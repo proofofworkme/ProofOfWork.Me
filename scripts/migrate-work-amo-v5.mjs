@@ -49,6 +49,7 @@ import {
   workAmoV5CanonicalTokenStateCommitment,
   workAmoV5ConsensusEventKind,
   workAmoV5EventSetCommitment,
+  workAmoV5WorkStateWithoutLegacyListingReservations,
 } from "../server/work-amo-v5.mjs";
 import {
   WORK_AMO_V5_RAW_BLOCK_DESCRIPTOR_MODEL,
@@ -60,6 +61,11 @@ import {
   workAmoV5RawGenericStateCommitment,
   workAmoV5RawIdStateCommitment,
 } from "../server/work-amo-v5-raw.mjs";
+import {
+  WORK_AMO_V5_H_MINUS_ONE_SEED_EVIDENCE_MODEL,
+  WORK_AMO_V5_H_MINUS_ONE_SEED_EVIDENCE_STATUS,
+  validatedWorkAmoV5HMinusOneSeedEvidence,
+} from "../server/work-amo-v5-seed-evidence.mjs";
 import {
   normalizedWorkAmoV5Bip141Witness,
   workAmoV5Bip141WitnessesEqual,
@@ -1349,6 +1355,7 @@ function canonicalWorkAmoPersistedActivationSeed(row, seed) {
     source: "persisted-activation-transition",
     state: stateValidation.state,
     tokenState,
+    workProjection,
   };
 }
 
@@ -1374,22 +1381,82 @@ async function canonicalWorkAmoSeedEvidence(client, seed) {
     `,
     [WORK_AMO_V5_ACTIVATION_HEIGHT],
   );
-  if (activationTransitionResult.rows.length > 1) {
+  if (activationTransitionResult.rows.length !== 1) {
     throw new Error(
-      "Canonical AMO activation transition is not unique.",
+      "Canonical AMO activation transition is unavailable or not unique.",
     );
   }
-  const snapshotId = String(seed?.snapshotIds?.[0] ?? "");
+  const evidenceResult = await client.query(
+    `
+      SELECT
+        snapshot_id,
+        indexed_through_block,
+        source_hashes,
+        consistency,
+        payload
+      FROM proof_indexer.ledger_snapshots
+      WHERE network = 'livenet'
+        AND payload->>'model' = $1
+      ORDER BY snapshot_id ASC
+    `,
+    [WORK_AMO_V5_H_MINUS_ONE_SEED_EVIDENCE_MODEL],
+  );
+  if (evidenceResult.rows.length !== 1) {
+    throw new Error(
+      "Canonical AMO H-1 seed evidence is unavailable or not unique.",
+    );
+  }
+  const evidenceRow = evidenceResult.rows[0];
+  const evidence =
+    validatedWorkAmoV5HMinusOneSeedEvidence(evidenceRow.payload);
+  const evidenceSourceHashes =
+    evidenceRow?.source_hashes &&
+    typeof evidenceRow.source_hashes === "object" &&
+    !Array.isArray(evidenceRow.source_hashes)
+      ? evidenceRow.source_hashes
+      : {};
+  const evidenceConsistency =
+    evidenceRow?.consistency &&
+    typeof evidenceRow.consistency === "object" &&
+    !Array.isArray(evidenceRow.consistency)
+      ? evidenceRow.consistency
+      : {};
+  const seedSnapshotIds = Array.isArray(seed?.snapshotIds)
+    ? seed.snapshotIds.map((value) => String(value ?? "").trim())
+    : [];
+  if (
+    !evidence ||
+    Object.keys(evidenceSourceHashes).sort().join(",") !==
+      "amoSeedBlock,amoSeedCanonicalSummary,amoSeedEvidence" ||
+    Object.keys(evidenceConsistency).sort().join(",") !== "ok,status" ||
+    evidenceRow.snapshot_id !== evidence.snapshotId ||
+    Number(evidenceRow.indexed_through_block) !== seedHeight ||
+    evidenceSourceHashes.amoSeedBlock !==
+      WORK_AMO_V5_DECLARATION_BLOCK_HASH ||
+    evidenceSourceHashes.amoSeedCanonicalSummary !==
+      evidence.canonicalSummary.canonicalSummaryHash ||
+    evidenceSourceHashes.amoSeedEvidence !==
+      evidence.evidenceCommitment.sha256 ||
+    evidenceConsistency.ok !== true ||
+    evidenceConsistency.status !==
+      WORK_AMO_V5_H_MINUS_ONE_SEED_EVIDENCE_STATUS ||
+    !seedSnapshotIds.includes(evidence.canonicalSummary.snapshotId) ||
+    evidence.canonicalSummary.canonicalSummaryHash !==
+      String(seed?.summaryHash ?? "").trim().toLowerCase() ||
+    evidence.canonicalSummary.networkValueQ8 !==
+      String(seed?.networkValueQ8 ?? "")
+  ) {
+    throw new Error(
+      "Canonical AMO H-1 seed evidence does not bind the pinned summary.",
+    );
+  }
+  const snapshotId = evidence.canonicalSummary.snapshotId;
   const [snapshotResult, eventResult, quoteResult] = await Promise.all([
     client.query(
       `
         SELECT
           payload->'summaryPayloads'->'workFloor'
-            ->'actualValue' AS actual_value,
-          payload->'tokenStatePayloads'->'all'
-            AS token_state_payload,
-          payload->'registryHistoryPayloads'
-            AS id_state_payload
+            ->'actualValue' AS actual_value
         FROM proof_indexer.ledger_snapshots
         WHERE network = 'livenet'
           AND snapshot_id = $1
@@ -1481,40 +1548,30 @@ async function canonicalWorkAmoSeedEvidence(client, seed) {
     ),
   ]);
   const actual = snapshotResult.rows[0]?.actual_value;
-  const genericTokenSnapshot =
-    snapshotResult.rows[0]?.token_state_payload;
-  const idStateSnapshot =
-    snapshotResult.rows[0]?.id_state_payload;
-  if (
-    !genericTokenSnapshot ||
-    typeof genericTokenSnapshot !== "object" ||
-    Array.isArray(genericTokenSnapshot)
-  ) {
-    throw new Error(
-      "Independent AMO H-1 generic token state is unavailable.",
-    );
-  }
   const genericTokenProjection =
     canonicalWorkAmoExactGenericSeedProjection(
-      genericTokenSnapshot,
-      { allowSafeLegacyNumbers: true },
+      evidence.seedGenericTokenState,
     );
   const genericTokenStateCommitment =
     workAmoV5RawGenericStateCommitment(genericTokenProjection);
-  if (
-    !idStateSnapshot ||
-    typeof idStateSnapshot !== "object" ||
-    Array.isArray(idStateSnapshot) ||
-    !canonicalWorkAmoJsonNumbersAreExact(idStateSnapshot)
-  ) {
-    throw new Error(
-      "Independent AMO H-1 ID state is unavailable.",
-    );
-  }
   const idStateProjection =
-    normalizeWorkAmoV5RawIdState(idStateSnapshot);
+    normalizeWorkAmoV5RawIdState(evidence.seedIdState);
   const idStateCommitment =
     workAmoV5RawIdStateCommitment(idStateProjection);
+  if (
+    genericTokenStateCommitment.sha256 !==
+      evidence.commitments.genericTokenState.sha256 ||
+    genericTokenStateCommitment.payloadBytes !==
+      evidence.commitments.genericTokenState.payloadBytes ||
+    idStateCommitment.sha256 !==
+      evidence.commitments.idState.sha256 ||
+    idStateCommitment.payloadBytes !==
+      evidence.commitments.idState.payloadBytes
+  ) {
+    throw new Error(
+      "Canonical AMO H-1 token or ID evidence commitment diverged.",
+    );
+  }
   if (
     !actual ||
     typeof actual !== "object" ||
@@ -1739,21 +1796,45 @@ async function canonicalWorkAmoSeedEvidence(client, seed) {
   const independentlyReplayedWorkTokenProjection =
     normalizeWorkAmoV5RawWorkState(tokenState);
   const workTokenProjection =
-    normalizeWorkAmoV5RawWorkState(genericTokenSnapshot);
+    normalizeWorkAmoV5RawWorkState(evidence.seedTokenState);
+  const pinnedWorkProjection =
+    normalizeWorkAmoV5RawWorkState(
+      workAmoV5WorkStateWithoutLegacyListingReservations(
+        evidence.seedWorkProjection,
+      ),
+    );
   const independentlyReplayedWorkCommitment =
     workAmoV5CanonicalTokenStateCommitment(
       independentlyReplayedWorkTokenProjection,
     );
   const tokenStateCommitment =
     workAmoV5CanonicalTokenStateCommitment(workTokenProjection);
+  const workProjectionCommitment =
+    workAmoV5CanonicalTokenStateCommitment(pinnedWorkProjection);
   if (
     independentlyReplayedWorkCommitment.sha256 !==
       tokenStateCommitment.sha256 ||
     independentlyReplayedWorkCommitment.payloadBytes !==
-      tokenStateCommitment.payloadBytes
+      tokenStateCommitment.payloadBytes ||
+    workProjectionCommitment.sha256 !==
+      tokenStateCommitment.sha256 ||
+    workProjectionCommitment.payloadBytes !==
+      tokenStateCommitment.payloadBytes ||
+    tokenStateCommitment.sha256 !==
+      evidence.commitments.tokenState.sha256 ||
+    tokenStateCommitment.payloadBytes !==
+      evidence.commitments.tokenState.payloadBytes ||
+    workProjectionCommitment.sha256 !==
+      evidence.commitments.workProjection.sha256 ||
+    workProjectionCommitment.payloadBytes !==
+      evidence.commitments.workProjection.payloadBytes ||
+    !canonicalWorkAmoV5PayloadsMatch(
+      independentlyReplayedWorkTokenProjection,
+      workTokenProjection,
+    )
   ) {
     throw new Error(
-      "Independent WORK event replay diverges from the pinned H-1 relational token projection.",
+      "Independent WORK event replay diverges from the immutable H-1 seed evidence.",
     );
   }
   const quote = quoteResult.rows[0];
@@ -1797,53 +1878,69 @@ async function canonicalWorkAmoSeedEvidence(client, seed) {
     tokenStateCommitment,
   });
   const validation = validateWorkAmoV5SufficientState(state);
+  const independentlyRecomputedStateCommitment = validation.valid
+    ? workAmoV5CanonicalStateCommitment(validation.state)
+    : null;
   if (
     !validation.valid ||
-    validation.state.networkValueQ8 !== String(seed?.networkValueQ8 ?? "")
+    validation.state.networkValueQ8 !== String(seed?.networkValueQ8 ?? "") ||
+    !independentlyRecomputedStateCommitment ||
+    independentlyRecomputedStateCommitment.sha256 !==
+      evidence.commitments.sufficientState.sha256 ||
+    independentlyRecomputedStateCommitment.payloadBytes !==
+      evidence.commitments.sufficientState.payloadBytes ||
+    !canonicalWorkAmoV5PayloadsMatch(
+      validation.state,
+      evidence.seedSufficientState,
+    )
   ) {
     throw new Error(
-      "Independent AMO H-1 sufficient state does not reproduce the exact seed.",
+      "Independent AMO H-1 sufficient state does not reproduce the immutable seed evidence.",
     );
   }
   const independentEvidence = {
-    commitment: workAmoV5CanonicalStateCommitment(validation.state),
+    commitment: independentlyRecomputedStateCommitment,
+    evidenceCommitment: evidence.evidenceCommitment,
     genericTokenProjection,
     idStateProjection,
-    source: "pinned-h-minus-one-snapshot",
+    source: "pinned-h-minus-one-seed-evidence",
     state: validation.state,
     tokenState: workTokenProjection,
+    workProjection: pinnedWorkProjection,
   };
-  if (activationTransitionResult.rows.length === 1) {
-    const persistedEvidence = canonicalWorkAmoPersistedActivationSeed(
-      activationTransitionResult.rows[0],
-      seed,
+  const persistedEvidence = canonicalWorkAmoPersistedActivationSeed(
+    activationTransitionResult.rows[0],
+    seed,
+  );
+  if (
+    persistedEvidence.commitment.sha256 !==
+      independentEvidence.commitment.sha256 ||
+    persistedEvidence.commitment.payloadBytes !==
+      independentEvidence.commitment.payloadBytes ||
+    !canonicalWorkAmoV5PayloadsMatch(
+      persistedEvidence.state,
+      independentEvidence.state,
+    ) ||
+    !canonicalWorkAmoV5PayloadsMatch(
+      persistedEvidence.genericTokenProjection,
+      independentEvidence.genericTokenProjection,
+    ) ||
+    !canonicalWorkAmoV5PayloadsMatch(
+      persistedEvidence.idStateProjection,
+      independentEvidence.idStateProjection,
+    ) ||
+    !canonicalWorkAmoV5PayloadsMatch(
+      persistedEvidence.tokenState,
+      independentEvidence.tokenState,
+    ) ||
+    !canonicalWorkAmoV5PayloadsMatch(
+      persistedEvidence.workProjection,
+      independentEvidence.workProjection,
+    )
+  ) {
+    throw new Error(
+      "Persisted AMO activation seed diverges from independent pinned H-1 evidence.",
     );
-    if (
-      persistedEvidence.commitment.sha256 !==
-        independentEvidence.commitment.sha256 ||
-      persistedEvidence.commitment.payloadBytes !==
-        independentEvidence.commitment.payloadBytes ||
-      !canonicalWorkAmoV5PayloadsMatch(
-        persistedEvidence.state,
-        independentEvidence.state,
-      ) ||
-      !canonicalWorkAmoV5PayloadsMatch(
-        persistedEvidence.genericTokenProjection,
-        independentEvidence.genericTokenProjection,
-      ) ||
-      !canonicalWorkAmoV5PayloadsMatch(
-        persistedEvidence.idStateProjection,
-        independentEvidence.idStateProjection,
-      ) ||
-      !canonicalWorkAmoV5PayloadsMatch(
-        persistedEvidence.tokenState,
-        independentEvidence.tokenState,
-      )
-    ) {
-      throw new Error(
-        "Persisted AMO activation seed diverges from independent pinned H-1 evidence.",
-      );
-    }
   }
   return independentEvidence;
 }
@@ -1856,6 +1953,10 @@ export function classifyWorkAmoV5LegacyRows(rows) {
     );
   }
   const row = sourceRows[0];
+  const authorizationVersions = [
+    String(row?.sale_version ?? "").trim().toLowerCase(),
+    String(row?.listing_version ?? "").trim().toLowerCase(),
+  ].filter(Boolean);
   if (
     String(row?.txid ?? "").toLowerCase() !==
       WORK_AMO_V5_POST_V1_INVALID_LISTING_TXID ||
@@ -1863,6 +1964,13 @@ export function classifyWorkAmoV5LegacyRows(rows) {
     String(row?.status ?? "") !== "confirmed" ||
     Number(row?.block_height) < WORK_AMO_V1_ACTIVATION_HEIGHT ||
     String(row?.version ?? "").toLowerCase() !== "pwt-sale-v3" ||
+    (
+      authorizationVersions.length > 0 &&
+      (
+        new Set(authorizationVersions).size !== 1 ||
+        authorizationVersions[0] !== "pwt-sale-v3"
+      )
+    ) ||
     String(row?.token_id ?? "").toLowerCase() !== WORK_TOKEN_ID ||
     !Number.isSafeInteger(Number(row?.event_id)) ||
     Number(row.event_id) < 1
@@ -2176,11 +2284,21 @@ async function legacyRows(client) {
         event_row.payload,
         lower(COALESCE(
           event_row.payload->'saleAuthorization'->>'version',
+          event_row.payload->'listingAuthorization'->>'version',
           ''
         )) AS version,
         lower(COALESCE(
+          event_row.payload->'saleAuthorization'->>'version',
+          ''
+        )) AS sale_version,
+        lower(COALESCE(
+          event_row.payload->'listingAuthorization'->>'version',
+          ''
+        )) AS listing_version,
+        lower(COALESCE(
           event_row.payload->>'tokenId',
           event_row.payload->'saleAuthorization'->>'tokenId',
+          event_row.payload->'listingAuthorization'->>'tokenId',
           ''
         )) AS token_id,
         listing.status AS listing_status
@@ -2249,6 +2367,60 @@ async function canonicalPositionAudit(client) {
           ) duplicate_positions
         ) AS duplicate_positions,
         (
+          (
+            SELECT count(*)::integer
+            FROM proof_indexer.credit_listings conflict_listing
+            WHERE conflict_listing.network = 'livenet'
+              AND lower(conflict_listing.token_id) = $2
+              AND NULLIF(lower(
+                conflict_listing.payload
+                  ->'saleAuthorization'->>'version'
+              ), '') IS NOT NULL
+              AND NULLIF(lower(
+                conflict_listing.payload
+                  ->'listingAuthorization'->>'version'
+              ), '') IS NOT NULL
+              AND lower(
+                conflict_listing.payload
+                  ->'saleAuthorization'->>'version'
+              ) <> lower(
+                conflict_listing.payload
+                  ->'listingAuthorization'->>'version'
+              )
+          )
+          +
+          (
+            SELECT count(*)::integer
+            FROM proof_indexer.events conflict_event
+            WHERE conflict_event.network = 'livenet'
+              AND conflict_event.status = 'confirmed'
+              AND conflict_event.block_height >= $3
+              AND lower(COALESCE(
+                conflict_event.payload
+                  ->'saleAuthorization'->>'tokenId',
+                conflict_event.payload
+                  ->'listingAuthorization'->>'tokenId',
+                conflict_event.payload->>'tokenId',
+                ''
+              )) = $2
+              AND NULLIF(lower(
+                conflict_event.payload
+                  ->'saleAuthorization'->>'version'
+              ), '') IS NOT NULL
+              AND NULLIF(lower(
+                conflict_event.payload
+                  ->'listingAuthorization'->>'version'
+              ), '') IS NOT NULL
+              AND lower(
+                conflict_event.payload
+                  ->'saleAuthorization'->>'version'
+              ) <> lower(
+                conflict_event.payload
+                  ->'listingAuthorization'->>'version'
+              )
+          )
+        ) AS authorization_conflicts,
+        (
           SELECT count(*)::integer
           FROM proof_indexer.credit_listings listing
           JOIN proof_indexer.transactions listing_tx
@@ -2257,10 +2429,16 @@ async function canonicalPositionAudit(client) {
           WHERE listing.network = 'livenet'
             AND lower(listing.token_id) = $2
             AND listing.status IN ('active', 'sealing')
-            AND lower(COALESCE(
-              listing.payload->'saleAuthorization'->>'version',
-              ''
-            )) = 'pwt-sale-v3'
+            AND 'pwt-sale-v3' = ANY(ARRAY[
+              lower(COALESCE(
+                listing.payload->'saleAuthorization'->>'version',
+                ''
+              )),
+              lower(COALESCE(
+                listing.payload->'listingAuthorization'->>'version',
+                ''
+              ))
+            ]::text[])
             AND listing_tx.block_height >= $3
         ) AS post_v1_v3_active,
         (
@@ -2272,10 +2450,16 @@ async function canonicalPositionAudit(client) {
           WHERE listing.network = 'livenet'
             AND lower(listing.token_id) = $2
             AND listing.status IN ('active', 'sealing')
-            AND lower(COALESCE(
-              listing.payload->'saleAuthorization'->>'version',
-              ''
-            )) = 'pwt-sale-v4'
+            AND 'pwt-sale-v4' = ANY(ARRAY[
+              lower(COALESCE(
+                listing.payload->'saleAuthorization'->>'version',
+                ''
+              )),
+              lower(COALESCE(
+                listing.payload->'listingAuthorization'->>'version',
+                ''
+              ))
+            ]::text[])
             AND listing_tx.block_height >= $1
         ) AS post_activation_v4_active,
         (
@@ -2284,13 +2468,18 @@ async function canonicalPositionAudit(client) {
           WHERE post_v5_v4_event.network = 'livenet'
             AND post_v5_v4_event.status = 'confirmed'
             AND post_v5_v4_event.block_height >= $1
-            AND lower(COALESCE(
-              post_v5_v4_event.payload
-                ->'saleAuthorization'->>'version',
-              post_v5_v4_event.payload
-                ->'listingAuthorization'->>'version',
-              ''
-            )) = 'pwt-sale-v4'
+            AND 'pwt-sale-v4' = ANY(ARRAY[
+              lower(COALESCE(
+                post_v5_v4_event.payload
+                  ->'saleAuthorization'->>'version',
+                ''
+              )),
+              lower(COALESCE(
+                post_v5_v4_event.payload
+                  ->'listingAuthorization'->>'version',
+                ''
+              ))
+            ]::text[])
         ) AS post_activation_v4_actions,
         (
           SELECT count(*)::integer
@@ -2316,11 +2505,18 @@ async function canonicalPositionAudit(client) {
               historical_v4_event.payload->>'tokenId',
               ''
             )) = $2
-            AND lower(COALESCE(
-              historical_v4_event.payload
-                ->'saleAuthorization'->>'version',
-              ''
-            )) = 'pwt-sale-v4'
+            AND 'pwt-sale-v4' = ANY(ARRAY[
+              lower(COALESCE(
+                historical_v4_event.payload
+                  ->'saleAuthorization'->>'version',
+                ''
+              )),
+              lower(COALESCE(
+                historical_v4_event.payload
+                  ->'listingAuthorization'->>'version',
+                ''
+              ))
+            ]::text[])
             AND (
               historical_v4_event.kind IN (
                 'token-listing',
@@ -2371,10 +2567,18 @@ async function canonicalPositionAudit(client) {
             AND listing_event.status = 'confirmed'
             AND listing_event.valid = true
             AND listing_event.kind = 'token-listing'
-            AND lower(COALESCE(
-              listing_event.payload->'saleAuthorization'->>'version',
-              ''
-            )) = $4
+            AND $4 = ANY(ARRAY[
+              lower(COALESCE(
+                listing_event.payload
+                  ->'saleAuthorization'->>'version',
+                ''
+              )),
+              lower(COALESCE(
+                listing_event.payload
+                  ->'listingAuthorization'->>'version',
+                ''
+              ))
+            ]::text[])
             AND listing_event.block_height >= $1
             AND terms.listing_id IS NULL
         ) AS missing_frozen_terms
@@ -2404,6 +2608,7 @@ async function canonicalPositionAudit(client) {
   );
   const row = result.rows[0] ?? {};
   return {
+    authorizationConflicts: Number(row.authorization_conflicts ?? 0),
     duplicatePositions: Number(row.duplicate_positions ?? 0),
     missingFrozenTerms: Number(row.missing_frozen_terms ?? 0),
     missingPositions: Number(row.missing_positions ?? 0),
@@ -4004,10 +4209,10 @@ export async function canonicalWorkAmoRelationalTokenStateEvidence(
           listing.seller_address,
           listing.amount::text AS amount_atoms,
           listing.price_sats::text AS price_sats,
-          COALESCE(
-            listing.payload->'listingAuthorization',
-            listing.payload->'saleAuthorization'
-          ) AS sale_authorization,
+          listing.payload->'listingAuthorization'
+            AS listing_authorization,
+          listing.payload->'saleAuthorization'
+            AS sale_authorization,
           COALESCE(
             terms.frozen_terms,
             listing.payload->'listingFrozenTerms'
@@ -4045,14 +4250,19 @@ export async function canonicalWorkAmoRelationalTokenStateEvidence(
       return total + BigInt(holder.balanceAtoms);
     }, 0n)
     .toString();
-  const listings = listingResult.rows.map((row) => ({
-    amountAtoms: String(row.amount_atoms ?? ""),
-    frozenTerms: row.frozen_terms,
-    listingId: String(row.listing_id ?? "").trim().toLowerCase(),
-    priceSats: String(row.price_sats ?? ""),
-    saleAuthorization: row.sale_authorization,
-    sellerAddress: String(row.seller_address ?? ""),
-  }));
+  const listings =
+    workAmoV5WorkStateWithoutLegacyListingReservations({
+      listings: listingResult.rows.map((row) => ({
+        amountAtoms: String(row.amount_atoms ?? ""),
+        frozenTerms: row.frozen_terms,
+        listingId: String(row.listing_id ?? "").trim().toLowerCase(),
+        listingAuthorization: row.listing_authorization,
+        priceSats: String(row.price_sats ?? ""),
+        saleAuthorization:
+          row.sale_authorization ?? row.listing_authorization,
+        sellerAddress: String(row.seller_address ?? ""),
+      })),
+    }).listings;
   let commitment;
   try {
     commitment = workAmoV5CanonicalTokenStateCommitment({
@@ -4478,6 +4688,7 @@ export async function runWorkAmoV5Migration(
     const audit = await canonicalPositionAudit(client);
     const replayEvidence = await canonicalWorkAmoReplayEvidence(client);
     const complete =
+      audit.authorizationConflicts === 0 &&
       audit.missingPositions === 0 &&
       audit.duplicatePositions === 0 &&
       audit.postV1V3Active === 0 &&

@@ -131,6 +131,7 @@ import {
   workAmoV5NetworkValueQ8FromSufficientState,
   workAmoV5StatusFromEvidence,
   workAmoV5UnitTerms,
+  workAmoV5WorkStateWithoutLegacyListingReservations,
 } from "./work-amo-v5.mjs";
 import {
   WORK_AMO_V5_RAW_BLOCK_DESCRIPTOR_MODEL,
@@ -143,6 +144,9 @@ import {
   workAmoV5RawGenericStateCommitment,
   workAmoV5RawIdStateCommitment,
 } from "./work-amo-v5-raw.mjs";
+import {
+  canonicalWorkAmoV5HMinusOneSeedEvidence,
+} from "./work-amo-v5-seed-evidence.mjs";
 import {
   normalizedWorkAmoV5Bip141Witness,
 } from "./work-amo-v5-bip141.mjs";
@@ -45826,6 +45830,7 @@ function workAmoV5TokenStateCommitmentProjection(tokenState) {
         listing?.workMarketPricing?.frozenTerms ??
         null,
       listingId: String(listing?.listingId ?? "").trim().toLowerCase(),
+      listingAuthorization: listing?.listingAuthorization ?? null,
       priceSats: canonicalNonNegativeIntegerText(listing?.priceSats),
       saleAuthorization: listing?.saleAuthorization ?? null,
       sellerAddress: String(listing?.sellerAddress ?? "").trim(),
@@ -45847,21 +45852,28 @@ async function workAmoV5WorkStateWithCanonicalListingWitnesses(
   tokenState,
   network,
 ) {
-  const listings = Array.isArray(tokenState?.listings)
-    ? tokenState.listings
-    : [];
+  const governedState =
+    workAmoV5WorkStateWithoutLegacyListingReservations(tokenState);
+  const listings = governedState.listings;
   const referenceIds = [
     ...new Set(
       listings.flatMap((listing) => {
-        const version = String(
-          listing?.saleAuthorization?.version ?? "",
-        ).trim();
+        const versions = [
+          listing?.saleAuthorization?.version,
+          listing?.listingAuthorization?.version,
+        ]
+          .map((version) => String(version ?? "").trim())
+          .filter(Boolean);
         const listingId = String(listing?.listingId ?? "")
           .trim()
           .toLowerCase();
         return (
-          [TOKEN_SALE_AUTH_WORK_MARKET_V4_VERSION,
-            TOKEN_SALE_AUTH_WORK_AMO_V5_VERSION].includes(version) &&
+          versions.some((version) =>
+            [
+              TOKEN_SALE_AUTH_WORK_MARKET_V4_VERSION,
+              TOKEN_SALE_AUTH_WORK_AMO_V5_VERSION,
+            ].includes(version)
+          ) &&
           /^[0-9a-f]{64}$/u.test(listingId)
         )
           ? [listingId]
@@ -45884,8 +45896,16 @@ async function workAmoV5WorkStateWithCanonicalListingWitnesses(
       )
     ).filter(([, witness]) => witness),
   );
+  const missingWitnessIds = referenceIds.filter(
+    (listingId) => !witnesses.has(listingId),
+  );
+  if (missingWitnessIds.length > 0) {
+    throw new Error(
+      `Canonical AMO opening listing witness is unavailable for ${missingWitnessIds[0]}.`,
+    );
+  }
   return {
-    ...tokenState,
+    ...governedState,
     listings: listings.map((listing) => {
       const witness = witnesses.get(
         String(listing?.listingId ?? "").trim().toLowerCase(),
@@ -45893,14 +45913,70 @@ async function workAmoV5WorkStateWithCanonicalListingWitnesses(
       if (!witness) {
         return listing;
       }
+      const canonicalAuthorization =
+        witness.listingAuthorization;
+      const canonicalFrozenTerms =
+        witness.listingFrozenTerms;
+      const authorizationSources = [
+        listing?.saleAuthorization,
+        listing?.listingAuthorization,
+      ];
+      const malformedAuthorizationPresent =
+        authorizationSources.some(
+          (authorization) =>
+            authorization !== undefined &&
+            authorization !== null &&
+            (
+              typeof authorization !== "object" ||
+              Array.isArray(authorization)
+            ),
+        );
+      const existingAuthorizations = authorizationSources.filter(
+        (authorization) =>
+          authorization &&
+          typeof authorization === "object" &&
+          !Array.isArray(authorization),
+      );
+      const frozenTermsPresent =
+        listing?.frozenTerms !== undefined &&
+        listing?.frozenTerms !== null;
+      const existingFrozenTerms =
+        frozenTermsPresent &&
+        typeof listing.frozenTerms === "object" &&
+        !Array.isArray(listing.frozenTerms)
+          ? listing.frozenTerms
+          : null;
+      if (
+        !canonicalAuthorization ||
+        !canonicalFrozenTerms ||
+        malformedAuthorizationPresent ||
+        (frozenTermsPresent && !existingFrozenTerms) ||
+        existingAuthorizations.some(
+          (authorization) =>
+            workAmoV5CanonicalPayloadCommitment(authorization)
+              .sha256 !==
+            workAmoV5CanonicalPayloadCommitment(
+              canonicalAuthorization,
+            ).sha256,
+        ) ||
+        (
+          existingFrozenTerms &&
+          workAmoV5CanonicalPayloadCommitment(existingFrozenTerms)
+            .sha256 !==
+            workAmoV5CanonicalPayloadCommitment(
+              canonicalFrozenTerms,
+            ).sha256
+        )
+      ) {
+        throw new Error(
+          `Canonical AMO opening listing witness diverged for ${listing.listingId}.`,
+        );
+      }
       return {
         ...listing,
-        frozenTerms:
-          listing?.frozenTerms ??
-          witness.listingFrozenTerms,
-        listingAuthorization:
-          listing?.listingAuthorization ??
-          witness.listingAuthorization,
+        frozenTerms: canonicalFrozenTerms,
+        listingAuthorization: canonicalAuthorization,
+        saleAuthorization: canonicalAuthorization,
       };
     }),
   };
@@ -47006,6 +47082,48 @@ async function workAmoV5OpeningAccumulatorState(
     opening.persistedActivationSeedVerified = true;
   }
   return opening;
+}
+
+async function workAmoV5HMinusOneSeedEvidencePayload(
+  network,
+  {
+    blockHash,
+    blockHeight,
+  } = {},
+) {
+  const requiredBlockHeight = Number(blockHeight);
+  const requiredBlockHash = String(blockHash ?? "").trim().toLowerCase();
+  if (
+    network !== "livenet" ||
+    requiredBlockHeight !== WORK_AMO_V5_ACTIVATION_HEIGHT - 1 ||
+    requiredBlockHash !== WORK_AMO_V5_DECLARATION_BLOCK_HASH
+  ) {
+    const error = new Error(
+      "The AMO V5 seed-evidence producer requires the exact livenet H-1 declaration checkpoint.",
+    );
+    error.statusCode = 400;
+    throw error;
+  }
+  const opening = await workAmoV5OpeningAccumulatorState(
+    network,
+    requiredBlockHeight,
+    requiredBlockHash,
+  );
+  return canonicalWorkAmoV5HMinusOneSeedEvidence({
+    canonicalSummary: {
+      canonicalSummaryHash: opening.summary?.canonicalSummaryHash,
+      networkValueQ8: opening.summary?.workNetworkValueQ8,
+      snapshotId: opening.summary?.snapshotId,
+    },
+    indexedThroughBlock: requiredBlockHeight,
+    indexedThroughBlockHash: requiredBlockHash,
+    network,
+    seedGenericTokenState: opening.genericState,
+    seedIdState: opening.idState,
+    seedSufficientState: opening.state,
+    seedTokenState: opening.workState,
+    seedWorkProjection: opening.workProjection,
+  });
 }
 
 function workAmoV5ProtocolRecordsForCurrentBlock(
@@ -51335,6 +51453,45 @@ async function handleRequest(request, response) {
     if (
       request.method === "POST" &&
       url.pathname ===
+        "/api/v1/internal/work-amo-v5-seed-evidence"
+    ) {
+      if (!internalVerifierRequestAllowed(request)) {
+        errorResponse(response, 404, "Not found.");
+        return;
+      }
+      const payload = await readJsonRequestBody(request, 64_000, {
+        label: "AMO V5 H-1 seed-evidence body",
+        timeoutMs: 15_000,
+      });
+      const requestedNetwork = String(payload?.network ?? "")
+        .trim()
+        .toLowerCase();
+      const requestedReplayBindingId =
+        url.searchParams.get("replayBindingId") ?? "";
+      const replayVerifierBinding = await internalReplayVerifierBinding(
+        requestedNetwork,
+        requestedReplayBindingId,
+      );
+      jsonResponse(
+        response,
+        200,
+        await internalReplayBoundPayload(
+          requestedNetwork,
+          requestedReplayBindingId,
+          await workAmoV5HMinusOneSeedEvidencePayload(
+            requestedNetwork,
+            payload,
+          ),
+          replayVerifierBinding,
+        ),
+        "no-store",
+      );
+      return;
+    }
+
+    if (
+      request.method === "POST" &&
+      url.pathname ===
         "/api/v1/internal/work-amo-v5-block-verifier"
     ) {
       if (!internalVerifierRequestAllowed(request)) {
@@ -51348,12 +51505,23 @@ async function handleRequest(request, response) {
       const requestedNetwork = String(payload?.network ?? "")
         .trim()
         .toLowerCase();
+      const requestedReplayBindingId =
+        url.searchParams.get("replayBindingId") ?? "";
+      const replayVerifierBinding = await internalReplayVerifierBinding(
+        requestedNetwork,
+        requestedReplayBindingId,
+      );
       jsonResponse(
         response,
         200,
-        await workAmoV5BlockVerifierPayload(
+        await internalReplayBoundPayload(
           requestedNetwork,
-          payload,
+          requestedReplayBindingId,
+          await workAmoV5BlockVerifierPayload(
+            requestedNetwork,
+            payload,
+          ),
+          replayVerifierBinding,
         ),
         "no-store",
       );

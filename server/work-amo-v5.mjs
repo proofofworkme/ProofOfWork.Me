@@ -79,6 +79,12 @@ export const WORK_AMO_V5_BASE_STATE_FIELDS = Object.freeze([
   "tokenTransferFlowSats",
 ]);
 export const WORK_AMO_V4_AUTH_VERSION = "pwt-sale-v4";
+export const WORK_AMO_V5_LEGACY_LISTING_AUTH_VERSIONS =
+  Object.freeze([
+    "pwt-sale-v1",
+    "pwt-sale-v2",
+    "pwt-sale-v3",
+  ]);
 export const WORK_AMO_V4_UNIT_MODEL =
   "canonical-work-amo-usd-unit-v1";
 export const WORK_AMO_V4_ORACLE_MODEL =
@@ -140,6 +146,52 @@ export const compareWorkAmoUtf8 = compareCanonicalUtf8;
 const WORK_AMO_V5_FATAL_UTF8_DECODER = new TextDecoder("utf-8", {
   fatal: true,
 });
+
+export function workAmoV5WorkStateWithoutLegacyListingReservations(
+  tokenState,
+) {
+  const source =
+    tokenState &&
+    typeof tokenState === "object" &&
+    !Array.isArray(tokenState)
+      ? tokenState
+      : {};
+  return {
+    ...source,
+    listings: (Array.isArray(source.listings)
+      ? source.listings
+      : []
+    ).filter((listing) => {
+      const presentAuthorizations = [
+        listing?.saleAuthorization,
+        listing?.listingAuthorization,
+      ].filter(
+        (authorization) =>
+          authorization !== undefined && authorization !== null,
+      );
+      if (
+        presentAuthorizations.some(
+          (authorization) =>
+            typeof authorization !== "object" ||
+            Array.isArray(authorization) ||
+            !String(authorization.version ?? "").trim(),
+        )
+      ) {
+        return true;
+      }
+      const presentVersions = presentAuthorizations.map(
+        (authorization) => String(authorization.version).trim(),
+      );
+      return !(
+        presentVersions.length > 0 &&
+        new Set(presentVersions).size === 1 &&
+        WORK_AMO_V5_LEGACY_LISTING_AUTH_VERSIONS.includes(
+          presentVersions[0],
+        )
+      );
+    }),
+  };
+}
 
 export const WORK_AMO_V5_FROZEN_TERM_FIELDS = Object.freeze([
   "version",
@@ -3637,6 +3689,19 @@ export function workAmoV5CanonicalTokenStatePreimage(tokenState) {
         ? listing.saleAuthorization
         : null;
     const version = String(authorization?.version ?? "").trim();
+    const listingAuthorizationPresent =
+      listing?.listingAuthorization !== undefined &&
+      listing?.listingAuthorization !== null;
+    const listingAuthorization =
+      listingAuthorizationPresent &&
+      typeof listing.listingAuthorization === "object" &&
+      !Array.isArray(listing.listingAuthorization)
+        ? listing.listingAuthorization
+        : null;
+    const listingAuthorizationVersion =
+      listingAuthorization
+        ? String(listingAuthorization.version ?? "").trim()
+        : "";
     const frozenTerms =
       listing?.frozenTerms &&
       typeof listing.frozenTerms === "object" &&
@@ -3670,6 +3735,15 @@ export function workAmoV5CanonicalTokenStatePreimage(tokenState) {
       !priceSats ||
       ![WORK_AMO_V4_AUTH_VERSION, WORK_AMO_V5_AUTH_VERSION].includes(
         version,
+      ) ||
+      (
+        listingAuthorizationPresent &&
+        (
+          !listingAuthorizationVersion ||
+          listingAuthorizationVersion !== version ||
+          canonicalPayloadCommitment(listingAuthorization).sha256 !==
+            canonicalPayloadCommitment(authorization).sha256
+        )
       ) ||
       (version === WORK_AMO_V5_AUTH_VERSION &&
         (v5Authorization?.valid !== true ||

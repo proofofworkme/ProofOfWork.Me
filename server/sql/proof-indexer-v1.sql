@@ -1059,4 +1059,38 @@ CREATE INDEX IF NOT EXISTS ledger_snapshots_canonical_payload_latest_idx
   )
   WHERE payload ? 'snapshotId';
 
+CREATE OR REPLACE FUNCTION
+  proof_indexer.reject_work_amo_h_minus_one_seed_evidence_mutation()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $proof_indexer_work_amo_h_minus_one_seed_evidence_immutable$
+BEGIN
+  IF
+    OLD.payload->>'model' =
+      'canonical-work-amo-v5-h-minus-one-seed-evidence-v1'
+    OR (
+      TG_OP = 'UPDATE'
+      AND NEW.payload->>'model' =
+        'canonical-work-amo-v5-h-minus-one-seed-evidence-v1'
+    )
+  THEN
+    RAISE EXCEPTION
+      'AMO V5 H-1 seed evidence is immutable'
+      USING ERRCODE = '55000';
+  END IF;
+  IF TG_OP = 'DELETE' THEN
+    RETURN OLD;
+  END IF;
+  RETURN NEW;
+END;
+$proof_indexer_work_amo_h_minus_one_seed_evidence_immutable$;
+
+DROP TRIGGER IF EXISTS work_amo_h_minus_one_seed_evidence_immutable
+  ON proof_indexer.ledger_snapshots;
+CREATE TRIGGER work_amo_h_minus_one_seed_evidence_immutable
+BEFORE UPDATE OR DELETE ON proof_indexer.ledger_snapshots
+FOR EACH ROW
+EXECUTE FUNCTION
+  proof_indexer.reject_work_amo_h_minus_one_seed_evidence_mutation();
+
 COMMIT;

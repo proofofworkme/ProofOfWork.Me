@@ -55,6 +55,7 @@ import {
   WORK_AMO_V5_ACTIVATION_HEIGHT,
   WORK_AMO_V5_AUTH_VERSION,
   WORK_AMO_V5_BLOCK_SEQUENCER_MODEL,
+  WORK_AMO_V5_DECLARATION_BLOCK_HASH,
   WORK_AMO_V5_DECLARATION_AUTHORITY_SCRIPT_PUBKEY as WORK_AMO_USD_QUOTE_AUTHORITY_SCRIPTPUBKEY,
   WORK_AMO_V5_DECLARATION_MIN_PAYMENT_SATS,
   WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS as WORK_AMO_USD_QUOTE_REGISTRY_ADDRESS,
@@ -76,6 +77,11 @@ import {
   workAmoV5ConsensusEventKind,
   workAmoV5EventSetCommitment,
 } from "../server/work-amo-v5.mjs";
+import {
+  WORK_AMO_V5_H_MINUS_ONE_SEED_EVIDENCE_MODEL,
+  WORK_AMO_V5_H_MINUS_ONE_SEED_EVIDENCE_STATUS,
+  validatedWorkAmoV5HMinusOneSeedEvidence,
+} from "../server/work-amo-v5-seed-evidence.mjs";
 import {
   WORK_AMO_V5_RAW_BLOCK_DESCRIPTOR_MODEL,
   WORK_AMO_V5_RAW_TRANSITION_CHAIN_MODEL,
@@ -6219,6 +6225,8 @@ async function invalidateWorkAtomicDerivedSnapshots(client) {
       )
       DELETE FROM proof_indexer.ledger_snapshots snapshot
       WHERE snapshot.network = $1
+        AND COALESCE(snapshot.payload->>'model', '') <>
+          'canonical-work-amo-v5-h-minus-one-seed-evidence-v1'
         AND COALESCE(
           snapshot.payload->>'workAmountStorageModel',
           ''
@@ -12158,6 +12166,8 @@ async function pruneLedgerSnapshots(
       USING ranked
       WHERE snapshot.network = $1
         AND snapshot.snapshot_id = ranked.snapshot_id
+        AND COALESCE(snapshot.payload->>'model', '') <>
+          'canonical-work-amo-v5-h-minus-one-seed-evidence-v1'
         AND (
           (
             ranked.canonical_summary
@@ -14281,6 +14291,8 @@ async function prepareCanonicalRebuild(client) {
       `
         DELETE FROM proof_indexer.ledger_snapshots
         WHERE network = $1
+          AND COALESCE(payload->>'model', '') <>
+            'canonical-work-amo-v5-h-minus-one-seed-evidence-v1'
       `,
       [NETWORK],
     );
@@ -14763,6 +14775,8 @@ async function prepareCanonicalPwtRangeReplay(client) {
         DELETE FROM proof_indexer.ledger_snapshots
         WHERE network = $1
           AND NOT (snapshot_id = ANY($2::text[]))
+          AND COALESCE(payload->>'model', '') <>
+            'canonical-work-amo-v5-h-minus-one-seed-evidence-v1'
       `,
       [NETWORK, preservedWitnessSnapshotIds],
     );
@@ -15293,6 +15307,347 @@ async function verifiedWorkAmoV5BlockTransition({
     blockHeight,
     previousBlockHash,
   });
+}
+
+function workAmoV5HMinusOneSeedEvidenceMetrics(evidence) {
+  return {
+    complete: true,
+    genericHolderCount:
+      evidence.seedGenericTokenState.holders.length,
+    genericListingCount:
+      evidence.seedGenericTokenState.listings.length,
+    genericTokenCount:
+      evidence.seedGenericTokenState.tokens.length,
+    idCount: evidence.seedIdState.records.length,
+    workHolderCount: evidence.seedTokenState.holders.length,
+    workListingCount: evidence.seedTokenState.listings.length,
+  };
+}
+
+function workAmoV5HMinusOneSeedEvidenceFromInternalPayload(payload) {
+  const {
+    replayVerifierBinding: _transportBinding,
+    ...evidencePayload
+  } = objectValue(payload);
+  return validatedWorkAmoV5HMinusOneSeedEvidence(evidencePayload);
+}
+
+function exactStoredWorkAmoV5HMinusOneSeedEvidenceRow(
+  row,
+  evidence,
+) {
+  const stored = validatedWorkAmoV5HMinusOneSeedEvidence(row?.payload);
+  const sourceHashes = objectValue(row?.source_hashes);
+  const metrics = objectValue(row?.metrics);
+  const consistency = objectValue(row?.consistency);
+  const expectedMetrics =
+    workAmoV5HMinusOneSeedEvidenceMetrics(evidence);
+  const storedMetricsCommitment =
+    workAmoV5CanonicalPayloadCommitment(metrics);
+  const expectedMetricsCommitment =
+    workAmoV5CanonicalPayloadCommitment(expectedMetrics);
+  return Boolean(
+    stored &&
+      Object.keys(sourceHashes).sort().join(",") ===
+        "amoSeedBlock,amoSeedCanonicalSummary,amoSeedEvidence" &&
+      Object.keys(consistency).sort().join(",") === "ok,status" &&
+      row?.snapshot_id === evidence.snapshotId &&
+      Number(row?.indexed_through_block) ===
+        evidence.indexedThroughBlock &&
+      sourceHashes.amoSeedBlock ===
+        evidence.indexedThroughBlockHash &&
+      sourceHashes.amoSeedCanonicalSummary ===
+        evidence.canonicalSummary.canonicalSummaryHash &&
+      sourceHashes.amoSeedEvidence ===
+        evidence.evidenceCommitment.sha256 &&
+      consistency.ok === true &&
+      consistency.status ===
+        WORK_AMO_V5_H_MINUS_ONE_SEED_EVIDENCE_STATUS &&
+      storedMetricsCommitment.sha256 ===
+        expectedMetricsCommitment.sha256 &&
+      storedMetricsCommitment.payloadBytes ===
+        expectedMetricsCommitment.payloadBytes &&
+      stored.evidenceCommitment.sha256 ===
+        evidence.evidenceCommitment.sha256 &&
+      stored.evidenceCommitment.payloadBytes ===
+        evidence.evidenceCommitment.payloadBytes
+  );
+}
+
+async function storedWorkAmoV5HMinusOneSeedEvidenceRows(
+  client,
+  snapshotId,
+) {
+  const result = await client.query(
+    `
+      SELECT
+        snapshot_id,
+        indexed_through_block,
+        source_hashes,
+        metrics,
+        consistency,
+        payload
+      FROM proof_indexer.ledger_snapshots
+      WHERE network = $1
+        AND (
+          snapshot_id = $2
+          OR payload->>'model' = $3
+        )
+      ORDER BY snapshot_id ASC
+      FOR UPDATE
+    `,
+    [
+      NETWORK,
+      snapshotId,
+      WORK_AMO_V5_H_MINUS_ONE_SEED_EVIDENCE_MODEL,
+    ],
+  );
+  return result.rows;
+}
+
+async function assertWorkAmoV5HMinusOneCaptureCheckpoint(
+  client,
+  {
+    blockHash,
+    blockHeight,
+  },
+) {
+  const checkpoint = await latestBlockScanCheckpoint(client, {
+    useStoredCheckpoint: true,
+  });
+  const relational = await client.query(
+    `
+      SELECT
+        (
+          SELECT count(*)::integer
+          FROM proof_indexer.blocks
+          WHERE network = $1
+            AND canonical = true
+            AND height = $2
+            AND lower(block_hash) = $3
+        ) AS exact_block_count,
+        (
+          SELECT COALESCE(max(height), 0)
+          FROM proof_indexer.blocks
+          WHERE network = $1
+            AND canonical = true
+        ) AS maximum_block_height,
+        (
+          SELECT count(*)::integer
+          FROM proof_indexer.blocks
+          WHERE network = $1
+            AND canonical = true
+            AND height > $2
+        ) AS later_block_count,
+        (
+          SELECT count(*)::integer
+          FROM proof_indexer.transactions
+          WHERE network = $1
+            AND status = 'confirmed'
+            AND block_height > $2
+        ) AS later_transaction_count,
+        (
+          SELECT count(*)::integer
+          FROM proof_indexer.events
+          WHERE network = $1
+            AND status = 'confirmed'
+            AND block_height > $2
+        ) AS later_event_count,
+        (
+          SELECT count(*)::integer
+          FROM proof_indexer.work_amo_block_transitions
+          WHERE network = $1
+        ) AS transition_count
+    `,
+    [NETWORK, blockHeight, blockHash],
+  );
+  const row = relational.rows[0] ?? {};
+  const rebuild =
+    await proofIndexerMetaValue(client, CANONICAL_REBUILD_META_KEY);
+  const rebuildApplies =
+    rebuild?.network === NETWORK &&
+    ["active", "complete"].includes(rebuild?.status);
+  if (
+    checkpoint.height !== blockHeight ||
+    checkpoint.blockHash !== blockHash ||
+    Number(row.exact_block_count) !== 1 ||
+    Number(row.maximum_block_height) !== blockHeight ||
+    Number(row.later_block_count) !== 0 ||
+    Number(row.later_transaction_count) !== 0 ||
+    Number(row.later_event_count) !== 0 ||
+    Number(row.transition_count) !== 0 ||
+    (rebuildApplies &&
+      (Number(rebuild.indexedThroughBlock) !== blockHeight ||
+        String(rebuild.indexedThroughBlockHash ?? "")
+          .trim()
+          .toLowerCase() !== blockHash))
+  ) {
+    throw new Error(
+      `Canonical AMO V5 H-1 seed capture requires the exact unadvanced checkpoint ${blockHeight}:${blockHash}.`,
+    );
+  }
+}
+
+async function captureWorkAmoV5HMinusOneSeedEvidence(
+  client,
+  {
+    blockHash,
+    blockHeight,
+  },
+) {
+  const normalizedBlockHash = String(blockHash ?? "").trim().toLowerCase();
+  if (
+    NETWORK !== "livenet" ||
+    blockHeight !== WORK_AMO_V5_ACTIVATION_HEIGHT - 1 ||
+    normalizedBlockHash !== WORK_AMO_V5_DECLARATION_BLOCK_HASH
+  ) {
+    throw new Error(
+      "Canonical AMO V5 H-1 seed capture checkpoint is invalid.",
+    );
+  }
+  await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
+  try {
+    await client.query(
+      `
+        LOCK TABLE
+          proof_indexer.blocks,
+          proof_indexer.transactions,
+          proof_indexer.events,
+          proof_indexer.credit_balances,
+          proof_indexer.credit_definitions,
+          proof_indexer.credit_listings,
+          proof_indexer.event_participants,
+          proof_indexer.event_refs,
+          proof_indexer.id_records,
+          proof_indexer.ledger_snapshots,
+          proof_indexer.meta,
+          proof_indexer.op_returns,
+          proof_indexer.tx_inputs,
+          proof_indexer.tx_outputs,
+          proof_indexer.work_usd_quotes,
+          proof_indexer.work_amo_block_transitions,
+          proof_indexer.work_amo_listing_terms
+        IN SHARE ROW EXCLUSIVE MODE
+      `,
+    );
+    await assertWorkAmoV5HMinusOneCaptureCheckpoint(client, {
+      blockHash: normalizedBlockHash,
+      blockHeight,
+    });
+    const payload = await readJson(
+      endpoint("/api/v1/internal/work-amo-v5-seed-evidence"),
+      {
+        body: {
+          blockHash: normalizedBlockHash,
+          blockHeight,
+          network: NETWORK,
+        },
+        method: "POST",
+        retries: 0,
+        timeoutMs: CANONICAL_SUMMARY_REFRESH_TIMEOUT_MS,
+      },
+    );
+    const evidence =
+      workAmoV5HMinusOneSeedEvidenceFromInternalPayload(payload);
+    if (
+      !evidence ||
+      evidence.indexedThroughBlock !== blockHeight ||
+      evidence.indexedThroughBlockHash !== normalizedBlockHash
+    ) {
+      throw new Error(
+        "Canonical AMO V5 H-1 seed-evidence producer returned an invalid envelope.",
+      );
+    }
+    const existing =
+      await storedWorkAmoV5HMinusOneSeedEvidenceRows(
+        client,
+        evidence.snapshotId,
+      );
+    if (existing.length > 0) {
+      if (
+        existing.length !== 1 ||
+        !exactStoredWorkAmoV5HMinusOneSeedEvidenceRow(
+          existing[0],
+          evidence,
+        )
+      ) {
+        throw new Error(
+          "Canonical AMO V5 H-1 seed evidence conflicts with an existing immutable row.",
+        );
+      }
+      await client.query("COMMIT");
+      return evidence;
+    }
+    const metrics =
+      workAmoV5HMinusOneSeedEvidenceMetrics(evidence);
+    await client.query(
+      `
+        INSERT INTO proof_indexer.ledger_snapshots (
+          network,
+          snapshot_id,
+          generated_at,
+          indexed_through_block,
+          source_hashes,
+          metrics,
+          consistency,
+          payload
+        )
+        VALUES (
+          $1,
+          $2,
+          now(),
+          $3,
+          $4::jsonb,
+          $5::jsonb,
+          $6::jsonb,
+          $7::jsonb
+        )
+        ON CONFLICT (network, snapshot_id) DO NOTHING
+      `,
+      [
+        NETWORK,
+        evidence.snapshotId,
+        evidence.indexedThroughBlock,
+        JSON.stringify({
+          amoSeedBlock: evidence.indexedThroughBlockHash,
+          amoSeedCanonicalSummary:
+            evidence.canonicalSummary.canonicalSummaryHash,
+          amoSeedEvidence: evidence.evidenceCommitment.sha256,
+        }),
+        JSON.stringify(metrics),
+        JSON.stringify({
+          ok: true,
+          status: WORK_AMO_V5_H_MINUS_ONE_SEED_EVIDENCE_STATUS,
+        }),
+        JSON.stringify(evidence),
+      ],
+    );
+    const stored =
+      await storedWorkAmoV5HMinusOneSeedEvidenceRows(
+        client,
+        evidence.snapshotId,
+      );
+    if (
+      stored.length !== 1 ||
+      !exactStoredWorkAmoV5HMinusOneSeedEvidenceRow(
+        stored[0],
+        evidence,
+      )
+    ) {
+      throw new Error(
+        "Canonical AMO V5 H-1 seed evidence was not stored exactly once.",
+      );
+    }
+    await assertWorkAmoV5HMinusOneCaptureCheckpoint(client, {
+      blockHash: normalizedBlockHash,
+      blockHeight,
+    });
+    await client.query("COMMIT");
+    return evidence;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  }
 }
 
 function workAmoEventReasonCode(row) {
@@ -16308,6 +16663,10 @@ async function backfillBlockScanSource(client, source) {
           `Canonical AMO V5 H-1 sufficient-value barrier failed at block ${height}`,
         );
       }
+      await captureWorkAmoV5HMinusOneSeedEvidence(client, {
+        blockHash: requiredCheckpoint.blockHash,
+        blockHeight: requiredCheckpoint.height,
+      });
     }
     if (
       ((typeof STORE_CANONICAL_SUMMARY_SNAPSHOT !== "undefined" &&
@@ -19436,6 +19795,8 @@ async function repairCanonicalIncbIssuance(client) {
         )
         DELETE FROM proof_indexer.ledger_snapshots snapshot
         WHERE snapshot.network = $1
+          AND COALESCE(snapshot.payload->>'model', '') <>
+            'canonical-work-amo-v5-h-minus-one-seed-evidence-v1'
           AND NOT (${canonicalBlockScanSnapshotPredicate})
           AND NOT (snapshot.snapshot_id = ANY($2::text[]))
           AND NOT EXISTS (

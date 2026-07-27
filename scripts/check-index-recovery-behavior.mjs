@@ -111,6 +111,7 @@ import {
   workAmoV5CanonicalTokenStateCommitment,
   workAmoV5ConsensusEventKind,
   workAmoV5EventSetCommitment,
+  workAmoV5WorkStateWithoutLegacyListingReservations,
 } from "../server/work-amo-v5.mjs";
 import {
   WORK_AMO_V5_RAW_BIP141_WITNESS_MODEL,
@@ -128,6 +129,11 @@ import {
   workAmoV5Bip141WitnessesEqual,
 } from "../server/work-amo-v5-bip141.mjs";
 import {
+  WORK_AMO_V5_H_MINUS_ONE_SEED_EVIDENCE_MODEL,
+  canonicalWorkAmoV5HMinusOneSeedEvidence,
+  validatedWorkAmoV5HMinusOneSeedEvidence,
+} from "../server/work-amo-v5-seed-evidence.mjs";
+import {
   WORK_AMO_V5_ACTIVATION_HEIGHT,
   WORK_AMO_V5_AUTH_VERSION,
   WORK_AMO_V5_FEE_TRANSITION_MODEL,
@@ -135,6 +141,7 @@ import {
   WORK_AMO_V5_LEGACY_REASON_CODE,
   WORK_AMO_V5_POST_V1_INVALID_LISTING_TXID,
   WORK_AMO_V5_PRE_V1_RELIC_LISTING_TXID,
+  canonicalWorkAmoRelationalTokenStateEvidence,
   classifyWorkAmoV5LegacyRows,
 } from "./migrate-work-amo-v5.mjs";
 import {
@@ -160,6 +167,10 @@ const WORK_AMO_V5_PATH = new URL(
 );
 const WORK_AMO_V5_RAW_PATH = new URL(
   "../server/work-amo-v5-raw.mjs",
+  import.meta.url,
+);
+const WORK_AMO_V5_SEED_EVIDENCE_PATH = new URL(
+  "../server/work-amo-v5-seed-evidence.mjs",
   import.meta.url,
 );
 const WORKER_PATH = new URL("./run-proof-indexer-worker.mjs", import.meta.url);
@@ -36391,6 +36402,270 @@ function rawAmoOpeningEconomicStateFixture({
   };
 }
 
+check("AMO V5 H-1 seed evidence is deterministic, closed, and independently produced", async () => {
+  const seedHeight = WORK_AMO_V5_ACTIVATION_HEIGHT - 1;
+  const genericState = normalizeWorkAmoV5RawGenericState({
+    holders: [],
+    listings: [],
+    tokens: [],
+  });
+  const idState = normalizeWorkAmoV5RawIdState({
+    listings: [],
+    records: [],
+  });
+  const workState = {
+    confirmedSupplyAtoms: "0",
+    holders: [],
+    listings: [],
+  };
+  const sufficientState = rawAmoOpeningEconomicStateFixture({
+    computerEventFlowSats: 2,
+    genericState,
+    idState,
+    throughBlockHash: WORK_AMO_V5_DECLARATION_BLOCK_HASH,
+    throughBlockHeight: seedHeight,
+    workState,
+  });
+  const input = {
+    canonicalSummary: {
+      canonicalSummaryHash: "a".repeat(64),
+      networkValueQ8: sufficientState.networkValueQ8,
+      snapshotId: "canonical-h-minus-one-fixture",
+    },
+    indexedThroughBlock: seedHeight,
+    indexedThroughBlockHash: WORK_AMO_V5_DECLARATION_BLOCK_HASH,
+    network: "livenet",
+    seedGenericTokenState: genericState,
+    seedIdState: idState,
+    seedSufficientState: sufficientState,
+    seedTokenState: workState,
+    seedWorkProjection: workState,
+  };
+  const first = canonicalWorkAmoV5HMinusOneSeedEvidence(input);
+  const second = canonicalWorkAmoV5HMinusOneSeedEvidence(
+    structuredClone(input),
+  );
+  assert.deepEqual(first, second);
+  assert.equal(
+    first.model,
+    WORK_AMO_V5_H_MINUS_ONE_SEED_EVIDENCE_MODEL,
+  );
+  assert.match(first.snapshotId, /^amo-v5-h1-[0-9a-f]{24}$/u);
+  assert.deepEqual(
+    validatedWorkAmoV5HMinusOneSeedEvidence(first),
+    first,
+  );
+  assert.equal(
+    validatedWorkAmoV5HMinusOneSeedEvidence({
+      ...first,
+      unexpected: true,
+    }),
+    null,
+  );
+  assert.equal(
+    validatedWorkAmoV5HMinusOneSeedEvidence({
+      ...first,
+      seedTokenState: {
+        confirmedSupplyAtoms: "1",
+        holders: [],
+        listings: [],
+      },
+    }),
+    null,
+  );
+
+  const producer = isolatedFunction(
+    API_PATH,
+    "workAmoV5HMinusOneSeedEvidencePayload",
+    {
+      WORK_AMO_V5_ACTIVATION_HEIGHT,
+      WORK_AMO_V5_DECLARATION_BLOCK_HASH,
+      canonicalWorkAmoV5HMinusOneSeedEvidence,
+      workAmoV5OpeningAccumulatorState: async () => ({
+        genericState,
+        idState,
+        state: sufficientState,
+        summary: {
+          canonicalSummaryHash:
+            input.canonicalSummary.canonicalSummaryHash,
+          snapshotId: input.canonicalSummary.snapshotId,
+          workNetworkValueQ8:
+            input.canonicalSummary.networkValueQ8,
+        },
+        workProjection: workState,
+        workState,
+      }),
+    },
+  );
+  const produced = await producer("livenet", {
+    blockHash: WORK_AMO_V5_DECLARATION_BLOCK_HASH,
+    blockHeight: seedHeight,
+  });
+  assert.deepEqual(produced, first);
+  assert.equal(Object.hasOwn(produced, "tokenStatePayloads"), false);
+  assert.equal(Object.hasOwn(produced, "registryHistoryPayloads"), false);
+});
+
+check("AMO V5 seed capture precedes replay and immutable evidence cannot be cleaned up", async () => {
+  const backfill = fileSource(BACKFILL_PATH);
+  const apiRequest = topLevelFunctionSource(API_PATH, "handleRequest");
+  const capture = topLevelFunctionSource(
+    BACKFILL_PATH,
+    "captureWorkAmoV5HMinusOneSeedEvidence",
+  );
+  const internalSeedPayload =
+    isolatedFunction(
+      BACKFILL_PATH,
+      "workAmoV5HMinusOneSeedEvidenceFromInternalPayload",
+      {
+        objectValue: (value) =>
+          value &&
+          typeof value === "object" &&
+          !Array.isArray(value)
+            ? value
+            : {},
+        validatedWorkAmoV5HMinusOneSeedEvidence,
+      },
+    );
+  const migrationEvidence = topLevelFunctionSource(
+    WORK_AMO_V5_MIGRATION_PATH,
+    "canonicalWorkAmoSeedEvidence",
+  );
+  const schema = fileSource(SCHEMA_PATH);
+  assert.match(capture, /BEGIN ISOLATION LEVEL SERIALIZABLE/u);
+  assert.match(
+    capture,
+    /LOCK TABLE[\s\S]*proof_indexer\.ledger_snapshots[\s\S]*IN SHARE ROW EXCLUSIVE MODE/u,
+  );
+  for (const relation of [
+    "proof_indexer.event_participants",
+    "proof_indexer.event_refs",
+    "proof_indexer.op_returns",
+    "proof_indexer.tx_inputs",
+    "proof_indexer.tx_outputs",
+  ]) {
+    assert.match(capture, new RegExp(relation.replace(".", "\\."), "u"));
+  }
+  assert.match(
+    capture,
+    /\/api\/v1\/internal\/work-amo-v5-seed-evidence/u,
+  );
+  for (const route of [
+    "work-amo-v5-seed-evidence",
+    "work-amo-v5-block-verifier",
+  ]) {
+    const routePattern = new RegExp(
+      `${route}[\\s\\S]{0,2400}` +
+        `url\\.searchParams\\.get\\("replayBindingId"\\)` +
+        `[\\s\\S]{0,1200}await internalReplayVerifierBinding\\(` +
+        `[\\s\\S]{0,2400}await internalReplayBoundPayload\\(`,
+      "u",
+    );
+    assert.match(apiRequest, routePattern);
+  }
+  const genericState = normalizeWorkAmoV5RawGenericState({
+    holders: [],
+    listings: [],
+    tokens: [],
+  });
+  const idState = normalizeWorkAmoV5RawIdState({
+    listings: [],
+    records: [],
+  });
+  const workState = {
+    confirmedSupplyAtoms: "0",
+    holders: [],
+    listings: [],
+  };
+  const sufficientState = rawAmoOpeningEconomicStateFixture({
+    computerEventFlowSats: 2,
+    genericState,
+    idState,
+    throughBlockHash: WORK_AMO_V5_DECLARATION_BLOCK_HASH,
+    throughBlockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT - 1,
+    workState,
+  });
+  const evidence = canonicalWorkAmoV5HMinusOneSeedEvidence({
+    canonicalSummary: {
+      canonicalSummaryHash: "a".repeat(64),
+      networkValueQ8: sufficientState.networkValueQ8,
+      snapshotId: "bound-seed-evidence-fixture",
+    },
+    indexedThroughBlock: WORK_AMO_V5_ACTIVATION_HEIGHT - 1,
+    indexedThroughBlockHash: WORK_AMO_V5_DECLARATION_BLOCK_HASH,
+    network: "livenet",
+    seedGenericTokenState: genericState,
+    seedIdState: idState,
+    seedSufficientState: sufficientState,
+    seedTokenState: workState,
+    seedWorkProjection: workState,
+  });
+  assert.deepEqual(
+    internalSeedPayload({
+      ...evidence,
+      replayVerifierBinding: replayVerifierBindingFixture(),
+    }),
+    evidence,
+  );
+  assert.equal(
+    internalSeedPayload({
+      ...evidence,
+      unexpectedTransportField: true,
+    }),
+    null,
+  );
+  assert.match(
+    capture,
+    /INSERT INTO proof_indexer\.ledger_snapshots/u,
+  );
+  assert.ok(
+    backfill.indexOf(
+      "await captureWorkAmoV5HMinusOneSeedEvidence(client",
+    ) <
+      backfill.indexOf(
+        "await verifiedWorkAmoV5BlockTransition({",
+      ),
+  );
+  assert.match(
+    schema,
+    /work_amo_h_minus_one_seed_evidence_immutable[\s\S]*BEFORE UPDATE OR DELETE/u,
+  );
+  assert.match(
+    migrationEvidence,
+    /validatedWorkAmoV5HMinusOneSeedEvidence/u,
+  );
+  assert.doesNotMatch(
+    migrationEvidence,
+    /tokenStatePayloads|registryHistoryPayloads/u,
+  );
+
+  const loadEvidence = isolatedFunction(
+    WORK_AMO_V5_MIGRATION_PATH,
+    "canonicalWorkAmoSeedEvidence",
+    {
+      WORK_AMO_V5_ACTIVATION_HEIGHT,
+      WORK_AMO_V5_H_MINUS_ONE_SEED_EVIDENCE_MODEL,
+    },
+  );
+  let queries = 0;
+  await assert.rejects(
+    () =>
+      loadEvidence(
+        {
+          async query() {
+            queries += 1;
+            return queries === 1
+              ? { rows: [{}] }
+              : { rows: [] };
+          },
+        },
+        {},
+      ),
+    /H-1 seed evidence is unavailable or not unique/u,
+  );
+  assert.equal(queries, 2);
+});
+
 function rawAmoFixtureOpReturnScript(message) {
   const payload = Buffer.from(String(message ?? ""), "utf8");
   let push;
@@ -40143,6 +40418,569 @@ check("AMO V5 raw replay never exposes an invalid token definition to a later mi
   );
 });
 
+check("AMO V5 opening state releases legacy marketplace reservations", async () => {
+  const unknownListingId = "c".repeat(64);
+  const v4SaleConflictListingId = "d".repeat(64);
+  const v3SaleConflictListingId = "e".repeat(64);
+  const missingWitnessListingId = "f".repeat(64);
+  const v4ListingId = "a".repeat(64);
+  const v5ListingId = "b".repeat(64);
+  const witnessReads = [];
+  const attachWitnesses = isolatedFunction(
+    API_PATH,
+    "workAmoV5WorkStateWithCanonicalListingWitnesses",
+    {
+      TOKEN_SALE_AUTH_WORK_AMO_V5_VERSION:
+        WORK_AMO_V5_AUTH_VERSION,
+      TOKEN_SALE_AUTH_ATOMS_VERSION: "pwt-sale-v2",
+      TOKEN_SALE_AUTH_VERSION: "pwt-sale-v1",
+      TOKEN_SALE_AUTH_WORK_MARKET_V2_VERSION: "pwt-sale-v3",
+      TOKEN_SALE_AUTH_WORK_MARKET_V4_VERSION:
+        WORK_AMO_V4_AUTH_VERSION,
+      TX_FETCH_CONCURRENCY: 4,
+      mapWithConcurrency: async (items, _concurrency, mapper) =>
+        Promise.all(items.map(mapper)),
+      proofIndexCanonicalWorkListingById: async (
+        network,
+        listingId,
+      ) => {
+        assert.equal(network, "livenet");
+        witnessReads.push(listingId);
+        if (listingId === missingWitnessListingId) {
+          return null;
+        }
+        return {
+          listingAuthorization: {
+            version:
+              listingId === v5ListingId
+                ? WORK_AMO_V5_AUTH_VERSION
+                : WORK_AMO_V4_AUTH_VERSION,
+          },
+          listingFrozenTerms: {
+            witness: listingId,
+          },
+        };
+      },
+      workAmoV5CanonicalPayloadCommitment,
+      workAmoV5WorkStateWithoutLegacyListingReservations,
+    },
+  );
+  const tokenState = {
+    confirmedSupplyAtoms: "1000",
+    holders: [{
+      address: "seller",
+      balanceAtoms: "1000",
+      tokenId: WORK_TOKEN_ID,
+    }],
+    listings: [
+      {
+        listingId: "1".repeat(64),
+        saleAuthorization: { version: "pwt-sale-v1" },
+      },
+      {
+        listingId: "2".repeat(64),
+        saleAuthorization: { version: "pwt-sale-v2" },
+      },
+      {
+        listingId: WORK_AMO_V5_PRE_V1_RELIC_LISTING_TXID,
+        saleAuthorization: { version: "pwt-sale-v3" },
+      },
+      {
+        listingId: WORK_AMO_V5_POST_V1_INVALID_LISTING_TXID,
+        saleAuthorization: { version: "pwt-sale-v3" },
+      },
+      {
+        listingId: unknownListingId,
+        saleAuthorization: { version: "pwt-sale-unknown" },
+      },
+      {
+        listingId: v4ListingId,
+        saleAuthorization: {
+          version: WORK_AMO_V4_AUTH_VERSION,
+        },
+      },
+      {
+        listingId: v5ListingId,
+        saleAuthorization: {
+          version: WORK_AMO_V5_AUTH_VERSION,
+        },
+      },
+    ],
+  };
+  const governed = await attachWitnesses(tokenState, "livenet");
+  assert.deepEqual(
+    governed.listings.map((listing) => listing.listingId),
+    [
+      unknownListingId,
+      v4ListingId,
+      v5ListingId,
+    ],
+  );
+  assert.deepEqual(witnessReads, [
+    v4ListingId,
+    v5ListingId,
+  ]);
+  assert.deepEqual(governed.listings[1].frozenTerms, {
+    witness: v4ListingId,
+  });
+  assert.deepEqual(governed.listings[1].listingAuthorization, {
+    version: WORK_AMO_V4_AUTH_VERSION,
+  });
+  assert.deepEqual(governed.listings[2].frozenTerms, {
+    witness: v5ListingId,
+  });
+  assert.deepEqual(governed.listings[2].listingAuthorization, {
+    version: WORK_AMO_V5_AUTH_VERSION,
+  });
+  assert.equal(governed.confirmedSupplyAtoms, "1000");
+  assert.deepEqual(governed.holders, tokenState.holders);
+  for (const conflict of [
+    {
+      listingAuthorization: { version: "pwt-sale-v3" },
+      listingId: v4SaleConflictListingId,
+      saleAuthorization: {
+        version: WORK_AMO_V4_AUTH_VERSION,
+      },
+    },
+    {
+      listingAuthorization: {
+        version: WORK_AMO_V4_AUTH_VERSION,
+      },
+      listingId: v3SaleConflictListingId,
+      saleAuthorization: { version: "pwt-sale-v3" },
+    },
+  ]) {
+    await assert.rejects(
+      attachWitnesses(
+        {
+          ...tokenState,
+          listings: [conflict],
+        },
+        "livenet",
+      ),
+      /listing witness diverged/u,
+    );
+  }
+  await assert.rejects(
+    attachWitnesses(
+      {
+        ...tokenState,
+        listings: [{
+          listingId: missingWitnessListingId,
+          saleAuthorization: {
+            version: WORK_AMO_V4_AUTH_VERSION,
+          },
+        }],
+      },
+      "livenet",
+    ),
+    /listing witness is unavailable/u,
+  );
+});
+
+check("AMO V5 relational WORK state releases only unambiguous legacy reservations", async () => {
+  const runReaderEvidence = async (
+    client,
+    expectedTokenStateCommitment,
+  ) => {
+    const evidence = isolatedFunction(
+      READER_PATH,
+      "proofIndexWorkAmoRelationalTokenStateEvidence",
+      {
+        proofIndexPool: () => client,
+        workAmoV5CanonicalTokenStateCommitment,
+        workAmoV5WorkStateWithoutLegacyListingReservations,
+      },
+    );
+    return evidence("livenet", expectedTokenStateCommitment);
+  };
+  const evidencePaths = [
+    {
+      name: "migration",
+      run: (client, expectedTokenStateCommitment) =>
+        canonicalWorkAmoRelationalTokenStateEvidence(
+          client,
+          expectedTokenStateCommitment,
+        ),
+    },
+    {
+      name: "reader",
+      run: runReaderEvidence,
+    },
+  ];
+  const clientFor = ({ balanceRows, listingRows }) => ({
+    async query(sql) {
+      const text = String(sql);
+      if (text.includes("proof_indexer.credit_balances")) {
+        return { rows: structuredClone(balanceRows) };
+      }
+      if (text.includes("proof_indexer.credit_listings")) {
+        assert.match(
+          text,
+          /payload->'listingAuthorization'[\s\S]+AS listing_authorization/u,
+        );
+        assert.match(
+          text,
+          /payload->'saleAuthorization'[\s\S]+AS sale_authorization/u,
+        );
+        return { rows: structuredClone(listingRows) };
+      }
+      throw new Error(`Unexpected relational evidence query: ${text}`);
+    },
+  });
+  const runBoth = async (fixture, expectedTokenStateCommitment) => {
+    const results = [];
+    for (const path of evidencePaths) {
+      results.push({
+        name: path.name,
+        result: await path.run(
+          clientFor(fixture),
+          expectedTokenStateCommitment,
+        ),
+      });
+    }
+    return results;
+  };
+  const assertCommitment = (actual, expected, label) => {
+    assert.equal(actual?.model, expected.model, `${label} model`);
+    assert.equal(
+      actual?.payloadBytes,
+      expected.payloadBytes,
+      `${label} payload bytes`,
+    );
+    assert.equal(actual?.sha256, expected.sha256, `${label} sha256`);
+  };
+  const legacyBalanceRows = [{
+    address: "legacy-seller",
+    balance_atoms: "1000",
+  }];
+  const legacyExpected = workAmoV5CanonicalTokenStateCommitment({
+    confirmedSupplyAtoms: "1000",
+    holders: [{
+      address: "legacy-seller",
+      balanceAtoms: "1000",
+    }],
+    listings: [],
+  });
+  const legacyRows = [
+    {
+      amount_atoms: "100",
+      frozen_terms: null,
+      listing_authorization: null,
+      listing_id: "1".repeat(64),
+      price_sats: "100",
+      sale_authorization: { version: "pwt-sale-v1" },
+      seller_address: "legacy-seller",
+    },
+    {
+      amount_atoms: "200",
+      frozen_terms: null,
+      listing_authorization: { version: "pwt-sale-v2" },
+      listing_id: "2".repeat(64),
+      price_sats: "200",
+      sale_authorization: null,
+      seller_address: "legacy-seller",
+    },
+    {
+      amount_atoms: "300",
+      frozen_terms: null,
+      listing_authorization: { version: "pwt-sale-v3" },
+      listing_id: "3".repeat(64),
+      price_sats: "300",
+      sale_authorization: { version: "pwt-sale-v3" },
+      seller_address: "legacy-seller",
+    },
+  ];
+  const legacyResults = await runBoth(
+    {
+      balanceRows: legacyBalanceRows,
+      listingRows: legacyRows,
+    },
+    legacyExpected,
+  );
+  for (const { name, result } of legacyResults) {
+    assert.equal(result.complete, true, `${name} legacy completeness`);
+    assert.equal(result.confirmedSupplyAtoms, "1000");
+    assert.equal(result.holderCount, 1);
+    assert.equal(result.listingCount, 0);
+    assertCommitment(result.commitment, legacyExpected, `${name} legacy`);
+  }
+  assertCommitment(
+    legacyResults[0].result.commitment,
+    legacyResults[1].result.commitment,
+    "relational path parity",
+  );
+
+  const v4ListingId = "4".repeat(64);
+  const v5ListingId = "5".repeat(64);
+  const v4AmountAtoms = "100000000";
+  const v4PriceSats = "2000";
+  const v4MinimumPriceSats = "1500";
+  const v4NetworkValueQ8 = "315000000000000000";
+  const v4Signed = signedAmoSaleTicketFixture(
+    {
+      amountAtoms: v4AmountAtoms,
+      anchorScriptPubKey: "00",
+      anchorSigHashType: 0x83,
+      anchorType: "sale-ticket-v1",
+      anchorValueSats: 546,
+      anchorVout: 2,
+      buyerAddress: "",
+      expiresAt: "",
+      minimumPriceSats: v4MinimumPriceSats,
+      network: "livenet",
+      nonce: "relational-v4",
+      oracleModel: WORK_AMO_V4_ORACLE_MODEL,
+      priceSats: v4PriceSats,
+      registryAddress: WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS,
+      sellerAddress: "1F1p9UEHuH5KTFR7Zsx93Khdrqhj6t5nFv",
+      sellerPublicKey: `02${"11".repeat(32)}`,
+      ticker: "WORK",
+      tokenId: WORK_TOKEN_ID,
+      unitAmountAtoms: v4AmountAtoms,
+      unitFaceUsd: 20,
+      unitFaceUsdCents: 2_000,
+      unitMinimumPriceSats: v4MinimumPriceSats,
+      unitModel: WORK_AMO_V4_UNIT_MODEL,
+      unitNetworkValueQ8: v4NetworkValueQ8,
+      unitPriceSats: v4PriceSats,
+      unitUsdOracleModel: WORK_AMO_V5_UNIT_USD_ORACLE_MODEL,
+      version: WORK_AMO_V4_AUTH_VERSION,
+    },
+    {
+      listingId: v4ListingId,
+      priceSats: v4PriceSats,
+    },
+  );
+  const canonicalV4 = workAmoV5CanonicalHistoricalV4ListingWitness(
+    v4Signed.authorization,
+    {
+      authorizationVersion: WORK_AMO_V4_AUTH_VERSION,
+      canonical: true,
+      confirmed: true,
+      listingBlockHash: "6".repeat(64),
+      listingBlockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT - 100,
+      listingBlockIndex: 4,
+      listingProtocolVout: 2,
+      listingRecordOrdinal: 0,
+      tokenId: WORK_TOKEN_ID,
+      unitAmountAtoms: v4AmountAtoms,
+      unitFaceUsd: 20,
+      unitFaceUsdCents: 2_000,
+      unitMinimumPriceSats: v4MinimumPriceSats,
+      unitNetworkValueBeforeQ8: v4NetworkValueQ8,
+      unitPriceSats: v4PriceSats,
+      valid: true,
+    },
+  );
+  assert.ok(canonicalV4);
+  const quote = {
+    blockHash: "7".repeat(64),
+    blockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT - 1,
+    blockTransactionIndex: 10,
+    previousQuoteTxid: WORK_AMO_V5_V1_DECLARATION_TXID,
+    protocolVout: 1,
+    recordOrdinal: 0,
+    sequence: "1",
+    txid: "8".repeat(64),
+    usdPer100mProofsQ8: "100000000",
+    v1DeclarationTxid: WORK_AMO_V5_V1_DECLARATION_TXID,
+  };
+  const v5Unsigned = {
+    amountModel: WORK_AMO_V5_AMOUNT_MODEL,
+    anchorScriptPubKey: v4Signed.authorization.anchorScriptPubKey,
+    anchorSigHashType: 0x83,
+    anchorType: "sale-ticket-v1",
+    anchorValueSats: 546,
+    anchorVout: 2,
+    bondTransitionModel: WORK_AMO_V5_BOND_TRANSITION_MODEL,
+    buyerAddress: "",
+    expiresAt: "",
+    network: "livenet",
+    nonce: "relational-v5",
+    registryAddress: WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS,
+    sellerAddress: v4Signed.sellerAddress,
+    sellerPublicKey: v4Signed.sellerPublicKey,
+    stateOrderModel: WORK_AMO_V5_STATE_ORDER_MODEL,
+    ticker: "WORK",
+    tokenId: WORK_TOKEN_ID,
+    unitFaceUsdCents: 2_000,
+    unitModel: WORK_AMO_V5_UNIT_MODEL,
+    unitUsdOracleModel: WORK_AMO_V5_UNIT_USD_ORACLE_MODEL,
+    unitWorkOracleModel: WORK_AMO_V5_UNIT_WORK_ORACLE_MODEL,
+    version: WORK_AMO_V5_AUTH_VERSION,
+  };
+  const maximumWorkAtoms = "2100000000000000";
+  const derivedV5 = deriveWorkAmoV5FrozenTerms(v5Unsigned, {
+    listingBondContributionQ8: "273000000000",
+    listingPosition: {
+      blockHash: "9".repeat(64),
+      blockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT,
+      blockTransactionIndex: 1,
+      protocolVout: 2,
+      recordOrdinal: 0,
+    },
+    networkValueBeforeQ8: "210000000000000000",
+    quote,
+    spendableAmountAtoms: maximumWorkAtoms,
+  });
+  assert.equal(derivedV5.valid, true, derivedV5.reasonCode);
+  const v5Signed = signedAmoSaleTicketFixture(v5Unsigned, {
+    listingId: v5ListingId,
+    priceSats: derivedV5.frozenTerms.unitPriceSats,
+  }).authorization;
+  const governedBalanceRows = [{
+    address: v4Signed.sellerAddress,
+    balance_atoms: maximumWorkAtoms,
+  }];
+  const governedRows = [
+    {
+      amount_atoms: v4AmountAtoms,
+      frozen_terms: canonicalV4.frozenTerms,
+      listing_authorization: null,
+      listing_id: v4ListingId,
+      price_sats: v4PriceSats,
+      sale_authorization: canonicalV4.saleAuthorization,
+      seller_address: v4Signed.sellerAddress,
+    },
+    {
+      amount_atoms: derivedV5.frozenTerms.unitAmountAtoms,
+      frozen_terms: derivedV5.frozenTerms,
+      listing_authorization: v5Signed,
+      listing_id: v5ListingId,
+      price_sats: derivedV5.frozenTerms.unitPriceSats,
+      sale_authorization: null,
+      seller_address: v4Signed.sellerAddress,
+    },
+  ];
+  const governedExpected = workAmoV5CanonicalTokenStateCommitment({
+    confirmedSupplyAtoms: maximumWorkAtoms,
+    holders: [{
+      address: v4Signed.sellerAddress,
+      balanceAtoms: maximumWorkAtoms,
+    }],
+    listings: [
+      {
+        amountAtoms: v4AmountAtoms,
+        frozenTerms: canonicalV4.frozenTerms,
+        listingId: v4ListingId,
+        priceSats: v4PriceSats,
+        saleAuthorization: canonicalV4.saleAuthorization,
+        sellerAddress: v4Signed.sellerAddress,
+      },
+      {
+        amountAtoms: derivedV5.frozenTerms.unitAmountAtoms,
+        frozenTerms: derivedV5.frozenTerms,
+        listingAuthorization: v5Signed,
+        listingId: v5ListingId,
+        priceSats: derivedV5.frozenTerms.unitPriceSats,
+        saleAuthorization: v5Signed,
+        sellerAddress: v4Signed.sellerAddress,
+      },
+    ],
+  });
+  const governedResults = await runBoth(
+    {
+      balanceRows: governedBalanceRows,
+      listingRows: governedRows,
+    },
+    governedExpected,
+  );
+  for (const { name, result } of governedResults) {
+    assert.equal(result.complete, true, `${name} governed completeness`);
+    assert.equal(result.listingCount, 2, `${name} governed listings`);
+    assertCommitment(
+      result.commitment,
+      governedExpected,
+      `${name} governed`,
+    );
+  }
+
+  const invalidRows = [
+    {
+      label: "missing authorization",
+      row: {
+        ...governedRows[0],
+        listing_authorization: null,
+        sale_authorization: null,
+      },
+    },
+    {
+      label: "unknown authorization",
+      row: {
+        ...governedRows[0],
+        listing_authorization: null,
+        sale_authorization: { version: "pwt-sale-unknown" },
+      },
+    },
+    {
+      label: "conflicting authorization versions",
+      row: {
+        ...governedRows[0],
+        listing_authorization: canonicalV4.saleAuthorization,
+        sale_authorization: { version: "pwt-sale-v3" },
+      },
+    },
+    {
+      label: "present authorization with missing version",
+      row: {
+        ...governedRows[0],
+        listing_authorization: {},
+        sale_authorization: canonicalV4.saleAuthorization,
+      },
+    },
+    {
+      label: "same-version divergent authorization payloads",
+      row: {
+        ...governedRows[0],
+        listing_authorization: {
+          ...canonicalV4.saleAuthorization,
+          nonce: "relational-v4-divergent",
+        },
+        sale_authorization: canonicalV4.saleAuthorization,
+      },
+    },
+  ];
+  for (const { label, row } of invalidRows) {
+    const results = await runBoth(
+      {
+        balanceRows: governedBalanceRows,
+        listingRows: [row],
+      },
+      legacyExpected,
+    );
+    for (const { name, result } of results) {
+      assert.equal(
+        result.complete,
+        false,
+        `${name} must fail closed for ${label}`,
+      );
+      assert.match(
+        String(result.reason ?? ""),
+        /work-amo-v5-token-state-listing-invalid/u,
+        `${name} reason for ${label}`,
+      );
+    }
+  }
+
+  const migrationSource = topLevelFunctionSource(
+    WORK_AMO_V5_MIGRATION_PATH,
+    "canonicalWorkAmoRelationalTokenStateEvidence",
+  );
+  assert.match(
+    migrationSource,
+    /sale_authorization\s*\?\?\s*row\.listing_authorization/u,
+  );
+  const readerSource = topLevelFunctionSource(
+    READER_PATH,
+    "proofIndexWorkAmoRelationalTokenStateEvidence",
+  );
+  assert.match(
+    readerSource,
+    /sale_authorization\s*\?\?\s*row\.listing_authorization/u,
+  );
+});
+
 check("AMO V5 activation replay fails closed when only advanced-tip relational sources are available", async () => {
   const blockHeight = WORK_AMO_V5_ACTIVATION_HEIGHT;
   const blockHash = "9".repeat(64);
@@ -41706,7 +42544,7 @@ check("AMO V5 canonical positions and immutable projections are schema-bound", (
   );
   assert.match(
     postActivationV4Clause,
-    /saleAuthorization'->>'version'[\s\S]*listingAuthorization'->>'version'[\s\S]*\)\) = \$6/u,
+    /\$6 = ANY\(ARRAY\[[\s\S]*saleAuthorization'->>'version'[\s\S]*listingAuthorization'->>'version'[\s\S]*\]::text\[\]\)/u,
   );
   assert.doesNotMatch(
     migrationSource,

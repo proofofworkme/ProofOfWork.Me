@@ -79,6 +79,7 @@ import {
   parseWorkAmoV5GenericSaleAuthorization,
   validateWorkAmoV5FrozenTerms,
   workAmoV5CanonicalTokenStateCommitment,
+  workAmoV5WorkStateWithoutLegacyListingReservations,
 } from "../work-amo-v5.mjs";
 import {
   WORK_AMO_V5_RAW_BIP141_WITNESS_MODEL,
@@ -2217,10 +2218,10 @@ export async function proofIndexWorkAmoRelationalTokenStateEvidence(
           listing.seller_address,
           listing.amount::text AS amount_atoms,
           listing.price_sats::text AS price_sats,
-          COALESCE(
-            listing.payload->'listingAuthorization',
-            listing.payload->'saleAuthorization'
-          ) AS sale_authorization,
+          listing.payload->'listingAuthorization'
+            AS listing_authorization,
+          listing.payload->'saleAuthorization'
+            AS sale_authorization,
           COALESCE(
             terms.frozen_terms,
             listing.payload->'listingFrozenTerms'
@@ -2266,14 +2267,19 @@ export async function proofIndexWorkAmoRelationalTokenStateEvidence(
       reason: error?.message ?? "relational-token-state-balance-invalid",
     };
   }
-  const listings = listingResult.rows.map((row) => ({
-    amountAtoms: String(row.amount_atoms ?? ""),
-    frozenTerms: row.frozen_terms,
-    listingId: String(row.listing_id ?? "").trim().toLowerCase(),
-    priceSats: String(row.price_sats ?? ""),
-    saleAuthorization: row.sale_authorization,
-    sellerAddress: String(row.seller_address ?? ""),
-  }));
+  const listings =
+    workAmoV5WorkStateWithoutLegacyListingReservations({
+      listings: listingResult.rows.map((row) => ({
+        amountAtoms: String(row.amount_atoms ?? ""),
+        frozenTerms: row.frozen_terms,
+        listingId: String(row.listing_id ?? "").trim().toLowerCase(),
+        listingAuthorization: row.listing_authorization,
+        priceSats: String(row.price_sats ?? ""),
+        saleAuthorization:
+          row.sale_authorization ?? row.listing_authorization,
+        sellerAddress: String(row.seller_address ?? ""),
+      })),
+    }).listings;
   let commitment;
   try {
     commitment = workAmoV5CanonicalTokenStateCommitment({
@@ -2742,6 +2748,60 @@ export async function proofIndexWorkAmoReplayReadiness(
             ) duplicate_positions
           ) AS duplicate_positions,
           (
+            (
+              SELECT count(*)::integer
+              FROM proof_indexer.credit_listings conflict_listing
+              WHERE conflict_listing.network = $1
+                AND lower(conflict_listing.token_id) = $4
+                AND NULLIF(lower(
+                  conflict_listing.payload
+                    ->'saleAuthorization'->>'version'
+                ), '') IS NOT NULL
+                AND NULLIF(lower(
+                  conflict_listing.payload
+                    ->'listingAuthorization'->>'version'
+                ), '') IS NOT NULL
+                AND lower(
+                  conflict_listing.payload
+                    ->'saleAuthorization'->>'version'
+                ) <> lower(
+                  conflict_listing.payload
+                    ->'listingAuthorization'->>'version'
+                )
+            )
+            +
+            (
+              SELECT count(*)::integer
+              FROM proof_indexer.events conflict_event
+              WHERE conflict_event.network = $1
+                AND conflict_event.status = 'confirmed'
+                AND conflict_event.block_height BETWEEN $5 AND $3
+                AND lower(COALESCE(
+                  conflict_event.payload
+                    ->'saleAuthorization'->>'tokenId',
+                  conflict_event.payload
+                    ->'listingAuthorization'->>'tokenId',
+                  conflict_event.payload->>'tokenId',
+                  ''
+                )) = $4
+                AND NULLIF(lower(
+                  conflict_event.payload
+                    ->'saleAuthorization'->>'version'
+                ), '') IS NOT NULL
+                AND NULLIF(lower(
+                  conflict_event.payload
+                    ->'listingAuthorization'->>'version'
+                ), '') IS NOT NULL
+                AND lower(
+                  conflict_event.payload
+                    ->'saleAuthorization'->>'version'
+                ) <> lower(
+                  conflict_event.payload
+                    ->'listingAuthorization'->>'version'
+                )
+            )
+          ) AS authorization_conflicts,
+          (
             SELECT count(*)::integer
             FROM proof_indexer.credit_listings listing
             LEFT JOIN proof_indexer.transactions listing_tx
@@ -2750,10 +2810,16 @@ export async function proofIndexWorkAmoReplayReadiness(
             WHERE listing.network = $1
               AND lower(listing.token_id) = $4
               AND listing.status IN ('active', 'sealing')
-              AND lower(COALESCE(
-                listing.payload->'saleAuthorization'->>'version',
-                ''
-              )) = 'pwt-sale-v3'
+              AND 'pwt-sale-v3' = ANY(ARRAY[
+                lower(COALESCE(
+                  listing.payload->'saleAuthorization'->>'version',
+                  ''
+                )),
+                lower(COALESCE(
+                  listing.payload->'listingAuthorization'->>'version',
+                  ''
+                ))
+              ]::text[])
               AND listing_tx.block_height >= $5
           ) AS post_v1_v3_active,
           (
@@ -2765,10 +2831,16 @@ export async function proofIndexWorkAmoReplayReadiness(
             WHERE listing.network = $1
               AND lower(listing.token_id) = $4
               AND listing.status IN ('active', 'sealing')
-              AND lower(COALESCE(
-                listing.payload->'saleAuthorization'->>'version',
-                ''
-              )) = $6
+              AND $6 = ANY(ARRAY[
+                lower(COALESCE(
+                  listing.payload->'saleAuthorization'->>'version',
+                  ''
+                )),
+                lower(COALESCE(
+                  listing.payload->'listingAuthorization'->>'version',
+                  ''
+                ))
+              ]::text[])
               AND listing_tx.block_height >= $2
           ) AS post_activation_v4_active,
           (
@@ -2792,13 +2864,18 @@ export async function proofIndexWorkAmoReplayReadiness(
                 post_v5_v4_event.payload->>'tokenId',
                 ''
               )) = $4
-              AND lower(COALESCE(
-                post_v5_v4_event.payload
-                  ->'saleAuthorization'->>'version',
-                post_v5_v4_event.payload
-                  ->'listingAuthorization'->>'version',
-                ''
-              )) = $6
+              AND $6 = ANY(ARRAY[
+                lower(COALESCE(
+                  post_v5_v4_event.payload
+                    ->'saleAuthorization'->>'version',
+                  ''
+                )),
+                lower(COALESCE(
+                  post_v5_v4_event.payload
+                    ->'listingAuthorization'->>'version',
+                  ''
+                ))
+              ]::text[])
           ) AS post_activation_v4_actions,
           (
             SELECT count(*)::integer
@@ -2824,11 +2901,18 @@ export async function proofIndexWorkAmoReplayReadiness(
                 historical_v4_event.payload->>'tokenId',
                 ''
               )) = $4
-              AND lower(COALESCE(
-                historical_v4_event.payload
-                  ->'saleAuthorization'->>'version',
-                ''
-              )) = $6
+              AND $6 = ANY(ARRAY[
+                lower(COALESCE(
+                  historical_v4_event.payload
+                    ->'saleAuthorization'->>'version',
+                  ''
+                )),
+                lower(COALESCE(
+                  historical_v4_event.payload
+                    ->'listingAuthorization'->>'version',
+                  ''
+                ))
+              ]::text[])
               AND (
                 historical_v4_event.kind IN (
                   'token-listing',
@@ -2879,10 +2963,18 @@ export async function proofIndexWorkAmoReplayReadiness(
               AND listing_event.status = 'confirmed'
               AND listing_event.valid = true
               AND listing_event.kind = 'token-listing'
-              AND lower(COALESCE(
-                listing_event.payload->'saleAuthorization'->>'version',
-                ''
-              )) = $7
+              AND $7 = ANY(ARRAY[
+                lower(COALESCE(
+                  listing_event.payload
+                    ->'saleAuthorization'->>'version',
+                  ''
+                )),
+                lower(COALESCE(
+                  listing_event.payload
+                    ->'listingAuthorization'->>'version',
+                  ''
+                ))
+              ]::text[])
               AND listing_event.block_height BETWEEN $2 AND $3
               AND terms.listing_id IS NULL
           ) AS missing_frozen_terms
@@ -3627,6 +3719,7 @@ export async function proofIndexWorkAmoReplayReadiness(
     String(rebuild.indexedThroughBlockHash ?? "").trim().toLowerCase() ===
       canonicalTipBlockHash;
   const legacyStateReady =
+    Number(audit.authorization_conflicts ?? 0) === 0 &&
     Number(audit.post_v1_v3_active ?? 0) === 0 &&
     Number(audit.post_activation_v4_active ?? 0) === 0 &&
     Number(audit.post_activation_v4_actions ?? 0) === 0;
@@ -3644,6 +3737,9 @@ export async function proofIndexWorkAmoReplayReadiness(
   if (!requestedTipReady) reasons.push("canonical-tip-not-current");
   if (!migrationReady) reasons.push("migration-not-complete");
   if (!positionsReady) reasons.push("canonical-positions-incomplete");
+  if (Number(audit.authorization_conflicts ?? 0) !== 0) {
+    reasons.push("market-authorization-conflict");
+  }
   if (!legacyStateReady) reasons.push("legacy-market-state-active");
   if (!frozenTermsReady) reasons.push("frozen-listing-terms-incomplete");
   return {
@@ -3652,6 +3748,7 @@ export async function proofIndexWorkAmoReplayReadiness(
     canonicalTipBlockHash,
     declaration,
     declarationReady,
+    authorizationConflicts: Number(audit.authorization_conflicts ?? 0),
     duplicatePositions: Number(audit.duplicate_positions ?? 0),
     frozenTermsReady,
     indexReady,

@@ -14,6 +14,10 @@ const proofIndexerSchema = readFileSync(
   "utf8",
 );
 const workAmoV5Core = readFileSync("server/work-amo-v5.mjs", "utf8");
+const workAmoV5SeedEvidence = readFileSync(
+  "server/work-amo-v5-seed-evidence.mjs",
+  "utf8",
+);
 const workAmoV5Migration = readFileSync(
   "scripts/migrate-work-amo-v5.mjs",
   "utf8",
@@ -1525,6 +1529,46 @@ expectAll("AMO V5 migration preserves relic and invalid-history distinctions", w
   /proof_indexer\.work_amo_listing_terms/,
   /WORK_AMO_V5_MIGRATION_APPLY/,
 ]);
+expectAll(
+  "AMO V5 opening state releases legacy market reservations before replay",
+  `${workAmoV5Core}\n${server}`,
+  [
+    /WORK_AMO_V5_LEGACY_LISTING_AUTH_VERSIONS[\s\S]*"pwt-sale-v1"[\s\S]*"pwt-sale-v2"[\s\S]*"pwt-sale-v3"/,
+    /function workAmoV5WorkStateWithoutLegacyListingReservations\([\s\S]*presentAuthorizations\.some[\s\S]*new Set\(presentVersions\)\.size === 1[\s\S]*WORK_AMO_V5_LEGACY_LISTING_AUTH_VERSIONS\.includes/,
+    /function workAmoV5TokenStateCommitmentProjection\([\s\S]*listingAuthorization: listing\?\.listingAuthorization \?\? null/,
+    /function workAmoV5WorkStateWithCanonicalListingWitnesses\([\s\S]*workAmoV5WorkStateWithoutLegacyListingReservations\(tokenState\)[\s\S]*TOKEN_SALE_AUTH_WORK_MARKET_V4_VERSION[\s\S]*TOKEN_SALE_AUTH_WORK_AMO_V5_VERSION[\s\S]*listings: listings\.map/,
+  ],
+);
+expectAll(
+  "AMO V5 activation consumes one immutable independently captured H-1 seed",
+  `${workAmoV5SeedEvidence}\n${server}\n${proofIndexerBackfill}\n${workAmoV5Migration}\n${proofIndexerSchema}`,
+  [
+    /canonical-work-amo-v5-h-minus-one-seed-evidence-v1/,
+    /export function canonicalWorkAmoV5HMinusOneSeedEvidence\(/,
+    /export function validatedWorkAmoV5HMinusOneSeedEvidence\(/,
+    /async function workAmoV5HMinusOneSeedEvidencePayload\(/,
+    /\/api\/v1\/internal\/work-amo-v5-seed-evidence/,
+    /BEGIN ISOLATION LEVEL SERIALIZABLE/,
+    /async function captureWorkAmoV5HMinusOneSeedEvidence\(/,
+    /await captureWorkAmoV5HMinusOneSeedEvidence\(client,[\s\S]*await verifiedWorkAmoV5BlockTransition\(/,
+    /amoSeedCanonicalSummary/,
+    /validatedWorkAmoV5HMinusOneSeedEvidence\(evidenceRow\.payload\)/,
+    /pinned-h-minus-one-seed-evidence/,
+    /work_amo_h_minus_one_seed_evidence_immutable/,
+    /BEFORE UPDATE OR DELETE ON proof_indexer\.ledger_snapshots/,
+  ],
+);
+const canonicalAmoSeedMigrationSource = sourceSliceBetween(
+  workAmoV5Migration,
+  /async function canonicalWorkAmoSeedEvidence\(/,
+  /export function classifyWorkAmoV5LegacyRows/,
+);
+expect(
+  "AMO V5 migration no longer assumes full token and ID payloads on summary rows",
+  !/tokenStatePayloads|registryHistoryPayloads/u.test(
+    canonicalAmoSeedMigrationSource,
+  ),
+);
 
 expectAll("registry default reads use proof index with canonical fallback", server, [
   /proofIndexRegistryPayload/,
