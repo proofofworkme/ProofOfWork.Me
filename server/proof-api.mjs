@@ -47036,8 +47036,7 @@ async function workAmoV5OpeningAccumulatorState(
     state,
     summary,
     tokenState,
-    workProjection:
-      tokenState,
+    workProjection: openingWorkState,
     workState: openingWorkState,
   };
   if (validatedPersistedActivationSeed) {

@@ -36504,6 +36504,18 @@ check("AMO V5 H-1 seed evidence is deterministic, closed, and independently prod
   assert.deepEqual(produced, first);
   assert.equal(Object.hasOwn(produced, "tokenStatePayloads"), false);
   assert.equal(Object.hasOwn(produced, "registryHistoryPayloads"), false);
+  const openingAccumulator = topLevelFunctionSource(
+    API_PATH,
+    "workAmoV5OpeningAccumulatorState",
+  );
+  assert.match(
+    openingAccumulator,
+    /workProjection: openingWorkState,[\s\S]*workState: openingWorkState/u,
+  );
+  assert.doesNotMatch(
+    openingAccumulator,
+    /workProjection:\s*tokenState/u,
+  );
 });
 
 check("AMO V5 seed capture precedes replay and immutable evidence cannot be cleaned up", async () => {
