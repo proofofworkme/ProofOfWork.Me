@@ -949,6 +949,51 @@ function canonicalWorkAmoExactSeedInteger(
   return "";
 }
 
+export function canonicalWorkAmoIndependentBaseVector(actual) {
+  if (
+    !actual ||
+    typeof actual !== "object" ||
+    Array.isArray(actual)
+  ) {
+    throw new Error("Independent AMO H-1 base vector is unavailable.");
+  }
+  const baseState = {};
+  for (const field of WORK_AMO_V5_BASE_STATE_FIELDS) {
+    const value = canonicalWorkAmoExactSeedInteger(actual[field], {
+      allowSafeLegacyNumber: true,
+    });
+    if (!value) {
+      throw new Error(
+        `Independent AMO H-1 base field ${field} is unavailable.`,
+      );
+    }
+    baseState[field] = value;
+  }
+  const creditEventFrozenValueQ8 =
+    canonicalWorkAmoExactSeedInteger(
+      actual.creditEventFrozenValueQ8,
+      { allowSafeLegacyNumber: true },
+    );
+  const creditMovementFrozenValueQ8 =
+    canonicalWorkAmoExactSeedInteger(
+      actual.creditMovementFrozenValueQ8,
+      { allowSafeLegacyNumber: true },
+    );
+  if (
+    !creditEventFrozenValueQ8 ||
+    !creditMovementFrozenValueQ8 ||
+    BigInt(creditEventFrozenValueQ8) <
+      BigInt(creditMovementFrozenValueQ8)
+  ) {
+    throw new Error("Independent AMO H-1 credit vector is unavailable.");
+  }
+  return {
+    baseState,
+    creditEventFrozenValueQ8,
+    creditMovementFrozenValueQ8,
+  };
+}
+
 function canonicalWorkAmoJsonNumbersAreExact(value) {
   if (typeof value === "number") {
     return Number.isSafeInteger(value);
@@ -1572,44 +1617,11 @@ async function canonicalWorkAmoSeedEvidence(client, seed) {
       "Canonical AMO H-1 token or ID evidence commitment diverged.",
     );
   }
-  if (
-    !actual ||
-    typeof actual !== "object" ||
-    Array.isArray(actual) ||
-    !canonicalWorkAmoJsonNumbersAreExact(actual)
-  ) {
-    throw new Error("Independent AMO H-1 base vector is unavailable.");
-  }
-  const baseState = {};
-  for (const field of WORK_AMO_V5_BASE_STATE_FIELDS) {
-    const value = canonicalWorkAmoExactSeedInteger(actual[field], {
-      allowSafeLegacyNumber: true,
-    });
-    if (!value) {
-      throw new Error(
-        `Independent AMO H-1 base field ${field} is unavailable.`,
-      );
-    }
-    baseState[field] = value;
-  }
-  const creditEventFrozenValueQ8 =
-    canonicalWorkAmoExactSeedInteger(
-      actual.creditEventFrozenValueQ8,
-      { allowSafeLegacyNumber: true },
-    );
-  const creditMovementFrozenValueQ8 =
-    canonicalWorkAmoExactSeedInteger(
-      actual.creditMovementFrozenValueQ8,
-      { allowSafeLegacyNumber: true },
-    );
-  if (
-    !creditEventFrozenValueQ8 ||
-    !creditMovementFrozenValueQ8 ||
-    BigInt(creditEventFrozenValueQ8) <
-      BigInt(creditMovementFrozenValueQ8)
-  ) {
-    throw new Error("Independent AMO H-1 credit vector is unavailable.");
-  }
+  const {
+    baseState,
+    creditEventFrozenValueQ8,
+    creditMovementFrozenValueQ8,
+  } = canonicalWorkAmoIndependentBaseVector(actual);
   const balances = new Map();
   const activeListings = new Map();
   const movements = [];

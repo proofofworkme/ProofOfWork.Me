@@ -141,6 +141,7 @@ import {
   WORK_AMO_V5_LEGACY_REASON_CODE,
   WORK_AMO_V5_POST_V1_INVALID_LISTING_TXID,
   WORK_AMO_V5_PRE_V1_RELIC_LISTING_TXID,
+  canonicalWorkAmoIndependentBaseVector,
   canonicalWorkAmoRelationalTokenStateEvidence,
   classifyWorkAmoV5LegacyRows,
 } from "./migrate-work-amo-v5.mjs";
@@ -42595,6 +42596,31 @@ check("AMO V5 canonical positions and immutable projections are schema-bound", (
   assert.doesNotMatch(
     readerSource,
     /Number\(audit\.pre_activation_v4_actions \?\? 0\) === 0/u,
+  );
+});
+
+check("AMO V5 independent base vector ignores non-consensus display approximations", () => {
+  const actual = Object.fromEntries(
+    WORK_AMO_V5_BASE_STATE_FIELDS.map((field) => [field, 1]),
+  );
+  actual.creditEventFrozenValueQ8 = "2";
+  actual.creditMovementFrozenValueQ8 = "1";
+  actual.totalUsd = 1.25;
+  actual.totalSatsApproximate = Number.MAX_VALUE;
+  assert.deepEqual(canonicalWorkAmoIndependentBaseVector(actual), {
+    baseState: Object.fromEntries(
+      WORK_AMO_V5_BASE_STATE_FIELDS.map((field) => [field, "1"]),
+    ),
+    creditEventFrozenValueQ8: "2",
+    creditMovementFrozenValueQ8: "1",
+  });
+  assert.throws(
+    () =>
+      canonicalWorkAmoIndependentBaseVector({
+        ...actual,
+        browserFlowSats: 1.25,
+      }),
+    /base field browserFlowSats is unavailable/u,
   );
 });
 
