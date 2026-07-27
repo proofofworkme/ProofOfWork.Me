@@ -31707,8 +31707,18 @@ function exactCreditFrozenValueComponentsAgree(actualValue) {
     source.legacyBootstrapCreditFixedSats !== undefined &&
     source.legacyBootstrapCreditFixedSats !== null &&
     source.legacyBootstrapCreditFixedSats !== "";
+  const postActivationCreditFixedQ8Present =
+    source.postActivationCreditFixedQ8 !== undefined &&
+    source.postActivationCreditFixedQ8 !== null &&
+    source.postActivationCreditFixedQ8 !== "";
+  const postActivationCreditFixedSatsPresent =
+    source.postActivationCreditFixedSats !== undefined &&
+    source.postActivationCreditFixedSats !== null &&
+    source.postActivationCreditFixedSats !== "";
   if (
     legacyCreditFixedQ8Present !== legacyCreditFixedSatsPresent ||
+    postActivationCreditFixedQ8Present !==
+      postActivationCreditFixedSatsPresent ||
     (presentFlows.length > 0 && presentFlows.length !== flowFields.length)
   ) {
     return false;
@@ -31725,13 +31735,29 @@ function exactCreditFrozenValueComponentsAgree(actualValue) {
       : "0",
     { allowZero: true },
   );
+  const postActivationCreditFixedQ8 = canonicalIntegerText(
+    postActivationCreditFixedQ8Present
+      ? source.postActivationCreditFixedQ8
+      : "0",
+    { allowZero: true },
+  );
+  const postActivationCreditFixedSats = canonicalIntegerText(
+    postActivationCreditFixedSatsPresent
+      ? source.postActivationCreditFixedSats
+      : "0",
+    { allowZero: true },
+  );
   if (
     !eventValueQ8 ||
     !movementValueQ8 ||
     !legacyCreditFixedQ8 ||
     !legacyCreditFixedSats ||
+    !postActivationCreditFixedQ8 ||
+    !postActivationCreditFixedSats ||
     BigInt(legacyCreditFixedQ8) !==
-      BigInt(legacyCreditFixedSats) * VALUE_Q8_SCALE
+      BigInt(legacyCreditFixedSats) * VALUE_Q8_SCALE ||
+    BigInt(postActivationCreditFixedQ8) !==
+      BigInt(postActivationCreditFixedSats) * VALUE_Q8_SCALE
   ) {
     return false;
   }
@@ -31741,7 +31767,8 @@ function exactCreditFrozenValueComponentsAgree(actualValue) {
       ? flows.reduce(
           (total, value) =>
             total + BigInt(value) * VALUE_Q8_SCALE,
-          BigInt(legacyCreditFixedQ8),
+          BigInt(legacyCreditFixedQ8) +
+            BigInt(postActivationCreditFixedQ8),
         )
       : null;
   if (fixedValueQ8) {
@@ -32004,6 +32031,11 @@ function ledgerSnapshotChecks({
   );
   const legacyBootstrapCreditFixedQ8 =
     workFloor?.actualValue?.legacyBootstrapCreditFixedQ8;
+  const postActivationCreditFixedSats = numericValue(
+    workFloor?.actualValue?.postActivationCreditFixedSats,
+  );
+  const postActivationCreditFixedQ8 =
+    workFloor?.actualValue?.postActivationCreditFixedQ8;
   const legacyBootstrapEvidence =
     workFloor?.actualValue?.workAmoV5LegacyBootstrap;
   const creditNetworkValueSats = numericValue(
@@ -32102,7 +32134,8 @@ function ledgerSnapshotChecks({
             creditMarketplaceMutationFlowSats +
             creditSalePaymentFlowSats +
             creditMinerFeeFlowSats +
-            legacyBootstrapCreditFixedSats,
+            legacyBootstrapCreditFixedSats +
+            postActivationCreditFixedSats,
           // Historical snapshots predate exact aggregate Q8 fields. Keep the
           // old sub-proof fallback only for those stored payloads.
           0.01,
@@ -32118,6 +32151,8 @@ function ledgerSnapshotChecks({
         workFloor?.actualValue?.creditMovementFrozenValueQ8,
       legacyBootstrapCreditFixedQ8,
       legacyBootstrapCreditFixedSats,
+      postActivationCreditFixedQ8,
+      postActivationCreditFixedSats,
       creditProofPaymentFlowSats,
       creditRegistryMutationFlowSats,
       creditSalePaymentFlowSats,
@@ -46615,6 +46650,11 @@ function workAmoV5ClosingSummaryProjection(
       reconciliation.legacyBootstrap.growthValueSats,
     legacyBootstrapTokenMarketplaceFeeSats:
       reconciliation.legacyBootstrap.marketplaceMutationFeeSats,
+    postActivationCreditFixedQ8:
+      (reconciliation.postActivationCreditFixedQ8 ?? 0n).toString(),
+    postActivationCreditFixedSats: Number(
+      (reconciliation.postActivationCreditFixedQ8 ?? 0n) / VALUE_Q8_SCALE,
+    ),
     tokenFlowSats: Number(tokenFlow),
     tokenSaleFlowSats: Number(baseState.tokenSaleVolumeSats),
     walletFlowSats: Number(walletFlow),

@@ -7347,8 +7347,13 @@ check("credit frozen-value consistency uses exact Q8 above float precision", () 
     0n,
   );
   const legacyBootstrapCreditFixedSats = 2_762n;
+  const postActivationCreditFixedSats = 1_044n;
   const committedFixedQ8 =
-    (fixedFlow + legacyBootstrapCreditFixedSats) * VALUE_Q8_SCALE;
+    (
+      fixedFlow +
+      legacyBootstrapCreditFixedSats +
+      postActivationCreditFixedSats
+    ) * VALUE_Q8_SCALE;
   const exact = {
     ...flows,
     // The legacy Number summaries can disagree by one whole proof at this
@@ -7363,6 +7368,10 @@ check("credit frozen-value consistency uses exact Q8 above float precision", () 
       (legacyBootstrapCreditFixedSats * VALUE_Q8_SCALE).toString(),
     legacyBootstrapCreditFixedSats:
       legacyBootstrapCreditFixedSats.toString(),
+    postActivationCreditFixedQ8:
+      (postActivationCreditFixedSats * VALUE_Q8_SCALE).toString(),
+    postActivationCreditFixedSats:
+      postActivationCreditFixedSats.toString(),
   };
   assert.equal(exactCreditFrozenValueComponentsAgree(exact), true);
   assert.equal(
@@ -43097,6 +43106,7 @@ check("AMO V5 legacy carry preserves committed N while publishing valid-only mar
     projected.flowFields.legacyBootstrapCreditFixedSats,
     2_762,
   );
+  assert.equal(projected.flowFields.postActivationCreditFixedSats, 0);
   assert.equal(
     projected.exactAliases.baseNetworkValueQ8,
     committedBaseNetworkValueQ8.toString(),

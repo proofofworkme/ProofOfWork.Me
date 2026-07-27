@@ -124,8 +124,8 @@ expect(
     .length === 1,
 );
 expect(
-  "legacy frozen credit fallback includes the explicit carry with only sub-proof tolerance",
-  /"credit-frozen-value-includes-event-components"[\s\S]*creditMinerFeeFlowSats \+[\s\S]*legacyBootstrapCreditFixedSats,[\s\S]*0\.01,/u.test(
+  "legacy frozen credit fallback includes explicit legacy and post-activation fixed value with only sub-proof tolerance",
+  /"credit-frozen-value-includes-event-components"[\s\S]*creditMinerFeeFlowSats \+[\s\S]*legacyBootstrapCreditFixedSats \+[\s\S]*postActivationCreditFixedSats,[\s\S]*0\.01,/u.test(
     ledgerSnapshotChecksSource,
   ),
 );
@@ -2044,6 +2044,7 @@ expectAll("credit frozen value proves valid flows plus the explicit legacy carry
   /legacyCreditFixedQ8Present !== legacyCreditFixedSatsPresent/,
   /BigInt\(legacyCreditFixedQ8\) !==\s*BigInt\(legacyCreditFixedSats\) \* VALUE_Q8_SCALE/,
   /flows\.reduce\([\s\S]*BigInt\(legacyCreditFixedQ8\)/,
+  /BigInt\(legacyCreditFixedQ8\) \+[\s\S]*BigInt\(postActivationCreditFixedQ8\)/,
 ]);
 expectAll("marketplace consistency keeps strict valid-only equality", marketplaceMutationEqualitySource, [
   /numbersAgree\(confirmedMarketplaceMutationFeeSats, marketplaceFeeSats\)/,
