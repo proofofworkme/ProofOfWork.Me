@@ -1114,7 +1114,7 @@ expectAll("stable Log reads stay pinned to one authenticated last-good snapshot"
   /async function stableCanonicalLogSummaryPayload[\s\S]*summaryPayloadWithCanonicalProvenance\([\s\S]*activitySummaryPayload\(network,\s*false\)[\s\S]*"log-summary"/,
   /async function stableProofIndexLogPayload[\s\S]*proofIndexCanonicalActivityPayload\(network,\s*\{[\s\S]*snapshotId:\s*summarySnapshotId/,
   /async function stableProofIndexLogPayload[\s\S]*pageSnapshotTotal !== summaryTotal[\s\S]*verifyStableLogCheckpointAfterRead\(summary,\s*network,\s*"log"\)/,
-  /async function stableProofIndexLogHistoryPayload[\s\S]*boundSearchParams\.set\("snapshot",\s*summarySnapshotId\)[\s\S]*proofIndexLogHistoryPayload\(/,
+  /async function stableProofIndexLogHistoryPayload[\s\S]*boundSearchParams\.set\("snapshot",\s*summarySnapshotId\)[\s\S]*proofIndexLogHistoryPayload\([\s\S]*\{\s*currentRelational:\s*true\s*\}/,
   /CANONICAL_LOG_HISTORY_STABLE_SNAPSHOT_MISMATCH/,
   /CANONICAL_LOG_EXACT_QUERY_OUTSIDE_SNAPSHOT/,
   /CANONICAL_LOG_EXACT_QUERY_NOT_IN_SNAPSHOT/,

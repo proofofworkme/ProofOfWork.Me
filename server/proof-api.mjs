@@ -36132,6 +36132,7 @@ async function stableProofIndexLogHistoryPayload(
     network,
     requestedKind,
     boundSearchParams,
+    { currentRelational: true },
   );
   if (!page) {
     throw freshDataUnavailableError(

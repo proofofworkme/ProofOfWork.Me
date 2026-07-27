@@ -277,7 +277,7 @@ expect(
   /async function stableProofIndexLogPayload[\s\S]*stableCanonicalLogSummaryPayload\(network, "Log"\)[\s\S]*proofIndexCanonicalActivityPayload\(network, \{[\s\S]*snapshotId: summarySnapshotId/u.test(
     server,
   ) &&
-    /async function stableProofIndexLogHistoryPayload[\s\S]*boundSearchParams\.set\("snapshot", summarySnapshotId\)[\s\S]*proofIndexLogHistoryPayload/u.test(
+    /async function stableProofIndexLogHistoryPayload[\s\S]*boundSearchParams\.set\("snapshot", summarySnapshotId\)[\s\S]*proofIndexLogHistoryPayload\([\s\S]*\{\s*currentRelational:\s*true\s*\}/u.test(
       server,
     ) &&
     /async function stableProofIndexLogHistoryPayload[\s\S]*proofIndexCanonicalActivityPayload\(network, \{[\s\S]*eventIds: pageEventIds,[\s\S]*snapshotId: summarySnapshotId/u.test(
