@@ -42447,6 +42447,14 @@ check("AMO V5 canonical positions and immutable projections are schema-bound", (
     migrationSource,
     /canonicalRawProtocolRecordSetFromTransaction\(tx\)/u,
   );
+  assert.match(
+    migrationSource,
+    /to_json\(event_row\.validation_errors\)::text AS validation_errors/u,
+  );
+  assert.match(
+    migrationSource,
+    /const v1History =\s*await canonicalWorkAmoV1HistoryEventEvidence[\s\S]*const transitionReplay =\s*await canonicalWorkAmoV5TransitionEvidence/u,
+  );
   const releaseLegacyListingStart = migrationSource.indexOf(
     "UPDATE proof_indexer.credit_listings",
   );

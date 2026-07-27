@@ -2788,7 +2788,7 @@ async function canonicalWorkAmoEventSetEvidence(
           event_row.kind,
           event_row.status,
           event_row.valid,
-          event_row.validation_errors::text AS validation_errors,
+          to_json(event_row.validation_errors)::text AS validation_errors,
           event_row.block_height,
           event_row.block_index,
           event_row.op_return_vout AS protocol_vout,
@@ -4539,16 +4539,19 @@ async function canonicalWorkAmoReplayEvidence(client) {
       throughHeight,
     };
   }
-  const [v1History, transitionReplay] = await Promise.all([
-    canonicalWorkAmoV1HistoryEventEvidence(client, throughHeight),
-    canonicalWorkAmoV5TransitionEvidence(client, {
+  const v1History =
+    await canonicalWorkAmoV1HistoryEventEvidence(
+      client,
+      throughHeight,
+    );
+  const transitionReplay =
+    await canonicalWorkAmoV5TransitionEvidence(client, {
       closing,
       seedEvidence,
       seed,
       throughBlockHash,
       throughHeight,
-    }),
-  ]);
+    });
   if (transitionReplay.complete !== true) {
     return {
       complete: false,
