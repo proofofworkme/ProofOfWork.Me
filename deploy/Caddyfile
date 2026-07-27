@@ -162,7 +162,7 @@ amo.proofofwork.me {
 
 marketplace.proofofwork.me {
 	import common_headers
-	redir https://amo.proofofwork.me{uri} permanent
+	redir https://amo.proofofwork.me{uri} 308
 }
 
 growth.proofofwork.me {
