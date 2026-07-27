@@ -721,7 +721,6 @@ async function canonicalRawProtocolCandidateCoverage(
       blockHash: coreBlockHash,
       blockHeaderHex,
       blockHeight,
-      blockTransactions: block.tx,
     });
   }
   if (
@@ -1496,102 +1495,100 @@ async function canonicalWorkAmoSeedEvidence(client, seed) {
     );
   }
   const snapshotId = evidence.canonicalSummary.snapshotId;
-  const [snapshotResult, eventResult, quoteResult] = await Promise.all([
-    client.query(
-      `
-        SELECT
-          payload->'summaryPayloads'->'workFloor'
-            ->'actualValue' AS actual_value
-        FROM proof_indexer.ledger_snapshots
-        WHERE network = 'livenet'
-          AND snapshot_id = $1
-          AND indexed_through_block = $2
-          AND lower(source_hashes->>'blockScan') = $3
-          AND lower(source_hashes->>'canonicalSummary') = $4
-        LIMIT 1
-      `,
-      [
-        snapshotId,
-        seedHeight,
-        WORK_AMO_V5_DECLARATION_BLOCK_HASH,
-        String(seed?.summaryHash ?? "").trim().toLowerCase(),
-      ],
-    ),
-    client.query(
-      `
-        SELECT
-          event_row.event_id,
-          event_row.txid,
-          event_row.kind,
-          event_row.block_height,
-          event_row.block_index,
-          event_row.op_return_vout,
-          event_row.record_ordinal,
-          lower(event_tx.block_hash) AS block_hash,
-          event_row.payload
-        FROM proof_indexer.events event_row
-        JOIN proof_indexer.transactions event_tx
-          ON event_tx.network = event_row.network
-         AND event_tx.txid = event_row.txid
-         AND event_tx.status = 'confirmed'
-         AND event_tx.block_height = event_row.block_height
-         AND event_tx.block_index = event_row.block_index
-        JOIN proof_indexer.blocks event_block
-          ON event_block.network = event_tx.network
-         AND event_block.block_hash = event_tx.block_hash
-         AND event_block.height = event_tx.block_height
-         AND event_block.canonical = true
-        WHERE event_row.network = 'livenet'
-          AND event_row.status = 'confirmed'
-          AND event_row.valid = true
-          AND event_row.protocol = 'pwt1'
-          AND event_row.kind IN (
-            'token-mint',
-            'token-transfer',
-            'token-listing',
-            'token-listing-sealed',
-            'token-sale',
-            'token-listing-closed'
-          )
-          AND event_row.block_height <= $1
-          AND lower(COALESCE(event_row.payload->>'tokenId', '')) = $2
-        ORDER BY
-          event_row.block_height,
-          event_row.block_index,
-          event_row.op_return_vout,
-          event_row.record_ordinal,
-          event_row.event_id
-      `,
-      [seedHeight, WORK_TOKEN_ID],
-    ),
-    client.query(
-      `
-        SELECT
-          txid,
-          declaration_txid,
-          sequence::text,
-          previous_quote_txid,
-          usd_per_100m_proofs_q8::text,
-          block_hash,
-          block_height,
-          block_index,
-          protocol_vout,
-          record_ordinal
-        FROM proof_indexer.work_usd_quotes
-        WHERE network = 'livenet'
-          AND status = 'confirmed'
-          AND valid = true
-          AND block_height <= $1
-        ORDER BY
-          block_height DESC,
-          block_index DESC,
-          protocol_vout DESC,
-          record_ordinal DESC
-        LIMIT 1
-      `,
-      [seedHeight],
-    ),
-  ]);
+  const snapshotResult = await client.query(
+    `
+      SELECT
+        payload->'summaryPayloads'->'workFloor'
+          ->'actualValue' AS actual_value
+      FROM proof_indexer.ledger_snapshots
+      WHERE network = 'livenet'
+        AND snapshot_id = $1
+        AND indexed_through_block = $2
+        AND lower(source_hashes->>'blockScan') = $3
+        AND lower(source_hashes->>'canonicalSummary') = $4
+      LIMIT 1
+    `,
+    [
+      snapshotId,
+      seedHeight,
+      WORK_AMO_V5_DECLARATION_BLOCK_HASH,
+      String(seed?.summaryHash ?? "").trim().toLowerCase(),
+    ],
+  );
+  const eventResult = await client.query(
+    `
+      SELECT
+        event_row.event_id,
+        event_row.txid,
+        event_row.kind,
+        event_row.block_height,
+        event_row.block_index,
+        event_row.op_return_vout,
+        event_row.record_ordinal,
+        lower(event_tx.block_hash) AS block_hash,
+        event_row.payload
+      FROM proof_indexer.events event_row
+      JOIN proof_indexer.transactions event_tx
+        ON event_tx.network = event_row.network
+       AND event_tx.txid = event_row.txid
+       AND event_tx.status = 'confirmed'
+       AND event_tx.block_height = event_row.block_height
+       AND event_tx.block_index = event_row.block_index
+      JOIN proof_indexer.blocks event_block
+        ON event_block.network = event_tx.network
+       AND event_block.block_hash = event_tx.block_hash
+       AND event_block.height = event_tx.block_height
+       AND event_block.canonical = true
+      WHERE event_row.network = 'livenet'
+        AND event_row.status = 'confirmed'
+        AND event_row.valid = true
+        AND event_row.protocol = 'pwt1'
+        AND event_row.kind IN (
+          'token-mint',
+          'token-transfer',
+          'token-listing',
+          'token-listing-sealed',
+          'token-sale',
+          'token-listing-closed'
+        )
+        AND event_row.block_height <= $1
+        AND lower(COALESCE(event_row.payload->>'tokenId', '')) = $2
+      ORDER BY
+        event_row.block_height,
+        event_row.block_index,
+        event_row.op_return_vout,
+        event_row.record_ordinal,
+        event_row.event_id
+    `,
+    [seedHeight, WORK_TOKEN_ID],
+  );
+  const quoteResult = await client.query(
+    `
+      SELECT
+        txid,
+        declaration_txid,
+        sequence::text,
+        previous_quote_txid,
+        usd_per_100m_proofs_q8::text,
+        block_hash,
+        block_height,
+        block_index,
+        protocol_vout,
+        record_ordinal
+      FROM proof_indexer.work_usd_quotes
+      WHERE network = 'livenet'
+        AND status = 'confirmed'
+        AND valid = true
+        AND block_height <= $1
+      ORDER BY
+        block_height DESC,
+        block_index DESC,
+        protocol_vout DESC,
+        record_ordinal DESC
+      LIMIT 1
+    `,
+    [seedHeight],
+  );
   const actual = snapshotResult.rows[0]?.actual_value;
   const genericTokenProjection =
     canonicalWorkAmoExactGenericSeedProjection(
@@ -3577,9 +3574,10 @@ export async function canonicalWorkAmoV5TransitionEvidence(
     fromHeight: WORK_AMO_V5_ACTIVATION_HEIGHT,
     throughHeight,
   });
-  const rawReplayRecords = canonicalWorkAmoRawReplayRecords(
+  let rawReplayRecords = canonicalWorkAmoRawReplayRecords(
     eventEvidence.canonicalRawProtocolRecords,
   );
+  const rawReplayRecordCount = rawReplayRecords.length;
   const canonicalFullBlocksByKey = new Map(
     eventEvidence.canonicalFullBlocks.map((block) => [
       `${block.blockHeight}:${block.blockHash}`,
@@ -3605,8 +3603,19 @@ export async function canonicalWorkAmoV5TransitionEvidence(
         reason: "v5-relational-event-position-duplicated",
       };
     }
-    databaseEventsByPosition.set(key, event);
+    databaseEventsByPosition.set(key, {
+      feeSats: event.feeSats,
+      payload: event.payload,
+      projectionPayload: event.projectionPayload,
+      protocol: event.protocol,
+      txid: event.txid,
+      valid: event.valid,
+    });
   }
+  rawReplayRecords = null;
+  eventEvidence.canonicalEvents = undefined;
+  eventEvidence.canonicalFullBlocks = undefined;
+  eventEvidence.canonicalRawProtocolRecords = undefined;
   const result = await client.query(
     `
       SELECT transition.*
@@ -3730,9 +3739,45 @@ export async function canonicalWorkAmoV5TransitionEvidence(
     let replay;
     let expected;
     try {
+      const canonicalBlockHash = String(
+        await canonicalBitcoinRpc("getblockhash", [blockHeight]),
+      )
+        .trim()
+        .toLowerCase();
+      if (canonicalBlockHash !== blockHash) {
+        throw new Error(
+          `Canonical block ${blockHeight} changed before replay.`,
+        );
+      }
+      let block;
+      try {
+        block = await canonicalBitcoinRpc("getblock", [blockHash, 3]);
+      } catch {
+        block = await canonicalBitcoinRpc("getblock", [blockHash, 2]);
+      }
+      if (
+        String(block?.hash ?? "").trim().toLowerCase() !== blockHash ||
+        Number(block?.height) !== blockHeight ||
+        !Array.isArray(block?.tx) ||
+        Number(block?.nTx) !== block.tx.length ||
+        block.tx.length === 0
+      ) {
+        throw new Error(
+          `Core returned an incomplete replay block ${blockHeight}.`,
+        );
+      }
+      const previousTransactions = new Map();
+      for (const transaction of block.tx) {
+        if (rawProtocolRecordParts(transaction).length > 0) {
+          await canonicalCoreTransactionFeeSats(
+            transaction,
+            previousTransactions,
+          );
+        }
+      }
       replay = replayWorkAmoV5RawBlock({
         blockHeaderHex: fullBlock.blockHeaderHex,
-        blockTransactions: fullBlock.blockTransactions,
+        blockTransactions: block.tx,
         expectedBlockHash: blockHash,
         expectedBlockHeight: blockHeight,
         expectedPreviousBlockHash: previousBlockHash,
@@ -4128,6 +4173,7 @@ export async function canonicalWorkAmoV5TransitionEvidence(
       ].join("\x1f"),
     );
     transitionSetHash.update("\n");
+    row.payload = null;
   }
   if (
     rawRecordsByBlock.size !== 0 ||
@@ -4136,7 +4182,7 @@ export async function canonicalWorkAmoV5TransitionEvidence(
     transitionEventCount !== BigInt(eventEvidence.eventCount) ||
     transitionRawProtocolCandidateCount !==
       BigInt(eventEvidence.rawProtocolCandidateCount) ||
-    transitionProtocolRecordCount !== BigInt(rawReplayRecords.length) ||
+    transitionProtocolRecordCount !== BigInt(rawReplayRecordCount) ||
     transitionTransactionCount !==
       BigInt(eventEvidence.transactionCount) ||
     openingEconomicState.networkValueQ8 !==
@@ -4147,6 +4193,29 @@ export async function canonicalWorkAmoV5TransitionEvidence(
     return {
       complete: false,
       reason: "v5-end-tip-raw-replay-parity-failed",
+    };
+  }
+  let finalCanonicalBlockHash;
+  try {
+    finalCanonicalBlockHash = String(
+      await canonicalBitcoinRpc("getblockhash", [throughHeight]),
+    )
+      .trim()
+      .toLowerCase();
+  } catch (error) {
+    return {
+      complete: false,
+      detail: error?.message ?? String(error),
+      reason: "v5-end-tip-core-witness-unavailable",
+    };
+  }
+  if (finalCanonicalBlockHash !== throughBlockHash) {
+    return {
+      complete: false,
+      finalCanonicalBlockHash,
+      reason: "v5-end-tip-core-canonicality-changed",
+      throughBlockHash,
+      throughHeight,
     };
   }
   const finalTipValidation =
@@ -4171,6 +4240,7 @@ export async function canonicalWorkAmoV5TransitionEvidence(
     finalBlockDescriptorCommitment,
     finalBlockTransactionCount,
     finalBip141Witness,
+    finalCanonicalBlockHash,
     finalTipCommitment:
       workAmoV5CanonicalStateCommitment(
         finalTipValidation.state,
@@ -4200,56 +4270,54 @@ export async function canonicalWorkAmoRelationalTokenStateEvidence(
   client,
   expectedTokenStateCommitment,
 ) {
-  const [balanceResult, listingResult] = await Promise.all([
-    client.query(
-      `
-        SELECT
-          address,
-          confirmed_balance::text AS balance_atoms
-        FROM proof_indexer.credit_balances
-        WHERE network = 'livenet'
-          AND lower(token_id) = $1
-          AND confirmed_balance > 0
-        ORDER BY address
-      `,
-      [WORK_TOKEN_ID],
-    ),
-    client.query(
-      `
-        SELECT
-          listing.listing_id,
-          listing.seller_address,
-          listing.amount::text AS amount_atoms,
-          listing.price_sats::text AS price_sats,
-          listing.payload->'listingAuthorization'
-            AS listing_authorization,
-          listing.payload->'saleAuthorization'
-            AS sale_authorization,
-          COALESCE(
-            terms.frozen_terms,
-            listing.payload->'listingFrozenTerms'
-          ) AS frozen_terms
-        FROM proof_indexer.credit_listings listing
-        JOIN proof_indexer.transactions listing_tx
-          ON listing_tx.network = listing.network
-         AND listing_tx.txid = listing.listing_id
-         AND listing_tx.status = 'confirmed'
-        JOIN proof_indexer.blocks listing_block
-          ON listing_block.network = listing_tx.network
-         AND listing_block.block_hash = listing_tx.block_hash
-         AND listing_block.height = listing_tx.block_height
-         AND listing_block.canonical = true
-        LEFT JOIN proof_indexer.work_amo_listing_terms terms
-          ON terms.network = listing.network
-         AND terms.listing_id = listing.listing_id
-        WHERE listing.network = 'livenet'
-          AND lower(listing.token_id) = $1
-          AND listing.status IN ('active', 'sealing')
-        ORDER BY listing.listing_id
-      `,
-      [WORK_TOKEN_ID],
-    ),
-  ]);
+  const balanceResult = await client.query(
+    `
+      SELECT
+        address,
+        confirmed_balance::text AS balance_atoms
+      FROM proof_indexer.credit_balances
+      WHERE network = 'livenet'
+        AND lower(token_id) = $1
+        AND confirmed_balance > 0
+      ORDER BY address
+    `,
+    [WORK_TOKEN_ID],
+  );
+  const listingResult = await client.query(
+    `
+      SELECT
+        listing.listing_id,
+        listing.seller_address,
+        listing.amount::text AS amount_atoms,
+        listing.price_sats::text AS price_sats,
+        listing.payload->'listingAuthorization'
+          AS listing_authorization,
+        listing.payload->'saleAuthorization'
+          AS sale_authorization,
+        COALESCE(
+          terms.frozen_terms,
+          listing.payload->'listingFrozenTerms'
+        ) AS frozen_terms
+      FROM proof_indexer.credit_listings listing
+      JOIN proof_indexer.transactions listing_tx
+        ON listing_tx.network = listing.network
+       AND listing_tx.txid = listing.listing_id
+       AND listing_tx.status = 'confirmed'
+      JOIN proof_indexer.blocks listing_block
+        ON listing_block.network = listing_tx.network
+       AND listing_block.block_hash = listing_tx.block_hash
+       AND listing_block.height = listing_tx.block_height
+       AND listing_block.canonical = true
+      LEFT JOIN proof_indexer.work_amo_listing_terms terms
+        ON terms.network = listing.network
+       AND terms.listing_id = listing.listing_id
+      WHERE listing.network = 'livenet'
+        AND lower(listing.token_id) = $1
+        AND listing.status IN ('active', 'sealing')
+      ORDER BY listing.listing_id
+    `,
+    [WORK_TOKEN_ID],
+  );
   const holders = balanceResult.rows.map((row) => ({
     address: String(row.address ?? ""),
     balanceAtoms: String(row.balance_atoms ?? ""),
@@ -4397,55 +4465,55 @@ async function canonicalWorkAmoReplayEvidence(client) {
       reason: "v5-h-minus-one-seed-block-mismatch",
     };
   }
-  const [seed, closing, rebuildResult, blockScanResult] = await Promise.all([
-    exactWorkNetworkValueSnapshotEvidence(
+  const seed =
+    await exactWorkNetworkValueSnapshotEvidence(
       client,
       seedHeight,
       seedBlockHash,
-    ),
-    exactWorkNetworkValueSnapshotEvidence(
+    );
+  const closing =
+    await exactWorkNetworkValueSnapshotEvidence(
       client,
       throughHeight,
       throughBlockHash,
-    ),
-    client.query(
-      `
-        SELECT value
-        FROM proof_indexer.meta
-        WHERE key = 'canonical:rebuild'
-        LIMIT 1
-      `,
-    ),
-    client.query(
-      `
-        SELECT
-          snapshot_id,
-          payload
-        FROM proof_indexer.ledger_snapshots
-        WHERE network = 'livenet'
-          AND indexed_through_block = $1
-          AND NOT COALESCE(source_hashes ? 'canonicalSummary', false)
-          AND (
-            COALESCE(source_hashes ? 'blockScan', false)
-            OR payload->>'source' = 'proof-indexer-block-scan'
-          )
-          AND lower(COALESCE(
-            NULLIF(payload->>'indexedThroughBlockHash', ''),
-            NULLIF(payload->>'blockHash', ''),
-            NULLIF(source_hashes->>'blockScan', '')
-          )) = $2
-          AND COALESCE(payload->>'complete', 'false') = 'true'
-          AND CASE
-            WHEN payload->>'indexedThroughBlock' ~ '^[1-9][0-9]*$'
-              THEN (payload->>'indexedThroughBlock')::integer = $1
-            ELSE indexed_through_block = $1
-          END
-        ORDER BY generated_at DESC
-        LIMIT 1
-      `,
-      [throughHeight, throughBlockHash],
-    ),
-  ]);
+    );
+  const rebuildResult = await client.query(
+    `
+      SELECT value
+      FROM proof_indexer.meta
+      WHERE key = 'canonical:rebuild'
+      LIMIT 1
+    `,
+  );
+  const blockScanResult = await client.query(
+    `
+      SELECT
+        snapshot_id,
+        payload
+      FROM proof_indexer.ledger_snapshots
+      WHERE network = 'livenet'
+        AND indexed_through_block = $1
+        AND NOT COALESCE(source_hashes ? 'canonicalSummary', false)
+        AND (
+          COALESCE(source_hashes ? 'blockScan', false)
+          OR payload->>'source' = 'proof-indexer-block-scan'
+        )
+        AND lower(COALESCE(
+          NULLIF(payload->>'indexedThroughBlockHash', ''),
+          NULLIF(payload->>'blockHash', ''),
+          NULLIF(source_hashes->>'blockScan', '')
+        )) = $2
+        AND COALESCE(payload->>'complete', 'false') = 'true'
+        AND CASE
+          WHEN payload->>'indexedThroughBlock' ~ '^[1-9][0-9]*$'
+            THEN (payload->>'indexedThroughBlock')::integer = $1
+          ELSE indexed_through_block = $1
+        END
+      ORDER BY generated_at DESC
+      LIMIT 1
+    `,
+    [throughHeight, throughBlockHash],
+  );
   const rebuild =
     rebuildResult.rows[0]?.value &&
     typeof rebuildResult.rows[0].value === "object" &&
@@ -4817,6 +4885,30 @@ export async function runWorkAmoV5Migration(
         `,
         ["workAmoV5Migration:livenet", JSON.stringify(marker)],
       );
+      const commitCanonicalBlockHash = String(
+        await canonicalBitcoinRpc(
+          "getblockhash",
+          [replayEvidence.throughHeight],
+        ),
+      )
+        .trim()
+        .toLowerCase();
+      if (
+        commitCanonicalBlockHash !==
+        replayEvidence.throughBlockHash
+      ) {
+        const error = new Error(
+          "AMO V5 migration apply aborted because the certified " +
+            "canonical block changed before commit.",
+        );
+        error.code = "WORK_AMO_V5_MIGRATION_CANONICALITY_CHANGED";
+        error.details = {
+          commitCanonicalBlockHash,
+          throughBlockHash: replayEvidence.throughBlockHash,
+          throughHeight: replayEvidence.throughHeight,
+        };
+        throw error;
+      }
     }
     await client.query(apply ? "COMMIT" : "ROLLBACK");
     return {

@@ -42455,6 +42455,52 @@ check("AMO V5 canonical positions and immutable projections are schema-bound", (
     migrationSource,
     /const v1History =\s*await canonicalWorkAmoV1HistoryEventEvidence[\s\S]*const transitionReplay =\s*await canonicalWorkAmoV5TransitionEvidence/u,
   );
+  const fullBlockDescriptorStart = migrationSource.indexOf(
+    "canonicalFullBlocks.push({",
+  );
+  const fullBlockDescriptorEnd = migrationSource.indexOf(
+    "});",
+    fullBlockDescriptorStart,
+  );
+  assert.ok(
+    fullBlockDescriptorStart >= 0 &&
+      fullBlockDescriptorEnd > fullBlockDescriptorStart,
+  );
+  assert.doesNotMatch(
+    migrationSource.slice(
+      fullBlockDescriptorStart,
+      fullBlockDescriptorEnd,
+    ),
+    /blockTransactions:/u,
+  );
+  assert.match(
+    migrationSource,
+    /canonicalBitcoinRpc\("getblockhash", \[blockHeight\]\)[\s\S]*canonicalBitcoinRpc\("getblock", \[blockHash, 3\]\)[\s\S]*blockTransactions: block\.tx/u,
+  );
+  assert.match(
+    migrationSource,
+    /for \(const transaction of block\.tx\)[\s\S]*rawProtocolRecordParts\(transaction\)\.length > 0[\s\S]*canonicalCoreTransactionFeeSats\(\s*transaction,\s*previousTransactions/u,
+  );
+  assert.match(
+    migrationSource,
+    /rawReplayRecordCount = rawReplayRecords\.length[\s\S]*rawReplayRecords = null[\s\S]*eventEvidence\.canonicalEvents = undefined[\s\S]*eventEvidence\.canonicalRawProtocolRecords = undefined/u,
+  );
+  assert.match(
+    migrationSource,
+    /databaseEventsByPosition\.set\(key, \{[\s\S]*projectionPayload: event\.projectionPayload[\s\S]*row\.payload = null/u,
+  );
+  assert.match(
+    migrationSource,
+    /canonicalBitcoinRpc\("getblockhash", \[throughHeight\]\)[\s\S]*finalCanonicalBlockHash !== throughBlockHash/u,
+  );
+  assert.match(
+    migrationSource,
+    /canonicalBitcoinRpc\(\s*"getblockhash",\s*\[replayEvidence\.throughHeight\][\s\S]*WORK_AMO_V5_MIGRATION_CANONICALITY_CHANGED/u,
+  );
+  assert.doesNotMatch(
+    migrationSource,
+    /Promise\.all\(\[\s*client\.query/u,
+  );
   const releaseLegacyListingStart = migrationSource.indexOf(
     "UPDATE proof_indexer.credit_listings",
   );
@@ -42717,6 +42763,102 @@ check("AMO V5 apply migration rolls back incomplete replay before any marker or 
     ),
     false,
   );
+  assert.equal(statements.includes("COMMIT"), false);
+});
+
+check("AMO V5 apply rechecks canonical block identity before commit", async () => {
+  const throughBlockHash = "a".repeat(64);
+  const audit = {
+    authorizationConflicts: 0,
+    duplicatePositions: 0,
+    missingFrozenTerms: 0,
+    missingPositions: 0,
+    postActivationV4Actions: 0,
+    postActivationV4Active: 0,
+    postV1V3Active: 0,
+  };
+  const replayEvidence = {
+    blockAtomic: true,
+    complete: true,
+    endTipParity: true,
+    independentSeed: {
+      commitment: workAmoV5CanonicalPayloadCommitment({
+        fixture: "seed",
+      }),
+    },
+    throughBlockHash,
+    throughHeight: WORK_AMO_V5_ACTIVATION_HEIGHT,
+    transitionReplay: {
+      finalBlockDescriptorCommitment:
+        workAmoV5CanonicalPayloadCommitment({
+          fixture: "block",
+        }),
+      finalBlockTransactionCount: 1,
+      finalTipCommitment: workAmoV5CanonicalPayloadCommitment({
+        fixture: "tip",
+      }),
+      finalTransitionChainCommitment: {
+        model: WORK_AMO_V5_RAW_TRANSITION_CHAIN_MODEL,
+        payloadBytes: 1,
+        sha256: "b".repeat(64),
+      },
+      transitionSetSha256: "c".repeat(64),
+    },
+  };
+  const runMigration = isolatedFunction(
+    WORK_AMO_V5_MIGRATION_PATH,
+    "runWorkAmoV5Migration",
+    {
+      WORK_AMO_V5_ACTIVATION_HEIGHT,
+      WORK_AMO_V5_DECLARATION_TXID,
+      WORK_AMO_V5_FEE_TRANSITION_MODEL,
+      WORK_AMO_V5_INVALID_EVENT_MODEL,
+      WORK_AMO_V5_RAW_BLOCK_DESCRIPTOR_MODEL,
+      WORK_AMO_V5_RAW_TRANSITION_CHAIN_MODEL,
+      backfillCanonicalPositions: async () => 0,
+      canonicalBitcoinRpc: async () => "d".repeat(64),
+      canonicalPositionAudit: async () => audit,
+      canonicalWorkAmoReplayEvidence: async () => replayEvidence,
+      classifyWorkAmoV5LegacyRows: () => ({
+        alreadyMigratedEventIds: [],
+        eventIds: [],
+      }),
+      declarationEvidence: () => ({
+        declarationTxid: WORK_AMO_V5_DECLARATION_TXID,
+        valid: true,
+      }),
+      legacyRows: async () => ({ rows: [] }),
+      pinnedDeclarationRow: async () => ({}),
+    },
+  );
+  const statements = [];
+  const client = {
+    async query(sql) {
+      const statement = String(sql).trim();
+      statements.push(statement);
+      return { rowCount: 0, rows: [] };
+    },
+  };
+  await assert.rejects(
+    () => runMigration(client, { apply: true }),
+    (error) => {
+      assert.equal(
+        error?.code,
+        "WORK_AMO_V5_MIGRATION_CANONICALITY_CHANGED",
+      );
+      assert.equal(
+        error?.details?.throughBlockHash,
+        throughBlockHash,
+      );
+      return true;
+    },
+  );
+  assert.ok(
+    statements.some((statement) =>
+      /INSERT INTO proof_indexer\.meta/u.test(statement)
+    ),
+  );
+  assert.equal(statements.at(-1), "ROLLBACK");
   assert.equal(statements.includes("COMMIT"), false);
 });
 
