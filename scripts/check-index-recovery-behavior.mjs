@@ -157,6 +157,7 @@ import {
   WORK_AMO_V5_LEGACY_REASON_CODE,
   WORK_AMO_V5_POST_V1_INVALID_LISTING_TXID,
   WORK_AMO_V5_PRE_V1_RELIC_LISTING_TXID,
+  backfillCanonicalPositions,
   canonicalWorkAmoIndependentBaseVector,
   canonicalWorkAmoRelationalTokenStateEvidence,
   classifyWorkAmoV5LegacyRows,
@@ -43656,6 +43657,14 @@ check("AMO V5 canonical positions and immutable projections are schema-bound", (
     migrationSource,
     /event_row\.block_height < \$1[\s\S]*WORK_AMO_V5_ACTIVATION_HEIGHT/u,
   );
+  assert.match(
+    migrationSource,
+    /confirmed_parent_metadata_gaps[\s\S]*synthetic_bond_position_gaps/u,
+  );
+  assert.match(
+    migrationSource,
+    /audit\.confirmedParentMetadataGaps === 0[\s\S]*audit\.syntheticBondPositionGaps === 0/u,
+  );
   assert.match(migrationSource, /pg_advisory_xact_lock/u);
   assert.match(migrationSource, /canonical-proof-state-order-v1/u);
   assert.match(migrationSource, /preActivationV4Actions/u);
@@ -43896,6 +43905,51 @@ check("AMO V5 canonical positions and immutable projections are schema-bound", (
   );
 });
 
+check("AMO V5 migration binds synthetic bond mints to their physical PWM carrier", async () => {
+  const queries = [];
+  const client = {
+    async query(sql, params = []) {
+      queries.push({
+        params,
+        sql: String(sql).trim(),
+      });
+      return {
+        rowCount: queries.length === 2 ? 511 : 0,
+        rows: [],
+      };
+    },
+  };
+  const result = await backfillCanonicalPositions(client);
+  assert.deepEqual(result, {
+    events: 511,
+    transactions: 0,
+  });
+  assert.equal(queries.length, 2);
+  assert.deepEqual(queries[1].params, [
+    WORK_AMO_V5_ACTIVATION_HEIGHT,
+    WORK_AMO_V5_POWB_TOKEN_ID,
+    WORK_AMO_V5_INCB_TOKEN_ID,
+  ]);
+  const sql = queries[1].sql;
+  for (const required of [
+    /canonical_bond_companion AS/u,
+    /carrier_event\.protocol = 'pwm1'/u,
+    /'canonical-powb-bond-projection'[\s\S]*'infinity-bond'/u,
+    /'canonical-incb-bond-projection'[\s\S]*'inception-bond'/u,
+    /recipient_output\.vout < carrier\.protocol_vout/u,
+    /recipient_output\.address =\s*synthetic_event\.payload->>'minterAddress'/u,
+    /NOT COALESCE\(\(\s*synthetic_event\.payload->>'bondRecipientVout' ~[\s\S]*\), false\)/u,
+    /preceding_output\.vout <= recipient\.recipient_vout/u,
+    /'bondRecipientAmountSats'[\s\S]*'bondRecipientVout'[\s\S]*'protocolVout'[\s\S]*'recordOrdinal'/u,
+  ]) {
+    assert.match(sql, required);
+  }
+  assert.doesNotMatch(
+    sql,
+    /event_row\.protocol = 'pwt1'[\s\S]*protocol_output\.protocol =\s*event_row\.protocol/u,
+  );
+});
+
 check("AMO V5 independent base vector ignores non-consensus display approximations", () => {
   const actual = Object.fromEntries(
     WORK_AMO_V5_BASE_STATE_FIELDS.map((field) => [field, 1]),
@@ -43933,12 +43987,15 @@ check("AMO V5 apply migration rolls back incomplete replay before any marker or 
     },
   };
   const audit = {
+    authorizationConflicts: 0,
+    confirmedParentMetadataGaps: 0,
     duplicatePositions: 0,
     missingFrozenTerms: 0,
     missingPositions: 1,
     postActivationV4Actions: 0,
     postActivationV4Active: 0,
     postV1V3Active: 0,
+    syntheticBondPositionGaps: 0,
   };
   const replayEvidence = {
     blockAtomic: false,
@@ -44013,12 +44070,14 @@ check("AMO V5 apply rechecks canonical block identity before commit", async () =
   const throughBlockHash = "a".repeat(64);
   const audit = {
     authorizationConflicts: 0,
+    confirmedParentMetadataGaps: 0,
     duplicatePositions: 0,
     missingFrozenTerms: 0,
     missingPositions: 0,
     postActivationV4Actions: 0,
     postActivationV4Active: 0,
     postV1V3Active: 0,
+    syntheticBondPositionGaps: 0,
   };
   const replayEvidence = {
     blockAtomic: true,
@@ -44107,12 +44166,15 @@ check("AMO V5 apply rechecks canonical block identity before commit", async () =
 
 check("AMO V5 dry-run executes exact legacy mutations and row guards before rollback", async () => {
   const audit = {
+    authorizationConflicts: 0,
+    confirmedParentMetadataGaps: 0,
     duplicatePositions: 0,
     missingFrozenTerms: 0,
     missingPositions: 0,
     postActivationV4Actions: 0,
     postActivationV4Active: 0,
     postV1V3Active: 0,
+    syntheticBondPositionGaps: 0,
   };
   const replayEvidence = {
     blockAtomic: true,
