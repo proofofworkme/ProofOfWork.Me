@@ -2459,7 +2459,7 @@ function walletTokenOverlayMatchesPayloadCheckpoint(payload, overlay) {
 function walletTokenOverlayMatchesCanonicalGate(overlay, gate) {
   if (
     !walletTokenOverlayHasExactCheckpoint(overlay) ||
-    gate?.ready !== true
+    gate?.atTip !== true
   ) {
     return false;
   }
@@ -28284,7 +28284,7 @@ async function walletScopedTokenPayload(
   }
   if (requireCurrent) {
     const unavailable = freshDataUnavailableError(
-      `Fresh wallet credit state is still catching up for ${scope || "all"}.`,
+      `Fresh wallet credit state is temporarily unavailable for ${scope || "all"}.`,
     );
     unavailable.details = { code: "CANONICAL_WALLET_INDEX_UNAVAILABLE" };
     throw unavailable;
