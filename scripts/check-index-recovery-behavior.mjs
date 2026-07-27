@@ -6515,7 +6515,7 @@ check("canonical Log membership is event-bounded and snapshot fenced", async () 
   );
   assert.match(
     reads[0].sql,
-    /e\.updated_at <= \$4::timestamptz/u,
+    /e\.status = 'confirmed'[\s\S]*e\.updated_at <= \$4::timestamptz[\s\S]*e\.block_height <= \$3[\s\S]*OR \([\s\S]*e\.status = 'pending'[\s\S]*e\.created_at <= \$4::timestamptz/u,
   );
   assert.match(
     reads[0].sql,
@@ -6533,6 +6533,24 @@ check("canonical Log membership is event-bounded and snapshot fenced", async () 
     null,
   );
   assert.equal(reads.length, 1);
+
+  const logHistorySource = topLevelFunctionSource(
+    READER_PATH,
+    "proofIndexLogHistoryPayload",
+  );
+  const parameterizedStatusSplitFences =
+    logHistorySource.match(
+      /e\.status = 'confirmed'\s+AND e\.updated_at <= \$\{snapshotTimeParam\}::timestamptz[\s\S]*?e\.block_height <= \$\{snapshotHeightParam\}[\s\S]*?OR \([\s\S]*?e\.status = 'pending'\s+AND e\.created_at <= \$\{snapshotTimeParam\}::timestamptz/gu,
+    ) ?? [];
+  assert.equal(parameterizedStatusSplitFences.length, 2);
+  assert.match(
+    logHistorySource,
+    /e\.status = 'confirmed'\s+AND e\.updated_at <= \$4::timestamptz[\s\S]*?e\.block_height <= \$3[\s\S]*?OR \([\s\S]*?e\.status = 'pending'\s+AND e\.created_at <= \$4::timestamptz/u,
+  );
+  assert.doesNotMatch(
+    logHistorySource,
+    /e\.updated_at <= (?:\$\{snapshotTimeParam\}|\$4)::timestamptz\s+AND \(\s*\(\s*e\.status = 'confirmed'/u,
+  );
 });
 
 check("canonical miner-fee coverage fails closed on partial normalized rows", async () => {
@@ -15471,7 +15489,7 @@ check("exact Log txid reads use indexed refs and trust an exact empty page", asy
   assert.match(queryReads[0].sql, /proof_indexer\.event_refs/u);
   assert.match(
     queryReads[0].sql,
-    /e\.updated_at <= \$4::timestamptz[\s\S]*e\.block_height <= \$3/u,
+    /e\.status = 'confirmed'[\s\S]*e\.updated_at <= \$4::timestamptz[\s\S]*e\.block_height <= \$3[\s\S]*OR \([\s\S]*e\.status = 'pending'[\s\S]*e\.created_at <= \$4::timestamptz/u,
   );
   assert.doesNotMatch(queryReads[0].sql, /payload @>/u);
   assert.equal(queryReads[0].params[2], 957913);

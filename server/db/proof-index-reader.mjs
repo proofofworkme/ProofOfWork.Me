@@ -10637,10 +10637,10 @@ export async function proofIndexLogHistoryPayload(
     const snapshotHeightParam = addParam(snapshotHeight);
     const snapshotTimeParam = addParam(snapshotGeneratedAt);
     conditions.push(`
-      e.updated_at <= ${snapshotTimeParam}::timestamptz
-      AND (
+      (
         (
           e.status = 'confirmed'
+          AND e.updated_at <= ${snapshotTimeParam}::timestamptz
           AND e.block_height > 0
           AND e.block_height <= ${snapshotHeightParam}
         )
@@ -10849,10 +10849,10 @@ export async function proofIndexLogHistoryPayload(
     const snapshotHeightParam = addParam(snapshotHeight);
     const snapshotTimeParam = addParam(snapshotGeneratedAt);
     conditions.push(`
-      e.updated_at <= ${snapshotTimeParam}::timestamptz
-      AND (
+      (
         (
           e.status = 'confirmed'
+          AND e.updated_at <= ${snapshotTimeParam}::timestamptz
           AND e.block_height > 0
           AND e.block_height <= ${snapshotHeightParam}
         )
@@ -10899,10 +10899,10 @@ export async function proofIndexLogHistoryPayload(
                 AND e.valid = true
                 AND e.status IN ('confirmed', 'pending')
                 AND e.kind = ANY($2::text[])
-                AND e.updated_at <= $4::timestamptz
                 AND (
                   (
                     e.status = 'confirmed'
+                    AND e.updated_at <= $4::timestamptz
                     AND e.block_height > 0
                     AND e.block_height <= $3
                   )
@@ -18260,10 +18260,10 @@ export async function proofIndexCanonicalActivityPayload(
     : "";
   const snapshotWhere = requestedSnapshotId
     ? `
-          AND e.updated_at <= ${snapshotTimeParam}::timestamptz
           AND (
             (
               e.status = 'confirmed'
+              AND e.updated_at <= ${snapshotTimeParam}::timestamptz
               AND e.block_height > 0
               AND e.block_height <= ${snapshotHeightParam}
             )
