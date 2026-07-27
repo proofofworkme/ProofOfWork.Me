@@ -4660,7 +4660,7 @@ export async function runWorkAmoV5Migration(
               || jsonb_build_object(
                 'confirmed', true,
                 'valid', false,
-                'reasonCode', $2,
+                'reasonCode', $2::text,
                 'relic', false,
                 'status', 'dropped'
               ),

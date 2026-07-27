@@ -42438,6 +42438,24 @@ check("AMO V5 canonical positions and immutable projections are schema-bound", (
     migrationSource,
     /canonicalRawProtocolRecordSetFromTransaction\(tx\)/u,
   );
+  const releaseLegacyListingStart = migrationSource.indexOf(
+    "UPDATE proof_indexer.credit_listings",
+  );
+  const releaseLegacyListingEnd = migrationSource.indexOf(
+    "RETURNING listing_id",
+    releaseLegacyListingStart,
+  );
+  assert.ok(
+    releaseLegacyListingStart >= 0 &&
+      releaseLegacyListingEnd > releaseLegacyListingStart,
+  );
+  assert.match(
+    migrationSource.slice(
+      releaseLegacyListingStart,
+      releaseLegacyListingEnd,
+    ),
+    /'reasonCode', \$2::text/u,
+  );
   assert.match(readerSource, /'allContinuous'/u);
   assert.match(
     readerSource,
