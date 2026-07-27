@@ -280,6 +280,12 @@ same hash-bound exact-tip Log summary. `indexedThroughBlock` is verified scan
 coverage, while `latestEventBlock` is the newest block containing a matching
 protocol event; an empty run of Bitcoin blocks must not be presented as index
 lag. A count, snapshot, height, hash, or readiness mismatch remains a 503.
+Confirmed Log rows are pinned by snapshot height, hash, and `updated_at`.
+Pending Log visibility is noncanonical and best-effort: membership is bounded
+by `created_at` and the row's current `pending` status, so a later liveness
+refresh cannot make an otherwise valid last-good snapshot unavailable. Pending
+rows never establish confirmed history, balances, supply, network value, or
+market state.
 
 The worker script keeps the indexer warm by repeatedly running bounded
 backfill pages, refreshing stale pending transaction statuses through
