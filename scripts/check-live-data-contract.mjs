@@ -567,6 +567,12 @@ expectAll("canonical read gate timeouts recover without a pinned public outage",
   /loadCanonicalPublicReadGate\(network\),[\s\S]*CANONICAL_PUBLIC_READ_GATE_TIMEOUT_MS/,
   /outcome\.timedOut[\s\S]*CANONICAL_PUBLIC_READ_GATE_TIMEOUT_TTL_MS[\s\S]*CANONICAL_PUBLIC_READ_GATE_TTL_MS/,
 ]);
+expectAll("canonical exact-tip reads are not blocked by worker heartbeat age", server, [
+  /const atTip =[\s\S]*available &&[\s\S]*indexedThroughBlock === tipHeight/,
+  /const ready =[\s\S]*atTip &&[\s\S]*workerFresh/,
+  /if \(freshRead && gate\.atTip !== true\)/,
+  /freshRead &&[\s\S]*canonicalSummarySnapshotReadGateApplies\(url\.pathname\)[\s\S]*!gate\.summarySnapshotOk/,
+]);
 expectAll("backfill source execution keeps confirmed blocks ahead of mempool work", proofIndexerBackfill, [
   /const ALL_SOURCES = \[[\s\S]*\{ blockScan: true, label: "block-scan" \}[\s\S]*\{ label: "mempool-scan", mempoolScan: true \}/,
 ]);

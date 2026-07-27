@@ -51656,12 +51656,15 @@ async function loadCanonicalPublicReadGate(network) {
     Boolean(canonical?.rebuild) &&
     rebuildTrustState === "complete" &&
     readModelsOk;
-  const ready =
+  const atTip =
     available &&
-    indexedThroughBlock === tipHeight &&
+    indexedThroughBlock === tipHeight;
+  const ready =
+    atTip &&
     workerFresh &&
     status?.worker?.ok === true;
   return {
+    atTip,
     available,
     canonicalHash: canonicalHash || null,
     fault,
@@ -51921,7 +51924,7 @@ async function handleRequest(request, response) {
         );
         return;
       }
-      if (freshRead && gate.ready !== true) {
+      if (freshRead && gate.atTip !== true) {
         errorResponse(
           response,
           503,
