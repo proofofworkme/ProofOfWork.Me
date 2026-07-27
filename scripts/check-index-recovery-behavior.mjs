@@ -15533,6 +15533,7 @@ check("stable exact Log authenticates only its bounded event membership", async 
   const membershipReads = [];
   let membershipRestricted = true;
   let resolvedEmptyDisposition = "";
+  const historyReads = [];
   const definitivePinnedLogQueryDisposition = isolatedFunction(
     API_PATH,
     "definitivePinnedLogQueryDisposition",
@@ -15598,7 +15599,15 @@ check("stable exact Log authenticates only its bounded event membership", async 
           snapshotId: "snapshot-105",
         };
       },
-      proofIndexLogHistoryPayload: async () => page,
+      proofIndexLogHistoryPayload: async (
+        _network,
+        _kind,
+        _searchParams,
+        options,
+      ) => {
+        historyReads.push(options);
+        return page;
+      },
       proofIndexLogHistoryReadEligibility: () => ({
         pagination: { query: txid, snapshotId: "" },
       }),
@@ -15623,6 +15632,7 @@ check("stable exact Log authenticates only its bounded event membership", async 
     new URLSearchParams({ q: txid }),
   );
   assert.equal(result.items[0].eventId, 42);
+  assert.equal(historyReads[0]?.currentRelational, true);
   assert.equal(membershipReads.length, 1);
   assert.equal(membershipReads[0].snapshotId, "snapshot-105");
   assert.deepEqual(Array.from(membershipReads[0].eventIds), [42]);
@@ -15690,6 +15700,69 @@ check("stable exact Log authenticates only its bounded event membership", async 
       candidate?.details?.code === "CANONICAL_LOG_EXACT_QUERY_NOT_IN_SNAPSHOT",
   );
   assert.equal(missingError.statusCode, 503);
+});
+
+check("stable Log history carries scan coverage across empty blocks", async () => {
+  const snapshotId = "snapshot-959789";
+  const latestEventBlock = 959_620;
+  const summaryHeight = 959_789;
+  const historyReads = [];
+  const stableProofIndexLogHistoryPayload = isolatedFunction(
+    API_PATH,
+    "stableProofIndexLogHistoryPayload",
+    {
+      freshDataUnavailableError: (message) => {
+        const error = new Error(message);
+        error.statusCode = 503;
+        return error;
+      },
+      payloadIndexedThroughBlockHash: (payload) =>
+        payload?.indexedThroughBlockHash ?? "",
+      payloadSnapshotId: (payload) => payload?.snapshotId ?? "",
+      proofIndexLogHistoryPayload: async (
+        _network,
+        _kind,
+        _searchParams,
+        options,
+      ) => {
+        historyReads.push(options);
+        return {
+          indexedThroughBlock:
+            options?.currentRelational === true
+              ? summaryHeight
+              : latestEventBlock,
+          items: [{ confirmed: true, txid: "7".repeat(64) }],
+          latestEventBlock,
+          snapshotId,
+          snapshotTotalCount: 23_862,
+          totalCount: 23_862,
+        };
+      },
+      proofIndexLogHistoryReadEligibility: () => ({
+        pagination: { query: "", snapshotId: "" },
+      }),
+      proofIndexPayloadIndexedThroughBlock: (payload) =>
+        Number(payload?.indexedThroughBlock) || 0,
+      stableCanonicalLogSummaryPayload: async () => ({
+        indexedThroughBlock: summaryHeight,
+        indexedThroughBlockHash: "a".repeat(64),
+        snapshotId,
+        stats: { total: 23_862 },
+        totalCount: 23_862,
+      }),
+      verifyStableLogCheckpointAfterRead: async () => ({ exact: true }),
+    },
+  );
+
+  const result = await stableProofIndexLogHistoryPayload(
+    "livenet",
+    "",
+    new URLSearchParams({ limit: "1" }),
+  );
+  assert.equal(historyReads.length, 1);
+  assert.equal(historyReads[0]?.currentRelational, true);
+  assert.equal(result.indexedThroughBlock, summaryHeight);
+  assert.equal(result.latestEventBlock, latestEventBlock);
 });
 
 check("ambiguous exact Log misses fail fast instead of scanning all history", async () => {
