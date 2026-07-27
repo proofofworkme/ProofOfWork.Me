@@ -223,6 +223,11 @@ txid Log membership is bounded to the returned relational event ids and their
 snapshot-fenced canonical transaction/block rows; it never authenticates a page
 by scanning the entire activity ledger.
 Fresh reads and every signing/broadcast admission path remain exact-tip-only.
+Exact-tip truth is the canonical indexed height and hash matching Core, not the
+age of the worker heartbeat. A stale worker heartbeat keeps `/health` readiness
+red for operators, but it must not relabel a hash-matched zero-lag wallet read
+as catch-up or block a current signing preflight. Summary-backed routes still
+require their coherent summary snapshot to match that exact tip.
 `event-history`
 serves DB-backed protocol/event search for indexed registry, credit,
 marketplace, mail/file, seeded, and broader Computer events; `address-mail`
