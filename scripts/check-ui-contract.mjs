@@ -343,7 +343,7 @@ expect(
     /amo\.proofofwork\.me\s*\{[\s\S]*import common_marketplace_app/.test(
       caddyfile,
     ) &&
-    /marketplace\.proofofwork\.me\s*\{[\s\S]*redir https:\/\/amo\.proofofwork\.me\{uri\} permanent/.test(
+    /marketplace\.proofofwork\.me\s*\{[\s\S]*redir https:\/\/amo\.proofofwork\.me\{uri\} 308/.test(
       caddyfile,
     ) &&
     /window\.location\.hostname === "amo\.proofofwork\.me"/.test(
