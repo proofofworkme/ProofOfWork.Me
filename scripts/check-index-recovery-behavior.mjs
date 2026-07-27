@@ -3306,7 +3306,7 @@ check("fresh wallet token reads never fall back behind canonical coverage", asyn
       ["sender"],
       { requireCurrent: true },
     ),
-    (error) => /still catching up/u.test(String(error?.message)),
+    (error) => /temporarily unavailable/u.test(String(error?.message)),
   );
   assert.equal(fallbackReads, 0);
   assert.equal(indexedReads, 0);
@@ -4921,9 +4921,10 @@ check("fresh wallet overlays must match the exact canonical tip", () => {
     indexedThroughBlockHash: blockHash,
   };
   const exactGate = {
+    atTip: true,
     canonicalHash: blockHash,
     indexedThroughBlock: 957_935,
-    ready: true,
+    ready: false,
     storedHash: blockHash,
     tipHeight: 957_935,
   };
@@ -4934,7 +4935,7 @@ check("fresh wallet overlays must match the exact canonical tip", () => {
   assert.equal(
     walletTokenOverlayMatchesCanonicalGate(overlay, {
       ...exactGate,
-      ready: false,
+      atTip: false,
     }),
     false,
   );

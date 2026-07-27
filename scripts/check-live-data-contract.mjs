@@ -501,6 +501,7 @@ expectAll("canonical exact-tip reads are not blocked by worker heartbeat age", s
   /const atTip =[\s\S]*available &&[\s\S]*indexedThroughBlock === tipHeight/,
   /const ready =[\s\S]*atTip &&[\s\S]*workerFresh/,
   /if \(freshRead && gate\.atTip !== true\)/,
+  /function walletTokenOverlayMatchesCanonicalGate\([\s\S]*gate\?\.atTip !== true/,
   /freshRead &&[\s\S]*canonicalSummarySnapshotReadGateApplies\(url\.pathname\)[\s\S]*!gate\.summarySnapshotOk/,
 ]);
 expectAll("backfill source execution keeps confirmed blocks ahead of mempool work", proofIndexerBackfill, [
@@ -1194,7 +1195,7 @@ expectAll("wallet scoped token reads keep confirmed lifecycle history", server, 
   /async function tokenPayloadWithIndexedWalletOverlay\([\s\S]*const invalidEvents = mergeTokenStateItemsByKey\([\s\S]*overlay\.invalidEvents[\s\S]*invalidEvents: invalidEvents\.length/,
   /async function tokenPayloadWithIndexedWalletOverlay\([\s\S]*sourceTokens = \[\][\s\S]*walletTokenIds[\s\S]*const tokens = mergeTokenStateItemsByKey/,
   /async function walletScopedTokenPayload\([\s\S]*currentProofIndexTokenPayloadForRead\([\s\S]*tokenPayloadScopedToAddresses[\s\S]*tokenPayloadWithIndexedWalletOverlay[\s\S]*tokenPayloadWithIndexedWalletClosedListings/,
-  /async function walletScopedTokenPayload\([\s\S]*requireCurrent[\s\S]*Fresh wallet credit state is still catching up[\s\S]*authoritativeWallet: true/,
+  /async function walletScopedTokenPayload\([\s\S]*requireCurrent[\s\S]*Fresh wallet credit state is temporarily unavailable[\s\S]*authoritativeWallet: true/,
   /async function walletScopedTokenSummaryPayload\([\s\S]*currentProofIndexTokenPayloadForRead\([\s\S]*tokenPayloadScopedToAddresses[\s\S]*tokenPayloadWithIndexedWalletOverlay/,
   /async function indexedWalletClosedListings\([\s\S]*kind: "token-closed-listings"[\s\S]*proofIndexEventHistoryPayload/,
   /async function tokenPayloadWithIndexedWalletClosedListings\([\s\S]*tokenStateWithPreservedListingRecords/,
@@ -1275,7 +1276,7 @@ expectAll("API wallet overlay merge consumes indexed canonical token definitions
 expectAll("wallet balance reads require an exact hashed index checkpoint", server, [
   /function walletTokenOverlayHasExactCheckpoint\(overlay\)[\s\S]*checkpointComplete === true[\s\S]*Number\.isSafeInteger\(indexedThroughBlock\)[\s\S]*sourceBlockHash === indexedThroughBlockHash[\s\S]*snapshotId/,
   /function walletTokenOverlayMatchesPayloadCheckpoint\(payload,\s*overlay\)[\s\S]*walletTokenOverlayHasExactCheckpoint\(overlay\)[\s\S]*payloadHeight === overlayHeight[\s\S]*\^\[0-9a-f\]\{64\}[\s\S]*payloadHash === overlay\.indexedThroughBlockHash/,
-  /function walletTokenOverlayMatchesCanonicalGate\(overlay,\s*gate\)[\s\S]*gate\?\.ready !== true[\s\S]*gate\?\.tipHeight[\s\S]*canonicalHash === overlayHash[\s\S]*storedHash === overlayHash/,
+  /function walletTokenOverlayMatchesCanonicalGate\(overlay,\s*gate\)[\s\S]*gate\?\.atTip !== true[\s\S]*gate\?\.tipHeight[\s\S]*canonicalHash === overlayHash[\s\S]*storedHash === overlayHash/,
   /async function proofIndexWalletScopedTokenPayloadForRead\([\s\S]*if \(!walletTokenOverlayHasExactCheckpoint\(overlay\)\)[\s\S]*return null/,
   /proofIndexWalletScopedTokenPayloadForRead\([\s\S]*\{ requireCurrent \}[\s\S]*authoritativeWallet:\s*true/,
   /if \(requireCurrent\) \{[\s\S]*CANONICAL_WALLET_INDEX_UNAVAILABLE[\s\S]*throw unavailable/,
