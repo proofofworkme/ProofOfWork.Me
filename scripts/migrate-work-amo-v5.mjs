@@ -2087,7 +2087,7 @@ function declarationEvidence(row) {
   return facts;
 }
 
-async function backfillCanonicalPositions(client) {
+export async function backfillCanonicalPositions(client) {
   const transactions = await client.query(
     `
       UPDATE proof_indexer.transactions transaction_row
@@ -2118,50 +2118,225 @@ async function backfillCanonicalPositions(client) {
           protocol_output.txid,
           protocol_output.protocol
         HAVING count(*) = 1
+      ),
+      canonical_bond_companion AS (
+        SELECT
+          synthetic_event.event_id,
+          carrier.protocol_vout,
+          recipient.recipient_vout,
+          recipient.recipient_amount_sats,
+          (
+            SELECT count(*)::integer
+            FROM proof_indexer.tx_outputs preceding_output
+            WHERE preceding_output.network = synthetic_event.network
+              AND preceding_output.txid = synthetic_event.txid
+              AND preceding_output.vout < carrier.protocol_vout
+              AND preceding_output.vout <= recipient.recipient_vout
+              AND NULLIF(btrim(preceding_output.address), '') IS NOT NULL
+              AND preceding_output.value_sats > 0
+          ) AS record_ordinal
+        FROM proof_indexer.events synthetic_event
+        JOIN LATERAL (
+          SELECT
+            min(carrier_event.op_return_vout)::integer AS protocol_vout,
+            count(*)::integer AS carrier_count
+          FROM proof_indexer.events carrier_event
+          WHERE carrier_event.network = synthetic_event.network
+            AND carrier_event.txid = synthetic_event.txid
+            AND carrier_event.status = 'confirmed'
+            AND carrier_event.valid = true
+            AND carrier_event.protocol = 'pwm1'
+            AND carrier_event.kind = CASE
+              WHEN synthetic_event.payload->>'validationMode' =
+                'canonical-powb-bond-projection'
+                THEN 'infinity-bond'
+              WHEN synthetic_event.payload->>'validationMode' =
+                'canonical-incb-bond-projection'
+                THEN 'inception-bond'
+              ELSE ''
+            END
+            AND carrier_event.block_height =
+              synthetic_event.block_height
+            AND carrier_event.block_index =
+              synthetic_event.block_index
+            AND carrier_event.block_time =
+              synthetic_event.block_time
+            AND carrier_event.op_return_vout IS NOT NULL
+        ) carrier ON carrier.carrier_count = 1
+        JOIN LATERAL (
+          SELECT
+            min(recipient_output.vout)::integer AS recipient_vout,
+            min(recipient_output.value_sats)::bigint
+              AS recipient_amount_sats,
+            count(*)::integer AS recipient_count
+          FROM proof_indexer.tx_outputs recipient_output
+          WHERE recipient_output.network = synthetic_event.network
+            AND recipient_output.txid = synthetic_event.txid
+            AND recipient_output.vout < carrier.protocol_vout
+            AND recipient_output.address =
+              synthetic_event.payload->>'minterAddress'
+            AND recipient_output.value_sats::text = CASE
+              WHEN synthetic_event.payload
+                ->>'bondRecipientAmountSats' ~ '^[1-9][0-9]*$'
+                THEN synthetic_event.payload
+                  ->>'bondRecipientAmountSats'
+              WHEN synthetic_event.payload->>'validationMode' =
+                'canonical-powb-bond-projection'
+                AND synthetic_event.payload->>'amount' ~
+                  '^[1-9][0-9]*$'
+                THEN synthetic_event.payload->>'amount'
+              ELSE NULL
+            END
+            AND (
+              NOT COALESCE((
+                synthetic_event.payload->>'bondRecipientVout' ~
+                  '^(?:0|[1-9][0-9]*)$'
+              ), false)
+              OR recipient_output.vout::text =
+                synthetic_event.payload->>'bondRecipientVout'
+            )
+        ) recipient ON recipient.recipient_count = 1
+        WHERE synthetic_event.network = 'livenet'
+          AND synthetic_event.status = 'confirmed'
+          AND synthetic_event.valid = true
+          AND synthetic_event.protocol = 'pwt1'
+          AND synthetic_event.kind = 'token-mint'
+          AND synthetic_event.block_height < $1
+          AND lower(
+            synthetic_event.payload->>'sourceBondTxid'
+          ) = synthetic_event.txid
+          AND NULLIF(
+            synthetic_event.payload->>'minterAddress',
+            ''
+          ) IS NOT NULL
+          AND (
+            (
+              synthetic_event.payload->>'validationMode' =
+                'canonical-powb-bond-projection'
+              AND upper(synthetic_event.payload->>'ticker') = 'POWB'
+              AND lower(synthetic_event.payload->>'tokenId') = $2
+            )
+            OR (
+              synthetic_event.payload->>'validationMode' =
+                'canonical-incb-bond-projection'
+              AND upper(synthetic_event.payload->>'ticker') = 'INCB'
+              AND lower(synthetic_event.payload->>'tokenId') = $3
+            )
+          )
+      ),
+      event_position_repair AS (
+        SELECT
+          candidate_event.event_id,
+          bond_companion.protocol_vout AS bond_protocol_vout,
+          bond_companion.recipient_vout AS bond_recipient_vout,
+          bond_companion.recipient_amount_sats
+            AS bond_recipient_amount_sats,
+          bond_companion.record_ordinal AS bond_record_ordinal,
+          COALESCE(
+            bond_companion.protocol_vout,
+            candidate_event.op_return_vout,
+            CASE
+              WHEN candidate_event.payload->>'protocolVout' ~
+                '^(?:0|[1-9][0-9]*)$'
+                THEN (
+                  SELECT protocol_output.vout
+                  FROM proof_indexer.op_returns protocol_output
+                  WHERE
+                    protocol_output.network = candidate_event.network
+                    AND protocol_output.txid = candidate_event.txid
+                    AND protocol_output.vout::text =
+                      candidate_event.payload->>'protocolVout'
+                    AND protocol_output.output_index = 0
+                    AND protocol_output.protocol =
+                      candidate_event.protocol
+                  LIMIT 1
+                )
+              ELSE NULL
+            END,
+            unique_protocol_output.protocol_vout
+          ) AS protocol_vout,
+          CASE
+            WHEN bond_companion.record_ordinal IS NOT NULL
+              THEN bond_companion.record_ordinal
+            WHEN candidate_event.payload->>'recordOrdinal' ~
+              '^(?:0|[1-9][0-9]*)$'
+              AND (
+                candidate_event.payload->>'recordOrdinal'
+              )::numeric <= 2147483647
+              THEN (
+                candidate_event.payload->>'recordOrdinal'
+              )::integer
+            ELSE candidate_event.record_ordinal
+          END AS record_ordinal
+        FROM proof_indexer.events candidate_event
+        LEFT JOIN canonical_bond_companion bond_companion
+          ON bond_companion.event_id = candidate_event.event_id
+        LEFT JOIN unique_protocol_output
+          ON unique_protocol_output.network = candidate_event.network
+         AND unique_protocol_output.txid = candidate_event.txid
+         AND unique_protocol_output.protocol = candidate_event.protocol
+        WHERE candidate_event.network = 'livenet'
+          AND candidate_event.status = 'confirmed'
+          AND candidate_event.block_height < $1
       )
       UPDATE proof_indexer.events event_row
       SET
         block_index = transaction_row.block_index,
-        op_return_vout = COALESCE(
-          event_row.op_return_vout,
-          CASE
-            WHEN event_row.payload->>'protocolVout' ~ '^[0-9]+$'
-              THEN (event_row.payload->>'protocolVout')::integer
-            ELSE (
-              SELECT unique_protocol_output.protocol_vout
-              FROM unique_protocol_output
-              WHERE unique_protocol_output.network = event_row.network
-                AND unique_protocol_output.txid = event_row.txid
-                AND unique_protocol_output.protocol = event_row.protocol
+        op_return_vout = position_repair.protocol_vout,
+        record_ordinal = position_repair.record_ordinal,
+        payload = CASE
+          WHEN position_repair.bond_protocol_vout IS NOT NULL
+            THEN event_row.payload || jsonb_build_object(
+              'bondRecipientAmountSats',
+                position_repair.bond_recipient_amount_sats::text,
+              'bondRecipientVout',
+                position_repair.bond_recipient_vout,
+              'protocolVout',
+                position_repair.bond_protocol_vout,
+              'recordOrdinal',
+                position_repair.bond_record_ordinal
             )
-          END
-        ),
-        record_ordinal = CASE
-          WHEN event_row.payload->>'recordOrdinal' ~ '^[0-9]+$'
-            THEN (event_row.payload->>'recordOrdinal')::integer
-          ELSE event_row.record_ordinal
+          ELSE event_row.payload
         END,
         updated_at = now()
-      FROM proof_indexer.transactions transaction_row
+      FROM
+        proof_indexer.transactions transaction_row,
+        event_position_repair position_repair
       WHERE transaction_row.network = event_row.network
         AND transaction_row.txid = event_row.txid
         AND transaction_row.status = 'confirmed'
         AND transaction_row.block_height = event_row.block_height
+        AND position_repair.event_id = event_row.event_id
         AND event_row.network = 'livenet'
         AND event_row.status = 'confirmed'
         AND event_row.block_height < $1
         AND (
           event_row.block_index IS DISTINCT FROM transaction_row.block_index
-          OR event_row.op_return_vout IS NULL
+          OR event_row.op_return_vout IS DISTINCT FROM
+            position_repair.protocol_vout
+          OR event_row.record_ordinal IS DISTINCT FROM
+            position_repair.record_ordinal
           OR (
-            event_row.payload->>'recordOrdinal' ~ '^[0-9]+$'
-            AND event_row.record_ordinal IS DISTINCT FROM
-              (event_row.payload->>'recordOrdinal')::integer
+            position_repair.bond_protocol_vout IS NOT NULL
+            AND (
+              event_row.payload->>'bondRecipientAmountSats' IS DISTINCT
+                FROM position_repair.bond_recipient_amount_sats::text
+              OR event_row.payload->>'bondRecipientVout' IS DISTINCT
+                FROM position_repair.bond_recipient_vout::text
+              OR event_row.payload->>'protocolVout' IS DISTINCT
+                FROM position_repair.bond_protocol_vout::text
+              OR event_row.payload->>'recordOrdinal' IS DISTINCT
+                FROM position_repair.bond_record_ordinal::text
+            )
           )
         )
       RETURNING event_row.event_id
     `,
-    [WORK_AMO_V5_ACTIVATION_HEIGHT],
+    [
+      WORK_AMO_V5_ACTIVATION_HEIGHT,
+      WORK_AMO_V5_POWB_TOKEN_ID,
+      WORK_AMO_V5_INCB_TOKEN_ID,
+    ],
   );
   return {
     events: Number(events.rowCount ?? 0),
@@ -2340,6 +2515,170 @@ async function canonicalPositionAudit(client) {
   const result = await client.query(
     `
       SELECT
+        (
+          SELECT count(*)::integer
+          FROM proof_indexer.events parent_event
+          LEFT JOIN proof_indexer.transactions parent_tx
+            ON parent_tx.network = parent_event.network
+           AND parent_tx.txid = parent_event.txid
+          WHERE parent_event.network = 'livenet'
+            AND parent_event.status = 'confirmed'
+            AND parent_event.valid = true
+            AND (
+              COALESCE(parent_tx.status, '') <> 'confirmed'
+              OR parent_event.block_height IS DISTINCT FROM
+                parent_tx.block_height
+              OR parent_event.block_index IS DISTINCT FROM
+                parent_tx.block_index
+              OR parent_event.block_index IS NULL
+              OR parent_event.op_return_vout IS NULL
+              OR parent_event.record_ordinal < 0
+              OR parent_event.block_time IS DISTINCT FROM
+                parent_tx.block_time
+              OR parent_event.event_time IS NULL
+              OR parent_event.event_time <
+                TIMESTAMPTZ '2009-01-03 18:15:05+00'
+            )
+        ) AS confirmed_parent_metadata_gaps,
+        (
+          SELECT count(*)::integer
+          FROM proof_indexer.events synthetic_event
+          JOIN proof_indexer.transactions synthetic_tx
+            ON synthetic_tx.network = synthetic_event.network
+           AND synthetic_tx.txid = synthetic_event.txid
+          WHERE synthetic_event.network = 'livenet'
+            AND synthetic_event.status = 'confirmed'
+            AND synthetic_event.valid = true
+            AND synthetic_event.protocol = 'pwt1'
+            AND synthetic_event.kind = 'token-mint'
+            AND (
+              lower(synthetic_event.payload->>'tokenId')
+                = ANY(ARRAY[$5, $6]::text[])
+              OR synthetic_event.payload->>'validationMode' IN (
+                'canonical-powb-bond-projection',
+                'canonical-incb-bond-projection'
+              )
+            )
+            AND (
+              synthetic_tx.status <> 'confirmed'
+              OR synthetic_event.block_height IS DISTINCT FROM
+                synthetic_tx.block_height
+              OR synthetic_event.block_index IS DISTINCT FROM
+                synthetic_tx.block_index
+              OR synthetic_event.block_time IS DISTINCT FROM
+                synthetic_tx.block_time
+              OR synthetic_event.op_return_vout IS NULL
+              OR synthetic_event.record_ordinal < 1
+              OR lower(
+                synthetic_event.payload->>'sourceBondTxid'
+              ) IS DISTINCT FROM synthetic_event.txid
+              OR NOT COALESCE((
+                (
+                  synthetic_event.payload->>'validationMode' =
+                    'canonical-powb-bond-projection'
+                  AND upper(
+                    synthetic_event.payload->>'ticker'
+                  ) = 'POWB'
+                  AND lower(
+                    synthetic_event.payload->>'tokenId'
+                  ) = $5
+                )
+                OR (
+                  synthetic_event.payload->>'validationMode' =
+                    'canonical-incb-bond-projection'
+                  AND upper(
+                    synthetic_event.payload->>'ticker'
+                  ) = 'INCB'
+                  AND lower(
+                    synthetic_event.payload->>'tokenId'
+                  ) = $6
+                )
+              ), false)
+              OR synthetic_event.payload->>'protocolVout'
+                IS DISTINCT FROM
+                  synthetic_event.op_return_vout::text
+              OR synthetic_event.payload->>'recordOrdinal'
+                IS DISTINCT FROM
+                  synthetic_event.record_ordinal::text
+              OR NOT COALESCE((
+                synthetic_event.payload->>'bondRecipientVout' ~
+                  '^(?:0|[1-9][0-9]*)$'
+              ), false)
+              OR NOT COALESCE((
+                synthetic_event.payload->>'bondRecipientAmountSats' ~
+                  '^[1-9][0-9]*$'
+              ), false)
+              OR (
+                SELECT count(*)
+                FROM proof_indexer.events carrier_event
+                WHERE carrier_event.network = synthetic_event.network
+                  AND carrier_event.txid = synthetic_event.txid
+                  AND carrier_event.status = 'confirmed'
+                  AND carrier_event.valid = true
+                  AND carrier_event.protocol = 'pwm1'
+                  AND carrier_event.kind = CASE
+                    WHEN synthetic_event.payload->>'validationMode' =
+                      'canonical-powb-bond-projection'
+                      THEN 'infinity-bond'
+                    WHEN synthetic_event.payload->>'validationMode' =
+                      'canonical-incb-bond-projection'
+                      THEN 'inception-bond'
+                    ELSE ''
+                  END
+                  AND carrier_event.block_height =
+                    synthetic_event.block_height
+                  AND carrier_event.block_index =
+                    synthetic_event.block_index
+                  AND carrier_event.block_time =
+                    synthetic_event.block_time
+                  AND carrier_event.op_return_vout =
+                    synthetic_event.op_return_vout
+              ) <> 1
+              OR (
+                SELECT count(*)
+                FROM proof_indexer.tx_outputs recipient_output
+                WHERE recipient_output.network =
+                    synthetic_event.network
+                  AND recipient_output.txid = synthetic_event.txid
+                  AND recipient_output.vout::text =
+                    synthetic_event.payload->>'bondRecipientVout'
+                  AND recipient_output.vout <
+                    synthetic_event.op_return_vout
+                  AND recipient_output.address =
+                    synthetic_event.payload->>'minterAddress'
+                  AND recipient_output.value_sats::text =
+                    synthetic_event.payload
+                      ->>'bondRecipientAmountSats'
+              ) <> 1
+              OR synthetic_event.record_ordinal IS DISTINCT FROM (
+                SELECT count(*)::integer
+                FROM
+                  proof_indexer.tx_outputs preceding_output,
+                  proof_indexer.tx_outputs recipient_output
+                WHERE recipient_output.network =
+                    synthetic_event.network
+                  AND recipient_output.txid = synthetic_event.txid
+                  AND recipient_output.vout::text =
+                    synthetic_event.payload->>'bondRecipientVout'
+                  AND recipient_output.address =
+                    synthetic_event.payload->>'minterAddress'
+                  AND recipient_output.value_sats::text =
+                    synthetic_event.payload
+                      ->>'bondRecipientAmountSats'
+                  AND preceding_output.network =
+                    recipient_output.network
+                  AND preceding_output.txid = recipient_output.txid
+                  AND preceding_output.vout <
+                    synthetic_event.op_return_vout
+                  AND preceding_output.vout <= recipient_output.vout
+                  AND NULLIF(
+                    btrim(preceding_output.address),
+                    ''
+                  ) IS NOT NULL
+                  AND preceding_output.value_sats > 0
+              )
+            )
+        ) AS synthetic_bond_position_gaps,
         count(*) FILTER (
           WHERE event_row.block_height IS DISTINCT FROM
               transaction_row.block_height
@@ -2615,11 +2954,16 @@ async function canonicalPositionAudit(client) {
       WORK_TOKEN_ID,
       WORK_AMO_V1_ACTIVATION_HEIGHT,
       WORK_AMO_V5_AUTH_VERSION,
+      WORK_AMO_V5_POWB_TOKEN_ID,
+      WORK_AMO_V5_INCB_TOKEN_ID,
     ],
   );
   const row = result.rows[0] ?? {};
   return {
     authorizationConflicts: Number(row.authorization_conflicts ?? 0),
+    confirmedParentMetadataGaps: Number(
+      row.confirmed_parent_metadata_gaps ?? 0,
+    ),
     duplicatePositions: Number(row.duplicate_positions ?? 0),
     missingFrozenTerms: Number(row.missing_frozen_terms ?? 0),
     missingPositions: Number(row.missing_positions ?? 0),
@@ -2629,6 +2973,9 @@ async function canonicalPositionAudit(client) {
       row.post_activation_v4_actions ?? 0,
     ),
     postV1V3Active: Number(row.post_v1_v3_active ?? 0),
+    syntheticBondPositionGaps: Number(
+      row.synthetic_bond_position_gaps ?? 0,
+    ),
   };
 }
 
@@ -4788,19 +5135,22 @@ export async function runWorkAmoV5Migration(
     const replayEvidence = await canonicalWorkAmoReplayEvidence(client);
     const complete =
       audit.authorizationConflicts === 0 &&
+      audit.confirmedParentMetadataGaps === 0 &&
       audit.missingPositions === 0 &&
       audit.duplicatePositions === 0 &&
       audit.postV1V3Active === 0 &&
       audit.postActivationV4Active === 0 &&
       audit.postActivationV4Actions === 0 &&
       audit.missingFrozenTerms === 0 &&
+      audit.syntheticBondPositionGaps === 0 &&
       replayEvidence.complete === true &&
       replayEvidence.blockAtomic === true &&
       replayEvidence.endTipParity === true;
     if (apply && !complete) {
       const error = new Error(
         "AMO V5 migration apply aborted because canonical replay, " +
-          "position audit, block atomicity, or end-tip parity is incomplete.",
+          "global parent or bond-companion position audit, block " +
+          "atomicity, or end-tip parity is incomplete.",
       );
       error.code = "WORK_AMO_V5_MIGRATION_INCOMPLETE";
       error.details = {
