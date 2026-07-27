@@ -68,14 +68,64 @@ const ledgerSnapshotChecksSource = sourceSliceBetween(
   /function ledgerSnapshotChecks\(/,
   /function attachLedgerMetadata/,
 );
+const uniqueMarketplaceMutationActivitySource = sourceSliceBetween(
+  server,
+  /function uniqueMarketplaceMutationActivity\(/,
+  /function marketplaceMutationPaymentFlowSats\(/,
+);
+const confirmedActivityFlowSatsSource = sourceSliceBetween(
+  server,
+  /function confirmedActivityFlowSats\(/,
+  /function tokenCanUseCreditNetworkFloor\(/,
+);
+const exactCreditFrozenValueComponentsSource = sourceSliceBetween(
+  server,
+  /function exactCreditFrozenValueComponentsAgree\(/,
+  /function ledgerSnapshotChecks\(/,
+);
+const tokenRouteSource = sourceSliceBetween(
+  server,
+  /if \(url\.pathname === "\/api\/v1\/token"\)/,
+  /if \(url\.pathname === "\/api\/v1\/token-summary"\)/,
+);
+const legacyBootstrapEvidenceReaderSource = sourceSliceBetween(
+  proofIndexReader,
+  /export function workAmoV5LegacyBootstrapCarryEvidenceFromRows\(/,
+  /export async function proofIndexWorkAmoRelationalTokenStateEvidence\(/,
+);
+const legacyBootstrapEvidenceMatcherSource = sourceSliceBetween(
+  server,
+  /function workAmoV5LegacyBootstrapEvidenceMatches\(/,
+  /function workAmoV5LegacyBootstrapReconciliation\(/,
+);
+const legacyBootstrapReconciliationSource = sourceSliceBetween(
+  server,
+  /function workAmoV5LegacyBootstrapReconciliation\(/,
+  /function workAmoV5ClosingSummaryProjection\(/,
+);
+const legacyBootstrapProjectionSource = sourceSliceBetween(
+  server,
+  /function workAmoV5ClosingSummaryProjection\(/,
+  /function exactWorkAmoV5RawTransitionChainCommitment\(/,
+);
+const verifiedWorkAmoV5ClosingStateSource = sourceSliceBetween(
+  server,
+  /async function workFloorWithVerifiedWorkAmoV5ClosingState\(/,
+  /function exactCanonicalAmoPositionInteger\(/,
+);
+const marketplaceMutationEqualitySource = sourceSliceBetween(
+  ledgerSnapshotChecksSource,
+  /addCheck\(\s*"marketplace-mutation-fees-counted"/,
+  /addCheck\(\s*"work-amo-v5-legacy-bootstrap-carry-proven"/,
+);
 expect(
   "canonical ledger builds the expensive WORK floor exactly once",
   (canonicalLedgerBuilderSource.match(/workFloorPayloadFromState\(/gu) ?? [])
     .length === 1,
 );
 expect(
-  "frozen credit component reconciliation uses only a sub-proof local tolerance",
-  /"credit-frozen-value-includes-event-components"[\s\S]*creditMinerFeeFlowSats,[\s\S]*0\.01,/u.test(
+  "legacy frozen credit fallback includes the explicit carry with only sub-proof tolerance",
+  /"credit-frozen-value-includes-event-components"[\s\S]*creditMinerFeeFlowSats \+[\s\S]*legacyBootstrapCreditFixedSats,[\s\S]*0\.01,/u.test(
     ledgerSnapshotChecksSource,
   ),
 );
@@ -1046,6 +1096,14 @@ expectAll("server fresh token state reads fall back to valid cached snapshots", 
   /url\.pathname === "\/api\/v1\/token"[\s\S]*"token-state-fresh-memory"[\s\S]*cachedTokenPayloadFallbackForRead\([\s\S]*"token-state-fresh-cache"[\s\S]*Fresh credit state is still catching up/,
 ]);
 
+expectAll("server token reads always expose the AMO activation envelope", tokenRouteSource, [
+  /withWorkMarketplaceV4Metadata\(indexedPayload,\s*network\)/,
+  /withWorkMarketplaceV4Metadata\(cachedPayload,\s*network\)/,
+  /withWorkMarketplaceV4Metadata\(fallbackPayload,\s*network\)/,
+  /withWorkMarketplaceV4Metadata\([\s\S]*walletScopedTokenPayload\(/,
+  /withWorkMarketplaceV4Metadata\(payload,\s*network\)/,
+]);
+
 expectAll("server canonical summaries require hash-bound database snapshots", server, [
   /async function storedCanonicalTokenSummaryPayload\([\s\S]*proofIndexSnapshotPayload\([\s\S]*payloadIndexedThroughBlockHash/,
   /async function tokenSummaryPayload\([\s\S]*storedCanonicalTokenSummaryPayload\([\s\S]*Fresh hash-bound credit summary is still catching up/,
@@ -1484,7 +1542,7 @@ expectAll("wallet token listing refresh preserves bounded spendable local pendin
 expectAll("current ledger reads reject non-OK summary snapshot fallback rows", server + proofIndexerBackfill, [
   /status:\s*"summary-snapshot-fallback"/,
   /ok:\s*false/,
-  /function ledgerPayloadHasCurrentChecks\(payload\)[\s\S]*payload\?\.consistency\?\.status !== "summary-snapshot-fallback"[\s\S]*checkNames\.has\("ledger-covers-node-tip"\)/,
+  /function ledgerPayloadHasCurrentChecks\(payload\)[\s\S]*payload\?\.consistency\?\.status !== "summary-snapshot-fallback"[\s\S]*checkNames\.has\("work-amo-v5-legacy-bootstrap-carry-proven"\)[\s\S]*checkNames\.has\("ledger-covers-node-tip"\)/,
 ]);
 expectAll("DB mail reads use indexed address matching and self-send folders", proofIndexReader, [
   /function addressMailRowPayloads\(row,\s*address,\s*network\)/,
@@ -1514,6 +1572,10 @@ expectAll("AMO V5 stays fail-closed until canonical quote readiness", proofIndex
   /WORK_AMO_V5_DECLARATION_MEMO_SHA256=d947a9adaa9d84d05571d2addd210cc4aa194eac94562411397553ef8135f95f/,
   /WORK_AMO_V5_WRITES_ENABLED=0/,
 ]);
+expectAll("AMO V5 derives the pinned declaration height only from a complete Core position proof", server, [
+  /const canonicalDeclarationPosition =[\s\S]*canonicalBlockHash === WORK_AMO_V5_DECLARATION_BLOCK_HASH[\s\S]*declarationBlockHash === WORK_AMO_V5_DECLARATION_BLOCK_HASH[\s\S]*declarationIndex === WORK_AMO_V5_DECLARATION_BLOCK_INDEX/,
+  /workAmoV5DeclarationEvidenceFromTransaction\([\s\S]*canonicalDeclarationPosition[\s\S]*canonicalDeclarationPosition[\s\S]*blockHeight: WORK_AMO_V5_DECLARATION_HEIGHT/,
+]);
 expectAll("AMO V5 uses exact position-derived immutable unit terms", workAmoV5Core, [
   /WORK_AMO_V5_AUTH_VERSION = "pwt-sale-v5"/,
   /WORK_AMO_V5_ALLOWED_FACE_USD_CENTS = Object\.freeze\(\[\s*2_000,\s*5_000,\s*10_000,\s*\]\)/,
@@ -1539,6 +1601,15 @@ expectAll(
     /function workAmoV5WorkStateWithCanonicalListingWitnesses\([\s\S]*workAmoV5WorkStateWithoutLegacyListingReservations\(tokenState\)[\s\S]*TOKEN_SALE_AUTH_WORK_MARKET_V4_VERSION[\s\S]*TOKEN_SALE_AUTH_WORK_AMO_V5_VERSION[\s\S]*listings: listings\.map/,
   ],
 );
+expectAll("proof-index token state exposes the exact AMO relic boundary", proofIndexReader, [
+  /async function payloadWithVerifiedWorkAmoV5Activation\([\s\S]*Promise\.all\(\[[\s\S]*proofIndexWorkAmoV5Declaration\([\s\S]*proofIndexWorkAmoV5PreUnitRelicEvidence\([\s\S]*workAmoV5CutoverActivationIsExact\(activation\)[\s\S]*workAmoV5PreUnitRelicEvidence: relicEvidence/,
+  /const cutoverPayload = async \(payload\) => \{[\s\S]*applyWorkMarketV2CutoverToTokenState\([\s\S]*applyWorkAmoV5CutoverToTokenState\(/,
+]);
+expectAll("AMO token projection preserves pre-unit listings only as nonrefundable relics", workAmoV5Core, [
+  /export function applyWorkAmoV5CutoverToTokenState\([\s\S]*workAmoV5CutoverActivationIsExact\([\s\S]*workAmoV5PreUnitRelicEvidenceIsExact\([\s\S]*listingId !== WORK_AMO_V5_PRE_UNIT_RELIC_LISTING_TXID[\s\S]*version === WORK_AMO_V5_AUTH_VERSION[\s\S]*version === WORK_AMO_V4_AUTH_VERSION/,
+  /relicDisposition === "relic"[\s\S]*closedTxid: WORK_AMO_V5_DECLARATION_TXID[\s\S]*disabledReason: WORK_AMO_V5_PRE_UNIT_RELIC_DISABLED_REASON[\s\S]*refundEligible: false[\s\S]*relic: true[\s\S]*status: "disabled"[\s\S]*txid: WORK_AMO_V5_DECLARATION_TXID/,
+  /const invalidEvents = Array\.isArray\(state\.invalidEvents\)[\s\S]*return \{[\s\S]*invalidEvents,[\s\S]*workAmoV5ProjectionReady: projectionReady/,
+]);
 expectAll(
   "AMO V5 activation consumes one immutable independently captured H-1 seed",
   `${workAmoV5SeedEvidence}\n${server}\n${proofIndexerBackfill}\n${workAmoV5Migration}\n${proofIndexerSchema}`,
@@ -1699,6 +1770,10 @@ expectAll("token market history reads merge direct DB event overlays", server, [
   /proofIndexTokenMarketHistoryOverlayPayload/,
   /async function tokenHistoryPayload[\s\S]*if \(workMarketHistoryKind && network === "livenet"\)[\s\S]*proofIndexTokenMarketHistoryOverlayPayload\(/,
   /mergeTokenHistoryPageWithOverlay\(page,\s*overlayPage,\s*pagination\)/,
+]);
+
+expectAll("WORK transfer history keeps height, hash, and snapshot on one exact tip", server, [
+  /function tokenHistoryPageWithCanonicalWorkTransferValues\([\s\S]*indexedThroughBlock: proofIndexPayloadIndexedThroughBlock\(summary\)[\s\S]*indexedThroughBlockHash: summary\.indexedThroughBlockHash[\s\S]*snapshotId: summary\.snapshotId/,
 ]);
 
 expectAll("proof index token history merges market event rows", proofIndexReader, [
@@ -1909,6 +1984,67 @@ expectAll("marketplace mutation fees are first-class network value", server, [
   /"marketplace-mutation-fees-counted"/,
   /"marketplace-value-includes-mutation-fees"/,
 ]);
+
+expectAll("invalid marketplace mutations contribute no canonical fee flow", uniqueMarketplaceMutationActivitySource + confirmedActivityFlowSatsSource, [
+  /item\?\.valid !== false && kinds\.has\(item\?\.kind\)/,
+  /item\?\.valid !== false && kinds\.has\(item\.kind\)/,
+]);
+expectAll("AMO V5 legacy bootstrap carry is proved from one exact relational row", legacyBootstrapEvidenceReaderSource, [
+  /sourceRows\.length !== 1/,
+  /row\?\.valid !== false/,
+  /row\?\.canonical_block !== true/,
+  /txid !== WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_TXID/,
+  /blockHash !== WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_BLOCK_HASH/,
+  /blockHeight !== WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_BLOCK_HEIGHT/,
+  /blockIndex !== WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_BLOCK_INDEX/,
+  /protocolVout !== WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_PROTOCOL_VOUT/,
+  /recordOrdinal !== WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_RECORD_ORDINAL/,
+  /mutationSats !== WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MUTATION_SATS/,
+  /minerFeeSats !== WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MINER_FEE_SATS/,
+  /listingCount !== 1/,
+  /activeListingCount !== 0/,
+  /listingStatuses\[0\] !== "dropped"/,
+  /JOIN proof_indexer\.transactions event_tx/,
+  /JOIN proof_indexer\.blocks event_block/,
+  /WHERE event_row\.network = \$1[\s\S]*AND event_row\.txid = \$2/,
+  /ORDER BY event_row\.event_id/,
+]);
+expectAll("AMO V5 legacy bootstrap carry is exact and separately reconciled", legacyBootstrapEvidenceMatcherSource + legacyBootstrapReconciliationSource + legacyBootstrapProjectionSource + verifiedWorkAmoV5ClosingStateSource, [
+  /WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MODEL/,
+  /WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_TXID/,
+  /WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_REASON_CODE/,
+  /field === "tokenMarketplaceFeeSats"/,
+  /committed !== valid \+ expectedCarry/,
+  /committedBaseNetworkValueQ8 !==\s*validBaseNetworkValueQ8 \+ legacyBootstrapGrowthValueQ8/,
+  /committedCreditFixedQ8 !==\s*validCreditFixedQ8 \+ legacyBootstrapCreditFixedQ8/,
+  /const baseState = reconciliation\.validBaseState/,
+  /workAmoV5ExactValueAliases\(\s*"baseNetworkValue",\s*value\.baseNetworkValueQ8/,
+  /workAmoV5ExactValueAliases\("creditFixed", creditFixedQ8\)/,
+  /marketplaceFeeSats:\s*Number\(marketplaceFee\)/,
+  /legacyBootstrapMarketplaceCarrySats:/,
+  /legacyBootstrapCreditFixedQ8:/,
+  /proofIndexWorkAmoLegacyBootstrapCarryEvidence\(network\)/,
+  /legacyBootstrapEvidence\?\.complete !== true/,
+  /workAmoV5LegacyBootstrapReconciliation\(/,
+  /reconciliation\.valid !== true/,
+]);
+expectAll("credit frozen value proves valid flows plus the explicit legacy carry", exactCreditFrozenValueComponentsSource, [
+  /legacyCreditFixedQ8Present/,
+  /legacyCreditFixedSatsPresent/,
+  /legacyCreditFixedQ8Present !== legacyCreditFixedSatsPresent/,
+  /BigInt\(legacyCreditFixedQ8\) !==\s*BigInt\(legacyCreditFixedSats\) \* VALUE_Q8_SCALE/,
+  /flows\.reduce\([\s\S]*BigInt\(legacyCreditFixedQ8\)/,
+]);
+expectAll("marketplace consistency keeps strict valid-only equality", marketplaceMutationEqualitySource, [
+  /numbersAgree\(confirmedMarketplaceMutationFeeSats, marketplaceFeeSats\)/,
+  /numbersAgree\(confirmedMarketplaceMutationFeeSats, marketplaceMutationFeeSats\)/,
+]);
+expect(
+  "marketplace fee equality is not relaxed by the legacy bootstrap carry",
+  !/\|\||legacyBootstrap|WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY/u.test(
+    marketplaceMutationEqualitySource,
+  ),
+);
 
 expectAll("confirmed token protocol failures stay diagnosable", server, [
   /invalidEvents:\s*\[\]/,

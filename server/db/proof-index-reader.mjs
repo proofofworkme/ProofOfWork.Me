@@ -58,6 +58,7 @@ import {
   WORK_AMO_V5_DECLARATION_AUTHORITY_SCRIPT_PUBKEY as WORK_AMO_V5_AUTHORITY_SCRIPTPUBKEY,
   WORK_AMO_V5_DECLARATION_BLOCK_HASH,
   WORK_AMO_V5_DECLARATION_BLOCK_INDEX,
+  WORK_AMO_V5_DECLARATION_BLOCK_TIME,
   WORK_AMO_V5_DECLARATION_HEIGHT,
   WORK_AMO_V5_DECLARATION_MIN_PAYMENT_SATS as WORK_AMO_V5_MIN_REGISTRY_PAYMENT_SATS,
   WORK_AMO_V5_DECLARATION_PAYLOAD_BYTES as WORK_AMO_V5_DECLARATION_MEMO_BYTES,
@@ -69,16 +70,58 @@ import {
   WORK_AMO_V5_DECLARATION_TXID,
   WORK_AMO_V5_DECLARATION_WORK_PROTOCOL_VOUT,
   WORK_AMO_V5_EVENT_SET_COMMITMENT_MODEL,
+  WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_BLOCK_HASH,
+  WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_BLOCK_HEIGHT,
+  WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_BLOCK_INDEX,
+  WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MINER_FEE_SATS,
+  WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MODEL,
+  WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MUTATION_SATS,
+  WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_PROTOCOL_VOUT,
+  WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_REASON_CODE,
+  WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_RECORD_ORDINAL,
+  WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_TXID,
   WORK_AMO_V5_MAX_QUOTE_AGE_BLOCKS as WORK_AMO_V1_MAX_QUOTE_AGE_BLOCKS,
   WORK_AMO_V5_PAYLOAD_COMMITMENT_MODEL,
+  WORK_AMO_V5_PRE_UNIT_RELIC_AMOUNT_ATOMS,
+  WORK_AMO_V5_PRE_UNIT_RELIC_ANCHOR_SCRIPT_PUBKEY,
+  WORK_AMO_V5_PRE_UNIT_RELIC_AUTH_VERSION,
+  WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_HASH,
+  WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_HEIGHT,
+  WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_INDEX,
+  WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_TIME,
+  WORK_AMO_V5_PRE_UNIT_RELIC_DATA_BYTES,
+  WORK_AMO_V5_PRE_UNIT_RELIC_DISABLED_REASON,
+  WORK_AMO_V5_PRE_UNIT_RELIC_LISTING_TXID,
+  WORK_AMO_V5_PRE_UNIT_RELIC_MINER_FEE_SATS,
+  WORK_AMO_V5_PRE_UNIT_RELIC_MINIMUM_PRICE_SATS,
+  WORK_AMO_V5_PRE_UNIT_RELIC_MODEL,
+  WORK_AMO_V5_PRE_UNIT_RELIC_NONCE,
+  WORK_AMO_V5_PRE_UNIT_RELIC_ORACLE_BLOCK_HASH,
+  WORK_AMO_V5_PRE_UNIT_RELIC_ORACLE_BLOCK_HEIGHT,
+  WORK_AMO_V5_PRE_UNIT_RELIC_ORACLE_MODEL,
+  WORK_AMO_V5_PRE_UNIT_RELIC_ORACLE_NETWORK_VALUE_Q8,
+  WORK_AMO_V5_PRE_UNIT_RELIC_PRICE_SATS,
+  WORK_AMO_V5_PRE_UNIT_RELIC_PROTOCOL_VOUT,
+  WORK_AMO_V5_PRE_UNIT_RELIC_RECORD_ORDINAL,
+  WORK_AMO_V5_PRE_UNIT_RELIC_REGISTRY_ADDRESS,
+  WORK_AMO_V5_PRE_UNIT_RELIC_SELLER_ADDRESS,
+  WORK_AMO_V5_PRE_UNIT_RELIC_SELLER_PUBLIC_KEY,
+  WORK_AMO_V5_PRE_UNIT_RELIC_TICKET_VALUE_SATS,
+  WORK_AMO_V5_PRE_UNIT_RELIC_TICKET_VOUT,
   WORK_AMO_V5_STATE_COMMITMENT_MODEL,
   WORK_AMO_V5_UNIT_USD_ORACLE_MODEL as WORK_AMO_UNIT_USD_ORACLE_MODEL,
   WORK_AMO_V5_V1_ACTIVATION_HEIGHT as WORK_AMO_V1_ACTIVATION_HEIGHT,
+  WORK_AMO_V5_V1_DECLARATION_BLOCK_HASH,
+  WORK_AMO_V5_V1_DECLARATION_BLOCK_INDEX,
+  WORK_AMO_V5_V1_DECLARATION_HEIGHT,
   WORK_AMO_V5_V1_DECLARATION_TXID as WORK_AMO_V1_DECLARATION_TXID,
+  applyWorkAmoV5CutoverToTokenState,
   isWorkAmoV5LivenetAddress,
   parseWorkAmoV5GenericSaleAuthorization,
   validateWorkAmoV5FrozenTerms,
   workAmoV5CanonicalTokenStateCommitment,
+  workAmoV5CutoverActivationIsExact,
+  workAmoV5PreUnitRelicEvidenceIsExact,
   workAmoV5WorkStateWithoutLegacyListingReservations,
 } from "../work-amo-v5.mjs";
 import {
@@ -1007,6 +1050,7 @@ export async function proofIndexWorkAmoV5Declaration(
         declaration_tx.block_hash,
         declaration_tx.block_height,
         declaration_tx.block_index,
+        declaration_tx.block_time,
         COALESCE(
           declaration_tx.raw_tx #>> '{vin,0,prevout,scriptPubKey,hex}',
           declaration_tx.raw_tx #>> '{vin,0,prevout,scriptpubkey}',
@@ -1116,6 +1160,12 @@ export async function proofIndexWorkAmoV5Declaration(
   }
   if (
     row &&
+    dateIso(row.block_time) !== WORK_AMO_V5_DECLARATION_BLOCK_TIME
+  ) {
+    reasons.push("declaration-block-time-mismatch");
+  }
+  if (
+    row &&
     (
       memoRows.length !== 1 ||
       Number(memoRows[0]?.vout) !==
@@ -1178,6 +1228,7 @@ export async function proofIndexWorkAmoV5Declaration(
     blockHeight: Number(row?.block_height ?? WORK_AMO_V5_DECLARATION_HEIGHT),
     blockIndex: Number(row?.block_index ?? -1),
     blockTransactionIndex: Number(row?.block_index ?? -1),
+    blockTime: row?.block_time ? dateIso(row.block_time) : "",
     canonical,
     confirmed: row?.status === "confirmed",
     configured: true,
@@ -1712,6 +1763,633 @@ export async function proofIndexCanonicalWorkListingById(
   };
 }
 
+function exactWorkAmoV5PreUnitRelicAuthorization(authorization) {
+  const exactString = (field, expected) =>
+    typeof authorization?.[field] === "string" &&
+    authorization[field] === expected;
+  const exactInteger = (field, expected) =>
+    typeof authorization?.[field] === "number" &&
+    Number.isSafeInteger(authorization[field]) &&
+    authorization[field] === expected;
+  return (
+    authorization &&
+    typeof authorization === "object" &&
+    !Array.isArray(authorization) &&
+    exactString("version", WORK_AMO_V5_PRE_UNIT_RELIC_AUTH_VERSION) &&
+    exactString("network", "livenet") &&
+    exactString("tokenId", WORK_TOKEN_ID) &&
+    exactString("ticker", "WORK") &&
+    exactString("nonce", WORK_AMO_V5_PRE_UNIT_RELIC_NONCE) &&
+    exactString("amountAtoms", WORK_AMO_V5_PRE_UNIT_RELIC_AMOUNT_ATOMS) &&
+    exactInteger("priceSats", WORK_AMO_V5_PRE_UNIT_RELIC_PRICE_SATS) &&
+    exactString(
+      "minimumPriceSats",
+      String(WORK_AMO_V5_PRE_UNIT_RELIC_MINIMUM_PRICE_SATS),
+    ) &&
+    exactString(
+      "sellerAddress",
+      WORK_AMO_V5_PRE_UNIT_RELIC_SELLER_ADDRESS,
+    ) &&
+    exactString(
+      "registryAddress",
+      WORK_AMO_V5_PRE_UNIT_RELIC_REGISTRY_ADDRESS,
+    ) &&
+    exactString(
+      "sellerPublicKey",
+      WORK_AMO_V5_PRE_UNIT_RELIC_SELLER_PUBLIC_KEY,
+    ) &&
+    exactString("buyerAddress", "") &&
+    exactString("expiresAt", "") &&
+    exactString("anchorTxid", "") &&
+    exactString("anchorSignature", "") &&
+    exactString("anchorType", "sale-ticket-v1") &&
+    exactInteger("anchorVout", WORK_AMO_V5_PRE_UNIT_RELIC_TICKET_VOUT) &&
+    exactInteger(
+      "anchorValueSats",
+      WORK_AMO_V5_PRE_UNIT_RELIC_TICKET_VALUE_SATS,
+    ) &&
+    exactInteger("anchorSigHashType", 0x83) &&
+    exactString(
+      "anchorScriptPubKey",
+      WORK_AMO_V5_PRE_UNIT_RELIC_ANCHOR_SCRIPT_PUBKEY,
+    ) &&
+    exactString("oracleModel", WORK_AMO_V5_PRE_UNIT_RELIC_ORACLE_MODEL) &&
+    exactInteger(
+      "oracleBlockHeight",
+      WORK_AMO_V5_PRE_UNIT_RELIC_ORACLE_BLOCK_HEIGHT,
+    ) &&
+    exactString(
+      "oracleBlockHash",
+      WORK_AMO_V5_PRE_UNIT_RELIC_ORACLE_BLOCK_HASH,
+    ) &&
+    exactString(
+      "oracleNetworkValueQ8",
+      WORK_AMO_V5_PRE_UNIT_RELIC_ORACLE_NETWORK_VALUE_Q8,
+    )
+  );
+}
+
+function exactWorkAmoV5PreUnitRelicPayloadAuthorizations(payload) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return false;
+  }
+  const present = [
+    payload.saleAuthorization,
+    payload.listingAuthorization,
+  ].filter((authorization) => authorization !== undefined && authorization !== null);
+  return (
+    present.length > 0 &&
+    present.every(exactWorkAmoV5PreUnitRelicAuthorization)
+  );
+}
+
+export function workAmoV5PreUnitRelicEvidenceFromRows(
+  rows,
+  activation = null,
+) {
+  const incomplete = (reason) => ({
+    complete: false,
+    model: WORK_AMO_V5_PRE_UNIT_RELIC_MODEL,
+    reason,
+  });
+  const sourceRows = Array.isArray(rows) ? rows : [];
+  if (sourceRows.length !== 1) {
+    return incomplete("pre-unit-relic-event-cardinality");
+  }
+  const row = sourceRows[0];
+  const payload =
+    row?.listing_event_payload &&
+    typeof row.listing_event_payload === "object" &&
+    !Array.isArray(row.listing_event_payload)
+      ? row.listing_event_payload
+      : null;
+  const listingPayload =
+    row?.listing_row_payload &&
+    typeof row.listing_row_payload === "object" &&
+    !Array.isArray(row.listing_row_payload)
+      ? row.listing_row_payload
+      : null;
+  const integer = (value, minimum = 0) => {
+    if (value === undefined || value === null || value === "") {
+      return null;
+    }
+    const parsed = Number(value);
+    return Number.isSafeInteger(parsed) && parsed >= minimum ? parsed : null;
+  };
+  const lower = (value) => String(value ?? "").trim().toLowerCase();
+  const text = (value) => String(value ?? "").trim();
+  const listingId = lower(row?.listing_id);
+  const blockHash = lower(row?.block_hash);
+  const blockHeight = integer(row?.block_height, 1);
+  const blockIndex = integer(row?.block_index);
+  const protocolVout = integer(row?.protocol_vout);
+  const recordOrdinal = integer(row?.record_ordinal);
+  const saleTicketTxid = lower(
+    row?.sale_ticket_txid || WORK_AMO_V5_PRE_UNIT_RELIC_LISTING_TXID,
+  );
+  const saleTicketVout = integer(row?.sale_ticket_vout);
+  const saleTicketValueSats = integer(row?.sale_ticket_value_sats);
+  const canonicalSpendCount = integer(row?.canonical_spend_count);
+  const canonicalCloseCount = integer(row?.canonical_close_count);
+  const listingEventCount = integer(row?.listing_event_count);
+  const eventId = integer(row?.event_id, 1);
+  const validSealCount = integer(row?.valid_seal_count);
+  const registryPaymentCount = integer(row?.registry_payment_count);
+  const registryPaymentSats = integer(row?.registry_payment_sats);
+  const registryPaymentVout = integer(row?.registry_payment_vout);
+  const pendingTicketSpendCount = integer(
+    row?.pending_ticket_spend_count,
+  );
+  const v1DeclarationCount = integer(row?.v1_declaration_count);
+  const transactionBlockHeight = integer(
+    row?.transaction_block_height,
+    1,
+  );
+  const transactionBlockIndex = integer(row?.transaction_block_index);
+  const blockTime = dateIso(row?.block_time);
+  const listingStatus = lower(row?.listing_status);
+  const outputSpentByTxid = lower(row?.output_spent_by_txid);
+  const canonicalSpendTxid = lower(row?.canonical_spend_txid);
+  const canonicalCloseTxid = lower(row?.canonical_close_txid);
+  const eventAuthorization = payload?.saleAuthorization;
+  const listingAuthorization = listingPayload?.saleAuthorization;
+  if (
+    !payload ||
+    !listingPayload ||
+    !workAmoV5CutoverActivationIsExact(activation) ||
+    lower(row?.network) !== "livenet" ||
+    listingId !== WORK_AMO_V5_PRE_UNIT_RELIC_LISTING_TXID ||
+    lower(row?.token_id) !== WORK_TOKEN_ID ||
+    lower(row?.event_txid) !== listingId ||
+    lower(row?.protocol) !== "pwt1" ||
+    lower(row?.kind) !== "token-listing" ||
+    lower(row?.event_status) !== "confirmed" ||
+    lower(row?.transaction_status) !== "confirmed" ||
+    row?.event_valid !== true ||
+    row?.canonical_block !== true ||
+    eventId === null ||
+    listingEventCount !== 1 ||
+    row?.listing_payload_matches_event !== true ||
+    text(row?.event_raw_payload) !== text(payload?.payload) ||
+    text(row?.record_payload_text) !== text(row?.event_raw_payload) ||
+    lower(row?.record_protocol) !== "pwt1" ||
+    integer(row?.record_vout) !==
+      WORK_AMO_V5_PRE_UNIT_RELIC_PROTOCOL_VOUT ||
+    integer(row?.record_output_index) !==
+      WORK_AMO_V5_PRE_UNIT_RELIC_RECORD_ORDINAL ||
+    integer(row?.event_data_bytes) !== WORK_AMO_V5_PRE_UNIT_RELIC_DATA_BYTES ||
+    integer(row?.record_data_bytes) !== WORK_AMO_V5_PRE_UNIT_RELIC_DATA_BYTES ||
+    blockHash !== WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_HASH ||
+    blockHeight !== WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_HEIGHT ||
+    blockIndex !== WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_INDEX ||
+    protocolVout !== WORK_AMO_V5_PRE_UNIT_RELIC_PROTOCOL_VOUT ||
+    recordOrdinal !== WORK_AMO_V5_PRE_UNIT_RELIC_RECORD_ORDINAL ||
+    transactionBlockHeight !== blockHeight ||
+    transactionBlockIndex !== blockIndex ||
+    blockTime !== WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_TIME ||
+    text(row?.amount_atoms) !== WORK_AMO_V5_PRE_UNIT_RELIC_AMOUNT_ATOMS ||
+    integer(row?.price_sats, 1) !== WORK_AMO_V5_PRE_UNIT_RELIC_PRICE_SATS ||
+    text(row?.seller_address) !==
+      WORK_AMO_V5_PRE_UNIT_RELIC_SELLER_ADDRESS ||
+    text(row?.definition_registry_address) !==
+      WORK_AMO_V5_PRE_UNIT_RELIC_REGISTRY_ADDRESS ||
+    text(row?.ticker).toUpperCase() !== "WORK" ||
+    saleTicketTxid !== WORK_AMO_V5_PRE_UNIT_RELIC_LISTING_TXID ||
+    saleTicketVout !== WORK_AMO_V5_PRE_UNIT_RELIC_TICKET_VOUT ||
+    saleTicketValueSats !==
+      WORK_AMO_V5_PRE_UNIT_RELIC_TICKET_VALUE_SATS ||
+    integer(row?.anchor_value_sats) !==
+      WORK_AMO_V5_PRE_UNIT_RELIC_TICKET_VALUE_SATS ||
+    lower(row?.anchor_scriptpubkey) !==
+      WORK_AMO_V5_PRE_UNIT_RELIC_ANCHOR_SCRIPT_PUBKEY ||
+    text(row?.anchor_address) !==
+      WORK_AMO_V5_PRE_UNIT_RELIC_SELLER_ADDRESS ||
+    integer(row?.transaction_fee_sats) !==
+      WORK_AMO_V5_PRE_UNIT_RELIC_MINER_FEE_SATS ||
+    integer(row?.event_amount_sats) !==
+      WORK_AMO_V5_PRE_UNIT_RELIC_TICKET_VALUE_SATS ||
+    registryPaymentCount !== 1 ||
+    registryPaymentSats !== WORK_AMO_V5_PRE_UNIT_RELIC_TICKET_VALUE_SATS ||
+    registryPaymentVout !== 0 ||
+    validSealCount !== 0 ||
+    canonicalSpendCount === null ||
+    canonicalSpendCount > 1 ||
+    canonicalCloseCount === null ||
+    canonicalCloseCount > 1 ||
+    pendingTicketSpendCount !== 0 ||
+    v1DeclarationCount !== 1 ||
+    !exactWorkAmoV5PreUnitRelicPayloadAuthorizations(payload) ||
+    !exactWorkAmoV5PreUnitRelicPayloadAuthorizations(listingPayload) ||
+    !exactWorkAmoV5PreUnitRelicAuthorization(eventAuthorization) ||
+    !exactWorkAmoV5PreUnitRelicAuthorization(listingAuthorization) ||
+    lower(payload?.listingId ?? payload?.txid) !== listingId ||
+    lower(payload?.tokenId) !== WORK_TOKEN_ID ||
+    lower(payload?.network) !== "livenet" ||
+    text(payload?.sellerAddress) !==
+      WORK_AMO_V5_PRE_UNIT_RELIC_SELLER_ADDRESS ||
+    text(payload?.registryAddress) !==
+      WORK_AMO_V5_PRE_UNIT_RELIC_REGISTRY_ADDRESS ||
+    text(payload?.amountAtoms) !==
+      WORK_AMO_V5_PRE_UNIT_RELIC_AMOUNT_ATOMS ||
+    integer(payload?.priceSats, 1) !==
+      WORK_AMO_V5_PRE_UNIT_RELIC_PRICE_SATS
+  ) {
+    return incomplete("pre-unit-relic-evidence-mismatch");
+  }
+
+  const terminal =
+    canonicalSpendCount === 1 ||
+    canonicalCloseCount === 1 ||
+    Boolean(outputSpentByTxid);
+  if (terminal) {
+    if (
+      canonicalSpendCount !== 1 ||
+      !canonicalSpendTxid ||
+      !outputSpentByTxid ||
+      outputSpentByTxid !== canonicalSpendTxid ||
+      (
+        canonicalCloseCount === 1 &&
+        (
+          !canonicalCloseTxid ||
+          canonicalCloseTxid !== canonicalSpendTxid
+        )
+      )
+    ) {
+      return incomplete("pre-unit-relic-terminal-evidence-mismatch");
+    }
+  } else if (
+    outputSpentByTxid ||
+    !["active", "sealing"].includes(listingStatus)
+  ) {
+    return incomplete("pre-unit-relic-open-state-mismatch");
+  }
+
+  const authorizationVersion = WORK_AMO_V5_PRE_UNIT_RELIC_AUTH_VERSION;
+  const evidence = {
+    activationBlockHash: WORK_AMO_V5_DECLARATION_BLOCK_HASH,
+    activationBlockHeight: WORK_AMO_V5_DECLARATION_HEIGHT,
+    activationBlockIndex: WORK_AMO_V5_DECLARATION_BLOCK_INDEX,
+    activationBlockTime: String(activation?.blockTime ?? ""),
+    activationTxid: WORK_AMO_V5_DECLARATION_TXID,
+    amountAtoms: WORK_AMO_V5_PRE_UNIT_RELIC_AMOUNT_ATOMS,
+    authorizationVersion,
+    blockHash,
+    blockHeight,
+    blockIndex,
+    canonical: true,
+    canonicalCloseCount,
+    canonicalCloseTxid,
+    canonicalSpendCount,
+    canonicalSpendTxid,
+    complete: true,
+    confirmed: true,
+    disposition: terminal ? "terminal" : "relic",
+    eventId,
+    listingId,
+    model: WORK_AMO_V5_PRE_UNIT_RELIC_MODEL,
+    priceSats: WORK_AMO_V5_PRE_UNIT_RELIC_PRICE_SATS,
+    protocolVout,
+    recordOrdinal,
+    registryAddress: WORK_AMO_V5_PRE_UNIT_RELIC_REGISTRY_ADDRESS,
+    saleTicketTxid,
+    saleTicketValueSats,
+    saleTicketVout,
+    sellerAddress: WORK_AMO_V5_PRE_UNIT_RELIC_SELLER_ADDRESS,
+    terminal,
+    txid: listingId,
+    unspent: !terminal,
+    valid: true,
+  };
+  if (!terminal) {
+    evidence.listing = {
+      _powEventIndex: WORK_AMO_V5_PRE_UNIT_RELIC_RECORD_ORDINAL,
+      amount: formatWorkAtoms(WORK_AMO_V5_PRE_UNIT_RELIC_AMOUNT_ATOMS),
+      amountAtoms: WORK_AMO_V5_PRE_UNIT_RELIC_AMOUNT_ATOMS,
+      amountSats: WORK_AMO_V5_PRE_UNIT_RELIC_TICKET_VALUE_SATS,
+      blockHash,
+      blockHeight,
+      blockIndex,
+      confirmed: true,
+      createdAt: blockTime,
+      decimals: WORK_DECIMALS,
+      kind: "token-listing",
+      listingId,
+      marketplaceMutationFeeSats:
+        WORK_AMO_V5_PRE_UNIT_RELIC_TICKET_VALUE_SATS,
+      minerFeeSats: WORK_AMO_V5_PRE_UNIT_RELIC_MINER_FEE_SATS,
+      minimumPriceSats: WORK_AMO_V5_PRE_UNIT_RELIC_MINIMUM_PRICE_SATS,
+      network: "livenet",
+      priceSats: WORK_AMO_V5_PRE_UNIT_RELIC_PRICE_SATS,
+      protocol: "pwt1",
+      protocolVout,
+      recordOrdinal,
+      registryAddress: WORK_AMO_V5_PRE_UNIT_RELIC_REGISTRY_ADDRESS,
+      saleAuthorization: eventAuthorization,
+      saleTicketTxid,
+      saleTicketValueSats,
+      saleTicketVout,
+      sellerAddress: WORK_AMO_V5_PRE_UNIT_RELIC_SELLER_ADDRESS,
+      status: listingStatus,
+      ticker: "WORK",
+      tokenId: WORK_TOKEN_ID,
+      txid: listingId,
+      unitScale: WORK_UNIT_SCALE_TEXT,
+      valid: true,
+    };
+  }
+  return workAmoV5PreUnitRelicEvidenceIsExact(evidence)
+    ? evidence
+    : incomplete("pre-unit-relic-normalized-evidence-mismatch");
+}
+
+export async function proofIndexWorkAmoV5PreUnitRelicEvidence(
+  network,
+  indexedThroughBlock = WORK_AMO_V5_ACTIVATION_HEIGHT,
+) {
+  const pool = proofIndexPool();
+  if (!pool) {
+    return {
+      complete: false,
+      model: WORK_AMO_V5_PRE_UNIT_RELIC_MODEL,
+      reason: "database-not-configured",
+    };
+  }
+  const result = await pool.query(
+    `
+      SELECT
+        listing.listing_id,
+        listing.status AS listing_status,
+        listing.token_id,
+        listing.seller_address,
+        listing.amount::text AS amount_atoms,
+        listing.price_sats::text AS price_sats,
+        listing.sale_ticket_txid,
+        listing.sale_ticket_vout,
+        listing.sale_ticket_value_sats::text AS sale_ticket_value_sats,
+        listing.payload AS listing_row_payload,
+        (listing.payload = listing_event.payload) AS
+          listing_payload_matches_event,
+        listing_event.event_id,
+        listing_event.network,
+        listing_event.txid AS event_txid,
+        listing_event.protocol,
+        listing_event.kind,
+        listing_event.status AS event_status,
+        listing_event.valid AS event_valid,
+        listing_event.amount_sats::text AS event_amount_sats,
+        listing_event.data_bytes AS event_data_bytes,
+        listing_event.raw_payload AS event_raw_payload,
+        listing_event.payload AS listing_event_payload,
+        listing_event.block_height,
+        listing_event.block_index,
+        listing_event.op_return_vout AS protocol_vout,
+        listing_event.record_ordinal,
+        listing_tx.status AS transaction_status,
+        listing_tx.block_hash,
+        listing_tx.block_height AS transaction_block_height,
+        listing_tx.block_index AS transaction_block_index,
+        listing_tx.block_time,
+        listing_tx.fee_sats::text AS transaction_fee_sats,
+        listing_block.canonical AS canonical_block,
+        listing_anchor.address AS anchor_address,
+        listing_anchor.scriptpubkey AS anchor_scriptpubkey,
+        listing_anchor.value_sats::text AS anchor_value_sats,
+        listing_anchor.spent_by_txid AS output_spent_by_txid,
+        listing_record.protocol AS record_protocol,
+        listing_record.vout AS record_vout,
+        listing_record.output_index AS record_output_index,
+        listing_record.payload_text AS record_payload_text,
+        listing_record.data_bytes AS record_data_bytes,
+        definition.ticker,
+        definition.registry_address AS definition_registry_address,
+        (
+          SELECT count(*)::integer
+          FROM proof_indexer.events counted_listing_event
+          WHERE counted_listing_event.network = listing.network
+            AND counted_listing_event.txid = listing.listing_id
+            AND counted_listing_event.kind = 'token-listing'
+        ) AS listing_event_count,
+        (
+          SELECT count(*)::integer
+          FROM proof_indexer.events seal_event
+          JOIN proof_indexer.transactions seal_tx
+            ON seal_tx.network = seal_event.network
+           AND seal_tx.txid = seal_event.txid
+           AND seal_tx.status = 'confirmed'
+           AND seal_tx.block_height = seal_event.block_height
+           AND seal_tx.block_index = seal_event.block_index
+          JOIN proof_indexer.blocks seal_block
+            ON seal_block.network = seal_tx.network
+           AND seal_block.block_hash = seal_tx.block_hash
+           AND seal_block.height = seal_tx.block_height
+           AND seal_block.canonical = true
+          WHERE seal_event.network = listing.network
+            AND seal_event.valid = true
+            AND seal_event.status = 'confirmed'
+            AND seal_event.kind = 'token-listing-sealed'
+            AND lower(seal_event.payload->>'listingId') = listing.listing_id
+        ) AS valid_seal_count,
+        (
+          SELECT count(*)::integer
+          FROM proof_indexer.tx_outputs registry_output
+          WHERE registry_output.network = listing.network
+            AND registry_output.txid = listing.listing_id
+            AND registry_output.address = $3
+            AND registry_output.value_sats = $4
+        ) AS registry_payment_count,
+        (
+          SELECT COALESCE(sum(registry_output.value_sats), 0)::text
+          FROM proof_indexer.tx_outputs registry_output
+          WHERE registry_output.network = listing.network
+            AND registry_output.txid = listing.listing_id
+            AND registry_output.address = $3
+        ) AS registry_payment_sats,
+        (
+          SELECT min(registry_output.vout)
+          FROM proof_indexer.tx_outputs registry_output
+          WHERE registry_output.network = listing.network
+            AND registry_output.txid = listing.listing_id
+            AND registry_output.address = $3
+        ) AS registry_payment_vout,
+        (
+          SELECT count(*)::integer
+          FROM proof_indexer.tx_inputs spend_input
+          JOIN proof_indexer.transactions spend_tx
+            ON spend_tx.network = spend_input.network
+           AND spend_tx.txid = spend_input.txid
+           AND spend_tx.status = 'confirmed'
+          JOIN proof_indexer.blocks spend_block
+            ON spend_block.network = spend_tx.network
+           AND spend_block.block_hash = spend_tx.block_hash
+           AND spend_block.height = spend_tx.block_height
+           AND spend_block.canonical = true
+          WHERE spend_input.network = listing.network
+            AND spend_input.prev_txid = lower(COALESCE(
+              NULLIF(listing.sale_ticket_txid, ''),
+              listing.listing_id
+            ))
+            AND spend_input.prev_vout = listing.sale_ticket_vout
+        ) AS canonical_spend_count,
+        (
+          SELECT min(spend_tx.txid)
+          FROM proof_indexer.tx_inputs spend_input
+          JOIN proof_indexer.transactions spend_tx
+            ON spend_tx.network = spend_input.network
+           AND spend_tx.txid = spend_input.txid
+           AND spend_tx.status = 'confirmed'
+          JOIN proof_indexer.blocks spend_block
+            ON spend_block.network = spend_tx.network
+           AND spend_block.block_hash = spend_tx.block_hash
+           AND spend_block.height = spend_tx.block_height
+           AND spend_block.canonical = true
+          WHERE spend_input.network = listing.network
+            AND spend_input.prev_txid = lower(COALESCE(
+              NULLIF(listing.sale_ticket_txid, ''),
+              listing.listing_id
+            ))
+            AND spend_input.prev_vout = listing.sale_ticket_vout
+        ) AS canonical_spend_txid,
+        (
+          SELECT count(*)::integer
+          FROM proof_indexer.tx_inputs spend_input
+          LEFT JOIN proof_indexer.transactions spend_tx
+            ON spend_tx.network = spend_input.network
+           AND spend_tx.txid = spend_input.txid
+          LEFT JOIN proof_indexer.blocks spend_block
+            ON spend_block.network = spend_tx.network
+           AND spend_block.block_hash = spend_tx.block_hash
+           AND spend_block.height = spend_tx.block_height
+           AND spend_block.canonical = true
+          WHERE spend_input.network = listing.network
+            AND spend_input.prev_txid = lower(COALESCE(
+              NULLIF(listing.sale_ticket_txid, ''),
+              listing.listing_id
+            ))
+            AND spend_input.prev_vout = listing.sale_ticket_vout
+            AND (
+              spend_tx.status IS DISTINCT FROM 'confirmed'
+              OR spend_block.block_hash IS NULL
+            )
+        ) AS pending_ticket_spend_count,
+        (
+          SELECT count(*)::integer
+          FROM proof_indexer.events close_event
+          JOIN proof_indexer.transactions close_tx
+            ON close_tx.network = close_event.network
+           AND close_tx.txid = close_event.txid
+           AND close_tx.status = 'confirmed'
+           AND close_tx.block_height = close_event.block_height
+           AND close_tx.block_index = close_event.block_index
+          JOIN proof_indexer.blocks close_block
+            ON close_block.network = close_tx.network
+           AND close_block.block_hash = close_tx.block_hash
+           AND close_block.height = close_tx.block_height
+           AND close_block.canonical = true
+          WHERE close_event.network = listing.network
+            AND close_event.valid = true
+            AND close_event.status = 'confirmed'
+            AND close_event.kind =
+              ANY(ARRAY['token-listing-closed','token-sale']::text[])
+            AND lower(close_event.payload->>'listingId') = listing.listing_id
+        ) AS canonical_close_count,
+        (
+          SELECT min(close_event.txid)
+          FROM proof_indexer.events close_event
+          JOIN proof_indexer.transactions close_tx
+            ON close_tx.network = close_event.network
+           AND close_tx.txid = close_event.txid
+           AND close_tx.status = 'confirmed'
+           AND close_tx.block_height = close_event.block_height
+           AND close_tx.block_index = close_event.block_index
+          JOIN proof_indexer.blocks close_block
+            ON close_block.network = close_tx.network
+           AND close_block.block_hash = close_tx.block_hash
+           AND close_block.height = close_tx.block_height
+           AND close_block.canonical = true
+          WHERE close_event.network = listing.network
+            AND close_event.valid = true
+            AND close_event.status = 'confirmed'
+            AND close_event.kind =
+              ANY(ARRAY['token-listing-closed','token-sale']::text[])
+            AND lower(close_event.payload->>'listingId') = listing.listing_id
+        ) AS canonical_close_txid,
+        (
+          SELECT count(*)::integer
+          FROM proof_indexer.transactions v1_declaration_tx
+          JOIN proof_indexer.blocks v1_declaration_block
+            ON v1_declaration_block.network = v1_declaration_tx.network
+           AND v1_declaration_block.block_hash =
+             v1_declaration_tx.block_hash
+           AND v1_declaration_block.height =
+             v1_declaration_tx.block_height
+           AND v1_declaration_block.canonical = true
+          WHERE v1_declaration_tx.network = listing.network
+            AND v1_declaration_tx.txid = $6
+            AND v1_declaration_tx.status = 'confirmed'
+            AND v1_declaration_tx.block_height = $7
+            AND lower(v1_declaration_tx.block_hash) = $8
+            AND v1_declaration_tx.block_index = $9
+        ) AS v1_declaration_count
+      FROM proof_indexer.credit_listings listing
+      JOIN proof_indexer.transactions listing_tx
+        ON listing_tx.network = listing.network
+       AND listing_tx.txid = listing.listing_id
+       AND listing_tx.status = 'confirmed'
+       AND listing_tx.block_index IS NOT NULL
+      JOIN proof_indexer.blocks listing_block
+        ON listing_block.network = listing_tx.network
+       AND listing_block.block_hash = listing_tx.block_hash
+       AND listing_block.height = listing_tx.block_height
+       AND listing_block.canonical = true
+      JOIN proof_indexer.events listing_event
+        ON listing_event.network = listing.network
+       AND listing_event.txid = listing.listing_id
+       AND listing_event.kind = 'token-listing'
+       AND listing_event.status = 'confirmed'
+       AND listing_event.valid = true
+       AND listing_event.block_height = listing_tx.block_height
+       AND listing_event.block_index = listing_tx.block_index
+      JOIN proof_indexer.tx_outputs listing_anchor
+        ON listing_anchor.network = listing.network
+       AND listing_anchor.txid = lower(COALESCE(
+         NULLIF(listing.sale_ticket_txid, ''),
+         listing.listing_id
+       ))
+       AND listing_anchor.vout = listing.sale_ticket_vout
+       AND listing_anchor.value_sats = listing.sale_ticket_value_sats
+      JOIN proof_indexer.op_returns listing_record
+        ON listing_record.network = listing_event.network
+       AND listing_record.txid = listing_event.txid
+       AND listing_record.vout = listing_event.op_return_vout
+       AND listing_record.output_index = listing_event.record_ordinal
+      JOIN proof_indexer.credit_definitions definition
+        ON definition.network = listing.network
+       AND definition.token_id = listing.token_id
+      WHERE listing.network = $1
+        AND listing.listing_id = $2
+        AND lower(listing.token_id) = $5
+      ORDER BY listing_event.event_id
+      LIMIT 2
+    `,
+    [
+      network,
+      WORK_AMO_V5_PRE_UNIT_RELIC_LISTING_TXID,
+      WORK_AMO_V5_PRE_UNIT_RELIC_REGISTRY_ADDRESS,
+      WORK_AMO_V5_PRE_UNIT_RELIC_TICKET_VALUE_SATS,
+      WORK_TOKEN_ID,
+      WORK_AMO_V1_DECLARATION_TXID,
+      WORK_AMO_V5_V1_DECLARATION_HEIGHT,
+      WORK_AMO_V5_V1_DECLARATION_BLOCK_HASH,
+      WORK_AMO_V5_V1_DECLARATION_BLOCK_INDEX,
+    ],
+  );
+  const activation = await proofIndexWorkAmoV5Declaration(
+    network,
+    indexedThroughBlock,
+  );
+  return workAmoV5PreUnitRelicEvidenceFromRows(result.rows, activation);
+}
+
 export async function proofIndexWorkAmoCanonicalEvents(
   network,
   options = {},
@@ -2191,6 +2869,212 @@ export async function proofIndexWorkAmoBlockTransition(
     : null;
 }
 
+export function workAmoV5LegacyBootstrapCarryEvidenceFromRows(rows) {
+  const incomplete = (reason) => ({
+    complete: false,
+    model: WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MODEL,
+    reason,
+  });
+  const sourceRows = Array.isArray(rows) ? rows : [];
+  if (sourceRows.length !== 1) {
+    return incomplete("legacy-bootstrap-event-cardinality");
+  }
+  const row = sourceRows[0];
+  const payload =
+    row?.payload &&
+    typeof row.payload === "object" &&
+    !Array.isArray(row.payload)
+      ? row.payload
+      : null;
+  if (!payload) {
+    return incomplete("legacy-bootstrap-payload-missing");
+  }
+  const integer = (value, minimum = 0) => {
+    if (value === undefined || value === null || value === "") {
+      return null;
+    }
+    const parsed = Number(value);
+    return Number.isSafeInteger(parsed) && parsed >= minimum ? parsed : null;
+  };
+  const text = (value) => String(value ?? "").trim();
+  const lower = (value) => text(value).toLowerCase();
+  const exactReasons = (value) =>
+    Array.isArray(value) &&
+    value.length === 1 &&
+    text(value[0]) === WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_REASON_CODE;
+  const listingStatuses = Array.isArray(row?.listing_statuses)
+    ? row.listing_statuses.map(lower)
+    : [];
+  const authorizationVersions = [
+    lower(payload?.saleAuthorization?.version),
+    lower(payload?.listingAuthorization?.version),
+  ].filter(Boolean);
+  const eventId = integer(row?.event_id, 1);
+  const mutationSats = integer(row?.amount_sats);
+  const minerFeeSats = integer(row?.fee_sats);
+  const payloadMutationSats = integer(payload?.amountSats);
+  const payloadMinerFeeSats = integer(payload?.minerFeeSats);
+  const blockHeight = integer(row?.block_height, 1);
+  const blockIndex = integer(row?.block_index);
+  const protocolVout = integer(row?.protocol_vout);
+  const recordOrdinal = integer(row?.record_ordinal);
+  const transactionBlockHeight = integer(
+    row?.transaction_block_height,
+    1,
+  );
+  const transactionBlockIndex = integer(row?.transaction_block_index);
+  const listingCount = integer(row?.listing_count);
+  const activeListingCount = integer(row?.active_listing_count);
+  const txid = lower(row?.txid);
+  const blockHash = lower(row?.block_hash);
+  if (
+    lower(row?.network) !== "livenet" ||
+    txid !== WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_TXID ||
+    blockHash !== WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_BLOCK_HASH ||
+    lower(row?.protocol) !== "pwt1" ||
+    lower(row?.kind) !== "token-listing" ||
+    lower(row?.event_status ?? row?.status) !== "confirmed" ||
+    lower(row?.transaction_status) !== "confirmed" ||
+    row?.valid !== false ||
+    row?.canonical_block !== true ||
+    eventId === null ||
+    blockHeight !== WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_BLOCK_HEIGHT ||
+    blockIndex !== WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_BLOCK_INDEX ||
+    protocolVout !== WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_PROTOCOL_VOUT ||
+    recordOrdinal !== WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_RECORD_ORDINAL ||
+    transactionBlockHeight !== blockHeight ||
+    transactionBlockIndex !== blockIndex ||
+    mutationSats !== WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MUTATION_SATS ||
+    minerFeeSats !== WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MINER_FEE_SATS ||
+    !exactReasons(row?.validation_errors) ||
+    listingCount !== 1 ||
+    activeListingCount !== 0 ||
+    listingStatuses.length !== 1 ||
+    listingStatuses[0] !== "dropped" ||
+    lower(payload?.txid) !== txid ||
+    lower(payload?.protocol) !== "pwt1" ||
+    lower(payload?.kind) !== "token-listing" ||
+    lower(payload?.network) !== "livenet" ||
+    lower(payload?.status) !== "confirmed" ||
+    payload?.confirmed !== true ||
+    payload?.valid !== false ||
+    payload?.relic !== false ||
+    payload?.refundEligible !== false ||
+    text(payload?.reasonCode) !==
+      WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_REASON_CODE ||
+    !exactReasons(payload?.validationErrors) ||
+    lower(payload?.tokenId) !== WORK_TOKEN_ID ||
+    lower(payload?.listingId) !== txid ||
+    lower(payload?.saleTicketTxid) !== txid ||
+    lower(payload?.blockHash) !== blockHash ||
+    integer(payload?.blockHeight, 1) !== blockHeight ||
+    integer(payload?.blockIndex) !== blockIndex ||
+    integer(payload?.protocolVout) !== protocolVout ||
+    integer(payload?._powEventIndex) !== recordOrdinal ||
+    payloadMutationSats !== mutationSats ||
+    payloadMinerFeeSats !== minerFeeSats ||
+    authorizationVersions.length !== 1 ||
+    authorizationVersions[0] !== "pwt-sale-v3"
+  ) {
+    return incomplete("legacy-bootstrap-evidence-mismatch");
+  }
+  const creditFixedSats = mutationSats + minerFeeSats;
+  const growthValueSats = mutationSats * 5;
+  return {
+    activeListingCount,
+    blockHash,
+    blockHeight,
+    blockIndex,
+    complete: true,
+    creditFixedQ8: (BigInt(creditFixedSats) * 100_000_000n).toString(),
+    creditFixedSats,
+    eventId,
+    growthValueQ8: (BigInt(growthValueSats) * 100_000_000n).toString(),
+    growthValueSats,
+    listingCount,
+    marketplaceMutationFeeSats: mutationSats,
+    minerFeeSats,
+    model: WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MODEL,
+    protocolVout,
+    reasonCode: WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_REASON_CODE,
+    recordOrdinal,
+    txid,
+  };
+}
+
+export async function proofIndexWorkAmoLegacyBootstrapCarryEvidence(
+  network,
+) {
+  const pool = proofIndexPool();
+  if (!pool) {
+    return {
+      complete: false,
+      model: WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MODEL,
+      reason: "database-not-configured",
+    };
+  }
+  const result = await pool.query(
+    `
+      SELECT
+        event_row.event_id,
+        event_row.network,
+        event_row.txid,
+        event_row.protocol,
+        event_row.kind,
+        event_row.status AS event_status,
+        event_row.valid,
+        event_row.validation_errors,
+        event_row.block_height,
+        event_row.block_index,
+        event_row.op_return_vout AS protocol_vout,
+        event_row.record_ordinal,
+        event_row.amount_sats,
+        event_row.payload,
+        event_tx.status AS transaction_status,
+        event_tx.block_hash,
+        event_tx.block_height AS transaction_block_height,
+        event_tx.block_index AS transaction_block_index,
+        event_tx.fee_sats,
+        event_block.canonical AS canonical_block,
+        (
+          SELECT count(*)::integer
+          FROM proof_indexer.credit_listings listing
+          WHERE listing.network = event_row.network
+            AND listing.listing_id = event_row.txid
+        ) AS listing_count,
+        (
+          SELECT count(*)::integer
+          FROM proof_indexer.credit_listings listing
+          WHERE listing.network = event_row.network
+            AND listing.listing_id = event_row.txid
+            AND listing.status IN ('active', 'sealing')
+        ) AS active_listing_count,
+        (
+          SELECT COALESCE(
+            jsonb_agg(listing.status ORDER BY listing.status),
+            '[]'::jsonb
+          )
+          FROM proof_indexer.credit_listings listing
+          WHERE listing.network = event_row.network
+            AND listing.listing_id = event_row.txid
+        ) AS listing_statuses
+      FROM proof_indexer.events event_row
+      JOIN proof_indexer.transactions event_tx
+        ON event_tx.network = event_row.network
+       AND event_tx.txid = event_row.txid
+      JOIN proof_indexer.blocks event_block
+        ON event_block.network = event_tx.network
+       AND event_block.block_hash = event_tx.block_hash
+       AND event_block.height = event_tx.block_height
+      WHERE event_row.network = $1
+        AND event_row.txid = $2
+      ORDER BY event_row.event_id
+    `,
+    [network, WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_TXID],
+  );
+  return workAmoV5LegacyBootstrapCarryEvidenceFromRows(result.rows);
+}
+
 export async function proofIndexWorkAmoRelationalTokenStateEvidence(
   network,
   expectedTokenStateCommitment = null,
@@ -2662,6 +3546,7 @@ export async function proofIndexWorkAmoReplayReadiness(
       listingReady: false,
       migrationReady: false,
       positionsReady: false,
+      preUnitRelicReady: false,
       quoteReady: false,
       ready: false,
       reasons: ["database-not-configured"],
@@ -2707,10 +3592,10 @@ export async function proofIndexWorkAmoReplayReadiness(
     requestedThroughHeight === canonicalTip &&
     requestedThroughBlockHash === canonicalTipBlockHash;
   const throughHeight = requestedThroughHeight;
-  const declaration = await proofIndexWorkAmoV5Declaration(
-    network,
-    throughHeight,
-  );
+  const [declaration, preUnitRelicEvidence] = await Promise.all([
+    proofIndexWorkAmoV5Declaration(network, throughHeight),
+    proofIndexWorkAmoV5PreUnitRelicEvidence(network, throughHeight),
+  ]);
   const [
     auditResult,
     migrationResult,
@@ -3724,6 +4609,9 @@ export async function proofIndexWorkAmoReplayReadiness(
     Number(audit.post_activation_v4_active ?? 0) === 0 &&
     Number(audit.post_activation_v4_actions ?? 0) === 0;
   const frozenTermsReady = Number(audit.missing_frozen_terms ?? 0) === 0;
+  const preUnitRelicReady = workAmoV5PreUnitRelicEvidenceIsExact(
+    preUnitRelicEvidence,
+  );
   const quoteReady = Boolean(quoteHead);
   const indexReady =
     declarationReady &&
@@ -3731,6 +4619,7 @@ export async function proofIndexWorkAmoReplayReadiness(
     migrationReady &&
     positionsReady &&
     legacyStateReady &&
+    preUnitRelicReady &&
     frozenTermsReady;
   const listingReady = indexReady && quoteReady;
   if (!declarationReady) reasons.push("declaration-not-ready");
@@ -3741,6 +4630,7 @@ export async function proofIndexWorkAmoReplayReadiness(
     reasons.push("market-authorization-conflict");
   }
   if (!legacyStateReady) reasons.push("legacy-market-state-active");
+  if (!preUnitRelicReady) reasons.push("pre-unit-relic-evidence-incomplete");
   if (!frozenTermsReady) reasons.push("frozen-listing-terms-incomplete");
   return {
     activationHeight: WORK_AMO_V5_ACTIVATION_HEIGHT,
@@ -3759,6 +4649,8 @@ export async function proofIndexWorkAmoReplayReadiness(
     missingFrozenTerms: Number(audit.missing_frozen_terms ?? 0),
     missingPositions: Number(audit.missing_positions ?? 0),
     positionsReady,
+    preUnitRelicEvidence,
+    preUnitRelicReady,
     preActivationV4Actions: Number(
       audit.pre_activation_v4_actions ?? 0,
     ),
@@ -3801,6 +4693,45 @@ async function payloadWithVerifiedWorkMarketV4Activation(
   );
   return activation
     ? { ...untrustedPayload, workMarketV4Activation: activation }
+    : untrustedPayload;
+}
+
+async function payloadWithVerifiedWorkAmoV5Activation(network, payload) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return payload;
+  }
+  const {
+    workAmoV5Activation: ignoredActivation,
+    workAmoV5PreUnitRelicEvidence: ignoredRelicEvidence,
+    workAmoV5ProjectionReady: ignoredProjectionReady,
+    ...untrustedPayload
+  } = payload;
+  void ignoredActivation;
+  void ignoredRelicEvidence;
+  void ignoredProjectionReady;
+  const indexedThroughBlock = safeBlockHeight(
+    untrustedPayload.indexedThroughBlock ??
+      untrustedPayload.stats?.indexedThroughBlock,
+  );
+  if (
+    network !== "livenet" ||
+    indexedThroughBlock < WORK_AMO_V5_ACTIVATION_HEIGHT
+  ) {
+    return untrustedPayload;
+  }
+  const [activation, relicEvidence] = await Promise.all([
+    proofIndexWorkAmoV5Declaration(network, indexedThroughBlock),
+    proofIndexWorkAmoV5PreUnitRelicEvidence(
+      network,
+      indexedThroughBlock,
+    ),
+  ]);
+  return workAmoV5CutoverActivationIsExact(activation)
+    ? {
+        ...untrustedPayload,
+        workAmoV5Activation: activation,
+        workAmoV5PreUnitRelicEvidence: relicEvidence,
+      }
     : untrustedPayload;
 }
 
@@ -5551,7 +6482,47 @@ function tokenMintFromEventPayload(payload, row = {}) {
   };
 }
 
-function tokenHistoryItemFromMarketEventPayload(payload, safeKind, row = {}) {
+function tokenHistoryItemFromMarketEventPayload(
+  payload,
+  safeKind,
+  row = {},
+  amoV5RelicEvidence = null,
+) {
+  if (
+    row?.work_amo_v5_pre_unit_relic_projection === true &&
+    workAmoV5PreUnitRelicEvidenceIsExact(amoV5RelicEvidence) &&
+    amoV5RelicEvidence.disposition === "relic"
+  ) {
+    const closedListing = {
+      ...amoV5RelicEvidence.listing,
+      closedAt: amoV5RelicEvidence.activationBlockTime,
+      closedConfirmed: true,
+      closedTxid: WORK_AMO_V5_DECLARATION_TXID,
+      confirmed: true,
+      disabledAtBlockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT,
+      disabledByTxid: WORK_AMO_V5_DECLARATION_TXID,
+      disabledReason: WORK_AMO_V5_PRE_UNIT_RELIC_DISABLED_REASON,
+      kind: "token-listing-closed",
+      originalStatus: amoV5RelicEvidence.listing.status ?? "active",
+      refundEligible: false,
+      relic: true,
+      status: "disabled",
+      txid: WORK_AMO_V5_DECLARATION_TXID,
+    };
+    if (safeKind === "closedListings") {
+      return closedListing;
+    }
+    if (safeKind === "market-log") {
+      return {
+        closedListing,
+        createdAt: closedListing.closedAt,
+        kind: "closed-listing",
+        txid: closedListing.closedTxid,
+      };
+    }
+    return null;
+  }
+
   if (payload?.kind === "token-listing" || payload?.kind === "token-listings") {
     const listing = tokenListingFromEventPayload(payload);
     if (!activeTokenListingHistoryItem(listing)) {
@@ -5687,9 +6658,18 @@ function tokenHistoryMarketEventKinds(safeKind) {
   return [];
 }
 
-function tokenHistoryCanonicalMarketEventsSql(safeKind, whereClause) {
+function tokenHistoryCanonicalMarketEventsSql(
+  safeKind,
+  whereClause,
+  {
+    amoV5RelicClosedAtSql = "NULL",
+    amoV5RelicClosedTxidSql = "''",
+    amoV5RelicPredicateSql = "false",
+  } = {},
+) {
   const listingKinds =
     "ARRAY['token-listings','token-listing','token-listing-sealed']::text[]";
+  const amoV5Relic = `(${amoV5RelicPredicateSql})`;
   const listingId = `lower(COALESCE(
     NULLIF(e.payload->>'listingId', ''),
     NULLIF(cl_event.listing_id, ''),
@@ -5705,7 +6685,7 @@ function tokenHistoryCanonicalMarketEventsSql(safeKind, whereClause) {
         e.record_ordinal::text
     ELSE 'sale:' || lower(e.txid)
   END`;
-  const canonicalKey =
+  const ordinaryCanonicalKey =
     safeKind === "listings"
       ? `'listing:' || ${listingId}`
       : safeKind === "sales"
@@ -5721,17 +6701,25 @@ function tokenHistoryCanonicalMarketEventsSql(safeKind, whereClause) {
                 THEN 'closed:' || ${listingId} || ':' || lower(e.txid)
               ELSE e.kind || ':' || e.event_id::text
             END`;
+  const canonicalKey = `CASE
+    WHEN ${amoV5Relic}
+      THEN 'closed:' || ${listingId} || ':' || ${amoV5RelicClosedTxidSql}
+    ELSE ${ordinaryCanonicalKey}
+  END`;
   const itemTxid = `CASE
+    WHEN ${amoV5Relic} THEN ${amoV5RelicClosedTxidSql}
     WHEN e.kind = ANY(${listingKinds}) THEN ${listingId}
     ELSE lower(e.txid)
   END`;
   const itemKindRank = `CASE
+    WHEN ${amoV5Relic} THEN 1
     WHEN e.kind = 'token-sale' THEN 0
     WHEN e.kind = 'token-listing-closed' THEN 1
     WHEN e.kind = ANY(${listingKinds}) THEN 2
     ELSE 3
   END`;
   const projectionRank = `CASE
+    WHEN ${amoV5Relic} THEN 1
     WHEN e.kind = ANY(ARRAY['token-listings','token-listing']::text[]) THEN 0
     WHEN e.kind = 'token-listing-sealed' THEN 1
     WHEN e.kind = 'token-listing-closed' THEN 1
@@ -5746,10 +6734,22 @@ function tokenHistoryCanonicalMarketEventsSql(safeKind, whereClause) {
         e.protocol,
         e.kind,
         e.status,
-        e.event_time,
-        e.block_time,
-        e.created_at,
-        e.block_height,
+        CASE
+          WHEN ${amoV5Relic} THEN ${amoV5RelicClosedAtSql}::timestamptz
+          ELSE e.event_time
+        END AS event_time,
+        CASE
+          WHEN ${amoV5Relic} THEN ${amoV5RelicClosedAtSql}::timestamptz
+          ELSE e.block_time
+        END AS block_time,
+        CASE
+          WHEN ${amoV5Relic} THEN ${amoV5RelicClosedAtSql}::timestamptz
+          ELSE e.created_at
+        END AS created_at,
+        CASE
+          WHEN ${amoV5Relic} THEN ${WORK_AMO_V5_ACTIVATION_HEIGHT}
+          ELSE e.block_height
+        END AS block_height,
         e.block_index,
         e.op_return_vout,
         e.record_ordinal,
@@ -5773,6 +6773,7 @@ function tokenHistoryCanonicalMarketEventsSql(safeKind, whereClause) {
         canonical_seal_event.seal_event_payload,
         canonical_seal_event.seal_event_status,
         canonical_seal_event.seal_event_txid,
+        ${amoV5Relic} AS work_amo_v5_pre_unit_relic_projection,
         (e.status = 'confirmed') AS history_item_confirmed,
         ${itemTxid} AS history_item_txid,
         ${itemKindRank} AS history_item_kind_rank,
@@ -5780,7 +6781,15 @@ function tokenHistoryCanonicalMarketEventsSql(safeKind, whereClause) {
           PARTITION BY ${canonicalKey}
           ORDER BY
             ${projectionRank} ASC,
-            COALESCE(e.event_time, e.block_time, e.created_at) DESC,
+            COALESCE(
+              CASE
+                WHEN ${amoV5Relic}
+                  THEN ${amoV5RelicClosedAtSql}::timestamptz
+                ELSE e.event_time
+              END,
+              e.block_time,
+              e.created_at
+            ) DESC,
             (e.status = 'confirmed') DESC,
             e.txid DESC,
             e.event_id DESC
@@ -9114,6 +10123,26 @@ export async function proofIndexTokenMarketHistoryOverlayPayload(
     network,
     snapshotHeight,
   );
+  const workScopeIncludesWork =
+    !scope ||
+    scope === "all" ||
+    scope === "work" ||
+    scope === WORK_TOKEN_ID;
+  const amoV5RelicBoundaryReached =
+    network === "livenet" &&
+    (snapshotHeight === 0 ||
+      snapshotHeight >= WORK_AMO_V5_ACTIVATION_HEIGHT) &&
+    workScopeIncludesWork &&
+    ["listings", "closedListings", "market-log"].includes(safeKind);
+  const amoV5RelicEvidence = amoV5RelicBoundaryReached
+    ? await proofIndexWorkAmoV5PreUnitRelicEvidence(
+        network,
+        snapshotHeight,
+      )
+    : null;
+  const amoV5RelicProjectable =
+    workAmoV5PreUnitRelicEvidenceIsExact(amoV5RelicEvidence) &&
+    amoV5RelicEvidence.disposition === "relic";
   const currentWorkMarketAuthorizationVersion =
     network === "livenet" &&
       (snapshotHeight === 0 ||
@@ -9122,13 +10151,52 @@ export async function proofIndexTokenMarketHistoryOverlayPayload(
       : workMarketV4Activation
         ? WORK_MARKET_V4_AUTH_VERSION
         : WORK_MARKET_V2_AUTH_VERSION;
+  const params = [network, eventKinds];
+  let amoV5RelicPredicateSql = "false";
+  let amoV5RelicClosedTxidSql = "''";
+  let amoV5RelicClosedAtSql = "NULL";
+  if (amoV5RelicProjectable) {
+    params.push(
+      WORK_AMO_V5_PRE_UNIT_RELIC_LISTING_TXID,
+      amoV5RelicEvidence.eventId,
+      WORK_AMO_V5_DECLARATION_TXID,
+      amoV5RelicEvidence.activationBlockTime,
+    );
+    const listingIdParam = `$${params.length - 3}`;
+    const eventIdParam = `$${params.length - 2}`;
+    amoV5RelicClosedTxidSql = `$${params.length - 1}`;
+    amoV5RelicClosedAtSql = `$${params.length}`;
+    amoV5RelicPredicateSql = `(
+      e.txid = ${listingIdParam}
+      AND e.event_id = ${eventIdParam}
+      AND e.protocol = 'pwt1'
+      AND e.kind = 'token-listing'
+      AND e.status = 'confirmed'
+      AND e.valid = true
+      AND e.block_height = ${WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_HEIGHT}
+      AND e.block_index = ${WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_INDEX}
+      AND e.op_return_vout = ${WORK_AMO_V5_PRE_UNIT_RELIC_PROTOCOL_VOUT}
+      AND e.record_ordinal = ${WORK_AMO_V5_PRE_UNIT_RELIC_RECORD_ORDINAL}
+    )`;
+  }
+  const eventKindCondition =
+    safeKind === "closedListings" && amoV5RelicProjectable
+      ? `(e.kind = ANY($2::text[]) OR ${amoV5RelicPredicateSql})`
+      : "e.kind = ANY($2::text[])";
   const conditions = [
     "e.network = $1",
     "e.valid = true",
     "e.status IN ('confirmed', 'pending')",
-    "e.kind = ANY($2::text[])",
+    eventKindCondition,
   ];
-  const params = [network, eventKinds];
+  if (
+    amoV5RelicBoundaryReached &&
+    safeKind === "market-log" &&
+    !amoV5RelicProjectable
+  ) {
+    params.push(WORK_AMO_V5_PRE_UNIT_RELIC_LISTING_TXID);
+    conditions.push(`e.txid <> $${params.length}`);
+  }
 
   if (scope && scope !== "all") {
     params.push(scope);
@@ -9175,6 +10243,14 @@ export async function proofIndexTokenMarketHistoryOverlayPayload(
     conditions.push(
       `(
         e.txid = ANY(${param}::text[])
+        ${
+          amoV5RelicProjectable
+            ? `OR (
+          ${amoV5RelicPredicateSql}
+          AND ${amoV5RelicClosedTxidSql} = ANY(${param}::text[])
+        )`
+            : ""
+        }
         ${payloadClauses.length > 0 ? `OR ${payloadClauses.join("\n        OR ")}` : ""}
         OR cl_event.listing_id = ANY(${param}::text[])
         OR cl_event.close_txid = ANY(${param}::text[])
@@ -9272,9 +10348,35 @@ export async function proofIndexTokenMarketHistoryOverlayPayload(
   const canonicalMarketEventsSql = tokenHistoryCanonicalMarketEventsSql(
     safeKind,
     whereClause,
+    {
+      amoV5RelicClosedAtSql,
+      amoV5RelicClosedTxidSql,
+      amoV5RelicPredicateSql,
+    },
   );
+  const exactAmoV5CutoverQuery =
+    amoV5RelicBoundaryReached &&
+    pureExactTxidQuery &&
+    txidNeedles.some((txid) =>
+      [
+        WORK_AMO_V5_PRE_UNIT_RELIC_LISTING_TXID,
+        WORK_AMO_V5_DECLARATION_TXID,
+      ].includes(txid),
+    );
+  const exactAmoV5CutoverDisposition =
+    exactAmoV5CutoverQuery &&
+    (
+      !amoV5RelicProjectable ||
+      safeKind === "listings"
+    )
+      ? amoV5RelicProjectable
+        ? "terminal-cutover-closed"
+        : "terminal-cutover-withheld"
+      : "";
   const exactQueryDispositionSql = exactQueryTxidsParam
     ? `CASE
+        WHEN ${exactAmoV5CutoverDisposition ? "true" : "false"}
+        THEN '${exactAmoV5CutoverDisposition}'::text
         WHEN (
           SELECT
             count(*) = cardinality(${exactQueryTxidsParam}::text[])
@@ -9334,7 +10436,7 @@ export async function proofIndexTokenMarketHistoryOverlayPayload(
       : "";
   if (
     totalCount === 0 &&
-    queryDisposition !== "terminal-nonmarket" &&
+    !queryDisposition.startsWith("terminal-") &&
     options.authoritativeEmpty !== true
   ) {
     return null;
@@ -9346,6 +10448,7 @@ export async function proofIndexTokenMarketHistoryOverlayPayload(
         tokenMarketEventRowPayload(row, network),
         safeKind,
         row,
+        amoV5RelicEvidence,
       ),
     )
     .filter(Boolean)
@@ -10666,7 +11769,7 @@ export async function proofIndexTokenHistoryPayload(
   // searches already take the summary-pinned branch above; the default page
   // must not disappear merely because embedded history blobs are retired.
   if (
-    ["listings", "market-log"].includes(eligibility.kind) &&
+    ["listings", "closedListings", "market-log"].includes(eligibility.kind) &&
     !eligibility.pagination.snapshotId &&
     exactMarketTxidNeedles.length === 0
   ) {
@@ -14688,14 +15791,17 @@ export async function proofIndexTokenPayload(network, tokenScope, searchParams) 
   }
   const currentTablePayload = () =>
     proofIndexTokenPayloadFromCurrentTables(pool, network, eligibility.scope);
-  const cutoverPayload = async (payload) =>
-    applyWorkMarketV2CutoverToTokenState(
-      await payloadWithVerifiedWorkMarketV4Activation(
-        pool,
+  const cutoverPayload = async (payload) => {
+    const legacyCutoverPayload = applyWorkMarketV2CutoverToTokenState(
+      await payloadWithVerifiedWorkMarketV4Activation(pool, network, payload),
+    );
+    return applyWorkAmoV5CutoverToTokenState(
+      await payloadWithVerifiedWorkAmoV5Activation(
         network,
-        payload,
+        legacyCutoverPayload,
       ),
     );
+  };
 
   // Stable, unscoped token-state reads are live relational projections. The
   // block scanner updates events and balances atomically, while embedded JSON

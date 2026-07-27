@@ -97,6 +97,16 @@ import {
   WORK_AMO_V5_DECLARATION_TXID,
   WORK_AMO_V5_DECLARATION_REGISTRY_PAYMENT_VOUT,
   WORK_AMO_V5_DECLARATION_WORK_PROTOCOL_VOUT,
+  WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_BLOCK_HASH,
+  WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_BLOCK_HEIGHT,
+  WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_BLOCK_INDEX,
+  WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MINER_FEE_SATS,
+  WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MODEL,
+  WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MUTATION_SATS,
+  WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_PROTOCOL_VOUT,
+  WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_REASON_CODE,
+  WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_RECORD_ORDINAL,
+  WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_TXID,
   WORK_AMO_V5_MAX_QUOTE_AGE_BLOCKS,
   WORK_AMO_V5_NETWORK_ACCUMULATOR_MODEL,
   WORK_AMO_V5_PAYLOAD_COMMITMENT_MODEL,
@@ -206,6 +216,7 @@ import {
   proofIndexWalletTokenOverlayPayload,
   proofIndexWorkAmoBlockTransition,
   proofIndexWorkAmoGenericTokenStatePreimage,
+  proofIndexWorkAmoLegacyBootstrapCarryEvidence,
   proofIndexWorkAmoRelationalTokenStateEvidence,
   proofIndexWorkAmoReplayReadiness,
   proofIndexWorkAmoV5Declaration,
@@ -4771,6 +4782,7 @@ function tokenHistoryPageWithCanonicalWorkTransferValues(
     ...mergeTokenHistoryPageWithOverlay(page, overlayPage, pagination, {
       addOverlayItems: false,
     }),
+    indexedThroughBlock: proofIndexPayloadIndexedThroughBlock(summary),
     indexedThroughBlockHash: summary.indexedThroughBlockHash,
     snapshotId: summary.snapshotId,
     workTransferValueProjection: {
@@ -4784,6 +4796,14 @@ function tokenHistoryPageWithCanonicalWorkTransferValues(
   };
 }
 
+function isTerminalTokenMarketHistoryPage(page) {
+  return (
+    String(page?.queryDisposition ?? "").startsWith("terminal-") &&
+    Number(page?.totalCount ?? 0) === 0 &&
+    (page?.items ?? []).length === 0
+  );
+}
+
 async function tokenHistoryPageWithCanonicalCreditValueOverlay(
   page,
   network,
@@ -4792,9 +4812,7 @@ async function tokenHistoryPageWithCanonicalCreditValueOverlay(
   searchParams,
 ) {
   if (
-    page?.queryDisposition === "terminal-nonmarket" &&
-    Number(page.totalCount ?? 0) === 0 &&
-    (page.items ?? []).length === 0
+    isTerminalTokenMarketHistoryPage(page)
   ) {
     return page;
   }
@@ -5988,13 +6006,23 @@ async function workAmoV5Metadata(
     const declarationIndex = blockTxidIndex?.get(
       WORK_AMO_V5_DECLARATION_TXID,
     );
-    const candidateEvidence = workAmoV5DeclarationEvidenceFromTransaction(
-      declarationTx,
-      declarationIndex,
+    const canonicalDeclarationPosition =
       canonicalBlockHash === WORK_AMO_V5_DECLARATION_BLOCK_HASH &&
         declarationBlockHash === WORK_AMO_V5_DECLARATION_BLOCK_HASH &&
-        declarationIndex === WORK_AMO_V5_DECLARATION_BLOCK_INDEX,
-    );
+        declarationIndex === WORK_AMO_V5_DECLARATION_BLOCK_INDEX;
+    const candidateEvidence = {
+      ...workAmoV5DeclarationEvidenceFromTransaction(
+        declarationTx,
+        declarationIndex,
+        canonicalDeclarationPosition,
+      ),
+      // Core getrawtransaction proves the block hash and confirmations but does
+      // not expose a block height. Bind the pinned height only after getblockhash
+      // and the canonical block transaction array prove the complete position.
+      ...(canonicalDeclarationPosition
+        ? { blockHeight: WORK_AMO_V5_DECLARATION_HEIGHT }
+        : {}),
+    };
     evidence =
       canonicalBlockHash === WORK_AMO_V5_DECLARATION_BLOCK_HASH &&
       validateWorkAmoV5DeclarationEvidence(candidateEvidence).valid
@@ -29892,6 +29920,7 @@ function ledgerPayloadHasCurrentChecks(payload) {
     checkNames.has("network-values-finite") &&
     checkNames.has("marketplace-mutation-fees-counted") &&
     checkNames.has("marketplace-value-includes-mutation-fees") &&
+    checkNames.has("work-amo-v5-legacy-bootstrap-carry-proven") &&
     checkNames.has("credit-frozen-value-includes-event-components") &&
     checkNames.has("credit-live-value-is-active-network-value") &&
     checkNames.has("computer-event-flow-excludes-marketplace") &&
@@ -31654,10 +31683,6 @@ function exactCreditFrozenValueComponentsAgree(actualValue) {
   const fixedValueQ8 = canonicalIntegerText(source.creditFixedQ8, {
     allowZero: true,
   });
-  if (eventValueQ8 && movementValueQ8 && fixedValueQ8) {
-    return BigInt(eventValueQ8) ===
-      BigInt(movementValueQ8) + BigInt(fixedValueQ8);
-  }
   const flowFields = [
     "creditProofPaymentFlowSats",
     "creditRegistryMutationFlowSats",
@@ -31665,17 +31690,73 @@ function exactCreditFrozenValueComponentsAgree(actualValue) {
     "creditSalePaymentFlowSats",
     "creditMinerFeeFlowSats",
   ];
+  const presentFlows = flowFields.filter(
+    (field) =>
+      source[field] !== undefined &&
+      source[field] !== null &&
+      source[field] !== "",
+  );
   const flows = flowFields.map((field) =>
     canonicalIntegerText(source[field], { allowZero: true }),
   );
-  if (!eventValueQ8 || !movementValueQ8 || flows.some((value) => !value)) {
+  const legacyCreditFixedQ8Present =
+    source.legacyBootstrapCreditFixedQ8 !== undefined &&
+    source.legacyBootstrapCreditFixedQ8 !== null &&
+    source.legacyBootstrapCreditFixedQ8 !== "";
+  const legacyCreditFixedSatsPresent =
+    source.legacyBootstrapCreditFixedSats !== undefined &&
+    source.legacyBootstrapCreditFixedSats !== null &&
+    source.legacyBootstrapCreditFixedSats !== "";
+  if (
+    legacyCreditFixedQ8Present !== legacyCreditFixedSatsPresent ||
+    (presentFlows.length > 0 && presentFlows.length !== flowFields.length)
+  ) {
     return false;
   }
-  const fixedFlowQ8 = flows.reduce(
-    (total, value) => total + BigInt(value) * VALUE_Q8_SCALE,
-    0n,
+  const legacyCreditFixedQ8 = canonicalIntegerText(
+    legacyCreditFixedQ8Present
+      ? source.legacyBootstrapCreditFixedQ8
+      : "0",
+    { allowZero: true },
   );
-  return BigInt(eventValueQ8) === BigInt(movementValueQ8) + fixedFlowQ8;
+  const legacyCreditFixedSats = canonicalIntegerText(
+    legacyCreditFixedSatsPresent
+      ? source.legacyBootstrapCreditFixedSats
+      : "0",
+    { allowZero: true },
+  );
+  if (
+    !eventValueQ8 ||
+    !movementValueQ8 ||
+    !legacyCreditFixedQ8 ||
+    !legacyCreditFixedSats ||
+    BigInt(legacyCreditFixedQ8) !==
+      BigInt(legacyCreditFixedSats) * VALUE_Q8_SCALE
+  ) {
+    return false;
+  }
+  const expectedFixedQ8 =
+    presentFlows.length === flowFields.length &&
+    flows.every((value) => value !== null)
+      ? flows.reduce(
+          (total, value) =>
+            total + BigInt(value) * VALUE_Q8_SCALE,
+          BigInt(legacyCreditFixedQ8),
+        )
+      : null;
+  if (fixedValueQ8) {
+    return (
+      BigInt(eventValueQ8) ===
+        BigInt(movementValueQ8) + BigInt(fixedValueQ8) &&
+      (expectedFixedQ8 === null ||
+        BigInt(fixedValueQ8) === expectedFixedQ8)
+    );
+  }
+  return (
+    expectedFixedQ8 !== null &&
+    BigInt(eventValueQ8) ===
+      BigInt(movementValueQ8) + expectedFixedQ8
+  );
 }
 
 function ledgerSnapshotChecks({
@@ -31918,6 +31999,13 @@ function ledgerSnapshotChecks({
   const creditMinerFeeFlowSats = numericValue(
     workFloor?.actualValue?.creditMinerFeeFlowSats,
   );
+  const legacyBootstrapCreditFixedSats = numericValue(
+    workFloor?.actualValue?.legacyBootstrapCreditFixedSats,
+  );
+  const legacyBootstrapCreditFixedQ8 =
+    workFloor?.actualValue?.legacyBootstrapCreditFixedQ8;
+  const legacyBootstrapEvidence =
+    workFloor?.actualValue?.workAmoV5LegacyBootstrap;
   const creditNetworkValueSats = numericValue(
     workFloor?.actualValue?.creditNetworkValueSats,
   );
@@ -31970,6 +32058,19 @@ function ledgerSnapshotChecks({
     },
   );
   addCheck(
+    "work-amo-v5-legacy-bootstrap-carry-proven",
+    network !== "livenet" ||
+      indexedThroughBlock < WORK_AMO_V5_ACTIVATION_HEIGHT ||
+      workAmoV5LegacyBootstrapEvidenceMatches(
+        legacyBootstrapEvidence,
+      ),
+    {
+      evidence: legacyBootstrapEvidence ?? null,
+      indexedThroughBlock,
+      model: WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MODEL,
+    },
+  );
+  addCheck(
     "marketplace-value-includes-mutation-fees",
     numbersAgree(marketplaceFlowSats, expectedMarketplaceFlowSats) &&
       numbersAgree(marketplaceSats, expectedMarketplaceSats),
@@ -32000,7 +32101,8 @@ function ledgerSnapshotChecks({
             creditRegistryMutationFlowSats +
             creditMarketplaceMutationFlowSats +
             creditSalePaymentFlowSats +
-            creditMinerFeeFlowSats,
+            creditMinerFeeFlowSats +
+            legacyBootstrapCreditFixedSats,
           // Historical snapshots predate exact aggregate Q8 fields. Keep the
           // old sub-proof fallback only for those stored payloads.
           0.01,
@@ -32014,6 +32116,8 @@ function ledgerSnapshotChecks({
       creditMovementFrozenValueSats,
       creditMovementFrozenValueQ8:
         workFloor?.actualValue?.creditMovementFrozenValueQ8,
+      legacyBootstrapCreditFixedQ8,
+      legacyBootstrapCreditFixedSats,
       creditProofPaymentFlowSats,
       creditRegistryMutationFlowSats,
       creditSalePaymentFlowSats,
@@ -39108,7 +39212,7 @@ async function tokenHistoryPayload(network, tokenScope, kind, searchParams, fres
       indexedMarketPage &&
       (Number(indexedMarketPage.totalCount ?? 0) > 0 ||
         (indexedMarketPage.items ?? []).length > 0 ||
-        indexedMarketPage.queryDisposition === "terminal-nonmarket")
+        isTerminalTokenMarketHistoryPage(indexedMarketPage))
     ) {
       return tokenHistoryPageWithCanonicalCreditValueOverlay(
         indexedMarketPage,
@@ -39395,7 +39499,7 @@ async function tokenHistoryPayload(network, tokenScope, kind, searchParams, fres
       indexedHistoryPage &&
       (Number(indexedHistoryPage.totalCount ?? 0) > 0 ||
         (indexedHistoryPage.items ?? []).length > 0 ||
-        indexedHistoryPage.queryDisposition === "terminal-nonmarket")
+        isTerminalTokenMarketHistoryPage(indexedHistoryPage))
     ) {
       return tokenHistoryPageWithCanonicalCreditValueOverlay(
         indexedHistoryPage,
@@ -39843,8 +39947,8 @@ function uniqueMarketplaceMutationActivity(
   activity,
   kinds = MARKETPLACE_MUTATION_KINDS,
 ) {
-  const selected = (Array.isArray(activity) ? activity : []).filter((item) =>
-    kinds.has(item?.kind),
+  const selected = (Array.isArray(activity) ? activity : []).filter(
+    (item) => item?.valid !== false && kinds.has(item?.kind),
   );
   const registriesByPayment = new Map();
   for (const item of selected) {
@@ -39999,7 +40103,9 @@ function unbucketedConfirmedComputerLogFlowSats(confirmedActivity) {
 }
 
 function confirmedActivityFlowSats(confirmedActivity, kinds) {
-  const selected = confirmedActivity.filter((item) => kinds.has(item.kind));
+  const selected = confirmedActivity.filter(
+    (item) => item?.valid !== false && kinds.has(item.kind),
+  );
   const nonMarketplaceFlowSats = selected
     .filter((item) => !MARKETPLACE_MUTATION_KINDS.has(item.kind))
     .reduce((total, item) => total + activityAmountSats(item), 0);
@@ -40772,7 +40878,10 @@ function creditNetworkValueMetrics({
       : {};
   const tokensById = new Map(
     (Array.isArray(tokenDefinitions) ? tokenDefinitions : [])
-      .filter(tokenCanUseCreditNetworkFloor)
+      .filter(
+        (token) =>
+          token?.valid !== false && tokenCanUseCreditNetworkFloor(token),
+      )
       .map((token) => [String(token.tokenId ?? "").toLowerCase(), token]),
   );
   if (tokensById.size === 0) {
@@ -40843,7 +40952,11 @@ function creditNetworkValueMetrics({
   };
 
   for (const item of Array.isArray(confirmedActivity) ? confirmedActivity : []) {
-    if (item?.confirmed && isTokenActivityItem(item)) {
+    if (
+      item?.confirmed &&
+      item?.valid !== false &&
+      isTokenActivityItem(item)
+    ) {
       addTokenActivity(item);
     }
   }
@@ -40867,6 +40980,7 @@ function creditNetworkValueMetrics({
     if (
       !token ||
       !item?.confirmed ||
+      item?.valid === false ||
       !/^[0-9a-f]{64}$/u.test(txid) ||
       createdMs > cutoffMs ||
       (amountAtoms === null ? amountUnits === null : amountAtoms <= 0n)
@@ -41568,7 +41682,7 @@ function growthActualBaseNetworkValueEvents(
   );
   const addEvent = (source, field, value) => {
     const createdMs = Date.parse(source?.createdAt ?? "");
-    if (!Number.isFinite(createdMs)) {
+    if (source?.valid === false || !Number.isFinite(createdMs)) {
       return;
     }
     const blockHeight = Number(source?.blockHeight);
@@ -41962,7 +42076,10 @@ function growthActualLiveTotalSatsAtProvider(
     );
   const tokensById = new Map(
     (Array.isArray(tokenDefinitions) ? tokenDefinitions : [])
-      .filter(tokenCanUseCreditNetworkFloor)
+      .filter(
+        (token) =>
+          token?.valid !== false && tokenCanUseCreditNetworkFloor(token),
+      )
       .map((token) => [String(token.tokenId ?? "").toLowerCase(), token]),
   );
   if (tokensById.size === 0) {
@@ -41980,6 +42097,7 @@ function growthActualLiveTotalSatsAtProvider(
     const txid = String(item?.txid ?? "").toLowerCase();
     if (
       !item?.confirmed ||
+      item?.valid === false ||
       !isTokenActivityItem(item) ||
       !/^[0-9a-f]{64}$/u.test(txid) ||
       !tokensById.has(String(item?.tokenId ?? "").toLowerCase())
@@ -42027,6 +42145,7 @@ function growthActualLiveTotalSatsAtProvider(
     if (
       !token ||
       !item?.confirmed ||
+      item?.valid === false ||
       !/^[0-9a-f]{64}$/u.test(txid) ||
       !Number.isFinite(createdMs) ||
       amount <= 0
@@ -42258,43 +42377,43 @@ function growthActualValuePoints(
   };
 
   for (const record of records) {
-    if (record.confirmed) {
+    if (record.confirmed && record.valid !== false) {
       addEventTime(record.createdAt, `${record.id}@proofofwork.me`);
     }
   }
 
   for (const item of idActivity) {
-    if (item.confirmed) {
+    if (item.confirmed && item.valid !== false) {
       addEventTime(item.createdAt, item.title);
     }
   }
 
   for (const sale of publicMarketplaceSales(sales)) {
-    if (sale.confirmed) {
+    if (sale.confirmed && sale.valid !== false) {
       addEventTime(sale.createdAt, `${sale.id}@proofofwork.me sale`);
     }
   }
 
   for (const token of tokenDefinitions) {
-    if (token.confirmed) {
+    if (token.confirmed && token.valid !== false) {
       addEventTime(token.createdAt, `${token.ticker} credit created`);
     }
   }
 
   for (const mint of tokenMints) {
-    if (mint.confirmed) {
+    if (mint.confirmed && mint.valid !== false) {
       addEventTime(mint.createdAt, `${mint.ticker} credit mint`);
     }
   }
 
   for (const transfer of tokenTransfers) {
-    if (transfer.confirmed) {
+    if (transfer.confirmed && transfer.valid !== false) {
       addEventTime(transfer.createdAt, `${transfer.ticker} credit transfer`);
     }
   }
 
   for (const sale of tokenSales) {
-    if (sale.confirmed) {
+    if (sale.confirmed && sale.valid !== false) {
       addEventTime(sale.createdAt, `${sale.ticker} credit sale`);
     }
   }
@@ -42757,11 +42876,12 @@ function workFloorPayloadFromState(
     workTokenState,
     WORK_TOKEN_ID,
   );
-  const activityForGrowth =
+  const activityForGrowth = (
     Array.isArray(computerActivity.activity) &&
     computerActivity.activity.length > 0
       ? computerActivity.activity
-      : registryState.activity ?? [];
+      : registryState.activity ?? []
+  ).filter((item) => item?.valid !== false);
   const tokenSalesForValue = Array.isArray(valueTokenState.sales)
     ? valueTokenState.sales
     : [];
@@ -46136,13 +46256,196 @@ function workAmoV5ExactValueAliases(prefix, valueQ8) {
   };
 }
 
-function workAmoV5ClosingSummaryProjection(state, value, workFloor) {
-  const baseState = Object.fromEntries(
-    WORK_AMO_V5_BASE_STATE_FIELDS.map((field) => [
+function workAmoV5LegacyBootstrapEvidenceMatches(evidence) {
+  const item =
+    evidence &&
+    typeof evidence === "object" &&
+    !Array.isArray(evidence)
+      ? evidence
+      : {};
+  const integer = (value) => workAmoV5ExactInteger(value);
+  const mutationSats = integer(item.marketplaceMutationFeeSats);
+  const minerFeeSats = integer(item.minerFeeSats);
+  const creditFixedSats = integer(item.creditFixedSats);
+  const creditFixedQ8 = integer(item.creditFixedQ8);
+  const growthValueSats = integer(item.growthValueSats);
+  const growthValueQ8 = integer(item.growthValueQ8);
+  return (
+    item.complete === true &&
+    String(item.model ?? "") ===
+      WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MODEL &&
+    String(item.txid ?? "").trim().toLowerCase() ===
+      WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_TXID &&
+    String(item.blockHash ?? "").trim().toLowerCase() ===
+      WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_BLOCK_HASH &&
+    Number(item.blockHeight) ===
+      WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_BLOCK_HEIGHT &&
+    Number(item.blockIndex) ===
+      WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_BLOCK_INDEX &&
+    Number(item.protocolVout) ===
+      WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_PROTOCOL_VOUT &&
+    Number(item.recordOrdinal) ===
+      WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_RECORD_ORDINAL &&
+    String(item.reasonCode ?? "") ===
+      WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_REASON_CODE &&
+    mutationSats ===
+      BigInt(WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MUTATION_SATS) &&
+    minerFeeSats ===
+      BigInt(WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MINER_FEE_SATS) &&
+    creditFixedSats === mutationSats + minerFeeSats &&
+    creditFixedQ8 === creditFixedSats * VALUE_Q8_SCALE &&
+    growthValueSats === mutationSats * GROWTH_VALUE_MULTIPLE &&
+    growthValueQ8 === growthValueSats * VALUE_Q8_SCALE &&
+    Number.isSafeInteger(Number(item.eventId)) &&
+    Number(item.eventId) > 0 &&
+    Number(item.listingCount) === 1 &&
+    Number(item.activeListingCount) === 0
+  );
+}
+
+function workAmoV5LegacyBootstrapReconciliation(
+  state,
+  value,
+  workFloor,
+  evidence,
+) {
+  const invalid = (reason) => ({ reason, valid: false });
+  if (!workAmoV5LegacyBootstrapEvidenceMatches(evidence)) {
+    return invalid("legacy-bootstrap-evidence-mismatch");
+  }
+  const committedBaseState = {};
+  const validBaseState = {};
+  for (const field of WORK_AMO_V5_BASE_STATE_FIELDS) {
+    const committed = workAmoV5ExactInteger(state?.baseState?.[field]);
+    const valid = workAmoV5ExactInteger(
+      workFloor?.actualValue?.[field],
+    );
+    if (committed === null || valid === null) {
+      return invalid(`legacy-bootstrap-base-field-missing:${field}`);
+    }
+    const expectedCarry =
+      field === "tokenMarketplaceFeeSats"
+        ? BigInt(evidence.marketplaceMutationFeeSats)
+        : 0n;
+    if (committed !== valid + expectedCarry) {
+      return invalid(`legacy-bootstrap-base-field-diverged:${field}`);
+    }
+    committedBaseState[field] = committed;
+    validBaseState[field] = valid;
+  }
+  const committedBaseNetworkValueQ8 = workAmoV5ExactInteger(
+    value?.baseNetworkValueQ8,
+  );
+  const publishedValidBaseNetworkValueQ8 = workAmoV5ExactInteger(
+    workFloor?.actualValue?.baseNetworkValueQ8,
+  );
+  const validBaseNetworkValueQ8 =
+    growthActualBaseStateTotalQ8(validBaseState);
+  const legacyBootstrapGrowthValueQ8 = BigInt(evidence.growthValueQ8);
+  if (
+    committedBaseNetworkValueQ8 === null ||
+    publishedValidBaseNetworkValueQ8 === null ||
+    growthActualBaseStateTotalQ8(committedBaseState) !==
+      committedBaseNetworkValueQ8 ||
+    publishedValidBaseNetworkValueQ8 !== validBaseNetworkValueQ8 ||
+    committedBaseNetworkValueQ8 !==
+      validBaseNetworkValueQ8 + legacyBootstrapGrowthValueQ8
+  ) {
+    return invalid("legacy-bootstrap-base-value-diverged");
+  }
+  const creditFlowFields = [
+    "creditProofPaymentFlowSats",
+    "creditRegistryMutationFlowSats",
+    "creditMarketplaceMutationFlowSats",
+    "creditSalePaymentFlowSats",
+    "creditMinerFeeFlowSats",
+  ];
+  const validCreditFlows = {};
+  let validCreditFixedSats = 0n;
+  for (const field of creditFlowFields) {
+    const amount = workAmoV5ExactInteger(
+      workFloor?.actualValue?.[field],
+    );
+    if (amount === null) {
+      return invalid(`legacy-bootstrap-credit-field-missing:${field}`);
+    }
+    validCreditFlows[field] = amount;
+    validCreditFixedSats += amount;
+  }
+  const committedCreditFixedQ8 = workAmoV5ExactInteger(
+    state?.creditFixedQ8,
+  );
+  const publishedValidCreditFixedQ8Present =
+    workFloor?.actualValue?.creditFixedQ8 !== undefined &&
+    workFloor?.actualValue?.creditFixedQ8 !== null &&
+    workFloor?.actualValue?.creditFixedQ8 !== "";
+  const publishedValidCreditFixedQ8 =
+    publishedValidCreditFixedQ8Present
+      ? workAmoV5ExactInteger(
+          workFloor?.actualValue?.creditFixedQ8,
+        )
+      : null;
+  const validCreditFixedQ8 = validCreditFixedSats * VALUE_Q8_SCALE;
+  const legacyBootstrapCreditFixedQ8 = BigInt(evidence.creditFixedQ8);
+  if (
+    committedCreditFixedQ8 === null ||
+    (publishedValidCreditFixedQ8Present &&
+      publishedValidCreditFixedQ8 !== validCreditFixedQ8) ||
+    committedCreditFixedQ8 !==
+      validCreditFixedQ8 + legacyBootstrapCreditFixedQ8
+  ) {
+    return invalid("legacy-bootstrap-credit-value-diverged");
+  }
+  const committedState = Object.fromEntries(
+    Object.entries(committedBaseState).map(([field, amount]) => [
       field,
-      BigInt(state.baseState[field]),
+      amount.toString(),
     ]),
   );
+  const validState = Object.fromEntries(
+    Object.entries(validBaseState).map(([field, amount]) => [
+      field,
+      amount.toString(),
+    ]),
+  );
+  const legacyBootstrap = {
+    ...evidence,
+    committedBaseState: committedState,
+    committedCreditFixedQ8: committedCreditFixedQ8.toString(),
+    validActivityContributionSats: 0,
+    validBaseNetworkValueQ8: validBaseNetworkValueQ8.toString(),
+    validBaseState: validState,
+    validCreditFixedQ8: validCreditFixedQ8.toString(),
+    validCreditFixedSats: Number(validCreditFixedSats),
+    validMarketplaceMutationFeeSats: Number(
+      validBaseState.idMarketplaceFeeSats +
+        validBaseState.tokenMarketplaceFeeSats,
+    ),
+  };
+  return {
+    committedBaseState,
+    legacyBootstrap,
+    legacyBootstrapCreditFixedQ8,
+    legacyBootstrapGrowthValueQ8,
+    valid: true,
+    validBaseNetworkValueQ8,
+    validBaseState,
+    validCreditFixedQ8,
+    validCreditFixedSats,
+    validCreditFlows,
+  };
+}
+
+function workAmoV5ClosingSummaryProjection(
+  state,
+  value,
+  workFloor,
+  reconciliation,
+) {
+  if (reconciliation?.valid !== true) {
+    throw new Error("AMO V5 legacy bootstrap reconciliation is unavailable.");
+  }
+  const baseState = reconciliation.validBaseState;
   const supply = BigInt(WORK_TOKEN_MAX_SUPPLY);
   const creditFixedQ8 = BigInt(state.creditFixedQ8);
   const creditMovementFrozenValueQ8 = BigInt(
@@ -46252,6 +46555,8 @@ function workAmoV5ClosingSummaryProjection(state, value, workFloor) {
     marketplaceSats: scaledQ8(marketplaceFlow),
     tokenSats: scaledQ8(tokenFlow),
     walletSats: scaledQ8(walletFlow),
+    legacyBootstrapSats:
+      reconciliation.legacyBootstrapGrowthValueQ8,
   };
   const componentFields = Object.fromEntries(
     Object.entries(componentQ8).map(([field, fieldValueQ8]) => [
@@ -46266,6 +46571,20 @@ function workAmoV5ClosingSummaryProjection(state, value, workFloor) {
     marketplaceMutationFeeSats: Number(marketplaceFee),
     marketplaceSaleVolumeSats: Number(marketplaceSaleVolume),
     marketplaceVolumeSats: Number(marketplaceSaleVolume),
+    legacyBootstrapCreditFixedQ8:
+      reconciliation.legacyBootstrapCreditFixedQ8.toString(),
+    legacyBootstrapCreditFixedSats:
+      reconciliation.legacyBootstrap.creditFixedSats,
+    legacyBootstrapFlowSats:
+      reconciliation.legacyBootstrap.marketplaceMutationFeeSats,
+    legacyBootstrapGrowthValueQ8:
+      reconciliation.legacyBootstrapGrowthValueQ8.toString(),
+    legacyBootstrapMarketplaceCarrySats:
+      reconciliation.legacyBootstrap.marketplaceMutationFeeSats,
+    legacyBootstrapSats:
+      reconciliation.legacyBootstrap.growthValueSats,
+    legacyBootstrapTokenMarketplaceFeeSats:
+      reconciliation.legacyBootstrap.marketplaceMutationFeeSats,
     tokenFlowSats: Number(tokenFlow),
     tokenSaleFlowSats: Number(baseState.tokenSaleVolumeSats),
     walletFlowSats: Number(walletFlow),
@@ -46411,14 +46730,33 @@ async function workFloorWithVerifiedWorkAmoV5ClosingState(
       "The canonical AMO transition closing commitment diverged.",
     );
   }
-  const relationalTokenState =
-    await proofIndexWorkAmoRelationalTokenStateEvidence(
-      network,
-      state.tokenStateCommitment,
-    );
+  const [relationalTokenState, legacyBootstrapEvidence] =
+    await Promise.all([
+      proofIndexWorkAmoRelationalTokenStateEvidence(
+        network,
+        state.tokenStateCommitment,
+      ),
+      proofIndexWorkAmoLegacyBootstrapCarryEvidence(network),
+    ]);
   if (relationalTokenState?.complete !== true) {
     throw freshDataUnavailableError(
       "The canonical AMO transition token state is not relationally complete.",
+    );
+  }
+  if (legacyBootstrapEvidence?.complete !== true) {
+    throw freshDataUnavailableError(
+      "The canonical AMO legacy bootstrap evidence is unavailable.",
+    );
+  }
+  const reconciliation = workAmoV5LegacyBootstrapReconciliation(
+    state,
+    value,
+    workFloor,
+    legacyBootstrapEvidence,
+  );
+  if (reconciliation.valid !== true) {
+    throw freshDataUnavailableError(
+      `The canonical AMO legacy bootstrap reconciliation diverged (${reconciliation.reason}).`,
     );
   }
 
@@ -46426,6 +46764,7 @@ async function workFloorWithVerifiedWorkAmoV5ClosingState(
     state,
     value,
     workFloor,
+    reconciliation,
   );
   const transitionEvidence = {
     blockHash,
@@ -46449,6 +46788,8 @@ async function workFloorWithVerifiedWorkAmoV5ClosingState(
     modelTotalUsd: projection.modelTotalUsd,
     networkUsd: projection.totalUsd,
     totalUsd: projection.totalUsd,
+    workAmoV5LegacyBootstrap:
+      reconciliation.legacyBootstrap,
     workAmoV5Transition: transitionEvidence,
     workAmoV5AccumulatorModel:
       WORK_AMO_V5_NETWORK_ACCUMULATOR_MODEL,
@@ -46485,6 +46826,8 @@ async function workFloorWithVerifiedWorkAmoV5ClosingState(
     networkValueSats:
       projection.exactAliases.networkValueSatsApproximate,
     totalSats: projection.exactAliases.totalSatsApproximate,
+    workAmoV5LegacyBootstrap:
+      reconciliation.legacyBootstrap,
   };
   return {
     ...workFloor,
@@ -46498,6 +46841,8 @@ async function workFloorWithVerifiedWorkAmoV5ClosingState(
     stats,
     tokenFlowSats: projection.flowFields.tokenFlowSats,
     totalUsd: projection.totalUsd,
+    workAmoV5LegacyBootstrap:
+      reconciliation.legacyBootstrap,
     workAmoV5Transition: transitionEvidence,
     workAmoV5AccumulatorModel:
       WORK_AMO_V5_NETWORK_ACCUMULATOR_MODEL,
@@ -52212,7 +52557,7 @@ async function handleRequest(request, response) {
           jsonResponse(
             response,
             200,
-            indexedPayload,
+            await withWorkMarketplaceV4Metadata(indexedPayload, network),
             TOKEN_READ_CACHE_CONTROL,
           );
           return;
@@ -52228,7 +52573,7 @@ async function handleRequest(request, response) {
           jsonResponse(
             response,
             200,
-            cachedPayload,
+            await withWorkMarketplaceV4Metadata(cachedPayload, network),
             TOKEN_READ_CACHE_CONTROL,
           );
           return;
@@ -52242,7 +52587,7 @@ async function handleRequest(request, response) {
           jsonResponse(
             response,
             200,
-            fallbackPayload,
+            await withWorkMarketplaceV4Metadata(fallbackPayload, network),
             TOKEN_READ_CACHE_CONTROL,
           );
           return;
@@ -52255,11 +52600,14 @@ async function handleRequest(request, response) {
         jsonResponse(
           response,
           200,
-          await walletScopedTokenPayload(
+          await withWorkMarketplaceV4Metadata(
+            await walletScopedTokenPayload(
+              network,
+              tokenScope,
+              recoveryAddresses,
+              { requireCurrent: freshRead },
+            ),
             network,
-            tokenScope,
-            recoveryAddresses,
-            { requireCurrent: freshRead },
           ),
           freshRead ? FRESH_READ_CACHE_CONTROL : TOKEN_READ_CACHE_CONTROL,
         );
@@ -52282,7 +52630,7 @@ async function handleRequest(request, response) {
       jsonResponse(
         response,
         200,
-        payload,
+        await withWorkMarketplaceV4Metadata(payload, network),
         tokenFreshRead ? FRESH_READ_CACHE_CONTROL : TOKEN_READ_CACHE_CONTROL,
       );
       return;

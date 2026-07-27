@@ -18,6 +18,8 @@ export const WORK_AMO_V5_DECLARATION_HEIGHT = 959_620;
 export const WORK_AMO_V5_DECLARATION_BLOCK_HASH =
   "0000000000000000000094195957f498f894c92f5d5f75ff5b9c9afc749a6811";
 export const WORK_AMO_V5_DECLARATION_BLOCK_INDEX = 141;
+export const WORK_AMO_V5_DECLARATION_BLOCK_TIME =
+  "2026-07-26T00:17:29.000Z";
 export const WORK_AMO_V5_DECLARATION_PROTOCOL_VOUT = 3;
 export const WORK_AMO_V5_DECLARATION_RECORD_ORDINAL = 0;
 export const WORK_AMO_V5_DECLARATION_REGISTRY_PAYMENT_VOUT = 4;
@@ -37,6 +39,58 @@ export const WORK_AMO_V5_V1_DECLARATION_BLOCK_HASH =
   "00000000000000000000e82cdcdca5f072924d79790f2e4301330d4338d8eb30";
 export const WORK_AMO_V5_V1_DECLARATION_BLOCK_INDEX = 1_187;
 export const WORK_AMO_V5_V1_ACTIVATION_HEIGHT = 959_306;
+export const WORK_AMO_V5_PRE_UNIT_RELIC_MODEL =
+  "canonical-work-amo-v5-pre-unit-relic-v1";
+export const WORK_AMO_V5_PRE_UNIT_RELIC_LISTING_TXID =
+  "4e9cedced2252cd183608dc9176415a913c4f6aa5e8307a732179a2240b6feb1";
+export const WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_HASH =
+  "000000000000000000007933e0dc73604a52057ba18de7b9463b65d9433dd0fe";
+export const WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_HEIGHT = 959_241;
+export const WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_INDEX = 2_601;
+export const WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_TIME =
+  "2026-07-23T09:47:50.000Z";
+export const WORK_AMO_V5_PRE_UNIT_RELIC_PROTOCOL_VOUT = 1;
+export const WORK_AMO_V5_PRE_UNIT_RELIC_RECORD_ORDINAL = 0;
+export const WORK_AMO_V5_PRE_UNIT_RELIC_AUTH_VERSION = "pwt-sale-v3";
+export const WORK_AMO_V5_PRE_UNIT_RELIC_AMOUNT_ATOMS = "1600";
+export const WORK_AMO_V5_PRE_UNIT_RELIC_PRICE_SATS = 1_500_479;
+export const WORK_AMO_V5_PRE_UNIT_RELIC_MINIMUM_PRICE_SATS = 1_500_477;
+export const WORK_AMO_V5_PRE_UNIT_RELIC_SELLER_ADDRESS =
+  "bc1p0uxp0axptr8rg9dndgtlwxn00j4hq8m88kg80tqd0t6045putwhq5ca7ed";
+export const WORK_AMO_V5_PRE_UNIT_RELIC_SELLER_PUBLIC_KEY =
+  "0306baa226e3a87a99547df2144f2e6206a4a479a46df41ec1618945c064568237";
+export const WORK_AMO_V5_PRE_UNIT_RELIC_NONCE = "mrxbidku-hlnygfgz";
+export const WORK_AMO_V5_PRE_UNIT_RELIC_REGISTRY_ADDRESS =
+  "1638Vn6KtmK8p5r4oGvAXq9nmZb1emU1DV";
+export const WORK_AMO_V5_PRE_UNIT_RELIC_TICKET_VOUT = 2;
+export const WORK_AMO_V5_PRE_UNIT_RELIC_TICKET_VALUE_SATS = 546;
+export const WORK_AMO_V5_PRE_UNIT_RELIC_ANCHOR_SCRIPT_PUBKEY =
+  "51207f0c17f4c158ce3415b36a17f71a6f7cab701f673d9077ac0d7af4fad03c5bae";
+export const WORK_AMO_V5_PRE_UNIT_RELIC_MINER_FEE_SATS = 3_890;
+export const WORK_AMO_V5_PRE_UNIT_RELIC_DATA_BYTES = 1_251;
+export const WORK_AMO_V5_PRE_UNIT_RELIC_ORACLE_MODEL =
+  "canonical-work-market-h-minus-one-v1";
+export const WORK_AMO_V5_PRE_UNIT_RELIC_ORACLE_BLOCK_HEIGHT = 959_240;
+export const WORK_AMO_V5_PRE_UNIT_RELIC_ORACLE_BLOCK_HASH =
+  "0000000000000000000181919d7c56d488be45525c0c1659b46439d21496f911";
+export const WORK_AMO_V5_PRE_UNIT_RELIC_ORACLE_NETWORK_VALUE_Q8 =
+  "196937530758698091074146532";
+export const WORK_AMO_V5_PRE_UNIT_RELIC_DISABLED_REASON =
+  "work-amo-v5-pre-unit-relic";
+export const WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MODEL =
+  "canonical-work-amo-v5-legacy-bootstrap-carry-v1";
+export const WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_TXID =
+  "5eb0a876603a7551653806b932533dc27a884631a581caa2e36dcf129b8278e8";
+export const WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_BLOCK_HASH =
+  "000000000000000000005a63a2c00834b92746ab0658c9f0c98aeb509724e8f9";
+export const WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_BLOCK_HEIGHT = 959_311;
+export const WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_BLOCK_INDEX = 2_552;
+export const WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_PROTOCOL_VOUT = 1;
+export const WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_RECORD_ORDINAL = 0;
+export const WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_REASON_CODE =
+  "work-market-v4-version-required";
+export const WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MUTATION_SATS = 546;
+export const WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MINER_FEE_SATS = 2_216;
 
 export const WORK_AMO_V5_UNIT_MODEL =
   "canonical-work-amo-usd-unit-v2";
@@ -190,6 +244,319 @@ export function workAmoV5WorkStateWithoutLegacyListingReservations(
         )
       );
     }),
+  };
+}
+
+export function workAmoV5CutoverActivationIsExact(activation) {
+  return (
+    activation?.active === true &&
+    activation?.canonical === true &&
+    activation?.confirmed === true &&
+    activation?.evidenceComplete === true &&
+    normalizedTxid(activation?.txid ?? activation?.declarationTxid) ===
+      WORK_AMO_V5_DECLARATION_TXID &&
+    Number(activation?.blockHeight) === WORK_AMO_V5_DECLARATION_HEIGHT &&
+    String(activation?.blockHash ?? "").trim().toLowerCase() ===
+      WORK_AMO_V5_DECLARATION_BLOCK_HASH &&
+    Number(
+      activation?.blockTransactionIndex ?? activation?.blockIndex,
+    ) === WORK_AMO_V5_DECLARATION_BLOCK_INDEX &&
+    Number(activation?.activationHeight) === WORK_AMO_V5_ACTIVATION_HEIGHT
+  );
+}
+
+function workAmoV5ListingIdentity(listing) {
+  return normalizedTxid(listing?.listingId ?? listing?.txid);
+}
+
+function workAmoV5ListingAuthorizationVersion(listing) {
+  const versions = [
+    listing?.saleAuthorization?.version,
+    listing?.listingAuthorization?.version,
+  ]
+    .filter((value) => value !== undefined && value !== null)
+    .map((value) => String(value).trim().toLowerCase());
+  return versions.length > 0 && new Set(versions).size === 1
+    ? versions[0]
+    : "";
+}
+
+export function workAmoV5PreUnitRelicEvidenceIsExact(evidence) {
+  const listing =
+    evidence?.listing &&
+    typeof evidence.listing === "object" &&
+    !Array.isArray(evidence.listing)
+      ? evidence.listing
+      : null;
+  const disposition = String(evidence?.disposition ?? "")
+    .trim()
+    .toLowerCase();
+  const terminal = disposition === "terminal";
+  return (
+    evidence?.complete === true &&
+    evidence?.canonical === true &&
+    evidence?.confirmed === true &&
+    evidence?.valid === true &&
+    evidence?.model === WORK_AMO_V5_PRE_UNIT_RELIC_MODEL &&
+    normalizedTxid(evidence?.activationTxid) ===
+      WORK_AMO_V5_DECLARATION_TXID &&
+    String(evidence?.activationBlockHash ?? "").trim().toLowerCase() ===
+      WORK_AMO_V5_DECLARATION_BLOCK_HASH &&
+    Number(evidence?.activationBlockHeight) ===
+      WORK_AMO_V5_DECLARATION_HEIGHT &&
+    Number(evidence?.activationBlockIndex) ===
+      WORK_AMO_V5_DECLARATION_BLOCK_INDEX &&
+    String(evidence?.activationBlockTime ?? "") ===
+      WORK_AMO_V5_DECLARATION_BLOCK_TIME &&
+    normalizedTxid(evidence?.listingId ?? evidence?.txid) ===
+      WORK_AMO_V5_PRE_UNIT_RELIC_LISTING_TXID &&
+    String(evidence?.blockHash ?? "").trim().toLowerCase() ===
+      WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_HASH &&
+    Number(evidence?.blockHeight) ===
+      WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_HEIGHT &&
+    Number(evidence?.blockIndex) === WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_INDEX &&
+    Number.isSafeInteger(Number(evidence?.eventId)) &&
+    Number(evidence.eventId) > 0 &&
+    Number(evidence?.protocolVout) ===
+      WORK_AMO_V5_PRE_UNIT_RELIC_PROTOCOL_VOUT &&
+    Number(evidence?.recordOrdinal) ===
+      WORK_AMO_V5_PRE_UNIT_RELIC_RECORD_ORDINAL &&
+    String(evidence?.authorizationVersion ?? "").trim().toLowerCase() ===
+      WORK_AMO_V5_PRE_UNIT_RELIC_AUTH_VERSION &&
+    String(evidence?.amountAtoms ?? "") ===
+      WORK_AMO_V5_PRE_UNIT_RELIC_AMOUNT_ATOMS &&
+    Number(evidence?.priceSats) === WORK_AMO_V5_PRE_UNIT_RELIC_PRICE_SATS &&
+    String(evidence?.sellerAddress ?? "").trim() ===
+      WORK_AMO_V5_PRE_UNIT_RELIC_SELLER_ADDRESS &&
+    String(evidence?.registryAddress ?? "").trim() ===
+      WORK_AMO_V5_PRE_UNIT_RELIC_REGISTRY_ADDRESS &&
+    normalizedTxid(evidence?.saleTicketTxid) ===
+      WORK_AMO_V5_PRE_UNIT_RELIC_LISTING_TXID &&
+    Number(evidence?.saleTicketVout) ===
+      WORK_AMO_V5_PRE_UNIT_RELIC_TICKET_VOUT &&
+    Number(evidence?.saleTicketValueSats) ===
+      WORK_AMO_V5_PRE_UNIT_RELIC_TICKET_VALUE_SATS &&
+    (disposition === "relic" || terminal) &&
+    (terminal
+      ? evidence?.terminal === true &&
+        Number(evidence?.canonicalSpendCount) === 1 &&
+        normalizedTxid(evidence?.canonicalSpendTxid) &&
+        (
+          Number(evidence?.canonicalCloseCount) === 0 ||
+          (
+            Number(evidence?.canonicalCloseCount) === 1 &&
+            normalizedTxid(evidence?.canonicalCloseTxid) ===
+              normalizedTxid(evidence?.canonicalSpendTxid)
+          )
+        )
+      : evidence?.terminal === false &&
+        Number(evidence?.canonicalSpendCount) === 0 &&
+        Number(evidence?.canonicalCloseCount) === 0 &&
+        evidence?.unspent === true &&
+        listing &&
+        workAmoV5ListingIdentity(listing) ===
+          WORK_AMO_V5_PRE_UNIT_RELIC_LISTING_TXID &&
+        workAmoV5ListingTokenId(listing) === WORK_TOKEN_ID &&
+        workAmoV5ListingAuthorizationVersion(listing) ===
+          WORK_AMO_V5_PRE_UNIT_RELIC_AUTH_VERSION &&
+        String(listing?.amountAtoms ?? "") ===
+          WORK_AMO_V5_PRE_UNIT_RELIC_AMOUNT_ATOMS &&
+        Number(listing?.priceSats) ===
+          WORK_AMO_V5_PRE_UNIT_RELIC_PRICE_SATS &&
+        listing?.confirmed === true)
+  );
+}
+
+function workAmoV5ListingTokenId(listing) {
+  return String(
+    listing?.tokenId ??
+      listing?.saleAuthorization?.tokenId ??
+      listing?.listingAuthorization?.tokenId ??
+      "",
+  )
+    .trim()
+    .toLowerCase();
+}
+
+/**
+ * Projects the confirmed AMO boundary over relational/snapshot token state.
+ * Raw listing rows remain replayable evidence; only their public reserving
+ * status changes. The exact declaration evidence must be attached first.
+ */
+export function applyWorkAmoV5CutoverToTokenState(state) {
+  if (
+    !state ||
+    typeof state !== "object" ||
+    Array.isArray(state)
+  ) {
+    return state;
+  }
+  const indexedThroughBlock = Number(
+    state.indexedThroughBlock ?? state.stats?.indexedThroughBlock,
+  );
+  if (
+    String(state.network ?? "").trim().toLowerCase() !== "livenet" ||
+    !Number.isSafeInteger(indexedThroughBlock) ||
+    indexedThroughBlock < WORK_AMO_V5_ACTIVATION_HEIGHT
+  ) {
+    return state;
+  }
+
+  const activationExact = workAmoV5CutoverActivationIsExact(
+    state.workAmoV5Activation,
+  );
+  const relicEvidenceExact = workAmoV5PreUnitRelicEvidenceIsExact(
+    state.workAmoV5PreUnitRelicEvidence,
+  );
+  const relicDisposition =
+    activationExact && relicEvidenceExact
+      ? String(state.workAmoV5PreUnitRelicEvidence.disposition)
+      : "";
+  const sourceListings = Array.isArray(state.listings) ? state.listings : [];
+  const listings = sourceListings.filter((listing) => {
+    if (workAmoV5ListingTokenId(listing) !== WORK_TOKEN_ID) {
+      return true;
+    }
+    const listingId = workAmoV5ListingIdentity(listing);
+    const version = workAmoV5ListingAuthorizationVersion(listing);
+    return (
+      listingId !== WORK_AMO_V5_PRE_UNIT_RELIC_LISTING_TXID &&
+      (
+        version === WORK_AMO_V5_AUTH_VERSION ||
+        (
+          version === WORK_AMO_V4_AUTH_VERSION &&
+          listing?.confirmed === true &&
+          Number.isSafeInteger(Number(listing?.blockHeight)) &&
+          Number(listing.blockHeight) > 0 &&
+          Number(listing.blockHeight) < WORK_AMO_V5_ACTIVATION_HEIGHT
+        )
+      )
+    );
+  });
+  let closedListings = Array.isArray(state.closedListings)
+    ? state.closedListings.filter(
+        (listing) =>
+          !(
+            workAmoV5ListingIdentity(listing) ===
+              WORK_AMO_V5_PRE_UNIT_RELIC_LISTING_TXID &&
+            listing?.disabledReason ===
+              WORK_AMO_V5_PRE_UNIT_RELIC_DISABLED_REASON
+          ),
+      )
+    : [];
+  const invalidEvents = Array.isArray(state.invalidEvents)
+    ? state.invalidEvents
+    : [];
+  const closedIds = new Set(
+    closedListings.map(workAmoV5ListingIdentity).filter(Boolean),
+  );
+  if (relicDisposition === "relic" && !closedIds.has(
+    WORK_AMO_V5_PRE_UNIT_RELIC_LISTING_TXID,
+  )) {
+    const evidenceListing = state.workAmoV5PreUnitRelicEvidence.listing;
+    closedListings = [
+      ...closedListings,
+      {
+        ...evidenceListing,
+        closedAt:
+          state.workAmoV5PreUnitRelicEvidence?.activationBlockTime ??
+          state.workAmoV5Activation?.blockTime ??
+          evidenceListing.createdAt,
+        closedConfirmed: true,
+        closedTxid: WORK_AMO_V5_DECLARATION_TXID,
+        confirmed: true,
+        disabledAtBlockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT,
+        disabledByTxid: WORK_AMO_V5_DECLARATION_TXID,
+        disabledReason: WORK_AMO_V5_PRE_UNIT_RELIC_DISABLED_REASON,
+        kind: "token-listing-closed",
+        listingId: WORK_AMO_V5_PRE_UNIT_RELIC_LISTING_TXID,
+        originalStatus: evidenceListing?.status ?? "active",
+        refundEligible: false,
+        relic: true,
+        status: "disabled",
+        txid: WORK_AMO_V5_DECLARATION_TXID,
+      },
+    ];
+  }
+
+  const removedListings = sourceListings.length - listings.length;
+  const addedClosedListings =
+    closedListings.length -
+    (Array.isArray(state.closedListings) ? state.closedListings.length : 0);
+  const projectionReady = activationExact && relicEvidenceExact;
+  const confirmedOpenListings = listings.filter(
+    (listing) => listing?.confirmed === true,
+  ).length;
+  const pendingOpenListings = listings.length - confirmedOpenListings;
+  const relicListings = closedListings.filter(
+    (listing) => listing?.relic === true,
+  ).length;
+  const existingTotalListings = Number(state?.totalCounts?.listings);
+  const totalCounts =
+    state.totalCounts && typeof state.totalCounts === "object"
+      ? {
+          ...state.totalCounts,
+          ...(Number.isSafeInteger(Number(state.totalCounts.closedListings))
+            ? {
+                closedListings: Math.max(
+                  0,
+                  Number(state.totalCounts.closedListings) +
+                    addedClosedListings,
+                ),
+              }
+            : {}),
+          listings: Number.isSafeInteger(existingTotalListings)
+            ? Math.max(0, existingTotalListings - removedListings)
+            : listings.length,
+        }
+      : state.totalCounts;
+  const tokens = Array.isArray(state.tokens)
+    ? state.tokens.map((token) =>
+        workAmoV5ListingTokenId(token) === WORK_TOKEN_ID
+          ? {
+              ...token,
+              confirmedOpenListings: listings.filter(
+                (listing) =>
+                  workAmoV5ListingTokenId(listing) === WORK_TOKEN_ID &&
+                  listing?.confirmed === true,
+              ).length,
+              openListings: listings.filter(
+                (listing) =>
+                  workAmoV5ListingTokenId(listing) === WORK_TOKEN_ID,
+              ).length,
+              pendingOpenListings: listings.filter(
+                (listing) =>
+                  workAmoV5ListingTokenId(listing) === WORK_TOKEN_ID &&
+                  listing?.confirmed !== true,
+              ).length,
+            }
+          : token,
+      )
+    : state.tokens;
+
+  return {
+    ...state,
+    closedListings,
+    invalidEvents,
+    listings,
+    ...(tokens ? { tokens } : {}),
+    ...(totalCounts ? { totalCounts } : {}),
+    workAmoV5ProjectionReady: projectionReady,
+    ...(state.stats && typeof state.stats === "object"
+      ? {
+          stats: {
+            ...state.stats,
+            activeListings: listings.length,
+            confirmedOpenListings,
+            invalidEvents: invalidEvents.filter(
+              (event) => event?.confirmed === true,
+            ).length,
+            openListings: listings.length,
+            pendingOpenListings,
+            relicListings,
+          },
+        }
+      : {}),
   };
 }
 

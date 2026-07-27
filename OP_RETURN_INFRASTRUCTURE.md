@@ -1004,6 +1004,32 @@ protocol. A fresh canonical quote is additionally required to create a new
 listing. It is not required to seal or buy a listing that already confirmed
 with valid frozen terms.
 
+AMO V5 also applies one closed, exact relational projection for pre-unit
+listing
+`4e9cedced2252cd183608dc9176415a913c4f6aa5e8307a732179a2240b6feb1`.
+The projection is permitted only by
+`canonical-work-amo-v5-pre-unit-relic-v1` evidence: singleton confirmed valid
+event and raw record, exact height `959241`, block transaction index `2601`,
+protocol output `1`, ordinal `0`, canonical block hash
+`000000000000000000007933e0dc73604a52057ba18de7b9463b65d9433dd0fe`,
+exact payload/authorization/data/fee/registry/ticket facts, one exact V1
+declaration, and the exact V5 declaration including block time
+`2026-07-26T00:17:29.000Z`. The sale-ticket authority is output `2`; only its
+one canonical spend is terminal. A matching valid close may corroborate that
+spend, but a close without the spend, a pending or noncanonical spend, a stale
+`spent_by_txid` pointer, duplicate evidence, or any mismatch withholds the
+relic. An invalid event or a spend of output `3` is irrelevant.
+
+The original row stays in raw audit storage. Public state always removes its
+reservation after the activation boundary, adds the closed relic only when the
+exact proof is complete and unspent, and never synthesizes an invalid event.
+Relational `closedListings` and `market-log` transform the exact row before
+metadata count, canonical ordering, and SQL pagination. `listings` always
+excludes it. Exact queries for either the listing txid or V5 declaration txid
+are authoritative: they return the one projected close where applicable, or a
+terminal empty page when the proof is withheld, and cannot fall back to an
+older embedded snapshot.
+
 `work_amo_block_transitions` stores every immutable activation-through-tip
 opening and closing sufficient state, event-set commitment, replay descriptor,
 trace, full canonical `closingTokenState` preimage, canonical generic-credit
@@ -1023,6 +1049,52 @@ network Q8 values and accounting models; disagreement fails closed. A later
 pending/public-log fingerprint cannot cause the immutable height-959620
 bootstrap to be recomputed from present relational state. The summary service
 is consulted only when no eligible exact checkpoint exists.
+
+One historical invalid WORK listing is already embedded in that immutable
+bootstrap basis and is reconciled without rewriting it. Its complete evidence
+uses model `canonical-work-amo-v5-legacy-bootstrap-carry-v1` and txid
+`5eb0a876603a7551653806b932533dc27a884631a581caa2e36dcf129b8278e8`,
+height `959311`, block transaction index `2552`, protocol output `1`, ordinal
+`0`, canonical block hash
+`000000000000000000005a63a2c00834b92746ab0658c9f0c98aeb509724e8f9`,
+and invalid reason `work-market-v4-version-required`. The proof-index reader
+must find exactly one matching confirmed invalid event joined to its canonical
+transaction and block, prove the 546-proof mutation payment, the 2,216-proof
+transaction miner fee, and no active listing reservation, and reject every
+field or cardinality mismatch. It must not infer these facts from summary
+deltas.
+
+The event contributes zero valid marketplace activity and zero current event
+or miner-fee flow. Its values survive only as the following opaque
+legacy-bootstrap reconciliation:
+
+```text
+legacyBootstrapMarketplaceCarrySats = 546
+legacyBootstrapSats = 2730
+legacyBootstrapGrowthValueQ8 = 273000000000
+legacyBootstrapCreditFixedSats = 2762
+legacyBootstrapCreditFixedQ8 = 276200000000
+```
+
+Here, `2730 = 546 * 5` is the exact legacy Growth component and
+`2762 = 546 + 2216` is the exact fixed-flow residual. The raw committed
+transition N, base-state preimage, frozen values, Q8 commitments, and chart
+history stay unchanged. Summary projection publishes valid-only marketplace
+aliases with the 546 proofs removed, preserves the committed base vector as
+explicit evidence, and exposes the exact `workAmoV5LegacyBootstrap` proof.
+Credit frozen-value consistency must prove:
+
+```text
+committedCreditFixedQ8
+  = validCreditFixedFlowSats * 100000000
+  + legacyBootstrapCreditFixedQ8
+```
+
+The corresponding Growth comparison must prove the valid base value plus
+`legacyBootstrapGrowthValueQ8` equals the committed base value. Missing or
+divergent evidence makes the current summary unavailable; no last-good row may
+be relabeled as a fresh reconciliation. A retroactive height-959620 reseed
+would change protocol history and requires a new on-chain protocol version.
 
 The activation transition also stores the exact replayable H-1 seed under
 `seedSufficientState`, `seedSufficientStateCommitment`,
@@ -1585,6 +1657,13 @@ The canonical livenet ledger payload:
 - Preserves sale-ticket seal metadata when WORK or credit listings promote from pending to confirmed state. Confirmed seal regressions are rejected so a refreshed payload cannot make a sealed listing look unsealed.
 - Checks pending WORK and credit txids for liveness on fresh reads and prunes dropped pending transfers, listings, seals, delistings, and buys from pending overlays without changing confirmed history.
 - Counts AMO network value from sale volume plus market mutation fees. Market mutation fees remain in AMO flow and are excluded from generic Computer event flow.
+- Reports only valid AMO mutation fee/flow in the outward marketplace aliases.
+  The pinned AMO V5 legacy-bootstrap carry is exposed separately through
+  `workAmoV5LegacyBootstrap`, `legacyBootstrapMarketplaceCarrySats`,
+  `legacyBootstrapSats`, `legacyBootstrapGrowthValueQ8`,
+  `legacyBootstrapCreditFixedSats`, and
+  `legacyBootstrapCreditFixedQ8`; it never masquerades as valid marketplace
+  activity. Exact evidence mismatch makes the summary fail closed.
 
 The consistency endpoints:
 

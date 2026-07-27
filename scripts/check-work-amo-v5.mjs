@@ -32,6 +32,32 @@ import {
   WORK_AMO_V5_ID_SALE_AUTH_VERSION,
   WORK_AMO_V5_INCB_TOKEN_ID,
   WORK_AMO_V5_MAX_QUOTE_AGE_BLOCKS,
+  WORK_AMO_V5_PRE_UNIT_RELIC_AMOUNT_ATOMS,
+  WORK_AMO_V5_PRE_UNIT_RELIC_ANCHOR_SCRIPT_PUBKEY,
+  WORK_AMO_V5_PRE_UNIT_RELIC_AUTH_VERSION,
+  WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_HASH,
+  WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_HEIGHT,
+  WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_INDEX,
+  WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_TIME,
+  WORK_AMO_V5_PRE_UNIT_RELIC_DATA_BYTES,
+  WORK_AMO_V5_PRE_UNIT_RELIC_DISABLED_REASON,
+  WORK_AMO_V5_PRE_UNIT_RELIC_LISTING_TXID,
+  WORK_AMO_V5_PRE_UNIT_RELIC_MINER_FEE_SATS,
+  WORK_AMO_V5_PRE_UNIT_RELIC_MINIMUM_PRICE_SATS,
+  WORK_AMO_V5_PRE_UNIT_RELIC_MODEL,
+  WORK_AMO_V5_PRE_UNIT_RELIC_NONCE,
+  WORK_AMO_V5_PRE_UNIT_RELIC_ORACLE_BLOCK_HASH,
+  WORK_AMO_V5_PRE_UNIT_RELIC_ORACLE_BLOCK_HEIGHT,
+  WORK_AMO_V5_PRE_UNIT_RELIC_ORACLE_MODEL,
+  WORK_AMO_V5_PRE_UNIT_RELIC_ORACLE_NETWORK_VALUE_Q8,
+  WORK_AMO_V5_PRE_UNIT_RELIC_PRICE_SATS,
+  WORK_AMO_V5_PRE_UNIT_RELIC_PROTOCOL_VOUT,
+  WORK_AMO_V5_PRE_UNIT_RELIC_RECORD_ORDINAL,
+  WORK_AMO_V5_PRE_UNIT_RELIC_REGISTRY_ADDRESS,
+  WORK_AMO_V5_PRE_UNIT_RELIC_SELLER_ADDRESS,
+  WORK_AMO_V5_PRE_UNIT_RELIC_SELLER_PUBLIC_KEY,
+  WORK_AMO_V5_PRE_UNIT_RELIC_TICKET_VALUE_SATS,
+  WORK_AMO_V5_PRE_UNIT_RELIC_TICKET_VOUT,
   WORK_AMO_V5_POWB_TOKEN_ID,
   WORK_AMO_V5_RUSH_REGISTRY_ADDRESS,
   WORK_AMO_V5_STATE_ORDER_MODEL,
@@ -47,6 +73,7 @@ import {
   WORK_AMO_V5_V1_DECLARATION_BLOCK_INDEX,
   WORK_AMO_V5_V1_DECLARATION_HEIGHT,
   WORK_AMO_V5_V1_DECLARATION_TXID,
+  applyWorkAmoV5CutoverToTokenState,
   assignWorkAmoV5EconomicOutputs,
   calculateWorkAmoV5UnitTerms,
   compareWorkAmoUtf8,
@@ -84,10 +111,12 @@ import {
   workAmoV5NetworkValueQ8FromSufficientState,
   validateWorkAmoV5SufficientState,
   workAmoV5FrozenTermsMatch,
+  workAmoV5PreUnitRelicEvidenceIsExact,
   workAmoV5StatusFromEvidence,
 } from "../server/work-amo-v5.mjs";
 import {
   workAmoV5GenericTokenStatePreimageFromRows,
+  workAmoV5PreUnitRelicEvidenceFromRows,
 } from "../server/db/proof-index-reader.mjs";
 import {
   normalizeWorkAmoV5RawGenericState,
@@ -139,6 +168,563 @@ for (const exactColumn of [
     `AMO V5 SQL preimage must preserve ${exactColumn}`,
   );
 }
+
+const postUnitInvalidListingId = hash("2");
+const grandfatheredV4ListingId = hash("3");
+const exactAmoActivationBlockTime = "2026-07-26T00:17:29.000Z";
+const exactAmoActivation = {
+  activationHeight: WORK_AMO_V5_ACTIVATION_HEIGHT,
+  active: true,
+  blockHash: WORK_AMO_V5_DECLARATION_BLOCK_HASH,
+  blockHeight: WORK_AMO_V5_DECLARATION_HEIGHT,
+  blockIndex: WORK_AMO_V5_DECLARATION_BLOCK_INDEX,
+  blockTime: exactAmoActivationBlockTime,
+  canonical: true,
+  confirmed: true,
+  declarationTxid: WORK_AMO_V5_DECLARATION_TXID,
+  evidenceComplete: true,
+  txid: WORK_AMO_V5_DECLARATION_TXID,
+};
+const exactPreUnitAuthorization = {
+  amountAtoms: WORK_AMO_V5_PRE_UNIT_RELIC_AMOUNT_ATOMS,
+  anchorScriptPubKey: WORK_AMO_V5_PRE_UNIT_RELIC_ANCHOR_SCRIPT_PUBKEY,
+  anchorSigHashType: 0x83,
+  anchorType: "sale-ticket-v1",
+  anchorValueSats: WORK_AMO_V5_PRE_UNIT_RELIC_TICKET_VALUE_SATS,
+  anchorVout: WORK_AMO_V5_PRE_UNIT_RELIC_TICKET_VOUT,
+  buyerAddress: "",
+  expiresAt: "",
+  network: "livenet",
+  nonce: WORK_AMO_V5_PRE_UNIT_RELIC_NONCE,
+  minimumPriceSats: String(
+    WORK_AMO_V5_PRE_UNIT_RELIC_MINIMUM_PRICE_SATS,
+  ),
+  oracleBlockHash: WORK_AMO_V5_PRE_UNIT_RELIC_ORACLE_BLOCK_HASH,
+  oracleBlockHeight: WORK_AMO_V5_PRE_UNIT_RELIC_ORACLE_BLOCK_HEIGHT,
+  oracleModel: WORK_AMO_V5_PRE_UNIT_RELIC_ORACLE_MODEL,
+  oracleNetworkValueQ8:
+    WORK_AMO_V5_PRE_UNIT_RELIC_ORACLE_NETWORK_VALUE_Q8,
+  priceSats: WORK_AMO_V5_PRE_UNIT_RELIC_PRICE_SATS,
+  registryAddress: WORK_AMO_V5_PRE_UNIT_RELIC_REGISTRY_ADDRESS,
+  sellerAddress: WORK_AMO_V5_PRE_UNIT_RELIC_SELLER_ADDRESS,
+  sellerPublicKey: WORK_AMO_V5_PRE_UNIT_RELIC_SELLER_PUBLIC_KEY,
+  ticker: "WORK",
+  tokenId: WORK_TOKEN_ID,
+  version: WORK_AMO_V5_PRE_UNIT_RELIC_AUTH_VERSION,
+  anchorSignature: "",
+  anchorTxid: "",
+};
+const exactPreUnitRawPayload =
+  `pwt1:list5:${Buffer.from(
+    JSON.stringify(exactPreUnitAuthorization),
+    "utf8",
+  ).toString("base64url")}`;
+assert.equal(
+  Buffer.byteLength(exactPreUnitRawPayload, "utf8"),
+  WORK_AMO_V5_PRE_UNIT_RELIC_DATA_BYTES,
+  "The pre-unit fixture must preserve the exact canonical OP_RETURN bytes",
+);
+const exactPreUnitPayload = {
+  _powEventIndex: WORK_AMO_V5_PRE_UNIT_RELIC_RECORD_ORDINAL,
+  amount: "0.000016",
+  amountAtoms: WORK_AMO_V5_PRE_UNIT_RELIC_AMOUNT_ATOMS,
+  amountSats: WORK_AMO_V5_PRE_UNIT_RELIC_TICKET_VALUE_SATS,
+  amountStorageModel: "work-atoms-v1",
+  blockHash: WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_HASH,
+  blockHeight: WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_HEIGHT,
+  blockIndex: WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_INDEX,
+  blockTime: WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_TIME,
+  canonicalVerifier: "/api/v1/internal/token-verifier",
+  confirmed: true,
+  createdAt: WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_TIME,
+  dataBytes: WORK_AMO_V5_PRE_UNIT_RELIC_DATA_BYTES,
+  decimals: 8,
+  dropped: false,
+  indexedFrom: "token-listings",
+  kind: "token-listing",
+  listingId: WORK_AMO_V5_PRE_UNIT_RELIC_LISTING_TXID,
+  minerFeeSats: WORK_AMO_V5_PRE_UNIT_RELIC_MINER_FEE_SATS,
+  network: "livenet",
+  participants: [WORK_AMO_V5_PRE_UNIT_RELIC_SELLER_ADDRESS],
+  payload: exactPreUnitRawPayload,
+  priceSats: WORK_AMO_V5_PRE_UNIT_RELIC_PRICE_SATS,
+  protocol: "pwt1",
+  protocolVout: WORK_AMO_V5_PRE_UNIT_RELIC_PROTOCOL_VOUT,
+  recipients: [
+    {
+      address: WORK_AMO_V5_PRE_UNIT_RELIC_REGISTRY_ADDRESS,
+      amountSats: String(WORK_AMO_V5_PRE_UNIT_RELIC_TICKET_VALUE_SATS),
+      vout: 0,
+    },
+  ],
+  registryAddress: WORK_AMO_V5_PRE_UNIT_RELIC_REGISTRY_ADDRESS,
+  saleAuthorization: structuredClone(exactPreUnitAuthorization),
+  saleTicketTxid: WORK_AMO_V5_PRE_UNIT_RELIC_LISTING_TXID,
+  saleTicketValueSats: String(
+    WORK_AMO_V5_PRE_UNIT_RELIC_TICKET_VALUE_SATS,
+  ),
+  saleTicketVout: WORK_AMO_V5_PRE_UNIT_RELIC_TICKET_VOUT,
+  sellerAddress: WORK_AMO_V5_PRE_UNIT_RELIC_SELLER_ADDRESS,
+  senderAddress: WORK_AMO_V5_PRE_UNIT_RELIC_SELLER_ADDRESS,
+  status: "confirmed",
+  ticker: "WORK",
+  timestamp: WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_TIME,
+  tokenId: WORK_TOKEN_ID,
+  txid: WORK_AMO_V5_PRE_UNIT_RELIC_LISTING_TXID,
+  unitScale: "100000000",
+  valid: true,
+  validationMode: "canonical-first-party-state",
+};
+const exactPreUnitRelicRow = () => ({
+  anchor_address: WORK_AMO_V5_PRE_UNIT_RELIC_SELLER_ADDRESS,
+  anchor_scriptpubkey: WORK_AMO_V5_PRE_UNIT_RELIC_ANCHOR_SCRIPT_PUBKEY,
+  anchor_value_sats: String(
+    WORK_AMO_V5_PRE_UNIT_RELIC_TICKET_VALUE_SATS,
+  ),
+  block_hash: WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_HASH,
+  block_height: WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_HEIGHT,
+  block_index: WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_INDEX,
+  block_time: WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_TIME,
+  canonical_block: true,
+  canonical_close_count: 0,
+  canonical_close_txid: null,
+  canonical_spend_count: 0,
+  canonical_spend_txid: null,
+  definition_registry_address:
+    WORK_AMO_V5_PRE_UNIT_RELIC_REGISTRY_ADDRESS,
+  event_amount_sats: String(
+    WORK_AMO_V5_PRE_UNIT_RELIC_TICKET_VALUE_SATS,
+  ),
+  event_data_bytes: WORK_AMO_V5_PRE_UNIT_RELIC_DATA_BYTES,
+  event_id: 3_120_772,
+  event_raw_payload: exactPreUnitRawPayload,
+  event_status: "confirmed",
+  event_txid: WORK_AMO_V5_PRE_UNIT_RELIC_LISTING_TXID,
+  event_valid: true,
+  kind: "token-listing",
+  listing_event_count: 1,
+  listing_event_payload: structuredClone(exactPreUnitPayload),
+  listing_id: WORK_AMO_V5_PRE_UNIT_RELIC_LISTING_TXID,
+  listing_payload_matches_event: true,
+  listing_row_payload: structuredClone(exactPreUnitPayload),
+  listing_status: "active",
+  network: "livenet",
+  output_spent_by_txid: null,
+  pending_ticket_spend_count: 0,
+  price_sats: String(WORK_AMO_V5_PRE_UNIT_RELIC_PRICE_SATS),
+  protocol: "pwt1",
+  protocol_vout: WORK_AMO_V5_PRE_UNIT_RELIC_PROTOCOL_VOUT,
+  record_data_bytes: WORK_AMO_V5_PRE_UNIT_RELIC_DATA_BYTES,
+  record_output_index: WORK_AMO_V5_PRE_UNIT_RELIC_RECORD_ORDINAL,
+  record_payload_text: exactPreUnitRawPayload,
+  record_protocol: "pwt1",
+  record_vout: WORK_AMO_V5_PRE_UNIT_RELIC_PROTOCOL_VOUT,
+  record_ordinal: WORK_AMO_V5_PRE_UNIT_RELIC_RECORD_ORDINAL,
+  registry_payment_count: 1,
+  registry_payment_sats: String(
+    WORK_AMO_V5_PRE_UNIT_RELIC_TICKET_VALUE_SATS,
+  ),
+  registry_payment_vout: 0,
+  sale_ticket_txid: WORK_AMO_V5_PRE_UNIT_RELIC_LISTING_TXID,
+  sale_ticket_value_sats: String(
+    WORK_AMO_V5_PRE_UNIT_RELIC_TICKET_VALUE_SATS,
+  ),
+  sale_ticket_vout: WORK_AMO_V5_PRE_UNIT_RELIC_TICKET_VOUT,
+  seller_address: WORK_AMO_V5_PRE_UNIT_RELIC_SELLER_ADDRESS,
+  ticker: "WORK",
+  token_id: WORK_TOKEN_ID,
+  transaction_block_height: WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_HEIGHT,
+  transaction_block_index: WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_INDEX,
+  transaction_fee_sats: String(WORK_AMO_V5_PRE_UNIT_RELIC_MINER_FEE_SATS),
+  transaction_status: "confirmed",
+  valid_seal_count: 0,
+  v1_declaration_count: 1,
+  amount_atoms: WORK_AMO_V5_PRE_UNIT_RELIC_AMOUNT_ATOMS,
+});
+const incompletePreUnitEvidence = (rows, message) => {
+  const evidence = workAmoV5PreUnitRelicEvidenceFromRows(
+    rows,
+    exactAmoActivation,
+  );
+  assert.equal(evidence.complete, false, message);
+  return evidence;
+};
+const exactPreUnitRelicEvidence = workAmoV5PreUnitRelicEvidenceFromRows(
+  [exactPreUnitRelicRow()],
+  exactAmoActivation,
+);
+assert.equal(exactPreUnitRelicEvidence.complete, true);
+assert.equal(exactPreUnitRelicEvidence.disposition, "relic");
+assert.equal(exactPreUnitRelicEvidence.terminal, false);
+assert.equal(exactPreUnitRelicEvidence.unspent, true);
+assert.equal(exactPreUnitRelicEvidence.eventId, 3_120_772);
+assert.equal(
+  exactPreUnitRelicEvidence.model,
+  WORK_AMO_V5_PRE_UNIT_RELIC_MODEL,
+);
+assert.equal(
+  workAmoV5PreUnitRelicEvidenceIsExact(exactPreUnitRelicEvidence),
+  true,
+);
+
+incompletePreUnitEvidence([], "Missing relic evidence must fail closed");
+incompletePreUnitEvidence(
+  [exactPreUnitRelicRow(), exactPreUnitRelicRow()],
+  "Duplicate relic events must fail closed",
+);
+for (const [field, mismatch] of [
+  ["event_id", null],
+  ["listing_event_count", 2],
+  ["event_txid", hash("4")],
+  ["protocol", "pwm1"],
+  ["kind", "token-sale"],
+  ["event_status", "pending"],
+  ["event_valid", false],
+  ["canonical_block", false],
+]) {
+  const row = exactPreUnitRelicRow();
+  row[field] = mismatch;
+  incompletePreUnitEvidence(
+    [row],
+    `Mismatched canonical event field ${field} must fail closed`,
+  );
+}
+for (const [field, mismatch] of [
+  ["block_hash", hash("5")],
+  ["block_height", WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_HEIGHT + 1],
+  ["block_index", WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_INDEX + 1],
+  ["protocol_vout", WORK_AMO_V5_PRE_UNIT_RELIC_PROTOCOL_VOUT + 1],
+  ["record_ordinal", WORK_AMO_V5_PRE_UNIT_RELIC_RECORD_ORDINAL + 1],
+  [
+    "transaction_block_height",
+    WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_HEIGHT + 1,
+  ],
+  [
+    "transaction_block_index",
+    WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_INDEX + 1,
+  ],
+]) {
+  const row = exactPreUnitRelicRow();
+  row[field] = mismatch;
+  incompletePreUnitEvidence(
+    [row],
+    `Mismatched canonical coordinate ${field} must fail closed`,
+  );
+}
+const authorizationMismatchRow = (field, mismatch) => {
+  const row = exactPreUnitRelicRow();
+  row.listing_event_payload.saleAuthorization[field] = mismatch;
+  row.listing_row_payload.saleAuthorization[field] = mismatch;
+  return row;
+};
+for (const [field, mismatch] of [
+  ["version", "pwt-sale-v4"],
+  ["amountAtoms", "1601"],
+  ["priceSats", WORK_AMO_V5_PRE_UNIT_RELIC_PRICE_SATS + 1],
+  ["anchorVout", WORK_AMO_V5_PRE_UNIT_RELIC_TICKET_VOUT + 1],
+  ["oracleBlockHeight", WORK_AMO_V5_PRE_UNIT_RELIC_ORACLE_BLOCK_HEIGHT + 1],
+]) {
+  incompletePreUnitEvidence(
+    [authorizationMismatchRow(field, mismatch)],
+    `Mismatched sale authorization field ${field} must fail closed`,
+  );
+}
+for (const [field, wrongType] of [
+  ["amountAtoms", Number(WORK_AMO_V5_PRE_UNIT_RELIC_AMOUNT_ATOMS)],
+  ["anchorVout", String(WORK_AMO_V5_PRE_UNIT_RELIC_TICKET_VOUT)],
+  ["minimumPriceSats", WORK_AMO_V5_PRE_UNIT_RELIC_MINIMUM_PRICE_SATS],
+  ["priceSats", String(WORK_AMO_V5_PRE_UNIT_RELIC_PRICE_SATS)],
+]) {
+  incompletePreUnitEvidence(
+    [authorizationMismatchRow(field, wrongType)],
+    `Wrong JSON type for sale authorization field ${field} must fail closed`,
+  );
+}
+for (const [field, mismatch] of [
+  ["listing_payload_matches_event", false],
+  ["event_raw_payload", "pwt1:list5:broken"],
+  ["record_payload_text", "pwt1:list5:broken"],
+  ["event_data_bytes", WORK_AMO_V5_PRE_UNIT_RELIC_DATA_BYTES + 1],
+  ["record_data_bytes", WORK_AMO_V5_PRE_UNIT_RELIC_DATA_BYTES + 1],
+]) {
+  const row = exactPreUnitRelicRow();
+  row[field] = mismatch;
+  incompletePreUnitEvidence(
+    [row],
+    `Mismatched payload evidence ${field} must fail closed`,
+  );
+}
+for (const [field, mismatch] of [
+  ["sale_ticket_txid", hash("6")],
+  ["sale_ticket_vout", WORK_AMO_V5_PRE_UNIT_RELIC_TICKET_VOUT + 1],
+  [
+    "sale_ticket_value_sats",
+    String(WORK_AMO_V5_PRE_UNIT_RELIC_TICKET_VALUE_SATS + 1),
+  ],
+  ["anchor_address", "bc1qnottheseller"],
+  ["anchor_scriptpubkey", `5120${"0".repeat(64)}`],
+  [
+    "anchor_value_sats",
+    String(WORK_AMO_V5_PRE_UNIT_RELIC_TICKET_VALUE_SATS + 1),
+  ],
+  ["registry_payment_count", 0],
+  ["registry_payment_sats", "0"],
+  ["registry_payment_vout", 1],
+  ["event_amount_sats", "0"],
+  ["transaction_fee_sats", "0"],
+]) {
+  const row = exactPreUnitRelicRow();
+  row[field] = mismatch;
+  incompletePreUnitEvidence(
+    [row],
+    `Mismatched output or cost evidence ${field} must fail closed`,
+  );
+}
+for (const [field, mismatch] of [
+  ["v1_declaration_count", 0],
+  ["pending_ticket_spend_count", 1],
+]) {
+  const row = exactPreUnitRelicRow();
+  row[field] = mismatch;
+  incompletePreUnitEvidence(
+    [row],
+    `Mismatched prerequisite ${field} must fail closed`,
+  );
+}
+const terminalSpendTxid = hash("a");
+const terminalSpendRow = exactPreUnitRelicRow();
+Object.assign(terminalSpendRow, {
+  canonical_spend_count: 1,
+  canonical_spend_txid: terminalSpendTxid,
+  output_spent_by_txid: terminalSpendTxid,
+});
+const terminalPreUnitRelicEvidence =
+  workAmoV5PreUnitRelicEvidenceFromRows(
+    [terminalSpendRow],
+    exactAmoActivation,
+  );
+assert.equal(terminalPreUnitRelicEvidence.complete, true);
+assert.equal(terminalPreUnitRelicEvidence.disposition, "terminal");
+assert.equal(terminalPreUnitRelicEvidence.terminal, true);
+assert.equal(terminalPreUnitRelicEvidence.unspent, false);
+assert.equal(terminalPreUnitRelicEvidence.listing, undefined);
+assert.equal(
+  workAmoV5PreUnitRelicEvidenceIsExact(terminalPreUnitRelicEvidence),
+  true,
+);
+const terminalCloseAndSpendRow = structuredClone(terminalSpendRow);
+Object.assign(terminalCloseAndSpendRow, {
+  canonical_close_count: 1,
+  canonical_close_txid: terminalSpendTxid,
+});
+assert.equal(
+  workAmoV5PreUnitRelicEvidenceFromRows(
+    [terminalCloseAndSpendRow],
+    exactAmoActivation,
+  ).complete,
+  true,
+  "A matching canonical close and exact ticket spend must be terminal",
+);
+const closeOnlyRow = exactPreUnitRelicRow();
+Object.assign(closeOnlyRow, {
+  canonical_close_count: 1,
+  canonical_close_txid: terminalSpendTxid,
+});
+incompletePreUnitEvidence(
+  [closeOnlyRow],
+  "A close event without the canonical ticket spend must fail closed",
+);
+const pointerOnlyRow = exactPreUnitRelicRow();
+pointerOnlyRow.output_spent_by_txid = terminalSpendTxid;
+incompletePreUnitEvidence(
+  [pointerOnlyRow],
+  "A spend pointer without canonical input evidence must fail closed",
+);
+const mismatchedTerminalRow = structuredClone(terminalSpendRow);
+mismatchedTerminalRow.output_spent_by_txid = hash("b");
+incompletePreUnitEvidence(
+  [mismatchedTerminalRow],
+  "Mismatched canonical spend and output pointer must fail closed",
+);
+const invalidVoutThreeRow = exactPreUnitRelicRow();
+Object.assign(invalidVoutThreeRow, {
+  invalid_related_event_count: 1,
+  other_output_spend_count: 1,
+  other_output_spent_by_txid:
+    "8d5dd9599d8a372a6f68833cc844a7610120041ba3412baff62a21d74e5c8ad0",
+  other_output_vout: 3,
+});
+assert.equal(
+  workAmoV5PreUnitRelicEvidenceFromRows(
+    [invalidVoutThreeRow],
+    exactAmoActivation,
+  ).disposition,
+  "relic",
+  "An invalid action spending vout 3 must not close the vout 2 ticket",
+);
+
+const listingFixture = (listingId, version, blockHeight) => ({
+  blockHeight,
+  confirmed: true,
+  listingId,
+  network: "livenet",
+  saleAuthorization: {
+    tokenId: WORK_TOKEN_ID,
+    version,
+  },
+  status: "active",
+  tokenId: WORK_TOKEN_ID,
+  txid: listingId,
+});
+const unprojectedAmoListings = {
+  closedListings: [],
+  indexedThroughBlock: WORK_AMO_V5_ACTIVATION_HEIGHT,
+  invalidEvents: [],
+  listings: [
+    listingFixture(
+      WORK_AMO_V5_PRE_UNIT_RELIC_LISTING_TXID,
+      "pwt-sale-v3",
+      WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_HEIGHT,
+    ),
+    listingFixture(
+      postUnitInvalidListingId,
+      "pwt-sale-v3",
+      WORK_AMO_V5_V1_ACTIVATION_HEIGHT,
+    ),
+    listingFixture(
+      grandfatheredV4ListingId,
+      WORK_AMO_V4_AUTH_VERSION,
+      WORK_AMO_V5_ACTIVATION_HEIGHT - 1,
+    ),
+  ],
+  network: "livenet",
+  stats: {
+    activeListings: 3,
+    confirmedOpenListings: 3,
+    invalidEvents: 0,
+    openListings: 3,
+    pendingOpenListings: 0,
+    relicListings: 0,
+  },
+  tokens: [
+    {
+      confirmedOpenListings: 3,
+      openListings: 3,
+      pendingOpenListings: 0,
+      tokenId: WORK_TOKEN_ID,
+    },
+  ],
+  totalCounts: {
+    closedListings: 0,
+    listings: 3,
+  },
+  workAmoV5Activation: exactAmoActivation,
+};
+const missingRelicProjection = applyWorkAmoV5CutoverToTokenState({
+  ...unprojectedAmoListings,
+  workAmoV5PreUnitRelicEvidence: {
+    complete: false,
+    model: WORK_AMO_V5_PRE_UNIT_RELIC_MODEL,
+  },
+});
+assert.deepEqual(
+  missingRelicProjection.listings.map(({ listingId }) => listingId),
+  [grandfatheredV4ListingId],
+  "Missing evidence must suppress legacy WORK reservations while preserving V4",
+);
+assert.equal(missingRelicProjection.closedListings.length, 0);
+assert.equal(missingRelicProjection.stats.relicListings, 0);
+assert.deepEqual(missingRelicProjection.totalCounts, {
+  closedListings: 0,
+  listings: 1,
+});
+assert.deepEqual(
+  {
+    confirmedOpenListings:
+      missingRelicProjection.tokens[0].confirmedOpenListings,
+    openListings: missingRelicProjection.tokens[0].openListings,
+    pendingOpenListings:
+      missingRelicProjection.tokens[0].pendingOpenListings,
+  },
+  {
+    confirmedOpenListings: 1,
+    openListings: 1,
+    pendingOpenListings: 0,
+  },
+);
+assert.equal(missingRelicProjection.workAmoV5ProjectionReady, false);
+const projectedAmoListings = applyWorkAmoV5CutoverToTokenState(
+  {
+    ...unprojectedAmoListings,
+    workAmoV5PreUnitRelicEvidence: exactPreUnitRelicEvidence,
+  },
+);
+assert.deepEqual(
+  projectedAmoListings.listings.map(({ listingId }) => listingId),
+  [grandfatheredV4ListingId],
+  "AMO projection must preserve only the grandfathered V4 listing as active",
+);
+assert.deepEqual(
+  projectedAmoListings.closedListings.find(
+    ({ listingId }) =>
+      listingId === WORK_AMO_V5_PRE_UNIT_RELIC_LISTING_TXID,
+  ),
+  {
+    ...exactPreUnitRelicEvidence.listing,
+    closedAt: exactAmoActivationBlockTime,
+    closedConfirmed: true,
+    closedTxid: WORK_AMO_V5_DECLARATION_TXID,
+    confirmed: true,
+    disabledAtBlockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT,
+    disabledByTxid: WORK_AMO_V5_DECLARATION_TXID,
+    disabledReason: WORK_AMO_V5_PRE_UNIT_RELIC_DISABLED_REASON,
+    kind: "token-listing-closed",
+    listingId: WORK_AMO_V5_PRE_UNIT_RELIC_LISTING_TXID,
+    originalStatus: "active",
+    refundEligible: false,
+    relic: true,
+    status: "disabled",
+    txid: WORK_AMO_V5_DECLARATION_TXID,
+  },
+);
+assert.equal(
+  projectedAmoListings.stats.activeListings,
+  1,
+);
+assert.equal(projectedAmoListings.stats.confirmedOpenListings, 1);
+assert.equal(projectedAmoListings.stats.relicListings, 1);
+assert.deepEqual(projectedAmoListings.totalCounts, {
+  closedListings: 1,
+  listings: 1,
+});
+assert.equal(projectedAmoListings.workAmoV5ProjectionReady, true);
+const terminalRelicProjection = applyWorkAmoV5CutoverToTokenState({
+  ...unprojectedAmoListings,
+  workAmoV5PreUnitRelicEvidence: terminalPreUnitRelicEvidence,
+});
+assert.deepEqual(
+  terminalRelicProjection.listings.map(({ listingId }) => listingId),
+  [grandfatheredV4ListingId],
+  "Terminal ticket evidence must suppress the V3 reservation and preserve V4",
+);
+assert.equal(terminalRelicProjection.closedListings.length, 0);
+assert.equal(terminalRelicProjection.stats.relicListings, 0);
+assert.deepEqual(terminalRelicProjection.totalCounts, {
+  closedListings: 0,
+  listings: 1,
+});
+assert.equal(terminalRelicProjection.workAmoV5ProjectionReady, true);
+assert.deepEqual(
+  applyWorkAmoV5CutoverToTokenState(missingRelicProjection),
+  missingRelicProjection,
+  "Missing-evidence projection must be idempotent",
+);
+assert.deepEqual(
+  applyWorkAmoV5CutoverToTokenState(projectedAmoListings),
+  projectedAmoListings,
+  "AMO listing projection must be idempotent",
+);
+
 const genericTokenId = hash("7");
 const exactGenericBalance = "9007199254740993";
 const exactGenericPreimage =
