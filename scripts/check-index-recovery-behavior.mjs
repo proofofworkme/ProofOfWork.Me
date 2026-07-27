@@ -43010,6 +43010,25 @@ check("AMO V5 legacy carry preserves committed N while publishing valid-only mar
   assert.equal(evidenceMatches(evidence), true);
   const reconciliation = reconcile(state, value, workFloor, evidence);
   assert.equal(reconciliation.valid, true);
+  assert.equal(reconciliation.postActivationCreditFixedQ8, 0n);
+  const postActivationCreditFixedQ8 = 1_044n * VALUE_Q8_SCALE;
+  const postActivationState = {
+    ...state,
+    creditFixedQ8: (
+      committedCreditFixedQ8 + postActivationCreditFixedQ8
+    ).toString(),
+  };
+  const postActivationReconciliation = reconcile(
+    postActivationState,
+    value,
+    workFloor,
+    evidence,
+  );
+  assert.equal(postActivationReconciliation.valid, true);
+  assert.equal(
+    postActivationReconciliation.postActivationCreditFixedQ8,
+    postActivationCreditFixedQ8,
+  );
   assert.equal(
     reconcile(
       state,
@@ -43034,7 +43053,7 @@ check("AMO V5 legacy carry preserves committed N while publishing valid-only mar
         actualValue: {
           ...workFloor.actualValue,
           creditFixedQ8: (
-            committedCreditFixedQ8 + 1n
+            committedCreditFixedQ8 - 1n
           ).toString(),
         },
       },

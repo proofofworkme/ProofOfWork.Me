@@ -46388,18 +46388,42 @@ function workAmoV5LegacyBootstrapReconciliation(
       : null;
   const validCreditFixedQ8 = validCreditFixedSats * VALUE_Q8_SCALE;
   const legacyBootstrapCreditFixedQ8 = BigInt(evidence.creditFixedQ8);
-  const committedExpectedCreditFixedQ8 =
+  const legacyBaselineCreditFixedQ8 =
     validCreditFixedQ8 + legacyBootstrapCreditFixedQ8;
+  const postActivationCreditFixedQ8 =
+    committedCreditFixedQ8 !== null &&
+    committedCreditFixedQ8 >= legacyBaselineCreditFixedQ8
+      ? committedCreditFixedQ8 - legacyBaselineCreditFixedQ8
+      : null;
   const publishedCreditFixedQ8Matches =
     !publishedValidCreditFixedQ8Present ||
     publishedValidCreditFixedQ8 === validCreditFixedQ8 ||
-    publishedValidCreditFixedQ8 === committedExpectedCreditFixedQ8;
+    publishedValidCreditFixedQ8 === legacyBaselineCreditFixedQ8 ||
+    publishedValidCreditFixedQ8 === committedCreditFixedQ8;
   if (
     committedCreditFixedQ8 === null ||
+    postActivationCreditFixedQ8 === null ||
     !publishedCreditFixedQ8Matches ||
-    committedCreditFixedQ8 !== committedExpectedCreditFixedQ8
+    committedCreditFixedQ8 !==
+      legacyBaselineCreditFixedQ8 + postActivationCreditFixedQ8
   ) {
-    return invalid("legacy-bootstrap-credit-value-diverged");
+    return {
+      details: {
+        committedCreditFixedQ8:
+          committedCreditFixedQ8?.toString() ?? null,
+        legacyBaselineCreditFixedQ8:
+          legacyBaselineCreditFixedQ8.toString(),
+        legacyBootstrapCreditFixedQ8:
+          legacyBootstrapCreditFixedQ8.toString(),
+        postActivationCreditFixedQ8:
+          postActivationCreditFixedQ8?.toString() ?? null,
+        publishedValidCreditFixedQ8:
+          publishedValidCreditFixedQ8?.toString() ?? null,
+        validCreditFixedQ8: validCreditFixedQ8.toString(),
+      },
+      reason: "legacy-bootstrap-credit-value-diverged",
+      valid: false,
+    };
   }
   const committedState = Object.fromEntries(
     Object.entries(committedBaseState).map(([field, amount]) => [
@@ -46432,6 +46456,7 @@ function workAmoV5LegacyBootstrapReconciliation(
     legacyBootstrap,
     legacyBootstrapCreditFixedQ8,
     legacyBootstrapGrowthValueQ8,
+    postActivationCreditFixedQ8,
     valid: true,
     validBaseNetworkValueQ8,
     validBaseState,
@@ -46761,7 +46786,7 @@ async function workFloorWithVerifiedWorkAmoV5ClosingState(
   );
   if (reconciliation.valid !== true) {
     throw freshDataUnavailableError(
-      `The canonical AMO legacy bootstrap reconciliation diverged (${reconciliation.reason}).`,
+      `The canonical AMO legacy bootstrap reconciliation diverged (${reconciliation.reason})${reconciliation.details ? `: ${JSON.stringify(reconciliation.details)}` : ""}.`,
     );
   }
 
