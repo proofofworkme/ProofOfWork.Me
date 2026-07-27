@@ -42985,6 +42985,7 @@ check("AMO V5 legacy carry preserves committed N while publishing valid-only mar
       ...validBaseState,
       ...validCreditFlows,
       baseNetworkValueQ8: validBaseNetworkValueQ8.toString(),
+      creditFixedQ8: committedCreditFixedQ8.toString(),
       marketplaceFeeSats: "stale",
       marketplaceFlowSats: "stale",
       marketplaceMutationFeeSats: "stale",
@@ -43009,6 +43010,38 @@ check("AMO V5 legacy carry preserves committed N while publishing valid-only mar
   assert.equal(evidenceMatches(evidence), true);
   const reconciliation = reconcile(state, value, workFloor, evidence);
   assert.equal(reconciliation.valid, true);
+  assert.equal(
+    reconcile(
+      state,
+      value,
+      {
+        ...workFloor,
+        actualValue: {
+          ...workFloor.actualValue,
+          creditFixedQ8: validCreditFixedQ8.toString(),
+        },
+      },
+      evidence,
+    ).valid,
+    true,
+  );
+  assert.equal(
+    reconcile(
+      state,
+      value,
+      {
+        ...workFloor,
+        actualValue: {
+          ...workFloor.actualValue,
+          creditFixedQ8: (
+            committedCreditFixedQ8 + 1n
+          ).toString(),
+        },
+      },
+      evidence,
+    ).reason,
+    "legacy-bootstrap-credit-value-diverged",
+  );
   assert.equal(
     reconciliation.committedBaseState.tokenMarketplaceFeeSats,
     746n,

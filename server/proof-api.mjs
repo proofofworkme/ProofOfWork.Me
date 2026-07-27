@@ -46388,12 +46388,16 @@ function workAmoV5LegacyBootstrapReconciliation(
       : null;
   const validCreditFixedQ8 = validCreditFixedSats * VALUE_Q8_SCALE;
   const legacyBootstrapCreditFixedQ8 = BigInt(evidence.creditFixedQ8);
+  const committedExpectedCreditFixedQ8 =
+    validCreditFixedQ8 + legacyBootstrapCreditFixedQ8;
+  const publishedCreditFixedQ8Matches =
+    !publishedValidCreditFixedQ8Present ||
+    publishedValidCreditFixedQ8 === validCreditFixedQ8 ||
+    publishedValidCreditFixedQ8 === committedExpectedCreditFixedQ8;
   if (
     committedCreditFixedQ8 === null ||
-    (publishedValidCreditFixedQ8Present &&
-      publishedValidCreditFixedQ8 !== validCreditFixedQ8) ||
-    committedCreditFixedQ8 !==
-      validCreditFixedQ8 + legacyBootstrapCreditFixedQ8
+    !publishedCreditFixedQ8Matches ||
+    committedCreditFixedQ8 !== committedExpectedCreditFixedQ8
   ) {
     return invalid("legacy-bootstrap-credit-value-diverged");
   }
