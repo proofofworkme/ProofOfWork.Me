@@ -913,8 +913,76 @@ async function assertWorkAmoV5CutoverContract({ fresh = true } = {}) {
     relic?.confirmed === true &&
       relic?.relic === true &&
       relic?.refundEligible === false &&
+      String(relic?.closedTxid ?? relic?.txid ?? "").toLowerCase() ===
+        WORK_AMO_V5_DECLARATION_TXID &&
       ["disabled", "closed"].includes(String(relic?.status ?? "")),
     `${WORK_AMO_V5_PRE_V1_RELIC_LISTING_TX} is not preserved as a non-reserving pre-unit relic`,
+  );
+
+  const relicByDeclaration = await tokenHistory("closed-listings", {
+    fresh: 1,
+    q: WORK_AMO_V5_DECLARATION_TXID,
+  });
+  const declarationRelic = listingById(
+    relicByDeclaration.items,
+    WORK_AMO_V5_PRE_V1_RELIC_LISTING_TX,
+  );
+  assert(
+    declarationRelic?.relic === true &&
+      String(
+        declarationRelic?.closedTxid ?? declarationRelic?.txid ?? "",
+      ).toLowerCase() === WORK_AMO_V5_DECLARATION_TXID,
+    `${WORK_AMO_V5_DECLARATION_TXID} does not resolve the pre-unit closed relic`,
+  );
+
+  for (const query of [
+    WORK_AMO_V5_PRE_V1_RELIC_LISTING_TX,
+    WORK_AMO_V5_DECLARATION_TXID,
+  ]) {
+    const relicMarketLog = await tokenHistory("market-log", {
+      fresh: 1,
+      q: query,
+    });
+    const marketRelic = (relicMarketLog.items ?? []).find(
+      (item) =>
+        item?.kind === "closed-listing" &&
+        String(item?.closedListing?.listingId ?? "").toLowerCase() ===
+          WORK_AMO_V5_PRE_V1_RELIC_LISTING_TX &&
+        String(item?.txid ?? "").toLowerCase() ===
+          WORK_AMO_V5_DECLARATION_TXID,
+    );
+    assert(
+      marketRelic?.closedListing?.relic === true &&
+        marketRelic?.closedListing?.refundEligible === false,
+      `${query} does not resolve the pre-unit relic in WORK market-log`,
+    );
+  }
+
+  const activeRelicHistory = await tokenHistory("listings", {
+    fresh: 1,
+    q: WORK_AMO_V5_PRE_V1_RELIC_LISTING_TX,
+  });
+  assert(
+    !listingById(
+      activeRelicHistory.items,
+      WORK_AMO_V5_PRE_V1_RELIC_LISTING_TX,
+    ),
+    `${WORK_AMO_V5_PRE_V1_RELIC_LISTING_TX} leaked into active WORK listing history`,
+  );
+
+  const broadRelicHistory = await tokenHistory("closed-listings", {
+    fresh: 1,
+    limit: 200,
+  });
+  const broadRelic = listingById(
+    broadRelicHistory.items,
+    WORK_AMO_V5_PRE_V1_RELIC_LISTING_TX,
+  );
+  assert(
+    broadRelic?.relic === true &&
+      String(broadRelic?.closedTxid ?? broadRelic?.txid ?? "").toLowerCase() ===
+        WORK_AMO_V5_DECLARATION_TXID,
+    `${WORK_AMO_V5_PRE_V1_RELIC_LISTING_TX} is absent from broad relational closed history`,
   );
 
   const invalidHistory = await tokenHistory("invalid-events", {

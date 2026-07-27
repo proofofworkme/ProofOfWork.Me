@@ -123,6 +123,32 @@ assert.equal(
   true,
   "frozen credit components must reconcile through exact Q8 arithmetic",
 );
+const legacyBootstrapCreditFixedSats = 2_762n;
+const creditFrozenWithLegacyCarry = {
+  ...creditFrozenFixture,
+  creditEventFrozenValueQ8: (
+    BigInt(creditEventFrozenValueQ8) +
+    legacyBootstrapCreditFixedSats * BOND_VALUE_Q8_SCALE
+  ).toString(),
+  legacyBootstrapCreditFixedQ8: (
+    legacyBootstrapCreditFixedSats * BOND_VALUE_Q8_SCALE
+  ).toString(),
+  legacyBootstrapCreditFixedSats:
+    legacyBootstrapCreditFixedSats.toString(),
+};
+assert.equal(
+  exactCreditFrozenValueState(creditFrozenWithLegacyCarry).componentsAgree,
+  true,
+  "legacy bootstrap fixed value must reconcile separately from valid flows",
+);
+assert.equal(
+  exactCreditFrozenValueState({
+    ...creditFrozenWithLegacyCarry,
+    legacyBootstrapCreditFixedQ8: undefined,
+  }).componentsAgree,
+  false,
+  "a partial legacy bootstrap carry must fail exact reconciliation",
+);
 assert.equal(
   exactCreditFrozenValueState({
     ...creditFrozenFixture,

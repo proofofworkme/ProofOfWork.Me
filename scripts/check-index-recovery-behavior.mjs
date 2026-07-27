@@ -78,9 +78,25 @@ import {
   WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS,
   WORK_AMO_V5_ID_REGISTRY_ADDRESS,
   WORK_AMO_V5_INCB_TOKEN_ID,
+  WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_BLOCK_HASH,
+  WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_BLOCK_HEIGHT,
+  WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_BLOCK_INDEX,
+  WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MINER_FEE_SATS,
+  WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MODEL,
+  WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MUTATION_SATS,
+  WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_PROTOCOL_VOUT,
+  WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_REASON_CODE,
+  WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_RECORD_ORDINAL,
+  WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_TXID,
   WORK_AMO_V5_NETWORK_ACCUMULATOR_MODEL,
   WORK_AMO_V5_PAYLOAD_COMMITMENT_MODEL,
   WORK_AMO_V5_POWB_TOKEN_ID,
+  WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_HEIGHT,
+  WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_INDEX,
+  WORK_AMO_V5_PRE_UNIT_RELIC_DISABLED_REASON,
+  WORK_AMO_V5_PRE_UNIT_RELIC_LISTING_TXID,
+  WORK_AMO_V5_PRE_UNIT_RELIC_PROTOCOL_VOUT,
+  WORK_AMO_V5_PRE_UNIT_RELIC_RECORD_ORDINAL,
   WORK_AMO_V5_RUSH_REGISTRY_ADDRESS,
   WORK_AMO_V5_TOKEN_INDEX_ADDRESS,
   WORK_AMO_V5_STATE_ORDER_MODEL,
@@ -201,6 +217,101 @@ const GROWTH_ID_DENSITY_NUMERATOR = 26_868_933_906_745_133n;
 const GROWTH_ID_DENSITY_DENOMINATOR = 100_000_000_000_000n;
 const GROWTH_VALUE_MULTIPLE = 5n;
 const DEFAULT_REPLAY_WITNESS_SET_HASH = "8".repeat(64);
+
+function workAmoV5LegacyBootstrapCarryRowFixture(overrides = {}) {
+  const txid = WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_TXID;
+  const blockHash = WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_BLOCK_HASH;
+  const reasonCode = WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_REASON_CODE;
+  return {
+    active_listing_count: 0,
+    amount_sats: String(
+      WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MUTATION_SATS,
+    ),
+    block_hash: blockHash,
+    block_height: WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_BLOCK_HEIGHT,
+    block_index: WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_BLOCK_INDEX,
+    canonical_block: true,
+    event_id: 3_121_341,
+    event_status: "confirmed",
+    fee_sats: String(WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MINER_FEE_SATS),
+    kind: "token-listing",
+    listing_count: 1,
+    listing_statuses: ["dropped"],
+    network: "livenet",
+    payload: {
+      _powEventIndex:
+        WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_RECORD_ORDINAL,
+      amountSats: WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MUTATION_SATS,
+      blockHash,
+      blockHeight: WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_BLOCK_HEIGHT,
+      blockIndex: WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_BLOCK_INDEX,
+      confirmed: true,
+      kind: "token-listing",
+      listingId: txid,
+      minerFeeSats: WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MINER_FEE_SATS,
+      network: "livenet",
+      protocol: "pwt1",
+      protocolVout:
+        WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_PROTOCOL_VOUT,
+      reasonCode,
+      refundEligible: false,
+      relic: false,
+      saleAuthorization: { version: "pwt-sale-v3" },
+      saleTicketTxid: txid,
+      status: "confirmed",
+      tokenId: WORK_TOKEN_ID,
+      txid,
+      valid: false,
+      validationErrors: [reasonCode],
+    },
+    protocol: "pwt1",
+    protocol_vout: WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_PROTOCOL_VOUT,
+    record_ordinal: WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_RECORD_ORDINAL,
+    transaction_block_height:
+      WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_BLOCK_HEIGHT,
+    transaction_block_index:
+      WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_BLOCK_INDEX,
+    transaction_status: "confirmed",
+    txid,
+    valid: false,
+    validation_errors: [reasonCode],
+    ...overrides,
+  };
+}
+
+function workAmoV5LegacyBootstrapCarryEvidenceFixture(overrides = {}) {
+  const mutationSats =
+    WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MUTATION_SATS;
+  const minerFeeSats =
+    WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MINER_FEE_SATS;
+  const creditFixedSats = mutationSats + minerFeeSats;
+  const growthValueSats = mutationSats * Number(GROWTH_VALUE_MULTIPLE);
+  return {
+    activeListingCount: 0,
+    blockHash: WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_BLOCK_HASH,
+    blockHeight: WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_BLOCK_HEIGHT,
+    blockIndex: WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_BLOCK_INDEX,
+    complete: true,
+    creditFixedQ8: (
+      BigInt(creditFixedSats) * VALUE_Q8_SCALE
+    ).toString(),
+    creditFixedSats,
+    eventId: 3_121_341,
+    growthValueQ8: (
+      BigInt(growthValueSats) * VALUE_Q8_SCALE
+    ).toString(),
+    growthValueSats,
+    listingCount: 1,
+    marketplaceMutationFeeSats: mutationSats,
+    minerFeeSats,
+    model: WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MODEL,
+    protocolVout: WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_PROTOCOL_VOUT,
+    reasonCode: WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_REASON_CODE,
+    recordOrdinal: WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_RECORD_ORDINAL,
+    txid: WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_TXID,
+    ...overrides,
+  };
+}
 
 function exactWorkAmoV5RawTransitionChainCommitment(value) {
   const model = String(value?.model ?? "").trim();
@@ -3442,6 +3553,7 @@ check("canonical credit overlays retain explicit address scope", async () => {
         page: 0,
         query: "",
       }),
+      isTerminalTokenMarketHistoryPage: () => false,
       ledgerTokenStateForScope: () => ({
         transfers: [
           { recipientAddress: address, txid: otherTxid },
@@ -3486,6 +3598,64 @@ check("canonical credit overlays retain explicit address scope", async () => {
     [requestedTxid],
     "an older exact tx read must filter before overlay pagination",
   );
+});
+
+check("canonical WORK transfer overlays preserve exact-tip page provenance", () => {
+  const historicalTxid = "a".repeat(64);
+  const tipHash = "b".repeat(64);
+  const tokenHistoryPageWithCanonicalWorkTransferValues = isolatedFunction(
+    API_PATH,
+    "tokenHistoryPageWithCanonicalWorkTransferValues",
+    {
+      historyItemsMatchingAddresses: (items) => items,
+      historyPaginationFromSearch: () => ({
+        limit: 20,
+        offset: 0,
+        page: 0,
+        query: "",
+      }),
+      mergeTokenHistoryPageWithOverlay: (page, overlayPage) => ({
+        ...page,
+        indexedThroughBlock: overlayPage.items[0].blockHeight,
+        items: overlayPage.items,
+      }),
+      paginatedHistoryPayload: ({ items, ...page }) => ({
+        ...page,
+        indexedThroughBlock: items[0].blockHeight,
+        items,
+      }),
+      proofIndexPayloadIndexedThroughBlock: (payload) =>
+        Number(payload?.indexedThroughBlock ?? 0),
+      recoveryAddressHintsFromSearchParams: () => [],
+      recoveryTxidsFromSearchParams: () => [],
+    },
+  );
+  const result = tokenHistoryPageWithCanonicalWorkTransferValues(
+    {
+      indexedThroughBlock: 959_780,
+      items: [{ blockHeight: 954_072, txid: historicalTxid }],
+      kind: "transfers",
+      network: "livenet",
+    },
+    {
+      indexedAt: "2026-07-27T03:44:24.501Z",
+      indexedThroughBlock: 959_780,
+      indexedThroughBlockHash: tipHash,
+      snapshotId: "e80d970ceea57924de46ed32",
+      workTransferValueProjection: {
+        items: [{ blockHeight: 954_072, txid: historicalTxid }],
+        model: "canonical-work-transfer-value-projection-v1",
+      },
+    },
+    "livenet",
+    new URLSearchParams(),
+  );
+
+  assert.equal(result.indexedThroughBlock, 959_780);
+  assert.equal(result.indexedThroughBlockHash, tipHash);
+  assert.equal(result.snapshotId, "e80d970ceea57924de46ed32");
+  assert.equal(result.items[0].blockHeight, 954_072);
+  assert.equal(result.workTransferValueProjection.indexedThroughBlock, 959_780);
 });
 
 check("canonical credit fee fields cannot be overwritten by stale projections", () => {
@@ -7125,6 +7295,10 @@ check("ledger consistency requires fixed Inception issuance plus market flow", (
     currentLedgerSource,
     /checkNames\.has\("inception-fixed-value-reconciles"\)/u,
   );
+  assert.match(
+    currentLedgerSource,
+    /checkNames\.has\("work-amo-v5-legacy-bootstrap-carry-proven"\)/u,
+  );
 });
 
 check("credit frozen-value consistency uses exact Q8 above float precision", () => {
@@ -7152,15 +7326,23 @@ check("credit frozen-value consistency uses exact Q8 above float precision", () 
     (total, value) => total + BigInt(value),
     0n,
   );
+  const legacyBootstrapCreditFixedSats = 2_762n;
+  const committedFixedQ8 =
+    (fixedFlow + legacyBootstrapCreditFixedSats) * VALUE_Q8_SCALE;
   const exact = {
     ...flows,
     // The legacy Number summaries can disagree by one whole proof at this
     // magnitude even though every event component is exact.
     creditEventFrozenValueSats: 7_575_762_511_753_281,
     creditEventFrozenValueQ8:
-      (movementQ8 + fixedFlow * VALUE_Q8_SCALE).toString(),
+      (movementQ8 + committedFixedQ8).toString(),
+    creditFixedQ8: committedFixedQ8.toString(),
     creditMovementFrozenValueSats: 7_575_762_473_548_365,
     creditMovementFrozenValueQ8: movementQ8.toString(),
+    legacyBootstrapCreditFixedQ8:
+      (legacyBootstrapCreditFixedSats * VALUE_Q8_SCALE).toString(),
+    legacyBootstrapCreditFixedSats:
+      legacyBootstrapCreditFixedSats.toString(),
   };
   assert.equal(exactCreditFrozenValueComponentsAgree(exact), true);
   assert.equal(
@@ -7190,6 +7372,40 @@ check("credit frozen-value consistency uses exact Q8 above float precision", () 
     exactCreditFrozenValueComponentsAgree({
       ...exact,
       creditMinerFeeFlowSats: undefined,
+    }),
+    false,
+  );
+  assert.equal(
+    exactCreditFrozenValueComponentsAgree({
+      ...exact,
+      legacyBootstrapCreditFixedQ8: undefined,
+      legacyBootstrapCreditFixedSats: undefined,
+    }),
+    false,
+    "the committed carry cannot be silently treated as current valid flow",
+  );
+  assert.equal(
+    exactCreditFrozenValueComponentsAgree({
+      ...exact,
+      legacyBootstrapCreditFixedQ8:
+        (
+          legacyBootstrapCreditFixedSats * VALUE_Q8_SCALE +
+          1n
+        ).toString(),
+    }),
+    false,
+  );
+  assert.equal(
+    exactCreditFrozenValueComponentsAgree({
+      ...exact,
+      legacyBootstrapCreditFixedQ8: "not-an-integer",
+    }),
+    false,
+  );
+  assert.equal(
+    exactCreditFrozenValueComponentsAgree({
+      ...exact,
+      legacyBootstrapCreditFixedSats: undefined,
     }),
     false,
   );
@@ -15082,6 +15298,8 @@ check("exact listing misses bypass chain recovery only with terminal database pr
         totalCount: options.items.length,
       }),
       tokenScopeKey: (value) => String(value ?? "").toLowerCase(),
+      WORK_AMO_V5_ACTIVATION_HEIGHT,
+      WORK_AMO_V5_AUTH_VERSION,
       WORK_MARKET_V2_ACTIVATION_HEIGHT: 959062,
       WORK_MARKET_V2_AUTH_VERSION: "pwt-sale-v3",
       WORK_MARKET_V4_AUTH_VERSION: "pwt-sale-v4",
@@ -15131,6 +15349,29 @@ check("exact listing misses bypass chain recovery only with terminal database pr
   assert.match(sqlReads[1], /saleAuthorization'->>'version'[\s\S]*<> \$4/u);
   assert.equal(sqlParams[1][2], WORK_TOKEN_ID);
   assert.equal(sqlParams[1].at(-1), "pwt-sale-v3");
+
+  sqlReads.length = 0;
+  sqlParams.length = 0;
+  const amoCutoverPage = await exactActiveTokenListingHistoryPage(
+    pool,
+    "livenet",
+    "work",
+    new URLSearchParams({ q: txid }),
+    pagination,
+    {
+      ...snapshot,
+      indexed_through_block: WORK_AMO_V5_ACTIVATION_HEIGHT,
+    },
+  );
+  assert.equal(amoCutoverPage.totalCount, 0);
+  assert.equal(
+    amoCutoverPage.source,
+    "proof-indexer-credit-listings-terminal",
+  );
+  assert.match(sqlReads[0], /saleAuthorization'->>'version'[\s\S]*= \$5/u);
+  assert.equal(sqlParams[0].at(-1), WORK_AMO_V5_AUTH_VERSION);
+  assert.match(sqlReads[1], /cutover_listing/u);
+  assert.equal(sqlParams[1].at(-1), WORK_AMO_V5_AUTH_VERSION);
 
   terminal = false;
   sqlReads.length = 0;
@@ -28890,9 +29131,22 @@ check("credit market log SQL canonicalizes listing lifecycles before pagination"
     },
   );
   const sql = canonicalSql("market-log", "e.network = $1");
+  const relicSql = canonicalSql(
+    "closedListings",
+    "e.network = $1",
+    {
+      amoV5RelicClosedAtSql: "$9",
+      amoV5RelicClosedTxidSql: "$8",
+      amoV5RelicPredicateSql: "e.event_id = $7",
+    },
+  );
   const overlaySource = topLevelFunctionSource(
     READER_PATH,
     "proofIndexTokenMarketHistoryOverlayPayload",
+  );
+  const historySource = topLevelFunctionSource(
+    READER_PATH,
+    "proofIndexTokenHistoryPayload",
   );
 
   assert.match(
@@ -28915,12 +29169,316 @@ check("credit market log SQL canonicalizes listing lifecycles before pagination"
     overlaySource,
     /FROM canonical_market_metadata metadata[\s\S]*LEFT JOIN LATERAL \([\s\S]*FROM canonical_market_events[\s\S]*history_item_confirmed DESC[\s\S]*history_item_txid DESC[\s\S]*history_item_kind_rank ASC[\s\S]*LIMIT \$\$\{limitParam\}[\s\S]*OFFSET \$\$\{offsetParam\}/iu,
   );
+  assert.match(
+    relicSql,
+    /WHEN \(e\.event_id = \$7\)[\s\S]*THEN 'closed:'[\s\S]*\$8/iu,
+  );
+  assert.match(
+    relicSql,
+    /WHEN \(e\.event_id = \$7\) THEN \$9::timestamptz[\s\S]*AS event_time[\s\S]*WHEN \(e\.event_id = \$7\) THEN 959621[\s\S]*AS block_height/iu,
+  );
+  assert.match(
+    relicSql,
+    /\(e\.event_id = \$7\) AS work_amo_v5_pre_unit_relic_projection/iu,
+  );
+  assert.match(
+    overlaySource,
+    /safeKind === "closedListings" && amoV5RelicProjectable[\s\S]*e\.kind = ANY\(\$2::text\[\]\) OR \$\{amoV5RelicPredicateSql\}/u,
+  );
+  assert.match(
+    historySource,
+    /\["listings", "closedListings", "market-log"\]\.includes\(\s*eligibility\.kind\s*\)[\s\S]*authoritativeEmpty: true/iu,
+  );
   assert.doesNotMatch(
     overlaySource,
     /await pool\.query\([\s\S]*await pool\.query/iu,
   );
   assert.match(overlaySource, /await ledgerSnapshotMetadata\(/u);
   assert.doesNotMatch(overlaySource, /await ledgerSnapshot\(/u);
+});
+
+check("AMO V5 pre-unit relic history is exact, relational, and fail-closed", async () => {
+  const activationBlockTime = "2026-07-26T00:17:29.000Z";
+  const exactEvidence = {
+    activationBlockTime,
+    complete: true,
+    disposition: "relic",
+    eventId: 3_120_772,
+    listing: {
+      amount: "0.000016",
+      amountAtoms: "1600",
+      confirmed: true,
+      createdAt: "2026-07-23T09:47:50.000Z",
+      listingId: WORK_AMO_V5_PRE_UNIT_RELIC_LISTING_TXID,
+      priceSats: 1_500_479,
+      status: "active",
+      ticker: "WORK",
+      tokenId: WORK_TOKEN_ID,
+      txid: WORK_AMO_V5_PRE_UNIT_RELIC_LISTING_TXID,
+    },
+  };
+  const evidenceIsExact = (evidence) =>
+    evidence?.complete === true &&
+    evidence?.disposition === "relic" &&
+    evidence?.eventId === exactEvidence.eventId;
+  const mapMarketHistoryItem = isolatedFunction(
+    READER_PATH,
+    "tokenHistoryItemFromMarketEventPayload",
+    {
+      WORK_AMO_V5_ACTIVATION_HEIGHT,
+      WORK_AMO_V5_DECLARATION_TXID,
+      WORK_AMO_V5_PRE_UNIT_RELIC_DISABLED_REASON,
+      workAmoV5PreUnitRelicEvidenceIsExact: evidenceIsExact,
+    },
+  );
+
+  let evidence = exactEvidence;
+  let evidenceReads = 0;
+  let currentKind = "";
+  let currentNeedles = [];
+  const canonicalSqlCalls = [];
+  const sqlReads = [];
+  const paginationFor = (query = "") => ({
+    limit: 20,
+    offset: 0,
+    page: 0,
+    query,
+    snapshotId: "",
+  });
+  const proofIndexTokenMarketHistoryOverlayPayload = isolatedFunction(
+    READER_PATH,
+    "proofIndexTokenMarketHistoryOverlayPayload",
+    {
+      compareTokenHistoryMarketItems: () => 0,
+      historyCursor: (_snapshotId, offset) => String(offset),
+      historyPaginationFromSearch: (searchParams) =>
+        paginationFor(searchParams.get("q") ?? ""),
+      ledgerSnapshotMetadata: async () => {
+        throw new Error("an explicit relational snapshot was expected");
+      },
+      proofIndexPool: () => ({
+        async query(sql, params) {
+          sqlReads.push({
+            kind: currentKind,
+            needles: [...currentNeedles],
+            params: Array.from(params),
+            sql: String(sql),
+          });
+          const projectRelic =
+            evidenceIsExact(evidence) &&
+            ["closedListings", "market-log"].includes(currentKind);
+          if (projectRelic) {
+            return {
+              rows: [
+                {
+                  block_height: WORK_AMO_V5_ACTIVATION_HEIGHT,
+                  event_time: activationBlockTime,
+                  history_indexed_through_block:
+                    WORK_AMO_V5_ACTIVATION_HEIGHT,
+                  history_query_disposition: null,
+                  history_total_count: 1,
+                  kind: "token-listing",
+                  payload: exactEvidence.listing,
+                  work_amo_v5_pre_unit_relic_projection: true,
+                },
+              ],
+            };
+          }
+          const exactRelicQuery = currentNeedles.some((txid) =>
+            [
+              WORK_AMO_V5_PRE_UNIT_RELIC_LISTING_TXID,
+              WORK_AMO_V5_DECLARATION_TXID,
+            ].includes(txid),
+          );
+          return {
+            rows: [
+              {
+                history_indexed_through_block: null,
+                history_query_disposition:
+                  exactRelicQuery
+                    ? evidenceIsExact(evidence) && currentKind === "listings"
+                      ? "terminal-cutover-closed"
+                      : !evidenceIsExact(evidence)
+                        ? "terminal-cutover-withheld"
+                        : null
+                    : null,
+                history_total_count: 0,
+              },
+            ],
+          };
+        },
+      }),
+      proofIndexWorkAmoV5PreUnitRelicEvidence: async () => {
+        evidenceReads += 1;
+        return evidence;
+      },
+      tokenHistoryCanonicalMarketEventsSql: (
+        kind,
+        whereClause,
+        options,
+      ) => {
+        canonicalSqlCalls.push({ kind, options, whereClause });
+        return `
+          WITH canonical_market_events AS (
+            SELECT NULL::integer AS block_height
+            WHERE false /* ${whereClause} */
+          )
+        `;
+      },
+      tokenHistoryFilterNeedles: (searchParams, pagination) => {
+        const query = String(
+          pagination?.query ?? searchParams?.get("q") ?? "",
+        )
+          .trim()
+          .toLowerCase();
+        currentNeedles = query ? [query] : [];
+        return currentNeedles;
+      },
+      tokenHistoryItemFromMarketEventPayload: mapMarketHistoryItem,
+      tokenHistoryMarketEventKinds: (kind) =>
+        kind === "closedListings"
+          ? ["token-listing-closed", "token-sale"]
+          : kind === "listings"
+            ? ["token-listing", "token-listing-sealed"]
+            : [
+                "token-listing",
+                "token-listing-sealed",
+                "token-listing-closed",
+                "token-sale",
+              ],
+      tokenHistorySafeKind: (kind) => {
+        currentKind = kind;
+        return kind;
+      },
+      tokenMarketEventRowPayload: (row) => row.payload,
+      tokenScopeKey: (value) => String(value ?? "").toLowerCase(),
+      verifiedWorkMarketV4Activation: async () => null,
+      WORK_AMO_V5_ACTIVATION_HEIGHT,
+      WORK_AMO_V5_AUTH_VERSION,
+      WORK_AMO_V5_DECLARATION_TXID,
+      WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_HEIGHT,
+      WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_INDEX,
+      WORK_AMO_V5_PRE_UNIT_RELIC_LISTING_TXID,
+      WORK_AMO_V5_PRE_UNIT_RELIC_PROTOCOL_VOUT,
+      WORK_AMO_V5_PRE_UNIT_RELIC_RECORD_ORDINAL,
+      WORK_MARKET_V2_ACTIVATION_HEIGHT,
+      WORK_MARKET_V2_AUTH_VERSION,
+      WORK_MARKET_V4_AUTH_VERSION: "pwt-sale-v4",
+      WORK_TOKEN_ID,
+      workAmoV5PreUnitRelicEvidenceIsExact: evidenceIsExact,
+    },
+  );
+  const snapshot = {
+    generated_at: activationBlockTime,
+    indexed_through_block: WORK_AMO_V5_ACTIVATION_HEIGHT,
+    snapshot_id: "",
+  };
+  const read = (kind, query = "", options = {}) =>
+    proofIndexTokenMarketHistoryOverlayPayload(
+      "livenet",
+      WORK_TOKEN_ID,
+      kind,
+      new URLSearchParams(query ? { q: query } : {}),
+      {
+        pagination: paginationFor(query),
+        snapshot,
+        ...options,
+      },
+    );
+
+  for (const query of [
+    WORK_AMO_V5_PRE_UNIT_RELIC_LISTING_TXID,
+    WORK_AMO_V5_DECLARATION_TXID,
+  ]) {
+    const closed = await read("closedListings", query);
+    assert.equal(closed.totalCount, 1);
+    assert.equal(closed.items.length, 1);
+    assert.equal(
+      closed.items[0].listingId,
+      WORK_AMO_V5_PRE_UNIT_RELIC_LISTING_TXID,
+    );
+    assert.equal(closed.items[0].txid, WORK_AMO_V5_DECLARATION_TXID);
+    assert.equal(
+      closed.items[0].closedTxid,
+      WORK_AMO_V5_DECLARATION_TXID,
+    );
+    assert.equal(closed.items[0].closedAt, activationBlockTime);
+    assert.equal(closed.items[0].relic, true);
+    assert.equal(closed.items[0].refundEligible, false);
+    assert.equal(
+      closed.items[0].disabledReason,
+      WORK_AMO_V5_PRE_UNIT_RELIC_DISABLED_REASON,
+    );
+
+    const marketLog = await read("market-log", query);
+    assert.equal(marketLog.totalCount, 1);
+    assert.equal(marketLog.items[0].kind, "closed-listing");
+    assert.equal(
+      marketLog.items[0].closedListing.listingId,
+      WORK_AMO_V5_PRE_UNIT_RELIC_LISTING_TXID,
+    );
+    assert.equal(marketLog.items[0].txid, WORK_AMO_V5_DECLARATION_TXID);
+  }
+
+  const broadClosed = await read("closedListings", "", {
+    authoritativeEmpty: true,
+  });
+  assert.equal(broadClosed.totalCount, 1);
+  assert.equal(
+    broadClosed.items[0].listingId,
+    WORK_AMO_V5_PRE_UNIT_RELIC_LISTING_TXID,
+  );
+  const broadListings = await read("listings", "", {
+    authoritativeEmpty: true,
+  });
+  assert.equal(broadListings.totalCount, 0);
+  assert.deepEqual(broadListings.items, []);
+  const exactListings = await read(
+    "listings",
+    WORK_AMO_V5_PRE_UNIT_RELIC_LISTING_TXID,
+  );
+  assert.equal(exactListings.totalCount, 0);
+  assert.deepEqual(exactListings.items, []);
+  assert.equal(
+    exactListings.queryDisposition,
+    "terminal-cutover-closed",
+  );
+
+  const projectedCall = canonicalSqlCalls.find(
+    (call) => call.kind === "closedListings",
+  );
+  assert.ok(projectedCall);
+  assert.notEqual(projectedCall.options.amoV5RelicPredicateSql, "false");
+  assert.match(
+    projectedCall.options.amoV5RelicPredicateSql,
+    /e\.event_id = \$\d+[\s\S]*e\.block_height = 959241[\s\S]*e\.block_index = 2601[\s\S]*e\.op_return_vout = 1[\s\S]*e\.record_ordinal = 0/u,
+  );
+  assert.ok(
+    sqlReads.some((readResult) =>
+      readResult.params.includes(WORK_AMO_V5_DECLARATION_TXID),
+    ),
+  );
+
+  evidence = {
+    complete: false,
+    disposition: "relic",
+    reason: "pre-unit-relic-evidence-mismatch",
+  };
+  for (const [kind, query] of [
+    ["closedListings", WORK_AMO_V5_PRE_UNIT_RELIC_LISTING_TXID],
+    ["market-log", WORK_AMO_V5_DECLARATION_TXID],
+    ["listings", WORK_AMO_V5_PRE_UNIT_RELIC_LISTING_TXID],
+  ]) {
+    const withheld = await read(kind, query);
+    assert.equal(withheld.totalCount, 0);
+    assert.deepEqual(withheld.items, []);
+    assert.equal(
+      withheld.queryDisposition,
+      "terminal-cutover-withheld",
+    );
+  }
+  assert.ok(evidenceReads >= 10);
+  assert.match(sqlReads.at(-1).sql, /terminal-cutover-withheld/u);
 });
 
 check("exact dropped market misses are terminal without loading broad history", async () => {
@@ -28984,6 +29542,7 @@ check("exact dropped market misses are terminal without loading broad history", 
       WORK_MARKET_V4_AUTH_VERSION: "pwt-sale-v4",
       WORK_TOKEN_ID,
       verifiedWorkMarketV4Activation: async () => null,
+      workAmoV5PreUnitRelicEvidenceIsExact: () => false,
     },
   );
 
@@ -29074,24 +29633,45 @@ check("exact dropped market misses are terminal without loading broad history", 
   assert.doesNotMatch(sqlReads[0].sql, /bool_and\(/u);
 
   let embeddedSnapshotReads = 0;
+  let historyKind = "market-log";
+  let historyNeedles = [txid];
+  let historyPagination = pagination;
+  let overlayPage = terminalPage;
+  let overlayOptions = null;
   const proofIndexTokenHistoryPayload = isolatedFunction(
     READER_PATH,
     "proofIndexTokenHistoryPayload",
     {
+      currentRelationalHistoryPageWithScanCoverage: (page) => page,
       ledgerSnapshotMetadata: async () => snapshot,
       ledgerSnapshotWithPayload: async () => {
         embeddedSnapshotReads += 1;
         throw new Error("broad embedded history must not load");
       },
+      latestProofIndexScanMetadata: async () => ({
+        generated_at: snapshot.generated_at,
+        indexed_through_block: WORK_AMO_V5_ACTIVATION_HEIGHT,
+        payload: {},
+        source_hashes: {},
+      }),
       proofIndexPool: () => ({}),
       proofIndexTokenHistoryReadEligibility: () => ({
         eligible: true,
-        kind: "market-log",
-        pagination,
+        kind: historyKind,
+        pagination: historyPagination,
         scope: "work",
       }),
-      proofIndexTokenMarketHistoryOverlayPayload: async () => terminalPage,
-      tokenHistoryFilterNeedles: () => [txid],
+      proofIndexTokenMarketHistoryOverlayPayload: async (
+        _network,
+        _scope,
+        _kind,
+        _searchParams,
+        options,
+      ) => {
+        overlayOptions = options;
+        return overlayPage;
+      },
+      tokenHistoryFilterNeedles: () => historyNeedles,
       tokenHistoryMarketEventKinds: () => ["token-sale"],
       tokenHistoryPageWithScanCoverage: (page) => page,
     },
@@ -29105,9 +29685,38 @@ check("exact dropped market misses are terminal without loading broad history", 
   assert.equal(exactPage.queryDisposition, "terminal-nonmarket");
   assert.equal(embeddedSnapshotReads, 0);
 
+  historyKind = "closedListings";
+  historyNeedles = [];
+  historyPagination = { ...pagination, query: "" };
+  overlayPage = {
+    indexedThroughBlock: WORK_AMO_V5_ACTIVATION_HEIGHT,
+    items: [
+      {
+        listingId: WORK_AMO_V5_PRE_UNIT_RELIC_LISTING_TXID,
+        relic: true,
+      },
+    ],
+    kind: "closedListings",
+    totalCount: 1,
+  };
+  const broadClosedPage = await proofIndexTokenHistoryPayload(
+    "livenet",
+    "work",
+    "closed-listings",
+    new URLSearchParams(),
+  );
+  assert.equal(broadClosedPage.totalCount, 1);
+  assert.equal(
+    broadClosedPage.items[0].listingId,
+    WORK_AMO_V5_PRE_UNIT_RELIC_LISTING_TXID,
+  );
+  assert.equal(overlayOptions.authoritativeEmpty, true);
+  assert.equal(overlayOptions.snapshot.snapshot_id, "");
+  assert.equal(embeddedSnapshotReads, 0);
+
   const apiSource = topLevelFunctionSource(API_PATH, "tokenHistoryPayload");
   assert.equal(
-    (apiSource.match(/queryDisposition === "terminal-nonmarket"/gu) ?? [])
+    (apiSource.match(/isTerminalTokenMarketHistoryPage\(/gu) ?? [])
       .length,
     2,
   );
@@ -29115,12 +29724,33 @@ check("exact dropped market misses are terminal without loading broad history", 
     apiSource.indexOf("proofIndexTokenMarketHistoryOverlayPayload") <
       apiSource.indexOf("confirmedTransactionsForTxids"),
   );
+  const isTerminalTokenMarketHistoryPage = isolatedFunction(
+    API_PATH,
+    "isTerminalTokenMarketHistoryPage",
+  );
+  assert.equal(isTerminalTokenMarketHistoryPage(terminalPage), true);
+  assert.equal(
+    isTerminalTokenMarketHistoryPage({
+      items: [],
+      queryDisposition: "terminal-cutover-withheld",
+      totalCount: 0,
+    }),
+    true,
+  );
+  assert.equal(
+    isTerminalTokenMarketHistoryPage({
+      items: [{ txid }],
+      queryDisposition: "terminal-cutover-withheld",
+      totalCount: 1,
+    }),
+    false,
+  );
   assert.match(
     topLevelFunctionSource(
       API_PATH,
       "tokenHistoryPageWithCanonicalCreditValueOverlay",
     ),
-    /queryDisposition === "terminal-nonmarket"[\s\S]*totalCount[\s\S]*items[\s\S]*return page/iu,
+    /isTerminalTokenMarketHistoryPage\(page\)[\s\S]*return page/iu,
   );
 });
 
@@ -29160,7 +29790,7 @@ check("dropped market events cannot re-enter history or close active listings", 
 
   assert.match(
     overlaySource,
-    /const conditions = \[[\s\S]*e\.valid = true[\s\S]*e\.status IN \('confirmed', 'pending'\)[\s\S]*e\.kind = ANY/iu,
+    /const eventKindCondition =[\s\S]*e\.kind = ANY\(\$2::text\[\]\)[\s\S]*const conditions = \[[\s\S]*e\.valid = true[\s\S]*e\.status IN \('confirmed', 'pending'\)[\s\S]*eventKindCondition/iu,
   );
   assert.equal(
     (overlaySource.match(/close_event\.status IN \('confirmed', 'pending'\)/gu) ?? [])
@@ -32895,6 +33525,12 @@ check("marketplace mutation accounting counts one registry payment per transacti
     txid: "c".repeat(64),
   };
   const activity = [seal, close, listing, sellerSale];
+  const invalidDuplicate = {
+    ...close,
+    amountSats: 54_600,
+    marketplaceMutationFeeSats: 54_600,
+    valid: false,
+  };
 
   assert.equal(
     marketplaceMutationPaymentIdentity(seal),
@@ -32934,12 +33570,143 @@ check("marketplace mutation accounting counts one registry payment per transacti
     1_092,
   );
   assert.equal(
+    uniqueMarketplaceMutationActivity(
+      [...activity, invalidDuplicate],
+      TOKEN_MARKETPLACE_MUTATION_KINDS,
+    ).length,
+    2,
+    "an invalid duplicate cannot replace or inflate valid mutation activity",
+  );
+  assert.equal(
+    marketplaceMutationPaymentFlowSats(
+      [...activity, invalidDuplicate],
+      TOKEN_MARKETPLACE_MUTATION_KINDS,
+    ),
+    1_092,
+  );
+  assert.equal(
+    uniqueMarketplaceMutationActivity(
+      [invalidDuplicate],
+      TOKEN_MARKETPLACE_MUTATION_KINDS,
+    ).length,
+    0,
+    "invalid-only marketplace activity contributes no mutation row",
+  );
+  assert.equal(
     confirmedActivityFlowSats(
       activity,
       TOKEN_MARKETPLACE_MUTATION_KINDS,
     ),
     1_092,
     "seller paidSats must not replace priceSats or enter mutation fees",
+  );
+  assert.equal(
+    confirmedActivityFlowSats(
+      [...activity, invalidDuplicate],
+      TOKEN_MARKETPLACE_MUTATION_KINDS,
+    ),
+    1_092,
+  );
+  assert.equal(
+    confirmedActivityFlowSats(
+      [invalidDuplicate],
+      TOKEN_MARKETPLACE_MUTATION_KINDS,
+    ),
+    0,
+    "invalid-only marketplace activity contributes zero confirmed flow",
+  );
+});
+
+check("AMO V5 legacy bootstrap carry requires one exact canonical evidence row", () => {
+  const normalizeEvidence = isolatedFunction(
+    READER_PATH,
+    "workAmoV5LegacyBootstrapCarryEvidenceFromRows",
+    {
+      WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_BLOCK_HASH,
+      WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_BLOCK_HEIGHT,
+      WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_BLOCK_INDEX,
+      WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MINER_FEE_SATS,
+      WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MODEL,
+      WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MUTATION_SATS,
+      WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_PROTOCOL_VOUT,
+      WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_REASON_CODE,
+      WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_RECORD_ORDINAL,
+      WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_TXID,
+      WORK_TOKEN_ID,
+    },
+  );
+  const exactRow = workAmoV5LegacyBootstrapCarryRowFixture();
+  const evidence = normalizeEvidence([exactRow]);
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(evidence)),
+    workAmoV5LegacyBootstrapCarryEvidenceFixture(),
+  );
+
+  const mutation = (apply) => {
+    const row = structuredClone(exactRow);
+    apply(row);
+    return row;
+  };
+  const wrongTxid = "f".repeat(64);
+  const cases = [
+    [
+      "txid",
+      mutation((row) => {
+        row.txid = wrongTxid;
+        row.payload.txid = wrongTxid;
+        row.payload.listingId = wrongTxid;
+        row.payload.saleTicketTxid = wrongTxid;
+      }),
+    ],
+    [
+      "reason",
+      mutation((row) => {
+        row.validation_errors = ["different-reason"];
+        row.payload.reasonCode = "different-reason";
+        row.payload.validationErrors = ["different-reason"];
+      }),
+    ],
+    [
+      "amount",
+      mutation((row) => {
+        row.amount_sats = "547";
+        row.payload.amountSats = 547;
+      }),
+    ],
+    [
+      "fee",
+      mutation((row) => {
+        row.fee_sats = "2217";
+        row.payload.minerFeeSats = 2_217;
+      }),
+    ],
+    [
+      "position",
+      mutation((row) => {
+        row.block_index += 1;
+        row.transaction_block_index += 1;
+        row.payload.blockIndex += 1;
+      }),
+    ],
+    [
+      "active listing",
+      mutation((row) => {
+        row.active_listing_count = 1;
+        row.listing_statuses = ["active"];
+      }),
+    ],
+  ];
+  for (const [label, row] of cases) {
+    assert.equal(
+      normalizeEvidence([row]).complete,
+      false,
+      `${label} mismatch must fail closed`,
+    );
+  }
+  assert.equal(
+    normalizeEvidence([exactRow, structuredClone(exactRow)]).complete,
+    false,
+    "duplicate evidence rows must fail closed",
   );
 });
 
@@ -41724,6 +42491,22 @@ check("AMO V5 transition closing value publishes and chains across adjacent bloc
       workAmoV5ExactValueAliases: exactAliasProjection,
     },
   );
+  const zeroLegacyReconciliation = (state) => ({
+    legacyBootstrap: {
+      creditFixedSats: 0,
+      growthValueSats: 0,
+      marketplaceMutationFeeSats: 0,
+    },
+    legacyBootstrapCreditFixedQ8: 0n,
+    legacyBootstrapGrowthValueQ8: 0n,
+    valid: true,
+    validBaseState: Object.fromEntries(
+      Object.entries(state.baseState).map(([field, value]) => [
+        field,
+        BigInt(value),
+      ]),
+    ),
+  });
   const publishClosing = isolatedFunction(
     API_PATH,
     "workFloorWithVerifiedWorkAmoV5ClosingState",
@@ -41751,7 +42534,12 @@ check("AMO V5 transition closing value publishes and chains across adjacent bloc
       proofIndexWorkAmoRelationalTokenStateEvidence: async () => ({
         complete: true,
       }),
+      proofIndexWorkAmoLegacyBootstrapCarryEvidence: async () => ({
+        complete: true,
+      }),
       workAmoV5ClosingSummaryProjection: closingSummaryProjection,
+      workAmoV5LegacyBootstrapReconciliation:
+        zeroLegacyReconciliation,
       validateWorkAmoV5SufficientState: (state) => ({
         state,
         valid: Boolean(state),
@@ -41950,6 +42738,388 @@ check("AMO V5 transition closing value publishes and chains across adjacent bloc
   assert.equal(
     canonicalMarketplace.workFloor.chartPoints.at(-1).networkValueSats,
     published.chartPoints.at(-1).networkValueSats,
+  );
+});
+
+check("AMO V5 legacy carry preserves committed N while publishing valid-only marketplace flow", async () => {
+  const exactInteger = isolatedFunction(
+    API_PATH,
+    "workAmoV5ExactInteger",
+  );
+  const baseStateTotalQ8 = isolatedFunction(
+    API_PATH,
+    "growthActualBaseStateTotalQ8",
+    {
+      GROWTH_ID_DENSITY_DENOMINATOR,
+      GROWTH_ID_DENSITY_NUMERATOR,
+      GROWTH_VALUE_MULTIPLE,
+      VALUE_Q8_SCALE,
+    },
+  );
+  const evidenceMatches = isolatedFunction(
+    API_PATH,
+    "workAmoV5LegacyBootstrapEvidenceMatches",
+    {
+      GROWTH_VALUE_MULTIPLE,
+      VALUE_Q8_SCALE,
+      WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_BLOCK_HASH,
+      WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_BLOCK_HEIGHT,
+      WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_BLOCK_INDEX,
+      WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MINER_FEE_SATS,
+      WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MODEL,
+      WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MUTATION_SATS,
+      WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_PROTOCOL_VOUT,
+      WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_REASON_CODE,
+      WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_RECORD_ORDINAL,
+      WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_TXID,
+      workAmoV5ExactInteger: exactInteger,
+    },
+  );
+  const reconcile = isolatedFunction(
+    API_PATH,
+    "workAmoV5LegacyBootstrapReconciliation",
+    {
+      VALUE_Q8_SCALE,
+      WORK_AMO_V5_BASE_STATE_FIELDS,
+      growthActualBaseStateTotalQ8: baseStateTotalQ8,
+      workAmoV5ExactInteger: exactInteger,
+      workAmoV5LegacyBootstrapEvidenceMatches: evidenceMatches,
+    },
+  );
+  const exactAliases = isolatedFunction(
+    API_PATH,
+    "workAmoV5ExactValueAliases",
+    {
+      q8ToCanonicalDecimal,
+      q8ToNumber,
+    },
+  );
+  const closingProjection = isolatedFunction(
+    API_PATH,
+    "workAmoV5ClosingSummaryProjection",
+    {
+      GROWTH_ID_DENSITY_DENOMINATOR,
+      GROWTH_ID_DENSITY_NUMERATOR,
+      GROWTH_VALUE_MULTIPLE,
+      VALUE_Q8_SCALE,
+      WORK_TOKEN_MAX_SUPPLY,
+      growthElapsedYears: () => 2,
+      growthSatsToUsdAtYears: (sats, years) => sats * years,
+      numericValue: (candidate) => Number(candidate) || 0,
+      q8ToNumber,
+      satsToUsdAtBtcUsd: (sats, btcUsd) =>
+        (sats / 100_000_000) * btcUsd,
+      workAmoV5ExactValueAliases: exactAliases,
+    },
+  );
+
+  const validBaseState = Object.fromEntries(
+    WORK_AMO_V5_BASE_STATE_FIELDS.map((field) => [field, "0"]),
+  );
+  validBaseState.computerEventFlowSats = "24";
+  validBaseState.idMarketplaceFeeSats = "100";
+  validBaseState.tokenMarketplaceFeeSats = "200";
+  const committedBaseState = {
+    ...validBaseState,
+    tokenMarketplaceFeeSats: String(
+      Number(validBaseState.tokenMarketplaceFeeSats) +
+        WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MUTATION_SATS,
+    ),
+  };
+  const validBaseNetworkValueQ8 = baseStateTotalQ8(
+    Object.fromEntries(
+      Object.entries(validBaseState).map(([field, value]) => [
+        field,
+        BigInt(value),
+      ]),
+    ),
+  );
+  const committedBaseNetworkValueQ8 = baseStateTotalQ8(
+    Object.fromEntries(
+      Object.entries(committedBaseState).map(([field, value]) => [
+        field,
+        BigInt(value),
+      ]),
+    ),
+  );
+  const validCreditFlows = {
+    creditMinerFeeFlowSats: "50",
+    creditMarketplaceMutationFlowSats: "30",
+    creditProofPaymentFlowSats: "10",
+    creditRegistryMutationFlowSats: "20",
+    creditSalePaymentFlowSats: "40",
+  };
+  const validCreditFixedSats = Object.values(validCreditFlows).reduce(
+    (total, amount) => total + BigInt(amount),
+    0n,
+  );
+  const validCreditFixedQ8 =
+    validCreditFixedSats * VALUE_Q8_SCALE;
+  const evidence = workAmoV5LegacyBootstrapCarryEvidenceFixture();
+  const committedCreditFixedQ8 =
+    validCreditFixedQ8 + BigInt(evidence.creditFixedQ8);
+  const creditMovementFrozenValueQ8 = 2_000_000_000n;
+  const creditMovementLiveValueQ8 = 4_000_000_000n;
+  const frozenNetworkValueQ8 =
+    committedBaseNetworkValueQ8 +
+    committedCreditFixedQ8 +
+    creditMovementFrozenValueQ8;
+  const networkValueQ8 =
+    committedBaseNetworkValueQ8 +
+    committedCreditFixedQ8 +
+    creditMovementLiveValueQ8;
+  const blockHeight = WORK_AMO_V5_ACTIVATION_HEIGHT + 10;
+  const blockHash = "9".repeat(64);
+  const state = {
+    baseState: committedBaseState,
+    creditFixedQ8: committedCreditFixedQ8.toString(),
+    creditMovementFrozenValueQ8:
+      creditMovementFrozenValueQ8.toString(),
+    model: WORK_AMO_V5_NETWORK_ACCUMULATOR_MODEL,
+    network: "livenet",
+    networkValueQ8: networkValueQ8.toString(),
+    throughBlockHash: blockHash,
+    throughBlockHeight: blockHeight,
+  };
+  const value = {
+    baseNetworkValueQ8: committedBaseNetworkValueQ8,
+    creditMovementLiveValueQ8,
+    frozenNetworkValueQ8,
+    networkValueQ8,
+  };
+  const workFloor = {
+    actualValue: {
+      ...validBaseState,
+      ...validCreditFlows,
+      baseNetworkValueQ8: validBaseNetworkValueQ8.toString(),
+      marketplaceFeeSats: "stale",
+      marketplaceFlowSats: "stale",
+      marketplaceMutationFeeSats: "stale",
+      marketplaceSats: "stale",
+    },
+    btcUsd: 50_000,
+    chartPoints: [
+      {
+        floorQ8: "stale",
+        floorSats: "stale",
+        label: "Real now",
+        marker: "preserved",
+        networkValueQ8: "stale",
+        networkValueSats: "stale",
+        years: 1,
+      },
+    ],
+    network: "livenet",
+    stats: {},
+  };
+
+  assert.equal(evidenceMatches(evidence), true);
+  const reconciliation = reconcile(state, value, workFloor, evidence);
+  assert.equal(reconciliation.valid, true);
+  assert.equal(
+    reconciliation.committedBaseState.tokenMarketplaceFeeSats,
+    746n,
+  );
+  assert.equal(
+    reconciliation.validBaseState.tokenMarketplaceFeeSats,
+    200n,
+  );
+  assert.equal(
+    reconciliation.validCreditFixedQ8,
+    validCreditFixedQ8,
+  );
+  assert.equal(
+    reconciliation.legacyBootstrap.committedCreditFixedQ8,
+    committedCreditFixedQ8.toString(),
+  );
+
+  const projected = closingProjection(
+    state,
+    value,
+    workFloor,
+    reconciliation,
+  );
+  assert.equal(projected.flowFields.tokenMarketplaceFeeSats, 200);
+  assert.equal(projected.flowFields.marketplaceFeeSats, 300);
+  assert.equal(projected.flowFields.marketplaceMutationFeeSats, 300);
+  assert.equal(projected.flowFields.marketplaceFlowSats, 300);
+  assert.equal(
+    projected.flowFields.legacyBootstrapMarketplaceCarrySats,
+    546,
+  );
+  assert.equal(projected.flowFields.legacyBootstrapSats, 2_730);
+  assert.equal(
+    projected.flowFields.legacyBootstrapCreditFixedSats,
+    2_762,
+  );
+  assert.equal(
+    projected.exactAliases.baseNetworkValueQ8,
+    committedBaseNetworkValueQ8.toString(),
+  );
+  assert.equal(
+    projected.exactAliases.creditFixedQ8,
+    committedCreditFixedQ8.toString(),
+  );
+  assert.equal(
+    projected.exactAliases.networkValueQ8,
+    state.networkValueQ8,
+  );
+
+  const commitment = {
+    model: "canonical-work-amo-v5-sufficient-state-v1",
+    payloadBytes: 123,
+    sha256: "a".repeat(64),
+  };
+  const blockDescriptorCommitment = {
+    model: WORK_AMO_V5_PAYLOAD_COMMITMENT_MODEL,
+    payloadBytes: 321,
+    sha256: "b".repeat(64),
+  };
+  const transitionChainCommitment = {
+    model: WORK_AMO_V5_RAW_TRANSITION_CHAIN_MODEL,
+    payloadBytes: 456,
+    sha256: "c".repeat(64),
+  };
+  const bip141Witness = normalizedWorkAmoV5Bip141Witness({
+    commitmentSha256: "",
+    commitmentVout: null,
+    model: WORK_AMO_V5_RAW_BIP141_WITNESS_MODEL,
+    required: false,
+    witnessMerkleRootInternalHex: "",
+    witnessTransactionCount: 0,
+  });
+  assert.ok(bip141Witness);
+  const transition = {
+    blockHash,
+    blockHeight,
+    closing_network_value_q8: state.networkValueQ8,
+    closing_state_payload_bytes: commitment.payloadBytes,
+    closing_state_sha256: commitment.sha256,
+    payload: {
+      bip141Witness,
+      blockDescriptorCommitment,
+      blockDescriptorModel: WORK_AMO_V5_RAW_BLOCK_DESCRIPTOR_MODEL,
+      blockTransactionCount: 1,
+      closingStateCommitment: commitment,
+      closingSufficientState: state,
+      transitionChainCommitment,
+      transitionChainModel: WORK_AMO_V5_RAW_TRANSITION_CHAIN_MODEL,
+    },
+  };
+  let currentEvidence = evidence;
+  const publishClosing = isolatedFunction(
+    API_PATH,
+    "workFloorWithVerifiedWorkAmoV5ClosingState",
+    {
+      WORK_AMO_V5_ACTIVATION_HEIGHT,
+      WORK_AMO_V5_BLOCK_SEQUENCER_MODEL,
+      WORK_AMO_V5_NETWORK_ACCUMULATOR_MODEL,
+      WORK_AMO_V5_RAW_BLOCK_DESCRIPTOR_MODEL,
+      WORK_AMO_V5_RAW_TRANSITION_CHAIN_MODEL,
+      WORK_NETWORK_VALUE_ACCOUNTING_MODEL,
+      decimalTextFromQ8,
+      exactWorkAmoV5RawBlockDescriptorCommitment,
+      exactWorkAmoV5RawTransitionChainCommitment,
+      freshDataUnavailableError: (message) => new Error(message),
+      normalizedWorkAmoV5Bip141Witness,
+      proofIndexWorkAmoBlockTransition: async () => transition,
+      proofIndexWorkAmoLegacyBootstrapCarryEvidence: async () =>
+        currentEvidence,
+      proofIndexWorkAmoRelationalTokenStateEvidence: async () => ({
+        complete: true,
+      }),
+      validateWorkAmoV5SufficientState: (candidate) => ({
+        state: candidate,
+        valid: Boolean(candidate),
+      }),
+      workAmoV5AccumulatorNetworkValueQ8: () => value,
+      workAmoV5CanonicalStateCommitment: () => commitment,
+      workAmoV5ClosingSummaryProjection: closingProjection,
+      workAmoV5LegacyBootstrapReconciliation: reconcile,
+    },
+  );
+  const published = await publishClosing(
+    structuredClone(workFloor),
+    "livenet",
+    blockHeight,
+    blockHash,
+  );
+  assert.equal(published.networkValueQ8, state.networkValueQ8);
+  assert.equal(
+    published.actualValue.networkValueQ8,
+    state.networkValueQ8,
+  );
+  assert.equal(
+    published.actualValue.creditFixedQ8,
+    committedCreditFixedQ8.toString(),
+  );
+  assert.equal(
+    published.actualValue.tokenMarketplaceFeeSats,
+    200,
+  );
+  assert.equal(published.actualValue.marketplaceFeeSats, 300);
+  assert.equal(
+    published.actualValue.marketplaceMutationFeeSats,
+    300,
+  );
+  assert.equal(published.actualValue.marketplaceFlowSats, 300);
+  assert.equal(published.actualValue.marketplaceSats, 1_500);
+  assert.equal(
+    published.actualValue.legacyBootstrapMarketplaceCarrySats,
+    546,
+  );
+  assert.equal(published.actualValue.legacyBootstrapSats, 2_730);
+  assert.equal(
+    published.actualValue.legacyBootstrapCreditFixedSats,
+    2_762,
+  );
+  assert.equal(
+    published.actualValue.workAmoV5LegacyBootstrap.txid,
+    WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_TXID,
+  );
+  assert.equal(
+    published.chartPoints.at(-1).networkValueQ8,
+    state.networkValueQ8,
+  );
+  assert.equal(
+    published.chartPoints.at(-1).marker,
+    "preserved",
+  );
+  assert.equal(
+    published.workAmoV5Transition.networkValueQ8,
+    state.networkValueQ8,
+  );
+  assert.equal(
+    published.workAmoV5Transition.closingStateCommitment.sha256,
+    commitment.sha256,
+  );
+
+  const mismatchedEvidence = {
+    ...evidence,
+    reasonCode: "different-reason",
+  };
+  assert.equal(evidenceMatches(mismatchedEvidence), false);
+  const invalidReconciliation = reconcile(
+    state,
+    value,
+    workFloor,
+    mismatchedEvidence,
+  );
+  assert.equal(invalidReconciliation.valid, false);
+  assert.throws(
+    () =>
+      closingProjection(
+        state,
+        value,
+        workFloor,
+        invalidReconciliation,
+      ),
+    /reconciliation is unavailable/u,
+  );
+  currentEvidence = mismatchedEvidence;
+  await rejection(
+    publishClosing(workFloor, "livenet", blockHeight, blockHash),
+    (error) => /reconciliation diverged/u.test(String(error?.message)),
   );
 });
 

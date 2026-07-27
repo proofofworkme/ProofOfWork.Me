@@ -1482,11 +1482,11 @@ assert.match(
 );
 assert.match(
   readerSource,
-  /\["listings", "market-log"\]\.includes\(eligibility\.kind\)[\s\S]*authoritativeEmpty: true[\s\S]*indexed_through_block: scan\?\.indexed_through_block/u,
+  /\["listings", "closedListings", "market-log"\]\.includes\(eligibility\.kind\)[\s\S]*authoritativeEmpty: true[\s\S]*indexed_through_block: scan\?\.indexed_through_block/u,
 );
 assert.match(
   readerSource,
-  /totalCount === 0[\s\S]*queryDisposition !== "terminal-nonmarket"[\s\S]*options\.authoritativeEmpty !== true/u,
+  /totalCount === 0[\s\S]*!queryDisposition\.startsWith\("terminal-"\)[\s\S]*options\.authoritativeEmpty !== true/u,
 );
 assert.ok(
   [...readerSource.matchAll(/applyWorkMarketV2CutoverToTokenState\(/gu)]

@@ -1,5 +1,17 @@
 import { parseWorkAmountToAtoms } from "../server/work-units.mjs";
 import {
+  WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_BLOCK_HASH,
+  WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_BLOCK_HEIGHT,
+  WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_BLOCK_INDEX,
+  WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MINER_FEE_SATS,
+  WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MODEL,
+  WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MUTATION_SATS,
+  WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_PROTOCOL_VOUT,
+  WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_REASON_CODE,
+  WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_RECORD_ORDINAL,
+  WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_TXID,
+} from "../server/work-amo-v5.mjs";
+import {
   exactBondLedgerState,
   exactCreditFrozenValueState,
 } from "./ledger-audit-exact.mjs";
@@ -750,6 +762,10 @@ const creditSalePaymentFlowSats = numberValue(
   actualValue.creditSalePaymentFlowSats,
 );
 const creditMinerFeeFlowSats = numberValue(actualValue.creditMinerFeeFlowSats);
+const legacyBootstrapCreditFixedSats = numberValue(
+  actualValue.legacyBootstrapCreditFixedSats,
+);
+const legacyBootstrapEvidence = actualValue.workAmoV5LegacyBootstrap ?? {};
 const creditNetworkValueSats = numberValue(actualValue.creditNetworkValueSats);
 const creditEventFrozenValueSats = numberValue(
   actualValue.creditEventFrozenValueSats ??
@@ -764,8 +780,9 @@ const creditLiveNetworkValueSats = numberValue(
 );
 expect(
   "consistency guards marketplace mutation fee accounting",
-  consistencyChecks.has("marketplace-mutation-fees-counted") &&
+    consistencyChecks.has("marketplace-mutation-fees-counted") &&
     consistencyChecks.has("marketplace-value-includes-mutation-fees") &&
+    consistencyChecks.has("work-amo-v5-legacy-bootstrap-carry-proven") &&
     consistencyChecks.has("credit-frozen-value-includes-event-components") &&
     consistencyChecks.has("credit-live-value-is-active-network-value") &&
     consistencyChecks.has("computer-event-flow-excludes-marketplace"),
@@ -800,8 +817,38 @@ expect(
             creditRegistryMutationFlowSats +
             creditMarketplaceMutationFlowSats +
             creditSalePaymentFlowSats +
-            creditMinerFeeFlowSats,
+            creditMinerFeeFlowSats +
+            legacyBootstrapCreditFixedSats,
         ),
+);
+expect(
+  "AMO V5 legacy bootstrap carry is exact and valid-only",
+  legacyBootstrapEvidence.complete === true &&
+    legacyBootstrapEvidence.model ===
+      WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MODEL &&
+    legacyBootstrapEvidence.txid ===
+      WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_TXID &&
+    legacyBootstrapEvidence.blockHash ===
+      WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_BLOCK_HASH &&
+    Number(legacyBootstrapEvidence.blockHeight) ===
+      WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_BLOCK_HEIGHT &&
+    Number(legacyBootstrapEvidence.blockIndex) ===
+      WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_BLOCK_INDEX &&
+    Number(legacyBootstrapEvidence.protocolVout) ===
+      WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_PROTOCOL_VOUT &&
+    Number(legacyBootstrapEvidence.recordOrdinal) ===
+      WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_RECORD_ORDINAL &&
+    legacyBootstrapEvidence.reasonCode ===
+      WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_REASON_CODE &&
+    Number(legacyBootstrapEvidence.marketplaceMutationFeeSats) ===
+      WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MUTATION_SATS &&
+    Number(legacyBootstrapEvidence.minerFeeSats) ===
+      WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MINER_FEE_SATS &&
+    Number(actualValue.legacyBootstrapMarketplaceCarrySats) ===
+      WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MUTATION_SATS &&
+    legacyBootstrapCreditFixedSats ===
+      WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MUTATION_SATS +
+        WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MINER_FEE_SATS,
 );
 expect(
   "credit live value is the active network value",

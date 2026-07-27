@@ -53,6 +53,20 @@ export function exactCreditFrozenValueState(actualValue) {
     source.creditSalePaymentFlowSats,
     source.creditMinerFeeFlowSats,
   ].map(exactUnsignedInteger);
+  const legacyFieldsAbsent =
+    source.legacyBootstrapCreditFixedQ8 == null &&
+    source.legacyBootstrapCreditFixedSats == null;
+  const legacyBootstrapCreditFixedQ8 = legacyFieldsAbsent
+    ? 0n
+    : exactUnsignedString(source.legacyBootstrapCreditFixedQ8);
+  const legacyBootstrapCreditFixedSats = legacyFieldsAbsent
+    ? 0n
+    : exactUnsignedInteger(source.legacyBootstrapCreditFixedSats);
+  const legacyFieldsAgree =
+    legacyBootstrapCreditFixedQ8 !== null &&
+    legacyBootstrapCreditFixedSats !== null &&
+    legacyBootstrapCreditFixedQ8 ===
+      legacyBootstrapCreditFixedSats * BOND_VALUE_Q8_SCALE;
   const q8FieldsAbsent =
     source.creditEventFrozenValueQ8 == null &&
     source.creditMovementFrozenValueQ8 == null;
@@ -60,10 +74,15 @@ export function exactCreditFrozenValueState(actualValue) {
     eventValueQ8,
     movementValueQ8,
     ...flowValues,
-  ]);
-  const fixedFlowSats = allExact(flowValues)
+  ]) && legacyFieldsAgree;
+  const validFixedFlowSats = allExact(flowValues)
     ? flowValues.reduce((total, value) => total + value, 0n)
     : null;
+  const fixedFlowSats =
+    validFixedFlowSats !== null &&
+    legacyBootstrapCreditFixedSats !== null
+      ? validFixedFlowSats + legacyBootstrapCreditFixedSats
+      : null;
   const expectedEventValueQ8 =
     movementValueQ8 !== null && fixedFlowSats !== null
       ? movementValueQ8 + fixedFlowSats * BOND_VALUE_Q8_SCALE
@@ -75,8 +94,12 @@ export function exactCreditFrozenValueState(actualValue) {
     eventValueQ8,
     exactFieldsPresent,
     fixedFlowSats,
+    legacyBootstrapCreditFixedQ8,
+    legacyBootstrapCreditFixedSats,
+    legacyFieldsAgree,
     movementValueQ8,
     q8FieldsAbsent,
+    validFixedFlowSats,
   };
 }
 

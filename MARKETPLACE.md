@@ -242,13 +242,99 @@ The corrective declaration is transaction
 It is canonical at block height `959620`, block transaction index `141`, block
 hash
 `0000000000000000000094195957f498f894c92f5d5f75ff5b9c9afc749a6811`,
-and activates at height `959621`.
+block time `2026-07-26T00:17:29.000Z`, and activates at height `959621`.
+
+The cutover has one exact evidence-bound pre-unit relic:
+
+```text
+model = canonical-work-amo-v5-pre-unit-relic-v1
+listingId = 4e9cedced2252cd183608dc9176415a913c4f6aa5e8307a732179a2240b6feb1
+blockHeight = 959241
+blockTransactionIndex = 2601
+protocolVout = 1
+recordOrdinal = 0
+blockHash = 000000000000000000007933e0dc73604a52057ba18de7b9463b65d9433dd0fe
+authorizationVersion = pwt-sale-v3
+amountAtoms = 1600
+priceSats = 1500479
+saleTicketOutpoint = 4e9cedced2252cd183608dc9176415a913c4f6aa5e8307a732179a2240b6feb1:2
+```
+
+After activation this listing is non-reserving, cannot be sealed or bought,
+and appears once as a read-only closed relic attributed to the V5 declaration.
+It is outside the height-959061 refund snapshot and therefore has
+`refundEligible:false`. Its original confirmed row remains immutable replay
+evidence.
+
+This projection is not authorized by txid or height alone. The reader must
+prove one exact valid listing event, its canonical transaction/block/position,
+the identical stored and raw `pwt1` payload, exact authorization, 1,251 data
+bytes, 3,890-proof miner fee, 546-proof registry payment, exact sale-ticket
+output/script, the V1 and V5 declarations, and zero valid seals. The sale-ticket
+outpoint is the terminal authority: one canonical spend retires the relic, and
+a matching valid close may corroborate that spend. A close without that spend,
+a pointer-only or pending spend, a duplicate, or any field mismatch fails
+closed. Invalid events and spends of other outputs cannot close it.
+
+Token state suppresses the legacy reservation even when this proof is
+temporarily unavailable, but it never manufactures a relic from incomplete
+evidence. Exact active-listing queries then return an authoritative terminal
+empty result instead of falling back to a stale snapshot. Closed-listing and
+market-log projection occurs inside the canonical relational set before
+counting, ordering, cursoring, `LIMIT`, or `OFFSET`, so every page has the same
+single evidence-bound history.
 
 Height `959620` is the one immutable legacy H-1 bootstrap. A supervised replay
 reuses its exact eligible height/hash-bound canonical summary; it does not
 recompute that historical value from later pending or public-log state.
 Multiple eligible versions must agree on the exact value bindings or replay
 fails closed.
+
+That immutable seed contains one narrowly pinned legacy-bootstrap carry. The
+underlying transaction is:
+
+```text
+model = canonical-work-amo-v5-legacy-bootstrap-carry-v1
+txid = 5eb0a876603a7551653806b932533dc27a884631a581caa2e36dcf129b8278e8
+blockHeight = 959311
+blockTransactionIndex = 2552
+protocolVout = 1
+recordOrdinal = 0
+blockHash = 000000000000000000005a63a2c00834b92746ab0658c9f0c98aeb509724e8f9
+reasonCode = work-market-v4-version-required
+```
+
+It is confirmed audit history but not a valid WORK marketplace event. It
+creates no active listing reservation and contributes zero valid marketplace
+activity, mutation-fee flow, miner-fee flow, or derived state. The immutable
+pre-V5 summary nevertheless already carried its 546-proof mutation payment and
+2,216-proof transaction miner cost. V5 does not relabel those values as valid
+activity and does not rewrite the activation seed. Instead, exact-tip
+projection reconciles them as an opaque legacy-bootstrap basis:
+
+```text
+legacyBootstrapMarketplaceCarrySats = 546
+legacyBootstrapSats = 546 * 5 = 2730
+legacyBootstrapGrowthValueQ8 = 273000000000
+legacyBootstrapCreditFixedSats = 546 + 2216 = 2762
+legacyBootstrapCreditFixedQ8 = 276200000000
+```
+
+The outward `tokenMarketplaceFeeSats`, `marketplaceFeeSats`,
+`marketplaceMutationFeeSats`, `marketplaceFlowSats`, and `marketplaceSats`
+aliases are valid-only and therefore exclude the 546-proof carry. The raw
+committed transition N, base-state preimage, frozen values, Q8 commitments, and
+chart history remain byte-for-byte authoritative. The API exposes the carry
+separately with its exact `workAmoV5LegacyBootstrap` evidence so consumers can
+prove both the valid-only projection and the unchanged committed basis.
+
+Reconciliation fails closed unless the relational event, transaction,
+canonical block, exact position, invalid disposition, reason, 546-proof
+payment, 2,216-proof miner fee, zero active reservation, and singleton
+cardinality all match. No current aggregate, heuristic, or fallback may infer
+the carry. Changing the height-959620 seed or replaying it without the carry
+would be a retroactive protocol change and requires a new on-chain protocol
+version.
 
 The declaration memo is output 3. Input zero spends exact authority
 scriptPubKey
@@ -458,7 +544,10 @@ prepared row one-to-one to the raw transition outcome at its exact
 `(height, transaction index, protocol vout, ordinal)` before persistence.
 Transition validity, reason, frozen output, and state mutation are
 authoritative. Invalid rows remain audit history but cannot mutate balances,
-listings, IDs, quotes, Log, Growth, or network value.
+listings, IDs, quotes, Log, Growth, or network value. The pinned
+legacy-bootstrap carry above is only a reconciliation of the already committed
+H-1 basis; it is not a valid-row exception and cannot be generalized to any
+other invalid event.
 
 ## Current Infinity Bond / POWB Model
 
