@@ -4479,7 +4479,12 @@ async function canonicalWorkAmoReplayEvidence(client) {
       throughHeight,
     };
   }
-  const bootstrapBlock = await client.query(
+  const [canonicalBootstrapCoreHash, canonicalFromCoreHash] =
+    await Promise.all([
+      canonicalBitcoinRpc("getblockhash", [rebuildBootstrapHeight]),
+      canonicalBitcoinRpc("getblockhash", [rebuildFromHeight]),
+    ]);
+  const replayStartBlock = await client.query(
     `
       SELECT 1
       FROM proof_indexer.blocks
@@ -4487,11 +4492,20 @@ async function canonicalWorkAmoReplayEvidence(client) {
         AND canonical = true
         AND height = $1
         AND lower(block_hash) = $2
+        AND lower(previous_block_hash) = $3
       LIMIT 1
     `,
-    [rebuildBootstrapHeight, rebuildBootstrapHash],
+    [
+      rebuildFromHeight,
+      String(canonicalFromCoreHash ?? "").trim().toLowerCase(),
+      rebuildBootstrapHash,
+    ],
   );
-  if (bootstrapBlock.rows.length !== 1) {
+  if (
+    String(canonicalBootstrapCoreHash ?? "").trim().toLowerCase() !==
+      rebuildBootstrapHash ||
+    replayStartBlock.rows.length !== 1
+  ) {
     return {
       complete: false,
       reason: "canonical-rebuild-bootstrap-mismatch",

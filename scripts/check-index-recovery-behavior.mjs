@@ -42425,6 +42425,14 @@ check("AMO V5 canonical positions and immutable projections are schema-bound", (
     migrationSource,
     /canonicalBitcoinRpc\("getblock", \[coreBlockHash, 3\]\)/u,
   );
+  assert.match(
+    migrationSource,
+    /canonicalBitcoinRpc\("getblockhash", \[rebuildBootstrapHeight\]\)/u,
+  );
+  assert.match(
+    migrationSource,
+    /height = \$1[\s\S]*lower\(block_hash\) = \$2[\s\S]*lower\(previous_block_hash\) = \$3[\s\S]*rebuildFromHeight[\s\S]*canonicalFromCoreHash[\s\S]*rebuildBootstrapHash/u,
+  );
   assert.match(migrationSource, /bootstrapCertificate/u);
   assert.match(
     migrationSource,
