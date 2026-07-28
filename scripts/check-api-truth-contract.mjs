@@ -607,6 +607,16 @@ expect(
     /listingFrozenTerms/u.test(server),
 );
 expect(
+  "AMO V5 read caching preserves fresh negative checks and exact-tip positive reuse",
+  /function reusableWorkAmoV5StatusCache\([\s\S]*cache\.payload\.indexReady === true[\s\S]*Number\(cache\.expiresAt\) > now/u.test(
+    server,
+  ) &&
+    /reusableWorkAmoV5StatusCache\(workAmoV5StatusCache/u.test(server) &&
+    /proofIndexWorkAmoReplayReadiness\(network,\s*\{[\s\S]*force,[\s\S]*throughBlockHash: tipHash/u.test(
+      server,
+    ),
+);
+expect(
   "AMO V5 production configuration starts with its separate gate closed",
   /Environment=WORK_AMO_V5_DECLARATION_TXID=54d7a367a3998ce1327ee89d983a25c80ce34b96d9811807df215a8694aead36/u.test(
     service,

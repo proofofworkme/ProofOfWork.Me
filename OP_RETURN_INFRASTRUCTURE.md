@@ -1036,6 +1036,17 @@ protocol. A fresh canonical quote is additionally required to create a new
 listing. It is not required to seal or buy a listing that already confirmed
 with valid frozen terms.
 
+AMO readiness reads are coalesced only when network, confirmed Core tip height,
+and confirmed Core tip hash are identical. The replay reader constrains its
+seed and closing rows to canonical-summary snapshots so PostgreSQL can use the
+summary partial index without changing any consensus check. A proven-positive
+V5 status may be reused after the ordinary 15-second cache window only while a
+fresh Core read reports that same tip height and hash and the caller supplies
+the same exact pre-event network-value Q8. Negative status expires normally
+because the index can become ready at the same tip. Forced broadcast admission
+bypasses both reuse and replay-read singleflight, so every governed write
+performs a fresh fail-closed check.
+
 AMO V5 also applies one closed, exact relational projection for pre-unit
 listing
 `4e9cedced2252cd183608dc9176415a913c4f6aa5e8307a732179a2240b6feb1`.
