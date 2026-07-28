@@ -147,6 +147,7 @@ import {
 
 let proofIndexReadPool = null;
 const workAmoReplayReadinessInFlight = new Map();
+const workAmoReplayReadinessReadyCache = new Map();
 const INFINITY_BOND_MEMO = "powb";
 const INFINITY_BOND_KIND = "infinity-bond";
 const INCEPTION_BOND_MEMO = "incb";
@@ -3671,8 +3672,21 @@ function workAmoReplayReadinessCheckpointKey(network, options = {}) {
     Number.isSafeInteger(throughHeight) &&
     throughHeight > 0 &&
     /^[0-9a-f]{64}$/u.test(throughBlockHash)
-    ? `${normalizedNetwork}:${throughHeight}:${throughBlockHash}`
-    : "";
+      ? `${normalizedNetwork}:${throughHeight}:${throughBlockHash}`
+      : "";
+}
+
+function workAmoReplayReadinessRequest(network, options = {}) {
+  const requestOptions = Object.freeze({ ...options });
+  const checkpointKey =
+    requestOptions.force === true ||
+    requestOptions.singleFlightBypass === true
+      ? ""
+      : workAmoReplayReadinessCheckpointKey(network, requestOptions);
+  return Object.freeze({
+    checkpointKey,
+    options: requestOptions,
+  });
 }
 
 async function exactCheckpointSingleFlight(inFlight, key, load) {
@@ -3691,24 +3705,118 @@ async function exactCheckpointSingleFlight(inFlight, key, load) {
   }
 }
 
+function deepFreezeReadinessSnapshot(value, seen = new WeakSet()) {
+  if (
+    value === null ||
+    typeof value !== "object" ||
+    seen.has(value)
+  ) {
+    return value;
+  }
+  const prototype = Object.getPrototypeOf(value);
+  const plainObject =
+    prototype === null ||
+    Object.getPrototypeOf(prototype) === null;
+  if (
+    !Array.isArray(value) &&
+    !plainObject
+  ) {
+    return value;
+  }
+  seen.add(value);
+  for (const child of Object.values(value)) {
+    deepFreezeReadinessSnapshot(child, seen);
+  }
+  return Object.freeze(value);
+}
+
+function workAmoReplayReadinessResultIsExactPositive(
+  result,
+  options = {},
+) {
+  const throughHeight = Number(options.throughHeight);
+  const throughBlockHash = String(options.throughBlockHash ?? "")
+    .trim()
+    .toLowerCase();
+  return (
+    result?.ready === true &&
+    result?.indexReady === true &&
+    result?.requestedTipReady === true &&
+    Number(result.requestedThroughHeight) === throughHeight &&
+    Number(result.throughHeight) === throughHeight &&
+    Number(result.canonicalTip) === throughHeight &&
+    String(result.requestedThroughBlockHash ?? "")
+      .trim()
+      .toLowerCase() === throughBlockHash &&
+    String(result.canonicalTipBlockHash ?? "")
+      .trim()
+      .toLowerCase() === throughBlockHash
+  );
+}
+
+function rememberExactCheckpointReadiness(
+  cache,
+  key,
+  result,
+  maxEntries = 2,
+) {
+  cache.delete(key);
+  cache.set(key, result);
+  while (cache.size > maxEntries) {
+    const oldestKey = cache.keys().next().value;
+    if (oldestKey === undefined) {
+      break;
+    }
+    cache.delete(oldestKey);
+  }
+}
+
+async function exactCheckpointReadinessWithCache({
+  checkpointKey,
+  inFlight,
+  load,
+  options,
+  readyCache,
+}) {
+  const settledReady = readyCache.get(checkpointKey);
+  if (settledReady) {
+    return settledReady;
+  }
+  const result = await exactCheckpointSingleFlight(
+    inFlight,
+    checkpointKey,
+    load,
+  );
+  if (!workAmoReplayReadinessResultIsExactPositive(result, options)) {
+    return result;
+  }
+  const immutableResult = deepFreezeReadinessSnapshot({ ...result });
+  rememberExactCheckpointReadiness(
+    readyCache,
+    checkpointKey,
+    immutableResult,
+  );
+  return immutableResult;
+}
+
 export async function proofIndexWorkAmoReplayReadiness(
   network,
   options = {},
 ) {
-  const checkpointKey =
-    options.force === true || options.singleFlightBypass === true
-      ? ""
-      : workAmoReplayReadinessCheckpointKey(network, options);
+  const request = workAmoReplayReadinessRequest(network, options);
+  const { checkpointKey, options: requestOptions } = request;
   if (checkpointKey) {
-    return exactCheckpointSingleFlight(
-      workAmoReplayReadinessInFlight,
+    return exactCheckpointReadinessWithCache({
       checkpointKey,
-      () =>
+      inFlight: workAmoReplayReadinessInFlight,
+      load: () =>
         proofIndexWorkAmoReplayReadiness(network, {
-          ...options,
+          ...requestOptions,
           singleFlightBypass: true,
         }),
-    );
+      options: requestOptions,
+      readyCache: workAmoReplayReadinessReadyCache,
+    });
   }
   const pool = proofIndexPool();
   if (!pool) {
@@ -3750,12 +3858,12 @@ export async function proofIndexWorkAmoReplayReadiness(
       Number(tipResult.rows[1].height) !== canonicalTip
     );
   const requestedThroughHeight =
-    Number.isSafeInteger(Number(options.throughHeight)) &&
-    Number(options.throughHeight) > 0
-      ? Number(options.throughHeight)
+    Number.isSafeInteger(Number(requestOptions.throughHeight)) &&
+    Number(requestOptions.throughHeight) > 0
+      ? Number(requestOptions.throughHeight)
       : 0;
   const requestedThroughBlockHash = String(
-    options.throughBlockHash ?? "",
+    requestOptions.throughBlockHash ?? "",
   )
     .trim()
     .toLowerCase();
