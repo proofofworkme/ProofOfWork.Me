@@ -19560,6 +19560,7 @@ export async function proofIndexWalletTokenOverlayPayload(
         sealTxid: payload.txid,
       },
       "listings",
+      row,
     );
     if (sealEvent) {
       legacySealEvents.push({

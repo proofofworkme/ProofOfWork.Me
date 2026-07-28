@@ -6447,9 +6447,41 @@ check("wallet index overlay binds every WORK and bond holder to a canonical defi
   ];
   let definitionQuery = null;
   let legacySealQuery = null;
+  let legacySealParserRow = null;
   let walletEventQuery = null;
   let walletListingQuery = null;
   let checkpointQueries = 0;
+  const legacySealRow = {
+    block_hash:
+      "0000000000000000000115822e12543f130e680e25d99539d40734a2609bfc46",
+    block_height: 953_165,
+    block_index: 944,
+    event_id: 3_105_687,
+    event_time: "2026-06-18T00:00:00.000Z",
+    kind: "token-listing-sealed",
+    network: "livenet",
+    payload: {
+      blockHeight: 953_165,
+      blockIndex: 2_613,
+      confirmed: true,
+      kind: "token-listing-sealed",
+      listingId:
+        "d78192fb6bb78a488eab4c948a932faa5c901cbed720823a67c562e9e3d3c4c7",
+      saleAuthorization: {
+        tokenId: workTokenId,
+        version: "pwt-sale-v1",
+      },
+      sellerAddress: address,
+      tokenId: workTokenId,
+      txid:
+        "f2bc2d704dae788aa80e8e6a542cc36d4e2b6fd3e7f4f677fba83fa943931e1",
+      protocolVout: 1,
+    },
+    protocol: "pwt1",
+    status: "confirmed",
+    txid:
+      "f2bc2d704dae788aa80e8e6a542cc36d4e2b6fd3e7f4f677fba83fa943931e1",
+  };
   const pool = {
     async query(sql, params) {
       const text = String(sql);
@@ -6475,7 +6507,7 @@ check("wallet index overlay binds every WORK and bond holder to a canonical defi
       }
       if (text.includes("wallet_legacy_work_listing_seals")) {
         legacySealQuery = { params, text };
-        return { rows: [] };
+        return { rows: [legacySealRow] };
       }
       if (text.includes("FROM proof_indexer.credit_listings cl")) {
         walletListingQuery = { params, text };
@@ -6525,6 +6557,7 @@ check("wallet index overlay binds every WORK and bond holder to a canonical defi
       canonicalEventPayload: (payload) => payload ?? {},
       compareTokenItemsByTime: () => 0,
       dateIso,
+      eventRowPayload: (row) => row.payload ?? {},
       normalizeEventPayload: (payload) => payload,
       normalizedLowerText: (value) => String(value ?? "").trim().toLowerCase(),
       objectRecord,
@@ -6540,6 +6573,22 @@ check("wallet index overlay binds every WORK and bond holder to a canonical defi
       }),
       tokenInvalidEventSelectSql: () =>
         "'wallet_definition_invalid_marker' AS wallet_definition_invalid_marker",
+      tokenHistoryItemFromMarketEventPayload: (payload, safeKind, row) => {
+        assert.equal(safeKind, "listings");
+        assert.equal(payload.txid, legacySealRow.txid);
+        assert.equal(payload.blockIndex, 2_613);
+        assert.equal(row.block_index, 944);
+        legacySealParserRow = row;
+        return {
+          confirmed: true,
+          listingId: payload.listingId,
+          saleAuthorization: payload.saleAuthorization,
+          sealConfirmed: true,
+          sealTxid: payload.txid,
+          sellerAddress: payload.sellerAddress,
+          tokenId: payload.tokenId,
+        };
+      },
       tokenListingEffectiveCloseTxid: () => "",
       tokenListingEffectiveSaleTicketTxid: () => "",
       tokenListingFromEventPayload: () => ({}),
@@ -6628,6 +6677,11 @@ check("wallet index overlay binds every WORK and bond holder to a canonical defi
   assert.doesNotMatch(legacySealQuery.text, /pwt-sale-v3/u);
   assert.equal(legacySealQuery.params[2], WORK_MARKET_V2_ACTIVATION_HEIGHT);
   assert.equal(legacySealQuery.params.at(-1), 501);
+  assert.equal(
+    legacySealParserRow,
+    legacySealRow,
+    "the legacy seal parser must retain its relational canonical row",
+  );
   const zeroBalanceScopedDefinitions = await proofIndexWalletTokenDefinitions(
     pool,
     "livenet",
