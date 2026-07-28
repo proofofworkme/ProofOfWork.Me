@@ -286,7 +286,9 @@ const exactPreUnitRelicRow = () => ({
   block_index: WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_INDEX,
   block_time: WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_TIME,
   canonical_block: true,
+  canonical_close_closed_count: 0,
   canonical_close_count: 0,
+  canonical_close_sale_count: 0,
   canonical_close_txid: null,
   canonical_spend_count: 0,
   canonical_spend_txid: null,
@@ -512,9 +514,59 @@ assert.equal(
   workAmoV5PreUnitRelicEvidenceIsExact(terminalPreUnitRelicEvidence),
   true,
 );
+for (const field of [
+  "canonicalCloseCount",
+  "canonicalCloseSaleCount",
+  "canonicalCloseClosedCount",
+]) {
+  const validCount = terminalPreUnitRelicEvidence[field];
+  for (const malformed of [
+    0.5,
+    String(validCount),
+    null,
+    Number.NaN,
+  ]) {
+    const malformedTerminalEvidence = structuredClone(
+      terminalPreUnitRelicEvidence,
+    );
+    malformedTerminalEvidence[field] = malformed;
+    assert.equal(
+      workAmoV5PreUnitRelicEvidenceIsExact(
+        malformedTerminalEvidence,
+      ),
+      false,
+      `${field} must be an exact safe integer`,
+    );
+  }
+}
+for (const [evidence, expectedCount] of [
+  [exactPreUnitRelicEvidence, 0],
+  [terminalPreUnitRelicEvidence, 1],
+]) {
+  for (const malformed of [
+    0.5,
+    String(expectedCount),
+    null,
+    false,
+    "",
+    Number.NaN,
+  ]) {
+    const malformedSpendEvidence = structuredClone(evidence);
+    malformedSpendEvidence.canonicalSpendCount = malformed;
+    assert.equal(
+      workAmoV5PreUnitRelicEvidenceIsExact(
+        malformedSpendEvidence,
+      ),
+      false,
+      "canonicalSpendCount must be an exact safe integer",
+    );
+  }
+}
 const terminalCloseAndSpendRow = structuredClone(terminalSpendRow);
 Object.assign(terminalCloseAndSpendRow, {
+  canonical_close_closed_count: 1,
   canonical_close_count: 1,
+  canonical_close_sale_count: 0,
   canonical_close_txid: terminalSpendTxid,
 });
 assert.equal(
@@ -525,9 +577,32 @@ assert.equal(
   true,
   "A matching canonical close and exact ticket spend must be terminal",
 );
+const terminalPurchasePairRow = structuredClone(terminalSpendRow);
+Object.assign(terminalPurchasePairRow, {
+  canonical_close_closed_count: 1,
+  canonical_close_count: 1,
+  canonical_close_sale_count: 1,
+  canonical_close_txid: terminalSpendTxid,
+});
+assert.equal(
+  workAmoV5PreUnitRelicEvidenceFromRows(
+    [terminalPurchasePairRow],
+    exactAmoActivation,
+  ).complete,
+  true,
+  "One close plus one sale from the canonical ticket spend is one terminal purchase",
+);
+const duplicateTerminalSaleRow = structuredClone(terminalPurchasePairRow);
+duplicateTerminalSaleRow.canonical_close_sale_count = 2;
+incompletePreUnitEvidence(
+  [duplicateTerminalSaleRow],
+  "Duplicate sale records in one terminal transaction must fail closed",
+);
 const closeOnlyRow = exactPreUnitRelicRow();
 Object.assign(closeOnlyRow, {
+  canonical_close_closed_count: 1,
   canonical_close_count: 1,
+  canonical_close_sale_count: 0,
   canonical_close_txid: terminalSpendTxid,
 });
 incompletePreUnitEvidence(

@@ -1005,6 +1005,8 @@ function isolatedFunction(path, name, globals = {}) {
     WORK_AMO_V5_ACTIVATION_HEIGHT,
     WORK_AMO_V5_AUTH_VERSION,
     WORK_AMO_V5_RAW_TRANSITION_CHAIN_MODEL,
+    WORK_MARKET_GOVERNED_AUTH_VERSIONS:
+      WORK_MARKET_GOVERNED_AUTH_VERSIONS_FIXTURE,
     GROWTH_ID_DENSITY_DENOMINATOR,
     GROWTH_ID_DENSITY_NUMERATOR,
     GROWTH_VALUE_MULTIPLE,
@@ -1022,6 +1024,7 @@ function isolatedFunction(path, name, globals = {}) {
     activatePwtRangeReplayVerifierBinding: () => null,
     assertCanonicalPwtRangeReplayState: () => null,
     assertInternalReplayVerifierResponseBinding: (payload) => payload,
+    assertCurrentAmoV5CanonicalPositionUniqueness: async () => {},
     ID_MARKETPLACE_MUTATION_KINDS,
     MARKETPLACE_MUTATION_KINDS,
     TOKEN_MARKETPLACE_MUTATION_KINDS,
@@ -1161,6 +1164,10 @@ function isolatedFunction(path, name, globals = {}) {
         tokenMintHistoryItemKey: ["canonicalTokenReplayPosition"],
         tokenReplayEntriesForRegistry: ["canonicalTokenReplayPosition"],
         tokenStateFromTransactions: ["tokenMintHistoryItemKey"],
+        tokenActivityItemsFromState: ["canonicalEventIdentityDetails"],
+        tokenMarketLifecycleOverlayFromCreditListings: [
+          "canonicalEventIdentityDetails",
+        ],
         tokenStateWithCreditNetworkValueDetails: [
           "creditNetworkValueEventDetailFor",
         ],
@@ -1172,6 +1179,64 @@ function isolatedFunction(path, name, globals = {}) {
       }
     : path.href === READER_PATH.href
       ? {
+          canonicalTokenListingEventJoinSql: [
+            "canonicalCreditListingAlias",
+          ],
+          canonicalTokenListingSealEventJoinSql: [
+            "canonicalCreditListingAlias",
+          ],
+          canonicalTokenDefinitionCreationEventJoinSql: [
+            "canonicalCreditListingAlias",
+          ],
+          tokenListingActiveLifecycleSql: [
+            "canonicalCreditListingAlias",
+          ],
+          exactActiveTokenListingHistoryPage: [
+            "activeTokenListingFromCreditListingRow",
+            "canonicalTokenListingEventJoinSql",
+            "tokenListingActiveLifecycleSql",
+          ],
+          eventRowPayload: [
+            "canonicalMovementPositionFromEventRow",
+          ],
+          proofIndexCreditListingsPayload: [
+            "canonicalTokenListingEventJoinSql",
+          ],
+          proofIndexTokenDefinitionsByIds: [
+            "canonicalTokenDefinitionCreationEventJoinSql",
+          ],
+          proofIndexTokenDefinitionsFromTables: [
+            "canonicalTokenDefinitionCreationEventJoinSql",
+          ],
+          proofIndexTokenListingsFromTables: [
+            "activeTokenListingFromCreditListingRow",
+            "canonicalTokenSaleEvidenceForListing",
+            "canonicalTokenListingEventJoinSql",
+          ],
+          proofIndexWalletTokenOverlayPayload: [
+            "activeTokenListingFromCreditListingRow",
+            "canonicalTokenListingEventJoinSql",
+            "tokenListingActiveLifecycleSql",
+          ],
+          tokenListingFromCreditListingRow: [
+            "normalizedLowerText",
+          ],
+          activeTokenListingFromCreditListingRow: [
+            "normalizedLowerText",
+            "tokenListingFromCreditListingRow",
+          ],
+          tokenDefinitionFromRow: [
+            "normalizedLowerText",
+          ],
+          tokenClosedListingFromEventPayload: [
+            "canonicalMovementPositionFromEventRow",
+          ],
+          tokenClosedListingFromSalePayload: [
+            "normalizedLowerText",
+          ],
+          tokenListingFromEventPayload: [
+            "canonicalMovementPositionFromEventRow",
+          ],
           tokenMintFromEventPayload: [
             "canonicalMovementPositionFromEventRow",
           ],
@@ -1674,7 +1739,20 @@ check("WORK V3 seal confirmation requires its canonical valid event", () => {
       { seal_tx_status: "confirmed" },
       sealTxid,
     ),
+    false,
+    "a confirmed seal with unknown relational and transaction height fails closed",
+  );
+  assert.equal(
+    tokenListingSealConfirmedFromTransaction(
+      {
+        seal_transaction_block_height:
+          WORK_AMO_V5_ACTIVATION_HEIGHT - 1,
+        seal_tx_status: "confirmed",
+      },
+      sealTxid,
+    ),
     true,
+    "a positively known pre-V5 generic seal keeps legacy compatibility",
   );
   const workMarketV3Row = {
     payload: {
@@ -1683,6 +1761,8 @@ check("WORK V3 seal confirmation requires its canonical valid event", () => {
         version: "pwt-sale-v3",
       },
     },
+    seal_transaction_block_height:
+      WORK_AMO_V5_ACTIVATION_HEIGHT - 1,
     seal_tx_status: "confirmed",
     token_id: workTokenId,
   };
@@ -1692,10 +1772,22 @@ check("WORK V3 seal confirmation requires its canonical valid event", () => {
   );
   assert.equal(
     tokenListingSealConfirmedFromTransaction(
-      { ...workMarketV3Row, seal_event_status: "confirmed" },
+      {
+        ...workMarketV3Row,
+        seal_event_match_count: 1,
+        seal_event_status: "confirmed",
+      },
       sealTxid,
     ),
     true,
+  );
+  assert.equal(
+    tokenListingSealConfirmedFromTransaction(
+      { ...workMarketV3Row, seal_event_status: "confirmed" },
+      sealTxid,
+    ),
+    false,
+    "required canonical seal evidence must include an exact singleton count",
   );
   assert.equal(
     tokenListingSealConfirmedFromTransaction({}, sealTxid),
@@ -1721,7 +1813,7 @@ check("WORK V3 seal confirmation requires its canonical valid event", () => {
   );
   assert.equal(
     (readerSource.match(
-      /sealConfirmed: tokenListingSealConfirmedFromTransaction\(row, sealTxid\)/gu,
+      /(?<!function )tokenListingSealConfirmedFromTransaction\(\s*row,\s*sealTxid,?\s*\)/gu,
     ) ?? []).length,
     4,
   );
@@ -2333,21 +2425,36 @@ check("current token state removes listings with live close events", () => {
   const tokenListingsWithoutClosedEvents = isolatedFunction(
     READER_PATH,
     "tokenListingsWithoutClosedEvents",
-    { tokenListingId },
+    {
+      normalizedLowerText: (value) =>
+        String(value ?? "").trim().toLowerCase(),
+      tokenListingId,
+    },
   );
   const firstListingId = "a".repeat(64);
   const secondListingId = "b".repeat(64);
   const thirdListingId = "c".repeat(64);
+  const tokenId = "work";
   assert.deepEqual(
     tokenListingsWithoutClosedEvents(
       [
-        { listingId: firstListingId },
-        { listingId: secondListingId },
-        { listing: { listingId: thirdListingId } },
+        { listingId: firstListingId, tokenId },
+        { listingId: secondListingId, tokenId },
+        { listing: { listingId: thirdListingId }, tokenId },
       ],
       [
-        { listingId: secondListingId },
-        { listing: { listingId: thirdListingId } },
+        {
+          closedByCanonicalOutpointSpend: true,
+          closedConfirmed: true,
+          listingId: secondListingId,
+          tokenId,
+        },
+        {
+          closedByCanonicalOutpointSpend: true,
+          closedConfirmed: true,
+          listing: { listingId: thirdListingId },
+          tokenId,
+        },
       ],
     ).map(tokenListingId),
     [firstListingId],
@@ -2407,7 +2514,7 @@ check("a current market lifecycle overlay owns sold and active state", () => {
       tokenSaleItemKey: (item) => item.txid,
     },
   );
-  const lifecycleOverlay = isolatedFunction(
+  const lifecycleOverlayFromCreditListings = isolatedFunction(
     API_PATH,
     "tokenMarketLifecycleOverlayFromCreditListings",
     {
@@ -2415,7 +2522,8 @@ check("a current market lifecycle overlay owns sold and active state", () => {
       normalizeTokenScope: (value) => String(value ?? "").toLowerCase(),
       numericValue: (value) => Number(value) || 0,
     },
-  )({
+  );
+  const lifecycleOverlay = lifecycleOverlayFromCreditListings({
     indexedAt: "2026-07-12T01:52:58.000Z",
     indexedThroughBlock: 957637,
     items: [
@@ -2423,12 +2531,24 @@ check("a current market lifecycle overlay owns sold and active state", () => {
         amount: 10000,
         buyerAddress: "buyer",
         closedAt: "2026-07-12T01:52:42.000Z",
+        closedBlockHash: "d".repeat(64),
+        closedBlockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT + 3,
+        closedBlockIndex: 12,
+        closedByCanonicalOutpointSpend: true,
         closedConfirmed: true,
+        closedProtocolVout: 4,
+        closedRecordOrdinal: 1,
+        closeTransactionBlockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT + 3,
         closedTxid: purchaseTxid,
         confirmed: true,
         listingId,
         network: "livenet",
         priceSats: 86590,
+        saleBlockHash: "d".repeat(64),
+        saleBlockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT + 3,
+        saleBlockIndex: 12,
+        saleProtocolVout: 6,
+        saleRecordOrdinal: 2,
         saleTxid: purchaseTxid,
         sellerAddress: "seller",
         status: "sold",
@@ -2445,7 +2565,14 @@ check("a current market lifecycle overlay owns sold and active state", () => {
     {
       closedListings: [],
       indexedAt: "2026-07-12T01:40:00.000Z",
-      listings: [{ listingId, network: "livenet", status: "active" }],
+      listings: [
+        {
+          listingId,
+          network: "livenet",
+          status: "active",
+          tokenId: "work",
+        },
+      ],
       sales: [],
       source: "stale-summary",
       stats: {},
@@ -2455,6 +2582,171 @@ check("a current market lifecycle overlay owns sold and active state", () => {
   assert.equal(result.listings.length, 0);
   assert.equal(result.closedListings[0].closedTxid, purchaseTxid);
   assert.equal(result.sales[0].txid, purchaseTxid);
+  assert.deepEqual(
+    {
+      blockHash: result.closedListings[0].closedBlockHash,
+      blockHeight: result.closedListings[0].closedBlockHeight,
+      blockIndex: result.closedListings[0].closedBlockIndex,
+      protocolVout: result.closedListings[0].closedProtocolVout,
+      recordOrdinal: result.closedListings[0].closedRecordOrdinal,
+    },
+    {
+      blockHash: "d".repeat(64),
+      blockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT + 3,
+      blockIndex: 12,
+      protocolVout: 4,
+      recordOrdinal: 1,
+    },
+    "the lifecycle closure must preserve the close event's own tuple",
+  );
+  assert.deepEqual(
+    {
+      blockHash: result.sales[0].blockHash,
+      blockHeight: result.sales[0].blockHeight,
+      blockIndex: result.sales[0].blockIndex,
+      protocolVout: result.sales[0].protocolVout,
+      recordOrdinal: result.sales[0].recordOrdinal,
+    },
+    {
+      blockHash: "d".repeat(64),
+      blockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT + 3,
+      blockIndex: 12,
+      protocolVout: 6,
+      recordOrdinal: 2,
+    },
+    "lifecycle-only sales must preserve their distinct canonical sale position",
+  );
+  const closedTupleOnly = lifecycleOverlayFromCreditListings({
+    indexedAt: "2026-07-28T00:00:00.000Z",
+    indexedThroughBlock: WORK_AMO_V5_ACTIVATION_HEIGHT + 3,
+    items: [{
+      amount: 10_000,
+      buyerAddress: "buyer",
+      closedBlockHash: "d".repeat(64),
+      closedBlockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT + 3,
+      closedBlockIndex: 12,
+      closedConfirmed: true,
+      closedProtocolVout: 4,
+      closedRecordOrdinal: 1,
+      closeTransactionBlockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT + 3,
+      closedTxid: "3".repeat(64),
+      confirmed: true,
+      listingId: "4".repeat(64),
+      network: "livenet",
+      saleTxid: "3".repeat(64),
+      sellerAddress: "seller",
+      status: "sold",
+      tokenId: "unit",
+    }],
+    network: "livenet",
+    stats: { complete: true, totalCount: 1 },
+  });
+  assert.equal(closedTupleOnly.closedListings.length, 1);
+  assert.equal(
+    closedTupleOnly.sales.length,
+    0,
+    "a complete close tuple must never be reused to manufacture a post-V5 sale",
+  );
+  const incompletePostV5Sale = lifecycleOverlayFromCreditListings({
+    indexedAt: "2026-07-28T00:00:00.000Z",
+    indexedThroughBlock: WORK_AMO_V5_ACTIVATION_HEIGHT + 1,
+    items: [{
+      blockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT,
+      buyerAddress: "buyer",
+      closedConfirmed: true,
+      closedTxid: "4".repeat(64),
+      confirmed: true,
+      listingId: "5".repeat(64),
+      network: "livenet",
+      sellerAddress: "seller",
+      status: "sold",
+      tokenId: "unit",
+    }],
+    network: "livenet",
+    stats: { complete: true, totalCount: 1 },
+  });
+  assert.equal(
+    incompletePostV5Sale.sales.length,
+    0,
+    "a lifecycle-only post-V5 sale without its own close tuple must not project",
+  );
+  assert.equal(
+    incompletePostV5Sale.closedListings.length,
+    1,
+    "an incomplete sale position must not reopen its closed listing",
+  );
+
+  const preV5Opening = {
+    blockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT - 10,
+    buyerAddress: "buyer",
+    closedConfirmed: true,
+    closedTxid: "6".repeat(64),
+    confirmed: true,
+    listingId: "7".repeat(64),
+    network: "livenet",
+    sellerAddress: "seller",
+    status: "sold",
+    tokenId: "unit",
+  };
+  const unknownCloseHeightSale = lifecycleOverlayFromCreditListings({
+    indexedAt: "2026-07-28T00:00:00.000Z",
+    indexedThroughBlock: WORK_AMO_V5_ACTIVATION_HEIGHT + 1,
+    items: [preV5Opening],
+    network: "livenet",
+    stats: { complete: true, totalCount: 1 },
+  });
+  assert.equal(
+    unknownCloseHeightSale.closedListings.length,
+    1,
+    "an unknown-height terminal action must retain closed state",
+  );
+  assert.equal(
+    unknownCloseHeightSale.sales.length,
+    0,
+    "a confirmed unknown-height close must not borrow its pre-V5 opening tuple",
+  );
+
+  const postV5TransactionClose = lifecycleOverlayFromCreditListings({
+    indexedAt: "2026-07-28T00:00:00.000Z",
+    indexedThroughBlock: WORK_AMO_V5_ACTIVATION_HEIGHT + 1,
+    items: [{
+      ...preV5Opening,
+      closeTransactionBlockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT + 1,
+      closedTxid: "8".repeat(64),
+      listingId: "9".repeat(64),
+    }],
+    network: "livenet",
+    stats: { complete: true, totalCount: 1 },
+  });
+  assert.equal(postV5TransactionClose.closedListings.length, 1);
+  assert.equal(
+    postV5TransactionClose.sales.length,
+    0,
+    "the confirmed close transaction height must trigger post-V5 strictness",
+  );
+
+  const knownPreV5Close = lifecycleOverlayFromCreditListings({
+    indexedAt: "2026-07-28T00:00:00.000Z",
+    indexedThroughBlock: WORK_AMO_V5_ACTIVATION_HEIGHT + 1,
+    items: [{
+      ...preV5Opening,
+      closeTransactionBlockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT - 1,
+      closedTxid: "a".repeat(64),
+      listingId: "b".repeat(64),
+    }],
+    network: "livenet",
+    stats: { complete: true, totalCount: 1 },
+  });
+  assert.equal(
+    knownPreV5Close.sales.length,
+    1,
+    "a positively known pre-V5 close remains legacy-projectable",
+  );
+  assert.equal(
+    knownPreV5Close.sales[0].blockHeight,
+    WORK_AMO_V5_ACTIVATION_HEIGHT - 1,
+    "legacy projection must prefer the known close transaction height",
+  );
 
   const activeListingId =
     "15aa831e339a17dd3d0a8a256268cb5e652b965ecf79a6af1423375619ad88fa";
@@ -2465,12 +2757,14 @@ check("a current market lifecycle overlay owns sold and active state", () => {
           closedTxid: "f".repeat(64),
           listingId: activeListingId,
           network: "livenet",
+          tokenId: "work",
         },
       ],
       listings: [],
       sales: [
         {
           listingId: activeListingId,
+          tokenId: "work",
           txid: "e".repeat(64),
         },
       ],
@@ -2486,6 +2780,7 @@ check("a current market lifecycle overlay owns sold and active state", () => {
           listingId: activeListingId,
           network: "livenet",
           sellerAddress: "seller",
+          tokenId: "work",
         },
       ],
       sales: [],
@@ -2496,6 +2791,203 @@ check("a current market lifecycle overlay owns sold and active state", () => {
   assert.equal(reopened.listings[0].listingId, activeListingId);
   assert.equal(reopened.closedListings.length, 0);
   assert.equal(reopened.sales.length, 0);
+
+  const staleCloseTxid = "1".repeat(64);
+  const canonicalCloseTxid = "2".repeat(64);
+  const unrelatedListingId = "3".repeat(64);
+  const unrelatedSaleListingId = "4".repeat(64);
+  const unrelatedSaleTxid = "5".repeat(64);
+  const unrelatedListing = {
+    confirmed: true,
+    listingId: unrelatedListingId,
+    network: "livenet",
+    sellerAddress: "unrelated-seller",
+    tokenId: "work",
+  };
+  const canonicalSold = applyOverlay(
+    {
+      closedListings: [
+        {
+          closedTxid: staleCloseTxid,
+          listingId,
+          network: "livenet",
+          tokenId: "work",
+        },
+        {
+          closedTxid: unrelatedSaleTxid,
+          listingId: unrelatedSaleListingId,
+          network: "livenet",
+          tokenId: "work",
+        },
+      ],
+      listings: [
+        {
+          listingId,
+          network: "livenet",
+          status: "active",
+          tokenId: "work",
+        },
+        unrelatedListing,
+      ],
+      sales: [
+        {
+          confirmed: true,
+          listingId,
+          priceSats: 90_000,
+          tokenId: "work",
+          txid: staleCloseTxid,
+        },
+        {
+          confirmed: true,
+          listingId: unrelatedSaleListingId,
+          priceSats: 700,
+          tokenId: "work",
+          txid: unrelatedSaleTxid,
+        },
+      ],
+      source: "stale-summary",
+      stats: {
+        confirmedSales: 2,
+        confirmedSalesVolumeSats: 90_700,
+      },
+    },
+    {
+      closedListings: [
+        {
+          closedByCanonicalOutpointSpend: true,
+          closedConfirmed: true,
+          closedTxid: canonicalCloseTxid,
+          listingId,
+          network: "livenet",
+          tokenId: "work",
+        },
+      ],
+      indexedAt: "2026-07-28T01:00:00.000Z",
+      listings: [],
+      sales: [
+        {
+          confirmed: true,
+          listingId,
+          priceSats: 200,
+          tokenId: "work",
+          txid: canonicalCloseTxid,
+        },
+      ],
+      source: "proof-indexer-credit-listing-lifecycle",
+      stats: { complete: true },
+    },
+  );
+  assert.deepEqual(
+    canonicalSold.listings.map((listing) => listing.listingId),
+    [unrelatedListingId],
+    "a canonical closure must suppress the stale active projection only for its listing",
+  );
+  assert.deepEqual(
+    canonicalSold.closedListings
+      .map((listing) => listing.closedTxid)
+      .sort(),
+    [canonicalCloseTxid, unrelatedSaleTxid].sort(),
+    "a canonical close B must atomically replace stale close A",
+  );
+  assert.deepEqual(
+    canonicalSold.sales.map((sale) => sale.txid).sort(),
+    [canonicalCloseTxid, unrelatedSaleTxid].sort(),
+    "a canonical sale B must atomically replace stale sale A",
+  );
+  assert.equal(canonicalSold.stats.confirmedSales, 2);
+  assert.equal(
+    canonicalSold.stats.confirmedSalesVolumeSats,
+    900,
+    "canonical sale B must replace stale sale A's larger aggregate volume while retaining unrelated sale volume",
+  );
+
+  const canonicalStateOnlyClose = applyOverlay(
+    {
+      closedListings: [
+        {
+          closedTxid: staleCloseTxid,
+          listingId,
+          network: "livenet",
+          tokenId: "work",
+        },
+        {
+          closedTxid: unrelatedSaleTxid,
+          listingId: unrelatedSaleListingId,
+          network: "livenet",
+          tokenId: "work",
+        },
+      ],
+      listings: [
+        {
+          listingId,
+          network: "livenet",
+          status: "active",
+          tokenId: "work",
+        },
+        unrelatedListing,
+      ],
+      sales: [
+        {
+          confirmed: true,
+          listingId,
+          priceSats: 90_000,
+          tokenId: "work",
+          txid: staleCloseTxid,
+        },
+        {
+          confirmed: true,
+          listingId: unrelatedSaleListingId,
+          priceSats: 700,
+          tokenId: "work",
+          txid: unrelatedSaleTxid,
+        },
+      ],
+      source: "stale-summary",
+      stats: {
+        confirmedSales: 2,
+        confirmedSalesVolumeSats: 90_700,
+      },
+    },
+    {
+      closedListings: [
+        {
+          closedByCanonicalOutpointSpend: true,
+          closedConfirmed: true,
+          closedTxid: canonicalCloseTxid,
+          listingId,
+          network: "livenet",
+          status: "closed",
+          tokenId: "work",
+        },
+      ],
+      indexedAt: "2026-07-28T01:01:00.000Z",
+      listings: [],
+      sales: [],
+      source: "proof-indexer-credit-listing-lifecycle",
+      stats: { complete: true },
+    },
+  );
+  assert.deepEqual(
+    canonicalStateOnlyClose.listings.map((listing) => listing.listingId),
+    [unrelatedListingId],
+    "a state-only canonical closure must preserve unrelated active listings",
+  );
+  assert.deepEqual(
+    canonicalStateOnlyClose.closedListings
+      .map((listing) => listing.closedTxid)
+      .sort(),
+    [canonicalCloseTxid, unrelatedSaleTxid].sort(),
+  );
+  assert.deepEqual(
+    canonicalStateOnlyClose.sales.map((sale) => sale.txid),
+    [unrelatedSaleTxid],
+    "a state-only canonical close must remove a stale base sale without dropping unrelated sales",
+  );
+  assert.equal(canonicalStateOnlyClose.stats.confirmedSales, 1);
+  assert.equal(
+    canonicalStateOnlyClose.stats.confirmedSalesVolumeSats,
+    700,
+  );
 });
 
 check("marketplace fast fallback fails closed without lifecycle coverage", async () => {
@@ -3292,6 +3784,7 @@ check(
       buyer_address: "reserved-buyer",
       canonical_spend_block_hash: spendBlockHash,
       canonical_spend_block_height: 959_302,
+      canonical_spend_block_index: 8,
       canonical_spend_block_time: spendTime,
       canonical_spend_txid: spendTxid,
       canonical_spend_vin: 0,
@@ -3300,10 +3793,38 @@ check(
       listing_block_time: "2026-07-23T16:00:00.000Z",
       listing_id: listingId,
       listing_tx_status: "confirmed",
+      close_txid: staleSaleTxid,
       payload: {
         buyerAddress: "reserved-buyer",
-        saleAuthorization: { tokenId: WORK_TOKEN_ID },
+        closedAt: "2026-07-23T15:59:00.000Z",
+        closedDataBytes: 432,
+        closedFrozenNetworkValueSats: 765,
+        closedLiveNetworkValueSats: 1_098,
+        closedMinerFeeCanonical: true,
+        closedMinerFeeSats: 222,
+        closedMinerFeeSource: "close-a",
+        closedProtocolVout: 9,
+        closedRecordOrdinal: 1,
+        closedVin: 7,
+        closeTxid: staleSaleTxid,
+        closeTransactionBlockHeight: 959_300,
+        saleAt: "2026-07-23T15:59:00.000Z",
+        registryAddress: "registry",
+        saleAuthorization: {
+          buyerAddress: "buyer",
+          registryAddress: "registry",
+          ticker: "WORK",
+          tokenId: WORK_TOKEN_ID,
+          version: WORK_AMO_V5_AUTH_VERSION,
+        },
+        saleBlockHash: "f".repeat(64),
+        saleBlockHeight: 959_300,
+        saleBlockIndex: 6,
+        saleProtocolVout: 9,
+        saleRecordOrdinal: 1,
+        saleTransactionBlockHeight: 959_300,
         saleTxid: staleSaleTxid,
+        ticker: "WORK",
       },
       price_sats: 1000,
       sale_ticket_txid: listingId,
@@ -3314,6 +3835,23 @@ check(
       token_id: WORK_TOKEN_ID,
       updated_at: "2026-07-23T16:00:00.000Z",
     };
+    const canonicalWorkMarketV3ListingProjectionSql = isolatedFunction(
+      READER_PATH,
+      "canonicalWorkMarketV3ListingProjectionSql",
+      {
+        WORK_AMO_V5_AUTH_VERSION,
+        WORK_MARKET_V2_AUTH_VERSION: "pwt-sale-v3",
+        WORK_MARKET_V4_AUTH_VERSION: "pwt-sale-v4",
+        WORK_TOKEN_ID,
+        canonicalCreditListingAlias: (value) => String(value),
+      },
+    );
+    const canonicalTokenSaleEvidenceForListing = isolatedFunction(
+      READER_PATH,
+      "canonicalTokenSaleEvidenceForListing",
+    );
+    let lifecycleRow = listingRow;
+    let closeRows = [];
     const pool = {
       async query(sql, params) {
         const text = String(sql);
@@ -3321,10 +3859,14 @@ check(
         if (/count\(\*\) AS total_count/u.test(text)) {
           return { rows: [{ total_count: 1 }] };
         }
-        if (/SELECT DISTINCT ON \(lower\(e\.payload->>'listingId'\)\)/u.test(text)) {
-          return { rows: [] };
+        if (
+          /JOIN unnest\(\$2::text\[\], \$3::text\[\], \$4::text\[\]\)/u.test(
+            text,
+          )
+        ) {
+          return { rows: closeRows };
         }
-        return { rows: [listingRow] };
+        return { rows: [lifecycleRow] };
       },
     };
     const proofIndexCreditListingsPayload = isolatedFunction(
@@ -3338,7 +3880,8 @@ check(
         boundedInteger: (value, fallback, min, max) =>
           Math.min(max, Math.max(min, Number(value ?? fallback))),
         canonicalTokenListingSealEventJoinSql: () => "",
-        canonicalWorkMarketV3ListingProjectionSql: () => "TRUE",
+        canonicalTokenSaleEvidenceForListing,
+        canonicalWorkMarketV3ListingProjectionSql,
         dateIso: (value) =>
           value ? new Date(value).toISOString() : undefined,
         latestProofIndexScanMetadata: async () => ({
@@ -3353,7 +3896,10 @@ check(
             : {},
         proofIndexPool: () => pool,
         rowNumber: (row, key) => Number(row?.[key] ?? 0),
-        tokenListingEffectiveCloseTxid: () => "",
+        tokenListingEffectiveCloseTxid: (row, payload) =>
+          String(row?.close_txid ?? payload?.closeTxid ?? "")
+            .trim()
+            .toLowerCase(),
         tokenListingEffectiveSaleTicketTxid: (
           row,
           _payload,
@@ -3361,6 +3907,29 @@ check(
           fallback,
         ) => row.sale_ticket_txid ?? fallback,
         tokenListingSealConfirmedFromTransaction: () => false,
+        tokenMarketEventRowPayload: (row, network) => ({
+          ...row.payload,
+          blockHash: row.block_hash,
+          blockHeight: row.block_height,
+          blockIndex: row.block_index,
+          confirmed: true,
+          createdAt: row.event_time,
+          kind: row.kind,
+          network,
+          protocolVout: row.op_return_vout,
+          recordOrdinal: row.record_ordinal,
+          txid: row.txid,
+        }),
+        tokenClosedListingFromEventPayload: (payload) => ({
+          closedAt: payload.createdAt,
+          closedBlockHash: payload.blockHash,
+          closedBlockHeight: payload.blockHeight,
+          closedBlockIndex: payload.blockIndex,
+          closedConfirmed: true,
+          closedProtocolVout: payload.protocolVout,
+          closedRecordOrdinal: payload.recordOrdinal,
+          closedTxid: payload.txid,
+        }),
         tokenScopeKey: (value) =>
           String(value ?? "").trim().toLowerCase() || "all",
         validTxid: (value) => /^[0-9a-f]{64}$/u.test(String(value ?? "")),
@@ -3383,7 +3952,97 @@ check(
     assert.equal(closed.closedBlockHeight, 959_302);
     assert.equal(closed.closedVin, 0);
     assert.equal(closed.closedAt, spendTime);
+    assert.equal(closed.buyerAddress, "");
     assert.equal(closed.saleTxid, undefined);
+    assert.equal(closed.saleAt, undefined);
+    assert.equal(closed.saleBlockHash, undefined);
+    assert.equal(closed.saleBlockHeight, undefined);
+    assert.equal(closed.saleBlockIndex, undefined);
+    assert.equal(closed.saleProtocolVout, undefined);
+    assert.equal(closed.saleRecordOrdinal, undefined);
+    assert.equal(closed.saleTransactionBlockHeight, undefined);
+    assert.equal(closed.closedDataBytes, undefined);
+    assert.equal(closed.closedFrozenNetworkValueSats, undefined);
+    assert.equal(closed.closedLiveNetworkValueSats, undefined);
+    assert.equal(closed.closedMinerFeeCanonical, false);
+    assert.equal(closed.closedMinerFeeSats, undefined);
+    assert.equal(closed.closedMinerFeeSource, undefined);
+    assert.equal(closed.closedProtocolVout, undefined);
+    assert.equal(closed.closedRecordOrdinal, undefined);
+    assert.equal(closed.closeTransactionBlockHeight, 959_302);
+
+    closeRows = [];
+    lifecycleRow = {
+      ...listingRow,
+      canonical_spend_block_hash: undefined,
+      canonical_spend_block_height: undefined,
+      canonical_spend_block_index: undefined,
+      canonical_spend_block_time: undefined,
+      canonical_spend_txid: undefined,
+      canonical_spend_vin: undefined,
+      close_transaction_block_hash: undefined,
+      close_transaction_block_height: undefined,
+      close_transaction_block_index: undefined,
+      close_transaction_status: undefined,
+      status: "sold",
+    };
+    const staleClose = await proofIndexCreditListingsPayload(
+      "livenet",
+      WORK_TOKEN_ID,
+    );
+    assert.equal(staleClose.items.length, 1);
+    assert.equal(
+      staleClose.items[0].status,
+      "active",
+      "a noncanonical close_txid must not suppress lifecycle inventory",
+    );
+    assert.equal(staleClose.items[0].closeTxid, "");
+    assert.equal(staleClose.items[0].closedTxid, "");
+    assert.equal(staleClose.items[0].closedConfirmed, false);
+    assert.equal(staleClose.items[0].saleTxid, undefined);
+
+    for (const staleTerminalStatus of ["sold", "delisted"]) {
+      closeRows = [];
+      lifecycleRow = {
+        ...listingRow,
+        payload: {
+          ...listingRow.payload,
+          status: staleTerminalStatus,
+        },
+        status: staleTerminalStatus,
+      };
+      const staleTerminal =
+        await proofIndexCreditListingsPayload(
+          "livenet",
+          WORK_TOKEN_ID,
+        );
+      assert.equal(staleTerminal.items.length, 1);
+      assert.equal(
+        staleTerminal.items[0].status,
+        "closed",
+        `canonical spender B without lifecycle records must override stale ${staleTerminalStatus} state from A`,
+      );
+      assert.equal(staleTerminal.items[0].closeTxid, spendTxid);
+      assert.equal(staleTerminal.items[0].closedTxid, spendTxid);
+      assert.equal(
+        staleTerminal.items[0].closedByCanonicalOutpointSpend,
+        true,
+      );
+      assert.equal(staleTerminal.items[0].closedBlockHash, spendBlockHash);
+      assert.equal(staleTerminal.items[0].closedBlockHeight, 959_302);
+      assert.equal(staleTerminal.items[0].buyerAddress, "");
+      assert.equal(staleTerminal.items[0].saleTxid, undefined);
+      assert.equal(staleTerminal.items[0].saleAt, undefined);
+      assert.equal(staleTerminal.items[0].saleBlockHash, undefined);
+      assert.equal(staleTerminal.items[0].saleProtocolVout, undefined);
+      assert.equal(staleTerminal.items[0].closedDataBytes, undefined);
+      assert.equal(
+        staleTerminal.items[0].closedMinerFeeCanonical,
+        false,
+      );
+      assert.equal(staleTerminal.items[0].closedMinerFeeSats, undefined);
+      assert.equal(staleTerminal.items[0].closedMinerFeeSource, undefined);
+    }
 
     const lifecycleQuery = queries.find(({ sql }) =>
       sql.includes("canonical_spend.txid AS canonical_spend_txid"),
@@ -3396,6 +4055,300 @@ check(
     assert.match(
       lifecycleQuery.sql,
       /spend_input\.prev_txid = lower\([\s\S]*sale_ticket_txid[\s\S]*spend_input\.prev_vout = cl\.sale_ticket_vout/u,
+    );
+    assert.doesNotMatch(
+      topLevelFunctionSource(
+        READER_PATH,
+        "canonicalWorkMarketV3ListingProjectionSql",
+      ),
+      /\$\{alias\}\.status|\$\{alias\}\.close_txid/u,
+      "governed listing admission must not depend on mutable terminal metadata",
+    );
+    assert.doesNotMatch(
+      lifecycleQuery.sql,
+      /canonical_spend_close_event/u,
+      "canonical outpoint-spend admission must not depend on an optional pwt1 lifecycle record",
+    );
+
+    const canonicalCloseEvent = {
+      block_hash: spendBlockHash,
+      block_height: 959_302,
+      block_index: 8,
+      canonical_block_hash: spendBlockHash,
+      event_time: spendTime,
+      kind: "token-listing-closed",
+      linked_listing_id: listingId,
+      op_return_vout: 3,
+      payload: {
+        listingId,
+        sellerAddress: "seller",
+        tokenId: WORK_TOKEN_ID,
+      },
+      protocol: "pwt1",
+      record_ordinal: 0,
+      status: "confirmed",
+      transaction_block_height: 959_302,
+      transaction_block_index: 8,
+      transaction_status: "confirmed",
+      txid: spendTxid,
+    };
+    const canonicalSaleEvent = {
+      ...canonicalCloseEvent,
+      kind: "token-sale",
+      op_return_vout: 2,
+      payload: {
+        ...canonicalCloseEvent.payload,
+        amount: "100000000",
+        buyerAddress: "buyer",
+        priceSats: 1000,
+        registryAddress: "registry",
+        ticker: "WORK",
+      },
+    };
+    closeRows = [canonicalCloseEvent, canonicalSaleEvent];
+    lifecycleRow = listingRow;
+    const pairedPurchase = await proofIndexCreditListingsPayload(
+      "livenet",
+      WORK_TOKEN_ID,
+    );
+    assert.equal(pairedPurchase.items[0].status, "sold");
+    assert.equal(pairedPurchase.items[0].saleTxid, spendTxid);
+    assert.equal(pairedPurchase.items[0].buyerAddress, "buyer");
+    assert.equal(pairedPurchase.items[0].closedBlockHash, spendBlockHash);
+    assert.equal(pairedPurchase.items[0].closedBlockHeight, 959_302);
+    assert.equal(pairedPurchase.items[0].closedBlockIndex, 8);
+    assert.equal(
+      pairedPurchase.items[0].closedProtocolVout,
+      3,
+      "the close keeps its own canonical protocol output",
+    );
+    assert.equal(pairedPurchase.items[0].closedRecordOrdinal, 0);
+    assert.equal(pairedPurchase.items[0].saleBlockHash, spendBlockHash);
+    assert.equal(pairedPurchase.items[0].saleBlockHeight, 959_302);
+    assert.equal(pairedPurchase.items[0].saleBlockIndex, 8);
+    assert.equal(
+      pairedPurchase.items[0].saleProtocolVout,
+      2,
+      "the sale keeps its own distinct canonical protocol output",
+    );
+    assert.equal(pairedPurchase.items[0].saleRecordOrdinal, 0);
+    assert.equal(
+      pairedPurchase.items[0].saleTransactionBlockHeight,
+      959_302,
+    );
+    assert.equal(pairedPurchase.items[0].closedDataBytes, undefined);
+    assert.equal(
+      pairedPurchase.items[0].closedMinerFeeCanonical,
+      false,
+    );
+    assert.equal(pairedPurchase.items[0].closedMinerFeeSats, undefined);
+    assert.equal(pairedPurchase.items[0].closedMinerFeeSource, undefined);
+    closeRows = [
+      canonicalCloseEvent,
+      {
+        ...canonicalSaleEvent,
+        payload: {
+          ...canonicalSaleEvent.payload,
+          priceSats: 1001,
+        },
+      },
+    ];
+    const mismatchedSaleTerms =
+      await proofIndexCreditListingsPayload(
+        "livenet",
+        WORK_TOKEN_ID,
+      );
+    assert.equal(mismatchedSaleTerms.items[0].status, "closed");
+    assert.equal(mismatchedSaleTerms.items[0].saleTxid, undefined);
+    assert.equal(mismatchedSaleTerms.items[0].buyerAddress, "");
+    const closeLifecycleQuery = queries.find(({ sql }) =>
+      /JOIN unnest\(\$2::text\[\], \$3::text\[\], \$4::text\[\]\)/u.test(
+        sql,
+      ),
+    );
+    assert.ok(closeLifecycleQuery);
+    assert.deepEqual(Array.from(closeLifecycleQuery.params[3]), [
+      WORK_TOKEN_ID,
+    ]);
+    assert.match(
+      closeLifecycleQuery.sql,
+      /expected_close\.token_id = lower\(COALESCE\([\s\S]*?payload->>'tokenId'[\s\S]*?saleAuthorization'->>'tokenId'/u,
+      "close lifecycle events must carry the bound listing token identity",
+    );
+
+    closeRows = [
+      canonicalCloseEvent,
+      canonicalSaleEvent,
+      { ...canonicalSaleEvent, event_id: "duplicate-sale" },
+    ];
+    const duplicateSale = await proofIndexCreditListingsPayload(
+      "livenet",
+      WORK_TOKEN_ID,
+    );
+    assert.equal(duplicateSale.items[0].status, "closed");
+    assert.equal(duplicateSale.items[0].saleTxid, undefined);
+    assert.equal(duplicateSale.items[0].closedProtocolVout, undefined);
+
+    closeRows = [
+      canonicalCloseEvent,
+      { ...canonicalSaleEvent, block_index: 9 },
+    ];
+    const mismatchedPosition = await proofIndexCreditListingsPayload(
+      "livenet",
+      WORK_TOKEN_ID,
+    );
+    assert.equal(mismatchedPosition.items[0].status, "closed");
+    assert.equal(mismatchedPosition.items[0].saleTxid, undefined);
+
+    closeRows = [
+      canonicalCloseEvent,
+      {
+        ...canonicalSaleEvent,
+        op_return_vout: canonicalCloseEvent.op_return_vout,
+        record_ordinal: canonicalCloseEvent.record_ordinal,
+      },
+    ];
+    const sharedTuple = await proofIndexCreditListingsPayload(
+      "livenet",
+      WORK_TOKEN_ID,
+    );
+    assert.equal(sharedTuple.items[0].status, "closed");
+    assert.equal(sharedTuple.items[0].saleTxid, undefined);
+
+    closeRows = [
+      {
+        ...canonicalCloseEvent,
+        payload: {
+          ...canonicalCloseEvent.payload,
+          tokenId: "9".repeat(64),
+        },
+      },
+      {
+        ...canonicalSaleEvent,
+        payload: {
+          ...canonicalSaleEvent.payload,
+          tokenId: "9".repeat(64),
+        },
+      },
+    ];
+    const wrongTokenPair = await proofIndexCreditListingsPayload(
+      "livenet",
+      WORK_TOKEN_ID,
+    );
+    assert.equal(wrongTokenPair.items[0].status, "closed");
+    assert.equal(wrongTokenPair.items[0].saleTxid, undefined);
+
+    closeRows = [canonicalSaleEvent];
+    const saleOnly = await proofIndexCreditListingsPayload(
+      "livenet",
+      WORK_TOKEN_ID,
+    );
+    assert.equal(saleOnly.items[0].status, "closed");
+    assert.equal(saleOnly.items[0].saleTxid, undefined);
+
+    closeRows = [
+      canonicalCloseEvent,
+      { ...canonicalCloseEvent, event_id: "duplicate-close" },
+    ];
+    const duplicateClose = await proofIndexCreditListingsPayload(
+      "livenet",
+      WORK_TOKEN_ID,
+    );
+    assert.equal(duplicateClose.items[0].status, "closed");
+    assert.equal(duplicateClose.items[0].saleTxid, undefined);
+
+    closeRows = [canonicalCloseEvent];
+    const delisted = await proofIndexCreditListingsPayload(
+      "livenet",
+      WORK_TOKEN_ID,
+    );
+    assert.equal(delisted.items[0].status, "delisted");
+    assert.equal(delisted.items[0].saleTxid, undefined);
+
+    closeRows = [];
+    lifecycleRow = {
+      ...listingRow,
+      listing_block_height: WORK_AMO_V5_ACTIVATION_HEIGHT,
+      listing_event_block_hash: spendBlockHash,
+      listing_event_block_height: WORK_AMO_V5_ACTIVATION_HEIGHT,
+      listing_event_block_index: 8,
+      listing_event_match_count: 1,
+      listing_event_protocol_vout: null,
+      listing_event_record_ordinal: 0,
+      listing_event_status: "confirmed",
+      listing_transaction_block_index: 8,
+    };
+    const malformedPostV5 = await proofIndexCreditListingsPayload(
+      "livenet",
+      WORK_TOKEN_ID,
+    );
+    assert.equal(malformedPostV5.items.length, 0);
+    assert.equal(
+      malformedPostV5.stats.complete,
+      false,
+      "silently rejected relational rows must never claim complete lifecycle coverage",
+    );
+    assert.equal(malformedPostV5.stats.projectedCount, 0);
+    assert.equal(malformedPostV5.stats.rejectedCount, 1);
+
+    const unpositionedCloseTxid = "f".repeat(64);
+    closeRows = [];
+    lifecycleRow = {
+      ...listingRow,
+      canonical_spend_block_hash: undefined,
+      canonical_spend_block_height: undefined,
+      canonical_spend_block_time: undefined,
+      canonical_spend_txid: undefined,
+      canonical_spend_vin: undefined,
+      close_transaction_block_height: null,
+      close_transaction_status: "confirmed",
+      close_txid: unpositionedCloseTxid,
+      listing_id: "1".repeat(64),
+      payload: {
+        buyerAddress: "reserved-buyer",
+        saleAuthorization: {
+          tokenId: WORK_TOKEN_ID,
+          version: WORK_AMO_V5_AUTH_VERSION,
+        },
+        saleTxid: unpositionedCloseTxid,
+      },
+      status: "sold",
+    };
+    const unpositionedPayload = await proofIndexCreditListingsPayload(
+      "livenet",
+      WORK_TOKEN_ID,
+    );
+    assert.equal(unpositionedPayload.items.length, 1);
+    const [unpositionedClose] = unpositionedPayload.items;
+    assert.equal(unpositionedClose.closedTxid, "");
+    assert.equal(
+      unpositionedClose.closedConfirmed,
+      false,
+      "a generic confirmed transaction is not canonical ticket-spend evidence",
+    );
+    assert.equal(unpositionedClose.status, "active");
+    assert.equal(unpositionedClose.closeTransactionBlockHeight, undefined);
+
+    const lifecycleOverlay = isolatedFunction(
+      API_PATH,
+      "tokenMarketLifecycleOverlayFromCreditListings",
+      {
+        applyWorkMarketV2CutoverToTokenState: (state) => state,
+        normalizeTokenScope: (value) => String(value ?? "").toLowerCase(),
+        numericValue: (value) => Number(value) || 0,
+      },
+    );
+    const unpositionedState = lifecycleOverlay(unpositionedPayload);
+    assert.equal(
+      unpositionedState.closedListings.length,
+      0,
+      "generic close metadata must not become terminal state",
+    );
+    assert.equal(unpositionedState.listings.length, 1);
+    assert.equal(
+      unpositionedState.sales.length,
+      0,
+      "a confirmed close without its own height and tuple must stay state-only",
     );
   },
 );
@@ -4208,7 +5161,7 @@ check("fresh wallet token reads never fall back behind canonical coverage", asyn
       ["sender"],
       { requireCurrent: true },
     ),
-    (error) => /still catching up/u.test(String(error?.message)),
+    (error) => /temporarily unavailable/u.test(String(error?.message)),
   );
   assert.equal(fallbackReads, 0);
   assert.equal(indexedReads, 0);
@@ -5494,6 +6447,8 @@ check("wallet index overlay binds every WORK and bond holder to a canonical defi
   ];
   let definitionQuery = null;
   let legacySealQuery = null;
+  let walletEventQuery = null;
+  let walletListingQuery = null;
   let checkpointQueries = 0;
   const pool = {
     async query(sql, params) {
@@ -5515,6 +6470,7 @@ check("wallet index overlay binds every WORK and bond holder to a canonical defi
         return { rows: [] };
       }
       if (text.includes("e.kind IN")) {
+        walletEventQuery = { params, text };
         return { rows: [] };
       }
       if (text.includes("wallet_legacy_work_listing_seals")) {
@@ -5522,6 +6478,7 @@ check("wallet index overlay binds every WORK and bond holder to a canonical defi
         return { rows: [] };
       }
       if (text.includes("FROM proof_indexer.credit_listings cl")) {
+        walletListingQuery = { params, text };
         return { rows: [] };
       }
       if (text.includes("FROM proof_indexer.credit_definitions")) {
@@ -5632,6 +6589,18 @@ check("wallet index overlay binds every WORK and bond holder to a canonical defi
   assert.equal(overlay.indexedThroughBlock, 957_926);
   assert.equal(overlay.indexedThroughBlockHash, blockHash);
   assert.equal(checkpointQueries, 2);
+  assert.ok(walletEventQuery);
+  assert.match(
+    walletEventQuery.text,
+    /e\.kind NOT IN \('token-listings', 'token-listing'\)[\s\S]*NOT EXISTS \(\s*SELECT 1\s*FROM proof_indexer\.tx_inputs wallet_event_spend_input[\s\S]*wallet_event_spend_tx\.status = 'confirmed'[\s\S]*wallet_event_spend_block\.canonical = true[\s\S]*wallet_event_spend_input\.prev_txid = lower\(\s*COALESCE\(\s*NULLIF\(cl_event\.sale_ticket_txid, ''\),\s*cl_event\.listing_id\s*\)\s*\)[\s\S]*wallet_event_spend_input\.prev_vout =\s*cl_event\.sale_ticket_vout\s*\)/u,
+    "a confirmed canonical ticket spend must remove an event-derived wallet listing even when no close event exists",
+  );
+  assert.ok(walletListingQuery);
+  assert.match(
+    walletListingQuery.text,
+    /NOT EXISTS \(\s*SELECT 1\s*FROM proof_indexer\.tx_inputs active_listing_spend_input[\s\S]*active_listing_spend_tx\.status = 'confirmed'[\s\S]*active_listing_spend_block\.canonical = true[\s\S]*active_listing_spend_input\.prev_txid = lower\(COALESCE\([\s\S]*cl\.sale_ticket_txid[\s\S]*active_listing_spend_input\.prev_vout =\s*cl\.sale_ticket_vout\s*\)/u,
+    "a canonical sale-ticket spend must remove the wallet listing even without a valid close event",
+  );
   assert.ok(legacySealQuery);
   assert.match(
     legacySealQuery.text,
@@ -5707,21 +6676,36 @@ check("wallet scoped token payload deduplicates lifecycle rows before reserving 
     {
       closedListings: [
         {
+          closedByCanonicalOutpointSpend: true,
+          closedConfirmed: true,
           closedTxid: "close-1",
           confirmed: true,
           listingId: "listing-1",
           network: "livenet",
+          tokenId: "work",
         },
         {
+          closedByCanonicalOutpointSpend: true,
+          closedConfirmed: true,
           closedTxid: "close-1",
           confirmed: true,
           listingId: "listing-1",
           network: "livenet",
+          tokenId: "work",
         },
       ],
       holders: [],
       invalidEvents: [],
       listings: [
+        {
+          amount: 9_000,
+          confirmed: true,
+          listingId: "listing-1",
+          network: "livenet",
+          sealTxid: "stale-seal-a",
+          status: "sealing",
+          tokenId: "work",
+        },
         {
           amount: 5_000,
           confirmed: true,
@@ -5753,6 +6737,7 @@ check("wallet scoped token payload deduplicates lifecycle rows before reserving 
   assert.equal(payload.listings[0].amount, 5_000);
   assert.equal(payload.listings[0].status, "active");
   assert.equal(payload.closedListings.length, 1);
+  assert.equal(payload.closedListings[0].closedTxid, "close-1");
   assert.equal(payload.sales.length, 1);
   assert.equal(payload.stats.confirmedListings, 1);
   assert.equal(payload.stats.confirmedSales, 1);
@@ -5825,9 +6810,10 @@ check("fresh wallet overlays must match the exact canonical tip", () => {
     indexedThroughBlockHash: blockHash,
   };
   const exactGate = {
+    atTip: true,
     canonicalHash: blockHash,
     indexedThroughBlock: 957_935,
-    ready: true,
+    ready: false,
     storedHash: blockHash,
     tipHeight: 957_935,
   };
@@ -5838,7 +6824,7 @@ check("fresh wallet overlays must match the exact canonical tip", () => {
   assert.equal(
     walletTokenOverlayMatchesCanonicalGate(overlay, {
       ...exactGate,
-      ready: false,
+      atTip: false,
     }),
     false,
   );
@@ -6911,6 +7897,7 @@ check("WORK V2 relics remain paid history without synthetic closes", () => {
     closedListings: [
       {
         ...unsealedRelic,
+        closeTransactionBlockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT - 1,
         closedConfirmed: true,
         closedTxid: genuineCloseTxid,
         relic: false,
@@ -6936,6 +7923,7 @@ check("WORK V2 relics remain paid history without synthetic closes", () => {
       relics[0],
       {
         ...unsealedRelic,
+        closeTransactionBlockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT - 1,
         closedConfirmed: true,
         closedTxid: genuineCloseTxid,
         relic: false,
@@ -7346,8 +8334,13 @@ check("credit frozen-value consistency uses exact Q8 above float precision", () 
     0n,
   );
   const legacyBootstrapCreditFixedSats = 2_762n;
+  const postActivationCreditFixedSats = 1_044n;
   const committedFixedQ8 =
-    (fixedFlow + legacyBootstrapCreditFixedSats) * VALUE_Q8_SCALE;
+    (
+      fixedFlow +
+      legacyBootstrapCreditFixedSats +
+      postActivationCreditFixedSats
+    ) * VALUE_Q8_SCALE;
   const exact = {
     ...flows,
     // The legacy Number summaries can disagree by one whole proof at this
@@ -7362,6 +8355,10 @@ check("credit frozen-value consistency uses exact Q8 above float precision", () 
       (legacyBootstrapCreditFixedSats * VALUE_Q8_SCALE).toString(),
     legacyBootstrapCreditFixedSats:
       legacyBootstrapCreditFixedSats.toString(),
+    postActivationCreditFixedQ8:
+      (postActivationCreditFixedSats * VALUE_Q8_SCALE).toString(),
+    postActivationCreditFixedSats:
+      postActivationCreditFixedSats.toString(),
   };
   assert.equal(exactCreditFrozenValueComponentsAgree(exact), true);
   assert.equal(
@@ -8486,7 +9483,12 @@ check("Inception fixes attachment value at issuance and adds only later INCB mar
         tokenId: WORK_TOKEN_ID,
         txid,
       },
-      { event_id: index + 100, network: "livenet", status: "confirmed" },
+      {
+        block_height: blockHeight,
+        event_id: index + 100,
+        network: "livenet",
+        status: "confirmed",
+      },
     );
     return tokenTransferFromIndexedActivityItem(
       readerTransfer,
@@ -17002,35 +18004,40 @@ check("partial RUSH reads require the explicit exact-checkpoint mode", async () 
   const blockHash = "9".repeat(64);
   const bootstrapHash = "8".repeat(64);
   let queries = 0;
+  let statusHeight = 101;
+  let statusHash = blockHash;
+  let marker = {
+    indexedThroughBlock: 100,
+    indexedThroughBlockHash: bootstrapHash,
+    mintCount: 1,
+    network: "livenet",
+    version: 1,
+  };
+  let eventRows = [
+    {
+      block_hash: bootstrapHash,
+      block_height: 100,
+      block_index: 0,
+      bootstrap_canonical: true,
+      bootstrap_mint_count: 1,
+      canonical_block_hash: bootstrapHash,
+      payload: { kind: "rush-mint", txid: "7".repeat(64) },
+      protocol: "pwr1",
+      transaction_block_height: 100,
+      transaction_block_index: 0,
+      transaction_status: "confirmed",
+      txid: "7".repeat(64),
+    },
+  ];
   const pool = {
     async query(sql) {
       queries += 1;
       if (String(sql).includes("SELECT value")) {
         return {
-          rows: [
-            {
-              value: {
-                indexedThroughBlock: 100,
-                indexedThroughBlockHash: bootstrapHash,
-                mintCount: 1,
-                network: "livenet",
-                version: 1,
-              },
-            },
-          ],
+          rows: [{ value: marker }],
         };
       }
-      return {
-        rows: [
-          {
-            block_height: 100,
-            bootstrap_canonical: true,
-            bootstrap_mint_count: 1,
-            payload: { kind: "rush-mint", txid: "7".repeat(64) },
-            protocol: "pwr1",
-          },
-        ],
-      };
+      return { rows: eventRows };
     },
   };
   const proofIndexRushPayload = isolatedFunction(
@@ -17042,8 +18049,8 @@ check("partial RUSH reads require the explicit exact-checkpoint mode", async () 
       objectRecord: (value) => value ?? {},
       proofIndexOperationalStatusPayload: async () => ({
         indexedAt: "2026-07-15T00:00:00.000Z",
-        indexedThroughBlock: 101,
-        scan: { blockHash, complete: false },
+        indexedThroughBlock: statusHeight,
+        scan: { blockHash: statusHash, complete: false },
       }),
       proofIndexPool: () => pool,
     },
@@ -17065,6 +18072,64 @@ check("partial RUSH reads require the explicit exact-checkpoint mode", async () 
   assert.equal(accepted.indexedThroughBlockHash, blockHash);
   assert.equal(accepted.mints.length, 1);
   assert.equal(queries, 2);
+
+  const postV5BlockHash = "a".repeat(64);
+  const postV5TxidA = "b".repeat(64);
+  const postV5TxidB = "c".repeat(64);
+  statusHeight = WORK_AMO_V5_ACTIVATION_HEIGHT;
+  statusHash = postV5BlockHash;
+  marker = {
+    indexedThroughBlock: statusHeight,
+    indexedThroughBlockHash: postV5BlockHash,
+    mintCount: 2,
+    network: "livenet",
+    version: 1,
+  };
+  const postV5Row = (txid, recordOrdinal = 0) => ({
+    block_hash: postV5BlockHash,
+    block_height: statusHeight,
+    block_index: 3,
+    bootstrap_canonical: true,
+    bootstrap_mint_count: marker.mintCount,
+    canonical_block_hash: postV5BlockHash,
+    event_id: txid === postV5TxidA ? 1 : 2,
+    op_return_vout: 4,
+    payload: { kind: "rush-mint", txid },
+    protocol: "pwr1",
+    record_ordinal: recordOrdinal,
+    transaction_block_height: statusHeight,
+    transaction_block_index: 3,
+    transaction_status: "confirmed",
+    txid,
+  });
+  eventRows = [postV5Row(postV5TxidA), postV5Row(postV5TxidB)];
+  assert.equal(
+    await proofIndexRushPayload("livenet", statusHeight, {
+      allowIncompleteScan: true,
+    }),
+    null,
+    "duplicate post-V5 canonical positions must fail closed before mapping",
+  );
+
+  marker = { ...marker, mintCount: 1 };
+  eventRows = [postV5Row(postV5TxidA, null)].map((row) => ({
+    ...row,
+    bootstrap_mint_count: 1,
+  }));
+  assert.equal(
+    await proofIndexRushPayload("livenet", statusHeight, {
+      allowIncompleteScan: true,
+    }),
+    null,
+    "a NULL post-V5 RUSH record ordinal must fail closed",
+  );
+  const rushSource = topLevelFunctionSource(
+    READER_PATH,
+    "proofIndexRushPayload",
+  );
+  assert.match(rushSource, /rush_tx\.block_height = e\.block_height/u);
+  assert.match(rushSource, /rush_tx\.block_index = e\.block_index/u);
+  assert.match(rushSource, /rush_block\.canonical = true/u);
 });
 
 check("internal canonical routes require token, loopback socket, and loopback Host", () => {
@@ -20695,6 +21760,8 @@ check("canonical mail recipients become indexed participants", () => {
 
 check("address-mail exposes exact canonical WORK siblings and fails closed on ambiguity", () => {
   const workTokenId = "4".repeat(64);
+  const activationHeight = 959_621;
+  const blockHash = `0${"1".repeat(63)}`;
   const sameMailPaymentAddress = isolatedFunction(
     READER_PATH,
     "sameMailPaymentAddress",
@@ -20709,6 +21776,7 @@ check("address-mail exposes exact canonical WORK siblings and fails closed on am
       WORK_TOKEN_ID: workTokenId,
       WORK_TOKEN_MAX_SUPPLY_ATOMS: "2100000000000000",
       WORK_TOKEN_TICKER: "WORK",
+      WORK_AMO_V5_ACTIVATION_HEIGHT: activationHeight,
       canonicalEventIdentityDetails: (item) =>
         Number.isSafeInteger(Number(item?.eventId))
           ? { eventId: Number(item.eventId) }
@@ -20740,44 +21808,49 @@ check("address-mail exposes exact canonical WORK siblings and fails closed on am
   );
   const target = "bc1qtarget";
   const other = "bc1qother";
+  const canonicalLineage = {
+    blockHash,
+    blockHeight: activationHeight,
+    blockIndex: 7,
+    canonicalBlockHash: blockHash,
+    canonicalPositionRequired: true,
+    transactionBlockHeight: activationHeight,
+    transactionBlockIndex: 7,
+  };
   const baseRow = {
     attached_credit_events: [
       {
+        ...canonicalLineage,
         amount: "stale-float-must-not-win",
         amountAtoms: "123456789",
         eventId: 12,
         protocolVout: 3,
+        recordOrdinal: 0,
         recipientAddress: target.toUpperCase(),
         ticker: "WORK",
         tokenId: workTokenId,
       },
       {
+        ...canonicalLineage,
         amountAtoms: "2099999999999999",
         eventId: 13,
-        protocolVout: 4,
+        protocolVout: 3,
+        recordOrdinal: 1,
         recipientAddress: other,
         tokenId: workTokenId,
       },
-      {
-        amount: "999",
-        protocolVout: 5,
-        recipientAddress: target,
-        tokenId: workTokenId,
-      },
-      {
-        amountAtoms: "100000000",
-        protocolVout: 6,
-        recipientAddress: target,
-        tokenId: "5".repeat(64),
-      },
     ],
+    block_height: activationHeight,
     status: "confirmed",
   };
   const credits = canonicalMailAttachedCreditsFromRow(baseRow, [target, other]);
   assert.equal(credits.length, 2);
   assert.equal(credits[0].amount, "1.23456789");
   assert.equal(credits[0].amountAtoms, "123456789");
+  assert.equal(credits[0].recordOrdinal, 0);
   assert.equal(credits[1].amountAtoms, "2099999999999999");
+  assert.equal(credits[1].protocolVout, 3);
+  assert.equal(credits[1].recordOrdinal, 1);
   assert.equal(
     canonicalMailAttachedCreditsFromRow(
       { ...baseRow, status: "pending" },
@@ -20800,7 +21873,38 @@ check("address-mail exposes exact canonical WORK siblings and fails closed on am
       [target],
     ).length,
     0,
-    "conflicting canonical rows for one protocol output must fail closed",
+    "conflicting canonical rows for one protocol position must fail closed",
+  );
+  const missingRecordOrdinal = {
+    ...baseRow.attached_credit_events[0],
+  };
+  delete missingRecordOrdinal.recordOrdinal;
+  assert.equal(
+    canonicalMailAttachedCreditsFromRow(
+      {
+        ...baseRow,
+        attached_credit_events: [missingRecordOrdinal],
+      },
+      [target],
+    ).length,
+    0,
+    "post-activation WORK attachments require a relational record ordinal",
+  );
+  assert.equal(
+    canonicalMailAttachedCreditsFromRow(
+      {
+        ...baseRow,
+        attached_credit_events: [
+          {
+            ...baseRow.attached_credit_events[0],
+            canonicalBlockHash: "f".repeat(64),
+          },
+        ],
+      },
+      [target],
+    ).length,
+    0,
+    "post-activation WORK attachments require the canonical block hash",
   );
 
   const mailRecipientRowsFromSource = isolatedFunction(
@@ -20875,11 +21979,23 @@ check("address-mail exposes exact canonical WORK siblings and fails closed on am
   );
   assert.match(
     addressMailSource,
-    /transfer_event\.block_height = transfer_transaction\.block_height[\s\S]*transfer_block\.canonical = true/u,
+    /transfer_event\.block_height = transfer_transaction\.block_height[\s\S]*transfer_event\.block_index = transfer_transaction\.block_index[\s\S]*transfer_block\.canonical = true/u,
   );
   assert.match(
     addressMailSource,
-    /lower\(COALESCE\(transfer_event\.payload->>'blockHash', ''\)\)[\s\S]*transfer_transaction\.block_hash/u,
+    /'protocolVout', transfer_event\.op_return_vout[\s\S]*'recordOrdinal', transfer_event\.record_ordinal/u,
+  );
+  assert.match(
+    addressMailSource,
+    /transfer_event\.op_return_vout IS NOT NULL[\s\S]*transfer_event\.record_ordinal IS NOT NULL/u,
+  );
+  assert.match(
+    addressMailSource,
+    /ORDER BY[\s\S]*transfer_event\.op_return_vout,[\s\S]*transfer_event\.record_ordinal,[\s\S]*transfer_event\.event_id/u,
+  );
+  assert.doesNotMatch(
+    addressMailSource,
+    /transfer_event\.payload->>'(?:protocolVout|blockHash)'/u,
   );
   assert.doesNotMatch(addressMailSource, /fallbackRecipientAddresses/u);
 });
@@ -29855,6 +30971,10 @@ check("dropped market events cannot re-enter history or close active listings", 
     READER_PATH,
     "exactActiveTokenListingHistoryPage",
   );
+  const activeLifecycleSqlSource = topLevelFunctionSource(
+    READER_PATH,
+    "tokenListingActiveLifecycleSql",
+  );
   const creditListingsSource = topLevelFunctionSource(
     READER_PATH,
     "proofIndexCreditListingsPayload",
@@ -29884,26 +31004,61 @@ check("dropped market events cannot re-enter history or close active listings", 
     overlaySource,
     /const eventKindCondition =[\s\S]*e\.kind = ANY\(\$2::text\[\]\)[\s\S]*const conditions = \[[\s\S]*e\.valid = true[\s\S]*e\.status IN \('confirmed', 'pending'\)[\s\S]*eventKindCondition/iu,
   );
-  assert.equal(
-    (overlaySource.match(/close_event\.status IN \('confirmed', 'pending'\)/gu) ?? [])
-      .length,
-    2,
+  assert.doesNotMatch(
+    overlaySource,
+    /close_event\.status IN \('confirmed', 'pending'\)[\s\S]*listingId/iu,
+  );
+  assert.match(
+    overlaySource,
+    /market_listing_spend_input[\s\S]*market_listing_spend_tx\.status = 'confirmed'[\s\S]*market_listing_spend_block\.canonical = true[\s\S]*sale_ticket_vout/iu,
   );
   assert.match(
     closeOutspendSource,
-    /e\.valid = true[\s\S]*e\.status IN \('confirmed', 'pending'\)[\s\S]*token-listing-closed/iu,
+    /e\.valid = true[\s\S]*e\.status = 'confirmed'[\s\S]*token-listing-closed/iu,
+  );
+  assert.doesNotMatch(
+    filterClosedListingSource,
+    /e\.kind = ANY\(\$2::text\[\]\)[\s\S]*e\.status IN \('confirmed', 'pending'\)/iu,
   );
   assert.match(
     filterClosedListingSource,
-    /e\.kind = ANY\(\$2::text\[\]\)[\s\S]*e\.status IN \('confirmed', 'pending'\)[\s\S]*listingId/iu,
+    /e\.kind = 'token-listing'[\s\S]*e\.status = 'dropped'/iu,
+  );
+  assert.match(
+    filterClosedListingSource,
+    /spend_input[\s\S]*spend_tx\.status = 'confirmed'[\s\S]*spend_block\.canonical = true/iu,
+  );
+  assert.match(
+    filterClosedListingSource,
+    /spend_input\.prev_vout = spent_listing\.sale_ticket_vout/iu,
+  );
+  assert.doesNotMatch(
+    exactActiveListingSource,
+    /terminal_event\.valid = true[\s\S]*terminal_event\.status IN \('confirmed', 'pending'\)[\s\S]*token-listing-closed/iu,
+  );
+  assert.doesNotMatch(
+    exactActiveListingSource,
+    /terminal_listing\.status IN \(\s*'sold',\s*'delisted'/iu,
   );
   assert.match(
     exactActiveListingSource,
-    /e\.valid = true[\s\S]*e\.status IN \('confirmed', 'pending'\)[\s\S]*e\.kind = ANY\(\s*ARRAY\['token-listing-closed','token-sale'\]/iu,
+    /tokenListingActiveLifecycleSql\("cl"\)/u,
+  );
+  assert.doesNotMatch(
+    exactActiveListingSource,
+    /cl\.status = ANY\(ARRAY\['active','sealing'\]/u,
   );
   assert.match(
-    exactActiveListingSource,
-    /terminal_event\.txid = ANY\(\$2::text\[\]\)[\s\S]*terminal_event\.status IN \('dropped', 'orphaned'\)[\s\S]*terminal_event\.valid = true[\s\S]*terminal_event\.status IN \('confirmed', 'pending'\)[\s\S]*terminal_event\.kind IN \('token-listing-closed', 'token-sale'\)/iu,
+    activeLifecycleSqlSource,
+    /active_listing_spend_input[\s\S]*active_listing_spend_tx\.status = 'confirmed'[\s\S]*active_listing_spend_block\.canonical = true[\s\S]*sale_ticket_vout/iu,
+  );
+  assert.match(
+    activeLifecycleSqlSource,
+    /dropped_listing_event\.protocol = 'pwt1'[\s\S]*dropped_listing_event\.kind = 'token-listing'[\s\S]*dropped_listing_event\.status = 'dropped'/iu,
+  );
+  assert.doesNotMatch(
+    activeLifecycleSqlSource,
+    /\$\{alias\}\.status|\$\{alias\}\.close_txid/u,
   );
   assert.match(
     marketSummarySource,
@@ -29911,21 +31066,760 @@ check("dropped market events cannot re-enter history or close active listings", 
   );
   assert.match(
     creditListingsSource,
-    /e\.valid = true[\s\S]*e\.status IN \('confirmed', 'pending'\)[\s\S]*e\.kind = ANY\(ARRAY\['token-sale','token-listing-closed'\]/iu,
+    /e\.valid = true[\s\S]*e\.status = 'confirmed'[\s\S]*e\.kind = ANY\(ARRAY\['token-sale','token-listing-closed'\]/iu,
   );
-  assert.match(
+  assert.doesNotMatch(
     walletOverlaySource,
     /close_event\.valid = true[\s\S]*close_event\.status IN \('confirmed', 'pending'\)[\s\S]*close_event\.kind = ANY\(ARRAY\['token-listing-closed','token-sale'\]/iu,
   );
   assert.match(
-    currentTokenListingsSource,
-    /active[\s\S]*sealing[\s\S]*pending[\s\S]*tokenListingTransactionCanProjectActive\(row\.listing_tx_status\)/iu,
+    walletOverlaySource,
+    /wallet_event_spend_input[\s\S]*wallet_event_spend_tx\.status = 'confirmed'[\s\S]*wallet_event_spend_block\.canonical = true[\s\S]*cl_event\.sale_ticket_vout/iu,
   );
   assert.match(
     walletOverlaySource,
-    /tokenListingTransactionCanProjectActive\(row\.listing_tx_status\)[\s\S]*activeTokenListingHistoryItem\(listing\)/iu,
+    /cl_event\.listing_id = lower\(e\.payload->>'listingId'\)[\s\S]*cl_event\.token_id[\s\S]*saleAuthorization'->>'tokenId'/iu,
+  );
+  assert.match(
+    currentTokenListingsSource,
+    /activeTokenListingFromCreditListingRow\([\s\S]*tokenListingTransactionCanProjectActive\(row\.listing_tx_status\)/iu,
+  );
+  assert.match(
+    walletOverlaySource,
+    /tokenListingActiveLifecycleSql\("cl"\)[\s\S]*activeTokenListingFromCreditListingRow\(row, network\)[\s\S]*tokenListingTransactionCanProjectActive\(row\.listing_tx_status\)[\s\S]*activeTokenListingHistoryItem\(listing\)/iu,
+  );
+  const tokenListingsWithoutClosedEvents = isolatedFunction(
+    READER_PATH,
+    "tokenListingsWithoutClosedEvents",
+    {
+      normalizedLowerText: (value) =>
+        String(value ?? "").trim().toLowerCase(),
+      tokenListingId: (item) =>
+        String(item?.listingId ?? "").trim().toLowerCase(),
+    },
+  );
+  const listing = {
+    listingId: "a".repeat(64),
+    tokenId: "b".repeat(64),
+  };
+  const payloadOnlyClose = {
+    closedConfirmed: true,
+    listingId: listing.listingId,
+    tokenId: listing.tokenId,
+  };
+  assert.equal(
+    tokenListingsWithoutClosedEvents([listing], [payloadOnlyClose]).length,
+    1,
+    "a payload-only confirmed close must not hide active inventory",
+  );
+  assert.equal(
+    tokenListingsWithoutClosedEvents(
+      [listing],
+      [{
+        ...payloadOnlyClose,
+        closedByCanonicalOutpointSpend: true,
+        tokenId: "c".repeat(64),
+      }],
+    ).length,
+    1,
+    "a close for the wrong token must not hide the listing",
+  );
+  assert.equal(
+    tokenListingsWithoutClosedEvents(
+      [listing],
+      [{
+        ...payloadOnlyClose,
+        closedByCanonicalOutpointSpend: true,
+      }],
+    ).length,
+    0,
+    "the exact canonical ticket spend must close active inventory",
+  );
+  for (const functionName of [
+    "walletScopedTokenPayloadFromOverlay",
+    "tokenStateWithIndexedMarketSummaryOverlay",
+  ]) {
+    const source = topLevelFunctionSource(API_PATH, functionName);
+    assert.match(
+      source,
+      /closedByCanonicalOutpointSpend === true[\s\S]*closedConfirmed === true/u,
+    );
+  }
+});
+
+check("canonical outspend sale recovery requires exact tuple-bound terms", () => {
+  const tokenLedgerAmountFromRecord = (_tokenId, item) => {
+    const rawAmount = item?.amountAtoms ?? item?.amount;
+    if (rawAmount === undefined || rawAmount === null || rawAmount === "") {
+      return null;
+    }
+    const amount = Number(rawAmount);
+    return Number.isSafeInteger(amount) && amount >= 0 ? amount : null;
+  };
+  const lifecyclePatch = isolatedFunction(
+    API_PATH,
+    "canonicalTokenListingOutspendLifecyclePatch",
+    { tokenLedgerAmountFromRecord },
+  );
+  const saleFromClosedListing = isolatedFunction(
+    API_PATH,
+    "canonicalOutspendSaleFromClosedListing",
+    {
+      numericValue: (value) => Number(value) || 0,
+      tokenLedgerAmountFields: (_tokenId, amount) => ({
+        amount,
+        amountAtoms: String(amount),
+      }),
+      tokenLedgerAmountFromRecord,
+    },
+  );
+  const listing = {
+    amountAtoms: "100",
+    listingId: "a".repeat(64),
+    network: "livenet",
+    priceSats: 20_000,
+    registryAddress: "registry",
+    saleAuthorization: { buyerAddress: "buyer" },
+    sellerAddress: "seller",
+    ticker: "WORK",
+    tokenId: "work",
+  };
+  const closeTxid = "b".repeat(64);
+  const blockHash = "c".repeat(64);
+  const canonicalSaleEvidence = {
+    amountAtoms: listing.amountAtoms,
+    buyerAddress: "buyer",
+    listingId: listing.listingId,
+    priceSats: listing.priceSats,
+    registryAddress: listing.registryAddress,
+    sellerAddress: listing.sellerAddress,
+    ticker: listing.ticker,
+    tokenId: listing.tokenId,
+  };
+  const outspend = {
+    canonicalSaleEvidence,
+    closedBlockHash: blockHash,
+    closedBlockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT + 2,
+    closedBlockIndex: 4,
+    closedProtocolVout: 2,
+    closedRecordOrdinal: 0,
+    lifecycleStatus: "sold",
+    saleBlockHash: blockHash,
+    saleBlockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT + 2,
+    saleBlockIndex: 4,
+    saleProtocolVout: 3,
+    saleRecordOrdinal: 0,
+    spent: true,
+    status: {
+      block_height: WORK_AMO_V5_ACTIVATION_HEIGHT + 2,
+      confirmed: true,
+    },
+    txid: closeTxid,
+  };
+  const patch = lifecyclePatch(listing, outspend);
+  assert.equal(patch.lifecycleStatus, "sold");
+  assert.equal(patch.saleConfirmed, true);
+  assert.equal(patch.saleTxid, closeTxid);
+  const closedListing = {
+    ...listing,
+    ...patch,
+    closedAt: "2026-07-28T12:00:00.000Z",
+    closedConfirmed: true,
+    closedTxid: closeTxid,
+  };
+  const recoveredSale = saleFromClosedListing(closedListing);
+  assert.equal(recoveredSale.txid, closeTxid);
+  assert.equal(recoveredSale.buyerAddress, "buyer");
+  assert.equal(recoveredSale.protocolVout, 3);
+  assert.equal(recoveredSale.recordOrdinal, 0);
+
+  for (const [label, mutateEvidence] of [
+    ["listing", (evidence) => ({ ...evidence, listingId: "d".repeat(64) })],
+    ["token", (evidence) => ({ ...evidence, tokenId: "other" })],
+    ["buyer", (evidence) => ({ ...evidence, buyerAddress: "other" })],
+    ["seller", (evidence) => ({ ...evidence, sellerAddress: "other" })],
+    ["registry", (evidence) => ({ ...evidence, registryAddress: "other" })],
+    ["ticker", (evidence) => ({ ...evidence, ticker: "OTHER" })],
+    ["price", (evidence) => ({ ...evidence, priceSats: 20_001 })],
+    ["amount", (evidence) => ({ ...evidence, amountAtoms: "101" })],
+  ]) {
+    const mismatched = lifecyclePatch(listing, {
+      ...outspend,
+      canonicalSaleEvidence: mutateEvidence(canonicalSaleEvidence),
+    });
+    assert.equal(
+      mismatched.lifecycleStatus,
+      "closed",
+      `${label} mismatch synthesized a sale`,
+    );
+    assert.equal(mismatched.saleConfirmed, false);
+  }
+
+  const sameTuple = lifecyclePatch(listing, {
+    ...outspend,
+    saleProtocolVout: outspend.closedProtocolVout,
+    saleRecordOrdinal: outspend.closedRecordOrdinal,
+  });
+  assert.equal(sameTuple.lifecycleStatus, "closed");
+  assert.equal(sameTuple.saleConfirmed, false);
+  assert.equal(
+    saleFromClosedListing({
+      ...closedListing,
+      canonicalSaleEvidence: {
+        ...canonicalSaleEvidence,
+        priceSats: listing.priceSats + 1,
+      },
+    }),
+    null,
+  );
+  assert.equal(
+    saleFromClosedListing({
+      ...closedListing,
+      saleProtocolVout: closedListing.closedProtocolVout,
+      saleRecordOrdinal: closedListing.closedRecordOrdinal,
+    }),
+    null,
   );
 });
+
+check(
+  "confirmed direct listing outspends merge only exact indexed lifecycle evidence",
+  async () => {
+    const listingId = "a".repeat(64);
+    const closeTxid = "b".repeat(64);
+    const blockHash = "c".repeat(64);
+    const blockHeight = WORK_AMO_V5_ACTIVATION_HEIGHT + 2;
+    const anchor = {
+      txid: listingId,
+      vout: 4,
+    };
+    const directConfirmedOutspend = {
+      spent: true,
+      status: {
+        block_height: blockHeight,
+        confirmed: true,
+        source: "core",
+      },
+      txid: closeTxid,
+      vin: 2,
+    };
+    const listing = {
+      amountAtoms: "100",
+      listingId,
+      priceSats: 20_000,
+      registryAddress: "registry",
+      saleAuthorization: {
+        anchorType: "pwt-sale-ticket",
+        anchorVout: anchor.vout,
+        buyerAddress: "buyer",
+      },
+      sellerAddress: "seller",
+      ticker: "WORK",
+      tokenId: "work",
+    };
+    const canonicalSaleEvidence = {
+      amountAtoms: listing.amountAtoms,
+      buyerAddress: "buyer",
+      listingId,
+      priceSats: listing.priceSats,
+      registryAddress: listing.registryAddress,
+      sellerAddress: listing.sellerAddress,
+      ticker: listing.ticker,
+      tokenId: listing.tokenId,
+    };
+    let indexedOutspend = {
+      canonicalSaleEvidence,
+      closedBlockHash: blockHash,
+      closedBlockHeight: blockHeight,
+      closedBlockIndex: 4,
+      closedProtocolVout: 2,
+      closedRecordOrdinal: 0,
+      lifecycleStatus: "sold",
+      saleBlockHash: blockHash,
+      saleBlockHeight: blockHeight,
+      saleBlockIndex: 4,
+      saleProtocolVout: 3,
+      saleRecordOrdinal: 0,
+      spent: true,
+      status: {
+        block_height: blockHeight,
+        block_time: 1_753_680_000,
+        confirmed: true,
+      },
+      txid: closeTxid,
+      vin: 2,
+    };
+    let indexedLookupCount = 0;
+    const outspendHasConfirmedSpender = isolatedFunction(
+      API_PATH,
+      "outspendHasConfirmedSpender",
+    );
+    const hydrateIncompleteSpentOutspendFromProofIndex =
+      isolatedFunction(
+        API_PATH,
+        "hydrateIncompleteSpentOutspendFromProofIndex",
+        {
+          errorSummary: (error) => String(error?.message ?? error),
+          outspendHasConfirmedSpender,
+          proofIndexTokenListingCloseOutspendPayload:
+            async (network, txid, vout) => {
+              indexedLookupCount += 1;
+              assert.equal(network, "livenet");
+              assert.equal(txid, listingId);
+              assert.equal(vout, anchor.vout);
+              return indexedOutspend;
+            },
+        },
+      );
+    let cachedPayload = null;
+    const tokenListingAnchorOutspend = isolatedFunction(
+      API_PATH,
+      "tokenListingAnchorOutspend",
+      {
+        cacheTokenMarketOutspend: (_network, _anchor, payload) => {
+          cachedPayload = payload;
+        },
+        cachedTokenMarketOutspend: () => null,
+        errorSummary: (error) => String(error?.message ?? error),
+        hydrateIncompleteSpentOutspendFromProofIndex,
+        hydrateOutspendStatus: async (payload) => payload,
+        outspendHasConfirmedSpender,
+        tokenListingAnchorOutpoint: () => anchor,
+        tokenListingAnchorOutspendFromRegistryHistory: async () => {
+          assert.fail("confirmed Core evidence must not scan registry history");
+        },
+        tokenListingAnchorOutspendFromSellerHistory: async () => {
+          assert.fail("confirmed Core evidence must not scan seller history");
+        },
+        tokenListingAnchorOutspendFromSellerUtxos: async () => {
+          assert.fail("confirmed Core evidence must not scan seller UTXOs");
+        },
+        txOutspendPayload: async () => directConfirmedOutspend,
+      },
+    );
+
+    const exact = await tokenListingAnchorOutspend(listing, "livenet");
+    assert.equal(indexedLookupCount, 1);
+    assert.equal(exact.lifecycleStatus, "sold");
+    assert.equal(exact.saleProtocolVout, 3);
+    assert.deepEqual(exact.canonicalSaleEvidence, canonicalSaleEvidence);
+    assert.equal(exact.status.source, "core");
+    assert.equal(exact.status.block_time, 1_753_680_000);
+    assert.equal(cachedPayload, exact);
+
+    indexedOutspend = {
+      ...indexedOutspend,
+      txid: "d".repeat(64),
+    };
+    const mismatchedSpender = await tokenListingAnchorOutspend(
+      listing,
+      "livenet",
+    );
+    assert.equal(indexedLookupCount, 2);
+    assert.equal(mismatchedSpender.txid, closeTxid);
+    assert.equal(mismatchedSpender.lifecycleStatus, undefined);
+    assert.equal(mismatchedSpender.canonicalSaleEvidence, undefined);
+
+    indexedOutspend = {
+      lifecycleStatus: "closed",
+      spent: true,
+      status: {
+        block_height: blockHeight,
+        confirmed: true,
+      },
+      txid: closeTxid,
+      vin: 2,
+    };
+    const missingSale = await tokenListingAnchorOutspend(
+      listing,
+      "livenet",
+    );
+    assert.equal(missingSale.lifecycleStatus, "closed");
+    assert.equal(missingSale.canonicalSaleEvidence, undefined);
+    assert.equal(missingSale.saleProtocolVout, undefined);
+
+    indexedOutspend = {
+      ...indexedOutspend,
+      canonicalSaleEvidence: {
+        ...canonicalSaleEvidence,
+        priceSats: listing.priceSats + 1,
+      },
+      closedBlockHash: blockHash,
+      closedBlockHeight: blockHeight,
+      closedBlockIndex: 4,
+      closedProtocolVout: 2,
+      closedRecordOrdinal: 0,
+      lifecycleStatus: "sold",
+      saleBlockHash: blockHash,
+      saleBlockHeight: blockHeight,
+      saleBlockIndex: 4,
+      saleProtocolVout: 3,
+      saleRecordOrdinal: 0,
+    };
+    const mismatchedSale = await tokenListingAnchorOutspend(
+      listing,
+      "livenet",
+    );
+    const tokenLedgerAmountFromRecord = (_tokenId, item) => {
+      const value = item?.amountAtoms ?? item?.amount;
+      return /^\d+$/u.test(String(value ?? ""))
+        ? BigInt(value)
+        : null;
+    };
+    const lifecyclePatch = isolatedFunction(
+      API_PATH,
+      "canonicalTokenListingOutspendLifecyclePatch",
+      { tokenLedgerAmountFromRecord },
+    );
+    const mismatchedSalePatch = lifecyclePatch(
+      listing,
+      mismatchedSale,
+    );
+    assert.equal(mismatchedSalePatch.lifecycleStatus, "closed");
+    assert.equal(mismatchedSalePatch.saleConfirmed, false);
+  },
+);
+
+check("relational canonical sale evidence binds every listing term and tuple", () => {
+  const evidenceForListing = isolatedFunction(
+    READER_PATH,
+    "canonicalTokenSaleEvidenceForListing",
+  );
+  const listing = {
+    amountAtoms: "100",
+    listingId: "a".repeat(64),
+    priceSats: 20_000,
+    registryAddress: "registry",
+    saleAuthorization: { buyerAddress: "buyer" },
+    sellerAddress: "seller",
+    ticker: "WORK",
+    tokenId: "work",
+  };
+  const payload = {
+    amountAtoms: "100",
+    buyerAddress: "buyer",
+    listingId: listing.listingId,
+    priceSats: 20_000,
+    registryAddress: "registry",
+    sellerAddress: "seller",
+    ticker: "WORK",
+    tokenId: "work",
+  };
+  const position = {
+    closeBlockHash: "b".repeat(64),
+    closeBlockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT + 2,
+    closeBlockIndex: 4,
+    closeProtocolVout: 2,
+    closeRecordOrdinal: 0,
+    saleBlockHash: "b".repeat(64),
+    saleBlockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT + 2,
+    saleBlockIndex: 4,
+    saleProtocolVout: 3,
+    saleRecordOrdinal: 0,
+  };
+  assert.equal(
+    evidenceForListing(listing, payload, position)?.buyerAddress,
+    "buyer",
+  );
+  for (const [label, field, value] of [
+    ["listing", "listingId", "c".repeat(64)],
+    ["token", "tokenId", "other"],
+    ["buyer", "buyerAddress", "other"],
+    ["seller", "sellerAddress", "other"],
+    ["registry", "registryAddress", "other"],
+    ["ticker", "ticker", "OTHER"],
+    ["price", "priceSats", 20_001],
+    ["amount", "amountAtoms", "101"],
+  ]) {
+    assert.equal(
+      evidenceForListing(
+        listing,
+        { ...payload, [field]: value },
+        position,
+      ),
+      null,
+      `${label} mismatch synthesized a relational sale`,
+    );
+  }
+  for (const positionPatch of [
+    { saleBlockHash: "d".repeat(64) },
+    { saleBlockHeight: position.saleBlockHeight + 1 },
+    { saleBlockIndex: position.saleBlockIndex + 1 },
+    { saleProtocolVout: null },
+    {
+      saleProtocolVout: position.closeProtocolVout,
+      saleRecordOrdinal: position.closeRecordOrdinal,
+    },
+  ]) {
+    assert.equal(
+      evidenceForListing(
+        listing,
+        payload,
+        { ...position, ...positionPatch },
+      ),
+      null,
+      "an incomplete, divergent, or shared sale tuple synthesized a sale",
+    );
+  }
+});
+
+check(
+  "close outspend hydration binds one canonical pwt1 lifecycle to the exact listing outpoint",
+  async () => {
+    const listingTxid =
+      "9b21a716be871f944aa194e5a263bdd16e8b534bacbcc80ef3efee7d0f90cb61";
+    const closeTxid =
+      "0b3129a34902319813887fd76b4c095ce91b99d02bc24b16ecf19a34fc38a5f2";
+    const listingVout = 4;
+    const canonicalSpenderRow = {
+      block_hash: "c".repeat(64),
+      block_height: 958_135,
+      block_index: 1_175,
+      block_time: "2026-07-28T06:00:00.000Z",
+      txid: closeTxid,
+      vin: 2,
+    };
+    const canonicalCloseRow = {
+      ...canonicalSpenderRow,
+      event_block_height: 958_135,
+      event_block_index: 1_175,
+      event_protocol_vout: 1,
+      event_record_ordinal: 0,
+      kind: "token-listing-closed",
+    };
+    const canonicalSaleRow = {
+      ...canonicalCloseRow,
+      event_protocol_vout: 2,
+      kind: "token-sale",
+    };
+    let rows = [canonicalCloseRow, canonicalSaleRow];
+    let spenderRows = [canonicalSpenderRow];
+    let spenderSql = "";
+    let lifecycleSql = "";
+    let spenderParams = [];
+    let lifecycleParams = [];
+    const proofIndexTokenListingCloseOutspendPayload = isolatedFunction(
+      READER_PATH,
+      "proofIndexTokenListingCloseOutspendPayload",
+      {
+        normalizedLowerText: (value) =>
+          String(value ?? "").trim().toLowerCase(),
+        objectRecord: (value) =>
+          value && typeof value === "object" && !Array.isArray(value)
+            ? value
+            : {},
+        proofIndexPool: () => ({
+          async query(sql, params) {
+            const text = String(sql);
+            if (text.includes("token_listing_close_outspend_spender")) {
+              spenderSql = text;
+              spenderParams = Array.from(params);
+              return { rows: spenderRows };
+            }
+            lifecycleSql = text;
+            lifecycleParams = Array.from(params);
+            return { rows };
+          },
+        }),
+      },
+    );
+
+    const payload = await proofIndexTokenListingCloseOutspendPayload(
+      "livenet",
+      listingTxid,
+      listingVout,
+    );
+    assert.equal(payload.spent, true);
+    assert.equal(payload.status.block_height, 958_135);
+    assert.equal(
+      payload.status.block_time,
+      Math.floor(new Date("2026-07-28T06:00:00.000Z").getTime() / 1000),
+    );
+    assert.equal(payload.status.confirmed, true);
+    assert.equal(payload.txid, closeTxid);
+    assert.equal(payload.vin, 2);
+    assert.equal(payload.lifecycleStatus, "sold");
+    assert.equal(payload.closedProtocolVout, 1);
+    assert.equal(payload.saleProtocolVout, 2);
+    assert.deepEqual(spenderParams, ["livenet", listingTxid, listingVout]);
+    assert.deepEqual(lifecycleParams, ["livenet", closeTxid, listingTxid]);
+    assert.match(
+      spenderSql,
+      /FROM proof_indexer\.tx_inputs spend_input[\s\S]*spend_input\.prev_txid = \$2[\s\S]*spend_input\.prev_vout = \$3/iu,
+    );
+    assert.match(
+      spenderSql,
+      /spend_tx\.status = 'confirmed'[\s\S]*spend_block\.canonical = true/iu,
+    );
+    assert.doesNotMatch(spenderSql, /proof_indexer\.events/u);
+    assert.match(
+      lifecycleSql,
+      /e\.status = 'confirmed'[\s\S]*e\.protocol = 'pwt1'[\s\S]*token-listing-closed','token-sale'[\s\S]*lower\(e\.payload->>'listingId'\) = \$3/iu,
+    );
+    assert.match(
+      lifecycleSql,
+      /e\.block_height AS event_block_height[\s\S]*e\.block_index AS event_block_index[\s\S]*e\.op_return_vout AS event_protocol_vout[\s\S]*e\.record_ordinal AS event_record_ordinal/iu,
+      "all candidate positions must be selected so mismatched evidence cannot disappear before validation",
+    );
+    assert.match(spenderSql, /LIMIT 2/iu);
+    assert.match(lifecycleSql, /LIMIT 3/iu);
+
+    const assertStateOnlySpentPayload = async (message) => {
+      const stateOnlyPayload =
+        await proofIndexTokenListingCloseOutspendPayload(
+          "livenet",
+          listingTxid,
+          listingVout,
+        );
+      assert.equal(stateOnlyPayload?.spent, true, message);
+      assert.equal(stateOnlyPayload?.status?.confirmed, true, message);
+      assert.equal(stateOnlyPayload?.txid, closeTxid, message);
+      assert.equal(stateOnlyPayload?.vin, 2, message);
+      assert.equal(stateOnlyPayload?.lifecycleStatus, "closed", message);
+      assert.equal(stateOnlyPayload?.closedProtocolVout, undefined, message);
+      assert.equal(stateOnlyPayload?.saleProtocolVout, undefined, message);
+    };
+
+    rows = [
+      canonicalCloseRow,
+      canonicalSaleRow,
+      {
+        ...canonicalSaleRow,
+        event_id: "duplicate-sale",
+      },
+    ];
+    await assertStateOnlySpentPayload(
+      "ambiguous canonical close evidence must fail closed",
+    );
+    rows = [canonicalCloseRow];
+    const delistPayload =
+      await proofIndexTokenListingCloseOutspendPayload(
+        "livenet",
+        listingTxid,
+        listingVout,
+      );
+    assert.equal(
+      delistPayload?.txid,
+      closeTxid,
+      "one exact listing-close event is a legitimate delist",
+    );
+    assert.equal(delistPayload?.lifecycleStatus, "delisted");
+    assert.equal(delistPayload?.closedProtocolVout, 1);
+    assert.equal(delistPayload?.closedRecordOrdinal, 0);
+    assert.equal(delistPayload?.saleProtocolVout, undefined);
+    rows = [canonicalSaleRow];
+    await assertStateOnlySpentPayload(
+      "a sale event without its matching close projection is incomplete",
+    );
+    rows = [
+      canonicalCloseRow,
+      {
+        ...canonicalSaleRow,
+        event_block_index: 1_176,
+      },
+    ];
+    await assertStateOnlySpentPayload(
+      "each paired purchase projection must match the canonical spend transaction position",
+    );
+    rows = [
+      canonicalCloseRow,
+      {
+        ...canonicalSaleRow,
+        event_protocol_vout: canonicalCloseRow.event_protocol_vout,
+        event_record_ordinal: canonicalCloseRow.event_record_ordinal,
+      },
+    ];
+    await assertStateOnlySpentPayload(
+      "a close and sale sharing one canonical record position cannot manufacture a purchase",
+    );
+    rows = [];
+    await assertStateOnlySpentPayload(
+      "an exact canonical ticket spend remains authoritative without lifecycle projections",
+    );
+
+    for (const field of [
+      "block_index",
+      "event_block_index",
+      "event_protocol_vout",
+      "event_record_ordinal",
+    ]) {
+      rows = [
+        canonicalCloseRow,
+        {
+          ...canonicalSaleRow,
+          [field]: null,
+        },
+      ];
+      await assertStateOnlySpentPayload(
+        `a lifecycle row with absent ${field} cannot manufacture a canonical tuple`,
+      );
+    }
+    rows = [];
+    for (const invalidListingVout of [null, "", false]) {
+      assert.equal(
+        await proofIndexTokenListingCloseOutspendPayload(
+          "livenet",
+          listingTxid,
+          invalidListingVout,
+        ),
+        null,
+        "an absent listing vout must fail closed before querying",
+      );
+    }
+
+    spenderRows = [
+      {
+        ...canonicalSpenderRow,
+        block_index: null,
+      },
+    ];
+    assert.equal(
+      await proofIndexTokenListingCloseOutspendPayload(
+        "livenet",
+        listingTxid,
+        listingVout,
+      ),
+      null,
+      "an absent canonical spender block index must fail closed",
+    );
+    spenderRows = [];
+    assert.equal(
+      await proofIndexTokenListingCloseOutspendPayload(
+        "livenet",
+        listingTxid,
+        listingVout,
+      ),
+      null,
+      "missing canonical spender evidence must fail closed",
+    );
+    spenderRows = [
+      canonicalSpenderRow,
+      {
+        ...canonicalSpenderRow,
+        txid: "f".repeat(64),
+        vin: 3,
+      },
+    ];
+    assert.equal(
+      await proofIndexTokenListingCloseOutspendPayload(
+        "livenet",
+        listingTxid,
+        listingVout,
+      ),
+      null,
+      "ambiguous canonical spender evidence must fail closed",
+    );
+    spenderRows = [canonicalSpenderRow];
+    assert.equal(
+      await proofIndexTokenListingCloseOutspendPayload(
+        "livenet",
+        listingTxid,
+        -1,
+      ),
+      null,
+    );
+  },
+);
 
 check("canonical market listings retain original time with current seal metadata", () => {
   const normalizedLowerText = (value) =>
@@ -30027,10 +31921,19 @@ check("canonical market listings retain original time with current seal metadata
         tokenId: "c".repeat(64),
         txid: listingId,
       },
+      seal_transaction_block_height:
+        WORK_AMO_V5_ACTIVATION_HEIGHT - 1,
     },
     "livenet",
   );
-  const item = tokenHistoryItemFromMarketEventPayload(payload, "market-log");
+  const item = tokenHistoryItemFromMarketEventPayload(
+    payload,
+    "market-log",
+    {
+      block_height: WORK_AMO_V5_ACTIVATION_HEIGHT - 1,
+      status: "confirmed",
+    },
+  );
 
   assert.equal(item.kind, "listing");
   assert.equal(item.createdAt, originalAt);
@@ -30132,6 +32035,9 @@ check("WORK V3 market history ignores an unproven listing-table seal", () => {
       },
       seal_event_status: "confirmed",
       seal_event_txid: sealTxid,
+      seal_event_match_count: 1,
+      seal_transaction_block_height:
+        WORK_AMO_V5_ACTIVATION_HEIGHT - 1,
     },
     "livenet",
   );
@@ -30242,18 +32148,24 @@ check("closed listing projections retain seal metadata and close chronology", ()
       validTxid: (value) => /^[0-9a-f]{64}$/u.test(String(value ?? "")),
     },
   );
-  const closed = tokenClosedListingFromEventPayload({
-    closedAt: "2026-06-30T10:49:21.000Z",
-    confirmed: true,
-    createdAt: "2026-06-21T11:50:32.000Z",
-    listingId,
-    saleAuthorization: { anchorTxid: listingId },
-    sealAt: "2026-06-21T21:18:53.000Z",
-    sealConfirmed: true,
-    sealTxid,
-    tokenId: "work",
-    txid: closeTxid,
-  });
+  const closed = tokenClosedListingFromEventPayload(
+    {
+      closedAt: "2026-06-30T10:49:21.000Z",
+      confirmed: true,
+      createdAt: "2026-06-21T11:50:32.000Z",
+      listingId,
+      saleAuthorization: { anchorTxid: listingId },
+      sealAt: "2026-06-21T21:18:53.000Z",
+      sealConfirmed: true,
+      sealTxid,
+      tokenId: "work",
+      txid: closeTxid,
+    },
+    {
+      block_height: WORK_AMO_V5_ACTIVATION_HEIGHT - 1,
+      status: "confirmed",
+    },
+  );
 
   assert.equal(closed.createdAt, "2026-06-21T11:50:32.000Z");
   assert.equal(closed.closedAt, "2026-06-30T10:49:21.000Z");
@@ -30551,14 +32463,52 @@ check("raw transaction reconciliation cannot promote a WORK V3 seal", async () =
     sealConfirmed: false,
     sealTxid,
   };
-  const reconciledLegacy = await reconcileCachedTokenListingSeal(
+  assert.equal(
+    await reconcileCachedTokenListingSeal(legacy, "livenet"),
     legacy,
+    "an unknown-height generic seal must remain unsealed",
+  );
+  assert.equal(confirmationChecks, 0);
+
+  const knownPreV5Legacy = {
+    ...legacy,
+    sealTransactionBlockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT - 1,
+  };
+  const reconciledLegacy = await reconcileCachedTokenListingSeal(
+    knownPreV5Legacy,
     "livenet",
   );
   assert.equal(reconciledLegacy.sealConfirmed, true);
   assert.equal(reconciledLegacy.sealTxid, sealTxid);
   assert.equal(reconciledLegacy.saleAuthorization.version, "pwt-sale-v2");
   assert.equal(confirmationChecks, 1);
+
+  const incompletePostV5 = {
+    ...legacy,
+    sealTransactionBlockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT,
+  };
+  assert.equal(
+    await reconcileCachedTokenListingSeal(incompletePostV5, "livenet"),
+    incompletePostV5,
+    "a post-V5 generic seal without one bound canonical tuple must remain unsealed",
+  );
+  assert.equal(confirmationChecks, 1);
+
+  const canonicalPostV5 = {
+    ...incompletePostV5,
+    sealBlockHash: "f".repeat(64),
+    sealBlockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT,
+    sealBlockIndex: 8,
+    sealEventMatchCount: 1,
+    sealProtocolVout: 2,
+    sealRecordOrdinal: 0,
+  };
+  const reconciledCanonical = await reconcileCachedTokenListingSeal(
+    canonicalPostV5,
+    "livenet",
+  );
+  assert.equal(reconciledCanonical.sealConfirmed, true);
+  assert.equal(confirmationChecks, 2);
 });
 
 check("canonical listing actions use their action time", () => {
@@ -31550,6 +33500,26 @@ check("exact ID lifecycle keeps sealed listings active until a canonical close",
       assert.match(source, required, `${functionName} lacks relational proof`);
     }
   }
+  const registryHistorySource = topLevelFunctionSource(
+    READER_PATH,
+    "currentRegistryEventHistoryPage",
+  );
+  assert.match(
+    registryHistorySource,
+    /transfer_event\.protocol = 'pwid1'/u,
+  );
+  assert.match(
+    registryHistorySource,
+    /\(\s*close_event\.block_height,\s*close_event\.block_index,\s*close_event\.op_return_vout,\s*close_event\.record_ordinal\s*\) > \(\s*e\.block_height,\s*e\.block_index,\s*e\.op_return_vout,\s*e\.record_ordinal\s*\)/u,
+  );
+  assert.match(
+    registryHistorySource,
+    /\(\s*transfer_event\.block_height,\s*transfer_event\.block_index,\s*transfer_event\.op_return_vout,\s*transfer_event\.record_ordinal\s*\) > \(\s*e\.block_height,\s*e\.block_index,\s*e\.op_return_vout,\s*e\.record_ordinal\s*\)/u,
+  );
+  assert.match(
+    registryHistorySource,
+    /audit_event\.protocol = 'pwid1'[\s\S]*GROUP BY[\s\S]*audit_event\.record_ordinal[\s\S]*HAVING count\(\*\) > 1/u,
+  );
 });
 
 check("exact ID API lifecycle feeds every ID marketplace preflight", async () => {
@@ -33989,12 +35959,16 @@ check("WORK replay counts one canonical miner fee without collapsing same-tx mov
     baseValueAt: () => 1_000,
     confirmedActivity: [
       {
+        blockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT,
+        blockIndex: 7,
         canonicalMinerFeeSats: 77,
         canonicalMinerFeeCovered: true,
         confirmed: true,
         createdMs: 100,
         kind: "token-transfer",
         minerFeeSats: 999,
+        protocolVout: 1,
+        recordOrdinal: 0,
         tokenId,
         txid,
       },
@@ -34092,10 +36066,14 @@ check("WORK replay counts one canonical miner fee without collapsing same-tx mov
     },
     confirmedActivity: [
       {
+        blockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT,
+        blockIndex: 7,
         confirmed: true,
         createdMs: 100,
         kind: "token-transfer",
         minerFeeSats: 999,
+        protocolVout: 1,
+        recordOrdinal: 0,
         tokenId,
         txid,
       },
@@ -34792,6 +36770,7 @@ check("exact-tip WORK transfer projection preserves both Inception H-1 values", 
     creditFloorAtConfirmSats: 0,
     creditValueAtConfirmSats: 0,
     eventKeyVout: index + 1,
+    protocolVout: index + 1,
     tokenId: WORK_TOKEN_ID,
     txid: value.txid,
   }));
@@ -34808,6 +36787,7 @@ check("exact-tip WORK transfer projection preserves both Inception H-1 values", 
     return {
       ...rawTransfers.find((item) => item.txid === value.txid),
       amountAtoms,
+      blockHeight: value.height + 1,
       confirmed: true,
       creditAmountMoved: 3_644_060,
       creditFloorAtConfirmModel: "canonical-incb-h-minus-one-live-work-v1",
@@ -35952,7 +37932,10 @@ check("AMO V5 sold listing rows cannot synthesize a sale event", () => {
   const canonicalTokenSaleProjectionKey = isolatedFunction(
     READER_PATH,
     "canonicalTokenSaleProjectionKey",
-    { normalizedLowerText },
+    {
+      WORK_AMO_V5_ACTIVATION_HEIGHT,
+      normalizedLowerText,
+    },
   );
   const isWorkAmoV5ListingSaleProjection = isolatedFunction(
     READER_PATH,
@@ -35984,11 +37967,15 @@ check("AMO V5 sold listing rows cannot synthesize a sale event", () => {
   const listingId = "a".repeat(64);
   const saleTxid = "b".repeat(64);
   const tableSale = {
+    blockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT,
+    blockIndex: 7,
     confirmed: true,
     createdAt: "2026-07-26T00:01:00.000Z",
     listingId,
     network: "livenet",
     priceSats: 2_000,
+    protocolVout: 5,
+    recordOrdinal: 0,
     saleAuthorization: {
       tokenId: WORK_TOKEN_ID,
       version: WORK_AMO_V5_AUTH_VERSION,
@@ -36027,6 +38014,15 @@ check("AMO V5 sold listing rows cannot synthesize a sale event", () => {
     enriched.saleAuthorization.version,
     WORK_AMO_V5_AUTH_VERSION,
   );
+  assert.equal(
+    canonicalTokenSaleProjectionKey({
+      ...canonicalSale,
+      listingId: "c".repeat(64),
+      tokenId: "d".repeat(64),
+    }, "livenet"),
+    canonicalTokenSaleProjectionKey(canonicalSale, "livenet"),
+    "post-V5 sale enrichment keys must be canonical-tuple-only",
+  );
 
   const canonicalWorkMarketV3ListingProjectionSql = isolatedFunction(
     READER_PATH,
@@ -36043,6 +38039,39 @@ check("AMO V5 sold listing rows cannot synthesize a sale event", () => {
     canonicalWorkMarketV3ListingProjectionSql("cl"),
     /pwt-sale-v5/u,
   );
+  const canonicalTokenListingEventJoinSql = isolatedFunction(
+    READER_PATH,
+    "canonicalTokenListingEventJoinSql",
+    {
+      WORK_AMO_V5_AUTH_VERSION,
+      WORK_TOKEN_ID,
+      canonicalCreditListingAlias: (value) => String(value),
+    },
+  );
+  for (const governedListingSql of [
+    canonicalWorkMarketV3ListingProjectionSql("cl"),
+    canonicalTokenListingEventJoinSql("cl"),
+  ]) {
+    assert.match(
+      governedListingSql,
+      /protocol = 'pwt1'[\s\S]*kind = 'token-listing'/u,
+    );
+    const pluralStart = governedListingSql.indexOf(
+      "kind = 'token-listings'",
+    );
+    assert.ok(pluralStart >= 0);
+    const pluralLegacyGuard = governedListingSql.slice(
+      pluralStart,
+      pluralStart + 1_200,
+    );
+    assert.match(pluralLegacyGuard, new RegExp(WORK_TOKEN_ID, "u"));
+    assert.match(pluralLegacyGuard, /OR NOT \(/u);
+    assert.match(pluralLegacyGuard, /pwt-sale-v5/u);
+    assert.doesNotMatch(
+      governedListingSql,
+      /kind = ANY\(\s*ARRAY\['token-listings','token-listing'\]/u,
+    );
+  }
 });
 
 check("AMO canonical positions reject omitted, null, and empty tuple fields", () => {
@@ -36090,7 +38119,11 @@ check("AMO V5 public activity preserves same-transaction record identity", () =>
   const historyActivityKey = isolatedFunction(
     READER_PATH,
     "historyActivityKey",
-    { WORK_AMO_V5_ACTIVATION_HEIGHT },
+    {
+      WORK_AMO_V5_ACTIVATION_HEIGHT,
+      normalizedLowerText: (value) =>
+        String(value ?? "").trim().toLowerCase(),
+    },
   );
   const activityItemRichness = isolatedFunction(
     API_PATH,
@@ -36119,6 +38152,19 @@ check("AMO V5 public activity preserves same-transaction record identity", () =>
   const sibling = { ...base, recordOrdinal: 1 };
   assert.notEqual(activityKey(base), activityKey(sibling));
   assert.notEqual(historyActivityKey(base), historyActivityKey(sibling));
+  for (const keyForItem of [activityKey, historyActivityKey]) {
+    assert.equal(
+      keyForItem({
+        ...base,
+        id: "payload-id",
+        kind: "token-sale",
+        listingId: "f".repeat(64),
+        tokenId: "d".repeat(64),
+      }),
+      keyForItem(base),
+      "one canonical activity tuple cannot acquire a second identity from payload fields",
+    );
+  }
   assert.equal(dedupeActivityItems([base, sibling]).length, 2);
   for (const keyForItem of [activityKey, historyActivityKey]) {
     for (const field of ["blockIndex", "protocolVout", "recordOrdinal"]) {
@@ -36128,6 +38174,59 @@ check("AMO V5 public activity preserves same-transaction record identity", () =>
         /activity position is incomplete/u,
       );
     }
+  }
+  for (const kind of [
+    "token-create",
+    "token-event-invalid",
+    "token-mint",
+    "token-transfer",
+    "token-listing",
+    "token-listing-closed",
+    "token-listing-sealed",
+    "token-sale",
+  ]) {
+    for (const [surface, keyForItem] of [
+      ["API", activityKey],
+      ["reader", historyActivityKey],
+    ]) {
+      assert.throws(
+        () =>
+          keyForItem({
+            ...base,
+            blockHeight: undefined,
+            kind,
+          }),
+        /(?:height|position) is incomplete/u,
+        `${surface} ${kind} must fail closed when its confirmed height is unknown`,
+      );
+      assert.doesNotThrow(
+        () =>
+          keyForItem({
+            ...base,
+            blockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT - 1,
+            kind,
+          }),
+        `${surface} ${kind} must preserve positively known pre-V5 history`,
+      );
+    }
+  }
+  for (const keyForItem of [activityKey, historyActivityKey]) {
+    assert.doesNotThrow(() =>
+      keyForItem({
+        ...base,
+        blockHeight: undefined,
+        kind: "token-listing",
+        relic: true,
+      }),
+    );
+    assert.doesNotThrow(() =>
+      keyForItem({
+        ...base,
+        blockHeight: undefined,
+        canonicalSynthetic: true,
+        kind: "token-mint",
+      }),
+    );
   }
 
   const logReadSource = topLevelFunctionSource(
@@ -36145,6 +38244,200 @@ check("AMO V5 public activity preserves same-transaction record identity", () =>
       3,
       `every exact and paged Log SELECT must carry ${field}`,
     );
+  }
+});
+
+check("AMO V5 public Log pages require authoritative canonical positions", async () => {
+  const blockHash = "a".repeat(64);
+  const txid = "9".repeat(64);
+  const canonicalMovementPositionFromEventRow = isolatedFunction(
+    READER_PATH,
+    "canonicalMovementPositionFromEventRow",
+  );
+  const eventRowPayload = isolatedFunction(READER_PATH, "eventRowPayload", {
+    canonicalEventPayload: (payload) => payload ?? {},
+    canonicalEventIdentityDetails: () => ({}),
+    canonicalMovementPositionFromEventRow,
+    dateIso: (value) => String(value ?? ""),
+    eventPayloadParticipants: () => [],
+    normalizeEventPayload: (payload, row) => ({
+      ...(payload ?? {}),
+      kind: payload?.kind ?? row?.kind,
+      txid: payload?.txid ?? row?.txid,
+    }),
+    normalizedLowerText: (value) => String(value ?? "").trim().toLowerCase(),
+    normalizedText: (value) => String(value ?? "").trim(),
+    plausibleBitcoinEventTime: (...values) =>
+      values.find((value) => Boolean(value)),
+    tokenInvalidAuditCosts: () => ({}),
+  });
+  const baseRow = {
+    block_hash: blockHash,
+    block_height: WORK_AMO_V5_ACTIVATION_HEIGHT,
+    block_index: 7,
+    block_time: "2026-07-28T00:00:00.000Z",
+    canonical_block_hash: blockHash,
+    canonical_position_required: true,
+    created_at: "2026-07-28T00:00:00.000Z",
+    event_id: 42,
+    event_time: "2026-07-28T00:00:00.000Z",
+    kind: "token-transfer",
+    op_return_vout: 5,
+    payload: {
+      confirmed: true,
+      kind: "token-transfer",
+      status: "confirmed",
+      txid,
+    },
+    protocol: "pwt1",
+    record_ordinal: 0,
+    status: "confirmed",
+    transaction_block_height: WORK_AMO_V5_ACTIVATION_HEIGHT,
+    transaction_block_index: 7,
+    transaction_status: "confirmed",
+    txid,
+  };
+  const runShape = async (shape, row = baseRow) => {
+    const rowSqls = [];
+    const totalCount = shape === "large" ? 2 : 1;
+    const proofIndexLogHistoryPayload = isolatedFunction(
+      READER_PATH,
+      "proofIndexLogHistoryPayload",
+      {
+        PUBLIC_LOG_EVENT_KINDS: new Set(["token-transfer"]),
+        SMALL_EVENT_HISTORY_NORMALIZE_LIMIT: 1,
+        WORK_AMO_V5_ACTIVATION_HEIGHT,
+        eventKindSqlCondition: () => "true",
+        historyCursor: (snapshotId, offset) => `${snapshotId}:${offset}`,
+        indexedThroughBlockFromItems: () =>
+          WORK_AMO_V5_ACTIVATION_HEIGHT,
+        ledgerSnapshot: async () => null,
+        ledgerSnapshotMetadata: async () => ({
+          generated_at: "2026-07-28T00:00:00.000Z",
+          indexed_through_block: WORK_AMO_V5_ACTIVATION_HEIGHT,
+          snapshot_id: "snapshot-v5",
+        }),
+        logHistoryPageFromItems: ({ indexedThroughBlock, items, source }) => ({
+          indexedThroughBlock,
+          items,
+          source,
+          totalCount: items.length,
+        }),
+        logHistoryPageFromSnapshot: () => null,
+        normalizeHistoryEventRows: (rows) =>
+          rows.map((candidate) => eventRowPayload(candidate, "livenet")),
+        proofIndexLogHistoryReadEligibility: () => ({
+          pagination: {
+            limit: 1,
+            offset: 0,
+            query: shape === "exact" ? txid : "",
+            snapshotId: "",
+          },
+        }),
+        proofIndexPool: () => ({
+          async query(sql) {
+            if (/count\(\*\) AS total_count/iu.test(sql)) {
+              return {
+                rows: [{
+                  indexed_through_block: WORK_AMO_V5_ACTIVATION_HEIGHT,
+                  total_count: totalCount,
+                }],
+              };
+            }
+            if (
+              sql.includes("e.op_return_vout") &&
+              sql.includes("event_tx.status AS transaction_status")
+            ) {
+              rowSqls.push(sql);
+              return { rows: [row] };
+            }
+            return { rows: [] };
+          },
+        }),
+      },
+    );
+    const result = await proofIndexLogHistoryPayload(
+      "livenet",
+      "",
+      new URLSearchParams(shape === "exact" ? { q: txid } : {}),
+      shape === "exact" ? {} : { currentRelational: true },
+    );
+    assert.equal(rowSqls.length, 1, `${shape} must execute one event-page query`);
+    return { result, sql: rowSqls[0] };
+  };
+
+  for (const shape of ["exact", "small", "large"]) {
+    const { result, sql } = await runShape(shape);
+    assert.equal(result.items.length, 1);
+    assert.equal(result.items[0].blockHash, blockHash);
+    assert.equal(
+      result.items[0].blockHeight,
+      WORK_AMO_V5_ACTIVATION_HEIGHT,
+    );
+    assert.equal(result.items[0].blockIndex, 7);
+    assert.equal(result.items[0].protocolVout, 5);
+    assert.equal(result.items[0].recordOrdinal, 0);
+    for (const required of [
+      /LEFT JOIN proof_indexer\.transactions event_tx/u,
+      /LEFT JOIN proof_indexer\.blocks canonical_event_block/u,
+      /event_tx\.status AS transaction_status/u,
+      /event_tx\.block_height AS transaction_block_height/u,
+      /event_tx\.block_index AS transaction_block_index/u,
+      /event_tx\.block_hash AS block_hash/u,
+      /canonical_event_block\.block_hash AS canonical_block_hash/u,
+      /AS canonical_position_required/u,
+      /canonical_event_block\.canonical = true/u,
+    ]) {
+      assert.match(sql, required, `${shape} lacks canonical Log evidence`);
+    }
+    assert.match(
+      sql,
+      /COALESCE\(e\.block_height, 0\)[\s\S]*COALESCE\(event_tx\.block_height, 0\)/u,
+      `${shape} must make either post-V5 height strict`,
+    );
+    assert.match(
+      sql,
+      /e\.status = 'confirmed'[\s\S]*e\.block_height IS NULL[\s\S]*event_tx\.block_height IS NULL[\s\S]*AS canonical_position_required/u,
+      `${shape} must make a confirmed row with unknown event and transaction heights strict`,
+    );
+
+    await assert.rejects(
+      () =>
+        runShape(shape, {
+          ...baseRow,
+          block_height: null,
+          canonical_position_required: true,
+          transaction_block_height: null,
+        }),
+      /incomplete or noncanonical/u,
+      `${shape} must fail closed on an unknown confirmed height`,
+    );
+
+    for (const [label, patch] of [
+      ["transaction index mismatch", { transaction_block_index: 8 }],
+      [
+        "noncanonical block",
+        { canonical_block_hash: "b".repeat(64) },
+      ],
+      ["missing canonical block", { canonical_block_hash: null }],
+      ["event status mismatch", { status: "pending" }],
+      ["transaction status mismatch", { transaction_status: "pending" }],
+      [
+        "transaction height mismatch",
+        {
+          transaction_block_height:
+            WORK_AMO_V5_ACTIVATION_HEIGHT + 1,
+        },
+      ],
+      ["missing protocol output", { op_return_vout: null }],
+      ["missing record ordinal", { record_ordinal: null }],
+    ]) {
+      await assert.rejects(
+        () => runShape(shape, { ...baseRow, ...patch }),
+        /incomplete or noncanonical/u,
+        `${shape} must fail closed on ${label}`,
+      );
+    }
   }
 });
 
@@ -36319,6 +38612,51 @@ check("AMO V5 movement projections require one exact relational event position",
       /incomplete or noncanonical/u,
     );
   }
+  assert.throws(
+    () =>
+      canonicalMovementPositionFromEventRow(
+        {
+          blockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT - 1,
+          confirmed: true,
+          status: "confirmed",
+        },
+        {
+          block_hash: blockHash,
+          block_index: 7,
+          canonical_block_hash: blockHash,
+          op_return_vout: 5,
+          record_ordinal: 0,
+          status: "confirmed",
+          transaction_block_index: 7,
+          transaction_status: "confirmed",
+        },
+      ),
+    /incomplete or noncanonical/u,
+    "confirmed unknown-height activity must not trust a payload pre-V5 claim",
+  );
+  const knownPreV5Position = canonicalMovementPositionFromEventRow(
+    {
+      blockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT - 1,
+      blockIndex: 6,
+      confirmed: true,
+      protocolVout: 4,
+      recordOrdinal: 0,
+      status: "confirmed",
+    },
+    {
+      block_height: WORK_AMO_V5_ACTIVATION_HEIGHT - 1,
+      status: "confirmed",
+      transaction_block_height: WORK_AMO_V5_ACTIVATION_HEIGHT - 1,
+      transaction_status: "confirmed",
+    },
+  );
+  assert.equal(
+    knownPreV5Position.blockHeight,
+    WORK_AMO_V5_ACTIVATION_HEIGHT - 1,
+  );
+  assert.equal(knownPreV5Position.blockIndex, 6);
+  assert.equal(knownPreV5Position.protocolVout, 4);
+  assert.equal(knownPreV5Position.recordOrdinal, 0);
 
   for (const [path, functionName] of [
     [READER_PATH, "tokenMintEventQueryParts"],
@@ -36414,6 +38752,14 @@ check("AMO V5 history merge keys preserve same-vout record ordinals", () => {
       numericValue: (value) => Number(value) || 0,
     },
   );
+  const creditReplayRecordIdentity = isolatedFunction(
+    API_PATH,
+    "creditReplayRecordIdentity",
+    {
+      WORK_AMO_V5_ACTIVATION_HEIGHT,
+      canonicalTokenReplayPosition,
+    },
+  );
   const tokenTransferHistoryItemKey = isolatedFunction(
     API_PATH,
     "tokenTransferHistoryItemKey",
@@ -36448,6 +38794,40 @@ check("AMO V5 history merge keys preserve same-vout record ordinals", () => {
     tokenTransferHistoryItemKey(movements[0]),
     tokenTransferHistoryItemKey(movements[1]),
   );
+  for (const conflict of [
+    { kind: "token-sale" },
+    { listingId: "b".repeat(64) },
+    { tokenId: "c".repeat(64) },
+    {
+      amount: 999,
+      recipientAddress: "bc1qrecipient",
+      senderAddress: "bc1qsender",
+    },
+  ]) {
+    assert.equal(
+      tokenMintHistoryItemKey({ ...movements[0], ...conflict }),
+      tokenMintHistoryItemKey(movements[0]),
+      "one canonical tuple cannot acquire a second mint identity from payload fields",
+    );
+    assert.equal(
+      tokenTransferHistoryItemKey({ ...movements[0], ...conflict }),
+      tokenTransferHistoryItemKey(movements[0]),
+      "one canonical tuple cannot acquire a second transfer identity from payload fields",
+    );
+    assert.equal(
+      creditMovementIdentity(
+        { ...movements[0], ...conflict },
+        "sale",
+      ),
+      creditMovementIdentity(movements[0], "transfer"),
+      "one canonical tuple cannot acquire a second credit movement identity from payload fields",
+    );
+    assert.equal(
+      creditReplayRecordIdentity({ ...movements[0], ...conflict }),
+      creditReplayRecordIdentity(movements[0]),
+      "one canonical tuple cannot acquire a second replay identity from payload fields",
+    );
+  }
   assert.notEqual(
     creditMovementIdentity(movements[0], "transfer"),
     creditMovementIdentity(movements[1], "transfer"),
@@ -36472,10 +38852,23 @@ check("AMO V5 history merge keys preserve same-vout record ordinals", () => {
     tokenMintHistoryItemKey,
     tokenTransferHistoryItemKey,
     (item) => creditMovementIdentity(item, "transfer"),
+    creditReplayRecordIdentity,
   ]) {
     assert.throws(
       () => keyForItem({ ...base, recordOrdinal: null }),
       /position is incomplete/u,
+    );
+    assert.throws(
+      () => keyForItem({ ...base, blockHeight: undefined }),
+      /position is incomplete/u,
+      "confirmed governed history with unknown height must not downgrade to a legacy identity",
+    );
+    assert.doesNotThrow(() =>
+      keyForItem({
+        ...base,
+        blockHeight: undefined,
+        relic: true,
+      }),
     );
   }
   const identityDetails = isolatedFunction(
@@ -36540,6 +38933,35 @@ check("AMO V5 sale history preserves full same-transaction positions", () => {
       () => keyForSale({ ...base, recordOrdinal: null }),
       /position is incomplete/u,
     );
+    assert.throws(
+      () => keyForSale({ ...base, blockHeight: undefined }),
+      /position is incomplete/u,
+      "a confirmed sale with unknown height must not acquire a legacy key",
+    );
+    assert.doesNotThrow(() =>
+      keyForSale({
+        ...base,
+        blockHeight: undefined,
+        canonicalSynthetic: true,
+      }),
+    );
+  }
+  for (const conflict of [
+    { kind: "token-listing-closed" },
+    { listingId: "c".repeat(64) },
+    { tokenId: "d".repeat(64) },
+  ]) {
+    assert.equal(
+      tokenSaleItemKey({ ...sales[0], ...conflict }),
+      tokenSaleItemKey(sales[0]),
+    );
+    assert.equal(
+      canonicalTokenMarketHistorySaleKey({
+        ...sales[0],
+        ...conflict,
+      }),
+      canonicalTokenMarketHistorySaleKey(sales[0]),
+    );
   }
   const canonicalMarketSql = isolatedFunction(
     READER_PATH,
@@ -36562,7 +38984,11 @@ check("AMO V5 sale history preserves full same-transaction positions", () => {
   }
   assert.match(
     canonicalMarketSql,
-    /'sale:' \|\| lower\(e\.txid\) \|\| ':' \|\|[\s\S]*lower\(COALESCE\(/u,
+    /'sale:' \|\| lower\(e\.network\) \|\| ':' \|\| lower\(e\.txid\) \|\| ':' \|\|[\s\S]*e\.block_height::text[\s\S]*e\.block_index::text[\s\S]*e\.op_return_vout::text[\s\S]*e\.record_ordinal::text/u,
+  );
+  assert.doesNotMatch(
+    canonicalMarketSql,
+    /THEN 'sale:'[\s\S]{0,240}NULLIF\(e\.payload->>'listingId'/u,
   );
   const marketOverlaySource = topLevelFunctionSource(
     READER_PATH,
@@ -36571,8 +38997,187 @@ check("AMO V5 sale history preserves full same-transaction positions", () => {
   assert.match(marketOverlaySource, /WORK_AMO_V5_AUTH_VERSION/u);
 });
 
+check("AMO V5 current readers reject a globally duplicated canonical position", async () => {
+  let auditSql = "";
+  let auditParams = [];
+  const duplicateRow = {
+    block_height: WORK_AMO_V5_ACTIVATION_HEIGHT,
+    block_index: 7,
+    first_event_id: "41",
+    op_return_vout: 2,
+    record_ordinal: 0,
+    second_event_id: "42",
+  };
+  const auditPool = {
+    async query(sql, params) {
+      auditSql = String(sql);
+      auditParams = params;
+      return { rows: [duplicateRow] };
+    },
+  };
+  const assertCurrentAmoV5CanonicalPositionUniqueness = isolatedFunction(
+    READER_PATH,
+    "assertCurrentAmoV5CanonicalPositionUniqueness",
+  );
+  const duplicateError = await rejection(
+    assertCurrentAmoV5CanonicalPositionUniqueness(auditPool, "livenet"),
+    (error) =>
+      error?.code ===
+        "PROOF_INDEX_AMO_V5_CANONICAL_POSITION_DUPLICATED" &&
+      /records 41 and 42 share position 959621:7:2:0/u.test(error.message),
+  );
+  assert.equal(
+    duplicateError.code,
+    "PROOF_INDEX_AMO_V5_CANONICAL_POSITION_DUPLICATED",
+  );
+  assert.deepEqual([...auditParams], [
+    "livenet",
+    WORK_AMO_V5_ACTIVATION_HEIGHT,
+  ]);
+  assert.match(
+    auditSql,
+    /HAVING count\(DISTINCT event_row\.event_id\) > 1/u,
+  );
+  assert.match(
+    auditSql,
+    /event_tx\.block_height = event_row\.block_height/u,
+  );
+  assert.match(
+    auditSql,
+    /event_tx\.block_index = event_row\.block_index/u,
+  );
+  assert.match(auditSql, /event_block\.canonical = true/u);
+  assert.match(
+    auditSql,
+    /ARRAY\['pwm1','pwa1','pwid1','pwr1','pwt1'\]/u,
+  );
+  assert.match(auditSql, /event_row\.status = 'confirmed'/u);
+  assert.match(auditSql, /event_row\.block_height >= \$2/u);
+  assert.match(
+    auditSql,
+    /GROUP BY\s+event_row\.block_height,\s*event_row\.block_index,\s*event_row\.op_return_vout,\s*event_row\.record_ordinal/u,
+  );
+
+  let guardedQueryCount = 0;
+  const guardedPool = {
+    async query() {
+      guardedQueryCount += 1;
+      assert.fail("a scoped current-state query ran after the global audit");
+    },
+  };
+  let auditCount = 0;
+  const rejectDuplicatePosition = async (pool, network) => {
+    assert.equal(pool, guardedPool);
+    assert.equal(network, "livenet");
+    auditCount += 1;
+    const error = new Error("duplicate canonical position");
+    error.code = "PROOF_INDEX_AMO_V5_CANONICAL_POSITION_DUPLICATED";
+    throw error;
+  };
+  const globals = {
+    assertCurrentAmoV5CanonicalPositionUniqueness:
+      rejectDuplicatePosition,
+    proofIndexPool: () => guardedPool,
+  };
+  const guardedCurrentTokenRead = isolatedFunction(
+    READER_PATH,
+    "proofIndexTokenPayloadFromCurrentTables",
+    globals,
+  );
+  const guardedReads = [
+    [
+      "proofIndexTokenPayload",
+      (read) => read("livenet", "work", new URLSearchParams()),
+      {
+        proofIndexTokenPayloadFromCurrentTables:
+          guardedCurrentTokenRead,
+        proofIndexTokenReadEligibility: () => ({
+          eligible: true,
+          scope: "work",
+        }),
+      },
+    ],
+    [
+      "proofIndexTokenPayloadFromCurrentTables",
+      (read) => read(guardedPool, "livenet", "work"),
+    ],
+    [
+      "proofIndexTokenMintStatsPayload",
+      (read) => read("livenet", "work"),
+    ],
+    [
+      "proofIndexTokenHistoryPayload",
+      (read) =>
+        read("livenet", "work", "transfers", new URLSearchParams()),
+    ],
+    [
+      "proofIndexTokenMarketHistoryOverlayPayload",
+      (read) =>
+        read(
+          "livenet",
+          "work",
+          "listings",
+          new URLSearchParams(),
+        ),
+    ],
+    [
+      "proofIndexTokenMarketSummaryOverlayPayload",
+      (read) => read("livenet", "work"),
+    ],
+    [
+      "proofIndexTokenListingCloseOutspendPayload",
+      (read) => read("livenet", "a".repeat(64), 0),
+    ],
+    [
+      "proofIndexWalletTokenOverlayPayload",
+      (read) => read("livenet", "work", ["bc1qcanonicalcollision"]),
+    ],
+    [
+      "proofIndexCreditListingsPayload",
+      (read) => read("livenet", "work"),
+    ],
+  ];
+  for (const [name, invoke, extraGlobals = {}] of guardedReads) {
+    const read = isolatedFunction(
+      READER_PATH,
+      name,
+      { ...globals, ...extraGlobals },
+    );
+    const error = await rejection(
+      invoke(read),
+      (reason) =>
+        reason?.code ===
+        "PROOF_INDEX_AMO_V5_CANONICAL_POSITION_DUPLICATED",
+      `${name} must reject a globally duplicated position`,
+    );
+    assert.equal(
+      error.code,
+      "PROOF_INDEX_AMO_V5_CANONICAL_POSITION_DUPLICATED",
+    );
+  }
+  assert.equal(auditCount, guardedReads.length);
+  assert.equal(guardedQueryCount, 0);
+
+  const completePool = {
+    async query() {
+      return { rows: [] };
+    },
+  };
+  assert.equal(
+    await assertCurrentAmoV5CanonicalPositionUniqueness(
+      completePool,
+      "livenet",
+    ),
+    undefined,
+  );
+});
+
 check("AMO V5 canonical replay cursors reject incomplete positions before SQL", async () => {
   let queryCount = 0;
+  let positionAudit = {
+    duplicate_count: 0,
+    incomplete_count: 0,
+  };
   const proofIndexWorkAmoCanonicalEvents = isolatedFunction(
     READER_PATH,
     "proofIndexWorkAmoCanonicalEvents",
@@ -36580,8 +39185,11 @@ check("AMO V5 canonical replay cursors reject incomplete positions before SQL", 
       WORK_AMO_V1_ACTIVATION_HEIGHT: 959_306,
       WORK_AMO_V5_ACTIVATION_HEIGHT,
       proofIndexPool: () => ({
-        async query() {
+        async query(sql) {
           queryCount += 1;
+          if (String(sql).includes("AS incomplete_count")) {
+            return { rows: [positionAudit] };
+          }
           return { rows: [] };
         },
       }),
@@ -36618,6 +39226,50 @@ check("AMO V5 canonical replay cursors reject incomplete positions before SQL", 
     assert.equal(page.items.length, 0);
   }
   assert.equal(queryCount, 0);
+
+  const completePage = await proofIndexWorkAmoCanonicalEvents("livenet", {
+    after: base,
+  });
+  assert.equal(completePage.complete, true);
+  assert.equal(queryCount, 2);
+
+  positionAudit = { duplicate_count: 0, incomplete_count: 1 };
+  const incompletePage = await proofIndexWorkAmoCanonicalEvents(
+    "livenet",
+    { after: base },
+  );
+  assert.equal(incompletePage.complete, false);
+  assert.deepEqual(
+    [...incompletePage.reasons],
+    ["canonical-position-incomplete"],
+  );
+
+  positionAudit = { duplicate_count: 1, incomplete_count: 0 };
+  const duplicatePage = await proofIndexWorkAmoCanonicalEvents(
+    "livenet",
+    { after: base },
+  );
+  assert.equal(duplicatePage.complete, false);
+  assert.deepEqual(
+    [...duplicatePage.reasons],
+    ["canonical-position-duplicated"],
+  );
+
+  const source = topLevelFunctionSource(
+    READER_PATH,
+    "proofIndexWorkAmoCanonicalEvents",
+  );
+  assert.match(source, /record_ordinal IS NULL/u);
+  assert.match(source, /HAVING count\(\*\) > 1/u);
+  assert.match(
+    source,
+    /event_tx\.block_height = event_row\.block_height/u,
+  );
+  assert.match(
+    source,
+    /event_tx\.block_index = event_row\.block_index/u,
+  );
+  assert.match(source, /event_block\.canonical = true/u);
 });
 
 check("AMO V5 canonical listing reads bind frozen terms to tuple and block hash", async () => {
@@ -42984,6 +45636,7 @@ check("AMO V5 legacy carry preserves committed N while publishing valid-only mar
       ...validBaseState,
       ...validCreditFlows,
       baseNetworkValueQ8: validBaseNetworkValueQ8.toString(),
+      creditFixedQ8: committedCreditFixedQ8.toString(),
       marketplaceFeeSats: "stale",
       marketplaceFlowSats: "stale",
       marketplaceMutationFeeSats: "stale",
@@ -43008,6 +45661,57 @@ check("AMO V5 legacy carry preserves committed N while publishing valid-only mar
   assert.equal(evidenceMatches(evidence), true);
   const reconciliation = reconcile(state, value, workFloor, evidence);
   assert.equal(reconciliation.valid, true);
+  assert.equal(reconciliation.postActivationCreditFixedQ8, 0n);
+  const postActivationCreditFixedQ8 = 1_044n * VALUE_Q8_SCALE;
+  const postActivationState = {
+    ...state,
+    creditFixedQ8: (
+      committedCreditFixedQ8 + postActivationCreditFixedQ8
+    ).toString(),
+  };
+  const postActivationReconciliation = reconcile(
+    postActivationState,
+    value,
+    workFloor,
+    evidence,
+  );
+  assert.equal(postActivationReconciliation.valid, true);
+  assert.equal(
+    postActivationReconciliation.postActivationCreditFixedQ8,
+    postActivationCreditFixedQ8,
+  );
+  assert.equal(
+    reconcile(
+      state,
+      value,
+      {
+        ...workFloor,
+        actualValue: {
+          ...workFloor.actualValue,
+          creditFixedQ8: validCreditFixedQ8.toString(),
+        },
+      },
+      evidence,
+    ).valid,
+    true,
+  );
+  assert.equal(
+    reconcile(
+      state,
+      value,
+      {
+        ...workFloor,
+        actualValue: {
+          ...workFloor.actualValue,
+          creditFixedQ8: (
+            committedCreditFixedQ8 - 1n
+          ).toString(),
+        },
+      },
+      evidence,
+    ).reason,
+    "legacy-bootstrap-credit-value-diverged",
+  );
   assert.equal(
     reconciliation.committedBaseState.tokenMarketplaceFeeSats,
     746n,
@@ -43044,6 +45748,7 @@ check("AMO V5 legacy carry preserves committed N while publishing valid-only mar
     projected.flowFields.legacyBootstrapCreditFixedSats,
     2_762,
   );
+  assert.equal(projected.flowFields.postActivationCreditFixedSats, 0);
   assert.equal(
     projected.exactAliases.baseNetworkValueQ8,
     committedBaseNetworkValueQ8.toString(),
@@ -43662,6 +46367,28 @@ check("AMO V5 canonical positions and immutable projections are schema-bound", (
       readerSource,
       new RegExp(`export async function ${exportName}\\b`, "u"),
     );
+  }
+  const replayReadinessSource = topLevelFunctionSource(
+    READER_PATH,
+    "proofIndexWorkAmoReplayReadiness",
+  );
+  for (const required of [
+    /event_row\.record_ordinal IS NULL/u,
+    /duplicate_event\.protocol = ANY\(\s*ARRAY\['pwm1','pwa1','pwid1','pwr1','pwt1'\]::text\[\]\s*\)/u,
+    /duplicate_tx\.block_height = duplicate_event\.block_height/u,
+    /duplicate_tx\.block_index = duplicate_event\.block_index/u,
+    /duplicate_block\.canonical = true/u,
+    /post_v5_v4_tx\.block_height =\s*post_v5_v4_event\.block_height/u,
+    /post_v5_v4_tx\.block_index = post_v5_v4_event\.block_index/u,
+    /post_v5_v4_block\.canonical = true/u,
+    /historical_v4_tx\.block_height =\s*historical_v4_event\.block_height/u,
+    /historical_v4_tx\.block_index =\s*historical_v4_event\.block_index/u,
+    /historical_v4_block\.canonical = true/u,
+    /listing_tx\.block_height = listing_event\.block_height/u,
+    /listing_tx\.block_index = listing_event\.block_index/u,
+    /listing_block\.canonical = true/u,
+  ]) {
+    assert.match(replayReadinessSource, required);
   }
   assert.match(
     migrationSource,
@@ -44392,6 +47119,3476 @@ check("AMO V5 migration releases only the pinned post-V1 V3 listing", () => {
       ]),
     /pinned post-V1 V3 listing facts/u,
   );
+});
+
+check("canonical activity SQL carries the exact relational event tuple", async () => {
+  const txid = "1".repeat(64);
+  const blockHash = "2".repeat(64);
+  const relationalPosition = {
+    block_index: 17,
+    op_return_vout: 4,
+    record_ordinal: 2,
+  };
+  let activitySql = "";
+  const canonicalMovementPositionFromEventRow = isolatedFunction(
+    READER_PATH,
+    "canonicalMovementPositionFromEventRow",
+  );
+  const proofIndexCanonicalActivityPayload = isolatedFunction(
+    READER_PATH,
+    "proofIndexCanonicalActivityPayload",
+    {
+      indexedThroughBlockFromItems: () => WORK_AMO_V5_ACTIVATION_HEIGHT,
+      latestProofIndexScanMetadata: async () => null,
+      newestDateIso: () => "2026-07-28T00:00:00.000Z",
+      normalizeHistoryEventRows: (rows) =>
+        rows.map((row) => {
+          const position = canonicalMovementPositionFromEventRow(
+            row.payload,
+            row,
+          );
+          return {
+            ...position,
+            confirmed: row.status === "confirmed",
+            txid: row.txid,
+          };
+        }),
+      normalizedTxid: (value) => String(value ?? "").trim().toLowerCase(),
+      PUBLIC_LOG_EVENT_KINDS: new Set(["token-transfer"]),
+      proofIndexPool: () => ({
+        async query(sql) {
+          activitySql = String(sql);
+          return {
+            rows: [{
+              ...relationalPosition,
+              block_hash: blockHash,
+              block_height: WORK_AMO_V5_ACTIVATION_HEIGHT,
+              canonical_block_hash: blockHash,
+              canonical_position_required: true,
+              canonical_miner_fee_covered: true,
+              canonical_miner_fee_sats: 700,
+              payload: {
+                blockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT,
+                confirmed: true,
+                status: "confirmed",
+              },
+              status: "confirmed",
+              transaction_block_height:
+                WORK_AMO_V5_ACTIVATION_HEIGHT,
+              transaction_block_index: relationalPosition.block_index,
+              transaction_status: "confirmed",
+              txid,
+            }],
+          };
+        },
+      }),
+      rowNumber: () => 0,
+    },
+  );
+
+  const payload = await proofIndexCanonicalActivityPayload("livenet");
+  assert.deepEqual(
+    {
+      blockIndex: payload.activity[0].blockIndex,
+      protocolVout: payload.activity[0].protocolVout,
+      recordOrdinal: payload.activity[0].recordOrdinal,
+    },
+    {
+      blockIndex: relationalPosition.block_index,
+      protocolVout: relationalPosition.op_return_vout,
+      recordOrdinal: relationalPosition.record_ordinal,
+    },
+  );
+
+  const selectedEventsSql =
+    /WITH selected_events AS \(\s*SELECT([\s\S]*?)FROM proof_indexer\.events e/u.exec(
+      activitySql,
+    )?.[1] ?? "";
+  const finalSelectStart = activitySql.lastIndexOf(
+    "\n      SELECT\n        e.payload",
+  );
+  const finalSelectEnd = activitySql.indexOf(
+    "\n      FROM selected_events e",
+    finalSelectStart,
+  );
+  const finalSelectSql =
+    finalSelectStart >= 0 && finalSelectEnd > finalSelectStart
+      ? activitySql.slice(finalSelectStart, finalSelectEnd)
+      : "";
+  for (const field of [
+    "e.block_index",
+    "e.op_return_vout",
+    "e.record_ordinal",
+  ]) {
+    const pattern = new RegExp(field.replace(".", "\\."), "u");
+    assert.match(
+      selectedEventsSql,
+      pattern,
+      `selected_events must retain relational ${field}`,
+    );
+    assert.match(
+      finalSelectSql,
+      pattern,
+      `canonical activity must return relational ${field}`,
+    );
+  }
+  for (const required of [
+    /transaction_row\.status AS transaction_status/u,
+    /transaction_row\.block_height AS transaction_block_height/u,
+    /transaction_row\.block_index AS transaction_block_index/u,
+    /transaction_row\.block_hash AS block_hash/u,
+    /canonical_block\.block_hash AS canonical_block_hash/u,
+  ]) {
+    assert.match(
+      finalSelectSql,
+      required,
+      "canonical activity must return complete relational transaction and block evidence",
+    );
+  }
+  assert.match(
+    finalSelectSql,
+    new RegExp(
+      `WHEN COALESCE\\(e\\.block_height, 0\\) >=\\s+${WORK_AMO_V5_ACTIVATION_HEIGHT}\\s+OR COALESCE\\(transaction_row\\.block_height, 0\\) >=\\s+${WORK_AMO_V5_ACTIVATION_HEIGHT}\\s+THEN CASE[\\s\\S]*?e\\.status = 'confirmed'[\\s\\S]*?transaction_row\\.status = 'confirmed'[\\s\\S]*?transaction_row\\.block_height = e\\.block_height[\\s\\S]*?transaction_row\\.block_index = e\\.block_index[\\s\\S]*?THEN e\\.block_index[\\s\\S]*?ELSE NULL[\\s\\S]*?WHEN COALESCE\\(e\\.block_height, 0\\) <\\s+${WORK_AMO_V5_ACTIVATION_HEIGHT}[\\s\\S]*?THEN COALESCE\\(\\s*e\\.block_index`,
+      "u",
+    ),
+    "either post-activation height must require matching relational event and transaction order before any legacy fallback",
+  );
+  assert.match(
+    finalSelectSql,
+    new RegExp(
+      `WHEN COALESCE\\(e\\.block_height, 0\\) <\\s+${WORK_AMO_V5_ACTIVATION_HEIGHT}\\s+AND COALESCE\\(transaction_row\\.block_height, 0\\) <\\s+${WORK_AMO_V5_ACTIVATION_HEIGHT}\\s+THEN COALESCE\\([\\s\\S]*?payload->>'blockIndex'[\\s\\S]*?canonicalBlockScan'->>'blockIndex'`,
+      "u",
+    ),
+    "pre-activation activity must retain its qualified legacy block-order recovery",
+  );
+  assert.match(
+    finalSelectSql,
+    /e\.status = 'confirmed'[\s\S]*e\.block_height IS NULL[\s\S]*transaction_row\.block_height IS NULL[\s\S]*AS canonical_position_required/u,
+    "confirmed canonical activity with unknown event and transaction heights must require authoritative position validation",
+  );
+});
+
+check("token state activity preserves every event-specific canonical tuple", () => {
+  const canonicalEventIdentityDetails = isolatedFunction(
+    API_PATH,
+    "canonicalEventIdentityDetails",
+  );
+  const tokenActivityItemsFromState = isolatedFunction(
+    API_PATH,
+    "tokenActivityItemsFromState",
+    {
+      INCB_TOKEN_ID,
+      INCEPTION_ISSUANCE_ACCOUNTING_MODEL: "fixture-incb-issuance",
+      TOKEN_MIN_MUTATION_PRICE_SATS: 546,
+      activityStatusTag: (confirmed) =>
+        confirmed ? "Confirmed" : "Pending",
+      canonicalEventIdentityDetails,
+      canonicalInceptionMintMetadata: () => ({}),
+      networkLabel: (network) => String(network ?? ""),
+      shortAddress: (value) => String(value ?? "").slice(0, 12),
+      tokenAmountFieldsFromRecord: (item) => ({
+        amount: item?.amount ?? 0,
+      }),
+      tokenListingCanProjectCloseActivity: () => true,
+      tokenListingHasConfirmedSaleTicketSeal: (listing) =>
+        listing?.sealConfirmed === true,
+      tokenListingHasPendingSaleTicketSeal: () => false,
+    },
+  );
+  const tokenId = "2".repeat(64);
+  const network = "livenet";
+  const registryAddress = "registry";
+  const sellerAddress = "seller";
+  const createdAt = "2026-07-28T00:00:00.000Z";
+  const blockHash = (digit) => digit.repeat(64);
+  const position = (
+    height,
+    blockIndex,
+    protocolVout,
+    recordOrdinal,
+    digit,
+  ) => ({
+    blockHash: blockHash(digit),
+    blockHeight: height,
+    blockIndex,
+    confirmed: true,
+    protocolVout,
+    recordOrdinal,
+  });
+  const creation = {
+    ...position(WORK_AMO_V5_ACTIVATION_HEIGHT, 1, 2, 0, "3"),
+    creationFeeSats: 1_000,
+    createdAt,
+    creatorAddress: "creator",
+    eventId: 101,
+    maxSupply: 1_000,
+    mintAmount: 10,
+    mintPriceSats: 546,
+    network,
+    registryAddress,
+    ticker: "UNIT",
+    tokenId,
+    txid: tokenId,
+  };
+  const mint = {
+    ...position(WORK_AMO_V5_ACTIVATION_HEIGHT, 2, 3, 1, "4"),
+    amount: 10,
+    createdAt,
+    eventId: 102,
+    minterAddress: "minter",
+    network,
+    paidSats: 546,
+    registryAddress,
+    ticker: "UNIT",
+    tokenId,
+    txid: "5".repeat(64),
+  };
+  const transfer = {
+    ...position(WORK_AMO_V5_ACTIVATION_HEIGHT, 3, 4, 2, "6"),
+    amount: 4,
+    createdAt,
+    eventId: 103,
+    network,
+    paidSats: 546,
+    recipientAddress: "recipient",
+    registryAddress,
+    senderAddress: sellerAddress,
+    ticker: "UNIT",
+    tokenId,
+    txid: "7".repeat(64),
+  };
+  const listing = {
+    ...position(WORK_AMO_V5_ACTIVATION_HEIGHT, 4, 5, 3, "8"),
+    amount: 3,
+    createdAt,
+    eventId: 104,
+    listingId: "9".repeat(64),
+    network,
+    priceSats: 2_000,
+    registryAddress,
+    saleAuthorization: {},
+    sealAt: "2026-07-28T00:01:00.000Z",
+    sealBlockHash: blockHash("a"),
+    sealBlockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT + 1,
+    sealBlockIndex: 6,
+    sealConfirmed: true,
+    sealProtocolVout: 7,
+    sealRecordOrdinal: 4,
+    sealTransactionBlockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT + 1,
+    sealTxid: "b".repeat(64),
+    sellerAddress,
+    ticker: "UNIT",
+    tokenId,
+  };
+  const closedListing = {
+    ...position(WORK_AMO_V5_ACTIVATION_HEIGHT, 7, 8, 5, "c"),
+    amount: 2,
+    closedAt: "2026-07-28T00:02:00.000Z",
+    closedBlockHash: blockHash("d"),
+    closedBlockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT + 2,
+    closedBlockIndex: 9,
+    closedConfirmed: true,
+    closedProtocolVout: 10,
+    closedRecordOrdinal: 6,
+    closeTransactionBlockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT + 2,
+    closedTxid: "e".repeat(64),
+    createdAt,
+    listingId: "f".repeat(64),
+    network,
+    priceSats: 3_000,
+    registryAddress,
+    saleAuthorization: {},
+    sellerAddress,
+    ticker: "UNIT",
+    tokenId,
+  };
+  const sale = {
+    ...position(WORK_AMO_V5_ACTIVATION_HEIGHT + 3, 11, 12, 7, "1"),
+    amount: 1,
+    buyerAddress: "buyer",
+    createdAt: "2026-07-28T00:03:00.000Z",
+    eventId: 107,
+    listingId: "0".repeat(64),
+    network,
+    paidSats: 546,
+    priceSats: 4_000,
+    registryAddress,
+    sellerAddress,
+    ticker: "UNIT",
+    tokenId,
+    txid: "a".repeat(64),
+  };
+  const activity = tokenActivityItemsFromState(
+    {
+      closedListings: [closedListing],
+      listings: [listing],
+      mints: [mint],
+      sales: [sale],
+      tokens: [creation],
+      transfers: [transfer],
+    },
+    "token-index",
+  );
+  const byKind = new Map(activity.map((item) => [item.kind, item]));
+  const tuple = (item) => ({
+    blockHash: item?.blockHash,
+    blockHeight: item?.blockHeight,
+    blockIndex: item?.blockIndex,
+    protocolVout: item?.protocolVout,
+    recordOrdinal: item?.recordOrdinal,
+  });
+
+  assert.deepEqual(tuple(byKind.get("token-create")), tuple(creation));
+  assert.deepEqual(tuple(byKind.get("token-mint")), tuple(mint));
+  assert.deepEqual(tuple(byKind.get("token-transfer")), tuple(transfer));
+  assert.deepEqual(tuple(byKind.get("token-listing")), tuple(listing));
+  assert.deepEqual(tuple(byKind.get("token-sale")), tuple(sale));
+  const saleSpecificActivity = tokenActivityItemsFromState(
+    {
+      sales: [{
+        ...sale,
+        saleBlockHash: blockHash("1"),
+        saleBlockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT + 3,
+        saleBlockIndex: 11,
+        saleProtocolVout: 13,
+        saleRecordOrdinal: 9,
+      }],
+    },
+    "token-index",
+  ).find((item) => item.kind === "token-sale");
+  assert.deepEqual(tuple(saleSpecificActivity), {
+    blockHash: blockHash("1"),
+    blockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT + 3,
+    blockIndex: 11,
+    protocolVout: 13,
+    recordOrdinal: 9,
+  });
+  assert.deepEqual(tuple(byKind.get("token-listing-sealed")), {
+    blockHash: listing.sealBlockHash,
+    blockHeight: listing.sealBlockHeight,
+    blockIndex: listing.sealBlockIndex,
+    protocolVout: listing.sealProtocolVout,
+    recordOrdinal: listing.sealRecordOrdinal,
+  });
+  assert.deepEqual(tuple(byKind.get("token-listing-closed")), {
+    blockHash: closedListing.closedBlockHash,
+    blockHeight: closedListing.closedBlockHeight,
+    blockIndex: closedListing.closedBlockIndex,
+    protocolVout: closedListing.closedProtocolVout,
+    recordOrdinal: closedListing.closedRecordOrdinal,
+  });
+  for (const kind of [
+    "token-create",
+    "token-mint",
+    "token-transfer",
+    "token-listing",
+    "token-listing-sealed",
+    "token-listing-closed",
+    "token-sale",
+  ]) {
+    for (const field of [
+      "blockHash",
+      "blockHeight",
+      "blockIndex",
+      "protocolVout",
+      "recordOrdinal",
+    ]) {
+      assert.notEqual(
+        byKind.get(kind)?.[field],
+        undefined,
+        `${kind} dropped ${field}`,
+      );
+    }
+  }
+
+  const unknownHeightBaseActivity = tokenActivityItemsFromState(
+    {
+      listings: [{
+        ...listing,
+        blockHeight: undefined,
+        listingId: "3".repeat(64),
+        sealConfirmed: false,
+        sealTxid: "",
+      }],
+      mints: [{
+        ...mint,
+        blockHeight: undefined,
+        txid: "4".repeat(64),
+      }],
+      tokens: [{
+        ...creation,
+        blockHeight: undefined,
+        tokenId: "5".repeat(64),
+        txid: "5".repeat(64),
+      }],
+      transfers: [{
+        ...transfer,
+        blockHeight: undefined,
+        txid: "6".repeat(64),
+      }],
+    },
+    "token-index",
+  );
+  for (const kind of [
+    "token-create",
+    "token-mint",
+    "token-transfer",
+    "token-listing",
+  ]) {
+    assert.equal(
+      unknownHeightBaseActivity.some((item) => item.kind === kind),
+      false,
+      `${kind} with an unknown confirmed height must remain state-only`,
+    );
+  }
+
+  const knownPreV5BaseActivity = tokenActivityItemsFromState(
+    {
+      listings: [{
+        ...listing,
+        blockHash: undefined,
+        blockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT - 1,
+        blockIndex: undefined,
+        listingId: "7".repeat(64),
+        protocolVout: undefined,
+        recordOrdinal: undefined,
+        sealConfirmed: false,
+        sealTxid: "",
+      }],
+      mints: [{
+        ...mint,
+        blockHash: undefined,
+        blockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT - 1,
+        blockIndex: undefined,
+        protocolVout: undefined,
+        recordOrdinal: undefined,
+        txid: "8".repeat(64),
+      }],
+      tokens: [{
+        ...creation,
+        blockHash: undefined,
+        blockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT - 1,
+        blockIndex: undefined,
+        protocolVout: undefined,
+        recordOrdinal: undefined,
+        tokenId: "9".repeat(64),
+        txid: "9".repeat(64),
+      }],
+      transfers: [{
+        ...transfer,
+        blockHash: undefined,
+        blockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT - 1,
+        blockIndex: undefined,
+        protocolVout: undefined,
+        recordOrdinal: undefined,
+        txid: "0".repeat(64),
+      }],
+    },
+    "token-index",
+  );
+  for (const kind of [
+    "token-create",
+    "token-mint",
+    "token-transfer",
+    "token-listing",
+  ]) {
+    assert.equal(
+      knownPreV5BaseActivity.some((item) => item.kind === kind),
+      true,
+      `${kind} with a positively known pre-V5 height must remain visible`,
+    );
+  }
+
+  const [syntheticMintActivity] = tokenActivityItemsFromState(
+    {
+      mints: [{
+        ...mint,
+        blockHash: undefined,
+        blockHeight: undefined,
+        blockIndex: undefined,
+        canonicalSynthetic: true,
+        protocolVout: undefined,
+        recordOrdinal: undefined,
+        tokenId: POWB_TOKEN_ID,
+        txid: "d".repeat(64),
+      }],
+    },
+    "token-index",
+  ).filter((item) => item.kind === "token-mint");
+  assert.equal(syntheticMintActivity?.canonicalSynthetic, true);
+
+  const [derivedSpendClose] = tokenActivityItemsFromState(
+    {
+      closedListings: [{
+        ...closedListing,
+        blockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT - 2,
+        closeTransactionBlockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT + 4,
+        closedBlockHash: undefined,
+        closedBlockHeight: undefined,
+        closedBlockIndex: undefined,
+        closedProtocolVout: undefined,
+        closedRecordOrdinal: undefined,
+        protocolVout: 14,
+        recordOrdinal: 8,
+      }],
+    },
+    "token-index",
+  ).filter((item) => item.kind === "token-listing-closed");
+  assert.equal(
+    derivedSpendClose,
+    undefined,
+    "a post-V5 outpoint spend without its own protocol tuple must stay state-only",
+  );
+
+  const unknownHeightClose = tokenActivityItemsFromState(
+    {
+      closedListings: [{
+        ...closedListing,
+        blockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT - 2,
+        closeTransactionBlockHeight: undefined,
+        closedBlockHash: undefined,
+        closedBlockHeight: undefined,
+        closedBlockIndex: undefined,
+        closedProtocolVout: undefined,
+        closedRecordOrdinal: undefined,
+      }],
+    },
+    "token-index",
+  ).find((item) => item.kind === "token-listing-closed");
+  assert.equal(
+    unknownHeightClose,
+    undefined,
+    "an unknown-height confirmed close must not borrow its pre-V5 opening tuple",
+  );
+
+  const knownPreV5Close = tokenActivityItemsFromState(
+    {
+      closedListings: [{
+        ...closedListing,
+        blockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT - 3,
+        closeTransactionBlockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT - 1,
+        closedBlockHash: undefined,
+        closedBlockHeight: undefined,
+        closedBlockIndex: undefined,
+        closedProtocolVout: undefined,
+        closedRecordOrdinal: undefined,
+      }],
+    },
+    "token-index",
+  ).find((item) => item.kind === "token-listing-closed");
+  assert.ok(
+    knownPreV5Close,
+    "a positively known pre-V5 close remains legacy-projectable",
+  );
+  assert.equal(
+    knownPreV5Close.blockHeight,
+    WORK_AMO_V5_ACTIVATION_HEIGHT - 1,
+    "legacy close activity must prefer the known close transaction height",
+  );
+
+  const incompletePostV5Sale = tokenActivityItemsFromState(
+    {
+      sales: [{
+        ...sale,
+        blockHash: undefined,
+        blockHeight: undefined,
+        blockIndex: undefined,
+        closeTransactionBlockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT + 5,
+        protocolVout: undefined,
+        recordOrdinal: undefined,
+        txid: "4".repeat(64),
+      }],
+    },
+    "token-index",
+  ).find((item) => item.kind === "token-sale");
+  assert.equal(
+    incompletePostV5Sale,
+    undefined,
+    "an incomplete post-V5 direct sale tuple must not become economic activity",
+  );
+
+  const borrowedOpeningSale = tokenActivityItemsFromState(
+    {
+      sales: [{
+        ...sale,
+        blockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT - 4,
+        closeTransactionBlockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT + 5,
+        txid: "5".repeat(64),
+      }],
+    },
+    "token-index",
+  ).find((item) => item.kind === "token-sale");
+  assert.equal(
+    borrowedOpeningSale,
+    undefined,
+    "a post-V5 close transaction must not accept a borrowed pre-V5 direct tuple",
+  );
+
+  const knownPreV5Sale = tokenActivityItemsFromState(
+    {
+      sales: [{
+        ...sale,
+        blockHash: undefined,
+        blockHeight: undefined,
+        blockIndex: undefined,
+        closeTransactionBlockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT - 1,
+        protocolVout: undefined,
+        recordOrdinal: undefined,
+        txid: "6".repeat(64),
+      }],
+    },
+    "token-index",
+  ).find((item) => item.kind === "token-sale");
+  assert.ok(
+    knownPreV5Sale,
+    "a positively known pre-V5 sale remains legacy-projectable",
+  );
+
+  const incompletePostV5Seal = tokenActivityItemsFromState(
+    {
+      listings: [{
+        ...listing,
+        blockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT - 1,
+        listingId: "2".repeat(64),
+        protocolVout: undefined,
+        recordOrdinal: undefined,
+        sealBlockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT + 4,
+        sealProtocolVout: undefined,
+        sealRecordOrdinal: undefined,
+        sealTxid: "3".repeat(64),
+      }],
+    },
+    "token-index",
+  ).find((item) => item.kind === "token-listing-sealed");
+  assert.equal(
+    incompletePostV5Seal,
+    undefined,
+    "a post-V5 seal must not borrow its pre-V5 opening position",
+  );
+
+  const mismatchedPostV5SealTransaction = tokenActivityItemsFromState(
+    {
+      listings: [{
+        ...listing,
+        listingId: "4".repeat(64),
+        sealBlockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT - 1,
+        sealTransactionBlockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT + 4,
+        sealTxid: "5".repeat(64),
+      }],
+    },
+    "token-index",
+  ).find((item) => item.kind === "token-listing-sealed");
+  assert.equal(
+    mismatchedPostV5SealTransaction,
+    undefined,
+    "a stale pre-V5 seal event cannot mask a mismatched post-V5 seal transaction",
+  );
+
+  const transactionHeightOnlyPreV5Seal = tokenActivityItemsFromState(
+    {
+      listings: [{
+        ...listing,
+        listingId: "6".repeat(64),
+        sealBlockHash: undefined,
+        sealBlockHeight: undefined,
+        sealBlockIndex: undefined,
+        sealProtocolVout: undefined,
+        sealRecordOrdinal: undefined,
+        sealTransactionBlockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT - 1,
+        sealTxid: "7".repeat(64),
+      }],
+    },
+    "token-index",
+  ).find((item) => item.kind === "token-listing-sealed");
+  assert.ok(
+    transactionHeightOnlyPreV5Seal,
+    "a transaction-height-only positively known pre-V5 seal remains legacy-projectable",
+  );
+  assert.equal(
+    transactionHeightOnlyPreV5Seal.blockHeight,
+    WORK_AMO_V5_ACTIVATION_HEIGHT - 1,
+    "legacy seal activity must prefer its known seal transaction height",
+  );
+
+  const directHeightOnlyPreV5Sale = tokenActivityItemsFromState(
+    {
+      sales: [{
+        ...sale,
+        blockHash: undefined,
+        blockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT - 1,
+        blockIndex: undefined,
+        closeTransactionBlockHeight: undefined,
+        closedBlockHeight: undefined,
+        protocolVout: undefined,
+        recordOrdinal: undefined,
+        txid: "8".repeat(64),
+      }],
+    },
+    "token-index",
+  ).find((item) => item.kind === "token-sale");
+  assert.ok(
+    directHeightOnlyPreV5Sale,
+    "a direct-height-only positively known pre-V5 sale remains legacy-projectable",
+  );
+  assert.equal(
+    directHeightOnlyPreV5Sale.blockHeight,
+    WORK_AMO_V5_ACTIVATION_HEIGHT - 1,
+  );
+});
+
+check("reader listing lifecycle merges preserve seal and close positions", () => {
+  const tokenListingSealRank = (listing) =>
+    validTxid(listing?.sealTxid) ? 3 : 0;
+  const tokenListingCloseRank = (listing) =>
+    validTxid(listing?.closedTxid) ? 3 : 0;
+  const tokenListingWithSealFrom = isolatedFunction(
+    READER_PATH,
+    "tokenListingWithSealFrom",
+    {
+      tokenListingSealRank,
+    },
+  );
+  const tokenListingWithCloseFrom = isolatedFunction(
+    READER_PATH,
+    "tokenListingWithCloseFrom",
+    {
+      tokenListingCloseRank,
+    },
+  );
+  const apiTokenListingWithSealFrom = isolatedFunction(
+    API_PATH,
+    "tokenListingWithSealFrom",
+    {
+      tokenListingSealRank,
+    },
+  );
+  const apiTokenListingWithCloseFrom = isolatedFunction(
+    API_PATH,
+    "tokenListingWithCloseFrom",
+    {
+      tokenListingCloseRank,
+    },
+  );
+  const preferredTokenListingSealSource = (left, right) =>
+    tokenListingSealRank(right) > tokenListingSealRank(left) ? right : left;
+  const mergeTokenListingRecord = isolatedFunction(
+    READER_PATH,
+    "mergeTokenListingRecord",
+    {
+      normalizedLowerText: (value) =>
+        String(value ?? "").trim().toLowerCase(),
+      preferredTokenListingSealSource,
+      tokenListingCloseRank,
+      tokenListingWithCloseFrom,
+      tokenListingWithSealFrom,
+    },
+  );
+  const apiMergeTokenListingRecord = isolatedFunction(
+    API_PATH,
+    "mergeTokenListingRecord",
+    {
+      preferredTokenListingSealSource,
+      tokenListingCloseRank,
+      tokenListingWithCloseFrom: apiTokenListingWithCloseFrom,
+      tokenListingWithSealFrom: apiTokenListingWithSealFrom,
+    },
+  );
+  const listing = {
+    blockHash: "1".repeat(64),
+    blockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT,
+    blockIndex: 1,
+    listingId: "2".repeat(64),
+    protocolVout: 2,
+    recordOrdinal: 0,
+  };
+  const sealSource = {
+    sealBlockHash: "3".repeat(64),
+    sealBlockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT + 1,
+    sealBlockIndex: 4,
+    sealConfirmed: true,
+    sealProtocolVout: 5,
+    sealRecordOrdinal: 1,
+    sealTransactionBlockHeight:
+      WORK_AMO_V5_ACTIVATION_HEIGHT + 1,
+    sealTxid: "4".repeat(64),
+  };
+  const closeSource = {
+    closedBlockHash: "5".repeat(64),
+    closedBlockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT + 2,
+    closedBlockIndex: 6,
+    closedByCanonicalOutpointSpend: true,
+    closedConfirmed: true,
+    closedProtocolVout: 7,
+    closedRecordOrdinal: 2,
+    closedTxid: "6".repeat(64),
+    closeTransactionBlockHeight:
+      WORK_AMO_V5_ACTIVATION_HEIGHT + 2,
+  };
+  const sealed = tokenListingWithSealFrom(listing, sealSource);
+  const closed = tokenListingWithCloseFrom(sealed, closeSource);
+  for (const field of [
+    "sealBlockHash",
+    "sealBlockHeight",
+    "sealBlockIndex",
+    "sealProtocolVout",
+    "sealRecordOrdinal",
+    "sealTransactionBlockHeight",
+  ]) {
+    assert.equal(sealed[field], sealSource[field], `seal merge dropped ${field}`);
+  }
+  const sealATxid = sealSource.sealTxid;
+  const sealBTxid = "7".repeat(64);
+  const sealA = {
+    ...sealed,
+    saleAuthorization: { signature: "seal-a" },
+    sealDataBytes: 321,
+    sealFrozenNetworkValueSats: 654,
+    sealLiveNetworkValueSats: 987,
+    sealMinerFeeCanonical: true,
+    sealMinerFeeSats: 111,
+    sealMinerFeeSource: "seal-a",
+    sealTxid: sealATxid,
+  };
+  const sealB = tokenListingWithSealFrom(sealA, {
+    sealConfirmed: true,
+    sealTxid: sealBTxid,
+  });
+  assert.equal(sealB.sealTxid, sealBTxid);
+  assert.equal(sealB.sealConfirmed, true);
+  assert.equal(sealB.sealMinerFeeCanonical, false);
+  for (const field of [
+    "saleAuthorization",
+    "sealAt",
+    "sealBlockHash",
+    "sealBlockHeight",
+    "sealBlockIndex",
+    "sealDataBytes",
+    "sealFrozenNetworkValueSats",
+    "sealLiveNetworkValueSats",
+    "sealMinerFeeSats",
+    "sealMinerFeeSource",
+    "sealProtocolVout",
+    "sealRecordOrdinal",
+    "sealTransactionBlockHeight",
+  ]) {
+    assert.equal(
+      sealB[field],
+      undefined,
+      `seal B inherited ${field} from seal A`,
+    );
+  }
+  for (const field of [
+    "closedBlockHash",
+    "closedBlockHeight",
+    "closedBlockIndex",
+    "closeTransactionBlockHeight",
+    "closedProtocolVout",
+    "closedRecordOrdinal",
+  ]) {
+    assert.equal(
+      closed[field],
+      closeSource[field],
+      `close merge dropped ${field}`,
+    );
+  }
+  assert.equal(closed.closedByCanonicalOutpointSpend, true);
+
+  const sealFieldNames = [
+    "saleAuthorization",
+    "sealAt",
+    "sealBlockHash",
+    "sealBlockHeight",
+    "sealBlockIndex",
+    "sealDataBytes",
+    "sealFrozenNetworkValueSats",
+    "sealLiveNetworkValueSats",
+    "sealMinerFeeSats",
+    "sealMinerFeeSource",
+    "sealProtocolVout",
+    "sealRecordOrdinal",
+    "sealTransactionBlockHeight",
+  ];
+  const assertSealBDoesNotInheritA = (candidate, surface) => {
+    assert.equal(candidate.sealTxid, sealBTxid);
+    assert.equal(candidate.sealConfirmed, true);
+    assert.equal(candidate.sealMinerFeeCanonical, false);
+    for (const field of sealFieldNames) {
+      assert.equal(
+        candidate[field],
+        undefined,
+        `${surface} seal B inherited ${field} from seal A`,
+      );
+    }
+  };
+  assertSealBDoesNotInheritA(sealB, "reader");
+  assertSealBDoesNotInheritA(
+    apiTokenListingWithSealFrom(sealA, {
+      sealConfirmed: true,
+      sealTxid: sealBTxid,
+    }),
+    "API",
+  );
+
+  const closeATxid = closeSource.closedTxid;
+  const closeBTxid = "8".repeat(64);
+  const closeA = {
+    ...closed,
+    buyerAddress: "bc1qstale",
+    canonicalSaleEvidence: {
+      buyerAddress: "bc1qstale",
+      listingId: listing.listingId,
+    },
+    closedAt: "2026-07-28T01:00:00.000Z",
+    closedDataBytes: 432,
+    closedFrozenNetworkValueSats: 765,
+    closedLiveNetworkValueSats: 1_098,
+    closedMinerFeeCanonical: true,
+    closedMinerFeeSats: 222,
+    closedMinerFeeSource: "close-a",
+    closeTxid: closeATxid,
+    closedTxid: closeATxid,
+    closedVin: 3,
+    lifecycleStatus: "sold",
+    saleAt: "2026-07-28T01:00:00.000Z",
+    saleBlockHash: closeSource.closedBlockHash,
+    saleBlockHeight: closeSource.closedBlockHeight,
+    saleBlockIndex: closeSource.closedBlockIndex,
+    saleBuyerAddress: "bc1qstale",
+    saleConfirmed: true,
+    saleDataBytes: 333,
+    saleMinerFeeSats: 444,
+    salePaymentSats: 555,
+    saleProtocolVout: closeSource.closedProtocolVout + 1,
+    saleRecordOrdinal: 0,
+    saleTransactionBlockHeight: closeSource.closedBlockHeight,
+    saleTxid: closeATxid,
+    status: "sold",
+  };
+  const closeFieldNames = [
+    "buyerAddress",
+    "canonicalSaleEvidence",
+    "closedAt",
+    "closedBlockHash",
+    "closedBlockHeight",
+    "closedBlockIndex",
+    "closeTransactionBlockHeight",
+    "closedDataBytes",
+    "closedFrozenNetworkValueSats",
+    "closedLiveNetworkValueSats",
+    "closedMinerFeeSats",
+    "closedMinerFeeSource",
+    "closedProtocolVout",
+    "closedRecordOrdinal",
+    "closedVin",
+    "closeTxid",
+    "lifecycleStatus",
+    "saleAt",
+    "saleBlockHash",
+    "saleBlockHeight",
+    "saleBlockIndex",
+    "saleBuyerAddress",
+    "saleDataBytes",
+    "saleMinerFeeSats",
+    "salePaymentSats",
+    "saleProtocolVout",
+    "saleRecordOrdinal",
+    "saleTransactionBlockHeight",
+    "saleTxid",
+    "status",
+  ];
+  const assertCloseBDoesNotInheritA = (candidate, surface) => {
+    assert.equal(candidate.closedTxid, closeBTxid);
+    assert.equal(candidate.closedConfirmed, true);
+    assert.equal(candidate.closedMinerFeeCanonical, false);
+    assert.equal(candidate.closedByCanonicalOutpointSpend, false);
+    assert.equal(candidate.saleConfirmed, false);
+    for (const field of closeFieldNames) {
+      assert.equal(
+        candidate[field],
+        undefined,
+        `${surface} close B inherited ${field} from close A`,
+      );
+    }
+  };
+  const closeBSource = {
+    closedConfirmed: true,
+    closedTxid: closeBTxid,
+  };
+  assertCloseBDoesNotInheritA(
+    tokenListingWithCloseFrom(closeA, closeBSource),
+    "reader",
+  );
+  assertCloseBDoesNotInheritA(
+    apiTokenListingWithCloseFrom(closeA, closeBSource),
+    "API",
+  );
+  const sameCloseCorrection = {
+    buyerAddress: undefined,
+    canonicalSaleEvidence: undefined,
+    closedConfirmed: true,
+    closedMinerFeeCanonical: true,
+    closedTxid: closeATxid,
+    lifecycleStatus: "closed",
+    saleAt: undefined,
+    saleBlockHash: undefined,
+    saleBlockHeight: undefined,
+    saleBlockIndex: undefined,
+    saleBuyerAddress: undefined,
+    saleConfirmed: false,
+    saleDataBytes: undefined,
+    saleMinerFeeSats: undefined,
+    salePaymentSats: undefined,
+    saleProtocolVout: undefined,
+    saleRecordOrdinal: undefined,
+    saleTransactionBlockHeight: undefined,
+    saleTxid: undefined,
+    status: "closed",
+  };
+  for (const [surface, corrected] of [
+    [
+      "reader",
+      tokenListingWithCloseFrom(closeA, sameCloseCorrection),
+    ],
+    [
+      "API",
+      apiTokenListingWithCloseFrom(closeA, sameCloseCorrection),
+    ],
+    [
+      "reader merge",
+      mergeTokenListingRecord(closeA, sameCloseCorrection),
+    ],
+    [
+      "API merge",
+      apiMergeTokenListingRecord(closeA, sameCloseCorrection),
+    ],
+  ]) {
+    assert.equal(corrected.closedTxid, closeATxid);
+    assert.equal(corrected.lifecycleStatus, "closed");
+    assert.equal(corrected.status, "closed");
+    assert.equal(corrected.saleConfirmed, false);
+    for (const field of [
+      "buyerAddress",
+      "canonicalSaleEvidence",
+      "closeTxid",
+      "saleAt",
+      "saleBlockHash",
+      "saleBlockHeight",
+      "saleBlockIndex",
+      "saleBuyerAddress",
+      "saleDataBytes",
+      "saleMinerFeeSats",
+      "salePaymentSats",
+      "saleProtocolVout",
+      "saleRecordOrdinal",
+      "saleTransactionBlockHeight",
+      "saleTxid",
+    ]) {
+      assert.equal(
+        corrected[field],
+        undefined,
+        `${surface} same-close correction retained stale ${field}`,
+      );
+    }
+  }
+  for (const [surface, mergeClose] of [
+    ["reader", tokenListingWithCloseFrom],
+    ["API", apiTokenListingWithCloseFrom],
+  ]) {
+    const corrected = mergeClose(closeA, {
+      blockHash: "f".repeat(64),
+      buyerAddress: undefined,
+      closedBlockHash: undefined,
+      closedConfirmed: true,
+      closedDataBytes: undefined,
+      closedMinerFeeSource: undefined,
+      closedProtocolVout: undefined,
+      closedRecordOrdinal: undefined,
+      closedTxid: closeATxid,
+      dataBytes: 999,
+      minerFeeSource: "stale-generic-alias",
+      protocolVout: 9,
+      recordOrdinal: 9,
+    });
+    for (const field of [
+      "buyerAddress",
+      "closedBlockHash",
+      "closedDataBytes",
+      "closedMinerFeeSource",
+      "closedProtocolVout",
+      "closedRecordOrdinal",
+      "saleBuyerAddress",
+    ]) {
+      assert.equal(
+        corrected[field],
+        undefined,
+        `${surface} explicit canonical clear resurrected ${field} from an alias`,
+      );
+    }
+  }
+  assert.deepEqual(
+    {
+      blockHash: closed.blockHash,
+      blockHeight: closed.blockHeight,
+      blockIndex: closed.blockIndex,
+      protocolVout: closed.protocolVout,
+      recordOrdinal: closed.recordOrdinal,
+    },
+    {
+      blockHash: listing.blockHash,
+      blockHeight: listing.blockHeight,
+      blockIndex: listing.blockIndex,
+      protocolVout: listing.protocolVout,
+      recordOrdinal: listing.recordOrdinal,
+    },
+    "lifecycle merges must not overwrite the original listing tuple",
+  );
+
+  const sealProjection = {
+    ...listing,
+    blockHash: sealSource.sealBlockHash,
+    blockHeight: sealSource.sealBlockHeight,
+    blockIndex: sealSource.sealBlockIndex,
+    protocolVout: sealSource.sealProtocolVout,
+    recordOrdinal: sealSource.sealRecordOrdinal,
+    ...sealSource,
+  };
+  const closeProjection = {
+    ...listing,
+    blockHash: closeSource.closedBlockHash,
+    blockHeight: closeSource.closedBlockHeight,
+    blockIndex: closeSource.closedBlockIndex,
+    protocolVout: closeSource.closedProtocolVout,
+    recordOrdinal: closeSource.closedRecordOrdinal,
+    ...closeSource,
+  };
+  const directTuple = (item) => ({
+    blockHash: item?.blockHash,
+    blockHeight: item?.blockHeight,
+    blockIndex: item?.blockIndex,
+    protocolVout: item?.protocolVout,
+    recordOrdinal: item?.recordOrdinal,
+  });
+  for (const mergedLifecycle of [
+    mergeTokenListingRecord(listing, sealProjection),
+    mergeTokenListingRecord(sealProjection, listing),
+    mergeTokenListingRecord(
+      mergeTokenListingRecord(listing, sealProjection),
+      closeProjection,
+    ),
+    mergeTokenListingRecord(
+      closeProjection,
+      mergeTokenListingRecord(sealProjection, listing),
+    ),
+  ]) {
+    assert.deepEqual(
+      directTuple(mergedLifecycle),
+      directTuple(listing),
+      "merge order must not replace the listing tuple with a seal/close tuple",
+    );
+  }
+  for (const mergeListing of [
+    mergeTokenListingRecord,
+    apiMergeTokenListingRecord,
+  ]) {
+    const partialLifecycleProjection = {
+      blockHash: "9".repeat(64),
+      blockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT + 3,
+      blockIndex: 9,
+      listingId: listing.listingId,
+      protocolVout: 2,
+      recordOrdinal: 0,
+      sealBlockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT + 3,
+      sealTxid: "a".repeat(64),
+    };
+    assert.deepEqual(
+      directTuple(mergeListing(listing, partialLifecycleProjection)),
+      directTuple(listing),
+      "a partial lifecycle tuple must not become the listing-opening tuple",
+    );
+    assert.deepEqual(
+      directTuple(mergeListing(partialLifecycleProjection, listing)),
+      directTuple(listing),
+      "partial lifecycle provenance must be merge-order independent",
+    );
+    for (const prefix of ["closed", "sale"]) {
+      const partial = {
+        blockHash: "c".repeat(64),
+        blockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT + 3,
+        blockIndex: 9,
+        listingId: listing.listingId,
+        protocolVout: 2,
+        recordOrdinal: 0,
+        [`${prefix}BlockHeight`]:
+          WORK_AMO_V5_ACTIVATION_HEIGHT + 3,
+        [prefix === "closed" ? "closeTxid" : "saleTxid"]:
+          "d".repeat(64),
+      };
+      assert.deepEqual(
+        directTuple(mergeListing(listing, partial)),
+        directTuple(listing),
+        `a partial ${prefix} tuple must not become the listing-opening tuple`,
+      );
+      assert.deepEqual(
+        directTuple(mergeListing(partial, listing)),
+        directTuple(listing),
+        `partial ${prefix} provenance must be merge-order independent`,
+      );
+    }
+
+    const conflictingOpening = {
+      ...listing,
+      blockHash: "b".repeat(64),
+      blockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT + 4,
+      blockIndex: 10,
+      protocolVout: 3,
+      recordOrdinal: 1,
+    };
+    for (const conflicted of [
+      mergeListing(listing, conflictingOpening),
+      mergeListing(conflictingOpening, listing),
+    ]) {
+      assert.deepEqual(
+        directTuple(conflicted),
+        {
+          blockHash: undefined,
+          blockHeight: undefined,
+          blockIndex: undefined,
+          protocolVout: undefined,
+          recordOrdinal: undefined,
+        },
+        "conflicting complete opening tuples must fail closed in either merge order",
+      );
+    }
+  }
+
+  const preV5CloseProvenance = {
+    closeTransactionBlockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT - 1,
+    closedByCanonicalOutpointSpend: true,
+    closedConfirmed: true,
+    closedTxid: "7".repeat(64),
+  };
+  for (const mergedLifecycle of [
+    mergeTokenListingRecord(listing, preV5CloseProvenance),
+    mergeTokenListingRecord(preV5CloseProvenance, listing),
+  ]) {
+    assert.equal(
+      mergedLifecycle.closeTransactionBlockHeight,
+      preV5CloseProvenance.closeTransactionBlockHeight,
+      "merge order must retain the close transaction height",
+    );
+    assert.equal(
+      mergedLifecycle.closedByCanonicalOutpointSpend,
+      true,
+      "merge order must retain canonical outpoint-spend provenance",
+    );
+  }
+});
+
+check("block-order annotation bounds singleton hydration and routes by network", async () => {
+  const transactionTxid = isolatedFunction(API_PATH, "transactionTxid");
+  const transactionConfirmed = isolatedFunction(
+    API_PATH,
+    "transactionConfirmed",
+  );
+  const transactionBlockHash = isolatedFunction(
+    API_PATH,
+    "transactionBlockHash",
+  );
+  const transactionBlockIndex = isolatedFunction(
+    API_PATH,
+    "transactionBlockIndex",
+  );
+  const blockHash = "7".repeat(64);
+  const txid = "8".repeat(64);
+  let fetches = 0;
+  let networkFetches = 0;
+  let canonicalIndex = new Map([[txid, 23]]);
+  let rejectFetch = false;
+  const annotateBlockOrder = isolatedFunction(API_PATH, "annotateBlockOrder", {
+    BLOCK_TXID_FETCH_CONCURRENCY: 2,
+    WORK_AMO_V5_ACTIVATION_HEIGHT,
+    fetchBlockTxidIndex: async (requestedBlockHash, requestedNetwork) => {
+      networkFetches += 1;
+      assert.equal(requestedBlockHash, blockHash);
+      assert.equal(requestedNetwork, "testnet");
+      return canonicalIndex;
+    },
+    fetchCoreBlockTxidIndex: async (requestedBlockHash) => {
+      fetches += 1;
+      assert.equal(requestedBlockHash, blockHash);
+      if (rejectFetch) {
+        throw new Error("Core block hydration unavailable");
+      }
+      return canonicalIndex;
+    },
+    mapWithConcurrency: async (items, _limit, mapper) =>
+      Promise.all(items.map(mapper)),
+    transactionBlockHash,
+    transactionBlockHeight: isolatedFunction(
+      API_PATH,
+      "transactionBlockHeight",
+    ),
+    transactionBlockIndex,
+    transactionConfirmed,
+    transactionTxid,
+  });
+  const singleton = {
+    status: {
+      block_hash: blockHash,
+      block_height: WORK_AMO_V5_ACTIVATION_HEIGHT,
+      confirmed: true,
+    },
+    txid,
+  };
+
+  const [hydrated] = await annotateBlockOrder([singleton], "livenet");
+  assert.equal(fetches, 1, "a missing singleton index must fetch its full block");
+  assert.equal(hydrated._powBlockIndex, 23);
+  assert.equal(transactionBlockIndex(hydrated), 23);
+
+  fetches = 0;
+  const preV5Singleton = {
+    ...singleton,
+    status: {
+      ...singleton.status,
+      block_height: WORK_AMO_V5_ACTIVATION_HEIGHT - 1,
+    },
+  };
+  const [preV5] = await annotateBlockOrder([preV5Singleton], "livenet");
+  assert.equal(
+    fetches,
+    0,
+    "a pre-V5 singleton must not amplify historical block fetches",
+  );
+  assert.equal(transactionBlockIndex(preV5), undefined);
+
+  networkFetches = 0;
+  const [testnetHydrated] = await annotateBlockOrder([singleton], "testnet");
+  assert.equal(
+    fetches,
+    0,
+    "a non-livenet singleton must not use livenet Core",
+  );
+  assert.equal(networkFetches, 1);
+  assert.equal(transactionBlockIndex(testnetHydrated), 23);
+
+  fetches = 0;
+  const alreadyExact = {
+    ...singleton,
+    _powBlockIndex: 19,
+  };
+  const [preserved] = await annotateBlockOrder([alreadyExact], "livenet");
+  assert.equal(fetches, 0, "an exact singleton must not require hydration");
+  assert.equal(preserved._powBlockIndex, 19);
+
+  fetches = 0;
+  canonicalIndex = new Map();
+  const [unresolved] = await annotateBlockOrder([singleton], "livenet");
+  assert.equal(fetches, 1);
+  assert.equal(
+    transactionBlockIndex(unresolved),
+    undefined,
+    "a missing Core member must not receive an invented transaction index",
+  );
+
+  fetches = 0;
+  rejectFetch = true;
+  const [unavailable] = await annotateBlockOrder([singleton], "livenet");
+  assert.equal(fetches, 1);
+  assert.equal(
+    transactionBlockIndex(unavailable),
+    undefined,
+    "failed Core hydration must remain incomplete for downstream fail-closed validation",
+  );
+});
+
+check("canonical listing and close parsers reject relational position mismatches", () => {
+  const parserGlobals = {
+    dateIso: (value) =>
+      value ? new Date(value).toISOString() : undefined,
+    objectRecord: (value) =>
+      value && typeof value === "object" && !Array.isArray(value)
+        ? value
+        : {},
+    rowNumber: (value, key) => Number(value?.[key] ?? 0),
+    tokenMarketNumbersFromTags: () => ({
+      amount: 0,
+      priceSats: 0,
+      ticker: "",
+    }),
+    tokenRegistryAddressFromPayload: () => "registry",
+    workAmountProjection: () => null,
+  };
+  const tokenListingFromEventPayload = isolatedFunction(
+    READER_PATH,
+    "tokenListingFromEventPayload",
+    parserGlobals,
+  );
+  const tokenClosedListingFromEventPayload = isolatedFunction(
+    READER_PATH,
+    "tokenClosedListingFromEventPayload",
+    parserGlobals,
+  );
+  const blockHash = "1".repeat(64);
+  const tokenId = "2".repeat(64);
+  const payload = {
+    amount: 1,
+    blockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT,
+    confirmed: true,
+    createdAt: "2026-07-28T00:00:00.000Z",
+    kind: "token-listing",
+    listingId: "3".repeat(64),
+    priceSats: 546,
+    sellerAddress: "seller",
+    ticker: "UNIT",
+    tokenId,
+    txid: "3".repeat(64),
+  };
+  const canonicalRow = {
+    block_hash: blockHash,
+    block_height: WORK_AMO_V5_ACTIVATION_HEIGHT,
+    block_index: 7,
+    canonical_block_hash: blockHash,
+    effective_status: "confirmed",
+    op_return_vout: 2,
+    record_ordinal: 1,
+    status: "confirmed",
+    transaction_block_height: WORK_AMO_V5_ACTIVATION_HEIGHT,
+    transaction_block_index: 7,
+    transaction_status: "confirmed",
+  };
+
+  const listing = tokenListingFromEventPayload(payload, canonicalRow);
+  assert.deepEqual(
+    {
+      blockHash: listing.blockHash,
+      blockHeight: listing.blockHeight,
+      blockIndex: listing.blockIndex,
+      protocolVout: listing.protocolVout,
+      recordOrdinal: listing.recordOrdinal,
+    },
+    {
+      blockHash,
+      blockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT,
+      blockIndex: 7,
+      protocolVout: 2,
+      recordOrdinal: 1,
+    },
+  );
+  const closed = tokenClosedListingFromEventPayload(
+    {
+      ...payload,
+      kind: "token-listing-closed",
+      txid: "4".repeat(64),
+    },
+    canonicalRow,
+  );
+  assert.deepEqual(
+    {
+      blockHash: closed.closedBlockHash,
+      blockHeight: closed.closedBlockHeight,
+      blockIndex: closed.closedBlockIndex,
+      protocolVout: closed.closedProtocolVout,
+      recordOrdinal: closed.closedRecordOrdinal,
+    },
+    {
+      blockHash,
+      blockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT,
+      blockIndex: 7,
+      protocolVout: 2,
+      recordOrdinal: 1,
+    },
+  );
+
+  for (const mismatchedRow of [
+    {
+      ...canonicalRow,
+      transaction_block_height: WORK_AMO_V5_ACTIVATION_HEIGHT + 1,
+    },
+    {
+      ...canonicalRow,
+      transaction_block_index: canonicalRow.block_index + 1,
+    },
+    {
+      ...canonicalRow,
+      block_height: WORK_AMO_V5_ACTIVATION_HEIGHT - 1,
+      transaction_block_height: WORK_AMO_V5_ACTIVATION_HEIGHT,
+    },
+  ]) {
+    assert.throws(
+      () => tokenListingFromEventPayload(payload, mismatchedRow),
+      /canonical AMO V5 movement position/iu,
+    );
+    assert.throws(
+      () =>
+        tokenClosedListingFromEventPayload(
+          { ...payload, kind: "token-listing-closed" },
+          mismatchedRow,
+        ),
+      /canonical AMO V5 movement position/iu,
+    );
+  }
+});
+
+check("token definitions publish only a complete canonical creation tuple", () => {
+  const tokenDefinitionFromRow = isolatedFunction(
+    READER_PATH,
+    "tokenDefinitionFromRow",
+    {
+      dateIso: (value) =>
+        value ? new Date(value).toISOString() : undefined,
+      objectRecord: (value) =>
+        value && typeof value === "object" && !Array.isArray(value)
+          ? value
+          : {},
+      rowNumber: (value, key) => Number(value?.[key] ?? 0),
+    },
+  );
+  const blockHash = "5".repeat(64);
+  const metadataHash = "6".repeat(64);
+  const tokenId = "7".repeat(64);
+  const baseRow = {
+    confirmed: true,
+    create_txid: tokenId,
+    created_height: WORK_AMO_V5_ACTIVATION_HEIGHT,
+    creation_event_match_count: 1,
+    creation_event_block_hash: blockHash,
+    creation_event_block_height: WORK_AMO_V5_ACTIVATION_HEIGHT,
+    creation_event_block_index: 11,
+    creation_event_protocol_vout: 3,
+    creation_event_record_ordinal: 2,
+    creation_event_status: "confirmed",
+    creator_address: "creator",
+    definition_tx_block_hash: blockHash,
+    definition_tx_block_height: WORK_AMO_V5_ACTIVATION_HEIGHT,
+    definition_tx_block_index: 11,
+    definition_tx_status: "confirmed",
+    max_supply: "1000",
+    metadata: {
+      blockHash: metadataHash,
+      blockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT,
+      blockIndex: 99,
+      createdAt: "2026-07-28T00:00:00.000Z",
+      protocolVout: 88,
+      recordOrdinal: 77,
+    },
+    mint_amount: "10",
+    mint_price_sats: "546",
+    registry_address: "registry",
+    ticker: "UNIT",
+    token_id: tokenId,
+  };
+  const token = tokenDefinitionFromRow(baseRow);
+  assert.deepEqual(
+    {
+      blockHash: token.blockHash,
+      blockHeight: token.blockHeight,
+      blockIndex: token.blockIndex,
+      protocolVout: token.protocolVout,
+      recordOrdinal: token.recordOrdinal,
+    },
+    {
+      blockHash,
+      blockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT,
+      blockIndex: 11,
+      protocolVout: 3,
+      recordOrdinal: 2,
+    },
+    "metadata must not shadow the relational token-create position",
+  );
+  assert.throws(
+    () =>
+      tokenDefinitionFromRow({
+        ...baseRow,
+        metadata: {
+          ...baseRow.metadata,
+          blockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT + 1,
+        },
+      }),
+    /inconsistent canonical creation heights/iu,
+  );
+  assert.throws(
+    () =>
+      tokenDefinitionFromRow({
+        ...baseRow,
+        creation_event_block_hash: null,
+        creation_event_block_height: null,
+        creation_event_block_index: null,
+        creation_event_protocol_vout: null,
+        creation_event_record_ordinal: null,
+      }),
+    /missing its canonical AMO V5 creation event/iu,
+  );
+  assert.throws(
+    () =>
+      tokenDefinitionFromRow({
+        ...baseRow,
+        creation_event_record_ordinal: null,
+      }),
+    /incomplete canonical AMO V5 creation position/iu,
+  );
+  for (const ambiguousOrMismatchedRow of [
+    {
+      ...baseRow,
+      creation_event_match_count: 2,
+    },
+    {
+      ...baseRow,
+      definition_tx_block_hash: "8".repeat(64),
+    },
+    {
+      ...baseRow,
+      definition_tx_block_index: 12,
+    },
+  ]) {
+    assert.throws(
+      () => tokenDefinitionFromRow(ambiguousOrMismatchedRow),
+      /incomplete canonical AMO V5 creation position/iu,
+    );
+  }
+  assert.throws(
+    () =>
+      tokenDefinitionFromRow({
+        ...baseRow,
+        created_height: null,
+        creation_event_block_hash: null,
+        creation_event_block_height: null,
+        creation_event_block_index: null,
+        creation_event_match_count: null,
+        creation_event_protocol_vout: null,
+        creation_event_record_ordinal: null,
+        creation_event_status: null,
+        definition_tx_block_hash: null,
+        definition_tx_block_height: null,
+        definition_tx_block_index: null,
+        metadata: {
+          ...baseRow.metadata,
+          blockHash: null,
+          blockHeight: null,
+          blockIndex: null,
+          protocolVout: null,
+          recordOrdinal: null,
+        },
+      }),
+    /missing its canonical AMO V5 creation event/iu,
+  );
+  const legacyHeight = WORK_AMO_V5_ACTIVATION_HEIGHT - 1;
+  assert.equal(
+    tokenDefinitionFromRow({
+      ...baseRow,
+      created_height: legacyHeight,
+      creation_event_block_hash: null,
+      creation_event_block_height: null,
+      creation_event_block_index: null,
+      creation_event_match_count: null,
+      creation_event_protocol_vout: null,
+      creation_event_record_ordinal: null,
+      creation_event_status: null,
+      definition_tx_block_hash: "9".repeat(64),
+      definition_tx_block_height: legacyHeight,
+      definition_tx_block_index: 7,
+      metadata: {
+        ...baseRow.metadata,
+        blockHash: "9".repeat(64),
+        blockHeight: legacyHeight,
+        blockIndex: 7,
+        protocolVout: null,
+        recordOrdinal: null,
+      },
+    }).blockHeight,
+    legacyHeight,
+    "a positively confirmed pre-V5 definition keeps legacy compatibility",
+  );
+
+  const creationJoinSql = isolatedFunction(
+    READER_PATH,
+    "canonicalTokenDefinitionCreationEventJoinSql",
+  )("cd");
+  assert.match(
+    creationJoinSql,
+    /canonical_creation_tx\.block_height =\s+canonical_creation_event_row\.block_height/iu,
+  );
+  assert.match(
+    creationJoinSql,
+    /canonical_creation_tx\.block_index =\s+canonical_creation_event_row\.block_index/iu,
+  );
+  assert.match(
+    creationJoinSql,
+    /canonical_creation_block\.canonical = true/iu,
+  );
+  assert.match(
+    creationJoinSql,
+    /canonical_creation_event_row\.kind = 'token-create'/iu,
+  );
+  assert.match(
+    creationJoinSql,
+    /canonical_creation_event_row\.protocol = 'pwt1'/iu,
+  );
+  assert.match(
+    creationJoinSql,
+    /COUNT\(\*\) OVER \(\) AS creation_event_match_count/iu,
+  );
+  for (const functionName of [
+    "proofIndexTokenDefinitionsFromTables",
+    "proofIndexTokenDefinitionsByIds",
+  ]) {
+    const definitionQuerySource = topLevelFunctionSource(
+      READER_PATH,
+      functionName,
+    );
+    assert.match(
+      definitionQuerySource,
+      /LEFT JOIN proof_indexer\.transactions definition_transaction/iu,
+    );
+    assert.match(
+      definitionQuerySource,
+      /definition_transaction\.status AS definition_tx_status/iu,
+    );
+    assert.match(
+      definitionQuerySource,
+      /definition_transaction\.block_hash AS definition_tx_block_hash/iu,
+    );
+    assert.match(
+      definitionQuerySource,
+      /definition_transaction\.block_height AS definition_tx_block_height/iu,
+    );
+    assert.match(
+      definitionQuerySource,
+      /definition_transaction\.block_index AS definition_tx_block_index/iu,
+    );
+    assert.match(
+      definitionQuerySource,
+      /canonical_creation_event\.creation_event_match_count/iu,
+    );
+  }
+});
+
+check("post-V5 seal positions come only from canonical relational seal rows", async () => {
+  const normalizedLowerText = (value) =>
+    String(value ?? "").trim().toLowerCase();
+  const objectRecord = (value) =>
+    value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  const validTxid = (value) =>
+    /^[0-9a-f]{64}$/u.test(String(value ?? "").trim().toLowerCase());
+  const sealPatch = isolatedFunction(
+    READER_PATH,
+    "tokenMarketListingSealPatch",
+    {
+      normalizedLowerText,
+      objectRecord,
+      validTxid,
+      WORK_MARKET_GOVERNED_AUTH_VERSIONS:
+        WORK_MARKET_GOVERNED_AUTH_VERSIONS_FIXTURE,
+    },
+  );
+  const projectionPayload = isolatedFunction(
+    READER_PATH,
+    "tokenMarketCanonicalListingProjectionPayload",
+    {
+      normalizedLowerText,
+      objectRecord,
+      WORK_MARKET_GOVERNED_AUTH_VERSIONS:
+        WORK_MARKET_GOVERNED_AUTH_VERSIONS_FIXTURE,
+    },
+  );
+  const tokenMarketEventRowPayload = isolatedFunction(
+    READER_PATH,
+    "tokenMarketEventRowPayload",
+    {
+      eventRowPayload: (row) => row.payload,
+      normalizeEventPayload: (value) => value,
+      normalizedLowerText,
+      objectRecord,
+      tokenMarketCanonicalListingProjectionPayload: projectionPayload,
+      tokenMarketListingSealPatch: sealPatch,
+      validTxid,
+    },
+  );
+  const tokenId = "8".repeat(64);
+  const listingId = "9".repeat(64);
+  const sealTxid = "a".repeat(64);
+  const staleSealPosition = {
+    sealAt: "2026-07-28T00:00:30.000Z",
+    sealBlockHash: "b".repeat(64),
+    sealBlockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT + 1,
+    sealBlockIndex: 91,
+    sealDataBytes: 321,
+    sealFrozenNetworkValueSats: 654,
+    sealLiveNetworkValueSats: 987,
+    sealMinerFeeCanonical: true,
+    sealMinerFeeSats: 111,
+    sealMinerFeeSource: "stale-payload",
+    sealProtocolVout: 92,
+    sealRecordOrdinal: 93,
+  };
+  const staleRow = {
+    listing_payload: {
+      ...staleSealPosition,
+      listingId,
+      sealConfirmed: true,
+      sealTxid,
+      tokenId,
+    },
+    payload: {
+      ...staleSealPosition,
+      confirmed: true,
+      kind: "token-listing",
+      listingId,
+      sealConfirmed: true,
+      sealTxid,
+      tokenId,
+      txid: listingId,
+    },
+  };
+  const withoutCanonicalSeal = tokenMarketEventRowPayload(
+    staleRow,
+    "livenet",
+  );
+  for (const field of Object.keys(staleSealPosition)) {
+    assert.equal(
+      Object.hasOwn(withoutCanonicalSeal, field),
+      false,
+      `${field} leaked from an unbound payload`,
+    );
+  }
+
+  const canonicalSealPosition = {
+    sealBlockHash: "c".repeat(64),
+    sealBlockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT + 2,
+    sealBlockIndex: 12,
+    sealProtocolVout: 4,
+    sealRecordOrdinal: 1,
+  };
+  const withCanonicalSeal = tokenMarketEventRowPayload(
+    {
+      ...staleRow,
+      seal_event_payload: {
+        listingId,
+        sealAt: "2026-07-28T00:01:00.000Z",
+        tokenId,
+      },
+      seal_event_status: "confirmed",
+      seal_event_txid: sealTxid,
+      seal_event_match_count: 1,
+      seal_event_block_hash: canonicalSealPosition.sealBlockHash,
+      seal_event_block_height: canonicalSealPosition.sealBlockHeight,
+      seal_event_block_index: canonicalSealPosition.sealBlockIndex,
+      seal_event_protocol_vout: canonicalSealPosition.sealProtocolVout,
+      seal_event_record_ordinal: canonicalSealPosition.sealRecordOrdinal,
+    },
+    "livenet",
+  );
+  for (const [field, value] of Object.entries(canonicalSealPosition)) {
+    assert.equal(withCanonicalSeal[field], value);
+  }
+  const ambiguousCanonicalSeal = tokenMarketEventRowPayload(
+    {
+      ...staleRow,
+      seal_event_payload: {
+        listingId,
+        tokenId,
+      },
+      seal_event_status: "confirmed",
+      seal_event_txid: sealTxid,
+      seal_event_match_count: 2,
+      seal_event_block_hash: canonicalSealPosition.sealBlockHash,
+      seal_event_block_height: canonicalSealPosition.sealBlockHeight,
+      seal_event_block_index: canonicalSealPosition.sealBlockIndex,
+      seal_event_protocol_vout: canonicalSealPosition.sealProtocolVout,
+      seal_event_record_ordinal: canonicalSealPosition.sealRecordOrdinal,
+    },
+    "livenet",
+  );
+  assert.equal(
+    Object.hasOwn(ambiguousCanonicalSeal, "sealTxid"),
+    false,
+    "ambiguous canonical seal evidence must not become pending seal state",
+  );
+  for (const field of Object.keys(staleSealPosition)) {
+    assert.equal(
+      Object.hasOwn(ambiguousCanonicalSeal, field),
+      false,
+      `${field} leaked from ambiguous canonical seal evidence`,
+    );
+  }
+  const unknownHeightSeal = tokenMarketEventRowPayload(
+    {
+      listing_payload: {
+        listingId,
+        sealConfirmed: true,
+        sealTxid,
+        tokenId,
+      },
+      payload: {
+        confirmed: true,
+        kind: "token-listing",
+        listingId,
+        sealConfirmed: true,
+        sealTxid,
+        tokenId,
+        txid: listingId,
+      },
+    },
+    "livenet",
+  );
+  assert.equal(
+    Object.hasOwn(unknownHeightSeal, "sealTxid"),
+    false,
+    "an unknown-height confirmed seal must not be reclassified as pending",
+  );
+  const preV5SealPatch = sealPatch(
+    {
+      confirmed: true,
+      kind: "token-listing",
+      listingId,
+      tokenId,
+    },
+    {
+      listingId,
+      sealConfirmed: true,
+      sealTxid,
+      tokenId,
+    },
+    {
+      sealTransactionBlockHeight:
+        WORK_AMO_V5_ACTIVATION_HEIGHT - 1,
+    },
+    "",
+  );
+  assert.equal(preV5SealPatch.sealTxid, sealTxid);
+  assert.equal(
+    preV5SealPatch.sealTransactionBlockHeight,
+    WORK_AMO_V5_ACTIVATION_HEIGHT - 1,
+    "a positively known pre-V5 generic seal keeps legacy projection",
+  );
+
+  const tokenListingSealConfirmedFromTransaction = isolatedFunction(
+    READER_PATH,
+    "tokenListingSealConfirmedFromTransaction",
+    {
+      normalizedLowerText,
+      validTxid,
+      WORK_MARKET_GOVERNED_AUTH_VERSIONS:
+        WORK_MARKET_GOVERNED_AUTH_VERSIONS_FIXTURE,
+    },
+  );
+  const listingRow = {
+    amount: "1",
+    listing_block_hash: "d".repeat(64),
+    listing_block_height: WORK_AMO_V5_ACTIVATION_HEIGHT,
+    listing_block_time: "2026-07-28T00:00:00.000Z",
+    listing_event_block_hash: "d".repeat(64),
+    listing_event_block_height: WORK_AMO_V5_ACTIVATION_HEIGHT,
+    listing_event_block_index: 6,
+    listing_event_match_count: 1,
+    listing_event_protocol_vout: 2,
+    listing_event_record_ordinal: 0,
+    listing_event_status: "confirmed",
+    listing_id: listingId,
+    listing_transaction_block_index: 6,
+    listing_tx_status: "confirmed",
+    payload: {
+      ...staleSealPosition,
+      blockHash: "e".repeat(64),
+      blockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT,
+      blockIndex: 55,
+      listingId,
+      protocolVout: 56,
+      recordOrdinal: 57,
+      saleAuthorization: {},
+      sealConfirmed: true,
+      sealTxid,
+      tokenId,
+    },
+    price_sats: "546",
+    registry_address: "registry",
+    sale_ticket_value_sats: "546",
+    sale_ticket_vout: 1,
+    seal_event_block_hash: canonicalSealPosition.sealBlockHash,
+    seal_event_block_height: canonicalSealPosition.sealBlockHeight,
+    seal_event_block_index: canonicalSealPosition.sealBlockIndex,
+    seal_event_match_count: 2,
+    seal_event_protocol_vout: canonicalSealPosition.sealProtocolVout,
+    seal_event_record_ordinal: canonicalSealPosition.sealRecordOrdinal,
+    seal_event_status: "confirmed",
+    seal_transaction_block_height: WORK_AMO_V5_ACTIVATION_HEIGHT + 1,
+    seal_tx_status: "confirmed",
+    seal_txid: sealTxid,
+    seller_address: "seller",
+    status: "sealing",
+    token_id: tokenId,
+    updated_at: "2026-07-28T00:00:00.000Z",
+  };
+  const pool = {
+    async query(sql) {
+      const text = String(sql);
+      if (/count\(\*\) AS total_count/iu.test(text)) {
+        return { rows: [{ total_count: 1 }] };
+      }
+      if (/SELECT DISTINCT ON \(lower\(e\.payload->>'listingId'\)\)/iu.test(text)) {
+        return { rows: [] };
+      }
+      return { rows: [listingRow] };
+    },
+  };
+  const proofIndexCreditListingsPayload = isolatedFunction(
+    READER_PATH,
+    "proofIndexCreditListingsPayload",
+    {
+      activeOrSealingListingStatus: (status) =>
+        ["active", "pending", "sealing"].includes(
+          normalizedLowerText(status),
+        ),
+      boundedInteger: (value, fallback, min, max) =>
+        Math.min(max, Math.max(min, Number(value ?? fallback))),
+      canonicalTokenListingEventJoinSql: () => "",
+      canonicalTokenListingSealEventJoinSql: () => "",
+      canonicalWorkMarketV3ListingProjectionSql: () => "TRUE",
+      dateIso: (value) =>
+        value ? new Date(value).toISOString() : undefined,
+      latestProofIndexScanMetadata: async () => ({
+        generated_at: "2026-07-28T00:02:00.000Z",
+        indexed_through_block: WORK_AMO_V5_ACTIVATION_HEIGHT + 2,
+      }),
+      normalizedLowerText,
+      objectRecord,
+      proofIndexPool: () => pool,
+      rowNumber: (value, key) => Number(value?.[key] ?? 0),
+      tokenListingEffectiveCloseTxid: () => "",
+      tokenListingEffectiveSaleTicketTxid: (
+        _row,
+        _payload,
+        _authorization,
+        fallback,
+      ) => fallback,
+      tokenListingSealConfirmedFromTransaction,
+      tokenScopeKey: (value) =>
+        String(value ?? "").trim().toLowerCase() || "all",
+      validTxid,
+      verifiedWorkMarketV4Activation: async () => null,
+    },
+  );
+  const lifecycle = await proofIndexCreditListingsPayload(
+    "livenet",
+    tokenId,
+  );
+  const [creditListing] = lifecycle.items;
+  assert.equal(creditListing.blockHash, listingRow.listing_event_block_hash);
+  assert.equal(creditListing.blockIndex, listingRow.listing_event_block_index);
+  assert.equal(creditListing.protocolVout, listingRow.listing_event_protocol_vout);
+  assert.equal(
+    creditListing.recordOrdinal,
+    listingRow.listing_event_record_ordinal,
+  );
+  assert.equal(creditListing.sealConfirmed, false);
+  assert.equal(creditListing.sealTxid, "");
+  assert.equal(creditListing.status, "active");
+  assert.equal(
+    Object.hasOwn(creditListing, "sealTransactionBlockHeight"),
+    false,
+  );
+  for (const field of Object.keys(staleSealPosition)) {
+    assert.equal(
+      Object.hasOwn(creditListing, field),
+      false,
+      `${field} leaked through the credit lifecycle payload`,
+    );
+  }
+
+  const tokenListingFromCreditListingRow = isolatedFunction(
+    READER_PATH,
+    "tokenListingFromCreditListingRow",
+    {
+      normalizeTokenHistoryListingItem: (item) => item,
+      normalizedLowerText,
+      objectRecord,
+      rowNumber: (value, key) => Number(value?.[key] ?? 0),
+      tokenListingEffectiveCloseTxid: () => "",
+      tokenListingEffectiveSaleTicketTxid: (
+        _row,
+        _payload,
+        _authorization,
+        fallback,
+      ) => fallback,
+      tokenListingSealConfirmedFromTransaction,
+      validTxid,
+      WORK_MARKET_GOVERNED_AUTH_VERSIONS:
+        WORK_MARKET_GOVERNED_AUTH_VERSIONS_FIXTURE,
+    },
+  );
+  const preV5Height = WORK_AMO_V5_ACTIVATION_HEIGHT - 1;
+  const legacySealRow = {
+    amount: 1,
+    listing_block_height: preV5Height - 1,
+    listing_id: listingId,
+    listing_tx_status: "confirmed",
+    payload: {
+      listingId,
+      saleAuthorization: {},
+      sealAt: "2026-07-27T23:59:00.000Z",
+      sealBlockHash: "e".repeat(64),
+      sealBlockIndex: 8,
+      sealConfirmed: true,
+      sealDataBytes: 321,
+      sealFrozenNetworkValueSats: 654,
+      sealLiveNetworkValueSats: 987,
+      sealMinerFeeCanonical: true,
+      sealMinerFeeSats: 111,
+      sealMinerFeeSource: "legacy-seal",
+      sealProtocolVout: 3,
+      sealRecordOrdinal: 1,
+      sealTxid,
+      tokenId,
+    },
+    seal_transaction_block_height: preV5Height,
+    seal_tx_status: "confirmed",
+    seal_txid: sealTxid,
+    status: "sealing",
+    token_id: tokenId,
+  };
+  const legacySeal = tokenListingFromCreditListingRow(
+    legacySealRow,
+    "livenet",
+  );
+  assert.equal(legacySeal.sealConfirmed, true);
+  assert.equal(legacySeal.sealBlockHeight, preV5Height);
+  assert.equal(legacySeal.sealTransactionBlockHeight, preV5Height);
+  assert.equal(legacySeal.sealTxid, sealTxid);
+  assert.equal(legacySeal.status, "sealing");
+  assert.equal(legacySeal.sealDataBytes, 321);
+  assert.equal(legacySeal.sealMinerFeeCanonical, true);
+
+  const unknownHeightConfirmedSeal = tokenListingFromCreditListingRow(
+    {
+      ...legacySealRow,
+      seal_transaction_block_height: null,
+    },
+    "livenet",
+  );
+  assert.equal(unknownHeightConfirmedSeal.sealConfirmed, false);
+  assert.equal(unknownHeightConfirmedSeal.sealTxid, "");
+  assert.equal(unknownHeightConfirmedSeal.status, "active");
+  for (const field of [
+    "sealAt",
+    "sealBlockHash",
+    "sealBlockHeight",
+    "sealBlockIndex",
+    "sealDataBytes",
+    "sealFrozenNetworkValueSats",
+    "sealLiveNetworkValueSats",
+    "sealMinerFeeCanonical",
+    "sealMinerFeeSats",
+    "sealMinerFeeSource",
+    "sealProtocolVout",
+    "sealRecordOrdinal",
+    "sealTransactionBlockHeight",
+  ]) {
+    assert.equal(
+      unknownHeightConfirmedSeal[field],
+      undefined,
+      `${field} leaked from an unknown-height confirmed seal`,
+    );
+  }
+
+  const ambiguousSeal = tokenListingFromCreditListingRow(
+    {
+      ...legacySealRow,
+      seal_event_block_hash: canonicalSealPosition.sealBlockHash,
+      seal_event_block_height: canonicalSealPosition.sealBlockHeight,
+      seal_event_block_index: canonicalSealPosition.sealBlockIndex,
+      seal_event_match_count: 2,
+      seal_event_protocol_vout: canonicalSealPosition.sealProtocolVout,
+      seal_event_record_ordinal: canonicalSealPosition.sealRecordOrdinal,
+      seal_event_status: "confirmed",
+      seal_transaction_block_height: canonicalSealPosition.sealBlockHeight,
+    },
+    "livenet",
+  );
+  assert.equal(ambiguousSeal.sealConfirmed, false);
+  assert.equal(ambiguousSeal.sealTxid, "");
+  assert.equal(ambiguousSeal.status, "active");
+  for (const field of [
+    ...Object.keys(canonicalSealPosition),
+    "sealAt",
+    "sealDataBytes",
+    "sealFrozenNetworkValueSats",
+    "sealLiveNetworkValueSats",
+    "sealMinerFeeCanonical",
+    "sealMinerFeeSats",
+    "sealMinerFeeSource",
+    "sealTransactionBlockHeight",
+  ]) {
+    assert.equal(
+      Object.hasOwn(ambiguousSeal, field),
+      false,
+      `${field} leaked from duplicate canonical seal evidence`,
+    );
+  }
+});
+
+check("canonical seal SQL remains general while WORK keeps auth equality", () => {
+  const historySql = isolatedFunction(
+    READER_PATH,
+    "tokenHistoryCanonicalMarketEventsSql",
+    {
+      WORK_MARKET_V2_AUTH_VERSION: "pwt-sale-v3",
+      WORK_MARKET_V4_AUTH_VERSION: "pwt-sale-v4",
+    },
+  )("market-log", "TRUE");
+  const listingJoinSql = isolatedFunction(
+    READER_PATH,
+    "canonicalTokenListingSealEventJoinSql",
+    {
+      WORK_MARKET_V2_AUTH_VERSION: "pwt-sale-v3",
+      WORK_MARKET_V4_AUTH_VERSION: "pwt-sale-v4",
+    },
+  )("cl");
+  for (const sql of [historySql, listingJoinSql]) {
+    assert.match(
+      sql,
+      /canonical_seal_event_row\.protocol = 'pwt1'/iu,
+      "canonical seal evidence must be bound to the credit protocol",
+    );
+    assert.match(
+      sql,
+      /canonical_seal_event_row\.kind = 'token-listing-sealed'/iu,
+    );
+    assert.match(
+      sql,
+      new RegExp(`<> '${WORK_TOKEN_ID}'`, "u"),
+      "non-WORK token seals must remain eligible",
+    );
+    assert.match(
+      sql,
+      /canonical_seal_event_row\.payload[\s\S]*saleAuthorization[\s\S]*version[\s\S]*=[\s\S]*saleAuthorization[\s\S]*version/iu,
+      "governed WORK seals must retain exact authorization-version equality",
+    );
+    assert.doesNotMatch(
+      sql,
+      new RegExp(`\\)\\) = '${WORK_TOKEN_ID}'`, "u"),
+      "the canonical seal itself must not be hard-coded to WORK",
+    );
+  }
+  assert.match(
+    historySql,
+    /\(false\)[\s\S]*OR e\.protocol = 'pwt1'/iu,
+    "ordinary token-market history must reject kind-shaped rows from another protocol",
+  );
+});
+
+check("all relational token-action selectors bind kind to pwt1", () => {
+  const tokenMintEventQueryParts = isolatedFunction(
+    READER_PATH,
+    "tokenMintEventQueryParts",
+    {
+      normalizedTxid: () => "",
+      tokenHistoryFilterNeedles: () => [],
+      tokenMintQueryScopeCondition: () => "true",
+      tokenScopeKey: (value) => String(value ?? "").trim().toLowerCase(),
+    },
+  );
+  const { candidateCte } = tokenMintEventQueryParts(
+    "livenet",
+    "all",
+    new URLSearchParams(),
+    { query: "" },
+  );
+  assert.match(
+    candidateCte,
+    /e\.protocol = 'pwt1'[\s\S]*e\.kind = 'token-mint'/iu,
+    "a wrong-protocol token-mint row must not enter mint history",
+  );
+
+  for (const [functionName, required] of [
+    [
+      "currentTokenTransferHistoryPage",
+      /e\.protocol = 'pwt1'[\s\S]*e\.kind = 'token-transfer'/iu,
+    ],
+    [
+      "proofIndexTokenTransferEventsFromTables",
+      /e\.protocol = 'pwt1'[\s\S]*e\.kind = 'token-transfer'/iu,
+    ],
+    [
+      "proofIndexTokenMarketEventsFromTables",
+      /e\.protocol = 'pwt1'[\s\S]*e\.kind = ANY\([\s\S]*token-sale/iu,
+    ],
+    [
+      "proofIndexTokenMarketSummaryOverlayPayload",
+      /e\.protocol = 'pwt1'[\s\S]*e\.kind = ANY/iu,
+    ],
+    [
+      "proofIndexWalletTokenOverlayPayload",
+      /e\.protocol = 'pwt1'[\s\S]*e\.kind IN \([\s\S]*token-transfer/iu,
+    ],
+  ]) {
+    assert.match(
+      topLevelFunctionSource(READER_PATH, functionName),
+      required,
+      `${functionName} can admit a wrong-protocol token action`,
+    );
+  }
+
+  for (const functionName of [
+    "proofIndexLogHistoryPayload",
+    "proofIndexCanonicalActivityPayload",
+    "proofIndexEventHistoryPayload",
+    "proofIndexConfirmedValueEventsAfterBlock",
+  ]) {
+    assert.match(
+      topLevelFunctionSource(READER_PATH, functionName),
+      /kind NOT LIKE 'token-%'[\s\S]*protocol = 'pwt1'/iu,
+      `${functionName} must bind generic token-* activity to pwt1`,
+    );
+  }
+});
+
+check("snapshot token activity fails closed without its canonical tuple", () => {
+  const normalizedLowerText = (value) =>
+    String(value ?? "").trim().toLowerCase();
+  const snapshotTokenActivityCanonicalExemption = isolatedFunction(
+    READER_PATH,
+    "snapshotTokenActivityCanonicalExemption",
+    { normalizedLowerText },
+  );
+  const snapshotTokenActivityPositionCanProject = isolatedFunction(
+    READER_PATH,
+    "snapshotTokenActivityPositionCanProject",
+    {
+      normalizedLowerText,
+      snapshotTokenActivityCanonicalExemption,
+    },
+  );
+  const snapshotTokenActivityItemCanProject = isolatedFunction(
+    READER_PATH,
+    "snapshotTokenActivityItemCanProject",
+    {
+      SNAPSHOT_TOKEN_ACTIVITY_KINDS: new Set([
+        "token-create",
+        "token-event-invalid",
+        "token-listing",
+        "token-listings",
+        "token-listing-closed",
+        "token-listing-sealed",
+        "token-mint",
+        "token-sale",
+        "token-transfer",
+      ]),
+      normalizedLowerText,
+      snapshotTokenActivityPositionCanProject,
+    },
+  );
+  const snapshotTokenHistoryItemCanProject = isolatedFunction(
+    READER_PATH,
+    "snapshotTokenHistoryItemCanProject",
+    {
+      normalizedLowerText,
+      snapshotTokenActivityItemCanProject,
+      snapshotTokenActivityPositionCanProject,
+    },
+  );
+  const canonical = {
+    blockHash: "a".repeat(64),
+    blockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT,
+    blockIndex: 4,
+    confirmed: true,
+    kind: "token-mint",
+    protocolVout: 2,
+    recordOrdinal: 0,
+    txid: "b".repeat(64),
+  };
+  assert.equal(snapshotTokenActivityItemCanProject(canonical), true);
+  for (const field of [
+    "blockHash",
+    "blockHeight",
+    "blockIndex",
+    "protocolVout",
+    "recordOrdinal",
+  ]) {
+    assert.equal(
+      snapshotTokenActivityItemCanProject({
+        ...canonical,
+        [field]: undefined,
+      }),
+      false,
+      `confirmed post-V5 snapshot activity accepted without ${field}`,
+    );
+  }
+  assert.equal(
+    snapshotTokenActivityItemCanProject({
+      ...canonical,
+      blockHeight: undefined,
+    }),
+    false,
+    "confirmed unknown-height snapshot activity must fail closed",
+  );
+  assert.equal(
+    snapshotTokenActivityItemCanProject({
+      ...canonical,
+      blockHash: undefined,
+      blockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT - 1,
+      blockIndex: undefined,
+      protocolVout: undefined,
+      recordOrdinal: undefined,
+    }),
+    true,
+    "a positively known pre-V5 snapshot event remains replayable",
+  );
+  for (const exemption of [
+    { canonicalSynthetic: true },
+    { relic: true },
+  ]) {
+    assert.equal(
+      snapshotTokenActivityItemCanProject({
+        ...canonical,
+        ...exemption,
+        blockHash: undefined,
+        blockHeight: undefined,
+        blockIndex: undefined,
+        protocolVout: undefined,
+        recordOrdinal: undefined,
+      }),
+      true,
+    );
+  }
+
+  const sealedListing = {
+    ...canonical,
+    kind: undefined,
+    listingId: "c".repeat(64),
+    sealBlockHash: "d".repeat(64),
+    sealBlockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT + 1,
+    sealBlockIndex: 5,
+    sealConfirmed: true,
+    sealProtocolVout: 3,
+    sealRecordOrdinal: 1,
+    sealTransactionBlockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT + 1,
+    sealTxid: "e".repeat(64),
+  };
+  assert.equal(
+    snapshotTokenHistoryItemCanProject(sealedListing, "listings"),
+    true,
+  );
+  assert.equal(
+    snapshotTokenHistoryItemCanProject(
+      { ...sealedListing, sealRecordOrdinal: undefined },
+      "listings",
+    ),
+    false,
+    "a listing snapshot must not publish an incomplete confirmed seal",
+  );
+  assert.equal(
+    snapshotTokenHistoryItemCanProject(
+      {
+        ...sealedListing,
+        sealBlockHash: undefined,
+        sealBlockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT - 1,
+        sealBlockIndex: undefined,
+        sealProtocolVout: undefined,
+        sealRecordOrdinal: undefined,
+        sealTransactionBlockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT - 1,
+      },
+      "listings",
+    ),
+    true,
+    "a positively known pre-V5 seal remains replayable",
+  );
+
+  const closedListing = {
+    ...canonical,
+    closedBlockHash: "f".repeat(64),
+    closedBlockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT + 2,
+    closedBlockIndex: 6,
+    closedConfirmed: true,
+    closedProtocolVout: 4,
+    closedRecordOrdinal: 2,
+    closeTransactionBlockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT + 2,
+    kind: undefined,
+  };
+  assert.equal(
+    snapshotTokenHistoryItemCanProject(closedListing, "closedListings"),
+    true,
+  );
+  assert.equal(
+    snapshotTokenHistoryItemCanProject(
+      { ...closedListing, closedBlockHash: "" },
+      "closedListings",
+    ),
+    false,
+    "a closed-listing snapshot must carry the close event's full tuple",
+  );
+
+  const logHistoryPageFromSnapshot = isolatedFunction(
+    READER_PATH,
+    "logHistoryPageFromSnapshot",
+    {
+      compareHistoryItems: () => 0,
+      dateIso: (value) =>
+        value ? new Date(value).toISOString() : undefined,
+      historyCursor: (_snapshotId, offset) => String(offset),
+      historyItemsMatchingQuery: (items) => items,
+      indexedThroughBlockFromItems: () => undefined,
+      normalizeEventPayload: (item) => item,
+      normalizeHistoryEventItem: (item) => item,
+      rowNumber: (value, key) => Number(value?.[key] ?? 0),
+      snapshotActivityPayload: (snapshot) => snapshot.payload,
+      snapshotTokenActivityItemCanProject,
+    },
+  );
+  const logPage = logHistoryPageFromSnapshot(
+    {
+      generated_at: "2026-07-28T00:00:00.000Z",
+      indexed_through_block: WORK_AMO_V5_ACTIVATION_HEIGHT,
+      payload: {
+        activity: [
+          canonical,
+          { ...canonical, blockHash: "", txid: "1".repeat(64) },
+          {
+            ...canonical,
+            blockHash: "",
+            blockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT - 1,
+            blockIndex: undefined,
+            protocolVout: undefined,
+            recordOrdinal: undefined,
+            txid: "2".repeat(64),
+          },
+        ],
+      },
+      snapshot_id: "snapshot-log-guard",
+    },
+    "livenet",
+    "",
+    { limit: 100, offset: 0, query: "" },
+  );
+  const logTxids = logPage.items.map((item) => item.txid);
+  assert.equal(
+    logTxids.length,
+    2,
+    "Log snapshot reads leaked malformed post-V5 token activity",
+  );
+  assert.equal(logTxids[0], canonical.txid);
+  assert.equal(logTxids[1], "2".repeat(64));
+
+  const tokenHistoryPageFromSnapshot = isolatedFunction(
+    READER_PATH,
+    "tokenHistoryPageFromSnapshot",
+    {
+      dateIso: (value) =>
+        value ? new Date(value).toISOString() : undefined,
+      embeddedHistoryIndexedThroughBlock: () =>
+        WORK_AMO_V5_ACTIVATION_HEIGHT,
+      historyCursor: (_snapshotId, offset) => String(offset),
+      historyItemsMatchingNeedles: (items) => items,
+      indexedThroughBlockFromItems: () => undefined,
+      normalizeTokenHistoryItemsForKind: (items) => items,
+      proofIndexTokenHistoryMaxAgeMs: () => 1_000,
+      snapshotTokenHistoryItemCanProject,
+      tokenHistoryFilterNeedles: () => [],
+      tokenHistoryItemsFromSnapshot: (payloads) => ({
+        payload: payloads.all.mints,
+        sourceItems: payloads.all.mints.items,
+      }),
+      tokenHistoryPayloadsFromSnapshot: (snapshot) =>
+        snapshot.payload.tokenHistoryPayloads,
+      tokenHistorySnapshotAgeMs: () => 0,
+      tokenScopeKey: () => "all",
+    },
+  );
+  const mintPage = tokenHistoryPageFromSnapshot(
+    {
+      generated_at: "2026-07-28T00:00:00.000Z",
+      payload: {
+        tokenHistoryPayloads: {
+          all: {
+            mints: {
+              items: [
+                canonical,
+                { ...canonical, blockIndex: undefined, txid: "3".repeat(64) },
+                {
+                  ...canonical,
+                  blockHash: undefined,
+                  blockHeight: undefined,
+                  blockIndex: undefined,
+                  canonicalSynthetic: true,
+                  protocolVout: undefined,
+                  recordOrdinal: undefined,
+                  txid: "4".repeat(64),
+                },
+              ],
+            },
+          },
+        },
+      },
+      snapshot_id: "snapshot-token-guard",
+    },
+    "livenet",
+    "all",
+    "mints",
+    new URLSearchParams(),
+    { limit: 100, offset: 0, query: "" },
+  );
+  const mintTxids = mintPage.items.map((item) => item.txid);
+  assert.equal(
+    mintTxids.length,
+    2,
+    "token-history snapshot reads leaked malformed post-V5 mint activity",
+  );
+  assert.equal(mintTxids[0], canonical.txid);
+  assert.equal(mintTxids[1], "4".repeat(64));
+
+  assert.match(
+    topLevelFunctionSource(READER_PATH, "logHistoryPageFromSnapshot"),
+    /filter\(snapshotTokenActivityItemCanProject\)/u,
+  );
+  assert.match(
+    topLevelFunctionSource(READER_PATH, "tokenHistoryPageFromSnapshot"),
+    /snapshotTokenHistoryItemCanProject\(item, safeKind\)/u,
+  );
+});
+
+check("synthetic sold listings map and require the sale's own close tuple", () => {
+  const tokenClosedListingFromSalePayload = isolatedFunction(
+    READER_PATH,
+    "tokenClosedListingFromSalePayload",
+  );
+  const sale = {
+    blockHash: "e".repeat(64),
+    blockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT,
+    blockIndex: 14,
+    buyerAddress: "buyer",
+    confirmed: true,
+    createdAt: "2026-07-28T00:03:00.000Z",
+    listingId: "f".repeat(64),
+    protocolVout: 5,
+    recordOrdinal: 3,
+    tokenId: "1".repeat(64),
+    txid: "2".repeat(64),
+  };
+  const closed = tokenClosedListingFromSalePayload(sale);
+  assert.deepEqual(
+    {
+      blockHash: closed.closedBlockHash,
+      blockHeight: closed.closedBlockHeight,
+      blockIndex: closed.closedBlockIndex,
+      protocolVout: closed.closedProtocolVout,
+      recordOrdinal: closed.closedRecordOrdinal,
+    },
+    {
+      blockHash: sale.blockHash,
+      blockHeight: sale.blockHeight,
+      blockIndex: sale.blockIndex,
+      protocolVout: sale.protocolVout,
+      recordOrdinal: sale.recordOrdinal,
+    },
+  );
+  for (const incomplete of [
+    { ...sale, blockHash: "" },
+    { ...sale, blockIndex: undefined },
+    { ...sale, protocolVout: undefined },
+    { ...sale, recordOrdinal: undefined },
+  ]) {
+    assert.equal(
+      tokenClosedListingFromSalePayload(incomplete),
+      null,
+      "an incomplete confirmed post-V5 sale must not synthesize a sold close",
+    );
+  }
+  assert.notEqual(
+    tokenClosedListingFromSalePayload({
+      ...sale,
+      blockHash: "",
+      blockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT - 1,
+      blockIndex: undefined,
+      protocolVout: undefined,
+      recordOrdinal: undefined,
+    }),
+    null,
+    "qualified pre-V5 history keeps its legacy compatibility",
+  );
+});
+
+check("exact active listing reads preserve WORK atomic amount metadata", () => {
+  const exactSource = topLevelFunctionSource(
+    READER_PATH,
+    "exactActiveTokenListingHistoryPage",
+  );
+  assert.match(exactSource, /cd\.metadata AS token_metadata/iu);
+  assert.match(
+    exactSource,
+    /tokenListingFromCreditListingRow\(row, network\)/iu,
+  );
+
+  const tokenListingFromCreditListingRow = isolatedFunction(
+    READER_PATH,
+    "tokenListingFromCreditListingRow",
+    {
+      dateIso: (value) =>
+        value ? new Date(value).toISOString() : undefined,
+      normalizeTokenHistoryListingItem: (item) => item,
+      objectRecord: (value) =>
+        value && typeof value === "object" && !Array.isArray(value)
+          ? value
+          : {},
+      rowNumber: (value, key) => Number(value?.[key] ?? 0),
+      tokenListingEffectiveCloseTxid: () => "",
+      tokenListingEffectiveSaleTicketTxid: (
+        _row,
+        _payload,
+        _authorization,
+        fallback,
+      ) => fallback,
+      tokenListingSealConfirmedFromTransaction: () => false,
+      validTxid: (value) => /^[0-9a-f]{64}$/u.test(String(value ?? "")),
+    },
+  );
+  const listing = tokenListingFromCreditListingRow(
+    {
+      amount: "123456789",
+      listing_id: "3".repeat(64),
+      payload: {
+        listingId: "3".repeat(64),
+        saleAuthorization: { tokenId: WORK_TOKEN_ID },
+      },
+      status: "active",
+      token_id: WORK_TOKEN_ID,
+      token_metadata: {
+        amountStorageModel: WORK_ATOMIC_PROJECTION_MODEL,
+        decimals: WORK_DECIMALS,
+        unitScale: WORK_UNIT_SCALE_TEXT,
+      },
+    },
+    "livenet",
+  );
+  assert.equal(listing.amount, "1.23456789");
+  assert.equal(listing.amountAtoms, "123456789");
+});
+
+check("post-V5 listing rows require one exact canonical listing tuple", () => {
+  const tokenListingFromCreditListingRow = isolatedFunction(
+    READER_PATH,
+    "tokenListingFromCreditListingRow",
+    {
+      dateIso: (value) =>
+        value ? new Date(value).toISOString() : undefined,
+      normalizeTokenHistoryListingItem: (item) => item,
+      objectRecord: (value) =>
+        value && typeof value === "object" && !Array.isArray(value)
+          ? value
+          : {},
+      rowNumber: (value, key) => Number(value?.[key] ?? 0),
+      tokenListingEffectiveCloseTxid: () => "",
+      tokenListingEffectiveSaleTicketTxid: (
+        _row,
+        _payload,
+        _authorization,
+        fallback,
+      ) => fallback,
+      tokenListingSealConfirmedFromTransaction: () => false,
+      validTxid: (value) => /^[0-9a-f]{64}$/u.test(String(value ?? "")),
+    },
+  );
+  const blockHash = "a".repeat(64);
+  const listingId = "b".repeat(64);
+  const baseRow = {
+    amount: 10,
+    listing_block_hash: blockHash,
+    listing_block_height: WORK_AMO_V5_ACTIVATION_HEIGHT,
+    listing_event_block_hash: blockHash,
+    listing_event_block_height: WORK_AMO_V5_ACTIVATION_HEIGHT,
+    listing_event_block_index: 4,
+    listing_event_match_count: 1,
+    listing_event_protocol_vout: 2,
+    listing_event_record_ordinal: 0,
+    listing_event_status: "confirmed",
+    listing_id: listingId,
+    listing_transaction_block_index: 4,
+    listing_tx_status: "confirmed",
+    payload: {
+      blockHash: "c".repeat(64),
+      blockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT,
+      blockIndex: 99,
+      listingId,
+      protocolVout: 98,
+      recordOrdinal: 97,
+      saleAuthorization: { tokenId: "d".repeat(64) },
+    },
+    status: "active",
+    token_id: "d".repeat(64),
+  };
+  const listing = tokenListingFromCreditListingRow(baseRow, "livenet");
+  assert.deepEqual(
+    {
+      blockHash: listing.blockHash,
+      blockHeight: listing.blockHeight,
+      blockIndex: listing.blockIndex,
+      protocolVout: listing.protocolVout,
+      recordOrdinal: listing.recordOrdinal,
+    },
+    {
+      blockHash,
+      blockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT,
+      blockIndex: 4,
+      protocolVout: 2,
+      recordOrdinal: 0,
+    },
+  );
+  for (const incompleteOrAmbiguousRow of [
+    { ...baseRow, listing_event_match_count: 2 },
+    { ...baseRow, listing_event_protocol_vout: null },
+    { ...baseRow, listing_block_hash: "e".repeat(64) },
+    { ...baseRow, listing_transaction_block_index: 5 },
+  ]) {
+    assert.equal(
+      tokenListingFromCreditListingRow(
+        incompleteOrAmbiguousRow,
+        "livenet",
+      ),
+      null,
+      "an incomplete, ambiguous, or mismatched V5 listing is suppressed",
+    );
+  }
+  const selectedNullStatus = tokenListingFromCreditListingRow(
+    {
+      listing_id: listingId,
+      listing_tx_status: null,
+      payload: { listingId },
+      status: "active",
+      token_id: "d".repeat(64),
+    },
+    "livenet",
+  );
+  assert.equal(
+    selectedNullStatus.confirmed,
+    false,
+    "an explicitly selected null transaction status is not confirmed",
+  );
+  const absentLegacyStatus = tokenListingFromCreditListingRow(
+    {
+      listing_id: listingId,
+      payload: { listingId },
+      status: "active",
+      token_id: "d".repeat(64),
+    },
+    "livenet",
+  );
+  assert.equal(
+    absentLegacyStatus.confirmed,
+    true,
+    "a legacy fixture with no selected status keeps historical fallback",
+  );
+
+  const listingJoinSql = isolatedFunction(
+    READER_PATH,
+    "canonicalTokenListingEventJoinSql",
+  )("cl");
+  assert.match(
+    listingJoinSql,
+    /COUNT\(\*\) OVER \(\) AS listing_event_match_count/iu,
+  );
+  assert.match(
+    listingJoinSql,
+    /canonical_listing_event_row\.protocol = 'pwt1'/iu,
+  );
+  const governedProjectionSource = topLevelFunctionSource(
+    READER_PATH,
+    "canonicalWorkMarketV3ListingProjectionSql",
+  );
+  assert.match(
+    governedProjectionSource,
+    /canonical_listing_event\.protocol = 'pwt1'/iu,
+  );
+  assert.doesNotMatch(
+    governedProjectionSource,
+    /canonical_close_event|\$\{alias\}\.status|\$\{alias\}\.close_txid/iu,
+    "governed listing admission is independent of mutable close metadata",
+  );
+  const lifecycleSource = topLevelFunctionSource(
+    READER_PATH,
+    "proofIndexCreditListingsPayload",
+  );
+  assert.match(
+    lifecycleSource,
+    /AND e\.protocol = 'pwt1'/iu,
+    "batched lifecycle close evidence must be credit-protocol bound",
+  );
+  const tableListingSource = topLevelFunctionSource(
+    READER_PATH,
+    "proofIndexTokenListingsFromTables",
+  );
+  assert.match(
+    tableListingSource,
+    /close_event_row\.protocol = 'pwt1'/iu,
+    "table lifecycle close evidence must be credit-protocol bound",
+  );
+  for (const functionName of [
+    "exactActiveTokenListingHistoryPage",
+    "proofIndexTokenListingsFromTables",
+    "proofIndexWalletTokenOverlayPayload",
+  ]) {
+    const querySource = topLevelFunctionSource(READER_PATH, functionName);
+    assert.match(
+      querySource,
+      /listing_tx\.block_index AS listing_transaction_block_index/iu,
+    );
+    assert.match(
+      querySource,
+      /canonical_listing_event\.listing_event_match_count/iu,
+    );
+  }
+});
+
+check("terminal listing rows require exact close identity before sale activity", async () => {
+  const normalizedLowerText = (value) =>
+    String(value ?? "").trim().toLowerCase();
+  const validTxid = (value) =>
+    /^[0-9a-f]{64}$/u.test(normalizedLowerText(value));
+  const dateIso = (value) =>
+    value ? new Date(value).toISOString() : undefined;
+  const tokenListingFromCreditListingRow = isolatedFunction(
+    READER_PATH,
+    "tokenListingFromCreditListingRow",
+    {
+      dateIso,
+      normalizeTokenHistoryListingItem: (item) => item,
+      normalizedLowerText,
+      objectRecord: (value) =>
+        value && typeof value === "object" && !Array.isArray(value)
+          ? value
+          : {},
+      rowNumber: (value, key) => Number(value?.[key] ?? 0),
+      tokenListingEffectiveCloseTxid: (row, payload) =>
+        normalizedLowerText(row?.close_txid ?? payload?.closeTxid),
+      tokenListingEffectiveSaleTicketTxid: (
+        _row,
+        _payload,
+        _authorization,
+        fallback,
+      ) => fallback,
+      tokenListingSealConfirmedFromTransaction: () => false,
+      validTxid,
+    },
+  );
+  const canonicalWorkMarketV3ListingProjectionSql = isolatedFunction(
+    READER_PATH,
+    "canonicalWorkMarketV3ListingProjectionSql",
+    {
+      WORK_AMO_V5_AUTH_VERSION,
+      WORK_MARKET_V2_AUTH_VERSION: "pwt-sale-v3",
+      WORK_MARKET_V4_AUTH_VERSION: "pwt-sale-v4",
+      WORK_TOKEN_ID,
+      canonicalCreditListingAlias: (value) => String(value),
+    },
+  );
+  const canonicalTokenSaleEvidenceForListing = isolatedFunction(
+    READER_PATH,
+    "canonicalTokenSaleEvidenceForListing",
+  );
+  let lifecycleRow;
+  let tableSql = "";
+  const proofIndexTokenListingsFromTables = isolatedFunction(
+    READER_PATH,
+    "proofIndexTokenListingsFromTables",
+    {
+      activeTokenListingHistoryItem: () => true,
+      activeOrSealingListingStatus: (status) =>
+        ["active", "pending", "sealing"].includes(
+          String(status ?? "").trim().toLowerCase(),
+        ),
+      canonicalTokenListingEventJoinSql: () => "",
+      canonicalTokenListingSealEventJoinSql: () => "",
+      canonicalTokenSaleEvidenceForListing,
+      canonicalWorkMarketV3ListingProjectionSql,
+      dateIso,
+      normalizedLowerText,
+      objectRecord: (value) =>
+        value && typeof value === "object" && !Array.isArray(value)
+          ? value
+          : {},
+      TOKEN_STATE_EVENT_READ_LIMIT: 10,
+      tokenListingFromCreditListingRow,
+      tokenListingTransactionCanProjectActive: () => true,
+      tokenStateScopeSql: () => "",
+      validTxid,
+    },
+  );
+  const pool = {
+    async query(sql) {
+      tableSql = String(sql);
+      return { rows: [lifecycleRow] };
+    },
+  };
+  const listingId = "1".repeat(64);
+  const storedCloseTxid = "2".repeat(64);
+  const canonicalCloseTxid = "3".repeat(64);
+  const closeBlockHash = "4".repeat(64);
+  const listingBlockHash = "5".repeat(64);
+  const tokenId = WORK_TOKEN_ID;
+  const postV5CloseHeight = WORK_AMO_V5_ACTIVATION_HEIGHT + 1;
+  const completeCanonicalSaleRow = {
+    amount: 10,
+    buyer_address: "buyer-a",
+    canonical_spend_block_hash: closeBlockHash,
+    canonical_spend_block_height: postV5CloseHeight,
+    canonical_spend_block_index: 7,
+    canonical_spend_block_time: "2026-07-28T00:00:00.000Z",
+    canonical_spend_txid: canonicalCloseTxid,
+    canonical_spend_vin: 0,
+    close_event_block_hash: closeBlockHash,
+    close_event_block_height: postV5CloseHeight,
+    close_event_block_index: 7,
+    close_event_closed_match_count: 1,
+    close_event_kind: "token-sale",
+    close_event_payload: {
+      amount: 10,
+      amountAtoms: "10",
+      buyerAddress: "buyer-b",
+      listingId,
+      priceSats: 2_000,
+      registryAddress: "registry",
+      sellerAddress: "seller",
+      ticker: "WORK",
+      tokenId,
+    },
+    close_event_match_count: 2,
+    close_event_position_matches: true,
+    close_event_protocol_vout: 3,
+    close_event_record_ordinal: 0,
+    close_event_sale_match_count: 1,
+    close_event_txid: canonicalCloseTxid,
+    close_event_close_block_hash: closeBlockHash,
+    close_event_close_block_height: postV5CloseHeight,
+    close_event_close_block_index: 7,
+    close_event_close_protocol_vout: 1,
+    close_event_close_record_ordinal: 0,
+    close_event_close_event_time: "2026-07-28T00:00:00.000Z",
+    close_event_sale_block_hash: closeBlockHash,
+    close_event_sale_block_height: postV5CloseHeight,
+    close_event_sale_block_index: 7,
+    close_event_sale_protocol_vout: 2,
+    close_event_sale_record_ordinal: 0,
+    close_event_sale_event_time: "2026-07-28T00:00:00.000Z",
+    close_transaction_block_height: postV5CloseHeight,
+    close_transaction_status: "confirmed",
+    close_txid: storedCloseTxid,
+    listing_block_hash: listingBlockHash,
+    listing_block_height: WORK_AMO_V5_ACTIVATION_HEIGHT - 10,
+    listing_block_time: "2026-07-27T00:00:00.000Z",
+    listing_id: listingId,
+    listing_tx_status: "confirmed",
+    payload: {
+      buyerAddress: "stale-buyer",
+      closedAt: "2026-07-27T23:58:00.000Z",
+      closedDataBytes: 432,
+      closedFrozenNetworkValueSats: 765,
+      closedLiveNetworkValueSats: 1_098,
+      closedMinerFeeCanonical: true,
+      closedMinerFeeSats: 222,
+      closedMinerFeeSource: "close-a",
+      closedProtocolVout: 9,
+      closedRecordOrdinal: 1,
+      closedVin: 7,
+      closeTxid: storedCloseTxid,
+      closeTransactionBlockHeight: postV5CloseHeight - 1,
+      listingId,
+      saleAt: "2026-07-27T23:59:00.000Z",
+      saleBlockHash: "6".repeat(64),
+      saleBlockHeight: postV5CloseHeight - 1,
+      saleBlockIndex: 6,
+      saleProtocolVout: 9,
+      saleRecordOrdinal: 1,
+      saleTransactionBlockHeight: postV5CloseHeight - 1,
+      saleTxid: storedCloseTxid,
+      registryAddress: "registry",
+      saleAuthorization: {
+        buyerAddress: "buyer-b",
+        registryAddress: "registry",
+        ticker: "WORK",
+        tokenId,
+        version: WORK_AMO_V5_AUTH_VERSION,
+      },
+      ticker: "WORK",
+    },
+    price_sats: 2_000,
+    registry_address: "registry",
+    seller_address: "seller",
+    status: "sold",
+    ticker: "WORK",
+    token_id: tokenId,
+    token_metadata: {
+      amountStorageModel: WORK_ATOMIC_PROJECTION_MODEL,
+      decimals: WORK_DECIMALS,
+      unitScale: WORK_UNIT_SCALE_TEXT,
+    },
+    updated_at: "2026-07-28T00:00:00.000Z",
+  };
+
+  lifecycleRow = completeCanonicalSaleRow;
+  const exactSaleState = await proofIndexTokenListingsFromTables(
+    pool,
+    "livenet",
+    tokenId,
+  );
+  assert.equal(exactSaleState.closedListings.length, 1);
+  assert.equal(
+    exactSaleState.closedListings[0].closedTxid,
+    canonicalCloseTxid,
+    "a canonical spend identity must replace a stale stored close identity",
+  );
+  assert.equal(exactSaleState.sales.length, 1);
+  assert.equal(exactSaleState.sales[0].txid, canonicalCloseTxid);
+  assert.equal(
+    exactSaleState.closedListings[0].saleTxid,
+    canonicalCloseTxid,
+    "a matching canonical sale pair B must overwrite stale payload sale A",
+  );
+  assert.equal(
+    exactSaleState.closedListings[0].buyerAddress,
+    "buyer-b",
+    "canonical sale B must source its buyer from B's pwt1 payload, never stale row A",
+  );
+  assert.equal(exactSaleState.sales[0].buyerAddress, "buyer-b");
+  assert.equal(exactSaleState.closedListings[0].closedDataBytes, undefined);
+  assert.equal(
+    exactSaleState.closedListings[0].closedMinerFeeCanonical,
+    false,
+  );
+  assert.equal(
+    exactSaleState.closedListings[0].closedMinerFeeSats,
+    undefined,
+  );
+  assert.equal(
+    exactSaleState.closedListings[0].closedMinerFeeSource,
+    undefined,
+  );
+  assert.equal(exactSaleState.closedListings[0].closedProtocolVout, 1);
+  assert.equal(exactSaleState.closedListings[0].saleProtocolVout, 2);
+  assert.equal(exactSaleState.sales[0].closedProtocolVout, 1);
+  assert.equal(exactSaleState.sales[0].protocolVout, 2);
+  assert.equal(
+    exactSaleState.sales[0].saleTransactionBlockHeight,
+    postV5CloseHeight,
+  );
+  lifecycleRow = {
+    ...completeCanonicalSaleRow,
+    close_event_payload: {
+      ...completeCanonicalSaleRow.close_event_payload,
+      ticker: "OTHER",
+    },
+  };
+  const mismatchedSaleTerms =
+    await proofIndexTokenListingsFromTables(
+      pool,
+      "livenet",
+      tokenId,
+    );
+  assert.equal(mismatchedSaleTerms.closedListings.length, 1);
+  assert.equal(mismatchedSaleTerms.closedListings[0].status, "closed");
+  assert.equal(mismatchedSaleTerms.closedListings[0].saleTxid, undefined);
+  assert.equal(mismatchedSaleTerms.closedListings[0].buyerAddress, "");
+  assert.equal(mismatchedSaleTerms.sales.length, 0);
+  assert.match(
+    tableSql,
+    /FROM proof_indexer\.tx_inputs spend_input[\s\S]*spend_tx\.status = 'confirmed'[\s\S]*spend_block\.canonical = true[\s\S]*spend_input\.prev_txid = lower\(\s*COALESCE\(\s*NULLIF\(cl\.sale_ticket_txid, ''\), cl\.listing_id\s*\)\s*\)[\s\S]*spend_input\.prev_vout = cl\.sale_ticket_vout/u,
+    "governed WORK table-state SQL must admit exact canonical spender B without requiring a lifecycle record",
+  );
+  assert.doesNotMatch(
+    tableSql,
+    /canonical_spend_close_event/u,
+  );
+  assert.match(
+    tableSql,
+    /close_event\.payload AS close_event_payload/u,
+    "table state must carry canonical sale B's payload for buyer identity",
+  );
+
+  lifecycleRow = {
+    ...completeCanonicalSaleRow,
+    canonical_spend_block_hash: undefined,
+    canonical_spend_block_height: undefined,
+    canonical_spend_block_index: undefined,
+    canonical_spend_block_time: undefined,
+    canonical_spend_txid: undefined,
+    canonical_spend_vin: undefined,
+    close_event_block_hash: undefined,
+    close_event_block_height: undefined,
+    close_event_block_index: undefined,
+    close_event_close_block_hash: undefined,
+    close_event_close_block_height: undefined,
+    close_event_close_block_index: undefined,
+    close_event_close_event_time: undefined,
+    close_event_close_protocol_vout: undefined,
+    close_event_close_record_ordinal: undefined,
+    close_event_closed_match_count: undefined,
+    close_event_kind: undefined,
+    close_event_match_count: undefined,
+    close_event_position_matches: undefined,
+    close_event_protocol_vout: undefined,
+    close_event_record_ordinal: undefined,
+    close_event_sale_block_hash: undefined,
+    close_event_sale_block_height: undefined,
+    close_event_sale_block_index: undefined,
+    close_event_sale_event_time: undefined,
+    close_event_sale_match_count: undefined,
+    close_event_sale_protocol_vout: undefined,
+    close_event_sale_record_ordinal: undefined,
+    close_event_txid: undefined,
+    close_transaction_block_height: undefined,
+    close_transaction_status: undefined,
+    close_txid: storedCloseTxid,
+    status: "sold",
+  };
+  const staleCloseState = await proofIndexTokenListingsFromTables(
+    pool,
+    "livenet",
+    tokenId,
+  );
+  assert.equal(
+    staleCloseState.listings.length,
+    1,
+    "a stale terminal row with no canonical ticket spend remains active",
+  );
+  assert.equal(staleCloseState.closedListings.length, 0);
+  assert.equal(staleCloseState.sales.length, 0);
+  assert.equal(staleCloseState.listings[0].status, "active");
+  assert.equal(staleCloseState.listings[0].closeTxid, "");
+  assert.equal(staleCloseState.listings[0].closedConfirmed, false);
+
+  for (const staleTerminalStatus of ["sold", "delisted"]) {
+    lifecycleRow = {
+      ...completeCanonicalSaleRow,
+      buyer_address: "stale-buyer",
+      canonical_spend_block_hash: closeBlockHash,
+      canonical_spend_block_height: postV5CloseHeight,
+      canonical_spend_block_index: 7,
+      canonical_spend_block_time: "2026-07-28T00:00:00.000Z",
+      canonical_spend_vin: 0,
+      close_event_block_hash: undefined,
+      close_event_block_height: undefined,
+      close_event_block_index: undefined,
+      close_event_close_block_hash: undefined,
+      close_event_close_block_height: undefined,
+      close_event_close_block_index: undefined,
+      close_event_close_event_time: undefined,
+      close_event_close_protocol_vout: undefined,
+      close_event_close_record_ordinal: undefined,
+      close_event_closed_match_count: undefined,
+      close_event_kind: undefined,
+      close_event_match_count: undefined,
+      close_event_position_matches: undefined,
+      close_event_protocol_vout: undefined,
+      close_event_record_ordinal: undefined,
+      close_event_sale_block_hash: undefined,
+      close_event_sale_block_height: undefined,
+      close_event_sale_block_index: undefined,
+      close_event_sale_event_time: undefined,
+      close_event_sale_match_count: undefined,
+      close_event_sale_protocol_vout: undefined,
+      close_event_sale_record_ordinal: undefined,
+      close_event_txid: undefined,
+      payload: {
+        ...completeCanonicalSaleRow.payload,
+        buyerAddress: "stale-buyer",
+        closeTxid: storedCloseTxid,
+        saleAt: "2026-07-27T23:59:00.000Z",
+        saleBlockHash: "6".repeat(64),
+        saleBlockHeight: postV5CloseHeight - 1,
+        saleBlockIndex: 6,
+        saleProtocolVout: 9,
+        saleRecordOrdinal: 1,
+        saleTxid: storedCloseTxid,
+        status: staleTerminalStatus,
+      },
+      status: staleTerminalStatus,
+    };
+    const staleTerminalState =
+      await proofIndexTokenListingsFromTables(
+        pool,
+        "livenet",
+        tokenId,
+      );
+    assert.equal(staleTerminalState.listings.length, 0);
+    assert.equal(staleTerminalState.closedListings.length, 1);
+    assert.equal(staleTerminalState.sales.length, 0);
+    const [canonicalStateOnlyClose] =
+      staleTerminalState.closedListings;
+    assert.equal(canonicalStateOnlyClose.status, "closed");
+    assert.equal(canonicalStateOnlyClose.closeTxid, canonicalCloseTxid);
+    assert.equal(canonicalStateOnlyClose.closedTxid, canonicalCloseTxid);
+    assert.equal(
+      canonicalStateOnlyClose.closedByCanonicalOutpointSpend,
+      true,
+    );
+    assert.equal(canonicalStateOnlyClose.closedBlockHash, closeBlockHash);
+    assert.equal(
+      canonicalStateOnlyClose.closedBlockHeight,
+      postV5CloseHeight,
+    );
+    assert.equal(canonicalStateOnlyClose.closedBlockIndex, 7);
+    assert.equal(canonicalStateOnlyClose.closedVin, 0);
+    assert.equal(canonicalStateOnlyClose.buyerAddress, "");
+    assert.equal(canonicalStateOnlyClose.saleTxid, undefined);
+    assert.equal(canonicalStateOnlyClose.saleAt, undefined);
+    assert.equal(canonicalStateOnlyClose.saleBlockHash, undefined);
+    assert.equal(canonicalStateOnlyClose.saleProtocolVout, undefined);
+    assert.equal(canonicalStateOnlyClose.closedDataBytes, undefined);
+    assert.equal(
+      canonicalStateOnlyClose.closedFrozenNetworkValueSats,
+      undefined,
+    );
+    assert.equal(
+      canonicalStateOnlyClose.closedLiveNetworkValueSats,
+      undefined,
+    );
+    assert.equal(
+      canonicalStateOnlyClose.closedMinerFeeCanonical,
+      false,
+    );
+    assert.equal(canonicalStateOnlyClose.closedMinerFeeSats, undefined);
+    assert.equal(canonicalStateOnlyClose.closedMinerFeeSource, undefined);
+  }
+
+  for (const stateOnlyRow of [
+    {
+      ...completeCanonicalSaleRow,
+      close_event_match_count: 3,
+      close_event_sale_match_count: 2,
+    },
+    {
+      ...completeCanonicalSaleRow,
+      close_event_txid: storedCloseTxid,
+    },
+    {
+      ...completeCanonicalSaleRow,
+      close_event_kind: "token-listing-closed",
+      close_event_match_count: 1,
+      close_event_sale_match_count: 0,
+    },
+    {
+      ...completeCanonicalSaleRow,
+      close_event_closed_match_count: 0,
+      close_event_kind: "token-sale",
+      close_event_match_count: 1,
+      close_event_sale_match_count: 1,
+    },
+    {
+      ...completeCanonicalSaleRow,
+      close_event_closed_match_count: 2,
+      close_event_kind: "token-listing-closed",
+      close_event_match_count: 2,
+      close_event_sale_match_count: 0,
+    },
+    {
+      ...completeCanonicalSaleRow,
+      close_event_sale_protocol_vout:
+        completeCanonicalSaleRow.close_event_close_protocol_vout,
+      close_event_sale_record_ordinal:
+        completeCanonicalSaleRow.close_event_close_record_ordinal,
+    },
+    {
+      ...completeCanonicalSaleRow,
+      canonical_spend_txid: undefined,
+      close_event_block_hash: undefined,
+      close_event_block_height: undefined,
+      close_event_block_index: undefined,
+      close_event_kind: undefined,
+      close_event_closed_match_count: undefined,
+      close_event_match_count: undefined,
+      close_event_position_matches: undefined,
+      close_event_protocol_vout: undefined,
+      close_event_record_ordinal: undefined,
+      close_event_sale_match_count: undefined,
+      close_event_txid: undefined,
+      close_transaction_block_height: null,
+    },
+  ]) {
+    lifecycleRow = stateOnlyRow;
+    const state = await proofIndexTokenListingsFromTables(
+      pool,
+      "livenet",
+      tokenId,
+    );
+    if (!validTxid(stateOnlyRow.canonical_spend_txid)) {
+      assert.equal(
+        state.listings.length,
+        1,
+        "a generic close record without an exact ticket spend stays active",
+      );
+      assert.equal(state.listings[0].status, "active");
+      assert.equal(state.listings[0].closeTxid, "");
+      assert.equal(state.closedListings.length, 0);
+      assert.equal(state.sales.length, 0);
+      continue;
+    }
+    assert.equal(
+      state.closedListings.length,
+      1,
+      "ambiguous or unpositioned terminal rows remain closed state",
+    );
+    assert.equal(
+      state.sales.length,
+      0,
+      "ambiguous, mismatched, close-kind, or unknown-height rows are not sales",
+    );
+    if (validTxid(stateOnlyRow.canonical_spend_txid)) {
+      assert.equal(
+        state.closedListings[0].saleTxid,
+        undefined,
+        "ambiguous canonical spender B evidence must clear stale payload sale A",
+      );
+      assert.equal(state.closedListings[0].buyerAddress, "");
+    }
+  }
+
+  const preV5LegacySaleRow = {
+    ...completeCanonicalSaleRow,
+    canonical_spend_txid: undefined,
+    close_event_block_hash: undefined,
+    close_event_block_height: undefined,
+    close_event_block_index: undefined,
+    close_event_kind: undefined,
+    close_event_match_count: undefined,
+    close_event_protocol_vout: undefined,
+    close_event_record_ordinal: undefined,
+    close_event_txid: undefined,
+    close_transaction_block_height: WORK_AMO_V5_ACTIVATION_HEIGHT - 1,
+    payload: {
+      ...completeCanonicalSaleRow.payload,
+      saleBlockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT - 1,
+      saleTransactionBlockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT - 1,
+    },
+  };
+  for (const field of [
+    "close_event_close_block_hash",
+    "close_event_close_block_height",
+    "close_event_close_block_index",
+    "close_event_close_event_time",
+    "close_event_close_protocol_vout",
+    "close_event_close_record_ordinal",
+    "close_event_closed_match_count",
+    "close_event_position_matches",
+    "close_event_sale_block_hash",
+    "close_event_sale_block_height",
+    "close_event_sale_block_index",
+    "close_event_sale_event_time",
+    "close_event_sale_match_count",
+    "close_event_sale_protocol_vout",
+    "close_event_sale_record_ordinal",
+    "close_event_txid",
+  ]) {
+    delete preV5LegacySaleRow[field];
+  }
+  lifecycleRow = preV5LegacySaleRow;
+  const preV5SaleState = await proofIndexTokenListingsFromTables(
+    pool,
+    "livenet",
+    tokenId,
+  );
+  assert.equal(
+    preV5SaleState.listings.length,
+    1,
+    "even a legacy close row stays active until its ticket spend is canonical",
+  );
+  assert.equal(preV5SaleState.closedListings.length, 0);
+  assert.equal(preV5SaleState.sales.length, 0);
 });
 
 let failures = 0;

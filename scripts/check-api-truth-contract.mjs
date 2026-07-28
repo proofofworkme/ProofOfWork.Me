@@ -206,9 +206,13 @@ expect(
     !/item\.amount === 101_000/u.test(ledgerAudit),
 );
 expect(
-  "stable canonical reads use a canonical checkpoint while readiness remains exact-tip",
+  "stable canonical reads use a canonical checkpoint while exact-tip truth is independent of worker heartbeat health",
   /const available =/u.test(publicGate) &&
+    /const atTip =[\s\S]*available &&[\s\S]*indexedThroughBlock === tipHeight/u.test(
+      publicGate,
+    ) &&
     /const ready =/u.test(publicGate) &&
+    /atTip &&[\s\S]*workerFresh/u.test(publicGate) &&
     /indexedThroughBlock <= tipHeight/u.test(publicGate),
 );
 expect(
@@ -217,8 +221,9 @@ expect(
     .length >= 5,
 );
 expect(
-  "only fresh reads require exact-tip readiness at the public gate",
-  /if \(freshRead && gate\.ready !== true\)/u.test(requestGate) &&
+  "fresh reads require canonical exact-tip truth without treating a stale worker heartbeat as chain lag",
+  /if \(freshRead && gate\.atTip !== true\)/u.test(requestGate) &&
+    !/if \(freshRead && gate\.ready !== true\)/u.test(requestGate) &&
     /CANONICAL_INDEX_CATCHING_UP/u.test(requestGate),
 );
 expect(

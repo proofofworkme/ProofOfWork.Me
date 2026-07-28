@@ -124,8 +124,8 @@ expect(
     .length === 1,
 );
 expect(
-  "legacy frozen credit fallback includes the explicit carry with only sub-proof tolerance",
-  /"credit-frozen-value-includes-event-components"[\s\S]*creditMinerFeeFlowSats \+[\s\S]*legacyBootstrapCreditFixedSats,[\s\S]*0\.01,/u.test(
+  "legacy frozen credit fallback includes explicit legacy and post-activation fixed value with only sub-proof tolerance",
+  /"credit-frozen-value-includes-event-components"[\s\S]*creditMinerFeeFlowSats \+[\s\S]*legacyBootstrapCreditFixedSats \+[\s\S]*postActivationCreditFixedSats,[\s\S]*0\.01,/u.test(
     ledgerSnapshotChecksSource,
   ),
 );
@@ -566,6 +566,13 @@ expectAll("canonical read gate timeouts recover without a pinned public outage",
   /const CANONICAL_PUBLIC_READ_GATE_TIMEOUT_TTL_MS = Math\.min\(/,
   /loadCanonicalPublicReadGate\(network\),[\s\S]*CANONICAL_PUBLIC_READ_GATE_TIMEOUT_MS/,
   /outcome\.timedOut[\s\S]*CANONICAL_PUBLIC_READ_GATE_TIMEOUT_TTL_MS[\s\S]*CANONICAL_PUBLIC_READ_GATE_TTL_MS/,
+]);
+expectAll("canonical exact-tip reads are not blocked by worker heartbeat age", server, [
+  /const atTip =[\s\S]*available &&[\s\S]*indexedThroughBlock === tipHeight/,
+  /const ready =[\s\S]*atTip &&[\s\S]*workerFresh/,
+  /if \(freshRead && gate\.atTip !== true\)/,
+  /function walletTokenOverlayMatchesCanonicalGate\([\s\S]*gate\?\.atTip !== true/,
+  /freshRead &&[\s\S]*canonicalSummarySnapshotReadGateApplies\(url\.pathname\)[\s\S]*!gate\.summarySnapshotOk/,
 ]);
 expectAll("backfill source execution keeps confirmed blocks ahead of mempool work", proofIndexerBackfill, [
   /const ALL_SOURCES = \[[\s\S]*\{ blockScan: true, label: "block-scan" \}[\s\S]*\{ label: "mempool-scan", mempoolScan: true \}/,
@@ -1269,7 +1276,7 @@ expectAll("wallet scoped token reads keep confirmed lifecycle history", server, 
   /async function tokenPayloadWithIndexedWalletOverlay\([\s\S]*const invalidEvents = mergeTokenStateItemsByKey\([\s\S]*overlay\.invalidEvents[\s\S]*invalidEvents: invalidEvents\.length/,
   /async function tokenPayloadWithIndexedWalletOverlay\([\s\S]*sourceTokens = \[\][\s\S]*walletTokenIds[\s\S]*const tokens = mergeTokenStateItemsByKey/,
   /async function walletScopedTokenPayload\([\s\S]*currentProofIndexTokenPayloadForRead\([\s\S]*tokenPayloadScopedToAddresses[\s\S]*tokenPayloadWithIndexedWalletOverlay[\s\S]*tokenPayloadWithIndexedWalletClosedListings/,
-  /async function walletScopedTokenPayload\([\s\S]*requireCurrent[\s\S]*Fresh wallet credit state is still catching up[\s\S]*authoritativeWallet: true/,
+  /async function walletScopedTokenPayload\([\s\S]*requireCurrent[\s\S]*Fresh wallet credit state is temporarily unavailable[\s\S]*authoritativeWallet: true/,
   /async function walletScopedTokenSummaryPayload\([\s\S]*currentProofIndexTokenPayloadForRead\([\s\S]*tokenPayloadScopedToAddresses[\s\S]*tokenPayloadWithIndexedWalletOverlay/,
   /async function indexedWalletClosedListings\([\s\S]*kind: "token-closed-listings"[\s\S]*proofIndexEventHistoryPayload/,
   /async function tokenPayloadWithIndexedWalletClosedListings\([\s\S]*tokenStateWithPreservedListingRecords/,
@@ -1350,7 +1357,7 @@ expectAll("API wallet overlay merge consumes indexed canonical token definitions
 expectAll("wallet balance reads require an exact hashed index checkpoint", server, [
   /function walletTokenOverlayHasExactCheckpoint\(overlay\)[\s\S]*checkpointComplete === true[\s\S]*Number\.isSafeInteger\(indexedThroughBlock\)[\s\S]*sourceBlockHash === indexedThroughBlockHash[\s\S]*snapshotId/,
   /function walletTokenOverlayMatchesPayloadCheckpoint\(payload,\s*overlay\)[\s\S]*walletTokenOverlayHasExactCheckpoint\(overlay\)[\s\S]*payloadHeight === overlayHeight[\s\S]*\^\[0-9a-f\]\{64\}[\s\S]*payloadHash === overlay\.indexedThroughBlockHash/,
-  /function walletTokenOverlayMatchesCanonicalGate\(overlay,\s*gate\)[\s\S]*gate\?\.ready !== true[\s\S]*gate\?\.tipHeight[\s\S]*canonicalHash === overlayHash[\s\S]*storedHash === overlayHash/,
+  /function walletTokenOverlayMatchesCanonicalGate\(overlay,\s*gate\)[\s\S]*gate\?\.atTip !== true[\s\S]*gate\?\.tipHeight[\s\S]*canonicalHash === overlayHash[\s\S]*storedHash === overlayHash/,
   /async function proofIndexWalletScopedTokenPayloadForRead\([\s\S]*if \(!walletTokenOverlayHasExactCheckpoint\(overlay\)\)[\s\S]*return null/,
   /proofIndexWalletScopedTokenPayloadForRead\([\s\S]*\{ requireCurrent \}[\s\S]*authoritativeWallet:\s*true/,
   /if \(requireCurrent\) \{[\s\S]*CANONICAL_WALLET_INDEX_UNAVAILABLE[\s\S]*throw unavailable/,
@@ -2017,7 +2024,9 @@ expectAll("AMO V5 legacy bootstrap carry is exact and separately reconciled", le
   /field === "tokenMarketplaceFeeSats"/,
   /committed !== valid \+ expectedCarry/,
   /committedBaseNetworkValueQ8 !==\s*validBaseNetworkValueQ8 \+ legacyBootstrapGrowthValueQ8/,
-  /committedCreditFixedQ8 !==\s*validCreditFixedQ8 \+ legacyBootstrapCreditFixedQ8/,
+  /legacyBaselineCreditFixedQ8 =\s*validCreditFixedQ8 \+ legacyBootstrapCreditFixedQ8/,
+  /postActivationCreditFixedQ8 =[\s\S]*committedCreditFixedQ8 >= legacyBaselineCreditFixedQ8[\s\S]*committedCreditFixedQ8 - legacyBaselineCreditFixedQ8/,
+  /publishedCreditFixedQ8Matches[\s\S]*publishedValidCreditFixedQ8 === validCreditFixedQ8[\s\S]*publishedValidCreditFixedQ8 === legacyBaselineCreditFixedQ8[\s\S]*publishedValidCreditFixedQ8 === committedCreditFixedQ8/,
   /const baseState = reconciliation\.validBaseState/,
   /workAmoV5ExactValueAliases\(\s*"baseNetworkValue",\s*value\.baseNetworkValueQ8/,
   /workAmoV5ExactValueAliases\("creditFixed", creditFixedQ8\)/,
@@ -2035,6 +2044,7 @@ expectAll("credit frozen value proves valid flows plus the explicit legacy carry
   /legacyCreditFixedQ8Present !== legacyCreditFixedSatsPresent/,
   /BigInt\(legacyCreditFixedQ8\) !==\s*BigInt\(legacyCreditFixedSats\) \* VALUE_Q8_SCALE/,
   /flows\.reduce\([\s\S]*BigInt\(legacyCreditFixedQ8\)/,
+  /BigInt\(legacyCreditFixedQ8\) \+[\s\S]*BigInt\(postActivationCreditFixedQ8\)/,
 ]);
 expectAll("marketplace consistency keeps strict valid-only equality", marketplaceMutationEqualitySource, [
   /numbersAgree\(confirmedMarketplaceMutationFeeSats, marketplaceFeeSats\)/,
