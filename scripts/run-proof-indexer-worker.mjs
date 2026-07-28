@@ -123,6 +123,18 @@ const BACKFILL_CHILD_TIMEOUT_MS = Math.min(
       4 * 60_000,
   ),
 );
+export function pendingBackfillChildTimeoutMs(
+  configured = process.env.POW_INDEX_WORKER_PENDING_BACKFILL_TIMEOUT_MS,
+) {
+  return Math.min(
+    30_000,
+    Math.max(
+      20_000,
+      Math.floor(Number(configured ?? 30_000) || 30_000),
+    ),
+  );
+}
+const PENDING_BACKFILL_CHILD_TIMEOUT_MS = pendingBackfillChildTimeoutMs();
 const BACKFILL_RETRIES = Math.min(
   5,
   Math.max(
@@ -169,6 +181,7 @@ const REQUIRE_WORK_ATOMIC_PROJECTION = !/^(?:0|false|no)$/iu.test(
 const CHILD_LINE_BUFFER_CHARS = 16_384;
 const CHILD_ERROR_MAX_CHARS = 4_096;
 const CHILD_STOP_GRACE_MS = 5_000;
+const PENDING_CHILD_STOP_GRACE_MS = 1_000;
 export const CANONICAL_TX_CONTENT_FAILURE_CODE =
   "POW_CANONICAL_TX_CONTENT_INVARIANT";
 export const CANONICAL_TX_CONTENT_FAILURE_CLASS =
@@ -692,11 +705,62 @@ export async function runCanonicalBeforePending(runCanonical, runPending) {
   return runPending();
 }
 
+export function workerBackfillPhasePlan(
+  sourceText = BACKFILL_SOURCES,
+  storeCanonicalSummarySnapshot =
+    BACKFILL_STORE_CANONICAL_SUMMARY_SNAPSHOT,
+) {
+  const sourceLabels = [
+    ...new Set(
+      String(sourceText ?? "")
+        .split(/[,\s]+/u)
+        .map((value) => value.trim())
+        .filter(Boolean),
+    ),
+  ];
+  const confirmedFirstHotPath =
+    sourceLabels.length === 2 &&
+    sourceLabels.includes("block-scan") &&
+    sourceLabels.includes("mempool-scan");
+  if (!confirmedFirstHotPath) {
+    return [
+      {
+        canonicalBarrier: sourceLabels.includes("block-scan"),
+        kind: "combined",
+        sourceLabels,
+        storeCanonicalSummarySnapshot: String(
+          storeCanonicalSummarySnapshot ?? "",
+        ),
+      },
+    ];
+  }
+  return [
+    {
+      canonicalBarrier: true,
+      kind: "confirmed",
+      sourceLabels: ["block-scan"],
+      storeCanonicalSummarySnapshot: String(
+        storeCanonicalSummarySnapshot ?? "",
+      ),
+    },
+    {
+      canonicalBarrier: false,
+      kind: "best-effort-pending",
+      sourceLabels: ["mempool-scan"],
+      storeCanonicalSummarySnapshot: "0",
+    },
+  ];
+}
+
 export function runScript(
   scriptName,
   args = [],
   envOverrides = {},
-  { runtime = null, timeoutMs = BACKFILL_CHILD_TIMEOUT_MS } = {},
+  {
+    forceKillGraceMs = CHILD_STOP_GRACE_MS,
+    runtime = null,
+    timeoutMs = BACKFILL_CHILD_TIMEOUT_MS,
+  } = {},
 ) {
   if (runtime?.stopping) {
     return Promise.reject(workerStoppingError());
@@ -707,6 +771,14 @@ export function runScript(
     let timeout;
     let settled = false;
     let observedCanonicalFailure = null;
+    const wallClockBudgetMs = Math.max(
+      1,
+      Number(timeoutMs) || BACKFILL_CHILD_TIMEOUT_MS,
+    );
+    const forceKillAfterMs = Math.max(
+      1,
+      Number(forceKillGraceMs) || CHILD_STOP_GRACE_MS,
+    );
     const lineBuffers = new Map();
     const child = spawn(
       process.execPath,
@@ -767,10 +839,10 @@ export function runScript(
       child.kill("SIGTERM");
       forceKillTimer = setTimeout(
         () => child.kill("SIGKILL"),
-        CHILD_STOP_GRACE_MS,
+        forceKillAfterMs,
       );
       forceKillTimer.unref?.();
-    }, Math.max(1, Number(timeoutMs) || BACKFILL_CHILD_TIMEOUT_MS));
+    }, wallClockBudgetMs);
     timeout.unref?.();
     child.on("error", (error) => {
       finish(reject, runtime?.stopping ? workerStoppingError() : error);
@@ -788,8 +860,10 @@ export function runScript(
       }
       if (timedOut) {
         const error = new Error(
-          `${scriptName} exceeded its ${timeoutMs}ms wall-clock budget`,
+          `${scriptName} exceeded its ${wallClockBudgetMs}ms wall-clock budget`,
         );
+        error.code = "POW_INDEX_CHILD_TIMEOUT";
+        error.timeoutMs = wallClockBudgetMs;
         error.workerFailure = observedCanonicalFailure;
         finish(reject, error);
         return;
@@ -805,6 +879,41 @@ export function runScript(
       finish(reject, error);
     });
   });
+}
+
+export async function runBestEffortPendingBackfill(
+  envOverrides,
+  runtime,
+  {
+    args = [],
+    forceKillGraceMs = PENDING_CHILD_STOP_GRACE_MS,
+    scriptName = "backfill-proof-indexer.mjs",
+    timeoutMs = PENDING_BACKFILL_CHILD_TIMEOUT_MS,
+  } = {},
+) {
+  try {
+    await runScript(scriptName, args, envOverrides, {
+      forceKillGraceMs,
+      runtime,
+      timeoutMs,
+    });
+    return {
+      attempted: true,
+      error: null,
+      ok: true,
+      timedOut: false,
+    };
+  } catch (error) {
+    if (runtime?.stopping || error?.code === "POW_INDEX_WORKER_STOPPING") {
+      throw workerStoppingError();
+    }
+    return {
+      attempted: true,
+      error: cappedChildError(error?.message ?? error),
+      ok: false,
+      timedOut: error?.code === "POW_INDEX_CHILD_TIMEOUT",
+    };
+  }
 }
 
 async function runBackfillWithRetries(backfillEnv, runtime) {
@@ -1755,52 +1864,152 @@ async function runCycle(pool, lastSuccess, runtime) {
     startedAt: startedAt.toISOString(),
     state: "running",
   });
-  const backfillEnv = {
+  const commonBackfillEnv = {
     NETWORK,
     POW_API_BASE: API_BASE,
     POW_INDEX_BACKFILL_LIMIT: String(BACKFILL_LIMIT),
     POW_INDEX_BACKFILL_MAX_PAGES: String(BACKFILL_MAX_PAGES),
     POW_INDEX_BACKFILL_HOLDERS: INCLUDE_HOLDERS ? "1" : "0",
-    POW_INDEX_BACKFILL_SOURCES: BACKFILL_SOURCES,
     POW_INDEX_BACKFILL_SNAPSHOT_FRESH: BACKFILL_SNAPSHOT_FRESH,
     POW_INDEX_BACKFILL_SOURCE_FRESH: BACKFILL_SOURCE_FRESH,
     POW_INDEX_BACKFILL_STORE_LEDGER_SNAPSHOT: BACKFILL_STORE_LEDGER_SNAPSHOT,
-    POW_INDEX_BACKFILL_STORE_CANONICAL_SUMMARY_SNAPSHOT:
-      BACKFILL_STORE_CANONICAL_SUMMARY_SNAPSHOT,
     POW_INDEX_BACKFILL_SUMMARY_SNAPSHOT_FRESH: BACKFILL_SUMMARY_SNAPSHOT_FRESH,
     POW_INDEX_BACKFILL_TOKEN_SNAPSHOT_FRESH: BACKFILL_TOKEN_SNAPSHOT_FRESH,
     POW_INDEX_DB_APP_NAME: "proof-indexer-worker-backfill",
   };
-
-  await runBackfillWithRetries(backfillEnv, runtime);
-  const canonicalProgress = await readCanonicalWorkerProgress(
-    pool,
-    runtime.network,
+  const backfillPhases = workerBackfillPhasePlan(
+    BACKFILL_SOURCES,
+    BACKFILL_STORE_CANONICAL_SUMMARY_SNAPSHOT,
   );
-  const clearedNoProgress = resetWorkerNoProgressState(
-    noProgress,
-    canonicalProgress,
-    Date.now(),
-    "canonical-scan-success",
-    runtime.network,
-  );
-  runtime.noProgress = clearedNoProgress;
-  await writeWorkerMeta(pool, {
-    apiBase: API_BASE,
-    canonicalProgress,
-    consecutiveFailures: 0,
-    lastSuccess,
-    lastSuccessAt: lastSuccess?.finishedAt ?? null,
-    network: runtime.network,
-    noProgress: clearedNoProgress,
-    ok: Boolean(lastSuccess),
-    startedAt: startedAt.toISOString(),
-    state: "canonical-scan-complete",
-  });
+  let canonicalProgress = null;
+  let clearedNoProgress = noProgress;
+  let canonicalSuccess = lastSuccess;
+  let pendingBackfill = {
+    attempted: false,
+    error: null,
+    ok: null,
+    timedOut: null,
+  };
+  const runBackfillPhase = async (phase) => {
+    const backfillEnv = {
+      ...commonBackfillEnv,
+      POW_INDEX_BACKFILL_PENDING_ONLY:
+        phase.kind === "best-effort-pending" ? "1" : "0",
+      POW_INDEX_BACKFILL_PENDING_CHILD_TIMEOUT_MS:
+        phase.kind === "best-effort-pending"
+          ? String(PENDING_BACKFILL_CHILD_TIMEOUT_MS)
+          : "",
+      POW_INDEX_BACKFILL_SOURCES: phase.sourceLabels.join(","),
+      POW_INDEX_BACKFILL_STORE_LEDGER_SNAPSHOT:
+        phase.kind === "best-effort-pending"
+          ? "0"
+          : commonBackfillEnv.POW_INDEX_BACKFILL_STORE_LEDGER_SNAPSHOT,
+      POW_INDEX_BACKFILL_STORE_CANONICAL_SUMMARY_SNAPSHOT:
+        phase.storeCanonicalSummarySnapshot,
+    };
+    if (phase.kind === "best-effort-pending") {
+      pendingBackfill = await runBestEffortPendingBackfill(
+        backfillEnv,
+        runtime,
+      );
+      if (!pendingBackfill.ok) {
+        console.error(
+          JSON.stringify({
+            error: pendingBackfill.error,
+            phase: "worker-pending-backfill",
+            retrying: false,
+            timedOut: pendingBackfill.timedOut,
+          }),
+        );
+      }
+    } else {
+      await runBackfillWithRetries(backfillEnv, runtime);
+    }
+    if (!phase.canonicalBarrier) {
+      return;
+    }
+    canonicalProgress = await readCanonicalWorkerProgress(
+      pool,
+      runtime.network,
+    );
+    clearedNoProgress = resetWorkerNoProgressState(
+      noProgress,
+      canonicalProgress,
+      Date.now(),
+      "canonical-scan-success",
+      runtime.network,
+    );
+    runtime.noProgress = clearedNoProgress;
+    const canonicalFinishedAt = new Date();
+    canonicalSuccess = {
+      durationMs: canonicalFinishedAt.getTime() - startedAt.getTime(),
+      finishedAt: canonicalFinishedAt.toISOString(),
+      pendingStatus: lastSuccess?.pendingStatus ?? null,
+      startedAt: startedAt.toISOString(),
+    };
+    await writeWorkerMeta(pool, {
+      apiBase: API_BASE,
+      backfillPhase: phase.kind,
+      canonicalProgress,
+      consecutiveFailures: 0,
+      lastSuccess: canonicalSuccess,
+      lastSuccessAt: canonicalSuccess.finishedAt,
+      network: runtime.network,
+      noProgress: clearedNoProgress,
+      ok: true,
+      startedAt: startedAt.toISOString(),
+      state: "canonical-phase-complete",
+    });
+  };
+  if (
+    backfillPhases.length === 2 &&
+    backfillPhases[0]?.kind === "confirmed" &&
+    backfillPhases[1]?.kind === "best-effort-pending"
+  ) {
+    await runCanonicalBeforePending(
+      () => runBackfillPhase(backfillPhases[0]),
+      () => runBackfillPhase(backfillPhases[1]),
+    );
+  } else {
+    for (const phase of backfillPhases) {
+      await runBackfillPhase(phase);
+    }
+  }
+  if (!canonicalProgress) {
+    canonicalProgress = await readCanonicalWorkerProgress(
+      pool,
+      runtime.network,
+    );
+    clearedNoProgress = resetWorkerNoProgressState(
+      noProgress,
+      canonicalProgress,
+      Date.now(),
+      "canonical-scan-success",
+      runtime.network,
+    );
+    runtime.noProgress = clearedNoProgress;
+  }
   if (runtime.stopping) {
     throw workerStoppingError();
   }
-  const pendingStatus = await refreshPendingStatuses(pool);
+  let pendingStatus;
+  try {
+    pendingStatus = await refreshPendingStatuses(pool);
+  } catch (error) {
+    pendingStatus = {
+      checked: 0,
+      deferred: 0,
+      error: cappedChildError(error?.message ?? error),
+      errors: 1,
+      unavailable: true,
+    };
+    console.error(
+      JSON.stringify({
+        error: pendingStatus.error,
+        phase: "pending-status-scheduling",
+      }),
+    );
+  }
 
   const nowMs = Date.now();
   const runParityNow =
@@ -1840,6 +2049,12 @@ async function runCycle(pool, lastSuccess, runtime) {
     apiBase: API_BASE,
     backfillLimit: BACKFILL_LIMIT,
     backfillMaxPages: BACKFILL_MAX_PAGES,
+    backfillPhases: backfillPhases.map((phase) => ({
+      kind: phase.kind,
+      sources: phase.sourceLabels,
+      storeCanonicalSummarySnapshot:
+        phase.storeCanonicalSummarySnapshot,
+    })),
     backfillSources: BACKFILL_SOURCES,
     canonicalProgress,
     consecutiveFailures: 0,
@@ -1854,6 +2069,8 @@ async function runCycle(pool, lastSuccess, runtime) {
     parity: runParityNow,
     parityEnabled: RUN_PARITY,
     parityIntervalMs: PARITY_INTERVAL_MS,
+    pendingBackfill,
+    pendingBackfillTimeoutMs: PENDING_BACKFILL_CHILD_TIMEOUT_MS,
     pendingStatus,
     startedAt: currentSuccess.startedAt,
     state: "idle",
@@ -1880,8 +2097,14 @@ export async function runWorkerMain() {
           backfillStoreCanonicalSummarySnapshot:
             BACKFILL_STORE_CANONICAL_SUMMARY_SNAPSHOT,
           backfillTimeoutMs: BACKFILL_CHILD_TIMEOUT_MS,
+          pendingBackfillTimeoutMs: PENDING_BACKFILL_CHILD_TIMEOUT_MS,
+          pendingBackfillStopGraceMs: PENDING_CHILD_STOP_GRACE_MS,
           backfillRetries: BACKFILL_RETRIES,
           backfillRetryDelayMs: BACKFILL_RETRY_DELAY_MS,
+          backfillPhases: workerBackfillPhasePlan(
+            BACKFILL_SOURCES,
+            BACKFILL_STORE_CANONICAL_SUMMARY_SNAPSHOT,
+          ),
           dryRun: true,
           errorIntervalMs: ERROR_INTERVAL_MS,
           holders: INCLUDE_HOLDERS,

@@ -423,6 +423,7 @@ try {
         payload
       FROM proof_indexer.ledger_snapshots
       WHERE network = $1
+        AND payload ? 'summaryPayloads'
         AND payload ? 'snapshotId'
         AND payload->>'snapshotId' = snapshot_id
         AND COALESCE(consistency->>'ok', payload->>'ok', 'false') = 'true'

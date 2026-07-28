@@ -13,11 +13,14 @@ import {
   createWorkerRuntime,
   markWorkerNoProgressAlerted,
   nextWorkerNoProgressState,
+  pendingBackfillChildTimeoutMs,
   requestWorkerStop,
   resetWorkerNoProgressState,
+  runBestEffortPendingBackfill,
   runCanonicalBeforePending,
   runScript,
   shouldEscalateWorkerFailure,
+  workerBackfillPhasePlan,
   workerNoProgressFromMeta,
 } from "./run-proof-indexer-worker.mjs";
 
@@ -102,6 +105,9 @@ if (fixtureMode === "poison-exit") {
 } else if (fixtureMode === "wait-for-stop") {
   const timer = setInterval(() => {}, 1_000);
   process.once("SIGTERM", () => clearInterval(timer));
+} else if (fixtureMode === "ignore-term") {
+  setInterval(() => {}, 1_000);
+  process.on("SIGTERM", () => {});
 } else {
   await runChecks();
 }
@@ -258,6 +264,174 @@ async function runChecks() {
     /canonical checkpoint rejected/u,
   );
   assert.deepEqual(blockedOrder, ["canonical"]);
+
+  assert.deepEqual(
+    workerBackfillPhasePlan("block-scan,mempool-scan", "1"),
+    [
+      {
+        canonicalBarrier: true,
+        kind: "confirmed",
+        sourceLabels: ["block-scan"],
+        storeCanonicalSummarySnapshot: "1",
+      },
+      {
+        canonicalBarrier: false,
+        kind: "best-effort-pending",
+        sourceLabels: ["mempool-scan"],
+        storeCanonicalSummarySnapshot: "0",
+      },
+    ],
+    "the production hot path must publish confirmed summaries before pending work",
+  );
+  assert.deepEqual(
+    workerBackfillPhasePlan("mempool-scan,block-scan", "1"),
+    workerBackfillPhasePlan("block-scan,mempool-scan", "1"),
+    "configuration order must not move mempool work ahead of confirmed publication",
+  );
+  assert.deepEqual(
+    workerBackfillPhasePlan("block-scan,token-mints,mempool-scan", "1"),
+    [
+      {
+        canonicalBarrier: true,
+        kind: "combined",
+        sourceLabels: ["block-scan", "token-mints", "mempool-scan"],
+        storeCanonicalSummarySnapshot: "1",
+      },
+    ],
+    "explicit supervised source sets must retain their existing combined semantics",
+  );
+
+  const mempoolScanTimeBudgetReached = isolatedBackfillFunction(
+    "mempoolScanTimeBudgetReached",
+  );
+  assert.equal(
+    mempoolScanTimeBudgetReached(1_000, 0, 20_000, 15_000),
+    false,
+    "the pending scanner must attempt at least one candidate per pass",
+  );
+  assert.equal(
+    mempoolScanTimeBudgetReached(1_000, 1, 15_999, 15_000),
+    false,
+  );
+  assert.equal(
+    mempoolScanTimeBudgetReached(1_000, 1, 16_000, 15_000),
+    true,
+    "the pending scanner must yield at a transaction boundary once its budget is spent",
+  );
+  const pendingExtendedVerifierTimeoutMs = isolatedBackfillFunction(
+    "pendingExtendedVerifierTimeoutMs",
+    {
+      BACKFILL_PROCESS_STARTED_AT_MS: 0,
+      PENDING_LEGACY_VERIFIER_TIMEOUT_MS: 30_000,
+      PENDING_ONLY_BACKFILL: true,
+      PENDING_ONLY_CHILD_TIMEOUT_MS: 30_000,
+      PENDING_ONLY_PERSISTENCE_HEADROOM_MS: 9_000,
+      PENDING_ONLY_VERIFIER_MAX_MS: 20_000,
+    },
+  );
+  assert.equal(
+    pendingExtendedVerifierTimeoutMs({
+      childTimeoutMs: 30_000,
+      nowMs: 10_000,
+      pendingOnly: false,
+      processStartedAtMs: 10_000,
+    }),
+    30_000,
+    "the historical verifier allowance remains unchanged outside pending-only mode",
+  );
+  assert.equal(
+    pendingExtendedVerifierTimeoutMs({
+      childTimeoutMs: 30_000,
+      nowMs: 10_000,
+      pendingOnly: true,
+      processStartedAtMs: 10_000,
+    }),
+    20_000,
+  );
+  assert.equal(
+    pendingExtendedVerifierTimeoutMs({
+      childTimeoutMs: 30_000,
+      nowMs: 15_000,
+      pendingOnly: true,
+      processStartedAtMs: 10_000,
+    }),
+    16_000,
+  );
+  assert.equal(
+    pendingExtendedVerifierTimeoutMs({
+      childTimeoutMs: 30_000,
+      nowMs: 30_001,
+      pendingOnly: true,
+      processStartedAtMs: 10_000,
+    }),
+    0,
+    "an exhausted pending pass must skip the extended verifier and preserve shutdown headroom",
+  );
+  assert.equal(pendingBackfillChildTimeoutMs(null), 30_000);
+  assert.equal(pendingBackfillChildTimeoutMs("invalid"), 30_000);
+  assert.equal(pendingBackfillChildTimeoutMs("15000"), 20_000);
+  assert.equal(pendingBackfillChildTimeoutMs("25000"), 25_000);
+  assert.equal(pendingBackfillChildTimeoutMs("900000"), 30_000);
+
+  const pendingOnlyBackfillMode = isolatedBackfillFunction(
+    "pendingOnlyBackfillMode",
+  );
+  const pendingOnlyConfiguration = {
+    enabled: true,
+    maintenanceMode: false,
+    sourceFilterSize: 1,
+    sourceLabels: ["mempool-scan"],
+    storeCanonicalSummarySnapshot: false,
+    storeLedgerSnapshot: false,
+  };
+  assert.equal(pendingOnlyBackfillMode(pendingOnlyConfiguration), true);
+  assert.throws(
+    () =>
+      pendingOnlyBackfillMode({
+        ...pendingOnlyConfiguration,
+        sourceFilterSize: 2,
+        sourceLabels: ["block-scan", "mempool-scan"],
+      }),
+    /exact source set/u,
+  );
+  assert.throws(
+    () =>
+      pendingOnlyBackfillMode({
+        ...pendingOnlyConfiguration,
+        storeCanonicalSummarySnapshot: true,
+      }),
+    /canonical-summary storage to be disabled/u,
+  );
+  assert.throws(
+    () =>
+      pendingOnlyBackfillMode({
+        ...pendingOnlyConfiguration,
+        maintenanceMode: true,
+      }),
+    /cannot be combined/u,
+  );
+  const runPendingOnlyBackfillPass = isolatedBackfillFunction(
+    "runPendingOnlyBackfillPass",
+  );
+  const pendingSourceCalls = [];
+  const pendingSource = { label: "mempool-scan", mempoolScan: true };
+  const pendingPassResults = await runPendingOnlyBackfillPass(
+    { id: "fixture-client" },
+    [pendingSource],
+    async (client, source) => {
+      pendingSourceCalls.push({ client, source });
+      return { indexed: 2, source: source.label };
+    },
+  );
+  assert.deepEqual(pendingSourceCalls, [
+    {
+      client: { id: "fixture-client" },
+      source: pendingSource,
+    },
+  ]);
+  assert.deepEqual([...pendingPassResults], [
+    { indexed: 2, source: "mempool-scan" },
+  ]);
 
   const transition = (
     previous,
@@ -431,6 +605,7 @@ async function runChecks() {
 
   const timeoutRuntime = createWorkerRuntime("livenet");
   let timeoutError;
+  const timeoutStartedAt = Date.now();
   try {
     await runScript(
       "check-worker-containment.mjs",
@@ -441,9 +616,53 @@ async function runChecks() {
   } catch (error) {
     timeoutError = error;
   }
+  const timeoutElapsedMs = Date.now() - timeoutStartedAt;
   assert.match(timeoutError?.message ?? "", /wall-clock budget/u);
+  assert.equal(timeoutError?.code, "POW_INDEX_CHILD_TIMEOUT");
+  assert.equal(timeoutError?.timeoutMs, 1_000);
+  assert.ok(
+    timeoutElapsedMs >= 900,
+    `timeout returned too early: ${timeoutElapsedMs}ms`,
+  );
+  assert.ok(
+    timeoutElapsedMs < 3_000,
+    `timeout did not terminate promptly: ${timeoutElapsedMs}ms`,
+  );
   assert.deepEqual(canonicalWorkerFailureFromError(timeoutError), failure);
   assert.equal(timeoutRuntime.activeChild, null);
+
+  const pendingRuntime = createWorkerRuntime("livenet");
+  const pendingSequence = ["canonical-current"];
+  const pendingStartedAt = Date.now();
+  const pendingPhase = await runBestEffortPendingBackfill(
+    {},
+    pendingRuntime,
+    {
+      args: ["--fixture=ignore-term"],
+      forceKillGraceMs: 100,
+      scriptName: "check-worker-containment.mjs",
+      timeoutMs: 250,
+    },
+  );
+  const pendingElapsedMs = Date.now() - pendingStartedAt;
+  pendingSequence.push("pending-returned", "canonical-next");
+  assert.deepEqual(pendingSequence, [
+    "canonical-current",
+    "pending-returned",
+    "canonical-next",
+  ]);
+  assert.equal(pendingPhase.ok, false);
+  assert.equal(pendingPhase.timedOut, true);
+  assert.match(pendingPhase.error, /250ms wall-clock budget/u);
+  assert.ok(
+    pendingElapsedMs >= 200,
+    `pending watchdog returned too early: ${pendingElapsedMs}ms`,
+  );
+  assert.ok(
+    pendingElapsedMs < 2_000,
+    `pending watchdog did not return control promptly: ${pendingElapsedMs}ms`,
+  );
+  assert.equal(pendingRuntime.activeChild, null);
 
   const stopRuntime = createWorkerRuntime("livenet");
   const activeChildPromise = runScript(
@@ -456,11 +675,17 @@ async function runChecks() {
     await delay(10);
   }
   assert.ok(stopRuntime.activeChild, "fixture child should be active");
+  const stopStartedAt = Date.now();
   requestWorkerStop(stopRuntime);
   await assert.rejects(activeChildPromise, (error) => {
     assert.equal(error?.code, "POW_INDEX_WORKER_STOPPING");
     return true;
   });
+  const stopElapsedMs = Date.now() - stopStartedAt;
+  assert.ok(
+    stopElapsedMs < 2_000,
+    `SIGTERM did not return control promptly: ${stopElapsedMs}ms`,
+  );
   assert.equal(stopRuntime.activeChild, null);
   await assert.rejects(
     runScript(
@@ -484,6 +709,8 @@ async function runChecks() {
       deterministicDomainOnly: true,
       circuitActivation: "contained-retry",
       genericEscalation: true,
+      pendingOnlySourceBoundary: true,
+      pendingWatchdogReturnsControl: true,
       progressReset: true,
       rateLimitedAlert: true,
       sigtermStopsChildWithoutRespawn: true,

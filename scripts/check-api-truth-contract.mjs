@@ -394,7 +394,7 @@ expect(
     ) &&
     /publicLogRelational: finalPublicLogFingerprint\.hash/u.test(backfill) &&
     /publicLogFingerprint: finalPublicLogFingerprint/u.test(backfill) &&
-    /await runBackfillWithRetries\(backfillEnv, runtime\);[\s\S]*const pendingStatus = await refreshPendingStatuses\(pool\);/u.test(
+    /runCanonicalBeforePending\([\s\S]*runBackfillPhase\(backfillPhases\[0\]\)[\s\S]*runBackfillPhase\(backfillPhases\[1\]\)[\s\S]*pendingStatus = await refreshPendingStatuses\(pool\);/u.test(
       worker,
     ),
 );

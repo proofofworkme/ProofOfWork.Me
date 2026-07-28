@@ -93,6 +93,7 @@ import {
   normalizedWorkAmoV5Bip141Witness,
 } from "../server/work-amo-v5-bip141.mjs";
 
+const BACKFILL_PROCESS_STARTED_AT_MS = Date.now();
 const DEFAULT_API_BASE = "http://127.0.0.1:8081";
 const CONFIGURED_API_BASE = String(process.env.POW_API_BASE ?? "").trim();
 const API_BASE_EXPLICIT = CONFIGURED_API_BASE.length > 0;
@@ -278,6 +279,16 @@ const MEMPOOL_SCAN_MAX_PROTOCOL_TXIDS = Math.min(
     ),
   ),
 );
+const MEMPOOL_SCAN_BUDGET_MS = Math.min(
+  30_000,
+  Math.max(
+    5_000,
+    Math.floor(
+      Number(process.env.POW_INDEX_MEMPOOL_SCAN_BUDGET_MS ?? 15_000) ||
+        15_000,
+    ),
+  ),
+);
 const PENDING_VERIFIER_TIMEOUT_MS = Math.min(
   5_000,
   Math.max(
@@ -289,6 +300,19 @@ const PENDING_VERIFIER_TIMEOUT_MS = Math.min(
   ),
 );
 const PENDING_LEGACY_VERIFIER_TIMEOUT_MS = 30_000;
+const PENDING_ONLY_CHILD_TIMEOUT_MS = Math.min(
+  30_000,
+  Math.max(
+    20_000,
+    Math.floor(
+      Number(
+        process.env.POW_INDEX_BACKFILL_PENDING_CHILD_TIMEOUT_MS ?? 30_000,
+      ) || 30_000,
+    ),
+  ),
+);
+const PENDING_ONLY_VERIFIER_MAX_MS = 20_000;
+const PENDING_ONLY_PERSISTENCE_HEADROOM_MS = 9_000;
 const MEMPOOL_SCAN_SEEN_LIMIT = Number(
   process.env.POW_INDEX_MEMPOOL_SCAN_SEEN_LIMIT ?? 10_000,
 );
@@ -686,6 +710,86 @@ const STORE_LEDGER_SNAPSHOT = (() => {
 const STORE_CANONICAL_SUMMARY_SNAPSHOT = /^(?:1|true|yes)$/iu.test(
   String(process.env.POW_INDEX_BACKFILL_STORE_CANONICAL_SUMMARY_SNAPSHOT ?? ""),
 );
+const PENDING_ONLY_BACKFILL_REQUESTED = /^(?:1|true|yes)$/iu.test(
+  String(process.env.POW_INDEX_BACKFILL_PENDING_ONLY ?? ""),
+);
+
+function pendingOnlyBackfillMode({
+  enabled,
+  maintenanceMode,
+  sourceFilterSize,
+  sourceLabels,
+  storeCanonicalSummarySnapshot,
+  storeLedgerSnapshot,
+}) {
+  if (!enabled) {
+    return false;
+  }
+  if (
+    sourceFilterSize !== 1 ||
+    sourceLabels.length !== 1 ||
+    sourceLabels[0] !== "mempool-scan"
+  ) {
+    throw new Error(
+      "POW_INDEX_BACKFILL_PENDING_ONLY=1 requires the exact source set POW_INDEX_BACKFILL_SOURCES=mempool-scan.",
+    );
+  }
+  if (
+    storeCanonicalSummarySnapshot === true ||
+    storeLedgerSnapshot === true
+  ) {
+    throw new Error(
+      "POW_INDEX_BACKFILL_PENDING_ONLY=1 requires ledger and canonical-summary storage to be disabled.",
+    );
+  }
+  if (maintenanceMode === true) {
+    throw new Error(
+      "POW_INDEX_BACKFILL_PENDING_ONLY=1 cannot be combined with rebuild, repair, audit, migration, bootstrap, or hydration modes.",
+    );
+  }
+  return true;
+}
+
+async function runPendingOnlyBackfillPass(
+  client,
+  sources,
+  runSource = backfillSource,
+) {
+  const results = [];
+  for (const source of sources) {
+    results.push(await runSource(client, source));
+  }
+  return results;
+}
+
+function pendingOnlyBackfillMaintenanceMode() {
+  return (
+    HYDRATE_TRANSACTION_DETAILS_ONLY ||
+    PREPARE_CANONICAL_REBUILD_ONLY ||
+    PREPARE_CANONICAL_PWT_RANGE_REPLAY_ONLY ||
+    REPAIR_ID_TXIDS_ONLY ||
+    REPAIR_CANONICAL_TXIDS_ONLY ||
+    REPAIR_INCB_ISSUANCE_ONLY ||
+    REPAIR_WORK_PARTICIPANTS ||
+    REPAIR_MINT_MINTERS ||
+    RUSH_BOOTSTRAP_ONLY ||
+    AUDIT_WORK_ATOMS_ONLY ||
+    MIGRATE_WORK_ATOMS_ONLY ||
+    VERIFY_WORK_ATOMS_POST_BOOTSTRAP_ONLY ||
+    REBUILD_CREDIT_BALANCES_ONLY ||
+    DB_SUMMARY_REPAIR ||
+    CANONICAL_REBUILD
+  );
+}
+
+const PENDING_ONLY_BACKFILL = pendingOnlyBackfillMode({
+  enabled: PENDING_ONLY_BACKFILL_REQUESTED,
+  maintenanceMode: pendingOnlyBackfillMaintenanceMode(),
+  sourceFilterSize: SOURCE_FILTER.size,
+  sourceLabels: SOURCES.map((source) => source.label),
+  storeCanonicalSummarySnapshot: STORE_CANONICAL_SUMMARY_SNAPSHOT,
+  storeLedgerSnapshot: STORE_LEDGER_SNAPSHOT,
+});
 
 const LEDGER_CANONICAL_SUMMARY_RETENTION = Math.max(
   512,
@@ -11904,6 +12008,7 @@ async function storedEligibleCanonicalSummarySnapshotPayload(client) {
       SELECT payload
       FROM proof_indexer.ledger_snapshots
       WHERE network = $1
+        AND payload ? 'summaryPayloads'
         AND payload->>'workAmountStorageModel' = $2
         AND COALESCE(consistency->>'ok', payload->>'ok', 'false') = 'true'
         AND COALESCE(consistency->>'status', payload->>'status', '') <> 'summary-snapshot-fallback'
@@ -11935,7 +12040,7 @@ async function storedEligibleCanonicalSummarySnapshotPayload(client) {
           WHERE check_item->>'name' = 'canonical-activity-count-matches-public-log'
             AND COALESCE(check_item->>'ok', 'false') = 'true'
         )
-      ORDER BY generated_at DESC
+      ORDER BY indexed_through_block DESC NULLS LAST, generated_at DESC
       LIMIT 1
     `,
     [NETWORK, WORK_ATOMIC_PROJECTION_MODEL],
@@ -16980,6 +17085,48 @@ function mempoolScanCursorForEntry(entry) {
   });
 }
 
+function mempoolScanTimeBudgetReached(
+  startedAtMs,
+  scanned,
+  nowMs = Date.now(),
+  budgetMs = MEMPOOL_SCAN_BUDGET_MS,
+) {
+  const started = Number(startedAtMs);
+  const current = Number(nowMs);
+  const budget = Number(budgetMs);
+  return (
+    Number(scanned) > 0 &&
+    Number.isFinite(started) &&
+    Number.isFinite(current) &&
+    Number.isFinite(budget) &&
+    budget > 0 &&
+    current - started >= budget
+  );
+}
+
+function pendingExtendedVerifierTimeoutMs({
+  childTimeoutMs = PENDING_ONLY_CHILD_TIMEOUT_MS,
+  nowMs = Date.now(),
+  pendingOnly = PENDING_ONLY_BACKFILL,
+  processStartedAtMs = BACKFILL_PROCESS_STARTED_AT_MS,
+} = {}) {
+  if (!pendingOnly) {
+    return PENDING_LEGACY_VERIFIER_TIMEOUT_MS;
+  }
+  const childBudget = Math.max(1, Math.floor(Number(childTimeoutMs) || 1));
+  const elapsed = Math.max(
+    0,
+    Math.floor(Number(nowMs) || 0) -
+      Math.floor(Number(processStartedAtMs) || 0),
+  );
+  const verifierBudget =
+    childBudget - PENDING_ONLY_PERSISTENCE_HEADROOM_MS - elapsed;
+  if (verifierBudget < 1_000) {
+    return 0;
+  }
+  return Math.min(PENDING_ONLY_VERIFIER_MAX_MS, verifierBudget);
+}
+
 function mempoolEntriesAfterCursor(entries, cursor) {
   const normalizedCursor = normalizedMempoolScanCursor(cursor);
   if (!normalizedCursor || entries.length === 0) {
@@ -17779,6 +17926,7 @@ async function removeVolatileWorkMarketV2DecisionEvents(
 }
 
 async function backfillMempoolScanSource(client, source) {
+  const startedAtMs = Date.now();
   if (!BITCOIN_RPC_URL) {
     return {
       error: "BITCOIN_RPC_URL is not configured",
@@ -17838,10 +17986,16 @@ async function backfillMempoolScanSource(client, source) {
   let priorityScanned = 0;
   let protocolTxids = 0;
   let scanned = 0;
+  let stopReason = "";
   let unresolved = 0;
 
   for (const candidate of candidates) {
     if (protocolTxids >= Math.max(1, MEMPOOL_SCAN_MAX_PROTOCOL_TXIDS)) {
+      stopReason = "protocol-txid-limit";
+      break;
+    }
+    if (mempoolScanTimeBudgetReached(startedAtMs, scanned)) {
+      stopReason = "time-budget";
       break;
     }
     const [txid] = candidate.entry;
@@ -17886,12 +18040,25 @@ async function backfillMempoolScanSource(client, source) {
       const extendedPendingVerifier =
         legacyWorkInspection > 0 ||
         pendingCoreMarketplaceVerifierNeeded(messages);
+      const extendedPendingVerifierTimeoutMs = extendedPendingVerifier
+        ? pendingExtendedVerifierTimeoutMs()
+        : null;
+      if (
+        extendedPendingVerifier &&
+        extendedPendingVerifierTimeoutMs === 0
+      ) {
+        throw new Error(
+          `Pending-only verifier headroom is exhausted before inspecting ${txid}.`,
+        );
+      }
       const hydrated = await transactionWithInputPrevouts(tx);
       const rawVerifiedPrepared = await preparedProtocolItemsForTx(
         hydrated,
         messages,
         extendedPendingVerifier
-          ? { pendingVerifierTimeoutMs: PENDING_LEGACY_VERIFIER_TIMEOUT_MS }
+          ? {
+              pendingVerifierTimeoutMs: extendedPendingVerifierTimeoutMs,
+            }
           : undefined,
       );
       const workMintResolvedInvalid =
@@ -18046,6 +18213,7 @@ async function backfillMempoolScanSource(client, source) {
     priorityCursor,
   );
   return {
+    budgetMs: MEMPOOL_SCAN_BUDGET_MS,
     canonicalDeferred,
     cursor,
     cursorScanned,
@@ -18058,6 +18226,7 @@ async function backfillMempoolScanSource(client, source) {
     protocolTxids,
     scanned,
     source: source.label,
+    stopReason,
     unresolved,
   };
 }
@@ -20516,7 +20685,14 @@ if (DRY_RUN) {
         dryRun: true,
         hydrateTransactionDetailsOnly: HYDRATE_TRANSACTION_DETAILS_ONLY,
         maxPages: MAX_PAGES,
+        mempoolScanBudgetMs: MEMPOOL_SCAN_BUDGET_MS,
         migrateWorkAtomsOnly: MIGRATE_WORK_ATOMS_ONLY,
+        pendingOnlyBackfill: PENDING_ONLY_BACKFILL,
+        pendingOnlyChildTimeoutMs: PENDING_ONLY_CHILD_TIMEOUT_MS,
+        pendingOnlyPersistenceHeadroomMs:
+          PENDING_ONLY_PERSISTENCE_HEADROOM_MS,
+        pendingOnlyVerifierMaxMs: PENDING_ONLY_VERIFIER_MAX_MS,
+        postSourceMaintenance: !PENDING_ONLY_BACKFILL,
         verifyWorkAtomsPostBootstrapOnly:
           VERIFY_WORK_ATOMS_POST_BOOTSTRAP_ONLY,
         network: NETWORK,
@@ -20786,63 +20962,82 @@ try {
       );
     } else {
       const results = [];
-      let rushBootstrap = null;
-      if (!REPAIR_WORK_PARTICIPANTS_ONLY) {
-        for (const source of SOURCES) {
-          results.push(await backfillSource(client, source));
-        }
-        rushBootstrap = await ensureCanonicalRushBootstrap(client);
-        results.push(rushBootstrap);
-        results.push(await repairMailParticipants(client));
-        results.push(await repairConfirmedListingSealMetadata(client));
-      }
-      results.push(await repairConfirmedWorkTransferParticipants(client));
-      if (REPAIR_WORK_PARTICIPANTS_ONLY) {
+      if (PENDING_ONLY_BACKFILL) {
+        results.push(...(await runPendingOnlyBackfillPass(client, SOURCES)));
         console.log(
           JSON.stringify(
             {
               apiBase: API_BASE,
               network: NETWORK,
               ok: true,
-              repairWorkParticipantsOnly: true,
+              pendingOnlyBackfill: true,
+              postSourceMaintenance: false,
               results,
             },
             null,
             2,
           ),
         );
-        process.exitCode = 0;
       } else {
-        results.push(await repairWorkMintMinterAttribution(client));
-        results.push(await backfillScopedTokenHolders(client));
-        const snapshot = STORE_LEDGER_SNAPSHOT
-          ? await storeLedgerSnapshot(client)
-          : null;
-        const canonicalSummarySnapshot =
-          STORE_CANONICAL_SUMMARY_SNAPSHOT && rushBootstrap?.complete === true
-          ? await storeCanonicalSummarySnapshot(client)
-          : STORE_CANONICAL_SUMMARY_SNAPSHOT
-            ? {
-                reason: "rush-canonical-bootstrap-in-progress",
-                skipped: true,
-              }
+        let rushBootstrap = null;
+        if (!REPAIR_WORK_PARTICIPANTS_ONLY) {
+          for (const source of SOURCES) {
+            results.push(await backfillSource(client, source));
+          }
+          rushBootstrap = await ensureCanonicalRushBootstrap(client);
+          results.push(rushBootstrap);
+          results.push(await repairMailParticipants(client));
+          results.push(await repairConfirmedListingSealMetadata(client));
+        }
+        results.push(await repairConfirmedWorkTransferParticipants(client));
+        if (REPAIR_WORK_PARTICIPANTS_ONLY) {
+          console.log(
+            JSON.stringify(
+              {
+                apiBase: API_BASE,
+                network: NETWORK,
+                ok: true,
+                repairWorkParticipantsOnly: true,
+                results,
+              },
+              null,
+              2,
+            ),
+          );
+          process.exitCode = 0;
+        } else {
+          results.push(await repairWorkMintMinterAttribution(client));
+          results.push(await backfillScopedTokenHolders(client));
+          const snapshot = STORE_LEDGER_SNAPSHOT
+            ? await storeLedgerSnapshot(client)
             : null;
-        console.log(
-          JSON.stringify(
-            {
-              apiBase: API_BASE,
-              network: NETWORK,
-              ok: true,
-              results,
-              canonicalSummarySnapshot,
-              snapshotId: snapshot?.snapshotId ?? null,
-              storeCanonicalSummarySnapshot: STORE_CANONICAL_SUMMARY_SNAPSHOT,
-              storeLedgerSnapshot: STORE_LEDGER_SNAPSHOT,
-            },
-            null,
-            2,
-          ),
-        );
+          const canonicalSummarySnapshot =
+            STORE_CANONICAL_SUMMARY_SNAPSHOT && rushBootstrap?.complete === true
+              ? await storeCanonicalSummarySnapshot(client)
+              : STORE_CANONICAL_SUMMARY_SNAPSHOT
+                ? {
+                    reason: "rush-canonical-bootstrap-in-progress",
+                    skipped: true,
+                  }
+                : null;
+          console.log(
+            JSON.stringify(
+              {
+                apiBase: API_BASE,
+                network: NETWORK,
+                ok: true,
+                results,
+                canonicalSummarySnapshot,
+                snapshotId: snapshot?.snapshotId ?? null,
+                storeCanonicalSummarySnapshot:
+                  STORE_CANONICAL_SUMMARY_SNAPSHOT,
+                storeLedgerSnapshot: STORE_LEDGER_SNAPSHOT,
+              },
+              null,
+              2,
+            ),
+          );
+        }
       }
     }
   } finally {

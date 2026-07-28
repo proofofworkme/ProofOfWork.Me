@@ -23970,6 +23970,7 @@ export async function proofIndexSnapshotPayload(network, key) {
             payload
           FROM proof_indexer.ledger_snapshots
           WHERE network = $1
+            AND payload ? 'summaryPayloads'
             AND payload->>'workAmountStorageModel' = $3
             AND COALESCE(consistency->>'ok', payload->>'ok', 'false') = 'true'
             AND COALESCE(consistency->>'status', payload->>'status', '') <> 'summary-snapshot-fallback'

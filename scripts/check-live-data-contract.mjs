@@ -230,6 +230,22 @@ const proofIndexSnapshotPayloadSource = sourceSliceBetween(
   /export async function proofIndexSnapshotPayload/,
   /export async function proofIndexValueSummaryPayload/,
 );
+const storedEligibleCanonicalSummarySnapshotPayloadSource =
+  sourceSliceBetween(
+    proofIndexerBackfill,
+    /async function storedEligibleCanonicalSummarySnapshotPayload/,
+    /async function storedExactEligibleCanonicalSummarySnapshotPayload/,
+  );
+const workerBackfillPhasePlanSource = sourceSliceBetween(
+  proofIndexerWorker,
+  /export function workerBackfillPhasePlan/,
+  /export function runScript/,
+);
+const workerRunCycleSource = sourceSliceBetween(
+  proofIndexerWorker,
+  /async function runCycle/,
+  /async function main/,
+);
 const fetchIdRecordStateSource = sourceSliceBetween(
   app,
   /async function fetchIdRecordState/,
@@ -876,8 +892,8 @@ expectAll("mempool priority recovery rotates independently and preserves invalid
   /function storePendingWorkMintInspection\([\s\S]*jsonb_build_object\([\s\S]*pendingWorkMintInspectionVersion[\s\S]*pendingWorkMintRecoveryNeeded[\s\S]*pendingWorkMintResolvedInvalid[\s\S]*pendingProtocolResolvedInvalid[\s\S]*canonicalBlockScan/,
   /function storePendingWorkMintAttemptPreinspection\([\s\S]*pendingWorkMintAttemptCount[\s\S]*pendingWorkMintInspectionVersion[\s\S]*pendingWorkMintRecoveryNeeded', true[\s\S]*pendingWorkMintResolvedInvalid', false[\s\S]*canonicalBlockScan[\s\S]*!~ '\^\[1-9\]\[0-9\]\*\$'/,
   /const PENDING_LEGACY_VERIFIER_TIMEOUT_MS = 30_000[\s\S]*async function canonicalRecoveryItemsForTx\(tx, messages, options = \{\}\)[\s\S]*options\?\.pendingVerifierTimeoutMs/,
-  /const workMintAttemptCount = pendingWorkMintAttemptCount\(messages\)[\s\S]*storePendingWorkMintAttemptPreinspection\([\s\S]*PENDING_LEGACY_VERIFIER_TIMEOUT_MS[\s\S]*preparedProtocolItemsForTx/,
-  /function pendingCoreMarketplaceVerifierNeeded\([\s\S]*buy5[\s\S]*delist5[\s\S]*list5[\s\S]*seal5[\s\S]*const extendedPendingVerifier =[\s\S]*pendingCoreMarketplaceVerifierNeeded\(messages\)[\s\S]*PENDING_LEGACY_VERIFIER_TIMEOUT_MS/,
+  /const workMintAttemptCount = pendingWorkMintAttemptCount\(messages\)[\s\S]*storePendingWorkMintAttemptPreinspection\([\s\S]*pendingExtendedVerifierTimeoutMs\(\)[\s\S]*preparedProtocolItemsForTx/,
+  /function pendingCoreMarketplaceVerifierNeeded\([\s\S]*buy5[\s\S]*delist5[\s\S]*list5[\s\S]*seal5[\s\S]*const extendedPendingVerifier =[\s\S]*pendingCoreMarketplaceVerifierNeeded\(messages\)[\s\S]*pendingExtendedVerifierTimeoutMs\(\)/,
   /const protocolResolvedInvalid =[\s\S]*rawVerifiedPrepared\.length > 0[\s\S]*rawVerifiedPrepared\.every\([\s\S]*valid === false[\s\S]*storePendingWorkMintInspection\([\s\S]*protocolResolvedInvalid/,
   /row\.status === "pending"[\s\S]*row\.eventCount === 0[\s\S]*!row\.protocolResolvedInvalid[\s\S]*!row\.resolvedInvalid/,
   /const resolvedInvalids = items\.filter\([\s\S]*token-event-invalid[\s\S]*Number\.isSafeInteger\(workMintAttemptCount\)[\s\S]*workMintAttemptCount > 0[\s\S]*return \{ kind: "resolved-invalid", persistInvalid: false \}/,
@@ -1409,10 +1425,46 @@ expect(
   "summary proof-index snapshots use a dedicated lookback window",
   /const SUMMARY_SNAPSHOT_LOOKBACK_LIMIT = 5_000/.test(proofIndexReader),
 );
+expectAll(
+  "canonical summary candidate reads use the order-matched partial index contract",
+  proofIndexerSchema,
+  [
+    /CREATE INDEX IF NOT EXISTS ledger_snapshots_summary_latest_idx[\s\S]*ON proof_indexer\.ledger_snapshots \([\s\S]*network,[\s\S]*indexed_through_block DESC NULLS LAST,[\s\S]*generated_at DESC[\s\S]*\)[\s\S]*WHERE payload \? 'summaryPayloads'/,
+  ],
+);
+expectAll(
+  "worker canonical summary reuse constrains and orders the partial-index candidate set",
+  storedEligibleCanonicalSummarySnapshotPayloadSource,
+  [
+    /WHERE network = \$1[\s\S]*AND payload \? 'summaryPayloads'/,
+    /AND source_hashes \? 'canonicalSummary'/,
+    /ORDER BY indexed_through_block DESC NULLS LAST,\s*generated_at DESC[\s\S]*LIMIT 1/,
+  ],
+);
 expectAll("summary proof-index snapshots prefer latest summary scan rows before historical fallback", proofIndexSnapshotPayloadSource, [
   /FROM proof_indexer\.ledger_snapshots[\s\S]*WHERE network = \$1[\s\S]*payload \? 'summaryPayloads'[\s\S]*payload->'summaryPayloads' \? \$2[\s\S]*ORDER BY indexed_through_block DESC NULLS LAST,\s*generated_at DESC[\s\S]*LIMIT 1/,
-  /if \(!snapshot\) \{[\s\S]*WITH recent AS \([\s\S]*FROM proof_indexer\.ledger_snapshots[\s\S]*ORDER BY generated_at DESC[\s\S]*LIMIT \$\{SUMMARY_SNAPSHOT_LOOKBACK_LIMIT\}[\s\S]*FROM recent[\s\S]*WHERE payload \? 'summaryPayloads'[\s\S]*AND payload->'summaryPayloads' \? \$2[\s\S]*ORDER BY generated_at DESC[\s\S]*LIMIT 1/,
+  /if \(!snapshot\) \{[\s\S]*WITH recent AS \([\s\S]*FROM proof_indexer\.ledger_snapshots[\s\S]*WHERE network = \$1[\s\S]*AND payload \? 'summaryPayloads'[\s\S]*ORDER BY generated_at DESC[\s\S]*LIMIT \$\{SUMMARY_SNAPSHOT_LOOKBACK_LIMIT\}[\s\S]*FROM recent[\s\S]*WHERE payload \? 'summaryPayloads'[\s\S]*AND payload->'summaryPayloads' \? \$2[\s\S]*ORDER BY generated_at DESC[\s\S]*LIMIT 1/,
 ]);
+expectAll(
+  "hot worker publishes canonical summaries before bounded best-effort pending work",
+  workerBackfillPhasePlanSource +
+    workerRunCycleSource +
+    proofIndexerBackfill +
+    proofIndexerWorkerService,
+  [
+    /sourceLabels: \["block-scan"\][\s\S]*storeCanonicalSummarySnapshot:/,
+    /kind: "best-effort-pending"[\s\S]*sourceLabels: \["mempool-scan"\][\s\S]*storeCanonicalSummarySnapshot: "0"/,
+    /runCanonicalBeforePending\([\s\S]*runBackfillPhase\(backfillPhases\[0\]\)[\s\S]*runBackfillPhase\(backfillPhases\[1\]\)/,
+    /POW_INDEX_BACKFILL_PENDING_ONLY:[\s\S]*POW_INDEX_BACKFILL_PENDING_CHILD_TIMEOUT_MS:[\s\S]*runBestEffortPendingBackfill\(/,
+    /const PENDING_ONLY_BACKFILL = pendingOnlyBackfillMode\([\s\S]*if \(PENDING_ONLY_BACKFILL\) \{[\s\S]*runPendingOnlyBackfillPass\(client, SOURCES\)[\s\S]*postSourceMaintenance: false/,
+    /const MEMPOOL_SCAN_BUDGET_MS = Math\.min\([\s\S]*POW_INDEX_MEMPOOL_SCAN_BUDGET_MS \?\? 15_000/,
+    /const PENDING_ONLY_VERIFIER_MAX_MS = 20_000[\s\S]*const PENDING_ONLY_PERSISTENCE_HEADROOM_MS = 9_000/,
+    /mempoolScanTimeBudgetReached\(startedAtMs,\s*scanned\)[\s\S]*stopReason = "time-budget"/,
+    /pendingExtendedVerifierTimeoutMs\(\)[\s\S]*pendingVerifierTimeoutMs: extendedPendingVerifierTimeoutMs/,
+    /^Environment=POW_INDEX_MEMPOOL_SCAN_BUDGET_MS=15000$/m,
+    /^Environment=POW_INDEX_WORKER_PENDING_BACKFILL_TIMEOUT_MS=30000$/m,
+  ],
+);
 expectAll("generic payload snapshots select the latest matching payload without a finite lookback", ledgerSnapshotWithPayloadSource, [
   /FROM proof_indexer\.ledger_snapshots[\s\S]*WHERE network = \$1[\s\S]*AND payload \? \$2[\s\S]*ORDER BY generated_at DESC[\s\S]*LIMIT 1/,
 ]);

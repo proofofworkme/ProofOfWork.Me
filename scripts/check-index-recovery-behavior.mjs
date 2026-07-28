@@ -12905,6 +12905,7 @@ check("Core-present dropped protocol transactions revive through verifier and up
     "backfillMempoolScanSource",
     {
       BITCOIN_RPC_URL: "http://127.0.0.1:8332",
+      MEMPOOL_SCAN_BUDGET_MS: 15_000,
       MEMPOOL_SCAN_MAX_PROTOCOL_TXIDS: 5,
       MEMPOOL_SCAN_MAX_TXIDS: 500,
       MEMPOOL_SCAN_SEEN_LIMIT: 10_000,
@@ -12922,6 +12923,7 @@ check("Core-present dropped protocol transactions revive through verifier and up
       isHexTxid,
       knownMempoolRecoveryTxids: async () => [target],
       mempoolScanCursorForEntry,
+      mempoolScanTimeBudgetReached: () => false,
       mempoolScanState: async () => ({
         cursor: null,
         key: "mempoolScan:livenet",
@@ -13168,6 +13170,7 @@ check("supply-capped mempool mints replace stale valid rows with a pending inval
     "backfillMempoolScanSource",
     {
       BITCOIN_RPC_URL: "http://127.0.0.1:8332",
+      MEMPOOL_SCAN_BUDGET_MS: 15_000,
       MEMPOOL_SCAN_MAX_PROTOCOL_TXIDS: 5,
       MEMPOOL_SCAN_MAX_TXIDS: 500,
       MEMPOOL_SCAN_SEEN_LIMIT: 10_000,
@@ -13185,6 +13188,7 @@ check("supply-capped mempool mints replace stale valid rows with a pending inval
         time: metadata.time,
         txid,
       }),
+      mempoolScanTimeBudgetReached: () => false,
       mempoolScanState: async () => ({
         cursor: null,
         key: "mempoolScan:livenet",
@@ -13201,6 +13205,7 @@ check("supply-capped mempool mints replace stale valid rows with a pending inval
       pendingWorkMintDecision,
       pendingWorkMintAttemptCount: () => 1,
       pendingWorkMintVerifierResolved: () => true,
+      pendingExtendedVerifierTimeoutMs: () => 20_000,
       lockedCanonicalTransactionForMempool: isolatedFunction(
         BACKFILL_PATH,
         "lockedCanonicalTransactionForMempool",
@@ -13521,7 +13526,7 @@ check("same-height pending membership versions the canonical Log snapshot", asyn
   const runCycleSource = topLevelFunctionSource(WORKER_PATH, "runCycle");
   assert.match(
     runCycleSource,
-    /await runBackfillWithRetries\(backfillEnv, runtime\);[\s\S]*const pendingStatus = await refreshPendingStatuses\(pool\);/u,
+    /runCanonicalBeforePending\([\s\S]*runBackfillPhase\(backfillPhases\[0\]\)[\s\S]*runBackfillPhase\(backfillPhases\[1\]\)[\s\S]*pendingStatus = await refreshPendingStatuses\(pool\);/u,
   );
 });
 
@@ -48820,6 +48825,20 @@ check("block-order annotation bounds singleton hydration and routes by network",
   );
   assert.equal(transactionBlockIndex(preV5), undefined);
 
+  fetches = 0;
+  const [preV5Hydrated] = await annotateBlockOrder(
+    [preV5Singleton],
+    "livenet",
+    { hydrateAllMissingConfirmedIndexes: true },
+  );
+  assert.equal(
+    fetches,
+    1,
+    "an explicitly strict recovery must hydrate a pre-V5 singleton",
+  );
+  assert.equal(transactionBlockIndex(preV5Hydrated), 23);
+
+  fetches = 0;
   networkFetches = 0;
   const [testnetHydrated] = await annotateBlockOrder([singleton], "testnet");
   assert.equal(
@@ -48857,6 +48876,272 @@ check("block-order annotation bounds singleton hydration and routes by network",
     transactionBlockIndex(unavailable),
     undefined,
     "failed Core hydration must remain incomplete for downstream fail-closed validation",
+  );
+});
+
+check("WORK transfer recovery proves missing explorer order through Core", async () => {
+  const transactionTxid = isolatedFunction(API_PATH, "transactionTxid");
+  const transactionConfirmed = isolatedFunction(
+    API_PATH,
+    "transactionConfirmed",
+  );
+  const transactionBlockHash = isolatedFunction(
+    API_PATH,
+    "transactionBlockHash",
+  );
+  const transactionBlockHeight = isolatedFunction(
+    API_PATH,
+    "transactionBlockHeight",
+  );
+  const transactionBlockIndex = isolatedFunction(
+    API_PATH,
+    "transactionBlockIndex",
+  );
+  const dedupeTransactions = isolatedFunction(API_PATH, "dedupeTransactions", {
+    transactionConfirmed,
+    transactionTxid,
+  });
+  const transactionHasWorkTransferRecoveryCandidate = isolatedFunction(
+    API_PATH,
+    "transactionHasWorkTransferRecoveryCandidate",
+    {
+      TOKEN_PROTOCOL_PREFIX: "pwt1",
+      WORK_TOKEN_ID,
+      decodedProtocolMessages: (outputs) =>
+        outputs.flatMap((output) => output.protocolMessages ?? []),
+      parseTokenPayload: (message) =>
+        message === "canonical-work-send"
+          ? { kind: "send", tokenId: WORK_TOKEN_ID }
+          : null,
+    },
+  );
+
+  const preV5BlockHash = "1".repeat(64);
+  const preV5Txid = "2".repeat(64);
+  const unrelatedBlockHash = "3".repeat(64);
+  const unrelatedTxid = "4".repeat(64);
+  const preV5BlockHeight = WORK_AMO_V5_ACTIVATION_HEIGHT - 3_390;
+  let canonicalIndexes = new Map([[preV5Txid, 3_013]]);
+  let canonicalHash = preV5BlockHash;
+  let coreBlockHeight = preV5BlockHeight;
+  let coreConfirmations = 6;
+  const fetchedBlockHashes = [];
+  let rejectCore = false;
+  const fetchCoreCanonicalBlockOrder = isolatedFunction(
+    API_PATH,
+    "fetchCoreCanonicalBlockOrder",
+    {
+      bitcoinRpc: async (method, params) => {
+        if (rejectCore) {
+          throw new Error("Core block hydration unavailable");
+        }
+        if (method === "getblockheader") {
+          return {
+            ok: true,
+            result: {
+              confirmations: coreConfirmations,
+              hash: params[0],
+              height: coreBlockHeight,
+            },
+          };
+        }
+        if (method === "getblockhash") {
+          assert.equal(params[0], coreBlockHeight);
+          return { ok: true, result: canonicalHash };
+        }
+        throw new Error(`Unexpected Core method ${method}`);
+      },
+      fetchCoreBlockTxidIndex: async (blockHash) => {
+        fetchedBlockHashes.push(blockHash);
+        if (rejectCore) {
+          throw new Error("Core block hydration unavailable");
+        }
+        return blockHash === preV5BlockHash ? canonicalIndexes : new Map();
+      },
+    },
+  );
+  const annotateBlockOrder = async () => {
+    throw new Error("non-livenet block annotation was unexpected");
+  };
+  const mapWithConcurrency = async (items, _limit, mapper) =>
+    Promise.all(items.map(mapper));
+  const workTransferRecoveryTransactionsWithCanonicalOrder = isolatedFunction(
+    API_PATH,
+    "workTransferRecoveryTransactionsWithCanonicalOrder",
+    {
+      BLOCK_TXID_FETCH_CONCURRENCY: 2,
+      annotateBlockOrder,
+      dedupeTransactions,
+      fetchCoreCanonicalBlockOrder,
+      mapWithConcurrency,
+      transactionBlockHash,
+      transactionBlockHeight,
+      transactionBlockIndex,
+      transactionConfirmed,
+      transactionHasWorkTransferRecoveryCandidate,
+      transactionTxid,
+    },
+  );
+  const explorerWorkSend = {
+    status: {
+      block_hash: preV5BlockHash,
+      block_height: preV5BlockHeight,
+      confirmed: true,
+    },
+    txid: preV5Txid,
+    vout: [{ protocolMessages: ["canonical-work-send"] }],
+  };
+  const unrelatedExplorerTransaction = {
+    status: {
+      block_hash: unrelatedBlockHash,
+      block_height: WORK_AMO_V5_ACTIVATION_HEIGHT - 100,
+      confirmed: true,
+    },
+    txid: unrelatedTxid,
+    vout: [{ protocolMessages: [] }],
+  };
+
+  const [hydrated] =
+    await workTransferRecoveryTransactionsWithCanonicalOrder(
+      [unrelatedExplorerTransaction, explorerWorkSend],
+      "livenet",
+    );
+  assert.equal(hydrated.txid, preV5Txid);
+  assert.equal(
+    transactionBlockIndex(hydrated),
+    3_013,
+    "Core must supply the exact missing pre-V5 transaction position",
+  );
+  assert.deepEqual(
+    fetchedBlockHashes,
+    [preV5BlockHash],
+    "unrelated address transactions must not amplify Core hydration",
+  );
+
+  fetchedBlockHashes.length = 0;
+  const [verifiedExact] =
+    await workTransferRecoveryTransactionsWithCanonicalOrder(
+      [
+        {
+          ...explorerWorkSend,
+          status: {
+            ...explorerWorkSend.status,
+            block_index: 3_013,
+          },
+        },
+      ],
+      "livenet",
+    );
+  assert.equal(transactionBlockIndex(verifiedExact), 3_013);
+  assert.deepEqual(
+    fetchedBlockHashes,
+    [preV5BlockHash],
+    "strict recovery must prove even a prefilled transaction index through Core",
+  );
+
+  fetchedBlockHashes.length = 0;
+  await assert.rejects(
+    workTransferRecoveryTransactionsWithCanonicalOrder(
+      [
+        {
+          ...explorerWorkSend,
+          status: {
+            ...explorerWorkSend.status,
+            block_index: 12,
+          },
+        },
+      ],
+      "livenet",
+    ),
+    /recovery index does not match Bitcoin Core/u,
+    "a prefilled explorer index cannot override Core transaction order",
+  );
+  assert.deepEqual(fetchedBlockHashes, [preV5BlockHash]);
+
+  canonicalIndexes = new Map();
+  fetchedBlockHashes.length = 0;
+  await assert.rejects(
+    workTransferRecoveryTransactionsWithCanonicalOrder(
+      [explorerWorkSend],
+      "livenet",
+    ),
+    /recovery position does not match Bitcoin Core/u,
+    "a Core block that cannot prove membership must fail closed",
+  );
+  assert.deepEqual(fetchedBlockHashes, [preV5BlockHash]);
+
+  canonicalIndexes = new Map([[preV5Txid, 3_013]]);
+  coreConfirmations = -1;
+  fetchedBlockHashes.length = 0;
+  await assert.rejects(
+    workTransferRecoveryTransactionsWithCanonicalOrder(
+      [explorerWorkSend],
+      "livenet",
+    ),
+    /did not prove an active canonical block order/u,
+    "a stale-fork block must never prove a confirmed recovery",
+  );
+  assert.deepEqual(fetchedBlockHashes, [preV5BlockHash]);
+
+  coreConfirmations = 6;
+  coreBlockHeight = preV5BlockHeight + 1;
+  fetchedBlockHashes.length = 0;
+  await assert.rejects(
+    workTransferRecoveryTransactionsWithCanonicalOrder(
+      [explorerWorkSend],
+      "livenet",
+    ),
+    /recovery position does not match Bitcoin Core/u,
+    "the explorer height must exactly match Core's block height",
+  );
+  assert.deepEqual(fetchedBlockHashes, [preV5BlockHash]);
+
+  coreBlockHeight = preV5BlockHeight;
+  canonicalHash = "5".repeat(64);
+  fetchedBlockHashes.length = 0;
+  await assert.rejects(
+    workTransferRecoveryTransactionsWithCanonicalOrder(
+      [explorerWorkSend],
+      "livenet",
+    ),
+    /canonical block identity changed/u,
+    "a reorg between block hydration and the height binding must fail closed",
+  );
+  assert.deepEqual(fetchedBlockHashes, [preV5BlockHash]);
+
+  canonicalHash = preV5BlockHash;
+  rejectCore = true;
+  fetchedBlockHashes.length = 0;
+  await assert.rejects(
+    workTransferRecoveryTransactionsWithCanonicalOrder(
+      [
+        {
+          ...explorerWorkSend,
+          createdAt: "2026-07-01T15:32:19.000Z",
+        },
+      ],
+      "livenet",
+    ),
+    /Core block hydration unavailable/u,
+    "Core unavailability must not fall back to txid or timestamp order",
+  );
+  assert.deepEqual(fetchedBlockHashes, [preV5BlockHash]);
+
+  const apiSource = fileSource(API_PATH);
+  assert.match(
+    apiSource,
+    /async function recoveredWorkTransfersForAddresses[\s\S]*workTransferRecoveryTransactionsWithCanonicalOrder\([\s\S]*workTransfersFromTransactions\(\s*recoveryTransactions/u,
+    "address recovery must hydrate exact order before strict WORK replay",
+  );
+  assert.match(
+    apiSource,
+    /async function tokenPayloadWithRecoveredWalletWorkTransfers[\s\S]*recoveredWorkTransfersForAddresses\(/u,
+    "wallet recovery must use the exact shared address recovery path",
+  );
+  assert.match(
+    apiSource,
+    /safeKind === "transfers"[\s\S]*const recoveredTransfers = await recoveredWorkTransfersForAddresses\(/u,
+    "transfer-history fallback must use the exact shared address recovery path",
   );
 });
 

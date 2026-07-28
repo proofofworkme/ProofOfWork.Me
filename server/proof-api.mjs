@@ -7358,6 +7358,54 @@ async function fetchCoreBlockTxidIndex(blockHash) {
   return index;
 }
 
+async function fetchCoreCanonicalBlockOrder(blockHash) {
+  const normalizedHash = String(blockHash ?? "").trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/u.test(normalizedHash)) {
+    throw new Error(
+      "Bitcoin Core canonical block-order proof requires a block hash.",
+    );
+  }
+
+  const [headerResponse, txidIndex] = await Promise.all([
+    bitcoinRpc("getblockheader", [normalizedHash, true]),
+    fetchCoreBlockTxidIndex(normalizedHash),
+  ]);
+  const header = headerResponse?.ok ? headerResponse.result : null;
+  const headerHash = String(header?.hash ?? "").trim().toLowerCase();
+  const blockHeight = Number(header?.height);
+  if (
+    !header ||
+    headerHash !== normalizedHash ||
+    Number(header.confirmations) <= 0 ||
+    !Number.isSafeInteger(blockHeight) ||
+    blockHeight < 1 ||
+    !txidIndex ||
+    typeof txidIndex.get !== "function"
+  ) {
+    throw new Error(
+      "Bitcoin Core did not prove an active canonical block order.",
+    );
+  }
+
+  const canonicalHashResponse = await bitcoinRpc("getblockhash", [blockHeight]);
+  const canonicalHash = String(
+    canonicalHashResponse?.ok ? canonicalHashResponse.result : "",
+  )
+    .trim()
+    .toLowerCase();
+  if (canonicalHash !== normalizedHash) {
+    throw new Error(
+      "Bitcoin Core canonical block identity changed during WORK transfer recovery.",
+    );
+  }
+
+  return {
+    blockHash: normalizedHash,
+    blockHeight,
+    txidIndex,
+  };
+}
+
 async function fetchAddressTransactionsPage(address, network, path) {
   return fetchAddressTransactionsPageFromBase(
     mempoolBase(network),
@@ -8578,7 +8626,9 @@ function transactionBlockIndex(tx) {
   return Number.isSafeInteger(index) && index >= 0 ? index : undefined;
 }
 
-async function annotateBlockOrder(txs, network) {
+async function annotateBlockOrder(txs, network, options = {}) {
+  const hydrateAllMissingConfirmedIndexes =
+    options.hydrateAllMissingConfirmedIndexes === true;
   const blockDetails = new Map();
   for (const tx of txs) {
     if (!transactionConfirmed(tx)) {
@@ -8594,7 +8644,10 @@ async function annotateBlockOrder(txs, network) {
       details.count += 1;
       details.missingCanonicalIndex ||=
         transactionBlockIndex(tx) === undefined &&
-        Number(transactionBlockHeight(tx)) >= WORK_AMO_V5_ACTIVATION_HEIGHT;
+        (
+          hydrateAllMissingConfirmedIndexes ||
+          Number(transactionBlockHeight(tx)) >= WORK_AMO_V5_ACTIVATION_HEIGHT
+        );
       blockDetails.set(blockHash, details);
     }
   }
@@ -15426,6 +15479,107 @@ function workTransfersFromTransactions(txs, network) {
   );
 }
 
+function transactionHasWorkTransferRecoveryCandidate(tx, network) {
+  const vout = Array.isArray(tx?.vout) ? tx.vout : [];
+  return decodedProtocolMessages(vout, TOKEN_PROTOCOL_PREFIX).some((message) => {
+    const parsed = parseTokenPayload(message, network);
+    return parsed?.kind === "send" && parsed.tokenId === WORK_TOKEN_ID;
+  });
+}
+
+async function workTransferRecoveryTransactionsWithCanonicalOrder(
+  txs,
+  network,
+) {
+  const candidates = dedupeTransactions(
+    (Array.isArray(txs) ? txs : []).filter((tx) =>
+      transactionHasWorkTransferRecoveryCandidate(tx, network),
+    ),
+  );
+  if (network !== "livenet") {
+    return annotateBlockOrder(candidates, network, {
+      hydrateAllMissingConfirmedIndexes: true,
+    });
+  }
+
+  const confirmedBlockHashes = new Set();
+  for (const tx of candidates) {
+    if (!transactionConfirmed(tx)) {
+      continue;
+    }
+    const blockHash = transactionBlockHash(tx);
+    if (!blockHash) {
+      throw new Error(
+        "Confirmed WORK transfer recovery position is incomplete.",
+      );
+    }
+    confirmedBlockHashes.add(blockHash);
+  }
+  const canonicalBlocks = new Map();
+  await mapWithConcurrency(
+    [...confirmedBlockHashes],
+    BLOCK_TXID_FETCH_CONCURRENCY,
+    async (blockHash) => {
+      canonicalBlocks.set(
+        blockHash,
+        await fetchCoreCanonicalBlockOrder(blockHash),
+      );
+    },
+  );
+
+  const hydrated = candidates.map((tx) => {
+    if (!transactionConfirmed(tx)) {
+      return tx;
+    }
+    const txid = transactionTxid(tx);
+    const blockHash = transactionBlockHash(tx);
+    const blockHeight = transactionBlockHeight(tx);
+    const blockIndex = transactionBlockIndex(tx);
+    const canonicalBlock = canonicalBlocks.get(blockHash);
+    const canonicalIndex = canonicalBlock?.txidIndex?.get(txid);
+    if (
+      !canonicalBlock ||
+      canonicalBlock.blockHash !== blockHash ||
+      canonicalBlock.blockHeight !== blockHeight ||
+      !Number.isSafeInteger(canonicalIndex) ||
+      canonicalIndex < 0
+    ) {
+      throw new Error(
+        "Confirmed WORK transfer recovery position does not match Bitcoin Core.",
+      );
+    }
+    if (
+      Number.isSafeInteger(blockIndex) &&
+      blockIndex >= 0 &&
+      blockIndex !== canonicalIndex
+    ) {
+      throw new Error(
+        "Confirmed WORK transfer recovery index does not match Bitcoin Core.",
+      );
+    }
+    return { ...tx, _powBlockIndex: canonicalIndex };
+  });
+  for (const tx of hydrated) {
+    if (!transactionConfirmed(tx)) {
+      continue;
+    }
+    const blockHeight = transactionBlockHeight(tx);
+    const blockIndex = transactionBlockIndex(tx);
+    if (
+      !transactionBlockHash(tx) ||
+      !Number.isSafeInteger(blockHeight) ||
+      blockHeight < 1 ||
+      !Number.isSafeInteger(blockIndex) ||
+      blockIndex < 0
+    ) {
+      throw new Error(
+        "Confirmed WORK transfer recovery position is incomplete.",
+      );
+    }
+  }
+  return hydrated;
+}
+
 async function recoveredWorkTransfersForAddresses(
   addresses,
   network,
@@ -15490,8 +15644,13 @@ async function recoveredWorkTransfersForAddresses(
         )
       : [];
   const addressSet = new Set(safeAddresses);
+  const recoveryTransactions =
+    await workTransferRecoveryTransactionsWithCanonicalOrder(
+      [...explicitTxs, ...txGroups.flat()],
+      network,
+    );
   return workTransfersFromTransactions(
-    dedupeTransactions([...explicitTxs, ...txGroups.flat()]),
+    recoveryTransactions,
     network,
   ).filter(
     (transfer) =>
