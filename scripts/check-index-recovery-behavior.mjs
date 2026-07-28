@@ -46636,9 +46636,38 @@ check("AMO V5 readiness coalesces only identical exact checkpoints", async () =>
     READER_PATH,
     "workAmoReplayReadinessCheckpointKey",
   );
+  const readinessRequest = isolatedFunction(
+    READER_PATH,
+    "workAmoReplayReadinessRequest",
+    {
+      workAmoReplayReadinessCheckpointKey: checkpointKey,
+    },
+  );
   const singleFlight = isolatedFunction(
     READER_PATH,
     "exactCheckpointSingleFlight",
+  );
+  const deepFreezeSnapshot = isolatedFunction(
+    READER_PATH,
+    "deepFreezeReadinessSnapshot",
+  );
+  const exactPositive = isolatedFunction(
+    READER_PATH,
+    "workAmoReplayReadinessResultIsExactPositive",
+  );
+  const rememberReady = isolatedFunction(
+    READER_PATH,
+    "rememberExactCheckpointReadiness",
+  );
+  const readinessWithCache = isolatedFunction(
+    READER_PATH,
+    "exactCheckpointReadinessWithCache",
+    {
+      exactCheckpointSingleFlight: singleFlight,
+      deepFreezeReadinessSnapshot: deepFreezeSnapshot,
+      rememberExactCheckpointReadiness: rememberReady,
+      workAmoReplayReadinessResultIsExactPositive: exactPositive,
+    },
   );
   const tipHash = "a".repeat(64);
   assert.equal(
@@ -46647,6 +46676,37 @@ check("AMO V5 readiness coalesces only identical exact checkpoints", async () =>
       throughHeight: 960_000,
     }),
     `livenet:960000:${tipHash}`,
+  );
+  const mutableOptions = {
+    throughBlockHash: tipHash,
+    throughHeight: 960_000,
+  };
+  const snapshottedRequest = readinessRequest("livenet", mutableOptions);
+  mutableOptions.throughBlockHash = "b".repeat(64);
+  mutableOptions.throughHeight = 960_001;
+  assert.equal(
+    snapshottedRequest.checkpointKey,
+    `livenet:960000:${tipHash}`,
+  );
+  assert.equal(snapshottedRequest.options.throughBlockHash, tipHash);
+  assert.equal(snapshottedRequest.options.throughHeight, 960_000);
+  assert.equal(Object.isFrozen(snapshottedRequest), true);
+  assert.equal(Object.isFrozen(snapshottedRequest.options), true);
+  assert.equal(
+    readinessRequest("livenet", {
+      force: true,
+      throughBlockHash: tipHash,
+      throughHeight: 960_000,
+    }).checkpointKey,
+    "",
+  );
+  assert.equal(
+    readinessRequest("livenet", {
+      singleFlightBypass: true,
+      throughBlockHash: tipHash,
+      throughHeight: 960_000,
+    }).checkpointKey,
+    "",
   );
   for (const options of [
     {},
@@ -46702,6 +46762,124 @@ check("AMO V5 readiness coalesces only identical exact checkpoints", async () =>
     await singleFlight(inFlight, "retry", async () => "recovered"),
     "recovered",
   );
+
+  const exactResult = {
+    canonicalTip: 960_000,
+    canonicalTipBlockHash: tipHash,
+    indexReady: true,
+    ready: true,
+    requestedThroughBlockHash: tipHash,
+    requestedThroughHeight: 960_000,
+    requestedTipReady: true,
+    declaration: { txid: "c".repeat(64) },
+    reasons: [],
+    throughHeight: 960_000,
+  };
+  const exactOptions = {
+    throughBlockHash: tipHash,
+    throughHeight: 960_000,
+  };
+  assert.equal(exactPositive(exactResult, exactOptions), true);
+  for (const changed of [
+    { ready: false },
+    { indexReady: false },
+    { requestedTipReady: false },
+    { canonicalTip: 960_001 },
+    { canonicalTipBlockHash: "b".repeat(64) },
+    { requestedThroughBlockHash: "b".repeat(64) },
+    { requestedThroughHeight: 960_001 },
+    { throughHeight: 960_001 },
+  ]) {
+    assert.equal(
+      exactPositive({ ...exactResult, ...changed }, exactOptions),
+      false,
+    );
+  }
+
+  const readyCache = new Map();
+  rememberReady(readyCache, "first", exactResult);
+  rememberReady(readyCache, "second", exactResult);
+  rememberReady(readyCache, "third", exactResult);
+  assert.deepEqual([...readyCache.keys()], ["second", "third"]);
+  rememberReady(readyCache, "second", exactResult);
+  assert.deepEqual([...readyCache.keys()], ["third", "second"]);
+
+  let positiveLoads = 0;
+  const positiveReadyCache = new Map();
+  const loadPositive = async () => {
+    positiveLoads += 1;
+    return exactResult;
+  };
+  const positiveRequest = {
+    checkpointKey: "positive",
+    inFlight: new Map(),
+    load: loadPositive,
+    options: exactOptions,
+    readyCache: positiveReadyCache,
+  };
+  const firstPositive = await readinessWithCache(positiveRequest);
+  const secondPositive = await readinessWithCache(positiveRequest);
+  assert.equal(positiveLoads, 1);
+  assert.equal(firstPositive, secondPositive);
+  assert.equal(Object.isFrozen(firstPositive), true);
+  assert.equal(Object.isFrozen(firstPositive.declaration), true);
+  assert.equal(Object.isFrozen(firstPositive.reasons), true);
+  assert.throws(
+    () => {
+      firstPositive.ready = false;
+    },
+    TypeError,
+  );
+  assert.throws(() => firstPositive.reasons.push("poisoned"), TypeError);
+  assert.throws(
+    () => {
+      firstPositive.declaration.txid = "d".repeat(64);
+    },
+    TypeError,
+  );
+  assert.equal(secondPositive.ready, true);
+  assert.equal(secondPositive.reasons.length, 0);
+  assert.equal(secondPositive.declaration.txid, "c".repeat(64));
+
+  const differentTipHash = "b".repeat(64);
+  const differentTipResult = {
+    ...exactResult,
+    canonicalTipBlockHash: differentTipHash,
+    requestedThroughBlockHash: differentTipHash,
+  };
+  const differentTipOptions = {
+    ...exactOptions,
+    throughBlockHash: differentTipHash,
+  };
+  await readinessWithCache({
+    ...positiveRequest,
+    checkpointKey: "positive-different-hash",
+    load: async () => {
+      positiveLoads += 1;
+      return differentTipResult;
+    },
+    options: differentTipOptions,
+  });
+  assert.equal(positiveLoads, 2);
+  assert.deepEqual(
+    [...positiveReadyCache.keys()],
+    ["positive", "positive-different-hash"],
+  );
+
+  let negativeLoads = 0;
+  const negativeRequest = {
+    checkpointKey: "negative",
+    inFlight: new Map(),
+    load: async () => {
+      negativeLoads += 1;
+      return { ...exactResult, ready: false };
+    },
+    options: exactOptions,
+    readyCache: new Map(),
+  };
+  await readinessWithCache(negativeRequest);
+  await readinessWithCache(negativeRequest);
+  assert.equal(negativeLoads, 2);
 });
 
 check("AMO V5 status reuse keeps only proven exact-tip positives", () => {
@@ -46876,8 +47054,9 @@ check("AMO V5 canonical positions and immutable projections are schema-bound", (
     /listing_tx\.block_height = listing_event\.block_height/u,
     /listing_tx\.block_index = listing_event\.block_index/u,
     /listing_block\.canonical = true/u,
-    /options\.force === true[\s\S]*singleFlightBypass/u,
-    /exactCheckpointSingleFlight\(/u,
+    /workAmoReplayReadinessRequest\(network, options\)[\s\S]*singleFlightBypass/u,
+    /exactCheckpointReadinessWithCache\(/u,
+    /readyCache: workAmoReplayReadinessReadyCache/u,
     /seed_snapshot\.payload \? 'summaryPayloads'/u,
     /closing_snapshot\.payload \? 'summaryPayloads'/u,
   ]) {
