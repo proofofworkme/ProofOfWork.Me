@@ -5951,7 +5951,38 @@ let workAmoV5StatusCache = {
   networkValueBeforeQ8: "",
   payload: null,
   tipHash: "",
+  tipHeight: 0,
 };
+
+function reusableWorkAmoV5StatusCache(
+  cache,
+  {
+    force = false,
+    network = "",
+    networkValueBeforeQ8 = "",
+    now = Date.now(),
+    tipHash = "",
+    tipHeight = 0,
+  } = {},
+) {
+  const normalizedTipHash = String(tipHash ?? "").trim().toLowerCase();
+  const normalizedTipHeight = Number(tipHeight);
+  return (
+    force !== true &&
+    /^[0-9a-f]{64}$/u.test(normalizedTipHash) &&
+    Number.isSafeInteger(normalizedTipHeight) &&
+    normalizedTipHeight > 0 &&
+    cache?.network === network &&
+    cache?.networkValueBeforeQ8 === networkValueBeforeQ8 &&
+    cache?.tipHash === normalizedTipHash &&
+    cache?.tipHeight === normalizedTipHeight &&
+    Boolean(cache?.payload) &&
+    (
+      cache.payload.indexReady === true ||
+      Number(cache.expiresAt) > now
+    )
+  );
+}
 
 function baseWorkAmoV5Metadata() {
   const writesConfigured =
@@ -6193,13 +6224,13 @@ async function workAmoV5Metadata(
       .toLowerCase();
 
     if (
-      !force &&
-      /^[0-9a-f]{64}$/u.test(tipHash) &&
-      workAmoV5StatusCache.network === network &&
-      workAmoV5StatusCache.networkValueBeforeQ8 === networkValueBeforeQ8 &&
-      workAmoV5StatusCache.tipHash === tipHash &&
-      workAmoV5StatusCache.expiresAt > Date.now() &&
-      workAmoV5StatusCache.payload
+      reusableWorkAmoV5StatusCache(workAmoV5StatusCache, {
+        force,
+        network,
+        networkValueBeforeQ8,
+        tipHash,
+        tipHeight,
+      })
     ) {
       return workAmoV5StatusCache.payload;
     }
@@ -6222,6 +6253,7 @@ async function workAmoV5Metadata(
             .then((head) => ({ head, ready: true }))
             .catch(() => ({ head: null, ready: false })),
           proofIndexWorkAmoReplayReadiness(network, {
+            force,
             throughBlockHash: tipHash,
             throughHeight: tipHeight,
           }).catch(() => null),
@@ -6292,6 +6324,7 @@ async function workAmoV5Metadata(
     networkValueBeforeQ8,
     payload,
     tipHash,
+    tipHeight,
   };
   return payload;
 }

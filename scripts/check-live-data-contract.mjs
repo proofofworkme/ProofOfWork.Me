@@ -1441,6 +1441,17 @@ expectAll(
     /ORDER BY indexed_through_block DESC NULLS LAST,\s*generated_at DESC[\s\S]*LIMIT 1/,
   ],
 );
+expectAll(
+  "AMO exact-tip replay readiness coalesces reads and constrains summary snapshots",
+  proofIndexReader,
+  [
+    /const workAmoReplayReadinessInFlight = new Map\(\)/,
+    /function exactCheckpointSingleFlight\([\s\S]*inFlight\.set\(key, pending\)[\s\S]*finally[\s\S]*inFlight\.delete\(key\)/,
+    /proofIndexWorkAmoReplayReadiness\([\s\S]*options\.force === true[\s\S]*singleFlightBypass[\s\S]*exactCheckpointSingleFlight\(/,
+    /seed_snapshot\.source_hashes \? 'canonicalSummary'[\s\S]*seed_snapshot\.payload \? 'summaryPayloads'/,
+    /closing_snapshot\.source_hashes \? 'canonicalSummary'[\s\S]*closing_snapshot\.payload \? 'summaryPayloads'/,
+  ],
+);
 expectAll("summary proof-index snapshots prefer latest summary scan rows before historical fallback", proofIndexSnapshotPayloadSource, [
   /FROM proof_indexer\.ledger_snapshots[\s\S]*WHERE network = \$1[\s\S]*payload \? 'summaryPayloads'[\s\S]*payload->'summaryPayloads' \? \$2[\s\S]*ORDER BY indexed_through_block DESC NULLS LAST,\s*generated_at DESC[\s\S]*LIMIT 1/,
   /if \(!snapshot\) \{[\s\S]*WITH recent AS \([\s\S]*FROM proof_indexer\.ledger_snapshots[\s\S]*WHERE network = \$1[\s\S]*AND payload \? 'summaryPayloads'[\s\S]*ORDER BY generated_at DESC[\s\S]*LIMIT \$\{SUMMARY_SNAPSHOT_LOOKBACK_LIMIT\}[\s\S]*FROM recent[\s\S]*WHERE payload \? 'summaryPayloads'[\s\S]*AND payload->'summaryPayloads' \? \$2[\s\S]*ORDER BY generated_at DESC[\s\S]*LIMIT 1/,

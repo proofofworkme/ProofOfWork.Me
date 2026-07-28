@@ -146,6 +146,7 @@ import {
 } from "../incb-range-replay-witness.mjs";
 
 let proofIndexReadPool = null;
+const workAmoReplayReadinessInFlight = new Map();
 const INFINITY_BOND_MEMO = "powb";
 const INFINITY_BOND_KIND = "infinity-bond";
 const INCEPTION_BOND_MEMO = "incb";
@@ -3660,10 +3661,55 @@ export async function proofIndexWorkAmoGenericTokenStatePreimage(
   }
 }
 
+function workAmoReplayReadinessCheckpointKey(network, options = {}) {
+  const normalizedNetwork = String(network ?? "").trim();
+  const throughHeight = Number(options.throughHeight);
+  const throughBlockHash = String(options.throughBlockHash ?? "")
+    .trim()
+    .toLowerCase();
+  return normalizedNetwork &&
+    Number.isSafeInteger(throughHeight) &&
+    throughHeight > 0 &&
+    /^[0-9a-f]{64}$/u.test(throughBlockHash)
+    ? `${normalizedNetwork}:${throughHeight}:${throughBlockHash}`
+    : "";
+}
+
+async function exactCheckpointSingleFlight(inFlight, key, load) {
+  const existing = inFlight.get(key);
+  if (existing) {
+    return existing;
+  }
+  const pending = Promise.resolve().then(load);
+  inFlight.set(key, pending);
+  try {
+    return await pending;
+  } finally {
+    if (inFlight.get(key) === pending) {
+      inFlight.delete(key);
+    }
+  }
+}
+
 export async function proofIndexWorkAmoReplayReadiness(
   network,
   options = {},
 ) {
+  const checkpointKey =
+    options.force === true || options.singleFlightBypass === true
+      ? ""
+      : workAmoReplayReadinessCheckpointKey(network, options);
+  if (checkpointKey) {
+    return exactCheckpointSingleFlight(
+      workAmoReplayReadinessInFlight,
+      checkpointKey,
+      () =>
+        proofIndexWorkAmoReplayReadiness(network, {
+          ...options,
+          singleFlightBypass: true,
+        }),
+    );
+  }
   const pool = proofIndexPool();
   if (!pool) {
     return {
@@ -4124,6 +4170,7 @@ export async function proofIndexWorkAmoReplayReadiness(
              AND lower(seed_snapshot.source_hashes->>'blockScan') =
                lower(seed_block.block_hash)
              AND seed_snapshot.source_hashes ? 'canonicalSummary'
+             AND seed_snapshot.payload ? 'summaryPayloads'
              AND seed_snapshot.consistency->>'ok' = 'true'
              AND seed_snapshot.payload->>'ok' = 'true'
              AND seed_snapshot.payload->>'status' = 'green'
@@ -4158,6 +4205,7 @@ export async function proofIndexWorkAmoReplayReadiness(
              AND lower(closing_snapshot.source_hashes->>'blockScan') =
                lower(closing_block.block_hash)
              AND closing_snapshot.source_hashes ? 'canonicalSummary'
+             AND closing_snapshot.payload ? 'summaryPayloads'
              AND closing_snapshot.consistency->>'ok' = 'true'
              AND closing_snapshot.payload->>'ok' = 'true'
              AND closing_snapshot.payload->>'status' = 'green'

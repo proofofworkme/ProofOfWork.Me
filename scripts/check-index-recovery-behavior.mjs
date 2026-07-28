@@ -46631,6 +46631,132 @@ check("AMO V5 generic activation seeds preserve exact integers and reject lossy 
   }
 });
 
+check("AMO V5 readiness coalesces only identical exact checkpoints", async () => {
+  const checkpointKey = isolatedFunction(
+    READER_PATH,
+    "workAmoReplayReadinessCheckpointKey",
+  );
+  const singleFlight = isolatedFunction(
+    READER_PATH,
+    "exactCheckpointSingleFlight",
+  );
+  const tipHash = "a".repeat(64);
+  assert.equal(
+    checkpointKey("livenet", {
+      throughBlockHash: tipHash.toUpperCase(),
+      throughHeight: 960_000,
+    }),
+    `livenet:960000:${tipHash}`,
+  );
+  for (const options of [
+    {},
+    { throughBlockHash: "invalid", throughHeight: 960_000 },
+    { throughBlockHash: tipHash, throughHeight: 0 },
+    { throughBlockHash: tipHash, throughHeight: 1.5 },
+  ]) {
+    assert.equal(checkpointKey("livenet", options), "");
+  }
+
+  const inFlight = new Map();
+  let sameKeyLoads = 0;
+  let releaseSameKey;
+  const sameKeyGate = new Promise((resolve) => {
+    releaseSameKey = resolve;
+  });
+  const loadSameKey = async () => {
+    sameKeyLoads += 1;
+    await sameKeyGate;
+    return "ready";
+  };
+  const first = singleFlight(inFlight, "same", loadSameKey);
+  const second = singleFlight(inFlight, "same", loadSameKey);
+  await Promise.resolve();
+  assert.equal(sameKeyLoads, 1);
+  releaseSameKey();
+  assert.deepEqual(await Promise.all([first, second]), ["ready", "ready"]);
+  assert.equal(inFlight.size, 0);
+
+  let distinctKeyLoads = 0;
+  const [left, right] = await Promise.all([
+    singleFlight(inFlight, "left", async () => {
+      distinctKeyLoads += 1;
+      return "left";
+    }),
+    singleFlight(inFlight, "right", async () => {
+      distinctKeyLoads += 1;
+      return "right";
+    }),
+  ]);
+  assert.equal(distinctKeyLoads, 2);
+  assert.deepEqual([left, right], ["left", "right"]);
+  assert.equal(inFlight.size, 0);
+
+  await assert.rejects(
+    singleFlight(inFlight, "retry", async () => {
+      throw new Error("expected readiness failure");
+    }),
+    /expected readiness failure/u,
+  );
+  assert.equal(inFlight.has("retry"), false);
+  assert.equal(
+    await singleFlight(inFlight, "retry", async () => "recovered"),
+    "recovered",
+  );
+});
+
+check("AMO V5 status reuse keeps only proven exact-tip positives", () => {
+  const reusableStatus = isolatedFunction(
+    API_PATH,
+    "reusableWorkAmoV5StatusCache",
+  );
+  const tipHash = "b".repeat(64);
+  const exact = {
+    expiresAt: 1_000,
+    network: "livenet",
+    networkValueBeforeQ8: "123456789",
+    payload: { indexReady: true },
+    tipHash,
+    tipHeight: 960_000,
+  };
+  const request = {
+    network: "livenet",
+    networkValueBeforeQ8: "123456789",
+    now: 2_000,
+    tipHash,
+    tipHeight: 960_000,
+  };
+  assert.equal(reusableStatus(exact, request), true);
+  assert.equal(reusableStatus({ ...exact, payload: null }, request), false);
+  assert.equal(
+    reusableStatus(
+      { ...exact, payload: { indexReady: false } },
+      request,
+    ),
+    false,
+  );
+  assert.equal(
+    reusableStatus(
+      {
+        ...exact,
+        expiresAt: 3_000,
+        payload: { indexReady: false },
+      },
+      request,
+    ),
+    true,
+  );
+  for (const changed of [
+    { force: true },
+    { network: "testnet" },
+    { networkValueBeforeQ8: "123456790" },
+    { tipHash: "c".repeat(64) },
+    { tipHeight: 960_001 },
+    { tipHash: "" },
+  ]) {
+    assert.equal(reusableStatus(exact, { ...request, ...changed }), false);
+  }
+});
+
 check("AMO V5 canonical positions and immutable projections are schema-bound", () => {
   const apiSource = fileSource(API_PATH);
   const schemaSource = fileSource(SCHEMA_PATH);
@@ -46750,6 +46876,10 @@ check("AMO V5 canonical positions and immutable projections are schema-bound", (
     /listing_tx\.block_height = listing_event\.block_height/u,
     /listing_tx\.block_index = listing_event\.block_index/u,
     /listing_block\.canonical = true/u,
+    /options\.force === true[\s\S]*singleFlightBypass/u,
+    /exactCheckpointSingleFlight\(/u,
+    /seed_snapshot\.payload \? 'summaryPayloads'/u,
+    /closing_snapshot\.payload \? 'summaryPayloads'/u,
   ]) {
     assert.match(replayReadinessSource, required);
   }
