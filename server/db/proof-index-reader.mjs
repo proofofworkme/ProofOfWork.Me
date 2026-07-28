@@ -1572,6 +1572,7 @@ export async function proofIndexCanonicalWorkListingById(
       JOIN proof_indexer.events listing_event
         ON listing_event.network = listing.network
        AND listing_event.txid = listing.listing_id
+       AND listing_event.protocol = 'pwt1'
        AND listing_event.kind = 'token-listing'
        AND listing_event.status = 'confirmed'
        AND listing_event.valid = true
@@ -1891,6 +1892,12 @@ export function workAmoV5PreUnitRelicEvidenceFromRows(
   const saleTicketValueSats = integer(row?.sale_ticket_value_sats);
   const canonicalSpendCount = integer(row?.canonical_spend_count);
   const canonicalCloseCount = integer(row?.canonical_close_count);
+  const canonicalCloseSaleCount = integer(
+    row?.canonical_close_sale_count,
+  );
+  const canonicalCloseClosedCount = integer(
+    row?.canonical_close_closed_count,
+  );
   const listingEventCount = integer(row?.listing_event_count);
   const eventId = integer(row?.event_id, 1);
   const validSealCount = integer(row?.valid_seal_count);
@@ -1976,6 +1983,20 @@ export function workAmoV5PreUnitRelicEvidenceFromRows(
     canonicalSpendCount > 1 ||
     canonicalCloseCount === null ||
     canonicalCloseCount > 1 ||
+    canonicalCloseSaleCount === null ||
+    canonicalCloseClosedCount === null ||
+    !(
+      (
+        canonicalCloseCount === 0 &&
+        canonicalCloseSaleCount === 0 &&
+        canonicalCloseClosedCount === 0
+      ) ||
+      (
+        canonicalCloseCount === 1 &&
+        canonicalCloseSaleCount <= 1 &&
+        canonicalCloseClosedCount === 1
+      )
+    ) ||
     pendingTicketSpendCount !== 0 ||
     v1DeclarationCount !== 1 ||
     !exactWorkAmoV5PreUnitRelicPayloadAuthorizations(payload) ||
@@ -2037,7 +2058,9 @@ export function workAmoV5PreUnitRelicEvidenceFromRows(
     blockHeight,
     blockIndex,
     canonical: true,
+    canonicalCloseClosedCount,
     canonicalCloseCount,
+    canonicalCloseSaleCount,
     canonicalCloseTxid,
     canonicalSpendCount,
     canonicalSpendTxid,
@@ -2167,6 +2190,7 @@ export async function proofIndexWorkAmoV5PreUnitRelicEvidence(
           FROM proof_indexer.events counted_listing_event
           WHERE counted_listing_event.network = listing.network
             AND counted_listing_event.txid = listing.listing_id
+            AND counted_listing_event.protocol = 'pwt1'
             AND counted_listing_event.kind = 'token-listing'
         ) AS listing_event_count,
         (
@@ -2186,6 +2210,7 @@ export async function proofIndexWorkAmoV5PreUnitRelicEvidence(
           WHERE seal_event.network = listing.network
             AND seal_event.valid = true
             AND seal_event.status = 'confirmed'
+            AND seal_event.protocol = 'pwt1'
             AND seal_event.kind = 'token-listing-sealed'
             AND lower(seal_event.payload->>'listingId') = listing.listing_id
         ) AS valid_seal_count,
@@ -2271,48 +2296,10 @@ export async function proofIndexWorkAmoV5PreUnitRelicEvidence(
               OR spend_block.block_hash IS NULL
             )
         ) AS pending_ticket_spend_count,
-        (
-          SELECT count(*)::integer
-          FROM proof_indexer.events close_event
-          JOIN proof_indexer.transactions close_tx
-            ON close_tx.network = close_event.network
-           AND close_tx.txid = close_event.txid
-           AND close_tx.status = 'confirmed'
-           AND close_tx.block_height = close_event.block_height
-           AND close_tx.block_index = close_event.block_index
-          JOIN proof_indexer.blocks close_block
-            ON close_block.network = close_tx.network
-           AND close_block.block_hash = close_tx.block_hash
-           AND close_block.height = close_tx.block_height
-           AND close_block.canonical = true
-          WHERE close_event.network = listing.network
-            AND close_event.valid = true
-            AND close_event.status = 'confirmed'
-            AND close_event.kind =
-              ANY(ARRAY['token-listing-closed','token-sale']::text[])
-            AND lower(close_event.payload->>'listingId') = listing.listing_id
-        ) AS canonical_close_count,
-        (
-          SELECT min(close_event.txid)
-          FROM proof_indexer.events close_event
-          JOIN proof_indexer.transactions close_tx
-            ON close_tx.network = close_event.network
-           AND close_tx.txid = close_event.txid
-           AND close_tx.status = 'confirmed'
-           AND close_tx.block_height = close_event.block_height
-           AND close_tx.block_index = close_event.block_index
-          JOIN proof_indexer.blocks close_block
-            ON close_block.network = close_tx.network
-           AND close_block.block_hash = close_tx.block_hash
-           AND close_block.height = close_tx.block_height
-           AND close_block.canonical = true
-          WHERE close_event.network = listing.network
-            AND close_event.valid = true
-            AND close_event.status = 'confirmed'
-            AND close_event.kind =
-              ANY(ARRAY['token-listing-closed','token-sale']::text[])
-            AND lower(close_event.payload->>'listingId') = listing.listing_id
-        ) AS canonical_close_txid,
+        canonical_close.canonical_close_count,
+        canonical_close.canonical_close_sale_count,
+        canonical_close.canonical_close_closed_count,
+        canonical_close.canonical_close_txid,
         (
           SELECT count(*)::integer
           FROM proof_indexer.transactions v1_declaration_tx
@@ -2344,6 +2331,7 @@ export async function proofIndexWorkAmoV5PreUnitRelicEvidence(
       JOIN proof_indexer.events listing_event
         ON listing_event.network = listing.network
        AND listing_event.txid = listing.listing_id
+       AND listing_event.protocol = 'pwt1'
        AND listing_event.kind = 'token-listing'
        AND listing_event.status = 'confirmed'
        AND listing_event.valid = true
@@ -2365,6 +2353,37 @@ export async function proofIndexWorkAmoV5PreUnitRelicEvidence(
       JOIN proof_indexer.credit_definitions definition
         ON definition.network = listing.network
        AND definition.token_id = listing.token_id
+      LEFT JOIN LATERAL (
+        SELECT
+          count(DISTINCT close_event.txid)::integer AS
+            canonical_close_count,
+          count(*) FILTER (
+            WHERE close_event.kind = 'token-sale'
+          )::integer AS canonical_close_sale_count,
+          count(*) FILTER (
+            WHERE close_event.kind = 'token-listing-closed'
+          )::integer AS canonical_close_closed_count,
+          min(close_event.txid) AS canonical_close_txid
+        FROM proof_indexer.events close_event
+        JOIN proof_indexer.transactions close_tx
+          ON close_tx.network = close_event.network
+         AND close_tx.txid = close_event.txid
+         AND close_tx.status = 'confirmed'
+         AND close_tx.block_height = close_event.block_height
+         AND close_tx.block_index = close_event.block_index
+        JOIN proof_indexer.blocks close_block
+          ON close_block.network = close_tx.network
+         AND close_block.block_hash = close_tx.block_hash
+         AND close_block.height = close_tx.block_height
+         AND close_block.canonical = true
+        WHERE close_event.network = listing.network
+          AND close_event.valid = true
+          AND close_event.status = 'confirmed'
+          AND close_event.protocol = 'pwt1'
+          AND close_event.kind =
+            ANY(ARRAY['token-listing-closed','token-sale']::text[])
+          AND lower(close_event.payload->>'listingId') = listing.listing_id
+      ) canonical_close ON true
       WHERE listing.network = $1
         AND listing.listing_id = $2
         AND lower(listing.token_id) = $5
@@ -2388,6 +2407,69 @@ export async function proofIndexWorkAmoV5PreUnitRelicEvidence(
     indexedThroughBlock,
   );
   return workAmoV5PreUnitRelicEvidenceFromRows(result.rows, activation);
+}
+
+async function assertCurrentAmoV5CanonicalPositionUniqueness(pool, network) {
+  const result = await pool.query(
+    `
+      SELECT
+        event_row.block_height,
+        event_row.block_index,
+        event_row.op_return_vout,
+        event_row.record_ordinal,
+        min(event_row.event_id)::text AS first_event_id,
+        max(event_row.event_id)::text AS second_event_id
+      FROM proof_indexer.events event_row
+      JOIN proof_indexer.transactions event_tx
+        ON event_tx.network = event_row.network
+       AND event_tx.txid = event_row.txid
+       AND event_tx.status = 'confirmed'
+       AND event_tx.block_height = event_row.block_height
+       AND event_tx.block_index = event_row.block_index
+      JOIN proof_indexer.blocks event_block
+        ON event_block.network = event_tx.network
+       AND event_block.block_hash = event_tx.block_hash
+       AND event_block.height = event_tx.block_height
+       AND event_block.canonical = true
+      WHERE event_row.network = $1
+        AND event_row.status = 'confirmed'
+        AND event_row.block_height >= $2
+        AND event_row.block_index >= 0
+        AND event_row.op_return_vout >= 0
+        AND event_row.record_ordinal >= 0
+        AND event_row.protocol = ANY(
+          ARRAY['pwm1','pwa1','pwid1','pwr1','pwt1']::text[]
+        )
+      GROUP BY
+        event_row.block_height,
+        event_row.block_index,
+        event_row.op_return_vout,
+        event_row.record_ordinal
+      HAVING count(DISTINCT event_row.event_id) > 1
+      ORDER BY
+        event_row.block_height,
+        event_row.block_index,
+        event_row.op_return_vout,
+        event_row.record_ordinal
+      LIMIT 1
+    `,
+    [network, WORK_AMO_V5_ACTIVATION_HEIGHT],
+  );
+  const duplicate = result.rows[0];
+  if (!duplicate) {
+    return;
+  }
+  const position = [
+    duplicate.block_height,
+    duplicate.block_index,
+    duplicate.op_return_vout,
+    duplicate.record_ordinal,
+  ].join(":");
+  const error = new Error(
+    `Proof index AMO V5 current state is ambiguous: canonical records ${duplicate.first_event_id} and ${duplicate.second_event_id} share position ${position}.`,
+  );
+  error.code = "PROOF_INDEX_AMO_V5_CANONICAL_POSITION_DUPLICATED";
+  throw error;
 }
 
 export async function proofIndexWorkAmoCanonicalEvents(
@@ -2473,41 +2555,85 @@ export async function proofIndexWorkAmoCanonicalEvents(
   ) {
     return { complete: false, items: [], reasons: ["invalid-cursor"] };
   }
-  const missing = await pool.query(
+  const positionAudit = await pool.query(
     `
-      SELECT count(*)::integer AS count
-      FROM proof_indexer.events event_row
-      JOIN proof_indexer.transactions event_tx
-        ON event_tx.network = event_row.network
-       AND event_tx.txid = event_row.txid
-      JOIN proof_indexer.blocks event_block
-        ON event_block.network = event_tx.network
-       AND event_block.block_hash = event_tx.block_hash
-       AND event_block.height = event_tx.block_height
-       AND event_block.canonical = true
-      WHERE event_row.network = $1
-        AND event_row.status = 'confirmed'
-        AND event_tx.status = 'confirmed'
-        AND event_row.protocol = ANY(
-          ARRAY['pwm1','pwa1','pwid1','pwr1','pwt1']::text[]
-        )
-        AND event_tx.block_height BETWEEN $2 AND $3
-        AND (
-          event_row.block_height IS DISTINCT FROM event_tx.block_height
-          OR event_row.block_index IS NULL
-          OR event_row.op_return_vout IS NULL
-          OR event_row.record_ordinal < 0
-          OR event_tx.block_index IS NULL
-          OR event_tx.block_index IS DISTINCT FROM event_row.block_index
-        )
+      WITH canonical_candidates AS (
+        SELECT
+          event_row.block_height,
+          event_row.block_index,
+          event_row.op_return_vout,
+          event_row.record_ordinal,
+          event_tx.block_height AS transaction_block_height,
+          event_tx.block_index AS transaction_block_index
+        FROM proof_indexer.events event_row
+        JOIN proof_indexer.transactions event_tx
+          ON event_tx.network = event_row.network
+         AND event_tx.txid = event_row.txid
+        JOIN proof_indexer.blocks event_block
+          ON event_block.network = event_tx.network
+         AND event_block.block_hash = event_tx.block_hash
+         AND event_block.height = event_tx.block_height
+         AND event_block.canonical = true
+        WHERE event_row.network = $1
+          AND event_row.status = 'confirmed'
+          AND event_tx.status = 'confirmed'
+          AND event_row.protocol = ANY(
+            ARRAY['pwm1','pwa1','pwid1','pwr1','pwt1']::text[]
+          )
+          AND event_tx.block_height BETWEEN $2 AND $3
+      )
+      SELECT
+        count(*) FILTER (
+          WHERE block_height IS NULL
+            OR block_height < 1
+            OR block_height IS DISTINCT FROM transaction_block_height
+            OR block_index IS NULL
+            OR block_index < 0
+            OR op_return_vout IS NULL
+            OR op_return_vout < 0
+            OR record_ordinal IS NULL
+            OR record_ordinal < 0
+            OR transaction_block_index IS NULL
+            OR transaction_block_index < 0
+            OR transaction_block_index IS DISTINCT FROM block_index
+        )::integer AS incomplete_count,
+        (
+          SELECT count(*)::integer
+          FROM (
+            SELECT 1
+            FROM canonical_candidates duplicate_candidate
+            WHERE duplicate_candidate.block_height >= 1
+              AND duplicate_candidate.block_height =
+                duplicate_candidate.transaction_block_height
+              AND duplicate_candidate.block_index >= 0
+              AND duplicate_candidate.block_index =
+                duplicate_candidate.transaction_block_index
+              AND duplicate_candidate.op_return_vout >= 0
+              AND duplicate_candidate.record_ordinal >= 0
+            GROUP BY
+              duplicate_candidate.block_height,
+              duplicate_candidate.block_index,
+              duplicate_candidate.op_return_vout,
+              duplicate_candidate.record_ordinal
+            HAVING count(*) > 1
+          ) duplicate_positions
+        ) AS duplicate_count
+      FROM canonical_candidates
     `,
     [network, fromHeight, toHeight],
   );
-  if (Number(missing.rows[0]?.count ?? 0) > 0) {
+  if (Number(positionAudit.rows[0]?.incomplete_count ?? 0) > 0) {
     return {
       complete: false,
       items: [],
       reasons: ["canonical-position-incomplete"],
+    };
+  }
+  if (Number(positionAudit.rows[0]?.duplicate_count ?? 0) > 0) {
+    return {
+      complete: false,
+      items: [],
+      reasons: ["canonical-position-duplicated"],
     };
   }
   const result = await pool.query(
@@ -3606,12 +3732,18 @@ export async function proofIndexWorkAmoReplayReadiness(
       `
         SELECT
           count(*) FILTER (
-            WHERE event_row.block_height IS DISTINCT FROM
+            WHERE event_row.block_height IS NULL
+              OR event_row.block_height < 1
+              OR event_row.block_height IS DISTINCT FROM
                 event_tx.block_height
               OR event_row.block_index IS NULL
+              OR event_row.block_index < 0
               OR event_row.op_return_vout IS NULL
+              OR event_row.op_return_vout < 0
+              OR event_row.record_ordinal IS NULL
               OR event_row.record_ordinal < 0
               OR event_tx.block_index IS NULL
+              OR event_tx.block_index < 0
               OR event_tx.block_index IS DISTINCT FROM event_row.block_index
           )::integer AS missing_positions,
           (
@@ -3619,11 +3751,27 @@ export async function proofIndexWorkAmoReplayReadiness(
             FROM (
               SELECT 1
               FROM proof_indexer.events duplicate_event
+              JOIN proof_indexer.transactions duplicate_tx
+                ON duplicate_tx.network = duplicate_event.network
+               AND duplicate_tx.txid = duplicate_event.txid
+               AND duplicate_tx.status = 'confirmed'
+               AND duplicate_tx.block_height = duplicate_event.block_height
+               AND duplicate_tx.block_index = duplicate_event.block_index
+              JOIN proof_indexer.blocks duplicate_block
+                ON duplicate_block.network = duplicate_tx.network
+               AND duplicate_block.block_hash = duplicate_tx.block_hash
+               AND duplicate_block.height = duplicate_tx.block_height
+               AND duplicate_block.canonical = true
               WHERE duplicate_event.network = $1
                 AND duplicate_event.status = 'confirmed'
+                AND duplicate_event.protocol = ANY(
+                  ARRAY['pwm1','pwa1','pwid1','pwr1','pwt1']::text[]
+                )
                 AND duplicate_event.block_height BETWEEN $5 AND $3
-                AND duplicate_event.block_index IS NOT NULL
-                AND duplicate_event.op_return_vout IS NOT NULL
+                AND duplicate_event.block_height >= 1
+                AND duplicate_event.block_index >= 0
+                AND duplicate_event.op_return_vout >= 0
+                AND duplicate_event.record_ordinal >= 0
               GROUP BY
                 duplicate_event.block_height,
                 duplicate_event.block_index,
@@ -3658,7 +3806,19 @@ export async function proofIndexWorkAmoReplayReadiness(
             (
               SELECT count(*)::integer
               FROM proof_indexer.events conflict_event
+              JOIN proof_indexer.transactions conflict_tx
+                ON conflict_tx.network = conflict_event.network
+               AND conflict_tx.txid = conflict_event.txid
+               AND conflict_tx.status = 'confirmed'
+               AND conflict_tx.block_height = conflict_event.block_height
+               AND conflict_tx.block_index = conflict_event.block_index
+              JOIN proof_indexer.blocks conflict_block
+                ON conflict_block.network = conflict_tx.network
+               AND conflict_block.block_hash = conflict_tx.block_hash
+               AND conflict_block.height = conflict_tx.block_height
+               AND conflict_block.canonical = true
               WHERE conflict_event.network = $1
+                AND conflict_event.protocol = 'pwt1'
                 AND conflict_event.status = 'confirmed'
                 AND conflict_event.block_height BETWEEN $5 AND $3
                 AND lower(COALESCE(
@@ -3689,9 +3849,15 @@ export async function proofIndexWorkAmoReplayReadiness(
           (
             SELECT count(*)::integer
             FROM proof_indexer.credit_listings listing
-            LEFT JOIN proof_indexer.transactions listing_tx
+            JOIN proof_indexer.transactions listing_tx
               ON listing_tx.network = listing.network
              AND listing_tx.txid = listing.listing_id
+             AND listing_tx.status = 'confirmed'
+            JOIN proof_indexer.blocks listing_block
+              ON listing_block.network = listing_tx.network
+             AND listing_block.block_hash = listing_tx.block_hash
+             AND listing_block.height = listing_tx.block_height
+             AND listing_block.canonical = true
             WHERE listing.network = $1
               AND lower(listing.token_id) = $4
               AND listing.status IN ('active', 'sealing')
@@ -3710,9 +3876,15 @@ export async function proofIndexWorkAmoReplayReadiness(
           (
             SELECT count(*)::integer
             FROM proof_indexer.credit_listings listing
-            LEFT JOIN proof_indexer.transactions listing_tx
+            JOIN proof_indexer.transactions listing_tx
               ON listing_tx.network = listing.network
              AND listing_tx.txid = listing.listing_id
+             AND listing_tx.status = 'confirmed'
+            JOIN proof_indexer.blocks listing_block
+              ON listing_block.network = listing_tx.network
+             AND listing_block.block_hash = listing_tx.block_hash
+             AND listing_block.height = listing_tx.block_height
+             AND listing_block.canonical = true
             WHERE listing.network = $1
               AND lower(listing.token_id) = $4
               AND listing.status IN ('active', 'sealing')
@@ -3731,7 +3903,20 @@ export async function proofIndexWorkAmoReplayReadiness(
           (
             SELECT count(*)::integer
             FROM proof_indexer.events post_v5_v4_event
+            JOIN proof_indexer.transactions post_v5_v4_tx
+              ON post_v5_v4_tx.network = post_v5_v4_event.network
+             AND post_v5_v4_tx.txid = post_v5_v4_event.txid
+             AND post_v5_v4_tx.status = 'confirmed'
+             AND post_v5_v4_tx.block_height =
+               post_v5_v4_event.block_height
+             AND post_v5_v4_tx.block_index = post_v5_v4_event.block_index
+            JOIN proof_indexer.blocks post_v5_v4_block
+              ON post_v5_v4_block.network = post_v5_v4_tx.network
+             AND post_v5_v4_block.block_hash = post_v5_v4_tx.block_hash
+             AND post_v5_v4_block.height = post_v5_v4_tx.block_height
+             AND post_v5_v4_block.canonical = true
             WHERE post_v5_v4_event.network = $1
+              AND post_v5_v4_event.protocol = 'pwt1'
               AND post_v5_v4_event.status = 'confirmed'
               AND post_v5_v4_event.valid = true
               AND post_v5_v4_event.block_height >= $2
@@ -3769,6 +3954,10 @@ export async function proofIndexWorkAmoReplayReadiness(
               ON historical_v4_tx.network = historical_v4_event.network
              AND historical_v4_tx.txid = historical_v4_event.txid
              AND historical_v4_tx.status = 'confirmed'
+             AND historical_v4_tx.block_height =
+               historical_v4_event.block_height
+             AND historical_v4_tx.block_index =
+               historical_v4_event.block_index
             JOIN proof_indexer.blocks historical_v4_block
               ON historical_v4_block.network = historical_v4_tx.network
              AND historical_v4_block.block_hash =
@@ -3777,6 +3966,7 @@ export async function proofIndexWorkAmoReplayReadiness(
                historical_v4_tx.block_height
              AND historical_v4_block.canonical = true
             WHERE historical_v4_event.network = $1
+              AND historical_v4_event.protocol = 'pwt1'
               AND historical_v4_event.status = 'confirmed'
               AND historical_v4_event.block_height >= $5
               AND historical_v4_event.block_height < $2
@@ -3832,6 +4022,11 @@ export async function proofIndexWorkAmoReplayReadiness(
              AND listing_tx.status = 'confirmed'
              AND listing_tx.block_height = listing_event.block_height
              AND listing_tx.block_index = listing_event.block_index
+            JOIN proof_indexer.blocks listing_block
+              ON listing_block.network = listing_tx.network
+             AND listing_block.block_hash = listing_tx.block_hash
+             AND listing_block.height = listing_tx.block_height
+             AND listing_block.canonical = true
             LEFT JOIN proof_indexer.work_amo_listing_terms terms
               ON terms.network = listing_event.network
              AND terms.listing_id = listing_event.txid
@@ -3845,6 +4040,7 @@ export async function proofIndexWorkAmoReplayReadiness(
              AND lower(terms.listing_block_hash) =
                lower(listing_tx.block_hash)
             WHERE listing_event.network = $1
+              AND listing_event.protocol = 'pwt1'
               AND listing_event.status = 'confirmed'
               AND listing_event.valid = true
               AND listing_event.kind = 'token-listing'
@@ -4992,7 +5188,12 @@ function canonicalMovementPositionFromEventRow(payload, row = {}) {
     if (value === undefined || value === null || value === "") {
       return null;
     }
-    const parsed = Number(value);
+    const parsed =
+      typeof value === "number"
+        ? value
+        : typeof value === "string" && /^(?:0|[1-9][0-9]*)$/u.test(value)
+          ? Number(value)
+          : Number.NaN;
     return Number.isSafeInteger(parsed) && parsed >= minimum ? parsed : null;
   };
   const eventStatus = String(row?.status ?? payload?.status ?? "")
@@ -5016,10 +5217,23 @@ function canonicalMovementPositionFromEventRow(payload, row = {}) {
   );
   const candidateHeight =
     relationalHeight ?? transactionBlockHeight ?? payloadHeight;
+  const confirmedHeightUnknown =
+    confirmed &&
+    relationalHeight === null &&
+    transactionBlockHeight === null;
   const postActivation =
     confirmed &&
-    candidateHeight !== null &&
-    candidateHeight >= WORK_AMO_V5_ACTIVATION_HEIGHT;
+    (
+      confirmedHeightUnknown ||
+      (relationalHeight !== null &&
+        relationalHeight >= WORK_AMO_V5_ACTIVATION_HEIGHT) ||
+      (transactionBlockHeight !== null &&
+        transactionBlockHeight >= WORK_AMO_V5_ACTIVATION_HEIGHT) ||
+      (relationalHeight === null &&
+        transactionBlockHeight === null &&
+        payloadHeight !== null &&
+        payloadHeight >= WORK_AMO_V5_ACTIVATION_HEIGHT)
+    );
   if (postActivation) {
     const blockIndex = exactInteger(row?.block_index, 0);
     const protocolVout = exactInteger(
@@ -5176,7 +5390,7 @@ function tokenSaleFromEventPayload(payload, row = {}) {
   };
 }
 
-function tokenListingFromEventPayload(payload) {
+function tokenListingFromEventPayload(payload, row = {}) {
   const saleAuthorization =
     payload?.saleAuthorization &&
     typeof payload.saleAuthorization === "object" &&
@@ -5203,6 +5417,17 @@ function tokenListingFromEventPayload(payload) {
     ? workAmountProjection(payload)
     : null;
   const normalizedTicker = String(ticker || saleAuthorization.ticker || "").trim();
+  const position = canonicalMovementPositionFromEventRow(payload, row);
+  const exactPositionInteger = (value) => {
+    if (value === undefined || value === null || value === "") {
+      return null;
+    }
+    const parsed = Number(value);
+    return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null;
+  };
+  const sealBlockIndex = exactPositionInteger(payload?.sealBlockIndex);
+  const sealProtocolVout = exactPositionInteger(payload?.sealProtocolVout);
+  const sealRecordOrdinal = exactPositionInteger(payload?.sealRecordOrdinal);
   return {
     amount: workAmount
       ? workAmount.amount
@@ -5223,8 +5448,19 @@ function tokenListingFromEventPayload(payload) {
       : {}),
     canonicalMinerFeeCovered: payload?.canonicalMinerFeeCovered === true,
     canonicalMinerFeeSats: rowNumber(payload, "canonicalMinerFeeSats"),
-    blockHash: String(payload?.blockHash ?? "").trim().toLowerCase(),
-    blockHeight: rowNumber(payload, "blockHeight") || undefined,
+    blockHash: String(position.blockHash ?? "").trim().toLowerCase(),
+    ...(position.blockHeight !== undefined
+      ? { blockHeight: position.blockHeight }
+      : {}),
+    ...(position.blockIndex !== undefined
+      ? { blockIndex: position.blockIndex }
+      : {}),
+    ...(position.protocolVout !== undefined
+      ? { protocolVout: position.protocolVout }
+      : {}),
+    ...(position.recordOrdinal !== undefined
+      ? { recordOrdinal: position.recordOrdinal }
+      : {}),
     confirmed: payload?.confirmed === true,
     createdAt: dateIso(payload?.createdAt),
     dataBytes: rowNumber(payload, "dataBytes"),
@@ -5248,11 +5484,9 @@ function tokenListingFromEventPayload(payload) {
     sealAt: dateIso(payload?.sealAt),
     sealBlockHash: String(payload?.sealBlockHash ?? "").trim().toLowerCase(),
     sealBlockHeight: rowNumber(payload, "sealBlockHeight") || undefined,
-    sealBlockIndex:
-      Number.isSafeInteger(Number(payload?.sealBlockIndex)) &&
-      Number(payload.sealBlockIndex) >= 0
-        ? Number(payload.sealBlockIndex)
-        : undefined,
+    ...(sealBlockIndex !== null ? { sealBlockIndex } : {}),
+    ...(sealProtocolVout !== null ? { sealProtocolVout } : {}),
+    ...(sealRecordOrdinal !== null ? { sealRecordOrdinal } : {}),
     sealConfirmed:
       typeof payload?.sealConfirmed === "boolean"
         ? payload.sealConfirmed
@@ -5361,6 +5595,60 @@ function canonicalCreditListingAlias(value) {
   return alias;
 }
 
+function tokenListingActiveLifecycleSql(listingAlias = "cl") {
+  const alias = canonicalCreditListingAlias(listingAlias);
+  return `(
+    NOT EXISTS (
+      SELECT 1
+      FROM proof_indexer.events dropped_listing_event
+      WHERE dropped_listing_event.network = ${alias}.network
+        AND dropped_listing_event.protocol = 'pwt1'
+        AND dropped_listing_event.kind = 'token-listing'
+        AND dropped_listing_event.valid = true
+        AND dropped_listing_event.status = 'dropped'
+        AND dropped_listing_event.txid = lower(${alias}.listing_id)
+        AND lower(COALESCE(
+          dropped_listing_event.payload->>'listingId',
+          dropped_listing_event.txid
+        )) = lower(${alias}.listing_id)
+        AND lower(COALESCE(
+          NULLIF(dropped_listing_event.payload->>'tokenId', ''),
+          NULLIF(
+            dropped_listing_event.payload
+              ->'saleAuthorization'->>'tokenId',
+            ''
+          ),
+          ${alias}.token_id
+        )) = lower(${alias}.token_id)
+    )
+    AND NOT EXISTS (
+      SELECT 1
+      FROM proof_indexer.tx_inputs active_listing_spend_input
+      JOIN proof_indexer.transactions active_listing_spend_tx
+        ON active_listing_spend_tx.network =
+          active_listing_spend_input.network
+       AND active_listing_spend_tx.txid =
+          active_listing_spend_input.txid
+       AND active_listing_spend_tx.status = 'confirmed'
+      JOIN proof_indexer.blocks active_listing_spend_block
+        ON active_listing_spend_block.network =
+          active_listing_spend_tx.network
+       AND active_listing_spend_block.block_hash =
+          active_listing_spend_tx.block_hash
+       AND active_listing_spend_block.height =
+          active_listing_spend_tx.block_height
+       AND active_listing_spend_block.canonical = true
+      WHERE active_listing_spend_input.network = ${alias}.network
+        AND active_listing_spend_input.prev_txid = lower(COALESCE(
+          NULLIF(${alias}.sale_ticket_txid, ''),
+          ${alias}.listing_id
+        ))
+        AND active_listing_spend_input.prev_vout =
+          ${alias}.sale_ticket_vout
+    )
+  )`;
+}
+
 function canonicalWorkMarketV3ListingProjectionSql(listingAlias = "cl") {
   const alias = canonicalCreditListingAlias(listingAlias);
   return `(
@@ -5378,9 +5666,13 @@ function canonicalWorkMarketV3ListingProjectionSql(listingAlias = "cl") {
         SELECT 1
         FROM proof_indexer.events canonical_listing_event
         JOIN proof_indexer.transactions canonical_listing_tx
-          ON canonical_listing_tx.network = canonical_listing_event.network
+         ON canonical_listing_tx.network = canonical_listing_event.network
          AND canonical_listing_tx.txid = canonical_listing_event.txid
          AND canonical_listing_tx.status = 'confirmed'
+         AND canonical_listing_tx.block_height =
+           canonical_listing_event.block_height
+         AND canonical_listing_tx.block_index =
+           canonical_listing_event.block_index
         JOIN proof_indexer.blocks canonical_listing_block
           ON canonical_listing_block.network = canonical_listing_tx.network
          AND canonical_listing_block.block_hash = canonical_listing_tx.block_hash
@@ -5390,8 +5682,28 @@ function canonicalWorkMarketV3ListingProjectionSql(listingAlias = "cl") {
           AND canonical_listing_event.txid = lower(${alias}.listing_id)
           AND canonical_listing_event.valid = true
           AND canonical_listing_event.status = 'confirmed'
-          AND canonical_listing_event.kind = ANY(
-            ARRAY['token-listing','token-listings']::text[]
+          AND canonical_listing_event.protocol = 'pwt1'
+          AND (
+            canonical_listing_event.kind = 'token-listing'
+            OR (
+              canonical_listing_event.kind = 'token-listings'
+              AND (
+                lower(COALESCE(${alias}.token_id, '')) <>
+                  '${WORK_TOKEN_ID}'
+                OR NOT (
+                  '${WORK_AMO_V5_AUTH_VERSION}' = ANY(ARRAY[
+                    lower(COALESCE(
+                      ${alias}.payload->'saleAuthorization'->>'version',
+                      ''
+                    )),
+                    lower(COALESCE(
+                      ${alias}.payload->'listingAuthorization'->>'version',
+                      ''
+                    ))
+                  ]::text[])
+                )
+              )
+            )
           )
           AND lower(COALESCE(
             canonical_listing_event.payload->>'listingId',
@@ -5410,42 +5722,90 @@ function canonicalWorkMarketV3ListingProjectionSql(listingAlias = "cl") {
             ''
           ))
       )
-      AND (
-        (
-          ${alias}.status NOT IN ('sold', 'delisted')
-          AND COALESCE(${alias}.close_txid, '') = ''
-        )
-        OR EXISTS (
-          SELECT 1
-          FROM proof_indexer.events canonical_close_event
-          JOIN proof_indexer.transactions canonical_close_tx
-            ON canonical_close_tx.network = canonical_close_event.network
-           AND canonical_close_tx.txid = canonical_close_event.txid
-           AND canonical_close_tx.status = 'confirmed'
-          JOIN proof_indexer.blocks canonical_close_block
-            ON canonical_close_block.network = canonical_close_tx.network
-           AND canonical_close_block.block_hash = canonical_close_tx.block_hash
-           AND canonical_close_block.height = canonical_close_tx.block_height
-           AND canonical_close_block.canonical = true
-          WHERE canonical_close_event.network = ${alias}.network
-            AND canonical_close_event.txid = lower(${alias}.close_txid)
-            AND canonical_close_event.valid = true
-            AND canonical_close_event.status = 'confirmed'
-            AND canonical_close_event.kind = ANY(
-              ARRAY['token-sale','token-listing-closed']::text[]
-            )
-            AND lower(canonical_close_event.payload->>'listingId') =
-              lower(${alias}.listing_id)
-        )
-      )
     )
   )`;
+}
+
+function canonicalTokenListingEventJoinSql(listingAlias = "cl") {
+  const alias = canonicalCreditListingAlias(listingAlias);
+  return `LEFT JOIN LATERAL (
+    SELECT
+      canonical_listing_event_row.status AS listing_event_status,
+      canonical_listing_tx.block_hash AS listing_event_block_hash,
+      canonical_listing_event_row.block_height AS listing_event_block_height,
+      canonical_listing_event_row.block_index AS listing_event_block_index,
+      canonical_listing_event_row.op_return_vout AS listing_event_protocol_vout,
+      canonical_listing_event_row.record_ordinal AS listing_event_record_ordinal,
+      COUNT(*) OVER () AS listing_event_match_count
+    FROM proof_indexer.events canonical_listing_event_row
+    JOIN proof_indexer.transactions canonical_listing_tx
+      ON canonical_listing_tx.network = canonical_listing_event_row.network
+     AND canonical_listing_tx.txid = canonical_listing_event_row.txid
+     AND canonical_listing_tx.status = 'confirmed'
+     AND canonical_listing_tx.block_height =
+       canonical_listing_event_row.block_height
+     AND canonical_listing_tx.block_index =
+       canonical_listing_event_row.block_index
+    JOIN proof_indexer.blocks canonical_listing_block
+      ON canonical_listing_block.network = canonical_listing_tx.network
+     AND canonical_listing_block.block_hash = canonical_listing_tx.block_hash
+     AND canonical_listing_block.height = canonical_listing_tx.block_height
+     AND canonical_listing_block.canonical = true
+    WHERE canonical_listing_event_row.network = ${alias}.network
+      AND canonical_listing_event_row.txid = lower(${alias}.listing_id)
+      AND canonical_listing_event_row.valid = true
+      AND canonical_listing_event_row.status = 'confirmed'
+      AND canonical_listing_event_row.protocol = 'pwt1'
+      AND (
+        canonical_listing_event_row.kind = 'token-listing'
+        OR (
+          canonical_listing_event_row.kind = 'token-listings'
+          AND (
+            lower(COALESCE(${alias}.token_id, '')) <> '${WORK_TOKEN_ID}'
+            OR NOT (
+              '${WORK_AMO_V5_AUTH_VERSION}' = ANY(ARRAY[
+                lower(COALESCE(
+                  ${alias}.payload->'saleAuthorization'->>'version',
+                  ''
+                )),
+                lower(COALESCE(
+                  ${alias}.payload->'listingAuthorization'->>'version',
+                  ''
+                ))
+              ]::text[])
+            )
+          )
+        )
+      )
+      AND lower(COALESCE(
+        canonical_listing_event_row.payload->>'listingId',
+        canonical_listing_event_row.txid
+      )) = lower(${alias}.listing_id)
+      AND lower(COALESCE(
+        canonical_listing_event_row.payload->>'tokenId',
+        canonical_listing_event_row.payload->'saleAuthorization'->>'tokenId',
+        ''
+      )) = lower(${alias}.token_id)
+    ORDER BY
+      canonical_listing_event_row.block_height DESC,
+      canonical_listing_event_row.block_index DESC,
+      canonical_listing_event_row.op_return_vout DESC,
+      canonical_listing_event_row.record_ordinal DESC
+    LIMIT 1
+  ) canonical_listing_event ON true`;
 }
 
 function canonicalTokenListingSealEventJoinSql(listingAlias = "cl") {
   const alias = canonicalCreditListingAlias(listingAlias);
   return `LEFT JOIN LATERAL (
-    SELECT canonical_seal_event_row.status AS seal_event_status
+    SELECT
+      canonical_seal_event_row.status AS seal_event_status,
+      canonical_seal_tx.block_hash AS seal_event_block_hash,
+      canonical_seal_event_row.block_height AS seal_event_block_height,
+      canonical_seal_event_row.block_index AS seal_event_block_index,
+      canonical_seal_event_row.op_return_vout AS seal_event_protocol_vout,
+      canonical_seal_event_row.record_ordinal AS seal_event_record_ordinal,
+      COUNT(*) OVER () AS seal_event_match_count
     FROM proof_indexer.events canonical_seal_event_row
     JOIN proof_indexer.transactions canonical_seal_tx
       ON canonical_seal_tx.network = canonical_seal_event_row.network
@@ -5464,6 +5824,7 @@ function canonicalTokenListingSealEventJoinSql(listingAlias = "cl") {
       AND canonical_seal_event_row.txid = lower(${alias}.seal_txid)
       AND canonical_seal_event_row.valid = true
       AND canonical_seal_event_row.status = 'confirmed'
+      AND canonical_seal_event_row.protocol = 'pwt1'
       AND canonical_seal_event_row.kind = 'token-listing-sealed'
       AND lower(canonical_seal_event_row.payload->>'listingId') =
         lower(${alias}.listing_id)
@@ -5471,14 +5832,27 @@ function canonicalTokenListingSealEventJoinSql(listingAlias = "cl") {
         canonical_seal_event_row.payload->>'tokenId',
         canonical_seal_event_row.payload->'saleAuthorization'->>'tokenId',
         ''
-      )) = '${WORK_TOKEN_ID}'
-      AND lower(COALESCE(
-        canonical_seal_event_row.payload->'saleAuthorization'->>'version',
-        ''
-      )) = lower(COALESCE(
-        ${alias}.payload->'saleAuthorization'->>'version',
-        ''
-      ))
+      )) = lower(${alias}.token_id)
+      AND (
+        lower(COALESCE(${alias}.token_id, '')) <> '${WORK_TOKEN_ID}'
+        OR (
+          lower(COALESCE(
+            ${alias}.payload->'saleAuthorization'->>'version',
+            ''
+          )) IN (
+            '${WORK_MARKET_V2_AUTH_VERSION}',
+            '${WORK_MARKET_V4_AUTH_VERSION}',
+            '${WORK_AMO_V5_AUTH_VERSION}'
+          )
+          AND lower(COALESCE(
+            canonical_seal_event_row.payload->'saleAuthorization'->>'version',
+            ''
+          )) = lower(COALESCE(
+            ${alias}.payload->'saleAuthorization'->>'version',
+            ''
+          ))
+        )
+      )
     ORDER BY
       canonical_seal_event_row.block_height DESC,
       canonical_seal_event_row.block_index DESC,
@@ -5504,10 +5878,62 @@ function tokenListingSealConfirmedFromTransaction(row, sealTxid) {
     WORK_MARKET_GOVERNED_AUTH_VERSIONS.has(
       normalizedLowerText(saleAuthorization.version),
     );
+  const exactPositionInteger = (value, minimum) => {
+    if (value === undefined || value === null || value === "") {
+      return null;
+    }
+    const parsed = Number(value);
+    return Number.isSafeInteger(parsed) && parsed >= minimum ? parsed : null;
+  };
+  const sealEventBlockHeight = exactPositionInteger(
+    row?.seal_event_block_height,
+    1,
+  );
+  const sealTransactionBlockHeight = exactPositionInteger(
+    row?.seal_transaction_block_height,
+    1,
+  );
+  const unknownConfirmedSealHeight =
+    transactionConfirmed &&
+    sealEventBlockHeight === null &&
+    sealTransactionBlockHeight === null;
+  const postAmoV5Seal =
+    transactionConfirmed &&
+    (
+      unknownConfirmedSealHeight ||
+      [
+        sealEventBlockHeight,
+        sealTransactionBlockHeight,
+      ].some(
+        (height) =>
+          height !== null &&
+          height >= WORK_AMO_V5_ACTIVATION_HEIGHT,
+      )
+    );
+  const canonicalSealPositionComplete =
+    /^[0-9a-f]{64}$/u.test(
+      normalizedLowerText(row?.seal_event_block_hash),
+    ) &&
+    exactPositionInteger(row?.seal_event_block_height, 1) !== null &&
+    exactPositionInteger(row?.seal_event_block_index, 0) !== null &&
+    exactPositionInteger(row?.seal_event_protocol_vout, 0) !== null &&
+    exactPositionInteger(row?.seal_event_record_ordinal, 0) !== null;
+  const canonicalSealEventMatchCount =
+    row?.seal_event_match_count === undefined
+      ? null
+      : exactPositionInteger(row.seal_event_match_count, 1);
+  const canonicalSealEventSingleton =
+    canonicalSealEventMatchCount === 1;
+  const canonicalSealEventRequired =
+    governedWorkMarket || postAmoV5Seal;
   return (
     transactionConfirmed &&
-    (!governedWorkMarket ||
-      normalizedLowerText(row?.seal_event_status) === "confirmed")
+    (!canonicalSealEventRequired ||
+      (
+        normalizedLowerText(row?.seal_event_status) === "confirmed" &&
+        canonicalSealEventSingleton &&
+        (!postAmoV5Seal || canonicalSealPositionComplete)
+      ))
   );
 }
 
@@ -5614,7 +6040,228 @@ function normalizeTokenHistoryItemsForKind(items, safeKind) {
     .filter(activeTokenListingHistoryItem);
 }
 
+const SNAPSHOT_TOKEN_ACTIVITY_KINDS = new Set([
+  "token-create",
+  "token-event-invalid",
+  "token-listing",
+  "token-listings",
+  "token-listing-closed",
+  "token-listing-sealed",
+  "token-mint",
+  "token-sale",
+  "token-transfer",
+]);
+
+function snapshotTokenActivityCanonicalExemption(item) {
+  return (
+    item?.relic === true ||
+    item?.canonicalSynthetic === true ||
+    normalizedLowerText(item?.canonicalSynthetic) === "true" ||
+    item?.metadata?.canonicalSynthetic === true ||
+    normalizedLowerText(item?.metadata?.canonicalSynthetic) === "true"
+  );
+}
+
+function snapshotTokenActivityPositionCanProject(
+  item,
+  options = {},
+) {
+  const selected = (key, fallback) =>
+    Object.prototype.hasOwnProperty.call(options, key)
+      ? options[key]
+      : fallback;
+  const blockHash = selected("blockHash", item?.blockHash);
+  const blockHeight = selected("blockHeight", item?.blockHeight);
+  const blockIndex = selected("blockIndex", item?.blockIndex);
+  const confirmed = selected(
+    "confirmed",
+    item?.confirmed === true ||
+      normalizedLowerText(item?.status) === "confirmed",
+  );
+  const protocolVout = selected("protocolVout", item?.protocolVout);
+  const recordOrdinal = selected("recordOrdinal", item?.recordOrdinal);
+  const transactionBlockHeight = selected(
+    "transactionBlockHeight",
+    undefined,
+  );
+  if (confirmed !== true || snapshotTokenActivityCanonicalExemption(item)) {
+    return true;
+  }
+  const exactPositionInteger = (value, minimum) => {
+    if (value === undefined || value === null || value === "") {
+      return null;
+    }
+    const parsed = Number(value);
+    return Number.isSafeInteger(parsed) && parsed >= minimum ? parsed : null;
+  };
+  const eventHeight = exactPositionInteger(blockHeight, 1);
+  const transactionHeight = exactPositionInteger(transactionBlockHeight, 1);
+  const knownHeights = [eventHeight, transactionHeight].filter(
+    (height) => height !== null,
+  );
+  const knownPreAmoV5 =
+    knownHeights.length > 0 &&
+    knownHeights.every(
+      (height) => height < WORK_AMO_V5_ACTIVATION_HEIGHT,
+    );
+  if (knownPreAmoV5) {
+    return true;
+  }
+  return (
+    eventHeight !== null &&
+    (transactionHeight === null || transactionHeight === eventHeight) &&
+    /^[0-9a-f]{64}$/u.test(normalizedLowerText(blockHash)) &&
+    exactPositionInteger(blockIndex, 0) !== null &&
+    exactPositionInteger(protocolVout, 0) !== null &&
+    exactPositionInteger(recordOrdinal, 0) !== null
+  );
+}
+
+function snapshotTokenActivityItemCanProject(item) {
+  const kind = normalizedLowerText(item?.kind);
+  if (!SNAPSHOT_TOKEN_ACTIVITY_KINDS.has(kind)) {
+    return true;
+  }
+  if (kind === "token-listing-sealed") {
+    return snapshotTokenActivityPositionCanProject(item, {
+      blockHash: item?.sealBlockHash ?? item?.blockHash,
+      blockHeight: item?.sealBlockHeight ?? item?.blockHeight,
+      blockIndex: item?.sealBlockIndex ?? item?.blockIndex,
+      confirmed:
+        item?.sealConfirmed === true ||
+        item?.confirmed === true ||
+        normalizedLowerText(item?.status) === "confirmed",
+      protocolVout: item?.sealProtocolVout ?? item?.protocolVout,
+      recordOrdinal: item?.sealRecordOrdinal ?? item?.recordOrdinal,
+      transactionBlockHeight: item?.sealTransactionBlockHeight,
+    });
+  }
+  if (kind === "token-listing-closed") {
+    return snapshotTokenActivityPositionCanProject(item, {
+      blockHash: item?.closedBlockHash ?? item?.blockHash,
+      blockHeight: item?.closedBlockHeight ?? item?.blockHeight,
+      blockIndex: item?.closedBlockIndex ?? item?.blockIndex,
+      confirmed:
+        item?.closedConfirmed === true ||
+        item?.confirmed === true ||
+        normalizedLowerText(item?.status) === "confirmed",
+      protocolVout: item?.closedProtocolVout ?? item?.protocolVout,
+      recordOrdinal: item?.closedRecordOrdinal ?? item?.recordOrdinal,
+      transactionBlockHeight: item?.closeTransactionBlockHeight,
+    });
+  }
+  return snapshotTokenActivityPositionCanProject(item, {
+    transactionBlockHeight: item?.closeTransactionBlockHeight,
+  });
+}
+
+function snapshotTokenHistoryItemCanProject(item, safeKind) {
+  if (!item || typeof item !== "object" || Array.isArray(item)) {
+    return false;
+  }
+  if (safeKind === "holders") {
+    return true;
+  }
+  if (safeKind === "market-log") {
+    if (item.listing) {
+      return snapshotTokenHistoryItemCanProject(item.listing, "listings");
+    }
+    if (item.sale) {
+      return snapshotTokenHistoryItemCanProject(item.sale, "sales");
+    }
+    if (item.closedListing) {
+      return snapshotTokenHistoryItemCanProject(
+        item.closedListing,
+        "closedListings",
+      );
+    }
+    return snapshotTokenActivityItemCanProject(item);
+  }
+  if (safeKind === "listings") {
+    if (
+      !snapshotTokenActivityPositionCanProject(item, {
+        confirmed:
+          item?.confirmed === true ||
+          normalizedLowerText(item?.status) === "confirmed",
+      })
+    ) {
+      return false;
+    }
+    if (item?.sealConfirmed !== true) {
+      return true;
+    }
+    return snapshotTokenActivityPositionCanProject(item, {
+      blockHash: item?.sealBlockHash,
+      blockHeight: item?.sealBlockHeight,
+      blockIndex: item?.sealBlockIndex,
+      confirmed: true,
+      protocolVout: item?.sealProtocolVout,
+      recordOrdinal: item?.sealRecordOrdinal,
+      transactionBlockHeight: item?.sealTransactionBlockHeight,
+    });
+  }
+  if (safeKind === "closedListings") {
+    return snapshotTokenActivityPositionCanProject(item, {
+      blockHash: item?.closedBlockHash,
+      blockHeight: item?.closedBlockHeight,
+      blockIndex: item?.closedBlockIndex,
+      confirmed:
+        item?.closedConfirmed === true ||
+        (
+          item?.closedConfirmed === undefined &&
+          (
+            item?.confirmed === true ||
+            ["closed", "delisted", "disabled", "sold"].includes(
+              normalizedLowerText(item?.status),
+            )
+          )
+        ),
+      protocolVout: item?.closedProtocolVout,
+      recordOrdinal: item?.closedRecordOrdinal,
+      transactionBlockHeight: item?.closeTransactionBlockHeight,
+    });
+  }
+  if (safeKind === "tokens") {
+    return snapshotTokenActivityItemCanProject({
+      ...item,
+      kind: "token-create",
+    });
+  }
+  if (safeKind === "mints") {
+    return snapshotTokenActivityItemCanProject({
+      ...item,
+      kind: "token-mint",
+    });
+  }
+  if (safeKind === "transfers") {
+    return snapshotTokenActivityItemCanProject({
+      ...item,
+      kind: "token-transfer",
+    });
+  }
+  if (safeKind === "sales") {
+    return snapshotTokenActivityItemCanProject({
+      ...item,
+      kind: "token-sale",
+    });
+  }
+  if (safeKind === "invalidEvents") {
+    return snapshotTokenActivityItemCanProject({
+      ...item,
+      kind: "token-event-invalid",
+    });
+  }
+  return true;
+}
+
 function tokenClosedListingFromEventPayload(payload) {
+  const row =
+    arguments.length > 1 &&
+    arguments[1] &&
+    typeof arguments[1] === "object" &&
+    !Array.isArray(arguments[1])
+      ? arguments[1]
+      : {};
   const { amount, priceSats, ticker } = tokenMarketNumbersFromTags(payload);
   const tokenId = String(payload?.tokenId ?? "").trim().toLowerCase();
   const workAmount = isWorkTokenId(tokenId)
@@ -5634,6 +6281,7 @@ function tokenClosedListingFromEventPayload(payload) {
   const closedAt = dateIso(
     payload?.closedAt ?? payload?.blockTime ?? payload?.timestamp ?? createdAt,
   );
+  const position = canonicalMovementPositionFromEventRow(payload, row);
   return {
     amount: workAmount
       ? workAmount.amount
@@ -5652,6 +6300,13 @@ function tokenClosedListingFromEventPayload(payload) {
         }
       : {}),
     closedAt,
+    closedBlockHash: String(position.blockHash ?? "").trim().toLowerCase(),
+    ...(position.blockHeight !== undefined
+      ? { closedBlockHeight: position.blockHeight }
+      : {}),
+    ...(position.blockIndex !== undefined
+      ? { closedBlockIndex: position.blockIndex }
+      : {}),
     closedConfirmed: payload?.confirmed === true,
     closedFrozenNetworkValueSats: rowNumber(
       payload,
@@ -5666,6 +6321,12 @@ function tokenClosedListingFromEventPayload(payload) {
       payload?.canonicalMinerFeeCovered === true
         ? String(payload?.minerFeeSource ?? "").trim()
         : String(payload?.closedMinerFeeSource ?? "").trim(),
+    ...(position.protocolVout !== undefined
+      ? { closedProtocolVout: position.protocolVout }
+      : {}),
+    ...(position.recordOrdinal !== undefined
+      ? { closedRecordOrdinal: position.recordOrdinal }
+      : {}),
     closedTxid: String(payload?.txid ?? "").trim().toLowerCase(),
     confirmed: true,
     createdAt,
@@ -6524,7 +7185,7 @@ function tokenHistoryItemFromMarketEventPayload(
   }
 
   if (payload?.kind === "token-listing" || payload?.kind === "token-listings") {
-    const listing = tokenListingFromEventPayload(payload);
+    const listing = tokenListingFromEventPayload(payload, row);
     if (!activeTokenListingHistoryItem(listing)) {
       return null;
     }
@@ -6540,13 +7201,23 @@ function tokenHistoryItemFromMarketEventPayload(
   }
 
   if (payload?.kind === "token-listing-sealed") {
-    const listing = tokenListingFromEventPayload({
-      ...payload,
-      sealAt: payload.sealAt ?? payload.createdAt,
-      sealConfirmed: payload.confirmed !== false,
-      sealTxid: payload.sealTxid ?? payload.txid,
-      status: "sealing",
-    });
+    const listing = tokenListingFromEventPayload(
+      {
+        ...payload,
+        sealAt: payload.sealAt ?? payload.createdAt,
+        sealBlockHash: payload.sealBlockHash ?? payload.blockHash,
+        sealBlockHeight: payload.sealBlockHeight ?? payload.blockHeight,
+        sealBlockIndex: payload.sealBlockIndex ?? payload.blockIndex,
+        sealConfirmed: payload.confirmed !== false,
+        sealProtocolVout:
+          payload.sealProtocolVout ?? payload.protocolVout,
+        sealRecordOrdinal:
+          payload.sealRecordOrdinal ?? payload.recordOrdinal,
+        sealTxid: payload.sealTxid ?? payload.txid,
+        status: "sealing",
+      },
+      row,
+    );
     if (!activeTokenListingHistoryItem(listing)) {
       return null;
     }
@@ -6581,7 +7252,7 @@ function tokenHistoryItemFromMarketEventPayload(
   }
 
   if (payload?.kind === "token-listing-closed") {
-    const closedListing = tokenClosedListingFromEventPayload(payload);
+    const closedListing = tokenClosedListingFromEventPayload(payload, row);
     if (
       !closedListing.closedTxid ||
       !closedListing.listingId ||
@@ -6610,11 +7281,50 @@ function tokenClosedListingFromSalePayload(salePayload) {
   if (!sale?.txid || !sale?.listingId || !sale?.tokenId) {
     return null;
   }
+  const exactPositionInteger = (value, minimum) => {
+    if (value === undefined || value === null || value === "") {
+      return null;
+    }
+    const parsed = Number(value);
+    return Number.isSafeInteger(parsed) && parsed >= minimum ? parsed : null;
+  };
+  const blockHeight = exactPositionInteger(sale.blockHeight, 1);
+  const blockIndex = exactPositionInteger(sale.blockIndex, 0);
+  const protocolVout = exactPositionInteger(sale.protocolVout, 0);
+  const recordOrdinal = exactPositionInteger(sale.recordOrdinal, 0);
+  const postAmoV5Sale =
+    sale.confirmed === true &&
+    blockHeight !== null &&
+    blockHeight >= WORK_AMO_V5_ACTIVATION_HEIGHT;
+  if (
+    postAmoV5Sale &&
+    (
+      !/^[0-9a-f]{64}$/u.test(normalizedLowerText(sale.blockHash)) ||
+      blockIndex === null ||
+      protocolVout === null ||
+      recordOrdinal === null
+    )
+  ) {
+    return null;
+  }
   return {
     ...sale,
     buyerAddress: sale.buyerAddress,
     closedAt: sale.createdAt,
+    ...(sale.blockHash ? { closedBlockHash: sale.blockHash } : {}),
+    ...(blockHeight !== null
+      ? { closedBlockHeight: blockHeight }
+      : {}),
+    ...(blockIndex !== null
+      ? { closedBlockIndex: blockIndex }
+      : {}),
     closedConfirmed: sale.confirmed === true,
+    ...(protocolVout !== null
+      ? { closedProtocolVout: protocolVout }
+      : {}),
+    ...(recordOrdinal !== null
+      ? { closedRecordOrdinal: recordOrdinal }
+      : {}),
     closedTxid: sale.txid,
     confirmed: sale.confirmed === true,
     saleTxid: sale.txid,
@@ -6675,10 +7385,23 @@ function tokenHistoryCanonicalMarketEventsSql(
     NULLIF(cl_event.listing_id, ''),
     e.txid
   ))`;
+  const targetTokenId = `lower(COALESCE(
+    NULLIF(e.payload->>'tokenId', ''),
+    NULLIF(e.payload->'saleAuthorization'->>'tokenId', ''),
+    NULLIF(cl_event.token_id, ''),
+    NULLIF(cl_event.payload->>'tokenId', ''),
+    NULLIF(cl_event.payload->'saleAuthorization'->>'tokenId', ''),
+    ''
+  ))`;
+  const targetSaleAuthorizationVersion = `lower(COALESCE(
+    NULLIF(e.payload->'saleAuthorization'->>'version', ''),
+    NULLIF(cl_event.payload->'saleAuthorization'->>'version', ''),
+    ''
+  ))`;
   const canonicalSaleKey = `CASE
     WHEN e.status = 'confirmed'
       AND e.block_height >= ${WORK_AMO_V5_ACTIVATION_HEIGHT}
-      THEN 'sale:' || lower(e.txid) || ':' || ${listingId} || ':' ||
+      THEN 'sale:' || lower(e.network) || ':' || lower(e.txid) || ':' ||
         e.block_height::text || ':' ||
         e.block_index::text || ':' ||
         e.op_return_vout::text || ':' ||
@@ -6773,6 +7496,13 @@ function tokenHistoryCanonicalMarketEventsSql(
         canonical_seal_event.seal_event_payload,
         canonical_seal_event.seal_event_status,
         canonical_seal_event.seal_event_txid,
+        canonical_seal_event.seal_event_block_hash,
+        canonical_seal_event.seal_event_block_height,
+        canonical_seal_event.seal_event_block_index,
+        canonical_seal_event.seal_event_protocol_vout,
+        canonical_seal_event.seal_event_record_ordinal,
+        canonical_seal_event.seal_event_match_count,
+        seal_transaction.block_height AS seal_transaction_block_height,
         ${amoV5Relic} AS work_amo_v5_pre_unit_relic_projection,
         (e.status = 'confirmed') AS history_item_confirmed,
         ${itemTxid} AS history_item_txid,
@@ -6806,11 +7536,24 @@ function tokenHistoryCanonicalMarketEventsSql(
       LEFT JOIN proof_indexer.credit_listings cl_event
         ON cl_event.network = e.network
        AND cl_event.listing_id = lower(e.payload->>'listingId')
+       AND lower(cl_event.token_id) = lower(COALESCE(
+         NULLIF(e.payload->>'tokenId', ''),
+         NULLIF(e.payload->'saleAuthorization'->>'tokenId', '')
+       ))
+      LEFT JOIN proof_indexer.transactions seal_transaction
+        ON seal_transaction.network = cl_event.network
+       AND seal_transaction.txid = cl_event.seal_txid
       LEFT JOIN LATERAL (
         SELECT
           canonical_seal_event_row.payload AS seal_event_payload,
           canonical_seal_event_row.status AS seal_event_status,
-          canonical_seal_event_row.txid AS seal_event_txid
+          canonical_seal_event_row.txid AS seal_event_txid,
+          canonical_seal_tx.block_hash AS seal_event_block_hash,
+          canonical_seal_event_row.block_height AS seal_event_block_height,
+          canonical_seal_event_row.block_index AS seal_event_block_index,
+          canonical_seal_event_row.op_return_vout AS seal_event_protocol_vout,
+          canonical_seal_event_row.record_ordinal AS seal_event_record_ordinal,
+          COUNT(*) OVER () AS seal_event_match_count
         FROM proof_indexer.events canonical_seal_event_row
         JOIN proof_indexer.transactions canonical_seal_tx
           ON canonical_seal_tx.network = canonical_seal_event_row.network
@@ -6826,8 +7569,10 @@ function tokenHistoryCanonicalMarketEventsSql(
          AND canonical_seal_block.height = canonical_seal_tx.block_height
          AND canonical_seal_block.canonical = true
         WHERE canonical_seal_event_row.network = e.network
+          AND canonical_seal_event_row.txid = lower(cl_event.seal_txid)
           AND canonical_seal_event_row.valid = true
           AND canonical_seal_event_row.status = 'confirmed'
+          AND canonical_seal_event_row.protocol = 'pwt1'
           AND canonical_seal_event_row.kind = 'token-listing-sealed'
           AND lower(canonical_seal_event_row.payload->>'listingId') =
             lower(COALESCE(
@@ -6839,22 +7584,21 @@ function tokenHistoryCanonicalMarketEventsSql(
             canonical_seal_event_row.payload->>'tokenId',
             canonical_seal_event_row.payload->'saleAuthorization'->>'tokenId',
             ''
-          )) = '${WORK_TOKEN_ID}'
-          AND lower(COALESCE(
-            canonical_seal_event_row.payload->'saleAuthorization'->>'version',
-            ''
-          )) = lower(COALESCE(
-            e.payload->'saleAuthorization'->>'version',
-            cl_event.payload->'saleAuthorization'->>'version',
-            ''
-          ))
-          AND lower(COALESCE(
-            canonical_seal_event_row.payload->'saleAuthorization'->>'version',
-            ''
-          )) IN (
-            '${WORK_MARKET_V2_AUTH_VERSION}',
-            '${WORK_MARKET_V4_AUTH_VERSION}',
-            '${WORK_AMO_V5_AUTH_VERSION}'
+          )) = ${targetTokenId}
+          AND (
+            ${targetTokenId} <> '${WORK_TOKEN_ID}'
+            OR (
+              ${targetSaleAuthorizationVersion} IN (
+                '${WORK_MARKET_V2_AUTH_VERSION}',
+                '${WORK_MARKET_V4_AUTH_VERSION}',
+                '${WORK_AMO_V5_AUTH_VERSION}'
+              )
+              AND lower(COALESCE(
+                canonical_seal_event_row.payload
+                  ->'saleAuthorization'->>'version',
+                ''
+              )) = ${targetSaleAuthorizationVersion}
+            )
           )
         ORDER BY
           canonical_seal_event_row.block_height DESC,
@@ -6867,6 +7611,10 @@ function tokenHistoryCanonicalMarketEventsSql(
         ON cd.network = e.network
        AND cd.token_id = COALESCE(lower(e.payload->>'tokenId'), cl_event.token_id)
       WHERE ${whereClause}
+        AND (
+          ${amoV5Relic}
+          OR e.protocol = 'pwt1'
+        )
     ),
     canonical_market_events AS (
       SELECT *
@@ -6900,6 +7648,15 @@ function canonicalTokenMarketHistorySaleKey(item, network = "") {
     Number(sale.blockHeight) >= 1
       ? Number(sale.blockHeight)
       : null;
+  const legacyPositionExempt =
+    sale?.relic === true || sale?.canonicalSynthetic === true;
+  if (
+    sale?.confirmed === true &&
+    blockHeight === null &&
+    !legacyPositionExempt
+  ) {
+    throw new Error("Canonical AMO V5 market sale position is incomplete.");
+  }
   if (
     sale?.confirmed === true &&
     blockHeight !== null &&
@@ -6928,7 +7685,7 @@ function canonicalTokenMarketHistorySaleKey(item, network = "") {
     return [
       normalizedLowerText(sale?.network ?? network),
       txid,
-      normalizedLowerText(sale?.listingId),
+      "v5",
       blockHeight,
       blockIndex,
       protocolVout,
@@ -7075,29 +7832,53 @@ function tokenListingWithSealFrom(listing, sealSource) {
   if (!listing || tokenListingSealRank(sealSource) === 0) {
     return listing;
   }
+  const selectedSealTxid = String(sealSource.sealTxid ?? "")
+    .trim()
+    .toLowerCase();
+  const currentSealTxid = String(listing.sealTxid ?? "")
+    .trim()
+    .toLowerCase();
+  const sameSealTransaction =
+    validTxid(selectedSealTxid) &&
+    validTxid(currentSealTxid) &&
+    selectedSealTxid === currentSealTxid;
+  const sealFallback = sameSealTransaction ? listing : {};
 
   return {
     ...listing,
-    saleAuthorization: sealSource.saleAuthorization ?? listing.saleAuthorization,
-    sealAt: sealSource.sealAt ?? listing.sealAt,
-    sealBlockHash: sealSource.sealBlockHash ?? listing.sealBlockHash,
-    sealBlockHeight: sealSource.sealBlockHeight ?? listing.sealBlockHeight,
-    sealBlockIndex: sealSource.sealBlockIndex ?? listing.sealBlockIndex,
+    saleAuthorization:
+      sealSource.saleAuthorization ?? sealFallback.saleAuthorization,
+    sealAt: sealSource.sealAt ?? sealFallback.sealAt,
+    sealBlockHash: sealSource.sealBlockHash ?? sealFallback.sealBlockHash,
+    sealBlockHeight:
+      sealSource.sealBlockHeight ?? sealFallback.sealBlockHeight,
+    sealBlockIndex: sealSource.sealBlockIndex ?? sealFallback.sealBlockIndex,
     sealConfirmed: sealSource.sealConfirmed === true,
-    sealDataBytes: sealSource.sealDataBytes ?? listing.sealDataBytes,
+    sealDataBytes: sealSource.sealDataBytes ?? sealFallback.sealDataBytes,
     sealFrozenNetworkValueSats:
       sealSource.sealFrozenNetworkValueSats ??
-      listing.sealFrozenNetworkValueSats,
+      sealFallback.sealFrozenNetworkValueSats,
     sealLiveNetworkValueSats:
       sealSource.sealLiveNetworkValueSats ??
-      listing.sealLiveNetworkValueSats,
+      sealFallback.sealLiveNetworkValueSats,
     sealMinerFeeCanonical:
       sealSource.sealMinerFeeCanonical === true ||
-      listing.sealMinerFeeCanonical === true,
+      (
+        sameSealTransaction &&
+        listing.sealMinerFeeCanonical === true
+      ),
     sealMinerFeeSource:
-      sealSource.sealMinerFeeSource ?? listing.sealMinerFeeSource,
-    sealMinerFeeSats: sealSource.sealMinerFeeSats ?? listing.sealMinerFeeSats,
-    sealTxid: sealSource.sealTxid ?? listing.sealTxid,
+      sealSource.sealMinerFeeSource ?? sealFallback.sealMinerFeeSource,
+    sealMinerFeeSats:
+      sealSource.sealMinerFeeSats ?? sealFallback.sealMinerFeeSats,
+    sealProtocolVout:
+      sealSource.sealProtocolVout ?? sealFallback.sealProtocolVout,
+    sealRecordOrdinal:
+      sealSource.sealRecordOrdinal ?? sealFallback.sealRecordOrdinal,
+    sealTransactionBlockHeight:
+      sealSource.sealTransactionBlockHeight ??
+      sealFallback.sealTransactionBlockHeight,
+    sealTxid: selectedSealTxid,
   };
 }
 
@@ -7145,39 +7926,111 @@ function tokenListingWithCloseFrom(listing, closeSource) {
     return listing;
   }
 
+  const selectedCloseTxid = String(closeSource.closedTxid ?? "")
+    .trim()
+    .toLowerCase();
+  const currentCloseTxid = String(listing.closedTxid ?? "")
+    .trim()
+    .toLowerCase();
+  const sameCloseTransaction =
+    validTxid(selectedCloseTxid) &&
+    validTxid(currentCloseTxid) &&
+    selectedCloseTxid === currentCloseTxid;
+  const closeFallback = sameCloseTransaction ? listing : {};
+  const selectedCloseField = (field) =>
+    Object.prototype.hasOwnProperty.call(closeSource, field)
+      ? closeSource[field]
+      : closeFallback[field];
+  const selectedCloseAliasField = (...fields) => {
+    for (const field of fields) {
+      if (Object.prototype.hasOwnProperty.call(closeSource, field)) {
+        return closeSource[field];
+      }
+    }
+    for (const field of fields) {
+      if (Object.prototype.hasOwnProperty.call(closeFallback, field)) {
+        return closeFallback[field];
+      }
+    }
+    return undefined;
+  };
+
   return {
     ...listing,
-    closedAt: closeSource.closedAt ?? listing.closedAt,
-    closedBlockHeight:
-      closeSource.closedBlockHeight ??
-      closeSource.blockHeight ??
-      listing.closedBlockHeight,
-    closedBlockIndex:
-      closeSource.closedBlockIndex ??
-      closeSource.blockIndex ??
-      listing.closedBlockIndex,
-    closedConfirmed: closeSource.closedConfirmed === true,
-    closedDataBytes:
-      closeSource.closedDataBytes ??
-      closeSource.dataBytes ??
-      listing.closedDataBytes,
-    closedFrozenNetworkValueSats:
-      closeSource.closedFrozenNetworkValueSats ??
-      listing.closedFrozenNetworkValueSats,
-    closedLiveNetworkValueSats:
-      closeSource.closedLiveNetworkValueSats ??
-      listing.closedLiveNetworkValueSats,
+    buyerAddress: selectedCloseAliasField(
+      "buyerAddress",
+      "saleBuyerAddress",
+    ),
+    canonicalSaleEvidence: selectedCloseField("canonicalSaleEvidence"),
+    closeTxid: undefined,
+    closedAt: selectedCloseField("closedAt"),
+    closedBlockHash: selectedCloseAliasField(
+      "closedBlockHash",
+      "blockHash",
+    ),
+    closedBlockHeight: selectedCloseAliasField(
+      "closedBlockHeight",
+      "blockHeight",
+    ),
+    closeTransactionBlockHeight: selectedCloseField(
+      "closeTransactionBlockHeight",
+    ),
+    closedBlockIndex: selectedCloseAliasField(
+      "closedBlockIndex",
+      "blockIndex",
+    ),
+    closedByCanonicalOutpointSpend:
+      selectedCloseField("closedByCanonicalOutpointSpend") === true,
+    closedBySpendableOutspend:
+      selectedCloseField("closedBySpendableOutspend") === true,
+    closedConfirmed: selectedCloseField("closedConfirmed") === true,
+    closedDataBytes: selectedCloseAliasField(
+      "closedDataBytes",
+      "dataBytes",
+    ),
+    closedFrozenNetworkValueSats: selectedCloseField(
+      "closedFrozenNetworkValueSats",
+    ),
+    closedLiveNetworkValueSats: selectedCloseField(
+      "closedLiveNetworkValueSats",
+    ),
     closedMinerFeeCanonical:
-      closeSource.closedMinerFeeCanonical === true ||
-      listing.closedMinerFeeCanonical === true,
-    closedMinerFeeSats:
-      closeSource.closedMinerFeeSats ?? listing.closedMinerFeeSats,
-    closedMinerFeeSource:
-      closeSource.closedMinerFeeSource ??
-      closeSource.minerFeeSource ??
-      listing.closedMinerFeeSource,
-    closedTxid: closeSource.closedTxid ?? listing.closedTxid,
-    closedVin: closeSource.closedVin ?? listing.closedVin,
+      selectedCloseField("closedMinerFeeCanonical") === true,
+    closedMinerFeeSats: selectedCloseField("closedMinerFeeSats"),
+    closedMinerFeeSource: selectedCloseAliasField(
+      "closedMinerFeeSource",
+      "minerFeeSource",
+    ),
+    closedProtocolVout: selectedCloseAliasField(
+      "closedProtocolVout",
+      "protocolVout",
+    ),
+    closedRecordOrdinal: selectedCloseAliasField(
+      "closedRecordOrdinal",
+      "recordOrdinal",
+    ),
+    closedTxid: selectedCloseTxid,
+    closedVin: selectedCloseField("closedVin"),
+    lifecycleStatus: selectedCloseField("lifecycleStatus"),
+    saleAt: selectedCloseField("saleAt"),
+    saleBlockHash: selectedCloseField("saleBlockHash"),
+    saleBlockHeight: selectedCloseField("saleBlockHeight"),
+    saleBlockIndex: selectedCloseField("saleBlockIndex"),
+    saleBuyerAddress: selectedCloseAliasField(
+      "saleBuyerAddress",
+      "buyerAddress",
+    ),
+    saleConfirmed: selectedCloseField("saleConfirmed") === true,
+    saleDataBytes: selectedCloseField("saleDataBytes"),
+    saleMinerFeeSats: selectedCloseField("saleMinerFeeSats"),
+    salePaymentSats: selectedCloseField("salePaymentSats"),
+    saleProtocolVout: selectedCloseField("saleProtocolVout"),
+    saleRecordOrdinal: selectedCloseField("saleRecordOrdinal"),
+    saleTransactionBlockHeight: selectedCloseField(
+      "saleTransactionBlockHeight",
+    ),
+    saleTxid: selectedCloseField("saleTxid"),
+    status: selectedCloseField("status"),
   };
 }
 
@@ -7190,9 +8043,162 @@ function mergeTokenListingRecord(current, incoming) {
   }
 
   const sealSource = preferredTokenListingSealSource(current, incoming);
-  const merged = sealSource
+  const sealed = sealSource
     ? tokenListingWithSealFrom(incoming, sealSource)
     : incoming;
+  const exactPositionInteger = (value, minimum) => {
+    if (value === undefined || value === null || value === "") {
+      return null;
+    }
+    const parsed =
+      typeof value === "number"
+        ? value
+        : typeof value === "string" && /^(?:0|[1-9][0-9]*)$/u.test(value)
+          ? Number(value)
+          : Number.NaN;
+    return Number.isSafeInteger(parsed) && parsed >= minimum ? parsed : null;
+  };
+  const completeListingPosition = (listing) =>
+    /^[0-9a-f]{64}$/u.test(normalizedLowerText(listing?.blockHash)) &&
+    exactPositionInteger(listing?.blockHeight, 1) !== null &&
+    exactPositionInteger(listing?.blockIndex, 0) !== null &&
+    exactPositionInteger(listing?.protocolVout, 0) !== null &&
+    exactPositionInteger(listing?.recordOrdinal, 0) !== null;
+  const directPositionAliasesLifecycle = (listing, prefix) => {
+    if (!completeListingPosition(listing)) {
+      return false;
+    }
+    const lifecycleHash = normalizedLowerText(
+      listing?.[`${prefix}BlockHash`],
+    );
+    const lifecycleHeight = exactPositionInteger(
+      listing?.[`${prefix}BlockHeight`],
+      1,
+    );
+    const lifecycleIndex = exactPositionInteger(
+      listing?.[`${prefix}BlockIndex`],
+      0,
+    );
+    const lifecycleVout = exactPositionInteger(
+      listing?.[`${prefix}ProtocolVout`],
+      0,
+    );
+    const lifecycleOrdinal = exactPositionInteger(
+      listing?.[`${prefix}RecordOrdinal`],
+      0,
+    );
+    return (
+      /^[0-9a-f]{64}$/u.test(lifecycleHash) &&
+      lifecycleHash === normalizedLowerText(listing.blockHash) &&
+      lifecycleHeight !== null &&
+      lifecycleHeight === exactPositionInteger(listing.blockHeight, 1) &&
+      lifecycleIndex !== null &&
+      lifecycleIndex === exactPositionInteger(listing.blockIndex, 0) &&
+      lifecycleVout !== null &&
+      lifecycleVout === exactPositionInteger(listing.protocolVout, 0) &&
+      lifecycleOrdinal !== null &&
+      lifecycleOrdinal === exactPositionInteger(listing.recordOrdinal, 0)
+    );
+  };
+  const lifecyclePositionState = (listing, prefix) => {
+    const txidField =
+      prefix === "closed" ? "closedTxid" : `${prefix}Txid`;
+    const positionValues = [
+      listing?.[`${prefix}BlockHash`],
+      listing?.[`${prefix}BlockHeight`],
+      listing?.[`${prefix}BlockIndex`],
+      listing?.[`${prefix}ProtocolVout`],
+      listing?.[`${prefix}RecordOrdinal`],
+    ];
+    const present =
+      validTxid(listing?.[txidField]) ||
+      (prefix === "closed" && validTxid(listing?.closeTxid)) ||
+      positionValues.some(
+        (value) => value !== undefined && value !== null && value !== "",
+      );
+    if (!present) {
+      return "absent";
+    }
+    const complete =
+      /^[0-9a-f]{64}$/u.test(
+        normalizedLowerText(listing?.[`${prefix}BlockHash`]),
+      ) &&
+      exactPositionInteger(listing?.[`${prefix}BlockHeight`], 1) !== null &&
+      exactPositionInteger(listing?.[`${prefix}BlockIndex`], 0) !== null &&
+      exactPositionInteger(listing?.[`${prefix}ProtocolVout`], 0) !== null &&
+      exactPositionInteger(listing?.[`${prefix}RecordOrdinal`], 0) !== null;
+    if (!complete) {
+      return "incomplete";
+    }
+    return directPositionAliasesLifecycle(listing, prefix)
+      ? "aliases-opening"
+      : "complete";
+  };
+  const listingPositionKey = (listing) => [
+    normalizedLowerText(listing?.blockHash),
+    exactPositionInteger(listing?.blockHeight, 1),
+    exactPositionInteger(listing?.blockIndex, 0),
+    exactPositionInteger(listing?.protocolVout, 0),
+    exactPositionInteger(listing?.recordOrdinal, 0),
+  ].join(":");
+  const candidateListingPositionSources = [incoming, current].filter(
+    (listing) =>
+      completeListingPosition(listing) &&
+      ["seal", "closed", "sale"].every((prefix) =>
+        ["absent", "complete"].includes(
+          lifecyclePositionState(listing, prefix),
+        ),
+      ),
+  );
+  const conflictingListingPositions =
+    new Set(candidateListingPositionSources.map(listingPositionKey)).size > 1;
+  const canonicalListingPositionSource = conflictingListingPositions
+    ? null
+    : candidateListingPositionSources[0];
+  const unsafeAliasedListingPosition =
+    conflictingListingPositions ||
+    (
+      !canonicalListingPositionSource &&
+      [incoming, current].some(completeListingPosition)
+    );
+  const merged = {
+    ...sealed,
+    blockHash:
+      canonicalListingPositionSource?.blockHash ||
+      (
+        unsafeAliasedListingPosition
+          ? undefined
+          : sealed.blockHash || current.blockHash
+      ),
+    blockHeight:
+      canonicalListingPositionSource?.blockHeight ??
+      (
+        unsafeAliasedListingPosition
+          ? undefined
+          : sealed.blockHeight ?? current.blockHeight
+      ),
+    blockIndex:
+      canonicalListingPositionSource?.blockIndex ??
+      (
+        unsafeAliasedListingPosition
+          ? undefined
+          : sealed.blockIndex ?? current.blockIndex
+      ),
+    protocolVout:
+      canonicalListingPositionSource?.protocolVout ??
+      (
+        unsafeAliasedListingPosition
+          ? undefined
+          : sealed.protocolVout ?? current.protocolVout
+      ),
+    recordOrdinal:
+      canonicalListingPositionSource?.recordOrdinal ??
+      (
+        unsafeAliasedListingPosition
+          ? undefined
+          : sealed.recordOrdinal ?? current.recordOrdinal
+      ),
+  };
   return tokenListingCloseRank(current) > tokenListingCloseRank(incoming)
     ? tokenListingWithCloseFrom(merged, current)
     : tokenListingWithCloseFrom(merged, incoming);
@@ -7271,6 +8277,49 @@ function mergeCanonicalTokenSaleRecord(current, incoming) {
 function canonicalTokenSaleProjectionKey(sale, network) {
   const normalizedNetwork = normalizedLowerText(sale?.network ?? network);
   const txid = normalizedLowerText(sale?.txid);
+  const blockHeight =
+    typeof sale?.blockHeight === "number"
+      ? sale.blockHeight
+      : typeof sale?.blockHeight === "string" &&
+          /^(?:0|[1-9][0-9]*)$/u.test(sale.blockHeight)
+        ? Number(sale.blockHeight)
+        : null;
+  if (
+    sale?.confirmed === true &&
+    Number.isSafeInteger(blockHeight) &&
+    blockHeight >= WORK_AMO_V5_ACTIVATION_HEIGHT
+  ) {
+    const exactPositionInteger = (value) =>
+      typeof value === "number"
+        ? Number.isSafeInteger(value) && value >= 0
+          ? value
+          : null
+        : typeof value === "string" &&
+            /^(?:0|[1-9][0-9]*)$/u.test(value) &&
+            Number.isSafeInteger(Number(value))
+          ? Number(value)
+          : null;
+    const blockIndex = exactPositionInteger(sale?.blockIndex);
+    const protocolVout = exactPositionInteger(sale?.protocolVout);
+    const recordOrdinal = exactPositionInteger(sale?.recordOrdinal);
+    if (
+      !/^[0-9a-f]{64}$/u.test(txid) ||
+      blockIndex === null ||
+      protocolVout === null ||
+      recordOrdinal === null
+    ) {
+      return "";
+    }
+    return [
+      normalizedNetwork,
+      txid,
+      "v5",
+      blockHeight,
+      blockIndex,
+      protocolVout,
+      recordOrdinal,
+    ].join(":");
+  }
   const listingId = normalizedLowerText(sale?.listingId);
   return `${normalizedNetwork}:${txid}:${listingId}`;
 }
@@ -7484,6 +8533,7 @@ function tokenMintEventQueryParts(network, tokenScope, searchParams, pagination)
   const scope = tokenScopeKey(tokenScope);
   const conditions = [
     "e.network = $1",
+    "e.protocol = 'pwt1'",
     "e.valid IS DISTINCT FROM false",
     "e.kind = 'token-mint'",
     "COALESCE(t.status, e.status) IN ('confirmed', 'pending')",
@@ -7853,6 +8903,7 @@ export async function proofIndexTokenMintStatsPayload(
   if (!pool) {
     return null;
   }
+  await assertCurrentAmoV5CanonicalPositionUniqueness(pool, network);
   const scope = tokenScopeKey(tokenScope);
   if (!scope || scope === "all") {
     return null;
@@ -8220,21 +9271,13 @@ async function filterClosedTokenListingHistoryPage(pool, page, network) {
           lower(COALESCE(e.payload->>'listingId', e.txid)) AS listing_id
         FROM proof_indexer.events e
         WHERE e.network = $1
+          AND e.protocol = 'pwt1'
           AND e.valid = true
-          AND (
-            (
-              e.kind = ANY($2::text[])
-              AND e.status IN ('confirmed', 'pending')
-              AND lower(e.payload->>'listingId') = ANY($3::text[])
-            )
-            OR (
-              e.kind = 'token-listing'
-              AND e.status = 'dropped'
-              AND lower(
-                COALESCE(e.payload->>'listingId', e.txid)
-              ) = ANY($3::text[])
-            )
-          )
+          AND e.kind = 'token-listing'
+          AND e.status = 'dropped'
+          AND lower(
+            COALESCE(e.payload->>'listingId', e.txid)
+          ) = ANY($2::text[])
         UNION
         SELECT DISTINCT lower(spent_listing.listing_id) AS listing_id
         FROM proof_indexer.credit_listings spent_listing
@@ -8257,10 +9300,10 @@ async function filterClosedTokenListingHistoryPage(pool, page, network) {
          AND spend_block.height = spend_tx.block_height
          AND spend_block.canonical = true
         WHERE spent_listing.network = $1
-          AND lower(spent_listing.listing_id) = ANY($3::text[])
+          AND lower(spent_listing.listing_id) = ANY($2::text[])
       ) closed_listing
     `,
-    [network, ["token-listing-closed", "token-sale"], listingIds],
+    [network, listingIds],
   );
   const closedListingIds = new Set(
     result.rows
@@ -8331,26 +9374,8 @@ async function exactActiveTokenListingHistoryPage(
       OR cl.seal_txid = ANY($2::text[])
       OR cl.close_txid = ANY($2::text[])
     )`,
-    "cl.status = ANY(ARRAY['active','sealing']::text[])",
     canonicalWorkMarketV3ListingProjectionSql("cl"),
-    `NOT EXISTS (
-      SELECT 1
-      FROM proof_indexer.tx_inputs active_spend_input
-      JOIN proof_indexer.transactions active_spend_tx
-        ON active_spend_tx.network = active_spend_input.network
-       AND active_spend_tx.txid = active_spend_input.txid
-       AND active_spend_tx.status = 'confirmed'
-      JOIN proof_indexer.blocks active_spend_block
-        ON active_spend_block.network = active_spend_tx.network
-       AND active_spend_block.block_hash = active_spend_tx.block_hash
-       AND active_spend_block.height = active_spend_tx.block_height
-       AND active_spend_block.canonical = true
-      WHERE active_spend_input.network = cl.network
-        AND active_spend_input.prev_txid = lower(
-          COALESCE(NULLIF(cl.sale_ticket_txid, ''), cl.listing_id)
-        )
-        AND active_spend_input.prev_vout = cl.sale_ticket_vout
-    )`,
+    tokenListingActiveLifecycleSql("cl"),
   ];
   let currentWorkMarketAuthorizationVersionParam = "";
   if (scope && scope !== "all") {
@@ -8447,8 +9472,6 @@ async function exactActiveTokenListingHistoryPage(
                 OR terminal_listing.close_txid = ANY($2::text[])
               )
               AND terminal_listing.status IN (
-                'sold',
-                'delisted',
                 'dropped',
                 'orphaned'
               )
@@ -8491,18 +9514,12 @@ async function exactActiveTokenListingHistoryPage(
             FROM candidate_events candidate
             JOIN proof_indexer.events terminal_event
               ON terminal_event.event_id = candidate.event_id
-            WHERE (
-              terminal_event.txid = ANY($2::text[])
+            WHERE terminal_event.protocol = 'pwt1'
+              AND terminal_event.txid = ANY($2::text[])
               AND (
                 terminal_event.valid = false
                 OR terminal_event.status IN ('dropped', 'orphaned')
               )
-            )
-            OR (
-              terminal_event.valid = true
-              AND terminal_event.status IN ('confirmed', 'pending')
-              AND terminal_event.kind IN ('token-listing-closed', 'token-sale')
-            )
           )
         ) AS terminal
       `,
@@ -8535,11 +9552,35 @@ async function exactActiveTokenListingHistoryPage(
               cl.close_txid,
               cl.payload,
               cl.updated_at,
+              listing_tx.block_hash AS listing_block_hash,
+              listing_tx.block_height AS listing_block_height,
+              listing_tx.block_index AS listing_transaction_block_index,
+              listing_tx.block_time AS listing_block_time,
+              listing_tx.status AS listing_tx_status,
+              canonical_listing_event.listing_event_status,
+              canonical_listing_event.listing_event_block_hash,
+              canonical_listing_event.listing_event_block_height,
+              canonical_listing_event.listing_event_block_index,
+              canonical_listing_event.listing_event_protocol_vout,
+              canonical_listing_event.listing_event_record_ordinal,
+              canonical_listing_event.listing_event_match_count,
               seal_tx.status AS seal_tx_status,
+              seal_tx.block_height AS seal_transaction_block_height,
               canonical_seal_event.seal_event_status,
+              canonical_seal_event.seal_event_block_hash,
+              canonical_seal_event.seal_event_block_height,
+              canonical_seal_event.seal_event_block_index,
+              canonical_seal_event.seal_event_protocol_vout,
+              canonical_seal_event.seal_event_record_ordinal,
+              canonical_seal_event.seal_event_match_count,
               cd.ticker,
-              cd.registry_address
+              cd.registry_address,
+              cd.metadata AS token_metadata
             FROM proof_indexer.credit_listings cl
+            LEFT JOIN proof_indexer.transactions listing_tx
+              ON listing_tx.network = cl.network
+             AND listing_tx.txid = cl.listing_id
+            ${canonicalTokenListingEventJoinSql("cl")}
             LEFT JOIN proof_indexer.transactions seal_tx
               ON seal_tx.network = cl.network
              AND seal_tx.txid = cl.seal_txid
@@ -8561,16 +9602,6 @@ async function exactActiveTokenListingHistoryPage(
           `
             SELECT closed_listing.listing_id
             FROM (
-              SELECT DISTINCT lower(e.payload->>'listingId') AS listing_id
-              FROM proof_indexer.events e
-              WHERE e.network = $1
-                AND e.valid = true
-                AND e.status IN ('confirmed', 'pending')
-                AND e.kind = ANY(
-                  ARRAY['token-listing-closed','token-sale']::text[]
-                )
-                AND lower(e.payload->>'listingId') = ANY($2::text[])
-              UNION
               SELECT DISTINCT lower(spent_listing.listing_id) AS listing_id
               FROM proof_indexer.credit_listings spent_listing
               JOIN proof_indexer.tx_inputs spend_input
@@ -8606,56 +9637,17 @@ async function exactActiveTokenListingHistoryPage(
 
   const items = rowsResult.rows
     .map((row) => {
-      const payload = objectRecord(row.payload);
-      const saleAuthorization = objectRecord(payload.saleAuthorization);
-      const listingId = String(row.listing_id ?? payload.listingId ?? "")
-        .trim()
-        .toLowerCase();
-      const status = String(row.status ?? payload.status ?? "")
-        .trim()
-        .toLowerCase();
-      const sealTxid = String(row.seal_txid ?? payload.sealTxid ?? "")
-        .trim()
-        .toLowerCase();
-      const closeTxid = tokenListingEffectiveCloseTxid(
-        row,
-        payload,
-        status,
-        sealTxid,
+      const listing = activeTokenListingFromCreditListingRow(row, network);
+      const sealTxid = normalizedLowerText(
+        row?.seal_txid ?? row?.payload?.sealTxid,
       );
-      return normalizeTokenHistoryListingItem({
-        ...payload,
-        amount: row.amount,
-        buyerAddress: row.buyer_address ?? payload.buyerAddress,
-        closeTxid,
-        confirmed: true,
-        createdAt: dateIso(payload.createdAt ?? row.updated_at),
-        listingId,
-        network,
-        priceSats: Number(row.price_sats ?? 0),
-        registryAddress:
-          row.registry_address ??
-          payload.registryAddress ??
-          saleAuthorization.registryAddress,
-        saleAuthorization,
-        saleTicketTxid: tokenListingEffectiveSaleTicketTxid(
+      return {
+        ...listing,
+        sealConfirmed: tokenListingSealConfirmedFromTransaction(
           row,
-          payload,
-          saleAuthorization,
-          listingId,
           sealTxid,
         ),
-        saleTicketValueSats: Number(row.sale_ticket_value_sats ?? 0),
-        saleTicketVout: row.sale_ticket_vout,
-        sealAt: dateIso(payload.sealAt ?? payload.sealedAt ?? row.updated_at),
-        sealConfirmed: tokenListingSealConfirmedFromTransaction(row, sealTxid),
-        sealTxid,
-        sellerAddress: row.seller_address ?? payload.sellerAddress,
-        status,
-        ticker: row.ticker ?? payload.ticker ?? saleAuthorization.ticker,
-        tokenId: row.token_id ?? payload.tokenId ?? saleAuthorization.tokenId,
-        txid: listingId,
-      });
+      };
     })
     .filter(activeTokenListingHistoryItem)
     .filter((item) => !closedListingIds.has(tokenListingId(item)))
@@ -9073,6 +10065,21 @@ function historyActivityKey(item) {
     Number(item.blockHeight) >= 1
       ? Number(item.blockHeight)
       : null;
+  const governedTokenActivity = normalizedLowerText(item?.kind).startsWith(
+    "token-",
+  );
+  const legacyPositionExempt =
+    item?.relic === true || item?.canonicalSynthetic === true;
+  if (
+    item?.confirmed === true &&
+    governedTokenActivity &&
+    blockHeight === null &&
+    !legacyPositionExempt
+  ) {
+    throw new Error(
+      "Canonical post-AMO-V5 activity position is incomplete.",
+    );
+  }
   if (
     item?.confirmed === true &&
     blockHeight !== null &&
@@ -9101,7 +10108,6 @@ function historyActivityKey(item) {
       );
     }
     return [
-      item?.kind,
       item?.network,
       item?.txid,
       "v5",
@@ -9109,8 +10115,6 @@ function historyActivityKey(item) {
       blockIndex,
       protocolVout,
       recordOrdinal,
-      item?.listingId ?? "",
-      item?.id ?? "",
     ].join(":");
   }
   if (item?.kind === "token-listing-closed" && item?.txid) {
@@ -9779,6 +10783,7 @@ function logHistoryPageFromSnapshot(snapshot, network, requestedKind, pagination
           }),
         )
         .filter(Boolean)
+        .filter(snapshotTokenActivityItemCanProject)
     : [];
   if (sourceItems.length === 0) {
     return null;
@@ -10021,6 +11026,9 @@ function tokenHistoryPageFromSnapshot(
     source.sourceItems,
     safeKind,
   );
+  sourceItems = sourceItems.filter((item) =>
+    snapshotTokenHistoryItemCanProject(item, safeKind),
+  );
   if (safeKind === "listings") {
     const cutoverState = applyWorkMarketV2CutoverToTokenState({
       closedListings: [],
@@ -10104,6 +11112,7 @@ export async function proofIndexTokenMarketHistoryOverlayPayload(
   if (!pool) {
     return null;
   }
+  await assertCurrentAmoV5CanonicalPositionUniqueness(pool, network);
 
   const safeKind = tokenHistorySafeKind(kind);
   const eventKinds = tokenHistoryMarketEventKinds(safeKind);
@@ -10185,6 +11194,7 @@ export async function proofIndexTokenMarketHistoryOverlayPayload(
       : "e.kind = ANY($2::text[])";
   const conditions = [
     "e.network = $1",
+    "e.protocol = 'pwt1'",
     "e.valid = true",
     "e.status IN ('confirmed', 'pending')",
     eventKindCondition,
@@ -10313,35 +11323,38 @@ export async function proofIndexTokenMarketHistoryOverlayPayload(
         )`,
       );
     }
-    if (txidNeedles.length > 0) {
-      conditions.push(
-        `(
-          cl_event.listing_id IS NULL
-          OR lower(cl_event.status) != ALL(ARRAY['closed','sold','dropped']::text[])
-        )`,
-        `NOT EXISTS (
+    conditions.push(
+      `(
+        cl_event.listing_id IS NULL
+        OR NOT EXISTS (
           SELECT 1
-          FROM proof_indexer.events close_event
-          WHERE close_event.network = e.network
-            AND close_event.valid = true
-            AND close_event.status IN ('confirmed', 'pending')
-            AND close_event.kind = ANY(ARRAY['token-listing-closed','token-sale']::text[])
-            AND lower(close_event.payload->>'listingId') = lower(e.payload->>'listingId')
-        )`,
-      );
-    } else {
-      conditions.push(
-        `NOT EXISTS (
-          SELECT 1
-          FROM proof_indexer.events close_event
-          WHERE close_event.network = e.network
-            AND close_event.valid = true
-            AND close_event.status IN ('confirmed', 'pending')
-            AND close_event.kind = ANY(ARRAY['token-listing-closed','token-sale']::text[])
-            AND lower(close_event.payload->>'listingId') = lower(e.payload->>'listingId')
-        )`,
-      );
-    }
+          FROM proof_indexer.tx_inputs market_listing_spend_input
+          JOIN proof_indexer.transactions market_listing_spend_tx
+            ON market_listing_spend_tx.network =
+              market_listing_spend_input.network
+           AND market_listing_spend_tx.txid =
+              market_listing_spend_input.txid
+           AND market_listing_spend_tx.status = 'confirmed'
+          JOIN proof_indexer.blocks market_listing_spend_block
+            ON market_listing_spend_block.network =
+              market_listing_spend_tx.network
+           AND market_listing_spend_block.block_hash =
+              market_listing_spend_tx.block_hash
+           AND market_listing_spend_block.height =
+              market_listing_spend_tx.block_height
+           AND market_listing_spend_block.canonical = true
+          WHERE market_listing_spend_input.network = cl_event.network
+            AND market_listing_spend_input.prev_txid = lower(
+              COALESCE(
+                NULLIF(cl_event.sale_ticket_txid, ''),
+                cl_event.listing_id
+              )
+            )
+            AND market_listing_spend_input.prev_vout =
+              cl_event.sale_ticket_vout
+        )
+      )`,
+    );
   }
 
   const whereClause = conditions.join(" AND ");
@@ -10500,60 +11513,251 @@ export async function proofIndexTokenMarketHistoryOverlayPayload(
 export async function proofIndexTokenListingCloseOutspendPayload(
   network,
   listingTxid,
+  listingVout,
 ) {
   const pool = proofIndexPool();
   const normalizedListingTxid = String(listingTxid ?? "").trim().toLowerCase();
-  if (!pool || !/^[0-9a-f]{64}$/u.test(normalizedListingTxid)) {
+  const exactInteger = (value, minimum = 0) => {
+    if (value === undefined || value === null) {
+      return null;
+    }
+    const parsed =
+      typeof value === "number"
+        ? value
+        : typeof value === "string" && /^\d+$/u.test(value.trim())
+          ? Number(value.trim())
+          : Number.NaN;
+    return Number.isSafeInteger(parsed) && parsed >= minimum
+      ? parsed
+      : null;
+  };
+  const normalizedListingVout = exactInteger(listingVout);
+  if (
+    !pool ||
+    !/^[0-9a-f]{64}$/u.test(normalizedListingTxid) ||
+    normalizedListingVout === null
+  ) {
+    return null;
+  }
+  await assertCurrentAmoV5CanonicalPositionUniqueness(pool, network);
+
+  const spenderResult = await pool.query(
+    `
+      /* token_listing_close_outspend_spender */
+      SELECT
+        spend_tx.block_hash,
+        spend_tx.block_index,
+        spend_tx.block_time,
+        spend_tx.block_height,
+        spend_tx.txid,
+        spend_input.vin
+      FROM proof_indexer.tx_inputs spend_input
+      JOIN proof_indexer.transactions spend_tx
+        ON spend_tx.network = spend_input.network
+       AND spend_tx.txid = spend_input.txid
+       AND spend_tx.status = 'confirmed'
+      JOIN proof_indexer.blocks spend_block
+        ON spend_block.network = spend_tx.network
+       AND spend_block.block_hash = spend_tx.block_hash
+       AND spend_block.height = spend_tx.block_height
+       AND spend_block.canonical = true
+      WHERE spend_input.network = $1
+        AND spend_input.prev_txid = $2
+        AND spend_input.prev_vout = $3
+      ORDER BY
+        spend_tx.block_height,
+        spend_tx.block_index,
+        spend_tx.txid,
+        spend_input.vin
+      LIMIT 2
+    `,
+    [network, normalizedListingTxid, normalizedListingVout],
+  );
+  if (spenderResult.rows.length !== 1) {
+    return null;
+  }
+  const spenderRow = spenderResult.rows[0];
+  const closeTxid = normalizedLowerText(spenderRow?.txid);
+  const vin = exactInteger(spenderRow?.vin);
+  const blockHash = normalizedLowerText(spenderRow?.block_hash);
+  const blockHeight = exactInteger(spenderRow?.block_height, 1);
+  const blockIndex = exactInteger(spenderRow?.block_index);
+  if (
+    !/^[0-9a-f]{64}$/u.test(closeTxid) ||
+    vin === null ||
+    !/^[0-9a-f]{64}$/u.test(blockHash) ||
+    blockHeight === null ||
+    blockIndex === null
+  ) {
     return null;
   }
 
-  const result = await pool.query(
+  const eventResult = await pool.query(
     `
+      /* token_listing_close_outspend_lifecycle */
       SELECT
         e.payload,
-        e.status,
-        e.block_time,
-        e.block_height,
-        e.txid
+        e.kind,
+        e.block_height AS event_block_height,
+        e.block_index AS event_block_index,
+        e.op_return_vout AS event_protocol_vout,
+        e.record_ordinal AS event_record_ordinal,
+        lifecycle_tx.block_hash,
+        lifecycle_tx.block_index,
+        lifecycle_tx.block_height,
+        lifecycle_tx.txid
       FROM proof_indexer.events e
+      JOIN proof_indexer.transactions lifecycle_tx
+        ON lifecycle_tx.network = e.network
+       AND lifecycle_tx.txid = e.txid
+       AND lifecycle_tx.status = 'confirmed'
+       AND lifecycle_tx.block_height = e.block_height
+       AND lifecycle_tx.block_index = e.block_index
+      JOIN proof_indexer.blocks lifecycle_block
+        ON lifecycle_block.network = lifecycle_tx.network
+       AND lifecycle_block.block_hash = lifecycle_tx.block_hash
+       AND lifecycle_block.height = lifecycle_tx.block_height
+       AND lifecycle_block.canonical = true
       WHERE e.network = $1
+        AND e.txid = $2
         AND e.valid = true
-        AND e.status IN ('confirmed', 'pending')
-        AND e.kind = ANY(ARRAY['token-listing-closed','token-sale']::text[])
-        AND lower(e.payload->>'listingId') = $2
+        AND e.status = 'confirmed'
+        AND e.protocol = 'pwt1'
+        AND e.kind =
+          ANY(ARRAY['token-listing-closed','token-sale']::text[])
+        AND lower(e.payload->>'listingId') = $3
       ORDER BY
-        COALESCE(e.event_time, e.block_time, e.created_at) DESC,
-        e.txid DESC,
+        e.op_return_vout,
+        e.record_ordinal,
         e.event_id DESC
-      LIMIT 1
+      LIMIT 3
     `,
-    [network, normalizedListingTxid],
+    [network, closeTxid, normalizedListingTxid],
   );
-  const row = result.rows[0];
-  const closeTxid = String(row?.txid ?? row?.payload?.closedTxid ?? "")
-    .trim()
-    .toLowerCase();
-  if (!/^[0-9a-f]{64}$/u.test(closeTxid)) {
-    return null;
-  }
+  const saleRows = eventResult.rows.filter(
+    (row) => normalizedLowerText(row?.kind) === "token-sale",
+  );
+  const closedRows = eventResult.rows.filter(
+    (row) =>
+      normalizedLowerText(row?.kind) === "token-listing-closed",
+  );
+  const eventLineageExact = eventResult.rows.every((candidate) => {
+    const candidateBlockHeight = exactInteger(
+      candidate?.block_height,
+      1,
+    );
+    const candidateBlockIndex = exactInteger(candidate?.block_index);
+    const eventBlockHeight = exactInteger(
+      candidate?.event_block_height,
+      1,
+    );
+    const eventBlockIndex = exactInteger(
+      candidate?.event_block_index,
+    );
+    const eventProtocolVout = exactInteger(
+      candidate?.event_protocol_vout,
+    );
+    const eventRecordOrdinal = exactInteger(
+      candidate?.event_record_ordinal,
+    );
+    return (
+      normalizedLowerText(candidate?.txid) === closeTxid &&
+      normalizedLowerText(candidate?.block_hash) === blockHash &&
+      candidateBlockHeight === blockHeight &&
+      candidateBlockIndex === blockIndex &&
+      eventBlockHeight === blockHeight &&
+      eventBlockIndex === blockIndex &&
+      eventProtocolVout !== null &&
+      eventRecordOrdinal !== null
+    );
+  });
+  const lifecyclePositionsDistinct =
+    closedRows.length === 1 &&
+    saleRows.length === 1 &&
+    (
+      exactInteger(closedRows[0]?.event_protocol_vout) !==
+        exactInteger(saleRows[0]?.event_protocol_vout) ||
+      exactInteger(closedRows[0]?.event_record_ordinal) !==
+        exactInteger(saleRows[0]?.event_record_ordinal)
+    );
+  const canonicalPurchase =
+    eventLineageExact &&
+    saleRows.length === 1 &&
+    closedRows.length === 1 &&
+    eventResult.rows.length === 2 &&
+    lifecyclePositionsDistinct;
+  const canonicalDelist =
+    eventLineageExact &&
+    saleRows.length === 0 &&
+    closedRows.length === 1 &&
+    eventResult.rows.length === 1;
+  const closeEventRow =
+    canonicalPurchase || canonicalDelist ? closedRows[0] : null;
+  const saleEventRow = canonicalPurchase ? saleRows[0] : null;
+  const saleEventPayload = objectRecord(saleEventRow?.payload);
+  const canonicalSaleEvidence = saleEventRow
+    ? {
+        amount:
+          saleEventPayload.amount ??
+          saleEventPayload.tokenAmount,
+        amountAtoms:
+          saleEventPayload.amountAtoms ??
+          saleEventPayload.tokenAmountAtoms,
+        buyerAddress: String(
+          saleEventPayload.actor ??
+            saleEventPayload.buyerAddress ??
+            "",
+        ).trim(),
+        listingId: normalizedLowerText(saleEventPayload.listingId),
+        priceSats:
+          saleEventPayload.priceSats ??
+          saleEventPayload.salePriceSats,
+        registryAddress: String(
+          saleEventPayload.registryAddress ?? "",
+        ).trim(),
+        sellerAddress: String(
+          saleEventPayload.counterparty ??
+            saleEventPayload.sellerAddress ??
+            "",
+        ).trim(),
+        ticker: String(saleEventPayload.ticker ?? "").trim(),
+        tokenId: normalizedLowerText(saleEventPayload.tokenId),
+      }
+    : null;
+  const lifecyclePosition = (row, prefix) =>
+    row
+      ? {
+          [`${prefix}BlockHash`]: blockHash,
+          [`${prefix}BlockHeight`]: blockHeight,
+          [`${prefix}BlockIndex`]: blockIndex,
+          [`${prefix}ProtocolVout`]: exactInteger(
+            row.event_protocol_vout,
+          ),
+          [`${prefix}RecordOrdinal`]: exactInteger(
+            row.event_record_ordinal,
+          ),
+        }
+      : {};
 
-  const confirmed =
-    row?.status === "confirmed" ||
-    row?.payload?.confirmed === true ||
-    row?.payload?.closedConfirmed === true;
   return {
+    ...lifecyclePosition(closeEventRow, "closed"),
+    ...lifecyclePosition(saleEventRow, "sale"),
+    ...(canonicalSaleEvidence ? { canonicalSaleEvidence } : {}),
+    lifecycleStatus: canonicalPurchase
+      ? "sold"
+      : canonicalDelist
+        ? "delisted"
+        : "closed",
     spent: true,
     status: {
-      block_height: rowNumber(row, "block_height") || undefined,
-      block_time: row?.block_time
-        ? Math.floor(new Date(row.block_time).getTime() / 1000)
+      block_height: blockHeight,
+      block_time: spenderRow?.block_time
+        ? Math.floor(new Date(spenderRow.block_time).getTime() / 1000)
         : undefined,
-      confirmed,
+      confirmed: true,
     },
     txid: closeTxid,
-    vin: Number.isSafeInteger(Number(row?.payload?.closedVin))
-      ? Number(row.payload.closedVin)
-      : undefined,
+    vin,
   };
 }
 
@@ -10578,6 +11782,7 @@ export async function proofIndexLogHistoryPayload(
     "e.valid = true",
     "e.status IN ('confirmed', 'pending')",
     "e.kind = ANY($2::text[])",
+    "(e.kind NOT LIKE 'token-%' OR e.protocol = 'pwt1')",
   ];
   const params = [network, [...PUBLIC_LOG_EVENT_KINDS]];
   const addParam = (value) => {
@@ -10686,11 +11891,35 @@ export async function proofIndexLogHistoryPayload(
           e.block_index,
           e.op_return_vout,
           e.record_ordinal,
+          event_tx.status AS transaction_status,
+          event_tx.block_height AS transaction_block_height,
+          event_tx.block_index AS transaction_block_index,
+          event_tx.block_hash AS block_hash,
+          canonical_event_block.block_hash AS canonical_block_hash,
+          (
+            (
+              e.status = 'confirmed'
+              AND e.block_height IS NULL
+              AND event_tx.block_height IS NULL
+            )
+            OR COALESCE(e.block_height, 0) >=
+              ${WORK_AMO_V5_ACTIVATION_HEIGHT}
+            OR COALESCE(event_tx.block_height, 0) >=
+              ${WORK_AMO_V5_ACTIVATION_HEIGHT}
+          ) AS canonical_position_required,
           e.txid,
           e.event_id
         FROM matched_events matched
         JOIN proof_indexer.events e
           ON e.event_id = matched.event_id
+        LEFT JOIN proof_indexer.transactions event_tx
+          ON event_tx.network = e.network
+         AND event_tx.txid = e.txid
+        LEFT JOIN proof_indexer.blocks canonical_event_block
+          ON canonical_event_block.network = event_tx.network
+         AND canonical_event_block.block_hash = event_tx.block_hash
+         AND canonical_event_block.height = event_tx.block_height
+         AND canonical_event_block.canonical = true
         WHERE ${whereClause}
         ORDER BY
           COALESCE(e.event_time, e.block_time, e.created_at) DESC,
@@ -10900,6 +12129,10 @@ export async function proofIndexLogHistoryPayload(
                 AND e.status IN ('confirmed', 'pending')
                 AND e.kind = ANY($2::text[])
                 AND (
+                  e.kind NOT LIKE 'token-%'
+                  OR e.protocol = 'pwt1'
+                )
+                AND (
                   (
                     e.status = 'confirmed'
                     AND e.updated_at <= $4::timestamptz
@@ -10950,9 +12183,33 @@ export async function proofIndexLogHistoryPayload(
           e.block_index,
           e.op_return_vout,
           e.record_ordinal,
+          event_tx.status AS transaction_status,
+          event_tx.block_height AS transaction_block_height,
+          event_tx.block_index AS transaction_block_index,
+          event_tx.block_hash AS block_hash,
+          canonical_event_block.block_hash AS canonical_block_hash,
+          (
+            (
+              e.status = 'confirmed'
+              AND e.block_height IS NULL
+              AND event_tx.block_height IS NULL
+            )
+            OR COALESCE(e.block_height, 0) >=
+              ${WORK_AMO_V5_ACTIVATION_HEIGHT}
+            OR COALESCE(event_tx.block_height, 0) >=
+              ${WORK_AMO_V5_ACTIVATION_HEIGHT}
+          ) AS canonical_position_required,
           e.txid,
           e.event_id
         FROM proof_indexer.events e
+        LEFT JOIN proof_indexer.transactions event_tx
+          ON event_tx.network = e.network
+         AND event_tx.txid = e.txid
+        LEFT JOIN proof_indexer.blocks canonical_event_block
+          ON canonical_event_block.network = event_tx.network
+         AND canonical_event_block.block_hash = event_tx.block_hash
+         AND canonical_event_block.height = event_tx.block_height
+         AND canonical_event_block.canonical = true
         WHERE ${whereClause}
         ORDER BY
           COALESCE(e.event_time, e.block_time, e.created_at) DESC,
@@ -10998,9 +12255,33 @@ export async function proofIndexLogHistoryPayload(
         e.block_index,
         e.op_return_vout,
         e.record_ordinal,
+        event_tx.status AS transaction_status,
+        event_tx.block_height AS transaction_block_height,
+        event_tx.block_index AS transaction_block_index,
+        event_tx.block_hash AS block_hash,
+        canonical_event_block.block_hash AS canonical_block_hash,
+        (
+          (
+            e.status = 'confirmed'
+            AND e.block_height IS NULL
+            AND event_tx.block_height IS NULL
+          )
+          OR COALESCE(e.block_height, 0) >=
+            ${WORK_AMO_V5_ACTIVATION_HEIGHT}
+          OR COALESCE(event_tx.block_height, 0) >=
+            ${WORK_AMO_V5_ACTIVATION_HEIGHT}
+        ) AS canonical_position_required,
         e.txid,
         e.event_id
       FROM proof_indexer.events e
+      LEFT JOIN proof_indexer.transactions event_tx
+        ON event_tx.network = e.network
+       AND event_tx.txid = e.txid
+      LEFT JOIN proof_indexer.blocks canonical_event_block
+        ON canonical_event_block.network = event_tx.network
+       AND canonical_event_block.block_hash = event_tx.block_hash
+       AND canonical_event_block.height = event_tx.block_height
+       AND canonical_event_block.canonical = true
       WHERE ${whereClause}
       ORDER BY
         COALESCE(e.event_time, e.block_time, e.created_at) DESC,
@@ -11065,12 +12346,14 @@ export async function proofIndexTokenMarketSummaryOverlayPayload(
   if (!pool) {
     return null;
   }
+  await assertCurrentAmoV5CanonicalPositionUniqueness(pool, network);
 
   const scope = tokenScopeKey(tokenScope);
   const maxRows = boundedInteger(options.limit, 5000, 1, 10000);
   const scan = await latestProofIndexScanMetadata(pool, network);
   const conditions = [
     "e.network = $1",
+    "e.protocol = 'pwt1'",
     "e.valid = true",
     "e.status IN ('confirmed', 'pending')",
     "e.kind = ANY($2::text[])",
@@ -11107,6 +12390,10 @@ export async function proofIndexTokenMarketSummaryOverlayPayload(
       LEFT JOIN proof_indexer.credit_listings cl_event
         ON cl_event.network = e.network
        AND cl_event.listing_id = lower(e.payload->>'listingId')
+       AND lower(cl_event.token_id) = lower(COALESCE(
+         NULLIF(e.payload->>'tokenId', ''),
+         NULLIF(e.payload->'saleAuthorization'->>'tokenId', '')
+       ))
       LEFT JOIN proof_indexer.credit_definitions cd
         ON cd.network = e.network
        AND cd.token_id = COALESCE(lower(e.payload->>'tokenId'), cl_event.token_id)
@@ -11164,6 +12451,10 @@ export async function proofIndexTokenMarketSummaryOverlayPayload(
       LEFT JOIN proof_indexer.credit_listings cl_event
         ON cl_event.network = e.network
        AND cl_event.listing_id = lower(e.payload->>'listingId')
+       AND lower(cl_event.token_id) = lower(COALESCE(
+         NULLIF(e.payload->>'tokenId', ''),
+         NULLIF(e.payload->'saleAuthorization'->>'tokenId', '')
+       ))
       LEFT JOIN proof_indexer.credit_definitions cd
         ON cd.network = e.network
        AND cd.token_id = COALESCE(lower(e.payload->>'tokenId'), cl_event.token_id)
@@ -11183,7 +12474,7 @@ export async function proofIndexTokenMarketSummaryOverlayPayload(
   for (const row of rowsResult.rows) {
     const payload = tokenMarketEventRowPayload(row, network);
     if (payload?.kind === "token-listing" || payload?.kind === "token-listings") {
-      const listing = tokenListingFromEventPayload(payload);
+      const listing = tokenListingFromEventPayload(payload, row);
       if (listing.listingId && listing.tokenId) {
         listings.push(listing);
       }
@@ -11200,7 +12491,7 @@ export async function proofIndexTokenMarketSummaryOverlayPayload(
     }
 
     if (payload?.kind === "token-listing-closed") {
-      const closedListing = tokenClosedListingFromEventPayload(payload);
+      const closedListing = tokenClosedListingFromEventPayload(payload, row);
       if (
         closedListing.closedTxid &&
         closedListing.listingId &&
@@ -11249,6 +12540,7 @@ async function currentTokenTransferHistoryPage(
   const params = [network];
   const conditions = [
     "e.network = $1",
+    "e.protocol = 'pwt1'",
     "e.valid = true",
     "e.kind = 'token-transfer'",
     "COALESCE(t.status, e.status) IN ('confirmed', 'pending')",
@@ -11615,6 +12907,7 @@ export async function proofIndexTokenHistoryPayload(
   if (!pool) {
     return null;
   }
+  await assertCurrentAmoV5CanonicalPositionUniqueness(pool, network);
 
   const eligibility = proofIndexTokenHistoryReadEligibility(
     tokenScope,
@@ -12029,6 +13322,7 @@ async function latestProofIndexScanMetadata(pool, network) {
           max(e.block_height)::int AS confirmed_transfer_max_block
         FROM proof_indexer.events e
         WHERE e.network = $1
+          AND e.protocol = 'pwt1'
           AND e.kind = 'token-transfer'
           AND e.status = 'confirmed'
           AND e.valid = true
@@ -12250,6 +13544,7 @@ async function latestProofIndexOperationalMetadata(pool, network) {
           max(e.block_height)::int AS confirmed_transfer_max_block
         FROM proof_indexer.events e
         WHERE e.network = $1
+          AND e.protocol = 'pwt1'
           AND e.kind = 'token-transfer'
           AND e.status = 'confirmed'
           AND e.valid = true
@@ -12526,14 +13821,42 @@ export async function proofIndexRushPayload(
       rush_events AS (
         SELECT
           e.*,
+          rush_tx.status AS transaction_status,
+          COALESCE(rush_tx.status, e.status) AS effective_status,
+          rush_tx.block_height AS transaction_block_height,
+          rush_tx.block_index AS transaction_block_index,
+          rush_tx.block_hash AS block_hash,
+          rush_block.block_hash AS canonical_block_hash,
+          (
+            (
+              e.status = 'confirmed'
+              AND e.block_height IS NULL
+              AND rush_tx.block_height IS NULL
+            )
+            OR COALESCE(e.block_height, 0) >=
+              ${WORK_AMO_V5_ACTIVATION_HEIGHT}
+            OR COALESCE(rush_tx.block_height, 0) >=
+              ${WORK_AMO_V5_ACTIVATION_HEIGHT}
+          ) AS canonical_position_required,
           count(*) FILTER (WHERE e.block_height <= $2) OVER ()::int AS bootstrap_mint_count
         FROM proof_indexer.events e
+        LEFT JOIN proof_indexer.transactions rush_tx
+          ON rush_tx.network = e.network
+         AND rush_tx.txid = e.txid
+         AND rush_tx.status = 'confirmed'
+         AND rush_tx.block_height = e.block_height
+         AND rush_tx.block_index = e.block_index
+        LEFT JOIN proof_indexer.blocks rush_block
+          ON rush_block.network = rush_tx.network
+         AND rush_block.height = rush_tx.block_height
+         AND rush_block.block_hash = rush_tx.block_hash
+         AND rush_block.canonical = true
         WHERE e.network = $1
           AND e.protocol = 'pwr1'
           AND e.kind = 'rush-mint'
           AND e.status = 'confirmed'
           AND e.valid = true
-          AND e.block_height <= $4
+          AND (e.block_height IS NULL OR e.block_height <= $4)
       )
       SELECT
         rush_events.*,
@@ -12541,11 +13864,9 @@ export async function proofIndexRushPayload(
       FROM rush_events
       ORDER BY
         block_height ASC,
-        CASE
-          WHEN payload->>'blockIndex' ~ '^[0-9]+$'
-            THEN (payload->>'blockIndex')::integer
-          ELSE 2147483647
-        END ASC,
+        block_index ASC NULLS LAST,
+        op_return_vout ASC NULLS LAST,
+        record_ordinal ASC NULLS LAST,
         txid ASC,
         event_id ASC
     `,
@@ -12573,9 +13894,70 @@ export async function proofIndexRushPayload(
           )
         ).rows[0],
       ));
+  const exactInteger = (value, minimum = 0) => {
+    if (value === undefined || value === null || value === "") {
+      return null;
+    }
+    const parsed =
+      typeof value === "number"
+        ? value
+        : typeof value === "string" && /^(?:0|[1-9][0-9]*)$/u.test(value)
+          ? Number(value)
+          : Number.NaN;
+    return Number.isSafeInteger(parsed) && parsed >= minimum ? parsed : null;
+  };
+  const canonicalPositionKeys = new Set();
+  const invalidCanonicalRow = result.rows.some((row) => {
+    const blockHeight = exactInteger(row.block_height, 1);
+    const blockIndex = exactInteger(row.block_index);
+    const transactionBlockHeight = exactInteger(
+      row.transaction_block_height,
+      1,
+    );
+    const transactionBlockIndex = exactInteger(
+      row.transaction_block_index,
+    );
+    const txid = normalizedLowerText(row.txid);
+    const blockHash = normalizedLowerText(row.block_hash);
+    const canonicalBlockHash = normalizedLowerText(
+      row.canonical_block_hash,
+    );
+    if (
+      normalizedLowerText(row.transaction_status) !== "confirmed" ||
+      blockHeight === null ||
+      blockIndex === null ||
+      transactionBlockHeight !== blockHeight ||
+      transactionBlockIndex !== blockIndex ||
+      !/^[0-9a-f]{64}$/u.test(txid) ||
+      !/^[0-9a-f]{64}$/u.test(blockHash) ||
+      canonicalBlockHash !== blockHash
+    ) {
+      return true;
+    }
+    if (blockHeight < WORK_AMO_V5_ACTIVATION_HEIGHT) {
+      return false;
+    }
+    const protocolVout = exactInteger(row.op_return_vout);
+    const recordOrdinal = exactInteger(row.record_ordinal);
+    if (protocolVout === null || recordOrdinal === null) {
+      return true;
+    }
+    const positionKey = [
+      blockHeight,
+      blockIndex,
+      protocolVout,
+      recordOrdinal,
+    ].join(":");
+    if (canonicalPositionKeys.has(positionKey)) {
+      return true;
+    }
+    canonicalPositionKeys.add(positionKey);
+    return false;
+  });
   if (
     !bootstrapCanonical ||
     bootstrapMintCount !== expectedMintCount ||
+    invalidCanonicalRow ||
     result.rows.some(
       (row) =>
         Number(row.block_height) > indexedThroughBlock ||
@@ -14006,6 +15388,19 @@ function tokenDefinitionFromRow(row) {
           unitScale: WORK_UNIT_SCALE_TEXT,
         }
     : sourceMetadata;
+  const {
+    blockHash: ignoredMetadataBlockHash,
+    blockHeight: ignoredMetadataBlockHeight,
+    blockIndex: ignoredMetadataBlockIndex,
+    protocolVout: ignoredMetadataProtocolVout,
+    recordOrdinal: ignoredMetadataRecordOrdinal,
+    ...metadataWithoutPosition
+  } = metadata;
+  void ignoredMetadataBlockHash;
+  void ignoredMetadataBlockHeight;
+  void ignoredMetadataBlockIndex;
+  void ignoredMetadataProtocolVout;
+  void ignoredMetadataRecordOrdinal;
   const ticker = String(row?.ticker ?? metadata.ticker ?? "").trim();
   const workMaxSupply = isWorkTokenId(tokenId)
     ? workBalanceProjection(
@@ -14025,12 +15420,175 @@ function tokenDefinitionFromRow(row) {
         allowZero: false,
       }) || "1"
     : "";
+  const exactPositionInteger = (value, minimum) => {
+    if (value === undefined || value === null || value === "") {
+      return null;
+    }
+    const parsed = Number(value);
+    return Number.isSafeInteger(parsed) && parsed >= minimum ? parsed : null;
+  };
+  const canonicalSynthetic =
+    metadata.canonicalSynthetic === true ||
+    normalizedLowerText(metadata.canonicalSynthetic) === "true";
+  const definitionTransactionStatusSelected =
+    Object.prototype.hasOwnProperty.call(
+      row ?? {},
+      "definition_tx_status",
+    );
+  const definitionTransactionStatus = normalizedLowerText(
+    row?.definition_tx_status,
+  );
+  const definitionTransactionConfirmed =
+    definitionTransactionStatusSelected &&
+    definitionTransactionStatus === "confirmed";
+  const confirmed = canonicalSynthetic
+    ? typeof row?.confirmed === "boolean"
+      ? row.confirmed
+      : metadata.confirmed === true
+    : definitionTransactionStatusSelected
+      ? definitionTransactionConfirmed
+      : typeof row?.confirmed === "boolean"
+        ? row.confirmed
+        : metadata.confirmed === true;
+  const creationEventBlockHeight = exactPositionInteger(
+    row?.creation_event_block_height,
+    1,
+  );
+  const definitionTransactionBlockHeight = exactPositionInteger(
+    row?.definition_tx_block_height,
+    1,
+  );
+  const storedCreationHeight = exactPositionInteger(row?.created_height, 1);
+  const metadataBlockHeight = exactPositionInteger(metadata.blockHeight, 1);
+  const distinctCreationHeights = new Set(
+    [
+      creationEventBlockHeight,
+      definitionTransactionBlockHeight,
+      storedCreationHeight,
+      metadataBlockHeight,
+    ].filter((height) => height !== null),
+  );
+  if (!canonicalSynthetic && distinctCreationHeights.size > 1) {
+    throw new Error(
+      `Token definition ${tokenId || "unknown"} has inconsistent canonical creation heights.`,
+    );
+  }
+  const fallbackCreationHeight =
+    definitionTransactionBlockHeight ??
+    storedCreationHeight ??
+    metadataBlockHeight;
+  const unknownConfirmedCreationHeight =
+    confirmed &&
+    !canonicalSynthetic &&
+    (
+      definitionTransactionStatusSelected
+        ? definitionTransactionBlockHeight === null
+        : fallbackCreationHeight === null
+    );
+  const missingPostAmoV5CreationEvent =
+    confirmed &&
+    !canonicalSynthetic &&
+    creationEventBlockHeight === null &&
+    (
+      unknownConfirmedCreationHeight ||
+      (
+        fallbackCreationHeight !== null &&
+        fallbackCreationHeight >= WORK_AMO_V5_ACTIVATION_HEIGHT
+      )
+    );
+  if (missingPostAmoV5CreationEvent) {
+    throw new Error(
+      `Token definition ${tokenId || "unknown"} is missing its canonical AMO V5 creation event.`,
+    );
+  }
+  const postAmoV5Creation =
+    confirmed &&
+    !canonicalSynthetic &&
+    (
+      unknownConfirmedCreationHeight ||
+      [
+        creationEventBlockHeight,
+        definitionTransactionBlockHeight,
+        storedCreationHeight,
+        metadataBlockHeight,
+      ].some(
+        (height) =>
+          height !== null &&
+          height >= WORK_AMO_V5_ACTIVATION_HEIGHT,
+      )
+    );
+  const definitionTransactionBlockHash = normalizedLowerText(
+    row?.definition_tx_block_hash,
+  );
+  const definitionTransactionBlockIndex = exactPositionInteger(
+    row?.definition_tx_block_index,
+    0,
+  );
+  const creationEventMatchCount = exactPositionInteger(
+    row?.creation_event_match_count,
+    0,
+  );
+  const blockHash = normalizedLowerText(
+    postAmoV5Creation
+      ? row?.creation_event_block_hash
+      : row?.creation_event_block_hash ??
+          row?.definition_tx_block_hash ??
+          metadata.blockHash,
+  );
+  const blockHeight = postAmoV5Creation
+    ? creationEventBlockHeight
+    : creationEventBlockHeight ?? fallbackCreationHeight;
+  const blockIndex = exactPositionInteger(
+    postAmoV5Creation
+      ? row?.creation_event_block_index
+      : row?.creation_event_block_index ??
+          row?.definition_tx_block_index ??
+          metadata.blockIndex,
+    0,
+  );
+  const protocolVout = exactPositionInteger(
+    postAmoV5Creation
+      ? row?.creation_event_protocol_vout
+      : row?.creation_event_protocol_vout ?? metadata.protocolVout,
+    0,
+  );
+  const recordOrdinal = exactPositionInteger(
+    postAmoV5Creation
+      ? row?.creation_event_record_ordinal
+      : row?.creation_event_record_ordinal ?? metadata.recordOrdinal,
+    0,
+  );
+  if (
+    postAmoV5Creation &&
+    (
+      normalizedLowerText(row?.creation_event_status) !== "confirmed" ||
+      creationEventMatchCount !== 1 ||
+      !/^[0-9a-f]{64}$/u.test(blockHash) ||
+      blockHeight === null ||
+      blockIndex === null ||
+      protocolVout === null ||
+      recordOrdinal === null ||
+      !definitionTransactionConfirmed ||
+      !/^[0-9a-f]{64}$/u.test(definitionTransactionBlockHash) ||
+      definitionTransactionBlockHeight === null ||
+      definitionTransactionBlockIndex === null ||
+      blockHash !== definitionTransactionBlockHash ||
+      blockHeight !== definitionTransactionBlockHeight ||
+      blockIndex !== definitionTransactionBlockIndex
+    )
+  ) {
+    throw new Error(
+      `Token definition ${tokenId || "unknown"} has an incomplete canonical AMO V5 creation position.`,
+    );
+  }
   return {
-    ...metadata,
-    blockHeight:
-      rowNumber(row, "created_height") || rowNumber(metadata, "blockHeight"),
-    confirmed:
-      typeof row?.confirmed === "boolean" ? row.confirmed : metadata.confirmed === true,
+    ...metadataWithoutPosition,
+    ...(blockHash ? { blockHash } : {}),
+    ...(blockHeight !== null ? { blockHeight } : {}),
+    ...(blockIndex !== null ? { blockIndex } : {}),
+    ...(protocolVout !== null ? { protocolVout } : {}),
+    ...(recordOrdinal !== null ? { recordOrdinal } : {}),
+    confirmed,
     createdAt: dateIso(
       metadata.createdAt ??
         metadata.timestamp ??
@@ -14075,6 +15633,57 @@ function tokenDefinitionFromRow(row) {
   };
 }
 
+function canonicalTokenDefinitionCreationEventJoinSql(
+  definitionAlias = "cd",
+) {
+  const alias = canonicalCreditListingAlias(definitionAlias);
+  return `LEFT JOIN LATERAL (
+    SELECT
+      canonical_creation_event_row.status AS creation_event_status,
+      canonical_creation_tx.block_hash AS creation_event_block_hash,
+      canonical_creation_event_row.block_height AS creation_event_block_height,
+      canonical_creation_event_row.block_index AS creation_event_block_index,
+      canonical_creation_event_row.op_return_vout
+        AS creation_event_protocol_vout,
+      canonical_creation_event_row.record_ordinal
+        AS creation_event_record_ordinal,
+      COUNT(*) OVER () AS creation_event_match_count
+    FROM proof_indexer.events canonical_creation_event_row
+    JOIN proof_indexer.transactions canonical_creation_tx
+      ON canonical_creation_tx.network =
+        canonical_creation_event_row.network
+     AND canonical_creation_tx.txid = canonical_creation_event_row.txid
+     AND canonical_creation_tx.status = 'confirmed'
+     AND canonical_creation_tx.block_height =
+       canonical_creation_event_row.block_height
+     AND canonical_creation_tx.block_index =
+       canonical_creation_event_row.block_index
+    JOIN proof_indexer.blocks canonical_creation_block
+      ON canonical_creation_block.network = canonical_creation_tx.network
+     AND canonical_creation_block.block_hash =
+       canonical_creation_tx.block_hash
+     AND canonical_creation_block.height =
+       canonical_creation_tx.block_height
+     AND canonical_creation_block.canonical = true
+    WHERE canonical_creation_event_row.network = ${alias}.network
+      AND canonical_creation_event_row.txid = lower(${alias}.create_txid)
+      AND canonical_creation_event_row.valid = true
+      AND canonical_creation_event_row.status = 'confirmed'
+      AND canonical_creation_event_row.protocol = 'pwt1'
+      AND canonical_creation_event_row.kind = 'token-create'
+      AND lower(COALESCE(
+        canonical_creation_event_row.payload->>'tokenId',
+        ''
+      )) = lower(${alias}.token_id)
+    ORDER BY
+      canonical_creation_event_row.block_height DESC,
+      canonical_creation_event_row.block_index DESC,
+      canonical_creation_event_row.op_return_vout DESC,
+      canonical_creation_event_row.record_ordinal DESC
+    LIMIT 1
+  ) canonical_creation_event ON true`;
+}
+
 function tokenStateScopeSql(scope, columnSql, tickerSql) {
   if (!scope || scope === "all") {
     return "";
@@ -14087,33 +15696,40 @@ async function proofIndexTokenDefinitionsFromTables(pool, network, scope) {
   const result = await pool.query(
     `
       SELECT
-        token_id,
-        ticker,
-        creator_address,
-        registry_address,
-        max_supply,
-        mint_amount,
-        mint_price_sats,
-        create_txid,
-        confirmed,
-        created_height,
-        metadata
-      FROM proof_indexer.credit_definitions
-      WHERE network = $1
+        cd.token_id,
+        cd.ticker,
+        cd.creator_address,
+        cd.registry_address,
+        cd.max_supply,
+        cd.mint_amount,
+        cd.mint_price_sats,
+        cd.create_txid,
+        cd.confirmed,
+        cd.created_height,
+        cd.metadata,
+        definition_transaction.status AS definition_tx_status,
+        definition_transaction.block_hash AS definition_tx_block_hash,
+        definition_transaction.block_height AS definition_tx_block_height,
+        definition_transaction.block_index AS definition_tx_block_index,
+        canonical_creation_event.creation_event_status,
+        canonical_creation_event.creation_event_block_hash,
+        canonical_creation_event.creation_event_block_height,
+        canonical_creation_event.creation_event_block_index,
+        canonical_creation_event.creation_event_protocol_vout,
+        canonical_creation_event.creation_event_record_ordinal,
+        canonical_creation_event.creation_event_match_count
+      FROM proof_indexer.credit_definitions cd
+      LEFT JOIN proof_indexer.transactions definition_transaction
+        ON definition_transaction.network = cd.network
+       AND definition_transaction.txid = cd.create_txid
+      ${canonicalTokenDefinitionCreationEventJoinSql("cd")}
+      WHERE cd.network = $1
         AND (
-          metadata->>'canonicalSynthetic' = 'true'
-          OR EXISTS (
-            SELECT 1
-            FROM proof_indexer.transactions definition_transaction
-            WHERE definition_transaction.network =
-                proof_indexer.credit_definitions.network
-              AND definition_transaction.txid =
-                proof_indexer.credit_definitions.create_txid
-              AND definition_transaction.status IN ('confirmed', 'pending')
-          )
+          cd.metadata->>'canonicalSynthetic' = 'true'
+          OR definition_transaction.status IN ('confirmed', 'pending')
         )
-        ${tokenStateScopeSql(scope, "token_id", "ticker")}
-      ORDER BY upper(ticker), token_id
+        ${tokenStateScopeSql(scope, "cd.token_id", "cd.ticker")}
+      ORDER BY upper(cd.ticker), cd.token_id
     `,
     scoped ? [network, scope] : [network],
   );
@@ -14135,33 +15751,40 @@ async function proofIndexTokenDefinitionsByIds(pool, network, tokenIds) {
   const result = await pool.query(
     `
       SELECT
-        token_id,
-        ticker,
-        creator_address,
-        registry_address,
-        max_supply,
-        mint_amount,
-        mint_price_sats,
-        create_txid,
-        confirmed,
-        created_height,
-        metadata
-      FROM proof_indexer.credit_definitions
-      WHERE network = $1
-        AND token_id = ANY($2::text[])
+        cd.token_id,
+        cd.ticker,
+        cd.creator_address,
+        cd.registry_address,
+        cd.max_supply,
+        cd.mint_amount,
+        cd.mint_price_sats,
+        cd.create_txid,
+        cd.confirmed,
+        cd.created_height,
+        cd.metadata,
+        definition_transaction.status AS definition_tx_status,
+        definition_transaction.block_hash AS definition_tx_block_hash,
+        definition_transaction.block_height AS definition_tx_block_height,
+        definition_transaction.block_index AS definition_tx_block_index,
+        canonical_creation_event.creation_event_status,
+        canonical_creation_event.creation_event_block_hash,
+        canonical_creation_event.creation_event_block_height,
+        canonical_creation_event.creation_event_block_index,
+        canonical_creation_event.creation_event_protocol_vout,
+        canonical_creation_event.creation_event_record_ordinal,
+        canonical_creation_event.creation_event_match_count
+      FROM proof_indexer.credit_definitions cd
+      LEFT JOIN proof_indexer.transactions definition_transaction
+        ON definition_transaction.network = cd.network
+       AND definition_transaction.txid = cd.create_txid
+      ${canonicalTokenDefinitionCreationEventJoinSql("cd")}
+      WHERE cd.network = $1
+        AND cd.token_id = ANY($2::text[])
         AND (
-          metadata->>'canonicalSynthetic' = 'true'
-          OR EXISTS (
-            SELECT 1
-            FROM proof_indexer.transactions definition_transaction
-            WHERE definition_transaction.network =
-                proof_indexer.credit_definitions.network
-              AND definition_transaction.txid =
-                proof_indexer.credit_definitions.create_txid
-              AND definition_transaction.status IN ('confirmed', 'pending')
-          )
+          cd.metadata->>'canonicalSynthetic' = 'true'
+          OR definition_transaction.status IN ('confirmed', 'pending')
         )
-      ORDER BY upper(ticker), token_id
+      ORDER BY upper(cd.ticker), cd.token_id
     `,
     [network, normalizedTokenIds],
   );
@@ -14402,8 +16025,240 @@ function tokenMetricSummariesFromHolders(holders) {
   return summaries;
 }
 
+function canonicalTokenSaleEvidenceForListing(
+  listing,
+  salePayload,
+  {
+    closeBlockHash,
+    closeBlockHeight,
+    closeBlockIndex,
+    closeProtocolVout,
+    closeRecordOrdinal,
+    saleBlockHash,
+    saleBlockHeight,
+    saleBlockIndex,
+    saleProtocolVout,
+    saleRecordOrdinal,
+  } = {},
+) {
+  const record = (value) =>
+    value && typeof value === "object" && !Array.isArray(value)
+      ? value
+      : {};
+  const lower = (value) => String(value ?? "").trim().toLowerCase();
+  const text = (value) => String(value ?? "").trim();
+  const integer = (value, minimum = 0) => {
+    if (value === undefined || value === null || value === "") {
+      return null;
+    }
+    const parsed =
+      typeof value === "number"
+        ? value
+        : typeof value === "string" &&
+            /^(?:0|[1-9][0-9]*)$/u.test(value)
+          ? Number(value)
+          : Number.NaN;
+    return Number.isSafeInteger(parsed) && parsed >= minimum
+      ? parsed
+      : null;
+  };
+  const decimal = (value) => {
+    const source =
+      typeof value === "number" && Number.isFinite(value)
+        ? String(value)
+        : typeof value === "string"
+          ? value
+          : "";
+    const match = /^(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$/u.exec(source);
+    if (!match) {
+      return "";
+    }
+    const [whole, fraction = ""] = source.split(".");
+    const canonicalFraction = fraction.replace(/0+$/u, "");
+    const canonical = canonicalFraction
+      ? `${whole}.${canonicalFraction}`
+      : whole;
+    return canonical === "0" ? "" : canonical;
+  };
+  const authorization = record(listing?.saleAuthorization);
+  const payload = record(salePayload);
+  const payloadAuthorization = record(payload.saleAuthorization);
+  const listingId = lower(listing?.listingId);
+  const tokenId = lower(
+    listing?.tokenId ?? authorization.tokenId,
+  );
+  const evidenceListingId = lower(payload.listingId);
+  const evidenceTokenIds = [
+    payload.tokenId,
+    payloadAuthorization.tokenId,
+  ]
+    .map(lower)
+    .filter(Boolean);
+  const buyerAddress = text(
+    payload.buyerAddress ?? payload.actor,
+  );
+  const lockedBuyerAddress = text(authorization.buyerAddress);
+  const sellerAddress = text(
+    listing?.sellerAddress ?? authorization.sellerAddress,
+  );
+  const registryAddress = text(
+    listing?.registryAddress ?? authorization.registryAddress,
+  );
+  const ticker = text(
+    listing?.ticker ?? authorization.ticker,
+  );
+  const evidenceSellerAddress = text(
+    payload.sellerAddress ?? payload.counterparty,
+  );
+  const evidenceRegistryAddress = text(payload.registryAddress);
+  const evidenceTicker = text(payload.ticker);
+  const listingPriceSats = integer(
+    listing?.priceSats ?? authorization.priceSats,
+  );
+  const evidencePriceSats = integer(
+    payload.priceSats ?? payload.salePriceSats,
+  );
+  const listingAmountAtoms =
+    listing?.amountAtoms ??
+    authorization.amountAtoms ??
+    authorization.tokenAmountAtoms;
+  const evidenceAmountAtoms =
+    payload.amountAtoms ?? payload.tokenAmountAtoms;
+  const amountAtomsRequired =
+    listingAmountAtoms !== undefined &&
+    listingAmountAtoms !== null &&
+    listingAmountAtoms !== "";
+  const listingAmount = amountAtomsRequired
+    ? integer(listingAmountAtoms, 1)
+    : decimal(
+        listing?.amount ??
+          authorization.amount ??
+          authorization.tokenAmount,
+      );
+  const evidenceAmount = amountAtomsRequired
+    ? integer(evidenceAmountAtoms, 1)
+    : decimal(payload.amount ?? payload.tokenAmount);
+  const normalizedCloseHash = lower(closeBlockHash);
+  const normalizedSaleHash = lower(saleBlockHash);
+  const exactCloseHeight = integer(closeBlockHeight, 1);
+  const exactCloseIndex = integer(closeBlockIndex);
+  const exactCloseVout = integer(closeProtocolVout);
+  const exactCloseOrdinal = integer(closeRecordOrdinal);
+  const exactSaleHeight = integer(saleBlockHeight, 1);
+  const exactSaleIndex = integer(saleBlockIndex);
+  const exactSaleVout = integer(saleProtocolVout);
+  const exactSaleOrdinal = integer(saleRecordOrdinal);
+  const exactDistinctSaleTuple =
+    /^[0-9a-f]{64}$/u.test(normalizedCloseHash) &&
+    normalizedSaleHash === normalizedCloseHash &&
+    exactCloseHeight !== null &&
+    exactSaleHeight === exactCloseHeight &&
+    exactCloseIndex !== null &&
+    exactSaleIndex === exactCloseIndex &&
+    exactCloseVout !== null &&
+    exactCloseOrdinal !== null &&
+    exactSaleVout !== null &&
+    exactSaleOrdinal !== null &&
+    (
+      exactSaleVout !== exactCloseVout ||
+      exactSaleOrdinal !== exactCloseOrdinal
+    );
+  if (
+    !exactDistinctSaleTuple ||
+    !/^[0-9a-f]{64}$/u.test(listingId) ||
+    evidenceListingId !== listingId ||
+    !tokenId ||
+    evidenceTokenIds.length === 0 ||
+    evidenceTokenIds.some((candidate) => candidate !== tokenId) ||
+    !buyerAddress ||
+    (lockedBuyerAddress && buyerAddress !== lockedBuyerAddress) ||
+    !sellerAddress ||
+    evidenceSellerAddress !== sellerAddress ||
+    !registryAddress ||
+    evidenceRegistryAddress !== registryAddress ||
+    !ticker ||
+    evidenceTicker !== ticker ||
+    listingPriceSats === null ||
+    evidencePriceSats !== listingPriceSats ||
+    !listingAmount ||
+    evidenceAmount !== listingAmount
+  ) {
+    return null;
+  }
+  return {
+    ...(amountAtomsRequired
+      ? { amountAtoms: String(evidenceAmountAtoms) }
+      : { amount: payload.amount ?? payload.tokenAmount }),
+    buyerAddress,
+    listingId,
+    priceSats: payload.priceSats ?? payload.salePriceSats,
+    registryAddress,
+    sellerAddress,
+    ticker,
+    tokenId,
+  };
+}
+
 function tokenListingFromCreditListingRow(row, network) {
   const payload = objectRecord(row?.payload);
+  const {
+    blockHash: ignoredPayloadBlockHash,
+    blockHeight: ignoredPayloadBlockHeight,
+    blockIndex: ignoredPayloadBlockIndex,
+    closedBlockHash: ignoredPayloadClosedBlockHash,
+    closedBlockHeight: ignoredPayloadClosedBlockHeight,
+    closedBlockIndex: ignoredPayloadClosedBlockIndex,
+    closedProtocolVout: ignoredPayloadClosedProtocolVout,
+    closedRecordOrdinal: ignoredPayloadClosedRecordOrdinal,
+    protocolVout: ignoredPayloadProtocolVout,
+    recordOrdinal: ignoredPayloadRecordOrdinal,
+    sealAt: ignoredPayloadSealAt,
+    sealBlockHash: ignoredPayloadSealBlockHash,
+    sealBlockHeight: ignoredPayloadSealBlockHeight,
+    sealBlockIndex: ignoredPayloadSealBlockIndex,
+    sealConfirmed: ignoredPayloadSealConfirmed,
+    sealDataBytes: ignoredPayloadSealDataBytes,
+    sealedAt: ignoredPayloadSealedAt,
+    sealFrozenNetworkValueSats:
+      ignoredPayloadSealFrozenNetworkValueSats,
+    sealLiveNetworkValueSats:
+      ignoredPayloadSealLiveNetworkValueSats,
+    sealMinerFeeCanonical: ignoredPayloadSealMinerFeeCanonical,
+    sealMinerFeeSats: ignoredPayloadSealMinerFeeSats,
+    sealMinerFeeSource: ignoredPayloadSealMinerFeeSource,
+    sealProtocolVout: ignoredPayloadSealProtocolVout,
+    sealRecordOrdinal: ignoredPayloadSealRecordOrdinal,
+    sealTransactionBlockHeight:
+      ignoredPayloadSealTransactionBlockHeight,
+    sealTxid: ignoredPayloadSealTxid,
+    ...payloadWithoutLifecyclePosition
+  } = payload;
+  void ignoredPayloadBlockHash;
+  void ignoredPayloadBlockHeight;
+  void ignoredPayloadBlockIndex;
+  void ignoredPayloadClosedBlockHash;
+  void ignoredPayloadClosedBlockHeight;
+  void ignoredPayloadClosedBlockIndex;
+  void ignoredPayloadClosedProtocolVout;
+  void ignoredPayloadClosedRecordOrdinal;
+  void ignoredPayloadProtocolVout;
+  void ignoredPayloadRecordOrdinal;
+  void ignoredPayloadSealAt;
+  void ignoredPayloadSealBlockHash;
+  void ignoredPayloadSealBlockHeight;
+  void ignoredPayloadSealBlockIndex;
+  void ignoredPayloadSealConfirmed;
+  void ignoredPayloadSealDataBytes;
+  void ignoredPayloadSealedAt;
+  void ignoredPayloadSealFrozenNetworkValueSats;
+  void ignoredPayloadSealLiveNetworkValueSats;
+  void ignoredPayloadSealMinerFeeCanonical;
+  void ignoredPayloadSealMinerFeeSats;
+  void ignoredPayloadSealMinerFeeSource;
+  void ignoredPayloadSealProtocolVout;
+  void ignoredPayloadSealRecordOrdinal;
+  void ignoredPayloadSealTransactionBlockHeight;
+  void ignoredPayloadSealTxid;
   const saleAuthorization = objectRecord(payload.saleAuthorization);
   const status = String(row?.status ?? payload.status ?? "").trim().toLowerCase();
   const terminal = ["sold", "delisted"].includes(status);
@@ -14413,12 +16268,16 @@ function tokenListingFromCreditListingRow(row, network) {
   const sealTxid = String(row?.seal_txid ?? payload.sealTxid ?? "")
     .trim()
     .toLowerCase();
-  const closeTxid = tokenListingEffectiveCloseTxid(
+  const storedCloseTxid = tokenListingEffectiveCloseTxid(
     row,
     payload,
     status,
     sealTxid,
   );
+  const canonicalSpendTxid = normalizedLowerText(row?.canonical_spend_txid);
+  const closeTxid = validTxid(canonicalSpendTxid)
+    ? canonicalSpendTxid
+    : storedCloseTxid;
   const tokenId = String(
     row?.token_id ?? payload.tokenId ?? saleAuthorization.tokenId ?? "",
   )
@@ -14430,15 +16289,494 @@ function tokenListingFromCreditListingRow(row, network) {
         storedAmount: row?.amount,
       })
     : null;
+  const exactPositionInteger = (value, minimum) => {
+    if (value === undefined || value === null || value === "") {
+      return null;
+    }
+    const parsed = Number(value);
+    return Number.isSafeInteger(parsed) && parsed >= minimum ? parsed : null;
+  };
+  const listingTransactionStatusSelected =
+    Object.prototype.hasOwnProperty.call(
+      row ?? {},
+      "listing_tx_status",
+    );
+  const listingTransactionStatus = normalizedLowerText(
+    row?.listing_tx_status,
+  );
+  const listingConfirmed = listingTransactionStatusSelected
+    ? listingTransactionStatus === "confirmed"
+    : status !== "pending";
+  const listingEventBlockHeight = exactPositionInteger(
+    row?.listing_event_block_height,
+    1,
+  );
+  const listingTransactionBlockHeight = exactPositionInteger(
+    row?.listing_block_height,
+    1,
+  );
+  const listingTransactionBlockIndex = exactPositionInteger(
+    row?.listing_transaction_block_index,
+    0,
+  );
+  const payloadListingBlockHeight = exactPositionInteger(
+    payload.blockHeight,
+    1,
+  );
+  const postAmoV5Listing =
+    listingConfirmed &&
+    (
+      (
+        listingTransactionStatusSelected &&
+        listingTransactionBlockHeight === null
+      ) ||
+      [
+        listingEventBlockHeight,
+        listingTransactionBlockHeight,
+        payloadListingBlockHeight,
+      ].some(
+        (height) =>
+          height !== null &&
+          height >= WORK_AMO_V5_ACTIVATION_HEIGHT,
+      )
+    );
+  const listingBlockHeight = postAmoV5Listing
+    ? listingEventBlockHeight
+    : listingEventBlockHeight ??
+      listingTransactionBlockHeight ??
+      payloadListingBlockHeight;
+  const listingBlockHash = normalizedLowerText(
+    postAmoV5Listing
+      ? row?.listing_event_block_hash
+      : row?.listing_event_block_hash ??
+          row?.listing_block_hash ??
+          payload.blockHash,
+  );
+  const listingBlockIndex = exactPositionInteger(
+    postAmoV5Listing
+      ? row?.listing_event_block_index
+      : row?.listing_event_block_index ?? payload.blockIndex,
+    0,
+  );
+  const listingProtocolVout = exactPositionInteger(
+    postAmoV5Listing
+      ? row?.listing_event_protocol_vout
+      : row?.listing_event_protocol_vout ?? payload.protocolVout,
+    0,
+  );
+  const listingRecordOrdinal = exactPositionInteger(
+    postAmoV5Listing
+      ? row?.listing_event_record_ordinal
+      : row?.listing_event_record_ordinal ?? payload.recordOrdinal,
+    0,
+  );
+  const listingEventMatchCount = exactPositionInteger(
+    row?.listing_event_match_count,
+    0,
+  );
+  const listingTransactionBlockHash = normalizedLowerText(
+    row?.listing_block_hash,
+  );
+  if (
+    postAmoV5Listing &&
+    (
+      normalizedLowerText(row?.listing_event_status) !== "confirmed" ||
+      listingEventMatchCount !== 1 ||
+      !/^[0-9a-f]{64}$/u.test(listingBlockHash) ||
+      listingBlockHeight === null ||
+      listingBlockIndex === null ||
+      listingProtocolVout === null ||
+      listingRecordOrdinal === null ||
+      !/^[0-9a-f]{64}$/u.test(listingTransactionBlockHash) ||
+      listingTransactionBlockHeight === null ||
+      listingTransactionBlockIndex === null ||
+      listingBlockHash !== listingTransactionBlockHash ||
+      listingBlockHeight !== listingTransactionBlockHeight ||
+      listingBlockIndex !== listingTransactionBlockIndex
+    )
+  ) {
+    return null;
+  }
+  const sealConfirmed = tokenListingSealConfirmedFromTransaction(
+    row,
+    sealTxid,
+  );
+  const sealTransactionConfirmed =
+    validTxid(sealTxid) &&
+    normalizedLowerText(row?.seal_tx_status) === "confirmed";
+  const sealEventBlockHeight = exactPositionInteger(
+    row?.seal_event_block_height,
+    1,
+  );
+  const sealTransactionBlockHeight = exactPositionInteger(
+    row?.seal_transaction_block_height,
+    1,
+  );
+  const payloadSealBlockHeight = exactPositionInteger(
+    payload.sealBlockHeight,
+    1,
+  );
+  const unknownConfirmedSealHeight =
+    sealTransactionConfirmed &&
+    sealEventBlockHeight === null &&
+    sealTransactionBlockHeight === null;
+  const postAmoV5Seal =
+    sealTransactionConfirmed &&
+    (
+      unknownConfirmedSealHeight ||
+      [
+        sealEventBlockHeight,
+        sealTransactionBlockHeight,
+      ].some(
+        (height) =>
+          height !== null &&
+          height >= WORK_AMO_V5_ACTIVATION_HEIGHT,
+        )
+    );
+  const governedWorkSeal =
+    tokenId === WORK_TOKEN_ID &&
+    WORK_MARKET_GOVERNED_AUTH_VERSIONS.has(
+      normalizedLowerText(saleAuthorization.version),
+    );
+  const canonicalSealEventRequired =
+    governedWorkSeal || postAmoV5Seal;
+  const invalidConfirmedSealEvidence =
+    sealTransactionConfirmed &&
+    canonicalSealEventRequired &&
+    !sealConfirmed;
+  const sealBlockHeight = invalidConfirmedSealEvidence
+    ? null
+    : postAmoV5Seal
+      ? sealEventBlockHeight
+      : sealEventBlockHeight ??
+        sealTransactionBlockHeight ??
+        payloadSealBlockHeight;
+  const sealBlockHash = normalizedLowerText(
+    invalidConfirmedSealEvidence
+      ? ""
+      : postAmoV5Seal
+        ? row?.seal_event_block_hash
+        : row?.seal_event_block_hash ?? payload.sealBlockHash,
+  );
+  const sealBlockIndex = exactPositionInteger(
+    invalidConfirmedSealEvidence
+      ? null
+      : postAmoV5Seal
+        ? row?.seal_event_block_index
+        : row?.seal_event_block_index ?? payload.sealBlockIndex,
+    0,
+  );
+  const sealProtocolVout = exactPositionInteger(
+    invalidConfirmedSealEvidence
+      ? null
+      : postAmoV5Seal
+        ? row?.seal_event_protocol_vout
+        : row?.seal_event_protocol_vout ?? payload.sealProtocolVout,
+    0,
+  );
+  const sealRecordOrdinal = exactPositionInteger(
+    invalidConfirmedSealEvidence
+      ? null
+      : postAmoV5Seal
+        ? row?.seal_event_record_ordinal
+        : row?.seal_event_record_ordinal ?? payload.sealRecordOrdinal,
+    0,
+  );
+  const projectedSealAt = invalidConfirmedSealEvidence
+    ? undefined
+    : dateIso(payload.sealAt ?? payload.sealedAt ?? row?.updated_at);
+  const sealEvidencePatch = invalidConfirmedSealEvidence
+    ? {}
+    : {
+        ...(projectedSealAt ? { sealAt: projectedSealAt } : {}),
+        ...(payload.sealDataBytes !== undefined
+          ? { sealDataBytes: payload.sealDataBytes }
+          : {}),
+        ...(payload.sealFrozenNetworkValueSats !== undefined
+          ? {
+              sealFrozenNetworkValueSats:
+                payload.sealFrozenNetworkValueSats,
+            }
+          : {}),
+        ...(payload.sealLiveNetworkValueSats !== undefined
+          ? {
+              sealLiveNetworkValueSats:
+                payload.sealLiveNetworkValueSats,
+            }
+          : {}),
+        ...(payload.sealMinerFeeCanonical !== undefined
+          ? {
+              sealMinerFeeCanonical:
+                payload.sealMinerFeeCanonical === true,
+            }
+          : {}),
+        ...(payload.sealMinerFeeSats !== undefined
+          ? { sealMinerFeeSats: payload.sealMinerFeeSats }
+          : {}),
+        ...(payload.sealMinerFeeSource !== undefined
+          ? { sealMinerFeeSource: payload.sealMinerFeeSource }
+          : {}),
+        ...(sealTransactionBlockHeight !== null
+          ? { sealTransactionBlockHeight }
+          : {}),
+      };
+  const closeTransactionStatusSelected =
+    Object.prototype.hasOwnProperty.call(
+      row ?? {},
+      "close_transaction_status",
+    );
+  const closeTransactionConfirmed =
+    normalizedLowerText(row?.close_transaction_status) === "confirmed";
+  const closeConfirmed =
+    ["sold", "delisted"].includes(status) &&
+    validTxid(closeTxid) &&
+    (
+      !closeTransactionStatusSelected ||
+      closeTransactionConfirmed
+    );
+  const closeEventIdentitySelected =
+    Object.prototype.hasOwnProperty.call(row ?? {}, "close_event_txid");
+  const closeEventCardinalitySelected =
+    Object.prototype.hasOwnProperty.call(
+      row ?? {},
+      "close_event_sale_match_count",
+    ) &&
+    Object.prototype.hasOwnProperty.call(
+      row ?? {},
+      "close_event_closed_match_count",
+    ) &&
+    Object.prototype.hasOwnProperty.call(
+      row ?? {},
+      "close_event_position_matches",
+    );
+  const closeEventKind = normalizedLowerText(row?.close_event_kind);
+  const closeEventSaleMatchCount = exactPositionInteger(
+    row?.close_event_sale_match_count,
+    0,
+  );
+  const closeEventClosedMatchCount = exactPositionInteger(
+    row?.close_event_closed_match_count,
+    0,
+  );
+  const closeEventCloseProtocolVout = exactPositionInteger(
+    row?.close_event_close_protocol_vout,
+    0,
+  );
+  const closeEventCloseRecordOrdinal = exactPositionInteger(
+    row?.close_event_close_record_ordinal,
+    0,
+  );
+  const closeEventSaleProtocolVout = exactPositionInteger(
+    row?.close_event_sale_protocol_vout,
+    0,
+  );
+  const closeEventSaleRecordOrdinal = exactPositionInteger(
+    row?.close_event_sale_record_ordinal,
+    0,
+  );
+  const closeSalePositionsDistinct =
+    closeEventCloseProtocolVout !== null &&
+    closeEventCloseRecordOrdinal !== null &&
+    closeEventSaleProtocolVout !== null &&
+    closeEventSaleRecordOrdinal !== null &&
+    (
+      closeEventCloseProtocolVout !== closeEventSaleProtocolVout ||
+      closeEventCloseRecordOrdinal !== closeEventSaleRecordOrdinal
+    );
+  const canonicalCloseEventCardinality =
+    row?.close_event_position_matches === true &&
+    (
+      (
+        closeEventKind === "token-sale" &&
+        closeEventSaleMatchCount === 1 &&
+        closeEventClosedMatchCount === 1 &&
+        closeSalePositionsDistinct
+      ) ||
+      (
+        closeEventKind === "token-listing-closed" &&
+        closeEventSaleMatchCount === 0 &&
+        closeEventClosedMatchCount === 1
+      )
+    );
+  const closeEventMatches =
+    !closeEventIdentitySelected ||
+    (
+      normalizedLowerText(row?.close_event_txid) === closeTxid &&
+      (
+        closeEventCardinalitySelected
+          ? canonicalCloseEventCardinality
+          : exactPositionInteger(row?.close_event_match_count, 1) === 1
+      )
+    );
+  const pairedCloseTupleSelected =
+    Object.prototype.hasOwnProperty.call(
+      row ?? {},
+      "close_event_close_block_height",
+    );
+  const closeEventBlockHeight = closeEventMatches
+    ? exactPositionInteger(
+        pairedCloseTupleSelected
+          ? row?.close_event_close_block_height
+          : row?.close_event_block_height,
+        1,
+      )
+    : null;
+  const closeTransactionBlockHeight = exactPositionInteger(
+    row?.close_transaction_block_height,
+    1,
+  );
+  const payloadClosedBlockHeight = exactPositionInteger(
+    payload.closedBlockHeight,
+    1,
+  );
+  const postAmoV5Close =
+    closeConfirmed &&
+    (
+      (
+        closeTransactionStatusSelected &&
+        closeTransactionBlockHeight === null
+      ) ||
+      [
+        closeEventBlockHeight,
+        closeTransactionBlockHeight,
+        payloadClosedBlockHeight,
+      ].some(
+        (height) =>
+          height !== null &&
+          height >= WORK_AMO_V5_ACTIVATION_HEIGHT,
+      )
+    );
+  const closedBlockHeight = postAmoV5Close
+    ? closeEventBlockHeight
+    : closeEventBlockHeight ?? payloadClosedBlockHeight;
+  const closedBlockHash = normalizedLowerText(
+    postAmoV5Close
+      ? closeEventMatches
+        ? pairedCloseTupleSelected
+          ? row?.close_event_close_block_hash
+          : row?.close_event_block_hash
+        : ""
+      : closeEventMatches
+        ? (
+            pairedCloseTupleSelected
+              ? row?.close_event_close_block_hash
+              : row?.close_event_block_hash
+          ) ?? payload.closedBlockHash
+        : payload.closedBlockHash,
+  );
+  const closedBlockIndex = exactPositionInteger(
+    postAmoV5Close
+      ? closeEventMatches
+        ? pairedCloseTupleSelected
+          ? row?.close_event_close_block_index
+          : row?.close_event_block_index
+        : null
+      : closeEventMatches
+        ? (
+            pairedCloseTupleSelected
+              ? row?.close_event_close_block_index
+              : row?.close_event_block_index
+          ) ?? payload.closedBlockIndex
+        : payload.closedBlockIndex,
+    0,
+  );
+  const closedProtocolVout = exactPositionInteger(
+    postAmoV5Close
+      ? closeEventMatches
+        ? pairedCloseTupleSelected
+          ? row?.close_event_close_protocol_vout
+          : row?.close_event_protocol_vout
+        : null
+      : closeEventMatches
+        ? (
+            pairedCloseTupleSelected
+              ? row?.close_event_close_protocol_vout
+              : row?.close_event_protocol_vout
+          ) ?? payload.closedProtocolVout
+        : payload.closedProtocolVout,
+    0,
+  );
+  const closedRecordOrdinal = exactPositionInteger(
+    postAmoV5Close
+      ? closeEventMatches
+        ? pairedCloseTupleSelected
+          ? row?.close_event_close_record_ordinal
+          : row?.close_event_record_ordinal
+        : null
+      : closeEventMatches
+        ? (
+            pairedCloseTupleSelected
+              ? row?.close_event_close_record_ordinal
+              : row?.close_event_record_ordinal
+          ) ?? payload.closedRecordOrdinal
+        : payload.closedRecordOrdinal,
+    0,
+  );
   const canonicalCloseAt = dateIso(
-    row?.close_event_time ??
-      row?.close_event_block_time ??
+    (
+      pairedCloseTupleSelected
+        ? row?.close_event_close_event_time
+        : row?.close_event_time
+    ) ??
+      (
+        pairedCloseTupleSelected
+          ? row?.close_event_close_block_time
+          : row?.close_event_block_time
+      ) ??
       row?.close_transaction_block_time ??
       payload.closedAt ??
       payload.closeAt,
   );
+  const saleEventBlockHeight =
+    closeEventMatches && closeEventKind === "token-sale"
+      ? exactPositionInteger(
+          row?.close_event_sale_block_height ??
+            row?.close_event_block_height,
+          1,
+        )
+      : null;
+  const saleEventBlockIndex =
+    closeEventMatches && closeEventKind === "token-sale"
+      ? exactPositionInteger(
+          row?.close_event_sale_block_index ??
+            row?.close_event_block_index,
+          0,
+        )
+      : null;
+  const saleEventProtocolVout =
+    closeEventMatches && closeEventKind === "token-sale"
+      ? exactPositionInteger(
+          row?.close_event_sale_protocol_vout ??
+            row?.close_event_protocol_vout,
+          0,
+        )
+      : null;
+  const saleEventRecordOrdinal =
+    closeEventMatches && closeEventKind === "token-sale"
+      ? exactPositionInteger(
+          row?.close_event_sale_record_ordinal ??
+            row?.close_event_record_ordinal,
+          0,
+        )
+      : null;
+  const saleEventBlockHash =
+    closeEventMatches && closeEventKind === "token-sale"
+      ? normalizedLowerText(
+          row?.close_event_sale_block_hash ??
+            row?.close_event_block_hash,
+        )
+      : "";
+  const saleAt =
+    closeEventMatches && closeEventKind === "token-sale"
+      ? dateIso(
+          row?.close_event_sale_event_time ??
+            row?.close_event_sale_block_time ??
+            row?.close_event_time ??
+            row?.close_event_block_time,
+        )
+      : undefined;
   return normalizeTokenHistoryListingItem({
-    ...payload,
+    ...payloadWithoutLifecyclePosition,
     amount: workAmount
       ? workAmount.amount
       : isBondTokenId(tokenId)
@@ -14446,24 +16784,46 @@ function tokenListingFromCreditListingRow(row, network) {
       : rowNumber(row, "amount") || rowNumber(payload, "amount"),
     ...(workAmount ? { amountAtoms: workAmount.amountAtoms } : {}),
     buyerAddress: row?.buyer_address ?? payload.buyerAddress,
-    blockHash: String(
-      row?.listing_block_hash ?? payload.blockHash ?? "",
-    )
-      .trim()
-      .toLowerCase(),
-    blockHeight:
-      rowNumber(row, "listing_block_height") ||
-      rowNumber(payload, "blockHeight") ||
-      undefined,
+    blockHash: listingBlockHash,
+    ...(listingBlockHeight !== null ? { blockHeight: listingBlockHeight } : {}),
+    ...(listingBlockIndex !== null ? { blockIndex: listingBlockIndex } : {}),
+    ...(listingProtocolVout !== null ? { protocolVout: listingProtocolVout } : {}),
+    ...(listingRecordOrdinal !== null
+      ? { recordOrdinal: listingRecordOrdinal }
+      : {}),
     closeTxid,
+    ...(closeTransactionBlockHeight !== null
+      ? { closeTransactionBlockHeight }
+      : {}),
     closedAt: terminal
       ? canonicalCloseAt
       : dateIso(payload.closedAt ?? payload.closeAt ?? row?.updated_at),
-    closedConfirmed: ["sold", "delisted"].includes(status) && validTxid(closeTxid),
+    ...(closedBlockHash ? { closedBlockHash } : {}),
+    ...(closedBlockHeight !== null ? { closedBlockHeight } : {}),
+    ...(closedBlockIndex !== null ? { closedBlockIndex } : {}),
+    closedConfirmed: closeConfirmed,
+    ...(closedProtocolVout !== null ? { closedProtocolVout } : {}),
+    ...(closedRecordOrdinal !== null ? { closedRecordOrdinal } : {}),
+    ...(saleAt ? { saleAt } : {}),
+    ...(saleEventBlockHash ? { saleBlockHash: saleEventBlockHash } : {}),
+    ...(saleEventBlockHeight !== null
+      ? { saleBlockHeight: saleEventBlockHeight }
+      : {}),
+    ...(saleEventBlockHeight !== null &&
+    closeTransactionBlockHeight !== null
+      ? { saleTransactionBlockHeight: closeTransactionBlockHeight }
+      : {}),
+    ...(saleEventBlockIndex !== null
+      ? { saleBlockIndex: saleEventBlockIndex }
+      : {}),
+    ...(saleEventProtocolVout !== null
+      ? { saleProtocolVout: saleEventProtocolVout }
+      : {}),
+    ...(saleEventRecordOrdinal !== null
+      ? { saleRecordOrdinal: saleEventRecordOrdinal }
+      : {}),
     closedTxid: closeTxid,
-    confirmed: row?.listing_tx_status
-      ? normalizedLowerText(row.listing_tx_status) === "confirmed"
-      : status !== "pending",
+    confirmed: listingConfirmed,
     createdAt: dateIso(
       row?.listing_block_time ??
         payload.createdAt ??
@@ -14492,15 +16852,69 @@ function tokenListingFromCreditListingRow(row, network) {
       rowNumber(saleAuthorization, "saleTicketValueSats"),
     saleTicketVout:
       row?.sale_ticket_vout ?? payload.saleTicketVout ?? saleAuthorization.saleTicketVout,
-    sealAt: dateIso(payload.sealAt ?? payload.sealedAt ?? row?.updated_at),
-    sealConfirmed: tokenListingSealConfirmedFromTransaction(row, sealTxid),
-    sealTxid,
+    ...sealEvidencePatch,
+    ...(sealBlockHash ? { sealBlockHash } : {}),
+    ...(sealBlockHeight !== null ? { sealBlockHeight } : {}),
+    ...(sealBlockIndex !== null ? { sealBlockIndex } : {}),
+    sealConfirmed,
+    ...(sealProtocolVout !== null ? { sealProtocolVout } : {}),
+    ...(sealRecordOrdinal !== null ? { sealRecordOrdinal } : {}),
+    sealTxid: invalidConfirmedSealEvidence ? "" : sealTxid,
     sellerAddress: row?.seller_address ?? payload.sellerAddress,
-    status,
+    status:
+      invalidConfirmedSealEvidence && status === "sealing"
+        ? "active"
+        : status,
     ticker: row?.ticker ?? payload.ticker ?? saleAuthorization.ticker,
     tokenId,
     txid: listingId,
   });
+}
+
+function activeTokenListingFromCreditListingRow(row, network) {
+  const payload = { ...objectRecord(row?.payload) };
+  for (const key of [
+    "closeAt",
+    "closeTxid",
+    "closedAt",
+    "closedBlockHash",
+    "closedBlockHeight",
+    "closedBlockIndex",
+    "closedByCanonicalOutpointSpend",
+    "closedConfirmed",
+    "closedProtocolVout",
+    "closedRecordOrdinal",
+    "closedTxid",
+    "closedVin",
+    "saleAt",
+    "saleBlockHash",
+    "saleBlockHeight",
+    "saleBlockIndex",
+    "saleProtocolVout",
+    "saleRecordOrdinal",
+    "saleTransactionBlockHeight",
+    "saleTxid",
+  ]) {
+    delete payload[key];
+  }
+  const storedStatus = normalizedLowerText(row?.status ?? payload.status);
+  const status = ["pending", "sealing"].includes(storedStatus)
+    ? storedStatus
+    : ["dropped", "orphaned"].includes(storedStatus)
+      ? storedStatus
+      : "active";
+  payload.status = status;
+  return tokenListingFromCreditListingRow(
+    {
+      ...row,
+      buyer_address: row?.buyer_address,
+      canonical_spend_txid: undefined,
+      close_txid: "",
+      payload,
+      status,
+    },
+    network,
+  );
 }
 
 async function proofIndexTokenListingsFromTables(pool, network, scope) {
@@ -14524,21 +16938,67 @@ async function proofIndexTokenListingsFromTables(pool, network, scope) {
         cl.updated_at,
         listing_tx.block_hash AS listing_block_hash,
         listing_tx.block_height AS listing_block_height,
+        listing_tx.block_index AS listing_transaction_block_index,
         listing_tx.block_time AS listing_block_time,
         listing_tx.status AS listing_tx_status,
+        canonical_listing_event.listing_event_status,
+        canonical_listing_event.listing_event_block_hash,
+        canonical_listing_event.listing_event_block_height,
+        canonical_listing_event.listing_event_block_index,
+        canonical_listing_event.listing_event_protocol_vout,
+        canonical_listing_event.listing_event_record_ordinal,
+        canonical_listing_event.listing_event_match_count,
+        close_event.txid AS close_event_txid,
+        close_event.kind AS close_event_kind,
+        close_event.payload AS close_event_payload,
+        close_event.match_count AS close_event_match_count,
+        close_event.sale_match_count AS close_event_sale_match_count,
+        close_event.closed_match_count AS close_event_closed_match_count,
+        close_event.position_matches AS close_event_position_matches,
         close_event.event_time AS close_event_time,
         close_event.block_time AS close_event_block_time,
+        close_event.block_hash AS close_event_block_hash,
+        close_event.block_height AS close_event_block_height,
+        close_event.block_index AS close_event_block_index,
+        close_event.protocol_vout AS close_event_protocol_vout,
+        close_event.record_ordinal AS close_event_record_ordinal,
+        close_event.close_event_time AS close_event_close_event_time,
+        close_event.close_block_time AS close_event_close_block_time,
+        close_event.close_block_hash AS close_event_close_block_hash,
+        close_event.close_block_height AS close_event_close_block_height,
+        close_event.close_block_index AS close_event_close_block_index,
+        close_event.close_protocol_vout AS close_event_close_protocol_vout,
+        close_event.close_record_ordinal AS close_event_close_record_ordinal,
+        close_event.sale_event_time AS close_event_sale_event_time,
+        close_event.sale_block_time AS close_event_sale_block_time,
+        close_event.sale_block_hash AS close_event_sale_block_hash,
+        close_event.sale_block_height AS close_event_sale_block_height,
+        close_event.sale_block_index AS close_event_sale_block_index,
+        close_event.sale_protocol_vout AS close_event_sale_protocol_vout,
+        close_event.sale_record_ordinal AS close_event_sale_record_ordinal,
         canonical_spend.txid AS canonical_spend_txid,
         canonical_spend.vin AS canonical_spend_vin,
         canonical_spend.block_hash AS canonical_spend_block_hash,
         canonical_spend.block_height AS canonical_spend_block_height,
+        canonical_spend.block_index AS canonical_spend_block_index,
         canonical_spend.block_time AS canonical_spend_block_time,
         CASE
           WHEN close_tx.status = 'confirmed' THEN close_tx.block_time
           ELSE NULL
         END AS close_transaction_block_time,
+        close_tx.status AS close_transaction_status,
+        close_tx.block_hash AS close_transaction_block_hash,
+        close_tx.block_height AS close_transaction_block_height,
+        close_tx.block_index AS close_transaction_block_index,
         seal_tx.status AS seal_tx_status,
+        seal_tx.block_height AS seal_transaction_block_height,
         canonical_seal_event.seal_event_status,
+        canonical_seal_event.seal_event_block_hash,
+        canonical_seal_event.seal_event_block_height,
+        canonical_seal_event.seal_event_block_index,
+        canonical_seal_event.seal_event_protocol_vout,
+        canonical_seal_event.seal_event_record_ordinal,
+        canonical_seal_event.seal_event_match_count,
         cd.ticker,
         cd.registry_address,
         cd.metadata AS token_metadata
@@ -14546,47 +17006,18 @@ async function proofIndexTokenListingsFromTables(pool, network, scope) {
       LEFT JOIN proof_indexer.transactions listing_tx
         ON listing_tx.network = cl.network
        AND listing_tx.txid = cl.listing_id
+      ${canonicalTokenListingEventJoinSql("cl")}
       LEFT JOIN proof_indexer.transactions seal_tx
         ON seal_tx.network = cl.network
        AND seal_tx.txid = cl.seal_txid
       ${canonicalTokenListingSealEventJoinSql("cl")}
       LEFT JOIN LATERAL (
         SELECT
-          close_event_row.event_time,
-          close_event_row.block_time
-        FROM proof_indexer.events close_event_row
-        WHERE close_event_row.network = cl.network
-          AND close_event_row.valid = true
-          AND close_event_row.status = 'confirmed'
-          AND close_event_row.kind =
-            ANY(ARRAY['token-sale','token-listing-closed']::text[])
-          AND close_event_row.txid = COALESCE(
-            NULLIF(lower(cl.close_txid), ''),
-            NULLIF(lower(cl.payload->>'closeTxid'), '')
-          )
-          AND lower(close_event_row.payload->>'listingId') =
-            lower(cl.listing_id)
-        ORDER BY
-          CASE WHEN close_event_row.kind = 'token-sale' THEN 0 ELSE 1 END,
-          COALESCE(
-            close_event_row.event_time,
-            close_event_row.block_time
-          ) DESC,
-          close_event_row.event_id DESC
-        LIMIT 1
-      ) close_event ON true
-      LEFT JOIN proof_indexer.transactions close_tx
-        ON close_tx.network = cl.network
-       AND close_tx.txid = COALESCE(
-         NULLIF(lower(cl.close_txid), ''),
-         NULLIF(lower(cl.payload->>'closeTxid'), '')
-       )
-      LEFT JOIN LATERAL (
-        SELECT
           spend_tx.txid,
           spend_input.vin,
           spend_tx.block_hash,
           spend_tx.block_height,
+          spend_tx.block_index,
           spend_tx.block_time
         FROM proof_indexer.tx_inputs spend_input
         JOIN proof_indexer.transactions spend_tx
@@ -14609,6 +17040,123 @@ async function proofIndexTokenListingsFromTables(pool, network, scope) {
           spend_input.vin ASC
         LIMIT 1
       ) canonical_spend ON true
+      LEFT JOIN LATERAL (
+        SELECT
+          close_event_row.txid,
+          close_event_row.kind,
+          close_event_row.payload,
+          close_event_row.event_time,
+          close_event_row.block_time,
+          canonical_close_tx.block_hash,
+          close_event_row.block_height,
+          close_event_row.block_index,
+          close_event_row.op_return_vout AS protocol_vout,
+          close_event_row.record_ordinal,
+          COUNT(*) OVER () AS match_count,
+          COUNT(*) FILTER (
+            WHERE close_event_row.kind = 'token-sale'
+          ) OVER () AS sale_match_count,
+          COUNT(*) FILTER (
+            WHERE close_event_row.kind = 'token-listing-closed'
+          ) OVER () AS closed_match_count,
+          BOOL_AND(
+            close_event_row.block_height =
+              canonical_close_tx.block_height
+            AND close_event_row.block_index =
+              canonical_close_tx.block_index
+            AND close_event_row.op_return_vout >= 0
+            AND close_event_row.record_ordinal >= 0
+          ) OVER () AS position_matches,
+          MAX(close_event_row.event_time) FILTER (
+            WHERE close_event_row.kind = 'token-listing-closed'
+          ) OVER () AS close_event_time,
+          MAX(close_event_row.block_time) FILTER (
+            WHERE close_event_row.kind = 'token-listing-closed'
+          ) OVER () AS close_block_time,
+          MAX(canonical_close_tx.block_hash) FILTER (
+            WHERE close_event_row.kind = 'token-listing-closed'
+          ) OVER () AS close_block_hash,
+          MAX(close_event_row.block_height) FILTER (
+            WHERE close_event_row.kind = 'token-listing-closed'
+          ) OVER () AS close_block_height,
+          MAX(close_event_row.block_index) FILTER (
+            WHERE close_event_row.kind = 'token-listing-closed'
+          ) OVER () AS close_block_index,
+          MAX(close_event_row.op_return_vout) FILTER (
+            WHERE close_event_row.kind = 'token-listing-closed'
+          ) OVER () AS close_protocol_vout,
+          MAX(close_event_row.record_ordinal) FILTER (
+            WHERE close_event_row.kind = 'token-listing-closed'
+          ) OVER () AS close_record_ordinal,
+          MAX(close_event_row.event_time) FILTER (
+            WHERE close_event_row.kind = 'token-sale'
+          ) OVER () AS sale_event_time,
+          MAX(close_event_row.block_time) FILTER (
+            WHERE close_event_row.kind = 'token-sale'
+          ) OVER () AS sale_block_time,
+          MAX(canonical_close_tx.block_hash) FILTER (
+            WHERE close_event_row.kind = 'token-sale'
+          ) OVER () AS sale_block_hash,
+          MAX(close_event_row.block_height) FILTER (
+            WHERE close_event_row.kind = 'token-sale'
+          ) OVER () AS sale_block_height,
+          MAX(close_event_row.block_index) FILTER (
+            WHERE close_event_row.kind = 'token-sale'
+          ) OVER () AS sale_block_index,
+          MAX(close_event_row.op_return_vout) FILTER (
+            WHERE close_event_row.kind = 'token-sale'
+          ) OVER () AS sale_protocol_vout,
+          MAX(close_event_row.record_ordinal) FILTER (
+            WHERE close_event_row.kind = 'token-sale'
+          ) OVER () AS sale_record_ordinal
+        FROM proof_indexer.events close_event_row
+        JOIN proof_indexer.transactions canonical_close_tx
+          ON canonical_close_tx.network = close_event_row.network
+         AND canonical_close_tx.txid = close_event_row.txid
+         AND canonical_close_tx.status = 'confirmed'
+        JOIN proof_indexer.blocks canonical_close_block
+          ON canonical_close_block.network = canonical_close_tx.network
+         AND canonical_close_block.block_hash = canonical_close_tx.block_hash
+         AND canonical_close_block.height = canonical_close_tx.block_height
+         AND canonical_close_block.canonical = true
+        WHERE close_event_row.network = cl.network
+          AND close_event_row.valid = true
+          AND close_event_row.status = 'confirmed'
+          AND close_event_row.protocol = 'pwt1'
+          AND close_event_row.kind =
+            ANY(ARRAY['token-sale','token-listing-closed']::text[])
+          AND close_event_row.txid = COALESCE(
+            NULLIF(lower(canonical_spend.txid), ''),
+            NULLIF(lower(cl.close_txid), ''),
+            NULLIF(lower(cl.payload->>'closeTxid'), '')
+          )
+          AND lower(close_event_row.payload->>'listingId') =
+            lower(cl.listing_id)
+          AND lower(COALESCE(
+            NULLIF(close_event_row.payload->>'tokenId', ''),
+            NULLIF(
+              close_event_row.payload
+                ->'saleAuthorization'->>'tokenId',
+              ''
+            ),
+            cl.token_id
+          )) = lower(cl.token_id)
+        ORDER BY
+          CASE WHEN close_event_row.kind = 'token-sale' THEN 0 ELSE 1 END,
+          COALESCE(
+            close_event_row.event_time,
+            close_event_row.block_time
+          ) DESC,
+          close_event_row.event_id DESC
+        LIMIT 1
+      ) close_event ON true
+      LEFT JOIN proof_indexer.transactions close_tx
+        ON close_tx.network = cl.network
+       AND close_tx.txid = COALESCE(
+         NULLIF(lower(canonical_spend.txid), ''),
+         NULLIF(lower(cl.close_txid), ''),
+         NULLIF(lower(cl.payload->>'closeTxid'), '')
+       )
       LEFT JOIN proof_indexer.credit_definitions cd
         ON cd.network = cl.network
        AND cd.token_id = cl.token_id
@@ -14629,37 +17177,250 @@ async function proofIndexTokenListingsFromTables(pool, network, scope) {
       continue;
     }
     if (
-      ["active", "sealing", "pending"].includes(String(row.status)) &&
       row.listing_tx_status === "confirmed" &&
       validTxid(row.canonical_spend_txid)
     ) {
-      closedListings.push({
+      const canonicalSpendTxid = normalizedLowerText(
+        row.canonical_spend_txid,
+      );
+      const closeEventKind = normalizedLowerText(row.close_event_kind);
+      const exactCloseInteger = (value, minimum) => {
+        if (value === undefined || value === null || value === "") {
+          return null;
+        }
+        const parsed = Number(value);
+        return Number.isSafeInteger(parsed) && parsed >= minimum
+          ? parsed
+          : null;
+      };
+      const closeEventSaleMatchCount = exactCloseInteger(
+        row.close_event_sale_match_count,
+        0,
+      );
+      const closeEventClosedMatchCount = exactCloseInteger(
+        row.close_event_closed_match_count,
+        0,
+      );
+      const closeEventCloseProtocolVout = exactCloseInteger(
+        row.close_event_close_protocol_vout,
+        0,
+      );
+      const closeEventCloseRecordOrdinal = exactCloseInteger(
+        row.close_event_close_record_ordinal,
+        0,
+      );
+      const closeEventSaleProtocolVout = exactCloseInteger(
+        row.close_event_sale_protocol_vout,
+        0,
+      );
+      const closeEventSaleRecordOrdinal = exactCloseInteger(
+        row.close_event_sale_record_ordinal,
+        0,
+      );
+      const closeSalePositionsDistinct =
+        closeEventCloseProtocolVout !== null &&
+        closeEventCloseRecordOrdinal !== null &&
+        closeEventSaleProtocolVout !== null &&
+        closeEventSaleRecordOrdinal !== null &&
+        (
+          closeEventCloseProtocolVout !==
+            closeEventSaleProtocolVout ||
+          closeEventCloseRecordOrdinal !==
+            closeEventSaleRecordOrdinal
+        );
+      const closeEventCardinalityMatches =
+        (
+          closeEventKind === "token-sale" &&
+          closeEventSaleMatchCount === 1 &&
+          closeEventClosedMatchCount === 1 &&
+          closeSalePositionsDistinct
+        ) ||
+        (
+          closeEventKind === "token-listing-closed" &&
+          closeEventSaleMatchCount === 0 &&
+          closeEventClosedMatchCount === 1
+        );
+      const closeEventMatches =
+        normalizedLowerText(row.close_event_txid) === canonicalSpendTxid &&
+        row.close_event_position_matches === true &&
+        closeEventCardinalityMatches;
+      const closeEventPayload =
+        row.close_event_payload &&
+        typeof row.close_event_payload === "object" &&
+        !Array.isArray(row.close_event_payload)
+          ? row.close_event_payload
+          : {};
+      const closeBlockHeight = exactCloseInteger(
+        closeEventMatches
+          ? row.close_event_close_block_height
+          : row.canonical_spend_block_height,
+        1,
+      );
+      const closeBlockIndex = exactCloseInteger(
+        closeEventMatches
+          ? row.close_event_close_block_index
+          : row.canonical_spend_block_index,
+        0,
+      );
+      const closeProtocolVout = closeEventMatches
+        ? exactCloseInteger(row.close_event_close_protocol_vout, 0)
+        : null;
+      const closeRecordOrdinal = closeEventMatches
+        ? exactCloseInteger(row.close_event_close_record_ordinal, 0)
+        : null;
+      const closeBlockHash = normalizedLowerText(
+        closeEventMatches
+          ? row.close_event_close_block_hash
+          : row.canonical_spend_block_hash,
+      );
+      const saleBlockHeight =
+        closeEventMatches && closeEventKind === "token-sale"
+          ? exactCloseInteger(row.close_event_sale_block_height, 1)
+          : null;
+      const saleBlockIndex =
+        closeEventMatches && closeEventKind === "token-sale"
+          ? exactCloseInteger(row.close_event_sale_block_index, 0)
+          : null;
+      const saleProtocolVout =
+        closeEventMatches && closeEventKind === "token-sale"
+          ? exactCloseInteger(row.close_event_sale_protocol_vout, 0)
+          : null;
+      const saleRecordOrdinal =
+        closeEventMatches && closeEventKind === "token-sale"
+          ? exactCloseInteger(row.close_event_sale_record_ordinal, 0)
+          : null;
+      const saleBlockHash =
+        closeEventMatches && closeEventKind === "token-sale"
+          ? normalizedLowerText(row.close_event_sale_block_hash)
+          : "";
+      const saleAt =
+        closeEventMatches && closeEventKind === "token-sale"
+          ? dateIso(
+              row.close_event_sale_event_time ??
+                row.close_event_sale_block_time,
+            )
+          : undefined;
+      const canonicalSaleEvidence =
+        closeEventMatches && closeEventKind === "token-sale"
+          ? canonicalTokenSaleEvidenceForListing(
+              listing,
+              closeEventPayload,
+              {
+                closeBlockHash,
+                closeBlockHeight,
+                closeBlockIndex,
+                closeProtocolVout,
+                closeRecordOrdinal,
+                saleBlockHash,
+                saleBlockHeight,
+                saleBlockIndex,
+                saleProtocolVout,
+                saleRecordOrdinal,
+              },
+            )
+          : null;
+      const canonicalSaleEvent = Boolean(canonicalSaleEvidence);
+      const canonicalSaleBuyerAddress =
+        canonicalSaleEvidence?.buyerAddress ?? "";
+      const closedListing = {
         ...listing,
-        closeTxid: String(row.canonical_spend_txid).toLowerCase(),
-        closedAt: dateIso(row.canonical_spend_block_time ?? row.updated_at),
-        closedBlockHash: String(row.canonical_spend_block_hash ?? "")
-          .trim()
-          .toLowerCase(),
-        closedBlockHeight:
-          rowNumber(row, "canonical_spend_block_height") || undefined,
+        buyerAddress: canonicalSaleEvent
+          ? canonicalSaleBuyerAddress
+          : "",
+        ...(canonicalSaleEvidence ? { canonicalSaleEvidence } : {}),
+        closeTransactionBlockHeight:
+          exactCloseInteger(row.canonical_spend_block_height, 1) ?? undefined,
+        closeTxid: canonicalSpendTxid,
+        closedAt: dateIso(
+          (closeEventMatches
+            ? row.close_event_close_event_time ??
+              row.close_event_close_block_time
+            : row.canonical_spend_block_time) ?? row.updated_at,
+        ),
+        closedBlockHash: closeBlockHash || undefined,
+        closedBlockHeight: closeBlockHeight ?? undefined,
+        closedBlockIndex: closeBlockIndex ?? undefined,
+        closedProtocolVout: closeProtocolVout ?? undefined,
+        closedRecordOrdinal: closeRecordOrdinal ?? undefined,
+        closedDataBytes: undefined,
+        closedFrozenNetworkValueSats: undefined,
+        closedLiveNetworkValueSats: undefined,
+        closedMinerFeeCanonical: false,
+        closedMinerFeeSats: undefined,
+        closedMinerFeeSource: undefined,
+        saleAt: canonicalSaleEvent ? saleAt : undefined,
+        saleBlockHash: canonicalSaleEvent ? saleBlockHash : undefined,
+        saleBlockHeight: canonicalSaleEvent ? saleBlockHeight : undefined,
+        saleBlockIndex: canonicalSaleEvent ? saleBlockIndex : undefined,
+        saleProtocolVout: canonicalSaleEvent
+          ? saleProtocolVout
+          : undefined,
+        saleRecordOrdinal: canonicalSaleEvent
+          ? saleRecordOrdinal
+          : undefined,
+        saleTransactionBlockHeight: canonicalSaleEvent
+          ? exactCloseInteger(row.canonical_spend_block_height, 1) ??
+            undefined
+          : undefined,
+        saleTxid: canonicalSaleEvent ? canonicalSpendTxid : undefined,
         closedByCanonicalOutpointSpend: true,
         closedConfirmed: true,
-        closedTxid: String(row.canonical_spend_txid).toLowerCase(),
+        closedTxid: canonicalSpendTxid,
         closedVin:
           Number.isSafeInteger(Number(row.canonical_spend_vin))
             ? Number(row.canonical_spend_vin)
             : undefined,
         confirmed: true,
-        status: "closed",
-      });
+        status: closeEventMatches
+          ? closeEventKind === "token-sale"
+            ? canonicalSaleEvent
+              ? "sold"
+              : "closed"
+            : "delisted"
+          : "closed",
+      };
+      closedListings.push(closedListing);
+      const completeSalePosition =
+        /^[0-9a-f]{64}$/u.test(saleBlockHash) &&
+        saleBlockHeight !== null &&
+        saleBlockIndex !== null &&
+        saleProtocolVout !== null &&
+        saleRecordOrdinal !== null;
+      if (
+        canonicalSaleEvent &&
+        (
+          (
+            saleBlockHeight !== null &&
+            saleBlockHeight < WORK_AMO_V5_ACTIVATION_HEIGHT
+          ) ||
+          completeSalePosition)
+      ) {
+        sales.push({
+          ...closedListing,
+          blockHash: saleBlockHash,
+          blockHeight: saleBlockHeight,
+          blockIndex: saleBlockIndex,
+          buyerAddress: closedListing.buyerAddress,
+          confirmed: true,
+          createdAt: saleAt ?? closedListing.closedAt ?? listing.createdAt,
+          paidSats: listing.priceSats,
+          protocolVout: saleProtocolVout ?? undefined,
+          recordOrdinal: saleRecordOrdinal ?? undefined,
+          txid: canonicalSpendTxid,
+        });
+      }
       continue;
     }
+    const activeListing = activeTokenListingFromCreditListingRow(
+      row,
+      network,
+    );
     if (
-      ["active", "sealing", "pending"].includes(String(row.status)) &&
+      activeOrSealingListingStatus(activeListing?.status) &&
       tokenListingTransactionCanProjectActive(row.listing_tx_status)
     ) {
-      if (activeTokenListingHistoryItem(listing)) {
-        listings.push(listing);
+      if (activeTokenListingHistoryItem(activeListing)) {
+        listings.push(activeListing);
       }
       continue;
     }
@@ -14668,20 +17429,102 @@ async function proofIndexTokenListingsFromTables(pool, network, scope) {
       const closedListing = {
         ...listing,
         closedAt: listing.closedAt ?? listing.createdAt,
-        closedConfirmed: true,
+        closedConfirmed: listing.closedConfirmed === true,
         closedTxid: listing.closedTxid || listing.closeTxid,
-        confirmed: true,
+        confirmed: listing.confirmed === true,
       };
-      if (closedListing.closedTxid && closedListing.listingId) {
-        closedListings.push(closedListing);
+      const exactLifecycleInteger = (value, minimum) => {
+        if (value === undefined || value === null || value === "") {
+          return null;
+        }
+        const parsed = Number(value);
+        return Number.isSafeInteger(parsed) && parsed >= minimum
+          ? parsed
+          : null;
+      };
+      const saleBlockHeight = exactLifecycleInteger(
+        closedListing.saleBlockHeight ??
+          closedListing.closedBlockHeight,
+        1,
+      );
+      const saleBlockIndex = exactLifecycleInteger(
+        closedListing.saleBlockIndex ??
+          closedListing.closedBlockIndex,
+        0,
+      );
+      const saleProtocolVout = exactLifecycleInteger(
+        closedListing.saleProtocolVout ??
+          closedListing.closedProtocolVout,
+        0,
+      );
+      const saleRecordOrdinal = exactLifecycleInteger(
+        closedListing.saleRecordOrdinal ??
+          closedListing.closedRecordOrdinal,
+        0,
+      );
+      const closeTransactionBlockHeight = exactLifecycleInteger(
+        closedListing.saleTransactionBlockHeight ??
+          closedListing.closeTransactionBlockHeight ??
+          row.close_transaction_block_height,
+        1,
+      );
+      const closeSpecificHeights = [
+        saleBlockHeight,
+        closeTransactionBlockHeight,
+      ].filter((height) => height !== null);
+      const knownPreAmoV5Close =
+        closeSpecificHeights.length > 0 &&
+        closeSpecificHeights.every(
+          (height) => height < WORK_AMO_V5_ACTIVATION_HEIGHT,
+        );
+      const stateOnlyClosedListing =
+        String(row.status) === "sold" && !knownPreAmoV5Close
+          ? {
+              ...closedListing,
+              buyerAddress: "",
+              canonicalSaleEvidence: undefined,
+              lifecycleStatus: "closed",
+              saleAt: undefined,
+              saleBlockHash: undefined,
+              saleBlockHeight: undefined,
+              saleBlockIndex: undefined,
+              saleProtocolVout: undefined,
+              saleRecordOrdinal: undefined,
+              saleTransactionBlockHeight: undefined,
+              saleTxid: undefined,
+              status: "closed",
+            }
+          : closedListing;
+      if (
+        stateOnlyClosedListing.closedTxid &&
+        stateOnlyClosedListing.listingId
+      ) {
+        closedListings.push(stateOnlyClosedListing);
       }
-      if (String(row.status) === "sold" && closedListing.closedTxid) {
+      if (
+        String(row.status) === "sold" &&
+        closedListing.closedTxid &&
+        closedListing.closedConfirmed === true &&
+        knownPreAmoV5Close
+      ) {
         sales.push({
           ...closedListing,
+          blockHash:
+            normalizedLowerText(
+              closedListing.saleBlockHash ??
+                closedListing.closedBlockHash,
+            ) || undefined,
+          blockHeight: saleBlockHeight ?? undefined,
+          blockIndex: saleBlockIndex ?? undefined,
           buyerAddress: listing.buyerAddress ?? "",
           confirmed: true,
-          createdAt: closedListing.closedAt ?? listing.createdAt,
+          createdAt:
+            closedListing.saleAt ??
+            closedListing.closedAt ??
+            listing.createdAt,
           paidSats: listing.priceSats,
+          protocolVout: saleProtocolVout ?? undefined,
+          recordOrdinal: saleRecordOrdinal ?? undefined,
           txid: closedListing.closedTxid,
         });
       }
@@ -14737,6 +17580,7 @@ async function proofIndexTokenTransferEventsFromTables(pool, network, scope) {
         ON cd.network = e.network
        AND cd.token_id = lower(e.payload->>'tokenId')
       WHERE e.network = $1
+        AND e.protocol = 'pwt1'
         AND e.valid IS DISTINCT FROM false
         AND e.kind = 'token-transfer'
         ${tokenStateScopeSql(scope, "COALESCE(cd.token_id, lower(e.payload->>'tokenId'))", "cd.ticker")}
@@ -15162,10 +18006,15 @@ async function proofIndexTokenMarketEventsFromTables(pool, network, scope) {
       LEFT JOIN proof_indexer.credit_listings cl_event
         ON cl_event.network = e.network
        AND cl_event.listing_id = lower(e.payload->>'listingId')
+       AND lower(cl_event.token_id) = lower(COALESCE(
+         NULLIF(e.payload->>'tokenId', ''),
+         NULLIF(e.payload->'saleAuthorization'->>'tokenId', '')
+       ))
       LEFT JOIN proof_indexer.credit_definitions cd
         ON cd.network = e.network
        AND cd.token_id = COALESCE(lower(e.payload->>'tokenId'), cl_event.token_id)
       WHERE e.network = $1
+        AND e.protocol = 'pwt1'
         AND e.valid IS DISTINCT FROM false
         AND e.status IN ('confirmed', 'pending')
         AND e.kind = ANY(ARRAY['token-sale','token-listing-closed']::text[])
@@ -15196,7 +18045,7 @@ async function proofIndexTokenMarketEventsFromTables(pool, network, scope) {
     }
 
     if (payload?.kind === "token-listing-closed") {
-      const closedListing = tokenClosedListingFromEventPayload(payload);
+      const closedListing = tokenClosedListingFromEventPayload(payload, row);
       if (
         closedListing.closedTxid &&
         closedListing.listingId &&
@@ -15238,13 +18087,30 @@ function uniqueTokenItems(items, keyForItem, mergeItems = null) {
 }
 
 function tokenListingsWithoutClosedEvents(listings, closedListings) {
-  const closedListingIds = new Set(
+  const canonicallyClosedListingKeys = new Set(
     (Array.isArray(closedListings) ? closedListings : [])
-      .map(tokenListingId)
+      .filter(
+        (listing) =>
+          listing?.closedByCanonicalOutpointSpend === true &&
+          listing?.closedConfirmed === true,
+      )
+      .map((listing) => {
+        const listingId = tokenListingId(listing);
+        const tokenId = normalizedLowerText(listing?.tokenId);
+        return listingId && tokenId ? `${tokenId}:${listingId}` : "";
+      })
       .filter(Boolean),
   );
   return (Array.isArray(listings) ? listings : []).filter(
-    (listing) => !closedListingIds.has(tokenListingId(listing)),
+    (listing) => {
+      const listingId = tokenListingId(listing);
+      const tokenId = normalizedLowerText(listing?.tokenId);
+      return (
+        !listingId ||
+        !tokenId ||
+        !canonicallyClosedListingKeys.has(`${tokenId}:${listingId}`)
+      );
+    },
   );
 }
 
@@ -15308,6 +18174,7 @@ function assertCanonicalIncbCurrentProjection(tokens, mints, holders, context) {
 }
 
 async function proofIndexTokenPayloadFromCurrentTables(pool, network, scope) {
+  await assertCurrentAmoV5CanonicalPositionUniqueness(pool, network);
   const tokens = await proofIndexTokenDefinitionsFromTables(pool, network, scope);
   if (tokens.length === 0) {
     return null;
@@ -16035,6 +18902,7 @@ export async function proofIndexWalletTokenOverlayPayload(
   if (!pool || addressNeedles.length === 0) {
     return null;
   }
+  await assertCurrentAmoV5CanonicalPositionUniqueness(pool, network);
 
   const scope = tokenScopeKey(tokenScope);
   const scoped = scope && scope !== "all";
@@ -16106,6 +18974,7 @@ export async function proofIndexWalletTokenOverlayPayload(
 
   const eventConditions = [
     "e.network = $1",
+    "e.protocol = 'pwt1'",
     "e.valid = true",
     "e.status IN ('confirmed', 'pending')",
     `(EXISTS (
@@ -16126,12 +18995,29 @@ export async function proofIndexWalletTokenOverlayPayload(
       e.kind NOT IN ('token-listings', 'token-listing')
       OR NOT EXISTS (
         SELECT 1
-        FROM proof_indexer.events close_event
-        WHERE close_event.network = e.network
-          AND close_event.valid = true
-          AND close_event.status IN ('confirmed', 'pending')
-          AND close_event.kind = ANY(ARRAY['token-listing-closed','token-sale']::text[])
-          AND lower(close_event.payload->>'listingId') = lower(e.payload->>'listingId')
+        FROM proof_indexer.tx_inputs wallet_event_spend_input
+        JOIN proof_indexer.transactions wallet_event_spend_tx
+          ON wallet_event_spend_tx.network =
+            wallet_event_spend_input.network
+         AND wallet_event_spend_tx.txid = wallet_event_spend_input.txid
+         AND wallet_event_spend_tx.status = 'confirmed'
+        JOIN proof_indexer.blocks wallet_event_spend_block
+          ON wallet_event_spend_block.network =
+            wallet_event_spend_tx.network
+         AND wallet_event_spend_block.block_hash =
+            wallet_event_spend_tx.block_hash
+         AND wallet_event_spend_block.height =
+            wallet_event_spend_tx.block_height
+         AND wallet_event_spend_block.canonical = true
+        WHERE wallet_event_spend_input.network = e.network
+          AND wallet_event_spend_input.prev_txid = lower(
+            COALESCE(
+              NULLIF(cl_event.sale_ticket_txid, ''),
+              cl_event.listing_id
+            )
+          )
+          AND wallet_event_spend_input.prev_vout =
+            cl_event.sale_ticket_vout
       )
     )`,
   ];
@@ -16200,6 +19086,10 @@ export async function proofIndexWalletTokenOverlayPayload(
       LEFT JOIN proof_indexer.credit_listings cl_event
         ON cl_event.network = e.network
        AND cl_event.listing_id = lower(e.payload->>'listingId')
+       AND lower(cl_event.token_id) = lower(COALESCE(
+         NULLIF(e.payload->>'tokenId', ''),
+         NULLIF(e.payload->'saleAuthorization'->>'tokenId', '')
+       ))
       LEFT JOIN proof_indexer.credit_definitions cd
         ON cd.network = e.network
        AND cd.token_id = COALESCE(lower(e.payload->>'tokenId'), cl_event.token_id)
@@ -16224,7 +19114,7 @@ export async function proofIndexWalletTokenOverlayPayload(
   const listingConditions = [
     "cl.network = $1",
     "cl.seller_address = ANY($2::text[])",
-    "cl.status IN ('active', 'sealing', 'pending')",
+    tokenListingActiveLifecycleSql("cl"),
   ];
   const listingParams = [network, addressNeedles];
   if (scoped) {
@@ -16258,10 +19148,25 @@ export async function proofIndexWalletTokenOverlayPayload(
         cl.updated_at,
         listing_tx.block_hash AS listing_block_hash,
         listing_tx.block_height AS listing_block_height,
+        listing_tx.block_index AS listing_transaction_block_index,
         listing_tx.block_time AS listing_block_time,
         listing_tx.status AS listing_tx_status,
+        canonical_listing_event.listing_event_status,
+        canonical_listing_event.listing_event_block_hash,
+        canonical_listing_event.listing_event_block_height,
+        canonical_listing_event.listing_event_block_index,
+        canonical_listing_event.listing_event_protocol_vout,
+        canonical_listing_event.listing_event_record_ordinal,
+        canonical_listing_event.listing_event_match_count,
         seal_tx.status AS seal_tx_status,
+        seal_tx.block_height AS seal_transaction_block_height,
         canonical_seal_event.seal_event_status,
+        canonical_seal_event.seal_event_block_hash,
+        canonical_seal_event.seal_event_block_height,
+        canonical_seal_event.seal_event_block_index,
+        canonical_seal_event.seal_event_protocol_vout,
+        canonical_seal_event.seal_event_record_ordinal,
+        canonical_seal_event.seal_event_match_count,
         cd.ticker,
         cd.registry_address,
         cd.metadata AS token_metadata
@@ -16269,6 +19174,7 @@ export async function proofIndexWalletTokenOverlayPayload(
       LEFT JOIN proof_indexer.transactions listing_tx
         ON listing_tx.network = cl.network
        AND listing_tx.txid = cl.listing_id
+      ${canonicalTokenListingEventJoinSql("cl")}
       LEFT JOIN proof_indexer.transactions seal_tx
         ON seal_tx.network = cl.network
        AND seal_tx.txid = cl.seal_txid
@@ -16537,7 +19443,7 @@ export async function proofIndexWalletTokenOverlayPayload(
   for (const row of eventResult.rows) {
     const payload = normalizeEventPayload(canonicalEventPayload(row.payload), row);
     if (payload?.kind === "token-listing" || payload?.kind === "token-listings") {
-      const listing = tokenListingFromEventPayload(payload);
+      const listing = tokenListingFromEventPayload(payload, row);
       if (activeTokenListingHistoryItem(listing)) {
         listings.push(listing);
       }
@@ -16612,7 +19518,7 @@ export async function proofIndexWalletTokenOverlayPayload(
       continue;
     }
     if (payload?.kind === "token-listing-closed") {
-      const closedListing = tokenClosedListingFromEventPayload(payload);
+      const closedListing = tokenClosedListingFromEventPayload(payload, row);
       if (
         closedListing.closedTxid &&
         closedListing.listingId &&
@@ -16623,102 +19529,15 @@ export async function proofIndexWalletTokenOverlayPayload(
     }
   }
   for (const row of listingResult.rows) {
-    const payload =
-      row.payload && typeof row.payload === "object" && !Array.isArray(row.payload)
-        ? row.payload
-        : {};
-    const status = String(row.status ?? payload.status ?? "").trim().toLowerCase();
-    const sealTxid = String(row.seal_txid ?? payload.sealTxid ?? "")
-      .trim()
-      .toLowerCase();
-    const saleAuthorization = objectRecord(payload.saleAuthorization);
-    const listingId = String(row.listing_id ?? payload.listingId ?? "")
-      .trim()
-      .toLowerCase();
-    const closeTxid = tokenListingEffectiveCloseTxid(
-      row,
-      payload,
-      status,
-      sealTxid,
+    const sealTxid = normalizedLowerText(
+      row?.seal_txid ?? row?.payload?.sealTxid,
     );
-    const tokenId = String(row.token_id ?? payload.tokenId ?? "")
-      .trim()
-      .toLowerCase();
-    const workAmount = isWorkTokenId(tokenId)
-      ? workAmountProjection(payload, {
-          metadata: row.token_metadata,
-          storedAmount: row.amount,
-        })
-      : null;
     const listing = {
-      ...payload,
-      amount: workAmount
-        ? workAmount.amount
-        : isBondTokenId(tokenId)
-          ? exactBondUnits(row?.amount ?? payload?.amount, {
-              positive: true,
-            })
-        : rowNumber(row, "amount") || rowNumber(payload, "amount"),
-      ...(workAmount
-        ? {
-            amountAtoms: workAmount.amountAtoms,
-            decimals: WORK_DECIMALS,
-            unitScale: WORK_UNIT_SCALE_TEXT,
-          }
-        : {}),
-      buyerAddress: row.buyer_address ?? payload.buyerAddress,
-      blockHash: String(
-        row.listing_block_hash ?? payload.blockHash ?? "",
-      )
-        .trim()
-        .toLowerCase(),
-      blockHeight:
-        rowNumber(row, "listing_block_height") ||
-        rowNumber(payload, "blockHeight") ||
-        undefined,
-      closeTxid,
-      confirmed: row.listing_tx_status
-        ? normalizedLowerText(row.listing_tx_status) === "confirmed"
-        : row.status !== "pending",
-      createdAt: dateIso(
-        row.listing_block_time ?? payload.createdAt ?? row.updated_at,
-      ),
-      listingId,
-      network,
-      priceSats: rowNumber(row, "price_sats") || rowNumber(payload, "priceSats"),
-      registryAddress:
-        payload.registryAddress ??
-        row.registry_address ??
-        saleAuthorization.registryAddress ??
-        "",
-      saleAuthorization,
-      saleTicketTxid: tokenListingEffectiveSaleTicketTxid(
+      ...activeTokenListingFromCreditListingRow(row, network),
+      sealConfirmed: tokenListingSealConfirmedFromTransaction(
         row,
-        payload,
-        saleAuthorization,
-        listingId,
         sealTxid,
       ),
-      saleTicketValueSats:
-        rowNumber(row, "sale_ticket_value_sats") ||
-        rowNumber(payload, "saleTicketValueSats"),
-      saleTicketVout:
-        row.sale_ticket_vout ?? payload.saleTicketVout,
-      sealAt:
-        payload.sealAt ??
-        payload.blockTime ??
-        payload.timestamp ??
-        payload.createdAt ??
-        row.updated_at,
-      sealConfirmed: tokenListingSealConfirmedFromTransaction(row, sealTxid),
-      sealTxid,
-      sellerAddress: row.seller_address ?? payload.sellerAddress ?? "",
-      status: row.status ?? payload.status,
-      ticker: payload.ticker ?? row.ticker ?? saleAuthorization.ticker ?? "",
-      tokenId,
-      txid: String(row.listing_id ?? payload.txid ?? "")
-        .trim()
-        .toLowerCase(),
     };
     if (
       tokenListingTransactionCanProjectActive(row.listing_tx_status) &&
@@ -17387,6 +20206,17 @@ async function confirmedIdLifecycleFromCurrentEvents(pool, network, idLower) {
         t.block_index AS transaction_block_index,
         t.block_hash,
         canonical_block.block_hash AS canonical_block_hash,
+        (
+          (
+            e.status = 'confirmed'
+            AND e.block_height IS NULL
+            AND t.block_height IS NULL
+          )
+          OR COALESCE(e.block_height, 0) >=
+            ${WORK_AMO_V5_ACTIVATION_HEIGHT}
+          OR COALESCE(t.block_height, 0) >=
+            ${WORK_AMO_V5_ACTIVATION_HEIGHT}
+        ) AS canonical_position_required,
         e.txid
       FROM proof_indexer.events e
       JOIN proof_indexer.transactions t
@@ -17564,6 +20394,17 @@ async function currentIdRegistryEventState(pool, network) {
         t.block_index AS transaction_block_index,
         t.block_hash,
         canonical_block.block_hash AS canonical_block_hash,
+        (
+          (
+            e.status = 'confirmed'
+            AND e.block_height IS NULL
+            AND t.block_height IS NULL
+          )
+          OR COALESCE(e.block_height, 0) >=
+            ${WORK_AMO_V5_ACTIVATION_HEIGHT}
+          OR COALESCE(t.block_height, 0) >=
+            ${WORK_AMO_V5_ACTIVATION_HEIGHT}
+        ) AS canonical_position_required,
         e.txid
       FROM proof_indexer.events e
       JOIN proof_indexer.transactions t
@@ -17641,6 +20482,50 @@ async function currentRegistryEventHistoryPage(
   if (eventKinds.length === 0) {
     return null;
   }
+  if (safeKind === "listings") {
+    const positionAudit = await pool.query(
+      `
+        SELECT count(*)::integer AS duplicate_count
+        FROM (
+          SELECT 1
+          FROM proof_indexer.events audit_event
+          JOIN proof_indexer.transactions audit_tx
+            ON audit_tx.network = audit_event.network
+           AND audit_tx.txid = audit_event.txid
+           AND audit_tx.status = 'confirmed'
+           AND audit_tx.block_height = audit_event.block_height
+           AND audit_tx.block_index = audit_event.block_index
+          JOIN proof_indexer.blocks audit_block
+            ON audit_block.network = audit_tx.network
+           AND audit_block.block_hash = audit_tx.block_hash
+           AND audit_block.height = audit_tx.block_height
+           AND audit_block.canonical = true
+          WHERE audit_event.network = $1
+            AND audit_event.protocol = 'pwid1'
+            AND audit_event.valid = true
+            AND audit_event.status = 'confirmed'
+            AND audit_event.block_height >= $2
+            AND audit_event.kind IN (
+              'id-list',
+              'id-seal',
+              'id-delist',
+              'id-buy',
+              'id-transfer'
+            )
+          GROUP BY
+            audit_event.block_height,
+            audit_event.block_index,
+            audit_event.op_return_vout,
+            audit_event.record_ordinal
+          HAVING count(*) > 1
+        ) duplicate_positions
+      `,
+      [network, WORK_AMO_V5_ACTIVATION_HEIGHT],
+    );
+    if (Number(positionAudit.rows[0]?.duplicate_count ?? 0) > 0) {
+      return null;
+    }
+  }
   const params = [network, eventKinds];
   const conditions = [
     "e.network = $1",
@@ -17652,19 +20537,88 @@ async function currentRegistryEventHistoryPage(
     conditions.push(`NOT EXISTS (
       SELECT 1
       FROM proof_indexer.events close_event
+      JOIN proof_indexer.transactions close_transaction
+        ON close_transaction.network = close_event.network
+       AND close_transaction.txid = close_event.txid
+       AND close_transaction.status = 'confirmed'
+      JOIN proof_indexer.blocks close_block
+        ON close_block.network = close_transaction.network
+       AND close_block.height = close_transaction.block_height
+       AND close_block.block_hash = close_transaction.block_hash
+       AND close_block.canonical = true
       WHERE close_event.network = e.network
         AND close_event.valid = true
         AND close_event.status = 'confirmed'
+        AND close_event.protocol = 'pwid1'
         AND close_event.kind IN ('id-delist', 'id-buy')
-        AND EXISTS (
-          SELECT 1
-          FROM proof_indexer.transactions close_transaction
-          WHERE close_transaction.network = close_event.network
-            AND close_transaction.txid = close_event.txid
-            AND close_transaction.status = 'confirmed'
-        )
         AND lower(close_event.payload->>'listingId') = lower(
           COALESCE(e.payload->>'listingId', e.txid)
+        )
+        AND (
+          (
+            (
+              COALESCE(close_event.block_height, 0) >=
+                ${WORK_AMO_V5_ACTIVATION_HEIGHT}
+              OR COALESCE(close_transaction.block_height, 0) >=
+                ${WORK_AMO_V5_ACTIVATION_HEIGHT}
+              OR COALESCE(e.block_height, 0) >=
+                ${WORK_AMO_V5_ACTIVATION_HEIGHT}
+              OR COALESCE(t.block_height, 0) >=
+                ${WORK_AMO_V5_ACTIVATION_HEIGHT}
+            )
+            AND e.status = 'confirmed'
+            AND t.status = 'confirmed'
+            AND close_event.block_height =
+              close_transaction.block_height
+            AND close_event.block_index =
+              close_transaction.block_index
+            AND close_event.block_height >= 1
+            AND close_event.block_index >= 0
+            AND close_event.op_return_vout >= 0
+            AND close_event.record_ordinal >= 0
+            AND e.block_height = t.block_height
+            AND e.block_index = t.block_index
+            AND e.block_height >= 1
+            AND e.block_index >= 0
+            AND e.op_return_vout >= 0
+            AND e.record_ordinal >= 0
+            AND EXISTS (
+              SELECT 1
+              FROM proof_indexer.blocks listing_block
+              WHERE listing_block.network = t.network
+                AND listing_block.height = t.block_height
+                AND listing_block.block_hash = t.block_hash
+                AND listing_block.canonical = true
+            )
+            AND (
+              close_event.block_height,
+              close_event.block_index,
+              close_event.op_return_vout,
+              close_event.record_ordinal
+            ) > (
+              e.block_height,
+              e.block_index,
+              e.op_return_vout,
+              e.record_ordinal
+            )
+          )
+          OR (
+            GREATEST(
+              COALESCE(
+                close_event.block_height,
+                close_transaction.block_height,
+                0
+              ),
+              COALESCE(e.block_height, t.block_height, 0)
+            ) > 0
+            AND COALESCE(
+              close_event.block_height,
+              close_transaction.block_height,
+              0
+            ) < ${WORK_AMO_V5_ACTIVATION_HEIGHT}
+            AND COALESCE(e.block_height, t.block_height, 0) <
+              ${WORK_AMO_V5_ACTIVATION_HEIGHT}
+          )
         )
     )`);
     conditions.push(`NOT EXISTS (
@@ -17674,18 +20628,90 @@ async function currentRegistryEventHistoryPage(
         ON transfer_transaction.network = transfer_event.network
        AND transfer_transaction.txid = transfer_event.txid
        AND transfer_transaction.status = 'confirmed'
+      JOIN proof_indexer.blocks transfer_block
+        ON transfer_block.network = transfer_transaction.network
+       AND transfer_block.height = transfer_transaction.block_height
+       AND transfer_block.block_hash = transfer_transaction.block_hash
+       AND transfer_block.canonical = true
       WHERE transfer_event.network = e.network
         AND transfer_event.valid = true
         AND transfer_event.status = 'confirmed'
+        AND transfer_event.protocol = 'pwid1'
         AND transfer_event.kind IN ('id-transfer', 'id-buy')
         AND lower(COALESCE(transfer_event.payload->>'id', '')) =
           lower(COALESCE(e.payload->>'id', ''))
         AND (
-          COALESCE(transfer_event.block_height, 0),
-          transfer_event.event_id
-        ) > (
-          COALESCE(e.block_height, 0),
-          e.event_id
+          (
+            (
+              COALESCE(transfer_event.block_height, 0) >=
+                ${WORK_AMO_V5_ACTIVATION_HEIGHT}
+              OR COALESCE(transfer_transaction.block_height, 0) >=
+                ${WORK_AMO_V5_ACTIVATION_HEIGHT}
+              OR COALESCE(e.block_height, 0) >=
+                ${WORK_AMO_V5_ACTIVATION_HEIGHT}
+              OR COALESCE(t.block_height, 0) >=
+                ${WORK_AMO_V5_ACTIVATION_HEIGHT}
+            )
+            AND e.status = 'confirmed'
+            AND t.status = 'confirmed'
+            AND transfer_event.block_height =
+              transfer_transaction.block_height
+            AND transfer_event.block_index =
+              transfer_transaction.block_index
+            AND transfer_event.block_height >= 1
+            AND transfer_event.block_index >= 0
+            AND transfer_event.op_return_vout >= 0
+            AND transfer_event.record_ordinal >= 0
+            AND e.block_height = t.block_height
+            AND e.block_index = t.block_index
+            AND e.block_height >= 1
+            AND e.block_index >= 0
+            AND e.op_return_vout >= 0
+            AND e.record_ordinal >= 0
+            AND EXISTS (
+              SELECT 1
+              FROM proof_indexer.blocks listing_block
+              WHERE listing_block.network = t.network
+                AND listing_block.height = t.block_height
+                AND listing_block.block_hash = t.block_hash
+                AND listing_block.canonical = true
+            )
+            AND (
+              transfer_event.block_height,
+              transfer_event.block_index,
+              transfer_event.op_return_vout,
+              transfer_event.record_ordinal
+            ) > (
+              e.block_height,
+              e.block_index,
+              e.op_return_vout,
+              e.record_ordinal
+            )
+          )
+          OR (
+            GREATEST(
+              COALESCE(
+                transfer_event.block_height,
+                transfer_transaction.block_height,
+                0
+              ),
+              COALESCE(e.block_height, t.block_height, 0)
+            ) > 0
+            AND COALESCE(
+              transfer_event.block_height,
+              transfer_transaction.block_height,
+              0
+            ) < ${WORK_AMO_V5_ACTIVATION_HEIGHT}
+            AND COALESCE(e.block_height, t.block_height, 0) <
+              ${WORK_AMO_V5_ACTIVATION_HEIGHT}
+            AND (
+              COALESCE(transfer_event.block_height, 0),
+              transfer_event.event_id
+            ) > (
+              COALESCE(e.block_height, 0),
+              e.event_id
+            )
+          )
         )
     )`);
   }
@@ -17754,17 +20780,42 @@ async function currentRegistryEventHistoryPage(
         e.payload,
         e.protocol,
         e.kind,
-        COALESCE(t.status, e.status) AS status,
+        e.status,
+        t.status AS transaction_status,
+        COALESCE(t.status, e.status) AS effective_status,
         e.event_time,
         e.block_time,
         e.created_at,
         e.block_height,
+        e.block_index,
+        e.op_return_vout,
+        e.record_ordinal,
+        t.block_height AS transaction_block_height,
+        t.block_index AS transaction_block_index,
+        t.block_hash AS block_hash,
+        canonical_block.block_hash AS canonical_block_hash,
+        (
+          (
+            e.status = 'confirmed'
+            AND e.block_height IS NULL
+            AND t.block_height IS NULL
+          )
+          OR COALESCE(e.block_height, 0) >=
+            ${WORK_AMO_V5_ACTIVATION_HEIGHT}
+          OR COALESCE(t.block_height, 0) >=
+            ${WORK_AMO_V5_ACTIVATION_HEIGHT}
+        ) AS canonical_position_required,
         e.txid,
         e.event_id
       FROM proof_indexer.events e
       LEFT JOIN proof_indexer.transactions t
         ON t.network = e.network
        AND t.txid = e.txid
+      LEFT JOIN proof_indexer.blocks canonical_block
+        ON canonical_block.network = t.network
+       AND canonical_block.height = t.block_height
+       AND canonical_block.block_hash = t.block_hash
+       AND canonical_block.canonical = true
       WHERE ${whereClause}
       ORDER BY
         COALESCE(e.event_time, e.block_time, e.created_at) DESC,
@@ -18296,6 +21347,9 @@ export async function proofIndexCanonicalActivityPayload(
           e.block_time,
           e.created_at,
           e.block_height,
+          e.block_index,
+          e.op_return_vout,
+          e.record_ordinal,
           e.txid,
           e.event_id,
           e.network
@@ -18304,6 +21358,10 @@ export async function proofIndexCanonicalActivityPayload(
           AND e.valid = true
           AND e.status IN ('confirmed', 'pending')
           AND e.kind = ANY($2::text[])
+          AND (
+            e.kind NOT LIKE 'token-%'
+            OR e.protocol = 'pwt1'
+          )
           ${snapshotWhere}
           ${membershipWhere}
       ),
@@ -18349,18 +21407,65 @@ export async function proofIndexCanonicalActivityPayload(
         e.block_height,
         e.txid,
         e.event_id,
+        transaction_row.status AS transaction_status,
+        transaction_row.block_height AS transaction_block_height,
+        transaction_row.block_index AS transaction_block_index,
         transaction_row.block_hash AS block_hash,
+        canonical_block.block_hash AS canonical_block_hash,
+        (
+          (
+            e.status = 'confirmed'
+            AND e.block_height IS NULL
+            AND transaction_row.block_height IS NULL
+          )
+          OR COALESCE(e.block_height, 0) >=
+            ${WORK_AMO_V5_ACTIVATION_HEIGHT}
+          OR COALESCE(transaction_row.block_height, 0) >=
+            ${WORK_AMO_V5_ACTIVATION_HEIGHT}
+        ) AS canonical_position_required,
         CASE
-          WHEN e.payload->>'blockIndex' ~ '^[0-9]+$'
-            THEN (e.payload->>'blockIndex')::integer
-          WHEN e.payload->>'_powBlockIndex' ~ '^[0-9]+$'
-            THEN (e.payload->>'_powBlockIndex')::integer
-          WHEN transaction_row.raw_tx->'canonicalBlockScan'->>'blockIndex' ~ '^[0-9]+$'
-            THEN (
-              transaction_row.raw_tx->'canonicalBlockScan'->>'blockIndex'
-            )::integer
+          WHEN COALESCE(e.block_height, 0) >=
+              ${WORK_AMO_V5_ACTIVATION_HEIGHT}
+            OR COALESCE(transaction_row.block_height, 0) >=
+              ${WORK_AMO_V5_ACTIVATION_HEIGHT}
+            THEN CASE
+              WHEN e.status = 'confirmed'
+                AND transaction_row.status = 'confirmed'
+                AND e.block_height IS NOT NULL
+                AND transaction_row.block_height = e.block_height
+                AND e.block_index IS NOT NULL
+                AND transaction_row.block_index = e.block_index
+                AND canonical_block.canonical = true
+                AND canonical_block.block_hash =
+                  transaction_row.block_hash
+                AND canonical_block.height =
+                  transaction_row.block_height
+                THEN e.block_index
+              ELSE NULL
+            END
+          WHEN COALESCE(e.block_height, 0) <
+              ${WORK_AMO_V5_ACTIVATION_HEIGHT}
+            AND COALESCE(transaction_row.block_height, 0) <
+              ${WORK_AMO_V5_ACTIVATION_HEIGHT}
+            THEN COALESCE(
+              e.block_index,
+              CASE
+                WHEN e.payload->>'blockIndex' ~ '^[0-9]+$'
+                  THEN (e.payload->>'blockIndex')::integer
+                WHEN e.payload->>'_powBlockIndex' ~ '^[0-9]+$'
+                  THEN (e.payload->>'_powBlockIndex')::integer
+                WHEN transaction_row.raw_tx->'canonicalBlockScan'->>'blockIndex' ~
+                  '^[0-9]+$'
+                  THEN (
+                    transaction_row.raw_tx->'canonicalBlockScan'->>'blockIndex'
+                  )::integer
+                ELSE NULL
+              END
+            )
           ELSE NULL
         END AS block_index,
+        e.op_return_vout,
+        e.record_ordinal,
         CASE
           WHEN e.status = 'confirmed'
             AND transaction_row.status = 'confirmed'
@@ -18822,15 +21927,26 @@ function eventRowPayload(row, network) {
     const parsed = Number(value);
     return Number.isSafeInteger(parsed) && parsed >= minimum ? parsed : null;
   };
-  const blockIndex = exactPositionInteger(
-    row?.block_index ?? payload.blockIndex ?? payload._powBlockIndex,
-    0,
-  );
-  const protocolVout = exactPositionInteger(
-    row?.op_return_vout ?? row?.protocol_vout,
-    0,
-  );
-  const recordOrdinal = exactPositionInteger(row?.record_ordinal, 0);
+  const canonicalPositionRequired =
+    row?.canonical_position_required === true;
+  const canonicalPosition = canonicalPositionRequired
+    ? canonicalMovementPositionFromEventRow(payload, row)
+    : null;
+  const blockIndex = canonicalPositionRequired
+    ? canonicalPosition.blockIndex
+    : exactPositionInteger(
+        row?.block_index ?? payload.blockIndex ?? payload._powBlockIndex,
+        0,
+      );
+  const protocolVout = canonicalPositionRequired
+    ? canonicalPosition.protocolVout
+    : exactPositionInteger(
+        row?.op_return_vout ?? row?.protocol_vout,
+        0,
+      );
+  const recordOrdinal = canonicalPositionRequired
+    ? canonicalPosition.recordOrdinal
+    : exactPositionInteger(row?.record_ordinal, 0);
   return {
     ...payload,
     ...canonicalEventIdentityDetails({
@@ -18856,11 +21972,18 @@ function eventRowPayload(row, network) {
         }
       : {}),
     blockHash: String(
-      row?.block_hash ?? payload.blockHash ?? payload._powBlockHash ?? "",
+      canonicalPositionRequired
+        ? canonicalPosition.blockHash ?? ""
+        : row?.block_hash ??
+            payload.blockHash ??
+            payload._powBlockHash ??
+            "",
     )
       .trim()
       .toLowerCase(),
-    blockHeight: rowNumber(row, "block_height") || payload.blockHeight,
+    blockHeight: canonicalPositionRequired
+      ? canonicalPosition.blockHeight
+      : rowNumber(row, "block_height") || payload.blockHeight,
     ...(blockIndex !== null ? { blockIndex } : {}),
     ...(protocolVout !== null ? { protocolVout } : {}),
     ...(recordOrdinal !== null ? { recordOrdinal } : {}),
@@ -18926,13 +22049,77 @@ function tokenMarketListingSealPatch(
   const sealSource = governedWorkMarket
     ? canonicalSealPayload
     : listingPayload;
+  const canonicalSealEventConfirmed =
+    normalizedLowerText(canonicalSealStatus) === "confirmed";
+  const canonicalSealEventMatchCount =
+    canonicalSealPayload?.sealEventMatchCount === undefined
+      ? null
+      : Number(canonicalSealPayload.sealEventMatchCount);
+  const canonicalSealEventSingleton =
+    Number.isSafeInteger(canonicalSealEventMatchCount) &&
+    canonicalSealEventMatchCount === 1;
+  const exactPositionInteger = (value, minimum) => {
+    if (value === undefined || value === null || value === "") {
+      return null;
+    }
+    const parsed = Number(value);
+    return Number.isSafeInteger(parsed) && parsed >= minimum ? parsed : null;
+  };
+  const sealEventBlockHeight = exactPositionInteger(
+    canonicalSealPayload?.sealBlockHeight,
+    1,
+  );
+  const sealTransactionBlockHeight = exactPositionInteger(
+    canonicalSealPayload?.sealTransactionBlockHeight,
+    1,
+  );
+  const sealTransactionConfirmed =
+    canonicalSealEventConfirmed ||
+    listingPayload?.sealConfirmed === true ||
+    payload?.sealConfirmed === true;
+  const unknownConfirmedSealHeight =
+    sealTransactionConfirmed &&
+    sealEventBlockHeight === null &&
+    sealTransactionBlockHeight === null;
+  const postAmoV5Seal =
+    sealTransactionConfirmed &&
+    (
+      unknownConfirmedSealHeight ||
+      [
+        sealEventBlockHeight,
+        sealTransactionBlockHeight,
+      ]
+        .map((value) => exactPositionInteger(value, 1))
+        .some(
+          (height) =>
+            height !== null &&
+            height >= WORK_AMO_V5_ACTIVATION_HEIGHT,
+        )
+    );
+  const canonicalSealEventRequired =
+    governedWorkMarket || postAmoV5Seal;
+  const sealIdentitySource = canonicalSealEventRequired
+    ? canonicalSealPayload
+    : sealSource;
+  const sealPositionSource = canonicalSealEventRequired
+    ? canonicalSealPayload
+    : sealSource;
+  const canonicalSealPositionComplete =
+    /^[0-9a-f]{64}$/u.test(
+      normalizedLowerText(canonicalSealPayload?.sealBlockHash),
+    ) &&
+    exactPositionInteger(canonicalSealPayload?.sealBlockHeight, 1) !== null &&
+    exactPositionInteger(canonicalSealPayload?.sealBlockIndex, 0) !== null &&
+    exactPositionInteger(canonicalSealPayload?.sealProtocolVout, 0) !== null &&
+    exactPositionInteger(canonicalSealPayload?.sealRecordOrdinal, 0) !== null;
   if (
     !["token-listings", "token-listing", "token-listing-sealed"].includes(
       kind,
     ) ||
-    !validTxid(sealSource?.sealTxid) ||
-    (governedWorkMarket &&
-      normalizedLowerText(canonicalSealStatus) !== "confirmed")
+    !validTxid(sealIdentitySource?.sealTxid) ||
+    (canonicalSealEventRequired && !canonicalSealEventConfirmed) ||
+    (canonicalSealEventRequired && !canonicalSealEventSingleton) ||
+    (postAmoV5Seal && !canonicalSealPositionComplete)
   ) {
     return {};
   }
@@ -18941,7 +22128,16 @@ function tokenMarketListingSealPatch(
   return {
     ...(Object.keys(saleAuthorization).length > 0 ? { saleAuthorization } : {}),
     sealAt: sealSource.sealAt ?? payload?.sealAt,
-    sealConfirmed: governedWorkMarket
+    sealBlockHash: canonicalSealEventRequired
+      ? sealPositionSource.sealBlockHash
+      : sealPositionSource.sealBlockHash ?? payload?.sealBlockHash,
+    sealBlockHeight: canonicalSealEventRequired
+      ? sealPositionSource.sealBlockHeight
+      : sealPositionSource.sealBlockHeight ?? payload?.sealBlockHeight,
+    sealBlockIndex: canonicalSealEventRequired
+      ? sealPositionSource.sealBlockIndex
+      : sealPositionSource.sealBlockIndex ?? payload?.sealBlockIndex,
+    sealConfirmed: canonicalSealEventRequired
       ? true
       : typeof sealSource.sealConfirmed === "boolean"
         ? sealSource.sealConfirmed
@@ -18963,8 +22159,17 @@ function tokenMarketListingSealPatch(
       sealSource.sealMinerFeeSats ?? payload?.sealMinerFeeSats,
     sealMinerFeeSource:
       sealSource.sealMinerFeeSource ?? payload?.sealMinerFeeSource,
-    sealTxid: String(sealSource.sealTxid).trim().toLowerCase(),
-    status: governedWorkMarket
+    sealProtocolVout: canonicalSealEventRequired
+      ? sealPositionSource.sealProtocolVout
+      : sealPositionSource.sealProtocolVout ?? payload?.sealProtocolVout,
+    sealRecordOrdinal: canonicalSealEventRequired
+      ? sealPositionSource.sealRecordOrdinal
+      : sealPositionSource.sealRecordOrdinal ?? payload?.sealRecordOrdinal,
+    ...(sealTransactionBlockHeight !== null
+      ? { sealTransactionBlockHeight }
+      : {}),
+    sealTxid: String(sealIdentitySource.sealTxid).trim().toLowerCase(),
+    status: canonicalSealEventRequired
       ? "sealing"
       : sealSource.status ?? payload?.status,
   };
@@ -18973,15 +22178,92 @@ function tokenMarketListingSealPatch(
 function tokenMarketEventRowPayload(row, network) {
   const payload = eventRowPayload(row, network);
   const listingPayload = objectRecord(row?.listing_payload);
+  const withoutSealPosition = (value) => {
+    const {
+      sealAt: ignoredSealAt,
+      sealBlockHash: ignoredSealBlockHash,
+      sealBlockHeight: ignoredSealBlockHeight,
+      sealBlockIndex: ignoredSealBlockIndex,
+      sealConfirmed: ignoredSealConfirmed,
+      sealDataBytes: ignoredSealDataBytes,
+      sealedAt: ignoredSealedAt,
+      sealFrozenNetworkValueSats:
+        ignoredSealFrozenNetworkValueSats,
+      sealLiveNetworkValueSats:
+        ignoredSealLiveNetworkValueSats,
+      sealMinerFeeCanonical: ignoredSealMinerFeeCanonical,
+      sealMinerFeeSats: ignoredSealMinerFeeSats,
+      sealMinerFeeSource: ignoredSealMinerFeeSource,
+      sealProtocolVout: ignoredSealProtocolVout,
+      sealRecordOrdinal: ignoredSealRecordOrdinal,
+      sealTransactionBlockHeight:
+        ignoredSealTransactionBlockHeight,
+      sealTxid: ignoredSealTxid,
+      ...terms
+    } = objectRecord(value);
+    void ignoredSealAt;
+    void ignoredSealBlockHash;
+    void ignoredSealBlockHeight;
+    void ignoredSealBlockIndex;
+    void ignoredSealConfirmed;
+    void ignoredSealDataBytes;
+    void ignoredSealedAt;
+    void ignoredSealFrozenNetworkValueSats;
+    void ignoredSealLiveNetworkValueSats;
+    void ignoredSealMinerFeeCanonical;
+    void ignoredSealMinerFeeSats;
+    void ignoredSealMinerFeeSource;
+    void ignoredSealProtocolVout;
+    void ignoredSealRecordOrdinal;
+    void ignoredSealTransactionBlockHeight;
+    void ignoredSealTxid;
+    return terms;
+  };
+  const canonicalSealEventPayload = withoutSealPosition(
+    row?.seal_event_payload,
+  );
+  const payloadWithoutSealPosition = withoutSealPosition(payload);
   const canonicalSealPayload = {
-    ...objectRecord(row?.seal_event_payload),
+    ...canonicalSealEventPayload,
+    ...(row?.seal_event_match_count !== undefined &&
+    row?.seal_event_match_count !== null
+      ? { sealEventMatchCount: Number(row.seal_event_match_count) }
+      : {}),
+    ...(row?.seal_transaction_block_height !== undefined &&
+    row?.seal_transaction_block_height !== null
+      ? {
+          sealTransactionBlockHeight:
+            Number(row.seal_transaction_block_height),
+        }
+      : {}),
+    ...(row?.seal_event_block_hash
+      ? { sealBlockHash: normalizedLowerText(row.seal_event_block_hash) }
+      : {}),
+    ...(row?.seal_event_block_height !== undefined &&
+    row?.seal_event_block_height !== null
+      ? { sealBlockHeight: Number(row.seal_event_block_height) }
+      : {}),
+    ...(row?.seal_event_block_index !== undefined &&
+    row?.seal_event_block_index !== null
+      ? { sealBlockIndex: Number(row.seal_event_block_index) }
+      : {}),
+    ...(row?.seal_event_protocol_vout !== undefined &&
+    row?.seal_event_protocol_vout !== null
+      ? { sealProtocolVout: Number(row.seal_event_protocol_vout) }
+      : {}),
+    ...(row?.seal_event_record_ordinal !== undefined &&
+    row?.seal_event_record_ordinal !== null
+      ? { sealRecordOrdinal: Number(row.seal_event_record_ordinal) }
+      : {}),
     ...(validTxid(row?.seal_event_txid)
       ? { sealTxid: normalizedLowerText(row.seal_event_txid) }
       : {}),
   };
-  const projectedListingPayload = tokenMarketCanonicalListingProjectionPayload(
-    payload,
-    listingPayload,
+  const projectedListingPayload = withoutSealPosition(
+    tokenMarketCanonicalListingProjectionPayload(
+      payload,
+      listingPayload,
+    ),
   );
   const sealPatch = tokenMarketListingSealPatch(
     payload,
@@ -18991,7 +22273,7 @@ function tokenMarketEventRowPayload(row, network) {
   );
   const merged = {
     ...projectedListingPayload,
-    ...payload,
+    ...payloadWithoutSealPosition,
     ...sealPatch,
     amount:
       payload.amount ??
@@ -19253,6 +22535,19 @@ function canonicalMailAttachedCreditsFromRow(row, recipientAddresses) {
   if (String(row?.status ?? "").trim().toLowerCase() !== "confirmed") {
     return [];
   }
+  const exactPositionInteger = (value, minimum = 0) => {
+    if (value === undefined || value === null || value === "") {
+      return null;
+    }
+    const parsed =
+      typeof value === "number"
+        ? value
+        : typeof value === "string" &&
+            /^(?:0|[1-9][0-9]*)$/u.test(value)
+          ? Number(value)
+          : Number.NaN;
+    return Number.isSafeInteger(parsed) && parsed >= minimum ? parsed : null;
+  };
   const recipients = (Array.isArray(recipientAddresses)
     ? recipientAddresses
     : [])
@@ -19262,7 +22557,8 @@ function canonicalMailAttachedCreditsFromRow(row, recipientAddresses) {
     return [];
   }
 
-  const byProtocolVout = new Map();
+  const mailBlockHeight = exactPositionInteger(row?.block_height, 1);
+  const byCanonicalPosition = new Map();
   for (const rawCredit of Array.isArray(row?.attached_credit_events)
     ? row.attached_credit_events
     : []) {
@@ -19270,11 +22566,54 @@ function canonicalMailAttachedCreditsFromRow(row, recipientAddresses) {
     const tokenId = String(credit.tokenId ?? "").trim().toLowerCase();
     const ticker = String(credit.ticker ?? "").trim().toUpperCase();
     const recipientAddress = normalizedAddress(credit.recipientAddress);
-    const protocolVout = Number(credit.protocolVout);
+    const blockHeight = exactPositionInteger(credit.blockHeight, 1);
+    const blockIndex = exactPositionInteger(credit.blockIndex);
+    const transactionBlockHeight = exactPositionInteger(
+      credit.transactionBlockHeight,
+      1,
+    );
+    const transactionBlockIndex = exactPositionInteger(
+      credit.transactionBlockIndex,
+    );
+    const protocolVout = exactPositionInteger(credit.protocolVout);
+    const recordOrdinal = exactPositionInteger(credit.recordOrdinal);
+    const blockHash = String(credit.blockHash ?? "").trim().toLowerCase();
+    const canonicalBlockHash = String(
+      credit.canonicalBlockHash ?? "",
+    )
+      .trim()
+      .toLowerCase();
+    const canonicalPositionRequired =
+      credit.canonicalPositionRequired === true ||
+      (mailBlockHeight !== null &&
+        mailBlockHeight >= WORK_AMO_V5_ACTIVATION_HEIGHT) ||
+      (blockHeight !== null &&
+        blockHeight >= WORK_AMO_V5_ACTIVATION_HEIGHT) ||
+      (transactionBlockHeight !== null &&
+        transactionBlockHeight >= WORK_AMO_V5_ACTIVATION_HEIGHT);
+    if (
+      canonicalPositionRequired &&
+      (
+        blockHeight === null ||
+        blockHeight < WORK_AMO_V5_ACTIVATION_HEIGHT ||
+        blockIndex === null ||
+        transactionBlockHeight !== blockHeight ||
+        transactionBlockIndex !== blockIndex ||
+        protocolVout === null ||
+        recordOrdinal === null ||
+        !/^[0-9a-f]{64}$/u.test(blockHash) ||
+        canonicalBlockHash !== blockHash
+      )
+    ) {
+      return [];
+    }
     let amountAtoms = "";
     try {
       amountAtoms = normalizeWorkAtoms(credit.amountAtoms);
     } catch {
+      if (canonicalPositionRequired) {
+        return [];
+      }
       continue;
     }
     if (
@@ -19283,12 +22622,14 @@ function canonicalMailAttachedCreditsFromRow(row, recipientAddresses) {
       amountAtoms !== String(credit.amountAtoms ?? "").trim() ||
       BigInt(amountAtoms) > BigInt(WORK_TOKEN_MAX_SUPPLY_ATOMS) ||
       !recipientAddress ||
-      !Number.isSafeInteger(protocolVout) ||
-      protocolVout < 0 ||
+      protocolVout === null ||
       !recipients.some((recipient) =>
         sameMailPaymentAddress(recipient, recipientAddress),
       )
     ) {
+      if (canonicalPositionRequired) {
+        return [];
+      }
       continue;
     }
 
@@ -19299,13 +22640,32 @@ function canonicalMailAttachedCreditsFromRow(row, recipientAddresses) {
       amountVersion: credit.amountVersion,
       paidSats: positiveNumber(credit.paidSats),
       protocolVout,
+      ...(recordOrdinal !== null ? { recordOrdinal } : {}),
       recipientAddress,
       registryAddress: credit.registryAddress,
       ticker: WORK_TOKEN_TICKER,
       tokenId: WORK_TOKEN_ID,
+      ...(canonicalPositionRequired
+        ? {
+            blockHash,
+            blockHeight,
+            blockIndex,
+            canonicalBlockHash,
+            canonicalPositionRequired: true,
+            transactionBlockHeight,
+            transactionBlockIndex,
+          }
+        : {}),
     });
-    const existing = byProtocolVout.get(protocolVout);
+    const positionKey = `${protocolVout}:${recordOrdinal ?? 0}`;
+    const existing = byCanonicalPosition.get(positionKey);
     if (existing) {
+      if (
+        canonicalPositionRequired ||
+        existing.canonicalPositionRequired === true
+      ) {
+        return [];
+      }
       if (
         existing.amountAtoms !== normalized.amountAtoms ||
         !sameMailPaymentAddress(
@@ -19317,12 +22677,13 @@ function canonicalMailAttachedCreditsFromRow(row, recipientAddresses) {
       }
       continue;
     }
-    byProtocolVout.set(protocolVout, normalized);
+    byCanonicalPosition.set(positionKey, normalized);
   }
 
-  return [...byProtocolVout.values()].sort(
+  return [...byCanonicalPosition.values()].sort(
     (left, right) =>
       left.protocolVout - right.protocolVout ||
+      (left.recordOrdinal ?? 0) - (right.recordOrdinal ?? 0) ||
       compareCanonicalUtf8(
         left.recipientAddress,
         right.recipientAddress,
@@ -19628,14 +22989,21 @@ export async function proofIndexAddressMailPayload(network, address) {
           transfer_event.txid,
           jsonb_agg(
             transfer_event.payload || jsonb_build_object(
-              'eventId', transfer_event.event_id
+              'blockHash', transfer_transaction.block_hash,
+              'blockHeight', transfer_event.block_height,
+              'blockIndex', transfer_event.block_index,
+              'canonicalBlockHash', transfer_block.block_hash,
+              'canonicalPositionRequired',
+                transfer_event.block_height >= ${WORK_AMO_V5_ACTIVATION_HEIGHT},
+              'eventId', transfer_event.event_id,
+              'protocolVout', transfer_event.op_return_vout,
+              'recordOrdinal', transfer_event.record_ordinal,
+              'transactionBlockHeight', transfer_transaction.block_height,
+              'transactionBlockIndex', transfer_transaction.block_index
             )
             ORDER BY
-              CASE
-                WHEN COALESCE(transfer_event.payload->>'protocolVout', '') ~ '^[0-9]+$'
-                  THEN (transfer_event.payload->>'protocolVout')::numeric
-                ELSE 999999999
-              END,
+              transfer_event.op_return_vout,
+              transfer_event.record_ordinal,
               transfer_event.event_id
           ) AS attached_credit_events
         FROM proof_indexer.events transfer_event
@@ -19647,18 +23015,25 @@ export async function proofIndexAddressMailPayload(network, address) {
          AND transfer_transaction.txid = transfer_event.txid
          AND transfer_transaction.status = 'confirmed'
          AND transfer_event.block_height = transfer_transaction.block_height
+         AND transfer_event.block_index = transfer_transaction.block_index
         JOIN proof_indexer.blocks transfer_block
           ON transfer_block.network = transfer_transaction.network
          AND transfer_block.block_hash = transfer_transaction.block_hash
          AND transfer_block.height = transfer_transaction.block_height
          AND transfer_block.canonical = true
         WHERE transfer_event.network = $1
+          AND transfer_event.protocol = 'pwt1'
           AND transfer_event.kind = 'token-transfer'
           AND transfer_event.status = 'confirmed'
           AND transfer_event.valid = true
           AND lower(COALESCE(transfer_event.payload->>'tokenId', '')) = $4
-          AND lower(COALESCE(transfer_event.payload->>'blockHash', '')) =
-            transfer_transaction.block_hash
+          AND (
+            transfer_event.block_height < ${WORK_AMO_V5_ACTIVATION_HEIGHT}
+            OR (
+              transfer_event.op_return_vout IS NOT NULL
+              AND transfer_event.record_ordinal IS NOT NULL
+            )
+          )
         GROUP BY transfer_event.network, transfer_event.txid
       )
       SELECT
@@ -19673,6 +23048,7 @@ export async function proofIndexAddressMailPayload(network, address) {
         e.event_time,
         e.block_time,
         e.created_at,
+        e.block_height,
         e.txid,
         e.event_id,
         t.raw_tx AS transaction_raw_tx,
@@ -19723,6 +23099,7 @@ export async function proofIndexAddressMailPayload(network, address) {
         e.event_time,
         e.block_time,
         e.created_at,
+        e.block_height,
         e.txid,
         e.event_id,
         t.raw_tx,
@@ -19889,7 +23266,11 @@ export async function proofIndexEventHistoryPayload(network, searchParams) {
   const { filters, values } = eventHistoryFilters(searchParams, pagination, [
     network,
   ]);
-  const whereClause = ["e.network = $1", ...filters].join(" AND ");
+  const whereClause = [
+    "e.network = $1",
+    "(e.kind NOT LIKE 'token-%' OR e.protocol = 'pwt1')",
+    ...filters,
+  ].join(" AND ");
   const countResult = await pool.query(
     `
       SELECT count(*) AS total_count, max(e.block_height) AS indexed_through_block
@@ -19915,10 +23296,30 @@ export async function proofIndexEventHistoryPayload(network, searchParams) {
           e.protocol,
           e.kind,
           e.status,
+          t.status AS transaction_status,
+          COALESCE(t.status, e.status) AS effective_status,
           e.event_time,
           e.block_time,
           e.created_at,
           e.block_height,
+          e.block_index,
+          e.op_return_vout,
+          e.record_ordinal,
+          t.block_height AS transaction_block_height,
+          t.block_index AS transaction_block_index,
+          t.block_hash AS block_hash,
+          canonical_event_block.block_hash AS canonical_block_hash,
+          (
+            (
+              e.status = 'confirmed'
+              AND e.block_height IS NULL
+              AND t.block_height IS NULL
+            )
+            OR COALESCE(e.block_height, 0) >=
+              ${WORK_AMO_V5_ACTIVATION_HEIGHT}
+            OR COALESCE(t.block_height, 0) >=
+              ${WORK_AMO_V5_ACTIVATION_HEIGHT}
+          ) AS canonical_position_required,
           e.txid,
           e.event_id,
           t.fee_sats AS transaction_fee_sats,
@@ -19930,6 +23331,11 @@ export async function proofIndexEventHistoryPayload(network, searchParams) {
         LEFT JOIN proof_indexer.transactions t
           ON t.network = e.network
          AND t.txid = e.txid
+        LEFT JOIN proof_indexer.blocks canonical_event_block
+          ON canonical_event_block.network = t.network
+         AND canonical_event_block.height = t.block_height
+         AND canonical_event_block.block_hash = t.block_hash
+         AND canonical_event_block.canonical = true
         WHERE ${whereClause}
         ORDER BY
           COALESCE(e.event_time, e.block_time, e.created_at) DESC,
@@ -19975,10 +23381,30 @@ export async function proofIndexEventHistoryPayload(network, searchParams) {
         e.protocol,
         e.kind,
         e.status,
+        t.status AS transaction_status,
+        COALESCE(t.status, e.status) AS effective_status,
         e.event_time,
         e.block_time,
         e.created_at,
         e.block_height,
+        e.block_index,
+        e.op_return_vout,
+        e.record_ordinal,
+        t.block_height AS transaction_block_height,
+        t.block_index AS transaction_block_index,
+        t.block_hash AS block_hash,
+        canonical_event_block.block_hash AS canonical_block_hash,
+        (
+          (
+            e.status = 'confirmed'
+            AND e.block_height IS NULL
+            AND t.block_height IS NULL
+          )
+          OR COALESCE(e.block_height, 0) >=
+            ${WORK_AMO_V5_ACTIVATION_HEIGHT}
+          OR COALESCE(t.block_height, 0) >=
+            ${WORK_AMO_V5_ACTIVATION_HEIGHT}
+        ) AS canonical_position_required,
         e.txid,
         e.event_id,
         t.fee_sats AS transaction_fee_sats,
@@ -19990,6 +23416,11 @@ export async function proofIndexEventHistoryPayload(network, searchParams) {
       LEFT JOIN proof_indexer.transactions t
         ON t.network = e.network
        AND t.txid = e.txid
+      LEFT JOIN proof_indexer.blocks canonical_event_block
+        ON canonical_event_block.network = t.network
+       AND canonical_event_block.height = t.block_height
+       AND canonical_event_block.block_hash = t.block_hash
+       AND canonical_event_block.canonical = true
       WHERE ${whereClause}
       ORDER BY
         COALESCE(e.event_time, e.block_time, e.created_at) DESC,
@@ -20943,6 +24374,10 @@ export async function proofIndexConfirmedValueEventsAfterBlock(
         WHERE e.network = $1
           AND e.status = 'confirmed'
           AND e.valid IS DISTINCT FROM false
+          AND (
+            e.kind NOT LIKE 'token-%'
+            OR e.protocol = 'pwt1'
+          )
           AND e.block_height > $2
       ),
       grouped_value_events AS (
@@ -21069,6 +24504,7 @@ export async function proofIndexCreditListingsPayload(
   if (!pool) {
     return null;
   }
+  await assertCurrentAmoV5CanonicalPositionUniqueness(pool, network);
 
   const requestedScope = tokenScopeKey(tokenId);
   const scope = requestedScope === "all" ? "" : requestedScope;
@@ -21112,29 +24548,57 @@ export async function proofIndexCreditListingsPayload(
         cl.updated_at,
         listing_tx.block_hash AS listing_block_hash,
         listing_tx.block_height AS listing_block_height,
+        listing_tx.block_index AS listing_transaction_block_index,
         listing_tx.block_time AS listing_block_time,
         listing_tx.status AS listing_tx_status,
+        canonical_listing_event.listing_event_status,
+        canonical_listing_event.listing_event_block_hash,
+        canonical_listing_event.listing_event_block_height,
+        canonical_listing_event.listing_event_block_index,
+        canonical_listing_event.listing_event_protocol_vout,
+        canonical_listing_event.listing_event_record_ordinal,
+        canonical_listing_event.listing_event_match_count,
         seal_tx.status AS seal_tx_status,
+        seal_tx.block_height AS seal_transaction_block_height,
         canonical_seal_event.seal_event_status,
+        canonical_seal_event.seal_event_block_hash,
+        canonical_seal_event.seal_event_block_height,
+        canonical_seal_event.seal_event_block_index,
+        canonical_seal_event.seal_event_protocol_vout,
+        canonical_seal_event.seal_event_record_ordinal,
+        canonical_seal_event.seal_event_match_count,
+        close_tx.status AS close_transaction_status,
+        close_tx.block_hash AS close_transaction_block_hash,
+        close_tx.block_height AS close_transaction_block_height,
+        close_tx.block_index AS close_transaction_block_index,
         canonical_spend.txid AS canonical_spend_txid,
         canonical_spend.vin AS canonical_spend_vin,
         canonical_spend.block_hash AS canonical_spend_block_hash,
         canonical_spend.block_height AS canonical_spend_block_height,
+        canonical_spend.block_index AS canonical_spend_block_index,
         canonical_spend.block_time AS canonical_spend_block_time
       FROM proof_indexer.credit_listings cl
       LEFT JOIN proof_indexer.transactions listing_tx
         ON listing_tx.network = cl.network
        AND listing_tx.txid = cl.listing_id
+      ${canonicalTokenListingEventJoinSql("cl")}
       LEFT JOIN proof_indexer.transactions seal_tx
         ON seal_tx.network = cl.network
        AND seal_tx.txid = cl.seal_txid
       ${canonicalTokenListingSealEventJoinSql("cl")}
+      LEFT JOIN proof_indexer.transactions close_tx
+        ON close_tx.network = cl.network
+       AND close_tx.txid = COALESCE(
+         NULLIF(lower(cl.close_txid), ''),
+         NULLIF(lower(cl.payload->>'closeTxid'), '')
+       )
       LEFT JOIN LATERAL (
         SELECT
           spend_tx.txid,
           spend_input.vin,
           spend_tx.block_hash,
           spend_tx.block_height,
+          spend_tx.block_index,
           spend_tx.block_time
         FROM proof_indexer.tx_inputs spend_input
         JOIN proof_indexer.transactions spend_tx
@@ -21166,15 +24630,94 @@ export async function proofIndexCreditListingsPayload(
     [network, scope, maxRows],
   );
 
-  const listingIds = result.rows
-    .map((row) => String(row?.listing_id ?? "").trim().toLowerCase())
-    .filter(Boolean);
+  const closeBindingByListingId = new Map();
+  const ambiguousCloseBindingListingIds = new Set();
+  for (const row of result.rows) {
+    const listingId = normalizedLowerText(row?.listing_id);
+    const payload = objectRecord(row?.payload);
+    const saleAuthorization = objectRecord(payload.saleAuthorization);
+    const tokenId = normalizedLowerText(
+      row?.token_id ??
+        payload.tokenId ??
+        saleAuthorization.tokenId,
+    );
+    const status = normalizedLowerText(row?.status ?? payload.status);
+    const sealTxid = normalizedLowerText(
+      row?.seal_txid ?? payload.sealTxid,
+    );
+    const canonicalSpendTxid = normalizedLowerText(
+      row?.canonical_spend_txid,
+    );
+    const storedCloseTxid = tokenListingEffectiveCloseTxid(
+      row,
+      payload,
+      status,
+      sealTxid,
+    );
+    const closeTxid = validTxid(canonicalSpendTxid)
+      ? canonicalSpendTxid
+      : storedCloseTxid;
+    if (validTxid(listingId) && validTxid(closeTxid) && tokenId) {
+      const canonicalSpend = validTxid(canonicalSpendTxid);
+      const binding = {
+        blockHash: normalizedLowerText(
+          canonicalSpend
+            ? row?.canonical_spend_block_hash
+            : row?.close_transaction_block_hash,
+        ),
+        blockHeight: canonicalSpend
+          ? row?.canonical_spend_block_height
+          : row?.close_transaction_block_height,
+        blockIndex: canonicalSpend
+          ? row?.canonical_spend_block_index
+          : row?.close_transaction_block_index,
+        canonicalSpend,
+        closeTxid,
+        tokenId,
+      };
+      const existingBinding = closeBindingByListingId.get(listingId);
+      if (
+        existingBinding &&
+        (
+          existingBinding.closeTxid !== binding.closeTxid ||
+          existingBinding.tokenId !== binding.tokenId ||
+          existingBinding.blockHash !== binding.blockHash ||
+          Number(existingBinding.blockHeight) !==
+            Number(binding.blockHeight) ||
+          Number(existingBinding.blockIndex) !==
+            Number(binding.blockIndex)
+        )
+      ) {
+        ambiguousCloseBindingListingIds.add(listingId);
+        closeBindingByListingId.delete(listingId);
+      } else if (!ambiguousCloseBindingListingIds.has(listingId)) {
+        closeBindingByListingId.set(listingId, binding);
+      }
+    }
+  }
+  const closeBindings = Array.from(
+    closeBindingByListingId,
+    ([listingId, binding]) => ({ ...binding, listingId }),
+  );
   const closeEventsByListingId = new Map();
+  const closeLifecycleEventsByListingId = new Map();
+  const ambiguousCloseEventListingIds = new Set(
+    ambiguousCloseBindingListingIds,
+  );
   let closeEventRows = [];
-  if (listingIds.length > 0) {
+  if (closeBindings.length > 0) {
+    const exactCloseInteger = (value, minimum) => {
+      if (value === undefined || value === null || value === "") {
+        return null;
+      }
+      const parsed = Number(value);
+      return Number.isSafeInteger(parsed) && parsed >= minimum
+        ? parsed
+        : null;
+    };
     const closeResult = await pool.query(
       `
-        SELECT DISTINCT ON (lower(e.payload->>'listingId'))
+        SELECT
           lower(e.payload->>'listingId') AS linked_listing_id,
           e.payload,
           e.protocol,
@@ -21187,28 +24730,221 @@ export async function proofIndexCreditListingsPayload(
           e.block_index,
           e.op_return_vout,
           e.record_ordinal,
+          close_tx.status AS transaction_status,
+          close_tx.block_height AS transaction_block_height,
+          close_tx.block_index AS transaction_block_index,
+          close_tx.block_hash AS block_hash,
+          close_block.block_hash AS canonical_block_hash,
           e.txid,
           e.event_id
         FROM proof_indexer.events e
+        JOIN unnest($2::text[], $3::text[], $4::text[])
+          AS expected_close(listing_id, close_txid, token_id)
+          ON expected_close.listing_id =
+            lower(e.payload->>'listingId')
+         AND expected_close.close_txid = lower(e.txid)
+         AND expected_close.token_id = lower(COALESCE(
+           NULLIF(e.payload->>'tokenId', ''),
+           NULLIF(
+             e.payload->'saleAuthorization'->>'tokenId',
+             ''
+           )
+         ))
+         AND (
+           NULLIF(e.payload->>'tokenId', '') IS NULL
+           OR lower(e.payload->>'tokenId') =
+             expected_close.token_id
+         )
+         AND (
+           NULLIF(
+             e.payload->'saleAuthorization'->>'tokenId',
+             ''
+           ) IS NULL
+           OR lower(
+             e.payload->'saleAuthorization'->>'tokenId'
+           ) = expected_close.token_id
+         )
+        JOIN proof_indexer.transactions close_tx
+          ON close_tx.network = e.network
+         AND close_tx.txid = e.txid
+         AND close_tx.status = 'confirmed'
+        JOIN proof_indexer.blocks close_block
+          ON close_block.network = close_tx.network
+         AND close_block.block_hash = close_tx.block_hash
+         AND close_block.height = close_tx.block_height
+         AND close_block.canonical = true
         WHERE e.network = $1
           AND e.valid = true
-          AND e.status IN ('confirmed', 'pending')
+          AND e.status = 'confirmed'
+          AND e.protocol = 'pwt1'
           AND e.kind = ANY(ARRAY['token-sale','token-listing-closed']::text[])
-          AND lower(e.payload->>'listingId') = ANY($2::text[])
         ORDER BY
-          lower(e.payload->>'listingId'),
-          CASE WHEN e.kind = 'token-sale' THEN 0 ELSE 1 END,
-          COALESCE(e.event_time, e.block_time, e.created_at) DESC,
-          e.txid DESC,
+          expected_close.listing_id,
+          e.block_height,
+          e.block_index,
+          e.op_return_vout,
+          e.record_ordinal,
           e.event_id DESC
       `,
-      [network, listingIds],
+      [
+        network,
+        closeBindings.map((binding) => binding.listingId),
+        closeBindings.map((binding) => binding.closeTxid),
+        closeBindings.map((binding) => binding.tokenId),
+      ],
     );
     closeEventRows = closeResult.rows;
+    const closeEventCandidates = new Map();
     for (const row of closeResult.rows) {
       const listingId = String(row?.linked_listing_id ?? "").trim().toLowerCase();
       if (listingId) {
-        closeEventsByListingId.set(listingId, row);
+        const candidates = closeEventCandidates.get(listingId) ?? [];
+        candidates.push(row);
+        closeEventCandidates.set(listingId, candidates);
+      }
+    }
+    for (const [listingId, candidates] of closeEventCandidates) {
+      const expectedBinding = closeBindingByListingId.get(listingId);
+      const expectedCloseTxid = expectedBinding?.closeTxid;
+      const expectedTokenId = normalizedLowerText(
+        expectedBinding?.tokenId,
+      );
+      const first = candidates[0];
+      const blockHash = normalizedLowerText(first?.block_hash);
+      const blockHeight = exactCloseInteger(
+        first?.transaction_block_height,
+        1,
+      );
+      const blockIndex = exactCloseInteger(
+        first?.transaction_block_index,
+        0,
+      );
+      const protocolVout = exactCloseInteger(first?.op_return_vout, 0);
+      const recordOrdinal = exactCloseInteger(first?.record_ordinal, 0);
+      const canonicalLineage =
+        validTxid(expectedCloseTxid) &&
+        /^[0-9a-f]{64}$/u.test(blockHash) &&
+        normalizedLowerText(first?.canonical_block_hash) === blockHash &&
+        blockHeight !== null &&
+        blockIndex !== null &&
+        protocolVout !== null &&
+        recordOrdinal !== null &&
+        (
+          expectedBinding?.canonicalSpend !== true ||
+          (
+            normalizedLowerText(expectedBinding?.blockHash) === blockHash &&
+            exactCloseInteger(expectedBinding?.blockHeight, 1) ===
+              blockHeight &&
+            exactCloseInteger(expectedBinding?.blockIndex, 0) === blockIndex
+          )
+        ) &&
+        candidates.every(
+          (candidate) =>
+            normalizedLowerText(candidate?.linked_listing_id) === listingId &&
+            normalizedLowerText(candidate?.txid) === expectedCloseTxid &&
+            normalizedLowerText(candidate?.protocol) === "pwt1" &&
+            normalizedLowerText(candidate?.status) === "confirmed" &&
+            normalizedLowerText(candidate?.transaction_status) ===
+              "confirmed" &&
+            normalizedLowerText(candidate?.block_hash) === blockHash &&
+            normalizedLowerText(candidate?.canonical_block_hash) ===
+              blockHash &&
+            exactCloseInteger(candidate?.transaction_block_height, 1) ===
+              blockHeight &&
+            exactCloseInteger(candidate?.transaction_block_index, 0) ===
+              blockIndex &&
+            exactCloseInteger(candidate?.block_height, 1) === blockHeight &&
+            exactCloseInteger(candidate?.block_index, 0) === blockIndex &&
+            exactCloseInteger(candidate?.op_return_vout, 0) !== null &&
+            exactCloseInteger(candidate?.record_ordinal, 0) !== null &&
+            (() => {
+              const candidatePayload = objectRecord(candidate?.payload);
+              const candidateAuthorization = objectRecord(
+                candidatePayload.saleAuthorization,
+              );
+              const candidateTokenIds = [
+                candidatePayload.tokenId,
+                candidateAuthorization.tokenId,
+              ]
+                .map(normalizedLowerText)
+                .filter(Boolean);
+              return (
+                expectedTokenId &&
+                candidateTokenIds.length > 0 &&
+                candidateTokenIds.every(
+                  (candidateTokenId) =>
+                    candidateTokenId === expectedTokenId,
+                )
+              );
+            })(),
+        );
+      const saleCandidates = candidates.filter(
+        (candidate) =>
+          normalizedLowerText(candidate?.kind) === "token-sale",
+      );
+      const closedCandidates = candidates.filter(
+        (candidate) =>
+          normalizedLowerText(candidate?.kind) ===
+          "token-listing-closed",
+      );
+      const saleProtocolVout = exactCloseInteger(
+        saleCandidates[0]?.op_return_vout,
+        0,
+      );
+      const saleRecordOrdinal = exactCloseInteger(
+        saleCandidates[0]?.record_ordinal,
+        0,
+      );
+      const closedProtocolVout = exactCloseInteger(
+        closedCandidates[0]?.op_return_vout,
+        0,
+      );
+      const closedRecordOrdinal = exactCloseInteger(
+        closedCandidates[0]?.record_ordinal,
+        0,
+      );
+      const lifecyclePositionsDistinct =
+        saleProtocolVout !== null &&
+        saleRecordOrdinal !== null &&
+        closedProtocolVout !== null &&
+        closedRecordOrdinal !== null &&
+        (
+          saleProtocolVout !== closedProtocolVout ||
+          saleRecordOrdinal !== closedRecordOrdinal
+        );
+      const canonicalPurchase =
+        canonicalLineage &&
+        candidates.length === 2 &&
+        saleCandidates.length === 1 &&
+        closedCandidates.length === 1 &&
+        lifecyclePositionsDistinct;
+      const canonicalDelist =
+        canonicalLineage &&
+        candidates.length === 1 &&
+        saleCandidates.length === 0 &&
+        closedCandidates.length === 1;
+      if (canonicalPurchase) {
+        closeEventsByListingId.set(listingId, saleCandidates[0]);
+        closeLifecycleEventsByListingId.set(
+          listingId,
+          closedCandidates[0],
+        );
+      } else if (canonicalDelist) {
+        closeEventsByListingId.set(listingId, closedCandidates[0]);
+        closeLifecycleEventsByListingId.set(
+          listingId,
+          closedCandidates[0],
+        );
+      } else {
+        ambiguousCloseEventListingIds.add(listingId);
+      }
+    }
+    for (const { listingId } of closeBindings) {
+      if (
+        !closeEventsByListingId.has(listingId) &&
+        !ambiguousCloseEventListingIds.has(listingId)
+      ) {
+        ambiguousCloseEventListingIds.add(listingId);
       }
     }
   }
@@ -21223,7 +24959,7 @@ export async function proofIndexCreditListingsPayload(
     .filter(Number.isFinite)
     .reduce((max, value) => Math.max(max, value), 0);
 
-  return {
+  const lifecyclePayload = {
     indexedAt: dateIso(
       scan?.generated_at ??
         (newestTime ? new Date(newestTime).toISOString() : result.rows[0]?.updated_at),
@@ -21231,18 +24967,322 @@ export async function proofIndexCreditListingsPayload(
     indexedThroughBlock: rowNumber(scan, "indexed_through_block"),
     items: result.rows.map((row) => {
       const payload = objectRecord(row.payload);
+      const {
+        blockHash: ignoredPayloadBlockHash,
+        blockHeight: ignoredPayloadBlockHeight,
+        blockIndex: ignoredPayloadBlockIndex,
+        closedBlockHash: ignoredPayloadClosedBlockHash,
+        closedBlockHeight: ignoredPayloadClosedBlockHeight,
+        closedBlockIndex: ignoredPayloadClosedBlockIndex,
+        closedProtocolVout: ignoredPayloadClosedProtocolVout,
+        closedRecordOrdinal: ignoredPayloadClosedRecordOrdinal,
+        protocolVout: ignoredPayloadProtocolVout,
+        recordOrdinal: ignoredPayloadRecordOrdinal,
+        sealAt: ignoredPayloadSealAt,
+        sealBlockHash: ignoredPayloadSealBlockHash,
+        sealBlockHeight: ignoredPayloadSealBlockHeight,
+        sealBlockIndex: ignoredPayloadSealBlockIndex,
+        sealConfirmed: ignoredPayloadSealConfirmed,
+        sealDataBytes: ignoredPayloadSealDataBytes,
+        sealedAt: ignoredPayloadSealedAt,
+        sealFrozenNetworkValueSats:
+          ignoredPayloadSealFrozenNetworkValueSats,
+        sealLiveNetworkValueSats:
+          ignoredPayloadSealLiveNetworkValueSats,
+        sealMinerFeeCanonical: ignoredPayloadSealMinerFeeCanonical,
+        sealMinerFeeSats: ignoredPayloadSealMinerFeeSats,
+        sealMinerFeeSource: ignoredPayloadSealMinerFeeSource,
+        sealProtocolVout: ignoredPayloadSealProtocolVout,
+        sealRecordOrdinal: ignoredPayloadSealRecordOrdinal,
+        sealTransactionBlockHeight:
+          ignoredPayloadSealTransactionBlockHeight,
+        sealTxid: ignoredPayloadSealTxid,
+        ...payloadWithoutLifecyclePosition
+      } = payload;
+      void ignoredPayloadBlockHash;
+      void ignoredPayloadBlockHeight;
+      void ignoredPayloadBlockIndex;
+      void ignoredPayloadClosedBlockHash;
+      void ignoredPayloadClosedBlockHeight;
+      void ignoredPayloadClosedBlockIndex;
+      void ignoredPayloadClosedProtocolVout;
+      void ignoredPayloadClosedRecordOrdinal;
+      void ignoredPayloadProtocolVout;
+      void ignoredPayloadRecordOrdinal;
+      void ignoredPayloadSealAt;
+      void ignoredPayloadSealBlockHash;
+      void ignoredPayloadSealBlockHeight;
+      void ignoredPayloadSealBlockIndex;
+      void ignoredPayloadSealConfirmed;
+      void ignoredPayloadSealDataBytes;
+      void ignoredPayloadSealedAt;
+      void ignoredPayloadSealFrozenNetworkValueSats;
+      void ignoredPayloadSealLiveNetworkValueSats;
+      void ignoredPayloadSealMinerFeeCanonical;
+      void ignoredPayloadSealMinerFeeSats;
+      void ignoredPayloadSealMinerFeeSource;
+      void ignoredPayloadSealProtocolVout;
+      void ignoredPayloadSealRecordOrdinal;
+      void ignoredPayloadSealTransactionBlockHeight;
+      void ignoredPayloadSealTxid;
+      const exactLifecycleInteger = (value, minimum) => {
+        if (value === undefined || value === null || value === "") {
+          return null;
+        }
+        const parsed = Number(value);
+        return Number.isSafeInteger(parsed) && parsed >= minimum
+          ? parsed
+          : null;
+      };
+      const listingConfirmed =
+        normalizedLowerText(row.listing_tx_status) === "confirmed";
+      const listingEventBlockHeight = exactLifecycleInteger(
+        row.listing_event_block_height,
+        1,
+      );
+      const listingTransactionBlockHeight = exactLifecycleInteger(
+        row.listing_block_height,
+        1,
+      );
+      const payloadListingBlockHeight = exactLifecycleInteger(
+        payload.blockHeight,
+        1,
+      );
+      const postAmoV5Listing =
+        listingConfirmed &&
+        (
+          listingTransactionBlockHeight === null ||
+          [
+            listingEventBlockHeight,
+            listingTransactionBlockHeight,
+            payloadListingBlockHeight,
+          ].some(
+            (height) =>
+              height !== null &&
+              height >= WORK_AMO_V5_ACTIVATION_HEIGHT,
+          )
+        );
+      const listingBlockHeight = postAmoV5Listing
+        ? listingEventBlockHeight
+        : listingEventBlockHeight ??
+          listingTransactionBlockHeight ??
+          payloadListingBlockHeight;
+      const listingBlockHash = normalizedLowerText(
+        postAmoV5Listing
+          ? row.listing_event_block_hash
+          : row.listing_event_block_hash ??
+              row.listing_block_hash ??
+              payload.blockHash,
+      );
+      const listingBlockIndex = exactLifecycleInteger(
+        postAmoV5Listing
+          ? row.listing_event_block_index
+          : row.listing_event_block_index ?? payload.blockIndex,
+        0,
+      );
+      const listingProtocolVout = exactLifecycleInteger(
+        postAmoV5Listing
+          ? row.listing_event_protocol_vout
+          : row.listing_event_protocol_vout ?? payload.protocolVout,
+        0,
+      );
+      const listingRecordOrdinal = exactLifecycleInteger(
+        postAmoV5Listing
+          ? row.listing_event_record_ordinal
+          : row.listing_event_record_ordinal ?? payload.recordOrdinal,
+        0,
+      );
+      if (
+        postAmoV5Listing &&
+        (
+          normalizedLowerText(row.listing_event_status) !== "confirmed" ||
+          exactLifecycleInteger(row.listing_event_match_count, 1) !== 1 ||
+          !/^[0-9a-f]{64}$/u.test(listingBlockHash) ||
+          listingBlockHeight === null ||
+          listingBlockIndex === null ||
+          listingProtocolVout === null ||
+          listingRecordOrdinal === null ||
+          listingBlockHash !== normalizedLowerText(row.listing_block_hash) ||
+          listingBlockHeight !== listingTransactionBlockHeight ||
+          listingBlockIndex !==
+            exactLifecycleInteger(row.listing_transaction_block_index, 0)
+        )
+      ) {
+        return null;
+      }
       const saleAuthorization = objectRecord(payload.saleAuthorization);
+      const sealTxid = String(row.seal_txid ?? payload.sealTxid ?? "")
+        .trim()
+        .toLowerCase();
+      const sealConfirmed = tokenListingSealConfirmedFromTransaction(
+        row,
+        sealTxid,
+      );
+      const sealTransactionConfirmed =
+        validTxid(sealTxid) &&
+        normalizedLowerText(row.seal_tx_status) === "confirmed";
+      const sealEventBlockHeight = exactLifecycleInteger(
+        row.seal_event_block_height,
+        1,
+      );
+      const sealTransactionBlockHeight = exactLifecycleInteger(
+        row.seal_transaction_block_height,
+        1,
+      );
+      const payloadSealBlockHeight = exactLifecycleInteger(
+        payload.sealBlockHeight,
+        1,
+      );
+      const unknownConfirmedSealHeight =
+        sealTransactionConfirmed &&
+        sealEventBlockHeight === null &&
+        sealTransactionBlockHeight === null;
+      const postAmoV5Seal =
+        sealTransactionConfirmed &&
+        (
+          unknownConfirmedSealHeight ||
+          [
+            sealEventBlockHeight,
+            sealTransactionBlockHeight,
+          ].some(
+            (height) =>
+              height !== null &&
+              height >= WORK_AMO_V5_ACTIVATION_HEIGHT,
+            )
+        );
+      const governedWorkSeal =
+        normalizedLowerText(
+          row.token_id ?? saleAuthorization.tokenId,
+        ) === WORK_TOKEN_ID &&
+        WORK_MARKET_GOVERNED_AUTH_VERSIONS.has(
+          normalizedLowerText(saleAuthorization.version),
+        );
+      const canonicalSealEventRequired =
+        governedWorkSeal || postAmoV5Seal;
+      const invalidConfirmedSealEvidence =
+        sealTransactionConfirmed &&
+        canonicalSealEventRequired &&
+        !sealConfirmed;
+      const projectedSealAt = invalidConfirmedSealEvidence
+        ? undefined
+        : dateIso(
+            payload.sealAt ??
+              payload.sealedAt ??
+              row.updated_at,
+          );
+      const sealEvidencePatch = invalidConfirmedSealEvidence
+        ? {}
+        : {
+            ...(projectedSealAt ? { sealAt: projectedSealAt } : {}),
+            ...(payload.sealDataBytes !== undefined
+              ? { sealDataBytes: payload.sealDataBytes }
+              : {}),
+            ...(payload.sealFrozenNetworkValueSats !== undefined
+              ? {
+                  sealFrozenNetworkValueSats:
+                    payload.sealFrozenNetworkValueSats,
+                }
+              : {}),
+            ...(payload.sealLiveNetworkValueSats !== undefined
+              ? {
+                  sealLiveNetworkValueSats:
+                    payload.sealLiveNetworkValueSats,
+                }
+              : {}),
+            ...(payload.sealMinerFeeCanonical !== undefined
+              ? {
+                  sealMinerFeeCanonical:
+                    payload.sealMinerFeeCanonical === true,
+                }
+              : {}),
+            ...(payload.sealMinerFeeSats !== undefined
+              ? { sealMinerFeeSats: payload.sealMinerFeeSats }
+              : {}),
+            ...(payload.sealMinerFeeSource !== undefined
+              ? { sealMinerFeeSource: payload.sealMinerFeeSource }
+              : {}),
+            ...(sealTransactionBlockHeight !== null
+              ? { sealTransactionBlockHeight }
+              : {}),
+          };
+      const sealBlockHeight = invalidConfirmedSealEvidence
+        ? null
+        : postAmoV5Seal
+          ? sealEventBlockHeight
+          : sealEventBlockHeight ??
+            sealTransactionBlockHeight ??
+            payloadSealBlockHeight;
+      const listingProjection = {
+        blockHash: listingBlockHash,
+        ...(listingBlockHeight !== null ? { blockHeight: listingBlockHeight } : {}),
+        ...(listingBlockIndex !== null ? { blockIndex: listingBlockIndex } : {}),
+        ...(listingProtocolVout !== null
+          ? { protocolVout: listingProtocolVout }
+          : {}),
+        ...(listingRecordOrdinal !== null
+          ? { recordOrdinal: listingRecordOrdinal }
+          : {}),
+        sealBlockHash: normalizedLowerText(
+          invalidConfirmedSealEvidence
+            ? ""
+            : postAmoV5Seal
+              ? row.seal_event_block_hash
+              : row.seal_event_block_hash ?? payload.sealBlockHash,
+        ),
+        ...(() => {
+          const sealBlockIndex = exactLifecycleInteger(
+            invalidConfirmedSealEvidence
+              ? null
+              : postAmoV5Seal
+                ? row.seal_event_block_index
+                : row.seal_event_block_index ?? payload.sealBlockIndex,
+            0,
+          );
+          const sealProtocolVout = exactLifecycleInteger(
+            invalidConfirmedSealEvidence
+              ? null
+              : postAmoV5Seal
+                ? row.seal_event_protocol_vout
+                : row.seal_event_protocol_vout ?? payload.sealProtocolVout,
+            0,
+          );
+          const sealRecordOrdinal = exactLifecycleInteger(
+            invalidConfirmedSealEvidence
+              ? null
+              : postAmoV5Seal
+                ? row.seal_event_record_ordinal
+                : row.seal_event_record_ordinal ?? payload.sealRecordOrdinal,
+            0,
+          );
+          return {
+            ...(sealBlockHeight !== null ? { sealBlockHeight } : {}),
+            ...(sealBlockIndex !== null ? { sealBlockIndex } : {}),
+            ...(sealProtocolVout !== null ? { sealProtocolVout } : {}),
+            ...(sealRecordOrdinal !== null ? { sealRecordOrdinal } : {}),
+          };
+        })(),
+      };
       const listingId = String(row.listing_id ?? payload.listingId ?? "")
         .trim()
         .toLowerCase();
       const closeRow = closeEventsByListingId.get(listingId);
+      const closeLifecycleRow =
+        closeLifecycleEventsByListingId.get(listingId) ?? closeRow;
+      const ambiguousCloseEvidence =
+        ambiguousCloseEventListingIds.has(listingId);
       const closePayload = closeRow
         ? tokenMarketEventRowPayload(closeRow, network)
         : {};
+      const closeLifecyclePayload = closeLifecycleRow
+        ? tokenMarketEventRowPayload(closeLifecycleRow, network)
+        : {};
+      const closeLifecycle = closeLifecycleRow
+        ? tokenClosedListingFromEventPayload(
+            closeLifecyclePayload,
+            closeLifecycleRow,
+          )
+        : {};
       const rowStatus = String(row.status ?? payload.status ?? "")
-        .trim()
-        .toLowerCase();
-      const sealTxid = String(row.seal_txid ?? payload.sealTxid ?? "")
         .trim()
         .toLowerCase();
       const eventCloseTxid = closeRow
@@ -21254,7 +25294,6 @@ export async function proofIndexCreditListingsPayload(
         .trim()
         .toLowerCase();
       const closedByCanonicalOutpointSpend =
-        activeOrSealingListingStatus(rowStatus) &&
         normalizedLowerText(row.listing_tx_status) === "confirmed" &&
         validTxid(canonicalSpendTxid);
       const matchingCloseEvent =
@@ -21263,65 +25302,229 @@ export async function proofIndexCreditListingsPayload(
         eventCloseTxid === canonicalSpendTxid;
       const closeTxid = closedByCanonicalOutpointSpend
         ? canonicalSpendTxid
-        : closeRow
-          ? eventCloseTxid
-          : tokenListingEffectiveCloseTxid(
-              row,
-              payload,
-              rowStatus,
-              sealTxid,
-            );
-      const closeConfirmed = closedByCanonicalOutpointSpend
-        ? true
-        : closeRow
-          ? closePayload.confirmed !== false
-          : payload.closedConfirmed === true;
-      const closeIsSale =
-        (!closedByCanonicalOutpointSpend || matchingCloseEvent) &&
-        (closePayload.kind === "token-sale" ||
-          Boolean(closePayload.saleTxid) ||
-          Boolean(closePayload.buyerAddress));
+        : "";
+      const closeConfirmed = closedByCanonicalOutpointSpend;
+      const closeTransactionBlockHeight = exactLifecycleInteger(
+        closedByCanonicalOutpointSpend
+          ? row.canonical_spend_block_height
+          : null,
+        1,
+      );
+      const saleCandidate =
+        matchingCloseEvent &&
+        normalizedLowerText(closePayload.kind) === "token-sale";
+      const saleBlockHash =
+        saleCandidate
+          ? normalizedLowerText(closePayload.blockHash)
+          : "";
+      const saleBlockHeight =
+        saleCandidate
+          ? exactLifecycleInteger(closePayload.blockHeight, 1)
+          : null;
+      const saleBlockIndex =
+        saleCandidate
+          ? exactLifecycleInteger(closePayload.blockIndex, 0)
+          : null;
+      const saleProtocolVout =
+        saleCandidate
+          ? exactLifecycleInteger(closePayload.protocolVout, 0)
+          : null;
+      const saleRecordOrdinal =
+        saleCandidate
+          ? exactLifecycleInteger(closePayload.recordOrdinal, 0)
+          : null;
+      const saleTransactionBlockHeight =
+        saleCandidate
+          ? exactLifecycleInteger(
+              closeRow.transaction_block_height,
+              1,
+            )
+          : null;
+      const canonicalSaleEvidence = saleCandidate
+        ? canonicalTokenSaleEvidenceForListing(
+            {
+              amount: row.amount,
+              amountAtoms:
+                payload.amountAtoms ??
+                saleAuthorization.amountAtoms,
+              listingId,
+              priceSats: row.price_sats,
+              registryAddress:
+                payload.registryAddress ??
+                saleAuthorization.registryAddress,
+              saleAuthorization,
+              sellerAddress: row.seller_address,
+              ticker:
+                payload.ticker ?? saleAuthorization.ticker,
+              tokenId: row.token_id,
+            },
+            objectRecord(closeRow?.payload),
+            {
+              closeBlockHash: closeLifecycle.closedBlockHash,
+              closeBlockHeight: closeLifecycle.closedBlockHeight,
+              closeBlockIndex: closeLifecycle.closedBlockIndex,
+              closeProtocolVout: closeLifecycle.closedProtocolVout,
+              closeRecordOrdinal: closeLifecycle.closedRecordOrdinal,
+              saleBlockHash,
+              saleBlockHeight,
+              saleBlockIndex,
+              saleProtocolVout,
+              saleRecordOrdinal,
+            },
+          )
+        : null;
+      const closeIsSale = Boolean(canonicalSaleEvidence);
       const status = closedByCanonicalOutpointSpend
         ? matchingCloseEvent
-          ? closeIsSale
-            ? "sold"
+          ? saleCandidate
+            ? closeIsSale
+              ? "sold"
+              : "closed"
             : "delisted"
           : "closed"
-        : closeConfirmed && closeTxid
-          ? closeIsSale
-            ? "sold"
-            : "delisted"
-          : row.status;
+        : invalidConfirmedSealEvidence && rowStatus === "sealing"
+          ? "active"
+          : ["pending", "sealing"].includes(rowStatus)
+            ? rowStatus
+            : ["dropped", "orphaned"].includes(rowStatus)
+              ? rowStatus
+              : "active";
+      const canonicalCloseProvenancePatch =
+        closedByCanonicalOutpointSpend
+          ? {
+              closedAt: matchingCloseEvent
+                ? closeLifecycle.closedAt ??
+                  closePayload.createdAt ??
+                  dateIso(
+                    row.canonical_spend_block_time ?? row.updated_at,
+                  )
+                : dateIso(
+                    row.canonical_spend_block_time ?? row.updated_at,
+                  ),
+              closedBlockHash: matchingCloseEvent
+                ? closeLifecycle.closedBlockHash
+                : normalizedLowerText(row.canonical_spend_block_hash),
+              closedBlockHeight: matchingCloseEvent
+                ? closeLifecycle.closedBlockHeight
+                : exactLifecycleInteger(
+                    row.canonical_spend_block_height,
+                    1,
+                  ) ?? undefined,
+              closedBlockIndex: matchingCloseEvent
+                ? closeLifecycle.closedBlockIndex
+                : exactLifecycleInteger(
+                    row.canonical_spend_block_index,
+                    0,
+                  ) ?? undefined,
+              closeTransactionBlockHeight:
+                closeTransactionBlockHeight ?? undefined,
+              closedDataBytes: matchingCloseEvent
+                ? closeLifecycle.closedDataBytes ??
+                  closeLifecycle.dataBytes
+                : undefined,
+              closedFrozenNetworkValueSats: matchingCloseEvent
+                ? closeLifecycle.closedFrozenNetworkValueSats
+                : undefined,
+              closedLiveNetworkValueSats: matchingCloseEvent
+                ? closeLifecycle.closedLiveNetworkValueSats
+                : undefined,
+              closedMinerFeeCanonical:
+                matchingCloseEvent &&
+                closeLifecycle.closedMinerFeeCanonical === true,
+              closedMinerFeeSats: matchingCloseEvent
+                ? closeLifecycle.closedMinerFeeSats
+                : undefined,
+              closedMinerFeeSource: matchingCloseEvent
+                ? closeLifecycle.closedMinerFeeSource
+                : undefined,
+              closedProtocolVout: matchingCloseEvent
+                ? closeLifecycle.closedProtocolVout
+                : undefined,
+              closedRecordOrdinal: matchingCloseEvent
+                ? closeLifecycle.closedRecordOrdinal
+                : undefined,
+              closedVin: Number.isSafeInteger(
+                Number(row.canonical_spend_vin),
+              )
+                ? Number(row.canonical_spend_vin)
+                : undefined,
+            }
+          : {};
       return {
-        ...payload,
+        ...payloadWithoutLifecyclePosition,
         amount: row.amount,
-        blockHash: String(
-          row.listing_block_hash ?? payload.blockHash ?? "",
-        )
-          .trim()
-          .toLowerCase(),
-        blockHeight:
-          rowNumber(row, "listing_block_height") ||
-          rowNumber(payload, "blockHeight") ||
-          undefined,
-        buyerAddress:
-          (!closedByCanonicalOutpointSpend || matchingCloseEvent
-            ? closePayload.buyerAddress
-            : undefined) ??
-          row.buyer_address ??
-          payload.buyerAddress,
+        blockHash: listingProjection.blockHash,
+        ...(listingProjection.blockHeight !== undefined
+          ? { blockHeight: listingProjection.blockHeight }
+          : {}),
+        ...(listingProjection.blockIndex !== undefined
+          ? { blockIndex: listingProjection.blockIndex }
+          : {}),
+        ...(listingProjection.protocolVout !== undefined
+          ? { protocolVout: listingProjection.protocolVout }
+          : {}),
+        ...(listingProjection.recordOrdinal !== undefined
+          ? { recordOrdinal: listingProjection.recordOrdinal }
+          : {}),
+        buyerAddress: closedByCanonicalOutpointSpend
+          ? matchingCloseEvent && closeIsSale
+            ? canonicalSaleEvidence?.buyerAddress ?? ""
+            : ""
+          : row.buyer_address ?? payload.buyerAddress,
+        ...(canonicalSaleEvidence ? { canonicalSaleEvidence } : {}),
         closeTxid,
         closedAt:
-          (closedByCanonicalOutpointSpend
-            ? dateIso(row.canonical_spend_block_time ?? row.updated_at)
-            : closePayload.createdAt) ?? payload.closedAt,
+          closedByCanonicalOutpointSpend
+            ? canonicalCloseProvenancePatch.closedAt
+            : undefined,
+        ...(closeTransactionBlockHeight !== null
+          ? { closeTransactionBlockHeight }
+          : {}),
         ...(closedByCanonicalOutpointSpend
-          ? {
-              closedBlockHash: String(row.canonical_spend_block_hash ?? "")
-                .trim()
-                .toLowerCase(),
+          ? matchingCloseEvent
+            ? {
+                ...(closeLifecycle.closedBlockHash
+                  ? { closedBlockHash: closeLifecycle.closedBlockHash }
+                  : {}),
+                ...(closeLifecycle.closedBlockHeight !== undefined
+                  ? { closedBlockHeight: closeLifecycle.closedBlockHeight }
+                  : {}),
+                ...(closeLifecycle.closedBlockIndex !== undefined
+                  ? { closedBlockIndex: closeLifecycle.closedBlockIndex }
+                  : {}),
+                ...(closeLifecycle.closedProtocolVout !== undefined
+                  ? {
+                      closedProtocolVout:
+                        closeLifecycle.closedProtocolVout,
+                    }
+                  : {}),
+                ...(closeLifecycle.closedRecordOrdinal !== undefined
+                  ? {
+                      closedRecordOrdinal:
+                        closeLifecycle.closedRecordOrdinal,
+                    }
+                  : {}),
+                closedByCanonicalOutpointSpend: true,
+                closedVin: Number.isSafeInteger(
+                  Number(row.canonical_spend_vin),
+                )
+                  ? Number(row.canonical_spend_vin)
+                  : undefined,
+              }
+            : {
+              closedBlockHash: normalizedLowerText(
+                row.canonical_spend_block_hash,
+              ),
               closedBlockHeight:
-                rowNumber(row, "canonical_spend_block_height") || undefined,
+                exactLifecycleInteger(
+                  row.canonical_spend_block_height,
+                  1,
+                ) ?? undefined,
+              closedBlockIndex:
+                exactLifecycleInteger(
+                  row.canonical_spend_block_index,
+                  0,
+                ) ?? undefined,
               closedByCanonicalOutpointSpend: true,
               closedVin: Number.isSafeInteger(
                 Number(row.canonical_spend_vin),
@@ -21330,13 +25533,10 @@ export async function proofIndexCreditListingsPayload(
                 : undefined,
             }
           : {}),
-        closedConfirmed:
-          (Boolean(closeTxid) && closeConfirmed) ||
-          payload.closedConfirmed === true,
+        ...canonicalCloseProvenancePatch,
+        closedConfirmed: Boolean(closeTxid) && closeConfirmed,
         closedTxid: closeTxid,
-        confirmed: row.listing_tx_status
-          ? normalizedLowerText(row.listing_tx_status) === "confirmed"
-          : status !== "pending",
+        confirmed: listingConfirmed,
         createdAt: dateIso(
           row.listing_block_time ?? payload.createdAt ?? row.updated_at,
         ),
@@ -21354,29 +25554,81 @@ export async function proofIndexCreditListingsPayload(
         saleTicketValueSats: Number(row.sale_ticket_value_sats ?? 0),
         saleTicketVout: row.sale_ticket_vout,
         saleTxid:
-          closedByCanonicalOutpointSpend && !matchingCloseEvent
+          !closedByCanonicalOutpointSpend ||
+          ambiguousCloseEvidence ||
+          !matchingCloseEvent
             ? undefined
             : closeIsSale && closeTxid
-              ? closeTxid
-              : payload.saleTxid ?? undefined,
-        sealConfirmed: tokenListingSealConfirmedFromTransaction(row, sealTxid),
-        sealTxid,
+                ? closeTxid
+                : undefined,
+        saleAt: closedByCanonicalOutpointSpend
+          ? closeIsSale && closeRow
+            ? closePayload.createdAt
+            : undefined
+          : undefined,
+        saleBlockHash: closedByCanonicalOutpointSpend
+          ? saleBlockHash || undefined
+          : undefined,
+        saleBlockHeight: closedByCanonicalOutpointSpend
+          ? saleBlockHeight ?? undefined
+          : undefined,
+        saleBlockIndex: closedByCanonicalOutpointSpend
+          ? saleBlockIndex ?? undefined
+          : undefined,
+        saleProtocolVout: closedByCanonicalOutpointSpend
+          ? saleProtocolVout ?? undefined
+          : undefined,
+        saleRecordOrdinal: closedByCanonicalOutpointSpend
+          ? saleRecordOrdinal ?? undefined
+          : undefined,
+        saleTransactionBlockHeight: closedByCanonicalOutpointSpend
+          ? saleTransactionBlockHeight ?? undefined
+          : undefined,
+        ...(listingProjection.sealBlockHash
+          ? { sealBlockHash: listingProjection.sealBlockHash }
+          : {}),
+        ...sealEvidencePatch,
+        ...(listingProjection.sealBlockHeight !== undefined
+          ? { sealBlockHeight: listingProjection.sealBlockHeight }
+          : {}),
+        ...(listingProjection.sealBlockIndex !== undefined
+          ? { sealBlockIndex: listingProjection.sealBlockIndex }
+          : {}),
+        sealConfirmed,
+        ...(listingProjection.sealProtocolVout !== undefined
+          ? { sealProtocolVout: listingProjection.sealProtocolVout }
+          : {}),
+        ...(listingProjection.sealRecordOrdinal !== undefined
+          ? { sealRecordOrdinal: listingProjection.sealRecordOrdinal }
+          : {}),
+        sealTxid: invalidConfirmedSealEvidence ? "" : sealTxid,
         sellerAddress: row.seller_address,
         status,
         tokenId: row.token_id,
         txid: listingId,
         updatedAt: dateIso(row.updated_at),
       };
-    }),
+    }).filter(Boolean),
     network,
     source: "proof-indexer-credit-listing-lifecycle",
     ...(workMarketV4Activation ? { workMarketV4Activation } : {}),
     stats: {
-      complete: result.rows.length >= totalCount,
+      complete: false,
       totalCount,
     },
     totalCount,
   };
+  const projectedCount = lifecyclePayload.items.length;
+  const rejectedCount = result.rows.length - projectedCount;
+  lifecyclePayload.stats = {
+    ...lifecyclePayload.stats,
+    complete:
+      rejectedCount === 0 &&
+      result.rows.length >= totalCount,
+    projectedCount,
+    rejectedCount,
+  };
+  return lifecyclePayload;
 }
 
 function historyItemKey(item) {

@@ -292,6 +292,33 @@ export function workAmoV5PreUnitRelicEvidenceIsExact(evidence) {
     .trim()
     .toLowerCase();
   const terminal = disposition === "terminal";
+  const canonicalSpendCount = evidence?.canonicalSpendCount;
+  const canonicalCloseCount = evidence?.canonicalCloseCount;
+  const canonicalCloseSaleCount = evidence?.canonicalCloseSaleCount;
+  const canonicalCloseClosedCount =
+    evidence?.canonicalCloseClosedCount;
+  const canonicalSpendCountExact =
+    Number.isSafeInteger(canonicalSpendCount) &&
+    (canonicalSpendCount === 0 || canonicalSpendCount === 1);
+  const canonicalCloseCountsExact =
+    Number.isSafeInteger(canonicalCloseCount) &&
+    Number.isSafeInteger(canonicalCloseSaleCount) &&
+    Number.isSafeInteger(canonicalCloseClosedCount);
+  const canonicalCloseCardinalityExact =
+    canonicalCloseCountsExact &&
+    (
+      (
+        canonicalCloseCount === 0 &&
+        canonicalCloseSaleCount === 0 &&
+        canonicalCloseClosedCount === 0
+      ) ||
+      (
+        canonicalCloseCount === 1 &&
+        (canonicalCloseSaleCount === 0 ||
+          canonicalCloseSaleCount === 1) &&
+        canonicalCloseClosedCount === 1
+      )
+    );
   return (
     evidence?.complete === true &&
     evidence?.canonical === true &&
@@ -336,22 +363,24 @@ export function workAmoV5PreUnitRelicEvidenceIsExact(evidence) {
       WORK_AMO_V5_PRE_UNIT_RELIC_TICKET_VOUT &&
     Number(evidence?.saleTicketValueSats) ===
       WORK_AMO_V5_PRE_UNIT_RELIC_TICKET_VALUE_SATS &&
+    canonicalSpendCountExact &&
+    canonicalCloseCardinalityExact &&
     (disposition === "relic" || terminal) &&
     (terminal
       ? evidence?.terminal === true &&
-        Number(evidence?.canonicalSpendCount) === 1 &&
+        canonicalSpendCount === 1 &&
         normalizedTxid(evidence?.canonicalSpendTxid) &&
         (
-          Number(evidence?.canonicalCloseCount) === 0 ||
+          canonicalCloseCount === 0 ||
           (
-            Number(evidence?.canonicalCloseCount) === 1 &&
+            canonicalCloseCount === 1 &&
             normalizedTxid(evidence?.canonicalCloseTxid) ===
               normalizedTxid(evidence?.canonicalSpendTxid)
           )
         )
       : evidence?.terminal === false &&
-        Number(evidence?.canonicalSpendCount) === 0 &&
-        Number(evidence?.canonicalCloseCount) === 0 &&
+        canonicalSpendCount === 0 &&
+        canonicalCloseCount === 0 &&
         evidence?.unspent === true &&
         listing &&
         workAmoV5ListingIdentity(listing) ===

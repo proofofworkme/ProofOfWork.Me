@@ -1032,6 +1032,7 @@ const RUSH_PHASES = [
 ];
 
 const NETWORKS = new Set(["livenet", "testnet", "testnet4"]);
+const BLOCK_TXID_INDEX_CACHE_MAX_SIZE = 256;
 const BLOCK_TXID_INDEX_CACHE = new Map();
 const TRANSACTION_CACHE = new Map();
 const PENDING_TOKEN_TRANSACTION_CACHE = new Map();
@@ -2360,15 +2361,49 @@ function walletScopedTokenPayloadFromOverlay(overlay, network, tokenScope) {
     ? canonicalOverlay.invalidEvents
     : [];
   const sales = mergeTokenStateItemsByKey([], rawSales, tokenSaleItemKey);
-  const listings = mergeTokenStateItemsByKey(
-    [],
-    rawListings,
-    tokenListingItemKey,
-  );
   const closedListings = mergeTokenStateItemsByKey(
     [],
     rawClosedListings,
     tokenClosedListingItemKey,
+  );
+  const canonicalClosedListingKeys = new Set(
+    closedListings
+      .filter(
+        (listing) =>
+          listing?.closedByCanonicalOutpointSpend === true &&
+          listing?.closedConfirmed === true,
+      )
+      .map((listing) => {
+        const listingId = String(listing?.listingId ?? "")
+          .trim()
+          .toLowerCase();
+        const tokenId = String(listing?.tokenId ?? "")
+          .trim()
+          .toLowerCase();
+        return listingId && tokenId ? `${tokenId}:${listingId}` : "";
+      })
+      .filter(Boolean),
+  );
+  const listings = mergeTokenStateItemsByKey(
+    [],
+    rawListings,
+    tokenListingItemKey,
+  ).filter(
+    (listing) => {
+      const listingId = String(
+        listing?.listingId ?? listing?.txid ?? "",
+      )
+        .trim()
+        .toLowerCase();
+      const tokenId = String(listing?.tokenId ?? "")
+        .trim()
+        .toLowerCase();
+      return (
+        !listingId ||
+        !tokenId ||
+        !canonicalClosedListingKeys.has(`${tokenId}:${listingId}`)
+      );
+    },
   );
   return {
     ...canonicalOverlay,
@@ -3050,6 +3085,15 @@ function tokenSaleItemKey(item) {
     Number(item.blockHeight) >= 1
       ? Number(item.blockHeight)
       : null;
+  const legacyPositionExempt =
+    item?.relic === true || item?.canonicalSynthetic === true;
+  if (
+    item?.confirmed === true &&
+    blockHeight === null &&
+    !legacyPositionExempt
+  ) {
+    throw new Error("Confirmed token sale position is incomplete.");
+  }
   if (
     item?.confirmed === true &&
     blockHeight !== null &&
@@ -3058,9 +3102,8 @@ function tokenSaleItemKey(item) {
     const position = canonicalTokenReplayPosition(item);
     return [
       String(item?.network ?? "").trim().toLowerCase(),
-      String(item?.tokenId ?? "").trim().toLowerCase(),
       txid,
-      String(item?.listingId ?? "").trim().toLowerCase(),
+      "v5",
       position.blockHeight,
       position.blockIndex,
       position.protocolVout,
@@ -3104,17 +3147,39 @@ function tokenStateWithIndexedMarketSummaryOverlay(payload, overlay) {
     return payload;
   }
 
-  const activeOverlayListingIds = new Set(
-    (Array.isArray(overlay.listings) ? overlay.listings : [])
-      .map((listing) =>
-        String(listing?.listingId ?? listing?.txid ?? "")
-          .trim()
-          .toLowerCase(),
-      )
+  const marketListingIdentity = (item) => {
+    const listingId = String(item?.listingId ?? item?.txid ?? "")
+      .trim()
+      .toLowerCase();
+    const tokenId = String(
+      item?.tokenId ?? item?.saleAuthorization?.tokenId ?? "",
+    )
+      .trim()
+      .toLowerCase();
+    return listingId && tokenId ? `${tokenId}:${listingId}` : "";
+  };
+  const authoritativeOverlayListingKeys = new Set(
+    [
+      ...(Array.isArray(overlay.listings) ? overlay.listings : []),
+      ...(Array.isArray(overlay.closedListings)
+        ? overlay.closedListings
+        : []
+      ).filter(
+        (listing) =>
+          listing?.closedByCanonicalOutpointSpend === true &&
+          listing?.closedConfirmed === true,
+      ),
+    ]
+      .map(marketListingIdentity)
       .filter(Boolean),
   );
   const mergedListings = mergeTokenStateItemsByKey(
-    payload.listings,
+    (Array.isArray(payload.listings) ? payload.listings : []).filter(
+      (listing) =>
+        !authoritativeOverlayListingKeys.has(
+          marketListingIdentity(listing),
+        ),
+    ),
     overlay.listings,
     tokenListingItemKey,
     (current, incoming) => mergeTokenListingRecord(incoming, current),
@@ -3122,9 +3187,7 @@ function tokenStateWithIndexedMarketSummaryOverlay(payload, overlay) {
   const sales = mergeTokenStateItemsByKey(
     (Array.isArray(payload.sales) ? payload.sales : []).filter(
       (sale) =>
-        !activeOverlayListingIds.has(
-          String(sale?.listingId ?? "").trim().toLowerCase(),
-        ),
+        !authoritativeOverlayListingKeys.has(marketListingIdentity(sale)),
     ),
     overlay.sales,
     tokenSaleItemKey,
@@ -3136,8 +3199,8 @@ function tokenStateWithIndexedMarketSummaryOverlay(payload, overlay) {
         : []
       ).filter(
         (listing) =>
-          !activeOverlayListingIds.has(
-            String(listing?.listingId ?? "").trim().toLowerCase(),
+          !authoritativeOverlayListingKeys.has(
+            marketListingIdentity(listing),
           ),
       ),
       overlay.closedListings,
@@ -3145,16 +3208,28 @@ function tokenStateWithIndexedMarketSummaryOverlay(payload, overlay) {
       mergeTokenListingRecord,
     ),
   );
-  const closedListingIds = new Set(
+  const canonicallyClosedListingKeys = new Set(
     closedListings
-      .map((listing) => String(listing?.listingId ?? "").trim().toLowerCase())
+      .filter(
+        (listing) =>
+          listing?.closedByCanonicalOutpointSpend === true &&
+          listing?.closedConfirmed === true,
+      )
+      .map(marketListingIdentity)
       .filter(Boolean),
   );
   const listings = mergedListings.filter((listing) => {
-    const listingId = String(listing?.listingId ?? listing?.txid ?? "")
-      .trim()
-      .toLowerCase();
-    return listingId && !closedListingIds.has(listingId);
+    const listingKey = marketListingIdentity(listing);
+    const listingId = String(
+      listing?.listingId ?? listing?.txid ?? "",
+    ).trim();
+    return (
+      Boolean(listingId) &&
+      (
+        !listingKey ||
+        !canonicallyClosedListingKeys.has(listingKey)
+      )
+    );
   });
   const stats = confirmedTokenSalesStats(sales);
   return applyWorkMarketV2CutoverToTokenState({
@@ -3166,16 +3241,8 @@ function tokenStateWithIndexedMarketSummaryOverlay(payload, overlay) {
     source: mergedSourceLabel(payload.source, overlay.source),
     stats: {
       ...(payload.stats ?? {}),
-      confirmedSales: Math.max(
-        safeStatNumber(payload, "confirmedSales"),
-        numericValue(overlay.stats?.confirmedSales),
-        stats.confirmedSales,
-      ),
-      confirmedSalesVolumeSats: Math.max(
-        numericValue(payload.stats?.confirmedSalesVolumeSats),
-        numericValue(overlay.stats?.confirmedSalesVolumeSats),
-        stats.confirmedSalesVolumeSats,
-      ),
+      confirmedSales: stats.confirmedSales,
+      confirmedSalesVolumeSats: stats.confirmedSalesVolumeSats,
     },
     ...((overlay.workMarketV4Activation ??
       payload.workMarketV4Activation)
@@ -3247,14 +3314,101 @@ function tokenMarketLifecycleOverlayFromCreditListings(payload) {
         /^[0-9a-f]{64}$/u.test(saleTxid) ||
         Boolean(item?.buyerAddress))
     ) {
+      const exactPositionInteger = (value, minimum) =>
+        value !== undefined &&
+        value !== null &&
+        value !== "" &&
+        Number.isSafeInteger(Number(value)) &&
+        Number(value) >= minimum;
+      const saleHeight = exactPositionInteger(item?.saleBlockHeight, 1)
+        ? Number(item.saleBlockHeight)
+        : undefined;
+      const saleTransactionHeight = exactPositionInteger(
+        item?.saleTransactionBlockHeight ??
+          item?.closeTransactionBlockHeight,
+        1,
+      )
+        ? Number(
+            item?.saleTransactionBlockHeight ??
+              item?.closeTransactionBlockHeight,
+          )
+        : undefined;
+      const saleSpecificHeights = [
+        saleHeight,
+        saleTransactionHeight,
+      ].filter((height) => height !== undefined);
+      const knownPreAmoV5Sale =
+        saleSpecificHeights.length > 0 &&
+        saleSpecificHeights.every(
+          (height) => height < WORK_AMO_V5_ACTIVATION_HEIGHT,
+        );
+      const postAmoV5Sale =
+        saleSpecificHeights.some(
+          (height) => height >= WORK_AMO_V5_ACTIVATION_HEIGHT,
+        );
+      const strictSalePosition =
+        postAmoV5Sale ||
+        (item?.relic !== true &&
+          item?.saleConfirmed !== false &&
+          item?.closedConfirmed !== false &&
+          !knownPreAmoV5Sale);
+      const completeSalePosition =
+        /^[0-9a-f]{64}$/u.test(
+          String(item?.saleBlockHash ?? "").trim().toLowerCase(),
+        ) &&
+        saleHeight !== undefined &&
+        saleTransactionHeight !== undefined &&
+        saleTransactionHeight === saleHeight &&
+        exactPositionInteger(item?.saleBlockIndex, 0) &&
+        exactPositionInteger(item?.saleProtocolVout, 0) &&
+        exactPositionInteger(item?.saleRecordOrdinal, 0);
+      const projectedSaleTxid = /^[0-9a-f]{64}$/u.test(saleTxid)
+        ? saleTxid
+        : knownPreAmoV5Sale
+          ? closeTxid
+          : "";
+      if (
+        !/^[0-9a-f]{64}$/u.test(projectedSaleTxid) ||
+        (strictSalePosition && !completeSalePosition)
+      ) {
+        continue;
+      }
       const saleAmount = tokenLedgerAmountFromRecord(tokenId, item);
       sales.push({
+        ...canonicalEventIdentityDetails({
+          protocolVout: item?.saleProtocolVout,
+          recordOrdinal: item?.saleRecordOrdinal,
+        }),
         ...(saleAmount === null
           ? { amount: numericValue(item?.amount) }
           : tokenLedgerAmountFields(tokenId, saleAmount)),
+        blockHash: item?.saleBlockHash,
+        blockHeight: saleHeight ?? saleTransactionHeight,
+        blockIndex: item?.saleBlockIndex,
         buyerAddress: item?.buyerAddress ?? "",
-        confirmed: item?.closedConfirmed !== false,
-        createdAt: closedAt,
+        ...(saleHeight !== undefined ? { saleBlockHeight: saleHeight } : {}),
+        ...(item?.saleBlockHash
+          ? { saleBlockHash: item.saleBlockHash }
+          : {}),
+        ...(exactPositionInteger(item?.saleBlockIndex, 0)
+          ? { saleBlockIndex: Number(item.saleBlockIndex) }
+          : {}),
+        ...(exactPositionInteger(item?.saleProtocolVout, 0)
+          ? { saleProtocolVout: Number(item.saleProtocolVout) }
+          : {}),
+        ...(exactPositionInteger(item?.saleRecordOrdinal, 0)
+          ? { saleRecordOrdinal: Number(item.saleRecordOrdinal) }
+          : {}),
+        ...(saleTransactionHeight !== undefined
+          ? {
+              closeTransactionBlockHeight: saleTransactionHeight,
+              saleTransactionBlockHeight: saleTransactionHeight,
+            }
+          : {}),
+        confirmed:
+          item?.saleConfirmed !== false &&
+          item?.closedConfirmed !== false,
+        createdAt: item?.saleAt ?? closedAt,
         listingId,
         network: item?.network ?? payload.network,
         paidSats: numericValue(item?.paidSats ?? item?.priceSats),
@@ -3263,7 +3417,7 @@ function tokenMarketLifecycleOverlayFromCreditListings(payload) {
         sellerAddress: item?.sellerAddress ?? "",
         ticker: item?.ticker ?? item?.saleAuthorization?.ticker ?? "",
         tokenId,
-        txid: /^[0-9a-f]{64}$/u.test(saleTxid) ? saleTxid : closeTxid,
+        txid: projectedSaleTxid,
       });
     }
   }
@@ -7113,6 +7267,20 @@ async function fetchBlockTxids(blockHash, network) {
     : [];
 }
 
+function cacheBlockTxidIndex(cacheKey, promise) {
+  while (
+    !BLOCK_TXID_INDEX_CACHE.has(cacheKey) &&
+    BLOCK_TXID_INDEX_CACHE.size >= BLOCK_TXID_INDEX_CACHE_MAX_SIZE
+  ) {
+    const oldestKey = BLOCK_TXID_INDEX_CACHE.keys().next().value;
+    if (oldestKey === undefined) {
+      break;
+    }
+    BLOCK_TXID_INDEX_CACHE.delete(oldestKey);
+  }
+  BLOCK_TXID_INDEX_CACHE.set(cacheKey, promise);
+}
+
 async function fetchBlockTxidIndex(blockHash, network) {
   if (!/^[0-9a-fA-F]{64}$/u.test(blockHash)) {
     return new Map();
@@ -7133,7 +7301,7 @@ async function fetchBlockTxidIndex(blockHash, network) {
         BLOCK_TXID_INDEX_CACHE.delete(cacheKey);
         throw error;
       });
-    BLOCK_TXID_INDEX_CACHE.set(cacheKey, promise);
+    cacheBlockTxidIndex(cacheKey, promise);
   }
 
   return BLOCK_TXID_INDEX_CACHE.get(cacheKey);
@@ -7144,28 +7312,48 @@ async function fetchCoreBlockTxidIndex(blockHash) {
   if (!/^[0-9a-f]{64}$/u.test(normalizedHash)) {
     return null;
   }
-  const response = await bitcoinRpc("getblock", [normalizedHash, 1]);
-  const block = response?.ok ? response.result : null;
-  const observedHash = String(block?.hash ?? normalizedHash)
-    .trim()
-    .toLowerCase();
-  const transactions = Array.isArray(block?.tx) ? block.tx : null;
-  if (observedHash !== normalizedHash || !transactions) {
-    return null;
+  const cacheKey = `core:${normalizedHash}`;
+  if (!BLOCK_TXID_INDEX_CACHE.has(cacheKey)) {
+    const promise = bitcoinRpc("getblock", [normalizedHash, 1])
+      .then((response) => {
+        const block = response?.ok ? response.result : null;
+        const observedHash = String(block?.hash ?? normalizedHash)
+          .trim()
+          .toLowerCase();
+        const transactions = Array.isArray(block?.tx) ? block.tx : null;
+        if (observedHash !== normalizedHash || !transactions) {
+          return null;
+        }
+        const index = new Map();
+        for (
+          let position = 0;
+          position < transactions.length;
+          position += 1
+        ) {
+          const txid = String(
+            typeof transactions[position] === "string"
+              ? transactions[position]
+              : transactions[position]?.txid ?? "",
+          )
+            .trim()
+            .toLowerCase();
+          if (!/^[0-9a-f]{64}$/u.test(txid) || index.has(txid)) {
+            return null;
+          }
+          index.set(txid, position);
+        }
+        return index;
+      })
+      .catch((error) => {
+        BLOCK_TXID_INDEX_CACHE.delete(cacheKey);
+        throw error;
+      });
+    cacheBlockTxidIndex(cacheKey, promise);
   }
-  const index = new Map();
-  for (let position = 0; position < transactions.length; position += 1) {
-    const txid = String(
-      typeof transactions[position] === "string"
-        ? transactions[position]
-        : transactions[position]?.txid ?? "",
-    )
-      .trim()
-      .toLowerCase();
-    if (!/^[0-9a-f]{64}$/u.test(txid) || index.has(txid)) {
-      return null;
-    }
-    index.set(txid, position);
+
+  const index = await BLOCK_TXID_INDEX_CACHE.get(cacheKey);
+  if (!index) {
+    BLOCK_TXID_INDEX_CACHE.delete(cacheKey);
   }
   return index;
 }
@@ -8391,7 +8579,7 @@ function transactionBlockIndex(tx) {
 }
 
 async function annotateBlockOrder(txs, network) {
-  const blockCounts = new Map();
+  const blockDetails = new Map();
   for (const tx of txs) {
     if (!transactionConfirmed(tx)) {
       continue;
@@ -8399,12 +8587,23 @@ async function annotateBlockOrder(txs, network) {
 
     const blockHash = transactionBlockHash(tx);
     if (blockHash) {
-      blockCounts.set(blockHash, (blockCounts.get(blockHash) ?? 0) + 1);
+      const details = blockDetails.get(blockHash) ?? {
+        count: 0,
+        missingCanonicalIndex: false,
+      };
+      details.count += 1;
+      details.missingCanonicalIndex ||=
+        transactionBlockIndex(tx) === undefined &&
+        Number(transactionBlockHeight(tx)) >= WORK_AMO_V5_ACTIVATION_HEIGHT;
+      blockDetails.set(blockHash, details);
     }
   }
 
-  const blockHashes = [...blockCounts]
-    .filter(([, count]) => count > 1)
+  const blockHashes = [...blockDetails]
+    .filter(
+      ([, details]) =>
+        details.count > 1 || details.missingCanonicalIndex,
+    )
     .map(([blockHash]) => blockHash);
 
   if (blockHashes.length === 0) {
@@ -8416,9 +8615,11 @@ async function annotateBlockOrder(txs, network) {
     blockHashes,
     BLOCK_TXID_FETCH_CONCURRENCY,
     async (blockHash) => {
-      const index = await fetchBlockTxidIndex(blockHash, network).catch(
-        () => null,
-      );
+      const index = await (
+        network === "livenet"
+          ? fetchCoreBlockTxidIndex(blockHash)
+          : fetchBlockTxidIndex(blockHash, network)
+      ).catch(() => null);
       if (index) {
         blockIndexes.set(blockHash, index);
       }
@@ -10086,25 +10287,53 @@ function tokenListingWithSealFrom(listing, sealSource) {
     return listing;
   }
 
+  const selectedSealTxid = String(sealSource.sealTxid ?? "")
+    .trim()
+    .toLowerCase();
+  const currentSealTxid = String(listing.sealTxid ?? "")
+    .trim()
+    .toLowerCase();
+  const sameSealTransaction =
+    /^[0-9a-f]{64}$/u.test(selectedSealTxid) &&
+    /^[0-9a-f]{64}$/u.test(currentSealTxid) &&
+    selectedSealTxid === currentSealTxid;
+  const sealFallback = sameSealTransaction ? listing : {};
+
   return {
     ...listing,
-    saleAuthorization: sealSource.saleAuthorization ?? listing.saleAuthorization,
-    sealAt: sealSource.sealAt ?? listing.sealAt,
+    saleAuthorization:
+      sealSource.saleAuthorization ?? sealFallback.saleAuthorization,
+    sealAt: sealSource.sealAt ?? sealFallback.sealAt,
+    sealBlockHash: sealSource.sealBlockHash ?? sealFallback.sealBlockHash,
+    sealBlockHeight:
+      sealSource.sealBlockHeight ?? sealFallback.sealBlockHeight,
+    sealBlockIndex: sealSource.sealBlockIndex ?? sealFallback.sealBlockIndex,
     sealConfirmed: sealSource.sealConfirmed === true,
-    sealDataBytes: sealSource.sealDataBytes ?? listing.sealDataBytes,
+    sealDataBytes: sealSource.sealDataBytes ?? sealFallback.sealDataBytes,
     sealFrozenNetworkValueSats:
       sealSource.sealFrozenNetworkValueSats ??
-      listing.sealFrozenNetworkValueSats,
+      sealFallback.sealFrozenNetworkValueSats,
     sealLiveNetworkValueSats:
       sealSource.sealLiveNetworkValueSats ??
-      listing.sealLiveNetworkValueSats,
+      sealFallback.sealLiveNetworkValueSats,
     sealMinerFeeCanonical:
       sealSource.sealMinerFeeCanonical === true ||
-      listing.sealMinerFeeCanonical === true,
+      (
+        sameSealTransaction &&
+        listing.sealMinerFeeCanonical === true
+      ),
     sealMinerFeeSource:
-      sealSource.sealMinerFeeSource ?? listing.sealMinerFeeSource,
-    sealMinerFeeSats: sealSource.sealMinerFeeSats ?? listing.sealMinerFeeSats,
-    sealTxid: sealSource.sealTxid ?? listing.sealTxid,
+      sealSource.sealMinerFeeSource ?? sealFallback.sealMinerFeeSource,
+    sealMinerFeeSats:
+      sealSource.sealMinerFeeSats ?? sealFallback.sealMinerFeeSats,
+    sealProtocolVout:
+      sealSource.sealProtocolVout ?? sealFallback.sealProtocolVout,
+    sealRecordOrdinal:
+      sealSource.sealRecordOrdinal ?? sealFallback.sealRecordOrdinal,
+    sealTransactionBlockHeight:
+      sealSource.sealTransactionBlockHeight ??
+      sealFallback.sealTransactionBlockHeight,
+    sealTxid: selectedSealTxid,
   };
 }
 
@@ -10154,39 +10383,111 @@ function tokenListingWithCloseFrom(listing, closeSource) {
     return listing;
   }
 
+  const selectedCloseTxid = String(closeSource.closedTxid ?? "")
+    .trim()
+    .toLowerCase();
+  const currentCloseTxid = String(listing.closedTxid ?? "")
+    .trim()
+    .toLowerCase();
+  const sameCloseTransaction =
+    /^[0-9a-f]{64}$/u.test(selectedCloseTxid) &&
+    /^[0-9a-f]{64}$/u.test(currentCloseTxid) &&
+    selectedCloseTxid === currentCloseTxid;
+  const closeFallback = sameCloseTransaction ? listing : {};
+  const selectedCloseField = (field) =>
+    Object.prototype.hasOwnProperty.call(closeSource, field)
+      ? closeSource[field]
+      : closeFallback[field];
+  const selectedCloseAliasField = (...fields) => {
+    for (const field of fields) {
+      if (Object.prototype.hasOwnProperty.call(closeSource, field)) {
+        return closeSource[field];
+      }
+    }
+    for (const field of fields) {
+      if (Object.prototype.hasOwnProperty.call(closeFallback, field)) {
+        return closeFallback[field];
+      }
+    }
+    return undefined;
+  };
+
   return {
     ...listing,
-    closedAt: closeSource.closedAt ?? listing.closedAt,
-    closedBlockHeight:
-      closeSource.closedBlockHeight ??
-      closeSource.blockHeight ??
-      listing.closedBlockHeight,
-    closedBlockIndex:
-      closeSource.closedBlockIndex ??
-      closeSource.blockIndex ??
-      listing.closedBlockIndex,
-    closedConfirmed: closeSource.closedConfirmed === true,
-    closedDataBytes:
-      closeSource.closedDataBytes ??
-      closeSource.dataBytes ??
-      listing.closedDataBytes,
-    closedFrozenNetworkValueSats:
-      closeSource.closedFrozenNetworkValueSats ??
-      listing.closedFrozenNetworkValueSats,
-    closedLiveNetworkValueSats:
-      closeSource.closedLiveNetworkValueSats ??
-      listing.closedLiveNetworkValueSats,
+    buyerAddress: selectedCloseAliasField(
+      "buyerAddress",
+      "saleBuyerAddress",
+    ),
+    canonicalSaleEvidence: selectedCloseField("canonicalSaleEvidence"),
+    closeTxid: undefined,
+    closedAt: selectedCloseField("closedAt"),
+    closedBlockHash: selectedCloseAliasField(
+      "closedBlockHash",
+      "blockHash",
+    ),
+    closedBlockHeight: selectedCloseAliasField(
+      "closedBlockHeight",
+      "blockHeight",
+    ),
+    closeTransactionBlockHeight: selectedCloseField(
+      "closeTransactionBlockHeight",
+    ),
+    closedBlockIndex: selectedCloseAliasField(
+      "closedBlockIndex",
+      "blockIndex",
+    ),
+    closedByCanonicalOutpointSpend:
+      selectedCloseField("closedByCanonicalOutpointSpend") === true,
+    closedBySpendableOutspend:
+      selectedCloseField("closedBySpendableOutspend") === true,
+    closedConfirmed: selectedCloseField("closedConfirmed") === true,
+    closedDataBytes: selectedCloseAliasField(
+      "closedDataBytes",
+      "dataBytes",
+    ),
+    closedFrozenNetworkValueSats: selectedCloseField(
+      "closedFrozenNetworkValueSats",
+    ),
+    closedLiveNetworkValueSats: selectedCloseField(
+      "closedLiveNetworkValueSats",
+    ),
     closedMinerFeeCanonical:
-      closeSource.closedMinerFeeCanonical === true ||
-      listing.closedMinerFeeCanonical === true,
-    closedMinerFeeSats:
-      closeSource.closedMinerFeeSats ?? listing.closedMinerFeeSats,
-    closedMinerFeeSource:
-      closeSource.closedMinerFeeSource ??
-      closeSource.minerFeeSource ??
-      listing.closedMinerFeeSource,
-    closedTxid: closeSource.closedTxid ?? listing.closedTxid,
-    closedVin: closeSource.closedVin ?? listing.closedVin,
+      selectedCloseField("closedMinerFeeCanonical") === true,
+    closedMinerFeeSats: selectedCloseField("closedMinerFeeSats"),
+    closedMinerFeeSource: selectedCloseAliasField(
+      "closedMinerFeeSource",
+      "minerFeeSource",
+    ),
+    closedProtocolVout: selectedCloseAliasField(
+      "closedProtocolVout",
+      "protocolVout",
+    ),
+    closedRecordOrdinal: selectedCloseAliasField(
+      "closedRecordOrdinal",
+      "recordOrdinal",
+    ),
+    closedTxid: selectedCloseTxid,
+    closedVin: selectedCloseField("closedVin"),
+    lifecycleStatus: selectedCloseField("lifecycleStatus"),
+    saleAt: selectedCloseField("saleAt"),
+    saleBlockHash: selectedCloseField("saleBlockHash"),
+    saleBlockHeight: selectedCloseField("saleBlockHeight"),
+    saleBlockIndex: selectedCloseField("saleBlockIndex"),
+    saleBuyerAddress: selectedCloseAliasField(
+      "saleBuyerAddress",
+      "buyerAddress",
+    ),
+    saleConfirmed: selectedCloseField("saleConfirmed") === true,
+    saleDataBytes: selectedCloseField("saleDataBytes"),
+    saleMinerFeeSats: selectedCloseField("saleMinerFeeSats"),
+    salePaymentSats: selectedCloseField("salePaymentSats"),
+    saleProtocolVout: selectedCloseField("saleProtocolVout"),
+    saleRecordOrdinal: selectedCloseField("saleRecordOrdinal"),
+    saleTransactionBlockHeight: selectedCloseField(
+      "saleTransactionBlockHeight",
+    ),
+    saleTxid: selectedCloseField("saleTxid"),
+    status: selectedCloseField("status"),
   };
 }
 
@@ -10199,9 +10500,176 @@ function mergeTokenListingRecord(current, incoming) {
   }
 
   const sealSource = preferredTokenListingSealSource(current, incoming);
-  const merged = sealSource
+  const sealed = sealSource
     ? tokenListingWithSealFrom(incoming, sealSource)
     : incoming;
+  const exactPositionInteger = (value, minimum) => {
+    if (value === undefined || value === null || value === "") {
+      return null;
+    }
+    const parsed =
+      typeof value === "number"
+        ? value
+        : typeof value === "string" && /^(?:0|[1-9][0-9]*)$/u.test(value)
+          ? Number(value)
+          : Number.NaN;
+    return Number.isSafeInteger(parsed) && parsed >= minimum ? parsed : null;
+  };
+  const completeListingPosition = (listing) =>
+    /^[0-9a-f]{64}$/u.test(
+      String(listing?.blockHash ?? "").trim().toLowerCase(),
+    ) &&
+    exactPositionInteger(listing?.blockHeight, 1) !== null &&
+    exactPositionInteger(listing?.blockIndex, 0) !== null &&
+    exactPositionInteger(listing?.protocolVout, 0) !== null &&
+    exactPositionInteger(listing?.recordOrdinal, 0) !== null;
+  const directPositionAliasesLifecycle = (listing, prefix) => {
+    if (!completeListingPosition(listing)) {
+      return false;
+    }
+    const lifecycleHash = String(
+      listing?.[`${prefix}BlockHash`] ?? "",
+    )
+      .trim()
+      .toLowerCase();
+    const lifecycleHeight = exactPositionInteger(
+      listing?.[`${prefix}BlockHeight`],
+      1,
+    );
+    const lifecycleIndex = exactPositionInteger(
+      listing?.[`${prefix}BlockIndex`],
+      0,
+    );
+    const lifecycleVout = exactPositionInteger(
+      listing?.[`${prefix}ProtocolVout`],
+      0,
+    );
+    const lifecycleOrdinal = exactPositionInteger(
+      listing?.[`${prefix}RecordOrdinal`],
+      0,
+    );
+    return (
+      /^[0-9a-f]{64}$/u.test(lifecycleHash) &&
+      lifecycleHash ===
+        String(listing.blockHash ?? "").trim().toLowerCase() &&
+      lifecycleHeight !== null &&
+      lifecycleHeight === exactPositionInteger(listing.blockHeight, 1) &&
+      lifecycleIndex !== null &&
+      lifecycleIndex === exactPositionInteger(listing.blockIndex, 0) &&
+      lifecycleVout !== null &&
+      lifecycleVout === exactPositionInteger(listing.protocolVout, 0) &&
+      lifecycleOrdinal !== null &&
+      lifecycleOrdinal === exactPositionInteger(listing.recordOrdinal, 0)
+    );
+  };
+  const lifecyclePositionState = (listing, prefix) => {
+    const txidField =
+      prefix === "closed" ? "closedTxid" : `${prefix}Txid`;
+    const positionValues = [
+      listing?.[`${prefix}BlockHash`],
+      listing?.[`${prefix}BlockHeight`],
+      listing?.[`${prefix}BlockIndex`],
+      listing?.[`${prefix}ProtocolVout`],
+      listing?.[`${prefix}RecordOrdinal`],
+    ];
+    const present =
+      /^[0-9a-f]{64}$/u.test(
+        String(listing?.[txidField] ?? "").trim().toLowerCase(),
+      ) ||
+      (
+        prefix === "closed" &&
+        /^[0-9a-f]{64}$/u.test(
+          String(listing?.closeTxid ?? "").trim().toLowerCase(),
+        )
+      ) ||
+      positionValues.some(
+        (value) => value !== undefined && value !== null && value !== "",
+      );
+    if (!present) {
+      return "absent";
+    }
+    const complete =
+      /^[0-9a-f]{64}$/u.test(
+        String(listing?.[`${prefix}BlockHash`] ?? "")
+          .trim()
+          .toLowerCase(),
+      ) &&
+      exactPositionInteger(listing?.[`${prefix}BlockHeight`], 1) !== null &&
+      exactPositionInteger(listing?.[`${prefix}BlockIndex`], 0) !== null &&
+      exactPositionInteger(listing?.[`${prefix}ProtocolVout`], 0) !== null &&
+      exactPositionInteger(listing?.[`${prefix}RecordOrdinal`], 0) !== null;
+    if (!complete) {
+      return "incomplete";
+    }
+    return directPositionAliasesLifecycle(listing, prefix)
+      ? "aliases-opening"
+      : "complete";
+  };
+  const listingPositionKey = (listing) => [
+    String(listing?.blockHash ?? "").trim().toLowerCase(),
+    exactPositionInteger(listing?.blockHeight, 1),
+    exactPositionInteger(listing?.blockIndex, 0),
+    exactPositionInteger(listing?.protocolVout, 0),
+    exactPositionInteger(listing?.recordOrdinal, 0),
+  ].join(":");
+  const candidateListingPositionSources = [incoming, current].filter(
+    (listing) =>
+      completeListingPosition(listing) &&
+      ["seal", "closed", "sale"].every((prefix) =>
+        ["absent", "complete"].includes(
+          lifecyclePositionState(listing, prefix),
+        ),
+      ),
+  );
+  const conflictingListingPositions =
+    new Set(candidateListingPositionSources.map(listingPositionKey)).size > 1;
+  const canonicalListingPositionSource = conflictingListingPositions
+    ? null
+    : candidateListingPositionSources[0];
+  const unsafeAliasedListingPosition =
+    conflictingListingPositions ||
+    (
+      !canonicalListingPositionSource &&
+      [incoming, current].some(completeListingPosition)
+    );
+  const merged = {
+    ...sealed,
+    blockHash:
+      canonicalListingPositionSource?.blockHash ||
+      (
+        unsafeAliasedListingPosition
+          ? undefined
+          : sealed.blockHash || current.blockHash
+      ),
+    blockHeight:
+      canonicalListingPositionSource?.blockHeight ??
+      (
+        unsafeAliasedListingPosition
+          ? undefined
+          : sealed.blockHeight ?? current.blockHeight
+      ),
+    blockIndex:
+      canonicalListingPositionSource?.blockIndex ??
+      (
+        unsafeAliasedListingPosition
+          ? undefined
+          : sealed.blockIndex ?? current.blockIndex
+      ),
+    protocolVout:
+      canonicalListingPositionSource?.protocolVout ??
+      (
+        unsafeAliasedListingPosition
+          ? undefined
+          : sealed.protocolVout ?? current.protocolVout
+      ),
+    recordOrdinal:
+      canonicalListingPositionSource?.recordOrdinal ??
+      (
+        unsafeAliasedListingPosition
+          ? undefined
+          : sealed.recordOrdinal ?? current.recordOrdinal
+      ),
+  };
   return tokenListingCloseRank(current) > tokenListingCloseRank(incoming)
     ? tokenListingWithCloseFrom(merged, current)
     : tokenListingWithCloseFrom(merged, incoming);
@@ -10639,12 +11107,16 @@ async function hydrateIncompleteSpentOutspendFromProofIndex(
   network,
   payload,
 ) {
-  if (!payload?.spent || outspendHasConfirmedSpender(payload)) {
+  if (!payload?.spent) {
     return payload;
   }
 
   const indexedCloseOutspend =
-    await proofIndexTokenListingCloseOutspendPayload(network, txid).catch(
+    await proofIndexTokenListingCloseOutspendPayload(
+      network,
+      txid,
+      vout,
+    ).catch(
       (error) => {
         console.error(
           `Proof index listing close outspend lookup failed for ${txid}:${vout}: ${errorSummary(error)}`,
@@ -10652,9 +11124,79 @@ async function hydrateIncompleteSpentOutspendFromProofIndex(
         return null;
       },
     );
-  return outspendHasConfirmedSpender(indexedCloseOutspend)
-    ? indexedCloseOutspend
-    : payload;
+  if (!outspendHasConfirmedSpender(indexedCloseOutspend)) {
+    return payload;
+  }
+  if (!outspendHasConfirmedSpender(payload)) {
+    return indexedCloseOutspend;
+  }
+
+  const exactInteger = (value, minimum = 0) => {
+    const parsed =
+      typeof value === "number"
+        ? value
+        : typeof value === "string" && /^(?:0|[1-9][0-9]*)$/u.test(value)
+          ? Number(value)
+          : Number.NaN;
+    return Number.isSafeInteger(parsed) && parsed >= minimum ? parsed : null;
+  };
+  const payloadTxid = String(payload.txid ?? "").trim().toLowerCase();
+  const indexedTxid = String(indexedCloseOutspend.txid ?? "")
+    .trim()
+    .toLowerCase();
+  const payloadVin = exactInteger(payload.vin);
+  const indexedVin = exactInteger(indexedCloseOutspend.vin);
+  const payloadBlockHeight = exactInteger(payload.status?.block_height, 1);
+  const indexedBlockHeight = exactInteger(
+    indexedCloseOutspend.status?.block_height,
+    1,
+  );
+  if (
+    payloadTxid !== indexedTxid ||
+    indexedVin === null ||
+    indexedBlockHeight === null ||
+    (payloadVin !== null && payloadVin !== indexedVin) ||
+    (
+      payloadBlockHeight !== null &&
+      payloadBlockHeight !== indexedBlockHeight
+    )
+  ) {
+    return payload;
+  }
+
+  const enriched = {
+    ...payload,
+    status: {
+      ...indexedCloseOutspend.status,
+      ...payload.status,
+      confirmed: true,
+    },
+    txid: payloadTxid,
+    vin: payloadVin ?? indexedVin,
+  };
+  for (const field of [
+    "canonicalSaleEvidence",
+    "closedBlockHash",
+    "closedBlockHeight",
+    "closedBlockIndex",
+    "closedProtocolVout",
+    "closedRecordOrdinal",
+    "lifecycleStatus",
+    "saleBlockHash",
+    "saleBlockHeight",
+    "saleBlockIndex",
+    "saleProtocolVout",
+    "saleRecordOrdinal",
+  ]) {
+    if (
+      Object.prototype.hasOwnProperty.call(indexedCloseOutspend, field)
+    ) {
+      enriched[field] = indexedCloseOutspend[field];
+    } else {
+      delete enriched[field];
+    }
+  }
+  return enriched;
 }
 
 function tokenMarketOutspendCacheKey(network, anchor) {
@@ -10863,6 +11405,20 @@ async function tokenListingAnchorOutspend(listing, network) {
     }
     if (payload?.spent) {
       payload = await hydrateOutspendStatus(payload, network);
+      if (
+        outspendHasConfirmedSpender(payload) &&
+        !Object.prototype.hasOwnProperty.call(
+          payload,
+          "lifecycleStatus",
+        )
+      ) {
+        payload = await hydrateIncompleteSpentOutspendFromProofIndex(
+          anchor.txid,
+          anchor.vout,
+          network,
+          payload,
+        );
+      }
     }
     if (payload?.unknown) {
       const utxoRecovered = await tokenListingAnchorOutspendFromSellerUtxos(
@@ -10884,6 +11440,213 @@ async function tokenListingAnchorOutspend(listing, network) {
     // Keep the last known answer if the node has a transient outspend miss.
     return cachedTokenMarketOutspend(network, anchor, true);
   }
+}
+
+function canonicalTokenListingOutspendLifecyclePatch(listing, outspend) {
+  const exactInteger = (value, minimum = 0) => {
+    if (value === undefined || value === null || value === "") {
+      return null;
+    }
+    const parsed =
+      typeof value === "number"
+        ? value
+        : typeof value === "string" && /^(?:0|[1-9][0-9]*)$/u.test(value)
+          ? Number(value)
+          : Number.NaN;
+    return Number.isSafeInteger(parsed) && parsed >= minimum ? parsed : null;
+  };
+  const exactTxid = (value) => {
+    const normalized = String(value ?? "").trim().toLowerCase();
+    return /^[0-9a-f]{64}$/u.test(normalized) ? normalized : "";
+  };
+  const lifecycleStatus = String(outspend?.lifecycleStatus ?? "")
+    .trim()
+    .toLowerCase();
+  const closeTxid = exactTxid(outspend?.txid);
+  const statusHeight = exactInteger(outspend?.status?.block_height, 1);
+  const closedBlockHash = String(outspend?.closedBlockHash ?? "")
+    .trim()
+    .toLowerCase();
+  const closedBlockHeight = exactInteger(outspend?.closedBlockHeight, 1);
+  const closedBlockIndex = exactInteger(outspend?.closedBlockIndex);
+  const closedProtocolVout = exactInteger(outspend?.closedProtocolVout);
+  const closedRecordOrdinal = exactInteger(outspend?.closedRecordOrdinal);
+  const exactCanonicalSpend =
+    outspend?.spent === true &&
+    outspend?.status?.confirmed === true &&
+    Boolean(closeTxid) &&
+    statusHeight !== null;
+  const exactClose =
+    exactCanonicalSpend &&
+    /^[0-9a-f]{64}$/u.test(closedBlockHash) &&
+    closedBlockHeight === statusHeight &&
+    closedBlockIndex !== null &&
+    closedProtocolVout !== null &&
+    closedRecordOrdinal !== null;
+  if (!exactCanonicalSpend) {
+    return {};
+  }
+
+  const closePatch = {
+    buyerAddress: undefined,
+    canonicalSaleEvidence: undefined,
+    closeTxid: undefined,
+    closeTransactionBlockHeight: undefined,
+    closedBlockHash: undefined,
+    closedBlockHeight: undefined,
+    closedBlockIndex: undefined,
+    closedByCanonicalOutpointSpend: true,
+    closedProtocolVout: undefined,
+    closedRecordOrdinal: undefined,
+    lifecycleStatus: "closed",
+    saleAt: undefined,
+    saleBlockHash: undefined,
+    saleBlockHeight: undefined,
+    saleBlockIndex: undefined,
+    saleBuyerAddress: undefined,
+    saleConfirmed: false,
+    saleDataBytes: undefined,
+    saleMinerFeeSats: undefined,
+    salePaymentSats: undefined,
+    saleProtocolVout: undefined,
+    saleRecordOrdinal: undefined,
+    saleTransactionBlockHeight: undefined,
+    saleTxid: undefined,
+    status: "closed",
+  };
+  if (!exactClose) {
+    return closePatch;
+  }
+  Object.assign(closePatch, {
+    closeTransactionBlockHeight: closedBlockHeight,
+    closedBlockHash,
+    closedBlockHeight,
+    closedBlockIndex,
+    closedProtocolVout,
+    closedRecordOrdinal,
+    lifecycleStatus:
+      lifecycleStatus === "delisted" ? "delisted" : "closed",
+    status:
+      lifecycleStatus === "delisted" ? "delisted" : "closed",
+  });
+  if (lifecycleStatus !== "sold") {
+    return closePatch;
+  }
+
+  const saleBlockHash = String(outspend?.saleBlockHash ?? "")
+    .trim()
+    .toLowerCase();
+  const saleBlockHeight = exactInteger(outspend?.saleBlockHeight, 1);
+  const saleBlockIndex = exactInteger(outspend?.saleBlockIndex);
+  const saleProtocolVout = exactInteger(outspend?.saleProtocolVout);
+  const saleRecordOrdinal = exactInteger(outspend?.saleRecordOrdinal);
+  const exactSale =
+    saleBlockHash === closedBlockHash &&
+    saleBlockHeight === closedBlockHeight &&
+    saleBlockIndex === closedBlockIndex &&
+    saleProtocolVout !== null &&
+    saleRecordOrdinal !== null &&
+    (
+      saleProtocolVout !== closedProtocolVout ||
+      saleRecordOrdinal !== closedRecordOrdinal
+    );
+  const evidence =
+    outspend?.canonicalSaleEvidence &&
+    typeof outspend.canonicalSaleEvidence === "object" &&
+    !Array.isArray(outspend.canonicalSaleEvidence)
+      ? outspend.canonicalSaleEvidence
+      : {};
+  const listingId = String(listing?.listingId ?? "").trim().toLowerCase();
+  const evidenceListingId = String(evidence.listingId ?? "")
+    .trim()
+    .toLowerCase();
+  const tokenId = String(listing?.tokenId ?? "").trim().toLowerCase();
+  const evidenceTokenId = String(evidence.tokenId ?? "")
+    .trim()
+    .toLowerCase();
+  const buyerAddress = String(evidence.buyerAddress ?? "").trim();
+  const lockedBuyerAddress = String(
+    listing?.saleAuthorization?.buyerAddress ?? "",
+  ).trim();
+  const evidenceSellerAddress = String(evidence.sellerAddress ?? "").trim();
+  const evidenceRegistryAddress = String(evidence.registryAddress ?? "").trim();
+  const evidenceTicker = String(evidence.ticker ?? "").trim();
+  const evidencePricePresent =
+    evidence.priceSats !== undefined &&
+    evidence.priceSats !== null &&
+    evidence.priceSats !== "";
+  const evidencePriceSats = evidencePricePresent
+    ? exactInteger(evidence.priceSats)
+    : null;
+  const listingPriceSats = exactInteger(listing?.priceSats);
+  const evidenceAmountPresent =
+    (
+      evidence.amountAtoms !== undefined &&
+      evidence.amountAtoms !== null &&
+      evidence.amountAtoms !== ""
+    ) ||
+    (
+      evidence.amount !== undefined &&
+      evidence.amount !== null &&
+      evidence.amount !== ""
+    );
+  const listingAmount = tokenLedgerAmountFromRecord(tokenId, listing);
+  const evidenceAmount = evidenceAmountPresent
+    ? tokenLedgerAmountFromRecord(tokenId, evidence)
+    : null;
+  const evidenceAgrees =
+    exactSale &&
+    Boolean(buyerAddress) &&
+    Boolean(listingId) &&
+    evidenceListingId === listingId &&
+    Boolean(evidenceTokenId) &&
+    evidenceTokenId === tokenId &&
+    (!lockedBuyerAddress || lockedBuyerAddress === buyerAddress) &&
+    Boolean(evidenceSellerAddress) &&
+    evidenceSellerAddress === String(listing?.sellerAddress ?? "").trim() &&
+    Boolean(evidenceRegistryAddress) &&
+    evidenceRegistryAddress ===
+      String(listing?.registryAddress ?? "").trim() &&
+    Boolean(evidenceTicker) &&
+    evidenceTicker === String(listing?.ticker ?? "").trim() &&
+    evidencePricePresent &&
+    evidencePriceSats !== null &&
+    listingPriceSats !== null &&
+    evidencePriceSats === listingPriceSats &&
+    evidenceAmountPresent &&
+    listingAmount !== null &&
+    evidenceAmount !== null &&
+    String(evidenceAmount) === String(listingAmount);
+  if (!evidenceAgrees) {
+    return closePatch;
+  }
+
+  return {
+    ...closePatch,
+    buyerAddress,
+    canonicalSaleEvidence: {
+      amount: evidence.amount,
+      amountAtoms: evidence.amountAtoms,
+      buyerAddress,
+      listingId: evidenceListingId,
+      priceSats: evidence.priceSats,
+      registryAddress: evidenceRegistryAddress,
+      sellerAddress: evidenceSellerAddress,
+      ticker: evidenceTicker,
+      tokenId: evidenceTokenId,
+    },
+    lifecycleStatus: "sold",
+    saleBlockHash,
+    saleBlockHeight,
+    saleBlockIndex,
+    saleBuyerAddress: buyerAddress,
+    saleConfirmed: true,
+    saleProtocolVout,
+    saleRecordOrdinal,
+    saleTransactionBlockHeight: saleBlockHeight,
+    saleTxid: closeTxid,
+    status: "sold",
+  };
 }
 
 async function filterSpendableTokenListings(listings, network) {
@@ -10929,6 +11692,7 @@ async function filterSpendableTokenListings(listings, network) {
       closedConfirmed: Boolean(outspend.status?.confirmed),
       closedTxid,
       closedVin: Number.isSafeInteger(outspend.vin) ? outspend.vin : undefined,
+      ...canonicalTokenListingOutspendLifecyclePatch(listing, outspend),
     });
   }
 
@@ -10937,11 +11701,42 @@ async function filterSpendableTokenListings(listings, network) {
 
 function tokenListingWithoutCloseMetadata(listing) {
   const {
+    canonicalSaleEvidence,
+    buyerAddress,
+    closeTransactionBlockHeight,
     closeTxid,
     closedAt,
+    closedBlockHash,
+    closedBlockHeight,
+    closedBlockIndex,
+    closedByCanonicalOutpointSpend,
+    closedBySpendableOutspend,
     closedConfirmed,
+    closedDataBytes,
+    closedFrozenNetworkValueSats,
+    closedLiveNetworkValueSats,
+    closedMinerFeeCanonical,
+    closedMinerFeeSats,
+    closedMinerFeeSource,
+    closedProtocolVout,
+    closedRecordOrdinal,
     closedTxid,
     closedVin,
+    lifecycleStatus,
+    saleAt,
+    saleBlockHash,
+    saleBlockHeight,
+    saleBlockIndex,
+    saleBuyerAddress,
+    saleConfirmed,
+    saleDataBytes,
+    saleMinerFeeSats,
+    salePaymentSats,
+    saleProtocolVout,
+    saleRecordOrdinal,
+    saleTransactionBlockHeight,
+    saleTxid,
+    status,
     ...activeListing
   } = listing ?? {};
   return activeListing;
@@ -10986,6 +11781,43 @@ async function reconcileCachedTokenListingSeal(listing, network) {
     !/^[0-9a-f]{64}$/u.test(sealTxid) ||
     !tokenSaleAuthorizationUsesSaleTicketAnchor(listing?.saleAuthorization)
   ) {
+    return listing;
+  }
+
+  const exactPositionInteger = (value, minimum) =>
+    value !== undefined &&
+    value !== null &&
+    value !== "" &&
+    Number.isSafeInteger(Number(value)) &&
+    Number(value) >= minimum
+      ? Number(value)
+      : null;
+  const sealEventBlockHeight = exactPositionInteger(
+    listing?.sealBlockHeight,
+    1,
+  );
+  const sealTransactionBlockHeight = exactPositionInteger(
+    listing?.sealTransactionBlockHeight,
+    1,
+  );
+  const positivelyKnownPreAmoV5Seal =
+    sealTransactionBlockHeight !== null &&
+    sealTransactionBlockHeight < WORK_AMO_V5_ACTIVATION_HEIGHT &&
+    (
+      sealEventBlockHeight === null ||
+      sealEventBlockHeight === sealTransactionBlockHeight
+    );
+  const boundCanonicalSealEvidence =
+    sealTransactionBlockHeight !== null &&
+    sealEventBlockHeight === sealTransactionBlockHeight &&
+    /^[0-9a-f]{64}$/u.test(
+      String(listing?.sealBlockHash ?? "").trim().toLowerCase(),
+    ) &&
+    exactPositionInteger(listing?.sealBlockIndex, 0) !== null &&
+    exactPositionInteger(listing?.sealProtocolVout, 0) !== null &&
+    exactPositionInteger(listing?.sealRecordOrdinal, 0) !== null &&
+    exactPositionInteger(listing?.sealEventMatchCount, 1) === 1;
+  if (!positivelyKnownPreAmoV5Seal && !boundCanonicalSealEvidence) {
     return listing;
   }
 
@@ -11105,6 +11937,10 @@ async function reconcileCachedTokenClosedListing(closedListing, network) {
           closedVin: Number.isSafeInteger(outspend.vin)
             ? outspend.vin
             : closedListing.closedVin,
+          ...canonicalTokenListingOutspendLifecyclePatch(
+            closedListing,
+            outspend,
+          ),
         },
       };
     }
@@ -11144,6 +11980,10 @@ async function reconcileCachedTokenClosedListing(closedListing, network) {
         closedVin: Number.isSafeInteger(outspend.vin)
           ? outspend.vin
           : closedListing.closedVin,
+        ...canonicalTokenListingOutspendLifecyclePatch(
+          closedListing,
+          outspend,
+        ),
       },
     };
   }
@@ -11152,6 +11992,176 @@ async function reconcileCachedTokenClosedListing(closedListing, network) {
   return tokenListingAnchorOutpoint(activeListing)
     ? { kind: "active", listing: activeListing }
     : { kind: "closed", listing: closedListing };
+}
+
+function canonicalOutspendSaleFromClosedListing(listing) {
+  const exactInteger = (value, minimum = 0) => {
+    if (value === undefined || value === null || value === "") {
+      return null;
+    }
+    const parsed =
+      typeof value === "number"
+        ? value
+        : typeof value === "string" && /^(?:0|[1-9][0-9]*)$/u.test(value)
+          ? Number(value)
+          : Number.NaN;
+    return Number.isSafeInteger(parsed) && parsed >= minimum ? parsed : null;
+  };
+  const txid = String(listing?.saleTxid ?? listing?.closedTxid ?? "")
+    .trim()
+    .toLowerCase();
+  const buyerAddress = String(listing?.saleBuyerAddress ?? "").trim();
+  const evidence =
+    listing?.canonicalSaleEvidence &&
+    typeof listing.canonicalSaleEvidence === "object" &&
+    !Array.isArray(listing.canonicalSaleEvidence)
+      ? listing.canonicalSaleEvidence
+      : {};
+  const closedBlockHash = String(listing?.closedBlockHash ?? "")
+    .trim()
+    .toLowerCase();
+  const saleBlockHash = String(listing?.saleBlockHash ?? "")
+    .trim()
+    .toLowerCase();
+  const closedBlockHeight = exactInteger(listing?.closedBlockHeight, 1);
+  const closeTransactionBlockHeight = exactInteger(
+    listing?.closeTransactionBlockHeight,
+    1,
+  );
+  const saleBlockHeight = exactInteger(listing?.saleBlockHeight, 1);
+  const saleTransactionBlockHeight = exactInteger(
+    listing?.saleTransactionBlockHeight,
+    1,
+  );
+  const closedBlockIndex = exactInteger(listing?.closedBlockIndex);
+  const saleBlockIndex = exactInteger(listing?.saleBlockIndex);
+  const closedProtocolVout = exactInteger(listing?.closedProtocolVout);
+  const closedRecordOrdinal = exactInteger(listing?.closedRecordOrdinal);
+  const saleProtocolVout = exactInteger(listing?.saleProtocolVout);
+  const saleRecordOrdinal = exactInteger(listing?.saleRecordOrdinal);
+  const listingId = String(listing?.listingId ?? "").trim().toLowerCase();
+  const tokenId = String(listing?.tokenId ?? "").trim().toLowerCase();
+  const evidenceListingId = String(evidence?.listingId ?? "")
+    .trim()
+    .toLowerCase();
+  const evidenceTokenId = String(evidence?.tokenId ?? "")
+    .trim()
+    .toLowerCase();
+  const listingAmount = tokenLedgerAmountFromRecord(tokenId, listing);
+  const evidenceAmount = tokenLedgerAmountFromRecord(tokenId, evidence);
+  const listingPriceSats = exactInteger(listing?.priceSats);
+  const evidencePriceSats = exactInteger(evidence?.priceSats);
+  if (
+    listing?.lifecycleStatus !== "sold" ||
+    listing?.closedByCanonicalOutpointSpend !== true ||
+    listing?.closedConfirmed !== true ||
+    listing?.saleConfirmed !== true ||
+    !/^[0-9a-f]{64}$/u.test(txid) ||
+    txid !== String(listing?.closedTxid ?? "").trim().toLowerCase() ||
+    !buyerAddress ||
+    String(evidence?.buyerAddress ?? "").trim() !== buyerAddress ||
+    !listingId ||
+    evidenceListingId !== listingId ||
+    !tokenId ||
+    evidenceTokenId !== tokenId ||
+    String(evidence?.sellerAddress ?? "").trim() !==
+      String(listing?.sellerAddress ?? "").trim() ||
+    String(evidence?.registryAddress ?? "").trim() !==
+      String(listing?.registryAddress ?? "").trim() ||
+    String(evidence?.ticker ?? "").trim() !==
+      String(listing?.ticker ?? "").trim() ||
+    listingAmount === null ||
+    evidenceAmount === null ||
+    String(evidenceAmount) !== String(listingAmount) ||
+    listingPriceSats === null ||
+    evidencePriceSats !== listingPriceSats ||
+    !/^[0-9a-f]{64}$/u.test(closedBlockHash) ||
+    saleBlockHash !== closedBlockHash ||
+    closedBlockHeight === null ||
+    closeTransactionBlockHeight !== closedBlockHeight ||
+    saleBlockHeight !== closedBlockHeight ||
+    saleTransactionBlockHeight !== saleBlockHeight ||
+    closedBlockIndex === null ||
+    saleBlockIndex !== closedBlockIndex ||
+    closedProtocolVout === null ||
+    closedRecordOrdinal === null ||
+    saleProtocolVout === null ||
+    saleRecordOrdinal === null ||
+    (
+      saleProtocolVout === closedProtocolVout &&
+      saleRecordOrdinal === closedRecordOrdinal
+    )
+  ) {
+    return null;
+  }
+  const amount = tokenLedgerAmountFromRecord(tokenId, listing);
+  if (amount === null) {
+    return null;
+  }
+  return {
+    ...tokenLedgerAmountFields(tokenId, amount),
+    blockHash: listing.saleBlockHash,
+    blockHeight: listing.saleBlockHeight,
+    blockIndex: listing.saleBlockIndex,
+    buyerAddress,
+    closeTransactionBlockHeight:
+      listing.saleTransactionBlockHeight,
+    confirmed: true,
+    createdAt: listing.saleAt ?? listing.closedAt ?? listing.createdAt,
+    listingId: listing.listingId,
+    network: listing.network,
+    paidSats: numericValue(listing.priceSats),
+    priceSats: numericValue(listing.priceSats),
+    protocolVout: listing.saleProtocolVout,
+    recordOrdinal: listing.saleRecordOrdinal,
+    registryAddress: listing.registryAddress,
+    saleAt: listing.saleAt ?? listing.closedAt ?? listing.createdAt,
+    saleBlockHash: listing.saleBlockHash,
+    saleBlockHeight: listing.saleBlockHeight,
+    saleBlockIndex: listing.saleBlockIndex,
+    saleConfirmed: true,
+    salePaymentSats: numericValue(listing.priceSats),
+    saleProtocolVout: listing.saleProtocolVout,
+    saleRecordOrdinal: listing.saleRecordOrdinal,
+    saleTransactionBlockHeight:
+      listing.saleTransactionBlockHeight,
+    sellerAddress: listing.sellerAddress,
+    ticker: listing.ticker,
+    tokenId,
+    txid,
+  };
+}
+
+function tokenSalesWithCanonicalOutspendClosures(sales, closedListings) {
+  const byIdentity = new Map();
+  const identity = (sale) => {
+    const listingId = String(sale?.listingId ?? "").trim().toLowerCase();
+    const txid = String(sale?.txid ?? "").trim().toLowerCase();
+    return listingId && /^[0-9a-f]{64}$/u.test(txid)
+      ? `${listingId}:${txid}`
+      : "";
+  };
+  const passthrough = [];
+  for (const sale of Array.isArray(sales) ? sales : []) {
+    const key = identity(sale);
+    if (key) {
+      byIdentity.set(key, sale);
+    } else {
+      passthrough.push(sale);
+    }
+  }
+  for (const listing of Array.isArray(closedListings) ? closedListings : []) {
+    const recovered = canonicalOutspendSaleFromClosedListing(listing);
+    const key = identity(recovered);
+    if (!recovered || !key) {
+      continue;
+    }
+    byIdentity.set(key, {
+      ...(byIdentity.get(key) ?? {}),
+      ...recovered,
+    });
+  }
+  return [...passthrough, ...byIdentity.values()];
 }
 
 async function reconcileCachedTokenMarketPayload(payload, network) {
@@ -11206,11 +12216,15 @@ async function reconcileCachedTokenMarketPayload(payload, network) {
     },
   );
 
+  const sortedClosedListings = sortClosedTokenListings(closedListings);
   return {
     ...payload,
-    closedListings: sortClosedTokenListings(closedListings),
+    closedListings: sortedClosedListings,
     listings: [...activeListingsById.values()],
-    sales: sales.filter(Boolean),
+    sales: tokenSalesWithCanonicalOutspendClosures(
+      sales.filter(Boolean),
+      sortedClosedListings,
+    ),
   };
 }
 
@@ -11735,15 +12749,20 @@ async function spendableTokenListingsPayload(payload, network) {
       .filter(Boolean),
   );
 
+  const closedListings = sortClosedTokenListings([...closedByKey.values()]);
   return {
     ...reconciledPayload,
-    closedListings: sortClosedTokenListings([...closedByKey.values()]),
+    closedListings,
     listings: tokenListings.listings.filter((listing) => {
       const listingId = String(listing?.listingId ?? listing?.txid ?? "")
         .trim()
         .toLowerCase();
       return listingId && !closedListingIds.has(listingId);
     }),
+    sales: tokenSalesWithCanonicalOutspendClosures(
+      reconciledPayload.sales,
+      closedListings,
+    ),
   };
 }
 
@@ -13748,6 +14767,7 @@ function tokenStateFromTransactions(
             sealAt: createdAt,
             sealBlockHash: blockHash,
             sealBlockHeight: blockHeight,
+            sealTransactionBlockHeight: blockHeight,
             sealBlockIndex: blockIndex,
             sealConfirmed: confirmed,
             sealDataBytes: proofProtocolDataBytesForVout(vout),
@@ -15938,6 +16958,10 @@ function compactText(value, maxLength = 140) {
 }
 
 function activityKey(item) {
+  const governedTokenActivity = String(item?.kind ?? "")
+    .trim()
+    .toLowerCase()
+    .startsWith("token-");
   const blockHeight =
     item?.blockHeight !== undefined &&
     item?.blockHeight !== null &&
@@ -15946,6 +16970,18 @@ function activityKey(item) {
     Number(item.blockHeight) >= 1
       ? Number(item.blockHeight)
       : null;
+  const legacyPositionExempt =
+    item?.relic === true || item?.canonicalSynthetic === true;
+  if (
+    item?.confirmed === true &&
+    governedTokenActivity &&
+    blockHeight === null &&
+    !legacyPositionExempt
+  ) {
+    throw new Error(
+      "Confirmed token activity height is incomplete.",
+    );
+  }
   if (
     item?.confirmed === true &&
     blockHeight !== null &&
@@ -15974,7 +17010,6 @@ function activityKey(item) {
       );
     }
     return [
-      item?.kind,
       item?.network,
       item?.txid,
       "v5",
@@ -15982,8 +17017,6 @@ function activityKey(item) {
       blockIndex,
       protocolVout,
       recordOrdinal,
-      item?.listingId ?? "",
-      item?.id ?? "",
     ].join(":");
   }
   if (item?.kind === "token-listing-closed" && item?.txid) {
@@ -19748,6 +20781,47 @@ function infinityBondChartPointsFromEvents({
 }
 
 function tokenActivityItemsFromState(state, indexAddress) {
+  const exactPositionInteger = (value, minimum) =>
+    value !== undefined &&
+    value !== null &&
+    value !== "" &&
+    Number.isSafeInteger(Number(value)) &&
+    Number(value) >= minimum
+      ? Number(value)
+      : null;
+  const canonicalSyntheticRecord = (item, bondMint = false) =>
+    item?.canonicalSynthetic === true ||
+    item?.synthetic === true ||
+    bondMint;
+  const baseActivityRecordCanProject = (
+    item,
+    { bondMint = false, relic = false } = {},
+  ) => {
+    if (item?.confirmed !== true) {
+      return true;
+    }
+    if (
+      relic ||
+      canonicalSyntheticRecord(item, bondMint)
+    ) {
+      return true;
+    }
+    const blockHeight = exactPositionInteger(item?.blockHeight, 1);
+    if (blockHeight === null) {
+      return false;
+    }
+    if (blockHeight < WORK_AMO_V5_ACTIVATION_HEIGHT) {
+      return true;
+    }
+    return (
+      /^[0-9a-f]{64}$/u.test(
+        String(item?.blockHash ?? "").trim().toLowerCase(),
+      ) &&
+      exactPositionInteger(item?.blockIndex, 0) !== null &&
+      exactPositionInteger(item?.protocolVout, 0) !== null &&
+      exactPositionInteger(item?.recordOrdinal, 0) !== null
+    );
+  };
   const tickerByTokenId = new Map(
     (state.tokens ?? [])
       .map((token) => [
@@ -19760,48 +20834,62 @@ function tokenActivityItemsFromState(state, indexAddress) {
     .filter(
       (token) =>
         token?.tokenId !== WORK_TOKEN_ID &&
-        !BOND_TOKEN_IDS.has(token?.tokenId),
+        !BOND_TOKEN_IDS.has(token?.tokenId) &&
+        baseActivityRecordCanProject(token),
     )
     .map((token) => ({
-    amountSats: token.creationFeeSats,
-    actor: token.creatorAddress,
-    blockHash: token.blockHash,
-    blockHeight: token.blockHeight,
-    blockIndex: token.blockIndex,
-    confirmed: token.confirmed,
-    counterparty: indexAddress,
-    createdAt: token.createdAt,
-    dataBytes: token.dataBytes,
-    description: `${token.ticker} created with ${token.maxSupply.toLocaleString()} max supply and registry ${shortAddress(token.registryAddress)}.`,
-    detail: `${token.mintAmount.toLocaleString()} ${token.ticker} for ${token.mintPriceSats.toLocaleString()} proofs`,
-    frozenNetworkValueSats:
-      numericValue(token.frozenNetworkValueSats) ||
-      numericValue(token.creationFeeSats) + numericValue(token.minerFeeSats),
-    kind: "token-create",
-    liveNetworkValueSats:
-      numericValue(token.liveNetworkValueSats) ||
-      numericValue(token.creationFeeSats) + numericValue(token.minerFeeSats),
-    minerFeeSats: numericValue(token.minerFeeSats),
-    network: token.network,
-    participants: [token.creatorAddress, token.registryAddress].filter(Boolean),
-    proofPaymentSats: numericValue(token.creationFeeSats),
-    tags: [
-      activityStatusTag(token.confirmed),
-      networkLabel(token.network),
-      "Credit",
-      "Creation",
-      token.ticker,
-      `${token.creationFeeSats.toLocaleString()} creation proofs`,
-    ],
-    title: token.confirmed ? "Credit created" : "Credit creation pending",
-    tokenId: token.tokenId,
-    txid: token.txid,
+      ...canonicalEventIdentityDetails(token),
+      ...(canonicalSyntheticRecord(token)
+        ? { canonicalSynthetic: true }
+        : {}),
+      amountSats: token.creationFeeSats,
+      actor: token.creatorAddress,
+      blockHash: token.blockHash,
+      blockHeight: token.blockHeight,
+      blockIndex: token.blockIndex,
+      confirmed: token.confirmed,
+      counterparty: indexAddress,
+      createdAt: token.createdAt,
+      dataBytes: token.dataBytes,
+      description: `${token.ticker} created with ${token.maxSupply.toLocaleString()} max supply and registry ${shortAddress(token.registryAddress)}.`,
+      detail: `${token.mintAmount.toLocaleString()} ${token.ticker} for ${token.mintPriceSats.toLocaleString()} proofs`,
+      frozenNetworkValueSats:
+        numericValue(token.frozenNetworkValueSats) ||
+        numericValue(token.creationFeeSats) + numericValue(token.minerFeeSats),
+      kind: "token-create",
+      liveNetworkValueSats:
+        numericValue(token.liveNetworkValueSats) ||
+        numericValue(token.creationFeeSats) + numericValue(token.minerFeeSats),
+      minerFeeSats: numericValue(token.minerFeeSats),
+      network: token.network,
+      participants: [token.creatorAddress, token.registryAddress].filter(Boolean),
+      proofPaymentSats: numericValue(token.creationFeeSats),
+      tags: [
+        activityStatusTag(token.confirmed),
+        networkLabel(token.network),
+        "Credit",
+        "Creation",
+        token.ticker,
+        `${token.creationFeeSats.toLocaleString()} creation proofs`,
+      ],
+      title: token.confirmed ? "Credit created" : "Credit creation pending",
+      tokenId: token.tokenId,
+      txid: token.txid,
     }));
 
-  const mints = (state.mints ?? []).map((mint) => ({
+  const mints = (state.mints ?? [])
+    .filter((mint) =>
+      baseActivityRecordCanProject(mint, {
+        bondMint: isBondTokenId(mint?.tokenId),
+      }),
+    )
+    .map((mint) => ({
     ...canonicalEventIdentityDetails(mint),
     ...canonicalInceptionMintMetadata(mint),
     ...tokenAmountFieldsFromRecord(mint),
+    ...(canonicalSyntheticRecord(mint, isBondTokenId(mint?.tokenId))
+      ? { canonicalSynthetic: true }
+      : {}),
     amountSats:
       mint.tokenId === INCB_TOKEN_ID &&
       mint.issuanceAccountingModel === INCEPTION_ISSUANCE_ACCOUNTING_MODEL
@@ -19840,9 +20928,12 @@ function tokenActivityItemsFromState(state, indexAddress) {
     title: mint.confirmed ? "Credit mint" : "Credit mint pending",
     tokenId: mint.tokenId,
     txid: mint.txid,
-  }));
+    }));
 
-  const transfers = (state.transfers ?? []).map((transfer) => ({
+  const transfers = (state.transfers ?? [])
+    .filter((transfer) => baseActivityRecordCanProject(transfer))
+    .map((transfer) => ({
+    ...canonicalEventIdentityDetails(transfer),
     ...tokenAmountFieldsFromRecord(transfer),
     ...(transfer.amountAtoms
       ? { creditAmountMovedAtoms: transfer.amountAtoms }
@@ -19921,18 +21012,28 @@ function tokenActivityItemsFromState(state, indexAddress) {
     title: transfer.confirmed ? "Credit transfer" : "Credit transfer pending",
     tokenId: transfer.tokenId,
     txid: transfer.txid,
-  }));
+    }));
 
   const listings = [
     ...(state.listings ?? []),
     ...(state.closedListings ?? []).filter(
       (listing) => listing?.relic === true,
     ),
-  ].map((listing) => {
+  ]
+    .filter((listing) =>
+      baseActivityRecordCanProject(listing, {
+        relic: listing?.relic === true,
+      }),
+    )
+    .map((listing) => {
     const sealConfirmed = tokenListingHasConfirmedSaleTicketSeal(listing);
     const sealPending = tokenListingHasPendingSaleTicketSeal(listing);
     return {
+      ...canonicalEventIdentityDetails(listing),
       ...tokenAmountFieldsFromRecord(listing),
+      ...(canonicalSyntheticRecord(listing)
+        ? { canonicalSynthetic: true }
+        : {}),
       amountSats: TOKEN_MIN_MUTATION_PRICE_SATS,
       actor: listing.sellerAddress,
       blockHash: listing.blockHash,
@@ -19959,6 +21060,7 @@ function tokenActivityItemsFromState(state, indexAddress) {
       marketplaceMutationFeeSats: TOKEN_MIN_MUTATION_PRICE_SATS,
       minerFeeSats: numericValue(listing.minerFeeSats),
       network: listing.network,
+      ...(listing?.relic === true ? { relic: true } : {}),
       participants: [
         listing.sellerAddress,
         listing.saleAuthorization?.buyerAddress,
@@ -19984,7 +21086,7 @@ function tokenActivityItemsFromState(state, indexAddress) {
       tokenId: listing.tokenId,
       txid: listing.listingId,
     };
-  });
+    });
   const sealedListings = [];
   const seenSealTxids = new Set();
   for (const listing of [
@@ -19996,15 +21098,67 @@ function tokenActivityItemsFromState(state, indexAddress) {
     if (!sealTxid || seenSealTxids.has(sealTxid)) {
       continue;
     }
-    seenSealTxids.add(sealTxid);
     const sealConfirmed = listing.sealConfirmed === true;
+    const exactSealPositionInteger = (value, minimum) =>
+      value !== undefined &&
+      value !== null &&
+      value !== "" &&
+      Number.isSafeInteger(Number(value)) &&
+      Number(value) >= minimum;
+    const sealHeight = exactSealPositionInteger(listing.sealBlockHeight, 1)
+      ? Number(listing.sealBlockHeight)
+      : undefined;
+    const sealTransactionHeight = exactSealPositionInteger(
+      listing.sealTransactionBlockHeight,
+      1,
+    )
+      ? Number(listing.sealTransactionBlockHeight)
+      : undefined;
+    const sealSpecificHeights = [
+      sealHeight,
+      sealTransactionHeight,
+    ].filter((height) => height !== undefined);
+    const knownPreAmoV5Seal =
+      sealSpecificHeights.length > 0 &&
+      sealSpecificHeights.every(
+        (height) => height < WORK_AMO_V5_ACTIVATION_HEIGHT,
+      );
+    const strictSealPosition =
+      listing?.relic !== true &&
+      sealConfirmed &&
+      !knownPreAmoV5Seal;
+    if (
+      strictSealPosition &&
+      (!/^[0-9a-f]{64}$/u.test(
+        String(listing.sealBlockHash ?? "").trim().toLowerCase(),
+      ) ||
+        sealHeight === undefined ||
+        sealTransactionHeight === undefined ||
+        sealHeight !== sealTransactionHeight ||
+        !exactSealPositionInteger(listing.sealBlockIndex, 0) ||
+        !exactSealPositionInteger(listing.sealProtocolVout, 0) ||
+        !exactSealPositionInteger(listing.sealRecordOrdinal, 0))
+    ) {
+      continue;
+    }
+    seenSealTxids.add(sealTxid);
     sealedListings.push({
+      ...canonicalEventIdentityDetails({
+        protocolVout: listing.sealProtocolVout,
+        recordOrdinal: listing.sealRecordOrdinal,
+      }),
       ...tokenAmountFieldsFromRecord(listing),
       amountSats: TOKEN_MIN_MUTATION_PRICE_SATS,
       actor: listing.sellerAddress,
-      blockHash: listing.sealBlockHash ?? listing.blockHash,
-      blockHeight: listing.sealBlockHeight ?? listing.blockHeight,
-      blockIndex: listing.sealBlockIndex ?? listing.blockIndex,
+      blockHash: strictSealPosition
+        ? listing.sealBlockHash
+        : listing.sealBlockHash ?? listing.blockHash,
+      blockHeight: strictSealPosition
+        ? sealHeight
+        : sealTransactionHeight ?? sealHeight ?? listing.blockHeight,
+      blockIndex: strictSealPosition
+        ? listing.sealBlockIndex
+        : listing.sealBlockIndex ?? listing.blockIndex,
       confirmed: sealConfirmed,
       counterparty: listing.registryAddress,
       createdAt: listing.sealAt ?? listing.createdAt,
@@ -20024,6 +21178,7 @@ function tokenActivityItemsFromState(state, indexAddress) {
       marketplaceMutationFeeSats: TOKEN_MIN_MUTATION_PRICE_SATS,
       minerFeeSats: numericValue(listing.sealMinerFeeSats),
       network: listing.network,
+      ...(listing?.relic === true ? { relic: true } : {}),
       participants: [
         listing.sellerAddress,
         listing.saleAuthorization?.buyerAddress,
@@ -20048,79 +21203,280 @@ function tokenActivityItemsFromState(state, indexAddress) {
   }
 
   const closedListings = (state.closedListings ?? [])
-    .filter(
-      (listing) =>
-        listing?.relic !== true &&
-        tokenListingCanProjectCloseActivity(listing),
-    )
+    .filter((listing) => {
+      if (
+        listing?.relic === true ||
+        !tokenListingCanProjectCloseActivity(listing)
+      ) {
+        return false;
+      }
+      const exactPositionInteger = (value, minimum) =>
+        value !== undefined &&
+        value !== null &&
+        value !== "" &&
+        Number.isSafeInteger(Number(value)) &&
+        Number(value) >= minimum;
+      const closeHeight = exactPositionInteger(
+        listing.closedBlockHeight,
+        1,
+      )
+        ? Number(listing.closedBlockHeight)
+        : undefined;
+      const closeTransactionHeight = exactPositionInteger(
+        listing.closeTransactionBlockHeight,
+        1,
+      )
+        ? Number(listing.closeTransactionBlockHeight)
+        : undefined;
+      const closeSpecificHeights = [
+        closeHeight,
+        closeTransactionHeight,
+      ].filter((height) => height !== undefined);
+      const knownPreAmoV5Close =
+        closeSpecificHeights.length > 0 &&
+        closeSpecificHeights.every(
+          (height) => height < WORK_AMO_V5_ACTIVATION_HEIGHT,
+        );
+      const postAmoV5Close =
+        closeSpecificHeights.some(
+          (height) => height >= WORK_AMO_V5_ACTIVATION_HEIGHT,
+        );
+      const strictClosePosition =
+        postAmoV5Close ||
+        (listing.closedConfirmed === true && !knownPreAmoV5Close);
+      if (!strictClosePosition) {
+        return true;
+      }
+      return (
+        /^[0-9a-f]{64}$/u.test(
+          String(listing.closedBlockHash ?? "").trim().toLowerCase(),
+        ) &&
+        closeHeight !== undefined &&
+        (closeTransactionHeight === undefined ||
+          closeTransactionHeight === closeHeight) &&
+        exactPositionInteger(listing.closedBlockIndex, 0) &&
+        exactPositionInteger(listing.closedProtocolVout, 0) &&
+        exactPositionInteger(listing.closedRecordOrdinal, 0)
+      );
+    })
     .map((listing) => {
-    const closedTxid =
-      typeof listing.closedTxid === "string" ? listing.closedTxid : "";
-    const spentBy = closedTxid ? ` by ${shortAddress(closedTxid)}` : "";
-    return {
-      ...tokenAmountFieldsFromRecord(listing),
-      amountSats: TOKEN_MIN_MUTATION_PRICE_SATS,
-      actor: listing.sellerAddress,
-      blockHash: listing.closedBlockHash ?? listing.blockHash,
-      blockHeight: listing.closedBlockHeight ?? listing.blockHeight,
-      blockIndex: listing.closedBlockIndex ?? listing.blockIndex,
-      confirmed: Boolean(listing.closedConfirmed),
-      counterparty: listing.registryAddress,
-      createdAt: listing.closedAt ?? listing.createdAt,
-      dataBytes: listing.closedDataBytes ?? listing.dataBytes,
-      description: `${listing.amount.toLocaleString()} ${listing.ticker} listing closed because its sale-ticket output was spent${spentBy}.`,
-      detail: closedTxid
-        ? `Sale ticket spent by ${shortAddress(closedTxid)}`
-        : "Sale ticket spent",
-      frozenNetworkValueSats:
-        numericValue(listing.closedFrozenNetworkValueSats) ||
-        TOKEN_MIN_MUTATION_PRICE_SATS +
-          numericValue(listing.closedMinerFeeSats),
-      kind: "token-listing-closed",
-      listingId: listing.listingId,
-      liveNetworkValueSats:
-        numericValue(listing.closedLiveNetworkValueSats) ||
-        TOKEN_MIN_MUTATION_PRICE_SATS +
-          numericValue(listing.closedMinerFeeSats),
-      marketplaceMutationFeeSats: TOKEN_MIN_MUTATION_PRICE_SATS,
-      minerFeeSats: numericValue(listing.closedMinerFeeSats),
-      network: listing.network,
-      participants: [
-        listing.sellerAddress,
-        listing.saleAuthorization?.buyerAddress,
-        listing.registryAddress,
-      ].filter(Boolean),
-      tags: [
-        activityStatusTag(Boolean(listing.closedConfirmed)),
-        networkLabel(listing.network),
-        "Credit",
-        "AMO",
-        "Closed",
-        "Spent ticket",
-        listing.ticker,
-        `${listing.amount.toLocaleString()} ${listing.ticker}`,
-        `${listing.priceSats.toLocaleString()} sale proofs`,
-      ],
-      title: listing.closedConfirmed
-        ? "Credit listing closed"
-        : "Credit listing closing",
-      tokenId: listing.tokenId,
-      txid: closedTxid || listing.listingId,
-    };
-  });
+      const closedTxid =
+        typeof listing.closedTxid === "string" ? listing.closedTxid : "";
+      const spentBy = closedTxid ? ` by ${shortAddress(closedTxid)}` : "";
+      const exactPositionInteger = (value, minimum) =>
+        value !== undefined &&
+        value !== null &&
+        value !== "" &&
+        Number.isSafeInteger(Number(value)) &&
+        Number(value) >= minimum;
+      const closeHeight = exactPositionInteger(
+        listing.closedBlockHeight,
+        1,
+      )
+        ? Number(listing.closedBlockHeight)
+        : undefined;
+      const closeTransactionHeight = exactPositionInteger(
+        listing.closeTransactionBlockHeight,
+        1,
+      )
+        ? Number(listing.closeTransactionBlockHeight)
+        : undefined;
+      const closeSpecificHeights = [
+        closeHeight,
+        closeTransactionHeight,
+      ].filter((height) => height !== undefined);
+      const knownPreAmoV5Close =
+        closeSpecificHeights.length > 0 &&
+        closeSpecificHeights.every(
+          (height) => height < WORK_AMO_V5_ACTIVATION_HEIGHT,
+        );
+      const strictClosePosition =
+        closeSpecificHeights.some(
+          (height) => height >= WORK_AMO_V5_ACTIVATION_HEIGHT,
+        ) ||
+        (listing.closedConfirmed === true && !knownPreAmoV5Close);
+      return {
+        ...canonicalEventIdentityDetails({
+          protocolVout: listing.closedProtocolVout,
+          recordOrdinal: listing.closedRecordOrdinal,
+        }),
+        ...tokenAmountFieldsFromRecord(listing),
+        amountSats: TOKEN_MIN_MUTATION_PRICE_SATS,
+        actor: listing.sellerAddress,
+        blockHash: strictClosePosition
+          ? listing.closedBlockHash
+          : listing.closedBlockHash ?? listing.blockHash,
+        blockHeight: strictClosePosition
+          ? closeHeight
+          : closeHeight ?? closeTransactionHeight ?? listing.blockHeight,
+        blockIndex: strictClosePosition
+          ? listing.closedBlockIndex
+          : listing.closedBlockIndex ?? listing.blockIndex,
+        confirmed: Boolean(listing.closedConfirmed),
+        counterparty: listing.registryAddress,
+        createdAt: listing.closedAt ?? listing.createdAt,
+        dataBytes: listing.closedDataBytes ?? listing.dataBytes,
+        description: `${listing.amount.toLocaleString()} ${listing.ticker} listing closed because its sale-ticket output was spent${spentBy}.`,
+        detail: closedTxid
+          ? `Sale ticket spent by ${shortAddress(closedTxid)}`
+          : "Sale ticket spent",
+        frozenNetworkValueSats:
+          numericValue(listing.closedFrozenNetworkValueSats) ||
+          TOKEN_MIN_MUTATION_PRICE_SATS +
+            numericValue(listing.closedMinerFeeSats),
+        kind: "token-listing-closed",
+        listingId: listing.listingId,
+        liveNetworkValueSats:
+          numericValue(listing.closedLiveNetworkValueSats) ||
+          TOKEN_MIN_MUTATION_PRICE_SATS +
+            numericValue(listing.closedMinerFeeSats),
+        marketplaceMutationFeeSats: TOKEN_MIN_MUTATION_PRICE_SATS,
+        minerFeeSats: numericValue(listing.closedMinerFeeSats),
+        network: listing.network,
+        participants: [
+          listing.sellerAddress,
+          listing.saleAuthorization?.buyerAddress,
+          listing.registryAddress,
+        ].filter(Boolean),
+        tags: [
+          activityStatusTag(Boolean(listing.closedConfirmed)),
+          networkLabel(listing.network),
+          "Credit",
+          "AMO",
+          "Closed",
+          "Spent ticket",
+          listing.ticker,
+          `${listing.amount.toLocaleString()} ${listing.ticker}`,
+          `${listing.priceSats.toLocaleString()} sale proofs`,
+        ],
+        title: listing.closedConfirmed
+          ? "Credit listing closed"
+          : "Credit listing closing",
+        tokenId: listing.tokenId,
+        txid: closedTxid || listing.listingId,
+      };
+    });
 
-  const sales = (state.sales ?? []).map((sale) => ({
+  const saleActivityPosition = (sale) => {
+    const exactPositionInteger = (value, minimum) =>
+      value !== undefined &&
+      value !== null &&
+      value !== "" &&
+      Number.isSafeInteger(Number(value)) &&
+      Number(value) >= minimum
+        ? Number(value)
+        : undefined;
+    const hasSaleSpecificPosition = [
+      sale?.saleBlockHash,
+      sale?.saleBlockHeight,
+      sale?.saleBlockIndex,
+      sale?.saleProtocolVout,
+      sale?.saleRecordOrdinal,
+    ].some(
+      (value) => value !== undefined && value !== null && value !== "",
+    );
+    const saleSpecificHeight = exactPositionInteger(
+      sale?.saleBlockHeight,
+      1,
+    );
+    const directSaleHeight = exactPositionInteger(sale?.blockHeight, 1);
+    const saleHeight = hasSaleSpecificPosition
+      ? saleSpecificHeight
+      : directSaleHeight;
+    const closeHeight = exactPositionInteger(
+      sale?.closedBlockHeight,
+      1,
+    );
+    const saleTransactionHeight = exactPositionInteger(
+      sale?.saleTransactionBlockHeight ??
+        sale?.closeTransactionBlockHeight,
+      1,
+    );
+    const saleLifecycleHeights = [
+      saleSpecificHeight,
+      directSaleHeight,
+      closeHeight,
+      saleTransactionHeight,
+    ].filter((height) => height !== undefined);
+    const knownPreAmoV5Sale =
+      saleLifecycleHeights.length > 0 &&
+      saleLifecycleHeights.every(
+        (height) => height < WORK_AMO_V5_ACTIVATION_HEIGHT,
+      );
+    const lifecycleHeightsAgree =
+      saleLifecycleHeights.length < 2 ||
+      saleLifecycleHeights.every(
+        (height) => height === saleLifecycleHeights[0],
+      );
+    const strictSalePosition =
+      saleLifecycleHeights.some(
+        (height) => height >= WORK_AMO_V5_ACTIVATION_HEIGHT,
+      ) ||
+      (sale?.relic !== true &&
+        sale?.confirmed === true &&
+        !knownPreAmoV5Sale);
+    const blockHash = String(
+      hasSaleSpecificPosition
+        ? sale?.saleBlockHash ?? ""
+        : sale?.blockHash ?? "",
+    )
+      .trim()
+      .toLowerCase();
+    const blockIndex = exactPositionInteger(
+      hasSaleSpecificPosition
+        ? sale?.saleBlockIndex
+        : sale?.blockIndex,
+      0,
+    );
+    const protocolVout = exactPositionInteger(
+      hasSaleSpecificPosition
+        ? sale?.saleProtocolVout
+        : sale?.protocolVout,
+      0,
+    );
+    const recordOrdinal = exactPositionInteger(
+      hasSaleSpecificPosition
+        ? sale?.saleRecordOrdinal
+        : sale?.recordOrdinal,
+      0,
+    );
+    const completeSalePosition =
+      /^[0-9a-f]{64}$/u.test(blockHash) &&
+      saleHeight !== undefined &&
+      blockIndex !== undefined &&
+      protocolVout !== undefined &&
+      recordOrdinal !== undefined;
+    return {
+      blockHash: blockHash || undefined,
+      blockHeight: saleHeight ?? saleTransactionHeight,
+      blockIndex,
+      canProject:
+        lifecycleHeightsAgree &&
+        (!strictSalePosition || completeSalePosition),
+      protocolVout,
+      recordOrdinal,
+    };
+  };
+  const sales = (state.sales ?? []).filter(
+    (sale) => saleActivityPosition(sale).canProject,
+  ).map((sale) => {
+    const salePosition = saleActivityPosition(sale);
+    return {
+    ...canonicalEventIdentityDetails({
+      protocolVout: salePosition.protocolVout,
+      recordOrdinal: salePosition.recordOrdinal,
+    }),
     ...tokenAmountFieldsFromRecord(sale),
     ...(sale.amountAtoms ? { creditAmountMovedAtoms: sale.amountAtoms } : {}),
     amountSats: sale.paidSats,
     actor: sale.buyerAddress,
-    blockHash: sale.blockHash,
-    blockHeight: sale.blockHeight,
-    blockIndex: sale.blockIndex,
+    blockHash: salePosition.blockHash,
+    blockHeight: salePosition.blockHeight,
+    blockIndex: salePosition.blockIndex,
     confirmed: sale.confirmed,
     counterparty: sale.sellerAddress,
-    createdAt: sale.createdAt,
-    dataBytes: sale.dataBytes,
+    createdAt: sale.saleAt ?? sale.createdAt,
+    dataBytes: sale.saleDataBytes ?? sale.dataBytes,
     description: `${sale.amount.toLocaleString()} ${sale.ticker} bought by ${shortAddress(sale.buyerAddress)} from ${shortAddress(sale.sellerAddress)} for ${sale.priceSats.toLocaleString()} proofs.`,
     detail: `Listing ${shortAddress(sale.listingId)}`,
     arbSats: numericValue(sale.arbSats),
@@ -20155,7 +21511,12 @@ function tokenActivityItemsFromState(state, indexAddress) {
       sale.sellerAddress,
       sale.registryAddress,
     ].filter(Boolean),
+    saleBlockHash: salePosition.blockHash,
+    saleBlockHeight: salePosition.blockHeight,
+    saleBlockIndex: salePosition.blockIndex,
     salePaymentSats: numericValue(sale.priceSats),
+    saleProtocolVout: salePosition.protocolVout,
+    saleRecordOrdinal: salePosition.recordOrdinal,
     tags: [
       activityStatusTag(sale.confirmed),
       networkLabel(sale.network),
@@ -20169,7 +21530,8 @@ function tokenActivityItemsFromState(state, indexAddress) {
     title: sale.confirmed ? "Credit sale" : "Credit sale pending",
     tokenId: sale.tokenId,
     txid: sale.txid,
-  }));
+    };
+  });
 
   return [
     ...creations,
@@ -25570,6 +26932,7 @@ function workTokenStateWithDeltaTransactions(state, txs, network) {
           sealAt: createdAt,
           sealBlockHash: blockHash,
           sealBlockHeight: blockHeight,
+          sealTransactionBlockHeight: blockHeight,
           sealBlockIndex: blockIndex,
           sealConfirmed: confirmed,
           sealDataBytes: proofProtocolDataBytesForVout(vout),
@@ -26886,6 +28249,15 @@ function tokenMintHistoryItemKey(item) {
     Number(item.blockHeight) >= 1
       ? Number(item.blockHeight)
       : null;
+  const legacyPositionExempt =
+    item?.relic === true || item?.canonicalSynthetic === true;
+  if (
+    item?.confirmed === true &&
+    blockHeight === null &&
+    !legacyPositionExempt
+  ) {
+    throw new Error("Confirmed token mint position is incomplete.");
+  }
   if (
     item?.confirmed === true &&
     blockHeight !== null &&
@@ -26893,9 +28265,9 @@ function tokenMintHistoryItemKey(item) {
   ) {
     const position = canonicalTokenReplayPosition(item);
     return [
-      String(item?.tokenId ?? "").trim().toLowerCase(),
+      String(item?.network ?? "").trim().toLowerCase(),
       String(item?.txid ?? "").trim().toLowerCase(),
-      "event",
+      "v5",
       position.blockHeight,
       position.blockIndex,
       position.protocolVout,
@@ -26933,6 +28305,15 @@ function tokenTransferHistoryItemKey(item) {
     Number(item.blockHeight) >= 1
       ? Number(item.blockHeight)
       : null;
+  const legacyPositionExempt =
+    item?.relic === true || item?.canonicalSynthetic === true;
+  if (
+    item?.confirmed === true &&
+    blockHeight === null &&
+    !legacyPositionExempt
+  ) {
+    throw new Error("Confirmed token transfer position is incomplete.");
+  }
   if (
     item?.confirmed === true &&
     blockHeight !== null &&
@@ -26940,9 +28321,9 @@ function tokenTransferHistoryItemKey(item) {
   ) {
     const position = canonicalTokenReplayPosition(item);
     return [
-      String(item?.tokenId ?? "").trim().toLowerCase(),
+      String(item?.network ?? "").trim().toLowerCase(),
       String(item?.txid ?? "").trim().toLowerCase(),
-      "event",
+      "v5",
       position.blockHeight,
       position.blockIndex,
       position.protocolVout,
@@ -28705,15 +30086,20 @@ async function workTokenStateWithIndexedActiveListings(
     Array.isArray(recoveredPayload?.listings) ? recoveredPayload.listings : [],
     network,
   );
+  const closedListings = [
+    ...(Array.isArray(recoveredPayload?.closedListings)
+      ? recoveredPayload.closedListings
+      : []),
+    ...spendable.closedListings,
+  ];
   return {
     ...recoveredPayload,
-    closedListings: [
-      ...(Array.isArray(recoveredPayload?.closedListings)
-        ? recoveredPayload.closedListings
-        : []),
-      ...spendable.closedListings,
-    ],
+    closedListings,
     listings: spendable.listings,
+    sales: tokenSalesWithCanonicalOutspendClosures(
+      recoveredPayload?.sales,
+      closedListings,
+    ),
     source: mergedSourceLabel(
       recoveredPayload?.source,
       "proof-indexer-token-listing-tx-recovery",
@@ -40071,12 +41457,32 @@ function creditMovementIdentity(item, kind) {
     Number(item.blockHeight) >= 1
       ? Number(item.blockHeight)
       : null;
+  const legacyPositionExempt =
+    item?.relic === true || item?.canonicalSynthetic === true;
+  if (
+    item?.confirmed === true &&
+    blockHeight === null &&
+    !legacyPositionExempt
+  ) {
+    throw new Error("Confirmed credit movement position is incomplete.");
+  }
   const canonicalPosition =
     item?.confirmed === true &&
       blockHeight !== null &&
       blockHeight >= WORK_AMO_V5_ACTIVATION_HEIGHT
       ? canonicalTokenReplayPosition(item)
       : null;
+  if (canonicalPosition) {
+    return [
+      text(item?.network),
+      text(item?.txid),
+      "v5",
+      canonicalPosition.blockHeight,
+      canonicalPosition.blockIndex,
+      canonicalPosition.protocolVout,
+      canonicalPosition.recordOrdinal,
+    ].join(":");
+  }
   const identity = canonicalPosition
     ? [
         "event",
@@ -40115,6 +41521,15 @@ function creditReplayRecordIdentity(item) {
     Number(item.blockHeight) >= 1
       ? Number(item.blockHeight)
       : null;
+  const legacyPositionExempt =
+    item?.relic === true || item?.canonicalSynthetic === true;
+  if (
+    item?.confirmed === true &&
+    blockHeight === null &&
+    !legacyPositionExempt
+  ) {
+    throw new Error("Confirmed credit replay position is incomplete.");
+  }
   if (
     item?.confirmed === true &&
     blockHeight !== null &&
@@ -40122,6 +41537,8 @@ function creditReplayRecordIdentity(item) {
   ) {
     const position = canonicalTokenReplayPosition(item);
     return [
+      String(item?.network ?? "").trim().toLowerCase(),
+      txid,
       "v5",
       position.blockHeight,
       position.blockIndex,
