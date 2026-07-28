@@ -3,6 +3,16 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import * as bitcoin from "bitcoinjs-lib";
 import {
+  CanonicalConvergenceTimeoutError,
+  MarketplaceRegressionHttpError,
+  createCanonicalConvergenceBudget,
+  isRetryableCanonicalReadError,
+  isRetryableWorkAmoV5TipRaceStatus,
+  marketplaceRegressionCanonicalReadKind,
+  waitForCanonicalConvergence,
+  waitForCanonicalConvergenceWithinBudget,
+} from "./marketplace-canonical-convergence.mjs";
+import {
   WORK_AMO_V4_AUTH_VERSION,
   WORK_AMO_V4_ORACLE_MODEL,
   WORK_AMO_V4_UNIT_MODEL,
@@ -32,6 +42,7 @@ import {
   WORK_AMO_V5_ID_SALE_AUTH_VERSION,
   WORK_AMO_V5_INCB_TOKEN_ID,
   WORK_AMO_V5_MAX_QUOTE_AGE_BLOCKS,
+  WORK_AMO_V5_MODELS,
   WORK_AMO_V5_PRE_UNIT_RELIC_AMOUNT_ATOMS,
   WORK_AMO_V5_PRE_UNIT_RELIC_ANCHOR_SCRIPT_PUBKEY,
   WORK_AMO_V5_PRE_UNIT_RELIC_AUTH_VERSION,
@@ -5526,5 +5537,373 @@ assert.throws(
   () => replayRawAdversarialRecords([rawMissingOrdinalRecord]),
   /work-amo-v5-raw-record-invalid/u,
 );
+
+const canonicalCatchUpError = new MarketplaceRegressionHttpError(
+  "https://computer.proofofwork.me/api/v1/token",
+  503,
+  {
+    details: { code: "CANONICAL_INDEX_CATCHING_UP" },
+    error:
+      "The canonical ProofOfWork index is catching up to the Bitcoin Core tip.",
+  },
+);
+assert.equal(isRetryableCanonicalReadError(canonicalCatchUpError), true);
+
+const canonicalHashA = "a".repeat(64);
+const canonicalHashB = "b".repeat(64);
+const transientIndexUnavailableDetails = {
+  canonicalHash: canonicalHashA,
+  fault: { active: false },
+  indexedThroughBlock: 100,
+  lagBlocks: 1,
+  readModelsOk: true,
+  rebuild: {
+    active: false,
+    complete: true,
+    status: "complete",
+  },
+  storedHash: canonicalHashA,
+  tipHeight: 101,
+};
+assert.equal(
+  isRetryableCanonicalReadError(
+    new MarketplaceRegressionHttpError(
+      "https://computer.proofofwork.me/api/v1/token",
+      503,
+      {
+        details: {
+          code: "CANONICAL_INDEX_UNAVAILABLE",
+          ...transientIndexUnavailableDetails,
+        },
+        error:
+          "The canonical ProofOfWork index is rebuilding or no longer matches Bitcoin Core.",
+      },
+    ),
+  ),
+  true,
+);
+assert.equal(
+  isRetryableCanonicalReadError(
+    new MarketplaceRegressionHttpError(
+      "https://computer.proofofwork.me/api/v1/token",
+      503,
+      {
+        details: {
+          code: "CANONICAL_INDEX_UNAVAILABLE",
+          ...transientIndexUnavailableDetails,
+          fault: { active: true },
+        },
+        error:
+          "The canonical ProofOfWork index is rebuilding or no longer matches Bitcoin Core.",
+      },
+    ),
+  ),
+  false,
+);
+assert.equal(
+  isRetryableCanonicalReadError(
+    new MarketplaceRegressionHttpError(
+      "https://computer.proofofwork.me/api/v1/token",
+      503,
+      {
+        details: {
+          code: "CANONICAL_INDEX_UNAVAILABLE",
+          ...transientIndexUnavailableDetails,
+          canonicalHash: canonicalHashB,
+        },
+        error:
+          "The canonical ProofOfWork index is rebuilding or no longer matches Bitcoin Core.",
+      },
+    ),
+  ),
+  false,
+);
+assert.equal(
+  isRetryableCanonicalReadError(
+    new MarketplaceRegressionHttpError(
+      "https://computer.proofofwork.me/api/v1/token",
+      503,
+      {
+        error: "Fresh credit state is still catching up for WORK.",
+      },
+    ),
+  ),
+  true,
+);
+assert.equal(
+  isRetryableCanonicalReadError(
+    new MarketplaceRegressionHttpError(
+      "https://computer.proofofwork.me/api/v1/token",
+      503,
+      {
+        details: { code: "CANONICAL_SUMMARY_INCOHERENT" },
+        error: "A generic parser or summary invariant failed.",
+      },
+    ),
+  ),
+  false,
+);
+assert.equal(
+  isRetryableCanonicalReadError(
+    new MarketplaceRegressionHttpError(
+      "https://computer.proofofwork.me/api/v1/token",
+      500,
+      {
+        details: { code: "CANONICAL_INDEX_CATCHING_UP" },
+        error: "Unexpected server error.",
+      },
+    ),
+  ),
+  false,
+);
+
+const expectedWorkAmoV5TipRaceStatus = {
+  activationHeight: WORK_AMO_V5_ACTIVATION_HEIGHT,
+  allowedFaceUsdCents: WORK_AMO_V5_ALLOWED_FACE_USD_CENTS,
+  authVersion: WORK_AMO_V5_AUTH_VERSION,
+  declarationBlockHash: WORK_AMO_V5_DECLARATION_BLOCK_HASH,
+  declarationBlockIndex: WORK_AMO_V5_DECLARATION_BLOCK_INDEX,
+  declarationHeight: WORK_AMO_V5_DECLARATION_HEIGHT,
+  declarationTxid: WORK_AMO_V5_DECLARATION_TXID,
+  maxQuoteAgeBlocks: WORK_AMO_V5_MAX_QUOTE_AGE_BLOCKS,
+  models: WORK_AMO_V5_MODELS,
+};
+const canonicalNotReadyStatus = workAmoV5StatusFromEvidence(
+  declarationEvidence,
+  {
+    indexReady: false,
+    quoteHead: null,
+    tipHeight: WORK_AMO_V5_ACTIVATION_HEIGHT,
+    writesConfigured: false,
+  },
+);
+const canonicalReadyStatus = workAmoV5StatusFromEvidence(
+  declarationEvidence,
+  {
+    indexReady: true,
+    quoteHead: null,
+    tipHeight: WORK_AMO_V5_ACTIVATION_HEIGHT,
+    writesConfigured: false,
+  },
+);
+assert.equal(
+  isRetryableWorkAmoV5TipRaceStatus(
+    canonicalNotReadyStatus,
+    expectedWorkAmoV5TipRaceStatus,
+  ),
+  true,
+);
+assert.equal(
+  isRetryableWorkAmoV5TipRaceStatus(
+    {
+      ...canonicalNotReadyStatus,
+      models: {
+        ...canonicalNotReadyStatus.models,
+        unitModel: "unexpected-unit-model",
+      },
+    },
+    expectedWorkAmoV5TipRaceStatus,
+  ),
+  false,
+);
+assert.equal(
+  marketplaceRegressionCanonicalReadKind({
+    params: {
+      asset: WORK_TOKEN_ID,
+      fresh: 1,
+      network: "livenet",
+    },
+    path: "/api/v1/token",
+    workTokenId: WORK_TOKEN_ID,
+  }),
+  "work-token",
+);
+for (const path of [
+  "/api/v1/token-history",
+  "/api/v1/token-summary",
+  "/api/v1/work-summary",
+  "/api/v1/marketplace-summary",
+  "/api/v1/growth-summary",
+]) {
+  assert.equal(
+    marketplaceRegressionCanonicalReadKind({
+      params: {
+        asset: WORK_TOKEN_ID,
+        fresh: 1,
+        network: "livenet",
+      },
+      path,
+      workTokenId: WORK_TOKEN_ID,
+    }),
+    "canonical",
+    `${path} must share the bounded canonical convergence budget`,
+  );
+}
+assert.equal(
+  marketplaceRegressionCanonicalReadKind({
+    params: {
+      asset: WORK_TOKEN_ID,
+      network: "livenet",
+    },
+    path: "/api/v1/token",
+    workTokenId: WORK_TOKEN_ID,
+  }),
+  "",
+);
+assert.equal(
+  marketplaceRegressionCanonicalReadKind({
+    params: {
+      asset: WORK_TOKEN_ID,
+      fresh: 1,
+      network: "livenet",
+    },
+    path: "/api/v1/tx/example/status",
+    workTokenId: WORK_TOKEN_ID,
+  }),
+  "",
+);
+
+let convergenceClockMs = 0;
+let initialTokenReads = 0;
+const sharedConvergenceBudget = createCanonicalConvergenceBudget(25);
+const convergedInitialToken =
+  await waitForCanonicalConvergenceWithinBudget({
+    budget: sharedConvergenceBudget,
+    isReady: (payload) => payload?.workAmoV5?.indexReady === true,
+    isRetryableValue: (payload) =>
+      isRetryableWorkAmoV5TipRaceStatus(
+        payload?.workAmoV5,
+        expectedWorkAmoV5TipRaceStatus,
+      ),
+    label: "initial Marketplace V2 WORK token convergence",
+    now: () => convergenceClockMs,
+    pollIntervalMs: 10,
+    read: async () => {
+      initialTokenReads += 1;
+      if (initialTokenReads === 1) {
+        throw canonicalCatchUpError;
+      }
+      return {
+        workAmoV5:
+          initialTokenReads === 2
+            ? canonicalNotReadyStatus
+            : canonicalReadyStatus,
+      };
+    },
+    sleep: async (delayMs) => {
+      convergenceClockMs += delayMs;
+    },
+  });
+assert.equal(convergedInitialToken.workAmoV5.indexReady, true);
+assert.equal(initialTokenReads, 3);
+assert.equal(convergenceClockMs, 20);
+assert.equal(sharedConvergenceBudget.remainingMs, 5);
+
+let laterHistoryReads = 0;
+const convergedLaterHistory =
+  await waitForCanonicalConvergenceWithinBudget({
+    budget: sharedConvergenceBudget,
+    isReady: () => true,
+    isRetryableValue: () => false,
+    label: "later fresh WORK history convergence",
+    now: () => convergenceClockMs,
+    pollIntervalMs: 2,
+    read: async () => {
+      laterHistoryReads += 1;
+      if (laterHistoryReads === 1) {
+        throw canonicalCatchUpError;
+      }
+      return { items: [] };
+    },
+    sleep: async (delayMs) => {
+      convergenceClockMs += delayMs;
+    },
+  });
+assert.deepEqual(convergedLaterHistory.items, []);
+assert.equal(laterHistoryReads, 2);
+assert.equal(convergenceClockMs, 22);
+assert.equal(sharedConvergenceBudget.remainingMs, 3);
+
+let readyAfterDeadlineClockMs = 0;
+let readyAfterDeadlineReads = 0;
+await assert.rejects(
+  waitForCanonicalConvergence({
+    isReady: (payload) => payload?.ready === true,
+    isRetryableValue: () => false,
+    label: "ready after canonical convergence deadline",
+    maxWaitMs: 25,
+    now: () => readyAfterDeadlineClockMs,
+    pollIntervalMs: 10,
+    read: async () => {
+      readyAfterDeadlineReads += 1;
+      readyAfterDeadlineClockMs = 25;
+      return { ready: true };
+    },
+    sleep: async () => {
+      throw new Error("an expired ready read must not sleep");
+    },
+  }),
+  (error) =>
+    error instanceof CanonicalConvergenceTimeoutError &&
+    error.maxWaitMs === 25,
+);
+assert.equal(readyAfterDeadlineReads, 1);
+
+let genericFailureReads = 0;
+const genericFailure = new MarketplaceRegressionHttpError(
+  "https://computer.proofofwork.me/api/v1/token",
+  503,
+  {
+    details: { code: "CANONICAL_SUMMARY_INCOHERENT" },
+    error: "A generic parser or summary invariant failed.",
+  },
+);
+await assert.rejects(
+  waitForCanonicalConvergence({
+    isReady: () => false,
+    isRetryableValue: () => false,
+    label: "generic server failure",
+    maxWaitMs: 25,
+    now: () => 0,
+    pollIntervalMs: 10,
+    read: async () => {
+      genericFailureReads += 1;
+      throw genericFailure;
+    },
+    sleep: async () => {
+      throw new Error("generic failures must not sleep");
+    },
+  }),
+  (error) => error === genericFailure,
+);
+assert.equal(genericFailureReads, 1);
+
+convergenceClockMs = 0;
+let boundedConvergenceReads = 0;
+const boundedSleepDelays = [];
+await assert.rejects(
+  waitForCanonicalConvergence({
+    isReady: () => false,
+    isRetryableValue: () => true,
+    label: "bounded canonical convergence",
+    maxWaitMs: 25,
+    now: () => convergenceClockMs,
+    pollIntervalMs: 10,
+    read: async () => {
+      boundedConvergenceReads += 1;
+      return { ready: false };
+    },
+    sleep: async (delayMs) => {
+      boundedSleepDelays.push(delayMs);
+      convergenceClockMs += delayMs;
+    },
+  }),
+  (error) =>
+    error instanceof CanonicalConvergenceTimeoutError &&
+    error.maxWaitMs === 25,
+);
+assert.equal(convergenceClockMs, 25);
+assert.equal(boundedConvergenceReads, 3);
+assert.deepEqual(boundedSleepDelays, [10, 10, 5]);
 
 console.log("WORK AMO V5 checks passed.");

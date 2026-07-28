@@ -302,23 +302,44 @@ window is measured from the first consecutive absence; faster checks preserve
 that epoch, while any proven pending or confirmed observation resets it.
 Continuous worker cycles use
 `POW_INDEX_WORKER_BACKFILL_SOURCES=block-scan,mempool-scan` as the hot path.
-The confirmed block scanner always runs first. The bounded mempool scanner then
-gives best-effort pending visibility without being allowed to delay confirmed
-catch-up: each cycle verifies at most five protocol-bearing mempool txids, and
-routine pending ordered-verifier requests are capped at five seconds. The
-versioned legacy WORK inspection described below gets one 30-second attempt;
-if it does not finish, its recovery-pending marker remains set. Production
-pins those bounds with `POW_INDEX_MEMPOOL_SCAN_MAX_PROTOCOL_TXIDS=5` and
-`POW_INDEX_PENDING_VERIFIER_TIMEOUT_MS=5000`; the backfill script also clamps
-the routine overrides to those maximums. The block scanner uses local Bitcoin Core
-RPC verbosity 2 to scan blocks after the database's
-indexed height for ProofOfWork OP_RETURN prefixes, then writes discovered txids
-through the normal projection writer. It hydrates and verifies input prevouts
-only for discovered protocol transactions, deduplicates previous transaction
-lookups, and permits at most four concurrent prevout RPCs. Complete value and
-script evidence is mandatory; an addressless but complete Bitcoin script is
-allowed through to the ordered protocol validator. Core calls have their own
-15-second timeout and two-retry budget, independent of broad API-source fetch
+The worker runs that hot path as two sequential child phases under its one
+writer: `block-scan` catches up and publishes the exact canonical-summary
+bundle first, then `mempool-scan` runs with canonical-summary publication
+disabled. The bounded mempool scanner gives best-effort pending visibility
+without being allowed to delay that confirmed publication or the next
+confirmed pass: it stops at a transaction boundary after its 15-second
+scheduling budget, verifies at most five protocol-bearing mempool txids per
+pass, and persists its rotating cursor so deferred candidates remain visible
+to later cycles. This pending-only child exits after the mempool source has
+persisted its transactions and scan cursor; it does not repeat the canonical
+RUSH bootstrap, relational repairs, holder backfill, ledger snapshot, or
+canonical-summary work already owned by the confirmed phase. A separate
+30-second child watchdog terminates a pending pass that does not return after
+the cooperative budget, escalating from `SIGTERM` to `SIGKILL` after one
+second and waiting for child closure before the one-writer loop proceeds.
+Committed pending writes remain idempotent; an interrupted in-flight database
+transaction rolls back and its candidate remains eligible for a later cursor
+pass. Routine pending ordered-verifier requests are capped at five seconds.
+The versioned legacy WORK inspection described below remains subordinate to
+the hard child watchdog. Its historical 30-second allowance remains available
+outside this pending-only worker mode. Inside the pending-only child it is
+capped at 20 seconds and shortened further by elapsed child time so at least
+nine seconds remain for error handling, cursor persistence, and shutdown; if
+that headroom is already exhausted, the inspection is deferred without
+starting. Production pins those bounds with
+`POW_INDEX_MEMPOOL_SCAN_BUDGET_MS=15000`,
+`POW_INDEX_MEMPOOL_SCAN_MAX_PROTOCOL_TXIDS=5`, and
+`POW_INDEX_PENDING_VERIFIER_TIMEOUT_MS=5000`, plus
+`POW_INDEX_WORKER_PENDING_BACKFILL_TIMEOUT_MS=30000`; the backfill script also
+clamps the routine overrides to those maximums. The block scanner uses local
+Bitcoin Core RPC verbosity 2 to scan blocks after the database's indexed height
+for ProofOfWork OP_RETURN prefixes, then writes discovered txids through the
+normal projection writer. It hydrates and verifies input prevouts only for
+discovered protocol transactions, deduplicates previous transaction lookups,
+and permits at most four concurrent prevout RPCs. Complete value and script
+evidence is mandatory; an addressless but complete Bitcoin script is allowed
+through to the ordered protocol validator. Core calls have their own 15-second
+timeout and two-retry budget, independent of broad API-source fetch
 settings. This avoids full prevout expansion for every unrelated transaction in
 every scanned block and prevents one high-input protocol-looking transaction
 from flooding the local node. History-page sources such as token

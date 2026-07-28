@@ -2,6 +2,13 @@
 
 import fs from "node:fs";
 import { parseWorkAmountToAtoms } from "../server/work-units.mjs";
+import {
+  MarketplaceRegressionHttpError,
+  createCanonicalConvergenceBudget,
+  isRetryableWorkAmoV5TipRaceStatus,
+  marketplaceRegressionCanonicalReadKind,
+  waitForCanonicalConvergenceWithinBudget,
+} from "./marketplace-canonical-convergence.mjs";
 
 const API_BASE = (
   process.env.POW_API_BASE ||
@@ -194,6 +201,24 @@ const REQUEST_RETRY_COUNT = Number(
 const ID_RECORD_MAX_MS = Number(
   process.env.MARKETPLACE_ID_RECORD_MAX_MS ?? 15_000,
 );
+const WORK_AMO_V5_CONVERGENCE_MAX_MS = Math.min(
+  300_000,
+  Math.max(
+    1_000,
+    Number(
+      process.env.MARKETPLACE_AMO_V5_CONVERGENCE_MAX_MS ?? 180_000,
+    ) || 180_000,
+  ),
+);
+const WORK_AMO_V5_CONVERGENCE_POLL_MS = Math.min(
+  10_000,
+  Math.max(
+    100,
+    Number(
+      process.env.MARKETPLACE_AMO_V5_CONVERGENCE_POLL_MS ?? 2_000,
+    ) || 2_000,
+  ),
+);
 
 function assert(condition, message) {
   if (!condition) {
@@ -278,7 +303,15 @@ function assertRenderableLogItems(payload, label) {
   }
 }
 
-async function getJson(path, params = {}) {
+async function requestJson(
+  path,
+  params = {},
+  {
+    canonicalErrorDetails = false,
+    retryCount = REQUEST_RETRY_COUNT,
+    timeoutMs = REQUEST_TIMEOUT_MS,
+  } = {},
+) {
   const url = new URL(path, `${API_BASE}/`);
   for (const [key, value] of Object.entries(params)) {
     if (value !== undefined && value !== null && value !== "") {
@@ -288,10 +321,10 @@ async function getJson(path, params = {}) {
   const requestStartedAt = Date.now();
   console.log(`GET   [${GATE_LABEL}] ${url.pathname}${url.search}`);
   let lastError = null;
-  for (let attempt = 0; attempt <= REQUEST_RETRY_COUNT; attempt += 1) {
+  for (let attempt = 0; attempt <= retryCount; attempt += 1) {
     try {
       const response = await fetch(url, {
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+        signal: AbortSignal.timeout(timeoutMs),
       });
       if (response.ok) {
         console.log(
@@ -301,22 +334,39 @@ async function getJson(path, params = {}) {
         );
         return response.json();
       }
+      let responseError = new Error(
+        `${url} returned HTTP ${response.status}`,
+      );
+      if (canonicalErrorDetails) {
+        let errorPayload = null;
+        try {
+          errorPayload = await response.json();
+        } catch {
+          // A non-JSON server failure is never eligible for canonical
+          // convergence retries, but preserve the HTTP status for diagnostics.
+        }
+        responseError = new MarketplaceRegressionHttpError(
+          url,
+          response.status,
+          errorPayload,
+        );
+      }
       const retryableStatus = [500, 502, 503, 504].includes(response.status);
-      if (!retryableStatus || attempt >= REQUEST_RETRY_COUNT) {
+      if (!retryableStatus || attempt >= retryCount) {
         console.error(
           `BAD   [${GATE_LABEL}] ${url.pathname}${url.search} HTTP ${
             response.status
           } ${elapsedMs(requestStartedAt)}`,
         );
-        throw new Error(`${url} returned HTTP ${response.status}`);
+        throw responseError;
       }
-      lastError = new Error(`${url} returned HTTP ${response.status}`);
+      lastError = responseError;
     } catch (error) {
       lastError = error;
       const retryableError =
         error?.name === "TimeoutError" ||
         String(error?.message ?? "").includes("fetch failed");
-      if (!retryableError || attempt >= REQUEST_RETRY_COUNT) {
+      if (!retryableError || attempt >= retryCount) {
         console.error(
           `BAD   [${GATE_LABEL}] ${url.pathname}${url.search} ${
             error?.message ?? error
@@ -328,13 +378,73 @@ async function getJson(path, params = {}) {
     console.log(
       `RETRY [${GATE_LABEL}] ${url.pathname}${url.search} attempt ${
         attempt + 2
-      }/${REQUEST_RETRY_COUNT + 1}`,
+      }/${retryCount + 1}`,
     );
     await new Promise((resolve) =>
       setTimeout(resolve, 1_000 * (attempt + 1)),
     );
   }
   throw lastError;
+}
+
+const marketplaceCanonicalConvergenceBudget =
+  createCanonicalConvergenceBudget(WORK_AMO_V5_CONVERGENCE_MAX_MS);
+
+async function convergedFreshCanonicalJson(path, params, kind) {
+  return waitForCanonicalConvergenceWithinBudget({
+    budget: marketplaceCanonicalConvergenceBudget,
+    isReady: (payload) =>
+      kind !== "work-token" ||
+      workAmoV5StatusFromPayload(payload)?.indexReady === true,
+    isRetryableValue:
+      kind === "work-token"
+        ? isRetryableWorkAmoV5TipRacePayload
+        : () => false,
+    label:
+      kind === "work-token"
+        ? "WORK AMO V5 canonical token readiness"
+        : `fresh canonical ${path} readiness`,
+    pollIntervalMs: WORK_AMO_V5_CONVERGENCE_POLL_MS,
+    read: ({ remainingMs }) =>
+      requestJson(path, params, {
+        canonicalErrorDetails: true,
+        retryCount: 0,
+        timeoutMs: Math.max(
+          1,
+          Math.min(REQUEST_TIMEOUT_MS, Math.floor(remainingMs)),
+        ),
+      }),
+    onRetry: ({ attempt, delayMs, error }) => {
+      const reason =
+        error?.code ||
+        error?.serverMessage ||
+        (kind === "work-token"
+          ? "work-amo-v5-index-not-ready"
+          : "canonical-index-catching-up");
+      console.log(
+        `WAIT  [${GATE_LABEL}] ${kind === "work-token" ? "WORK AMO V5 token" : path} canonical convergence after attempt ${attempt}: ${reason}; retrying in ${delayMs}ms`,
+      );
+    },
+  });
+}
+
+async function getJson(
+  path,
+  params = {},
+  {
+    retryCount = REQUEST_RETRY_COUNT,
+    timeoutMs = REQUEST_TIMEOUT_MS,
+  } = {},
+) {
+  const convergenceKind = marketplaceRegressionCanonicalReadKind({
+    path,
+    params,
+    workTokenId: WORK_TOKEN_ID,
+  });
+  if (convergenceKind) {
+    return convergedFreshCanonicalJson(path, params, convergenceKind);
+  }
+  return requestJson(path, params, { retryCount, timeoutMs });
 }
 
 async function timedGetJson(path, params = {}) {
@@ -642,6 +752,31 @@ function workAmoV5StatusFromPayload(payload, context = payload) {
   ].find((status) => status && typeof status === "object");
 }
 
+function isRetryableWorkAmoV5TipRacePayload(payload) {
+  return isRetryableWorkAmoV5TipRaceStatus(
+    workAmoV5StatusFromPayload(payload),
+    {
+      activationHeight: WORK_AMO_V5_ACTIVATION_HEIGHT,
+      allowedFaceUsdCents: WORK_AMO_V5_ALLOWED_FACE_USD_CENTS,
+      authVersion: WORK_AMO_V5_AUTH_VERSION,
+      declarationBlockHash: WORK_AMO_V5_DECLARATION_BLOCK_HASH,
+      declarationBlockIndex: WORK_AMO_V5_DECLARATION_BLOCK_INDEX,
+      declarationHeight: WORK_AMO_V5_DECLARATION_HEIGHT,
+      declarationTxid: WORK_AMO_V5_DECLARATION_TXID,
+      maxQuoteAgeBlocks: WORK_AMO_V5_MAX_QUOTE_AGE_BLOCKS,
+      models: WORK_AMO_V5_MODELS,
+    },
+  );
+}
+
+async function convergedWorkAmoV5Token({ fresh = true } = {}) {
+  return getJson("/api/v1/token", {
+    network: "livenet",
+    asset: WORK_TOKEN_ID,
+    ...(fresh ? { fresh: 1 } : {}),
+  });
+}
+
 function assertWorkAmoV5Readiness(payload, label, context = payload) {
   const status = workAmoV5StatusFromPayload(payload, context);
   assert(status, `${label} is missing WORK AMO V5 status`);
@@ -865,12 +1000,15 @@ async function assertWorkMarketV2InvalidAttempt({
   );
 }
 
-async function assertWorkMarketV2CutoverContract({ fresh = true } = {}) {
-  const token = await getJson("/api/v1/token", {
-    network: "livenet",
-    asset: WORK_TOKEN_ID,
-    ...(fresh ? { fresh: 1 } : {}),
-  });
+async function assertWorkMarketV2CutoverContract({
+  fresh = true,
+  token: providedToken = null,
+} = {}) {
+  const token =
+    providedToken ??
+    (await convergedWorkAmoV5Token({
+      fresh,
+    }));
   assertActiveWorkListingsUseCanonicalVersion(
     token,
     "/api/v1/token?asset=WORK",
@@ -889,12 +1027,15 @@ async function assertWorkMarketV2CutoverContract({ fresh = true } = {}) {
   return token;
 }
 
-async function assertWorkAmoV5CutoverContract({ fresh = true } = {}) {
-  const token = await getJson("/api/v1/token", {
-    network: "livenet",
-    asset: WORK_TOKEN_ID,
-    ...(fresh ? { fresh: 1 } : {}),
-  });
+async function assertWorkAmoV5CutoverContract({
+  fresh = true,
+  token: providedToken = null,
+} = {}) {
+  const token =
+    providedToken ??
+    (await convergedWorkAmoV5Token({
+      fresh,
+    }));
   assertWorkAmoV5Readiness(token, "/api/v1/token?asset=WORK");
   assertActiveWorkListingsUseCanonicalVersion(
     token,
@@ -1035,12 +1176,13 @@ async function runFastMarketplaceRegressionGate() {
     );
   });
 
+  let cutoverToken = null;
   await step("WORK Marketplace V2 cutover contract", async () => {
-    await assertWorkMarketV2CutoverContract();
+    cutoverToken = await assertWorkMarketV2CutoverContract();
   });
 
   await step("WORK AMO V5 cutover and write gate", async () => {
-    await assertWorkAmoV5CutoverContract();
+    await assertWorkAmoV5CutoverContract({ token: cutoverToken });
   });
 
   await step("active and closed WORK listing truth", async () => {
@@ -1273,7 +1415,7 @@ assert(
 );
 
 const workCutoverToken = await assertWorkMarketV2CutoverContract();
-await assertWorkAmoV5CutoverContract();
+await assertWorkAmoV5CutoverContract({ token: workCutoverToken });
 
 const activeListing = await tokenHistory("listings", { q: LISTING_TX });
 assert(
@@ -2012,21 +2154,19 @@ assertActiveWorkListingsUseCanonicalVersion(
   workToken,
   "Fresh WORK token payload",
 );
-const [workSummary, workTokenSummary, growthSummary] = await Promise.all([
-  getJson("/api/v1/work-summary", {
-    network: "livenet",
-    fresh: 1,
-  }),
-  getJson("/api/v1/token-summary", {
-    network: "livenet",
-    asset: WORK_TOKEN_ID,
-    fresh: 1,
-  }),
-  getJson("/api/v1/growth-summary", {
-    network: "livenet",
-    fresh: 1,
-  }),
-]);
+const workSummary = await getJson("/api/v1/work-summary", {
+  network: "livenet",
+  fresh: 1,
+});
+const workTokenSummary = await getJson("/api/v1/token-summary", {
+  network: "livenet",
+  asset: WORK_TOKEN_ID,
+  fresh: 1,
+});
+const growthSummary = await getJson("/api/v1/growth-summary", {
+  network: "livenet",
+  fresh: 1,
+});
 const activeWorkListingCount = (workToken.listings ?? []).length;
 const workSummaryToken = (workSummary.token?.tokens ?? []).find(
   (item) => item?.tokenId === WORK_TOKEN_ID,
