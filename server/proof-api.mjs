@@ -41581,6 +41581,15 @@ function creditValueEventMs(item) {
 
 function creditValueEventPosition(item) {
   if (item?.confirmed === true) {
+    const explicitLegacyReplay =
+      item?.relic === true || item?.canonicalSynthetic === true;
+    const blockHeightAbsent =
+      item?.blockHeight === undefined ||
+      item?.blockHeight === null ||
+      item?.blockHeight === "";
+    if (explicitLegacyReplay && blockHeightAbsent) {
+      return null;
+    }
     return canonicalTokenReplayPosition(item);
   }
   const exactNonNegativeInteger = (value, minimum) =>

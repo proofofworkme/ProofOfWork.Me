@@ -38112,6 +38112,310 @@ check("AMO canonical positions reject omitted, null, and empty tuple fields", ()
   }
 });
 
+check("credit value replay preserves only explicit positionless relic history", () => {
+  const canonicalTokenReplayPosition = isolatedFunction(
+    API_PATH,
+    "canonicalTokenReplayPosition",
+    { WORK_AMO_V5_ACTIVATION_HEIGHT },
+  );
+  const creditValueEventPosition = isolatedFunction(
+    API_PATH,
+    "creditValueEventPosition",
+    { canonicalTokenReplayPosition },
+  );
+  const compareCreditValueReplayEvents = isolatedFunction(
+    API_PATH,
+    "compareCreditValueReplayEvents",
+    { creditValueEventPosition },
+  );
+  const assertUniqueCreditValueReplayPositions = isolatedFunction(
+    API_PATH,
+    "assertUniqueCreditValueReplayPositions",
+    { creditValueEventPosition },
+  );
+  const txidA = "a".repeat(64);
+  const txidB = "b".repeat(64);
+  const explicitLegacyReplays = [
+    { kind: "token-listing", relic: true },
+    { canonicalSynthetic: true, kind: "token-mint" },
+  ];
+  for (const explicitLegacyReplay of explicitLegacyReplays) {
+    for (const absentHeight of [
+      undefined,
+      null,
+      "",
+    ]) {
+      assert.equal(
+        creditValueEventPosition({
+          ...explicitLegacyReplay,
+          blockHeight: absentHeight,
+          confirmed: true,
+          txid: txidA,
+        }),
+        null,
+        `explicit legacy replay without height (${String(absentHeight)}) must use its timestamp fallback`,
+      );
+    }
+    for (const malformedHeight of [
+      0,
+      -1,
+      1.5,
+      "not-a-height",
+    ]) {
+      assert.throws(
+        () =>
+          creditValueEventPosition({
+            ...explicitLegacyReplay,
+            blockHeight: malformedHeight,
+            confirmed: true,
+            txid: txidA,
+          }),
+        /Confirmed token replay height is incomplete/u,
+        `malformed explicit legacy height ${String(malformedHeight)} must fail closed`,
+      );
+    }
+    assert.throws(
+      () =>
+        creditValueEventPosition({
+          ...explicitLegacyReplay,
+          blockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT - 1,
+          confirmed: true,
+          protocolVout: 2,
+          txid: txidA,
+        }),
+      /Confirmed legacy token replay position is incomplete/u,
+      "a positive pre-V5 height still requires its transaction position",
+    );
+    const exactPreV5 = creditValueEventPosition({
+      ...explicitLegacyReplay,
+      blockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT - 1,
+      blockIndex: 7,
+      confirmed: true,
+      protocolVout: 2,
+      txid: txidA,
+    });
+    assert.equal(
+      exactPreV5?.blockHeight,
+      WORK_AMO_V5_ACTIVATION_HEIGHT - 1,
+    );
+    assert.equal(exactPreV5?.blockIndex, 7);
+    assert.equal(exactPreV5?.protocolVout, 2);
+    assert.equal(exactPreV5?.v5, false);
+    assert.equal(
+      creditValueEventPosition({
+        ...explicitLegacyReplay,
+        _powBlockIndex: 8,
+        blockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT - 1,
+        confirmed: true,
+        protocolVout: 3,
+        txid: txidA,
+      })?.blockIndex,
+      8,
+      "the legacy index alias remains a complete canonical position",
+    );
+    for (const requiredField of [
+      "blockIndex",
+      "protocolVout",
+      "recordOrdinal",
+    ]) {
+      assert.throws(
+        () =>
+          creditValueEventPosition({
+            ...explicitLegacyReplay,
+            blockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT,
+            confirmed: true,
+            blockIndex: 9,
+            protocolVout: 4,
+            recordOrdinal: 0,
+            [requiredField]: undefined,
+            txid: txidA,
+          }),
+        /Canonical AMO V5 token replay position is incomplete/u,
+        `known post-V5 replay without ${requiredField} must fail closed`,
+      );
+    }
+  }
+
+  const relic = {
+    confirmed: true,
+    createdAt: "2026-05-20T00:00:00.000Z",
+    kind: "token-listing",
+    relic: true,
+    txid: txidA,
+  };
+  const synthetic = {
+    canonicalSynthetic: true,
+    confirmed: true,
+    createdAt: "2026-05-21T00:00:00.000Z",
+    kind: "token-mint",
+    txid: txidB,
+  };
+  assert.doesNotThrow(() =>
+    assertUniqueCreditValueReplayPositions([
+      {
+        createdMs: Date.parse(relic.createdAt),
+        order: 2,
+        source: relic,
+        txid: txidA,
+      },
+      {
+        createdMs: Date.parse(synthetic.createdAt),
+        order: 1,
+        source: synthetic,
+        txid: txidB,
+      },
+    ]).sort(compareCreditValueReplayEvents),
+  );
+  const positioned = {
+    blockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT - 1,
+    blockIndex: 5,
+    confirmed: true,
+    protocolVout: 2,
+    txid: "c".repeat(64),
+  };
+  assert.ok(
+    compareCreditValueReplayEvents(
+      {
+        createdMs: Date.parse(relic.createdAt),
+        order: 2,
+        source: relic,
+        txid: txidA,
+      },
+      {
+        createdMs: Date.parse(synthetic.createdAt),
+        order: 1,
+        source: synthetic,
+        txid: txidB,
+      },
+    ) < 0,
+    "positionless relic history must retain deterministic timestamp ordering",
+  );
+  assert.ok(
+    compareCreditValueReplayEvents(
+      {
+        createdMs: Date.parse("2030-01-01T00:00:00.000Z"),
+        order: 2,
+        source: positioned,
+        txid: positioned.txid,
+      },
+      {
+        createdMs: Date.parse("1990-01-01T00:00:00.000Z"),
+        order: 1,
+        source: relic,
+        txid: relic.txid,
+      },
+    ) < 0,
+    "a complete canonical position sorts before positionless legacy history",
+  );
+  const sameTime = Date.parse("2026-05-22T00:00:00.000Z");
+  assert.ok(
+    compareCreditValueReplayEvents(
+      {
+        createdMs: sameTime,
+        order: 1,
+        source: relic,
+        txid: txidB,
+      },
+      {
+        createdMs: sameTime,
+        order: 2,
+        source: synthetic,
+        txid: txidA,
+      },
+    ) < 0,
+    "positionless legacy replay uses order after timestamp",
+  );
+  assert.ok(
+    compareCreditValueReplayEvents(
+      {
+        createdMs: sameTime,
+        order: 1,
+        source: relic,
+        txid: txidA,
+      },
+      {
+        createdMs: sameTime,
+        order: 1,
+        source: synthetic,
+        txid: txidB,
+      },
+    ) < 0,
+    "positionless legacy replay uses canonical txid after timestamp and order",
+  );
+
+  assert.throws(
+    () =>
+      creditValueEventPosition({
+        confirmed: true,
+        kind: "token-listing",
+        txid: txidA,
+      }),
+    /Confirmed token replay height is incomplete/u,
+    "ordinary confirmed activity must not downgrade to timestamp replay",
+  );
+});
+
+check("registry replay keeps synthetic seed positions strict", () => {
+  const canonicalTokenReplayPosition = isolatedFunction(
+    API_PATH,
+    "canonicalTokenReplayPosition",
+    { WORK_AMO_V5_ACTIVATION_HEIGHT },
+  );
+  const tokenReplayEntriesForRegistry = isolatedFunction(
+    API_PATH,
+    "tokenReplayEntriesForRegistry",
+    {
+      canonicalTokenReplayPosition,
+      tokenProtocolSortedTransactions: (transactions) => transactions,
+      tokenTransactionTime: () => 0,
+      transactionBlockHeight: () => undefined,
+      transactionBlockIndex: () => undefined,
+      transactionConfirmed: () => false,
+      transactionTxid: () => "",
+    },
+  );
+  const tokenId = "d".repeat(64);
+  const registryAddress = "registry";
+  const completeSyntheticSeed = {
+    canonicalSynthetic: true,
+    blockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT - 1,
+    blockIndex: 7,
+    confirmed: true,
+    createdAt: "2026-05-20T00:00:00.000Z",
+    protocolVout: 2,
+    tokenId,
+    txid: "e".repeat(64),
+  };
+  const tokensById = new Map([
+    [tokenId, { registryAddress, tokenId }],
+  ]);
+  const entries = tokenReplayEntriesForRegistry(
+    [],
+    [completeSyntheticSeed],
+    tokensById,
+    registryAddress,
+  );
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].kind, "seed-mint");
+  assert.equal(
+    entries[0].blockHeight,
+    WORK_AMO_V5_ACTIVATION_HEIGHT - 1,
+  );
+  assert.equal(entries[0].blockIndex, 7);
+  assert.equal(entries[0].protocolVout, 2);
+  assert.throws(
+    () =>
+      tokenReplayEntriesForRegistry(
+        [],
+        [{ ...completeSyntheticSeed, blockHeight: undefined }],
+        tokensById,
+        registryAddress,
+      ),
+    /Confirmed token replay height is incomplete/u,
+    "the credit-value relic fallback must not weaken registry seed replay",
+  );
+});
+
 check("AMO V5 public activity preserves same-transaction record identity", () => {
   const activityKey = isolatedFunction(API_PATH, "activityKey", {
     WORK_AMO_V5_ACTIVATION_HEIGHT,
