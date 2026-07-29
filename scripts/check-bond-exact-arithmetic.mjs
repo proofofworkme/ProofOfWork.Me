@@ -141,6 +141,42 @@ assert.equal(
   true,
   "legacy bootstrap fixed value must reconcile separately from valid flows",
 );
+const postActivationCreditFixedSats = 7_042n;
+const creditFrozenWithPostActivationCarry = {
+  ...creditFrozenWithLegacyCarry,
+  creditEventFrozenValueQ8: (
+    BigInt(creditFrozenWithLegacyCarry.creditEventFrozenValueQ8) +
+    postActivationCreditFixedSats * BOND_VALUE_Q8_SCALE
+  ).toString(),
+  postActivationCreditFixedQ8: (
+    postActivationCreditFixedSats * BOND_VALUE_Q8_SCALE
+  ).toString(),
+  postActivationCreditFixedSats:
+    postActivationCreditFixedSats.toString(),
+};
+assert.equal(
+  exactCreditFrozenValueState(
+    creditFrozenWithPostActivationCarry,
+  ).componentsAgree,
+  true,
+  "post-activation fixed value must reconcile separately from valid flows",
+);
+assert.equal(
+  exactCreditFrozenValueState({
+    ...creditFrozenWithPostActivationCarry,
+    postActivationCreditFixedSats: undefined,
+  }).componentsAgree,
+  false,
+  "a partial post-activation carry must fail exact reconciliation",
+);
+assert.equal(
+  exactCreditFrozenValueState({
+    ...creditFrozenWithPostActivationCarry,
+    postActivationCreditFixedQ8: undefined,
+  }).componentsAgree,
+  false,
+  "a post-activation sats alias without Q8 must fail exact reconciliation",
+);
 assert.equal(
   exactCreditFrozenValueState({
     ...creditFrozenWithLegacyCarry,
