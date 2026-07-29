@@ -22,6 +22,16 @@ const workAmoV5Migration = readFileSync(
   "scripts/migrate-work-amo-v5.mjs",
   "utf8",
 );
+const workAmoV6Core = readFileSync("server/work-amo-v6.mjs", "utf8");
+const workUsdOracle = readFileSync("server/work-usd-oracle.mjs", "utf8");
+const workAmoV6Attestor = readFileSync(
+  "server/work-amo-v6-attestor.mjs",
+  "utf8",
+);
+const workAmoV6Migration = readFileSync(
+  "scripts/migrate-work-amo-v6.mjs",
+  "utf8",
+);
 const app = readFileSync("src/App.tsx", "utf8");
 const routeRegistry = readFileSync("src/app/routeRegistry.ts", "utf8");
 const proofIndexDeploy = readFileSync("deploy/proofofwork-api-proof-index.conf", "utf8");
@@ -1639,7 +1649,7 @@ expectAll("proof index deploy flags keep mailbox DB reads enabled", proofIndexDe
   /POW_INDEX_READS=[^\n]*address-mail/,
   /POW_INDEX_TOKEN_HISTORY_MAX_AGE_MS=86400000/,
 ]);
-expectAll("AMO V5 stays fail-closed until canonical quote readiness", proofIndexDeploy, [
+expectAll("historical AMO V5 stays fail-closed", proofIndexDeploy, [
   /WORK_AMO_V5_DECLARATION_TXID=54d7a367a3998ce1327ee89d983a25c80ce34b96d9811807df215a8694aead36/,
   /WORK_AMO_V5_DECLARATION_HEIGHT=959620/,
   /WORK_AMO_V5_DECLARATION_BLOCK_HASH=0000000000000000000094195957f498f894c92f5d5f75ff5b9c9afc749a6811/,
@@ -1647,11 +1657,11 @@ expectAll("AMO V5 stays fail-closed until canonical quote readiness", proofIndex
   /WORK_AMO_V5_DECLARATION_MEMO_SHA256=d947a9adaa9d84d05571d2addd210cc4aa194eac94562411397553ef8135f95f/,
   /WORK_AMO_V5_WRITES_ENABLED=0/,
 ]);
-expectAll("AMO V5 derives the pinned declaration height only from a complete Core position proof", server, [
+expectAll("historical AMO V5 derives the pinned declaration height only from a complete Core position proof", server, [
   /const canonicalDeclarationPosition =[\s\S]*canonicalBlockHash === WORK_AMO_V5_DECLARATION_BLOCK_HASH[\s\S]*declarationBlockHash === WORK_AMO_V5_DECLARATION_BLOCK_HASH[\s\S]*declarationIndex === WORK_AMO_V5_DECLARATION_BLOCK_INDEX/,
   /workAmoV5DeclarationEvidenceFromTransaction\([\s\S]*canonicalDeclarationPosition[\s\S]*canonicalDeclarationPosition[\s\S]*blockHeight: WORK_AMO_V5_DECLARATION_HEIGHT/,
 ]);
-expectAll("AMO V5 uses exact position-derived immutable unit terms", workAmoV5Core, [
+expectAll("historical AMO V5 uses exact position-derived immutable unit terms", workAmoV5Core, [
   /WORK_AMO_V5_AUTH_VERSION = "pwt-sale-v5"/,
   /WORK_AMO_V5_ALLOWED_FACE_USD_CENTS = Object\.freeze\(\[\s*2_000,\s*5_000,\s*10_000,\s*\]\)/,
   /WORK_AMO_V5_STATE_ORDER_MODEL =\s*"canonical-proof-state-order-v1"/,
@@ -1659,12 +1669,69 @@ expectAll("AMO V5 uses exact position-derived immutable unit terms", workAmoV5Co
   /export function validateWorkAmoV5SealOrBuyTerms\(/,
   /export function workAmoV5BroadcastDecision\(/,
 ]);
-expectAll("AMO V5 migration preserves relic and invalid-history distinctions", workAmoV5Migration, [
+expectAll("historical AMO V5 migration preserves relic and invalid-history distinctions", workAmoV5Migration, [
   /WORK_AMO_V5_PRE_V1_RELIC_LISTING_TXID/,
   /WORK_AMO_V5_POST_V1_INVALID_LISTING_TXID/,
   /Post-V1 WORK pwt-sale-v3 actions are invalid audit history/,
   /proof_indexer\.work_amo_listing_terms/,
   /WORK_AMO_V5_MIGRATION_APPLY/,
+]);
+expectAll("AMO V6 production is staged with blank declaration pins and both explicit gates closed", proofIndexDeploy, [
+  /^LoadCredential=work-amo-v6-oracle-key:\/etc\/proofofwork-api\/work-amo-v6-oracle-key$/mu,
+  /^Environment=WORK_AMO_V6_DECLARATION_TXID=$/mu,
+  /^Environment=WORK_AMO_V6_DECLARATION_HEIGHT=$/mu,
+  /^Environment=WORK_AMO_V6_DECLARATION_BLOCK_HASH=$/mu,
+  /^Environment=WORK_AMO_V6_DECLARATION_BLOCK_INDEX=$/mu,
+  /^Environment=WORK_AMO_V6_DECLARATION_MEMO_SHA256=$/mu,
+  /^Environment=WORK_AMO_V6_DECLARATION_MEMO_BYTES=$/mu,
+  /^Environment=WORK_AMO_V6_DECLARATION_PROTOCOL_VOUT=$/mu,
+  /^Environment=WORK_AMO_V6_DECLARATION_RECORD_ORDINAL=$/mu,
+  /^Environment=WORK_AMO_V6_DECLARATION_REGISTRY_PAYMENT_VOUT=$/mu,
+  /^Environment=WORK_AMO_V6_ORACLE_PUBLIC_KEY=$/mu,
+  /^Environment=WORK_AMO_V6_ORACLE_KEY_ID=$/mu,
+  /^Environment=WORK_AMO_V6_ATTESTOR_ENABLED=0$/mu,
+  /^Environment=WORK_AMO_V6_WRITES_ENABLED=0$/mu,
+]);
+expectAll("AMO V6 current writes distinguish automatic listing readiness from frozen settlement readiness", workAmoV6Core, [
+  /WORK_AMO_V6_AUTH_VERSION = "pwt-sale-v6"/,
+  /WORK_AMO_V6_ALLOWED_FACE_USD_CENTS = Object\.freeze\(\[\s*2_000,\s*5_000,\s*10_000,\s*\]\)/,
+  /WORK_AMO_V6_UNIT_MODEL =\s*"canonical-work-amo-usd-unit-v3"/,
+  /export function workAmoV6StatusFromEvidence\([\s\S]*settlementWritesEnabled =\s*ready && protocolWritesEnabled === true[\s\S]*listingWritesEnabled =\s*settlementWritesEnabled && oracleReady === true/,
+  /export function workAmoV6BroadcastDecision\([\s\S]*metadata\?\.protocolWritesEnabled !== true[\s\S]*actionName === "list5"[\s\S]*metadata\?\.listingWritesEnabled !== true/,
+  /export function validateWorkAmoV6SealOrBuyTerms\([\s\S]*validateWorkAmoV6FrozenTerms[\s\S]*validateWorkAmoV6LegacyListingReference/,
+]);
+expectAll("AMO V6 uses exact automatic 3-of-5 median attestations with bounded spread and validity", workUsdOracle, [
+  /WORK_USD_ATTESTATION_VERSION = "pwa-inline-v1"/,
+  /WORK_USD_ATTESTATION_MODEL =\s*"canonical-work-usd-five-source-median-q8-v1"/,
+  /WORK_USD_ORACLE_MINIMUM_SOURCES = 3/,
+  /WORK_USD_ORACLE_FRESHNESS_WINDOW_MS = 120_000/,
+  /WORK_USD_ORACLE_MAX_SPREAD_BPS = 200/,
+  /WORK_USD_ORACLE_MAX_VALIDITY_BLOCKS = 12/,
+  /WORK_USD_ORACLE_SOURCE_IDS = Object\.freeze\(\[\s*"bitfinex",\s*"bitflyer",\s*"coinbase",\s*"gemini",\s*"kraken",\s*\]\)/,
+  /export function buildWorkUsdConsensus\([\s\S]*medianQ8[\s\S]*work-usd-spread/,
+  /export function buildSignedWorkUsdAttestation\([\s\S]*ecc\.signSchnorr/,
+  /export function verifyWorkUsdAttestation\([\s\S]*ecc\.verifySchnorr/,
+]);
+expectAll("AMO V6 API exposes a no-store automatic attestation envelope and never invents an authority-signing path", `${server}\n${workAmoV6Attestor}`, [
+  /async function configuredWorkAmoV6Attestor\([\s\S]*readWorkAmoV6OraclePrivateKeyFile[\s\S]*createWorkAmoV6Attestor/,
+  /async function issueWorkAmoV6AttestationPayload\([\s\S]*metadata\.ready !== true[\s\S]*metadata\.oracleReady !== true[\s\S]*WORK_AMO_V6_ALLOWED_FACE_USD_CENTS\.map/,
+  /let workAmoV6AttestationPayloadInFlight = null[\s\S]*async function workAmoV6AttestationPayload\([\s\S]*workAmoV6AttestationPayloadInFlight = inFlight[\s\S]*inFlight\.then\(clearInFlight, clearInFlight\)/,
+  /protocolVersion: WORK_AMO_V6_AUTH_VERSION[\s\S]*referenceTip:[\s\S]*sourceCount:[\s\S]*sourceFailures:/,
+  /url\.pathname === "\/api\/v1\/work-amo-v6\/attestation"[\s\S]*await workAmoV6AttestationPayload\(network\)[\s\S]*"no-store"/,
+  /readWorkAmoV6OraclePrivateKeyFile\([\s\S]*metadata\.mode & 0o077/,
+]);
+expectAll("AMO V6 index migration is immutable, declaration-bound, and consumed by API readiness", `${proofIndexerSchema}\n${proofIndexReader}\n${workAmoV6Migration}\n${server}`, [
+  /CREATE TABLE IF NOT EXISTS proof_indexer\.work_amo_v6_attestations/,
+  /CREATE TABLE IF NOT EXISTS proof_indexer\.work_amo_v6_listing_terms/,
+  /work_amo_v6_attestations_immutable/,
+  /work_amo_v6_listing_terms_immutable/,
+  /work_amo_v6_migration_marker_immutable/,
+  /export async function proofIndexWorkAmoV6MigrationReadiness/,
+  /export async function proofIndexWorkAmoV6Attestation/,
+  /export async function proofIndexWorkAmoV6ListingTerms/,
+  /canonical-work-amo-v6-index-migration-v1/,
+  /workAmoV6Migration:livenet/,
+  /proofIndexWorkAmoV6MigrationReadiness/,
 ]);
 expectAll(
   "AMO V5 opening state releases legacy market reservations before replay",
@@ -2204,6 +2271,37 @@ expect(
   /"migrate:work-amo-v5":\s*"node scripts\/migrate-work-amo-v5\.mjs"/.test(
     packageJson,
   ),
+);
+expect(
+  "package exposes AMO V6 protocol, attestor, and peak-load checks",
+  /"check:work-amo-v6":\s*"node scripts\/check-work-amo-v6\.mjs"/.test(
+    packageJson,
+  ) &&
+    /"check:work-amo-v6-attestor":\s*"node scripts\/check-work-amo-v6-attestor\.mjs"/.test(
+      packageJson,
+    ) &&
+    /"check:work-amo-v6-peak":\s*"node --expose-gc scripts\/check-work-amo-v6-peak\.mjs"/.test(
+      packageJson,
+    ),
+);
+expect(
+  "package exposes the supervised AMO V6 migration",
+  /"migrate:work-amo-v6":\s*"node scripts\/migrate-work-amo-v6\.mjs"/.test(
+    packageJson,
+  ),
+);
+expect(
+  "AMO V6 API readiness requires the dedicated V6 migration proof",
+  /proofIndexWorkAmoV6MigrationReadiness/.test(server) &&
+    /workAmoV6Metadata[\s\S]*proofIndexWorkAmoV6MigrationReadiness/.test(
+      server,
+    ) &&
+    /Number\.isSafeInteger\(WORK_AMO_V6_DECLARATION_RECORD_ORDINAL\) &&\s*WORK_AMO_V6_DECLARATION_RECORD_ORDINAL === 0/.test(
+      server,
+    ) &&
+    /function workAmoV6ReplayInputsForBlock[\s\S]*proofIndexWorkAmoV6MigrationReadiness\([\s\S]*migrationReadiness\?\.ready !== true[\s\S]*migrationReadiness\?\.active !== true[\s\S]*migrationReadiness\?\.canonical !== true[\s\S]*migrationReadiness\?\.confirmed !== true[\s\S]*migrationReadiness\?\.evidenceComplete !== true/.test(
+      server,
+    ),
 );
 
 if (failures.length) {

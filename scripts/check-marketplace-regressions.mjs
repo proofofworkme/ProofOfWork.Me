@@ -60,6 +60,30 @@ const WORK_AMO_V5_MODELS = {
   unitUsdOracleModel: "canonical-amo-chain-usd-quote-v1",
   unitWorkOracleModel: "canonical-work-prefix-before-action-v1",
 };
+const WORK_AMO_V6_AUTH_VERSION = "pwt-sale-v6";
+const WORK_AMO_V6_ATTESTATION_VERSION = "pwa-inline-v1";
+const WORK_AMO_V6_ATTESTATION_MODEL =
+  "canonical-work-usd-five-source-median-q8-v1";
+const WORK_AMO_V6_ALLOWED_FACE_USD_CENTS = [2_000, 5_000, 10_000];
+const WORK_AMO_V6_ORACLE_SOURCE_IDS = [
+  "bitfinex",
+  "bitflyer",
+  "coinbase",
+  "gemini",
+  "kraken",
+];
+const WORK_AMO_V6_ORACLE_FRESHNESS_WINDOW_MS = 120_000;
+const WORK_AMO_V6_ORACLE_MAX_SPREAD_BPS = 200;
+const WORK_AMO_V6_ORACLE_MINIMUM_SOURCES = 3;
+const WORK_AMO_V6_ORACLE_MAX_VALIDITY_BLOCKS = 12;
+const WORK_AMO_V6_MODELS = {
+  amountModel: "canonical-confirmed-position-derived-work-amount-v1",
+  bondTransitionModel: "canonical-compute-then-bond-v1",
+  stateOrderModel: "canonical-proof-state-order-v1",
+  unitModel: "canonical-work-amo-usd-unit-v3",
+  unitUsdOracleModel: WORK_AMO_V6_ATTESTATION_MODEL,
+  unitWorkOracleModel: "canonical-work-prefix-before-action-v1",
+};
 const WORK_MARKET_V2_LATE_SEAL_LISTING_TX =
   "9c79f121eb73f079b330950a2890ba2029416e5b75bafadc642623c66fd963f9";
 const WORK_MARKET_V2_LATE_SEAL_TX =
@@ -395,14 +419,14 @@ async function convergedFreshCanonicalJson(path, params, kind) {
     budget: marketplaceCanonicalConvergenceBudget,
     isReady: (payload) =>
       kind !== "work-token" ||
-      workAmoV5StatusFromPayload(payload)?.indexReady === true,
+      canonicalWorkAmoStatusIndexReady(payload),
     isRetryableValue:
       kind === "work-token"
-        ? isRetryableWorkAmoV5TipRacePayload
+        ? isRetryableWorkAmoTipRacePayload
         : () => false,
     label:
       kind === "work-token"
-        ? "WORK AMO V5 canonical token readiness"
+        ? "WORK AMO canonical token readiness"
         : `fresh canonical ${path} readiness`,
     pollIntervalMs: WORK_AMO_V5_CONVERGENCE_POLL_MS,
     read: ({ remainingMs }) =>
@@ -419,10 +443,10 @@ async function convergedFreshCanonicalJson(path, params, kind) {
         error?.code ||
         error?.serverMessage ||
         (kind === "work-token"
-          ? "work-amo-v5-index-not-ready"
+          ? "work-amo-index-not-ready"
           : "canonical-index-catching-up");
       console.log(
-        `WAIT  [${GATE_LABEL}] ${kind === "work-token" ? "WORK AMO V5 token" : path} canonical convergence after attempt ${attempt}: ${reason}; retrying in ${delayMs}ms`,
+        `WAIT  [${GATE_LABEL}] ${kind === "work-token" ? "WORK AMO token" : path} canonical convergence after attempt ${attempt}: ${reason}; retrying in ${delayMs}ms`,
       );
     },
   });
@@ -752,6 +776,29 @@ function workAmoV5StatusFromPayload(payload, context = payload) {
   ].find((status) => status && typeof status === "object");
 }
 
+function workAmoV6StatusFromPayload(payload, context = payload) {
+  return [
+    context?.workAmoV6,
+    context?.floor?.workAmoV6,
+    context?.workFloor?.workAmoV6,
+    payload?.workAmoV6,
+  ].find((status) => status && typeof status === "object");
+}
+
+function canonicalWorkAmoStatusIndexReady(payload) {
+  const v6 = workAmoV6StatusFromPayload(payload);
+  return v6?.pinsConfigured === true
+    ? v6.indexReady === true
+    : workAmoV5StatusFromPayload(payload)?.indexReady === true;
+}
+
+function isRetryableWorkAmoTipRacePayload(payload) {
+  const v6 = workAmoV6StatusFromPayload(payload);
+  return v6?.pinsConfigured === true && v6.indexReady !== true
+    ? true
+    : isRetryableWorkAmoV5TipRacePayload(payload);
+}
+
 function isRetryableWorkAmoV5TipRacePayload(payload) {
   return isRetryableWorkAmoV5TipRaceStatus(
     workAmoV5StatusFromPayload(payload),
@@ -834,7 +881,216 @@ function assertWorkAmoV5Readiness(payload, label, context = payload) {
   return status;
 }
 
+function assertExactWorkAmoV6OraclePolicy(policy, label) {
+  assert(policy && typeof policy === "object", `${label} is missing`);
+  assert(
+    policy.model === WORK_AMO_V6_ATTESTATION_MODEL &&
+      Number(policy.freshnessWindowMs) ===
+        WORK_AMO_V6_ORACLE_FRESHNESS_WINDOW_MS &&
+      Number(policy.maxSpreadBps) ===
+        WORK_AMO_V6_ORACLE_MAX_SPREAD_BPS &&
+      Number(policy.minimumSources) ===
+        WORK_AMO_V6_ORACLE_MINIMUM_SOURCES &&
+      Number(policy.maxValidityBlocks) ===
+        WORK_AMO_V6_ORACLE_MAX_VALIDITY_BLOCKS &&
+      JSON.stringify(policy.allowedSourceIds) ===
+        JSON.stringify(WORK_AMO_V6_ORACLE_SOURCE_IDS) &&
+      /^[0-9a-f]{64}$/u.test(String(policy.declarationTxid ?? "")) &&
+      /^[0-9a-f]{64}$/u.test(String(policy.oracleKeyId ?? "")) &&
+      /^[0-9a-f]{64}$/u.test(String(policy.publicKey ?? "")),
+    `${label} does not match the exact V6 3-of-5 oracle policy`,
+  );
+}
+
+function assertWorkAmoV6AttestationEnvelope(payload, status, label) {
+  const attestation = payload?.attestation;
+  assert(
+    payload?.network === "livenet" &&
+      payload?.protocolVersion === WORK_AMO_V6_AUTH_VERSION,
+    `${label} returned the wrong network or protocol`,
+  );
+  assertExactWorkAmoV6OraclePolicy(payload?.policy, `${label} policy`);
+  assert(
+    JSON.stringify(payload.policy) === JSON.stringify(status.oraclePolicy),
+    `${label} policy differs from the activated V6 status`,
+  );
+  assert(
+    attestation?.version === WORK_AMO_V6_ATTESTATION_VERSION &&
+      attestation?.model === WORK_AMO_V6_ATTESTATION_MODEL &&
+      attestation?.network === "livenet" &&
+      attestation?.declarationTxid ===
+        status.oraclePolicy.declarationTxid &&
+      attestation?.oracleKeyId === status.oraclePolicy.oracleKeyId &&
+      attestation?.publicKey === status.oraclePolicy.publicKey &&
+      /^[0-9a-f]{64}$/u.test(String(attestation?.attestationId ?? "")) &&
+      /^[0-9a-f]{128}$/u.test(String(attestation?.signature ?? "")) &&
+      /^[1-9][0-9]*$/u.test(
+        String(attestation?.usdPer100mProofsQ8 ?? ""),
+      ),
+    `${label} returned an invalid signed attestation identity`,
+  );
+  const sources = Array.isArray(attestation?.sources)
+    ? attestation.sources
+    : [];
+  const sourceIds = sources.map((source) => source?.sourceId);
+  assert(
+    sources.length >= WORK_AMO_V6_ORACLE_MINIMUM_SOURCES &&
+      sources.length <= WORK_AMO_V6_ORACLE_SOURCE_IDS.length &&
+      new Set(sourceIds).size === sources.length &&
+      sourceIds.every(
+        (sourceId, index) =>
+          WORK_AMO_V6_ORACLE_SOURCE_IDS.includes(sourceId) &&
+          (index === 0 || sourceIds[index - 1] < sourceId),
+      ) &&
+      sources.every(
+        (source) =>
+          /^[1-9][0-9]*$/u.test(
+            String(source?.usdPer100mProofsQ8 ?? ""),
+          ) &&
+          Number.isSafeInteger(Number(source?.observedAtUnixMs)),
+      ),
+    `${label} returned a malformed or noncanonical source quorum`,
+  );
+  const failures = Array.isArray(payload?.sourceFailures)
+    ? payload.sourceFailures
+    : [];
+  assert(
+    Number(payload?.sourceCount) === sources.length &&
+      sources.length + failures.length ===
+        WORK_AMO_V6_ORACLE_SOURCE_IDS.length &&
+      failures.every(
+        (failure) =>
+          WORK_AMO_V6_ORACLE_SOURCE_IDS.includes(failure?.sourceId) &&
+          !sourceIds.includes(failure?.sourceId) &&
+          String(failure?.code ?? "").trim(),
+      ),
+    `${label} does not account for all five declared sources`,
+  );
+  assert(
+    Number(payload?.referenceTip?.height) ===
+      Number(attestation?.referenceBlockHeight) &&
+      payload?.referenceTip?.hash === attestation?.referenceBlockHash &&
+      Number(attestation?.validFromHeight) ===
+        Number(attestation?.referenceBlockHeight) + 1 &&
+      Number(attestation?.validThroughHeight) >=
+        Number(attestation?.validFromHeight) &&
+      Number(attestation?.validThroughHeight) <=
+        Number(attestation?.referenceBlockHeight) +
+          WORK_AMO_V6_ORACLE_MAX_VALIDITY_BLOCKS,
+    `${label} returned an invalid canonical reference or validity window`,
+  );
+  const estimates = Array.isArray(payload?.estimates) ? payload.estimates : [];
+  assert(
+    estimates.length === WORK_AMO_V6_ALLOWED_FACE_USD_CENTS.length &&
+      JSON.stringify(
+        estimates
+          .map((estimate) => Number(estimate?.unitFaceUsdCents))
+          .sort((left, right) => left - right),
+      ) === JSON.stringify(WORK_AMO_V6_ALLOWED_FACE_USD_CENTS) &&
+      estimates.every(
+        (estimate) =>
+          estimate?.estimateOnly === true &&
+          /^[1-9][0-9]*$/u.test(String(estimate?.unitAmountAtoms ?? "")) &&
+          /^[1-9][0-9]*$/u.test(
+            String(estimate?.unitMinimumPriceSats ?? ""),
+          ) &&
+          /^[1-9][0-9]*$/u.test(String(estimate?.unitPriceSats ?? "")),
+      ),
+    `${label} did not return exact $20, $50, and $100 estimates`,
+  );
+}
+
+async function assertWorkAmoV6Surface(payload, label, context = payload) {
+  const status = workAmoV6StatusFromPayload(payload, context);
+  assert(status, `${label} is missing WORK AMO V6 status`);
+  assert(
+    status.version === WORK_AMO_V6_AUTH_VERSION,
+    `${label} reports the wrong WORK AMO V6 version`,
+  );
+  assert(
+    status.settlementWritesEnabled ===
+        (status.ready === true &&
+          status.protocolWritesEnabled === true) &&
+      status.listingWritesEnabled ===
+        (status.settlementWritesEnabled === true &&
+          status.oracleReady === true),
+    `${label} does not preserve the independent settlement/listing gate invariant`,
+  );
+  if (status.pinsConfigured !== true) {
+    assert(
+      status.ready === false &&
+        status.indexReady === false &&
+        status.writesConfigured === false &&
+        status.attestorEnabled === false &&
+        status.protocolWritesEnabled === false &&
+        status.settlementWritesEnabled === false &&
+        status.listingWritesEnabled === false &&
+        status.oracleReady === false &&
+        status.oraclePolicy === null &&
+        status.activation?.active === false &&
+        status.activation?.reasonCode ===
+          "work-amo-v6-declaration-commitment-unconfigured",
+      `${label} did not preserve the fully closed pre-declaration V6 stage`,
+    );
+    return status;
+  }
+
+  assertExactWorkAmoV6OraclePolicy(
+    status.oraclePolicy,
+    `${label} oracle policy`,
+  );
+  if (status.activation?.active === true) {
+    const declaration = status.activation.declaration;
+    assert(
+      status.ready === true &&
+        status.indexReady === true &&
+        status.activation.evidenceComplete === true &&
+        status.activation.canonical === true &&
+        status.activation.confirmed === true &&
+        declaration?.txid === status.oraclePolicy.declarationTxid &&
+        Number.isSafeInteger(Number(declaration?.blockHeight)) &&
+        Number(declaration?.activationHeight) ===
+          Number(declaration?.blockHeight) + 1 &&
+        /^[0-9a-f]{64}$/u.test(String(declaration?.blockHash ?? "")) &&
+        Number.isSafeInteger(Number(declaration?.blockTransactionIndex)) &&
+        Number.isSafeInteger(Number(declaration?.protocolVout)) &&
+        Number(declaration?.recordOrdinal) === 0 &&
+        Number.isSafeInteger(Number(declaration?.registryPaymentVout)),
+      `${label} does not expose exact active declaration/index evidence`,
+    );
+  } else {
+    assert(
+      status.ready === false &&
+        status.protocolWritesEnabled === false &&
+        status.settlementWritesEnabled === false &&
+        status.listingWritesEnabled === false,
+      `${label} enabled V6 writes before exact activation evidence`,
+    );
+  }
+  if (status.listingWritesEnabled === true) {
+    const attestation = await requestJson(
+      "/api/v1/work-amo-v6/attestation",
+      { network: "livenet", fresh: 1 },
+      { retryCount: 0, timeoutMs: 90_000 },
+    );
+    assertWorkAmoV6AttestationEnvelope(
+      attestation,
+      status,
+      "/api/v1/work-amo-v6/attestation",
+    );
+  }
+  return status;
+}
+
 function expectedActiveWorkMarketVersion(payload, context = payload) {
+  const workAmoV6 = workAmoV6StatusFromPayload(payload, context);
+  if (
+    workAmoV6?.activation?.active === true &&
+    workAmoV6?.ready === true &&
+    workAmoV6?.version === WORK_AMO_V6_AUTH_VERSION
+  ) {
+    return WORK_AMO_V6_AUTH_VERSION;
+  }
   const workAmoV5 = workAmoV5StatusFromPayload(payload, context);
   if (
     workAmoV5?.active === true &&
@@ -900,12 +1156,25 @@ function assertActiveWorkListingsUseCanonicalVersion(
       if (version === expectedVersion) {
         return false;
       }
+      const v6Status = workAmoV6StatusFromPayload(payload, context);
+      const v6ActivationHeight = Number(
+        v6Status?.activation?.activationHeight ??
+          v6Status?.activation?.declaration?.activationHeight,
+      );
       return !(
-        expectedVersion === WORK_AMO_V5_AUTH_VERSION &&
-        version === WORK_MARKET_V4_AUTH_VERSION &&
-        listing?.confirmed === true &&
-        Number.isSafeInteger(Number(listing?.blockHeight)) &&
-        Number(listing.blockHeight) < WORK_AMO_V5_ACTIVATION_HEIGHT
+        (expectedVersion === WORK_AMO_V5_AUTH_VERSION &&
+          version === WORK_MARKET_V4_AUTH_VERSION &&
+          listing?.confirmed === true &&
+          Number.isSafeInteger(Number(listing?.blockHeight)) &&
+          Number(listing.blockHeight) < WORK_AMO_V5_ACTIVATION_HEIGHT) ||
+        (expectedVersion === WORK_AMO_V6_AUTH_VERSION &&
+          [WORK_MARKET_V4_AUTH_VERSION, WORK_AMO_V5_AUTH_VERSION].includes(
+            version,
+          ) &&
+          listing?.confirmed === true &&
+          Number.isSafeInteger(v6ActivationHeight) &&
+          Number.isSafeInteger(Number(listing?.blockHeight)) &&
+          Number(listing.blockHeight) < v6ActivationHeight)
       );
     },
   );
@@ -1185,6 +1454,13 @@ async function runFastMarketplaceRegressionGate() {
     await assertWorkAmoV5CutoverContract({ token: cutoverToken });
   });
 
+  await step("WORK AMO V6 staged/current gate", async () => {
+    await assertWorkAmoV6Surface(
+      cutoverToken,
+      "/api/v1/token?asset=WORK",
+    );
+  });
+
   await step("active and closed WORK listing truth", async () => {
     const activeListing = await tokenHistory("listings", { q: LISTING_TX });
     assert(
@@ -1416,6 +1692,10 @@ assert(
 
 const workCutoverToken = await assertWorkMarketV2CutoverContract();
 await assertWorkAmoV5CutoverContract({ token: workCutoverToken });
+await assertWorkAmoV6Surface(
+  workCutoverToken,
+  "/api/v1/token?asset=WORK",
+);
 
 const activeListing = await tokenHistory("listings", { q: LISTING_TX });
 assert(

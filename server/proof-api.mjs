@@ -119,6 +119,7 @@ import {
   assignWorkAmoV5EconomicOutputs,
   compareWorkAmoUtf8,
   deriveWorkAmoV5FrozenTerms,
+  parseWorkAmoV5RawPwtRecord,
   parseWorkAmoV5PwmMessages,
   parseWorkAmoUsdQuoteRecord,
   selectWorkAmoV5DistinctRegistryPayment,
@@ -160,6 +161,30 @@ import {
 import {
   normalizedWorkAmoV5Bip141Witness,
 } from "./work-amo-v5-bip141.mjs";
+import {
+  WORK_AMO_V6_ALLOWED_FACE_USD_CENTS,
+  WORK_AMO_V6_AUTH_VERSION,
+  WORK_AMO_V6_MAX_ATTESTATION_VALIDITY_BLOCKS,
+  workAmoV6StatusFromEvidence,
+  workAmoV6BroadcastDecision,
+  workAmoV6UnitTerms,
+  validateWorkAmoV6StaticAuthorization,
+} from "./work-amo-v6.mjs";
+import {
+  WORK_USD_ATTESTATION_MODEL,
+  WORK_USD_ORACLE_FRESHNESS_WINDOW_MS,
+  WORK_USD_ORACLE_MAX_SPREAD_BPS,
+  WORK_USD_ORACLE_MINIMUM_SOURCES,
+  WORK_USD_ORACLE_SOURCE_IDS,
+} from "./work-usd-oracle.mjs";
+import {
+  WorkAmoV6AttestorError,
+  createWorkAmoV6Attestor,
+  readWorkAmoV6OraclePrivateKeyFile,
+} from "./work-amo-v6-attestor.mjs";
+import {
+  workAmoV6DeclarationCommitment,
+} from "./work-amo-v6-declaration.mjs";
 import {
   tokenListingCanProjectCloseActivity,
 } from "./token-listing-lifecycle.mjs";
@@ -219,6 +244,7 @@ import {
   proofIndexWorkAmoLegacyBootstrapCarryEvidence,
   proofIndexWorkAmoRelationalTokenStateEvidence,
   proofIndexWorkAmoReplayReadiness,
+  proofIndexWorkAmoV6MigrationReadiness,
   proofIndexWorkAmoV5Declaration,
   proofIndexWorkUsdQuoteByTxid,
   proofIndexWorkUsdQuoteHead,
@@ -753,6 +779,7 @@ const TOKEN_SALE_AUTH_ATOMS_VERSION = "pwt-sale-v2";
 const TOKEN_SALE_AUTH_WORK_MARKET_V2_VERSION = WORK_MARKET_V2_AUTH_VERSION;
 const TOKEN_SALE_AUTH_WORK_MARKET_V4_VERSION = WORK_MARKET_V4_AUTH_VERSION;
 const TOKEN_SALE_AUTH_WORK_AMO_V5_VERSION = WORK_AMO_V5_AUTH_VERSION;
+const TOKEN_SALE_AUTH_WORK_AMO_V6_VERSION = WORK_AMO_V6_AUTH_VERSION;
 const TOKEN_SALE_AUTH_WORK_MARKET_VERSIONS = new Set([
   TOKEN_SALE_AUTH_WORK_MARKET_V2_VERSION,
   TOKEN_SALE_AUTH_WORK_MARKET_V4_VERSION,
@@ -760,6 +787,7 @@ const TOKEN_SALE_AUTH_WORK_MARKET_VERSIONS = new Set([
 const TOKEN_SALE_AUTH_WORK_VERSIONS = new Set([
   ...TOKEN_SALE_AUTH_WORK_MARKET_VERSIONS,
   TOKEN_SALE_AUTH_WORK_AMO_V5_VERSION,
+  TOKEN_SALE_AUTH_WORK_AMO_V6_VERSION,
 ]);
 const WORK_MARKETPLACE_WRITES_CONFIGURED = /^(?:1|true|yes)$/iu.test(
   String(process.env.WORK_MARKETPLACE_WRITES_ENABLED ?? "0"),
@@ -781,6 +809,85 @@ const WORK_AMO_V5_DECLARATION_PINS_CONFIGURED =
   String(process.env.WORK_AMO_V5_DECLARATION_MEMO_SHA256 ?? "")
     .trim()
     .toLowerCase() === WORK_AMO_V5_DECLARATION_PAYLOAD_SHA256;
+const WORK_AMO_V6_WRITES_CONFIGURED = /^(?:1|true|yes)$/iu.test(
+  String(process.env.WORK_AMO_V6_WRITES_ENABLED ?? "0"),
+);
+const WORK_AMO_V6_ATTESTOR_CONFIGURED = /^(?:1|true|yes)$/iu.test(
+  String(process.env.WORK_AMO_V6_ATTESTOR_ENABLED ?? "0"),
+);
+const WORK_AMO_V6_DECLARATION_TXID = String(
+  process.env.WORK_AMO_V6_DECLARATION_TXID ?? "",
+).trim().toLowerCase();
+const WORK_AMO_V6_DECLARATION_HEIGHT = Number(
+  process.env.WORK_AMO_V6_DECLARATION_HEIGHT,
+);
+const WORK_AMO_V6_DECLARATION_BLOCK_HASH = String(
+  process.env.WORK_AMO_V6_DECLARATION_BLOCK_HASH ?? "",
+).trim().toLowerCase();
+const WORK_AMO_V6_DECLARATION_BLOCK_INDEX = Number(
+  process.env.WORK_AMO_V6_DECLARATION_BLOCK_INDEX,
+);
+const WORK_AMO_V6_DECLARATION_MEMO_SHA256 = String(
+  process.env.WORK_AMO_V6_DECLARATION_MEMO_SHA256 ?? "",
+).trim().toLowerCase();
+const WORK_AMO_V6_DECLARATION_MEMO_BYTES = Number(
+  process.env.WORK_AMO_V6_DECLARATION_MEMO_BYTES,
+);
+const WORK_AMO_V6_DECLARATION_PROTOCOL_VOUT = Number(
+  process.env.WORK_AMO_V6_DECLARATION_PROTOCOL_VOUT,
+);
+const WORK_AMO_V6_DECLARATION_RECORD_ORDINAL = Number(
+  process.env.WORK_AMO_V6_DECLARATION_RECORD_ORDINAL,
+);
+const WORK_AMO_V6_DECLARATION_REGISTRY_PAYMENT_VOUT = Number(
+  process.env.WORK_AMO_V6_DECLARATION_REGISTRY_PAYMENT_VOUT,
+);
+const WORK_AMO_V6_ORACLE_PUBLIC_KEY = String(
+  process.env.WORK_AMO_V6_ORACLE_PUBLIC_KEY ?? "",
+).trim().toLowerCase();
+const WORK_AMO_V6_ORACLE_KEY_ID = String(
+  process.env.WORK_AMO_V6_ORACLE_KEY_ID ?? "",
+).trim().toLowerCase();
+const WORK_AMO_V6_EXPECTED_DECLARATION_COMMITMENT = (() => {
+  try {
+    return workAmoV6DeclarationCommitment({
+      oracleKeyId: WORK_AMO_V6_ORACLE_KEY_ID,
+      oraclePublicKey: WORK_AMO_V6_ORACLE_PUBLIC_KEY,
+    });
+  } catch {
+    return null;
+  }
+})();
+const WORK_AMO_V6_ACTIVATION_HEIGHT =
+  Number.isSafeInteger(WORK_AMO_V6_DECLARATION_HEIGHT) &&
+  WORK_AMO_V6_DECLARATION_HEIGHT > 0
+    ? WORK_AMO_V6_DECLARATION_HEIGHT + 1
+    : 0;
+const WORK_AMO_V6_DECLARATION_PINS_CONFIGURED =
+  /^[0-9a-f]{64}$/u.test(WORK_AMO_V6_DECLARATION_TXID) &&
+  Number.isSafeInteger(WORK_AMO_V6_DECLARATION_HEIGHT) &&
+  WORK_AMO_V6_DECLARATION_HEIGHT > 0 &&
+  /^[0-9a-f]{64}$/u.test(WORK_AMO_V6_DECLARATION_BLOCK_HASH) &&
+  Number.isSafeInteger(WORK_AMO_V6_DECLARATION_BLOCK_INDEX) &&
+  WORK_AMO_V6_DECLARATION_BLOCK_INDEX >= 0 &&
+  /^[0-9a-f]{64}$/u.test(WORK_AMO_V6_DECLARATION_MEMO_SHA256) &&
+  Number.isSafeInteger(WORK_AMO_V6_DECLARATION_MEMO_BYTES) &&
+  WORK_AMO_V6_DECLARATION_MEMO_BYTES ===
+    WORK_AMO_V6_EXPECTED_DECLARATION_COMMITMENT
+      ?.protocolRecordBytes &&
+  WORK_AMO_V6_DECLARATION_MEMO_SHA256 ===
+    WORK_AMO_V6_EXPECTED_DECLARATION_COMMITMENT
+      ?.protocolRecordSha256 &&
+  Number.isSafeInteger(WORK_AMO_V6_DECLARATION_PROTOCOL_VOUT) &&
+  WORK_AMO_V6_DECLARATION_PROTOCOL_VOUT >= 0 &&
+  Number.isSafeInteger(WORK_AMO_V6_DECLARATION_RECORD_ORDINAL) &&
+  WORK_AMO_V6_DECLARATION_RECORD_ORDINAL === 0 &&
+  Number.isSafeInteger(
+    WORK_AMO_V6_DECLARATION_REGISTRY_PAYMENT_VOUT,
+  ) &&
+  WORK_AMO_V6_DECLARATION_REGISTRY_PAYMENT_VOUT >= 0 &&
+  /^[0-9a-f]{64}$/u.test(WORK_AMO_V6_ORACLE_PUBLIC_KEY) &&
+  /^[0-9a-f]{64}$/u.test(WORK_AMO_V6_ORACLE_KEY_ID);
 const TOKEN_CREATION_PRICE_SATS = 546;
 const TOKEN_MIN_MUTATION_PRICE_SATS = 546;
 const TOKEN_LISTING_ANCHOR_TYPE = "sale-ticket-v1";
@@ -6329,20 +6436,515 @@ async function workAmoV5Metadata(
   return payload;
 }
 
+function configuredWorkAmoV6OraclePolicy() {
+  if (!WORK_AMO_V6_DECLARATION_PINS_CONFIGURED) {
+    return null;
+  }
+  return {
+    allowedSourceIds: [...WORK_USD_ORACLE_SOURCE_IDS],
+    declarationTxid: WORK_AMO_V6_DECLARATION_TXID,
+    freshnessWindowMs: WORK_USD_ORACLE_FRESHNESS_WINDOW_MS,
+    maxSpreadBps: WORK_USD_ORACLE_MAX_SPREAD_BPS,
+    maxValidityBlocks: WORK_AMO_V6_MAX_ATTESTATION_VALIDITY_BLOCKS,
+    minimumSources: WORK_USD_ORACLE_MINIMUM_SOURCES,
+    model: WORK_USD_ATTESTATION_MODEL,
+    oracleKeyId: WORK_AMO_V6_ORACLE_KEY_ID,
+    publicKey: WORK_AMO_V6_ORACLE_PUBLIC_KEY,
+  };
+}
+
+function configuredWorkAmoV6Declaration() {
+  const oraclePolicy = configuredWorkAmoV6OraclePolicy();
+  if (!oraclePolicy) {
+    return null;
+  }
+  return {
+    activationHeight: WORK_AMO_V6_ACTIVATION_HEIGHT,
+    authorityScriptPubKey:
+      WORK_AMO_V5_DECLARATION_AUTHORITY_SCRIPT_PUBKEY,
+    blockHash: WORK_AMO_V6_DECLARATION_BLOCK_HASH,
+    blockHeight: WORK_AMO_V6_DECLARATION_HEIGHT,
+    blockTransactionIndex:
+      WORK_AMO_V6_DECLARATION_BLOCK_INDEX,
+    minimumPaymentSats:
+      WORK_AMO_V5_DECLARATION_MIN_PAYMENT_SATS,
+    oraclePolicy,
+    payloadBytes: WORK_AMO_V6_DECLARATION_MEMO_BYTES,
+    payloadSha256: WORK_AMO_V6_DECLARATION_MEMO_SHA256,
+    protocolVout: WORK_AMO_V6_DECLARATION_PROTOCOL_VOUT,
+    recordOrdinal: WORK_AMO_V6_DECLARATION_RECORD_ORDINAL,
+    registryAddress: WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS,
+    registryPaymentVout:
+      WORK_AMO_V6_DECLARATION_REGISTRY_PAYMENT_VOUT,
+    txid: WORK_AMO_V6_DECLARATION_TXID,
+  };
+}
+
+function workAmoV6DeclarationEvidenceFromTransaction(
+  declarationTx,
+  blockTransactionIndex,
+  canonical = false,
+) {
+  const outputs = Array.isArray(declarationTx?.vout)
+    ? declarationTx.vout
+    : [];
+  const payload = decodedOpReturnAt(
+    outputs,
+    WORK_AMO_V6_DECLARATION_PROTOCOL_VOUT,
+  );
+  const registryOutput =
+    outputs[WORK_AMO_V6_DECLARATION_REGISTRY_PAYMENT_VOUT];
+  const registryPaymentSats = Number(registryOutput?.value);
+  return {
+    activationHeight: WORK_AMO_V6_ACTIVATION_HEIGHT,
+    authorityScriptPubKey: String(
+      declarationTx?.vin?.[0]?.prevout?.scriptpubkey ?? "",
+    ).trim().toLowerCase(),
+    blockHash: transactionBlockHash(declarationTx),
+    blockHeight: WORK_AMO_V6_DECLARATION_HEIGHT,
+    blockTransactionIndex,
+    canonical: canonical === true,
+    confirmed: transactionConfirmed(declarationTx),
+    evidenceComplete:
+      canonical === true &&
+      payload ===
+        WORK_AMO_V6_EXPECTED_DECLARATION_COMMITMENT
+          ?.protocolRecord &&
+      Number.isSafeInteger(registryPaymentSats) &&
+      registryPaymentSats >=
+        WORK_AMO_V5_DECLARATION_MIN_PAYMENT_SATS,
+    minimumPaymentSats:
+      Number.isSafeInteger(registryPaymentSats) &&
+      registryPaymentSats >=
+        WORK_AMO_V5_DECLARATION_MIN_PAYMENT_SATS
+        ? WORK_AMO_V5_DECLARATION_MIN_PAYMENT_SATS
+        : registryPaymentSats,
+    payloadBytes: Buffer.byteLength(payload, "utf8"),
+    payloadSha256: sha256Hex(Buffer.from(payload, "utf8")),
+    protocolVout: WORK_AMO_V6_DECLARATION_PROTOCOL_VOUT,
+    recordOrdinal: WORK_AMO_V6_DECLARATION_RECORD_ORDINAL,
+    registryAddress: addressFromVout(registryOutput),
+    registryPaymentVout:
+      WORK_AMO_V6_DECLARATION_REGISTRY_PAYMENT_VOUT,
+    txid: transactionTxid(declarationTx),
+  };
+}
+
+function workAmoV6OracleCredentialPath() {
+  const explicit = String(
+    process.env.WORK_AMO_V6_ORACLE_PRIVATE_KEY_FILE ?? "",
+  ).trim();
+  if (explicit) {
+    return explicit;
+  }
+  const credentialsDirectory = String(
+    process.env.CREDENTIALS_DIRECTORY ?? "",
+  ).trim();
+  return credentialsDirectory
+    ? path.join(credentialsDirectory, "work-amo-v6-oracle-key")
+    : "";
+}
+
+let workAmoV6AttestorPromise = null;
+
+async function configuredWorkAmoV6Attestor() {
+  if (
+    !WORK_AMO_V6_ATTESTOR_CONFIGURED ||
+    !WORK_AMO_V6_DECLARATION_PINS_CONFIGURED
+  ) {
+    return null;
+  }
+  if (!workAmoV6AttestorPromise) {
+    workAmoV6AttestorPromise = (async () => {
+      const privateKey = await readWorkAmoV6OraclePrivateKeyFile(
+        workAmoV6OracleCredentialPath(),
+      );
+      try {
+        const attestor = createWorkAmoV6Attestor({
+          declarationTxid: WORK_AMO_V6_DECLARATION_TXID,
+          getCanonicalBlockHash: async (height) => {
+            const result = await bitcoinRpc("getblockhash", [height]);
+            return result?.ok ? result.result : "";
+          },
+          getCanonicalTip: async () => {
+            const [heightResult, hashResult] = await Promise.all([
+              bitcoinRpc("getblockcount", []),
+              bitcoinRpc("getbestblockhash", []),
+            ]);
+            return {
+              hash: hashResult?.ok ? hashResult.result : "",
+              height: heightResult?.ok ? heightResult.result : null,
+            };
+          },
+          network: "livenet",
+          privateKey,
+        });
+        if (
+          attestor.identity.publicKey !==
+            WORK_AMO_V6_ORACLE_PUBLIC_KEY ||
+          attestor.identity.oracleKeyId !==
+            WORK_AMO_V6_ORACLE_KEY_ID
+        ) {
+          attestor.destroy();
+          throw new WorkAmoV6AttestorError(
+            "work-amo-v6-oracle-identity-mismatch",
+            "the configured oracle credential does not match the declaration",
+          );
+        }
+        return attestor;
+      } finally {
+        privateKey.fill(0);
+      }
+    })().catch((error) => {
+      workAmoV6AttestorPromise = null;
+      throw error;
+    });
+  }
+  return workAmoV6AttestorPromise;
+}
+
+let workAmoV6StatusCache = {
+  expiresAt: 0,
+  network: "",
+  payload: null,
+  tipHash: "",
+  tipHeight: 0,
+};
+
+async function workAmoV6Metadata(
+  network,
+  { force = false, summaryPayload = null } = {},
+) {
+  const expectedDeclaration = configuredWorkAmoV6Declaration();
+  const base = {
+    ...workAmoV6StatusFromEvidence({
+      evidence: null,
+      expectedDeclaration,
+      indexedThroughBlock: null,
+      oracleReady: false,
+      protocolWritesEnabled: false,
+    }),
+    attestorEnabled: WORK_AMO_V6_ATTESTOR_CONFIGURED,
+    estimates: {},
+    indexReady: false,
+    oraclePolicy: configuredWorkAmoV6OraclePolicy(),
+    pinsConfigured: WORK_AMO_V6_DECLARATION_PINS_CONFIGURED,
+    writesConfigured: WORK_AMO_V6_WRITES_CONFIGURED,
+  };
+  if (network !== "livenet" || !expectedDeclaration) {
+    return base;
+  }
+  let evidence = null;
+  let indexReady = false;
+  let migrationReadiness = null;
+  let oracleReady = false;
+  let tipHeight = 0;
+  let tipHash = "";
+  try {
+    const [
+      declarationTx,
+      declarationHashResult,
+      tipHeightResult,
+      tipHashResult,
+    ] = await Promise.all([
+      fetchTransactionFromBitcoinRpc(
+        WORK_AMO_V6_DECLARATION_TXID,
+        network,
+        {
+          bypassCache: true,
+          requireCanonicalPrevouts: true,
+        },
+      ),
+      bitcoinRpc("getblockhash", [
+        WORK_AMO_V6_DECLARATION_HEIGHT,
+      ]),
+      bitcoinRpc("getblockcount", []),
+      bitcoinRpc("getbestblockhash", []),
+    ]);
+    const canonicalDeclarationHash = String(
+      declarationHashResult?.ok
+        ? declarationHashResult.result
+        : "",
+    ).trim().toLowerCase();
+    tipHeight = Number(
+      tipHeightResult?.ok ? tipHeightResult.result : 0,
+    );
+    tipHash = String(
+      tipHashResult?.ok ? tipHashResult.result : "",
+    ).trim().toLowerCase();
+    if (
+      !force &&
+      workAmoV6StatusCache.network === network &&
+      workAmoV6StatusCache.tipHeight === tipHeight &&
+      workAmoV6StatusCache.tipHash === tipHash &&
+      workAmoV6StatusCache.expiresAt > Date.now() &&
+      workAmoV6StatusCache.payload
+    ) {
+      return workAmoV6StatusCache.payload;
+    }
+    const declarationBlockHash =
+      transactionBlockHash(declarationTx);
+    const blockTxidIndex =
+      declarationBlockHash === WORK_AMO_V6_DECLARATION_BLOCK_HASH
+        ? await fetchCoreBlockTxidIndex(declarationBlockHash)
+        : null;
+    const declarationIndex = blockTxidIndex?.get(
+      WORK_AMO_V6_DECLARATION_TXID,
+    );
+    const canonicalDeclaration =
+      canonicalDeclarationHash ===
+        WORK_AMO_V6_DECLARATION_BLOCK_HASH &&
+      declarationBlockHash === WORK_AMO_V6_DECLARATION_BLOCK_HASH &&
+      declarationIndex === WORK_AMO_V6_DECLARATION_BLOCK_INDEX;
+    evidence = workAmoV6DeclarationEvidenceFromTransaction(
+      declarationTx,
+      declarationIndex,
+      canonicalDeclaration,
+    );
+    if (
+      canonicalDeclaration &&
+      Number.isSafeInteger(tipHeight) &&
+      tipHeight >= WORK_AMO_V6_ACTIVATION_HEIGHT &&
+      /^[0-9a-f]{64}$/u.test(tipHash)
+    ) {
+      const [replayReadiness, exactMigrationReadiness] =
+        await Promise.all([
+          proofIndexWorkAmoReplayReadiness(network, {
+            force,
+            throughBlockHash: tipHash,
+            throughHeight: tipHeight,
+          }).catch(() => null),
+          proofIndexWorkAmoV6MigrationReadiness(
+            network,
+            expectedDeclaration,
+          ).catch(() => null),
+        ]);
+      migrationReadiness = exactMigrationReadiness;
+      indexReady =
+        replayReadiness?.indexReady === true &&
+        replayReadiness?.requestedTipReady === true &&
+        Number(replayReadiness?.requestedThroughHeight) === tipHeight &&
+        Number(replayReadiness?.throughHeight) === tipHeight &&
+        String(
+          replayReadiness?.requestedThroughBlockHash ?? "",
+        ).trim().toLowerCase() === tipHash &&
+        migrationReadiness?.ready === true &&
+        migrationReadiness?.active === true &&
+        migrationReadiness?.canonical === true &&
+        migrationReadiness?.confirmed === true &&
+        migrationReadiness?.evidenceComplete === true &&
+        Number(migrationReadiness?.activationHeight) ===
+          WORK_AMO_V6_ACTIVATION_HEIGHT;
+      if (indexReady && WORK_AMO_V6_ATTESTOR_CONFIGURED) {
+        oracleReady = Boolean(
+          await configuredWorkAmoV6Attestor(),
+        );
+      }
+    }
+  } catch (error) {
+    console.error(
+      `WORK AMO V6 readiness verification failed: ${errorSummary(error)}`,
+    );
+  }
+  const status = workAmoV6StatusFromEvidence({
+    evidence,
+    expectedDeclaration,
+    indexedThroughBlock: indexReady ? tipHeight : null,
+    oracleReady,
+    protocolWritesEnabled:
+      WORK_AMO_V6_WRITES_CONFIGURED &&
+      WORK_AMO_V6_DECLARATION_PINS_CONFIGURED,
+  });
+  const payload = {
+    ...status,
+    attestorEnabled: WORK_AMO_V6_ATTESTOR_CONFIGURED,
+    estimates: {},
+    indexReady,
+    migrationReady:
+      migrationReadiness?.ready === true &&
+      migrationReadiness?.evidenceComplete === true,
+    oraclePolicy: configuredWorkAmoV6OraclePolicy(),
+    pinsConfigured: WORK_AMO_V6_DECLARATION_PINS_CONFIGURED,
+    networkValueBeforeQ8:
+      canonicalWorkMarketOracleNetworkValueQ8(summaryPayload) ?? "",
+    tipHash,
+    tipHeight,
+    writesConfigured: WORK_AMO_V6_WRITES_CONFIGURED,
+  };
+  workAmoV6StatusCache = {
+    expiresAt: Date.now() + 15_000,
+    network,
+    payload,
+    tipHash,
+    tipHeight,
+  };
+  return payload;
+}
+
+async function issueWorkAmoV6AttestationPayload(network) {
+  if (network !== "livenet") {
+    const error = new Error(
+      "WORK AMO V6 attestations are available on livenet only.",
+    );
+    error.statusCode = 400;
+    throw error;
+  }
+  const summaryPayload =
+    await summaryPayloadWithCanonicalProvenance(
+      await cachedWorkFloorPayload(network, true),
+      network,
+      true,
+      "work-amo-v6-attestation",
+    );
+  const metadata = await workAmoV6Metadata(network, {
+    force: true,
+    summaryPayload,
+  });
+  if (
+    metadata.ready !== true ||
+    metadata.oracleReady !== true
+  ) {
+    const error = new Error(
+      "WORK AMO V6 attestations are paused until the declaration, canonical replay, and oracle credential are ready.",
+    );
+    error.statusCode = 503;
+    error.details = {
+      code: "WORK_AMO_V6_NOT_READY",
+      reasonCode: metadata.reasonCode,
+      workAmoV6: metadata,
+    };
+    throw error;
+  }
+  const attestor = await configuredWorkAmoV6Attestor();
+  if (!attestor) {
+    const error = new Error(
+      "The WORK AMO V6 live price attestor is not enabled.",
+    );
+    error.statusCode = 503;
+    error.details = {
+      code: "WORK_AMO_V6_ORACLE_NOT_READY",
+      reasonCode: "work-amo-v6-oracle-not-ready",
+    };
+    throw error;
+  }
+  let issued;
+  try {
+    issued = await attestor.attestation();
+  } catch (cause) {
+    const error = new Error(
+      cause instanceof Error
+        ? cause.message
+        : "A fresh canonical AMO price attestation is unavailable.",
+      { cause },
+    );
+    error.statusCode = 503;
+    error.details = {
+      code:
+        cause instanceof WorkAmoV6AttestorError
+          ? cause.code
+          : "work-amo-v6-attestation-unavailable",
+    };
+    throw error;
+  }
+  const networkValueBeforeQ8 =
+    canonicalWorkMarketOracleNetworkValueQ8(summaryPayload);
+  if (!networkValueBeforeQ8) {
+    const error = new Error(
+      "The exact current WORK network value is unavailable.",
+    );
+    error.statusCode = 503;
+    error.details = {
+      code: "WORK_AMO_V6_NETWORK_VALUE_NOT_READY",
+    };
+    throw error;
+  }
+  const estimates = WORK_AMO_V6_ALLOWED_FACE_USD_CENTS.map(
+    (unitFaceUsdCents) => {
+      const terms = workAmoV6UnitTerms({
+        networkValueBeforeQ8,
+        unitFaceUsdCents,
+        usdPer100mProofsQ8:
+          issued.attestation.usdPer100mProofsQ8,
+      });
+      if (!terms.valid) {
+        const error = new Error(
+          `WORK AMO V6 could not derive the $${unitFaceUsdCents / 100} estimate.`,
+        );
+        error.statusCode = 503;
+        error.details = {
+          code: "WORK_AMO_V6_ESTIMATE_NOT_READY",
+          reasonCode: terms.reasonCode,
+        };
+        throw error;
+      }
+      return {
+        estimateOnly: true,
+        unitAmountAtoms: terms.unitAmountAtoms,
+        unitFaceUsdCents,
+        unitMinimumPriceSats: terms.unitMinimumPriceSats,
+        unitNetworkValueBeforeQ8: networkValueBeforeQ8,
+        unitPriceSats: terms.unitPriceSats,
+      };
+    },
+  );
+  return {
+    attestation: issued.attestation,
+    estimates,
+    network: "livenet",
+    policy: {
+      ...metadata.oraclePolicy,
+      allowedSourceIds: [...WORK_USD_ORACLE_SOURCE_IDS],
+    },
+    protocolVersion: WORK_AMO_V6_AUTH_VERSION,
+    referenceTip: {
+      hash: issued.attestation.referenceBlockHash,
+      height: issued.attestation.referenceBlockHeight,
+    },
+    sourceCount: issued.sourceCount,
+    sourceFailures: issued.failures.map((failure) => ({
+      code: failure.code,
+      sourceId: failure.sourceId,
+    })),
+  };
+}
+
+let workAmoV6AttestationPayloadInFlight = null;
+
+async function workAmoV6AttestationPayload(network) {
+  if (network !== "livenet") {
+    return issueWorkAmoV6AttestationPayload(network);
+  }
+  if (!workAmoV6AttestationPayloadInFlight) {
+    const inFlight = issueWorkAmoV6AttestationPayload(network);
+    workAmoV6AttestationPayloadInFlight = inFlight;
+    const clearInFlight = () => {
+      if (workAmoV6AttestationPayloadInFlight === inFlight) {
+        workAmoV6AttestationPayloadInFlight = null;
+      }
+    };
+    void inFlight.then(clearInFlight, clearInFlight);
+  }
+  return workAmoV6AttestationPayloadInFlight;
+}
+
 async function withWorkMarketplaceV4Metadata(payload, network) {
-  const [workMarketplaceV4, workAmoV5] = await Promise.all([
+  const [workMarketplaceV4, workAmoV5, workAmoV6] =
+    await Promise.all([
     workMarketplaceV4Metadata(network),
     workAmoV5Metadata(network, { summaryPayload: payload }),
+    workAmoV6Metadata(network, { summaryPayload: payload }),
   ]);
   return {
     ...payload,
     workAmoV5,
+    workAmoV6,
     workMarketplaceV4,
     ...(payload?.floor && typeof payload.floor === "object"
       ? {
           floor: {
             ...payload.floor,
             workAmoV5,
+            workAmoV6,
             workMarketplaceV4,
           },
         }
@@ -6352,6 +6954,7 @@ async function withWorkMarketplaceV4Metadata(payload, network) {
           workFloor: {
             ...payload.workFloor,
             workAmoV5,
+            workAmoV6,
             workMarketplaceV4,
           },
         }
@@ -6564,7 +7167,10 @@ async function canonicalWorkMarketplaceListingAnchor(txid, network) {
       )
     ) {
       const frozenTerms =
-        indexedListing.version === TOKEN_SALE_AUTH_WORK_AMO_V5_VERSION
+        [
+          TOKEN_SALE_AUTH_WORK_AMO_V5_VERSION,
+          TOKEN_SALE_AUTH_WORK_AMO_V6_VERSION,
+        ].includes(indexedListing.version)
           ? indexedListing.listingFrozenTerms
           : indexedListing.historicalV4ReplayValidated === true
             ? indexedListing.validatedV1FrozenTerms
@@ -6721,6 +7327,9 @@ async function signedWorkMarketplaceWriteActions(txHex, network) {
       : 0;
     const workAmoV5 =
       parsedAuthorization?.version === TOKEN_SALE_AUTH_WORK_AMO_V5_VERSION;
+    const workAmoV6 =
+      parsedAuthorization?.version === TOKEN_SALE_AUTH_WORK_AMO_V6_VERSION;
+    const workAmoGoverned = workAmoV5 || workAmoV6;
     const staticShapeValid =
       parsedAuthorization !== null &&
       (action === TOKEN_LIST_ACTION
@@ -6736,7 +7345,7 @@ async function signedWorkMarketplaceWriteActions(txHex, network) {
               parsedAuthorization,
             ) &&
             spendsSignedAnchor &&
-            (workAmoV5 ||
+            (workAmoGoverned ||
               sellerPaymentSats >=
                 parsedAuthorization.priceSats +
                   parsedAuthorization.anchorValueSats));
@@ -6833,6 +7442,9 @@ async function signedWorkMarketplaceWriteActions(txHex, network) {
     const listingAnchor = anchorsByListingId.get(candidate.listingId);
     const workAmoV5 =
       authorization?.version === TOKEN_SALE_AUTH_WORK_AMO_V5_VERSION;
+    const workAmoV6 =
+      authorization?.version === TOKEN_SALE_AUTH_WORK_AMO_V6_VERSION;
+    const workAmoGoverned = workAmoV5 || workAmoV6;
     const referencedHistoricalV4 =
       workAmoV5 &&
       candidate.action !== TOKEN_LIST_ACTION &&
@@ -6842,11 +7454,12 @@ async function signedWorkMarketplaceWriteActions(txHex, network) {
       listingAnchor?.frozenTerms?.unitPriceSats ?? Number.NaN,
     );
     const frozenTermsReady =
-      !workAmoV5 ||
+      !workAmoGoverned ||
       candidate.action === TOKEN_LIST_ACTION ||
       ([
         TOKEN_SALE_AUTH_WORK_MARKET_V4_VERSION,
         TOKEN_SALE_AUTH_WORK_AMO_V5_VERSION,
+        TOKEN_SALE_AUTH_WORK_AMO_V6_VERSION,
       ].includes(listingAnchor?.saleAuthorization?.version) &&
         Number.isSafeInteger(frozenPriceSats) &&
         frozenPriceSats > 0);
@@ -6881,7 +7494,7 @@ async function signedWorkMarketplaceWriteActions(txHex, network) {
       );
     const frozenPaymentMatches =
       candidate.action !== TOKEN_BUY_ACTION ||
-      !workAmoV5 ||
+      !workAmoGoverned ||
       signedSinglePaymentAmountBeforeTokenProtocol(
         economicOutputs,
         String(authorization?.sellerAddress ?? "").trim(),
@@ -6897,6 +7510,23 @@ async function signedWorkMarketplaceWriteActions(txHex, network) {
         : {}),
       ...(listingAnchor?.saleAuthorization
         ? { listingAuthorization: listingAnchor.saleAuthorization }
+        : {}),
+      ...(listingAnchor?.frozenTerms
+        ? {
+            listingPosition: {
+              blockHash:
+                listingAnchor.frozenTerms.listingBlockHash,
+              blockHeight:
+                listingAnchor.frozenTerms.listingBlockHeight,
+              blockTransactionIndex:
+                listingAnchor.frozenTerms.listingBlockIndex,
+              protocolVout:
+                listingAnchor.frozenTerms.listingProtocolVout,
+              recordOrdinal:
+                listingAnchor.frozenTerms.listingRecordOrdinal,
+            },
+            referencesListingFrozenTerms: true,
+          }
         : {}),
       signedShapeValid:
         candidate.staticShapeValid === true &&
@@ -7036,6 +7666,116 @@ async function assertWorkMarketplaceBroadcastAllowed(txHex, network) {
   }
   const actions = await signedWorkMarketplaceWriteActions(txHex, network);
   if (actions.length === 0) {
+    return;
+  }
+  if (WORK_AMO_V6_DECLARATION_PINS_CONFIGURED) {
+    const [metadata, tipResult] = await Promise.all([
+      workAmoV6Metadata(network, { force: true }),
+      bitcoinRpc("getblockcount", []),
+    ]);
+    const tipHeight = Number(
+      tipResult?.ok ? tipResult.result : Number.NaN,
+    );
+    if (!Number.isSafeInteger(tipHeight) || tipHeight < 1) {
+      const error = new Error(
+        "WORK AMO V6 admission could not verify the current canonical tip.",
+      );
+      error.statusCode = 503;
+      throw error;
+    }
+    const expectedConfirmationHeight = tipHeight + 1;
+    const referenceHeights = [
+      ...new Set(
+        actions.flatMap((action) => {
+          const referenceHeight = Number(
+            action?.saleAuthorization?.unitUsdAttestation
+              ?.referenceBlockHeight,
+          );
+          return action.action === TOKEN_LIST_ACTION &&
+            action.authVersion === WORK_AMO_V6_AUTH_VERSION &&
+            Number.isSafeInteger(referenceHeight) &&
+            referenceHeight > 0
+            ? [referenceHeight]
+            : [];
+        }),
+      ),
+    ];
+    const canonicalReferenceEntries = await mapWithConcurrency(
+      referenceHeights,
+      Math.min(
+        4,
+        Math.max(1, referenceHeights.length),
+      ),
+      async (height) => {
+        const result = await bitcoinRpc("getblockhash", [height]);
+        return [
+          height,
+          String(result?.ok ? result.result : "")
+            .trim()
+            .toLowerCase(),
+        ];
+      },
+    );
+    const canonicalReferenceHashes = new Map(
+      canonicalReferenceEntries,
+    );
+    const candidateActions = actions.map((action) => ({
+      ...action,
+      ...(action.action === TOKEN_LIST_ACTION
+        ? { expectedConfirmationHeight }
+        : {
+            actionPosition: {
+              blockHash: "00".repeat(32),
+              blockHeight: expectedConfirmationHeight,
+              blockTransactionIndex: 0,
+              protocolVout: 0,
+              recordOrdinal: 0,
+            },
+          }),
+    }));
+    const decision = workAmoV6BroadcastDecision(candidateActions, {
+      canonicalBlockHashAtHeight: (height) =>
+        canonicalReferenceHashes.get(height) ?? "",
+      legacyValidation: ({
+        actionAuthorization,
+        listingAuthorization,
+        listingFrozenTerms,
+      }) => {
+        const validation =
+          validateWorkAmoV5ReferencedAuthorization(
+            actionAuthorization,
+            {
+              listingAuthorization,
+              listingFrozenTerms,
+            },
+          );
+        return validation.valid
+          ? {
+              frozenTerms: listingFrozenTerms,
+              valid: true,
+            }
+          : validation;
+      },
+      metadata,
+      network,
+    });
+    if (!decision.allowed) {
+      const paused =
+        decision.code === "WORK_AMO_V6_WRITES_PAUSED" ||
+        decision.code === "WORK_AMO_V6_EVIDENCE_NOT_READY";
+      const error = new Error(
+        paused
+          ? "WORK AMO V6 broadcasts are paused until the declaration, canonical replay, oracle credential, and explicit write gate are ready."
+          : "WORK AMO V6 rejected this listing or frozen settlement transaction.",
+      );
+      error.statusCode = decision.statusCode;
+      error.details = {
+        code: decision.code,
+        reasonCode: decision.reasonCode,
+        workAmoV6: metadata,
+      };
+      throw error;
+    }
     return;
   }
   const metadata = await workAmoV5Metadata(network, { force: true });
@@ -10042,8 +10782,10 @@ function tokenSaleAuthorizationDraft(authorization = {}) {
   const ticker = normalizeTokenTicker(String(authorization.ticker ?? ""));
   const bond = isBondTokenId(tokenId);
   const workAmoV5 = version === TOKEN_SALE_AUTH_WORK_AMO_V5_VERSION;
+  const workAmoV6 = version === TOKEN_SALE_AUTH_WORK_AMO_V6_VERSION;
+  const workAmoDerived = workAmoV5 || workAmoV6;
   const amountFields =
-    workAmoV5
+    workAmoDerived
       ? {}
       : (version === TOKEN_SALE_AUTH_ATOMS_VERSION ||
           TOKEN_SALE_AUTH_WORK_MARKET_VERSIONS.has(version))
@@ -10070,7 +10812,7 @@ function tokenSaleAuthorizationDraft(authorization = {}) {
     expiresAt: String(authorization.expiresAt ?? "").trim(),
     network: authorization.network ?? "livenet",
     nonce: String(authorization.nonce ?? "").trim(),
-    ...(workAmoV5
+    ...(workAmoDerived
       ? {
           amountModel: String(authorization.amountModel ?? "").trim(),
           bondTransitionModel: String(
@@ -10087,6 +10829,20 @@ function tokenSaleAuthorizationDraft(authorization = {}) {
           unitWorkOracleModel: String(
             authorization.unitWorkOracleModel ?? "",
           ).trim(),
+          ...(workAmoV6
+            ? {
+                unitUsdAttestation:
+                  authorization.unitUsdAttestation &&
+                  typeof authorization.unitUsdAttestation === "object" &&
+                  !Array.isArray(
+                    authorization.unitUsdAttestation,
+                  )
+                    ? structuredClone(
+                        authorization.unitUsdAttestation,
+                      )
+                    : null,
+              }
+            : {}),
         }
       : {}),
     ...(TOKEN_SALE_AUTH_WORK_MARKET_VERSIONS.has(version)
@@ -10173,7 +10929,7 @@ function tokenSaleAuthorizationDraft(authorization = {}) {
             : {}),
         }
       : {}),
-    ...(workAmoV5
+    ...(workAmoDerived
       ? {}
       : {
           priceSats: Math.max(
@@ -10222,6 +10978,14 @@ function parseTokenSaleAuthorizationJson(
   const workAmoV5Validation = workAmoV5Authorization
     ? validateWorkAmoV5StaticAuthorization(draft)
     : null;
+  const workAmoV6Authorization =
+    draft.version === TOKEN_SALE_AUTH_WORK_AMO_V6_VERSION;
+  const workAmoV6Validation = workAmoV6Authorization
+    ? validateWorkAmoV6StaticAuthorization(draft, {
+        oraclePolicy: configuredWorkAmoV6OraclePolicy(),
+        requireCanonicalAnchor: false,
+      })
+    : null;
   const historicalWorkAmoReference =
     workAmoV5Authorization &&
     allowHistoricalWorkAmoReference === true &&
@@ -10232,10 +10996,13 @@ function parseTokenSaleAuthorizationJson(
     (!legacyAmountValid &&
       !atomicAmountValid &&
       workAmoV5Validation?.valid !== true &&
+      workAmoV6Validation?.valid !== true &&
       !historicalWorkAmoReference) ||
     !/^[0-9a-f]{64}$/u.test(draft.tokenId) ||
     !/^[A-Z0-9]{1,12}$/u.test(draft.ticker) ||
-    (!workAmoV5Authorization && draft.priceSats < 1) ||
+    (!workAmoV5Authorization &&
+      !workAmoV6Authorization &&
+      draft.priceSats < 1) ||
     draft.network !== network ||
     !isValidBitcoinAddress(draft.registryAddress, network) ||
     !isValidBitcoinAddress(draft.sellerAddress, network) ||
@@ -10287,6 +11054,16 @@ function parseTokenSaleAuthorizationJson(
       }.`,
     );
   }
+  if (
+    workAmoV6Authorization &&
+    workAmoV6Validation?.valid !== true
+  ) {
+    throw new Error(
+      `WORK AMO V6 authorization is invalid: ${
+        workAmoV6Validation?.reasonCode ?? "unknown"
+      }.`,
+    );
+  }
 
   return { ...draft, anchorSignature, anchorTxid };
 }
@@ -10307,7 +11084,10 @@ function tokenSaleAuthorizationUsesSaleTicketAnchor(authorization) {
     (authorization?.version === TOKEN_SALE_AUTH_VERSION ||
       authorization?.version === TOKEN_SALE_AUTH_ATOMS_VERSION ||
       TOKEN_SALE_AUTH_WORK_VERSIONS.has(authorization?.version)) &&
-    (authorization?.version === TOKEN_SALE_AUTH_WORK_AMO_V5_VERSION ||
+    ([
+      TOKEN_SALE_AUTH_WORK_AMO_V5_VERSION,
+      TOKEN_SALE_AUTH_WORK_AMO_V6_VERSION,
+    ].includes(authorization?.version) ||
       tokenSaleAuthorizationLedgerAmount(authorization) !== null) &&
     authorization.anchorType === TOKEN_LISTING_ANCHOR_TYPE &&
     authorization.anchorVout === TOKEN_LISTING_ANCHOR_VOUT &&
@@ -10324,7 +11104,10 @@ function tokenSaleAuthorizationUsesSpendableSaleTicketAnchor(authorization) {
     (authorization?.version === TOKEN_SALE_AUTH_VERSION ||
       authorization?.version === TOKEN_SALE_AUTH_ATOMS_VERSION ||
       TOKEN_SALE_AUTH_WORK_VERSIONS.has(authorization?.version)) &&
-    (authorization?.version === TOKEN_SALE_AUTH_WORK_AMO_V5_VERSION ||
+    ([
+      TOKEN_SALE_AUTH_WORK_AMO_V5_VERSION,
+      TOKEN_SALE_AUTH_WORK_AMO_V6_VERSION,
+    ].includes(authorization?.version) ||
       tokenSaleAuthorizationLedgerAmount(authorization) !== null) &&
     authorization.anchorType === TOKEN_LISTING_ANCHOR_TYPE &&
     authorization.anchorVout === TOKEN_LISTING_ANCHOR_VOUT &&
@@ -11029,11 +11812,23 @@ function tokenStateWithRecoveredActiveListingRecords(state, sourceState) {
 
 function tokenSaleAuthorizationTermsMatch(left, right) {
   const comparable = (authorization) => {
-    const draft = tokenSaleAuthorizationDraft({
+    let draft = tokenSaleAuthorizationDraft({
       ...authorization,
       anchorSignature: "",
       anchorTxid: "",
     });
+    if (draft.version === TOKEN_SALE_AUTH_WORK_AMO_V6_VERSION) {
+      const validation = validateWorkAmoV6StaticAuthorization(
+        draft,
+        {
+          oraclePolicy: configuredWorkAmoV6OraclePolicy(),
+          requireCanonicalAnchor: false,
+        },
+      );
+      if (validation.valid) {
+        draft = validation.authorization;
+      }
+    }
     if (TOKEN_SALE_AUTH_WORK_MARKET_VERSIONS.has(draft.version)) {
       delete draft.minimumPriceSats;
       delete draft.oracleBlockHash;
@@ -13731,9 +14526,20 @@ function tokenStateFromTransactions(
     if (
       actionHeight >= WORK_AMO_V5_ACTIVATION_HEIGHT
     ) {
-      if (authorization?.version !== TOKEN_SALE_AUTH_WORK_AMO_V5_VERSION) {
+      const workAmoV6Active =
+        WORK_AMO_V6_DECLARATION_PINS_CONFIGURED &&
+        actionHeight >= WORK_AMO_V6_ACTIVATION_HEIGHT;
+      if (
+        actionContext.actionKind === "list" &&
+        authorization?.version !==
+          (workAmoV6Active
+            ? TOKEN_SALE_AUTH_WORK_AMO_V6_VERSION
+            : TOKEN_SALE_AUTH_WORK_AMO_V5_VERSION)
+      ) {
         return {
-          reasonCode: "work-amo-v5-version-required",
+          reasonCode: workAmoV6Active
+            ? "work-amo-v6-version-required"
+            : "work-amo-v5-version-required",
           valid: false,
         };
       }
@@ -13821,7 +14627,10 @@ function tokenStateFromTransactions(
     tx,
   }) => {
     if (
-      authorization?.version === TOKEN_SALE_AUTH_WORK_AMO_V5_VERSION &&
+      [
+        TOKEN_SALE_AUTH_WORK_AMO_V5_VERSION,
+        TOKEN_SALE_AUTH_WORK_AMO_V6_VERSION,
+      ].includes(authorization?.version) &&
       typeof options.workAmoV5RecordOutcome === "function"
     ) {
       assertExplicitProtocolRecordPosition(protocolVout, recordOrdinal);
@@ -13837,7 +14646,10 @@ function tokenStateFromTransactions(
       });
     }
     if (
-      authorization?.version === TOKEN_SALE_AUTH_WORK_AMO_V5_VERSION &&
+      [
+        TOKEN_SALE_AUTH_WORK_AMO_V5_VERSION,
+        TOKEN_SALE_AUTH_WORK_AMO_V6_VERSION,
+      ].includes(authorization?.version) &&
       typeof options.tokenProtocolRecordOutcome === "function"
     ) {
       assertExplicitProtocolRecordPosition(protocolVout, recordOrdinal);
@@ -14119,8 +14931,10 @@ function tokenStateFromTransactions(
   const closeListingsSpentByEvent = (spentOutpoints, event) => {
     for (const [listingId, listing] of [...listings.entries()]) {
       if (
-        listing?.saleAuthorization?.version ===
-        TOKEN_SALE_AUTH_WORK_AMO_V5_VERSION
+        [
+          TOKEN_SALE_AUTH_WORK_AMO_V5_VERSION,
+          TOKEN_SALE_AUTH_WORK_AMO_V6_VERSION,
+        ].includes(listing?.saleAuthorization?.version)
       ) {
         continue;
       }
@@ -14133,8 +14947,10 @@ function tokenStateFromTransactions(
     }
     for (const [listingId, listing] of [...disabledWorkListings.entries()]) {
       if (
-        listing?.saleAuthorization?.version ===
-        TOKEN_SALE_AUTH_WORK_AMO_V5_VERSION
+        [
+          TOKEN_SALE_AUTH_WORK_AMO_V5_VERSION,
+          TOKEN_SALE_AUTH_WORK_AMO_V6_VERSION,
+        ].includes(listing?.saleAuthorization?.version)
       ) {
         continue;
       }
@@ -14648,7 +15464,10 @@ function tokenStateFromTransactions(
             },
           );
           const listedAmount =
-            authorization?.version === TOKEN_SALE_AUTH_WORK_AMO_V5_VERSION
+            [
+              TOKEN_SALE_AUTH_WORK_AMO_V5_VERSION,
+              TOKEN_SALE_AUTH_WORK_AMO_V6_VERSION,
+            ].includes(authorization?.version)
               ? (() => {
                   const amountAtoms = canonicalWorkAtomsText(
                     pricingValidation?.frozenTerms?.unitAmountAtoms,
@@ -14710,7 +15529,10 @@ function tokenStateFromTransactions(
             minerFeeSats,
             network,
             priceSats:
-              authorization?.version === TOKEN_SALE_AUTH_WORK_AMO_V5_VERSION
+              [
+                TOKEN_SALE_AUTH_WORK_AMO_V5_VERSION,
+                TOKEN_SALE_AUTH_WORK_AMO_V6_VERSION,
+              ].includes(authorization?.version)
                 ? pricingValidation.frozenTerms.unitPriceSats
                 : authorization.priceSats,
             protocolVout,
@@ -14741,7 +15563,10 @@ function tokenStateFromTransactions(
             tx,
           });
           if (
-            authorization?.version === TOKEN_SALE_AUTH_WORK_AMO_V5_VERSION &&
+            [
+              TOKEN_SALE_AUTH_WORK_AMO_V5_VERSION,
+              TOKEN_SALE_AUTH_WORK_AMO_V6_VERSION,
+            ].includes(authorization?.version) &&
             workAmoOutcome?.valid !== true
           ) {
             const reasonCode = String(
@@ -14882,7 +15707,10 @@ function tokenStateFromTransactions(
             tx,
           });
           if (
-            authorization?.version === TOKEN_SALE_AUTH_WORK_AMO_V5_VERSION &&
+            [
+              TOKEN_SALE_AUTH_WORK_AMO_V5_VERSION,
+              TOKEN_SALE_AUTH_WORK_AMO_V6_VERSION,
+            ].includes(authorization?.version) &&
             workAmoOutcome?.valid !== true
           ) {
             consensusRejectedListingIds.add(listing.listingId);
@@ -15122,8 +15950,10 @@ function tokenStateFromTransactions(
             tx,
           });
           if (
-            pricingAuthorization?.version ===
-              TOKEN_SALE_AUTH_WORK_AMO_V5_VERSION &&
+            [
+              TOKEN_SALE_AUTH_WORK_AMO_V5_VERSION,
+              TOKEN_SALE_AUTH_WORK_AMO_V6_VERSION,
+            ].includes(pricingAuthorization?.version) &&
             workAmoOutcome?.valid !== true
           ) {
             consensusRejectedListingIds.add(listing.listingId);
@@ -47646,6 +48476,7 @@ async function workAmoV5WorkStateWithCanonicalListingWitnesses(
             [
               TOKEN_SALE_AUTH_WORK_MARKET_V4_VERSION,
               TOKEN_SALE_AUTH_WORK_AMO_V5_VERSION,
+              TOKEN_SALE_AUTH_WORK_AMO_V6_VERSION,
             ].includes(version)
           ) &&
           /^[0-9a-f]{64}$/u.test(listingId)
@@ -49283,6 +50114,105 @@ function workAmoV5RecordPositionKey(record) {
   );
 }
 
+async function workAmoV6ReplayInputsForBlock(
+  records,
+  requiredBlockHeight,
+) {
+  if (
+    !WORK_AMO_V6_DECLARATION_PINS_CONFIGURED ||
+    requiredBlockHeight < WORK_AMO_V6_ACTIVATION_HEIGHT
+  ) {
+    return {
+      referenceBlockWitnesses: [],
+      workAmoV6: null,
+    };
+  }
+  const canonicalDeclarationHashResult = await bitcoinRpc(
+    "getblockhash",
+    [WORK_AMO_V6_DECLARATION_HEIGHT],
+  );
+  const canonicalDeclarationHash = String(
+    canonicalDeclarationHashResult?.ok
+      ? canonicalDeclarationHashResult.result
+      : "",
+  ).trim().toLowerCase();
+  if (
+    canonicalDeclarationHash !==
+      WORK_AMO_V6_DECLARATION_BLOCK_HASH
+  ) {
+    throw new Error(
+      "Canonical AMO V6 declaration anchor is unavailable.",
+    );
+  }
+  const expectedDeclaration = configuredWorkAmoV6Declaration();
+  const migrationReadiness =
+    await proofIndexWorkAmoV6MigrationReadiness(
+      "livenet",
+      expectedDeclaration,
+    ).catch(() => null);
+  if (
+    !expectedDeclaration ||
+    migrationReadiness?.ready !== true ||
+    migrationReadiness?.active !== true ||
+    migrationReadiness?.canonical !== true ||
+    migrationReadiness?.confirmed !== true ||
+    migrationReadiness?.evidenceComplete !== true ||
+    Number(migrationReadiness?.activationHeight) !==
+      WORK_AMO_V6_ACTIVATION_HEIGHT
+  ) {
+    throw new Error(
+      "Canonical AMO V6 declaration migration evidence is unavailable.",
+    );
+  }
+  const referenceHeights = [
+    ...new Set(
+      (Array.isArray(records) ? records : []).flatMap((record) => {
+        if (record?.protocol !== "pwt1") {
+          return [];
+        }
+        const parsed = parseWorkAmoV5RawPwtRecord(record.message);
+        const referenceHeight = Number(
+          parsed?.saleAuthorization?.unitUsdAttestation
+            ?.referenceBlockHeight,
+        );
+        return parsed?.kind === "list" &&
+          parsed.saleAuthorization?.version ===
+            WORK_AMO_V6_AUTH_VERSION &&
+          Number.isSafeInteger(referenceHeight) &&
+          referenceHeight > 0 &&
+          referenceHeight < requiredBlockHeight &&
+          requiredBlockHeight - referenceHeight <=
+            WORK_AMO_V6_MAX_ATTESTATION_VALIDITY_BLOCKS
+          ? [referenceHeight]
+          : [];
+      }),
+    ),
+  ].sort((left, right) => left - right);
+  const referenceBlockWitnesses = await mapWithConcurrency(
+    referenceHeights,
+    Math.min(4, Math.max(1, referenceHeights.length)),
+    async (blockHeight) => {
+      const result = await bitcoinRpc("getblockhash", [blockHeight]);
+      const blockHash = String(
+        result?.ok ? result.result : "",
+      ).trim().toLowerCase();
+      if (!/^[0-9a-f]{64}$/u.test(blockHash)) {
+        throw new Error(
+          `Canonical AMO V6 reference block ${blockHeight} is unavailable.`,
+        );
+      }
+      return { blockHash, blockHeight };
+    },
+  );
+  return {
+    referenceBlockWitnesses,
+    workAmoV6: {
+      activationHeight: WORK_AMO_V6_ACTIVATION_HEIGHT,
+      oraclePolicy: configuredWorkAmoV6OraclePolicy(),
+    },
+  };
+}
+
 async function completeWorkAmoV5BlockProjection(
   context,
   network,
@@ -49345,6 +50275,10 @@ async function completeWorkAmoV5BlockProjection(
     requiredBlockHeight,
     blockHash,
   );
+  const v6ReplayInputs = await workAmoV6ReplayInputsForBlock(
+    protocolEnvelope.records,
+    requiredBlockHeight,
+  );
   const replay = replayWorkAmoV5RawBlock({
     blockHeaderHex: context.blockHeaderHex,
     blockTransactions: context.blockTransactions,
@@ -49355,7 +50289,10 @@ async function completeWorkAmoV5BlockProjection(
     openingGenericState: opening.genericState,
     openingIdState: opening.idState,
     openingWorkState: opening.workState,
+    referenceBlockWitnesses:
+      v6ReplayInputs.referenceBlockWitnesses,
     records: protocolEnvelope.records,
+    workAmoV6: v6ReplayInputs.workAmoV6,
   });
   const bip141Witness = normalizedWorkAmoV5Bip141Witness(
     replay.bip141Witness,
@@ -49620,6 +50557,13 @@ async function completeWorkAmoV5BlockProjection(
     rawProtocolCandidateCount: replay.rawProtocolCandidateCount,
     replayDescriptorCommitment,
     replayRecords,
+    ...(v6ReplayInputs.workAmoV6
+      ? {
+          referenceBlockWitnesses:
+            replay.referenceBlockWitnesses,
+          workAmoV6: v6ReplayInputs.workAmoV6,
+        }
+      : {}),
     ...(requiredBlockHeight === WORK_AMO_V5_ACTIVATION_HEIGHT
       ? {
           seedGenericTokenState: opening.genericState,
@@ -54519,6 +55463,16 @@ async function handleRequest(request, response) {
         200,
         payload,
         freshRead ? FRESH_READ_CACHE_CONTROL : TOKEN_READ_CACHE_CONTROL,
+      );
+      return;
+    }
+
+    if (url.pathname === "/api/v1/work-amo-v6/attestation") {
+      jsonResponse(
+        response,
+        200,
+        await workAmoV6AttestationPayload(network),
+        "no-store",
       );
       return;
     }

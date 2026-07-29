@@ -59,6 +59,13 @@ import {
   parseWorkAmountToAtoms,
   workAmountAtomsFromRecord,
 } from "./work-units.mjs";
+import {
+  WORK_AMO_V6_AUTH_VERSION,
+  WORK_AMO_V6_MAX_ATTESTATION_VALIDITY_BLOCKS,
+  deriveWorkAmoV6FrozenTerms,
+  validateWorkAmoV6SealOrBuyTerms,
+  validateWorkAmoV6StaticAuthorization,
+} from "./work-amo-v6.mjs";
 
 const TXID_PATTERN = /^[0-9a-f]{64}$/u;
 const INTEGER_PATTERN = /^(?:0|[1-9][0-9]*)$/u;
@@ -2724,7 +2731,63 @@ function evaluateGenericPwt(record, context, parsed) {
   };
 }
 
-function workAuthorizationsMatch(left, right) {
+function workAuthorizationsMatch(left, right, context = {}) {
+  const v6 =
+    left?.version === WORK_AMO_V6_AUTH_VERSION ||
+    right?.version === WORK_AMO_V6_AUTH_VERSION;
+  if (v6) {
+    if (
+      left?.version !== WORK_AMO_V6_AUTH_VERSION ||
+      right?.version !== WORK_AMO_V6_AUTH_VERSION
+    ) {
+      return false;
+    }
+    const options = {
+      oraclePolicy: context.workAmoV6?.oraclePolicy,
+      requireCanonicalAnchor: false,
+    };
+    const leftValidation = validateWorkAmoV6StaticAuthorization(
+      left,
+      options,
+    );
+    const rightValidation = validateWorkAmoV6StaticAuthorization(
+      right,
+      options,
+    );
+    if (!leftValidation.valid || !rightValidation.valid) {
+      return false;
+    }
+    return [
+      "amountModel",
+      "anchorScriptPubKey",
+      "anchorSigHashType",
+      "anchorType",
+      "anchorValueSats",
+      "anchorVout",
+      "bondTransitionModel",
+      "buyerAddress",
+      "expiresAt",
+      "network",
+      "nonce",
+      "registryAddress",
+      "sellerAddress",
+      "sellerPublicKey",
+      "stateOrderModel",
+      "ticker",
+      "tokenId",
+      "unitFaceUsdCents",
+      "unitModel",
+      "unitUsdOracleModel",
+      "unitWorkOracleModel",
+      "version",
+    ].every(
+      (field) =>
+        leftValidation.authorization[field] ===
+        rightValidation.authorization[field],
+    ) &&
+      leftValidation.attestation.attestationId ===
+        rightValidation.attestation.attestationId;
+  }
   const leftValidation = validateWorkAmoV5StaticAuthorization(left);
   const rightValidation = validateWorkAmoV5StaticAuthorization(right);
   if (!leftValidation.valid || !rightValidation.valid) {
@@ -2992,9 +3055,39 @@ function evaluateWorkPwt(record, context, parsed) {
       output = { ...output, inceptionAttachment: attachment };
     }
   } else if (parsed.kind === "list") {
-    const staticValidation = validateWorkAmoV5StaticAuthorization(
-      parsed.saleAuthorization,
+    const v6ActivationHeight = exactSafeInteger(
+      context.workAmoV6?.activationHeight,
+      { positive: true },
     );
+    const v6Active =
+      v6ActivationHeight !== null &&
+      record.position.blockHeight >= v6ActivationHeight;
+    const v6Authorization =
+      parsed.saleAuthorization?.version ===
+      WORK_AMO_V6_AUTH_VERSION;
+    const staticValidation = v6Authorization
+      ? v6Active
+        ? validateWorkAmoV6StaticAuthorization(
+            parsed.saleAuthorization,
+            {
+              canonicalBlockHashAtHeight:
+                context.workAmoV6.canonicalBlockHashAtHeight,
+              oraclePolicy: context.workAmoV6.oraclePolicy,
+              requireCanonicalAnchor: true,
+            },
+          )
+        : {
+            reasonCode: "work-amo-v6-before-activation",
+            valid: false,
+          }
+      : v6Active
+        ? {
+            reasonCode: "work-amo-v6-version-required",
+            valid: false,
+          }
+        : validateWorkAmoV5StaticAuthorization(
+            parsed.saleAuthorization,
+          );
     const authorization = staticValidation.authorization;
     const anchor = staticValidation.valid
       ? claimExactOutput(record, claimed, authorization.anchorVout)
@@ -3027,16 +3120,35 @@ function evaluateWorkPwt(record, context, parsed) {
       stateDelta,
       { runtime: context.economicRuntime },
     );
-    const derivedTerms = deriveWorkAmoV5FrozenTerms(authorization, {
-      listingBondContributionQ8: hypothetical.bondContributionQ8,
-      listingPosition: record.position,
-      networkValueBeforeQ8: hypothetical.networkValueBeforeQ8,
-      quote: context.economicState.quoteHead,
-      spendableAmountAtoms: workSpendable(
-        workState,
-        authorization.sellerAddress,
-      ).toString(),
-    });
+    const derivedTerms = v6Authorization
+      ? deriveWorkAmoV6FrozenTerms(authorization, {
+          activationHeight:
+            context.workAmoV6.activationHeight,
+          canonicalBlockHashAtHeight:
+            context.workAmoV6.canonicalBlockHashAtHeight,
+          listingBondContributionQ8:
+            hypothetical.bondContributionQ8,
+          listingPosition: record.position,
+          networkValueBeforeQ8:
+            hypothetical.networkValueBeforeQ8,
+          oraclePolicy: context.workAmoV6.oraclePolicy,
+          spendableAmountAtoms: workSpendable(
+            workState,
+            authorization.sellerAddress,
+          ).toString(),
+        })
+      : deriveWorkAmoV5FrozenTerms(authorization, {
+          listingBondContributionQ8:
+            hypothetical.bondContributionQ8,
+          listingPosition: record.position,
+          networkValueBeforeQ8:
+            hypothetical.networkValueBeforeQ8,
+          quote: context.economicState.quoteHead,
+          spendableAmountAtoms: workSpendable(
+            workState,
+            authorization.sellerAddress,
+          ).toString(),
+        });
     if (!derivedTerms.valid) {
       return invalidOutcome(
         derivedTerms.reasonCode,
@@ -3087,6 +3199,7 @@ function evaluateWorkPwt(record, context, parsed) {
       authorizationReady = workAuthorizationsMatch(
         parsed.saleAuthorization,
         listing.saleAuthorization,
+        context,
       );
     }
     if (
@@ -3103,6 +3216,11 @@ function evaluateWorkPwt(record, context, parsed) {
         signature.valid === true &&
         parsed.saleAuthorization?.anchorTxid === listing.listingId;
     }
+    const listingVersion = String(
+      listing.saleAuthorization?.version ??
+        listing.frozenTerms?.version ??
+        "",
+    ).trim();
     const termsValidation =
       parsed.kind === "delist"
         ? { valid: true }
@@ -3113,12 +3231,23 @@ function evaluateWorkPwt(record, context, parsed) {
                 record.position,
               ),
             }
-          : validateWorkAmoV5SealOrBuyTerms({
-            actionPosition: record.position,
-            listingFrozenTerms: listing.frozenTerms,
-            listingPosition: position,
-            referencesListingFrozenTerms: true,
-          });
+          : listingVersion === WORK_AMO_V6_AUTH_VERSION
+            ? validateWorkAmoV6SealOrBuyTerms({
+                actionPosition: record.position,
+                activationHeight:
+                  context.workAmoV6?.activationHeight,
+                listingAuthorization:
+                  listing.saleAuthorization,
+                listingFrozenTerms: listing.frozenTerms,
+                listingPosition: position,
+                referencesListingFrozenTerms: true,
+              })
+            : validateWorkAmoV5SealOrBuyTerms({
+                actionPosition: record.position,
+                listingFrozenTerms: listing.frozenTerms,
+                listingPosition: position,
+                referencesListingFrozenTerms: true,
+              });
     if (
       !authorizationReady ||
       !termsValidation.valid ||
@@ -3206,9 +3335,20 @@ function evaluateWorkPwt(record, context, parsed) {
       output = { closedListing: listing };
     } else if (parsed.kind === "seal") {
       if (listing.saleAuthorization?.version !== "pwt-sale-v4") {
-        const signed = validateWorkAmoV5StaticAuthorization(
-          parsed.saleAuthorization,
-        );
+        const signed =
+          listing.saleAuthorization?.version ===
+          WORK_AMO_V6_AUTH_VERSION
+            ? validateWorkAmoV6StaticAuthorization(
+                parsed.saleAuthorization,
+                {
+                  oraclePolicy:
+                    context.workAmoV6?.oraclePolicy,
+                  requireCanonicalAnchor: false,
+                },
+              )
+            : validateWorkAmoV5StaticAuthorization(
+                parsed.saleAuthorization,
+              );
         if (!signed.valid) {
           return invalidOutcome(
             signed.reasonCode,
@@ -4105,6 +4245,149 @@ function newlyClaimedVouts(before, after) {
     .sort((left, right) => left - right);
 }
 
+function workAmoV6ReferenceHeightsForBlock(
+  records,
+  { activationHeight, blockHeight } = {},
+) {
+  if (
+    !Number.isSafeInteger(activationHeight) ||
+    !Number.isSafeInteger(blockHeight) ||
+    blockHeight < activationHeight
+  ) {
+    return [];
+  }
+  const heights = new Set();
+  for (const record of records) {
+    if (record.protocol !== "pwt1") {
+      continue;
+    }
+    const parsed = parseWorkAmoV5RawPwtRecord(record.message);
+    if (
+      parsed?.kind !== "list" ||
+      parsed.saleAuthorization?.version !==
+        WORK_AMO_V6_AUTH_VERSION
+    ) {
+      continue;
+    }
+    const referenceHeight = exactSafeInteger(
+      parsed.saleAuthorization?.unitUsdAttestation
+        ?.referenceBlockHeight,
+      { positive: true },
+    );
+    if (
+      referenceHeight !== null &&
+      referenceHeight < blockHeight &&
+      blockHeight - referenceHeight <=
+        WORK_AMO_V6_MAX_ATTESTATION_VALIDITY_BLOCKS
+    ) {
+      heights.add(referenceHeight);
+    }
+  }
+  return [...heights].sort((left, right) => left - right);
+}
+
+function normalizedWorkAmoV6ReplayContext({
+  blockHeight,
+  records,
+  referenceBlockWitnesses,
+  workAmoV6,
+} = {}) {
+  const activationHeight = exactSafeInteger(
+    workAmoV6?.activationHeight,
+    { positive: true },
+  );
+  if (activationHeight === null) {
+    if (
+      Array.isArray(referenceBlockWitnesses) &&
+      referenceBlockWitnesses.length > 0
+    ) {
+      throw new TypeError(
+        "work-amo-v6-reference-witnesses-unexpected",
+      );
+    }
+    return {
+      commitment: null,
+      evaluation: null,
+      referenceBlockWitnesses: [],
+    };
+  }
+  if (
+    !workAmoV6?.oraclePolicy ||
+    typeof workAmoV6.oraclePolicy !== "object" ||
+    Array.isArray(workAmoV6.oraclePolicy)
+  ) {
+    throw new TypeError("work-amo-v6-replay-policy-invalid");
+  }
+  if (blockHeight < activationHeight) {
+    if (
+      Array.isArray(referenceBlockWitnesses) &&
+      referenceBlockWitnesses.length > 0
+    ) {
+      throw new TypeError(
+        "work-amo-v6-reference-witnesses-before-activation",
+      );
+    }
+    return {
+      commitment: null,
+      evaluation: null,
+      referenceBlockWitnesses: [],
+    };
+  }
+  const expectedHeights = workAmoV6ReferenceHeightsForBlock(
+    records,
+    { activationHeight, blockHeight },
+  );
+  const witnesses = (Array.isArray(referenceBlockWitnesses)
+    ? referenceBlockWitnesses
+    : []
+  ).map((witness) => {
+    const height = exactSafeInteger(witness?.blockHeight, {
+      positive: true,
+    });
+    const hash = normalizedTxid(witness?.blockHash);
+    if (height === null || !hash) {
+      throw new TypeError(
+        "work-amo-v6-reference-witness-invalid",
+      );
+    }
+    return { blockHash: hash, blockHeight: height };
+  }).sort((left, right) => left.blockHeight - right.blockHeight);
+  if (
+    new Set(witnesses.map((witness) => witness.blockHeight)).size !==
+      witnesses.length ||
+    witnesses.length !== expectedHeights.length ||
+    witnesses.some(
+      (witness, index) =>
+        witness.blockHeight !== expectedHeights[index],
+    )
+  ) {
+    throw new TypeError(
+      "work-amo-v6-reference-witness-set-mismatch",
+    );
+  }
+  const hashByHeight = new Map(
+    witnesses.map((witness) => [
+      witness.blockHeight,
+      witness.blockHash,
+    ]),
+  );
+  const oraclePolicy = structuredClone(workAmoV6.oraclePolicy);
+  return {
+    commitment: {
+      activationHeight,
+      oraclePolicy,
+      referenceBlockWitnesses: witnesses,
+    },
+    evaluation: {
+      activationHeight,
+      canonicalBlockHashAtHeight: (height) =>
+        hashByHeight.get(height) ?? "",
+      oraclePolicy,
+    },
+    referenceBlockWitnesses: witnesses,
+  };
+}
+
 export function replayWorkAmoV5RawBlock({
   blockHeaderHex,
   blockTransactions,
@@ -4116,6 +4399,8 @@ export function replayWorkAmoV5RawBlock({
   openingGenericState,
   openingIdState,
   openingWorkState,
+  referenceBlockWitnesses = [],
+  workAmoV6 = null,
 } = {}) {
   const openingValidation = validateWorkAmoV5SufficientState(
     openingEconomicState,
@@ -4251,6 +4536,12 @@ export function replayWorkAmoV5RawBlock({
       );
     }
   }
+  const v6Replay = normalizedWorkAmoV6ReplayContext({
+    blockHeight: requiredBlockHeight,
+    records: ordered,
+    referenceBlockWitnesses,
+    workAmoV6,
+  });
   const countsByTxid = new Map();
   const protocolRecordCountsByTxid = new Map();
   const validPwaRecordCountsByTxid = new Map();
@@ -4332,6 +4623,9 @@ export function replayWorkAmoV5RawBlock({
     model: WORK_AMO_V5_RAW_TRANSITION_CHAIN_MODEL,
     openingStateCommitment:
       workAmoV5CanonicalStateCommitment(economicState),
+    ...(v6Replay.commitment
+      ? { workAmoV6: v6Replay.commitment }
+      : {}),
   });
   for (let index = 0; index < ordered.length; index += 1) {
     const record = ordered[index];
@@ -4370,6 +4664,7 @@ export function replayWorkAmoV5RawBlock({
           incbParentsByTxid,
           protocolRecordCountsByTxid,
           validPwaRecordCountsByTxid,
+          workAmoV6: v6Replay.evaluation,
           workSendsByTxid,
           workState,
         });
@@ -4678,6 +4973,12 @@ export function replayWorkAmoV5RawBlock({
     protocolRecordCount: ordered.length,
     rawProtocolCandidateCount:
       fullBlockEnvelope.rawProtocolCandidateCount,
+    ...(v6Replay.commitment
+      ? {
+          referenceBlockWitnesses:
+            v6Replay.referenceBlockWitnesses,
+        }
+      : {}),
     records: ordered,
     stateCommitment,
     tokenStateCommitment,

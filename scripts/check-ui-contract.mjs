@@ -307,7 +307,11 @@ const exactAmount = contents.get("src/exactAmount.ts");
 const walletUtxoPolicy = contents.get("src/walletUtxos.ts");
 const transferTokenSource = app.slice(
   app.indexOf("async function transferToken"),
-  app.indexOf("async function publishWorkAmoUsdQuote"),
+  app.indexOf("async function listToken"),
+);
+const fetchWorkAmoV6AttestationSource = app.slice(
+  app.indexOf("async function fetchWorkAmoV6Attestation"),
+  app.indexOf("function workAmoListingFaceUsdCents"),
 );
 const listTokenSource = app.slice(
   app.indexOf("async function listToken"),
@@ -320,10 +324,6 @@ const sealTokenListingSource = app.slice(
 const buyTokenListingSource = app.slice(
   app.indexOf("async function buyTokenListing"),
   app.indexOf("async function runRushChainedMint"),
-);
-const publishWorkAmoUsdQuoteSource = app.slice(
-  app.indexOf("async function publishWorkAmoUsdQuote"),
-  app.indexOf("async function listToken"),
 );
 const canListTokenSource = app.slice(
   app.indexOf("const tokenListInput"),
@@ -738,7 +738,7 @@ expect(
     /normalizedTokenListAmountUnits !== null[\s\S]*normalizedTokenListAmountUnits <= walletSpendableTokenAtoms/.test(
       canListTokenSource,
     ) &&
-    /selectedWorkAmoEstimateAtoms !== null[\s\S]*selectedWorkAmoEstimateAtoms <= walletSpendableTokenAtoms/.test(
+    /const workAmoListInputReady = Boolean\([\s\S]*workAmoFaceUsdCentsAllowed\(tokenListFaceUsdCents\)[\s\S]*workAmoV6ListingWritesReady\(workFloorQuote\)[\s\S]*walletSpendableTokenAtoms > 0n/.test(
       canListTokenSource,
     ) &&
     !/max=\{Math\.max\(1, listSpendableBalance\)\}/.test(app) &&
@@ -1150,7 +1150,7 @@ const walletV3RelicRecoveryBlock =
     /\{walletRecoverableV3WorkRelics\.length \? \([\s\S]*?\) : null\}/,
   )?.[0] ?? "";
 expect(
-  "WORK legacy sale tickets remain replayable while V5 owns current AMO writes",
+  "WORK legacy sale tickets remain replayable while V6 owns current AMO writes",
   /isWorkMarketSaleAuthorizationVersion/.test(listingAnchorDetailsBlock) &&
     /listingAnchorDetails\(listing, network\)/.test(
       assertListingAnchorUnspentBlock,
@@ -1166,7 +1166,10 @@ expect(
       app,
     ) &&
     /TOKEN_SALE_AUTH_WORK_AMO_UNIT_VERSION\s*=\s*"pwt-sale-v5"/.test(app) &&
-    /workAmoV5StaticAuthorizationForListing\(listing\)/.test(
+    /TOKEN_SALE_AUTH_WORK_AMO_INLINE_ORACLE_VERSION\s*=\s*"pwt-sale-v6"/.test(
+      app,
+    ) &&
+    /workAmoStaticAuthorizationForListing\(listing\)/.test(
       sealTokenListingSource,
     ) &&
     /workAmoFrozenTerms\(listing\)/.test(buyTokenListingSource) &&
@@ -1193,40 +1196,46 @@ expect(
     ),
 );
 expect(
-  "WORK AMO V5 pins its declaration, exact unit set, and fail-closed write readiness",
+  "WORK AMO V6 pins exact faces and separates activation, settlement, and listing readiness",
   /WORK_AMO_ALLOWED_FACE_USD_CENTS\s*=\s*\[2000,\s*5000,\s*10000\]\s*as const/.test(
     app,
   ) &&
-    /WORK_AMO_V5_DECLARATION_TXID\s*=\s*"54d7a367a3998ce1327ee89d983a25c80ce34b96d9811807df215a8694aead36"/.test(
+    /WORK_AMO_V6_UNIT_MODEL\s*=\s*"canonical-work-amo-usd-unit-v3"/.test(
       app,
     ) &&
-    /WORK_AMO_V5_DECLARATION_HEIGHT\s*=\s*959620/.test(app) &&
-    /WORK_AMO_V5_DECLARATION_BLOCK_INDEX\s*=\s*141/.test(app) &&
-    /WORK_AMO_V5_ACTIVATION_HEIGHT\s*=\s*959621/.test(app) &&
-    /function workAmoV5ProtocolReady[\s\S]*status\?\.active === true[\s\S]*status\.indexReady === true[\s\S]*status\.declarationConfirmed === true[\s\S]*status\.authVersion === TOKEN_SALE_AUTH_WORK_AMO_UNIT_VERSION[\s\S]*WORK_AMO_V5_DECLARATION_TXID[\s\S]*WORK_AMO_V5_DECLARATION_BLOCK_HASH[\s\S]*activationHeight === declarationHeight \+ 1[\s\S]*WORK_AMO_ALLOWED_FACE_USD_CENTS/.test(
+    /WORK_AMO_V6_USD_ORACLE_MODEL\s*=\s*"canonical-work-usd-five-source-median-q8-v1"/.test(
       app,
     ) &&
-    /function workAmoV5ProtocolReady[\s\S]*declarationBlockIndex === WORK_AMO_V5_DECLARATION_BLOCK_INDEX/.test(
+    /const WORK_AMO_V6_ORACLE_SOURCE_IDS = \[\s*"bitfinex",\s*"bitflyer",\s*"coinbase",\s*"gemini",\s*"kraken",\s*\] as const/.test(
       app,
     ) &&
-    /function workAmoV5ProtocolWritesReady[\s\S]*workAmoV5ProtocolReady\(quote\)[\s\S]*protocolWritesEnabled === true/.test(
+    /function workAmoV6ActivationReady[\s\S]*status\?\.version === TOKEN_SALE_AUTH_WORK_AMO_INLINE_ORACLE_VERSION[\s\S]*status\.activation\?\.active === true[\s\S]*status\.activation\.evidenceComplete === true[\s\S]*workAmoV6NormalizedOraclePolicy\(status\.oraclePolicy\)/.test(
       app,
     ) &&
-    /function workAmoV5ListingWritesReady[\s\S]*writesEnabled === true[\s\S]*listingWritesEnabled === true[\s\S]*quoteReady === true[\s\S]*WORK_AMO_ALLOWED_FACE_USD_CENTS\.every/.test(
+    /function workAmoV6SettlementWritesReady[\s\S]*workAmoV6ActivationReady\(quote\)[\s\S]*status\?\.ready === true[\s\S]*status\.protocolWritesEnabled === true[\s\S]*status\.settlementWritesEnabled === true/.test(
       app,
     ) &&
-    /assertWorkAmoV5ListingEnabled\(freshFloor\)/.test(listTokenSource),
+    /function workAmoV6ListingWritesReady[\s\S]*workAmoV6SettlementWritesReady\(quote\)[\s\S]*status\?\.ready === true[\s\S]*status\.listingWritesEnabled === true[\s\S]*status\.attestorEnabled === true[\s\S]*status\.oracleReady === true/.test(
+      app,
+    ) &&
+    /assertWorkAmoV6ListingEnabled\(freshFloor\)/.test(listTokenSource),
 );
 expect(
-  "WORK AMO V5 serializes face intent only and labels pending values as estimates",
-  /function tokenSaleAuthorizationWireDraft[\s\S]*TOKEN_SALE_AUTH_WORK_AMO_UNIT_VERSION[\s\S]*amount:\s*_amount[\s\S]*amountAtoms:\s*_amountAtoms[\s\S]*priceSats:\s*_priceSats[\s\S]*return wire/.test(
+  "WORK AMO V6 serializes face plus signed attestation intent and labels pending values as estimates",
+  /function tokenSaleAuthorizationWireDraft[\s\S]*isWorkAmoDerivedUnitAuthorization\(draft\.version\)[\s\S]*amount:\s*_amount[\s\S]*amountAtoms:\s*_amountAtoms[\s\S]*priceSats:\s*_priceSats[\s\S]*return wire/.test(
     app,
   ) &&
+    /unitUsdAttestation:[\s\S]*v6Authorization[\s\S]*hasExactRecordKeys\([\s\S]*WORK_AMO_V6_ATTESTATION_KEYS[\s\S]*sources: Array\.isArray/.test(
+      app,
+    ) &&
     /WORK_AMO_ALLOWED_FACE_USD_CENTS\.map/.test(tokenWalletWorkspaceBlock) &&
     /You choose only the face unit[\s\S]*Pending values are estimates[\s\S]*confirmation[\s\S]*freezes the terms permanently/.test(
       tokenWalletWorkspaceBlock,
     ) &&
-    /unitFaceUsdCents:\s*workListing[\s\S]*TOKEN_SALE_AUTH_WORK_AMO_UNIT_VERSION/.test(
+    /automatically fetches and verifies a fresh signed[\s\S]*multi-source USD attestation[\s\S]*embeds it in the listing/.test(
+      tokenWalletWorkspaceBlock,
+    ) &&
+    /const issued = await fetchWorkAmoV6Attestation\(freshFloor\)[\s\S]*workAttestation = issued\.attestation[\s\S]*unitFaceUsdCents:\s*workListing[\s\S]*unitUsdAttestation:\s*workListing[\s\S]*TOKEN_SALE_AUTH_WORK_AMO_INLINE_ORACLE_VERSION/.test(
       listTokenSource,
     ) &&
     /const estimate =\s*listing\.confirmed !== true\s*&&\s*rawEstimate/.test(
@@ -1240,35 +1249,38 @@ expect(
     ),
 );
 expect(
-  "confirmed AMO terms freeze seal and buy without current-floor repricing",
+  "confirmed V4, V5, and V6 AMO terms freeze seal and buy without current-price repricing",
   /WORK_AMO_V1_FACE_USD_CENTS\s*=\s*\[\s*1000,\s*2000,\s*5000,\s*10000,\s*20000,\s*50000,\s*100000,\s*200000,\s*500000,\s*1000000,[\s\S]*function workAmoHistoricalFaceUsdCents[\s\S]*WORK_AMO_V1_FACE_USD_CENTS\.some/.test(
     app,
   ) &&
     /function workAmoFrozenTerms[\s\S]*grandfatheredV4[\s\S]*TOKEN_SALE_AUTH_WORK_CONFIRMATION_FLOOR_VERSION[\s\S]*grandfatheredV4ProjectionComplete[\s\S]*frozen\.canonical === true[\s\S]*frozen\.confirmed === true[\s\S]*frozen\.valid === true[\s\S]*WORK_AMO_V1_ACTIVATION_HEIGHT[\s\S]*WORK_AMO_V5_ACTIVATION_HEIGHT/.test(
-    app,
-  ) &&
-    /function workAmoV5StaticAuthorizationForListing[\s\S]*unitFaceUsdCents:\s*faceUsdCents[\s\S]*version:\s*TOKEN_SALE_AUTH_WORK_AMO_UNIT_VERSION/.test(
+      app,
+    ) &&
+    /function workAmoV6FrozenProjection[\s\S]*validateWorkAmoV6Attestation[\s\S]*listingProtocolVout[\s\S]*listingRecordOrdinal[\s\S]*listingBlockHeight < verifiedAttestation\.validFromHeight[\s\S]*listingBlockHeight > verifiedAttestation\.validThroughHeight[\s\S]*networkValueAfterQ8 !==\s*networkValueBeforeQ8 \+ listingBondContributionQ8[\s\S]*amountAtoms !== expectedAmount[\s\S]*priceSats !== expectedPrice/.test(
       app,
     ) &&
     /const v5ProjectionComplete =[\s\S]*WORK_AMO_UNIT_MODEL[\s\S]*WORK_AMO_STATE_ORDER_MODEL[\s\S]*unitUsdQuoteTxid[\s\S]*listingBlockHeight[\s\S]*frozenNetworkValueAfterQ8 ===[\s\S]*frozenNetworkValueBeforeQ8 \+ frozenListingBondContributionQ8/.test(
       app,
     ) &&
-    /assertWorkAmoV5ProtocolEnabled\(workFloorQuote\)/.test(
+    /function workAmoStaticAuthorizationForListing[\s\S]*TOKEN_SALE_AUTH_WORK_AMO_INLINE_ORACLE_VERSION[\s\S]*WORK_AMO_V6_UNIT_MODEL[\s\S]*TOKEN_SALE_AUTH_WORK_AMO_UNIT_VERSION/.test(
+      app,
+    ) &&
+    /assertWorkAmoV6SettlementEnabled\(workFloorQuote\)/.test(
     sealTokenListingSource,
   ) &&
-    /workAmoV5StaticAuthorizationForListing\(listing\)/.test(
+    /workAmoStaticAuthorizationForListing\(listing\)/.test(
       sealTokenListingSource,
     ) &&
     /confirmWorkAmoFrozenAction\("seal", listing\)/.test(
       sealTokenListingSource,
     ) &&
-    /assertWorkAmoV5ProtocolEnabled\(workFloorQuote\)/.test(
+    /assertWorkAmoV6SettlementEnabled\(workFloorQuote\)/.test(
       buyTokenListingSource,
     ) &&
     /tokenSellerPaymentRequiredSats\(listing\)/.test(
       buyTokenListingSource,
     ) &&
-    /const purchaseAuthorization = isWorkToken\(listing\)[\s\S]*workAmoV5StaticAuthorizationForListing\(listing\)[\s\S]*buildTokenBuyPayload\(\s*listing\.listingId,\s*address,\s*purchaseAuthorization/.test(
+    /const purchaseAuthorization = isWorkToken\(listing\)[\s\S]*workAmoStaticAuthorizationForListing\(listing\)[\s\S]*buildTokenBuyPayload\(\s*listing\.listingId,\s*address,\s*purchaseAuthorization/.test(
       buyTokenListingSource,
     ) &&
     /confirmWorkAmoFrozenAction\("purchase", listing\)/.test(
@@ -1279,27 +1291,31 @@ expect(
     ),
 );
 expect(
-  "declared authority can publish the next canonical AMO USD quote",
-  /!workAmoV5QuotePublicationReady\(publication\)/.test(
-    publishWorkAmoUsdQuoteSource,
+  "AMO V6 automatically fetches and verifies the exact inline USD attestation",
+  /"\/api\/v1\/work-amo-v6\/attestation\?fresh=1"/.test(
+    fetchWorkAmoV6AttestationSource,
   ) &&
-    /publication\.v1DeclarationTxid !== WORK_AMO_V1_DECLARATION_TXID/.test(
-    publishWorkAmoUsdQuoteSource,
-  ) &&
-    /connectedScriptPubKey !== authorityScriptPubKey/.test(
-      publishWorkAmoUsdQuoteSource,
+    /payload\.network !== "livenet"[\s\S]*payload\.protocolVersion !==\s*TOKEN_SALE_AUTH_WORK_AMO_INLINE_ORACLE_VERSION/.test(
+      fetchWorkAmoV6AttestationSource,
     ) &&
-    /const payload = `\$\{recordPrefix\}\$\{usdPer100mProofsQ8\}`/.test(
-      publishWorkAmoUsdQuoteSource,
+    /workAmoV6OraclePoliciesMatch\(statusPolicy, responsePolicy\)/.test(
+      fetchWorkAmoV6AttestationSource,
     ) &&
-    /protocolPayloads:\s*\[payload\]/.test(publishWorkAmoUsdQuoteSource) &&
-    /requireConfirmedUtxos:\s*true/.test(publishWorkAmoUsdQuoteSource) &&
-    /Quote publication remains available while ordinary[\s\S]*V5 writes are paused/.test(
+    /validateWorkAmoV6Attestation\([\s\S]*payload\.attestation,[\s\S]*statusPolicy/.test(
+      fetchWorkAmoV6AttestationSource,
+    ) &&
+    /successfulSources\.size \+ failedSources\.size !==\s*statusPolicy\.allowedSourceIds\.length/.test(
+      fetchWorkAmoV6AttestationSource,
+    ) &&
+    /estimates\.length !== WORK_AMO_ALLOWED_FACE_USD_CENTS\.length[\s\S]*workAmoV6ExpectedUnitPriceSats/.test(
+      fetchWorkAmoV6AttestationSource,
+    ) &&
+    /function validateWorkAmoV6Attestation[\s\S]*hasExactRecordKeys\(value, WORK_AMO_V6_ATTESTATION_KEYS\)[\s\S]*workAmoV6MedianQ8[\s\S]*workAmoV6SourceSetSha256[\s\S]*workAmoV6OracleKeyId[\s\S]*ecc\.verifySchnorr/.test(
       app,
     ),
 );
 expect(
-  "AMO quote sequences remain exact strings and publication UI fails closed",
+  "historical V5 quote sequences remain exact while current V6 has no manual publication path",
   /type WorkAmoV5FrozenTerms[\s\S]*unitUsdQuoteSequence\?: string;/.test(
     app,
   ) &&
@@ -1317,16 +1333,9 @@ expect(
     /quoteHead:[\s\S]*canonicalPositiveIntegerText\(\s*payload\.workAmoV5\.quoteHead\.sequence[\s\S]*quotePublication:[\s\S]*canonicalPositiveIntegerText\(\s*payload\.workAmoV5\.quotePublication\.nextSequence/.test(
       app,
     ) &&
-    /function workAmoV5QuotePublicationReady[\s\S]*publication\?\.ready === true[\s\S]*recordPrefix ===[\s\S]*pwa1:usd1:/.test(
-      app,
-    ) &&
-    /BigInt\(\s*nextSequence,\s*\)\.toLocaleString\("en-US"\)/.test(
-      publishWorkAmoUsdQuoteSource,
-    ) &&
-    !/Number\(\s*publication\.nextSequence/u.test(
-      publishWorkAmoUsdQuoteSource,
-    ) &&
-    /\{workAmoQuotePublicationIsReady \? \([\s\S]*BigInt\(workAmoQuoteNextSequence\)\.toLocaleString\([\s\S]*Authority preparation fails closed; no sequence or[\s\S]*publication form is offered/.test(
+    !/async function publishWorkAmoUsdQuote/.test(app) &&
+    !/workAmoQuotePublicationIsReady/.test(app) &&
+    /Automatic signed USD attestor[\s\S]*Creating an AMO intent automatically requests a fresh[\s\S]*BIP340 signature[\s\S]*automatic and fail closed/.test(
       app,
     ),
 );
@@ -1629,12 +1638,15 @@ expect(
   /marketplaceMode/.test(app) && /activityMode/.test(app) && /growthMode/.test(app),
 );
 expect(
-  "AMO UI preserves distinct V5, V4 relic, and historical Marketplace V1 views",
+  "AMO UI preserves distinct V6, V4 relic, and historical Marketplace V1 views",
   /aria-label="WORK AMO protocol view"/.test(app) &&
     /<span>AMO<\/span>/.test(app) &&
     /<span>V4 Relic<\/span>/.test(app) &&
     /<span>Marketplace V1 Relic<\/span>/.test(app) &&
-    /\? "V4 Relic Sale Tickets"\s*:\s*"AMO Units"/.test(app),
+    /\? "V4 Relic Sale Tickets"\s*:\s*"AMO Units"/.test(app) &&
+    /<h3>WORK AMO State<\/h3>[\s\S]*New \$20, \$50, and \$100 intents embed a signed multi-source[\s\S]*Confirmation order derives their WORK/.test(
+      app,
+    ),
 );
 expect(
   "Growth stays standalone and is not a Computer folder",
@@ -1865,7 +1877,7 @@ expect(
   ),
 );
 expect(
-  "AMO face choices and quote controls remain contained responsively",
+  "AMO face choices and automatic attestor status remain contained responsively",
   /work-amo-face-selector[\s\S]*grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/.test(
     css,
   ) &&

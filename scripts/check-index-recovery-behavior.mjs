@@ -141,6 +141,9 @@ import {
   workAmoV5RawIdStateCommitment,
 } from "../server/work-amo-v5-raw.mjs";
 import {
+  WORK_AMO_V6_AUTH_VERSION,
+} from "../server/work-amo-v6.mjs";
+import {
   normalizedWorkAmoV5Bip141Witness,
   workAmoV5Bip141WitnessesEqual,
 } from "../server/work-amo-v5-bip141.mjs";
@@ -1004,6 +1007,8 @@ function isolatedFunction(path, name, globals = {}) {
     WORK_TOKEN_MINT_AMOUNT_ATOMS,
     WORK_AMO_V5_ACTIVATION_HEIGHT,
     WORK_AMO_V5_AUTH_VERSION,
+    WORK_AMO_V6_AUTH_VERSION,
+    WORK_AMO_V6_DECLARATION_PINS_CONFIGURED: false,
     WORK_AMO_V5_RAW_TRANSITION_CHAIN_MODEL,
     WORK_MARKET_GOVERNED_AUTH_VERSIONS:
       WORK_MARKET_GOVERNED_AUTH_VERSIONS_FIXTURE,
@@ -1013,6 +1018,7 @@ function isolatedFunction(path, name, globals = {}) {
     TOKEN_SEND_ATOMS_ACTION,
     TOKEN_SALE_AUTH_ATOMS_VERSION,
     TOKEN_SALE_AUTH_WORK_AMO_V5_VERSION: WORK_AMO_V5_AUTH_VERSION,
+    TOKEN_SALE_AUTH_WORK_AMO_V6_VERSION: WORK_AMO_V6_AUTH_VERSION,
     VALUE_Q8_SCALE,
     BOND_VALUE_Q8_SCALE,
     BOND_TOKEN_IDS: scopedBondTokenIds,
@@ -1123,6 +1129,10 @@ function isolatedFunction(path, name, globals = {}) {
     workAtomicProjectionMetadata,
     workAmountProjection,
     workAmoV5RawTransitionChainCommitmentsEqual,
+    workAmoV6ReplayInputsForBlock: async () => ({
+      referenceBlockWitnesses: [],
+      workAmoV6: null,
+    }),
     workBalanceProjection,
     workAtomsBigIntFromRecord,
     workAtomsValueAtFloorQ8,
@@ -1130,6 +1140,7 @@ function isolatedFunction(path, name, globals = {}) {
     workAtomicProjectionReady: async () => true,
     workAmountFieldsFromAtoms,
     workProjectionItem,
+    upsertWorkAmoV6ListingProjection: async () => {},
     withWorkPrecisionMetadata,
     uniqueMarketplaceMutationActivity,
     validTxid,

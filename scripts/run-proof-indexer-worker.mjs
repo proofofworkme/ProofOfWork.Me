@@ -290,6 +290,13 @@ async function assertAmoPositionSchemaReady(pool) {
           AS quotes_ready,
         to_regclass('proof_indexer.work_amo_listing_terms') IS NOT NULL
           AS listing_terms_ready,
+        to_regclass('proof_indexer.work_amo_v6_attestations') IS NOT NULL
+          AS v6_attestations_ready,
+        to_regclass('proof_indexer.work_amo_v6_listing_terms') IS NOT NULL
+          AS v6_listing_terms_ready,
+        to_regprocedure(
+          'proof_indexer.valid_work_amo_v6_sources(jsonb,integer,bigint,integer)'
+        ) IS NOT NULL AS v6_source_validator_ready,
         to_regclass('proof_indexer.work_amo_block_transitions') IS NOT NULL
           AS block_transitions_ready,
         (
@@ -304,6 +311,98 @@ async function assertAmoPositionSchemaReady(pool) {
               'registry_payment_vout'
             )
         ) AS quote_evidence_ready,
+        (
+          SELECT count(*) = 22
+          FROM information_schema.columns
+          WHERE table_schema = 'proof_indexer'
+            AND table_name = 'work_amo_v6_attestations'
+            AND column_name IN (
+              'declaration_txid',
+              'attestation_version',
+              'attestation_model',
+              'attestation_id',
+              'oracle_key_id',
+              'oracle_public_key',
+              'signature_hex',
+              'source_set_sha256',
+              'source_count',
+              'sources',
+              'issued_at_unix_ms',
+              'freshness_window_ms',
+              'max_spread_bps',
+              'minimum_sources',
+              'max_validity_blocks',
+              'reference_block_height',
+              'reference_block_hash',
+              'valid_from_height',
+              'valid_through_height',
+              'usd_per_100m_proofs_q8',
+              'listing_txid',
+              'payload'
+            )
+        ) AS v6_attestation_evidence_ready,
+        (
+          SELECT count(*) = 30
+          FROM information_schema.columns
+          WHERE table_schema = 'proof_indexer'
+            AND table_name = 'work_amo_v6_listing_terms'
+            AND column_name IN (
+              'listing_id',
+              'listing_txid',
+              'token_id',
+              'authorization_version',
+              'unit_face_usd_cents',
+              'unit_amount_atoms',
+              'unit_price_sats',
+              'unit_minimum_price_sats',
+              'unit_usd_attestation_version',
+              'unit_usd_attestation_model',
+              'unit_usd_attestation_id',
+              'unit_usd_declaration_txid',
+              'unit_usd_oracle_key_id',
+              'unit_usd_oracle_public_key',
+              'unit_usd_reference_block_height',
+              'unit_usd_reference_block_hash',
+              'unit_usd_valid_from_height',
+              'unit_usd_valid_through_height',
+              'unit_usd_source_set_sha256',
+              'unit_usd_attestation_signature',
+              'unit_usd_per_100m_proofs_q8',
+              'listing_network_value_before_q8',
+              'listing_block_height',
+              'listing_block_hash',
+              'listing_block_index',
+              'listing_protocol_vout',
+              'listing_record_ordinal',
+              'listing_bond_contribution_q8',
+              'listing_network_value_after_q8',
+              'frozen_terms'
+            )
+        ) AS v6_listing_terms_evidence_ready,
+        (
+          SELECT count(*) = 7
+          FROM pg_constraint constraint_row
+          JOIN pg_class relation
+            ON relation.oid = constraint_row.conrelid
+          JOIN pg_namespace namespace
+            ON namespace.oid = relation.relnamespace
+          WHERE namespace.nspname = 'proof_indexer'
+            AND relation.relname IN (
+              'work_amo_v6_attestations',
+              'work_amo_v6_listing_terms'
+            )
+            AND constraint_row.contype = 'c'
+            AND constraint_row.convalidated = true
+            AND constraint_row.conname IN (
+              'work_amo_v6_attestation_identity',
+              'work_amo_v6_attestation_policy',
+              'work_amo_v6_attestation_payload',
+              'work_amo_v6_terms_identity',
+              'work_amo_v6_terms_values',
+              'work_amo_v6_terms_positions',
+              'work_amo_v6_terms_frozen_payload'
+            )
+        ) AS v6_policy_constraints_ready,
         (
           SELECT count(*) = 22
           FROM information_schema.columns
@@ -353,7 +452,7 @@ async function assertAmoPositionSchemaReady(pool) {
             )
         ) AS event_position_ready,
         (
-          SELECT count(*) = 3
+          SELECT count(*) = 4
           FROM information_schema.columns
           WHERE table_schema = 'proof_indexer'
             AND (
@@ -369,10 +468,47 @@ async function assertAmoPositionSchemaReady(pool) {
                 table_name = 'work_amo_listing_terms'
                 AND column_name = 'listing_record_ordinal'
               )
+              OR (
+                table_name = 'work_amo_v6_listing_terms'
+                AND column_name = 'listing_record_ordinal'
+              )
             )
             AND is_nullable = 'NO'
             AND column_default IS NULL
         ) AS ordinal_constraints_ready,
+        (
+          SELECT count(*) = 2
+          FROM pg_trigger trigger_row
+          JOIN pg_class relation
+            ON relation.oid = trigger_row.tgrelid
+          JOIN pg_namespace namespace
+            ON namespace.oid = relation.relnamespace
+          WHERE namespace.nspname = 'proof_indexer'
+            AND relation.relname IN (
+              'work_amo_v6_attestations',
+              'work_amo_v6_listing_terms'
+            )
+            AND trigger_row.tgname IN (
+              'work_amo_v6_attestations_immutable',
+              'work_amo_v6_listing_terms_immutable'
+            )
+            AND trigger_row.tgenabled <> 'D'
+            AND trigger_row.tgisinternal = false
+        ) AS v6_immutability_ready,
+        EXISTS (
+          SELECT 1
+          FROM pg_trigger trigger_row
+          JOIN pg_class relation
+            ON relation.oid = trigger_row.tgrelid
+          JOIN pg_namespace namespace
+            ON namespace.oid = relation.relnamespace
+          WHERE namespace.nspname = 'proof_indexer'
+            AND relation.relname = 'meta'
+            AND trigger_row.tgname =
+              'work_amo_v6_migration_marker_immutable'
+            AND trigger_row.tgenabled <> 'D'
+            AND trigger_row.tgisinternal = false
+        ) AS v6_marker_immutability_ready,
         EXISTS (
           SELECT 1
           FROM pg_indexes
@@ -387,16 +523,24 @@ async function assertAmoPositionSchemaReady(pool) {
   if (
     row.quotes_ready !== true ||
     row.listing_terms_ready !== true ||
+    row.v6_attestations_ready !== true ||
+    row.v6_listing_terms_ready !== true ||
+    row.v6_source_validator_ready !== true ||
     row.block_transitions_ready !== true ||
     row.block_transition_evidence_ready !== true ||
     row.quote_evidence_ready !== true ||
+    row.v6_attestation_evidence_ready !== true ||
+    row.v6_listing_terms_evidence_ready !== true ||
+    row.v6_policy_constraints_ready !== true ||
+    row.v6_immutability_ready !== true ||
+    row.v6_marker_immutability_ready !== true ||
     row.transaction_position_ready !== true ||
     row.event_position_ready !== true ||
     row.ordinal_constraints_ready !== true ||
     row.governed_position_unique_ready !== true
   ) {
     throw new Error(
-      "Proof index worker is paused until the AMO V5 canonical-position schema is installed.",
+      "Proof index worker is paused until the AMO V5/V6 canonical-position schema is installed.",
     );
   }
 }

@@ -92,6 +92,25 @@ import {
 import {
   normalizedWorkAmoV5Bip141Witness,
 } from "../server/work-amo-v5-bip141.mjs";
+import {
+  WORK_AMO_V6_ALLOWED_FACE_USD_CENTS,
+  WORK_AMO_V6_AUTH_VERSION,
+  WORK_AMO_V6_FROZEN_TERM_FIELDS,
+  validateWorkAmoV6FrozenTerms,
+} from "../server/work-amo-v6.mjs";
+import {
+  workAmoV6DeclarationCommitment,
+} from "../server/work-amo-v6-declaration.mjs";
+import {
+  WORK_USD_ATTESTATION_MODEL,
+  WORK_USD_ATTESTATION_VERSION,
+  WORK_USD_ORACLE_FRESHNESS_WINDOW_MS,
+  WORK_USD_ORACLE_MAX_SPREAD_BPS,
+  WORK_USD_ORACLE_MAX_VALIDITY_BLOCKS,
+  WORK_USD_ORACLE_MINIMUM_SOURCES,
+  WORK_USD_ORACLE_SOURCE_IDS,
+  verifyWorkUsdAttestation,
+} from "../server/work-usd-oracle.mjs";
 
 const BACKFILL_PROCESS_STARTED_AT_MS = Date.now();
 const DEFAULT_API_BASE = "http://127.0.0.1:8081";
@@ -105,7 +124,16 @@ const WORK_MARKET_GOVERNED_AUTH_VERSIONS = new Set([
   WORK_MARKET_V2_AUTH_VERSION,
   WORK_MARKET_V4_AUTH_VERSION,
   WORK_AMO_V5_AUTH_VERSION,
+  WORK_AMO_V6_AUTH_VERSION,
 ]);
+const WORK_AMO_V6_INDEX_MIGRATION_META_KEY =
+  "workAmoV6Migration:livenet";
+const WORK_AMO_V6_INDEX_MIGRATION_MODEL =
+  "canonical-work-amo-v6-index-migration-v1";
+const WORK_AMO_V6_DECLARATION_INDEX_EVIDENCE_MODEL =
+  "canonical-work-amo-v6-declaration-core-index-evidence-v1";
+const WORK_AMO_V6_DECLARATION_INDEX_EVIDENCE_DOMAIN =
+  "ProofOfWork.Me/WORK-AMO-V6-DECLARATION-EVIDENCE/v1";
 const WORK_AMO_USD_QUOTE_MIN_PAYMENT_SATS = BigInt(
   WORK_AMO_V5_DECLARATION_MIN_PAYMENT_SATS,
 );
@@ -9933,6 +9961,510 @@ async function upsertWorkAmoListingTermsProjection(client, item, status) {
   }
 }
 
+function workAmoV6FrozenTermsFromItem(item) {
+  const source = objectValue(item);
+  const authorization = objectValue(source.saleAuthorization);
+  const explicit = objectValue(
+    source.frozenTerms ??
+      source.workAmoFrozenTerms ??
+      source.workAmoV6FrozenTerms ??
+      authorization.frozenTerms,
+  );
+  const pricing = objectValue(
+    source.workAmoPricing ?? source.workAmoV6Pricing,
+  );
+  const merged = {
+    ...authorization,
+    ...pricing,
+    ...source,
+    ...explicit,
+  };
+  const terms = Object.fromEntries(
+    WORK_AMO_V6_FROZEN_TERM_FIELDS.map((field) => [
+      field,
+      merged[field],
+    ]),
+  );
+  const position = canonicalProtocolPosition(item);
+  const validation = validateWorkAmoV6FrozenTerms(terms, {
+    authorization,
+    listingPosition: position
+      ? {
+          blockHash: normalizedLowerText(
+            item?.blockHash ?? item?._powBlockHash,
+          ),
+          blockHeight: position.blockHeight,
+          blockTransactionIndex: position.blockIndex,
+          protocolVout: position.protocolVout,
+          recordOrdinal: position.recordOrdinal,
+        }
+      : null,
+  });
+  return validation.valid ? validation.frozenTerms : null;
+}
+
+function verifiedWorkAmoV6Attestation(item, listingPosition) {
+  const authorization = objectValue(item?.saleAuthorization);
+  const candidate = authorization.unitUsdAttestation;
+  if (
+    !candidate ||
+    typeof candidate !== "object" ||
+    Array.isArray(candidate)
+  ) {
+    return null;
+  }
+  try {
+    const verified = verifyWorkUsdAttestation(candidate, {
+      allowedSourceIds: WORK_USD_ORACLE_SOURCE_IDS,
+      blockHeight: listingPosition?.blockHeight,
+      expectedDeclarationTxid: normalizedLowerText(
+        candidate.declarationTxid,
+      ),
+      expectedFreshnessWindowMs:
+        WORK_USD_ORACLE_FRESHNESS_WINDOW_MS,
+      expectedMaxSpreadBps: WORK_USD_ORACLE_MAX_SPREAD_BPS,
+      expectedMaxValidityBlocks:
+        WORK_USD_ORACLE_MAX_VALIDITY_BLOCKS,
+      expectedMinimumSources: WORK_USD_ORACLE_MINIMUM_SOURCES,
+      expectedModel: WORK_USD_ATTESTATION_MODEL,
+      expectedNetwork: NETWORK,
+      expectedOracleKeyId: normalizedLowerText(candidate.oracleKeyId),
+      expectedPublicKey: normalizedLowerText(candidate.publicKey),
+      expectedReferenceBlockHash: normalizedLowerText(
+        candidate.referenceBlockHash,
+      ),
+      expectedReferenceBlockHeight: Number(
+        candidate.referenceBlockHeight,
+      ),
+    });
+    return verified.valid === true ? verified.attestation : null;
+  } catch {
+    return null;
+  }
+}
+
+function workAmoV6MigrationMarkerBinds(
+  marker,
+  attestation,
+  listingPosition,
+) {
+  const value = objectValue(marker);
+  const evidence = objectValue(value.declarationEvidence);
+  const safeInteger = (candidate, minimum = 0) => {
+    const parsed = Number(candidate);
+    return Number.isSafeInteger(parsed) && parsed >= minimum
+      ? parsed
+      : null;
+  };
+  const positiveInteger = (candidate) => {
+    const text = String(candidate ?? "").trim();
+    return /^[1-9][0-9]*$/u.test(text)
+      ? BigInt(text).toString()
+      : "";
+  };
+  const committed = {
+    authorityScriptPubKey: normalizedLowerText(
+      evidence.authorityScriptPubKey,
+    ),
+    blockHash: normalizedLowerText(evidence.blockHash),
+    blockHeight: safeInteger(evidence.blockHeight, 1),
+    blockTransactionIndex: safeInteger(
+      evidence.blockTransactionIndex,
+    ),
+    inputCount: safeInteger(evidence.inputCount, 1),
+    outputCount: safeInteger(evidence.outputCount, 1),
+    payloadBytes: safeInteger(evidence.payloadBytes, 1),
+    payloadSha256: normalizedLowerText(evidence.payloadSha256),
+    protocol: normalizedLowerText(evidence.protocol),
+    protocolVout: safeInteger(evidence.protocolVout),
+    recordOrdinal: safeInteger(evidence.recordOrdinal),
+    registryAddress: String(evidence.registryAddress ?? "").trim(),
+    registryPaymentSats: positiveInteger(
+      evidence.registryPaymentSats,
+    ),
+    registryPaymentVout: safeInteger(evidence.registryPaymentVout),
+    txid: normalizedLowerText(evidence.txid),
+  };
+  if (
+    value.model !== WORK_AMO_V6_INDEX_MIGRATION_MODEL ||
+    value.status !== "complete" ||
+    value.network !== NETWORK ||
+    value.version !== WORK_AMO_V6_AUTH_VERSION ||
+    value.attestationVersion !== WORK_USD_ATTESTATION_VERSION ||
+    value.attestationModel !== WORK_USD_ATTESTATION_MODEL ||
+    evidence.model !==
+      WORK_AMO_V6_DECLARATION_INDEX_EVIDENCE_MODEL ||
+    evidence.evidenceComplete !== true ||
+    evidence.coreVerified !== true ||
+    evidence.indexVerified !== true ||
+    !Object.values(committed).every(
+      (field) => field !== null && field !== "",
+    ) ||
+    committed.authorityScriptPubKey !==
+      WORK_AMO_USD_QUOTE_AUTHORITY_SCRIPTPUBKEY ||
+    committed.txid !== attestation.declarationTxid ||
+    committed.registryAddress !==
+      WORK_AMO_USD_QUOTE_REGISTRY_ADDRESS ||
+    BigInt(committed.registryPaymentSats) <
+      BigInt(WORK_AMO_V5_DECLARATION_MIN_PAYMENT_SATS) ||
+    committed.recordOrdinal !== 0 ||
+    !/^[0-9a-f]{64}$/u.test(committed.blockHash) ||
+    !/^[0-9a-f]{64}$/u.test(committed.payloadSha256) ||
+    committed.protocol !== "pwm1"
+  ) {
+    return false;
+  }
+  let expectedDeclaration;
+  try {
+    expectedDeclaration = workAmoV6DeclarationCommitment({
+      oracleKeyId: attestation.oracleKeyId,
+      oraclePublicKey: attestation.publicKey,
+    });
+  } catch {
+    return false;
+  }
+  const commitment = createHash("sha256")
+    .update(
+      Buffer.from(
+        `${WORK_AMO_V6_DECLARATION_INDEX_EVIDENCE_DOMAIN}\n${
+          JSON.stringify(committed)
+        }`,
+        "utf8",
+      ),
+    )
+    .digest("hex");
+  const activationHeight = safeInteger(value.activationHeight, 2);
+  const policy = objectValue(value.policy);
+  return Boolean(
+    commitment ===
+      normalizedLowerText(evidence.commitmentSha256) &&
+      activationHeight === committed.blockHeight + 1 &&
+      listingPosition.blockHeight >= activationHeight &&
+      normalizedLowerText(value.declarationTxid) === committed.txid &&
+      normalizedLowerText(value.declarationBlockHash) ===
+        committed.blockHash &&
+      Number(value.declarationHeight) === committed.blockHeight &&
+      Number(value.declarationBlockIndex) ===
+        committed.blockTransactionIndex &&
+      normalizedLowerText(value.declarationMemoSha256) ===
+        committed.payloadSha256 &&
+      Number(value.declarationMemoBytes) === committed.payloadBytes &&
+      committed.payloadBytes ===
+        expectedDeclaration.protocolRecordBytes &&
+      committed.payloadSha256 ===
+        expectedDeclaration.protocolRecordSha256 &&
+      Number(value.declarationProtocolRecordBytes) ===
+        expectedDeclaration.protocolRecordBytes &&
+      normalizedLowerText(
+        value.declarationProtocolRecordSha256,
+      ) === expectedDeclaration.protocolRecordSha256 &&
+      Number(value.declarationTextBytes) ===
+        expectedDeclaration.payloadBytes &&
+      normalizedLowerText(value.declarationTextSha256) ===
+        expectedDeclaration.payloadSha256 &&
+      Number(value.declarationProtocolVout) ===
+        committed.protocolVout &&
+      Number(value.declarationRecordOrdinal) ===
+        committed.recordOrdinal &&
+      String(value.declarationRegistryAddress ?? "").trim() ===
+        committed.registryAddress &&
+      Number(value.declarationRegistryMinimumPaymentSats) ===
+        WORK_AMO_V5_DECLARATION_MIN_PAYMENT_SATS &&
+      Number(value.declarationRegistryPaymentVout) ===
+        committed.registryPaymentVout &&
+      normalizedLowerText(value.oracleKeyId) ===
+        attestation.oracleKeyId &&
+      normalizedLowerText(value.oraclePublicKey) ===
+        attestation.publicKey &&
+      JSON.stringify(value.facesUsdCents) ===
+        JSON.stringify(WORK_AMO_V6_ALLOWED_FACE_USD_CENTS) &&
+      Number(policy.freshnessWindowMs) ===
+        WORK_USD_ORACLE_FRESHNESS_WINDOW_MS &&
+      Number(policy.maxSpreadBps) ===
+        WORK_USD_ORACLE_MAX_SPREAD_BPS &&
+      Number(policy.minimumSources) ===
+        WORK_USD_ORACLE_MINIMUM_SOURCES &&
+      Number(policy.maxValidityBlocks) ===
+        WORK_USD_ORACLE_MAX_VALIDITY_BLOCKS &&
+      Number(policy.sourceCountMinimum) === 3 &&
+      Number(policy.sourceCountMaximum) === 5
+  );
+}
+
+async function upsertWorkAmoV6ListingProjection(client, item, status) {
+  const authorization = objectValue(item?.saleAuthorization);
+  const version = normalizedLowerText(authorization.version);
+  const tokenId = normalizedLowerText(item?.tokenId ?? authorization.tokenId);
+  if (
+    version !== WORK_AMO_V6_AUTH_VERSION ||
+    tokenId !== WORK_TOKEN_ID ||
+    status !== "confirmed" ||
+    item?.confirmed !== true ||
+    item?.valid === false ||
+    !["token-listing", "token-listings"].includes(
+      normalizedLowerText(item?.kind),
+    )
+  ) {
+    return;
+  }
+  const listingId = normalizedLowerText(item?.listingId ?? item?.txid);
+  const listingTxid = normalizedLowerText(item?.txid);
+  const listingPosition = canonicalProtocolPosition(item);
+  const listingBlockHash = normalizedLowerText(
+    item?.blockHash ?? item?._powBlockHash,
+  );
+  const attestation = verifiedWorkAmoV6Attestation(
+    item,
+    listingPosition,
+  );
+  const terms = workAmoV6FrozenTermsFromItem(item);
+  if (
+    !isHexTxid(listingId) ||
+    listingId !== listingTxid ||
+    !listingPosition ||
+    !isHexTxid(listingBlockHash) ||
+    !attestation ||
+    !terms ||
+    terms.unitUsdAttestationId !== attestation.attestationId
+  ) {
+    throw new Error(
+      `Canonical AMO V6 listing ${listingId || listingTxid || "unknown"} has incomplete inline-attestation terms.`,
+    );
+  }
+  const activationBinding = await client.query(
+    `
+      SELECT value
+      FROM proof_indexer.meta
+      WHERE key = $1
+      LIMIT 2
+    `,
+    [WORK_AMO_V6_INDEX_MIGRATION_META_KEY],
+  );
+  if (
+    activationBinding.rows.length !== 1 ||
+    !workAmoV6MigrationMarkerBinds(
+      activationBinding.rows[0]?.value,
+      attestation,
+      listingPosition,
+    )
+  ) {
+    throw new Error(
+      `Canonical AMO V6 listing ${listingId} is not bound to the configured declaration migration.`,
+    );
+  }
+  const referenceBlock = await client.query(
+    `
+      SELECT count(*)::integer AS count
+      FROM proof_indexer.blocks
+      WHERE network = $1
+        AND height = $2
+        AND lower(block_hash) = $3
+        AND canonical = true
+    `,
+    [
+      NETWORK,
+      attestation.referenceBlockHeight,
+      attestation.referenceBlockHash,
+    ],
+  );
+  if (Number(referenceBlock.rows[0]?.count ?? 0) !== 1) {
+    throw new Error(
+      `Canonical AMO V6 listing ${listingId} references a noncanonical USD anchor.`,
+    );
+  }
+
+  const insertedAttestation = await client.query(
+    `
+      INSERT INTO proof_indexer.work_amo_v6_attestations (
+        network,
+        listing_txid,
+        declaration_txid,
+        attestation_version,
+        attestation_model,
+        attestation_id,
+        oracle_key_id,
+        oracle_public_key,
+        signature_hex,
+        source_set_sha256,
+        source_count,
+        sources,
+        issued_at_unix_ms,
+        freshness_window_ms,
+        max_spread_bps,
+        minimum_sources,
+        max_validity_blocks,
+        reference_block_height,
+        reference_block_hash,
+        valid_from_height,
+        valid_through_height,
+        usd_per_100m_proofs_q8,
+        payload
+      )
+      VALUES (
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+        $12::jsonb, $13::bigint, $14, $15, $16, $17, $18, $19,
+        $20, $21, $22::numeric, $23::jsonb
+      )
+      ON CONFLICT (network, listing_txid) DO NOTHING
+      RETURNING listing_txid
+    `,
+    [
+      NETWORK,
+      listingTxid,
+      attestation.declarationTxid,
+      WORK_USD_ATTESTATION_VERSION,
+      WORK_USD_ATTESTATION_MODEL,
+      attestation.attestationId,
+      attestation.oracleKeyId,
+      attestation.publicKey,
+      attestation.signature,
+      attestation.sourceSetSha256,
+      attestation.sources.length,
+      JSON.stringify(attestation.sources),
+      attestation.issuedAtUnixMs,
+      attestation.freshnessWindowMs,
+      attestation.maxSpreadBps,
+      attestation.minimumSources,
+      attestation.maxValidityBlocks,
+      attestation.referenceBlockHeight,
+      attestation.referenceBlockHash,
+      attestation.validFromHeight,
+      attestation.validThroughHeight,
+      attestation.usdPer100mProofsQ8,
+      JSON.stringify(attestation),
+    ],
+  );
+  if (insertedAttestation.rowCount === 0) {
+    const existingAttestation = await client.query(
+      `
+        SELECT 1
+        FROM proof_indexer.work_amo_v6_attestations
+        WHERE network = $1
+          AND listing_txid = $2
+          AND attestation_id = $3
+          AND payload = $4::jsonb
+        LIMIT 1
+      `,
+      [
+        NETWORK,
+        listingTxid,
+        attestation.attestationId,
+        JSON.stringify(attestation),
+      ],
+    );
+    if (existingAttestation.rowCount !== 1) {
+      throw new Error(
+        `Immutable AMO V6 attestation occurrence conflicts for ${listingId}.`,
+      );
+    }
+  }
+
+  const insertedTerms = await client.query(
+    `
+      INSERT INTO proof_indexer.work_amo_v6_listing_terms (
+        network,
+        listing_id,
+        listing_txid,
+        token_id,
+        authorization_version,
+        unit_face_usd_cents,
+        unit_amount_atoms,
+        unit_price_sats,
+        unit_minimum_price_sats,
+        unit_usd_attestation_version,
+        unit_usd_attestation_model,
+        unit_usd_attestation_id,
+        unit_usd_declaration_txid,
+        unit_usd_oracle_key_id,
+        unit_usd_oracle_public_key,
+        unit_usd_reference_block_height,
+        unit_usd_reference_block_hash,
+        unit_usd_valid_from_height,
+        unit_usd_valid_through_height,
+        unit_usd_source_set_sha256,
+        unit_usd_attestation_signature,
+        unit_usd_per_100m_proofs_q8,
+        listing_network_value_before_q8,
+        listing_block_height,
+        listing_block_hash,
+        listing_block_index,
+        listing_protocol_vout,
+        listing_record_ordinal,
+        listing_bond_contribution_q8,
+        listing_network_value_after_q8,
+        frozen_terms
+      )
+      VALUES (
+        $1, $2, $3, $4, $5, $6, $7::numeric, $8::bigint,
+        $9::bigint, $10, $11, $12, $13, $14, $15, $16, $17,
+        $18, $19, $20, $21, $22::numeric, $23::numeric, $24,
+        $25, $26, $27, $28, $29::numeric, $30::numeric, $31::jsonb
+      )
+      ON CONFLICT (network, listing_id) DO NOTHING
+      RETURNING listing_id
+    `,
+    [
+      NETWORK,
+      listingId,
+      listingTxid,
+      WORK_TOKEN_ID,
+      WORK_AMO_V6_AUTH_VERSION,
+      terms.unitFaceUsdCents,
+      terms.unitAmountAtoms,
+      terms.unitPriceSats,
+      terms.unitMinimumPriceSats,
+      terms.unitUsdAttestationVersion,
+      terms.unitUsdAttestationModel,
+      terms.unitUsdAttestationId,
+      terms.unitUsdDeclarationTxid,
+      terms.unitUsdOracleKeyId,
+      terms.unitUsdOraclePublicKey,
+      terms.unitUsdReferenceBlockHeight,
+      terms.unitUsdReferenceBlockHash,
+      terms.unitUsdValidFromHeight,
+      terms.unitUsdValidThroughHeight,
+      terms.unitUsdSourceSetSha256,
+      terms.unitUsdAttestationSignature,
+      terms.unitUsdPer100mProofsQ8,
+      terms.listingNetworkValueBeforeQ8,
+      terms.listingBlockHeight,
+      terms.listingBlockHash,
+      terms.listingBlockIndex,
+      terms.listingProtocolVout,
+      terms.listingRecordOrdinal,
+      terms.listingBondContributionQ8,
+      terms.listingNetworkValueAfterQ8,
+      JSON.stringify(terms),
+    ],
+  );
+  if (insertedTerms.rowCount === 0) {
+    const existingTerms = await client.query(
+      `
+        SELECT 1
+        FROM proof_indexer.work_amo_v6_listing_terms
+        WHERE network = $1
+          AND listing_id = $2
+          AND listing_txid = $3
+          AND unit_usd_attestation_id = $4
+          AND frozen_terms = $5::jsonb
+        LIMIT 1
+      `,
+      [
+        NETWORK,
+        listingId,
+        listingTxid,
+        attestation.attestationId,
+        JSON.stringify(terms),
+      ],
+    );
+    if (existingTerms.rowCount !== 1) {
+      throw new Error(
+        `Immutable AMO V6 listing terms conflict for ${listingId}.`,
+      );
+    }
+  }
+}
+
 async function upsertProjection(client, sourceLabel, item, status) {
   const projectionKind = eventKind(item, sourceLabel);
   if (sourceLabel === "work-usd-quotes" && projectionKind === "work-usd-quote") {
@@ -9941,6 +10473,7 @@ async function upsertProjection(client, sourceLabel, item, status) {
   if (typeof upsertWorkAmoListingTermsProjection === "function") {
     await upsertWorkAmoListingTermsProjection(client, item, status);
   }
+  await upsertWorkAmoV6ListingProjection(client, item, status);
   if (
     projectionKind === "id-register" &&
     item?.id &&
@@ -14337,6 +14870,14 @@ async function prepareCanonicalRebuild(client) {
       [NETWORK],
     );
     await client.query(
+      `DELETE FROM proof_indexer.work_amo_v6_listing_terms WHERE network = $1`,
+      [NETWORK],
+    );
+    await client.query(
+      `DELETE FROM proof_indexer.work_amo_v6_attestations WHERE network = $1`,
+      [NETWORK],
+    );
+    await client.query(
       `DELETE FROM proof_indexer.work_amo_listing_terms WHERE network = $1`,
       [NETWORK],
     );
@@ -15630,6 +16171,8 @@ async function captureWorkAmoV5HMinusOneSeedEvidence(
           proof_indexer.tx_inputs,
           proof_indexer.tx_outputs,
           proof_indexer.work_usd_quotes,
+          proof_indexer.work_amo_v6_attestations,
+          proof_indexer.work_amo_v6_listing_terms,
           proof_indexer.work_amo_block_transitions,
           proof_indexer.work_amo_listing_terms
         IN SHARE ROW EXCLUSIVE MODE
