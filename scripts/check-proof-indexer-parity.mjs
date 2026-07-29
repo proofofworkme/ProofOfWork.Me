@@ -346,6 +346,22 @@ try {
         (SELECT count(*) FROM proof_indexer.events WHERE network = $1 AND status = 'dropped') AS events_dropped,
         (SELECT count(*) FROM proof_indexer.events WHERE network = $1 AND status = 'confirmed' AND valid = true) AS events_confirmed_valid,
         (SELECT count(*) FROM proof_indexer.events WHERE network = $1 AND status = 'pending' AND valid = true) AS events_pending_valid,
+        (
+          SELECT count(*)
+          FROM proof_indexer.events event_row
+          JOIN proof_indexer.transactions transaction_row
+            ON transaction_row.network = event_row.network
+           AND transaction_row.txid = event_row.txid
+          JOIN proof_indexer.blocks canonical_block
+            ON canonical_block.network = transaction_row.network
+           AND canonical_block.block_hash = transaction_row.block_hash
+           AND canonical_block.height = transaction_row.block_height
+           AND canonical_block.canonical = true
+          WHERE event_row.network = $1
+            AND event_row.protocol = 'pwid1'
+            AND event_row.status IN ('pending', 'dropped', 'orphaned')
+            AND transaction_row.status = 'confirmed'
+        ) AS canonical_confirmed_transactions_with_volatile_pwid_events,
         (SELECT count(DISTINCT txid) FROM proof_indexer.events WHERE network = $1 AND status IN ('confirmed', 'pending') AND valid = true) AS canonical_activity_txids,
         (SELECT count(DISTINCT e.txid) FROM proof_indexer.events e LEFT JOIN proof_indexer.transactions t ON t.network = e.network AND t.txid = e.txid WHERE e.network = $1 AND e.status IN ('confirmed', 'pending') AND e.valid = true AND t.txid IS NULL) AS canonical_activity_txids_missing_transaction,
         (SELECT count(*) FROM proof_indexer.events e LEFT JOIN proof_indexer.transactions t ON t.network = e.network AND t.txid = e.txid WHERE e.network = $1 AND e.status = 'confirmed' AND e.valid = true AND COALESCE(t.status, '') <> 'confirmed') AS confirmed_activity_events_without_confirmed_transaction,
@@ -716,6 +732,20 @@ try {
     rowNumber(counts, "nonconfirmed_events_with_block_metadata") === 0,
     {
       mismatches: rowNumber(counts, "nonconfirmed_events_with_block_metadata"),
+    },
+  );
+  check(
+    checks,
+    "canonical-confirmed-transactions-own-no-volatile-pwid-events",
+    rowNumber(
+      counts,
+      "canonical_confirmed_transactions_with_volatile_pwid_events",
+    ) === 0,
+    {
+      volatilePwidEvents: rowNumber(
+        counts,
+        "canonical_confirmed_transactions_with_volatile_pwid_events",
+      ),
     },
   );
   check(

@@ -8886,6 +8886,10 @@ async function ensureCanonicalRushBootstrap(client) {
           blockTime: item.block?.time,
           height: item.height,
         });
+        await removeVolatileProtocolEventsForCanonicalTransaction(
+          client,
+          item.txid,
+        );
         await persistPreparedProtocolItems(client, item.items);
         indexedTransactions += 1;
       }
@@ -17240,6 +17244,10 @@ async function backfillBlockScanSource(client, source) {
           blockTime: block?.time,
           height,
         });
+        await removeVolatileProtocolEventsForCanonicalTransaction(
+          client,
+          prepared.txid,
+        );
         await removeVolatileWorkMintDecisionEvents(
           client,
           prepared.items,
@@ -18146,6 +18154,54 @@ async function reconcilePendingWorkMintDecision(
     persistInvalid: decision.persistInvalid,
     reconciled: true,
   };
+}
+
+async function removeVolatileProtocolEventsForCanonicalTransaction(
+  client,
+  txid,
+) {
+  const normalizedTxid = String(txid ?? "").trim().toLowerCase();
+  if (!isHexTxid(normalizedTxid)) {
+    throw new Error(
+      "Canonical volatile-event replacement requires a valid transaction id.",
+    );
+  }
+  const result = await client.query(
+    `
+      WITH canonical_guard AS (
+        SELECT 1
+        FROM proof_indexer.transactions canonical_transaction
+        JOIN proof_indexer.blocks canonical_block
+          ON canonical_block.network = canonical_transaction.network
+         AND canonical_block.block_hash = canonical_transaction.block_hash
+         AND canonical_block.height = canonical_transaction.block_height
+         AND canonical_block.canonical = true
+        WHERE canonical_transaction.network = $1
+          AND canonical_transaction.txid = $2
+          AND canonical_transaction.status = 'confirmed'
+          AND canonical_transaction.raw_tx ? 'canonicalBlockScan'
+        LIMIT 1
+      ), deleted AS (
+        DELETE FROM proof_indexer.events volatile_event
+        WHERE volatile_event.network = $1
+          AND volatile_event.txid = $2
+          AND volatile_event.status IN ('pending', 'dropped', 'orphaned')
+          AND EXISTS (SELECT 1 FROM canonical_guard)
+        RETURNING volatile_event.event_id
+      )
+      SELECT
+        EXISTS (SELECT 1 FROM canonical_guard) AS canonical_confirmed,
+        count(*)::integer AS deleted
+      FROM deleted
+    `,
+    [NETWORK, normalizedTxid],
+  );
+  if (result.rows[0]?.canonical_confirmed !== true) {
+    throw new Error(
+      `Canonical volatile-event replacement guard failed for ${normalizedTxid}.`,
+    );
+  }
+  return Number(result.rows[0]?.deleted ?? 0);
 }
 
 async function removeVolatileWorkMintDecisionEvents(

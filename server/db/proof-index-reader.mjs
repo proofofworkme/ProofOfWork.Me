@@ -20705,6 +20705,7 @@ async function confirmedIdRecordsFromCurrentTables(pool, network, idLower = "") 
         WHERE e.network = r.network
           AND e.txid = r.registration_txid
           AND e.kind = 'id-register'
+          AND e.status = 'confirmed'
           AND e.valid = true
           AND lower(COALESCE(e.payload->>'id', '')) = r.id_lower
         ORDER BY e.event_id ASC
@@ -21275,6 +21276,16 @@ async function currentIdRegistryEventState(pool, network) {
         AND e.valid = true
         AND e.kind = ANY($2::text[])
         AND t.status IN ('confirmed', 'pending')
+        AND (
+          (
+            t.status = 'confirmed'
+            AND e.status = 'confirmed'
+          )
+          OR (
+            t.status = 'pending'
+            AND e.status = 'pending'
+          )
+        )
       ORDER BY
         COALESCE(e.block_height, t.block_height) ASC NULLS LAST,
         e.block_index ASC NULLS LAST,

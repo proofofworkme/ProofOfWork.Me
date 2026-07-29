@@ -336,6 +336,16 @@ const currentIdCoverageSource = sourceSliceBetween(
   /async function proveCurrentIdAbsence\(/,
   /function promiseOutcomeWithin\(/,
 );
+const confirmedIdRecordsFromCurrentTablesSource = sourceSliceBetween(
+  proofIndexReader,
+  /async function confirmedIdRecordsFromCurrentTables\(/,
+  /function idLifecycleStateFromItems\(/,
+);
+const currentIdRegistryEventStateSource = sourceSliceBetween(
+  proofIndexReader,
+  /async function currentIdRegistryEventState\(/,
+  /function registryHistoryEventKinds\(/,
+);
 const exactIdRouteSource = sourceSliceBetween(
   server,
   /const id = normalizePowId\(decodeURIComponent\(pathParts\[3\]\)\);/,
@@ -1785,6 +1795,15 @@ expectAll("current ID tables must agree with canonical registration events", pro
   /const orphanRelationalIds = \[\.\.\.confirmedIds\][\s\S]*!registeredEventIds\.has\(id\)/,
   /missingRelationalIds\.length > 0 \|\| orphanRelationalIds\.length > 0[\s\S]*return null/,
 ]);
+expectAll(
+  "current ID records and events require matching canonical dispositions",
+  confirmedIdRecordsFromCurrentTablesSource +
+    currentIdRegistryEventStateSource,
+  [
+    /e\.kind = 'id-register'[\s\S]*e\.status = 'confirmed'[\s\S]*e\.valid = true/,
+    /t\.status IN \('confirmed', 'pending'\)[\s\S]*t\.status = 'confirmed'[\s\S]*e\.status = 'confirmed'[\s\S]*t\.status = 'pending'[\s\S]*e\.status = 'pending'/,
+  ],
+);
 expectAll("checkpoint registry reads are exact and default reads stay complete-only", proofIndexReader, [
   /async function currentProofIndexRegistryPayload\(pool,\s*network,\s*options\s*=\s*\{\}\)/,
   /expectedCheckpointOptionPresent[\s\S]*exactCheckpointRequested[\s\S]*allowIncompleteExactCheckpoint/,

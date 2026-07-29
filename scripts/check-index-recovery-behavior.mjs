@@ -13398,6 +13398,86 @@ check("resolved permanent-invalid WORK rechecks delete stale volatile decisions"
   ]);
 });
 
+check("canonical transaction persistence replaces every same-tx volatile event", async () => {
+  const txid = "e".repeat(64);
+  const removeVolatileProtocolEventsForCanonicalTransaction = isolatedFunction(
+    BACKFILL_PATH,
+    "removeVolatileProtocolEventsForCanonicalTransaction",
+    {
+      NETWORK: "livenet",
+      isHexTxid: (value) => /^[0-9a-f]{64}$/u.test(String(value)),
+    },
+  );
+  let query = null;
+  const client = {
+    async query(sql, params) {
+      query = { params: Array.from(params), sql: String(sql) };
+      return {
+        rows: [{ canonical_confirmed: true, deleted: 3 }],
+      };
+    },
+  };
+  assert.equal(
+    await removeVolatileProtocolEventsForCanonicalTransaction(client, txid),
+    3,
+  );
+  assert.deepEqual(query.params, ["livenet", txid]);
+  assert.match(
+    query.sql,
+    /JOIN proof_indexer\.blocks canonical_block[\s\S]*canonical_block\.canonical = true/u,
+  );
+  assert.match(
+    query.sql,
+    /canonical_transaction\.status = 'confirmed'/u,
+  );
+  assert.match(
+    query.sql,
+    /canonical_transaction\.raw_tx \? 'canonicalBlockScan'/u,
+  );
+  assert.match(
+    query.sql,
+    /volatile_event\.status IN \('pending', 'dropped', 'orphaned'\)/u,
+  );
+  assert.match(
+    query.sql,
+    /EXISTS \(SELECT 1 FROM canonical_guard\)/u,
+  );
+  assert.doesNotMatch(
+    query.sql,
+    /volatile_event\.(?:kind|protocol)|payload->/u,
+    "canonical replacement must not leave protocol-specific volatile rows behind",
+  );
+
+  await rejection(
+    removeVolatileProtocolEventsForCanonicalTransaction(
+      {
+        async query() {
+          return {
+            rows: [{ canonical_confirmed: false, deleted: 0 }],
+          };
+        },
+      },
+      txid,
+    ),
+    (error) => /replacement guard failed/u.test(error.message),
+    "volatile rows must not be deleted without the canonical transaction guard",
+  );
+  let invalidQueryCount = 0;
+  await rejection(
+    removeVolatileProtocolEventsForCanonicalTransaction(
+      {
+        async query() {
+          invalidQueryCount += 1;
+          return { rows: [] };
+        },
+      },
+      "not-a-txid",
+    ),
+    (error) => /valid transaction id/u.test(error.message),
+  );
+  assert.equal(invalidQueryCount, 0);
+});
+
 check("canonical WORK mint decisions remove only volatile mint audit rows", async () => {
   const txid = "e".repeat(64);
   const workTokenId =
@@ -18070,6 +18150,136 @@ check("indexed RUSH history is complete and ordered by canonical blocks", async 
   );
 });
 
+check("canonical RUSH bootstrap replaces volatile rows before persistence and rolls back failures", async () => {
+  const checkpointHash = "a".repeat(64);
+  const itemBlockHash = "b".repeat(64);
+  const txid = "c".repeat(64);
+  async function runFixture({ failCleanup = false } = {}) {
+    const events = [];
+    const discovery = {
+      cursor: 0,
+      entries: [{ height: 90, txid }],
+      historyEntryCount: 1,
+      historyHash: "d".repeat(64),
+      indexedThroughBlock: 100,
+      indexedThroughBlockHash: checkpointHash,
+      indexedTransactions: 0,
+      network: "livenet",
+    };
+    const ensureCanonicalRushBootstrap = isolatedFunction(
+      BACKFILL_PATH,
+      "ensureCanonicalRushBootstrap",
+      {
+        NETWORK: "livenet",
+        PREVOUT_HYDRATION_CONCURRENCY: 1,
+        RUSH_BOOTSTRAP_BATCH_SIZE: 250,
+        RUSH_BOOTSTRAP_ENABLED: true,
+        RUSH_BOOTSTRAP_MAX_TXIDS: 0,
+        RUSH_BOOTSTRAP_META_KEY: "rush:bootstrap",
+        RUSH_BOOTSTRAP_VERSION: 1,
+        RUSH_DISCOVERY_META_KEY: "rush:discovery",
+        RUSH_REGISTRY_ADDRESS: "bc1rushregistry",
+        bitcoinRpc: async (method) => {
+          if (method === "getblockhash") return checkpointHash;
+          if (method === "getblock") {
+            return {
+              hash: checkpointHash,
+              height: 100,
+              time: 1_700_000_100,
+            };
+          }
+          throw new Error(`unexpected RPC method ${method}`);
+        },
+        canonicalRushBootstrapIsComplete: async () => null,
+        canonicalRushBootstrapTransaction: async () => ({
+          block: {
+            hash: itemBlockHash,
+            height: 90,
+            time: 1_700_000_090,
+          },
+          blockHash: itemBlockHash,
+          height: 90,
+          hydrated: { txid },
+          items: [{ item: { kind: "rush-mint", txid } }],
+          txid,
+        }),
+        canonicalRushDiscovery: async () => discovery,
+        isHexTxid: (value) => /^[0-9a-f]{64}$/u.test(String(value)),
+        latestBlockScanCheckpoint: async () => ({
+          blockHash: checkpointHash,
+          height: 100,
+        }),
+        mapWithConcurrency: async (items, _concurrency, mapper) =>
+          Promise.all(items.map(mapper)),
+        persistCanonicalBlock: async (_client, _block, height) => {
+          events.push(`block:${height}`);
+        },
+        persistCanonicalRawTransaction: async () => {
+          events.push("raw");
+        },
+        persistPreparedProtocolItems: async () => {
+          events.push("persist");
+          return { indexed: 1, skipped: 0 };
+        },
+        removeVolatileProtocolEventsForCanonicalTransaction: async (
+          _client,
+          actualTxid,
+        ) => {
+          assert.equal(actualTxid, txid);
+          events.push("volatile-cleanup");
+          if (failCleanup) {
+            throw new Error("canonical volatile cleanup failed");
+          }
+          return 1;
+        },
+        storeProofIndexerMeta: async (_client, key) => {
+          events.push(`meta:${key}`);
+        },
+        validRushMintCountThroughHeight: async () => 1,
+      },
+    );
+    const client = {
+      async query(sql) {
+        events.push(String(sql).trim());
+        return { rows: [] };
+      },
+    };
+    return {
+      ensureCanonicalRushBootstrap,
+      events,
+      run: () => ensureCanonicalRushBootstrap(client),
+    };
+  }
+
+  const successful = await runFixture();
+  const result = await successful.run();
+  assert.equal(result.complete, true);
+  assert.ok(successful.events.indexOf("raw") >= 0);
+  assert.ok(
+    successful.events.indexOf("raw") <
+      successful.events.indexOf("volatile-cleanup"),
+  );
+  assert.ok(
+    successful.events.indexOf("volatile-cleanup") <
+      successful.events.indexOf("persist"),
+  );
+  assert.equal(
+    successful.events.filter((event) => event === "COMMIT").length,
+    2,
+  );
+
+  const failed = await runFixture({ failCleanup: true });
+  await rejection(
+    failed.run(),
+    (error) => /canonical volatile cleanup failed/u.test(error.message),
+  );
+  assert.ok(failed.events.includes("raw"));
+  assert.ok(failed.events.includes("volatile-cleanup"));
+  assert.equal(failed.events.includes("persist"), false);
+  assert.equal(failed.events.at(-1), "ROLLBACK");
+  assert.equal(failed.events.includes("COMMIT"), false);
+});
+
 check("partial RUSH reads require the explicit exact-checkpoint mode", async () => {
   const blockHash = "9".repeat(64);
   const bootstrapHash = "8".repeat(64);
@@ -18389,6 +18599,7 @@ const canonicalVerificationFailureRecord = (error, { height, txid }) => ({
 check("block verification completes before the atomic block transaction", async () => {
   const events = [];
   const txid = "4".repeat(64);
+  let failVolatileCleanup = false;
   const backfillBlockScanSource = isolatedFunction(
     BACKFILL_PATH,
     "backfillBlockScanSource",
@@ -18438,6 +18649,12 @@ check("block verification completes before the atomic block transaction", async 
       persistCanonicalRawTransaction: async () => {
         events.push("raw");
       },
+      removeVolatileProtocolEventsForCanonicalTransaction: async () => {
+        events.push("volatile-cleanup");
+        if (failVolatileCleanup) {
+          throw new Error("canonical volatile cleanup guard failed");
+        }
+      },
       removeVolatileWorkMintDecisionEvents: async () => {
         events.push("cleanup");
       },
@@ -18471,12 +18688,28 @@ check("block verification completes before the atomic block transaction", async 
     "BEGIN",
     "block",
     "raw",
+    "volatile-cleanup",
     "cleanup",
     "market-cleanup",
     "persist",
     "balances",
     "checkpoint",
     "COMMIT",
+  ]);
+
+  events.length = 0;
+  failVolatileCleanup = true;
+  await rejection(
+    backfillBlockScanSource(client, { label: "block-scan" }),
+    (error) => /canonical volatile cleanup guard failed/u.test(error.message),
+  );
+  assert.deepEqual(events, [
+    "verify",
+    "BEGIN",
+    "block",
+    "raw",
+    "volatile-cleanup",
+    "ROLLBACK",
   ]);
 });
 
@@ -18604,6 +18837,7 @@ check("active range replay regenerates deleted exact H-1 checkpoints before veri
       rebuildConfirmedCreditBalancesFromCanonicalEvents: async () => {
         events.push(`balances:${rebuildState.indexedThroughBlock}`);
       },
+      removeVolatileProtocolEventsForCanonicalTransaction: async () => {},
       removeVolatileWorkMintDecisionEvents: async () => {},
       removeVolatileWorkMarketV2DecisionEvents: async () => {},
       seedCanonicalBondDefinitions: async () => {},
@@ -21330,6 +21564,7 @@ check("a verifier error cannot begin or advance a block checkpoint", async () =>
       canonicalBlockScanVerificationFailureRecord:
         canonicalVerificationFailureRecord,
       persistPreparedProtocolItems: async () => ({ indexed: 1, skipped: 0 }),
+      removeVolatileProtocolEventsForCanonicalTransaction: async () => 0,
       removeVolatileWorkMintDecisionEvents: async () => 0,
       removeVolatileWorkMarketV2DecisionEvents: async () => 0,
       preparedProtocolItemsForTx: async () => {
@@ -21415,6 +21650,7 @@ check("the protocol tx target defers a later block but never splits one", async 
         },
         persistCanonicalRawTransaction: async () => {},
         persistPreparedProtocolItems: async () => ({ indexed: 0, skipped: 0 }),
+        removeVolatileProtocolEventsForCanonicalTransaction: async () => 0,
         removeVolatileWorkMintDecisionEvents: async () => 0,
         removeVolatileWorkMarketV2DecisionEvents: async () => 0,
         preparedProtocolItemsForTx: async () => {

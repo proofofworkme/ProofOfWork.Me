@@ -292,6 +292,17 @@ refresh cannot make an otherwise valid last-good snapshot unavailable. Pending
 rows never establish confirmed history, balances, supply, network value, or
 market state.
 
+Confirmation removes the transaction's volatile event overlay atomically. The
+canonical block writer first owns the transaction row under the same database
+lock used to exclude the mempool writer. In that one database transaction it
+removes every `pending`, `dropped`, or `orphaned` event owned by the
+transaction—cascading its participant and reference rows—then persists the
+confirmed canonical events and derived projections. Any failure rolls the
+whole confirmation change back, so a reader cannot observe a confirmed parent
+transaction with a stale volatile event. The ID reader independently requires
+matching parent/event dispositions, and the parity gate hard-fails when a
+confirmed transaction in a canonical block owns a volatile `pwid1:` event.
+
 The worker script keeps the indexer warm by repeatedly running bounded
 backfill pages, refreshing stale pending transaction statuses through
 `/api/v1/tx/:txid/status`, marking disappeared txids as `dropped`, and running
