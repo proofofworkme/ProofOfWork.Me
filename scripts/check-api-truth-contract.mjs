@@ -15,6 +15,10 @@ const ledgerAudit = readFileSync(
   "scripts/audit-ledger-consistency.mjs",
   "utf8",
 );
+const ledgerAuditExact = readFileSync(
+  "scripts/ledger-audit-exact.mjs",
+  "utf8",
+);
 const service = readFileSync("deploy/proofofwork-api-proof-index.conf", "utf8");
 const failures = [];
 const readerPublicLogKinds =
@@ -204,6 +208,20 @@ expect(
   /function workAmountMatches[\s\S]*amountAtoms/u.test(ledgerAudit) &&
     /workAmountMatches\(item, "101000"\)/u.test(ledgerAudit) &&
     !/item\.amount === 101_000/u.test(ledgerAudit),
+);
+expect(
+  "deep ledger audit includes the exact post-activation credit carry",
+  /postActivationCreditFixedQ8/u.test(ledgerAuditExact) &&
+    /postActivationCreditFixedSats/u.test(ledgerAuditExact) &&
+    /legacyBootstrapCreditFixedSats \+[\s\S]*postActivationCreditFixedSats/u.test(
+      ledgerAuditExact,
+    ) &&
+    /legacyBootstrapCreditFixedSats \+[\s\S]*postActivationCreditFixedSats/u.test(
+      ledgerAudit,
+    ) &&
+    /q8FieldsAbsent &&[\s\S]*legacyFieldsAgree &&[\s\S]*postActivationFieldsAgree &&[\s\S]*numbersAgree/u.test(
+      ledgerAudit,
+    ),
 );
 expect(
   "stable canonical reads use a canonical checkpoint while exact-tip truth is independent of worker heartbeat health",

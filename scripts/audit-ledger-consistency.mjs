@@ -765,6 +765,9 @@ const creditMinerFeeFlowSats = numberValue(actualValue.creditMinerFeeFlowSats);
 const legacyBootstrapCreditFixedSats = numberValue(
   actualValue.legacyBootstrapCreditFixedSats,
 );
+const postActivationCreditFixedSats = numberValue(
+  actualValue.postActivationCreditFixedSats,
+);
 const legacyBootstrapEvidence = actualValue.workAmoV5LegacyBootstrap ?? {};
 const creditNetworkValueSats = numberValue(actualValue.creditNetworkValueSats);
 const creditEventFrozenValueSats = numberValue(
@@ -810,6 +813,8 @@ expect(
   exactCreditFrozenValue.exactFieldsPresent
     ? exactCreditFrozenValue.componentsAgree
     : exactCreditFrozenValue.q8FieldsAbsent &&
+        exactCreditFrozenValue.legacyFieldsAgree &&
+        exactCreditFrozenValue.postActivationFieldsAgree &&
         numbersAgree(
           creditEventFrozenValueSats,
           creditMovementFrozenValueSats +
@@ -818,7 +823,8 @@ expect(
             creditMarketplaceMutationFlowSats +
             creditSalePaymentFlowSats +
             creditMinerFeeFlowSats +
-            legacyBootstrapCreditFixedSats,
+            legacyBootstrapCreditFixedSats +
+            postActivationCreditFixedSats,
         ),
 );
 expect(

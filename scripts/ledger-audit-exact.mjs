@@ -67,6 +67,20 @@ export function exactCreditFrozenValueState(actualValue) {
     legacyBootstrapCreditFixedSats !== null &&
     legacyBootstrapCreditFixedQ8 ===
       legacyBootstrapCreditFixedSats * BOND_VALUE_Q8_SCALE;
+  const postActivationFieldsAbsent =
+    source.postActivationCreditFixedQ8 == null &&
+    source.postActivationCreditFixedSats == null;
+  const postActivationCreditFixedQ8 = postActivationFieldsAbsent
+    ? 0n
+    : exactUnsignedString(source.postActivationCreditFixedQ8);
+  const postActivationCreditFixedSats = postActivationFieldsAbsent
+    ? 0n
+    : exactUnsignedInteger(source.postActivationCreditFixedSats);
+  const postActivationFieldsAgree =
+    postActivationCreditFixedQ8 !== null &&
+    postActivationCreditFixedSats !== null &&
+    postActivationCreditFixedQ8 ===
+      postActivationCreditFixedSats * BOND_VALUE_Q8_SCALE;
   const q8FieldsAbsent =
     source.creditEventFrozenValueQ8 == null &&
     source.creditMovementFrozenValueQ8 == null;
@@ -74,14 +88,17 @@ export function exactCreditFrozenValueState(actualValue) {
     eventValueQ8,
     movementValueQ8,
     ...flowValues,
-  ]) && legacyFieldsAgree;
+  ]) && legacyFieldsAgree && postActivationFieldsAgree;
   const validFixedFlowSats = allExact(flowValues)
     ? flowValues.reduce((total, value) => total + value, 0n)
     : null;
   const fixedFlowSats =
     validFixedFlowSats !== null &&
-    legacyBootstrapCreditFixedSats !== null
-      ? validFixedFlowSats + legacyBootstrapCreditFixedSats
+    legacyBootstrapCreditFixedSats !== null &&
+    postActivationCreditFixedSats !== null
+      ? validFixedFlowSats +
+        legacyBootstrapCreditFixedSats +
+        postActivationCreditFixedSats
       : null;
   const expectedEventValueQ8 =
     movementValueQ8 !== null && fixedFlowSats !== null
@@ -98,6 +115,9 @@ export function exactCreditFrozenValueState(actualValue) {
     legacyBootstrapCreditFixedSats,
     legacyFieldsAgree,
     movementValueQ8,
+    postActivationCreditFixedQ8,
+    postActivationCreditFixedSats,
+    postActivationFieldsAgree,
     q8FieldsAbsent,
     validFixedFlowSats,
   };
