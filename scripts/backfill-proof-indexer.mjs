@@ -93,24 +93,20 @@ import {
   normalizedWorkAmoV5Bip141Witness,
 } from "../server/work-amo-v5-bip141.mjs";
 import {
-  WORK_AMO_V6_ALLOWED_FACE_USD_CENTS,
+  WORK_AMO_V6_ALLOWED_FACE_PROOFS,
+  WORK_AMO_V6_AMOUNT_MODEL,
   WORK_AMO_V6_AUTH_VERSION,
+  WORK_AMO_V6_BLOCK_SEQUENCER_MODEL,
+  WORK_AMO_V6_BOND_TRANSITION_MODEL,
   WORK_AMO_V6_FROZEN_TERM_FIELDS,
+  WORK_AMO_V6_STATE_ORDER_MODEL,
+  WORK_AMO_V6_UNIT_MODEL,
+  WORK_AMO_V6_UNIT_WORK_ORACLE_MODEL,
   validateWorkAmoV6FrozenTerms,
 } from "../server/work-amo-v6.mjs";
 import {
   workAmoV6DeclarationCommitment,
 } from "../server/work-amo-v6-declaration.mjs";
-import {
-  WORK_USD_ATTESTATION_MODEL,
-  WORK_USD_ATTESTATION_VERSION,
-  WORK_USD_ORACLE_FRESHNESS_WINDOW_MS,
-  WORK_USD_ORACLE_MAX_SPREAD_BPS,
-  WORK_USD_ORACLE_MAX_VALIDITY_BLOCKS,
-  WORK_USD_ORACLE_MINIMUM_SOURCES,
-  WORK_USD_ORACLE_SOURCE_IDS,
-  verifyWorkUsdAttestation,
-} from "../server/work-usd-oracle.mjs";
 
 const BACKFILL_PROCESS_STARTED_AT_MS = Date.now();
 const DEFAULT_API_BASE = "http://127.0.0.1:8081";
@@ -129,7 +125,7 @@ const WORK_MARKET_GOVERNED_AUTH_VERSIONS = new Set([
 const WORK_AMO_V6_INDEX_MIGRATION_META_KEY =
   "workAmoV6Migration:livenet";
 const WORK_AMO_V6_INDEX_MIGRATION_MODEL =
-  "canonical-work-amo-v6-index-migration-v1";
+  "canonical-work-amo-v6-proof-native-index-migration-v1";
 const WORK_AMO_V6_DECLARATION_INDEX_EVIDENCE_MODEL =
   "canonical-work-amo-v6-declaration-core-index-evidence-v1";
 const WORK_AMO_V6_DECLARATION_INDEX_EVIDENCE_DOMAIN =
@@ -10003,51 +9999,7 @@ function workAmoV6FrozenTermsFromItem(item) {
   return validation.valid ? validation.frozenTerms : null;
 }
 
-function verifiedWorkAmoV6Attestation(item, listingPosition) {
-  const authorization = objectValue(item?.saleAuthorization);
-  const candidate = authorization.unitUsdAttestation;
-  if (
-    !candidate ||
-    typeof candidate !== "object" ||
-    Array.isArray(candidate)
-  ) {
-    return null;
-  }
-  try {
-    const verified = verifyWorkUsdAttestation(candidate, {
-      allowedSourceIds: WORK_USD_ORACLE_SOURCE_IDS,
-      blockHeight: listingPosition?.blockHeight,
-      expectedDeclarationTxid: normalizedLowerText(
-        candidate.declarationTxid,
-      ),
-      expectedFreshnessWindowMs:
-        WORK_USD_ORACLE_FRESHNESS_WINDOW_MS,
-      expectedMaxSpreadBps: WORK_USD_ORACLE_MAX_SPREAD_BPS,
-      expectedMaxValidityBlocks:
-        WORK_USD_ORACLE_MAX_VALIDITY_BLOCKS,
-      expectedMinimumSources: WORK_USD_ORACLE_MINIMUM_SOURCES,
-      expectedModel: WORK_USD_ATTESTATION_MODEL,
-      expectedNetwork: NETWORK,
-      expectedOracleKeyId: normalizedLowerText(candidate.oracleKeyId),
-      expectedPublicKey: normalizedLowerText(candidate.publicKey),
-      expectedReferenceBlockHash: normalizedLowerText(
-        candidate.referenceBlockHash,
-      ),
-      expectedReferenceBlockHeight: Number(
-        candidate.referenceBlockHeight,
-      ),
-    });
-    return verified.valid === true ? verified.attestation : null;
-  } catch {
-    return null;
-  }
-}
-
-function workAmoV6MigrationMarkerBinds(
-  marker,
-  attestation,
-  listingPosition,
-) {
+function workAmoV6MigrationMarkerBinds(marker, listingPosition) {
   const value = objectValue(marker);
   const evidence = objectValue(value.declarationEvidence);
   const safeInteger = (candidate, minimum = 0) => {
@@ -10090,8 +10042,13 @@ function workAmoV6MigrationMarkerBinds(
     value.status !== "complete" ||
     value.network !== NETWORK ||
     value.version !== WORK_AMO_V6_AUTH_VERSION ||
-    value.attestationVersion !== WORK_USD_ATTESTATION_VERSION ||
-    value.attestationModel !== WORK_USD_ATTESTATION_MODEL ||
+    value.amountModel !== WORK_AMO_V6_AMOUNT_MODEL ||
+    value.blockSequencerModel !== WORK_AMO_V6_BLOCK_SEQUENCER_MODEL ||
+    value.bondTransitionModel !== WORK_AMO_V6_BOND_TRANSITION_MODEL ||
+    value.stateOrderModel !== WORK_AMO_V6_STATE_ORDER_MODEL ||
+    value.unitModel !== WORK_AMO_V6_UNIT_MODEL ||
+    value.unitWorkOracleModel !==
+      WORK_AMO_V6_UNIT_WORK_ORACLE_MODEL ||
     evidence.model !==
       WORK_AMO_V6_DECLARATION_INDEX_EVIDENCE_MODEL ||
     evidence.evidenceComplete !== true ||
@@ -10102,7 +10059,7 @@ function workAmoV6MigrationMarkerBinds(
     ) ||
     committed.authorityScriptPubKey !==
       WORK_AMO_USD_QUOTE_AUTHORITY_SCRIPTPUBKEY ||
-    committed.txid !== attestation.declarationTxid ||
+    committed.txid !== normalizedLowerText(value.declarationTxid) ||
     committed.registryAddress !==
       WORK_AMO_USD_QUOTE_REGISTRY_ADDRESS ||
     BigInt(committed.registryPaymentSats) <
@@ -10110,16 +10067,18 @@ function workAmoV6MigrationMarkerBinds(
     committed.recordOrdinal !== 0 ||
     !/^[0-9a-f]{64}$/u.test(committed.blockHash) ||
     !/^[0-9a-f]{64}$/u.test(committed.payloadSha256) ||
-    committed.protocol !== "pwm1"
+    committed.protocol !== "pwm1" ||
+    !Array.isArray(value.facesProofs) ||
+    JSON.stringify(value.facesProofs) !==
+      JSON.stringify(WORK_AMO_V6_ALLOWED_FACE_PROOFS) ||
+    !Number.isFinite(Date.parse(String(value.completedAt ?? ""))) ||
+    !Number.isFinite(Date.parse(String(value.updatedAt ?? "")))
   ) {
     return false;
   }
   let expectedDeclaration;
   try {
-    expectedDeclaration = workAmoV6DeclarationCommitment({
-      oracleKeyId: attestation.oracleKeyId,
-      oraclePublicKey: attestation.publicKey,
-    });
+    expectedDeclaration = workAmoV6DeclarationCommitment();
   } catch {
     return false;
   }
@@ -10134,7 +10093,6 @@ function workAmoV6MigrationMarkerBinds(
     )
     .digest("hex");
   const activationHeight = safeInteger(value.activationHeight, 2);
-  const policy = objectValue(value.policy);
   return Boolean(
     commitment ===
       normalizedLowerText(evidence.commitmentSha256) &&
@@ -10171,23 +10129,7 @@ function workAmoV6MigrationMarkerBinds(
       Number(value.declarationRegistryMinimumPaymentSats) ===
         WORK_AMO_V5_DECLARATION_MIN_PAYMENT_SATS &&
       Number(value.declarationRegistryPaymentVout) ===
-        committed.registryPaymentVout &&
-      normalizedLowerText(value.oracleKeyId) ===
-        attestation.oracleKeyId &&
-      normalizedLowerText(value.oraclePublicKey) ===
-        attestation.publicKey &&
-      JSON.stringify(value.facesUsdCents) ===
-        JSON.stringify(WORK_AMO_V6_ALLOWED_FACE_USD_CENTS) &&
-      Number(policy.freshnessWindowMs) ===
-        WORK_USD_ORACLE_FRESHNESS_WINDOW_MS &&
-      Number(policy.maxSpreadBps) ===
-        WORK_USD_ORACLE_MAX_SPREAD_BPS &&
-      Number(policy.minimumSources) ===
-        WORK_USD_ORACLE_MINIMUM_SOURCES &&
-      Number(policy.maxValidityBlocks) ===
-        WORK_USD_ORACLE_MAX_VALIDITY_BLOCKS &&
-      Number(policy.sourceCountMinimum) === 3 &&
-      Number(policy.sourceCountMaximum) === 5
+        committed.registryPaymentVout
   );
 }
 
@@ -10213,22 +10155,16 @@ async function upsertWorkAmoV6ListingProjection(client, item, status) {
   const listingBlockHash = normalizedLowerText(
     item?.blockHash ?? item?._powBlockHash,
   );
-  const attestation = verifiedWorkAmoV6Attestation(
-    item,
-    listingPosition,
-  );
   const terms = workAmoV6FrozenTermsFromItem(item);
   if (
     !isHexTxid(listingId) ||
     listingId !== listingTxid ||
     !listingPosition ||
     !isHexTxid(listingBlockHash) ||
-    !attestation ||
-    !terms ||
-    terms.unitUsdAttestationId !== attestation.attestationId
+    !terms
   ) {
     throw new Error(
-      `Canonical AMO V6 listing ${listingId || listingTxid || "unknown"} has incomplete inline-attestation terms.`,
+      `Canonical AMO V6 listing ${listingId || listingTxid || "unknown"} has incomplete proof-native frozen terms.`,
     );
   }
   const activationBinding = await client.query(
@@ -10244,119 +10180,12 @@ async function upsertWorkAmoV6ListingProjection(client, item, status) {
     activationBinding.rows.length !== 1 ||
     !workAmoV6MigrationMarkerBinds(
       activationBinding.rows[0]?.value,
-      attestation,
       listingPosition,
     )
   ) {
     throw new Error(
       `Canonical AMO V6 listing ${listingId} is not bound to the configured declaration migration.`,
     );
-  }
-  const referenceBlock = await client.query(
-    `
-      SELECT count(*)::integer AS count
-      FROM proof_indexer.blocks
-      WHERE network = $1
-        AND height = $2
-        AND lower(block_hash) = $3
-        AND canonical = true
-    `,
-    [
-      NETWORK,
-      attestation.referenceBlockHeight,
-      attestation.referenceBlockHash,
-    ],
-  );
-  if (Number(referenceBlock.rows[0]?.count ?? 0) !== 1) {
-    throw new Error(
-      `Canonical AMO V6 listing ${listingId} references a noncanonical USD anchor.`,
-    );
-  }
-
-  const insertedAttestation = await client.query(
-    `
-      INSERT INTO proof_indexer.work_amo_v6_attestations (
-        network,
-        listing_txid,
-        declaration_txid,
-        attestation_version,
-        attestation_model,
-        attestation_id,
-        oracle_key_id,
-        oracle_public_key,
-        signature_hex,
-        source_set_sha256,
-        source_count,
-        sources,
-        issued_at_unix_ms,
-        freshness_window_ms,
-        max_spread_bps,
-        minimum_sources,
-        max_validity_blocks,
-        reference_block_height,
-        reference_block_hash,
-        valid_from_height,
-        valid_through_height,
-        usd_per_100m_proofs_q8,
-        payload
-      )
-      VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
-        $12::jsonb, $13::bigint, $14, $15, $16, $17, $18, $19,
-        $20, $21, $22::numeric, $23::jsonb
-      )
-      ON CONFLICT (network, listing_txid) DO NOTHING
-      RETURNING listing_txid
-    `,
-    [
-      NETWORK,
-      listingTxid,
-      attestation.declarationTxid,
-      WORK_USD_ATTESTATION_VERSION,
-      WORK_USD_ATTESTATION_MODEL,
-      attestation.attestationId,
-      attestation.oracleKeyId,
-      attestation.publicKey,
-      attestation.signature,
-      attestation.sourceSetSha256,
-      attestation.sources.length,
-      JSON.stringify(attestation.sources),
-      attestation.issuedAtUnixMs,
-      attestation.freshnessWindowMs,
-      attestation.maxSpreadBps,
-      attestation.minimumSources,
-      attestation.maxValidityBlocks,
-      attestation.referenceBlockHeight,
-      attestation.referenceBlockHash,
-      attestation.validFromHeight,
-      attestation.validThroughHeight,
-      attestation.usdPer100mProofsQ8,
-      JSON.stringify(attestation),
-    ],
-  );
-  if (insertedAttestation.rowCount === 0) {
-    const existingAttestation = await client.query(
-      `
-        SELECT 1
-        FROM proof_indexer.work_amo_v6_attestations
-        WHERE network = $1
-          AND listing_txid = $2
-          AND attestation_id = $3
-          AND payload = $4::jsonb
-        LIMIT 1
-      `,
-      [
-        NETWORK,
-        listingTxid,
-        attestation.attestationId,
-        JSON.stringify(attestation),
-      ],
-    );
-    if (existingAttestation.rowCount !== 1) {
-      throw new Error(
-        `Immutable AMO V6 attestation occurrence conflicts for ${listingId}.`,
-      );
-    }
   }
 
   const insertedTerms = await client.query(
@@ -10367,23 +10196,10 @@ async function upsertWorkAmoV6ListingProjection(client, item, status) {
         listing_txid,
         token_id,
         authorization_version,
-        unit_face_usd_cents,
+        unit_face_proofs,
         unit_amount_atoms,
         unit_price_sats,
         unit_minimum_price_sats,
-        unit_usd_attestation_version,
-        unit_usd_attestation_model,
-        unit_usd_attestation_id,
-        unit_usd_declaration_txid,
-        unit_usd_oracle_key_id,
-        unit_usd_oracle_public_key,
-        unit_usd_reference_block_height,
-        unit_usd_reference_block_hash,
-        unit_usd_valid_from_height,
-        unit_usd_valid_through_height,
-        unit_usd_source_set_sha256,
-        unit_usd_attestation_signature,
-        unit_usd_per_100m_proofs_q8,
         listing_network_value_before_q8,
         listing_block_height,
         listing_block_hash,
@@ -10396,9 +10212,8 @@ async function upsertWorkAmoV6ListingProjection(client, item, status) {
       )
       VALUES (
         $1, $2, $3, $4, $5, $6, $7::numeric, $8::bigint,
-        $9::bigint, $10, $11, $12, $13, $14, $15, $16, $17,
-        $18, $19, $20, $21, $22::numeric, $23::numeric, $24,
-        $25, $26, $27, $28, $29::numeric, $30::numeric, $31::jsonb
+        $9::bigint, $10::numeric, $11, $12, $13, $14, $15,
+        $16::numeric, $17::numeric, $18::jsonb
       )
       ON CONFLICT (network, listing_id) DO NOTHING
       RETURNING listing_id
@@ -10409,23 +10224,10 @@ async function upsertWorkAmoV6ListingProjection(client, item, status) {
       listingTxid,
       WORK_TOKEN_ID,
       WORK_AMO_V6_AUTH_VERSION,
-      terms.unitFaceUsdCents,
+      terms.unitFaceProofs,
       terms.unitAmountAtoms,
       terms.unitPriceSats,
       terms.unitMinimumPriceSats,
-      terms.unitUsdAttestationVersion,
-      terms.unitUsdAttestationModel,
-      terms.unitUsdAttestationId,
-      terms.unitUsdDeclarationTxid,
-      terms.unitUsdOracleKeyId,
-      terms.unitUsdOraclePublicKey,
-      terms.unitUsdReferenceBlockHeight,
-      terms.unitUsdReferenceBlockHash,
-      terms.unitUsdValidFromHeight,
-      terms.unitUsdValidThroughHeight,
-      terms.unitUsdSourceSetSha256,
-      terms.unitUsdAttestationSignature,
-      terms.unitUsdPer100mProofsQ8,
       terms.listingNetworkValueBeforeQ8,
       terms.listingBlockHeight,
       terms.listingBlockHash,
@@ -10445,15 +10247,13 @@ async function upsertWorkAmoV6ListingProjection(client, item, status) {
         WHERE network = $1
           AND listing_id = $2
           AND listing_txid = $3
-          AND unit_usd_attestation_id = $4
-          AND frozen_terms = $5::jsonb
+          AND frozen_terms = $4::jsonb
         LIMIT 1
       `,
       [
         NETWORK,
         listingId,
         listingTxid,
-        attestation.attestationId,
         JSON.stringify(terms),
       ],
     );
@@ -14874,10 +14674,6 @@ async function prepareCanonicalRebuild(client) {
       [NETWORK],
     );
     await client.query(
-      `DELETE FROM proof_indexer.work_amo_v6_attestations WHERE network = $1`,
-      [NETWORK],
-    );
-    await client.query(
       `DELETE FROM proof_indexer.work_amo_listing_terms WHERE network = $1`,
       [NETWORK],
     );
@@ -16171,7 +15967,6 @@ async function captureWorkAmoV5HMinusOneSeedEvidence(
           proof_indexer.tx_inputs,
           proof_indexer.tx_outputs,
           proof_indexer.work_usd_quotes,
-          proof_indexer.work_amo_v6_attestations,
           proof_indexer.work_amo_v6_listing_terms,
           proof_indexer.work_amo_block_transitions,
           proof_indexer.work_amo_listing_terms

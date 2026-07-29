@@ -681,296 +681,227 @@ BEFORE UPDATE ON proof_indexer.work_amo_listing_terms
 FOR EACH ROW
 EXECUTE FUNCTION proof_indexer.reject_work_amo_listing_terms_update();
 
--- AMO V6 removes the separately published quote chain from new listings.
--- Each confirmed V6 listing carries one signed, closed-shape USD attestation.
--- Store the attestation as an occurrence keyed by its listing transaction:
--- one valid attestation may intentionally be reused by more than one listing,
--- while each occurrence remains independently tied to canonical listing
--- evidence. Source order is the fixed unsigned-UTF-8 order of the five ASCII
--- source ids, expressed here as explicit ranks so database collation cannot
--- become protocol ordering.
-CREATE OR REPLACE FUNCTION
-  proof_indexer.valid_work_amo_v6_sources(
-    candidate jsonb,
-    expected_count integer,
-    issued_at_ms bigint,
-    freshness_ms integer
-  )
-RETURNS boolean
-LANGUAGE plpgsql
-IMMUTABLE
-AS $proof_indexer_work_amo_v6_sources$
+-- AMO V6 is proof-native. The face is a fixed amount of proofs and the
+-- confirmed canonical listing position derives and freezes the WORK amount
+-- from the network value immediately before that record.
+--
+-- The USD-attestation V6 schema was staged in production but never activated.
+-- Replace that exact empty shape once, and fail closed if it ever contains
+-- history or a migration marker. After replacement this block is a no-op, so
+-- normal schema reapplication can never drop proof-native V6 history.
+DO $proof_indexer_replace_staged_work_amo_v6_oracle$
 DECLARE
-  source jsonb;
-  source_id text;
-  source_rank integer;
-  previous_rank integer := 0;
-  observed_text text;
-  observed_at_ms bigint;
-  usd_q8 text;
-  actual_count integer := 0;
+  staged_attestations regclass :=
+    to_regclass('proof_indexer.work_amo_v6_attestations');
+  staged_terms regclass :=
+    to_regclass('proof_indexer.work_amo_v6_listing_terms');
+  staged_attestation_count bigint := 0;
+  staged_terms_count bigint := 0;
+  marker_present boolean := false;
+  oracle_attestations_exact boolean := false;
+  oracle_terms_exact boolean := false;
+  oracle_terms_shape boolean := false;
+  proof_terms_exact boolean := false;
+  proof_terms_shape boolean := false;
 BEGIN
-  IF
-    candidate IS NULL
-    OR jsonb_typeof(candidate) <> 'array'
-    OR expected_count < 3
-    OR expected_count > 5
-    OR jsonb_array_length(candidate) <> expected_count
-    OR issued_at_ms <= 0
-    OR freshness_ms <> 120000
-  THEN
-    RETURN false;
+  SELECT EXISTS (
+    SELECT 1
+    FROM proof_indexer.meta
+    WHERE key = 'workAmoV6Migration:livenet'
+  )
+  INTO marker_present;
+
+  IF staged_terms IS NOT NULL THEN
+    SELECT
+      EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'proof_indexer'
+          AND table_name = 'work_amo_v6_listing_terms'
+          AND column_name = 'unit_face_usd_cents'
+      ),
+      EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'proof_indexer'
+          AND table_name = 'work_amo_v6_listing_terms'
+          AND column_name = 'unit_face_proofs'
+      ),
+      (
+        SELECT array_agg(column_name::text ORDER BY column_name) =
+          ARRAY[
+            'authorization_version',
+            'created_at',
+            'frozen_terms',
+            'listing_block_hash',
+            'listing_block_height',
+            'listing_block_index',
+            'listing_bond_contribution_q8',
+            'listing_id',
+            'listing_network_value_after_q8',
+            'listing_network_value_before_q8',
+            'listing_protocol_vout',
+            'listing_record_ordinal',
+            'listing_txid',
+            'network',
+            'token_id',
+            'unit_amount_atoms',
+            'unit_face_usd_cents',
+            'unit_minimum_price_sats',
+            'unit_price_sats',
+            'unit_usd_attestation_id',
+            'unit_usd_attestation_model',
+            'unit_usd_attestation_signature',
+            'unit_usd_attestation_version',
+            'unit_usd_declaration_txid',
+            'unit_usd_oracle_key_id',
+            'unit_usd_oracle_public_key',
+            'unit_usd_per_100m_proofs_q8',
+            'unit_usd_reference_block_hash',
+            'unit_usd_reference_block_height',
+            'unit_usd_source_set_sha256',
+            'unit_usd_valid_from_height',
+            'unit_usd_valid_through_height'
+          ]::text[]
+        FROM information_schema.columns
+        WHERE table_schema = 'proof_indexer'
+          AND table_name = 'work_amo_v6_listing_terms'
+      ),
+      (
+        SELECT array_agg(column_name::text ORDER BY column_name) =
+          ARRAY[
+            'authorization_version',
+            'created_at',
+            'frozen_terms',
+            'listing_block_hash',
+            'listing_block_height',
+            'listing_block_index',
+            'listing_bond_contribution_q8',
+            'listing_id',
+            'listing_network_value_after_q8',
+            'listing_network_value_before_q8',
+            'listing_protocol_vout',
+            'listing_record_ordinal',
+            'listing_txid',
+            'network',
+            'token_id',
+            'unit_amount_atoms',
+            'unit_face_proofs',
+            'unit_minimum_price_sats',
+            'unit_price_sats'
+          ]::text[]
+        FROM information_schema.columns
+        WHERE table_schema = 'proof_indexer'
+          AND table_name = 'work_amo_v6_listing_terms'
+      )
+    INTO
+      oracle_terms_shape,
+      proof_terms_shape,
+      oracle_terms_exact,
+      proof_terms_exact;
   END IF;
 
-  FOR source IN
-    SELECT value
-    FROM jsonb_array_elements(candidate)
-  LOOP
-    IF
-      jsonb_typeof(source) <> 'object'
-      OR NOT source ?& ARRAY[
-        'sourceId',
-        'usdPer100mProofsQ8',
-        'observedAtUnixMs'
-      ]
-      OR jsonb_typeof(source->'sourceId') <> 'string'
-      OR jsonb_typeof(source->'usdPer100mProofsQ8') <> 'string'
-      OR jsonb_typeof(source->'observedAtUnixMs') <> 'number'
-      OR (
-        SELECT count(*)
-        FROM jsonb_object_keys(source)
-      ) <> 3
-    THEN
-      RETURN false;
-    END IF;
+  IF staged_attestations IS NOT NULL THEN
+    SELECT
+      array_agg(column_name::text ORDER BY column_name) =
+        ARRAY[
+          'attestation_id',
+          'attestation_model',
+          'attestation_version',
+          'created_at',
+          'declaration_txid',
+          'freshness_window_ms',
+          'issued_at_unix_ms',
+          'listing_txid',
+          'max_spread_bps',
+          'max_validity_blocks',
+          'minimum_sources',
+          'network',
+          'oracle_key_id',
+          'oracle_public_key',
+          'payload',
+          'reference_block_hash',
+          'reference_block_height',
+          'signature_hex',
+          'source_count',
+          'source_set_sha256',
+          'sources',
+          'usd_per_100m_proofs_q8',
+          'valid_from_height',
+          'valid_through_height'
+        ]::text[]
+    INTO oracle_attestations_exact
+    FROM information_schema.columns
+    WHERE table_schema = 'proof_indexer'
+      AND table_name = 'work_amo_v6_attestations';
+  END IF;
 
-    source_id := source->>'sourceId';
-    source_rank := CASE source_id
-      WHEN 'bitfinex' THEN 1
-      WHEN 'bitflyer' THEN 2
-      WHEN 'coinbase' THEN 3
-      WHEN 'gemini' THEN 4
-      WHEN 'kraken' THEN 5
-      ELSE 0
-    END;
-    IF source_rank <= previous_rank THEN
-      RETURN false;
-    END IF;
-    previous_rank := source_rank;
+  IF
+    staged_terms IS NOT NULL
+    AND (
+      (oracle_terms_shape AND NOT oracle_terms_exact)
+      OR (proof_terms_shape AND NOT proof_terms_exact)
+      OR (NOT oracle_terms_shape AND NOT proof_terms_shape)
+    )
+  THEN
+    RAISE EXCEPTION
+      'Unknown AMO V6 listing-terms schema; refusing automatic replacement'
+      USING ERRCODE = '55000';
+  END IF;
 
-    usd_q8 := source->>'usdPer100mProofsQ8';
-    observed_text := source->>'observedAtUnixMs';
-    IF
-      usd_q8 !~ '^[1-9][0-9]*$'
-      OR observed_text !~ '^[1-9][0-9]*$'
-      OR observed_text::numeric > 9223372036854775807::numeric
-    THEN
-      RETURN false;
-    END IF;
-    observed_at_ms := observed_text::bigint;
-    IF
-      observed_at_ms > issued_at_ms
-      OR observed_at_ms < issued_at_ms - freshness_ms
-    THEN
-      RETURN false;
-    END IF;
-    actual_count := actual_count + 1;
-  END LOOP;
+  IF
+    staged_attestations IS NOT NULL
+    AND NOT oracle_attestations_exact
+  THEN
+    RAISE EXCEPTION
+      'Unknown AMO V6 attestation schema; refusing automatic replacement'
+      USING ERRCODE = '55000';
+  END IF;
 
-  RETURN actual_count = expected_count;
+  IF oracle_terms_shape OR staged_attestations IS NOT NULL THEN
+    IF oracle_terms_shape THEN
+      EXECUTE
+        'SELECT count(*) FROM proof_indexer.work_amo_v6_listing_terms'
+      INTO staged_terms_count;
+    END IF;
+    IF staged_attestations IS NOT NULL THEN
+      EXECUTE
+        'SELECT count(*) FROM proof_indexer.work_amo_v6_attestations'
+      INTO staged_attestation_count;
+    END IF;
+    IF
+      marker_present
+      OR staged_terms_count <> 0
+      OR staged_attestation_count <> 0
+    THEN
+      RAISE EXCEPTION
+        'Staged USD-oracle AMO V6 state is not empty; refusing proof-native replacement (terms %, attestations %, marker %)',
+        staged_terms_count,
+        staged_attestation_count,
+        marker_present
+        USING ERRCODE = '55000';
+    END IF;
+    IF oracle_terms_shape THEN
+      EXECUTE
+        'DROP TABLE proof_indexer.work_amo_v6_listing_terms';
+    END IF;
+    IF staged_attestations IS NOT NULL THEN
+      EXECUTE
+        'DROP TABLE proof_indexer.work_amo_v6_attestations';
+    END IF;
+  END IF;
 END;
-$proof_indexer_work_amo_v6_sources$;
+$proof_indexer_replace_staged_work_amo_v6_oracle$;
 
-CREATE TABLE IF NOT EXISTS proof_indexer.work_amo_v6_attestations (
-  network text NOT NULL,
-  listing_txid text NOT NULL,
-  declaration_txid text NOT NULL,
-  attestation_version text NOT NULL,
-  attestation_model text NOT NULL,
-  attestation_id text NOT NULL,
-  oracle_key_id text NOT NULL,
-  oracle_public_key text NOT NULL,
-  signature_hex text NOT NULL,
-  source_set_sha256 text NOT NULL,
-  source_count integer NOT NULL,
-  sources jsonb NOT NULL,
-  issued_at_unix_ms bigint NOT NULL,
-  freshness_window_ms integer NOT NULL,
-  max_spread_bps integer NOT NULL,
-  minimum_sources integer NOT NULL,
-  max_validity_blocks integer NOT NULL,
-  reference_block_height integer NOT NULL,
-  reference_block_hash text NOT NULL,
-  valid_from_height integer NOT NULL,
-  valid_through_height integer NOT NULL,
-  usd_per_100m_proofs_q8 numeric NOT NULL,
-  payload jsonb NOT NULL,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  PRIMARY KEY (network, listing_txid),
-  UNIQUE (network, listing_txid, attestation_id),
-  CONSTRAINT work_amo_v6_attestation_identity
-    CHECK (
-      network = 'livenet'
-      AND attestation_version = 'pwa-inline-v1'
-      AND attestation_model =
-        'canonical-work-usd-five-source-median-q8-v1'
-      AND listing_txid ~ '^[0-9a-f]{64}$'
-      AND declaration_txid ~ '^[0-9a-f]{64}$'
-      AND attestation_id ~ '^[0-9a-f]{64}$'
-      AND oracle_key_id ~ '^[0-9a-f]{64}$'
-      AND oracle_public_key ~ '^[0-9a-f]{64}$'
-      AND signature_hex ~ '^[0-9a-f]{128}$'
-      AND source_set_sha256 ~ '^[0-9a-f]{64}$'
-      AND reference_block_hash ~ '^[0-9a-f]{64}$'
-    ),
-  CONSTRAINT work_amo_v6_attestation_policy
-    CHECK (
-      source_count BETWEEN 3 AND 5
-      AND freshness_window_ms = 120000
-      AND max_spread_bps = 200
-      AND minimum_sources = 3
-      AND max_validity_blocks = 12
-      AND issued_at_unix_ms > 0
-      AND reference_block_height > 0
-      AND valid_from_height = reference_block_height + 1
-      AND valid_through_height >= valid_from_height
-      AND valid_through_height <= reference_block_height + 12
-      AND usd_per_100m_proofs_q8::text ~ '^[1-9][0-9]*$'
-      AND proof_indexer.valid_work_amo_v6_sources(
-        sources,
-        source_count,
-        issued_at_unix_ms,
-        freshness_window_ms
-      )
-    ),
-  CONSTRAINT work_amo_v6_attestation_payload
-    CHECK ((
-      jsonb_typeof(payload) = 'object'
-      AND payload ?& ARRAY[
-        'version',
-        'model',
-        'network',
-        'declarationTxid',
-        'oracleKeyId',
-        'publicKey',
-        'referenceBlockHeight',
-        'referenceBlockHash',
-        'validFromHeight',
-        'validThroughHeight',
-        'issuedAtUnixMs',
-        'freshnessWindowMs',
-        'maxSpreadBps',
-        'minimumSources',
-        'maxValidityBlocks',
-        'usdPer100mProofsQ8',
-        'sources',
-        'sourceSetSha256',
-        'attestationId',
-        'signature'
-      ]
-      AND payload - ARRAY[
-        'version',
-        'model',
-        'network',
-        'declarationTxid',
-        'oracleKeyId',
-        'publicKey',
-        'referenceBlockHeight',
-        'referenceBlockHash',
-        'validFromHeight',
-        'validThroughHeight',
-        'issuedAtUnixMs',
-        'freshnessWindowMs',
-        'maxSpreadBps',
-        'minimumSources',
-        'maxValidityBlocks',
-        'usdPer100mProofsQ8',
-        'sources',
-        'sourceSetSha256',
-        'attestationId',
-        'signature'
-      ] = '{}'::jsonb
-      AND jsonb_typeof(payload->'version') = 'string'
-      AND jsonb_typeof(payload->'model') = 'string'
-      AND jsonb_typeof(payload->'network') = 'string'
-      AND jsonb_typeof(payload->'declarationTxid') = 'string'
-      AND jsonb_typeof(payload->'oracleKeyId') = 'string'
-      AND jsonb_typeof(payload->'publicKey') = 'string'
-      AND jsonb_typeof(payload->'referenceBlockHeight') = 'number'
-      AND jsonb_typeof(payload->'referenceBlockHash') = 'string'
-      AND jsonb_typeof(payload->'validFromHeight') = 'number'
-      AND jsonb_typeof(payload->'validThroughHeight') = 'number'
-      AND jsonb_typeof(payload->'issuedAtUnixMs') = 'number'
-      AND jsonb_typeof(payload->'freshnessWindowMs') = 'number'
-      AND jsonb_typeof(payload->'maxSpreadBps') = 'number'
-      AND jsonb_typeof(payload->'minimumSources') = 'number'
-      AND jsonb_typeof(payload->'maxValidityBlocks') = 'number'
-      AND jsonb_typeof(payload->'usdPer100mProofsQ8') = 'string'
-      AND jsonb_typeof(payload->'sources') = 'array'
-      AND jsonb_typeof(payload->'sourceSetSha256') = 'string'
-      AND jsonb_typeof(payload->'attestationId') = 'string'
-      AND jsonb_typeof(payload->'signature') = 'string'
-      AND payload->>'version' = attestation_version
-      AND payload->>'model' = attestation_model
-      AND lower(payload->>'network') = lower(network)
-      AND payload->>'declarationTxid' = declaration_txid
-      AND payload->>'attestationId' = attestation_id
-      AND payload->>'oracleKeyId' = oracle_key_id
-      AND payload->>'publicKey' = oracle_public_key
-      AND payload->>'signature' = signature_hex
-      AND payload->>'sourceSetSha256' = source_set_sha256
-      AND payload->'sources' = sources
-      AND payload->>'issuedAtUnixMs' = issued_at_unix_ms::text
-      AND payload->>'freshnessWindowMs' = freshness_window_ms::text
-      AND payload->>'maxSpreadBps' = max_spread_bps::text
-      AND payload->>'minimumSources' = minimum_sources::text
-      AND payload->>'maxValidityBlocks' = max_validity_blocks::text
-      AND payload->>'referenceBlockHeight' =
-        reference_block_height::text
-      AND payload->>'referenceBlockHash' = reference_block_hash
-      AND payload->>'validFromHeight' = valid_from_height::text
-      AND payload->>'validThroughHeight' = valid_through_height::text
-      AND payload->>'usdPer100mProofsQ8' =
-        usd_per_100m_proofs_q8::text
-    ) IS TRUE),
-  FOREIGN KEY (network, listing_txid)
-    REFERENCES proof_indexer.transactions (network, txid)
-    ON DELETE CASCADE
-);
-
-CREATE INDEX IF NOT EXISTS work_amo_v6_attestations_id_idx
-  ON proof_indexer.work_amo_v6_attestations (
-    network,
-    attestation_id,
-    listing_txid
-  );
-
-CREATE INDEX IF NOT EXISTS work_amo_v6_attestations_reference_idx
-  ON proof_indexer.work_amo_v6_attestations (
-    network,
-    reference_block_height,
-    reference_block_hash
-  );
-
-CREATE OR REPLACE FUNCTION
-  proof_indexer.reject_work_amo_v6_attestations_update()
-RETURNS trigger
-LANGUAGE plpgsql
-AS $proof_indexer_work_amo_v6_attestations_immutable$
-BEGIN
-  RAISE EXCEPTION
-    'AMO V6 inline attestation occurrences are immutable; delete only for canonical reorg replay'
-    USING ERRCODE = '55000';
-END;
-$proof_indexer_work_amo_v6_attestations_immutable$;
-
-DROP TRIGGER IF EXISTS work_amo_v6_attestations_immutable
-  ON proof_indexer.work_amo_v6_attestations;
-CREATE TRIGGER work_amo_v6_attestations_immutable
-BEFORE UPDATE ON proof_indexer.work_amo_v6_attestations
-FOR EACH ROW
-EXECUTE FUNCTION
+DROP FUNCTION IF EXISTS
   proof_indexer.reject_work_amo_v6_attestations_update();
+DROP FUNCTION IF EXISTS
+  proof_indexer.valid_work_amo_v6_sources(
+    jsonb,
+    integer,
+    bigint,
+    integer
+  );
 
 CREATE TABLE IF NOT EXISTS proof_indexer.work_amo_v6_listing_terms (
   network text NOT NULL,
@@ -978,23 +909,10 @@ CREATE TABLE IF NOT EXISTS proof_indexer.work_amo_v6_listing_terms (
   listing_txid text NOT NULL,
   token_id text NOT NULL,
   authorization_version text NOT NULL,
-  unit_face_usd_cents integer NOT NULL,
+  unit_face_proofs integer NOT NULL,
   unit_amount_atoms numeric NOT NULL,
   unit_price_sats bigint NOT NULL,
   unit_minimum_price_sats bigint NOT NULL,
-  unit_usd_attestation_version text NOT NULL,
-  unit_usd_attestation_model text NOT NULL,
-  unit_usd_attestation_id text NOT NULL,
-  unit_usd_declaration_txid text NOT NULL,
-  unit_usd_oracle_key_id text NOT NULL,
-  unit_usd_oracle_public_key text NOT NULL,
-  unit_usd_reference_block_height integer NOT NULL,
-  unit_usd_reference_block_hash text NOT NULL,
-  unit_usd_valid_from_height integer NOT NULL,
-  unit_usd_valid_through_height integer NOT NULL,
-  unit_usd_source_set_sha256 text NOT NULL,
-  unit_usd_attestation_signature text NOT NULL,
-  unit_usd_per_100m_proofs_q8 numeric NOT NULL,
   listing_network_value_before_q8 numeric NOT NULL,
   listing_block_height integer NOT NULL,
   listing_block_hash text NOT NULL,
@@ -1015,43 +933,43 @@ CREATE TABLE IF NOT EXISTS proof_indexer.work_amo_v6_listing_terms (
       AND token_id =
         'd4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8'
       AND authorization_version = 'pwt-sale-v6'
-      AND unit_usd_attestation_version = 'pwa-inline-v1'
-      AND unit_usd_attestation_model =
-        'canonical-work-usd-five-source-median-q8-v1'
-      AND unit_usd_attestation_id ~ '^[0-9a-f]{64}$'
-      AND unit_usd_declaration_txid ~ '^[0-9a-f]{64}$'
-      AND unit_usd_oracle_key_id ~ '^[0-9a-f]{64}$'
-      AND unit_usd_oracle_public_key ~ '^[0-9a-f]{64}$'
-      AND unit_usd_reference_block_hash ~ '^[0-9a-f]{64}$'
-      AND unit_usd_source_set_sha256 ~ '^[0-9a-f]{64}$'
-      AND unit_usd_attestation_signature ~ '^[0-9a-f]{128}$'
       AND listing_block_hash ~ '^[0-9a-f]{64}$'
     ),
   CONSTRAINT work_amo_v6_terms_values
     CHECK (
-      unit_face_usd_cents IN (2000, 5000, 10000)
+      unit_face_proofs IN (20000, 50000, 100000)
       AND unit_amount_atoms::text ~ '^[1-9][0-9]*$'
-      AND unit_price_sats > 0
+      AND unit_amount_atoms <= 2100000000000000
+      AND unit_price_sats = unit_face_proofs
       AND unit_minimum_price_sats > 0
-      AND unit_price_sats >= unit_minimum_price_sats
-      AND unit_usd_per_100m_proofs_q8::text ~ '^[1-9][0-9]*$'
+      AND unit_minimum_price_sats <= unit_price_sats
       AND listing_network_value_before_q8::text ~ '^[1-9][0-9]*$'
       AND listing_bond_contribution_q8::text ~ '^[1-9][0-9]*$'
       AND listing_network_value_after_q8::text ~ '^[1-9][0-9]*$'
       AND listing_network_value_after_q8 =
         listing_network_value_before_q8 + listing_bond_contribution_q8
+      AND unit_amount_atoms = trunc(
+        (
+          unit_face_proofs::numeric *
+          21000000 *
+          100000000 *
+          100000000
+        ) / listing_network_value_before_q8
+      )
+      AND unit_minimum_price_sats = ceil(
+        (
+          unit_amount_atoms *
+          listing_network_value_before_q8
+        ) / (
+          21000000::numeric *
+          100000000 *
+          100000000
+        )
+      )
     ),
   CONSTRAINT work_amo_v6_terms_positions
     CHECK (
-      unit_usd_reference_block_height > 0
-      AND unit_usd_valid_from_height =
-        unit_usd_reference_block_height + 1
-      AND unit_usd_valid_through_height >=
-        unit_usd_valid_from_height
-      AND unit_usd_valid_through_height <=
-        unit_usd_reference_block_height + 12
-      AND listing_block_height BETWEEN
-        unit_usd_valid_from_height AND unit_usd_valid_through_height
+      listing_block_height > 0
       AND listing_block_index >= 0
       AND listing_protocol_vout >= 0
       AND listing_record_ordinal >= 0
@@ -1065,23 +983,8 @@ CREATE TABLE IF NOT EXISTS proof_indexer.work_amo_v6_listing_terms (
         'stateOrderModel',
         'amountModel',
         'bondTransitionModel',
-        'unitUsdOracleModel',
         'unitWorkOracleModel',
-        'unitFaceUsd',
-        'unitFaceUsdCents',
-        'unitUsdAttestationVersion',
-        'unitUsdAttestationModel',
-        'unitUsdAttestationId',
-        'unitUsdDeclarationTxid',
-        'unitUsdOracleKeyId',
-        'unitUsdOraclePublicKey',
-        'unitUsdReferenceBlockHeight',
-        'unitUsdReferenceBlockHash',
-        'unitUsdValidFromHeight',
-        'unitUsdValidThroughHeight',
-        'unitUsdSourceSetSha256',
-        'unitUsdAttestationSignature',
-        'unitUsdPer100mProofsQ8',
+        'unitFaceProofs',
         'listingBlockHeight',
         'listingBlockHash',
         'listingBlockIndex',
@@ -1100,23 +1003,8 @@ CREATE TABLE IF NOT EXISTS proof_indexer.work_amo_v6_listing_terms (
         'stateOrderModel',
         'amountModel',
         'bondTransitionModel',
-        'unitUsdOracleModel',
         'unitWorkOracleModel',
-        'unitFaceUsd',
-        'unitFaceUsdCents',
-        'unitUsdAttestationVersion',
-        'unitUsdAttestationModel',
-        'unitUsdAttestationId',
-        'unitUsdDeclarationTxid',
-        'unitUsdOracleKeyId',
-        'unitUsdOraclePublicKey',
-        'unitUsdReferenceBlockHeight',
-        'unitUsdReferenceBlockHash',
-        'unitUsdValidFromHeight',
-        'unitUsdValidThroughHeight',
-        'unitUsdSourceSetSha256',
-        'unitUsdAttestationSignature',
-        'unitUsdPer100mProofsQ8',
+        'unitFaceProofs',
         'listingBlockHeight',
         'listingBlockHash',
         'listingBlockIndex',
@@ -1129,53 +1017,43 @@ CREATE TABLE IF NOT EXISTS proof_indexer.work_amo_v6_listing_terms (
         'listingBondContributionQ8',
         'listingNetworkValueAfterQ8'
       ] = '{}'::jsonb
+      AND jsonb_typeof(frozen_terms->'version') = 'string'
+      AND jsonb_typeof(frozen_terms->'unitModel') = 'string'
+      AND jsonb_typeof(frozen_terms->'stateOrderModel') = 'string'
+      AND jsonb_typeof(frozen_terms->'amountModel') = 'string'
+      AND jsonb_typeof(frozen_terms->'bondTransitionModel') = 'string'
+      AND jsonb_typeof(frozen_terms->'unitWorkOracleModel') = 'string'
+      AND jsonb_typeof(frozen_terms->'unitFaceProofs') = 'number'
+      AND jsonb_typeof(frozen_terms->'listingBlockHeight') = 'number'
+      AND jsonb_typeof(frozen_terms->'listingBlockHash') = 'string'
+      AND jsonb_typeof(frozen_terms->'listingBlockIndex') = 'number'
+      AND jsonb_typeof(frozen_terms->'listingProtocolVout') = 'number'
+      AND jsonb_typeof(frozen_terms->'listingRecordOrdinal') = 'number'
+      AND jsonb_typeof(
+        frozen_terms->'listingNetworkValueBeforeQ8'
+      ) = 'string'
+      AND jsonb_typeof(frozen_terms->'unitAmountAtoms') = 'string'
+      AND jsonb_typeof(frozen_terms->'unitPriceSats') = 'string'
+      AND jsonb_typeof(frozen_terms->'unitMinimumPriceSats') = 'string'
+      AND jsonb_typeof(
+        frozen_terms->'listingBondContributionQ8'
+      ) = 'string'
+      AND jsonb_typeof(
+        frozen_terms->'listingNetworkValueAfterQ8'
+      ) = 'string'
       AND frozen_terms->>'version' = authorization_version
       AND frozen_terms->>'unitModel' =
-        'canonical-work-amo-usd-unit-v3'
+        'canonical-work-amo-proof-unit-v1'
       AND frozen_terms->>'stateOrderModel' =
         'canonical-proof-state-order-v1'
       AND frozen_terms->>'amountModel' =
         'canonical-confirmed-position-derived-work-amount-v1'
       AND frozen_terms->>'bondTransitionModel' =
         'canonical-compute-then-bond-v1'
-      AND frozen_terms->>'unitUsdOracleModel' =
-        unit_usd_attestation_model
       AND frozen_terms->>'unitWorkOracleModel' =
         'canonical-work-prefix-before-action-v1'
-      AND frozen_terms->>'unitFaceUsd' =
-        (unit_face_usd_cents / 100)::text
-      AND frozen_terms->>'unitFaceUsdCents' =
-        unit_face_usd_cents::text
-      AND frozen_terms->>'unitAmountAtoms' = unit_amount_atoms::text
-      AND frozen_terms->>'unitPriceSats' = unit_price_sats::text
-      AND frozen_terms->>'unitMinimumPriceSats' =
-        unit_minimum_price_sats::text
-      AND frozen_terms->>'unitUsdAttestationVersion' =
-        unit_usd_attestation_version
-      AND frozen_terms->>'unitUsdAttestationModel' =
-        unit_usd_attestation_model
-      AND frozen_terms->>'unitUsdAttestationId' =
-        unit_usd_attestation_id
-      AND frozen_terms->>'unitUsdDeclarationTxid' =
-        unit_usd_declaration_txid
-      AND frozen_terms->>'unitUsdOracleKeyId' =
-        unit_usd_oracle_key_id
-      AND frozen_terms->>'unitUsdOraclePublicKey' =
-        unit_usd_oracle_public_key
-      AND frozen_terms->>'unitUsdReferenceBlockHeight' =
-        unit_usd_reference_block_height::text
-      AND frozen_terms->>'unitUsdReferenceBlockHash' =
-        unit_usd_reference_block_hash
-      AND frozen_terms->>'unitUsdValidFromHeight' =
-        unit_usd_valid_from_height::text
-      AND frozen_terms->>'unitUsdValidThroughHeight' =
-        unit_usd_valid_through_height::text
-      AND frozen_terms->>'unitUsdSourceSetSha256' =
-        unit_usd_source_set_sha256
-      AND frozen_terms->>'unitUsdAttestationSignature' =
-        unit_usd_attestation_signature
-      AND frozen_terms->>'unitUsdPer100mProofsQ8' =
-        unit_usd_per_100m_proofs_q8::text
+      AND frozen_terms->>'unitFaceProofs' =
+        unit_face_proofs::text
       AND frozen_terms->>'listingNetworkValueBeforeQ8' =
         listing_network_value_before_q8::text
       AND frozen_terms->>'listingBlockHeight' =
@@ -1187,6 +1065,10 @@ CREATE TABLE IF NOT EXISTS proof_indexer.work_amo_v6_listing_terms (
         listing_protocol_vout::text
       AND frozen_terms->>'listingRecordOrdinal' =
         listing_record_ordinal::text
+      AND frozen_terms->>'unitAmountAtoms' = unit_amount_atoms::text
+      AND frozen_terms->>'unitPriceSats' = unit_price_sats::text
+      AND frozen_terms->>'unitMinimumPriceSats' =
+        unit_minimum_price_sats::text
       AND frozen_terms->>'listingBondContributionQ8' =
         listing_bond_contribution_q8::text
       AND frozen_terms->>'listingNetworkValueAfterQ8' =
@@ -1194,17 +1076,6 @@ CREATE TABLE IF NOT EXISTS proof_indexer.work_amo_v6_listing_terms (
     ) IS TRUE),
   FOREIGN KEY (network, listing_txid)
     REFERENCES proof_indexer.transactions (network, txid)
-    ON DELETE CASCADE,
-  FOREIGN KEY (
-    network,
-    listing_txid,
-    unit_usd_attestation_id
-  )
-    REFERENCES proof_indexer.work_amo_v6_attestations (
-      network,
-      listing_txid,
-      attestation_id
-    )
     ON DELETE CASCADE
 );
 
@@ -1217,13 +1088,6 @@ CREATE UNIQUE INDEX IF NOT EXISTS work_amo_v6_listing_terms_position_uidx
     listing_record_ordinal
   );
 
-CREATE INDEX IF NOT EXISTS work_amo_v6_listing_terms_attestation_idx
-  ON proof_indexer.work_amo_v6_listing_terms (
-    network,
-    unit_usd_attestation_id,
-    listing_id
-  );
-
 CREATE OR REPLACE FUNCTION
   proof_indexer.reject_work_amo_v6_listing_terms_update()
 RETURNS trigger
@@ -1231,7 +1095,7 @@ LANGUAGE plpgsql
 AS $proof_indexer_work_amo_v6_listing_terms_immutable$
 BEGIN
   RAISE EXCEPTION
-    'AMO V6 frozen listing terms are immutable; delete only for canonical reorg replay'
+    'Proof-native AMO V6 frozen listing terms are immutable; delete only for canonical reorg replay'
     USING ERRCODE = '55000';
 END;
 $proof_indexer_work_amo_v6_listing_terms_immutable$;

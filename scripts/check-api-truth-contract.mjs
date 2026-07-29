@@ -8,11 +8,6 @@ const backfill = readFileSync("scripts/backfill-proof-indexer.mjs", "utf8");
 const worker = readFileSync("scripts/run-proof-indexer-worker.mjs", "utf8");
 const workAmoV5 = readFileSync("server/work-amo-v5.mjs", "utf8");
 const workAmoV6 = readFileSync("server/work-amo-v6.mjs", "utf8");
-const workUsdOracle = readFileSync("server/work-usd-oracle.mjs", "utf8");
-const workAmoV6Attestor = readFileSync(
-  "server/work-amo-v6-attestor.mjs",
-  "utf8",
-);
 const workAmoV6Migration = readFileSync(
   "scripts/migrate-work-amo-v6.mjs",
   "utf8",
@@ -674,18 +669,18 @@ expect(
     /proofIndexWorkAmoReplayReadiness/u.test(reader),
 );
 expect(
-  "AMO V6 owns current writes with exact faces, models, and distinct settlement and listing gates",
+  "AMO V6 owns current writes with proof-native faces and one exact readiness gate",
   /WORK_AMO_V6_AUTH_VERSION = "pwt-sale-v6"/u.test(workAmoV6) &&
-    /WORK_AMO_V6_INLINE_ATTESTATION_VERSION =\s*WORK_USD_ATTESTATION_VERSION/u.test(
+    /WORK_AMO_V6_UNIT_MODEL =\s*"canonical-work-amo-proof-unit-v1"/u.test(
       workAmoV6,
     ) &&
-    /WORK_AMO_V6_UNIT_MODEL =\s*"canonical-work-amo-usd-unit-v3"/u.test(
+    /WORK_AMO_V6_ALLOWED_FACE_PROOFS = Object\.freeze\(\[\s*20_000,\s*50_000,\s*100_000,\s*\]\)/u.test(
       workAmoV6,
     ) &&
-    /WORK_AMO_V6_ALLOWED_FACE_USD_CENTS = Object\.freeze\(\[\s*2_000,\s*5_000,\s*10_000,\s*\]\)/u.test(
+    /export function workAmoV6UnitTerms\(\{[\s\S]*networkValueBeforeQ8,[\s\S]*unitFaceProofs,[\s\S]*unitPriceSats = BigInt\(face\)[\s\S]*unitAmountAtoms = workAmoFloorDiv\([\s\S]*unitPriceSats \* denominator,[\s\S]*networkValue,[\s\S]*unitMinimumPriceSats = workAmoCeilDiv\([\s\S]*unitAmountAtoms \* networkValue,[\s\S]*denominator/u.test(
       workAmoV6,
     ) &&
-    /function workAmoV6StatusFromEvidence[\s\S]*settlementWritesEnabled =\s*ready && protocolWritesEnabled === true[\s\S]*listingWritesEnabled =\s*settlementWritesEnabled && oracleReady === true/u.test(
+    /function workAmoV6StatusFromEvidence[\s\S]*settlementWritesEnabled =\s*ready && protocolWritesEnabled === true[\s\S]*listingWritesEnabled = settlementWritesEnabled/u.test(
       workAmoV6,
     ) &&
     /if \(metadata\?\.protocolWritesEnabled !== true\)[\s\S]*if \(actionName === "list5"\)[\s\S]*metadata\?\.listingWritesEnabled !== true/u.test(
@@ -700,33 +695,20 @@ expect(
     ),
 );
 expect(
-  "AMO V6 inline oracle is a closed exact 3-of-5 median with freshness, spread, validity, and BIP340 verification",
-  /WORK_USD_ATTESTATION_VERSION = "pwa-inline-v1"/u.test(workUsdOracle) &&
-    /WORK_USD_ATTESTATION_MODEL =\s*"canonical-work-usd-five-source-median-q8-v1"/u.test(
-      workUsdOracle,
+  "AMO V6 signable authorization is proof-native and rejects every derived or USD field",
+  /WORK_AMO_V6_STATIC_AUTHORIZATION_FIELDS = Object\.freeze\(\[[\s\S]*"unitFaceProofs"[\s\S]*\]\)/u.test(
+    workAmoV6,
+  ) &&
+    /const V6_DERIVED_AUTHORIZATION_FIELDS = Object\.freeze\(\[[\s\S]*"unitFaceUsd"[\s\S]*"unitUsdAttestation"[\s\S]*\]\)/u.test(
+      workAmoV6,
     ) &&
-    /WORK_USD_ORACLE_MINIMUM_SOURCES = 3/u.test(workUsdOracle) &&
-    /WORK_USD_ORACLE_FRESHNESS_WINDOW_MS = 120_000/u.test(workUsdOracle) &&
-    /WORK_USD_ORACLE_MAX_SPREAD_BPS = 200/u.test(workUsdOracle) &&
-    /WORK_USD_ORACLE_MAX_VALIDITY_BLOCKS = 12/u.test(workUsdOracle) &&
-    /WORK_USD_ORACLE_SOURCE_IDS = Object\.freeze\(\[\s*"bitfinex",\s*"bitflyer",\s*"coinbase",\s*"gemini",\s*"kraken",\s*\]\)/u.test(
-      workUsdOracle,
-    ) &&
-    /function medianQ8\([\s\S]*\(sorted\[midpoint - 1\] \+ sorted\[midpoint\]\) \/ 2n/u.test(
-      workUsdOracle,
-    ) &&
-    /\(maximum - minimum\) \* BASIS_POINT_SCALE >\s*median \* BigInt\(maxSpreadBps\)/u.test(
-      workUsdOracle,
-    ) &&
-    /validFromHeight !== referenceBlockHeight \+ 1[\s\S]*validThroughHeight >\s*referenceBlockHeight \+ maxValidityBlocks/u.test(
-      workUsdOracle,
-    ) &&
-    /ecc\.signSchnorr/u.test(workUsdOracle) &&
-    /ecc\.verifySchnorr/u.test(workUsdOracle),
+    /V6_DERIVED_AUTHORIZATION_FIELDS\.some\([\s\S]*work-amo-v6-derived-fields-not-signable/u.test(
+      workAmoV6,
+    ),
 );
 expect(
-  "AMO V6 API pins every declaration coordinate and exposes only automatic no-store attestations",
-  /WORK_AMO_V6_DECLARATION_PINS_CONFIGURED[\s\S]*WORK_AMO_V6_DECLARATION_TXID[\s\S]*WORK_AMO_V6_DECLARATION_HEIGHT[\s\S]*WORK_AMO_V6_DECLARATION_BLOCK_HASH[\s\S]*WORK_AMO_V6_DECLARATION_BLOCK_INDEX[\s\S]*WORK_AMO_V6_DECLARATION_MEMO_SHA256[\s\S]*WORK_AMO_V6_DECLARATION_MEMO_BYTES[\s\S]*WORK_AMO_V6_DECLARATION_PROTOCOL_VOUT[\s\S]*WORK_AMO_V6_DECLARATION_RECORD_ORDINAL[\s\S]*WORK_AMO_V6_DECLARATION_REGISTRY_PAYMENT_VOUT[\s\S]*WORK_AMO_V6_ORACLE_PUBLIC_KEY[\s\S]*WORK_AMO_V6_ORACLE_KEY_ID/u.test(
+  "AMO V6 API pins every declaration coordinate and exposes deterministic proof estimates only",
+  /WORK_AMO_V6_DECLARATION_PINS_CONFIGURED[\s\S]*WORK_AMO_V6_DECLARATION_TXID[\s\S]*WORK_AMO_V6_DECLARATION_HEIGHT[\s\S]*WORK_AMO_V6_DECLARATION_BLOCK_HASH[\s\S]*WORK_AMO_V6_DECLARATION_BLOCK_INDEX[\s\S]*WORK_AMO_V6_DECLARATION_MEMO_SHA256[\s\S]*WORK_AMO_V6_DECLARATION_MEMO_BYTES[\s\S]*WORK_AMO_V6_DECLARATION_PROTOCOL_VOUT[\s\S]*WORK_AMO_V6_DECLARATION_RECORD_ORDINAL[\s\S]*WORK_AMO_V6_DECLARATION_REGISTRY_PAYMENT_VOUT/u.test(
     server,
   ) &&
     /WORK_AMO_V6_ACTIVATION_HEIGHT =[\s\S]*WORK_AMO_V6_DECLARATION_HEIGHT \+ 1/u.test(
@@ -735,24 +717,10 @@ expect(
     /Number\.isSafeInteger\(WORK_AMO_V6_DECLARATION_RECORD_ORDINAL\) &&\s*WORK_AMO_V6_DECLARATION_RECORD_ORDINAL === 0/u.test(
       server,
     ) &&
-    /function configuredWorkAmoV6OraclePolicy\([\s\S]*allowedSourceIds: \[\.\.\.WORK_USD_ORACLE_SOURCE_IDS\][\s\S]*declarationTxid:[\s\S]*oracleKeyId:[\s\S]*publicKey:/u.test(
+    /function workAmoV6Estimates\(networkValueBeforeQ8\)[\s\S]*WORK_AMO_V6_ALLOWED_FACE_PROOFS\.flatMap\([\s\S]*workAmoV6UnitTerms\(\{[\s\S]*unitFaceProofs/u.test(
       server,
     ) &&
-    /async function issueWorkAmoV6AttestationPayload\([\s\S]*metadata\.ready !== true[\s\S]*metadata\.oracleReady !== true[\s\S]*WORK_AMO_V6_ALLOWED_FACE_USD_CENTS\.map/u.test(
-      server,
-    ) &&
-    /let workAmoV6AttestationPayloadInFlight = null[\s\S]*async function workAmoV6AttestationPayload\([\s\S]*issueWorkAmoV6AttestationPayload\(network\)[\s\S]*workAmoV6AttestationPayloadInFlight = inFlight[\s\S]*inFlight\.then\(clearInFlight, clearInFlight\)/u.test(
-      server,
-    ) &&
-    /url\.pathname === "\/api\/v1\/work-amo-v6\/attestation"[\s\S]*await workAmoV6AttestationPayload\(network\)[\s\S]*"no-store"/u.test(
-      server,
-    ) &&
-    /protocolVersion: WORK_AMO_V6_AUTH_VERSION[\s\S]*referenceTip:[\s\S]*sourceCount:[\s\S]*sourceFailures:/u.test(
-      server,
-    ) &&
-    /readWorkAmoV6OraclePrivateKeyFile[\s\S]*metadata\.mode & 0o077[\s\S]*createWorkAmoV6Attestor/u.test(
-      workAmoV6Attestor,
-    ) &&
+    !/\/api\/v1\/work-amo-v6\/attestation/u.test(server) &&
     /process\.stdout\.write\(declaration\.text\);/u.test(
       workAmoV6DeclarationBuilder,
     ) &&
@@ -761,11 +729,8 @@ expect(
     ),
 );
 expect(
-  "AMO V6 production starts fully unpinned and gated with an isolated oracle credential",
-  /LoadCredential=work-amo-v6-oracle-key:\/etc\/proofofwork-api\/work-amo-v6-oracle-key/u.test(
-    service,
-  ) &&
-    [
+  "AMO V6 production starts fully unpinned and gated without an oracle credential",
+  [
       "TXID",
       "HEIGHT",
       "BLOCK_HASH",
@@ -780,28 +745,27 @@ expect(
         service,
       ),
     ) &&
-    /Environment=WORK_AMO_V6_ORACLE_PUBLIC_KEY=$/mu.test(service) &&
-    /Environment=WORK_AMO_V6_ORACLE_KEY_ID=$/mu.test(service) &&
-    /Environment=WORK_AMO_V6_ATTESTOR_ENABLED=0$/mu.test(service) &&
-    /Environment=WORK_AMO_V6_WRITES_ENABLED=0$/mu.test(service),
+    /Environment=WORK_AMO_V6_WRITES_ENABLED=0$/mu.test(service) &&
+    !/WORK_AMO_V6_(?:ORACLE|ATTESTOR)|work-amo-v6-oracle-key/u.test(
+      service,
+    ),
 );
 expect(
-  "AMO V6 index migration binds immutable attestations and frozen terms to exact declaration evidence",
-  /CREATE TABLE IF NOT EXISTS proof_indexer\.work_amo_v6_attestations/iu.test(
-    proofIndexSchema,
-  ) &&
-    /CREATE TABLE IF NOT EXISTS proof_indexer\.work_amo_v6_listing_terms/iu.test(
+  "AMO V6 index migration binds immutable proof-native terms to exact declaration evidence",
+  /CREATE TABLE IF NOT EXISTS proof_indexer\.work_amo_v6_listing_terms/iu.test(
       proofIndexSchema,
     ) &&
-    /work_amo_v6_attestations_immutable/iu.test(proofIndexSchema) &&
+    /unit_face_proofs integer NOT NULL/iu.test(proofIndexSchema) &&
+    /unit_face_proofs IN \(20000, 50000, 100000\)/iu.test(
+      proofIndexSchema,
+    ) &&
     /work_amo_v6_listing_terms_immutable/iu.test(proofIndexSchema) &&
     /work_amo_v6_migration_marker_immutable/iu.test(proofIndexSchema) &&
     /export async function proofIndexWorkAmoV6MigrationReadiness/u.test(
       reader,
     ) &&
-    /export async function proofIndexWorkAmoV6Attestation/u.test(reader) &&
     /export async function proofIndexWorkAmoV6ListingTerms/u.test(reader) &&
-    /WORK_AMO_V6_INDEX_MIGRATION_MODEL =\s*"canonical-work-amo-v6-index-migration-v1"/u.test(
+    /WORK_AMO_V6_INDEX_MIGRATION_MODEL =\s*"canonical-work-amo-v6-proof-native-index-migration-v1"/u.test(
       workAmoV6Migration,
     ) &&
     /WORK_AMO_V6_INDEX_MIGRATION_META_KEY =\s*"workAmoV6Migration:livenet"/u.test(

@@ -549,160 +549,97 @@ legacy-bootstrap carry above is only a reconciliation of the already committed
 H-1 basis; it is not a valid-row exception and cannot be generalized to any
 other invalid event.
 
-## Staged WORK AMO V6 Inline Attestation Protocol (`pwt-sale-v6`)
+## Staged WORK AMO V6 Proof-Native Unit Protocol (`pwt-sale-v6`)
 
-V6 removes the recurring manual `pwa1:usd1` publication requirement from new
-WORK listings. It is declaration-gated and is not active merely because the
-code is deployed. Until its exact declaration confirms and activates, V5 above
-remains the governed listing protocol and both V6 production gates stay off.
+V6 makes proofs the only AMO pricing unit. It is declaration-gated and does
+not activate merely because code is deployed. Until the exact V6 declaration
+confirms and activates, V5 above remains the governed listing protocol and the
+V6 write gate stays off.
 
-The V6 declaration pins the exact protocol models, policy, x-only BIP340 oracle
-public key, and derived oracle key id. If the declaration confirms in block
-`D`, V6 starts at `D + 1`. Production separately verifies and pins the
-declaration transaction, height, block hash, transaction index, memo hash and
-size, protocol output, record ordinal, registry-payment output, public key, and
-key id before either the attestor or writes can be enabled.
+A seller chooses exactly one fixed proof face:
 
-After activation:
+```text
+allowedFaceProofs = [20000, 50000, 100000]
+```
+
+USD is not a protocol input. It is optional display metadata derived by the
+public UI from the current proofs-to-USD display rate. A missing, stale or
+changed USD display value cannot affect listing creation, confirmation,
+settlement, replay or validity. V6 has no exchange-source quorum, operator
+price, price-attestation key, signature window or recurring on-chain price
+publication.
+
+If the exact V6 declaration confirms in block `D`, V6 starts at `D + 1`.
+Production separately verifies and pins the declaration transaction id, block
+height/hash/index, exact memo hash/byte length, protocol output, record ordinal,
+registry-payment output, authority input-zero script and registry payment.
+Partial, pending, noncanonical or divergent evidence fails closed.
+
+From activation:
 
 - new governed WORK listings require `pwt-sale-v6`;
-- a V4 or V5 listing that validly confirmed before activation retains its
-  already-frozen terms and may still be sealed, bought, or delisted;
-- a new V4 or V5 listing at or after activation is invalid audit history and
-  mutates nothing;
-- V1 and pre-unit V3 relic/history projections remain immutable and
-  non-actionable under their existing rules; and
-- the V5 `pwa1:usd1` quote chain remains immutable replay history but is not a
-  V6 listing dependency.
+- valid confirmed V4/V5 listings from before activation retain their frozen
+  terms and may still be sealed, purchased or delisted;
+- new V4/V5 listings at or after activation are invalid audit history;
+- V1 and pre-unit V3 relic projections remain immutable and non-actionable; and
+- historical V5 `pwa1:usd1` quotes remain replayable history but do not govern
+  V6 listing creation.
 
-A seller still chooses only one face:
-
-```text
-allowedFaceUsdCents = { 2000, 5000, 10000 }
-```
-
-These are `$20`, `$50`, and `$100`. The signed pending authorization contains
-the face and one complete signed USD attestation. It must not contain
-`amountAtoms`, `priceSats`, a markup, a discount, or any other confirmation-
-derived term. A pending amount or proof-price display is an estimate only.
-
-### Inline USD attestation
-
-The attestation version is `pwa-inline-v1`, and its model is
-`canonical-work-usd-five-source-median-q8-v1`. The dedicated oracle key is a
-non-funding signing key loaded by the first-party API from a private systemd
-credential. Its private key is never an API field, application log, wallet key,
-or on-chain value. A key rotation requires another declaration.
-
-The approved source set is:
-
-```text
-bitfinex
-bitflyer
-coinbase
-gemini
-kraken
-```
-
-The attestor polls all five independently. A valid observation uses an exact
-base-10 price converted to integer Q8; binary floating-point arithmetic is not
-consensus input. At issuance:
-
-```text
-minimum distinct fresh sources = 3
-freshnessWindowMs = 120000
-maxSpreadBps = 200
-maxValidityBlocks = 12
-```
-
-The canonical price is the sorted median of the accepted source Q8 values.
-With an even number of accepted sources it is
-`floor((lowerMiddle + upperMiddle) / 2)`. The attestation includes every
-accepted source id, exact Q8 value, observation time, the deterministic source-
-set SHA-256, issuance time, policy values, declaration txid, oracle public key
-and key id, reference block height/hash, validity window, attestation id, and
-BIP340 signature.
-
-The reference block must still be canonical. The validity window begins at
-`referenceBlockHeight + 1` and ends no later than
-`referenceBlockHeight + 12`. A listing is valid only when its confirmed block
-falls inside that signed window and the reference hash still matches Core. One
-attestation may be reused by many listings in the same valid window, including
-thousands of listings in one block; every listing still derives independently
-at its own canonical position.
-
-Quorum loss, stale observations, spread above 200 basis points, a changed
-reference block, a signature or key mismatch, an unavailable canonical hash,
-or any malformed/extra/missing field fails closed. The attestor never falls
-back to the public display-price endpoint, a cached stale attestation, a single
-exchange, a pending transaction, or an invented operator price.
+The V6 signed authorization is closed shape. It commits to the protocol models,
+token/network/registry/seller/buyer/nonce/expiry fields, sale-ticket anchor and
+`unitFaceProofs`. It must not contain USD fields, price attestations, `amount`,
+`amountAtoms`, `priceSats`, `minimumPriceSats`, derived terms or network-value
+fields.
 
 ### Confirmation formula and ordering
 
-V6 retains the V5 canonical event order and integer formula. For listing `L`:
+For listing `L`, using unsigned arbitrary-precision integers:
 
 ```text
 position(L) =
   (blockHeight, blockTransactionIndex, protocolVout, recordOrdinal)
 
-F = unitFaceUsdCents
-P = L.unitUsdAttestation.usdPer100mProofsQ8
+F = L.unitFaceProofs
 N = Nbefore(L)
 S = 21000000
-A = 100000000
-Q = 100000000
-R = 100000000
-U = 100000000
+A = 100000000 atoms per WORK
+Q = 100000000 network-value Q8 scale
 
-targetNumerator = F * R * U
-targetDenominator = 100 * P
-
-unitPriceSats =
-  ceilDiv(targetNumerator, targetDenominator)
-
-unitAmountAtoms =
-  floorDiv(
-    targetNumerator * S * A * Q,
-    targetDenominator * N
-  )
-
-unitMinimumPriceSats =
-  ceilDiv(
-    unitAmountAtoms * N,
-    S * A * Q
-  )
+unitPriceProofs = F
+unitAmountAtoms = floorDiv(F * S * A * Q, N)
+unitMinimumPriceProofs =
+  ceilDiv(unitAmountAtoms * N, S * A * Q)
 ```
 
-The Computer validates and computes each protocol event from the complete state
-immediately before that event, freezes the result, and only then applies that
-record's distinct registry-payment bond contribution. After every protocol
-record in one transaction has been evaluated, that transaction's miner-fee
-contribution is applied exactly once before the next transaction. An earlier
-confirmed event in the same block or transaction can therefore change a later
-listing's `Nbefore`; a transaction miner fee changes the first event of the
-next transaction, not a later record inside its own transaction. A later event
-cannot change an earlier listing. Reversing input arrival, API completion, or
-database insertion order cannot change the result because the four-integer
-confirmed position and transaction boundary are the only event order.
+`F` must be one of the three declared faces. The price, amount and minimum must
+all be positive, the amount cannot exceed total WORK supply, and
+`unitPriceProofs` must be at least `unitMinimumPriceProofs`. Floating-point
+arithmetic and implicit rounding are forbidden. The fixed face is the sale
+consideration; registry, sale-ticket and miner fees remain separate protocol
+costs.
 
-A valid V6 listing permanently freezes the face, attestation identity and
-policy evidence, source-set hash, signed USD Q8, reference block and validity
-window, listing position, `Nbefore`, exact WORK atoms, proof price, minimum
-proof price, its record-level registry bond contribution, and record-level
-`Nafter`. The transaction miner fee remains a distinct once-per-transaction
-transition. Seal and buy reference the frozen listing terms. They do not
-require a fresh attestation, do not re-evaluate the attestation's age after
-listing confirmation, and never reprice against later network value or USD
-changes.
+The Computer evaluates every event from the complete state immediately before
+that event. It freezes the result and then applies that record's distinct
+registry-payment bond contribution. After all protocol records in one
+transaction are evaluated, the transaction miner-fee contribution is applied
+exactly once before the next transaction. An earlier confirmed event in the
+same block or transaction can change a later listing's `Nbefore`; a later event
+cannot change an earlier listing. API completion, mempool arrival, database
+insertion and worker scheduling cannot change the result.
 
-V6 continues to use
-`canonical-work-amo-full-position-block-sequencer-v2`; it changes listing USD
-evidence, not confirmed event order. Deployment remains fail-closed:
-`WORK_AMO_V6_ATTESTOR_ENABLED=0` and `WORK_AMO_V6_WRITES_ENABLED=0` through the
-pre-declaration release. Schema/replay readiness, exact declaration evidence,
-canonical tip agreement, oracle credential/public identity agreement, and a
-fresh valid attestation must all be independently proved before a new listing
-can be admitted.
+A valid V6 listing permanently freezes the selected proof face, confirmed
+position, `Nbefore`, exact WORK atoms, proof price, minimum proof price,
+record-level registry bond contribution and record-level `Nafter`. Seal and buy
+use those frozen terms without consulting current network value or any USD
+display. A confirmed listing therefore remains eligible for settlement even
+after later bonds and market activity change network value.
+
+V6 keeps `canonical-work-amo-full-position-block-sequencer-v2` and uses
+`canonical-work-amo-proof-unit-v1`. Deployment remains fail-closed with
+`WORK_AMO_V6_WRITES_ENABLED=0` through the pre-declaration release. Exact
+declaration evidence, immutable migration marker, canonical replay parity,
+exact-tip index readiness and the explicit write gate must all be independently
+proved before a new listing or settlement is admitted.
 
 ## Current Infinity Bond / POWB Model
 

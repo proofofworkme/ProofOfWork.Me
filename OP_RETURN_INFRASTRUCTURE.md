@@ -1238,15 +1238,17 @@ before a later PWM record. The derived INCB companion is bound to the accepted
 parent/send outcome and has no second output claim, miner fee, or economic
 contribution.
 
-### Staged WORK AMO V6 inline-attestation gate
+### Staged WORK AMO V6 proof-native gate
 
-The V6 release replaces recurring manual V5 `pwa1:usd1` quote publication for
-new WORK listings with a signed multi-source attestation carried inside each
-`pwt-sale-v6` listing authorization. This is a prepared, fail-closed upgrade:
-deployment alone does not activate it. The exact declaration must first
-confirm, and activation remains `D + 1`.
+The V6 release replaces USD-denominated WORK faces with fixed proof-native
+faces of 20,000, 50,000 and 100,000 proofs. No V6 consensus path reads a USD
+price, exchange source, operator quote, signing key or time-limited
+attestation. USD equivalents are optional UI display values only. This is a
+prepared, fail-closed upgrade: deployment alone does not activate it. The
+exact declaration must first confirm, and activation remains `D + 1`.
 
-Production configuration is split into three independent authorities:
+Production configuration has exact declaration pins and one independent write
+gate:
 
 ```text
 WORK_AMO_V6_DECLARATION_TXID
@@ -1258,60 +1260,13 @@ WORK_AMO_V6_DECLARATION_MEMO_BYTES
 WORK_AMO_V6_DECLARATION_PROTOCOL_VOUT
 WORK_AMO_V6_DECLARATION_RECORD_ORDINAL
 WORK_AMO_V6_DECLARATION_REGISTRY_PAYMENT_VOUT
-WORK_AMO_V6_ORACLE_PUBLIC_KEY
-WORK_AMO_V6_ORACLE_KEY_ID
-WORK_AMO_V6_ATTESTOR_ENABLED
 WORK_AMO_V6_WRITES_ENABLED
 ```
 
-Every declaration/public-key pin starts empty, while both enable switches start
-at `0`. V5 remains independently disabled for new production writes; an old V4
-or V5 switch cannot authorize V6.
-
-The oracle private key is a dedicated non-funding BIP340 key. It is never
-stored in an environment file or Git checkout. The tracked service override
-loads it through:
-
-```text
-LoadCredential=work-amo-v6-oracle-key:/etc/proofofwork-api/work-amo-v6-oracle-key
-WORK_AMO_V6_ORACLE_PRIVATE_KEY_FILE=%d/work-amo-v6-oracle-key
-```
-
-Provision the source credential as a root-controlled private regular file
-before starting the service. The API verifies that its derived x-only public
-key and key id exactly equal the declaration pins, copies neither the private
-key nor credential bytes into responses, and clears temporary key buffers after
-constructing the attestor. Key mismatch is a closed readiness state.
-
-The public endpoint is:
-
-```text
-GET /api/v1/work-amo-v6/attestation?network=livenet
-```
-
-It is livenet-only and returns `Cache-Control: no-store`. The attestor polls
-Bitfinex, bitFlyer, Coinbase, Gemini, and Kraken, requires at least three
-distinct observations no older than 120 seconds, rejects a spread above 200
-basis points, and computes the exact integer-Q8 median. With four accepted
-sources the median is the floor of the two middle Q8 values. It signs one
-`pwa-inline-v1` closed-shape attestation bound to the declaration and current
-canonical reference block. The listing window begins in the next block and
-extends no more than 12 blocks from the reference.
-
-Attestations are cached for at most 30 seconds only while their observation
-freshness, validity window, and reference-block hash remain valid. Concurrent
-requests share one in-flight issuance. After polling and signing, the service
-rechecks both the canonical tip and the reference block hash. A reorganization,
-quorum failure, source timeout, excess spread, expired cache, or failed
-signature verification returns an unavailable response; it never returns a
-stale cached result or substitutes `/api/v1/prices/btc-usd`.
-
-The V6 listing carries the complete signed attestation on chain. Canonical
-replay independently verifies the closed shape, BIP340 signature, declaration,
-public key/key id, exact source set and median, policy values, signed block
-window, and reference hash. The replay block descriptor carries the required
-reference-height/hash witnesses so a verifier does not read mutable ambient
-chain state while reconstructing a historical transition.
+Every declaration pin starts empty and the write gate starts at `0`. V5 remains
+independently disabled for new production writes; an old V4 or V5 switch cannot
+authorize V6. The old unactivated oracle credential is not a V6 dependency and
+must not remain in the tracked systemd override.
 
 The listing itself remains ordered by:
 
@@ -1319,40 +1274,49 @@ The listing itself remains ordered by:
 (blockHeight, blockTransactionIndex, protocolVout, recordOrdinal)
 ```
 
-The evaluator computes its exact WORK atoms and proof price from the signed USD
-Q8 and `Nbefore`, freezes those terms, then applies the listing's own bond. One
-attestation can therefore serve many listings in its valid window without
-making their amounts equal: intervening valid bonds and earlier ordered events
-can change each later listing's `Nbefore`. Reverse fetch order or database
-arrival order must reproduce the same transition.
+For `F=unitFaceProofs`, total network value `N=Nbefore`, total supply
+`S=21000000`, atom scale `A=100000000`, and Q8 scale `Q=100000000`, the
+evaluator computes:
+
+```text
+unitPriceProofs = F
+unitAmountAtoms = floor(F*S*A*Q/N)
+unitMinimumPriceProofs = ceil(unitAmountAtoms*N/(S*A*Q))
+```
+
+It freezes those terms and then applies the listing's own bond. Intervening
+valid bonds and earlier ordered events can therefore change each later
+listing's exact WORK amount even when the chosen proof face is the same.
+Reverse fetch order or database arrival order must reproduce the same
+transition.
 
 V6 activation changes new listing admission only. A valid V4 or V5 listing
-confirmed before activation keeps its frozen terms and may settle without a
-current V6 attestation. After activation, new V4/V5 listings are invalid audit
-history. V1/V3 relics and all old quote rows remain immutable replay evidence.
-Seal and buy use confirmation-frozen listing terms and never recheck current
-USD, current network value, or current attestation freshness.
+confirmed before activation keeps its frozen terms and may settle unchanged.
+After activation, new V4/V5 listings are invalid audit history. V1/V3 relics
+and all old quote rows remain immutable replay evidence. Seal and buy use
+confirmation-frozen listing terms and never recheck current network value or
+any USD display.
 
 The safe rollout order is:
 
-1. Generate the non-funding credential, make and verify an encrypted offline
-   recovery copy, and provision its root-controlled `0600` source file before
-   installing the systemd override that names it; publish only its x-only
-   public key and key id. Losing every private copy requires a new declaration
-   and pauses new listings.
-2. Deploy code/schema with both V6 switches off and V5 writes still off.
-3. Produce the exact declaration text from those public facts. The user signs
+1. Prove through Core and the canonical index that no earlier V6 declaration,
+   migration marker or accepted `pwt-sale-v6` listing exists. Reusing the
+   version is forbidden if any such canonical history exists.
+2. Back up PostgreSQL and the current release. Replace the empty unactivated
+   oracle-shaped V6 schema only through its guarded zero-row/null-marker path.
+3. Deploy code/schema with V6 writes off and V5 writes still off.
+4. Produce the exact proof-native declaration text. The user signs
    and publishes it locally.
-4. After confirmation, pin every declaration field and re-prove it from Core,
-   but leave both gates off until the declaration is at least six confirmations
+5. After confirmation, pin every declaration field and re-prove it from Core,
+   but leave writes off until the declaration is at least six confirmations
    deep.
-5. At that safety depth, apply the exact declaration/index migration marker
+6. At that safety depth, apply the exact declaration/index migration marker
    from the confirmed pre-activation declaration evidence. Only after that
    immutable marker verifies, run activation-through-tip replay and require
-   exact relational, transition, listing-term, and attestation parity;
+   exact relational, transition and listing-term parity;
    post-activation replay intentionally fails closed before the marker exists.
-6. Enable the attestor only, verify its identity, quorum, cache, reorg, and
-   endpoint contracts, then enable writes in a separate supervised change.
+7. Enable writes only after exact-tip health, replay parity, public truth
+   checks and marketplace regressions pass.
 
 Publish the declaration from a fresh Computer message, not a reply. Paste only
 the exact declaration body emitted on standard output by
@@ -1370,11 +1334,10 @@ those facts before migration can proceed.
 
 The post-confirmation migration is an operator-supervised maintenance event.
 Create a root-owned `0600` public activation file containing the exact
-declaration and oracle public pins listed above plus
-`WORK_AMO_V6_ACTIVATION_HEIGHT=D+1`; it must never contain the oracle private
-key. Let systemd load the root-only database, Core RPC, internal-verifier, and
-public activation files while Node still runs as `powadmin`. Stop the ordinary
-index worker before applying pins or the immutable marker. First run
+declaration pins listed above plus `WORK_AMO_V6_ACTIVATION_HEIGHT=D+1`. Let
+systemd load the root-only database, Core RPC, internal-verifier, and public
+activation files while Node still runs as `powadmin`. Stop the ordinary index
+worker before applying pins or the immutable marker. First run
 `npm run migrate:work-amo-v6` with
 `WORK_AMO_V6_MIGRATION_APPLY=0`, inspect the complete Core/index evidence and
 `ready-to-apply` result, then rerun with
@@ -1398,14 +1361,12 @@ POW_INDEX_BACKFILL_CANONICAL_REBUILD=0
 Set the supervised block and transaction caps high enough to cover `D+1`
 through the current Core tip, then run `npm run indexer:backfill`. Do not use
 canonical rebuild: a rebuild beginning at `D+1` would delete earlier global
-projections. Require exact transition, frozen-term, attestation, and relational
-parity through the same current tip before restarting the ordinary worker.
-Enable `WORK_AMO_V6_ATTESTOR_ENABLED=1` while writes remain `0`; verify the
-public key/key id, five-source policy, signed response, cache/reorg behavior,
-`Cache-Control: no-store`, API truth checks, and marketplace regressions.
-Only then enable `WORK_AMO_V6_WRITES_ENABLED=1` and deploy every public UI
-surface from the same commit-bound archive. A failure at any stage leaves new
-V6 listings closed while historical frozen settlements remain available.
+projections. Require exact transition, frozen-term and relational parity
+through the same current tip before restarting the ordinary worker. Verify API
+truth checks and marketplace regressions, then enable
+`WORK_AMO_V6_WRITES_ENABLED=1` and deploy every public UI surface from the same
+commit-bound archive. A failure at any stage leaves new V6 listings closed
+while historical frozen settlements remain available.
 
 ### WORK atomic-unit cutover
 
@@ -1813,7 +1774,6 @@ GET /api/v1/token-summary?network=livenet
 GET /api/v1/token-history?network=livenet
 GET /api/v1/work-floor?network=livenet
 GET /api/v1/work-summary?network=livenet
-GET /api/v1/work-amo-v6/attestation?network=livenet
 GET /api/v1/marketplace-summary?network=livenet
 GET /api/v1/infinity-summary?network=livenet
 GET /api/v1/inception-summary?network=livenet
@@ -1949,14 +1909,17 @@ The credit endpoint:
 - WORK's permanent price floor is derived from live confirmed ProofOfWork Computer network value, not from pending mempool visibility: `work_floor_sats = live_network_value_sats / 21,000,000 WORK`. The inverse `21,000,000 / live_network_value_sats` is the WORK-per-proof ratio.
 - Historical WORK Marketplace Pricing Protocol V2 is declaration-tx anchored at `4c53252c6e9279726e1456f4d846274bfa33f778b633d32a68ed36906b38083f` and activated at declaration height plus one. Its confirmed governed WORK list/seal/buy validation loaded the exact green canonical summary at H-1, required the authorization's `oracleBlockHeight`, `oracleBlockHash`, and `oracleNetworkValueQ8` to match it, recomputed the integer-ceiling minimum total seller price from `amountAtoms`, and failed closed on any unavailable or mismatched dependency. A missed next-block commitment was stale; confirmation did not rescue it. This is replay documentation, not the current AMO write protocol.
 - WORK Marketplace Pricing Protocol V4 remains replayable historical design. Current governed WORK list/seal/buy actions use AMO `pwt-sale-v5` after activation height 959621. A listing chooses only `$20`, `$50`, or `$100`; exact WORK atoms and proof price derive at its complete canonical position from the preceding valid `pwa1:usd1` quote and the network value immediately before the listing. Those terms freeze at confirmation. Seal and buy reference them without current-floor repricing. Writes require the independent V5 declaration pins, quote/index/replay readiness, and `WORK_AMO_V5_WRITES_ENABLED=1`.
-- WORK AMO V6 is staged behind a new declaration and independent attestor/write
-  gates. Once that declaration activates, new governed listings use
-  `pwt-sale-v6` and carry a BIP340-signed `pwa-inline-v1` five-source median
-  attestation instead of depending on a recurring `pwa1:usd1` transaction.
-  V5 listings validly confirmed before the cutover keep their frozen terms and
-  may settle; new V5 listings after the cutover are invalid audit history.
-  Until that declaration confirms and every pin/replay gate is ready, V5
-  remains the current chain protocol and V6 writes stay disabled.
+- WORK AMO V6 is staged behind a new declaration and an independent write
+  gate. Once that declaration activates, new governed listings use
+  `pwt-sale-v6` and choose exactly `20,000`, `50,000`, or `100,000` proofs.
+  The listing's exact WORK atoms derive at its complete canonical position
+  from the network value immediately before the listing; no USD quote,
+  attestation, signer, source quorum, or validity window is part of V6
+  consensus. USD is display-only. V5 listings validly confirmed before the
+  cutover keep their frozen terms and may settle; new V5 listings after the
+  cutover are invalid audit history. Until the declaration confirms and every
+  declaration pin, migration, and replay gate is ready, V5 remains the current
+  chain protocol and V6 writes stay disabled.
 - WORK value accounting exposes both live and frozen values. Live network value reprices confirmed WORK movement at the current live floor and is the site-facing value. Frozen network value records the confirmation-time value of each WORK movement plus fixed event components such as proof payments, registry mutation fees, marketplace mutation fees, sale payments, and miner fees where available.
 - WORK is the only credit whose amount moved adds credit movement network value. Non-WORK credits remain confirmed proof-flow records and must not derive value from manipulable illiquid floors.
 - Credit mint-out is confirmed-only at the protocol/indexing layer: a credit is canonically minted out only when confirmed supply reaches max supply. UI mint controls also pause when confirmed plus pending mints fill the remaining supply, because pending records can consume the last valid mint slots if they confirm.
@@ -2090,15 +2053,16 @@ alias, or value beyond eight decimal places is accepted. `send2` is WORK-only.
 Historical signed `pwt-sale-v1` authorizations remain whole-credit records;
 historical fractional WORK actions may use `pwt-sale-v2`, and the governed V3
 era used `pwt-sale-v3` with exact atoms and its hash-bound H-1 pricing
-commitment. Current governed WORK list, seal, and buy actions use
-`pwt-sale-v5`. A new listing selects only `$20`, `$50`, or `$100`; its complete
+commitment. Historical governed WORK list, seal, and buy actions use
+`pwt-sale-v5`. A V5 listing selects only `$20`, `$50`, or `$100`; its complete
 canonical position, preceding valid USD quote, and network value immediately
 before that position derive and freeze the exact WORK atoms and proof price at
 confirmation. Later seal and buy actions reference those immutable terms and
 do not reprice. The staged, declaration-gated successor is `pwt-sale-v6`: it
-keeps the same faces, order, and confirmation freeze while embedding a signed
-multi-source USD attestation in the listing and eliminating recurring manual
-quote transactions after activation. Non-WORK listings remain V1. The surrounding
+selects only `20,000`, `50,000`, or `100,000` proofs and derives the exact WORK
+atoms from the network value immediately before the listing. V6 has no USD
+consensus input, quote, attestation, key, quorum, or validity window; any USD
+equivalent is display-only. Non-WORK listings remain V1. The surrounding
 `list5`/`seal5`/`buy5`/`delist5` messages and sale-ticket UTXO contract remain
 compatible.
 

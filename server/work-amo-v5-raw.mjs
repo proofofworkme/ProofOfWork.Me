@@ -61,7 +61,6 @@ import {
 } from "./work-units.mjs";
 import {
   WORK_AMO_V6_AUTH_VERSION,
-  WORK_AMO_V6_MAX_ATTESTATION_VALIDITY_BLOCKS,
   deriveWorkAmoV6FrozenTerms,
   validateWorkAmoV6SealOrBuyTerms,
   validateWorkAmoV6StaticAuthorization,
@@ -2731,7 +2730,7 @@ function evaluateGenericPwt(record, context, parsed) {
   };
 }
 
-function workAuthorizationsMatch(left, right, context = {}) {
+function workAuthorizationsMatch(left, right) {
   const v6 =
     left?.version === WORK_AMO_V6_AUTH_VERSION ||
     right?.version === WORK_AMO_V6_AUTH_VERSION;
@@ -2742,17 +2741,11 @@ function workAuthorizationsMatch(left, right, context = {}) {
     ) {
       return false;
     }
-    const options = {
-      oraclePolicy: context.workAmoV6?.oraclePolicy,
-      requireCanonicalAnchor: false,
-    };
     const leftValidation = validateWorkAmoV6StaticAuthorization(
       left,
-      options,
     );
     const rightValidation = validateWorkAmoV6StaticAuthorization(
       right,
-      options,
     );
     if (!leftValidation.valid || !rightValidation.valid) {
       return false;
@@ -2775,18 +2768,15 @@ function workAuthorizationsMatch(left, right, context = {}) {
       "stateOrderModel",
       "ticker",
       "tokenId",
-      "unitFaceUsdCents",
+      "unitFaceProofs",
       "unitModel",
-      "unitUsdOracleModel",
       "unitWorkOracleModel",
       "version",
     ].every(
       (field) =>
         leftValidation.authorization[field] ===
         rightValidation.authorization[field],
-    ) &&
-      leftValidation.attestation.attestationId ===
-        rightValidation.attestation.attestationId;
+    );
   }
   const leftValidation = validateWorkAmoV5StaticAuthorization(left);
   const rightValidation = validateWorkAmoV5StaticAuthorization(right);
@@ -3069,12 +3059,6 @@ function evaluateWorkPwt(record, context, parsed) {
       ? v6Active
         ? validateWorkAmoV6StaticAuthorization(
             parsed.saleAuthorization,
-            {
-              canonicalBlockHashAtHeight:
-                context.workAmoV6.canonicalBlockHashAtHeight,
-              oraclePolicy: context.workAmoV6.oraclePolicy,
-              requireCanonicalAnchor: true,
-            },
           )
         : {
             reasonCode: "work-amo-v6-before-activation",
@@ -3124,14 +3108,11 @@ function evaluateWorkPwt(record, context, parsed) {
       ? deriveWorkAmoV6FrozenTerms(authorization, {
           activationHeight:
             context.workAmoV6.activationHeight,
-          canonicalBlockHashAtHeight:
-            context.workAmoV6.canonicalBlockHashAtHeight,
           listingBondContributionQ8:
             hypothetical.bondContributionQ8,
           listingPosition: record.position,
           networkValueBeforeQ8:
             hypothetical.networkValueBeforeQ8,
-          oraclePolicy: context.workAmoV6.oraclePolicy,
           spendableAmountAtoms: workSpendable(
             workState,
             authorization.sellerAddress,
@@ -3340,11 +3321,6 @@ function evaluateWorkPwt(record, context, parsed) {
           WORK_AMO_V6_AUTH_VERSION
             ? validateWorkAmoV6StaticAuthorization(
                 parsed.saleAuthorization,
-                {
-                  oraclePolicy:
-                    context.workAmoV6?.oraclePolicy,
-                  requireCanonicalAnchor: false,
-                },
               )
             : validateWorkAmoV5StaticAuthorization(
                 parsed.saleAuthorization,
@@ -4245,50 +4221,8 @@ function newlyClaimedVouts(before, after) {
     .sort((left, right) => left - right);
 }
 
-function workAmoV6ReferenceHeightsForBlock(
-  records,
-  { activationHeight, blockHeight } = {},
-) {
-  if (
-    !Number.isSafeInteger(activationHeight) ||
-    !Number.isSafeInteger(blockHeight) ||
-    blockHeight < activationHeight
-  ) {
-    return [];
-  }
-  const heights = new Set();
-  for (const record of records) {
-    if (record.protocol !== "pwt1") {
-      continue;
-    }
-    const parsed = parseWorkAmoV5RawPwtRecord(record.message);
-    if (
-      parsed?.kind !== "list" ||
-      parsed.saleAuthorization?.version !==
-        WORK_AMO_V6_AUTH_VERSION
-    ) {
-      continue;
-    }
-    const referenceHeight = exactSafeInteger(
-      parsed.saleAuthorization?.unitUsdAttestation
-        ?.referenceBlockHeight,
-      { positive: true },
-    );
-    if (
-      referenceHeight !== null &&
-      referenceHeight < blockHeight &&
-      blockHeight - referenceHeight <=
-        WORK_AMO_V6_MAX_ATTESTATION_VALIDITY_BLOCKS
-    ) {
-      heights.add(referenceHeight);
-    }
-  }
-  return [...heights].sort((left, right) => left - right);
-}
-
 function normalizedWorkAmoV6ReplayContext({
   blockHeight,
-  records,
   referenceBlockWitnesses,
   workAmoV6,
 } = {}) {
@@ -4311,13 +4245,6 @@ function normalizedWorkAmoV6ReplayContext({
       referenceBlockWitnesses: [],
     };
   }
-  if (
-    !workAmoV6?.oraclePolicy ||
-    typeof workAmoV6.oraclePolicy !== "object" ||
-    Array.isArray(workAmoV6.oraclePolicy)
-  ) {
-    throw new TypeError("work-amo-v6-replay-policy-invalid");
-  }
   if (blockHeight < activationHeight) {
     if (
       Array.isArray(referenceBlockWitnesses) &&
@@ -4333,58 +4260,18 @@ function normalizedWorkAmoV6ReplayContext({
       referenceBlockWitnesses: [],
     };
   }
-  const expectedHeights = workAmoV6ReferenceHeightsForBlock(
-    records,
-    { activationHeight, blockHeight },
-  );
-  const witnesses = (Array.isArray(referenceBlockWitnesses)
-    ? referenceBlockWitnesses
-    : []
-  ).map((witness) => {
-    const height = exactSafeInteger(witness?.blockHeight, {
-      positive: true,
-    });
-    const hash = normalizedTxid(witness?.blockHash);
-    if (height === null || !hash) {
-      throw new TypeError(
-        "work-amo-v6-reference-witness-invalid",
-      );
-    }
-    return { blockHash: hash, blockHeight: height };
-  }).sort((left, right) => left.blockHeight - right.blockHeight);
   if (
-    new Set(witnesses.map((witness) => witness.blockHeight)).size !==
-      witnesses.length ||
-    witnesses.length !== expectedHeights.length ||
-    witnesses.some(
-      (witness, index) =>
-        witness.blockHeight !== expectedHeights[index],
-    )
+    Array.isArray(referenceBlockWitnesses) &&
+    referenceBlockWitnesses.length > 0
   ) {
     throw new TypeError(
-      "work-amo-v6-reference-witness-set-mismatch",
+      "work-amo-v6-reference-witnesses-unexpected",
     );
   }
-  const hashByHeight = new Map(
-    witnesses.map((witness) => [
-      witness.blockHeight,
-      witness.blockHash,
-    ]),
-  );
-  const oraclePolicy = structuredClone(workAmoV6.oraclePolicy);
   return {
-    commitment: {
-      activationHeight,
-      oraclePolicy,
-      referenceBlockWitnesses: witnesses,
-    },
-    evaluation: {
-      activationHeight,
-      canonicalBlockHashAtHeight: (height) =>
-        hashByHeight.get(height) ?? "",
-      oraclePolicy,
-    },
-    referenceBlockWitnesses: witnesses,
+    commitment: { activationHeight },
+    evaluation: { activationHeight },
+    referenceBlockWitnesses: [],
   };
 }
 

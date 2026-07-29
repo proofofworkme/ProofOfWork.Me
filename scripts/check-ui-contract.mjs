@@ -309,8 +309,8 @@ const transferTokenSource = app.slice(
   app.indexOf("async function transferToken"),
   app.indexOf("async function listToken"),
 );
-const fetchWorkAmoV6AttestationSource = app.slice(
-  app.indexOf("async function fetchWorkAmoV6Attestation"),
+const workAmoV6ProofUnitSource = app.slice(
+  app.indexOf("function workAmoV6ActivationReady"),
   app.indexOf("function workAmoListingFaceUsdCents"),
 );
 const listTokenSource = app.slice(
@@ -738,7 +738,7 @@ expect(
     /normalizedTokenListAmountUnits !== null[\s\S]*normalizedTokenListAmountUnits <= walletSpendableTokenAtoms/.test(
       canListTokenSource,
     ) &&
-    /const workAmoListInputReady = Boolean\([\s\S]*workAmoFaceUsdCentsAllowed\(tokenListFaceUsdCents\)[\s\S]*workAmoV6ListingWritesReady\(workFloorQuote\)[\s\S]*walletSpendableTokenAtoms > 0n/.test(
+    /const workAmoListInputReady = Boolean\([\s\S]*workAmoV6FaceProofsAllowed\(tokenListFaceProofs\)[\s\S]*workAmoV6ListingWritesReady\(workFloorQuote\)[\s\S]*workAmoV6EstimateForFace\([\s\S]*tokenListFaceProofs[\s\S]*walletSpendableTokenAtoms > 0n/.test(
       canListTokenSource,
     ) &&
     !/max=\{Math\.max\(1, listSpendableBalance\)\}/.test(app) &&
@@ -1166,7 +1166,7 @@ expect(
       app,
     ) &&
     /TOKEN_SALE_AUTH_WORK_AMO_UNIT_VERSION\s*=\s*"pwt-sale-v5"/.test(app) &&
-    /TOKEN_SALE_AUTH_WORK_AMO_INLINE_ORACLE_VERSION\s*=\s*"pwt-sale-v6"/.test(
+    /TOKEN_SALE_AUTH_WORK_AMO_PROOF_UNIT_VERSION\s*=\s*"pwt-sale-v6"/.test(
       app,
     ) &&
     /workAmoStaticAuthorizationForListing\(listing\)/.test(
@@ -1196,46 +1196,39 @@ expect(
     ),
 );
 expect(
-  "WORK AMO V6 pins exact faces and separates activation, settlement, and listing readiness",
-  /WORK_AMO_ALLOWED_FACE_USD_CENTS\s*=\s*\[2000,\s*5000,\s*10000\]\s*as const/.test(
+  "WORK AMO V6 pins proof faces and separates activation, settlement, and listing readiness",
+  /WORK_AMO_V6_ALLOWED_FACE_PROOFS\s*=\s*\[20_000,\s*50_000,\s*100_000\]\s*as const/.test(
     app,
   ) &&
-    /WORK_AMO_V6_UNIT_MODEL\s*=\s*"canonical-work-amo-usd-unit-v3"/.test(
+    /WORK_AMO_V6_UNIT_MODEL\s*=\s*"canonical-work-amo-proof-unit-v1"/.test(
       app,
     ) &&
-    /WORK_AMO_V6_USD_ORACLE_MODEL\s*=\s*"canonical-work-usd-five-source-median-q8-v1"/.test(
-      app,
-    ) &&
-    /const WORK_AMO_V6_ORACLE_SOURCE_IDS = \[\s*"bitfinex",\s*"bitflyer",\s*"coinbase",\s*"gemini",\s*"kraken",\s*\] as const/.test(
-      app,
-    ) &&
-    /function workAmoV6ActivationReady[\s\S]*status\?\.version === TOKEN_SALE_AUTH_WORK_AMO_INLINE_ORACLE_VERSION[\s\S]*status\.activation\?\.active === true[\s\S]*status\.activation\.evidenceComplete === true[\s\S]*workAmoV6NormalizedOraclePolicy\(status\.oraclePolicy\)/.test(
+    /function workAmoV6ActivationReady[\s\S]*status\?\.version === TOKEN_SALE_AUTH_WORK_AMO_PROOF_UNIT_VERSION[\s\S]*status\.activation\?\.active === true[\s\S]*status\.activation\.evidenceComplete === true/.test(
       app,
     ) &&
     /function workAmoV6SettlementWritesReady[\s\S]*workAmoV6ActivationReady\(quote\)[\s\S]*status\?\.ready === true[\s\S]*status\.protocolWritesEnabled === true[\s\S]*status\.settlementWritesEnabled === true/.test(
       app,
     ) &&
-    /function workAmoV6ListingWritesReady[\s\S]*workAmoV6SettlementWritesReady\(quote\)[\s\S]*status\?\.ready === true[\s\S]*status\.listingWritesEnabled === true[\s\S]*status\.attestorEnabled === true[\s\S]*status\.oracleReady === true/.test(
+    /function workAmoV6ListingWritesReady[\s\S]*workAmoV6SettlementWritesReady\(quote\)[\s\S]*status\?\.listingWritesEnabled === true/.test(
       app,
     ) &&
     /assertWorkAmoV6ListingEnabled\(freshFloor\)/.test(listTokenSource),
 );
 expect(
-  "WORK AMO V6 serializes face plus signed attestation intent and labels pending values as estimates",
+  "WORK AMO V6 serializes only the proof face and labels USD as display-only",
   /function tokenSaleAuthorizationWireDraft[\s\S]*isWorkAmoDerivedUnitAuthorization\(draft\.version\)[\s\S]*amount:\s*_amount[\s\S]*amountAtoms:\s*_amountAtoms[\s\S]*priceSats:\s*_priceSats[\s\S]*return wire/.test(
     app,
   ) &&
-    /unitUsdAttestation:[\s\S]*v6Authorization[\s\S]*hasExactRecordKeys\([\s\S]*WORK_AMO_V6_ATTESTATION_KEYS[\s\S]*sources: Array\.isArray/.test(
+    /WORK_AMO_V6_STATIC_AUTHORIZATION_KEYS[\s\S]*"unitFaceProofs"[\s\S]*"anchorSignature"/.test(
       app,
     ) &&
-    /WORK_AMO_ALLOWED_FACE_USD_CENTS\.map/.test(tokenWalletWorkspaceBlock) &&
-    /You choose only the face unit[\s\S]*Pending values are estimates[\s\S]*confirmation[\s\S]*freezes the terms permanently/.test(
-      tokenWalletWorkspaceBlock,
+    /unitFaceProofs:\s*v6Authorization[\s\S]*workAmoV6FaceProofsAllowed/.test(
+      app,
     ) &&
-    /automatically fetches and verifies a fresh signed[\s\S]*multi-source USD attestation[\s\S]*embeds it in the listing/.test(
-      tokenWalletWorkspaceBlock,
-    ) &&
-    /const issued = await fetchWorkAmoV6Attestation\(freshFloor\)[\s\S]*workAttestation = issued\.attestation[\s\S]*unitFaceUsdCents:\s*workListing[\s\S]*unitUsdAttestation:\s*workListing[\s\S]*TOKEN_SALE_AUTH_WORK_AMO_INLINE_ORACLE_VERSION/.test(
+    /WORK_AMO_V6_ALLOWED_FACE_PROOFS\.map/.test(tokenWalletWorkspaceBlock) &&
+    /20,000, 50,000, or 100,000-proof/.test(tokenWalletWorkspaceBlock) &&
+    /USD is display-only/.test(tokenWalletWorkspaceBlock) &&
+    /workEstimate = workAmoV6EstimateForFace\([\s\S]*unitFaceProofs:\s*workListing[\s\S]*TOKEN_SALE_AUTH_WORK_AMO_PROOF_UNIT_VERSION/.test(
       listTokenSource,
     ) &&
     /const estimate =\s*listing\.confirmed !== true\s*&&\s*rawEstimate/.test(
@@ -1256,18 +1249,18 @@ expect(
     /function workAmoFrozenTerms[\s\S]*grandfatheredV4[\s\S]*TOKEN_SALE_AUTH_WORK_CONFIRMATION_FLOOR_VERSION[\s\S]*grandfatheredV4ProjectionComplete[\s\S]*frozen\.canonical === true[\s\S]*frozen\.confirmed === true[\s\S]*frozen\.valid === true[\s\S]*WORK_AMO_V1_ACTIVATION_HEIGHT[\s\S]*WORK_AMO_V5_ACTIVATION_HEIGHT/.test(
       app,
     ) &&
-    /function workAmoV6FrozenProjection[\s\S]*validateWorkAmoV6Attestation[\s\S]*listingProtocolVout[\s\S]*listingRecordOrdinal[\s\S]*listingBlockHeight < verifiedAttestation\.validFromHeight[\s\S]*listingBlockHeight > verifiedAttestation\.validThroughHeight[\s\S]*networkValueAfterQ8 !==\s*networkValueBeforeQ8 \+ listingBondContributionQ8[\s\S]*amountAtoms !== expectedAmount[\s\S]*priceSats !== expectedPrice/.test(
+    /function workAmoV6FrozenProjection[\s\S]*WORK_AMO_V6_FROZEN_TERM_KEYS[\s\S]*unitFaceProofs[\s\S]*listingProtocolVout[\s\S]*listingRecordOrdinal[\s\S]*networkValueAfterQ8 !==[\s\S]*networkValueBeforeQ8 \+ listingBondContributionQ8[\s\S]*workAmoV6UnitTerms\([\s\S]*amountAtoms\.toString\(\) !== expected\.unitAmountAtoms[\s\S]*priceSats\.toString\(\) !== expected\.unitPriceSats/.test(
       app,
     ) &&
     /const v5ProjectionComplete =[\s\S]*WORK_AMO_UNIT_MODEL[\s\S]*WORK_AMO_STATE_ORDER_MODEL[\s\S]*unitUsdQuoteTxid[\s\S]*listingBlockHeight[\s\S]*frozenNetworkValueAfterQ8 ===[\s\S]*frozenNetworkValueBeforeQ8 \+ frozenListingBondContributionQ8/.test(
       app,
     ) &&
-    /function workAmoStaticAuthorizationForListing[\s\S]*TOKEN_SALE_AUTH_WORK_AMO_INLINE_ORACLE_VERSION[\s\S]*WORK_AMO_V6_UNIT_MODEL[\s\S]*TOKEN_SALE_AUTH_WORK_AMO_UNIT_VERSION/.test(
+    /function workAmoStaticAuthorizationForListing[\s\S]*TOKEN_SALE_AUTH_WORK_AMO_PROOF_UNIT_VERSION[\s\S]*unitFaceProofs:\s*faceProofs[\s\S]*WORK_AMO_V6_UNIT_MODEL[\s\S]*TOKEN_SALE_AUTH_WORK_AMO_UNIT_VERSION/.test(
       app,
     ) &&
     /assertWorkAmoV6SettlementEnabled\(workFloorQuote\)/.test(
-    sealTokenListingSource,
-  ) &&
+      sealTokenListingSource,
+    ) &&
     /workAmoStaticAuthorizationForListing\(listing\)/.test(
       sealTokenListingSource,
     ) &&
@@ -1291,29 +1284,18 @@ expect(
     ),
 );
 expect(
-  "AMO V6 automatically fetches and verifies the exact inline USD attestation",
-  /"\/api\/v1\/work-amo-v6\/attestation\?fresh=1"/.test(
-    fetchWorkAmoV6AttestationSource,
+  "AMO V6 is proof-native and has no USD oracle or attestation lane",
+  /function workAmoV6UnitTerms[\s\S]*BigInt\(WORK_TOKEN_MAX_SUPPLY\) \* 100_000_000n \* 100_000_000n[\s\S]*BigInt\(face\) \* valueDenominator[\s\S]*amountAtoms \* networkValue \+ valueDenominator - 1n/.test(
+    workAmoV6ProofUnitSource,
   ) &&
-    /payload\.network !== "livenet"[\s\S]*payload\.protocolVersion !==\s*TOKEN_SALE_AUTH_WORK_AMO_INLINE_ORACLE_VERSION/.test(
-      fetchWorkAmoV6AttestationSource,
-    ) &&
-    /workAmoV6OraclePoliciesMatch\(statusPolicy, responsePolicy\)/.test(
-      fetchWorkAmoV6AttestationSource,
-    ) &&
-    /validateWorkAmoV6Attestation\([\s\S]*payload\.attestation,[\s\S]*statusPolicy/.test(
-      fetchWorkAmoV6AttestationSource,
-    ) &&
-    /successfulSources\.size \+ failedSources\.size !==\s*statusPolicy\.allowedSourceIds\.length/.test(
-      fetchWorkAmoV6AttestationSource,
-    ) &&
-    /estimates\.length !== WORK_AMO_ALLOWED_FACE_USD_CENTS\.length[\s\S]*workAmoV6ExpectedUnitPriceSats/.test(
-      fetchWorkAmoV6AttestationSource,
-    ) &&
-    /function validateWorkAmoV6Attestation[\s\S]*hasExactRecordKeys\(value, WORK_AMO_V6_ATTESTATION_KEYS\)[\s\S]*workAmoV6MedianQ8[\s\S]*workAmoV6SourceSetSha256[\s\S]*workAmoV6OracleKeyId[\s\S]*ecc\.verifySchnorr/.test(
+    !/\/api\/v1\/work-amo-v6\/attestation/.test(app) &&
+    !/WorkUsdAttestation|unitUsdAttestation|WORK_AMO_V6_USD_ORACLE_MODEL|WORK_AMO_V6_ORACLE_SOURCE_IDS|fetchWorkAmoV6Attestation/.test(
       app,
-    ),
+    ) &&
+    !/btcUsd/.test(listTokenSource) &&
+    !/btcUsd/.test(canListTokenSource),
 );
+
 expect(
   "historical V5 quote sequences remain exact while current V6 has no manual publication path",
   /type WorkAmoV5FrozenTerms[\s\S]*unitUsdQuoteSequence\?: string;/.test(
@@ -1335,7 +1317,7 @@ expect(
     ) &&
     !/async function publishWorkAmoUsdQuote/.test(app) &&
     !/workAmoQuotePublicationIsReady/.test(app) &&
-    /Automatic signed USD attestor[\s\S]*Creating an AMO intent automatically requests a fresh[\s\S]*BIP340 signature[\s\S]*automatic and fail closed/.test(
+    /Proof-native AMO write gate[\s\S]*No USD oracle, signed price attestation, or recurring[\s\S]*on-chain price publication is required/.test(
       app,
     ),
 );
@@ -1644,7 +1626,7 @@ expect(
     /<span>V4 Relic<\/span>/.test(app) &&
     /<span>Marketplace V1 Relic<\/span>/.test(app) &&
     /\? "V4 Relic Sale Tickets"\s*:\s*"AMO Units"/.test(app) &&
-    /<h3>WORK AMO State<\/h3>[\s\S]*New \$20, \$50, and \$100 intents embed a signed multi-source[\s\S]*Confirmation order derives their WORK/.test(
+    /<h3>WORK AMO State<\/h3>[\s\S]*New 20,000, 50,000, and 100,000-proof intents commit only[\s\S]*Confirmation order derives the exact WORK/.test(
       app,
     ),
 );
@@ -1877,7 +1859,7 @@ expect(
   ),
 );
 expect(
-  "AMO face choices and automatic attestor status remain contained responsively",
+  "AMO proof-face choices and proof-native status remain contained responsively",
   /work-amo-face-selector[\s\S]*grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/.test(
     css,
   ) &&

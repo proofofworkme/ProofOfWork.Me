@@ -61,29 +61,7 @@ const WORK_AMO_V5_MODELS = {
   unitWorkOracleModel: "canonical-work-prefix-before-action-v1",
 };
 const WORK_AMO_V6_AUTH_VERSION = "pwt-sale-v6";
-const WORK_AMO_V6_ATTESTATION_VERSION = "pwa-inline-v1";
-const WORK_AMO_V6_ATTESTATION_MODEL =
-  "canonical-work-usd-five-source-median-q8-v1";
-const WORK_AMO_V6_ALLOWED_FACE_USD_CENTS = [2_000, 5_000, 10_000];
-const WORK_AMO_V6_ORACLE_SOURCE_IDS = [
-  "bitfinex",
-  "bitflyer",
-  "coinbase",
-  "gemini",
-  "kraken",
-];
-const WORK_AMO_V6_ORACLE_FRESHNESS_WINDOW_MS = 120_000;
-const WORK_AMO_V6_ORACLE_MAX_SPREAD_BPS = 200;
-const WORK_AMO_V6_ORACLE_MINIMUM_SOURCES = 3;
-const WORK_AMO_V6_ORACLE_MAX_VALIDITY_BLOCKS = 12;
-const WORK_AMO_V6_MODELS = {
-  amountModel: "canonical-confirmed-position-derived-work-amount-v1",
-  bondTransitionModel: "canonical-compute-then-bond-v1",
-  stateOrderModel: "canonical-proof-state-order-v1",
-  unitModel: "canonical-work-amo-usd-unit-v3",
-  unitUsdOracleModel: WORK_AMO_V6_ATTESTATION_MODEL,
-  unitWorkOracleModel: "canonical-work-prefix-before-action-v1",
-};
+const WORK_AMO_V6_ALLOWED_FACE_PROOFS = [20_000, 50_000, 100_000];
 const WORK_MARKET_V2_LATE_SEAL_LISTING_TX =
   "9c79f121eb73f079b330950a2890ba2029416e5b75bafadc642623c66fd963f9";
 const WORK_MARKET_V2_LATE_SEAL_TX =
@@ -881,126 +859,36 @@ function assertWorkAmoV5Readiness(payload, label, context = payload) {
   return status;
 }
 
-function assertExactWorkAmoV6OraclePolicy(policy, label) {
-  assert(policy && typeof policy === "object", `${label} is missing`);
+function assertWorkAmoV6ProofEstimates(status, label) {
+  const estimates =
+    status?.estimates && typeof status.estimates === "object"
+      ? status.estimates
+      : {};
+  const observedFaces = Object.keys(estimates)
+    .map(Number)
+    .sort((left, right) => left - right);
   assert(
-    policy.model === WORK_AMO_V6_ATTESTATION_MODEL &&
-      Number(policy.freshnessWindowMs) ===
-        WORK_AMO_V6_ORACLE_FRESHNESS_WINDOW_MS &&
-      Number(policy.maxSpreadBps) ===
-        WORK_AMO_V6_ORACLE_MAX_SPREAD_BPS &&
-      Number(policy.minimumSources) ===
-        WORK_AMO_V6_ORACLE_MINIMUM_SOURCES &&
-      Number(policy.maxValidityBlocks) ===
-        WORK_AMO_V6_ORACLE_MAX_VALIDITY_BLOCKS &&
-      JSON.stringify(policy.allowedSourceIds) ===
-        JSON.stringify(WORK_AMO_V6_ORACLE_SOURCE_IDS) &&
-      /^[0-9a-f]{64}$/u.test(String(policy.declarationTxid ?? "")) &&
-      /^[0-9a-f]{64}$/u.test(String(policy.oracleKeyId ?? "")) &&
-      /^[0-9a-f]{64}$/u.test(String(policy.publicKey ?? "")),
-    `${label} does not match the exact V6 3-of-5 oracle policy`,
+    JSON.stringify(observedFaces) ===
+      JSON.stringify(WORK_AMO_V6_ALLOWED_FACE_PROOFS),
+    `${label} does not expose exactly 20,000, 50,000, and 100,000 proof faces`,
   );
+  for (const face of WORK_AMO_V6_ALLOWED_FACE_PROOFS) {
+    const estimate = estimates[String(face)];
+    assert(
+      estimate?.estimateOnly === true &&
+        Number(estimate?.unitFaceProofs) === face &&
+        String(estimate?.unitPriceSats) === String(face) &&
+        /^[1-9][0-9]*$/u.test(String(estimate?.unitAmountAtoms ?? "")) &&
+        /^[1-9][0-9]*$/u.test(
+          String(estimate?.unitMinimumPriceSats ?? ""),
+        ) &&
+        BigInt(estimate.unitMinimumPriceSats) <= BigInt(face),
+      `${label} has invalid deterministic terms for ${face} proofs`,
+    );
+  }
 }
 
-function assertWorkAmoV6AttestationEnvelope(payload, status, label) {
-  const attestation = payload?.attestation;
-  assert(
-    payload?.network === "livenet" &&
-      payload?.protocolVersion === WORK_AMO_V6_AUTH_VERSION,
-    `${label} returned the wrong network or protocol`,
-  );
-  assertExactWorkAmoV6OraclePolicy(payload?.policy, `${label} policy`);
-  assert(
-    JSON.stringify(payload.policy) === JSON.stringify(status.oraclePolicy),
-    `${label} policy differs from the activated V6 status`,
-  );
-  assert(
-    attestation?.version === WORK_AMO_V6_ATTESTATION_VERSION &&
-      attestation?.model === WORK_AMO_V6_ATTESTATION_MODEL &&
-      attestation?.network === "livenet" &&
-      attestation?.declarationTxid ===
-        status.oraclePolicy.declarationTxid &&
-      attestation?.oracleKeyId === status.oraclePolicy.oracleKeyId &&
-      attestation?.publicKey === status.oraclePolicy.publicKey &&
-      /^[0-9a-f]{64}$/u.test(String(attestation?.attestationId ?? "")) &&
-      /^[0-9a-f]{128}$/u.test(String(attestation?.signature ?? "")) &&
-      /^[1-9][0-9]*$/u.test(
-        String(attestation?.usdPer100mProofsQ8 ?? ""),
-      ),
-    `${label} returned an invalid signed attestation identity`,
-  );
-  const sources = Array.isArray(attestation?.sources)
-    ? attestation.sources
-    : [];
-  const sourceIds = sources.map((source) => source?.sourceId);
-  assert(
-    sources.length >= WORK_AMO_V6_ORACLE_MINIMUM_SOURCES &&
-      sources.length <= WORK_AMO_V6_ORACLE_SOURCE_IDS.length &&
-      new Set(sourceIds).size === sources.length &&
-      sourceIds.every(
-        (sourceId, index) =>
-          WORK_AMO_V6_ORACLE_SOURCE_IDS.includes(sourceId) &&
-          (index === 0 || sourceIds[index - 1] < sourceId),
-      ) &&
-      sources.every(
-        (source) =>
-          /^[1-9][0-9]*$/u.test(
-            String(source?.usdPer100mProofsQ8 ?? ""),
-          ) &&
-          Number.isSafeInteger(Number(source?.observedAtUnixMs)),
-      ),
-    `${label} returned a malformed or noncanonical source quorum`,
-  );
-  const failures = Array.isArray(payload?.sourceFailures)
-    ? payload.sourceFailures
-    : [];
-  assert(
-    Number(payload?.sourceCount) === sources.length &&
-      sources.length + failures.length ===
-        WORK_AMO_V6_ORACLE_SOURCE_IDS.length &&
-      failures.every(
-        (failure) =>
-          WORK_AMO_V6_ORACLE_SOURCE_IDS.includes(failure?.sourceId) &&
-          !sourceIds.includes(failure?.sourceId) &&
-          String(failure?.code ?? "").trim(),
-      ),
-    `${label} does not account for all five declared sources`,
-  );
-  assert(
-    Number(payload?.referenceTip?.height) ===
-      Number(attestation?.referenceBlockHeight) &&
-      payload?.referenceTip?.hash === attestation?.referenceBlockHash &&
-      Number(attestation?.validFromHeight) ===
-        Number(attestation?.referenceBlockHeight) + 1 &&
-      Number(attestation?.validThroughHeight) >=
-        Number(attestation?.validFromHeight) &&
-      Number(attestation?.validThroughHeight) <=
-        Number(attestation?.referenceBlockHeight) +
-          WORK_AMO_V6_ORACLE_MAX_VALIDITY_BLOCKS,
-    `${label} returned an invalid canonical reference or validity window`,
-  );
-  const estimates = Array.isArray(payload?.estimates) ? payload.estimates : [];
-  assert(
-    estimates.length === WORK_AMO_V6_ALLOWED_FACE_USD_CENTS.length &&
-      JSON.stringify(
-        estimates
-          .map((estimate) => Number(estimate?.unitFaceUsdCents))
-          .sort((left, right) => left - right),
-      ) === JSON.stringify(WORK_AMO_V6_ALLOWED_FACE_USD_CENTS) &&
-      estimates.every(
-        (estimate) =>
-          estimate?.estimateOnly === true &&
-          /^[1-9][0-9]*$/u.test(String(estimate?.unitAmountAtoms ?? "")) &&
-          /^[1-9][0-9]*$/u.test(
-            String(estimate?.unitMinimumPriceSats ?? ""),
-          ) &&
-          /^[1-9][0-9]*$/u.test(String(estimate?.unitPriceSats ?? "")),
-      ),
-    `${label} did not return exact $20, $50, and $100 estimates`,
-  );
-}
-
-async function assertWorkAmoV6Surface(payload, label, context = payload) {
+function assertWorkAmoV6Surface(payload, label, context = payload) {
   const status = workAmoV6StatusFromPayload(payload, context);
   assert(status, `${label} is missing WORK AMO V6 status`);
   assert(
@@ -1012,21 +900,22 @@ async function assertWorkAmoV6Surface(payload, label, context = payload) {
         (status.ready === true &&
           status.protocolWritesEnabled === true) &&
       status.listingWritesEnabled ===
-        (status.settlementWritesEnabled === true &&
-          status.oracleReady === true),
-    `${label} does not preserve the independent settlement/listing gate invariant`,
+        (status.settlementWritesEnabled === true),
+    `${label} does not preserve the single proof-native write-gate invariant`,
   );
+  if (
+    /^[1-9][0-9]*$/u.test(String(status.networkValueBeforeQ8 ?? ""))
+  ) {
+    assertWorkAmoV6ProofEstimates(status, label);
+  }
   if (status.pinsConfigured !== true) {
     assert(
       status.ready === false &&
         status.indexReady === false &&
         status.writesConfigured === false &&
-        status.attestorEnabled === false &&
         status.protocolWritesEnabled === false &&
         status.settlementWritesEnabled === false &&
         status.listingWritesEnabled === false &&
-        status.oracleReady === false &&
-        status.oraclePolicy === null &&
         status.activation?.active === false &&
         status.activation?.reasonCode ===
           "work-amo-v6-declaration-commitment-unconfigured",
@@ -1035,19 +924,16 @@ async function assertWorkAmoV6Surface(payload, label, context = payload) {
     return status;
   }
 
-  assertExactWorkAmoV6OraclePolicy(
-    status.oraclePolicy,
-    `${label} oracle policy`,
-  );
   if (status.activation?.active === true) {
     const declaration = status.activation.declaration;
     assert(
       status.ready === true &&
         status.indexReady === true &&
+        status.migrationReady === true &&
         status.activation.evidenceComplete === true &&
         status.activation.canonical === true &&
         status.activation.confirmed === true &&
-        declaration?.txid === status.oraclePolicy.declarationTxid &&
+        /^[0-9a-f]{64}$/u.test(String(declaration?.txid ?? "")) &&
         Number.isSafeInteger(Number(declaration?.blockHeight)) &&
         Number(declaration?.activationHeight) ===
           Number(declaration?.blockHeight) + 1 &&
@@ -1065,18 +951,6 @@ async function assertWorkAmoV6Surface(payload, label, context = payload) {
         status.settlementWritesEnabled === false &&
         status.listingWritesEnabled === false,
       `${label} enabled V6 writes before exact activation evidence`,
-    );
-  }
-  if (status.listingWritesEnabled === true) {
-    const attestation = await requestJson(
-      "/api/v1/work-amo-v6/attestation",
-      { network: "livenet", fresh: 1 },
-      { retryCount: 0, timeoutMs: 90_000 },
-    );
-    assertWorkAmoV6AttestationEnvelope(
-      attestation,
-      status,
-      "/api/v1/work-amo-v6/attestation",
     );
   }
   return status;

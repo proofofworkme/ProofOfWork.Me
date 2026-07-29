@@ -13,37 +13,29 @@ import {
   WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS,
 } from "../server/work-amo-v5.mjs";
 import {
-  WORK_AMO_V6_ALLOWED_FACE_USD_CENTS,
+  WORK_AMO_V6_ALLOWED_FACE_PROOFS,
+  WORK_AMO_V6_AMOUNT_MODEL,
   WORK_AMO_V6_AUTH_VERSION,
+  WORK_AMO_V6_BLOCK_SEQUENCER_MODEL,
+  WORK_AMO_V6_BOND_TRANSITION_MODEL,
+  WORK_AMO_V6_STATE_ORDER_MODEL,
+  WORK_AMO_V6_UNIT_MODEL,
+  WORK_AMO_V6_UNIT_WORK_ORACLE_MODEL,
 } from "../server/work-amo-v6.mjs";
 import {
   workAmoV6DeclarationCommitment,
 } from "../server/work-amo-v6-declaration.mjs";
-import {
-  WORK_USD_ATTESTATION_MODEL,
-  WORK_USD_ATTESTATION_VERSION,
-  WORK_USD_ORACLE_FRESHNESS_WINDOW_MS,
-  WORK_USD_ORACLE_MAX_SPREAD_BPS,
-  WORK_USD_ORACLE_MAX_VALIDITY_BLOCKS,
-  WORK_USD_ORACLE_MINIMUM_SOURCES,
-  workUsdOracleKeyIdFromPublicKey,
-} from "../server/work-usd-oracle.mjs";
 
 const { Pool } = pg;
 
 export const WORK_AMO_V6_INDEX_MIGRATION_MODEL =
-  "canonical-work-amo-v6-index-migration-v1";
+  "canonical-work-amo-v6-proof-native-index-migration-v1";
 export const WORK_AMO_V6_INDEX_MIGRATION_META_KEY =
   "workAmoV6Migration:livenet";
 export const WORK_AMO_V6_ACTIVATION_CONSTRAINT =
   "work_amo_v6_terms_activation";
-export const WORK_AMO_V6_ATTESTATION_PINS_CONSTRAINT =
-  "work_amo_v6_attestation_declaration_pins";
-export const WORK_AMO_V6_TERMS_PINS_CONSTRAINT =
-  "work_amo_v6_terms_declaration_pins";
 
 const TXID_PATTERN = /^[0-9a-f]{64}$/u;
-const PUBLIC_KEY_PATTERN = /^[0-9a-f]{64}$/u;
 const HEX_BYTES_PATTERN = /^(?:[0-9a-f]{2})+$/u;
 const BITCOIN_RPC_TIMEOUT_MS = 15_000;
 
@@ -93,12 +85,6 @@ function configuredPins(env = process.env) {
     env.WORK_AMO_V6_DECLARATION_REGISTRY_PAYMENT_VOUT,
     0,
   );
-  const oraclePublicKey = normalizedLower(
-    env.WORK_AMO_V6_ORACLE_PUBLIC_KEY,
-  );
-  const oracleKeyId = normalizedLower(
-    env.WORK_AMO_V6_ORACLE_KEY_ID,
-  );
   const configuredActivationHeight = optionalSafeInteger(
     env.WORK_AMO_V6_ACTIVATION_HEIGHT,
     2,
@@ -113,29 +99,15 @@ function configuredPins(env = process.env) {
     "WORK_AMO_V6_DECLARATION_PROTOCOL_VOUT",
     "WORK_AMO_V6_DECLARATION_RECORD_ORDINAL",
     "WORK_AMO_V6_DECLARATION_REGISTRY_PAYMENT_VOUT",
-    "WORK_AMO_V6_ORACLE_PUBLIC_KEY",
-    "WORK_AMO_V6_ORACLE_KEY_ID",
     "WORK_AMO_V6_ACTIVATION_HEIGHT",
   ].some((key) => String(env[key] ?? "").trim() !== "");
   if (!configured) {
     return { configured: false };
   }
-  let derivedOracleKeyId = "";
   let declarationCommitment = null;
   try {
-    derivedOracleKeyId = PUBLIC_KEY_PATTERN.test(oraclePublicKey)
-      ? workUsdOracleKeyIdFromPublicKey(oraclePublicKey)
-      : "";
-    declarationCommitment =
-      PUBLIC_KEY_PATTERN.test(oraclePublicKey) &&
-      TXID_PATTERN.test(oracleKeyId)
-        ? workAmoV6DeclarationCommitment({
-            oracleKeyId,
-            oraclePublicKey,
-          })
-        : null;
+    declarationCommitment = workAmoV6DeclarationCommitment();
   } catch {
-    derivedOracleKeyId = "";
     declarationCommitment = null;
   }
   if (
@@ -153,16 +125,13 @@ function configuredPins(env = process.env) {
       declarationCommitment.protocolRecordBytes ||
     declarationMemoSha256 !==
       declarationCommitment.protocolRecordSha256 ||
-    !PUBLIC_KEY_PATTERN.test(oraclePublicKey) ||
-    !TXID_PATTERN.test(oracleKeyId) ||
-    oracleKeyId !== derivedOracleKeyId ||
     (env.WORK_AMO_V6_ACTIVATION_HEIGHT !== undefined &&
       env.WORK_AMO_V6_ACTIVATION_HEIGHT !== "" &&
       (configuredActivationHeight === null ||
         configuredActivationHeight !== declarationHeight + 1))
   ) {
     throw new Error(
-      "AMO V6 migration declaration/oracle pins are incomplete or inconsistent.",
+      "AMO V6 proof-native migration declaration pins are incomplete or inconsistent.",
     );
   }
   const activationHeight = declarationHeight + 1;
@@ -186,8 +155,6 @@ function configuredPins(env = process.env) {
     declarationTextBytes: declarationCommitment.payloadBytes,
     declarationTextSha256: declarationCommitment.payloadSha256,
     declarationTxid,
-    oracleKeyId,
-    oraclePublicKey,
   };
 }
 
@@ -195,87 +162,80 @@ export async function auditWorkAmoV6IndexSchema(client) {
   const readiness = await client.query(
     `
       SELECT
-        to_regclass('proof_indexer.work_amo_v6_attestations') IS NOT NULL
-          AS attestations_ready,
         to_regclass('proof_indexer.work_amo_v6_listing_terms') IS NOT NULL
           AS listing_terms_ready,
+        to_regclass('proof_indexer.work_amo_v6_attestations') IS NULL
+          AS legacy_attestations_absent,
         to_regprocedure(
           'proof_indexer.valid_work_amo_v6_sources(jsonb,integer,bigint,integer)'
-        ) IS NOT NULL AS source_validator_ready
+        ) IS NULL AS legacy_source_validator_absent
     `,
   );
   const readyRow = readiness.rows[0] ?? {};
   if (
-    readyRow.attestations_ready !== true ||
     readyRow.listing_terms_ready !== true ||
-    readyRow.source_validator_ready !== true
+    readyRow.legacy_attestations_absent !== true ||
+    readyRow.legacy_source_validator_absent !== true
   ) {
     return {
-      attestationCount: 0,
-      attestationsReady: readyRow.attestations_ready === true,
       canonicalIndexesReady: false,
       immutableTriggersReady: false,
-      invalidAttestationPolicyCount: 0,
       invalidListingPolicyCount: 0,
+      legacyOracleArtifactsAbsent:
+        readyRow.legacy_attestations_absent === true &&
+        readyRow.legacy_source_validator_absent === true,
       listingTermsCount: 0,
       listingTermsReady: readyRow.listing_terms_ready === true,
+      proofNativeColumnsReady: false,
       policyConstraintsReady: false,
       ready: false,
-      sourceValidatorReady: readyRow.source_validator_ready === true,
-      unboundListingTermsCount: 0,
     };
   }
   const result = await client.query(
     `
       SELECT
         (
-          SELECT count(*) = 3
+          SELECT count(*) = 2
           FROM pg_trigger trigger_row
           JOIN pg_class relation
             ON relation.oid = trigger_row.tgrelid
           JOIN pg_namespace namespace
             ON namespace.oid = relation.relnamespace
           WHERE namespace.nspname = 'proof_indexer'
-            AND relation.relname IN (
-              'work_amo_v6_attestations',
-              'work_amo_v6_listing_terms',
-              'meta'
-            )
-            AND trigger_row.tgname IN (
-              'work_amo_v6_attestations_immutable',
-              'work_amo_v6_listing_terms_immutable',
-              'work_amo_v6_migration_marker_immutable'
+            AND (
+              (
+                relation.relname = 'work_amo_v6_listing_terms'
+                AND trigger_row.tgname =
+                  'work_amo_v6_listing_terms_immutable'
+              )
+              OR (
+                relation.relname = 'meta'
+                AND trigger_row.tgname =
+                  'work_amo_v6_migration_marker_immutable'
+              )
             )
             AND trigger_row.tgenabled <> 'D'
             AND trigger_row.tgisinternal = false
         ) AS immutable_triggers_ready,
-        (
-          SELECT count(*) = 2
+        EXISTS (
+          SELECT 1
           FROM pg_indexes
           WHERE schemaname = 'proof_indexer'
-            AND indexname IN (
-              'work_amo_v6_attestations_reference_idx',
+            AND indexname =
               'work_amo_v6_listing_terms_position_uidx'
-            )
         ) AS canonical_indexes_ready,
         (
-          SELECT count(*) = 7
+          SELECT count(*) = 4
           FROM pg_constraint constraint_row
           JOIN pg_class relation
             ON relation.oid = constraint_row.conrelid
           JOIN pg_namespace namespace
             ON namespace.oid = relation.relnamespace
           WHERE namespace.nspname = 'proof_indexer'
-            AND relation.relname IN (
-              'work_amo_v6_attestations',
-              'work_amo_v6_listing_terms'
-            )
+            AND relation.relname = 'work_amo_v6_listing_terms'
             AND constraint_row.contype = 'c'
             AND constraint_row.convalidated = true
             AND constraint_row.conname IN (
-              'work_amo_v6_attestation_identity',
-              'work_amo_v6_attestation_policy',
-              'work_amo_v6_attestation_payload',
               'work_amo_v6_terms_identity',
               'work_amo_v6_terms_values',
               'work_amo_v6_terms_positions',
@@ -283,50 +243,61 @@ export async function auditWorkAmoV6IndexSchema(client) {
             )
         ) AS policy_constraints_ready,
         (
-          SELECT count(*)::integer
-          FROM proof_indexer.work_amo_v6_attestations
-        ) AS attestation_count,
+          SELECT count(*) = 17
+          FROM information_schema.columns
+          WHERE table_schema = 'proof_indexer'
+            AND table_name = 'work_amo_v6_listing_terms'
+            AND column_name IN (
+              'listing_id',
+              'listing_txid',
+              'token_id',
+              'authorization_version',
+              'unit_face_proofs',
+              'unit_amount_atoms',
+              'unit_price_sats',
+              'unit_minimum_price_sats',
+              'listing_network_value_before_q8',
+              'listing_block_height',
+              'listing_block_hash',
+              'listing_block_index',
+              'listing_protocol_vout',
+              'listing_record_ordinal',
+              'listing_bond_contribution_q8',
+              'listing_network_value_after_q8',
+              'frozen_terms'
+            )
+        ) AND (
+          SELECT count(*) = 19
+          FROM information_schema.columns
+          WHERE table_schema = 'proof_indexer'
+            AND table_name = 'work_amo_v6_listing_terms'
+        ) AND NOT EXISTS (
+          SELECT 1
+          FROM information_schema.columns
+          WHERE table_schema = 'proof_indexer'
+            AND table_name = 'work_amo_v6_listing_terms'
+            AND (
+              column_name = 'unit_face_usd_cents'
+              OR column_name LIKE 'unit_usd_%'
+            )
+        ) AS proof_native_columns_ready,
         (
           SELECT count(*)::integer
           FROM proof_indexer.work_amo_v6_listing_terms
         ) AS listing_terms_count,
         (
           SELECT count(*)::integer
-          FROM proof_indexer.work_amo_v6_attestations
-          WHERE attestation_version <> $1
-             OR attestation_model <> $2
-             OR freshness_window_ms <> $3
-             OR max_spread_bps <> $4
-             OR minimum_sources <> $5
-             OR max_validity_blocks <> $6
-             OR source_count NOT BETWEEN 3 AND 5
-        ) AS invalid_attestation_policy_count,
-        (
-          SELECT count(*)::integer
           FROM proof_indexer.work_amo_v6_listing_terms
-          WHERE authorization_version <> $7
-             OR unit_face_usd_cents <> ALL($8::integer[])
-        ) AS invalid_listing_policy_count,
-        (
-          SELECT count(*)::integer
-          FROM proof_indexer.work_amo_v6_listing_terms terms
-          LEFT JOIN proof_indexer.work_amo_v6_attestations attestation
-            ON attestation.network = terms.network
-           AND attestation.listing_txid = terms.listing_txid
-           AND attestation.attestation_id =
-             terms.unit_usd_attestation_id
-          WHERE attestation.listing_txid IS NULL
-        ) AS unbound_listing_terms_count
+          WHERE authorization_version <> $1
+             OR unit_face_proofs <> ALL($2::integer[])
+             OR unit_price_sats <> unit_face_proofs
+             OR unit_minimum_price_sats <= 0
+             OR unit_minimum_price_sats > unit_price_sats
+        ) AS invalid_listing_policy_count
     `,
     [
-      WORK_USD_ATTESTATION_VERSION,
-      WORK_USD_ATTESTATION_MODEL,
-      WORK_USD_ORACLE_FRESHNESS_WINDOW_MS,
-      WORK_USD_ORACLE_MAX_SPREAD_BPS,
-      WORK_USD_ORACLE_MINIMUM_SOURCES,
-      WORK_USD_ORACLE_MAX_VALIDITY_BLOCKS,
       WORK_AMO_V6_AUTH_VERSION,
-      WORK_AMO_V6_ALLOWED_FACE_USD_CENTS,
+      WORK_AMO_V6_ALLOWED_FACE_PROOFS,
     ],
   );
   const row = result.rows[0] ?? {};
@@ -334,31 +305,22 @@ export async function auditWorkAmoV6IndexSchema(client) {
     row.immutable_triggers_ready === true &&
     row.canonical_indexes_ready === true &&
     row.policy_constraints_ready === true &&
-    Number(row.invalid_attestation_policy_count) === 0 &&
-    Number(row.invalid_listing_policy_count) === 0 &&
-    Number(row.unbound_listing_terms_count) === 0;
+    row.proof_native_columns_ready === true &&
+    Number(row.invalid_listing_policy_count) === 0;
   return {
-    attestationCount: Number(row.attestation_count ?? 0),
-    attestationsReady: true,
     canonicalIndexesReady: row.canonical_indexes_ready === true,
     immutableTriggersReady: row.immutable_triggers_ready === true,
-    invalidAttestationPolicyCount: Number(
-      row.invalid_attestation_policy_count ?? 0,
-    ),
     invalidListingPolicyCount: Number(
       row.invalid_listing_policy_count ?? 0,
     ),
+    legacyOracleArtifactsAbsent: true,
     listingTermsCount: Number(row.listing_terms_count ?? 0),
     listingTermsReady: true,
+    proofNativeColumnsReady: row.proof_native_columns_ready === true,
     policyConstraintsReady: row.policy_constraints_ready === true,
     ready,
-    sourceValidatorReady: true,
-    unboundListingTermsCount: Number(
-      row.unbound_listing_terms_count ?? 0,
-    ),
   };
 }
-
 function sha256Hex(value) {
   return createHash("sha256").update(value).digest("hex");
 }
@@ -857,16 +819,12 @@ async function constraintDefinition(client, tableName, constraintName) {
   return String(result.rows[0]?.definition ?? "");
 }
 
-function constraintPinsMatch(definition, pins, { activation = false } = {}) {
+function activationConstraintMatches(definition, activationHeight) {
   return Boolean(
     definition &&
-      definition.includes(`'${pins.declarationTxid}'`) &&
-      definition.includes(`'${pins.oracleKeyId}'`) &&
-      definition.includes(`'${pins.oraclePublicKey}'`) &&
-      (!activation ||
-        definition.includes(
-          `listing_block_height >= ${pins.activationHeight}`,
-        )),
+      definition.includes(
+        `listing_block_height >= ${activationHeight}`,
+      ),
   );
 }
 
@@ -926,7 +884,7 @@ export async function runWorkAmoV6IndexMigration(
   const audit = await auditWorkAmoV6IndexSchema(client);
   if (!audit.ready) {
     throw new Error(
-      "AMO V6 index schema is incomplete; apply proof-indexer-v1.sql first.",
+      "Proof-native AMO V6 index schema is incomplete; apply proof-indexer-v1.sql first.",
     );
   }
   const existingMarker = await client.query(
@@ -934,21 +892,35 @@ export async function runWorkAmoV6IndexMigration(
       SELECT value
       FROM proof_indexer.meta
       WHERE key = $1
-      LIMIT 1
+      LIMIT 2
     `,
     [WORK_AMO_V6_INDEX_MIGRATION_META_KEY],
   );
+  if (existingMarker.rows.length > 1) {
+    throw new Error("AMO V6 migration marker is not unique.");
+  }
+  const existingMarkerValue = existingMarker.rows[0]?.value ?? null;
+  if (
+    existingMarkerValue &&
+    existingMarkerValue.model !== WORK_AMO_V6_INDEX_MIGRATION_MODEL
+  ) {
+    throw new Error(
+      "An incompatible AMO V6 migration marker already exists.",
+    );
+  }
   if (!pins.configured) {
     if (apply) {
       throw new Error(
-        "AMO V6 index migration apply waits for the confirmed declaration and oracle pins.",
+        "Proof-native AMO V6 index migration apply waits for the confirmed declaration pins.",
       );
     }
     return {
       applied: false,
       audit,
-      marker: existingMarker.rows[0]?.value ?? null,
-      status: "awaiting-declaration",
+      marker: existingMarkerValue,
+      status: existingMarkerValue
+        ? "declaration-pins-required"
+        : "awaiting-declaration",
     };
   }
   const indexedDeclarationEvidence =
@@ -967,7 +939,7 @@ export async function runWorkAmoV6IndexMigration(
   );
   if (declarationEvidence.evidenceComplete !== true) {
     throw new Error(
-      "AMO V6 declaration does not have complete Core/index evidence.",
+      "Proof-native AMO V6 declaration does not have complete Core/index evidence.",
     );
   }
   const existingActivationConstraint = await constraintDefinition(
@@ -975,41 +947,23 @@ export async function runWorkAmoV6IndexMigration(
     "work_amo_v6_listing_terms",
     WORK_AMO_V6_ACTIVATION_CONSTRAINT,
   );
-  const existingAttestationPinsConstraint = await constraintDefinition(
-    client,
-    "work_amo_v6_attestations",
-    WORK_AMO_V6_ATTESTATION_PINS_CONSTRAINT,
-  );
-  const existingTermsPinsConstraint = await constraintDefinition(
-    client,
-    "work_amo_v6_listing_terms",
-    WORK_AMO_V6_TERMS_PINS_CONSTRAINT,
-  );
   if (
     existingActivationConstraint &&
-    !existingActivationConstraint.includes(
-      `listing_block_height >= ${pins.activationHeight}`,
+    !activationConstraintMatches(
+      existingActivationConstraint,
+      pins.activationHeight,
     )
   ) {
     throw new Error(
       "AMO V6 activation constraint exists with a different height.",
     );
   }
-  if (
-    (existingAttestationPinsConstraint &&
-      !constraintPinsMatch(existingAttestationPinsConstraint, pins)) ||
-    (existingTermsPinsConstraint &&
-      !constraintPinsMatch(existingTermsPinsConstraint, pins))
-  ) {
-    throw new Error(
-      "AMO V6 declaration/oracle constraints exist with different pins.",
-    );
-  }
   const markerTimestamp = new Date().toISOString();
   const marker = {
     activationHeight: pins.activationHeight,
-    attestationModel: WORK_USD_ATTESTATION_MODEL,
-    attestationVersion: WORK_USD_ATTESTATION_VERSION,
+    amountModel: WORK_AMO_V6_AMOUNT_MODEL,
+    blockSequencerModel: WORK_AMO_V6_BLOCK_SEQUENCER_MODEL,
+    bondTransitionModel: WORK_AMO_V6_BOND_TRANSITION_MODEL,
     completedAt: apply ? markerTimestamp : null,
     declarationBlockHash: pins.declarationBlockHash,
     declarationBlockIndex: pins.declarationBlockIndex,
@@ -1032,20 +986,13 @@ export async function runWorkAmoV6IndexMigration(
     declarationTextBytes: pins.declarationTextBytes,
     declarationTextSha256: pins.declarationTextSha256,
     declarationTxid: pins.declarationTxid,
-    facesUsdCents: [...WORK_AMO_V6_ALLOWED_FACE_USD_CENTS],
+    facesProofs: [...WORK_AMO_V6_ALLOWED_FACE_PROOFS],
     model: WORK_AMO_V6_INDEX_MIGRATION_MODEL,
     network: "livenet",
-    oracleKeyId: pins.oracleKeyId,
-    oraclePublicKey: pins.oraclePublicKey,
-    policy: {
-      freshnessWindowMs: WORK_USD_ORACLE_FRESHNESS_WINDOW_MS,
-      maxSpreadBps: WORK_USD_ORACLE_MAX_SPREAD_BPS,
-      maxValidityBlocks: WORK_USD_ORACLE_MAX_VALIDITY_BLOCKS,
-      minimumSources: WORK_USD_ORACLE_MINIMUM_SOURCES,
-      sourceCountMaximum: 5,
-      sourceCountMinimum: 3,
-    },
+    stateOrderModel: WORK_AMO_V6_STATE_ORDER_MODEL,
     status: apply ? "complete" : "ready-to-apply",
+    unitModel: WORK_AMO_V6_UNIT_MODEL,
+    unitWorkOracleModel: WORK_AMO_V6_UNIT_WORK_ORACLE_MODEL,
     updatedAt: markerTimestamp,
     version: WORK_AMO_V6_AUTH_VERSION,
   };
@@ -1058,9 +1005,6 @@ export async function runWorkAmoV6IndexMigration(
       marker,
       status: "ready-to-apply",
       wouldInstallActivationConstraint: !existingActivationConstraint,
-      wouldInstallAttestationPinsConstraint:
-        !existingAttestationPinsConstraint,
-      wouldInstallTermsPinsConstraint: !existingTermsPinsConstraint,
     };
   }
 
@@ -1088,56 +1032,25 @@ export async function runWorkAmoV6IndexMigration(
         "AMO V6 declaration evidence changed before migration apply.",
       );
     }
+    const transactionMarker = await client.query(
+      `
+        SELECT value
+        FROM proof_indexer.meta
+        WHERE key = $1
+        LIMIT 2
+      `,
+      [WORK_AMO_V6_INDEX_MIGRATION_META_KEY],
+    );
     if (
-      !(await constraintDefinition(
-        client,
-        "work_amo_v6_attestations",
-        WORK_AMO_V6_ATTESTATION_PINS_CONSTRAINT,
-      ))
+      transactionMarker.rows.length > 1 ||
+      (
+        transactionMarker.rows.length === 1 &&
+        transactionMarker.rows[0]?.value?.model !==
+          WORK_AMO_V6_INDEX_MIGRATION_MODEL
+      )
     ) {
-      await client.query(
-        `
-          ALTER TABLE proof_indexer.work_amo_v6_attestations
-          ADD CONSTRAINT ${WORK_AMO_V6_ATTESTATION_PINS_CONSTRAINT}
-          CHECK (
-            declaration_txid = '${pins.declarationTxid}'
-            AND oracle_key_id = '${pins.oracleKeyId}'
-            AND oracle_public_key = '${pins.oraclePublicKey}'
-          )
-          NOT VALID
-        `,
-      );
-      await client.query(
-        `
-          ALTER TABLE proof_indexer.work_amo_v6_attestations
-          VALIDATE CONSTRAINT ${WORK_AMO_V6_ATTESTATION_PINS_CONSTRAINT}
-        `,
-      );
-    }
-    if (
-      !(await constraintDefinition(
-        client,
-        "work_amo_v6_listing_terms",
-        WORK_AMO_V6_TERMS_PINS_CONSTRAINT,
-      ))
-    ) {
-      await client.query(
-        `
-          ALTER TABLE proof_indexer.work_amo_v6_listing_terms
-          ADD CONSTRAINT ${WORK_AMO_V6_TERMS_PINS_CONSTRAINT}
-          CHECK (
-            unit_usd_declaration_txid = '${pins.declarationTxid}'
-            AND unit_usd_oracle_key_id = '${pins.oracleKeyId}'
-            AND unit_usd_oracle_public_key = '${pins.oraclePublicKey}'
-          )
-          NOT VALID
-        `,
-      );
-      await client.query(
-        `
-          ALTER TABLE proof_indexer.work_amo_v6_listing_terms
-          VALIDATE CONSTRAINT ${WORK_AMO_V6_TERMS_PINS_CONSTRAINT}
-        `,
+      throw new Error(
+        "An incompatible AMO V6 migration marker appeared during apply.",
       );
     }
     if (
@@ -1162,35 +1075,26 @@ export async function runWorkAmoV6IndexMigration(
         `,
       );
     }
-    const installedAttestationPins = await constraintDefinition(
-      client,
-      "work_amo_v6_attestations",
-      WORK_AMO_V6_ATTESTATION_PINS_CONSTRAINT,
-    );
-    const installedTermsPins = await constraintDefinition(
-      client,
-      "work_amo_v6_listing_terms",
-      WORK_AMO_V6_TERMS_PINS_CONSTRAINT,
-    );
     const installedActivation = await constraintDefinition(
       client,
       "work_amo_v6_listing_terms",
       WORK_AMO_V6_ACTIVATION_CONSTRAINT,
     );
     if (
-      !constraintPinsMatch(installedAttestationPins, pins) ||
-      !constraintPinsMatch(installedTermsPins, pins) ||
-      !installedActivation.includes(
-        `listing_block_height >= ${pins.activationHeight}`,
+      !activationConstraintMatches(
+        installedActivation,
+        pins.activationHeight,
       )
     ) {
       throw new Error(
-        "AMO V6 declaration/oracle/activation constraints are not exact.",
+        "AMO V6 activation constraint is not exact.",
       );
     }
     const finalAudit = await auditWorkAmoV6IndexSchema(client);
     if (!finalAudit.ready) {
-      throw new Error("AMO V6 index schema changed during migration.");
+      throw new Error(
+        "Proof-native AMO V6 index schema changed during migration.",
+      );
     }
     await client.query(
       `
@@ -1216,7 +1120,7 @@ export async function runWorkAmoV6IndexMigration(
       !storedMarkerMatchesExpected(storedMarker, marker)
     ) {
       throw new Error(
-        "Immutable AMO V6 declaration/index marker conflicts with the exact evidence.",
+        "Immutable proof-native AMO V6 declaration/index marker conflicts with the exact evidence.",
       );
     }
     await client.query("COMMIT");
@@ -1232,7 +1136,6 @@ export async function runWorkAmoV6IndexMigration(
     throw error;
   }
 }
-
 async function main() {
   const connectionString = String(
     process.env.POW_INDEX_DATABASE_URL ?? "",

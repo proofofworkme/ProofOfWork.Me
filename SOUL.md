@@ -72,7 +72,7 @@ read-only until the exact locally signed declaration confirms, activates at
 the following block, is pinned, and writes are explicitly enabled. V3 listings
 become recoverable relics; any confirmed ticket spend still closes its listing.
 
-WORK AMO Unit Protocol V2 is the current corrective protocol. Its confirmed
+WORK AMO Unit Protocol V2 is confirmed historical protocol state. Its
 declaration transaction
 `54d7a367a3998ce1327ee89d983a25c80ce34b96d9811807df215a8694aead36`
 activates `pwt-sale-v5` at block 959621. A seller chooses only a fixed USD face
@@ -83,6 +83,17 @@ position, protocol output, and record ordinal; every valid event is computed
 and frozen before its own bond contribution is applied. AMO remains
 fail-closed until its canonical USD quote chain, exact positions, replay, and
 independent write gate are ready.
+
+WORK AMO Unit Protocol V6 is the staged proof-native corrective protocol. A
+seller chooses only 20,000, 50,000, or 100,000 proofs. At the listing's exact
+confirmed canonical position, the Computer derives the WORK amount from the
+network value immediately before that record, freezes the result, and then
+applies the listing's bond contribution. Seal and purchase never reprice a
+confirmed listing. V6 has no USD consensus input, quote, attestation, key,
+source quorum, or validity window; USD is display-only. It remains
+declaration-gated and write-disabled until exact declaration evidence,
+migration, replay parity, and exact-tip readiness all agree. Valid V4/V5
+listings confirmed before activation keep their frozen settlement rights.
 
 ## Launch Memory
 

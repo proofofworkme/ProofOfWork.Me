@@ -5,8 +5,6 @@ import {
   WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS,
   WORK_AMO_V5_MAX_SUPPLY,
   WORK_AMO_V5_NETWORK_VALUE_Q8_SCALE,
-  WORK_AMO_V5_PROOFS_PER_QUOTE_UNIT,
-  WORK_AMO_V5_USD_QUOTE_Q8_SCALE,
   compareWorkAmoCanonicalPositions,
   isWorkAmoV5LivenetAddress,
   normalizeWorkAmoCanonicalPosition,
@@ -18,28 +16,14 @@ import {
   workAmoV5CanonicalExpiryMs,
 } from "./work-amo-v5.mjs";
 import { WORK_TOKEN_ID } from "./work-units.mjs";
-import {
-  WORK_USD_ATTESTATION_MODEL,
-  WORK_USD_ATTESTATION_VERSION,
-  WORK_USD_ORACLE_FRESHNESS_WINDOW_MS,
-  WORK_USD_ORACLE_MAX_SPREAD_BPS,
-  WORK_USD_ORACLE_MAX_VALIDITY_BLOCKS,
-  WORK_USD_ORACLE_MINIMUM_SOURCES,
-  WORK_USD_ORACLE_SOURCE_IDS,
-  verifyWorkUsdAttestation,
-} from "./work-usd-oracle.mjs";
 
 export const WORK_AMO_V6_AUTH_VERSION = "pwt-sale-v6";
-export const WORK_AMO_V6_INLINE_ATTESTATION_VERSION =
-  WORK_USD_ATTESTATION_VERSION;
 export const WORK_AMO_V6_UNIT_MODEL =
-  "canonical-work-amo-usd-unit-v3";
+  "canonical-work-amo-proof-unit-v1";
 export const WORK_AMO_V6_STATE_ORDER_MODEL =
   "canonical-proof-state-order-v1";
 export const WORK_AMO_V6_AMOUNT_MODEL =
   "canonical-confirmed-position-derived-work-amount-v1";
-export const WORK_AMO_V6_UNIT_USD_ORACLE_MODEL =
-  WORK_USD_ATTESTATION_MODEL;
 export const WORK_AMO_V6_UNIT_WORK_ORACLE_MODEL =
   "canonical-work-prefix-before-action-v1";
 export const WORK_AMO_V6_BOND_TRANSITION_MODEL =
@@ -48,19 +32,16 @@ export const WORK_AMO_V6_BLOCK_SEQUENCER_MODEL =
   "canonical-work-amo-full-position-block-sequencer-v2";
 export const WORK_AMO_V6_DECLARATION_EVIDENCE_MODEL =
   "canonical-work-amo-v6-declaration-evidence-v1";
-export const WORK_AMO_V6_ALLOWED_FACE_USD_CENTS = Object.freeze([
-  2_000,
-  5_000,
-  10_000,
+export const WORK_AMO_V6_ALLOWED_FACE_PROOFS = Object.freeze([
+  20_000,
+  50_000,
+  100_000,
 ]);
-export const WORK_AMO_V6_MAX_ATTESTATION_VALIDITY_BLOCKS =
-  WORK_USD_ORACLE_MAX_VALIDITY_BLOCKS;
 export const WORK_AMO_V6_MODELS = Object.freeze({
   amountModel: WORK_AMO_V6_AMOUNT_MODEL,
   bondTransitionModel: WORK_AMO_V6_BOND_TRANSITION_MODEL,
   stateOrderModel: WORK_AMO_V6_STATE_ORDER_MODEL,
   unitModel: WORK_AMO_V6_UNIT_MODEL,
-  unitUsdOracleModel: WORK_AMO_V6_UNIT_USD_ORACLE_MODEL,
   unitWorkOracleModel: WORK_AMO_V6_UNIT_WORK_ORACLE_MODEL,
 });
 export const WORK_AMO_V6_STATIC_AUTHORIZATION_FIELDS = Object.freeze([
@@ -69,7 +50,6 @@ export const WORK_AMO_V6_STATIC_AUTHORIZATION_FIELDS = Object.freeze([
   "stateOrderModel",
   "amountModel",
   "bondTransitionModel",
-  "unitUsdOracleModel",
   "unitWorkOracleModel",
   "tokenId",
   "ticker",
@@ -80,8 +60,7 @@ export const WORK_AMO_V6_STATIC_AUTHORIZATION_FIELDS = Object.freeze([
   "buyerAddress",
   "nonce",
   "expiresAt",
-  "unitFaceUsdCents",
-  "unitUsdAttestation",
+  "unitFaceProofs",
   "anchorType",
   "anchorVout",
   "anchorValueSats",
@@ -97,23 +76,8 @@ export const WORK_AMO_V6_FROZEN_TERM_FIELDS = Object.freeze([
   "stateOrderModel",
   "amountModel",
   "bondTransitionModel",
-  "unitUsdOracleModel",
   "unitWorkOracleModel",
-  "unitFaceUsd",
-  "unitFaceUsdCents",
-  "unitUsdAttestationVersion",
-  "unitUsdAttestationModel",
-  "unitUsdAttestationId",
-  "unitUsdDeclarationTxid",
-  "unitUsdOracleKeyId",
-  "unitUsdOraclePublicKey",
-  "unitUsdReferenceBlockHeight",
-  "unitUsdReferenceBlockHash",
-  "unitUsdValidFromHeight",
-  "unitUsdValidThroughHeight",
-  "unitUsdSourceSetSha256",
-  "unitUsdAttestationSignature",
-  "unitUsdPer100mProofsQ8",
+  "unitFaceProofs",
   "listingBlockHeight",
   "listingBlockHash",
   "listingBlockIndex",
@@ -129,8 +93,6 @@ export const WORK_AMO_V6_FROZEN_TERM_FIELDS = Object.freeze([
 
 const TXID_PATTERN = /^[0-9a-f]{64}$/u;
 const HASH_PATTERN = /^[0-9a-f]{64}$/u;
-const PUBLIC_KEY_PATTERN = /^[0-9a-f]{64}$/u;
-const SIGNATURE_PATTERN = /^[0-9a-f]{128}$/u;
 const HEX_PATTERN = /^(?:[0-9a-f]{2})+$/u;
 const UNSIGNED_INTEGER_PATTERN = /^(?:0|[1-9][0-9]*)$/u;
 const V6_DERIVED_AUTHORIZATION_FIELDS = Object.freeze([
@@ -140,14 +102,20 @@ const V6_DERIVED_AUTHORIZATION_FIELDS = Object.freeze([
   "priceSats",
   "unitAmountAtoms",
   "unitFaceUsd",
+  "unitFaceUsdCents",
   "unitMinimumPriceSats",
   "unitNetworkValueAfterQ8",
   "unitNetworkValueBeforeQ8",
   "unitPriceSats",
   "unitUsdPer100mProofsQ8",
+  "unitUsdAttestation",
+  "unitUsdOracleModel",
 ]);
 const V6_STATIC_AUTHORIZATION_FIELD_SET = new Set(
   WORK_AMO_V6_STATIC_AUTHORIZATION_FIELDS,
+);
+const V6_FROZEN_TERM_FIELD_SET = new Set(
+  WORK_AMO_V6_FROZEN_TERM_FIELDS,
 );
 
 function invalid(reasonCode, detail = {}) {
@@ -219,261 +187,14 @@ function samePosition(left, right) {
   );
 }
 
-function sameStringArray(left, right) {
-  return (
-    Array.isArray(left) &&
-    Array.isArray(right) &&
-    left.length === right.length &&
-    left.every((value, index) => value === right[index])
-  );
-}
-
 function authorizationModelsValid(authorization) {
   return Object.entries(WORK_AMO_V6_MODELS).every(
     ([field, expected]) => authorization?.[field] === expected,
   );
 }
 
-function normalizeOraclePolicy(value) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return null;
-  }
-  const declarationTxid = normalizedTxid(value.declarationTxid);
-  const oracleKeyId = normalizedLowerText(value.oracleKeyId);
-  const publicKey = normalizedLowerText(value.publicKey);
-  const model = String(value.model ?? "").trim();
-  const freshnessWindowMs = canonicalSafeInteger(
-    value.freshnessWindowMs,
-    { positive: true },
-  );
-  const maxSpreadBps = canonicalSafeInteger(value.maxSpreadBps, {
-    positive: true,
-  });
-  const minimumSources = canonicalSafeInteger(value.minimumSources, {
-    positive: true,
-  });
-  const maxValidityBlocks = canonicalSafeInteger(
-    value.maxValidityBlocks ??
-      WORK_AMO_V6_MAX_ATTESTATION_VALIDITY_BLOCKS,
-    { positive: true },
-  );
-  const allowedSourceIds = Array.isArray(value.allowedSourceIds)
-    ? value.allowedSourceIds.map((sourceId) =>
-        String(sourceId ?? "").trim(),
-      )
-    : [];
-  if (
-    !declarationTxid ||
-    !HASH_PATTERN.test(oracleKeyId) ||
-    !PUBLIC_KEY_PATTERN.test(publicKey) ||
-    !model ||
-    freshnessWindowMs === null ||
-    maxSpreadBps === null ||
-    minimumSources === null ||
-    maxValidityBlocks === null ||
-    model !== WORK_USD_ATTESTATION_MODEL ||
-    freshnessWindowMs !== WORK_USD_ORACLE_FRESHNESS_WINDOW_MS ||
-    maxSpreadBps !== WORK_USD_ORACLE_MAX_SPREAD_BPS ||
-    minimumSources !== WORK_USD_ORACLE_MINIMUM_SOURCES ||
-    maxValidityBlocks !== WORK_USD_ORACLE_MAX_VALIDITY_BLOCKS ||
-    allowedSourceIds.length < minimumSources ||
-    allowedSourceIds.some((sourceId) => !sourceId) ||
-    new Set(allowedSourceIds).size !== allowedSourceIds.length ||
-    !sameStringArray(
-      allowedSourceIds,
-      allowedSourceIds.slice().sort(),
-    ) ||
-    !sameStringArray(allowedSourceIds, WORK_USD_ORACLE_SOURCE_IDS)
-  ) {
-    return null;
-  }
-  return {
-    allowedSourceIds,
-    declarationTxid,
-    freshnessWindowMs,
-    maxSpreadBps,
-    maxValidityBlocks,
-    minimumSources,
-    model,
-    oracleKeyId,
-    publicKey,
-  };
-}
-
-function oracleReasonCode(error) {
-  const code = String(error?.code ?? "").trim();
-  return code
-    ? `work-amo-v6-${code.toLowerCase().replaceAll("_", "-")}`
-    : "work-amo-v6-attestation-invalid";
-}
-
-function normalizedVerifiedAttestation(result) {
-  const attestation = result?.attestation;
-  if (
-    result?.valid !== true ||
-    !attestation ||
-    typeof attestation !== "object" ||
-    Array.isArray(attestation)
-  ) {
-    return null;
-  }
-  const referenceBlockHeight = canonicalSafeInteger(
-    attestation.referenceBlockHeight,
-    { positive: true },
-  );
-  const validFromHeight = canonicalSafeInteger(
-    attestation.validFromHeight,
-    { positive: true },
-  );
-  const validThroughHeight = canonicalSafeInteger(
-    attestation.validThroughHeight,
-    { positive: true },
-  );
-  const usdPer100mProofsQ8 = canonicalUnsignedIntegerText(
-    attestation.usdPer100mProofsQ8,
-    { positive: true },
-  );
-  const normalized = {
-    ...attestation,
-    attestationId: normalizedLowerText(attestation.attestationId),
-    declarationTxid: normalizedTxid(attestation.declarationTxid),
-    model: String(attestation.model ?? "").trim(),
-    network: String(attestation.network ?? "").trim().toLowerCase(),
-    oracleKeyId: normalizedLowerText(attestation.oracleKeyId),
-    publicKey: normalizedLowerText(attestation.publicKey),
-    referenceBlockHash: normalizedTxid(
-      attestation.referenceBlockHash,
-    ),
-    referenceBlockHeight,
-    signature: normalizedLowerText(attestation.signature),
-    sourceSetSha256: normalizedLowerText(
-      attestation.sourceSetSha256,
-    ),
-    usdPer100mProofsQ8,
-    validFromHeight,
-    validThroughHeight,
-    version: String(attestation.version ?? "").trim(),
-  };
-  if (
-    normalized.version !== WORK_AMO_V6_INLINE_ATTESTATION_VERSION ||
-    normalized.network !== "livenet" ||
-    !normalized.declarationTxid ||
-    !HASH_PATTERN.test(normalized.oracleKeyId) ||
-    !PUBLIC_KEY_PATTERN.test(normalized.publicKey) ||
-    referenceBlockHeight === null ||
-    !normalized.referenceBlockHash ||
-    validFromHeight === null ||
-    validThroughHeight === null ||
-    !HASH_PATTERN.test(normalized.sourceSetSha256) ||
-    !HASH_PATTERN.test(normalized.attestationId) ||
-    !SIGNATURE_PATTERN.test(normalized.signature) ||
-    !usdPer100mProofsQ8
-  ) {
-    return null;
-  }
-  return normalized;
-}
-
-/**
- * Verifies the signed inline USD attestation and then independently binds its
- * anchor to canonical chain data. `canonicalBlockHashAtHeight` must read the
- * canonical block index, never a caller-supplied transaction projection.
- */
-export function validateWorkAmoV6InlineAttestation(
-  attestation,
-  {
-    canonicalBlockHashAtHeight,
-    listingPosition = null,
-    oraclePolicy,
-    verifyAttestation = verifyWorkUsdAttestation,
-  } = {},
-) {
-  const policy = normalizeOraclePolicy(oraclePolicy);
-  if (!policy) {
-    return invalid("work-amo-v6-oracle-policy-unavailable");
-  }
-  if (typeof verifyAttestation !== "function") {
-    return invalid("work-amo-v6-attestation-verifier-unavailable");
-  }
-  const listing = listingPosition
-    ? normalizeWorkAmoCanonicalPosition(listingPosition)
-    : null;
-  if (listingPosition && !listing) {
-    return invalid("work-amo-v6-listing-position-unavailable");
-  }
-  let verified;
-  try {
-    verified = verifyAttestation(attestation, {
-      allowedSourceIds: policy.allowedSourceIds,
-      ...(listing ? { blockHeight: listing.blockHeight } : {}),
-      expectedDeclarationTxid: policy.declarationTxid,
-      expectedFreshnessWindowMs: policy.freshnessWindowMs,
-      expectedMaxValidityBlocks: policy.maxValidityBlocks,
-      expectedMaxSpreadBps: policy.maxSpreadBps,
-      expectedMinimumSources: policy.minimumSources,
-      expectedModel: policy.model,
-      expectedNetwork: "livenet",
-      expectedOracleKeyId: policy.oracleKeyId,
-      expectedPublicKey: policy.publicKey,
-    });
-  } catch (error) {
-    return invalid(oracleReasonCode(error), {
-      oracleCode: String(error?.code ?? ""),
-    });
-  }
-  const normalized = normalizedVerifiedAttestation(verified);
-  if (!normalized) {
-    return invalid("work-amo-v6-attestation-result-invalid");
-  }
-  if (
-    normalized.validFromHeight !==
-      normalized.referenceBlockHeight + 1 ||
-    normalized.validThroughHeight < normalized.validFromHeight ||
-    normalized.validThroughHeight - normalized.referenceBlockHeight >
-      policy.maxValidityBlocks
-  ) {
-    return invalid("work-amo-v6-attestation-window-invalid");
-  }
-  if (
-    typeof canonicalBlockHashAtHeight !== "function"
-  ) {
-    return invalid("work-amo-v6-attestation-anchor-unavailable");
-  }
-  let canonicalHash;
-  try {
-    canonicalHash = normalizedTxid(
-      canonicalBlockHashAtHeight(normalized.referenceBlockHeight),
-    );
-  } catch {
-    return invalid("work-amo-v6-attestation-anchor-unavailable");
-  }
-  if (!canonicalHash) {
-    return invalid("work-amo-v6-attestation-anchor-unavailable");
-  }
-  if (canonicalHash !== normalized.referenceBlockHash) {
-    return invalid("work-amo-v6-attestation-anchor-noncanonical");
-  }
-  if (
-    listing &&
-    (
-      normalized.referenceBlockHeight >= listing.blockHeight ||
-      listing.blockHeight < normalized.validFromHeight ||
-      listing.blockHeight > normalized.validThroughHeight
-    )
-  ) {
-    return invalid("work-amo-v6-attestation-not-valid-at-listing");
-  }
-  return { attestation: normalized, oraclePolicy: policy, valid: true };
-}
-
 export function validateWorkAmoV6StaticAuthorization(
   authorization,
-  {
-    canonicalBlockHashAtHeight,
-    oraclePolicy,
-    requireCanonicalAnchor = true,
-    verifyAttestation = verifyWorkUsdAttestation,
-  } = {},
 ) {
   if (
     !authorization ||
@@ -489,12 +210,12 @@ export function validateWorkAmoV6StaticAuthorization(
   if (!authorizationModelsValid(authorization)) {
     return invalid("work-amo-v6-models-invalid");
   }
-  const unitFaceUsdCents = canonicalSafeInteger(
-    authorization.unitFaceUsdCents,
+  const unitFaceProofs = canonicalSafeInteger(
+    authorization.unitFaceProofs,
     { positive: true },
   );
   if (
-    !WORK_AMO_V6_ALLOWED_FACE_USD_CENTS.includes(unitFaceUsdCents)
+    !WORK_AMO_V6_ALLOWED_FACE_PROOFS.includes(unitFaceProofs)
   ) {
     return invalid("work-amo-v6-face-unit-invalid");
   }
@@ -563,58 +284,7 @@ export function validateWorkAmoV6StaticAuthorization(
   ) {
     return invalid("work-amo-v6-static-fields-invalid");
   }
-  let attestationValidation;
-  if (requireCanonicalAnchor) {
-    attestationValidation = validateWorkAmoV6InlineAttestation(
-      authorization.unitUsdAttestation,
-      {
-        canonicalBlockHashAtHeight,
-        oraclePolicy,
-        verifyAttestation,
-      },
-    );
-    if (!attestationValidation.valid) {
-      return attestationValidation;
-    }
-  } else {
-    const policy = normalizeOraclePolicy(oraclePolicy);
-    if (!policy) {
-      return invalid("work-amo-v6-oracle-policy-unavailable");
-    }
-    let verified;
-    try {
-      verified = verifyAttestation(
-        authorization.unitUsdAttestation,
-        {
-          allowedSourceIds: policy.allowedSourceIds,
-          expectedDeclarationTxid: policy.declarationTxid,
-          expectedFreshnessWindowMs: policy.freshnessWindowMs,
-          expectedMaxValidityBlocks: policy.maxValidityBlocks,
-          expectedMaxSpreadBps: policy.maxSpreadBps,
-          expectedMinimumSources: policy.minimumSources,
-          expectedModel: policy.model,
-          expectedNetwork: "livenet",
-          expectedOracleKeyId: policy.oracleKeyId,
-          expectedPublicKey: policy.publicKey,
-        },
-      );
-    } catch (error) {
-      return invalid(oracleReasonCode(error), {
-        oracleCode: String(error?.code ?? ""),
-      });
-    }
-    const attestation = normalizedVerifiedAttestation(verified);
-    if (!attestation) {
-      return invalid("work-amo-v6-attestation-result-invalid");
-    }
-    attestationValidation = {
-      attestation,
-      oraclePolicy: policy,
-      valid: true,
-    };
-  }
   return {
-    attestation: attestationValidation.attestation,
     authorization: {
       ...WORK_AMO_V6_MODELS,
       anchorScriptPubKey,
@@ -631,8 +301,7 @@ export function validateWorkAmoV6StaticAuthorization(
       sellerPublicKey,
       ticker: "WORK",
       tokenId: WORK_TOKEN_ID,
-      unitFaceUsdCents,
-      unitUsdAttestation: attestationValidation.attestation,
+      unitFaceProofs,
       version: WORK_AMO_V6_AUTH_VERSION,
       ...(anchorTxid ? { anchorTxid } : {}),
       ...(anchorSignature ? { anchorSignature } : {}),
@@ -643,44 +312,30 @@ export function validateWorkAmoV6StaticAuthorization(
 
 export function workAmoV6UnitTerms({
   networkValueBeforeQ8,
-  unitFaceUsdCents,
-  usdPer100mProofsQ8,
+  unitFaceProofs,
 } = {}) {
-  const face = canonicalSafeInteger(unitFaceUsdCents, {
+  const face = canonicalSafeInteger(unitFaceProofs, {
     positive: true,
   });
-  const priceQuote = positiveBigInt(usdPer100mProofsQ8);
   const networkValue = positiveBigInt(networkValueBeforeQ8);
-  if (!WORK_AMO_V6_ALLOWED_FACE_USD_CENTS.includes(face)) {
+  if (!WORK_AMO_V6_ALLOWED_FACE_PROOFS.includes(face)) {
     return invalid("work-amo-v6-face-unit-invalid");
-  }
-  if (priceQuote === null) {
-    return invalid("work-amo-v6-usd-quote-value-invalid");
   }
   if (networkValue === null) {
     return invalid("work-amo-v6-network-value-before-invalid");
   }
-  const targetNumerator =
-    BigInt(face) *
-    WORK_AMO_V5_PROOFS_PER_QUOTE_UNIT *
-    WORK_AMO_V5_USD_QUOTE_Q8_SCALE;
-  const targetDenominator = 100n * priceQuote;
-  const unitPriceSats = workAmoCeilDiv(
-    targetNumerator,
-    targetDenominator,
-  );
+  const denominator =
+    WORK_AMO_V5_MAX_SUPPLY *
+    WORK_AMO_V5_ATOMS_PER_WORK *
+    WORK_AMO_V5_NETWORK_VALUE_Q8_SCALE;
+  const unitPriceSats = BigInt(face);
   const unitAmountAtoms = workAmoFloorDiv(
-    targetNumerator *
-      WORK_AMO_V5_MAX_SUPPLY *
-      WORK_AMO_V5_ATOMS_PER_WORK *
-      WORK_AMO_V5_NETWORK_VALUE_Q8_SCALE,
-    targetDenominator * networkValue,
+    unitPriceSats * denominator,
+    networkValue,
   );
   const unitMinimumPriceSats = workAmoCeilDiv(
     unitAmountAtoms * networkValue,
-    WORK_AMO_V5_MAX_SUPPLY *
-      WORK_AMO_V5_ATOMS_PER_WORK *
-      WORK_AMO_V5_NETWORK_VALUE_Q8_SCALE,
+    denominator,
   );
   if (
     unitPriceSats <= 0n ||
@@ -689,12 +344,16 @@ export function workAmoV6UnitTerms({
   ) {
     return invalid("work-amo-v6-unit-result-nonpositive");
   }
+  if (
+    unitAmountAtoms >
+    WORK_AMO_V5_MAX_SUPPLY * WORK_AMO_V5_ATOMS_PER_WORK
+  ) {
+    return invalid("work-amo-v6-unit-amount-exceeds-supply");
+  }
   if (unitPriceSats < unitMinimumPriceSats) {
     return invalid("work-amo-v6-unit-price-below-minimum");
   }
   return {
-    targetDenominator: targetDenominator.toString(),
-    targetNumerator: targetNumerator.toString(),
     unitAmountAtoms: unitAmountAtoms.toString(),
     unitMinimumPriceSats: unitMinimumPriceSats.toString(),
     unitPriceSats: unitPriceSats.toString(),
@@ -750,13 +409,10 @@ export function deriveWorkAmoV6FrozenTerms(
   authorization,
   {
     activationHeight,
-    canonicalBlockHashAtHeight,
     listingBondContributionQ8,
     listingPosition,
     networkValueBeforeQ8,
-    oraclePolicy,
     spendableAmountAtoms,
-    verifyAttestation = verifyWorkUsdAttestation,
   } = {},
 ) {
   const listing = normalizeWorkAmoCanonicalPosition(listingPosition);
@@ -775,28 +431,9 @@ export function deriveWorkAmoV6FrozenTerms(
   }
   const staticValidation = validateWorkAmoV6StaticAuthorization(
     authorization,
-    {
-      canonicalBlockHashAtHeight,
-      oraclePolicy,
-      requireCanonicalAnchor: true,
-      verifyAttestation,
-    },
   );
   if (!staticValidation.valid) {
     return staticValidation;
-  }
-  const attestationValidation =
-    validateWorkAmoV6InlineAttestation(
-      staticValidation.authorization.unitUsdAttestation,
-      {
-        canonicalBlockHashAtHeight,
-        listingPosition: listing,
-        oraclePolicy,
-        verifyAttestation,
-      },
-    );
-  if (!attestationValidation.valid) {
-    return attestationValidation;
   }
   const networkValue = positiveBigInt(networkValueBeforeQ8);
   if (networkValue === null) {
@@ -812,10 +449,8 @@ export function deriveWorkAmoV6FrozenTerms(
   }
   const unit = workAmoV6UnitTerms({
     networkValueBeforeQ8: networkValue.toString(),
-    unitFaceUsdCents:
-      staticValidation.authorization.unitFaceUsdCents,
-    usdPer100mProofsQ8:
-      attestationValidation.attestation.usdPer100mProofsQ8,
+    unitFaceProofs:
+      staticValidation.authorization.unitFaceProofs,
   });
   if (!unit.valid) {
     return unit;
@@ -830,7 +465,6 @@ export function deriveWorkAmoV6FrozenTerms(
       spendableAmountAtoms: spendable.toString(),
     });
   }
-  const attestation = attestationValidation.attestation;
   const networkAfter = networkValue + bondContribution;
   return {
     frozenTerms: {
@@ -844,25 +478,10 @@ export function deriveWorkAmoV6FrozenTerms(
       listingProtocolVout: listing.protocolVout,
       listingRecordOrdinal: listing.recordOrdinal,
       unitAmountAtoms: unit.unitAmountAtoms,
-      unitFaceUsd:
-        staticValidation.authorization.unitFaceUsdCents / 100,
-      unitFaceUsdCents:
-        staticValidation.authorization.unitFaceUsdCents,
+      unitFaceProofs:
+        staticValidation.authorization.unitFaceProofs,
       unitMinimumPriceSats: unit.unitMinimumPriceSats,
       unitPriceSats: unit.unitPriceSats,
-      unitUsdAttestationId: attestation.attestationId,
-      unitUsdAttestationModel: attestation.model,
-      unitUsdAttestationSignature: attestation.signature,
-      unitUsdAttestationVersion: attestation.version,
-      unitUsdDeclarationTxid: attestation.declarationTxid,
-      unitUsdOracleKeyId: attestation.oracleKeyId,
-      unitUsdOraclePublicKey: attestation.publicKey,
-      unitUsdPer100mProofsQ8: attestation.usdPer100mProofsQ8,
-      unitUsdReferenceBlockHash: attestation.referenceBlockHash,
-      unitUsdReferenceBlockHeight: attestation.referenceBlockHeight,
-      unitUsdSourceSetSha256: attestation.sourceSetSha256,
-      unitUsdValidFromHeight: attestation.validFromHeight,
-      unitUsdValidThroughHeight: attestation.validThroughHeight,
       version: WORK_AMO_V6_AUTH_VERSION,
     },
     valid: true,
@@ -874,16 +493,16 @@ function normalizeWorkAmoV6FrozenTerms(value) {
     !value ||
     typeof value !== "object" ||
     Array.isArray(value) ||
+    Object.getPrototypeOf(value) !== Object.prototype ||
+    Object.keys(value).some(
+      (field) => !V6_FROZEN_TERM_FIELD_SET.has(field),
+    ) ||
     value.version !== WORK_AMO_V6_AUTH_VERSION ||
     !authorizationModelsValid(value)
   ) {
     return null;
   }
-  const unitFaceUsdCents = canonicalSafeInteger(
-    value.unitFaceUsdCents,
-    { positive: true },
-  );
-  const unitFaceUsd = canonicalSafeInteger(value.unitFaceUsd, {
+  const unitFaceProofs = canonicalSafeInteger(value.unitFaceProofs, {
     positive: true,
   });
   const listingPosition = normalizeWorkAmoCanonicalPosition({
@@ -893,18 +512,6 @@ function normalizeWorkAmoV6FrozenTerms(value) {
     protocolVout: value.listingProtocolVout,
     recordOrdinal: value.listingRecordOrdinal,
   });
-  const referenceBlockHeight = canonicalSafeInteger(
-    value.unitUsdReferenceBlockHeight,
-    { positive: true },
-  );
-  const validFromHeight = canonicalSafeInteger(
-    value.unitUsdValidFromHeight,
-    { positive: true },
-  );
-  const validThroughHeight = canonicalSafeInteger(
-    value.unitUsdValidThroughHeight,
-    { positive: true },
-  );
   const networkBefore = positiveBigInt(
     value.listingNetworkValueBeforeQ8,
   );
@@ -915,65 +522,22 @@ function normalizeWorkAmoV6FrozenTerms(value) {
   const amount = positiveBigInt(value.unitAmountAtoms);
   const price = positiveBigInt(value.unitPriceSats);
   const minimum = positiveBigInt(value.unitMinimumPriceSats);
-  const quote = positiveBigInt(value.unitUsdPer100mProofsQ8);
-  const referenceBlockHash = normalizedTxid(
-    value.unitUsdReferenceBlockHash,
-  );
-  const declarationTxid = normalizedTxid(
-    value.unitUsdDeclarationTxid,
-  );
-  const oracleKeyId = normalizedLowerText(value.unitUsdOracleKeyId);
-  const publicKey = normalizedLowerText(
-    value.unitUsdOraclePublicKey,
-  );
-  const sourceSetSha256 = normalizedLowerText(
-    value.unitUsdSourceSetSha256,
-  );
-  const attestationId = normalizedLowerText(
-    value.unitUsdAttestationId,
-  );
-  const signature = normalizedLowerText(
-    value.unitUsdAttestationSignature,
-  );
   if (
-    !WORK_AMO_V6_ALLOWED_FACE_USD_CENTS.includes(
-      unitFaceUsdCents,
-    ) ||
-    unitFaceUsd !== unitFaceUsdCents / 100 ||
+    !WORK_AMO_V6_ALLOWED_FACE_PROOFS.includes(unitFaceProofs) ||
     !listingPosition ||
-    referenceBlockHeight === null ||
-    validFromHeight !== referenceBlockHeight + 1 ||
-    validThroughHeight === null ||
-    validThroughHeight < validFromHeight ||
-    validThroughHeight - referenceBlockHeight >
-      WORK_AMO_V6_MAX_ATTESTATION_VALIDITY_BLOCKS ||
-    listingPosition.blockHeight < validFromHeight ||
-    listingPosition.blockHeight > validThroughHeight ||
-    !referenceBlockHash ||
-    !declarationTxid ||
-    !HASH_PATTERN.test(oracleKeyId) ||
-    !PUBLIC_KEY_PATTERN.test(publicKey) ||
-    !HASH_PATTERN.test(sourceSetSha256) ||
-    !HASH_PATTERN.test(attestationId) ||
-    !SIGNATURE_PATTERN.test(signature) ||
-    value.unitUsdAttestationVersion !==
-      WORK_AMO_V6_INLINE_ATTESTATION_VERSION ||
-    !String(value.unitUsdAttestationModel ?? "").trim() ||
     networkBefore === null ||
     networkAfter === null ||
     bond === null ||
     amount === null ||
     price === null ||
     minimum === null ||
-    quote === null ||
     networkAfter !== networkBefore + bond
   ) {
     return null;
   }
   const unit = workAmoV6UnitTerms({
     networkValueBeforeQ8: networkBefore.toString(),
-    unitFaceUsdCents,
-    usdPer100mProofsQ8: quote.toString(),
+    unitFaceProofs,
   });
   if (
     !unit.valid ||
@@ -994,26 +558,9 @@ function normalizeWorkAmoV6FrozenTerms(value) {
     listingProtocolVout: listingPosition.protocolVout,
     listingRecordOrdinal: listingPosition.recordOrdinal,
     unitAmountAtoms: amount.toString(),
-    unitFaceUsd,
-    unitFaceUsdCents,
+    unitFaceProofs,
     unitMinimumPriceSats: minimum.toString(),
     unitPriceSats: price.toString(),
-    unitUsdAttestationId: attestationId,
-    unitUsdAttestationModel: String(
-      value.unitUsdAttestationModel,
-    ).trim(),
-    unitUsdAttestationSignature: signature,
-    unitUsdAttestationVersion:
-      WORK_AMO_V6_INLINE_ATTESTATION_VERSION,
-    unitUsdDeclarationTxid: declarationTxid,
-    unitUsdOracleKeyId: oracleKeyId,
-    unitUsdOraclePublicKey: publicKey,
-    unitUsdPer100mProofsQ8: quote.toString(),
-    unitUsdReferenceBlockHash: referenceBlockHash,
-    unitUsdReferenceBlockHeight: referenceBlockHeight,
-    unitUsdSourceSetSha256: sourceSetSha256,
-    unitUsdValidFromHeight: validFromHeight,
-    unitUsdValidThroughHeight: validThroughHeight,
     version: WORK_AMO_V6_AUTH_VERSION,
   };
 }
@@ -1075,50 +622,12 @@ export function validateWorkAmoV6FrozenTerms(
     if (
       authorization.version !== WORK_AMO_V6_AUTH_VERSION ||
       !authorizationModelsValid(authorization) ||
-      canonicalSafeInteger(authorization.unitFaceUsdCents, {
+      canonicalSafeInteger(authorization.unitFaceProofs, {
         positive: true,
-      }) !== normalized.unitFaceUsdCents
+      }) !== normalized.unitFaceProofs
     ) {
       return invalid(
         "work-amo-v6-frozen-authorization-mismatch",
-      );
-    }
-    const attestation = authorization.unitUsdAttestation;
-    if (
-      String(attestation?.version ?? "").trim() !==
-        normalized.unitUsdAttestationVersion ||
-      String(attestation?.model ?? "").trim() !==
-        normalized.unitUsdAttestationModel ||
-      normalizedLowerText(attestation?.attestationId) !==
-        normalized.unitUsdAttestationId ||
-      normalizedLowerText(attestation?.oracleKeyId) !==
-        normalized.unitUsdOracleKeyId ||
-      normalizedLowerText(attestation?.publicKey) !==
-        normalized.unitUsdOraclePublicKey ||
-      canonicalSafeInteger(attestation?.referenceBlockHeight, {
-        positive: true,
-      }) !== normalized.unitUsdReferenceBlockHeight ||
-      normalizedTxid(attestation?.referenceBlockHash) !==
-        normalized.unitUsdReferenceBlockHash ||
-      canonicalSafeInteger(attestation?.validFromHeight, {
-        positive: true,
-      }) !== normalized.unitUsdValidFromHeight ||
-      canonicalSafeInteger(attestation?.validThroughHeight, {
-        positive: true,
-      }) !== normalized.unitUsdValidThroughHeight ||
-      normalizedLowerText(attestation?.sourceSetSha256) !==
-        normalized.unitUsdSourceSetSha256 ||
-      canonicalUnsignedIntegerText(
-        attestation?.usdPer100mProofsQ8,
-        { positive: true },
-      ) !== normalized.unitUsdPer100mProofsQ8 ||
-      normalizedLowerText(attestation?.signature) !==
-        normalized.unitUsdAttestationSignature ||
-      normalizedTxid(attestation?.declarationTxid) !==
-        normalized.unitUsdDeclarationTxid
-    ) {
-      return invalid(
-        "work-amo-v6-frozen-attestation-mismatch",
       );
     }
   }
@@ -1228,7 +737,7 @@ export function validateWorkAmoV6LegacyListingReference(
 
 /**
  * Settlements validate only the listing's already-frozen canonical terms.
- * They never select or compare a current USD quote.
+ * They never select or compare a current network-value estimate.
  */
 export function validateWorkAmoV6SealOrBuyTerms({
   actionAuthorization = null,
@@ -1389,7 +898,6 @@ function normalizeExpectedDeclaration(value) {
     value.minimumPaymentSats,
     { positive: true },
   );
-  const oraclePolicy = normalizeOraclePolicy(value.oraclePolicy);
   if (
     !txid ||
     !blockHash ||
@@ -1403,9 +911,7 @@ function normalizeExpectedDeclaration(value) {
     !HEX_PATTERN.test(authorityScriptPubKey) ||
     registryAddress !== WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS ||
     registryPaymentVout === null ||
-    minimumPaymentSats !== 546 ||
-    !oraclePolicy ||
-    oraclePolicy.declarationTxid !== txid
+    minimumPaymentSats !== 546
   ) {
     return null;
   }
@@ -1416,7 +922,6 @@ function normalizeExpectedDeclaration(value) {
     blockHeight,
     blockTransactionIndex,
     minimumPaymentSats,
-    oraclePolicy,
     payloadBytes,
     payloadSha256,
     protocolVout,
@@ -1471,7 +976,6 @@ export function validateWorkAmoV6DeclarationEvidence(
     activationHeight: expected.activationHeight,
     declaration: expected,
     model: WORK_AMO_V6_DECLARATION_EVIDENCE_MODEL,
-    oraclePolicy: expected.oraclePolicy,
     valid: true,
   };
 }
@@ -1513,7 +1017,6 @@ export function workAmoV6ActivationFromEvidence(
     confirmed: true,
     declaration: validation.declaration,
     evidenceComplete: true,
-    oraclePolicy: validation.oraclePolicy,
   };
 }
 
@@ -1521,7 +1024,6 @@ export function workAmoV6StatusFromEvidence({
   evidence,
   expectedDeclaration,
   indexedThroughBlock,
-  oracleReady = false,
   protocolWritesEnabled = false,
 } = {}) {
   const activation = workAmoV6ActivationFromEvidence(evidence, {
@@ -1531,21 +1033,17 @@ export function workAmoV6StatusFromEvidence({
   const ready = activation.active === true;
   const settlementWritesEnabled =
     ready && protocolWritesEnabled === true;
-  const listingWritesEnabled =
-    settlementWritesEnabled && oracleReady === true;
+  const listingWritesEnabled = settlementWritesEnabled;
   return {
     activation,
     listingWritesEnabled,
-    oracleReady: oracleReady === true,
     protocolWritesEnabled: settlementWritesEnabled,
     settlementWritesEnabled,
     reasonCode: listingWritesEnabled
       ? ""
       : activation.active !== true
         ? activation.reasonCode
-        : protocolWritesEnabled !== true
-          ? "work-amo-v6-writes-paused"
-          : "work-amo-v6-oracle-not-ready",
+        : "work-amo-v6-writes-paused",
     ready,
     version: WORK_AMO_V6_AUTH_VERSION,
   };
@@ -1554,11 +1052,9 @@ export function workAmoV6StatusFromEvidence({
 export function workAmoV6BroadcastDecision(
   actions,
   {
-    canonicalBlockHashAtHeight,
     legacyValidation = null,
     metadata = null,
     network = "livenet",
-    verifyAttestation = verifyWorkUsdAttestation,
   } = {},
 ) {
   const candidates = Array.isArray(actions) ? actions : [];
@@ -1582,10 +1078,7 @@ export function workAmoV6BroadcastDecision(
       metadata?.activationHeight,
     { positive: true },
   );
-  const oraclePolicy =
-    metadata?.activation?.oraclePolicy ??
-    metadata?.oraclePolicy;
-  if (activationHeight === null || !normalizeOraclePolicy(oraclePolicy)) {
+  if (activationHeight === null) {
     return {
       allowed: false,
       code: "WORK_AMO_V6_EVIDENCE_NOT_READY",
@@ -1626,7 +1119,7 @@ export function workAmoV6BroadcastDecision(
           allowed: false,
           code: "WORK_AMO_V6_WRITES_PAUSED",
           reasonCode:
-            metadata?.reasonCode ?? "work-amo-v6-oracle-not-ready",
+            metadata?.reasonCode ?? "work-amo-v6-writes-paused",
           statusCode: 503,
         };
       }
@@ -1645,12 +1138,6 @@ export function workAmoV6BroadcastDecision(
       const staticValidation =
         validateWorkAmoV6StaticAuthorization(
           action.saleAuthorization,
-          {
-            canonicalBlockHashAtHeight,
-            oraclePolicy,
-            requireCanonicalAnchor: true,
-            verifyAttestation,
-          },
         );
       if (!staticValidation.valid) {
         return {
@@ -1659,41 +1146,6 @@ export function workAmoV6BroadcastDecision(
           reasonCode: staticValidation.reasonCode,
           statusCode: 400,
         };
-      }
-      if (action.expectedConfirmationHeight !== undefined) {
-        const expectedConfirmationHeight = canonicalSafeInteger(
-          action.expectedConfirmationHeight,
-          { positive: true },
-        );
-        const confirmationValidation =
-          expectedConfirmationHeight === null
-            ? invalid(
-                "work-amo-v6-expected-confirmation-height-invalid",
-              )
-            : validateWorkAmoV6InlineAttestation(
-                staticValidation.authorization
-                  .unitUsdAttestation,
-                {
-                  canonicalBlockHashAtHeight,
-                  listingPosition: {
-                    blockHash: "00".repeat(32),
-                    blockHeight: expectedConfirmationHeight,
-                    blockTransactionIndex: 0,
-                    protocolVout: 0,
-                    recordOrdinal: 0,
-                  },
-                  oraclePolicy,
-                  verifyAttestation,
-                },
-              );
-        if (!confirmationValidation.valid) {
-          return {
-            allowed: false,
-            code: "WORK_AMO_V6_ATTESTATION_NOT_CURRENT",
-            reasonCode: confirmationValidation.reasonCode,
-            statusCode: 400,
-          };
-        }
       }
       continue;
     }

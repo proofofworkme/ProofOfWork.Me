@@ -264,6 +264,64 @@ const WORK_FLOOR = {
     writesConfigured: true,
     writesEnabled: true,
   },
+  workAmoV6: {
+    activation: {
+      active: true,
+      activationHeight: 959_999,
+      canonical: true,
+      confirmed: true,
+      declaration: {
+        activationHeight: 959_999,
+        blockHash: HASH,
+        blockHeight: 959_998,
+        blockTransactionIndex: 0,
+        protocolVout: 0,
+        recordOrdinal: 0,
+        txid: HASH,
+      },
+      evidenceComplete: true,
+      reasonCode: "",
+    },
+    estimates: {
+      20000: {
+        estimateOnly: true,
+        unitAmountAtoms: "21",
+        unitFaceProofs: 20_000,
+        unitMinimumPriceSats: "19694",
+        unitNetworkValueBeforeQ8: NETWORK_VALUE_Q8,
+        unitPriceSats: "20000",
+      },
+      50000: {
+        estimateOnly: true,
+        unitAmountAtoms: "53",
+        unitFaceProofs: 50_000,
+        unitMinimumPriceSats: "49704",
+        unitNetworkValueBeforeQ8: NETWORK_VALUE_Q8,
+        unitPriceSats: "50000",
+      },
+      100000: {
+        estimateOnly: true,
+        unitAmountAtoms: "106",
+        unitFaceProofs: 100_000,
+        unitMinimumPriceSats: "99407",
+        unitNetworkValueBeforeQ8: NETWORK_VALUE_Q8,
+        unitPriceSats: "100000",
+      },
+    },
+    indexReady: true,
+    listingWritesEnabled: true,
+    migrationReady: true,
+    networkValueBeforeQ8: NETWORK_VALUE_Q8,
+    pinsConfigured: true,
+    protocolWritesEnabled: true,
+    ready: true,
+    reasonCode: "",
+    settlementWritesEnabled: true,
+    tipHash: HASH,
+    tipHeight: 960_000,
+    version: "pwt-sale-v6",
+    writesConfigured: true,
+  },
   workNetworkValueAccountingModel: WORK_ACCOUNTING_MODEL,
 };
 
@@ -640,6 +698,16 @@ async function assertMarketplaceGeometry(page, mode, width) {
     .getByRole("heading", { exact: true, name: panelHeading })
     .locator("xpath=ancestor::section[1]");
   await expect(panel, `${label} panel did not render`).toBeVisible();
+  if (mode === "AMO") {
+    await expect(
+      panel,
+      `${label} must describe the proof-native V6 faces`,
+    ).toContainText("20,000, 50,000, or 100,000-proof face");
+    await expect(
+      panel,
+      `${label} must not describe the retired USD attestor`,
+    ).not.toContainText("signed multi-source USD");
+  }
 
   const [tabsBox, panelBox] = await Promise.all([
     tabs.boundingBox(),
