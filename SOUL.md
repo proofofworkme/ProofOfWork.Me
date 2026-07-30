@@ -84,16 +84,19 @@ and frozen before its own bond contribution is applied. AMO remains
 fail-closed until its canonical USD quote chain, exact positions, replay, and
 independent write gate are ready.
 
-WORK AMO Unit Protocol V6 is the staged proof-native corrective protocol. A
-seller chooses only 20,000, 50,000, or 100,000 proofs. At the listing's exact
-confirmed canonical position, the Computer derives the WORK amount from the
-network value immediately before that record, freezes the result, and then
-applies the listing's bond contribution. Seal and purchase never reprice a
-confirmed listing. V6 has no USD consensus input, quote, attestation, key,
-source quorum, or validity window; USD is display-only. It remains
-declaration-gated and write-disabled until exact declaration evidence,
-migration, replay parity, and exact-tip readiness all agree. Valid V4/V5
-listings confirmed before activation keep their frozen settlement rights.
+WORK AMO Unit Protocol V6 is the proof-native corrective protocol, anchored by
+declaration transaction
+`975fd82aa84995e014b240618ee1a1254d0a735e6e1241372d0bed0a0d9f0799`
+and active from height 960219. A seller chooses only 20,000, 50,000, or
+100,000 proofs. At the listing's exact confirmed canonical position, the
+Computer derives the WORK amount from the network value immediately before
+that record, freezes the result, and then applies the listing's bond
+contribution. Seal and purchase never reprice a confirmed listing. V6 has no
+USD consensus input, quote, attestation, key, source quorum, or validity
+window; USD is display-only. Production admission remains independently
+fail-closed until exact declaration evidence, migration, replay parity,
+exact-tip readiness and the write gate all agree. Valid V4/V5 listings
+confirmed before activation keep their frozen settlement rights.
 
 ## Launch Memory
 
@@ -159,6 +162,7 @@ The archive captured a live Phase 1 ignition, not a polished brand campaign.
 - 2026-07-23: Repository hygiene becomes a mandatory handoff contract for every approved update and every authored commit. Agents review `SOUL.md` and canonical docs semantically, classify tracked notes, clear only allowlisted rebuildable local state, verify generated artifacts and relative links, inspect the final diff, and attest the result in commit trailers. A server-created merge may inherit reviewed parent attestations only when its tree is the exact mechanical Git merge result. Old history, ledgers, refunds, incident evidence, and tx-backed records are not stale merely because they are old.
 - 2026-07-23: Two community reports harden WORK liveness. Fractional invalid-event records keep their exact atoms and paid-cost audit trail; WORK marketplace V4 uses a recent quote plus the independent confirmation H-1 floor, with V3 sale tickets preserved as recoverable relics. Wallet sends prefer separate confirmed curated funding outputs and expose a local self-send lane-preparation tool, avoiding accidental serialization through one unconfirmed change chain while continuing to reserve marketplace anchors.
 - 2026-07-26: Marketplace becomes AMO, the Autonomous Money Organization, with `amo.proofofwork.me` canonical and the former marketplace hostname retained as a compatibility entry. The confirmed WORK AMO Unit Protocol V2 declaration makes `$20`, `$50`, and `$100` the only new governed WORK faces. Listing amount and proof price do not exist canonically while pending; exact block/transaction/output/record order derives and freezes them at confirmation. Later bonds, floor moves, and USD quotes cannot invalidate or reprice a valid confirmed listing, and seals and buys reference those immutable terms. Raw Core replay owns outputs transaction-wide and commits economic, WORK, generic-credit, and PowID closing state from block to block; invalid records remain visible but mutate nothing. Quote freshness gates new listings only, never settlement of already-confirmed frozen terms.
+- 2026-07-30: WORK AMO V6 moves pricing fully into proofs. Declaration tx `975fd82aa84995e014b240618ee1a1254d0a735e6e1241372d0bed0a0d9f0799` confirms the 20,000, 50,000, and 100,000-proof faces and activates `pwt-sale-v6` from height 960219. The exact raw `pwm1:m` declaration carrier remains independently verifiable even when its transaction also contains subject/reply mail parts and a sibling WORK transfer. Complete block, transaction, output, and record order derives each listing's exact WORK atoms from the network value immediately before that record; confirmation freezes settlement forever, and USD remains display-only.
 
 The emotional shape is a breakthrough moment: years of ProofOfWork/app experiments meeting modern agents and becoming legible all at once.
 

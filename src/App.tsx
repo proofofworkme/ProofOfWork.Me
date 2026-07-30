@@ -42838,8 +42838,9 @@ function TokenMarketplacePanel({
                 <p>
                   These WORK listings were disabled at activation height
                   959062. They are immutable history and cannot be sealed or
-                  purchased. Sellers may create new $20, $50, or $100 AMO
-                  units under the confirmed-position V5 protocol.
+                  purchased. To create a new AMO unit, choose a 20,000,
+                  50,000, or 100,000-proof face. Confirmation derives and
+                  freezes the exact WORK amount.
                 </p>
               </div>
             </div>

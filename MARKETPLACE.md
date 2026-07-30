@@ -552,9 +552,9 @@ other invalid event.
 ## Staged WORK AMO V6 Proof-Native Unit Protocol (`pwt-sale-v6`)
 
 V6 makes proofs the only AMO pricing unit. It is declaration-gated and does
-not activate merely because code is deployed. Until the exact V6 declaration
-confirms and activates, V5 above remains the governed listing protocol and the
-V6 write gate stays off.
+not activate merely because code is deployed. V5 above governs only before the
+V6 activation height; the independent V6 production write gate remains off
+until declaration evidence, migration, replay and exact-tip readiness pass.
 
 A seller chooses exactly one fixed proof face:
 
@@ -574,6 +574,18 @@ Production separately verifies and pins the declaration transaction id, block
 height/hash/index, exact memo hash/byte length, protocol output, record ordinal,
 registry-payment output, authority input-zero script and registry payment.
 Partial, pending, noncanonical or divergent evidence fails closed.
+
+The canonical V6 declaration is transaction
+`975fd82aa84995e014b240618ee1a1254d0a735e6e1241372d0bed0a0d9f0799`.
+It confirmed at height `960218` in block
+`00000000000000000001ac35a5b7e43c782297fcb9cde0fb458fbd5451ad55df`
+at zero-based transaction index `102`, so the protocol activation height is
+`960219`. The exact wrapped declaration carrier is output `3`, record ordinal
+`0`, 3,350 bytes, SHA-256
+`b43daeea38fcacaf6afa6a48d3d0fde631497a4af9f3bb137fc07975d18bbe01`;
+the distinct 546-proof registry payment is output `4`. Production admission
+remains independently fail-closed until the six-confirmation migration,
+activation-range replay, exact-tip parity and explicit write gate all pass.
 
 The declaration position is the exact raw `pwm1:m` carrier output and its
 within-output record ordinal, not the canonical mailbox aggregate position.
@@ -647,7 +659,7 @@ after later bonds and market activity change network value.
 
 V6 keeps `canonical-work-amo-full-position-block-sequencer-v2` and uses
 `canonical-work-amo-proof-unit-v1`. Deployment remains fail-closed with
-`WORK_AMO_V6_WRITES_ENABLED=0` through the pre-declaration release. Exact
+`WORK_AMO_V6_WRITES_ENABLED=0` through the initial staged release. Exact
 declaration evidence, immutable migration marker, canonical replay parity,
 exact-tip index readiness and the explicit write gate must all be independently
 proved before a new listing or settlement is admitted.

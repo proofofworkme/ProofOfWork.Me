@@ -1626,6 +1626,10 @@ expect(
     /<span>V4 Relic<\/span>/.test(app) &&
     /<span>Marketplace V1 Relic<\/span>/.test(app) &&
     /\? "V4 Relic Sale Tickets"\s*:\s*"AMO Units"/.test(app) &&
+    /These WORK listings were disabled at activation height[\s\S]*choose a 20,000,[\s\S]*50,000, or 100,000-proof face[\s\S]*freezes the exact WORK amount/.test(
+      app,
+    ) &&
+    !/Sellers may create new \$20, \$50, or \$100 AMO/.test(app) &&
     /<h3>WORK AMO State<\/h3>[\s\S]*New 20,000, 50,000, and 100,000-proof intents commit only[\s\S]*Confirmation order derives the exact WORK/.test(
       app,
     ),
