@@ -4831,11 +4831,233 @@ check("current ID reads exclude dropped registration transactions", async () => 
   );
   assert.equal(dropped.length, 0);
   assert.deepEqual(Array.from(calls[1].params), ["livenet", "dropped-name"]);
+  assert.match(
+    calls[0].sql,
+    /t\.block_hash AS registration_block_hash/u,
+  );
+  assert.match(
+    calls[0].sql,
+    /e\.block_height AS registration_block_height[\s\S]*candidate_event\.\*[\s\S]*COUNT\(\*\) OVER \(\) AS registration_event_match_count/u,
+  );
+  assert.match(
+    calls[0].sql,
+    /candidate_event\.protocol = 'pwid1'[\s\S]*candidate_event\.kind = 'id-register'[\s\S]*candidate_event\.status = 'confirmed'[\s\S]*candidate_event\.valid = true[\s\S]*lower\(COALESCE\(candidate_event\.payload->>'id', ''\)\) = r\.id_lower[\s\S]*\) e/u,
+  );
+  assert.match(
+    calls[0].sql,
+    /registration_block\.block_hash = t\.block_hash[\s\S]*registration_block\.height = t\.block_height[\s\S]*registration_block\.canonical = true/u,
+  );
   assert.match(calls[0].sql, /e\.payload->>'blockIndex'/u);
-  assert.match(calls[0].sql, /registration_event\.registration_event_id DESC/u);
+  assert.match(
+    calls[0].sql,
+    /registration_event\.registration_block_index DESC NULLS LAST,[\s\S]*registration_event\.registration_protocol_vout DESC NULLS LAST,[\s\S]*registration_event\.registration_record_ordinal DESC NULLS LAST,[\s\S]*registration_event\.registration_event_id DESC NULLS LAST/u,
+  );
   assert.match(
     calls[0].sql,
     /COALESCE\(r\.registered_height, t\.block_height\) DESC/u,
+  );
+});
+
+check("post-AMO-V5 ID registrations require and expose one exact canonical position", () => {
+  const confirmedIdRecordFromRow = isolatedFunction(
+    READER_PATH,
+    "confirmedIdRecordFromRow",
+    {
+      ID_REGISTRATION_PRICE_SATS: 1_000,
+      normalizedLowerText: (value) =>
+        String(value ?? "").trim().toLowerCase(),
+    },
+  );
+  const blockHeight = 960_117;
+  const registrationTxid =
+    "a1a58faef3a6ece598a5efb34545ee098cc09a2739cd68d458eafc6bc1e1f9dc";
+  const blockHash =
+    "000000000000000000011609b5476622bc279ca9fedea8852cb62bcb65776df2";
+  const baseRow = {
+    confirmed_at: "2026-07-29T00:00:00.000Z",
+    display_id: "grahamnazareth",
+    id_lower: "grahamnazareth",
+    owner_address: "bc1owner",
+    receive_address: "bc1receiver",
+    registered_height: blockHeight,
+    registration_block_hash: blockHash,
+    registration_block_height: blockHeight,
+    registration_block_index: 2_174,
+    registration_event_id: 123,
+    registration_event_match_count: 1,
+    registration_event_status: "confirmed",
+    registration_protocol_vout: 1,
+    registration_record_ordinal: 0,
+    registration_transaction_block_height: blockHeight,
+    registration_transaction_block_index: 2_174,
+    registration_txid: registrationTxid,
+    updated_height: blockHeight,
+  };
+
+  const record = confirmedIdRecordFromRow(baseRow, "livenet");
+  assert.ok(record);
+  assert.deepEqual(
+    {
+      blockHash: record.blockHash,
+      blockHeight: record.blockHeight,
+      blockIndex: record.blockIndex,
+      id: record.id,
+      protocolVout: record.protocolVout,
+      recordOrdinal: record.recordOrdinal,
+      txid: record.txid,
+    },
+    {
+      blockHash,
+      blockHeight,
+      blockIndex: 2_174,
+      id: "grahamnazareth",
+      protocolVout: 1,
+      recordOrdinal: 0,
+      txid: registrationTxid,
+    },
+  );
+
+  const requiredIntegerFields = [
+    "registration_block_height",
+    "registration_block_index",
+    "registration_event_match_count",
+    "registration_protocol_vout",
+    "registration_record_ordinal",
+    "registration_transaction_block_height",
+    "registration_transaction_block_index",
+  ];
+  for (const field of requiredIntegerFields) {
+    for (const missingValue of [undefined, null, "", " "]) {
+      assert.equal(
+        confirmedIdRecordFromRow(
+          { ...baseRow, [field]: missingValue },
+          "livenet",
+        ),
+        null,
+        `${field}=${String(missingValue)} must not coerce to zero`,
+      );
+    }
+  }
+  assert.equal(
+    confirmedIdRecordFromRow(
+      { ...baseRow, registration_record_ordinal: false },
+      "livenet",
+    ),
+    null,
+  );
+  assert.equal(
+    confirmedIdRecordFromRow(
+      {
+        ...baseRow,
+        registration_protocol_vout: Number.MAX_SAFE_INTEGER + 1,
+      },
+      "livenet",
+    ),
+    null,
+  );
+  assert.equal(
+    confirmedIdRecordFromRow(
+      { ...baseRow, registration_block_hash: "not-a-block-hash" },
+      "livenet",
+    ),
+    null,
+  );
+  assert.equal(
+    confirmedIdRecordFromRow(
+      { ...baseRow, registration_event_match_count: 2 },
+      "livenet",
+    ),
+    null,
+  );
+  assert.equal(
+    confirmedIdRecordFromRow(
+      { ...baseRow, registration_event_status: "pending" },
+      "livenet",
+    ),
+    null,
+  );
+  assert.equal(
+    confirmedIdRecordFromRow(
+      {
+        ...baseRow,
+        registration_transaction_block_height: blockHeight + 1,
+      },
+      "livenet",
+    ),
+    null,
+  );
+  assert.equal(
+    confirmedIdRecordFromRow(
+      { ...baseRow, registration_transaction_block_index: 2_175 },
+      "livenet",
+    ),
+    null,
+  );
+});
+
+check("pre-AMO-V5 ID registrations retain the legacy payload block-index fallback", () => {
+  const confirmedIdRecordFromRow = isolatedFunction(
+    READER_PATH,
+    "confirmedIdRecordFromRow",
+    {
+      ID_REGISTRATION_PRICE_SATS: 1_000,
+      normalizedLowerText: (value) =>
+        String(value ?? "").trim().toLowerCase(),
+    },
+  );
+  const legacyHeight = WORK_AMO_V5_ACTIVATION_HEIGHT - 1;
+  const record = confirmedIdRecordFromRow(
+    {
+      confirmed_at: "2026-07-29T00:00:00.000Z",
+      display_id: "legacy-id",
+      id_lower: "legacy-id",
+      owner_address: "bc1legacy",
+      registered_height: legacyHeight,
+      registration_block_height: null,
+      registration_block_index: null,
+      registration_event_match_count: null,
+      registration_event_status: null,
+      registration_legacy_block_index: 23,
+      registration_protocol_vout: null,
+      registration_record_ordinal: null,
+      registration_transaction_block_height: null,
+      registration_transaction_block_index: null,
+      registration_txid: "c".repeat(64),
+    },
+    "livenet",
+  );
+
+  assert.ok(record);
+  assert.equal(record.blockHeight, legacyHeight);
+  assert.equal(record.blockIndex, 23);
+  assert.equal("protocolVout" in record, false);
+  assert.equal("recordOrdinal" in record, false);
+});
+
+check("current ID reads reject incomplete confirmed registration projections", async () => {
+  const confirmedIdRecordsFromCurrentTables = isolatedFunction(
+    READER_PATH,
+    "confirmedIdRecordsFromCurrentTables",
+    {
+      confirmedIdRecordFromRow: () => null,
+    },
+  );
+  const pool = {
+    async query() {
+      return {
+        rows: [
+          {
+            display_id: "incomplete-id",
+            registration_txid: "d".repeat(64),
+          },
+        ],
+      };
+    },
+  };
+
+  await assert.rejects(
+    confirmedIdRecordsFromCurrentTables(pool, "livenet"),
+    /Confirmed ID registration projection is incomplete or noncanonical/u,
   );
 });
 

@@ -336,6 +336,11 @@ const currentIdCoverageSource = sourceSliceBetween(
   /async function proveCurrentIdAbsence\(/,
   /function promiseOutcomeWithin\(/,
 );
+const confirmedIdRecordFromRowSource = sourceSliceBetween(
+  proofIndexReader,
+  /function confirmedIdRecordFromRow\(/,
+  /async function confirmedIdRecordsFromCurrentTables\(/,
+);
 const confirmedIdRecordsFromCurrentTablesSource = sourceSliceBetween(
   proofIndexReader,
   /async function confirmedIdRecordsFromCurrentTables\(/,
@@ -1800,8 +1805,41 @@ expectAll(
   confirmedIdRecordsFromCurrentTablesSource +
     currentIdRegistryEventStateSource,
   [
-    /e\.kind = 'id-register'[\s\S]*e\.status = 'confirmed'[\s\S]*e\.valid = true/,
+    /candidate_event\.kind = 'id-register'[\s\S]*candidate_event\.status = 'confirmed'[\s\S]*candidate_event\.valid = true[\s\S]*lower\(COALESCE\(candidate_event\.payload->>'id', ''\)\) = r\.id_lower[\s\S]*\) e/,
     /t\.status IN \('confirmed', 'pending'\)[\s\S]*t\.status = 'confirmed'[\s\S]*e\.status = 'confirmed'[\s\S]*t\.status = 'pending'[\s\S]*e\.status = 'pending'/,
+  ],
+);
+expectAll(
+  "post-AMO-V5 ID records bind one exact canonical registration position",
+  confirmedIdRecordFromRowSource +
+    confirmedIdRecordsFromCurrentTablesSource,
+  [
+    /typeof value === "string" && value\.trim\(\) === ""/,
+    /typeof value === "boolean"/,
+    /Number\.isSafeInteger\(parsed\) && parsed >= minimum/,
+    /unknownConfirmedBlockHeight = distinctBlockHeights\.size === 0/,
+    /height >= WORK_AMO_V5_ACTIVATION_HEIGHT/,
+    /registrationEventMatchCount !== 1/,
+    /eventBlockHeight !== transactionBlockHeight/,
+    /eventBlockIndex !== transactionBlockIndex/,
+    /\^\[0-9a-f\]\{64\}\$/,
+    /\.\.\.\(blockHash \? \{ blockHash \} : \{\}\)/,
+    /\.\.\.\(blockHeight !== null \? \{ blockHeight \} : \{\}\)/,
+    /\.\.\.\(blockIndex !== null \? \{ blockIndex \} : \{\}\)/,
+    /\.\.\.\(protocolVout !== null \? \{ protocolVout \} : \{\}\)/,
+    /\.\.\.\(recordOrdinal !== null \? \{ recordOrdinal \} : \{\}\)/,
+    /t\.block_hash AS registration_block_hash/,
+    /t\.block_height AS registration_transaction_block_height/,
+    /t\.block_index AS registration_transaction_block_index/,
+    /e\.block_height AS registration_block_height/,
+    /e\.block_index AS registration_block_index/,
+    /e\.op_return_vout AS registration_protocol_vout/,
+    /e\.record_ordinal AS registration_record_ordinal/,
+    /COUNT\(\*\) OVER \(\) AS registration_event_match_count/,
+    /candidate_event\.protocol = 'pwid1'[\s\S]*candidate_event\.kind = 'id-register'[\s\S]*candidate_event\.status = 'confirmed'[\s\S]*candidate_event\.valid = true[\s\S]*lower\(COALESCE\(candidate_event\.payload->>'id', ''\)\) = r\.id_lower[\s\S]*\) e/,
+    /registration_block\.block_hash = t\.block_hash[\s\S]*registration_block\.height = t\.block_height[\s\S]*registration_block\.canonical = true/,
+    /registration_event\.registration_block_index DESC NULLS LAST,[\s\S]*registration_event\.registration_protocol_vout DESC NULLS LAST,[\s\S]*registration_event\.registration_record_ordinal DESC NULLS LAST,[\s\S]*registration_event\.registration_event_id DESC NULLS LAST/,
+    /const records = result\.rows\.map\(\(row\) =>[\s\S]*confirmedIdRecordFromRow\(row, network\)[\s\S]*records\.some\(\(record\) => !record\)[\s\S]*Confirmed ID registration projection is incomplete or noncanonical/,
   ],
 );
 expectAll("checkpoint registry reads are exact and default reads stay complete-only", proofIndexReader, [

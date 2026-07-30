@@ -20623,22 +20623,114 @@ async function proofIndexScopedHolderHistoryPayload(
 }
 
 function confirmedIdRecordFromRow(row, network) {
-  const blockHeight =
-    rowNumber(row, "registered_height") ||
-    rowNumber(row, "block_height") ||
-    undefined;
-  const blockIndex = Number(row.registration_block_index);
+  const exactPositionInteger = (value, minimum) => {
+    if (
+      value === undefined ||
+      value === null ||
+      typeof value === "boolean" ||
+      (typeof value === "string" && value.trim() === "")
+    ) {
+      return null;
+    }
+    const normalizedValue =
+      typeof value === "string" ? value.trim() : value;
+    if (
+      typeof normalizedValue === "string" &&
+      !/^(?:0|[1-9][0-9]*)$/u.test(normalizedValue)
+    ) {
+      return null;
+    }
+    const parsed = Number(normalizedValue);
+    return Number.isSafeInteger(parsed) && parsed >= minimum ? parsed : null;
+  };
+  const eventBlockHeight = exactPositionInteger(
+    row?.registration_block_height,
+    1,
+  );
+  const transactionBlockHeight = exactPositionInteger(
+    row?.registration_transaction_block_height,
+    1,
+  );
+  const storedBlockHeight = exactPositionInteger(
+    row?.registered_height,
+    1,
+  );
+  const distinctBlockHeights = new Set(
+    [eventBlockHeight, transactionBlockHeight, storedBlockHeight].filter(
+      (height) => height !== null,
+    ),
+  );
+  if (distinctBlockHeights.size > 1) {
+    return null;
+  }
+  const unknownConfirmedBlockHeight = distinctBlockHeights.size === 0;
+  const postAmoV5Registration =
+    unknownConfirmedBlockHeight ||
+    [eventBlockHeight, transactionBlockHeight, storedBlockHeight].some(
+      (height) =>
+        height !== null &&
+        height >= WORK_AMO_V5_ACTIVATION_HEIGHT,
+    );
+  const transactionBlockIndex = exactPositionInteger(
+    row?.registration_transaction_block_index,
+    0,
+  );
+  const eventBlockIndex = exactPositionInteger(
+    row?.registration_block_index,
+    0,
+  );
+  const legacyBlockIndex = exactPositionInteger(
+    row?.registration_legacy_block_index,
+    0,
+  );
+  const protocolVout = exactPositionInteger(
+    row?.registration_protocol_vout,
+    0,
+  );
+  const recordOrdinal = exactPositionInteger(
+    row?.registration_record_ordinal,
+    0,
+  );
+  const registrationEventMatchCount = exactPositionInteger(
+    row?.registration_event_match_count,
+    0,
+  );
+  const candidateBlockHash = normalizedLowerText(
+    row?.registration_block_hash,
+  );
+  const blockHash = /^[0-9a-f]{64}$/u.test(candidateBlockHash)
+    ? candidateBlockHash
+    : "";
+  if (
+    postAmoV5Registration &&
+    (
+      normalizedLowerText(row?.registration_event_status) !== "confirmed" ||
+      registrationEventMatchCount !== 1 ||
+      !blockHash ||
+      eventBlockHeight === null ||
+      eventBlockIndex === null ||
+      protocolVout === null ||
+      recordOrdinal === null ||
+      transactionBlockHeight === null ||
+      transactionBlockIndex === null ||
+      eventBlockHeight !== transactionBlockHeight ||
+      eventBlockIndex !== transactionBlockIndex
+    )
+  ) {
+    return null;
+  }
+  const blockHeight = postAmoV5Registration
+    ? eventBlockHeight
+    : eventBlockHeight ?? transactionBlockHeight ?? storedBlockHeight;
+  const blockIndex = postAmoV5Registration
+    ? eventBlockIndex
+    : eventBlockIndex ?? transactionBlockIndex ?? legacyBlockIndex;
   const registrationEventId = Number(row.registration_event_id);
   return {
     amountSats: ID_REGISTRATION_PRICE_SATS,
-    blockHeight,
-    blockIndex:
-      row.registration_block_index !== null &&
-      row.registration_block_index !== undefined &&
-      Number.isSafeInteger(blockIndex) &&
-      blockIndex >= 0
-        ? blockIndex
-        : undefined,
+    ...(blockHash ? { blockHash } : {}),
+    ...(blockHeight !== null ? { blockHeight } : {}),
+    ...(blockIndex !== null ? { blockIndex } : {}),
     confirmed: true,
     createdAt: dateIso(
       row.confirmed_at ?? row.block_time ?? row.updated_at,
@@ -20648,7 +20740,9 @@ function confirmedIdRecordFromRow(row, network) {
     network,
     ownerAddress: String(row.owner_address || ""),
     pgpKey: row.pgp_public_key || undefined,
+    ...(protocolVout !== null ? { protocolVout } : {}),
     receiveAddress: String(row.receive_address || row.owner_address || ""),
+    ...(recordOrdinal !== null ? { recordOrdinal } : {}),
     registrationEventId:
       row.registration_event_id !== null &&
       row.registration_event_id !== undefined &&
@@ -20684,10 +20778,18 @@ async function confirmedIdRecordsFromCurrentTables(pool, network, idLower = "") 
         r.updated_height,
         r.updated_at,
         t.confirmed_at,
-        t.block_height,
+        t.block_hash AS registration_block_hash,
+        t.block_height AS registration_transaction_block_height,
+        t.block_index AS registration_transaction_block_index,
         t.block_time,
+        registration_event.registration_block_height,
         registration_event.registration_block_index,
-        registration_event.registration_event_id
+        registration_event.registration_event_match_count,
+        registration_event.registration_event_status,
+        registration_event.registration_event_id,
+        registration_event.registration_legacy_block_index,
+        registration_event.registration_protocol_vout,
+        registration_event.registration_record_ordinal
       FROM proof_indexer.id_records r
       JOIN proof_indexer.transactions t
         ON t.network = r.network
@@ -20695,20 +20797,42 @@ async function confirmedIdRecordsFromCurrentTables(pool, network, idLower = "") 
        AND t.status = 'confirmed'
       LEFT JOIN LATERAL (
         SELECT
+          e.block_height AS registration_block_height,
+          e.block_index AS registration_block_index,
           CASE
             WHEN e.payload->>'blockIndex' ~ '^[0-9]+$'
               THEN (e.payload->>'blockIndex')::integer
             ELSE NULL
-          END AS registration_block_index,
+          END AS registration_legacy_block_index,
+          e.op_return_vout AS registration_protocol_vout,
+          e.record_ordinal AS registration_record_ordinal,
+          e.status AS registration_event_status,
+          e.registration_event_match_count,
           e.event_id AS registration_event_id
-        FROM proof_indexer.events e
-        WHERE e.network = r.network
-          AND e.txid = r.registration_txid
-          AND e.kind = 'id-register'
-          AND e.status = 'confirmed'
-          AND e.valid = true
-          AND lower(COALESCE(e.payload->>'id', '')) = r.id_lower
-        ORDER BY e.event_id ASC
+        FROM (
+          SELECT
+            candidate_event.*,
+            COUNT(*) OVER () AS registration_event_match_count
+          FROM proof_indexer.events candidate_event
+          WHERE candidate_event.network = r.network
+            AND candidate_event.txid = r.registration_txid
+            AND candidate_event.protocol = 'pwid1'
+            AND candidate_event.kind = 'id-register'
+            AND candidate_event.status = 'confirmed'
+            AND candidate_event.valid = true
+            AND lower(COALESCE(candidate_event.payload->>'id', '')) = r.id_lower
+        ) e
+        JOIN proof_indexer.blocks registration_block
+          ON registration_block.network = t.network
+         AND registration_block.block_hash = t.block_hash
+         AND registration_block.height = t.block_height
+         AND registration_block.canonical = true
+        ORDER BY
+          e.block_height DESC NULLS LAST,
+          e.block_index DESC NULLS LAST,
+          e.op_return_vout DESC NULLS LAST,
+          e.record_ordinal DESC NULLS LAST,
+          e.event_id DESC
         LIMIT 1
       ) registration_event ON true
       WHERE r.network = $1
@@ -20716,12 +20840,22 @@ async function confirmedIdRecordsFromCurrentTables(pool, network, idLower = "") 
       ORDER BY
         COALESCE(r.registered_height, t.block_height) DESC NULLS LAST,
         registration_event.registration_block_index DESC NULLS LAST,
+        registration_event.registration_protocol_vout DESC NULLS LAST,
+        registration_event.registration_record_ordinal DESC NULLS LAST,
         registration_event.registration_event_id DESC NULLS LAST,
         r.registration_txid DESC
     `,
     params,
   );
-  return result.rows.map((row) => confirmedIdRecordFromRow(row, network));
+  const records = result.rows.map((row) =>
+    confirmedIdRecordFromRow(row, network),
+  );
+  if (records.some((record) => !record)) {
+    throw new Error(
+      "Confirmed ID registration projection is incomplete or noncanonical.",
+    );
+  }
+  return records;
 }
 
 function idLifecycleStateFromItems(items, network, id) {
