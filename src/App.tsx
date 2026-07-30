@@ -7363,6 +7363,31 @@ function normalizedWorkAmoV6Estimate(
     : undefined;
 }
 
+function workAmoV6NetworkValueBeforeQ8(quote: WorkFloorQuote | undefined) {
+  const explicit = canonicalPositiveIntegerText(
+    quote?.workAmoV6?.networkValueBeforeQ8,
+  );
+  if (explicit) {
+    return explicit;
+  }
+
+  const liveQ8 = workFloorQuoteLiveValueQ8(quote);
+  if (liveQ8 !== null) {
+    return liveQ8.toString();
+  }
+
+  const networkValueSats =
+    exactIntegerBigInt(quote?.networkValueSats) ??
+    exactIntegerBigInt(quote?.liveNetworkValueSats) ??
+    exactIntegerBigInt(quote?.actualValue?.networkValueSats) ??
+    exactIntegerBigInt(quote?.actualValue?.liveNetworkValueSats) ??
+    exactIntegerBigInt(quote?.actualValue?.totalSats);
+
+  return networkValueSats
+    ? (networkValueSats * 100_000_000n).toString()
+    : "";
+}
+
 function workAmoV6EstimateForFace(
   quote: WorkFloorQuote | undefined,
   faceProofs: number,
@@ -7377,10 +7402,7 @@ function workAmoV6EstimateForFace(
       )
     : estimates?.[String(faceProofs)];
   const normalized = normalizedWorkAmoV6Estimate(candidate);
-  const networkValueBeforeQ8 = canonicalPositiveIntegerText(
-    quote?.workAmoV6?.networkValueBeforeQ8 ||
-      quote?.networkValueQ8,
-  );
+  const networkValueBeforeQ8 = workAmoV6NetworkValueBeforeQ8(quote);
   const derived = workAmoV6UnitTerms(faceProofs, networkValueBeforeQ8);
   if (!derived) {
     return undefined;
@@ -33221,6 +33243,8 @@ function TokenWalletWorkspace({
   const [walletTransferPageIndex, setWalletTransferPageIndex] = useState(0);
   const [walletListingSortMode, setWalletListingSortMode] =
     useState<MarketplaceSortMode>("price-desc");
+  const workAmoV6EstimateCacheRef =
+    useRef(new Map<number, WorkAmoV6Estimate>());
   useEffect(() => {
     setWalletListingPageIndex(0);
   }, [address, selectedTokenId, walletListingSortMode]);
@@ -33451,6 +33475,16 @@ function TokenWalletWorkspace({
     workFloorQuote,
     listFaceProofs,
   );
+  if (selectedWorkAmoEstimate) {
+    workAmoV6EstimateCacheRef.current.set(
+      selectedWorkAmoEstimate.unitFaceProofs,
+      selectedWorkAmoEstimate,
+    );
+  }
+  const cachedWorkAmoEstimate =
+    workAmoV6EstimateCacheRef.current.get(listFaceProofs);
+  const selectedWorkAmoEstimateDisplay =
+    selectedWorkAmoEstimate ?? cachedWorkAmoEstimate;
   const selectedWalletBalance = selectedListToken
     ? balances.find(
         (balance) => balance.token.tokenId === selectedListToken.tokenId,
@@ -34045,9 +34079,9 @@ function TokenWalletWorkspace({
                   <div>
                     <span>Estimated WORK</span>
                     <strong>
-                      {selectedWorkAmoEstimate?.unitAmountAtoms
+                      {selectedWorkAmoEstimateDisplay?.unitAmountAtoms
                         ? formatWorkAmountAmo(
-                            BigInt(selectedWorkAmoEstimate.unitAmountAtoms),
+                            BigInt(selectedWorkAmoEstimateDisplay.unitAmountAtoms),
                             false,
                           )
                         : workFloorLoading
@@ -34059,9 +34093,9 @@ function TokenWalletWorkspace({
                   <div>
                     <span>Proof price</span>
                     <strong>
-                      {selectedWorkAmoEstimate?.unitPriceSats
+                      {selectedWorkAmoEstimateDisplay?.unitPriceSats
                         ? `${Number(
-                            selectedWorkAmoEstimate.unitPriceSats,
+                            selectedWorkAmoEstimateDisplay.unitPriceSats,
                           ).toLocaleString()} proofs`
                         : workAmoV6FaceLabel(listFaceProofs)}
                     </strong>
