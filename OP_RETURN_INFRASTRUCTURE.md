@@ -1279,6 +1279,28 @@ independently disabled for new production writes; an old V4 or V5 switch cannot
 authorize V6. The old unactivated oracle credential is not a V6 dependency and
 must not remain in the tracked systemd override.
 
+The confirmed production declaration pins are:
+
+```text
+WORK_AMO_V6_DECLARATION_TXID=975fd82aa84995e014b240618ee1a1254d0a735e6e1241372d0bed0a0d9f0799
+WORK_AMO_V6_DECLARATION_HEIGHT=960218
+WORK_AMO_V6_DECLARATION_BLOCK_HASH=00000000000000000001ac35a5b7e43c782297fcb9cde0fb458fbd5451ad55df
+WORK_AMO_V6_DECLARATION_BLOCK_INDEX=102
+WORK_AMO_V6_DECLARATION_MEMO_SHA256=b43daeea38fcacaf6afa6a48d3d0fde631497a4af9f3bb137fc07975d18bbe01
+WORK_AMO_V6_DECLARATION_MEMO_BYTES=3350
+WORK_AMO_V6_DECLARATION_PROTOCOL_VOUT=3
+WORK_AMO_V6_DECLARATION_RECORD_ORDINAL=0
+WORK_AMO_V6_DECLARATION_REGISTRY_PAYMENT_VOUT=4
+WORK_AMO_V6_ACTIVATION_HEIGHT=960219
+```
+
+Core confirmed that declaration in block
+`00000000000000000001ac35a5b7e43c782297fcb9cde0fb458fbd5451ad55df`
+at height `960218` and zero-based transaction index `102`. These immutable
+coordinates do not themselves open production writes: the marker, replay,
+parity, exact-tip health and separate `WORK_AMO_V6_WRITES_ENABLED=1` gate
+remain mandatory.
+
 The listing itself remains ordered by:
 
 ```text
@@ -1923,18 +1945,20 @@ The credit endpoint:
 - WORK settings are 21,000,000 max supply, 1,000 WORK per mint, 1,000 proofs per mint, and the `work@proofofwork.me` registry address. WORK launches at exactly 1 proof per WORK. The create form can reuse the same economic template for non-reserved tickers only.
 - WORK's permanent price floor is derived from live confirmed ProofOfWork Computer network value, not from pending mempool visibility: `work_floor_sats = live_network_value_sats / 21,000,000 WORK`. The inverse `21,000,000 / live_network_value_sats` is the WORK-per-proof ratio.
 - Historical WORK Marketplace Pricing Protocol V2 is declaration-tx anchored at `4c53252c6e9279726e1456f4d846274bfa33f778b633d32a68ed36906b38083f` and activated at declaration height plus one. Its confirmed governed WORK list/seal/buy validation loaded the exact green canonical summary at H-1, required the authorization's `oracleBlockHeight`, `oracleBlockHash`, and `oracleNetworkValueQ8` to match it, recomputed the integer-ceiling minimum total seller price from `amountAtoms`, and failed closed on any unavailable or mismatched dependency. A missed next-block commitment was stale; confirmation did not rescue it. This is replay documentation, not the current AMO write protocol.
-- WORK Marketplace Pricing Protocol V4 remains replayable historical design. Current governed WORK list/seal/buy actions use AMO `pwt-sale-v5` after activation height 959621. A listing chooses only `$20`, `$50`, or `$100`; exact WORK atoms and proof price derive at its complete canonical position from the preceding valid `pwa1:usd1` quote and the network value immediately before the listing. Those terms freeze at confirmation. Seal and buy reference them without current-floor repricing. Writes require the independent V5 declaration pins, quote/index/replay readiness, and `WORK_AMO_V5_WRITES_ENABLED=1`.
-- WORK AMO V6 is staged behind a new declaration and an independent write
-  gate. Once that declaration activates, new governed listings use
+- WORK Marketplace Pricing Protocol V4 remains replayable historical design. AMO `pwt-sale-v5` governed WORK list/seal/buy actions from activation height 959621 until the V6 cutover. A listing chose only `$20`, `$50`, or `$100`; exact WORK atoms and proof price derived at its complete canonical position from the preceding valid `pwa1:usd1` quote and the network value immediately before the listing. Those terms froze at confirmation. Valid pre-V6 V5 listings remain settleable without current-floor repricing, while new V5 listings from V6 activation are invalid audit history.
+- WORK AMO V6 is anchored by declaration transaction
+  `975fd82aa84995e014b240618ee1a1254d0a735e6e1241372d0bed0a0d9f0799`
+  and an independent write gate. From activation height `960219`, new
+  governed listings use
   `pwt-sale-v6` and choose exactly `20,000`, `50,000`, or `100,000` proofs.
   The listing's exact WORK atoms derive at its complete canonical position
   from the network value immediately before the listing; no USD quote,
   attestation, signer, source quorum, or validity window is part of V6
   consensus. USD is display-only. V5 listings validly confirmed before the
   cutover keep their frozen terms and may settle; new V5 listings after the
-  cutover are invalid audit history. Until the declaration confirms and every
-  declaration pin, migration, and replay gate is ready, V5 remains the current
-  chain protocol and V6 writes stay disabled.
+  cutover are invalid audit history. Declaration pins, the immutable migration
+  marker, activation-range replay, exact-tip parity and the explicit V6 write
+  gate must all agree before production admits V6 actions.
 - WORK value accounting exposes both live and frozen values. Live network value reprices confirmed WORK movement at the current live floor and is the site-facing value. Frozen network value records the confirmation-time value of each WORK movement plus fixed event components such as proof payments, registry mutation fees, marketplace mutation fees, sale payments, and miner fees where available.
 - WORK is the only credit whose amount moved adds credit movement network value. Non-WORK credits remain confirmed proof-flow records and must not derive value from manipulable illiquid floors.
 - Credit mint-out is confirmed-only at the protocol/indexing layer: a credit is canonically minted out only when confirmed supply reaches max supply. UI mint controls also pause when confirmed plus pending mints fill the remaining supply, because pending records can consume the last valid mint slots if they confirm.
