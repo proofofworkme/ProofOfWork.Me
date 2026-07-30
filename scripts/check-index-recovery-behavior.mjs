@@ -26611,10 +26611,35 @@ check("INCB replay facts are pinned to exact Bitcoin Core positions", async () =
   );
 });
 
-check("PWT range replay removes whole stale txs and resets projections", async () => {
+check("PWT range replay preserves pre-range issuance oracles while resetting in-range projections", async () => {
   const calls = [];
   const canonicalBootstrapHash = "a".repeat(64);
   const rangeCheckpointHash = "b".repeat(64);
+  const retainedPreRangeSnapshotId = "1".repeat(24);
+  const retainedWitnessSnapshotId = "2".repeat(24);
+  const retainedSaleOracleSnapshotId = "3".repeat(24);
+  const retainedConfirmationOracleSnapshotId = "4".repeat(24);
+  const protectedSnapshotIds = [
+    retainedPreRangeSnapshotId,
+    retainedWitnessSnapshotId,
+    retainedSaleOracleSnapshotId,
+    retainedConfirmationOracleSnapshotId,
+  ];
+  const protectedSnapshotRows = protectedSnapshotIds.map(
+    (snapshotId, index) => ({
+      fingerprint: JSON.stringify({
+        indexed_through_block: 958315,
+        network: "livenet",
+        snapshot_id: snapshotId,
+      }),
+      reference_id:
+        index < 2
+          ? `snapshot:${snapshotId}`
+          : `work-market:${index}:${snapshotId}`,
+      resolved: true,
+      snapshot_id: snapshotId,
+    }),
+  );
   const existingRebuild = {
     active: false,
     bootstrapHash: canonicalBootstrapHash,
@@ -26632,6 +26657,9 @@ check("PWT range replay removes whole stale txs and resets projections", async (
     status: "complete",
     transactionNormalization: "canonical-raw-tx-only",
   };
+  let protectedReadCount = 0;
+  let scenario = "success";
+  let semanticVerificationCount = 0;
   let storedRebuildMeta = existingRebuild;
   const legacyCompletedPwtRangeReplayCanBeReprepared = isolatedFunction(
     BACKFILL_PATH,
@@ -26650,6 +26678,36 @@ check("PWT range replay removes whole stale txs and resets projections", async (
     legacyCompletedPwtRangeReplayCanBeReprepared(existingRebuild, 958383),
     true,
   );
+  const assertPwtRangeReplayProtectedSnapshots = isolatedFunction(
+    BACKFILL_PATH,
+    "assertPwtRangeReplayProtectedSnapshots",
+  );
+  const assertPwtRangeReplayRetainedIncbSnapshotState = isolatedFunction(
+    BACKFILL_PATH,
+    "assertPwtRangeReplayRetainedIncbSnapshotState",
+  );
+  const pwtRangeReplayProtectedSnapshotState = isolatedFunction(
+    BACKFILL_PATH,
+    "pwtRangeReplayProtectedSnapshotState",
+    {
+      NETWORK: "livenet",
+      WORK_AMO_V5_AUTH_VERSION: "pwt-sale-v5",
+      WORK_MARKET_V2_AUTH_VERSION: "pwt-sale-v3",
+      WORK_MARKET_V4_AUTH_VERSION: "pwt-sale-v4",
+      WORK_TOKEN_ID,
+    },
+  );
+  const retainedBinding = {
+    blockHash: "5".repeat(64),
+    blockHeight: 958315,
+    canonicalSummaryHash: "6".repeat(64),
+    generatedAt: "2026-07-16T19:42:00.000Z",
+    mode: "canonical-summary-refresh",
+    model: "canonical-summary-h-minus-one-v1",
+    snapshotId: retainedPreRangeSnapshotId,
+    workNetworkValueQ8: "900719925474099300000001",
+    workNetworkValueWitnessMode: "locked-bound-legacy-work-value-v1",
+  };
   const prepareCanonicalPwtRangeReplay = isolatedFunction(
     BACKFILL_PATH,
     "prepareCanonicalPwtRangeReplay",
@@ -26686,6 +26744,8 @@ check("PWT range replay removes whole stale txs and resets projections", async (
           },
         };
       },
+      assertPwtRangeReplayProtectedSnapshots,
+      assertPwtRangeReplayRetainedIncbSnapshotState,
       assertCanonicalIncbRangeReplayWitnessManifestUnchanged: async (
         _client,
         manifest,
@@ -26707,15 +26767,49 @@ check("PWT range replay removes whole stale txs and resets projections", async (
         options,
       ) => {
         calls.push("capture-witness-manifest");
-        return buildIncbRangeReplayWitnessManifest({
-          ...options,
-          entries: [],
+        return {
+          bindingId: options.bindingId,
+          commitment: {
+            algorithm: "sha256",
+            hash: "9".repeat(64),
+            model: "sha256-canonical-json-v1",
+          },
+          count: 1,
+          createdAt: options.createdAt,
+          entries: [
+            {
+              disposition: "preserve",
+              snapshot: { snapshotId: retainedWitnessSnapshotId },
+            },
+          ],
+          model: INCB_RANGE_REPLAY_WITNESS_MANIFEST_MODEL,
           network: "livenet",
-        });
+          preserveCount: 1,
+          rangeReplayFromHeight: options.rangeReplayFromHeight,
+          rederiveCount: 0,
+          throughHash: options.throughHash,
+          throughHeight: options.throughHeight,
+        };
       },
-      incbRangeReplayWitnessBindingFields,
+      incbRangeReplayWitnessBindingFields: (manifest, metaKey) => ({
+        witnessCount: manifest.count,
+        witnessModel: manifest.model,
+        witnessPreserveCount: manifest.preserveCount,
+        witnessSetHash: manifest.commitment.hash,
+        witnessSetMetaKey: metaKey,
+        witnessedThroughBlock: manifest.throughHeight,
+        witnessedThroughBlockHash: manifest.throughHash,
+      }),
       isHexTxid: (value) => /^[0-9a-f]{64}$/u.test(String(value)),
       legacyCompletedPwtRangeReplayCanBeReprepared,
+      lockedCanonicalIncbValueSnapshots: async (_client, snapshotIds) => {
+        calls.push({
+          lockedIncbSnapshotIds: Array.from(snapshotIds),
+        });
+        return Array.from(snapshotIds, (snapshotId) => ({
+          snapshot_id: snapshotId,
+        }));
+      },
       migrateUnboundedCreditUnitStorage: async () => {
         calls.push("migrate-credit-units");
         return { storageModel: "unconstrained-integer-numeric-v1" };
@@ -26729,6 +26823,13 @@ check("PWT range replay removes whole stale txs and resets projections", async (
       }),
       proofIndexerMetaValue: async (_client, key) =>
         key === "canonical:rebuild" ? storedRebuildMeta : null,
+      pwtRangeReplayProtectedSnapshotState,
+      pwtRangeReplayRetainedIncbValueSnapshotBindings: async () => {
+        calls.push("read-retained-incb-bindings");
+        return new Map([
+          [retainedPreRangeSnapshotId, retainedBinding],
+        ]);
+      },
       rebuildConfirmedCreditBalancesFromCanonicalEvents: async () => {
         calls.push("rebuild-balances");
         return { holders: 4, tokens: 3 };
@@ -26759,6 +26860,29 @@ check("PWT range replay removes whole stale txs and resets projections", async (
           }),
         );
       },
+      verifiedCanonicalIncbValueSnapshotFingerprints: (_rows, bindings) => {
+        semanticVerificationCount += 1;
+        calls.push(
+          `verify-retained-incb-snapshots:${semanticVerificationCount}`,
+        );
+        if (
+          scenario === "semantic-pre-unresolved" &&
+          semanticVerificationCount === 1
+        ) {
+          throw new Error(
+            "INCB issuance repair expected 1 locked value snapshots but found 0.",
+          );
+        }
+        return new Map(
+          [...bindings.keys()].map((snapshotId) => [
+            snapshotId,
+            scenario === "semantic-post-changed" &&
+              semanticVerificationCount === 2
+              ? "changed-semantic-fingerprint"
+              : "stable-semantic-fingerprint",
+          ]),
+        );
+      },
     },
   );
   const client = {
@@ -26770,6 +26894,57 @@ check("PWT range replay removes whole stale txs and resets projections", async (
       }
       if (normalizedSql.includes("AS first_false_height")) {
         return { rows: [{ first_false_height: null }] };
+      }
+      if (
+        normalizedSql.includes("market_references AS MATERIALIZED") &&
+        normalizedSql.includes(
+          "payload->>'issuanceValueSnapshotId'",
+        ) &&
+        normalizedSql.includes("unnest($2::text[])")
+      ) {
+        protectedReadCount += 1;
+        if (
+          protectedReadCount === 1 &&
+          [
+            "market-pre-alias-mismatch",
+            "market-pre-ambiguous",
+            "market-pre-missing",
+          ].includes(scenario)
+        ) {
+          if (scenario === "market-pre-ambiguous") {
+            return {
+              rows: [
+                ...protectedSnapshotRows.slice(0, 2),
+                {
+                  ...protectedSnapshotRows[2],
+                  reference_id: "work-market:ambiguous-reference",
+                },
+                {
+                  ...protectedSnapshotRows[3],
+                  reference_id: "work-market:ambiguous-reference",
+                },
+              ],
+            };
+          }
+          return {
+            rows: [
+              ...protectedSnapshotRows.slice(0, 2),
+              {
+                fingerprint: null,
+                reference_id:
+                  scenario === "market-pre-missing"
+                    ? "work-market:missing-row"
+                    : "work-market:indexed-hash-alias-mismatch",
+                resolved: false,
+                snapshot_id: null,
+              },
+              protectedSnapshotRows[3],
+            ],
+          };
+        }
+        return {
+          rows: protectedSnapshotRows,
+        };
       }
       if (normalizedSql.includes("e.kind = 'token-create'")) {
         return {
@@ -26810,7 +26985,7 @@ check("PWT range replay removes whole stale txs and resets projections", async (
     prepared.value.verifierBinding.witnessModel,
     INCB_RANGE_REPLAY_WITNESS_MANIFEST_MODEL,
   );
-  assert.equal(prepared.value.verifierBinding.witnessCount, 0);
+  assert.equal(prepared.value.verifierBinding.witnessCount, 1);
   assert.ok(calls.includes("capture-witness-manifest"));
   assert.ok(calls.includes("verify-witness-manifest-unchanged"));
   assert.equal(
@@ -26840,6 +27015,75 @@ check("PWT range replay removes whole stale txs and resets projections", async (
   assert.match(sql, /DELETE FROM proof_indexer\.credit_definitions/u);
   assert.match(sql, /DELETE FROM proof_indexer\.ledger_snapshots/u);
   assert.doesNotMatch(sql, /DELETE FROM proof_indexer\.(?:id_records|mail_items)/u);
+  const protectedSnapshotReads = calls.filter(
+    (call) =>
+      call.sql?.includes("market_references AS MATERIALIZED") &&
+      call.sql.includes("unnest($2::text[])"),
+  );
+  assert.equal(
+    protectedSnapshotReads.length,
+    2,
+    "every protected snapshot must resolve before and after snapshot pruning",
+  );
+  assert.equal(protectedReadCount, 2);
+  assert.match(
+    protectedSnapshotReads[0].sql,
+    /saleAuthorization'->>'oracleBlockHeight'/u,
+  );
+  assert.match(
+    protectedSnapshotReads[0].sql,
+    /workMarketPricing'->>'confirmationOracleBlockHeight'/u,
+  );
+  assert.match(
+    protectedSnapshotReads[0].sql,
+    /proof_indexer\.transactions action_transaction/u,
+  );
+  assert.match(
+    protectedSnapshotReads[0].sql,
+    /proof_indexer\.blocks action_block/u,
+  );
+  assert.match(
+    protectedSnapshotReads[0].sql,
+    /CROSS JOIN LATERAL[\s\S]*oracle_reference/u,
+  );
+  assert.match(
+    protectedSnapshotReads[0].sql,
+    /market_references AS MATERIALIZED[\s\S]*action_event\.txid[\s\S]*action_event\.event_id[\s\S]*reference_kind/u,
+  );
+  assert.match(
+    protectedSnapshotReads[0].sql,
+    /FROM market_references market[\s\S]*LEFT JOIN proof_indexer\.ledger_snapshots snapshot/u,
+  );
+  assert.match(
+    protectedSnapshotReads[0].sql,
+    /payload->>'indexedThroughBlockHash'/u,
+  );
+  assert.match(
+    protectedSnapshotReads[0].sql,
+    /source_hashes \? 'canonicalSummary'/u,
+  );
+  assert.match(
+    protectedSnapshotReads[0].sql,
+    /summaryRefresh'->>'mode'[\s\S]*canonical-summary-refresh/u,
+  );
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(protectedSnapshotReads[0].params)),
+    [
+      "livenet",
+      [retainedWitnessSnapshotId],
+      ["pwt-sale-v3", "pwt-sale-v4", "pwt-sale-v5"],
+      WORK_TOKEN_ID,
+      "pwt-sale-v4",
+    ],
+  );
+  const snapshotDelete = calls.find((call) =>
+    call.sql?.startsWith("DELETE FROM proof_indexer.ledger_snapshots"),
+  );
+  assert.deepEqual(
+    [...new Set(snapshotDelete?.params?.[1] ?? [])].sort(),
+    protectedSnapshotIds,
+    "event, witness, sale, and confirmation oracle snapshots must all survive pruning",
+  );
   assert.ok(calls.includes("seed-work"));
   assert.ok(calls.includes("seed-bonds"));
   assert.ok(calls.includes("migrate-credit-units"));
@@ -26869,6 +27113,221 @@ check("PWT range replay removes whole stale txs and resets projections", async (
   );
   assert.ok(calls.some((call) => call.source === "tokens"));
   assert.ok(calls.some((call) => call.source === "token-listings"));
+
+  const replayEventDeleteIndex = calls.findIndex((call) =>
+    call.sql?.includes("WITH replay_txids AS"),
+  );
+  const protectedReadIndexes = calls.flatMap((call, index) =>
+    call.sql?.includes("market_references AS MATERIALIZED") &&
+    call.sql.includes("unnest($2::text[])")
+      ? [index]
+      : [],
+  );
+  const semanticVerifyIndexes = calls.flatMap((call, index) =>
+    typeof call === "string" &&
+    call.startsWith("verify-retained-incb-snapshots:")
+      ? [index]
+      : [],
+  );
+  const snapshotDeleteIndex = calls.findIndex((call) =>
+    call.sql?.startsWith("DELETE FROM proof_indexer.ledger_snapshots"),
+  );
+  const commitIndex = calls.findIndex((call) => call.sql === "COMMIT");
+  assert.ok(
+    replayEventDeleteIndex < protectedReadIndexes[0] &&
+      protectedReadIndexes[0] < semanticVerifyIndexes[0] &&
+      semanticVerifyIndexes[0] < snapshotDeleteIndex &&
+      snapshotDeleteIndex < protectedReadIndexes[1] &&
+      protectedReadIndexes[1] < semanticVerifyIndexes[1] &&
+      semanticVerifyIndexes[1] < commitIndex,
+    "retained event deletion, preflight, pruning, postflight, and commit must stay ordered",
+  );
+
+  const resetReplay = (nextScenario) => {
+    calls.length = 0;
+    protectedReadCount = 0;
+    scenario = nextScenario;
+    semanticVerificationCount = 0;
+    storedRebuildMeta = existingRebuild;
+  };
+  resetReplay("semantic-pre-unresolved");
+  await rejection(
+    prepareCanonicalPwtRangeReplay(client),
+    (error) => /expected 1 locked value snapshots but found 0/u.test(
+      error.message,
+    ),
+  );
+  assert.equal(calls.at(-1)?.sql, "ROLLBACK");
+  assert.equal(
+    calls.some((call) =>
+      call.sql?.startsWith("DELETE FROM proof_indexer.ledger_snapshots"),
+    ),
+    false,
+    "an unresolved preflight oracle must roll back before snapshot pruning",
+  );
+
+  resetReplay("semantic-post-changed");
+  await rejection(
+    prepareCanonicalPwtRangeReplay(client),
+    (error) => /changed retained INCB H-1 oracle/u.test(error.message),
+  );
+  assert.equal(calls.at(-1)?.sql, "ROLLBACK");
+  assert.ok(
+    calls.some((call) =>
+      call.sql?.startsWith("DELETE FROM proof_indexer.ledger_snapshots"),
+    ),
+    "the changed postflight fixture must reach snapshot pruning",
+  );
+  assert.equal(
+    calls.some((call) => call.sql === "COMMIT"),
+    false,
+    "a changed postflight oracle must never commit",
+  );
+
+  for (const marketFailure of [
+    "market-pre-missing",
+    "market-pre-alias-mismatch",
+    "market-pre-ambiguous",
+  ]) {
+    resetReplay(marketFailure);
+    await rejection(
+      prepareCanonicalPwtRangeReplay(client),
+      (error) => /cannot uniquely resolve every protected ledger snapshot reference/u.test(
+        error.message,
+      ),
+    );
+    assert.equal(calls.at(-1)?.sql, "ROLLBACK");
+    assert.equal(
+      calls.some((call) =>
+        call.sql?.startsWith("DELETE FROM proof_indexer.ledger_snapshots"),
+      ),
+      false,
+      `${marketFailure} must roll back before snapshot pruning`,
+    );
+    assert.equal(
+      calls.some(
+        (call) =>
+          typeof call === "string" &&
+          call.startsWith("verify-retained-incb-snapshots:"),
+      ),
+      false,
+      `${marketFailure} must fail before retained INCB semantic verification`,
+    );
+  }
+});
+
+check("PWT retained INCB canonical collection excludes stale rows and rejects divergent bindings", async () => {
+  const snapshotId = "retained-divergent-h-minus-one";
+  const canonicalIncbValueSnapshotBindings = isolatedFunction(
+    BACKFILL_PATH,
+    "canonicalIncbValueSnapshotBindings",
+    {
+      canonicalIncbValueSnapshotBinding: (item) => ({
+        blockHeight: Number(item.blockHeight),
+        snapshotId: String(item.snapshotId),
+      }),
+    },
+  );
+  const pwtRangeReplayRetainedIncbValueSnapshotBindings = isolatedFunction(
+    BACKFILL_PATH,
+    "pwtRangeReplayRetainedIncbValueSnapshotBindings",
+    {
+      INCB_TOKEN_ID,
+      NETWORK: "livenet",
+      canonicalIncbValueSnapshotBindings,
+      objectValue: (value) =>
+        value && typeof value === "object" && !Array.isArray(value)
+          ? value
+          : {},
+    },
+  );
+  let queryText = "";
+  const canonicalRow = (blockHeight, blockHash) => ({
+    event_block_height: blockHeight,
+    event_block_index: 7,
+    payload: {
+      blockHash,
+      blockHeight,
+      blockIndex: 7,
+      snapshotId,
+    },
+    transaction_block_hash: blockHash,
+    transaction_block_height: blockHeight,
+    transaction_block_index: 7,
+  });
+  const staleRowsExcluded =
+    await pwtRangeReplayRetainedIncbValueSnapshotBindings({
+      async query(sql, params) {
+        queryText = String(sql);
+        assert.deepEqual(Array.from(params), ["livenet", INCB_TOKEN_ID]);
+        // A confirmed event whose relational or payload position disagrees
+        // with the canonical transaction is filtered by this SQL, so the
+        // semantic binding collector receives no stale row.
+        return { rows: [] };
+      },
+    });
+  assert.equal(staleRowsExcluded.size, 0);
+  await rejection(
+    pwtRangeReplayRetainedIncbValueSnapshotBindings({
+      async query() {
+        return {
+          rows: [
+            {
+              ...canonicalRow(958315, "a".repeat(64)),
+              transaction_block_height: 958316,
+            },
+          ],
+        };
+      },
+    }),
+    (error) => /outside its canonical transaction position/u.test(
+      error.message,
+    ),
+  );
+  await rejection(
+    pwtRangeReplayRetainedIncbValueSnapshotBindings({
+      async query(sql, params) {
+        queryText = String(sql);
+        assert.deepEqual(Array.from(params), ["livenet", INCB_TOKEN_ID]);
+        return {
+          rows: [
+            canonicalRow(958315, "a".repeat(64)),
+            canonicalRow(958316, "b".repeat(64)),
+          ],
+        };
+      },
+    }),
+    (error) => /disagree about value snapshot/u.test(error.message),
+  );
+  assert.match(queryText, /proof_indexer\.transactions canonical_transaction/u);
+  assert.match(queryText, /proof_indexer\.blocks canonical_block/u);
+  assert.match(queryText, /canonical_transaction\.status = 'confirmed'/u);
+  assert.match(
+    queryText,
+    /canonical_transaction\.block_height = mint_event\.block_height/u,
+  );
+  assert.match(
+    queryText,
+    /canonical_transaction\.block_index = mint_event\.block_index/u,
+  );
+  assert.match(queryText, /canonical_block\.canonical = true/u);
+  assert.match(queryText, /mint_event\.protocol = 'pwt1'/u);
+  assert.match(queryText, /mint_event\.kind = 'token-mint'/u);
+  assert.match(queryText, /mint_event\.status = 'confirmed'/u);
+  assert.match(queryText, /mint_event\.valid = true/u);
+  assert.match(
+    queryText,
+    /payload->>'blockHeight'[\s\S]*canonical_transaction\.block_height/u,
+  );
+  assert.match(
+    queryText,
+    /payload->>'blockIndex'[\s\S]*canonical_transaction\.block_index/u,
+  );
+  assert.match(
+    queryText,
+    /payload->>'blockHash'[\s\S]*canonical_transaction\.block_hash/u,
+  );
+  assert.match(queryText, /issuanceValueSnapshotId/u);
 });
 
 check("completed INCB range replay verifies exact dynamic H-1 Q8 issuance", async () => {

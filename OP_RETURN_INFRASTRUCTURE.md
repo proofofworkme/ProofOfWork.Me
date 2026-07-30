@@ -1598,6 +1598,77 @@ then run `indexer:verify-work-atoms-post-bootstrap` before reopening public
 reads or writes. A second run reports `alreadyApplied: true`, changes no row,
 and does not invalidate snapshots.
 
+The July 19, 2026 bounded PWT replay exposed a separate historical retention
+fault: pre-range INCB mint events remained canonical while 18 of their
+immutable H-1 `ledger_snapshots` rows were pruned. Never synthesize those rows
+from current state or from the smaller event binding alone; each original row
+also commits its complete metrics, consistency and nested summary payloads.
+The closed recovery set comes from the verified July 20 physical backup's
+pre-deletion `proof_indexer_shadow_20260718` database. Its 30 mint-event
+bindings are byte-identical to production and the exact 18-row JSONL artifact
+is pinned by:
+
+```text
+SHA256=4bdc01059114110396bdf666b68dd24d2c074c4c48e382b18a0f3a61849430bd
+rows=18
+targetEventReferences=30
+globalReferencedSnapshotIds=29
+```
+
+Keep that artifact outside the release tree as a non-symlink, operator-readable
+`0600` file. Load the canonical `POW_INDEX_DATABASE_URL`; this recovery command
+rejects legacy or generic database variables. Stop index writers and run the
+default rollback-only preflight:
+
+```bash
+NETWORK=livenet npm run indexer:restore-incb-oracle-snapshots -- \
+  --artifact /absolute/path/oracle-snapshots-18.jsonl \
+  --sha256 4bdc01059114110396bdf666b68dd24d2c074c4c48e382b18a0f3a61849430bd
+```
+
+Preflight must report `ok: true`, `committed: false`,
+`state: "first-apply"`, `wouldInsert: 18`, 18 artifact rows, 30 target
+references, 29 global referenced ids, and exactly the pinned 18 unresolved
+ids. Take and verify another current logical backup before applying. Then run:
+
+```bash
+NETWORK=livenet POW_RESTORE_INCB_ORACLE_SNAPSHOTS_APPLY=1 \
+  npm run indexer:restore-incb-oracle-snapshots -- \
+  --artifact /absolute/path/oracle-snapshots-18.jsonl \
+  --sha256 4bdc01059114110396bdf666b68dd24d2c074c4c48e382b18a0f3a61849430bd \
+  --apply
+```
+
+The importer is pinned to livenet, the exact artifact hash and the exact
+18 identifiers. It streams and hashes the artifact, rejects links, duplicate
+or extra rows, divergent event bindings, partial recovery state, conflicting
+existing rows and any noncanonical mint. Within one serializable transaction
+it takes an advisory lock plus share-row-exclusive locks on the protected
+block, transaction, event, snapshot and metadata tables. It locks and rejects
+an active canonical fault, active or incomplete rebuild, or uncertified range
+replay before any insert, then verifies
+green status, H-1 height, four block-hash aliases, canonical-summary hash,
+generation time, model, mode and exact legacy decimal-to-Q8 value, and inserts
+missing rows without an update path. Historical JSON numeric lexemes are read
+as exact text with PostgreSQL `jsonb_typeof` and `#>>`; JavaScript `Number`
+never carries their value. The only admissible starting states are all 18
+absent or all 18 already present with canonical logical-row and whole-row
+fingerprint equivalence. Require the first apply to commit 18 rows and resolve
+all 29 references. Repeat the same apply command:
+it must commit with `state: "already-applied"` and `inserted: 0`.
+
+Future bounded PWT replay preparation must collect the complete protected
+snapshot set after deleting the replay range and before pruning snapshots.
+That set includes every oracle referenced by a retained event, every
+witness-preserved INCB row and every historical WORK marketplace oracle
+reference. Preparation validates the immutable event-to-row fields and a
+whole-row fingerprint both before and after pruning in the same
+serializable transaction; an unresolved, divergent or changed row rolls the
+entire preparation back. After a supervised historical restore or replay,
+publish a fresh marked exact-tip summary and run
+`indexer:verify-work-atoms-post-bootstrap` before any public read or AMO write
+gate reopens.
+
 Production application releases must be staged from one exact commit, install
 dependencies before the swap, preserve one rollback outside the live path, and
 leave `/opt/proofofwork-api` as a clean checkout at the recorded commit. Managed
