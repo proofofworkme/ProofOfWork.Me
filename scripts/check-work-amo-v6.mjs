@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import {
+  canonicalRawProtocolRecordSetFromTransaction,
+} from "../server/canonical-op-return.mjs";
+import {
   WORK_AMO_V6_ALLOWED_FACE_PROOFS,
   WORK_AMO_V6_AUTH_VERSION,
   WORK_AMO_V6_BLOCK_SEQUENCER_MODEL,
@@ -20,6 +23,7 @@ import {
 import {
   WORK_AMO_V5_ATOMS_PER_WORK,
   WORK_AMO_V5_AUTH_VERSION,
+  WORK_AMO_V5_DECLARATION_AUTHORITY_SCRIPT_PUBKEY,
   WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS,
   WORK_AMO_V5_MAX_SUPPLY,
   WORK_AMO_V5_NETWORK_VALUE_Q8_SCALE,
@@ -28,6 +32,11 @@ import { WORK_TOKEN_ID } from "../server/work-units.mjs";
 import {
   workAmoV6DeclarationCommitment,
 } from "../server/work-amo-v6-declaration.mjs";
+import {
+  coreWorkAmoV6DeclarationEvidence,
+  exactWorkAmoV6DeclarationEvidence,
+  indexedWorkAmoV6DeclarationEvidence,
+} from "./migrate-work-amo-v6.mjs";
 
 const declarationTxid = "11".repeat(32);
 const declarationBlockHash = "12".repeat(32);
@@ -553,6 +562,364 @@ assert.equal(status.listingWritesEnabled, true);
 assert.equal(status.settlementWritesEnabled, true);
 assert.equal(Object.hasOwn(status, "oracleReady"), false);
 
+function opReturnOutput(text) {
+  const payload = Buffer.from(text, "utf8");
+  let push;
+  if (payload.length <= 0x4b) {
+    push = Buffer.from([payload.length]);
+  } else if (payload.length <= 0xff) {
+    push = Buffer.from([0x4c, payload.length]);
+  } else if (payload.length <= 0xffff) {
+    push = Buffer.alloc(3);
+    push[0] = 0x4d;
+    push.writeUInt16LE(payload.length, 1);
+  } else {
+    throw new Error("test OP_RETURN payload is too large");
+  }
+  return {
+    value: 0,
+    scriptPubKey: {
+      hex: Buffer.concat([
+        Buffer.from([0x6a]),
+        push,
+        payload,
+      ]).toString("hex"),
+    },
+  };
+}
+
+const declarationCarrierPayload = Buffer.from(
+  declarationCommitment.protocolRecord,
+  "utf8",
+);
+const declarationAuthorityAddress =
+  "1F1p9UEHuH5KTFR7Zsx93Khdrqhj6t5nFv";
+const declarationCarrierPins = {
+  activationHeight: listingBlockHeight,
+  declarationBlockHash,
+  declarationBlockIndex: 5,
+  declarationHeight: listingBlockHeight - 1,
+  declarationMemoBytes: declarationCommitment.protocolRecordBytes,
+  declarationMemoSha256: declarationCommitment.protocolRecordSha256,
+  declarationProtocolRecord: declarationCommitment.protocolRecord,
+  declarationProtocolVout: 3,
+  declarationRecordOrdinal: 0,
+  declarationRegistryPaymentVout: 4,
+  declarationTxid,
+};
+const declarationCarrierTx = {
+  txid: declarationTxid,
+  vin: [
+    {
+      prevout: {
+        scriptPubKey: {
+          hex: WORK_AMO_V5_DECLARATION_AUTHORITY_SCRIPT_PUBKEY,
+        },
+      },
+    },
+  ],
+  vout: [
+    {
+      value: 0.00000546,
+      scriptPubKey: {
+        address: declarationAuthorityAddress,
+      },
+    },
+    opReturnOutput("pwm1:s:VjYgZGVjbGFyYXRpb24"),
+    opReturnOutput(
+      `pwm1:r:${"b5".repeat(32)}`,
+    ),
+    opReturnOutput(declarationCommitment.protocolRecord),
+    {
+      value: 0.00000546,
+      scriptPubKey: {
+        address: WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS,
+      },
+    },
+    opReturnOutput(
+      `pwt1:send2:${WORK_TOKEN_ID}:1:${
+        declarationAuthorityAddress
+      }`,
+    ),
+  ],
+};
+function declarationCarrierRpc(
+  tx = declarationCarrierTx,
+  canonicalHash = declarationBlockHash,
+) {
+  return async (method) => {
+    if (method === "getblockhash") {
+      return canonicalHash;
+    }
+    if (method === "getblock") {
+      return {
+        hash: declarationBlockHash,
+        height: declarationCarrierPins.declarationHeight,
+        tx: [
+          "01".repeat(32),
+          "02".repeat(32),
+          "03".repeat(32),
+          "04".repeat(32),
+          "05".repeat(32),
+          tx,
+        ],
+      };
+    }
+    throw new Error(`unexpected test RPC method: ${method}`);
+  };
+}
+function declarationCarrierIndexRow(overrides = {}) {
+  return {
+    authority_scriptpubkey:
+      WORK_AMO_V5_DECLARATION_AUTHORITY_SCRIPT_PUBKEY,
+    block_hash: declarationBlockHash,
+    block_height: declarationCarrierPins.declarationHeight,
+    block_index: declarationCarrierPins.declarationBlockIndex,
+    data_bytes: declarationCarrierPayload.length,
+    input_count: 1,
+    output_count: declarationCarrierTx.vout.length,
+    payload_hex: declarationCarrierPayload.toString("hex"),
+    payload_text: declarationCommitment.protocolRecord,
+    protocol: "pwm1",
+    raw_carrier_count: 1,
+    registry_address: WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS,
+    registry_output_count: 1,
+    registry_payment_sats: "546",
+    status: "confirmed",
+    txid: declarationTxid,
+    ...overrides,
+  };
+}
+async function indexedCarrierEvidence(row, pins = declarationCarrierPins) {
+  let observedSql = "";
+  let observedParams = null;
+  const evidence = await indexedWorkAmoV6DeclarationEvidence(
+    {
+      query: async (sql, params) => {
+        observedSql = sql;
+        observedParams = params;
+        return { rows: [row] };
+      },
+    },
+    pins,
+  );
+  assert.match(
+    observedSql,
+    /FROM proof_indexer\.op_returns declaration_carrier/u,
+  );
+  assert.doesNotMatch(
+    observedSql,
+    /FROM proof_indexer\.events/u,
+  );
+  assert.deepEqual(observedParams, [
+    pins.declarationTxid,
+    pins.declarationHeight,
+    pins.declarationBlockHash,
+    pins.declarationBlockIndex,
+    pins.declarationProtocolVout,
+    pins.declarationRecordOrdinal,
+    pins.declarationRegistryPaymentVout,
+  ]);
+  return evidence;
+}
+
+const indexedCarrier = await indexedCarrierEvidence(
+  declarationCarrierIndexRow(),
+);
+const canonicalCarrierRecords =
+  canonicalRawProtocolRecordSetFromTransaction(
+    declarationCarrierTx,
+  ).records;
+const canonicalMail = canonicalCarrierRecords.find(
+  (record) => record.protocol === "pwm1",
+);
+assert.equal(canonicalMail.protocolVout, 1);
+assert.equal(canonicalMail.recordOrdinal, 0);
+assert.deepEqual(
+  canonicalMail.rawRecordParts.map((part) => part.protocolVout),
+  [1, 2, 3],
+);
+assert.equal(canonicalMail.rawDecodeValid, true);
+assert.deepEqual(
+  canonicalCarrierRecords
+    .filter((record) => record.protocol !== "pwm1")
+    .map((record) => [record.protocol, record.protocolVout]),
+  [["pwt1", 5]],
+);
+const coreCarrier = await coreWorkAmoV6DeclarationEvidence(
+  declarationCarrierPins,
+  declarationCarrierRpc(),
+);
+assert.equal(indexedCarrier.protocolVout, 3);
+assert.equal(indexedCarrier.recordOrdinal, 0);
+assert.equal(
+  indexedCarrier.payloadSha256,
+  declarationCommitment.protocolRecordSha256,
+);
+assert.equal(coreCarrier.protocolVout, 3);
+assert.equal(coreCarrier.outputCount, 6);
+assert.equal(
+  exactWorkAmoV6DeclarationEvidence(indexedCarrier, coreCarrier)
+    .evidenceComplete,
+  true,
+);
+
+await assert.rejects(
+  indexedCarrierEvidence(
+    declarationCarrierIndexRow({
+      payload_text: `${declarationCommitment.protocolRecord}x`,
+    }),
+  ),
+  /raw carrier metadata diverges/iu,
+);
+await assert.rejects(
+  indexedCarrierEvidence(
+    declarationCarrierIndexRow({
+      payload_hex: Buffer.from(
+        `${declarationCommitment.protocolRecord}x`,
+        "utf8",
+      ).toString("hex"),
+    }),
+  ),
+  /not the generated protocol record/iu,
+);
+await assert.rejects(
+  indexedCarrierEvidence(
+    declarationCarrierIndexRow({
+      data_bytes: declarationCarrierPayload.length + 1,
+    }),
+  ),
+  /raw carrier metadata diverges/iu,
+);
+await assert.rejects(
+  indexedCarrierEvidence(
+    declarationCarrierIndexRow({ raw_carrier_count: 0 }),
+  ),
+  /declaration evidence mismatch/iu,
+);
+await assert.rejects(
+  indexedCarrierEvidence(
+    declarationCarrierIndexRow({ registry_output_count: 0 }),
+  ),
+  /declaration evidence mismatch/iu,
+);
+await assert.rejects(
+  indexedCarrierEvidence(
+    declarationCarrierIndexRow({ raw_carrier_count: 0 }),
+    {
+      ...declarationCarrierPins,
+      declarationProtocolVout: 2,
+    },
+  ),
+  /declaration evidence mismatch/iu,
+);
+await assert.rejects(
+  indexedCarrierEvidence(
+    declarationCarrierIndexRow({ raw_carrier_count: 0 }),
+    {
+      ...declarationCarrierPins,
+      declarationRecordOrdinal: 1,
+    },
+  ),
+  /declaration evidence mismatch/iu,
+);
+await assert.rejects(
+  coreWorkAmoV6DeclarationEvidence(
+    declarationCarrierPins,
+    declarationCarrierRpc(
+      {
+        ...declarationCarrierTx,
+        vout: declarationCarrierTx.vout.map((output, index) =>
+          index === declarationCarrierPins.declarationProtocolVout
+            ? opReturnOutput(`${declarationCommitment.protocolRecord}x`)
+            : output
+        ),
+      },
+    ),
+  ),
+  /not the generated protocol record/iu,
+);
+await assert.rejects(
+  coreWorkAmoV6DeclarationEvidence(
+    declarationCarrierPins,
+    declarationCarrierRpc(
+      {
+        ...declarationCarrierTx,
+        vin: [
+          {
+            prevout: {
+              scriptPubKey: {
+                hex: `76a914${"00".repeat(20)}88ac`,
+              },
+            },
+          },
+        ],
+      },
+    ),
+  ),
+  /declaration evidence mismatch/iu,
+);
+await assert.rejects(
+  coreWorkAmoV6DeclarationEvidence(
+    declarationCarrierPins,
+    declarationCarrierRpc(
+      {
+        ...declarationCarrierTx,
+        vout: declarationCarrierTx.vout.map((output, index) =>
+          index === declarationCarrierPins.declarationRegistryPaymentVout
+            ? {
+                value: 0.00000546,
+                scriptPubKey: { address: "bc1qwrongregistry" },
+              }
+            : output
+        ),
+      },
+    ),
+  ),
+  /declaration evidence mismatch/iu,
+);
+await assert.rejects(
+  coreWorkAmoV6DeclarationEvidence(
+    declarationCarrierPins,
+    declarationCarrierRpc(
+      {
+        ...declarationCarrierTx,
+        vout: declarationCarrierTx.vout.map((output, index) =>
+          index === declarationCarrierPins.declarationRegistryPaymentVout
+            ? {
+                value: 0.00000545,
+                scriptPubKey: {
+                  address: WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS,
+                },
+              }
+            : output
+        ),
+      },
+    ),
+  ),
+  /declaration evidence mismatch/iu,
+);
+await assert.rejects(
+  coreWorkAmoV6DeclarationEvidence(
+    declarationCarrierPins,
+    declarationCarrierRpc({
+      ...declarationCarrierTx,
+      txid: "ee".repeat(32),
+    }),
+  ),
+  /block position does not match/iu,
+);
+await assert.rejects(
+  coreWorkAmoV6DeclarationEvidence(
+    declarationCarrierPins,
+    declarationCarrierRpc(
+      declarationCarrierTx,
+      "ff".repeat(32),
+    ),
+  ),
+  /no longer canonical/iu,
+);
+
 const commonBroadcastAction = {
   canonicalParsed: true,
   paysWorkRegistry: true,
@@ -612,6 +979,8 @@ console.log(
   JSON.stringify(
     {
       activationEvidence: "exact-and-fail-closed",
+      declarationCarrier:
+        "exact-raw-pwm1-m-with-mail-and-credit-siblings",
       allowedFaceProofs: WORK_AMO_V6_ALLOWED_FACE_PROOFS,
       formula:
         "price=face;amount=floor(face*supply*q8/network);minimum=ceil(amount*network/(supply*q8))",

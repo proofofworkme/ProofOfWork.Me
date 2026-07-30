@@ -1329,19 +1329,23 @@ The safe rollout order is:
 7. Enable writes only after exact-tip health, replay parity, public truth
    checks and marketplace regressions pass.
 
-Publish the declaration from a fresh Computer message, not a reply. Paste only
-the exact declaration body emitted on standard output by
+Publish the exact declaration body emitted on standard output by
 `scripts/build-work-amo-v6-declaration.mjs`; do not add a leading or trailing
-newline. Computer supplies the `pwm1:m:` record wrapper. The transaction must
-have the declared authority scriptPubKey at input zero, a distinct output
-paying at least 546 proofs to
-`1638Vn6KtmK8p5r4oGvAXq9nmZb1emU1DV`, and exactly one governed declaration
-record at record ordinal zero. Do not add reply metadata, CC recipients,
-attachments, or WORK. After confirmation, inspect the raw transaction through
-Core and record the transaction id, block height/hash, block transaction index,
-protocol output index, registry-payment output index, exact wrapped-record byte
-length, and SHA-256. The configured pins and indexed evidence must match all of
-those facts before migration can proceed.
+newline. Computer supplies the `pwm1:m:` record wrapper. Declaration evidence
+pins that exact raw carrier output and its within-output record ordinal. It
+does not substitute the canonical mailbox aggregate position: `pwm1:s`
+subject and `pwm1:r` reply parts may aggregate as mail at another output
+position without changing the declaration carrier. Independently valid sibling
+governed records, including a `pwt1:send2` WORK transfer, likewise do not
+invalidate the declaration; they remain separately ordered and validated by
+their own protocols. The transaction must still have the declared authority
+scriptPubKey at input zero and a distinct output paying at least 546 proofs to
+`1638Vn6KtmK8p5r4oGvAXq9nmZb1emU1DV`. After confirmation, inspect the raw
+transaction through Core and record the transaction id, block
+height/hash, block transaction index, declaration carrier output index and
+record ordinal, registry-payment output index, exact wrapped-record byte
+length, and SHA-256. The configured pins and indexed raw-carrier evidence must
+match all of those facts before migration can proceed.
 
 The post-confirmation migration is an operator-supervised maintenance event.
 Create a root-owned `0600` public activation file containing the exact

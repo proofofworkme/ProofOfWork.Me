@@ -514,46 +514,48 @@ export async function indexedWorkAmoV6DeclarationEvidence(client, pins) {
         ) AS output_count,
         (
           SELECT count(*)::integer
-          FROM proof_indexer.op_returns declaration_protocol
-          WHERE declaration_protocol.network = declaration_tx.network
-            AND declaration_protocol.txid = declaration_tx.txid
-            AND declaration_protocol.vout = $5
-            AND declaration_protocol.output_index = $6
-        ) AS protocol_count,
+          FROM proof_indexer.op_returns declaration_carrier
+          WHERE declaration_carrier.network = declaration_tx.network
+            AND declaration_carrier.txid = declaration_tx.txid
+            AND declaration_carrier.vout = $5
+            AND declaration_carrier.output_index = $6
+        ) AS raw_carrier_count,
         (
-          SELECT declaration_protocol.protocol
-          FROM proof_indexer.op_returns declaration_protocol
-          WHERE declaration_protocol.network = declaration_tx.network
-            AND declaration_protocol.txid = declaration_tx.txid
-            AND declaration_protocol.vout = $5
-            AND declaration_protocol.output_index = $6
+          SELECT declaration_carrier.protocol
+          FROM proof_indexer.op_returns declaration_carrier
+          WHERE declaration_carrier.network = declaration_tx.network
+            AND declaration_carrier.txid = declaration_tx.txid
+            AND declaration_carrier.vout = $5
+            AND declaration_carrier.output_index = $6
           LIMIT 1
         ) AS protocol,
         (
-          SELECT declaration_protocol.payload_hex
-          FROM proof_indexer.op_returns declaration_protocol
-          WHERE declaration_protocol.network = declaration_tx.network
-            AND declaration_protocol.txid = declaration_tx.txid
-            AND declaration_protocol.vout = $5
-            AND declaration_protocol.output_index = $6
+          SELECT declaration_carrier.payload_text
+          FROM proof_indexer.op_returns declaration_carrier
+          WHERE declaration_carrier.network = declaration_tx.network
+            AND declaration_carrier.txid = declaration_tx.txid
+            AND declaration_carrier.vout = $5
+            AND declaration_carrier.output_index = $6
+          LIMIT 1
+        ) AS payload_text,
+        (
+          SELECT declaration_carrier.payload_hex
+          FROM proof_indexer.op_returns declaration_carrier
+          WHERE declaration_carrier.network = declaration_tx.network
+            AND declaration_carrier.txid = declaration_tx.txid
+            AND declaration_carrier.vout = $5
+            AND declaration_carrier.output_index = $6
           LIMIT 1
         ) AS payload_hex,
         (
-          SELECT count(*)::integer
-          FROM proof_indexer.events declaration_event
-          WHERE declaration_event.network = declaration_tx.network
-            AND declaration_event.txid = declaration_tx.txid
-            AND declaration_event.status = 'confirmed'
-            AND declaration_event.valid = true
-            AND declaration_event.block_height =
-              declaration_tx.block_height
-            AND declaration_event.block_index =
-              declaration_tx.block_index
-            AND declaration_event.op_return_vout = $5
-            AND declaration_event.record_ordinal = $6
-            AND declaration_event.protocol = 'pwm1'
-            AND declaration_event.raw_payload = $8
-        ) AS indexed_event_count,
+          SELECT declaration_carrier.data_bytes
+          FROM proof_indexer.op_returns declaration_carrier
+          WHERE declaration_carrier.network = declaration_tx.network
+            AND declaration_carrier.txid = declaration_tx.txid
+            AND declaration_carrier.vout = $5
+            AND declaration_carrier.output_index = $6
+          LIMIT 1
+        ) AS data_bytes,
         (
           SELECT count(*)::integer
           FROM proof_indexer.tx_outputs registry_output
@@ -599,7 +601,6 @@ export async function indexedWorkAmoV6DeclarationEvidence(client, pins) {
       pins.declarationProtocolVout,
       pins.declarationRecordOrdinal,
       pins.declarationRegistryPaymentVout,
-      pins.declarationProtocolRecord,
     ],
   );
   if (result.rows.length !== 1) {
@@ -624,6 +625,14 @@ export async function indexedWorkAmoV6DeclarationEvidence(client, pins) {
       "AMO V6 indexed declaration is not the generated protocol record.",
     );
   }
+  if (
+    row.payload_text !== pins.declarationProtocolRecord ||
+    Number(row.data_bytes) !== payload.length
+  ) {
+    throw new Error(
+      "AMO V6 indexed declaration raw carrier metadata diverges from its exact payload bytes.",
+    );
+  }
   return exactDeclarationFacts(
     {
       authorityScriptPubKey: row.authority_scriptpubkey,
@@ -632,8 +641,7 @@ export async function indexedWorkAmoV6DeclarationEvidence(client, pins) {
       blockTransactionIndex: row.block_index,
       evidenceComplete:
         row.status === "confirmed" &&
-        Number(row.protocol_count) === 1 &&
-        Number(row.indexed_event_count) === 1 &&
+        Number(row.raw_carrier_count) === 1 &&
         Number(row.registry_output_count) === 1,
       inputCount: row.input_count,
       outputCount: row.output_count,
