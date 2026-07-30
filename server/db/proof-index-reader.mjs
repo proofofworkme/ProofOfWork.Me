@@ -148,6 +148,11 @@ import {
   workAmoV5Bip141WitnessesEqual,
 } from "../work-amo-v5-bip141.mjs";
 import {
+  WORK_AMO_V5_H_MINUS_ONE_SEED_EVIDENCE_MODEL,
+  WORK_AMO_V5_H_MINUS_ONE_SEED_EVIDENCE_STATUS,
+  validatedWorkAmoV5HMinusOneSeedEvidence,
+} from "../work-amo-v5-seed-evidence.mjs";
+import {
   INCB_RANGE_REPLAY_BOUND_WITNESS_SOURCE,
   INCB_RANGE_REPLAY_EXACT_MINT_LEGACY_SNAPSHOT_MODE,
   INCB_RANGE_REPLAY_WITNESS_MANIFEST_MODEL,
@@ -173,6 +178,8 @@ const INCB_ISSUANCE_ACCOUNTING_MODEL =
 const INCB_VALUE_SNAPSHOT_MODEL = "canonical-summary-h-minus-one-v1";
 const WORK_NETWORK_VALUE_ACCOUNTING_MODEL =
   "canonical-exact-work-network-q8-v1";
+const WORK_AMO_V5_H_MINUS_ONE_CANONICAL_SUMMARY_SNAPSHOT_ID =
+  "cb13bc6edd20d72f6ae3919e";
 const POWB_TOKEN_ID =
   "a3d0bc8528f91dfc52400a885bed7e49235396aa82aa9f95db41be629f1d5562";
 const BOND_TOKEN_IDS = new Set([POWB_TOKEN_ID, INCB_TOKEN_ID]);
@@ -4501,6 +4508,191 @@ async function exactCheckpointReadinessWithCache({
   return immutableResult;
 }
 
+function proofIndexWorkAmoSeedEvidenceReadiness(
+  evidenceSet,
+  canonicalSeedBlock,
+  markerSeed,
+  seedBindings,
+) {
+  const set =
+    evidenceSet &&
+    typeof evidenceSet === "object" &&
+    !Array.isArray(evidenceSet)
+      ? evidenceSet
+      : {};
+  const rows = Array.isArray(set.rows) ? set.rows : [];
+  const row =
+    Number(set.rowCount) === 1 && rows.length === 1
+      ? rows[0]
+      : null;
+  const payload =
+    row?.payload &&
+    typeof row.payload === "object" &&
+    !Array.isArray(row.payload)
+      ? row.payload
+      : null;
+  const evidence =
+    validatedWorkAmoV5HMinusOneSeedEvidence(payload);
+  if (!row || !evidence) {
+    return null;
+  }
+  const sourceHashes =
+    row.sourceHashes &&
+    typeof row.sourceHashes === "object" &&
+    !Array.isArray(row.sourceHashes)
+      ? row.sourceHashes
+      : {};
+  const metrics =
+    row.metrics &&
+    typeof row.metrics === "object" &&
+    !Array.isArray(row.metrics)
+      ? row.metrics
+      : {};
+  const consistency =
+    row.consistency &&
+    typeof row.consistency === "object" &&
+    !Array.isArray(row.consistency)
+      ? row.consistency
+      : {};
+  const expectedMetrics = {
+    complete: true,
+    genericHolderCount:
+      evidence.seedGenericTokenState.holders.length,
+    genericListingCount:
+      evidence.seedGenericTokenState.listings.length,
+    genericTokenCount:
+      evidence.seedGenericTokenState.tokens.length,
+    idCount: evidence.seedIdState.records.length,
+    workHolderCount: evidence.seedTokenState.holders.length,
+    workListingCount: evidence.seedTokenState.listings.length,
+  };
+  const storedMarker =
+    markerSeed &&
+    typeof markerSeed === "object" &&
+    !Array.isArray(markerSeed)
+      ? markerSeed
+      : {};
+  const markerSnapshotIds = Array.isArray(storedMarker.snapshotIds)
+    ? storedMarker.snapshotIds.map((value) => String(value ?? "").trim())
+    : [];
+  const markerSnapshotIdSet = new Set(markerSnapshotIds);
+  const bindings =
+    seedBindings &&
+    typeof seedBindings === "object" &&
+    !Array.isArray(seedBindings)
+      ? seedBindings
+      : {};
+  const activationTransition =
+    bindings.activationTransition &&
+    typeof bindings.activationTransition === "object" &&
+    !Array.isArray(bindings.activationTransition)
+      ? bindings.activationTransition
+      : {};
+  const independentSeed =
+    bindings.independentSeed &&
+    typeof bindings.independentSeed === "object" &&
+    !Array.isArray(bindings.independentSeed)
+      ? bindings.independentSeed
+      : {};
+  const firstOpeningCommitment =
+    bindings.firstOpeningCommitment &&
+    typeof bindings.firstOpeningCommitment === "object" &&
+    !Array.isArray(bindings.firstOpeningCommitment)
+      ? bindings.firstOpeningCommitment
+      : {};
+  const storedSeedCommitment =
+    bindings.bootstrapSeedCommitment &&
+    typeof bindings.bootstrapSeedCommitment === "object" &&
+    !Array.isArray(bindings.bootstrapSeedCommitment)
+      ? bindings.bootstrapSeedCommitment
+      : {};
+  const evidenceSeedCommitment =
+    evidence.commitments.sufficientState;
+  const commitmentMatchesEvidence = (commitment) =>
+    commitment?.model === evidenceSeedCommitment.model &&
+    Number(commitment?.payloadBytes) ===
+      evidenceSeedCommitment.payloadBytes &&
+    String(commitment?.sha256 ?? "").trim().toLowerCase() ===
+      evidenceSeedCommitment.sha256;
+  const metadataReady =
+    canonicalSeedBlock === true &&
+    Object.keys(sourceHashes).sort().join(",") ===
+      "amoSeedBlock,amoSeedCanonicalSummary,amoSeedEvidence" &&
+    Object.keys(metrics).sort().join(",") ===
+      "complete,genericHolderCount,genericListingCount,genericTokenCount,idCount,workHolderCount,workListingCount" &&
+    Object.keys(consistency).sort().join(",") === "ok,status" &&
+    String(row.snapshotId ?? "") === evidence.snapshotId &&
+    Number(row.indexedThroughBlock) ===
+      evidence.indexedThroughBlock &&
+    sourceHashes.amoSeedBlock ===
+      evidence.indexedThroughBlockHash &&
+    sourceHashes.amoSeedCanonicalSummary ===
+      evidence.canonicalSummary.canonicalSummaryHash &&
+    sourceHashes.amoSeedEvidence ===
+      evidence.evidenceCommitment.sha256 &&
+    consistency.ok === true &&
+    consistency.status ===
+      WORK_AMO_V5_H_MINUS_ONE_SEED_EVIDENCE_STATUS &&
+    Object.entries(expectedMetrics).every(
+      ([key, value]) => metrics[key] === value,
+    );
+  const markerReady =
+    Number(storedMarker.blockHeight) ===
+      evidence.indexedThroughBlock &&
+    String(storedMarker.blockHash ?? "").trim().toLowerCase() ===
+      evidence.indexedThroughBlockHash &&
+    String(storedMarker.networkValueQ8 ?? "") ===
+      evidence.canonicalSummary.networkValueQ8 &&
+    String(storedMarker.summaryHash ?? "").trim().toLowerCase() ===
+      evidence.canonicalSummary.canonicalSummaryHash &&
+    evidence.canonicalSummary.snapshotId ===
+      WORK_AMO_V5_H_MINUS_ONE_CANONICAL_SUMMARY_SNAPSHOT_ID &&
+    Number(storedMarker.snapshotCount) === 1 &&
+    markerSnapshotIds.length === 1 &&
+    markerSnapshotIdSet.size === 1 &&
+    markerSnapshotIds[0] ===
+      WORK_AMO_V5_H_MINUS_ONE_CANONICAL_SUMMARY_SNAPSHOT_ID &&
+    commitmentMatchesEvidence(storedSeedCommitment) &&
+    independentSeed.source ===
+      "pinned-h-minus-one-seed-evidence" &&
+    commitmentMatchesEvidence(independentSeed.commitment) &&
+    commitmentMatchesEvidence(firstOpeningCommitment) &&
+    Number(activationTransition.blockHeight) ===
+      WORK_AMO_V5_ACTIVATION_HEIGHT &&
+    /^[0-9a-f]{64}$/u.test(
+      String(activationTransition.blockHash ?? "")
+        .trim()
+        .toLowerCase(),
+    ) &&
+    String(activationTransition.previousBlockHash ?? "")
+      .trim()
+      .toLowerCase() === evidence.indexedThroughBlockHash &&
+    String(activationTransition.openingNetworkValueQ8 ?? "") ===
+      evidence.seedSufficientState.networkValueQ8 &&
+    activationTransition.openingStateModel ===
+      evidenceSeedCommitment.model &&
+    Number(activationTransition.openingStatePayloadBytes) ===
+      evidenceSeedCommitment.payloadBytes &&
+    String(activationTransition.openingStateSha256 ?? "")
+      .trim()
+      .toLowerCase() === evidenceSeedCommitment.sha256;
+  if (!metadataReady || !markerReady) {
+    return null;
+  }
+  return {
+    evidence,
+    evidenceSnapshotId: evidence.snapshotId,
+    ready: true,
+    seed: {
+      blockHash: evidence.indexedThroughBlockHash,
+      blockHeight: evidence.indexedThroughBlock,
+      networkValueQ8: evidence.canonicalSummary.networkValueQ8,
+      snapshotId: evidence.canonicalSummary.snapshotId,
+      summaryHash: evidence.canonicalSummary.canonicalSummaryHash,
+    },
+  };
+}
+
 export async function proofIndexWorkAmoReplayReadiness(
   network,
   options = {},
@@ -4963,37 +5155,35 @@ export async function proofIndexWorkAmoReplayReadiness(
           ) AS rebuild,
           (
             SELECT jsonb_build_object(
-              'blockHash', lower(seed_block.block_hash),
-              'blockHeight', seed_block.height,
-              'networkValueQ8',
-                seed_snapshot.payload->'totals'->>'workNetworkValueQ8',
-              'snapshotId', seed_snapshot.snapshot_id,
-              'summaryHash',
-                lower(seed_snapshot.source_hashes->>'canonicalSummary')
+              'rowCount', count(*),
+              'rows', COALESCE(
+                jsonb_agg(
+                  jsonb_build_object(
+                    'consistency', seed_evidence.consistency,
+                    'indexedThroughBlock',
+                      seed_evidence.indexed_through_block,
+                    'metrics', seed_evidence.metrics,
+                    'payload', seed_evidence.payload,
+                    'snapshotId', seed_evidence.snapshot_id,
+                    'sourceHashes', seed_evidence.source_hashes
+                  )
+                  ORDER BY seed_evidence.snapshot_id
+                ),
+                '[]'::jsonb
+              )
             )
+            FROM proof_indexer.ledger_snapshots seed_evidence
+            WHERE seed_evidence.network = $1
+              AND seed_evidence.payload->>'model' = $12
+          ) AS seed_evidence_set,
+          EXISTS (
+            SELECT 1
             FROM proof_indexer.blocks seed_block
-            JOIN proof_indexer.ledger_snapshots seed_snapshot
-              ON seed_snapshot.network = seed_block.network
-             AND seed_snapshot.indexed_through_block = seed_block.height
-             AND lower(seed_snapshot.payload->>'indexedThroughBlockHash') =
-               lower(seed_block.block_hash)
-             AND lower(seed_snapshot.source_hashes->>'blockScan') =
-               lower(seed_block.block_hash)
-             AND seed_snapshot.source_hashes ? 'canonicalSummary'
-             AND seed_snapshot.payload ? 'summaryPayloads'
-             AND seed_snapshot.consistency->>'ok' = 'true'
-             AND seed_snapshot.payload->>'ok' = 'true'
-             AND seed_snapshot.payload->>'status' = 'green'
-             AND seed_snapshot.payload->'totals'->>'workNetworkValueQ8' ~
-               '^[1-9][0-9]*$'
-             AND seed_snapshot.source_hashes->>'canonicalSummary' ~
-               '^[0-9a-fA-F]{64}$'
             WHERE seed_block.network = $1
-              AND seed_block.canonical = true
               AND seed_block.height = $2
-            ORDER BY seed_snapshot.generated_at DESC
-            LIMIT 1
-          ) AS seed,
+              AND lower(seed_block.block_hash) = $6
+              AND seed_block.canonical = true
+          ) AS seed_block_exact,
           (
             SELECT jsonb_build_object(
               'blockHash', lower(closing_block.block_hash),
@@ -5051,6 +5241,34 @@ export async function proofIndexWorkAmoReplayReadiness(
               )) = $4
               AND scan.payload->>'complete' = 'true'
           ) AS block_scan_complete,
+          (
+            SELECT jsonb_build_object(
+              'blockHash', lower(activation.block_hash),
+              'blockHeight', activation.block_height,
+              'openingNetworkValueQ8',
+                activation.opening_network_value_q8::text,
+              'openingStateModel',
+                activation.state_commitment_model,
+              'openingStatePayloadBytes',
+                activation.opening_state_payload_bytes,
+              'openingStateSha256',
+                lower(activation.opening_state_sha256),
+              'previousBlockHash',
+                lower(activation.previous_block_hash)
+            )
+            FROM proof_indexer.work_amo_block_transitions activation
+            JOIN proof_indexer.blocks activation_block
+              ON activation_block.network = activation.network
+             AND activation_block.block_hash = activation.block_hash
+             AND activation_block.height = activation.block_height
+             AND activation_block.previous_block_hash =
+               activation.previous_block_hash
+             AND activation_block.canonical = true
+            WHERE activation.network = $1
+              AND activation.block_height = $5
+              AND activation.model = $7
+            LIMIT 1
+          ) AS activation_transition,
           (
             SELECT jsonb_build_object(
               'blockCount', count(*),
@@ -5321,6 +5539,7 @@ export async function proofIndexWorkAmoReplayReadiness(
         WORK_AMO_V5_RAW_BLOCK_DESCRIPTOR_MODEL,
         WORK_AMO_V5_PAYLOAD_COMMITMENT_MODEL,
         WORK_AMO_V5_RAW_BIP141_WITNESS_MODEL,
+        WORK_AMO_V5_H_MINUS_ONE_SEED_EVIDENCE_MODEL,
       ],
     ),
   ]);
@@ -5348,32 +5567,19 @@ export async function proofIndexWorkAmoReplayReadiness(
     typeof migration.bootstrapCertificate === "object" &&
     !Array.isArray(migration.bootstrapCertificate)
       ? migration.bootstrapCertificate
-      : {
-          blockDescriptorModel:
-            replayEvidence.transitionReplay?.blockDescriptorModel,
-          finalBlockDescriptorCommitment:
-            replayEvidence.transitionReplay
-              ?.finalBlockDescriptorCommitment,
-          finalBlockTransactionCount:
-            replayEvidence.transitionReplay
-              ?.finalBlockTransactionCount,
-          finalBip141Witness:
-            replayEvidence.transitionReplay
-              ?.finalBip141Witness,
-          finalTipCommitment:
-            replayEvidence.transitionReplay?.finalTipCommitment,
-          finalTransitionChainCommitment:
-            replayEvidence.transitionReplay
-              ?.finalTransitionChainCommitment,
-          seedCommitment:
-            replayEvidence.independentSeed?.commitment,
-          throughBlockHash: replayEvidence.throughBlockHash,
-          throughHeight: replayEvidence.throughHeight,
-          transitionSetSha256:
-            replayEvidence.transitionReplay?.transitionSetSha256,
-          transitionChainModel:
-            replayEvidence.transitionReplay?.transitionChainModel,
-        };
+      : {};
+  const markerIndependentSeed =
+    replayEvidence.independentSeed &&
+    typeof replayEvidence.independentSeed === "object" &&
+    !Array.isArray(replayEvidence.independentSeed)
+      ? replayEvidence.independentSeed
+      : {};
+  const markerTransitionReplay =
+    replayEvidence.transitionReplay &&
+    typeof replayEvidence.transitionReplay === "object" &&
+    !Array.isArray(replayEvidence.transitionReplay)
+      ? replayEvidence.transitionReplay
+      : {};
   const markerSeed =
     replayEvidence.seed &&
     typeof replayEvidence.seed === "object" &&
@@ -5386,12 +5592,22 @@ export async function proofIndexWorkAmoReplayReadiness(
     !Array.isArray(replayEvidence.closing)
       ? replayEvidence.closing
       : {};
-  const currentSeed =
-    replayCheckpoint.seed &&
-    typeof replayCheckpoint.seed === "object" &&
-    !Array.isArray(replayCheckpoint.seed)
-      ? replayCheckpoint.seed
-      : {};
+  const currentSeedReadiness =
+    proofIndexWorkAmoSeedEvidenceReadiness(
+      replayCheckpoint.seed_evidence_set,
+      replayCheckpoint.seed_block_exact,
+      markerSeed,
+      {
+        activationTransition:
+          replayCheckpoint.activation_transition,
+        bootstrapSeedCommitment:
+          bootstrapCertificate.seedCommitment,
+        firstOpeningCommitment:
+          markerTransitionReplay.firstOpeningCommitment,
+        independentSeed: markerIndependentSeed,
+      },
+    );
+  const currentSeed = currentSeedReadiness?.seed ?? {};
   const currentClosing =
     replayCheckpoint.closing &&
     typeof replayCheckpoint.closing === "object" &&
@@ -5590,6 +5806,7 @@ export async function proofIndexWorkAmoReplayReadiness(
     Number(
       bootstrapTransition.payload?.transitionChainCommitment?.payloadBytes,
     ) === Number(markerFinalTransitionChainCommitment.payloadBytes) &&
+    currentSeedReadiness?.ready === true &&
     Number(markerSeed.blockHeight) ===
       WORK_AMO_V5_ACTIVATION_HEIGHT - 1 &&
     String(markerSeed.blockHash ?? "").trim().toLowerCase() ===

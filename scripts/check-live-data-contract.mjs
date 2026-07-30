@@ -1482,7 +1482,7 @@ expectAll(
   ],
 );
 expectAll(
-  "AMO exact-tip replay readiness coalesces reads and constrains summary snapshots",
+  "AMO exact-tip replay readiness coalesces reads and binds immutable seed evidence",
   proofIndexReader,
   [
     /const workAmoReplayReadinessInFlight = new Map\(\)/,
@@ -1493,7 +1493,12 @@ expectAll(
     /function rememberExactCheckpointReadiness\([\s\S]*maxEntries = 2[\s\S]*cache\.delete\(oldestKey\)/,
     /function exactCheckpointReadinessWithCache\([\s\S]*readyCache\.get\(checkpointKey\)[\s\S]*exactCheckpointSingleFlight\([\s\S]*workAmoReplayReadinessResultIsExactPositive\([\s\S]*deepFreezeReadinessSnapshot\(\{ \.\.\.result \}\)[\s\S]*rememberExactCheckpointReadiness\(/,
     /proofIndexWorkAmoReplayReadiness\([\s\S]*workAmoReplayReadinessRequest\(network, options\)[\s\S]*exactCheckpointReadinessWithCache\([\s\S]*singleFlightBypass[\s\S]*readyCache: workAmoReplayReadinessReadyCache/,
-    /seed_snapshot\.source_hashes \? 'canonicalSummary'[\s\S]*seed_snapshot\.payload \? 'summaryPayloads'/,
+    /FROM proof_indexer\.ledger_snapshots seed_evidence[\s\S]*WHERE seed_evidence\.network = \$1[\s\S]*seed_evidence\.payload->>'model' = \$12/,
+    /FROM proof_indexer\.blocks seed_block[\s\S]*seed_block\.height = \$2[\s\S]*lower\(seed_block\.block_hash\) = \$6[\s\S]*seed_block\.canonical = true/,
+    /FROM proof_indexer\.work_amo_block_transitions activation[\s\S]*activation\.block_height = \$5[\s\S]*activation\.model = \$7/,
+    /validatedWorkAmoV5HMinusOneSeedEvidence\(payload\)/,
+    /independentSeed\.source ===\s*"pinned-h-minus-one-seed-evidence"/,
+    /WORK_AMO_V5_H_MINUS_ONE_CANONICAL_SUMMARY_SNAPSHOT_ID/,
     /closing_snapshot\.source_hashes \? 'canonicalSummary'[\s\S]*closing_snapshot\.payload \? 'summaryPayloads'/,
   ],
 );
@@ -1788,6 +1793,7 @@ expectAll(
     /amoSeedCanonicalSummary/,
     /validatedWorkAmoV5HMinusOneSeedEvidence\(evidenceRow\.payload\)/,
     /pinned-h-minus-one-seed-evidence/,
+    /CREATE UNIQUE INDEX IF NOT EXISTS\s+ledger_snapshots_work_amo_v5_h_minus_one_seed_evidence_network_uidx[\s\S]*ON proof_indexer\.ledger_snapshots \(network\)/,
     /work_amo_h_minus_one_seed_evidence_immutable/,
     /BEFORE UPDATE OR DELETE ON proof_indexer\.ledger_snapshots/,
   ],

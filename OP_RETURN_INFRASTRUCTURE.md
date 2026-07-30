@@ -107,6 +107,12 @@ oracle. Operators can raise the two caps with
 `POW_INDEX_LEDGER_CANONICAL_SUMMARY_RETENTION` and
 `POW_INDEX_LEDGER_SCAN_SNAPSHOT_RETENTION`; do not lower them below the built-in
 safety floors or delete referenced H-1 valuation snapshots.
+Retention, canonical rebuild, PWT range replay, WORK atomic invalidation, and
+repair deletion paths also preserve the immutable V5 H-1 seed-evidence row
+and every completed-migration seed or closing dependency. The schema's
+immutable `BEFORE UPDATE OR DELETE` trigger is the database backstop. The
+evidence-bound historical canonical summary is protected when present, but
+readiness does not depend on recreating it after legitimate pruning.
 For every hydrated protocol transaction, canonical replay also upserts
 full-node `tx_inputs`, `tx_outputs`, safely decoded `op_returns`, and canonical
 spend links. These normalized rows accelerate exact transaction/outpoint audits
@@ -1100,13 +1106,15 @@ Historical transitions are never tested against unscoped current balance or
 listing tables. Only publication of the current tip may require current
 relational parity.
 
-The required historical H-1 barrier reuses an already eligible exact
-height/hash-bound canonical summary before considering any refresh. Every
-eligible version at that checkpoint must agree on the exact live/frozen WORK
-network Q8 values and accounting models; disagreement fails closed. A later
-pending/public-log fingerprint cannot cause the immutable height-959620
-bootstrap to be recomputed from present relational state. The summary service
-is consulted only when no eligible exact checkpoint exists.
+During original capture, the H-1 producer reused the eligible exact
+height/hash-bound canonical summary to construct one immutable seed-evidence
+row. After capture and migration, runtime readiness consumes that evidence row
+directly: it recomputes the evidence envelope and preimage commitments, checks
+exact ledger metadata and canonical H-1 block binding, and binds the historical
+summary id/hash/network-value Q8 to the completed migration seed, bootstrap
+commitment, and first activation opening state. It neither requires nor
+fabricates the replaceable historical summary row. Duplicate, tampered,
+noncanonical, or marker-divergent evidence fails closed.
 
 One historical invalid WORK listing is already embedded in that immutable
 bootstrap basis and is reconciled without rewriting it. Its complete evidence
@@ -1166,6 +1174,8 @@ stored seed to match those preimages and commitments exactly. If the
 independent H-1 sources are unavailable, replay fails closed; it never
 reconstructs the seed from current-tip tables or legacy bond-activity
 heuristics.
+The separately captured immutable H-1 evidence row is bootstrap authority; the
+persisted activation transition is corroborating replay evidence only.
 Generic-credit definition, balance, listing-amount, and listing-price fields in
 that seed are canonical decimal strings. A supervised first bootstrap may use
 the H-1 repeatable-read SQL preimage, where every `numeric`/`bigint` field is
@@ -1249,14 +1259,16 @@ before a later PWM record. The derived INCB companion is bound to the accepted
 parent/send outcome and has no second output claim, miner fee, or economic
 contribution.
 
-### Staged WORK AMO V6 proof-native gate
+### Confirmed WORK AMO V6 proof-native gate (production writes fail closed)
 
 The V6 release replaces USD-denominated WORK faces with fixed proof-native
 faces of 20,000, 50,000 and 100,000 proofs. No V6 consensus path reads a USD
 price, exchange source, operator quote, signing key or time-limited
 attestation. USD equivalents are optional UI display values only. This is a
-prepared, fail-closed upgrade: deployment alone does not activate it. The
-exact declaration must first confirm, and activation remains `D + 1`.
+confirmed, fail-closed upgrade: declaration transaction
+`975fd82aa84995e014b240618ee1a1254d0a735e6e1241372d0bed0a0d9f0799`
+sets protocol activation height `960219`, but deployment or protocol height
+alone cannot open production admission.
 
 Production configuration has exact declaration pins and one independent write
 gate:
@@ -1404,6 +1416,23 @@ truth checks and marketplace regressions, then enable
 `WORK_AMO_V6_WRITES_ENABLED=1` and deploy every public UI surface from the same
 commit-bound archive. A failure at any stage leaves new V6 listings closed
 while historical frozen settlements remain available.
+
+Before opening the V6 write gate, record all of these checks from the same
+canonical tip and release:
+
+- the immutable seed/dependency trigger and the partial unique evidence index
+  are installed;
+- exactly one valid same-model livenet H-1 evidence row passes with its bound
+  full canonical-summary row absent;
+- the evidence envelope, canonical H-1 block, completed marker, bootstrap seed
+  commitment, and first persisted activation opening state agree exactly;
+- every snapshot-deletion path passes the dependency-protection regression;
+- the V6 migration marker, activation-through-tip transition chain, exact-tip
+  closing summary, and relational listing terms pass parity;
+- API and worker both load the exact pins and
+  `WORK_AMO_V6_WRITES_ENABLED=1`, while V4/V5 write gates remain disabled; and
+- Wallet and AMO public listing preflights expose only the 20,000, 50,000, and
+  100,000-proof V6 faces from the commit-bound UI release.
 
 ### WORK atomic-unit cutover
 
@@ -1603,6 +1632,10 @@ fault: pre-range INCB mint events remained canonical while 18 of their
 immutable H-1 `ledger_snapshots` rows were pruned. Never synthesize those rows
 from current state or from the smaller event binding alone; each original row
 also commits its complete metrics, consistency and nested summary payloads.
+This INCB restore rule is intentionally different from V5 H-1 readiness: V5's
+immutable evidence row contains and commits the complete bootstrap preimages,
+so it is validated directly and never authorizes synthesis of its historical
+bound summary.
 The closed recovery set comes from the verified July 20 physical backup's
 pre-deletion `proof_indexer_shadow_20260718` database. Its 30 mint-event
 bindings are byte-identical to production and the exact 18-row JSONL artifact
