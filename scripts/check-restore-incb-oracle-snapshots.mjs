@@ -59,7 +59,7 @@ function bindingFixture(snapshotId, index) {
       blockHeight: snapshotBlockHeight,
       canonicalSummaryHash: sha256(`summary:${snapshotId}`),
       generatedAt: new Date(
-        Date.UTC(2026, 6, 1, 0, index, 0),
+        Date.UTC(2026, 6, 1, 0, index, 0, 603 + index),
       ).toISOString(),
       mode: SNAPSHOT_MODE,
       model: SNAPSHOT_MODEL,
@@ -256,7 +256,10 @@ function databaseRow(row) {
   return {
     consistency: JSON.parse(row.rawConsistencyJson),
     legacy_work_value_evidence: exactLegacyWorkValueEvidence(payload),
-    generated_at: row.generatedAt,
+    // node-postgres returns `timestamptz` columns as Date objects. Keep the
+    // fake faithful so the post-insert verifier exercises millisecond
+    // preservation instead of seeing the artifact's original ISO string.
+    generated_at: new Date(row.generatedAt),
     indexed_through_block: row.indexedThroughBlock,
     metrics: JSON.parse(row.rawMetricsJson),
     network: row.network,

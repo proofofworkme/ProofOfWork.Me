@@ -139,6 +139,12 @@ function canonicalSnapshotId(value, label = "snapshot id") {
 }
 
 function canonicalTimestamp(value, label) {
+  if (value instanceof Date) {
+    if (!Number.isFinite(value.getTime())) {
+      throw new Error(`${label} must be a valid timestamp.`);
+    }
+    return value.toISOString();
+  }
   const text = String(value ?? "").trim();
   const timestamp = Date.parse(text);
   if (!text || !Number.isFinite(timestamp)) {
