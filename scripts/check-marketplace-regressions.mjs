@@ -62,6 +62,12 @@ const WORK_AMO_V5_MODELS = {
 };
 const WORK_AMO_V6_AUTH_VERSION = "pwt-sale-v6";
 const WORK_AMO_V6_ALLOWED_FACE_PROOFS = [20_000, 50_000, 100_000];
+const WORK_AMO_V6_FIRST_LISTING_TX =
+  "b259fa601676287eca2ea94c9142cd13b45fde7031ec98967f15306df6ef7936";
+const WORK_AMO_V6_FIRST_LISTING_BLOCK_HASH =
+  "00000000000000000000a5ea8861570ed551f77ed3cc0bddc3db3958d2700b44";
+const WORK_AMO_V6_FIRST_LISTING_SELLER =
+  "18hkqE81wQuq75UEBKhB4JjAuQg47jN7Aa";
 const WORK_MARKET_V2_LATE_SEAL_LISTING_TX =
   "9c79f121eb73f079b330950a2890ba2029416e5b75bafadc642623c66fd963f9";
 const WORK_MARKET_V2_LATE_SEAL_TX =
@@ -956,6 +962,89 @@ function assertWorkAmoV6Surface(payload, label, context = payload) {
   return status;
 }
 
+function assertFirstWorkAmoV6ListingRecord(
+  listing,
+  label,
+  allowedStatuses = ["active", "sealing", "sold", "delisted"],
+) {
+  assert(listing, `${label} is missing the first confirmed AMO V6 listing`);
+  const status = String(listing.status ?? "").toLowerCase();
+  assert(
+    String(listing.listingId ?? "").toLowerCase() ===
+        WORK_AMO_V6_FIRST_LISTING_TX &&
+      listing.confirmed === true &&
+      allowedStatuses.includes(status) &&
+      workListingAuthorizationVersion(listing) ===
+        WORK_AMO_V6_AUTH_VERSION &&
+      String(listing.tokenId ?? "").toLowerCase() === WORK_TOKEN_ID &&
+      String(listing.sellerAddress ?? "") ===
+        WORK_AMO_V6_FIRST_LISTING_SELLER &&
+      String(listing.amountAtoms ?? "") === "10" &&
+      String(listing.amount ?? "") === "0.0000001" &&
+      Number(listing.priceSats) === 20_000 &&
+      Number(listing.blockHeight) === 960_258 &&
+      String(listing.blockHash ?? "").toLowerCase() ===
+        WORK_AMO_V6_FIRST_LISTING_BLOCK_HASH &&
+      Number(listing.blockIndex) === 4_093 &&
+      Number(listing.protocolVout) === 1 &&
+      Number(listing.recordOrdinal) === 0,
+    `${label} changed the canonical first AMO V6 listing terms, position, or lifecycle status (${status || "missing"})`,
+  );
+}
+
+async function assertFirstWorkAmoV6ListingProjection(token) {
+  const tokenMatches = (token?.listings ?? []).filter(
+    (item) =>
+      String(item?.listingId ?? "").toLowerCase() ===
+      WORK_AMO_V6_FIRST_LISTING_TX,
+  );
+  assert(
+    tokenMatches.length === 1,
+    `/api/v1/token returned ${tokenMatches.length} copies of the first AMO V6 listing`,
+  );
+  assertFirstWorkAmoV6ListingRecord(
+    tokenMatches[0],
+    "/api/v1/token",
+  );
+
+  const exactHistory = await tokenHistory("listings", {
+    fresh: 1,
+    q: WORK_AMO_V6_FIRST_LISTING_TX,
+  });
+  const exactMatches = (exactHistory.items ?? []).filter(
+    (item) =>
+      String(item?.listingId ?? "").toLowerCase() ===
+      WORK_AMO_V6_FIRST_LISTING_TX,
+  );
+  assert(
+    exactMatches.length === 1 && Number(exactHistory.totalCount) === 1,
+    `exact listing history returned ${exactMatches.length} rows and total ${exactHistory.totalCount} for the first AMO V6 listing`,
+  );
+  assertFirstWorkAmoV6ListingRecord(
+    exactMatches[0],
+    "exact /api/v1/token-history",
+  );
+
+  const broadHistory = await tokenHistory("listings", {
+    fresh: 1,
+    limit: 200,
+  });
+  const broadMatches = (broadHistory.items ?? []).filter(
+    (item) =>
+      String(item?.listingId ?? "").toLowerCase() ===
+      WORK_AMO_V6_FIRST_LISTING_TX,
+  );
+  assert(
+    broadMatches.length === 1,
+    `broad listing history returned ${broadMatches.length} copies of the first AMO V6 listing`,
+  );
+  assertFirstWorkAmoV6ListingRecord(
+    broadMatches[0],
+    "broad /api/v1/token-history",
+    ["confirmed"],
+  );
+}
+
 function expectedActiveWorkMarketVersion(payload, context = payload) {
   const workAmoV6 = workAmoV6StatusFromPayload(payload, context);
   if (
@@ -1335,6 +1424,13 @@ async function runFastMarketplaceRegressionGate() {
     );
   });
 
+  await step("first confirmed WORK AMO V6 listing projection", async () => {
+    const status = workAmoV6StatusFromPayload(cutoverToken);
+    if (status?.activation?.active === true && status?.ready === true) {
+      await assertFirstWorkAmoV6ListingProjection(cutoverToken);
+    }
+  });
+
   await step("active and closed WORK listing truth", async () => {
     const activeListing = await tokenHistory("listings", { q: LISTING_TX });
     assert(
@@ -1529,6 +1625,27 @@ async function runFastMarketplaceRegressionGate() {
       "Marketplace summary",
       marketplaceSummary,
     );
+    const v6Status = workAmoV6StatusFromPayload(
+      marketplaceSummary,
+      marketplaceSummary.token,
+    );
+    if (v6Status?.activation?.active === true && v6Status?.ready === true) {
+      const firstListingMatches = (
+        marketplaceSummary.token?.listings ?? []
+      ).filter(
+        (item) =>
+          String(item?.listingId ?? "").toLowerCase() ===
+          WORK_AMO_V6_FIRST_LISTING_TX,
+      );
+      assert(
+        firstListingMatches.length === 1,
+        `Marketplace summary returned ${firstListingMatches.length} copies of the first AMO V6 listing`,
+      );
+      assertFirstWorkAmoV6ListingRecord(
+        firstListingMatches[0],
+        "Marketplace summary",
+      );
+    }
     for (const txid of REPORTED_OTC_UNSEALED_LISTING_TXS) {
       const item = listingById(marketplaceSummary.token?.listings, txid);
       assert(

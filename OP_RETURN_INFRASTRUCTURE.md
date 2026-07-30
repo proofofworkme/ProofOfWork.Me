@@ -1373,6 +1373,48 @@ and publish their action tuple separately. This verifier-only enrichment is
 V6-scoped so already-persisted V4/V5 transition payloads and canonical bytes
 remain unchanged.
 
+#### Public V6 read projection is independent of write admission
+
+The public current-table and history readers activate V6 only when the exact
+configured declaration pins rejoin the confirmed canonical declaration
+transaction, block and raw OP_RETURN carrier, and the singleton completed
+`workAmoV6Migration:livenet` marker binds the same declaration evidence and V6
+models. The read decision is made for the requested snapshot: a snapshot
+before height `960219` keeps its historical policy, while a current or later
+snapshot requires the exact V6 readiness proof. Missing, duplicate, tampered
+or noncanonical evidence leaves the reader on the preceding V5-era version
+policy. It must not infer V6 readiness from activation height, deployment
+configuration or a marker independently.
+
+After exact read readiness, the public allowed set is V6 plus canonical valid
+confirmed grandfathered V4/V5 listings with frozen settlement rights. A V4
+listing confirmed at or after height `959621`, a V5 listing confirmed at or
+after height `960219`, an unknown version or a mixed-version row is excluded
+from active state and remains audit evidence only. `/api/v1/token`, listings
+history, Credit, Wallet and AMO projections must apply the same version policy
+rather than maintaining independent V5-only filters.
+
+Relational projection remains evidence-bound. A V6 `credit_listings` row can
+be public only when exactly one valid confirmed listing event joins its
+confirmed transaction and canonical block at the identical full protocol
+position. A sealed row also needs exactly one valid confirmed seal event bound
+to the same listing and authorization version at its own identical full
+position. Missing, duplicate or mismatched listing/seal evidence fails closed;
+stored lifecycle state or payload booleans cannot manufacture confirmation.
+
+For WORK, `credit_listings.amount` is an atom count at this relational
+boundary. Readers must interpret it as atoms even if token metadata is absent
+or legacy-shaped, emit that integer as `amountAtoms`, and format the public
+eight-decimal WORK amount from it. Thus a stored value of `10` projects as
+`0.0000001 WORK`.
+
+`WORK_AMO_V6_WRITES_ENABLED`, exact-tip action admission and the V4/V5 write
+switches do not select public read versions. Disabling writes must leave
+already-confirmed canonical V6 listings and valid grandfathered frozen rights
+readable, subject to the ordinary canonical-index freshness rules. This
+separation permits an operator to close new actions without rewriting or
+hiding confirmed protocol history.
+
 The safe rollout order is:
 
 1. Prove through Core and the canonical index that no earlier V6 declaration,

@@ -1425,18 +1425,18 @@ assert.match(
 assert.match(apiSource, /work-market-v2-cutover/u);
 assert.match(
   appSource,
-  /function workAmoV5ProtocolReady[\s\S]*status\?\.active === true[\s\S]*status\.indexReady === true[\s\S]*status\.declarationConfirmed === true/u,
+  /function workAmoV6ActivationReady[\s\S]*status\?\.version === TOKEN_SALE_AUTH_WORK_AMO_PROOF_UNIT_VERSION[\s\S]*status\.activation\?\.active === true[\s\S]*status\.activation\.evidenceComplete === true/u,
 );
 assert.match(
   appSource,
-  /function workAmoV5ProtocolWritesReady[\s\S]*protocolWritesEnabled === true/u,
+  /function workAmoV6SettlementWritesReady[\s\S]*status\?\.ready === true[\s\S]*status\.protocolWritesEnabled === true[\s\S]*status\.settlementWritesEnabled === true/u,
 );
 assert.match(
   appSource,
-  /function workAmoV5ListingWritesReady[\s\S]*listingWritesEnabled === true[\s\S]*quoteReady === true/u,
+  /function workAmoV6ListingWritesReady[\s\S]*workAmoV6SettlementWritesReady\(quote\)[\s\S]*status\?\.listingWritesEnabled === true/u,
 );
-assert.match(appSource, /function assertWorkAmoV5ProtocolEnabled/u);
-assert.match(appSource, /function assertWorkAmoV5ListingEnabled/u);
+assert.match(appSource, /function assertWorkAmoV6SettlementEnabled/u);
+assert.match(appSource, /function assertWorkAmoV6ListingEnabled/u);
 assert.match(appSource, /TOKEN_SALE_AUTH_WORK_CONFIRMATION_FLOOR_VERSION/u);
 assert.match(appSource, /Marketplace V1 Relic/u);
 assert.match(appSource, /disabledAtBlockHeight: 959062/u);

@@ -104,6 +104,7 @@ import {
   WORK_AMO_V5_UNIT_USD_ORACLE_MODEL,
   WORK_AMO_V5_UNIT_WORK_ORACLE_MODEL,
   WORK_AMO_V5_V1_DECLARATION_TXID,
+  applyWorkAmoV5CutoverToTokenState,
   assignWorkAmoV5EconomicOutputs,
   compareWorkAmoUtf8,
   deriveWorkAmoV5FrozenTerms,
@@ -1074,6 +1075,23 @@ function isolatedFunction(path, name, globals = {}) {
     canonicalWorkAtomsText,
     compareCanonicalUtf8,
     compareTokenHolderBalances,
+    applyWorkAmoV6PublicListingReadPolicy: (state) => state,
+    currentWorkMarketAuthorizationVersionsAtSnapshot: async (
+      _network,
+      snapshotHeight,
+      workMarketV4Activation,
+    ) =>
+      Number(snapshotHeight) === 0 ||
+      Number(snapshotHeight) >= WORK_AMO_V5_ACTIVATION_HEIGHT
+        ? [WORK_AMO_V5_AUTH_VERSION, "pwt-sale-v4"]
+        : workMarketV4Activation
+          ? ["pwt-sale-v4"]
+          : ["pwt-sale-v3"],
+    payloadWithCurrentWorkMarketListingReadPolicy: async (
+      _network,
+      payload,
+    ) => payload,
+    workAmoV6PublicListingReadSql: () => "true",
     dateIso,
     decimalTextFromQ8,
     decimalValueToQ8,
@@ -1459,6 +1477,7 @@ const WORK_MARKET_GOVERNED_AUTH_VERSIONS_FIXTURE = new Set([
   "pwt-sale-v3",
   "pwt-sale-v4",
   WORK_AMO_V5_AUTH_VERSION,
+  WORK_AMO_V6_AUTH_VERSION,
 ]);
 
 check("server parses signed non-WORK outputs without free identifiers", () => {
@@ -3966,6 +3985,8 @@ check(
     );
     assert.equal(payload.items.length, 1);
     const [closed] = payload.items;
+    assert.equal(closed.amount, "1");
+    assert.equal(closed.amountAtoms, "100000000");
     assert.equal(closed.status, "closed");
     assert.equal(closed.closeTxid, spendTxid);
     assert.equal(closed.closedTxid, spendTxid);
@@ -4121,7 +4142,7 @@ check(
       op_return_vout: 2,
       payload: {
         ...canonicalCloseEvent.payload,
-        amount: "100000000",
+        amountAtoms: "100000000",
         buyerAddress: "buyer",
         priceSats: 1000,
         registryAddress: "registry",
@@ -16951,13 +16972,19 @@ check("exact listing misses bypass chain recovery only with terminal database pr
   );
   assert.equal(cutoverPage.totalCount, 0);
   assert.equal(cutoverPage.source, "proof-indexer-credit-listings-terminal");
-  assert.match(sqlReads[0], /saleAuthorization'->>'version'[\s\S]*= \$5/u);
-  assert.equal(sqlParams[0].at(-1), "pwt-sale-v3");
+  assert.match(
+    sqlReads[0],
+    /saleAuthorization'->>'version'[\s\S]*= ANY\(\$5::text\[\]\)/u,
+  );
+  assert.deepEqual(Array.from(sqlParams[0].at(-1)), ["pwt-sale-v3"]);
   assert.doesNotMatch(sqlReads[0], /pwt-sale-v1','pwt-sale-v2/u);
   assert.match(sqlReads[1], /cutover_listing/u);
-  assert.match(sqlReads[1], /saleAuthorization'->>'version'[\s\S]*<> \$4/u);
+  assert.match(
+    sqlReads[1],
+    /saleAuthorization'->>'version'[\s\S]*<> ALL\(\$4::text\[\]\)/u,
+  );
   assert.equal(sqlParams[1][2], WORK_TOKEN_ID);
-  assert.equal(sqlParams[1].at(-1), "pwt-sale-v3");
+  assert.deepEqual(Array.from(sqlParams[1].at(-1)), ["pwt-sale-v3"]);
 
   sqlReads.length = 0;
   sqlParams.length = 0;
@@ -16977,10 +17004,19 @@ check("exact listing misses bypass chain recovery only with terminal database pr
     amoCutoverPage.source,
     "proof-indexer-credit-listings-terminal",
   );
-  assert.match(sqlReads[0], /saleAuthorization'->>'version'[\s\S]*= \$5/u);
-  assert.equal(sqlParams[0].at(-1), WORK_AMO_V5_AUTH_VERSION);
+  assert.match(
+    sqlReads[0],
+    /saleAuthorization'->>'version'[\s\S]*= ANY\(\$5::text\[\]\)/u,
+  );
+  assert.deepEqual(
+    Array.from(sqlParams[0].at(-1)),
+    [WORK_AMO_V5_AUTH_VERSION, WORK_AMO_V4_AUTH_VERSION],
+  );
   assert.match(sqlReads[1], /cutover_listing/u);
-  assert.equal(sqlParams[1].at(-1), WORK_AMO_V5_AUTH_VERSION);
+  assert.deepEqual(
+    Array.from(sqlParams[1].at(-1)),
+    [WORK_AMO_V5_AUTH_VERSION, WORK_AMO_V4_AUTH_VERSION],
+  );
 
   terminal = false;
   sqlReads.length = 0;
@@ -32038,9 +32074,12 @@ check("exact dropped market misses are terminal without loading broad history", 
   assert.deepEqual(authoritativeEmptyListings.items, []);
   assert.match(
     sqlReads[0].sql,
-    /saleAuthorization'->>'version'[\s\S]*= \$5/u,
+    /saleAuthorization'->>'version'[\s\S]*= ANY\(\$5::text\[\]\)/u,
   );
-  assert.equal(sqlReads[0].params[4], "pwt-sale-v3");
+  assert.deepEqual(
+    Array.from(sqlReads[0].params[4]),
+    ["pwt-sale-v3"],
+  );
   assert.doesNotMatch(sqlReads[0].sql, /bool_and\(/u);
 
   let embeddedSnapshotReads = 0;
@@ -39144,7 +39183,7 @@ check("AMO V5 listing-term reads reject relational/frozen divergence", () => {
   );
 });
 
-check("AMO V5 sold listing rows cannot synthesize a sale event", () => {
+check("AMO V5 and V6 sold listing rows cannot synthesize a sale event", () => {
   const normalizedLowerText = (value) =>
     String(value ?? "").trim().toLowerCase();
   const objectRecord = (value) =>
@@ -39162,6 +39201,7 @@ check("AMO V5 sold listing rows cannot synthesize a sale event", () => {
     "isWorkAmoV5ListingSaleProjection",
     {
       WORK_AMO_V5_AUTH_VERSION,
+      WORK_AMO_V6_AUTH_VERSION,
       isWorkTokenId: (tokenId) => tokenId === WORK_TOKEN_ID,
       normalizedLowerText,
       objectRecord,
@@ -39209,6 +39249,22 @@ check("AMO V5 sold listing rows cannot synthesize a sale event", () => {
       .length,
     0,
   );
+  const v6TableSale = {
+    ...tableSale,
+    blockHeight: 960_258,
+    saleAuthorization: {
+      ...tableSale.saleAuthorization,
+      version: WORK_AMO_V6_AUTH_VERSION,
+    },
+    txid:
+      "b259fa601676287eca2ea94c9142cd13b45fde7031ec98967f15306df6ef7936",
+  };
+  assert.equal(
+    canonicalTokenSalesWithListingEnrichment([], [v6TableSale], "livenet")
+      .length,
+    0,
+    "a V6 relational listing projection cannot invent its own sale event",
+  );
 
   const canonicalSale = {
     blockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT,
@@ -39249,6 +39305,7 @@ check("AMO V5 sold listing rows cannot synthesize a sale event", () => {
     "canonicalWorkMarketV3ListingProjectionSql",
     {
       WORK_AMO_V5_AUTH_VERSION,
+      WORK_AMO_V6_AUTH_VERSION,
       WORK_MARKET_V2_AUTH_VERSION: "pwt-sale-v3",
       WORK_MARKET_V4_AUTH_VERSION: "pwt-sale-v4",
       WORK_TOKEN_ID,
@@ -39259,11 +39316,16 @@ check("AMO V5 sold listing rows cannot synthesize a sale event", () => {
     canonicalWorkMarketV3ListingProjectionSql("cl"),
     /pwt-sale-v5/u,
   );
+  assert.match(
+    canonicalWorkMarketV3ListingProjectionSql("cl"),
+    /pwt-sale-v6/u,
+  );
   const canonicalTokenListingEventJoinSql = isolatedFunction(
     READER_PATH,
     "canonicalTokenListingEventJoinSql",
     {
       WORK_AMO_V5_AUTH_VERSION,
+      WORK_AMO_V6_AUTH_VERSION,
       WORK_TOKEN_ID,
       canonicalCreditListingAlias: (value) => String(value),
     },
@@ -39287,6 +39349,7 @@ check("AMO V5 sold listing rows cannot synthesize a sale event", () => {
     assert.match(pluralLegacyGuard, new RegExp(WORK_TOKEN_ID, "u"));
     assert.match(pluralLegacyGuard, /OR NOT \(/u);
     assert.match(pluralLegacyGuard, /pwt-sale-v5/u);
+    assert.match(pluralLegacyGuard, /pwt-sale-v6/u);
     assert.doesNotMatch(
       governedListingSql,
       /kind = ANY\(\s*ARRAY\['token-listings','token-listing'\]/u,
@@ -54009,6 +54072,42 @@ check("exact active listing reads preserve WORK atomic amount metadata", () => {
       },
       status: "active",
       token_id: WORK_TOKEN_ID,
+    },
+    "livenet",
+  );
+  assert.equal(listing.amount, "1.23456789");
+  assert.equal(listing.amountAtoms, "123456789");
+
+  const firstV6ListingTxid =
+    "b259fa601676287eca2ea94c9142cd13b45fde7031ec98967f15306df6ef7936";
+  const firstV6ListingBlockHash =
+    "00000000000000000000a5ea8861570ed551f77ed3cc0bddc3db3958d2700b44";
+  const firstV6Listing = tokenListingFromCreditListingRow(
+    {
+      amount: "10",
+      listing_block_hash: firstV6ListingBlockHash,
+      listing_block_height: 960_258,
+      listing_event_block_hash: firstV6ListingBlockHash,
+      listing_event_block_height: 960_258,
+      listing_event_block_index: 4_093,
+      listing_event_match_count: 1,
+      listing_event_protocol_vout: 1,
+      listing_event_record_ordinal: 0,
+      listing_event_status: "confirmed",
+      listing_id: firstV6ListingTxid,
+      listing_transaction_block_index: 4_093,
+      listing_tx_status: "confirmed",
+      payload: {
+        amountAtoms: "10",
+        listingId: firstV6ListingTxid,
+        saleAuthorization: {
+          tokenId: WORK_TOKEN_ID,
+          version: WORK_AMO_V6_AUTH_VERSION,
+        },
+        tokenId: WORK_TOKEN_ID,
+      },
+      status: "active",
+      token_id: WORK_TOKEN_ID,
       token_metadata: {
         amountStorageModel: WORK_ATOMIC_PROJECTION_MODEL,
         decimals: WORK_DECIMALS,
@@ -54017,8 +54116,492 @@ check("exact active listing reads preserve WORK atomic amount metadata", () => {
     },
     "livenet",
   );
-  assert.equal(listing.amount, "1.23456789");
-  assert.equal(listing.amountAtoms, "123456789");
+  assert.ok(firstV6Listing);
+  assert.equal(firstV6Listing.amount, "0.0000001");
+  assert.equal(firstV6Listing.amountAtoms, "10");
+  assert.equal(firstV6Listing.blockHash, firstV6ListingBlockHash);
+  assert.equal(firstV6Listing.blockHeight, 960_258);
+  assert.equal(firstV6Listing.blockIndex, 4_093);
+  assert.equal(firstV6Listing.protocolVout, 1);
+  assert.equal(firstV6Listing.recordOrdinal, 0);
+  assert.equal(
+    firstV6Listing.saleAuthorization.version,
+    WORK_AMO_V6_AUTH_VERSION,
+  );
+});
+
+check("AMO V6 readiness selects exact listing-version SQL arrays", async () => {
+  const activationHeight = 960_219;
+  const pins = { activationHeight };
+  let readiness = {
+    activationHeight,
+    active: true,
+    canonical: true,
+    confirmed: true,
+    evidenceComplete: true,
+    ready: true,
+  };
+  const workAmoV6ReadinessIsCurrentAtSnapshot = isolatedFunction(
+    READER_PATH,
+    "workAmoV6ReadinessIsCurrentAtSnapshot",
+  );
+  const currentWorkMarketAuthorizationVersionsAtSnapshot =
+    isolatedFunction(
+      READER_PATH,
+      "currentWorkMarketAuthorizationVersionsAtSnapshot",
+      {
+        WORK_AMO_V5_ACTIVATION_HEIGHT,
+        WORK_AMO_V5_AUTH_VERSION,
+        WORK_AMO_V6_AUTH_VERSION,
+        WORK_MARKET_V2_AUTH_VERSION,
+        WORK_MARKET_V4_AUTH_VERSION: WORK_AMO_V4_AUTH_VERSION,
+        configuredWorkAmoV6ReaderPins: () => pins,
+        proofIndexWorkAmoV6MigrationReadiness: async () => readiness,
+        workAmoV6ReadinessIsCurrentAtSnapshot,
+      },
+    );
+  const expectedV6Versions = [
+    WORK_AMO_V6_AUTH_VERSION,
+    WORK_AMO_V5_AUTH_VERSION,
+    WORK_AMO_V4_AUTH_VERSION,
+  ];
+  const expectedV5Versions = [
+    WORK_AMO_V5_AUTH_VERSION,
+    WORK_AMO_V4_AUTH_VERSION,
+  ];
+  const versionsAt = async (network, height, v4Activation = null) =>
+    Array.from(
+      await currentWorkMarketAuthorizationVersionsAtSnapshot(
+        network,
+        height,
+        v4Activation,
+      ),
+    );
+
+  assert.deepEqual(
+    await versionsAt("livenet", 960_258),
+    expectedV6Versions,
+  );
+  assert.deepEqual(
+    await versionsAt("livenet", 0),
+    expectedV6Versions,
+    "the exact-tip selector must use V6 only after readiness is proven",
+  );
+  readiness = { ...readiness, ready: false };
+  assert.deepEqual(
+    await versionsAt("livenet", 960_258),
+    expectedV5Versions,
+    "an unready migration must fail closed to the last proven version set",
+  );
+  assert.deepEqual(
+    await versionsAt("livenet", activationHeight - 1),
+    expectedV5Versions,
+  );
+  assert.deepEqual(
+    await versionsAt(
+      "livenet",
+      WORK_AMO_V5_ACTIVATION_HEIGHT - 1,
+      { active: true },
+    ),
+    [WORK_AMO_V4_AUTH_VERSION],
+  );
+  assert.deepEqual(
+    await versionsAt(
+      "livenet",
+      WORK_AMO_V5_ACTIVATION_HEIGHT - 1,
+      null,
+    ),
+    [WORK_MARKET_V2_AUTH_VERSION],
+  );
+  assert.deepEqual(
+    await versionsAt("testnet", 960_258),
+    [WORK_MARKET_V2_AUTH_VERSION],
+  );
+
+  const listingTxid =
+    "b259fa601676287eca2ea94c9142cd13b45fde7031ec98967f15306df6ef7936";
+  const exactQueries = [];
+  const exactPool = {
+    async query(sql, params) {
+      exactQueries.push({ params, sql: String(sql) });
+      return exactQueries.length === 1
+        ? { rows: [{ total_count: 0 }] }
+        : { rows: [{ terminal: false }] };
+    },
+  };
+  const exactActiveTokenListingHistoryPage = isolatedFunction(
+    READER_PATH,
+    "exactActiveTokenListingHistoryPage",
+    {
+      WORK_MARKET_V2_ACTIVATION_HEIGHT,
+      WORK_TOKEN_ID,
+      activeTokenListingFromCreditListingRow: () => null,
+      canonicalTokenListingEventJoinSql: () => "",
+      canonicalTokenListingSealEventJoinSql: () => "",
+      canonicalWorkMarketV3ListingProjectionSql: () => "TRUE",
+      currentWorkMarketAuthorizationVersionsAtSnapshot: async () =>
+        expectedV6Versions,
+      normalizedTxid: (value) => {
+        const normalized = String(value ?? "").trim().toLowerCase();
+        return /^[0-9a-f]{64}$/u.test(normalized) ? normalized : "";
+      },
+      rowNumber: (row, key) => Number(row?.[key] ?? 0),
+      tokenHistoryFilterNeedles: () => [listingTxid],
+      tokenListingActiveLifecycleSql: () => "TRUE",
+      tokenScopeKey: () => "all",
+      verifiedWorkMarketV4Activation: async () => null,
+    },
+  );
+  assert.equal(
+    await exactActiveTokenListingHistoryPage(
+      exactPool,
+      "livenet",
+      "all",
+      new URLSearchParams(`q=${listingTxid}`),
+      { limit: 100, offset: 0, query: listingTxid },
+      { indexed_through_block: 960_258 },
+    ),
+    null,
+  );
+  assert.equal(exactQueries.length, 2);
+  assert.deepEqual(
+    Array.from(exactQueries[0].params[3]),
+    expectedV6Versions,
+  );
+  assert.deepEqual(
+    Array.from(exactQueries[1].params[3]),
+    expectedV6Versions,
+  );
+  assert.match(
+    exactQueries[0].sql,
+    /= ANY\(\$4::text\[\]\)/u,
+  );
+  assert.match(
+    exactQueries[1].sql,
+    /<> ALL\(\$4::text\[\]\)/u,
+  );
+
+  const overlayQueries = [];
+  const overlayPool = {
+    async query(sql, params) {
+      overlayQueries.push({ params, sql: String(sql) });
+      return { rows: [{}] };
+    },
+  };
+  const proofIndexTokenMarketHistoryOverlayPayload = isolatedFunction(
+    READER_PATH,
+    "proofIndexTokenMarketHistoryOverlayPayload",
+    {
+      WORK_AMO_V5_ACTIVATION_HEIGHT,
+      WORK_AMO_V5_AUTH_VERSION,
+      WORK_AMO_V6_AUTH_VERSION,
+      WORK_MARKET_V2_ACTIVATION_HEIGHT,
+      WORK_MARKET_V2_AUTH_VERSION,
+      WORK_MARKET_V4_AUTH_VERSION: WORK_AMO_V4_AUTH_VERSION,
+      WORK_TOKEN_ID,
+      assertCurrentAmoV5CanonicalPositionUniqueness: async () => {},
+      compareTokenHistoryMarketItems: () => 0,
+      currentWorkMarketAuthorizationVersionsAtSnapshot: async () =>
+        expectedV6Versions,
+      dateIso: () => undefined,
+      historyCursor: () => "",
+      proofIndexPool: () => overlayPool,
+      proofIndexWorkAmoV5PreUnitRelicEvidence: async () => null,
+      rowNumber: (row, key) => Number(row?.[key] ?? 0),
+      tokenHistoryCanonicalMarketEventsSql: (_kind, whereClause) => `
+        WITH canonical_market_events AS (
+          SELECT 1
+          WHERE ${whereClause}
+        )
+      `,
+      tokenHistoryFilterNeedles: () => [],
+      tokenHistoryMarketEventKinds: () => ["token-listing"],
+      tokenHistorySafeKind: () => "listings",
+      tokenScopeKey: () => "all",
+      verifiedWorkMarketV4Activation: async () => null,
+      workAmoV5PreUnitRelicEvidenceIsExact: () => false,
+    },
+  );
+  const broadPage = await proofIndexTokenMarketHistoryOverlayPayload(
+    "livenet",
+    "all",
+    "listings",
+    new URLSearchParams(),
+    {
+      authoritativeEmpty: true,
+      pagination: {
+        limit: 100,
+        offset: 0,
+        query: "",
+        snapshotId: "",
+      },
+      snapshot: {
+        generated_at: "2026-07-29T00:00:00.000Z",
+        indexed_through_block: 960_258,
+      },
+    },
+  );
+  assert.equal(broadPage.totalCount, 0);
+  assert.equal(overlayQueries.length, 1);
+  assert.deepEqual(
+    Array.from(overlayQueries[0].params[3]),
+    expectedV6Versions,
+  );
+  assert.match(
+    overlayQueries[0].sql,
+    /= ANY\(\$4::text\[\]\)/u,
+  );
+  assert.match(
+    overlayQueries[0].sql,
+    new RegExp(WORK_AMO_V6_AUTH_VERSION, "u"),
+  );
+});
+
+check("sequential public cutovers require exact V6 read readiness", async () => {
+  const listing = {
+    amount: "0.0000001",
+    amountAtoms: "10",
+    blockHash:
+      "00000000000000000000a5ea8861570ed551f77ed3cc0bddc3db3958d2700b44",
+    blockHeight: 960_258,
+    blockIndex: 4_093,
+    confirmed: true,
+    listingId:
+      "b259fa601676287eca2ea94c9142cd13b45fde7031ec98967f15306df6ef7936",
+    network: "livenet",
+    protocolVout: 1,
+    recordOrdinal: 0,
+    saleAuthorization: {
+      tokenId: WORK_TOKEN_ID,
+      version: WORK_AMO_V6_AUTH_VERSION,
+    },
+    status: "active",
+    tokenId: WORK_TOKEN_ID,
+  };
+  const state = {
+    closedListings: [],
+    indexedThroughBlock: 960_258,
+    invalidEvents: [],
+    listings: [listing],
+    network: "livenet",
+  };
+  const afterV2 = applyWorkMarketV2CutoverToTokenState(
+    structuredClone(state),
+  );
+  const afterV5 = applyWorkAmoV5CutoverToTokenState(afterV2);
+  assert.deepEqual(
+    afterV2.listings.map((item) => item.listingId),
+    [listing.listingId],
+  );
+  assert.deepEqual(
+    afterV5.listings.map((item) => item.listingId),
+    [listing.listingId],
+  );
+  assert.equal(afterV5.listings[0].amountAtoms, "10");
+  assert.equal(afterV5.listings[0].amount, "0.0000001");
+
+  const workAmoV6PublicListingReadReady = isolatedFunction(
+    READER_PATH,
+    "workAmoV6PublicListingReadReady",
+    {
+      normalizedLowerText: (value) =>
+        String(value ?? "").trim().toLowerCase(),
+    },
+  );
+  const workAmoV6ListingRecord = isolatedFunction(
+    READER_PATH,
+    "workAmoV6ListingRecord",
+    {
+      normalizedLowerText: (value) =>
+        String(value ?? "").trim().toLowerCase(),
+      objectRecord: (value) =>
+        value && typeof value === "object" && !Array.isArray(value)
+          ? value
+          : {},
+    },
+  );
+  const applyWorkAmoV6PublicListingReadPolicy = isolatedFunction(
+    READER_PATH,
+    "applyWorkAmoV6PublicListingReadPolicy",
+    {
+      workAmoV6ListingRecord,
+      workAmoV6PublicListingReadReady,
+    },
+  );
+  assert.equal(
+    applyWorkAmoV6PublicListingReadPolicy(
+      structuredClone(state),
+      [WORK_AMO_V5_AUTH_VERSION, WORK_AMO_V4_AUTH_VERSION],
+    ).listings.length,
+    0,
+    "a V6 listing must fail closed when exact V6 read readiness is absent",
+  );
+  assert.equal(
+    applyWorkAmoV6PublicListingReadPolicy(
+      structuredClone(state),
+      [
+        WORK_AMO_V6_AUTH_VERSION,
+        WORK_AMO_V5_AUTH_VERSION,
+        WORK_AMO_V4_AUTH_VERSION,
+      ],
+    ).listings.length,
+    1,
+  );
+
+  const cutoverOrder = [];
+  let readReady = false;
+  const proofIndexTokenPayload = isolatedFunction(
+    READER_PATH,
+    "proofIndexTokenPayload",
+    {
+      applyWorkAmoV5CutoverToTokenState: (payload) => {
+        cutoverOrder.push("v5");
+        return applyWorkAmoV5CutoverToTokenState(payload);
+      },
+      applyWorkMarketV2CutoverToTokenState: (payload) => {
+        cutoverOrder.push("v2");
+        return applyWorkMarketV2CutoverToTokenState(payload);
+      },
+      payloadWithVerifiedWorkAmoV5Activation: async (
+        _network,
+        payload,
+      ) => payload,
+      payloadWithCurrentWorkMarketListingReadPolicy: async (
+        _network,
+        payload,
+      ) =>
+        applyWorkAmoV6PublicListingReadPolicy(
+          payload,
+          readReady
+            ? [
+                WORK_AMO_V6_AUTH_VERSION,
+                WORK_AMO_V5_AUTH_VERSION,
+                WORK_AMO_V4_AUTH_VERSION,
+              ]
+            : [WORK_AMO_V5_AUTH_VERSION, WORK_AMO_V4_AUTH_VERSION],
+        ),
+      payloadWithVerifiedWorkMarketV4Activation: async (
+        _pool,
+        _network,
+        payload,
+      ) => payload,
+      proofIndexPool: () => ({}),
+      proofIndexTokenPayloadFromCurrentTables: async () =>
+        structuredClone(state),
+      proofIndexTokenReadEligibility: () => ({
+        eligible: true,
+        scope: "all",
+      }),
+    },
+  );
+  const closedPayload = await proofIndexTokenPayload(
+    "livenet",
+    "all",
+    new URLSearchParams(),
+  );
+  assert.equal(closedPayload.listings.length, 0);
+  readReady = true;
+  const publicPayload = await proofIndexTokenPayload(
+    "livenet",
+    "all",
+    new URLSearchParams(),
+  );
+  assert.deepEqual(cutoverOrder, ["v2", "v5", "v2", "v5"]);
+  assert.equal(publicPayload.listings.length, 1);
+  assert.equal(publicPayload.listings[0].listingId, listing.listingId);
+  assert.equal(publicPayload.listings[0].amountAtoms, "10");
+  assert.equal(publicPayload.listings[0].amount, "0.0000001");
+});
+
+check("all governed listing and seal SQL paths include AMO V6", () => {
+  const sqlGlobals = {
+    WORK_AMO_V5_ACTIVATION_HEIGHT,
+    WORK_AMO_V5_AUTH_VERSION,
+    WORK_AMO_V6_AUTH_VERSION,
+    WORK_MARKET_V2_AUTH_VERSION,
+    WORK_MARKET_V4_AUTH_VERSION: WORK_AMO_V4_AUTH_VERSION,
+    WORK_TOKEN_ID,
+    canonicalCreditListingAlias: (value) => String(value),
+  };
+  const governedSql = [
+    isolatedFunction(
+      READER_PATH,
+      "canonicalWorkMarketV3ListingProjectionSql",
+      sqlGlobals,
+    )("cl"),
+    isolatedFunction(
+      READER_PATH,
+      "canonicalTokenListingEventJoinSql",
+      sqlGlobals,
+    )("cl"),
+    isolatedFunction(
+      READER_PATH,
+      "canonicalTokenListingSealEventJoinSql",
+      sqlGlobals,
+    )("cl"),
+    isolatedFunction(
+      READER_PATH,
+      "tokenHistoryCanonicalMarketEventsSql",
+      sqlGlobals,
+    )("market-log", "true"),
+  ];
+  for (const sql of governedSql) {
+    assert.match(
+      sql,
+      new RegExp(`'${WORK_AMO_V6_AUTH_VERSION}'`, "u"),
+      "every relational listing/seal admission path must recognize V6",
+    );
+  }
+  for (const sql of governedSql.slice(2)) {
+    for (const version of [
+      WORK_MARKET_V2_AUTH_VERSION,
+      WORK_AMO_V4_AUTH_VERSION,
+      WORK_AMO_V5_AUTH_VERSION,
+      WORK_AMO_V6_AUTH_VERSION,
+    ]) {
+      assert.match(
+        sql,
+        new RegExp(`'${version}'`, "u"),
+        `seal membership SQL omitted ${version}`,
+      );
+    }
+  }
+});
+
+check("every active listing surface applies exact V6 read readiness", () => {
+  for (const functionName of [
+    "proofIndexTokenMarketSummaryOverlayPayload",
+    "proofIndexTokenPayload",
+    "proofIndexTokenSnapshotPayload",
+    "proofIndexWalletTokenOverlayPayload",
+  ]) {
+    assert.match(
+      topLevelFunctionSource(READER_PATH, functionName),
+      /payloadWithCurrentWorkMarketListingReadPolicy/u,
+      `${functionName} bypasses the shared V6 read policy`,
+    );
+  }
+  assert.match(
+    topLevelFunctionSource(READER_PATH, "tokenHistoryPageFromSnapshot"),
+    /applyWorkAmoV6PublicListingReadPolicy/u,
+  );
+  const creditLifecycleSource = topLevelFunctionSource(
+    READER_PATH,
+    "proofIndexCreditListingsPayload",
+  );
+  assert.match(
+    creditLifecycleSource,
+    /currentWorkMarketAuthorizationVersionsAtSnapshot/u,
+  );
+  assert.equal(
+    (
+      creditLifecycleSource.match(
+        /AND \$\{workAmoV6ReadSql\}/gu,
+      ) ?? []
+    ).length,
+    2,
+    "both lifecycle count and row queries must use V6 read readiness",
+  );
 });
 
 check("post-V5 listing rows require one exact canonical listing tuple", () => {

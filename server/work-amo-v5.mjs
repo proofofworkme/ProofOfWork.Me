@@ -11,6 +11,9 @@ import { WORK_TOKEN_ID } from "./work-units.mjs";
 bitcoin.initEccLib(ecc);
 
 export const WORK_AMO_V5_AUTH_VERSION = "pwt-sale-v5";
+const WORK_AMO_V5_SUCCESSOR_AUTH_VERSIONS = new Set([
+  "pwt-sale-v6",
+]);
 export const WORK_AMO_V5_ACTIVATION_HEIGHT = 959_621;
 export const WORK_AMO_V5_DECLARATION_TXID =
   "54d7a367a3998ce1327ee89d983a25c80ce34b96d9811807df215a8694aead36";
@@ -452,6 +455,7 @@ export function applyWorkAmoV5CutoverToTokenState(state) {
       listingId !== WORK_AMO_V5_PRE_UNIT_RELIC_LISTING_TXID &&
       (
         version === WORK_AMO_V5_AUTH_VERSION ||
+        WORK_AMO_V5_SUCCESSOR_AUTH_VERSIONS.has(version) ||
         (
           version === WORK_AMO_V4_AUTH_VERSION &&
           listing?.confirmed === true &&
