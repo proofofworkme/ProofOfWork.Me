@@ -1349,6 +1349,25 @@ frozen-term validators. That V6-aware path must reproduce historical V4/V5
 preimages and commitments byte-for-byte; unsupported or tampered listing
 versions fail closed.
 
+V6 signed intents intentionally omit amount and price. The generic raw decoder
+may therefore carry local zero placeholders, but those placeholders are never
+persistable terms. After the block verifier binds the exact txid, protocol and
+full canonical position to a valid replay outcome, the indexer materializes
+the V6 list/seal/buy/delist projection only from the replay output's canonical
+nested listing or closed listing. It validates the nested authorization and
+frozen terms, requires the atom amount and proof price to equal those terms,
+and then writes the exact top-level atomic and human aliases. An invalid replay
+remains invalid audit history; an unbound or divergent valid projection aborts
+the atomic block.
+
+The V6 closing WORK read projection derives the active listing's original
+confirmed tuple from its immutable frozen terms and formats the human amount
+from atoms. A later seal adds separate seal-position fields without replacing
+the listing tuple. Buy and delist projections likewise retain the listing tuple
+and publish their action tuple separately. This verifier-only enrichment is
+V6-scoped so already-persisted V4/V5 transition payloads and canonical bytes
+remain unchanged.
+
 The safe rollout order is:
 
 1. Prove through Core and the canonical index that no earlier V6 declaration,

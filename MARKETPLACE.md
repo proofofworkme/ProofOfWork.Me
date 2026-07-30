@@ -673,6 +673,23 @@ V6 listings through the strict V6 authorization and frozen-term validators.
 Historical V4/V5 listings keep their existing canonical bytes; an unknown,
 tampered or internally divergent listing version fails the state commitment.
 
+Because V6 forbids derived amount and price fields in the signed intent, a raw
+`list5`, `seal5`, `buy5` or `delist5` decoder must not treat an absent derived
+field or its local zero placeholder as a listing term. Only the exact
+block-replay binding may materialize top-level `amountAtoms`, human `amount`,
+`priceSats`, seller, authorization and frozen terms from the canonical nested
+listing. The materialized amount and price must equal the validated immutable
+`unitAmountAtoms` and `unitPriceSats`; divergence aborts the whole block.
+Unbound payload fields and client-supplied frozen terms never authorize this
+materialization.
+
+The confirmed verifier projection for a V6 listing also carries its original
+listing block hash, height, transaction index, protocol output and record
+ordinal, even after a later seal. Seal and close actions carry their own
+separate canonical tuples. Public human amounts are formatted from the exact
+atom integer (`10` atoms is `0.0000001` WORK); relational WORK listing columns
+continue storing atoms.
+
 V6 keeps `canonical-work-amo-full-position-block-sequencer-v2` and uses
 `canonical-work-amo-proof-unit-v1`. Exact declaration evidence, immutable
 migration marker, canonical replay parity, exact-tip index readiness and the

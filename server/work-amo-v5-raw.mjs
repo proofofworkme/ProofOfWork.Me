@@ -54,6 +54,7 @@ import {
 } from "./work-amo-v5.mjs";
 import {
   WORK_TOKEN_ID,
+  formatWorkAtoms,
   parseWorkAmountToAtoms,
   workAmountAtomsFromRecord,
 } from "./work-units.mjs";
@@ -4890,6 +4891,56 @@ function baseEventProjection(event) {
   };
 }
 
+function workListingProjectionFromCanonicalState(
+  listing,
+  preserved = null,
+) {
+  if (
+    listing?.saleAuthorization?.version !==
+      WORK_AMO_V6_AUTH_VERSION
+  ) {
+    return null;
+  }
+  const amountAtoms = String(listing?.amountAtoms ?? "").trim();
+  const listingId = normalizedTxid(listing?.listingId);
+  const position = listingPosition(listing);
+  if (
+    !amountAtoms ||
+    !listingId ||
+    !position?.blockHash ||
+    !Number.isSafeInteger(position.blockHeight) ||
+    !Number.isSafeInteger(position.blockTransactionIndex) ||
+    !Number.isSafeInteger(position.protocolVout) ||
+    !Number.isSafeInteger(position.recordOrdinal)
+  ) {
+    throw new TypeError(
+      "work-amo-v5-listing-projection-position-invalid",
+    );
+  }
+  return {
+    ...(preserved &&
+    typeof preserved === "object" &&
+    !Array.isArray(preserved)
+      ? preserved
+      : {}),
+    ...listing,
+    amount: formatWorkAtoms(amountAtoms),
+    amountAtoms,
+    blockHash: position.blockHash,
+    blockHeight: position.blockHeight,
+    blockIndex: position.blockTransactionIndex,
+    confirmed: true,
+    listingId,
+    protocol: "pwt1",
+    protocolVout: position.protocolVout,
+    recordOrdinal: position.recordOrdinal,
+    ticker: "WORK",
+    tokenId: WORK_TOKEN_ID,
+    txid: listingId,
+    valid: true,
+  };
+}
+
 export function projectWorkAmoV5RawEvents(
   seedProjection,
   events,
@@ -4902,6 +4953,14 @@ export function projectWorkAmoV5RawEvents(
       ? seedProjection
       : {};
   const closing = normalizeWorkAmoV5RawWorkState(closingWorkState);
+  const preservedListings = new Map(
+    (Array.isArray(seed.listings) ? seed.listings : [])
+      .map((listing) => [
+        normalizedTxid(listing?.listingId),
+        listing,
+      ])
+      .filter(([listingId]) => Boolean(listingId)),
+  );
   const next = {
     ...seed,
     closedListings: structuredClone(
@@ -4916,11 +4975,18 @@ export function projectWorkAmoV5RawEvents(
     invalidEvents: structuredClone(
       Array.isArray(seed.invalidEvents) ? seed.invalidEvents : [],
     ),
-    listings: closing.listings.map((listing) => ({
-      ...listing,
-      amount: listing.amountAtoms,
-      tokenId: WORK_TOKEN_ID,
-    })),
+    listings: closing.listings.map((listing) =>
+      workListingProjectionFromCanonicalState(
+        listing,
+        preservedListings.get(
+          normalizedTxid(listing?.listingId),
+        ),
+      ) ?? {
+        ...listing,
+        amount: listing.amountAtoms,
+        tokenId: WORK_TOKEN_ID,
+      }
+    ),
     mints: structuredClone(Array.isArray(seed.mints) ? seed.mints : []),
     sales: structuredClone(Array.isArray(seed.sales) ? seed.sales : []),
     transfers: structuredClone(
@@ -4931,16 +4997,30 @@ export function projectWorkAmoV5RawEvents(
     if (event.protocol !== "pwt1") {
       continue;
     }
+    const projection = event.output?.projection ?? {};
+    const referencedListing = preservedListings.get(
+      normalizedTxid(event.parsed?.listingId),
+    );
+    const v6ClosedListing =
+      String(
+        projection.closedListing?.saleAuthorization?.version ?? "",
+      ).trim().toLowerCase() === WORK_AMO_V6_AUTH_VERSION
+        ? projection.closedListing
+        : null;
+    const v6ReferencedListing =
+      String(
+        referencedListing?.saleAuthorization?.version ?? "",
+      ).trim().toLowerCase() === WORK_AMO_V6_AUTH_VERSION
+        ? referencedListing
+        : null;
     const tokenId = normalizedTxid(
       event.parsed?.tokenId ??
         event.parsed?.saleAuthorization?.tokenId ??
-        event.output?.projection?.listing?.saleAuthorization?.tokenId,
+        projection.listing?.saleAuthorization?.tokenId ??
+        v6ClosedListing?.saleAuthorization?.tokenId ??
+        v6ReferencedListing?.saleAuthorization?.tokenId,
     );
-    const workScoped =
-      tokenId === WORK_TOKEN_ID ||
-      event.output?.projection?.listing?.saleAuthorization?.tokenId ===
-        WORK_TOKEN_ID;
-    if (!workScoped) {
+    if (tokenId !== WORK_TOKEN_ID) {
       continue;
     }
     const base = baseEventProjection(event);
@@ -4954,8 +5034,27 @@ export function projectWorkAmoV5RawEvents(
       });
       continue;
     }
-    const projection = event.output?.projection ?? {};
-    if (event.parsed?.kind === "mint") {
+    if (event.parsed?.kind === "list") {
+      const listingId = normalizedTxid(
+        projection.listing?.listingId,
+      );
+      const materialized = projection.listing
+        ? workListingProjectionFromCanonicalState(
+            projection.listing,
+            preservedListings.get(listingId),
+          )
+        : null;
+      const index = next.listings.findIndex(
+        (listing) =>
+          listing.listingId === projection.listing?.listingId,
+      );
+      if (materialized) {
+        preservedListings.set(listingId, materialized);
+        if (index >= 0) {
+          next.listings[index] = materialized;
+        }
+      }
+    } else if (event.parsed?.kind === "mint") {
       next.mints.push({
         ...base,
         amountAtoms: event.parsed.amountAtoms,
@@ -4974,15 +5073,64 @@ export function projectWorkAmoV5RawEvents(
         ticker: "WORK",
         tokenId: WORK_TOKEN_ID,
       });
+    } else if (event.parsed?.kind === "seal") {
+      const listingId = normalizedTxid(
+        projection.listing?.listingId,
+      );
+      const materialized = projection.listing
+        ? workListingProjectionFromCanonicalState(
+            projection.listing,
+            preservedListings.get(listingId),
+          )
+        : null;
+      const index = next.listings.findIndex(
+        (listing) =>
+          listing.listingId === projection.listing?.listingId,
+      );
+      if (materialized) {
+        const sealedListing = {
+          ...materialized,
+          sealBlockHash: base.blockHash,
+          sealBlockHeight: base.blockHeight,
+          sealBlockIndex: base.blockIndex,
+          sealConfirmed: true,
+          sealProtocolVout: base.protocolVout,
+          sealRecordOrdinal: base.recordOrdinal,
+          sealTxid: event.txid,
+        };
+        preservedListings.set(listingId, sealedListing);
+        if (index >= 0) {
+          next.listings[index] = sealedListing;
+        }
+      }
     } else if (event.parsed?.kind === "buy") {
-      next.sales.push({
-        ...base,
-        ...(projection.listing ?? {}),
-        buyerAddress: projection.buyerAddress,
-        amountAtoms: projection.listing?.amountAtoms,
-        ticker: "WORK",
-        tokenId: WORK_TOKEN_ID,
-      });
+      const listingId = normalizedTxid(
+        projection.listing?.listingId,
+      );
+      const listing = projection.listing
+        ? workListingProjectionFromCanonicalState(
+            projection.listing,
+            preservedListings.get(listingId),
+          )
+        : null;
+      next.sales.push(
+        listing
+          ? {
+              ...listing,
+              ...base,
+              buyerAddress: projection.buyerAddress,
+              ticker: "WORK",
+              tokenId: WORK_TOKEN_ID,
+            }
+          : {
+              ...base,
+              ...(projection.listing ?? {}),
+              buyerAddress: projection.buyerAddress,
+              amountAtoms: projection.listing?.amountAtoms,
+              ticker: "WORK",
+              tokenId: WORK_TOKEN_ID,
+            },
+      );
       if (projection.listing) {
         const derivedClose = (Array.isArray(event.derived)
           ? event.derived
@@ -5001,8 +5149,11 @@ export function projectWorkAmoV5RawEvents(
             })
           : base;
         next.closedListings.push({
-          ...projection.listing,
-          ...closeBase,
+          ...(listing ?? projection.listing),
+          ...(listing ? {} : closeBase),
+          ...(listing
+            ? { closedBlockHash: closeBase.blockHash }
+            : {}),
           closedBlockHeight: closeBase.blockHeight,
           closedBlockIndex: closeBase.blockIndex,
           closedConfirmed: true,
@@ -5014,9 +5165,20 @@ export function projectWorkAmoV5RawEvents(
       }
     } else if (event.parsed?.kind === "delist") {
       if (projection.closedListing) {
+        const listingId = normalizedTxid(
+          projection.closedListing.listingId,
+        );
+        const listing =
+          workListingProjectionFromCanonicalState(
+            projection.closedListing,
+            preservedListings.get(listingId),
+          );
         next.closedListings.push({
-          ...projection.closedListing,
-          ...base,
+          ...(listing ?? projection.closedListing),
+          ...(listing ? {} : base),
+          ...(listing
+            ? { closedBlockHash: base.blockHash }
+            : {}),
           closedBlockHeight: base.blockHeight,
           closedBlockIndex: base.blockIndex,
           closedConfirmed: true,

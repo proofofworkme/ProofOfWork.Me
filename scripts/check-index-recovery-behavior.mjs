@@ -107,6 +107,7 @@ import {
   assignWorkAmoV5EconomicOutputs,
   compareWorkAmoUtf8,
   deriveWorkAmoV5FrozenTerms,
+  normalizeWorkAmoCanonicalPosition,
   parseWorkAmoV5GenericSaleAuthorization,
   parseWorkAmoV5IdSaleAuthorization,
   parseWorkAmoV5PwmMessages,
@@ -127,6 +128,7 @@ import {
   workAmoV5CanonicalTokenStateCommitment,
   workAmoV5ConsensusEventKind,
   workAmoV5EventSetCommitment,
+  workAmoCanonicalPositionPrecedes,
   workAmoV5WorkStateWithoutLegacyListingReservations,
 } from "../server/work-amo-v5.mjs";
 import {
@@ -143,7 +145,10 @@ import {
 import {
   WORK_AMO_V6_AUTH_VERSION,
   WORK_AMO_V6_MODELS,
+  validateWorkAmoV6FrozenTerms,
+  validateWorkAmoV6StaticAuthorization,
   workAmoV6CanonicalTokenStateCommitment,
+  workAmoV6FrozenTermsMatch,
 } from "../server/work-amo-v6.mjs";
 import {
   normalizedWorkAmoV5Bip141Witness,
@@ -35106,6 +35111,10 @@ check("unpinned broad ID registry uses current relational event state", async ()
 check("token verifier uses event-specific seal and close confirmation", () => {
   const sealTxid = "d".repeat(64);
   const closeTxid = "e".repeat(64);
+  const listingBlockHash = "a".repeat(64);
+  const sealBlockHash = "b".repeat(64);
+  const closeBlockHash = "c".repeat(64);
+  const lifecycleBlockHeight = WORK_AMO_V5_ACTIVATION_HEIGHT + 10;
   const tokenVerifierItemsFromState = isolatedFunction(
     API_PATH,
     "tokenVerifierItemsFromState",
@@ -35113,7 +35122,11 @@ check("token verifier uses event-specific seal and close confirmation", () => {
   const state = {
     closedListings: [
       {
-        closedBlockHeight: 958_000,
+        blockHash: listingBlockHash,
+        blockHeight: lifecycleBlockHeight - 2,
+        blockIndex: 1,
+        closedBlockHash: closeBlockHash,
+        closedBlockHeight: lifecycleBlockHeight,
         closedBlockIndex: 3,
         closedConfirmed: false,
         closedProtocolVout: 2,
@@ -35121,7 +35134,10 @@ check("token verifier uses event-specific seal and close confirmation", () => {
         closedTxid: closeTxid,
         confirmed: true,
         listingId: "f".repeat(64),
-        sealBlockHeight: 958_000,
+        protocolVout: 1,
+        recordOrdinal: 0,
+        sealBlockHash,
+        sealBlockHeight: lifecycleBlockHeight - 1,
         sealBlockIndex: 2,
         sealConfirmed: false,
         sealProtocolVout: 1,
@@ -35134,13 +35150,19 @@ check("token verifier uses event-specific seal and close confirmation", () => {
   const [close] = tokenVerifierItemsFromState(state, closeTxid);
   assert.equal(seal.kind, "token-listing-sealed");
   assert.equal(seal.confirmed, false);
+  assert.equal(seal.blockHash, sealBlockHash);
   assert.equal(close.kind, "token-listing-closed");
   assert.equal(close.confirmed, false);
+  assert.equal(close.blockHash, closeBlockHash);
 
   state.closedListings[0].sealConfirmed = true;
   state.closedListings[0].closedConfirmed = true;
-  assert.equal(tokenVerifierItemsFromState(state, sealTxid)[0].confirmed, true);
-  assert.equal(tokenVerifierItemsFromState(state, closeTxid)[0].confirmed, true);
+  const confirmedSeal = tokenVerifierItemsFromState(state, sealTxid)[0];
+  const confirmedClose = tokenVerifierItemsFromState(state, closeTxid)[0];
+  assert.equal(confirmedSeal.confirmed, true);
+  assert.equal(confirmedSeal.blockHash, sealBlockHash);
+  assert.equal(confirmedClose.confirmed, true);
+  assert.equal(confirmedClose.blockHash, closeBlockHash);
 });
 
 check("operational status preserves compact canonical health coverage", async () => {
@@ -46576,6 +46598,881 @@ check("AMO V5 relational WORK state releases only unambiguous legacy reservation
       /workAmoV6CanonicalTokenStateCommitment\(/u,
     );
   }
+});
+
+check("the first V6 listing crosses replay binding into atomic persistence without trusting its zero placeholder", () => {
+  const listingId =
+    "b259fa601676287eca2ea94c9142cd13b45fde7031ec98967f15306df6ef7936";
+  const sellerAddress =
+    "18hkqE81wQuq75UEBKhB4JjAuQg47jN7Aa";
+  const saleAuthorization = {
+    ...WORK_AMO_V6_MODELS,
+    anchorScriptPubKey:
+      "76a914547e1b8e5303c69a1fd07e87305b5b71fbaac0ee88ac",
+    anchorSigHashType: 0x83,
+    anchorSignature: "",
+    anchorTxid: "",
+    anchorType: "sale-ticket-v1",
+    anchorValueSats: 546,
+    anchorVout: 2,
+    buyerAddress: "",
+    expiresAt: "",
+    network: "livenet",
+    nonce: "ms7i747w-93nwbex7",
+    registryAddress: WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS,
+    sellerAddress,
+    sellerPublicKey:
+      "03322f3132310abe49fd21dbb4987c7a5f327afc0224bc74851e06b0f5cf4bf945",
+    ticker: "WORK",
+    tokenId: WORK_TOKEN_ID,
+    unitFaceProofs: 20_000,
+    version: WORK_AMO_V6_AUTH_VERSION,
+  };
+  const frozenTerms = {
+    ...WORK_AMO_V6_MODELS,
+    listingBlockHash:
+      "00000000000000000000a5ea8861570ed551f77ed3cc0bddc3db3958d2700b44",
+    listingBlockHeight: 960_258,
+    listingBlockIndex: 4_093,
+    listingBondContributionQ8: "327600000000",
+    listingNetworkValueAfterQ8:
+      "407065289490674476605636246",
+    listingNetworkValueBeforeQ8:
+      "407065289490674149005636246",
+    listingProtocolVout: 1,
+    listingRecordOrdinal: 0,
+    unitAmountAtoms: "10",
+    unitFaceProofs: 20_000,
+    unitMinimumPriceSats: "19385",
+    unitPriceSats: "20000",
+    version: WORK_AMO_V6_AUTH_VERSION,
+  };
+  const position = {
+    blockHash: frozenTerms.listingBlockHash,
+    blockHeight: frozenTerms.listingBlockHeight,
+    blockTransactionIndex: frozenTerms.listingBlockIndex,
+    protocolVout: frozenTerms.listingProtocolVout,
+    recordOrdinal: frozenTerms.listingRecordOrdinal,
+  };
+  const preparedItem = {
+    amount: "0",
+    blockHash: position.blockHash,
+    blockHeight: position.blockHeight,
+    blockIndex: position.blockTransactionIndex,
+    kind: "token-listing",
+    listingId,
+    priceSats: "0",
+    protocol: "pwt1",
+    protocolVout: position.protocolVout,
+    recordOrdinal: position.recordOrdinal,
+    saleAuthorization,
+    sellerAddress,
+    tokenId: WORK_TOKEN_ID,
+    txid: listingId,
+    valid: true,
+  };
+  const normalizePosition = (value) => {
+    const source = value?.position ?? value ?? {};
+    return {
+      blockHash: String(source.blockHash ?? ""),
+      blockHeight: Number(source.blockHeight),
+      blockTransactionIndex: Number(
+        source.blockTransactionIndex ?? source.blockIndex,
+      ),
+      protocolVout: Number(source.protocolVout),
+      recordOrdinal: Number(source.recordOrdinal),
+    };
+  };
+  const replayPositionKey = (value) => {
+    const normalized = normalizePosition(value);
+    return {
+      key: [
+        normalized.blockHeight,
+        normalized.blockTransactionIndex,
+        normalized.protocolVout,
+        normalized.recordOrdinal,
+      ].join(":"),
+      position: normalized,
+    };
+  };
+  const isHexTxidFixture = (value) => /^[0-9a-f]{64}$/u.test(value);
+  const normalizedLowerTextFixture = (value) =>
+    String(value ?? "").trim().toLowerCase();
+  const materializeV6Listing = isolatedFunction(
+    BACKFILL_PATH,
+    "workAmoV6ReplayListingMaterialization",
+    {
+      WORK_AMO_V6_AUTH_VERSION,
+      WORK_DECIMALS,
+      WORK_TOKEN_ID,
+      WORK_UNIT_SCALE_TEXT,
+      canonicalIntegerText,
+      canonicalWorkAtomsText,
+      formatWorkAtoms,
+      isHexTxid: isHexTxidFixture,
+      normalizeWorkAmoCanonicalPosition,
+      normalizedLowerText: normalizedLowerTextFixture,
+      objectValue,
+      validateWorkAmoV6FrozenTerms,
+      validateWorkAmoV6StaticAuthorization,
+      workAmoCanonicalPositionPrecedes,
+      workAmoV5CanonicalPayloadCommitment:
+        isolatedCanonicalPayloadCommitment,
+      workAmoV6FrozenTermsMatch,
+    },
+  );
+  const bind = isolatedFunction(
+    BACKFILL_PATH,
+    "bindPreparedTransactionsToWorkAmoV5Replay",
+    {
+      invalidProtocolItem: (item, reason) => {
+        const kind = String(item?.kind ?? "event").toLowerCase();
+        return {
+          ...item,
+          kind: kind.endsWith("-invalid") ? kind : `${kind}-invalid`,
+          reason,
+          valid: false,
+        };
+      },
+      isHexTxid: isHexTxidFixture,
+      normalizedLowerText: normalizedLowerTextFixture,
+      workAmoFrozenTermsFromItem: () => null,
+      workAmoV5CanonicalPayloadCommitment:
+        isolatedCanonicalPayloadCommitment,
+      workAmoV5ConsensusEventKind,
+      workAmoV5ReplayFrozenTerms: (output) =>
+        output?.frozenTerms ?? null,
+      workAmoV5ReplayPositionKey: replayPositionKey,
+      workAmoV5ReplayProjectionFromOutput: (output) =>
+        output?.projection ?? {},
+      workAmoV6ReplayListingMaterialization:
+        materializeV6Listing,
+    },
+  );
+  const canonicalListing = {
+    amountAtoms: "10",
+    frozenTerms,
+    listingId,
+    priceSats: "20000",
+    saleAuthorization,
+    sellerAddress,
+  };
+  const bindLifecycleItem = ({
+    actionPosition = position,
+    actionTxid = listingId,
+    buyerAddress = "",
+    kind = "token-listing",
+    listing = canonicalListing,
+    listingField = "listing",
+    sourceAuthorization = saleAuthorization,
+    sourceSellerAddress = sellerAddress,
+  } = {}) => {
+    const item = {
+      amount: "0",
+      blockHash: actionPosition.blockHash,
+      blockHeight: actionPosition.blockHeight,
+      blockIndex: actionPosition.blockTransactionIndex,
+      kind,
+      listingId,
+      priceSats: "0",
+      protocol: "pwt1",
+      protocolVout: actionPosition.protocolVout,
+      recordOrdinal: actionPosition.recordOrdinal,
+      tokenId: WORK_TOKEN_ID,
+      txid: actionTxid,
+      valid: true,
+      ...(buyerAddress ? { buyerAddress } : {}),
+      ...(kind === "token-listing-sealed"
+        ? {
+            sealConfirmed: true,
+            sealTxid: actionTxid,
+          }
+        : {}),
+      ...(kind === "token-sale"
+        ? { saleTxid: actionTxid }
+        : {}),
+      ...(kind === "token-listing-closed"
+        ? { closedTxid: actionTxid }
+        : {}),
+      ...(sourceAuthorization
+        ? { saleAuthorization: sourceAuthorization }
+        : {}),
+      ...(sourceSellerAddress
+        ? { sellerAddress: sourceSellerAddress }
+        : {}),
+    };
+    const output = {
+      ...(listingField === "closedListing"
+        ? { closedListing: listing }
+        : { frozenTerms: listing.frozenTerms, listing }),
+      ...(buyerAddress ? { buyerAddress } : {}),
+    };
+    output.projection = {
+      ...structuredClone(output),
+      kind,
+      position: actionPosition,
+      protocol: "pwt1",
+      txid: actionTxid,
+      valid: true,
+    };
+    const [boundTransaction] = bind(
+      [{ items: [item], txid: actionTxid }],
+      {
+        replayRecords: [{
+          outcome: {
+            kind: workAmoV5ConsensusEventKind("pwt1", true),
+            reasonCode: "",
+            valid: true,
+          },
+          output,
+          position: actionPosition,
+          protocol: "pwt1",
+          rawCandidate: true,
+          rawWitness: {
+            fixture: `first-v6-listing-${kind}`,
+          },
+          txid: actionTxid,
+        }],
+      },
+    );
+    return boundTransaction.items[0];
+  };
+  const boundItem = bindLifecycleItem({
+    listing: canonicalListing,
+  });
+  assert.equal(boundItem.amountAtoms, "10");
+  assert.equal(boundItem.amount, "0.0000001");
+  assert.equal(boundItem.priceSats, "20000");
+  assert.deepEqual(boundItem.frozenTerms, frozenTerms);
+  assert.equal(boundItem._workAmoV5ReplayBound, true);
+
+  const persistProjection = isolatedFunction(
+    BACKFILL_PATH,
+    "workProjectionItem",
+    {
+      isWorkTokenId,
+      objectValue,
+      workAmountFields,
+    },
+  );
+  const persisted = persistProjection(boundItem, { strict: true });
+  assert.equal(persisted.amountAtoms, "10");
+  assert.equal(persisted.amount, "0.0000001");
+  assert.equal(persisted.priceSats, "20000");
+  assert.equal(persisted.decimals, WORK_DECIMALS);
+  assert.equal(persisted.unitScale, WORK_UNIT_SCALE_TEXT);
+
+  const signedAuthorization = {
+    ...saleAuthorization,
+    anchorSignature: "00",
+    anchorTxid: listingId,
+  };
+  const signedListing = {
+    ...canonicalListing,
+    saleAuthorization: signedAuthorization,
+  };
+  const lifecycle = [
+    {
+      actionPosition: {
+        blockHash: "a".repeat(64),
+        blockHeight: position.blockHeight + 1,
+        blockTransactionIndex: 10,
+        protocolVout: 1,
+        recordOrdinal: 0,
+      },
+      actionTxid: "a".repeat(64),
+      kind: "token-listing-sealed",
+      listing: signedListing,
+      sourceAuthorization: signedAuthorization,
+    },
+    {
+      actionPosition: {
+        blockHash: "b".repeat(64),
+        blockHeight: position.blockHeight + 2,
+        blockTransactionIndex: 11,
+        protocolVout: 1,
+        recordOrdinal: 0,
+      },
+      actionTxid: "b".repeat(64),
+      buyerAddress: "1F1p9UEHuH5KTFR7Zsx93Khdrqhj6t5nFv",
+      kind: "token-sale",
+      listing: signedListing,
+      sourceAuthorization: signedAuthorization,
+      sourceSellerAddress: "",
+    },
+    {
+      actionPosition: {
+        blockHash: "c".repeat(64),
+        blockHeight: position.blockHeight + 3,
+        blockTransactionIndex: 12,
+        protocolVout: 1,
+        recordOrdinal: 0,
+      },
+      actionTxid: "c".repeat(64),
+      kind: "token-listing-closed",
+      listing: signedListing,
+      listingField: "closedListing",
+      sourceAuthorization: null,
+      sourceSellerAddress: "",
+    },
+  ];
+  for (const fixture of lifecycle) {
+    const materialized = bindLifecycleItem(fixture);
+    assert.equal(materialized.kind, fixture.kind);
+    assert.equal(materialized.amountAtoms, "10");
+    assert.equal(materialized.amount, "0.0000001");
+    assert.equal(materialized.priceSats, "20000");
+    assert.equal(materialized.listingId, listingId);
+    assert.equal(materialized.sellerAddress, sellerAddress);
+    assert.equal(materialized.tokenId, WORK_TOKEN_ID);
+    assert.deepEqual(materialized.frozenTerms, frozenTerms);
+    assert.equal(materialized._workAmoV5ReplayBound, true);
+    if (fixture.kind === "token-listing-sealed") {
+      assert.equal(materialized.sealTxid, fixture.actionTxid);
+      assert.equal(materialized.sealConfirmed, true);
+    } else if (fixture.kind === "token-sale") {
+      assert.equal(materialized.saleTxid, fixture.actionTxid);
+      assert.equal(
+        materialized.buyerAddress,
+        fixture.buyerAddress,
+      );
+    } else {
+      assert.equal(materialized.closedTxid, fixture.actionTxid);
+    }
+  }
+
+  const corruptedListings = [
+    {
+      field: "amount",
+      mutate: (listing) => {
+        listing.amountAtoms = "11";
+      },
+    },
+    {
+      field: "price",
+      mutate: (listing) => {
+        listing.priceSats = "20001";
+      },
+    },
+    {
+      field: "seller",
+      mutate: (listing) => {
+        listing.sellerAddress =
+          "1F1p9UEHuH5KTFR7Zsx93Khdrqhj6t5nFv";
+      },
+    },
+    {
+      field: "authorization",
+      mutate: (listing) => {
+        listing.saleAuthorization.unitFaceProofs = 50_000;
+      },
+    },
+    {
+      field: "frozen terms",
+      mutate: (listing) => {
+        listing.frozenTerms.unitPriceSats = "20001";
+      },
+    },
+  ];
+  for (const { field, mutate } of corruptedListings) {
+    const corrupted = structuredClone(canonicalListing);
+    mutate(corrupted);
+    assert.throws(
+      () => bindLifecycleItem({ listing: corrupted }),
+      /Canonical AMO V6 replay listing materialization is invalid/u,
+      `Tampered V6 replay ${field} must fail closed`,
+    );
+  }
+
+  const invalidTxid = "d".repeat(64);
+  const invalidPosition = {
+    blockHash: "d".repeat(64),
+    blockHeight: position.blockHeight + 4,
+    blockTransactionIndex: 13,
+    protocolVout: 1,
+    recordOrdinal: 0,
+  };
+  const [invalidTransaction] = bind(
+    [{
+      items: [{
+        ...preparedItem,
+        blockHash: invalidPosition.blockHash,
+        blockHeight: invalidPosition.blockHeight,
+        blockIndex: invalidPosition.blockTransactionIndex,
+        listingId: invalidTxid,
+        txid: invalidTxid,
+      }],
+      txid: invalidTxid,
+    }],
+    {
+      replayRecords: [{
+        outcome: {
+          kind: workAmoV5ConsensusEventKind("pwt1", false),
+          reasonCode: "work-amo-v6-fixture-invalid",
+          valid: false,
+        },
+        output: null,
+        position: invalidPosition,
+        protocol: "pwt1",
+        rawCandidate: true,
+        rawWitness: {
+          fixture: "invalid-v6-listing-remains-audit-history",
+        },
+        txid: invalidTxid,
+      }],
+    },
+  );
+  assert.equal(invalidTransaction.items[0].valid, false);
+  assert.equal(
+    invalidTransaction.items[0].reasonCode,
+    "work-amo-v6-fixture-invalid",
+  );
+  assert.match(
+    invalidTransaction.items[0].kind,
+    /-invalid$/u,
+    "An invalid V6 intent remains audit history instead of aborting the block",
+  );
+
+  assert.throws(
+    () =>
+      persistProjection(
+        {
+          ...preparedItem,
+          frozenTerms,
+          workAmoFrozenTerms: frozenTerms,
+        },
+        { strict: true },
+      ),
+    /WORK amount must be greater than zero/u,
+    "An unbound V6 ticket must not derive atoms from client-supplied frozen terms",
+  );
+});
+
+check("the first V6 listing projects its canonical list position and atomic human amount into verifier state", () => {
+  const listingId =
+    "b259fa601676287eca2ea94c9142cd13b45fde7031ec98967f15306df6ef7936";
+  const sellerAddress =
+    "18hkqE81wQuq75UEBKhB4JjAuQg47jN7Aa";
+  const saleAuthorization = {
+    ...WORK_AMO_V6_MODELS,
+    anchorScriptPubKey:
+      "76a914547e1b8e5303c69a1fd07e87305b5b71fbaac0ee88ac",
+    anchorSigHashType: 0x83,
+    anchorSignature: "",
+    anchorTxid: "",
+    anchorType: "sale-ticket-v1",
+    anchorValueSats: 546,
+    anchorVout: 2,
+    buyerAddress: "",
+    expiresAt: "",
+    network: "livenet",
+    nonce: "ms7i747w-93nwbex7",
+    registryAddress: WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS,
+    sellerAddress,
+    sellerPublicKey:
+      "03322f3132310abe49fd21dbb4987c7a5f327afc0224bc74851e06b0f5cf4bf945",
+    ticker: "WORK",
+    tokenId: WORK_TOKEN_ID,
+    unitFaceProofs: 20_000,
+    version: WORK_AMO_V6_AUTH_VERSION,
+  };
+  const frozenTerms = {
+    ...WORK_AMO_V6_MODELS,
+    listingBlockHash:
+      "00000000000000000000a5ea8861570ed551f77ed3cc0bddc3db3958d2700b44",
+    listingBlockHeight: 960_258,
+    listingBlockIndex: 4_093,
+    listingBondContributionQ8: "327600000000",
+    listingNetworkValueAfterQ8:
+      "407065289490674476605636246",
+    listingNetworkValueBeforeQ8:
+      "407065289490674149005636246",
+    listingProtocolVout: 1,
+    listingRecordOrdinal: 0,
+    unitAmountAtoms: "10",
+    unitFaceProofs: 20_000,
+    unitMinimumPriceSats: "19385",
+    unitPriceSats: "20000",
+    version: WORK_AMO_V6_AUTH_VERSION,
+  };
+  const position = {
+    blockHash: frozenTerms.listingBlockHash,
+    blockHeight: frozenTerms.listingBlockHeight,
+    blockTransactionIndex: frozenTerms.listingBlockIndex,
+    protocolVout: frozenTerms.listingProtocolVout,
+    recordOrdinal: frozenTerms.listingRecordOrdinal,
+  };
+  const listing = {
+    amountAtoms: "10",
+    frozenTerms,
+    listingId,
+    priceSats: "20000",
+    saleAuthorization,
+    sellerAddress,
+  };
+  const projection = projectWorkAmoV5RawEvents(
+    {
+      closedListings: [],
+      invalidEvents: [],
+      listings: [],
+      mints: [],
+      sales: [],
+      transfers: [],
+    },
+    [{
+      derived: [],
+      output: {
+        frozenTerms,
+        listing,
+        projection: {
+          frozenTerms,
+          kind: "token-listing",
+          listing,
+          parsed: {
+            kind: "list",
+            saleAuthorization,
+          },
+          position,
+          protocol: "pwt1",
+          reasonCode: "",
+          txid: listingId,
+          valid: true,
+        },
+      },
+      parsed: {
+        kind: "list",
+        saleAuthorization,
+      },
+      position,
+      protocol: "pwt1",
+      reasonCode: "",
+      semanticKind: "token-listing",
+      txid: listingId,
+      valid: true,
+    }],
+    {
+      confirmedSupplyAtoms: "10",
+      holders: [{
+        address: sellerAddress,
+        balanceAtoms: "10",
+      }],
+      listings: [listing],
+    },
+  );
+  assert.equal(projection.listings.length, 1);
+  const [activeListing] = projection.listings;
+  assert.equal(activeListing.listingId, listingId);
+  assert.equal(activeListing.txid, listingId);
+  assert.equal(activeListing.amountAtoms, "10");
+  assert.equal(activeListing.amount, "0.0000001");
+  assert.equal(activeListing.blockHash, position.blockHash);
+  assert.equal(activeListing.blockHeight, 960_258);
+  assert.equal(activeListing.blockIndex, 4_093);
+  assert.equal(activeListing.confirmed, true);
+  assert.equal(activeListing.protocol, "pwt1");
+  assert.equal(activeListing.protocolVout, 1);
+  assert.equal(activeListing.recordOrdinal, 0);
+
+  const tokenVerifierItemsFromState = isolatedFunction(
+    API_PATH,
+    "tokenVerifierItemsFromState",
+  );
+  const verifierItems = tokenVerifierItemsFromState(
+    projection,
+    listingId,
+  );
+  assert.equal(verifierItems.length, 1);
+  const [verifierListing] = verifierItems;
+  assert.equal(verifierListing.kind, "token-listing");
+  assert.equal(verifierListing.amountAtoms, "10");
+  assert.equal(verifierListing.amount, "0.0000001");
+  assert.equal(verifierListing.blockHeight, 960_258);
+  assert.equal(verifierListing.blockIndex, 4_093);
+  assert.equal(verifierListing.protocolVout, 1);
+  assert.equal(verifierListing.recordOrdinal, 0);
+  assert.equal(verifierListing.confirmed, true);
+
+  const signedSaleAuthorization = {
+    ...saleAuthorization,
+    anchorSignature: "00",
+    anchorTxid: listingId,
+  };
+  const signedListing = {
+    ...listing,
+    saleAuthorization: signedSaleAuthorization,
+  };
+  const workState = (listings, holderAddress = sellerAddress) => ({
+    confirmedSupplyAtoms: "10",
+    holders: [{
+      address: holderAddress,
+      balanceAtoms: "10",
+    }],
+    listings,
+  });
+  const lifecyclePosition = (
+    blockHeight,
+    blockTransactionIndex,
+    blockHash,
+  ) => ({
+    blockHash,
+    blockHeight,
+    blockTransactionIndex,
+    protocolVout: 1,
+    recordOrdinal: 0,
+  });
+  const sealTxid = "a".repeat(64);
+  const sealPosition = lifecyclePosition(
+    960_259,
+    11,
+    "b".repeat(64),
+  );
+  const sealedProjection = projectWorkAmoV5RawEvents(
+    projection,
+    [{
+      derived: [],
+      output: {
+        projection: {
+          kind: "token-listing-sealed",
+          listing: signedListing,
+        },
+      },
+      parsed: {
+        kind: "seal",
+        saleAuthorization: signedSaleAuthorization,
+      },
+      position: sealPosition,
+      protocol: "pwt1",
+      reasonCode: "",
+      semanticKind: "token-listing-sealed",
+      txid: sealTxid,
+      valid: true,
+    }],
+    workState([signedListing]),
+  );
+  assert.equal(sealedProjection.listings.length, 1);
+  const [sealedListing] = sealedProjection.listings;
+  assert.equal(sealedListing.blockHash, position.blockHash);
+  assert.equal(sealedListing.blockHeight, position.blockHeight);
+  assert.equal(sealedListing.blockIndex, position.blockTransactionIndex);
+  assert.equal(sealedListing.sealBlockHash, sealPosition.blockHash);
+  assert.equal(sealedListing.sealBlockHeight, sealPosition.blockHeight);
+  assert.equal(
+    sealedListing.sealBlockIndex,
+    sealPosition.blockTransactionIndex,
+  );
+  assert.equal(sealedListing.sealTxid, sealTxid);
+
+  const delistTxid = "c".repeat(64);
+  const delistPosition = lifecyclePosition(
+    960_260,
+    12,
+    "d".repeat(64),
+  );
+  const delistedProjection = projectWorkAmoV5RawEvents(
+    sealedProjection,
+    [{
+      derived: [],
+      output: {
+        projection: {
+          closedListing: signedListing,
+          kind: "token-listing-closed",
+        },
+      },
+      parsed: {
+        kind: "delist",
+        listingId,
+      },
+      position: delistPosition,
+      protocol: "pwt1",
+      reasonCode: "",
+      semanticKind: "token-listing-closed",
+      txid: delistTxid,
+      valid: true,
+    }],
+    workState([]),
+  );
+  assert.equal(delistedProjection.listings.length, 0);
+  assert.equal(delistedProjection.closedListings.length, 1);
+  const [delistedListing] = delistedProjection.closedListings;
+  assert.equal(delistedListing.blockHash, position.blockHash);
+  assert.equal(delistedListing.blockHeight, position.blockHeight);
+  assert.equal(delistedListing.blockIndex, position.blockTransactionIndex);
+  assert.equal(delistedListing.sealBlockHash, sealPosition.blockHash);
+  assert.equal(delistedListing.sealTxid, sealTxid);
+  assert.equal(delistedListing.closedBlockHash, delistPosition.blockHash);
+  assert.equal(
+    delistedListing.closedBlockHeight,
+    delistPosition.blockHeight,
+  );
+  assert.equal(delistedListing.closedTxid, delistTxid);
+  const [delistedSealVerifier] = tokenVerifierItemsFromState(
+    delistedProjection,
+    sealTxid,
+  );
+  const [delistVerifier] = tokenVerifierItemsFromState(
+    delistedProjection,
+    delistTxid,
+  );
+  assert.equal(delistedSealVerifier.blockHash, sealPosition.blockHash);
+  assert.equal(delistVerifier.blockHash, delistPosition.blockHash);
+
+  const buyerAddress =
+    "1F1p9UEHuH5KTFR7Zsx93Khdrqhj6t5nFv";
+  const buyTxid = "e".repeat(64);
+  const buyPosition = lifecyclePosition(
+    960_261,
+    13,
+    "f".repeat(64),
+  );
+  const boughtProjection = projectWorkAmoV5RawEvents(
+    sealedProjection,
+    [{
+      derived: [{
+        kind: "token-listing-closed",
+        listingId,
+        tokenId: WORK_TOKEN_ID,
+      }],
+      output: {
+        projection: {
+          buyerAddress,
+          kind: "token-sale",
+          listing: signedListing,
+        },
+      },
+      parsed: {
+        buyerAddress,
+        kind: "buy",
+        listingId,
+        saleAuthorization: signedSaleAuthorization,
+      },
+      position: buyPosition,
+      protocol: "pwt1",
+      reasonCode: "",
+      semanticKind: "token-sale",
+      txid: buyTxid,
+      valid: true,
+    }],
+    workState([], buyerAddress),
+  );
+  assert.equal(boughtProjection.listings.length, 0);
+  assert.equal(boughtProjection.sales.length, 1);
+  assert.equal(boughtProjection.closedListings.length, 1);
+  const [saleProjection] = boughtProjection.sales;
+  const [boughtListing] = boughtProjection.closedListings;
+  assert.equal(saleProjection.blockHash, buyPosition.blockHash);
+  assert.equal(saleProjection.sealBlockHash, sealPosition.blockHash);
+  assert.equal(saleProjection.sealTxid, sealTxid);
+  assert.equal(boughtListing.blockHash, position.blockHash);
+  assert.equal(boughtListing.sealBlockHash, sealPosition.blockHash);
+  assert.equal(boughtListing.sealTxid, sealTxid);
+  assert.equal(boughtListing.closedBlockHash, buyPosition.blockHash);
+  assert.equal(boughtListing.closedTxid, buyTxid);
+
+  const invalidDelistTxid = "1".repeat(64);
+  const invalidDelistPosition = lifecyclePosition(
+    960_262,
+    14,
+    "2".repeat(64),
+  );
+  const invalidDelistProjection = projectWorkAmoV5RawEvents(
+    sealedProjection,
+    [{
+      derived: [],
+      output: {
+        projection: {
+          kind: "token-listing-closed",
+        },
+      },
+      parsed: {
+        kind: "delist",
+        listingId,
+      },
+      position: invalidDelistPosition,
+      protocol: "pwt1",
+      reasonCode: "work-amo-v6-delist-fixture-invalid",
+      semanticKind: "token-listing-closed",
+      txid: invalidDelistTxid,
+      valid: false,
+    }],
+    workState([signedListing]),
+  );
+  assert.equal(invalidDelistProjection.invalidEvents.length, 1);
+  assert.equal(
+    invalidDelistProjection.invalidEvents[0].txid,
+    invalidDelistTxid,
+  );
+  assert.equal(
+    invalidDelistProjection.invalidEvents[0].attemptedKind,
+    "delist",
+  );
+
+  const legacyListingId = "3".repeat(64);
+  const legacyListing = {
+    amountAtoms: "10",
+    listingId: legacyListingId,
+    priceSats: "20000",
+    saleAuthorization: {
+      tokenId: WORK_TOKEN_ID,
+      version: WORK_AMO_V5_AUTH_VERSION,
+    },
+    sellerAddress,
+  };
+  const legacySeed = {
+    closedListings: [],
+    invalidEvents: [],
+    legacyMarker: "byte-shape-preserved",
+    listings: [legacyListing],
+    mints: [],
+    sales: [],
+    transfers: [],
+  };
+  const legacyDelistProjection = projectWorkAmoV5RawEvents(
+    legacySeed,
+    [{
+      derived: [],
+      output: {
+        projection: {
+          closedListing: legacyListing,
+          kind: "token-listing-closed",
+        },
+      },
+      parsed: {
+        kind: "delist",
+        listingId: legacyListingId,
+      },
+      position: lifecyclePosition(
+        WORK_AMO_V5_ACTIVATION_HEIGHT + 1,
+        1,
+        "4".repeat(64),
+      ),
+      protocol: "pwt1",
+      reasonCode: "",
+      semanticKind: "token-listing-closed",
+      txid: "5".repeat(64),
+      valid: true,
+    }],
+    workState([]),
+  );
+  assert.deepEqual(
+    legacyDelistProjection,
+    {
+      ...legacySeed,
+      closedListings: [],
+      confirmedSupplyAtoms: "10",
+      holders: [{
+        address: sellerAddress,
+        balance: "10",
+        balanceAtoms: "10",
+        tokenId: WORK_TOKEN_ID,
+      }],
+      invalidEvents: [],
+      listings: [],
+      mints: [],
+      sales: [],
+      transfers: [],
+    },
+    "V6 delist scoping must not change historical V4/V5 projection bytes",
+  );
 });
 
 check("AMO V5 activation replay fails closed when only advanced-tip relational sources are available", async () => {

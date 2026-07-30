@@ -51008,6 +51008,7 @@ function exactVerifierPositionInteger(item, field, minimum) {
 function canonicalVerifierItemPosition(
   item,
   {
+    blockHashField = "blockHash",
     blockHeightField = "blockHeight",
     blockIndexField = "blockIndex",
     confirmationField = "confirmed",
@@ -51020,8 +51021,17 @@ function canonicalVerifierItemPosition(
   } = {},
 ) {
   const confirmed = item?.[confirmationField] === true;
+  const selectedBlockHash = String(
+    item?.[blockHashField] ?? item?.blockHash ?? "",
+  )
+    .trim()
+    .toLowerCase();
+  const blockHash = /^[0-9a-f]{64}$/u.test(selectedBlockHash)
+    ? selectedBlockHash
+    : "";
   if (!confirmed) {
     return {
+      ...(blockHash ? { blockHash } : {}),
       blockHeight: item?.[blockHeightField] ?? item?.blockHeight,
       blockIndex: item?.[blockIndexField] ?? item?.blockIndex,
       confirmed: false,
@@ -51095,6 +51105,7 @@ function canonicalVerifierItemPosition(
     );
   }
   return {
+    ...(blockHash ? { blockHash } : {}),
     blockHeight,
     blockIndex,
     confirmed: true,
@@ -51115,6 +51126,7 @@ function tokenVerifierItemsFromState(state, txid, options = {}) {
     blockIndexField = "blockIndex",
     protocolVoutField = "protocolVout",
     recordOrdinalField = "recordOrdinal",
+    blockHashField = "blockHash",
   ) => {
     if (!item || typeof item !== "object") {
       return;
@@ -51122,6 +51134,7 @@ function tokenVerifierItemsFromState(state, txid, options = {}) {
     const position = canonicalVerifierItemPosition(
       item,
       {
+        blockHashField,
         blockHeightField,
         blockIndexField,
         confirmationField,
@@ -51180,6 +51193,7 @@ function tokenVerifierItemsFromState(state, txid, options = {}) {
         "sealBlockIndex",
         "sealProtocolVout",
         "sealRecordOrdinal",
+        "sealBlockHash",
       );
     }
   }
@@ -51199,6 +51213,7 @@ function tokenVerifierItemsFromState(state, txid, options = {}) {
         "sealBlockIndex",
         "sealProtocolVout",
         "sealRecordOrdinal",
+        "sealBlockHash",
       );
     }
     if (String(listing?.closedTxid ?? "").toLowerCase() === normalizedTxid) {
@@ -51211,6 +51226,7 @@ function tokenVerifierItemsFromState(state, txid, options = {}) {
         "closedBlockIndex",
         "closedProtocolVout",
         "closedRecordOrdinal",
+        "closedBlockHash",
       );
     }
   }

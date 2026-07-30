@@ -102,7 +102,9 @@ import {
   WORK_AMO_V6_UNIT_MODEL,
   WORK_AMO_V6_UNIT_WORK_ORACLE_MODEL,
   validateWorkAmoV6FrozenTerms,
+  validateWorkAmoV6StaticAuthorization,
   workAmoV6CanonicalTokenStateCommitment,
+  workAmoV6FrozenTermsMatch,
 } from "../server/work-amo-v6.mjs";
 import {
   workAmoV6DeclarationCommitment,
@@ -17004,6 +17006,226 @@ function workAmoV5ReplayFrozenTerms(output) {
   return null;
 }
 
+function workAmoV6ReplayListingMaterialization({
+  item,
+  output,
+  position,
+  projection,
+  txid,
+  valid,
+}) {
+  const source = objectValue(item);
+  const projected = objectValue(projection);
+  const canonicalKind = normalizedLowerText(
+    projected.kind ?? source.kind,
+  ).replace(/-invalid$/u, "");
+  const listingField = canonicalKind === "token-listing-closed"
+    ? "closedListing"
+    : ["token-listing", "token-listing-sealed", "token-sale"].includes(
+        canonicalKind,
+      )
+      ? "listing"
+      : "";
+  const replayListing = objectValue(
+    listingField
+      ? output?.[listingField] ?? projected?.[listingField]
+      : null,
+  );
+  const replayAuthorization = objectValue(
+    replayListing.saleAuthorization,
+  );
+  const sourceAuthorization = objectValue(source.saleAuthorization);
+  const v6Mentioned = [
+    replayAuthorization.version,
+    sourceAuthorization.version,
+  ].some(
+    (version) =>
+      normalizedLowerText(version) === WORK_AMO_V6_AUTH_VERSION,
+  );
+  if (!v6Mentioned) {
+    return null;
+  }
+
+  const fail = () => {
+    throw new Error(
+      `Canonical AMO V6 replay listing materialization is invalid for ${txid}.`,
+    );
+  };
+  if (
+    valid !== true ||
+    !listingField ||
+    Object.keys(replayListing).length === 0
+  ) {
+    return fail();
+  }
+
+  const replayAuthorizationValidation =
+    validateWorkAmoV6StaticAuthorization(replayAuthorization);
+  if (!replayAuthorizationValidation.valid) {
+    return fail();
+  }
+  if (Object.keys(sourceAuthorization).length > 0) {
+    const sourceAuthorizationValidation =
+      validateWorkAmoV6StaticAuthorization(sourceAuthorization);
+    const staticIdentityFields = [
+      "amountModel",
+      "anchorScriptPubKey",
+      "anchorSigHashType",
+      "anchorType",
+      "anchorValueSats",
+      "anchorVout",
+      "bondTransitionModel",
+      "buyerAddress",
+      "expiresAt",
+      "network",
+      "nonce",
+      "registryAddress",
+      "sellerAddress",
+      "sellerPublicKey",
+      "stateOrderModel",
+      "ticker",
+      "tokenId",
+      "unitFaceProofs",
+      "unitModel",
+      "unitWorkOracleModel",
+      "version",
+    ];
+    if (
+      !sourceAuthorizationValidation.valid ||
+      !staticIdentityFields.every(
+        (field) =>
+          sourceAuthorizationValidation.authorization[field] ===
+            replayAuthorizationValidation.authorization[field],
+      )
+    ) {
+      return fail();
+    }
+  } else if (
+    ["token-listing", "token-listing-sealed"].includes(canonicalKind)
+  ) {
+    return fail();
+  }
+
+  const replayFrozenTerms = objectValue(replayListing.frozenTerms);
+  const frozenValidation = validateWorkAmoV6FrozenTerms(
+    replayFrozenTerms,
+    {
+      authorization: replayAuthorizationValidation.authorization,
+    },
+  );
+  if (!frozenValidation.valid) {
+    return fail();
+  }
+  for (const candidate of [
+    output?.frozenTerms,
+    projected.frozenTerms,
+    projected?.[listingField]?.frozenTerms,
+  ]) {
+    if (
+      candidate &&
+      !workAmoV6FrozenTermsMatch(
+        frozenValidation.frozenTerms,
+        candidate,
+      )
+    ) {
+      return fail();
+    }
+  }
+
+  const projectedListing = objectValue(projected?.[listingField]);
+  if (
+    Object.keys(projectedListing).length > 0 &&
+    workAmoV5CanonicalPayloadCommitment(projectedListing).sha256 !==
+      workAmoV5CanonicalPayloadCommitment(replayListing).sha256
+  ) {
+    return fail();
+  }
+
+  const listingId = normalizedLowerText(replayListing.listingId);
+  const sourceListingId = normalizedLowerText(source.listingId);
+  const sellerAddress = String(
+    replayListing.sellerAddress ?? "",
+  ).trim();
+  const sourceSellerAddress = String(
+    source.sellerAddress ?? "",
+  ).trim();
+  const sourceTokenId = normalizedLowerText(source.tokenId);
+  const amountAtoms = canonicalWorkAtomsText(
+    replayListing.amountAtoms,
+  );
+  const priceSats = canonicalIntegerText(
+    replayListing.priceSats,
+    { positive: true },
+  );
+  const listingPosition = normalizeWorkAmoCanonicalPosition({
+    blockHash: frozenValidation.frozenTerms.listingBlockHash,
+    blockHeight: frozenValidation.frozenTerms.listingBlockHeight,
+    blockTransactionIndex:
+      frozenValidation.frozenTerms.listingBlockIndex,
+    protocolVout:
+      frozenValidation.frozenTerms.listingProtocolVout,
+    recordOrdinal:
+      frozenValidation.frozenTerms.listingRecordOrdinal,
+  });
+  const actionPosition = normalizeWorkAmoCanonicalPosition(position);
+  const listPositionMatches =
+    canonicalKind === "token-listing" &&
+    listingPosition &&
+    actionPosition &&
+    listingPosition.blockHash === actionPosition.blockHash &&
+    listingPosition.blockHeight === actionPosition.blockHeight &&
+    listingPosition.blockTransactionIndex ===
+      actionPosition.blockTransactionIndex &&
+    listingPosition.protocolVout === actionPosition.protocolVout &&
+    listingPosition.recordOrdinal === actionPosition.recordOrdinal;
+  const followOnPositionMatches =
+    canonicalKind !== "token-listing" &&
+    listingPosition &&
+    actionPosition &&
+    workAmoCanonicalPositionPrecedes(
+      listingPosition,
+      actionPosition,
+    );
+  if (
+    !isHexTxid(listingId) ||
+    !isHexTxid(sourceListingId) ||
+    listingId !== sourceListingId ||
+    (canonicalKind === "token-listing" && listingId !== txid) ||
+    replayAuthorizationValidation.authorization.tokenId !==
+      WORK_TOKEN_ID ||
+    (sourceTokenId && sourceTokenId !== WORK_TOKEN_ID) ||
+    !sellerAddress ||
+    sellerAddress !==
+      replayAuthorizationValidation.authorization.sellerAddress ||
+    (sourceSellerAddress &&
+      sourceSellerAddress !== sellerAddress) ||
+    !amountAtoms ||
+    amountAtoms !== frozenValidation.frozenTerms.unitAmountAtoms ||
+    !priceSats ||
+    priceSats !== frozenValidation.frozenTerms.unitPriceSats ||
+    (!listPositionMatches && !followOnPositionMatches)
+  ) {
+    return fail();
+  }
+
+  return {
+    amount: formatWorkAtoms(amountAtoms),
+    amountAtoms,
+    decimals: WORK_DECIMALS,
+    frozenTerms: frozenValidation.frozenTerms,
+    listingId,
+    priceSats,
+    saleAuthorization:
+      replayAuthorizationValidation.authorization,
+    sellerAddress,
+    ticker: "WORK",
+    tokenId: WORK_TOKEN_ID,
+    unitScale: WORK_UNIT_SCALE_TEXT,
+    workAmoFrozenTerms: frozenValidation.frozenTerms,
+    workAmoV6FrozenTerms: frozenValidation.frozenTerms,
+  };
+}
+
 export function bindPreparedTransactionsToWorkAmoV5Replay(
   preparedTransactions,
   transition,
@@ -17112,9 +17334,50 @@ export function bindPreparedTransactionsToWorkAmoV5Replay(
           `Canonical AMO frozen terms diverged at ${position.key}.`,
         );
       }
+      const replaySemanticKind = normalizedLowerText(
+        projection.kind ?? item?.kind,
+      ).replace(/-invalid$/u, "");
+      const replayListingField =
+        replaySemanticKind === "token-listing-closed"
+          ? "closedListing"
+          : [
+              "token-listing",
+              "token-listing-sealed",
+              "token-sale",
+            ].includes(replaySemanticKind)
+            ? "listing"
+            : "";
+      const replayListingAuthorization = objectValue(
+        replayListingField
+          ? (
+              output?.[replayListingField] ??
+              projection?.[replayListingField]
+            )?.saleAuthorization
+          : null,
+      );
+      const v6ListingMentioned = [
+        item?.saleAuthorization?.version,
+        replayListingAuthorization.version,
+      ].some(
+        (version) =>
+          normalizedLowerText(version) ===
+            WORK_AMO_V6_AUTH_VERSION,
+      );
+      const v6ListingMaterialization =
+        valid && v6ListingMentioned
+        ? workAmoV6ReplayListingMaterialization({
+            item,
+            output,
+            position: position.position,
+            projection,
+            txid,
+            valid,
+          })
+        : null;
       let nextItem = {
         ...item,
         ...projection,
+        ...(v6ListingMaterialization ?? {}),
         _workAmoV5ReplayBound: true,
         blockHash: position.position.blockHash,
         blockHeight: position.position.blockHeight,
