@@ -15041,6 +15041,345 @@ async function prepareCanonicalRebuild(client) {
   return { creditUnitStorageMigration, resumed: false, value };
 }
 
+async function pwtRangeReplayProtectedSnapshotState(
+  client,
+  witnessSnapshotIds = [],
+) {
+  const result = await client.query(
+    `
+      WITH explicit_references AS MATERIALIZED (
+        SELECT DISTINCT
+          'snapshot:' || payload->>'issuanceValueSnapshotId' AS reference_id,
+          payload->>'issuanceValueSnapshotId' AS snapshot_id
+        FROM proof_indexer.events
+        WHERE network = $1
+          AND COALESCE(payload->>'issuanceValueSnapshotId', '') <> ''
+        UNION
+        SELECT DISTINCT
+          'snapshot:' || witness.snapshot_id AS reference_id,
+          witness.snapshot_id
+        FROM unnest($2::text[]) AS witness(snapshot_id)
+        WHERE witness.snapshot_id <> ''
+      ),
+      market_references AS MATERIALIZED (
+        SELECT DISTINCT
+          concat(
+            'work-market:',
+            action_event.txid,
+            ':',
+            action_event.event_id::text,
+            ':',
+            oracle_reference.reference_kind,
+            ':',
+            oracle_reference.block_height,
+            ':',
+            lower(oracle_reference.block_hash)
+          ) AS reference_id,
+          CASE
+            WHEN oracle_reference.block_height ~ '^[1-9][0-9]*$'
+            THEN oracle_reference.block_height::integer
+            ELSE NULL
+          END AS block_height,
+          lower(oracle_reference.block_hash) AS block_hash
+        FROM proof_indexer.events action_event
+        JOIN proof_indexer.transactions action_transaction
+          ON action_transaction.network = action_event.network
+         AND action_transaction.txid = action_event.txid
+         AND action_transaction.status = 'confirmed'
+        JOIN proof_indexer.blocks action_block
+          ON action_block.network = action_transaction.network
+         AND action_block.block_hash = action_transaction.block_hash
+         AND action_block.height = action_transaction.block_height
+         AND action_block.canonical = true
+        CROSS JOIN LATERAL (
+          VALUES
+            (
+              'sale-authorization',
+              action_event.payload->'saleAuthorization'->>'oracleBlockHeight',
+              action_event.payload->'saleAuthorization'->>'oracleBlockHash'
+            ),
+            (
+              'v4-confirmation',
+              CASE
+                WHEN action_event.payload->'saleAuthorization'->>'version' = $5
+                THEN action_event.payload->'workMarketPricing'->>'confirmationOracleBlockHeight'
+                ELSE NULL
+              END,
+              CASE
+                WHEN action_event.payload->'saleAuthorization'->>'version' = $5
+                THEN action_event.payload->'workMarketPricing'->>'confirmationOracleBlockHash'
+                ELSE NULL
+              END
+            )
+        ) oracle_reference(
+          reference_kind,
+          block_height,
+          block_hash
+        )
+        WHERE action_event.network = $1
+          AND action_event.status = 'confirmed'
+          AND (
+            action_event.valid = true
+            OR action_event.payload->'saleAuthorization'->>'version' = $5
+          )
+          AND action_event.kind IN (
+            'token-listing',
+            'token-listing-sealed',
+            'token-sale',
+            'token-event-invalid'
+          )
+          AND (
+            action_event.kind <> 'token-event-invalid'
+            OR lower(COALESCE(
+              action_event.payload->>'attemptedKind',
+              ''
+            )) IN (
+              'list',
+              'seal',
+              'buy',
+              'token-listing',
+              'token-listing-sealed',
+              'token-sale'
+            )
+          )
+          AND action_event.payload->'saleAuthorization'->>'version' =
+            ANY($3::text[])
+          AND lower(action_event.payload->'saleAuthorization'->>'tokenId') =
+            $4
+          AND oracle_reference.block_height ~ '^[1-9][0-9]*$'
+          AND oracle_reference.block_hash ~ '^[0-9a-fA-F]{64}$'
+      ),
+      referenced AS MATERIALIZED (
+        SELECT
+          explicit.reference_id,
+          snapshot.snapshot_id,
+          CASE
+            WHEN snapshot.snapshot_id IS NULL THEN NULL
+            ELSE to_jsonb(snapshot)::text
+          END AS fingerprint
+        FROM explicit_references explicit
+        LEFT JOIN proof_indexer.ledger_snapshots snapshot
+          ON snapshot.network = $1
+         AND snapshot.snapshot_id = explicit.snapshot_id
+        UNION ALL
+        SELECT
+          market.reference_id,
+          snapshot.snapshot_id,
+          CASE
+            WHEN snapshot.snapshot_id IS NULL THEN NULL
+            ELSE to_jsonb(snapshot)::text
+          END AS fingerprint
+        FROM market_references market
+        LEFT JOIN proof_indexer.ledger_snapshots snapshot
+          ON snapshot.network = $1
+         AND snapshot.indexed_through_block = market.block_height
+         AND lower(COALESCE(
+           snapshot.source_hashes->>'blockScan',
+           ''
+         )) = market.block_hash
+         AND lower(COALESCE(
+           snapshot.payload->>'indexedThroughBlockHash',
+           ''
+         )) = market.block_hash
+         AND snapshot.source_hashes ? 'canonicalSummary'
+         AND snapshot.payload->'summaryRefresh'->>'mode' =
+           'canonical-summary-refresh'
+      )
+      SELECT
+        referenced.reference_id,
+        referenced.snapshot_id,
+        referenced.snapshot_id IS NOT NULL AS resolved,
+        referenced.fingerprint
+      FROM referenced
+      ORDER BY referenced.reference_id ASC, referenced.snapshot_id ASC
+    `,
+    [
+      NETWORK,
+      witnessSnapshotIds,
+      [
+        WORK_MARKET_V2_AUTH_VERSION,
+        WORK_MARKET_V4_AUTH_VERSION,
+        WORK_AMO_V5_AUTH_VERSION,
+      ],
+      WORK_TOKEN_ID,
+      WORK_MARKET_V4_AUTH_VERSION,
+    ],
+  );
+  return result.rows.map((row) => ({
+    fingerprint:
+      row?.fingerprint === null || row?.fingerprint === undefined
+        ? null
+        : String(row.fingerprint),
+    referenceId: String(row?.reference_id ?? ""),
+    resolved: row?.resolved === true,
+    snapshotId: String(row?.snapshot_id ?? ""),
+  }));
+}
+
+function assertPwtRangeReplayProtectedSnapshots(
+  beforeRows,
+  afterRows = beforeRows,
+) {
+  const before = Array.isArray(beforeRows) ? beforeRows : [];
+  const after = Array.isArray(afterRows) ? afterRows : [];
+  const beforeByReference = new Map(
+    before.map((row) => [String(row?.referenceId ?? ""), row]),
+  );
+  const afterByReference = new Map(
+    after.map((row) => [String(row?.referenceId ?? ""), row]),
+  );
+  if (
+    before.some(
+      (row) =>
+        !row?.referenceId ||
+        !row?.snapshotId ||
+        row?.resolved !== true ||
+        !String(row?.fingerprint ?? ""),
+    ) ||
+    beforeByReference.size !== before.length ||
+    afterByReference.size !== after.length ||
+    after.length !== before.length
+  ) {
+    throw new Error(
+      "PWT range replay cannot uniquely resolve every protected ledger snapshot reference.",
+    );
+  }
+  for (const beforeRow of before) {
+    const afterRow = afterByReference.get(beforeRow.referenceId);
+    if (
+      !afterRow ||
+      afterRow.resolved !== true ||
+      afterRow.snapshotId !== beforeRow.snapshotId ||
+      afterRow.fingerprint !== beforeRow.fingerprint
+    ) {
+      throw new Error(
+        `PWT range replay changed protected ledger snapshot reference ${beforeRow.referenceId}.`,
+      );
+    }
+  }
+}
+
+async function pwtRangeReplayRetainedIncbValueSnapshotBindings(client) {
+  const result = await client.query(
+    `
+      SELECT
+        mint_event.payload,
+        mint_event.block_height AS event_block_height,
+        mint_event.block_index AS event_block_index,
+        canonical_transaction.block_height AS transaction_block_height,
+        canonical_transaction.block_index AS transaction_block_index,
+        lower(canonical_transaction.block_hash) AS transaction_block_hash
+      FROM proof_indexer.events mint_event
+      JOIN proof_indexer.transactions canonical_transaction
+        ON canonical_transaction.network = mint_event.network
+       AND canonical_transaction.txid = mint_event.txid
+       AND canonical_transaction.status = 'confirmed'
+       AND canonical_transaction.block_height = mint_event.block_height
+       AND canonical_transaction.block_index = mint_event.block_index
+      JOIN proof_indexer.blocks canonical_block
+        ON canonical_block.network = canonical_transaction.network
+       AND canonical_block.block_hash = canonical_transaction.block_hash
+       AND canonical_block.height = canonical_transaction.block_height
+       AND canonical_block.canonical = true
+      WHERE mint_event.network = $1
+        AND mint_event.protocol = 'pwt1'
+        AND mint_event.kind = 'token-mint'
+        AND mint_event.status = 'confirmed'
+        AND mint_event.valid = true
+        AND CASE
+          WHEN mint_event.payload->>'blockHeight' ~ '^[1-9][0-9]*$'
+          THEN (mint_event.payload->>'blockHeight')::integer
+          ELSE NULL
+        END = canonical_transaction.block_height
+        AND CASE
+          WHEN mint_event.payload->>'blockIndex' ~ '^(0|[1-9][0-9]*)$'
+          THEN (mint_event.payload->>'blockIndex')::integer
+          ELSE NULL
+        END = canonical_transaction.block_index
+        AND lower(COALESCE(
+          NULLIF(mint_event.payload->>'blockHash', ''),
+          NULLIF(mint_event.payload->>'_powBlockHash', ''),
+          ''
+        )) = lower(canonical_transaction.block_hash)
+        AND lower(COALESCE(mint_event.payload->>'tokenId', '')) = $2
+        AND COALESCE(
+          mint_event.payload->>'issuanceValueSnapshotId',
+          ''
+        ) <> ''
+      ORDER BY mint_event.event_id ASC
+    `,
+    [NETWORK, INCB_TOKEN_ID],
+  );
+  const mintItems = result.rows.map((row) => {
+    const payload = objectValue(row?.payload);
+    const eventBlockHeight = Number(row?.event_block_height);
+    const eventBlockIndex = Number(row?.event_block_index);
+    const transactionBlockHeight = Number(row?.transaction_block_height);
+    const transactionBlockIndex = Number(row?.transaction_block_index);
+    const transactionBlockHash = String(
+      row?.transaction_block_hash ?? "",
+    )
+      .trim()
+      .toLowerCase();
+    const payloadBlockHeight = Number(payload?.blockHeight);
+    const payloadBlockIndex = Number(payload?.blockIndex);
+    const payloadBlockHash = String(
+      payload?.blockHash ?? payload?._powBlockHash ?? "",
+    )
+      .trim()
+      .toLowerCase();
+    if (
+      !Number.isSafeInteger(eventBlockHeight) ||
+      !Number.isSafeInteger(eventBlockIndex) ||
+      eventBlockHeight !== transactionBlockHeight ||
+      eventBlockIndex !== transactionBlockIndex ||
+      payloadBlockHeight !== transactionBlockHeight ||
+      payloadBlockIndex !== transactionBlockIndex ||
+      !/^[0-9a-f]{64}$/u.test(transactionBlockHash) ||
+      payloadBlockHash !== transactionBlockHash
+    ) {
+      throw new Error(
+        "PWT range replay found a retained INCB mint outside its canonical transaction position.",
+      );
+    }
+    return payload;
+  });
+  return canonicalIncbValueSnapshotBindings([
+    {
+      mintItems,
+    },
+  ]);
+}
+
+function assertPwtRangeReplayRetainedIncbSnapshotState(
+  beforeBindings,
+  beforeFingerprints,
+  afterBindings = beforeBindings,
+  afterFingerprints = beforeFingerprints,
+) {
+  if (
+    beforeBindings.size !== afterBindings.size ||
+    beforeFingerprints.size !== beforeBindings.size ||
+    afterFingerprints.size !== afterBindings.size
+  ) {
+    throw new Error(
+      "PWT range replay changed the retained INCB H-1 oracle set.",
+    );
+  }
+  for (const [snapshotId, beforeBinding] of beforeBindings) {
+    if (
+      JSON.stringify(afterBindings.get(snapshotId)) !==
+        JSON.stringify(beforeBinding) ||
+      afterFingerprints.get(snapshotId) !==
+        beforeFingerprints.get(snapshotId)
+    ) {
+      throw new Error(
+        `PWT range replay changed retained INCB H-1 oracle ${snapshotId}.`,
+      );
+    }
+  }
+}
+
 async function prepareCanonicalPwtRangeReplay(client) {
   if (!PREPARE_CANONICAL_PWT_RANGE_REPLAY_ONLY) {
     return null;
@@ -15444,6 +15783,34 @@ async function prepareCanonicalPwtRangeReplay(client) {
       `,
       [NETWORK, BLOCK_SCAN_FROM_HEIGHT],
     );
+    const preservedWitnessSnapshotIds = replayWitnessManifest.entries
+      .filter((entry) => entry.disposition === "preserve")
+      .map((entry) => entry.snapshot.snapshotId);
+    const protectedSnapshotsBefore =
+      await pwtRangeReplayProtectedSnapshotState(
+        client,
+        preservedWitnessSnapshotIds,
+      );
+    assertPwtRangeReplayProtectedSnapshots(protectedSnapshotsBefore);
+    const retainedIncbBindingsBefore =
+      await pwtRangeReplayRetainedIncbValueSnapshotBindings(client);
+    const retainedIncbSnapshotIdsBefore = [
+      ...retainedIncbBindingsBefore.keys(),
+    ].sort();
+    const retainedIncbRowsBefore =
+      await lockedCanonicalIncbValueSnapshots(
+        client,
+        retainedIncbSnapshotIdsBefore,
+      );
+    const retainedIncbFingerprintsBefore =
+      verifiedCanonicalIncbValueSnapshotFingerprints(
+        retainedIncbRowsBefore,
+        retainedIncbBindingsBefore,
+      );
+    assertPwtRangeReplayRetainedIncbSnapshotState(
+      retainedIncbBindingsBefore,
+      retainedIncbFingerprintsBefore,
+    );
     await client.query(
       `DELETE FROM proof_indexer.credit_balances WHERE network = $1`,
       [NETWORK],
@@ -15479,9 +15846,14 @@ async function prepareCanonicalPwtRangeReplay(client) {
       client,
       "PWT range replay retained state",
     );
-    const preservedWitnessSnapshotIds = replayWitnessManifest.entries
-      .filter((entry) => entry.disposition === "preserve")
-      .map((entry) => entry.snapshot.snapshotId);
+    const preservedSnapshotIds = [
+      ...new Set([
+        ...preservedWitnessSnapshotIds,
+        ...protectedSnapshotsBefore.map(
+          (row) => row.snapshotId,
+        ),
+      ]),
+    ];
     await client.query(
       `
         DELETE FROM proof_indexer.ledger_snapshots
@@ -15490,7 +15862,37 @@ async function prepareCanonicalPwtRangeReplay(client) {
           AND COALESCE(payload->>'model', '') <>
             'canonical-work-amo-v5-h-minus-one-seed-evidence-v1'
       `,
-      [NETWORK, preservedWitnessSnapshotIds],
+      [NETWORK, preservedSnapshotIds],
+    );
+    const protectedSnapshotsAfter =
+      await pwtRangeReplayProtectedSnapshotState(
+        client,
+        preservedWitnessSnapshotIds,
+      );
+    assertPwtRangeReplayProtectedSnapshots(
+      protectedSnapshotsBefore,
+      protectedSnapshotsAfter,
+    );
+    const retainedIncbBindingsAfter =
+      await pwtRangeReplayRetainedIncbValueSnapshotBindings(client);
+    const retainedIncbSnapshotIdsAfter = [
+      ...retainedIncbBindingsAfter.keys(),
+    ].sort();
+    const retainedIncbRowsAfter =
+      await lockedCanonicalIncbValueSnapshots(
+        client,
+        retainedIncbSnapshotIdsAfter,
+      );
+    const retainedIncbFingerprintsAfter =
+      verifiedCanonicalIncbValueSnapshotFingerprints(
+        retainedIncbRowsAfter,
+        retainedIncbBindingsAfter,
+      );
+    assertPwtRangeReplayRetainedIncbSnapshotState(
+      retainedIncbBindingsBefore,
+      retainedIncbFingerprintsBefore,
+      retainedIncbBindingsAfter,
+      retainedIncbFingerprintsAfter,
     );
     await client.query(`DELETE FROM proof_indexer.meta WHERE key = $1`, [
       CANONICAL_FAULT_META_KEY,
