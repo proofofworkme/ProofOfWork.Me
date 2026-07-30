@@ -10,6 +10,7 @@ import {
   WORK_UNIT_SCALE_TEXT,
   decimalValueToQ8,
   formatWorkAtoms,
+  isWorkTokenId,
   isCanonicalWorkAtoms,
   normalizeWorkAtoms,
   parseSignedWorkAmountToAtoms,
@@ -87,6 +88,19 @@ function isolatedTypeScriptFunction(source, name, globals = {}) {
   );
   return context.__checkedFunction;
 }
+
+const backfillWorkProjectionItem = isolatedTypeScriptFunction(
+  backfill,
+  "workProjectionItem",
+  {
+    isWorkTokenId,
+    objectValue: (value) =>
+      value && typeof value === "object" && !Array.isArray(value)
+        ? value
+        : {},
+    workAmountFields,
+  },
+);
 
 const frontendExactIntegerBigInt = (value) => {
   if (typeof value === "bigint") {
@@ -581,11 +595,221 @@ assert.deepEqual(withWorkPrecisionMetadata({ ticker: "WORK" }), {
   unitScale: "100000000",
 });
 
+const invalidZeroListingTxid =
+  "55fdd6f89cfc3daa331b84efa635dcb5918f689517f725686252874f02c4d0c3";
+const invalidZeroListing = backfillWorkProjectionItem(
+  {
+    amount: "0",
+    kind: "token-listing",
+    tokenId: WORK_TOKEN_ID,
+    txid: invalidZeroListingTxid,
+    valid: false,
+  },
+  { strict: false },
+);
+assert.equal(invalidZeroListing.amount, "0");
+assert.equal(invalidZeroListing.amountAtoms, "0");
+assert.equal(invalidZeroListing.decimals, 8);
+assert.equal(invalidZeroListing.unitScale, "100000000");
+assert.equal(invalidZeroListing.txid, invalidZeroListingTxid);
+assert.equal(invalidZeroListing.valid, false);
+assert.throws(() =>
+  backfillWorkProjectionItem(
+    {
+      amount: "0",
+      kind: "token-listing",
+      tokenId: WORK_TOKEN_ID,
+      txid: invalidZeroListingTxid,
+      valid: true,
+    },
+    { strict: true },
+  ),
+);
+
+const invalidateWorkAtomicDerivedSnapshots =
+  isolatedTypeScriptFunction(
+    backfill,
+    "invalidateWorkAtomicDerivedSnapshots",
+    {
+      CANONICAL_REBUILD_META_KEY: "canonical:rebuild",
+      INCB_RANGE_REPLAY_WITNESS_MANIFEST_MODEL:
+        "proof-indexer-incb-range-replay-witness-v1",
+      NETWORK: "livenet",
+      WORK_ATOMIC_PROJECTION_MODEL,
+    },
+  );
+const invalidationQueries = [];
+const invalidationClient = {
+  async query(sql, params) {
+    invalidationQueries.push({
+      params: Array.from(params),
+      sql: String(sql),
+    });
+    return { rows: [{ snapshot_id: "pre-repair-summary" }] };
+  },
+};
+assert.deepEqual(
+  Array.from(
+    await invalidateWorkAtomicDerivedSnapshots(invalidationClient),
+  ),
+  ["pre-repair-summary"],
+);
+assert.deepEqual(
+  Array.from(
+    await invalidateWorkAtomicDerivedSnapshots(invalidationClient, {
+      includeMarked: true,
+    }),
+  ),
+  ["pre-repair-summary"],
+);
+assert.match(
+  invalidationQueries[0].sql,
+  /FALSE[\s\S]*workAmountStorageModel/u,
+);
+assert.match(
+  invalidationQueries[1].sql,
+  /TRUE[\s\S]*workAmountStorageModel/u,
+);
+assert.match(invalidationQueries[1].sql, /issuance_locked/u);
+assert.match(invalidationQueries[1].sql, /NOT EXISTS/u);
+
+const repairWorkAtomicEventPrecisionMetadata =
+  isolatedTypeScriptFunction(
+    backfill,
+    "repairWorkAtomicEventPrecisionMetadata",
+    {
+      NETWORK: "livenet",
+      WORK_DECIMALS,
+      WORK_UNIT_SCALE_TEXT,
+      assertWorkAtomicEventMigration: () => {},
+      assertWorkAtomicSnapshotMigrationState: () => {},
+      auditWorkAtomicProjection: (() => {
+        let calls = 0;
+        return async (_client, options = {}) => {
+          calls += 1;
+          if (calls === 1) {
+            assert.equal(options.allowRepairableEventPrecision, true);
+            assert.equal(options.lock, true);
+            return {
+              atomic: true,
+              events: {
+                amount_events: 1,
+                precision_events: 0,
+              },
+              legacy: false,
+            };
+          }
+          return {
+            atomic: true,
+            events: {
+              amount_events: 1,
+              precision_events: 1,
+            },
+            legacy: false,
+          };
+        };
+      })(),
+      invalidateWorkAtomicDerivedSnapshots: async (_client, options) => {
+        assert.equal(options.includeMarked, true);
+        return ["pre-repair-summary"];
+      },
+      markedExactTipWorkAtomicSummary: async () => null,
+      parseWorkAmountToAtoms,
+      repairInvalidWorkAtomicEventPrecisionRows: async () => [
+        {
+          amount: "0",
+          amountAtoms: "0",
+          decimals: 8,
+          eventId: "1",
+          eventKey: `${invalidZeroListingTxid}:token-listing:0`,
+          kind: "token-listing",
+          status: "confirmed",
+          txid: invalidZeroListingTxid,
+          unitScale: "100000000",
+          valid: false,
+        },
+      ],
+    },
+  );
+const repairQueries = [];
+const repairResult = await repairWorkAtomicEventPrecisionMetadata({
+  async query(sql, params = []) {
+    repairQueries.push({
+      params: Array.from(params),
+      sql: String(sql),
+    });
+    return { rows: [] };
+  },
+});
+assert.equal(repairResult.repairedEvents, 1);
+assert.equal(repairResult.alreadyApplied, false);
+assert.equal(repairResult.cacheBootstrapRequired, true);
+assert.deepEqual(
+  Array.from(repairResult.invalidatedSnapshotIds),
+  ["pre-repair-summary"],
+);
+assert.equal(repairResult.cacheInvalidationRequired.length, 3);
+assert.equal(repairQueries.at(-1).sql, "COMMIT");
+
+const idempotentWorkAtomicEventPrecisionRepair =
+  isolatedTypeScriptFunction(
+    backfill,
+    "repairWorkAtomicEventPrecisionMetadata",
+    {
+      NETWORK: "livenet",
+      WORK_DECIMALS,
+      WORK_UNIT_SCALE_TEXT,
+      assertWorkAtomicEventMigration: () => {},
+      assertWorkAtomicSnapshotMigrationState: () => {},
+      auditWorkAtomicProjection: async () => ({
+        atomic: true,
+        events: {
+          amount_events: 1,
+          precision_events: 1,
+        },
+        legacy: false,
+      }),
+      invalidateWorkAtomicDerivedSnapshots: async () => {
+        throw new Error("Idempotent repair must not invalidate snapshots.");
+      },
+      markedExactTipWorkAtomicSummary: async () => {
+        throw new Error("Idempotent repair must not inspect stale summaries.");
+      },
+      parseWorkAmountToAtoms,
+      repairInvalidWorkAtomicEventPrecisionRows: async () => [],
+    },
+  );
+const idempotentRepairQueries = [];
+const idempotentRepairResult =
+  await idempotentWorkAtomicEventPrecisionRepair({
+    async query(sql, params = []) {
+      idempotentRepairQueries.push({
+        params: Array.from(params),
+        sql: String(sql),
+      });
+      return { rows: [] };
+    },
+  });
+assert.equal(idempotentRepairResult.repairedEvents, 0);
+assert.equal(idempotentRepairResult.alreadyApplied, true);
+assert.equal(idempotentRepairResult.cacheBootstrapRequired, false);
+assert.deepEqual(
+  Array.from(idempotentRepairResult.invalidatedSnapshotIds),
+  [],
+);
+assert.deepEqual(
+  Array.from(idempotentRepairResult.cacheInvalidationRequired),
+  [],
+);
+assert.equal(idempotentRepairQueries.at(-1).sql, "COMMIT");
+
 assert.match(backfill, /action === "send" \|\| action === "send2"/u);
 assert.match(backfill, /--audit-work-atoms/u);
 assert.match(backfill, /--migrate-work-atoms/u);
+assert.match(backfill, /--repair-work-atomic-events/u);
 assert.match(backfill, /--verify-work-atoms-post-bootstrap/u);
 assert.match(backfill, /POW_INDEX_WORK_ATOMIC_MIGRATION_APPLY/u);
+assert.match(backfill, /POW_INDEX_WORK_ATOMIC_EVENT_REPAIR_APPLY/u);
 assert.match(backfill, /BEGIN ISOLATION LEVEL SERIALIZABLE/u);
 assert.match(backfill, /pg_advisory_xact_lock/u);
 assert.match(backfill, /proof_indexer\.transactions/u);
@@ -596,6 +820,17 @@ assert.match(backfill, /issuanceValueSnapshotId/u);
 assert.match(backfill, /unmarked_non_oracle_derived/u);
 assert.match(backfill, /workAmountStorageModel/u);
 assert.match(backfill, /assertWorkAtomicEventMigration/u);
+assert.match(backfill, /repairInvalidWorkAtomicEventPrecisionRows/u);
+assert.match(backfill, /allowRepairableEventPrecision/u);
+assert.match(backfill, /"invalid_events"[\s\S]*"valid_events"/u);
+assert.match(
+  topLevelFunctionSource(
+    backfill,
+    "repairWorkAtomicEventPrecisionMetadata",
+  ),
+  /includeMarked: true[\s\S]*markedExactTipWorkAtomicSummary/u,
+);
+assert.match(backfill, /precision_events/u);
 assert.match(backfill, /preservePendingDeltas/u);
 assert.match(reader, /"pwt-sale-v2"/u);
 assert.match(reader, /authorization\?\.version === "pwt-sale-v2"/u);
@@ -632,7 +867,7 @@ assert.doesNotMatch(
 
 console.log(
   JSON.stringify({
-    checks: 94,
+    checks: 130,
     model: WORK_ATOMIC_PROJECTION_MODEL,
     ok: true,
     tokenId: WORK_TOKEN_ID,

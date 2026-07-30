@@ -1576,6 +1576,28 @@ stopped, preserve the affected chain/mempool txids, and fix forward with a
 V2-capable atomic release; never reopen the old release and never attempt an
 in-place divide-by-scale rollback.
 
+A post-cutover amount-metadata defect on an invalid WORK audit event has one
+guarded, idempotent repair path. Stop index writers, stage the exact release,
+load the production database environment, and run:
+
+```bash
+NETWORK=livenet POW_INDEX_WORK_ATOMIC_EVENT_REPAIR_APPLY=1 \
+  npm run indexer:repair-work-atomic-events
+```
+
+The command runs under the atomic migration's serializable advisory/table
+locks and may add only exact `amountAtoms`, `decimals`, and `unitScale` fields
+to `valid = false` WORK audit rows. It aborts if a valid event needs repair,
+if an amount cannot be converted exactly, or if event and validity counters
+change. A real repair invalidates every replaceable derived summary, including
+previously marked current summaries, while preserving immutable INCB H-1
+oracle evidence. Treat its `invalidatedSnapshotIds`,
+`cacheBootstrapRequired`, and `cacheInvalidationRequired` as deployment
+gates: clear response caches, publish a new marked exact-tip canonical summary,
+then run `indexer:verify-work-atoms-post-bootstrap` before reopening public
+reads or writes. A second run reports `alreadyApplied: true`, changes no row,
+and does not invalidate snapshots.
+
 Production application releases must be staged from one exact commit, install
 dependencies before the swap, preserve one rollback outside the live path, and
 leave `/opt/proofofwork-api` as a clean checkout at the recorded commit. Managed

@@ -441,6 +441,9 @@ const HYDRATE_TRANSACTION_DETAILS_ONLY = process.argv.includes(
 );
 const AUDIT_WORK_ATOMS_ONLY = process.argv.includes("--audit-work-atoms");
 const MIGRATE_WORK_ATOMS_ONLY = process.argv.includes("--migrate-work-atoms");
+const REPAIR_WORK_ATOMIC_EVENTS_ONLY = process.argv.includes(
+  "--repair-work-atomic-events",
+);
 const VERIFY_WORK_ATOMS_POST_BOOTSTRAP_ONLY = process.argv.includes(
   "--verify-work-atoms-post-bootstrap",
 );
@@ -449,6 +452,9 @@ const REBUILD_CREDIT_BALANCES_ONLY = process.argv.includes(
 );
 const APPLY_WORK_ATOMIC_MIGRATION = /^(?:1|true|yes)$/iu.test(
   String(process.env.POW_INDEX_WORK_ATOMIC_MIGRATION_APPLY ?? ""),
+);
+const APPLY_WORK_ATOMIC_EVENT_REPAIR = /^(?:1|true|yes)$/iu.test(
+  String(process.env.POW_INDEX_WORK_ATOMIC_EVENT_REPAIR_APPLY ?? ""),
 );
 const TX_DETAIL_HYDRATION_BATCH_SIZE = Number(
   process.env.POW_INDEX_TX_DETAIL_HYDRATION_BATCH_SIZE ?? 200,
@@ -489,6 +495,9 @@ function assertCanonicalRebuildConfiguration() {
   const verifyWorkAtomsPostBootstrapOnly =
     typeof VERIFY_WORK_ATOMS_POST_BOOTSTRAP_ONLY !== "undefined" &&
     VERIFY_WORK_ATOMS_POST_BOOTSTRAP_ONLY;
+  const repairWorkAtomicEventsOnly =
+    typeof REPAIR_WORK_ATOMIC_EVENTS_ONLY !== "undefined" &&
+    REPAIR_WORK_ATOMIC_EVENTS_ONLY;
   const exclusiveMaintenanceModes = [
     HYDRATE_TRANSACTION_DETAILS_ONLY,
     PREPARE_CANONICAL_REBUILD_ONLY,
@@ -500,6 +509,7 @@ function assertCanonicalRebuildConfiguration() {
     RUSH_BOOTSTRAP_ONLY,
     AUDIT_WORK_ATOMS_ONLY,
     MIGRATE_WORK_ATOMS_ONLY,
+    repairWorkAtomicEventsOnly,
     verifyWorkAtomsPostBootstrapOnly,
   ].filter(Boolean).length;
   if (exclusiveMaintenanceModes > 1) {
@@ -513,8 +523,17 @@ function assertCanonicalRebuildConfiguration() {
     );
   }
   if (
+    repairWorkAtomicEventsOnly &&
+    !APPLY_WORK_ATOMIC_EVENT_REPAIR
+  ) {
+    throw new Error(
+      "--repair-work-atomic-events requires POW_INDEX_WORK_ATOMIC_EVENT_REPAIR_APPLY=1.",
+    );
+  }
+  if (
     (AUDIT_WORK_ATOMS_ONLY ||
       MIGRATE_WORK_ATOMS_ONLY ||
+      repairWorkAtomicEventsOnly ||
       verifyWorkAtomsPostBootstrapOnly) &&
     (CANONICAL_REBUILD || NETWORK !== "livenet")
   ) {
@@ -532,6 +551,7 @@ function assertCanonicalRebuildConfiguration() {
       REPAIR_WORK_PARTICIPANTS_ONLY ||
       AUDIT_WORK_ATOMS_ONLY ||
       MIGRATE_WORK_ATOMS_ONLY ||
+      repairWorkAtomicEventsOnly ||
       verifyWorkAtomsPostBootstrapOnly ||
       CANONICAL_REBUILD)
   ) {
@@ -787,6 +807,9 @@ async function runPendingOnlyBackfillPass(
 }
 
 function pendingOnlyBackfillMaintenanceMode() {
+  const repairWorkAtomicEventsOnly =
+    typeof REPAIR_WORK_ATOMIC_EVENTS_ONLY !== "undefined" &&
+    REPAIR_WORK_ATOMIC_EVENTS_ONLY;
   return (
     HYDRATE_TRANSACTION_DETAILS_ONLY ||
     PREPARE_CANONICAL_REBUILD_ONLY ||
@@ -799,6 +822,7 @@ function pendingOnlyBackfillMaintenanceMode() {
     RUSH_BOOTSTRAP_ONLY ||
     AUDIT_WORK_ATOMS_ONLY ||
     MIGRATE_WORK_ATOMS_ONLY ||
+    repairWorkAtomicEventsOnly ||
     VERIFY_WORK_ATOMS_POST_BOOTSTRAP_ONLY ||
     REBUILD_CREDIT_BALANCES_ONLY ||
     DB_SUMMARY_REPAIR ||
@@ -1071,6 +1095,9 @@ const SUMMARY_SNAPSHOT_SOURCES = [
 ];
 
 async function canonicalPwtRangeReplayRuntime(client) {
+  const repairWorkAtomicEventsOnly =
+    typeof REPAIR_WORK_ATOMIC_EVENTS_ONLY !== "undefined" &&
+    REPAIR_WORK_ATOMIC_EVENTS_ONLY;
   const rebuild = await proofIndexerMetaValue(
     client,
     CANONICAL_REBUILD_META_KEY,
@@ -1104,6 +1131,7 @@ async function canonicalPwtRangeReplayRuntime(client) {
     HYDRATE_TRANSACTION_DETAILS_ONLY ||
     AUDIT_WORK_ATOMS_ONLY ||
     MIGRATE_WORK_ATOMS_ONLY ||
+    repairWorkAtomicEventsOnly ||
     VERIFY_WORK_ATOMS_POST_BOOTSTRAP_ONLY ||
     RUSH_BOOTSTRAP_ONLY ||
     PREPARE_CANONICAL_REBUILD_ONLY ||
@@ -1671,9 +1699,13 @@ function workProjectionItem(item, options = {}) {
     return source;
   }
   try {
+    const amountOptions =
+      source.valid === false && options.allowZero === undefined
+        ? { ...options, allowZero: true }
+        : options;
     return {
       ...source,
-      ...workAmountFields(source, options),
+      ...workAmountFields(source, amountOptions),
     };
   } catch (error) {
     if (source.valid === false || options.strict === false) {
@@ -5973,6 +6005,8 @@ function assertWorkAtomicEventMigration(beforeEvents, afterEvents) {
     "confirmed_mints",
     "confirmed_transfers",
     "confirmed_sales",
+    "invalid_events",
+    "valid_events",
   ];
   for (const counter of invariantCounters) {
     if (Number(after[counter] ?? 0) !== Number(before[counter] ?? 0)) {
@@ -5983,7 +6017,13 @@ function assertWorkAtomicEventMigration(beforeEvents, afterEvents) {
   }
 }
 
-async function auditWorkAtomicProjection(client, { lock = false } = {}) {
+async function auditWorkAtomicProjection(
+  client,
+  {
+    allowRepairableEventPrecision = false,
+    lock = false,
+  } = {},
+) {
   const definitionResult = await client.query(
     `
       SELECT
@@ -6055,9 +6095,21 @@ async function auditWorkAtomicProjection(client, { lock = false } = {}) {
               WHERE COALESCE(payload->>'amountAtoms', '') ~ '^(0|[1-9][0-9]*)$'
             )::integer AS atom_events,
             count(*) FILTER (
+              WHERE COALESCE(payload->>'amountAtoms', '') ~ '^(0|[1-9][0-9]*)$'
+                AND COALESCE(payload->>'decimals', '') = $4::text
+                AND COALESCE(payload->>'unitScale', '') = $3::text
+            )::integer AS precision_events,
+            count(*) FILTER (
               WHERE COALESCE(payload->>'amountAtoms', '') <> ''
                 AND COALESCE(payload->>'amountAtoms', '') !~ '^(0|[1-9][0-9]*)$'
             )::integer AS invalid_atom_events,
+            count(*) FILTER (
+              WHERE COALESCE(payload->>'amountAtoms', '') ~ '^(0|[1-9][0-9]*)$'
+                AND (
+                  COALESCE(payload->>'decimals', '') <> $4::text
+                  OR COALESCE(payload->>'unitScale', '') <> $3::text
+                )
+            )::integer AS invalid_precision_events,
             count(*) FILTER (
               WHERE COALESCE(payload->>'amountAtoms', '') ~ '^(0|[1-9][0-9]*)$'
                 AND COALESCE(payload->>'amount', '') ~
@@ -6070,6 +6122,12 @@ async function auditWorkAtomicProjection(client, { lock = false } = {}) {
                 AND COALESCE(payload->>'amount', '') !~
                   '^(0|[1-9][0-9]*)(\\.[0-9]{1,8})?$'
             )::integer AS invalid_legacy_events,
+            count(*) FILTER (
+              WHERE e.valid = false
+            )::integer AS invalid_events,
+            count(*) FILTER (
+              WHERE e.valid = true
+            )::integer AS valid_events,
             count(*) FILTER (
               WHERE kind = 'token-mint'
                 AND e.valid = true
@@ -6092,7 +6150,12 @@ async function auditWorkAtomicProjection(client, { lock = false } = {}) {
             AND lower(COALESCE(e.payload->>'tokenId', '')) = $2
             AND (e.payload ? 'amount' OR e.payload ? 'amountAtoms')
         `,
-        [NETWORK, WORK_TOKEN_ID, WORK_UNIT_SCALE_TEXT],
+        [
+          NETWORK,
+          WORK_TOKEN_ID,
+          WORK_UNIT_SCALE_TEXT,
+          WORK_DECIMALS,
+        ],
       ),
     () => client.query(
         `
@@ -6205,6 +6268,10 @@ async function auditWorkAtomicProjection(client, { lock = false } = {}) {
     Number(balances.negative_balances ?? 0) !== 0 ||
     Number(listings.invalid_amounts ?? 0) !== 0 ||
     Number(events.invalid_atom_events ?? 0) !== 0 ||
+    (
+      Number(events.invalid_precision_events ?? 0) !== 0 &&
+      !allowRepairableEventPrecision
+    ) ||
     Number(events.invalid_legacy_events ?? 0) !== 0 ||
     Number(events.mismatched_atom_events ?? 0) !== 0
   ) {
@@ -6214,10 +6281,16 @@ async function auditWorkAtomicProjection(client, { lock = false } = {}) {
   }
   if (
     atomic &&
-    Number(events.atom_events ?? 0) !== Number(events.amount_events ?? 0)
+    !allowRepairableEventPrecision &&
+    (
+      Number(events.atom_events ?? 0) !==
+        Number(events.amount_events ?? 0) ||
+      Number(events.precision_events ?? 0) !==
+        Number(events.amount_events ?? 0)
+    )
   ) {
     throw new Error(
-      "Atomic WORK projection contains amount-bearing events without amountAtoms.",
+      "Atomic WORK projection contains amount-bearing events without exact amountAtoms/decimals/unitScale.",
     );
   }
   if (Number(reservations.oversubscribed_sellers ?? 0) !== 0) {
@@ -6246,6 +6319,193 @@ async function auditWorkAtomicProjection(client, { lock = false } = {}) {
     reservations,
     snapshots,
   };
+}
+
+async function repairInvalidWorkAtomicEventPrecisionRows(client) {
+  const result = await client.query(
+    `
+      WITH repairable AS MATERIALIZED (
+        SELECT event_id
+        FROM proof_indexer.events
+        WHERE network = $1
+          AND lower(COALESCE(payload->>'tokenId', '')) = $2
+          AND valid = false
+          AND (payload ? 'amount' OR payload ? 'amountAtoms')
+          AND (
+            (
+              COALESCE(payload->>'amountAtoms', '') = ''
+              AND COALESCE(payload->>'amount', '') ~
+                '^(0|[1-9][0-9]*)(\\.[0-9]{1,8})?$'
+            )
+            OR (
+              COALESCE(payload->>'amountAtoms', '') ~
+                '^(0|[1-9][0-9]*)$'
+              AND (
+                COALESCE(payload->>'decimals', '') <> $4::text
+                OR COALESCE(payload->>'unitScale', '') <> $3::text
+              )
+            )
+          )
+      ),
+      repaired AS (
+        UPDATE proof_indexer.events target_event
+        SET
+          payload = target_event.payload || jsonb_build_object(
+            'amountAtoms',
+            CASE
+              WHEN COALESCE(target_event.payload->>'amountAtoms', '') ~
+                '^(0|[1-9][0-9]*)$'
+                THEN target_event.payload->>'amountAtoms'
+              ELSE trunc(
+                (target_event.payload->>'amount')::numeric *
+                  $3::numeric
+              )::text
+            END,
+            'decimals', $4::integer,
+            'unitScale', $3::text
+          ),
+          updated_at = now()
+        FROM repairable
+        WHERE target_event.event_id = repairable.event_id
+        RETURNING
+          target_event.event_id,
+          target_event.event_key,
+          target_event.kind,
+          target_event.status,
+          target_event.txid,
+          target_event.valid,
+          target_event.payload->>'amount' AS amount,
+          target_event.payload->>'amountAtoms' AS amount_atoms,
+          target_event.payload->>'decimals' AS decimals,
+          target_event.payload->>'unitScale' AS unit_scale
+      )
+      SELECT *
+      FROM repaired
+      ORDER BY event_id ASC
+    `,
+    [
+      NETWORK,
+      WORK_TOKEN_ID,
+      WORK_UNIT_SCALE_TEXT,
+      WORK_DECIMALS,
+    ],
+  );
+  return result.rows.map((row) => ({
+    amount: String(row.amount ?? ""),
+    amountAtoms: String(row.amount_atoms ?? ""),
+    decimals: Number(row.decimals),
+    eventId: String(row.event_id ?? ""),
+    eventKey: String(row.event_key ?? ""),
+    kind: String(row.kind ?? ""),
+    status: String(row.status ?? ""),
+    txid: String(row.txid ?? ""),
+    unitScale: String(row.unit_scale ?? ""),
+    valid: row.valid === true,
+  }));
+}
+
+async function repairWorkAtomicEventPrecisionMetadata(client) {
+  await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
+  try {
+    await client.query(
+      "SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))",
+      ["proof-indexer-work-atoms-v1", NETWORK],
+    );
+    await client.query(
+      `
+        LOCK TABLE
+          proof_indexer.credit_definitions,
+          proof_indexer.credit_balances,
+          proof_indexer.credit_listings,
+          proof_indexer.events,
+          proof_indexer.ledger_snapshots,
+          proof_indexer.transactions
+        IN SHARE ROW EXCLUSIVE MODE
+      `,
+    );
+    const before = await auditWorkAtomicProjection(client, {
+      allowRepairableEventPrecision: true,
+      lock: true,
+    });
+    if (!before.atomic || before.legacy) {
+      throw new Error(
+        "WORK atomic event precision repair requires work-atoms-v1.",
+      );
+    }
+    const expectedRepairs =
+      Number(before.events.amount_events ?? 0) -
+      Number(before.events.precision_events ?? 0);
+    if (!Number.isSafeInteger(expectedRepairs) || expectedRepairs < 0) {
+      throw new Error(
+        "WORK atomic event precision repair found invalid audit counters.",
+      );
+    }
+
+    const repairs = await repairInvalidWorkAtomicEventPrecisionRows(client);
+    if (repairs.length !== expectedRepairs) {
+      throw new Error(
+        "WORK atomic event precision repair is limited to invalid audit rows; another amount-bearing event requires canonical replay.",
+      );
+    }
+    for (const repair of repairs) {
+      if (
+        repair.valid !== false ||
+        repair.decimals !== WORK_DECIMALS ||
+        repair.unitScale !== WORK_UNIT_SCALE_TEXT ||
+        !/^(0|[1-9][0-9]*)$/u.test(repair.amountAtoms) ||
+        (
+          repair.amount &&
+          parseWorkAmountToAtoms(repair.amount, { allowZero: true }) !==
+            repair.amountAtoms
+        )
+      ) {
+        throw new Error(
+          `WORK atomic event precision repair produced an invalid row for ${repair.txid || repair.eventId}.`,
+        );
+      }
+    }
+
+    const invalidatedSnapshotIds =
+      repairs.length > 0
+        ? await invalidateWorkAtomicDerivedSnapshots(client, {
+            includeMarked: true,
+          })
+        : [];
+    const preRepairCanonicalSummary =
+      repairs.length > 0
+        ? await markedExactTipWorkAtomicSummary(client)
+        : null;
+    if (preRepairCanonicalSummary) {
+      throw new Error(
+        "WORK atomic event precision repair left a pre-repair exact-tip canonical summary readable.",
+      );
+    }
+
+    const after = await auditWorkAtomicProjection(client);
+    assertWorkAtomicEventMigration(before.events, after.events);
+    assertWorkAtomicSnapshotMigrationState(after);
+    await client.query("COMMIT");
+    return {
+      after,
+      alreadyApplied: repairs.length === 0,
+      before,
+      cacheBootstrapRequired: repairs.length > 0,
+      cacheInvalidationRequired:
+        repairs.length > 0
+          ? [
+              "restart the proof-api after clearing process/disk response caches",
+              "run the worker once and publish a marked exact-tip canonical summary",
+              "run indexer:verify-work-atoms-post-bootstrap before public exposure",
+            ]
+          : [],
+      invalidatedSnapshotIds,
+      repairedEvents: repairs.length,
+      repairs,
+    };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  }
 }
 
 async function canonicalWorkAtomicConservation(client) {
@@ -6329,7 +6589,10 @@ async function assertCanonicalWorkAtomicSource(client, context) {
   };
 }
 
-async function invalidateWorkAtomicDerivedSnapshots(client) {
+async function invalidateWorkAtomicDerivedSnapshots(
+  client,
+  { includeMarked = false } = {},
+) {
   const result = await client.query(
     `
       WITH issuance_locked AS MATERIALIZED (
@@ -6355,10 +6618,13 @@ async function invalidateWorkAtomicDerivedSnapshots(client) {
       WHERE snapshot.network = $1
         AND COALESCE(snapshot.payload->>'model', '') <>
           'canonical-work-amo-v5-h-minus-one-seed-evidence-v1'
-        AND COALESCE(
-          snapshot.payload->>'workAmountStorageModel',
-          ''
-        ) <> $2
+        AND (
+          ${includeMarked ? "TRUE" : "FALSE"}
+          OR COALESCE(
+            snapshot.payload->>'workAmountStorageModel',
+            ''
+          ) <> $2
+        )
         AND NOT EXISTS (
           SELECT 1
           FROM issuance_locked locked
@@ -21081,6 +21347,7 @@ if (DRY_RUN) {
         maxPages: MAX_PAGES,
         mempoolScanBudgetMs: MEMPOOL_SCAN_BUDGET_MS,
         migrateWorkAtomsOnly: MIGRATE_WORK_ATOMS_ONLY,
+        repairWorkAtomicEventsOnly: REPAIR_WORK_ATOMIC_EVENTS_ONLY,
         pendingOnlyBackfill: PENDING_ONLY_BACKFILL,
         pendingOnlyChildTimeoutMs: PENDING_ONLY_CHILD_TIMEOUT_MS,
         pendingOnlyPersistenceHeadroomMs:
@@ -21182,6 +21449,20 @@ try {
             network: NETWORK,
             ok: true,
             workAtomicProjectionMigration: true,
+          },
+          null,
+          2,
+        ),
+      );
+    } else if (REPAIR_WORK_ATOMIC_EVENTS_ONLY) {
+      const repair = await repairWorkAtomicEventPrecisionMetadata(client);
+      console.log(
+        JSON.stringify(
+          {
+            network: NETWORK,
+            ok: true,
+            repair,
+            workAtomicEventPrecisionRepair: true,
           },
           null,
           2,
