@@ -1209,6 +1209,7 @@ function isolatedFunction(path, name, globals = {}) {
           ],
           eventRowPayload: [
             "canonicalMovementPositionFromEventRow",
+            "idRegistryProtocolFeeSats",
           ],
           proofIndexCreditListingsPayload: [
             "canonicalTokenListingEventJoinSql",
@@ -4992,6 +4993,151 @@ check("post-AMO-V5 ID registrations require and expose one exact canonical posit
       "livenet",
     ),
     null,
+  );
+});
+
+check("valid PWID lifecycle rows project their fixed protocol fee", () => {
+  const eventRowPayload = isolatedFunction(READER_PATH, "eventRowPayload", {
+    ID_MUTATION_PRICE_SATS: 546,
+    ID_REGISTRATION_PRICE_SATS: 1_000,
+    canonicalEventPayload: (payload) => payload ?? {},
+    canonicalEventIdentityDetails: () => ({}),
+    canonicalMovementPositionFromEventRow: () => ({
+      blockHash:
+        "000000000000000000011609b5476622bc279ca9fedea8852cb62bcb65776df2",
+      blockHeight: 960_117,
+      blockIndex: 2_174,
+      protocolVout: 1,
+      recordOrdinal: 0,
+    }),
+    dateIso: (value) => String(value ?? ""),
+    eventPayloadParticipants: () => [],
+    normalizeEventPayload: (payload, row) => ({
+      ...(payload ?? {}),
+      kind: payload?.kind ?? row?.kind,
+      protocol: payload?.protocol ?? row?.protocol,
+      txid: payload?.txid ?? row?.txid,
+    }),
+    normalizedLowerText: (value) =>
+      String(value ?? "").trim().toLowerCase(),
+    normalizedText: (value) => String(value ?? "").trim(),
+    plausibleBitcoinEventTime: (...values) =>
+      values.find((value) => Boolean(value)),
+    tokenInvalidAuditCosts: () => ({}),
+  });
+  const txid =
+    "a1a58faef3a6ece598a5efb34545ee098cc09a2739cd68d458eafc6bc1e1f9dc";
+  const rowFor = (kind, overrides = {}) => ({
+    block_hash:
+      "000000000000000000011609b5476622bc279ca9fedea8852cb62bcb65776df2",
+    block_height: 960_117,
+    block_index: 2_174,
+    canonical_block_hash:
+      "000000000000000000011609b5476622bc279ca9fedea8852cb62bcb65776df2",
+    canonical_position_required: true,
+    event_time: "2026-07-29T00:00:00.000Z",
+    kind,
+    op_return_vout: 1,
+    payload: {
+      amountSats: 0,
+      id: "grahamnazareth",
+      kind,
+      protocol: "pwid1",
+      txid,
+    },
+    protocol: "pwid1",
+    record_ordinal: 0,
+    status: "confirmed",
+    transaction_block_height: 960_117,
+    transaction_block_index: 2_174,
+    txid,
+    valid: true,
+    ...overrides,
+  });
+
+  assert.equal(
+    eventRowPayload(rowFor("id-register"), "livenet").amountSats,
+    1_000,
+    "the incident registration must contribute its fixed 1,000-proof fee",
+  );
+  for (const kind of [
+    "id-update",
+    "id-transfer",
+    "id-list",
+    "id-seal",
+    "id-delist",
+    "id-buy",
+  ]) {
+    assert.equal(
+      eventRowPayload(rowFor(kind), "livenet").amountSats,
+      546,
+      `${kind} must contribute its fixed 546-proof fee`,
+    );
+  }
+  assert.equal(
+    eventRowPayload(
+      rowFor("id-register", {
+        payload: {
+          amountSats: 99_999,
+          id: "grahamnazareth",
+          kind: "id-register",
+          protocol: "pwid1",
+          txid,
+        },
+      }),
+      "livenet",
+    ).amountSats,
+    1_000,
+    "payload amounts cannot override the fixed protocol fee",
+  );
+  const kindSpoof = eventRowPayload(
+    rowFor("id-update", {
+      payload: {
+        amountSats: 1_000,
+        id: "grahamnazareth",
+        kind: "id-register",
+        protocol: "pwid1",
+        txid,
+      },
+    }),
+    "livenet",
+  );
+  assert.equal(kindSpoof.kind, "id-update");
+  assert.equal(
+    kindSpoof.amountSats,
+    546,
+    "payload kinds cannot override the relational PWID lifecycle kind",
+  );
+  assert.equal(
+    eventRowPayload(
+      rowFor("id-register", { valid: false }),
+      "livenet",
+    ).amountSats,
+    0,
+    "invalid PWID rows must not receive a canonical protocol fee",
+  );
+  assert.equal(
+    eventRowPayload(
+      rowFor("unsupported-id-kind"),
+      "livenet",
+    ).amountSats,
+    0,
+    "unsupported PWID kinds must not receive a canonical protocol fee",
+  );
+
+  const confirmedValueDeltaSource = topLevelFunctionSource(
+    READER_PATH,
+    "proofIndexConfirmedValueEventsAfterBlock",
+  );
+  assert.match(
+    confirmedValueDeltaSource,
+    /e\.protocol = 'pwid1' AND e\.kind = 'id-register'[\s\S]*THEN \$\{ID_REGISTRATION_PRICE_SATS\}[\s\S]*e\.protocol = 'pwid1' AND e\.kind IN \([\s\S]*'id-update'[\s\S]*'id-transfer'[\s\S]*'id-list'[\s\S]*'id-seal'[\s\S]*'id-delist'[\s\S]*'id-buy'[\s\S]*THEN \$\{ID_MUTATION_PRICE_SATS\}[\s\S]*ELSE e\.amount_sats/u,
+    "incremental value-event recovery must derive the same fixed PWID fees",
+  );
+  assert.match(
+    topLevelFunctionSource(READER_PATH, "proofIndexValueSummaryPayload"),
+    /protocol = 'pwid1' AND kind = 'id-register'[\s\S]*THEN \$\{ID_REGISTRATION_PRICE_SATS\}[\s\S]*protocol = 'pwid1' AND kind IN \([\s\S]*'id-update'[\s\S]*'id-transfer'[\s\S]*'id-list'[\s\S]*'id-seal'[\s\S]*'id-delist'[\s\S]*'id-buy'[\s\S]*THEN \$\{ID_MUTATION_PRICE_SATS\}[\s\S]*ELSE amount_sats/u,
+    "value-summary fallback must derive the same fixed PWID fees",
   );
 });
 

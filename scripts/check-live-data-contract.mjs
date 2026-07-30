@@ -346,6 +346,26 @@ const confirmedIdRecordsFromCurrentTablesSource = sourceSliceBetween(
   /async function confirmedIdRecordsFromCurrentTables\(/,
   /function idLifecycleStateFromItems\(/,
 );
+const idRegistryProtocolFeeSource = sourceSliceBetween(
+  proofIndexReader,
+  /function idRegistryProtocolFeeSats\(/,
+  /function eventRowPayload\(/,
+);
+const eventRowPayloadSource = sourceSliceBetween(
+  proofIndexReader,
+  /function eventRowPayload\(/,
+  /function tokenMarketCanonicalListingProjectionPayload\(/,
+);
+const confirmedValueEventsAfterBlockSource = sourceSliceBetween(
+  proofIndexReader,
+  /export async function proofIndexConfirmedValueEventsAfterBlock\(/,
+  /export async function proofIndexCreditListingsPayload\(/,
+);
+const valueSummaryPayloadSource = sourceSliceBetween(
+  proofIndexReader,
+  /export async function proofIndexValueSummaryPayload\(/,
+  /function marketplaceMutationPaymentIdentityFromRow\(/,
+);
 const currentIdRegistryEventStateSource = sourceSliceBetween(
   proofIndexReader,
   /async function currentIdRegistryEventState\(/,
@@ -1840,6 +1860,24 @@ expectAll(
     /registration_block\.block_hash = t\.block_hash[\s\S]*registration_block\.height = t\.block_height[\s\S]*registration_block\.canonical = true/,
     /registration_event\.registration_block_index DESC NULLS LAST,[\s\S]*registration_event\.registration_protocol_vout DESC NULLS LAST,[\s\S]*registration_event\.registration_record_ordinal DESC NULLS LAST,[\s\S]*registration_event\.registration_event_id DESC NULLS LAST/,
     /const records = result\.rows\.map\(\(row\) =>[\s\S]*confirmedIdRecordFromRow\(row, network\)[\s\S]*records\.some\(\(record\) => !record\)[\s\S]*Confirmed ID registration projection is incomplete or noncanonical/,
+  ],
+);
+expectAll(
+  "valid PWID lifecycle rows project fixed protocol fees",
+  idRegistryProtocolFeeSource +
+    eventRowPayloadSource +
+    valueSummaryPayloadSource +
+    confirmedValueEventsAfterBlockSource,
+  [
+    /valid !== true/,
+    /pwid1/,
+    /case "id-register":[\s\S]*ID_REGISTRATION_PRICE_SATS/,
+    /case "id-update":[\s\S]*case "id-transfer":[\s\S]*case "id-list":[\s\S]*case "id-seal":[\s\S]*case "id-delist":[\s\S]*case "id-buy":[\s\S]*ID_MUTATION_PRICE_SATS/,
+    /rowProtocol === "pwid1" && rowKind[\s\S]*\? rowKind[\s\S]*: payloadKind/,
+    /idRegistryProtocolFeeSats\([\s\S]*row\?\.valid !== false && payload\?\.valid !== false/,
+    /\.\.\.canonicalIdRegistryFeePatch/,
+    /e\.protocol = 'pwid1' AND e\.kind = 'id-register'[\s\S]*ID_REGISTRATION_PRICE_SATS/,
+    /e\.protocol = 'pwid1' AND e\.kind IN \([\s\S]*'id-update'[\s\S]*'id-transfer'[\s\S]*'id-list'[\s\S]*'id-seal'[\s\S]*'id-delist'[\s\S]*'id-buy'[\s\S]*ID_MUTATION_PRICE_SATS/,
   ],
 );
 expectAll("checkpoint registry reads are exact and default reads stay complete-only", proofIndexReader, [

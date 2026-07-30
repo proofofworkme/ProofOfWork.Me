@@ -189,6 +189,7 @@ const BOND_TAGS = [
   },
 ];
 const ID_REGISTRATION_PRICE_SATS = 1_000;
+const ID_MUTATION_PRICE_SATS = 546;
 const ID_REGISTRY_ADDRESSES = {
   livenet: "bc1qfwytlzyr3ym3enz2eutwtjsf9kkf6uqkjydk3e",
 };
@@ -22889,9 +22890,37 @@ function eventPayloadParticipants(payload) {
   return [...new Set(participants)];
 }
 
+function idRegistryProtocolFeeSats(protocol, kind, valid = true) {
+  if (
+    valid !== true ||
+    String(protocol ?? "").trim().toLowerCase() !== "pwid1"
+  ) {
+    return null;
+  }
+  switch (String(kind ?? "").trim().toLowerCase()) {
+    case "id-register":
+      return ID_REGISTRATION_PRICE_SATS;
+    case "id-update":
+    case "id-transfer":
+    case "id-list":
+    case "id-seal":
+    case "id-delist":
+    case "id-buy":
+      return ID_MUTATION_PRICE_SATS;
+    default:
+      return null;
+  }
+}
+
 function eventRowPayload(row, network) {
   const payload = normalizeEventPayload(canonicalEventPayload(row.payload), row);
-  const kind = normalizedLowerText(payload.kind ?? row.kind);
+  const payloadKind = normalizedLowerText(payload.kind ?? row.kind);
+  const rowProtocol = normalizedLowerText(row?.protocol ?? payload?.protocol);
+  const rowKind = normalizedLowerText(row?.kind);
+  const kind =
+    rowProtocol === "pwid1" && rowKind
+      ? rowKind
+      : payloadKind;
   const invalidTokenEvent = kind === "token-event-invalid";
   const canonicalMinerFeeCovered =
     row?.canonical_miner_fee_covered === true;
@@ -22918,6 +22947,20 @@ function eventRowPayload(row, network) {
   const registryAddress = normalizedText(
     payload.registryAddress ?? row.registry_address,
   );
+  const idRegistryFeeSats = idRegistryProtocolFeeSats(
+    rowProtocol,
+    kind,
+    row?.valid !== false && payload?.valid !== false,
+  );
+  const canonicalIdRegistryFeePatch =
+    idRegistryFeeSats === null
+      ? {}
+      : {
+          // PWID fees are fixed protocol values. A normalized relational row
+          // may omit amount_sats, but a payload-supplied amount must never
+          // override the fee committed by the valid lifecycle kind.
+          amountSats: idRegistryFeeSats,
+        };
   const auditCosts = invalidTokenEvent
     ? tokenInvalidAuditCosts(payload, row, registryAddress)
     : {};
@@ -22957,6 +23000,7 @@ function eventRowPayload(row, network) {
       eventId: row?.event_id ?? payload?.eventId,
     }),
     ...canonicalMinerFeePatch,
+    ...canonicalIdRegistryFeePatch,
     ...(invalidTokenEvent
       ? {
           amountSats: 0,
@@ -25120,7 +25164,25 @@ export async function proofIndexValueSummaryPayload(network) {
       ),
       value_events AS (
         SELECT
-          COALESCE(sum(amount_sats), 0)::text AS total_sats,
+          COALESCE(
+            sum(
+              CASE
+                WHEN protocol = 'pwid1' AND kind = 'id-register'
+                  THEN ${ID_REGISTRATION_PRICE_SATS}
+                WHEN protocol = 'pwid1' AND kind IN (
+                  'id-update',
+                  'id-transfer',
+                  'id-list',
+                  'id-seal',
+                  'id-delist',
+                  'id-buy'
+                )
+                  THEN ${ID_MUTATION_PRICE_SATS}
+                ELSE amount_sats
+              END
+            ),
+            0
+          )::text AS total_sats,
           count(*)::int AS event_count,
           max(block_height)::int AS max_event_block,
           max(event_time) AS max_event_time
@@ -25351,7 +25413,20 @@ export async function proofIndexConfirmedValueEventsAfterBlock(
         SELECT
           e.kind,
           e.txid,
-          e.amount_sats,
+          CASE
+            WHEN e.protocol = 'pwid1' AND e.kind = 'id-register'
+              THEN ${ID_REGISTRATION_PRICE_SATS}
+            WHEN e.protocol = 'pwid1' AND e.kind IN (
+              'id-update',
+              'id-transfer',
+              'id-list',
+              'id-seal',
+              'id-delist',
+              'id-buy'
+            )
+              THEN ${ID_MUTATION_PRICE_SATS}
+            ELSE e.amount_sats
+          END AS amount_sats,
           e.block_height,
           e.event_time,
           CASE
