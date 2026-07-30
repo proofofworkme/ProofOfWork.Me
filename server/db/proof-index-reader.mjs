@@ -1921,7 +1921,9 @@ function workAmoV6IndexedEvidenceMatchesMarker(row, marker) {
   if (
     !payload.equals(
       Buffer.from(expectedDeclaration.protocolRecord, "utf8"),
-    )
+    ) ||
+    row?.payload_text !== expectedDeclaration.protocolRecord ||
+    Number(row?.data_bytes) !== payload.length
   ) {
     return false;
   }
@@ -1948,8 +1950,7 @@ function workAmoV6IndexedEvidenceMatchesMarker(row, marker) {
   };
   return Boolean(
     row?.status === "confirmed" &&
-      Number(row?.protocol_count) === 1 &&
-      Number(row?.indexed_event_count) === 1 &&
+      Number(row?.raw_carrier_count) === 1 &&
       Number(row?.registry_output_count) === 1 &&
       Object.entries(facts).every(
         ([field, fact]) => evidence[field] === fact,
@@ -2002,46 +2003,48 @@ export async function proofIndexWorkAmoV6MigrationReadiness(
         ) AS output_count,
         (
           SELECT count(*)::integer
-          FROM proof_indexer.op_returns declaration_protocol
-          WHERE declaration_protocol.network = declaration_tx.network
-            AND declaration_protocol.txid = declaration_tx.txid
-            AND declaration_protocol.vout = $7
-            AND declaration_protocol.output_index = $8
-        ) AS protocol_count,
+          FROM proof_indexer.op_returns declaration_carrier
+          WHERE declaration_carrier.network = declaration_tx.network
+            AND declaration_carrier.txid = declaration_tx.txid
+            AND declaration_carrier.vout = $7
+            AND declaration_carrier.output_index = $8
+        ) AS raw_carrier_count,
         (
-          SELECT declaration_protocol.protocol
-          FROM proof_indexer.op_returns declaration_protocol
-          WHERE declaration_protocol.network = declaration_tx.network
-            AND declaration_protocol.txid = declaration_tx.txid
-            AND declaration_protocol.vout = $7
-            AND declaration_protocol.output_index = $8
+          SELECT declaration_carrier.protocol
+          FROM proof_indexer.op_returns declaration_carrier
+          WHERE declaration_carrier.network = declaration_tx.network
+            AND declaration_carrier.txid = declaration_tx.txid
+            AND declaration_carrier.vout = $7
+            AND declaration_carrier.output_index = $8
           LIMIT 1
         ) AS protocol,
         (
-          SELECT declaration_protocol.payload_hex
-          FROM proof_indexer.op_returns declaration_protocol
-          WHERE declaration_protocol.network = declaration_tx.network
-            AND declaration_protocol.txid = declaration_tx.txid
-            AND declaration_protocol.vout = $7
-            AND declaration_protocol.output_index = $8
+          SELECT declaration_carrier.payload_text
+          FROM proof_indexer.op_returns declaration_carrier
+          WHERE declaration_carrier.network = declaration_tx.network
+            AND declaration_carrier.txid = declaration_tx.txid
+            AND declaration_carrier.vout = $7
+            AND declaration_carrier.output_index = $8
+          LIMIT 1
+        ) AS payload_text,
+        (
+          SELECT declaration_carrier.payload_hex
+          FROM proof_indexer.op_returns declaration_carrier
+          WHERE declaration_carrier.network = declaration_tx.network
+            AND declaration_carrier.txid = declaration_tx.txid
+            AND declaration_carrier.vout = $7
+            AND declaration_carrier.output_index = $8
           LIMIT 1
         ) AS payload_hex,
         (
-          SELECT count(*)::integer
-          FROM proof_indexer.events declaration_event
-          WHERE declaration_event.network = declaration_tx.network
-            AND declaration_event.txid = declaration_tx.txid
-            AND declaration_event.status = 'confirmed'
-            AND declaration_event.valid = true
-            AND declaration_event.block_height =
-              declaration_tx.block_height
-            AND declaration_event.block_index =
-              declaration_tx.block_index
-            AND declaration_event.op_return_vout = $7
-            AND declaration_event.record_ordinal = $8
-            AND declaration_event.protocol = 'pwm1'
-            AND declaration_event.raw_payload = $10
-        ) AS indexed_event_count,
+          SELECT declaration_carrier.data_bytes
+          FROM proof_indexer.op_returns declaration_carrier
+          WHERE declaration_carrier.network = declaration_tx.network
+            AND declaration_carrier.txid = declaration_tx.txid
+            AND declaration_carrier.vout = $7
+            AND declaration_carrier.output_index = $8
+          LIMIT 1
+        ) AS data_bytes,
         $7::integer AS protocol_vout,
         $8::integer AS record_ordinal,
         (
@@ -2094,7 +2097,6 @@ export async function proofIndexWorkAmoV6MigrationReadiness(
       pins.declarationProtocolVout,
       pins.declarationRecordOrdinal,
       pins.declarationRegistryPaymentVout,
-      expectedDeclaration.protocolRecord,
     ],
   );
   if (result.rows.length !== 1) {

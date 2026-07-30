@@ -575,6 +575,17 @@ height/hash/index, exact memo hash/byte length, protocol output, record ordinal,
 registry-payment output, authority input-zero script and registry payment.
 Partial, pending, noncanonical or divergent evidence fails closed.
 
+The declaration position is the exact raw `pwm1:m` carrier output and its
+within-output record ordinal, not the canonical mailbox aggregate position.
+The same transaction may carry `pwm1:s` subject or `pwm1:r` reply parts that
+mail indexing aggregates at a different canonical position. It may also carry
+independently valid sibling governed records, including `pwt1:send2`. Those
+siblings neither change the declaration payload nor invalidate its evidence;
+each remains subject to its own ordered protocol validation. The declaration
+gate still requires the exact wrapped payload at the pinned carrier, the
+declared authority at input zero, the canonical transaction and block pins,
+and the distinct registry payment.
+
 From activation:
 
 - new governed WORK listings require `pwt-sale-v6`;

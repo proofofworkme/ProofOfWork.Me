@@ -16,6 +16,14 @@ const workAmoV6DeclarationBuilder = readFileSync(
   "scripts/build-work-amo-v6-declaration.mjs",
   "utf8",
 );
+const workAmoV6IndexedDeclarationEvidence =
+  /export async function indexedWorkAmoV6DeclarationEvidence[\s\S]*?(?=export async function coreWorkAmoV6DeclarationEvidence)/u.exec(
+    workAmoV6Migration,
+  )?.[0] ?? "";
+const workAmoV6ReaderDeclarationEvidence =
+  /function workAmoV6IndexedEvidenceMatchesMarker[\s\S]*?(?=export async function proofIndexWorkAmoV6ListingTerms)/u.exec(
+    reader,
+  )?.[0] ?? "";
 const proofIndexSchema = readFileSync(
   "server/sql/proof-indexer-v1.sql",
   "utf8",
@@ -770,6 +778,35 @@ expect(
     ) &&
     /WORK_AMO_V6_INDEX_MIGRATION_META_KEY =\s*"workAmoV6Migration:livenet"/u.test(
       workAmoV6Migration,
+    ),
+);
+expect(
+  "AMO V6 declaration evidence uses the exact raw pwm1:m carrier while allowing sibling mail and credit records",
+  [
+    workAmoV6IndexedDeclarationEvidence,
+    workAmoV6ReaderDeclarationEvidence,
+  ].every(
+    (source) =>
+      /FROM proof_indexer\.op_returns declaration_carrier/u.test(source) &&
+      /declaration_carrier\.vout = \$[57]/u.test(source) &&
+      /declaration_carrier\.output_index = \$[68]/u.test(source) &&
+      /AS raw_carrier_count/u.test(source) &&
+      /declaration_carrier\.payload_text/u.test(source) &&
+      /declaration_carrier\.payload_hex/u.test(source) &&
+      /declaration_carrier\.data_bytes/u.test(source) &&
+      !/FROM proof_indexer\.events/u.test(source),
+  ) &&
+    /row\.payload_text !== pins\.declarationProtocolRecord[\s\S]*Number\(row\.data_bytes\) !== payload\.length/u.test(
+      workAmoV6IndexedDeclarationEvidence,
+    ) &&
+    /Number\(row\.raw_carrier_count\) === 1[\s\S]*Number\(row\.registry_output_count\) === 1/u.test(
+      workAmoV6IndexedDeclarationEvidence,
+    ) &&
+    /row\?\.payload_text !== expectedDeclaration\.protocolRecord[\s\S]*Number\(row\?\.data_bytes\) !== payload\.length/u.test(
+      workAmoV6ReaderDeclarationEvidence,
+    ) &&
+    /Number\(row\?\.raw_carrier_count\) === 1[\s\S]*Number\(row\?\.registry_output_count\) === 1/u.test(
+      workAmoV6ReaderDeclarationEvidence,
     ),
 );
 expect(
