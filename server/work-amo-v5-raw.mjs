@@ -3161,6 +3161,25 @@ function evaluateWorkPwt(record, context, parsed) {
         genericSemanticKind(parsed.kind),
       );
     }
+    if (
+      parsed.kind === "seal" &&
+      listing.saleAuthorization?.version ===
+        WORK_AMO_V6_AUTH_VERSION &&
+      normalizedTxid(
+        listing.saleAuthorization?.anchorTxid,
+      ) === listing.listingId &&
+      Boolean(
+        String(
+          listing.saleAuthorization?.anchorSignature ?? "",
+        ).trim(),
+      )
+    ) {
+      return invalidOutcome(
+        "work-amo-v6-listing-already-sealed",
+        parsed,
+        "token-listing-sealed",
+      );
+    }
     const position = listingPosition(listing);
     const referencedV4 =
       parsed.kind !== "delist" &&

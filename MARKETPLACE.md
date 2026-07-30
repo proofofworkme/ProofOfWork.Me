@@ -668,6 +668,10 @@ use those frozen terms without consulting current network value or any USD
 display. A confirmed listing therefore remains eligible for settlement even
 after later bonds and market activity change network value.
 
+V6 sealing is a one-way state transition. Once a listing has a coherent signed
+authorization anchored to its listing id, any later seal attempt is invalid
+audit history and cannot replace the first seal identity or frozen terms.
+
 Every opening and closing WORK token-state commitment must canonicalize active
 V6 listings through the strict V6 authorization and frozen-term validators.
 Historical V4/V5 listings keep their existing canonical bytes; an unknown,
@@ -681,7 +685,11 @@ block-replay binding may materialize top-level `amountAtoms`, human `amount`,
 listing. The materialized amount and price must equal the validated immutable
 `unitAmountAtoms` and `unitPriceSats`; divergence aborts the whole block.
 Unbound payload fields and client-supplied frozen terms never authorize this
-materialization.
+materialization. The raw placeholder is consumed only when its exact lifecycle
+kind, action txid, `pwt1` protocol, complete action position, listing identity,
+actor and validated V6 authorization identity match the canonical verifier
+item. An unmatched raw record remains rejected evidence; it cannot coexist at
+the same canonical position as a separately materialized valid item.
 
 The confirmed verifier projection for a V6 listing also carries its original
 listing block hash, height, transaction index, protocol output and record

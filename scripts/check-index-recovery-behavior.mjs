@@ -145,6 +145,7 @@ import {
 import {
   WORK_AMO_V6_AUTH_VERSION,
   WORK_AMO_V6_MODELS,
+  deriveWorkAmoV6FrozenTerms,
   validateWorkAmoV6FrozenTerms,
   validateWorkAmoV6StaticAuthorization,
   workAmoV6CanonicalTokenStateCommitment,
@@ -43365,6 +43366,173 @@ check("AMO V5 raw replay closes exact grandfathered V4 listings without repricin
   assert.equal(expired?.valid, false);
 });
 
+check("AMO V6 raw replay keeps the first seal canonical and rejects resealing", () => {
+  const blockHeight = 960_300;
+  const blockHash = "1".repeat(64);
+  const priorBlockHash = "2".repeat(64);
+  const listingId = "3".repeat(64);
+  const sealTxid = "4".repeat(64);
+  const listingPosition = {
+    blockHash: "5".repeat(64),
+    blockHeight: blockHeight - 1,
+    blockTransactionIndex: 1,
+    protocolVout: 1,
+    recordOrdinal: 0,
+  };
+  const baseAuthorization = {
+    ...WORK_AMO_V6_MODELS,
+    anchorScriptPubKey: "00",
+    anchorSigHashType: 0x83,
+    anchorType: "sale-ticket-v1",
+    anchorValueSats: 546,
+    anchorVout: 2,
+    buyerAddress: "",
+    expiresAt: "",
+    network: "livenet",
+    nonce: "v6-reseal-is-invalid",
+    registryAddress: WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS,
+    sellerAddress:
+      "1BgGZ9tcN4rm9KBzDn7KprQz87SZ26SAMH",
+    sellerPublicKey:
+      "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+    ticker: "WORK",
+    tokenId: WORK_TOKEN_ID,
+    unitFaceProofs: 20_000,
+    version: WORK_AMO_V6_AUTH_VERSION,
+  };
+  const signed = signedAmoSaleTicketFixture(
+    baseAuthorization,
+    {
+      listingId,
+      priceSats: "20000",
+    },
+  );
+  const unsignedAuthorization = {
+    ...signed.authorization,
+    anchorSignature: "",
+    anchorTxid: "",
+  };
+  const frozen = deriveWorkAmoV6FrozenTerms(
+    unsignedAuthorization,
+    {
+      activationHeight: 960_219,
+      listingBondContributionQ8: "327600000000",
+      listingPosition,
+      networkValueBeforeQ8: "2100000000000000",
+      spendableAmountAtoms: "2100000000000000",
+    },
+  );
+  assert.equal(frozen.valid, true, frozen.reasonCode);
+
+  const openingGenericState = normalizeWorkAmoV5RawGenericState({});
+  const openingIdState = normalizeWorkAmoV5RawIdState({});
+  const openingWorkState = {
+    confirmedSupplyAtoms: "2100000000000000",
+    holders: [{
+      address: signed.sellerAddress,
+      balanceAtoms: "2100000000000000",
+    }],
+    listings: [{
+      amountAtoms: frozen.frozenTerms.unitAmountAtoms,
+      frozenTerms: frozen.frozenTerms,
+      listingId,
+      priceSats: frozen.frozenTerms.unitPriceSats,
+      saleAuthorization: signed.authorization,
+      sellerAddress: signed.sellerAddress,
+    }],
+  };
+  const openingEconomicState = {
+    ...rawAmoOpeningEconomicStateFixture({
+      genericState: openingGenericState,
+      idState: openingIdState,
+      quoteHead: null,
+      throughBlockHash: priorBlockHash,
+      throughBlockHeight: blockHeight - 1,
+      workState: {
+        ...openingWorkState,
+        listings: [],
+      },
+    }),
+    tokenStateCommitment:
+      workAmoV6CanonicalTokenStateCommitment(
+        openingWorkState,
+      ),
+  };
+  const message =
+    `pwt1:seal5:${listingId}:` +
+    Buffer.from(
+      JSON.stringify(signed.authorization),
+      "utf8",
+    ).toString("base64url");
+  const record = rawAmoRecordFixture({
+    blockHash,
+    blockHeight,
+    blockTransactionIndex: 1,
+    feeSats: 111,
+    message,
+    protocol: "pwt1",
+    protocolVout: 1,
+    tx: {
+      blocktime: Math.floor(
+        Date.parse("2026-07-30T12:00:00.000Z") / 1_000,
+      ),
+      vin: [{
+        prevout: {
+          scriptpubkey_address: signed.sellerAddress,
+        },
+        txid: "6".repeat(64),
+        vout: 0,
+      }],
+      vout: [
+        {
+          scriptpubkey_address:
+            WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS,
+          value: 546,
+        },
+        { scriptpubkey: "6a", value: 0 },
+      ],
+    },
+    txid: sealTxid,
+  });
+  const replay = replayWorkAmoV5RawBlock({
+    expectedBlockHash: blockHash,
+    expectedBlockHeight: blockHeight,
+    expectedPreviousBlockHash: priorBlockHash,
+    fixtureBlockTimeSeconds: Math.floor(
+      Date.parse("2026-07-30T12:00:00.000Z") / 1_000,
+    ),
+    openingEconomicState,
+    openingGenericState,
+    openingIdState,
+    openingWorkState,
+    records: [record],
+    workAmoV6: { activationHeight: 960_219 },
+  });
+  const outcome = replay.outcomes.get(
+    `${record.txid}:1:0`,
+  );
+  assert.equal(outcome?.valid, false);
+  assert.equal(
+    outcome?.reasonCode,
+    "work-amo-v6-listing-already-sealed",
+  );
+  assert.deepEqual(outcome?.stateDelta, {
+    baseContributions: [],
+    creditFixedQ8: "0",
+    creditFixedSats: "0",
+    economicOutputs: [],
+  });
+  assert.equal(replay.workState.listings.length, 1);
+  assert.equal(
+    replay.workState.listings[0].listingId,
+    listingId,
+  );
+  assert.deepEqual(
+    replay.workState.listings[0].saleAuthorization,
+    signed.authorization,
+  );
+});
+
 check("AMO V5 raw replay rejects expired or pre-signed listing intents", () => {
   const blockHeight = WORK_AMO_V5_ACTIVATION_HEIGHT + 21;
   const blockHash = "e".repeat(64);
@@ -46600,7 +46768,7 @@ check("AMO V5 relational WORK state releases only unambiguous legacy reservation
   }
 });
 
-check("the first V6 listing crosses replay binding into atomic persistence without trusting its zero placeholder", () => {
+check("the first V6 listing crosses replay binding into atomic persistence without trusting its zero placeholder", async () => {
   const listingId =
     "b259fa601676287eca2ea94c9142cd13b45fde7031ec98967f15306df6ef7936";
   const sellerAddress =
@@ -46659,6 +46827,7 @@ check("the first V6 listing crosses replay binding into atomic persistence witho
     blockHash: position.blockHash,
     blockHeight: position.blockHeight,
     blockIndex: position.blockTransactionIndex,
+    confirmed: true,
     kind: "token-listing",
     listingId,
     priceSats: "0",
@@ -46666,6 +46835,7 @@ check("the first V6 listing crosses replay binding into atomic persistence witho
     protocolVout: position.protocolVout,
     recordOrdinal: position.recordOrdinal,
     saleAuthorization,
+    senderAddress: sellerAddress,
     sellerAddress,
     tokenId: WORK_TOKEN_ID,
     txid: listingId,
@@ -46698,6 +46868,217 @@ check("the first V6 listing crosses replay binding into atomic persistence witho
   const isHexTxidFixture = (value) => /^[0-9a-f]{64}$/u.test(value);
   const normalizedLowerTextFixture = (value) =>
     String(value ?? "").trim().toLowerCase();
+  const rawPlaceholderMatchesCanonical = isolatedFunction(
+    BACKFILL_PATH,
+    "workAmoV6RawPlaceholderMatchesCanonical",
+    {
+      WORK_AMO_V6_AUTH_VERSION,
+      WORK_TOKEN_ID,
+      canonicalIntegerText,
+      canonicalWorkAtomsText,
+      formatWorkAtoms,
+      isHexTxid: isHexTxidFixture,
+      normalizeWorkAmoCanonicalPosition,
+      normalizedLowerText: normalizedLowerTextFixture,
+      objectValue,
+      validateWorkAmoV6FrozenTerms,
+      validateWorkAmoV6StaticAuthorization,
+      workAmoCanonicalPositionPrecedes,
+      workAmoV5CanonicalPayloadCommitment:
+        isolatedCanonicalPayloadCommitment,
+      workAmoV6FrozenTermsMatch,
+      workAmountAtomsFromRecord,
+    },
+  );
+  const rawMatchesCanonical = isolatedFunction(
+    BACKFILL_PATH,
+    "rawProtocolItemMatchesCanonical",
+    {
+      INCB_TOKEN_ID: "f".repeat(64),
+      canonicalBondMintProjectionStructure: () => false,
+      isWorkTokenId,
+      workAmoV6RawPlaceholderMatchesCanonical:
+        rawPlaceholderMatchesCanonical,
+      workAmountAtomsFromRecord,
+    },
+  );
+  const canonicalVerifierListing = {
+    ...preparedItem,
+    amount: "0.0000001",
+    amountAtoms: "10",
+    frozenTerms,
+    priceSats: "20000",
+  };
+  assert.equal(
+    rawMatchesCanonical(
+      preparedItem,
+      canonicalVerifierListing,
+      "token-listing",
+    ),
+    true,
+  );
+  assert.equal(
+    rawMatchesCanonical(
+      {
+        ...preparedItem,
+        confirmed: false,
+      },
+      {
+        ...preparedItem,
+        confirmed: false,
+      },
+      "token-listing",
+    ),
+    true,
+    "Pending V6 placeholders retain the pre-existing non-derived matcher",
+  );
+  for (const [label, mutate] of [
+    ["nonzero raw amount", (item) => {
+      item.amount = "1";
+    }],
+    ["nonzero raw price", (item) => {
+      item.priceSats = "1";
+    }],
+    ["raw atomic amount", (item) => {
+      item.amountAtoms = "0";
+    }],
+    ["raw frozen terms", (item) => {
+      item.frozenTerms = frozenTerms;
+    }],
+    ["wrong raw sender", (item) => {
+      item.senderAddress =
+        "1F1p9UEHuH5KTFR7Zsx93Khdrqhj6t5nFv";
+    }],
+    ["wrong action position", (item) => {
+      item.blockIndex += 1;
+    }],
+    ["tampered authorization", (item) => {
+      item.saleAuthorization.unitFaceProofs = 50_000;
+    }],
+  ]) {
+    const tampered = structuredClone(preparedItem);
+    mutate(tampered);
+    assert.equal(
+      rawMatchesCanonical(
+        tampered,
+        canonicalVerifierListing,
+        "token-listing",
+      ),
+      false,
+      label,
+    );
+  }
+  const legacyRawListing = {
+    amount: "1",
+    kind: "token-listing",
+    saleAuthorization: {
+      version: WORK_AMO_V5_AUTH_VERSION,
+    },
+    tokenId: WORK_TOKEN_ID,
+  };
+  assert.equal(
+    rawMatchesCanonical(
+      legacyRawListing,
+      {
+        ...legacyRawListing,
+        valid: true,
+      },
+      "token-listing",
+    ),
+    true,
+    "V5 keeps the existing exact WORK amount matcher",
+  );
+  assert.equal(
+    rawMatchesCanonical(
+      {
+        ...preparedItem,
+        saleAuthorization,
+      },
+      {
+        ...canonicalVerifierListing,
+        saleAuthorization: {
+          version: WORK_AMO_V5_AUTH_VERSION,
+        },
+      },
+      "token-listing",
+    ),
+    false,
+    "A raw V6 claim cannot fall through to legacy matching",
+  );
+
+  const previousBlockHash = "e".repeat(64);
+  const canonicalRecoveryItemsForTx = isolatedFunction(
+    BACKFILL_PATH,
+    "canonicalRecoveryItemsForTx",
+    {
+      NETWORK: "livenet",
+      PENDING_LEGACY_VERIFIER_TIMEOUT_MS: 30_000,
+      PENDING_VERIFIER_TIMEOUT_MS: 5_000,
+      canonicalKindForSourceLabel: isolatedFunction(
+        BACKFILL_PATH,
+        "canonicalKindForSourceLabel",
+      ),
+      canonicalRecoveryItemMatchesTxid: isolatedFunction(
+        BACKFILL_PATH,
+        "canonicalRecoveryItemMatchesTxid",
+      ),
+      disambiguateDuplicateProtocolItems: isolatedFunction(
+        BACKFILL_PATH,
+        "disambiguateDuplicateProtocolItems",
+      ),
+      endpoint: () => "http://127.0.0.1/internal/token-verifier",
+      invalidProtocolItem: isolatedFunction(
+        BACKFILL_PATH,
+        "invalidProtocolItem",
+      ),
+      rawProtocolItemMatchesCanonical: rawMatchesCanonical,
+      rawProtocolItemsForTx: () => [structuredClone(preparedItem)],
+      readJson: async () => ({
+        blockHash: position.blockHash,
+        indexedThroughBlock: position.blockHeight,
+        items: [structuredClone(canonicalVerifierListing)],
+        network: "livenet",
+        previousBlockHash,
+        source: "canonical-block-scan-db-core-credit-verifier",
+        txid: listingId,
+      }),
+      recoveryEndpointSpecs: () => [
+        {
+          label: "token-verifier",
+          params: { asset: WORK_TOKEN_ID, txid: listingId },
+          path: "/api/v1/internal/token-verifier",
+        },
+      ],
+      reservedBondCreditViolationReason: () => "",
+      sourceLabelForProtocolItem: isolatedFunction(
+        BACKFILL_PATH,
+        "sourceLabelForProtocolItem",
+      ),
+      tokenProtocolIntegrityInvalidItem: (item) => item,
+    },
+  );
+  const recovered = await canonicalRecoveryItemsForTx(
+    {
+      _powBlockHash: position.blockHash,
+      _powBlockIndex: position.blockTransactionIndex,
+      _powPreviousBlockHash: previousBlockHash,
+      height: position.blockHeight,
+      txid: listingId,
+    },
+    [{ prefix: "pwt1:", text: "pwt1:list5:first-v6-listing" }],
+  );
+  assert.equal(recovered.length, 1);
+  assert.equal(recovered[0].item.kind, "token-listing");
+  assert.equal(recovered[0].item.amountAtoms, "10");
+  assert.equal(recovered[0].item.amount, "0.0000001");
+  assert.equal(recovered[0].item.amountSats, 546);
+  assert.equal(recovered[0].item.priceSats, "20000");
+  assert.equal(
+    recovered.some(({ item }) => item.kind.endsWith("-invalid")),
+    false,
+    "The consumed raw placeholder must not reappear as an invalid sibling",
+  );
+
   const materializeV6Listing = isolatedFunction(
     BACKFILL_PATH,
     "workAmoV6ReplayListingMaterialization",
@@ -46871,44 +47252,257 @@ check("the first V6 listing crosses replay binding into atomic persistence witho
     ...canonicalListing,
     saleAuthorization: signedAuthorization,
   };
+  assert.equal(
+    rawMatchesCanonical(
+      preparedItem,
+      {
+        ...canonicalVerifierListing,
+        saleAuthorization: signedAuthorization,
+      },
+      "token-listing",
+    ),
+    true,
+    "An earlier V6 list remains recoverable after a later ordered seal signs the closing state",
+  );
+  const canonicalLifecycleItem = ({
+    actionField,
+    actionPosition,
+    actionTxid,
+    authorization,
+    buyerAddress = "",
+    kind,
+  }) => ({
+    amount: "0.0000001",
+    amountAtoms: "10",
+    blockHash: actionPosition.blockHash,
+    blockHeight: actionPosition.blockHeight,
+    blockIndex: actionPosition.blockTransactionIndex,
+    confirmed: true,
+    frozenTerms,
+    kind,
+    listingId,
+    priceSats: "20000",
+    protocol: "pwt1",
+    protocolVout: actionPosition.protocolVout,
+    recordOrdinal: actionPosition.recordOrdinal,
+    saleAuthorization: authorization,
+    sellerAddress,
+    tokenId: WORK_TOKEN_ID,
+    txid: actionTxid,
+    valid: true,
+    ...(actionField ? { [actionField]: actionTxid } : {}),
+    ...(buyerAddress ? { buyerAddress } : {}),
+  });
+  const rawLifecycleItem = ({
+    actionField,
+    actionPosition,
+    actionTxid,
+    authorization,
+    buyerAddress = "",
+    kind,
+    sellerAction = false,
+    tokenId = "",
+    zeroPlaceholder = false,
+  }) => ({
+    blockHash: actionPosition.blockHash,
+    blockHeight: actionPosition.blockHeight,
+    blockIndex: actionPosition.blockTransactionIndex,
+    confirmed: true,
+    kind,
+    listingId,
+    protocol: "pwt1",
+    protocolVout: actionPosition.protocolVout,
+    recordOrdinal: actionPosition.recordOrdinal,
+    senderAddress: sellerAction ? sellerAddress : buyerAddress,
+    txid: actionTxid,
+    valid: true,
+    ...(actionField ? { [actionField]: actionTxid } : {}),
+    ...(authorization ? { saleAuthorization: authorization } : {}),
+    ...(buyerAddress ? { buyerAddress } : {}),
+    ...(sellerAction ? { sellerAddress } : {}),
+    ...(tokenId ? { tokenId } : {}),
+    ...(zeroPlaceholder ? { amount: "0", priceSats: "0" } : {}),
+  });
+  const sealPosition = {
+    blockHash: "a".repeat(64),
+    blockHeight: position.blockHeight + 1,
+    blockTransactionIndex: 10,
+    protocolVout: 1,
+    recordOrdinal: 0,
+  };
+  const sealTxid = "a".repeat(64);
+  const canonicalSeal = canonicalLifecycleItem({
+    actionField: "sealTxid",
+    actionPosition: sealPosition,
+    actionTxid: sealTxid,
+    authorization: signedAuthorization,
+    kind: "token-listing-sealed",
+  });
+  const rawSeal = rawLifecycleItem({
+    actionField: "sealTxid",
+    actionPosition: sealPosition,
+    actionTxid: sealTxid,
+    authorization: signedAuthorization,
+    kind: "token-listing-sealed",
+    sellerAction: true,
+    tokenId: WORK_TOKEN_ID,
+    zeroPlaceholder: true,
+  });
+  assert.equal(
+    rawMatchesCanonical(
+      rawSeal,
+      canonicalSeal,
+      "token-listing-sealed",
+    ),
+    true,
+  );
+  assert.equal(
+    rawMatchesCanonical(
+      {
+        ...rawSeal,
+        sealTxid: "f".repeat(64),
+      },
+      canonicalSeal,
+      "token-listing-sealed",
+    ),
+    false,
+  );
+
+  const buyerAddress =
+    "1F1p9UEHuH5KTFR7Zsx93Khdrqhj6t5nFv";
+  const buyPosition = {
+    blockHash: "b".repeat(64),
+    blockHeight: position.blockHeight + 2,
+    blockTransactionIndex: 11,
+    protocolVout: 1,
+    recordOrdinal: 0,
+  };
+  const buyTxid = "b".repeat(64);
+  const canonicalDirectBuy = canonicalLifecycleItem({
+    actionPosition: buyPosition,
+    actionTxid: buyTxid,
+    authorization: saleAuthorization,
+    buyerAddress,
+    kind: "token-sale",
+  });
+  const rawDirectBuy = rawLifecycleItem({
+    actionField: "saleTxid",
+    actionPosition: buyPosition,
+    actionTxid: buyTxid,
+    authorization: signedAuthorization,
+    buyerAddress,
+    kind: "token-sale",
+  });
+  assert.equal(
+    rawMatchesCanonical(
+      rawDirectBuy,
+      canonicalDirectBuy,
+      "token-sale",
+    ),
+    true,
+    "A direct buy matches the same signed V6 terms without inventing derived fields",
+  );
+  assert.equal(
+    rawMatchesCanonical(
+      {
+        ...rawDirectBuy,
+        listingId: listingId.toUpperCase(),
+      },
+      canonicalDirectBuy,
+      "token-sale",
+    ),
+    true,
+    "Canonical txid identities are case-normalized for raw buy records",
+  );
+  assert.equal(
+    rawMatchesCanonical(
+      {
+        ...rawDirectBuy,
+        amount: "0",
+      },
+      canonicalDirectBuy,
+      "token-sale",
+    ),
+    false,
+  );
+
+  const delistPosition = {
+    blockHash: "c".repeat(64),
+    blockHeight: position.blockHeight + 3,
+    blockTransactionIndex: 12,
+    protocolVout: 1,
+    recordOrdinal: 0,
+  };
+  const delistTxid = "c".repeat(64);
+  const canonicalDelist = canonicalLifecycleItem({
+    actionField: "closedTxid",
+    actionPosition: delistPosition,
+    actionTxid: delistTxid,
+    authorization: saleAuthorization,
+    kind: "token-listing-closed",
+  });
+  const rawDelist = rawLifecycleItem({
+    actionField: "closedTxid",
+    actionPosition: delistPosition,
+    actionTxid: delistTxid,
+    authorization: null,
+    kind: "token-listing-closed",
+    sellerAction: true,
+  });
+  assert.equal(
+    rawMatchesCanonical(
+      rawDelist,
+      canonicalDelist,
+      "token-listing-closed",
+    ),
+    true,
+  );
+  assert.equal(
+    rawMatchesCanonical(
+      {
+        ...rawDelist,
+        listingId: listingId.toUpperCase(),
+      },
+      canonicalDelist,
+      "token-listing-closed",
+    ),
+    true,
+    "Canonical txid identities are case-normalized for raw delists",
+  );
+  assert.equal(
+    rawMatchesCanonical(
+      rawDirectBuy,
+      {
+        ...canonicalDelist,
+        closedTxid: buyTxid,
+        txid: buyTxid,
+      },
+      "token-listing-closed",
+    ),
+    false,
+    "A buy raw record cannot be consumed by its synthetic close companion",
+  );
+
   const lifecycle = [
     {
-      actionPosition: {
-        blockHash: "a".repeat(64),
-        blockHeight: position.blockHeight + 1,
-        blockTransactionIndex: 10,
-        protocolVout: 1,
-        recordOrdinal: 0,
-      },
-      actionTxid: "a".repeat(64),
+      actionPosition: sealPosition,
+      actionTxid: sealTxid,
       kind: "token-listing-sealed",
       listing: signedListing,
       sourceAuthorization: signedAuthorization,
     },
     {
-      actionPosition: {
-        blockHash: "b".repeat(64),
-        blockHeight: position.blockHeight + 2,
-        blockTransactionIndex: 11,
-        protocolVout: 1,
-        recordOrdinal: 0,
-      },
-      actionTxid: "b".repeat(64),
-      buyerAddress: "1F1p9UEHuH5KTFR7Zsx93Khdrqhj6t5nFv",
+      actionPosition: buyPosition,
+      actionTxid: buyTxid,
+      buyerAddress,
       kind: "token-sale",
       listing: signedListing,
       sourceAuthorization: signedAuthorization,
       sourceSellerAddress: "",
     },
     {
-      actionPosition: {
-        blockHash: "c".repeat(64),
-        blockHeight: position.blockHeight + 3,
-        blockTransactionIndex: 12,
-        protocolVout: 1,
-        recordOrdinal: 0,
-      },
-      actionTxid: "c".repeat(64),
+      actionPosition: delistPosition,
+      actionTxid: delistTxid,
       kind: "token-listing-closed",
       listing: signedListing,
       listingField: "closedListing",

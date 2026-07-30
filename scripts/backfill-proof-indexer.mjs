@@ -4363,6 +4363,347 @@ function canonicalKindForSourceLabel(sourceLabel, item) {
   }[sourceLabel] ?? "";
 }
 
+function workAmoV6RawPlaceholderMatchesCanonical(
+  rawItem,
+  canonicalItem,
+  kind,
+) {
+  const canonicalKind = String(kind ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/-invalid$/u, "");
+  const lifecycleKinds = new Set([
+    "token-listing",
+    "token-listing-sealed",
+    "token-sale",
+    "token-listing-closed",
+  ]);
+  const rawAuthorization = objectValue(rawItem?.saleAuthorization);
+  const canonicalAuthorizationSource = objectValue(
+    canonicalItem?.saleAuthorization,
+  );
+  const canonicalFrozenTermsSource = objectValue(
+    canonicalItem?.frozenTerms ??
+      canonicalItem?.workAmoFrozenTerms ??
+      canonicalItem?.workAmoV6FrozenTerms,
+  );
+  const v6Mentioned = [
+    rawAuthorization.version,
+    canonicalAuthorizationSource.version,
+    canonicalFrozenTermsSource.version,
+  ].some(
+    (version) =>
+      normalizedLowerText(version) === WORK_AMO_V6_AUTH_VERSION,
+  );
+  if (
+    canonicalItem?.valid !== true ||
+    !lifecycleKinds.has(canonicalKind) ||
+    !v6Mentioned
+  ) {
+    return null;
+  }
+  const rawConfirmed = rawItem?.confirmed === true;
+  const canonicalConfirmed = canonicalItem?.confirmed === true;
+  if (!rawConfirmed && !canonicalConfirmed) {
+    return null;
+  }
+  if (!rawConfirmed || !canonicalConfirmed) {
+    return false;
+  }
+  const rawKind = normalizedLowerText(rawItem?.kind);
+  const rawProtocol = normalizedLowerText(rawItem?.protocol);
+  const canonicalProtocol = normalizedLowerText(
+    canonicalItem?.protocol,
+  );
+  const rawTxid = normalizedLowerText(rawItem?.txid);
+  const canonicalTxid = normalizedLowerText(canonicalItem?.txid);
+  const rawPosition = normalizeWorkAmoCanonicalPosition(rawItem);
+  const canonicalPosition =
+    normalizeWorkAmoCanonicalPosition(canonicalItem);
+  const samePosition = Boolean(
+    rawPosition &&
+      canonicalPosition &&
+      rawPosition.blockHash === canonicalPosition.blockHash &&
+      rawPosition.blockHeight === canonicalPosition.blockHeight &&
+      rawPosition.blockTransactionIndex ===
+        canonicalPosition.blockTransactionIndex &&
+      rawPosition.protocolVout === canonicalPosition.protocolVout &&
+      rawPosition.recordOrdinal === canonicalPosition.recordOrdinal,
+  );
+  if (
+    rawKind !== canonicalKind ||
+    rawItem?.valid === false ||
+    rawProtocol !== "pwt1" ||
+    canonicalProtocol !== "pwt1" ||
+    !isHexTxid(rawTxid) ||
+    canonicalTxid !== rawTxid ||
+    !samePosition
+  ) {
+    return false;
+  }
+  const canonicalAuthorization =
+    validateWorkAmoV6StaticAuthorization(
+      canonicalAuthorizationSource,
+    );
+  if (!canonicalAuthorization.valid) {
+    return false;
+  }
+  const canonicalFrozenTerms = validateWorkAmoV6FrozenTerms(
+    canonicalFrozenTermsSource,
+    {
+      authorization: canonicalAuthorization.authorization,
+    },
+  );
+  if (!canonicalFrozenTerms.valid) {
+    return false;
+  }
+  for (const frozenTerms of [
+    canonicalItem?.frozenTerms,
+    canonicalItem?.workAmoFrozenTerms,
+    canonicalItem?.workAmoV6FrozenTerms,
+  ]) {
+    if (
+      frozenTerms !== undefined &&
+      frozenTerms !== null &&
+      !workAmoV6FrozenTermsMatch(
+        canonicalFrozenTerms.frozenTerms,
+        frozenTerms,
+      )
+    ) {
+      return false;
+    }
+  }
+  let canonicalAmountAtoms = "";
+  try {
+    canonicalAmountAtoms = canonicalWorkAtomsText(
+      workAmountAtomsFromRecord(canonicalItem),
+    );
+  } catch {
+    return false;
+  }
+  const canonicalPriceSats = canonicalIntegerText(
+    canonicalItem?.priceSats,
+    { positive: true },
+  );
+  if (
+    !canonicalAmountAtoms ||
+    canonicalAmountAtoms !==
+      canonicalFrozenTerms.frozenTerms.unitAmountAtoms ||
+    String(canonicalItem?.amount ?? "").trim() !==
+      formatWorkAtoms(canonicalAmountAtoms) ||
+    !canonicalPriceSats ||
+    canonicalPriceSats !==
+      canonicalFrozenTerms.frozenTerms.unitPriceSats
+  ) {
+    return false;
+  }
+  const listingId = normalizedLowerText(canonicalItem?.listingId);
+  const rawListingId = normalizedLowerText(rawItem?.listingId);
+  const canonicalSellerAddress = String(
+    canonicalItem?.sellerAddress ?? "",
+  ).trim();
+  const canonicalTokenId = normalizedLowerText(canonicalItem?.tokenId);
+  const rawTokenId = normalizedLowerText(rawItem?.tokenId);
+  const listingPosition = normalizeWorkAmoCanonicalPosition({
+    blockHash: canonicalFrozenTerms.frozenTerms.listingBlockHash,
+    blockHeight:
+      canonicalFrozenTerms.frozenTerms.listingBlockHeight,
+    blockTransactionIndex:
+      canonicalFrozenTerms.frozenTerms.listingBlockIndex,
+    protocolVout:
+      canonicalFrozenTerms.frozenTerms.listingProtocolVout,
+    recordOrdinal:
+      canonicalFrozenTerms.frozenTerms.listingRecordOrdinal,
+  });
+  const listingPositionMatchesAction = Boolean(
+    listingPosition &&
+      canonicalPosition &&
+      listingPosition.blockHash === canonicalPosition.blockHash &&
+      listingPosition.blockHeight === canonicalPosition.blockHeight &&
+      listingPosition.blockTransactionIndex ===
+        canonicalPosition.blockTransactionIndex &&
+      listingPosition.protocolVout === canonicalPosition.protocolVout &&
+      listingPosition.recordOrdinal === canonicalPosition.recordOrdinal,
+  );
+  if (
+    !isHexTxid(listingId) ||
+    listingId !== rawListingId ||
+    canonicalTokenId !== WORK_TOKEN_ID ||
+    (rawTokenId && rawTokenId !== WORK_TOKEN_ID) ||
+    !canonicalSellerAddress ||
+    canonicalSellerAddress !==
+      canonicalAuthorization.authorization.sellerAddress ||
+    !listingPosition ||
+    (canonicalKind === "token-listing"
+      ? listingId !== canonicalTxid ||
+        !listingPositionMatchesAction
+      : !workAmoCanonicalPositionPrecedes(
+          listingPosition,
+          canonicalPosition,
+        ))
+  ) {
+    return false;
+  }
+
+  const present = (value) =>
+    value !== undefined && value !== null && value !== "";
+  const rawDerivedAtomicFields = [
+    rawItem?.amountAtoms,
+    rawItem?.tokenAmount,
+    rawItem?.tokenAmountAtoms,
+    rawItem?.unitAmountAtoms,
+    rawItem?.unitMinimumPriceSats,
+    rawItem?.unitPriceSats,
+  ];
+  const rawFrozenTermFields = [
+    rawItem?.frozenTerms,
+    rawItem?.listingFrozenTerms,
+    rawItem?.workAmoFrozenTerms,
+    rawItem?.workAmoV6FrozenTerms,
+  ];
+  if (
+    rawDerivedAtomicFields.some(present) ||
+    rawFrozenTermFields.some(present) ||
+    (["token-listing", "token-listing-sealed"].includes(
+      canonicalKind,
+    )
+      ? canonicalIntegerText(rawItem?.amount) !== "0" ||
+        canonicalIntegerText(rawItem?.priceSats) !== "0"
+      : [
+          rawItem?.amount,
+          rawItem?.priceSats,
+          rawItem?.minimumPriceSats,
+        ].some(present))
+  ) {
+    return false;
+  }
+
+  const rawAuthorizationValidation =
+    validateWorkAmoV6StaticAuthorization(rawAuthorization);
+  const staticIdentityFields = [
+    "amountModel",
+    "anchorScriptPubKey",
+    "anchorSigHashType",
+    "anchorType",
+    "anchorValueSats",
+    "anchorVout",
+    "bondTransitionModel",
+    "buyerAddress",
+    "expiresAt",
+    "network",
+    "nonce",
+    "registryAddress",
+    "sellerAddress",
+    "sellerPublicKey",
+    "stateOrderModel",
+    "ticker",
+    "tokenId",
+    "unitFaceProofs",
+    "unitModel",
+    "unitWorkOracleModel",
+    "version",
+  ];
+  const canonicalAnchorTxid = normalizedLowerText(
+    canonicalAuthorization.authorization.anchorTxid,
+  );
+  const canonicalAnchorSignature = normalizedLowerText(
+    canonicalAuthorization.authorization.anchorSignature,
+  );
+  const canonicalAnchorCoherent =
+    (!canonicalAnchorTxid && !canonicalAnchorSignature) ||
+    (canonicalAnchorTxid === listingId &&
+      Boolean(canonicalAnchorSignature));
+  if (!canonicalAnchorCoherent) {
+    return false;
+  }
+
+  if (canonicalKind === "token-listing") {
+    return Boolean(
+      rawTokenId === WORK_TOKEN_ID &&
+      rawAuthorizationValidation.valid &&
+      !rawAuthorizationValidation.authorization.anchorTxid &&
+      !rawAuthorizationValidation.authorization.anchorSignature &&
+      staticIdentityFields.every(
+        (field) =>
+          rawAuthorizationValidation.authorization[field] ===
+          canonicalAuthorization.authorization[field],
+      ) &&
+      String(rawItem?.sellerAddress ?? "").trim() ===
+        canonicalSellerAddress &&
+      String(rawItem?.senderAddress ?? "").trim() ===
+        canonicalSellerAddress
+    );
+  }
+
+  const actionField = {
+    "token-listing-sealed": "sealTxid",
+    "token-sale": "saleTxid",
+    "token-listing-closed": "closedTxid",
+  }[canonicalKind];
+  if (
+    !actionField ||
+    normalizedLowerText(rawItem?.[actionField]) !== canonicalTxid
+  ) {
+    return false;
+  }
+  const canonicalActionTxid = normalizedLowerText(
+    canonicalItem?.[actionField],
+  );
+  if (
+    canonicalKind === "token-sale"
+      ? canonicalActionTxid &&
+        canonicalActionTxid !== canonicalTxid
+      : canonicalActionTxid !== canonicalTxid
+  ) {
+    return false;
+  }
+
+  if (canonicalKind === "token-listing-sealed") {
+    return Boolean(
+      rawTokenId === WORK_TOKEN_ID &&
+      rawAuthorizationValidation.valid &&
+      canonicalAnchorTxid === listingId &&
+      canonicalAnchorSignature &&
+      workAmoV5CanonicalPayloadCommitment(
+        rawAuthorizationValidation.authorization,
+      ).sha256 ===
+        workAmoV5CanonicalPayloadCommitment(
+          canonicalAuthorization.authorization,
+        ).sha256 &&
+      String(rawItem?.sellerAddress ?? "").trim() ===
+        canonicalSellerAddress &&
+      String(rawItem?.senderAddress ?? "").trim() ===
+        canonicalSellerAddress
+    );
+  }
+
+  if (canonicalKind === "token-sale") {
+    const buyerAddress = String(
+      canonicalItem?.buyerAddress ?? "",
+    ).trim();
+    return Boolean(
+      rawAuthorizationValidation.valid &&
+      rawAuthorizationValidation.authorization.anchorTxid ===
+        listingId &&
+      rawAuthorizationValidation.authorization.anchorSignature &&
+      staticIdentityFields.every(
+        (field) =>
+          rawAuthorizationValidation.authorization[field] ===
+          canonicalAuthorization.authorization[field],
+      ) &&
+      buyerAddress &&
+      String(rawItem?.buyerAddress ?? "").trim() === buyerAddress &&
+      String(rawItem?.senderAddress ?? "").trim() === buyerAddress
+    );
+  }
+
+  return Boolean(
+    Object.keys(rawAuthorization).length === 0 &&
+      String(rawItem?.senderAddress ?? "").trim() ===
+        canonicalSellerAddress
+  );
+}
+
 function rawProtocolItemMatchesCanonical(rawItem, canonicalItem, kind) {
   const rawKind = String(rawItem?.kind ?? "").toLowerCase();
   if (
@@ -4384,7 +4725,19 @@ function rawProtocolItemMatchesCanonical(rawItem, canonicalItem, kind) {
   ]) {
     const canonicalValue = String(canonicalItem?.[field] ?? "").trim();
     const rawValue = String(rawItem?.[field] ?? "").trim();
-    if (canonicalValue && rawValue && canonicalValue !== rawValue) {
+    const canonicalIdentityValue = ["listingId", "tokenId"].includes(
+      field,
+    )
+      ? canonicalValue.toLowerCase()
+      : canonicalValue;
+    const rawIdentityValue = ["listingId", "tokenId"].includes(field)
+      ? rawValue.toLowerCase()
+      : rawValue;
+    if (
+      canonicalIdentityValue &&
+      rawIdentityValue &&
+      canonicalIdentityValue !== rawIdentityValue
+    ) {
       return false;
     }
   }
@@ -4414,6 +4767,15 @@ function rawProtocolItemMatchesCanonical(rawItem, canonicalItem, kind) {
     .trim()
     .toLowerCase();
   if (isWorkTokenId(tokenId)) {
+    const v6PlaceholderMatch =
+      workAmoV6RawPlaceholderMatchesCanonical(
+        rawItem,
+        canonicalItem,
+        kind,
+      );
+    if (v6PlaceholderMatch !== null) {
+      return v6PlaceholderMatch;
+    }
     try {
       return (
         workAmountAtomsFromRecord(canonicalItem) ===

@@ -1340,7 +1340,8 @@ confirmed before activation keeps its frozen terms and may settle unchanged.
 After activation, new V4/V5 listings are invalid audit history. V1/V3 relics
 and all old quote rows remain immutable replay evidence. Seal and buy use
 confirmation-frozen listing terms and never recheck current network value or
-any USD display.
+any USD display. A coherent signed V6 seal is one-way: subsequent seal attempts
+are invalid audit history and cannot overwrite the first seal identity.
 
 The canonical WORK token-state preimage used at block open, block close,
 transition verification, relational parity and current-state migration audits
@@ -1356,9 +1357,13 @@ full canonical position to a valid replay outcome, the indexer materializes
 the V6 list/seal/buy/delist projection only from the replay output's canonical
 nested listing or closed listing. It validates the nested authorization and
 frozen terms, requires the atom amount and proof price to equal those terms,
-and then writes the exact top-level atomic and human aliases. An invalid replay
-remains invalid audit history; an unbound or divergent valid projection aborts
-the atomic block.
+and then writes the exact top-level atomic and human aliases. Pairing consumes
+the raw placeholder only when lifecycle kind, action txid, `pwt1` protocol,
+complete action position, listing identity, actor and validated V6
+authorization identity all match the canonical verifier item. An invalid
+replay remains invalid audit history; an unmatched raw record or divergent
+valid projection aborts the atomic block instead of creating two items at one
+position.
 
 The V6 closing WORK read projection derives the active listing's original
 confirmed tuple from its immutable frozen terms and formats the human amount
