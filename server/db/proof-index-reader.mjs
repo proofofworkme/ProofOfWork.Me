@@ -1883,6 +1883,212 @@ function normalizedWorkAmoV6ExpectedPins(value) {
     ? null
     : normalized;
 }
+
+function configuredWorkAmoV6ReaderPins(env = process.env) {
+  const declarationHeight = Number(
+    env.WORK_AMO_V6_DECLARATION_HEIGHT,
+  );
+  const pins = normalizedWorkAmoV6ExpectedPins({
+    activationHeight:
+      Number.isSafeInteger(declarationHeight) && declarationHeight > 0
+        ? declarationHeight + 1
+        : 0,
+    declarationBlockHash:
+      env.WORK_AMO_V6_DECLARATION_BLOCK_HASH,
+    declarationBlockIndex:
+      env.WORK_AMO_V6_DECLARATION_BLOCK_INDEX,
+    declarationHeight,
+    declarationMemoBytes:
+      env.WORK_AMO_V6_DECLARATION_MEMO_BYTES,
+    declarationMemoSha256:
+      env.WORK_AMO_V6_DECLARATION_MEMO_SHA256,
+    declarationProtocolVout:
+      env.WORK_AMO_V6_DECLARATION_PROTOCOL_VOUT,
+    declarationRecordOrdinal:
+      env.WORK_AMO_V6_DECLARATION_RECORD_ORDINAL,
+    declarationRegistryPaymentVout:
+      env.WORK_AMO_V6_DECLARATION_REGISTRY_PAYMENT_VOUT,
+    declarationTxid:
+      env.WORK_AMO_V6_DECLARATION_TXID,
+  });
+  if (!pins) {
+    return null;
+  }
+  let expectedDeclaration;
+  try {
+    expectedDeclaration = workAmoV6DeclarationCommitment();
+  } catch {
+    return null;
+  }
+  return pins.declarationMemoBytes ===
+      expectedDeclaration.protocolRecordBytes &&
+    pins.declarationMemoSha256 ===
+      expectedDeclaration.protocolRecordSha256
+    ? pins
+    : null;
+}
+
+function workAmoV6ReadinessIsCurrentAtSnapshot(
+  readiness,
+  pins,
+  snapshotHeight,
+) {
+  const height = Number(snapshotHeight);
+  return Boolean(
+    pins &&
+      readiness?.ready === true &&
+      readiness?.active === true &&
+      readiness?.canonical === true &&
+      readiness?.confirmed === true &&
+      readiness?.evidenceComplete === true &&
+      Number(readiness?.activationHeight) === pins.activationHeight &&
+      (
+        height === 0 ||
+        (
+          Number.isSafeInteger(height) &&
+          height >= pins.activationHeight
+        )
+      )
+  );
+}
+
+async function currentWorkMarketAuthorizationVersionsAtSnapshot(
+  network,
+  snapshotHeight,
+  workMarketV4Activation,
+) {
+  if (network !== "livenet") {
+    return [WORK_MARKET_V2_AUTH_VERSION];
+  }
+  const pins = configuredWorkAmoV6ReaderPins();
+  if (
+    pins &&
+    (
+      Number(snapshotHeight) === 0 ||
+      Number(snapshotHeight) >= pins.activationHeight
+    )
+  ) {
+    const readiness = await proofIndexWorkAmoV6MigrationReadiness(
+      network,
+      pins,
+    ).catch(() => null);
+    if (
+      workAmoV6ReadinessIsCurrentAtSnapshot(
+        readiness,
+        pins,
+        snapshotHeight,
+      )
+    ) {
+      return [
+        WORK_AMO_V6_AUTH_VERSION,
+        WORK_AMO_V5_AUTH_VERSION,
+        WORK_MARKET_V4_AUTH_VERSION,
+      ];
+    }
+  }
+  if (
+    Number(snapshotHeight) === 0 ||
+    Number(snapshotHeight) >= WORK_AMO_V5_ACTIVATION_HEIGHT
+  ) {
+    return [
+      WORK_AMO_V5_AUTH_VERSION,
+      WORK_MARKET_V4_AUTH_VERSION,
+    ];
+  }
+  return workMarketV4Activation
+    ? [WORK_MARKET_V4_AUTH_VERSION]
+    : [WORK_MARKET_V2_AUTH_VERSION];
+}
+
+function workAmoV6PublicListingReadReady(authorizationVersions) {
+  return (
+    Array.isArray(authorizationVersions) &&
+    authorizationVersions.some(
+      (version) =>
+        normalizedLowerText(version) === WORK_AMO_V6_AUTH_VERSION,
+    )
+  );
+}
+
+function workAmoV6ListingRecord(record) {
+  const payload = objectRecord(record?.payload);
+  const saleAuthorization = objectRecord(
+    record?.saleAuthorization ?? payload.saleAuthorization,
+  );
+  return (
+    isWorkTokenId(
+      record?.tokenId ??
+        record?.token_id ??
+        payload.tokenId ??
+        saleAuthorization.tokenId,
+    ) &&
+    normalizedLowerText(saleAuthorization.version) ===
+      WORK_AMO_V6_AUTH_VERSION
+  );
+}
+
+function applyWorkAmoV6PublicListingReadPolicy(
+  state,
+  authorizationVersions,
+) {
+  if (
+    !state ||
+    typeof state !== "object" ||
+    Array.isArray(state) ||
+    workAmoV6PublicListingReadReady(authorizationVersions) ||
+    !Array.isArray(state.listings)
+  ) {
+    return state;
+  }
+  return {
+    ...state,
+    listings: state.listings.filter(
+      (listing) => !workAmoV6ListingRecord(listing),
+    ),
+  };
+}
+
+async function payloadWithCurrentWorkMarketListingReadPolicy(
+  network,
+  payload,
+) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return payload;
+  }
+  const snapshotHeight = Number(
+    payload.indexedThroughBlock ??
+      payload.stats?.indexedThroughBlock ??
+      0,
+  );
+  const authorizationVersions =
+    await currentWorkMarketAuthorizationVersionsAtSnapshot(
+      network,
+      snapshotHeight,
+      payload.workMarketV4Activation,
+    );
+  return applyWorkAmoV6PublicListingReadPolicy(
+    payload,
+    authorizationVersions,
+  );
+}
+
+function workAmoV6PublicListingReadSql(
+  listingAlias,
+  authorizationVersions,
+) {
+  if (workAmoV6PublicListingReadReady(authorizationVersions)) {
+    return "true";
+  }
+  const alias = canonicalCreditListingAlias(listingAlias);
+  return `(
+    lower(COALESCE(${alias}.token_id, '')) <> '${WORK_TOKEN_ID}'
+    OR lower(COALESCE(
+      ${alias}.payload->'saleAuthorization'->>'version',
+      ''
+    )) <> '${WORK_AMO_V6_AUTH_VERSION}'
+  )`;
+}
+
 function workAmoV6MarkerMatchesExpectedPins(marker, pins) {
   return Boolean(
     marker &&
@@ -6801,7 +7007,8 @@ function canonicalWorkMarketV3ListingProjectionSql(listingAlias = "cl") {
     )) NOT IN (
       '${WORK_MARKET_V2_AUTH_VERSION}',
       '${WORK_MARKET_V4_AUTH_VERSION}',
-      '${WORK_AMO_V5_AUTH_VERSION}'
+      '${WORK_AMO_V5_AUTH_VERSION}',
+      '${WORK_AMO_V6_AUTH_VERSION}'
     )
     OR (
       EXISTS (
@@ -6833,16 +7040,20 @@ function canonicalWorkMarketV3ListingProjectionSql(listingAlias = "cl") {
                 lower(COALESCE(${alias}.token_id, '')) <>
                   '${WORK_TOKEN_ID}'
                 OR NOT (
-                  '${WORK_AMO_V5_AUTH_VERSION}' = ANY(ARRAY[
-                    lower(COALESCE(
-                      ${alias}.payload->'saleAuthorization'->>'version',
-                      ''
-                    )),
-                    lower(COALESCE(
-                      ${alias}.payload->'listingAuthorization'->>'version',
-                      ''
-                    ))
-                  ]::text[])
+                  lower(COALESCE(
+                    ${alias}.payload->'saleAuthorization'->>'version',
+                    ''
+                  )) IN (
+                    '${WORK_AMO_V5_AUTH_VERSION}',
+                    '${WORK_AMO_V6_AUTH_VERSION}'
+                  )
+                  OR lower(COALESCE(
+                    ${alias}.payload->'listingAuthorization'->>'version',
+                    ''
+                  )) IN (
+                    '${WORK_AMO_V5_AUTH_VERSION}',
+                    '${WORK_AMO_V6_AUTH_VERSION}'
+                  )
                 )
               )
             )
@@ -6905,16 +7116,20 @@ function canonicalTokenListingEventJoinSql(listingAlias = "cl") {
           AND (
             lower(COALESCE(${alias}.token_id, '')) <> '${WORK_TOKEN_ID}'
             OR NOT (
-              '${WORK_AMO_V5_AUTH_VERSION}' = ANY(ARRAY[
-                lower(COALESCE(
-                  ${alias}.payload->'saleAuthorization'->>'version',
-                  ''
-                )),
-                lower(COALESCE(
-                  ${alias}.payload->'listingAuthorization'->>'version',
-                  ''
-                ))
-              ]::text[])
+              lower(COALESCE(
+                ${alias}.payload->'saleAuthorization'->>'version',
+                ''
+              )) IN (
+                '${WORK_AMO_V5_AUTH_VERSION}',
+                '${WORK_AMO_V6_AUTH_VERSION}'
+              )
+              OR lower(COALESCE(
+                ${alias}.payload->'listingAuthorization'->>'version',
+                ''
+              )) IN (
+                '${WORK_AMO_V5_AUTH_VERSION}',
+                '${WORK_AMO_V6_AUTH_VERSION}'
+              )
             )
           )
         )
@@ -6984,7 +7199,8 @@ function canonicalTokenListingSealEventJoinSql(listingAlias = "cl") {
           )) IN (
             '${WORK_MARKET_V2_AUTH_VERSION}',
             '${WORK_MARKET_V4_AUTH_VERSION}',
-            '${WORK_AMO_V5_AUTH_VERSION}'
+            '${WORK_AMO_V5_AUTH_VERSION}',
+            '${WORK_AMO_V6_AUTH_VERSION}'
           )
           AND lower(COALESCE(
             canonical_seal_event_row.payload->'saleAuthorization'->>'version',
@@ -8733,7 +8949,8 @@ function tokenHistoryCanonicalMarketEventsSql(
               ${targetSaleAuthorizationVersion} IN (
                 '${WORK_MARKET_V2_AUTH_VERSION}',
                 '${WORK_MARKET_V4_AUTH_VERSION}',
-                '${WORK_AMO_V5_AUTH_VERSION}'
+                '${WORK_AMO_V5_AUTH_VERSION}',
+                '${WORK_AMO_V6_AUTH_VERSION}'
               )
               AND lower(COALESCE(
                 canonical_seal_event_row.payload
@@ -9470,8 +9687,10 @@ function isWorkAmoV5ListingSaleProjection(sale) {
   const saleAuthorization = objectRecord(sale?.saleAuthorization);
   return (
     isWorkTokenId(sale?.tokenId ?? saleAuthorization.tokenId) &&
-    normalizedLowerText(saleAuthorization.version) ===
-      WORK_AMO_V5_AUTH_VERSION
+    [
+      WORK_AMO_V5_AUTH_VERSION,
+      WORK_AMO_V6_AUTH_VERSION,
+    ].includes(normalizedLowerText(saleAuthorization.version))
   );
 }
 
@@ -10496,14 +10715,12 @@ async function exactActiveTokenListingHistoryPage(
     network,
     snapshotHeight,
   );
-  const currentWorkMarketAuthorizationVersion =
-    network === "livenet" &&
-      (snapshotHeight === 0 ||
-        snapshotHeight >= WORK_AMO_V5_ACTIVATION_HEIGHT)
-      ? WORK_AMO_V5_AUTH_VERSION
-      : workMarketV4Activation
-        ? WORK_MARKET_V4_AUTH_VERSION
-        : WORK_MARKET_V2_AUTH_VERSION;
+  const currentWorkMarketAuthorizationVersions =
+    await currentWorkMarketAuthorizationVersionsAtSnapshot(
+      network,
+      snapshotHeight,
+      workMarketV4Activation,
+    );
   const workMarketV2Active =
     network === "livenet" &&
     (snapshotHeight === 0 ||
@@ -10519,14 +10736,14 @@ async function exactActiveTokenListingHistoryPage(
     canonicalWorkMarketV3ListingProjectionSql("cl"),
     tokenListingActiveLifecycleSql("cl"),
   ];
-  let currentWorkMarketAuthorizationVersionParam = "";
+  let currentWorkMarketAuthorizationVersionsParam = "";
   if (scope && scope !== "all") {
     params.push(scope);
     conditions.push("cl.token_id = $3");
   }
   if (workMarketV2Active) {
-    params.push(WORK_TOKEN_ID, currentWorkMarketAuthorizationVersion);
-    currentWorkMarketAuthorizationVersionParam = `$${params.length}`;
+    params.push(WORK_TOKEN_ID, currentWorkMarketAuthorizationVersions);
+    currentWorkMarketAuthorizationVersionsParam = `$${params.length}`;
     const workTokenParam = `$${params.length - 1}`;
     conditions.push(
       `(
@@ -10534,7 +10751,7 @@ async function exactActiveTokenListingHistoryPage(
         OR lower(COALESCE(
           cl.payload->'saleAuthorization'->>'version',
           ''
-        )) = ${currentWorkMarketAuthorizationVersionParam}
+        )) = ANY(${currentWorkMarketAuthorizationVersionsParam}::text[])
       )`,
     );
   }
@@ -10558,7 +10775,7 @@ async function exactActiveTokenListingHistoryPage(
     if (workMarketV2Active) {
       terminalParams.push(
         WORK_TOKEN_ID,
-        currentWorkMarketAuthorizationVersion,
+        currentWorkMarketAuthorizationVersions,
       );
       const workTokenParam = `$${terminalParams.length - 1}`;
       const workMarketAuthorizationVersionParam =
@@ -10577,7 +10794,7 @@ async function exactActiveTokenListingHistoryPage(
           AND lower(COALESCE(
             cutover_listing.payload->'saleAuthorization'->>'version',
             ''
-          )) <> ${workMarketAuthorizationVersionParam}
+          )) <> ALL(${workMarketAuthorizationVersionParam}::text[])
       )`;
     }
     const terminalResult = await pool.query(
@@ -12149,6 +12366,7 @@ function tokenHistoryPageFromSnapshot(
   searchParams,
   pagination,
   workMarketV4Activation = null,
+  workMarketAuthorizationVersions = [],
 ) {
   if (tokenHistorySnapshotAgeMs(snapshot) > proofIndexTokenHistoryMaxAgeMs()) {
     return null;
@@ -12172,17 +12390,22 @@ function tokenHistoryPageFromSnapshot(
     snapshotTokenHistoryItemCanProject(item, safeKind),
   );
   if (safeKind === "listings") {
-    const cutoverState = applyWorkMarketV2CutoverToTokenState({
-      closedListings: [],
-      // Embedded history owns its own generation fence. The outer ledger
-      // snapshot may be newer and must never promote stale listing history.
-      indexedThroughBlock:
-        embeddedHistoryIndexedThroughBlock(source.payload) || undefined,
-      invalidEvents: [],
-      listings: sourceItems,
-      network,
-      ...(workMarketV4Activation ? { workMarketV4Activation } : {}),
-    });
+    const cutoverState = applyWorkMarketV2CutoverToTokenState(
+      applyWorkAmoV6PublicListingReadPolicy(
+        {
+          closedListings: [],
+          // Embedded history owns its own generation fence. The outer ledger
+          // snapshot may be newer and must never promote stale listing history.
+          indexedThroughBlock:
+            embeddedHistoryIndexedThroughBlock(source.payload) || undefined,
+          invalidEvents: [],
+          listings: sourceItems,
+          network,
+          ...(workMarketV4Activation ? { workMarketV4Activation } : {}),
+        },
+        workMarketAuthorizationVersions,
+      ),
+    );
     sourceItems = Array.isArray(cutoverState?.listings)
       ? cutoverState.listings
       : sourceItems;
@@ -12294,14 +12517,12 @@ export async function proofIndexTokenMarketHistoryOverlayPayload(
   const amoV5RelicProjectable =
     workAmoV5PreUnitRelicEvidenceIsExact(amoV5RelicEvidence) &&
     amoV5RelicEvidence.disposition === "relic";
-  const currentWorkMarketAuthorizationVersion =
-    network === "livenet" &&
-      (snapshotHeight === 0 ||
-        snapshotHeight >= WORK_AMO_V5_ACTIVATION_HEIGHT)
-      ? WORK_AMO_V5_AUTH_VERSION
-      : workMarketV4Activation
-        ? WORK_MARKET_V4_AUTH_VERSION
-        : WORK_MARKET_V2_AUTH_VERSION;
+  const currentWorkMarketAuthorizationVersions =
+    await currentWorkMarketAuthorizationVersionsAtSnapshot(
+      network,
+      snapshotHeight,
+      workMarketV4Activation,
+    );
   const params = [network, eventKinds];
   let amoV5RelicPredicateSql = "false";
   let amoV5RelicClosedTxidSql = "''";
@@ -12439,7 +12660,7 @@ export async function proofIndexTokenMarketHistoryOverlayPayload(
     conditions.push(
       `(e.status IS DISTINCT FROM 'dropped')`,
       `(e.payload ? 'saleAuthorization')`,
-      `(e.payload->'saleAuthorization'->>'version' = ANY(ARRAY['pwt-sale-v1','pwt-sale-v2','${WORK_MARKET_V2_AUTH_VERSION}','${WORK_MARKET_V4_AUTH_VERSION}','${WORK_AMO_V5_AUTH_VERSION}']::text[]))`,
+      `(e.payload->'saleAuthorization'->>'version' = ANY(ARRAY['pwt-sale-v1','pwt-sale-v2','${WORK_MARKET_V2_AUTH_VERSION}','${WORK_MARKET_V4_AUTH_VERSION}','${WORK_AMO_V5_AUTH_VERSION}','${WORK_AMO_V6_AUTH_VERSION}']::text[]))`,
       `(e.payload->'saleAuthorization'->>'anchorType' = 'sale-ticket-v1')`,
     );
     if (
@@ -12447,8 +12668,11 @@ export async function proofIndexTokenMarketHistoryOverlayPayload(
       (snapshotHeight === 0 ||
         snapshotHeight >= WORK_MARKET_V2_ACTIVATION_HEIGHT)
     ) {
-      params.push(WORK_TOKEN_ID, currentWorkMarketAuthorizationVersion);
-      const workMarketAuthorizationVersionParam = `$${params.length}`;
+      params.push(
+        WORK_TOKEN_ID,
+        currentWorkMarketAuthorizationVersions,
+      );
+      const workMarketAuthorizationVersionsParam = `$${params.length}`;
       const workTokenParam = `$${params.length - 1}`;
       conditions.push(
         `(
@@ -12461,7 +12685,7 @@ export async function proofIndexTokenMarketHistoryOverlayPayload(
           OR lower(COALESCE(
             e.payload->'saleAuthorization'->>'version',
             ''
-          )) = ${workMarketAuthorizationVersionParam}
+          )) = ANY(${workMarketAuthorizationVersionsParam}::text[])
         )`,
       );
     }
@@ -13650,24 +13874,36 @@ export async function proofIndexTokenMarketSummaryOverlayPayload(
     "indexed_through_block",
   );
   const scanIndexedThroughBlock = rowNumber(scan, "indexed_through_block");
-  return applyWorkMarketV2CutoverToTokenState(
-    await payloadWithVerifiedWorkMarketV4Activation(pool, network, {
-    closedListings: closedListings.filter(Boolean).sort(compareTokenItemsByTime),
-    indexedAt: dateIso(scan?.generated_at ?? countResult.rows[0]?.indexed_at),
-    indexedThroughBlock: Math.max(
-      eventIndexedThroughBlock,
-      scanIndexedThroughBlock,
-    ),
-    listings: listings.sort(compareTokenItemsByTime),
-    sales: sales.sort(compareTokenItemsByTime),
-    scanSnapshotId: String(scan?.snapshot_id ?? ""),
-    source: "proof-indexer-token-market-summary-overlay",
-    stats: {
-      ...stats,
-      complete: rowsResult.rows.length >= totalCount,
-      totalCount,
+  const activatedPayload = await payloadWithVerifiedWorkMarketV4Activation(
+    pool,
+    network,
+    {
+      closedListings: closedListings
+        .filter(Boolean)
+        .sort(compareTokenItemsByTime),
+      indexedAt: dateIso(
+        scan?.generated_at ?? countResult.rows[0]?.indexed_at,
+      ),
+      indexedThroughBlock: Math.max(
+        eventIndexedThroughBlock,
+        scanIndexedThroughBlock,
+      ),
+      listings: listings.sort(compareTokenItemsByTime),
+      sales: sales.sort(compareTokenItemsByTime),
+      scanSnapshotId: String(scan?.snapshot_id ?? ""),
+      source: "proof-indexer-token-market-summary-overlay",
+      stats: {
+        ...stats,
+        complete: rowsResult.rows.length >= totalCount,
+        totalCount,
+      },
     },
-    }),
+  );
+  return applyWorkMarketV2CutoverToTokenState(
+    await payloadWithCurrentWorkMarketListingReadPolicy(
+      network,
+      activatedPayload,
+    ),
   );
 }
 
@@ -14283,6 +14519,14 @@ export async function proofIndexTokenHistoryPayload(
       network,
       rowNumber(snapshot, "indexed_through_block"),
     );
+  const snapshotWorkMarketAuthorizationVersions =
+    eligibility.kind === "listings"
+      ? await currentWorkMarketAuthorizationVersionsAtSnapshot(
+          network,
+          rowNumber(snapshot, "indexed_through_block"),
+          snapshotWorkMarketV4Activation,
+        )
+      : [];
   const snapshotPage = tokenHistoryPageFromSnapshot(
     snapshot,
     network,
@@ -14291,6 +14535,7 @@ export async function proofIndexTokenHistoryPayload(
     searchParams,
     eligibility.pagination,
     snapshotWorkMarketV4Activation,
+    snapshotWorkMarketAuthorizationVersions,
   );
   const marketOverlayPage = eligibility.pagination.snapshotId
     ? null
@@ -17429,6 +17674,7 @@ function tokenListingFromCreditListingRow(row, network) {
     ? workAmountProjection(payload, {
         metadata: row?.token_metadata,
         storedAmount: row?.amount,
+        storedAmountIsAtoms: true,
       })
     : null;
   const exactPositionInteger = (value, minimum) => {
@@ -19801,8 +20047,19 @@ export async function proofIndexTokenPayload(network, tokenScope, searchParams) 
   const currentTablePayload = () =>
     proofIndexTokenPayloadFromCurrentTables(pool, network, eligibility.scope);
   const cutoverPayload = async (payload) => {
+    const activatedPayload =
+      await payloadWithVerifiedWorkMarketV4Activation(
+        pool,
+        network,
+        payload,
+      );
+    const readPolicyPayload =
+      await payloadWithCurrentWorkMarketListingReadPolicy(
+        network,
+        activatedPayload,
+      );
     const legacyCutoverPayload = applyWorkMarketV2CutoverToTokenState(
-      await payloadWithVerifiedWorkMarketV4Activation(pool, network, payload),
+      readPolicyPayload,
     );
     return applyWorkAmoV5CutoverToTokenState(
       await payloadWithVerifiedWorkAmoV5Activation(
@@ -19928,14 +20185,20 @@ export async function proofIndexTokenSnapshotPayload(
   if (!eligibility.eligible) {
     return null;
   }
-  const cutoverPayload = async (payload) =>
-    applyWorkMarketV2CutoverToTokenState(
+  const cutoverPayload = async (payload) => {
+    const activatedPayload =
       await payloadWithVerifiedWorkMarketV4Activation(
         pool,
         network,
         payload,
+      );
+    return applyWorkMarketV2CutoverToTokenState(
+      await payloadWithCurrentWorkMarketListingReadPolicy(
+        network,
+        activatedPayload,
       ),
     );
+  };
 
   if (eligibility.scope !== "all") {
     const scopedSnapshot = await tokenStateSnapshotForScope(
@@ -20765,25 +21028,35 @@ export async function proofIndexWalletTokenOverlayPayload(
     .filter(Number.isFinite)
     .reduce((max, value) => Math.max(max, value), 0);
 
-  return applyWorkMarketV2CutoverToTokenState(
-    await payloadWithVerifiedWorkMarketV4Activation(pool, network, {
-    checkpointComplete: checkpoint?.checkpointComplete,
-    holders,
-    indexedAt: newestTime ? new Date(newestTime).toISOString() : undefined,
-    indexedThroughBlock: checkpoint?.indexedThroughBlock,
-    indexedThroughBlockHash: checkpoint?.indexedThroughBlockHash,
-    invalidEvents,
-    closedListings: closedListings.sort(compareTokenItemsByTime),
-    listings: mergedListings,
+  const activatedPayload = await payloadWithVerifiedWorkMarketV4Activation(
+    pool,
     network,
-    sales: sales.sort(compareTokenItemsByTime),
-    snapshotId: checkpoint?.snapshotId,
-    source: "proof-indexer-wallet-token-overlay",
-    sourceHashes: checkpoint?.sourceHashes,
-    tokenScope: scope,
-    tokens,
-    transfers: transfers.sort(compareTokenItemsByTime),
-    }),
+    {
+      checkpointComplete: checkpoint?.checkpointComplete,
+      holders,
+      indexedAt: newestTime
+        ? new Date(newestTime).toISOString()
+        : undefined,
+      indexedThroughBlock: checkpoint?.indexedThroughBlock,
+      indexedThroughBlockHash: checkpoint?.indexedThroughBlockHash,
+      invalidEvents,
+      closedListings: closedListings.sort(compareTokenItemsByTime),
+      listings: mergedListings,
+      network,
+      sales: sales.sort(compareTokenItemsByTime),
+      snapshotId: checkpoint?.snapshotId,
+      source: "proof-indexer-wallet-token-overlay",
+      sourceHashes: checkpoint?.sourceHashes,
+      tokenScope: scope,
+      tokens,
+      transfers: transfers.sort(compareTokenItemsByTime),
+    },
+  );
+  return applyWorkMarketV2CutoverToTokenState(
+    await payloadWithCurrentWorkMarketListingReadPolicy(
+      network,
+      activatedPayload,
+    ),
   );
 }
 
@@ -25872,23 +26145,32 @@ export async function proofIndexCreditListingsPayload(
   const requestedScope = tokenScopeKey(tokenId);
   const scope = requestedScope === "all" ? "" : requestedScope;
   const maxRows = boundedInteger(options.limit, 500, 1, 5000);
-  const [scan, countResult] = await Promise.all([
-    latestProofIndexScanMetadata(pool, network),
-    pool.query(
-      `
-        SELECT count(*) AS total_count
-        FROM proof_indexer.credit_listings cl
-        WHERE cl.network = $1
-          AND ($2 = '' OR lower(cl.token_id) = $2)
-          AND ${canonicalWorkMarketV3ListingProjectionSql("cl")}
-      `,
-      [network, scope],
-    ),
-  ]);
+  const scan = await latestProofIndexScanMetadata(pool, network);
   const workMarketV4Activation = await verifiedWorkMarketV4Activation(
     pool,
     network,
     rowNumber(scan, "indexed_through_block"),
+  );
+  const workMarketAuthorizationVersions =
+    await currentWorkMarketAuthorizationVersionsAtSnapshot(
+      network,
+      rowNumber(scan, "indexed_through_block"),
+      workMarketV4Activation,
+    );
+  const workAmoV6ReadSql = workAmoV6PublicListingReadSql(
+    "cl",
+    workMarketAuthorizationVersions,
+  );
+  const countResult = await pool.query(
+    `
+      SELECT count(*) AS total_count
+      FROM proof_indexer.credit_listings cl
+      WHERE cl.network = $1
+        AND ($2 = '' OR lower(cl.token_id) = $2)
+        AND ${canonicalWorkMarketV3ListingProjectionSql("cl")}
+        AND ${workAmoV6ReadSql}
+    `,
+    [network, scope],
   );
   const totalCount = rowNumber(countResult.rows[0], "total_count");
 
@@ -25987,6 +26269,7 @@ export async function proofIndexCreditListingsPayload(
       WHERE cl.network = $1
         AND ($2 = '' OR lower(cl.token_id) = $2)
         AND ${canonicalWorkMarketV3ListingProjectionSql("cl")}
+        AND ${workAmoV6ReadSql}
       ORDER BY cl.updated_at DESC, cl.listing_id ASC
       LIMIT $3
     `,
@@ -26474,6 +26757,22 @@ export async function proofIndexCreditListingsPayload(
         return null;
       }
       const saleAuthorization = objectRecord(payload.saleAuthorization);
+      const tokenId = normalizedLowerText(
+        row.token_id ??
+          payload.tokenId ??
+          saleAuthorization.tokenId,
+      );
+      const workAmount = isWorkTokenId(tokenId)
+        ? workAmountProjection(payload, {
+            storedAmount: row.amount,
+            storedAmountIsAtoms: true,
+          })
+        : null;
+      const atomicSaleEvidenceRequired =
+        isWorkTokenId(tokenId) &&
+        WORK_MARKET_GOVERNED_AUTH_VERSIONS.has(
+          normalizedLowerText(saleAuthorization.version),
+        );
       const sealTxid = String(row.seal_txid ?? payload.sealTxid ?? "")
         .trim()
         .toLowerCase();
@@ -26706,10 +27005,15 @@ export async function proofIndexCreditListingsPayload(
       const canonicalSaleEvidence = saleCandidate
         ? canonicalTokenSaleEvidenceForListing(
             {
-              amount: row.amount,
+              amount: workAmount?.amount ?? row.amount,
               amountAtoms:
                 payload.amountAtoms ??
-                saleAuthorization.amountAtoms,
+                saleAuthorization.amountAtoms ??
+                (
+                  atomicSaleEvidenceRequired
+                    ? workAmount?.amountAtoms
+                    : undefined
+                ),
               listingId,
               priceSats: row.price_sats,
               registryAddress:
@@ -26815,7 +27119,14 @@ export async function proofIndexCreditListingsPayload(
           : {};
       return {
         ...payloadWithoutLifecyclePosition,
-        amount: row.amount,
+        amount: workAmount?.amount ?? row.amount,
+        ...(workAmount
+          ? {
+              amountAtoms: workAmount.amountAtoms,
+              decimals: WORK_DECIMALS,
+              unitScale: WORK_UNIT_SCALE_TEXT,
+            }
+          : {}),
         blockHash: listingProjection.blockHash,
         ...(listingProjection.blockHeight !== undefined
           ? { blockHeight: listingProjection.blockHeight }
@@ -26967,7 +27278,7 @@ export async function proofIndexCreditListingsPayload(
         sealTxid: invalidConfirmedSealEvidence ? "" : sealTxid,
         sellerAddress: row.seller_address,
         status,
-        tokenId: row.token_id,
+        tokenId,
         txid: listingId,
         updatedAt: dateIso(row.updated_at),
       };

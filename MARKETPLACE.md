@@ -705,6 +705,48 @@ explicit write gate must all be independently proved before a new listing or
 settlement is admitted. Disagreement closes V6 admission without changing the
 frozen settlement rights of valid historical V4/V5 listings.
 
+### V6 public read projection
+
+Public reads activate V6 only from exact confirmed declaration and migration
+evidence. The configured declaration pins must resolve to the one canonical
+transaction, block, transaction index, raw carrier output, record ordinal and
+registry-payment output, and the completed
+`workAmoV6Migration:livenet` marker must bind those same facts and the declared
+V6 models. Height, a configured txid, a marker-shaped object or a write switch
+alone is insufficient. A missing, duplicate, noncanonical or divergent fact
+keeps the reader on its preceding V5-era version policy; it does not partially
+project V6.
+
+Once that exact readiness holds, a current or historical snapshot at or after
+height `960219` may project `pwt-sale-v6` together with valid confirmed
+grandfathered V4/V5 listings that retain frozen settlement rights. A V4
+listing confirmed at or after height `959621`, a V5 listing confirmed at or
+after height `960219`, an unknown version, or an unsupported mixed-version
+record remains invalid audit history and cannot enter the active listing set.
+Snapshots before V6 activation continue to use their historical version
+rules.
+
+Every table-backed V6 listing requires exactly one matching valid confirmed
+`token-listing` event, its confirmed transaction, its canonical block and the
+same full `(blockHeight, blockTransactionIndex, protocolVout, recordOrdinal)`
+tuple. A sealed V6 listing additionally requires exactly one matching valid
+confirmed `token-listing-sealed` event with the same listing and authorization
+version and its own complete canonical tuple. A payload flag, aggregate
+lifecycle row, missing event, duplicate event or mismatched tuple cannot
+substitute for that singleton evidence and fails closed.
+
+For a WORK `credit_listings` row, the relational `amount` column is always the
+exact atom integer, independent of whether definition metadata is present.
+Public readers set `amountAtoms` from that integer and derive the human amount
+with eight decimal places; for example, `10` stored atoms is
+`0.0000001 WORK`, not `10 WORK`.
+
+`WORK_AMO_V6_WRITES_ENABLED` controls action admission only. It is not a public
+read-version switch. Turning writes off, pausing exact-tip actions or closing
+new-listing admission must not hide an already confirmed, canonical,
+evidence-complete V6 listing or the frozen rights of a valid historical V4/V5
+listing. Ordinary index freshness and canonical-read safeguards still apply.
+
 ## Current Infinity Bond / POWB Model
 
 Infinity Bonds are `pwm1:m:powb` message actions. A confirmed bond payment mints

@@ -56,6 +56,10 @@ const LEGACY_WORK_MARKET_AUTH_VERSIONS = new Set([
   "pwt-sale-v1",
   "pwt-sale-v2",
 ]);
+const WORK_MARKET_SUCCESSOR_AUTH_VERSIONS = new Set([
+  "pwt-sale-v5",
+  "pwt-sale-v6",
+]);
 const WORK_MARKET_V1_REFUND_LISTINGS_BY_ID = new Map(
   workMarketV1RefundSnapshot.listings.flatMap((listing) => {
     const listingId = String(listing?.listingId ?? "").trim().toLowerCase();
@@ -792,7 +796,8 @@ export function applyWorkMarketV2CutoverToTokenState(state) {
     if (
       listingNetwork(listing, state) !== "livenet" ||
       !workListing ||
-      authorizationVersion === currentAuthorizationVersion
+      authorizationVersion === currentAuthorizationVersion ||
+      WORK_MARKET_SUCCESSOR_AUTH_VERSIONS.has(authorizationVersion)
     ) {
       listings.push(listing);
       continue;
@@ -893,7 +898,10 @@ export function applyWorkMarketV2CutoverToTokenState(state) {
     (listing) =>
       listingNetwork(listing, state) === "livenet" &&
       listingTokenId(listing) === WORK_TOKEN_ID &&
-      listingAuthorizationVersion(listing) !== currentAuthorizationVersion,
+      listingAuthorizationVersion(listing) !== currentAuthorizationVersion &&
+      !WORK_MARKET_SUCCESSOR_AUTH_VERSIONS.has(
+        listingAuthorizationVersion(listing),
+      ),
   ).length;
   const existingListingCount = finiteListingCount(
     state.totalCounts?.listings,
