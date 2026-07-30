@@ -119,7 +119,6 @@ import {
   isWorkAmoV5LivenetAddress,
   parseWorkAmoV5GenericSaleAuthorization,
   validateWorkAmoV5FrozenTerms,
-  workAmoV5CanonicalTokenStateCommitment,
   workAmoV5CutoverActivationIsExact,
   workAmoV5PreUnitRelicEvidenceIsExact,
   workAmoV5WorkStateWithoutLegacyListingReservations,
@@ -139,6 +138,7 @@ import {
   WORK_AMO_V6_UNIT_MODEL,
   WORK_AMO_V6_UNIT_WORK_ORACLE_MODEL,
   validateWorkAmoV6FrozenTerms,
+  workAmoV6CanonicalTokenStateCommitment,
 } from "../work-amo-v6.mjs";
 import {
   workAmoV6DeclarationCommitment,
@@ -3944,9 +3944,31 @@ export async function proofIndexWorkAmoRelationalTokenStateEvidence(
           listing.payload->'saleAuthorization'
             AS sale_authorization,
           COALESCE(
-            terms.frozen_terms,
-            listing.payload->'listingFrozenTerms'
-          ) AS frozen_terms
+            listing.payload->'listingAuthorization'->>'version',
+            listing.payload->'saleAuthorization'->>'version',
+            ''
+          ) AS authorization_version,
+          CASE
+            WHEN COALESCE(
+              listing.payload->'listingAuthorization'->>'version',
+              listing.payload->'saleAuthorization'->>'version',
+              ''
+            ) = $3
+              THEN v6_terms.frozen_terms
+            ELSE COALESCE(
+              v5_terms.frozen_terms,
+              listing.payload->'listingFrozenTerms'
+            )
+          END AS frozen_terms,
+          CASE
+            WHEN COALESCE(
+              listing.payload->'listingAuthorization'->>'version',
+              listing.payload->'saleAuthorization'->>'version',
+              ''
+            ) = $3
+              THEN v6_terms.listing_id IS NOT NULL
+            ELSE true
+          END AS immutable_terms_complete
         FROM proof_indexer.credit_listings listing
         JOIN proof_indexer.transactions listing_tx
           ON listing_tx.network = listing.network
@@ -3957,15 +3979,48 @@ export async function proofIndexWorkAmoRelationalTokenStateEvidence(
          AND listing_block.block_hash = listing_tx.block_hash
          AND listing_block.height = listing_tx.block_height
          AND listing_block.canonical = true
-        LEFT JOIN proof_indexer.work_amo_listing_terms terms
-          ON terms.network = listing.network
-         AND terms.listing_id = listing.listing_id
+        LEFT JOIN proof_indexer.work_amo_listing_terms v5_terms
+          ON v5_terms.network = listing.network
+         AND v5_terms.listing_id = listing.listing_id
+        LEFT JOIN proof_indexer.work_amo_v6_listing_terms v6_terms
+          ON v6_terms.network = listing.network
+         AND v6_terms.listing_id = listing.listing_id
+         AND v6_terms.listing_txid = listing.listing_id
+         AND v6_terms.token_id = lower(listing.token_id)
+         AND v6_terms.authorization_version = $3
+         AND v6_terms.authorization_version = COALESCE(
+           listing.payload->'listingAuthorization'->>'version',
+           listing.payload->'saleAuthorization'->>'version',
+           ''
+         )
+         AND v6_terms.unit_amount_atoms = listing.amount
+         AND v6_terms.unit_price_sats = listing.price_sats
+         AND (
+           listing.payload->'listingFrozenTerms' IS NULL
+           OR listing.payload->'listingFrozenTerms' =
+             v6_terms.frozen_terms
+         )
+         AND (
+           listing.payload->'frozenTerms' IS NULL
+           OR listing.payload->'frozenTerms' =
+             v6_terms.frozen_terms
+         )
+         AND (
+           listing.payload->'workAmoFrozenTerms' IS NULL
+           OR listing.payload->'workAmoFrozenTerms' =
+             v6_terms.frozen_terms
+         )
+         AND (
+           listing.payload->'workAmoV6FrozenTerms' IS NULL
+           OR listing.payload->'workAmoV6FrozenTerms' =
+             v6_terms.frozen_terms
+         )
         WHERE listing.network = $1
           AND lower(listing.token_id) = $2
           AND listing.status IN ('active', 'sealing')
         ORDER BY listing.listing_id
       `,
-      [network, WORK_TOKEN_ID],
+      [network, WORK_TOKEN_ID, WORK_AMO_V6_AUTH_VERSION],
     ),
   ]);
   const holders = balanceResult.rows.map((row) => ({
@@ -3988,6 +4043,18 @@ export async function proofIndexWorkAmoRelationalTokenStateEvidence(
       reason: error?.message ?? "relational-token-state-balance-invalid",
     };
   }
+  const invalidV6Listing = listingResult.rows.find(
+    (row) =>
+      String(row.authorization_version ?? "").trim() ===
+        WORK_AMO_V6_AUTH_VERSION &&
+      row.immutable_terms_complete !== true,
+  );
+  if (invalidV6Listing) {
+    return {
+      complete: false,
+      reason: "relational-v6-listing-terms-invalid",
+    };
+  }
   const listings =
     workAmoV5WorkStateWithoutLegacyListingReservations({
       listings: listingResult.rows.map((row) => ({
@@ -4003,7 +4070,7 @@ export async function proofIndexWorkAmoRelationalTokenStateEvidence(
     }).listings;
   let commitment;
   try {
-    commitment = workAmoV5CanonicalTokenStateCommitment({
+    commitment = workAmoV6CanonicalTokenStateCommitment({
       confirmedSupplyAtoms,
       holders,
       listings,

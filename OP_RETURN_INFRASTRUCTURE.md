@@ -1342,6 +1342,13 @@ and all old quote rows remain immutable replay evidence. Seal and buy use
 confirmation-frozen listing terms and never recheck current network value or
 any USD display.
 
+The canonical WORK token-state preimage used at block open, block close,
+transition verification, relational parity and current-state migration audits
+must accept V6 listings only through the strict V6 authorization and
+frozen-term validators. That V6-aware path must reproduce historical V4/V5
+preimages and commitments byte-for-byte; unsupported or tampered listing
+versions fail closed.
+
 The safe rollout order is:
 
 1. Prove through Core and the canonical index that no earlier V6 declaration,

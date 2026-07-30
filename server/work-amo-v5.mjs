@@ -4026,7 +4026,18 @@ export function workAmoV5EventSetCommitment(events) {
   };
 }
 
-export function workAmoV5CanonicalTokenStatePreimage(tokenState) {
+export function workAmoV5CanonicalTokenStatePreimage(
+  tokenState,
+  { canonicalizeAdditionalListing = null } = {},
+) {
+  if (
+    canonicalizeAdditionalListing !== null &&
+    typeof canonicalizeAdditionalListing !== "function"
+  ) {
+    throw new TypeError(
+      "work-amo-v5-token-state-listing-canonicalizer-invalid",
+    );
+  }
   const confirmedSupplyAtoms = canonicalUnsignedIntegerText(
     tokenState?.confirmedSupplyAtoms,
   );
@@ -4121,6 +4132,41 @@ export function workAmoV5CanonicalTokenStatePreimage(tokenState) {
             frozenTerms,
           )
         : null;
+    const additionalWitness =
+      canonicalizeAdditionalListing &&
+      ![WORK_AMO_V4_AUTH_VERSION, WORK_AMO_V5_AUTH_VERSION].includes(
+        version,
+      )
+        ? canonicalizeAdditionalListing({
+            authorization,
+            frozenTerms,
+            listingId,
+            sellerAddress,
+          })
+        : null;
+    const additionalAuthorization =
+      additionalWitness?.saleAuthorization &&
+      typeof additionalWitness.saleAuthorization === "object" &&
+      !Array.isArray(additionalWitness.saleAuthorization)
+        ? additionalWitness.saleAuthorization
+        : null;
+    const additionalFrozenTerms =
+      additionalWitness?.frozenTerms &&
+      typeof additionalWitness.frozenTerms === "object" &&
+      !Array.isArray(additionalWitness.frozenTerms)
+        ? additionalWitness.frozenTerms
+        : null;
+    const additionalAmountAtoms = canonicalUnsignedIntegerText(
+      additionalWitness?.amountAtoms,
+      { positive: true },
+    );
+    const additionalPriceSats = canonicalUnsignedIntegerText(
+      additionalWitness?.priceSats,
+      { positive: true },
+    );
+    const additionalVersion = String(
+      additionalAuthorization?.version ?? "",
+    ).trim();
     if (
       !listingId ||
       !sellerAddress ||
@@ -4129,8 +4175,18 @@ export function workAmoV5CanonicalTokenStatePreimage(tokenState) {
       BigInt(amountAtoms) >
         WORK_AMO_V5_MAX_SUPPLY * WORK_AMO_V5_ATOMS_PER_WORK ||
       !priceSats ||
-      ![WORK_AMO_V4_AUTH_VERSION, WORK_AMO_V5_AUTH_VERSION].includes(
-        version,
+      (
+        ![WORK_AMO_V4_AUTH_VERSION, WORK_AMO_V5_AUTH_VERSION].includes(
+          version,
+        ) &&
+        (
+          !additionalAuthorization ||
+          !additionalFrozenTerms ||
+          additionalVersion !== version ||
+          additionalFrozenTerms.version !== version ||
+          additionalAmountAtoms !== amountAtoms ||
+          additionalPriceSats !== priceSats
+        )
       ) ||
       (
         listingAuthorizationPresent &&
@@ -4160,13 +4216,17 @@ export function workAmoV5CanonicalTokenStatePreimage(tokenState) {
       frozenTerms:
         version === WORK_AMO_V5_AUTH_VERSION
           ? v5Terms.frozenTerms
-          : v4Witness.frozenTerms,
+          : version === WORK_AMO_V4_AUTH_VERSION
+            ? v4Witness.frozenTerms
+            : additionalFrozenTerms,
       listingId,
       priceSats,
       saleAuthorization:
         version === WORK_AMO_V5_AUTH_VERSION
           ? v5Authorization.authorization
-          : v4Witness.saleAuthorization,
+          : version === WORK_AMO_V4_AUTH_VERSION
+            ? v4Witness.saleAuthorization
+            : additionalAuthorization,
       sellerAddress,
     });
   }
@@ -4221,9 +4281,12 @@ export function workAmoV5CanonicalTokenStatePreimage(tokenState) {
   };
 }
 
-export function workAmoV5CanonicalTokenStateCommitment(tokenState) {
+export function workAmoV5CanonicalTokenStateCommitment(
+  tokenState,
+  options,
+) {
   return workAmoV5CanonicalPayloadCommitment(
-    workAmoV5CanonicalTokenStatePreimage(tokenState),
+    workAmoV5CanonicalTokenStatePreimage(tokenState, options),
   );
 }
 

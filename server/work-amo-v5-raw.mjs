@@ -49,8 +49,6 @@ import {
   workAmoCanonicalPositionPrecedes,
   workAmoV5CanonicalPayloadCommitment,
   workAmoV5CanonicalStateCommitment,
-  workAmoV5CanonicalTokenStateCommitment,
-  workAmoV5CanonicalTokenStatePreimage,
   workAmoV5GenericSaleAuthorizationsMatch,
   workAmoV5IdSaleAuthorizationsMatch,
 } from "./work-amo-v5.mjs";
@@ -64,6 +62,8 @@ import {
   deriveWorkAmoV6FrozenTerms,
   validateWorkAmoV6SealOrBuyTerms,
   validateWorkAmoV6StaticAuthorization,
+  workAmoV6CanonicalTokenStateCommitment,
+  workAmoV6CanonicalTokenStatePreimage,
 } from "./work-amo-v6.mjs";
 
 const TXID_PATTERN = /^[0-9a-f]{64}$/u;
@@ -632,7 +632,7 @@ export function normalizeWorkAmoV5RawGenericState(value) {
 }
 
 function workStateFromProjection(value) {
-  const preimage = workAmoV5CanonicalTokenStatePreimage(value);
+  const preimage = workAmoV6CanonicalTokenStatePreimage(value);
   const listings = new Map(
     preimage.listings.map((listing) => [
       listing.listingId,
@@ -936,7 +936,7 @@ function strictWorkStateFromProjection(value, expectedCommitment) {
   let commitment;
   try {
     state = workStateFromProjection(value);
-    commitment = workAmoV5CanonicalTokenStateCommitment(value);
+    commitment = workAmoV6CanonicalTokenStateCommitment(value);
   } catch {
     throw new TypeError(
       "work-amo-v5-raw-opening-work-state-invalid",
@@ -4805,7 +4805,7 @@ export function replayWorkAmoV5RawBlock({
   const idStateCommitment =
     workAmoV5RawIdStateCommitment(publicIdState);
   const tokenStateCommitment =
-    workAmoV5CanonicalTokenStateCommitment(publicWorkState);
+    workAmoV6CanonicalTokenStateCommitment(publicWorkState);
   const closingValidation = validateWorkAmoV5SufficientState({
     ...economicState,
     genericTokenStateCommitment,

@@ -135,7 +135,6 @@ import {
   workAmoV5BroadcastDecision,
   workAmoV5CanonicalPayloadCommitment,
   workAmoV5CanonicalStateCommitment,
-  workAmoV5CanonicalTokenStateCommitment,
   workAmoV5ConsensusEventKind,
   workAmoV5EventSetCommitment,
   workAmoV5FrozenTermsMatch,
@@ -166,6 +165,7 @@ import {
   WORK_AMO_V6_AUTH_VERSION,
   workAmoV6StatusFromEvidence,
   workAmoV6BroadcastDecision,
+  workAmoV6CanonicalTokenStateCommitment,
   workAmoV6UnitTerms,
   validateWorkAmoV6StaticAuthorization,
 } from "./work-amo-v6.mjs";
@@ -49197,7 +49197,7 @@ async function workAmoV5OpeningAccumulatorFromPriorTransition(
   let closingIdStateCommitment = null;
   try {
     closingTokenStateCommitment =
-      workAmoV5CanonicalTokenStateCommitment(
+      workAmoV6CanonicalTokenStateCommitment(
         prior.payload?.closingTokenState,
       );
     closingGenericTokenStateCommitment =
@@ -49350,9 +49350,9 @@ async function workAmoV5OpeningAccumulatorState(
       idStateCommitment =
         workAmoV5RawIdStateCommitment(idState);
       workProjectionCommitment =
-        workAmoV5CanonicalTokenStateCommitment(workProjection);
+        workAmoV6CanonicalTokenStateCommitment(workProjection);
       workStateCommitment =
-        workAmoV5CanonicalTokenStateCommitment(workState);
+        workAmoV6CanonicalTokenStateCommitment(workState);
     } catch {
       genericStateCommitment = null;
       idStateCommitment = null;
@@ -49581,7 +49581,7 @@ async function workAmoV5OpeningAccumulatorState(
       workAmoV5RawGenericStateCommitment(openingGenericState),
     idStateCommitment:
       workAmoV5RawIdStateCommitment(openingIdState),
-    tokenStateCommitment: workAmoV5CanonicalTokenStateCommitment(
+    tokenStateCommitment: workAmoV6CanonicalTokenStateCommitment(
       openingWorkState,
     ),
   });
@@ -49615,9 +49615,9 @@ async function workAmoV5OpeningAccumulatorState(
     const independentIdStateCommitment =
       workAmoV5RawIdStateCommitment(openingIdState);
     const independentWorkStateCommitment =
-      workAmoV5CanonicalTokenStateCommitment(openingWorkState);
+      workAmoV6CanonicalTokenStateCommitment(openingWorkState);
     const independentWorkProjectionCommitment =
-      workAmoV5CanonicalTokenStateCommitment(
+      workAmoV6CanonicalTokenStateCommitment(
         normalizeWorkAmoV5RawWorkState(tokenState),
       );
     if (

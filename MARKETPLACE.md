@@ -668,6 +668,11 @@ use those frozen terms without consulting current network value or any USD
 display. A confirmed listing therefore remains eligible for settlement even
 after later bonds and market activity change network value.
 
+Every opening and closing WORK token-state commitment must canonicalize active
+V6 listings through the strict V6 authorization and frozen-term validators.
+Historical V4/V5 listings keep their existing canonical bytes; an unknown,
+tampered or internally divergent listing version fails the state commitment.
+
 V6 keeps `canonical-work-amo-full-position-block-sequencer-v2` and uses
 `canonical-work-amo-proof-unit-v1`. Exact declaration evidence, immutable
 migration marker, canonical replay parity, exact-tip index readiness and the

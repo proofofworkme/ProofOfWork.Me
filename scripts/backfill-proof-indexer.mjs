@@ -73,7 +73,6 @@ import {
   workAmoCanonicalPositionPrecedes,
   workAmoV5CanonicalPayloadCommitment,
   workAmoV5CanonicalStateCommitment,
-  workAmoV5CanonicalTokenStateCommitment,
   workAmoV5ConsensusEventKind,
   workAmoV5EventSetCommitment,
 } from "../server/work-amo-v5.mjs";
@@ -103,6 +102,7 @@ import {
   WORK_AMO_V6_UNIT_MODEL,
   WORK_AMO_V6_UNIT_WORK_ORACLE_MODEL,
   validateWorkAmoV6FrozenTerms,
+  workAmoV6CanonicalTokenStateCommitment,
 } from "../server/work-amo-v6.mjs";
 import {
   workAmoV6DeclarationCommitment,
@@ -16294,7 +16294,7 @@ function normalizedWorkAmoV5BlockTransition(
   let closingIdStateCommitment = null;
   try {
     closingTokenStateCommitment =
-      workAmoV5CanonicalTokenStateCommitment(
+      workAmoV6CanonicalTokenStateCommitment(
         transition?.closingTokenState,
       );
     closingGenericTokenStateCommitment =
@@ -16360,9 +16360,9 @@ function normalizedWorkAmoV5BlockTransition(
           transition?.seedWorkProjection,
         );
       const seedTokenCommitment =
-        workAmoV5CanonicalTokenStateCommitment(seedTokenState);
+        workAmoV6CanonicalTokenStateCommitment(seedTokenState);
       const seedWorkProjectionCommitment =
-        workAmoV5CanonicalTokenStateCommitment(
+        workAmoV6CanonicalTokenStateCommitment(
           seedWorkProjection,
         );
       activationSeedValid =

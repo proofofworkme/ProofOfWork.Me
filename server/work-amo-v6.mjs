@@ -13,6 +13,8 @@ import {
   workAmoCanonicalPositionPrecedes,
   workAmoCeilDiv,
   workAmoFloorDiv,
+  workAmoV5CanonicalTokenStateCommitment,
+  workAmoV5CanonicalTokenStatePreimage,
   workAmoV5CanonicalExpiryMs,
 } from "./work-amo-v5.mjs";
 import { WORK_TOKEN_ID } from "./work-units.mjs";
@@ -632,6 +634,50 @@ export function validateWorkAmoV6FrozenTerms(
     }
   }
   return { frozenTerms: normalized, valid: true };
+}
+
+function canonicalWorkAmoV6TokenStateListing({
+  authorization,
+  frozenTerms,
+  sellerAddress,
+} = {}) {
+  const staticValidation =
+    validateWorkAmoV6StaticAuthorization(authorization);
+  if (
+    !staticValidation.valid ||
+    staticValidation.authorization.sellerAddress !== sellerAddress
+  ) {
+    return null;
+  }
+  const frozenValidation = validateWorkAmoV6FrozenTerms(
+    frozenTerms,
+    {
+      authorization: staticValidation.authorization,
+    },
+  );
+  if (!frozenValidation.valid) {
+    return null;
+  }
+  return {
+    amountAtoms: frozenValidation.frozenTerms.unitAmountAtoms,
+    frozenTerms: frozenValidation.frozenTerms,
+    priceSats: frozenValidation.frozenTerms.unitPriceSats,
+    saleAuthorization: staticValidation.authorization,
+  };
+}
+
+export function workAmoV6CanonicalTokenStatePreimage(tokenState) {
+  return workAmoV5CanonicalTokenStatePreimage(tokenState, {
+    canonicalizeAdditionalListing:
+      canonicalWorkAmoV6TokenStateListing,
+  });
+}
+
+export function workAmoV6CanonicalTokenStateCommitment(tokenState) {
+  return workAmoV5CanonicalTokenStateCommitment(tokenState, {
+    canonicalizeAdditionalListing:
+      canonicalWorkAmoV6TokenStateListing,
+  });
 }
 
 export function workAmoV6FrozenTermsMatch(left, right) {
