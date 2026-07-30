@@ -1711,17 +1711,17 @@ expectAll("historical AMO V5 migration preserves relic and invalid-history disti
   /proof_indexer\.work_amo_listing_terms/,
   /WORK_AMO_V5_MIGRATION_APPLY/,
 ]);
-expectAll("AMO V6 production is proof-native, blank-pinned, and write-gated", proofIndexDeploy, [
-  /^Environment=WORK_AMO_V6_DECLARATION_TXID=$/mu,
-  /^Environment=WORK_AMO_V6_DECLARATION_HEIGHT=$/mu,
-  /^Environment=WORK_AMO_V6_DECLARATION_BLOCK_HASH=$/mu,
-  /^Environment=WORK_AMO_V6_DECLARATION_BLOCK_INDEX=$/mu,
-  /^Environment=WORK_AMO_V6_DECLARATION_MEMO_SHA256=$/mu,
-  /^Environment=WORK_AMO_V6_DECLARATION_MEMO_BYTES=$/mu,
-  /^Environment=WORK_AMO_V6_DECLARATION_PROTOCOL_VOUT=$/mu,
-  /^Environment=WORK_AMO_V6_DECLARATION_RECORD_ORDINAL=$/mu,
-  /^Environment=WORK_AMO_V6_DECLARATION_REGISTRY_PAYMENT_VOUT=$/mu,
-  /^Environment=WORK_AMO_V6_WRITES_ENABLED=0$/mu,
+expectAll("AMO V6 production is proof-native, declared, and write-open", proofIndexDeploy, [
+  /^Environment=WORK_AMO_V6_DECLARATION_TXID=975fd82aa84995e014b240618ee1a1254d0a735e6e1241372d0bed0a0d9f0799$/mu,
+  /^Environment=WORK_AMO_V6_DECLARATION_HEIGHT=960218$/mu,
+  /^Environment=WORK_AMO_V6_DECLARATION_BLOCK_HASH=00000000000000000001ac35a5b7e43c782297fcb9cde0fb458fbd5451ad55df$/mu,
+  /^Environment=WORK_AMO_V6_DECLARATION_BLOCK_INDEX=102$/mu,
+  /^Environment=WORK_AMO_V6_DECLARATION_MEMO_SHA256=b43daeea38fcacaf6afa6a48d3d0fde631497a4af9f3bb137fc07975d18bbe01$/mu,
+  /^Environment=WORK_AMO_V6_DECLARATION_MEMO_BYTES=3350$/mu,
+  /^Environment=WORK_AMO_V6_DECLARATION_PROTOCOL_VOUT=3$/mu,
+  /^Environment=WORK_AMO_V6_DECLARATION_RECORD_ORDINAL=0$/mu,
+  /^Environment=WORK_AMO_V6_DECLARATION_REGISTRY_PAYMENT_VOUT=4$/mu,
+  /^Environment=WORK_AMO_V6_WRITES_ENABLED=1$/mu,
 ]);
 expect(
   "AMO V6 production has no oracle credential or attestor configuration",

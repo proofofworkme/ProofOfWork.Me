@@ -737,7 +737,7 @@ expect(
     ),
 );
 expect(
-  "AMO V6 production starts fully unpinned and gated without an oracle credential",
+  "AMO V6 production starts declared, indexed, and write-open without an oracle credential",
   [
       "TXID",
       "HEIGHT",
@@ -749,11 +749,26 @@ expect(
       "RECORD_ORDINAL",
       "REGISTRY_PAYMENT_VOUT",
     ].every((field) =>
-      new RegExp(`Environment=WORK_AMO_V6_DECLARATION_${field}=$`, "mu").test(
+      new RegExp(
+        `Environment=WORK_AMO_V6_DECLARATION_${field}=${{
+          TXID: "975fd82aa84995e014b240618ee1a1254d0a735e6e1241372d0bed0a0d9f0799",
+          HEIGHT: "960218",
+          BLOCK_HASH:
+            "00000000000000000001ac35a5b7e43c782297fcb9cde0fb458fbd5451ad55df",
+          BLOCK_INDEX: "102",
+          MEMO_SHA256:
+            "b43daeea38fcacaf6afa6a48d3d0fde631497a4af9f3bb137fc07975d18bbe01",
+          MEMO_BYTES: "3350",
+          PROTOCOL_VOUT: "3",
+          RECORD_ORDINAL: "0",
+          REGISTRY_PAYMENT_VOUT: "4",
+        }[field]}$`,
+        "mu",
+      ).test(
         service,
       ),
     ) &&
-    /Environment=WORK_AMO_V6_WRITES_ENABLED=0$/mu.test(service) &&
+    /Environment=WORK_AMO_V6_WRITES_ENABLED=1$/mu.test(service) &&
     !/WORK_AMO_V6_(?:ORACLE|ATTESTOR)|work-amo-v6-oracle-key/u.test(
       service,
     ),
