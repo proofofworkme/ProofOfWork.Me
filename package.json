@@ -53,6 +53,7 @@
     "indexer:prepare-pwt-range-replay": "node scripts/backfill-proof-indexer.mjs --prepare-canonical-pwt-range-replay",
     "indexer:audit-work-atoms": "node scripts/backfill-proof-indexer.mjs --audit-work-atoms",
     "indexer:migrate-work-atoms": "node scripts/backfill-proof-indexer.mjs --migrate-work-atoms",
+    "indexer:repair-work-atomic-events": "node scripts/backfill-proof-indexer.mjs --repair-work-atomic-events",
     "indexer:verify-work-atoms-post-bootstrap": "node scripts/backfill-proof-indexer.mjs --verify-work-atoms-post-bootstrap",
     "indexer:parity": "node scripts/check-proof-indexer-parity.mjs",
     "indexer:worker": "node scripts/run-proof-indexer-worker.mjs",
