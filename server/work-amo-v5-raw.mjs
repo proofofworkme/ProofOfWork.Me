@@ -55,6 +55,7 @@ import {
 import {
   WORK_TOKEN_ID,
   formatWorkAtoms,
+  formatWorkAtomsAmo,
   parseWorkAmountToAtoms,
   workAmountAtomsFromRecord,
 } from "./work-units.mjs";
@@ -4943,7 +4944,7 @@ function workListingProjectionFromCanonicalState(
       ? preserved
       : {}),
     ...listing,
-    amount: formatWorkAtoms(amountAtoms),
+    amount: formatWorkAtomsAmo(amountAtoms),
     amountAtoms,
     blockHash: position.blockHash,
     blockHeight: position.blockHeight,

@@ -36,7 +36,7 @@ export function buildWorkAmoV6DeclarationText() {
     `workOracleModel=${WORK_AMO_V6_UNIT_WORK_ORACLE_MODEL}`,
     "positionOrder=confirmed block height, then transaction index in that block, then protocol output index, then record ordinal",
     "arithmeticOrder=integer multiplication and division only; multiplication before division; floor and ceiling are applied only where explicitly declared",
-    "unitFormulaDefinitions=F=face proofs; N=networkValueBeforeQ8; S=21000000 WORK; A=100000000 atoms per WORK; Q=100000000",
+    "unitFormulaDefinitions=F=face proofs; N=networkValueBeforeQ8; S=21000000 WORK; A=10000000000000000 atoms per WORK; Q=100000000",
     "unitFormula=unitPriceProofs=F;unitAmountAtoms=floor(F*S*A*Q/N);unitMinimumPriceProofs=ceil(unitAmountAtoms*N/(S*A*Q))",
     "unitBounds=F must be an allowed positive integer; N must be positive; unitAmountAtoms must be between 1 and S*A inclusive; unitMinimumPriceProofs must be positive and no greater than F",
     "confirmationRule=the proof face is authorized before broadcast; the exact amount, price, minimum, N-before, listing position, and bond transition are derived and frozen only at confirmed canonical position",

@@ -1,6 +1,9 @@
 export const WORK_DECIMALS = 8;
 export const WORK_UNIT_SCALE = 100_000_000n;
 export const WORK_UNIT_SCALE_STRING = WORK_UNIT_SCALE.toString();
+export const WORK_AMO_DECIMALS = 16;
+export const WORK_AMO_UNIT_SCALE = 10_000_000_000_000_000n;
+export const WORK_AMO_UNIT_SCALE_TEXT = WORK_AMO_UNIT_SCALE.toString();
 
 const WORK_DECIMAL_PATTERN = /^(?:0|[1-9]\d*)(?:\.(\d{1,8}))?$/u;
 const WORK_ATOMS_PATTERN = /^(?:0|[1-9]\d*)$/u;
@@ -60,6 +63,37 @@ export function workDecimalFromAtoms(value: bigint | string) {
   return negative ? `-${canonical}` : canonical;
 }
 
+function formatWorkAmountWithScale(
+  value: bigint | string,
+  fractionDigits: number,
+  scale: bigint,
+) {
+  const atoms =
+    typeof value === "bigint"
+      ? value
+      : workSignedAtomsFromIntegerString(value);
+  if (atoms === null) {
+    return "0";
+  }
+
+  if (!Number.isInteger(fractionDigits) || fractionDigits < 0) {
+    return workDecimalFromAtoms(atoms);
+  }
+
+  const negative = atoms < 0n;
+  const absoluteAtoms = negative ? -atoms : atoms;
+  const whole = absoluteAtoms / scale;
+  const fraction = (absoluteAtoms % scale)
+    .toString()
+    .padStart(fractionDigits, "0");
+  const canonical =
+    fractionDigits === 0
+      ? ""
+      : fraction.slice(0, fractionDigits).replace(/0+$/u, "");
+  const formatted = canonical ? `${whole.toString()}.${canonical}` : whole.toString();
+  return negative ? `-${formatted}` : formatted;
+}
+
 export function workAtomsFromRecord(
   amountAtoms: unknown,
   legacyWholeAmount: unknown,
@@ -81,7 +115,22 @@ export function workNumberFromAtoms(value: bigint | string) {
 }
 
 export function formatWorkAmount(value: bigint | string) {
-  const canonical = workDecimalFromAtoms(value);
+  const canonical = formatWorkAmountWithScale(
+    value,
+    WORK_DECIMALS,
+    WORK_UNIT_SCALE,
+  );
+  const [whole, fraction] = canonical.split(".");
+  const groupedWhole = whole.replace(/\B(?=(\d{3})+(?!\d))/gu, ",");
+  return fraction ? `${groupedWhole}.${fraction}` : groupedWhole;
+}
+
+export function formatWorkAmountAmo(value: bigint | string) {
+  const canonical = formatWorkAmountWithScale(
+    value,
+    WORK_AMO_DECIMALS,
+    WORK_AMO_UNIT_SCALE,
+  );
   const [whole, fraction] = canonical.split(".");
   const groupedWhole = whole.replace(/\B(?=(\d{3})+(?!\d))/gu, ",");
   return fraction ? `${groupedWhole}.${fraction}` : groupedWhole;

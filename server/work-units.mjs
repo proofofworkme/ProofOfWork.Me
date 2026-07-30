@@ -3,6 +3,9 @@ export const WORK_TOKEN_ID =
 export const WORK_DECIMALS = 8;
 export const WORK_UNIT_SCALE = 100_000_000n;
 export const WORK_UNIT_SCALE_TEXT = WORK_UNIT_SCALE.toString();
+export const WORK_AMO_DECIMALS = 16;
+export const WORK_AMO_UNIT_SCALE = 10_000_000_000_000_000n;
+export const WORK_AMO_UNIT_SCALE_TEXT = WORK_AMO_UNIT_SCALE.toString();
 export const WORK_ATOMIC_PROJECTION_MODEL = "work-atoms-v1";
 export const WORK_VALUE_Q8_SCALE = 100_000_000n;
 
@@ -132,8 +135,10 @@ export function tryParseSignedWorkAmountToAtoms(value) {
   }
 }
 
-export function formatWorkAtoms(
+function formatWorkAtomsFromScale(
   value,
+  unitScale,
+  decimals,
   { allowNegative = false, trim = true } = {},
 ) {
   const atomsText = normalizeWorkAtoms(value, {
@@ -142,9 +147,9 @@ export function formatWorkAtoms(
   });
   const negative = atomsText.startsWith("-");
   const absolute = BigInt(negative ? atomsText.slice(1) : atomsText);
-  const whole = absolute / WORK_UNIT_SCALE;
-  const fraction = String(absolute % WORK_UNIT_SCALE).padStart(
-    WORK_DECIMALS,
+  const whole = absolute / unitScale;
+  const fraction = String(absolute % unitScale).padStart(
+    decimals,
     "0",
   );
   const displayedFraction = trim ? fraction.replace(/0+$/u, "") : fraction;
@@ -152,6 +157,26 @@ export function formatWorkAtoms(
     ? `${whole}.${displayedFraction}`
     : whole.toString();
   return negative && absolute !== 0n ? `-${amount}` : amount;
+}
+
+export function formatWorkAtoms(
+  value,
+  { allowNegative = false, trim = true } = {},
+) {
+  return formatWorkAtomsFromScale(value, WORK_UNIT_SCALE, WORK_DECIMALS, {
+    allowNegative,
+    trim,
+  });
+}
+
+export function formatWorkAtomsAmo(
+  value,
+  { allowNegative = false, trim = true } = {},
+) {
+  return formatWorkAtomsFromScale(value, WORK_AMO_UNIT_SCALE, WORK_AMO_DECIMALS, {
+    allowNegative,
+    trim,
+  });
 }
 
 export function workAmountAtomsFromRecord(

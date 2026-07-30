@@ -41,6 +41,7 @@ import {
   WORK_VALUE_Q8_SCALE as VALUE_Q8_SCALE,
   decimalValueToQ8,
   formatWorkAtoms,
+  formatWorkAtomsAmo,
   isWorkTokenId,
   parseWorkAmountToAtoms,
   q8ToCanonicalDecimal,
@@ -878,6 +879,8 @@ const WORK_TOKEN_MINT_PRICE_SATS = 1000;
 const WORK_TOKEN_PRICE_SATS_PER_WORK = 1;
 const WORK_TOKEN_MAX_SUPPLY_ATOMS =
   BigInt(WORK_TOKEN_MAX_SUPPLY) * WORK_UNIT_SCALE;
+const WORK_TOKEN_MAX_AMO_ATOMS =
+  WORK_TOKEN_MAX_SUPPLY_ATOMS * 100_000_000n;
 const WORK_TOKEN_MINT_AMOUNT_ATOMS =
   BigInt(WORK_TOKEN_MINT_AMOUNT) * WORK_UNIT_SCALE;
 const PENDING_WORK_MINT_WITNESS_LIMIT = 32;
@@ -10237,13 +10240,20 @@ function normalizeTokenTicker(value) {
     .slice(0, 12);
 }
 
-function canonicalWorkAtomsText(value, { allowZero = false } = {}) {
+function canonicalWorkAtomsText(
+  value,
+  { allowZero = false, allowAmoPrecision = true } = {},
+) {
   const text = String(value ?? "").trim();
   if (!/^(?:0|[1-9][0-9]*)$/u.test(text)) {
     return "";
   }
   const atoms = BigInt(text);
-  if ((!allowZero && atoms < 1n) || atoms > WORK_TOKEN_MAX_SUPPLY_ATOMS) {
+  const maxAtoms =
+    allowAmoPrecision
+      ? WORK_TOKEN_MAX_AMO_ATOMS
+      : WORK_TOKEN_MAX_SUPPLY_ATOMS;
+  if ((!allowZero && atoms < 1n) || atoms > maxAtoms) {
     return "";
   }
   return atoms.toString();
@@ -10295,25 +10305,41 @@ function workAtomsBigIntFromRecord(
 }
 
 function workAmountFieldsFromAtoms(value, { allowZero = false } = {}) {
-  const normalized = canonicalWorkAtomsText(value, { allowZero });
+  const normalized = canonicalWorkAtomsText(value, {
+    allowZero,
+    allowAmoPrecision: true,
+  });
   if (!normalized) {
     return {};
   }
+  const atoms = BigInt(normalized);
+  const formatAmount =
+    atoms > WORK_TOKEN_MAX_SUPPLY_ATOMS
+      ? formatWorkAtomsAmo(atoms)
+      : formatWorkAtoms(atoms);
   return withWorkPrecisionMetadata({
-    amount: formatWorkAtoms(normalized),
-    amountAtoms: normalized,
+    amount: formatAmount,
+    amountAtoms: atoms.toString(),
     amountStorageModel: WORK_ATOMIC_PROJECTION_MODEL,
   });
 }
 
 function workBalanceFieldsFromAtoms(value) {
-  const normalized = canonicalWorkAtomsText(value, { allowZero: true });
+  const normalized = canonicalWorkAtomsText(value, {
+    allowZero: true,
+    allowAmoPrecision: true,
+  });
   if (!normalized) {
     return {};
   }
+  const atoms = BigInt(normalized);
+  const formatBalance =
+    atoms > WORK_TOKEN_MAX_SUPPLY_ATOMS
+      ? formatWorkAtomsAmo(atoms)
+      : formatWorkAtoms(atoms);
   return withWorkPrecisionMetadata({
-    balance: formatWorkAtoms(normalized),
-    balanceAtoms: normalized,
+    balance: formatBalance,
+    balanceAtoms: atoms.toString(),
     amountStorageModel: WORK_ATOMIC_PROJECTION_MODEL,
   });
 }

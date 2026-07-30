@@ -123,9 +123,12 @@ import {
 } from "./features/rush/rushProtocol";
 import {
   canonicalWorkDecimal,
+  formatWorkAmountAmo,
   formatWorkAmount,
   positiveWorkAtoms,
   WORK_DECIMALS,
+  WORK_AMO_DECIMALS,
+  WORK_AMO_UNIT_SCALE,
   workAtomsFromDecimal,
   workAtomsFromIntegerString,
   workAtomsFromRecord,
@@ -1499,6 +1502,7 @@ const WORK_AMO_WORK_ORACLE_MODEL =
   "canonical-work-prefix-before-action-v1";
 const WORK_AMO_BOND_TRANSITION_MODEL =
   "canonical-compute-then-bond-v1";
+const WORK_AMO_V6_ATOMS_PER_WORK = 10_000_000_000_000_000n;
 const WORK_AMO_V6_ALLOWED_FACE_PROOFS = [20_000, 50_000, 100_000] as const;
 const WORK_AMO_ALLOWED_FACE_USD_CENTS = [2000, 5000, 10000] as const;
 const WORK_AMO_V1_FACE_USD_CENTS = [
@@ -1555,6 +1559,7 @@ const WORK_TOKEN_MINT_AMOUNT = 1000;
 const WORK_TOKEN_MINT_PRICE_SATS = 1000;
 const WORK_TOKEN_DECIMALS = WORK_DECIMALS;
 const WORK_TOKEN_UNIT_SCALE = WORK_UNIT_SCALE_STRING;
+const WORK_AMO_UNIT_SCALE_BIGINT = WORK_AMO_UNIT_SCALE;
 const WORK_TOKEN_ID =
   "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8";
 const CREDIT_MINER_FEE_ACCOUNTING_MODEL =
@@ -6899,15 +6904,104 @@ function compareTokenHolderBalances(
 }
 
 function tokenAmountDisplay(
-  token: { ticker?: string; tokenId?: string },
+  token: unknown,
   amount: unknown,
   amountAtoms?: unknown,
 ) {
-  if (isWorkToken(token)) {
+  const tokenRecord = token as any;
+  if (isWorkToken(tokenRecord)) {
     const atoms = workRecordAtoms(amount, amountAtoms);
-    return atoms === null ? "0" : formatWorkAmount(atoms);
+    return atoms === null ? "0" : formatWorkAmountForTokenAtoms(atoms, tokenRecord);
   }
   return formatExactInteger(amount);
+}
+
+function isWorkAmoV6WorkRecord(
+  token:
+    | { saleAuthorization?: { version?: unknown } }
+    | { frozenTerms?: { version?: unknown } }
+    | { workAmoFrozenTerms?: { version?: unknown } }
+    | unknown,
+): boolean {
+  const record =
+    token && typeof token === "object" && !Array.isArray(token)
+      ? (token as {
+          saleAuthorization?: { version?: unknown };
+          frozenTerms?: { version?: unknown };
+          workAmoFrozenTerms?: { version?: unknown };
+        })
+      : {};
+  const saleAuthorizationVersion = String(record.saleAuthorization?.version ?? "")
+    .trim();
+  const frozenTermsVersion = String(record.frozenTerms?.version ?? "")
+    .trim();
+  const workAmoFrozenTermsVersion = String(
+    record.workAmoFrozenTerms?.version ?? "",
+  ).trim();
+  return (
+    saleAuthorizationVersion === TOKEN_SALE_AUTH_WORK_AMO_PROOF_UNIT_VERSION ||
+    frozenTermsVersion === TOKEN_SALE_AUTH_WORK_AMO_PROOF_UNIT_VERSION ||
+    workAmoFrozenTermsVersion === TOKEN_SALE_AUTH_WORK_AMO_PROOF_UNIT_VERSION
+  );
+}
+
+function workAmountScaleFromTokenMetadata(
+  token:
+    | {
+        decimals?: unknown;
+        unitScale?: unknown;
+      }
+    | unknown,
+) {
+  const record =
+    token && typeof token === "object" && !Array.isArray(token)
+      ? (token as {
+          decimals?: unknown;
+          unitScale?: unknown;
+        })
+      : {};
+  const decimals = Number(String(record.decimals ?? "").trim());
+  if (!Number.isInteger(decimals) || decimals < 0) {
+    return null;
+  }
+  const unitScale = String(record.unitScale ?? "").trim();
+  if (
+    decimals === WORK_AMO_DECIMALS &&
+    unitScale === WORK_AMO_UNIT_SCALE_BIGINT.toString()
+  ) {
+    return WORK_AMO_UNIT_SCALE_BIGINT;
+  }
+  if (
+    decimals === WORK_DECIMALS &&
+    unitScale === WORK_TOKEN_UNIT_SCALE
+  ) {
+    return BigInt(WORK_TOKEN_UNIT_SCALE);
+  }
+  return null;
+}
+
+function workTokenAmountScale(token: unknown): bigint {
+  return (
+    workAmountScaleFromTokenMetadata(token) ??
+    (isWorkAmoV6WorkRecord(token)
+      ? WORK_AMO_UNIT_SCALE_BIGINT
+      : BigInt(WORK_TOKEN_UNIT_SCALE))
+  );
+}
+
+function formatWorkAmountForTokenAtoms(
+  atoms: bigint,
+  token?:
+    | {
+        saleAuthorization?: { version?: unknown };
+        frozenTerms?: { version?: unknown };
+        workAmoFrozenTerms?: { version?: unknown };
+      }
+    | undefined,
+) {
+  return workTokenAmountScale(token) === WORK_AMO_UNIT_SCALE_BIGINT
+    ? formatWorkAmountAmo(atoms)
+    : formatWorkAmount(atoms);
 }
 
 function tokenAmountInput(
@@ -7208,11 +7302,13 @@ function workAmoV6UnitTerms(
     return null;
   }
   const valueDenominator =
-    BigInt(WORK_TOKEN_MAX_SUPPLY) * 100_000_000n * 100_000_000n;
+    BigInt(WORK_TOKEN_MAX_SUPPLY) *
+    WORK_AMO_V6_ATOMS_PER_WORK *
+    100_000_000n;
   const amountAtoms = (BigInt(face) * valueDenominator) / networkValue;
   if (
     amountAtoms < 1n ||
-    amountAtoms > BigInt(WORK_TOKEN_MAX_SUPPLY) * 100_000_000n
+    amountAtoms > BigInt(WORK_TOKEN_MAX_SUPPLY) * WORK_AMO_V6_ATOMS_PER_WORK
   ) {
     return null;
   }
@@ -27055,7 +27151,7 @@ export default function App() {
     estimate: WorkAmoV6Estimate,
   ) {
     return window.confirm(
-      `${workAmoV6FaceLabel(faceProofs)} AMO unit: the displayed ${formatWorkAmount(
+      `${workAmoV6FaceLabel(faceProofs)} AMO unit: the displayed ${formatWorkAmountAmo(
         BigInt(estimate.unitAmountAtoms ?? "0"),
       )} WORK amount is an estimate only. The ${Number(estimate.unitPriceSats).toLocaleString()}-proof face is fixed in the intent; confirmation order derives and freezes the exact WORK amount from canonical network value immediately before the listing. The transaction can fail admission if the balance or canonical state is invalid at its position. Registry and miner fees are final once broadcast. Continue?`,
     );
@@ -27075,7 +27171,7 @@ export default function App() {
         ? `${workAmoFaceLabel(frozen.faceUsdCents)} historical AMO unit`
         : "grandfathered V4 WORK listing";
     return window.confirm(
-      `${actionLabel === "seal" ? "Seal" : "Purchase"} ${unitLabel}: this confirmed listing is frozen at ${formatWorkAmount(
+      `${actionLabel === "seal" ? "Seal" : "Purchase"} ${unitLabel}: this confirmed listing is frozen at ${formatWorkAmountAmo(
         BigInt(frozen.amountAtoms),
       )} WORK for ${frozen.priceSats.toLocaleString()} proofs. Later network-value changes do not reprice it; any USD equivalent is display-only. Registry and miner fees are final once broadcast. Continue?`,
     );
@@ -27189,7 +27285,7 @@ export default function App() {
           );
       const attemptedAmountDisplay =
         workListing && attemptedAmountUnits !== null
-          ? `${formatWorkAmount(attemptedAmountUnits)} estimated`
+          ? `${formatWorkAmountAmo(attemptedAmountUnits)} estimated`
           : parsedAmount?.display ?? "unknown";
       if (
         attemptedAmountUnits === null ||
@@ -33924,11 +34020,11 @@ function TokenWalletWorkspace({
                       · display only
                     </small>
                   </div>
-                  <div>
+                <div>
                     <span>Estimated WORK</span>
                     <strong>
                       {selectedWorkAmoEstimate?.unitAmountAtoms
-                        ? formatWorkAmount(
+                        ? formatWorkAmountAmo(
                             BigInt(selectedWorkAmoEstimate.unitAmountAtoms),
                           )
                         : workFloorLoading
@@ -34149,12 +34245,12 @@ function TokenWalletWorkspace({
                           ·{" "}
                           {isWorkToken(item)
                             ? workFrozenTerms
-                              ? `${formatWorkAmount(
+                              ? `${formatWorkAmountAmo(
                                   BigInt(workFrozenTerms.amountAtoms),
                                 )} WORK · ${workFrozenTerms.priceSats.toLocaleString()} frozen proofs`
                               : workEstimate?.unitAmountAtoms &&
                                   workEstimate.unitPriceSats
-                                ? `${formatWorkAmount(
+                                ? `${formatWorkAmountAmo(
                                     BigInt(workEstimate.unitAmountAtoms),
                                   )} estimated WORK · ${workEstimate.unitPriceSats.toLocaleString()} estimated proofs · terms finalize at confirmation`
                                 : "amount and proof price pending confirmation"
@@ -40543,10 +40639,8 @@ function tokenUnitPriceSats(
   ) {
     return 0;
   }
-  const unitScale = isWorkToken(token)
-    ? Number(WORK_TOKEN_UNIT_SCALE)
-    : 1;
-  return (priceSats * unitScale) / Number(parsedAmountAtoms);
+  const unitScale = workTokenAmountScale(token);
+  return Number((BigInt(priceSats) * unitScale) / parsedAmountAtoms);
 }
 
 function tokenListingUnitPriceSats(listing: PowTokenListing) {
@@ -40582,12 +40676,9 @@ function compareTokenListingUnitPrice(
   ) {
     return 0;
   }
-  const leftNumerator =
-    BigInt(left.priceSats) *
-    (isWorkToken(left) ? BigInt(WORK_TOKEN_UNIT_SCALE) : 1n);
+  const leftNumerator = BigInt(left.priceSats) * workTokenAmountScale(left);
   const rightNumerator =
-    BigInt(right.priceSats) *
-    (isWorkToken(right) ? BigInt(WORK_TOKEN_UNIT_SCALE) : 1n);
+    BigInt(right.priceSats) * workTokenAmountScale(right);
   const leftCross = leftNumerator * rightAmountAtoms;
   const rightCross = rightNumerator * leftAmountAtoms;
   return leftCross < rightCross ? -1 : leftCross > rightCross ? 1 : 0;
@@ -43080,12 +43171,12 @@ function TokenMarketplacePanel({
                         {sealStatus} ·{" "}
                         {isWorkToken(listing)
                           ? workFrozen
-                            ? `${formatWorkAmount(
+                            ? `${formatWorkAmountAmo(
                                 BigInt(workFrozen.amountAtoms),
                               )} WORK · ${workFrozen.priceSats.toLocaleString()} frozen proofs`
                             : workEstimate?.unitAmountAtoms &&
                                 workEstimate.unitPriceSats
-                              ? `${formatWorkAmount(
+                              ? `${formatWorkAmountAmo(
                                   BigInt(workEstimate.unitAmountAtoms),
                                 )} estimated WORK · ${workEstimate.unitPriceSats.toLocaleString()} estimated proofs`
                               : "terms pending confirmation"
@@ -43212,12 +43303,12 @@ function TokenMarketplacePanel({
                         <dt>Amount</dt>
                         <dd>
                           {isWorkToken(listing)
-                            ? workFrozen
-                              ? `${formatWorkAmount(
+                          ? workFrozen
+                              ? `${formatWorkAmountAmo(
                                   BigInt(workFrozen.amountAtoms),
                                 )} WORK`
                               : workEstimate?.unitAmountAtoms
-                                ? `${formatWorkAmount(
+                                ? `${formatWorkAmountAmo(
                                     BigInt(workEstimate.unitAmountAtoms),
                                   )} WORK estimated`
                                 : "Pending confirmation"

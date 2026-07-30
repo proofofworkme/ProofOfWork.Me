@@ -18,8 +18,11 @@ import {
 import {
   WORK_ATOMIC_PROJECTION_MODEL,
   WORK_DECIMALS,
+  WORK_AMO_DECIMALS,
   WORK_TOKEN_ID,
   WORK_UNIT_SCALE_TEXT,
+  WORK_AMO_UNIT_SCALE_TEXT,
+  formatWorkAtomsAmo,
   formatWorkAtoms,
   isWorkTokenId,
   normalizeWorkAtoms,
@@ -6686,11 +6689,7 @@ function tokenSaleFromEventPayload(payload, row = {}) {
     ...position,
     amount,
     ...(workAmount
-      ? {
-          amountAtoms: workAmount.amountAtoms,
-          decimals: WORK_DECIMALS,
-          unitScale: WORK_UNIT_SCALE_TEXT,
-        }
+      ? workAmountProjectionMetadataForAmount(workAmount)
       : {}),
     arbSats: rowNumber(payload, "arbSats"),
     buyerAddress,
@@ -6788,11 +6787,7 @@ function tokenListingFromEventPayload(payload, row = {}) {
         rowNumber(saleAuthorization, "amount") ||
         amount,
     ...(workAmount
-      ? {
-          amountAtoms: workAmount.amountAtoms,
-          decimals: WORK_DECIMALS,
-          unitScale: WORK_UNIT_SCALE_TEXT,
-        }
+      ? workAmountProjectionMetadataForAmount(workAmount)
       : {}),
     canonicalMinerFeeCovered: payload?.canonicalMinerFeeCovered === true,
     canonicalMinerFeeSats: rowNumber(payload, "canonicalMinerFeeSats"),
@@ -7372,11 +7367,7 @@ function normalizeTokenHistoryListingItem(item) {
       : rowNumber(item, "amount") ||
         rowNumber(saleAuthorization, "amount"),
     ...(workAmount
-      ? {
-          amountAtoms: workAmount.amountAtoms,
-          decimals: WORK_DECIMALS,
-          unitScale: WORK_UNIT_SCALE_TEXT,
-        }
+      ? workAmountProjectionMetadataForAmount(workAmount)
       : {}),
     priceSats:
       rowNumber(item, "priceSats") || rowNumber(saleAuthorization, "priceSats"),
@@ -7651,11 +7642,7 @@ function tokenClosedListingFromEventPayload(payload) {
         rowNumber(payload, "tokenAmount") ||
         amount,
     ...(workAmount
-      ? {
-          amountAtoms: workAmount.amountAtoms,
-          decimals: WORK_DECIMALS,
-          unitScale: WORK_UNIT_SCALE_TEXT,
-        }
+      ? workAmountProjectionMetadataForAmount(workAmount)
       : {}),
     closedAt,
     closedBlockHash: String(position.blockHash ?? "").trim().toLowerCase(),
@@ -7751,11 +7738,7 @@ function tokenTransferFromEventPayload(payload, row = {}) {
     ...position,
     amount,
     ...(workAmount
-      ? {
-          amountAtoms: workAmount.amountAtoms,
-          decimals: WORK_DECIMALS,
-          unitScale: WORK_UNIT_SCALE_TEXT,
-        }
+      ? workAmountProjectionMetadataForAmount(workAmount)
       : {}),
     confirmed:
       row.status === "confirmed" || payload?.confirmed === true,
@@ -8318,11 +8301,7 @@ function tokenMintFromEventPayload(payload, row = {}) {
         rowNumber(payload, "tokenAmount") ||
         tagNumbers.amount,
     ...(workAmount
-      ? {
-          amountAtoms: workAmount.amountAtoms,
-          decimals: WORK_DECIMALS,
-          unitScale: WORK_UNIT_SCALE_TEXT,
-        }
+      ? workAmountProjectionMetadataForAmount(workAmount)
       : {}),
     amountSats: rowNumber(payload, "amountSats"),
     bondRecipientAddress: String(payload?.bondRecipientAddress ?? "").trim(),
@@ -11137,12 +11116,115 @@ function rowNumber(row, key) {
   return Number.isFinite(number) ? number : 0;
 }
 
+function workAmountProjectionMetadata(record, metadata = {}) {
+  const item = objectRecord(record);
+  const normalizedMetadata = objectRecord(metadata);
+  const metadataDecimals = Number(normalizedMetadata.decimals);
+  const metadataUnitScale = String(normalizedMetadata.unitScale ?? "");
+  if (
+    normalizedMetadata.amountStorageModel === WORK_ATOMIC_PROJECTION_MODEL &&
+    ((metadataDecimals === WORK_DECIMALS &&
+      metadataUnitScale === WORK_UNIT_SCALE_TEXT) ||
+      (metadataDecimals === WORK_AMO_DECIMALS &&
+        metadataUnitScale === WORK_AMO_UNIT_SCALE_TEXT))
+  ) {
+    return {
+      decimals: metadataDecimals,
+      unitScale: metadataUnitScale,
+    };
+  }
+
+  const tokenId = String(
+    item.tokenId ??
+      item.payload?.tokenId ??
+      item.saleAuthorization?.tokenId ??
+      item.token_id ??
+      "",
+  )
+    .trim()
+    .toLowerCase();
+  const saleAuthorization =
+    item.saleAuthorization &&
+    typeof item.saleAuthorization === "object" &&
+    !Array.isArray(item.saleAuthorization)
+      ? item.saleAuthorization
+      : {};
+  const frozenTerms =
+    item.frozenTerms &&
+    typeof item.frozenTerms === "object" &&
+    !Array.isArray(item.frozenTerms)
+      ? item.frozenTerms
+      : {};
+  const workAmoFrozenTerms =
+    item.workAmoFrozenTerms &&
+    typeof item.workAmoFrozenTerms === "object" &&
+    !Array.isArray(item.workAmoFrozenTerms)
+      ? item.workAmoFrozenTerms
+      : {};
+  const listingFrozenTerms =
+    item.listingFrozenTerms &&
+    typeof item.listingFrozenTerms === "object" &&
+    !Array.isArray(item.listingFrozenTerms)
+      ? item.listingFrozenTerms
+      : {};
+  const metadataVersion = String(
+    item.version ??
+      saleAuthorization.version ??
+      item.authorizationVersion ??
+      frozenTerms.version ??
+      workAmoFrozenTerms.version ??
+      listingFrozenTerms.version ??
+      "",
+  )
+    .trim()
+    .toLowerCase();
+
+  if (
+    tokenId === WORK_TOKEN_ID &&
+    metadataVersion === WORK_AMO_V6_AUTH_VERSION
+  ) {
+    return {
+      decimals: WORK_AMO_DECIMALS,
+      unitScale: WORK_AMO_UNIT_SCALE_TEXT,
+    };
+  }
+
+  return {
+    decimals: WORK_DECIMALS,
+    unitScale: WORK_UNIT_SCALE_TEXT,
+  };
+}
+
+function workAmountProjectionMetadataForAmount(workAmount) {
+  return workAmount &&
+    typeof workAmount === "object" &&
+    !Array.isArray(workAmount)
+    ? {
+        amountAtoms: workAmount.amountAtoms,
+        decimals: workAmount.decimals,
+        unitScale: workAmount.unitScale,
+      }
+    : {};
+}
+
+function formatWorkAmountByProjectionMeta(amountAtoms, amountMetadata = {}) {
+  if (
+    Number(amountMetadata.decimals) === WORK_AMO_DECIMALS &&
+    String(amountMetadata.unitScale ?? "") === WORK_AMO_UNIT_SCALE_TEXT
+  ) {
+    return formatWorkAtomsAmo(amountAtoms);
+  }
+  return formatWorkAtoms(amountAtoms);
+}
+
 function workAtomicProjectionMetadata(metadata) {
   const item = objectRecord(metadata);
   return (
     item.amountStorageModel === WORK_ATOMIC_PROJECTION_MODEL &&
-    Number(item.decimals) === WORK_DECIMALS &&
-    String(item.unitScale ?? "") === WORK_UNIT_SCALE_TEXT
+    ((Number(item.decimals) === WORK_DECIMALS &&
+      String(item.unitScale ?? "") === WORK_UNIT_SCALE_TEXT) ||
+      (Number(item.decimals) === WORK_AMO_DECIMALS &&
+        String(item.unitScale ?? "") === WORK_AMO_UNIT_SCALE_TEXT))
   );
 }
 
@@ -11173,19 +11255,21 @@ function workAmountProjection(
         ? normalizeWorkAtoms(storedAmount, { allowZero })
         : parseWorkAmountToAtoms(storedAmount, { allowZero })
       : workAmountAtomsFromRecord(record, { allowZero });
+  const amountMetadata = workAmountProjectionMetadata(record, metadata);
   return {
-    amount: formatWorkAtoms(amountAtoms),
+    amount: formatWorkAmountByProjectionMeta(amountAtoms, amountMetadata),
     amountAtoms,
-    decimals: WORK_DECIMALS,
-    unitScale: WORK_UNIT_SCALE_TEXT,
+    decimals: amountMetadata.decimals,
+    unitScale: amountMetadata.unitScale,
   };
 }
 
 function workBalanceProjection(value, metadata, { signed = false } = {}) {
   const atoms = storedWorkAtoms(value, metadata, { signed });
+  const amountMetadata = workAmountProjectionMetadata({}, metadata);
   return {
     atoms,
-    amount: formatWorkAtoms(atoms, { allowNegative: signed }),
+    amount: formatWorkAmountByProjectionMeta(atoms, amountMetadata),
   };
 }
 
@@ -27121,11 +27205,7 @@ export async function proofIndexCreditListingsPayload(
         ...payloadWithoutLifecyclePosition,
         amount: workAmount?.amount ?? row.amount,
         ...(workAmount
-          ? {
-              amountAtoms: workAmount.amountAtoms,
-              decimals: WORK_DECIMALS,
-              unitScale: WORK_UNIT_SCALE_TEXT,
-            }
+          ? workAmountProjectionMetadataForAmount(workAmount)
           : {}),
         blockHash: listingProjection.blockHash,
         ...(listingProjection.blockHeight !== undefined

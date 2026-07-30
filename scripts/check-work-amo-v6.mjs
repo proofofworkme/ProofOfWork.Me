@@ -9,6 +9,7 @@ import {
   WORK_AMO_V6_AUTH_VERSION,
   WORK_AMO_V6_BLOCK_SEQUENCER_MODEL,
   WORK_AMO_V6_MODELS,
+  WORK_AMO_V6_ATOMS_PER_WORK,
   calculateWorkAmoV6UnitTerms,
   deriveWorkAmoV6FrozenTerms,
   replayWorkAmoV6CanonicalBlock,
@@ -74,7 +75,7 @@ const listingBlockHash = "33".repeat(32);
 const actionBlockHash = "44".repeat(32);
 const listingBlockHeight = 1_000_000;
 const supplyAtoms =
-  WORK_AMO_V5_MAX_SUPPLY * WORK_AMO_V5_ATOMS_PER_WORK;
+  WORK_AMO_V5_MAX_SUPPLY * WORK_AMO_V6_ATOMS_PER_WORK;
 const formulaDenominator =
   supplyAtoms * WORK_AMO_V5_NETWORK_VALUE_Q8_SCALE;
 
@@ -155,7 +156,7 @@ for (const face of WORK_AMO_V6_ALLOWED_FACE_PROOFS) {
   assert.equal(terms.unitPriceSats, String(face));
   assert.equal(
     terms.unitAmountAtoms,
-    (BigInt(face) * WORK_AMO_V5_ATOMS_PER_WORK).toString(),
+    (BigInt(face) * WORK_AMO_V6_ATOMS_PER_WORK).toString(),
   );
   assert.equal(terms.unitMinimumPriceSats, String(face));
 }
@@ -253,7 +254,7 @@ const networkValueBeforeQ8 =
   WORK_AMO_V5_NETWORK_VALUE_Q8_SCALE;
 const bondContributionQ8 =
   546n * WORK_AMO_V5_NETWORK_VALUE_Q8_SCALE;
-const expectedAmount = 20_000n * WORK_AMO_V5_ATOMS_PER_WORK;
+const expectedAmount = 20_000n * WORK_AMO_V6_ATOMS_PER_WORK;
 const frozen = deriveWorkAmoV6FrozenTerms(authorization(), {
   activationHeight: listingBlockHeight,
   listingBondContributionQ8: bondContributionQ8,
@@ -357,23 +358,24 @@ const firstV6ListingFrozenTerms = {
     "407065289490674149005636246",
   listingProtocolVout: 1,
   listingRecordOrdinal: 0,
-  unitAmountAtoms: "10",
+  unitAmountAtoms: "1031775518",
   unitFaceProofs: 20_000,
-  unitMinimumPriceSats: "19385",
+  unitMinimumPriceSats: "20000",
   unitPriceSats: "20000",
   version: WORK_AMO_V6_AUTH_VERSION,
 };
+const firstV6ListingAmountAtoms = firstV6ListingFrozenTerms.unitAmountAtoms;
 const firstV6ListingState = {
-  confirmedSupplyAtoms: WORK_AMO_V5_ATOMS_PER_WORK.toString(),
+  confirmedSupplyAtoms: firstV6ListingAmountAtoms,
   holders: [
     {
       address: firstV6ListingSeller,
-      balanceAtoms: WORK_AMO_V5_ATOMS_PER_WORK.toString(),
+      balanceAtoms: firstV6ListingAmountAtoms,
     },
   ],
   listings: [
     {
-      amountAtoms: "10",
+      amountAtoms: firstV6ListingAmountAtoms,
       frozenTerms: firstV6ListingFrozenTerms,
       listingId: firstV6ListingTxid,
       priceSats: "20000",
@@ -416,7 +418,7 @@ assert.equal(
 );
 assert.equal(
   firstV6ListingClosingPreimage.listings[0].amountAtoms,
-  "10",
+  "1031775518",
 );
 assert.equal(
   firstV6ListingClosingPreimage.listings[0].priceSats,
@@ -424,9 +426,9 @@ assert.equal(
 );
 assert.deepEqual(firstV6ListingClosingCommitment, {
   model: "canonical-work-amo-payload-sha256-v1",
-  payloadBytes: 2_316,
+  payloadBytes: 2_342,
   sha256:
-    "e3c735bfb17c69384de7d64acf3701cd9df36e20de8e27805bb712c17df14d1e",
+    "18568d7004a05b9706970ac270d5f475af1f55612c2fd594f040ae05d3d6564c",
 });
 assert.deepEqual(
   workAmoV6CanonicalTokenStatePreimage(
@@ -773,11 +775,11 @@ const firstV6RawOpeningIdState =
   });
 const firstV6RawOpeningWorkState =
   normalizeWorkAmoV5RawWorkState({
-    confirmedSupplyAtoms: WORK_AMO_V5_ATOMS_PER_WORK.toString(),
+    confirmedSupplyAtoms: firstV6ListingAmountAtoms,
     holders: [
       {
         address: firstV6ListingSeller,
-        balanceAtoms: WORK_AMO_V5_ATOMS_PER_WORK.toString(),
+        balanceAtoms: firstV6ListingAmountAtoms,
       },
     ],
     listings: [],
@@ -853,7 +855,7 @@ assert.deepEqual(
       firstV6RawClosingListing.frozenTerms.listingRecordOrdinal,
   },
   {
-    amountAtoms: "10",
+    amountAtoms: firstV6ListingAmountAtoms,
     blockHeight: 960_258,
     blockTransactionIndex: 4_093,
     listingBondContributionQ8: "327600000000",

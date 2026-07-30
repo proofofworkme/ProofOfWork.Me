@@ -939,7 +939,7 @@ CREATE TABLE IF NOT EXISTS proof_indexer.work_amo_v6_listing_terms (
     CHECK (
       unit_face_proofs IN (20000, 50000, 100000)
       AND unit_amount_atoms::text ~ '^[1-9][0-9]*$'
-      AND unit_amount_atoms <= 2100000000000000
+      AND unit_amount_atoms <= 210000000000000000000000
       AND unit_price_sats = unit_face_proofs
       AND unit_minimum_price_sats > 0
       AND unit_minimum_price_sats <= unit_price_sats
@@ -952,7 +952,7 @@ CREATE TABLE IF NOT EXISTS proof_indexer.work_amo_v6_listing_terms (
         (
           unit_face_proofs::numeric *
           21000000 *
-          100000000 *
+          10000000000000000 *
           100000000
         ) / listing_network_value_before_q8
       )
@@ -962,7 +962,7 @@ CREATE TABLE IF NOT EXISTS proof_indexer.work_amo_v6_listing_terms (
           listing_network_value_before_q8
         ) / (
           21000000::numeric *
-          100000000 *
+          10000000000000000 *
           100000000
         )
       )
