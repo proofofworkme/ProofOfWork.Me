@@ -149,6 +149,7 @@ import {
 } from "../server/work-amo-v5-bip141.mjs";
 import {
   WORK_AMO_V5_H_MINUS_ONE_SEED_EVIDENCE_MODEL,
+  WORK_AMO_V5_H_MINUS_ONE_SEED_EVIDENCE_STATUS,
   canonicalWorkAmoV5HMinusOneSeedEvidence,
   validatedWorkAmoV5HMinusOneSeedEvidence,
 } from "../server/work-amo-v5-seed-evidence.mjs";
@@ -221,6 +222,8 @@ const GROWTH_ID_DENSITY_NUMERATOR = 26_868_933_906_745_133n;
 const GROWTH_ID_DENSITY_DENOMINATOR = 100_000_000_000_000n;
 const GROWTH_VALUE_MULTIPLE = 5n;
 const DEFAULT_REPLAY_WITNESS_SET_HASH = "8".repeat(64);
+const WORK_AMO_V5_H_MINUS_ONE_CANONICAL_SUMMARY_SNAPSHOT_ID =
+  "cb13bc6edd20d72f6ae3919e";
 
 function workAmoV5LegacyBootstrapCarryRowFixture(overrides = {}) {
   const txid = WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_TXID;
@@ -14456,6 +14459,65 @@ check("ledger snapshot retention preserves pinned issuance oracles", async () =>
     scanOrDerived: 1,
     total: 2,
   });
+});
+
+check("every ledger snapshot deletion preserves immutable AMO V5 seed dependencies", () => {
+  const source = fileSource(BACKFILL_PATH);
+  const sourceFile = ts.createSourceFile(
+    "backfill-proof-indexer.mjs",
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.JS,
+  );
+  const snapshotDeleteQueries = [];
+  const visit = (node) => {
+    if (
+      (
+        ts.isNoSubstitutionTemplateLiteral(node) ||
+        ts.isTemplateExpression(node)
+      ) &&
+      node.getText(sourceFile).includes(
+        "DELETE FROM proof_indexer.ledger_snapshots",
+      )
+    ) {
+      snapshotDeleteQueries.push(node.getText(sourceFile));
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  assert.equal(
+    snapshotDeleteQueries.length,
+    5,
+    "every ledger snapshot deletion path must be reviewed",
+  );
+  for (const query of snapshotDeleteQueries) {
+    assert.match(query, /workAmoV5Migration:/u);
+    assert.match(
+      query,
+      /replayEvidence'->'seed'[\s\S]*->'snapshotIds'/u,
+    );
+    assert.match(
+      query,
+      /replayEvidence'->'closing'[\s\S]*->'snapshotIds'/u,
+    );
+    assert.match(
+      query,
+      /migration\.value->'replayEvidence'->>'complete' = 'true'/u,
+    );
+    assert.match(
+      query,
+      /canonical-work-amo-v5-h-minus-one-seed-evidence-v1/u,
+    );
+    assert.match(
+      query,
+      /seed_evidence\.payload->'canonicalSummary'->>'snapshotId'/u,
+    );
+    assert.match(
+      query,
+      /work_amo_v5_protected\.snapshot_id\s*=\s*snapshot\.snapshot_id/u,
+    );
+  }
 });
 
 check("derived ledger snapshots expose atomic WORK only after the definition is ready", async () => {
@@ -41467,6 +41529,347 @@ check("AMO V5 H-1 seed evidence is deterministic, closed, and independently prod
   );
 });
 
+check("AMO readiness survives a pruned canonical seed summary through immutable evidence", () => {
+  const seedHeight = WORK_AMO_V5_ACTIVATION_HEIGHT - 1;
+  const genericState = normalizeWorkAmoV5RawGenericState({
+    holders: [],
+    listings: [],
+    tokens: [],
+  });
+  const idState = normalizeWorkAmoV5RawIdState({
+    listings: [],
+    records: [],
+  });
+  const workState = {
+    confirmedSupplyAtoms: "0",
+    holders: [],
+    listings: [],
+  };
+  const sufficientState = rawAmoOpeningEconomicStateFixture({
+    computerEventFlowSats: 2,
+    genericState,
+    idState,
+    throughBlockHash: WORK_AMO_V5_DECLARATION_BLOCK_HASH,
+    throughBlockHeight: seedHeight,
+    workState,
+  });
+  const canonicalSummarySnapshotId =
+    WORK_AMO_V5_H_MINUS_ONE_CANONICAL_SUMMARY_SNAPSHOT_ID;
+  const evidence = canonicalWorkAmoV5HMinusOneSeedEvidence({
+    canonicalSummary: {
+      canonicalSummaryHash: "a".repeat(64),
+      networkValueQ8: sufficientState.networkValueQ8,
+      snapshotId: canonicalSummarySnapshotId,
+    },
+    indexedThroughBlock: seedHeight,
+    indexedThroughBlockHash: WORK_AMO_V5_DECLARATION_BLOCK_HASH,
+    network: "livenet",
+    seedGenericTokenState: genericState,
+    seedIdState: idState,
+    seedSufficientState: sufficientState,
+    seedTokenState: workState,
+    seedWorkProjection: workState,
+  });
+  const evidenceSet = {
+    rowCount: 1,
+    rows: [
+      {
+        consistency: {
+          ok: true,
+          status: WORK_AMO_V5_H_MINUS_ONE_SEED_EVIDENCE_STATUS,
+        },
+        indexedThroughBlock: seedHeight,
+        metrics: {
+          complete: true,
+          genericHolderCount: 0,
+          genericListingCount: 0,
+          genericTokenCount: 0,
+          idCount: 0,
+          workHolderCount: 0,
+          workListingCount: 0,
+        },
+        payload: evidence,
+        snapshotId: evidence.snapshotId,
+        sourceHashes: {
+          amoSeedBlock: WORK_AMO_V5_DECLARATION_BLOCK_HASH,
+          amoSeedCanonicalSummary:
+            evidence.canonicalSummary.canonicalSummaryHash,
+          amoSeedEvidence: evidence.evidenceCommitment.sha256,
+        },
+      },
+    ],
+  };
+  const markerSeed = {
+    blockHash: WORK_AMO_V5_DECLARATION_BLOCK_HASH,
+    blockHeight: seedHeight,
+    networkValueQ8: evidence.canonicalSummary.networkValueQ8,
+    snapshotCount: 1,
+    snapshotIds: [canonicalSummarySnapshotId],
+    summaryHash: evidence.canonicalSummary.canonicalSummaryHash,
+  };
+  const activationTransition = {
+    blockHash: "b".repeat(64),
+    blockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT,
+    openingNetworkValueQ8:
+      evidence.seedSufficientState.networkValueQ8,
+    openingStateModel:
+      evidence.commitments.sufficientState.model,
+    openingStatePayloadBytes:
+      evidence.commitments.sufficientState.payloadBytes,
+    openingStateSha256:
+      evidence.commitments.sufficientState.sha256,
+    previousBlockHash: WORK_AMO_V5_DECLARATION_BLOCK_HASH,
+  };
+  const seedBindings = {
+    activationTransition,
+    bootstrapSeedCommitment:
+      evidence.commitments.sufficientState,
+    firstOpeningCommitment:
+      evidence.commitments.sufficientState,
+    independentSeed: {
+      commitment: evidence.commitments.sufficientState,
+      source: "pinned-h-minus-one-seed-evidence",
+    },
+  };
+  const seedReadiness = isolatedFunction(
+    READER_PATH,
+    "proofIndexWorkAmoSeedEvidenceReadiness",
+    {
+      WORK_AMO_V5_ACTIVATION_HEIGHT,
+      WORK_AMO_V5_H_MINUS_ONE_CANONICAL_SUMMARY_SNAPSHOT_ID,
+      WORK_AMO_V5_H_MINUS_ONE_SEED_EVIDENCE_STATUS,
+      validatedWorkAmoV5HMinusOneSeedEvidence,
+    },
+  );
+  const readiness = seedReadiness(
+    structuredClone(evidenceSet),
+    true,
+    structuredClone(markerSeed),
+    structuredClone(seedBindings),
+  );
+  assert.equal(readiness.ready, true);
+  assert.equal(readiness.evidenceSnapshotId, evidence.snapshotId);
+  assert.deepEqual(JSON.parse(JSON.stringify(readiness.seed)), {
+    blockHash: WORK_AMO_V5_DECLARATION_BLOCK_HASH,
+    blockHeight: seedHeight,
+    networkValueQ8: evidence.canonicalSummary.networkValueQ8,
+    snapshotId: canonicalSummarySnapshotId,
+    summaryHash: evidence.canonicalSummary.canonicalSummaryHash,
+  });
+  assert.equal(
+    seedReadiness(
+      {
+        rowCount: 2,
+        rows: [
+          ...structuredClone(evidenceSet.rows),
+          ...structuredClone(evidenceSet.rows),
+        ],
+      },
+      true,
+      markerSeed,
+      seedBindings,
+    ),
+    null,
+    "duplicate immutable evidence must fail closed",
+  );
+  const offHeightDuplicate = structuredClone(evidenceSet.rows[0]);
+  offHeightDuplicate.indexedThroughBlock = seedHeight - 1;
+  assert.equal(
+    seedReadiness(
+      {
+        rowCount: 2,
+        rows: [
+          ...structuredClone(evidenceSet.rows),
+          offHeightDuplicate,
+        ],
+      },
+      true,
+      markerSeed,
+      seedBindings,
+    ),
+    null,
+    "an off-height same-model evidence row must make the global set ambiguous",
+  );
+  assert.equal(
+    seedReadiness(
+      evidenceSet,
+      false,
+      markerSeed,
+      seedBindings,
+    ),
+    null,
+    "the unique immutable evidence must bind the canonical H-1 block",
+  );
+  const wrongMetadata = structuredClone(evidenceSet);
+  wrongMetadata.rows[0].sourceHashes.unexpected = "unsafe";
+  assert.equal(
+    seedReadiness(
+      wrongMetadata,
+      true,
+      markerSeed,
+      seedBindings,
+    ),
+    null,
+    "seed evidence metadata must be closed-shape",
+  );
+  const wrongMetrics = structuredClone(evidenceSet);
+  wrongMetrics.rows[0].metrics.workHolderCount = 1;
+  assert.equal(
+    seedReadiness(
+      wrongMetrics,
+      true,
+      markerSeed,
+      seedBindings,
+    ),
+    null,
+    "seed evidence metric tampering must fail closed",
+  );
+  const wrongConsistency = structuredClone(evidenceSet);
+  wrongConsistency.rows[0].consistency.ok = false;
+  assert.equal(
+    seedReadiness(
+      wrongConsistency,
+      true,
+      markerSeed,
+      seedBindings,
+    ),
+    null,
+    "seed evidence consistency tampering must fail closed",
+  );
+  assert.equal(
+    seedReadiness(
+      evidenceSet,
+      true,
+      { ...markerSeed, snapshotIds: ["different-summary"] },
+      seedBindings,
+    ),
+    null,
+    "the immutable evidence must bind the completed migration marker",
+  );
+  const wrongBootstrapCommitment = structuredClone(seedBindings);
+  wrongBootstrapCommitment.bootstrapSeedCommitment.sha256 =
+    "c".repeat(64);
+  assert.equal(
+    seedReadiness(
+      evidenceSet,
+      true,
+      markerSeed,
+      wrongBootstrapCommitment,
+    ),
+    null,
+    "bootstrapCertificate.seedCommitment tampering must fail closed",
+  );
+  const wrongIndependentSource = structuredClone(seedBindings);
+  wrongIndependentSource.independentSeed.source = "mutable-summary";
+  assert.equal(
+    seedReadiness(
+      evidenceSet,
+      true,
+      markerSeed,
+      wrongIndependentSource,
+    ),
+    null,
+    "the independent seed must declare the pinned H-1 evidence source",
+  );
+  const wrongIndependentCommitment = structuredClone(seedBindings);
+  wrongIndependentCommitment.independentSeed.commitment.payloadBytes += 1;
+  assert.equal(
+    seedReadiness(
+      evidenceSet,
+      true,
+      markerSeed,
+      wrongIndependentCommitment,
+    ),
+    null,
+    "the independent seed commitment must bind immutable evidence",
+  );
+  const wrongFirstOpeningCommitment = structuredClone(seedBindings);
+  wrongFirstOpeningCommitment.firstOpeningCommitment.sha256 =
+    "d".repeat(64);
+  assert.equal(
+    seedReadiness(
+      evidenceSet,
+      true,
+      markerSeed,
+      wrongFirstOpeningCommitment,
+    ),
+    null,
+    "the replay first opening commitment must bind immutable evidence",
+  );
+  for (const [field, value] of [
+    ["previousBlockHash", "e".repeat(64)],
+    ["openingNetworkValueQ8", "1"],
+    ["openingStatePayloadBytes",
+      evidence.commitments.sufficientState.payloadBytes + 1],
+    ["openingStateSha256", "f".repeat(64)],
+  ]) {
+    const wrongActivation = structuredClone(seedBindings);
+    wrongActivation.activationTransition[field] = value;
+    assert.equal(
+      seedReadiness(
+        evidenceSet,
+        true,
+        markerSeed,
+        wrongActivation,
+      ),
+      null,
+      `activation transition ${field} tampering must fail closed`,
+    );
+  }
+  const seedReadinessSource = topLevelFunctionSource(
+    READER_PATH,
+    "proofIndexWorkAmoSeedEvidenceReadiness",
+  );
+  for (const required of [
+    /validatedWorkAmoV5HMinusOneSeedEvidence\(payload\)/u,
+    /WORK_AMO_V5_H_MINUS_ONE_CANONICAL_SUMMARY_SNAPSHOT_ID/u,
+    /independentSeed\.source ===\s*"pinned-h-minus-one-seed-evidence"/u,
+    /commitmentMatchesEvidence\(storedSeedCommitment\)/u,
+    /commitmentMatchesEvidence\(independentSeed\.commitment\)/u,
+    /commitmentMatchesEvidence\(firstOpeningCommitment\)/u,
+    /activationTransition\.previousBlockHash/u,
+    /activationTransition\.openingNetworkValueQ8/u,
+    /activationTransition\.openingStatePayloadBytes/u,
+    /activationTransition\.openingStateSha256/u,
+  ]) {
+    assert.match(seedReadinessSource, required);
+  }
+  const replayReadinessSource = topLevelFunctionSource(
+    READER_PATH,
+    "proofIndexWorkAmoReplayReadiness",
+  );
+  assert.match(
+    replayReadinessSource,
+    /seed_evidence_set[\s\S]*proofIndexWorkAmoSeedEvidenceReadiness/u,
+  );
+  assert.match(
+    replayReadinessSource,
+    /count\(\*\)[\s\S]*FROM proof_indexer\.ledger_snapshots seed_evidence[\s\S]*WHERE seed_evidence\.network = \$1[\s\S]*seed_evidence\.payload->>'model' = \$12/u,
+  );
+  assert.match(
+    replayReadinessSource,
+    /FROM proof_indexer\.blocks seed_block[\s\S]{0,400}seed_block\.height = \$2[\s\S]{0,200}lower\(seed_block\.block_hash\) = \$6[\s\S]{0,200}seed_block\.canonical = true/u,
+  );
+  assert.match(
+    replayReadinessSource,
+    /FROM proof_indexer\.work_amo_block_transitions activation[\s\S]*activation\.block_height = \$5[\s\S]*activation\.model = \$7/u,
+  );
+  assert.doesNotMatch(
+    replayReadinessSource,
+    /WHERE seed_evidence\.network = \$1[\s\S]{0,160}seed_evidence\.indexed_through_block = \$2/u,
+    "the evidence cardinality query must count every same-model row",
+  );
+  assert.match(
+    replayReadinessSource,
+    /currentSeedReadiness\?\.ready === true/u,
+  );
+  assert.doesNotMatch(
+    replayReadinessSource,
+    /seed_snapshot/u,
+    "readiness must not require the prunable canonical H-1 summary row",
+  );
+});
+
 check("AMO V5 seed capture precedes replay and immutable evidence cannot be cleaned up", async () => {
   const backfill = fileSource(BACKFILL_PATH);
   const apiRequest = topLevelFunctionSource(API_PATH, "handleRequest");
@@ -41590,6 +41993,22 @@ check("AMO V5 seed capture precedes replay and immutable evidence cannot be clea
   assert.match(
     schema,
     /work_amo_h_minus_one_seed_evidence_immutable[\s\S]*BEFORE UPDATE OR DELETE/u,
+  );
+  assert.match(
+    schema,
+    /CREATE UNIQUE INDEX IF NOT EXISTS\s+ledger_snapshots_work_amo_v5_h_minus_one_seed_evidence_network_uidx[\s\S]*ON proof_indexer\.ledger_snapshots \(network\)[\s\S]*WHERE payload->>'model' =\s*'canonical-work-amo-v5-h-minus-one-seed-evidence-v1'/u,
+  );
+  for (const protectedReference of [
+    /workAmoV5Migration:/u,
+    /replayEvidence'->'seed'[\s\S]*snapshotIds/u,
+    /replayEvidence'->'closing'[\s\S]*snapshotIds/u,
+    /protected_snapshot\.snapshot_id\s*=\s*OLD\.snapshot_id/u,
+  ]) {
+    assert.match(schema, protectedReference);
+  }
+  assert.match(
+    schema,
+    /reject_work_amo_h_minus_one_seed_evidence_mutation[\s\S]*seed_evidence\.payload->'canonicalSummary'->>'snapshotId'[\s\S]*OLD\.snapshot_id/u,
   );
   assert.match(
     migrationEvidence,
@@ -48131,7 +48550,9 @@ check("AMO V5 canonical positions and immutable projections are schema-bound", (
     /workAmoReplayReadinessRequest\(network, options\)[\s\S]*singleFlightBypass/u,
     /exactCheckpointReadinessWithCache\(/u,
     /readyCache: workAmoReplayReadinessReadyCache/u,
-    /seed_snapshot\.payload \? 'summaryPayloads'/u,
+    /seed_evidence\.payload->>'model' = \$12/u,
+    /proofIndexWorkAmoSeedEvidenceReadiness\(/u,
+    /currentSeedReadiness\?\.ready === true/u,
     /closing_snapshot\.payload \? 'summaryPayloads'/u,
   ]) {
     assert.match(replayReadinessSource, required);

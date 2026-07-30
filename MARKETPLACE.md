@@ -284,11 +284,18 @@ market-log projection occurs inside the canonical relational set before
 counting, ordering, cursoring, `LIMIT`, or `OFFSET`, so every page has the same
 single evidence-bound history.
 
-Height `959620` is the one immutable legacy H-1 bootstrap. A supervised replay
-reuses its exact eligible height/hash-bound canonical summary; it does not
-recompute that historical value from later pending or public-log state.
-Multiple eligible versions must agree on the exact value bindings or replay
-fails closed.
+Height `959620` is the one immutable legacy H-1 bootstrap. Before activation
+replay, the Computer captured one closed-shape
+`canonical-work-amo-v5-h-minus-one-seed-evidence-v1` ledger row containing the
+economic, WORK, generic-credit, and PowID preimages plus their commitments.
+Readiness validates that immutable row directly, requires exactly one
+same-model livenet row bound to the canonical declaration block, and binds its
+`canonicalSummary` identity/hash/network-value Q8 to the completed V5
+migration seed, bootstrap seed commitment, and first activation opening
+state. The bound canonical-summary row is historical provenance and may be
+absent under normal retention; it is not reconstructed or restored. Missing,
+duplicate, tampered, noncanonical, unsafe-number, commitment-divergent, or
+marker-divergent evidence fails closed.
 
 That immutable seed contains one narrowly pinned legacy-bootstrap carry. The
 underlying transaction is:
@@ -549,12 +556,16 @@ legacy-bootstrap carry above is only a reconciliation of the already committed
 H-1 basis; it is not a valid-row exception and cannot be generalized to any
 other invalid event.
 
-## Staged WORK AMO V6 Proof-Native Unit Protocol (`pwt-sale-v6`)
+The immutable seed-evidence row, not a retained replaceable canonical-summary
+row, is the runtime readiness authority.
 
-V6 makes proofs the only AMO pricing unit. It is declaration-gated and does
-not activate merely because code is deployed. V5 above governs only before the
-V6 activation height; the independent V6 production write gate remains off
-until declaration evidence, migration, replay and exact-tip readiness pass.
+## WORK AMO V6 Proof-Native Unit Protocol (`pwt-sale-v6`) — protocol active, production admission gated
+
+V6 makes proofs the only AMO pricing unit. Its declaration is confirmed and
+its protocol activation height is `960219`. V5 above governs only before that
+height. Production action admission remains independently closed unless
+declaration evidence, migration, activation-range replay, exact-tip readiness,
+and the write gate all agree.
 
 A seller chooses exactly one fixed proof face:
 
@@ -658,11 +669,11 @@ display. A confirmed listing therefore remains eligible for settlement even
 after later bonds and market activity change network value.
 
 V6 keeps `canonical-work-amo-full-position-block-sequencer-v2` and uses
-`canonical-work-amo-proof-unit-v1`. Deployment remains fail-closed with
-`WORK_AMO_V6_WRITES_ENABLED=0` through the initial staged release. Exact
-declaration evidence, immutable migration marker, canonical replay parity,
-exact-tip index readiness and the explicit write gate must all be independently
-proved before a new listing or settlement is admitted.
+`canonical-work-amo-proof-unit-v1`. Exact declaration evidence, immutable
+migration marker, canonical replay parity, exact-tip index readiness and the
+explicit write gate must all be independently proved before a new listing or
+settlement is admitted. Disagreement closes V6 admission without changing the
+frozen settlement rights of valid historical V4/V5 listings.
 
 ## Current Infinity Bond / POWB Model
 

@@ -6630,6 +6630,50 @@ async function invalidateWorkAtomicDerivedSnapshots(
           FROM issuance_locked locked
           WHERE locked.snapshot_id = snapshot.snapshot_id
         )
+        AND NOT EXISTS (
+          SELECT 1
+          FROM (
+            SELECT protected_snapshot.snapshot_id
+            FROM proof_indexer.meta migration
+            CROSS JOIN LATERAL (
+              VALUES
+                (
+                  migration.value->'replayEvidence'->'seed'
+                    ->'snapshotIds'
+                ),
+                (
+                  migration.value->'replayEvidence'->'closing'
+                    ->'snapshotIds'
+                )
+            ) snapshot_group(snapshot_ids)
+            CROSS JOIN LATERAL jsonb_array_elements_text(
+              CASE
+                WHEN jsonb_typeof(snapshot_group.snapshot_ids) = 'array'
+                THEN snapshot_group.snapshot_ids
+                ELSE '[]'::jsonb
+              END
+            ) protected_snapshot(snapshot_id)
+            WHERE migration.key = 'workAmoV5Migration:' || $1
+              AND migration.value->>'network' = $1
+              AND migration.value->>'model' =
+                'canonical-work-amo-v5-migration-v2'
+              AND migration.value->>'status' = 'complete'
+              AND migration.value->'replayEvidence'->>'complete' = 'true'
+              AND COALESCE(protected_snapshot.snapshot_id, '') <> ''
+            UNION
+            SELECT
+              seed_evidence.payload->'canonicalSummary'->>'snapshotId'
+            FROM proof_indexer.ledger_snapshots seed_evidence
+            WHERE seed_evidence.network = $1
+              AND seed_evidence.payload->>'model' =
+                'canonical-work-amo-v5-h-minus-one-seed-evidence-v1'
+              AND COALESCE(
+                seed_evidence.payload->'canonicalSummary'->>'snapshotId',
+                ''
+              ) <> ''
+          ) work_amo_v5_protected
+          WHERE work_amo_v5_protected.snapshot_id = snapshot.snapshot_id
+        )
         AND (
           snapshot.source_hashes ? 'canonicalSummary'
           OR snapshot.payload ? 'activityPayload'
@@ -12891,6 +12935,50 @@ async function pruneLedgerSnapshots(
           FROM referenced
           WHERE referenced.snapshot_id = snapshot.snapshot_id
         )
+        AND NOT EXISTS (
+          SELECT 1
+          FROM (
+            SELECT protected_snapshot.snapshot_id
+            FROM proof_indexer.meta migration
+            CROSS JOIN LATERAL (
+              VALUES
+                (
+                  migration.value->'replayEvidence'->'seed'
+                    ->'snapshotIds'
+                ),
+                (
+                  migration.value->'replayEvidence'->'closing'
+                    ->'snapshotIds'
+                )
+            ) snapshot_group(snapshot_ids)
+            CROSS JOIN LATERAL jsonb_array_elements_text(
+              CASE
+                WHEN jsonb_typeof(snapshot_group.snapshot_ids) = 'array'
+                THEN snapshot_group.snapshot_ids
+                ELSE '[]'::jsonb
+              END
+            ) protected_snapshot(snapshot_id)
+            WHERE migration.key = 'workAmoV5Migration:' || $1
+              AND migration.value->>'network' = $1
+              AND migration.value->>'model' =
+                'canonical-work-amo-v5-migration-v2'
+              AND migration.value->>'status' = 'complete'
+              AND migration.value->'replayEvidence'->>'complete' = 'true'
+              AND COALESCE(protected_snapshot.snapshot_id, '') <> ''
+            UNION
+            SELECT
+              seed_evidence.payload->'canonicalSummary'->>'snapshotId'
+            FROM proof_indexer.ledger_snapshots seed_evidence
+            WHERE seed_evidence.network = $1
+              AND seed_evidence.payload->>'model' =
+                'canonical-work-amo-v5-h-minus-one-seed-evidence-v1'
+              AND COALESCE(
+                seed_evidence.payload->'canonicalSummary'->>'snapshotId',
+                ''
+              ) <> ''
+          ) work_amo_v5_protected
+          WHERE work_amo_v5_protected.snapshot_id = snapshot.snapshot_id
+        )
       RETURNING
         snapshot.snapshot_id,
         snapshot.source_hashes ? 'canonicalSummary' AS canonical_summary
@@ -15001,10 +15089,55 @@ async function prepareCanonicalRebuild(client) {
     );
     await client.query(
       `
-        DELETE FROM proof_indexer.ledger_snapshots
-        WHERE network = $1
-          AND COALESCE(payload->>'model', '') <>
+        DELETE FROM proof_indexer.ledger_snapshots snapshot
+        WHERE snapshot.network = $1
+          AND COALESCE(snapshot.payload->>'model', '') <>
             'canonical-work-amo-v5-h-minus-one-seed-evidence-v1'
+          AND NOT EXISTS (
+            SELECT 1
+            FROM (
+              SELECT protected_snapshot.snapshot_id
+              FROM proof_indexer.meta migration
+              CROSS JOIN LATERAL (
+                VALUES
+                  (
+                    migration.value->'replayEvidence'->'seed'
+                      ->'snapshotIds'
+                  ),
+                  (
+                    migration.value->'replayEvidence'->'closing'
+                      ->'snapshotIds'
+                  )
+              ) snapshot_group(snapshot_ids)
+              CROSS JOIN LATERAL jsonb_array_elements_text(
+                CASE
+                  WHEN jsonb_typeof(snapshot_group.snapshot_ids) = 'array'
+                  THEN snapshot_group.snapshot_ids
+                  ELSE '[]'::jsonb
+                END
+              ) protected_snapshot(snapshot_id)
+              WHERE migration.key = 'workAmoV5Migration:' || $1
+                AND migration.value->>'network' = $1
+                AND migration.value->>'model' =
+                  'canonical-work-amo-v5-migration-v2'
+                AND migration.value->>'status' = 'complete'
+                AND migration.value->'replayEvidence'->>'complete' = 'true'
+                AND COALESCE(protected_snapshot.snapshot_id, '') <> ''
+              UNION
+              SELECT
+                seed_evidence.payload->'canonicalSummary'->>'snapshotId'
+              FROM proof_indexer.ledger_snapshots seed_evidence
+              WHERE seed_evidence.network = $1
+                AND seed_evidence.payload->>'model' =
+                  'canonical-work-amo-v5-h-minus-one-seed-evidence-v1'
+                AND COALESCE(
+                  seed_evidence.payload->'canonicalSummary'->>'snapshotId',
+                  ''
+                ) <> ''
+            ) work_amo_v5_protected
+            WHERE work_amo_v5_protected.snapshot_id =
+              snapshot.snapshot_id
+          )
       `,
       [NETWORK],
     );
@@ -15856,11 +15989,56 @@ async function prepareCanonicalPwtRangeReplay(client) {
     ];
     await client.query(
       `
-        DELETE FROM proof_indexer.ledger_snapshots
-        WHERE network = $1
-          AND NOT (snapshot_id = ANY($2::text[]))
-          AND COALESCE(payload->>'model', '') <>
+        DELETE FROM proof_indexer.ledger_snapshots snapshot
+        WHERE snapshot.network = $1
+          AND NOT (snapshot.snapshot_id = ANY($2::text[]))
+          AND COALESCE(snapshot.payload->>'model', '') <>
             'canonical-work-amo-v5-h-minus-one-seed-evidence-v1'
+          AND NOT EXISTS (
+            SELECT 1
+            FROM (
+              SELECT protected_snapshot.snapshot_id
+              FROM proof_indexer.meta migration
+              CROSS JOIN LATERAL (
+                VALUES
+                  (
+                    migration.value->'replayEvidence'->'seed'
+                      ->'snapshotIds'
+                  ),
+                  (
+                    migration.value->'replayEvidence'->'closing'
+                      ->'snapshotIds'
+                  )
+              ) snapshot_group(snapshot_ids)
+              CROSS JOIN LATERAL jsonb_array_elements_text(
+                CASE
+                  WHEN jsonb_typeof(snapshot_group.snapshot_ids) = 'array'
+                  THEN snapshot_group.snapshot_ids
+                  ELSE '[]'::jsonb
+                END
+              ) protected_snapshot(snapshot_id)
+              WHERE migration.key = 'workAmoV5Migration:' || $1
+                AND migration.value->>'network' = $1
+                AND migration.value->>'model' =
+                  'canonical-work-amo-v5-migration-v2'
+                AND migration.value->>'status' = 'complete'
+                AND migration.value->'replayEvidence'->>'complete' = 'true'
+                AND COALESCE(protected_snapshot.snapshot_id, '') <> ''
+              UNION
+              SELECT
+                seed_evidence.payload->'canonicalSummary'->>'snapshotId'
+              FROM proof_indexer.ledger_snapshots seed_evidence
+              WHERE seed_evidence.network = $1
+                AND seed_evidence.payload->>'model' =
+                  'canonical-work-amo-v5-h-minus-one-seed-evidence-v1'
+                AND COALESCE(
+                  seed_evidence.payload->'canonicalSummary'->>'snapshotId',
+                  ''
+                ) <> ''
+            ) work_amo_v5_protected
+            WHERE work_amo_v5_protected.snapshot_id =
+              snapshot.snapshot_id
+          )
       `,
       [NETWORK, preservedSnapshotIds],
     );
@@ -21034,6 +21212,51 @@ async function repairCanonicalIncbIssuance(client) {
             SELECT 1
             FROM manifest_locked locked
             WHERE locked.snapshot_id = snapshot.snapshot_id
+          )
+          AND NOT EXISTS (
+            SELECT 1
+            FROM (
+              SELECT protected_snapshot.snapshot_id
+              FROM proof_indexer.meta migration
+              CROSS JOIN LATERAL (
+                VALUES
+                  (
+                    migration.value->'replayEvidence'->'seed'
+                      ->'snapshotIds'
+                  ),
+                  (
+                    migration.value->'replayEvidence'->'closing'
+                      ->'snapshotIds'
+                  )
+              ) snapshot_group(snapshot_ids)
+              CROSS JOIN LATERAL jsonb_array_elements_text(
+                CASE
+                  WHEN jsonb_typeof(snapshot_group.snapshot_ids) = 'array'
+                  THEN snapshot_group.snapshot_ids
+                  ELSE '[]'::jsonb
+                END
+              ) protected_snapshot(snapshot_id)
+              WHERE migration.key = 'workAmoV5Migration:' || $1
+                AND migration.value->>'network' = $1
+                AND migration.value->>'model' =
+                  'canonical-work-amo-v5-migration-v2'
+                AND migration.value->>'status' = 'complete'
+                AND migration.value->'replayEvidence'->>'complete' = 'true'
+                AND COALESCE(protected_snapshot.snapshot_id, '') <> ''
+              UNION
+              SELECT
+                seed_evidence.payload->'canonicalSummary'->>'snapshotId'
+              FROM proof_indexer.ledger_snapshots seed_evidence
+              WHERE seed_evidence.network = $1
+                AND seed_evidence.payload->>'model' =
+                  'canonical-work-amo-v5-h-minus-one-seed-evidence-v1'
+                AND COALESCE(
+                  seed_evidence.payload->'canonicalSummary'->>'snapshotId',
+                  ''
+                ) <> ''
+            ) work_amo_v5_protected
+            WHERE work_amo_v5_protected.snapshot_id =
+              snapshot.snapshot_id
           )
       `,
       [

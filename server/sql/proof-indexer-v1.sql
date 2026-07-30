@@ -1518,6 +1518,12 @@ CREATE INDEX IF NOT EXISTS ledger_snapshots_canonical_payload_latest_idx
   )
   WHERE payload ? 'snapshotId';
 
+CREATE UNIQUE INDEX IF NOT EXISTS
+  ledger_snapshots_work_amo_v5_h_minus_one_seed_evidence_network_uidx
+ON proof_indexer.ledger_snapshots (network)
+WHERE payload->>'model' =
+  'canonical-work-amo-v5-h-minus-one-seed-evidence-v1';
+
 CREATE OR REPLACE FUNCTION
   proof_indexer.reject_work_amo_h_minus_one_seed_evidence_mutation()
 RETURNS trigger
@@ -1532,9 +1538,47 @@ BEGIN
       AND NEW.payload->>'model' =
         'canonical-work-amo-v5-h-minus-one-seed-evidence-v1'
     )
+    OR EXISTS (
+      SELECT 1
+      FROM proof_indexer.meta migration
+      CROSS JOIN LATERAL (
+        VALUES
+          (
+            migration.value->'replayEvidence'->'seed'
+              ->'snapshotIds'
+          ),
+          (
+            migration.value->'replayEvidence'->'closing'
+              ->'snapshotIds'
+          )
+      ) snapshot_group(snapshot_ids)
+      CROSS JOIN LATERAL jsonb_array_elements_text(
+        CASE
+          WHEN jsonb_typeof(snapshot_group.snapshot_ids) = 'array'
+          THEN snapshot_group.snapshot_ids
+          ELSE '[]'::jsonb
+        END
+      ) protected_snapshot(snapshot_id)
+      WHERE migration.key = 'workAmoV5Migration:' || OLD.network
+        AND migration.value->>'network' = OLD.network
+        AND migration.value->>'model' =
+          'canonical-work-amo-v5-migration-v2'
+        AND migration.value->>'status' = 'complete'
+        AND migration.value->'replayEvidence'->>'complete' = 'true'
+        AND protected_snapshot.snapshot_id = OLD.snapshot_id
+    )
+    OR EXISTS (
+      SELECT 1
+      FROM proof_indexer.ledger_snapshots seed_evidence
+      WHERE seed_evidence.network = OLD.network
+        AND seed_evidence.payload->>'model' =
+          'canonical-work-amo-v5-h-minus-one-seed-evidence-v1'
+        AND seed_evidence.payload->'canonicalSummary'->>'snapshotId' =
+          OLD.snapshot_id
+    )
   THEN
     RAISE EXCEPTION
-      'AMO V5 H-1 seed evidence is immutable'
+      'AMO V5 seed evidence and its canonical snapshot dependencies are immutable'
       USING ERRCODE = '55000';
   END IF;
   IF TG_OP = 'DELETE' THEN
