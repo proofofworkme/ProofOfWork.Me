@@ -7000,7 +7000,7 @@ function formatWorkAmountForTokenAtoms(
     | undefined,
 ) {
   return workTokenAmountScale(token) === WORK_AMO_UNIT_SCALE_BIGINT
-    ? formatWorkAmountAmo(atoms)
+    ? formatWorkAmountAmo(atoms, false)
     : formatWorkAmount(atoms);
 }
 
@@ -7341,7 +7341,9 @@ function normalizedWorkAmoV6Estimate(
     value.unitNetworkValueBeforeQ8,
   );
   const unitPriceSats = canonicalPositiveIntegerText(value.unitPriceSats);
-  return value.estimateOnly === true &&
+  const isEstimateOnly =
+    value.estimateOnly === undefined || value.estimateOnly === true;
+  return isEstimateOnly &&
     workAmoV6FaceProofsAllowed(unitFaceProofs) &&
     unitAmountAtoms &&
     unitAmountAtoms.length <= 80 &&
@@ -7365,6 +7367,9 @@ function workAmoV6EstimateForFace(
   quote: WorkFloorQuote | undefined,
   faceProofs: number,
 ) {
+  if (!workAmoV6FaceProofsAllowed(faceProofs)) {
+    return undefined;
+  }
   const estimates = quote?.workAmoV6?.estimates;
   const candidate = Array.isArray(estimates)
     ? estimates.find(
@@ -7373,17 +7378,32 @@ function workAmoV6EstimateForFace(
     : estimates?.[String(faceProofs)];
   const normalized = normalizedWorkAmoV6Estimate(candidate);
   const networkValueBeforeQ8 = canonicalPositiveIntegerText(
-    quote?.workAmoV6?.networkValueBeforeQ8,
+    quote?.workAmoV6?.networkValueBeforeQ8 ||
+      quote?.networkValueQ8,
   );
   const derived = workAmoV6UnitTerms(faceProofs, networkValueBeforeQ8);
-  return normalized &&
-    derived &&
+  if (!derived) {
+    return undefined;
+  }
+
+  if (
+    normalized &&
     normalized.unitNetworkValueBeforeQ8 === networkValueBeforeQ8 &&
     normalized.unitAmountAtoms === derived.unitAmountAtoms &&
     normalized.unitMinimumPriceSats === derived.unitMinimumPriceSats &&
     normalized.unitPriceSats === derived.unitPriceSats
-    ? normalized
-    : undefined;
+  ) {
+    return normalized;
+  }
+
+  return {
+    estimateOnly: true,
+    unitAmountAtoms: derived.unitAmountAtoms,
+    unitFaceProofs: faceProofs as WorkAmoV6Estimate["unitFaceProofs"],
+    unitMinimumPriceSats: derived.unitMinimumPriceSats,
+    unitNetworkValueBeforeQ8: networkValueBeforeQ8,
+    unitPriceSats: derived.unitPriceSats,
+  } satisfies WorkAmoV6Estimate;
 }
 
 function workAmoListingFaceUsdCents(listing: PowTokenListing) {
@@ -27153,6 +27173,7 @@ export default function App() {
     return window.confirm(
       `${workAmoV6FaceLabel(faceProofs)} AMO unit: the displayed ${formatWorkAmountAmo(
         BigInt(estimate.unitAmountAtoms ?? "0"),
+        false,
       )} WORK amount is an estimate only. The ${Number(estimate.unitPriceSats).toLocaleString()}-proof face is fixed in the intent; confirmation order derives and freezes the exact WORK amount from canonical network value immediately before the listing. The transaction can fail admission if the balance or canonical state is invalid at its position. Registry and miner fees are final once broadcast. Continue?`,
     );
   }
@@ -27173,6 +27194,7 @@ export default function App() {
     return window.confirm(
       `${actionLabel === "seal" ? "Seal" : "Purchase"} ${unitLabel}: this confirmed listing is frozen at ${formatWorkAmountAmo(
         BigInt(frozen.amountAtoms),
+        false,
       )} WORK for ${frozen.priceSats.toLocaleString()} proofs. Later network-value changes do not reprice it; any USD equivalent is display-only. Registry and miner fees are final once broadcast. Continue?`,
     );
   }
@@ -27285,7 +27307,7 @@ export default function App() {
           );
       const attemptedAmountDisplay =
         workListing && attemptedAmountUnits !== null
-          ? `${formatWorkAmountAmo(attemptedAmountUnits)} estimated`
+          ? `${formatWorkAmountAmo(attemptedAmountUnits, false)} estimated`
           : parsedAmount?.display ?? "unknown";
       if (
         attemptedAmountUnits === null ||
@@ -34020,12 +34042,13 @@ function TokenWalletWorkspace({
                       · display only
                     </small>
                   </div>
-                <div>
+                  <div>
                     <span>Estimated WORK</span>
                     <strong>
                       {selectedWorkAmoEstimate?.unitAmountAtoms
                         ? formatWorkAmountAmo(
                             BigInt(selectedWorkAmoEstimate.unitAmountAtoms),
+                            false,
                           )
                         : workFloorLoading
                           ? "Loading"
@@ -34247,11 +34270,13 @@ function TokenWalletWorkspace({
                             ? workFrozenTerms
                               ? `${formatWorkAmountAmo(
                                   BigInt(workFrozenTerms.amountAtoms),
+                                  false,
                                 )} WORK · ${workFrozenTerms.priceSats.toLocaleString()} frozen proofs`
                               : workEstimate?.unitAmountAtoms &&
                                   workEstimate.unitPriceSats
                                 ? `${formatWorkAmountAmo(
                                     BigInt(workEstimate.unitAmountAtoms),
+                                    false,
                                   )} estimated WORK · ${workEstimate.unitPriceSats.toLocaleString()} estimated proofs · terms finalize at confirmation`
                                 : "amount and proof price pending confirmation"
                             : `${item.priceSats.toLocaleString()} proofs · ${tokenSatsPerUnit(unitSats)} proofs / ${item.ticker}`}
@@ -41514,7 +41539,7 @@ function InfinityBondMarketPanel({
                   </div>
                   <dl>
                     <div>
-                      <dt>Amount</dt>
+                        <dt>Amount</dt>
                       <dd>
                         {tokenAmountDisplay(
                           listing,
@@ -43173,11 +43198,13 @@ function TokenMarketplacePanel({
                           ? workFrozen
                             ? `${formatWorkAmountAmo(
                                 BigInt(workFrozen.amountAtoms),
+                                false,
                               )} WORK · ${workFrozen.priceSats.toLocaleString()} frozen proofs`
                             : workEstimate?.unitAmountAtoms &&
                                 workEstimate.unitPriceSats
                               ? `${formatWorkAmountAmo(
                                   BigInt(workEstimate.unitAmountAtoms),
+                                  false,
                                 )} estimated WORK · ${workEstimate.unitPriceSats.toLocaleString()} estimated proofs`
                               : "terms pending confirmation"
                           : `${listing.priceSats.toLocaleString()} proofs · ${tokenSatsPerUnit(unitSats)} proof / ${listing.ticker}`}
@@ -43306,10 +43333,12 @@ function TokenMarketplacePanel({
                           ? workFrozen
                               ? `${formatWorkAmountAmo(
                                   BigInt(workFrozen.amountAtoms),
+                                  false,
                                 )} WORK`
                               : workEstimate?.unitAmountAtoms
                                 ? `${formatWorkAmountAmo(
                                     BigInt(workEstimate.unitAmountAtoms),
+                                    false,
                                   )} WORK estimated`
                                 : "Pending confirmation"
                             : tokenAmountDisplay(

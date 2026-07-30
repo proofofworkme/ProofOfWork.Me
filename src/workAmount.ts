@@ -67,6 +67,7 @@ function formatWorkAmountWithScale(
   value: bigint | string,
   fractionDigits: number,
   scale: bigint,
+  trimTrailingZeros = true,
 ) {
   const atoms =
     typeof value === "bigint"
@@ -89,7 +90,9 @@ function formatWorkAmountWithScale(
   const canonical =
     fractionDigits === 0
       ? ""
-      : fraction.slice(0, fractionDigits).replace(/0+$/u, "");
+      : trimTrailingZeros
+        ? fraction.slice(0, fractionDigits).replace(/0+$/u, "")
+        : fraction.slice(0, fractionDigits);
   const formatted = canonical ? `${whole.toString()}.${canonical}` : whole.toString();
   return negative ? `-${formatted}` : formatted;
 }
@@ -125,11 +128,15 @@ export function formatWorkAmount(value: bigint | string) {
   return fraction ? `${groupedWhole}.${fraction}` : groupedWhole;
 }
 
-export function formatWorkAmountAmo(value: bigint | string) {
+export function formatWorkAmountAmo(
+  value: bigint | string,
+  trimTrailingZeros = true,
+) {
   const canonical = formatWorkAmountWithScale(
     value,
     WORK_AMO_DECIMALS,
     WORK_AMO_UNIT_SCALE,
+    trimTrailingZeros,
   );
   const [whole, fraction] = canonical.split(".");
   const groupedWhole = whole.replace(/\B(?=(\d{3})+(?!\d))/gu, ",");
