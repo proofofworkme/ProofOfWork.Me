@@ -21961,6 +21961,100 @@ function inceptionIssuanceMetadataFromMints(mints) {
   };
 }
 
+function exactWorkAmountStorageModelFromState(state) {
+  const recognizedModels = new Set([
+    WORK_ATOMIC_PROJECTION_MODEL,
+    WORK_SUBATOM_PROJECTION_MODEL,
+  ]);
+  const declaredModels = [];
+  let invalidDeclaration = false;
+  const addDeclaration = (value) => {
+    const model = String(value ?? "").trim();
+    if (!model) {
+      return;
+    }
+    if (!recognizedModels.has(model)) {
+      invalidDeclaration = true;
+      return;
+    }
+    declaredModels.push(model);
+  };
+  addDeclaration(state?.amountStorageModel);
+  const workDefinitions = (Array.isArray(state?.tokens) ? state.tokens : [])
+    .filter(
+      (token) =>
+        String(token?.tokenId ?? "").trim().toLowerCase() ===
+        WORK_TOKEN_ID,
+    );
+  if (workDefinitions.length > 1) {
+    return "";
+  }
+  addDeclaration(workDefinitions[0]?.amountStorageModel);
+  const models = new Set(declaredModels);
+  if (invalidDeclaration || models.size !== 1) {
+    return "";
+  }
+  const model = [...models][0];
+  const metadataMatches = (record, requireBaseFields = false) => {
+    if (!record) {
+      return !requireBaseFields;
+    }
+    const decimalsPresent =
+      record.decimals !== undefined && record.decimals !== null &&
+      record.decimals !== "";
+    const unitScalePresent =
+      record.unitScale !== undefined && record.unitScale !== null &&
+      record.unitScale !== "";
+    if (
+      (requireBaseFields && (!decimalsPresent || !unitScalePresent)) ||
+      (decimalsPresent &&
+        Number(record.decimals) !==
+          (model === WORK_SUBATOM_PROJECTION_MODEL
+            ? WORK_SUBATOM_DECIMALS
+            : WORK_DECIMALS)) ||
+      (unitScalePresent &&
+        String(record.unitScale) !==
+          (model === WORK_SUBATOM_PROJECTION_MODEL
+            ? WORK_SUBATOM_UNIT_SCALE_TEXT
+            : WORK_UNIT_SCALE_TEXT))
+    ) {
+      return false;
+    }
+    const precisionModel = String(record.precisionModel ?? "");
+    const precisionMatches =
+      model === WORK_SUBATOM_PROJECTION_MODEL
+        ? (!(requireBaseFields || precisionModel) ||
+          precisionModel === WORK_PRECISION_V2_MODEL)
+        : precisionModel === "";
+    if (!precisionMatches) {
+      return false;
+    }
+    const forbiddenFields =
+      model === WORK_SUBATOM_PROJECTION_MODEL
+        ? [
+            "confirmedSupplyAtoms",
+            "maxSupplyAtoms",
+            "mintAmountAtoms",
+            "pendingSupplyAtoms",
+          ]
+        : [
+            "confirmedSupplySubatoms",
+            "maxSupplySubatoms",
+            "mintAmountSubatoms",
+            "pendingSupplySubatoms",
+          ];
+    return forbiddenFields.every(
+      (field) =>
+        record[field] === undefined || record[field] === null ||
+        record[field] === "",
+    );
+  };
+  return metadataMatches(state) &&
+      metadataMatches(workDefinitions[0], workDefinitions.length === 1)
+    ? model
+    : "";
+}
+
 function inceptionAttachedWorkProjectionFromIssuance(
   issuance,
   workAmountStorageModel,
@@ -38385,9 +38479,8 @@ function bondSummaryPayloadFromLedger(ledger, config) {
   const inceptionAttachmentProjection = issuance
     ? inceptionAttachedWorkProjectionFromIssuance(
         issuance,
-        String(
-          ledgerTokenStateForScope(ledger, WORK_TOKEN_ID)
-            ?.amountStorageModel ?? "",
+        exactWorkAmountStorageModelFromState(
+          ledgerTokenStateForScope(ledger, WORK_TOKEN_ID),
         ),
       )
     : null;
@@ -40697,6 +40790,23 @@ async function buildIndexedCanonicalLedgerPayload(
       `Rejected ${label}: an exact canonical checkpoint hash is required.`,
     );
   }
+  const workPrecisionOptions = await workAmoV7ReplayPrecisionOptions(
+    network,
+    exactHeight,
+  );
+  const expectedWorkAmountStorageModel = String(
+    workPrecisionOptions.workAmountStorageModel ?? "",
+  );
+  if (
+    ![
+      WORK_ATOMIC_PROJECTION_MODEL,
+      WORK_SUBATOM_PROJECTION_MODEL,
+    ].includes(expectedWorkAmountStorageModel)
+  ) {
+    throw freshDataUnavailableError(
+      `Rejected ${label}: the exact WORK precision era is unavailable.`,
+    );
+  }
   const timingStartedAt = Date.now();
   let timingPreviousAt = timingStartedAt;
   const timingMs = {};
@@ -40734,6 +40844,15 @@ async function buildIndexedCanonicalLedgerPayload(
     }),
   ]);
   markTiming("sources");
+  const tableWorkAmountStorageModel =
+    exactWorkAmountStorageModelFromState(currentTokenTableState);
+  if (
+    tableWorkAmountStorageModel !== expectedWorkAmountStorageModel
+  ) {
+    throw freshDataUnavailableError(
+      `Rejected ${label}: the canonical WORK definition conflicts with the exact replay precision era.`,
+    );
+  }
   const sourceTipHeight = exactHeight;
   const registryState = registrySnapshot;
   const derivedTokenState = await tokenValueStateFromIndexedActivity(
@@ -40741,8 +40860,7 @@ async function buildIndexedCanonicalLedgerPayload(
     activityState,
     "",
     {
-      workAmountStorageModel:
-        currentTokenTableState?.amountStorageModel,
+      workAmountStorageModel: expectedWorkAmountStorageModel,
     },
   );
   const tokenState = derivedTokenState;
@@ -40780,6 +40898,14 @@ async function buildIndexedCanonicalLedgerPayload(
   const baseWorkTokenState =
     indexedWorkTokenState ??
     scopedTokenPayloadFromState(ledgerTokenTableState, WORK_TOKEN_ID);
+  if (
+    exactWorkAmountStorageModelFromState(baseWorkTokenState) !==
+      expectedWorkAmountStorageModel
+  ) {
+    throw freshDataUnavailableError(
+      `Rejected ${label}: the reconstructed WORK state conflicts with the exact replay precision era.`,
+    );
+  }
   const valueTokenState = tokenStateWithScopedTokenOverride(
     ledgerTokenTableState,
     baseWorkTokenState,
@@ -44328,7 +44454,9 @@ async function proofIndexBondSummaryPayload(
     !bondSummaryPayloadHasKnownMainnetValue(payload, config, {
       allowEmptyHistory: config.tokenId === INCB_TOKEN_ID,
       workAmountStorageModel:
-        canonicalLedger?.workTokenState?.amountStorageModel,
+        exactWorkAmountStorageModelFromState(
+          canonicalLedger?.workTokenState,
+        ),
     })
   ) {
     console.error(

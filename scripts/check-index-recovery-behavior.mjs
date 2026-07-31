@@ -9579,6 +9579,11 @@ check("Inception fixes attachment value at issuance and adds only later INCB mar
     API_PATH,
     "inceptionAttachedWorkProjectionFromIssuance",
   );
+  const exactWorkAmountStorageModelFromState = isolatedFunction(
+    API_PATH,
+    "exactWorkAmountStorageModelFromState",
+    { WORK_TOKEN_ID },
+  );
   const inceptionInvalidMintDispositionMatchesBond = isolatedFunction(
     API_PATH,
     "inceptionInvalidMintDispositionMatchesBond",
@@ -9659,6 +9664,7 @@ check("Inception fixes attachment value at issuance and adds only later INCB mar
       inceptionBondHasExplicitlyRejectedMint,
       inceptionIssuanceMetadataFromMints,
       isBondActivityItem,
+      exactWorkAmountStorageModelFromState,
       ledgerTokenStateForScope,
       numericValue,
       satsToUsdAtBtcUsd: () => 0,
@@ -9869,7 +9875,14 @@ check("Inception fixes attachment value at issuance and adds only later INCB mar
       },
       workFloor: { liveFloorSats: 3 },
       workTokenState: {
-        amountStorageModel: WORK_ATOMIC_PROJECTION_MODEL,
+        tokens: [
+          {
+            amountStorageModel: WORK_ATOMIC_PROJECTION_MODEL,
+            decimals: WORK_DECIMALS,
+            tokenId: WORK_TOKEN_ID,
+            unitScale: WORK_UNIT_SCALE_TEXT,
+          },
+        ],
         transfers: [
           {
             amount: 100,
@@ -10303,7 +10316,17 @@ check("Inception fixes attachment value at issuance and adds only later INCB mar
       },
       workFloor: { liveFloorSats: 3 },
       workTokenState: {
-        amountStorageModel: WORK_ATOMIC_PROJECTION_MODEL,
+        confirmedSupplyAtoms: "2100000000000000",
+        decimals: WORK_DECIMALS,
+        tokens: [
+          {
+            amountStorageModel: WORK_ATOMIC_PROJECTION_MODEL,
+            decimals: WORK_DECIMALS,
+            tokenId: WORK_TOKEN_ID,
+            unitScale: WORK_UNIT_SCALE_TEXT,
+          },
+        ],
+        unitScale: WORK_UNIT_SCALE_TEXT,
         transfers: [
           {
             amount: 100,
@@ -10439,6 +10462,26 @@ check("Inception fixes attachment value at issuance and adds only later INCB mar
     true,
     "the API's exact preactivation Q8 bundle must pass the worker publication contract",
   );
+  assert.equal(
+    exactWorkAmountStorageModelFromState(
+      canonicalLedger.workTokenState,
+    ),
+    WORK_ATOMIC_PROJECTION_MODEL,
+    "the active Q8 model resolves from the unique canonical WORK definition when the top-level alias is absent",
+  );
+  assert.equal(
+    exactWorkAmountStorageModelFromState({
+      amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+      tokens: [
+        {
+          amountStorageModel: WORK_ATOMIC_PROJECTION_MODEL,
+          tokenId: WORK_TOKEN_ID,
+        },
+      ],
+    }),
+    "",
+    "conflicting payload-wide and definition precision declarations fail closed",
+  );
   const q16AggregateSummary = bondSummaryPayloadFromLedger(
     {
       activity: [bond, oneAtomBond],
@@ -10462,7 +10505,19 @@ check("Inception fixes attachment value at issuance and adds only later INCB mar
       },
       workFloor: { liveFloorSats: 3 },
       workTokenState: {
-        amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+        confirmedSupplySubatoms: "210000000000000000000000",
+        decimals: WORK_SUBATOM_DECIMALS,
+        precisionModel: WORK_PRECISION_V2_MODEL,
+        tokens: [
+          {
+            amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+            decimals: WORK_SUBATOM_DECIMALS,
+            precisionModel: WORK_PRECISION_V2_MODEL,
+            tokenId: WORK_TOKEN_ID,
+            unitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,
+          },
+        ],
+        unitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,
         transfers: [
           {
             amount: 100,
