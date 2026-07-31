@@ -7475,9 +7475,172 @@ let workAmoV7DeclarationDiscoveryCache = {
   tipHeight: 0,
 };
 
+function workAmoV7DeclarationCandidatesFromCanonicalTransactions(
+  transactions,
+  {
+    blockHash,
+    blockHeight,
+    commitment,
+    source,
+  },
+) {
+  const candidates = [];
+  for (const transaction of transactions) {
+    if (!transactionConfirmed(transaction)) {
+      throw new Error(
+        "canonical-declaration-prefix-contains-unconfirmed-transaction",
+      );
+    }
+    const txid = transactionTxid(transaction);
+    const transactionHeight = transactionBlockHeight(transaction);
+    const transactionHash = transactionBlockHash(transaction);
+    const blockTransactionIndex = transactionBlockIndex(transaction);
+    if (
+      !txid ||
+      !Number.isSafeInteger(transactionHeight) ||
+      transactionHeight < 1 ||
+      transactionHeight > blockHeight ||
+      !/^[0-9a-f]{64}$/u.test(transactionHash) ||
+      (
+        transactionHeight === blockHeight &&
+        transactionHash !== blockHash
+      ) ||
+      !Number.isSafeInteger(blockTransactionIndex) ||
+      blockTransactionIndex < 0
+    ) {
+      throw new Error(
+        "canonical-declaration-prefix-transaction-position-invalid",
+      );
+    }
+    const outputs = Array.isArray(transaction?.vout)
+      ? transaction.vout
+      : [];
+    for (const [protocolVout] of outputs.entries()) {
+      if (
+        decodedOpReturnAt(outputs, protocolVout) !==
+        commitment.protocolRecord
+      ) {
+        continue;
+      }
+      candidates.push({
+        blockHash: transactionHash,
+        blockHeight: transactionHeight,
+        blockTransactionIndex,
+        protocolVout,
+        recordOrdinal: 0,
+        txid,
+      });
+    }
+  }
+  candidates.sort(
+    (left, right) =>
+      left.blockHeight - right.blockHeight ||
+      left.blockTransactionIndex - right.blockTransactionIndex ||
+      left.protocolVout - right.protocolVout ||
+      left.recordOrdinal - right.recordOrdinal ||
+      compareCanonicalUtf8(left.txid, right.txid),
+  );
+  const limit = 32;
+  return {
+    candidates: candidates.slice(0, limit),
+    complete: candidates.length <= limit,
+    overflow: candidates.length > limit,
+    scan: {
+      blockHash,
+      complete: true,
+      indexedThroughBlock: blockHeight,
+      tipHeight: blockHeight,
+    },
+    source,
+  };
+}
+
+function workAmoV7DeclarationCandidatesFromCanonicalPrefix(
+  prefix,
+  commitment,
+) {
+  const blockHeight = Number(prefix?.coverageHeight);
+  const indexedThroughBlock = Number(
+    prefix?.indexedThroughBlock,
+  );
+  const blockHash = String(prefix?.blockHash ?? "")
+    .trim()
+    .toLowerCase();
+  const previousBlockHash = String(
+    prefix?.previousBlockHash ?? "",
+  ).trim().toLowerCase();
+  if (
+    prefix?.canonicalCoverage !== true ||
+    !Number.isSafeInteger(blockHeight) ||
+    blockHeight < 1 ||
+    indexedThroughBlock !== blockHeight ||
+    !/^[0-9a-f]{64}$/u.test(blockHash) ||
+    !/^[0-9a-f]{64}$/u.test(previousBlockHash) ||
+    !Array.isArray(prefix?.transactions) ||
+    !Array.isArray(prefix?.blockTransactions) ||
+    prefix.blockTransactions.length < 1 ||
+    !commitment
+  ) {
+    throw new Error(
+      "canonical-replay-prefix-invalid-for-declaration-discovery",
+    );
+  }
+  return workAmoV7DeclarationCandidatesFromCanonicalTransactions(
+    prefix.transactions,
+    {
+      blockHash,
+      blockHeight,
+      commitment,
+      source: "canonical-replay-prefix",
+    },
+  );
+}
+
+function workAmoV7DeclarationCandidatesFromCanonicalCheckpoint(
+  checkpoint,
+  expectedTipHeight,
+  expectedTipHash,
+  commitment,
+) {
+  const blockHeight = Number(expectedTipHeight);
+  const blockHash = String(expectedTipHash ?? "")
+    .trim()
+    .toLowerCase();
+  if (
+    checkpoint?.fault?.active === true ||
+    Number(checkpoint?.indexedThroughBlock) !== blockHeight ||
+    String(checkpoint?.checkpointHash ?? "")
+      .trim()
+      .toLowerCase() !== blockHash ||
+    !Array.isArray(checkpoint?.transactions) ||
+    !Number.isSafeInteger(blockHeight) ||
+    blockHeight < 1 ||
+    !/^[0-9a-f]{64}$/u.test(blockHash) ||
+    !commitment
+  ) {
+    throw new Error(
+      "canonical-index-checkpoint-invalid-for-declaration-discovery",
+    );
+  }
+  return workAmoV7DeclarationCandidatesFromCanonicalTransactions(
+    checkpoint.transactions,
+    {
+      blockHash,
+      blockHeight,
+      commitment,
+      source: "canonical-index-checkpoint",
+    },
+  );
+}
+
 async function discoverExactWorkAmoV7Declaration(
   network,
-  { force = false } = {},
+  {
+    canonicalPrefix = null,
+    expectedTipHash = "",
+    expectedTipHeight = null,
+    force = false,
+  } = {},
 ) {
   if (network !== "livenet") {
     return {
@@ -7489,7 +7652,13 @@ async function discoverExactWorkAmoV7Declaration(
     };
   }
   const configured = configuredWorkAmoV7Declaration();
-  if (workAmoV7DiscoveredDeclaration) {
+  const canonicalPrefixRequested = canonicalPrefix !== null;
+  const exactCheckpointRequested =
+    expectedTipHeight !== null ||
+    String(expectedTipHash ?? "").trim().length > 0;
+  const replayScoped =
+    canonicalPrefixRequested || exactCheckpointRequested;
+  if (!replayScoped && workAmoV7DiscoveredDeclaration) {
     if (
       configured &&
       !workAmoV7DeclarationsEqual(
@@ -7517,6 +7686,7 @@ async function discoverExactWorkAmoV7Declaration(
     };
   }
   if (
+    !replayScoped &&
     !force &&
     workAmoV7DeclarationDiscoveryCache.network === network &&
     workAmoV7DeclarationDiscoveryCache.expiresAt > Date.now()
@@ -7535,16 +7705,39 @@ async function discoverExactWorkAmoV7Declaration(
     };
   }
   try {
-    const [startHeightResult, startHashResult] = await Promise.all([
-      bitcoinRpc("getblockcount", []),
-      bitcoinRpc("getbestblockhash", []),
-    ]);
-    const startHeight = Number(
-      startHeightResult?.ok ? startHeightResult.result : NaN,
-    );
-    const startHash = String(
-      startHashResult?.ok ? startHashResult.result : "",
-    ).trim().toLowerCase();
+    let startHeight;
+    let startHash;
+    let indexedCandidates;
+    if (canonicalPrefixRequested) {
+      indexedCandidates =
+        workAmoV7DeclarationCandidatesFromCanonicalPrefix(
+          canonicalPrefix,
+          commitment,
+        );
+      startHeight = Number(
+        indexedCandidates?.scan?.indexedThroughBlock,
+      );
+      startHash = String(
+        indexedCandidates?.scan?.blockHash ?? "",
+      ).trim().toLowerCase();
+    } else if (exactCheckpointRequested) {
+      startHeight = Number(expectedTipHeight);
+      startHash = String(expectedTipHash ?? "")
+        .trim()
+        .toLowerCase();
+    } else {
+      const [startHeightResult, startHashResult] =
+        await Promise.all([
+          bitcoinRpc("getblockcount", []),
+          bitcoinRpc("getbestblockhash", []),
+        ]);
+      startHeight = Number(
+        startHeightResult?.ok ? startHeightResult.result : NaN,
+      );
+      startHash = String(
+        startHashResult?.ok ? startHashResult.result : "",
+      ).trim().toLowerCase();
+    }
     if (
       !Number.isSafeInteger(startHeight) ||
       startHeight < 1 ||
@@ -7552,8 +7745,39 @@ async function discoverExactWorkAmoV7Declaration(
     ) {
       throw new Error("canonical-tip-unavailable");
     }
-    const indexedCandidates =
-      await proofIndexWorkAmoV7DeclarationCandidates(
+    if (replayScoped) {
+      const canonicalHashResult = await bitcoinRpc(
+        "getblockhash",
+        [startHeight],
+      );
+      const canonicalHash = String(
+        canonicalHashResult?.ok
+          ? canonicalHashResult.result
+          : "",
+      ).trim().toLowerCase();
+      if (canonicalHash !== startHash) {
+        throw new Error(
+          "canonical-replay-checkpoint-unavailable",
+        );
+      }
+    }
+    if (!indexedCandidates && exactCheckpointRequested) {
+      const checkpoint =
+        await proofIndexCanonicalTransactionsPayload(
+          network,
+          startHeight,
+        );
+      indexedCandidates =
+        workAmoV7DeclarationCandidatesFromCanonicalCheckpoint(
+          checkpoint,
+          startHeight,
+          startHash,
+          commitment,
+        );
+    }
+    if (!indexedCandidates) {
+      indexedCandidates =
+        await proofIndexWorkAmoV7DeclarationCandidates(
         network,
         {
           expectedTipHash: startHash,
@@ -7561,6 +7785,7 @@ async function discoverExactWorkAmoV7Declaration(
           limit: 32,
         },
       );
+    }
     const indexedHeight = Number(
       indexedCandidates?.scan?.indexedThroughBlock,
     );
@@ -7705,25 +7930,69 @@ async function discoverExactWorkAmoV7Declaration(
         left.declaration.blockTransactionIndex -
           right.declaration.blockTransactionIndex,
     );
-    const [endHeightResult, endHashResult] = await Promise.all([
-      bitcoinRpc("getblockcount", []),
-      bitcoinRpc("getbestblockhash", []),
-    ]);
-    const endHeight = Number(
-      endHeightResult?.ok ? endHeightResult.result : NaN,
-    );
-    const endHash = String(
-      endHashResult?.ok ? endHashResult.result : "",
-    ).trim().toLowerCase();
+    let endHeight;
+    let endHash;
+    if (replayScoped) {
+      const endHashResult = await bitcoinRpc(
+        "getblockhash",
+        [startHeight],
+      );
+      endHeight = startHeight;
+      endHash = String(
+        endHashResult?.ok ? endHashResult.result : "",
+      ).trim().toLowerCase();
+    } else {
+      const [endHeightResult, endHashResult] =
+        await Promise.all([
+          bitcoinRpc("getblockcount", []),
+          bitcoinRpc("getbestblockhash", []),
+        ]);
+      endHeight = Number(
+        endHeightResult?.ok ? endHeightResult.result : NaN,
+      );
+      endHash = String(
+        endHashResult?.ok ? endHashResult.result : "",
+      ).trim().toLowerCase();
+    }
     if (endHeight !== startHeight || endHash !== startHash) {
       throw new Error("canonical-tip-changed-during-discovery");
     }
     const declaration = candidates[0]?.declaration ?? null;
+    const scopedProcessLatch =
+      replayScoped &&
+      workAmoV7DiscoveredDeclaration &&
+      Number(workAmoV7DiscoveredDeclaration.blockHeight) <=
+        startHeight
+        ? workAmoV7DiscoveredDeclaration
+        : null;
     if (
-      configured &&
+      scopedProcessLatch &&
       (
         !declaration ||
-        !workAmoV7DeclarationsEqual(configured, declaration)
+        !workAmoV7DeclarationsEqual(
+          scopedProcessLatch,
+          declaration,
+        )
+      )
+    ) {
+      throw new Error(
+        "canonical-replay-prefix-conflicts-with-process-latch",
+      );
+    }
+    const scopedConfigured =
+      replayScoped &&
+      configured &&
+      Number(configured.blockHeight) > startHeight
+        ? null
+        : configured;
+    if (
+      scopedConfigured &&
+      (
+        !declaration ||
+        !workAmoV7DeclarationsEqual(
+          scopedConfigured,
+          declaration,
+        )
       )
     ) {
       throw new Error(
@@ -7731,6 +8000,17 @@ async function discoverExactWorkAmoV7Declaration(
       );
     }
     if (declaration) {
+      if (
+        workAmoV7DiscoveredDeclaration &&
+        !workAmoV7DeclarationsEqual(
+          workAmoV7DiscoveredDeclaration,
+          declaration,
+        )
+      ) {
+        throw new Error(
+          "canonical-declaration-conflicts-with-process-latch",
+        );
+      }
       workAmoV7DiscoveredDeclaration = declaration;
       workAmoV7DeclarationEmbargoLatch = true;
     }
@@ -7739,16 +8019,22 @@ async function discoverExactWorkAmoV7Declaration(
       declaration,
       error: "",
       source: declaration
-        ? "canonical-registry-discovery"
-        : "canonical-registry-negative",
+        ? replayScoped
+          ? "canonical-replay-declaration-discovery"
+          : "canonical-registry-discovery"
+        : replayScoped
+          ? "canonical-replay-declaration-negative"
+          : "canonical-registry-negative",
       tipHash: endHash,
       tipHeight: endHeight,
     };
-    workAmoV7DeclarationDiscoveryCache = {
-      ...result,
-      expiresAt: Date.now() + 5_000,
-      network,
-    };
+    if (!replayScoped) {
+      workAmoV7DeclarationDiscoveryCache = {
+        ...result,
+        expiresAt: Date.now() + 5_000,
+        network,
+      };
+    }
     return result;
   } catch (error) {
     const result = {
@@ -7762,7 +8048,9 @@ async function discoverExactWorkAmoV7Declaration(
       tipHash: "",
       tipHeight: 0,
     };
-    workAmoV7DeclarationDiscoveryCache = result;
+    if (!replayScoped) {
+      workAmoV7DeclarationDiscoveryCache = result;
+    }
     return result;
   }
 }
@@ -7770,6 +8058,7 @@ async function discoverExactWorkAmoV7Declaration(
 async function workAmoV7ReplayPrecisionOptions(
   network,
   replayCoverageHeight,
+  replayCoverageHash = "",
 ) {
   if (network !== "livenet") {
     return {};
@@ -7778,6 +8067,14 @@ async function workAmoV7ReplayPrecisionOptions(
   if (!Number.isSafeInteger(coverageHeight) || coverageHeight < 1) {
     throw freshDataUnavailableError(
       "WORK replay cannot choose a precision era without exact canonical coverage.",
+    );
+  }
+  const coverageHash = String(replayCoverageHash ?? "")
+    .trim()
+    .toLowerCase();
+  if (coverageHash && !/^[0-9a-f]{64}$/u.test(coverageHash)) {
+    throw freshDataUnavailableError(
+      "WORK replay cannot choose a precision era with an invalid canonical checkpoint hash.",
     );
   }
   const persistentActivationLatch =
@@ -7817,7 +8114,15 @@ async function workAmoV7ReplayPrecisionOptions(
 
   const discovery = await discoverExactWorkAmoV7Declaration(
     network,
-    { force: true },
+    {
+      ...(coverageHash
+        ? {
+            expectedTipHash: coverageHash,
+            expectedTipHeight: coverageHeight,
+          }
+        : {}),
+      force: true,
+    },
   );
   if (discovery?.checked !== true) {
     throw freshDataUnavailableError(
@@ -40796,6 +41101,7 @@ async function buildIndexedCanonicalLedgerPayload(
   const workPrecisionOptions = await workAmoV7ReplayPrecisionOptions(
     network,
     exactHeight,
+    exactHash,
   );
   const expectedWorkAmountStorageModel = String(
     workPrecisionOptions.workAmountStorageModel ?? "",
@@ -54057,7 +54363,21 @@ function workAmoV7OpeningStateFromLegacy(legacyState) {
   return workAmoV7CanonicalTokenStatePreimage(scaled);
 }
 
-async function workAmoV7ReplayInputsForBlock(requiredBlockHeight) {
+async function workAmoV7ReplayInputsForBlock(
+  context,
+  requiredBlockHeight,
+) {
+  const requiredHeight = Number(requiredBlockHeight);
+  if (
+    !Number.isSafeInteger(requiredHeight) ||
+    requiredHeight < 1 ||
+    Number(context?.coverageHeight) !== requiredHeight ||
+    Number(context?.indexedThroughBlock) !== requiredHeight
+  ) {
+    throw new Error(
+      "Canonical AMO V7 replay context does not match the required block height.",
+    );
+  }
   const configuredDeclaration =
     configuredWorkAmoV7Declaration();
   const latch =
@@ -54069,7 +54389,10 @@ async function workAmoV7ReplayInputsForBlock(requiredBlockHeight) {
     const discovery =
       await discoverExactWorkAmoV7Declaration(
         "livenet",
-        { force: true },
+        {
+          canonicalPrefix: context,
+          force: true,
+        },
       );
     if (discovery?.checked !== true) {
       throw new Error(
@@ -54186,10 +54509,16 @@ async function completeWorkAmoV5BlockProjection(
     requiredBlockHeight,
   );
   const v7ReplayInputs =
-    await workAmoV7ReplayInputsForBlock(requiredBlockHeight);
+    await workAmoV7ReplayInputsForBlock(
+      context,
+      requiredBlockHeight,
+    );
+  const v7ActivationHeight = Number(
+    v7ReplayInputs.workAmoV7?.activationHeight,
+  );
   if (
     v7ReplayInputs.workAmoV7 &&
-    requiredBlockHeight === WORK_AMO_V7_ACTIVATION_HEIGHT
+    requiredBlockHeight === v7ActivationHeight
   ) {
     const q16OpeningWorkState =
       workAmoV7OpeningStateFromLegacy(opening.workState);
@@ -54509,10 +54838,10 @@ async function completeWorkAmoV5BlockProjection(
           workTokenStateModel:
             "canonical-work-token-state-subatoms-v2",
           ...(requiredBlockHeight ===
-          WORK_AMO_V7_ACTIVATION_HEIGHT
+          v7ActivationHeight
             ? {
                 activationHeight:
-                  WORK_AMO_V7_ACTIVATION_HEIGHT,
+                  v7ActivationHeight,
                 precisionOpeningTokenStateCommitment:
                   workAmoV7CanonicalTokenStateCommitment(
                     opening.workState,

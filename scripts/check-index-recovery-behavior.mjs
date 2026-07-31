@@ -17919,6 +17919,59 @@ check("AMO V7 declaration discovery uses one exact-tip protocol-record index", (
   );
 });
 
+check("AMO V7 block replay uses its proven canonical prefix without a live-tip cycle", () => {
+  const discoverySource = topLevelFunctionSource(
+    API_PATH,
+    "discoverExactWorkAmoV7Declaration",
+  );
+  const replaySource = topLevelFunctionSource(
+    API_PATH,
+    "workAmoV7ReplayInputsForBlock",
+  );
+  const projectionSource = topLevelFunctionSource(
+    API_PATH,
+    "completeWorkAmoV5BlockProjection",
+  );
+  const precisionSource = topLevelFunctionSource(
+    API_PATH,
+    "workAmoV7ReplayPrecisionOptions",
+  );
+  const ledgerSource = topLevelFunctionSource(
+    API_PATH,
+    "buildIndexedCanonicalLedgerPayload",
+  );
+  assert.match(
+    replaySource,
+    /discoverExactWorkAmoV7Declaration\([\s\S]*canonicalPrefix: context/u,
+  );
+  assert.doesNotMatch(
+    replaySource,
+    /getblockcount|proofIndexWorkAmoV7DeclarationCandidates/u,
+  );
+  assert.match(
+    discoverySource,
+    /exactCheckpointRequested[\s\S]*proofIndexCanonicalTransactionsPayload\([\s\S]*workAmoV7DeclarationCandidatesFromCanonicalCheckpoint/u,
+    "historical precision selection must read the exact canonical checkpoint rather than the current index tip",
+  );
+  assert.match(
+    discoverySource,
+    /proofIndexWorkAmoV7DeclarationCandidates\(/u,
+    "public declaration discovery must retain its efficient exact-live-tip reader",
+  );
+  assert.match(
+    projectionSource,
+    /workAmoV7ReplayInputsForBlock\(\s*context,\s*requiredBlockHeight/u,
+  );
+  assert.match(
+    precisionSource,
+    /expectedTipHash: coverageHash[\s\S]*expectedTipHeight: coverageHeight/u,
+  );
+  assert.match(
+    ledgerSource,
+    /workAmoV7ReplayPrecisionOptions\(\s*network,\s*exactHeight,\s*exactHash/u,
+  );
+});
+
 check("AMO replay seed evidence uses its immutable partial index predicate", () => {
   const source = topLevelFunctionSource(
     READER_PATH,

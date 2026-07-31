@@ -337,6 +337,137 @@ function broadcastAdmissionFixture() {
   );
 }
 
+{
+  let discoveryOptions = null;
+  const { workAmoV7ReplayPrecisionOptions } = isolatedFunctions(
+    apiSource,
+    ["workAmoV7ReplayPrecisionOptions"],
+    {
+      WORK_ATOMIC_PROJECTION_MODEL: "work-atoms-v1",
+      WORK_SUBATOM_PROJECTION_MODEL: "work-subatoms-v2",
+      discoverExactWorkAmoV7Declaration: async (
+        _network,
+        options,
+      ) => {
+        discoveryOptions = options;
+        return { checked: true, declaration: null };
+      },
+      freshDataUnavailableError: (message) => new Error(message),
+      proofIndexWorkAmoV7ActivationLatch: async () => null,
+    },
+  );
+  const checkpointHash = "c".repeat(64);
+  const exact = await workAmoV7ReplayPrecisionOptions(
+    "livenet",
+    500,
+    checkpointHash,
+  );
+  assert.equal(exact.workAmountStorageModel, "work-atoms-v1");
+  assert.equal(discoveryOptions?.expectedTipHeight, 500);
+  assert.equal(discoveryOptions?.expectedTipHash, checkpointHash);
+}
+
+function blockReplayInputsFixture({
+  configuredDeclaration = null,
+  discoveredDeclaration = null,
+  latch = null,
+} = {}) {
+  let discoveryOptions = null;
+  const replay = isolatedFunctions(
+    apiSource,
+    ["workAmoV7ReplayInputsForBlock"],
+    {
+      WORK_SUBATOM_PROJECTION_MODEL: "work-subatoms-v2",
+      configuredWorkAmoV7Declaration: () =>
+        configuredDeclaration,
+      discoverExactWorkAmoV7Declaration: async (
+        _network,
+        options,
+      ) => {
+        discoveryOptions = options;
+        return {
+          checked: true,
+          declaration: discoveredDeclaration,
+        };
+      },
+      proofIndexWorkAmoV7ActivationLatch: async () => latch,
+    },
+  ).workAmoV7ReplayInputsForBlock;
+  return {
+    discoveryOptions: () => discoveryOptions,
+    replay,
+  };
+}
+
+{
+  const contextAt501 = {
+    blockHash: "b".repeat(64),
+    blockTransactions: [{}],
+    canonicalCoverage: true,
+    coverageHeight: 501,
+    indexedThroughBlock: 501,
+    previousBlockHash: "a".repeat(64),
+    transactions: [],
+  };
+  const preactivationFixture = blockReplayInputsFixture();
+  const preactivation = await preactivationFixture.replay(
+    contextAt501,
+    501,
+  );
+  assert.equal(
+    preactivation.workAmoV7,
+    null,
+    "next-block replay must remain live before any V7 declaration latch exists",
+  );
+  assert.equal(
+    preactivationFixture.discoveryOptions()?.canonicalPrefix,
+    contextAt501,
+    "block replay must resolve declarations from its proven canonical prefix",
+  );
+
+  const activationWithoutLatch = blockReplayInputsFixture({
+    discoveredDeclaration: { activationHeight: 501 },
+  });
+  const contextAt500 = {
+    ...contextAt501,
+    coverageHeight: 500,
+    indexedThroughBlock: 500,
+  };
+  const beforeActivation = await activationWithoutLatch.replay(
+    contextAt500,
+    500,
+  );
+  assert.equal(beforeActivation.workAmoV7, null);
+  await assert.rejects(
+    activationWithoutLatch.replay(contextAt501, 501),
+    /activated without a persistent Q16 migration latch/u,
+    "a configured activation boundary must still fail closed without its migration latch",
+  );
+  await assert.rejects(
+    activationWithoutLatch.replay(contextAt501, 500),
+    /replay context does not match the required block height/u,
+    "block replay must reject a verifier context from a different height",
+  );
+
+  const activatedReplay = blockReplayInputsFixture({
+    latch: {
+      activationHeight: 501,
+      markerReady: true,
+      pins: { activationHeight: 501 },
+      reached: true,
+    },
+  });
+  const activated = await activatedReplay.replay(
+    contextAt501,
+    501,
+  );
+  assert.equal(activated.workAmoV7?.activationHeight, 501);
+  assert.equal(
+    activated.workAmoV7?.amountStorageModel,
+    "work-subatoms-v2",
+  );
+}
+
 const declarationCommitment = Object.freeze({
   protocolRecord: "pwm1:m:work-amo-v7-declaration",
   protocolRecordBytes: 34,
@@ -400,6 +531,11 @@ function declarationPins(candidate) {
 }
 
 function apiDeclarationDiscoveryFixture(configured, candidates) {
+  let checkpointReads = 0;
+  let checkpointHeight = null;
+  let indexReads = 0;
+  let indexOptions = null;
+  const rpcMethods = [];
   const byTxid = new Map(
     candidates.map((candidate) => [candidate.txid, candidate]),
   );
@@ -409,9 +545,12 @@ function apiDeclarationDiscoveryFixture(configured, candidates) {
       candidate,
     ]),
   );
-  return isolatedFunctions(
+  const discovery = isolatedFunctions(
     apiSource,
     [
+      "workAmoV7DeclarationCandidatesFromCanonicalTransactions",
+      "workAmoV7DeclarationCandidatesFromCanonicalPrefix",
+      "workAmoV7DeclarationCandidatesFromCanonicalCheckpoint",
       "workAmoV7DeclarationsEqual",
       "discoverExactWorkAmoV7Declaration",
     ],
@@ -427,6 +566,7 @@ function apiDeclarationDiscoveryFixture(configured, candidates) {
         declarationCommitment,
       addressFromVout: (output) => output?.address ?? "",
       bitcoinRpc: async (method, params) => {
+        rpcMethods.push(method);
         if (method === "getblockcount") {
           return { ok: true, result: 500 };
         }
@@ -438,8 +578,14 @@ function apiDeclarationDiscoveryFixture(configured, candidates) {
             (entry) => entry.blockHeight === Number(params?.[0]),
           );
           return {
-            ok: Boolean(candidate),
-            result: candidate?.blockHash ?? "",
+            ok:
+              Boolean(candidate) ||
+              Number(params?.[0]) === 500,
+            result:
+              candidate?.blockHash ??
+              (Number(params?.[0]) === 500
+                ? canonicalTipHash
+                : ""),
           };
         }
         throw new Error(`Unexpected RPC method ${method}.`);
@@ -460,37 +606,75 @@ function apiDeclarationDiscoveryFixture(configured, candidates) {
         byTxid.get(txid) ?? null,
       mapWithConcurrency: async (items, _limit, mapper) =>
         Promise.all(items.map(mapper)),
-      proofIndexWorkAmoV7DeclarationCandidates: async () => ({
-        candidates: candidates.flatMap((candidate) =>
-          candidate.vout.flatMap((output, protocolVout) =>
-            output?.message === declarationCommitment.protocolRecord
-              ? [{
-                  blockHash: candidate.blockHash,
-                  blockHeight: candidate.blockHeight,
-                  blockTransactionIndex: candidate.blockIndex,
-                  protocolVout,
-                  recordOrdinal: 0,
-                  txid: candidate.txid,
-                }]
-              : [],
-          )
-        ),
-        complete: true,
-        overflow: false,
-        scan: {
-          blockHash: canonicalTipHash,
+      proofIndexCanonicalTransactionsPayload: async (
+        _network,
+        height,
+      ) => {
+        checkpointReads += 1;
+        checkpointHeight = Number(height);
+        const checkpointCandidate = candidates.find(
+          (candidate) =>
+            candidate.blockHeight === checkpointHeight,
+        );
+        return {
+          checkpointHash:
+            checkpointCandidate?.blockHash ??
+            (checkpointHeight === 500
+              ? canonicalTipHash
+              : ""),
+          fault: null,
+          indexedThroughBlock: checkpointHeight,
+          transactions: candidates.filter(
+            (candidate) =>
+              candidate.blockHeight <= checkpointHeight,
+          ),
+        };
+      },
+      proofIndexWorkAmoV7DeclarationCandidates: async (
+        _network,
+        options,
+      ) => {
+        indexReads += 1;
+        indexOptions = options;
+        return {
+          candidates: candidates.flatMap((candidate) =>
+            candidate.vout.flatMap((output, protocolVout) =>
+              output?.message === declarationCommitment.protocolRecord
+                ? [{
+                    blockHash: candidate.blockHash,
+                    blockHeight: candidate.blockHeight,
+                    blockTransactionIndex: candidate.blockIndex,
+                    protocolVout,
+                    recordOrdinal: 0,
+                    txid: candidate.txid,
+                  }]
+                : [],
+            )
+          ),
           complete: true,
-          indexedThroughBlock: 500,
-          tipHeight: 500,
-        },
-      }),
+          overflow: false,
+          scan: {
+            blockHash: canonicalTipHash,
+            complete: true,
+            indexedThroughBlock: 500,
+            tipHeight: 500,
+          },
+        };
+      },
       transactionBlockHash: (transaction) =>
         transaction?.blockHash ?? "",
       transactionBlockHeight: (transaction) =>
         transaction?.blockHeight ?? null,
+      transactionBlockIndex: (transaction) =>
+        transaction?.blockIndex ?? null,
       transactionConfirmed: (transaction) =>
         transaction?.confirmed === true,
       transactionTxid: (transaction) => transaction?.txid ?? "",
+      compareCanonicalUtf8: (left, right) =>
+        Buffer.compare(
+          Buffer.from(String(left), "utf8"),
+          Buffer.from(String(right), "utf8"),
+        ),
       workAmoV7DeclarationEvidenceFromTransaction: () => ({
         evidenceComplete: true,
       }),
@@ -509,6 +693,12 @@ function apiDeclarationDiscoveryFixture(configured, candidates) {
       };
     `,
   ).discoverExactWorkAmoV7Declaration;
+  discovery.checkpointHeight = () => checkpointHeight;
+  discovery.checkpointReads = () => checkpointReads;
+  discovery.indexOptions = () => indexOptions;
+  discovery.indexReads = () => indexReads;
+  discovery.rpcMethods = () => [...rpcMethods];
+  return discovery;
 }
 
 {
@@ -562,6 +752,192 @@ function apiDeclarationDiscoveryFixture(configured, candidates) {
   assert.match(
     ambiguousResult.error,
     /configured-pins-conflict-with-earliest-canonical-declaration/u,
+  );
+}
+
+function canonicalReplayPrefix(
+  blockHeight,
+  blockHash,
+  transactions = [],
+) {
+  return {
+    blockHash,
+    blockTransactions: [{}],
+    canonicalCoverage: true,
+    coverageHeight: blockHeight,
+    indexedThroughBlock: blockHeight,
+    previousBlockHash: "e".repeat(64),
+    transactions,
+  };
+}
+
+{
+  const exactCheckpointDiscovery =
+    apiDeclarationDiscoveryFixture(null, []);
+  const exactCheckpoint = await exactCheckpointDiscovery(
+    "livenet",
+    {
+      expectedTipHash: canonicalTipHash,
+      expectedTipHeight: 500,
+      force: true,
+    },
+  );
+  assert.equal(exactCheckpoint.checked, true);
+  assert.equal(exactCheckpoint.declaration, null);
+  assert.equal(
+    exactCheckpointDiscovery.checkpointHeight(),
+    500,
+  );
+  assert.equal(exactCheckpointDiscovery.checkpointReads(), 1);
+  assert.equal(exactCheckpointDiscovery.indexReads(), 0);
+  assert.deepEqual(
+    exactCheckpointDiscovery.rpcMethods(),
+    ["getblockhash", "getblockhash"],
+    "an exact summary checkpoint must not depend on the newer Core best tip",
+  );
+  const liveAfterCheckpoint = await exactCheckpointDiscovery(
+    "livenet",
+  );
+  assert.equal(liveAfterCheckpoint.checked, true);
+  assert.equal(exactCheckpointDiscovery.checkpointReads(), 1);
+  assert.equal(exactCheckpointDiscovery.indexReads(), 1);
+  assert.ok(
+    exactCheckpointDiscovery.rpcMethods().includes("getblockcount") &&
+      exactCheckpointDiscovery.rpcMethods().includes(
+        "getbestblockhash",
+      ),
+    "an exact-checkpoint negative must not populate the live discovery cache",
+  );
+
+  const negativePrefixDiscovery =
+    apiDeclarationDiscoveryFixture(null, []);
+  const negative = await negativePrefixDiscovery("livenet", {
+    canonicalPrefix: canonicalReplayPrefix(
+      500,
+      canonicalTipHash,
+    ),
+    force: true,
+  });
+  assert.equal(negative.checked, true);
+  assert.equal(negative.declaration, null);
+  assert.equal(
+    negative.source,
+    "canonical-replay-declaration-negative",
+  );
+  assert.equal(
+    negativePrefixDiscovery.indexReads(),
+    0,
+    "canonical-prefix discovery must not require a published exact-tip snapshot",
+  );
+
+  const currentDeclaration = declarationCandidate({
+    blockHeight: 500,
+    blockIndex: 4,
+    txid: "7".repeat(64),
+  });
+  const currentPrefixDiscovery =
+    apiDeclarationDiscoveryFixture(
+      null,
+      [currentDeclaration],
+    );
+  const current = await currentPrefixDiscovery("livenet", {
+    canonicalPrefix: canonicalReplayPrefix(
+      500,
+      currentDeclaration.blockHash,
+      [currentDeclaration],
+    ),
+    force: true,
+  });
+  assert.equal(current.checked, true, current.error);
+  assert.equal(
+    current.declaration?.txid,
+    currentDeclaration.txid,
+    "a declaration in the current replay prefix must be discovered without a published exact-tip snapshot",
+  );
+  assert.equal(currentPrefixDiscovery.indexReads(), 0);
+
+  const futureDeclaration = declarationCandidate({
+    blockHeight: 501,
+    blockIndex: 2,
+    txid: "8".repeat(64),
+  });
+  const futurePrefixDiscovery =
+    apiDeclarationDiscoveryFixture(
+      declarationPins(futureDeclaration),
+      [futureDeclaration],
+    );
+  const beforeFuture = await futurePrefixDiscovery("livenet", {
+    canonicalPrefix: canonicalReplayPrefix(
+      500,
+      canonicalTipHash,
+    ),
+    force: true,
+  });
+  assert.equal(beforeFuture.checked, true);
+  assert.equal(
+    beforeFuture.declaration,
+    null,
+    "configured future declaration pins must not bleed backward into historical replay",
+  );
+  const atFuture = await futurePrefixDiscovery("livenet", {
+    canonicalPrefix: canonicalReplayPrefix(
+      501,
+      futureDeclaration.blockHash,
+      [futureDeclaration],
+    ),
+    force: true,
+  });
+  assert.equal(atFuture.checked, true);
+  assert.equal(atFuture.declaration?.txid, futureDeclaration.txid);
+  const omittedAfterLatch = await futurePrefixDiscovery(
+    "livenet",
+    {
+      canonicalPrefix: canonicalReplayPrefix(
+        501,
+        futureDeclaration.blockHash,
+      ),
+      force: true,
+    },
+  );
+  assert.equal(omittedAfterLatch.checked, false);
+  assert.match(
+    omittedAfterLatch.error,
+    /canonical-replay-prefix-conflicts-with-process-latch/u,
+    "an in-scope process latch must be rediscovered identically from every replay prefix",
+  );
+
+  const wrongCurrentBlockHash = await apiDeclarationDiscoveryFixture(
+    null,
+    [currentDeclaration],
+  )("livenet", {
+    canonicalPrefix: canonicalReplayPrefix(
+      500,
+      canonicalTipHash,
+      [currentDeclaration],
+    ),
+    force: true,
+  });
+  assert.equal(wrongCurrentBlockHash.checked, false);
+  assert.match(
+    wrongCurrentBlockHash.error,
+    /canonical-declaration-prefix-transaction-position-invalid/u,
+    "the current block's transactions must be bound to the replay prefix hash",
+  );
+
+  const reorged = await apiDeclarationDiscoveryFixture(
+    null,
+    [],
+  )("livenet", {
+    canonicalPrefix: canonicalReplayPrefix(
+      500,
+      "d".repeat(64),
+    ),
+    force: true,
+  });
+  assert.equal(reorged.checked, false);
+  assert.match(
+    reorged.error,
+    /canonical-replay-checkpoint-unavailable/u,
   );
 }
 
@@ -672,5 +1048,5 @@ function indexDeclarationDiscoveryFixture(configured) {
 }
 
 console.log(
-  "WORK AMO V7 gate regressions passed: aggregate transfer admission, persistent Q16 replay, and canonical declaration discovery.",
+  "WORK AMO V7 gate regressions passed: aggregate transfer admission, persistent Q16 replay, next-block liveness, and canonical declaration discovery.",
 );
