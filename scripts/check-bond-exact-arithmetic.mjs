@@ -20,6 +20,17 @@ import {
   exactCreditFrozenValueState,
   exactInceptionLedgerState,
 } from "./ledger-audit-exact.mjs";
+import {
+  WORK_LEGACY_ATOMIC_PROJECTION_MODEL,
+  WORK_LEGACY_UNIT_SCALE,
+  WORK_SUBATOM_CONVERSION_FACTOR,
+  WORK_SUBATOM_PROJECTION_MODEL,
+  WORK_SUBATOM_UNIT_SCALE,
+  WORK_TOKEN_ID,
+  legacyWorkAtomsToSubatoms,
+  workAtomsValueAtFloorQ8,
+  workSubatomsValueAtFloorQ8,
+} from "../server/work-units.mjs";
 
 const INCB_TOKEN_ID =
   "3cb25745f937f2b4e5508e5400189fe8fe679cd8e84bfa1e9176d70c9761f15d";
@@ -50,6 +61,81 @@ assert.equal(q8TextFromDecimal("18.92911351"), "1892911351");
 assert.equal(
   floorQ8PerUnit(issuanceNetworkValueQ8, unsafeSupply),
   "100000000",
+);
+
+assert.equal(WORK_LEGACY_UNIT_SCALE, 100_000_000n);
+assert.equal(WORK_SUBATOM_UNIT_SCALE, 10_000_000_000_000_000n);
+assert.equal(WORK_SUBATOM_CONVERSION_FACTOR, 100_000_000n);
+const workValuationFixtures = [
+  {
+    amountAtoms: "1",
+    floorQ8: "407065289490674149005636246",
+  },
+  {
+    amountAtoms: "10",
+    floorQ8: "1892911351",
+  },
+  {
+    amountAtoms: "9007199254740993",
+    floorQ8: "1662232770668615317979969",
+  },
+];
+for (const { amountAtoms, floorQ8 } of workValuationFixtures) {
+  const amountSubatoms = legacyWorkAtomsToSubatoms(amountAtoms);
+  const floorDecimal = decimalTextFromQ8(floorQ8);
+  const send2Record =
+    `pwt1:send2:${WORK_TOKEN_ID}:${amountAtoms}:` +
+    "1Q16EquivalenceReceiver111111111111";
+  const send3Record =
+    `pwt1:send3:${WORK_TOKEN_ID}:${amountSubatoms}:` +
+    "1Q16EquivalenceReceiver111111111111";
+  assert.equal(send2Record.split(":")[3], amountAtoms);
+  assert.equal(send3Record.split(":")[3], amountSubatoms);
+  const historicalSend2ValueQ8 =
+    workAtomsValueAtFloorQ8(amountAtoms, floorDecimal);
+  const nativeSend3ValueQ8 =
+    workSubatomsValueAtFloorQ8(amountSubatoms, floorDecimal);
+  assert.equal(
+    nativeSend3ValueQ8,
+    historicalSend2ValueQ8,
+    "scaling WORK quantity and its denominator by 1e8 must preserve exact bond value Q8",
+  );
+  const attachmentValueQ8 = BigInt(floorQ8) + 12_345_678n;
+  const historicalSend2FloorQ8 =
+    (attachmentValueQ8 * WORK_LEGACY_UNIT_SCALE) /
+    BigInt(amountAtoms);
+  const nativeSend3FloorQ8 =
+    (attachmentValueQ8 * WORK_SUBATOM_UNIT_SCALE) /
+    BigInt(amountSubatoms);
+  assert.equal(
+    nativeSend3FloorQ8,
+    historicalSend2FloorQ8,
+    "INCB attachment floor must be invariant under exact Q8-to-Q16 quantity conversion",
+  );
+}
+const adjacentLegacyAtoms = [
+  "9007199254740992",
+  "9007199254740993",
+];
+const adjacentQ16Values = adjacentLegacyAtoms.map((amountAtoms) =>
+  workSubatomsValueAtFloorQ8(
+    legacyWorkAtomsToSubatoms(amountAtoms),
+    "1",
+  ),
+);
+assert.deepEqual(adjacentQ16Values, [
+  9_007_199_254_740_992n,
+  9_007_199_254_740_993n,
+]);
+assert.equal(
+  Number(adjacentQ16Values[0]),
+  Number(adjacentQ16Values[1]),
+  "the fixture must prove Number aliases adjacent exact Q8 values",
+);
+assert.notEqual(
+  adjacentQ16Values[0],
+  adjacentQ16Values[1],
+  "bond authority must remain exact BigInt despite the Number alias",
 );
 
 const conserved = ["9007199254740993", "3684991403670197"].reduce(
@@ -229,6 +315,9 @@ function exactInceptionFixture(
   const actualValue = {
     attachedWorkActions,
     attachedWorkAmountAtoms: attachedWorkAmountAtoms.toString(),
+    attachedWorkAmountStorageModel:
+      WORK_LEGACY_ATOMIC_PROJECTION_MODEL,
+    attachedWorkAmountVersion: "send2",
     attachedWorkFrozenValueQ8: attachedAtSendQ8.toString(),
     attachedWorkIssuanceUnits: attached.toString(),
     attachedWorkLiveFloorAtSendQ8:
@@ -300,6 +389,104 @@ assert.equal(
   Number.isFinite(Number(hugeExactAuditFixture.networkValueQ8)),
   false,
   "the exact audit fixture must exceed Number's finite range",
+);
+const q16EquivalentActual = {
+  ...hugeExactAuditFixture.actualValue,
+  attachedWorkAmountStorageModel:
+    WORK_SUBATOM_PROJECTION_MODEL,
+  attachedWorkAmountSubatoms: legacyWorkAtomsToSubatoms(
+    hugeExactAuditFixture.actualValue.attachedWorkAmountAtoms,
+  ),
+  attachedWorkAmountVersion: "send3",
+};
+delete q16EquivalentActual.attachedWorkAmountAtoms;
+const q16EquivalentSummary = {
+  ...hugeExactAuditFixture.summary,
+  actualValue: q16EquivalentActual,
+};
+const q16EquivalentAudit = exactInceptionLedgerState(
+  q16EquivalentSummary,
+  hugeExactAuditFixture.tokenState,
+);
+assert.equal(
+  q16EquivalentAudit.currentV2,
+  true,
+  "native send3 attachments must enter the exact INCB audit as Q16 subatoms",
+);
+assert.equal(
+  q16EquivalentAudit.issuanceConserves,
+  true,
+  "Q16 send3 and corresponding historical Q8 send2 attachments must conserve identical issuance value",
+);
+assert.equal(
+  q16EquivalentAudit.marketValueConserves,
+  hugeExactAudit.marketValueConserves,
+);
+assert.equal(
+  q16EquivalentAudit.floorConserves,
+  hugeExactAudit.floorConserves,
+);
+assert.equal(
+  exactInceptionLedgerState(
+    {
+      ...q16EquivalentSummary,
+      actualValue: {
+        ...q16EquivalentActual,
+        attachedWorkAmountVersion: "send2",
+      },
+    },
+    hugeExactAuditFixture.tokenState,
+  ).currentV2,
+  false,
+  "Q16 attachment units require explicit send3 version evidence",
+);
+assert.equal(
+  exactInceptionLedgerState(
+    {
+      ...q16EquivalentSummary,
+      actualValue: {
+        ...q16EquivalentActual,
+        attachedWorkAmountStorageModel:
+          WORK_LEGACY_ATOMIC_PROJECTION_MODEL,
+      },
+    },
+    hugeExactAuditFixture.tokenState,
+  ).currentV2,
+  false,
+  "send3 attachment units require explicit work-subatoms-v2 metadata",
+);
+assert.equal(
+  exactInceptionLedgerState(
+    {
+      ...q16EquivalentSummary,
+      actualValue: {
+        ...q16EquivalentActual,
+        attachedWorkAmountAtoms:
+          hugeExactAuditFixture.actualValue
+            .attachedWorkAmountAtoms,
+      },
+    },
+    hugeExactAuditFixture.tokenState,
+  ).currentV2,
+  false,
+  "native send3 audit state must reject a legacy amount alias",
+);
+assert.equal(
+  exactInceptionLedgerState(
+    {
+      ...q16EquivalentSummary,
+      actualValue: {
+        ...q16EquivalentActual,
+        attachedWorkAmountSubatoms: (
+          BigInt(q16EquivalentActual.attachedWorkAmountSubatoms) +
+          1n
+        ).toString(),
+      },
+    },
+    hugeExactAuditFixture.tokenState,
+  ).issuanceConserves,
+  false,
+  "one subatom of native attachment drift must fail exact INCB conservation",
 );
 
 const oneQ8DriftSummary = {
@@ -451,6 +638,10 @@ const readerSource = readFileSync(
   new URL("../server/db/proof-index-reader.mjs", import.meta.url),
   "utf8",
 );
+const ledgerAuditSource = readFileSync(
+  new URL("./ledger-audit-exact.mjs", import.meta.url),
+  "utf8",
+);
 assert.match(
   apiSource,
   /const trackApproximateTopLevelSupply =[\s\S]*tokens\.length === 1[\s\S]*!isBondTokenId/,
@@ -482,6 +673,26 @@ assert.doesNotMatch(
 assert.match(
   readerSource,
   /const genericScoped =[\s\S]*enrichedTokens\.length === 1[\s\S]*confirmedSupply:[\s\S]*genericScoped[\s\S]*:\s*null/,
+);
+assert.match(
+  apiSource,
+  /parts\[0\] === TOKEN_SEND_SUBATOMS_ACTION[\s\S]{0,500}?canonicalWorkSubatomsText\(parts\[2\]\)[\s\S]{0,500}?workAmountFieldsFromSubatoms\(amountSubatoms\)/,
+  "send3 parsing must preserve exact subatoms rather than pass through Number",
+);
+assert.match(
+  ledgerAuditSource,
+  /attachedWorkAmountSubatoms/u,
+  "the exact INCB audit must recognize native Q16 attachment quantity",
+);
+assert.match(
+  ledgerAuditSource,
+  /WORK_SUBATOM_UNIT_SCALE/u,
+  "the exact INCB audit must divide native send3 quantity by 1e16",
+);
+assert.match(
+  ledgerAuditSource,
+  /attachedWorkAmountVersion[\s\S]*send3/u,
+  "the exact INCB audit must bind Q16 valuation to explicit send3 evidence",
 );
 
 console.log("Bond exact-arithmetic contract checks passed.");

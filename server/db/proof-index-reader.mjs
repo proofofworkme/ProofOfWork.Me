@@ -18,18 +18,31 @@ import {
 import {
   WORK_ATOMIC_PROJECTION_MODEL,
   WORK_DECIMALS,
-  WORK_AMO_DECIMALS,
+  WORK_LEGACY_ATOMIC_PROJECTION_MODEL,
+  WORK_PRECISION_V2_MIGRATION_META_KEY,
+  WORK_PRECISION_V2_MIGRATION_MODEL,
+  WORK_PRECISION_V2_MODEL,
+  WORK_SUBATOM_DECIMALS,
+  WORK_SUBATOM_CONVERSION_FACTOR,
+  WORK_SUBATOM_PROJECTION_MODEL,
+  WORK_SUBATOM_UNIT_SCALE_TEXT,
   WORK_TOKEN_ID,
   WORK_UNIT_SCALE_TEXT,
-  WORK_AMO_UNIT_SCALE_TEXT,
-  formatWorkAtomsAmo,
   formatWorkAtoms,
+  formatWorkSubatoms,
   isWorkTokenId,
+  legacyWorkAtomsToSubatoms,
   normalizeWorkAtoms,
+  normalizeWorkSubatoms,
   parseSignedWorkAmountToAtoms,
+  parseSignedWorkAmountToSubatoms,
   parseWorkAmountToAtoms,
+  parseWorkAmountToSubatoms,
+  validateWorkPrecisionMetadata,
   withWorkPrecisionMetadata,
+  withWorkSubatomPrecisionMetadata,
   workAmountAtomsFromRecord,
+  workAmountSubatomsFromRecord,
 } from "../work-units.mjs";
 import {
   applyWorkMarketV2CutoverToTokenState,
@@ -144,6 +157,21 @@ import {
   workAmoV6CanonicalTokenStateCommitment,
 } from "../work-amo-v6.mjs";
 import {
+  WORK_AMO_V7_AUTH_VERSION,
+  WORK_AMO_V7_BLOCK_SEQUENCER_MODEL,
+  WORK_AMO_V7_DECLARATION_EVIDENCE_MODEL,
+  WORK_AMO_V7_GLOBAL_PRECISION_MODEL,
+  WORK_AMO_V7_MAX_SUPPLY_SUBATOMS,
+  WORK_AMO_V7_MINT_AMOUNT_SUBATOMS,
+  WORK_AMO_V7_TOKEN_STATE_PREIMAGE_MODEL,
+  WORK_AMO_V7_TRANSFER_VERSION,
+  validateWorkAmoV7FrozenTerms,
+  workAmoV7CanonicalTokenStateCommitment,
+} from "../work-amo-v7.mjs";
+import {
+  workAmoV7DeclarationCommitment,
+} from "../work-amo-v7-declaration.mjs";
+import {
   workAmoV6DeclarationCommitment,
 } from "../work-amo-v6-declaration.mjs";
 import {
@@ -208,6 +236,13 @@ const WORK_TOKEN_TICKER = "WORK";
 const WORK_TOKEN_MAX_SUPPLY_ATOMS = (
   21_000_000n * BigInt(WORK_UNIT_SCALE_TEXT)
 ).toString();
+const WORK_TOKEN_MINT_AMOUNT_ATOMS = (
+  1_000n * BigInt(WORK_UNIT_SCALE_TEXT)
+).toString();
+const WORK_TOKEN_MAX_SUPPLY_SUBATOMS =
+  WORK_AMO_V7_MAX_SUPPLY_SUBATOMS.toString();
+const WORK_TOKEN_MINT_AMOUNT_SUBATOMS =
+  WORK_AMO_V7_MINT_AMOUNT_SUBATOMS.toString();
 const TOKEN_SALE_AUTH_VERSIONS = new Set([
   TOKEN_SALE_AUTH_VERSION,
   "pwt-sale-v2",
@@ -215,12 +250,14 @@ const TOKEN_SALE_AUTH_VERSIONS = new Set([
   WORK_MARKET_V4_AUTH_VERSION,
   "pwt-sale-v5",
   WORK_AMO_V6_AUTH_VERSION,
+  WORK_AMO_V7_AUTH_VERSION,
 ]);
 const WORK_MARKET_GOVERNED_AUTH_VERSIONS = new Set([
   WORK_MARKET_V2_AUTH_VERSION,
   WORK_MARKET_V4_AUTH_VERSION,
   "pwt-sale-v5",
   WORK_AMO_V6_AUTH_VERSION,
+  WORK_AMO_V7_AUTH_VERSION,
 ]);
 const WORK_AMO_V6_INDEX_MIGRATION_META_KEY =
   "workAmoV6Migration:livenet";
@@ -230,6 +267,40 @@ const WORK_AMO_V6_DECLARATION_INDEX_EVIDENCE_MODEL =
   "canonical-work-amo-v6-declaration-core-index-evidence-v1";
 const WORK_AMO_V6_DECLARATION_INDEX_EVIDENCE_DOMAIN =
   "ProofOfWork.Me/WORK-AMO-V6-DECLARATION-EVIDENCE/v1";
+const WORK_PRECISION_V2_DECLARATION_INDEX_EVIDENCE_MODEL =
+  "canonical-work-precision-v2-declaration-core-index-evidence-v1";
+const WORK_PRECISION_V2_DECLARATION_INDEX_EVIDENCE_DOMAIN =
+  "ProofOfWork.Me/WORK-PRECISION-V2-DECLARATION-EVIDENCE/v1";
+const WORK_Q16_PENDING_REBUILD_META_KEY =
+  "workQ16PendingRebuild:livenet";
+const WORK_Q16_PENDING_REBUILD_MODEL =
+  "canonical-work-q16-pending-rebuild-v1";
+const WORK_Q16_PENDING_MEMPOOL_MODEL =
+  "canonical-core-mempool-txid-set-v1";
+const WORK_Q16_PENDING_PROJECTION_MODEL =
+  "canonical-work-q16-pending-projection-v1";
+const WORK_Q16_PENDING_WITNESS_MAX_AGE_MS = Math.min(
+  10 * 60_000,
+  Math.max(
+    60_000,
+    Number(
+      process.env.POW_INDEX_WORKER_PENDING_WITNESS_MAX_AGE_MS ??
+        2 * 60_000,
+    ) || 2 * 60_000,
+  ),
+);
+if (
+  WORK_PRECISION_V2_MIGRATION_META_KEY !==
+  "workPrecisionV2Migration:livenet"
+) {
+  throw new Error("WORK precision V2 marker key diverged.");
+}
+if (
+  WORK_AMO_V7_TRANSFER_VERSION !== "send3" ||
+  WORK_SUBATOM_PROJECTION_MODEL !== "work-subatoms-v2"
+) {
+  throw new Error("WORK precision V2 reader constants diverged.");
+}
 const TOKEN_LISTING_ANCHOR_TYPE = "sale-ticket-v1";
 const TOKEN_LISTING_ANCHOR_VALUE_SATS = 546;
 const TOKEN_LISTING_ANCHOR_VOUT = 2;
@@ -281,6 +352,99 @@ function proofIndexPool() {
   }
 
   return proofIndexReadPool;
+}
+
+function workDefinitionStorageModel(row) {
+  const metadata = objectRecord(row?.metadata);
+  const q8 =
+    String(row?.max_supply ?? "") === WORK_TOKEN_MAX_SUPPLY_ATOMS &&
+    String(row?.mint_amount ?? "") === WORK_TOKEN_MINT_AMOUNT_ATOMS &&
+    metadata.amountStorageModel === WORK_ATOMIC_PROJECTION_MODEL &&
+    Number(metadata.decimals) === WORK_DECIMALS &&
+    String(metadata.unitScale ?? "") === WORK_UNIT_SCALE_TEXT;
+  const q16 =
+    String(row?.max_supply ?? "") ===
+      WORK_TOKEN_MAX_SUPPLY_SUBATOMS &&
+    String(row?.mint_amount ?? "") ===
+      WORK_TOKEN_MINT_AMOUNT_SUBATOMS &&
+    metadata.amountStorageModel === WORK_SUBATOM_PROJECTION_MODEL &&
+    Number(metadata.decimals) === WORK_SUBATOM_DECIMALS &&
+    String(metadata.unitScale ?? "") ===
+      WORK_SUBATOM_UNIT_SCALE_TEXT &&
+    metadata.precisionModel === WORK_AMO_V7_GLOBAL_PRECISION_MODEL;
+  return q8
+    ? WORK_ATOMIC_PROJECTION_MODEL
+    : q16
+      ? WORK_SUBATOM_PROJECTION_MODEL
+      : "";
+}
+
+async function currentWorkAmountStorageModel(pool, network) {
+  const result = await pool.query(
+    `
+      SELECT max_supply::text, mint_amount::text, metadata
+      FROM proof_indexer.credit_definitions
+      WHERE network = $1 AND token_id = $2
+      LIMIT 2
+    `,
+    [network, WORK_TOKEN_ID],
+  );
+  return result.rows.length === 1
+    ? workDefinitionStorageModel(result.rows[0])
+    : "";
+}
+
+async function workAmountStorageModelAtHeight(
+  pool,
+  network,
+  blockHeight,
+) {
+  const currentModel = await currentWorkAmountStorageModel(
+    pool,
+    network,
+  );
+  if (!currentModel) {
+    return "";
+  }
+  if (currentModel === WORK_ATOMIC_PROJECTION_MODEL) {
+    return WORK_ATOMIC_PROJECTION_MODEL;
+  }
+  const height = safeBlockHeight(blockHeight);
+  if (!height) {
+    return WORK_SUBATOM_PROJECTION_MODEL;
+  }
+  const markerResult = await pool.query(
+    `
+      SELECT value
+      FROM proof_indexer.meta
+      WHERE key = $1
+      LIMIT 2
+    `,
+    [WORK_PRECISION_V2_MIGRATION_META_KEY],
+  );
+  const marker = objectRecord(markerResult.rows[0]?.value);
+  const activationHeight = safeBlockHeight(marker.activationHeight);
+  if (
+    markerResult.rows.length !== 1 ||
+    marker.network !== network ||
+    marker.status !== "complete" ||
+    marker.model !== WORK_PRECISION_V2_MIGRATION_MODEL ||
+    marker.projectionModel !== WORK_SUBATOM_PROJECTION_MODEL ||
+    Number(marker.decimals) !== WORK_SUBATOM_DECIMALS ||
+    String(marker.unitScale ?? "") !==
+      WORK_SUBATOM_UNIT_SCALE_TEXT ||
+    marker.globalPrecisionModel !== WORK_AMO_V7_GLOBAL_PRECISION_MODEL ||
+    String(marker.maxSupplySubatoms ?? "") !==
+      WORK_TOKEN_MAX_SUPPLY_SUBATOMS ||
+    String(marker.mintAmountSubatoms ?? "") !==
+      WORK_TOKEN_MINT_AMOUNT_SUBATOMS ||
+    !activationHeight
+  ) {
+    return "";
+  }
+  return height < activationHeight
+    ? WORK_ATOMIC_PROJECTION_MODEL
+    : WORK_SUBATOM_PROJECTION_MODEL;
 }
 
 export async function closeProofIndexReadPool() {
@@ -1807,9 +1971,11 @@ function normalizedWorkAmoV6ExpectedPins(value) {
       : {};
   const lowerHex = (...candidates) => {
     for (const candidate of candidates) {
-      const text = String(candidate ?? "").trim().toLowerCase();
-      if (/^[0-9a-f]{64}$/u.test(text)) {
-        return text;
+      if (
+        typeof candidate === "string" &&
+        /^[0-9a-f]{64}$/u.test(candidate)
+      ) {
+        return candidate;
       }
     }
     return "";
@@ -1818,6 +1984,15 @@ function normalizedWorkAmoV6ExpectedPins(value) {
     for (const candidate of candidates) {
       if (candidate === undefined || candidate === null || candidate === "") {
         continue;
+      }
+      if (
+        typeof candidate !== "number" &&
+        (
+          typeof candidate !== "string" ||
+          !/^(?:0|[1-9][0-9]*)$/u.test(candidate)
+        )
+      ) {
+        return null;
       }
       const parsed = Number(candidate);
       if (Number.isSafeInteger(parsed) && parsed >= minimum) {
@@ -1931,6 +2106,48 @@ function configuredWorkAmoV6ReaderPins(env = process.env) {
     : null;
 }
 
+export function configuredWorkPrecisionV2ReaderPins(
+  env = process.env,
+) {
+  const pins = normalizedWorkAmoV6ExpectedPins({
+    activationHeight:
+      env.WORK_AMO_V7_ACTIVATION_HEIGHT,
+    declarationBlockHash:
+      env.WORK_AMO_V7_DECLARATION_BLOCK_HASH,
+    declarationBlockIndex:
+      env.WORK_AMO_V7_DECLARATION_BLOCK_INDEX,
+    declarationHeight:
+      env.WORK_AMO_V7_DECLARATION_HEIGHT,
+    declarationMemoBytes:
+      env.WORK_AMO_V7_DECLARATION_MEMO_BYTES,
+    declarationMemoSha256:
+      env.WORK_AMO_V7_DECLARATION_MEMO_SHA256,
+    declarationProtocolVout:
+      env.WORK_AMO_V7_DECLARATION_PROTOCOL_VOUT,
+    declarationRecordOrdinal:
+      env.WORK_AMO_V7_DECLARATION_RECORD_ORDINAL,
+    declarationRegistryPaymentVout:
+      env.WORK_AMO_V7_DECLARATION_REGISTRY_PAYMENT_VOUT,
+    declarationTxid:
+      env.WORK_AMO_V7_DECLARATION_TXID,
+  });
+  if (!pins) {
+    return null;
+  }
+  let expectedDeclaration;
+  try {
+    expectedDeclaration = workAmoV7DeclarationCommitment();
+  } catch {
+    return null;
+  }
+  return pins.declarationMemoBytes ===
+      expectedDeclaration.protocolRecordBytes &&
+    pins.declarationMemoSha256 ===
+      expectedDeclaration.protocolRecordSha256
+    ? pins
+    : null;
+}
+
 function workAmoV6ReadinessIsCurrentAtSnapshot(
   readiness,
   pins,
@@ -1962,6 +2179,51 @@ async function currentWorkMarketAuthorizationVersionsAtSnapshot(
 ) {
   if (network !== "livenet") {
     return [WORK_MARKET_V2_AUTH_VERSION];
+  }
+  const configuredPrecisionPins =
+    configuredWorkPrecisionV2ReaderPins();
+  const precisionLatch =
+    await proofIndexWorkAmoV7ActivationLatch(
+      network,
+      configuredPrecisionPins,
+    ).catch(() => null);
+  const precisionPins =
+    configuredPrecisionPins ?? precisionLatch?.pins ?? null;
+  const precisionBoundaryReached =
+    precisionLatch?.reached === true ||
+    (
+      precisionPins &&
+      (
+        Number(snapshotHeight) === 0 ||
+        Number(snapshotHeight) >= precisionPins.activationHeight
+      )
+    );
+  if (precisionBoundaryReached) {
+    if (!precisionPins) {
+      return [];
+    }
+    const precisionReadiness =
+      await proofIndexWorkPrecisionV2MigrationReadiness(
+        network,
+        precisionPins,
+      ).catch(() => null);
+    if (
+      precisionReadiness?.ready === true &&
+      precisionReadiness?.active === true &&
+      precisionReadiness?.parityReady === true &&
+      precisionReadiness?.replayReady === true
+    ) {
+      return [
+        WORK_AMO_V7_AUTH_VERSION,
+        WORK_AMO_V6_AUTH_VERSION,
+        WORK_AMO_V5_AUTH_VERSION,
+        WORK_MARKET_V4_AUTH_VERSION,
+      ];
+    }
+    // Once the V7 declaration boundary or its persistent latch applies,
+    // current balances and reservations must never fall back to Q8.
+    // Historical records remain available through raw/history paths.
+    return [];
   }
   const pins = configuredWorkAmoV6ReaderPins();
   if (
@@ -2003,30 +2265,39 @@ async function currentWorkMarketAuthorizationVersionsAtSnapshot(
     : [WORK_MARKET_V2_AUTH_VERSION];
 }
 
-function workAmoV6PublicListingReadReady(authorizationVersions) {
-  return (
-    Array.isArray(authorizationVersions) &&
-    authorizationVersions.some(
-      (version) =>
-        normalizedLowerText(version) === WORK_AMO_V6_AUTH_VERSION,
-    )
-  );
-}
-
-function workAmoV6ListingRecord(record) {
+function governedWorkListingVersion(record) {
   const payload = objectRecord(record?.payload);
   const saleAuthorization = objectRecord(
-    record?.saleAuthorization ?? payload.saleAuthorization,
+    record?.saleAuthorization ??
+      payload.saleAuthorization ??
+      payload.listingAuthorization,
   );
-  return (
+  const work =
     isWorkTokenId(
       record?.tokenId ??
         record?.token_id ??
         payload.tokenId ??
         saleAuthorization.tokenId,
-    ) &&
-    normalizedLowerText(saleAuthorization.version) ===
-      WORK_AMO_V6_AUTH_VERSION
+    );
+  const version = normalizedLowerText(saleAuthorization.version);
+  return work && WORK_MARKET_GOVERNED_AUTH_VERSIONS.has(version)
+    ? version
+    : "";
+}
+
+function workListingAuthorizationAllowed(
+  record,
+  authorizationVersions,
+) {
+  const governedVersion = governedWorkListingVersion(record);
+  return (
+    !governedVersion ||
+    new Set(
+      (Array.isArray(authorizationVersions)
+        ? authorizationVersions
+        : []
+      ).map(normalizedLowerText),
+    ).has(governedVersion)
   );
 }
 
@@ -2038,7 +2309,6 @@ function applyWorkAmoV6PublicListingReadPolicy(
     !state ||
     typeof state !== "object" ||
     Array.isArray(state) ||
-    workAmoV6PublicListingReadReady(authorizationVersions) ||
     !Array.isArray(state.listings)
   ) {
     return state;
@@ -2046,7 +2316,11 @@ function applyWorkAmoV6PublicListingReadPolicy(
   return {
     ...state,
     listings: state.listings.filter(
-      (listing) => !workAmoV6ListingRecord(listing),
+      (listing) =>
+        workListingAuthorizationAllowed(
+          listing,
+          authorizationVersions,
+        ),
     ),
   };
 }
@@ -2075,20 +2349,408 @@ async function payloadWithCurrentWorkMarketListingReadPolicy(
   );
 }
 
+export function workPrecisionV2ProjectCurrentPayload(payload) {
+  const state = objectRecord(payload);
+  const projectItems = (value) =>
+    (Array.isArray(value) ? value : []).map((item) => {
+      if (!isWorkTokenId(item?.tokenId)) {
+        return item;
+      }
+      const amountPresent = [
+        item?.amount,
+        item?.tokenAmount,
+        item?.amountAtoms,
+        item?.tokenAmountAtoms,
+        item?.amountSubatoms,
+        item?.tokenAmountSubatoms,
+        item?.saleAuthorization?.amount,
+        item?.saleAuthorization?.amountAtoms,
+        item?.saleAuthorization?.amountSubatoms,
+      ].some(
+        (candidate) =>
+          candidate !== undefined &&
+          candidate !== null &&
+          candidate !== "",
+      );
+      if (!amountPresent) {
+        return item;
+      }
+      const source = workAmountProjection(item, {
+        allowZero: false,
+      });
+      const projected = workAmountProjection(item, {
+        allowZero: false,
+        targetStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+      });
+      return {
+        ...payloadWithWorkAmountProjection(item, projected),
+        ...(source.amountStorageModel ===
+        WORK_ATOMIC_PROJECTION_MODEL
+          ? {
+              sourceAmountEvidence: {
+                amount: source.amount,
+                ...workAmountProjectionMetadataForAmount(source),
+              },
+            }
+          : {}),
+      };
+    });
+  return {
+    ...state,
+    mints: projectItems(state.mints),
+    transfers: projectItems(state.transfers),
+    listings: projectItems(state.listings),
+    closedListings: projectItems(state.closedListings),
+    sales: projectItems(state.sales),
+  };
+}
+
+export function workPrecisionV2CurrentPayloadIsExact(
+  payload,
+  activationHeight,
+  { requireSupplyEnvelope = true } = {},
+) {
+  if (safeBlockHeight(activationHeight) === 0) {
+    return false;
+  }
+  const state = objectRecord(payload);
+  const tokens = Array.isArray(state.tokens) ? state.tokens : [];
+  const workTokens = tokens.filter((token) =>
+    isWorkTokenId(token?.tokenId),
+  );
+  const workItems = [
+    ...(Array.isArray(state.mints) ? state.mints : []),
+    ...(Array.isArray(state.transfers) ? state.transfers : []),
+    ...(Array.isArray(state.listings) ? state.listings : []),
+    ...(Array.isArray(state.closedListings)
+      ? state.closedListings
+      : []),
+    ...(Array.isArray(state.sales) ? state.sales : []),
+  ].filter((item) => isWorkTokenId(item?.tokenId));
+  const carriesWork =
+    workTokens.length > 0 ||
+    workItems.length > 0 ||
+    (Array.isArray(state.holders) &&
+      state.holders.some((holder) =>
+        isWorkTokenId(holder?.tokenId),
+      ));
+  if (!carriesWork) {
+    return true;
+  }
+  if (
+    workTokens.length !== 1 ||
+    !validateWorkPrecisionMetadata(workTokens[0], {
+      allowLegacy: false,
+      allowSubatoms: true,
+    }) ||
+    workTokens[0].amountStorageModel !==
+      WORK_SUBATOM_PROJECTION_MODEL ||
+    workTokens[0].precisionModel !== WORK_PRECISION_V2_MODEL
+  ) {
+    return false;
+  }
+  const supplyEnvelopePresent =
+    workTokens[0].confirmedSupplySubatoms !== undefined &&
+    workTokens[0].pendingSupplySubatoms !== undefined;
+  if (requireSupplyEnvelope && !supplyEnvelopePresent) {
+    return false;
+  }
+  try {
+    if (supplyEnvelopePresent) {
+      normalizeWorkSubatoms(
+        workTokens[0].confirmedSupplySubatoms,
+        { allowZero: true },
+      );
+      normalizeWorkSubatoms(
+        workTokens[0].pendingSupplySubatoms,
+        { allowNegative: true, allowZero: true },
+      );
+    }
+  } catch {
+    return false;
+  }
+  if (
+    workTokens[0].confirmedSupplyAtoms !== undefined ||
+    workTokens[0].pendingSupplyAtoms !== undefined
+  ) {
+    return false;
+  }
+  if (requireSupplyEnvelope && tokens.length === 1) {
+    if (
+      !validateWorkPrecisionMetadata(state, {
+        allowLegacy: false,
+        allowSubatoms: true,
+      }) ||
+      state.amountStorageModel !== WORK_SUBATOM_PROJECTION_MODEL ||
+      state.precisionModel !== WORK_PRECISION_V2_MODEL ||
+      state.confirmedSupplyAtoms !== undefined ||
+      state.pendingSupplyAtoms !== undefined
+    ) {
+      return false;
+    }
+    try {
+      const confirmedSupplySubatoms = normalizeWorkSubatoms(
+        state.confirmedSupplySubatoms,
+        {
+          allowZero: true,
+        },
+      );
+      const pendingSupplySubatoms = normalizeWorkSubatoms(
+        state.pendingSupplySubatoms,
+        {
+          allowNegative: true,
+          allowZero: true,
+        },
+      );
+      if (
+        confirmedSupplySubatoms !==
+          normalizeWorkSubatoms(
+            workTokens[0].confirmedSupplySubatoms,
+            { allowZero: true },
+          ) ||
+        pendingSupplySubatoms !==
+          normalizeWorkSubatoms(
+            workTokens[0].pendingSupplySubatoms,
+            { allowNegative: true, allowZero: true },
+          )
+      ) {
+        return false;
+      }
+    } catch {
+      return false;
+    }
+  }
+  const holders = (Array.isArray(state.holders)
+    ? state.holders
+    : []).filter((holder) => isWorkTokenId(holder?.tokenId));
+  for (const holder of holders) {
+    if (
+      !validateWorkPrecisionMetadata(holder, {
+        allowLegacy: false,
+        allowSubatoms: true,
+      }) ||
+      holder.amountStorageModel !== WORK_SUBATOM_PROJECTION_MODEL ||
+      holder.precisionModel !== WORK_PRECISION_V2_MODEL ||
+      holder.balanceAtoms !== undefined ||
+      holder.pendingDeltaAtoms !== undefined
+    ) {
+      return false;
+    }
+    try {
+      normalizeWorkSubatoms(holder.balanceSubatoms, {
+        allowZero: true,
+      });
+      normalizeWorkSubatoms(holder.pendingDeltaSubatoms, {
+        allowNegative: true,
+        allowZero: true,
+      });
+    } catch {
+      return false;
+    }
+  }
+  if (
+    supplyEnvelopePresent &&
+    holders.reduce(
+      (total, holder) =>
+        total + BigInt(String(holder.balanceSubatoms)),
+      0n,
+    ) !== BigInt(String(workTokens[0].confirmedSupplySubatoms))
+  ) {
+    return false;
+  }
+  for (const item of workItems) {
+    const amountPresent = [
+      item?.amount,
+      item?.tokenAmount,
+      item?.amountAtoms,
+      item?.tokenAmountAtoms,
+      item?.amountSubatoms,
+      item?.tokenAmountSubatoms,
+      item?.saleAuthorization?.amount,
+      item?.saleAuthorization?.amountAtoms,
+      item?.saleAuthorization?.amountSubatoms,
+    ].some(
+      (value) =>
+        value !== undefined &&
+        value !== null &&
+        value !== "",
+    );
+    if (!amountPresent) {
+      const pendingV7Intent =
+        item?.confirmed !== true &&
+        normalizedLowerText(
+          item?.saleAuthorization?.version ??
+            item?.listingAuthorization?.version,
+        ) === WORK_AMO_V7_AUTH_VERSION;
+      if (!pendingV7Intent) {
+        return false;
+      }
+      continue;
+    }
+    if (
+      !validateWorkPrecisionMetadata(item, {
+        allowLegacy: false,
+        allowSubatoms: true,
+      }) ||
+      item.amountStorageModel !== WORK_SUBATOM_PROJECTION_MODEL ||
+      item.precisionModel !== WORK_PRECISION_V2_MODEL ||
+      item.amountAtoms !== undefined ||
+      item.tokenAmountAtoms !== undefined
+    ) {
+      return false;
+    }
+    let projection;
+    try {
+      projection = workAmountProjection(item, {
+        allowZero: false,
+      });
+    } catch {
+      return false;
+    }
+    if (
+      projection.amountStorageModel !==
+        WORK_SUBATOM_PROJECTION_MODEL
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+async function payloadWithCurrentWorkPrecisionReadPolicy(
+  network,
+  payload,
+  {
+    requireExactCheckpoint = false,
+    requireSupplyEnvelope = true,
+  } = {},
+) {
+  if (
+    network !== "livenet" ||
+    !payload ||
+    typeof payload !== "object" ||
+    Array.isArray(payload)
+  ) {
+    return payload;
+  }
+  const configuredPins = configuredWorkPrecisionV2ReaderPins();
+  const latch = await proofIndexWorkAmoV7ActivationLatch(
+    network,
+    configuredPins,
+  ).catch(() => null);
+  const pins = configuredPins ?? latch?.pins ?? null;
+  const payloadCarriesQ16Work = [
+    ...(Array.isArray(payload.tokens) ? payload.tokens : []),
+    ...(Array.isArray(payload.holders) ? payload.holders : []),
+  ].some(
+    (item) =>
+      isWorkTokenId(item?.tokenId) &&
+      item?.amountStorageModel === WORK_SUBATOM_PROJECTION_MODEL,
+  );
+  if (!pins) {
+    return payloadCarriesQ16Work ? null : payload;
+  }
+  const snapshotHeight = Number(
+    payload.indexedThroughBlock ??
+      payload.stats?.indexedThroughBlock ??
+      0,
+  );
+  const boundaryApplies =
+    latch?.reached === true ||
+    snapshotHeight === 0 ||
+    (
+      Number.isSafeInteger(snapshotHeight) &&
+      snapshotHeight >= pins.activationHeight
+    );
+  if (!boundaryApplies) {
+    return payload;
+  }
+  const currentPayload =
+    workPrecisionV2ProjectCurrentPayload(payload);
+  const readiness =
+    await proofIndexWorkPrecisionV2MigrationReadiness(
+      network,
+      pins,
+    ).catch(() => null);
+  if (
+    readiness?.ready !== true ||
+    readiness?.active !== true ||
+    readiness?.evidenceComplete !== true ||
+    readiness?.parityReady !== true ||
+    readiness?.pendingReady !== true ||
+    readiness?.replayReady !== true ||
+    !workPrecisionV2CurrentPayloadIsExact(
+      currentPayload,
+      pins.activationHeight,
+      { requireSupplyEnvelope },
+    )
+  ) {
+    return null;
+  }
+  const snapshotBacked = normalizedLowerText(
+    currentPayload.source,
+  ).includes("snapshot");
+  if (snapshotBacked || requireExactCheckpoint) {
+    const payloadHash = normalizedLowerText(
+      currentPayload.indexedThroughBlockHash,
+    );
+    if (
+      snapshotHeight !== Number(readiness.tipHeight) ||
+      payloadHash !== normalizedLowerText(readiness.tipHash)
+    ) {
+      return null;
+    }
+  }
+  return currentPayload;
+}
+
 function workAmoV6PublicListingReadSql(
   listingAlias,
   authorizationVersions,
 ) {
-  if (workAmoV6PublicListingReadReady(authorizationVersions)) {
-    return "true";
-  }
   const alias = canonicalCreditListingAlias(listingAlias);
+  const governedVersions = [
+    ...WORK_MARKET_GOVERNED_AUTH_VERSIONS,
+  ].sort(compareCanonicalUtf8);
+  const allowedVersions = [
+    ...new Set(
+      (Array.isArray(authorizationVersions)
+        ? authorizationVersions
+        : []
+      )
+        .map(normalizedLowerText)
+        .filter((version) =>
+          WORK_MARKET_GOVERNED_AUTH_VERSIONS.has(version)
+        ),
+    ),
+  ].sort(compareCanonicalUtf8);
+  const sqlLiteralList = (versions) =>
+    versions
+      .map((version) => {
+        if (!/^[a-z0-9-]+$/u.test(version)) {
+          throw new Error(
+            "WORK authorization version is not SQL-literal safe.",
+          );
+        }
+        return `'${version}'`;
+      })
+      .join(", ");
+  const allowedSql =
+    allowedVersions.length > 0
+      ? `OR lower(COALESCE(
+        ${alias}.payload->'saleAuthorization'->>'version',
+        ${alias}.payload->'listingAuthorization'->>'version',
+        ''
+      )) IN (${sqlLiteralList(allowedVersions)})`
+      : "";
   return `(
     lower(COALESCE(${alias}.token_id, '')) <> '${WORK_TOKEN_ID}'
     OR lower(COALESCE(
       ${alias}.payload->'saleAuthorization'->>'version',
+      ${alias}.payload->'listingAuthorization'->>'version',
       ''
-    )) <> '${WORK_AMO_V6_AUTH_VERSION}'
+    )) NOT IN (${sqlLiteralList(governedVersions)})
+    ${allowedSql}
   )`;
 }
 
@@ -2351,6 +3013,1711 @@ export async function proofIndexWorkAmoV6MigrationReadiness(
   };
 }
 
+function canonicalWorkPrecisionStateRows(
+  rows,
+  {
+    amountField,
+    keyField,
+    pendingField = "",
+  },
+) {
+  return (Array.isArray(rows) ? rows : [])
+    .map((row) => ({
+      amount: normalizeWorkSubatoms(row?.[amountField], {
+        allowZero: true,
+      }),
+      key: String(row?.[keyField] ?? ""),
+      ...(pendingField
+        ? {
+            pending: normalizeWorkSubatoms(row?.[pendingField], {
+              allowNegative: true,
+              allowZero: true,
+            }),
+          }
+        : {}),
+    }))
+    .sort((left, right) =>
+      compareCanonicalUtf8(left.key, right.key),
+    );
+}
+
+function stableWorkPrecisionJson(value) {
+  if (Array.isArray(value)) {
+    return `[${value.map(stableWorkPrecisionJson).join(",")}]`;
+  }
+  if (value && typeof value === "object") {
+    return `{${
+      Object.keys(value)
+        .sort()
+        .map(
+          (key) =>
+            `${JSON.stringify(key)}:${
+              stableWorkPrecisionJson(value[key])
+            }`,
+        )
+        .join(",")
+    }}`;
+  }
+  return JSON.stringify(value ?? null);
+}
+
+function workPrecisionStateCommitment(rows, options) {
+  const payload = stableWorkPrecisionJson(
+    canonicalWorkPrecisionStateRows(rows, options),
+  );
+  return {
+    count: rows.length,
+    payloadBytes: Buffer.byteLength(payload, "utf8"),
+    sha256: createHash("sha256")
+      .update(Buffer.from(payload, "utf8"))
+      .digest("hex"),
+  };
+}
+
+function workQ16PendingCommitment(domain, rows) {
+  return createHash("sha256")
+    .update(
+      Buffer.from(
+        `ProofOfWork.Me/WORK-Q16-PENDING-${domain}/v1\n${
+          stableWorkPrecisionJson(rows)
+        }`,
+        "utf8",
+      ),
+    )
+    .digest("hex");
+}
+
+function workQ16PendingParity({
+  balances,
+  events,
+  listings,
+  mempoolTxids,
+  transactions,
+}) {
+  const isTxid = (value) => /^[0-9a-f]{64}$/u.test(value);
+  const mempool = new Set(
+    (Array.isArray(mempoolTxids) ? mempoolTxids : [])
+      .map(normalizedLowerText)
+      .filter(isTxid),
+  );
+  const expectedTxids = [
+    ...new Set([
+      ...(Array.isArray(events) ? events : []).map((row) =>
+        normalizedLowerText(row?.txid),
+      ),
+      ...(Array.isArray(listings) ? listings : []).map((row) =>
+        normalizedLowerText(row?.membership_txid),
+      ),
+    ].filter(isTxid)),
+  ].sort(compareCanonicalUtf8);
+  const outsideMempoolTxids = expectedTxids.filter(
+    (txid) => !mempool.has(txid),
+  );
+  const transactionRows = new Map();
+  let duplicateTransactionCount = 0;
+  for (const row of Array.isArray(transactions) ? transactions : []) {
+    const txid = normalizedLowerText(row?.txid);
+    if (!isTxid(txid) || !mempool.has(txid)) {
+      continue;
+    }
+    if (transactionRows.has(txid)) {
+      duplicateTransactionCount += 1;
+    }
+    transactionRows.set(txid, row);
+  }
+  const missingTransactionTxids = expectedTxids.filter(
+    (txid) =>
+      !transactionRows.has(txid) ||
+      transactionRows.get(txid)?.status !== "pending",
+  );
+  const observedNonzeroBalanceRows =
+    Array.isArray(balances) ? balances : [];
+  return {
+    balanceDeltas: {
+      expectedNonzeroCount: 0,
+      model:
+        "pending-work-events-do-not-mutate-holder-balances-v1",
+      observedNonzeroCount: observedNonzeroBalanceRows.length,
+      observedSha256: workQ16PendingCommitment(
+        "BALANCE-DELTA-PARITY",
+        observedNonzeroBalanceRows,
+      ),
+    },
+    membership: {
+      expectedTxidCount: expectedTxids.length,
+      expectedTxidsSha256: workQ16PendingCommitment(
+        "MEMBERSHIP",
+        expectedTxids,
+      ),
+      outsideMempoolCount: outsideMempoolTxids.length,
+      outsideMempoolTxidsSha256: workQ16PendingCommitment(
+        "OUTSIDE-MEMPOOL",
+        outsideMempoolTxids,
+      ),
+    },
+    model: "canonical-work-q16-pending-parity-v1",
+    ready:
+      outsideMempoolTxids.length === 0 &&
+      duplicateTransactionCount === 0 &&
+      missingTransactionTxids.length === 0 &&
+      observedNonzeroBalanceRows.length === 0,
+    transactions: {
+      duplicateCount: duplicateTransactionCount,
+      expectedCount: expectedTxids.length,
+      matchedCount:
+        expectedTxids.length - missingTransactionTxids.length,
+      missingCount: missingTransactionTxids.length,
+      missingTxidsSha256: workQ16PendingCommitment(
+        "MISSING-TRANSACTIONS",
+        missingTransactionTxids,
+      ),
+    },
+  };
+}
+
+function workPrecisionMarkerMatchesPins(marker, pins) {
+  return Boolean(
+    marker &&
+      marker.activationHeight === pins.activationHeight &&
+      marker.declarationBlockHash ===
+        pins.declarationBlockHash &&
+      marker.declarationBlockIndex ===
+        pins.declarationBlockIndex &&
+      marker.declarationHeight === pins.declarationHeight &&
+      marker.declarationMemoBytes ===
+        pins.declarationMemoBytes &&
+      marker.declarationMemoSha256 ===
+        pins.declarationMemoSha256 &&
+      marker.declarationProtocolVout ===
+        pins.declarationProtocolVout &&
+      marker.declarationRecordOrdinal ===
+        pins.declarationRecordOrdinal &&
+      marker.declarationRegistryPaymentVout ===
+        pins.declarationRegistryPaymentVout &&
+      marker.declarationTxid ===
+        pins.declarationTxid
+  );
+}
+
+function exactWorkPrecisionObjectKeys(value, expectedKeys) {
+  const keys = Object.keys(objectRecord(value)).sort();
+  const expected = [...expectedKeys].sort();
+  return (
+    keys.length === expected.length &&
+    keys.every((key, index) => key === expected[index])
+  );
+}
+
+function exactWorkPrecisionJsonInteger(value, minimum = 0) {
+  return (
+    typeof value === "number" &&
+    Number.isSafeInteger(value) &&
+    value >= minimum
+  );
+}
+
+function workPrecisionCommitmentShapeReady(
+  value,
+  { model = "" } = {},
+) {
+  const commitment = objectRecord(value);
+  return (
+    (
+      !model ||
+      exactWorkPrecisionObjectKeys(
+        commitment,
+        ["model", "payloadBytes", "sha256"],
+      )
+    ) &&
+    (!model || commitment.model === model) &&
+    exactWorkPrecisionJsonInteger(
+      commitment.payloadBytes,
+      1,
+    ) &&
+    /^[0-9a-f]{64}$/u.test(String(commitment.sha256 ?? "")) &&
+    commitment.sha256 === normalizedLowerText(commitment.sha256)
+  );
+}
+
+function workPrecisionRowsCommitmentShapeReady(value) {
+  const commitment = objectRecord(value);
+  return (
+    exactWorkPrecisionObjectKeys(
+      commitment,
+      ["count", "payloadBytes", "sha256"],
+    ) &&
+    exactWorkPrecisionJsonInteger(commitment.count) &&
+    workPrecisionCommitmentShapeReady(commitment)
+  );
+}
+
+function workPrecisionV2MarkerBindsReader(marker, pins) {
+  const evidence = objectRecord(marker?.declarationEvidence);
+  const activationOpening = objectRecord(
+    marker?.activationOpening,
+  );
+  const before = objectRecord(marker?.before);
+  const after = objectRecord(marker?.after);
+  const legacyOpeningCommitment = objectRecord(
+    activationOpening.legacyTokenStateCommitment,
+  );
+  const subatomOpeningCommitment = objectRecord(
+    activationOpening.subatomTokenStateCommitment,
+  );
+  const committed = {
+    authorityScriptPubKey: normalizedLowerText(
+      evidence.authorityScriptPubKey,
+    ),
+    blockHash: normalizedLowerText(evidence.blockHash),
+    blockHeight: Number(evidence.blockHeight),
+    blockTransactionIndex: Number(
+      evidence.blockTransactionIndex,
+    ),
+    inputCount: Number(evidence.inputCount),
+    outputCount: Number(evidence.outputCount),
+    payloadBytes: Number(evidence.payloadBytes),
+    payloadSha256: normalizedLowerText(evidence.payloadSha256),
+    protocol: normalizedLowerText(evidence.protocol),
+    protocolVout: Number(evidence.protocolVout),
+    recordOrdinal: Number(evidence.recordOrdinal),
+    registryAddress: String(evidence.registryAddress ?? "").trim(),
+    registryPaymentSats: String(
+      evidence.registryPaymentSats ?? "",
+    ).trim(),
+    registryPaymentVout: Number(evidence.registryPaymentVout),
+    txid: normalizedLowerText(evidence.txid),
+  };
+  let expectedDeclaration;
+  try {
+    expectedDeclaration = workAmoV7DeclarationCommitment();
+  } catch {
+    return false;
+  }
+  const evidenceCommitment = createHash("sha256")
+    .update(
+      Buffer.from(
+        `${WORK_PRECISION_V2_DECLARATION_INDEX_EVIDENCE_DOMAIN}\n${
+          JSON.stringify(committed)
+        }`,
+        "utf8",
+      ),
+    )
+    .digest("hex");
+  const markerKeys = [
+    "activationHeight",
+    "activationOpening",
+    "after",
+    "before",
+    "completedAt",
+    "conversionFactor",
+    "declarationBlockHash",
+    "declarationBlockIndex",
+    "declarationEvidence",
+    "declarationHeight",
+    "declarationMemoBytes",
+    "declarationMemoSha256",
+    "declarationProtocolVout",
+    "declarationRecordOrdinal",
+    "declarationRegistryPaymentVout",
+    "declarationTextBytes",
+    "declarationTextSha256",
+    "declarationTxid",
+    "decimals",
+    "derivedProjectionPolicy",
+    "globalPrecisionModel",
+    "legacyDecimals",
+    "legacyProjectionModel",
+    "maxSupplySubatoms",
+    "migrationModel",
+    "mintAmountSubatoms",
+    "model",
+    "network",
+    "projectionModel",
+    "rawConfirmedHistoryMutation",
+    "replayFromHeight",
+    "snapshotPolicy",
+    "status",
+    "transferVersion",
+    "unitScale",
+    "updatedAt",
+    "version",
+  ];
+  const evidenceKeys = [
+    "authorityScriptPubKey",
+    "blockHash",
+    "blockHeight",
+    "blockTransactionIndex",
+    "commitmentSha256",
+    "coreVerified",
+    "evidenceComplete",
+    "indexVerified",
+    "inputCount",
+    "model",
+    "outputCount",
+    "payloadBytes",
+    "payloadSha256",
+    "protocol",
+    "protocolVout",
+    "recordOrdinal",
+    "registryAddress",
+    "registryPaymentSats",
+    "registryPaymentVout",
+    "txid",
+  ];
+  return Boolean(
+    exactWorkPrecisionObjectKeys(marker, markerKeys) &&
+      exactWorkPrecisionObjectKeys(
+        activationOpening,
+        [
+          "declarationClosingStatePayloadBytes",
+          "declarationClosingStateSha256",
+          "declarationTransitionModel",
+          "legacyTokenStateCommitment",
+          "subatomTokenStateCommitment",
+        ],
+      ) &&
+      exactWorkPrecisionObjectKeys(before, [
+        "balances",
+        "listings",
+      ]) &&
+      exactWorkPrecisionObjectKeys(after, [
+        "balances",
+        "listings",
+      ]) &&
+      exactWorkPrecisionObjectKeys(evidence, evidenceKeys) &&
+      marker?.model === WORK_PRECISION_V2_MIGRATION_MODEL &&
+      marker?.migrationModel ===
+        WORK_PRECISION_V2_MIGRATION_MODEL &&
+      marker?.status === "complete" &&
+      marker?.network === "livenet" &&
+      marker?.version === WORK_AMO_V7_AUTH_VERSION &&
+      marker?.globalPrecisionModel === WORK_PRECISION_V2_MODEL &&
+      marker?.projectionModel === WORK_SUBATOM_PROJECTION_MODEL &&
+      marker?.legacyProjectionModel ===
+        WORK_ATOMIC_PROJECTION_MODEL &&
+      marker?.transferVersion === WORK_AMO_V7_TRANSFER_VERSION &&
+      marker?.legacyDecimals === WORK_DECIMALS &&
+      marker?.decimals === WORK_SUBATOM_DECIMALS &&
+      String(marker?.conversionFactor ?? "") === "100000000" &&
+      String(marker?.unitScale ?? "") ===
+        WORK_SUBATOM_UNIT_SCALE_TEXT &&
+      String(marker?.maxSupplySubatoms ?? "") ===
+        "210000000000000000000000" &&
+      String(marker?.mintAmountSubatoms ?? "") ===
+        WORK_AMO_V7_MINT_AMOUNT_SUBATOMS.toString() &&
+      marker?.declarationTextBytes ===
+        expectedDeclaration.payloadBytes &&
+      marker?.declarationTextSha256 ===
+        expectedDeclaration.payloadSha256 &&
+      marker?.rawConfirmedHistoryMutation === "none" &&
+      marker?.derivedProjectionPolicy ===
+        "invalidate-and-replay-from-activation" &&
+      marker?.replayFromHeight === pins.activationHeight &&
+      marker?.snapshotPolicy ===
+        "preserve-preactivation-canonical-invalidate-wrong-era-derived-require-post-migration-current-snapshot" &&
+      activationOpening.declarationTransitionModel ===
+        WORK_AMO_V6_BLOCK_SEQUENCER_MODEL &&
+      exactWorkPrecisionJsonInteger(
+        activationOpening.declarationClosingStatePayloadBytes,
+        1,
+      ) &&
+      /^[0-9a-f]{64}$/u.test(
+        normalizedLowerText(
+          activationOpening.declarationClosingStateSha256,
+        ),
+      ) &&
+      workPrecisionCommitmentShapeReady(
+        legacyOpeningCommitment,
+        { model: WORK_AMO_V5_PAYLOAD_COMMITMENT_MODEL },
+      ) &&
+      workPrecisionCommitmentShapeReady(
+        subatomOpeningCommitment,
+        { model: WORK_AMO_V5_PAYLOAD_COMMITMENT_MODEL },
+      ) &&
+      workPrecisionRowsCommitmentShapeReady(before.balances) &&
+      workPrecisionRowsCommitmentShapeReady(before.listings) &&
+      workPrecisionRowsCommitmentShapeReady(after.balances) &&
+      workPrecisionRowsCommitmentShapeReady(after.listings) &&
+      workPrecisionMarkerMatchesPins(marker, pins) &&
+      evidence.model ===
+        WORK_PRECISION_V2_DECLARATION_INDEX_EVIDENCE_MODEL &&
+      evidence.coreVerified === true &&
+      evidence.indexVerified === true &&
+      evidence.evidenceComplete === true &&
+      exactWorkPrecisionJsonInteger(evidence.blockHeight, 1) &&
+      exactWorkPrecisionJsonInteger(
+        evidence.blockTransactionIndex,
+      ) &&
+      exactWorkPrecisionJsonInteger(evidence.inputCount, 1) &&
+      exactWorkPrecisionJsonInteger(evidence.outputCount, 1) &&
+      exactWorkPrecisionJsonInteger(evidence.payloadBytes, 1) &&
+      exactWorkPrecisionJsonInteger(evidence.protocolVout) &&
+      exactWorkPrecisionJsonInteger(evidence.recordOrdinal) &&
+      exactWorkPrecisionJsonInteger(
+        evidence.registryPaymentVout,
+      ) &&
+      evidence.authorityScriptPubKey ===
+        normalizedLowerText(evidence.authorityScriptPubKey) &&
+      evidence.blockHash === normalizedLowerText(evidence.blockHash) &&
+      evidence.payloadSha256 ===
+        normalizedLowerText(evidence.payloadSha256) &&
+      evidence.txid === normalizedLowerText(evidence.txid) &&
+      evidence.registryAddress ===
+        String(evidence.registryAddress ?? "").trim() &&
+      evidence.registryPaymentSats ===
+        String(evidence.registryPaymentSats ?? "").trim() &&
+      normalizedLowerText(evidence.commitmentSha256) ===
+        evidenceCommitment &&
+      committed.authorityScriptPubKey ===
+        WORK_AMO_V5_AUTHORITY_SCRIPTPUBKEY &&
+      committed.blockHash === pins.declarationBlockHash &&
+      committed.blockHeight === pins.declarationHeight &&
+      committed.blockTransactionIndex ===
+        pins.declarationBlockIndex &&
+      committed.payloadBytes ===
+        expectedDeclaration.protocolRecordBytes &&
+      committed.payloadSha256 ===
+        expectedDeclaration.protocolRecordSha256 &&
+      committed.protocol === "pwm1" &&
+      committed.protocolVout === pins.declarationProtocolVout &&
+      committed.recordOrdinal === pins.declarationRecordOrdinal &&
+      committed.registryAddress === WORK_AMO_V5_REGISTRY_ADDRESS &&
+      /^[1-9][0-9]*$/u.test(committed.registryPaymentSats) &&
+      BigInt(committed.registryPaymentSats) >=
+        BigInt(WORK_AMO_V5_MIN_REGISTRY_PAYMENT_SATS) &&
+      committed.registryPaymentVout ===
+        pins.declarationRegistryPaymentVout &&
+      committed.txid === pins.declarationTxid &&
+      Number.isFinite(Date.parse(String(marker.completedAt ?? ""))) &&
+      Number.isFinite(Date.parse(String(marker.updatedAt ?? "")))
+  );
+}
+
+function indexedWorkPrecisionEvidenceMatchesMarker(row, marker) {
+  const evidence = objectRecord(marker?.declarationEvidence);
+  const payloadHex = normalizedLowerText(row?.payload_hex);
+  if (!/^(?:[0-9a-f]{2})+$/u.test(payloadHex)) {
+    return false;
+  }
+  const payload = Buffer.from(payloadHex, "hex");
+  let expectedDeclaration;
+  try {
+    expectedDeclaration = workAmoV7DeclarationCommitment();
+  } catch {
+    return false;
+  }
+  return Boolean(
+    payload.equals(
+      Buffer.from(expectedDeclaration.protocolRecord, "utf8"),
+    ) &&
+      row?.payload_text === expectedDeclaration.protocolRecord &&
+      Number(row?.data_bytes) === payload.length &&
+      normalizedLowerText(row?.txid) === evidence.txid &&
+      normalizedLowerText(row?.block_hash) === evidence.blockHash &&
+      Number(row?.block_height) === evidence.blockHeight &&
+      Number(row?.block_index) === evidence.blockTransactionIndex &&
+      normalizedLowerText(row?.authority_scriptpubkey) ===
+        evidence.authorityScriptPubKey &&
+      Number(row?.input_count) === evidence.inputCount &&
+      Number(row?.output_count) === evidence.outputCount &&
+      normalizedLowerText(row?.protocol) === evidence.protocol &&
+      String(row?.registry_address ?? "").trim() ===
+        evidence.registryAddress &&
+      String(row?.registry_payment_sats ?? "").trim() ===
+        evidence.registryPaymentSats
+  );
+}
+
+export async function proofIndexWorkPrecisionV2MigrationReadiness(
+  network,
+  expectedPins,
+) {
+  const pool = proofIndexPool();
+  const pins = normalizedWorkAmoV6ExpectedPins(expectedPins);
+  if (!pool || network !== "livenet" || !pins) {
+    return null;
+  }
+  const client = await pool.connect();
+  let transactionOpen = false;
+  try {
+    await client.query(
+      "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY",
+    );
+    transactionOpen = true;
+  const stateResult = await client.query(
+    `
+      SELECT
+        migration.value AS migration_marker,
+        definition.max_supply::text,
+        definition.mint_amount::text,
+        definition.metadata AS definition_metadata,
+        tx.txid,
+        tx.block_hash,
+        tx.block_height,
+        tx.block_index,
+        COALESCE(
+          tx.raw_tx #>> '{vin,0,prevout,scriptPubKey,hex}',
+          tx.raw_tx #>> '{vin,0,prevout,scriptpubkey}',
+          ''
+        ) AS authority_scriptpubkey,
+        (SELECT count(*)::integer FROM proof_indexer.tx_inputs i
+          WHERE i.network = tx.network AND i.txid = tx.txid) AS input_count,
+        (SELECT count(*)::integer FROM proof_indexer.tx_outputs o
+          WHERE o.network = tx.network AND o.txid = tx.txid) AS output_count,
+        carrier.protocol,
+        carrier.payload_text,
+        carrier.payload_hex,
+        carrier.data_bytes,
+        registry.address AS registry_address,
+        registry.value_sats::text AS registry_payment_sats,
+        (
+          SELECT max(block.height)::integer
+          FROM proof_indexer.blocks block
+          WHERE block.network = $1 AND block.canonical = true
+        ) AS tip_height,
+        (
+          SELECT block.block_hash
+          FROM proof_indexer.blocks block
+          WHERE block.network = $1 AND block.canonical = true
+          ORDER BY block.height DESC
+          LIMIT 1
+        ) AS tip_hash,
+        (
+          SELECT transition.block_height
+          FROM proof_indexer.work_amo_block_transitions transition
+          WHERE transition.network = $1
+            AND transition.complete = true
+          ORDER BY transition.block_height DESC
+          LIMIT 1
+        ) AS transition_height,
+        (
+          SELECT transition.block_hash
+          FROM proof_indexer.work_amo_block_transitions transition
+          WHERE transition.network = $1
+            AND transition.complete = true
+          ORDER BY transition.block_height DESC
+          LIMIT 1
+        ) AS transition_hash,
+        (
+          SELECT transition.model
+          FROM proof_indexer.work_amo_block_transitions transition
+          WHERE transition.network = $1
+            AND transition.complete = true
+          ORDER BY transition.block_height DESC
+          LIMIT 1
+        ) AS transition_model,
+        (
+          SELECT transition.work_token_state_model
+          FROM proof_indexer.work_amo_block_transitions transition
+          WHERE transition.network = $1
+            AND transition.complete = true
+          ORDER BY transition.block_height DESC
+          LIMIT 1
+        ) AS work_token_state_model,
+        (
+          SELECT transition.payload
+          FROM proof_indexer.work_amo_block_transitions transition
+          WHERE transition.network = $1
+            AND transition.complete = true
+          ORDER BY transition.block_height DESC
+          LIMIT 1
+        ) AS transition_payload,
+        (
+          SELECT transition.model
+          FROM proof_indexer.work_amo_block_transitions transition
+          WHERE transition.network = $1
+            AND transition.block_height = $11
+            AND transition.complete = true
+          LIMIT 1
+        ) AS activation_transition_model,
+        (
+          SELECT transition.work_token_state_model
+          FROM proof_indexer.work_amo_block_transitions transition
+          WHERE transition.network = $1
+            AND transition.block_height = $11
+            AND transition.complete = true
+          LIMIT 1
+        ) AS activation_work_token_state_model,
+        (
+          SELECT transition.payload
+          FROM proof_indexer.work_amo_block_transitions transition
+          WHERE transition.network = $1
+            AND transition.block_height = $11
+            AND transition.complete = true
+          LIMIT 1
+        ) AS activation_transition_payload,
+        (
+          SELECT count(*)::integer
+          FROM proof_indexer.work_amo_block_transitions transition
+          WHERE transition.network = $1
+            AND transition.block_height >= $11
+        ) AS transition_count,
+        (
+          SELECT count(*)::integer
+          FROM proof_indexer.work_amo_block_transitions transition
+          LEFT JOIN proof_indexer.blocks block
+            ON block.network = transition.network
+           AND block.height = transition.block_height
+           AND block.block_hash = transition.block_hash
+           AND block.canonical = true
+          LEFT JOIN proof_indexer.blocks previous_block
+            ON previous_block.network = transition.network
+           AND previous_block.height = transition.block_height - 1
+           AND previous_block.block_hash = transition.previous_block_hash
+           AND previous_block.canonical = true
+          LEFT JOIN proof_indexer.work_amo_block_transitions
+            previous_transition
+            ON previous_transition.network = transition.network
+           AND previous_transition.block_height =
+             transition.block_height - 1
+           AND previous_transition.block_hash =
+             transition.previous_block_hash
+           AND previous_transition.complete = true
+          WHERE transition.network = $1
+            AND transition.block_height >= $11
+            AND (
+              transition.complete IS DISTINCT FROM true
+              OR transition.model <> $13
+              OR transition.work_token_state_model <> $14
+              OR block.block_hash IS NULL
+              OR block.previous_block_hash <>
+                transition.previous_block_hash
+              OR previous_block.block_hash IS NULL
+              OR (
+                transition.block_height = $11
+                AND transition.previous_block_hash <> $5
+              )
+              OR (
+                transition.block_height > $11
+                AND (
+                  previous_transition.block_hash IS NULL
+                  OR transition.opening_state_sha256 <>
+                    previous_transition.closing_state_sha256
+                  OR transition.payload
+                      ->'openingSufficientState'
+                      ->'tokenStateCommitment'
+                    IS DISTINCT FROM
+                      previous_transition.payload
+                        ->'closingSufficientState'
+                        ->'tokenStateCommitment'
+                )
+              )
+            )
+        ) AS invalid_transition_count,
+        current_snapshot.snapshot_height,
+        current_snapshot.snapshot_hash,
+        current_snapshot.snapshot_work_amount_storage_model,
+        current_snapshot.snapshot_work_token_state,
+        (
+          SELECT count(*)::integer
+          FROM proof_indexer.events event
+          WHERE event.network = $1
+            AND event.protocol = 'pwt1'
+            AND event.status = 'confirmed'
+            AND event.valid = true
+            AND event.block_height >= $11
+            AND lower(COALESCE(
+              event.payload->>'tokenId',
+              event.payload->'saleAuthorization'->>'tokenId',
+              event.payload->'listingAuthorization'->>'tokenId',
+              ''
+            )) = $2
+            AND (
+              event.raw_payload LIKE 'pwt1:send:%'
+              OR
+              event.raw_payload LIKE 'pwt1:send2:%'
+              OR (
+                event.kind = 'token-listing'
+                AND lower(COALESCE(
+                  event.payload->'saleAuthorization'->>'version',
+                  event.payload->'listingAuthorization'->>'version',
+                  ''
+                )) <> $12
+              )
+            )
+        ) AS invalid_post_activation_legacy_count,
+        (
+          SELECT count(*)::integer
+          FROM proof_indexer.events event
+          WHERE event.network = $1
+            AND event.protocol = 'pwt1'
+            AND event.status = 'confirmed'
+            AND event.valid = true
+            AND event.block_height < $11
+            AND lower(COALESCE(
+              event.payload->>'tokenId',
+              event.payload->'saleAuthorization'->>'tokenId',
+              event.payload->'listingAuthorization'->>'tokenId',
+              ''
+            )) = $2
+            AND (
+              event.raw_payload LIKE 'pwt1:send3:%'
+              OR (
+                event.kind = 'token-listing'
+                AND lower(COALESCE(
+                  event.payload->'saleAuthorization'->>'version',
+                  event.payload->'listingAuthorization'->>'version',
+                  ''
+                )) = $12
+              )
+            )
+        ) AS invalid_pre_activation_v7_count,
+        (
+          SELECT pg_get_constraintdef(constraint_row.oid)
+          FROM pg_constraint constraint_row
+          WHERE constraint_row.conrelid =
+              'proof_indexer.credit_definitions'::regclass
+            AND constraint_row.conname =
+              'credit_definitions_work_precision'
+            AND constraint_row.convalidated = true
+          LIMIT 1
+        ) AS definition_constraint,
+        (
+          SELECT pg_get_constraintdef(constraint_row.oid)
+          FROM pg_constraint constraint_row
+          WHERE constraint_row.conrelid =
+              'proof_indexer.work_amo_v6_listing_terms'::regclass
+            AND constraint_row.conname =
+              'work_amo_v6_terms_values'
+            AND constraint_row.convalidated = true
+          LIMIT 1
+        ) AS v6_constraint,
+        (
+          SELECT pg_get_constraintdef(constraint_row.oid)
+          FROM pg_constraint constraint_row
+          WHERE constraint_row.conrelid =
+              'proof_indexer.work_amo_v6_listing_terms'::regclass
+            AND constraint_row.conname =
+              'work_amo_v6_terms_deactivation'
+            AND constraint_row.convalidated = true
+          LIMIT 1
+        ) AS v6_deactivation_constraint,
+        (
+          SELECT pg_get_constraintdef(constraint_row.oid)
+          FROM pg_constraint constraint_row
+          WHERE constraint_row.conrelid =
+              'proof_indexer.work_amo_v7_listing_terms'::regclass
+            AND constraint_row.conname =
+              'work_amo_v7_terms_values'
+            AND constraint_row.convalidated = true
+          LIMIT 1
+        ) AS v7_constraint,
+        (
+          SELECT pg_get_constraintdef(constraint_row.oid)
+          FROM pg_constraint constraint_row
+          WHERE constraint_row.conrelid =
+              'proof_indexer.work_amo_v7_listing_terms'::regclass
+            AND constraint_row.conname =
+              'work_amo_v7_terms_activation'
+            AND constraint_row.convalidated = true
+          LIMIT 1
+        ) AS activation_constraint,
+        (
+          SELECT pg_get_constraintdef(constraint_row.oid)
+          FROM pg_constraint constraint_row
+          WHERE constraint_row.conrelid =
+              'proof_indexer.work_amo_block_transitions'::regclass
+            AND constraint_row.conname =
+              'work_amo_block_transitions_models'
+            AND constraint_row.convalidated = true
+          LIMIT 1
+        ) AS transition_constraint,
+        EXISTS (
+          SELECT 1
+          FROM pg_trigger trigger_row
+          WHERE trigger_row.tgrelid =
+              'proof_indexer.work_amo_v7_listing_terms'::regclass
+            AND trigger_row.tgname =
+              'work_amo_v7_listing_terms_immutable'
+            AND trigger_row.tgenabled <> 'D'
+            AND trigger_row.tgisinternal = false
+        ) AS v7_immutable_trigger,
+        EXISTS (
+          SELECT 1
+          FROM pg_trigger trigger_row
+          WHERE trigger_row.tgrelid =
+              'proof_indexer.meta'::regclass
+            AND trigger_row.tgname =
+              'work_precision_v2_marker_immutable'
+            AND trigger_row.tgenabled <> 'D'
+            AND trigger_row.tgisinternal = false
+        ) AS marker_immutable_trigger
+      FROM proof_indexer.meta migration
+      JOIN proof_indexer.credit_definitions definition
+        ON definition.network = $1 AND definition.token_id = $2
+      JOIN proof_indexer.transactions tx
+        ON tx.network = $1
+       AND tx.txid = $3
+       AND tx.status = 'confirmed'
+       AND tx.block_height = $4
+       AND lower(tx.block_hash) = $5
+       AND tx.block_index = $6
+      JOIN proof_indexer.blocks declaration_block
+        ON declaration_block.network = tx.network
+       AND declaration_block.block_hash = tx.block_hash
+       AND declaration_block.height = tx.block_height
+       AND declaration_block.canonical = true
+      JOIN proof_indexer.op_returns carrier
+        ON carrier.network = tx.network
+       AND carrier.txid = tx.txid
+       AND carrier.vout = $7
+       AND carrier.output_index = $8
+      JOIN proof_indexer.tx_outputs registry
+        ON registry.network = tx.network
+       AND registry.txid = tx.txid
+       AND registry.vout = $9
+      LEFT JOIN LATERAL (
+        SELECT
+          snapshot.indexed_through_block AS snapshot_height,
+          lower(snapshot.source_hashes->>'blockScan') AS snapshot_hash,
+          snapshot.payload->>'workAmountStorageModel'
+            AS snapshot_work_amount_storage_model,
+          snapshot.payload->'tokenStatePayloads'->$2
+            AS snapshot_work_token_state
+        FROM proof_indexer.ledger_snapshots snapshot
+        WHERE snapshot.network = $1
+          AND snapshot.generated_at >=
+            (migration.value->>'completedAt')::timestamptz
+          AND snapshot.payload ? 'tokenStatePayloads'
+          AND snapshot.payload->'tokenStatePayloads' ? $2
+          AND snapshot.payload->>'workAmountStorageModel' = $15
+          AND COALESCE(
+            snapshot.consistency->>'ok',
+            snapshot.payload->>'ok',
+            'false'
+          ) = 'true'
+          AND COALESCE(
+            snapshot.consistency->>'status',
+            snapshot.payload->>'status',
+            ''
+          ) = 'green'
+          AND snapshot.payload->'summaryRefresh'->>'mode' =
+            'canonical-summary-refresh'
+          AND lower(COALESCE(
+            snapshot.source_hashes->>'blockScan',
+            ''
+          )) ~ '^[0-9a-f]{64}$'
+          AND lower(COALESCE(
+            snapshot.payload->>'indexedThroughBlockHash',
+            ''
+          )) = lower(snapshot.source_hashes->>'blockScan')
+          AND lower(COALESCE(
+            snapshot.payload->'summaryRefresh'
+              ->>'indexedThroughBlockHash',
+            ''
+          )) = lower(snapshot.source_hashes->>'blockScan')
+        ORDER BY snapshot.indexed_through_block DESC NULLS LAST,
+          snapshot.generated_at DESC
+        LIMIT 1
+      ) current_snapshot ON true
+      WHERE migration.key = $10
+      LIMIT 2
+    `,
+    [
+      network,
+      WORK_TOKEN_ID,
+      pins.declarationTxid,
+      pins.declarationHeight,
+      pins.declarationBlockHash,
+      pins.declarationBlockIndex,
+      pins.declarationProtocolVout,
+      pins.declarationRecordOrdinal,
+      pins.declarationRegistryPaymentVout,
+      WORK_PRECISION_V2_MIGRATION_META_KEY,
+      pins.activationHeight,
+      WORK_AMO_V7_AUTH_VERSION,
+      WORK_AMO_V7_BLOCK_SEQUENCER_MODEL,
+      WORK_AMO_V7_TOKEN_STATE_PREIMAGE_MODEL,
+      WORK_SUBATOM_PROJECTION_MODEL,
+    ],
+  );
+  if (stateResult.rows.length !== 1) {
+    await client.query("ROLLBACK");
+    transactionOpen = false;
+    return null;
+  }
+  const [balanceResult, listingResult] = await Promise.all([
+    client.query(
+      `
+        SELECT
+          address,
+          confirmed_balance::text,
+          pending_delta::text
+        FROM proof_indexer.credit_balances
+        WHERE network = $1 AND token_id = $2
+        ORDER BY address ASC
+      `,
+      [network, WORK_TOKEN_ID],
+    ),
+    client.query(
+      `
+        SELECT
+          listing.listing_id,
+          listing.seller_address,
+          listing.amount::text,
+          listing.price_sats::text,
+          COALESCE(
+            listing.payload->'saleAuthorization',
+            listing.payload->'listingAuthorization'
+          ) AS sale_authorization,
+          CASE
+            WHEN COALESCE(
+              listing.payload->'saleAuthorization'->>'version',
+              listing.payload->'listingAuthorization'->>'version',
+              ''
+            ) = $3
+              THEN v7_terms.frozen_terms
+            WHEN COALESCE(
+              listing.payload->'saleAuthorization'->>'version',
+              listing.payload->'listingAuthorization'->>'version',
+              ''
+            ) = $4
+              THEN v6_terms.frozen_terms
+            ELSE COALESCE(
+              v5_terms.frozen_terms,
+              listing.payload->'frozenTerms',
+              listing.payload->'listingFrozenTerms',
+              listing.payload->'workAmoFrozenTerms',
+              listing.payload->'workAmoV6FrozenTerms',
+              listing.payload->'workAmoV7FrozenTerms'
+            )
+          END AS frozen_terms
+        FROM proof_indexer.credit_listings listing
+        LEFT JOIN proof_indexer.work_amo_listing_terms v5_terms
+          ON v5_terms.network = listing.network
+         AND v5_terms.listing_id = listing.listing_id
+         AND v5_terms.authorization_version = $5
+         AND v5_terms.unit_amount_atoms * 100000000 = listing.amount
+         AND v5_terms.unit_price_sats = listing.price_sats
+        LEFT JOIN proof_indexer.work_amo_v6_listing_terms v6_terms
+          ON v6_terms.network = listing.network
+         AND v6_terms.listing_id = listing.listing_id
+         AND v6_terms.authorization_version = $4
+         AND v6_terms.unit_amount_atoms * 100000000 = listing.amount
+         AND v6_terms.unit_price_sats = listing.price_sats
+        LEFT JOIN proof_indexer.work_amo_v7_listing_terms v7_terms
+          ON v7_terms.network = listing.network
+         AND v7_terms.listing_id = listing.listing_id
+         AND v7_terms.authorization_version = $3
+         AND v7_terms.unit_amount_subatoms = listing.amount
+         AND v7_terms.unit_price_sats = listing.price_sats
+        WHERE listing.network = $1
+          AND listing.token_id = $2
+          AND listing.status IN ('active', 'sealing')
+        ORDER BY listing.listing_id ASC
+      `,
+      [
+        network,
+        WORK_TOKEN_ID,
+        WORK_AMO_V7_AUTH_VERSION,
+        WORK_AMO_V6_AUTH_VERSION,
+        WORK_AMO_V5_AUTH_VERSION,
+      ],
+    ),
+  ]);
+  const row = stateResult.rows[0];
+  const marker = row.migration_marker;
+  const metadata = objectRecord(row.definition_metadata);
+  const constraintText = (value) =>
+    String(value ?? "").replace(/\s+/gu, " ").trim();
+  const constraintHasEvery = (value, fragments) => {
+    const text = constraintText(value);
+    return (
+      text.startsWith("CHECK (") &&
+      fragments.every((fragment) => text.includes(fragment))
+    );
+  };
+  const exactHeightConstraint = (value, operator, height) => {
+    const escapedOperator = operator.replace(
+      /[.*+?^${}()|[\]\\]/gu,
+      "\\$&",
+    );
+    return new RegExp(
+      `^CHECK \\(\\(*listing_block_height ${escapedOperator} ${height}\\)*\\)$`,
+      "u",
+    ).test(constraintText(value));
+  };
+  const v6Constraint = constraintText(row.v6_constraint);
+  const v7Constraint = constraintText(row.v7_constraint);
+  const definitionConstraint = constraintText(
+    row.definition_constraint,
+  );
+  const transitionConstraint = constraintText(
+    row.transition_constraint,
+  );
+  const logicalOrCount = (value) =>
+    constraintText(value).match(/ OR /gu)?.length ?? 0;
+  const constraints = {
+    definition: constraintHasEvery(
+      definitionConstraint,
+      [
+        WORK_TOKEN_ID,
+        "2100000000000000",
+        "100000000000",
+        "work-atoms-v1",
+        "210000000000000000000000",
+        "10000000000000000000",
+        "work-subatoms-v2",
+        "canonical-work-subatoms-v2",
+      ],
+    ) && logicalOrCount(definitionConstraint) === 2,
+    transition: constraintHasEvery(
+      transitionConstraint,
+      [
+        WORK_AMO_V7_BLOCK_SEQUENCER_MODEL,
+        WORK_AMO_V7_TOKEN_STATE_PREIMAGE_MODEL,
+        "canonical-work-amo-sufficient-state-sha256-v1",
+        "canonical-work-amo-event-set-sha256-v1",
+      ],
+    ) && logicalOrCount(transitionConstraint) === 1,
+    markerImmutable: row.marker_immutable_trigger === true,
+    v6:
+      constraintHasEvery(v6Constraint, [
+        "unit_face_proofs",
+        "unit_amount_atoms",
+        "2100000000000000",
+        "unit_price_sats",
+        "unit_minimum_price_sats",
+        "listing_network_value_before_q8",
+        "listing_bond_contribution_q8",
+        "listing_network_value_after_q8",
+        "trunc(",
+        "ceil(",
+        "21000000",
+        "100000000",
+      ]) &&
+      !v6Constraint.includes(" OR ") &&
+      !v6Constraint.includes("10000000000000000") &&
+      !v6Constraint.includes("210000000000000000000000"),
+    v6Deactivation: exactHeightConstraint(
+      row.v6_deactivation_constraint,
+      "<",
+      pins.activationHeight,
+    ),
+    v7:
+      constraintHasEvery(v7Constraint, [
+        "unit_face_proofs",
+        "unit_amount_subatoms",
+        "210000000000000000000000",
+        "unit_price_sats",
+        "unit_minimum_price_sats",
+        "listing_network_value_before_q8",
+        "listing_bond_contribution_q8",
+        "listing_network_value_after_q8",
+        "trunc(",
+        "ceil(",
+        "21000000",
+        "10000000000000000",
+        "100000000",
+      ]) &&
+      !v7Constraint.includes(" OR "),
+    activation: exactHeightConstraint(
+      row.activation_constraint,
+      ">=",
+      pins.activationHeight,
+    ),
+    v7Immutable: row.v7_immutable_trigger === true,
+  };
+  const activationTransitionPayload = objectRecord(
+    row.activation_transition_payload,
+  );
+  const activationTransitionOpeningCommitment = objectRecord(
+    activationTransitionPayload.precisionOpeningTokenStateCommitment,
+  );
+  const markerOpeningCommitment = objectRecord(
+    marker?.activationOpening?.subatomTokenStateCommitment,
+  );
+  const activationOpeningReady =
+    row.activation_transition_model ===
+      WORK_AMO_V7_BLOCK_SEQUENCER_MODEL &&
+    row.activation_work_token_state_model ===
+      WORK_AMO_V7_TOKEN_STATE_PREIMAGE_MODEL &&
+    activationTransitionPayload.precisionMigrationMarkerKey ===
+      WORK_PRECISION_V2_MIGRATION_META_KEY &&
+    Number(activationTransitionPayload.activationHeight) ===
+      pins.activationHeight &&
+    stableWorkPrecisionJson(
+      activationTransitionOpeningCommitment,
+    ) === stableWorkPrecisionJson(markerOpeningCommitment);
+  const transitionPayload = objectRecord(row.transition_payload);
+  const closingTokenState = objectRecord(
+    transitionPayload.closingTokenState,
+  );
+  const closingSufficientState = objectRecord(
+    transitionPayload.closingSufficientState,
+  );
+  const closingSufficientStateCommitment = objectRecord(
+    closingSufficientState.tokenStateCommitment,
+  );
+  let closingTokenStateCommitment = null;
+  let relationalParityReady = false;
+  try {
+    closingTokenStateCommitment =
+      workAmoV7CanonicalTokenStateCommitment(
+        closingTokenState,
+      );
+    const currentBalances = balanceResult.rows.filter(
+      (balance) => BigInt(balance.confirmed_balance) !== 0n,
+    );
+    const relationalTokenState = {
+      confirmedSupplySubatoms: currentBalances
+        .reduce(
+          (total, balance) =>
+            total + BigInt(balance.confirmed_balance),
+          0n,
+        )
+        .toString(),
+      holders: currentBalances.map((balance) => ({
+        address: balance.address,
+        balanceSubatoms: balance.confirmed_balance,
+      })),
+      listings: listingResult.rows.map((listing) => ({
+        amountSubatoms: listing.amount,
+        frozenTerms: listing.frozen_terms,
+        listingId: listing.listing_id,
+        priceSats: listing.price_sats,
+        saleAuthorization: listing.sale_authorization,
+        sellerAddress: listing.seller_address,
+      })),
+    };
+    const relationalCommitment =
+      workAmoV7CanonicalTokenStateCommitment(
+        relationalTokenState,
+      );
+    relationalParityReady =
+      stableWorkPrecisionJson(relationalCommitment) ===
+        stableWorkPrecisionJson(closingTokenStateCommitment);
+  } catch {
+    closingTokenStateCommitment = null;
+    relationalParityReady = false;
+  }
+  const closingTokenStateReady =
+    Boolean(closingTokenStateCommitment) &&
+    stableWorkPrecisionJson(closingTokenStateCommitment) ===
+      stableWorkPrecisionJson(
+        closingSufficientStateCommitment,
+      );
+  const snapshotWorkTokenState = objectRecord(
+    row.snapshot_work_token_state,
+  );
+  let snapshotTokenStateReady = false;
+  try {
+    const snapshotTokenStateCommitment =
+      workAmoV7CanonicalTokenStateCommitment(
+        snapshotWorkTokenState,
+      );
+    snapshotTokenStateReady =
+      snapshotWorkTokenState.amountStorageModel ===
+        WORK_SUBATOM_PROJECTION_MODEL &&
+      Number(snapshotWorkTokenState.decimals) ===
+        WORK_SUBATOM_DECIMALS &&
+      String(snapshotWorkTokenState.unitScale ?? "") ===
+        WORK_SUBATOM_UNIT_SCALE_TEXT &&
+      snapshotWorkTokenState.precisionModel ===
+        WORK_PRECISION_V2_MODEL &&
+      stableWorkPrecisionJson(snapshotTokenStateCommitment) ===
+        stableWorkPrecisionJson(closingTokenStateCommitment);
+  } catch {
+    snapshotTokenStateReady = false;
+  }
+  const tipHeight = Number(row.tip_height);
+  const tipHash = normalizedLowerText(row.tip_hash);
+  const snapshotHash = normalizedLowerText(row.snapshot_hash);
+  const pendingWitnessResult = await client.query(
+    `
+      SELECT value
+      FROM proof_indexer.meta
+      WHERE key = $1
+      LIMIT 2
+    `,
+    [WORK_Q16_PENDING_REBUILD_META_KEY],
+  );
+  const pendingWitness = objectRecord(
+    pendingWitnessResult.rows[0]?.value,
+  );
+  const pendingMempool = objectRecord(
+    pendingWitness.mempoolSnapshot,
+  );
+  const pendingProjection = objectRecord(
+    pendingWitness.projection,
+  );
+  const pendingMempoolTxids =
+    Array.isArray(pendingMempool.txids)
+      ? pendingMempool.txids.map(normalizedLowerText)
+      : [];
+  const pendingMempoolTxidsCanonical =
+    pendingMempoolTxids.length ===
+      new Set(pendingMempoolTxids).size &&
+    pendingMempoolTxids.every((txid) =>
+      /^[0-9a-f]{64}$/u.test(txid)
+    ) &&
+    pendingMempoolTxids.every(
+      (txid, index) =>
+        index === 0 ||
+        compareCanonicalUtf8(
+          pendingMempoolTxids[index - 1],
+          txid,
+        ) < 0,
+    );
+  let pendingReady = false;
+  if (
+    pendingWitnessResult.rows.length === 1 &&
+    pendingMempoolTxidsCanonical
+  ) {
+    const [
+      pendingBalanceResult,
+      pendingEventResult,
+      pendingListingResult,
+      pendingTransactionResult,
+      pendingInvalidLegacyResult,
+    ] = await Promise.all([
+      client.query(
+        `
+          SELECT address, pending_delta::text
+          FROM proof_indexer.credit_balances
+          WHERE network = $1
+            AND token_id = $2
+            AND pending_delta <> 0
+          ORDER BY address ASC
+        `,
+        [network, WORK_TOKEN_ID],
+      ),
+      client.query(
+        `
+          SELECT
+            event_id,
+            txid,
+            kind,
+            protocol,
+            protocol_vout,
+            record_ordinal,
+            valid,
+            raw_payload,
+            payload
+          FROM proof_indexer.events
+          WHERE network = $1
+            AND status = 'pending'
+            AND protocol = 'pwt1'
+            AND lower(COALESCE(
+              payload->>'tokenId',
+              payload->'saleAuthorization'->>'tokenId',
+              payload->'listingAuthorization'->>'tokenId',
+              payload->'actionAuthorization'->>'tokenId',
+              ''
+            )) = $2
+          ORDER BY txid ASC, protocol_vout ASC, record_ordinal ASC,
+            event_id ASC
+        `,
+        [network, WORK_TOKEN_ID],
+      ),
+      client.query(
+        `
+          SELECT
+            listing_id,
+            status,
+            seller_address,
+            buyer_address,
+            amount::text,
+            price_sats::text,
+            sale_ticket_txid,
+            seal_txid,
+            CASE
+              WHEN listing.status = 'pending'
+                THEN lower(listing.listing_id)
+              WHEN listing.status = 'sealing'
+                AND COALESCE(seal_tx.status, '') <> 'confirmed'
+                AND COALESCE(listing.seal_txid, '') <> ''
+                THEN lower(listing.seal_txid)
+              ELSE NULL
+            END AS membership_txid,
+            seal_tx.status AS seal_transaction_status,
+            payload
+          FROM proof_indexer.credit_listings listing
+          LEFT JOIN proof_indexer.transactions seal_tx
+            ON seal_tx.network = listing.network
+           AND seal_tx.txid = lower(listing.seal_txid)
+          WHERE listing.network = $1
+            AND listing.token_id = $2
+            AND listing.status IN ('pending', 'sealing')
+          ORDER BY listing.listing_id ASC
+        `,
+        [network, WORK_TOKEN_ID],
+      ),
+      client.query(
+        `
+          SELECT txid, status, raw_tx
+          FROM proof_indexer.transactions
+          WHERE network = $1
+            AND status = 'pending'
+            AND txid = ANY($2::text[])
+          ORDER BY txid ASC
+        `,
+        [network, pendingMempoolTxids],
+      ),
+      client.query(
+        `
+          SELECT count(*)::integer AS invalid_count
+          FROM proof_indexer.events event
+          WHERE event.network = $1
+            AND event.status = 'pending'
+            AND event.protocol = 'pwt1'
+            AND event.valid = true
+            AND lower(COALESCE(
+              event.payload->>'tokenId',
+              event.payload->'saleAuthorization'->>'tokenId',
+              event.payload->'listingAuthorization'->>'tokenId',
+              event.payload->'actionAuthorization'->>'tokenId',
+              ''
+            )) = $2
+            AND (
+              event.raw_payload LIKE 'pwt1:send:%'
+              OR event.raw_payload LIKE 'pwt1:send2:%'
+              OR (
+                event.kind = 'token-listing'
+                AND lower(COALESCE(
+                  event.payload->'saleAuthorization'->>'version',
+                  event.payload->'listingAuthorization'->>'version',
+                  ''
+                )) <> $3
+              )
+            )
+        `,
+        [network, WORK_TOKEN_ID, WORK_AMO_V7_AUTH_VERSION],
+      ),
+    ]);
+    const pendingProjectionParts = {
+      balances: {
+        count: pendingBalanceResult.rows.length,
+        sha256: workQ16PendingCommitment(
+          "BALANCES",
+          pendingBalanceResult.rows,
+        ),
+      },
+      events: {
+        count: pendingEventResult.rows.length,
+        sha256: workQ16PendingCommitment(
+          "EVENTS",
+          pendingEventResult.rows,
+        ),
+      },
+      listings: {
+        count: pendingListingResult.rows.length,
+        sha256: workQ16PendingCommitment(
+          "LISTINGS",
+          pendingListingResult.rows,
+        ),
+      },
+      transactions: {
+        count: pendingTransactionResult.rows.length,
+        sha256: workQ16PendingCommitment(
+          "TRANSACTIONS",
+          pendingTransactionResult.rows,
+        ),
+      },
+    };
+    const expectedMempoolSha256 = createHash("sha256")
+      .update(
+        Buffer.from(
+          `ProofOfWork.Me/WORK-Q16-PENDING-MEMPOOL/v1\n${
+            stableWorkPrecisionJson(pendingMempoolTxids)
+          }`,
+          "utf8",
+        ),
+      )
+      .digest("hex");
+    const pendingGeneratedAtMs = Date.parse(
+      String(pendingWitness.generatedAt ?? ""),
+    );
+    const pendingParity = workQ16PendingParity({
+      balances: pendingBalanceResult.rows,
+      events: pendingEventResult.rows,
+      listings: pendingListingResult.rows,
+      mempoolTxids: pendingMempoolTxids,
+      transactions: pendingTransactionResult.rows,
+    });
+    pendingReady =
+      pendingWitness.model ===
+        WORK_Q16_PENDING_REBUILD_MODEL &&
+      pendingWitness.network === network &&
+      pendingWitness.ready === true &&
+      Number(pendingWitness.activationHeight) ===
+        pins.activationHeight &&
+      normalizedLowerText(pendingWitness.declarationTxid) ===
+        pins.declarationTxid &&
+      pendingWitness.amountStorageModel ===
+        WORK_SUBATOM_PROJECTION_MODEL &&
+      pendingWitness.precisionModel ===
+        WORK_AMO_V7_GLOBAL_PRECISION_MODEL &&
+      Number(pendingWitness.invalidLegacyMutationCount) === 0 &&
+      Number(pendingInvalidLegacyResult.rows[0]?.invalid_count) === 0 &&
+      Number(pendingWitness.canonicalTip?.height) === tipHeight &&
+      normalizedLowerText(pendingWitness.canonicalTip?.hash) ===
+        tipHash &&
+      pendingMempool.model === WORK_Q16_PENDING_MEMPOOL_MODEL &&
+      Number(pendingMempool.count) === pendingMempoolTxids.length &&
+      normalizedLowerText(pendingMempool.sha256) ===
+        expectedMempoolSha256 &&
+      pendingProjection.model ===
+        WORK_Q16_PENDING_PROJECTION_MODEL &&
+      pendingParity.ready === true &&
+      stableWorkPrecisionJson(
+        objectRecord(pendingWitness.parity),
+      ) === stableWorkPrecisionJson(pendingParity) &&
+      stableWorkPrecisionJson({
+        balances: pendingProjection.balances,
+        events: pendingProjection.events,
+        listings: pendingProjection.listings,
+        transactions: pendingProjection.transactions,
+      }) === stableWorkPrecisionJson(pendingProjectionParts) &&
+      normalizedLowerText(
+        pendingProjection.commitmentSha256,
+      ) ===
+        workQ16PendingCommitment(
+          "PROJECTION",
+          pendingProjectionParts,
+        ) &&
+      pendingWitness.scan?.complete === true &&
+      Number(pendingWitness.scan?.canonicalDeferred) === 0 &&
+      Number(pendingWitness.scan?.unresolved) === 0 &&
+      String(pendingWitness.scan?.stopReason ?? "") === "" &&
+      Number.isFinite(
+        pendingGeneratedAtMs,
+      ) &&
+      Date.now() >= pendingGeneratedAtMs &&
+      Date.now() - pendingGeneratedAtMs <=
+        WORK_Q16_PENDING_WITNESS_MAX_AGE_MS;
+  }
+  const expectedTransitionCount =
+    Number.isSafeInteger(tipHeight) &&
+    tipHeight >= pins.activationHeight
+      ? tipHeight - pins.activationHeight + 1
+      : -1;
+  const replayReady =
+    Number.isSafeInteger(tipHeight) &&
+    tipHeight >= pins.activationHeight &&
+    Number(row.transition_height) === tipHeight &&
+    /^[0-9a-f]{64}$/u.test(tipHash) &&
+    normalizedLowerText(row.transition_hash) === tipHash &&
+    row.transition_model === WORK_AMO_V7_BLOCK_SEQUENCER_MODEL &&
+    row.work_token_state_model ===
+      WORK_AMO_V7_TOKEN_STATE_PREIMAGE_MODEL &&
+    Number(row.snapshot_height) === tipHeight &&
+    snapshotHash === tipHash &&
+    row.snapshot_work_amount_storage_model ===
+      WORK_SUBATOM_PROJECTION_MODEL &&
+    snapshotTokenStateReady &&
+    Number(row.transition_count) === expectedTransitionCount &&
+    Number(row.invalid_transition_count) === 0 &&
+    activationOpeningReady &&
+    closingTokenStateReady;
+  const stateCommitmentsReady =
+    closingTokenStateReady && relationalParityReady;
+  const readyWithinSnapshot =
+    workPrecisionV2MarkerBindsReader(marker, pins) &&
+    indexedWorkPrecisionEvidenceMatchesMarker(row, marker) &&
+    String(row.max_supply ?? "") ===
+      "210000000000000000000000" &&
+    String(row.mint_amount ?? "") ===
+      WORK_AMO_V7_MINT_AMOUNT_SUBATOMS.toString() &&
+    metadata.amountStorageModel === WORK_SUBATOM_PROJECTION_MODEL &&
+    Number(metadata.decimals) === WORK_SUBATOM_DECIMALS &&
+    String(metadata.unitScale ?? "") ===
+      WORK_SUBATOM_UNIT_SCALE_TEXT &&
+    metadata.precisionModel === WORK_PRECISION_V2_MODEL &&
+    Object.values(constraints).every(Boolean) &&
+    stateCommitmentsReady &&
+    replayReady &&
+    pendingReady &&
+    Number(row.invalid_post_activation_legacy_count) === 0 &&
+    Number(row.invalid_pre_activation_v7_count) === 0;
+  await client.query("COMMIT");
+  transactionOpen = false;
+  const freshTipResult = await client.query(
+    `
+      WITH maximum_tip AS (
+        SELECT max(height)::integer AS height
+        FROM proof_indexer.blocks
+        WHERE network = $1 AND canonical = true
+      )
+      SELECT block.height, lower(block.block_hash) AS block_hash
+      FROM proof_indexer.blocks block
+      JOIN maximum_tip ON maximum_tip.height = block.height
+      WHERE block.network = $1 AND block.canonical = true
+      ORDER BY block.block_hash
+      LIMIT 2
+    `,
+    [network],
+  );
+  const exactTipReady =
+    freshTipResult.rows.length === 1 &&
+    Number(freshTipResult.rows[0]?.height) === tipHeight &&
+    normalizedLowerText(
+      freshTipResult.rows[0]?.block_hash,
+    ) === tipHash;
+  const ready = readyWithinSnapshot && exactTipReady;
+  return {
+    activationHeight: pins.activationHeight,
+    active: ready,
+    canonical: true,
+    confirmed: true,
+    constraints,
+    declarationEvidence: marker?.declarationEvidence ?? null,
+    evidenceComplete:
+      marker?.declarationEvidence?.evidenceComplete === true,
+    exactTipReady,
+    marker,
+    model: WORK_PRECISION_V2_MIGRATION_MODEL,
+    openingReady: activationOpeningReady,
+    parityReady: stateCommitmentsReady,
+    pendingReady,
+    pendingWitness,
+    precision: {
+      amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+      decimals: WORK_SUBATOM_DECIMALS,
+      unitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,
+    },
+    ready,
+    replayReady,
+    snapshotTokenStateReady,
+    snapshotHash,
+    status: ready ? "complete" : "not-ready",
+    tipHash,
+    tipHeight,
+  };
+  } catch (error) {
+    if (transactionOpen) {
+      await client.query("ROLLBACK").catch(() => {});
+      transactionOpen = false;
+    }
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function proofIndexWorkAmoV7ActivationLatch(
+  network,
+  expectedPins,
+) {
+  const pool = proofIndexPool();
+  const pins = normalizedWorkAmoV6ExpectedPins(expectedPins);
+  if (!pool || network !== "livenet") {
+    return null;
+  }
+  const result = await pool.query(
+    `
+      SELECT
+        latch.value,
+        migration.value AS migration_marker,
+        definition.max_supply::text,
+        definition.mint_amount::text,
+        definition.metadata AS definition_metadata
+      FROM proof_indexer.meta latch
+      LEFT JOIN proof_indexer.meta migration
+        ON migration.key = $2
+      LEFT JOIN proof_indexer.credit_definitions definition
+        ON definition.network = $1
+       AND definition.token_id = $3
+      WHERE latch.key = 'workAmoV7ActivationLatch:livenet'
+      LIMIT 2
+    `,
+    [
+      network,
+      WORK_PRECISION_V2_MIGRATION_META_KEY,
+      WORK_TOKEN_ID,
+    ],
+  );
+  if (result.rows.length !== 1) {
+    return null;
+  }
+  const value = objectRecord(result.rows[0]?.value);
+  const marker = objectRecord(result.rows[0]?.migration_marker);
+  const definitionModel = workDefinitionStorageModel({
+    max_supply: result.rows[0]?.max_supply,
+    metadata: result.rows[0]?.definition_metadata,
+    mint_amount: result.rows[0]?.mint_amount,
+  });
+  const firstObservedTipHeight = safeBlockHeight(
+    value.firstObservedTipHeight,
+  );
+  const firstObservedTipHash = normalizedLowerText(
+    value.firstObservedTipHash,
+  );
+  const selfContainedPins = normalizedWorkAmoV6ExpectedPins({
+    activationHeight: value.activationHeight,
+    declarationBlockHash: value.declarationBlockHash,
+    declarationBlockIndex: value.declarationBlockIndex,
+    declarationHeight: value.declarationHeight,
+    declarationMemoBytes: value.declarationMemoBytes,
+    declarationMemoSha256: value.declarationMemoSha256,
+    declarationProtocolVout: value.declarationProtocolVout,
+    declarationRecordOrdinal: value.declarationRecordOrdinal,
+    declarationRegistryPaymentVout:
+      value.declarationRegistryPaymentVout,
+    declarationTxid: value.declarationTxid,
+  });
+  let declarationCommitment;
+  try {
+    declarationCommitment = workAmoV7DeclarationCommitment();
+  } catch {
+    return null;
+  }
+  const selfContainedEvidence =
+    Boolean(selfContainedPins) &&
+    selfContainedPins.declarationMemoBytes ===
+      declarationCommitment.protocolRecordBytes &&
+    selfContainedPins.declarationMemoSha256 ===
+    declarationCommitment.protocolRecordSha256 &&
+    value.evidenceComplete === true &&
+    value.coreVerified === true &&
+    value.indexVerified === true &&
+    normalizedLowerText(value.authorityScriptPubKey) ===
+      WORK_AMO_V5_AUTHORITY_SCRIPTPUBKEY &&
+    String(value.registryAddress ?? "").trim() ===
+      WORK_AMO_V5_REGISTRY_ADDRESS &&
+    /^[1-9][0-9]*$/u.test(
+      String(value.registryPaymentSats ?? "").trim(),
+    ) &&
+    BigInt(String(value.registryPaymentSats).trim()) >=
+      BigInt(WORK_AMO_V5_MIN_REGISTRY_PAYMENT_SATS) &&
+    Number(value.inputCount) > 0 &&
+    Number(value.outputCount) > 0 &&
+    value.protocol === "pwm1";
+  const markerReady =
+    marker.model === WORK_PRECISION_V2_MIGRATION_MODEL &&
+    marker.status === "complete" &&
+    marker.network === network &&
+    Number(marker.activationHeight) ===
+      selfContainedPins?.activationHeight &&
+    marker.projectionModel === WORK_SUBATOM_PROJECTION_MODEL &&
+    marker.globalPrecisionModel === WORK_PRECISION_V2_MODEL &&
+    definitionModel === WORK_SUBATOM_PROJECTION_MODEL;
+  const configuredPinsMatch =
+    !pins ||
+    stableWorkPrecisionJson(pins) ===
+      stableWorkPrecisionJson(selfContainedPins);
+  const reached =
+    value.model ===
+      "canonical-work-amo-v7-activation-latch-v1" &&
+    value.network === network &&
+    value.reached === true &&
+    selfContainedEvidence &&
+    configuredPinsMatch &&
+    firstObservedTipHeight >= selfContainedPins.activationHeight &&
+    /^[0-9a-f]{64}$/u.test(firstObservedTipHash) &&
+    Number.isFinite(Date.parse(String(value.observedAt ?? "")));
+  return reached
+    ? {
+      ...value,
+        markerReady,
+        pins: selfContainedPins,
+        firstObservedTipHash,
+        firstObservedTipHeight,
+        reached: true,
+      }
+    : null;
+}
+
 export async function proofIndexWorkAmoV6ListingTerms(
   network,
   listingId,
@@ -2422,6 +4789,191 @@ export async function proofIndexWorkAmoV6ListingTerms(
     ? normalizedWorkAmoV6ListingTermsRow(result.rows[0])
     : null;
 }
+
+function normalizedWorkAmoV7ListingTermsRow(row, pins) {
+  const frozenTerms = objectRecord(row?.frozen_terms);
+  const listingAuthorization = objectRecord(
+    row?.listing_event_payload?.saleAuthorization ??
+      row?.listing_event_payload?.listingAuthorization,
+  );
+  const listingId = normalizedLowerText(row?.listing_id);
+  const listingTxid = normalizedLowerText(row?.listing_txid);
+  const listingPosition = canonicalAmoPosition(row, "listing_");
+  const listingBlockHash = normalizedLowerText(
+    row?.listing_block_hash,
+  );
+  if (
+    !pins ||
+    !/^[0-9a-f]{64}$/u.test(listingId) ||
+    listingTxid !== listingId ||
+    !listingPosition ||
+    !/^[0-9a-f]{64}$/u.test(listingBlockHash) ||
+    listingPosition.blockHeight < pins.activationHeight ||
+    row?.authorization_version !== WORK_AMO_V7_AUTH_VERSION ||
+    normalizedLowerText(row?.token_id) !== WORK_TOKEN_ID ||
+    !workPrecisionV2MarkerBindsReader(
+      row?.migration_marker,
+      pins,
+    )
+  ) {
+    return null;
+  }
+  const validation = validateWorkAmoV7FrozenTerms(
+    frozenTerms,
+    {
+      authorization: listingAuthorization,
+      listingPosition: {
+        blockHash: listingBlockHash,
+        blockHeight: listingPosition.blockHeight,
+        blockTransactionIndex: listingPosition.blockIndex,
+        protocolVout: listingPosition.protocolVout,
+        recordOrdinal: listingPosition.recordOrdinal,
+      },
+    },
+  );
+  if (!validation.valid) {
+    return null;
+  }
+  const frozen = validation.frozenTerms;
+  const exactPositiveInteger = (value) => {
+    const text = String(value ?? "").trim();
+    return /^[1-9][0-9]*$/u.test(text)
+      ? BigInt(text).toString()
+      : "";
+  };
+  if (
+    Number(row?.unit_face_proofs) !== frozen.unitFaceProofs ||
+    exactPositiveInteger(row?.unit_amount_subatoms) !==
+      frozen.unitAmountSubatoms ||
+    exactPositiveInteger(row?.unit_price_sats) !==
+      frozen.unitPriceSats ||
+    exactPositiveInteger(row?.unit_minimum_price_sats) !==
+      frozen.unitMinimumPriceSats ||
+    exactPositiveInteger(row?.listing_network_value_before_q8) !==
+      frozen.listingNetworkValueBeforeQ8 ||
+    exactPositiveInteger(row?.listing_bond_contribution_q8) !==
+      frozen.listingBondContributionQ8 ||
+    exactPositiveInteger(row?.listing_network_value_after_q8) !==
+      frozen.listingNetworkValueAfterQ8
+  ) {
+    return null;
+  }
+  return {
+    authorizationVersion: WORK_AMO_V7_AUTH_VERSION,
+    createdAt: dateIso(row?.created_at),
+    frozenTerms: frozen,
+    listingId,
+    listingPosition,
+    listingTxid,
+    tokenId: WORK_TOKEN_ID,
+    unitAmountSubatoms: frozen.unitAmountSubatoms,
+    unitFaceProofs: frozen.unitFaceProofs,
+    unitMinimumPriceSats: frozen.unitMinimumPriceSats,
+    unitPriceSats: frozen.unitPriceSats,
+  };
+}
+
+export async function proofIndexWorkAmoV7ListingTerms(
+  network,
+  listingId,
+) {
+  const pool = proofIndexPool();
+  const normalizedListingId = normalizedLowerText(listingId);
+  if (
+    !pool ||
+    network !== "livenet" ||
+    !/^[0-9a-f]{64}$/u.test(normalizedListingId)
+  ) {
+    return null;
+  }
+  const configuredPins =
+    configuredWorkPrecisionV2ReaderPins();
+  const latch = await proofIndexWorkAmoV7ActivationLatch(
+    network,
+    configuredPins,
+  ).catch(() => null);
+  const pins = configuredPins ?? latch?.pins ?? null;
+  if (!pins) {
+    return null;
+  }
+  const readiness =
+    await proofIndexWorkPrecisionV2MigrationReadiness(
+      network,
+      pins,
+    ).catch(() => null);
+  if (
+    readiness?.ready !== true ||
+    readiness?.active !== true ||
+    readiness?.parityReady !== true ||
+    readiness?.replayReady !== true
+  ) {
+    return null;
+  }
+  const result = await pool.query(
+    `
+      SELECT
+        terms.*,
+        listing_event.payload AS listing_event_payload,
+        migration.value AS migration_marker
+      FROM proof_indexer.work_amo_v7_listing_terms terms
+      JOIN proof_indexer.transactions listing_tx
+        ON listing_tx.network = terms.network
+       AND listing_tx.txid = terms.listing_txid
+       AND listing_tx.status = 'confirmed'
+       AND listing_tx.block_hash = terms.listing_block_hash
+       AND listing_tx.block_height = terms.listing_block_height
+       AND listing_tx.block_index = terms.listing_block_index
+      JOIN proof_indexer.blocks listing_block
+        ON listing_block.network = listing_tx.network
+       AND listing_block.block_hash = listing_tx.block_hash
+       AND listing_block.height = listing_tx.block_height
+       AND listing_block.canonical = true
+      JOIN proof_indexer.events listing_event
+        ON listing_event.network = terms.network
+       AND listing_event.txid = terms.listing_txid
+       AND listing_event.protocol = 'pwt1'
+       AND listing_event.kind = 'token-listing'
+       AND listing_event.status = 'confirmed'
+       AND listing_event.valid = true
+       AND listing_event.block_height = terms.listing_block_height
+       AND listing_event.block_index = terms.listing_block_index
+       AND listing_event.op_return_vout =
+         terms.listing_protocol_vout
+       AND listing_event.record_ordinal =
+         terms.listing_record_ordinal
+       AND lower(COALESCE(
+         listing_event.payload->>'tokenId',
+         listing_event.payload->'saleAuthorization'->>'tokenId',
+         listing_event.payload->'listingAuthorization'->>'tokenId',
+         ''
+       )) = terms.token_id
+       AND lower(COALESCE(
+         listing_event.payload->'saleAuthorization'->>'version',
+         listing_event.payload->'listingAuthorization'->>'version',
+         ''
+       )) = terms.authorization_version
+      JOIN proof_indexer.meta migration
+        ON migration.key = $3
+      WHERE terms.network = $1
+        AND terms.listing_id = $2
+        AND terms.authorization_version = $4
+      LIMIT 2
+    `,
+    [
+      network,
+      normalizedListingId,
+      WORK_PRECISION_V2_MIGRATION_META_KEY,
+      WORK_AMO_V7_AUTH_VERSION,
+    ],
+  );
+  return result.rows.length === 1
+    ? normalizedWorkAmoV7ListingTermsRow(
+        result.rows[0],
+        pins,
+      )
+    : null;
+}
+
 export async function proofIndexCanonicalWorkListingById(
   network,
   listingId,
@@ -2437,7 +4989,7 @@ export async function proofIndexCanonicalWorkListingById(
         listing.listing_id,
         listing.status AS listing_status,
         listing.seller_address,
-        listing.amount::text AS amount_atoms,
+        listing.amount::text AS amount_units,
         listing.price_sats::text AS price_sats,
         listing.sale_ticket_txid,
         listing.sale_ticket_vout,
@@ -2450,8 +5002,12 @@ export async function proofIndexCanonicalWorkListingById(
         listing_event.block_index,
         listing_event.op_return_vout AS protocol_vout,
         listing_event.record_ordinal,
-        listing_tx.block_hash
+        listing_tx.block_hash,
+        definition.metadata AS token_metadata
       FROM proof_indexer.credit_listings listing
+      JOIN proof_indexer.credit_definitions definition
+        ON definition.network = listing.network
+       AND definition.token_id = listing.token_id
       JOIN proof_indexer.transactions listing_tx
         ON listing_tx.network = listing.network
        AND listing_tx.txid = listing.listing_id
@@ -2473,6 +5029,15 @@ export async function proofIndexCanonicalWorkListingById(
        AND listing_event.block_index = listing_tx.block_index
        AND listing_event.op_return_vout IS NOT NULL
        AND listing_event.record_ordinal >= 0
+       AND lower(COALESCE(
+         listing_event.payload->'saleAuthorization'->>'version',
+         listing_event.payload->'listingAuthorization'->>'version',
+         ''
+       )) = lower(COALESCE(
+         listing.payload->'saleAuthorization'->>'version',
+         listing.payload->'listingAuthorization'->>'version',
+         ''
+       ))
       JOIN proof_indexer.tx_outputs listing_anchor
         ON listing_anchor.network = listing.network
        AND listing_anchor.txid = COALESCE(
@@ -2519,6 +5084,17 @@ export async function proofIndexCanonicalWorkListingById(
   const version = String(listingAuthorization.version ?? "")
     .trim()
     .toLowerCase();
+  let sourceWorkAmount;
+  let currentWorkAmount;
+  try {
+    sourceWorkAmount = workAmountProjection(payload);
+    currentWorkAmount = workListingAmountProjection(payload, {
+      metadata: row.token_metadata,
+      storedAmount: row.amount_units,
+    });
+  } catch {
+    return null;
+  }
   const v5Terms =
     version === WORK_AMO_V5_AUTH_VERSION
       ? await proofIndexWorkAmoListingTerms(network, normalizedListingId)
@@ -2526,6 +5102,13 @@ export async function proofIndexCanonicalWorkListingById(
   const v6Terms =
     version === WORK_AMO_V6_AUTH_VERSION
       ? await proofIndexWorkAmoV6ListingTerms(
+          network,
+          normalizedListingId,
+        )
+      : null;
+  const v7Terms =
+    version === WORK_AMO_V7_AUTH_VERSION
+      ? await proofIndexWorkAmoV7ListingTerms(
           network,
           normalizedListingId,
         )
@@ -2555,6 +5138,22 @@ export async function proofIndexCanonicalWorkListingById(
     )
       .trim()
       .toLowerCase();
+    if (
+      !termsPosition ||
+      termsPosition.blockHeight !== position.blockHeight ||
+      termsPosition.blockIndex !== position.blockIndex ||
+      termsPosition.protocolVout !== position.protocolVout ||
+      termsPosition.recordOrdinal !== position.recordOrdinal ||
+      frozenBlockHash !== blockHash
+    ) {
+      return null;
+    }
+  }
+  if (version === WORK_AMO_V7_AUTH_VERSION) {
+    const termsPosition = v7Terms?.listingPosition;
+    const frozenBlockHash = normalizedLowerText(
+      v7Terms?.frozenTerms?.listingBlockHash,
+    );
     if (
       !termsPosition ||
       termsPosition.blockHeight !== position.blockHeight ||
@@ -2635,7 +5234,7 @@ export async function proofIndexCanonicalWorkListingById(
   const validatedV1FrozenTerms =
     version === WORK_MARKET_V4_AUTH_VERSION
       ? validatedHistoricalV4ListingWitness({
-          amountAtoms: row.amount_atoms,
+          amountAtoms: sourceWorkAmount.amountAtoms,
           anchorAddress: row.anchor_address,
           anchorScriptPubKey: row.anchor_scriptpubkey,
           anchorValueSats: row.anchor_value_sats,
@@ -2654,18 +5253,21 @@ export async function proofIndexCanonicalWorkListingById(
         })
       : null;
   return {
-    amountAtoms: String(row.amount_atoms ?? ""),
+    amount: currentWorkAmount.amount,
+    ...workAmountProjectionMetadataForAmount(currentWorkAmount),
     blockHash,
     canonical: true,
     confirmed: true,
     historicalV4ReplayValidated: Boolean(validatedV1FrozenTerms),
     listingAuthorization,
     listingFrozenTerms:
-      version === WORK_AMO_V6_AUTH_VERSION
-        ? v6Terms.frozenTerms
-        : version === WORK_AMO_V5_AUTH_VERSION
-          ? v5Terms.frozenTerms
-          : validatedV1FrozenTerms,
+      version === WORK_AMO_V7_AUTH_VERSION
+        ? v7Terms.frozenTerms
+        : version === WORK_AMO_V6_AUTH_VERSION
+          ? v6Terms.frozenTerms
+          : version === WORK_AMO_V5_AUTH_VERSION
+            ? v5Terms.frozenTerms
+            : validatedV1FrozenTerms,
     listingId: normalizedListingId,
     priceSats: String(row.price_sats ?? ""),
     saleAuthorization: listingAuthorization,
@@ -3707,6 +6309,26 @@ export async function proofIndexWorkAmoBlockTransition(
   ) {
     return null;
   }
+  const configuredPrecisionPins =
+    configuredWorkPrecisionV2ReaderPins();
+  const activationLatch =
+    network === "livenet"
+      ? await proofIndexWorkAmoV7ActivationLatch(
+          network,
+          configuredPrecisionPins ?? undefined,
+        )
+      : null;
+  const precisionActivationHeight =
+    activationLatch?.pins?.activationHeight ??
+    configuredPrecisionPins?.activationHeight ??
+    Number.POSITIVE_INFINITY;
+  const q16Transition = height >= precisionActivationHeight;
+  const expectedTransitionModel = q16Transition
+    ? WORK_AMO_V7_BLOCK_SEQUENCER_MODEL
+    : WORK_AMO_V5_BLOCK_SEQUENCER_MODEL;
+  const expectedWorkTokenStateModel = q16Transition
+    ? WORK_AMO_V7_TOKEN_STATE_PREIMAGE_MODEL
+    : null;
   const result = await pool.query(
     `
       SELECT
@@ -3716,6 +6338,7 @@ export async function proofIndexWorkAmoBlockTransition(
         lower(transition.previous_block_hash) AS previous_block_hash,
         transition.model,
         transition.state_commitment_model,
+        transition.work_token_state_model,
         transition.opening_network_value_q8::text,
         transition.closing_network_value_q8::text,
         transition.opening_state_sha256,
@@ -3746,6 +6369,7 @@ export async function proofIndexWorkAmoBlockTransition(
         AND transition.block_height = $2
         AND lower(transition.block_hash) = $3
         AND transition.model = $4
+        AND transition.work_token_state_model IS NOT DISTINCT FROM $11
         AND transition.state_commitment_model = $5
         AND transition.event_set_model = $6
         AND transition.payload->>'transitionChainModel' = $7
@@ -3840,13 +6464,14 @@ export async function proofIndexWorkAmoBlockTransition(
       network,
       height,
       hash,
-      WORK_AMO_V5_BLOCK_SEQUENCER_MODEL,
+      expectedTransitionModel,
       WORK_AMO_V5_STATE_COMMITMENT_MODEL,
       WORK_AMO_V5_EVENT_SET_COMMITMENT_MODEL,
       WORK_AMO_V5_RAW_TRANSITION_CHAIN_MODEL,
       WORK_AMO_V5_RAW_BLOCK_DESCRIPTOR_MODEL,
       WORK_AMO_V5_PAYLOAD_COMMITMENT_MODEL,
       WORK_AMO_V5_RAW_BIP141_WITNESS_MODEL,
+      expectedWorkTokenStateModel,
     ],
   );
   if (result.rows.length !== 1) {
@@ -3911,6 +6536,8 @@ export async function proofIndexWorkAmoBlockTransition(
           row.previous_block_hash ?? "",
         ).toLowerCase(),
         payload,
+        workTokenStateModel:
+          row.work_token_state_model ?? null,
       }
     : null;
 }
@@ -6889,10 +9516,32 @@ function tokenSaleAuthorizationUsesSpendableSaleTicketAnchor(authorization) {
 
 function compareTokenHolderBalances(left, right) {
   if (isWorkTokenId(left?.tokenId) && isWorkTokenId(right?.tokenId)) {
-    const leftAtoms = BigInt(String(left?.balanceAtoms ?? "0"));
-    const rightAtoms = BigInt(String(right?.balanceAtoms ?? "0"));
-    if (leftAtoms !== rightAtoms) {
-      return leftAtoms > rightAtoms ? -1 : 1;
+    const leftModel = left?.amountStorageModel;
+    const rightModel = right?.amountStorageModel;
+    if (
+      leftModel !== rightModel ||
+      (
+        leftModel !== WORK_ATOMIC_PROJECTION_MODEL &&
+        leftModel !== WORK_SUBATOM_PROJECTION_MODEL
+      )
+    ) {
+      throw new Error(
+        "WORK holder ordering requires one explicit precision model.",
+      );
+    }
+    const subatomic = leftModel === WORK_SUBATOM_PROJECTION_MODEL;
+    const leftUnits = BigInt(
+      String(
+        subatomic ? left?.balanceSubatoms : left?.balanceAtoms,
+      ),
+    );
+    const rightUnits = BigInt(
+      String(
+        subatomic ? right?.balanceSubatoms : right?.balanceAtoms,
+      ),
+    );
+    if (leftUnits !== rightUnits) {
+      return leftUnits > rightUnits ? -1 : 1;
     }
   } else if (isBondTokenId(left?.tokenId) && isBondTokenId(right?.tokenId)) {
     const leftUnits = integerBigInt(left?.balance) ?? 0n;
@@ -7003,7 +9652,8 @@ function canonicalWorkMarketV3ListingProjectionSql(listingAlias = "cl") {
       '${WORK_MARKET_V2_AUTH_VERSION}',
       '${WORK_MARKET_V4_AUTH_VERSION}',
       '${WORK_AMO_V5_AUTH_VERSION}',
-      '${WORK_AMO_V6_AUTH_VERSION}'
+      '${WORK_AMO_V6_AUTH_VERSION}',
+      '${WORK_AMO_V7_AUTH_VERSION}'
     )
     OR (
       EXISTS (
@@ -7040,14 +9690,16 @@ function canonicalWorkMarketV3ListingProjectionSql(listingAlias = "cl") {
                     ''
                   )) IN (
                     '${WORK_AMO_V5_AUTH_VERSION}',
-                    '${WORK_AMO_V6_AUTH_VERSION}'
+                    '${WORK_AMO_V6_AUTH_VERSION}',
+                    '${WORK_AMO_V7_AUTH_VERSION}'
                   )
                   OR lower(COALESCE(
                     ${alias}.payload->'listingAuthorization'->>'version',
                     ''
                   )) IN (
                     '${WORK_AMO_V5_AUTH_VERSION}',
-                    '${WORK_AMO_V6_AUTH_VERSION}'
+                    '${WORK_AMO_V6_AUTH_VERSION}',
+                    '${WORK_AMO_V7_AUTH_VERSION}'
                   )
                 )
               )
@@ -7116,14 +9768,16 @@ function canonicalTokenListingEventJoinSql(listingAlias = "cl") {
                 ''
               )) IN (
                 '${WORK_AMO_V5_AUTH_VERSION}',
-                '${WORK_AMO_V6_AUTH_VERSION}'
+                '${WORK_AMO_V6_AUTH_VERSION}',
+                '${WORK_AMO_V7_AUTH_VERSION}'
               )
               OR lower(COALESCE(
                 ${alias}.payload->'listingAuthorization'->>'version',
                 ''
               )) IN (
                 '${WORK_AMO_V5_AUTH_VERSION}',
-                '${WORK_AMO_V6_AUTH_VERSION}'
+                '${WORK_AMO_V6_AUTH_VERSION}',
+                '${WORK_AMO_V7_AUTH_VERSION}'
               )
             )
           )
@@ -7138,6 +9792,20 @@ function canonicalTokenListingEventJoinSql(listingAlias = "cl") {
         canonical_listing_event_row.payload->'saleAuthorization'->>'tokenId',
         ''
       )) = lower(${alias}.token_id)
+      AND (
+        lower(COALESCE(${alias}.token_id, '')) <> '${WORK_TOKEN_ID}'
+        OR lower(COALESCE(
+          canonical_listing_event_row.payload
+            ->'saleAuthorization'->>'version',
+          canonical_listing_event_row.payload
+            ->'listingAuthorization'->>'version',
+          ''
+        )) = lower(COALESCE(
+          ${alias}.payload->'saleAuthorization'->>'version',
+          ${alias}.payload->'listingAuthorization'->>'version',
+          ''
+        ))
+      )
     ORDER BY
       canonical_listing_event_row.block_height DESC,
       canonical_listing_event_row.block_index DESC,
@@ -7195,7 +9863,8 @@ function canonicalTokenListingSealEventJoinSql(listingAlias = "cl") {
             '${WORK_MARKET_V2_AUTH_VERSION}',
             '${WORK_MARKET_V4_AUTH_VERSION}',
             '${WORK_AMO_V5_AUTH_VERSION}',
-            '${WORK_AMO_V6_AUTH_VERSION}'
+            '${WORK_AMO_V6_AUTH_VERSION}',
+            '${WORK_AMO_V7_AUTH_VERSION}'
           )
           AND lower(COALESCE(
             canonical_seal_event_row.payload->'saleAuthorization'->>'version',
@@ -7788,9 +10457,119 @@ function exactBondUnits(value, { positive = false, signed = false } = {}) {
   });
 }
 
+function canonicalIncbAttachedWorkQuantity(payload = {}) {
+  const source = objectRecord(payload);
+  const storageModel = String(
+    source.attachedWorkAmountStorageModel ?? "",
+  );
+  const amountVersion = String(
+    source.attachedWorkAmountVersion ?? "",
+  );
+  const atomFieldPresent =
+    source.attachedWorkAmountAtoms !== undefined &&
+    source.attachedWorkAmountAtoms !== null &&
+    source.attachedWorkAmountAtoms !== "";
+  const subatomFieldPresent =
+    source.attachedWorkAmountSubatoms !== undefined &&
+    source.attachedWorkAmountSubatoms !== null &&
+    source.attachedWorkAmountSubatoms !== "";
+  if (storageModel === WORK_SUBATOM_PROJECTION_MODEL) {
+    let amountSubatoms = "";
+    try {
+      amountSubatoms = normalizeWorkSubatoms(
+        source.attachedWorkAmountSubatoms,
+        { allowZero: true },
+      );
+    } catch {
+      amountSubatoms = "";
+    }
+    if (
+      !subatomFieldPresent ||
+      atomFieldPresent ||
+      !amountSubatoms ||
+      BigInt(amountSubatoms) >
+        BigInt(WORK_TOKEN_MAX_SUPPLY_SUBATOMS) ||
+      amountVersion !== WORK_AMO_V7_TRANSFER_VERSION ||
+      Number(source.attachedWorkAmountDecimals) !==
+        WORK_SUBATOM_DECIMALS ||
+      String(source.attachedWorkAmountUnitScale ?? "") !==
+        WORK_SUBATOM_UNIT_SCALE_TEXT ||
+      String(source.attachedWorkAmountPrecisionModel ?? "") !==
+        WORK_PRECISION_V2_MODEL
+    ) {
+      return null;
+    }
+    return {
+      amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+      amountSubatoms,
+      amountVersion,
+      decimals: WORK_SUBATOM_DECIMALS,
+      precisionModel: WORK_PRECISION_V2_MODEL,
+      unitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,
+    };
+  }
+  if (
+    storageModel !== "" &&
+    storageModel !== WORK_ATOMIC_PROJECTION_MODEL
+  ) {
+    return null;
+  }
+  let amountAtoms = "";
+  try {
+    amountAtoms = normalizeWorkAtoms(
+      source.attachedWorkAmountAtoms,
+      { allowZero: true },
+    );
+  } catch {
+    amountAtoms = "";
+  }
+  if (
+    !atomFieldPresent ||
+    subatomFieldPresent ||
+    !amountAtoms ||
+    BigInt(amountAtoms) > BigInt(WORK_TOKEN_MAX_SUPPLY_ATOMS)
+  ) {
+    return null;
+  }
+  const explicitLegacyMetadata =
+    storageModel === WORK_ATOMIC_PROJECTION_MODEL ||
+    amountVersion !== "" ||
+    source.attachedWorkAmountDecimals !== undefined ||
+    source.attachedWorkAmountUnitScale !== undefined ||
+    source.attachedWorkAmountPrecisionModel !== undefined;
+  if (
+    explicitLegacyMetadata &&
+    (
+      storageModel !== WORK_ATOMIC_PROJECTION_MODEL ||
+      !["send", "send2"].includes(
+        amountVersion,
+      ) ||
+      Number(source.attachedWorkAmountDecimals) !== WORK_DECIMALS ||
+      String(source.attachedWorkAmountUnitScale ?? "") !==
+        WORK_UNIT_SCALE_TEXT ||
+      String(source.attachedWorkAmountPrecisionModel ?? "") !== ""
+    )
+  ) {
+    return null;
+  }
+  return {
+    amountAtoms,
+    amountStorageModel: WORK_ATOMIC_PROJECTION_MODEL,
+    amountSubatoms: legacyWorkAtomsToSubatoms(amountAtoms, {
+      allowZero: true,
+    }),
+    amountVersion: amountVersion || "historical-q8",
+    decimals: WORK_DECIMALS,
+    precisionModel: "",
+    unitScale: WORK_UNIT_SCALE_TEXT,
+  };
+}
+
 function incbExactIssuanceMetadata(payload = {}) {
   const fieldNames = [
     "attachedWorkAmountAtoms",
+    "attachedWorkAmountSubatoms",
+    "attachedWorkAmountStorageModel",
     "attachedWorkLiveValueAtSendQ8",
     "issuanceDustQ8",
     "issuanceNetworkValueQ8",
@@ -7806,11 +10585,8 @@ function incbExactIssuanceMetadata(payload = {}) {
     return { complete: false, fault: "", present: false };
   }
 
+  const attachedWork = canonicalIncbAttachedWorkQuantity(payload);
   const exact = {
-    attachedWorkAmountAtoms: canonicalIntegerText(
-      payload?.attachedWorkAmountAtoms,
-      { allowZero: true },
-    ),
     attachedWorkLiveValueAtSendQ8: canonicalIntegerText(
       payload?.attachedWorkLiveValueAtSendQ8,
     ),
@@ -7824,7 +10600,10 @@ function incbExactIssuanceMetadata(payload = {}) {
       { allowZero: false },
     ),
   };
-  if (Object.values(exact).some((value) => !value)) {
+  if (
+    !attachedWork ||
+    Object.values(exact).some((value) => !value)
+  ) {
     return {
       ...exact,
       complete: false,
@@ -7849,8 +10628,9 @@ function incbExactIssuanceMetadata(payload = {}) {
     };
   }
 
-  const workMaxSupplyAtoms = 21_000_000n * 100_000_000n;
-  const attachedWorkAmountAtoms = BigInt(exact.attachedWorkAmountAtoms);
+  const attachedWorkAmountSubatoms = BigInt(
+    attachedWork.amountSubatoms,
+  );
   const attachedWorkLiveValueAtSendQ8 = BigInt(
     exact.attachedWorkLiveValueAtSendQ8,
   );
@@ -7864,19 +10644,33 @@ function incbExactIssuanceMetadata(payload = {}) {
   const attachedUnits =
     attachedWorkLiveValueAtSendQ8 / BOND_VALUE_Q8_SCALE;
   const expectedAttachedValueQ8 =
-    (attachedWorkAmountAtoms * snapshotWorkNetworkValueQ8) /
-    workMaxSupplyAtoms;
-  let declaredAttachedWorkAmountAtoms = "";
-  try {
-    declaredAttachedWorkAmountAtoms = parseWorkAmountToAtoms(
-      payload?.attachedWorkAmount,
-      { allowZero: true },
+    (attachedWorkAmountSubatoms * snapshotWorkNetworkValueQ8) /
+    (
+      21_000_000n *
+      BigInt(WORK_SUBATOM_UNIT_SCALE_TEXT)
     );
+  let declaredAttachedWorkAmountUnits = "";
+  try {
+    declaredAttachedWorkAmountUnits =
+      attachedWork.amountStorageModel ===
+        WORK_SUBATOM_PROJECTION_MODEL
+        ? parseWorkAmountToSubatoms(payload?.attachedWorkAmount, {
+            allowZero: true,
+          })
+        : parseWorkAmountToAtoms(payload?.attachedWorkAmount, {
+            allowZero: true,
+          });
   } catch {
-    declaredAttachedWorkAmountAtoms = "";
+    declaredAttachedWorkAmountUnits = "";
   }
+  const expectedDeclaredWorkAmountUnits =
+    attachedWork.amountStorageModel ===
+      WORK_SUBATOM_PROJECTION_MODEL
+      ? attachedWork.amountSubatoms
+      : attachedWork.amountAtoms;
   if (
-    declaredAttachedWorkAmountAtoms !== attachedWorkAmountAtoms.toString() ||
+    declaredAttachedWorkAmountUnits !==
+      expectedDeclaredWorkAmountUnits ||
     attachedWorkLiveValueAtSendQ8 !== expectedAttachedValueQ8 ||
     issuanceNetworkValueQ8 !==
       directUnits * BOND_VALUE_Q8_SCALE + attachedWorkLiveValueAtSendQ8 ||
@@ -7886,7 +10680,8 @@ function incbExactIssuanceMetadata(payload = {}) {
       ...exact,
       complete: false,
       fault:
-        declaredAttachedWorkAmountAtoms !== attachedWorkAmountAtoms.toString()
+        declaredAttachedWorkAmountUnits !==
+          expectedDeclaredWorkAmountUnits
           ? "fractional exact issuance metadata disagrees with projected values"
           : "fractional exact issuance metadata does not conserve value",
       present: true,
@@ -7916,6 +10711,39 @@ function incbExactIssuanceMetadata(payload = {}) {
 
   return {
     ...exact,
+    attachedWorkAmount: formatWorkSubatoms(
+      attachedWork.amountSubatoms,
+    ),
+    attachedWorkAmountDecimals: attachedWork.decimals,
+    attachedWorkAmountStorageModel:
+      attachedWork.amountStorageModel,
+    attachedWorkAmountUnitScale: attachedWork.unitScale,
+    attachedWorkAmountVersion: attachedWork.amountVersion,
+    ...(attachedWork.amountStorageModel ===
+      WORK_SUBATOM_PROJECTION_MODEL
+      ? {
+          attachedWorkAmountSubatoms:
+            attachedWork.amountSubatoms,
+        }
+      : {}),
+    ...(attachedWork.precisionModel
+      ? {
+          attachedWorkAmountPrecisionModel:
+            attachedWork.precisionModel,
+        }
+      : {}),
+    ...(attachedWork.amountAtoms
+      ? { attachedWorkAmountAtoms: attachedWork.amountAtoms }
+      : BigInt(attachedWork.amountSubatoms) %
+            WORK_SUBATOM_CONVERSION_FACTOR ===
+          0n
+        ? {
+            attachedWorkAmountAtoms: (
+              BigInt(attachedWork.amountSubatoms) /
+              WORK_SUBATOM_CONVERSION_FACTOR
+            ).toString(),
+          }
+        : {}),
     amount: amount.toString(),
     attachedWorkIssuanceUnits: attachedUnits.toString(),
     complete: true,
@@ -8307,11 +11135,37 @@ function tokenMintFromEventPayload(payload, row = {}) {
     bondRecipientAddress: String(payload?.bondRecipientAddress ?? "").trim(),
     bondRecipientAmountSats: rowNumber(payload, "bondRecipientAmountSats"),
     bondRecipientVout: rowNumber(payload, "bondRecipientVout"),
-    attachedWorkAmount: rowNumber(payload, "attachedWorkAmount"),
+    attachedWorkAmount: exactIncbIssuance.complete
+      ? exactIncbIssuance.attachedWorkAmount
+      : rowNumber(payload, "attachedWorkAmount"),
     ...(exactIncbIssuance.complete
       ? {
-          attachedWorkAmountAtoms:
-            exactIncbIssuance.attachedWorkAmountAtoms,
+          attachedWorkAmountDecimals:
+            exactIncbIssuance.attachedWorkAmountDecimals,
+          attachedWorkAmountStorageModel:
+            exactIncbIssuance.attachedWorkAmountStorageModel,
+          ...(exactIncbIssuance.attachedWorkAmountSubatoms
+            ? {
+                attachedWorkAmountSubatoms:
+                  exactIncbIssuance.attachedWorkAmountSubatoms,
+              }
+            : {}),
+          attachedWorkAmountUnitScale:
+            exactIncbIssuance.attachedWorkAmountUnitScale,
+          attachedWorkAmountVersion:
+            exactIncbIssuance.attachedWorkAmountVersion,
+          ...(exactIncbIssuance.attachedWorkAmountPrecisionModel
+            ? {
+                attachedWorkAmountPrecisionModel:
+                  exactIncbIssuance.attachedWorkAmountPrecisionModel,
+              }
+            : {}),
+          ...(exactIncbIssuance.attachedWorkAmountAtoms
+            ? {
+                attachedWorkAmountAtoms:
+                  exactIncbIssuance.attachedWorkAmountAtoms,
+              }
+            : {}),
           attachedWorkLiveValueAtSendQ8:
             exactIncbIssuance.attachedWorkLiveValueAtSendQ8,
         }
@@ -8929,7 +11783,8 @@ function tokenHistoryCanonicalMarketEventsSql(
                 '${WORK_MARKET_V2_AUTH_VERSION}',
                 '${WORK_MARKET_V4_AUTH_VERSION}',
                 '${WORK_AMO_V5_AUTH_VERSION}',
-                '${WORK_AMO_V6_AUTH_VERSION}'
+                '${WORK_AMO_V6_AUTH_VERSION}',
+                '${WORK_AMO_V7_AUTH_VERSION}'
               )
               AND lower(COALESCE(
                 canonical_seal_event_row.payload
@@ -9669,6 +12524,7 @@ function isWorkAmoV5ListingSaleProjection(sale) {
     [
       WORK_AMO_V5_AUTH_VERSION,
       WORK_AMO_V6_AUTH_VERSION,
+      WORK_AMO_V7_AUTH_VERSION,
     ].includes(normalizedLowerText(saleAuthorization.version))
   );
 }
@@ -10249,6 +13105,27 @@ export async function proofIndexTokenMintStatsPayload(
     return null;
   }
   const targetTxid = normalizedTxid(options.targetTxid);
+  const workScoped = isWorkTokenId(scope);
+  const workStorageModel = workScoped
+    ? await currentWorkAmountStorageModel(pool, network)
+    : "";
+  if (workScoped && !workStorageModel) {
+    throw new Error(
+      "Proof index WORK mint statistics require one canonical Q8 or Q16 definition.",
+    );
+  }
+  const precisionCheckpointBefore =
+    workScoped &&
+    workStorageModel === WORK_SUBATOM_PROJECTION_MODEL
+      ? await proofIndexWalletCheckpointMetadata(pool, network)
+      : null;
+  if (
+    workScoped &&
+    workStorageModel === WORK_SUBATOM_PROJECTION_MODEL &&
+    !precisionCheckpointBefore
+  ) {
+    return null;
+  }
 
   const rows = await proofIndexTokenMintRows(
     pool,
@@ -10269,17 +13146,26 @@ export async function proofIndexTokenMintStatsPayload(
   }
 
   const exactWholeUnits = isBondTokenId(scope);
+  const exactIntegerUnits = exactWholeUnits || workScoped;
   let confirmedMints = 0;
-  let confirmedSupply = exactWholeUnits ? 0n : 0;
+  let confirmedSupply = exactIntegerUnits ? 0n : 0;
   let pendingMints = 0;
-  let pendingSupply = exactWholeUnits ? 0n : 0;
+  let pendingSupply = exactIntegerUnits ? 0n : 0;
   let targetConfirmedMints = 0;
   let targetPendingMints = 0;
   const pendingCandidatesByTxid = new Map();
   for (const mint of mints) {
-    const amount = exactWholeUnits
-      ? integerBigInt(mint.amount)
-      : Number(mint.amount);
+    const amount = workScoped
+      ? BigInt(
+          workAmountUnitsForStorageModel(
+            mint,
+            workStorageModel,
+            { allowZero: true },
+          ),
+        )
+      : exactWholeUnits
+        ? integerBigInt(mint.amount)
+        : Number(mint.amount);
     if (
       amount === null ||
       (typeof amount === "number" &&
@@ -10311,7 +13197,7 @@ export async function proofIndexTokenMintStatsPayload(
       }
       const existingCandidate = pendingCandidatesByTxid.get(mintTxid);
       const candidateAmount =
-        (existingCandidate?.amount ?? (exactWholeUnits ? 0n : 0)) + amount;
+        (existingCandidate?.amount ?? (exactIntegerUnits ? 0n : 0)) + amount;
       if (
         typeof candidateAmount === "number" &&
         !Number.isSafeInteger(candidateAmount)
@@ -10343,7 +13229,7 @@ export async function proofIndexTokenMintStatsPayload(
   );
   const pendingCandidateSupply = pendingCandidateRows.reduce(
     (total, candidate) => total + candidate.amount,
-    exactWholeUnits ? 0n : 0,
+    exactIntegerUnits ? 0n : 0,
   );
   if (
     typeof pendingCandidateSupply === "number" &&
@@ -10351,11 +13237,65 @@ export async function proofIndexTokenMintStatsPayload(
   ) {
     throw new Error("Proof index pending mint witness supply is inexact.");
   }
+  const workSupply = workScoped
+    ? workSupplyFieldsForStorageModel(
+        confirmedSupply.toString(),
+        pendingSupply.toString(),
+        workStorageModel,
+      )
+    : null;
+  const workPendingCandidateSupply = workScoped
+    ? workSupplyFieldsForStorageModel(
+        "0",
+        pendingCandidateSupply.toString(),
+        workStorageModel,
+      )
+    : null;
+  if (precisionCheckpointBefore) {
+    const precisionCheckpointAfter =
+      await proofIndexWalletCheckpointMetadata(pool, network);
+    if (
+      !precisionCheckpointAfter ||
+      precisionCheckpointAfter.indexedThroughBlock !==
+        precisionCheckpointBefore.indexedThroughBlock ||
+      precisionCheckpointAfter.indexedThroughBlockHash !==
+        precisionCheckpointBefore.indexedThroughBlockHash
+    ) {
+      return null;
+    }
+    const precisionProbe =
+      await payloadWithCurrentWorkPrecisionReadPolicy(
+        network,
+        {
+          indexedThroughBlock:
+            precisionCheckpointAfter.indexedThroughBlock,
+          indexedThroughBlockHash:
+            precisionCheckpointAfter.indexedThroughBlockHash,
+          source: "proof-indexer-token-mint-stats",
+          tokens: [{
+            amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+            decimals: WORK_SUBATOM_DECIMALS,
+            precisionModel: WORK_PRECISION_V2_MODEL,
+            tokenId: scope,
+            unitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,
+          }],
+        },
+        {
+          requireExactCheckpoint: true,
+          requireSupplyEnvelope: false,
+        },
+      );
+    if (!precisionProbe) {
+      return null;
+    }
+  }
   return {
     confirmedMints,
-    confirmedSupply: exactWholeUnits
-      ? confirmedSupply.toString()
-      : confirmedSupply,
+    ...(workSupply ?? {
+      confirmedSupply: exactWholeUnits
+        ? confirmedSupply.toString()
+        : confirmedSupply,
+    }),
     indexedAt: newestDateIso(
       rows.flatMap((row) => [
         row.block_time,
@@ -10365,24 +13305,68 @@ export async function proofIndexTokenMintStatsPayload(
         row.created_at,
       ]),
     ),
-    indexedThroughBlock: indexedThroughBlock || undefined,
+    indexedThroughBlock:
+      (
+        precisionCheckpointBefore?.indexedThroughBlock ??
+        indexedThroughBlock
+      ) ||
+      undefined,
     network,
     pendingCandidateCount: pendingCandidateRows.length,
     pendingCandidates: pendingCandidateRows
       .slice(0, TOKEN_PENDING_MINT_WITNESS_LIMIT)
       .map((candidate) => ({
-        ...candidate,
-        amount: exactWholeUnits
-          ? candidate.amount.toString()
-          : candidate.amount,
+        txid: candidate.txid,
+        amount: workScoped
+          ? formatWorkAmountByProjectionMeta(
+              candidate.amount.toString(),
+              workSupply,
+            )
+          : exactWholeUnits
+            ? candidate.amount.toString()
+            : candidate.amount,
+        ...(workScoped
+          ? {
+              amountStorageModel: workStorageModel,
+              decimals: workSupply.decimals,
+              ...(workStorageModel ===
+                WORK_SUBATOM_PROJECTION_MODEL
+                ? {
+                    amountSubatoms: candidate.amount.toString(),
+                    precisionModel: WORK_PRECISION_V2_MODEL,
+                  }
+                : { amountAtoms: candidate.amount.toString() }),
+              unitScale: workSupply.unitScale,
+            }
+          : {}),
       })),
     pendingCandidatesComplete:
       pendingCandidateRows.length <= TOKEN_PENDING_MINT_WITNESS_LIMIT,
-    pendingCandidateSupply: exactWholeUnits
-      ? pendingCandidateSupply.toString()
-      : pendingCandidateSupply,
+    pendingCandidateSupply: workScoped
+      ? workPendingCandidateSupply.pendingSupply
+      : exactWholeUnits
+        ? pendingCandidateSupply.toString()
+        : pendingCandidateSupply,
+    ...(workScoped &&
+      workStorageModel === WORK_SUBATOM_PROJECTION_MODEL
+      ? {
+          pendingCandidateSupplySubatoms:
+            pendingCandidateSupply.toString(),
+        }
+      : workScoped
+        ? {
+            pendingCandidateSupplyAtoms:
+              pendingCandidateSupply.toString(),
+          }
+        : {}),
     pendingMints,
-    pendingSupply: exactWholeUnits ? pendingSupply.toString() : pendingSupply,
+    ...(workSupply
+      ? {}
+      : {
+          pendingSupply: exactWholeUnits
+            ? pendingSupply.toString()
+            : pendingSupply,
+        }),
     pendingWitnessLimit: TOKEN_PENDING_MINT_WITNESS_LIMIT,
     source: "proof-indexer-token-mint-events",
     ...(targetTxid
@@ -10446,7 +13430,12 @@ async function exactTokenMintHistoryPage(
   );
   const items = rowsResult.rows
     .map((row) => tokenMintFromEventPayload(objectRecord(row.payload), row))
-    .filter((item) => item.txid && item.tokenId && item.amount > 0);
+    .filter(
+      (item) =>
+        item.txid &&
+        item.tokenId &&
+        tokenAmountIsPositive(item),
+    );
   const start = Math.min(pagination.offset, totalCount);
   const end = Math.min(totalCount, start + pagination.limit);
   const snapshotId = snapshot?.snapshot_id ?? "";
@@ -10512,6 +13501,11 @@ async function tokenStateWithMintEventOverlay(pool, network, scope, payload, sna
     .map((row) => tokenMintFromEventPayload(objectRecord(row.payload), row))
     .filter((item) => {
       if (!item.txid || !item.tokenId) return false;
+      if (isWorkTokenId(item.tokenId)) {
+        return BigInt(
+          String(item.amountSubatoms ?? item.amountAtoms ?? "0"),
+        ) > 0n;
+      }
       if (!isBondTokenId(item.tokenId)) return Number(item.amount) > 0;
       const amount = exactBondUnits(item.amount, { positive: true });
       return Boolean(amount) && BigInt(amount) > 0n;
@@ -10528,28 +13522,87 @@ async function tokenStateWithMintEventOverlay(pool, network, scope, payload, sna
     mints,
   );
   const bondScoped = Boolean(scopedBondTokenId);
-  const confirmedSupply = bondScoped
-    ? confirmedMints
+  const scopedWorkTokens = (
+    Array.isArray(payload.tokens) ? payload.tokens : []
+  ).filter(
+    (token) =>
+      tokenMatchesScope(token, scope) &&
+      isWorkTokenId(token?.tokenId),
+  );
+  const workScoped = scopedWorkTokens.length === 1;
+  const workStorageModel = workScoped
+    ? scopedWorkTokens[0].amountStorageModel
+    : "";
+  if (
+    workScoped &&
+    workStorageModel !== WORK_ATOMIC_PROJECTION_MODEL &&
+    workStorageModel !== WORK_SUBATOM_PROJECTION_MODEL
+  ) {
+    throw new Error(
+      "WORK mint overlay requires an explicit Q8 or Q16 token definition.",
+    );
+  }
+  const confirmedWorkUnits = workScoped
+    ? confirmedMints.reduce(
+        (total, mint) =>
+          total +
+          BigInt(
+            workAmountUnitsForStorageModel(
+              mint,
+              workStorageModel,
+              { allowZero: true },
+            ),
+          ),
+        0n,
+      )
+    : 0n;
+  const pendingWorkUnits = workScoped
+    ? pendingMints.reduce(
+        (total, mint) =>
+          total +
+          BigInt(
+            workAmountUnitsForStorageModel(
+              mint,
+              workStorageModel,
+              { allowZero: true },
+            ),
+          ),
+        0n,
+      )
+    : 0n;
+  const workSupply = workScoped
+    ? workSupplyFieldsForStorageModel(
+        confirmedWorkUnits.toString(),
+        pendingWorkUnits.toString(),
+        workStorageModel,
+      )
+    : null;
+  const confirmedSupply = workSupply
+    ? workSupply.confirmedSupply
+    : bondScoped
+      ? confirmedMints
         .reduce(
           (total, mint) => total + BigInt(exactBondUnits(mint.amount)),
           0n,
         )
         .toString()
-    : confirmedMints.reduce(
-        (total, mint) => total + Number(mint.amount ?? 0),
-        0,
-      );
-  const pendingSupply = bondScoped
-    ? pendingMints
+      : confirmedMints.reduce(
+          (total, mint) => total + Number(mint.amount ?? 0),
+          0,
+        );
+  const pendingSupply = workSupply
+    ? workSupply.pendingSupply
+    : bondScoped
+      ? pendingMints
         .reduce(
           (total, mint) => total + BigInt(exactBondUnits(mint.amount)),
           0n,
         )
         .toString()
-    : pendingMints.reduce(
-        (total, mint) => total + Number(mint.amount ?? 0),
-        0,
-      );
+      : pendingMints.reduce(
+          (total, mint) => total + Number(mint.amount ?? 0),
+          0,
+        );
   const tokens = (Array.isArray(payload.tokens) ? payload.tokens : []).map((token) => {
     if (!tokenMatchesScope(token, scope)) {
       return token;
@@ -10557,14 +13610,13 @@ async function tokenStateWithMintEventOverlay(pool, network, scope, payload, sna
     return {
       ...token,
       confirmedMints: confirmedMints.length,
-      confirmedSupply,
+      ...(workSupply ?? { confirmedSupply, pendingSupply }),
       pendingMints: pendingMints.length,
-      pendingSupply,
     };
   });
   const nextPayload = {
     ...payload,
-    confirmedSupply,
+    ...(workSupply ?? { confirmedSupply, pendingSupply }),
     indexedAt: newestDateIso([
       payload.indexedAt,
       snapshot?.generated_at,
@@ -10577,7 +13629,6 @@ async function tokenStateWithMintEventOverlay(pool, network, scope, payload, sna
         indexedThroughBlockFromItems(mints) ?? 0,
       ) || undefined,
     mints,
-    pendingSupply,
     source: mergedSourceLabel(payload.source, "proof-indexer-token-mint-events"),
     tokens,
   };
@@ -11119,36 +14170,48 @@ function rowNumber(row, key) {
 function workAmountProjectionMetadata(record, metadata = {}) {
   const item = objectRecord(record);
   const normalizedMetadata = objectRecord(metadata);
-  const metadataDecimals = Number(normalizedMetadata.decimals);
-  const metadataUnitScale = String(normalizedMetadata.unitScale ?? "");
+  const explicitMetadata = [
+    normalizedMetadata,
+    item,
+  ].flatMap((candidate) =>
+    validateWorkPrecisionMetadata(candidate)
+      ? [{
+          amountStorageModel: candidate.amountStorageModel,
+          decimals: Number(candidate.decimals),
+          unitScale: String(candidate.unitScale),
+        }]
+      : [],
+  );
   if (
-    normalizedMetadata.amountStorageModel === WORK_ATOMIC_PROJECTION_MODEL &&
-    ((metadataDecimals === WORK_DECIMALS &&
-      metadataUnitScale === WORK_UNIT_SCALE_TEXT) ||
-      (metadataDecimals === WORK_AMO_DECIMALS &&
-        metadataUnitScale === WORK_AMO_UNIT_SCALE_TEXT))
+    explicitMetadata.length === 2 &&
+    JSON.stringify(explicitMetadata[0]) !==
+      JSON.stringify(explicitMetadata[1])
   ) {
-    return {
-      decimals: metadataDecimals,
-      unitScale: metadataUnitScale,
-    };
+    throw new Error("WORK precision metadata aliases conflict.");
   }
 
-  const tokenId = String(
-    item.tokenId ??
-      item.payload?.tokenId ??
-      item.saleAuthorization?.tokenId ??
-      item.token_id ??
-      "",
-  )
-    .trim()
-    .toLowerCase();
   const saleAuthorization =
     item.saleAuthorization &&
     typeof item.saleAuthorization === "object" &&
     !Array.isArray(item.saleAuthorization)
       ? item.saleAuthorization
       : {};
+  const listingAuthorization =
+    item.listingAuthorization &&
+    typeof item.listingAuthorization === "object" &&
+    !Array.isArray(item.listingAuthorization)
+      ? item.listingAuthorization
+      : {};
+  const tokenId = String(
+    item.tokenId ??
+      item.payload?.tokenId ??
+      saleAuthorization.tokenId ??
+      listingAuthorization.tokenId ??
+      item.token_id ??
+      "",
+  )
+    .trim()
+    .toLowerCase();
   const frozenTerms =
     item.frozenTerms &&
     typeof item.frozenTerms === "object" &&
@@ -11169,7 +14232,10 @@ function workAmountProjectionMetadata(record, metadata = {}) {
       : {};
   const metadataVersion = String(
     item.version ??
+      item.amountVersion ??
+      item.transferVersion ??
       saleAuthorization.version ??
+      listingAuthorization.version ??
       item.authorizationVersion ??
       frozenTerms.version ??
       workAmoFrozenTerms.version ??
@@ -11178,57 +14244,130 @@ function workAmountProjectionMetadata(record, metadata = {}) {
   )
     .trim()
     .toLowerCase();
-
-  if (
+  const versionModel =
     tokenId === WORK_TOKEN_ID &&
-    metadataVersion === WORK_AMO_V6_AUTH_VERSION
+    (
+      metadataVersion === WORK_AMO_V7_AUTH_VERSION ||
+      metadataVersion === WORK_AMO_V7_TRANSFER_VERSION
+    )
+      ? WORK_SUBATOM_PROJECTION_MODEL
+      : "";
+  if (
+    explicitMetadata.length > 0 &&
+    versionModel &&
+    explicitMetadata[0].amountStorageModel !== versionModel
   ) {
+    throw new Error(
+      "WORK authorization version conflicts with precision metadata.",
+    );
+  }
+  if (explicitMetadata.length > 0) {
+    return explicitMetadata[0];
+  }
+
+  if (versionModel === WORK_SUBATOM_PROJECTION_MODEL) {
     return {
-      decimals: WORK_AMO_DECIMALS,
-      unitScale: WORK_AMO_UNIT_SCALE_TEXT,
+      amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+      decimals: WORK_SUBATOM_DECIMALS,
+      unitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,
     };
   }
 
   return {
+    amountStorageModel: WORK_LEGACY_ATOMIC_PROJECTION_MODEL,
     decimals: WORK_DECIMALS,
     unitScale: WORK_UNIT_SCALE_TEXT,
   };
 }
 
 function workAmountProjectionMetadataForAmount(workAmount) {
-  return workAmount &&
-    typeof workAmount === "object" &&
-    !Array.isArray(workAmount)
-    ? {
-        amountAtoms: workAmount.amountAtoms,
-        decimals: workAmount.decimals,
-        unitScale: workAmount.unitScale,
-      }
-    : {};
+  if (
+    !workAmount ||
+    typeof workAmount !== "object" ||
+    Array.isArray(workAmount)
+  ) {
+    return {};
+  }
+  const subatomic =
+    workAmount.amountStorageModel ===
+      WORK_SUBATOM_PROJECTION_MODEL;
+  return {
+    amountStorageModel: workAmount.amountStorageModel,
+    decimals: workAmount.decimals,
+    ...(subatomic
+      ? {
+          amountSubatoms: workAmount.amountSubatoms,
+          precisionModel: WORK_PRECISION_V2_MODEL,
+        }
+      : { amountAtoms: workAmount.amountAtoms }),
+    unitScale: workAmount.unitScale,
+  };
 }
 
-function formatWorkAmountByProjectionMeta(amountAtoms, amountMetadata = {}) {
+function recordWithoutWorkAmountAliases(record) {
+  const {
+    amount: ignoredAmount,
+    amountAtoms: ignoredAmountAtoms,
+    amountStorageModel: ignoredAmountStorageModel,
+    amountSubatoms: ignoredAmountSubatoms,
+    decimals: ignoredDecimals,
+    precisionModel: ignoredPrecisionModel,
+    tokenAmount: ignoredTokenAmount,
+    tokenAmountAtoms: ignoredTokenAmountAtoms,
+    tokenAmountSubatoms: ignoredTokenAmountSubatoms,
+    unitScale: ignoredUnitScale,
+    ...remainder
+  } = objectRecord(record);
+  void ignoredAmount;
+  void ignoredAmountAtoms;
+  void ignoredAmountStorageModel;
+  void ignoredAmountSubatoms;
+  void ignoredDecimals;
+  void ignoredPrecisionModel;
+  void ignoredTokenAmount;
+  void ignoredTokenAmountAtoms;
+  void ignoredTokenAmountSubatoms;
+  void ignoredUnitScale;
+  return remainder;
+}
+
+function payloadWithWorkAmountProjection(record, workAmount) {
+  const item = objectRecord(record);
+  return {
+    ...recordWithoutWorkAmountAliases(item),
+    amount: workAmount.amount,
+    ...workAmountProjectionMetadataForAmount(workAmount),
+  };
+}
+
+function formatWorkAmountByProjectionMeta(amountUnits, amountMetadata = {}) {
   if (
-    Number(amountMetadata.decimals) === WORK_AMO_DECIMALS &&
-    String(amountMetadata.unitScale ?? "") === WORK_AMO_UNIT_SCALE_TEXT
+    amountMetadata.amountStorageModel ===
+      WORK_SUBATOM_PROJECTION_MODEL &&
+    Number(amountMetadata.decimals) === WORK_SUBATOM_DECIMALS &&
+    String(amountMetadata.unitScale ?? "") ===
+      WORK_SUBATOM_UNIT_SCALE_TEXT
   ) {
-    return formatWorkAtomsAmo(amountAtoms);
+    return formatWorkSubatoms(amountUnits);
   }
-  return formatWorkAtoms(amountAtoms);
+  return formatWorkAtoms(amountUnits);
 }
 
 function workAtomicProjectionMetadata(metadata) {
-  const item = objectRecord(metadata);
-  return (
-    item.amountStorageModel === WORK_ATOMIC_PROJECTION_MODEL &&
-    ((Number(item.decimals) === WORK_DECIMALS &&
-      String(item.unitScale ?? "") === WORK_UNIT_SCALE_TEXT) ||
-      (Number(item.decimals) === WORK_AMO_DECIMALS &&
-        String(item.unitScale ?? "") === WORK_AMO_UNIT_SCALE_TEXT))
-  );
+  return validateWorkPrecisionMetadata(objectRecord(metadata));
 }
 
 function storedWorkAtoms(value, metadata, { signed = false } = {}) {
+  const amountMetadata = workAmountProjectionMetadata({}, metadata);
+  if (
+    amountMetadata.amountStorageModel ===
+      WORK_SUBATOM_PROJECTION_MODEL
+  ) {
+    return normalizeWorkSubatoms(value, {
+      allowNegative: signed,
+      allowZero: true,
+    });
+  }
   if (workAtomicProjectionMetadata(metadata)) {
     return normalizeWorkAtoms(value, {
       allowNegative: signed,
@@ -11247,30 +14386,298 @@ function workAmountProjection(
     storedAmount,
     storedAmountIsAtoms = false,
     allowZero = false,
+    targetStorageModel = "",
   } = {},
 ) {
-  const amountAtoms =
+  let amountMetadata = workAmountProjectionMetadata(record, metadata);
+  let subatomic =
+    amountMetadata.amountStorageModel ===
+      WORK_SUBATOM_PROJECTION_MODEL;
+  const item = objectRecord(record);
+  const topLevelSubatomAliases = [
+    item.amountSubatoms,
+    item.tokenAmountSubatoms,
+  ].filter(
+    (candidate) =>
+      candidate !== undefined && candidate !== null && candidate !== "",
+  );
+  const topLevelAtomAliases = [
+    item.amountAtoms,
+    item.tokenAmountAtoms,
+  ].filter(
+    (candidate) =>
+      candidate !== undefined && candidate !== null && candidate !== "",
+  );
+  let amountUnits =
     storedAmount !== undefined
       ? storedAmountIsAtoms || workAtomicProjectionMetadata(metadata)
-        ? normalizeWorkAtoms(storedAmount, { allowZero })
-        : parseWorkAmountToAtoms(storedAmount, { allowZero })
-      : workAmountAtomsFromRecord(record, { allowZero });
-  const amountMetadata = workAmountProjectionMetadata(record, metadata);
+        ? subatomic
+          ? normalizeWorkSubatoms(storedAmount, { allowZero })
+          : normalizeWorkAtoms(storedAmount, { allowZero })
+        : subatomic
+          ? parseWorkAmountToSubatoms(storedAmount, { allowZero })
+          : parseWorkAmountToAtoms(storedAmount, { allowZero })
+      : subatomic
+        ? topLevelSubatomAliases.length > 0
+          ? topLevelSubatomAliases.length === 1 &&
+            topLevelAtomAliases.length === 0
+            ? normalizeWorkSubatoms(topLevelSubatomAliases[0], {
+                allowZero,
+              })
+            : (() => {
+                throw new TypeError(
+                  "Current Q16 WORK projection aliases are ambiguous.",
+                );
+              })()
+          : workAmountSubatomsFromRecord(record, {
+              allowZero,
+              sourceModel: amountMetadata.amountStorageModel,
+            })
+        : workAmountAtomsFromRecord(record, { allowZero });
+  const normalizedTargetStorageModel = String(
+    targetStorageModel ?? "",
+  ).trim();
+  if (
+    normalizedTargetStorageModel &&
+    normalizedTargetStorageModel !== amountMetadata.amountStorageModel
+  ) {
+    if (
+      amountMetadata.amountStorageModel !==
+        WORK_ATOMIC_PROJECTION_MODEL ||
+      normalizedTargetStorageModel !==
+        WORK_SUBATOM_PROJECTION_MODEL
+    ) {
+      throw new TypeError(
+        "Native Q16 WORK cannot be projected back into historical Q8 atoms.",
+      );
+    }
+    amountUnits = (
+      BigInt(normalizeWorkAtoms(amountUnits, { allowZero })) *
+      WORK_SUBATOM_CONVERSION_FACTOR
+    ).toString();
+    amountMetadata = {
+      amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+      decimals: WORK_SUBATOM_DECIMALS,
+      unitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,
+    };
+    subatomic = true;
+  } else if (
+    normalizedTargetStorageModel &&
+    normalizedTargetStorageModel !== WORK_ATOMIC_PROJECTION_MODEL &&
+    normalizedTargetStorageModel !== WORK_SUBATOM_PROJECTION_MODEL
+  ) {
+    throw new TypeError(
+      "WORK projection target requires an explicit Q8 or Q16 storage model.",
+    );
+  }
   return {
-    amount: formatWorkAmountByProjectionMeta(amountAtoms, amountMetadata),
-    amountAtoms,
+    amount: formatWorkAmountByProjectionMeta(
+      amountUnits,
+      amountMetadata,
+    ),
+    amountStorageModel: amountMetadata.amountStorageModel,
+    units: amountUnits,
+    ...(subatomic
+      ? { amountSubatoms: amountUnits }
+      : { amountAtoms: amountUnits }),
     decimals: amountMetadata.decimals,
     unitScale: amountMetadata.unitScale,
   };
 }
 
-function workBalanceProjection(value, metadata, { signed = false } = {}) {
-  const atoms = storedWorkAtoms(value, metadata, { signed });
+function workListingAmountProjection(
+  record,
+  {
+    metadata = {},
+    storedAmount,
+  } = {},
+) {
+  const item = objectRecord(record);
+  const saleAuthorization = objectRecord(
+    item.saleAuthorization ?? item.listingAuthorization,
+  );
+  const authorizationVersion = String(
+    saleAuthorization.version ?? item.authorizationVersion ?? "",
+  ).trim();
+  const currentMetadata = workAmountProjectionMetadata({}, metadata);
+  if (
+    currentMetadata.amountStorageModel ===
+      WORK_SUBATOM_PROJECTION_MODEL &&
+    authorizationVersion &&
+    authorizationVersion !== WORK_AMO_V7_AUTH_VERSION
+  ) {
+    const legacyProjection = workAmountProjection(item);
+    if (
+      legacyProjection.amountStorageModel !==
+        WORK_ATOMIC_PROJECTION_MODEL ||
+      storedAmount === undefined ||
+      normalizeWorkSubatoms(storedAmount, {
+        allowZero: true,
+      }) !==
+        legacyWorkAtomsToSubatoms(
+          legacyProjection.amountAtoms,
+          { allowZero: true },
+        )
+    ) {
+      throw new Error(
+        "Migrated legacy WORK listing does not conserve its immutable Q8 amount.",
+      );
+    }
+    return workAmountProjection(
+      {},
+      {
+        metadata: currentMetadata,
+        storedAmount,
+        storedAmountIsAtoms: true,
+      },
+    );
+  }
+  return workAmountProjection(item, {
+    metadata,
+    storedAmount,
+    storedAmountIsAtoms: true,
+  });
+}
+
+export function workBalanceProjection(
+  value,
+  metadata,
+  { signed = false } = {},
+) {
+  const units = storedWorkAtoms(value, metadata, { signed });
   const amountMetadata = workAmountProjectionMetadata({}, metadata);
+  const subatomic =
+    amountMetadata.amountStorageModel ===
+      WORK_SUBATOM_PROJECTION_MODEL;
   return {
-    atoms,
-    amount: formatWorkAmountByProjectionMeta(atoms, amountMetadata),
+    amount: formatWorkAmountByProjectionMeta(units, amountMetadata),
+    amountStorageModel: amountMetadata.amountStorageModel,
+    decimals: amountMetadata.decimals,
+    units,
+    ...(subatomic ? { subatoms: units } : { atoms: units }),
+    unitScale: amountMetadata.unitScale,
   };
+}
+
+function workBalanceUnitFields(
+  projection,
+  {
+    atomField,
+    subatomField,
+  },
+) {
+  const subatomic =
+    projection?.amountStorageModel === WORK_SUBATOM_PROJECTION_MODEL;
+  if (
+    !projection ||
+    (!subatomic &&
+      projection.amountStorageModel !== WORK_ATOMIC_PROJECTION_MODEL)
+  ) {
+    throw new TypeError(
+      "WORK balance fields require an explicit Q8 or Q16 projection.",
+    );
+  }
+  return {
+    amountStorageModel: projection.amountStorageModel,
+    decimals: projection.decimals,
+    ...(subatomic
+      ? {
+          [subatomField]: projection.subatoms,
+          precisionModel: WORK_PRECISION_V2_MODEL,
+        }
+      : { [atomField]: projection.atoms }),
+    unitScale: projection.unitScale,
+  };
+}
+
+export function workAmountUnitsForStorageModel(
+  record,
+  targetStorageModel,
+  { allowZero = true } = {},
+) {
+  if (
+    targetStorageModel !== WORK_ATOMIC_PROJECTION_MODEL &&
+    targetStorageModel !== WORK_SUBATOM_PROJECTION_MODEL
+  ) {
+    throw new TypeError(
+      "WORK aggregate target requires an explicit Q8 or Q16 storage model.",
+    );
+  }
+  const projected = workAmountProjection(record, { allowZero });
+  if (projected.amountStorageModel === targetStorageModel) {
+    return projected.units;
+  }
+  if (
+    projected.amountStorageModel === WORK_ATOMIC_PROJECTION_MODEL &&
+    targetStorageModel === WORK_SUBATOM_PROJECTION_MODEL
+  ) {
+    return legacyWorkAtomsToSubatoms(projected.amountAtoms, {
+      allowZero,
+    });
+  }
+  throw new TypeError(
+    "Native Q16 WORK cannot be projected back into historical Q8 atoms.",
+  );
+}
+
+export function workSupplyFieldsForStorageModel(
+  confirmedUnits,
+  pendingUnits,
+  storageModel,
+) {
+  const subatomic = storageModel === WORK_SUBATOM_PROJECTION_MODEL;
+  if (!subatomic && storageModel !== WORK_ATOMIC_PROJECTION_MODEL) {
+    throw new TypeError(
+      "WORK supply requires an explicit Q8 or Q16 storage model.",
+    );
+  }
+  const normalize = subatomic ? normalizeWorkSubatoms : normalizeWorkAtoms;
+  const format = subatomic ? formatWorkSubatoms : formatWorkAtoms;
+  const confirmed = normalize(confirmedUnits, { allowZero: true });
+  const pending = normalize(pendingUnits, {
+    allowNegative: true,
+    allowZero: true,
+  });
+  return {
+    amountStorageModel: storageModel,
+    confirmedSupply: format(confirmed),
+    decimals: subatomic ? WORK_SUBATOM_DECIMALS : WORK_DECIMALS,
+    pendingSupply: format(pending, { allowNegative: true }),
+    ...(subatomic
+      ? {
+          confirmedSupplySubatoms: confirmed,
+          pendingSupplySubatoms: pending,
+          precisionModel: WORK_PRECISION_V2_MODEL,
+        }
+      : {
+          confirmedSupplyAtoms: confirmed,
+          pendingSupplyAtoms: pending,
+        }),
+    unitScale: subatomic
+      ? WORK_SUBATOM_UNIT_SCALE_TEXT
+      : WORK_UNIT_SCALE_TEXT,
+  };
+}
+
+function tokenAmountIsPositive(item) {
+  if (isWorkTokenId(item?.tokenId)) {
+    const storageModel = item?.amountStorageModel;
+    if (storageModel === WORK_SUBATOM_PROJECTION_MODEL) {
+      return BigInt(String(item?.amountSubatoms ?? "0")) > 0n;
+    }
+    if (storageModel === WORK_ATOMIC_PROJECTION_MODEL) {
+      return BigInt(String(item?.amountAtoms ?? "0")) > 0n;
+    }
+    throw new Error(
+      "WORK amount requires an explicit Q8 or Q16 projection.",
+    );
+  }
+  if (isBondTokenId(item?.tokenId)) {
+    const amount = integerBigInt(item?.amount);
+    return amount !== null && amount > 0n;
+  }
+  const amount = Number(item?.amount);
+  return Number.isFinite(amount) && amount > 0;
 }
 
 function addAtomicStrings(left, right) {
@@ -11879,12 +15286,27 @@ async function ledgerSnapshot(pool, network, snapshotId = "") {
           consistency,
           payload
         FROM proof_indexer.ledger_snapshots
-        WHERE network = $1 AND snapshot_id = $2
+        WHERE network = $1
+          AND snapshot_id = $2
+          AND payload->>'workAmountStorageModel' =
+            ANY($3::text[])
         LIMIT 1
       `,
-      [network, pinnedSnapshotId],
+      [
+        network,
+        pinnedSnapshotId,
+        [
+          WORK_ATOMIC_PROJECTION_MODEL,
+          WORK_SUBATOM_PROJECTION_MODEL,
+        ],
+      ],
     );
     return pinnedResult.rows[0] ?? null;
+  }
+  const workAmountStorageModel =
+    await currentWorkAmountStorageModel(pool, network);
+  if (!workAmountStorageModel) {
+    return null;
   }
 
   const snapshotResult = await pool.query(
@@ -11913,7 +15335,7 @@ async function ledgerSnapshot(pool, network, snapshotId = "") {
         generated_at DESC
       LIMIT 1
     `,
-    [network, WORK_ATOMIC_PROJECTION_MODEL],
+    [network, workAmountStorageModel],
   );
   return snapshotResult.rows[0] ?? null;
 }
@@ -11931,11 +15353,25 @@ async function ledgerSnapshotMetadata(pool, network, snapshotId = "") {
         FROM proof_indexer.ledger_snapshots
         WHERE network = $1 AND snapshot_id = $2
           AND payload ? 'snapshotId'
+          AND payload->>'workAmountStorageModel' =
+            ANY($3::text[])
         LIMIT 1
       `,
-      [network, pinnedSnapshotId],
+      [
+        network,
+        pinnedSnapshotId,
+        [
+          WORK_ATOMIC_PROJECTION_MODEL,
+          WORK_SUBATOM_PROJECTION_MODEL,
+        ],
+      ],
     );
     return pinnedResult.rows[0] ?? null;
+  }
+  const workAmountStorageModel =
+    await currentWorkAmountStorageModel(pool, network);
+  if (!workAmountStorageModel) {
+    return null;
   }
 
   const snapshotResult = await pool.query(
@@ -11951,7 +15387,7 @@ async function ledgerSnapshotMetadata(pool, network, snapshotId = "") {
       ORDER BY generated_at DESC
       LIMIT 1
     `,
-    [network, WORK_ATOMIC_PROJECTION_MODEL],
+    [network, workAmountStorageModel],
   );
   return snapshotResult.rows[0] ?? null;
 }
@@ -11976,11 +15412,26 @@ async function ledgerSnapshotWithPayload(pool, network, snapshotId, payloadKey) 
         WHERE network = $1
           AND snapshot_id = $2
           AND payload ? $3
+          AND payload->>'workAmountStorageModel' =
+            ANY($4::text[])
         LIMIT 1
       `,
-      [network, pinnedSnapshotId, requiredPayloadKey],
+      [
+        network,
+        pinnedSnapshotId,
+        requiredPayloadKey,
+        [
+          WORK_ATOMIC_PROJECTION_MODEL,
+          WORK_SUBATOM_PROJECTION_MODEL,
+        ],
+      ],
     );
     return pinnedResult.rows[0] ?? null;
+  }
+  const workAmountStorageModel =
+    await currentWorkAmountStorageModel(pool, network);
+  if (!workAmountStorageModel) {
+    return null;
   }
 
   const snapshotResult = await pool.query(
@@ -11998,7 +15449,7 @@ async function ledgerSnapshotWithPayload(pool, network, snapshotId, payloadKey) 
       ORDER BY generated_at DESC
       LIMIT 1
     `,
-    [network, requiredPayloadKey, WORK_ATOMIC_PROJECTION_MODEL],
+    [network, requiredPayloadKey, workAmountStorageModel],
   );
   return snapshotResult.rows[0] ?? null;
 }
@@ -12010,6 +15461,12 @@ async function tokenStateSnapshotForScope(pool, network, snapshotId, scope) {
   }
 
   const pinnedSnapshotId = normalizedSnapshotId(snapshotId);
+  const workAmountStorageModel = pinnedSnapshotId
+    ? ""
+    : await currentWorkAmountStorageModel(pool, network);
+  if (!pinnedSnapshotId && !workAmountStorageModel) {
+    return null;
+  }
   const selectSql = pinnedSnapshotId
     ? `
       SELECT
@@ -12023,6 +15480,8 @@ async function tokenStateSnapshotForScope(pool, network, snapshotId, scope) {
         AND payload ? 'tokenStatePayloads'
         AND payload->'tokenStatePayloads' ? $2
         AND snapshot_id = $3
+        AND payload->>'workAmountStorageModel' =
+          ANY($4::text[])
       LIMIT 1
     `
     : `
@@ -12054,8 +15513,16 @@ async function tokenStateSnapshotForScope(pool, network, snapshotId, scope) {
   const result = await pool.query(
     selectSql,
     pinnedSnapshotId
-      ? [network, tokenScope, pinnedSnapshotId]
-      : [network, tokenScope, WORK_ATOMIC_PROJECTION_MODEL],
+      ? [
+          network,
+          tokenScope,
+          pinnedSnapshotId,
+          [
+            WORK_ATOMIC_PROJECTION_MODEL,
+            WORK_SUBATOM_PROJECTION_MODEL,
+          ],
+        ]
+      : [network, tokenScope, workAmountStorageModel],
   );
   return result.rows[0] ?? null;
 }
@@ -12744,7 +16211,7 @@ export async function proofIndexTokenMarketHistoryOverlayPayload(
     conditions.push(
       `(e.status IS DISTINCT FROM 'dropped')`,
       `(e.payload ? 'saleAuthorization')`,
-      `(e.payload->'saleAuthorization'->>'version' = ANY(ARRAY['pwt-sale-v1','pwt-sale-v2','${WORK_MARKET_V2_AUTH_VERSION}','${WORK_MARKET_V4_AUTH_VERSION}','${WORK_AMO_V5_AUTH_VERSION}','${WORK_AMO_V6_AUTH_VERSION}']::text[]))`,
+      `(e.payload->'saleAuthorization'->>'version' = ANY(ARRAY['pwt-sale-v1','pwt-sale-v2','${WORK_MARKET_V2_AUTH_VERSION}','${WORK_MARKET_V4_AUTH_VERSION}','${WORK_AMO_V5_AUTH_VERSION}','${WORK_AMO_V6_AUTH_VERSION}','${WORK_AMO_V7_AUTH_VERSION}']::text[]))`,
       `(e.payload->'saleAuthorization'->>'anchorType' = 'sale-ticket-v1')`,
     );
     if (
@@ -13055,7 +16522,11 @@ export async function proofIndexTokenListingCloseOutspendPayload(
         lifecycle_tx.block_hash,
         lifecycle_tx.block_index,
         lifecycle_tx.block_height,
-        lifecycle_tx.txid
+        lifecycle_tx.txid,
+        close_listing.token_id AS listing_token_id,
+        close_listing.amount::text AS listing_amount,
+        close_listing.payload AS listing_payload,
+        close_definition.metadata AS token_metadata
       FROM proof_indexer.events e
       JOIN proof_indexer.transactions lifecycle_tx
         ON lifecycle_tx.network = e.network
@@ -13068,6 +16539,17 @@ export async function proofIndexTokenListingCloseOutspendPayload(
        AND lifecycle_block.block_hash = lifecycle_tx.block_hash
        AND lifecycle_block.height = lifecycle_tx.block_height
        AND lifecycle_block.canonical = true
+      LEFT JOIN proof_indexer.credit_listings close_listing
+        ON close_listing.network = e.network
+       AND lower(close_listing.listing_id) = $3
+       AND lower(COALESCE(
+         NULLIF(close_listing.sale_ticket_txid, ''),
+         close_listing.listing_id
+       )) = $3
+       AND close_listing.sale_ticket_vout = $4
+      LEFT JOIN proof_indexer.credit_definitions close_definition
+        ON close_definition.network = close_listing.network
+       AND close_definition.token_id = close_listing.token_id
       WHERE e.network = $1
         AND e.txid = $2
         AND e.valid = true
@@ -13082,7 +16564,12 @@ export async function proofIndexTokenListingCloseOutspendPayload(
         e.event_id DESC
       LIMIT 3
     `,
-    [network, closeTxid, normalizedListingTxid],
+    [
+      network,
+      closeTxid,
+      normalizedListingTxid,
+      normalizedListingVout,
+    ],
   );
   const saleRows = eventResult.rows.filter(
     (row) => normalizedLowerText(row?.kind) === "token-sale",
@@ -13145,14 +16632,91 @@ export async function proofIndexTokenListingCloseOutspendPayload(
     canonicalPurchase || canonicalDelist ? closedRows[0] : null;
   const saleEventRow = canonicalPurchase ? saleRows[0] : null;
   const saleEventPayload = objectRecord(saleEventRow?.payload);
-  const canonicalSaleEvidence = saleEventRow
+  const saleTokenId = normalizedLowerText(saleEventPayload.tokenId);
+  const saleListingTokenId = normalizedLowerText(
+    saleEventRow?.listing_token_id,
+  );
+  let sourceSaleWorkAmount = null;
+  let saleWorkAmount = null;
+  if (
+    saleEventRow &&
+    isWorkTokenId(saleTokenId) &&
+    saleListingTokenId === saleTokenId
+  ) {
+    try {
+      sourceSaleWorkAmount =
+        workAmountProjection(saleEventPayload);
+      const listingWorkAmount =
+        workListingAmountProjection(
+          objectRecord(saleEventRow.listing_payload),
+          {
+            metadata: saleEventRow.token_metadata,
+            storedAmount: saleEventRow.listing_amount,
+          },
+        );
+      const normalizedSaleWorkAmount =
+        workAmountProjection(saleEventPayload, {
+          targetStorageModel:
+            listingWorkAmount.amountStorageModel,
+        });
+      if (
+        normalizedSaleWorkAmount.units !==
+        listingWorkAmount.units
+      ) {
+        throw new Error(
+          "Canonical sale amount does not match the current listing projection.",
+        );
+      }
+      saleWorkAmount = normalizedSaleWorkAmount;
+    } catch {
+      sourceSaleWorkAmount = null;
+      saleWorkAmount = null;
+    }
+  }
+  const canonicalSaleEvidence =
+    saleEventRow &&
+    saleListingTokenId &&
+    saleListingTokenId === saleTokenId &&
+    (!isWorkTokenId(saleTokenId) || saleWorkAmount)
     ? {
-        amount:
-          saleEventPayload.amount ??
-          saleEventPayload.tokenAmount,
-        amountAtoms:
-          saleEventPayload.amountAtoms ??
-          saleEventPayload.tokenAmountAtoms,
+        ...(saleWorkAmount
+          ? {
+              amount: saleWorkAmount.amount,
+              ...workAmountProjectionMetadataForAmount(
+                saleWorkAmount,
+              ),
+              ...(sourceSaleWorkAmount
+                ? {
+                    sourceAmountEvidence: {
+                      amount: sourceSaleWorkAmount.amount,
+                      ...workAmountProjectionMetadataForAmount(
+                        sourceSaleWorkAmount,
+                      ),
+                    },
+                  }
+                : {}),
+              amountVersion: String(
+                saleEventPayload.amountVersion ??
+                  saleEventPayload.transferVersion ??
+                  "",
+              ).trim(),
+              authorizationVersion: String(
+                saleEventPayload.authorizationVersion ??
+                  saleEventPayload.saleAuthorization?.version ??
+                  "",
+              ).trim(),
+              transferVersion: String(
+                saleEventPayload.transferVersion ?? "",
+              ).trim(),
+            }
+          : {
+              amount:
+                saleEventPayload.amount ??
+                saleEventPayload.tokenAmount,
+              amountAtoms:
+                saleEventPayload.amountAtoms ??
+                saleEventPayload.tokenAmountAtoms,
+            }),
         buyerAddress: String(
           saleEventPayload.actor ??
             saleEventPayload.buyerAddress ??
@@ -13171,7 +16735,7 @@ export async function proofIndexTokenListingCloseOutspendPayload(
             "",
         ).trim(),
         ticker: String(saleEventPayload.ticker ?? "").trim(),
-        tokenId: normalizedLowerText(saleEventPayload.tokenId),
+        tokenId: saleTokenId,
       }
     : null;
   const lifecyclePosition = (row, prefix) =>
@@ -13193,7 +16757,7 @@ export async function proofIndexTokenListingCloseOutspendPayload(
     ...lifecyclePosition(closeEventRow, "closed"),
     ...lifecyclePosition(saleEventRow, "sale"),
     ...(canonicalSaleEvidence ? { canonicalSaleEvidence } : {}),
-    lifecycleStatus: canonicalPurchase
+    lifecycleStatus: canonicalPurchase && canonicalSaleEvidence
       ? "sold"
       : canonicalDelist
         ? "delisted"
@@ -13883,6 +17447,7 @@ export async function proofIndexTokenMarketSummaryOverlayPayload(
         COALESCE(cd.token_id, cl_event.token_id) AS token_id,
         cd.ticker,
         cd.registry_address,
+        cd.metadata AS token_metadata,
         cl_event.listing_id AS linked_listing_id,
         cl_event.seller_address AS listing_seller_address,
         cl_event.buyer_address AS listing_buyer_address,
@@ -14249,7 +17814,7 @@ async function currentTokenTransferHistoryPage(
       (item) =>
         item.txid &&
         item.tokenId &&
-        item.amount > 0 &&
+        tokenAmountIsPositive(item) &&
         (item.senderAddress || item.recipientAddress),
     );
   const start = Math.min(pagination.offset, totalCount);
@@ -14697,9 +18262,17 @@ function tokenStateWithSnapshotMetadata(payload, snapshot, source) {
     rowNumber(payload?.stats, "indexedThroughBlock"),
     rowNumber(payload?.metrics, "indexedThroughBlock"),
   );
+  const indexedThroughBlockHash = normalizedLowerText(
+    payload.indexedThroughBlockHash ??
+      snapshot?.payload?.indexedThroughBlockHash ??
+      snapshot?.payload?.summaryRefresh?.indexedThroughBlockHash,
+  );
   return {
     ...payload,
     indexedThroughBlock: indexedThroughBlock || undefined,
+    ...(indexedThroughBlockHash
+      ? { indexedThroughBlockHash }
+      : {}),
     indexedAt: dateIso(
       payload.indexedAt ??
         snapshot?.payload?.tokenStatePayloadsIndexedAt,
@@ -14840,6 +18413,11 @@ async function latestProofIndexScanMetadata(pool, network) {
 }
 
 async function latestProofIndexOperationalMetadata(pool, network) {
+  const workAmountStorageModel =
+    await currentWorkAmountStorageModel(pool, network);
+  if (!workAmountStorageModel) {
+    return null;
+  }
   const result = await pool.query(
     `
       WITH latest_scan AS (
@@ -15066,7 +18644,7 @@ async function latestProofIndexOperationalMetadata(pool, network) {
       LEFT JOIN latest_summary ON true
       LEFT JOIN worker_meta ON true
     `,
-    [network, WORK_ATOMIC_PROJECTION_MODEL],
+    [network, workAmountStorageModel],
   );
   return result.rows[0] ?? null;
 }
@@ -16850,28 +20428,44 @@ function tokenDefinitionFromRow(row) {
   const tokenId = String(row?.token_id ?? sourceMetadata.tokenId ?? "")
     .trim()
     .toLowerCase();
-  const metadata = isWorkTokenId(tokenId)
-    ? workAtomicProjectionMetadata(sourceMetadata)
-      ? withWorkPrecisionMetadata(sourceMetadata)
-      : {
-          ...sourceMetadata,
-          decimals: WORK_DECIMALS,
-          unitScale: WORK_UNIT_SCALE_TEXT,
-        }
-    : sourceMetadata;
+  const workStorageModel = isWorkTokenId(tokenId)
+    ? workDefinitionStorageModel(row)
+    : "";
+  if (isWorkTokenId(tokenId) && !workStorageModel) {
+    throw new Error(
+      "Canonical WORK definition has missing or conflicting Q8/Q16 precision metadata.",
+    );
+  }
+  const metadata = sourceMetadata;
   const {
+    amountStorageModel: ignoredMetadataAmountStorageModel,
     blockHash: ignoredMetadataBlockHash,
     blockHeight: ignoredMetadataBlockHeight,
     blockIndex: ignoredMetadataBlockIndex,
     protocolVout: ignoredMetadataProtocolVout,
+    decimals: ignoredMetadataDecimals,
+    maxSupplyAtoms: ignoredMetadataMaxSupplyAtoms,
+    maxSupplySubatoms: ignoredMetadataMaxSupplySubatoms,
+    mintAmountAtoms: ignoredMetadataMintAmountAtoms,
+    mintAmountSubatoms: ignoredMetadataMintAmountSubatoms,
+    precisionModel: ignoredMetadataPrecisionModel,
     recordOrdinal: ignoredMetadataRecordOrdinal,
+    unitScale: ignoredMetadataUnitScale,
     ...metadataWithoutPosition
   } = metadata;
+  void ignoredMetadataAmountStorageModel;
   void ignoredMetadataBlockHash;
   void ignoredMetadataBlockHeight;
   void ignoredMetadataBlockIndex;
   void ignoredMetadataProtocolVout;
+  void ignoredMetadataDecimals;
+  void ignoredMetadataMaxSupplyAtoms;
+  void ignoredMetadataMaxSupplySubatoms;
+  void ignoredMetadataMintAmountAtoms;
+  void ignoredMetadataMintAmountSubatoms;
+  void ignoredMetadataPrecisionModel;
   void ignoredMetadataRecordOrdinal;
+  void ignoredMetadataUnitScale;
   const ticker = String(row?.ticker ?? metadata.ticker ?? "").trim();
   const workMaxSupply = isWorkTokenId(tokenId)
     ? workBalanceProjection(
@@ -16885,6 +20479,9 @@ function tokenDefinitionFromRow(row) {
         sourceMetadata,
       )
     : null;
+  const workSubatomic =
+    workMaxSupply?.amountStorageModel ===
+      WORK_SUBATOM_PROJECTION_MODEL;
   const bondToken = isBondTokenId(tokenId);
   const bondMintAmount = bondToken
     ? canonicalIntegerText(row?.mint_amount ?? metadata.mintAmount ?? 1, {
@@ -17082,9 +20679,15 @@ function tokenDefinitionFromRow(row) {
       : {}),
     ...(workMaxSupply
       ? {
-          decimals: WORK_DECIMALS,
-          maxSupplyAtoms: workMaxSupply.atoms,
-          unitScale: WORK_UNIT_SCALE_TEXT,
+          amountStorageModel: workMaxSupply.amountStorageModel,
+          decimals: workMaxSupply.decimals,
+          ...(workSubatomic
+            ? { maxSupplySubatoms: workMaxSupply.subatoms }
+            : { maxSupplyAtoms: workMaxSupply.atoms }),
+          ...(workSubatomic
+            ? { precisionModel: WORK_PRECISION_V2_MODEL }
+            : {}),
+          unitScale: workMaxSupply.unitScale,
         }
       : {}),
     mintAmount: bondToken
@@ -17093,7 +20696,9 @@ function tokenDefinitionFromRow(row) {
         ? workMintAmount.amount
         : rowNumber(row, "mint_amount") || rowNumber(metadata, "mintAmount"),
     ...(workMintAmount
-      ? { mintAmountAtoms: workMintAmount.atoms }
+      ? workSubatomic
+        ? { mintAmountSubatoms: workMintAmount.subatoms }
+        : { mintAmountAtoms: workMintAmount.atoms }
       : {}),
     mintPriceSats:
       rowNumber(row, "mint_price_sats") || rowNumber(metadata, "mintPriceSats"),
@@ -17413,16 +21018,20 @@ async function proofIndexTokenHoldersFromTables(pool, network, tokenIds, scope) 
           ? workBalance.amount
           : bondBalance || Number(row.confirmed_balance ?? 0),
         ...(workBalance
-          ? {
-              balanceAtoms: workBalance.atoms,
-              decimals: WORK_DECIMALS,
-              unitScale: WORK_UNIT_SCALE_TEXT,
-            }
+          ? workBalanceUnitFields(workBalance, {
+              atomField: "balanceAtoms",
+              subatomField: "balanceSubatoms",
+            })
           : {}),
         pendingDelta: workPending
           ? workPending.amount
           : bondPending || Number(row.pending_delta ?? 0),
-        ...(workPending ? { pendingDeltaAtoms: workPending.atoms } : {}),
+        ...(workPending
+          ? workBalanceUnitFields(workPending, {
+              atomField: "pendingDeltaAtoms",
+              subatomField: "pendingDeltaSubatoms",
+            })
+          : {}),
         registryAddress: row.registry_address ?? "",
         ticker: row.ticker ?? "",
         tokenId,
@@ -17430,9 +21039,18 @@ async function proofIndexTokenHoldersFromTables(pool, network, tokenIds, scope) 
       };
     })
     .filter((holder) => {
-      const balance = isBondTokenId(holder.tokenId)
-        ? integerBigInt(holder.balance)
-        : Number(holder.balance);
+      const workHolder = isWorkTokenId(holder.tokenId);
+      const balance = workHolder
+        ? BigInt(
+            String(
+              holder.balanceSubatoms ??
+                holder.balanceAtoms ??
+                "0",
+            ),
+          )
+        : isBondTokenId(holder.tokenId)
+          ? integerBigInt(holder.balance)
+          : Number(holder.balance);
       return (
         holder.address &&
         holder.tokenId &&
@@ -17455,22 +21073,49 @@ function tokenMetricSummariesFromHolders(holders) {
       pendingSupply: 0,
     };
     if (isWorkTokenId(tokenId)) {
-      current.confirmedSupplyAtoms = addAtomicStrings(
-        current.confirmedSupplyAtoms,
-        holder.balanceAtoms ??
-          parseWorkAmountToAtoms(holder.balance ?? 0, { allowZero: true }),
+      const storageModel = holder.amountStorageModel;
+      if (
+        (storageModel !== WORK_ATOMIC_PROJECTION_MODEL &&
+          storageModel !== WORK_SUBATOM_PROJECTION_MODEL) ||
+        (
+          current.amountStorageModel &&
+          current.amountStorageModel !== storageModel
+        )
+      ) {
+        throw new Error(
+          `WORK holder ${holder.address || "unknown"} has conflicting precision metadata.`,
+        );
+      }
+      const subatomic =
+        storageModel === WORK_SUBATOM_PROJECTION_MODEL;
+      const confirmedUnits = subatomic
+        ? holder.balanceSubatoms
+        : holder.balanceAtoms;
+      const pendingUnits = subatomic
+        ? holder.pendingDeltaSubatoms
+        : holder.pendingDeltaAtoms;
+      if (confirmedUnits === undefined || pendingUnits === undefined) {
+        throw new Error(
+          `WORK holder ${holder.address || "unknown"} is missing exact ${subatomic ? "subatom" : "atom"} fields.`,
+        );
+      }
+      current.amountStorageModel = storageModel;
+      current.confirmedSupplyUnits = addAtomicStrings(
+        current.confirmedSupplyUnits,
+        confirmedUnits,
       );
-      current.pendingSupplyAtoms = addAtomicStrings(
-        current.pendingSupplyAtoms,
-        holder.pendingDeltaAtoms ??
-          parseSignedWorkAmountToAtoms(holder.pendingDelta ?? 0),
+      current.pendingSupplyUnits = addAtomicStrings(
+        current.pendingSupplyUnits,
+        pendingUnits,
       );
-      current.confirmedSupply = formatWorkAtoms(
-        current.confirmedSupplyAtoms,
+      Object.assign(
+        current,
+        workSupplyFieldsForStorageModel(
+          current.confirmedSupplyUnits,
+          current.pendingSupplyUnits,
+          storageModel,
+        ),
       );
-      current.pendingSupply = formatWorkAtoms(current.pendingSupplyAtoms, {
-        allowNegative: true,
-      });
     } else if (isBondTokenId(tokenId)) {
       current.confirmedSupply = addIntegerTexts(
         current.confirmedSupply,
@@ -17484,8 +21129,18 @@ function tokenMetricSummariesFromHolders(holders) {
       current.confirmedSupply += Number(holder.balance ?? 0);
       current.pendingSupply += Number(holder.pendingDelta ?? 0);
     }
-    current.holderCount += isBondTokenId(tokenId)
-      ? integerBigInt(holder.balance) > 0n
+    current.holderCount += isWorkTokenId(tokenId)
+      ? BigInt(
+          String(
+            holder.balanceSubatoms ??
+              holder.balanceAtoms ??
+              "0",
+          ),
+        ) > 0n
+        ? 1
+        : 0
+      : isBondTokenId(tokenId)
+        ? integerBigInt(holder.balance) > 0n
         ? 1
         : 0
       : Number(holder.balance ?? 0) > 0
@@ -17589,6 +21244,19 @@ function canonicalTokenSaleEvidenceForListing(
   const evidencePriceSats = integer(
     payload.priceSats ?? payload.salePriceSats,
   );
+  let listingWorkAmount = null;
+  let evidenceWorkAmount = null;
+  if (isWorkTokenId(tokenId)) {
+    try {
+      listingWorkAmount = workAmountProjection(listing);
+      evidenceWorkAmount = workAmountProjection(payload, {
+        targetStorageModel:
+          listingWorkAmount.amountStorageModel,
+      });
+    } catch {
+      return null;
+    }
+  }
   const listingAmountAtoms =
     listing?.amountAtoms ??
     authorization.amountAtoms ??
@@ -17596,19 +21264,24 @@ function canonicalTokenSaleEvidenceForListing(
   const evidenceAmountAtoms =
     payload.amountAtoms ?? payload.tokenAmountAtoms;
   const amountAtomsRequired =
+    !listingWorkAmount &&
     listingAmountAtoms !== undefined &&
     listingAmountAtoms !== null &&
     listingAmountAtoms !== "";
-  const listingAmount = amountAtomsRequired
-    ? integer(listingAmountAtoms, 1)
-    : decimal(
-        listing?.amount ??
-          authorization.amount ??
-          authorization.tokenAmount,
-      );
-  const evidenceAmount = amountAtomsRequired
-    ? integer(evidenceAmountAtoms, 1)
-    : decimal(payload.amount ?? payload.tokenAmount);
+  const listingAmount = listingWorkAmount
+    ? listingWorkAmount.units
+    : amountAtomsRequired
+      ? integer(listingAmountAtoms, 1)
+      : decimal(
+          listing?.amount ??
+            authorization.amount ??
+            authorization.tokenAmount,
+        );
+  const evidenceAmount = evidenceWorkAmount
+    ? evidenceWorkAmount.units
+    : amountAtomsRequired
+      ? integer(evidenceAmountAtoms, 1)
+      : decimal(payload.amount ?? payload.tokenAmount);
   const normalizedCloseHash = lower(closeBlockHash);
   const normalizedSaleHash = lower(saleBlockHash);
   const exactCloseHeight = integer(closeBlockHeight, 1);
@@ -17652,14 +21325,29 @@ function canonicalTokenSaleEvidenceForListing(
     listingPriceSats === null ||
     evidencePriceSats !== listingPriceSats ||
     !listingAmount ||
-    evidenceAmount !== listingAmount
+    evidenceAmount !== listingAmount ||
+    (
+      listingWorkAmount &&
+      (
+        !evidenceWorkAmount ||
+        evidenceWorkAmount.amountStorageModel !==
+          listingWorkAmount.amountStorageModel
+      )
+    )
   ) {
     return null;
   }
   return {
-    ...(amountAtomsRequired
-      ? { amountAtoms: String(evidenceAmountAtoms) }
-      : { amount: payload.amount ?? payload.tokenAmount }),
+    ...(evidenceWorkAmount
+      ? {
+          amount: evidenceWorkAmount.amount,
+          ...workAmountProjectionMetadataForAmount(
+            evidenceWorkAmount,
+          ),
+        }
+      : amountAtomsRequired
+        ? { amountAtoms: String(evidenceAmountAtoms) }
+        : { amount: payload.amount ?? payload.tokenAmount }),
     buyerAddress,
     listingId,
     priceSats: payload.priceSats ?? payload.salePriceSats,
@@ -17755,10 +21443,9 @@ function tokenListingFromCreditListingRow(row, network) {
     .trim()
     .toLowerCase();
   const workAmount = isWorkTokenId(tokenId)
-    ? workAmountProjection(payload, {
+    ? workListingAmountProjection(payload, {
         metadata: row?.token_metadata,
         storedAmount: row?.amount,
-        storedAmountIsAtoms: true,
       })
     : null;
   const exactPositionInteger = (value, minimum) => {
@@ -18248,13 +21935,19 @@ function tokenListingFromCreditListingRow(row, network) {
         )
       : undefined;
   return normalizeTokenHistoryListingItem({
-    ...payloadWithoutLifecyclePosition,
+    ...(workAmount
+      ? recordWithoutWorkAmountAliases(
+          payloadWithoutLifecyclePosition,
+        )
+      : payloadWithoutLifecyclePosition),
     amount: workAmount
       ? workAmount.amount
       : isBondTokenId(tokenId)
         ? exactBondUnits(row?.amount ?? payload?.amount, { positive: true })
       : rowNumber(row, "amount") || rowNumber(payload, "amount"),
-    ...(workAmount ? { amountAtoms: workAmount.amountAtoms } : {}),
+    ...(workAmount
+      ? workAmountProjectionMetadataForAmount(workAmount)
+      : {}),
     buyerAddress: row?.buyer_address ?? payload.buyerAddress,
     blockHash: listingBlockHash,
     ...(listingBlockHeight !== null ? { blockHeight: listingBlockHeight } : {}),
@@ -18475,6 +22168,9 @@ async function proofIndexTokenListingsFromTables(pool, network, scope) {
         cd.registry_address,
         cd.metadata AS token_metadata
       FROM proof_indexer.credit_listings cl
+      LEFT JOIN proof_indexer.credit_definitions cd
+        ON cd.network = cl.network
+       AND lower(cd.token_id) = lower(cl.token_id)
       LEFT JOIN proof_indexer.transactions listing_tx
         ON listing_tx.network = cl.network
        AND listing_tx.txid = cl.listing_id
@@ -19075,7 +22771,7 @@ async function proofIndexTokenTransferEventsFromTables(pool, network, scope) {
       (item) =>
         item.txid &&
         item.tokenId &&
-        item.amount > 0 &&
+        tokenAmountIsPositive(item) &&
         (item.senderAddress || item.recipientAddress),
     )
     .sort(compareTokenItemsByTime);
@@ -19460,6 +23156,7 @@ async function proofIndexTokenMarketEventsFromTables(pool, network, scope) {
         COALESCE(cd.token_id, cl_event.token_id) AS token_id,
         cd.ticker,
         cd.registry_address,
+        cd.metadata AS token_metadata,
         cl_event.listing_id AS linked_listing_id,
         cl_event.seller_address AS listing_seller_address,
         cl_event.buyer_address AS listing_buyer_address,
@@ -19695,6 +23392,11 @@ async function proofIndexTokenPayloadFromCurrentTables(pool, network, scope) {
     )
     .filter((item) => {
       if (!item.txid || !item.tokenId) return false;
+      if (isWorkTokenId(item.tokenId)) {
+        return BigInt(
+          String(item.amountSubatoms ?? item.amountAtoms ?? "0"),
+        ) > 0n;
+      }
       if (!isBondTokenId(item.tokenId)) return Number(item.amount) > 0;
       const amount = exactBondUnits(item.amount, { positive: true });
       return Boolean(amount) && BigInt(amount) > 0n;
@@ -19707,6 +23409,21 @@ async function proofIndexTokenPayloadFromCurrentTables(pool, network, scope) {
     "Proof index token state",
   );
   const holderSummaries = tokenMetricSummariesFromHolders(holders);
+  const workStorageModels = new Map(
+    tokens
+      .filter((token) => isWorkTokenId(token.tokenId))
+      .map((token) => {
+        if (
+          token.amountStorageModel !== WORK_ATOMIC_PROJECTION_MODEL &&
+          token.amountStorageModel !== WORK_SUBATOM_PROJECTION_MODEL
+        ) {
+          throw new Error(
+            "Canonical WORK token state requires an explicit Q8 or Q16 definition.",
+          );
+        }
+        return [token.tokenId, token.amountStorageModel];
+      }),
+  );
   const mintSummaries = new Map();
   for (const mint of mints) {
     const current = mintSummaries.get(mint.tokenId) ?? {
@@ -19718,13 +23435,24 @@ async function proofIndexTokenPayloadFromCurrentTables(pool, network, scope) {
     if (mint.confirmed) {
       current.confirmedMints += 1;
       if (isWorkTokenId(mint.tokenId)) {
-        current.confirmedSupplyAtoms = addAtomicStrings(
-          current.confirmedSupplyAtoms,
-          mint.amountAtoms ??
-            parseWorkAmountToAtoms(mint.amount ?? 0, { allowZero: true }),
+        const storageModel = workStorageModels.get(mint.tokenId);
+        const mintUnits = workAmountUnitsForStorageModel(
+          mint,
+          storageModel,
+          { allowZero: true },
         );
-        current.confirmedSupply = formatWorkAtoms(
-          current.confirmedSupplyAtoms,
+        current.confirmedSupplyUnits = addAtomicStrings(
+          current.confirmedSupplyUnits,
+          mintUnits,
+        );
+        current.amountStorageModel = storageModel;
+        Object.assign(
+          current,
+          workSupplyFieldsForStorageModel(
+            current.confirmedSupplyUnits,
+            current.pendingSupplyUnits ?? "0",
+            storageModel,
+          ),
         );
       } else if (isBondTokenId(mint.tokenId)) {
         current.confirmedSupply = addIntegerTexts(
@@ -19737,12 +23465,25 @@ async function proofIndexTokenPayloadFromCurrentTables(pool, network, scope) {
     } else {
       current.pendingMints += 1;
       if (isWorkTokenId(mint.tokenId)) {
-        current.pendingSupplyAtoms = addAtomicStrings(
-          current.pendingSupplyAtoms,
-          mint.amountAtoms ??
-            parseWorkAmountToAtoms(mint.amount ?? 0, { allowZero: true }),
+        const storageModel = workStorageModels.get(mint.tokenId);
+        const mintUnits = workAmountUnitsForStorageModel(
+          mint,
+          storageModel,
+          { allowZero: true },
         );
-        current.pendingSupply = formatWorkAtoms(current.pendingSupplyAtoms);
+        current.pendingSupplyUnits = addAtomicStrings(
+          current.pendingSupplyUnits,
+          mintUnits,
+        );
+        current.amountStorageModel = storageModel;
+        Object.assign(
+          current,
+          workSupplyFieldsForStorageModel(
+            current.confirmedSupplyUnits ?? "0",
+            current.pendingSupplyUnits,
+            storageModel,
+          ),
+        );
       } else if (isBondTokenId(mint.tokenId)) {
         current.pendingSupply = addIntegerTexts(
           current.pendingSupply,
@@ -19759,23 +23500,45 @@ async function proofIndexTokenPayloadFromCurrentTables(pool, network, scope) {
     const holderSummary = holderSummaries.get(token.tokenId) ?? {};
     const mintSummary = mintSummaries.get(token.tokenId) ?? {};
     if (isWorkTokenId(token.tokenId)) {
-      const confirmedSupplyAtoms = maxAtomicStrings(
-        holderSummary.confirmedSupplyAtoms,
-        mintSummary.confirmedSupplyAtoms,
+      const storageModel = token.amountStorageModel;
+      if (
+        (holderSummary.amountStorageModel &&
+          holderSummary.amountStorageModel !== storageModel) ||
+        (mintSummary.amountStorageModel &&
+          mintSummary.amountStorageModel !== storageModel)
+      ) {
+        throw new Error(
+          "Canonical WORK holder and mint summaries use conflicting precision models.",
+        );
+      }
+      const subatomic =
+        storageModel === WORK_SUBATOM_PROJECTION_MODEL;
+      const confirmedSupplyUnits = maxAtomicStrings(
+        subatomic
+          ? holderSummary.confirmedSupplySubatoms
+          : holderSummary.confirmedSupplyAtoms,
+        subatomic
+          ? mintSummary.confirmedSupplySubatoms
+          : mintSummary.confirmedSupplyAtoms,
       );
-      const pendingSupplyAtoms = maxAtomicStrings(
-        holderSummary.pendingSupplyAtoms,
-        mintSummary.pendingSupplyAtoms,
+      const pendingSupplyUnits = maxAtomicStrings(
+        subatomic
+          ? holderSummary.pendingSupplySubatoms
+          : holderSummary.pendingSupplyAtoms,
+        subatomic
+          ? mintSummary.pendingSupplySubatoms
+          : mintSummary.pendingSupplyAtoms,
       );
       return {
         ...token,
         confirmedMints: mintSummary.confirmedMints ?? 0,
-        confirmedSupply: formatWorkAtoms(confirmedSupplyAtoms),
-        confirmedSupplyAtoms,
+        ...workSupplyFieldsForStorageModel(
+          confirmedSupplyUnits,
+          pendingSupplyUnits,
+          storageModel,
+        ),
         holderCount: holderSummary.holderCount ?? 0,
         pendingMints: mintSummary.pendingMints ?? 0,
-        pendingSupply: formatWorkAtoms(pendingSupplyAtoms),
-        pendingSupplyAtoms,
       };
     }
     if (isBondTokenId(token.tokenId)) {
@@ -19883,12 +23646,15 @@ async function proofIndexTokenPayloadFromCurrentTables(pool, network, scope) {
             .reduce((total, mint) => total + Number(mint.amount ?? 0), 0),
         )
       : null;
-  const confirmedSupplyAtoms = workScoped
-    ? enrichedTokens[0].confirmedSupplyAtoms
-    : "";
-  const pendingSupplyAtoms = workScoped
-    ? enrichedTokens[0].pendingSupplyAtoms
-    : "";
+  const workSupply = workScoped
+    ? workSupplyFieldsForStorageModel(
+        enrichedTokens[0].confirmedSupplySubatoms ??
+          enrichedTokens[0].confirmedSupplyAtoms,
+        enrichedTokens[0].pendingSupplySubatoms ??
+          enrichedTokens[0].pendingSupplyAtoms,
+        enrichedTokens[0].amountStorageModel,
+      )
+    : null;
   const creationSats = enrichedTokens.reduce(
     (total, token) => total + Number(token.creationFeeSats ?? 0),
     0,
@@ -19914,20 +23680,14 @@ async function proofIndexTokenPayloadFromCurrentTables(pool, network, scope) {
     closedListings,
     creationPriceSats: 0,
     creationSats,
-    confirmedSupply: workScoped
-      ? formatWorkAtoms(confirmedSupplyAtoms)
-      : bondScoped
+    ...(workSupply ?? {
+      confirmedSupply: bondScoped
         ? maxIntegerTexts(confirmedSupply, mintedConfirmedSupply)
         : genericScoped
           ? Math.max(confirmedSupply, mintedConfirmedSupply)
           : null,
-    ...(workScoped
-      ? {
-          confirmedSupplyAtoms,
-          decimals: WORK_DECIMALS,
-          unitScale: WORK_UNIT_SCALE_TEXT,
-        }
-      : {}),
+      pendingSupply,
+    }),
     holders,
     indexAddress: "",
     indexId: "",
@@ -19939,10 +23699,6 @@ async function proofIndexTokenPayloadFromCurrentTables(pool, network, scope) {
     minMutationPriceSats: TOKEN_LISTING_ANCHOR_VALUE_SATS,
     mints,
     network,
-    pendingSupply: workScoped
-      ? formatWorkAtoms(pendingSupplyAtoms)
-      : pendingSupply,
-    ...(workScoped ? { pendingSupplyAtoms } : {}),
     sales,
     source: "proof-indexer-token-state-tables",
     tokens: enrichedTokens,
@@ -19994,11 +23750,10 @@ async function scopedHoldersFromBalances(pool, network, tokenId) {
         ? balance.amount
         : bondBalance || Number(row.confirmed_balance),
       ...(balance
-        ? {
-            balanceAtoms: balance.atoms,
-            decimals: WORK_DECIMALS,
-            unitScale: WORK_UNIT_SCALE_TEXT,
-          }
+        ? workBalanceUnitFields(balance, {
+            atomField: "balanceAtoms",
+            subatomField: "balanceSubatoms",
+          })
         : {}),
       ticker: row.ticker,
       tokenId: normalizedTokenId,
@@ -20033,6 +23788,28 @@ async function scopedTokenStateFromAllPayload(pool, network, scope, allPayload) 
   const bondScoped =
     tokens.length === 1 && isBondTokenId(tokens[0]?.tokenId);
   const genericScoped = tokens.length === 1 && !workScoped && !bondScoped;
+  const workStorageModel = workScoped
+    ? tokens[0].amountStorageModel
+    : "";
+  if (
+    workScoped &&
+    workStorageModel !== WORK_ATOMIC_PROJECTION_MODEL &&
+    workStorageModel !== WORK_SUBATOM_PROJECTION_MODEL
+  ) {
+    throw new Error(
+      "Scoped WORK state requires an explicit Q8 or Q16 definition.",
+    );
+  }
+  if (
+    workScoped &&
+    holders.some(
+      (holder) => holder.amountStorageModel !== workStorageModel,
+    )
+  ) {
+    throw new Error(
+      "Scoped WORK holders conflict with the canonical token precision model.",
+    );
+  }
   const confirmedSupply = bondScoped
     ? holders.reduce(
         (total, holder) => addIntegerTexts(total, holder.balance),
@@ -20044,34 +23821,47 @@ async function scopedTokenStateFromAllPayload(pool, network, scope, allPayload) 
           0,
         )
       : null;
-  const confirmedSupplyAtoms = workScoped
+  const confirmedWorkUnits = workScoped
     ? holders.reduce(
         (total, holder) =>
           addAtomicStrings(
             total,
-            holder.balanceAtoms ??
-              parseWorkAmountToAtoms(holder.balance ?? 0, {
-                allowZero: true,
-              }),
+            workStorageModel === WORK_SUBATOM_PROJECTION_MODEL
+              ? holder.balanceSubatoms
+              : holder.balanceAtoms,
           ),
         "0",
       )
     : "";
-  const pendingSupplyAtoms = workScoped
+  const pendingWorkUnits = workScoped
     ? mints
         .filter((mint) => !mint?.confirmed)
         .reduce(
           (total, mint) =>
             addAtomicStrings(
               total,
-              mint.amountAtoms ??
-                parseWorkAmountToAtoms(mint.amount ?? 0, {
-                  allowZero: true,
-                }),
+              workAmountUnitsForStorageModel(
+                mint,
+                workStorageModel,
+                { allowZero: true },
+              ),
             ),
           "0",
         )
     : "";
+  const workSupply = workScoped
+    ? workSupplyFieldsForStorageModel(
+        confirmedWorkUnits,
+        pendingWorkUnits,
+        workStorageModel,
+      )
+    : null;
+  const scopedTokens = workSupply
+    ? tokens.map((token) => ({
+        ...token,
+        ...workSupply,
+      }))
+    : tokens;
   const creationSats = tokens.reduce(
     (total, token) => total + Number(token?.creationFeeSats ?? 0),
     0,
@@ -20079,24 +23869,15 @@ async function scopedTokenStateFromAllPayload(pool, network, scope, allPayload) 
   const payload = {
     ...allPayload,
     closedListings,
-    confirmedSupply: workScoped
-      ? formatWorkAtoms(confirmedSupplyAtoms)
-      : confirmedSupply,
-    ...(workScoped
-      ? {
-          confirmedSupplyAtoms,
-          decimals: WORK_DECIMALS,
-          unitScale: WORK_UNIT_SCALE_TEXT,
-        }
-      : {}),
+    ...(workSupply ?? { confirmedSupply }),
     creationSats,
     holders,
     invalidEvents,
     listings,
     mints,
-    pendingSupply: workScoped
-      ? formatWorkAtoms(pendingSupplyAtoms)
-      : bondScoped
+    ...(!workSupply
+      ? {
+          pendingSupply: bondScoped
         ? mints
             .filter((mint) => !mint?.confirmed)
             .reduce(
@@ -20108,14 +23889,21 @@ async function scopedTokenStateFromAllPayload(pool, network, scope, allPayload) 
               .filter((mint) => !mint?.confirmed)
               .reduce((total, mint) => total + Number(mint?.amount ?? 0), 0)
           : null,
-    ...(workScoped ? { pendingSupplyAtoms } : {}),
+        }
+      : {}),
     sales,
-    tokens,
+    tokens: scopedTokens,
     transfers,
   };
   return {
     ...payload,
-    stats: tokenStateStats(payload, tokens, mints, transfers, invalidEvents),
+    stats: tokenStateStats(
+      payload,
+      scopedTokens,
+      mints,
+      transfers,
+      invalidEvents,
+    ),
   };
 }
 
@@ -20131,11 +23919,19 @@ export async function proofIndexTokenPayload(network, tokenScope, searchParams) 
   const currentTablePayload = () =>
     proofIndexTokenPayloadFromCurrentTables(pool, network, eligibility.scope);
   const cutoverPayload = async (payload) => {
+    const precisionPayload =
+      await payloadWithCurrentWorkPrecisionReadPolicy(
+        network,
+        payload,
+      );
+    if (!precisionPayload) {
+      return null;
+    }
     const activatedPayload =
       await payloadWithVerifiedWorkMarketV4Activation(
         pool,
         network,
-        payload,
+        precisionPayload,
       );
     const readPolicyPayload =
       await payloadWithCurrentWorkMarketListingReadPolicy(
@@ -20270,11 +24066,19 @@ export async function proofIndexTokenSnapshotPayload(
     return null;
   }
   const cutoverPayload = async (payload) => {
+    const precisionPayload =
+      await payloadWithCurrentWorkPrecisionReadPolicy(
+        network,
+        payload,
+      );
+    if (!precisionPayload) {
+      return null;
+    }
     const activatedPayload =
       await payloadWithVerifiedWorkMarketV4Activation(
         pool,
         network,
-        payload,
+        precisionPayload,
       );
     return applyWorkMarketV2CutoverToTokenState(
       await payloadWithCurrentWorkMarketListingReadPolicy(
@@ -20557,6 +24361,7 @@ export async function proofIndexWalletTokenOverlayPayload(
         COALESCE(cd.token_id, cl_event.token_id) AS token_id,
         cd.ticker,
         cd.registry_address,
+        cd.metadata AS token_metadata,
         cl_event.listing_id AS linked_listing_id,
         cl_event.seller_address AS listing_seller_address,
         cl_event.buyer_address AS listing_buyer_address,
@@ -20660,6 +24465,9 @@ export async function proofIndexWalletTokenOverlayPayload(
         cd.registry_address,
         cd.metadata AS token_metadata
       FROM proof_indexer.credit_listings cl
+      LEFT JOIN proof_indexer.credit_definitions cd
+        ON cd.network = cl.network
+       AND cd.token_id = cl.token_id
       LEFT JOIN proof_indexer.transactions listing_tx
         ON listing_tx.network = cl.network
        AND listing_tx.txid = cl.listing_id
@@ -20668,9 +24476,6 @@ export async function proofIndexWalletTokenOverlayPayload(
         ON seal_tx.network = cl.network
        AND seal_tx.txid = cl.seal_txid
       ${canonicalTokenListingSealEventJoinSql("cl")}
-      LEFT JOIN proof_indexer.credit_definitions cd
-        ON cd.network = cl.network
-       AND cd.token_id = cl.token_id
       WHERE ${listingConditions.join(" AND ")}
         AND ${canonicalWorkMarketV3ListingProjectionSql("cl")}
       ORDER BY cl.updated_at DESC, cl.listing_id ASC
@@ -20895,24 +24700,37 @@ export async function proofIndexWalletTokenOverlayPayload(
           ? balance.amount
           : bondBalance || Number(row.confirmed_balance ?? 0),
         ...(balance
-          ? {
-              balanceAtoms: balance.atoms,
-              decimals: WORK_DECIMALS,
-              unitScale: WORK_UNIT_SCALE_TEXT,
-            }
+          ? workBalanceUnitFields(balance, {
+              atomField: "balanceAtoms",
+              subatomField: "balanceSubatoms",
+            })
           : {}),
         pendingDelta: pending
           ? pending.amount
           : bondPending || Number(row.pending_delta ?? 0),
-        ...(pending ? { pendingDeltaAtoms: pending.atoms } : {}),
+        ...(pending
+          ? workBalanceUnitFields(pending, {
+              atomField: "pendingDeltaAtoms",
+              subatomField: "pendingDeltaSubatoms",
+            })
+          : {}),
         ticker: row.ticker,
         tokenId,
       };
     })
     .filter((holder) => {
-      const balance = isBondTokenId(holder.tokenId)
-        ? integerBigInt(holder.balance)
-        : Number(holder.balance);
+      const workHolder = isWorkTokenId(holder.tokenId);
+      const balance = workHolder
+        ? BigInt(
+            String(
+              holder.balanceSubatoms ??
+                holder.balanceAtoms ??
+                "0",
+            ),
+          )
+        : isBondTokenId(holder.tokenId)
+          ? integerBigInt(holder.balance)
+          : Number(holder.balance);
       return (
         holder.address &&
         balance !== null &&
@@ -20943,7 +24761,7 @@ export async function proofIndexWalletTokenOverlayPayload(
       if (
         transfer.txid &&
         transfer.tokenId &&
-        transfer.amount > 0 &&
+        tokenAmountIsPositive(transfer) &&
         (transfer.senderAddress || transfer.recipientAddress)
       ) {
         transfers.push(transfer);
@@ -20957,28 +24775,33 @@ export async function proofIndexWalletTokenOverlayPayload(
         !Array.isArray(row.listing_payload)
           ? row.listing_payload
           : {};
-      const sale = tokenSaleFromEventPayload({
+      const saleTokenId =
+        payload.tokenId ?? listingPayload.tokenId ?? row.token_id;
+      const workSaleAmount =
+        isWorkTokenId(saleTokenId) &&
+        row.listing_amount !== null &&
+        row.listing_amount !== undefined
+          ? workListingAmountProjection(listingPayload, {
+              metadata: row.token_metadata,
+              storedAmount: row.listing_amount,
+            })
+          : null;
+      const salePayload = {
         ...listingPayload,
         ...payload,
         blockHeight: row.block_height,
         blockIndex: row.block_index,
         protocolVout: row.op_return_vout,
         recordOrdinal: row.record_ordinal,
-        amountAtoms:
-          payload.amountAtoms ??
-          listingPayload.amountAtoms ??
-          (isWorkTokenId(
-            payload.tokenId ?? listingPayload.tokenId ?? row.token_id,
-          ) &&
-          row.listing_amount !== null &&
-          row.listing_amount !== undefined
-            ? storedWorkAtoms(row.listing_amount ?? 0, row.token_metadata)
-            : undefined),
-        amount:
-          payload.amount ??
-          payload.tokenAmount ??
-          listingPayload.amount ??
-          row.listing_amount,
+        ...(!workSaleAmount
+          ? {
+              amount:
+                payload.amount ??
+                payload.tokenAmount ??
+                listingPayload.amount ??
+                row.listing_amount,
+            }
+          : {}),
         listingId:
           payload.listingId ?? listingPayload.listingId ?? row.linked_listing_id,
         priceSats:
@@ -21000,7 +24823,16 @@ export async function proofIndexWalletTokenOverlayPayload(
           payload.tokenId ??
           listingPayload.tokenId ??
           row.token_id,
-      }, row);
+      };
+      const sale = tokenSaleFromEventPayload(
+        workSaleAmount
+          ? payloadWithWorkAmountProjection(
+              salePayload,
+              workSaleAmount,
+            )
+          : salePayload,
+        row,
+      );
       if (sale.txid && sale.listingId && sale.tokenId) {
         sales.push(sale);
       }
@@ -21136,11 +24968,19 @@ export async function proofIndexWalletTokenOverlayPayload(
       transfers: transfers.sort(compareTokenItemsByTime),
     },
   );
-  return applyWorkMarketV2CutoverToTokenState(
+  const currentMarketPayload = applyWorkMarketV2CutoverToTokenState(
     await payloadWithCurrentWorkMarketListingReadPolicy(
       network,
       activatedPayload,
     ),
+  );
+  return payloadWithCurrentWorkPrecisionReadPolicy(
+    network,
+    currentMarketPayload,
+    {
+      requireExactCheckpoint: true,
+      requireSupplyEnvelope: false,
+    },
   );
 }
 
@@ -21241,11 +25081,10 @@ async function proofIndexScopedHolderHistoryPayload(
           ? balance.amount
           : bondBalance || Number(row.confirmed_balance),
         ...(balance
-          ? {
-              balanceAtoms: balance.atoms,
-              decimals: WORK_DECIMALS,
-              unitScale: WORK_UNIT_SCALE_TEXT,
-            }
+          ? workBalanceUnitFields(balance, {
+              atomField: "balanceAtoms",
+              subatomField: "balanceSubatoms",
+            })
           : {}),
         ticker: token.ticker,
         tokenId: token.token_id,
@@ -24295,9 +28134,9 @@ function canonicalMailAttachedCreditsFromRow(row, recipientAddresses) {
     ) {
       return [];
     }
-    let amountAtoms = "";
+    let workAmount = null;
     try {
-      amountAtoms = normalizeWorkAtoms(credit.amountAtoms);
+      workAmount = workAmountProjection(credit);
     } catch {
       if (canonicalPositionRequired) {
         return [];
@@ -24307,8 +28146,14 @@ function canonicalMailAttachedCreditsFromRow(row, recipientAddresses) {
     if (
       tokenId !== WORK_TOKEN_ID ||
       (ticker && ticker !== WORK_TOKEN_TICKER) ||
-      amountAtoms !== String(credit.amountAtoms ?? "").trim() ||
-      BigInt(amountAtoms) > BigInt(WORK_TOKEN_MAX_SUPPLY_ATOMS) ||
+      !workAmount ||
+      BigInt(workAmount.units) >
+        (
+          workAmount.amountStorageModel ===
+            WORK_SUBATOM_PROJECTION_MODEL
+            ? WORK_AMO_V7_MAX_SUPPLY_SUBATOMS
+            : BigInt(WORK_TOKEN_MAX_SUPPLY_ATOMS)
+        ) ||
       !recipientAddress ||
       protocolVout === null ||
       !recipients.some((recipient) =>
@@ -24321,10 +28166,10 @@ function canonicalMailAttachedCreditsFromRow(row, recipientAddresses) {
       continue;
     }
 
-    const normalized = withWorkPrecisionMetadata({
+    const normalizedPayload = {
       ...canonicalEventIdentityDetails(credit),
-      amount: formatWorkAtoms(amountAtoms),
-      amountAtoms,
+      amount: workAmount.amount,
+      ...workAmountProjectionMetadataForAmount(workAmount),
       amountVersion: credit.amountVersion,
       paidSats: positiveNumber(credit.paidSats),
       protocolVout,
@@ -24344,7 +28189,15 @@ function canonicalMailAttachedCreditsFromRow(row, recipientAddresses) {
             transactionBlockIndex,
           }
         : {}),
-    });
+    };
+    const normalized =
+      workAmount.amountStorageModel ===
+        WORK_SUBATOM_PROJECTION_MODEL
+        ? withWorkSubatomPrecisionMetadata({
+            ...normalizedPayload,
+            precisionModel: WORK_PRECISION_V2_MODEL,
+          })
+        : withWorkPrecisionMetadata(normalizedPayload);
     const positionKey = `${protocolVout}:${recordOrdinal ?? 0}`;
     const existing = byCanonicalPosition.get(positionKey);
     if (existing) {
@@ -24355,7 +28208,15 @@ function canonicalMailAttachedCreditsFromRow(row, recipientAddresses) {
         return [];
       }
       if (
-        existing.amountAtoms !== normalized.amountAtoms ||
+        existing.amountStorageModel !==
+          normalized.amountStorageModel ||
+        (
+          normalized.amountStorageModel ===
+            WORK_SUBATOM_PROJECTION_MODEL
+            ? existing.amountSubatoms !==
+              normalized.amountSubatoms
+            : existing.amountAtoms !== normalized.amountAtoms
+        ) ||
         !sameMailPaymentAddress(
           existing.recipientAddress,
           normalized.recipientAddress,
@@ -25374,6 +29235,15 @@ export async function proofIndexCanonicalSummaryLedgerPayload(
   if (!pool) {
     return exactStatusResult("unavailable");
   }
+  const requiredWorkAmountStorageModel =
+    await workAmountStorageModelAtHeight(
+      pool,
+      network,
+      exactCheckpointRequested ? requestedHeight : 0,
+    );
+  if (!requiredWorkAmountStorageModel) {
+    return exactStatusResult("unavailable");
+  }
 
   const checkpointProjection = exactCheckpointRequested
     ? "count(*) OVER ()"
@@ -25388,14 +29258,19 @@ export async function proofIndexCanonicalSummaryLedgerPayload(
       `
     : "";
   const workAmountStorageFilter = exactCheckpointRequested
-    ? ""
+    ? "AND payload->>'workAmountStorageModel' = $4"
     : "AND payload->>'workAmountStorageModel' = $2";
   // Exact H-1 reads must prove agreement across the complete eligible row
   // set. A numeric cap could hide a disagreeing older row behind the limit.
   const checkpointLimit = exactCheckpointRequested ? "" : "LIMIT 1";
   const checkpointParams = exactCheckpointRequested
-    ? [network, requestedHeight, requestedHash]
-    : [network, WORK_ATOMIC_PROJECTION_MODEL];
+    ? [
+        network,
+        requestedHeight,
+        requestedHash,
+        requiredWorkAmountStorageModel,
+      ]
+    : [network, requiredWorkAmountStorageModel];
 
   const result = await pool.query(
     `
@@ -25591,6 +29466,11 @@ export async function proofIndexSnapshotPayload(network, key) {
   if (!pool) {
     return null;
   }
+  const workAmountStorageModel =
+    await currentWorkAmountStorageModel(pool, network);
+  if (!workAmountStorageModel) {
+    return null;
+  }
 
   const summaryResult = await pool.query(
     `
@@ -25642,7 +29522,7 @@ export async function proofIndexSnapshotPayload(network, key) {
       ORDER BY indexed_through_block DESC NULLS LAST, generated_at DESC
       LIMIT 1
     `,
-    [network, key, WORK_ATOMIC_PROJECTION_MODEL],
+    [network, key, workAmountStorageModel],
   );
   let snapshot = summaryResult.rows[0] ?? null;
   if (!snapshot) {
@@ -25708,7 +29588,7 @@ export async function proofIndexSnapshotPayload(network, key) {
         ORDER BY generated_at DESC
         LIMIT 1
       `,
-      [network, key, WORK_ATOMIC_PROJECTION_MODEL],
+      [network, key, workAmountStorageModel],
     );
     snapshot = snapshotResult.rows[0] ?? null;
   }
@@ -26275,6 +30155,7 @@ export async function proofIndexCreditListingsPayload(
         cl.close_txid,
         cl.payload,
         cl.updated_at,
+        cd.metadata AS token_metadata,
         listing_tx.block_hash AS listing_block_hash,
         listing_tx.block_height AS listing_block_height,
         listing_tx.block_index AS listing_transaction_block_index,
@@ -26307,6 +30188,9 @@ export async function proofIndexCreditListingsPayload(
         canonical_spend.block_index AS canonical_spend_block_index,
         canonical_spend.block_time AS canonical_spend_block_time
       FROM proof_indexer.credit_listings cl
+      LEFT JOIN proof_indexer.credit_definitions cd
+        ON cd.network = cl.network
+       AND cd.token_id = cl.token_id
       LEFT JOIN proof_indexer.transactions listing_tx
         ON listing_tx.network = cl.network
        AND listing_tx.txid = cl.listing_id
@@ -26847,9 +30731,9 @@ export async function proofIndexCreditListingsPayload(
           saleAuthorization.tokenId,
       );
       const workAmount = isWorkTokenId(tokenId)
-        ? workAmountProjection(payload, {
+        ? workListingAmountProjection(payload, {
+            metadata: row.token_metadata,
             storedAmount: row.amount,
-            storedAmountIsAtoms: true,
           })
         : null;
       const atomicSaleEvidenceRequired =
@@ -27090,14 +30974,20 @@ export async function proofIndexCreditListingsPayload(
         ? canonicalTokenSaleEvidenceForListing(
             {
               amount: workAmount?.amount ?? row.amount,
-              amountAtoms:
-                payload.amountAtoms ??
-                saleAuthorization.amountAtoms ??
-                (
-                  atomicSaleEvidenceRequired
-                    ? workAmount?.amountAtoms
-                    : undefined
-                ),
+              ...(workAmount
+                ? workAmountProjectionMetadataForAmount(
+                    workAmount,
+                  )
+                : {
+                    amountAtoms:
+                      payload.amountAtoms ??
+                      saleAuthorization.amountAtoms ??
+                      (
+                        atomicSaleEvidenceRequired
+                          ? workAmount?.amountAtoms
+                          : undefined
+                      ),
+                  }),
               listingId,
               priceSats: row.price_sats,
               registryAddress:
@@ -27202,7 +31092,11 @@ export async function proofIndexCreditListingsPayload(
             }
           : {};
       return {
-        ...payloadWithoutLifecyclePosition,
+        ...(workAmount
+          ? recordWithoutWorkAmountAliases(
+              payloadWithoutLifecyclePosition,
+            )
+          : payloadWithoutLifecyclePosition),
         amount: workAmount?.amount ?? row.amount,
         ...(workAmount
           ? workAmountProjectionMetadataForAmount(workAmount)

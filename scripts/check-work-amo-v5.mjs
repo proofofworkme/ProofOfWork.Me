@@ -145,7 +145,13 @@ import {
   CANONICAL_PWM_ENVELOPE_NONCONTIGUOUS,
   canonicalRawProtocolRecordSetFromTransaction,
 } from "../server/canonical-op-return.mjs";
-import { WORK_TOKEN_ID } from "../server/work-units.mjs";
+import {
+  workAmoV7CanonicalTokenStateCommitment,
+} from "../server/work-amo-v7.mjs";
+import {
+  WORK_SUBATOM_PROJECTION_MODEL,
+  WORK_TOKEN_ID,
+} from "../server/work-units.mjs";
 
 const hash = (byte) => byte.repeat(64);
 const readerSource = readFileSync(
@@ -3231,7 +3237,10 @@ function buildRawAdversarialOpeningEconomicState({
     throughBlockHash: priorBlockHash,
     throughBlockHeight: priorBlockHeight,
     tokenStateCommitment:
-      workAmoV5CanonicalTokenStateCommitment(workState),
+      workState.amountStorageModel ===
+        WORK_SUBATOM_PROJECTION_MODEL
+        ? workAmoV7CanonicalTokenStateCommitment(workState)
+        : workAmoV5CanonicalTokenStateCommitment(workState),
   };
 }
 
@@ -4037,6 +4046,7 @@ function replayRawAdversarialContext(
       rawAdversarialOpeningGenericState,
     openingIdState = rawAdversarialOpeningIdState,
     openingWorkState = rawAdversarialOpeningWorkState,
+    workAmoV7 = null,
   } = {},
 ) {
   return replayWorkAmoV5RawBlock({
@@ -4050,6 +4060,7 @@ function replayRawAdversarialContext(
     openingIdState,
     openingWorkState,
     records: context.records,
+    workAmoV7,
   });
 }
 
@@ -4144,6 +4155,355 @@ assert.deepEqual(
 assert.deepEqual(
   rawAdversarialOpeningWorkState,
   rawAdversarialOpeningWitness.work,
+);
+
+function rawAggregateWorkSendFixture({
+  amountVersion,
+  feeSats,
+  registryPayments,
+  thirdMessage = "",
+}) {
+  const messages = [
+    `pwt1:${amountVersion}:${WORK_TOKEN_ID}:1:${WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS}`,
+    `pwt1:${amountVersion}:${WORK_TOKEN_ID}:1:${WORK_AMO_V5_ID_REGISTRY_ADDRESS}`,
+    ...(thirdMessage ? [thirdMessage] : []),
+  ];
+  const mailMessage = "pwm1:m:aggregate-work-send";
+  const tx = {
+    vin: [
+      {
+        prevout: {
+          scriptpubkey_address: rawAdversarialActor,
+        },
+        txid: hash("d"),
+        vout: 0,
+      },
+    ],
+    vout: [
+      {
+        scriptpubkey_address: rawAdversarialActor,
+        value: 1,
+      },
+      {
+        scriptpubkey:
+          rawAdversarialOpReturnScript(mailMessage),
+        value: 0,
+      },
+      ...registryPayments.map((value) => ({
+        scriptpubkey_address:
+          WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS,
+        value,
+      })),
+      ...messages.map((message) => ({
+        scriptpubkey:
+          rawAdversarialOpReturnScript(message),
+        value: 0,
+      })),
+    ],
+  };
+  const hydrated = rawAdversarialHydratedTransaction({
+    feeSats,
+    tx,
+  });
+  const protocolVouts = [
+    1,
+    ...messages.map(
+      (_message, index) =>
+        2 + registryPayments.length + index,
+    ),
+  ];
+  return {
+    feeSats,
+    records: protocolVouts.map((protocolVout) =>
+      rawAdversarialRecord({
+        blockHash: rawAdversarialBlockHash,
+        blockHeight: rawAdversarialBlockHeight,
+        blockTransactionIndex: 1,
+        feeSats,
+        protocolVout,
+        tx,
+        txid: hydrated.txid,
+      })
+    ),
+    txid: hydrated.txid,
+  };
+}
+
+function rawAggregateWorkSendReplay(
+  fixture,
+  options = {},
+) {
+  return replayRawAdversarialContext(
+    rawAdversarialBlockContext(fixture.records),
+    options,
+  );
+}
+
+function rawAggregateWorkSendOutcomes(replay, txid) {
+  return replay.events.filter(
+    (event) =>
+      event.txid === txid &&
+      event.protocol === "pwt1" &&
+      event.parsed?.kind === "send" &&
+      event.parsed?.tokenId === WORK_TOKEN_ID,
+  );
+}
+
+function assertAggregateWorkSendAccounting(
+  replay,
+  fixture,
+  amountField,
+) {
+  const outcomes = rawAggregateWorkSendOutcomes(
+    replay,
+    fixture.txid,
+  );
+  assert.equal(outcomes.length, 2);
+  assert.ok(outcomes.every((outcome) => outcome.valid));
+  assert.deepEqual(
+    outcomes.map((outcome) => outcome.output[amountField]),
+    ["1", "1"],
+  );
+  assert.deepEqual(
+    outcomes.map(
+      (outcome) =>
+        outcome.stateDelta.economicOutputs[0],
+    ),
+    [
+      {
+        address:
+          WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS,
+        attributedSats: "546",
+        outputSats: "1092",
+        role: "pwt-token-registry",
+        vout: 2,
+      },
+      {
+        address:
+          WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS,
+        attributedSats: "546",
+        outputSats: "1092",
+        role: "pwt-token-registry",
+        vout: 2,
+      },
+    ],
+  );
+  assert.equal(
+    replay.economicState.baseState.tokenTransferFlowSats,
+    "1092",
+  );
+  assert.deepEqual(
+    replay.feeTransitions.filter(
+      (transition) =>
+        transition.txid === fixture.txid,
+    ).map((transition) => ({
+      fee: transition.transactionMinerFeeSats,
+      valid: transition.valid,
+    })),
+    [{ fee: String(fixture.feeSats), valid: true }],
+  );
+  assert.equal(
+    replay.economicState.creditFixedQ8,
+    (
+      BigInt(1_092 + fixture.feeSats) *
+      100_000_000n
+    ).toString(),
+  );
+}
+
+const rawAggregateSend2Fixture =
+  rawAggregateWorkSendFixture({
+    amountVersion: "send2",
+    feeSats: 43,
+    registryPayments: [1_092],
+  });
+const rawAggregateSend2Replay =
+  rawAggregateWorkSendReplay(rawAggregateSend2Fixture);
+assertAggregateWorkSendAccounting(
+  rawAggregateSend2Replay,
+  rawAggregateSend2Fixture,
+  "amountAtoms",
+);
+assert.equal(
+  rawAggregateSend2Replay.workState.holders.find(
+    ({ address }) => address === rawAdversarialActor,
+  )?.balanceAtoms,
+  "8",
+);
+
+const rawAggregateQ16OpeningWorkState =
+  normalizeWorkAmoV5RawWorkState({
+    amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+    confirmedSupplySubatoms: "10",
+    holders: [
+      {
+        address: rawAdversarialActor,
+        balanceSubatoms: "10",
+      },
+    ],
+    listings: [],
+  });
+const rawAggregateQ16OpeningEconomicState =
+  buildRawAdversarialOpeningEconomicState({
+    genericState: rawAdversarialOpeningGenericState,
+    idState: rawAdversarialOpeningIdState,
+    priorBlockHash: rawAdversarialPriorBlockHash,
+    priorBlockHeight: rawAdversarialBlockHeight - 1,
+    workState: rawAggregateQ16OpeningWorkState,
+  });
+const rawAggregateSend3Fixture =
+  rawAggregateWorkSendFixture({
+    amountVersion: "send3",
+    feeSats: 47,
+    registryPayments: [1_092],
+  });
+const rawAggregateSend3Replay =
+  rawAggregateWorkSendReplay(rawAggregateSend3Fixture, {
+    openingEconomicState:
+      rawAggregateQ16OpeningEconomicState,
+    openingWorkState: rawAggregateQ16OpeningWorkState,
+    workAmoV7: {
+      activationHeight: rawAdversarialBlockHeight,
+    },
+  });
+assertAggregateWorkSendAccounting(
+  rawAggregateSend3Replay,
+  rawAggregateSend3Fixture,
+  "amountSubatoms",
+);
+assert.equal(
+  rawAggregateSend3Replay.workState.holders.find(
+    ({ address }) => address === rawAdversarialActor,
+  )?.balanceSubatoms,
+  "8",
+);
+
+for (const registryPayments of [[1_091], [1_093]]) {
+  const fixture = rawAggregateWorkSendFixture({
+    amountVersion: "send2",
+    feeSats: 53,
+    registryPayments,
+  });
+  const replay = rawAggregateWorkSendReplay(fixture);
+  const outcomes = rawAggregateWorkSendOutcomes(
+    replay,
+    fixture.txid,
+  );
+  assert.equal(outcomes.length, 2);
+  assert.ok(outcomes.every((outcome) => !outcome.valid));
+  assert.ok(
+    outcomes.every(
+      (outcome) =>
+        outcome.reasonCode ===
+          "work-amo-v5-distinct-registry-payment-unavailable",
+    ),
+  );
+  assert.equal(
+    replay.economicState.baseState.tokenTransferFlowSats,
+    "0",
+  );
+}
+
+const rawDistinctSend2Fixture =
+  rawAggregateWorkSendFixture({
+    amountVersion: "send2",
+    feeSats: 57,
+    registryPayments: [546, 546],
+  });
+const rawDistinctSend2Replay =
+  rawAggregateWorkSendReplay(rawDistinctSend2Fixture);
+const rawDistinctSend2Outcomes =
+  rawAggregateWorkSendOutcomes(
+    rawDistinctSend2Replay,
+    rawDistinctSend2Fixture.txid,
+  );
+assert.ok(
+  rawDistinctSend2Outcomes.every(
+    (outcome) => outcome.valid,
+  ),
+);
+assert.deepEqual(
+  rawDistinctSend2Outcomes.map(
+    (outcome) =>
+      outcome.stateDelta.economicOutputs[0].vout,
+  ),
+  [2, 3],
+);
+assert.equal(
+  rawDistinctSend2Replay.economicState.baseState
+    .tokenTransferFlowSats,
+  "1092",
+);
+
+const rawAggregateCrossTokenId = hash("d");
+const rawAggregateCrossTokenGenericState =
+  normalizeWorkAmoV5RawGenericState({
+    holders: [
+      {
+        address: rawAdversarialActor,
+        balance: "1",
+        tokenId: rawAggregateCrossTokenId,
+      },
+    ],
+    listings: [],
+    tokens: [
+      {
+        confirmedSupply: "1",
+        maxSupply: "10",
+        mintAmount: "1",
+        mintPriceSats: "546",
+        registryAddress:
+          WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS,
+        ticker: "EDGE",
+        tokenId: rawAggregateCrossTokenId,
+      },
+    ],
+  });
+const rawAggregateCrossTokenEconomicState =
+  buildRawAdversarialOpeningEconomicState({
+    genericState: rawAggregateCrossTokenGenericState,
+    idState: rawAdversarialOpeningIdState,
+    priorBlockHash: rawAdversarialPriorBlockHash,
+    priorBlockHeight: rawAdversarialBlockHeight - 1,
+    workState: rawAdversarialOpeningWorkState,
+  });
+const rawAggregateCrossTokenFixture =
+  rawAggregateWorkSendFixture({
+    amountVersion: "send2",
+    feeSats: 59,
+    registryPayments: [1_092],
+    thirdMessage:
+      `pwt1:send:${rawAggregateCrossTokenId}:1:` +
+      WORK_AMO_V5_ID_REGISTRY_ADDRESS,
+  });
+const rawAggregateCrossTokenReplay =
+  rawAggregateWorkSendReplay(
+    rawAggregateCrossTokenFixture,
+    {
+      openingEconomicState:
+        rawAggregateCrossTokenEconomicState,
+      openingGenericState:
+        rawAggregateCrossTokenGenericState,
+    },
+  );
+assert.ok(
+  rawAggregateWorkSendOutcomes(
+    rawAggregateCrossTokenReplay,
+    rawAggregateCrossTokenFixture.txid,
+  ).every((outcome) => !outcome.valid),
+);
+assert.equal(
+  rawAggregateCrossTokenReplay.events.filter(
+    (event) =>
+      event.txid === rawAggregateCrossTokenFixture.txid &&
+      event.parsed?.tokenId === rawAggregateCrossTokenId,
+  ).filter((event) => event.valid).length,
+  1,
+);
+assert.equal(
+  rawAggregateCrossTokenReplay.economicState.baseState
+    .tokenTransferFlowSats,
+  "546",
 );
 
 function rawAdversarialTamperAddressLabels(

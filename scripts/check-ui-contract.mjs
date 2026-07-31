@@ -10,6 +10,7 @@ const files = [
   "PROOFOFWORK_GENERAL_DECK.md",
   "src/App.tsx",
   "src/exactAmount.ts",
+  "src/workAmount.ts",
   "src/walletUtxos.ts",
   "src/app/appLinks.ts",
   "src/app/routeRegistry.ts",
@@ -42,12 +43,33 @@ const walletUtxoRuntimeSource = ts.transpileModule(
     },
   },
 ).outputText;
+const workAmountRuntimeSource = ts.transpileModule(
+  contents.get("src/workAmount.ts"),
+  {
+    compilerOptions: {
+      module: ts.ModuleKind.ES2022,
+      target: ts.ScriptTarget.ES2022,
+    },
+  },
+).outputText;
 const {
   enrichWalletCuratedUtxoConfirmations,
   normalizeWalletUtxos,
   selectSmallestSingleConfirmedUtxo,
 } = await import(
   `data:text/javascript;base64,${Buffer.from(walletUtxoRuntimeSource).toString("base64")}`
+);
+const {
+  WORK_DECIMALS,
+  WORK_LEGACY_DECIMALS,
+  WORK_LEGACY_TO_CANONICAL_FACTOR,
+  WORK_LEGACY_UNIT_SCALE,
+  WORK_UNIT_SCALE,
+  workAtomsFromRecord,
+  workLegacyAtomsFromSubatoms,
+  workSubatomsFromCanonicalString,
+} = await import(
+  `data:text/javascript;base64,${Buffer.from(workAmountRuntimeSource).toString("base64")}`
 );
 const failures = [];
 
@@ -56,6 +78,30 @@ function expect(name, condition) {
     failures.push(name);
   }
 }
+
+expect(
+  "frontend WORK quantity helpers use exact Q16 subatoms without changing the historical Q8 scale",
+  WORK_DECIMALS === 16 &&
+    WORK_UNIT_SCALE === 10_000_000_000_000_000n &&
+    WORK_LEGACY_DECIMALS === 8 &&
+    WORK_LEGACY_UNIT_SCALE === 100_000_000n &&
+    WORK_LEGACY_TO_CANONICAL_FACTOR === 100_000_000n,
+);
+expect(
+  "frontend WORK subatom parser accepts only canonical integer text",
+  workSubatomsFromCanonicalString("1") === 1n &&
+    workSubatomsFromCanonicalString("0001") === null &&
+    workSubatomsFromCanonicalString(" 1") === null &&
+    workSubatomsFromCanonicalString("1 ") === null &&
+    workSubatomsFromCanonicalString(1) === null,
+);
+expect(
+  "frontend WORK record aliases fail closed unless legacy Q8 and current Q16 values agree exactly",
+  workAtomsFromRecord("10", 0, "1000000000") === 1_000_000_000n &&
+    workAtomsFromRecord("10", 0, "1000000001") === null &&
+    workLegacyAtomsFromSubatoms("1000000000") === 10n &&
+    workLegacyAtomsFromSubatoms("1") === null,
+);
 
 function notContains(path, pattern, label) {
   expect(`${path}: ${label}`, !pattern.test(contents.get(path)));
@@ -533,12 +579,12 @@ expect(
     /\.map\(\(senderAddress\) => senderAddress\.toLowerCase\(\)\)/.test(app),
 );
 expect(
-  "Inception WORK attachments use verified holders while Mail and Infinity remain allowlisted",
+  "Inception WORK attachments use verified Q16 holders while Mail and Infinity remain allowlisted",
   /function canAttachWorkToBond[\s\S]*bondConfig\.folder === "inception"[\s\S]*targetNetwork === "livenet"[\s\S]*Boolean\(senderAddress\.trim\(\)\)[\s\S]*confirmedWorkHolder[\s\S]*return canAttachWorkToMessages\(senderAddress, targetNetwork\)/.test(
     app,
   ) &&
     /const messageWorkAttachmentAllowed = canAttachWorkToMessages\(/.test(app) &&
-    /const inceptionWorkHolderEligible =[\s\S]*bondWorkBalanceHasCleanLane[\s\S]*bondWorkBalanceLoaded[\s\S]*!bondWorkBalanceError[\s\S]*workAtomsFromIntegerString\([\s\S]*workAttachmentPreviewSpendability\?\.confirmedBalanceAtoms[\s\S]*\?\? 0n\) > 0n/.test(
+    /const inceptionWorkHolderEligible =[\s\S]*bondWorkBalanceHasCleanLane[\s\S]*bondWorkBalanceLoaded[\s\S]*!bondWorkBalanceError[\s\S]*workAtomsFromIntegerString\([\s\S]*workAttachmentPreviewSpendability\?\.confirmedBalanceSubatoms[\s\S]*\?\? 0n\) > 0n/.test(
       app,
     ) &&
     /const bondWorkAttachmentAllowed = canAttachWorkToBond\(/.test(app) &&
@@ -562,7 +608,7 @@ expect(
     ),
 );
 expect(
-  "WORK attachment previews fail closed without a clean wallet lane",
+  "WORK attachment previews fail closed without a clean Q16 wallet lane",
   /const accountWorkSpendabilityState = accountWorkTokenLaneClean[\s\S]*accountAllTokenLaneClean[\s\S]*: undefined/.test(
     app,
   ) &&
@@ -570,7 +616,7 @@ expect(
       app,
     ) &&
     /catch \{\s*return undefined;\s*\}/.test(app) &&
-    /workAtomsFromIntegerString\([\s\S]*workAttachmentPreviewSpendability\?\.spendableBalanceAtoms[\s\S]*workNumberFromAtoms\(workAttachmentSpendableAtoms\)/.test(
+    /workAtomsFromIntegerString\([\s\S]*workAttachmentPreviewSpendability\?\.spendableBalanceSubatoms[\s\S]*workNumberFromAtoms\(workAttachmentSpendableAtoms\)/.test(
       app,
     ),
 );
@@ -718,14 +764,14 @@ expect(
     ),
 );
 expect(
-  "credit listings use canonical holder spendability on every route before PSBT creation",
+  "credit listings use canonical holder spendability and the active AMO protocol before PSBT creation",
   /fetchFreshWalletTokenPreflightState\(\s*address,\s*token\.tokenId/.test(
     listTokenSource,
   ) &&
     /tokenSpendabilityForWallet\(\s*address,\s*token,\s*freshState,\s*tokenListings,\s*tokenClosedListings,\s*tokenTransfers,\s*tokenSales/.test(
       listTokenSource,
     ) &&
-    /tokenAmountDisplay\([\s\S]*spendability\.spendableBalance,[\s\S]*spendability\.spendableBalanceAtoms[\s\S]*available; \$\{attemptedAmountDisplay\} attempted\. No transaction was created\./.test(
+    /tokenAmountDisplay\([\s\S]*spendability\.spendableBalance,[\s\S]*spendability\.spendableBalanceSubatoms[\s\S]*available; \$\{attemptedAmountDisplay\} attempted\. No transaction was created\./.test(
       listTokenSource,
     ) &&
     /activeTokenListingAnchorOutpointsForAddress\(\s*spendability\.activeListings/.test(
@@ -738,7 +784,7 @@ expect(
     /normalizedTokenListAmountUnits !== null[\s\S]*normalizedTokenListAmountUnits <= walletSpendableTokenAtoms/.test(
       canListTokenSource,
     ) &&
-    /const workAmoListInputReady = Boolean\([\s\S]*workAmoV6FaceProofsAllowed\(tokenListFaceProofs\)[\s\S]*workAmoV6ListingWritesReady\(workFloorQuote\)[\s\S]*workAmoV6EstimateForFace\([\s\S]*tokenListFaceProofs[\s\S]*walletSpendableTokenAtoms > 0n/.test(
+    /const workAmoListInputReady = Boolean\([\s\S]*workAmoV6FaceProofsAllowed\(tokenListFaceProofs\)[\s\S]*workAmoListingWritesReady\(workFloorQuote\)[\s\S]*workAmoEstimateForFace\([\s\S]*tokenListFaceProofs[\s\S]*walletSpendableTokenAtoms > 0n/.test(
       canListTokenSource,
     ) &&
     !/max=\{Math\.max\(1, listSpendableBalance\)\}/.test(app) &&
@@ -756,8 +802,8 @@ expect(
     ),
 );
 expect(
-  "wallet transfer copy names the atomic WORK protocol without changing bond copy",
-  /copy\?\.transferDescription \?\?[\s\S]*transferToken && isWorkToken\(transferToken\) \? "pwt1:send2" : "pwt1:send"/.test(
+  "wallet transfer copy names explicit admitted send2 or send3 and exposes paused WORK without changing bond copy",
+  /const workTransferMode =[\s\S]*workWriteModeForQuote\(workFloorQuote\)[\s\S]*workTransferMode === "native-q16"[\s\S]*"pwt1:send3"[\s\S]*workTransferMode === "legacy-q8"[\s\S]*"pwt1:send2"[\s\S]*"paused WORK transfer"[\s\S]*"pwt1:send"/.test(
     app,
   ) &&
     /transferDescription:\s*`Sends a pwt1:send \$\{bondConfig\.ticker\} event/.test(
@@ -765,9 +811,12 @@ expect(
     ),
 );
 expect(
-  "Infinity and Inception bond composers attach canonical WORK",
+  "Infinity and Inception bond composers attach canonical Q16 WORK through the active transfer version",
   /const \[bondWorkAmount,\s*setBondWorkAmount\] = useState\("0"\)/.test(app) &&
-    /async function createInfinityBond[\s\S]*if \(!bondWorkAttachmentAllowed\)[\s\S]*latestWorkSpendability\.confirmedBalanceAtoms[\s\S]*latestWorkSpendability\.spendableBalanceAtoms/.test(
+    /async function createInfinityBond[\s\S]*if \(!bondWorkAttachmentAllowed\)[\s\S]*latestWorkSpendability\.confirmedBalanceSubatoms[\s\S]*latestWorkSpendability\.spendableBalanceSubatoms/.test(
+      app,
+    ) &&
+    /async function createInfinityBond[\s\S]*buildTokenSendPayload\([\s\S]*WORK_TOKEN_ID[\s\S]*workWriteModeForQuote\(workFloorQuote\)/.test(
       app,
     ) &&
     /async function createInfinityBond[\s\S]*postProtocolPayments:[\s\S]*WORK_TOKEN_REGISTRY_ADDRESS[\s\S]*postProtocolPayloads:\s*attachedWorkPayloads/.test(
@@ -807,12 +856,12 @@ const desktopWorkspaceMailSortBlock =
   app.match(/function DesktopWorkspace[\s\S]*?function FilesWorkspace/)?.[0] ??
   "";
 expect(
-  "mail WORK signal accepts only canonical WORK and exact atoms",
+  "mail WORK signal accepts only canonical WORK and exact Q16 subatoms",
   /credit\.tokenId[\s\S]*WORK_TOKEN_ID/.test(mailWorkSignalBlock) &&
     /normalizeTokenTicker\(credit\.ticker\) === WORK_TOKEN_TICKER/.test(
       mailWorkSignalBlock,
     ) &&
-    /workRecordAtoms\(credit\.amount, credit\.amountAtoms\)/.test(
+    /workRecordAtoms\([\s\S]*credit\.amount,[\s\S]*credit\.amountAtoms,[\s\S]*credit\.amountSubatoms/.test(
       mailWorkSignalBlock,
     ) &&
     /reduce\([\s\S]*total \+ atoms[\s\S]*0n/.test(mailWorkSignalBlock),
@@ -1196,7 +1245,7 @@ expect(
     ),
 );
 expect(
-  "WORK AMO V6 pins proof faces and separates activation, settlement, and listing readiness",
+  "WORK AMO keeps V6 readiness immutable and cuts over to fail-closed V7 admission",
   /WORK_AMO_V6_ALLOWED_FACE_PROOFS\s*=\s*\[20_000,\s*50_000,\s*100_000\]\s*as const/.test(
     app,
   ) &&
@@ -1212,29 +1261,63 @@ expect(
     /function workAmoV6ListingWritesReady[\s\S]*workAmoV6SettlementWritesReady\(quote\)[\s\S]*status\?\.listingWritesEnabled === true/.test(
       app,
     ) &&
-    /assertWorkAmoV6ListingEnabled\(freshFloor\)/.test(listTokenSource),
+    /function workV7ActivationReached[\s\S]*status\?\.version === TOKEN_SALE_AUTH_WORK_AMO_SUBATOM_VERSION[\s\S]*status\.activation\?\.reached === true/.test(
+      workAmoV6ProofUnitSource,
+    ) &&
+    /function workV7WriteAdmissionReady[\s\S]*workV7ActivationReached\(quote\)[\s\S]*status\?\.activation\?\.active === true[\s\S]*status\?\.activation\?\.evidenceComplete === true[\s\S]*status\?\.protocolReady === true[\s\S]*status\.writeAdmission === true/.test(
+      workAmoV6ProofUnitSource,
+    ) &&
+    /type WorkAmoV7Status = \{[\s\S]*pinsConfigured\?: boolean;[\s\S]*pinsRequested\?: boolean/.test(
+      app,
+    ) &&
+    /function workV7DeclarationBoundaryObserved[\s\S]*legacyWriteEmbargo === true[\s\S]*pinsRequested === true[\s\S]*pinsConfigured === true[\s\S]*declarationConfirmed === true[\s\S]*reached === true/.test(
+      workAmoV6ProofUnitSource,
+    ) &&
+    /function workWriteModeForQuote[\s\S]*status\?\.version !== TOKEN_SALE_AUTH_WORK_AMO_SUBATOM_VERSION[\s\S]*return "paused"[\s\S]*status\?\.pinsRequested === true[\s\S]*status\.pinsConfigured !== true[\s\S]*status\?\.pinsConfigured === true[\s\S]*status\.activation\?\.tipVerified !== true[\s\S]*workV7DeclarationBoundaryObserved\(quote\)[\s\S]*workV7WriteAdmissionReady\(quote\)[\s\S]*workAmoV6ActivationReady\(quote\) \? "legacy-q8" : "paused"/.test(
+      workAmoV6ProofUnitSource,
+    ) &&
+    /const workV7DeclarationBoundaryLatchRef = useRef\(false\)/.test(app) &&
+    /function applyWorkFloorQuote[\s\S]*boundaryWasLatched[\s\S]*failClosedWorkAmoV7Status[\s\S]*work-amo-v7-exact-tip-regressed/.test(
+      app,
+    ) &&
+    /async function freshWorkWriteMode[\s\S]*boundaryWasLatched && !boundaryObserved[\s\S]*"paused"[\s\S]*expectedMode && mode !== expectedMode/.test(
+      app,
+    ) &&
+    /function assertWorkAmoSettlementEnabled[\s\S]*!workV7ActivationReached\(quote\)[\s\S]*assertWorkAmoV6SettlementEnabled\(quote\)[\s\S]*!workAmoSettlementWritesReady\(quote\)/.test(
+      workAmoV6ProofUnitSource,
+    ) &&
+    /function assertWorkAmoListingEnabled[\s\S]*!workV7ActivationReached\(quote\)[\s\S]*assertWorkAmoV6ListingEnabled\(quote\)[\s\S]*!workAmoListingWritesReady\(quote\)/.test(
+      workAmoV6ProofUnitSource,
+    ) &&
+    /assertWorkAmoListingEnabled\(freshFloor\)/.test(listTokenSource),
 );
 expect(
-  "WORK AMO V6 serializes only the proof face and labels USD as display-only",
+  "WORK AMO V6 and V7 serialize only the proof face and label USD as display-only",
   /function tokenSaleAuthorizationWireDraft[\s\S]*isWorkAmoDerivedUnitAuthorization\(draft\.version\)[\s\S]*amount:\s*_amount[\s\S]*amountAtoms:\s*_amountAtoms[\s\S]*priceSats:\s*_priceSats[\s\S]*return wire/.test(
     app,
   ) &&
+    /function tokenSaleAuthorizationWireDraft[\s\S]*amountSubatoms:\s*_amountSubatoms/.test(
+      app,
+    ) &&
     /WORK_AMO_V6_STATIC_AUTHORIZATION_KEYS[\s\S]*"unitFaceProofs"[\s\S]*"anchorSignature"/.test(
       app,
     ) &&
-    /unitFaceProofs:\s*v6Authorization[\s\S]*workAmoV6FaceProofsAllowed/.test(
+    /WORK_AMO_V7_STATIC_AUTHORIZATION_KEYS\s*=\s*WORK_AMO_V6_STATIC_AUTHORIZATION_KEYS/.test(
+      app,
+    ) &&
+    /unitFaceProofs:[\s\S]*\(v6Authorization \|\| v7Authorization\)[\s\S]*workAmoV6FaceProofsAllowed/.test(
       app,
     ) &&
     /WORK_AMO_V6_ALLOWED_FACE_PROOFS\.map/.test(tokenWalletWorkspaceBlock) &&
-    /20,000, 50,000, or 100,000-proof/.test(tokenWalletWorkspaceBlock) &&
+    /20,000, 50,000, or 100,000-proof/.test(app) &&
     /USD is display-only/.test(tokenWalletWorkspaceBlock) &&
-    /workEstimate = workAmoV6EstimateForFace\([\s\S]*unitFaceProofs:\s*workListing[\s\S]*TOKEN_SALE_AUTH_WORK_AMO_PROOF_UNIT_VERSION/.test(
+    /workEstimate = workAmoEstimateForFace\([\s\S]*unitFaceProofs:\s*workListing[\s\S]*TOKEN_SALE_AUTH_WORK_AMO_SUBATOM_VERSION[\s\S]*TOKEN_SALE_AUTH_WORK_AMO_PROOF_UNIT_VERSION/.test(
       listTokenSource,
     ) &&
     /const estimate =\s*listing\.confirmed !== true\s*&&\s*rawEstimate/.test(
       app,
     ) &&
-    !/beforeBroadcast|assertWorkMarketPricingTipUnchanged/.test(
+    /const freshAdmission = await freshWorkWriteMode\(\)[\s\S]*preparedWorkListingMode = freshAdmission\.mode[\s\S]*workV7Listing = preparedWorkListingMode === "native-q16"[\s\S]*beforeBroadcast:[\s\S]*freshWorkWriteMode\(preparedWorkListingMode\)/.test(
       listTokenSource,
     ) &&
     /selectedListTokenIsWork\s*\?\s*\([\s\S]*work-amo-face-selector[\s\S]*\)\s*:\s*\([\s\S]*Amount[\s\S]*Price proofs/.test(
@@ -1242,7 +1325,7 @@ expect(
     ),
 );
 expect(
-  "confirmed V4, V5, and V6 AMO terms freeze seal and buy without current-price repricing",
+  "confirmed V4 through V7 AMO terms freeze seal and buy without current-price repricing",
   /WORK_AMO_V1_FACE_USD_CENTS\s*=\s*\[\s*1000,\s*2000,\s*5000,\s*10000,\s*20000,\s*50000,\s*100000,\s*200000,\s*500000,\s*1000000,[\s\S]*function workAmoHistoricalFaceUsdCents[\s\S]*WORK_AMO_V1_FACE_USD_CENTS\.some/.test(
     app,
   ) &&
@@ -1252,13 +1335,19 @@ expect(
     /function workAmoV6FrozenProjection[\s\S]*WORK_AMO_V6_FROZEN_TERM_KEYS[\s\S]*unitFaceProofs[\s\S]*listingProtocolVout[\s\S]*listingRecordOrdinal[\s\S]*networkValueAfterQ8 !==[\s\S]*networkValueBeforeQ8 \+ listingBondContributionQ8[\s\S]*workAmoV6UnitTerms\([\s\S]*amountAtoms\.toString\(\) !== expected\.unitAmountAtoms[\s\S]*priceSats\.toString\(\) !== expected\.unitPriceSats/.test(
       app,
     ) &&
+    /function workAmoV7FrozenProjection[\s\S]*WORK_AMO_V7_FROZEN_TERM_KEYS[\s\S]*unitAmountSubatoms[\s\S]*workAmoV7UnitTerms\([\s\S]*listingAmountSubatoms !== amountSubatoms[\s\S]*String\(listing\.amountAtoms \?\? ""\) !== ""/.test(
+      app,
+    ) &&
+    /function workAmoFrozenTerms[\s\S]*TOKEN_SALE_AUTH_WORK_AMO_SUBATOM_VERSION[\s\S]*workAmoV7FrozenProjection\(listing\)[\s\S]*TOKEN_SALE_AUTH_WORK_AMO_PROOF_UNIT_VERSION[\s\S]*workAmoV6FrozenProjection\(listing\)[\s\S]*amountAtoms \* WORK_LEGACY_TO_CANONICAL_FACTOR/.test(
+      app,
+    ) &&
     /const v5ProjectionComplete =[\s\S]*WORK_AMO_UNIT_MODEL[\s\S]*WORK_AMO_STATE_ORDER_MODEL[\s\S]*unitUsdQuoteTxid[\s\S]*listingBlockHeight[\s\S]*frozenNetworkValueAfterQ8 ===[\s\S]*frozenNetworkValueBeforeQ8 \+ frozenListingBondContributionQ8/.test(
       app,
     ) &&
     /function workAmoStaticAuthorizationForListing[\s\S]*TOKEN_SALE_AUTH_WORK_AMO_PROOF_UNIT_VERSION[\s\S]*unitFaceProofs:\s*faceProofs[\s\S]*WORK_AMO_V6_UNIT_MODEL[\s\S]*TOKEN_SALE_AUTH_WORK_AMO_UNIT_VERSION/.test(
       app,
     ) &&
-    /assertWorkAmoV6SettlementEnabled\(workFloorQuote\)/.test(
+    /const freshAdmission = await freshWorkWriteMode\(\)[\s\S]*preparedWorkSettlementMode = freshAdmission\.mode[\s\S]*assertWorkAmoSettlementEnabled\(freshAdmission\.quote\)/.test(
       sealTokenListingSource,
     ) &&
     /workAmoStaticAuthorizationForListing\(listing\)/.test(
@@ -1267,7 +1356,7 @@ expect(
     /confirmWorkAmoFrozenAction\("seal", listing\)/.test(
       sealTokenListingSource,
     ) &&
-    /assertWorkAmoV6SettlementEnabled\(workFloorQuote\)/.test(
+    /const freshAdmission = await freshWorkWriteMode\(\)[\s\S]*preparedWorkSettlementMode = freshAdmission\.mode[\s\S]*assertWorkAmoSettlementEnabled\(freshAdmission\.quote\)/.test(
       buyTokenListingSource,
     ) &&
     /tokenSellerPaymentRequiredSats\(listing\)/.test(
@@ -1279,25 +1368,100 @@ expect(
     /confirmWorkAmoFrozenAction\("purchase", listing\)/.test(
       buyTokenListingSource,
     ) &&
-    !/fetchWorkFloorQuote|beforeBroadcast|assertWorkMarketPricingTipUnchanged/.test(
-      `${sealTokenListingSource}\n${buyTokenListingSource}`,
+    [sealTokenListingSource, buyTokenListingSource].every(
+      (source) =>
+        /beforeBroadcast:[\s\S]*freshWorkWriteMode\(preparedWorkSettlementMode\)/.test(
+          source,
+        ),
     ),
 );
 expect(
-  "AMO V6 is proof-native and has no USD oracle or attestation lane",
-  /function workAmoV6UnitTerms[\s\S]*BigInt\(WORK_TOKEN_MAX_SUPPLY\) \* 100_000_000n \* 100_000_000n[\s\S]*BigInt\(face\) \* valueDenominator[\s\S]*amountAtoms \* networkValue \+ valueDenominator - 1n/.test(
+  "AMO V6 remains exact Q8 while V7 derives exact Q16 subatoms without a USD oracle",
+  /function workAmoV6UnitTerms[\s\S]*WORK_AMO_V6_ATOMS_PER_WORK[\s\S]*100_000_000n[\s\S]*const amountAtoms = \(BigInt\(face\) \* valueDenominator\) \/ networkValue[\s\S]*amountAtoms \* networkValue \+ valueDenominator - 1n/.test(
     workAmoV6ProofUnitSource,
   ) &&
+    /function workAmoV7UnitTerms[\s\S]*WORK_AMO_V7_SUBATOMS_PER_WORK[\s\S]*100_000_000n[\s\S]*const amountSubatoms =[\s\S]*\(BigInt\(face\) \* valueDenominator\) \/ networkValue[\s\S]*amountSubatoms \* networkValue \+ valueDenominator - 1n/.test(
+      workAmoV6ProofUnitSource,
+    ) &&
     !/\/api\/v1\/work-amo-v6\/attestation/.test(app) &&
+    !/\/api\/v1\/work-amo-v7\/attestation/.test(app) &&
     !/WorkUsdAttestation|unitUsdAttestation|WORK_AMO_V6_USD_ORACLE_MODEL|WORK_AMO_V6_ORACLE_SOURCE_IDS|fetchWorkAmoV6Attestation/.test(
       app,
     ) &&
     !/btcUsd/.test(listTokenSource) &&
     !/btcUsd/.test(canListTokenSource),
 );
+expect(
+  "WORK transfer UI writes send3 only under V7 admission and never falls back after activation",
+  /const TOKEN_SEND_ATOMS_ACTION = "send2"/.test(app) &&
+    /const TOKEN_SEND_SUBATOMS_ACTION = "send3"/.test(app) &&
+    /function buildTokenSendPayload[\s\S]*workWriteMode === "paused"[\s\S]*No legacy send2 fallback is permitted[\s\S]*workWriteMode === "native-q16"[\s\S]*TOKEN_SEND_SUBATOMS_ACTION[\s\S]*amountSubatoms\.toString\(\)[\s\S]*workLegacyAtomsFromSubatoms\(amountSubatoms\)[\s\S]*TOKEN_SEND_ATOMS_ACTION/.test(
+      app,
+    ) &&
+    /parts\[0\] === TOKEN_SEND_ATOMS_ACTION[\s\S]*workSubatomsFromLegacyAtoms\(parts\[2\]\)[\s\S]*amountVersion: TOKEN_SEND_ATOMS_ACTION[\s\S]*parts\[0\] === TOKEN_SEND_SUBATOMS_ACTION[\s\S]*workSubatomsFromCanonicalString\(parts\[2\]\)[\s\S]*amountVersion: TOKEN_SEND_SUBATOMS_ACTION/.test(
+      app,
+    ) &&
+    /function normalizeTokenAmountRecord[\s\S]*amountVersion === TOKEN_SEND_SUBATOMS_ACTION[\s\S]*"native-q16"[\s\S]*amountVersion === TOKEN_SEND_ATOMS_ACTION[\s\S]*"legacy-q8"/.test(
+      app,
+    ) &&
+    /function buildTokenSendPayload\([\s\S]*workWriteMode: WorkWriteMode = "paused"/.test(
+      app,
+    ) &&
+    /async function transferToken[\s\S]*const freshAdmission = await freshWorkWriteMode\(\)[\s\S]*preparedWorkMode = freshAdmission\.mode[\s\S]*beforeBroadcast:[\s\S]*freshWorkWriteMode\(preparedWorkMode\)/.test(
+      app,
+    ) &&
+    /async function sendOpReturn[\s\S]*preparedWorkAttachmentMode =[\s\S]*await freshWorkWriteMode\(\)[\s\S]*beforeBroadcast:[\s\S]*freshWorkWriteMode\(preparedWorkAttachmentMode\)/.test(
+      app,
+    ) &&
+    /async function createInfinityBond[\s\S]*preparedBondWorkMode = \(await freshWorkWriteMode\(\)\)\.mode[\s\S]*beforeBroadcast:[\s\S]*freshWorkWriteMode\(preparedBondWorkMode\)/.test(
+      app,
+    ),
+);
+expect(
+  "WORK mint UI pauses every single and chained entry point when V7 admission is unknown or not ready",
+  /function assertWorkMintWriteEnabled[\s\S]*isWorkToken\(token\)[\s\S]*workWriteModeForQuote\(quote\) === "paused"[\s\S]*No mint transaction was created/u.test(
+    app,
+  ) &&
+    /const tokenMintPayload = useMemo\([\s\S]*workWriteModeForQuote\(workFloorQuote\) === "paused"[\s\S]*isWorkToken\(selectedToken\)[\s\S]*\? ""[\s\S]*buildTokenMintPayload/u.test(
+      app,
+    ) &&
+    /const canMintToken =[\s\S]*!isWorkToken\(selectedToken\) \|\|[\s\S]*workWriteModeForQuote\(workFloorQuote\) !== "paused"[\s\S]*tokenMintPayload/u.test(
+      app,
+    ) &&
+    /async function runTokenChainedMint[\s\S]*assertGenericTokenMintTarget\(token\);[\s\S]*assertWorkMintWriteEnabled\(token, workFloorQuote\);[\s\S]*buildTokenMintPayload/u.test(
+      app,
+    ) &&
+    /async function runTokenChainedMint[\s\S]*const preparedWorkMintMode = workMint[\s\S]*await freshWorkWriteMode\(\)[\s\S]*beforeBroadcast:[\s\S]*freshWorkWriteMode\(preparedWorkMintMode\)/u.test(
+      app,
+    ) &&
+    /async function mintToken\([\s\S]*assertWorkMintWriteEnabled\(mintTarget, workFloorQuote\);[\s\S]*WORK precision writes are paused/u.test(
+      app,
+    ),
+);
+expect(
+  "Q16 scale is exclusive to canonical WORK while generic credits remain whole-unit",
+  /function workTokenAmountScale\(token: unknown\): bigint \{[\s\S]*isWorkToken\(token as any\) \? WORK_AMO_UNIT_SCALE_BIGINT : 1n/.test(
+    app,
+  ) &&
+    /function tokenUnitPriceSats[\s\S]*workTokenAmountScale\(token\)/.test(
+      app,
+    ),
+);
+expect(
+  "native V7 listings reject legacy amount aliases while historical listings normalize by exact multiplication",
+  /function normalizeTokenListingRecord[\s\S]*TOKEN_SALE_AUTH_WORK_AMO_SUBATOM_VERSION[\s\S]*\? "native-q16"[\s\S]*isWorkMarketSaleAuthorizationVersion[\s\S]*\? "legacy-q8"/.test(
+    app,
+  ) &&
+    /function workAmoV7FrozenProjection[\s\S]*listingAmountSubatoms !== amountSubatoms[\s\S]*String\(listing\.amountAtoms \?\? ""\) !== ""/.test(
+      app,
+    ) &&
+    /function workAmoFrozenTerms[\s\S]*amountAtoms \* WORK_LEGACY_TO_CANONICAL_FACTOR/.test(
+      app,
+    ),
+);
 
 expect(
-  "historical V5 quote sequences remain exact while current V6 has no manual publication path",
+  "historical V5 quote sequences remain exact while proof-native V6 and V7 have no manual publication path",
   /type WorkAmoV5FrozenTerms[\s\S]*unitUsdQuoteSequence\?: string;/.test(
     app,
   ) &&
@@ -1658,10 +1822,14 @@ expect(
 const infinityAppBlock =
   app.match(/function InfinityApp[\s\S]*?function TokenWalletApp/)?.[0] ?? "";
 expect(
-  "Inception issues fixed INCB from the hash-bound H-1 live WORK summary",
+  "Inception issues fixed INCB from the hash-bound H-1 live WORK summary across Q8 and Q16 transfer eras",
   /attachedWorkAmount\?: number/.test(app) &&
     /attachedWorkAmountAtoms\?: string/.test(app) &&
+    /attachedWorkAmountSubatoms\?: string/.test(app) &&
     /attachedWorkAmountAtoms:\s*optionalStringValue\("attachedWorkAmountAtoms"\)/.test(
+      app,
+    ) &&
+    /attachedWorkAmountSubatoms:\s*optionalStringValue\([\s\S]*"attachedWorkAmountSubatoms"/.test(
       app,
     ) &&
     /attachedWorkIssuanceUnits\?: ExactIntegerValue/.test(app) &&
@@ -1699,7 +1867,7 @@ expect(
     /bond-transaction-provenance/.test(infinityAppBlock) &&
     /fixed-incb-issuance-plus-market-flow-v1/.test(infinityAppBlock) &&
     /issuanceValuationFixedAtSend === true/.test(infinityAppBlock) &&
-    /workAtomsFromIntegerString\(\s*summary\?\.actualValue\.attachedWorkAmountAtoms,\s*\)/.test(
+    /workRecordAtoms\([\s\S]*attachedWorkAmount,[\s\S]*summary\?\.actualValue\.attachedWorkAmountAtoms,[\s\S]*summary\?\.actualValue\.attachedWorkAmountSubatoms/.test(
       infinityAppBlock,
     ) &&
     /attachedWorkAmountAtoms > 0n[\s\S]*attachedWorkAmountDisplay/.test(

@@ -6,13 +6,18 @@ import {
   assertCanonicalUnicodeCaseMappingVersion,
   compareCanonicalUtf8,
 } from "./canonical-order.mjs";
-import { WORK_TOKEN_ID } from "./work-units.mjs";
+import {
+  WORK_SUBATOM_PROJECTION_MODEL,
+  WORK_SUBATOM_UNIT_SCALE,
+  WORK_TOKEN_ID,
+} from "./work-units.mjs";
 
 bitcoin.initEccLib(ecc);
 
 export const WORK_AMO_V5_AUTH_VERSION = "pwt-sale-v5";
 const WORK_AMO_V5_SUCCESSOR_AUTH_VERSIONS = new Set([
   "pwt-sale-v6",
+  "pwt-sale-v7",
 ]);
 export const WORK_AMO_V5_ACTIVATION_HEIGHT = 959_621;
 export const WORK_AMO_V5_DECLARATION_TXID =
@@ -1955,11 +1960,16 @@ export function parseWorkAmoV5RawPwtRecord(payload) {
   }
   if (
     parts.length === 4 &&
-    (parts[0] === "send" || parts[0] === "send2")
+    (
+      parts[0] === "send" ||
+      parts[0] === "send2" ||
+      parts[0] === "send3"
+    )
   ) {
     const tokenId = txid(parts[1]);
     const recipientAddress = String(parts[3] ?? "").trim();
     const legacy = parts[0] === "send";
+    const subatoms = parts[0] === "send3";
     const bond =
       tokenId === WORK_AMO_V5_POWB_TOKEN_ID ||
       tokenId === WORK_AMO_V5_INCB_TOKEN_ID;
@@ -1969,7 +1979,9 @@ export function parseWorkAmoV5RawPwtRecord(payload) {
     const amount = bond ? exactAmount : Number(parts[2]);
     const amountAtoms =
       tokenId === WORK_TOKEN_ID
-        ? legacy &&
+        ? subatoms
+          ? null
+          : legacy &&
           Number.isSafeInteger(amount) &&
           amount >= 1
           ? BigInt(amount) * WORK_AMO_V5_ATOMS_PER_WORK
@@ -1980,14 +1992,26 @@ export function parseWorkAmoV5RawPwtRecord(payload) {
             ? BigInt(parts[2])
             : 0n
         : null;
+    const amountSubatoms =
+      tokenId === WORK_TOKEN_ID && subatoms
+        ? canonicalUnsignedIntegerText(parts[2], {
+            positive: true,
+          })
+        : "";
     if (
       !tokenId ||
-      (!legacy && tokenId !== WORK_TOKEN_ID) ||
+      ((!legacy || subatoms) && tokenId !== WORK_TOKEN_ID) ||
       (legacy &&
         (bond
           ? !exactAmount
           : !Number.isSafeInteger(amount) || amount < 1)) ||
-      (!legacy && amountAtoms === 0n) ||
+      (!legacy && !subatoms && amountAtoms === 0n) ||
+      (subatoms &&
+        (
+          !amountSubatoms ||
+          BigInt(amountSubatoms) >
+            WORK_AMO_V5_MAX_SUPPLY * WORK_SUBATOM_UNIT_SCALE
+        )) ||
       !isWorkAmoV5LivenetAddress(recipientAddress) ||
       (amountAtoms !== null &&
         (amountAtoms < 1n ||
@@ -2002,6 +2026,9 @@ export function parseWorkAmoV5RawPwtRecord(payload) {
       ...(amountAtoms === null
         ? {}
         : { amountAtoms: amountAtoms.toString() }),
+      ...(amountSubatoms
+        ? { amountSubatoms }
+        : {}),
       amountVersion: parts[0],
       kind: "send",
       payload: text,
@@ -4379,18 +4406,47 @@ export function validateWorkAmoV5SufficientState(value) {
       movement?.amountAtoms,
       { positive: true },
     );
+    const amountSubatoms = canonicalUnsignedIntegerText(
+      movement?.amountSubatoms,
+      { positive: true },
+    );
+    const subatomMovement =
+      movement?.amountStorageModel ===
+        WORK_SUBATOM_PROJECTION_MODEL &&
+      Boolean(amountSubatoms) &&
+      !amountAtoms;
+    const atomMovement =
+      !movement?.amountStorageModel &&
+      Boolean(amountAtoms) &&
+      !amountSubatoms;
     if (
       !identity ||
       identity.length > 256 ||
-      !amountAtoms ||
-      BigInt(amountAtoms) >
-        WORK_AMO_V5_MAX_SUPPLY * WORK_AMO_V5_ATOMS_PER_WORK ||
+      (!atomMovement && !subatomMovement) ||
+      (
+        atomMovement &&
+        BigInt(amountAtoms) >
+          WORK_AMO_V5_MAX_SUPPLY * WORK_AMO_V5_ATOMS_PER_WORK
+      ) ||
+      (
+        subatomMovement &&
+        BigInt(amountSubatoms) >
+          WORK_AMO_V5_MAX_SUPPLY * WORK_SUBATOM_UNIT_SCALE
+      ) ||
       movementIdentities.has(identity)
     ) {
       return invalid("work-amo-v5-sufficient-state-movement-invalid");
     }
     movementIdentities.add(identity);
-    movements.push({ amountAtoms, identity });
+    movements.push(
+      subatomMovement
+        ? {
+            amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+            amountSubatoms,
+            identity,
+          }
+        : { amountAtoms, identity },
+    );
   }
   const quoteHead =
     value.quoteHead == null
@@ -4461,13 +4517,26 @@ function evaluateWorkAmoV5SufficientState(state) {
       baseNetworkValueQ8 +
       creditFixedQ8 +
       creditMovementFrozenValueQ8;
-    const movementDenominator =
-      WORK_AMO_V5_MAX_SUPPLY * WORK_AMO_V5_ATOMS_PER_WORK;
     const creditMovementLiveValueQ8 = state.movements.reduce(
       (total, movement) =>
         total +
-        (BigInt(movement.amountAtoms) * frozenNetworkValueQ8) /
-          movementDenominator,
+        (
+          BigInt(
+            movement.amountStorageModel ===
+              WORK_SUBATOM_PROJECTION_MODEL
+              ? movement.amountSubatoms
+              : movement.amountAtoms,
+          ) * frozenNetworkValueQ8
+        ) /
+          (
+            WORK_AMO_V5_MAX_SUPPLY *
+            (
+              movement.amountStorageModel ===
+                WORK_SUBATOM_PROJECTION_MODEL
+                ? WORK_SUBATOM_UNIT_SCALE
+                : WORK_AMO_V5_ATOMS_PER_WORK
+            )
+          ),
       0n,
     );
     const networkValueQ8 =

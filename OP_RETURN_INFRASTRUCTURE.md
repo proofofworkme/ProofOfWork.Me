@@ -1402,11 +1402,15 @@ to the same listing and authorization version at its own identical full
 position. Missing, duplicate or mismatched listing/seal evidence fails closed;
 stored lifecycle state or payload booleans cannot manufacture confirmation.
 
-For WORK, `credit_listings.amount` is an atom count at this relational
-boundary. Readers must interpret it as atoms even if token metadata is absent
-or legacy-shaped, emit that integer as `amountAtoms`, and format the public
-eight-decimal WORK amount from it. Thus a stored value of `10` projects as
-`0.0000001 WORK`.
+For a historical V6 or other pre-V7 Q8 WORK row,
+`credit_listings.amount` and the immutable
+`work_amo_v6_listing_terms.amount_atoms` are atom counts. Before V7 activation,
+readers must interpret the shared value as atoms even if token metadata is
+absent or legacy-shaped, emit that integer as `amountAtoms`, and format the
+public eight-decimal WORK amount from it. Thus a stored value of `10` projects
+as `0.0000001 WORK`. At V7 activation, current shared listing projections
+convert to Q16 subatoms; the immutable V6 terms table and raw historical
+records retain their original Q8 scale.
 
 `WORK_AMO_V6_WRITES_ENABLED`, exact-tip action admission and the V4/V5 write
 switches do not select public read versions. Disabling writes must leave
@@ -1507,11 +1511,150 @@ canonical tip and release:
 - Wallet and AMO public listing preflights expose only the 20,000, 50,000, and
   100,000-proof V6 faces from the commit-bound UI release.
 
+### Staged WORK Q16 / AMO V7 gate
+
+WORK Precision Protocol V2 and AMO Unit Protocol V7 form one activation
+boundary. The code and additive schema may be deployed before the declaration,
+but the deploy must preserve current V6/send2 behavior until exact V7
+declaration evidence confirms and reaches its following-block activation
+height. Merely shipping Q16 constants cannot change live state.
+
+The staged configuration surface is:
+
+```text
+WORK_AMO_V7_DECLARATION_TXID
+WORK_AMO_V7_DECLARATION_HEIGHT
+WORK_AMO_V7_DECLARATION_BLOCK_HASH
+WORK_AMO_V7_DECLARATION_BLOCK_INDEX
+WORK_AMO_V7_DECLARATION_MEMO_SHA256
+WORK_AMO_V7_DECLARATION_MEMO_BYTES
+WORK_AMO_V7_DECLARATION_PROTOCOL_VOUT
+WORK_AMO_V7_DECLARATION_RECORD_ORDINAL
+WORK_AMO_V7_DECLARATION_REGISTRY_PAYMENT_VOUT
+WORK_AMO_V7_ACTIVATION_HEIGHT
+WORK_AMO_V7_WRITES_ENABLED
+```
+
+Before any exact V7 declaration confirms, unconfigured pins and
+`WORK_AMO_V7_WRITES_ENABLED=0` are the safe staging state: V7 status reports
+not ready, `send3`/`pwt-sale-v7` preparation is rejected, and V6 remains
+available under its own independent evidence and gate. The official API also
+auto-discovers the exact confirmed declaration from canonical Core evidence.
+As soon as that evidence establishes `D`, it closes new V6 listing and
+`send2` admission before those writes can confirm at `D+1`. Once the canonical
+`D+1` boundary is observed or persistently latched, clearing, omitting, or
+malforming operator pins can only pause governed writes and never re-enable a
+legacy write path. Record the discovered exact evidence and
+`WORK_AMO_V7_ACTIVATION_HEIGHT=D+1`; never derive activation from wall-clock
+time, mempool visibility, or a user-supplied height.
+
+The precision boundary uses:
+
+```text
+globalModel=canonical-work-subatoms-v2
+storageModel=work-subatoms-v2
+decimals=16
+unitScale=10000000000000000
+legacyMultiplier=100000000
+transferOpcode=pwt1:send3
+amoAuthorization=pwt-sale-v7
+```
+
+At the opening of `D+1`, the migration converts every confirmed canonical Q8
+WORK amount to Q16 with exact integer multiplication by `100000000`. This
+includes definition max/mint amounts, confirmed supply, holder balances,
+reservations, and normalized active-listing amounts. Raw confirmed payload
+bytes, original frozen terms, pre-activation canonical state commitments, and
+pre-activation closed snapshot commitments stay immutable; provisional or
+wrong-era derived projections at `D+1` or later are invalidated and
+deterministically replayed from canonical raw evidence. Volatile pending WORK
+event, listing/action, and balance-delta projections are purged while
+noncanonical transaction envelopes remain raw recovery input; current pending
+projections are then rebuilt from one stable Core mempool under active V7
+rules with exact membership, semantic, transaction, and balance parity.
+Existing V4/V5/V6 listings retain
+their frozen proof price and use `legacyAmountAtoms * 100000000` only as their
+Q16 reservation/settlement amount.
+
+The raw mint record remains
+`pwt1:mint:<canonical-work-token-id>:1000`. It credits exactly
+`100000000000` Q8 atoms before activation and
+`10000000000000000000` Q16 subatoms from activation. Every other raw WORK
+mint amount is invalid and no historical mint bytes are rewritten.
+
+V7 listing projections serialize the existing exact integer field names:
+
+```text
+unitPriceSats = F
+unitAmountSubatoms = floor(F*S*A*Q/N)
+unitMinimumPriceSats = ceil(unitAmountSubatoms*N/(S*A*Q))
+```
+
+Here `S=21000000`, `A=10000000000000000`, `Q=100000000`, and `N` is the
+canonical Q8 network value immediately before the listing. The two `*Sats`
+fields are denominated in proofs; “proofs” is display language, not an
+alternate serialized `unitPriceProofs` or `unitMinimumPriceProofs` field.
+
+The migration command is idempotent and defaults to read-only. Before apply it
+must prove:
+
+- the configured declaration carrier and authority/payment evidence exactly
+  match the generated declaration commitment;
+- the canonical block at `D` and activation block at `D+1` are present;
+- no conflicting V7 declaration or completed migration marker exists;
+- the pre-activation Q8 definition, supply, balances, reservations, pending
+  deltas, and active listings reconcile;
+- every converted integer is exactly divisible by `100000000`;
+- converted supply equals the sum of converted balances and never exceeds
+  `210000000000000000000000` subatoms;
+- all pre-activation canonical transition/snapshot commitments recompute
+  unchanged, while provisional or wrong-era `D+1` and later derived
+  projections are invalidated for deterministic replay; and
+- the installed SQL constraint expressions admit the Q16 maximum and reject
+  noncanonical precision state.
+
+The apply writes one immutable `workPrecisionV2Migration:livenet` marker bound
+to the declaration pins, activation height/opening block, Q8-before and
+Q16-after commitments, and the deterministic row counts and conservation
+values implicit in those committed states. The current marker does not claim
+a release commit SHA or separate uncommitted totals. A repeated apply must
+return the identical marker and perform no mutation. A marker-shaped object,
+a constraint name without its expected definition, or converted rows without
+the marker cannot authorize reads or writes.
+
+Deployment sequence:
+
+1. Build and test the exact release with V7 pins empty and the V7 gate off.
+2. Apply only additive schema/readiness support. Verify V6/send2 still works
+   and all current production routes remain exact-tip green.
+3. Generate the exact declaration with
+   `npm run build:work-amo-v7-declaration`; publish the declaration text
+   through the local wallet only. The builder's final presentation newline is
+   outside `declaration.text`, its byte count, and both declaration hashes.
+4. After confirmation depth meets policy, record every declaration pin and
+   `D+1`, leaving V7 writes off.
+5. Take and verify a database backup. Run
+   `npm run migrate:work-precision-v2` in read-only mode, inspect all Core,
+   index, conservation, constraint-definition, and replay evidence, then run
+   the explicitly enabled apply mode.
+6. Rebuild through the exact tip and prove API/worker/ledger/database parity,
+   legacy V6 frozen-listing preservation, one-subatom round trips, `send3`
+   admission, and V7 peak canonical ordering.
+7. Enable only `WORK_AMO_V7_WRITES_ENABLED=1`; V4/V5/V6 new-listing gates stay
+   closed after activation. Deploy every public UI from the same commit-bound
+   archive and repeat the exact-tip production sweep.
+
+Any disagreement leaves V7 closed. Rollback before activation removes only
+the staged code/config because canonical state is still Q8. After the first
+canonical V7/send3 action, rollback means closing writes and restoring the
+same release from backup/replay; it never means reverting the declaration,
+dividing live balances heuristically, or rewriting confirmed history.
+
 ### WORK atomic-unit cutover
 
-This section preserves the completed atomic-unit migration and its rollback
-boundary as operational history. WORK alone uses eight decimal places. One
-WORK equals `100000000` atoms. Once
+This section preserves the completed historical Q8 atomic-unit migration and
+its rollback boundary as operational history. During that pre-V7 era, WORK
+used eight decimal places and one WORK equaled `100000000` atoms. Once
 the definition metadata is marked `work-atoms-v1`, the existing numeric
 definition, balance, pending-delta, and listing columns store WORK atoms; the
 same columns for every other credit retain their existing whole-credit units.
@@ -2125,9 +2268,9 @@ The credit endpoint:
 - Reconstructs mints from `pwt1:mint:<token-create-txid>:<amount>` transactions found on each credit's own registry address.
 - Requires mint payments to the credit registry before OP_RETURN at the owner-set mint price, with a 546-proof minimum for credit mint settings.
 - Credits confirmed mint balances to the first input address.
-- Reconstructs immutable legacy transfers from `pwt1:send:<token-create-txid>:<whole-amount>:<recipient-address>` and atomic WORK transfers from `pwt1:send2:<canonical-work-token-id>:<amount-atoms>:<recipient-address>` transactions found on the credit registry address.
-- Requires transfer payments of 546 proofs to the credit registry before OP_RETURN. Confirmed transfers debit the first input address and credit the recipient address; pending transfers are visibility only.
-- Approved mainnet message senders may attach canonical WORK to mail by combining normal mail recipient payments, `pwm1:` mail payloads, the WORK registry mutation payment, and one or more atomic `pwt1:send2` payloads in the same signed transaction. The output order keeps mail recipient parsing before the first `pwm1:` output and WORK transfer parsing after the registry payment before the first `pwt1:` output.
+- Reconstructs immutable legacy transfers from `pwt1:send:<token-create-txid>:<whole-amount>:<recipient-address>`, historical Q8 WORK transfers from `pwt1:send2:<canonical-work-token-id>:<amount-atoms>:<recipient-address>`, and post-activation Q16 WORK transfers from `pwt1:send3:<canonical-work-token-id>:<amount-subatoms>:<recipient-address>` transactions found on the credit registry address.
+- Requires transfer payments of 546 proofs to the credit registry before OP_RETURN. Confirmed transfers debit the first input address and credit the recipient address; pending transfers are visibility only. Separate qualifying WORK-registry outputs remain valid; two or more same-era WORK transfers may instead use one exact `546 * transferCount` aggregate output before every funded transfer when all `pwt1:` records are those WORK transfers and every other protocol record is only an earlier `pwm1:` envelope.
+- Approved mainnet message senders may attach canonical WORK to mail by combining normal mail recipient payments, `pwm1:` mail payloads, the exact aggregate WORK registry mutation payment, and one or more era-valid atomic `pwt1:send2`/`pwt1:send3` payloads in the same signed transaction. The output order keeps mail recipient parsing before the first `pwm1:` output and WORK transfer parsing after the registry payment before the first `pwt1:` output. Replay claims the physical aggregate output once and attributes exactly 546 proofs to each transfer.
 - Reconstructs credit listings from `pwt1:list5:<sale-ticket-json-base64url>`, credit seals from `pwt1:seal5:<listing-txid>:<sealed-sale-ticket-json-base64url>`, delistings from `pwt1:delist5:<listing-txid>`, and buyer-funded purchases from `pwt1:buy5:<listing-txid>:<buyer-address>`.
 - Credit listings reserve the seller's spendable balance, create a 546-proof seller-controlled sale-ticket output, and require the standard 546-proof credit registry mutation payment before OP_RETURN. Buys must spend the seller ticket, pay the seller the listed price plus ticket value, and pay the credit registry mutation fee.
 - Active credit listings are filtered by sale-ticket outspend state. When Bitcoin Core RPC is configured, `gettxout` is the fast spend-state oracle and address-history scans are recovery context. If the ticket output is spent, the listing is closed even when a cached snapshot is otherwise stale; if the spend is a valid `buy5`, the event also appears as a credit sale.
@@ -2281,13 +2424,18 @@ pwt1:create:<ticker>:<max-supply>:<mint-amount>:<mint-price-proofs>:<token-regis
 pwt1:mint:<token-create-txid>:<amount>
 pwt1:send:<token-create-txid>:<amount>:<recipient-address>
 pwt1:send2:<canonical-work-token-id>:<amount-atoms>:<recipient-address>
+pwt1:send3:<canonical-work-token-id>:<amount-subatoms>:<recipient-address>
 ```
 
 `pwt1:send` remains the current whole-credit transfer form for generic
 non-WORK credits and immutable legacy whole-WORK history. Canonical WORK
-transfers use `send2`; `amount-atoms` is a positive canonical integer,
-one WORK equals `100000000` atoms, and no exponent, sign, comma, leading-zero
-alias, or value beyond eight decimal places is accepted. `send2` is WORK-only.
+transfers before the staged Q16 activation use `send2`; `amount-atoms` is a
+positive canonical integer and one WORK equals `100000000` atoms. At and after
+Q16 activation, new WORK transfers use `send3`; `amount-subatoms` is a
+positive canonical integer and one WORK equals `10000000000000000` subatoms.
+Neither opcode accepts an exponent, sign, comma, whitespace alias,
+leading-zero alias, zero, or decimal text. Both are WORK-only, and each is
+valid for new state mutation only in its declared era.
 Historical signed `pwt-sale-v1` authorizations remain whole-credit records;
 historical fractional WORK actions may use `pwt-sale-v2`, and the governed V3
 era used `pwt-sale-v3` with exact atoms and its hash-bound H-1 pricing
@@ -2300,7 +2448,10 @@ do not reprice. The staged, declaration-gated successor is `pwt-sale-v6`: it
 selects only `20,000`, `50,000`, or `100,000` proofs and derives the exact WORK
 atoms from the network value immediately before the listing. V6 has no USD
 consensus input, quote, attestation, key, quorum, or validity window; any USD
-equivalent is display-only. Non-WORK listings remain V1. The surrounding
+equivalent is display-only. After the Q16 declaration activates, V7 uses the
+same proof faces and canonical order but freezes exact `unitAmountSubatoms`
+under `pwt-sale-v7`; new V6 listings are then invalid while prior frozen V6
+listings remain settleable. Non-WORK listings remain V1. The surrounding
 `list5`/`seal5`/`buy5`/`delist5` messages and sale-ticket UTXO contract remain
 compatible.
 

@@ -6,22 +6,31 @@ import ts from "typescript";
 import {
   WORK_ATOMIC_PROJECTION_MODEL,
   WORK_DECIMALS,
+  WORK_PRECISION_V2_MODEL,
+  WORK_SUBATOM_PROJECTION_MODEL,
   WORK_TOKEN_ID,
   WORK_UNIT_SCALE_TEXT,
   decimalValueToQ8,
   formatWorkAtoms,
+  formatWorkSubatoms,
   isWorkTokenId,
   isCanonicalWorkAtoms,
   normalizeWorkAtoms,
+  normalizeWorkSubatoms,
   parseSignedWorkAmountToAtoms,
   parseWorkAmountToAtoms,
   q8ToCanonicalDecimal,
   q8ToNumber,
   withWorkPrecisionMetadata,
+  withWorkSubatomPrecisionMetadata,
   workAmountAtomsFromRecord,
   workAmountFields,
   workAtomsValueAtFloorQ8,
 } from "../server/work-units.mjs";
+import {
+  WORK_AMO_V7_AUTH_VERSION,
+  WORK_AMO_V7_TRANSFER_VERSION,
+} from "../server/work-amo-v7.mjs";
 
 const repoRoot = new URL("../", import.meta.url);
 const [
@@ -93,12 +102,19 @@ const backfillWorkProjectionItem = isolatedTypeScriptFunction(
   backfill,
   "workProjectionItem",
   {
+    WORK_AMO_V7_AUTH_VERSION,
+    WORK_AMO_V7_TRANSFER_VERSION,
+    WORK_PRECISION_V2_MODEL,
+    WORK_SUBATOM_PROJECTION_MODEL,
+    formatWorkSubatoms,
     isWorkTokenId,
+    normalizeWorkSubatoms,
     objectValue: (value) =>
       value && typeof value === "object" && !Array.isArray(value)
         ? value
         : {},
     workAmountFields,
+    withWorkSubatomPrecisionMetadata,
   },
 );
 
@@ -131,11 +147,16 @@ const frontendIsBondTokenDefinition = (token) =>
   ["POWB", "INCB"].includes(
     String(token?.ticker ?? "").trim().toUpperCase(),
   );
-const frontendWorkRecordAtoms = (amount, amountAtoms) =>
-  workAmountModule.workAtomsFromRecord(amountAtoms, amount);
-const frontendTokenRecordAmountAtoms = (token, amount, amountAtoms) =>
+const frontendWorkRecordAtoms = (amount, amountAtoms, amountSubatoms) =>
+  workAmountModule.workAtomsFromRecord(amountAtoms, amount, amountSubatoms);
+const frontendTokenRecordAmountAtoms = (
+  token,
+  amount,
+  amountAtoms,
+  amountSubatoms,
+) =>
   frontendIsWorkToken(token)
-    ? frontendWorkRecordAtoms(amount, amountAtoms)
+    ? frontendWorkRecordAtoms(amount, amountAtoms, amountSubatoms)
     : frontendExactIntegerBigInt(amount);
 const tokenWalletBalanceAmountUnits = isolatedTypeScriptFunction(
   appSource,
@@ -294,7 +315,7 @@ const oneAtomBalances = tokenWalletBalancesFor(
   ],
 );
 assert.equal(oneAtomBalances.length, 1);
-assert.equal(oneAtomBalances[0].confirmedBalanceAtoms, "1");
+assert.equal(oneAtomBalances[0].confirmedBalanceSubatoms, "100000000");
 assert.equal(tokenWalletBalanceHasConfirmed(oneAtomBalances[0]), true);
 assert.equal(oneAtomBalances.filter(tokenWalletBalanceHasConfirmed).length, 1);
 
@@ -324,8 +345,8 @@ const oneAtomBaselineWithConfirmedHistory = tokenWalletBalancesFor(
 );
 assert.equal(oneAtomBaselineWithConfirmedHistory.length, 1);
 assert.equal(
-  oneAtomBaselineWithConfirmedHistory[0].confirmedBalanceAtoms,
-  "1",
+  oneAtomBaselineWithConfirmedHistory[0].confirmedBalanceSubatoms,
+  "100000000",
   "an exact holder baseline must prevent confirmed history double-counting",
 );
 
@@ -347,7 +368,10 @@ const pendingAtomBalances = tokenWalletBalancesFor(
   [],
 );
 assert.equal(pendingAtomBalances.length, 1);
-assert.equal(pendingAtomBalances[0].pendingIncomingAtoms, "1");
+assert.equal(
+  pendingAtomBalances[0].pendingIncomingSubatoms,
+  "100000000",
+);
 assert.equal(
   tokenWalletBalanceHasAmount(pendingAtomBalances[0], "pendingIncoming"),
   true,
@@ -356,26 +380,29 @@ assert.equal(
 const fractionalWalletBalances = [
   {
     confirmedBalance: 0.00000001,
-    confirmedBalanceAtoms: "1",
+    confirmedBalanceSubatoms: "100000000",
     pendingIncoming: 0,
-    pendingIncomingAtoms: "0",
+    pendingIncomingSubatoms: "0",
     pendingOutgoing: 0,
-    pendingOutgoingAtoms: "0",
+    pendingOutgoingSubatoms: "0",
     token: workToken,
   },
   {
     confirmedBalance: 0.00000002,
-    confirmedBalanceAtoms: "2",
+    confirmedBalanceSubatoms: "200000000",
     pendingIncoming: 0,
-    pendingIncomingAtoms: "0",
+    pendingIncomingSubatoms: "0",
     pendingOutgoing: 0,
-    pendingOutgoingAtoms: "0",
+    pendingOutgoingSubatoms: "0",
     token: workToken,
   },
 ].sort((left, right) =>
   compareTokenWalletBalanceAmounts(right, left, "confirmedBalance"),
 );
-assert.equal(fractionalWalletBalances[0].confirmedBalanceAtoms, "2");
+assert.equal(
+  fractionalWalletBalances[0].confirmedBalanceSubatoms,
+  "200000000",
+);
 
 const fractionalHolders = [
   {
@@ -517,11 +544,11 @@ assert.match(
 assert.equal(workAmountModule.workAtomsFromRecord("01", "1"), null);
 assert.equal(
   workAmountModule.workAtomsFromRecord("", "1"),
-  100_000_000n,
+  10_000_000_000_000_000n,
 );
 assert.equal(
   workAmountModule.workAtomsFromRecord(undefined, "1"),
-  100_000_000n,
+  10_000_000_000_000_000n,
 );
 assert.equal(decimalValueToQ8("11678198.442567484"), 1167819844256748n);
 const productionScaleValueQ8 = workAtomsValueAtFloorQ8(
@@ -803,7 +830,10 @@ assert.deepEqual(
 );
 assert.equal(idempotentRepairQueries.at(-1).sql, "COMMIT");
 
-assert.match(backfill, /action === "send" \|\| action === "send2"/u);
+assert.match(
+  backfill,
+  /action === "send" \|\|[\s\S]*action === "send2" \|\|[\s\S]*action === WORK_AMO_V7_TRANSFER_VERSION/u,
+);
 assert.match(backfill, /--audit-work-atoms/u);
 assert.match(backfill, /--migrate-work-atoms/u);
 assert.match(backfill, /--repair-work-atomic-events/u);

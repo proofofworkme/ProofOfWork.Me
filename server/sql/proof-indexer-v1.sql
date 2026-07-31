@@ -939,7 +939,7 @@ CREATE TABLE IF NOT EXISTS proof_indexer.work_amo_v6_listing_terms (
     CHECK (
       unit_face_proofs IN (20000, 50000, 100000)
       AND unit_amount_atoms::text ~ '^[1-9][0-9]*$'
-      AND unit_amount_atoms <= 210000000000000000000000
+      AND unit_amount_atoms <= 2100000000000000
       AND unit_price_sats = unit_face_proofs
       AND unit_minimum_price_sats > 0
       AND unit_minimum_price_sats <= unit_price_sats
@@ -952,7 +952,7 @@ CREATE TABLE IF NOT EXISTS proof_indexer.work_amo_v6_listing_terms (
         (
           unit_face_proofs::numeric *
           21000000 *
-          10000000000000000 *
+          100000000 *
           100000000
         ) / listing_network_value_before_q8
       )
@@ -962,7 +962,7 @@ CREATE TABLE IF NOT EXISTS proof_indexer.work_amo_v6_listing_terms (
           listing_network_value_before_q8
         ) / (
           21000000::numeric *
-          10000000000000000 *
+          100000000 *
           100000000
         )
       )
@@ -1079,6 +1079,54 @@ CREATE TABLE IF NOT EXISTS proof_indexer.work_amo_v6_listing_terms (
     ON DELETE CASCADE
 );
 
+-- The declaration height is not known when this additive base schema is
+-- installed. `migrate-work-precision-v2.mjs` installs and validates the
+-- dynamic `work_amo_v6_terms_deactivation` CHECK
+-- (`listing_block_height < D+1`) in the same serializable transaction that
+-- installs `work_amo_v7_terms_activation`
+-- (`listing_block_height >= D+1`). Together they make the authorization-era
+-- boundary a relational backstop rather than an API-only convention.
+
+-- AMO V6 is immutable Q8 history. This explicit replacement also repairs
+-- databases that briefly received a Q16 reinterpretation of the V6
+-- constraint through CREATE TABLE IF NOT EXISTS, which never updates an
+-- existing constraint definition.
+ALTER TABLE proof_indexer.work_amo_v6_listing_terms
+  DROP CONSTRAINT IF EXISTS work_amo_v6_terms_values;
+ALTER TABLE proof_indexer.work_amo_v6_listing_terms
+  ADD CONSTRAINT work_amo_v6_terms_values
+  CHECK (
+    unit_face_proofs IN (20000, 50000, 100000)
+    AND unit_amount_atoms::text ~ '^[1-9][0-9]*$'
+    AND unit_amount_atoms <= 2100000000000000
+    AND unit_price_sats = unit_face_proofs
+    AND unit_minimum_price_sats > 0
+    AND unit_minimum_price_sats <= unit_price_sats
+    AND listing_network_value_before_q8::text ~ '^[1-9][0-9]*$'
+    AND listing_bond_contribution_q8::text ~ '^[1-9][0-9]*$'
+    AND listing_network_value_after_q8::text ~ '^[1-9][0-9]*$'
+    AND listing_network_value_after_q8 =
+      listing_network_value_before_q8 + listing_bond_contribution_q8
+    AND unit_amount_atoms = trunc(
+      (
+        unit_face_proofs::numeric *
+        21000000 *
+        100000000 *
+        100000000
+      ) / listing_network_value_before_q8
+    )
+    AND unit_minimum_price_sats = ceil(
+      (
+        unit_amount_atoms *
+        listing_network_value_before_q8
+      ) / (
+        21000000::numeric *
+        100000000 *
+        100000000
+      )
+    )
+  );
+
 CREATE UNIQUE INDEX IF NOT EXISTS work_amo_v6_listing_terms_position_uidx
   ON proof_indexer.work_amo_v6_listing_terms (
     network,
@@ -1107,6 +1155,214 @@ BEFORE UPDATE ON proof_indexer.work_amo_v6_listing_terms
 FOR EACH ROW
 EXECUTE FUNCTION
   proof_indexer.reject_work_amo_v6_listing_terms_update();
+
+-- V7 is a separate Q16 protocol surface. V6 rows and frozen terms remain Q8
+-- forever; no V6 column is reinterpreted during the precision migration.
+CREATE TABLE IF NOT EXISTS proof_indexer.work_amo_v7_listing_terms (
+  network text NOT NULL,
+  listing_id text NOT NULL,
+  listing_txid text NOT NULL,
+  token_id text NOT NULL,
+  authorization_version text NOT NULL,
+  unit_face_proofs integer NOT NULL,
+  unit_amount_subatoms numeric NOT NULL,
+  unit_price_sats bigint NOT NULL,
+  unit_minimum_price_sats bigint NOT NULL,
+  listing_network_value_before_q8 numeric NOT NULL,
+  listing_block_height integer NOT NULL,
+  listing_block_hash text NOT NULL,
+  listing_block_index integer NOT NULL,
+  listing_protocol_vout integer NOT NULL,
+  listing_record_ordinal integer NOT NULL,
+  listing_bond_contribution_q8 numeric NOT NULL,
+  listing_network_value_after_q8 numeric NOT NULL,
+  frozen_terms jsonb NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (network, listing_id),
+  UNIQUE (network, listing_txid),
+  CONSTRAINT work_amo_v7_terms_identity
+    CHECK (
+      network = 'livenet'
+      AND listing_id = listing_txid
+      AND listing_id ~ '^[0-9a-f]{64}$'
+      AND token_id =
+        'd4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8'
+      AND authorization_version = 'pwt-sale-v7'
+      AND listing_block_hash ~ '^[0-9a-f]{64}$'
+    ),
+  CONSTRAINT work_amo_v7_terms_values
+    CHECK (
+      unit_face_proofs IN (20000, 50000, 100000)
+      AND unit_amount_subatoms::text ~ '^[1-9][0-9]*$'
+      AND unit_amount_subatoms <= 210000000000000000000000
+      AND unit_price_sats = unit_face_proofs
+      AND unit_minimum_price_sats > 0
+      AND unit_minimum_price_sats <= unit_price_sats
+      AND listing_network_value_before_q8::text ~ '^[1-9][0-9]*$'
+      AND listing_bond_contribution_q8::text ~ '^[1-9][0-9]*$'
+      AND listing_network_value_after_q8::text ~ '^[1-9][0-9]*$'
+      AND listing_network_value_after_q8 =
+        listing_network_value_before_q8 + listing_bond_contribution_q8
+      AND unit_amount_subatoms = trunc(
+        (
+          unit_face_proofs::numeric *
+          21000000 *
+          10000000000000000 *
+          100000000
+        ) / listing_network_value_before_q8
+      )
+      AND unit_minimum_price_sats = ceil(
+        (
+          unit_amount_subatoms *
+          listing_network_value_before_q8
+        ) / (
+          21000000::numeric *
+          10000000000000000 *
+          100000000
+        )
+      )
+    ),
+  CONSTRAINT work_amo_v7_terms_positions
+    CHECK (
+      listing_block_height > 0
+      AND listing_block_index >= 0
+      AND listing_protocol_vout >= 0
+      AND listing_record_ordinal >= 0
+    ),
+  CONSTRAINT work_amo_v7_terms_frozen_payload
+    CHECK ((
+      jsonb_typeof(frozen_terms) = 'object'
+      AND frozen_terms ?& ARRAY[
+        'version',
+        'unitModel',
+        'stateOrderModel',
+        'amountModel',
+        'bondTransitionModel',
+        'unitWorkOracleModel',
+        'unitFaceProofs',
+        'listingBlockHeight',
+        'listingBlockHash',
+        'listingBlockIndex',
+        'listingProtocolVout',
+        'listingRecordOrdinal',
+        'listingNetworkValueBeforeQ8',
+        'unitAmountSubatoms',
+        'unitPriceSats',
+        'unitMinimumPriceSats',
+        'listingBondContributionQ8',
+        'listingNetworkValueAfterQ8'
+      ]
+      AND frozen_terms - ARRAY[
+        'version',
+        'unitModel',
+        'stateOrderModel',
+        'amountModel',
+        'bondTransitionModel',
+        'unitWorkOracleModel',
+        'unitFaceProofs',
+        'listingBlockHeight',
+        'listingBlockHash',
+        'listingBlockIndex',
+        'listingProtocolVout',
+        'listingRecordOrdinal',
+        'listingNetworkValueBeforeQ8',
+        'unitAmountSubatoms',
+        'unitPriceSats',
+        'unitMinimumPriceSats',
+        'listingBondContributionQ8',
+        'listingNetworkValueAfterQ8'
+      ] = '{}'::jsonb
+      AND jsonb_typeof(frozen_terms->'version') = 'string'
+      AND jsonb_typeof(frozen_terms->'unitModel') = 'string'
+      AND jsonb_typeof(frozen_terms->'stateOrderModel') = 'string'
+      AND jsonb_typeof(frozen_terms->'amountModel') = 'string'
+      AND jsonb_typeof(frozen_terms->'bondTransitionModel') = 'string'
+      AND jsonb_typeof(frozen_terms->'unitWorkOracleModel') = 'string'
+      AND jsonb_typeof(frozen_terms->'unitFaceProofs') = 'number'
+      AND jsonb_typeof(frozen_terms->'listingBlockHeight') = 'number'
+      AND jsonb_typeof(frozen_terms->'listingBlockHash') = 'string'
+      AND jsonb_typeof(frozen_terms->'listingBlockIndex') = 'number'
+      AND jsonb_typeof(frozen_terms->'listingProtocolVout') = 'number'
+      AND jsonb_typeof(frozen_terms->'listingRecordOrdinal') = 'number'
+      AND jsonb_typeof(
+        frozen_terms->'listingNetworkValueBeforeQ8'
+      ) = 'string'
+      AND jsonb_typeof(frozen_terms->'unitAmountSubatoms') = 'string'
+      AND jsonb_typeof(frozen_terms->'unitPriceSats') = 'string'
+      AND jsonb_typeof(frozen_terms->'unitMinimumPriceSats') = 'string'
+      AND jsonb_typeof(
+        frozen_terms->'listingBondContributionQ8'
+      ) = 'string'
+      AND jsonb_typeof(
+        frozen_terms->'listingNetworkValueAfterQ8'
+      ) = 'string'
+      AND frozen_terms->>'version' = authorization_version
+      AND frozen_terms->>'unitModel' =
+        'canonical-work-amo-proof-unit-v2'
+      AND frozen_terms->>'stateOrderModel' =
+        'canonical-proof-state-order-v1'
+      AND frozen_terms->>'amountModel' =
+        'canonical-work-amo-proof-unit-amount-v2'
+      AND frozen_terms->>'bondTransitionModel' =
+        'canonical-compute-then-bond-v1'
+      AND frozen_terms->>'unitWorkOracleModel' =
+        'canonical-work-prefix-before-action-v1'
+      AND frozen_terms->>'unitFaceProofs' =
+        unit_face_proofs::text
+      AND frozen_terms->>'listingNetworkValueBeforeQ8' =
+        listing_network_value_before_q8::text
+      AND frozen_terms->>'listingBlockHeight' =
+        listing_block_height::text
+      AND frozen_terms->>'listingBlockHash' = listing_block_hash
+      AND frozen_terms->>'listingBlockIndex' =
+        listing_block_index::text
+      AND frozen_terms->>'listingProtocolVout' =
+        listing_protocol_vout::text
+      AND frozen_terms->>'listingRecordOrdinal' =
+        listing_record_ordinal::text
+      AND frozen_terms->>'unitAmountSubatoms' =
+        unit_amount_subatoms::text
+      AND frozen_terms->>'unitPriceSats' = unit_price_sats::text
+      AND frozen_terms->>'unitMinimumPriceSats' =
+        unit_minimum_price_sats::text
+      AND frozen_terms->>'listingBondContributionQ8' =
+        listing_bond_contribution_q8::text
+      AND frozen_terms->>'listingNetworkValueAfterQ8' =
+        listing_network_value_after_q8::text
+    ) IS TRUE),
+  FOREIGN KEY (network, listing_txid)
+    REFERENCES proof_indexer.transactions (network, txid)
+    ON DELETE CASCADE
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS work_amo_v7_listing_terms_position_uidx
+  ON proof_indexer.work_amo_v7_listing_terms (
+    network,
+    listing_block_height,
+    listing_block_index,
+    listing_protocol_vout,
+    listing_record_ordinal
+  );
+
+CREATE OR REPLACE FUNCTION
+  proof_indexer.reject_work_amo_v7_listing_terms_update()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $proof_indexer_work_amo_v7_listing_terms_immutable$
+BEGIN
+  RAISE EXCEPTION
+    'Proof-native AMO V7 Q16 frozen listing terms are immutable; delete only for canonical reorg replay'
+    USING ERRCODE = '55000';
+END;
+$proof_indexer_work_amo_v7_listing_terms_immutable$;
+
+DROP TRIGGER IF EXISTS work_amo_v7_listing_terms_immutable
+  ON proof_indexer.work_amo_v7_listing_terms;
+CREATE TRIGGER work_amo_v7_listing_terms_immutable
+BEFORE UPDATE ON proof_indexer.work_amo_v7_listing_terms
+FOR EACH ROW
+EXECUTE FUNCTION
+  proof_indexer.reject_work_amo_v7_listing_terms_update();
 
 CREATE OR REPLACE FUNCTION
   proof_indexer.reject_work_amo_v6_migration_marker_mutation()
@@ -1140,6 +1396,42 @@ FOR EACH ROW
 EXECUTE FUNCTION
   proof_indexer.reject_work_amo_v6_migration_marker_mutation();
 
+CREATE OR REPLACE FUNCTION
+  proof_indexer.reject_work_precision_v2_marker_mutation()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $proof_indexer_work_precision_v2_marker_immutable$
+BEGIN
+  IF
+    OLD.key = 'workPrecisionV2Migration:livenet'
+    OR OLD.key = 'workAmoV7ActivationLatch:livenet'
+    OR (
+      TG_OP = 'UPDATE'
+      AND NEW.key IN (
+        'workPrecisionV2Migration:livenet',
+        'workAmoV7ActivationLatch:livenet'
+      )
+    )
+  THEN
+    RAISE EXCEPTION
+      'The completed WORK Q16 migration/activation latch is immutable'
+      USING ERRCODE = '55000';
+  END IF;
+  IF TG_OP = 'DELETE' THEN
+    RETURN OLD;
+  END IF;
+  RETURN NEW;
+END;
+$proof_indexer_work_precision_v2_marker_immutable$;
+
+DROP TRIGGER IF EXISTS work_precision_v2_marker_immutable
+  ON proof_indexer.meta;
+CREATE TRIGGER work_precision_v2_marker_immutable
+BEFORE UPDATE OR DELETE ON proof_indexer.meta
+FOR EACH ROW
+EXECUTE FUNCTION
+  proof_indexer.reject_work_precision_v2_marker_mutation();
+
 CREATE TABLE IF NOT EXISTS proof_indexer.work_amo_block_transitions (
   network text NOT NULL,
   block_height integer NOT NULL,
@@ -1147,6 +1439,7 @@ CREATE TABLE IF NOT EXISTS proof_indexer.work_amo_block_transitions (
   previous_block_hash text NOT NULL,
   model text NOT NULL,
   state_commitment_model text NOT NULL,
+  work_token_state_model text,
   opening_network_value_q8 numeric NOT NULL,
   closing_network_value_q8 numeric NOT NULL,
   opening_state_sha256 text NOT NULL,
@@ -1174,10 +1467,26 @@ CREATE TABLE IF NOT EXISTS proof_indexer.work_amo_block_transitions (
     CHECK (
       model IN (
         'canonical-work-amo-full-position-block-sequencer-v1',
-        'canonical-work-amo-full-position-block-sequencer-v2'
+        'canonical-work-amo-full-position-block-sequencer-v2',
+        'canonical-work-amo-full-position-block-sequencer-v3'
       )
       AND state_commitment_model =
         'canonical-work-amo-sufficient-state-sha256-v1'
+      AND (
+        (
+          model IN (
+            'canonical-work-amo-full-position-block-sequencer-v1',
+            'canonical-work-amo-full-position-block-sequencer-v2'
+          )
+          AND work_token_state_model IS NULL
+        )
+        OR (
+          model =
+            'canonical-work-amo-full-position-block-sequencer-v3'
+          AND work_token_state_model =
+            'canonical-work-token-state-subatoms-v2'
+        )
+      )
       AND event_set_model =
         'canonical-work-amo-event-set-sha256-v1'
     ),
@@ -1218,16 +1527,35 @@ CREATE TABLE IF NOT EXISTS proof_indexer.work_amo_block_transitions (
 );
 
 ALTER TABLE proof_indexer.work_amo_block_transitions
+  ADD COLUMN IF NOT EXISTS work_token_state_model text;
+
+ALTER TABLE proof_indexer.work_amo_block_transitions
   DROP CONSTRAINT IF EXISTS work_amo_block_transitions_models;
 ALTER TABLE proof_indexer.work_amo_block_transitions
   ADD CONSTRAINT work_amo_block_transitions_models
   CHECK (
     model IN (
       'canonical-work-amo-full-position-block-sequencer-v1',
-      'canonical-work-amo-full-position-block-sequencer-v2'
+      'canonical-work-amo-full-position-block-sequencer-v2',
+      'canonical-work-amo-full-position-block-sequencer-v3'
     )
     AND state_commitment_model =
       'canonical-work-amo-sufficient-state-sha256-v1'
+    AND (
+      (
+        model IN (
+          'canonical-work-amo-full-position-block-sequencer-v1',
+          'canonical-work-amo-full-position-block-sequencer-v2'
+        )
+        AND work_token_state_model IS NULL
+      )
+      OR (
+        model =
+          'canonical-work-amo-full-position-block-sequencer-v3'
+        AND work_token_state_model =
+          'canonical-work-token-state-subatoms-v2'
+      )
+    )
     AND event_set_model =
       'canonical-work-amo-event-set-sha256-v1'
   );
@@ -1420,6 +1748,35 @@ $proof_indexer_credit_unit_constraints$;
 ALTER TABLE proof_indexer.credit_definitions
   VALIDATE CONSTRAINT credit_definitions_max_supply_integer,
   VALIDATE CONSTRAINT credit_definitions_mint_amount_integer;
+
+-- The canonical WORK row is allowed in exactly one of the two explicit
+-- precision eras. There is no value-magnitude inference: the metadata and
+-- stored definition must agree on either historical Q8 atoms or activated
+-- Q16 subatoms.
+ALTER TABLE proof_indexer.credit_definitions
+  DROP CONSTRAINT IF EXISTS credit_definitions_work_precision;
+ALTER TABLE proof_indexer.credit_definitions
+  ADD CONSTRAINT credit_definitions_work_precision
+  CHECK (
+    token_id <>
+      'd4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8'
+    OR (
+      max_supply = 2100000000000000
+      AND mint_amount = 100000000000
+      AND metadata->>'amountStorageModel' = 'work-atoms-v1'
+      AND metadata->>'decimals' = '8'
+      AND metadata->>'unitScale' = '100000000'
+    )
+    OR (
+      max_supply = 210000000000000000000000
+      AND mint_amount = 10000000000000000000
+      AND metadata->>'amountStorageModel' = 'work-subatoms-v2'
+      AND metadata->>'decimals' = '16'
+      AND metadata->>'unitScale' = '10000000000000000'
+      AND metadata->>'precisionModel' =
+        'canonical-work-subatoms-v2'
+    )
+  );
 
 ALTER TABLE proof_indexer.credit_balances
   VALIDATE CONSTRAINT credit_balances_confirmed_balance_integer,

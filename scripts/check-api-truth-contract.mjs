@@ -1,6 +1,45 @@
 #!/usr/bin/env node
 
 import { readFileSync } from "node:fs";
+import "./check-work-amo-v7-gates.mjs";
+import {
+  workAmountUnitsForStorageModel,
+  workBalanceProjection,
+  workSupplyFieldsForStorageModel,
+} from "../server/db/proof-index-reader.mjs";
+import {
+  workerWorkAmoV7DeclarationConfig,
+  workerWorkPrecisionConfirmedReplayEnvelopeReady,
+  workerWorkPrecisionCoreTipReady,
+  workerWorkPrecisionPendingProjection,
+  workerWorkPrecisionRelationalParity,
+  workerWorkPrecisionSnapshotReady,
+} from "./run-proof-indexer-worker.mjs";
+import {
+  workAmoV7DeclarationCommitment,
+} from "../server/work-amo-v7-declaration.mjs";
+import {
+  configuredWorkPrecisionV2Pins,
+} from "./migrate-work-precision-v2.mjs";
+import {
+  WORK_AMO_V5_PAYLOAD_COMMITMENT_MODEL,
+  WORK_AMO_V5_STATE_COMMITMENT_MODEL,
+} from "../server/work-amo-v5.mjs";
+import {
+  WORK_AMO_V7_BLOCK_SEQUENCER_MODEL,
+  WORK_AMO_V7_TOKEN_STATE_PREIMAGE_MODEL,
+} from "../server/work-amo-v7.mjs";
+import {
+  WORK_ATOMIC_PROJECTION_MODEL,
+  WORK_DECIMALS,
+  WORK_PRECISION_V2_MODEL,
+  WORK_PRECISION_V2_MIGRATION_META_KEY,
+  WORK_SUBATOM_DECIMALS,
+  WORK_SUBATOM_PROJECTION_MODEL,
+  WORK_SUBATOM_UNIT_SCALE_TEXT,
+  WORK_TOKEN_ID,
+  WORK_UNIT_SCALE_TEXT,
+} from "../server/work-units.mjs";
 
 const server = readFileSync("server/proof-api.mjs", "utf8");
 const reader = readFileSync("server/db/proof-index-reader.mjs", "utf8");
@@ -16,12 +55,26 @@ const workAmoV6DeclarationBuilder = readFileSync(
   "scripts/build-work-amo-v6-declaration.mjs",
   "utf8",
 );
+const workAmoV7 = readFileSync("server/work-amo-v7.mjs", "utf8");
+const workAmoV7Migration = readFileSync(
+  "scripts/migrate-work-precision-v2.mjs",
+  "utf8",
+);
+const workAmoV7DeclarationBuilder = readFileSync(
+  "scripts/build-work-amo-v7-declaration.mjs",
+  "utf8",
+);
+const workAmoV7Declaration = readFileSync(
+  "server/work-amo-v7-declaration.mjs",
+  "utf8",
+);
+const workUnits = readFileSync("server/work-units.mjs", "utf8");
 const workAmoV6IndexedDeclarationEvidence =
   /export async function indexedWorkAmoV6DeclarationEvidence[\s\S]*?(?=export async function coreWorkAmoV6DeclarationEvidence)/u.exec(
     workAmoV6Migration,
   )?.[0] ?? "";
 const workAmoV6ReaderDeclarationEvidence =
-  /function workAmoV6IndexedEvidenceMatchesMarker[\s\S]*?(?=export async function proofIndexWorkAmoV6ListingTerms)/u.exec(
+  /function workAmoV6IndexedEvidenceMatchesMarker[\s\S]*?(?=function canonicalWorkPrecisionStateRows)/u.exec(
     reader,
   )?.[0] ?? "";
 const proofIndexSchema = readFileSync(
@@ -51,6 +104,107 @@ const normalizedQuotedItems = (value) =>
     .map((match) => match[1])
     .sort()
     .join(",");
+const workAmoV7Commitment = workAmoV7DeclarationCommitment();
+const exactWorkAmoV7WorkerEnv = {
+  WORK_AMO_V7_ACTIVATION_HEIGHT: "101",
+  WORK_AMO_V7_DECLARATION_BLOCK_HASH: "b".repeat(64),
+  WORK_AMO_V7_DECLARATION_BLOCK_INDEX: "0",
+  WORK_AMO_V7_DECLARATION_HEIGHT: "100",
+  WORK_AMO_V7_DECLARATION_MEMO_BYTES: String(
+    workAmoV7Commitment.protocolRecordBytes,
+  ),
+  WORK_AMO_V7_DECLARATION_MEMO_SHA256:
+    workAmoV7Commitment.protocolRecordSha256,
+  WORK_AMO_V7_DECLARATION_PROTOCOL_VOUT: "1",
+  WORK_AMO_V7_DECLARATION_RECORD_ORDINAL: "0",
+  WORK_AMO_V7_DECLARATION_REGISTRY_PAYMENT_VOUT: "2",
+  WORK_AMO_V7_DECLARATION_TXID: "a".repeat(64),
+  WORK_AMO_V7_WRITES_ENABLED: "0",
+};
+const workPrecisionV2PinsReject = (env) => {
+  try {
+    configuredWorkPrecisionV2Pins(env, workAmoV7Commitment);
+    return false;
+  } catch {
+    return true;
+  }
+};
+const workerFixtureDeclarationHash = "d".repeat(64);
+const workerFixtureTipHash = "e".repeat(64);
+const workerFixtureOpeningCommitment = {
+  model: WORK_AMO_V5_PAYLOAD_COMMITMENT_MODEL,
+  payloadBytes: 1,
+  sha256: "f".repeat(64),
+};
+const workerFixtureSnapshot = {
+  consistencyOk: true,
+  consistencyStatus: "green",
+  indexedThroughBlock: 102,
+  payloadBlockHash: workerFixtureTipHash,
+  sourceBlockHash: workerFixtureTipHash,
+  summaryBlockHash: workerFixtureTipHash,
+  summaryMode: "canonical-summary-refresh",
+  tokenStatePayloads: {
+    [WORK_TOKEN_ID]: {
+      amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+    },
+  },
+  workAmountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+};
+const workerFixtureReplayEnvelope = {
+  activationHeight: 101,
+  activationTransition: {
+    blockHash: "c".repeat(64),
+    blockHeight: 101,
+    model: WORK_AMO_V7_BLOCK_SEQUENCER_MODEL,
+    payload: {
+      activationHeight: 101,
+      openingSufficientState: {
+        tokenStateCommitment: workerFixtureOpeningCommitment,
+      },
+      precisionMigrationMarkerKey:
+        WORK_PRECISION_V2_MIGRATION_META_KEY,
+      precisionOpeningTokenStateCommitment:
+        workerFixtureOpeningCommitment,
+    },
+    previousBlockHash: workerFixtureDeclarationHash,
+    stateCommitmentModel: WORK_AMO_V5_STATE_COMMITMENT_MODEL,
+    workTokenStateModel: WORK_AMO_V7_TOKEN_STATE_PREIMAGE_MODEL,
+  },
+  coreTip: {
+    blockHash: workerFixtureTipHash,
+    height: 102,
+    stable: true,
+  },
+  declarationBlockHash: workerFixtureDeclarationHash,
+  invalidPrecisionEventCount: 0,
+  invalidTransitionCount: 0,
+  latestTransition: {
+    blockHash: workerFixtureTipHash,
+    blockHeight: 102,
+    model: WORK_AMO_V7_BLOCK_SEQUENCER_MODEL,
+    payload: {},
+    previousBlockHash: "c".repeat(64),
+    stateCommitmentModel: WORK_AMO_V5_STATE_COMMITMENT_MODEL,
+    workTokenStateModel: WORK_AMO_V7_TOKEN_STATE_PREIMAGE_MODEL,
+  },
+  markerOpeningCommitment: workerFixtureOpeningCommitment,
+  snapshot: workerFixtureSnapshot,
+  tipHash: workerFixtureTipHash,
+  tipHeight: 102,
+  transitionCount: 2,
+};
+const workQ8PayloadMetadata = {
+  amountStorageModel: WORK_ATOMIC_PROJECTION_MODEL,
+  decimals: WORK_DECIMALS,
+  unitScale: WORK_UNIT_SCALE_TEXT,
+};
+const workQ16PayloadMetadata = {
+  amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+  decimals: WORK_SUBATOM_DECIMALS,
+  precisionModel: WORK_PRECISION_V2_MODEL,
+  unitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,
+};
 
 function expect(name, condition) {
   if (!condition) {
@@ -64,6 +218,16 @@ function sliceBetween(startPattern, endPattern) {
     return "";
   }
   const rest = server.slice(start);
+  const end = rest.search(endPattern);
+  return end < 0 ? rest : rest.slice(0, end);
+}
+
+function sourceSliceBetween(text, startPattern, endPattern) {
+  const start = text.search(startPattern);
+  if (start < 0) {
+    return "";
+  }
+  const rest = text.slice(start);
   const end = rest.search(endPattern);
   return end < 0 ? rest : rest.slice(0, end);
 }
@@ -120,6 +284,70 @@ const invalidOnlyInceptionResolution = sliceBetween(
 const pendingWorkSupplyCapVerifier = sliceBetween(
   /function pendingWorkMintFromHydratedTransaction/,
   /async function tokenVerifierDeterministicInvalidReason/,
+);
+const workAmoBroadcastAdmission = sliceBetween(
+  /async function assertWorkMarketplaceBroadcastAllowed/,
+  /async function broadcastSlipstreamPayload/,
+);
+const readerWorkMintStats = sourceSliceBetween(
+  reader,
+  /export async function proofIndexTokenMintStatsPayload/,
+  /async function exactTokenMintHistoryPage/,
+);
+const readerWorkMintOverlay = sourceSliceBetween(
+  reader,
+  /async function tokenStateWithMintEventOverlay/,
+  /async function filterClosedTokenListingHistoryPage/,
+);
+const readerWorkHolders = sourceSliceBetween(
+  reader,
+  /async function proofIndexTokenHoldersFromTables/,
+  /function tokenMetricSummariesFromHolders/,
+);
+const readerWorkHolderSummaries = sourceSliceBetween(
+  reader,
+  /function tokenMetricSummariesFromHolders/,
+  /function canonicalTokenSaleEvidenceForListing/,
+);
+const readerCurrentTokenPayload = sourceSliceBetween(
+  reader,
+  /async function proofIndexTokenPayloadFromCurrentTables/,
+  /async function scopedHoldersFromBalances/,
+);
+const readerScopedWorkHolders = sourceSliceBetween(
+  reader,
+  /async function scopedHoldersFromBalances/,
+  /async function scopedTokenStateFromAllPayload/,
+);
+const readerScopedTokenPayload = sourceSliceBetween(
+  reader,
+  /async function scopedTokenStateFromAllPayload/,
+  /export async function proofIndexTokenPayload/,
+);
+const readerWalletTokenPayload = sourceSliceBetween(
+  reader,
+  /export async function proofIndexWalletTokenOverlayPayload/,
+  /async function proofIndexScopedHolderHistoryPayload/,
+);
+const readerScopedHolderHistory = sourceSliceBetween(
+  reader,
+  /async function proofIndexScopedHolderHistoryPayload/,
+  /async function confirmedIdRecordsFromCurrentTables/,
+);
+const readerCurrentWorkMintBranches = [
+  ...readerCurrentTokenPayload.matchAll(
+    /if \(isWorkTokenId\(mint\.tokenId\)\) \{([\s\S]*?)\n      \} else if/gu,
+  ),
+].map((match) => match[1]);
+const readerMintOverlayExactWorkAggregation = sourceSliceBetween(
+  readerWorkMintOverlay,
+  /const confirmedWorkUnits = workScoped/,
+  /const confirmedSupply = workSupply/,
+);
+const readerScopedExactWorkAggregation = sourceSliceBetween(
+  readerScopedTokenPayload,
+  /const confirmedWorkUnits = workScoped/,
+  /const creationSats = tokens\.reduce/,
 );
 const stableCrossLedgerAudit = (() => {
   const start = ledgerAudit.indexOf("async function readStableCrossLedgerBatch");
@@ -832,6 +1060,855 @@ expect(
     ) &&
     /function workAmoV6ReplayInputsForBlock[\s\S]*proofIndexWorkAmoV6MigrationReadiness\([\s\S]*migrationReadiness\?\.ready !== true[\s\S]*migrationReadiness\?\.active !== true[\s\S]*migrationReadiness\?\.canonical !== true[\s\S]*migrationReadiness\?\.confirmed !== true[\s\S]*migrationReadiness\?\.evidenceComplete !== true/u.test(
       server,
+    ),
+);
+expect(
+  "worker V7 configuration treats every nonempty pin and an enabled write gate as requested while an all-empty closed gate stays staged",
+  workerWorkAmoV7DeclarationConfig({
+    WORK_AMO_V7_WRITES_ENABLED: "0",
+  }).requested === false &&
+    workerWorkAmoV7DeclarationConfig({
+      WORK_AMO_V7_DECLARATION_HEIGHT: "0",
+      WORK_AMO_V7_WRITES_ENABLED: "0",
+    }).requested === true &&
+    workerWorkAmoV7DeclarationConfig({
+      WORK_AMO_V7_DECLARATION_HEIGHT: "-1",
+      WORK_AMO_V7_WRITES_ENABLED: "0",
+    }).requested === true &&
+    workerWorkAmoV7DeclarationConfig({
+      WORK_AMO_V7_DECLARATION_HEIGHT: "01",
+      WORK_AMO_V7_WRITES_ENABLED: "0",
+    }).configured === false &&
+    workerWorkAmoV7DeclarationConfig({
+      WORK_AMO_V7_DECLARATION_HEIGHT: "-0",
+      WORK_AMO_V7_WRITES_ENABLED: "0",
+    }).configured === false &&
+    workerWorkAmoV7DeclarationConfig({
+      WORK_AMO_V7_WRITES_ENABLED: " 0",
+    }).requested === true &&
+    workerWorkAmoV7DeclarationConfig({
+      WORK_AMO_V7_WRITES_ENABLED: "1",
+    }).requested === true &&
+    workerWorkAmoV7DeclarationConfig(exactWorkAmoV7WorkerEnv)
+      .configured === true &&
+    workerWorkAmoV7DeclarationConfig({
+      ...exactWorkAmoV7WorkerEnv,
+      WORK_AMO_V7_ACTIVATION_HEIGHT: "102",
+    }).configured === false &&
+    workerWorkAmoV7DeclarationConfig({
+      ...exactWorkAmoV7WorkerEnv,
+      WORK_AMO_V7_ACTIVATION_HEIGHT: " 101",
+    }).configured === false &&
+    workerWorkAmoV7DeclarationConfig({
+      ...exactWorkAmoV7WorkerEnv,
+      WORK_AMO_V7_DECLARATION_TXID: "A".repeat(64),
+    }).configured === false,
+);
+expect(
+  "precision migration accepts only exact canonical V7 declaration pins and exact D+1 activation",
+  configuredWorkPrecisionV2Pins(
+    { WORK_AMO_V7_WRITES_ENABLED: "0" },
+    workAmoV7Commitment,
+  ).configured === false &&
+    configuredWorkPrecisionV2Pins(
+      exactWorkAmoV7WorkerEnv,
+      workAmoV7Commitment,
+    ).configured === true &&
+    configuredWorkPrecisionV2Pins(
+      exactWorkAmoV7WorkerEnv,
+      workAmoV7Commitment,
+    ).activationHeight === 101 &&
+    workPrecisionV2PinsReject({
+      ...exactWorkAmoV7WorkerEnv,
+      WORK_AMO_V7_DECLARATION_HEIGHT: "01",
+    }) &&
+    workPrecisionV2PinsReject({
+      ...exactWorkAmoV7WorkerEnv,
+      WORK_AMO_V7_DECLARATION_HEIGHT: "-0",
+    }) &&
+    workPrecisionV2PinsReject({
+      ...exactWorkAmoV7WorkerEnv,
+      WORK_AMO_V7_ACTIVATION_HEIGHT: " 101",
+    }) &&
+    workPrecisionV2PinsReject({
+      ...exactWorkAmoV7WorkerEnv,
+      WORK_AMO_V7_DECLARATION_TXID: "A".repeat(64),
+    }),
+);
+expect(
+  "worker Q16 snapshots bind the exact tip hash, explicit subatom model, green canonical summary, and WORK token state",
+  workerWorkPrecisionSnapshotReady(workerFixtureSnapshot, {
+    tipHash: workerFixtureTipHash,
+    tipHeight: 102,
+  }) === true &&
+    workerWorkPrecisionSnapshotReady({
+      ...workerFixtureSnapshot,
+      consistencyStatus: "red",
+    }, {
+      tipHash: workerFixtureTipHash,
+      tipHeight: 102,
+    }) === false &&
+    workerWorkPrecisionSnapshotReady({
+      ...workerFixtureSnapshot,
+      payloadBlockHash: "0".repeat(64),
+    }, {
+      tipHash: workerFixtureTipHash,
+      tipHeight: 102,
+    }) === false &&
+    workerWorkPrecisionSnapshotReady({
+      ...workerFixtureSnapshot,
+      workAmountStorageModel: "work-atoms-v1",
+    }, {
+      tipHash: workerFixtureTipHash,
+      tipHeight: 102,
+    }) === false,
+);
+expect(
+  "worker confirmed replay envelope binds D predecessor, activation-through-tip count, transition hash, and the exact Q16 snapshot",
+  workerWorkPrecisionCoreTipReady(
+    workerFixtureReplayEnvelope.coreTip,
+    {
+      tipHash: workerFixtureTipHash,
+      tipHeight: 102,
+    },
+  ) === true &&
+    workerWorkPrecisionCoreTipReady({
+      ...workerFixtureReplayEnvelope.coreTip,
+      stable: false,
+    }, {
+      tipHash: workerFixtureTipHash,
+      tipHeight: 102,
+    }) === false &&
+  workerWorkPrecisionConfirmedReplayEnvelopeReady(
+    workerFixtureReplayEnvelope,
+  ) === true &&
+    workerWorkPrecisionConfirmedReplayEnvelopeReady({
+      ...workerFixtureReplayEnvelope,
+      activationTransition: {
+        ...workerFixtureReplayEnvelope.activationTransition,
+        previousBlockHash: "0".repeat(64),
+      },
+    }) === false &&
+    workerWorkPrecisionConfirmedReplayEnvelopeReady({
+      ...workerFixtureReplayEnvelope,
+      latestTransition: {
+        ...workerFixtureReplayEnvelope.latestTransition,
+        blockHash: "0".repeat(64),
+      },
+    }) === false &&
+    workerWorkPrecisionConfirmedReplayEnvelopeReady({
+      ...workerFixtureReplayEnvelope,
+      transitionCount: 1,
+    }) === false,
+);
+expect(
+  "worker Q16 relational parity compares the complete holder and listing sets and rejects malformed, missing, or extra rows",
+  workerWorkPrecisionRelationalParity({
+    balanceRows: [{ address: "holder-a", confirmed_balance: "7" }],
+    closingTokenState: {
+      holders: [{ address: "holder-a", balanceSubatoms: "7" }],
+      listings: [{
+        amountSubatoms: "5",
+        frozenTerms: { model: "frozen" },
+        listingId: "listing-a",
+        priceSats: "20",
+        saleAuthorization: { version: "pwt-sale-v6" },
+        sellerAddress: "seller-a",
+      }],
+    },
+    listingRows: [{
+      amount: "5",
+      frozen_terms: { model: "frozen" },
+      listing_id: "listing-a",
+      price_sats: "20",
+      sale_authorization: { version: "pwt-sale-v6" },
+      seller_address: "seller-a",
+      status: "active",
+      v7_authorization_version: null,
+    }],
+  }) === true &&
+    workerWorkPrecisionRelationalParity({
+      balanceRows: [],
+      closingTokenState: {
+        holders: [{ address: "holder-a", balanceSubatoms: "7" }],
+        listings: [],
+      },
+      listingRows: [],
+    }) === false &&
+    workerWorkPrecisionRelationalParity({
+      balanceRows: [
+        { address: "holder-a", confirmed_balance: "7" },
+        { address: "holder-extra", confirmed_balance: "1" },
+      ],
+      closingTokenState: {
+        holders: [{ address: "holder-a", balanceSubatoms: "7" }],
+        listings: [],
+      },
+      listingRows: [],
+    }) === false &&
+    workerWorkPrecisionRelationalParity({
+      balanceRows: [{ address: "holder-a", confirmed_balance: "07" }],
+      closingTokenState: {
+        holders: [{ address: "holder-a", balanceSubatoms: "7" }],
+        listings: [],
+      },
+      listingRows: [],
+    }) === false,
+);
+expect(
+  "worker pending projection commits every Q16 pending relation instead of treating an incomplete phase as ready",
+  (() => {
+    const empty = workerWorkPrecisionPendingProjection({
+      balanceRows: [],
+      eventRows: [],
+      listingRows: [],
+      transactionRows: [],
+    });
+    const oneSubatom = workerWorkPrecisionPendingProjection({
+      balanceRows: [{ address: "holder-a", pending_delta: "1" }],
+      eventRows: [],
+      listingRows: [],
+      transactionRows: [],
+    });
+    return (
+      empty.balances.count === 0 &&
+      empty.events.count === 0 &&
+      empty.listings.count === 0 &&
+      empty.transactions.count === 0 &&
+      /^[0-9a-f]{64}$/u.test(empty.commitmentSha256) &&
+      oneSubatom.balances.count === 1 &&
+      oneSubatom.events.count === 0 &&
+      oneSubatom.commitmentSha256 !== empty.commitmentSha256
+    );
+  })(),
+);
+expect(
+  "worker Q16 readiness resamples one stable Core height and hash",
+  /async function readExactWorkerCoreTip[\s\S]*getblockchaininfo[\s\S]*getblockhash[\s\S]*afterHeight !== height[\s\S]*afterHash !== blockHash[\s\S]*heightHash !== blockHash[\s\S]*stable: true/u.test(
+    worker,
+  ),
+);
+expect(
+  "worker Q16 readiness brackets the exact DB canonical tip audit with stable Core samples",
+  /async function assertWorkPrecisionReplayReady[\s\S]*const coreTipBefore = await readExactWorkerCoreTip\(\)[\s\S]*WITH canonical_tip AS[\s\S]*AS tip_height[\s\S]*AS tip_hash[\s\S]*const coreTipAfter = await readExactWorkerCoreTip\(\)[\s\S]*coreTipBefore\.height !== coreTipAfter\.height[\s\S]*coreTipBefore\.blockHash !== coreTipAfter\.blockHash/u.test(
+    worker,
+  ),
+);
+expect(
+  "worker Q16 readiness checks transition hash, value, state, and sufficient-state continuity",
+  /previous_transition\.block_hash <>[\s\S]*transition\.previous_block_hash/u.test(
+    worker,
+  ) &&
+    /previous_transition\.closing_network_value_q8 <>[\s\S]*transition\.opening_network_value_q8/u.test(
+      worker,
+    ) &&
+    /previous_transition\.closing_state_sha256 <>[\s\S]*transition\.opening_state_sha256/u.test(
+      worker,
+    ) &&
+    /transition\.payload->'openingSufficientState'[\s\S]*IS DISTINCT FROM[\s\S]*previous_transition\.payload[\s\S]*->'closingSufficientState'/u.test(
+      worker,
+    ),
+);
+expect(
+  "worker Q16 readiness binds all snapshot hashes and model before full relational parity",
+  /jsonb_build_object\([\s\S]*'consistencyStatus'[\s\S]*'payloadBlockHash'[\s\S]*'sourceBlockHash'[\s\S]*'summaryBlockHash'[\s\S]*'workAmountStorageModel'[\s\S]*WORK_SUBATOM_PROJECTION_MODEL/u.test(
+    worker,
+  ) &&
+    /workerWorkPrecisionConfirmedReplayEnvelopeReady\(\{[\s\S]*coreTip: coreTipAfter[\s\S]*tipHash,[\s\S]*tipHeight,[\s\S]*workerWorkPrecisionRelationalParity\(\{[\s\S]*balanceRows: balanceResult\.rows[\s\S]*listingRows: listingResult\.rows/u.test(
+      worker,
+    ),
+);
+expect(
+  "worker pending witness binds Q16, Core, mempool, all pending relations, complete scan, and freshness",
+  /export function workerWorkPrecisionPendingWitnessReady[\s\S]*witness\.ready === true[\s\S]*WORK_SUBATOM_PROJECTION_MODEL[\s\S]*WORK_PRECISION_V2_MODEL[\s\S]*invalidLegacyMutationCount[\s\S]*workerWorkPrecisionCoreTipReady[\s\S]*canonicalWorkerMempoolSnapshot\(txids\)[\s\S]*canonicalWorkerJsonText\(witnessedProjection\) ===\s*canonicalWorkerJsonText\(currentProjection\)[\s\S]*scan\.complete === true[\s\S]*scan\.canonicalDeferred[\s\S]*scan\.unresolved[\s\S]*WORK_AMO_V7_PENDING_WITNESS_MAX_AGE_MS/u.test(
+    worker,
+  ),
+);
+expect(
+  "worker pending audit compares stable Core and mempool samples with every pending WORK projection",
+  /async function assertWorkPrecisionPendingReady[\s\S]*confirmedReplay\?\.ready !== true[\s\S]*readExactWorkerCoreMempoolSnapshot/u.test(
+    worker,
+  ) &&
+    /SELECT address, pending_delta::text[\s\S]*event\.status = 'pending'[\s\S]*status IN \('pending', 'sealing'\)/u.test(
+      worker,
+    ) &&
+    /invalidLegacyResult[\s\S]*const stableCore =[\s\S]*const stableMempool =[\s\S]*workerWorkPrecisionPendingWitnessReady/u.test(
+      worker,
+    ),
+);
+expect(
+  "worker publishes no Q16-ready state before the pending audit completes",
+  /workPrecision\.era === WORK_PRECISION_Q16_ERA[\s\S]*pendingRequired: true,[\s\S]*ready: false,[\s\S]*state: "canonical-phase-complete"/u.test(
+    worker,
+  ) &&
+    /workPrecision\.era === WORK_PRECISION_Q16_ERA[\s\S]*await assertWorkPrecisionPendingReady\([\s\S]*pendingRebuild:[\s\S]*WORK_AMO_V7_PENDING_REBUILD_MODEL[\s\S]*ready: workPrecisionReplay\.ready === true/u.test(
+      worker,
+    ),
+);
+expect(
+  "backfill and worker share one durable Q16 pending witness key and model",
+  /WORK_Q16_PENDING_REBUILD_META_KEY =\s*"workQ16PendingRebuild:livenet"/u.test(
+    backfill,
+  ) &&
+    /WORK_Q16_PENDING_REBUILD_MODEL =\s*"canonical-work-q16-pending-rebuild-v1"/u.test(
+      backfill,
+    ) &&
+    /WORK_AMO_V7_PENDING_REBUILD_META_KEY =\s*"workQ16PendingRebuild:livenet"/u.test(
+      worker,
+    ) &&
+    /WORK_AMO_V7_PENDING_REBUILD_MODEL =\s*"canonical-work-q16-pending-rebuild-v1"/u.test(
+      worker,
+    ),
+);
+expect(
+  "backfill publishes the Q16 pending witness only after stable Core and exact DB commitments",
+  /async function storeWorkQ16PendingWitnessNotReady[\s\S]*ready: false[\s\S]*WORK_Q16_PENDING_REBUILD_META_KEY/u.test(
+    backfill,
+  ) &&
+    /async function persistExactWorkQ16PendingWitness[\s\S]*getrawmempool[\s\S]*WORK_PROJECTION_STATE_Q16[\s\S]*workQ16PendingCommitment[\s\S]*recheckedMempoolSnapshot[\s\S]*recheckedTipHeight[\s\S]*ready: true[\s\S]*complete: true/u.test(
+      backfill,
+    ) &&
+    /canonicalDeferred: 0,[\s\S]*unresolved: 0,[\s\S]*WORK_Q16_PENDING_REBUILD_META_KEY[\s\S]*await client\.query\("COMMIT"\)/u.test(
+      backfill,
+    ),
+);
+expect(
+  "Q16 pending readiness proves mempool membership, transaction parity, and zero noncanonical balance deltas",
+  /function workQ16PendingParity[\s\S]*outsideMempoolTxids[\s\S]*missingTransactionTxids[\s\S]*pending-work-events-do-not-mutate-holder-balances-v1[\s\S]*canonical-work-q16-pending-parity-v1[\s\S]*ready:/u.test(
+    backfill,
+  ) &&
+    /const parity = workQ16PendingParity\([\s\S]*if \(!parity\.ready\)[\s\S]*parity,[\s\S]*projection/u.test(
+      backfill,
+    ) &&
+    /function workQ16PendingParity[\s\S]*canonical-work-q16-pending-parity-v1[\s\S]*pendingParity\.ready === true[\s\S]*pendingWitness\.parity/u.test(
+      reader,
+    ),
+);
+expect(
+  "reader runtime keeps a one-subatom holder and mint aggregate exact while preserving historical one-atom payloads",
+  (() => {
+    const q16Balance = workBalanceProjection(
+      "1",
+      workQ16PayloadMetadata,
+    );
+    const q8Balance = workBalanceProjection(
+      "1",
+      workQ8PayloadMetadata,
+    );
+    const q16Supply = workSupplyFieldsForStorageModel(
+      "1",
+      "-1",
+      WORK_SUBATOM_PROJECTION_MODEL,
+    );
+    const q8Supply = workSupplyFieldsForStorageModel(
+      "1",
+      "-1",
+      WORK_ATOMIC_PROJECTION_MODEL,
+    );
+    return (
+      q16Balance.amount === "0.0000000000000001" &&
+      q16Balance.subatoms === "1" &&
+      q16Balance.atoms === undefined &&
+      q16Balance.decimals === 16 &&
+      q16Balance.amountStorageModel ===
+        WORK_SUBATOM_PROJECTION_MODEL &&
+      q8Balance.amount === "0.00000001" &&
+      q8Balance.atoms === "1" &&
+      q8Balance.subatoms === undefined &&
+      q8Balance.decimals === 8 &&
+      q8Balance.amountStorageModel ===
+        WORK_ATOMIC_PROJECTION_MODEL &&
+      q16Supply.confirmedSupply === "0.0000000000000001" &&
+      q16Supply.pendingSupply === "-0.0000000000000001" &&
+      q16Supply.confirmedSupplySubatoms === "1" &&
+      q16Supply.pendingSupplySubatoms === "-1" &&
+      q16Supply.confirmedSupplyAtoms === undefined &&
+      q16Supply.decimals === 16 &&
+      q16Supply.precisionModel === WORK_PRECISION_V2_MODEL &&
+      q8Supply.confirmedSupply === "0.00000001" &&
+      q8Supply.pendingSupply === "-0.00000001" &&
+      q8Supply.confirmedSupplyAtoms === "1" &&
+      q8Supply.pendingSupplyAtoms === "-1" &&
+      q8Supply.confirmedSupplySubatoms === undefined &&
+      q8Supply.decimals === 8 &&
+      workAmountUnitsForStorageModel(
+        {
+          amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+          amountSubatoms: "1",
+          decimals: WORK_SUBATOM_DECIMALS,
+          precisionModel: WORK_PRECISION_V2_MODEL,
+          unitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,
+        },
+        WORK_SUBATOM_PROJECTION_MODEL,
+      ) === "1" &&
+      workAmountUnitsForStorageModel(
+        {
+          amountAtoms: "1",
+          amountStorageModel: WORK_ATOMIC_PROJECTION_MODEL,
+          decimals: WORK_DECIMALS,
+          unitScale: WORK_UNIT_SCALE_TEXT,
+        },
+        WORK_SUBATOM_PROJECTION_MODEL,
+      ) === "100000000"
+    );
+  })(),
+);
+expect(
+  "reader WORK projection helpers emit mutually exclusive Q8 atom or Q16 subatom fields with exact BigInt-derived supplies",
+  /export function workBalanceProjection[\s\S]*const units = storedWorkAtoms[\s\S]*WORK_SUBATOM_PROJECTION_MODEL[\s\S]*subatoms: units[\s\S]*atoms: units/u.test(
+    reader,
+  ) &&
+    /export function workSupplyFieldsForStorageModel[\s\S]*normalizeWorkSubatoms : normalizeWorkAtoms[\s\S]*formatWorkSubatoms : formatWorkAtoms[\s\S]*confirmedSupplySubatoms[\s\S]*pendingSupplySubatoms[\s\S]*precisionModel: WORK_PRECISION_V2_MODEL[\s\S]*confirmedSupplyAtoms[\s\S]*pendingSupplyAtoms/u.test(
+      reader,
+    ) &&
+    /export function workAmountUnitsForStorageModel[\s\S]*legacyWorkAtomsToSubatoms[\s\S]*Native Q16 WORK cannot be projected back/u.test(
+      reader,
+    ),
+);
+expect(
+  "reader WORK mint statistics aggregate exact active-model units and publish matching Q8 or Q16 fields",
+  /const workStorageModel = workScoped[\s\S]*currentWorkAmountStorageModel[\s\S]*const exactIntegerUnits = exactWholeUnits \|\| workScoped[\s\S]*const amount = workScoped[\s\S]*BigInt\([\s\S]*workAmountUnitsForStorageModel[\s\S]*const workSupply = workScoped[\s\S]*workSupplyFieldsForStorageModel/u.test(
+    readerWorkMintStats,
+  ) &&
+    /pendingCandidateSupplySubatoms[\s\S]*pendingCandidateSupplyAtoms/u.test(
+      readerWorkMintStats,
+    ) &&
+    /pendingCandidates:[\s\S]*amountStorageModel: workStorageModel[\s\S]*amountSubatoms:[\s\S]*amountAtoms:/u.test(
+      readerWorkMintStats,
+    ),
+);
+expect(
+  "reader mint overlays select WORK by exact units before any generic Number aggregation",
+  /if \(isWorkTokenId\(item\.tokenId\)\)[\s\S]*BigInt\([\s\S]*amountSubatoms \?\? item\.amountAtoms/u.test(
+    readerWorkMintOverlay,
+  ) &&
+    /const workStorageModel = workScoped[\s\S]*const confirmedWorkUnits = workScoped[\s\S]*workAmountUnitsForStorageModel[\s\S]*const pendingWorkUnits = workScoped[\s\S]*workAmountUnitsForStorageModel[\s\S]*const workSupply = workScoped[\s\S]*workSupplyFieldsForStorageModel[\s\S]*const confirmedSupply = workSupply[\s\S]*Number\(mint\.amount/u.test(
+      readerWorkMintOverlay,
+    ),
+);
+expect(
+  "authoritative WORK holder and mint aggregation never coerces active-model units through Number",
+  /const amount = workScoped[\s\S]*\? BigInt\([\s\S]*workAmountUnitsForStorageModel[\s\S]*: exactWholeUnits[\s\S]*: Number\(mint\.amount\)/u.test(
+    readerWorkMintStats,
+  ) &&
+    readerCurrentWorkMintBranches.length === 2 &&
+    readerCurrentWorkMintBranches.every(
+      (branch) => !/\bNumber\s*\(/u.test(branch),
+    ) &&
+    readerMintOverlayExactWorkAggregation.length > 0 &&
+    !/\bNumber\s*\(/u.test(readerMintOverlayExactWorkAggregation) &&
+    readerScopedExactWorkAggregation.length > 0 &&
+    !/\bNumber\s*\(/u.test(readerScopedExactWorkAggregation),
+);
+expect(
+  "reader holder and current-token aggregates carry exact active-model WORK fields through every authoritative sum",
+  /workBalanceUnitFields\(workBalance,[\s\S]*balanceAtoms[\s\S]*balanceSubatoms[\s\S]*workBalanceUnitFields\(workPending,[\s\S]*pendingDeltaAtoms[\s\S]*pendingDeltaSubatoms/u.test(
+    readerWorkHolders,
+  ) &&
+    /const storageModel = holder\.amountStorageModel[\s\S]*confirmedSupplyUnits = addAtomicStrings[\s\S]*pendingSupplyUnits = addAtomicStrings[\s\S]*workSupplyFieldsForStorageModel/u.test(
+      readerWorkHolderSummaries,
+    ) &&
+    /const workStorageModels = new Map[\s\S]*workAmountUnitsForStorageModel\([\s\S]*confirmedSupplyUnits = addAtomicStrings[\s\S]*pendingSupplyUnits = addAtomicStrings[\s\S]*workSupplyFieldsForStorageModel\([\s\S]*const workSupply = workScoped[\s\S]*confirmedSupplySubatoms \?\?[\s\S]*confirmedSupplyAtoms/u.test(
+      readerCurrentTokenPayload,
+    ),
+);
+expect(
+  "reader scoped WORK payloads retain Q8 atom fields or Q16 subatom fields without Number coercion",
+  /workBalanceUnitFields\(balance,[\s\S]*balanceAtoms[\s\S]*balanceSubatoms/u.test(
+    readerScopedWorkHolders,
+  ) &&
+    /const workStorageModel = workScoped[\s\S]*const confirmedWorkUnits = workScoped[\s\S]*balanceSubatoms[\s\S]*balanceAtoms[\s\S]*const pendingWorkUnits = workScoped[\s\S]*workAmountUnitsForStorageModel[\s\S]*const workSupply = workScoped[\s\S]*workSupplyFieldsForStorageModel/u.test(
+      readerScopedTokenPayload,
+    ),
+);
+expect(
+  "reader wallet payload exposes model-specific WORK units instead of hardcoded Q8 fields",
+  /workBalanceProjection\(row\.confirmed_balance/u.test(
+    readerWalletTokenPayload,
+  ) &&
+    /workBalanceUnitFields\(balance,[\s\S]*atomField: "balanceAtoms"[\s\S]*subatomField: "balanceSubatoms"/u.test(
+      readerWalletTokenPayload,
+    ) &&
+    /workBalanceProjection\(row\.pending_delta/u.test(
+      readerWalletTokenPayload,
+    ) &&
+    /workBalanceUnitFields\(pending,[\s\S]*atomField: "pendingDeltaAtoms"[\s\S]*subatomField: "pendingDeltaSubatoms"/u.test(
+      readerWalletTokenPayload,
+    ),
+);
+expect(
+  "reader holder-history payload exposes model-specific WORK units instead of hardcoded Q8 fields",
+  /workBalanceProjection\(row\.confirmed_balance, token\.metadata\)/u.test(
+    readerScopedHolderHistory,
+  ) &&
+    /workBalanceUnitFields\(balance,[\s\S]*atomField: "balanceAtoms"[\s\S]*subatomField: "balanceSubatoms"/u.test(
+      readerScopedHolderHistory,
+    ),
+);
+expect(
+  "WORK precision keeps immutable V6 Q8 units separate from canonical V7 Q16 subatoms",
+  /export const WORK_DECIMALS = 8;/u.test(workUnits) &&
+    /export const WORK_UNIT_SCALE = 100_000_000n;/u.test(workUnits) &&
+    /export const WORK_SUBATOM_DECIMALS = 16;/u.test(workUnits) &&
+    /export const WORK_SUBATOM_UNIT_SCALE = 10_000_000_000_000_000n;/u.test(
+      workUnits,
+    ) &&
+    /WORK_SUBATOM_CONVERSION_FACTOR =\s*WORK_SUBATOM_UNIT_SCALE \/ WORK_LEGACY_UNIT_SCALE/u.test(
+      workUnits,
+    ) &&
+    /export const WORK_AMO_DECIMALS = WORK_LEGACY_DECIMALS;/u.test(
+      workUnits,
+    ) &&
+    /export const WORK_AMO_UNIT_SCALE = WORK_LEGACY_UNIT_SCALE;/u.test(
+      workUnits,
+    ) &&
+    /export const WORK_AMO_V7_DECIMALS = WORK_SUBATOM_DECIMALS;/u.test(
+      workAmoV7,
+    ) &&
+    /export const WORK_AMO_V7_SUBATOMS_PER_WORK =\s*WORK_SUBATOM_UNIT_SCALE/u.test(
+      workAmoV7,
+    ),
+);
+expect(
+  "Q16 record projection requires explicit precision metadata and rejects ambiguous aliases",
+  /function normalizeWorkSubatoms[\s\S]*must not use surrounding whitespace/u.test(
+    workUnits,
+  ) &&
+    /function workAmountSubatomsFromRecord[\s\S]*model !== WORK_SUBATOM_PROJECTION_MODEL[\s\S]*WORK precision metadata is required/u.test(
+      workUnits,
+    ) &&
+    /model === WORK_SUBATOM_PROJECTION_MODEL[\s\S]*atomAliases\.length > 0 \|\| subatomAliases\.length !== 1[\s\S]*exactly one subatom alias and no legacy atom alias/u.test(
+      workUnits,
+    ) &&
+    /atomAliases\.length > 1 \|\| subatomAliases\.length > 1[\s\S]*Legacy WORK amount aliases are ambiguous/u.test(
+      workUnits,
+    ) &&
+    /normalizeWorkSubatoms\(subatomAliases\[0\],[\s\S]*!==\s*normalized[\s\S]*aliases conflict/u.test(
+      workUnits,
+    ),
+);
+expect(
+  "AMO V7 derives proof-native Q16 terms while preserving legacy settlement witnesses",
+  /WORK_AMO_V7_AUTH_VERSION = "pwt-sale-v7"/u.test(workAmoV7) &&
+    /WORK_AMO_V7_TRANSFER_VERSION = "send3"/u.test(workAmoV7) &&
+    /WORK_AMO_V7_ALLOWED_FACE_PROOFS = Object\.freeze\(\[\s*20_000,\s*50_000,\s*100_000,\s*\]\)/u.test(
+      workAmoV7,
+    ) &&
+    /export function workAmoV7UnitTerms\(\{[\s\S]*unitAmountSubatoms = workAmoFloorDiv\([\s\S]*unitPriceSats \* denominator,[\s\S]*networkValue,[\s\S]*unitMinimumPriceSats = workAmoCeilDiv\([\s\S]*unitAmountSubatoms \* networkValue/u.test(
+      workAmoV7,
+    ) &&
+    /function canonicalWorkAmoV7TokenStateListing[\s\S]*WORK_AMO_V7_AUTH_VERSION[\s\S]*WORK_AMO_V6_AUTH_VERSION[\s\S]*legacyWorkAtomsToSubatoms[\s\S]*WORK_AMO_V5_AUTH_VERSION[\s\S]*WORK_AMO_V4_AUTH_VERSION/u.test(
+      workAmoV7,
+    ) &&
+    /validateWorkAmoV7SealOrBuyTerms[\s\S]*validateWorkAmoV6SealOrBuyTerms/u.test(
+      workAmoV7,
+    ),
+);
+expect(
+  "send3 is mandatory exactly at the confirmed V7 boundary with no legacy fallback",
+  /export function workAmoV7TransferEraDecision[\s\S]*v7Required = height >= activation[\s\S]*v7Required =\s*projectionModel === WORK_SUBATOM_PROJECTION_MODEL[\s\S]*nativeV7 !== v7Required[\s\S]*work-amo-v7-send3-required[\s\S]*work-amo-v7-send3-before-activation/u.test(
+    workAmoV7,
+  ) &&
+    /TOKEN_SEND_SUBATOMS_ACTION = WORK_AMO_V7_TRANSFER_VERSION/u.test(
+      server,
+    ) &&
+    /TOKEN_SEND_SUBATOMS_ACTION !== "send3"/u.test(server) &&
+    /function canonicalWorkSubatomsText[\s\S]*text !== text\.trim\(\)[\s\S]*WORK_TOKEN_MAX_SUPPLY_SUBATOMS[\s\S]*parts\.length === 4 && parts\[0\] === TOKEN_SEND_SUBATOMS_ACTION[\s\S]*canonicalWorkSubatomsText\(parts\[2\]\)[\s\S]*amountVersion: TOKEN_SEND_SUBATOMS_ACTION/u.test(
+      server,
+    ) &&
+    /parsed\.tokenId !== WORK_TOKEN_ID[\s\S]*workAmoV7TransferEraDecision\([\s\S]*activationHeight:[\s\S]*blockHeight,[\s\S]*confirmed,[\s\S]*projectionModel:[\s\S]*transferVersion: parsedTransferVersion/u.test(
+      server,
+    ),
+);
+expect(
+  "V7 metadata separates an irreversible reached boundary from exact write readiness",
+  /export function workAmoV7StatusFromEvidence[\s\S]*const activation = \{[\s\S]*reached: Boolean\([\s\S]*indexed >= expected\.activationHeight[\s\S]*evidenceComplete =[\s\S]*precisionMigrationReady === true[\s\S]*protocolReady: ready[\s\S]*writeAdmission: settlementWritesEnabled/u.test(
+    workAmoV7,
+  ) &&
+    /let workAmoV7ReachedLatch = false[\s\S]*async function workAmoV7Metadata[\s\S]*tipVerified[\s\S]*tipHeight >= expectedDeclaration\.activationHeight[\s\S]*workAmoV7ReachedLatch = true[\s\S]*proofIndexWorkPrecisionV2MigrationReadiness/u.test(
+      server,
+    ) &&
+    /const indexReady =[\s\S]*migrationReadiness\?\.ready === true[\s\S]*migrationReadiness\?\.parityReady === true[\s\S]*migrationReadiness\?\.replayReady === true[\s\S]*Number\(migrationReadiness\?\.tipHeight\) === tipHeight/u.test(
+      server,
+    ) &&
+    /Number\(migrationReadiness\?\.tipHeight\) === tipHeight[\s\S]*String\(migrationReadiness\?\.tipHash \?\? ""\)[\s\S]*\.toLowerCase\(\) === tipHash/u.test(
+      server,
+    ) &&
+    /activation: \{[\s\S]*reached: workAmoV7ReachedLatch,[\s\S]*tipVerified,[\s\S]*migrationReadiness,[\s\S]*writesConfigured: WORK_AMO_V7_WRITES_CONFIGURED/u.test(
+      server,
+    ) &&
+    /withWorkMarketplaceV4Metadata[\s\S]*workAmoV7Metadata\(network,[\s\S]*workAmoV7,[\s\S]*floor:[\s\S]*workAmoV7,[\s\S]*workFloor:[\s\S]*workAmoV7/u.test(
+      server,
+    ),
+);
+expect(
+  "API V7 pins accept only raw canonical integers and lowercase hashes while every malformed nonempty request stays fail-closed",
+  /function canonicalWorkAmoV7ConfiguredInteger\([\s\S]*const raw = String\(value \?\? ""\);[\s\S]*\/\^\(\?:0\|\[1-9\]\[0-9\]\*\)\$\//u.test(
+    server,
+  ) &&
+    /function canonicalWorkAmoV7ConfiguredInteger\([\s\S]*Number\.isSafeInteger\(parsed\) && parsed >= minimum/u.test(
+      server,
+    ) &&
+    /function canonicalWorkAmoV7ConfiguredHash\([\s\S]*const raw = String\(value \?\? ""\);[\s\S]*\/\^\[0-9a-f\]\{64\}\$\//u.test(
+      server,
+    ) &&
+    /const WORK_AMO_V7_WRITES_SOURCE = String\([\s\S]*const WORK_AMO_V7_WRITES_RAW = WORK_AMO_V7_WRITES_SOURCE\.trim\(\);[\s\S]*const WORK_AMO_V7_WRITES_REQUESTED =\s*WORK_AMO_V7_WRITES_CONFIGURED \|\|[\s\S]*WORK_AMO_V7_WRITES_SOURCE !== WORK_AMO_V7_WRITES_RAW/u.test(
+      server,
+    ) &&
+    /const WORK_AMO_V7_ACTIVATION_HEIGHT_RAW = String\([\s\S]*canonicalWorkAmoV7ConfiguredInteger\([\s\S]*WORK_AMO_V7_EXPECTED_ACTIVATION_HEIGHT[\s\S]*WORK_AMO_V7_DECLARATION_HEIGHT \+ 1/u.test(
+      server,
+    ) &&
+    /const WORK_AMO_V7_DECLARATION_PINS_REQUESTED =\s*WORK_AMO_V7_WRITES_REQUESTED \|\|[\s\S]*process\.env\.WORK_AMO_V7_DECLARATION_HEIGHT[\s\S]*process\.env\.WORK_AMO_V7_ACTIVATION_HEIGHT[\s\S]*\.some\(\(value\) => String\(value \?\? ""\)\.length > 0\)/u.test(
+      server,
+    ) &&
+    /const WORK_AMO_V7_DECLARATION_PINS_CONFIGURED =[\s\S]*Number\.isSafeInteger\(WORK_AMO_V7_ACTIVATION_HEIGHT\)[\s\S]*WORK_AMO_V7_ACTIVATION_HEIGHT ===\s*WORK_AMO_V7_EXPECTED_ACTIVATION_HEIGHT/u.test(
+      server,
+    ) &&
+    /const WORK_AMO_V7_DECLARATION_PIN_STATE =[\s\S]*\? "configured"[\s\S]*WORK_AMO_V7_DECLARATION_PINS_REQUESTED[\s\S]*\? "invalid"[\s\S]*: "unrequested"/u.test(
+      server,
+    ) &&
+    /pinsRequested: WORK_AMO_V7_DECLARATION_PINS_REQUESTED[\s\S]*pinsConfigured: Boolean\(configuredDeclaration\)/u.test(
+      server,
+    ),
+);
+expect(
+  "backfill and precision migration use the same strict V7 pin grammar as API and worker",
+  /function canonicalWorkAmoV7ConfiguredInteger\([\s\S]*const raw = String\(value \?\? ""\);[\s\S]*\/\^\(\?:0\|\[1-9\]\[0-9\]\*\)\$\//u.test(
+    backfill,
+  ) &&
+    /function canonicalWorkAmoV7ConfiguredHash\([\s\S]*const raw = String\(value \?\? ""\);[\s\S]*\/\^\[0-9a-f\]\{64\}\$\//u.test(
+      backfill,
+    ) &&
+    /const WORK_AMO_V7_CONFIGURED_ACTIVATION_HEIGHT =\s*canonicalWorkAmoV7ConfiguredInteger\([\s\S]*process\.env\.WORK_AMO_V7_ACTIVATION_HEIGHT[\s\S]*WORK_AMO_V7_CONFIGURED_ACTIVATION_HEIGHT ===\s*WORK_AMO_V7_EXPECTED_ACTIVATION_HEIGHT/u.test(
+      backfill,
+    ) &&
+    /function optionalSafeInteger\([\s\S]*const raw = String\(value \?\? ""\);[\s\S]*UNSIGNED_INTEGER_PATTERN\.test\(raw\)[\s\S]*Number\.isSafeInteger\(parsed\)/u.test(
+      workAmoV7Migration,
+    ) &&
+    /function canonicalConfiguredHash\([\s\S]*const raw = String\(value \?\? ""\);[\s\S]*TXID_PATTERN\.test\(raw\)/u.test(
+      workAmoV7Migration,
+    ) &&
+    /export function configuredWorkPrecisionV2Pins\([\s\S]*canonicalConfiguredHash\([\s\S]*optionalSafeInteger\([\s\S]*configuredActivationHeight !== declarationHeight \+ 1/u.test(
+      workAmoV7Migration,
+    ),
+);
+expect(
+  "broadcast admission gates transfers and AMO actions on V7 before considering V6",
+  /signedTransactionOutputs\(txHex\)[\s\S]*workTransferActions[\s\S]*parsed\?\.kind !== "send"[\s\S]*workTransferRequiredRegistryPaymentSats[\s\S]*selectWorkAmoV5DistinctRegistryPayment\([\s\S]*requiredSats:\s*workTransferRequiredRegistryPaymentSats[\s\S]*workTransferRegistryPaymentValid[\s\S]*workMintActions[\s\S]*parsed\?\.kind !== "mint"/u.test(
+    workAmoBroadcastAdmission,
+  ) &&
+    /WORK_AMO_V7_DECLARATION_PINS_REQUESTED &&[\s\S]*!WORK_AMO_V7_DECLARATION_PINS_CONFIGURED[\s\S]*WORK_AMO_V7_PINS_INVALID/u.test(
+      workAmoBroadcastAdmission,
+    ) &&
+    /if \(WORK_AMO_V7_DECLARATION_PINS_CONFIGURED\)[\s\S]*workAmoV7Metadata\([\s\S]*activation\?\.reached !== true[\s\S]*activation\?\.tipVerified !== true[\s\S]*WORK_AMO_V7_ACTIVATION_UNKNOWN/u.test(
+      workAmoBroadcastAdmission,
+    ) &&
+    /activation\?\.reached === true[\s\S]*metadata\?\.writeAdmission === true[\s\S]*metadata\?\.protocolReady === true[\s\S]*metadata\?\.evidenceComplete === true[\s\S]*TOKEN_SEND_SUBATOMS_ACTION[\s\S]*workAmoV7BroadcastDecision/u.test(
+      workAmoBroadcastAdmission,
+    ) &&
+    /WORK_AMO_V7_SEND3_BEFORE_ACTIVATION[\s\S]*if \(WORK_AMO_V6_DECLARATION_PINS_CONFIGURED\)/u.test(
+      workAmoBroadcastAdmission,
+    ) &&
+    workAmoBroadcastAdmission.indexOf(
+      "if (WORK_AMO_V7_DECLARATION_PINS_CONFIGURED)",
+    ) <
+      workAmoBroadcastAdmission.indexOf(
+        "if (WORK_AMO_V6_DECLARATION_PINS_CONFIGURED)",
+      ),
+);
+expect(
+  "WORK mint broadcast admission preserves the exact wire amount and fails closed with all other V7 writes after activation",
+  /workMintActions\.some\([\s\S]*mint\.amount !== WORK_TOKEN_MINT_AMOUNT[\s\S]*WORK_MINT_AMOUNT_INVALID/u.test(
+    workAmoBroadcastAdmission,
+  ) &&
+    /activation\?\.reached === true[\s\S]*workTransferActions\.length > 0 \|\|[\s\S]*workMintActions\.length > 0[\s\S]*metadata\?\.writeAdmission === true[\s\S]*metadata\?\.protocolReady === true[\s\S]*metadata\?\.evidenceComplete === true[\s\S]*WORK_AMO_V7_WRITES_PAUSED/u.test(
+      workAmoBroadcastAdmission,
+    ) &&
+    /if \(workMintActions\.length > 0\)[\s\S]*workMintActions\.length === 1[\s\S]*workTransferActions\.length === 0[\s\S]*actions\.length === 0[\s\S]*signedTokenProtocolRecords\.length === 1[\s\S]*paysWorkRegistry === true[\s\S]*WORK_AMO_V7_MINT_SHAPE_INVALID/u.test(
+      workAmoBroadcastAdmission,
+    ) &&
+    /workMintActions\[0\]\.amount !== WORK_TOKEN_MINT_AMOUNT[\s\S]*WORK_AMO_V7_MINT_AMOUNT_INVALID/u.test(
+      workAmoBroadcastAdmission,
+    ) &&
+    /WORK_AMO_V7_DECLARATION_PINS_REQUESTED[\s\S]*WORK_MINT_AMOUNT_INVALID[\s\S]*if \(WORK_AMO_V7_DECLARATION_PINS_CONFIGURED\)/u.test(
+      workAmoBroadcastAdmission,
+    ),
+);
+expect(
+  "precision migration binds exact declaration evidence and rebuilds the D+1 opening deterministically",
+  /WORK_PRECISION_V2_MIGRATION_MODEL =\s*"canonical-work-q8-to-q16-migration-v1"/u.test(
+    workAmoV7Migration,
+  ) &&
+    /indexedWorkPrecisionV2DeclarationEvidence[\s\S]*JOIN proof_indexer\.op_returns carrier[\s\S]*carrier\.vout = \$5[\s\S]*carrier\.output_index = \$6/u.test(
+      workAmoV7Migration,
+    ) &&
+    /indexedWorkPrecisionV2DeclarationEvidence[\s\S]*carrier\.payload_text[\s\S]*carrier\.payload_hex[\s\S]*carrier\.data_bytes/u.test(
+      workAmoV7Migration,
+    ) &&
+    /coreWorkPrecisionV2DeclarationEvidence[\s\S]*getblockhash[\s\S]*getblock[\s\S]*declarationProtocolVout/u.test(
+      workAmoV7Migration,
+    ) &&
+    /readWorkPrecisionV2ActivationOpening[\s\S]*transition\.block_height = \$1[\s\S]*scaleWorkPrecisionV2TokenState/u.test(
+      workAmoV7Migration,
+    ) &&
+    /readWorkPrecisionV2ActivationOpening[\s\S]*canonical-work-amo-full-position-block-sequencer-v2/u.test(
+      workAmoV7Migration,
+    ) &&
+    /DELETE FROM proof_indexer\.credit_balances[\s\S]*INSERT INTO proof_indexer\.credit_balances[\s\S]*expectedScaledState\.balances/u.test(
+      workAmoV7Migration,
+    ) &&
+    /UPDATE proof_indexer\.credit_listings[\s\S]*opening\.amount::numeric[\s\S]*listing_tx\.block_height >= \$2[\s\S]*DELETE FROM proof_indexer\.work_amo_block_transitions[\s\S]*block_height >= \$1/u.test(
+      workAmoV7Migration,
+    ) &&
+    /verifyWorkPrecisionV2RowsConserved[\s\S]*WORK_PRECISION_V2_MIGRATION_META_KEY[\s\S]*workPrecisionV2MarkerMatches/u.test(
+      workAmoV7Migration,
+    ),
+);
+expect(
+  "precision readiness rejects every wrong-era WORK transfer and listing mutation",
+  /AS invalid_post_activation_legacy_count[\s\S]*AS invalid_pre_activation_v7_count/u.test(
+    reader,
+  ) &&
+    /event\.block_height >= \$11[\s\S]*event\.raw_payload LIKE 'pwt1:send:%'[\s\S]*event\.raw_payload LIKE 'pwt1:send2:%'[\s\S]*event\.kind = 'token-listing'[\s\S]*saleAuthorization'->>'version'[\s\S]*<> \$12/u.test(
+      reader,
+    ) &&
+    /event\.block_height < \$11[\s\S]*event\.raw_payload LIKE 'pwt1:send3:%'[\s\S]*event\.kind = 'token-listing'[\s\S]*saleAuthorization'->>'version'[\s\S]*= \$12/u.test(
+      reader,
+    ) &&
+    /WORK_AMO_V7_AUTH_VERSION,[\s\S]*WORK_AMO_V7_BLOCK_SEQUENCER_MODEL/u.test(
+      reader,
+    ) &&
+    /Number\(row\.invalid_post_activation_legacy_count\) === 0[\s\S]*Number\(row\.invalid_pre_activation_v7_count\) === 0/u.test(
+      reader,
+    ),
+);
+expect(
+  "precision readiness is bound to the exact canonical DB and Core tip hash",
+  /\) AS tip_height,[\s\S]*\) AS tip_hash,[\s\S]*\) AS transition_height,[\s\S]*\) AS transition_hash/u.test(
+    reader,
+  ) &&
+    /const tipHash = normalizedLowerText\(row\.tip_hash\)[\s\S]*Number\(row\.transition_height\) === tipHeight[\s\S]*\/\^\[0-9a-f\]\{64\}\$\/u\.test\(tipHash\)[\s\S]*normalizedLowerText\(row\.transition_hash\) === tipHash/u.test(
+      reader,
+    ) &&
+    /return \{[\s\S]*replayReady,[\s\S]*status: ready \? "complete" : "not-ready",[\s\S]*tipHash,[\s\S]*tipHeight/u.test(
+      reader,
+    ),
+);
+expect(
+  "Q16 snapshots are stamped and selected only by one exact active WORK precision model",
+  /function workDefinitionStorageModel[\s\S]*const q8 =[\s\S]*WORK_ATOMIC_PROJECTION_MODEL[\s\S]*const q16 =[\s\S]*WORK_SUBATOM_PROJECTION_MODEL[\s\S]*: ""/u.test(
+    reader,
+  ) &&
+    /async function currentWorkAmountStorageModel[\s\S]*LIMIT 2[\s\S]*result\.rows\.length === 1[\s\S]*workDefinitionStorageModel/u.test(
+      reader,
+    ) &&
+    /async function workAmountStorageModelAtHeight[\s\S]*WORK_PRECISION_V2_MIGRATION_META_KEY[\s\S]*marker\.status !== "complete"[\s\S]*height < activationHeight[\s\S]*WORK_ATOMIC_PROJECTION_MODEL[\s\S]*WORK_SUBATOM_PROJECTION_MODEL/u.test(
+      reader,
+    ) &&
+    /async function storeLedgerSnapshot[\s\S]*currentWorkProjectionModel\(client,[\s\S]*if \(!workAmountStorageModel\)[\s\S]*snapshotPayload = \{[\s\S]*workAmountStorageModel/u.test(
+      backfill,
+    ) &&
+    /async function storeCanonicalSummarySnapshot[\s\S]*currentWorkProjectionModel\(client,[\s\S]*if \(!workAmountStorageModel\)[\s\S]*snapshotPayload = \{[\s\S]*workAmountStorageModel/u.test(
+      backfill,
+    ) &&
+    /async function ledgerSnapshot\([\s\S]*payload->>'workAmountStorageModel' =\s*ANY\(\$3::text\[\]\)[\s\S]*currentWorkAmountStorageModel\(pool, network\)[\s\S]*payload->>'workAmountStorageModel' = \$2/u.test(
+      reader,
+    ),
+);
+expect(
+  "WORK definition reads reject missing or conflicting precision metadata instead of falling back to Q8",
+  /function tokenDefinitionFromRow[\s\S]*const workStorageModel = isWorkTokenId\(tokenId\)[\s\S]*workDefinitionStorageModel\(row\)[\s\S]*isWorkTokenId\(tokenId\) && !workStorageModel[\s\S]*missing or conflicting Q8\/Q16 precision metadata/u.test(
+    reader,
+  ) &&
+    !/function tokenDefinitionFromRow[\s\S]*amountStorageModel:\s*WORK_LEGACY_ATOMIC_PROJECTION_MODEL[\s\S]*const metadataWithoutPosition/u.test(
+      reader,
+    ),
+);
+expect(
+  "backfill dispatches every mutable WORK projection through one explicit Q8 or Q16 definition state",
+  /const WORK_PROJECTION_STATE_Q8 = "q8"[\s\S]*const WORK_PROJECTION_STATE_Q16 = "q16"[\s\S]*const WORK_PROJECTION_STATE_INVALID = "invalid"/u.test(
+    backfill,
+  ) &&
+    /function workDefinitionProjectionState[\s\S]*const q8 =[\s\S]*WORK_ATOMIC_PROJECTION_MODEL[\s\S]*const q16 =[\s\S]*WORK_SUBATOM_PROJECTION_MODEL[\s\S]*WORK_PROJECTION_STATE_INVALID/u.test(
+      backfill,
+    ) &&
+    /function workPrecisionV2MarkerAuthorizesQ16[\s\S]*marker\.status === "complete"[\s\S]*marker\.projectionModel === WORK_SUBATOM_PROJECTION_MODEL[\s\S]*marker\.globalPrecisionModel === WORK_AMO_V7_GLOBAL_PRECISION_MODEL/u.test(
+      backfill,
+    ) &&
+    /async function upsertProjection[\s\S]*WORK definition projection cannot update without one exact active Q8 or Q16 model[\s\S]*WORK holder projection cannot update without one exact active Q8 or Q16 model[\s\S]*WORK listing projection cannot update without one exact active Q8 or Q16 model/u.test(
+      backfill,
+    ) &&
+    /function workBalanceForProjection[\s\S]*Q8 WORK balance storage cannot accept native subatom aliases[\s\S]*Native Q16 WORK balance storage cannot accept legacy atom aliases[\s\S]*Native Q16 WORK balance aliases are ambiguous/u.test(
+      backfill,
+    ),
+);
+expect(
+  "WORK mint projection preserves Q8 history and maps the unchanged wire amount to exact Q16 only from D+1",
+  /async function protocolIntegrityItemForPersistence[\s\S]*item\?\.kind[\s\S]*"token-mint"[\s\S]*isWorkTokenId\(item\?\.tokenId\)[\s\S]*currentWorkPrecisionV2Marker[\s\S]*const activationHeight = Number\(marker\?\.activationHeight\)[\s\S]*blockHeight >= activationHeight[\s\S]*String\(item\?\.amount \?\? ""\) !== "1000"[\s\S]*amountSubatoms: WORK_TOKEN_MINT_AMOUNT_SUBATOMS/u.test(
+    backfill,
+  ) &&
+    /const WORK_TOKEN_MINT_AMOUNT_SUBATOMS =\s*WORK_AMO_V7_MINT_AMOUNT_SUBATOMS\.toString\(\)/u.test(
+      backfill,
+    ),
+);
+expect(
+  "backfill reconstructs Mail and Inception WORK attachments in canonical Q16 across both transfer eras",
+  /function preparedProtocolItemsWithCanonicalMailAttachments[\s\S]*const nativeQ16 =[\s\S]*WORK_SUBATOM_PROJECTION_MODEL[\s\S]*WORK_AMO_V7_TRANSFER_VERSION[\s\S]*canonicalWorkSubatomsText\(item\?\.amountSubatoms\)[\s\S]*BigInt\(amountAtoms\) \* WORK_ATOM_TO_SUBATOM_SCALE/u.test(
+    backfill,
+  ) &&
+    /nativeQ16[\s\S]*item\?\.amountAtoms[\s\S]*!nativeQ16[\s\S]*item\?\.amountSubatoms[\s\S]*withWorkSubatomPrecisionMetadata\([\s\S]*amountSubatoms,[\s\S]*legacyAmountAtoms:[\s\S]*legacyAmountStorageModel:[\s\S]*precisionModel: WORK_AMO_V7_GLOBAL_PRECISION_MODEL/u.test(
+      backfill,
+    ) &&
+    /existing\.amountSubatoms !== transfer\.amountSubatoms/u.test(
+      backfill,
+    ),
+);
+expect(
+  "V7 replay readiness rejects stale, forked, missing-model, and Q8 snapshots at the exact tip",
+  /current_snapshot\.snapshot_height,[\s\S]*current_snapshot\.snapshot_hash,[\s\S]*current_snapshot\.snapshot_work_amount_storage_model/u.test(
+    reader,
+  ) &&
+    /snapshot\.payload->>'workAmountStorageModel' = \$15[\s\S]*snapshot\.consistency->>'ok'[\s\S]*= 'true'[\s\S]*snapshot\.consistency->>'status'[\s\S]*= 'green'[\s\S]*summaryRefresh'->>'mode' =\s*'canonical-summary-refresh'/u.test(
+      reader,
+    ) &&
+    /snapshot\.payload->>'indexedThroughBlockHash'[\s\S]*snapshot\.source_hashes->>'blockScan'[\s\S]*summaryRefresh'[\s\S]*indexedThroughBlockHash/u.test(
+      reader,
+    ) &&
+    /Number\(row\.snapshot_height\) === tipHeight[\s\S]*snapshotHash === tipHash[\s\S]*row\.snapshot_work_amount_storage_model ===\s*WORK_SUBATOM_PROJECTION_MODEL/u.test(
+      reader,
+    ),
+);
+expect(
+  "V7 declaration builder adds one presentation newline outside the exact declaration commitment",
+  /presentation newline is not part of declaration\.text or either hash/u.test(
+    workAmoV7DeclarationBuilder,
+  ) &&
+    /process\.stdout\.write\(`\$\{declaration\.text\}\\n`\);/u.test(
+      workAmoV7DeclarationBuilder,
+    ) &&
+    /mintRule=the WORK mint wire record remains pwt1:mint:<token-id>:1000; before activation it credits exactly 100000000000 historical atoms and from activation it credits exactly 10000000000000000000 subatoms/u.test(
+      workAmoV7Declaration,
+    ) &&
+    /unitFormula=unitPriceSats=F;unitAmountSubatoms=floor[\s\S]*unitMinimumPriceSats=ceil/u.test(
+      workAmoV7Declaration,
+    ) &&
+    !/unitPriceProofs=|unitMinimumPriceProofs=/u.test(
+      workAmoV7Declaration,
+    ) &&
+    /readinessFailureRule=once the canonical D\+1 activation boundary is observed or persistently latched[\s\S]*never re-enables legacy send send2 or a pre-V7 new-listing protocol[\s\S]*delisting an existing canonical listing remains permitted/u.test(
+      workAmoV7Declaration,
+    ),
+);
+expect(
+  "V7 admission auto-discovers the exact declaration and irreversibly closes legacy writes without a manual-pin window",
+  /async function discoverExactWorkAmoV7Declaration[\s\S]*workAmoV7DeclarationEmbargoLatch = true[\s\S]*canonical-registry-discovery/u.test(
+    server,
+  ) &&
+    /WORK_AMO_V7_DECLARATION_DISCOVERY_UNAVAILABLE[\s\S]*WORK_AMO_V7_LEGACY_WRITE_EMBARGO[\s\S]*WORK_AMO_V7_PINS_REQUIRED_AFTER_DECLARATION/u.test(
+      server,
+    ) &&
+    /async function discoverIndexedWorkAmoV7DeclarationPins[\s\S]*Earliest AMO V7 declaration[\s\S]*persistWorkAmoV7ActivationLatch/u.test(
+      backfill,
     ),
 );
 

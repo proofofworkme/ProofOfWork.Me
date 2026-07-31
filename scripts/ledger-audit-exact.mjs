@@ -1,5 +1,10 @@
 import { BOND_VALUE_Q8_SCALE } from "../server/bond-units.mjs";
-import { WORK_UNIT_SCALE } from "../server/work-units.mjs";
+import {
+  WORK_LEGACY_ATOMIC_PROJECTION_MODEL,
+  WORK_SUBATOM_PROJECTION_MODEL,
+  WORK_SUBATOM_UNIT_SCALE,
+  WORK_UNIT_SCALE,
+} from "../server/work-units.mjs";
 
 const INCB_ISSUANCE_ACCOUNTING_MODEL =
   "canonical-pre-bond-live-network-value-v2";
@@ -166,6 +171,37 @@ export function exactInceptionLedgerState(summary, tokenState) {
   const attachedWorkAmountAtoms = exactUnsignedString(
     actual.attachedWorkAmountAtoms,
   );
+  const attachedWorkAmountSubatoms = exactUnsignedString(
+    actual.attachedWorkAmountSubatoms,
+  );
+  const attachedWorkAmountVersion = String(
+    actual.attachedWorkAmountVersion ?? "",
+  );
+  const attachedWorkAmountStorageModel = String(
+    actual.attachedWorkAmountStorageModel ?? "",
+  );
+  const legacyAttachmentUnits =
+    attachedWorkAmountVersion === "send2" &&
+    attachedWorkAmountStorageModel ===
+      WORK_LEGACY_ATOMIC_PROJECTION_MODEL &&
+    attachedWorkAmountAtoms !== null &&
+    actual.attachedWorkAmountSubatoms == null;
+  const subatomAttachmentUnits =
+    attachedWorkAmountVersion === "send3" &&
+    attachedWorkAmountStorageModel ===
+      WORK_SUBATOM_PROJECTION_MODEL &&
+    attachedWorkAmountSubatoms !== null &&
+    actual.attachedWorkAmountAtoms == null;
+  const attachedWorkAmountUnits = legacyAttachmentUnits
+    ? attachedWorkAmountAtoms
+    : subatomAttachmentUnits
+      ? attachedWorkAmountSubatoms
+      : null;
+  const attachedWorkUnitScale = legacyAttachmentUnits
+    ? WORK_UNIT_SCALE
+    : subatomAttachmentUnits
+      ? WORK_SUBATOM_UNIT_SCALE
+      : null;
   const attachedAtSendQ8 = exactUnsignedString(
     actual.attachedWorkLiveValueAtSendQ8,
   );
@@ -252,7 +288,7 @@ export function exactInceptionLedgerState(summary, tokenState) {
       confirmedIssuance,
       directIssuance,
       attachedIssuance,
-      attachedWorkAmountAtoms,
+      attachedWorkAmountUnits,
       attachedAtSendQ8,
       attachedFrozenQ8,
       attachedLiveQ8,
@@ -317,10 +353,11 @@ export function exactInceptionLedgerState(summary, tokenState) {
       directIssuance * BOND_VALUE_Q8_SCALE + attachedAtSendQ8 &&
     issuanceDustQ8 ===
       issuanceValueQ8 - confirmedIssuance * BOND_VALUE_Q8_SCALE &&
-    (attachedWorkAmountAtoms > 0n
+    (attachedWorkAmountUnits > 0n
       ? attachedWorkActions > 0 &&
         attachedFloorAtSendQ8 ===
-          (attachedAtSendQ8 * WORK_UNIT_SCALE) / attachedWorkAmountAtoms
+          (attachedAtSendQ8 * attachedWorkUnitScale) /
+            attachedWorkAmountUnits
       : attachedWorkActions === 0 &&
         attachedAtSendQ8 === 0n &&
         attachedIssuance === 0n) &&

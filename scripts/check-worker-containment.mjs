@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFileSync, writeSync } from "node:fs";
 import { setTimeout as delay } from "node:timers/promises";
 import vm from "node:vm";
@@ -22,7 +23,26 @@ import {
   shouldEscalateWorkerFailure,
   workerBackfillPhasePlan,
   workerNoProgressFromMeta,
+  workerWorkAmoV7ActivationLatchReady,
+  workerWorkAmoV7DeclarationConfig,
+  workerWorkPrecisionConfirmedReplayEnvelopeReady,
+  workerWorkPrecisionCoreTipReady,
+  workerWorkPrecisionEra,
+  workerWorkPrecisionFromMeta,
+  workerWorkPrecisionPendingProjection,
+  workerWorkPrecisionPendingParity,
+  workerWorkPrecisionPendingWitnessReady,
+  workerWorkPrecisionRelationalParity,
+  workerWorkPrecisionSnapshotReady,
+  workerWorkPrecisionV2MarkerReady,
 } from "./run-proof-indexer-worker.mjs";
+import {
+  workAmoV7DeclarationCommitment,
+} from "../server/work-amo-v7-declaration.mjs";
+import {
+  WORK_AMO_V5_DECLARATION_AUTHORITY_SCRIPT_PUBKEY,
+  WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS,
+} from "../server/work-amo-v5.mjs";
 
 const TXID = "b".repeat(64);
 const CHECKPOINT_HASH = "a".repeat(64);
@@ -31,8 +51,28 @@ const START_MS = Date.parse("2026-07-18T12:00:00.000Z");
 const DOMAIN_ERROR =
   `Canonical protocol transaction ${TXID} input 0 has an invalid outpoint`;
 const BACKFILL_PATH = new URL("./backfill-proof-indexer.mjs", import.meta.url);
+const API_PROOF_INDEX_CONFIG_PATH = new URL(
+  "../deploy/proofofwork-api-proof-index.conf",
+  import.meta.url,
+);
+const WORKER_SERVICE_PATH = new URL(
+  "../deploy/proofofwork-indexer-worker.service",
+  import.meta.url,
+);
+const WORKER_PATH = new URL(
+  "./run-proof-indexer-worker.mjs",
+  import.meta.url,
+);
 const fixtureMode = process.argv.find((value) => value.startsWith("--fixture="))
   ?.split("=")[1];
+
+function deploymentEnvironmentValues(source, name) {
+  const pattern = new RegExp(
+    `^Environment=${name.replaceAll(/[$()*+.?[\\\]^{|}]/gu, "\\$&")}=(.*)$`,
+    "gmu",
+  );
+  return [...source.matchAll(pattern)].map((match) => match[1]);
+}
 
 function topLevelFunctionSource(name) {
   const source = readFileSync(BACKFILL_PATH, "utf8");
@@ -113,6 +153,771 @@ if (fixtureMode === "poison-exit") {
 }
 
 async function runChecks() {
+  const workerSource = readFileSync(WORKER_PATH, "utf8");
+  assert.match(
+    workerSource,
+    /previous_transition\.closing_state_sha256 <>\s*transition\.opening_state_sha256/u,
+    "every post-activation transition must chain its opening state to the prior close",
+  );
+  assert.match(
+    workerSource,
+    /transition\.payload->'openingSufficientState'\s*IS DISTINCT FROM\s*previous_transition\.payload\s*->'closingSufficientState'/u,
+    "the complete sufficient-state payload must be continuous",
+  );
+  assert.match(
+    workerSource,
+    /transition\.block_height = \$2[\s\S]*transition\.previous_block_hash <> \$12/u,
+    "the activation transition predecessor must be the declaration block",
+  );
+  assert.match(
+    workerSource,
+    /getblockchaininfo[\s\S]*getblockhash[\s\S]*Core tip changed across the Q16 relational replay audit/u,
+    "Q16 replay must remain bracketed by stable first-party Core tip evidence",
+  );
+  assert.match(
+    workerSource,
+    /sourceBlockHash[\s\S]*payloadBlockHash[\s\S]*summaryBlockHash[\s\S]*canonical-summary-refresh[\s\S]*consistencyStatus === "green"/u,
+    "the Q16 snapshot must bind every checkpoint hash and green summary state",
+  );
+  assert.match(
+    workerSource,
+    /pendingRequired: true,[\s\S]*ready: false,[\s\S]*assertWorkPrecisionPendingReady/u,
+    "confirmed replay must remain not-ready until the pending witness passes",
+  );
+  for (const deploymentSource of [
+    readFileSync(API_PROOF_INDEX_CONFIG_PATH, "utf8"),
+    readFileSync(WORKER_SERVICE_PATH, "utf8"),
+  ]) {
+    for (const pin of [
+      "TXID",
+      "HEIGHT",
+      "BLOCK_HASH",
+      "BLOCK_INDEX",
+      "MEMO_SHA256",
+      "MEMO_BYTES",
+      "PROTOCOL_VOUT",
+      "RECORD_ORDINAL",
+      "REGISTRY_PAYMENT_VOUT",
+    ]) {
+      assert.deepEqual(
+        deploymentEnvironmentValues(
+          deploymentSource,
+          `WORK_AMO_V7_DECLARATION_${pin}`,
+        ),
+        [""],
+        `AMO V7 declaration ${pin} must deploy empty before publication`,
+      );
+    }
+    assert.deepEqual(
+      deploymentEnvironmentValues(
+        deploymentSource,
+        "WORK_AMO_V7_ACTIVATION_HEIGHT",
+      ),
+      [""],
+      "AMO V7 D+1 activation must deploy empty before publication",
+    );
+    assert.deepEqual(
+      deploymentEnvironmentValues(
+        deploymentSource,
+        "WORK_AMO_V7_WRITES_ENABLED",
+      ),
+      ["0"],
+      "AMO V7 writes must deploy disabled",
+    );
+  }
+  assert.deepEqual(
+    deploymentEnvironmentValues(
+      readFileSync(API_PROOF_INDEX_CONFIG_PATH, "utf8"),
+      "WORK_AMO_V6_WRITES_ENABLED",
+    ),
+    ["1"],
+    "the active V6 API write gate must not be silently overridden",
+  );
+  const v7DeclarationCommitment = workAmoV7DeclarationCommitment();
+  const emptyV7Config = workerWorkAmoV7DeclarationConfig({});
+  assert.equal(emptyV7Config.requested, false);
+  assert.equal(emptyV7Config.configured, false);
+  assert.equal(
+    workerWorkAmoV7DeclarationConfig({
+      WORK_AMO_V7_WRITES_ENABLED: "0",
+    }).requested,
+    false,
+    "the staged disabled write gate alone must not request V7",
+  );
+  assert.equal(
+    workerWorkAmoV7DeclarationConfig({
+      WORK_AMO_V7_WRITES_ENABLED: "1",
+    }).requested,
+    true,
+    "enabling writes must request the complete declaration",
+  );
+  assert.equal(
+    workerWorkAmoV7DeclarationConfig({
+      WORK_AMO_V7_WRITES_ENABLED: "perhaps",
+    }).requested,
+    true,
+    "a malformed nonempty write gate must fail closed as requested",
+  );
+  const partialV7Config = workerWorkAmoV7DeclarationConfig({
+    WORK_AMO_V7_DECLARATION_HEIGHT: "100",
+  });
+  assert.equal(partialV7Config.requested, true);
+  assert.equal(partialV7Config.configured, false);
+  const configuredV7Environment = {
+    WORK_AMO_V7_ACTIVATION_HEIGHT: "101",
+    WORK_AMO_V7_DECLARATION_BLOCK_HASH: "c".repeat(64),
+    WORK_AMO_V7_DECLARATION_BLOCK_INDEX: "8",
+    WORK_AMO_V7_DECLARATION_HEIGHT: "100",
+    WORK_AMO_V7_DECLARATION_MEMO_BYTES: String(
+      v7DeclarationCommitment.protocolRecordBytes,
+    ),
+    WORK_AMO_V7_DECLARATION_MEMO_SHA256:
+      v7DeclarationCommitment.protocolRecordSha256,
+    WORK_AMO_V7_DECLARATION_PROTOCOL_VOUT: "3",
+    WORK_AMO_V7_DECLARATION_RECORD_ORDINAL: "0",
+    WORK_AMO_V7_DECLARATION_REGISTRY_PAYMENT_VOUT: "4",
+    WORK_AMO_V7_DECLARATION_TXID: "d".repeat(64),
+  };
+  const configuredV7 = workerWorkAmoV7DeclarationConfig(
+    configuredV7Environment,
+  );
+  assert.equal(configuredV7.requested, true);
+  assert.equal(configuredV7.configured, true);
+  assert.equal(configuredV7.activationHeight, 101);
+  assert.equal(
+    workerWorkAmoV7DeclarationConfig({
+      ...configuredV7Environment,
+      WORK_AMO_V7_ACTIVATION_HEIGHT: "102",
+    }).configured,
+    false,
+    "AMO V7 activation must be declaration height plus exactly one",
+  );
+  for (const name of [
+    "WORK_AMO_V7_ACTIVATION_HEIGHT",
+    "WORK_AMO_V7_DECLARATION_TXID",
+    "WORK_AMO_V7_DECLARATION_HEIGHT",
+    "WORK_AMO_V7_DECLARATION_BLOCK_HASH",
+    "WORK_AMO_V7_DECLARATION_BLOCK_INDEX",
+    "WORK_AMO_V7_DECLARATION_MEMO_SHA256",
+    "WORK_AMO_V7_DECLARATION_MEMO_BYTES",
+    "WORK_AMO_V7_DECLARATION_PROTOCOL_VOUT",
+    "WORK_AMO_V7_DECLARATION_RECORD_ORDINAL",
+    "WORK_AMO_V7_DECLARATION_REGISTRY_PAYMENT_VOUT",
+  ]) {
+    const singlePin = workerWorkAmoV7DeclarationConfig({ [name]: "0" });
+    assert.equal(singlePin.requested, true, `${name}=0 must be requested`);
+    assert.equal(singlePin.configured, false, `${name}=0 must not configure V7`);
+  }
+  for (const invalidIndex of ["-1", "-0", "01"]) {
+    const invalid = workerWorkAmoV7DeclarationConfig({
+      ...configuredV7Environment,
+      WORK_AMO_V7_DECLARATION_BLOCK_INDEX: invalidIndex,
+    });
+    assert.equal(invalid.requested, true);
+    assert.equal(
+      invalid.configured,
+      false,
+      `noncanonical declaration index ${invalidIndex} must fail`,
+    );
+  }
+  for (const [name, invalidValue] of [
+    ["WORK_AMO_V7_DECLARATION_HEIGHT", " 100"],
+    ["WORK_AMO_V7_DECLARATION_BLOCK_INDEX", "8 "],
+    ["WORK_AMO_V7_DECLARATION_TXID", "D".repeat(64)],
+    ["WORK_AMO_V7_DECLARATION_BLOCK_HASH", ` ${"c".repeat(64)}`],
+  ]) {
+    const invalid = workerWorkAmoV7DeclarationConfig({
+      ...configuredV7Environment,
+      [name]: invalidValue,
+    });
+    assert.equal(invalid.requested, true);
+    assert.equal(
+      invalid.configured,
+      false,
+      `${name} must reject noncanonical whitespace or case`,
+    );
+  }
+  for (const invalidGate of [" 0", "0 ", " true", "false "]) {
+    const invalid = workerWorkAmoV7DeclarationConfig({
+      WORK_AMO_V7_WRITES_ENABLED: invalidGate,
+    });
+    assert.equal(
+      invalid.requested,
+      true,
+      `write gate ${JSON.stringify(invalidGate)} must fail closed as requested`,
+    );
+    assert.equal(invalid.configured, false);
+  }
+  const activationLatch = {
+    activationHeight: 101,
+    authorityScriptPubKey:
+      WORK_AMO_V5_DECLARATION_AUTHORITY_SCRIPT_PUBKEY,
+    coreVerified: true,
+    declarationBlockHash:
+      configuredV7.declarationBlockHash,
+    declarationBlockIndex:
+      configuredV7.declarationBlockIndex,
+    declarationHeight: 100,
+    declarationMemoBytes:
+      configuredV7.declarationMemoBytes,
+    declarationMemoSha256:
+      configuredV7.declarationMemoSha256,
+    declarationProtocolVout:
+      configuredV7.declarationProtocolVout,
+    declarationRecordOrdinal:
+      configuredV7.declarationRecordOrdinal,
+    declarationRegistryPaymentVout:
+      configuredV7.declarationRegistryPaymentVout,
+    declarationTxid: configuredV7.declarationTxid,
+    evidenceComplete: true,
+    firstObservedTipHash: "f".repeat(64),
+    firstObservedTipHeight: 101,
+    indexVerified: true,
+    inputCount: 1,
+    model: "canonical-work-amo-v7-activation-latch-v1",
+    network: "livenet",
+    observedAt: "2026-07-31T12:00:00.000Z",
+    outputCount: 5,
+    protocol: "pwm1",
+    reached: true,
+    registryAddress: WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS,
+    registryPaymentSats: "546",
+  };
+  assert.equal(
+    workerWorkAmoV7ActivationLatchReady(
+      activationLatch,
+      configuredV7,
+    ),
+    true,
+  );
+  assert.equal(
+    workerWorkAmoV7ActivationLatchReady(
+      { ...activationLatch, declarationHeight: 99 },
+      configuredV7,
+    ),
+    false,
+  );
+  const markerCommitment = {
+    model: "canonical-work-amo-payload-sha256-v1",
+    payloadBytes: 32,
+    sha256: "7".repeat(64),
+  };
+  const emptyRowsSha256 = createHash("sha256")
+    .update(Buffer.from("[]", "utf8"))
+    .digest("hex");
+  const emptyRowsCommitment = {
+    count: 0,
+    payloadBytes: 2,
+    sha256: emptyRowsSha256,
+  };
+  const markerEvidenceCommitted = {
+    authorityScriptPubKey:
+      WORK_AMO_V5_DECLARATION_AUTHORITY_SCRIPT_PUBKEY,
+    blockHash: configuredV7.declarationBlockHash,
+    blockHeight: configuredV7.declarationHeight,
+    blockTransactionIndex:
+      configuredV7.declarationBlockIndex,
+    inputCount: 1,
+    outputCount: 5,
+    payloadBytes: configuredV7.declarationMemoBytes,
+    payloadSha256: configuredV7.declarationMemoSha256,
+    protocol: "pwm1",
+    protocolVout: configuredV7.declarationProtocolVout,
+    recordOrdinal: configuredV7.declarationRecordOrdinal,
+    registryAddress: WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS,
+    registryPaymentSats: "546",
+    registryPaymentVout:
+      configuredV7.declarationRegistryPaymentVout,
+    txid: configuredV7.declarationTxid,
+  };
+  const markerEvidence = {
+    ...markerEvidenceCommitted,
+    commitmentSha256: createHash("sha256")
+      .update(
+        Buffer.from(
+          `ProofOfWork.Me/WORK-PRECISION-V2-DECLARATION-EVIDENCE/v1\n${
+            JSON.stringify(markerEvidenceCommitted)
+          }`,
+          "utf8",
+        ),
+      )
+      .digest("hex"),
+    coreVerified: true,
+    evidenceComplete: true,
+    indexVerified: true,
+    model:
+      "canonical-work-precision-v2-declaration-core-index-evidence-v1",
+  };
+  const markerTimestamp = "2026-07-31T12:01:00.000Z";
+  const precisionMarker = {
+    activationHeight: configuredV7.activationHeight,
+    activationOpening: {
+      declarationClosingStatePayloadBytes: 32,
+      declarationClosingStateSha256: "6".repeat(64),
+      declarationTransitionModel:
+        "canonical-work-amo-full-position-block-sequencer-v2",
+      legacyTokenStateCommitment: markerCommitment,
+      subatomTokenStateCommitment: markerCommitment,
+    },
+    after: {
+      balances: emptyRowsCommitment,
+      listings: emptyRowsCommitment,
+    },
+    before: {
+      balances: emptyRowsCommitment,
+      listings: emptyRowsCommitment,
+    },
+    completedAt: markerTimestamp,
+    conversionFactor: "100000000",
+    declarationBlockHash: configuredV7.declarationBlockHash,
+    declarationBlockIndex: configuredV7.declarationBlockIndex,
+    declarationEvidence: markerEvidence,
+    declarationHeight: configuredV7.declarationHeight,
+    declarationMemoBytes: configuredV7.declarationMemoBytes,
+    declarationMemoSha256: configuredV7.declarationMemoSha256,
+    declarationProtocolVout:
+      configuredV7.declarationProtocolVout,
+    declarationRecordOrdinal:
+      configuredV7.declarationRecordOrdinal,
+    declarationRegistryPaymentVout:
+      configuredV7.declarationRegistryPaymentVout,
+    declarationTextBytes: v7DeclarationCommitment.payloadBytes,
+    declarationTextSha256: v7DeclarationCommitment.payloadSha256,
+    declarationTxid: configuredV7.declarationTxid,
+    decimals: 16,
+    globalPrecisionModel: "canonical-work-subatoms-v2",
+    derivedProjectionPolicy:
+      "invalidate-and-replay-from-activation",
+    legacyDecimals: 8,
+    legacyProjectionModel: "work-atoms-v1",
+    maxSupplySubatoms: "210000000000000000000000",
+    migrationModel: "canonical-work-q8-to-q16-migration-v1",
+    mintAmountSubatoms: "10000000000000000000",
+    model: "canonical-work-q8-to-q16-migration-v1",
+    network: "livenet",
+    projectionModel: "work-subatoms-v2",
+    rawConfirmedHistoryMutation: "none",
+    replayFromHeight: configuredV7.activationHeight,
+    snapshotPolicy:
+      "preserve-preactivation-canonical-invalidate-wrong-era-derived-require-post-migration-current-snapshot",
+    status: "complete",
+    transferVersion: "send3",
+    unitScale: "10000000000000000",
+    updatedAt: markerTimestamp,
+    version: "pwt-sale-v7",
+  };
+  assert.equal(
+    workerWorkPrecisionV2MarkerReady(
+      precisionMarker,
+      configuredV7,
+    ),
+    true,
+  );
+  assert.equal(
+    workerWorkPrecisionV2MarkerReady(
+      {
+        ...precisionMarker,
+        mintAmountSubatoms: "1000000000000000000",
+      },
+      configuredV7,
+    ),
+    false,
+  );
+  assert.equal(
+    workerWorkPrecisionV2MarkerReady(
+      {
+        ...precisionMarker,
+        declarationEvidence: {
+          ...markerEvidence,
+          inputCount: 2,
+        },
+      },
+      configuredV7,
+    ),
+    false,
+    "declaration evidence must be recomputed, not shape-checked",
+  );
+  const q8Definition = {
+    max_supply: "2100000000000000",
+    metadata: {
+      amountStorageModel: "work-atoms-v1",
+      decimals: 8,
+      unitScale: "100000000",
+    },
+    mint_amount: "100000000000",
+  };
+  assert.equal(
+    workerWorkPrecisionEra({
+      declarationConfig: configuredV7,
+      definition: q8Definition,
+      marker: {},
+      observedHeight: 100,
+      tipHeight: 100,
+    }),
+    "q8",
+  );
+  assert.equal(
+    workerWorkPrecisionEra({
+      declarationConfig: configuredV7,
+      definition: q8Definition,
+      marker: {},
+      observedHeight: 101,
+      tipHeight: 101,
+    }),
+    "q16",
+    "the first activation block must irreversibly select Q16",
+  );
+  assert.equal(
+    workerWorkPrecisionEra({
+      declarationConfig: emptyV7Config,
+      definition: q8Definition,
+      marker: {},
+      observedHeight: 1,
+      q16Latched: true,
+      tipHeight: 1,
+    }),
+    "q16",
+    "a persisted Q16 worker era must never fall back to Q8",
+  );
+  assert.equal(
+    workerWorkPrecisionFromMeta(
+      {
+        network: "livenet",
+        workPrecision: { era: "q16", ready: false },
+      },
+      "livenet",
+    )?.era,
+    "q16",
+  );
+  assert.equal(
+    workerWorkPrecisionFromMeta(
+      {
+        network: "testnet",
+        workPrecision: { era: "q16", ready: false },
+      },
+      "livenet",
+    ),
+    null,
+  );
+  const listingId = "e".repeat(64);
+  const saleAuthorization = {
+    sellerAddress: "seller",
+    version: "pwt-sale-v6",
+  };
+  const frozenTerms = {
+    unitAmountAtoms: "1",
+    version: "pwt-sale-v6",
+  };
+  const relationalFixture = {
+    balanceRows: [{ address: "holder", confirmed_balance: "2" }],
+    closingTokenState: {
+      holders: [{ address: "holder", balanceSubatoms: "2" }],
+      listings: [{
+        amountSubatoms: "1",
+        frozenTerms,
+        listingId,
+        priceSats: "20",
+        saleAuthorization,
+        sellerAddress: "seller",
+      }],
+    },
+    listingRows: [{
+      amount: "1",
+      frozen_terms: frozenTerms,
+      listing_id: listingId,
+      price_sats: "20",
+      sale_authorization: saleAuthorization,
+      seller_address: "seller",
+      status: "active",
+      v7_authorization_version: null,
+    }],
+  };
+  assert.equal(
+    workerWorkPrecisionRelationalParity(relationalFixture),
+    true,
+  );
+  assert.equal(
+    workerWorkPrecisionRelationalParity({
+      ...relationalFixture,
+      listingRows: [{
+        ...relationalFixture.listingRows[0],
+        amount: "2",
+      }],
+    }),
+    false,
+  );
+  assert.equal(
+    workerWorkPrecisionRelationalParity({
+      ...relationalFixture,
+      balanceRows: [
+        ...relationalFixture.balanceRows,
+        { address: "broken", confirmed_balance: "-1" },
+      ],
+    }),
+    false,
+    "negative relational rows must fail instead of being filtered",
+  );
+  assert.equal(
+    workerWorkPrecisionRelationalParity({
+      ...relationalFixture,
+      balanceRows: [
+        ...relationalFixture.balanceRows,
+        { address: "holder", confirmed_balance: "0" },
+      ],
+    }),
+    false,
+    "duplicate relational keys must fail",
+  );
+  assert.equal(
+    workerWorkPrecisionRelationalParity({
+      ...relationalFixture,
+      balanceRows: [
+        ...relationalFixture.balanceRows,
+        { address: "zero", confirmed_balance: "0" },
+      ],
+    }),
+    true,
+    "a unique canonical zero row is semantically absent",
+  );
+  assert.equal(
+    workerWorkPrecisionRelationalParity({
+      ...relationalFixture,
+      listingRows: [{
+        ...relationalFixture.listingRows[0],
+        seller_address: "wrong-seller",
+      }],
+    }),
+    false,
+  );
+
+  const replayTipHash = "9".repeat(64);
+  const replayDeclarationHash = "8".repeat(64);
+  const replayCommitment = {
+    model: "canonical-work-amo-payload-sha256-v1",
+    payloadBytes: 32,
+    sha256: "7".repeat(64),
+  };
+  const replaySnapshot = {
+    consistencyOk: true,
+    consistencyStatus: "green",
+    indexedThroughBlock: 102,
+    payloadBlockHash: replayTipHash,
+    sourceBlockHash: replayTipHash,
+    summaryBlockHash: replayTipHash,
+    summaryMode: "canonical-summary-refresh",
+    tokenStatePayloads: {
+      d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8:
+        { model: "fixture" },
+    },
+    workAmountStorageModel: "work-subatoms-v2",
+  };
+  const replayCoreTip = {
+    blockHash: replayTipHash,
+    height: 102,
+    stable: true,
+  };
+  const replayEnvelope = {
+    activationHeight: 101,
+    activationTransition: {
+      blockHeight: 101,
+      model: "canonical-work-amo-full-position-block-sequencer-v3",
+      payload: {
+        activationHeight: 101,
+        openingSufficientState: {
+          tokenStateCommitment: replayCommitment,
+        },
+        precisionMigrationMarkerKey:
+          "workPrecisionV2Migration:livenet",
+        precisionOpeningTokenStateCommitment: replayCommitment,
+      },
+      previousBlockHash: replayDeclarationHash,
+      stateCommitmentModel:
+        "canonical-work-amo-sufficient-state-sha256-v1",
+      workTokenStateModel:
+        "canonical-work-token-state-subatoms-v2",
+    },
+    coreTip: replayCoreTip,
+    declarationBlockHash: replayDeclarationHash,
+    invalidPrecisionEventCount: 0,
+    invalidTransitionCount: 0,
+    latestTransition: {
+      blockHash: replayTipHash,
+      blockHeight: 102,
+      model: "canonical-work-amo-full-position-block-sequencer-v3",
+      stateCommitmentModel:
+        "canonical-work-amo-sufficient-state-sha256-v1",
+      workTokenStateModel:
+        "canonical-work-token-state-subatoms-v2",
+    },
+    markerOpeningCommitment: replayCommitment,
+    snapshot: replaySnapshot,
+    tipHash: replayTipHash,
+    tipHeight: 102,
+    transitionCount: 2,
+  };
+  assert.equal(
+    workerWorkPrecisionCoreTipReady(replayCoreTip, {
+      tipHash: replayTipHash,
+      tipHeight: 102,
+    }),
+    true,
+  );
+  assert.equal(
+    workerWorkPrecisionSnapshotReady(replaySnapshot, {
+      tipHash: replayTipHash,
+      tipHeight: 102,
+    }),
+    true,
+  );
+  assert.equal(
+    workerWorkPrecisionConfirmedReplayEnvelopeReady(replayEnvelope),
+    true,
+  );
+  for (const mutation of [
+    { coreTip: { ...replayCoreTip, blockHash: "6".repeat(64) } },
+    {
+      latestTransition: {
+        ...replayEnvelope.latestTransition,
+        blockHash: "6".repeat(64),
+      },
+    },
+    {
+      activationTransition: {
+        ...replayEnvelope.activationTransition,
+        previousBlockHash: "6".repeat(64),
+      },
+    },
+    {
+      snapshot: {
+        ...replaySnapshot,
+        consistencyStatus: "red",
+      },
+    },
+    {
+      snapshot: {
+        ...replaySnapshot,
+        summaryBlockHash: "6".repeat(64),
+      },
+    },
+    { transitionCount: 1 },
+  ]) {
+    assert.equal(
+      workerWorkPrecisionConfirmedReplayEnvelopeReady({
+        ...replayEnvelope,
+        ...mutation,
+      }),
+      false,
+      `confirmed replay mutation must fail: ${Object.keys(mutation)[0]}`,
+    );
+  }
+  const pendingProjection = workerWorkPrecisionPendingProjection({
+    balanceRows: [],
+    eventRows: [],
+    listingRows: [],
+    transactionRows: [],
+  });
+  const pendingParity = workerWorkPrecisionPendingParity({
+    balanceRows: [],
+    eventRows: [],
+    listingRows: [],
+    mempoolTxids: [],
+    transactionRows: [],
+  });
+  const pendingMempool = {
+    count: 0,
+    model: "canonical-core-mempool-txid-set-v1",
+    sha256: createHash("sha256")
+      .update(
+        Buffer.from(
+          "ProofOfWork.Me/WORK-Q16-PENDING-MEMPOOL/v1\n[]",
+          "utf8",
+        ),
+      )
+      .digest("hex"),
+    txids: [],
+  };
+  const pendingNowMs = Date.now();
+  const pendingWitness = {
+    activationHeight: configuredV7.activationHeight,
+    amountStorageModel: "work-subatoms-v2",
+    canonicalTip: {
+      hash: replayTipHash,
+      height: 102,
+    },
+    declarationTxid: configuredV7.declarationTxid,
+    generatedAt: new Date(pendingNowMs).toISOString(),
+    invalidLegacyMutationCount: 0,
+    mempoolSnapshot: pendingMempool,
+    model: "canonical-work-q16-pending-rebuild-v1",
+    network: "livenet",
+    parity: pendingParity,
+    precisionModel: "canonical-work-subatoms-v2",
+    projection: pendingProjection,
+    ready: true,
+    scan: {
+      canonicalDeferred: 0,
+      complete: true,
+      coveredTxids: 0,
+      protocolTxids: 0,
+      scanned: 0,
+      stopReason: "",
+      unresolved: 0,
+    },
+  };
+  const pendingWitnessOptions = {
+    coreTip: replayCoreTip,
+    declarationConfig: configuredV7,
+    invalidLegacyMutationCount: 0,
+    mempoolSnapshot: pendingMempool,
+    nowMs: pendingNowMs,
+    parity: pendingParity,
+    projection: pendingProjection,
+  };
+  assert.equal(
+    workerWorkPrecisionPendingWitnessReady(
+      pendingWitness,
+      pendingWitnessOptions,
+    ),
+    true,
+  );
+  for (const [witnessMutation, optionMutation] of [
+    [{ ready: false }, {}],
+    [{ invalidLegacyMutationCount: 1 }, {}],
+    [{
+      canonicalTip: {
+        hash: "6".repeat(64),
+        height: 102,
+      },
+    }, {}],
+    [{
+      projection: {
+        ...pendingProjection,
+        commitmentSha256: "6".repeat(64),
+      },
+    }, {}],
+    [{
+      parity: {
+        ...pendingParity,
+        ready: false,
+      },
+    }, {}],
+    [{}, { invalidLegacyMutationCount: 1 }],
+    [{
+      generatedAt: new Date(
+        pendingNowMs - 11 * 60_000,
+      ).toISOString(),
+    }, {}],
+  ]) {
+    assert.equal(
+      workerWorkPrecisionPendingWitnessReady(
+        { ...pendingWitness, ...witnessMutation },
+        { ...pendingWitnessOptions, ...optionMutation },
+      ),
+      false,
+      "mutated pending readiness witness must fail closed",
+    );
+  }
+
   const failure = canonicalWorkerFailureFromLine(
     JSON.stringify(fixtureFailureRecord()),
   );
@@ -710,11 +1515,16 @@ async function runChecks() {
       circuitActivation: "contained-retry",
       genericEscalation: true,
       pendingOnlySourceBoundary: true,
+      pendingWitnessExact: true,
       pendingWatchdogReturnsControl: true,
       progressReset: true,
       rateLimitedAlert: true,
       sigtermStopsChildWithoutRespawn: true,
       workerContainment: true,
+      workPrecisionCoreTipHash: true,
+      workPrecisionEraLatch: true,
+      workPrecisionFullRelationalParity: true,
+      workPrecisionTransitionSnapshotEnvelope: true,
     }),
   );
 }

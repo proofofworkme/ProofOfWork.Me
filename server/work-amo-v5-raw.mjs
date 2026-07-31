@@ -53,9 +53,17 @@ import {
   workAmoV5IdSaleAuthorizationsMatch,
 } from "./work-amo-v5.mjs";
 import {
+  WORK_ATOMIC_PROJECTION_MODEL,
+  WORK_PRECISION_V2_MODEL,
+  WORK_SUBATOM_CONVERSION_FACTOR,
+  WORK_SUBATOM_DECIMALS,
+  WORK_SUBATOM_PROJECTION_MODEL,
+  WORK_SUBATOM_UNIT_SCALE,
+  WORK_SUBATOM_UNIT_SCALE_TEXT,
   WORK_TOKEN_ID,
   formatWorkAtoms,
   formatWorkAtomsAmo,
+  formatWorkSubatoms,
   parseWorkAmountToAtoms,
   workAmountAtomsFromRecord,
 } from "./work-units.mjs";
@@ -67,6 +75,17 @@ import {
   workAmoV6CanonicalTokenStateCommitment,
   workAmoV6CanonicalTokenStatePreimage,
 } from "./work-amo-v6.mjs";
+import {
+  WORK_AMO_V7_AUTH_VERSION,
+  WORK_AMO_V7_BLOCK_SEQUENCER_MODEL,
+  WORK_AMO_V7_MAX_SUPPLY_SUBATOMS,
+  WORK_AMO_V7_MINT_AMOUNT_SUBATOMS,
+  deriveWorkAmoV7FrozenTerms,
+  validateWorkAmoV7SealOrBuyTerms,
+  validateWorkAmoV7StaticAuthorization,
+  workAmoV7CanonicalTokenStateCommitment,
+  workAmoV7CanonicalTokenStatePreimage,
+} from "./work-amo-v7.mjs";
 
 const TXID_PATTERN = /^[0-9a-f]{64}$/u;
 const INTEGER_PATTERN = /^(?:0|[1-9][0-9]*)$/u;
@@ -81,6 +100,8 @@ const WORK_AMO_V5_RESERVED_TOKEN_IDS = new Set([
 const WORK_AMO_VALUE_Q8_SCALE = 100_000_000n;
 const WORK_AMO_V5_MOVEMENT_DENOMINATOR =
   WORK_AMO_V5_MAX_SUPPLY * WORK_AMO_V5_ATOMS_PER_WORK;
+const WORK_AMO_V7_MOVEMENT_DENOMINATOR =
+  WORK_AMO_V5_MAX_SUPPLY * WORK_SUBATOM_UNIT_SCALE;
 const WORK_AMO_V5_GROWTH_VALUE_MULTIPLE = 5n;
 const WORK_AMO_V5_ID_DENSITY_NUMERATOR = 26_868_933_906_745_133n;
 const WORK_AMO_V5_ID_DENSITY_DENOMINATOR = 100_000_000_000_000n;
@@ -634,12 +655,23 @@ export function normalizeWorkAmoV5RawGenericState(value) {
 }
 
 function workStateFromProjection(value) {
-  const preimage = workAmoV6CanonicalTokenStatePreimage(value);
+  const q16 =
+    value?.amountStorageModel === WORK_SUBATOM_PROJECTION_MODEL ||
+    value?.model === "canonical-work-token-state-subatoms-v2" ||
+    value?.confirmedSupplySubatoms !== undefined;
+  const preimage = q16
+    ? workAmoV7CanonicalTokenStatePreimage(value)
+    : workAmoV6CanonicalTokenStatePreimage(value);
   const listings = new Map(
     preimage.listings.map((listing) => [
       listing.listingId,
       {
-        amountAtoms: BigInt(listing.amountAtoms),
+        amountStorageModel: q16
+          ? WORK_SUBATOM_PROJECTION_MODEL
+          : WORK_ATOMIC_PROJECTION_MODEL,
+        amountAtoms: BigInt(
+          q16 ? listing.amountSubatoms : listing.amountAtoms,
+        ),
         frozenTerms: structuredClone(listing.frozenTerms),
         listingId: listing.listingId,
         priceSats: BigInt(listing.priceSats),
@@ -657,31 +689,72 @@ function workStateFromProjection(value) {
     );
   }
   return {
+    amountStorageModel: q16
+      ? WORK_SUBATOM_PROJECTION_MODEL
+      : WORK_ATOMIC_PROJECTION_MODEL,
     balances: new Map(
       preimage.holders.map((holder) => [
         holder.address,
-        BigInt(holder.balanceAtoms),
+        BigInt(
+          q16 ? holder.balanceSubatoms : holder.balanceAtoms,
+        ),
       ]),
     ),
-    confirmedSupplyAtoms: BigInt(preimage.confirmedSupplyAtoms),
+    confirmedSupplyAtoms: BigInt(
+      q16
+        ? preimage.confirmedSupplySubatoms
+        : preimage.confirmedSupplyAtoms,
+    ),
     listings,
     reserved,
   };
 }
 
 function workProjectionFromState(state) {
+  const q16 =
+    state.amountStorageModel === WORK_SUBATOM_PROJECTION_MODEL;
   return {
-    confirmedSupplyAtoms: state.confirmedSupplyAtoms.toString(),
+    ...(q16
+      ? {
+          amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+          confirmedSupplySubatoms:
+            state.confirmedSupplyAtoms.toString(),
+        }
+      : {
+          confirmedSupplyAtoms:
+            state.confirmedSupplyAtoms.toString(),
+        }),
     holders: [...state.balances]
       .flatMap(([address, balanceAtoms]) =>
-        balanceAtoms === 0n ? [] : [{ address, balanceAtoms: balanceAtoms.toString() }],
+        balanceAtoms === 0n
+          ? []
+          : [{
+              address,
+              ...(q16
+                ? {
+                    balanceSubatoms:
+                      balanceAtoms.toString(),
+                  }
+                : {
+                    balanceAtoms:
+                      balanceAtoms.toString(),
+                  }),
+            }],
       )
       .sort((left, right) =>
         compareWorkAmoUtf8(left.address, right.address),
       ),
     listings: [...state.listings.values()]
       .map((listing) => ({
-        amountAtoms: listing.amountAtoms.toString(),
+        ...(q16
+          ? {
+              amountSubatoms:
+                listing.amountAtoms.toString(),
+            }
+          : {
+              amountAtoms:
+                listing.amountAtoms.toString(),
+            }),
         frozenTerms: structuredClone(listing.frozenTerms),
         listingId: listing.listingId,
         priceSats: listing.priceSats.toString(),
@@ -938,7 +1011,10 @@ function strictWorkStateFromProjection(value, expectedCommitment) {
   let commitment;
   try {
     state = workStateFromProjection(value);
-    commitment = workAmoV6CanonicalTokenStateCommitment(value);
+    commitment =
+      state.amountStorageModel === WORK_SUBATOM_PROJECTION_MODEL
+        ? workAmoV7CanonicalTokenStateCommitment(value)
+        : workAmoV6CanonicalTokenStateCommitment(value);
   } catch {
     throw new TypeError(
       "work-amo-v5-raw-opening-work-state-invalid",
@@ -964,6 +1040,7 @@ function cloneGenericState(state) {
 
 function cloneWorkState(state) {
   return {
+    amountStorageModel: state.amountStorageModel,
     balances: new OverlayMap(state.balances),
     confirmedSupplyAtoms: state.confirmedSupplyAtoms,
     listings: new OverlayMap(state.listings),
@@ -1090,8 +1167,11 @@ function stateMutationProjection({
           ...(workCandidate.confirmedSupplyAtoms !==
           workCurrent.confirmedSupplyAtoms
             ? {
-                confirmedSupplyAtoms:
-                  workCandidate.confirmedSupplyAtoms.toString(),
+                [workCandidate.amountStorageModel ===
+                WORK_SUBATOM_PROJECTION_MODEL
+                  ? "confirmedSupplySubatoms"
+                  : "confirmedSupplyAtoms"]:
+                    workCandidate.confirmedSupplyAtoms.toString(),
               }
             : {}),
         }
@@ -1279,18 +1359,37 @@ function baseStateQ8(state) {
 function movementAmountCounts(state) {
   const counts = new Map();
   for (const movement of state.movements) {
-    const amountAtoms = BigInt(movement.amountAtoms);
-    counts.set(amountAtoms, (counts.get(amountAtoms) ?? 0n) + 1n);
+    const descriptor = movementValueDescriptor(movement);
+    const prior = counts.get(descriptor.key);
+    counts.set(descriptor.key, {
+      ...descriptor,
+      count: (prior?.count ?? 0n) + 1n,
+    });
   }
   return counts;
 }
 
+function movementValueDescriptor(movement) {
+  const q16 =
+    movement?.amountStorageModel ===
+      WORK_SUBATOM_PROJECTION_MODEL;
+  const amount = BigInt(
+    q16 ? movement.amountSubatoms : movement.amountAtoms,
+  );
+  return {
+    amount,
+    denominator: q16
+      ? WORK_AMO_V7_MOVEMENT_DENOMINATOR
+      : WORK_AMO_V5_MOVEMENT_DENOMINATOR,
+    key: `${q16 ? "q16" : "q8"}:${amount}`,
+  };
+}
+
 function exactMovementLiveValueQ8(counts, frozenNetworkValueQ8) {
   let total = 0n;
-  for (const [amountAtoms, count] of counts) {
+  for (const { amount, count, denominator } of counts.values()) {
     total +=
-      ((amountAtoms * frozenNetworkValueQ8) /
-        WORK_AMO_V5_MOVEMENT_DENOMINATOR) *
+      ((amount * frozenNetworkValueQ8) / denominator) *
       count;
   }
   return total;
@@ -1387,15 +1486,44 @@ function normalizeStateDelta(value) {
   ) {
     throw new TypeError("work-amo-v5-raw-economic-output-invalid");
   }
-  const movement = source.movement
+  const movementSource = source.movement;
+  const movementQ16 =
+    movementSource?.amountStorageModel ===
+      WORK_SUBATOM_PROJECTION_MODEL;
+  const movement = movementSource
     ? {
-        amountAtoms: exactUnsignedText(source.movement.amountAtoms, {
-          positive: true,
-        }),
-        identity: String(source.movement.identity ?? "").trim(),
+        ...(movementQ16
+          ? {
+              amountStorageModel:
+                WORK_SUBATOM_PROJECTION_MODEL,
+              amountSubatoms: exactUnsignedText(
+                movementSource.amountSubatoms,
+                { positive: true },
+              ),
+            }
+          : {
+              amountAtoms: exactUnsignedText(
+                movementSource.amountAtoms,
+                { positive: true },
+              ),
+            }),
+        identity: String(movementSource.identity ?? "").trim(),
       }
     : null;
-  if (movement && (!movement.amountAtoms || !movement.identity)) {
+  if (
+    movement &&
+    (
+      !movement.identity ||
+      (
+        movementQ16
+          ? !movement.amountSubatoms ||
+            movementSource.amountAtoms !== undefined
+          : !movement.amountAtoms ||
+            movementSource.amountSubatoms !== undefined ||
+            movementSource.amountStorageModel !== undefined
+      )
+    )
+  ) {
     throw new TypeError("work-amo-v5-raw-movement-invalid");
   }
   return {
@@ -1439,7 +1567,7 @@ function applyEconomicDelta(
   let nextCreditMovementFrozenValueQ8 = BigInt(
     state.creditMovementFrozenValueQ8,
   );
-  let movementAmountAtoms = null;
+  let movementDescriptor = null;
   if (normalized.movement) {
     if (
       runtime
@@ -1451,10 +1579,11 @@ function applyEconomicDelta(
     ) {
       throw new TypeError("work-amo-v5-raw-movement-duplicate");
     }
-    movementAmountAtoms = BigInt(normalized.movement.amountAtoms);
+    movementDescriptor =
+      movementValueDescriptor(normalized.movement);
     nextCreditMovementFrozenValueQ8 +=
-      (BigInt(normalized.movement.amountAtoms) * before) /
-      WORK_AMO_V5_MOVEMENT_DENOMINATOR;
+      (movementDescriptor.amount * before) /
+      movementDescriptor.denominator;
   }
   const nextForBase = {
     ...state,
@@ -1474,10 +1603,12 @@ function applyEconomicDelta(
     counts,
     frozenNetworkValueQ8,
   );
-  if (movementAmountAtoms !== null) {
+  if (movementDescriptor) {
     creditMovementLiveValueQ8 +=
-      (movementAmountAtoms * frozenNetworkValueQ8) /
-      WORK_AMO_V5_MOVEMENT_DENOMINATOR;
+      (
+        movementDescriptor.amount *
+        frozenNetworkValueQ8
+      ) / movementDescriptor.denominator;
   }
   const networkValueAfterQ8 =
     baseNetworkValueQ8 +
@@ -1507,10 +1638,15 @@ function applyEconomicDelta(
   }
   if (normalized.movement && runtime && mutate) {
     runtime.movementIdentities.add(normalized.movement.identity);
+    const prior = runtime.movementAmountCounts.get(
+      movementDescriptor.key,
+    );
     runtime.movementAmountCounts.set(
-      movementAmountAtoms,
-      (runtime.movementAmountCounts.get(movementAmountAtoms) ?? 0n) +
-        1n,
+      movementDescriptor.key,
+      {
+        ...movementDescriptor,
+        count: (prior?.count ?? 0n) + 1n,
+      },
     );
   }
   return {
@@ -1560,6 +1696,140 @@ function singleRegistryClaim(
       outputSats: String(payment.registryPaymentSats),
       role,
       vout: payment.registryPaymentVout,
+    }],
+  };
+}
+
+function workAtomicTransferRecord(record) {
+  if (
+    record?.protocol !== "pwt1" ||
+    record?.rawDecodeValid === false
+  ) {
+    return null;
+  }
+  const parsed = parseWorkAmoV5RawPwtRecord(record.message);
+  return (
+      parsed?.kind === "send" &&
+      parsed.tokenId === WORK_TOKEN_ID &&
+      ["send2", "send3"].includes(parsed.amountVersion)
+    )
+    ? {
+        amountVersion: parsed.amountVersion,
+        key: recordKey(record),
+        record,
+      }
+    : null;
+}
+
+function workAggregateRegistryGroups(records) {
+  const recordsByTxid = new Map();
+  for (const record of Array.isArray(records) ? records : []) {
+    const transactionRecords =
+      recordsByTxid.get(record.txid) ?? [];
+    transactionRecords.push(record);
+    recordsByTxid.set(record.txid, transactionRecords);
+  }
+
+  const groups = new Map();
+  for (const [txid, transactionRecords] of recordsByTxid) {
+    const pwtRecords = transactionRecords.filter(
+      (record) => record.protocol === "pwt1",
+    );
+    const transfers = pwtRecords
+      .map(workAtomicTransferRecord)
+      .filter(Boolean);
+    if (transfers.length < 2) {
+      continue;
+    }
+
+    const recordKeys = new Set(
+      transfers.map((transfer) => transfer.key),
+    );
+    const amountVersions = new Set(
+      transfers.map((transfer) => transfer.amountVersion),
+    );
+    const earliestProtocolVout = Math.min(
+      ...transfers.map(
+        ({ record }) => record.position.protocolVout,
+      ),
+    );
+    const requiredPaymentSats =
+      WORK_AMO_V5_MIN_PAYMENT_SATS * transfers.length;
+    const registryOutputs = rawOutputs(
+      transactionRecords[0],
+    ).filter(
+      (output) =>
+        output.address ===
+          WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS &&
+        output.vout < earliestProtocolVout,
+    );
+    if (registryOutputs.length !== 1) {
+      // Multiple physical outputs retain the historical one-output-per-record
+      // claim path. This allocator is only for the singular aggregate shape.
+      continue;
+    }
+    const payment =
+      registryOutputs[0].amountSats === requiredPaymentSats
+        ? registryOutputs[0]
+        : null;
+    const envelopeRecords = transactionRecords.filter(
+      (record) => !recordKeys.has(recordKey(record)),
+    );
+    const envelopeUnambiguous =
+      envelopeRecords.every(
+        (record) =>
+          record.protocol === "pwm1" &&
+          payment &&
+          record.position.protocolVout < payment.vout,
+      );
+    groups.set(txid, {
+      payment,
+      recordKeys,
+      requiredPaymentSats,
+      valid:
+        pwtRecords.length === transfers.length &&
+        amountVersions.size === 1 &&
+        transfers.every(
+          ({ record }) =>
+            record.position.recordOrdinal === 0,
+        ) &&
+        Boolean(payment) &&
+        envelopeUnambiguous,
+    });
+  }
+  return groups;
+}
+
+function aggregateWorkRegistryClaim(
+  record,
+  claimed,
+  group,
+  { attributedSats, role },
+) {
+  if (
+    group?.valid !== true ||
+    !group.recordKeys.has(recordKey(record)) ||
+    !group.payment
+  ) {
+    return null;
+  }
+  const payment = group.payment;
+  claimed.add(payment.vout);
+  return {
+    payment: {
+      aggregateRecordCount: group.recordKeys.size,
+      registryAddress: payment.address,
+      registryPaymentSats: payment.amountSats,
+      registryPaymentVout: payment.vout,
+      requiredRegistryPaymentSats:
+        group.requiredPaymentSats,
+    },
+    outputs: [{
+      address: payment.address,
+      attributedSats: String(attributedSats),
+      outputSats: String(payment.amountSats),
+      role,
+      vout: payment.vout,
     }],
   };
 }
@@ -1877,10 +2147,17 @@ function evaluatePwm(record, context) {
         if (matchedBondRecipientVouts.length === 0) {
           continue;
         }
-        const amountAtoms = BigInt(send.amountAtoms);
+        const q16Send =
+          send.amountStorageModel ===
+            WORK_SUBATOM_PROJECTION_MODEL;
+        const amountAtoms = BigInt(
+          q16Send ? send.amountSubatoms : send.amountAtoms,
+        );
         const attachedWorkLiveValueAtSendQ8 =
           (amountAtoms * openingNetworkValueQ8) /
-          WORK_AMO_V5_MOVEMENT_DENOMINATOR;
+          (q16Send
+            ? WORK_AMO_V7_MOVEMENT_DENOMINATOR
+            : WORK_AMO_V5_MOVEMENT_DENOMINATOR);
         const attachedWorkIssuanceUnits =
           attachedWorkLiveValueAtSendQ8 / WORK_AMO_VALUE_Q8_SCALE;
         if (
@@ -1908,7 +2185,24 @@ function evaluatePwm(record, context) {
         }
         derived.push({
           amount: attachedWorkIssuanceUnits.toString(),
-          attachedWorkAmountAtoms: amountAtoms.toString(),
+          ...(q16Send
+            ? {
+                attachedWorkAmountDecimals:
+                  WORK_SUBATOM_DECIMALS,
+                attachedWorkAmountPrecisionModel:
+                  WORK_PRECISION_V2_MODEL,
+                attachedWorkAmountStorageModel:
+                  WORK_SUBATOM_PROJECTION_MODEL,
+                attachedWorkAmountSubatoms:
+                  amountAtoms.toString(),
+                attachedWorkAmountUnitScale:
+                  WORK_SUBATOM_UNIT_SCALE_TEXT,
+                attachedWorkAmountVersion: "send3",
+              }
+            : {
+                attachedWorkAmountAtoms:
+                  amountAtoms.toString(),
+              }),
           attachedWorkIssuanceUnits:
             attachedWorkIssuanceUnits.toString(),
           attachedWorkLiveValueAtSendQ8:
@@ -2733,6 +3027,51 @@ function evaluateGenericPwt(record, context, parsed) {
 }
 
 function workAuthorizationsMatch(left, right) {
+  const v7 =
+    left?.version === WORK_AMO_V7_AUTH_VERSION ||
+    right?.version === WORK_AMO_V7_AUTH_VERSION;
+  if (v7) {
+    if (
+      left?.version !== WORK_AMO_V7_AUTH_VERSION ||
+      right?.version !== WORK_AMO_V7_AUTH_VERSION
+    ) {
+      return false;
+    }
+    const leftValidation =
+      validateWorkAmoV7StaticAuthorization(left);
+    const rightValidation =
+      validateWorkAmoV7StaticAuthorization(right);
+    if (!leftValidation.valid || !rightValidation.valid) {
+      return false;
+    }
+    return [
+      "amountModel",
+      "anchorScriptPubKey",
+      "anchorSigHashType",
+      "anchorType",
+      "anchorValueSats",
+      "anchorVout",
+      "bondTransitionModel",
+      "buyerAddress",
+      "expiresAt",
+      "network",
+      "nonce",
+      "registryAddress",
+      "sellerAddress",
+      "sellerPublicKey",
+      "stateOrderModel",
+      "ticker",
+      "tokenId",
+      "unitFaceProofs",
+      "unitModel",
+      "unitWorkOracleModel",
+      "version",
+    ].every(
+      (field) =>
+        leftValidation.authorization[field] ===
+        rightValidation.authorization[field],
+    );
+  }
   const v6 =
     left?.version === WORK_AMO_V6_AUTH_VERSION ||
     right?.version === WORK_AMO_V6_AUTH_VERSION;
@@ -2853,7 +3192,16 @@ function workMarketplaceDelta(kind, listing, record, registryOutputs) {
       BigInt(stateDelta.creditFixedSats) + listing.priceSats
     ).toString();
     stateDelta.movement = {
-      amountAtoms: listing.amountAtoms.toString(),
+      ...(listing.amountStorageModel ===
+      WORK_SUBATOM_PROJECTION_MODEL
+        ? {
+            amountStorageModel:
+              WORK_SUBATOM_PROJECTION_MODEL,
+            amountSubatoms: listing.amountAtoms.toString(),
+          }
+        : {
+            amountAtoms: listing.amountAtoms.toString(),
+          }),
       identity: `sale:${record.txid}:${record.position.protocolVout}:${record.position.recordOrdinal}`,
     };
   }
@@ -2862,19 +3210,46 @@ function workMarketplaceDelta(kind, listing, record, registryOutputs) {
 
 function evaluateWorkPwt(record, context, parsed) {
   const workState = cloneWorkState(context.workState);
+  const q16 =
+    workState.amountStorageModel ===
+      WORK_SUBATOM_PROJECTION_MODEL;
+  const v7ActivationHeight = exactSafeInteger(
+    context.workAmoV7?.activationHeight,
+    { positive: true },
+  );
+  const v7Active =
+    v7ActivationHeight !== null &&
+    record.position.blockHeight >= v7ActivationHeight;
   const senderAddress = firstAddressBearingInput(record);
   const claimed = claimedForTx(context.claimedByTxid, record.txid);
   const requiredSats =
     parsed.kind === "mint"
       ? WORK_AMO_V5_WORK_MINT_PAYMENT_SATS
       : WORK_AMO_V5_MIN_PAYMENT_SATS;
-  const registry = singleRegistryClaim(record, claimed, {
-    address: WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS,
-    attributedSats: requiredSats,
-    requireBeforeProtocol: true,
-    requiredSats,
-    role: "pwt-token-registry",
-  });
+  const aggregateGroup =
+    parsed.kind === "send" &&
+    ["send2", "send3"].includes(parsed.amountVersion)
+      ? context.workAggregateRegistryGroupsByTxid.get(
+          record.txid,
+        )
+      : null;
+  const registry = aggregateGroup
+    ? aggregateWorkRegistryClaim(
+        record,
+        claimed,
+        aggregateGroup,
+        {
+          attributedSats: requiredSats,
+          role: "pwt-token-registry",
+        },
+      )
+    : singleRegistryClaim(record, claimed, {
+        address: WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS,
+        attributedSats: requiredSats,
+        requireBeforeProtocol: true,
+        requiredSats,
+        role: "pwt-token-registry",
+      });
   if (!registry) {
     return invalidOutcome(
       "work-amo-v5-distinct-registry-payment-unavailable",
@@ -2897,9 +3272,15 @@ function evaluateWorkPwt(record, context, parsed) {
       genericSemanticKind(parsed.kind),
     );
   }
-  const amountAtoms = BigInt(
-    exactUnsignedText(parsed.amountAtoms, { positive: true }) || "0",
-  );
+  const amountAtoms =
+    parsed.kind === "mint" && q16
+      ? WORK_AMO_V7_MINT_AMOUNT_SUBATOMS
+      : BigInt(
+          exactUnsignedText(
+            q16 ? parsed.amountSubatoms : parsed.amountAtoms,
+            { positive: true },
+          ) || "0",
+        );
   const derived = [];
   let genericState = context.genericState;
   let listing = null;
@@ -2909,9 +3290,15 @@ function evaluateWorkPwt(record, context, parsed) {
   if (parsed.kind === "mint") {
     if (
       !isWorkAmoV5LivenetAddress(senderAddress) ||
-      amountAtoms !== 100_000_000_000n ||
+      amountAtoms !==
+        (q16
+          ? WORK_AMO_V7_MINT_AMOUNT_SUBATOMS
+          : 100_000_000_000n) ||
       workState.confirmedSupplyAtoms + amountAtoms >
-        WORK_AMO_V5_MAX_SUPPLY * WORK_AMO_V5_ATOMS_PER_WORK ||
+        (q16
+          ? WORK_AMO_V7_MAX_SUPPLY_SUBATOMS
+          : WORK_AMO_V5_MAX_SUPPLY *
+            WORK_AMO_V5_ATOMS_PER_WORK) ||
       !adjustWorkBalance(
         workState,
         senderAddress,
@@ -2933,17 +3320,28 @@ function evaluateWorkPwt(record, context, parsed) {
       creditFixedSats: String(WORK_AMO_V5_WORK_MINT_PAYMENT_SATS),
       economicOutputs: registry.outputs,
       movement: {
-        amountAtoms: amountAtoms.toString(),
+        ...(q16
+          ? {
+              amountStorageModel:
+                WORK_SUBATOM_PROJECTION_MODEL,
+              amountSubatoms: amountAtoms.toString(),
+            }
+          : { amountAtoms: amountAtoms.toString() }),
         identity: `mint:${record.txid}:${record.position.protocolVout}:${record.position.recordOrdinal}`,
       },
     };
     output = {
-      amountAtoms: amountAtoms.toString(),
+      ...(q16
+        ? { amountSubatoms: amountAtoms.toString() }
+        : { amountAtoms: amountAtoms.toString() }),
       recipientAddress: senderAddress,
       tokenId: WORK_TOKEN_ID,
     };
   } else if (parsed.kind === "send") {
     if (
+      (v7Active
+        ? parsed.amountVersion !== "send3" || !q16
+        : parsed.amountVersion === "send3") ||
       !isWorkAmoV5LivenetAddress(senderAddress) ||
       !isWorkAmoV5LivenetAddress(parsed.recipientAddress) ||
       amountAtoms <= 0n ||
@@ -2969,12 +3367,20 @@ function evaluateWorkPwt(record, context, parsed) {
       creditFixedSats: String(WORK_AMO_V5_MIN_PAYMENT_SATS),
       economicOutputs: registry.outputs,
       movement: {
-        amountAtoms: amountAtoms.toString(),
+        ...(q16
+          ? {
+              amountStorageModel:
+                WORK_SUBATOM_PROJECTION_MODEL,
+              amountSubatoms: amountAtoms.toString(),
+            }
+          : { amountAtoms: amountAtoms.toString() }),
         identity: `transfer:${record.txid}:${record.position.protocolVout}:${record.position.recordOrdinal}`,
       },
     };
     output = {
-      amountAtoms: amountAtoms.toString(),
+      ...(q16
+        ? { amountSubatoms: amountAtoms.toString() }
+        : { amountAtoms: amountAtoms.toString() }),
       recipientAddress: parsed.recipientAddress,
       senderAddress,
       tokenId: WORK_TOKEN_ID,
@@ -2991,7 +3397,9 @@ function evaluateWorkPwt(record, context, parsed) {
       );
       const attachedWorkLiveValueAtSendQ8 =
         (amountAtoms * openingNetworkValueQ8) /
-        WORK_AMO_V5_MOVEMENT_DENOMINATOR;
+        (q16
+          ? WORK_AMO_V7_MOVEMENT_DENOMINATOR
+          : WORK_AMO_V5_MOVEMENT_DENOMINATOR);
       const attachedWorkIssuanceUnits =
         attachedWorkLiveValueAtSendQ8 / WORK_AMO_VALUE_Q8_SCALE;
       genericState = cloneGenericState(context.genericState);
@@ -3020,7 +3428,24 @@ function evaluateWorkPwt(record, context, parsed) {
       }
       const attachment = {
         amount: attachedWorkIssuanceUnits.toString(),
-        attachedWorkAmountAtoms: amountAtoms.toString(),
+        ...(q16
+          ? {
+              attachedWorkAmountDecimals:
+                WORK_SUBATOM_DECIMALS,
+              attachedWorkAmountPrecisionModel:
+                WORK_PRECISION_V2_MODEL,
+              attachedWorkAmountSubatoms:
+                amountAtoms.toString(),
+              attachedWorkAmountStorageModel:
+                WORK_SUBATOM_PROJECTION_MODEL,
+              attachedWorkAmountUnitScale:
+                WORK_SUBATOM_UNIT_SCALE_TEXT,
+              attachedWorkAmountVersion: "send3",
+            }
+          : {
+              attachedWorkAmountAtoms:
+                amountAtoms.toString(),
+            }),
         attachedWorkIssuanceUnits:
           attachedWorkIssuanceUnits.toString(),
         attachedWorkLiveValueAtSendQ8:
@@ -3057,7 +3482,24 @@ function evaluateWorkPwt(record, context, parsed) {
     const v6Authorization =
       parsed.saleAuthorization?.version ===
       WORK_AMO_V6_AUTH_VERSION;
-    const staticValidation = v6Authorization
+    const v7Authorization =
+      parsed.saleAuthorization?.version ===
+      WORK_AMO_V7_AUTH_VERSION;
+    const staticValidation = v7Authorization
+      ? v7Active
+        ? validateWorkAmoV7StaticAuthorization(
+            parsed.saleAuthorization,
+          )
+        : {
+            reasonCode: "work-amo-v7-before-activation",
+            valid: false,
+          }
+      : v7Active
+        ? {
+            reasonCode: "work-amo-v7-version-required",
+            valid: false,
+          }
+      : v6Authorization
       ? v6Active
         ? validateWorkAmoV6StaticAuthorization(
             parsed.saleAuthorization,
@@ -3106,7 +3548,21 @@ function evaluateWorkPwt(record, context, parsed) {
       stateDelta,
       { runtime: context.economicRuntime },
     );
-    const derivedTerms = v6Authorization
+    const derivedTerms = v7Authorization
+      ? deriveWorkAmoV7FrozenTerms(authorization, {
+          activationHeight:
+            context.workAmoV7.activationHeight,
+          listingBondContributionQ8:
+            hypothetical.bondContributionQ8,
+          listingPosition: record.position,
+          networkValueBeforeQ8:
+            hypothetical.networkValueBeforeQ8,
+          spendableAmountSubatoms: workSpendable(
+            workState,
+            authorization.sellerAddress,
+          ).toString(),
+        })
+      : v6Authorization
       ? deriveWorkAmoV6FrozenTerms(authorization, {
           activationHeight:
             context.workAmoV6.activationHeight,
@@ -3140,7 +3596,14 @@ function evaluateWorkPwt(record, context, parsed) {
       );
     }
     listing = {
-      amountAtoms: BigInt(derivedTerms.frozenTerms.unitAmountAtoms),
+      amountStorageModel: v7Authorization
+        ? WORK_SUBATOM_PROJECTION_MODEL
+        : WORK_ATOMIC_PROJECTION_MODEL,
+      amountAtoms: BigInt(
+        v7Authorization
+          ? derivedTerms.frozenTerms.unitAmountSubatoms
+          : derivedTerms.frozenTerms.unitAmountAtoms,
+      ),
       frozenTerms: derivedTerms.frozenTerms,
       listingId: record.txid,
       priceSats: BigInt(derivedTerms.frozenTerms.unitPriceSats),
@@ -3164,8 +3627,10 @@ function evaluateWorkPwt(record, context, parsed) {
     }
     if (
       parsed.kind === "seal" &&
-      listing.saleAuthorization?.version ===
-        WORK_AMO_V6_AUTH_VERSION &&
+      [
+        WORK_AMO_V6_AUTH_VERSION,
+        WORK_AMO_V7_AUTH_VERSION,
+      ].includes(listing.saleAuthorization?.version) &&
       normalizedTxid(
         listing.saleAuthorization?.anchorTxid,
       ) === listing.listingId &&
@@ -3233,6 +3698,19 @@ function evaluateWorkPwt(record, context, parsed) {
                 record.position,
               ),
             }
+          : listingVersion === WORK_AMO_V7_AUTH_VERSION
+            ? validateWorkAmoV7SealOrBuyTerms({
+                actionAuthorization:
+                  parsed.saleAuthorization,
+                actionPosition: record.position,
+                activationHeight:
+                  context.workAmoV7?.activationHeight,
+                listingAuthorization:
+                  listing.saleAuthorization,
+                listingFrozenTerms: listing.frozenTerms,
+                listingPosition: position,
+                referencesListingFrozenTerms: true,
+              })
           : listingVersion === WORK_AMO_V6_AUTH_VERSION
             ? validateWorkAmoV6SealOrBuyTerms({
                 actionPosition: record.position,
@@ -3339,7 +3817,12 @@ function evaluateWorkPwt(record, context, parsed) {
       if (listing.saleAuthorization?.version !== "pwt-sale-v4") {
         const signed =
           listing.saleAuthorization?.version ===
-          WORK_AMO_V6_AUTH_VERSION
+          WORK_AMO_V7_AUTH_VERSION
+            ? validateWorkAmoV7StaticAuthorization(
+                parsed.saleAuthorization,
+              )
+            : listing.saleAuthorization?.version ===
+              WORK_AMO_V6_AUTH_VERSION
             ? validateWorkAmoV6StaticAuthorization(
                 parsed.saleAuthorization,
               )
@@ -4296,6 +4779,47 @@ function normalizedWorkAmoV6ReplayContext({
   };
 }
 
+function normalizedWorkAmoV7ReplayContext({
+  blockHeight,
+  workAmoV7,
+  workState,
+} = {}) {
+  const activationHeight = exactSafeInteger(
+    workAmoV7?.activationHeight,
+    { positive: true },
+  );
+  if (activationHeight === null || blockHeight < activationHeight) {
+    if (
+      workState.amountStorageModel ===
+        WORK_SUBATOM_PROJECTION_MODEL
+    ) {
+      throw new TypeError(
+        "work-amo-v7-q16-state-before-activation",
+      );
+    }
+    return { commitment: null, evaluation: null };
+  }
+  if (
+    workState.amountStorageModel !==
+      WORK_SUBATOM_PROJECTION_MODEL
+  ) {
+    throw new TypeError(
+      "work-amo-v7-q16-opening-state-required",
+    );
+  }
+  return {
+    commitment: {
+      activationHeight,
+      amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+      blockSequencerModel: WORK_AMO_V7_BLOCK_SEQUENCER_MODEL,
+    },
+    evaluation: {
+      activationHeight,
+      amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+    },
+  };
+}
+
 export function replayWorkAmoV5RawBlock({
   blockHeaderHex,
   blockTransactions,
@@ -4309,6 +4833,7 @@ export function replayWorkAmoV5RawBlock({
   openingWorkState,
   referenceBlockWitnesses = [],
   workAmoV6 = null,
+  workAmoV7 = null,
 } = {}) {
   const openingValidation = validateWorkAmoV5SufficientState(
     openingEconomicState,
@@ -4450,6 +4975,11 @@ export function replayWorkAmoV5RawBlock({
     referenceBlockWitnesses,
     workAmoV6,
   });
+  const v7Replay = normalizedWorkAmoV7ReplayContext({
+    blockHeight: requiredBlockHeight,
+    workAmoV7,
+    workState: workOpeningState,
+  });
   const countsByTxid = new Map();
   const protocolRecordCountsByTxid = new Map();
   const validPwaRecordCountsByTxid = new Map();
@@ -4507,6 +5037,8 @@ export function replayWorkAmoV5RawBlock({
     );
   }
   const claimedByTxid = new Map();
+  const workAggregateRegistryGroupsByTxid =
+    workAggregateRegistryGroups(ordered);
   const incbParentsByTxid = new Map();
   const outcomes = new Map();
   const events = [];
@@ -4533,6 +5065,9 @@ export function replayWorkAmoV5RawBlock({
       workAmoV5CanonicalStateCommitment(economicState),
     ...(v6Replay.commitment
       ? { workAmoV6: v6Replay.commitment }
+      : {}),
+    ...(v7Replay.commitment
+      ? { workAmoV7: v7Replay.commitment }
       : {}),
   });
   for (let index = 0; index < ordered.length; index += 1) {
@@ -4573,6 +5108,8 @@ export function replayWorkAmoV5RawBlock({
           protocolRecordCountsByTxid,
           validPwaRecordCountsByTxid,
           workAmoV6: v6Replay.evaluation,
+          workAmoV7: v7Replay.evaluation,
+          workAggregateRegistryGroupsByTxid,
           workSendsByTxid,
           workState,
         });
@@ -4632,7 +5169,17 @@ export function replayWorkAmoV5RawBlock({
       ) {
         const sends = workSendsByTxid.get(record.txid) ?? [];
         sends.push({
-          amountAtoms: normalized.output.amountAtoms,
+          ...(normalized.output.amountSubatoms
+            ? {
+                amountStorageModel:
+                  WORK_SUBATOM_PROJECTION_MODEL,
+                amountSubatoms:
+                  normalized.output.amountSubatoms,
+              }
+            : {
+                amountAtoms:
+                  normalized.output.amountAtoms,
+              }),
           position: record.position,
           recipientAddress:
             normalized.output.recipientAddress,
@@ -4826,7 +5373,9 @@ export function replayWorkAmoV5RawBlock({
   const idStateCommitment =
     workAmoV5RawIdStateCommitment(publicIdState);
   const tokenStateCommitment =
-    workAmoV6CanonicalTokenStateCommitment(publicWorkState);
+    v7Replay.commitment
+      ? workAmoV7CanonicalTokenStateCommitment(publicWorkState)
+      : workAmoV6CanonicalTokenStateCommitment(publicWorkState);
   const closingValidation = validateWorkAmoV5SufficientState({
     ...economicState,
     genericTokenStateCommitment,
@@ -4887,6 +5436,9 @@ export function replayWorkAmoV5RawBlock({
             v6Replay.referenceBlockWitnesses,
         }
       : {}),
+    ...(v7Replay.commitment
+      ? { workAmoV7: v7Replay.commitment }
+      : {}),
     records: ordered,
     stateCommitment,
     tokenStateCommitment,
@@ -4915,13 +5467,19 @@ function workListingProjectionFromCanonicalState(
   listing,
   preserved = null,
 ) {
+  const v7 =
+    listing?.saleAuthorization?.version ===
+      WORK_AMO_V7_AUTH_VERSION;
   if (
+    !v7 &&
     listing?.saleAuthorization?.version !==
       WORK_AMO_V6_AUTH_VERSION
   ) {
     return null;
   }
-  const amountAtoms = String(listing?.amountAtoms ?? "").trim();
+  const amountAtoms = String(
+    v7 ? listing?.amountSubatoms : listing?.amountAtoms,
+  ).trim();
   const listingId = normalizedTxid(listing?.listingId);
   const position = listingPosition(listing);
   if (
@@ -4944,8 +5502,15 @@ function workListingProjectionFromCanonicalState(
       ? preserved
       : {}),
     ...listing,
-    amount: formatWorkAtomsAmo(amountAtoms),
-    amountAtoms,
+    amount: v7
+      ? formatWorkSubatoms(amountAtoms)
+      : formatWorkAtomsAmo(amountAtoms),
+    ...(v7
+      ? {
+          amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+          amountSubatoms: amountAtoms,
+        }
+      : { amountAtoms }),
     blockHash: position.blockHash,
     blockHeight: position.blockHeight,
     blockIndex: position.blockTransactionIndex,
@@ -4973,6 +5538,8 @@ export function projectWorkAmoV5RawEvents(
       ? seedProjection
       : {};
   const closing = normalizeWorkAmoV5RawWorkState(closingWorkState);
+  const q16 =
+    closing.amountStorageModel === WORK_SUBATOM_PROJECTION_MODEL;
   const preservedListings = new Map(
     (Array.isArray(seed.listings) ? seed.listings : [])
       .map((listing) => [
@@ -4986,10 +5553,23 @@ export function projectWorkAmoV5RawEvents(
     closedListings: structuredClone(
       Array.isArray(seed.closedListings) ? seed.closedListings : [],
     ),
-    confirmedSupplyAtoms: closing.confirmedSupplyAtoms,
+    ...(q16
+      ? {
+          amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+          confirmedSupplySubatoms:
+            closing.confirmedSupplySubatoms,
+          decimals: 16,
+          unitScale: WORK_SUBATOM_UNIT_SCALE.toString(),
+        }
+      : {
+          confirmedSupplyAtoms:
+            closing.confirmedSupplyAtoms,
+        }),
     holders: closing.holders.map((holder) => ({
       ...holder,
-      balance: holder.balanceAtoms,
+      balance: q16
+        ? formatWorkSubatoms(holder.balanceSubatoms)
+        : holder.balanceAtoms,
       tokenId: WORK_TOKEN_ID,
     })),
     invalidEvents: structuredClone(
@@ -5003,7 +5583,9 @@ export function projectWorkAmoV5RawEvents(
         ),
       ) ?? {
         ...listing,
-        amount: listing.amountAtoms,
+        amount: q16
+          ? formatWorkSubatoms(listing.amountSubatoms)
+          : listing.amountAtoms,
         tokenId: WORK_TOKEN_ID,
       }
     ),
@@ -5013,6 +5595,11 @@ export function projectWorkAmoV5RawEvents(
       Array.isArray(seed.transfers) ? seed.transfers : [],
     ),
   };
+  if (q16) {
+    delete next.confirmedSupplyAtoms;
+  } else {
+    delete next.confirmedSupplySubatoms;
+  }
   for (const event of Array.isArray(events) ? events : []) {
     if (event.protocol !== "pwt1") {
       continue;
@@ -5021,24 +5608,34 @@ export function projectWorkAmoV5RawEvents(
     const referencedListing = preservedListings.get(
       normalizedTxid(event.parsed?.listingId),
     );
-    const v6ClosedListing =
+    const governedClosedListing =
       String(
         projection.closedListing?.saleAuthorization?.version ?? "",
-      ).trim().toLowerCase() === WORK_AMO_V6_AUTH_VERSION
+      ).trim().toLowerCase();
+    const closedListing =
+      [
+        WORK_AMO_V6_AUTH_VERSION,
+        WORK_AMO_V7_AUTH_VERSION,
+      ].includes(governedClosedListing)
         ? projection.closedListing
         : null;
-    const v6ReferencedListing =
+    const governedReferencedListing =
       String(
         referencedListing?.saleAuthorization?.version ?? "",
-      ).trim().toLowerCase() === WORK_AMO_V6_AUTH_VERSION
+      ).trim().toLowerCase();
+    const referencedGovernedListing =
+      [
+        WORK_AMO_V6_AUTH_VERSION,
+        WORK_AMO_V7_AUTH_VERSION,
+      ].includes(governedReferencedListing)
         ? referencedListing
         : null;
     const tokenId = normalizedTxid(
       event.parsed?.tokenId ??
         event.parsed?.saleAuthorization?.tokenId ??
         projection.listing?.saleAuthorization?.tokenId ??
-        v6ClosedListing?.saleAuthorization?.tokenId ??
-        v6ReferencedListing?.saleAuthorization?.tokenId,
+        closedListing?.saleAuthorization?.tokenId ??
+        referencedGovernedListing?.saleAuthorization?.tokenId,
     );
     if (tokenId !== WORK_TOKEN_ID) {
       continue;
@@ -5077,7 +5674,14 @@ export function projectWorkAmoV5RawEvents(
     } else if (event.parsed?.kind === "mint") {
       next.mints.push({
         ...base,
-        amountAtoms: event.parsed.amountAtoms,
+        ...(q16
+          ? {
+              amountStorageModel:
+                WORK_SUBATOM_PROJECTION_MODEL,
+              amountSubatoms:
+                projection.amountSubatoms,
+            }
+          : { amountAtoms: event.parsed.amountAtoms }),
         minterAddress: projection.recipientAddress,
         paidSats: WORK_AMO_V5_WORK_MINT_PAYMENT_SATS,
         ticker: "WORK",
@@ -5086,7 +5690,14 @@ export function projectWorkAmoV5RawEvents(
     } else if (event.parsed?.kind === "send") {
       next.transfers.push({
         ...base,
-        amountAtoms: event.parsed.amountAtoms,
+        ...(q16
+          ? {
+              amountStorageModel:
+                WORK_SUBATOM_PROJECTION_MODEL,
+              amountSubatoms:
+                event.parsed.amountSubatoms,
+            }
+          : { amountAtoms: event.parsed.amountAtoms }),
         paidSats: WORK_AMO_V5_MIN_PAYMENT_SATS,
         recipientAddress: event.parsed.recipientAddress,
         senderAddress: projection.senderAddress,
@@ -5146,7 +5757,15 @@ export function projectWorkAmoV5RawEvents(
               ...base,
               ...(projection.listing ?? {}),
               buyerAddress: projection.buyerAddress,
-              amountAtoms: projection.listing?.amountAtoms,
+              ...(q16
+                ? {
+                    amountSubatoms:
+                      projection.listing?.amountSubatoms,
+                  }
+                : {
+                    amountAtoms:
+                      projection.listing?.amountAtoms,
+                  }),
               ticker: "WORK",
               tokenId: WORK_TOKEN_ID,
             },

@@ -3,10 +3,29 @@ export const WORK_TOKEN_ID =
 export const WORK_DECIMALS = 8;
 export const WORK_UNIT_SCALE = 100_000_000n;
 export const WORK_UNIT_SCALE_TEXT = WORK_UNIT_SCALE.toString();
-export const WORK_AMO_DECIMALS = 16;
-export const WORK_AMO_UNIT_SCALE = 10_000_000_000_000_000n;
+export const WORK_LEGACY_DECIMALS = WORK_DECIMALS;
+export const WORK_LEGACY_UNIT_SCALE = WORK_UNIT_SCALE;
+export const WORK_LEGACY_UNIT_SCALE_TEXT = WORK_UNIT_SCALE_TEXT;
+export const WORK_LEGACY_ATOMIC_PROJECTION_MODEL = "work-atoms-v1";
+export const WORK_SUBATOM_DECIMALS = 16;
+export const WORK_SUBATOM_UNIT_SCALE = 10_000_000_000_000_000n;
+export const WORK_SUBATOM_UNIT_SCALE_TEXT =
+  WORK_SUBATOM_UNIT_SCALE.toString();
+export const WORK_SUBATOM_CONVERSION_FACTOR =
+  WORK_SUBATOM_UNIT_SCALE / WORK_LEGACY_UNIT_SCALE;
+export const WORK_SUBATOM_PROJECTION_MODEL = "work-subatoms-v2";
+export const WORK_PRECISION_V2_MODEL = "canonical-work-subatoms-v2";
+export const WORK_PRECISION_V2_MIGRATION_MODEL =
+  "canonical-work-q8-to-q16-migration-v1";
+export const WORK_PRECISION_V2_MIGRATION_META_KEY =
+  "workPrecisionV2Migration:livenet";
+// V6 remains an immutable Q8 protocol. V7 and later use the Q16 constants
+// above after the separately evidenced precision migration activates.
+export const WORK_AMO_DECIMALS = WORK_LEGACY_DECIMALS;
+export const WORK_AMO_UNIT_SCALE = WORK_LEGACY_UNIT_SCALE;
 export const WORK_AMO_UNIT_SCALE_TEXT = WORK_AMO_UNIT_SCALE.toString();
-export const WORK_ATOMIC_PROJECTION_MODEL = "work-atoms-v1";
+export const WORK_ATOMIC_PROJECTION_MODEL =
+  WORK_LEGACY_ATOMIC_PROJECTION_MODEL;
 export const WORK_VALUE_Q8_SCALE = 100_000_000n;
 
 export function isWorkTokenId(value) {
@@ -56,9 +75,77 @@ export function isCanonicalWorkAtoms(value, options = {}) {
   }
 }
 
-export function parseWorkAmountToAtoms(
+export function normalizeWorkSubatoms(value, options = {}) {
+  if (
+    typeof value === "string" &&
+    value !== value.trim()
+  ) {
+    throw new TypeError(
+      "WORK subatoms must not use surrounding whitespace.",
+    );
+  }
+  return normalizeWorkAtoms(value, options);
+}
+
+export function isCanonicalWorkSubatoms(value, options = {}) {
+  try {
+    return (
+      normalizeWorkSubatoms(value, options) ===
+      String(value ?? "").trim()
+    );
+  } catch {
+    return false;
+  }
+}
+
+export function legacyWorkAtomsToSubatoms(
   value,
-  { allowZero = false, maxAtoms = "" } = {},
+  { allowNegative = false, allowZero = false } = {},
+) {
+  const legacyAtoms = BigInt(
+    normalizeWorkAtoms(value, {
+      allowNegative,
+      allowZero,
+    }),
+  );
+  return (legacyAtoms * WORK_SUBATOM_CONVERSION_FACTOR).toString();
+}
+
+export function workSubatomsToLegacyAtoms(
+  value,
+  {
+    allowNegative = false,
+    allowZero = false,
+    requireExact = true,
+  } = {},
+) {
+  const subatoms = BigInt(
+    normalizeWorkSubatoms(value, {
+      allowNegative,
+      allowZero,
+    }),
+  );
+  if (
+    requireExact &&
+    subatoms % WORK_SUBATOM_CONVERSION_FACTOR !== 0n
+  ) {
+    throw new RangeError(
+      "WORK subatoms do not map exactly to the legacy atomic scale.",
+    );
+  }
+  return (subatoms / WORK_SUBATOM_CONVERSION_FACTOR).toString();
+}
+
+function parseWorkDecimalToUnits(
+  value,
+  {
+    allowZero = false,
+    decimals,
+    maxUnits = "",
+    trimInput = true,
+    unitLabel,
+    unitScale,
+  },
 ) {
   let text;
   if (typeof value === "bigint") {
@@ -69,39 +156,83 @@ export function parseWorkAmountToAtoms(
     }
     text = String(value);
   } else {
-    text = String(value ?? "").trim();
+    text = String(value ?? "");
+    if (!trimInput && text !== text.trim()) {
+      throw new TypeError(
+        `WORK ${unitLabel} amount must not use surrounding whitespace.`,
+      );
+    }
+    text = trimInput ? text.trim() : text;
   }
 
-  const match =
-    /^(0|[1-9]\d*)(?:\.(\d{1,8}))?$/u.exec(text);
+  const match = new RegExp(
+    `^(0|[1-9]\\d*)(?:\\.(\\d{1,${decimals}}))?$`,
+    "u",
+  ).exec(text);
   if (!match) {
     throw new TypeError(
-      "WORK amount must be a plain decimal with at most 8 places.",
+      `WORK amount must be a plain decimal with at most ${decimals} places.`,
     );
   }
   const whole = BigInt(match[1]);
-  const fractional = String(match[2] ?? "").padEnd(
-    WORK_DECIMALS,
-    "0",
-  );
-  const atoms = whole * WORK_UNIT_SCALE + BigInt(fractional || "0");
-  if (!allowZero && atoms === 0n) {
+  const fractional = String(match[2] ?? "").padEnd(decimals, "0");
+  const units = whole * unitScale + BigInt(fractional || "0");
+  if (!allowZero && units === 0n) {
     throw new RangeError("WORK amount must be greater than zero.");
   }
-  if (maxAtoms !== "") {
+  if (maxUnits !== "") {
     const normalizedMax = BigInt(
-      normalizeWorkAtoms(maxAtoms, { allowZero: true }),
+      unitScale === WORK_SUBATOM_UNIT_SCALE
+        ? normalizeWorkSubatoms(maxUnits, { allowZero: true })
+        : normalizeWorkAtoms(maxUnits, { allowZero: true }),
     );
-    if (atoms > normalizedMax) {
-      throw new RangeError("WORK amount exceeds the allowed atomic maximum.");
+    if (units > normalizedMax) {
+      throw new RangeError(
+        `WORK amount exceeds the allowed ${unitLabel} maximum.`,
+      );
     }
   }
-  return atoms.toString();
+  return units.toString();
+}
+
+export function parseWorkAmountToAtoms(
+  value,
+  { allowZero = false, maxAtoms = "" } = {},
+) {
+  return parseWorkDecimalToUnits(value, {
+    allowZero,
+    decimals: WORK_LEGACY_DECIMALS,
+    maxUnits: maxAtoms,
+    unitLabel: "atomic",
+    unitScale: WORK_LEGACY_UNIT_SCALE,
+  });
+}
+
+export function parseWorkAmountToSubatoms(
+  value,
+  { allowZero = false, maxSubatoms = "" } = {},
+) {
+  return parseWorkDecimalToUnits(value, {
+    allowZero,
+    decimals: WORK_SUBATOM_DECIMALS,
+    maxUnits: maxSubatoms,
+    trimInput: false,
+    unitLabel: "subatomic",
+    unitScale: WORK_SUBATOM_UNIT_SCALE,
+  });
 }
 
 export function tryParseWorkAmountToAtoms(value, options = {}) {
   try {
     return parseWorkAmountToAtoms(value, options);
+  } catch {
+    return "";
+  }
+}
+
+export function tryParseWorkAmountToSubatoms(value, options = {}) {
+  try {
+    return parseWorkAmountToSubatoms(value, options);
   } catch {
     return "";
   }
@@ -130,6 +261,43 @@ export function parseSignedWorkAmountToAtoms(value) {
 export function tryParseSignedWorkAmountToAtoms(value) {
   try {
     return parseSignedWorkAmountToAtoms(value);
+  } catch {
+    return "";
+  }
+}
+
+export function parseSignedWorkAmountToSubatoms(value) {
+  const text = String(value ?? "");
+  if (text !== text.trim()) {
+    throw new TypeError(
+      "Signed WORK subatom amount must not use surrounding whitespace.",
+    );
+  }
+  const match =
+    /^(-?)(0|[1-9]\d*)(?:\.(\d{1,16}))?$/u.exec(text);
+  if (!match) {
+    throw new TypeError(
+      "Signed WORK amount must be a canonical decimal with at most 16 places.",
+    );
+  }
+  const whole = BigInt(match[2]);
+  const fractional = BigInt(
+    String(match[3] ?? "").padEnd(WORK_SUBATOM_DECIMALS, "0") ||
+      "0",
+  );
+  const absoluteSubatoms =
+    whole * WORK_SUBATOM_UNIT_SCALE + fractional;
+  if (match[1] === "-" && absoluteSubatoms === 0n) {
+    throw new TypeError("Signed WORK amount cannot use negative zero.");
+  }
+  return (
+    match[1] === "-" ? -absoluteSubatoms : absoluteSubatoms
+  ).toString();
+}
+
+export function tryParseSignedWorkAmountToSubatoms(value) {
+  try {
+    return parseSignedWorkAmountToSubatoms(value);
   } catch {
     return "";
   }
@@ -179,6 +347,69 @@ export function formatWorkAtomsAmo(
   });
 }
 
+export function formatWorkSubatoms(
+  value,
+  { allowNegative = false, trim = true } = {},
+) {
+  return formatWorkAtomsFromScale(
+    value,
+    WORK_SUBATOM_UNIT_SCALE,
+    WORK_SUBATOM_DECIMALS,
+    {
+      allowNegative,
+      trim,
+    },
+  );
+}
+
+export function workPrecisionMetadata(
+  model,
+  { allowLegacy = true, allowSubatoms = true } = {},
+) {
+  const normalized = String(model ?? "").trim();
+  if (
+    allowLegacy &&
+    normalized === WORK_LEGACY_ATOMIC_PROJECTION_MODEL
+  ) {
+    return Object.freeze({
+      amountStorageModel: WORK_LEGACY_ATOMIC_PROJECTION_MODEL,
+      decimals: WORK_LEGACY_DECIMALS,
+      unitScale: WORK_LEGACY_UNIT_SCALE_TEXT,
+    });
+  }
+  if (
+    allowSubatoms &&
+    normalized === WORK_SUBATOM_PROJECTION_MODEL
+  ) {
+    return Object.freeze({
+      amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+      decimals: WORK_SUBATOM_DECIMALS,
+      unitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,
+    });
+  }
+  return null;
+}
+
+export function validateWorkPrecisionMetadata(
+  metadata,
+  options = {},
+) {
+  const item =
+    metadata && typeof metadata === "object" && !Array.isArray(metadata)
+      ? metadata
+      : {};
+  const expected = workPrecisionMetadata(
+    item.amountStorageModel,
+    options,
+  );
+  return Boolean(
+    expected &&
+      typeof item.decimals === "number" &&
+      item.decimals === expected.decimals &&
+      String(item.unitScale ?? "") === expected.unitScale,
+  );
+}
+
 export function workAmountAtomsFromRecord(
   record,
   { allowZero = false, storedAmountIsAtoms = false } = {},
@@ -221,6 +452,117 @@ export function workAmountAtomsFromRecord(
     : parseWorkAmountToAtoms(amount, { allowZero });
 }
 
+export function workAmountSubatomsFromRecord(
+  record,
+  {
+    allowLegacy = true,
+    allowZero = false,
+    sourceModel = "",
+    storedAmountIsSubatoms = false,
+  } = {},
+) {
+  const item =
+    record && typeof record === "object" && !Array.isArray(record)
+      ? record
+      : {};
+  const saleAuthorization =
+    item.saleAuthorization &&
+    typeof item.saleAuthorization === "object" &&
+    !Array.isArray(item.saleAuthorization)
+      ? item.saleAuthorization
+      : {};
+  const subatomAliases = [
+    item.amountSubatoms,
+    item.tokenAmountSubatoms,
+    saleAuthorization.amountSubatoms,
+  ].filter(
+    (candidate) =>
+      candidate !== undefined && candidate !== null && candidate !== "",
+  );
+  const model = String(
+    sourceModel ||
+      item.amountStorageModel ||
+      saleAuthorization.amountStorageModel ||
+      "",
+  ).trim();
+  if (
+    model !== WORK_SUBATOM_PROJECTION_MODEL &&
+    (!allowLegacy || model !== WORK_LEGACY_ATOMIC_PROJECTION_MODEL)
+  ) {
+    throw new TypeError(
+      "WORK precision metadata is required to project subatoms.",
+    );
+  }
+
+  const atomAliases = [
+    item.amountAtoms,
+    item.tokenAmountAtoms,
+    saleAuthorization.amountAtoms,
+  ].filter(
+    (candidate) =>
+      candidate !== undefined && candidate !== null && candidate !== "",
+  );
+
+  if (model === WORK_SUBATOM_PROJECTION_MODEL) {
+    if (atomAliases.length > 0 || subatomAliases.length !== 1) {
+      throw new TypeError(
+        "Native Q16 WORK requires exactly one subatom alias and no legacy atom alias.",
+      );
+    }
+    return normalizeWorkSubatoms(subatomAliases[0], { allowZero });
+  }
+
+  if (atomAliases.length > 1 || subatomAliases.length > 1) {
+    throw new TypeError("Legacy WORK amount aliases are ambiguous.");
+  }
+  if (atomAliases.length === 1) {
+    const normalized = legacyWorkAtomsToSubatoms(atomAliases[0], {
+      allowZero,
+    });
+    if (
+      subatomAliases.length === 1 &&
+      normalizeWorkSubatoms(subatomAliases[0], { allowZero }) !==
+        normalized
+    ) {
+      throw new TypeError(
+        "Legacy WORK atom and normalized subatom aliases conflict.",
+      );
+    }
+    return normalized;
+  }
+  if (subatomAliases.length > 0) {
+    throw new TypeError(
+      "Legacy WORK subatom aliases require their exact raw atom source.",
+    );
+  }
+
+  const amount = [
+    item.amount,
+    item.tokenAmount,
+    saleAuthorization.amount,
+  ].find(
+    (candidate) =>
+      candidate !== undefined && candidate !== null && candidate !== "",
+  );
+  if (amount === undefined) {
+    throw new TypeError("WORK amount is missing.");
+  }
+  if (storedAmountIsSubatoms) {
+    if (model !== WORK_SUBATOM_PROJECTION_MODEL) {
+      throw new TypeError(
+        "Stored WORK subatoms require explicit work-subatoms-v2 metadata.",
+      );
+    }
+    return normalizeWorkSubatoms(amount, { allowZero });
+  }
+  return model === WORK_SUBATOM_PROJECTION_MODEL
+    ? parseWorkAmountToSubatoms(amount, { allowZero })
+    : legacyWorkAtomsToSubatoms(
+        parseWorkAmountToAtoms(amount, { allowZero }),
+        { allowZero },
+      );
+}
+
 export function workAmountFields(record, options = {}) {
   const amountAtoms = workAmountAtomsFromRecord(record, options);
   return {
@@ -229,6 +571,14 @@ export function workAmountFields(record, options = {}) {
     decimals: WORK_DECIMALS,
     unitScale: WORK_UNIT_SCALE_TEXT,
   };
+}
+
+export function workSubatomAmountFields(record, options = {}) {
+  const amountSubatoms = workAmountSubatomsFromRecord(record, options);
+  return withWorkSubatomPrecisionMetadata({
+    amount: formatWorkSubatoms(amountSubatoms),
+    amountSubatoms,
+  });
 }
 
 export function withWorkPrecisionMetadata(metadata = {}) {
@@ -241,6 +591,19 @@ export function withWorkPrecisionMetadata(metadata = {}) {
     amountStorageModel: WORK_ATOMIC_PROJECTION_MODEL,
     decimals: WORK_DECIMALS,
     unitScale: WORK_UNIT_SCALE_TEXT,
+  };
+}
+
+export function withWorkSubatomPrecisionMetadata(metadata = {}) {
+  const source =
+    metadata && typeof metadata === "object" && !Array.isArray(metadata)
+      ? metadata
+      : {};
+  return {
+    ...source,
+    amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+    decimals: WORK_SUBATOM_DECIMALS,
+    unitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,
   };
 }
 
@@ -289,4 +652,20 @@ export function workAtomsValueAtFloorQ8(amountAtoms, floorValue) {
     return null;
   }
   return (atoms * floorValueQ8) / WORK_UNIT_SCALE;
+}
+
+export function workSubatomsValueAtFloorQ8(amountSubatoms, floorValue) {
+  const subatoms =
+    typeof amountSubatoms === "bigint"
+      ? amountSubatoms
+      : BigInt(amountSubatoms);
+  const floorValueQ8 = decimalValueToQ8(floorValue);
+  if (
+    subatoms < 0n ||
+    floorValueQ8 === null ||
+    floorValueQ8 < 0n
+  ) {
+    return null;
+  }
+  return (subatoms * floorValueQ8) / WORK_SUBATOM_UNIT_SCALE;
 }

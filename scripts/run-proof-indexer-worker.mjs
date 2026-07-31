@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -6,9 +7,38 @@ import { createProofIndexPool } from "../server/db/postgres.mjs";
 import {
   WORK_ATOMIC_PROJECTION_MODEL,
   WORK_DECIMALS,
+  WORK_PRECISION_V2_MIGRATION_META_KEY,
+  WORK_PRECISION_V2_MIGRATION_MODEL,
+  WORK_PRECISION_V2_MODEL,
+  WORK_SUBATOM_DECIMALS,
+  WORK_SUBATOM_PROJECTION_MODEL,
+  WORK_SUBATOM_UNIT_SCALE_TEXT,
   WORK_TOKEN_ID,
   WORK_UNIT_SCALE_TEXT,
 } from "../server/work-units.mjs";
+import {
+  WORK_AMO_V5_DECLARATION_AUTHORITY_SCRIPT_PUBKEY,
+  WORK_AMO_V5_DECLARATION_MIN_PAYMENT_SATS,
+  WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS,
+  WORK_AMO_V5_NETWORK_ACCUMULATOR_MODEL,
+  WORK_AMO_V5_PAYLOAD_COMMITMENT_MODEL,
+  WORK_AMO_V5_STATE_COMMITMENT_MODEL,
+  workAmoV5CanonicalPayloadCommitment,
+} from "../server/work-amo-v5.mjs";
+import {
+  WORK_AMO_V6_BLOCK_SEQUENCER_MODEL,
+} from "../server/work-amo-v6.mjs";
+import {
+  WORK_AMO_V7_AUTH_VERSION,
+  WORK_AMO_V7_BLOCK_SEQUENCER_MODEL,
+  WORK_AMO_V7_MINT_AMOUNT_SUBATOMS,
+  WORK_AMO_V7_TOKEN_STATE_PREIMAGE_MODEL,
+  WORK_AMO_V7_TRANSFER_VERSION,
+  workAmoV7CanonicalTokenStateCommitment,
+} from "../server/work-amo-v7.mjs";
+import {
+  workAmoV7DeclarationCommitment,
+} from "../server/work-amo-v7-declaration.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
@@ -178,6 +208,58 @@ const ONCE = process.argv.includes("--once");
 const REQUIRE_WORK_ATOMIC_PROJECTION = !/^(?:0|false|no)$/iu.test(
   String(process.env.POW_INDEX_REQUIRE_WORK_ATOMS ?? "1"),
 );
+const WORK_Q8_MAX_SUPPLY = "2100000000000000";
+const WORK_Q8_MINT_AMOUNT = "100000000000";
+const WORK_Q16_MAX_SUPPLY = "210000000000000000000000";
+const WORK_Q16_MINT_AMOUNT = "10000000000000000000";
+const WORK_PRECISION_V2_DECLARATION_EVIDENCE_MODEL =
+  "canonical-work-precision-v2-declaration-core-index-evidence-v1";
+const WORK_PRECISION_V2_DECLARATION_EVIDENCE_DOMAIN =
+  "ProofOfWork.Me/WORK-PRECISION-V2-DECLARATION-EVIDENCE/v1";
+const WORK_PRECISION_V2_SNAPSHOT_POLICY =
+  "preserve-preactivation-canonical-invalidate-wrong-era-derived-require-post-migration-current-snapshot";
+const WORK_PRECISION_V2_CONVERSION_FACTOR = "100000000";
+const WORK_PRECISION_V2_RAW_HISTORY_POLICY = "none";
+const WORK_PRECISION_V2_DERIVED_PROJECTION_POLICY =
+  "invalidate-and-replay-from-activation";
+const WORK_PRECISION_Q8_ERA = "q8";
+const WORK_PRECISION_Q16_ERA = "q16";
+const WORK_AMO_V7_ACTIVATION_LATCH_META_KEY =
+  "workAmoV7ActivationLatch:livenet";
+const WORK_AMO_V7_ACTIVATION_LATCH_MODEL =
+  "canonical-work-amo-v7-activation-latch-v1";
+const WORK_AMO_V7_PENDING_REBUILD_META_KEY =
+  "workQ16PendingRebuild:livenet";
+const WORK_AMO_V7_PENDING_REBUILD_MODEL =
+  "canonical-work-q16-pending-rebuild-v1";
+const WORK_AMO_V7_PENDING_MEMPOOL_MODEL =
+  "canonical-core-mempool-txid-set-v1";
+const WORK_AMO_V7_PENDING_PROJECTION_MODEL =
+  "canonical-work-q16-pending-projection-v1";
+const WORK_AMO_V7_PENDING_MEMPOOL_DOMAIN =
+  "ProofOfWork.Me/WORK-Q16-PENDING-MEMPOOL/v1";
+const WORK_AMO_V7_PENDING_PROJECTION_DOMAIN_PREFIX =
+  "ProofOfWork.Me/WORK-Q16-PENDING-";
+const WORK_AMO_V7_PENDING_WITNESS_MAX_AGE_MS = Math.min(
+  10 * 60_000,
+  Math.max(
+    60_000,
+    Number(
+      process.env.POW_INDEX_WORKER_PENDING_WITNESS_MAX_AGE_MS ??
+        2 * 60_000,
+    ) || 2 * 60_000,
+  ),
+);
+const WORK_AMO_V7_EXPECTED_DECLARATION_COMMITMENT =
+  workAmoV7DeclarationCommitment();
+const WORK_PRECISION_CORE_RPC_TIMEOUT_MS = Math.min(
+  30_000,
+  Math.max(
+    5_000,
+    Number(process.env.POW_INDEX_WORKER_CORE_RPC_TIMEOUT_MS ?? 15_000) ||
+      15_000,
+  ),
+);
 const CHILD_LINE_BUFFER_CHARS = 16_384;
 const CHILD_ERROR_MAX_CHARS = 4_096;
 const CHILD_STOP_GRACE_MS = 5_000;
@@ -201,6 +283,8 @@ export function createWorkerRuntime(network = NETWORK) {
     noProgress: null,
     stopping: false,
     wakeSleep: null,
+    workPrecision: null,
+    workPrecisionEra: "",
   };
 }
 
@@ -248,41 +332,734 @@ function workerSleep(runtime, delayMs) {
   });
 }
 
-async function assertWorkAtomicProjectionReady(pool) {
-  if (!REQUIRE_WORK_ATOMIC_PROJECTION) {
-    return;
-  }
-  const result = await pool.query(
-    `
-      SELECT max_supply::text, mint_amount::text, metadata
-      FROM proof_indexer.credit_definitions
-      WHERE network = $1 AND token_id = $2
-      LIMIT 1
-    `,
-    [NETWORK, WORK_TOKEN_ID],
-  );
-  const row = result.rows[0];
-  const metadata =
-    row?.metadata &&
-    typeof row.metadata === "object" &&
-    !Array.isArray(row.metadata)
-      ? row.metadata
-      : {};
-  if (
-    !row ||
-    String(row.max_supply ?? "") !== "2100000000000000" ||
-    String(row.mint_amount ?? "") !== "100000000000" ||
-    metadata.amountStorageModel !== WORK_ATOMIC_PROJECTION_MODEL ||
-    Number(metadata.decimals) !== WORK_DECIMALS ||
-    String(metadata.unitScale ?? "") !== WORK_UNIT_SCALE_TEXT
-  ) {
-    throw new Error(
-      "Proof index worker is paused until the transactional WORK atomic projection migration is complete.",
-    );
-  }
+function objectRecord(value) {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value
+    : {};
 }
 
-async function assertAmoPositionSchemaReady(pool) {
+function normalizedLowerText(value) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function exactObjectKeys(value, expectedKeys) {
+  const keys = Object.keys(objectRecord(value)).sort();
+  return (
+    keys.length === expectedKeys.length &&
+    keys.every((key, index) => key === expectedKeys[index])
+  );
+}
+
+function canonicalConfiguredInteger(value, { minimum = 0 } = {}) {
+  const raw = String(value ?? "");
+  const text = raw.trim();
+  if (!/^(?:0|[1-9][0-9]*)$/u.test(text)) {
+    return null;
+  }
+  if (raw !== text) {
+    return null;
+  }
+  const parsed = Number(text);
+  return Number.isSafeInteger(parsed) && parsed >= minimum ? parsed : null;
+}
+
+function canonicalConfiguredHash(value) {
+  const raw = String(value ?? "");
+  return /^[0-9a-f]{64}$/u.test(raw) ? raw : "";
+}
+
+function exactJsonInteger(value, { minimum = 0 } = {}) {
+  return (
+    typeof value === "number" &&
+    Number.isSafeInteger(value) &&
+    value >= minimum
+  );
+}
+
+export function workerWorkAmoV7DeclarationConfig(env = process.env) {
+  const declarationTxid = canonicalConfiguredHash(
+    env.WORK_AMO_V7_DECLARATION_TXID,
+  );
+  const declarationHeight = canonicalConfiguredInteger(
+    env.WORK_AMO_V7_DECLARATION_HEIGHT,
+    { minimum: 1 },
+  );
+  const declarationBlockHash = canonicalConfiguredHash(
+    env.WORK_AMO_V7_DECLARATION_BLOCK_HASH,
+  );
+  const declarationBlockIndex = canonicalConfiguredInteger(
+    env.WORK_AMO_V7_DECLARATION_BLOCK_INDEX,
+  );
+  const declarationMemoSha256 = canonicalConfiguredHash(
+    env.WORK_AMO_V7_DECLARATION_MEMO_SHA256,
+  );
+  const declarationMemoBytes = canonicalConfiguredInteger(
+    env.WORK_AMO_V7_DECLARATION_MEMO_BYTES,
+    { minimum: 1 },
+  );
+  const declarationProtocolVout = canonicalConfiguredInteger(
+    env.WORK_AMO_V7_DECLARATION_PROTOCOL_VOUT,
+  );
+  const declarationRecordOrdinal = canonicalConfiguredInteger(
+    env.WORK_AMO_V7_DECLARATION_RECORD_ORDINAL,
+  );
+  const declarationRegistryPaymentVout = canonicalConfiguredInteger(
+    env.WORK_AMO_V7_DECLARATION_REGISTRY_PAYMENT_VOUT,
+  );
+  const configuredActivationHeight = canonicalConfiguredInteger(
+    env.WORK_AMO_V7_ACTIVATION_HEIGHT,
+    { minimum: 1 },
+  );
+  const rawWritesSource = String(
+    env.WORK_AMO_V7_WRITES_ENABLED ?? "",
+  );
+  const rawWritesEnabled = rawWritesSource.trim();
+  const writesEnabled = /^(?:1|true|yes)$/iu.test(rawWritesEnabled);
+  const writesDisabled =
+    rawWritesEnabled === "" ||
+    /^(?:0|false|no)$/iu.test(rawWritesEnabled);
+  const rawValues = [
+    env.WORK_AMO_V7_DECLARATION_TXID,
+    env.WORK_AMO_V7_DECLARATION_HEIGHT,
+    env.WORK_AMO_V7_DECLARATION_BLOCK_HASH,
+    env.WORK_AMO_V7_DECLARATION_BLOCK_INDEX,
+    env.WORK_AMO_V7_DECLARATION_MEMO_SHA256,
+    env.WORK_AMO_V7_DECLARATION_MEMO_BYTES,
+    env.WORK_AMO_V7_DECLARATION_PROTOCOL_VOUT,
+    env.WORK_AMO_V7_DECLARATION_RECORD_ORDINAL,
+    env.WORK_AMO_V7_DECLARATION_REGISTRY_PAYMENT_VOUT,
+    env.WORK_AMO_V7_ACTIVATION_HEIGHT,
+  ].map((value) => String(value ?? ""));
+  const requested =
+    rawValues.some((value) => value !== "") ||
+    writesEnabled ||
+    !writesDisabled ||
+    rawWritesSource !== rawWritesEnabled;
+  const configured = Boolean(
+    /^[0-9a-f]{64}$/u.test(declarationTxid) &&
+      declarationHeight !== null &&
+      declarationHeight < Number.MAX_SAFE_INTEGER &&
+      configuredActivationHeight === declarationHeight + 1 &&
+      /^[0-9a-f]{64}$/u.test(declarationBlockHash) &&
+      declarationBlockIndex !== null &&
+      /^[0-9a-f]{64}$/u.test(declarationMemoSha256) &&
+      declarationMemoBytes ===
+        WORK_AMO_V7_EXPECTED_DECLARATION_COMMITMENT.protocolRecordBytes &&
+      declarationMemoSha256 ===
+        WORK_AMO_V7_EXPECTED_DECLARATION_COMMITMENT.protocolRecordSha256 &&
+      declarationProtocolVout !== null &&
+      declarationRecordOrdinal === 0 &&
+      declarationRegistryPaymentVout !== null,
+  );
+  return {
+    activationHeight: configuredActivationHeight,
+    configured,
+    declarationBlockHash,
+    declarationBlockIndex,
+    declarationHeight,
+    declarationMemoBytes,
+    declarationMemoSha256,
+    declarationProtocolVout,
+    declarationRecordOrdinal,
+    declarationRegistryPaymentVout,
+    declarationTxid,
+    requested,
+    writesEnabled,
+  };
+}
+
+function workPrecisionCommitmentShapeReady(value, { model = "" } = {}) {
+  const commitment = objectRecord(value);
+  return (
+    (
+      model === "" ||
+      exactObjectKeys(
+        commitment,
+        ["model", "payloadBytes", "sha256"],
+      )
+    ) &&
+    (model === "" || commitment.model === model) &&
+    typeof commitment.payloadBytes === "number" &&
+    Number.isSafeInteger(commitment.payloadBytes) &&
+    commitment.payloadBytes > 0 &&
+    /^[0-9a-f]{64}$/u.test(String(commitment.sha256 ?? "")) &&
+    String(commitment.sha256) === normalizedLowerText(commitment.sha256)
+  );
+}
+
+function workPrecisionRowsCommitmentShapeReady(value) {
+  const commitment = objectRecord(value);
+  return (
+    exactObjectKeys(commitment, ["count", "payloadBytes", "sha256"]) &&
+    typeof commitment.count === "number" &&
+    Number.isSafeInteger(commitment.count) &&
+    commitment.count >= 0 &&
+    workPrecisionCommitmentShapeReady(commitment)
+  );
+}
+
+function workerWorkPrecisionEvidenceCommitment(evidenceValue) {
+  const evidence = objectRecord(evidenceValue);
+  const committed = {
+    authorityScriptPubKey: normalizedLowerText(
+      evidence.authorityScriptPubKey,
+    ),
+    blockHash: normalizedLowerText(evidence.blockHash),
+    blockHeight: Number(evidence.blockHeight),
+    blockTransactionIndex: Number(evidence.blockTransactionIndex),
+    inputCount: Number(evidence.inputCount),
+    outputCount: Number(evidence.outputCount),
+    payloadBytes: Number(evidence.payloadBytes),
+    payloadSha256: normalizedLowerText(evidence.payloadSha256),
+    protocol: String(evidence.protocol ?? ""),
+    protocolVout: Number(evidence.protocolVout),
+    recordOrdinal: Number(evidence.recordOrdinal),
+    registryAddress: String(evidence.registryAddress ?? "").trim(),
+    registryPaymentSats: String(evidence.registryPaymentSats ?? "").trim(),
+    registryPaymentVout: Number(evidence.registryPaymentVout),
+    txid: normalizedLowerText(evidence.txid),
+  };
+  return {
+    committed,
+    sha256: createHash("sha256")
+      .update(
+        Buffer.from(
+          `${WORK_PRECISION_V2_DECLARATION_EVIDENCE_DOMAIN}\n${
+            JSON.stringify(committed)
+          }`,
+          "utf8",
+        ),
+      )
+      .digest("hex"),
+  };
+}
+
+export function workerWorkPrecisionV2MarkerReady(
+  markerValue,
+  declarationConfig,
+) {
+  const marker = objectRecord(markerValue);
+  const config = objectRecord(declarationConfig);
+  const evidence = objectRecord(marker.declarationEvidence);
+  const activationOpening = objectRecord(marker.activationOpening);
+  const before = objectRecord(marker.before);
+  const after = objectRecord(marker.after);
+  const evidenceCommitment =
+    workerWorkPrecisionEvidenceCommitment(evidence);
+  const committedEvidence = evidenceCommitment.committed;
+  const markerKeys = [
+    "activationHeight",
+    "activationOpening",
+    "after",
+    "before",
+    "completedAt",
+    "conversionFactor",
+    "declarationBlockHash",
+    "declarationBlockIndex",
+    "declarationEvidence",
+    "declarationHeight",
+    "declarationMemoBytes",
+    "declarationMemoSha256",
+    "declarationProtocolVout",
+    "declarationRecordOrdinal",
+    "declarationRegistryPaymentVout",
+    "declarationTextBytes",
+    "declarationTextSha256",
+    "declarationTxid",
+    "decimals",
+    "globalPrecisionModel",
+    "derivedProjectionPolicy",
+    "legacyDecimals",
+    "legacyProjectionModel",
+    "maxSupplySubatoms",
+    "migrationModel",
+    "mintAmountSubatoms",
+    "model",
+    "network",
+    "projectionModel",
+    "rawConfirmedHistoryMutation",
+    "replayFromHeight",
+    "snapshotPolicy",
+    "status",
+    "transferVersion",
+    "unitScale",
+    "updatedAt",
+    "version",
+  ].sort();
+  const evidenceKeys = [
+    "authorityScriptPubKey",
+    "blockHash",
+    "blockHeight",
+    "blockTransactionIndex",
+    "commitmentSha256",
+    "coreVerified",
+    "evidenceComplete",
+    "indexVerified",
+    "inputCount",
+    "model",
+    "outputCount",
+    "payloadBytes",
+    "payloadSha256",
+    "protocol",
+    "protocolVout",
+    "recordOrdinal",
+    "registryAddress",
+    "registryPaymentSats",
+    "registryPaymentVout",
+    "txid",
+  ].sort();
+  return Boolean(
+    config.configured === true &&
+      exactObjectKeys(marker, markerKeys) &&
+      exactObjectKeys(activationOpening, [
+        "declarationClosingStatePayloadBytes",
+        "declarationClosingStateSha256",
+        "declarationTransitionModel",
+        "legacyTokenStateCommitment",
+        "subatomTokenStateCommitment",
+      ]) &&
+      exactObjectKeys(before, ["balances", "listings"]) &&
+      exactObjectKeys(after, ["balances", "listings"]) &&
+      exactObjectKeys(evidence, evidenceKeys) &&
+      marker.model === WORK_PRECISION_V2_MIGRATION_MODEL &&
+      marker.migrationModel === WORK_PRECISION_V2_MIGRATION_MODEL &&
+      marker.status === "complete" &&
+      marker.network === "livenet" &&
+      marker.version === WORK_AMO_V7_AUTH_VERSION &&
+      marker.globalPrecisionModel === WORK_PRECISION_V2_MODEL &&
+      marker.projectionModel === WORK_SUBATOM_PROJECTION_MODEL &&
+      marker.legacyProjectionModel === WORK_ATOMIC_PROJECTION_MODEL &&
+      marker.transferVersion === WORK_AMO_V7_TRANSFER_VERSION &&
+      marker.legacyDecimals === WORK_DECIMALS &&
+      marker.decimals === WORK_SUBATOM_DECIMALS &&
+      String(marker.conversionFactor ?? "") ===
+        WORK_PRECISION_V2_CONVERSION_FACTOR &&
+      String(marker.unitScale ?? "") === WORK_SUBATOM_UNIT_SCALE_TEXT &&
+      String(marker.maxSupplySubatoms ?? "") === WORK_Q16_MAX_SUPPLY &&
+      String(marker.mintAmountSubatoms ?? "") ===
+        WORK_AMO_V7_MINT_AMOUNT_SUBATOMS.toString() &&
+      marker.rawConfirmedHistoryMutation ===
+        WORK_PRECISION_V2_RAW_HISTORY_POLICY &&
+      marker.derivedProjectionPolicy ===
+        WORK_PRECISION_V2_DERIVED_PROJECTION_POLICY &&
+      marker.activationHeight === config.activationHeight &&
+      marker.replayFromHeight === config.activationHeight &&
+      marker.snapshotPolicy === WORK_PRECISION_V2_SNAPSHOT_POLICY &&
+      marker.declarationTxid === config.declarationTxid &&
+      marker.declarationHeight === config.declarationHeight &&
+      marker.declarationBlockHash ===
+        config.declarationBlockHash &&
+      marker.declarationBlockIndex === config.declarationBlockIndex &&
+      marker.declarationMemoBytes === config.declarationMemoBytes &&
+      marker.declarationMemoSha256 ===
+        config.declarationMemoSha256 &&
+      marker.declarationProtocolVout ===
+        config.declarationProtocolVout &&
+      marker.declarationRecordOrdinal ===
+        config.declarationRecordOrdinal &&
+      marker.declarationRegistryPaymentVout ===
+        config.declarationRegistryPaymentVout &&
+      marker.declarationTextBytes ===
+        WORK_AMO_V7_EXPECTED_DECLARATION_COMMITMENT.payloadBytes &&
+      marker.declarationTextSha256 ===
+        WORK_AMO_V7_EXPECTED_DECLARATION_COMMITMENT.payloadSha256 &&
+      Number.isFinite(Date.parse(String(marker.completedAt ?? ""))) &&
+      Number.isFinite(Date.parse(String(marker.updatedAt ?? ""))) &&
+      activationOpening.declarationTransitionModel ===
+        WORK_AMO_V6_BLOCK_SEQUENCER_MODEL &&
+      exactJsonInteger(
+        activationOpening.declarationClosingStatePayloadBytes,
+        { minimum: 1 },
+      ) &&
+      /^[0-9a-f]{64}$/u.test(
+        activationOpening.declarationClosingStateSha256,
+      ) &&
+      workPrecisionCommitmentShapeReady(
+        activationOpening.legacyTokenStateCommitment,
+        { model: WORK_AMO_V5_PAYLOAD_COMMITMENT_MODEL },
+      ) &&
+      workPrecisionCommitmentShapeReady(
+        activationOpening.subatomTokenStateCommitment,
+        { model: WORK_AMO_V5_PAYLOAD_COMMITMENT_MODEL },
+      ) &&
+      workPrecisionRowsCommitmentShapeReady(before.balances) &&
+      workPrecisionRowsCommitmentShapeReady(before.listings) &&
+      workPrecisionRowsCommitmentShapeReady(after.balances) &&
+      workPrecisionRowsCommitmentShapeReady(after.listings) &&
+      evidence.model ===
+        WORK_PRECISION_V2_DECLARATION_EVIDENCE_MODEL &&
+      evidence.coreVerified === true &&
+      evidence.indexVerified === true &&
+      evidence.evidenceComplete === true &&
+      evidence.commitmentSha256 ===
+        evidenceCommitment.sha256 &&
+      exactJsonInteger(evidence.blockHeight, { minimum: 1 }) &&
+      exactJsonInteger(evidence.blockTransactionIndex) &&
+      exactJsonInteger(evidence.inputCount, { minimum: 1 }) &&
+      exactJsonInteger(evidence.outputCount, { minimum: 1 }) &&
+      exactJsonInteger(evidence.payloadBytes, { minimum: 1 }) &&
+      exactJsonInteger(evidence.protocolVout) &&
+      exactJsonInteger(evidence.recordOrdinal) &&
+      exactJsonInteger(evidence.registryPaymentVout) &&
+      evidence.authorityScriptPubKey ===
+        normalizedLowerText(evidence.authorityScriptPubKey) &&
+      evidence.blockHash === normalizedLowerText(evidence.blockHash) &&
+      evidence.payloadSha256 ===
+        normalizedLowerText(evidence.payloadSha256) &&
+      evidence.txid === normalizedLowerText(evidence.txid) &&
+      evidence.registryAddress ===
+        String(evidence.registryAddress ?? "").trim() &&
+      evidence.registryPaymentSats ===
+        String(evidence.registryPaymentSats ?? "").trim() &&
+      committedEvidence.authorityScriptPubKey ===
+        WORK_AMO_V5_DECLARATION_AUTHORITY_SCRIPT_PUBKEY &&
+      committedEvidence.txid === config.declarationTxid &&
+      committedEvidence.blockHash === config.declarationBlockHash &&
+      committedEvidence.blockHeight === config.declarationHeight &&
+      committedEvidence.blockTransactionIndex ===
+        config.declarationBlockIndex &&
+      committedEvidence.payloadBytes === config.declarationMemoBytes &&
+      committedEvidence.payloadSha256 ===
+        config.declarationMemoSha256 &&
+      committedEvidence.protocolVout === config.declarationProtocolVout &&
+      committedEvidence.recordOrdinal ===
+        config.declarationRecordOrdinal &&
+      committedEvidence.protocol === "pwm1" &&
+      committedEvidence.registryAddress ===
+        WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS &&
+      /^(?:0|[1-9][0-9]*)$/u.test(
+        committedEvidence.registryPaymentSats,
+      ) &&
+      BigInt(committedEvidence.registryPaymentSats) >=
+        BigInt(WORK_AMO_V5_DECLARATION_MIN_PAYMENT_SATS) &&
+      committedEvidence.registryPaymentVout ===
+        config.declarationRegistryPaymentVout
+  );
+}
+
+export function workerWorkAmoV7ActivationLatchReady(
+  latchValue,
+  declarationConfig,
+) {
+  const latch = objectRecord(latchValue);
+  const config = objectRecord(declarationConfig);
+  const registryPaymentSats = String(
+    latch.registryPaymentSats ?? "",
+  );
+  return Boolean(
+    config.configured === true &&
+      exactObjectKeys(
+        latch,
+        [
+          "activationHeight",
+          "authorityScriptPubKey",
+          "coreVerified",
+          "declarationBlockHash",
+          "declarationBlockIndex",
+          "declarationHeight",
+          "declarationMemoBytes",
+          "declarationMemoSha256",
+          "declarationProtocolVout",
+          "declarationRecordOrdinal",
+          "declarationRegistryPaymentVout",
+          "declarationTxid",
+          "evidenceComplete",
+          "firstObservedTipHash",
+          "firstObservedTipHeight",
+          "indexVerified",
+          "inputCount",
+          "model",
+          "network",
+          "observedAt",
+          "outputCount",
+          "protocol",
+          "reached",
+          "registryAddress",
+          "registryPaymentSats",
+        ],
+      ) &&
+      latch.model === WORK_AMO_V7_ACTIVATION_LATCH_MODEL &&
+      latch.network === "livenet" &&
+      latch.reached === true &&
+      latch.activationHeight === config.activationHeight &&
+      latch.declarationTxid ===
+        config.declarationTxid &&
+      latch.declarationHeight === config.declarationHeight &&
+      latch.declarationBlockHash ===
+        config.declarationBlockHash &&
+      latch.declarationBlockIndex ===
+        config.declarationBlockIndex &&
+      latch.declarationMemoBytes ===
+        config.declarationMemoBytes &&
+      latch.declarationMemoSha256 ===
+        config.declarationMemoSha256 &&
+      latch.declarationProtocolVout ===
+        config.declarationProtocolVout &&
+      latch.declarationRecordOrdinal ===
+        config.declarationRecordOrdinal &&
+      latch.declarationRegistryPaymentVout ===
+        config.declarationRegistryPaymentVout &&
+      latch.authorityScriptPubKey ===
+        WORK_AMO_V5_DECLARATION_AUTHORITY_SCRIPT_PUBKEY &&
+      latch.protocol === "pwm1" &&
+      String(latch.registryAddress ?? "").trim() ===
+        WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS &&
+      typeof latch.registryPaymentSats === "string" &&
+      latch.registryPaymentSats === registryPaymentSats.trim() &&
+      /^(?:0|[1-9][0-9]*)$/u.test(registryPaymentSats) &&
+      BigInt(registryPaymentSats) >=
+        BigInt(WORK_AMO_V5_DECLARATION_MIN_PAYMENT_SATS) &&
+      exactJsonInteger(latch.inputCount, { minimum: 1 }) &&
+      exactJsonInteger(latch.outputCount, { minimum: 1 }) &&
+      latch.coreVerified === true &&
+      latch.indexVerified === true &&
+      latch.evidenceComplete === true &&
+      exactJsonInteger(latch.firstObservedTipHeight, {
+        minimum: config.activationHeight,
+      }) &&
+      /^[0-9a-f]{64}$/u.test(
+        latch.firstObservedTipHash,
+      ) &&
+      typeof latch.observedAt === "string" &&
+      Number.isFinite(Date.parse(String(latch.observedAt ?? "")))
+  );
+}
+
+export function workerWorkPrecisionEra({
+  activationLatch,
+  declarationConfig,
+  definition,
+  marker,
+  observedHeight,
+  q16Latched = false,
+  tipHeight,
+} = {}) {
+  const config = objectRecord(declarationConfig);
+  const row = objectRecord(definition);
+  const metadata = objectRecord(row.metadata);
+  const observed = Math.max(
+    Number.isSafeInteger(Number(observedHeight))
+      ? Number(observedHeight)
+      : 0,
+    Number.isSafeInteger(Number(tipHeight)) ? Number(tipHeight) : 0,
+  );
+  const boundaryReached =
+    config.configured === true &&
+    Number.isSafeInteger(Number(config.activationHeight)) &&
+    observed >= Number(config.activationHeight);
+  const q16StatePresent =
+    Object.keys(objectRecord(activationLatch)).length > 0 ||
+    Object.keys(objectRecord(marker)).length > 0 ||
+    metadata.amountStorageModel === WORK_SUBATOM_PROJECTION_MODEL ||
+    metadata.precisionModel === WORK_PRECISION_V2_MODEL ||
+    String(row.max_supply ?? "") === WORK_Q16_MAX_SUPPLY ||
+    String(row.mint_amount ?? "") === WORK_Q16_MINT_AMOUNT;
+  return q16Latched || boundaryReached || q16StatePresent
+    ? WORK_PRECISION_Q16_ERA
+    : WORK_PRECISION_Q8_ERA;
+}
+
+async function readWorkerWorkPrecisionState(pool) {
+  const result = await pool.query(
+    `
+      SELECT
+        (
+          SELECT jsonb_build_object(
+            'max_supply', definition.max_supply::text,
+            'mint_amount', definition.mint_amount::text,
+            'metadata', definition.metadata
+          )
+          FROM proof_indexer.credit_definitions definition
+          WHERE definition.network = $1
+            AND definition.token_id = $2
+          LIMIT 1
+        ) AS definition,
+        (
+          SELECT value
+          FROM proof_indexer.meta
+          WHERE key = $3
+          LIMIT 1
+        ) AS migration_marker,
+        (
+          SELECT value
+          FROM proof_indexer.meta
+          WHERE key = $4
+          LIMIT 1
+        ) AS activation_latch,
+        (
+          SELECT COALESCE(max(height), 0)::integer
+          FROM proof_indexer.blocks
+          WHERE network = $1 AND canonical = true
+        ) AS tip_height,
+        (
+          SELECT COALESCE(max(height), 0)::integer
+          FROM proof_indexer.blocks
+          WHERE network = $1
+        ) AS observed_height
+    `,
+    [
+      NETWORK,
+      WORK_TOKEN_ID,
+      WORK_PRECISION_V2_MIGRATION_META_KEY,
+      WORK_AMO_V7_ACTIVATION_LATCH_META_KEY,
+    ],
+  );
+  const row = result.rows[0] ?? {};
+  return {
+    activationLatch: objectRecord(row.activation_latch),
+    definition: objectRecord(row.definition),
+    marker: objectRecord(row.migration_marker),
+    observedHeight: Number(row.observed_height ?? 0),
+    tipHeight: Number(row.tip_height ?? 0),
+  };
+}
+
+async function assertWorkAtomicProjectionReady(
+  pool,
+  { q16Latched = false } = {},
+) {
+  if (!REQUIRE_WORK_ATOMIC_PROJECTION) {
+    if (NETWORK === "livenet") {
+      throw new Error(
+        "Proof index worker refuses to disable exact WORK precision readiness on livenet.",
+      );
+    }
+    return {
+      activationHeight: null,
+      era: "unchecked",
+      replayRequired: false,
+    };
+  }
+  const declarationConfig = workerWorkAmoV7DeclarationConfig();
+  if (
+    declarationConfig.requested === true &&
+    declarationConfig.configured !== true
+  ) {
+    throw new Error(
+      "Proof index worker is paused because the AMO V7 declaration pins are partial or do not match the compiled declaration.",
+    );
+  }
+  const state = await readWorkerWorkPrecisionState(pool);
+  if (Object.keys(state.definition).length === 0) {
+    const missingDefinitionEra = workerWorkPrecisionEra({
+      activationLatch: state.activationLatch,
+      declarationConfig,
+      definition: state.definition,
+      marker: state.marker,
+      observedHeight: state.observedHeight,
+      q16Latched,
+      tipHeight: state.tipHeight,
+    });
+    const error = new Error(
+      "Proof index worker is paused because the canonical WORK definition is missing.",
+    );
+    if (missingDefinitionEra === WORK_PRECISION_Q16_ERA) {
+      error.workPrecision = {
+        activationHeight: declarationConfig.activationHeight,
+        declarationBlockHash: declarationConfig.declarationBlockHash,
+        declarationConfigured: declarationConfig.configured,
+        declarationHeight: declarationConfig.declarationHeight,
+        declarationTxid: declarationConfig.declarationTxid,
+        era: WORK_PRECISION_Q16_ERA,
+        observedHeight: state.observedHeight,
+        ready: false,
+        replayRequired: true,
+        tipHeight: state.tipHeight,
+      };
+    }
+    throw error;
+  }
+  const era = workerWorkPrecisionEra({
+    activationLatch: state.activationLatch,
+    declarationConfig,
+    definition: state.definition,
+    marker: state.marker,
+    observedHeight: state.observedHeight,
+    q16Latched,
+    tipHeight: state.tipHeight,
+  });
+  const metadata = objectRecord(state.definition.metadata);
+  if (era === WORK_PRECISION_Q8_ERA) {
+    if (
+      String(state.definition.max_supply ?? "") !== WORK_Q8_MAX_SUPPLY ||
+      String(state.definition.mint_amount ?? "") !== WORK_Q8_MINT_AMOUNT ||
+      metadata.amountStorageModel !== WORK_ATOMIC_PROJECTION_MODEL ||
+      Number(metadata.decimals) !== WORK_DECIMALS ||
+      String(metadata.unitScale ?? "") !== WORK_UNIT_SCALE_TEXT ||
+      Object.keys(state.marker).length > 0 ||
+      Object.keys(state.activationLatch).length > 0
+    ) {
+      throw new Error(
+        "Proof index worker is paused until the exact pre-activation WORK Q8 projection is restored.",
+      );
+    }
+    return {
+      activationHeight: declarationConfig.activationHeight,
+      declarationConfigured: declarationConfig.configured,
+      era,
+      observedHeight: state.observedHeight,
+      replayRequired: false,
+      tipHeight: state.tipHeight,
+    };
+  }
+  if (
+    declarationConfig.configured !== true ||
+    String(state.definition.max_supply ?? "") !== WORK_Q16_MAX_SUPPLY ||
+    String(state.definition.mint_amount ?? "") !== WORK_Q16_MINT_AMOUNT ||
+    metadata.amountStorageModel !== WORK_SUBATOM_PROJECTION_MODEL ||
+    Number(metadata.decimals) !== WORK_SUBATOM_DECIMALS ||
+    String(metadata.unitScale ?? "") !== WORK_SUBATOM_UNIT_SCALE_TEXT ||
+    metadata.precisionModel !== WORK_PRECISION_V2_MODEL ||
+    metadata.precisionMigrationModel !==
+      WORK_PRECISION_V2_MIGRATION_MODEL ||
+    !workerWorkAmoV7ActivationLatchReady(
+      state.activationLatch,
+      declarationConfig,
+    ) ||
+    !workerWorkPrecisionV2MarkerReady(
+      state.marker,
+      declarationConfig,
+    )
+  ) {
+    const error = new Error(
+      "Proof index worker is fail-closed at the AMO V7 boundary until the exact Q16 definition and immutable precision migration marker are installed.",
+    );
+    error.workPrecision = {
+      activationHeight: declarationConfig.activationHeight,
+      declarationBlockHash: declarationConfig.declarationBlockHash,
+      declarationConfigured: declarationConfig.configured,
+      declarationHeight: declarationConfig.declarationHeight,
+      declarationTxid: declarationConfig.declarationTxid,
+      era: WORK_PRECISION_Q16_ERA,
+      observedHeight: state.observedHeight,
+      ready: false,
+      replayRequired: true,
+      tipHeight: state.tipHeight,
+    };
+    throw error;
+  }
+  return {
+    activationHeight: declarationConfig.activationHeight,
+    declarationConfigured: true,
+    declarationBlockHash: declarationConfig.declarationBlockHash,
+    declarationHeight: declarationConfig.declarationHeight,
+    declarationTxid: declarationConfig.declarationTxid,
+    era,
+    activationLatch: state.activationLatch,
+    markerCompletedAt: state.marker.completedAt,
+    openingTokenStateCommitment: objectRecord(
+      state.marker.activationOpening,
+    ).subatomTokenStateCommitment,
+    observedHeight: state.observedHeight,
+    replayRequired: true,
+    tipHeight: state.tipHeight,
+  };
+}
+
+async function assertAmoPositionSchemaReady(
+  pool,
+  { activationHeight = null, era = WORK_PRECISION_Q8_ERA } = {},
+) {
   const result = await pool.query(
     `
       SELECT
@@ -476,7 +1253,159 @@ async function assertAmoPositionSchemaReady(pool) {
             AND tablename = 'events'
             AND indexname =
               'events_confirmed_governed_position_uidx'
-        ) AS governed_position_unique_ready
+        ) AS governed_position_unique_ready,
+        to_regclass('proof_indexer.work_amo_v7_listing_terms') IS NOT NULL
+          AS v7_listing_terms_ready,
+        (
+          SELECT count(*) = 17
+          FROM information_schema.columns
+          WHERE table_schema = 'proof_indexer'
+            AND table_name = 'work_amo_v7_listing_terms'
+            AND column_name IN (
+              'listing_id',
+              'listing_txid',
+              'token_id',
+              'authorization_version',
+              'unit_face_proofs',
+              'unit_amount_subatoms',
+              'unit_price_sats',
+              'unit_minimum_price_sats',
+              'listing_network_value_before_q8',
+              'listing_block_height',
+              'listing_block_hash',
+              'listing_block_index',
+              'listing_protocol_vout',
+              'listing_record_ordinal',
+              'listing_bond_contribution_q8',
+              'listing_network_value_after_q8',
+              'frozen_terms'
+            )
+        ) AND (
+          SELECT count(*) = 19
+          FROM information_schema.columns
+          WHERE table_schema = 'proof_indexer'
+            AND table_name = 'work_amo_v7_listing_terms'
+        ) AND NOT EXISTS (
+          SELECT 1
+          FROM information_schema.columns
+          WHERE table_schema = 'proof_indexer'
+            AND table_name = 'work_amo_v7_listing_terms'
+            AND column_name = 'unit_amount_atoms'
+        ) AS v7_listing_terms_evidence_ready,
+        (
+          SELECT count(*) = 5
+          FROM pg_constraint constraint_row
+          JOIN pg_class relation
+            ON relation.oid = constraint_row.conrelid
+          JOIN pg_namespace namespace
+            ON namespace.oid = relation.relnamespace
+          WHERE namespace.nspname = 'proof_indexer'
+            AND relation.relname = 'work_amo_v7_listing_terms'
+            AND constraint_row.contype = 'c'
+            AND constraint_row.convalidated = true
+            AND constraint_row.conname IN (
+              'work_amo_v7_terms_identity',
+              'work_amo_v7_terms_values',
+              'work_amo_v7_terms_positions',
+              'work_amo_v7_terms_frozen_payload',
+              'work_amo_v7_terms_activation'
+            )
+        ) AS v7_policy_constraints_ready,
+        (
+          SELECT pg_get_constraintdef(constraint_row.oid)
+          FROM pg_constraint constraint_row
+          JOIN pg_class relation
+            ON relation.oid = constraint_row.conrelid
+          JOIN pg_namespace namespace
+            ON namespace.oid = relation.relnamespace
+          WHERE namespace.nspname = 'proof_indexer'
+            AND relation.relname = 'work_amo_v7_listing_terms'
+            AND constraint_row.conname =
+              'work_amo_v7_terms_activation'
+          LIMIT 1
+        ) AS v7_activation_constraint,
+        (
+          SELECT pg_get_constraintdef(constraint_row.oid)
+          FROM pg_constraint constraint_row
+          JOIN pg_class relation
+            ON relation.oid = constraint_row.conrelid
+          JOIN pg_namespace namespace
+            ON namespace.oid = relation.relnamespace
+          WHERE namespace.nspname = 'proof_indexer'
+            AND relation.relname = 'work_amo_block_transitions'
+            AND constraint_row.conname =
+              'work_amo_block_transitions_models'
+            AND constraint_row.convalidated = true
+          LIMIT 1
+        ) AS transition_model_constraint,
+        EXISTS (
+          SELECT 1
+          FROM information_schema.columns
+          WHERE table_schema = 'proof_indexer'
+            AND table_name = 'work_amo_block_transitions'
+            AND column_name = 'work_token_state_model'
+        ) AS transition_token_state_ready,
+        EXISTS (
+          SELECT 1
+          FROM pg_trigger trigger_row
+          JOIN pg_class relation
+            ON relation.oid = trigger_row.tgrelid
+          JOIN pg_namespace namespace
+            ON namespace.oid = relation.relnamespace
+          WHERE namespace.nspname = 'proof_indexer'
+            AND relation.relname = 'work_amo_block_transitions'
+            AND trigger_row.tgname =
+              'work_amo_block_transitions_immutable'
+            AND trigger_row.tgenabled <> 'D'
+            AND trigger_row.tgisinternal = false
+        ) AS transition_immutability_ready,
+        EXISTS (
+          SELECT 1
+          FROM information_schema.columns
+          WHERE table_schema = 'proof_indexer'
+            AND table_name = 'work_amo_v7_listing_terms'
+            AND column_name = 'listing_record_ordinal'
+            AND is_nullable = 'NO'
+            AND column_default IS NULL
+        ) AS v7_ordinal_constraint_ready,
+        EXISTS (
+          SELECT 1
+          FROM pg_trigger trigger_row
+          JOIN pg_class relation
+            ON relation.oid = trigger_row.tgrelid
+          JOIN pg_namespace namespace
+            ON namespace.oid = relation.relnamespace
+          WHERE namespace.nspname = 'proof_indexer'
+            AND relation.relname = 'work_amo_v7_listing_terms'
+            AND trigger_row.tgname =
+              'work_amo_v7_listing_terms_immutable'
+            AND trigger_row.tgenabled <> 'D'
+            AND trigger_row.tgisinternal = false
+        ) AS v7_immutability_ready,
+        EXISTS (
+          SELECT 1
+          FROM pg_trigger trigger_row
+          JOIN pg_class relation
+            ON relation.oid = trigger_row.tgrelid
+          JOIN pg_namespace namespace
+            ON namespace.oid = relation.relnamespace
+          WHERE namespace.nspname = 'proof_indexer'
+            AND relation.relname = 'meta'
+            AND trigger_row.tgname =
+              'work_precision_v2_marker_immutable'
+            AND trigger_row.tgenabled <> 'D'
+            AND trigger_row.tgisinternal = false
+        ) AS precision_marker_immutability_ready,
+        (
+          SELECT pg_get_functiondef(procedure_row.oid)
+          FROM pg_proc procedure_row
+          JOIN pg_namespace namespace
+            ON namespace.oid = procedure_row.pronamespace
+          WHERE namespace.nspname = 'proof_indexer'
+            AND procedure_row.proname =
+              'reject_work_precision_v2_marker_mutation'
+          LIMIT 1
+        ) AS precision_marker_immutability_definition
     `,
   );
   const row = result.rows[0] ?? {};
@@ -502,6 +1431,1492 @@ async function assertAmoPositionSchemaReady(pool) {
       "Proof index worker is paused until the AMO V5/proof-native V6 canonical-position schema is installed.",
     );
   }
+  if (era !== WORK_PRECISION_Q16_ERA) {
+    return;
+  }
+  const transitionConstraint = String(
+    row.transition_model_constraint ?? "",
+  );
+  const precisionMarkerImmutabilityDefinition = String(
+    row.precision_marker_immutability_definition ?? "",
+  );
+  if (
+    !Number.isSafeInteger(Number(activationHeight)) ||
+    Number(activationHeight) < 1 ||
+    row.v7_listing_terms_ready !== true ||
+    row.v7_listing_terms_evidence_ready !== true ||
+    row.v7_policy_constraints_ready !== true ||
+    !String(row.v7_activation_constraint ?? "").includes(
+      `listing_block_height >= ${Number(activationHeight)}`,
+    ) ||
+    row.transition_token_state_ready !== true ||
+    row.transition_immutability_ready !== true ||
+    !transitionConstraint.includes(WORK_AMO_V7_BLOCK_SEQUENCER_MODEL) ||
+    !transitionConstraint.includes(WORK_AMO_V7_TOKEN_STATE_PREIMAGE_MODEL) ||
+    row.v7_ordinal_constraint_ready !== true ||
+    row.v7_immutability_ready !== true ||
+    row.precision_marker_immutability_ready !== true ||
+    !precisionMarkerImmutabilityDefinition.includes(
+      WORK_PRECISION_V2_MIGRATION_META_KEY,
+    ) ||
+    !precisionMarkerImmutabilityDefinition.includes(
+      WORK_AMO_V7_ACTIVATION_LATCH_META_KEY,
+    )
+  ) {
+    throw new Error(
+      "Proof index worker is fail-closed until the exact AMO V7 Q16 schema, activation constraint, and immutable replay models are installed.",
+    );
+  }
+}
+
+function compareUtf8(left, right) {
+  return Buffer.compare(
+    Buffer.from(String(left ?? ""), "utf8"),
+    Buffer.from(String(right ?? ""), "utf8"),
+  );
+}
+
+function canonicalWorkPrecisionUnsignedInteger(value, { positive = false } = {}) {
+  const text = String(value ?? "");
+  if (
+    !/^(?:0|[1-9][0-9]*)$/u.test(text) ||
+    (positive && text === "0")
+  ) {
+    throw new TypeError("work-precision-relational-integer-invalid");
+  }
+  return text;
+}
+
+function canonicalWorkPrecisionBalanceRows(rows, {
+  amountField,
+  keyField,
+} = {}) {
+  if (!Array.isArray(rows)) {
+    throw new TypeError("work-precision-relational-balances-invalid");
+  }
+  const seen = new Set();
+  const canonical = [];
+  for (const row of rows) {
+    const address = String(row?.[keyField] ?? "");
+    const balanceSubatoms = canonicalWorkPrecisionUnsignedInteger(
+      row?.[amountField],
+    );
+    if (!address || seen.has(address)) {
+      throw new TypeError("work-precision-relational-balance-key-invalid");
+    }
+    seen.add(address);
+    if (balanceSubatoms !== "0") {
+      canonical.push({ address, balanceSubatoms });
+    }
+  }
+  return canonical.sort((left, right) =>
+    compareUtf8(left.address, right.address),
+  );
+}
+
+function canonicalWorkPrecisionListingRows(
+  rows,
+  {
+    actual = false,
+  } = {},
+) {
+  if (!Array.isArray(rows)) {
+    throw new TypeError("work-precision-relational-listings-invalid");
+  }
+  const seen = new Set();
+  const canonical = [];
+  for (const row of rows) {
+    const listingId = String(
+      (actual ? row?.listing_id : row?.listingId) ?? "",
+    );
+    const amountSubatoms = canonicalWorkPrecisionUnsignedInteger(
+      actual ? row?.amount : row?.amountSubatoms,
+      { positive: true },
+    );
+    const sellerAddress = String(
+      (actual ? row?.seller_address : row?.sellerAddress) ?? "",
+    );
+    const priceSats = canonicalWorkPrecisionUnsignedInteger(
+      actual ? row?.price_sats : row?.priceSats,
+      { positive: true },
+    );
+    const saleAuthorization = objectRecord(
+      actual ? row?.sale_authorization : row?.saleAuthorization,
+    );
+    const frozenTerms = objectRecord(
+      actual ? row?.frozen_terms : row?.frozenTerms,
+    );
+    if (
+      !listingId ||
+      seen.has(listingId) ||
+      !sellerAddress ||
+      Object.keys(saleAuthorization).length === 0 ||
+      Object.keys(frozenTerms).length === 0
+    ) {
+      throw new TypeError("work-precision-relational-listing-row-invalid");
+    }
+    seen.add(listingId);
+    if (actual) {
+      if (!["active", "sealing"].includes(String(row?.status ?? ""))) {
+        throw new TypeError(
+          "work-precision-relational-listing-status-invalid",
+        );
+      }
+      const authorizationVersion = String(
+        saleAuthorization.version ?? "",
+      );
+      const v7TermsPresent =
+        row?.v7_authorization_version !== null &&
+        row?.v7_authorization_version !== undefined;
+      if (authorizationVersion === WORK_AMO_V7_AUTH_VERSION) {
+        if (
+          !v7TermsPresent ||
+          String(row.v7_authorization_version) !==
+            WORK_AMO_V7_AUTH_VERSION ||
+          canonicalWorkPrecisionUnsignedInteger(
+            row.v7_unit_amount_subatoms,
+            { positive: true },
+          ) !== amountSubatoms ||
+          canonicalWorkPrecisionUnsignedInteger(
+            row.v7_unit_price_sats,
+            { positive: true },
+          ) !== priceSats ||
+          workAmoV5CanonicalPayloadCommitment(
+            objectRecord(row.v7_frozen_terms),
+          ).sha256 !==
+            workAmoV5CanonicalPayloadCommitment(frozenTerms).sha256
+        ) {
+          throw new TypeError(
+            "work-precision-relational-v7-terms-invalid",
+          );
+        }
+      } else if (v7TermsPresent) {
+        throw new TypeError(
+          "work-precision-relational-legacy-v7-terms-invalid",
+        );
+      }
+    }
+    canonical.push({
+      amountSubatoms,
+      frozenTerms,
+      listingId,
+      priceSats,
+      saleAuthorization,
+      sellerAddress,
+    });
+  }
+  return canonical.sort((left, right) =>
+    compareUtf8(left.listingId, right.listingId),
+  );
+}
+
+function sameWorkPrecisionCanonicalPayload(left, right) {
+  const leftCommitment = workAmoV5CanonicalPayloadCommitment(left);
+  const rightCommitment = workAmoV5CanonicalPayloadCommitment(right);
+  return (
+    leftCommitment.model === rightCommitment.model &&
+    leftCommitment.sha256 === rightCommitment.sha256 &&
+    leftCommitment.payloadBytes === rightCommitment.payloadBytes
+  );
+}
+
+export function workerWorkPrecisionRelationalParity({
+  balanceRows,
+  closingTokenState,
+  listingRows,
+} = {}) {
+  try {
+    const state = objectRecord(closingTokenState);
+    return (
+      sameWorkPrecisionCanonicalPayload(
+        canonicalWorkPrecisionBalanceRows(balanceRows, {
+          amountField: "confirmed_balance",
+          keyField: "address",
+        }),
+        canonicalWorkPrecisionBalanceRows(state.holders, {
+          amountField: "balanceSubatoms",
+          keyField: "address",
+        }),
+      ) &&
+      sameWorkPrecisionCanonicalPayload(
+        canonicalWorkPrecisionListingRows(listingRows, {
+          actual: true,
+        }),
+        canonicalWorkPrecisionListingRows(state.listings),
+      )
+    );
+  } catch {
+    return false;
+  }
+}
+
+function sameWorkPrecisionCommitment(leftValue, rightValue, model = "") {
+  const left = objectRecord(leftValue);
+  const right = objectRecord(rightValue);
+  return Boolean(
+    workPrecisionCommitmentShapeReady(left, { model }) &&
+      workPrecisionCommitmentShapeReady(right, { model }) &&
+      left.model === right.model &&
+      left.sha256 === right.sha256 &&
+      left.payloadBytes === right.payloadBytes,
+  );
+}
+
+export function workerWorkPrecisionSnapshotReady(
+  snapshotValue,
+  { tipHash, tipHeight } = {},
+) {
+  const snapshot = objectRecord(snapshotValue);
+  const normalizedTipHash = normalizedLowerText(tipHash);
+  const tokenStatePayloads = objectRecord(
+    snapshot.tokenStatePayloads,
+  );
+  return Boolean(
+    Number.isSafeInteger(Number(tipHeight)) &&
+      Number(tipHeight) > 0 &&
+      /^[0-9a-f]{64}$/u.test(normalizedTipHash) &&
+      Number(snapshot.indexedThroughBlock) === Number(tipHeight) &&
+      normalizedLowerText(snapshot.sourceBlockHash) ===
+        normalizedTipHash &&
+      normalizedLowerText(snapshot.payloadBlockHash) ===
+        normalizedTipHash &&
+      normalizedLowerText(snapshot.summaryBlockHash) ===
+        normalizedTipHash &&
+      snapshot.workAmountStorageModel ===
+        WORK_SUBATOM_PROJECTION_MODEL &&
+      snapshot.summaryMode === "canonical-summary-refresh" &&
+      snapshot.consistencyOk === true &&
+      snapshot.consistencyStatus === "green" &&
+      Object.keys(tokenStatePayloads).length > 0 &&
+      Object.keys(
+        objectRecord(tokenStatePayloads[WORK_TOKEN_ID]),
+      ).length > 0
+  );
+}
+
+export function workerWorkPrecisionCoreTipReady(
+  coreTipValue,
+  { tipHash, tipHeight } = {},
+) {
+  const coreTip = objectRecord(coreTipValue);
+  const normalizedTipHash = normalizedLowerText(tipHash);
+  return Boolean(
+    coreTip.stable === true &&
+      Number.isSafeInteger(Number(coreTip.height)) &&
+      Number(coreTip.height) > 0 &&
+      /^[0-9a-f]{64}$/u.test(
+        normalizedLowerText(coreTip.blockHash),
+      ) &&
+      Number(coreTip.height) === Number(tipHeight) &&
+      normalizedLowerText(coreTip.blockHash) === normalizedTipHash
+  );
+}
+
+export function workerWorkPrecisionConfirmedReplayEnvelopeReady({
+  activationHeight,
+  activationTransition,
+  coreTip,
+  declarationBlockHash,
+  invalidPrecisionEventCount,
+  invalidTransitionCount,
+  latestTransition,
+  markerOpeningCommitment,
+  snapshot,
+  tipHash,
+  tipHeight,
+  transitionCount,
+} = {}) {
+  const activation = objectRecord(activationTransition);
+  const activationPayload = objectRecord(activation.payload);
+  const latest = objectRecord(latestTransition);
+  const latestPayload = objectRecord(latest.payload);
+  const openingCommitment = objectRecord(
+    activationPayload.precisionOpeningTokenStateCommitment,
+  );
+  const expectedOpeningCommitment = objectRecord(
+    markerOpeningCommitment,
+  );
+  const normalizedTipHash = normalizedLowerText(tipHash);
+  const normalizedDeclarationBlockHash =
+    normalizedLowerText(declarationBlockHash);
+  const expectedTransitionCount =
+    Number.isSafeInteger(Number(tipHeight)) &&
+    Number.isSafeInteger(Number(activationHeight)) &&
+    Number(tipHeight) >= Number(activationHeight)
+      ? Number(tipHeight) - Number(activationHeight) + 1
+      : -1;
+  return Boolean(
+    expectedTransitionCount > 0 &&
+      /^[0-9a-f]{64}$/u.test(normalizedTipHash) &&
+      /^[0-9a-f]{64}$/u.test(normalizedDeclarationBlockHash) &&
+      Number(activation.blockHeight) === Number(activationHeight) &&
+      normalizedLowerText(activation.previousBlockHash) ===
+        normalizedDeclarationBlockHash &&
+      activation.model === WORK_AMO_V7_BLOCK_SEQUENCER_MODEL &&
+      activation.stateCommitmentModel ===
+        WORK_AMO_V5_STATE_COMMITMENT_MODEL &&
+      activation.workTokenStateModel ===
+        WORK_AMO_V7_TOKEN_STATE_PREIMAGE_MODEL &&
+      activationPayload.precisionMigrationMarkerKey ===
+        WORK_PRECISION_V2_MIGRATION_META_KEY &&
+      Number(activationPayload.activationHeight) ===
+        Number(activationHeight) &&
+      sameWorkPrecisionCommitment(
+        openingCommitment,
+        expectedOpeningCommitment,
+        WORK_AMO_V5_PAYLOAD_COMMITMENT_MODEL,
+      ) &&
+      sameWorkPrecisionCommitment(
+        openingCommitment,
+        objectRecord(
+          activationPayload.openingSufficientState,
+        ).tokenStateCommitment,
+        WORK_AMO_V5_PAYLOAD_COMMITMENT_MODEL,
+      ) &&
+      Number(latest.blockHeight) === Number(tipHeight) &&
+      normalizedLowerText(latest.blockHash) === normalizedTipHash &&
+      latest.model === WORK_AMO_V7_BLOCK_SEQUENCER_MODEL &&
+      latest.stateCommitmentModel ===
+        WORK_AMO_V5_STATE_COMMITMENT_MODEL &&
+      latest.workTokenStateModel ===
+        WORK_AMO_V7_TOKEN_STATE_PREIMAGE_MODEL &&
+      Number(transitionCount) === expectedTransitionCount &&
+      Number(invalidTransitionCount) === 0 &&
+      Number(invalidPrecisionEventCount) === 0 &&
+      workerWorkPrecisionCoreTipReady(coreTip, {
+        tipHash: normalizedTipHash,
+        tipHeight,
+      }) &&
+      workerWorkPrecisionSnapshotReady(snapshot, {
+        tipHash: normalizedTipHash,
+        tipHeight,
+      })
+  );
+}
+
+async function workerBitcoinCoreRpc(method, params = []) {
+  const rpcUrl = String(process.env.BITCOIN_RPC_URL ?? "").trim();
+  const rpcUser = String(process.env.BITCOIN_RPC_USER ?? "");
+  const rpcPassword = String(process.env.BITCOIN_RPC_PASSWORD ?? "");
+  if (!rpcUrl) {
+    throw new Error(
+      "Proof index worker requires BITCOIN_RPC_URL for exact Q16 tip readiness.",
+    );
+  }
+  const controller = new AbortController();
+  const timeout = setTimeout(
+    () => controller.abort(),
+    WORK_PRECISION_CORE_RPC_TIMEOUT_MS,
+  );
+  try {
+    const headers = { "content-type": "application/json" };
+    if (rpcUser || rpcPassword) {
+      headers.authorization = `Basic ${Buffer.from(
+        `${rpcUser}:${rpcPassword}`,
+        "utf8",
+      ).toString("base64")}`;
+    }
+    const response = await fetch(rpcUrl, {
+      body: JSON.stringify({
+        id: `proof-indexer-worker-${method}`,
+        jsonrpc: "1.0",
+        method,
+        params,
+      }),
+      headers,
+      method: "POST",
+      signal: controller.signal,
+    });
+    const payload = await response.json();
+    if (!response.ok || payload?.error) {
+      throw new Error(
+        `Proof index worker Core RPC ${method} failed: ${
+          payload?.error?.message ?? response.status
+        }`,
+      );
+    }
+    return payload.result;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function readExactWorkerCoreTip() {
+  const before = await workerBitcoinCoreRpc(
+    "getblockchaininfo",
+    [],
+  );
+  const height = Number(before?.blocks);
+  const headers = Number(before?.headers);
+  const blockHash = normalizedLowerText(before?.bestblockhash);
+  if (
+    !Number.isSafeInteger(height) ||
+    height < 1 ||
+    headers !== height ||
+    !/^[0-9a-f]{64}$/u.test(blockHash)
+  ) {
+    throw new Error(
+      "Proof index worker received an inexact Core tip before Q16 replay verification.",
+    );
+  }
+  const [heightHashValue, after] = await Promise.all([
+    workerBitcoinCoreRpc("getblockhash", [height]),
+    workerBitcoinCoreRpc("getblockchaininfo", []),
+  ]);
+  const heightHash = normalizedLowerText(heightHashValue);
+  const afterHeight = Number(after?.blocks);
+  const afterHeaders = Number(after?.headers);
+  const afterHash = normalizedLowerText(after?.bestblockhash);
+  if (
+    afterHeight !== height ||
+    afterHeaders !== height ||
+    afterHash !== blockHash ||
+    heightHash !== blockHash
+  ) {
+    throw new Error(
+      "Proof index worker Core tip changed during Q16 replay verification.",
+    );
+  }
+  return {
+    blockHash,
+    height,
+    stable: true,
+  };
+}
+
+function canonicalWorkerJsonText(value) {
+  if (Array.isArray(value)) {
+    return `[${value.map(canonicalWorkerJsonText).join(",")}]`;
+  }
+  if (value && typeof value === "object") {
+    return `{${Object.keys(value)
+      .sort()
+      .map(
+        (key) =>
+          `${JSON.stringify(key)}:${
+            canonicalWorkerJsonText(value[key])
+          }`,
+      )
+      .join(",")}}`;
+  }
+  return JSON.stringify(value ?? null);
+}
+
+function workerWorkQ16PendingCommitment(domain, rows) {
+  return createHash("sha256")
+    .update(
+      Buffer.from(
+        `${WORK_AMO_V7_PENDING_PROJECTION_DOMAIN_PREFIX}${domain}/v1\n${
+          canonicalWorkerJsonText(rows)
+        }`,
+        "utf8",
+      ),
+    )
+    .digest("hex");
+}
+
+function canonicalWorkerMempoolSnapshot(value) {
+  const rawTxids = Array.isArray(value)
+    ? value
+    : Object.keys(objectRecord(value));
+  const txids = rawTxids
+    .map((txid) => normalizedLowerText(txid));
+  if (
+    txids.some((txid) => !/^[0-9a-f]{64}$/u.test(txid)) ||
+    txids.length !== new Set(txids).size
+  ) {
+    throw new Error(
+      "Proof index worker received invalid or duplicate Core mempool txids.",
+    );
+  }
+  txids.sort(compareUtf8);
+  return {
+    count: txids.length,
+    model: WORK_AMO_V7_PENDING_MEMPOOL_MODEL,
+    sha256: createHash("sha256")
+      .update(
+        Buffer.from(
+          `${WORK_AMO_V7_PENDING_MEMPOOL_DOMAIN}\n${
+            canonicalWorkerJsonText(txids)
+          }`,
+          "utf8",
+        ),
+      )
+      .digest("hex"),
+    txids,
+  };
+}
+
+async function readExactWorkerCoreMempoolSnapshot() {
+  return canonicalWorkerMempoolSnapshot(
+    await workerBitcoinCoreRpc("getrawmempool", [false]),
+  );
+}
+
+export function workerWorkPrecisionPendingProjection({
+  balanceRows,
+  eventRows,
+  listingRows,
+  transactionRows,
+} = {}) {
+  const rowSets = {
+    balances: Array.isArray(balanceRows) ? balanceRows : [],
+    events: Array.isArray(eventRows) ? eventRows : [],
+    listings: Array.isArray(listingRows) ? listingRows : [],
+    transactions: Array.isArray(transactionRows) ? transactionRows : [],
+  };
+  const projectionParts = Object.fromEntries(
+    Object.entries(rowSets).map(([key, rows]) => [
+      key,
+      {
+        count: rows.length,
+        sha256: workerWorkQ16PendingCommitment(
+          key.toUpperCase(),
+          rows,
+        ),
+      },
+    ]),
+  );
+  return {
+    ...projectionParts,
+    commitmentSha256: workerWorkQ16PendingCommitment(
+      "PROJECTION",
+      projectionParts,
+    ),
+    model: WORK_AMO_V7_PENDING_PROJECTION_MODEL,
+  };
+}
+
+export function workerWorkPrecisionPendingParity({
+  balanceRows,
+  eventRows,
+  listingRows,
+  mempoolTxids,
+  transactionRows,
+} = {}) {
+  const isTxid = (value) => /^[0-9a-f]{64}$/u.test(value);
+  const mempool = new Set(
+    (Array.isArray(mempoolTxids) ? mempoolTxids : [])
+      .map(normalizedLowerText)
+      .filter(isTxid),
+  );
+  const expectedTxids = [
+    ...new Set([
+      ...(Array.isArray(eventRows) ? eventRows : []).map((row) =>
+        normalizedLowerText(row?.txid),
+      ),
+      ...(Array.isArray(listingRows) ? listingRows : []).map((row) =>
+        normalizedLowerText(row?.membership_txid),
+      ),
+    ].filter(isTxid)),
+  ].sort(compareUtf8);
+  const outsideMempoolTxids = expectedTxids.filter(
+    (txid) => !mempool.has(txid),
+  );
+  const transactionRowsByTxid = new Map();
+  let duplicateTransactionCount = 0;
+  for (
+    const row of Array.isArray(transactionRows)
+      ? transactionRows
+      : []
+  ) {
+    const txid = normalizedLowerText(row?.txid);
+    if (!isTxid(txid) || !mempool.has(txid)) {
+      continue;
+    }
+    if (transactionRowsByTxid.has(txid)) {
+      duplicateTransactionCount += 1;
+    }
+    transactionRowsByTxid.set(txid, row);
+  }
+  const missingTransactionTxids = expectedTxids.filter(
+    (txid) =>
+      !transactionRowsByTxid.has(txid) ||
+      transactionRowsByTxid.get(txid)?.status !== "pending",
+  );
+  const observedNonzeroBalanceRows =
+    Array.isArray(balanceRows) ? balanceRows : [];
+  return {
+    balanceDeltas: {
+      expectedNonzeroCount: 0,
+      model:
+        "pending-work-events-do-not-mutate-holder-balances-v1",
+      observedNonzeroCount: observedNonzeroBalanceRows.length,
+      observedSha256: workerWorkQ16PendingCommitment(
+        "BALANCE-DELTA-PARITY",
+        observedNonzeroBalanceRows,
+      ),
+    },
+    membership: {
+      expectedTxidCount: expectedTxids.length,
+      expectedTxidsSha256: workerWorkQ16PendingCommitment(
+        "MEMBERSHIP",
+        expectedTxids,
+      ),
+      outsideMempoolCount: outsideMempoolTxids.length,
+      outsideMempoolTxidsSha256:
+        workerWorkQ16PendingCommitment(
+          "OUTSIDE-MEMPOOL",
+          outsideMempoolTxids,
+        ),
+    },
+    model: "canonical-work-q16-pending-parity-v1",
+    ready:
+      outsideMempoolTxids.length === 0 &&
+      duplicateTransactionCount === 0 &&
+      missingTransactionTxids.length === 0 &&
+      observedNonzeroBalanceRows.length === 0,
+    transactions: {
+      duplicateCount: duplicateTransactionCount,
+      expectedCount: expectedTxids.length,
+      matchedCount:
+        expectedTxids.length - missingTransactionTxids.length,
+      missingCount: missingTransactionTxids.length,
+      missingTxidsSha256: workerWorkQ16PendingCommitment(
+        "MISSING-TRANSACTIONS",
+        missingTransactionTxids,
+      ),
+    },
+  };
+}
+
+function exactWorkerPendingCommitment(value) {
+  const commitment = objectRecord(value);
+  return Boolean(
+    exactObjectKeys(commitment, ["count", "sha256"]) &&
+      exactJsonInteger(commitment.count) &&
+      /^[0-9a-f]{64}$/u.test(
+        String(commitment.sha256 ?? ""),
+      ),
+  );
+}
+
+export function workerWorkPrecisionPendingWitnessReady(
+  witnessValue,
+  {
+    coreTip,
+    declarationConfig,
+    invalidLegacyMutationCount,
+    mempoolSnapshot,
+    nowMs = Date.now(),
+    parity,
+    projection,
+  } = {},
+) {
+  const witness = objectRecord(witnessValue);
+  const config = objectRecord(declarationConfig);
+  const witnessedTip = objectRecord(witness.canonicalTip);
+  const witnessedMempool = objectRecord(witness.mempoolSnapshot);
+  const currentMempool = objectRecord(mempoolSnapshot);
+  const witnessedProjection = objectRecord(witness.projection);
+  const currentProjection = objectRecord(projection);
+  const witnessedParity = objectRecord(witness.parity);
+  const currentParity = objectRecord(parity);
+  const scan = objectRecord(witness.scan);
+  const txids = Array.isArray(witnessedMempool.txids)
+    ? witnessedMempool.txids.map((txid) => normalizedLowerText(txid))
+    : [];
+  const generatedAtMs = Date.parse(String(witness.generatedAt ?? ""));
+  const projectionParts = {
+    balances: witnessedProjection.balances,
+    events: witnessedProjection.events,
+    listings: witnessedProjection.listings,
+    transactions: witnessedProjection.transactions,
+  };
+  return Boolean(
+    config.configured === true &&
+      exactObjectKeys(witness, [
+        "activationHeight",
+        "amountStorageModel",
+        "canonicalTip",
+        "declarationTxid",
+        "generatedAt",
+        "invalidLegacyMutationCount",
+        "mempoolSnapshot",
+        "model",
+        "network",
+        "parity",
+        "precisionModel",
+        "projection",
+        "ready",
+        "scan",
+      ]) &&
+      exactObjectKeys(witnessedTip, ["hash", "height"]) &&
+      exactObjectKeys(witnessedMempool, [
+        "count",
+        "model",
+        "sha256",
+        "txids",
+      ]) &&
+      exactObjectKeys(witnessedProjection, [
+        "balances",
+        "commitmentSha256",
+        "events",
+        "listings",
+        "model",
+        "transactions",
+      ]) &&
+      exactObjectKeys(scan, [
+        "canonicalDeferred",
+        "complete",
+        "coveredTxids",
+        "protocolTxids",
+        "scanned",
+        "stopReason",
+        "unresolved",
+      ]) &&
+      witness.model === WORK_AMO_V7_PENDING_REBUILD_MODEL &&
+      witness.network === "livenet" &&
+      witness.ready === true &&
+      witness.activationHeight === config.activationHeight &&
+      witness.declarationTxid ===
+        config.declarationTxid &&
+      witness.amountStorageModel === WORK_SUBATOM_PROJECTION_MODEL &&
+      witness.precisionModel === WORK_PRECISION_V2_MODEL &&
+      witness.invalidLegacyMutationCount === 0 &&
+      Number(invalidLegacyMutationCount) === 0 &&
+      workerWorkPrecisionCoreTipReady(coreTip, {
+        tipHash: witnessedTip.hash,
+        tipHeight: witnessedTip.height,
+      }) &&
+      exactJsonInteger(witnessedTip.height, {
+        minimum: config.activationHeight,
+      }) &&
+      witnessedTip.hash === normalizedLowerText(witnessedTip.hash) &&
+      witnessedMempool.model === WORK_AMO_V7_PENDING_MEMPOOL_MODEL &&
+      witnessedMempool.count === txids.length &&
+      canonicalWorkerJsonText(witnessedMempool.txids) ===
+        canonicalWorkerJsonText(txids) &&
+      txids.length === new Set(txids).size &&
+      txids.every((txid) => /^[0-9a-f]{64}$/u.test(txid)) &&
+      txids.every(
+        (txid, index) =>
+          index === 0 || compareUtf8(txids[index - 1], txid) < 0,
+      ) &&
+      witnessedMempool.sha256 ===
+        canonicalWorkerMempoolSnapshot(txids).sha256 &&
+      currentMempool.model === WORK_AMO_V7_PENDING_MEMPOOL_MODEL &&
+      currentMempool.count === witnessedMempool.count &&
+      currentMempool.sha256 === witnessedMempool.sha256 &&
+      canonicalWorkerJsonText(currentMempool.txids) ===
+        canonicalWorkerJsonText(txids) &&
+      witnessedProjection.model ===
+        WORK_AMO_V7_PENDING_PROJECTION_MODEL &&
+      witnessedParity.ready === true &&
+      currentParity.ready === true &&
+      canonicalWorkerJsonText(witnessedParity) ===
+        canonicalWorkerJsonText(currentParity) &&
+      Object.values(projectionParts).every(
+        exactWorkerPendingCommitment,
+      ) &&
+      witnessedProjection.commitmentSha256 ===
+        workerWorkQ16PendingCommitment(
+          "PROJECTION",
+          projectionParts,
+        ) &&
+      canonicalWorkerJsonText(witnessedProjection) ===
+        canonicalWorkerJsonText(currentProjection) &&
+      scan.complete === true &&
+      Number(scan.canonicalDeferred) === 0 &&
+      Number(scan.unresolved) === 0 &&
+      String(scan.stopReason ?? "") === "" &&
+      exactJsonInteger(scan.canonicalDeferred) &&
+      exactJsonInteger(scan.unresolved) &&
+      exactJsonInteger(scan.coveredTxids, {
+        minimum: txids.length,
+      }) &&
+      exactJsonInteger(scan.protocolTxids) &&
+      exactJsonInteger(scan.scanned) &&
+      typeof witness.generatedAt === "string" &&
+      Number.isFinite(generatedAtMs) &&
+      Number.isFinite(Number(nowMs)) &&
+      Number(nowMs) >= generatedAtMs &&
+      Number(nowMs) - generatedAtMs <=
+        WORK_AMO_V7_PENDING_WITNESS_MAX_AGE_MS
+  );
+}
+
+async function assertWorkPrecisionReplayReady(pool, precision) {
+  if (precision?.era !== WORK_PRECISION_Q16_ERA) {
+    return {
+      era: precision?.era ?? WORK_PRECISION_Q8_ERA,
+      ready: true,
+      replayRequired: false,
+    };
+  }
+  const activationHeight = Number(precision.activationHeight);
+  if (
+    !Number.isSafeInteger(activationHeight) ||
+    activationHeight < 1 ||
+    !Number.isFinite(Date.parse(String(precision.markerCompletedAt ?? "")))
+  ) {
+    throw new Error(
+      "Proof index worker cannot verify AMO V7 replay without the exact activation and migration completion.",
+    );
+  }
+  const declarationBlockHash = normalizedLowerText(
+    precision.declarationBlockHash,
+  );
+  if (
+    Number(precision.declarationHeight) !== activationHeight - 1 ||
+    !/^[0-9a-f]{64}$/u.test(declarationBlockHash)
+  ) {
+    throw new Error(
+      "Proof index worker cannot verify AMO V7 replay without the exact declaration-height predecessor.",
+    );
+  }
+  const coreTipBefore = await readExactWorkerCoreTip();
+  const [stateResult, balanceResult, listingResult] = await Promise.all([
+    pool.query(
+      `
+        WITH canonical_tip AS (
+          SELECT
+            block.height,
+            lower(block.block_hash) AS block_hash
+          FROM proof_indexer.blocks block
+          WHERE block.network = $1
+            AND block.canonical = true
+          ORDER BY block.height DESC
+          LIMIT 1
+        )
+        SELECT
+          (
+            SELECT tip.height
+            FROM canonical_tip tip
+          ) AS tip_height,
+          (
+            SELECT tip.block_hash
+            FROM canonical_tip tip
+          ) AS tip_hash,
+          (
+            SELECT count(*)::integer
+            FROM proof_indexer.work_amo_block_transitions transition
+            WHERE transition.network = $1
+              AND transition.block_height >= $2
+          ) AS transition_count,
+          (
+            SELECT count(*)::integer
+            FROM proof_indexer.work_amo_block_transitions transition
+            LEFT JOIN proof_indexer.blocks block
+              ON block.network = transition.network
+             AND block.height = transition.block_height
+             AND block.block_hash = transition.block_hash
+             AND block.canonical = true
+            LEFT JOIN proof_indexer.blocks previous_block
+              ON previous_block.network = transition.network
+             AND previous_block.height = transition.block_height - 1
+             AND previous_block.block_hash =
+                  transition.previous_block_hash
+             AND previous_block.canonical = true
+            LEFT JOIN proof_indexer.work_amo_block_transitions
+              previous_transition
+              ON previous_transition.network = transition.network
+             AND previous_transition.block_height =
+                  transition.block_height - 1
+            WHERE transition.network = $1
+              AND transition.block_height >= $2
+              AND (
+                transition.complete IS DISTINCT FROM true
+                OR transition.model <> $3
+                OR transition.work_token_state_model <> $4
+                OR transition.state_commitment_model <> $5
+                OR transition.block_atomic IS DISTINCT FROM true
+                OR transition.fee_once IS DISTINCT FROM true
+                OR transition.invalid_zero IS DISTINCT FROM true
+                OR block.block_hash IS NULL
+                OR previous_block.block_hash IS NULL
+                OR transition.payload->>'model'
+                  IS DISTINCT FROM $3
+                OR transition.payload->>'network'
+                  IS DISTINCT FROM $1
+                OR transition.payload->>'blockHeight'
+                  IS DISTINCT FROM
+                  transition.block_height::text
+                OR lower(COALESCE(
+                  transition.payload->>'blockHash',
+                  ''
+                )) <> transition.block_hash
+                OR lower(COALESCE(
+                  transition.payload->>'previousBlockHash',
+                  ''
+                )) <> transition.previous_block_hash
+                OR transition.payload->>'blockAtomic'
+                  IS DISTINCT FROM 'true'
+                OR transition.payload->>'feeOnce'
+                  IS DISTINCT FROM 'true'
+                OR transition.payload->>'invalidZero'
+                  IS DISTINCT FROM 'true'
+                OR transition.payload->>'complete'
+                  IS DISTINCT FROM 'true'
+                OR transition.payload->'openingSufficientState'
+                     ->>'model' IS DISTINCT FROM $6
+                OR transition.payload->'closingSufficientState'
+                     ->>'model' IS DISTINCT FROM $6
+                OR transition.payload->'openingSufficientState'
+                     ->>'throughBlockHeight' IS DISTINCT FROM
+                  (transition.block_height - 1)::text
+                OR lower(COALESCE(
+                  transition.payload->'openingSufficientState'
+                    ->>'throughBlockHash',
+                  ''
+                )) <> transition.previous_block_hash
+                OR transition.payload->'closingSufficientState'
+                     ->>'throughBlockHeight' IS DISTINCT FROM
+                  transition.block_height::text
+                OR lower(COALESCE(
+                  transition.payload->'closingSufficientState'
+                    ->>'throughBlockHash',
+                  ''
+                )) <> transition.block_hash
+                OR transition.payload->'openingSufficientState'
+                     ->>'networkValueQ8' IS DISTINCT FROM
+                  transition.opening_network_value_q8::text
+                OR transition.payload->'closingSufficientState'
+                     ->>'networkValueQ8' IS DISTINCT FROM
+                  transition.closing_network_value_q8::text
+                OR transition.payload->'openingStateCommitment'
+                     ->>'model' IS DISTINCT FROM $5
+                OR lower(COALESCE(
+                  transition.payload->'openingStateCommitment'
+                    ->>'sha256',
+                  ''
+                )) <> transition.opening_state_sha256
+                OR transition.payload->'openingStateCommitment'
+                     ->>'payloadBytes' IS DISTINCT FROM
+                  transition.opening_state_payload_bytes::text
+                OR transition.payload->'closingStateCommitment'
+                     ->>'model' IS DISTINCT FROM $5
+                OR lower(COALESCE(
+                  transition.payload->'closingStateCommitment'
+                    ->>'sha256',
+                  ''
+                )) <> transition.closing_state_sha256
+                OR transition.payload->'closingStateCommitment'
+                     ->>'payloadBytes' IS DISTINCT FROM
+                  transition.closing_state_payload_bytes::text
+                OR transition.payload->'openingSufficientState'
+                     ->'tokenStateCommitment'->>'model'
+                  IS DISTINCT FROM $7
+                OR transition.payload->'closingSufficientState'
+                     ->'tokenStateCommitment'->>'model'
+                  IS DISTINCT FROM $7
+                OR transition.payload->'closingTokenState'
+                     ->>'model' IS DISTINCT FROM $4
+                OR (
+                  transition.block_height = $2
+                  AND transition.previous_block_hash <> $12
+                )
+                OR (
+                  transition.block_height > $2
+                  AND (
+                    previous_transition.block_hash IS NULL
+                    OR previous_transition.block_hash <>
+                      transition.previous_block_hash
+                    OR previous_transition.closing_network_value_q8 <>
+                      transition.opening_network_value_q8
+                    OR previous_transition.closing_state_sha256 <>
+                      transition.opening_state_sha256
+                    OR previous_transition.closing_state_payload_bytes <>
+                      transition.opening_state_payload_bytes
+                    OR transition.payload->'openingSufficientState'
+                      IS DISTINCT FROM
+                      previous_transition.payload
+                        ->'closingSufficientState'
+                  )
+                )
+              )
+          ) AS invalid_transition_count,
+          (
+            SELECT jsonb_build_object(
+              'blockHeight', transition.block_height,
+              'blockHash', transition.block_hash,
+              'model', transition.model,
+              'payload', transition.payload,
+              'previousBlockHash', transition.previous_block_hash,
+              'stateCommitmentModel',
+                transition.state_commitment_model,
+              'workTokenStateModel', transition.work_token_state_model
+            )
+            FROM proof_indexer.work_amo_block_transitions transition
+            WHERE transition.network = $1
+              AND transition.complete = true
+            ORDER BY transition.block_height DESC
+            LIMIT 1
+          ) AS latest_transition,
+          (
+            SELECT jsonb_build_object(
+              'blockHeight', transition.block_height,
+              'blockHash', transition.block_hash,
+              'model', transition.model,
+              'payload', transition.payload,
+              'previousBlockHash', transition.previous_block_hash,
+              'stateCommitmentModel',
+                transition.state_commitment_model,
+              'workTokenStateModel', transition.work_token_state_model
+            )
+            FROM proof_indexer.work_amo_block_transitions transition
+            WHERE transition.network = $1
+              AND transition.block_height = $2
+              AND transition.complete = true
+            LIMIT 1
+          ) AS activation_transition,
+          (
+            SELECT jsonb_build_object(
+              'consistencyOk',
+                snapshot.consistency->>'ok' = 'true',
+              'consistencyStatus',
+                snapshot.consistency->>'status',
+              'indexedThroughBlock',
+                snapshot.indexed_through_block,
+              'payloadBlockHash',
+                lower(COALESCE(
+                  snapshot.payload->>'indexedThroughBlockHash',
+                  ''
+                )),
+              'sourceBlockHash',
+                lower(COALESCE(
+                  snapshot.source_hashes->>'blockScan',
+                  ''
+                )),
+              'summaryBlockHash',
+                lower(COALESCE(
+                  snapshot.payload->'summaryRefresh'
+                    ->>'indexedThroughBlockHash',
+                  ''
+                )),
+              'summaryMode',
+                snapshot.payload->'summaryRefresh'->>'mode',
+              'tokenStatePayloads',
+                snapshot.payload->'tokenStatePayloads',
+              'workAmountStorageModel',
+                snapshot.payload->>'workAmountStorageModel'
+            )
+            FROM proof_indexer.ledger_snapshots snapshot
+            WHERE snapshot.network = $1
+              AND snapshot.generated_at >= $8::timestamptz
+              AND snapshot.payload ? 'tokenStatePayloads'
+              AND snapshot.payload->'tokenStatePayloads' ? $9
+              AND snapshot.payload->>'workAmountStorageModel' = $11
+            ORDER BY snapshot.indexed_through_block DESC NULLS LAST,
+              snapshot.generated_at DESC
+            LIMIT 1
+          ) AS snapshot,
+          (
+            SELECT count(*)::integer
+            FROM proof_indexer.events event
+            WHERE event.network = $1
+              AND event.protocol = 'pwt1'
+              AND event.status = 'confirmed'
+              AND event.valid = true
+              AND lower(COALESCE(
+                event.payload->>'tokenId',
+                event.payload->'saleAuthorization'->>'tokenId',
+                event.payload->'listingAuthorization'->>'tokenId',
+                ''
+              )) = $9
+              AND (
+                (
+                  event.block_height < $2
+                  AND (
+                    event.raw_payload LIKE 'pwt1:send3:%'
+                    OR lower(COALESCE(
+                      event.payload->'saleAuthorization'->>'version',
+                      event.payload->'listingAuthorization'->>'version',
+                      ''
+                    )) = $10
+                  )
+                )
+                OR (
+                  event.block_height >= $2
+                  AND (
+                    event.raw_payload LIKE 'pwt1:send:%'
+                    OR event.raw_payload LIKE 'pwt1:send2:%'
+                    OR (
+                      event.kind = 'token-listing'
+                      AND lower(COALESCE(
+                        event.payload->'saleAuthorization'->>'version',
+                        event.payload->'listingAuthorization'->>'version',
+                        ''
+                      )) <> $10
+                    )
+                  )
+                )
+              )
+          ) AS invalid_precision_event_count
+      `,
+      [
+        NETWORK,
+        activationHeight,
+        WORK_AMO_V7_BLOCK_SEQUENCER_MODEL,
+        WORK_AMO_V7_TOKEN_STATE_PREIMAGE_MODEL,
+        WORK_AMO_V5_STATE_COMMITMENT_MODEL,
+        WORK_AMO_V5_NETWORK_ACCUMULATOR_MODEL,
+        WORK_AMO_V5_PAYLOAD_COMMITMENT_MODEL,
+        precision.markerCompletedAt,
+        WORK_TOKEN_ID,
+        WORK_AMO_V7_AUTH_VERSION,
+        WORK_SUBATOM_PROJECTION_MODEL,
+        declarationBlockHash,
+      ],
+    ),
+    pool.query(
+      `
+        SELECT address, confirmed_balance::text
+        FROM proof_indexer.credit_balances
+        WHERE network = $1
+          AND token_id = $2
+        ORDER BY address ASC
+      `,
+      [NETWORK, WORK_TOKEN_ID],
+    ),
+    pool.query(
+      `
+        SELECT
+          listing.listing_id,
+          listing.amount::text,
+          listing.seller_address,
+          listing.price_sats::text,
+          listing.status,
+          COALESCE(
+            listing.payload->'listingAuthorization',
+            listing.payload->'saleAuthorization'
+          ) AS sale_authorization,
+          COALESCE(
+            listing.payload->'listingFrozenTerms',
+            listing.payload->'frozenTerms'
+          ) AS frozen_terms,
+          v7.authorization_version AS v7_authorization_version,
+          v7.unit_amount_subatoms::text AS
+            v7_unit_amount_subatoms,
+          v7.unit_price_sats::text AS v7_unit_price_sats,
+          v7.frozen_terms AS v7_frozen_terms
+        FROM proof_indexer.credit_listings listing
+        LEFT JOIN proof_indexer.work_amo_v7_listing_terms v7
+          ON v7.network = listing.network
+         AND v7.listing_id = listing.listing_id
+        WHERE listing.network = $1
+          AND listing.token_id = $2
+          AND listing.status IN ('active', 'sealing')
+        ORDER BY listing.listing_id ASC
+      `,
+      [NETWORK, WORK_TOKEN_ID],
+    ),
+  ]);
+  const coreTipAfter = await readExactWorkerCoreTip();
+  if (
+    coreTipBefore.height !== coreTipAfter.height ||
+    coreTipBefore.blockHash !== coreTipAfter.blockHash
+  ) {
+    throw new Error(
+      "Proof index worker Core tip changed across the Q16 relational replay audit.",
+    );
+  }
+  const row = stateResult.rows[0] ?? {};
+  const tipHeight = Number(row.tip_height);
+  const tipHash = normalizedLowerText(row.tip_hash);
+  const latest = objectRecord(row.latest_transition);
+  const activation = objectRecord(row.activation_transition);
+  const latestPayload = objectRecord(latest.payload);
+  const closingTokenState = objectRecord(
+    latestPayload.closingTokenState,
+  );
+  const closingSufficientState = objectRecord(
+    latestPayload.closingSufficientState,
+  );
+  const sufficientCommitment = objectRecord(
+    closingSufficientState.tokenStateCommitment,
+  );
+  const markerOpeningCommitment = objectRecord(
+    precision.openingTokenStateCommitment,
+  );
+  let closingCommitment = null;
+  try {
+    closingCommitment =
+      workAmoV7CanonicalTokenStateCommitment(closingTokenState);
+  } catch {
+    closingCommitment = null;
+  }
+  const commitmentReady = Boolean(
+    closingCommitment &&
+      sameWorkPrecisionCommitment(
+        closingCommitment,
+        sufficientCommitment,
+        WORK_AMO_V5_PAYLOAD_COMMITMENT_MODEL,
+      ),
+  );
+  const replayEnvelopeReady =
+    workerWorkPrecisionConfirmedReplayEnvelopeReady({
+      activationHeight,
+      activationTransition: activation,
+      coreTip: coreTipAfter,
+      declarationBlockHash,
+      invalidPrecisionEventCount:
+        row.invalid_precision_event_count,
+      invalidTransitionCount: row.invalid_transition_count,
+      latestTransition: latest,
+      markerOpeningCommitment,
+      snapshot: row.snapshot,
+      tipHash,
+      tipHeight,
+      transitionCount: row.transition_count,
+    });
+  const ready =
+    replayEnvelopeReady &&
+    commitmentReady &&
+    workerWorkPrecisionRelationalParity({
+      balanceRows: balanceResult.rows,
+      closingTokenState,
+      listingRows: listingResult.rows,
+    });
+  if (!ready) {
+    throw new Error(
+      "Proof index worker is fail-closed until AMO V7 has exact activation-to-tip replay, Q16 relational parity, and a post-migration current snapshot.",
+    );
+  }
+  return {
+    activationHeight,
+    era: WORK_PRECISION_Q16_ERA,
+    ready: true,
+    replayRequired: true,
+    tipHash,
+    tipHeight,
+    transitionCount: Number(row.transition_count),
+  };
+}
+
+async function assertWorkPrecisionPendingReady(
+  pool,
+  precision,
+  confirmedReplay,
+) {
+  if (precision?.era !== WORK_PRECISION_Q16_ERA) {
+    return {
+      era: precision?.era ?? WORK_PRECISION_Q8_ERA,
+      ready: true,
+      replayRequired: false,
+    };
+  }
+  if (
+    confirmedReplay?.ready !== true ||
+    !workerWorkPrecisionCoreTipReady(
+      {
+        blockHash: confirmedReplay.tipHash,
+        height: confirmedReplay.tipHeight,
+        stable: true,
+      },
+      {
+        tipHash: confirmedReplay.tipHash,
+        tipHeight: confirmedReplay.tipHeight,
+      },
+    )
+  ) {
+    throw new Error(
+      "Proof index worker refuses pending readiness before exact confirmed replay.",
+    );
+  }
+  const declarationConfig = workerWorkAmoV7DeclarationConfig();
+  const witnessResult = await pool.query(
+    `
+      SELECT value
+      FROM proof_indexer.meta
+      WHERE key = $1
+      LIMIT 2
+    `,
+    [WORK_AMO_V7_PENDING_REBUILD_META_KEY],
+  );
+  const witness = objectRecord(witnessResult.rows[0]?.value);
+  const witnessedMempool = objectRecord(witness.mempoolSnapshot);
+  const witnessedTxids = Array.isArray(witnessedMempool.txids)
+    ? witnessedMempool.txids
+        .map((txid) => normalizedLowerText(txid))
+        .filter((txid) => /^[0-9a-f]{64}$/u.test(txid))
+    : [];
+  const [coreTipBefore, mempoolBefore] = await Promise.all([
+    readExactWorkerCoreTip(),
+    readExactWorkerCoreMempoolSnapshot(),
+  ]);
+  const [
+    balanceResult,
+    eventResult,
+    listingResult,
+    transactionResult,
+    invalidLegacyResult,
+  ] = await Promise.all([
+    pool.query(
+      `
+        SELECT address, pending_delta::text
+        FROM proof_indexer.credit_balances
+        WHERE network = $1
+          AND token_id = $2
+          AND pending_delta <> 0
+        ORDER BY address ASC
+      `,
+      [NETWORK, WORK_TOKEN_ID],
+    ),
+    pool.query(
+      `
+        SELECT
+          event_id,
+          txid,
+          kind,
+          protocol,
+          protocol_vout,
+          record_ordinal,
+          valid,
+          raw_payload,
+          payload
+        FROM proof_indexer.events
+        WHERE network = $1
+          AND status = 'pending'
+          AND protocol = 'pwt1'
+          AND lower(COALESCE(
+            payload->>'tokenId',
+            payload->'saleAuthorization'->>'tokenId',
+            payload->'listingAuthorization'->>'tokenId',
+            payload->'actionAuthorization'->>'tokenId',
+            ''
+          )) = $2
+        ORDER BY txid ASC, protocol_vout ASC, record_ordinal ASC,
+          event_id ASC
+      `,
+      [NETWORK, WORK_TOKEN_ID],
+    ),
+    pool.query(
+      `
+        SELECT
+          listing_id,
+          status,
+          seller_address,
+          buyer_address,
+          amount::text,
+          price_sats::text,
+          sale_ticket_txid,
+          seal_txid,
+          CASE
+            WHEN listing.status = 'pending'
+              THEN lower(listing.listing_id)
+            WHEN listing.status = 'sealing'
+              AND COALESCE(seal_tx.status, '') <> 'confirmed'
+              AND COALESCE(listing.seal_txid, '') <> ''
+              THEN lower(listing.seal_txid)
+            ELSE NULL
+          END AS membership_txid,
+          seal_tx.status AS seal_transaction_status,
+          payload
+        FROM proof_indexer.credit_listings listing
+        LEFT JOIN proof_indexer.transactions seal_tx
+          ON seal_tx.network = listing.network
+         AND seal_tx.txid = lower(listing.seal_txid)
+        WHERE listing.network = $1
+          AND listing.token_id = $2
+          AND listing.status IN ('pending', 'sealing')
+        ORDER BY listing.listing_id ASC
+      `,
+      [NETWORK, WORK_TOKEN_ID],
+    ),
+    pool.query(
+      `
+        SELECT txid, status, raw_tx
+        FROM proof_indexer.transactions
+        WHERE network = $1
+          AND status = 'pending'
+          AND txid = ANY($2::text[])
+        ORDER BY txid ASC
+      `,
+      [NETWORK, witnessedTxids],
+    ),
+    pool.query(
+      `
+        SELECT count(*)::integer AS invalid_count
+        FROM proof_indexer.events event
+        WHERE event.network = $1
+          AND event.status = 'pending'
+          AND event.protocol = 'pwt1'
+          AND event.valid = true
+          AND lower(COALESCE(
+            event.payload->>'tokenId',
+            event.payload->'saleAuthorization'->>'tokenId',
+            event.payload->'listingAuthorization'->>'tokenId',
+            event.payload->'actionAuthorization'->>'tokenId',
+            ''
+          )) = $2
+          AND (
+            event.raw_payload LIKE 'pwt1:send:%'
+            OR event.raw_payload LIKE 'pwt1:send2:%'
+            OR (
+              event.kind = 'token-listing'
+              AND lower(COALESCE(
+                event.payload->'saleAuthorization'->>'version',
+                event.payload->'listingAuthorization'->>'version',
+                ''
+              )) <> $3
+            )
+          )
+      `,
+      [NETWORK, WORK_TOKEN_ID, WORK_AMO_V7_AUTH_VERSION],
+    ),
+  ]);
+  const projection = workerWorkPrecisionPendingProjection({
+    balanceRows: balanceResult.rows,
+    eventRows: eventResult.rows,
+    listingRows: listingResult.rows,
+    transactionRows: transactionResult.rows,
+  });
+  const parity = workerWorkPrecisionPendingParity({
+    balanceRows: balanceResult.rows,
+    eventRows: eventResult.rows,
+    listingRows: listingResult.rows,
+    mempoolTxids: witnessedTxids,
+    transactionRows: transactionResult.rows,
+  });
+  const [coreTipAfter, mempoolAfter] = await Promise.all([
+    readExactWorkerCoreTip(),
+    readExactWorkerCoreMempoolSnapshot(),
+  ]);
+  const stableCore =
+    coreTipBefore.height === coreTipAfter.height &&
+    coreTipBefore.blockHash === coreTipAfter.blockHash;
+  const stableMempool =
+    mempoolBefore.count === mempoolAfter.count &&
+    mempoolBefore.sha256 === mempoolAfter.sha256 &&
+    canonicalWorkerJsonText(mempoolBefore.txids) ===
+      canonicalWorkerJsonText(mempoolAfter.txids);
+  const ready =
+    witnessResult.rows.length === 1 &&
+    stableCore &&
+    stableMempool &&
+    workerWorkPrecisionCoreTipReady(coreTipAfter, {
+      tipHash: confirmedReplay.tipHash,
+      tipHeight: confirmedReplay.tipHeight,
+    }) &&
+    workerWorkPrecisionPendingWitnessReady(witness, {
+      coreTip: coreTipAfter,
+      declarationConfig,
+      invalidLegacyMutationCount:
+        invalidLegacyResult.rows[0]?.invalid_count,
+      mempoolSnapshot: mempoolAfter,
+      parity,
+      projection,
+    });
+  if (!ready) {
+    throw new Error(
+      "Proof index worker is fail-closed until the backfill-owned Q16 pending witness matches the current Core mempool and exact pending projection.",
+    );
+  }
+  return {
+    activationHeight: precision.activationHeight,
+    confirmed: confirmedReplay,
+    era: WORK_PRECISION_Q16_ERA,
+    mempoolCount: mempoolAfter.count,
+    mempoolSha256: mempoolAfter.sha256,
+    pendingGeneratedAt: witness.generatedAt,
+    pendingProjectionSha256: projection.commitmentSha256,
+    ready: true,
+    replayRequired: true,
+    tipHash: confirmedReplay.tipHash,
+    tipHeight: confirmedReplay.tipHeight,
+    transitionCount: confirmedReplay.transitionCount,
+  };
 }
 
 function endpoint(pathname, params = {}) {
@@ -778,6 +3193,21 @@ export function workerNoProgressFromMeta(value, network = NETWORK) {
     return null;
   }
   return state;
+}
+
+export function workerWorkPrecisionFromMeta(value, network = NETWORK) {
+  const state = objectRecord(value?.workPrecision);
+  if (
+    String(value?.network ?? "") !== String(network ?? "") ||
+    state.era !== WORK_PRECISION_Q16_ERA
+  ) {
+    return null;
+  }
+  return {
+    ...state,
+    era: WORK_PRECISION_Q16_ERA,
+    replayRequired: true,
+  };
 }
 
 export function shouldEscalateWorkerFailure(
@@ -1955,17 +4385,46 @@ async function refreshPendingStatuses(pool) {
 async function runCycle(pool, lastSuccess, runtime) {
   const startedAt = new Date();
   const noProgress = runtime.noProgress;
-  await assertWorkAtomicProjectionReady(pool);
-  await assertAmoPositionSchemaReady(pool);
+  let workPrecision;
+  let workPrecisionRecoveryError = null;
+  try {
+    workPrecision = await assertWorkAtomicProjectionReady(pool, {
+      q16Latched:
+        runtime.workPrecisionEra === WORK_PRECISION_Q16_ERA,
+    });
+  } catch (error) {
+    if (error?.workPrecision?.era === WORK_PRECISION_Q16_ERA) {
+      runtime.workPrecisionEra = WORK_PRECISION_Q16_ERA;
+      workPrecisionRecoveryError = cappedChildError(
+        error?.message ?? error,
+      );
+      workPrecision = {
+        ...error.workPrecision,
+        readinessRecoveryRequired: true,
+        readinessError: workPrecisionRecoveryError,
+      };
+      runtime.workPrecision = workPrecision;
+    } else {
+      throw error;
+    }
+  }
+  runtime.workPrecisionEra = workPrecision.era;
+  runtime.workPrecision = workPrecision;
+  await assertAmoPositionSchemaReady(pool, workPrecision);
   await writeWorkerMeta(pool, {
     apiBase: API_BASE,
     lastSuccess,
     lastSuccessAt: lastSuccess?.finishedAt ?? null,
     network: NETWORK,
     noProgress,
-    ok: Boolean(lastSuccess),
+    ok:
+      Boolean(lastSuccess) &&
+      workPrecision.ready !== false &&
+      workPrecisionRecoveryError === null,
     startedAt: startedAt.toISOString(),
     state: "running",
+    workPrecision,
+    workPrecisionRecoveryError,
   });
   const commonBackfillEnv = {
     NETWORK,
@@ -1984,6 +4443,21 @@ async function runCycle(pool, lastSuccess, runtime) {
     BACKFILL_SOURCES,
     BACKFILL_STORE_CANONICAL_SUMMARY_SNAPSHOT,
   );
+  if (
+    workPrecision.era === WORK_PRECISION_Q16_ERA &&
+    !(
+      backfillPhases.length === 2 &&
+      backfillPhases[0]?.kind === "confirmed" &&
+      backfillPhases[0]?.canonicalBarrier === true &&
+      backfillPhases[1]?.kind === "best-effort-pending" &&
+      backfillPhases[1]?.sourceLabels?.length === 1 &&
+      backfillPhases[1].sourceLabels[0] === "mempool-scan"
+    )
+  ) {
+    throw new Error(
+      "Proof index worker requires confirmed block replay before the isolated pending rebuild in the AMO V7 Q16 era.",
+    );
+  }
   let canonicalProgress = null;
   let clearedNoProgress = noProgress;
   let canonicalSuccess = lastSuccess;
@@ -1992,6 +4466,15 @@ async function runCycle(pool, lastSuccess, runtime) {
     error: null,
     ok: null,
     timedOut: null,
+  };
+  let workPrecisionReplay = {
+    era: workPrecision.era,
+    ready: workPrecision.era !== WORK_PRECISION_Q16_ERA,
+    replayRequired: workPrecision.replayRequired === true,
+  };
+  let workPrecisionConfirmedReplay = {
+    ...workPrecisionReplay,
+    confirmedOnly: true,
   };
   const runBackfillPhase = async (phase) => {
     const backfillEnv = {
@@ -2024,6 +4507,11 @@ async function runCycle(pool, lastSuccess, runtime) {
             timedOut: pendingBackfill.timedOut,
           }),
         );
+        if (workPrecision.era === WORK_PRECISION_Q16_ERA) {
+          throw new Error(
+            "Proof index worker cannot complete the AMO V7 cycle until the backfill-owned pending projection is rebuilt.",
+          );
+        }
       }
     } else {
       await runBackfillWithRetries(backfillEnv, runtime);
@@ -2035,6 +4523,44 @@ async function runCycle(pool, lastSuccess, runtime) {
       pool,
       runtime.network,
     );
+    try {
+      workPrecision = await assertWorkAtomicProjectionReady(pool, {
+        q16Latched:
+          runtime.workPrecisionEra === WORK_PRECISION_Q16_ERA,
+      });
+    } catch (error) {
+      if (error?.workPrecision?.era === WORK_PRECISION_Q16_ERA) {
+        runtime.workPrecisionEra = WORK_PRECISION_Q16_ERA;
+        runtime.workPrecision = {
+          ...error.workPrecision,
+          readinessRecoveryRequired: true,
+          readinessError: cappedChildError(error?.message ?? error),
+        };
+      }
+      throw error;
+    }
+    runtime.workPrecisionEra = workPrecision.era;
+    runtime.workPrecision = workPrecision;
+    await assertAmoPositionSchemaReady(pool, workPrecision);
+    workPrecisionConfirmedReplay =
+      await assertWorkPrecisionReplayReady(
+        pool,
+        workPrecision,
+      );
+    workPrecisionReplay =
+      workPrecision.era === WORK_PRECISION_Q16_ERA
+        ? {
+            confirmed: workPrecisionConfirmedReplay,
+            era: WORK_PRECISION_Q16_ERA,
+            pendingRequired: true,
+            ready: false,
+            replayRequired: true,
+          }
+        : workPrecisionConfirmedReplay;
+    runtime.workPrecision = {
+      ...workPrecision,
+      replay: workPrecisionReplay,
+    };
     clearedNoProgress = resetWorkerNoProgressState(
       noProgress,
       canonicalProgress,
@@ -2059,9 +4585,10 @@ async function runCycle(pool, lastSuccess, runtime) {
       lastSuccessAt: canonicalSuccess.finishedAt,
       network: runtime.network,
       noProgress: clearedNoProgress,
-      ok: true,
+      ok: workPrecisionReplay.ready === true,
       startedAt: startedAt.toISOString(),
       state: "canonical-phase-complete",
+      workPrecision: runtime.workPrecision,
     });
   };
   if (
@@ -2092,6 +4619,32 @@ async function runCycle(pool, lastSuccess, runtime) {
     );
     runtime.noProgress = clearedNoProgress;
   }
+  workPrecisionConfirmedReplay = await assertWorkPrecisionReplayReady(
+    pool,
+    workPrecision,
+  );
+  workPrecisionReplay =
+    workPrecision.era === WORK_PRECISION_Q16_ERA
+      ? await assertWorkPrecisionPendingReady(
+          pool,
+          workPrecision,
+          workPrecisionConfirmedReplay,
+        )
+      : workPrecisionConfirmedReplay;
+  runtime.workPrecision = {
+    ...workPrecision,
+    pendingRebuild:
+      backfillPhases.some(
+        (phase) => phase.kind === "best-effort-pending",
+      )
+        ? {
+            model: WORK_AMO_V7_PENDING_REBUILD_MODEL,
+            owner: "backfill",
+            ready: workPrecisionReplay.ready === true,
+          }
+        : "not-configured",
+    replay: workPrecisionReplay,
+  };
   if (runtime.stopping) {
     throw workerStoppingError();
   }
@@ -2113,6 +4666,30 @@ async function runCycle(pool, lastSuccess, runtime) {
       }),
     );
   }
+  workPrecisionConfirmedReplay = await assertWorkPrecisionReplayReady(
+    pool,
+    workPrecision,
+  );
+  workPrecisionReplay =
+    workPrecision.era === WORK_PRECISION_Q16_ERA
+      ? await assertWorkPrecisionPendingReady(
+          pool,
+          workPrecision,
+          workPrecisionConfirmedReplay,
+        )
+      : workPrecisionConfirmedReplay;
+  runtime.workPrecision = {
+    ...runtime.workPrecision,
+    pendingRebuild:
+      workPrecision.era === WORK_PRECISION_Q16_ERA
+        ? {
+            model: WORK_AMO_V7_PENDING_REBUILD_MODEL,
+            owner: "backfill",
+            ready: workPrecisionReplay.ready === true,
+          }
+        : runtime.workPrecision.pendingRebuild,
+    replay: workPrecisionReplay,
+  };
 
   const nowMs = Date.now();
   const runParityNow =
@@ -2177,6 +4754,7 @@ async function runCycle(pool, lastSuccess, runtime) {
     pendingStatus,
     startedAt: currentSuccess.startedAt,
     state: "idle",
+    workPrecision: runtime.workPrecision,
   };
   await writeWorkerMeta(pool, value);
   console.log(JSON.stringify({ phase: "worker-cycle", ...value }));
@@ -2189,6 +4767,7 @@ async function runCycle(pool, lastSuccess, runtime) {
 
 export async function runWorkerMain() {
   if (DRY_RUN) {
+    const declarationConfig = workerWorkAmoV7DeclarationConfig();
     console.log(
       JSON.stringify(
         {
@@ -2229,6 +4808,13 @@ export async function runWorkerMain() {
           pendingStatusLimit: PENDING_STATUS_LIMIT,
           requireWorkAtomicProjection: REQUIRE_WORK_ATOMIC_PROJECTION,
           statusTimeoutMs: STATUS_REQUEST_TIMEOUT_MS,
+          workAmoV7Declaration: {
+            activationHeight: declarationConfig.activationHeight,
+            configured: declarationConfig.configured,
+            requested: declarationConfig.requested,
+          },
+          workPrecisionPolicy:
+            "q8-before-v7-boundary-q16-latched-no-fallback",
         },
         null,
         2,
@@ -2253,6 +4839,12 @@ export async function runWorkerMain() {
   try {
     const previousMeta = await readWorkerMeta(pool).catch(() => null);
     runtime.noProgress = workerNoProgressFromMeta(previousMeta, runtime.network);
+    runtime.workPrecision = workerWorkPrecisionFromMeta(
+      previousMeta,
+      runtime.network,
+    );
+    runtime.workPrecisionEra =
+      runtime.workPrecision?.era ?? "";
     let lastSuccess = lastSuccessFromMeta(previousMeta);
     let consecutiveFailures = Math.max(
       0,
@@ -2267,6 +4859,7 @@ export async function runWorkerMain() {
       ok: Boolean(lastSuccess),
       startedAt: new Date().toISOString(),
       state: "starting",
+      workPrecision: runtime.workPrecision,
     });
     while (!runtime.stopping) {
       try {
@@ -2365,6 +4958,7 @@ export async function runWorkerMain() {
             : escalating
               ? "failed-escalating"
               : "failed-retrying",
+          workPrecision: runtime.workPrecision,
         };
         console.error(JSON.stringify({ phase: "worker-cycle", ...value }));
         await writeWorkerMeta(pool, value);

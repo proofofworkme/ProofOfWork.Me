@@ -735,17 +735,176 @@ version and its own complete canonical tuple. A payload flag, aggregate
 lifecycle row, missing event, duplicate event or mismatched tuple cannot
 substitute for that singleton evidence and fails closed.
 
-For a WORK `credit_listings` row, the relational `amount` column is always the
-exact atom integer, independent of whether definition metadata is present.
-Public readers set `amountAtoms` from that integer and derive the human amount
-with eight decimal places; for example, `10` stored atoms is
-`0.0000001 WORK`, not `10 WORK`.
+For a historical V6 or other pre-V7 Q8 WORK `credit_listings` row, the
+relational `amount` value and immutable `work_amo_v6_listing_terms.amount_atoms`
+are exact atom integers, independent of whether definition metadata is
+present. Before the V7 activation boundary, public readers set `amountAtoms`
+from that integer and derive the human amount with eight decimal places; for
+example, `10` stored atoms is `0.0000001 WORK`, not `10 WORK`. At V7
+activation, current shared projections convert that column to exact Q16
+subatoms while the immutable V6 terms table and raw historical records retain
+their original Q8 scale.
 
 `WORK_AMO_V6_WRITES_ENABLED` controls action admission only. It is not a public
 read-version switch. Turning writes off, pausing exact-tip actions or closing
 new-listing admission must not hide an already confirmed, canonical,
 evidence-complete V6 listing or the frozen rights of a valid historical V4/V5
 listing. Ordinary index freshness and canonical-read safeguards still apply.
+
+## Staged WORK Precision Protocol V2 / AMO Unit Protocol V7 (`pwt-sale-v7`)
+
+V7 is a new declaration-bound protocol era. It does not edit the confirmed V6
+declaration, reinterpret V6 signed fields, or replace V6 before activation.
+Until exact V7 declaration pins are configured and that declaration confirms,
+V6 remains the current governed WORK write protocol.
+
+If the exact V7 declaration confirms in block `D`, the precision migration and
+V7 authorization rules activate at the opening of `D+1`. The consensus/global
+WORK precision model becomes `canonical-work-subatoms-v2`; its current
+relational and API storage projection uses `work-subatoms-v2`:
+
+```text
+WORK_DECIMALS = 16
+SUBATOMS_PER_WORK = 10000000000000000
+SUBATOMS_PER_LEGACY_ATOM = 100000000
+MAX_SUPPLY_SUBATOMS = 210000000000000000000000
+MINT_AMOUNT_SUBATOMS = 10000000000000000000
+```
+
+The activation conversion is exact integer multiplication. Every confirmed
+pre-activation balance atom, supply atom, reservation atom, and active-listing
+projection atom becomes `legacyAtoms * 100000000` subatoms. The sum of all
+converted holder balances must equal converted supply; no address gains or
+loses WORK and no supply is created. A one-atom balance therefore changes
+representation from `1` Q8 atom to `100000000` Q16 subatoms, while its human
+value stays exactly `0.00000001 WORK`. Mempool pending deltas are not canonical
+opening state: they are cleared and deterministically rebuilt under the active
+V7 rules, so an unconfirmed legacy write cannot cross the activation boundary.
+
+Raw confirmed OP_RETURN payloads and transaction bytes, original signed
+authorization objects and frozen terms, pre-activation canonical
+state-transition commitments, and pre-activation closed snapshot commitments
+are never rewritten. Provisional or wrong-era derived projections at `D+1` or
+later are invalidated and deterministically replayed from canonical raw
+evidence. A valid still-active V4/V5/V6 listing keeps its exact price and
+settlement rights. Its normalized Q16 reservation and settlement amount is
+its frozen Q8 atom amount multiplied by `100000000`; the Computer must never
+rederive or reprice it.
+
+The WORK mint wire record does not change scale syntax:
+
+```text
+pwt1:mint:<canonical-work-token-id>:1000
+```
+
+That exact raw amount credits `100000000000` Q8 atoms before activation and
+`10000000000000000000` Q16 subatoms from activation. Every other raw WORK mint
+amount is invalid; no historical mint bytes are rewritten.
+
+New canonical WORK transfers at or after activation use:
+
+```text
+pwt1:send3:<canonical-work-token-id>:<amount-subatoms>:<recipient-address>
+```
+
+`amount-subatoms` is a positive canonical base-10 integer. Signs, exponents,
+commas, whitespace aliases, leading-zero aliases, zero, and decimal text are
+invalid. `send3` is WORK-only. Historical `send` and pre-activation `send2`
+records remain replayable at their declared scale; a new `send2` confirmed at
+or after V7 activation is invalid audit history and cannot mutate WORK state.
+A `send3` record before activation is likewise invalid audit history.
+Each transfer still contributes exactly 546 proofs to the WORK registry.
+Separate qualifying registry outputs remain valid. Two or more same-era WORK
+transfers may instead share one registry output only when that singular output
+precedes every funded transfer, equals exactly `546 * transferCount`, all
+`pwt1:` records in the transaction are those WORK transfers, and every other
+protocol record is only an earlier `pwm1:` mail envelope. The physical output
+is claimed once while exactly 546 proofs are attributed to each transfer.
+
+The V7 signed listing authorization remains closed shape and commits only the
+static identity, sale-ticket anchor, proof face, and declared models. It uses:
+
+```text
+version = pwt-sale-v7
+unitModel = canonical-work-amo-proof-unit-v2
+amountModel = canonical-work-amo-proof-unit-amount-v2
+stateOrderModel = canonical-proof-state-order-v1
+unitWorkOracleModel = canonical-work-prefix-before-action-v1
+bondTransitionModel = canonical-compute-then-bond-v1
+unitFaceProofs = one of 20000, 50000, 100000
+```
+
+The signed intent must not contain `amount`, `amountAtoms`,
+`amountSubatoms`, `unitAmountAtoms`, `unitAmountSubatoms`, `priceSats`,
+`minimumPriceSats`, network-value fields, listing position fields, or
+client-supplied frozen terms. Those are confirmed-position derivations.
+
+For listing `L`, all values are unsigned arbitrary-precision integers:
+
+```text
+F = selected proof face
+N = canonical networkValueBeforeQ8 immediately before L
+S = 21000000 WORK
+A = 10000000000000000 subatoms per WORK
+Q = 100000000
+
+unitPriceSats = F
+unitAmountSubatoms = floor(F * S * A * Q / N)
+unitMinimumPriceSats = ceil(
+  unitAmountSubatoms * N / (S * A * Q)
+)
+```
+
+`N` must be positive. `unitAmountSubatoms` must be between `1` and `S*A`
+inclusive. `unitMinimumPriceSats` must be positive and cannot exceed
+`unitPriceSats=F`. Both serialized integer `*Sats` fields are denominated in
+proofs; “proofs” is display language and does not create alternate
+`unitPriceProofs` or `unitMinimumPriceProofs` fields.
+All multiplication happens before the declared floor or ceiling division.
+Floating-point numbers, USD values, magnitude guessing, and rounded display
+values are never consensus inputs.
+
+Canonical ordering remains:
+
+```text
+(blockHeight, blockTransactionIndex, protocolVout, recordOrdinal)
+```
+
+For every record, the Computer loads the exact state prefix before that
+position, derives and freezes the V7 terms from `N`, validates seller
+spendability in Q16, and only then applies that record's distinct registry bond
+contribution. A transaction's miner-fee contribution is applied exactly once
+after all protocol records in the transaction and before the next
+transaction. This ordering is the arithmetic grouping rule; no batch,
+parallel worker, or database query order may change it.
+
+The frozen V7 projection carries `unitAmountSubatoms`, exact human `amount`,
+proof price/minimum, network value before/after, listing block hash/height,
+transaction index, protocol output, record ordinal, and the immutable listing
+identity. Seal, buy, and delist reference that projection. Seal and buy never
+consult a later network value.
+
+V7 production admission is independent of V6 and fails closed until all of
+these agree at one exact tip:
+
+- exact declaration transaction, block, transaction index, protocol output,
+  record ordinal, raw carrier bytes/hash, authority input, and registry
+  payment pins;
+- the completed `workPrecisionV2Migration:livenet` marker with Q8 and Q16
+  conservation commitments;
+- the installed database constraint definitions, not merely their names;
+- activation-opening conversion and activation-through-tip canonical replay;
+- API, worker, relational index, and canonical ledger parity;
+- current Core height/hash and exact-tip summary readiness; and
+- the separate `WORK_AMO_V7_WRITES_ENABLED=1` gate.
+
+An unconfigured or not-yet-active V7 must not pause valid V6 writes. Once the
+canonical `D+1` boundary is observed or persistently latched from the exact
+confirmed declaration, clearing, omitting, or malforming operator pins cannot
+re-enable V6 or `send2`; readiness failure can only pause governed writes.
+After V7 activation, new V6 listings and new `send2` transfers are invalid,
+but valid pre-activation listings of every supported historical version
+remain visible and settleable under their original frozen terms.
 
 ## Current Infinity Bond / POWB Model
 
@@ -790,10 +949,11 @@ through `inception@proofofwork.me`; its canonical credit id is
 INCB transfers, listings, seals, delistings, and buys reuse the same `pwt1:`
 sale-ticket lifecycle as POWB and normal credits. The synthetic issuance has
 zero additional proof value, so Growth cannot count issued INCB as a second
-payment lane. A bond transaction may attach canonical WORK through a separate
-`pwt1:send2`. When that attachment is valid, confirmed, recipient-matched, and in
-the same transaction, its value uses the live WORK floor from that canonical
-H-1 summary.
+payment lane. A bond transaction may attach canonical WORK through the
+era-valid separate atomic transfer (`pwt1:send2` before the Q16 activation
+boundary, `pwt1:send3` afterward). When that attachment is valid, confirmed,
+recipient-matched, and in the same transaction, its value uses the live WORK
+floor from that canonical H-1 summary.
 
 Attachment issuance follows canonical position without reading the future. If
 the PWM bond position comes first, it issues the direct recipient proofs at

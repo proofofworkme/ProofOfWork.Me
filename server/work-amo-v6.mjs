@@ -1,5 +1,6 @@
 import {
   WORK_AMO_V4_AUTH_VERSION,
+  WORK_AMO_V5_ATOMS_PER_WORK,
   WORK_AMO_V5_AUTH_VERSION,
   WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS,
   WORK_AMO_V5_MAX_SUPPLY,
@@ -33,7 +34,6 @@ export const WORK_AMO_V6_BLOCK_SEQUENCER_MODEL =
   "canonical-work-amo-full-position-block-sequencer-v2";
 export const WORK_AMO_V6_DECLARATION_EVIDENCE_MODEL =
   "canonical-work-amo-v6-declaration-evidence-v1";
-export const WORK_AMO_V6_ATOMS_PER_WORK = 10_000_000_000_000_000n;
 export const WORK_AMO_V6_ALLOWED_FACE_PROOFS = Object.freeze([
   20_000,
   50_000,
@@ -328,7 +328,7 @@ export function workAmoV6UnitTerms({
   }
   const denominator =
     WORK_AMO_V5_MAX_SUPPLY *
-    WORK_AMO_V6_ATOMS_PER_WORK *
+    WORK_AMO_V5_ATOMS_PER_WORK *
     WORK_AMO_V5_NETWORK_VALUE_Q8_SCALE;
   const unitPriceSats = BigInt(face);
   const unitAmountAtoms = workAmoFloorDiv(
@@ -348,7 +348,7 @@ export function workAmoV6UnitTerms({
   }
   if (
     unitAmountAtoms >
-    WORK_AMO_V5_MAX_SUPPLY * WORK_AMO_V6_ATOMS_PER_WORK
+    WORK_AMO_V5_MAX_SUPPLY * WORK_AMO_V5_ATOMS_PER_WORK
   ) {
     return invalid("work-amo-v6-unit-amount-exceeds-supply");
   }

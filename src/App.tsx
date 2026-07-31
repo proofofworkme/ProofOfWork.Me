@@ -129,12 +129,18 @@ import {
   WORK_DECIMALS,
   WORK_AMO_DECIMALS,
   WORK_AMO_UNIT_SCALE,
+  WORK_LEGACY_TO_CANONICAL_FACTOR,
   workAtomsFromDecimal,
   workAtomsFromIntegerString,
   workAtomsFromRecord,
   workDecimalFromAtoms,
+  workLegacyAtomsFromSubatoms,
   workNumberFromAtoms,
-  workSignedAtomsFromIntegerString,
+  workSignedAtomsFromDecimal,
+  workSignedSubatomsFromCanonicalString,
+  workSignedSubatomsFromLegacyAtoms,
+  workSubatomsFromLegacyAtoms,
+  workSubatomsFromCanonicalString,
   WORK_UNIT_SCALE_STRING,
 } from "./workAmount";
 import {
@@ -354,6 +360,7 @@ type MailRecipient = {
 type MailAttachedCredit = {
   amount: number;
   amountAtoms?: string;
+  amountSubatoms?: string;
   paidSats?: number;
   recipientAddress: string;
   registryAddress?: string;
@@ -586,6 +593,7 @@ type PowIdExactStateItem = {
 type ExactDecimalValue = number | string;
 
 type PowTokenDefinition = {
+  amountStorageModel?: string;
   confirmed: boolean;
   confirmedMints?: number;
   confirmedOpenListings?: number;
@@ -623,6 +631,7 @@ type PowTokenDefinition = {
 type PowTokenMint = {
   amount: ExactIntegerValue;
   amountAtoms?: string;
+  amountSubatoms?: string;
   attributedMinerFeeSats?: number;
   confirmed: boolean;
   creditAmountMoved?: number;
@@ -647,6 +656,8 @@ type PowTokenMint = {
 type PowTokenTransfer = {
   amount: ExactIntegerValue;
   amountAtoms?: string;
+  amountSubatoms?: string;
+  amountVersion?: string;
   arbSats?: number;
   attributedMinerFeeSats?: number;
   confirmed: boolean;
@@ -674,6 +685,7 @@ type PowTokenTransfer = {
 type PowTokenInvalidEvent = {
   amount: ExactIntegerValue;
   amountAtoms?: string;
+  amountSubatoms?: string;
   attemptedKind?: string;
   auditMinerFeeSats?: number;
   auditRegistryPaymentSats?: number;
@@ -701,6 +713,7 @@ type PowTokenInvalidEvent = {
 type PowTokenSaleAuthorizationDraft = {
   amount: ExactIntegerValue;
   amountAtoms?: string;
+  amountSubatoms?: string;
   amountModel?: string;
   anchorScriptPubKey: string;
   anchorSigHashType: number;
@@ -740,6 +753,7 @@ type PowTokenSaleAuthorization = PowTokenSaleAuthorizationDraft & {
 type PowTokenListing = {
   amount: ExactIntegerValue;
   amountAtoms?: string;
+  amountSubatoms?: string;
   confirmed: boolean;
   createdAt: string;
   dataBytes?: number;
@@ -815,6 +829,7 @@ type PendingTokenListingSeal = {
 type PowTokenSale = {
   amount: ExactIntegerValue;
   amountAtoms?: string;
+  amountSubatoms?: string;
   arbSats?: number;
   attributedMinerFeeSats?: number;
   buyerAddress: string;
@@ -865,8 +880,10 @@ type PowTokenHolder = {
   address: string;
   balance: ExactIntegerValue;
   balanceAtoms?: string;
+  balanceSubatoms?: string;
   pendingDelta?: ExactIntegerValue;
   pendingDeltaAtoms?: string;
+  pendingDeltaSubatoms?: string;
   ticker?: string;
   tokenId?: string;
 };
@@ -958,10 +975,13 @@ type PowTokenSupplyState = Pick<
 type PowTokenWalletBalance = {
   confirmedBalance: ExactIntegerValue;
   confirmedBalanceAtoms?: string;
+  confirmedBalanceSubatoms?: string;
   pendingIncoming: ExactIntegerValue;
   pendingIncomingAtoms?: string;
+  pendingIncomingSubatoms?: string;
   pendingOutgoing: ExactIntegerValue;
   pendingOutgoingAtoms?: string;
+  pendingOutgoingSubatoms?: string;
   token: PowTokenDefinition;
 };
 
@@ -1479,6 +1499,7 @@ const TOKEN_CREATE_ACTION = "create";
 const TOKEN_MINT_ACTION = "mint";
 const TOKEN_SEND_ACTION = "send";
 const TOKEN_SEND_ATOMS_ACTION = "send2";
+const TOKEN_SEND_SUBATOMS_ACTION = "send3";
 const TOKEN_LIST_ACTION = "list5";
 const TOKEN_SEAL_ACTION = "seal5";
 const TOKEN_DELIST_ACTION = "delist5";
@@ -1489,20 +1510,25 @@ const TOKEN_SALE_AUTH_WORK_MARKET_V2_VERSION = "pwt-sale-v3";
 const TOKEN_SALE_AUTH_WORK_CONFIRMATION_FLOOR_VERSION = "pwt-sale-v4";
 const TOKEN_SALE_AUTH_WORK_AMO_UNIT_VERSION = "pwt-sale-v5";
 const TOKEN_SALE_AUTH_WORK_AMO_PROOF_UNIT_VERSION = "pwt-sale-v6";
+const TOKEN_SALE_AUTH_WORK_AMO_SUBATOM_VERSION = "pwt-sale-v7";
 const WORK_MARKET_V2_ORACLE_MODEL = "canonical-work-market-h-minus-one-v1";
 const WORK_MARKET_CONFIRMATION_FLOOR_ORACLE_MODEL =
   "canonical-work-market-confirmation-floor-v1";
 const WORK_AMO_UNIT_MODEL = "canonical-work-amo-usd-unit-v2";
 const WORK_AMO_V6_UNIT_MODEL = "canonical-work-amo-proof-unit-v1";
+const WORK_AMO_V7_UNIT_MODEL = "canonical-work-amo-proof-unit-v2";
 const WORK_AMO_STATE_ORDER_MODEL = "canonical-proof-state-order-v1";
 const WORK_AMO_AMOUNT_MODEL =
   "canonical-confirmed-position-derived-work-amount-v1";
+const WORK_AMO_V7_AMOUNT_MODEL =
+  "canonical-work-amo-proof-unit-amount-v2";
 const WORK_AMO_USD_ORACLE_MODEL = "canonical-amo-chain-usd-quote-v1";
 const WORK_AMO_WORK_ORACLE_MODEL =
   "canonical-work-prefix-before-action-v1";
 const WORK_AMO_BOND_TRANSITION_MODEL =
   "canonical-compute-then-bond-v1";
-const WORK_AMO_V6_ATOMS_PER_WORK = 10_000_000_000_000_000n;
+const WORK_AMO_V6_ATOMS_PER_WORK = 100_000_000n;
+const WORK_AMO_V7_SUBATOMS_PER_WORK = 10_000_000_000_000_000n;
 const WORK_AMO_V6_ALLOWED_FACE_PROOFS = [20_000, 50_000, 100_000] as const;
 const WORK_AMO_ALLOWED_FACE_USD_CENTS = [2000, 5000, 10000] as const;
 const WORK_AMO_V1_FACE_USD_CENTS = [
@@ -1554,6 +1580,7 @@ const TOKEN_INDEX_ADDRESSES: Partial<Record<BitcoinNetwork, string>> = {
 };
 const TOKEN_TEMPLATE_TICKER = "TOKEN";
 const WORK_TOKEN_TICKER = "WORK";
+const WORK_TOKEN_AMOUNT_STORAGE_MODEL = "work-subatoms-v2";
 const WORK_TOKEN_MAX_SUPPLY = 21_000_000;
 const WORK_TOKEN_MINT_AMOUNT = 1000;
 const WORK_TOKEN_MINT_PRICE_SATS = 1000;
@@ -1641,6 +1668,7 @@ const WORK_TOKEN_REGISTRY_RECORD: PowIdRecord = {
   txid: WORK_TOKEN_REGISTRY_TXID,
 };
 const WORK_TOKEN_DEFINITION: PowTokenDefinition = {
+  amountStorageModel: WORK_TOKEN_AMOUNT_STORAGE_MODEL,
   confirmed: true,
   createdAt: "2026-05-15T02:57:28.000Z",
   creationFeeSats: TOKEN_CREATION_PRICE_SATS,
@@ -1798,6 +1826,7 @@ type GrowthActualNetworkValue = {
   modelTotalUsd?: number;
   workAmoV5?: WorkAmoV5Status;
   workAmoV6?: WorkAmoV6Status;
+  workAmoV7?: WorkAmoV7Status;
   workNetworkValueAccountingModel?: string;
 };
 
@@ -1837,6 +1866,7 @@ type WorkFloorQuote = {
   usdSource?: string;
   workAmoV5?: WorkAmoV5Status;
   workAmoV6?: WorkAmoV6Status;
+  workAmoV7?: WorkAmoV7Status;
   workMarketplaceV4?: WorkMarketplaceV4Status;
   workNetworkValueAccountingModel?: string;
 };
@@ -1854,7 +1884,8 @@ type WorkAmoV5Estimate = {
 
 type WorkAmoV6Estimate = {
   estimateOnly: true;
-  unitAmountAtoms: string;
+  unitAmountAtoms?: string;
+  unitAmountSubatoms?: string;
   unitFaceProofs: 20000 | 50000 | 100000;
   unitMinimumPriceSats: string;
   unitNetworkValueBeforeQ8?: string;
@@ -1876,6 +1907,7 @@ type WorkAmoV5FrozenTerms = {
   stateOrderModel?: string;
   tokenId?: string;
   unitAmountAtoms?: string;
+  unitAmountSubatoms?: string;
   unitFaceUsd?: number;
   unitFaceUsdCents?: number;
   unitFaceProofs?: number;
@@ -1964,7 +1996,9 @@ type WorkAmoV6Activation = {
   declarationHeight?: number;
   declarationTxid?: string;
   evidenceComplete?: boolean;
+  reached?: boolean;
   reasonCode?: string;
+  tipVerified?: boolean;
 };
 
 type WorkAmoV6Status = {
@@ -1982,6 +2016,28 @@ type WorkAmoV6Status = {
   tipHash?: string;
   tipHeight?: number;
   version?: string;
+  writesConfigured?: boolean;
+};
+
+type WorkAmoV7Status = {
+  activation?: WorkAmoV6Activation;
+  estimates?: Record<string, WorkAmoV6Estimate> | WorkAmoV6Estimate[];
+  indexReady?: boolean;
+  legacyWriteEmbargo?: boolean;
+  listingWritesEnabled?: boolean;
+  networkValueBeforeQ8?: string;
+  pinState?: string;
+  pinsConfigured?: boolean;
+  pinsRequested?: boolean;
+  protocolReady?: boolean;
+  protocolWritesEnabled?: boolean;
+  ready?: boolean;
+  reasonCode?: string;
+  settlementWritesEnabled?: boolean;
+  tipHash?: string;
+  tipHeight?: number;
+  version?: string;
+  writeAdmission?: boolean;
   writesConfigured?: boolean;
 };
 
@@ -2045,6 +2101,7 @@ type WorkFloorApiResponse = {
   usdSource?: string;
   workAmoV5?: WorkAmoV5Status;
   workAmoV6?: WorkAmoV6Status;
+  workAmoV7?: WorkAmoV7Status;
   workMarketplaceV4?: WorkMarketplaceV4Status;
   workNetworkValueAccountingModel?: string;
 };
@@ -2143,6 +2200,7 @@ type InfinityActualValue = {
   attachedWorkActions?: number;
   attachedWorkAmount?: number;
   attachedWorkAmountAtoms?: string;
+  attachedWorkAmountSubatoms?: string;
   attachedWorkFrozenValueSats?: ExactDecimalValue;
   attachedWorkIssuanceUnits?: ExactIntegerValue;
   attachedWorkLiveFloorAtSendSats?: ExactDecimalValue;
@@ -3153,7 +3211,11 @@ function mergeSentAttachedCredits(
     ...(fallback.attachedCredits ?? []),
     ...(preferred.attachedCredits ?? []),
   ]) {
-    const atoms = workRecordAtoms(credit.amount, credit.amountAtoms);
+    const atoms = workRecordAtoms(
+      credit.amount,
+      credit.amountAtoms,
+      credit.amountSubatoms,
+    );
     const key = [
       String(credit.tokenId ?? "").trim().toLowerCase(),
       normalizeTokenTicker(credit.ticker),
@@ -4117,7 +4179,11 @@ function attachedCreditTotalAtoms(credits: MailAttachedCredit[] | undefined) {
         normalizeTokenTicker(credit.ticker) === WORK_TOKEN_TICKER,
     )
     .reduce((total, credit) => {
-      const atoms = workRecordAtoms(credit.amount, credit.amountAtoms);
+      const atoms = workRecordAtoms(
+        credit.amount,
+        credit.amountAtoms,
+        credit.amountSubatoms,
+      );
       return atoms === null ? total : total + atoms;
     }, 0n);
 }
@@ -4131,7 +4197,11 @@ function attachedCreditLabel(credits: MailAttachedCredit[] | undefined) {
     (credit) =>
       credit.tokenId === WORK_TOKEN_ID &&
       normalizeTokenTicker(credit.ticker) === WORK_TOKEN_TICKER &&
-      (workRecordAtoms(credit.amount, credit.amountAtoms) ?? 0n) > 0n,
+      (workRecordAtoms(
+        credit.amount,
+        credit.amountAtoms,
+        credit.amountSubatoms,
+      ) ?? 0n) > 0n,
   );
   const totalAtoms = attachedCreditTotalAtoms(workCredits);
   if (totalAtoms <= 0n) {
@@ -4151,7 +4221,11 @@ function attachedCreditDraftAmount(credits: MailAttachedCredit[] | undefined) {
     (credit) =>
       credit.tokenId === WORK_TOKEN_ID &&
       normalizeTokenTicker(credit.ticker) === WORK_TOKEN_TICKER &&
-      (workRecordAtoms(credit.amount, credit.amountAtoms) ?? 0n) > 0n,
+      (workRecordAtoms(
+        credit.amount,
+        credit.amountAtoms,
+        credit.amountSubatoms,
+      ) ?? 0n) > 0n,
   );
   if (workCredits.length === 0) {
     return "0";
@@ -4160,11 +4234,16 @@ function attachedCreditDraftAmount(credits: MailAttachedCredit[] | undefined) {
   const firstAmountAtoms = workRecordAtoms(
     workCredits[0].amount,
     workCredits[0].amountAtoms,
+    workCredits[0].amountSubatoms,
   );
   return firstAmountAtoms !== null &&
     workCredits.every(
       (credit) =>
-        workRecordAtoms(credit.amount, credit.amountAtoms) === firstAmountAtoms,
+        workRecordAtoms(
+          credit.amount,
+          credit.amountAtoms,
+          credit.amountSubatoms,
+        ) === firstAmountAtoms,
     )
     ? workDecimalFromAtoms(firstAmountAtoms)
     : "0";
@@ -4175,7 +4254,11 @@ function mailAttachedWorkCredits(message: MailMessage) {
     (credit) =>
       String(credit.tokenId ?? "").trim().toLowerCase() === WORK_TOKEN_ID &&
       normalizeTokenTicker(credit.ticker) === WORK_TOKEN_TICKER &&
-      (workRecordAtoms(credit.amount, credit.amountAtoms) ?? 0n) > 0n,
+      (workRecordAtoms(
+        credit.amount,
+        credit.amountAtoms,
+        credit.amountSubatoms,
+      ) ?? 0n) > 0n,
   );
 
   if (message.folder === "sent") {
@@ -4189,7 +4272,11 @@ function mailAttachedWorkCredits(message: MailMessage) {
 
 function mailWorkSignalAtoms(message: MailMessage) {
   return mailAttachedWorkCredits(message).reduce((total, credit) => {
-    const atoms = workRecordAtoms(credit.amount, credit.amountAtoms);
+    const atoms = workRecordAtoms(
+      credit.amount,
+      credit.amountAtoms,
+      credit.amountSubatoms,
+    );
     return atoms === null ? total : total + atoms;
   }, 0n);
 }
@@ -4197,7 +4284,11 @@ function mailWorkSignalAtoms(message: MailMessage) {
 function mailWorkSignalLabel(message: MailMessage) {
   const credits = mailAttachedWorkCredits(message);
   const totalAtoms = credits.reduce((total, credit) => {
-    const atoms = workRecordAtoms(credit.amount, credit.amountAtoms);
+    const atoms = workRecordAtoms(
+      credit.amount,
+      credit.amountAtoms,
+      credit.amountSubatoms,
+    );
     return atoms === null ? total : total + atoms;
   }, 0n);
   if (totalAtoms <= 0n) {
@@ -5945,7 +6036,11 @@ function storedAttachedCredits(
     const tokenId = String(credit.tokenId ?? "").trim().toLowerCase();
     const ticker = normalizeTokenTicker(String(credit.ticker ?? ""));
     const recipientAddress = String(credit.recipientAddress ?? "").trim();
-    const amountAtoms = workRecordAtoms(credit.amount, credit.amountAtoms);
+    const amountAtoms = workRecordAtoms(
+      credit.amount,
+      credit.amountAtoms,
+      credit.amountSubatoms,
+    );
     if (
       tokenId !== WORK_TOKEN_ID ||
       ticker !== WORK_TOKEN_TICKER ||
@@ -5961,7 +6056,8 @@ function storedAttachedCredits(
     return [
       {
         amount: workNumberFromAtoms(amountAtoms),
-        amountAtoms: amountAtoms.toString(),
+        amountAtoms: credit.amountAtoms,
+        amountSubatoms: amountAtoms.toString(),
         paidSats: paidSats > 0 ? paidSats : undefined,
         recipientAddress,
         registryAddress: isValidBitcoinAddress(registryAddress, network)
@@ -6412,6 +6508,7 @@ function attachedWorkCreditsFromVout(
         {
           amount: Number(parsed.amount),
           amountAtoms: parsed.amountAtoms,
+          amountSubatoms: parsed.amountSubatoms,
           paidSats: TOKEN_MIN_MUTATION_PRICE_SATS,
           recipientAddress: parsed.recipientAddress,
           registryAddress: WORK_TOKEN_REGISTRY_ADDRESS,
@@ -6836,17 +6933,41 @@ function isWorkToken(
   );
 }
 
-function workRecordAtoms(amount: unknown, amountAtoms?: unknown) {
-  return workAtomsFromRecord(amountAtoms, amount);
+function workRecordAtoms(
+  amount: unknown,
+  amountAtoms?: unknown,
+  amountSubatoms?: unknown,
+  model: "auto" | "legacy-q8" | "native-q16" = "auto",
+) {
+  const legacyText = String(amountAtoms ?? "").trim();
+  const subatomText = String(amountSubatoms ?? "").trim();
+  if (model === "native-q16") {
+    return legacyText || !subatomText
+      ? null
+      : workSubatomsFromCanonicalString(amountSubatoms);
+  }
+  if (model === "legacy-q8" && !legacyText) {
+    return null;
+  }
+  return workAtomsFromRecord(amountAtoms, amount, amountSubatoms);
 }
 
 function tokenRecordAmountAtoms(
-  token: { ticker?: string; tokenId?: string },
+  token: {
+    amountSubatoms?: unknown;
+    ticker?: string;
+    tokenId?: string;
+  },
   amount: unknown,
   amountAtoms?: unknown,
+  amountSubatoms?: unknown,
 ) {
   if (isWorkToken(token)) {
-    return workRecordAtoms(amount, amountAtoms);
+    return workRecordAtoms(
+      amount,
+      amountAtoms,
+      amountSubatoms ?? token.amountSubatoms,
+    );
   }
   return exactIntegerBigInt(amount);
 }
@@ -6866,7 +6987,18 @@ function tokenWalletBalanceAmountUnits(
       : field === "pendingIncoming"
         ? balance.pendingIncomingAtoms
         : balance.pendingOutgoingAtoms;
-  return tokenRecordAmountAtoms(balance.token, balance[field], amountAtoms);
+  const amountSubatoms =
+    field === "confirmedBalance"
+      ? balance.confirmedBalanceSubatoms
+      : field === "pendingIncoming"
+        ? balance.pendingIncomingSubatoms
+        : balance.pendingOutgoingSubatoms;
+  return tokenRecordAmountAtoms(
+    balance.token,
+    balance[field],
+    amountAtoms,
+    amountSubatoms,
+  );
 }
 
 function tokenWalletBalanceHasAmount(
@@ -6891,6 +7023,7 @@ function tokenHolderBalanceUnits(holder: PowTokenHolder) {
     holder,
     holder.balance,
     holder.balanceAtoms,
+    holder.balanceSubatoms,
   );
 }
 
@@ -6907,86 +7040,24 @@ function tokenAmountDisplay(
   token: unknown,
   amount: unknown,
   amountAtoms?: unknown,
+  amountSubatoms?: unknown,
 ) {
   const tokenRecord = token as any;
   if (isWorkToken(tokenRecord)) {
-    const atoms = workRecordAtoms(amount, amountAtoms);
-    return atoms === null ? "0" : formatWorkAmountForTokenAtoms(atoms, tokenRecord);
+    const atoms = workRecordAtoms(
+      amount,
+      amountAtoms,
+      amountSubatoms ?? tokenRecord.amountSubatoms,
+    );
+    return atoms === null
+      ? "Unavailable"
+      : formatWorkAmountForTokenAtoms(atoms, tokenRecord);
   }
   return formatExactInteger(amount);
 }
 
-function isWorkAmoV6WorkRecord(
-  token:
-    | { saleAuthorization?: { version?: unknown } }
-    | { frozenTerms?: { version?: unknown } }
-    | { workAmoFrozenTerms?: { version?: unknown } }
-    | unknown,
-): boolean {
-  const record =
-    token && typeof token === "object" && !Array.isArray(token)
-      ? (token as {
-          saleAuthorization?: { version?: unknown };
-          frozenTerms?: { version?: unknown };
-          workAmoFrozenTerms?: { version?: unknown };
-        })
-      : {};
-  const saleAuthorizationVersion = String(record.saleAuthorization?.version ?? "")
-    .trim();
-  const frozenTermsVersion = String(record.frozenTerms?.version ?? "")
-    .trim();
-  const workAmoFrozenTermsVersion = String(
-    record.workAmoFrozenTerms?.version ?? "",
-  ).trim();
-  return (
-    saleAuthorizationVersion === TOKEN_SALE_AUTH_WORK_AMO_PROOF_UNIT_VERSION ||
-    frozenTermsVersion === TOKEN_SALE_AUTH_WORK_AMO_PROOF_UNIT_VERSION ||
-    workAmoFrozenTermsVersion === TOKEN_SALE_AUTH_WORK_AMO_PROOF_UNIT_VERSION
-  );
-}
-
-function workAmountScaleFromTokenMetadata(
-  token:
-    | {
-        decimals?: unknown;
-        unitScale?: unknown;
-      }
-    | unknown,
-) {
-  const record =
-    token && typeof token === "object" && !Array.isArray(token)
-      ? (token as {
-          decimals?: unknown;
-          unitScale?: unknown;
-        })
-      : {};
-  const decimals = Number(String(record.decimals ?? "").trim());
-  if (!Number.isInteger(decimals) || decimals < 0) {
-    return null;
-  }
-  const unitScale = String(record.unitScale ?? "").trim();
-  if (
-    decimals === WORK_AMO_DECIMALS &&
-    unitScale === WORK_AMO_UNIT_SCALE_BIGINT.toString()
-  ) {
-    return WORK_AMO_UNIT_SCALE_BIGINT;
-  }
-  if (
-    decimals === WORK_DECIMALS &&
-    unitScale === WORK_TOKEN_UNIT_SCALE
-  ) {
-    return BigInt(WORK_TOKEN_UNIT_SCALE);
-  }
-  return null;
-}
-
 function workTokenAmountScale(token: unknown): bigint {
-  return (
-    workAmountScaleFromTokenMetadata(token) ??
-    (isWorkAmoV6WorkRecord(token)
-      ? WORK_AMO_UNIT_SCALE_BIGINT
-      : BigInt(WORK_TOKEN_UNIT_SCALE))
-  );
+  return isWorkToken(token as any) ? WORK_AMO_UNIT_SCALE_BIGINT : 1n;
 }
 
 function formatWorkAmountForTokenAtoms(
@@ -6999,9 +7070,7 @@ function formatWorkAmountForTokenAtoms(
       }
     | undefined,
 ) {
-  return workTokenAmountScale(token) === WORK_AMO_UNIT_SCALE_BIGINT
-    ? formatWorkAmountAmo(atoms, false)
-    : formatWorkAmount(atoms);
+  return formatWorkAmountAmo(atoms, false);
 }
 
 function tokenAmountInput(
@@ -7014,7 +7083,8 @@ function tokenAmountInput(
       ? null
       : {
           amount: workNumberFromAtoms(amountAtoms),
-          amountAtoms: amountAtoms.toString(),
+          amountAtoms: undefined,
+          amountSubatoms: amountAtoms.toString(),
           display: formatWorkAmount(amountAtoms),
         };
   }
@@ -7098,7 +7168,8 @@ function isWorkMarketSaleAuthorizationVersion(version: unknown) {
   return (
     isWorkMarketLegacyPriceAuthorizationVersion(version) ||
     version === TOKEN_SALE_AUTH_WORK_AMO_UNIT_VERSION ||
-    version === TOKEN_SALE_AUTH_WORK_AMO_PROOF_UNIT_VERSION
+    version === TOKEN_SALE_AUTH_WORK_AMO_PROOF_UNIT_VERSION ||
+    version === TOKEN_SALE_AUTH_WORK_AMO_SUBATOM_VERSION
   );
 }
 
@@ -7114,9 +7185,15 @@ function isWorkAmoV6Authorization(version: unknown) {
   return version === TOKEN_SALE_AUTH_WORK_AMO_PROOF_UNIT_VERSION;
 }
 
+function isWorkAmoV7Authorization(version: unknown) {
+  return version === TOKEN_SALE_AUTH_WORK_AMO_SUBATOM_VERSION;
+}
+
 function isWorkAmoDerivedUnitAuthorization(version: unknown) {
   return (
-    isWorkAmoUnitAuthorization(version) || isWorkAmoV6Authorization(version)
+    isWorkAmoUnitAuthorization(version) ||
+    isWorkAmoV6Authorization(version) ||
+    isWorkAmoV7Authorization(version)
   );
 }
 
@@ -7216,6 +7293,16 @@ const WORK_AMO_V6_FROZEN_TERM_KEYS = [
   "listingNetworkValueAfterQ8",
 ] as const;
 
+const WORK_AMO_V7_STATIC_AUTHORIZATION_KEYS =
+  WORK_AMO_V6_STATIC_AUTHORIZATION_KEYS;
+
+const WORK_AMO_V7_FROZEN_TERM_KEYS = [
+  ...WORK_AMO_V6_FROZEN_TERM_KEYS.filter(
+    (key) => key !== "unitAmountAtoms",
+  ),
+  "unitAmountSubatoms",
+] as const;
+
 function hasExactRecordKeys(
   value: unknown,
   expectedKeys: readonly string[],
@@ -7238,6 +7325,124 @@ function workAmoV6ActivationReady(quote: WorkFloorQuote | undefined) {
       status.activation?.active === true &&
       status.activation.evidenceComplete === true,
   );
+}
+
+function workV7ActivationReached(quote: WorkFloorQuote | undefined) {
+  const status = quote?.workAmoV7;
+  return Boolean(
+    status?.version === TOKEN_SALE_AUTH_WORK_AMO_SUBATOM_VERSION &&
+      status.activation?.reached === true,
+  );
+}
+
+function workV7WriteAdmissionReady(quote: WorkFloorQuote | undefined) {
+  const status = quote?.workAmoV7;
+  return Boolean(
+    workV7ActivationReached(quote) &&
+      status?.activation?.active === true &&
+      status?.activation?.evidenceComplete === true &&
+      status?.protocolReady === true &&
+      status.writeAdmission === true,
+  );
+}
+
+function workV7DeclarationBoundaryObserved(
+  quote: WorkFloorQuote | undefined,
+) {
+  const status = quote?.workAmoV7;
+  const activation = status?.activation;
+  return Boolean(
+    status?.version === TOKEN_SALE_AUTH_WORK_AMO_SUBATOM_VERSION &&
+      (status.legacyWriteEmbargo === true ||
+        status.pinsRequested === true ||
+        status.pinsConfigured === true ||
+        activation?.confirmed === true ||
+        activation?.declarationConfirmed === true ||
+        activation?.reached === true ||
+        Number(activation?.activationHeight) > 0 ||
+        Number(activation?.declarationHeight) > 0 ||
+        /^[0-9a-f]{64}$/u.test(
+          String(
+            activation?.declaration?.txid ??
+              activation?.declarationTxid ??
+              "",
+          )
+            .trim()
+            .toLowerCase(),
+        )),
+  );
+}
+
+function failClosedWorkAmoV7Status(
+  previous: WorkAmoV7Status | undefined,
+  observed: WorkAmoV7Status | undefined,
+  reasonCode = "work-amo-v7-status-regressed",
+): WorkAmoV7Status {
+  return {
+    ...previous,
+    ...observed,
+    activation: {
+      ...previous?.activation,
+      ...observed?.activation,
+      active: false,
+      reached:
+        previous?.activation?.reached === true ||
+        observed?.activation?.reached === true,
+      tipVerified: false,
+    },
+    indexReady: false,
+    legacyWriteEmbargo: true,
+    listingWritesEnabled: false,
+    protocolReady: false,
+    protocolWritesEnabled: false,
+    ready: false,
+    reasonCode,
+    settlementWritesEnabled: false,
+    version: TOKEN_SALE_AUTH_WORK_AMO_SUBATOM_VERSION,
+    writeAdmission: false,
+  };
+}
+
+type WorkWriteMode = "legacy-q8" | "native-q16" | "paused";
+
+function workWriteModeForQuote(
+  quote: WorkFloorQuote | undefined,
+): WorkWriteMode {
+  const status = quote?.workAmoV7;
+  if (
+    status?.version !== TOKEN_SALE_AUTH_WORK_AMO_SUBATOM_VERSION
+  ) {
+    return "paused";
+  }
+  if (
+    (status?.pinsRequested === true &&
+      status.pinsConfigured !== true) ||
+    (status?.pinsConfigured === true &&
+      status.activation?.tipVerified !== true)
+  ) {
+    return "paused";
+  }
+  if (workV7DeclarationBoundaryObserved(quote)) {
+    return workV7WriteAdmissionReady(quote)
+      ? "native-q16"
+      : "paused";
+  }
+  return workAmoV6ActivationReady(quote) ? "legacy-q8" : "paused";
+}
+
+function assertWorkMintWriteEnabled(
+  token: Pick<PowTokenDefinition, "ticker" | "tokenId">,
+  quote: WorkFloorQuote | undefined,
+) {
+  if (
+    isWorkToken(token) &&
+    workWriteModeForQuote(quote) === "paused"
+  ) {
+    const reason = String(quote?.workAmoV7?.reasonCode ?? "").trim();
+    throw new Error(
+      `WORK precision writes are paused${reason ? ` (${reason})` : ""}. No mint transaction was created.`,
+    );
+  }
 }
 
 function workAmoV6ListingWritesReady(quote: WorkFloorQuote | undefined) {
@@ -7279,11 +7484,51 @@ function assertWorkAmoV6SettlementEnabled(quote: WorkFloorQuote | undefined) {
   }
 }
 
+function workAmoSettlementWritesReady(quote: WorkFloorQuote | undefined) {
+  return workV7ActivationReached(quote)
+    ? workV7WriteAdmissionReady(quote) &&
+        quote?.workAmoV7?.settlementWritesEnabled === true
+    : workAmoV6SettlementWritesReady(quote);
+}
+
+function assertWorkAmoSettlementEnabled(quote: WorkFloorQuote | undefined) {
+  if (!workV7ActivationReached(quote)) {
+    assertWorkAmoV6SettlementEnabled(quote);
+    return;
+  }
+  if (!workAmoSettlementWritesReady(quote)) {
+    const reason = String(quote?.workAmoV7?.reasonCode ?? "").trim();
+    throw new Error(
+      `AMO governed settlement writes are paused${reason ? ` (${reason})` : ""}. No WORK transaction was created.`,
+    );
+  }
+}
+
 function assertWorkAmoV6ListingEnabled(quote: WorkFloorQuote | undefined) {
   if (!workAmoV6ListingWritesReady(quote)) {
     const reason = String(quote?.workAmoV6?.reasonCode ?? "").trim();
     throw new Error(
       `AMO proof-unit listing writes are paused${reason ? ` (${reason})` : ""}. No listing was created.`,
+    );
+  }
+}
+
+function workAmoListingWritesReady(quote: WorkFloorQuote | undefined) {
+  return workV7ActivationReached(quote)
+    ? workV7WriteAdmissionReady(quote) &&
+        quote?.workAmoV7?.listingWritesEnabled === true
+    : workAmoV6ListingWritesReady(quote);
+}
+
+function assertWorkAmoListingEnabled(quote: WorkFloorQuote | undefined) {
+  if (!workV7ActivationReached(quote)) {
+    assertWorkAmoV6ListingEnabled(quote);
+    return;
+  }
+  if (!workAmoListingWritesReady(quote)) {
+    const reason = String(quote?.workAmoV7?.reasonCode ?? "").trim();
+    throw new Error(
+      `AMO V7 subatom listing writes are paused${reason ? ` (${reason})` : ""}. No listing was created.`,
     );
   }
 }
@@ -7324,6 +7569,76 @@ function workAmoV6UnitTerms(
     unitMinimumPriceSats: minimumPriceSats.toString(),
     unitPriceSats: String(face),
   };
+}
+
+function workAmoV7UnitTerms(
+  unitFaceProofs: unknown,
+  networkValueBeforeQ8: unknown,
+) {
+  const face = Number(unitFaceProofs);
+  const networkValue = exactIntegerBigInt(networkValueBeforeQ8);
+  if (
+    !workAmoV6FaceProofsAllowed(face) ||
+    networkValue === null ||
+    networkValue < 1n
+  ) {
+    return null;
+  }
+  const valueDenominator =
+    BigInt(WORK_TOKEN_MAX_SUPPLY) *
+    WORK_AMO_V7_SUBATOMS_PER_WORK *
+    100_000_000n;
+  const amountSubatoms =
+    (BigInt(face) * valueDenominator) / networkValue;
+  if (
+    amountSubatoms < 1n ||
+    amountSubatoms >
+      BigInt(WORK_TOKEN_MAX_SUPPLY) * WORK_AMO_V7_SUBATOMS_PER_WORK
+  ) {
+    return null;
+  }
+  const minimumPriceSats =
+    (amountSubatoms * networkValue + valueDenominator - 1n) /
+    valueDenominator;
+  if (minimumPriceSats < 1n || minimumPriceSats > BigInt(face)) {
+    return null;
+  }
+  return {
+    unitAmountSubatoms: amountSubatoms.toString(),
+    unitFaceProofs: face,
+    unitMinimumPriceSats: minimumPriceSats.toString(),
+    unitPriceSats: String(face),
+  };
+}
+
+function workAmoEstimateSubatoms(
+  value:
+    | {
+        unitAmountAtoms?: string;
+        unitAmountSubatoms?: string;
+      }
+    | undefined,
+) {
+  const hasSubatoms =
+    value?.unitAmountSubatoms !== undefined &&
+    value.unitAmountSubatoms !== null &&
+    String(value.unitAmountSubatoms) !== "";
+  const hasAtoms =
+    value?.unitAmountAtoms !== undefined &&
+    value.unitAmountAtoms !== null &&
+    String(value.unitAmountAtoms).trim() !== "";
+  const explicit = hasSubatoms
+    ? workSubatomsFromCanonicalString(value?.unitAmountSubatoms)
+    : null;
+  const normalizedLegacy = hasAtoms
+    ? workSubatomsFromLegacyAtoms(value?.unitAmountAtoms)
+    : null;
+  if (hasSubatoms && hasAtoms) {
+    return explicit !== null && explicit === normalizedLegacy
+      ? explicit
+      : null;
+  }
+  return hasSubatoms ? explicit : normalizedLegacy;
 }
 
 function normalizedWorkAmoV6Estimate(
@@ -7426,6 +7741,100 @@ function workAmoV6EstimateForFace(
     unitNetworkValueBeforeQ8: networkValueBeforeQ8,
     unitPriceSats: derived.unitPriceSats,
   } satisfies WorkAmoV6Estimate;
+}
+
+function normalizedWorkAmoV7Estimate(
+  value: unknown,
+): WorkAmoV6Estimate | undefined {
+  if (!isPlainRecord(value)) {
+    return undefined;
+  }
+  const unitFaceProofs = Number(value.unitFaceProofs);
+  const unitAmountSubatoms = canonicalPositiveIntegerText(
+    value.unitAmountSubatoms,
+  );
+  const unitMinimumPriceSats = canonicalPositiveIntegerText(
+    value.unitMinimumPriceSats,
+  );
+  const unitNetworkValueBeforeQ8 = canonicalPositiveIntegerText(
+    value.unitNetworkValueBeforeQ8,
+  );
+  const unitPriceSats = canonicalPositiveIntegerText(value.unitPriceSats);
+  const isEstimateOnly =
+    value.estimateOnly === undefined || value.estimateOnly === true;
+  return isEstimateOnly &&
+    value.unitAmountAtoms === undefined &&
+    workAmoV6FaceProofsAllowed(unitFaceProofs) &&
+    unitAmountSubatoms &&
+    unitAmountSubatoms.length <= 96 &&
+    unitMinimumPriceSats &&
+    unitMinimumPriceSats.length <= 80 &&
+    unitNetworkValueBeforeQ8 &&
+    unitNetworkValueBeforeQ8.length <= 80 &&
+    unitPriceSats === String(unitFaceProofs)
+    ? {
+        estimateOnly: true,
+        unitAmountSubatoms,
+        unitFaceProofs,
+        unitMinimumPriceSats,
+        unitNetworkValueBeforeQ8,
+        unitPriceSats,
+      }
+    : undefined;
+}
+
+function workAmoV7NetworkValueBeforeQ8(quote: WorkFloorQuote | undefined) {
+  const explicit = canonicalPositiveIntegerText(
+    quote?.workAmoV7?.networkValueBeforeQ8,
+  );
+  return explicit || workAmoV6NetworkValueBeforeQ8(quote);
+}
+
+function workAmoV7EstimateForFace(
+  quote: WorkFloorQuote | undefined,
+  faceProofs: number,
+) {
+  if (!workAmoV6FaceProofsAllowed(faceProofs)) {
+    return undefined;
+  }
+  const estimates = quote?.workAmoV7?.estimates;
+  const candidate = Array.isArray(estimates)
+    ? estimates.find(
+        (estimate) => Number(estimate?.unitFaceProofs) === faceProofs,
+      )
+    : estimates?.[String(faceProofs)];
+  const normalized = normalizedWorkAmoV7Estimate(candidate);
+  const networkValueBeforeQ8 = workAmoV7NetworkValueBeforeQ8(quote);
+  const derived = workAmoV7UnitTerms(faceProofs, networkValueBeforeQ8);
+  if (!derived) {
+    return undefined;
+  }
+  if (
+    normalized &&
+    normalized.unitNetworkValueBeforeQ8 === networkValueBeforeQ8 &&
+    normalized.unitAmountSubatoms === derived.unitAmountSubatoms &&
+    normalized.unitMinimumPriceSats === derived.unitMinimumPriceSats &&
+    normalized.unitPriceSats === derived.unitPriceSats
+  ) {
+    return normalized;
+  }
+  return {
+    estimateOnly: true,
+    unitAmountSubatoms: derived.unitAmountSubatoms,
+    unitFaceProofs: faceProofs as WorkAmoV6Estimate["unitFaceProofs"],
+    unitMinimumPriceSats: derived.unitMinimumPriceSats,
+    unitNetworkValueBeforeQ8: networkValueBeforeQ8,
+    unitPriceSats: derived.unitPriceSats,
+  } satisfies WorkAmoV6Estimate;
+}
+
+function workAmoEstimateForFace(
+  quote: WorkFloorQuote | undefined,
+  faceProofs: number,
+) {
+  return workV7ActivationReached(quote)
+    ? workAmoV7EstimateForFace(quote, faceProofs)
+    : workAmoV6EstimateForFace(quote, faceProofs);
 }
 
 function workAmoListingFaceUsdCents(listing: PowTokenListing) {
@@ -7543,7 +7952,110 @@ function workAmoV6FrozenProjection(listing: PowTokenListing) {
     return null;
   }
   return {
-    amountAtoms: amountAtoms.toString(),
+    amountSubatoms: (
+      amountAtoms * WORK_LEGACY_TO_CANONICAL_FACTOR
+    ).toString(),
+    faceProofs,
+    faceUsdCents: undefined,
+    grandfatheredV4: false,
+    priceSats: listingPriceSats,
+  };
+}
+
+function workAmoV7FrozenProjection(listing: PowTokenListing) {
+  const frozen = listing.workAmoFrozenTerms ?? listing.frozenTerms;
+  const authorization = listing.saleAuthorization;
+  if (
+    authorization.version !== TOKEN_SALE_AUTH_WORK_AMO_SUBATOM_VERSION ||
+    frozen?.version !== TOKEN_SALE_AUTH_WORK_AMO_SUBATOM_VERSION ||
+    listing.confirmed !== true ||
+    !hasExactRecordKeys(frozen, WORK_AMO_V7_FROZEN_TERM_KEYS)
+  ) {
+    return null;
+  }
+  const faceProofs = Number(frozen.unitFaceProofs);
+  const listingBlockHeight = Number(frozen.listingBlockHeight);
+  const listingBlockIndex = Number(frozen.listingBlockIndex);
+  const listingProtocolVout = Number(frozen.listingProtocolVout);
+  const listingRecordOrdinal = Number(frozen.listingRecordOrdinal);
+  const networkValueBeforeQ8 = exactIntegerBigInt(
+    frozen.listingNetworkValueBeforeQ8,
+  );
+  const networkValueAfterQ8 = exactIntegerBigInt(
+    frozen.listingNetworkValueAfterQ8,
+  );
+  const listingBondContributionQ8 = exactIntegerBigInt(
+    frozen.listingBondContributionQ8,
+  );
+  const amountSubatoms = workSubatomsFromCanonicalString(
+    frozen.unitAmountSubatoms,
+  );
+  const priceSats = exactIntegerBigInt(frozen.unitPriceSats);
+  const minimumPriceSats = exactIntegerBigInt(
+    frozen.unitMinimumPriceSats,
+  );
+  if (
+    frozen.unitModel !== WORK_AMO_V7_UNIT_MODEL ||
+    frozen.stateOrderModel !== WORK_AMO_STATE_ORDER_MODEL ||
+    frozen.amountModel !== WORK_AMO_V7_AMOUNT_MODEL ||
+    frozen.unitWorkOracleModel !== WORK_AMO_WORK_ORACLE_MODEL ||
+    frozen.bondTransitionModel !== WORK_AMO_BOND_TRANSITION_MODEL ||
+    authorization.unitModel !== WORK_AMO_V7_UNIT_MODEL ||
+    authorization.stateOrderModel !== WORK_AMO_STATE_ORDER_MODEL ||
+    authorization.amountModel !== WORK_AMO_V7_AMOUNT_MODEL ||
+    authorization.unitWorkOracleModel !== WORK_AMO_WORK_ORACLE_MODEL ||
+    authorization.bondTransitionModel !== WORK_AMO_BOND_TRANSITION_MODEL ||
+    !workAmoV6FaceProofsAllowed(faceProofs) ||
+    Number(authorization.unitFaceProofs) !== faceProofs ||
+    !Number.isSafeInteger(listingBlockHeight) ||
+    listingBlockHeight < 1 ||
+    !/^[0-9a-f]{64}$/u.test(
+      String(frozen.listingBlockHash ?? "").trim().toLowerCase(),
+    ) ||
+    !Number.isSafeInteger(listingBlockIndex) ||
+    listingBlockIndex < 0 ||
+    !Number.isSafeInteger(listingProtocolVout) ||
+    listingProtocolVout < 0 ||
+    !Number.isSafeInteger(listingRecordOrdinal) ||
+    listingRecordOrdinal < 0 ||
+    networkValueBeforeQ8 === null ||
+    networkValueBeforeQ8 < 1n ||
+    networkValueAfterQ8 === null ||
+    listingBondContributionQ8 === null ||
+    listingBondContributionQ8 < 1n ||
+    networkValueAfterQ8 !==
+      networkValueBeforeQ8 + listingBondContributionQ8 ||
+    amountSubatoms === null ||
+    amountSubatoms < 1n ||
+    priceSats === null ||
+    priceSats < 1n ||
+    minimumPriceSats === null ||
+    minimumPriceSats < 1n
+  ) {
+    return null;
+  }
+  const expected = workAmoV7UnitTerms(
+    faceProofs,
+    networkValueBeforeQ8.toString(),
+  );
+  const listingAmountSubatoms = workSubatomsFromCanonicalString(
+    listing.amountSubatoms,
+  );
+  const listingPriceSats = Number(listing.priceSats);
+  if (
+    !expected ||
+    amountSubatoms.toString() !== expected.unitAmountSubatoms ||
+    priceSats.toString() !== expected.unitPriceSats ||
+    minimumPriceSats.toString() !== expected.unitMinimumPriceSats ||
+    listingAmountSubatoms !== amountSubatoms ||
+    String(listing.amountAtoms ?? "") !== "" ||
+    !Number.isSafeInteger(listingPriceSats) ||
+    BigInt(listingPriceSats) !== priceSats
+  ) {
+    return null;
+  }
+  return {
+    amountSubatoms: amountSubatoms.toString(),
     faceProofs,
     faceUsdCents: undefined,
     grandfatheredV4: false,
@@ -7553,6 +8065,13 @@ function workAmoV6FrozenProjection(listing: PowTokenListing) {
 
 function workAmoFrozenTerms(listing: PowTokenListing) {
   const frozen = listing.workAmoFrozenTerms ?? listing.frozenTerms;
+  const v7Listing =
+    listing.saleAuthorization.version ===
+      TOKEN_SALE_AUTH_WORK_AMO_SUBATOM_VERSION ||
+    frozen?.version === TOKEN_SALE_AUTH_WORK_AMO_SUBATOM_VERSION;
+  if (v7Listing) {
+    return workAmoV7FrozenProjection(listing);
+  }
   const v6Listing =
     listing.saleAuthorization.version ===
       TOKEN_SALE_AUTH_WORK_AMO_PROOF_UNIT_VERSION ||
@@ -7698,7 +8217,9 @@ function workAmoFrozenTerms(listing: PowTokenListing) {
     return null;
   }
   return {
-    amountAtoms: amountAtoms.toString(),
+    amountSubatoms: (
+      amountAtoms * WORK_LEGACY_TO_CANONICAL_FACTOR
+    ).toString(),
     faceProofs: undefined,
     faceUsdCents,
     grandfatheredV4,
@@ -7717,8 +8238,13 @@ function workAmoStaticAuthorizationForListing(
   }
   if (
     listing.saleAuthorization.version ===
-    TOKEN_SALE_AUTH_WORK_AMO_PROOF_UNIT_VERSION
+      TOKEN_SALE_AUTH_WORK_AMO_PROOF_UNIT_VERSION ||
+    listing.saleAuthorization.version ===
+      TOKEN_SALE_AUTH_WORK_AMO_SUBATOM_VERSION
   ) {
+    const v7 =
+      listing.saleAuthorization.version ===
+      TOKEN_SALE_AUTH_WORK_AMO_SUBATOM_VERSION;
     const faceProofs = workAmoListingFaceProofs(listing);
     if (!faceProofs) {
       throw new Error(
@@ -7730,14 +8256,19 @@ function workAmoStaticAuthorizationForListing(
         ...listing.saleAuthorization,
         amount: 0,
         amountAtoms: undefined,
-        amountModel: WORK_AMO_AMOUNT_MODEL,
+        amountSubatoms: undefined,
+        amountModel: v7
+          ? WORK_AMO_V7_AMOUNT_MODEL
+          : WORK_AMO_AMOUNT_MODEL,
         bondTransitionModel: WORK_AMO_BOND_TRANSITION_MODEL,
         priceSats: 0,
         stateOrderModel: WORK_AMO_STATE_ORDER_MODEL,
         unitFaceProofs: faceProofs,
-        unitModel: WORK_AMO_V6_UNIT_MODEL,
+        unitModel: v7 ? WORK_AMO_V7_UNIT_MODEL : WORK_AMO_V6_UNIT_MODEL,
         unitWorkOracleModel: WORK_AMO_WORK_ORACLE_MODEL,
-        version: TOKEN_SALE_AUTH_WORK_AMO_PROOF_UNIT_VERSION,
+        version: v7
+          ? TOKEN_SALE_AUTH_WORK_AMO_SUBATOM_VERSION
+          : TOKEN_SALE_AUTH_WORK_AMO_PROOF_UNIT_VERSION,
       }),
       anchorSignature: listing.saleAuthorization.anchorSignature,
       anchorTxid: listing.saleAuthorization.anchorTxid,
@@ -7787,6 +8318,7 @@ function tokenWalletBalanceDisplay(balance: PowTokenWalletBalance) {
     balance.token,
     balance.confirmedBalance,
     balance.confirmedBalanceAtoms,
+    balance.confirmedBalanceSubatoms,
   );
 }
 
@@ -7844,12 +8376,32 @@ function buildTokenSendPayload(
   tokenId: string,
   amount: string | number,
   recipientAddress: string,
+  workWriteMode: WorkWriteMode = "paused",
 ) {
   const normalizedTokenId = tokenId.trim().toLowerCase();
   if (normalizedTokenId === WORK_TOKEN_ID) {
-    const amountAtoms = positiveWorkAtoms(amount);
+    const amountSubatoms = positiveWorkAtoms(amount);
+    if (amountSubatoms === null) {
+      throw new Error("Enter a WORK amount with up to 16 decimal places.");
+    }
+    if (workWriteMode === "paused") {
+      throw new Error(
+        "WORK V7 is active, but Q16 write admission is paused. No legacy send2 fallback is permitted.",
+      );
+    }
+    if (workWriteMode === "native-q16") {
+      return [
+        `${TOKEN_PROTOCOL_PREFIX}${TOKEN_SEND_SUBATOMS_ACTION}`,
+        normalizedTokenId,
+        amountSubatoms.toString(),
+        recipientAddress.trim(),
+      ].join(":");
+    }
+    const amountAtoms = workLegacyAtomsFromSubatoms(amountSubatoms);
     if (amountAtoms === null) {
-      throw new Error("Enter a WORK amount with up to 8 decimal places.");
+      throw new Error(
+        "This WORK amount requires Q16 write admission. Until V7 activates, transfers must resolve exactly to 8 decimal places.",
+      );
     }
     return [
       `${TOKEN_PROTOCOL_PREFIX}${TOKEN_SEND_ATOMS_ACTION}`,
@@ -7883,13 +8435,34 @@ function buildTokenSendPayload(
   ].join(":");
 }
 
+function tryBuildTokenSendPayload(
+  tokenId: string,
+  amount: string | number,
+  recipientAddress: string,
+  workWriteMode: WorkWriteMode = "paused",
+) {
+  try {
+    return buildTokenSendPayload(
+      tokenId,
+      amount,
+      recipientAddress,
+      workWriteMode,
+    );
+  } catch {
+    return "";
+  }
+}
+
 function tokenSaleAuthorizationDraft(
   authorization: Partial<PowTokenSaleAuthorization>,
 ): PowTokenSaleAuthorizationDraft {
   const version = authorization.version ?? TOKEN_SALE_AUTH_VERSION;
   const v6Authorization = isWorkAmoV6Authorization(version);
+  const v7Authorization = isWorkAmoV7Authorization(version);
   const derivedAmoAuthorization =
-    isWorkAmoUnitAuthorization(version) || v6Authorization;
+    isWorkAmoUnitAuthorization(version) ||
+    v6Authorization ||
+    v7Authorization;
   const tokenId = String(authorization.tokenId ?? "").trim().toLowerCase();
   const ticker = normalizeTokenTicker(String(authorization.ticker ?? ""));
   const bond =
@@ -7902,19 +8475,24 @@ function tokenSaleAuthorizationDraft(
       isWorkMarketLegacyPriceAuthorizationVersion(version))
       ? workAtomsFromIntegerString(authorization.amountAtoms)
       : null;
+  const amountSubatoms =
+    amountAtoms === null
+      ? null
+      : amountAtoms * WORK_LEGACY_TO_CANONICAL_FACTOR;
   return {
     amount:
-      amountAtoms === null
+      amountSubatoms === null
         ? bond
           ? exactIntegerText(authorization.amount) || 0
           : Math.max(0, Math.floor(Number(authorization.amount ?? 0)))
-        : workNumberFromAtoms(amountAtoms),
+        : workNumberFromAtoms(amountSubatoms),
     amountAtoms:
       (version === TOKEN_SALE_AUTH_VERSION_ATOMS ||
         isWorkMarketLegacyPriceAuthorizationVersion(version)) &&
       amountAtoms !== null
         ? amountAtoms.toString()
         : undefined,
+    amountSubatoms: undefined,
     amountModel:
       derivedAmoAuthorization
         ? String(authorization.amountModel ?? "").trim()
@@ -7966,7 +8544,7 @@ function tokenSaleAuthorizationDraft(
         ? workAmoHistoricalFaceUsdCents(authorization.unitFaceUsdCents)
         : undefined,
     unitFaceProofs:
-      v6Authorization &&
+      (v6Authorization || v7Authorization) &&
       workAmoV6FaceProofsAllowed(authorization.unitFaceProofs)
         ? Number(authorization.unitFaceProofs)
         : undefined,
@@ -7994,6 +8572,7 @@ function tokenSaleAuthorizationWireDraft(
     const {
       amount: _amount,
       amountAtoms: _amountAtoms,
+      amountSubatoms: _amountSubatoms,
       priceSats: _priceSats,
       ...wire
     } = draft;
@@ -8006,7 +8585,11 @@ function tokenSaleAuthorizationWireDraft(
     const { amount: _amount, ...wire } = draft;
     return wire;
   }
-  const { amountAtoms: _amountAtoms, ...wire } = draft;
+  const {
+    amountAtoms: _amountAtoms,
+    amountSubatoms: _amountSubatoms,
+    ...wire
+  } = draft;
   return wire;
 }
 
@@ -8050,7 +8633,10 @@ function parseTokenSaleAuthorizationJson(
     draft.version === TOKEN_SALE_AUTH_WORK_AMO_UNIT_VERSION;
   const v6Authorization =
     draft.version === TOKEN_SALE_AUTH_WORK_AMO_PROOF_UNIT_VERSION;
-  const derivedAmoAuthorization = v5Authorization || v6Authorization;
+  const v7Authorization =
+    draft.version === TOKEN_SALE_AUTH_WORK_AMO_SUBATOM_VERSION;
+  const derivedAmoAuthorization =
+    v5Authorization || v6Authorization || v7Authorization;
   const v5ReferenceAuthorization =
     v5Authorization &&
     /^[0-9a-f]{64}$/u.test(anchorTxid) &&
@@ -8119,6 +8705,22 @@ function parseTokenSaleAuthorizationJson(
       draft.bondTransitionModel !== WORK_AMO_BOND_TRANSITION_MODEL
     ) {
       throw new Error("WORK AMO V6 authorization is invalid.");
+    }
+  }
+
+  if (v7Authorization) {
+    if (
+      !hasExactRecordKeys(parsed, WORK_AMO_V7_STATIC_AUTHORIZATION_KEYS) ||
+      draft.tokenId !== WORK_TOKEN_ID ||
+      draft.ticker !== WORK_TOKEN_TICKER ||
+      !workAmoV6FaceProofsAllowed(draft.unitFaceProofs) ||
+      draft.unitModel !== WORK_AMO_V7_UNIT_MODEL ||
+      draft.stateOrderModel !== WORK_AMO_STATE_ORDER_MODEL ||
+      draft.amountModel !== WORK_AMO_V7_AMOUNT_MODEL ||
+      draft.unitWorkOracleModel !== WORK_AMO_WORK_ORACLE_MODEL ||
+      draft.bondTransitionModel !== WORK_AMO_BOND_TRANSITION_MODEL
+    ) {
+      throw new Error("WORK AMO V7 authorization is invalid.");
     }
   }
 
@@ -8248,20 +8850,31 @@ function normalizeTokenListingRecord<
       saleAuthorization.unitFaceProofs ??
       estimate?.unitFaceProofs,
   );
-  const workAmountAtoms =
+  const workAmountSubatoms =
     tokenId === WORK_TOKEN_ID || ticker === WORK_TOKEN_TICKER
       ? workRecordAtoms(
           listing.amount || saleAuthorization.amount || 0,
           frozenTerms?.unitAmountAtoms ??
             listing.amountAtoms ??
             saleAuthorization.amountAtoms,
+          frozenTerms?.unitAmountSubatoms ??
+            listing.amountSubatoms ??
+            saleAuthorization.amountSubatoms,
+          saleAuthorization.version ===
+          TOKEN_SALE_AUTH_WORK_AMO_SUBATOM_VERSION
+            ? "native-q16"
+            : isWorkMarketSaleAuthorizationVersion(
+                  saleAuthorization.version,
+                )
+              ? "legacy-q8"
+              : "auto",
         )
       : null;
 
   return {
     ...listing,
     amount:
-      workAmountAtoms === null
+      workAmountSubatoms === null
         ? bond
           ? exactIntegerText(listing.amount || saleAuthorization.amount) || 0
           : Math.max(
@@ -8270,9 +8883,11 @@ function normalizeTokenListingRecord<
                 Number(listing.amount || saleAuthorization.amount || 0),
               ),
             )
-        : workNumberFromAtoms(workAmountAtoms),
-    amountAtoms:
-      workAmountAtoms === null ? undefined : workAmountAtoms.toString(),
+        : workNumberFromAtoms(workAmountSubatoms),
+    amountSubatoms:
+      workAmountSubatoms === null
+        ? undefined
+        : workAmountSubatoms.toString(),
     estimate,
     frozenTerms,
     listingId,
@@ -8654,19 +9269,46 @@ function parseTokenPayload(message: string, network: BitcoinNetwork) {
   if (parts.length === 4 && parts[0] === TOKEN_SEND_ATOMS_ACTION) {
     const tokenId = String(parts[1] ?? "").toLowerCase();
     const amountAtoms = workAtomsFromIntegerString(parts[2]);
+    const amountSubatoms = workSubatomsFromLegacyAtoms(parts[2]);
     const recipientAddress = String(parts[3] ?? "").trim();
     if (
       tokenId !== WORK_TOKEN_ID ||
       amountAtoms === null ||
       amountAtoms < 1n ||
+      amountSubatoms === null ||
       !isValidBitcoinAddress(recipientAddress, network)
     ) {
       return null;
     }
 
     return {
-      amount: workNumberFromAtoms(amountAtoms),
+      amount: workNumberFromAtoms(amountSubatoms),
       amountAtoms: amountAtoms.toString(),
+      amountSubatoms: amountSubatoms.toString(),
+      amountVersion: TOKEN_SEND_ATOMS_ACTION,
+      kind: "send" as const,
+      recipientAddress,
+      tokenId,
+    };
+  }
+
+  if (parts.length === 4 && parts[0] === TOKEN_SEND_SUBATOMS_ACTION) {
+    const tokenId = String(parts[1] ?? "").toLowerCase();
+    const amountSubatoms = workSubatomsFromCanonicalString(parts[2]);
+    const recipientAddress = String(parts[3] ?? "").trim();
+    if (
+      tokenId !== WORK_TOKEN_ID ||
+      amountSubatoms === null ||
+      amountSubatoms < 1n ||
+      !isValidBitcoinAddress(recipientAddress, network)
+    ) {
+      return null;
+    }
+
+    return {
+      amount: workNumberFromAtoms(amountSubatoms),
+      amountSubatoms: amountSubatoms.toString(),
+      amountVersion: TOKEN_SEND_SUBATOMS_ACTION,
       kind: "send" as const,
       recipientAddress,
       tokenId,
@@ -8923,6 +9565,7 @@ function tokenStateFromTransactions(
           listing,
           listing.amount,
           listing.amountAtoms,
+          listing.amountSubatoms,
         );
         if (amountAtoms !== null) {
           reserved += amountAtoms;
@@ -9053,7 +9696,7 @@ function tokenStateFromTransactions(
 
           mints.push({
             amount: parsed.amount,
-            amountAtoms: isWorkToken(mintedToken)
+            amountSubatoms: isWorkToken(mintedToken)
               ? workRecordAtoms(parsed.amount)?.toString()
               : undefined,
             confirmed,
@@ -9085,6 +9728,7 @@ function tokenStateFromTransactions(
             sentToken,
             parsed.amount,
             parsed.amountAtoms,
+            parsed.amountSubatoms,
           );
           const senderBalance = balances.get(senderBalanceKey) ?? 0n;
           if (
@@ -9109,6 +9753,9 @@ function tokenStateFromTransactions(
           transfers.push({
             amount: parsed.amount,
             amountAtoms: isWorkToken(sentToken)
+              ? parsed.amountAtoms
+              : undefined,
+            amountSubatoms: isWorkToken(sentToken)
               ? amountAtoms.toString()
               : undefined,
             confirmed,
@@ -9133,6 +9780,7 @@ function tokenStateFromTransactions(
                 listedToken,
                 authorization.amount,
                 authorization.amountAtoms,
+                authorization.amountSubatoms,
               )
             : null;
           if (
@@ -9156,6 +9804,9 @@ function tokenStateFromTransactions(
           listings.set(txid, {
             amount: authorization.amount,
             amountAtoms: isWorkToken(listedToken)
+              ? authorization.amountAtoms
+              : undefined,
+            amountSubatoms: isWorkToken(listedToken)
               ? amountAtoms.toString()
               : undefined,
             confirmed,
@@ -9237,6 +9888,7 @@ function tokenStateFromTransactions(
                 listing,
                 listing.amount,
                 listing.amountAtoms,
+                listing.amountSubatoms,
               )
             : null;
           if (
@@ -9276,6 +9928,7 @@ function tokenStateFromTransactions(
           sales.push({
             amount: listing.amount,
             amountAtoms: listing.amountAtoms,
+            amountSubatoms: listing.amountSubatoms,
             buyerAddress: parsed.buyerAddress,
             confirmed,
             createdAt,
@@ -9322,7 +9975,7 @@ function tokenStateFromTransactions(
             : bond
               ? balance.toString()
               : Number(balance),
-          balanceAtoms: work ? balance.toString() : undefined,
+          balanceSubatoms: work ? balance.toString() : undefined,
           ticker: token?.ticker,
           tokenId,
         };
@@ -9388,6 +10041,7 @@ function tokenLedgerFor(
         mint,
         mint.amount,
         mint.amountAtoms,
+        mint.amountSubatoms,
       );
       if (amountAtoms !== null) {
         balances.set(
@@ -9411,6 +10065,7 @@ function tokenLedgerFor(
         transfer,
         transfer.amount,
         transfer.amountAtoms,
+        transfer.amountSubatoms,
       );
       if (amountAtoms !== null) {
         balances.set(
@@ -9435,6 +10090,7 @@ function tokenLedgerFor(
         sale,
         sale.amount,
         sale.amountAtoms,
+        sale.amountSubatoms,
       );
       if (amountAtoms !== null) {
         balances.set(
@@ -9470,7 +10126,7 @@ function tokenLedgerFor(
           : bond
             ? balance.toString()
             : Number(balance),
-        balanceAtoms:
+        balanceSubatoms:
           token && isWorkToken(token) ? balance.toString() : undefined,
         ticker: token?.ticker,
         tokenId: token?.tokenId,
@@ -9620,7 +10276,11 @@ function sanitizedTokenState(state: PowTokenState): PowTokenState {
       listing.saleAuthorization.version !==
         TOKEN_SALE_AUTH_WORK_CONFIRMATION_FLOOR_VERSION &&
       listing.saleAuthorization.version !==
-        TOKEN_SALE_AUTH_WORK_AMO_UNIT_VERSION,
+        TOKEN_SALE_AUTH_WORK_AMO_UNIT_VERSION &&
+      listing.saleAuthorization.version !==
+        TOKEN_SALE_AUTH_WORK_AMO_PROOF_UNIT_VERSION &&
+      listing.saleAuthorization.version !==
+        TOKEN_SALE_AUTH_WORK_AMO_SUBATOM_VERSION,
   );
   const closedListings = normalizeTokenListingRecords([
     ...indexedClosedListings,
@@ -9769,6 +10429,7 @@ function tokenWalletBalancesFor(
             token,
             holderBaseline.balance,
             holderBaseline.balanceAtoms,
+            holderBaseline.balanceSubatoms,
           )
         : null;
       const hasHolderBaseline = holderBaselineBalance !== null;
@@ -9782,7 +10443,11 @@ function tokenWalletBalancesFor(
       if (isWorkToken(token)) {
         let confirmedBalanceAtoms =
           holderBaseline &&
-          workRecordAtoms(holderBaseline.balance, holderBaseline.balanceAtoms);
+          workRecordAtoms(
+            holderBaseline.balance,
+            holderBaseline.balanceAtoms,
+            holderBaseline.balanceSubatoms,
+          );
         if (confirmedBalanceAtoms === null || confirmedBalanceAtoms === undefined) {
           confirmedBalanceAtoms = 0n;
         }
@@ -9797,7 +10462,11 @@ function tokenWalletBalancesFor(
           ) {
             continue;
           }
-          const amountAtoms = workRecordAtoms(mint.amount, mint.amountAtoms);
+          const amountAtoms = workRecordAtoms(
+            mint.amount,
+            mint.amountAtoms,
+            mint.amountSubatoms,
+          );
           if (amountAtoms === null) {
             continue;
           }
@@ -9817,6 +10486,7 @@ function tokenWalletBalancesFor(
           const amountAtoms = workRecordAtoms(
             transfer.amount,
             transfer.amountAtoms,
+            transfer.amountSubatoms,
           );
           if (amountAtoms === null) {
             continue;
@@ -9850,7 +10520,11 @@ function tokenWalletBalancesFor(
           if (sale.tokenId !== token.tokenId) {
             continue;
           }
-          const amountAtoms = workRecordAtoms(sale.amount, sale.amountAtoms);
+          const amountAtoms = workRecordAtoms(
+            sale.amount,
+            sale.amountAtoms,
+            sale.amountSubatoms,
+          );
           if (amountAtoms === null) {
             continue;
           }
@@ -9884,11 +10558,11 @@ function tokenWalletBalancesFor(
         }
         return {
           confirmedBalance: workNumberFromAtoms(confirmedBalanceAtoms),
-          confirmedBalanceAtoms: confirmedBalanceAtoms.toString(),
+          confirmedBalanceSubatoms: confirmedBalanceAtoms.toString(),
           pendingIncoming: workNumberFromAtoms(pendingIncomingAtoms),
-          pendingIncomingAtoms: pendingIncomingAtoms.toString(),
+          pendingIncomingSubatoms: pendingIncomingAtoms.toString(),
           pendingOutgoing: workNumberFromAtoms(pendingOutgoingAtoms),
-          pendingOutgoingAtoms: pendingOutgoingAtoms.toString(),
+          pendingOutgoingSubatoms: pendingOutgoingAtoms.toString(),
           token,
         };
       }
@@ -10216,6 +10890,7 @@ function tokenReservedBalanceAtomsFor(
       listing,
       String(listing.amount),
       listing.amountAtoms,
+      listing.amountSubatoms,
     );
     return amountAtoms === null ? total : total + amountAtoms;
   }, 0n);
@@ -10234,6 +10909,7 @@ function tokenTransferSpendabilityKey(transfer: PowTokenTransfer) {
     transfer,
     transfer.amount,
     transfer.amountAtoms,
+    transfer.amountSubatoms,
   );
   return txid && tokenId && amountAtoms !== null && amountAtoms > 0n
     ? `${txid}:${tokenId}:${senderAddress}:${recipientAddress}:${amountAtoms}`
@@ -10321,7 +10997,11 @@ function tokenSpendabilityForWallet(
   const bond = isBondTokenDefinition(token);
   const exactUnits = true;
   const confirmedBalanceAtoms = work
-    ? workRecordAtoms(holder?.balance, holder?.balanceAtoms)
+    ? workRecordAtoms(
+        holder?.balance,
+        holder?.balanceAtoms,
+        holder?.balanceSubatoms,
+      )
     : exactIntegerBigInt(holder?.balance);
   const confirmedBalance: ExactIntegerValue = work
     ? confirmedBalanceAtoms === null
@@ -10417,6 +11097,7 @@ function tokenSpendabilityForWallet(
           transfer,
           transfer.amount,
           transfer.amountAtoms,
+          transfer.amountSubatoms,
         );
         return amountAtoms === null ? total : total + amountAtoms;
       }, 0n)
@@ -10449,6 +11130,7 @@ function tokenSpendabilityForWallet(
           sale,
           sale.amount,
           sale.amountAtoms,
+          sale.amountSubatoms,
         );
         return amountAtoms === null ? total : total + amountAtoms;
       }, 0n)
@@ -10477,16 +11159,25 @@ function tokenSpendabilityForWallet(
     activeListings,
     confirmedBalance,
     confirmedBalanceAtoms: confirmedBalanceAtoms?.toString(),
+    confirmedBalanceSubatoms: work
+      ? confirmedBalanceAtoms?.toString()
+      : undefined,
     pendingOutgoing:
       bond && pendingOutgoingAtoms !== null
         ? pendingOutgoingAtoms.toString()
         : pendingOutgoing,
     pendingOutgoingAtoms: pendingOutgoingAtoms?.toString(),
+    pendingOutgoingSubatoms: work
+      ? pendingOutgoingAtoms?.toString()
+      : undefined,
     reservedBalance:
       bond && reservedBalanceAtoms !== null
         ? reservedBalanceAtoms.toString()
         : reservedBalance,
     reservedBalanceAtoms: reservedBalanceAtoms?.toString(),
+    reservedBalanceSubatoms: work
+      ? reservedBalanceAtoms?.toString()
+      : undefined,
     spendableBalance:
       spendableBalanceAtoms === null
         ? Math.max(
@@ -10497,6 +11188,9 @@ function tokenSpendabilityForWallet(
           ? workNumberFromAtoms(spendableBalanceAtoms)
           : spendableBalanceAtoms.toString(),
     spendableBalanceAtoms: spendableBalanceAtoms?.toString(),
+    spendableBalanceSubatoms: work
+      ? spendableBalanceAtoms?.toString()
+      : undefined,
   };
 }
 
@@ -13636,6 +14330,9 @@ function normalizeTokenDefinitionRecord(
       : undefined,
     ticker,
     tokenId,
+    amountStorageModel: work
+      ? WORK_TOKEN_AMOUNT_STORAGE_MODEL
+      : token.amountStorageModel,
     unitScale: work ? WORK_TOKEN_UNIT_SCALE : "1",
     uncapped,
   };
@@ -13660,11 +14357,25 @@ function normalizeTokenAmountRecord<
     };
   }
 
-  const amountAtoms = workRecordAtoms(record.amount, record.amountAtoms);
+  const amountVersion = String(
+    (record as PowTokenTransfer).amountVersion ?? "",
+  );
+  const amountSubatoms = workRecordAtoms(
+    record.amount,
+    record.amountAtoms,
+    record.amountSubatoms,
+    amountVersion === TOKEN_SEND_SUBATOMS_ACTION
+      ? "native-q16"
+      : amountVersion === TOKEN_SEND_ATOMS_ACTION
+        ? "legacy-q8"
+        : "auto",
+  );
   return {
     ...record,
-    amount: amountAtoms === null ? 0 : workNumberFromAtoms(amountAtoms),
-    amountAtoms: amountAtoms === null ? undefined : amountAtoms.toString(),
+    amount:
+      amountSubatoms === null ? 0 : workNumberFromAtoms(amountSubatoms),
+    amountSubatoms:
+      amountSubatoms === null ? undefined : amountSubatoms.toString(),
     ticker: WORK_TOKEN_TICKER,
     tokenId: WORK_TOKEN_ID,
   };
@@ -13694,23 +14405,51 @@ function normalizeTokenHolderRecord(holder: PowTokenHolder): PowTokenHolder {
     };
   }
 
-  const balanceAtoms = workRecordAtoms(holder.balance, holder.balanceAtoms);
-  const legacyPendingDelta = Number(holder.pendingDelta);
-  const pendingDeltaAtoms =
-    workSignedAtomsFromIntegerString(holder.pendingDeltaAtoms) ??
-    (Number.isSafeInteger(legacyPendingDelta)
-      ? BigInt(legacyPendingDelta) * BigInt(WORK_TOKEN_UNIT_SCALE)
-      : null);
+  const balanceSubatoms = workRecordAtoms(
+    holder.balance,
+    holder.balanceAtoms,
+    holder.balanceSubatoms,
+  );
+  const hasPendingDeltaSubatoms =
+    holder.pendingDeltaSubatoms !== undefined &&
+    holder.pendingDeltaSubatoms !== null &&
+    String(holder.pendingDeltaSubatoms) !== "";
+  const hasPendingDeltaAtoms =
+    holder.pendingDeltaAtoms !== undefined &&
+    holder.pendingDeltaAtoms !== null &&
+    String(holder.pendingDeltaAtoms).trim() !== "";
+  const explicitPendingDeltaSubatoms = hasPendingDeltaSubatoms
+    ? workSignedSubatomsFromCanonicalString(holder.pendingDeltaSubatoms)
+    : null;
+  const normalizedLegacyPendingDeltaSubatoms = hasPendingDeltaAtoms
+    ? workSignedSubatomsFromLegacyAtoms(holder.pendingDeltaAtoms)
+    : null;
+  const pendingDeltaSubatoms =
+    hasPendingDeltaSubatoms && hasPendingDeltaAtoms
+      ? explicitPendingDeltaSubatoms !== null &&
+        explicitPendingDeltaSubatoms ===
+          normalizedLegacyPendingDeltaSubatoms
+        ? explicitPendingDeltaSubatoms
+        : null
+      : hasPendingDeltaSubatoms
+        ? explicitPendingDeltaSubatoms
+        : hasPendingDeltaAtoms
+          ? normalizedLegacyPendingDeltaSubatoms
+          : workSignedAtomsFromDecimal(holder.pendingDelta);
   return {
     ...holder,
-    balance: balanceAtoms === null ? 0 : workNumberFromAtoms(balanceAtoms),
-    balanceAtoms: balanceAtoms === null ? undefined : balanceAtoms.toString(),
+    balance:
+      balanceSubatoms === null ? 0 : workNumberFromAtoms(balanceSubatoms),
+    balanceSubatoms:
+      balanceSubatoms === null ? undefined : balanceSubatoms.toString(),
     pendingDelta:
-      pendingDeltaAtoms === null
+      pendingDeltaSubatoms === null
         ? Number(holder.pendingDelta) || 0
-        : workNumberFromAtoms(pendingDeltaAtoms),
-    pendingDeltaAtoms:
-      pendingDeltaAtoms === null ? undefined : pendingDeltaAtoms.toString(),
+        : workNumberFromAtoms(pendingDeltaSubatoms),
+    pendingDeltaSubatoms:
+      pendingDeltaSubatoms === null
+        ? undefined
+        : pendingDeltaSubatoms.toString(),
     ticker: WORK_TOKEN_TICKER,
     tokenId: WORK_TOKEN_ID,
   };
@@ -13747,22 +14486,28 @@ function normalizeTokenApiState(
           const ticker = normalizeTokenTicker(String(event?.ticker ?? ""));
           const work =
             tokenId === WORK_TOKEN_ID || ticker === WORK_TOKEN_TICKER;
-          const amountAtoms = work
-            ? workRecordAtoms(event?.amount, event?.amountAtoms)
+          const amountSubatoms = work
+            ? workRecordAtoms(
+                event?.amount,
+                event?.amountAtoms,
+                event?.amountSubatoms,
+              )
             : null;
           return {
             ...event,
             amount:
-              amountAtoms !== null
-                ? workNumberFromAtoms(amountAtoms)
+              amountSubatoms !== null
+                ? workNumberFromAtoms(amountSubatoms)
                 : tokenId === POWB_TOKEN_ID ||
                     tokenId === INCB_TOKEN_ID ||
                     ticker === POWB_TOKEN_TICKER ||
                     ticker === INCB_TOKEN_TICKER
                   ? exactIntegerText(event?.amount) || 0
                   : Math.max(0, Math.floor(Number(event?.amount) || 0)),
-            amountAtoms:
-              amountAtoms === null ? undefined : amountAtoms.toString(),
+            amountSubatoms:
+              amountSubatoms === null
+                ? undefined
+                : amountSubatoms.toString(),
             attemptedKind: String(event?.attemptedKind ?? "").trim(),
             confirmed: event?.confirmed === true,
             kind: "token-event-invalid" as const,
@@ -14628,6 +15373,10 @@ function normalizeGrowthActualValue(
       payload?.workAmoV6 && typeof payload.workAmoV6 === "object"
         ? { ...payload.workAmoV6 }
         : undefined,
+    workAmoV7:
+      payload?.workAmoV7 && typeof payload.workAmoV7 === "object"
+        ? { ...payload.workAmoV7 }
+        : undefined,
     workNetworkValueAccountingModel:
       typeof payload?.workNetworkValueAccountingModel === "string"
         ? payload.workNetworkValueAccountingModel
@@ -14844,6 +15593,25 @@ function normalizeWorkFloorQuote(
                 ?.activation === "object"
                 ? {
                     ...(payload.workAmoV6 ?? actualValue?.workAmoV6)
+                      ?.activation,
+                  }
+                : undefined,
+          }
+        : undefined,
+    workAmoV7:
+      (payload.workAmoV7 &&
+      typeof payload.workAmoV7 === "object"
+        ? payload.workAmoV7
+        : actualValue?.workAmoV7) &&
+      typeof (payload.workAmoV7 ?? actualValue?.workAmoV7) === "object"
+        ? {
+            ...(payload.workAmoV7 ?? actualValue?.workAmoV7),
+            activation:
+              (payload.workAmoV7 ?? actualValue?.workAmoV7)?.activation &&
+              typeof (payload.workAmoV7 ?? actualValue?.workAmoV7)
+                ?.activation === "object"
+                ? {
+                    ...(payload.workAmoV7 ?? actualValue?.workAmoV7)
                       ?.activation,
                   }
                 : undefined,
@@ -15365,6 +16133,9 @@ function normalizeInfinityActualValue(
     attachedWorkActions: optionalNumberValue("attachedWorkActions"),
     attachedWorkAmount: optionalNumberValue("attachedWorkAmount"),
     attachedWorkAmountAtoms: optionalStringValue("attachedWorkAmountAtoms"),
+    attachedWorkAmountSubatoms: optionalStringValue(
+      "attachedWorkAmountSubatoms",
+    ),
     attachedWorkFrozenValueSats: optionalDecimalValue(
       "attachedWorkFrozenValueSats",
     ),
@@ -18242,6 +19013,7 @@ export default function App() {
   activeFolderRef.current = activeFolder;
   const walletSyncGenerationRef = useRef(0);
   const acceptedWorkFloorQuoteRef = useRef<WorkFloorQuote | undefined>();
+  const workV7DeclarationBoundaryLatchRef = useRef(false);
   const acceptedGrowthSummaryRef = useRef<GrowthSummarySnapshot | undefined>();
   const acceptedMarketplaceSnapshotRef =
     useRef<MarketplaceSummarySnapshot | undefined>();
@@ -18414,13 +19186,80 @@ export default function App() {
     }
 
     const current = acceptedWorkFloorQuoteRef.current;
-    if (workFloorQuoteRegresses(quote, current)) {
-      return current;
+    const incomingBoundaryObserved =
+      workV7DeclarationBoundaryObserved(quote);
+    const boundaryWasLatched =
+      workV7DeclarationBoundaryLatchRef.current;
+    if (incomingBoundaryObserved) {
+      workV7DeclarationBoundaryLatchRef.current = true;
+    }
+    const safetyBoundQuote =
+      boundaryWasLatched && !incomingBoundaryObserved
+        ? {
+            ...quote,
+            workAmoV7: failClosedWorkAmoV7Status(
+              current?.workAmoV7,
+              quote.workAmoV7,
+            ),
+          }
+        : quote;
+    if (workFloorQuoteRegresses(safetyBoundQuote, current)) {
+      if (!current) {
+        return undefined;
+      }
+      const retained = {
+        ...current,
+        workAmoV7: failClosedWorkAmoV7Status(
+          current.workAmoV7,
+          safetyBoundQuote.workAmoV7,
+          "work-amo-v7-exact-tip-regressed",
+        ),
+      };
+      acceptedWorkFloorQuoteRef.current = retained;
+      setWorkFloorQuote(retained);
+      return retained;
     }
 
-    acceptedWorkFloorQuoteRef.current = quote;
-    setWorkFloorQuote(quote);
-    return quote;
+    acceptedWorkFloorQuoteRef.current = safetyBoundQuote;
+    setWorkFloorQuote(safetyBoundQuote);
+    return safetyBoundQuote;
+  }
+
+  async function freshWorkWriteMode(
+    expectedMode?: Exclude<WorkWriteMode, "paused">,
+  ) {
+    const freshQuote = await fetchWorkFloorQuote("livenet", true);
+    if (!freshQuote) {
+      throw new Error(
+        "Fresh WORK precision admission is unavailable. No transaction was created.",
+      );
+    }
+    const boundaryObserved =
+      workV7DeclarationBoundaryObserved(freshQuote);
+    const boundaryWasLatched =
+      workV7DeclarationBoundaryLatchRef.current;
+    if (boundaryObserved) {
+      workV7DeclarationBoundaryLatchRef.current = true;
+    }
+    const mode =
+      boundaryWasLatched && !boundaryObserved
+        ? "paused"
+        : workWriteModeForQuote(freshQuote);
+    applyWorkFloorQuote(freshQuote);
+    if (mode === "paused") {
+      const reason = String(
+        freshQuote.workAmoV7?.reasonCode ?? "",
+      ).trim();
+      throw new Error(
+        `WORK precision writes are paused${reason ? ` (${reason})` : ""}. No transaction was created.`,
+      );
+    }
+    if (expectedMode && mode !== expectedMode) {
+      throw new Error(
+        `WORK precision activation changed from ${expectedMode} to ${mode} while the transaction was being prepared. Nothing was broadcast; prepare it again under the current protocol.`,
+      );
+    }
+    return { mode, quote: freshQuote };
   }
 
   function applyGrowthSummary(snapshot: GrowthSummarySnapshot) {
@@ -18832,7 +19671,7 @@ export default function App() {
   ]);
   const workAttachmentSpendableAtoms =
     workAtomsFromIntegerString(
-      workAttachmentPreviewSpendability?.spendableBalanceAtoms,
+      workAttachmentPreviewSpendability?.spendableBalanceSubatoms,
     ) ?? 0n;
   const workAttachmentSpendableBalance =
     workNumberFromAtoms(workAttachmentSpendableAtoms);
@@ -18887,18 +19726,22 @@ export default function App() {
   const workAttachmentPayloads = useMemo(
     () =>
       messageWorkAmountAtoms > 0n && messageWorkAttachmentAllowed
-        ? messageWorkRecipientAddresses.map((recipientAddress) =>
-            buildTokenSendPayload(
+        ? messageWorkRecipientAddresses
+            .map((recipientAddress) =>
+            tryBuildTokenSendPayload(
               WORK_TOKEN_ID,
               workDecimalFromAtoms(messageWorkAmountAtoms),
               recipientAddress,
+              workWriteModeForQuote(workFloorQuote),
             ),
           )
+            .filter(Boolean)
         : [],
     [
       messageWorkAmountAtoms,
       messageWorkRecipientAddresses,
       messageWorkAttachmentAllowed,
+      workFloorQuote,
     ],
   );
   const workAttachmentTotalAtoms =
@@ -19616,7 +20459,7 @@ export default function App() {
     bondWorkBalanceLoaded &&
     !bondWorkBalanceError &&
     (workAtomsFromIntegerString(
-      workAttachmentPreviewSpendability?.confirmedBalanceAtoms,
+      workAttachmentPreviewSpendability?.confirmedBalanceSubatoms,
     ) ?? 0n) > 0n;
   const bondWorkAttachmentAllowed = canAttachWorkToBond(
     activeBondConfig,
@@ -19631,17 +20474,19 @@ export default function App() {
       infinityBondResolution.paymentAddress &&
       isValidBitcoinAddress(infinityBondResolution.paymentAddress, "livenet")
         ? [
-            buildTokenSendPayload(
+            tryBuildTokenSendPayload(
               WORK_TOKEN_ID,
               workDecimalFromAtoms(bondWorkAmountAtoms),
               infinityBondResolution.paymentAddress,
+              workWriteModeForQuote(workFloorQuote),
             ),
-          ]
+          ].filter(Boolean)
         : [],
     [
       bondWorkAmountAtoms,
       bondWorkAttachmentAllowed,
       infinityBondResolution.paymentAddress,
+      workFloorQuote,
     ],
   );
   const bondWorkAttachmentBalanceOk =
@@ -19716,6 +20561,7 @@ export default function App() {
         walletTransferToken,
         walletTransferBalance,
         walletTransferBalanceRow?.confirmedBalanceAtoms,
+        walletTransferBalanceRow?.confirmedBalanceSubatoms,
       ) ?? 0n
     : 0n;
   const walletPendingTokenAtoms =
@@ -19724,6 +20570,7 @@ export default function App() {
         walletTransferToken,
         walletPendingTokenBalance,
         walletTransferBalanceRow?.pendingOutgoingAtoms,
+        walletTransferBalanceRow?.pendingOutgoingSubatoms,
       ) ?? 0n
     : 0n;
   const walletReservedTokenAtoms =
@@ -20140,13 +20987,16 @@ export default function App() {
   const tokenMintPayload = useMemo(
     () =>
       selectedToken && !isBondTokenDefinition(selectedToken)
-        ? buildTokenMintPayload(
-            selectedToken.tokenId,
-            selectedToken.mintAmount,
-            selectedToken.ticker,
-          )
+        ? workWriteModeForQuote(workFloorQuote) === "paused" &&
+          isWorkToken(selectedToken)
+          ? ""
+          : buildTokenMintPayload(
+              selectedToken.tokenId,
+              selectedToken.mintAmount,
+              selectedToken.ticker,
+            )
         : "",
-    [selectedToken],
+    [selectedToken, workFloorQuote],
   );
   const tokenMintBytes = useMemo(
     () =>
@@ -20164,17 +21014,19 @@ export default function App() {
     ) {
       return "";
     }
-    return buildTokenSendPayload(
+    return tryBuildTokenSendPayload(
       walletTransferToken.tokenId,
       isWorkToken(walletTransferToken)
-        ? workDecimalFromAtoms(tokenTransferInput.amountAtoms ?? "0")
+        ? workDecimalFromAtoms(tokenTransferInput.amountSubatoms ?? "0")
         : tokenTransferInput.amount,
       tokenTransferRecipient.trim(),
+      workWriteModeForQuote(workFloorQuote),
     );
   }, [
     tokenTransferInput,
     tokenTransferRecipient,
     walletTransferToken,
+    workFloorQuote,
   ]);
   const tokenTransferBytes = useMemo(
     () =>
@@ -20193,6 +21045,7 @@ export default function App() {
           walletTransferToken,
           tokenListInput.amount,
           tokenListInput.amountAtoms,
+          tokenListInput.amountSubatoms,
         )
       : null;
   const normalizedTokenListPriceSats = Number.isFinite(tokenListPriceSats)
@@ -20202,9 +21055,9 @@ export default function App() {
     walletTransferToken &&
       isWorkToken(walletTransferToken) &&
       workAmoV6FaceProofsAllowed(tokenListFaceProofs) &&
-      workAmoV6ListingWritesReady(workFloorQuote) &&
+      workAmoListingWritesReady(workFloorQuote) &&
       Boolean(
-        workAmoV6EstimateForFace(
+        workAmoEstimateForFace(
           workFloorQuote,
           tokenListFaceProofs,
         ),
@@ -20281,6 +21134,8 @@ export default function App() {
       network === "livenet" &&
       selectedToken &&
       !isBondTokenDefinition(selectedToken) &&
+      (!isWorkToken(selectedToken) ||
+        workWriteModeForQuote(workFloorQuote) !== "paused") &&
       tokenMintPayload &&
       selectedToken.registryAddress,
     ) &&
@@ -20302,11 +21157,13 @@ export default function App() {
         walletTransferToken,
         tokenTransferInput.amount,
         tokenTransferInput.amountAtoms,
+        tokenTransferInput.amountSubatoms,
       ) !== null &&
       tokenRecordAmountAtoms(
         walletTransferToken,
         tokenTransferInput.amount,
         tokenTransferInput.amountAtoms,
+        tokenTransferInput.amountSubatoms,
       )! <= walletSpendableTokenAtoms,
     ) &&
     tokenTransferBytes <= MAX_DATA_CARRIER_BYTES &&
@@ -25837,6 +26694,9 @@ export default function App() {
       let attachedWorkCredits: MailAttachedCredit[] = [];
       let attachedWorkPayloads: string[] = [];
       let pendingWorkTransfers: PowTokenTransfer[] = [];
+      let preparedWorkAttachmentMode:
+        | Exclude<WorkWriteMode, "paused">
+        | undefined;
 
       if (workAttachmentAtoms > 0n) {
         if (!canAttachWorkToMessages(address, network)) {
@@ -25867,7 +26727,9 @@ export default function App() {
           tokenSales,
         );
         const latestSpendableWorkAtoms =
-          workAtomsFromIntegerString(latestSpendability.spendableBalanceAtoms) ??
+          workAtomsFromIntegerString(
+            latestSpendability.spendableBalanceSubatoms,
+          ) ??
           0n;
         const totalWorkToAttachAtoms =
           workAttachmentAtoms * BigInt(mailRecipients.length);
@@ -25881,18 +26743,21 @@ export default function App() {
 
         attachedWorkCredits = mailRecipients.map((mailRecipient) => ({
           amount: workAttachmentAmount,
-          amountAtoms: workAttachmentAtoms.toString(),
+          amountSubatoms: workAttachmentAtoms.toString(),
           paidSats: TOKEN_MIN_MUTATION_PRICE_SATS,
           recipientAddress: mailRecipient.address,
           registryAddress: WORK_TOKEN_REGISTRY_ADDRESS,
           ticker: WORK_TOKEN_TICKER,
           tokenId: WORK_TOKEN_ID,
         }));
+        preparedWorkAttachmentMode =
+          (await freshWorkWriteMode()).mode;
         attachedWorkPayloads = attachedWorkCredits.map((credit) =>
           buildTokenSendPayload(
             credit.tokenId,
-            workDecimalFromAtoms(credit.amountAtoms ?? "0"),
+            workDecimalFromAtoms(credit.amountSubatoms ?? "0"),
             credit.recipientAddress,
+            preparedWorkAttachmentMode,
           ),
         );
         if (
@@ -25919,13 +26784,15 @@ export default function App() {
         pendingWorkTransfers = attachedWorkCredits.map((credit) => ({
           amount: credit.amount,
           amountAtoms: credit.amountAtoms,
+          amountSubatoms: credit.amountSubatoms,
           confirmed: false,
           createdAt: new Date().toISOString(),
           dataBytes: dataCarrierBytesForPayload(
             buildTokenSendPayload(
               credit.tokenId,
-              workDecimalFromAtoms(credit.amountAtoms ?? "0"),
+              workDecimalFromAtoms(credit.amountSubatoms ?? "0"),
               credit.recipientAddress,
+              preparedWorkAttachmentMode,
             ),
           ),
           network: "livenet",
@@ -25979,6 +26846,11 @@ export default function App() {
       });
 
       const txid = await signAndBroadcastPsbt({
+        beforeBroadcast: preparedWorkAttachmentMode
+          ? async () => {
+              await freshWorkWriteMode(preparedWorkAttachmentMode);
+            }
+          : undefined,
         inputCount: paymentPsbt.inputCount,
         network,
         psbtHex: paymentPsbt.psbtHex,
@@ -26182,6 +27054,9 @@ export default function App() {
       ];
       let attachedWorkCredits: MailAttachedCredit[] = [];
       let attachedWorkPayloads: string[] = [];
+      let preparedBondWorkMode:
+        | Exclude<WorkWriteMode, "paused">
+        | undefined;
       const workAmountToAttach = bondWorkAmountValue;
       const workAtomsToAttach = bondWorkAmountAtoms;
 
@@ -26219,7 +27094,7 @@ export default function App() {
         if (
           activeBondConfig.folder === "inception" &&
           (workAtomsFromIntegerString(
-            latestWorkSpendability.confirmedBalanceAtoms,
+            latestWorkSpendability.confirmedBalanceSubatoms,
           ) ?? 0n) <= 0n
         ) {
           setStatus({
@@ -26230,7 +27105,7 @@ export default function App() {
         }
         const latestSpendableWorkAtoms =
           workAtomsFromIntegerString(
-            latestWorkSpendability.spendableBalanceAtoms,
+            latestWorkSpendability.spendableBalanceSubatoms,
           ) ?? 0n;
         if (workAtomsToAttach > latestSpendableWorkAtoms) {
           setStatus({
@@ -26243,7 +27118,7 @@ export default function App() {
         attachedWorkCredits = [
           {
             amount: workAmountToAttach,
-            amountAtoms: workAtomsToAttach.toString(),
+            amountSubatoms: workAtomsToAttach.toString(),
             paidSats: TOKEN_MIN_MUTATION_PRICE_SATS,
             recipientAddress: resolvedRecipient.paymentAddress,
             registryAddress: WORK_TOKEN_REGISTRY_ADDRESS,
@@ -26251,11 +27126,13 @@ export default function App() {
             tokenId: WORK_TOKEN_ID,
           },
         ];
+        preparedBondWorkMode = (await freshWorkWriteMode()).mode;
         attachedWorkPayloads = [
           buildTokenSendPayload(
             WORK_TOKEN_ID,
             workDecimalFromAtoms(workAtomsToAttach),
             resolvedRecipient.paymentAddress,
+            preparedBondWorkMode,
           ),
         ];
         if (
@@ -26322,6 +27199,11 @@ export default function App() {
       });
 
       const txid = await signAndBroadcastPsbt({
+        beforeBroadcast: preparedBondWorkMode
+          ? async () => {
+              await freshWorkWriteMode(preparedBondWorkMode);
+            }
+          : undefined,
         inputCount: paymentPsbt.inputCount,
         network: "livenet",
         psbtHex: paymentPsbt.psbtHex,
@@ -26395,6 +27277,7 @@ export default function App() {
           ? {
               amount: attachedWorkCredits[0].amount,
               amountAtoms: attachedWorkCredits[0].amountAtoms,
+              amountSubatoms: attachedWorkCredits[0].amountSubatoms,
               confirmed: false,
               createdAt,
               dataBytes: dataCarrierBytesForPayload(attachedWorkPayloads[0]),
@@ -26687,6 +27570,8 @@ export default function App() {
     token: PowTokenDefinition;
   }) {
     assertGenericTokenMintTarget(token);
+    assertWorkMintWriteEnabled(token, workFloorQuote);
+    const workMint = isWorkToken(token);
     const wallet = window.unisat;
     if (!wallet?.signPsbt) {
       throw new Error("UniSat signPsbt is not available.");
@@ -26738,6 +27623,9 @@ export default function App() {
 
     const result = await executeChainedMintRun<ChainedMintInput, PowTokenMint>({
       buildAndBroadcastStep: async ({ currentInputs, index, isLast }) => {
+        const preparedWorkMintMode = workMint
+          ? (await freshWorkWriteMode()).mode
+          : undefined;
         const paymentPsbt = buildChainedMintPsbt({
           feeRate,
           fixedOutputs: [
@@ -26768,6 +27656,12 @@ export default function App() {
           text: `Waiting for UniSat signature ${index + 1}/${total}. Fee estimate: ${paymentPsbt.feeSats.toLocaleString()} proofs.`,
         });
         const broadcast = await signAndBroadcastPsbtDetailed({
+          beforeBroadcast:
+            workMint && preparedWorkMintMode
+              ? async () => {
+                  await freshWorkWriteMode(preparedWorkMintMode);
+                }
+              : undefined,
           broadcastStrategy: CHAINED_MINT_BROADCAST_STRATEGY,
           inputCount: paymentPsbt.inputCount,
           network: "livenet",
@@ -26866,6 +27760,16 @@ export default function App() {
 
     if (network !== "livenet" || !mintTarget) {
       setStatus({ tone: "bad", text: "Select a mainnet credit first." });
+      return undefined;
+    }
+
+    try {
+      assertWorkMintWriteEnabled(mintTarget, workFloorQuote);
+    } catch (error) {
+      setStatus({
+        tone: "bad",
+        text: errorMessage(error, "WORK precision writes are paused."),
+      });
       return undefined;
     }
 
@@ -27043,13 +27947,30 @@ export default function App() {
       return;
     }
 
-    const payload = buildTokenSendPayload(
-      token.tokenId,
-      isWorkToken(token)
-        ? workDecimalFromAtoms(parsedAmount.amountAtoms ?? "0")
-        : parsedAmount.amount,
-      recipientAddress,
-    );
+    let payload = "";
+    let preparedWorkMode: Exclude<WorkWriteMode, "paused"> | undefined;
+    try {
+      const initialWorkMode = isWorkToken(token)
+        ? workWriteModeForQuote(workFloorQuote)
+        : undefined;
+      payload = buildTokenSendPayload(
+        token.tokenId,
+        isWorkToken(token)
+          ? workDecimalFromAtoms(parsedAmount.amountSubatoms ?? "0")
+          : parsedAmount.amount,
+        recipientAddress,
+        initialWorkMode,
+      );
+      if (initialWorkMode && initialWorkMode !== "paused") {
+        preparedWorkMode = initialWorkMode;
+      }
+    } catch (error) {
+      setStatus({
+        tone: "bad",
+        text: errorMessage(error, "Credit transfer fields are invalid."),
+      });
+      return;
+    }
     if (dataCarrierBytesForPayload(payload) > MAX_DATA_CARRIER_BYTES) {
       setStatus({
         tone: "bad",
@@ -27092,12 +28013,15 @@ export default function App() {
         tokenSales,
       );
       const spendableAmountUnits = exactIntegerBigInt(
-        spendability.spendableBalanceAtoms,
+        isWorkToken(token)
+          ? spendability.spendableBalanceSubatoms
+          : spendability.spendableBalanceAtoms,
       );
       const attemptedAmountUnits = tokenRecordAmountAtoms(
         token,
         parsedAmount.amount,
         parsedAmount.amountAtoms,
+        parsedAmount.amountSubatoms,
       );
       if (
         attemptedAmountUnits === null ||
@@ -27109,12 +28033,27 @@ export default function App() {
           text: `${tokenAmountDisplay(
             token,
             spendability.spendableBalance,
-            spendability.spendableBalanceAtoms,
+            undefined,
+            spendability.spendableBalanceSubatoms,
           )} ${token.ticker} available; ${parsedAmount.display} attempted. No transaction was created.`,
         });
         return;
       }
       await assertActiveWalletAddress(window.unisat, address);
+
+      if (isWorkToken(token)) {
+        const freshAdmission = await freshWorkWriteMode();
+        preparedWorkMode = freshAdmission.mode;
+        payload = buildTokenSendPayload(
+          token.tokenId,
+          workDecimalFromAtoms(parsedAmount.amountSubatoms ?? "0"),
+          recipientAddress,
+          preparedWorkMode,
+        );
+        if (dataCarrierBytesForPayload(payload) > MAX_DATA_CARRIER_BYTES) {
+          throw new Error("WORK transfer OP_RETURN is over 100 KB.");
+        }
+      }
 
       const paymentPsbt = await buildPaymentPsbt({
         amountSats: TOKEN_MIN_MUTATION_PRICE_SATS,
@@ -27144,6 +28083,12 @@ export default function App() {
       await assertActiveWalletAddress(window.unisat, address);
 
       const txid = await signAndBroadcastPsbt({
+        beforeBroadcast:
+          isWorkToken(token) && preparedWorkMode
+            ? async () => {
+                await freshWorkWriteMode(preparedWorkMode);
+              }
+            : undefined,
         inputCount: paymentPsbt.inputCount,
         network: "livenet",
         psbtHex: paymentPsbt.psbtHex,
@@ -27152,6 +28097,7 @@ export default function App() {
       const transfer: PowTokenTransfer = {
         amount: parsedAmount.amount,
         amountAtoms: parsedAmount.amountAtoms,
+        amountSubatoms: parsedAmount.amountSubatoms,
         confirmed: false,
         createdAt: new Date().toISOString(),
         dataBytes: dataCarrierBytesForPayload(payload),
@@ -27194,7 +28140,7 @@ export default function App() {
   ) {
     return window.confirm(
       `${workAmoV6FaceLabel(faceProofs)} AMO unit: the displayed ${formatWorkAmountAmo(
-        BigInt(estimate.unitAmountAtoms ?? "0"),
+        workAmoEstimateSubatoms(estimate) ?? 0n,
         false,
       )} WORK amount is an estimate only. The ${Number(estimate.unitPriceSats).toLocaleString()}-proof face is fixed in the intent; confirmation order derives and freezes the exact WORK amount from canonical network value immediately before the listing. The transaction can fail admission if the balance or canonical state is invalid at its position. Registry and miner fees are final once broadcast. Continue?`,
     );
@@ -27215,7 +28161,7 @@ export default function App() {
         : "grandfathered V4 WORK listing";
     return window.confirm(
       `${actionLabel === "seal" ? "Seal" : "Purchase"} ${unitLabel}: this confirmed listing is frozen at ${formatWorkAmountAmo(
-        BigInt(frozen.amountAtoms),
+        BigInt(frozen.amountSubatoms),
         false,
       )} WORK for ${frozen.priceSats.toLocaleString()} proofs. Later network-value changes do not reprice it; any USD equivalent is display-only. Registry and miner fees are final once broadcast. Continue?`,
     );
@@ -27274,15 +28220,17 @@ export default function App() {
       await ensureWalletNetwork(window.unisat, "livenet", address);
 
       let workEstimate: WorkAmoV6Estimate | undefined;
+      let workV7Listing = false;
+      let preparedWorkListingMode:
+        | Exclude<WorkWriteMode, "paused">
+        | undefined;
       if (workListing) {
-        const freshFloor = await fetchWorkFloorQuote("livenet", true);
-        if (!freshFloor) {
-          throw new Error(
-            "The current AMO state is unavailable. No listing was created.",
-          );
-        }
-        assertWorkAmoV6ListingEnabled(freshFloor);
-        workEstimate = workAmoV6EstimateForFace(
+        const freshAdmission = await freshWorkWriteMode();
+        const freshFloor = freshAdmission.quote;
+        preparedWorkListingMode = freshAdmission.mode;
+        assertWorkAmoListingEnabled(freshFloor);
+        workV7Listing = preparedWorkListingMode === "native-q16";
+        workEstimate = workAmoEstimateForFace(
           freshFloor,
           tokenListFaceProofs,
         );
@@ -27291,7 +28239,6 @@ export default function App() {
             "The selected proof-native AMO estimate is unavailable or inconsistent. No listing was created.",
           );
         }
-        applyWorkFloorQuote(freshFloor);
       }
 
       setStatus({
@@ -27318,14 +28265,17 @@ export default function App() {
         tokenSales,
       );
       const spendableAmountUnits = exactIntegerBigInt(
-        spendability.spendableBalanceAtoms,
+        workListing
+          ? spendability.spendableBalanceSubatoms
+          : spendability.spendableBalanceAtoms,
       );
       const attemptedAmountUnits = workListing
-        ? exactIntegerBigInt(workEstimate?.unitAmountAtoms)
+        ? workAmoEstimateSubatoms(workEstimate)
         : tokenRecordAmountAtoms(
             token,
             parsedAmount!.amount,
             parsedAmount!.amountAtoms,
+            parsedAmount!.amountSubatoms,
           );
       const attemptedAmountDisplay =
         workListing && attemptedAmountUnits !== null
@@ -27341,7 +28291,8 @@ export default function App() {
           text: `${tokenAmountDisplay(
             token,
             spendability.spendableBalance,
-            spendability.spendableBalanceAtoms,
+            undefined,
+            spendability.spendableBalanceSubatoms,
           )} ${token.ticker} available; ${attemptedAmountDisplay} attempted. No transaction was created.`,
         });
         return;
@@ -27359,7 +28310,13 @@ export default function App() {
         ...tokenSaleAuthorizationDraft({
           amount: workListing ? 0 : parsedAmount!.amount,
           amountAtoms: workListing ? undefined : parsedAmount!.amountAtoms,
-          amountModel: workListing ? WORK_AMO_AMOUNT_MODEL : undefined,
+          amountSubatoms:
+            workListing ? undefined : parsedAmount!.amountSubatoms,
+          amountModel: workListing
+            ? workV7Listing
+              ? WORK_AMO_V7_AMOUNT_MODEL
+              : WORK_AMO_AMOUNT_MODEL
+            : undefined,
           anchorScriptPubKey: bytesToHex(
             scriptForAddress(address, "livenet", "Sale-ticket address"),
           ),
@@ -27387,12 +28344,18 @@ export default function App() {
           unitFaceProofs: workListing
             ? tokenListFaceProofs
             : undefined,
-          unitModel: workListing ? WORK_AMO_V6_UNIT_MODEL : undefined,
+          unitModel: workListing
+            ? workV7Listing
+              ? WORK_AMO_V7_UNIT_MODEL
+              : WORK_AMO_V6_UNIT_MODEL
+            : undefined,
           unitWorkOracleModel: workListing
             ? WORK_AMO_WORK_ORACLE_MODEL
             : undefined,
           version: workListing
-            ? TOKEN_SALE_AUTH_WORK_AMO_PROOF_UNIT_VERSION
+            ? workV7Listing
+              ? TOKEN_SALE_AUTH_WORK_AMO_SUBATOM_VERSION
+              : TOKEN_SALE_AUTH_WORK_AMO_PROOF_UNIT_VERSION
             : TOKEN_SALE_AUTH_VERSION,
         }),
         anchorSignature: "",
@@ -27455,6 +28418,12 @@ export default function App() {
 
       await assertActiveWalletAddress(window.unisat, address);
       const txid = await signAndBroadcastPsbt({
+        beforeBroadcast:
+          workListing && preparedWorkListingMode
+            ? async () => {
+                await freshWorkWriteMode(preparedWorkListingMode);
+              }
+            : undefined,
         inputCount: paymentPsbt.inputCount,
         network: "livenet",
         psbtHex: paymentPsbt.psbtHex,
@@ -27463,6 +28432,8 @@ export default function App() {
       const listing: PowTokenListing = {
         amount: workListing ? 0 : parsedAmount!.amount,
         amountAtoms: workListing ? undefined : parsedAmount!.amountAtoms,
+        amountSubatoms:
+          workListing ? undefined : parsedAmount!.amountSubatoms,
         confirmed: false,
         createdAt: new Date().toISOString(),
         dataBytes: dataCarrierBytesForPayload(payload),
@@ -27488,7 +28459,7 @@ export default function App() {
       setStatus({
         tone: "good",
         text: workListing
-          ? `${workAmoV6FaceLabel(tokenListFaceProofs)} AMO V6 intent broadcast. Its exact WORK amount remains an estimate until canonical confirmation freezes the terms: ${shortAddress(txid)}.`
+          ? `${workAmoV6FaceLabel(tokenListFaceProofs)} AMO ${workV7Listing ? "V7" : "V6"} intent broadcast. Its exact WORK amount remains an estimate until canonical confirmation freezes the terms: ${shortAddress(txid)}.`
           : `${latestToken.ticker} listing broadcast: ${shortAddress(txid)}.`,
       });
       void refreshToken(true, true);
@@ -27533,8 +28504,13 @@ export default function App() {
       await ensureWalletNetwork(window.unisat, "livenet", address);
 
       let baseAuthorization = listing.saleAuthorization;
+      let preparedWorkSettlementMode:
+        | Exclude<WorkWriteMode, "paused">
+        | undefined;
       if (isWorkToken(listing)) {
-        assertWorkAmoV6SettlementEnabled(workFloorQuote);
+        const freshAdmission = await freshWorkWriteMode();
+        preparedWorkSettlementMode = freshAdmission.mode;
+        assertWorkAmoSettlementEnabled(freshAdmission.quote);
         baseAuthorization =
           workAmoStaticAuthorizationForListing(listing);
       }
@@ -27593,6 +28569,11 @@ export default function App() {
 
       await assertActiveWalletAddress(window.unisat, address);
       const txid = await signAndBroadcastPsbt({
+        beforeBroadcast: preparedWorkSettlementMode
+          ? async () => {
+              await freshWorkWriteMode(preparedWorkSettlementMode);
+            }
+          : undefined,
         inputCount: paymentPsbt.inputCount,
         network: "livenet",
         psbtHex: paymentPsbt.psbtHex,
@@ -27800,8 +28781,13 @@ export default function App() {
     try {
       await ensureWalletNetwork(window.unisat, "livenet", address);
 
+      let preparedWorkSettlementMode:
+        | Exclude<WorkWriteMode, "paused">
+        | undefined;
       if (isWorkToken(listing)) {
-        assertWorkAmoV6SettlementEnabled(workFloorQuote);
+        const freshAdmission = await freshWorkWriteMode();
+        preparedWorkSettlementMode = freshAdmission.mode;
+        assertWorkAmoSettlementEnabled(freshAdmission.quote);
       }
       const purchaseAuthorization = isWorkToken(listing)
         ? workAmoStaticAuthorizationForListing(listing)
@@ -27858,6 +28844,11 @@ export default function App() {
 
       await assertActiveWalletAddress(window.unisat, address);
       const txid = await signAndBroadcastPsbt({
+        beforeBroadcast: preparedWorkSettlementMode
+          ? async () => {
+              await freshWorkWriteMode(preparedWorkSettlementMode);
+            }
+          : undefined,
         inputCount: paymentPsbt.inputCount,
         network: "livenet",
         psbtHex: paymentPsbt.psbtHex,
@@ -27868,6 +28859,7 @@ export default function App() {
       const sale: PowTokenSale = {
         amount: listing.amount,
         amountAtoms: listing.amountAtoms,
+        amountSubatoms: listing.amountSubatoms,
         buyerAddress: address,
         confirmed: false,
         createdAt: new Date().toISOString(),
@@ -32275,9 +33267,11 @@ function InfinityApp({
     summary?.actualValue.networkValueQ8 ?? summary?.networkValueQ8;
   const attachedWorkAmount = summary?.actualValue.attachedWorkAmount ?? 0;
   const attachedWorkAmountAtoms =
-    workAtomsFromIntegerString(
+    workRecordAtoms(
+      attachedWorkAmount,
       summary?.actualValue.attachedWorkAmountAtoms,
-    ) ?? workAtomsFromDecimal(attachedWorkAmount) ?? 0n;
+      summary?.actualValue.attachedWorkAmountSubatoms,
+    ) ?? 0n;
   const attachedWorkAmountDisplay = formatWorkAmount(
     attachedWorkAmountAtoms,
   );
@@ -32697,8 +33691,8 @@ function InfinityApp({
                     }
                     min={0}
                     onChange={(event) => setBondWorkAmount(event.target.value)}
-                    step="0.00000001"
-                    type="number"
+                    step="0.0000000000000001"
+                    type="text"
                     value={bondWorkAmount}
                   />
                   <span className="field-note" id="bond-work-balance-note">
@@ -32706,6 +33700,7 @@ function InfinityApp({
                       ? `${tokenAmountDisplay(
                           { ticker: WORK_TOKEN_TICKER, tokenId: WORK_TOKEN_ID },
                           bondWorkSpendableBalance,
+                          undefined,
                           bondWorkSpendableAtoms,
                         )} spendable WORK${bondWorkBalanceError ? " from the last verified balance" : ""}.`
                       : bondWorkBalanceLoading
@@ -33069,6 +34064,7 @@ const DEFAULT_TOKEN_WALLET_WORKSPACE_COPY: Required<TokenWalletWorkspaceCopy> = 
 type TokenWalletMovement = {
   amount: ExactIntegerValue;
   amountAtoms?: string;
+  amountSubatoms?: string;
   auditMinerFeeSats?: number;
   auditRegistryPaymentSats?: number;
   auditTotalCostSats?: number;
@@ -33236,15 +34232,25 @@ function TokenWalletWorkspace({
   transferFundingReadiness?: TokenTransferFundingReadiness;
 }) {
   const walletCopy = { ...DEFAULT_TOKEN_WALLET_WORKSPACE_COPY, ...copy };
+  const workTransferMode =
+    transferToken && isWorkToken(transferToken)
+      ? workWriteModeForQuote(workFloorQuote)
+      : undefined;
+  const transferWire =
+    workTransferMode === "native-q16"
+      ? "pwt1:send3"
+      : workTransferMode === "legacy-q8"
+        ? "pwt1:send2"
+        : workTransferMode === "paused"
+          ? "paused WORK transfer"
+          : "pwt1:send";
   const transferDescription =
     copy?.transferDescription ??
-    `Sends a \`${transferToken && isWorkToken(transferToken) ? "pwt1:send2" : "pwt1:send"}\` event and pays the selected credit registry.`;
+    `Sends a \`${transferWire}\` event and pays the selected credit registry.`;
   const [walletListingPageIndex, setWalletListingPageIndex] = useState(0);
   const [walletTransferPageIndex, setWalletTransferPageIndex] = useState(0);
   const [walletListingSortMode, setWalletListingSortMode] =
     useState<MarketplaceSortMode>("price-desc");
-  const workAmoV6EstimateCacheRef =
-    useRef(new Map<number, WorkAmoV6Estimate>());
   useEffect(() => {
     setWalletListingPageIndex(0);
   }, [address, selectedTokenId, walletListingSortMode]);
@@ -33285,6 +34291,7 @@ function TokenWalletWorkspace({
     ...walletTransfers.map((transfer) => ({
       amount: transfer.amount,
       amountAtoms: transfer.amountAtoms,
+      amountSubatoms: transfer.amountSubatoms,
       confirmed: transfer.confirmed,
       frozenNetworkValueSats: transfer.frozenNetworkValueSats,
       liveNetworkValueSats: transfer.liveNetworkValueSats,
@@ -33301,6 +34308,7 @@ function TokenWalletWorkspace({
     ...walletInvalidEvents.map((event) => ({
       amount: event.amount,
       amountAtoms: event.amountAtoms,
+      amountSubatoms: event.amountSubatoms,
       auditMinerFeeSats: event.auditMinerFeeSats,
       auditRegistryPaymentSats: event.auditRegistryPaymentSats,
       auditTotalCostSats: event.auditTotalCostSats,
@@ -33324,6 +34332,7 @@ function TokenWalletWorkspace({
     ...walletListingEvents.map((item) => ({
       amount: item.amount,
       amountAtoms: item.amountAtoms,
+      amountSubatoms: item.amountSubatoms,
       confirmed: item.confirmed,
       createdAt: item.createdAt,
       frozenNetworkValueSats: item.frozenNetworkValueSats,
@@ -33343,6 +34352,7 @@ function TokenWalletWorkspace({
             {
               amount: item.amount,
               amountAtoms: item.amountAtoms,
+              amountSubatoms: item.amountSubatoms,
               confirmed: Boolean(item.sealConfirmed),
               createdAt: item.sealAt ?? item.createdAt,
               frozenNetworkValueSats: item.sealFrozenNetworkValueSats,
@@ -33362,6 +34372,7 @@ function TokenWalletWorkspace({
     ...walletClosedListingEvents.map((item) => ({
       amount: item.amount,
       amountAtoms: item.amountAtoms,
+      amountSubatoms: item.amountSubatoms,
       confirmed: Boolean(item.closedConfirmed ?? item.confirmed),
       createdAt: item.closedAt ?? item.createdAt,
       frozenNetworkValueSats: item.closedFrozenNetworkValueSats,
@@ -33384,6 +34395,7 @@ function TokenWalletWorkspace({
           .map((sale) => ({
             amount: sale.amount,
             amountAtoms: sale.amountAtoms,
+            amountSubatoms: sale.amountSubatoms,
             confirmed: sale.confirmed,
             createdAt: sale.createdAt,
             frozenNetworkValueSats: sale.frozenNetworkValueSats,
@@ -33467,24 +34479,16 @@ function TokenWalletWorkspace({
   const selectedListTokenIsWork = Boolean(
     selectedListToken && isWorkToken(selectedListToken),
   );
-  const workAmoProtocolVerified = workAmoV6ActivationReady(workFloorQuote);
+  const workAmoV7Enabled = workV7ActivationReached(workFloorQuote);
+  const workAmoProtocolVerified =
+    workAmoV7Enabled || workAmoV6ActivationReady(workFloorQuote);
   const workAmoSettlementEnabled =
-    workAmoV6SettlementWritesReady(workFloorQuote);
-  const workAmoListingEnabled = workAmoV6ListingWritesReady(workFloorQuote);
-  const selectedWorkAmoEstimate = workAmoV6EstimateForFace(
+    workAmoSettlementWritesReady(workFloorQuote);
+  const workAmoListingEnabled = workAmoListingWritesReady(workFloorQuote);
+  const selectedWorkAmoEstimate = workAmoEstimateForFace(
     workFloorQuote,
     listFaceProofs,
   );
-  if (selectedWorkAmoEstimate) {
-    workAmoV6EstimateCacheRef.current.set(
-      selectedWorkAmoEstimate.unitFaceProofs,
-      selectedWorkAmoEstimate,
-    );
-  }
-  const cachedWorkAmoEstimate =
-    workAmoV6EstimateCacheRef.current.get(listFaceProofs);
-  const selectedWorkAmoEstimateDisplay =
-    selectedWorkAmoEstimate ?? cachedWorkAmoEstimate;
   const selectedWalletBalance = selectedListToken
     ? balances.find(
         (balance) => balance.token.tokenId === selectedListToken.tokenId,
@@ -33492,7 +34496,7 @@ function TokenWalletWorkspace({
     : undefined;
   const transferBalanceAtoms =
     selectedListToken && isWorkToken(selectedListToken)
-      ? selectedWalletBalance?.confirmedBalanceAtoms
+      ? selectedWalletBalance?.confirmedBalanceSubatoms
       : undefined;
   const listSpendableBalanceAtoms =
     selectedListToken
@@ -33501,11 +34505,13 @@ function TokenWalletWorkspace({
             selectedListToken,
             selectedWalletBalance?.confirmedBalance,
             selectedWalletBalance?.confirmedBalanceAtoms,
+            selectedWalletBalance?.confirmedBalanceSubatoms,
           ) ?? 0n) -
             (tokenRecordAmountAtoms(
               selectedListToken,
               selectedWalletBalance?.pendingOutgoing,
               selectedWalletBalance?.pendingOutgoingAtoms,
+              selectedWalletBalance?.pendingOutgoingSubatoms,
             ) ?? 0n) -
             tokenReservedBalanceAtomsFor(
               listings,
@@ -33849,6 +34855,7 @@ function TokenWalletWorkspace({
                         balance.token,
                         balance.confirmedBalance,
                         balance.confirmedBalanceAtoms,
+                        balance.confirmedBalanceSubatoms,
                       )}{" "}
                       {balance.token.ticker}
                     </strong>
@@ -33861,6 +34868,7 @@ function TokenWalletWorkspace({
                             balance.token,
                             balance.pendingIncoming,
                             balance.pendingIncomingAtoms,
+                            balance.pendingIncomingSubatoms,
                           )} pending in`
                         : "confirmed"}
                       {tokenWalletBalanceHasAmount(
@@ -33871,6 +34879,7 @@ function TokenWalletWorkspace({
                             balance.token,
                             balance.pendingOutgoing,
                             balance.pendingOutgoingAtoms,
+                            balance.pendingOutgoingSubatoms,
                           )} pending out`
                         : ""}
                     </small>
@@ -33912,6 +34921,7 @@ function TokenWalletWorkspace({
                         balance.token,
                         balance.confirmedBalance,
                         balance.confirmedBalanceAtoms,
+                        balance.confirmedBalanceSubatoms,
                       )} confirmed
                     </option>
                   ))
@@ -33931,16 +34941,20 @@ function TokenWalletWorkspace({
                   }
                   min={
                     transferToken && isWorkToken(transferToken)
-                      ? "0.00000001"
+                      ? "0.0000000000000001"
                       : "1"
                   }
                   onChange={(event) => setTransferAmount(event.target.value)}
                   step={
                     transferToken && isWorkToken(transferToken)
-                      ? "0.00000001"
+                      ? "0.0000000000000001"
                       : "1"
                   }
-                  type="number"
+                  type={
+                    transferToken && isWorkToken(transferToken)
+                      ? "text"
+                      : "number"
+                  }
                   value={transferAmount}
                 />
               </label>
@@ -33960,6 +34974,7 @@ function TokenWalletWorkspace({
                   {tokenAmountDisplay(
                     transferToken ?? {},
                     transferBalance,
+                    undefined,
                     transferBalanceAtoms,
                   )}{" "}
                   {transferToken?.ticker ?? "TOKEN"}
@@ -34022,8 +35037,12 @@ function TokenWalletWorkspace({
           ) : selectedListTokenIsWork && !workAmoSettlementEnabled ? (
             <p className="field-note bad">
               AMO governed settlement writes are paused
-              {workFloorQuote?.workAmoV6?.reasonCode
-                ? ` (${workFloorQuote.workAmoV6.reasonCode})`
+              {(workAmoV7Enabled
+                ? workFloorQuote?.workAmoV7?.reasonCode
+                : workFloorQuote?.workAmoV6?.reasonCode)
+                ? ` (${workAmoV7Enabled
+                    ? workFloorQuote?.workAmoV7?.reasonCode
+                    : workFloorQuote?.workAmoV6?.reasonCode})`
                 : ""}
               . Transfers and delisting remain available; no governed WORK
               listing, seal, or purchase is prepared.
@@ -34032,8 +35051,12 @@ function TokenWalletWorkspace({
             <p className="field-note">
               New proof-native AMO units are temporarily read-only because
               the canonical listing write gate is paused
-              {workFloorQuote?.workAmoV6?.reasonCode
-                ? ` (${workFloorQuote.workAmoV6.reasonCode})`
+              {(workAmoV7Enabled
+                ? workFloorQuote?.workAmoV7?.reasonCode
+                : workFloorQuote?.workAmoV6?.reasonCode)
+                ? ` (${workAmoV7Enabled
+                    ? workFloorQuote?.workAmoV7?.reasonCode
+                    : workFloorQuote?.workAmoV6?.reasonCode})`
                 : ""}
               . Confirmed listings keep their frozen terms and remain eligible
               for sealing and purchase.
@@ -34079,23 +35102,25 @@ function TokenWalletWorkspace({
                   <div>
                     <span>Estimated WORK</span>
                     <strong>
-                      {selectedWorkAmoEstimateDisplay?.unitAmountAtoms
+                      {workAmoEstimateSubatoms(selectedWorkAmoEstimate) !== null
                         ? formatWorkAmountAmo(
-                            BigInt(selectedWorkAmoEstimateDisplay.unitAmountAtoms),
+                            workAmoEstimateSubatoms(
+                              selectedWorkAmoEstimate,
+                            ) ?? 0n,
                             false,
                           )
                         : workFloorLoading
                           ? "Loading"
-                          : "Calculated on click"}
+                          : "Network value unavailable"}
                     </strong>
                     <small>Estimate only</small>
                   </div>
                   <div>
                     <span>Proof price</span>
                     <strong>
-                      {selectedWorkAmoEstimateDisplay?.unitPriceSats
+                      {selectedWorkAmoEstimate?.unitPriceSats
                         ? `${Number(
-                            selectedWorkAmoEstimateDisplay.unitPriceSats,
+                            selectedWorkAmoEstimate.unitPriceSats,
                           ).toLocaleString()} proofs`
                         : workAmoV6FaceLabel(listFaceProofs)}
                     </strong>
@@ -34203,6 +35228,7 @@ function TokenWalletWorkspace({
                   {tokenAmountDisplay(
                     transferToken ?? {},
                     listSpendableBalance,
+                    undefined,
                     listSpendableBalanceAtoms,
                   )}{" "}
                   {transferToken?.ticker ?? "TOKEN"}
@@ -34271,8 +35297,12 @@ function TokenWalletWorkspace({
                   const workSealBlockedLabel =
                     isWorkToken(item) && !workAmoSettlementEnabled
                       ? `AMO paused${
-                          workFloorQuote?.workAmoV6?.reasonCode
-                            ? ` (${workFloorQuote.workAmoV6.reasonCode})`
+                          (workV7ActivationReached(workFloorQuote)
+                            ? workFloorQuote?.workAmoV7?.reasonCode
+                            : workFloorQuote?.workAmoV6?.reasonCode)
+                            ? ` (${(workV7ActivationReached(workFloorQuote)
+                                ? workFloorQuote?.workAmoV7?.reasonCode
+                                : workFloorQuote?.workAmoV6?.reasonCode) ?? ""})`
                             : ""
                         }`
                       : "Frozen terms unavailable";
@@ -34303,13 +35333,14 @@ function TokenWalletWorkspace({
                           {isWorkToken(item)
                             ? workFrozenTerms
                               ? `${formatWorkAmountAmo(
-                                  BigInt(workFrozenTerms.amountAtoms),
+                                  BigInt(workFrozenTerms.amountSubatoms),
                                   false,
                                 )} WORK · ${workFrozenTerms.priceSats.toLocaleString()} frozen proofs`
-                              : workEstimate?.unitAmountAtoms &&
-                                  workEstimate.unitPriceSats
+                              : workAmoEstimateSubatoms(workEstimate) !== null &&
+                                  workEstimate?.unitPriceSats
                                 ? `${formatWorkAmountAmo(
-                                    BigInt(workEstimate.unitAmountAtoms),
+                                    workAmoEstimateSubatoms(workEstimate) ??
+                                      0n,
                                     false,
                                   )} estimated WORK · ${workEstimate.unitPriceSats.toLocaleString()} estimated proofs · terms finalize at confirmation`
                                 : "amount and proof price pending confirmation"
@@ -34380,8 +35411,8 @@ function TokenWalletWorkspace({
                 sale tickets became read-only relics when V4 activated. They
                 cannot be sealed or bought. The seller can still publish a
                 delist5 transaction to return the seller-controlled ticket
-                output, then create a 20,000, 50,000, or 100,000-proof AMO V6
-                unit.
+                output, then create a current 20,000, 50,000, or
+                100,000-proof AMO unit.
                 Registry and miner fees are final.
               </p>
               <div className="token-list compact-token-list">
@@ -34910,11 +35941,12 @@ function TokenWorkspace({
     selectedToken && isWorkToken(selectedToken)
       ? (
           workAtomsFromIntegerString(
-            selectedWalletBalance?.confirmedBalanceAtoms,
+            selectedWalletBalance?.confirmedBalanceSubatoms,
           ) ??
           workRecordAtoms(
             selectedHolder?.balance,
             selectedHolder?.balanceAtoms,
+            selectedHolder?.balanceSubatoms,
           ) ??
           0n
         ).toString()
@@ -35241,11 +36273,12 @@ function TokenWorkspace({
     detailToken && isWorkToken(detailToken)
       ? (
           workAtomsFromIntegerString(
-            detailWalletBalance?.confirmedBalanceAtoms,
+            detailWalletBalance?.confirmedBalanceSubatoms,
           ) ??
           workRecordAtoms(
             detailHolder?.balance,
             detailHolder?.balanceAtoms,
+            detailHolder?.balanceSubatoms,
           ) ??
           0n
         ).toString()
@@ -35812,6 +36845,7 @@ function TokenWorkspace({
                   token,
                   holder.balance,
                   holder.balanceAtoms,
+                  holder.balanceSubatoms,
                 )}{" "}
                 {token.ticker}
               </strong>
@@ -36487,7 +37521,7 @@ function TokenWorkspace({
                     estimate. Paid to{" "}
                     {shortAddress(detailToken.registryAddress)}.
                     {address
-                      ? ` Your confirmed balance is ${tokenAmountDisplay(detailToken, detailHolderBalance, detailHolderBalanceAtoms)} ${detailToken.ticker}.`
+                      ? ` Your confirmed balance is ${tokenAmountDisplay(detailToken, detailHolderBalance, undefined, detailHolderBalanceAtoms)} ${detailToken.ticker}.`
                       : ""}
                   </p>
                   <div className="token-payment-lane">
@@ -36936,6 +37970,7 @@ function TokenWorkspace({
                 ? tokenAmountDisplay(
                     selectedToken,
                     holderBalance,
+                    undefined,
                     holderBalanceAtoms,
                   )
                 : "0"}{" "}
@@ -40462,6 +41497,7 @@ type TokenMarketplaceRow = PowTokenDefinition & {
   transferCount: number;
   walletBalance: ExactIntegerValue;
   walletBalanceAtoms?: string;
+  walletBalanceSubatoms?: string;
 };
 
 type MarketplaceSortMode =
@@ -40680,7 +41716,7 @@ function tokenMarketArbSats(token: TokenMarketplaceRow, workFloorSats: number) {
 }
 
 function tokenUnitPriceSats(
-  token: { ticker?: string; tokenId?: string },
+  token: { amountSubatoms?: unknown; ticker?: string; tokenId?: string },
   amount: unknown,
   amountAtoms: unknown,
   priceSats: number,
@@ -40719,11 +41755,13 @@ function compareTokenListingUnitPrice(
     left,
     left.amount,
     left.amountAtoms,
+    left.amountSubatoms,
   );
   const rightAmountAtoms = tokenRecordAmountAtoms(
     right,
     right.amount,
     right.amountAtoms,
+    right.amountSubatoms,
   );
   if (
     leftAmountAtoms === null ||
@@ -41061,6 +42099,7 @@ function tokenMarketplaceRowsFor({
         mint,
         mint.amount,
         mint.amountAtoms,
+        mint.amountSubatoms,
       );
       if (amountAtoms !== null) {
         current.balances.set(
@@ -41093,6 +42132,7 @@ function tokenMarketplaceRowsFor({
       transfer,
       transfer.amount,
       transfer.amountAtoms,
+      transfer.amountSubatoms,
     );
     if (amountAtoms !== null) {
       current.balances.set(
@@ -41121,6 +42161,7 @@ function tokenMarketplaceRowsFor({
         sale,
         sale.amount,
         sale.amountAtoms,
+        sale.amountSubatoms,
       );
       if (amountAtoms !== null) {
         current.balances.set(
@@ -41137,10 +42178,12 @@ function tokenMarketplaceRowsFor({
         amountAtoms !== null &&
         amountAtoms > 0n
       ) {
-        current.lastSalePricePerToken =
-          (sale.priceSats *
-            (isWorkToken(sale) ? Number(WORK_TOKEN_UNIT_SCALE) : 1)) /
-          Number(amountAtoms);
+        current.lastSalePricePerToken = tokenUnitPriceSats(
+          sale,
+          sale.amount,
+          sale.amountAtoms,
+          sale.priceSats,
+        );
       }
     }
   }
@@ -41241,7 +42284,8 @@ function tokenMarketplaceRowsFor({
           : isBondTokenDefinition(token)
             ? walletBalanceAtoms.toString()
             : Number(walletBalanceAtoms),
-        walletBalanceAtoms: isWorkToken(token)
+        walletBalanceAtoms: undefined,
+        walletBalanceSubatoms: isWorkToken(token)
           ? walletBalanceAtoms.toString()
           : undefined,
       };
@@ -42360,13 +43404,17 @@ function TokenMarketplacePanel({
       token.tokenId === WORK_TOKEN_ID || token.ticker === WORK_TOKEN_TICKER,
   );
   const selectedMarketTokenIsWork = Boolean(selectedTokenIsWork);
-  const workAmoProtocolVerified = workAmoV6ActivationReady(workFloorQuote);
+  const workAmoV7Enabled = workV7ActivationReached(workFloorQuote);
+  const workAmoProtocolVerified =
+    workAmoV7Enabled || workAmoV6ActivationReady(workFloorQuote);
   const workAmoProtocolWritesEnabled =
-    workAmoV6SettlementWritesReady(workFloorQuote);
+    workAmoSettlementWritesReady(workFloorQuote);
   const workAmoListingWritesEnabled =
-    workAmoV6ListingWritesReady(workFloorQuote);
+    workAmoListingWritesReady(workFloorQuote);
   const workAmoWriteReasonCode = String(
-    workFloorQuote?.workAmoV6?.reasonCode ?? "",
+    (workAmoV7Enabled
+      ? workFloorQuote?.workAmoV7?.reasonCode
+      : workFloorQuote?.workAmoV6?.reasonCode) ?? "",
   ).trim();
   const workRelicRows = workMarketV1RelicRows(marketClosedListings);
   const workRelicPage = pagedItems(
@@ -42571,7 +43619,8 @@ function TokenMarketplacePanel({
                       Confirmed canonical position derives the WORK amount
                       using integer math. No USD oracle, signed price
                       attestation, or recurring price publication is part of
-                      V6. The path remains fail closed.
+                      the active proof-native protocol. The path remains fail
+                      closed.
                     </p>
                   </div>
 
@@ -42865,7 +43914,7 @@ function TokenMarketplacePanel({
                     Registry {shortAddress(token.registryAddress)} ·{" "}
                     {token.pendingMints.toLocaleString()} pending mints
                     {address
-                      ? ` · Your balance ${tokenAmountDisplay(token, token.walletBalance, token.walletBalanceAtoms)} ${token.ticker}`
+                      ? ` · Your balance ${tokenAmountDisplay(token, token.walletBalance, token.walletBalanceAtoms, token.walletBalanceSubatoms)} ${token.ticker}`
                       : ""}
                   </p>
                   <div className="id-record-actions">
@@ -43127,7 +44176,7 @@ function TokenMarketplacePanel({
               <p>
                 {selectedMarketTokenIsWork &&
                 workMarketplaceVersion === "v4-relic"
-                  ? "Confirmed pre-activation V4 listings are historical protocol state. Complete frozen terms remain sealable and purchasable through V6 without repricing; incomplete rows fail closed."
+                  ? "Confirmed pre-activation V4 listings are historical protocol state. Complete frozen terms remain sealable and purchasable without repricing; incomplete rows fail closed."
                   : selectedMarketTokenIsWork
                     ? "Each pending intent commits only a 20,000, 50,000, or 100,000-proof face. Confirmation derives and freezes its exact WORK amount; USD equivalents are display-only."
                   : selectedMarketToken
@@ -43138,7 +44187,7 @@ function TokenMarketplacePanel({
           </div>
           {selectedMarketTokenIsWork && !workAmoProtocolVerified ? (
             <p className="field-note bad">
-              AMO V6 declaration or canonical index evidence is incomplete.
+              AMO declaration or canonical index evidence is incomplete.
               Governed WORK actions fail closed.
             </p>
           ) : selectedMarketTokenIsWork &&
@@ -43231,13 +44280,13 @@ function TokenMarketplacePanel({
                         {isWorkToken(listing)
                           ? workFrozen
                             ? `${formatWorkAmountAmo(
-                                BigInt(workFrozen.amountAtoms),
+                                BigInt(workFrozen.amountSubatoms),
                                 false,
                               )} WORK · ${workFrozen.priceSats.toLocaleString()} frozen proofs`
-                            : workEstimate?.unitAmountAtoms &&
-                                workEstimate.unitPriceSats
+                            : workAmoEstimateSubatoms(workEstimate) !== null &&
+                                workEstimate?.unitPriceSats
                               ? `${formatWorkAmountAmo(
-                                  BigInt(workEstimate.unitAmountAtoms),
+                                  workAmoEstimateSubatoms(workEstimate) ?? 0n,
                                   false,
                                 )} estimated WORK · ${workEstimate.unitPriceSats.toLocaleString()} estimated proofs`
                               : "terms pending confirmation"
@@ -43366,12 +44415,13 @@ function TokenMarketplacePanel({
                           {isWorkToken(listing)
                           ? workFrozen
                               ? `${formatWorkAmountAmo(
-                                  BigInt(workFrozen.amountAtoms),
+                                  BigInt(workFrozen.amountSubatoms),
                                   false,
                                 )} WORK`
-                              : workEstimate?.unitAmountAtoms
+                              : workAmoEstimateSubatoms(workEstimate) !== null
                                 ? `${formatWorkAmountAmo(
-                                    BigInt(workEstimate.unitAmountAtoms),
+                                    workAmoEstimateSubatoms(workEstimate) ??
+                                      0n,
                                     false,
                                   )} WORK estimated`
                                 : "Pending confirmation"
@@ -47381,8 +48431,8 @@ function ComposePane({
               inputMode="decimal"
               min="0"
               onChange={(event) => setWorkAmount(event.target.value)}
-              step="0.00000001"
-              type="number"
+              step="0.0000000000000001"
+              type="text"
               value={workAmount}
             />
           </label>

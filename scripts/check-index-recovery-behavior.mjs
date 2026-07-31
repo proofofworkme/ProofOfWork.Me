@@ -31,17 +31,32 @@ import { compareCanonicalUtf8 } from "../server/canonical-order.mjs";
 import {
   WORK_ATOMIC_PROJECTION_MODEL,
   WORK_DECIMALS,
+  WORK_LEGACY_ATOMIC_PROJECTION_MODEL,
+  WORK_PRECISION_V2_MIGRATION_MODEL,
+  WORK_PRECISION_V2_MODEL,
+  WORK_SUBATOM_CONVERSION_FACTOR,
+  WORK_SUBATOM_DECIMALS,
+  WORK_SUBATOM_PROJECTION_MODEL,
+  WORK_SUBATOM_UNIT_SCALE,
+  WORK_SUBATOM_UNIT_SCALE_TEXT,
   WORK_TOKEN_ID,
   WORK_UNIT_SCALE,
   WORK_UNIT_SCALE_TEXT,
   formatWorkAtoms,
+  formatWorkSubatoms,
   isWorkTokenId,
+  legacyWorkAtomsToSubatoms,
   normalizeWorkAtoms,
+  normalizeWorkSubatoms,
   parseSignedWorkAmountToAtoms,
   parseWorkAmountToAtoms,
+  parseWorkAmountToSubatoms,
+  validateWorkPrecisionMetadata,
   withWorkPrecisionMetadata,
+  withWorkSubatomPrecisionMetadata,
   workAmountAtomsFromRecord,
   workAmountFields,
+  workAmountSubatomsFromRecord,
 } from "../server/work-units.mjs";
 import {
   applyWorkMarketV2CutoverToTokenState,
@@ -153,6 +168,11 @@ import {
   workAmoV6FrozenTermsMatch,
 } from "../server/work-amo-v6.mjs";
 import {
+  WORK_AMO_V7_AUTH_VERSION,
+  WORK_AMO_V7_GLOBAL_PRECISION_MODEL,
+  WORK_AMO_V7_TRANSFER_VERSION,
+} from "../server/work-amo-v7.mjs";
+import {
   normalizedWorkAmoV5Bip141Witness,
   workAmoV5Bip141WitnessesEqual,
 } from "../server/work-amo-v5-bip141.mjs";
@@ -213,8 +233,13 @@ const WORK_AMO_V5_MIGRATION_PATH = new URL(
 const sourceCache = new Map();
 const WORK_TOKEN_MAX_SUPPLY = 21_000_000;
 const WORK_TOKEN_MAX_SUPPLY_ATOMS = 2_100_000_000_000_000n;
+const WORK_TOKEN_MAX_SUPPLY_SUBATOMS =
+  WORK_TOKEN_MAX_SUPPLY_ATOMS * WORK_SUBATOM_CONVERSION_FACTOR;
 const WORK_TOKEN_MINT_AMOUNT_ATOMS = 100_000_000_000n;
+const WORK_TOKEN_MINT_AMOUNT_SUBATOMS =
+  WORK_TOKEN_MINT_AMOUNT_ATOMS * WORK_SUBATOM_CONVERSION_FACTOR;
 const TOKEN_SEND_ATOMS_ACTION = "send2";
+const TOKEN_SEND_SUBATOMS_ACTION = "send3";
 const TOKEN_SALE_AUTH_ATOMS_VERSION = "pwt-sale-v2";
 const VALUE_Q8_SCALE = 100_000_000n;
 const POWB_TOKEN_ID =
@@ -600,6 +625,18 @@ const canonicalWorkAtomsText = (value, { allowZero = false } = {}) => {
     return "";
   }
 };
+const canonicalWorkSubatomsText = (
+  value,
+  { allowZero = false } = {},
+) => {
+  try {
+    const normalized = normalizeWorkSubatoms(value, { allowZero });
+    const subatoms = BigInt(normalized);
+    return subatoms <= WORK_TOKEN_MAX_SUPPLY_SUBATOMS ? normalized : "";
+  } catch {
+    return "";
+  }
+};
 const canonicalNonNegativeIntegerText = (
   value,
   { allowZero = true } = {},
@@ -626,6 +663,78 @@ const workAtomsBigIntFromRecord = (
     return null;
   }
 };
+const workRecordUsesSubatoms = (record) =>
+  Boolean(
+    record &&
+      typeof record === "object" &&
+      !Array.isArray(record) &&
+      (
+        record.amountStorageModel === WORK_SUBATOM_PROJECTION_MODEL ||
+        record.precisionModel === WORK_PRECISION_V2_MODEL ||
+        record.amountVersion === "send3" ||
+        (
+          record.amountSubatoms !== undefined &&
+          record.amountSubatoms !== null &&
+          record.amountSubatoms !== ""
+        )
+      ),
+  );
+const workSubatomsBigIntFromRecord = (
+  record,
+  {
+    allowZero = false,
+    convertLegacyAtoms = false,
+    storedAmountIsAtoms = false,
+  } = {},
+) => {
+  try {
+    if (workRecordUsesSubatoms(record)) {
+      const subatoms = workAmountSubatomsFromRecord(record, {
+        allowZero,
+      });
+      const normalized = canonicalWorkSubatomsText(subatoms, {
+        allowZero,
+      });
+      return normalized ? BigInt(normalized) : null;
+    }
+    if (!convertLegacyAtoms) {
+      return null;
+    }
+    const atoms = workAtomsBigIntFromRecord(record, {
+      allowZero,
+      storedAmountIsAtoms,
+    });
+    return atoms === null
+      ? null
+      : atoms * WORK_SUBATOM_CONVERSION_FACTOR;
+  } catch {
+    return null;
+  }
+};
+const workSubatomsValueAtNetworkQ8 = (
+  amountSubatoms,
+  networkValue,
+  exactNetworkValueQ8 = "",
+) => {
+  const subatoms = BigInt(amountSubatoms);
+  const exactQ8 = canonicalNonNegativeIntegerText(
+    exactNetworkValueQ8,
+  );
+  const networkValueQ8 = exactQ8
+    ? BigInt(exactQ8)
+    : decimalValueToQ8(networkValue);
+  if (
+    subatoms < 0n ||
+    networkValueQ8 === null ||
+    networkValueQ8 < 0n
+  ) {
+    return null;
+  }
+  return (
+    (subatoms * networkValueQ8) /
+    (BigInt(WORK_TOKEN_MAX_SUPPLY) * WORK_SUBATOM_UNIT_SCALE)
+  );
+};
 const workAmountFieldsFromAtoms = (value, { allowZero = false } = {}) => {
   const normalized = canonicalWorkAtomsText(value, { allowZero });
   return normalized
@@ -635,12 +744,40 @@ const workAmountFieldsFromAtoms = (value, { allowZero = false } = {}) => {
       })
     : {};
 };
+const workAmountFieldsFromSubatoms = (
+  value,
+  { allowZero = false } = {},
+) => {
+  const normalized = canonicalWorkSubatomsText(value, { allowZero });
+  return normalized
+    ? withWorkSubatomPrecisionMetadata({
+        amount: formatWorkSubatoms(normalized),
+        amountSubatoms: normalized,
+        precisionModel: WORK_PRECISION_V2_MODEL,
+      })
+    : {};
+};
 const tokenLedgerAmountFromRecord = (
   tokenId,
   record,
-  { allowZero = false, storedAmountIsAtoms = false } = {},
+  {
+    allowZero = false,
+    storedAmountIsAtoms = false,
+    workAmountStorageModel = "",
+  } = {},
 ) => {
   if (isWorkTokenId(tokenId)) {
+    if (
+      workAmountStorageModel === WORK_SUBATOM_PROJECTION_MODEL ||
+      workRecordUsesSubatoms(record)
+    ) {
+      return workSubatomsBigIntFromRecord(record, {
+        allowZero,
+        convertLegacyAtoms:
+          workAmountStorageModel === WORK_SUBATOM_PROJECTION_MODEL,
+        storedAmountIsAtoms,
+      });
+    }
     return workAtomsBigIntFromRecord(record, {
       allowZero,
       storedAmountIsAtoms,
@@ -658,10 +795,12 @@ const tokenLedgerAmountFromRecord = (
 const tokenLedgerAmountFields = (
   tokenId,
   amount,
-  { allowZero = false } = {},
+  { allowZero = false, workAmountStorageModel = "" } = {},
 ) =>
   isWorkTokenId(tokenId)
-    ? workAmountFieldsFromAtoms(amount, { allowZero })
+    ? workAmountStorageModel === WORK_SUBATOM_PROJECTION_MODEL
+      ? workAmountFieldsFromSubatoms(amount, { allowZero })
+      : workAmountFieldsFromAtoms(amount, { allowZero })
     : BOND_TOKEN_IDS.has(String(tokenId ?? "").trim().toLowerCase())
       ? { amount: canonicalIntegerText(amount, { allowZero }) }
       : { amount: Number(amount) };
@@ -848,9 +987,24 @@ function isolatedFunction(path, name, globals = {}) {
   const scopedTokenLedgerAmountFromRecord = (
     tokenId,
     record,
-    { allowZero = false, storedAmountIsAtoms = false } = {},
+    {
+      allowZero = false,
+      storedAmountIsAtoms = false,
+      workAmountStorageModel = "",
+    } = {},
   ) => {
     if (isWorkTokenId(tokenId)) {
+      if (
+        workAmountStorageModel === WORK_SUBATOM_PROJECTION_MODEL ||
+        workRecordUsesSubatoms(record)
+      ) {
+        return workSubatomsBigIntFromRecord(record, {
+          allowZero,
+          convertLegacyAtoms:
+            workAmountStorageModel === WORK_SUBATOM_PROJECTION_MODEL,
+          storedAmountIsAtoms,
+        });
+      }
       return workAtomsBigIntFromRecord(record, {
         allowZero,
         storedAmountIsAtoms,
@@ -868,10 +1022,12 @@ function isolatedFunction(path, name, globals = {}) {
   const scopedTokenLedgerAmountFields = (
     tokenId,
     amount,
-    { allowZero = false } = {},
+    { allowZero = false, workAmountStorageModel = "" } = {},
   ) => {
     if (isWorkTokenId(tokenId)) {
-      return workAmountFieldsFromAtoms(amount, { allowZero });
+      return workAmountStorageModel === WORK_SUBATOM_PROJECTION_MODEL
+        ? workAmountFieldsFromSubatoms(amount, { allowZero })
+        : workAmountFieldsFromAtoms(amount, { allowZero });
     }
     if (scopedIsBondTokenId(tokenId)) {
       const normalized = canonicalIntegerText(amount, { allowZero });
@@ -879,17 +1035,27 @@ function isolatedFunction(path, name, globals = {}) {
     }
     return { amount: Number(amount) };
   };
-  const scopedTokenLedgerMaxSupply = (token) =>
+  const scopedTokenLedgerMaxSupply = (
+    token,
+    { workAmountStorageModel = "" } = {},
+  ) =>
     scopedIsBondTokenId(token?.tokenId)
       ? null
       : isWorkTokenId(token?.tokenId)
-        ? WORK_TOKEN_MAX_SUPPLY_ATOMS
+        ? workAmountStorageModel === WORK_SUBATOM_PROJECTION_MODEL
+          ? WORK_TOKEN_MAX_SUPPLY_SUBATOMS
+          : WORK_TOKEN_MAX_SUPPLY_ATOMS
         : Number(token?.maxSupply ?? 0);
-  const scopedTokenLedgerMintAmount = (token) =>
+  const scopedTokenLedgerMintAmount = (
+    token,
+    { workAmountStorageModel = "" } = {},
+  ) =>
     scopedIsBondTokenId(token?.tokenId)
       ? scopedBondUnitsBigInt(token?.mintAmount ?? 0)
       : isWorkTokenId(token?.tokenId)
-        ? WORK_TOKEN_MINT_AMOUNT_ATOMS
+        ? workAmountStorageModel === WORK_SUBATOM_PROJECTION_MODEL
+          ? WORK_TOKEN_MINT_AMOUNT_SUBATOMS
+          : WORK_TOKEN_MINT_AMOUNT_ATOMS
         : Number(token?.mintAmount ?? 0);
   const scopedCanonicalPwtReplayVerifierBindingDescriptor = (
     value,
@@ -997,10 +1163,22 @@ function isolatedFunction(path, name, globals = {}) {
       : "";
   };
   const context = vm.createContext({
+    Buffer,
+    createHash,
     URLSearchParams,
     APPLY_WORK_ATOMIC_MIGRATION: false,
     AUDIT_WORK_ATOMS_ONLY: false,
     CANONICAL_REBUILD_META_KEY: "canonical:rebuild",
+    REQUIRED_CURRENT_SUMMARY_KEYS: [
+      "growthSummary",
+      "inceptionSummary",
+      "infinitySummary",
+      "logSummary",
+      "marketplaceSummary",
+      "tokenSummary",
+      "workFloor",
+      "workSummary",
+    ],
     MIGRATE_WORK_ATOMS_ONLY: false,
     RUSH_BOOTSTRAP_ONLY: false,
     VERIFY_WORK_ATOMS_POST_BOOTSTRAP_ONLY: false,
@@ -1011,16 +1189,49 @@ function isolatedFunction(path, name, globals = {}) {
     },
     WORK_ATOMIC_PROJECTION_MODEL,
     WORK_DECIMALS,
+    WORK_LEGACY_ATOMIC_PROJECTION_MODEL,
+    WORK_PRECISION_V2_MIGRATION_MODEL,
+    WORK_PRECISION_V2_MODEL,
+    WORK_SUBATOM_CONVERSION_FACTOR,
+    WORK_SUBATOM_DECIMALS,
+    WORK_SUBATOM_PROJECTION_MODEL,
+    WORK_SUBATOM_UNIT_SCALE,
+    WORK_SUBATOM_UNIT_SCALE_TEXT,
     WORK_TOKEN_ID,
     WORK_TOKEN_MAX_SUPPLY,
     WORK_UNIT_SCALE,
     WORK_UNIT_SCALE_TEXT,
     WORK_TOKEN_MAX_SUPPLY_ATOMS,
+    WORK_TOKEN_MAX_SUPPLY_SUBATOMS,
     WORK_TOKEN_MINT_AMOUNT_ATOMS,
+    WORK_TOKEN_MINT_AMOUNT_SUBATOMS,
+    TOKEN_CREATION_PRICE_SATS: 546,
+    WORK_TOKEN_CREATED_AT: "2026-05-15T02:57:28.000Z",
+    WORK_TOKEN_CREATE_DATA_BYTES: 70,
+    WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS:
+      "1638Vn6KtmK8p5r4oGvAXq9nmZb1emU1DV",
+    WORK_TOKEN_MINT_AMOUNT: 1_000,
+    WORK_TOKEN_MINT_PRICE_SATS: 1_000,
+    WORK_TOKEN_TICKER: "WORK",
+    tokenIndexAddressForNetwork: () => "",
     WORK_AMO_V5_ACTIVATION_HEIGHT,
     WORK_AMO_V5_AUTH_VERSION,
     WORK_AMO_V6_AUTH_VERSION,
+    WORK_AMO_V7_AUTH_VERSION,
+    WORK_AMO_V7_GLOBAL_PRECISION_MODEL,
+    WORK_AMO_V7_MAX_SUPPLY_SUBATOMS: WORK_TOKEN_MAX_SUPPLY_SUBATOMS,
+    WORK_AMO_V7_TRANSFER_VERSION,
     WORK_AMO_V6_DECLARATION_PINS_CONFIGURED: false,
+    WORK_AMO_V7_DECLARATION_PINS_CONFIGURED: false,
+    WORK_Q16_PENDING_MEMPOOL_MODEL:
+      "canonical-core-mempool-txid-set-v1",
+    WORK_Q16_PENDING_REBUILD_MODEL:
+      "canonical-work-q16-pending-rebuild-v1",
+    WORK_PROJECTION_STATE_INVALID: "invalid",
+    WORK_PROJECTION_STATE_Q16: "q16",
+    WORK_PROJECTION_STATE_Q8: "q8",
+    WORK_ATOM_TO_SUBATOM_SCALE: WORK_SUBATOM_CONVERSION_FACTOR,
+    workProjectionStateByClient: new WeakMap(),
     WORK_AMO_V5_RAW_TRANSITION_CHAIN_MODEL,
     WORK_MARKET_GOVERNED_AUTH_VERSIONS:
       WORK_MARKET_GOVERNED_AUTH_VERSIONS_FIXTURE,
@@ -1028,9 +1239,11 @@ function isolatedFunction(path, name, globals = {}) {
     GROWTH_ID_DENSITY_NUMERATOR,
     GROWTH_VALUE_MULTIPLE,
     TOKEN_SEND_ATOMS_ACTION,
+    TOKEN_SEND_SUBATOMS_ACTION,
     TOKEN_SALE_AUTH_ATOMS_VERSION,
     TOKEN_SALE_AUTH_WORK_AMO_V5_VERSION: WORK_AMO_V5_AUTH_VERSION,
     TOKEN_SALE_AUTH_WORK_AMO_V6_VERSION: WORK_AMO_V6_AUTH_VERSION,
+    TOKEN_SALE_AUTH_WORK_AMO_V7_VERSION: WORK_AMO_V7_AUTH_VERSION,
     VALUE_Q8_SCALE,
     BOND_VALUE_Q8_SCALE,
     BOND_TOKEN_IDS: scopedBondTokenIds,
@@ -1071,11 +1284,27 @@ function isolatedFunction(path, name, globals = {}) {
       ) return "complete";
       return "invalid";
     },
+    cachedInternalVerifierState: (_key, loader) => loader(),
     canonicalNonNegativeIntegerText,
     canonicalWorkAtomsText,
+    canonicalWorkSubatomsText,
+    normalizedLowerText: (value) =>
+      String(value ?? "").trim().toLowerCase(),
+    numberOrNull: (value) => {
+      const number = Number(value);
+      return Number.isFinite(number) ? number : null;
+    },
+    objectPayload: (value) =>
+      value && typeof value === "object" && !Array.isArray(value)
+        ? value
+        : null,
+    objectRecord: objectValue,
     compareCanonicalUtf8,
     compareTokenHolderBalances,
     applyWorkAmoV6PublicListingReadPolicy: (state) => state,
+    configuredWorkPrecisionV2ReaderPins: () => null,
+    proofIndexWorkAmoV7ActivationLatch: async () => null,
+    proofIndexWorkPrecisionV2MigrationReadiness: async () => null,
     currentWorkMarketAuthorizationVersionsAtSnapshot: async (
       _network,
       snapshotHeight,
@@ -1102,6 +1331,7 @@ function isolatedFunction(path, name, globals = {}) {
       error instanceof Error && error.message ? error.message : String(error),
     floorQ8PerUnit,
     formatWorkAtoms,
+    formatWorkSubatoms,
     incbRangeReplayWitnessMetaKey,
     incbRangeReplayWitnessBindingFields,
     incbReplayBondIdentity,
@@ -1115,6 +1345,8 @@ function isolatedFunction(path, name, globals = {}) {
     marketplaceMutationPaymentSats,
     marketplaceMutationPaymentSatsBigInt,
     normalizeWorkAtoms,
+    normalizeWorkSubatoms,
+    legacyWorkAtomsToSubatoms,
     normalizedText,
     normalizedTxid,
     numericValue,
@@ -1122,6 +1354,7 @@ function isolatedFunction(path, name, globals = {}) {
     objectValue,
     parseSignedWorkAmountToAtoms,
     parseWorkAmountToAtoms,
+    parseWorkAmountToSubatoms,
     proofFlowBigInt,
     q8ToCanonicalDecimal,
     q8ToNumber,
@@ -1133,21 +1366,37 @@ function isolatedFunction(path, name, globals = {}) {
     tokenLedgerAmountFromRecord: scopedTokenLedgerAmountFromRecord,
     tokenLedgerHumanNumber,
     tokenLedgerApproximateNumber: tokenLedgerHumanNumber,
-    tokenLedgerBalanceFields: (tokenId, balance) =>
+    tokenLedgerBalanceFields: (
+      tokenId,
+      balance,
+      { workAmountStorageModel = "" } = {},
+    ) =>
       isWorkTokenId(tokenId)
-        ? withWorkPrecisionMetadata({
-            balance: formatWorkAtoms(balance),
-            balanceAtoms: String(balance),
-            amountStorageModel: WORK_ATOMIC_PROJECTION_MODEL,
-          })
+        ? workAmountStorageModel === WORK_SUBATOM_PROJECTION_MODEL
+          ? withWorkSubatomPrecisionMetadata({
+              balance: formatWorkSubatoms(balance),
+              balanceSubatoms: String(balance),
+              precisionModel: WORK_PRECISION_V2_MODEL,
+            })
+          : withWorkPrecisionMetadata({
+              balance: formatWorkAtoms(balance),
+              balanceAtoms: String(balance),
+              amountStorageModel: WORK_ATOMIC_PROJECTION_MODEL,
+            })
         : scopedIsBondTokenId(tokenId)
           ? { balance: canonicalIntegerText(balance, { allowZero: true }) }
           : { balance: Number(balance) },
     tokenLedgerMaxSupply: scopedTokenLedgerMaxSupply,
     tokenLedgerMintAmount: scopedTokenLedgerMintAmount,
-    tokenLedgerSupplyValue: (tokenId, amount) =>
+    tokenLedgerSupplyValue: (
+      tokenId,
+      amount,
+      { workAmountStorageModel = "" } = {},
+    ) =>
       isWorkTokenId(tokenId)
-        ? formatWorkAtoms(amount)
+        ? workAmountStorageModel === WORK_SUBATOM_PROJECTION_MODEL
+          ? formatWorkSubatoms(amount)
+          : formatWorkAtoms(amount)
         : scopedIsBondTokenId(tokenId)
           ? canonicalIntegerText(amount, { allowZero: true })
           : Number(amount),
@@ -1155,6 +1404,7 @@ function isolatedFunction(path, name, globals = {}) {
       isWorkTokenId(tokenId) || scopedIsBondTokenId(tokenId) ? 0n : 0,
     tokenSaleAuthorizationLedgerAmount,
     workAmountAtomsFromRecord,
+    workAmountSubatomsFromRecord,
     workAtomicProjectionMetadata,
     workAmountProjection,
     workAmoV5RawTransitionChainCommitmentsEqual,
@@ -1162,14 +1412,26 @@ function isolatedFunction(path, name, globals = {}) {
       referenceBlockWitnesses: [],
       workAmoV6: null,
     }),
+    workAmoV7ReplayInputsForBlock: async () => ({
+      workAmoV7: null,
+    }),
     workBalanceProjection,
     workAtomsBigIntFromRecord,
     workAtomsValueAtFloorQ8,
     workAtomsValueAtNetworkQ8,
     workAtomicProjectionReady: async () => true,
     workAmountFieldsFromAtoms,
+    workAmountFieldsFromSubatoms,
+    workRecordUsesSubatoms,
+    workSubatomsBigIntFromRecord,
+    workSubatomsValueAtNetworkQ8,
+    withWorkSubatomPrecisionMetadata,
+    validateWorkPrecisionMetadata,
     workProjectionItem,
     upsertWorkAmoV6ListingProjection: async () => {},
+    upsertWorkAmoV7ListingProjection: async () => {},
+    discoverIndexedWorkAmoV7DeclarationPins: async () => null,
+    pendingCoreWorkMarketplaceVerifierContext: async () => null,
     withWorkPrecisionMetadata,
     uniqueMarketplaceMutationActivity,
     validTxid,
@@ -1179,6 +1441,12 @@ function isolatedFunction(path, name, globals = {}) {
     ? {
         canonicalTokenReplayPosition: ["canonicalTokenReplayOrdinal"],
         canonicalVerifierItemPosition: ["exactVerifierPositionInteger"],
+        canonicalCreditValueFieldsFromRecord: [
+          "canonicalNonNegativeIntegerText",
+        ],
+        canonicalWorkTransferValueProjectionFromState: [
+          "tokenCreditAmountMovedFields",
+        ],
         creditValueEventHeight: ["creditValueEventPosition"],
         creditValueEventIndex: ["creditValueEventPosition"],
         assertUniqueCreditValueReplayPositions: [
@@ -1201,15 +1469,34 @@ function isolatedFunction(path, name, globals = {}) {
           "creditReplayRecordIdentity",
         ],
         idVerifierItemsFromState: ["canonicalVerifierItemPosition"],
+        inceptionIssuanceMetadataFromMints: [
+          "attachedWorkSubatomsBigInt",
+        ],
+        mergeWalletHolders: [
+          "workBalanceFieldsFromAtoms",
+          "workBalanceFieldsFromSubatoms",
+        ],
         tokenMintHistoryItemKey: ["canonicalTokenReplayPosition"],
         tokenReplayEntriesForRegistry: ["canonicalTokenReplayPosition"],
-        tokenStateFromTransactions: ["tokenMintHistoryItemKey"],
-        tokenActivityItemsFromState: ["canonicalEventIdentityDetails"],
+        tokenStateFromTransactions: [
+          "canonicalWorkTokenDefinition",
+          "tokenMintHistoryItemKey",
+        ],
+        tokenActivityItemsFromState: [
+          "canonicalEventIdentityDetails",
+          "canonicalCreditValueFieldsFromRecord",
+          "tokenCreditAmountMovedFields",
+        ],
         tokenMarketLifecycleOverlayFromCreditListings: [
           "canonicalEventIdentityDetails",
         ],
+        tokenTransferFromIndexedActivityItem: [
+          "canonicalCreditValueFieldsFromRecord",
+          "tokenCreditAmountMovedFields",
+        ],
         tokenStateWithCreditNetworkValueDetails: [
           "creditNetworkValueEventDetailFor",
+          "tokenCreditAmountMovedFields",
         ],
         tokenVerifierItemsFromState: ["canonicalVerifierItemPosition"],
         workAmoV5QuoteHeadCommitmentProjection: [
@@ -1219,6 +1506,15 @@ function isolatedFunction(path, name, globals = {}) {
       }
     : path.href === READER_PATH.href
       ? {
+          canonicalIncbAttachedWorkQuantity: [],
+          canonicalMailAttachedCreditsFromRow: [
+            "workAmountProjection",
+            "workAmountProjectionMetadataForAmount",
+          ],
+          canonicalTokenSaleEvidenceForListing: [
+            "workAmountProjection",
+            "workAmountProjectionMetadataForAmount",
+          ],
           canonicalTokenListingEventJoinSql: [
             "canonicalCreditListingAlias",
           ],
@@ -1242,6 +1538,21 @@ function isolatedFunction(path, name, globals = {}) {
           ],
           proofIndexCreditListingsPayload: [
             "canonicalTokenListingEventJoinSql",
+            "recordWithoutWorkAmountAliases",
+            "workAmountProjectionMetadataForAmount",
+            "workListingAmountProjection",
+          ],
+          proofIndexCanonicalSummaryLedgerPayload: [
+            "workAmountStorageModelAtHeight",
+          ],
+          proofIndexTokenListingCloseOutspendPayload: [
+            "workAmountProjection",
+            "workAmountProjectionMetadataForAmount",
+            "workListingAmountProjection",
+          ],
+          proofIndexCanonicalWorkListingById: [
+            "workAmountProjectionMetadataForAmount",
+            "workListingAmountProjection",
           ],
           proofIndexTokenDefinitionsByIds: [
             "canonicalTokenDefinitionCreationEventJoinSql",
@@ -1253,14 +1564,41 @@ function isolatedFunction(path, name, globals = {}) {
             "activeTokenListingFromCreditListingRow",
             "canonicalTokenSaleEvidenceForListing",
             "canonicalTokenListingEventJoinSql",
+            "workListingAmountProjection",
           ],
           proofIndexWalletTokenOverlayPayload: [
             "activeTokenListingFromCreditListingRow",
             "canonicalTokenListingEventJoinSql",
             "tokenListingActiveLifecycleSql",
+            "workBalanceUnitFields",
+            "workListingAmountProjection",
+          ],
+          currentWorkAmountStorageModel: [
+            "workDefinitionStorageModel",
+          ],
+          incbExactIssuanceMetadata: [
+            "canonicalIncbAttachedWorkQuantity",
+          ],
+          incbIssuanceMetadataFault: [
+            "incbExactIssuanceMetadata",
+          ],
+          ledgerSnapshot: [
+            "currentWorkAmountStorageModel",
+          ],
+          ledgerSnapshotMetadata: [
+            "currentWorkAmountStorageModel",
+          ],
+          ledgerSnapshotWithPayload: [
+            "currentWorkAmountStorageModel",
+          ],
+          tokenStateSnapshotForScope: [
+            "currentWorkAmountStorageModel",
           ],
           tokenListingFromCreditListingRow: [
             "normalizedLowerText",
+            "recordWithoutWorkAmountAliases",
+            "workAmountProjectionMetadataForAmount",
+            "workListingAmountProjection",
           ],
           activeTokenListingFromCreditListingRow: [
             "normalizedLowerText",
@@ -1268,6 +1606,7 @@ function isolatedFunction(path, name, globals = {}) {
           ],
           tokenDefinitionFromRow: [
             "normalizedLowerText",
+            "workDefinitionStorageModel",
           ],
           tokenClosedListingFromEventPayload: [
             "canonicalMovementPositionFromEventRow",
@@ -1286,10 +1625,60 @@ function isolatedFunction(path, name, globals = {}) {
           ],
           tokenTransferFromEventPayload: [
             "canonicalMovementPositionFromEventRow",
+            "workAmountProjectionMetadataForAmount",
+          ],
+          workAmountProjection: [
+            "formatWorkAmountByProjectionMeta",
+            "workAmountProjectionMetadata",
+          ],
+          workAmountStorageModelAtHeight: [
+            "currentWorkAmountStorageModel",
+          ],
+          workListingAmountProjection: [
+            "workAmountProjection",
+            "workAmountProjectionMetadata",
           ],
         }
     : path.href === BACKFILL_PATH.href
       ? {
+          assertCanonicalWorkProjection: [
+            "currentWorkProjectionState",
+            "workProjectionModelForState",
+          ],
+          backfillMempoolScanSource: [
+            "canonicalMempoolTxidSnapshot",
+          ],
+          canonicalMempoolTxidSnapshot: [
+            "canonicalJsonText",
+          ],
+          canonicalIncbIssuanceQ8Projection: [
+            "canonicalIncbAttachedWorkQuantity",
+          ],
+          incbIssuanceMetadataInvalidReason: [
+            "canonicalIncbAttachedWorkQuantity",
+          ],
+          canonicalSummaryAccountingModelsCurrent: [
+            "canonicalSummaryCoverage",
+          ],
+          canonicalSummaryCoverage: [
+            "summaryPayloadConservativeCoverage",
+          ],
+          currentWorkPrecisionV2Marker: [
+            "workPrecisionV2MarkerAuthorizesQ16",
+          ],
+          currentWorkProjectionState: [
+            "currentWorkPrecisionV2Marker",
+            "workDefinitionProjectionState",
+          ],
+          rebuildConfirmedCreditBalancesFromCanonicalEvents: [
+            "assertCanonicalWorkProjection",
+          ],
+          seedCanonicalWorkDefinition: [
+            "currentWorkProjectionModel",
+          ],
+          workAtomicProjectionReady: [
+            "currentWorkProjectionState",
+          ],
           workAmoV5CanonicalBlockEventSet: ["canonicalProtocolPosition"],
         }
       : {};
@@ -1478,6 +1867,7 @@ const WORK_MARKET_GOVERNED_AUTH_VERSIONS_FIXTURE = new Set([
   "pwt-sale-v4",
   WORK_AMO_V5_AUTH_VERSION,
   WORK_AMO_V6_AUTH_VERSION,
+  WORK_AMO_V7_AUTH_VERSION,
 ]);
 
 check("server parses signed non-WORK outputs without free identifiers", () => {
@@ -3218,7 +3608,7 @@ check("livenet WORK replay enforces V2 without declaration hydration", () => {
       tokenListingAnchorIsPresent: () => true,
       tokenMatchesScope: (token, scope) =>
         !scope || token.tokenId === scope || token.ticker.toLowerCase() === scope,
-      tokenPaymentAmountBeforeProtocol: () => 546,
+      tokenPaymentAmountBeforeProtocol: () => 1_000,
       tokenDefinitionPrecedesTransaction: () => true,
       tokenReplayCoverageHeight: (registryTxsByAddress, options = {}) =>
         Math.max(
@@ -3311,7 +3701,7 @@ check("livenet WORK replay enforces V2 without declaration hydration", () => {
         creationFeeSats: 0,
         maxSupply: WORK_TOKEN_MAX_SUPPLY,
         mintAmount: 1_000,
-        mintPriceSats: 546,
+        mintPriceSats: 1_000,
         registryAddress,
         ticker: "WORK",
         tokenId: WORK_TOKEN_ID,
@@ -6276,7 +6666,7 @@ check("wallet holder overlays preserve WORK and POWB for one address", () => {
   assert.deepEqual(
     Array.from(holders, (holder) => [holder.ticker, holder.balance]),
     [
-      ["WORK", 3_639_060],
+      ["WORK", "3639060"],
       ["POWB", "225001"],
     ],
   );
@@ -6289,7 +6679,7 @@ check("wallet holder overlays preserve WORK and POWB for one address", () => {
     },
   ]);
   assert.equal(zeroBalanceHolder.length, 1);
-  assert.equal(zeroBalanceHolder[0].balance, 0);
+  assert.equal(zeroBalanceHolder[0].balance, "0");
 
   for (const functionName of [
     "walletScopedTokenSummaryPayload",
@@ -6759,6 +7149,72 @@ check("wallet legacy seal recovery enriches only its confirmed V1/V2 base listin
   assert.equal(cutover.closedListings[0].status, "disabled");
 });
 
+check("token payload regression guards compare exact Q16 WORK supply", () => {
+  const exactWorkConfirmedSupplySubatomsForMetrics = isolatedFunction(
+    API_PATH,
+    "exactWorkConfirmedSupplySubatomsForMetrics",
+  );
+  const tokenPayloadMetrics = isolatedFunction(
+    API_PATH,
+    "tokenPayloadMetrics",
+    {
+      confirmedItemCount: (items) =>
+        Array.isArray(items)
+          ? items.filter((item) => item?.confirmed).length
+          : 0,
+      exactWorkConfirmedSupplySubatomsForMetrics,
+      safeStatNumber: (payload, key, fallback = 0) =>
+        Number.isFinite(payload?.stats?.[key])
+          ? Number(payload.stats[key])
+          : fallback,
+    },
+  );
+  const tokenPayloadLooksWorse = isolatedFunction(
+    API_PATH,
+    "tokenPayloadLooksWorse",
+    {
+      tokenPayloadHasConfirmedSealRegression: () => false,
+      tokenPayloadMetrics,
+    },
+  );
+  const previousPayload = {
+    amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+    confirmedSupply: 21_000_000,
+    confirmedSupplySubatoms: WORK_TOKEN_MAX_SUPPLY_SUBATOMS.toString(),
+    precisionModel: WORK_PRECISION_V2_MODEL,
+    stats: { confirmedTokens: 1 },
+    tokens: [
+      {
+        amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+        confirmed: true,
+        precisionModel: WORK_PRECISION_V2_MODEL,
+        tokenId: WORK_TOKEN_ID,
+      },
+    ],
+  };
+  const nextPayload = {
+    ...previousPayload,
+    confirmedSupplySubatoms:
+      (WORK_TOKEN_MAX_SUPPLY_SUBATOMS - 1n).toString(),
+  };
+
+  assert.equal(
+    nextPayload.confirmedSupply,
+    previousPayload.confirmedSupply,
+    "the public display value intentionally rounds identically",
+  );
+  assert.equal(
+    tokenPayloadLooksWorse(nextPayload, previousPayload),
+    true,
+    "one missing WORK subatom must reject the replacement payload",
+  );
+  assert.equal(
+    tokenPayloadLooksWorse(previousPayload, nextPayload),
+    false,
+    "restoring one WORK subatom is not a regression",
+  );
+});
+
 check("wallet index overlay binds every WORK and bond holder to a canonical definition", async () => {
   const address = "1WalletDefinitionInvariant";
   const workTokenId =
@@ -6775,7 +7231,15 @@ check("wallet index overlay binds every WORK and bond holder to a canonical defi
   const tokenDefinitionFromRow = isolatedFunction(
     READER_PATH,
     "tokenDefinitionFromRow",
-    { dateIso, objectRecord, rowNumber },
+    {
+      WORK_TOKEN_MAX_SUPPLY_ATOMS: "2100000000000000",
+      WORK_TOKEN_MAX_SUPPLY_SUBATOMS: "210000000000000000000000",
+      WORK_TOKEN_MINT_AMOUNT_ATOMS: "100000000000",
+      WORK_TOKEN_MINT_AMOUNT_SUBATOMS: "10000000000000000000",
+      dateIso,
+      objectRecord,
+      rowNumber,
+    },
   );
   const proofIndexTokenDefinitionsByIds = isolatedFunction(
     READER_PATH,
@@ -6815,9 +7279,14 @@ check("wallet index overlay binds every WORK and bond holder to a canonical defi
       create_txid: workTokenId,
       created_height: 896_321,
       creator_address: "work-creator",
-      max_supply: "21000000",
-      metadata: { createdAt: "2026-05-15T02:57:28.000Z" },
-      mint_amount: "1000",
+      max_supply: "2100000000000000",
+      metadata: {
+        amountStorageModel: WORK_ATOMIC_PROJECTION_MODEL,
+        createdAt: "2026-05-15T02:57:28.000Z",
+        decimals: WORK_DECIMALS,
+        unitScale: WORK_UNIT_SCALE_TEXT,
+      },
+      mint_amount: "100000000000",
       mint_price_sats: "1000",
       registry_address: "work-registry",
       ticker: "WORK",
@@ -6905,6 +7374,7 @@ check("wallet index overlay binds every WORK and bond holder to a canonical defi
             registry_address: definition.registry_address,
             ticker: definition.ticker,
             token_id: definition.token_id,
+            metadata: definition.metadata,
             updated_at: "2026-07-13T21:00:00.000Z",
           })),
         };
@@ -7009,8 +7479,30 @@ check("wallet index overlay binds every WORK and bond holder to a canonical defi
       validTxid: () => false,
       walletProjectionExceedsLimit: () => false,
       walletTokenListingsWithLegacySealEvents: (items) => items,
+      workBalanceProjection: (
+        value,
+        _metadata,
+        { signed = false } = {},
+      ) => {
+        const atoms = normalizeWorkAtoms(value, {
+          allowNegative: signed,
+          allowZero: true,
+        });
+        return {
+          amount: formatWorkAtoms(atoms, {
+            allowNegative: signed,
+          }),
+          amountStorageModel: WORK_ATOMIC_PROJECTION_MODEL,
+          atoms,
+          decimals: WORK_DECIMALS,
+          unitScale: WORK_UNIT_SCALE_TEXT,
+          units: atoms,
+        };
+      },
       WORK_MARKET_V2_ACTIVATION_HEIGHT,
       WORK_TOKEN_TICKER: "WORK",
+      payloadWithCurrentWorkPrecisionReadPolicy:
+        async (_network, payload) => payload,
       payloadWithVerifiedWorkMarketV4Activation:
         async (_pool, _network, payload) => payload,
     },
@@ -8570,6 +9062,8 @@ check("current snapshot readers require atomic WORK markers while pinned history
     "ledgerSnapshot",
     {
       WORK_ATOMIC_PROJECTION_MODEL,
+      currentWorkAmountStorageModel: async () =>
+        WORK_ATOMIC_PROJECTION_MODEL,
       normalizedSnapshotId,
     },
   );
@@ -8578,6 +9072,8 @@ check("current snapshot readers require atomic WORK markers while pinned history
     "ledgerSnapshotMetadata",
     {
       WORK_ATOMIC_PROJECTION_MODEL,
+      currentWorkAmountStorageModel: async () =>
+        WORK_ATOMIC_PROJECTION_MODEL,
       normalizedSnapshotId,
     },
   );
@@ -8586,6 +9082,8 @@ check("current snapshot readers require atomic WORK markers while pinned history
     "ledgerSnapshotWithPayload",
     {
       WORK_ATOMIC_PROJECTION_MODEL,
+      currentWorkAmountStorageModel: async () =>
+        WORK_ATOMIC_PROJECTION_MODEL,
       ledgerSnapshot,
       normalizedSnapshotId,
     },
@@ -8596,6 +9094,8 @@ check("current snapshot readers require atomic WORK markers while pinned history
     {
       LEDGER_SNAPSHOT_RECENT_READ_LIMIT: 25,
       WORK_ATOMIC_PROJECTION_MODEL,
+      currentWorkAmountStorageModel: async () =>
+        WORK_ATOMIC_PROJECTION_MODEL,
       normalizedSnapshotId,
       tokenScopeKey: (value) => String(value ?? "").trim().toLowerCase(),
     },
@@ -8642,8 +9142,17 @@ check("current snapshot readers require atomic WORK markers while pinned history
   );
   assert.equal(calls.length, 4);
   for (const call of calls) {
-    assert.doesNotMatch(call.sql, /workAmountStorageModel/u);
+    assert.match(call.sql, /workAmountStorageModel/u);
     assert.ok(call.params.includes(pinned));
+    assert.ok(
+      call.params.some(
+        (value) =>
+          Array.isArray(value) &&
+          value.includes(WORK_ATOMIC_PROJECTION_MODEL) &&
+          value.includes(WORK_SUBATOM_PROJECTION_MODEL),
+      ),
+      "a pinned snapshot accepts either immutable Q8 or Q16 history",
+    );
   }
 
   calls.length = 0;
@@ -8653,6 +9162,8 @@ check("current snapshot readers require atomic WORK markers while pinned history
     {
       SUMMARY_SNAPSHOT_LOOKBACK_LIMIT: 5_000,
       WORK_ATOMIC_PROJECTION_MODEL,
+      currentWorkAmountStorageModel: async () =>
+        WORK_ATOMIC_PROJECTION_MODEL,
       proofIndexPool: () => pool,
     },
   );
@@ -8690,6 +9201,9 @@ check("backfill current snapshot selectors require atomic WORK markers while exa
     {
       NETWORK: "livenet",
       WORK_ATOMIC_PROJECTION_MODEL,
+      WORK_SUBATOM_PROJECTION_MODEL,
+      currentWorkProjectionModel: async () =>
+        WORK_ATOMIC_PROJECTION_MODEL,
     },
   );
   const storedEligibleCanonicalSummarySnapshotPayload =
@@ -8699,6 +9213,8 @@ check("backfill current snapshot selectors require atomic WORK markers while exa
       {
         NETWORK: "livenet",
         WORK_ATOMIC_PROJECTION_MODEL,
+        currentWorkProjectionModel: async () =>
+          WORK_ATOMIC_PROJECTION_MODEL,
         eligibleCanonicalSummarySnapshotPayload: () => false,
       },
     );
@@ -9931,6 +10447,8 @@ check("Inception fixes attachment value at issuance and adds only later INCB mar
       normalizeTokenTicker: (value) => String(value).trim().toUpperCase(),
       numericValue,
       tokenLedgerAmountFields: testTokenLedgerAmountFields,
+      tokenLedgerAmountFromRecord: (_tokenId, record) =>
+        workAtomsBigIntFromRecord(record),
     },
   );
   const pipelineTransfers = [2, 3].map((protocolVout, index) => {
@@ -9938,6 +10456,9 @@ check("Inception fixes attachment value at issuance and adds only later INCB mar
       {
         _powEventIndex: index + 20,
         amount: 100,
+        amountAtoms: "10000000000",
+        amountStorageModel: WORK_ATOMIC_PROJECTION_MODEL,
+        decimals: WORK_DECIMALS,
         creditLiveValueSats: 300,
         creditValueAtConfirmSats: 200,
         eventKeyVout: index,
@@ -9947,6 +10468,7 @@ check("Inception fixes attachment value at issuance and adds only later INCB mar
         ticker: "WORK",
         tokenId: WORK_TOKEN_ID,
         txid,
+        unitScale: WORK_UNIT_SCALE_TEXT,
       },
       {
         block_height: blockHeight,
@@ -9955,6 +10477,8 @@ check("Inception fixes attachment value at issuance and adds only later INCB mar
         status: "confirmed",
       },
     );
+    assert.equal(readerTransfer.amount, "100");
+    assert.equal(readerTransfer.amountAtoms, "10000000000");
     return tokenTransferFromIndexedActivityItem(
       readerTransfer,
       {
@@ -9970,10 +10494,14 @@ check("Inception fixes attachment value at issuance and adds only later INCB mar
       attachedCredits: [2, 3].map((protocolVout, index) => ({
         _powEventIndex: index + 30,
         amount: 100,
+        amountAtoms: "10000000000",
+        amountStorageModel: WORK_ATOMIC_PROJECTION_MODEL,
+        decimals: WORK_DECIMALS,
         protocolVout,
         recipientAddress,
         ticker: "WORK",
         tokenId: WORK_TOKEN_ID,
+        unitScale: WORK_UNIT_SCALE_TEXT,
       })),
     },
     "livenet",
@@ -11002,9 +11530,19 @@ check("livenet Inception issuance uses the published H-1 snapshot and excludes i
       numericValue,
       samePaymentAddress: (left, right) =>
         String(left).toLowerCase() === String(right).toLowerCase(),
-      workAtomsValueAtNetworkQ8: (amountAtoms, networkValue) =>
-        (BigInt(amountAtoms) * BigInt(q8TextFromDecimal(networkValue))) /
-        (1_000n * WORK_UNIT_SCALE),
+      workSubatomsValueAtNetworkQ8: (
+        amountSubatoms,
+        networkValue,
+        exactNetworkValueQ8 = "",
+      ) =>
+        (
+          BigInt(amountSubatoms) *
+          BigInt(
+            exactNetworkValueQ8 ||
+              q8TextFromDecimal(networkValue),
+          )
+        ) /
+        (1_000n * WORK_SUBATOM_UNIT_SCALE),
     },
   );
 
@@ -14141,10 +14679,13 @@ check("the hot worker publishes a fresh canonical summary with conservative cove
         "fixed-incb-issuance-plus-market-flow-v1",
       INCB_VALUE_SNAPSHOT_MODEL:
         "canonical-summary-h-minus-one-v1",
+      WORK_AMO_V7_CONFIGURED_ACTIVATION_HEIGHT: 1,
+      WORK_AMO_V7_DECLARATION_PINS_CONFIGURED: true,
       WORK_TOKEN_ID:
         "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8",
       WORK_TRANSFER_VALUE_PROJECTION_MODEL:
         "canonical-work-transfer-value-projection-v1",
+      canonicalSummaryCoverage: () => 1_000_000,
       objectPayload: (value) =>
         value && typeof value === "object" && !Array.isArray(value)
           ? value
@@ -14152,6 +14693,11 @@ check("the hot worker publishes a fresh canonical summary with conservative cove
     },
   );
   const currentInceptionActual = {
+    attachedWorkAmountDecimals: WORK_SUBATOM_DECIMALS,
+    attachedWorkAmountPrecisionModel: WORK_PRECISION_V2_MODEL,
+    attachedWorkAmountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+    attachedWorkAmountSubatoms: "1000000000000000000",
+    attachedWorkAmountUnitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,
     attachedWorkIssuanceUnits: 200,
     attachedWorkLiveValueAtSendSats: 200,
     attachmentAccountingModel:
@@ -14292,6 +14838,8 @@ check("the hot worker publishes a fresh canonical summary with conservative cove
       canonicalSummaryAccountingModelsCurrent,
       canonicalSummaryCoverage,
       createHash,
+      currentWorkProjectionModel: async () =>
+        WORK_SUBATOM_PROJECTION_MODEL,
       latestBlockScanCheckpoint: async () => ({ height: 101 }),
       numberOrNull,
       objectPayload,
@@ -14353,7 +14901,7 @@ check("the hot worker publishes a fresh canonical summary with conservative cove
   assert.equal(stored.tokenState.marker, "canonical");
   assert.equal(
     stored.workAmountStorageModel,
-    WORK_ATOMIC_PROJECTION_MODEL,
+    WORK_SUBATOM_PROJECTION_MODEL,
   );
   assert.equal(stored.summaryRefresh.indexedThroughBlock, 101);
   assert.equal(stored.summaryRefresh.mode, "canonical-summary-refresh");
@@ -14549,7 +15097,7 @@ check("every ledger snapshot deletion preserves immutable AMO V5 seed dependenci
   }
 });
 
-check("derived ledger snapshots expose atomic WORK only after the definition is ready", async () => {
+check("derived ledger snapshots require one exact current WORK projection", async () => {
   const run = async (ready) => {
     const writes = [];
     const storeLedgerSnapshot = isolatedFunction(
@@ -14597,15 +15145,30 @@ check("derived ledger snapshots expose atomic WORK only after the definition is 
           throw new Error("no token scopes expected");
         },
         unpagedEndpoint: (pathname) => ({ pathname }),
+        currentWorkProjectionModel: async () =>
+          ready ? WORK_ATOMIC_PROJECTION_MODEL : "",
         workAtomicProjectionReady: async () => ready,
       },
     );
-    const payload = await storeLedgerSnapshot({
+    const client = {
       async query(sql, params) {
         writes.push({ params: Array.from(params), sql: String(sql) });
         return { rows: [] };
       },
-    });
+    };
+    if (!ready) {
+      await rejection(
+        storeLedgerSnapshot(client),
+        (error) =>
+          /requires one exact canonical WORK Q8 or Q16 definition/u.test(
+            error.message,
+          ),
+        "an unmarked current WORK definition reached snapshot storage",
+      );
+      assert.equal(writes.length, 0);
+      return null;
+    }
+    const payload = await storeLedgerSnapshot(client);
     assert.equal(writes.length, 1);
     assert.match(
       writes[0].sql,
@@ -14619,8 +15182,7 @@ check("derived ledger snapshots expose atomic WORK only after the definition is 
     marked.workAmountStorageModel,
     WORK_ATOMIC_PROJECTION_MODEL,
   );
-  const unmarked = await run(false);
-  assert.equal("workAmountStorageModel" in unmarked, false);
+  assert.equal(await run(false), null);
 });
 
 check("WORK atomic post-bootstrap verification requires a marked green exact-tip summary", async () => {
@@ -14636,6 +15198,7 @@ check("WORK atomic post-bootstrap verification requires a marked green exact-tip
     {
       NETWORK: "livenet",
       WORK_ATOMIC_PROJECTION_MODEL,
+      WORK_SUBATOM_PROJECTION_MODEL,
     },
   );
   const selected = await markedExactTipWorkAtomicSummary({
@@ -14653,6 +15216,7 @@ check("WORK atomic post-bootstrap verification requires a marked green exact-tip
   assert.deepEqual(queries[0].params, [
     "livenet",
     WORK_ATOMIC_PROJECTION_MODEL,
+    0,
   ]);
   assert.match(queries[0].sql, /latest_scan/u);
   assert.match(
@@ -14666,6 +15230,28 @@ check("WORK atomic post-bootstrap verification requires a marked green exact-tip
   assert.match(
     queries[0].sql,
     /canonical-activity-count-matches-public-log/u,
+  );
+  queries.length = 0;
+  await markedExactTipWorkAtomicSummary(
+    {
+      async query(sql, params) {
+        queries.push({ params: Array.from(params), sql: String(sql) });
+        return { rows: [exactTipRow] };
+      },
+    },
+    {
+      activationHeight: 958_200,
+      projectionModel: WORK_SUBATOM_PROJECTION_MODEL,
+    },
+  );
+  assert.deepEqual(queries[0].params, [
+    "livenet",
+    WORK_SUBATOM_PROJECTION_MODEL,
+    958_200,
+  ]);
+  assert.match(
+    queries[0].sql,
+    /indexed_through_block >= \$3::integer/u,
   );
 
   const assertWorkAtomicIssuanceOracleSnapshots = isolatedFunction(
@@ -14692,12 +15278,16 @@ check("WORK atomic post-bootstrap verification requires a marked green exact-tip
       assertWorkAtomicIssuanceOracleSnapshots,
       assertWorkAtomicSnapshotMigrationState,
       auditWorkAtomicProjection: async () => ({
+        activationHeight: 0,
         atomic: true,
+        precision: "q8",
+        projectionModel: WORK_ATOMIC_PROJECTION_MODEL,
         snapshots: {
           unmarked_derived: 1,
           unmarked_derived_referenced: 1,
           unmarked_non_oracle_derived: 0,
         },
+        subatomic: false,
       }),
       markedExactTipWorkAtomicSummary: async () => exactTipSummary,
       workAtomicIssuanceOracleSnapshotState: async () =>
@@ -14713,6 +15303,124 @@ check("WORK atomic post-bootstrap verification requires a marked green exact-tip
   await assert.rejects(
     verifyWorkAtomicPostBootstrap({}),
     /marked green exact-tip canonical summary/u,
+  );
+});
+
+check("WORK precision audit accepts marker-bound Q16 with preserved exact Q8 history", async () => {
+  const activationHeight = 958_200;
+  const queries = [];
+  const rows = [
+    {
+      max_supply: WORK_TOKEN_MAX_SUPPLY_SUBATOMS.toString(),
+      metadata: {
+        amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+        decimals: WORK_SUBATOM_DECIMALS,
+        precisionModel: WORK_PRECISION_V2_MODEL,
+        unitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,
+      },
+      mint_amount: WORK_TOKEN_MINT_AMOUNT_SUBATOMS.toString(),
+      token_id: WORK_TOKEN_ID,
+    },
+    {
+      confirmed_supply: "210000000000000000000000",
+      holders: 2,
+      max_balance: "200000000000000000000000",
+      min_balance: "10000000000000000000000",
+      negative_balances: 0,
+      pending_delta: "0",
+      rows: 2,
+    },
+    {
+      invalid_amounts: 0,
+      max_amount: "1000000000000000000000",
+      min_amount: "200000000000000000000",
+      rows: 2,
+      statuses: { active: 2 },
+    },
+    {
+      ambiguous_exact_events: 0,
+      amount_events: 3,
+      atom_events: 2,
+      confirmed_mints: 1,
+      confirmed_sales: 1,
+      confirmed_transfers: 1,
+      invalid_atom_events: 0,
+      invalid_events: 0,
+      invalid_legacy_events: 0,
+      invalid_precision_events: 0,
+      invalid_subatom_events: 0,
+      mismatched_atom_events: 0,
+      precision_events: 3,
+      subatom_events: 1,
+      valid_events: 3,
+    },
+    { oversubscribed_sellers: 0 },
+    {
+      derived: 2,
+      issuance_locked: 0,
+      marked: 2,
+      total: 2,
+      unmarked_derived: 0,
+      unmarked_derived_referenced: 0,
+      unmarked_non_oracle_derived: 0,
+    },
+  ];
+  const auditWorkAtomicProjection = isolatedFunction(
+    BACKFILL_PATH,
+    "auditWorkAtomicProjection",
+    {
+      INCB_RANGE_REPLAY_WITNESS_MANIFEST_MODEL,
+      NETWORK: "livenet",
+      WORK_AMO_V7_GLOBAL_PRECISION_MODEL:
+        WORK_PRECISION_V2_MODEL,
+      WORK_ATOMIC_PROJECTION_MODEL,
+      WORK_DECIMALS,
+      WORK_SUBATOM_DECIMALS,
+      WORK_SUBATOM_PROJECTION_MODEL,
+      WORK_SUBATOM_UNIT_SCALE_TEXT,
+      WORK_TOKEN_ID,
+      WORK_TOKEN_MAX_SUPPLY: 21_000_000,
+      WORK_TOKEN_MINT_AMOUNT: 1_000,
+      WORK_UNIT_SCALE_TEXT,
+      currentWorkPrecisionV2Marker: async () => ({
+        activationHeight,
+      }),
+      objectValue,
+      workAtomicDefinitionReady: () => false,
+      workSubatomicDefinitionReady: () => true,
+    },
+  );
+  const audit = await auditWorkAtomicProjection({
+    async query(sql, params) {
+      queries.push({ params: Array.from(params), sql: String(sql) });
+      return { rows: [rows.shift()] };
+    },
+  });
+  assert.equal(audit.atomic, false);
+  assert.equal(audit.subatomic, true);
+  assert.equal(audit.precision, "q16");
+  assert.equal(
+    audit.projectionModel,
+    WORK_SUBATOM_PROJECTION_MODEL,
+  );
+  assert.equal(audit.activationHeight, activationHeight);
+  assert.equal(queries.length, 6);
+  assert.match(queries[3].sql, /amountSubatoms/u);
+  assert.deepEqual(queries[5].params, [
+    "livenet",
+    WORK_SUBATOM_PROJECTION_MODEL,
+    "canonical:rebuild",
+    INCB_RANGE_REPLAY_WITNESS_MANIFEST_MODEL,
+    activationHeight,
+    WORK_ATOMIC_PROJECTION_MODEL,
+  ]);
+  assert.match(
+    queries[5].sql,
+    /indexed_through_block < \$5::integer/u,
+  );
+  assert.match(
+    queries[5].sql,
+    /indexed_through_block >= \$5::integer/u,
   );
 });
 
@@ -14948,7 +15656,7 @@ check("WORK atomic migration is exact per row and idempotently preserves H-1 ora
     return removed;
   };
   const calls = [];
-  const workAtomicProjectionReadyByClient = new WeakMap();
+  const workProjectionStateByClient = new WeakMap();
   const migrateWorkAtomicProjection = isolatedFunction(
     BACKFILL_PATH,
     "migrateWorkAtomicProjection",
@@ -14979,7 +15687,7 @@ check("WORK atomic migration is exact per row and idempotently preserves H-1 ora
         issuanceOracles,
       workAtomicListingMigrationRows: async () => listings,
       workAtomicProjectionReady: async () => atomic,
-      workAtomicProjectionReadyByClient,
+      workProjectionStateByClient,
     },
   );
   const client = {
@@ -15051,7 +15759,7 @@ check("WORK atomic migration is exact per row and idempotently preserves H-1 ora
   );
   assert.match(
     atomicAuditSource,
-    /mismatched_atom_events[\s\S]*e\.valid = true[\s\S]*confirmed_mints/u,
+    /mismatched_atom_events[\s\S]*valid = true[\s\S]*confirmed_mints/u,
   );
   assert.doesNotMatch(
     atomicAuditSource,
@@ -15074,10 +15782,13 @@ check("canonical summary publication allows cumulative INCB dust across independ
         "fixed-incb-issuance-plus-market-flow-v1",
       INCB_VALUE_SNAPSHOT_MODEL:
         "canonical-summary-h-minus-one-v1",
+      WORK_AMO_V7_CONFIGURED_ACTIVATION_HEIGHT: 1,
+      WORK_AMO_V7_DECLARATION_PINS_CONFIGURED: true,
       WORK_TOKEN_ID:
         "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8",
       WORK_TRANSFER_VALUE_PROJECTION_MODEL:
         "canonical-work-transfer-value-projection-v1",
+      canonicalSummaryCoverage: () => 1_000_000,
     },
   );
   const minerFeeCoverage = {
@@ -15092,6 +15803,11 @@ check("canonical summary publication allows cumulative INCB dust across independ
     source: "proof-indexer-normalized-input-output-totals",
   };
   const actualValue = {
+    attachedWorkAmountDecimals: WORK_SUBATOM_DECIMALS,
+    attachedWorkAmountPrecisionModel: WORK_PRECISION_V2_MODEL,
+    attachedWorkAmountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+    attachedWorkAmountSubatoms: "72881200000000000000000",
+    attachedWorkAmountUnitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,
     attachedWorkIssuanceUnits: 3_132_313_922,
     attachedWorkLiveValueAtSendSats: 3_132_313_923.5410833,
     attachmentAccountingModel:
@@ -15233,6 +15949,9 @@ check("canonical summary publication allows cumulative INCB dust across independ
     txid,
   }) => {
     const amountAtoms = parseWorkAmountToAtoms(amount);
+    const amountSubatoms = (
+      BigInt(amountAtoms) * WORK_SUBATOM_CONVERSION_FACTOR
+    ).toString();
     const networkQ8 = BigInt(networkValueBeforeEventQ8);
     const creditFloorAtConfirmQ8 = networkQ8 / 21_000_000n;
     const creditValueAtConfirmQ8 =
@@ -15247,7 +15966,8 @@ check("canonical summary publication allows cumulative INCB dust across independ
     const liveNetworkValueQ8 = creditLiveValueQ8 + fixedEventFlowQ8;
     return {
       amount,
-      amountAtoms,
+      amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+      amountSubatoms,
       confirmed: true,
       creditAmountMoved: Number(amount),
       creditFloorAtConfirmModel:
@@ -15275,9 +15995,12 @@ check("canonical summary publication allows cumulative INCB dust across independ
       liveNetworkValueSats: q8ToCanonicalDecimal(liveNetworkValueQ8),
       networkValueBeforeEventQ8: networkQ8.toString(),
       networkValueBeforeEventSats: q8ToCanonicalDecimal(networkQ8),
+      decimals: WORK_SUBATOM_DECIMALS,
+      precisionModel: WORK_PRECISION_V2_MODEL,
       tokenId:
         "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8",
       txid,
+      unitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,
       valueSnapshotBlockHash: snapshotBlockHash,
       valueSnapshotBlockHeight: snapshotBlockHeight,
       valueSnapshotCanonicalSummaryHash: "b".repeat(64),
@@ -15408,6 +16131,10 @@ check("canonical summary publication allows cumulative INCB dust across independ
   const fractionalProductionAmountAtoms = parseWorkAmountToAtoms(
     fractionalProductionAmount,
   );
+  const fractionalProductionAmountSubatoms = (
+    BigInt(fractionalProductionAmountAtoms) *
+    WORK_SUBATOM_CONVERSION_FACTOR
+  ).toString();
   const highMagnitudeLiveFloorSats = 30_000_000.12345678;
   const highMagnitudeLiveFloorQ8 = decimalValueToQ8(
     highMagnitudeLiveFloorSats,
@@ -15427,7 +16154,8 @@ check("canonical summary publication allows cumulative INCB dust across independ
     highMagnitudeLiveValueQ8 + 546n * VALUE_Q8_SCALE;
   const highMagnitudeProjection = {
     amount: fractionalProductionAmount,
-    amountAtoms: fractionalProductionAmountAtoms,
+    amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+    amountSubatoms: fractionalProductionAmountSubatoms,
     confirmed: true,
     creditAmountMoved: Number(fractionalProductionAmount),
     creditFloorAtConfirmModel: "canonical-work-live-floor-v1",
@@ -15459,9 +16187,12 @@ check("canonical summary publication allows cumulative INCB dust across independ
       highMagnitudeNetworkValueBeforeEventQ8.toString(),
     networkValueBeforeEventSats:
       q8ToCanonicalDecimal(highMagnitudeNetworkValueBeforeEventQ8),
+    decimals: WORK_SUBATOM_DECIMALS,
+    precisionModel: WORK_PRECISION_V2_MODEL,
     tokenId:
       "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8",
     txid: "e".repeat(64),
+    unitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,
   };
   const highMagnitudeSummary = summaryPayloads(2);
   highMagnitudeSummary.workSummary = {
@@ -15614,10 +16345,13 @@ check("canonical summary accounting is exact for the 958382 H-1 state and unsafe
         "fixed-incb-issuance-plus-market-flow-v1",
       INCB_VALUE_SNAPSHOT_MODEL:
         "canonical-summary-h-minus-one-v1",
+      WORK_AMO_V7_CONFIGURED_ACTIVATION_HEIGHT: 1,
+      WORK_AMO_V7_DECLARATION_PINS_CONFIGURED: true,
       WORK_TOKEN_ID:
         "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8",
       WORK_TRANSFER_VALUE_PROJECTION_MODEL:
         "canonical-work-transfer-value-projection-v1",
+      canonicalSummaryCoverage: () => 1_000_000,
     },
   );
   const coverage = {
@@ -15632,6 +16366,12 @@ check("canonical summary accounting is exact for the 958382 H-1 state and unsafe
     source: "proof-indexer-normalized-input-output-totals",
   };
   const exactActual = {
+    attachedWorkAmountDecimals: WORK_SUBATOM_DECIMALS,
+    attachedWorkAmountPrecisionModel: WORK_PRECISION_V2_MODEL,
+    attachedWorkAmountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+    attachedWorkAmountSubatoms:
+      "942888400000000000000000",
+    attachedWorkAmountUnitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,
     attachedWorkIssuanceUnits: "108304295445969",
     attachedWorkLiveValueAtSendQ8: "10830429544598320233641",
     attachedWorkLiveValueAtSendSats: "108304295445983.20233641",
@@ -15851,7 +16591,11 @@ check("canonical summary accounting is exact for the 958382 H-1 state and unsafe
     workLiveValueQ8 + 546n * BOND_VALUE_Q8_SCALE;
   const exactWorkProjection = {
     amount: workAmount,
-    amountAtoms: workAmountAtoms,
+    amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+    amountSubatoms: (
+      BigInt(workAmountAtoms) *
+      WORK_SUBATOM_CONVERSION_FACTOR
+    ).toString(),
     confirmed: true,
     creditAmountMoved: Number(workAmount),
     creditFloorAtConfirmModel: "canonical-work-live-floor-v1",
@@ -15877,9 +16621,12 @@ check("canonical summary accounting is exact for the 958382 H-1 state and unsafe
     networkValueBeforeEventQ8: workConfirmNetworkValueQ8.toString(),
     networkValueBeforeEventSats:
       q8ToCanonicalDecimal(workConfirmNetworkValueQ8),
+    decimals: WORK_SUBATOM_DECIMALS,
+    precisionModel: WORK_PRECISION_V2_MODEL,
     tokenId:
       "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8",
     txid: "8".repeat(64),
+    unitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,
   };
   assert.ok(
     workLiveValueQ8 / BOND_VALUE_Q8_SCALE >
@@ -24795,7 +25542,13 @@ check("complete canonical token replay publishes conserved balances", async () =
   const rebuildConfirmedCreditBalancesFromCanonicalEvents = isolatedFunction(
     BACKFILL_PATH,
     "rebuildConfirmedCreditBalancesFromCanonicalEvents",
-    { NETWORK: "livenet" },
+    {
+      NETWORK: "livenet",
+      assertCanonicalWorkProjection: async () => ({
+        model: WORK_ATOMIC_PROJECTION_MODEL,
+        state: "q8",
+      }),
+    },
   );
   const client = {
     async query(sql, params) {
@@ -24888,7 +25641,14 @@ check("stored supply can decrease only in the explicit scoped INCB repair", asyn
   const rebuildConfirmedCreditBalancesFromCanonicalEvents = isolatedFunction(
     BACKFILL_PATH,
     "rebuildConfirmedCreditBalancesFromCanonicalEvents",
-    { INCB_TOKEN_ID: tokenId, NETWORK: "livenet" },
+    {
+      INCB_TOKEN_ID: tokenId,
+      NETWORK: "livenet",
+      assertCanonicalWorkProjection: async () => ({
+        model: WORK_ATOMIC_PROJECTION_MODEL,
+        state: "q8",
+      }),
+    },
   );
   const clientFor = (writes) => ({
     async query(sql, params = []) {
@@ -25137,9 +25897,18 @@ check("canonical indexer binds exact verified WORK transfers to every PWM mail k
     assert.equal(boundMail.item.attachedCredits[0]._powEventIndex, 2);
     assert.equal(boundMail.item.attachedCredits[0].amount, "20999999.99999999");
     assert.equal(
-      boundMail.item.attachedCredits[0].amountAtoms,
+      boundMail.item.attachedCredits[0].amountSubatoms,
+      "209999999999999900000000",
+    );
+    assert.equal(
+      boundMail.item.attachedCredits[0].legacyAmountAtoms,
       "2099999999999999",
     );
+    assert.equal(
+      boundMail.item.attachedCredits[0].amountStorageModel,
+      WORK_SUBATOM_PROJECTION_MODEL,
+    );
+    assert.equal(boundMail.item.attachedCredits[0].amountAtoms, undefined);
     assert.equal(boundMail.item.attachedCredits[0].protocolVout, 3);
     assert.equal(
       boundMail.item.attachedCredits[0].recipientAddress,
@@ -25839,7 +26608,13 @@ check("negative canonical token replay fails before balance publication", async 
   const rebuildConfirmedCreditBalancesFromCanonicalEvents = isolatedFunction(
     BACKFILL_PATH,
     "rebuildConfirmedCreditBalancesFromCanonicalEvents",
-    { NETWORK: "livenet" },
+    {
+      NETWORK: "livenet",
+      assertCanonicalWorkProjection: async () => ({
+        model: WORK_ATOMIC_PROJECTION_MODEL,
+        state: "q8",
+      }),
+    },
   );
   const client = {
     async query(sql) {
@@ -25944,7 +26719,12 @@ check("canonical WORK seed is atomic even from an empty cached-false definition"
       WORK_TOKEN_MINT_AMOUNT: 1_000,
       WORK_TOKEN_MINT_PRICE_SATS: 1_000,
       WORK_TOKEN_REGISTRY_ADDRESS: "work-registry",
-      assertCanonicalWorkAtomicProjection,
+      assertCanonicalWorkProjection: async () => ({
+        model: WORK_ATOMIC_PROJECTION_MODEL,
+        state: "q8",
+      }),
+      currentWorkProjectionModel: async () =>
+        WORK_ATOMIC_PROJECTION_MODEL,
       upsertCanonicalSyntheticCreditDefinition,
     },
   );
@@ -26008,8 +26788,8 @@ check("canonical WORK seed is atomic even from an empty cached-false definition"
   assert.equal(await workAtomicProjectionReady(client, { refresh: true }), true);
   assert.equal(
     calls.filter((call) => call.sql.includes("SELECT max_supply::text")).length,
-    3,
-    "the seed must ignore cached false for its write and refresh the stored row",
+    2,
+    "the explicit Q8 seed path must refresh readiness from the stored row",
   );
 });
 
@@ -26027,7 +26807,7 @@ check("range replay atomic source rejects legacy and hybrid WORK state", async (
   );
   await rejection(
     legacySource({}, "PWT range replay source projection"),
-    (error) => /fully atomic WORK source projection/u.test(error.message),
+    (error) => /fully exact Q8 or Q16 WORK source projection/u.test(error.message),
   );
 
   const hybridSource = isolatedFunction(
@@ -26051,7 +26831,12 @@ check("range replay atomic source rejects legacy and hybrid WORK state", async (
   const canonicalWorkAtomicConservation = isolatedFunction(
     BACKFILL_PATH,
     "canonicalWorkAtomicConservation",
-    { NETWORK: "livenet" },
+    {
+      NETWORK: "livenet",
+      WORK_ATOMIC_PROJECTION_MODEL,
+      WORK_ATOM_TO_SUBATOM_SCALE: 100_000_000n,
+      WORK_SUBATOM_PROJECTION_MODEL: "work-subatoms-v2",
+    },
   );
   const conserved = await canonicalWorkAtomicConservation({
     async query() {
@@ -26069,11 +26854,42 @@ check("range replay atomic source rejects legacy and hybrid WORK state", async (
   assert.deepEqual(
     { ...conserved },
     {
+      amountStorageModel: WORK_ATOMIC_PROJECTION_MODEL,
       balanceSupply: "2100000000000000",
       mintedSupply: "2100000000000000",
       mintEvents: 21000,
     },
   );
+  let q16Params = [];
+  const conservedQ16 = await canonicalWorkAtomicConservation(
+    {
+      async query(_sql, params) {
+        q16Params = Array.from(params);
+        return {
+          rows: [{
+            balance_supply: "210000000000000000000000",
+            invalid_mint_amounts: 0,
+            mint_events: 21000,
+            minted_supply: "210000000000000000000000",
+            negative_balances: 0,
+          }],
+        };
+      },
+    },
+    WORK_SUBATOM_PROJECTION_MODEL,
+  );
+  assert.equal(
+    conservedQ16.amountStorageModel,
+    WORK_SUBATOM_PROJECTION_MODEL,
+  );
+  assert.deepEqual(q16Params, [
+    "livenet",
+    WORK_TOKEN_ID,
+    WORK_SUBATOM_PROJECTION_MODEL,
+    "100000000",
+    WORK_SUBATOM_PROJECTION_MODEL,
+    WORK_ATOMIC_PROJECTION_MODEL,
+  ]);
 });
 
 check("canonical rebuild preparation requires an explicit supervised height", () => {
@@ -29150,7 +29966,13 @@ check("POWB bond mints rebuild holder supply before dependent transfers", async 
   const rebuildConfirmedCreditBalancesFromCanonicalEvents = isolatedFunction(
     BACKFILL_PATH,
     "rebuildConfirmedCreditBalancesFromCanonicalEvents",
-    { NETWORK: "livenet" },
+    {
+      NETWORK: "livenet",
+      assertCanonicalWorkProjection: async () => ({
+        model: WORK_ATOMIC_PROJECTION_MODEL,
+        state: "q8",
+      }),
+    },
   );
   const result = await rebuildConfirmedCreditBalancesFromCanonicalEvents({
     async query(sql, params = []) {
@@ -30645,6 +31467,27 @@ check("pending WORK supply-cap fast path is exact and bypasses broad replay", as
       stats.pendingSupply = 2_000;
       stats.totalMints = stats.confirmedMints + stats.pendingMints;
     }
+    stats.amountStorageModel = WORK_ATOMIC_PROJECTION_MODEL;
+    stats.confirmedSupplyAtoms = (
+      BigInt(stats.confirmedSupply) * WORK_UNIT_SCALE
+    ).toString();
+    stats.decimals = WORK_DECIMALS;
+    stats.pendingCandidateSupplyAtoms = (
+      BigInt(stats.pendingCandidateSupply) * WORK_UNIT_SCALE
+    ).toString();
+    stats.pendingCandidates = stats.pendingCandidates.map((candidate) => ({
+      ...candidate,
+      amountAtoms: (
+        BigInt(candidate.amount) * WORK_UNIT_SCALE
+      ).toString(),
+      amountStorageModel: WORK_ATOMIC_PROJECTION_MODEL,
+      decimals: WORK_DECIMALS,
+      unitScale: WORK_UNIT_SCALE_TEXT,
+    }));
+    stats.pendingSupplyAtoms = (
+      BigInt(stats.pendingSupply) * WORK_UNIT_SCALE
+    ).toString();
+    stats.unitScale = WORK_UNIT_SCALE_TEXT;
     return stats;
   };
   const pendingWorkMintSupplyCapVerifierPayload = isolatedFunction(
@@ -32821,6 +33664,26 @@ check(
       txid: closeTxid,
       vin: 2,
     };
+    const exactWorkAmountSubatoms = "200000000000000000";
+    const listingPayload = {
+      amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+      amountSubatoms: exactWorkAmountSubatoms,
+      decimals: WORK_SUBATOM_DECIMALS,
+      listingId: listingTxid,
+      saleAuthorization: {
+        tokenId: WORK_TOKEN_ID,
+        version: WORK_AMO_V7_AUTH_VERSION,
+      },
+      ticker: "WORK",
+      tokenId: WORK_TOKEN_ID,
+      unitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,
+    };
+    const tokenMetadata = {
+      amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+      decimals: WORK_SUBATOM_DECIMALS,
+      precisionModel: WORK_PRECISION_V2_MODEL,
+      unitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,
+    };
     const canonicalCloseRow = {
       ...canonicalSpenderRow,
       event_block_height: 958_135,
@@ -32828,11 +33691,36 @@ check(
       event_protocol_vout: 1,
       event_record_ordinal: 0,
       kind: "token-listing-closed",
+      listing_amount: exactWorkAmountSubatoms,
+      listing_payload: listingPayload,
+      listing_token_id: WORK_TOKEN_ID,
+      payload: {
+        listingId: listingTxid,
+        tokenId: WORK_TOKEN_ID,
+      },
+      token_metadata: tokenMetadata,
     };
     const canonicalSaleRow = {
       ...canonicalCloseRow,
       event_protocol_vout: 2,
       kind: "token-sale",
+      payload: {
+        amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+        amountSubatoms: exactWorkAmountSubatoms,
+        buyerAddress: "buyer",
+        decimals: WORK_SUBATOM_DECIMALS,
+        listingId: listingTxid,
+        priceSats: 20_000,
+        registryAddress: "registry",
+        saleAuthorization: {
+          tokenId: WORK_TOKEN_ID,
+          version: WORK_AMO_V7_AUTH_VERSION,
+        },
+        sellerAddress: "seller",
+        ticker: "WORK",
+        tokenId: WORK_TOKEN_ID,
+        unitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,
+      },
     };
     let rows = [canonicalCloseRow, canonicalSaleRow];
     let spenderRows = [canonicalSpenderRow];
@@ -32884,7 +33772,10 @@ check(
     assert.equal(payload.closedProtocolVout, 1);
     assert.equal(payload.saleProtocolVout, 2);
     assert.deepEqual(spenderParams, ["livenet", listingTxid, listingVout]);
-    assert.deepEqual(lifecycleParams, ["livenet", closeTxid, listingTxid]);
+    assert.deepEqual(
+      lifecycleParams,
+      ["livenet", closeTxid, listingTxid, listingVout],
+    );
     assert.match(
       spenderSql,
       /FROM proof_indexer\.tx_inputs spend_input[\s\S]*spend_input\.prev_txid = \$2[\s\S]*spend_input\.prev_vout = \$3/iu,
@@ -35534,6 +36425,8 @@ check("canonical consistency reads the exact eligible summary snapshot", async (
       canonicalSummaryLedgerRowBinding,
       canonicalSummaryLedgerValueBindingsAgree,
       dateIso: (value) => new Date(value).toISOString(),
+      workAmountStorageModelAtHeight: async () =>
+        WORK_ATOMIC_PROJECTION_MODEL,
       proofIndexPool: () => ({
         async query(sql, params) {
           queryText = String(sql);
@@ -35664,6 +36557,8 @@ check("Inception H-1 oracle accepts agreeing versioned exact green summaries", a
       canonicalSummaryLedgerRowBinding,
       canonicalSummaryLedgerValueBindingsAgree,
       dateIso: (value) => new Date(value).toISOString(),
+      workAmountStorageModelAtHeight: async () =>
+        WORK_ATOMIC_PROJECTION_MODEL,
       proofIndexPool: () => ({
         async query(sql, params) {
           queryCount += 1;
@@ -35742,8 +36637,13 @@ check("Inception H-1 oracle accepts agreeing versioned exact green summaries", a
   const preservedRows = structuredClone(rows);
   const exact = await readCanonicalSummary("livenet", height, blockHash);
   assert.equal(queryCount, 1);
-  assert.deepEqual(queryParams, ["livenet", height, blockHash]);
-  assert.doesNotMatch(queryText, /workAmountStorageModel/u);
+  assert.deepEqual(queryParams, [
+    "livenet",
+    height,
+    blockHash,
+    WORK_ATOMIC_PROJECTION_MODEL,
+  ]);
+  assert.match(queryText, /workAmountStorageModel/u);
   assert.match(queryText, /consistency->>'status'.*= 'green'/u);
   assert.match(
     queryText,
@@ -37299,8 +38199,12 @@ check("WORK replay counts one canonical miner fee without collapsing same-tx mov
     "a distinct same-tx marketplace record must survive movement deduplication",
   );
   assert.equal(
-    metrics.events.reduce((total, event) => total + event.amount, 0),
-    20,
+    metrics.events.reduce(
+      (total, event) =>
+        total + BigInt(event.amountSubatoms ?? "0"),
+      0n,
+    ),
+    20n * WORK_SUBATOM_UNIT_SCALE,
     "both WORK movements remain in the replay",
   );
   assert.equal(metrics.creditRegistryMutationFlowSats, 1_092);
@@ -37494,11 +38398,22 @@ check("Inception-bound WORK movements freeze once at each bond's own H-1 live or
         confirmedMints: mint ? 1 : 0,
       };
     }
+    const attachedWorkAmountAtoms = parseWorkAmountToAtoms(
+      mint.attachedWorkAmount,
+    );
+    const attachedWorkAmountSubatoms = (
+      BigInt(attachedWorkAmountAtoms) *
+      WORK_SUBATOM_CONVERSION_FACTOR
+    ).toString();
     return {
       attachedWorkAmount: mint.attachedWorkAmount,
-      attachedWorkAmountAtoms: parseWorkAmountToAtoms(
-        mint.attachedWorkAmount,
-      ),
+      attachedWorkAmountAtoms,
+      attachedWorkAmountDecimals: WORK_SUBATOM_DECIMALS,
+      attachedWorkAmountPrecisionModel: WORK_PRECISION_V2_MODEL,
+      attachedWorkAmountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+      attachedWorkAmountSubatoms,
+      attachedWorkAmountUnitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,
+      attachedWorkAmountVersion: TOKEN_SEND_SUBATOMS_ACTION,
       attachedWorkLiveValueAtSendSats:
         mint.attachedWorkLiveValueAtSendSats,
       attachedWorkLiveValueAtSendQ8:
@@ -37917,6 +38832,11 @@ check("exact-tip WORK transfer projection preserves both Inception H-1 values", 
   const projectedFields = [
     "amount",
     "amountAtoms",
+    "amountStorageModel",
+    "amountSubatoms",
+    "decimals",
+    "precisionModel",
+    "unitScale",
     "blockHash",
     "blockHeight",
     "blockIndex",
@@ -37943,6 +38863,11 @@ check("exact-tip WORK transfer projection preserves both Inception H-1 values", 
     "liveNetworkValueBeforeEventQ8",
     "liveNetworkValueQ8",
     "networkValueBeforeEventQ8",
+    "creditAmountMovedDecimals",
+    "creditAmountMovedPrecisionModel",
+    "creditAmountMovedStorageModel",
+    "creditAmountMovedSubatoms",
+    "creditAmountMovedUnitScale",
     ...numericFields,
   ];
   const fromState = isolatedFunction(
@@ -38094,11 +39019,15 @@ check("exact-tip WORK transfer projection preserves both Inception H-1 values", 
   const exactTipLiveFloorText = q8ToCanonicalDecimal(exactTipLiveFloorQ8);
   const projection = fromState(
     {
+      amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+      decimals: WORK_SUBATOM_DECIMALS,
       mints: Array.from({ length: 100 }, (_, index) => ({ index })),
+      precisionModel: WORK_PRECISION_V2_MODEL,
       transfers: [
         ...valuedTransfers,
         { ...valuedTransfers[0], confirmed: false, txid: "f".repeat(64) },
       ],
+      unitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,
     },
     exactTipLiveFloorSats,
   );
@@ -38114,6 +39043,17 @@ check("exact-tip WORK transfer projection preserves both Inception H-1 values", 
     );
     assert.ok(Math.abs(Number(item.creditValueAtConfirmSats) - value.frozen) < 0.01);
     assert.equal(item.creditLiveFloorSats, exactTipLiveFloorText);
+    assert.equal(
+      item.creditAmountMovedSubatoms,
+      (
+        BigInt(parseWorkAmountToAtoms("3644060")) *
+        WORK_SUBATOM_CONVERSION_FACTOR
+      ).toString(),
+    );
+    assert.equal(
+      item.creditAmountMovedStorageModel,
+      WORK_SUBATOM_PROJECTION_MODEL,
+    );
     assert.equal(item.creditLiveFloorQ8, exactTipLiveFloorQ8.toString());
     assert.equal(item.creditRevaluationFloorSats, exactTipLiveFloorText);
     assert.equal(
@@ -38153,7 +39093,10 @@ check("exact-tip WORK transfer projection preserves both Inception H-1 values", 
     txid: sharedV5Txid,
   }));
   const v5Projection = fromState(
-    { transfers: v5Transfers },
+    {
+      amountStorageModel: WORK_ATOMIC_PROJECTION_MODEL,
+      transfers: v5Transfers,
+    },
     exactTipLiveFloorSats,
   );
   const v5Projected = apply(
@@ -38177,8 +39120,19 @@ check("exact-tip WORK transfer projection preserves both Inception H-1 values", 
     (item) => item.txid === values[0].txid,
   );
   const dd743FloorFirstQ8 =
-    (BigInt(dd743.amountAtoms) * BigInt(dd743.creditFloorAtConfirmQ8)) /
-    WORK_UNIT_SCALE;
+    (
+      BigInt(dd743.amountSubatoms) *
+      BigInt(dd743.creditFloorAtConfirmQ8)
+    ) /
+    WORK_SUBATOM_UNIT_SCALE;
+  assert.equal(dd743.amountAtoms, undefined);
+  assert.equal(
+    dd743.amountSubatoms,
+    (
+      BigInt(parseWorkAmountToAtoms("3644060")) *
+      WORK_SUBATOM_CONVERSION_FACTOR
+    ).toString(),
+  );
   assert.equal(dd743.creditValueAtConfirmQ8, "142179891562759520");
   assert.equal(
     BigInt(dd743.creditValueAtConfirmQ8) - dd743FloorFirstQ8,
@@ -38200,6 +39154,7 @@ check("exact-tip WORK transfer projection preserves both Inception H-1 values", 
     unsafeConfirmValueQ8 + 546n * VALUE_Q8_SCALE;
   const unsafeProjection = fromState(
     {
+      amountStorageModel: WORK_ATOMIC_PROJECTION_MODEL,
       transfers: [
         {
           amount: unsafeAmount,
@@ -40863,7 +41818,7 @@ check("AMO V5 canonical listing reads bind frozen terms to tuple and block hash"
   const listingId = "a".repeat(64);
   const blockHash = "b".repeat(64);
   const row = {
-    amount_atoms: "100000000",
+    amount_units: "100000000",
     anchor_address: "anchor",
     anchor_scriptpubkey: "0014aa",
     anchor_value_sats: "546",
@@ -40871,9 +41826,14 @@ check("AMO V5 canonical listing reads bind frozen terms to tuple and block hash"
     block_height: WORK_AMO_V5_ACTIVATION_HEIGHT,
     block_index: 7,
     listing_event_payload: {
+      amount: "1",
+      amountAtoms: "100000000",
+      amountStorageModel: WORK_ATOMIC_PROJECTION_MODEL,
+      decimals: WORK_DECIMALS,
       saleAuthorization: {
         version: WORK_AMO_V5_AUTH_VERSION,
       },
+      unitScale: WORK_UNIT_SCALE_TEXT,
     },
     listing_id: listingId,
     listing_status: "active",
@@ -40884,6 +41844,11 @@ check("AMO V5 canonical listing reads bind frozen terms to tuple and block hash"
     sale_ticket_value_sats: "546",
     sale_ticket_vout: 2,
     seller_address: "seller",
+    token_metadata: {
+      amountStorageModel: WORK_ATOMIC_PROJECTION_MODEL,
+      decimals: WORK_DECIMALS,
+      unitScale: WORK_UNIT_SCALE_TEXT,
+    },
   };
   let terms = {
     frozenTerms: { listingBlockHash: blockHash },
@@ -47636,7 +48601,7 @@ check("the first V6 listing crosses replay binding into atomic persistence witho
     mutate(corrupted);
     assert.throws(
       () => bindLifecycleItem({ listing: corrupted }),
-      /Canonical AMO V6 replay listing materialization is invalid/u,
+      /Canonical AMO governed replay listing materialization is invalid/u,
       `Tampered V6 replay ${field} must fail closed`,
     );
   }
@@ -54357,7 +55322,7 @@ check("AMO V6 readiness selects exact listing-version SQL arrays", async () => {
   );
 });
 
-check("sequential public cutovers require exact V6 read readiness", async () => {
+check("sequential public cutovers require explicit V6 and V7 authorization", async () => {
   const listing = {
     amount: "0.0000001",
     amountAtoms: "10",
@@ -54400,18 +55365,13 @@ check("sequential public cutovers require exact V6 read readiness", async () => 
   assert.equal(afterV5.listings[0].amountAtoms, "10");
   assert.equal(afterV5.listings[0].amount, "0.0000001");
 
-  const workAmoV6PublicListingReadReady = isolatedFunction(
+  const governedWorkListingVersion = isolatedFunction(
     READER_PATH,
-    "workAmoV6PublicListingReadReady",
+    "governedWorkListingVersion",
     {
-      normalizedLowerText: (value) =>
-        String(value ?? "").trim().toLowerCase(),
-    },
-  );
-  const workAmoV6ListingRecord = isolatedFunction(
-    READER_PATH,
-    "workAmoV6ListingRecord",
-    {
+      WORK_MARKET_GOVERNED_AUTH_VERSIONS:
+        WORK_MARKET_GOVERNED_AUTH_VERSIONS_FIXTURE,
+      isWorkTokenId,
       normalizedLowerText: (value) =>
         String(value ?? "").trim().toLowerCase(),
       objectRecord: (value) =>
@@ -54420,12 +55380,20 @@ check("sequential public cutovers require exact V6 read readiness", async () => 
           : {},
     },
   );
+  const workListingAuthorizationAllowed = isolatedFunction(
+    READER_PATH,
+    "workListingAuthorizationAllowed",
+    {
+      governedWorkListingVersion,
+      normalizedLowerText: (value) =>
+        String(value ?? "").trim().toLowerCase(),
+    },
+  );
   const applyWorkAmoV6PublicListingReadPolicy = isolatedFunction(
     READER_PATH,
     "applyWorkAmoV6PublicListingReadPolicy",
     {
-      workAmoV6ListingRecord,
-      workAmoV6PublicListingReadReady,
+      workListingAuthorizationAllowed,
     },
   );
   assert.equal(
@@ -54446,6 +55414,46 @@ check("sequential public cutovers require exact V6 read readiness", async () => 
       ],
     ).listings.length,
     1,
+  );
+  const v7Listing = {
+    ...listing,
+    amount: "0.0000000000000001",
+    amountAtoms: undefined,
+    amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+    amountSubatoms: "1",
+    decimals: WORK_SUBATOM_DECIMALS,
+    listingId: "7".repeat(64),
+    precisionModel: WORK_PRECISION_V2_MODEL,
+    saleAuthorization: {
+      tokenId: WORK_TOKEN_ID,
+      version: WORK_AMO_V7_AUTH_VERSION,
+    },
+    unitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,
+  };
+  assert.equal(
+    applyWorkAmoV6PublicListingReadPolicy(
+      { ...structuredClone(state), listings: [v7Listing] },
+      [
+        WORK_AMO_V6_AUTH_VERSION,
+        WORK_AMO_V5_AUTH_VERSION,
+        WORK_AMO_V4_AUTH_VERSION,
+      ],
+    ).listings.length,
+    0,
+    "a V7 listing must fail closed until V7 is explicitly authorized",
+  );
+  assert.equal(
+    applyWorkAmoV6PublicListingReadPolicy(
+      { ...structuredClone(state), listings: [v7Listing] },
+      [
+        WORK_AMO_V7_AUTH_VERSION,
+        WORK_AMO_V6_AUTH_VERSION,
+        WORK_AMO_V5_AUTH_VERSION,
+        WORK_AMO_V4_AUTH_VERSION,
+      ],
+    ).listings.length,
+    1,
+    "an exact V7 authorization set admits the Q16 listing",
   );
 
   const cutoverOrder = [];
@@ -54480,6 +55488,10 @@ check("sequential public cutovers require exact V6 read readiness", async () => 
               ]
             : [WORK_AMO_V5_AUTH_VERSION, WORK_AMO_V4_AUTH_VERSION],
         ),
+      payloadWithCurrentWorkPrecisionReadPolicy: async (
+        _network,
+        payload,
+      ) => payload,
       payloadWithVerifiedWorkMarketV4Activation: async (
         _pool,
         _network,
