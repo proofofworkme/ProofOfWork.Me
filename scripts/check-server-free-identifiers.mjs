@@ -2,9 +2,14 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
 
-const targetPath = fileURLToPath(
-  new URL("../server/proof-api.mjs", import.meta.url),
-);
+const targetPaths = [
+  fileURLToPath(
+    new URL("../server/proof-api.mjs", import.meta.url),
+  ),
+  fileURLToPath(
+    new URL("./backfill-proof-indexer.mjs", import.meta.url),
+  ),
+];
 const compilerOptions = {
   allowJs: true,
   checkJs: true,
@@ -14,22 +19,32 @@ const compilerOptions = {
   skipLibCheck: true,
   target: ts.ScriptTarget.ES2022,
 };
-const program = ts.createProgram([targetPath], compilerOptions);
-const sourceFile = program.getSourceFile(targetPath);
-if (!sourceFile) {
-  console.error(`Server source was not loaded: ${targetPath}`);
+const program = ts.createProgram(targetPaths, compilerOptions);
+const sourceFiles = targetPaths.map((targetPath) => ({
+  sourceFile: program.getSourceFile(targetPath),
+  targetPath,
+}));
+const missingSources = sourceFiles.filter(
+  ({ sourceFile }) => !sourceFile,
+);
+for (const { targetPath } of missingSources) {
+  console.error(`Runtime source was not loaded: ${targetPath}`);
+}
+if (missingSources.length > 0) {
   process.exitCode = 1;
 }
 const missingIdentifierCodes = new Set([2304, 2552]);
-const diagnostics = sourceFile
-  ? program
-      .getSemanticDiagnostics(sourceFile)
-      .filter(
-        (diagnostic) =>
-          missingIdentifierCodes.has(diagnostic.code) &&
-          diagnostic.file === sourceFile,
-      )
-  : [];
+const diagnostics = sourceFiles.flatMap(({ sourceFile }) =>
+  sourceFile
+    ? program
+        .getSemanticDiagnostics(sourceFile)
+        .filter(
+          (diagnostic) =>
+            missingIdentifierCodes.has(diagnostic.code) &&
+            diagnostic.file === sourceFile,
+        )
+    : []
+);
 
 if (diagnostics.length > 0) {
   const host = {
@@ -43,6 +58,6 @@ if (diagnostics.length > 0) {
     ts.formatDiagnosticsWithColorAndContext(diagnostics, host).trimEnd(),
   );
   process.exitCode = 1;
-} else if (sourceFile) {
-  console.log("Server free-identifier check passed.");
+} else if (missingSources.length === 0) {
+  console.log("Server and indexer free-identifier check passed.");
 }

@@ -35,6 +35,7 @@ import {
   WORK_PRECISION_V2_MIGRATION_META_KEY,
   WORK_PRECISION_V2_MIGRATION_MODEL,
   WORK_PRECISION_V2_MODEL,
+  WORK_SUBATOM_CONVERSION_FACTOR,
   WORK_SUBATOM_DECIMALS,
   WORK_SUBATOM_PROJECTION_MODEL,
   WORK_SUBATOM_UNIT_SCALE,
@@ -11141,7 +11142,7 @@ async function ensureCanonicalRushBootstrap(client) {
       discovery.cursor + remainingBudget,
     );
     const blockCache = new Map();
-    const prepared = await mapWithConcurrency(
+    const prepared = await boundedMapWithConcurrency(
       entries,
       PREVOUT_HYDRATION_CONCURRENCY,
       (entry) => canonicalRushBootstrapTransaction(entry, blockCache),

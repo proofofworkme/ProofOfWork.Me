@@ -19930,7 +19930,7 @@ check("canonical RUSH bootstrap replaces volatile rows before persistence and ro
           blockHash: checkpointHash,
           height: 100,
         }),
-        mapWithConcurrency: async (items, _concurrency, mapper) =>
+        boundedMapWithConcurrency: async (items, _concurrency, mapper) =>
           Promise.all(items.map(mapper)),
         persistCanonicalBlock: async (_client, _block, height) => {
           events.push(`block:${height}`);
