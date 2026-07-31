@@ -68,6 +68,10 @@ const WORK_AMO_V6_FIRST_LISTING_BLOCK_HASH =
   "00000000000000000000a5ea8861570ed551f77ed3cc0bddc3db3958d2700b44";
 const WORK_AMO_V6_FIRST_LISTING_SELLER =
   "18hkqE81wQuq75UEBKhB4JjAuQg47jN7Aa";
+const WORK_AMO_V6_FIRST_LISTING_CLOSE_TX =
+  "4d8f0c92c19a6904e46594975d4b17139d5937209ce5b245844677cd3491bfe0";
+const WORK_AMO_V6_FIRST_LISTING_CLOSE_BLOCK_HASH =
+  "00000000000000000000700a55e93d0a769d861e956868c04ede0185ec929569";
 const WORK_MARKET_V2_LATE_SEAL_LISTING_TX =
   "9c79f121eb73f079b330950a2890ba2029416e5b75bafadc642623c66fd963f9";
 const WORK_MARKET_V2_LATE_SEAL_TX =
@@ -992,56 +996,202 @@ function assertFirstWorkAmoV6ListingRecord(
   );
 }
 
+function assertFirstWorkAmoV6FrozenTerms(frozenTerms, label) {
+  const expected = {
+    amountModel: "canonical-confirmed-position-derived-work-amount-v1",
+    bondTransitionModel: "canonical-compute-then-bond-v1",
+    listingBlockHash: WORK_AMO_V6_FIRST_LISTING_BLOCK_HASH,
+    listingBlockHeight: 960_258,
+    listingBlockIndex: 4_093,
+    listingBondContributionQ8: "2940553839600",
+    listingNetworkValueAfterQ8: "407065289490677089559475846",
+    listingNetworkValueBeforeQ8: "407065289490674149005636246",
+    listingProtocolVout: 1,
+    listingRecordOrdinal: 0,
+    stateOrderModel: "canonical-proof-state-order-v1",
+    unitAmountAtoms: "10",
+    unitFaceProofs: 20_000,
+    unitMinimumPriceSats: "19385",
+    unitModel: "canonical-work-amo-proof-unit-v1",
+    unitPriceSats: "20000",
+    unitWorkOracleModel: "canonical-work-prefix-before-action-v1",
+    version: WORK_AMO_V6_AUTH_VERSION,
+  };
+  assert(
+    frozenTerms &&
+      JSON.stringify(Object.keys(frozenTerms).sort()) ===
+        JSON.stringify(Object.keys(expected).sort()) &&
+      Object.entries(expected).every(
+        ([key, value]) => frozenTerms[key] === value,
+      ),
+    `${label} changed the exact first AMO V6 frozen terms`,
+  );
+}
+
+function assertFirstWorkAmoV6ClosedListingRecord(
+  listing,
+  label,
+  { requireOriginalPosition = false } = {},
+) {
+  if (requireOriginalPosition) {
+    assertFirstWorkAmoV6ListingRecord(listing, label, ["delisted"]);
+    assertFirstWorkAmoV6FrozenTerms(
+      listing.frozenTerms,
+      `${label} projection`,
+    );
+    const original = listing.listing ?? listing.closedListing;
+    assert(
+      String(original?.listingId ?? "").toLowerCase() ===
+          WORK_AMO_V6_FIRST_LISTING_TX &&
+        String(original?.amountAtoms ?? "") === "10" &&
+        Number(original?.priceSats) === 20_000 &&
+        String(original?.sellerAddress ?? "") ===
+          WORK_AMO_V6_FIRST_LISTING_SELLER &&
+        workListingAuthorizationVersion(original) ===
+          WORK_AMO_V6_AUTH_VERSION,
+      `${label} changed the nested original first AMO V6 listing`,
+    );
+    assertFirstWorkAmoV6FrozenTerms(
+      original.frozenTerms,
+      `${label} nested listing`,
+    );
+    assert(
+      String(listing.saleTicketTxid ?? "").toLowerCase() ===
+          WORK_AMO_V6_FIRST_LISTING_TX &&
+        Number(listing.saleTicketVout) === 2 &&
+        listing.closedByCanonicalOutpointSpend === true,
+      `${label} lost canonical sale-ticket close evidence`,
+    );
+  }
+  assert(
+    String(listing?.listingId ?? "").toLowerCase() ===
+        WORK_AMO_V6_FIRST_LISTING_TX &&
+      listing?.confirmed === true &&
+      listing?.closedConfirmed === true &&
+      workListingAuthorizationVersion(listing) ===
+        WORK_AMO_V6_AUTH_VERSION &&
+      String(listing?.tokenId ?? "").toLowerCase() === WORK_TOKEN_ID &&
+      String(listing?.sellerAddress ?? "") ===
+        WORK_AMO_V6_FIRST_LISTING_SELLER &&
+      String(listing?.amountAtoms ?? "") === "10" &&
+      String(listing?.amount ?? "") === "0.0000001" &&
+      Number(listing?.priceSats) === 20_000 &&
+      String(listing?.closedTxid ?? "").toLowerCase() ===
+        WORK_AMO_V6_FIRST_LISTING_CLOSE_TX &&
+      Number(listing?.closedBlockHeight) === 960_302 &&
+      String(listing?.closedBlockHash ?? "").toLowerCase() ===
+        WORK_AMO_V6_FIRST_LISTING_CLOSE_BLOCK_HASH &&
+      Number(listing?.closedBlockIndex) === 3_818 &&
+      Number(listing?.closedProtocolVout) === 2 &&
+      Number(listing?.closedRecordOrdinal) === 0,
+    `${label} changed the canonical first AMO V6 listing close lifecycle`,
+  );
+}
+
 async function assertFirstWorkAmoV6ListingProjection(token) {
-  const tokenMatches = (token?.listings ?? []).filter(
+  const tokenActiveMatches = (token?.listings ?? []).filter(
+    (item) =>
+      String(item?.listingId ?? "").toLowerCase() ===
+      WORK_AMO_V6_FIRST_LISTING_TX,
+  );
+  const tokenClosedMatches = (token?.closedListings ?? []).filter(
     (item) =>
       String(item?.listingId ?? "").toLowerCase() ===
       WORK_AMO_V6_FIRST_LISTING_TX,
   );
   assert(
-    tokenMatches.length === 1,
-    `/api/v1/token returned ${tokenMatches.length} copies of the first AMO V6 listing`,
+    tokenActiveMatches.length === 0 && tokenClosedMatches.length <= 1,
+    `/api/v1/token returned ${tokenActiveMatches.length} active and ${tokenClosedMatches.length} closed copies of the canonically delisted first AMO V6 listing`,
   );
-  assertFirstWorkAmoV6ListingRecord(
-    tokenMatches[0],
-    "/api/v1/token",
-  );
+  if (tokenClosedMatches.length === 1) {
+    assertFirstWorkAmoV6ClosedListingRecord(
+      tokenClosedMatches[0],
+      "/api/v1/token closed listing",
+      { requireOriginalPosition: true },
+    );
+  }
 
-  const exactHistory = await tokenHistory("listings", {
+  const exactActiveHistory = await tokenHistory("listings", {
     fresh: 1,
     q: WORK_AMO_V6_FIRST_LISTING_TX,
   });
-  const exactMatches = (exactHistory.items ?? []).filter(
+  const exactActiveMatches = (exactActiveHistory.items ?? []).filter(
     (item) =>
       String(item?.listingId ?? "").toLowerCase() ===
       WORK_AMO_V6_FIRST_LISTING_TX,
   );
   assert(
-    exactMatches.length === 1 && Number(exactHistory.totalCount) === 1,
-    `exact listing history returned ${exactMatches.length} rows and total ${exactHistory.totalCount} for the first AMO V6 listing`,
-  );
-  assertFirstWorkAmoV6ListingRecord(
-    exactMatches[0],
-    "exact /api/v1/token-history",
+    exactActiveMatches.length === 0 &&
+      Number(exactActiveHistory.totalCount) === 0,
+    `exact active listing history returned ${exactActiveMatches.length} rows and total ${exactActiveHistory.totalCount} for the canonically delisted first AMO V6 listing`,
   );
 
-  const broadHistory = await tokenHistory("listings", {
+  const exactClosedHistory = await tokenHistory("closed-listings", {
     fresh: 1,
-    limit: 200,
+    q: WORK_AMO_V6_FIRST_LISTING_TX,
   });
-  const broadMatches = (broadHistory.items ?? []).filter(
+  const exactClosedMatches = (exactClosedHistory.items ?? []).filter(
     (item) =>
       String(item?.listingId ?? "").toLowerCase() ===
       WORK_AMO_V6_FIRST_LISTING_TX,
   );
   assert(
-    broadMatches.length === 1,
-    `broad listing history returned ${broadMatches.length} copies of the first AMO V6 listing`,
+    exactClosedMatches.length === 1 &&
+      Number(exactClosedHistory.totalCount) === 1,
+    `exact closed listing history returned ${exactClosedMatches.length} rows and total ${exactClosedHistory.totalCount} for the first AMO V6 listing`,
+  );
+  assertFirstWorkAmoV6ClosedListingRecord(
+    exactClosedMatches[0],
+    "exact closed /api/v1/token-history",
+  );
+
+  const exactClosedByCloseTx = await tokenHistory("closed-listings", {
+    fresh: 1,
+    q: WORK_AMO_V6_FIRST_LISTING_CLOSE_TX,
+  });
+  const exactClosedByCloseMatches = (
+    exactClosedByCloseTx.items ?? []
+  ).filter(
+    (item) =>
+      String(item?.listingId ?? "").toLowerCase() ===
+        WORK_AMO_V6_FIRST_LISTING_TX &&
+      String(item?.closedTxid ?? "").toLowerCase() ===
+        WORK_AMO_V6_FIRST_LISTING_CLOSE_TX,
+  );
+  assert(
+    exactClosedByCloseMatches.length === 1 &&
+      Number(exactClosedByCloseTx.totalCount) === 1,
+    `exact close-tx history returned ${exactClosedByCloseMatches.length} rows and total ${exactClosedByCloseTx.totalCount} for the first AMO V6 lifecycle`,
+  );
+  assertFirstWorkAmoV6ClosedListingRecord(
+    exactClosedByCloseMatches[0],
+    "exact close-tx /api/v1/token-history",
+  );
+
+  const exactMarketLog = await tokenHistory("market-log", {
+    fresh: 1,
+    q: WORK_AMO_V6_FIRST_LISTING_TX,
+  });
+  const marketItems = exactMarketLog.items ?? [];
+  assert(
+    marketItems.length === 2 &&
+      Number(exactMarketLog.totalCount) === 2 &&
+      marketItems[0]?.kind === "closed-listing" &&
+      String(marketItems[0]?.txid ?? "").toLowerCase() ===
+        WORK_AMO_V6_FIRST_LISTING_CLOSE_TX &&
+      marketItems[1]?.kind === "listing" &&
+      String(marketItems[1]?.txid ?? "").toLowerCase() ===
+        WORK_AMO_V6_FIRST_LISTING_TX,
+    "exact market log did not return the canonical close-then-listing lifecycle order for the first AMO V6 listing",
   );
   assertFirstWorkAmoV6ListingRecord(
-    broadMatches[0],
-    "broad /api/v1/token-history",
+    marketItems[1].listing,
+    "exact market-log listing",
     ["confirmed"],
+  );
+  assertFirstWorkAmoV6ClosedListingRecord(
+    marketItems[0].closedListing,
+    "exact market-log close",
   );
 }
 
@@ -1424,7 +1574,7 @@ async function runFastMarketplaceRegressionGate() {
     );
   });
 
-  await step("first confirmed WORK AMO V6 listing projection", async () => {
+  await step("first confirmed WORK AMO V6 listing lifecycle", async () => {
     const status = workAmoV6StatusFromPayload(cutoverToken);
     if (status?.activation?.active === true && status?.ready === true) {
       await assertFirstWorkAmoV6ListingProjection(cutoverToken);
@@ -1630,21 +1780,31 @@ async function runFastMarketplaceRegressionGate() {
       marketplaceSummary.token,
     );
     if (v6Status?.activation?.active === true && v6Status?.ready === true) {
-      const firstListingMatches = (
+      const firstActiveMatches = (
         marketplaceSummary.token?.listings ?? []
       ).filter(
         (item) =>
           String(item?.listingId ?? "").toLowerCase() ===
           WORK_AMO_V6_FIRST_LISTING_TX,
       );
+      const firstClosedMatches = (
+        marketplaceSummary.token?.closedListings ?? []
+      ).filter(
+        (item) =>
+          String(item?.listingId ?? "").toLowerCase() ===
+          WORK_AMO_V6_FIRST_LISTING_TX,
+      );
       assert(
-        firstListingMatches.length === 1,
-        `Marketplace summary returned ${firstListingMatches.length} copies of the first AMO V6 listing`,
+        firstActiveMatches.length === 0 && firstClosedMatches.length <= 1,
+        `Marketplace summary returned ${firstActiveMatches.length} active and ${firstClosedMatches.length} closed copies of the canonically delisted first AMO V6 listing`,
       );
-      assertFirstWorkAmoV6ListingRecord(
-        firstListingMatches[0],
-        "Marketplace summary",
-      );
+      if (firstClosedMatches.length === 1) {
+        assertFirstWorkAmoV6ClosedListingRecord(
+          firstClosedMatches[0],
+          "Marketplace summary closed listing",
+          { requireOriginalPosition: true },
+        );
+      }
     }
     for (const txid of REPORTED_OTC_UNSEALED_LISTING_TXS) {
       const item = listingById(marketplaceSummary.token?.listings, txid);
