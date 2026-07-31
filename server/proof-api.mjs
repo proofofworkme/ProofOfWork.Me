@@ -22059,7 +22059,10 @@ function inceptionAttachedWorkProjectionFromIssuance(
   issuance,
   workAmountStorageModel,
 ) {
-  const attachedWorkAmountSubatoms = canonicalWorkSubatomsText(
+  // This is cumulative confirmed transfer volume across every INCB bond, not
+  // a single WORK balance. The same credit can be bonded more than once, so
+  // the historical total may legitimately exceed WORK's fixed supply.
+  const attachedWorkAmountSubatoms = canonicalNonNegativeIntegerText(
     issuance?.attachedWorkAmountSubatoms,
     { allowZero: true },
   );
@@ -41020,6 +41023,14 @@ async function buildIndexedCanonicalLedgerPayload(
     baseWorkTokenState,
     creditValueDetails,
   );
+  if (
+    exactWorkAmountStorageModelFromState(valuedWorkTokenState) !==
+      expectedWorkAmountStorageModel
+  ) {
+    throw freshDataUnavailableError(
+      `Rejected ${label}: WORK value enrichment changed the exact replay precision era.`,
+    );
+  }
   activity = dedupeActivityItems([
     ...tokenActivityItemsFromState(
       valuedTokenState,

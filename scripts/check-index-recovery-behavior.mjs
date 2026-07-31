@@ -9579,6 +9579,43 @@ check("Inception fixes attachment value at issuance and adds only later INCB mar
     API_PATH,
     "inceptionAttachedWorkProjectionFromIssuance",
   );
+  const cumulativeWorkAtoms = "2100000100000000";
+  const cumulativeWorkSubatoms = "210000010000000000000000";
+  const cumulativeQ8Projection =
+    inceptionAttachedWorkProjectionFromIssuance(
+      { attachedWorkAmountSubatoms: cumulativeWorkSubatoms },
+      WORK_ATOMIC_PROJECTION_MODEL,
+    );
+  assert.equal(
+    cumulativeQ8Projection?.attachedWorkAmount,
+    "21000001",
+    "cumulative INCB attachment volume may exceed fixed WORK supply",
+  );
+  assert.equal(
+    cumulativeQ8Projection?.attachedWorkAmountAtoms,
+    cumulativeWorkAtoms,
+  );
+  assert.equal(
+    cumulativeQ8Projection?.attachedWorkAmountStorageModel,
+    WORK_ATOMIC_PROJECTION_MODEL,
+  );
+  const cumulativeQ16Projection =
+    inceptionAttachedWorkProjectionFromIssuance(
+      { attachedWorkAmountSubatoms: cumulativeWorkSubatoms },
+      WORK_SUBATOM_PROJECTION_MODEL,
+    );
+  assert.equal(
+    cumulativeQ16Projection?.attachedWorkAmount,
+    "21000001",
+  );
+  assert.equal(
+    cumulativeQ16Projection?.attachedWorkAmountSubatoms,
+    cumulativeWorkSubatoms,
+  );
+  assert.equal(
+    cumulativeQ16Projection?.attachedWorkAmountStorageModel,
+    WORK_SUBATOM_PROJECTION_MODEL,
+  );
   const exactWorkAmountStorageModelFromState = isolatedFunction(
     API_PATH,
     "exactWorkAmountStorageModelFromState",
