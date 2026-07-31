@@ -10169,6 +10169,31 @@ check("Inception fixes attachment value at issuance and adds only later INCB mar
   ]);
   assert.equal(productionIssuance.complete, true);
   assert.equal(productionIssuance.canonicalMints, 1);
+  const historicalQ8ProjectionMint = {
+    ...productionMint,
+    attachedWorkAmountDecimals: 8,
+    attachedWorkAmountPrecisionModel: "",
+    attachedWorkAmountStorageModel: "work-atoms-v1",
+    attachedWorkAmountUnitScale: "100000000",
+    attachedWorkAmountVersion: "historical-q8",
+  };
+  assert.equal(
+    inceptionIssuanceMetadataFromMints([
+      historicalQ8ProjectionMint,
+    ]).complete,
+    true,
+    "an exact internally projected historical Q8 INCB attachment must remain canonical in API aggregation",
+  );
+  assert.equal(
+    inceptionIssuanceMetadataFromMints([
+      {
+        ...historicalQ8ProjectionMint,
+        attachedWorkAmountVersion: "historical-q7",
+      },
+    ]).complete,
+    false,
+    "an unknown historical WORK precision label must remain fail-closed",
+  );
   assert.equal(
     inceptionIssuanceMetadataFromMints([
       { ...productionMint, issuanceNetworkValueQ8: "not-an-integer" },

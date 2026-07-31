@@ -21200,7 +21200,7 @@ function attachedWorkSubatomsBigInt(
     explicitLegacyMetadata &&
     (
       storageModel !== WORK_ATOMIC_PROJECTION_MODEL ||
-      ![TOKEN_SEND_ACTION, TOKEN_SEND_ATOMS_ACTION].includes(
+      !["historical-q8", "send", "send2"].includes(
         amountVersion,
       ) ||
       Number(record?.attachedWorkAmountDecimals) !== WORK_DECIMALS ||
