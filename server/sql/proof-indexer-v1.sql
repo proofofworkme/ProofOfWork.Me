@@ -1566,6 +1566,85 @@ CREATE INDEX IF NOT EXISTS work_amo_block_transitions_tip_idx
     block_height DESC
   );
 
+CREATE INDEX IF NOT EXISTS
+  work_amo_block_transitions_v2_readiness_idx
+ON proof_indexer.work_amo_block_transitions (
+  network,
+  block_height,
+  block_hash,
+  previous_block_hash,
+  opening_state_sha256,
+  closing_state_sha256
+)
+INCLUDE (
+  complete,
+  block_atomic,
+  fee_once,
+  invalid_zero
+)
+WHERE
+  model = 'canonical-work-amo-full-position-block-sequencer-v2'
+  AND payload->>'transitionChainModel' =
+    'canonical-work-amo-raw-transition-chain-sha256-v1'
+  AND payload->'transitionChainCommitment'->>'model' =
+    'canonical-work-amo-raw-transition-chain-sha256-v1'
+  AND payload->'transitionChainCommitment'->>'sha256' ~
+    '^[0-9a-f]{64}$'
+  AND payload->'transitionChainCommitment'->>'payloadBytes' ~
+    '^[1-9][0-9]*$'
+  AND payload->>'blockDescriptorModel' =
+    'canonical-work-amo-raw-full-block-descriptor-v1'
+  AND payload->'blockDescriptorCommitment'->>'model' =
+    'canonical-work-amo-payload-sha256-v1'
+  AND payload->'blockDescriptorCommitment'->>'sha256' ~
+    '^[0-9a-f]{64}$'
+  AND payload->'blockDescriptorCommitment'->>'payloadBytes' ~
+    '^[1-9][0-9]*$'
+  AND payload->>'blockTransactionCount' ~ '^[1-9][0-9]*$'
+  AND payload->'bip141Witness'->>'model' =
+    'canonical-work-amo-raw-bip141-witness-v1'
+  AND (
+    (
+      payload->'bip141Witness'->>'required' = 'false'
+      AND payload->'bip141Witness'
+        ->>'witnessTransactionCount' = '0'
+      AND payload->'bip141Witness'->>'commitmentSha256' = ''
+      AND payload->'bip141Witness'
+        ->>'witnessMerkleRootInternalHex' = ''
+      AND payload->'bip141Witness'->>'commitmentVout' IS NULL
+      AND NOT (
+        payload->'bip141Witness' ? 'commitmentScriptPubKeyHex'
+      )
+      AND NOT (
+        payload->'bip141Witness'
+          ? 'coinbaseWitnessReservedValueHex'
+      )
+    )
+    OR
+    (
+      payload->'bip141Witness'->>'required' = 'true'
+      AND payload->'bip141Witness'
+        ->>'witnessTransactionCount' ~ '^[1-9][0-9]*$'
+      AND payload->'bip141Witness'->>'commitmentVout' ~
+        '^(?:0|[1-9][0-9]*)$'
+      AND payload->'bip141Witness'->>'commitmentSha256' ~
+        '^[0-9a-f]{64}$'
+      AND payload->'bip141Witness'
+        ->>'witnessMerkleRootInternalHex' ~ '^[0-9a-f]{64}$'
+      AND payload->'bip141Witness'
+        ->>'coinbaseWitnessReservedValueHex' ~ '^[0-9a-f]{64}$'
+      AND payload->'bip141Witness'
+        ->>'commitmentScriptPubKeyHex' ~ '^6a24aa21a9ed[0-9a-f]+$'
+      AND length(
+        payload->'bip141Witness'->>'commitmentScriptPubKeyHex'
+      ) % 2 = 0
+      AND substring(
+        payload->'bip141Witness'->>'commitmentScriptPubKeyHex'
+        FROM 13 FOR 64
+      ) = payload->'bip141Witness'->>'commitmentSha256'
+    )
+  );
+
 CREATE OR REPLACE FUNCTION
   proof_indexer.reject_work_amo_block_transitions_update()
 RETURNS trigger

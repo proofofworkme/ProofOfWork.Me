@@ -3973,7 +3973,7 @@ function canonicalIncbAttachedWorkQuantity(item) {
     explicitLegacyMetadata &&
     (
       storageModel !== WORK_ATOMIC_PROJECTION_MODEL ||
-      !["send", "send2"].includes(amountVersion) ||
+      !["historical-q8", "send", "send2"].includes(amountVersion) ||
       decimals !== WORK_DECIMALS ||
       unitScale !== WORK_UNIT_SCALE_TEXT ||
       precisionModel !== ""

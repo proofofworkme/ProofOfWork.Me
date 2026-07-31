@@ -234,6 +234,7 @@ import {
   proofIndexLogHistoryReadEligibility,
   proofIndexLogHistoryPayload,
   proofIndexOperationalStatusPayload,
+  proofIndexWorkAmoV7DeclarationCandidates,
   proofIndexReadFeatureEnabled,
   proofIndexReadUnconfirmedTxStatus,
   proofIndexIdRecordPayload,
@@ -7551,21 +7552,38 @@ async function discoverExactWorkAmoV7Declaration(
     ) {
       throw new Error("canonical-tip-unavailable");
     }
-    const registryTransactions = await fetchRegistryTransactions(
-      WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS,
-      network,
-    );
-    const rawCandidates = registryTransactions.filter((tx) => {
-      if (!transactionConfirmed(tx)) {
-        return false;
-      }
-      const outputs = Array.isArray(tx?.vout) ? tx.vout : [];
-      return outputs.some(
-        (_output, protocolVout) =>
-          decodedOpReturnAt(outputs, protocolVout) ===
-            commitment.protocolRecord,
+    const indexedCandidates =
+      await proofIndexWorkAmoV7DeclarationCandidates(
+        network,
+        {
+          expectedTipHash: startHash,
+          expectedTipHeight: startHeight,
+          limit: 32,
+        },
       );
-    });
+    const indexedHeight = Number(
+      indexedCandidates?.scan?.indexedThroughBlock,
+    );
+    const indexedTipHeight = Number(
+      indexedCandidates?.scan?.tipHeight,
+    );
+    const indexedHash = String(
+      indexedCandidates?.scan?.blockHash ?? "",
+    ).trim().toLowerCase();
+    if (
+      indexedCandidates?.scan?.complete !== true ||
+      indexedHeight !== startHeight ||
+      indexedTipHeight !== startHeight ||
+      indexedHash !== startHash ||
+      indexedCandidates?.complete !== true ||
+      indexedCandidates?.overflow === true ||
+      !Array.isArray(indexedCandidates?.candidates)
+    ) {
+      throw new Error(
+        "canonical-index-not-exact-for-declaration-discovery",
+      );
+    }
+    const rawCandidates = indexedCandidates.candidates;
     const candidates = (
       await mapWithConcurrency(
         rawCandidates,
@@ -7574,7 +7592,9 @@ async function discoverExactWorkAmoV7Declaration(
           Math.max(1, TX_FETCH_CONCURRENCY),
         ),
         async (candidate) => {
-          const txid = transactionTxid(candidate);
+          const txid = String(candidate?.txid ?? "")
+            .trim()
+            .toLowerCase();
           if (!txid) {
             return null;
           }

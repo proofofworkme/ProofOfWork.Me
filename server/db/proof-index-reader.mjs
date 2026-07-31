@@ -8077,6 +8077,8 @@ export async function proofIndexWorkAmoReplayReadiness(
             )
             FROM proof_indexer.ledger_snapshots seed_evidence
             WHERE seed_evidence.network = $1
+              AND seed_evidence.payload->>'model' =
+                'canonical-work-amo-v5-h-minus-one-seed-evidence-v1'
               AND seed_evidence.payload->>'model' = $12
           ) AS seed_evidence_set,
           EXISTS (
@@ -8217,9 +8219,17 @@ export async function proofIndexWorkAmoReplayReadiness(
                AND transition_block.canonical = true
               WHERE stored_transition.network = $1
                 AND stored_transition.block_height BETWEEN $5 AND $3
+                AND stored_transition.model =
+                  'canonical-work-amo-full-position-block-sequencer-v2'
                 AND stored_transition.model = $7
                 AND stored_transition.payload
+                  ->>'transitionChainModel' =
+                    'canonical-work-amo-raw-transition-chain-sha256-v1'
+                AND stored_transition.payload
                   ->>'transitionChainModel' = $8
+                AND stored_transition.payload
+                  ->'transitionChainCommitment'->>'model' =
+                    'canonical-work-amo-raw-transition-chain-sha256-v1'
                 AND stored_transition.payload
                   ->'transitionChainCommitment'->>'model' = $8
                 AND stored_transition.payload
@@ -8229,7 +8239,13 @@ export async function proofIndexWorkAmoReplayReadiness(
                   ->'transitionChainCommitment'->>'payloadBytes' ~
                     '^[1-9][0-9]*$'
                 AND stored_transition.payload
+                  ->>'blockDescriptorModel' =
+                    'canonical-work-amo-raw-full-block-descriptor-v1'
+                AND stored_transition.payload
                   ->>'blockDescriptorModel' = $9
+                AND stored_transition.payload
+                  ->'blockDescriptorCommitment'->>'model' =
+                    'canonical-work-amo-payload-sha256-v1'
                 AND stored_transition.payload
                   ->'blockDescriptorCommitment'->>'model' = $10
                 AND stored_transition.payload
@@ -8240,6 +8256,9 @@ export async function proofIndexWorkAmoReplayReadiness(
                     '^[1-9][0-9]*$'
                 AND stored_transition.payload
                   ->>'blockTransactionCount' ~ '^[1-9][0-9]*$'
+                AND stored_transition.payload
+                  ->'bip141Witness'->>'model' =
+                    'canonical-work-amo-raw-bip141-witness-v1'
                 AND stored_transition.payload
                   ->'bip141Witness'->>'model' = $11
                 AND (
@@ -10541,7 +10560,7 @@ function canonicalIncbAttachedWorkQuantity(payload = {}) {
     explicitLegacyMetadata &&
     (
       storageModel !== WORK_ATOMIC_PROJECTION_MODEL ||
-      !["send", "send2"].includes(
+      !["historical-q8", "send", "send2"].includes(
         amountVersion,
       ) ||
       Number(source.attachedWorkAmountDecimals) !== WORK_DECIMALS ||
@@ -18771,6 +18790,175 @@ export async function proofIndexOperationalStatusPayload(network) {
   };
 }
 
+export async function proofIndexWorkAmoV7DeclarationCandidates(
+  network,
+  options = {},
+) {
+  const pool = proofIndexPool();
+  const expectedTipHeight = safeBlockHeight(
+    options.expectedTipHeight,
+  );
+  const expectedTipHash = normalizedLowerText(
+    options.expectedTipHash,
+  );
+  const requestedLimit = Number(options.limit ?? 32);
+  const limit =
+    Number.isSafeInteger(requestedLimit) &&
+      requestedLimit > 0 &&
+      requestedLimit <= 128
+      ? requestedLimit
+      : 32;
+  let commitment;
+  try {
+    commitment = workAmoV7DeclarationCommitment();
+  } catch {
+    return null;
+  }
+  if (
+    !pool ||
+    network !== "livenet" ||
+    expectedTipHeight < 1 ||
+    !/^[0-9a-f]{64}$/u.test(expectedTipHash)
+  ) {
+    return null;
+  }
+  const protocolRecordHex = Buffer.from(
+    commitment.protocolRecord,
+    "utf8",
+  ).toString("hex");
+  const result = await pool.query(
+    `
+      WITH exact_scan AS MATERIALIZED (
+        SELECT
+          scan.snapshot_id,
+          scan.indexed_through_block,
+          lower(scan.source_hashes->>'blockScan') AS block_hash
+        FROM proof_indexer.ledger_snapshots scan
+        JOIN proof_indexer.blocks tip
+          ON tip.network = scan.network
+         AND tip.height = scan.indexed_through_block
+         AND lower(tip.block_hash) = $4
+         AND tip.canonical = true
+        WHERE scan.network = $1
+          AND scan.indexed_through_block = $3
+          AND NOT (scan.source_hashes ? 'canonicalSummary')
+          AND lower(COALESCE(
+            scan.source_hashes->>'blockScan',
+            ''
+          )) = $4
+          AND lower(COALESCE(
+            scan.payload->>'indexedThroughBlockHash',
+            ''
+          )) = $4
+          AND lower(COALESCE(
+            scan.metrics->>'indexedThroughBlockHash',
+            ''
+          )) = $4
+          AND scan.payload->>'source' =
+            'proof-indexer-block-scan'
+          AND scan.payload->>'complete' = 'true'
+          AND scan.metrics->>'complete' = 'true'
+          AND scan.payload->>'tipHeight' = $3::text
+          AND scan.metrics->>'tipHeight' = $3::text
+          AND scan.consistency->>'ok' = 'true'
+          AND scan.consistency->>'status' =
+            'block-scan-current'
+        ORDER BY scan.generated_at DESC
+        LIMIT 1
+      ),
+      candidate AS MATERIALIZED (
+        SELECT
+          declaration_tx.txid,
+          declaration_tx.block_hash,
+          declaration_tx.block_height,
+          declaration_tx.block_index,
+          declaration_carrier.vout AS protocol_vout,
+          declaration_carrier.output_index AS record_ordinal
+        FROM exact_scan scan
+        JOIN proof_indexer.op_returns declaration_carrier
+          ON declaration_carrier.network = $1
+         AND declaration_carrier.protocol = 'pwm1'
+         AND declaration_carrier.payload_text = $2
+         AND lower(declaration_carrier.payload_hex) = $5
+         AND declaration_carrier.data_bytes = $6
+        JOIN proof_indexer.transactions declaration_tx
+          ON declaration_tx.network = declaration_carrier.network
+         AND declaration_tx.txid = declaration_carrier.txid
+         AND declaration_tx.status = 'confirmed'
+        JOIN proof_indexer.blocks declaration_block
+          ON declaration_block.network = declaration_tx.network
+         AND declaration_block.height = declaration_tx.block_height
+         AND declaration_block.block_hash = declaration_tx.block_hash
+         AND declaration_block.canonical = true
+        WHERE declaration_tx.block_height <=
+            scan.indexed_through_block
+          AND declaration_tx.block_index IS NOT NULL
+        ORDER BY
+          declaration_tx.block_height ASC,
+          declaration_tx.block_index ASC,
+          declaration_carrier.vout ASC,
+          declaration_carrier.output_index ASC,
+          declaration_tx.txid ASC
+        LIMIT $7
+      )
+      SELECT
+        scan.snapshot_id,
+        scan.indexed_through_block,
+        scan.block_hash AS indexed_through_block_hash,
+        candidate.*
+      FROM exact_scan scan
+      LEFT JOIN candidate ON true
+      ORDER BY
+        candidate.block_height ASC,
+        candidate.block_index ASC,
+        candidate.protocol_vout ASC,
+        candidate.record_ordinal ASC,
+        candidate.txid ASC
+    `,
+    [
+      network,
+      commitment.protocolRecord,
+      expectedTipHeight,
+      expectedTipHash,
+      protocolRecordHex,
+      commitment.protocolRecordBytes,
+      limit + 1,
+    ],
+  );
+  const scanRow = result.rows[0];
+  if (!scanRow) {
+    return null;
+  }
+  const rows = result.rows.filter((row) => row?.txid);
+  const overflow = rows.length > limit;
+  return {
+    candidates: rows.slice(0, limit).map((row) => ({
+      blockHash: normalizedLowerText(row?.block_hash),
+      blockHeight: safeBlockHeight(row?.block_height),
+      blockTransactionIndex: Number(row?.block_index),
+      protocolVout: Number(row?.protocol_vout),
+      recordOrdinal: Number(row?.record_ordinal),
+      txid: normalizedLowerText(row?.txid),
+    })),
+    complete: !overflow,
+    overflow,
+    scan: {
+      blockHash: normalizedLowerText(
+        scanRow.indexed_through_block_hash,
+      ),
+      complete: true,
+      indexedThroughBlock: safeBlockHeight(
+        scanRow.indexed_through_block,
+      ),
+      snapshotId: String(scanRow.snapshot_id ?? ""),
+      tipHeight: safeBlockHeight(
+        scanRow.indexed_through_block,
+      ),
+    },
+    source: "proof-indexer-work-amo-v7-declaration-candidates",
+  };
+}
+
 async function canonicalStateMetaFromPool(pool, network) {
   const result = await pool.query(
     `
@@ -22325,9 +22513,6 @@ async function proofIndexTokenListingsFromTables(pool, network, scope) {
          NULLIF(lower(cl.close_txid), ''),
          NULLIF(lower(cl.payload->>'closeTxid'), '')
        )
-      LEFT JOIN proof_indexer.credit_definitions cd
-        ON cd.network = cl.network
-       AND cd.token_id = cl.token_id
       WHERE cl.network = $1
         AND ${canonicalWorkMarketV3ListingProjectionSql("cl")}
         ${tokenStateScopeSql(scope, "cl.token_id", "cd.ticker")}

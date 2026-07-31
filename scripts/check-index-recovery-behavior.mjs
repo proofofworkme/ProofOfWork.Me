@@ -17509,6 +17509,104 @@ check("exact canonical summaries require current conserved token balances", asyn
   assert.equal(requestedHeight, 102);
 });
 
+check("table-backed token listings bind the definition alias exactly once", () => {
+  const source = topLevelFunctionSource(
+    READER_PATH,
+    "proofIndexTokenListingsFromTables",
+  );
+  const definitionJoins =
+    source.match(
+      /LEFT JOIN proof_indexer\.credit_definitions cd\b/gu,
+    ) ?? [];
+  assert.equal(
+    definitionJoins.length,
+    1,
+    "duplicate cd aliases make PostgreSQL reject the canonical token table before conservation can be checked",
+  );
+  assert.match(
+    source,
+    /lower\(cd\.token_id\) = lower\(cl\.token_id\)/u,
+  );
+  assert.match(
+    source,
+    /tokenStateScopeSql\(scope, "cl\.token_id", "cd\.ticker"\)/u,
+  );
+});
+
+check("AMO V7 declaration discovery uses one exact-tip protocol-record index", () => {
+  const readerSource = topLevelFunctionSource(
+    READER_PATH,
+    "proofIndexWorkAmoV7DeclarationCandidates",
+  );
+  const discoverySource = topLevelFunctionSource(
+    API_PATH,
+    "discoverExactWorkAmoV7Declaration",
+  );
+  assert.match(
+    readerSource,
+    /declaration_carrier\.payload_text = \$2/u,
+  );
+  assert.match(
+    readerSource,
+    /declaration_tx\.status = 'confirmed'[\s\S]*declaration_block\.canonical = true/u,
+  );
+  assert.match(readerSource, /LIMIT \$7/u);
+  assert.match(
+    readerSource,
+    /source_hashes->>'blockScan'[\s\S]*payload->>'indexedThroughBlockHash'[\s\S]*metrics->>'indexedThroughBlockHash'[\s\S]*payload->>'complete' = 'true'[\s\S]*metrics->>'complete' = 'true'[\s\S]*consistency->>'status' =[\s\S]*'block-scan-current'/u,
+  );
+  assert.match(
+    discoverySource,
+    /proofIndexWorkAmoV7DeclarationCandidates\([\s\S]*expectedTipHash: startHash[\s\S]*expectedTipHeight: startHeight/u,
+  );
+  assert.match(
+    discoverySource,
+    /indexedCandidates\?\.scan\?\.complete !== true[\s\S]*indexedHeight !== startHeight[\s\S]*indexedHash !== startHash/u,
+  );
+  assert.doesNotMatch(
+    discoverySource,
+    /fetchRegistryTransactions/u,
+    "declaration discovery must not hydrate the entire WORK registry before testing one exact record",
+  );
+});
+
+check("AMO replay seed evidence uses its immutable partial index predicate", () => {
+  const source = topLevelFunctionSource(
+    READER_PATH,
+    "proofIndexWorkAmoReplayReadiness",
+  );
+  assert.match(
+    source,
+    /FROM proof_indexer\.ledger_snapshots seed_evidence[\s\S]*seed_evidence\.network = \$1[\s\S]*seed_evidence\.payload->>'model' =[\s\S]*'canonical-work-amo-v5-h-minus-one-seed-evidence-v1'[\s\S]*seed_evidence\.payload->>'model' = \$12/u,
+    "the literal immutable model predicate lets PostgreSQL use the one-row partial index while the bound model remains cross-checked",
+  );
+});
+
+check("AMO replay transition audits use the immutable V2 readiness index", () => {
+  const reader = topLevelFunctionSource(
+    READER_PATH,
+    "proofIndexWorkAmoReplayReadiness",
+  );
+  const schema = fileSource(SCHEMA_PATH);
+  assert.match(
+    schema,
+    /CREATE INDEX IF NOT EXISTS[\s\S]*work_amo_block_transitions_v2_readiness_idx[\s\S]*WHERE[\s\S]*canonical-work-amo-full-position-block-sequencer-v2[\s\S]*canonical-work-amo-raw-transition-chain-sha256-v1[\s\S]*canonical-work-amo-raw-full-block-descriptor-v1[\s\S]*canonical-work-amo-raw-bip141-witness-v1/u,
+  );
+  for (const model of [
+    "canonical-work-amo-full-position-block-sequencer-v2",
+    "canonical-work-amo-raw-transition-chain-sha256-v1",
+    "canonical-work-amo-raw-full-block-descriptor-v1",
+    "canonical-work-amo-payload-sha256-v1",
+    "canonical-work-amo-raw-bip141-witness-v1",
+  ]) {
+    assert.match(
+      reader,
+      new RegExp(model, "u"),
+      `the readiness query must expose the literal ${model} predicate to PostgreSQL's partial-index planner`,
+    );
+  }
+});
+
 check("exact stored bond snapshots serve stable and fresh reads before recovery", async () => {
   const requestSource = topLevelFunctionSource(API_PATH, "handleRequest");
   const workSource = topLevelFunctionSource(API_PATH, "workSummaryPayload");
@@ -26295,6 +26393,11 @@ check("confirmed INCB metadata is fully bound to its recipient and block", () =>
     },
   );
   const fractionalMint = tokenMintFromEventPayload(fractionalPayload, row);
+  assert.equal(
+    incbIssuanceMetadataFault(fractionalMint, row),
+    "",
+    "an exact historical Q8 issuance projection must remain valid when the current table rechecks it",
+  );
   assert.deepEqual(
     {
       attachedWorkAmountAtoms: fractionalMint.attachedWorkAmountAtoms,

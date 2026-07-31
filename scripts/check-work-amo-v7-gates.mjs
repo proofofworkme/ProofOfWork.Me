@@ -456,11 +456,34 @@ function apiDeclarationDiscoveryFixture(configured, candidates) {
             : [],
         );
       },
-      fetchRegistryTransactions: async () => candidates,
       fetchTransactionFromBitcoinRpc: async (txid) =>
         byTxid.get(txid) ?? null,
       mapWithConcurrency: async (items, _limit, mapper) =>
         Promise.all(items.map(mapper)),
+      proofIndexWorkAmoV7DeclarationCandidates: async () => ({
+        candidates: candidates.flatMap((candidate) =>
+          candidate.vout.flatMap((output, protocolVout) =>
+            output?.message === declarationCommitment.protocolRecord
+              ? [{
+                  blockHash: candidate.blockHash,
+                  blockHeight: candidate.blockHeight,
+                  blockTransactionIndex: candidate.blockIndex,
+                  protocolVout,
+                  recordOrdinal: 0,
+                  txid: candidate.txid,
+                }]
+              : [],
+          )
+        ),
+        complete: true,
+        overflow: false,
+        scan: {
+          blockHash: canonicalTipHash,
+          complete: true,
+          indexedThroughBlock: 500,
+          tipHeight: 500,
+        },
+      }),
       transactionBlockHash: (transaction) =>
         transaction?.blockHash ?? "",
       transactionBlockHeight: (transaction) =>
