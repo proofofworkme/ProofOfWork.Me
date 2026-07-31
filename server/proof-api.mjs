@@ -21961,6 +21961,48 @@ function inceptionIssuanceMetadataFromMints(mints) {
   };
 }
 
+function inceptionAttachedWorkProjectionFromIssuance(
+  issuance,
+  workAmountStorageModel,
+) {
+  const attachedWorkAmountSubatoms = canonicalWorkSubatomsText(
+    issuance?.attachedWorkAmountSubatoms,
+    { allowZero: true },
+  );
+  if (!attachedWorkAmountSubatoms) {
+    return null;
+  }
+  if (workAmountStorageModel === WORK_SUBATOM_PROJECTION_MODEL) {
+    return {
+      attachedWorkAmount: formatWorkSubatoms(attachedWorkAmountSubatoms),
+      attachedWorkAmountDecimals: WORK_SUBATOM_DECIMALS,
+      attachedWorkAmountPrecisionModel: WORK_PRECISION_V2_MODEL,
+      attachedWorkAmountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+      attachedWorkAmountSubatoms,
+      attachedWorkAmountUnitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,
+      attachedWorkAmountVersion: TOKEN_SEND_SUBATOMS_ACTION,
+    };
+  }
+  if (workAmountStorageModel !== WORK_ATOMIC_PROJECTION_MODEL) {
+    return null;
+  }
+  const amountSubatoms = BigInt(attachedWorkAmountSubatoms);
+  if (amountSubatoms % WORK_SUBATOM_CONVERSION_FACTOR !== 0n) {
+    return null;
+  }
+  const attachedWorkAmountAtoms = (
+    amountSubatoms / WORK_SUBATOM_CONVERSION_FACTOR
+  ).toString();
+  return {
+    attachedWorkAmount: formatWorkAtoms(attachedWorkAmountAtoms),
+    attachedWorkAmountAtoms,
+    attachedWorkAmountDecimals: WORK_DECIMALS,
+    attachedWorkAmountStorageModel: WORK_ATOMIC_PROJECTION_MODEL,
+    attachedWorkAmountUnitScale: WORK_UNIT_SCALE_TEXT,
+    attachedWorkAmountVersion: TOKEN_SEND_ATOMS_ACTION,
+  };
+}
+
 function inceptionMintHasCanonicalBondBinding(mint, bond) {
   if (
     !mint ||
@@ -34795,7 +34837,45 @@ function exactBondSummaryPayloadIsCanonical(summary, config, options = {}) {
   const attachedFrozenQ8 = q8(actual.attachedWorkFrozenValueQ8);
   const attachedLiveQ8 = q8(actual.attachedWorkLiveValueQ8);
   const attachedWorkActions = Number(actual.attachedWorkActions ?? 0);
-  const attachedWorkAmountAtoms = units(actual.attachedWorkAmountAtoms);
+  const attachedWorkAmountStorageModel = String(
+    actual.attachedWorkAmountStorageModel ?? "",
+  );
+  const expectedWorkAmountStorageModel = String(
+    options.workAmountStorageModel ?? "",
+  );
+  let attachedWorkAmountUnits = null;
+  let attachedWorkProjectionExact = false;
+  if (attachedWorkAmountStorageModel === WORK_ATOMIC_PROJECTION_MODEL) {
+    attachedWorkAmountUnits = units(actual.attachedWorkAmountAtoms);
+    attachedWorkProjectionExact =
+      attachedWorkAmountUnits !== null &&
+      actual.attachedWorkAmountSubatoms == null &&
+      Number(actual.attachedWorkAmountDecimals) === WORK_DECIMALS &&
+      String(actual.attachedWorkAmountPrecisionModel ?? "") === "" &&
+      String(actual.attachedWorkAmountUnitScale ?? "") ===
+        WORK_UNIT_SCALE_TEXT &&
+      String(actual.attachedWorkAmountVersion ?? "") ===
+        TOKEN_SEND_ATOMS_ACTION &&
+      String(actual.attachedWorkAmount ?? "") ===
+        formatWorkAtoms(attachedWorkAmountUnits);
+  } else if (
+    attachedWorkAmountStorageModel === WORK_SUBATOM_PROJECTION_MODEL
+  ) {
+    attachedWorkAmountUnits = units(actual.attachedWorkAmountSubatoms);
+    attachedWorkProjectionExact =
+      attachedWorkAmountUnits !== null &&
+      actual.attachedWorkAmountAtoms == null &&
+      Number(actual.attachedWorkAmountDecimals) ===
+        WORK_SUBATOM_DECIMALS &&
+      String(actual.attachedWorkAmountPrecisionModel ?? "") ===
+        WORK_PRECISION_V2_MODEL &&
+      String(actual.attachedWorkAmountUnitScale ?? "") ===
+        WORK_SUBATOM_UNIT_SCALE_TEXT &&
+      String(actual.attachedWorkAmountVersion ?? "") ===
+        TOKEN_SEND_SUBATOMS_ACTION &&
+      String(actual.attachedWorkAmount ?? "") ===
+        formatWorkSubatoms(attachedWorkAmountUnits);
+  }
   const unmatched = Number(actual.attachedWorkUnmatchedActions ?? 0);
   const unvalued = Number(actual.attachedWorkUnvaluedActions ?? 0);
   const marketFlowQ8 =
@@ -34810,6 +34890,10 @@ function exactBondSummaryPayloadIsCanonical(summary, config, options = {}) {
     attachedAtSendQ8 === null ||
     attachedFrozenQ8 === null ||
     attachedLiveQ8 === null ||
+    !attachedWorkProjectionExact ||
+    (expectedWorkAmountStorageModel &&
+      attachedWorkAmountStorageModel !==
+        expectedWorkAmountStorageModel) ||
     confirmedIssuanceUnits !== confirmedSupply ||
     directProofIssuanceUnits !== mintFlow ||
     directProofIssuanceUnits + attachedWorkIssuanceUnits !== confirmedSupply ||
@@ -34835,11 +34919,11 @@ function exactBondSummaryPayloadIsCanonical(summary, config, options = {}) {
     return false;
   }
   if (attachedWorkActions > 0) {
-    if (attachedWorkAmountAtoms === null || attachedWorkAmountAtoms <= 0n) {
+    if (attachedWorkAmountUnits === null || attachedWorkAmountUnits <= 0n) {
       return false;
     }
   } else if (
-    attachedWorkAmountAtoms !== 0n ||
+    attachedWorkAmountUnits !== 0n ||
     attachedAtSendQ8 !== 0n ||
     attachedWorkIssuanceUnits !== 0n
   ) {
@@ -38298,6 +38382,15 @@ function bondSummaryPayloadFromLedger(ledger, config) {
     config.tokenId === INCB_TOKEN_ID
       ? inceptionIssuanceMetadataFromMints(tokenState?.mints)
       : null;
+  const inceptionAttachmentProjection = issuance
+    ? inceptionAttachedWorkProjectionFromIssuance(
+        issuance,
+        String(
+          ledgerTokenStateForScope(ledger, WORK_TOKEN_ID)
+            ?.amountStorageModel ?? "",
+        ),
+      )
+    : null;
   const bondMarketFlow =
     bondSaleVolume + bondTransferFee + bondMarketplaceMutationFee;
   const baseNetworkValueQ8 = baseNetworkValue * BOND_VALUE_Q8_SCALE;
@@ -38380,10 +38473,17 @@ function bondSummaryPayloadFromLedger(ledger, config) {
     ...btcUsdMetadata,
     actualValue: {
       attachedWorkActions: attachedWork.attachedWorkActions,
-      attachedWorkAmount: attachedWork.attachedWorkAmount,
-      ...(attachedWork?.attachedWorkAmountAtoms !== undefined
-        ? { attachedWorkAmountAtoms: attachedWork.attachedWorkAmountAtoms }
-        : {}),
+      ...(config.tokenId === INCB_TOKEN_ID
+        ? inceptionAttachmentProjection ?? {}
+        : {
+            attachedWorkAmount: attachedWork.attachedWorkAmount,
+            ...(attachedWork?.attachedWorkAmountAtoms !== undefined
+              ? {
+                  attachedWorkAmountAtoms:
+                    attachedWork.attachedWorkAmountAtoms,
+                }
+              : {}),
+          }),
       attachedWorkIssuanceUnits:
         issuance?.attachedWorkIssuanceUnits ?? 0,
       attachedWorkLiveFloorAtSendSats:
@@ -44227,6 +44327,8 @@ async function proofIndexBondSummaryPayload(
     network === "livenet" &&
     !bondSummaryPayloadHasKnownMainnetValue(payload, config, {
       allowEmptyHistory: config.tokenId === INCB_TOKEN_ID,
+      workAmountStorageModel:
+        canonicalLedger?.workTokenState?.amountStorageModel,
     })
   ) {
     console.error(
@@ -44351,6 +44453,10 @@ async function standaloneBondSummaryPayload(network, fresh = false, config) {
       : new Date().toISOString(),
     network,
     tokenState: bondTokenState,
+    workTokenState: {
+      amountStorageModel: WORK_ATOMIC_PROJECTION_MODEL,
+      transfers: [],
+    },
   }, config);
 }
 

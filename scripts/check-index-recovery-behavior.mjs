@@ -9575,6 +9575,10 @@ check("Inception fixes attachment value at issuance and adds only later INCB mar
         String(left).toLowerCase() === String(right).toLowerCase(),
     },
   );
+  const inceptionAttachedWorkProjectionFromIssuance = isolatedFunction(
+    API_PATH,
+    "inceptionAttachedWorkProjectionFromIssuance",
+  );
   const inceptionInvalidMintDispositionMatchesBond = isolatedFunction(
     API_PATH,
     "inceptionInvalidMintDispositionMatchesBond",
@@ -9639,6 +9643,7 @@ check("Inception fixes attachment value at issuance and adds only later INCB mar
       INCEPTION_NETWORK_VALUE_ACCOUNTING_MODEL,
       INCEPTION_ATTACHMENT_ACCOUNTING_MODEL:
         INCEPTION_ISSUANCE_ACCOUNTING_MODEL,
+      WORK_TOKEN_ID,
       TOKEN_MARKETPLACE_MUTATION_KINDS: new Set([
         "token-listing",
         "token-listing-sealed",
@@ -9650,12 +9655,25 @@ check("Inception fixes attachment value at issuance and adds only later INCB mar
       btcUsdResponseMetadata: () => ({ btcUsd: 0 }),
       compactTokenSummaryPayload: (state) => state,
       infinityBondChartPointsFromEvents,
+      inceptionAttachedWorkProjectionFromIssuance,
       inceptionBondHasExplicitlyRejectedMint,
       inceptionIssuanceMetadataFromMints,
       isBondActivityItem,
       ledgerTokenStateForScope,
       numericValue,
       satsToUsdAtBtcUsd: () => 0,
+    },
+  );
+  const exactBondSummaryPayloadIsCanonical = isolatedFunction(
+    API_PATH,
+    "exactBondSummaryPayloadIsCanonical",
+    {
+      INCB_TOKEN_ID,
+      INCEPTION_ATTACHMENT_ACCOUNTING_MODEL:
+        INCEPTION_ISSUANCE_ACCOUNTING_MODEL,
+      INCEPTION_ISSUANCE_ACCOUNTING_MODEL,
+      INCEPTION_NETWORK_VALUE_ACCOUNTING_MODEL,
+      INCEPTION_VALUE_SNAPSHOT_MODEL,
     },
   );
   const config = {
@@ -9851,6 +9869,7 @@ check("Inception fixes attachment value at issuance and adds only later INCB mar
       },
       workFloor: { liveFloorSats: 3 },
       workTokenState: {
+        amountStorageModel: WORK_ATOMIC_PROJECTION_MODEL,
         transfers: [
           {
             amount: 100,
@@ -10284,6 +10303,7 @@ check("Inception fixes attachment value at issuance and adds only later INCB mar
       },
       workFloor: { liveFloorSats: 3 },
       workTokenState: {
+        amountStorageModel: WORK_ATOMIC_PROJECTION_MODEL,
         transfers: [
           {
             amount: 100,
@@ -10321,6 +10341,218 @@ check("Inception fixes attachment value at issuance and adds only later INCB mar
     aggregateSummary.actualValue.attachedWorkAmountAtoms,
     "10000000001",
     "public INCB actual value preserves a one-atom attachment in its aggregate",
+  );
+  assert.equal(
+    aggregateSummary.actualValue.attachedWorkAmount,
+    "100.00000001",
+  );
+  assert.equal(
+    aggregateSummary.actualValue.attachedWorkAmountDecimals,
+    WORK_DECIMALS,
+  );
+  assert.equal(
+    aggregateSummary.actualValue.attachedWorkAmountStorageModel,
+    WORK_ATOMIC_PROJECTION_MODEL,
+  );
+  assert.equal(
+    aggregateSummary.actualValue.attachedWorkAmountUnitScale,
+    WORK_UNIT_SCALE_TEXT,
+  );
+  assert.equal(
+    aggregateSummary.actualValue.attachedWorkAmountVersion,
+    TOKEN_SEND_ATOMS_ACTION,
+  );
+  assert.equal(
+    "attachedWorkAmountSubatoms" in aggregateSummary.actualValue,
+    false,
+    "a preactivation INCB summary cannot leak a future Q16 primary amount",
+  );
+  assert.equal(
+    "attachedWorkAmountPrecisionModel" in aggregateSummary.actualValue,
+    false,
+  );
+  assert.equal(
+    exactBondSummaryPayloadIsCanonical(aggregateSummary, config, {
+      workAmountStorageModel: WORK_ATOMIC_PROJECTION_MODEL,
+    }),
+    true,
+    "the strict livenet summary gate must accept the exact Q8 aggregate before activation",
+  );
+  const preactivationSummaryAccountingModelsCurrent = isolatedFunction(
+    BACKFILL_PATH,
+    "canonicalSummaryAccountingModelsCurrent",
+    {
+      exactWorkNetworkValueSummaryBinding:
+        isolatedExactWorkNetworkValueSummaryBinding(),
+      INCB_ISSUANCE_ACCOUNTING_MODEL:
+        INCEPTION_ISSUANCE_ACCOUNTING_MODEL,
+      INCB_NETWORK_VALUE_ACCOUNTING_MODEL:
+        INCEPTION_NETWORK_VALUE_ACCOUNTING_MODEL,
+      INCB_VALUE_SNAPSHOT_MODEL: INCEPTION_VALUE_SNAPSHOT_MODEL,
+      WORK_AMO_V7_CONFIGURED_ACTIVATION_HEIGHT: 0,
+      WORK_AMO_V7_DECLARATION_PINS_CONFIGURED: false,
+      WORK_TOKEN_ID,
+      WORK_TRANSFER_VALUE_PROJECTION_MODEL:
+        "canonical-work-transfer-value-projection-v1",
+      canonicalSummaryCoverage: () => 1_000_000,
+    },
+  );
+  const preactivationWorkNetworkValueQ8 =
+    aggregateSummary.actualValue
+      .issuanceValueSnapshotWorkNetworkValueQ8;
+  assert.equal(
+    preactivationSummaryAccountingModelsCurrent({
+      inceptionSummary: {
+        ...aggregateSummary,
+        token: {
+          ...aggregateSummary.token,
+          stats: { confirmedMints: 2 },
+        },
+      },
+      workFloor: exactWorkFloorFixture(
+        preactivationWorkNetworkValueQ8,
+        {
+          creditMinerFeeAccountingModel:
+            "canonical-unique-tx-input-output-v1",
+          creditMinerFeeCoverage: {
+            complete: true,
+            confirmedEvents: 2,
+            confirmedTransactions: 1,
+            coveredConfirmedEvents: 2,
+            coveredConfirmedTransactions: 1,
+            missingConfirmedEvents: 0,
+            missingConfirmedTransactions: 0,
+            missingConfirmedTxids: [],
+            source:
+              "proof-indexer-normalized-input-output-totals",
+          },
+        },
+      ),
+      workSummary: {
+        token: { stats: { confirmedTransfers: 0 } },
+        workTransferValueProjection: {
+          items: [],
+          model: "canonical-work-transfer-value-projection-v1",
+        },
+      },
+    }),
+    true,
+    "the API's exact preactivation Q8 bundle must pass the worker publication contract",
+  );
+  const q16AggregateSummary = bondSummaryPayloadFromLedger(
+    {
+      activity: [bond, oneAtomBond],
+      generatedAt: "2026-07-13T03:20:00.000Z",
+      network: "livenet",
+      tokenState: {
+        confirmedSupply: 1_292,
+        holders: [{ address: recipientAddress, balance: 1_292 }],
+        listings: [],
+        mints: [canonicalMint, oneAtomMint],
+        pendingSupply: 0,
+        sales: [],
+        source: "fixture",
+        tokens: [
+          {
+            registryAddress: "bc1inceptionregistry",
+            tokenId: INCB_TOKEN_ID,
+          },
+        ],
+        transfers: [],
+      },
+      workFloor: { liveFloorSats: 3 },
+      workTokenState: {
+        amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+        transfers: [
+          {
+            amount: 100,
+            blockHash,
+            blockHeight,
+            blockIndex,
+            confirmed: true,
+            creditFloorAtConfirmSats: 2,
+            protocolVout: 3,
+            recipientAddress,
+            tokenId: WORK_TOKEN_ID,
+            txid,
+            valid: true,
+          },
+          {
+            amount: 1e-8,
+            amountAtoms: "1",
+            blockHash: atomBlockHash,
+            blockHeight: blockHeight + 4,
+            blockIndex: 2,
+            confirmed: true,
+            creditFloorAtConfirmSats: 1,
+            protocolVout: 3,
+            recipientAddress,
+            tokenId: WORK_TOKEN_ID,
+            txid: atomTxid,
+            valid: true,
+          },
+        ],
+      },
+    },
+    config,
+  );
+  assert.equal(
+    q16AggregateSummary.actualValue.attachedWorkAmountSubatoms,
+    "1000000000100000000",
+  );
+  assert.equal(
+    q16AggregateSummary.actualValue.attachedWorkAmountDecimals,
+    WORK_SUBATOM_DECIMALS,
+  );
+  assert.equal(
+    q16AggregateSummary.actualValue.attachedWorkAmountPrecisionModel,
+    WORK_PRECISION_V2_MODEL,
+  );
+  assert.equal(
+    q16AggregateSummary.actualValue.attachedWorkAmountStorageModel,
+    WORK_SUBATOM_PROJECTION_MODEL,
+  );
+  assert.equal(
+    q16AggregateSummary.actualValue.attachedWorkAmountUnitScale,
+    WORK_SUBATOM_UNIT_SCALE_TEXT,
+  );
+  assert.equal(
+    q16AggregateSummary.actualValue.attachedWorkAmountVersion,
+    TOKEN_SEND_SUBATOMS_ACTION,
+  );
+  assert.equal(
+    "attachedWorkAmountAtoms" in q16AggregateSummary.actualValue,
+    false,
+    "an activated Q16 summary must expose exactly one primary attachment unit",
+  );
+  assert.equal(
+    exactBondSummaryPayloadIsCanonical(q16AggregateSummary, config, {
+      workAmountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+    }),
+    true,
+    "the strict livenet summary gate must accept the exact Q16 aggregate after activation",
+  );
+  assert.equal(
+    exactBondSummaryPayloadIsCanonical(q16AggregateSummary, config, {
+      workAmountStorageModel: WORK_ATOMIC_PROJECTION_MODEL,
+    }),
+    false,
+    "a Q16 aggregate cannot cross a Q8 canonical-ledger era binding",
+  );
+  assert.equal(
+    exactBondSummaryPayloadIsCanonical(
+      {
+        ...q16AggregateSummary,
+        actualValue: {
+          ...q16AggregateSummary.actualValue,
+          attachedWorkAmountAtoms: "10000000001",
+        },
+      },
+      config,
+      { workAmountStorageModel: WORK_SUBATOM_PROJECTION_MODEL },
+    ),
+    false,
+    "a Q16 aggregate with a second atom lane must fail closed",
   );
 
   const partial = bondAttachedWorkValueDetails(
