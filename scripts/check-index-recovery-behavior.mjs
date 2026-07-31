@@ -26036,6 +26036,96 @@ check("canonical protocol persistence follows full block-record position", async
   assert.equal(result.indexed, 3);
 });
 
+check("canonical WORK balance replay selects its complete precision identity", async () => {
+  const source = topLevelFunctionSource(
+    BACKFILL_PATH,
+    "rebuildConfirmedCreditBalancesFromCanonicalEvents",
+  );
+  assert.match(
+    source,
+    /SELECT\s+token_id,\s+ticker,\s+max_supply,\s+mint_amount,\s+confirmed,\s+created_height,\s+metadata/u,
+    "WORK definition model validation requires both max_supply and mint_amount",
+  );
+  assert.match(source, /workDefinitionProjectionState\(row\)/u);
+  const workDefinitionProjectionState = isolatedFunction(
+    BACKFILL_PATH,
+    "workDefinitionProjectionState",
+    {
+      WORK_TOKEN_MAX_SUPPLY_ATOMS:
+        WORK_TOKEN_MAX_SUPPLY_ATOMS.toString(),
+      WORK_TOKEN_MINT_AMOUNT_ATOMS:
+        WORK_TOKEN_MINT_AMOUNT_ATOMS.toString(),
+    },
+  );
+  const completeDefinition = {
+    confirmed: true,
+    created_height: 896_321,
+    max_supply: WORK_TOKEN_MAX_SUPPLY_ATOMS.toString(),
+    metadata: {
+      amountStorageModel: WORK_ATOMIC_PROJECTION_MODEL,
+      decimals: WORK_DECIMALS,
+      unitScale: WORK_UNIT_SCALE_TEXT,
+    },
+    mint_amount: WORK_TOKEN_MINT_AMOUNT_ATOMS.toString(),
+    ticker: "WORK",
+    token_id: WORK_TOKEN_ID,
+  };
+  assert.equal(
+    workDefinitionProjectionState(completeDefinition),
+    "q8",
+  );
+  const {
+    mint_amount: omittedMintAmount,
+    ...incompleteDefinition
+  } = completeDefinition;
+  void omittedMintAmount;
+  assert.equal(
+    workDefinitionProjectionState(incompleteDefinition),
+    "invalid",
+    "missing mint_amount must remain fail-closed",
+  );
+  let definitionSql = "";
+  const rebuildConfirmedCreditBalancesFromCanonicalEvents =
+    isolatedFunction(
+      BACKFILL_PATH,
+      "rebuildConfirmedCreditBalancesFromCanonicalEvents",
+      {
+        NETWORK: "livenet",
+        assertCanonicalWorkProjection: async () => ({
+          model: WORK_ATOMIC_PROJECTION_MODEL,
+          state: "q8",
+        }),
+        workDefinitionProjectionState,
+      },
+    );
+  const replay = await rebuildConfirmedCreditBalancesFromCanonicalEvents({
+    async query(sql) {
+      const text = String(sql);
+      if (text.includes("FROM proof_indexer.credit_definitions")) {
+        definitionSql = text;
+        return {
+          rows: [{
+            ...incompleteDefinition,
+            ...(/\bmint_amount\b/u.test(text)
+              ? { mint_amount: completeDefinition.mint_amount }
+              : {}),
+          }],
+        };
+      }
+      if (
+        text.includes("FROM proof_indexer.events") ||
+        text.includes("FROM proof_indexer.credit_balances")
+      ) {
+        return { rows: [] };
+      }
+      throw new Error(`Unexpected canonical replay query: ${text}`);
+    },
+  });
+  assert.match(definitionSql, /\bmint_amount\b/u);
+  assert.equal(replay.holders, 0);
+  assert.equal(replay.tokens, 0);
+});
+
 check("complete canonical token replay publishes conserved balances", async () => {
   const tokenId = "4".repeat(64);
   const writes = [];

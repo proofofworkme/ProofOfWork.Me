@@ -6327,7 +6327,7 @@ async function rebuildConfirmedCreditBalancesFromCanonicalEvents(
 
   const definitionsResult = await client.query(
     `
-      SELECT token_id, ticker, max_supply, confirmed, created_height, metadata
+      SELECT token_id, ticker, max_supply, mint_amount, confirmed, created_height, metadata
       FROM proof_indexer.credit_definitions
       WHERE network = $1
         AND confirmed = true
