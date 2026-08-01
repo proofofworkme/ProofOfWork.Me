@@ -15314,6 +15314,28 @@ check("Q16 canonical summary reuse binds the real token-state commitment and che
     )),
     JSON.stringify({ current: true }),
   );
+  const mergedSameModelStates = tokenStatePayloads(
+    WORK_SUBATOM_PROJECTION_MODEL,
+    [
+      {
+        tokenStatePayloads: {
+          priorOnly: true,
+          shared: "previous",
+        },
+        workAmountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+      },
+      {
+        tokenStatePayloads: {
+          latestOnly: true,
+          shared: "ledger",
+        },
+        workAmountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+      },
+    ],
+  );
+  assert.equal(mergedSameModelStates.priorOnly, true);
+  assert.equal(mergedSameModelStates.latestOnly, true);
+  assert.equal(mergedSameModelStates.shared, "ledger");
   assert.equal(
     JSON.stringify(tokenStatePayloads(
       WORK_SUBATOM_PROJECTION_MODEL,
@@ -15608,7 +15630,14 @@ check("the hot worker publishes a fresh canonical summary with conservative cove
             ok: true,
             snapshotId: "full-101",
             status: "consistent",
+            tokenStatePayloads: {
+              [workTokenId]: {
+                amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+                marker: "stale-ledger-work-state",
+              },
+            },
             tokenState: { indexedThroughBlock: 101, marker: "canonical" },
+            workAmountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
           },
           snapshotId: "full-101",
           summaryPayloads: Object.fromEntries(
