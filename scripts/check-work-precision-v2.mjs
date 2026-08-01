@@ -1735,6 +1735,11 @@ assert.match(sql, /workPrecisionV2Migration:livenet/u);
 assert.match(migration, /WORK_PRECISION_V2_MIGRATION_APPLY/u);
 assert.match(migration, /work_amo_v6_terms_deactivation/u);
 assert.match(migration, /listing_block_height < \$\{pins\.activationHeight\}/u);
+assert.match(
+  migration,
+  /'legacyAmountStorageModel', \$4::text,[\s\S]*'precisionMigrationModel', \$5::text/u,
+  "migration JSON construction must type text parameters explicitly for PostgreSQL",
+);
 assert.match(migration, /DELETE FROM proof_indexer\.events event/u);
 assert.match(
   migration,

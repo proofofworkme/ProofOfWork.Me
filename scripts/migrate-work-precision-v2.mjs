@@ -1655,8 +1655,8 @@ export async function runWorkPrecisionV2Migration(
           amount = listing.amount * $3::numeric,
           payload = listing.payload || jsonb_build_object(
             'legacyAmountAtoms', listing.amount::text,
-            'legacyAmountStorageModel', $4,
-            'precisionMigrationModel', $5
+            'legacyAmountStorageModel', $4::text,
+            'precisionMigrationModel', $5::text
           ),
           updated_at = now()
         WHERE listing.network = 'livenet'
