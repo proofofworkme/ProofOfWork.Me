@@ -1790,9 +1790,26 @@ amount plus explicit legacy-atom migration metadata. A second run must report
 Pending WORK state is volatile. Migration removes pending or wrong-era WORK
 events, listing/action rows, balance deltas, and affected current snapshots,
 while retaining noncanonical transaction envelopes as recovery input. After
-activation replay reaches the exact tip, rebuild pending projections from one
-stable Core mempool under V8 and require exact membership, semantic,
-transaction, and balance parity before readiness can turn green.
+activation replay reaches the exact tip, rebuild pending projections from Core
+mempool evidence under V8. Every txid in the exact persisted pending WORK set
+must remain present across both Core samples that fence the database audit, and
+exact event, listing, transaction, legacy-era, and balance-delta parity is
+required before readiness can turn green. Every member also requires all five
+correctly typed WORK inspection markers, and a terminal-invalid protocol marker
+cannot coexist with a valid persisted WORK projection. The full sampled mempool count and
+hash remain compact audit evidence; unrelated additions or removals between
+samples do not invalidate the WORK witness. Raw discovery of unrelated or
+not-yet-projected unconfirmed transactions remains bounded best-effort work; it
+is not canonical and a mempool larger than one scan budget—or unrelated
+continuous churn—cannot indefinitely pause confirmed V8 state.
+
+Canonical-summary publication is current under Q16 only when the same exact
+tip snapshot embeds `tokenStatePayloads[WORK]` derived from that block's
+complete canonical V8 closing transition. The publisher commitment-checks the
+embedded state against the transition, bypasses same-tip and exact-checkpoint
+reuse when it is missing or mismatched, and repairs it in the replacement
+summary. Readiness never infers Q16 token state from an outer summary height or
+from a stale pre-migration payload.
 
 The raw mint remains `pwt1:mint:<canonical-work-token-id>:1000`, crediting
 `100000000000` Q8 atoms before activation and

@@ -173,6 +173,7 @@ import {
   WORK_AMO_V8_MODELS,
   WORK_AMO_V8_TRANSFER_VERSION,
   validateWorkAmoV8StaticAuthorization,
+  workAmoV8CanonicalTokenStateCommitment,
 } from "../server/work-amo-v8.mjs";
 import {
   normalizedWorkAmoV5Bip141Witness,
@@ -1228,7 +1229,7 @@ function isolatedFunction(path, name, globals = {}) {
     WORK_Q16_PENDING_MEMPOOL_MODEL:
       "canonical-core-mempool-txid-set-v1",
     WORK_Q16_PENDING_REBUILD_MODEL:
-      "canonical-work-q16-pending-rebuild-v1",
+      "canonical-work-q16-pending-rebuild-v2",
     WORK_Q16_SUMMARY_UNIT_PRICE_MODEL:
       "exact-work-q16-sats-per-unit-ratio-v1",
     WORK_PROJECTION_STATE_INVALID: "invalid",
@@ -13480,6 +13481,116 @@ check("rebroadcast pending transactions clear every prior drop observation", asy
   assert.match(statement, /- 'statusObservation'/u);
 });
 
+check("Q16 pending readiness audits persisted WORK rows without requiring a full raw mempool sweep", () => {
+  const membershipStable = isolatedFunction(
+    BACKFILL_PATH,
+    "workQ16PendingMembershipStableAcrossSnapshots",
+    {
+      WORK_Q16_PENDING_MEMPOOL_MODEL:
+        "canonical-core-mempool-txid-set-v1",
+      canonicalMempoolTxidSnapshot: isolatedFunction(
+        BACKFILL_PATH,
+        "canonicalMempoolTxidSnapshot",
+        {
+          WORK_Q16_PENDING_MEMPOOL_MODEL:
+            "canonical-core-mempool-txid-set-v1",
+          Buffer,
+          canonicalJsonText: isolatedFunction(
+            BACKFILL_PATH,
+            "canonicalJsonText",
+          ),
+          compareCanonicalUtf8,
+          createHash,
+          isHexTxid: (value) =>
+            /^[0-9a-f]{64}$/u.test(String(value)),
+          normalizedLowerText: (value) =>
+            String(value ?? "").trim().toLowerCase(),
+          objectValue: (value) =>
+            value && typeof value === "object" && !Array.isArray(value)
+              ? value
+              : {},
+        },
+      ),
+      isHexTxid: (value) =>
+        /^[0-9a-f]{64}$/u.test(String(value)),
+    },
+  );
+  const snapshot = isolatedFunction(
+    BACKFILL_PATH,
+    "canonicalMempoolTxidSnapshot",
+    {
+      WORK_Q16_PENDING_MEMPOOL_MODEL:
+        "canonical-core-mempool-txid-set-v1",
+      Buffer,
+      canonicalJsonText: isolatedFunction(
+        BACKFILL_PATH,
+        "canonicalJsonText",
+      ),
+      compareCanonicalUtf8,
+      createHash,
+      isHexTxid: (value) =>
+        /^[0-9a-f]{64}$/u.test(String(value)),
+      normalizedLowerText: (value) =>
+        String(value ?? "").trim().toLowerCase(),
+      objectValue: (value) =>
+        value && typeof value === "object" && !Array.isArray(value)
+          ? value
+          : {},
+    },
+  );
+  const workTxid = "a".repeat(64);
+  const unrelatedTxid = "b".repeat(64);
+  const laterUnrelatedTxid = "c".repeat(64);
+  const initial = snapshot([workTxid, unrelatedTxid]);
+  const churned = snapshot([workTxid, laterUnrelatedTxid]);
+  assert.throws(
+    () => snapshot(null),
+    /exact Core mempool array or verbose object/u,
+  );
+  assert.equal(membershipStable(initial, churned, [workTxid]), true);
+  assert.equal(
+    membershipStable(initial, snapshot([laterUnrelatedTxid]), [workTxid]),
+    false,
+  );
+  assert.equal(
+    membershipStable(
+      { ...initial, count: initial.count + 1 },
+      churned,
+      [workTxid],
+    ),
+    false,
+  );
+  assert.equal(
+    membershipStable(
+      initial,
+      { ...churned, model: "wrong-model" },
+      [workTxid],
+    ),
+    false,
+  );
+
+  const source = topLevelFunctionSource(
+    BACKFILL_PATH,
+    "persistExactWorkQ16PendingWitness",
+  );
+  assert.match(
+    source,
+    /workQ16PendingMembershipStableAcrossSnapshots/u,
+  );
+  assert.match(
+    source,
+    /persisted-pending-work-projection-audit-v1/u,
+  );
+  assert.match(
+    source,
+    /bounded-best-effort-unconfirmed-discovery-v1/u,
+  );
+  assert.match(
+    source,
+    /membership\.expectedTxids/u,
+  );
+});
+
 check("mempool scan cursor crosses the processed-txid retention boundary", () => {
   const isHexTxid = (value) => /^[0-9a-f]{64}$/u.test(String(value));
   const normalizedMempoolScanCursor = isolatedFunction(
@@ -15098,9 +15209,128 @@ check("an outer ledger height cannot promote embedded token state", () => {
   assert.equal(state.indexedThroughBlock, 120);
 });
 
+check("Q16 canonical summary reuse binds the real token-state commitment and checkpoint model", async () => {
+  const objectValue = (value) =>
+    value && typeof value === "object" && !Array.isArray(value)
+      ? value
+      : {};
+  const canonicalJsonText = isolatedFunction(
+    BACKFILL_PATH,
+    "canonicalJsonText",
+  );
+  const stateMatches = isolatedFunction(
+    BACKFILL_PATH,
+    "exactWorkQ16LedgerSnapshotStateMatches",
+    {
+      WORK_PRECISION_V2_MODEL,
+      WORK_SUBATOM_DECIMALS,
+      WORK_SUBATOM_PROJECTION_MODEL,
+      WORK_SUBATOM_UNIT_SCALE_TEXT,
+      canonicalJsonText,
+      objectValue,
+      workAmoV8CanonicalTokenStateCommitment,
+    },
+  );
+  const expected = {
+    amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+    confirmedSupplySubatoms: "1",
+    decimals: WORK_SUBATOM_DECIMALS,
+    holders: [{ address: "holder", balanceSubatoms: "1" }],
+    indexedThroughBlock: 960_601,
+    indexedThroughBlockHash: "a".repeat(64),
+    listings: [],
+    precisionModel: WORK_PRECISION_V2_MODEL,
+    unitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,
+  };
+  assert.equal(stateMatches({ ...expected }, expected), true);
+  assert.equal(
+    stateMatches({ ...expected, decimals: "16" }, expected),
+    false,
+  );
+  assert.equal(
+    stateMatches(
+      {
+        ...expected,
+        confirmedSupplySubatoms: "2",
+        holders: [{ address: "holder", balanceSubatoms: "2" }],
+      },
+      expected,
+    ),
+    false,
+  );
+  assert.equal(
+    stateMatches(
+      { ...expected, indexedThroughBlockHash: "b".repeat(64) },
+      expected,
+    ),
+    false,
+  );
+
+  const projectionModelAtHeight = isolatedFunction(
+    BACKFILL_PATH,
+    "workProjectionModelAtHeight",
+    {
+      WORK_ATOMIC_PROJECTION_MODEL,
+      WORK_SUBATOM_PROJECTION_MODEL,
+      currentWorkPrecisionV2Marker: async () => ({
+        activationHeight: 960_601,
+      }),
+      currentWorkProjectionModel: async () =>
+        WORK_SUBATOM_PROJECTION_MODEL,
+    },
+  );
+  assert.equal(
+    await projectionModelAtHeight({}, 960_600),
+    WORK_ATOMIC_PROJECTION_MODEL,
+  );
+  assert.equal(
+    await projectionModelAtHeight({}, 960_601),
+    WORK_SUBATOM_PROJECTION_MODEL,
+  );
+  assert.equal(await projectionModelAtHeight({}, 0), "");
+
+  const tokenStatePayloads = isolatedFunction(
+    BACKFILL_PATH,
+    "canonicalSummaryTokenStatePayloads",
+    {
+      WORK_ATOMIC_PROJECTION_MODEL,
+      WORK_SUBATOM_PROJECTION_MODEL,
+      objectValue,
+    },
+  );
+  assert.equal(
+    JSON.stringify(tokenStatePayloads(
+      WORK_SUBATOM_PROJECTION_MODEL,
+      [
+        {
+          tokenStatePayloads: { legacy: true },
+          workAmountStorageModel: WORK_ATOMIC_PROJECTION_MODEL,
+        },
+        {
+          tokenStatePayloads: { current: true },
+          workAmountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+        },
+      ],
+    )),
+    JSON.stringify({ current: true }),
+  );
+  assert.equal(
+    JSON.stringify(tokenStatePayloads(
+      WORK_SUBATOM_PROJECTION_MODEL,
+      [{
+        tokenStatePayloads: { current: true },
+        workAmountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+      }],
+      { historicalCheckpoint: true },
+    )),
+    JSON.stringify({}),
+  );
+});
+
 check("the hot worker publishes a fresh canonical summary with conservative coverage", async () => {
   const objectPayload = (value) =>
     value && typeof value === "object" && !Array.isArray(value) ? value : null;
+  const objectValue = (value) => objectPayload(value) ?? {};
   const numberOrNull = (value) =>
     Number.isFinite(Number(value)) ? Number(value) : null;
   const summaryPayloadConservativeCoverage = isolatedFunction(
@@ -15130,6 +15360,28 @@ check("the hot worker publishes a fresh canonical summary with conservative cove
     count: 2,
     hash: "f".repeat(64),
     pending: 0,
+  };
+  const workTokenId =
+    "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8";
+  const exactWorkState = {
+    amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+    confirmedSupplySubatoms: "1000000000000000000",
+    decimals: WORK_SUBATOM_DECIMALS,
+    holders: [],
+    indexedThroughBlock: 101,
+    indexedThroughBlockHash: "",
+    listings: [],
+    marker: "exact-transition-q16",
+    precisionModel: WORK_PRECISION_V2_MODEL,
+    unitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,
+  };
+  const exactWorkQ16CanonicalSummaryState = async (_client, payload) => {
+    const candidate = objectValue(payload?.tokenStatePayloads)[workTokenId];
+    return {
+      ready: candidate?.marker === exactWorkState.marker,
+      required: true,
+      state: exactWorkState,
+    };
   };
   const canonicalSummaryCoverage = isolatedFunction(
     BACKFILL_PATH,
@@ -15305,16 +15557,34 @@ check("the hot worker publishes a fresh canonical summary with conservative cove
       REQUIRED_CURRENT_SUMMARY_KEYS: requiredKeys,
       WORK_MARKET_V2_AUTH_VERSION: "pwt-sale-v3",
       WORK_MARKET_V4_AUTH_VERSION: "pwt-sale-v4",
-      WORK_TOKEN_ID:
-        "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8",
+      WORK_TOKEN_ID: workTokenId,
+      canonicalSummaryTokenStatePayloads: (
+        workAmountStorageModel,
+        sources,
+        { historicalCheckpoint = false } = {},
+      ) => {
+        if (historicalCheckpoint) {
+          return {};
+        }
+        return sources.reduce((merged, source) =>
+          source?.workAmountStorageModel === workAmountStorageModel
+            ? {
+                ...merged,
+                ...objectValue(source?.tokenStatePayloads),
+              }
+            : merged,
+        {});
+      },
       canonicalSummaryAccountingModelsCurrent,
       canonicalSummaryCoverage,
       createHash,
-      currentWorkProjectionModel: async () =>
+      workProjectionModelAtHeight: async () =>
         WORK_SUBATOM_PROJECTION_MODEL,
+      exactWorkQ16CanonicalSummaryState,
       latestBlockScanCheckpoint: async () => ({ height: 101 }),
       numberOrNull,
       objectPayload,
+      objectValue,
       publicLogRelationalFingerprint: async () => publicLogFingerprint,
       publicLogFingerprintsMatch: (left, right) =>
         left?.hash === right?.hash &&
@@ -15361,7 +15631,7 @@ check("the hot worker publishes a fresh canonical summary with conservative cove
   const result = await storeCanonicalSummarySnapshot({
     async query(sql, params) {
       inserted.push({ params: Array.from(params), sql: String(sql) });
-      return { rows: [] };
+      return { rows: [{ snapshot_id: String(params[1]) }] };
     },
   });
   assert.equal(result.skipped, false);
@@ -15371,6 +15641,18 @@ check("the hot worker publishes a fresh canonical summary with conservative cove
   const stored = JSON.parse(inserted[0].params[7]);
   assert.equal(stored.indexedThroughBlock, 101);
   assert.equal(stored.tokenState.marker, "canonical");
+  assert.equal(
+    stored.tokenStatePayloads[workTokenId].marker,
+    "exact-transition-q16",
+  );
+  assert.equal(
+    stored.tokenStatePayloads[workTokenId].amountStorageModel,
+    WORK_SUBATOM_PROJECTION_MODEL,
+  );
+  assert.equal(
+    stored.tokenStatePayloads[workTokenId].decimals,
+    WORK_SUBATOM_DECIMALS,
+  );
   assert.equal(
     stored.workAmountStorageModel,
     WORK_SUBATOM_PROJECTION_MODEL,
@@ -15437,6 +15719,35 @@ check("the hot worker publishes a fresh canonical summary with conservative cove
     summaryPayloads: currentSummaryPayloads,
     summaryRefresh: { publicLogFingerprint },
   };
+  const repairedMissingStateResult = await storeCanonicalSummarySnapshot({
+    async query(sql, params) {
+      inserted.push({ params: Array.from(params), sql: String(sql) });
+      return { rows: [{ snapshot_id: String(params[1]) }] };
+    },
+  });
+  assert.equal(repairedMissingStateResult.skipped, false);
+  assert.equal(inserted.length, 2);
+  const repairedMissingState = JSON.parse(inserted[1].params[7]);
+  assert.equal(
+    repairedMissingState.tokenStatePayloads[workTokenId].marker,
+    "exact-transition-q16",
+  );
+  await rejection(
+    storeCanonicalSummarySnapshot({
+      async query(sql, params) {
+        inserted.push({ params: Array.from(params), sql: String(sql) });
+        return { rows: [] };
+      },
+    }),
+    (error) => /immutable and cannot be repaired in place/u.test(error.message),
+    "A protected same-tip snapshot no-op was reported as a successful Q16 repair",
+  );
+  assert.match(inserted[2].sql, /RETURNING snapshot_id/u);
+
+  previousPayload = {
+    ...previousPayload,
+    tokenStatePayloads: { [workTokenId]: exactWorkState },
+  };
   const currentResult = await storeCanonicalSummarySnapshot({
     async query() {
       throw new Error("A current same-tip accounting snapshot must not write");
@@ -15445,7 +15756,7 @@ check("the hot worker publishes a fresh canonical summary with conservative cove
   assert.equal(currentResult.skipped, true);
   assert.equal(currentResult.reason, "already-current");
   assert.equal(currentResult.snapshotId, "full-101-current-models");
-  assert.equal(inserted.length, 1);
+  assert.equal(inserted.length, 3);
 });
 
 check("ledger snapshot retention preserves pinned issuance oracles", async () => {
@@ -17353,6 +17664,13 @@ check("canonical summary timeouts fail closed unless an eligible prior snapshot 
       canonicalSummaryAccountingModelsCurrent: () => true,
       canonicalSummaryCoverage: () => 100,
       canonicalSummaryRefreshCanDefer,
+      workProjectionModelAtHeight: async () =>
+        WORK_SUBATOM_PROJECTION_MODEL,
+      exactWorkQ16CanonicalSummaryState: async () => ({
+        ready: true,
+        required: true,
+        state: {},
+      }),
       latestBlockScanCheckpoint: async () => ({
         blockHash: latestHash,
         height: 101,
@@ -17421,6 +17739,13 @@ check("an Inception summary barrier is exact and cannot defer", async () => {
       canonicalSummaryAccountingModelsCurrent: () => true,
       canonicalSummaryCoverage: () => 101,
       canonicalSummaryRefreshCanDefer: () => true,
+      workProjectionModelAtHeight: async () =>
+        WORK_SUBATOM_PROJECTION_MODEL,
+      exactWorkQ16CanonicalSummaryState: async () => ({
+        ready: true,
+        required: true,
+        state: {},
+      }),
       latestBlockScanCheckpoint: async () => ({
         blockHash: checkpointHash,
         height: 101,
@@ -17448,6 +17773,7 @@ check("an Inception summary barrier is exact and cannot defer", async () => {
         },
         summaryPayloads: {},
       }),
+      storedLedgerSnapshotPayload: async () => ({}),
       unpagedEndpoint: (pathname) =>
         new URL(`http://127.0.0.1:8081${pathname}`),
     },
@@ -17757,6 +18083,7 @@ check("canonical summary node:http preserves status semantics and caps bodies", 
 check("the canonical summary publisher rejects mixed snapshot identities", async () => {
   const objectPayload = (value) =>
     value && typeof value === "object" && !Array.isArray(value) ? value : null;
+  const objectValue = (value) => objectPayload(value) ?? {};
   const numberOrNull = (value) =>
     Number.isFinite(Number(value)) ? Number(value) : null;
   const requiredKeys = [
@@ -17801,9 +18128,17 @@ check("the canonical summary publisher rejects mixed snapshot identities", async
       canonicalSummaryAccountingModelsCurrent,
       canonicalSummaryCoverage,
       createHash,
+      workProjectionModelAtHeight: async () =>
+        WORK_SUBATOM_PROJECTION_MODEL,
+      exactWorkQ16CanonicalSummaryState: async () => ({
+        ready: false,
+        required: true,
+        state: {},
+      }),
       latestBlockScanCheckpoint: async () => ({ height: 101 }),
       numberOrNull,
       objectPayload,
+      objectValue,
       publicLogRelationalFingerprint: async () => ({
         contract: "proof-index-public-log-fingerprint-v1",
         count: 1,

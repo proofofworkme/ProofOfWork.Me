@@ -852,32 +852,112 @@ async function runChecks() {
       `confirmed replay mutation must fail: ${Object.keys(mutation)[0]}`,
     );
   }
+  const pendingMemberTxid = "7".repeat(64);
+  const pendingUnrelatedTxids = Array.from(
+    { length: 1_000 },
+    (_, index) => index.toString(16).padStart(64, "0"),
+  );
+  const pendingMempoolTxids = [
+    pendingMemberTxid,
+    ...pendingUnrelatedTxids,
+  ].sort();
+  const pendingEventRows = [{
+    event_id: "pending-work-event",
+    kind: "token-listing",
+    txid: pendingMemberTxid,
+    valid: true,
+  }];
+  const pendingTransactionRows = [{
+    raw_tx: {
+      pendingProtocolResolvedInvalid: false,
+      pendingWorkMintAttemptCount: 0,
+      pendingWorkMintInspectionVersion: 1,
+      pendingWorkMintRecoveryNeeded: false,
+      pendingWorkMintResolvedInvalid: false,
+    },
+    status: "pending",
+    txid: pendingMemberTxid,
+  }];
   const pendingProjection = workerWorkPrecisionPendingProjection({
     balanceRows: [],
-    eventRows: [],
+    eventRows: pendingEventRows,
     listingRows: [],
-    transactionRows: [],
+    transactionRows: pendingTransactionRows,
   });
   const pendingParity = workerWorkPrecisionPendingParity({
     balanceRows: [],
-    eventRows: [],
+    eventRows: pendingEventRows,
     listingRows: [],
-    mempoolTxids: [],
-    transactionRows: [],
+    mempoolTxids: pendingMempoolTxids,
+    recoveryRows: [],
+    transactionRows: pendingTransactionRows,
   });
-  const pendingMempool = {
-    count: 0,
+  assert.equal(pendingParity.ready, true);
+  assert.equal(
+    workerWorkPrecisionPendingParity({
+      balanceRows: [],
+      eventRows: pendingEventRows,
+      listingRows: [],
+      mempoolTxids: pendingMempoolTxids,
+      recoveryRows: [],
+      transactionRows: [{
+        raw_tx: {},
+        status: "pending",
+        txid: pendingMemberTxid,
+      }],
+    }).ready,
+    false,
+    "every persisted pending WORK transaction must carry the exact inspection marker",
+  );
+  assert.equal(
+    workerWorkPrecisionPendingParity({
+      balanceRows: [],
+      eventRows: pendingEventRows,
+      listingRows: [],
+      mempoolTxids: pendingMempoolTxids,
+      recoveryRows: [],
+      transactionRows: [{
+        ...pendingTransactionRows[0],
+        raw_tx: {
+          ...pendingTransactionRows[0].raw_tx,
+          pendingProtocolResolvedInvalid: true,
+        },
+      }],
+    }).ready,
+    false,
+    "a terminal-invalid protocol marker cannot coexist with a valid persisted WORK projection",
+  );
+  const pendingMempoolSnapshot = (txids) => ({
+    count: txids.length,
     model: "canonical-core-mempool-txid-set-v1",
     sha256: createHash("sha256")
       .update(
         Buffer.from(
-          "ProofOfWork.Me/WORK-Q16-PENDING-MEMPOOL/v1\n[]",
+          `ProofOfWork.Me/WORK-Q16-PENDING-MEMPOOL/v1\n${JSON.stringify(txids)}`,
           "utf8",
         ),
       )
       .digest("hex"),
-    txids: [],
+    txids,
+  });
+  const pendingMempool = pendingMempoolSnapshot(pendingMempoolTxids);
+  const pendingMembership = {
+    count: 1,
+    model: "canonical-work-q16-pending-membership-v2",
+    sha256: createHash("sha256")
+      .update(
+        Buffer.from(
+          `ProofOfWork.Me/WORK-Q16-PENDING-MEMBERSHIP/v1\n${JSON.stringify([pendingMemberTxid])}`,
+          "utf8",
+        ),
+      )
+      .digest("hex"),
+    txids: [pendingMemberTxid],
   };
+  const {
+    txids: _pendingMempoolTxids,
+    ...compactPendingMempool
+  } = pendingMempool;
   const pendingNowMs = Date.now();
   const pendingWitness = {
     activationHeight: configuredV7.activationHeight,
@@ -889,8 +969,9 @@ async function runChecks() {
     declarationTxid: configuredV7.declarationTxid,
     generatedAt: new Date(pendingNowMs).toISOString(),
     invalidLegacyMutationCount: 0,
-    mempoolSnapshot: pendingMempool,
-    model: "canonical-work-q16-pending-rebuild-v1",
+    membershipSnapshot: pendingMembership,
+    mempoolSnapshot: compactPendingMempool,
+    model: "canonical-work-q16-pending-rebuild-v2",
     network: "livenet",
     parity: pendingParity,
     precisionModel: "canonical-work-subatoms-v2",
@@ -899,7 +980,10 @@ async function runChecks() {
     scan: {
       canonicalDeferred: 0,
       complete: true,
-      coveredTxids: 0,
+      completeModel: "persisted-pending-work-projection-audit-v1",
+      discoveryModel: "bounded-best-effort-unconfirmed-discovery-v1",
+      inspectedTxids: 0,
+      mempoolMembershipCount: pendingMempoolTxids.length,
       protocolTxids: 0,
       scanned: 0,
       stopReason: "",
@@ -922,8 +1006,33 @@ async function runChecks() {
     ),
     true,
   );
+  const churnedMempoolTxids = [
+    ...pendingMempoolTxids,
+    "f".repeat(64),
+  ].sort();
+  const churnedParity = workerWorkPrecisionPendingParity({
+    balanceRows: [],
+    eventRows: pendingEventRows,
+    listingRows: [],
+    mempoolTxids: churnedMempoolTxids,
+    recoveryRows: [],
+    transactionRows: pendingTransactionRows,
+  });
+  assert.equal(
+    workerWorkPrecisionPendingWitnessReady(
+      pendingWitness,
+      {
+        ...pendingWitnessOptions,
+        mempoolSnapshot: pendingMempoolSnapshot(churnedMempoolTxids),
+        parity: churnedParity,
+      },
+    ),
+    true,
+    "unrelated mempool churn must not invalidate exact persisted WORK membership",
+  );
   for (const [witnessMutation, optionMutation] of [
     [{ ready: false }, {}],
+    [{ model: "canonical-work-q16-pending-rebuild-v1" }, {}],
     [{ invalidLegacyMutationCount: 1 }, {}],
     [{
       canonicalTip: {
@@ -945,6 +1054,18 @@ async function runChecks() {
     }, {}],
     [{}, { invalidLegacyMutationCount: 1 }],
     [{
+      scan: {
+        ...pendingWitness.scan,
+        inspectedTxids: pendingMempoolTxids.length + 1,
+      },
+    }, {}],
+    [{
+      scan: {
+        ...pendingWitness.scan,
+        mempoolMembershipCount: pendingMempoolTxids.length - 1,
+      },
+    }, {}],
+    [{
       generatedAt: new Date(
         pendingNowMs - 11 * 60_000,
       ).toISOString(),
@@ -959,6 +1080,150 @@ async function runChecks() {
       "mutated pending readiness witness must fail closed",
     );
   }
+  const unresolvedRecoveryParity = workerWorkPrecisionPendingParity({
+    balanceRows: [],
+    eventRows: [],
+    listingRows: [],
+    mempoolTxids: pendingMempoolTxids,
+    recoveryRows: [{
+      raw_tx: {
+        pendingWorkMintAttemptCount: 1,
+        pendingWorkMintInspectionVersion: 1,
+        pendingWorkMintRecoveryNeeded: true,
+        pendingWorkMintResolvedInvalid: false,
+        pendingProtocolResolvedInvalid: false,
+      },
+      status: "pending",
+      txid: pendingMemberTxid,
+    }],
+    transactionRows: [{
+      ...pendingTransactionRows[0],
+      raw_tx: {
+        pendingWorkMintAttemptCount: 1,
+        pendingWorkMintInspectionVersion: 1,
+        pendingWorkMintRecoveryNeeded: true,
+        pendingWorkMintResolvedInvalid: false,
+        pendingProtocolResolvedInvalid: false,
+      },
+    }],
+  });
+  assert.equal(unresolvedRecoveryParity.ready, false);
+  for (const raw_tx of [
+    {
+      pendingWorkMintAttemptCount: 1,
+      pendingWorkMintInspectionVersion: 1,
+      pendingWorkMintRecoveryNeeded: false,
+      pendingWorkMintResolvedInvalid: false,
+      pendingProtocolResolvedInvalid: false,
+    },
+    {
+      pendingWorkMintAttemptCount: 2,
+      pendingWorkMintInspectionVersion: 1,
+      pendingWorkMintRecoveryNeeded: false,
+      pendingWorkMintResolvedInvalid: true,
+      pendingProtocolResolvedInvalid: true,
+    },
+    {
+      pendingWorkMintAttemptCount: "1",
+      pendingWorkMintInspectionVersion: "1",
+      pendingWorkMintRecoveryNeeded: "false",
+      pendingWorkMintResolvedInvalid: "true",
+      pendingProtocolResolvedInvalid: "true",
+    },
+  ]) {
+    assert.equal(
+      workerWorkPrecisionPendingParity({
+        balanceRows: [],
+        eventRows: [],
+        listingRows: [],
+        mempoolTxids: pendingMempoolTxids,
+        recoveryRows: [{
+          raw_tx,
+          status: "pending",
+          txid: pendingMemberTxid,
+        }],
+        transactionRows: [{
+          ...pendingTransactionRows[0],
+          raw_tx,
+        }],
+      }).ready,
+      false,
+      "missing, ambiguous, or noncanonical WORK decision markers must fail closed",
+    );
+  }
+  assert.equal(
+    workerWorkPrecisionPendingParity({
+      balanceRows: [],
+      eventRows: [],
+      listingRows: [],
+      mempoolTxids: pendingMempoolTxids,
+      recoveryRows: [{
+        raw_tx: {
+          pendingWorkMintAttemptCount: 1,
+          pendingWorkMintInspectionVersion: 1,
+          pendingWorkMintRecoveryNeeded: false,
+          pendingWorkMintResolvedInvalid: true,
+          pendingProtocolResolvedInvalid: true,
+        },
+        status: "pending",
+        txid: pendingMemberTxid,
+      }],
+      transactionRows: [{
+        ...pendingTransactionRows[0],
+        raw_tx: {
+          pendingWorkMintAttemptCount: 1,
+          pendingWorkMintInspectionVersion: 1,
+          pendingWorkMintRecoveryNeeded: false,
+          pendingWorkMintResolvedInvalid: true,
+          pendingProtocolResolvedInvalid: true,
+        },
+      }],
+    }).ready,
+    true,
+    "one exact terminal invalid marker may close a single WORK mint attempt",
+  );
+  const supplyCapTerminalRaw = {
+    pendingWorkMintAttemptCount: 1,
+    pendingWorkMintInspectionVersion: 1,
+    pendingWorkMintRecoveryNeeded: false,
+    pendingWorkMintResolvedInvalid: false,
+    pendingProtocolResolvedInvalid: true,
+  };
+  assert.equal(
+    workerWorkPrecisionPendingParity({
+      balanceRows: [],
+      eventRows: [{
+        event_id: "pending-work-supply-cap",
+        kind: "token-event-invalid",
+        payload: { provisionalReason: "supply-cap" },
+        txid: pendingMemberTxid,
+        valid: false,
+      }],
+      listingRows: [],
+      mempoolTxids: pendingMempoolTxids,
+      recoveryRows: [{
+        raw_tx: supplyCapTerminalRaw,
+        status: "pending",
+        txid: pendingMemberTxid,
+      }],
+      transactionRows: [{
+        raw_tx: supplyCapTerminalRaw,
+        status: "pending",
+        txid: pendingMemberTxid,
+      }],
+    }).ready,
+    true,
+    "one exact invalid supply-cap decision may coexist with the terminal-invalid protocol marker",
+  );
+  const malformedMembershipParity = workerWorkPrecisionPendingParity({
+    balanceRows: [],
+    eventRows: [{ event_id: "bad-event", txid: "not-a-txid" }],
+    listingRows: [],
+    mempoolTxids: pendingMempoolTxids,
+    recoveryRows: [],
+    transactionRows: [],
+  });
+  assert.equal(malformedMembershipParity.ready, false);
 
   const failure = canonicalWorkerFailureFromLine(
     JSON.stringify(fixtureFailureRecord()),

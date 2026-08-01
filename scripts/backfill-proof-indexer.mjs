@@ -206,11 +206,11 @@ const NETWORK = process.env.NETWORK ?? "livenet";
 const WORK_Q16_PENDING_REBUILD_META_KEY =
   "workQ16PendingRebuild:livenet";
 const WORK_Q16_PENDING_REBUILD_MODEL =
-  "canonical-work-q16-pending-rebuild-v1";
+  "canonical-work-q16-pending-rebuild-v2";
 const WORK_Q16_PENDING_MEMPOOL_MODEL =
   "canonical-core-mempool-txid-set-v1";
 const WORK_Q16_PENDING_PROJECTION_MODEL =
-  "canonical-work-q16-pending-projection-v1";
+  "canonical-work-q16-pending-projection-v2";
 function canonicalWorkAmoV8ConfiguredInteger(
   value,
   { minimum = 0 } = {},
@@ -2180,6 +2180,29 @@ async function currentWorkProjectionModel(client, options = {}) {
   return workProjectionModelForState(
     await currentWorkProjectionState(client, options),
   );
+}
+
+async function workProjectionModelAtHeight(client, blockHeight) {
+  const currentModel = await currentWorkProjectionModel(client, {
+    refresh: true,
+  });
+  if (!currentModel || currentModel === WORK_ATOMIC_PROJECTION_MODEL) {
+    return currentModel;
+  }
+  const height = Number(blockHeight);
+  const marker = await currentWorkPrecisionV2Marker(client);
+  const activationHeight = Number(marker?.activationHeight);
+  if (
+    !Number.isSafeInteger(height) ||
+    height <= 0 ||
+    !Number.isSafeInteger(activationHeight) ||
+    activationHeight <= 0
+  ) {
+    return "";
+  }
+  return height < activationHeight
+    ? WORK_ATOMIC_PROJECTION_MODEL
+    : WORK_SUBATOM_PROJECTION_MODEL;
 }
 
 async function assertCanonicalWorkProjection(client, context, options = {}) {
@@ -13976,6 +13999,104 @@ async function exactWorkQ16LedgerSnapshotState(
   };
 }
 
+function exactWorkQ16LedgerSnapshotStateMatches(candidate, expected) {
+  const state = objectValue(candidate);
+  const exact = objectValue(expected);
+  try {
+    return (
+      state.amountStorageModel === WORK_SUBATOM_PROJECTION_MODEL &&
+      state.decimals === WORK_SUBATOM_DECIMALS &&
+      state.precisionModel === WORK_PRECISION_V2_MODEL &&
+      String(state.unitScale ?? "") === WORK_SUBATOM_UNIT_SCALE_TEXT &&
+      Number.isSafeInteger(state.indexedThroughBlock) &&
+      state.indexedThroughBlock === exact.indexedThroughBlock &&
+      String(state.indexedThroughBlockHash ?? "")
+        .trim()
+        .toLowerCase() ===
+        String(exact.indexedThroughBlockHash ?? "")
+          .trim()
+          .toLowerCase() &&
+      canonicalJsonText(
+        workAmoV8CanonicalTokenStateCommitment(state),
+      ) === canonicalJsonText(
+        workAmoV8CanonicalTokenStateCommitment(exact),
+      )
+    );
+  } catch {
+    return false;
+  }
+}
+
+async function exactWorkQ16CanonicalSummaryState(
+  client,
+  payload,
+  indexedThroughBlock,
+  workAmountStorageModel = "",
+) {
+  const projectionModel = workAmountStorageModel ||
+    await currentWorkProjectionModel(client, { refresh: true });
+  if (projectionModel !== WORK_SUBATOM_PROJECTION_MODEL) {
+    return { ready: true, required: false, state: null };
+  }
+  const marker = await currentWorkPrecisionV2Marker(client);
+  const activationHeight = Number(marker?.activationHeight);
+  if (
+    !Number.isSafeInteger(indexedThroughBlock) ||
+    !Number.isSafeInteger(activationHeight) ||
+    activationHeight < 1
+  ) {
+    throw new Error(
+      "Canonical Q16 summary requires one exact migration activation boundary.",
+    );
+  }
+  if (indexedThroughBlock < activationHeight) {
+    return { ready: true, required: false, state: null };
+  }
+  const tokenStatePayloads = objectValue(
+    objectValue(payload).tokenStatePayloads,
+  );
+  const candidate = objectValue(tokenStatePayloads[WORK_TOKEN_ID]);
+  const state = await exactWorkQ16LedgerSnapshotState(
+    client,
+    candidate,
+    indexedThroughBlock,
+  );
+  return {
+    ready: exactWorkQ16LedgerSnapshotStateMatches(candidate, state),
+    required: true,
+    state,
+  };
+}
+
+function canonicalSummaryTokenStatePayloads(
+  workAmountStorageModel,
+  sources,
+  { historicalCheckpoint = false } = {},
+) {
+  if (
+    historicalCheckpoint ||
+    ![
+      WORK_ATOMIC_PROJECTION_MODEL,
+      WORK_SUBATOM_PROJECTION_MODEL,
+    ].includes(workAmountStorageModel)
+  ) {
+    return {};
+  }
+  return (Array.isArray(sources) ? sources : []).reduce(
+    (merged, sourceValue) => {
+      const source = objectValue(sourceValue);
+      if (source.workAmountStorageModel !== workAmountStorageModel) {
+        return merged;
+      }
+      return {
+        ...merged,
+        ...objectValue(source.tokenStatePayloads),
+      };
+    },
+    {},
+  );
+}
+
 async function storeLedgerSnapshot(client, options = {}) {
   const includeDerivedSnapshots = options.includeDerivedSnapshots !== false;
   const workAmountStorageModel = await currentWorkProjectionModel(client, {
@@ -15490,6 +15611,18 @@ async function storeCanonicalSummarySnapshot(client, options = {}) {
       `Canonical summary checkpoint ${latestIndexedHeight}:${latestIndexedThroughBlockHash || "missing"} does not match required checkpoint ${requiredCheckpointHeight}:${requiredCheckpointHash || "missing"}`,
     );
   }
+  const summaryCheckpointHeight = checkpointRequired
+    ? requiredCheckpointHeight
+    : latestIndexedHeight;
+  const workAmountStorageModel = await workProjectionModelAtHeight(
+    client,
+    summaryCheckpointHeight,
+  );
+  if (!workAmountStorageModel) {
+    throw new Error(
+      "Canonical summary refresh requires one exact canonical WORK Q8 or Q16 definition.",
+    );
+  }
   const storedExactCheckpoint = checkpointRequired
     ? await storedExactEligibleCanonicalSummarySnapshotPayload(client, {
         blockHash: requiredCheckpointHash,
@@ -15497,15 +15630,27 @@ async function storeCanonicalSummarySnapshot(client, options = {}) {
       })
     : null;
   if (storedExactCheckpoint) {
-    return {
-      indexedThroughBlock: requiredCheckpointHeight,
-      indexedThroughBlockHash: requiredCheckpointHash,
-      previousCoverage: requiredCheckpointHeight,
-      reason: "already-current-exact-checkpoint",
-      skipped: true,
-      snapshotId: storedExactCheckpoint.snapshotId,
-      snapshotVersionCount: storedExactCheckpoint.count,
-    };
+    const storedExactPayload = await storedLedgerSnapshotPayload(
+      client,
+      storedExactCheckpoint.snapshotId,
+    );
+    const storedExactWorkState = await exactWorkQ16CanonicalSummaryState(
+      client,
+      storedExactPayload,
+      requiredCheckpointHeight,
+      workAmountStorageModel,
+    );
+    if (storedExactWorkState.ready) {
+      return {
+        indexedThroughBlock: requiredCheckpointHeight,
+        indexedThroughBlockHash: requiredCheckpointHash,
+        previousCoverage: requiredCheckpointHeight,
+        reason: "already-current-exact-checkpoint",
+        skipped: true,
+        snapshotId: storedExactCheckpoint.snapshotId,
+        snapshotVersionCount: storedExactCheckpoint.count,
+      };
+    }
   }
   const previousPayload = await storedEligibleCanonicalSummarySnapshotPayload(
     client,
@@ -15524,10 +15669,19 @@ async function storeCanonicalSummarySnapshot(client, options = {}) {
   const previousPublicLogFingerprint = objectPayload(
     previousPayload?.summaryRefresh?.publicLogFingerprint,
   );
+  const previousWorkState = previousPayload
+    ? await exactWorkQ16CanonicalSummaryState(
+        client,
+        previousPayload,
+        latestIndexedHeight,
+        workAmountStorageModel,
+      )
+    : { ready: false, required: false, state: null };
   if (
     !checkpointRequired &&
     previousCoverage === latestIndexedHeight &&
     previousIndexedThroughBlockHash === latestIndexedThroughBlockHash &&
+    previousWorkState.ready &&
     canonicalSummaryAccountingModelsCurrent(previousPayload?.summaryPayloads) &&
     publicLogFingerprintsMatch(
       currentPublicLogFingerprint,
@@ -15569,6 +15723,7 @@ async function storeCanonicalSummarySnapshot(client, options = {}) {
     if (
       checkpointRequired ||
       !previousPayload ||
+      !previousWorkState.ready ||
       !canonicalSummaryRefreshCanDefer(error)
     ) {
       throw error;
@@ -15660,26 +15815,39 @@ async function storeCanonicalSummarySnapshot(client, options = {}) {
     client,
     snapshotId,
   );
-  const workAmountStorageModel = await currentWorkProjectionModel(client, {
-    refresh: true,
-  });
-  if (!workAmountStorageModel) {
-    throw new Error(
-      "Canonical summary refresh requires one exact canonical WORK Q8 or Q16 definition.",
-    );
-  }
+  const tokenStatePayloads = canonicalSummaryTokenStatePayloads(
+    workAmountStorageModel,
+    [previousPayload, sameSnapshotPayload, ledger],
+    { historicalCheckpoint: checkpointRequired },
+  );
   const {
     workAmountStorageModel: _previousWorkAmountStorageModel,
+    tokenStatePayloads: _previousTokenStatePayloads,
+    tokenStatePayloadsIndexedAt: _previousTokenStatePayloadsIndexedAt,
     ...previousSnapshotPayload
   } = objectPayload(previousPayload) ?? {};
   const {
     workAmountStorageModel: _sameSnapshotWorkAmountStorageModel,
+    tokenStatePayloads: _sameSnapshotTokenStatePayloads,
+    tokenStatePayloadsIndexedAt: _sameSnapshotTokenStatePayloadsIndexedAt,
     ...sameStoredSnapshotPayload
   } = objectPayload(sameSnapshotPayload) ?? {};
   const {
     workAmountStorageModel: _ledgerWorkAmountStorageModel,
+    tokenStatePayloads: _ledgerTokenStatePayloads,
+    tokenStatePayloadsIndexedAt: _ledgerTokenStatePayloadsIndexedAt,
     ...canonicalLedgerPayload
   } = objectPayload(ledger) ?? {};
+
+  const exactWorkState = await exactWorkQ16CanonicalSummaryState(
+    client,
+    { tokenStatePayloads },
+    ledgerCoverage,
+    workAmountStorageModel,
+  );
+  if (exactWorkState.required) {
+    tokenStatePayloads[WORK_TOKEN_ID] = exactWorkState.state;
+  }
 
   const generatedAt = new Date().toISOString();
   const summaryHash = createHash("sha256")
@@ -15699,6 +15867,12 @@ async function storeCanonicalSummarySnapshot(client, options = {}) {
       canonicalSummary: summaryHash,
       publicLogRelational: finalPublicLogFingerprint.hash,
     },
+    ...(Object.keys(tokenStatePayloads).length > 0
+      ? {
+          tokenStatePayloads,
+          tokenStatePayloadsIndexedAt: generatedAt,
+        }
+      : {}),
     summaryPayloads,
     summaryPayloadsIndexedAt: generatedAt,
     summaryRefresh: {
@@ -15710,7 +15884,7 @@ async function storeCanonicalSummarySnapshot(client, options = {}) {
     },
     totals: summarySnapshotTotals(summaryPayloads),
   };
-  await client.query(
+  const snapshotWriteResult = await client.query(
     `
       INSERT INTO proof_indexer.ledger_snapshots (
         network,
@@ -15822,6 +15996,7 @@ async function storeCanonicalSummarySnapshot(client, options = {}) {
               )
             )
         )
+      RETURNING snapshot_id
     `,
     [
       NETWORK,
@@ -15848,6 +16023,14 @@ async function storeCanonicalSummarySnapshot(client, options = {}) {
       WORK_MARKET_V4_AUTH_VERSION,
     ],
   );
+  if (
+    snapshotWriteResult.rows.length !== 1 ||
+    String(snapshotWriteResult.rows[0]?.snapshot_id ?? "") !== snapshotId
+  ) {
+    throw new Error(
+      `Canonical summary ${snapshotId} is immutable and cannot be repaired in place.`,
+    );
+  }
   const snapshotRetention = await pruneLedgerSnapshots(client);
   return {
     indexedThroughBlock,
@@ -21109,10 +21292,30 @@ async function mempoolScanState(client) {
 }
 
 function canonicalMempoolTxidSnapshot(mempool) {
-  const txids = Object.keys(objectValue(mempool))
-    .map((txid) => normalizedLowerText(txid))
-    .filter(isHexTxid)
-    .sort(compareCanonicalUtf8);
+  const verboseMempool =
+    mempool &&
+    typeof mempool === "object" &&
+    !Array.isArray(mempool)
+      ? mempool
+      : null;
+  if (!Array.isArray(mempool) && !verboseMempool) {
+    throw new Error(
+      "WORK Q16 pending audit requires an exact Core mempool array or verbose object.",
+    );
+  }
+  const rawTxids = Array.isArray(mempool)
+    ? mempool
+    : Object.keys(verboseMempool);
+  const txids = rawTxids.map((txid) => normalizedLowerText(txid));
+  if (
+    txids.some((txid) => !isHexTxid(txid)) ||
+    txids.length !== new Set(txids).size
+  ) {
+    throw new Error(
+      "WORK Q16 pending audit received invalid or duplicate Core mempool txids.",
+    );
+  }
+  txids.sort(compareCanonicalUtf8);
   const sha256 = createHash("sha256")
     .update(
       Buffer.from(
@@ -21129,6 +21332,39 @@ function canonicalMempoolTxidSnapshot(mempool) {
     sha256,
     txids,
   };
+}
+
+function workQ16PendingMembershipStableAcrossSnapshots(
+  initialSnapshot,
+  finalSnapshot,
+  expectedTxids,
+) {
+  const initialTxids = Array.isArray(initialSnapshot?.txids)
+    ? initialSnapshot.txids
+    : [];
+  const finalTxids = Array.isArray(finalSnapshot?.txids)
+    ? finalSnapshot.txids
+    : [];
+  const expected = Array.isArray(expectedTxids) ? expectedTxids : [];
+  const canonicalInitial = canonicalMempoolTxidSnapshot(initialTxids);
+  const canonicalFinal = canonicalMempoolTxidSnapshot(finalTxids);
+  const initialMembership = new Set(initialTxids);
+  const finalMembership = new Set(finalTxids);
+  return (
+    initialSnapshot?.model === WORK_Q16_PENDING_MEMPOOL_MODEL &&
+    finalSnapshot?.model === WORK_Q16_PENDING_MEMPOOL_MODEL &&
+    Number.isSafeInteger(initialSnapshot.count) &&
+    initialSnapshot.count === initialTxids.length &&
+    initialSnapshot.sha256 === canonicalInitial.sha256 &&
+    Number.isSafeInteger(finalSnapshot.count) &&
+    finalSnapshot.count === finalTxids.length &&
+    finalSnapshot.sha256 === canonicalFinal.sha256 &&
+    expected.length === new Set(expected).size &&
+    expected.every(isHexTxid) &&
+    expected.every(
+      (txid) => initialMembership.has(txid) && finalMembership.has(txid),
+    )
+  );
 }
 
 function normalizedMempoolScanCursor(value) {
@@ -21545,11 +21781,198 @@ function workQ16PendingCommitment(domain, rows) {
     .digest("hex");
 }
 
+function workQ16PendingMembership({
+  eventRows,
+  listingRows,
+  recoveryRows,
+} = {}) {
+  const txids = new Set();
+  const invalidMembers = [];
+  const addRequiredTxid = (source, identity, value) => {
+    const txid = normalizedLowerText(value);
+    if (!isHexTxid(txid)) {
+      invalidMembers.push({
+        identity: String(identity ?? ""),
+        reason: "missing-or-invalid-txid",
+        source,
+        value: String(value ?? ""),
+      });
+      return;
+    }
+    txids.add(txid);
+  };
+  const workMintDecisionCounts = new Map();
+  for (const row of Array.isArray(eventRows) ? eventRows : []) {
+    addRequiredTxid("event", row?.event_id, row?.txid);
+    const txid = normalizedLowerText(row?.txid);
+    const payload = objectValue(row?.payload);
+    const kind = normalizedLowerText(row?.kind);
+    const workMintDecision =
+      (kind === "token-mint" && row?.valid === true) ||
+      (kind === "token-event-invalid" &&
+        row?.valid === false &&
+        (
+          payload.provisionalReason === "supply-cap" ||
+          String(payload.reason ?? "").startsWith(
+            "WORK mint exceeds max supply:",
+          )
+        ));
+    if (isHexTxid(txid) && workMintDecision) {
+      workMintDecisionCounts.set(
+        txid,
+        Number(workMintDecisionCounts.get(txid) ?? 0) + 1,
+      );
+    }
+  }
+  for (const row of Array.isArray(listingRows) ? listingRows : []) {
+    addRequiredTxid(
+      "listing",
+      row?.listing_id,
+      row?.membership_txid,
+    );
+  }
+  for (const row of Array.isArray(recoveryRows) ? recoveryRows : []) {
+    const raw = objectValue(row?.raw_tx);
+    const attemptValue = raw.pendingWorkMintAttemptCount;
+    const attemptValid =
+      Number.isSafeInteger(attemptValue) && attemptValue >= 0;
+    const attemptCount = attemptValid ? attemptValue : -1;
+    const inspectionVersion =
+      raw.pendingWorkMintInspectionVersion;
+    const recoveryValue = raw.pendingWorkMintRecoveryNeeded;
+    const recoveryDeclared = typeof recoveryValue === "boolean";
+    const recoveryNeeded = recoveryValue === true;
+    const resolvedInvalidValue =
+      raw.pendingWorkMintResolvedInvalid;
+    const resolvedInvalidDeclared =
+      typeof resolvedInvalidValue === "boolean";
+    const resolvedInvalid = resolvedInvalidValue === true;
+    const protocolResolvedInvalidValue =
+      raw.pendingProtocolResolvedInvalid;
+    const protocolResolvedInvalidDeclared =
+      typeof protocolResolvedInvalidValue === "boolean";
+    const protocolResolvedInvalid =
+      protocolResolvedInvalidValue === true;
+    if (
+      row?.status !== "pending" ||
+      !attemptValid ||
+      !Number.isSafeInteger(attemptCount) ||
+      inspectionVersion !== 1 ||
+      !recoveryDeclared ||
+      !resolvedInvalidDeclared ||
+      !protocolResolvedInvalidDeclared ||
+      (attemptCount === 0 && (recoveryNeeded || resolvedInvalid))
+    ) {
+      invalidMembers.push({
+        identity: String(row?.txid ?? ""),
+        reason: "malformed-work-recovery-marker",
+        source: "recovery",
+        value: String(row?.txid ?? ""),
+      });
+      continue;
+    }
+    if (attemptCount === 0) {
+      continue;
+    }
+    addRequiredTxid("recovery", row?.txid, row?.txid);
+    const txid = normalizedLowerText(row?.txid);
+    const decisionCount = Number(workMintDecisionCounts.get(txid) ?? 0);
+    const terminalMarker =
+      resolvedInvalid || protocolResolvedInvalid;
+    let invalidReason = "";
+    if (attemptCount > 1) {
+      invalidReason = "ambiguous-multi-mint-recovery";
+    } else if (recoveryNeeded) {
+      invalidReason = "work-recovery-unresolved";
+    } else if (decisionCount === 0 && !terminalMarker) {
+      invalidReason = "work-decision-missing";
+    } else if (decisionCount > 1 || (decisionCount > 0 && resolvedInvalid)) {
+      invalidReason = "work-decision-conflict";
+    }
+    if (invalidReason) {
+      invalidMembers.push({
+        identity: String(row?.txid ?? ""),
+        reason: invalidReason,
+        source: "recovery",
+        value: String(row?.txid ?? ""),
+      });
+    }
+  }
+  const expectedTxids = [...txids].sort(compareCanonicalUtf8);
+  invalidMembers.sort((left, right) =>
+    compareCanonicalUtf8(canonicalJsonText(left), canonicalJsonText(right))
+  );
+  return {
+    expectedTxidCount: expectedTxids.length,
+    expectedTxids,
+    expectedTxidsSha256: workQ16PendingCommitment(
+      "MEMBERSHIP",
+      expectedTxids,
+    ),
+    invalidCount: invalidMembers.length,
+    invalidSha256: workQ16PendingCommitment(
+      "INVALID-MEMBERSHIP",
+      invalidMembers,
+    ),
+    model: "canonical-work-q16-pending-membership-v2",
+  };
+}
+
+function workQ16PendingInspectionMarkerReason(
+  row,
+  decisionCount = 0,
+  validProjectionCount = 0,
+) {
+  const raw = objectValue(row?.raw_tx);
+  const attemptCount = raw.pendingWorkMintAttemptCount;
+  const inspectionVersion = raw.pendingWorkMintInspectionVersion;
+  const recoveryNeeded = raw.pendingWorkMintRecoveryNeeded;
+  const resolvedInvalid = raw.pendingWorkMintResolvedInvalid;
+  const protocolResolvedInvalid = raw.pendingProtocolResolvedInvalid;
+  if (
+    row?.status !== "pending" ||
+    !Number.isSafeInteger(attemptCount) ||
+    attemptCount < 0 ||
+    inspectionVersion !== 1 ||
+    typeof recoveryNeeded !== "boolean" ||
+    typeof resolvedInvalid !== "boolean" ||
+    typeof protocolResolvedInvalid !== "boolean"
+  ) {
+    return "malformed-work-inspection-marker";
+  }
+  if (attemptCount === 0) {
+    return recoveryNeeded ||
+        resolvedInvalid ||
+        decisionCount !== 0 ||
+        (protocolResolvedInvalid && validProjectionCount > 0)
+      ? "work-inspection-zero-attempt-conflict"
+      : "";
+  }
+  if (attemptCount > 1) {
+    return "ambiguous-multi-mint-recovery";
+  }
+  if (recoveryNeeded) {
+    return "work-recovery-unresolved";
+  }
+  const terminalMarker = resolvedInvalid || protocolResolvedInvalid;
+  if (protocolResolvedInvalid && validProjectionCount > 0) {
+    return "protocol-terminal-valid-projection-conflict";
+  }
+  if (decisionCount === 0 && !terminalMarker) {
+    return "work-decision-missing";
+  }
+  if (decisionCount > 1 || (decisionCount > 0 && resolvedInvalid)) {
+    return "work-decision-conflict";
+  }
+  return "";
+}
+
 function workQ16PendingParity({
   balances,
   events,
   listings,
   mempoolTxids,
+  recoveryRows,
   transactions,
 }) {
   const mempool = new Set(
@@ -21557,16 +21980,12 @@ function workQ16PendingParity({
       .map(normalizedLowerText)
       .filter(isHexTxid),
   );
-  const expectedTxids = [
-    ...new Set([
-      ...(Array.isArray(events) ? events : []).map((row) =>
-        normalizedLowerText(row?.txid),
-      ),
-      ...(Array.isArray(listings) ? listings : []).map((row) =>
-        normalizedLowerText(row?.membership_txid),
-      ),
-    ].filter(isHexTxid)),
-  ].sort(compareCanonicalUtf8);
+  const membership = workQ16PendingMembership({
+    eventRows: events,
+    listingRows: listings,
+    recoveryRows,
+  });
+  const expectedTxids = membership.expectedTxids;
   const outsideMempoolTxids = expectedTxids.filter(
     (txid) => !mempool.has(txid),
   );
@@ -21587,14 +22006,64 @@ function workQ16PendingParity({
       !transactionRows.has(txid) ||
       transactionRows.get(txid)?.status !== "pending",
   );
+  const workMintDecisionCounts = new Map();
+  const validProjectionCounts = new Map();
+  for (const row of Array.isArray(events) ? events : []) {
+    const txid = normalizedLowerText(row?.txid);
+    const payload = objectValue(row?.payload);
+    const kind = normalizedLowerText(row?.kind);
+    const decision =
+      (kind === "token-mint" && row?.valid === true) ||
+      (kind === "token-event-invalid" &&
+        row?.valid === false &&
+        (
+          payload.provisionalReason === "supply-cap" ||
+          String(payload.reason ?? "").startsWith(
+            "WORK mint exceeds max supply:",
+          )
+        ));
+    if (isHexTxid(txid) && decision) {
+      workMintDecisionCounts.set(
+        txid,
+        Number(workMintDecisionCounts.get(txid) ?? 0) + 1,
+      );
+    }
+    if (isHexTxid(txid) && row?.valid === true) {
+      validProjectionCounts.set(
+        txid,
+        Number(validProjectionCounts.get(txid) ?? 0) + 1,
+      );
+    }
+  }
+  for (const row of Array.isArray(listings) ? listings : []) {
+    const txid = normalizedLowerText(row?.membership_txid);
+    if (isHexTxid(txid)) {
+      validProjectionCounts.set(
+        txid,
+        Number(validProjectionCounts.get(txid) ?? 0) + 1,
+      );
+    }
+  }
+  const invalidInspectionRows = expectedTxids.flatMap((txid) => {
+    const row = transactionRows.get(txid);
+    if (!row) {
+      return [];
+    }
+    const reason = workQ16PendingInspectionMarkerReason(
+      row,
+      Number(workMintDecisionCounts.get(txid) ?? 0),
+      Number(validProjectionCounts.get(txid) ?? 0),
+    );
+    return reason ? [{ reason, txid }] : [];
+  });
   const observedNonzeroBalanceRows =
     Array.isArray(balances) ? balances : [];
-  const membership = {
-    expectedTxidCount: expectedTxids.length,
-    expectedTxidsSha256: workQ16PendingCommitment(
-      "MEMBERSHIP",
-      expectedTxids,
-    ),
+  const {
+    expectedTxids: _expectedTxids,
+    ...membershipCommitment
+  } = membership;
+  const membershipParity = {
+    ...membershipCommitment,
     outsideMempoolCount: outsideMempoolTxids.length,
     outsideMempoolTxidsSha256: workQ16PendingCommitment(
       "OUTSIDE-MEMPOOL",
@@ -21604,6 +22073,11 @@ function workQ16PendingParity({
   const transactionParity = {
     duplicateCount: duplicateTransactionCount,
     expectedCount: expectedTxids.length,
+    inspectionInvalidCount: invalidInspectionRows.length,
+    inspectionInvalidSha256: workQ16PendingCommitment(
+      "INVALID-INSPECTION",
+      invalidInspectionRows,
+    ),
     matchedCount:
       expectedTxids.length - missingTransactionTxids.length,
     missingCount: missingTransactionTxids.length,
@@ -21624,12 +22098,14 @@ function workQ16PendingParity({
   };
   return {
     balanceDeltas,
-    membership,
-    model: "canonical-work-q16-pending-parity-v1",
+    membership: membershipParity,
+    model: "canonical-work-q16-pending-parity-v2",
     ready:
+      membership.invalidCount === 0 &&
       outsideMempoolTxids.length === 0 &&
       duplicateTransactionCount === 0 &&
       missingTransactionTxids.length === 0 &&
+      invalidInspectionRows.length === 0 &&
       observedNonzeroBalanceRows.length === 0,
     transactions: transactionParity,
   };
@@ -21641,9 +22117,16 @@ async function storeWorkQ16PendingWitnessNotReady(
   mempoolSnapshot = null,
 ) {
   const generatedAt = new Date().toISOString();
+  const {
+    txids: _mempoolTxids,
+    ...compactMempoolSnapshot
+  } = objectValue(mempoolSnapshot);
   const witness = {
     generatedAt,
-    mempoolSnapshot,
+    mempoolSnapshot:
+      Object.keys(compactMempoolSnapshot).length > 0
+        ? compactMempoolSnapshot
+        : null,
     model: WORK_Q16_PENDING_REBUILD_MODEL,
     network: NETWORK,
     ready: false,
@@ -21689,35 +22172,15 @@ async function persistExactWorkQ16PendingWitness(
       initialMempoolSnapshot,
     );
   }
-  const finalMempool = await bitcoinRpc("getrawmempool", [true]);
+  const finalMempool = await bitcoinRpc("getrawmempool", [false]);
   const finalMempoolSnapshot =
     canonicalMempoolTxidSnapshot(finalMempool);
+  const finalMempoolTxids = new Set(finalMempoolSnapshot.txids);
   const covered = new Set(
     (Array.isArray(processedTxids) ? processedTxids : [])
       .map((txid) => normalizedLowerText(txid))
-      .filter(isHexTxid),
+      .filter((txid) => isHexTxid(txid) && finalMempoolTxids.has(txid)),
   );
-  const coverageComplete =
-    finalMempoolSnapshot.sha256 ===
-      initialMempoolSnapshot?.sha256 &&
-    finalMempoolSnapshot.count ===
-      Number(initialMempoolSnapshot?.count) &&
-    finalMempoolSnapshot.txids.every((txid) => covered.has(txid));
-  if (
-    !coverageComplete ||
-    stopReason ||
-    Number(unresolved) !== 0 ||
-    Number(canonicalDeferred) !== 0
-  ) {
-    return storeWorkQ16PendingWitnessNotReady(
-      client,
-      !coverageComplete
-        ? "mempool-snapshot-coverage-incomplete"
-        : stopReason || "pending-projection-unresolved",
-      finalMempoolSnapshot,
-    );
-  }
-
   const coreTipHeight = Number(
     await bitcoinRpc("getblockcount"),
   );
@@ -21758,7 +22221,7 @@ async function persistExactWorkQ16PendingWitness(
       balanceResult,
       eventResult,
       listingResult,
-      transactionResult,
+      recoveryResult,
       invalidLegacyResult,
     ] = await Promise.all([
       client.query(
@@ -21864,7 +22327,13 @@ async function persistExactWorkQ16PendingWitness(
            AND seal_tx.txid = lower(listing.seal_txid)
           WHERE listing.network = $1
             AND listing.token_id = $2
-            AND listing.status IN ('pending', 'sealing')
+            AND (
+              listing.status = 'pending'
+              OR (
+                listing.status = 'sealing'
+                AND COALESCE(seal_tx.status, '') <> 'confirmed'
+              )
+            )
           ORDER BY listing.listing_id ASC
         `,
         [NETWORK, WORK_TOKEN_ID],
@@ -21875,10 +22344,39 @@ async function persistExactWorkQ16PendingWitness(
           FROM proof_indexer.transactions
           WHERE network = $1
             AND status = 'pending'
-            AND txid = ANY($2::text[])
+            AND (
+              raw_tx ? 'pendingWorkMintAttemptCount'
+              OR raw_tx ? 'pendingWorkMintInspectionVersion'
+              OR raw_tx ? 'pendingWorkMintRecoveryNeeded'
+              OR raw_tx ? 'pendingWorkMintResolvedInvalid'
+              OR raw_tx ? 'pendingProtocolResolvedInvalid'
+            )
+            AND (
+              jsonb_typeof(
+                raw_tx->'pendingWorkMintAttemptCount'
+              ) = 'number'
+              AND jsonb_typeof(
+                raw_tx->'pendingWorkMintInspectionVersion'
+              ) = 'number'
+              AND jsonb_typeof(
+                raw_tx->'pendingWorkMintRecoveryNeeded'
+              ) = 'boolean'
+              AND jsonb_typeof(
+                raw_tx->'pendingWorkMintResolvedInvalid'
+              ) = 'boolean'
+              AND jsonb_typeof(
+                raw_tx->'pendingProtocolResolvedInvalid'
+              ) = 'boolean'
+              AND raw_tx->>'pendingWorkMintAttemptCount' = '0'
+              AND raw_tx->>'pendingWorkMintInspectionVersion' = '1'
+              AND raw_tx->>'pendingWorkMintRecoveryNeeded' = 'false'
+              AND raw_tx->>'pendingWorkMintResolvedInvalid' = 'false'
+              AND raw_tx->>'pendingProtocolResolvedInvalid'
+                IN ('false', 'true')
+            ) IS NOT TRUE
           ORDER BY txid ASC
         `,
-        [NETWORK, finalMempoolSnapshot.txids],
+        [NETWORK],
       ),
       client.query(
         `
@@ -21933,11 +22431,34 @@ async function persistExactWorkQ16PendingWitness(
       );
     }
 
+    const membership = workQ16PendingMembership({
+      eventRows: eventResult.rows,
+      listingRows: listingResult.rows,
+      recoveryRows: recoveryResult.rows,
+    });
+    if (membership.invalidCount !== 0) {
+      throw new Error(
+        "WORK Q16 pending membership contains a malformed or unresolved persisted WORK row.",
+      );
+    }
+    const transactionResult = await client.query(
+      `
+        SELECT txid, status, raw_tx
+        FROM proof_indexer.transactions
+        WHERE network = $1
+          AND status = 'pending'
+          AND txid = ANY($2::text[])
+        ORDER BY txid ASC
+      `,
+      [NETWORK, membership.expectedTxids],
+    );
+
     const parity = workQ16PendingParity({
       balances: balanceResult.rows,
       events: eventResult.rows,
       listings: listingResult.rows,
       mempoolTxids: finalMempoolSnapshot.txids,
+      recoveryRows: recoveryResult.rows,
       transactions: transactionResult.rows,
     });
     if (!parity.ready) {
@@ -21984,7 +22505,7 @@ async function persistExactWorkQ16PendingWitness(
       model: WORK_Q16_PENDING_PROJECTION_MODEL,
     };
     const recheckedMempoolSnapshot = canonicalMempoolTxidSnapshot(
-      await bitcoinRpc("getrawmempool", [true]),
+      await bitcoinRpc("getrawmempool", [false]),
     );
     const recheckedTipHeight = Number(
       await bitcoinRpc("getblockcount"),
@@ -21993,18 +22514,29 @@ async function persistExactWorkQ16PendingWitness(
       await bitcoinRpc("getbestblockhash"),
     );
     if (
-      recheckedMempoolSnapshot.sha256 !==
-        finalMempoolSnapshot.sha256 ||
-      recheckedMempoolSnapshot.count !==
-        finalMempoolSnapshot.count ||
+      !workQ16PendingMembershipStableAcrossSnapshots(
+        finalMempoolSnapshot,
+        recheckedMempoolSnapshot,
+        membership.expectedTxids,
+      ) ||
       recheckedTipHeight !== coreTipHeight ||
       recheckedTipHash !== coreTipHash
     ) {
       throw new Error(
-        "Core changed during WORK Q16 pending witness construction.",
+        "Core tip or persisted pending WORK membership changed during Q16 witness construction.",
       );
     }
     const generatedAt = new Date().toISOString();
+    const {
+      txids: _fullMempoolTxids,
+      ...compactMempoolSnapshot
+    } = finalMempoolSnapshot;
+    const membershipSnapshot = {
+      count: membership.expectedTxidCount,
+      model: membership.model,
+      sha256: membership.expectedTxidsSha256,
+      txids: membership.expectedTxids,
+    };
     const witness = {
       activationHeight:
         WORK_AMO_V8_CONFIGURED_ACTIVATION_HEIGHT,
@@ -22016,7 +22548,8 @@ async function persistExactWorkQ16PendingWitness(
       declarationTxid: WORK_AMO_V8_DECLARATION_TXID,
       generatedAt,
       invalidLegacyMutationCount: 0,
-      mempoolSnapshot: finalMempoolSnapshot,
+      membershipSnapshot,
+      mempoolSnapshot: compactMempoolSnapshot,
       model: WORK_Q16_PENDING_REBUILD_MODEL,
       network: NETWORK,
       precisionModel: WORK_AMO_V8_GLOBAL_PRECISION_MODEL,
@@ -22024,13 +22557,16 @@ async function persistExactWorkQ16PendingWitness(
       projection,
       ready: true,
       scan: {
-        canonicalDeferred: 0,
+        canonicalDeferred: Number(canonicalDeferred),
         complete: true,
-        coveredTxids: covered.size,
+        completeModel: "persisted-pending-work-projection-audit-v1",
+        discoveryModel: "bounded-best-effort-unconfirmed-discovery-v1",
+        inspectedTxids: covered.size,
+        mempoolMembershipCount: finalMempoolSnapshot.count,
         protocolTxids: Number(protocolTxids),
         scanned: Number(scanned),
-        stopReason: "",
-        unresolved: 0,
+        stopReason: String(stopReason ?? ""),
+        unresolved: Number(unresolved),
       },
     };
     await client.query(

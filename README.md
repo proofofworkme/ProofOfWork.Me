@@ -318,8 +318,19 @@ Current production behavior:
   subatoms per historical atom. One WORK is `10000000000000000` subatoms and
   one subatom is exactly `0.0000000000000001 WORK`. No supply or ownership
   changes and raw confirmed history is not rewritten. Pending WORK events,
-  actions, listings, and balance deltas are cleared, then rebuilt from one
-  stable mempool under active V8 semantics. From activation, current transfers
+  actions, listings, and balance deltas are cleared, then rebuilt under active
+  V8 semantics. Every persisted pending WORK txid must remain present across
+  both Core mempool samples that fence its database audit; readiness proves
+  exact membership, transaction, semantic, listing, and zero-balance-delta
+  parity for that persisted WORK set. Every member also requires the complete,
+  correctly typed five-field WORK inspection marker; a terminal-invalid
+  protocol marker cannot coexist with a valid persisted WORK projection. The
+  full sampled mempool count and hash
+  remain compact audit evidence, but unrelated additions or removals do not
+  invalidate the WORK witness. Discovery of unrelated or not-yet-projected
+  mempool transactions remains bounded best-effort visibility and cannot
+  indefinitely pause confirmed V8 state. From
+  activation, current transfers
   require `pwt1:send3`; new governed listings require `pwt-sale-v8` and the
   sole `unitFaceProofs=25000`. For Q8 network value `N` immediately before the
   listing, `F=25000`, `S=21000000`, `A=10000000000000000`, and `Q=100000000`,

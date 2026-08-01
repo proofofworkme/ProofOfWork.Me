@@ -127,7 +127,17 @@ places: one WORK is `10000000000000000` subatoms, one subatom is
 `0.0000000000000001 WORK`, and every Q8 atom becomes exactly `100000000`
 subatoms by integer multiplication. Balances, supply, and the 21,000,000 WORK
 cap conserve exactly; raw confirmed history is not rewritten. Pending WORK
-projections are cleared and rebuilt from one stable mempool under V8 rules.
+projections are cleared and rebuilt under V8 rules. Every persisted pending
+WORK txid must remain present across both Core mempool samples that fence its
+database audit, while readiness proves exact membership, transaction,
+semantic, listing, and zero-balance-delta parity for that persisted WORK set.
+Every member also requires the complete, correctly typed five-field WORK
+inspection marker; a terminal-invalid protocol marker cannot coexist with a
+valid persisted WORK projection. The full sampled mempool count and hash
+remain compact audit evidence, but
+unrelated additions or removals do not invalidate the WORK witness. Discovery
+of unrelated or not-yet-projected mempool transactions remains bounded
+best-effort visibility and cannot indefinitely pause confirmed V8 state.
 New transfers use `pwt1:send3`. New governed listings use only `pwt-sale-v8`
 and the single exact face `25000` proofs, with the exact
 `unitAmountSubatoms` frozen at confirmed canonical position before that

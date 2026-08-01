@@ -8220,10 +8220,19 @@ function workAmoV8Estimates(networkValueBeforeQ8) {
 }
 
 function workQ16MempoolSnapshot(txids) {
-  const canonicalTxids = (Array.isArray(txids) ? txids : [])
-    .map((txid) => String(txid ?? "").trim().toLowerCase())
-    .filter((txid) => /^[0-9a-f]{64}$/u.test(txid))
-    .sort(compareCanonicalUtf8);
+  if (!Array.isArray(txids)) {
+    return null;
+  }
+  const normalizedTxids = txids.map((txid) =>
+    String(txid ?? "").trim().toLowerCase()
+  );
+  if (
+    normalizedTxids.some((txid) => !/^[0-9a-f]{64}$/u.test(txid)) ||
+    normalizedTxids.length !== new Set(normalizedTxids).size
+  ) {
+    return null;
+  }
+  const canonicalTxids = [...normalizedTxids].sort(compareCanonicalUtf8);
   return {
     count: canonicalTxids.length,
     model: "canonical-core-mempool-txid-set-v1",
@@ -8236,6 +8245,51 @@ function workQ16MempoolSnapshot(txids) {
       ),
     ),
   };
+}
+
+function workQ16PendingMembershipSnapshotReady(
+  snapshotValue,
+  liveMempoolTxids,
+) {
+  if (!Array.isArray(liveMempoolTxids)) {
+    return false;
+  }
+  const snapshot =
+    snapshotValue &&
+    typeof snapshotValue === "object" &&
+    !Array.isArray(snapshotValue)
+      ? snapshotValue
+      : {};
+  const txids = Array.isArray(snapshot.txids)
+    ? snapshot.txids.map((txid) =>
+        String(txid ?? "").trim().toLowerCase()
+      )
+    : [];
+  const canonicalTxids = [...txids].sort(compareCanonicalUtf8);
+  const live = new Set(
+    liveMempoolTxids
+      .map((txid) => String(txid ?? "").trim().toLowerCase())
+      .filter((txid) => /^[0-9a-f]{64}$/u.test(txid)),
+  );
+  const sha256 = sha256Hex(
+    Buffer.from(
+      `ProofOfWork.Me/WORK-Q16-PENDING-MEMBERSHIP/v1\n${
+        JSON.stringify(canonicalTxids)
+      }`,
+      "utf8",
+    ),
+  );
+  return Boolean(
+    snapshot.model ===
+      "canonical-work-q16-pending-membership-v2" &&
+      Number.isSafeInteger(snapshot.count) &&
+      snapshot.count === canonicalTxids.length &&
+      canonicalTxids.length === new Set(canonicalTxids).size &&
+      canonicalTxids.every((txid) => /^[0-9a-f]{64}$/u.test(txid)) &&
+      JSON.stringify(txids) === JSON.stringify(canonicalTxids) &&
+      String(snapshot.sha256 ?? "").trim().toLowerCase() === sha256 &&
+      canonicalTxids.every((txid) => live.has(txid))
+  );
 }
 
 function exactWorkAmoV8WorkerReadiness(
@@ -8269,6 +8323,13 @@ function exactWorkAmoV8WorkerReadiness(
   const replayMempoolSha256 = String(
     replay.mempoolSha256 ?? "",
   );
+  const replayPendingMembershipCount = replay.pendingMembershipCount;
+  const replayPendingMembershipSha256 = String(
+    replay.pendingMembershipSha256 ?? "",
+  );
+  const replayPendingProjectionSha256 = String(
+    replay.pendingProjectionSha256 ?? "",
+  );
   const successIdentityReady =
     workerFinishedAt.length > 0 &&
     workerFinishedAt === workerLastSuccessAt &&
@@ -8283,29 +8344,39 @@ function exactWorkAmoV8WorkerReadiness(
     replay.era === "q16" &&
     replay.ready === true &&
     replay.replayRequired === true &&
-    Number(replay.tipHeight) === tipHeight &&
+    Number.isSafeInteger(replay.tipHeight) &&
+    replay.tipHeight === tipHeight &&
     /^[0-9a-f]{64}$/u.test(replayTipHash) &&
     replayTipHash === tipHash &&
     liveMempoolSnapshot?.model ===
       "canonical-core-mempool-txid-set-v1" &&
-    Number(replay.mempoolCount) ===
-      liveMempoolSnapshot.count &&
+    Number.isSafeInteger(replay.mempoolCount) &&
+    replay.mempoolCount >= 0 &&
     /^[0-9a-f]{64}$/u.test(replayMempoolSha256) &&
-    replayMempoolSha256 === liveMempoolSnapshot.sha256;
+    Number.isSafeInteger(replayPendingMembershipCount) &&
+    replayPendingMembershipCount >= 0 &&
+    /^[0-9a-f]{64}$/u.test(replayPendingMembershipSha256) &&
+    /^[0-9a-f]{64}$/u.test(replayPendingProjectionSha256);
   return {
     era: String(workPrecision.era ?? ""),
     finishedAt: workerFinishedAt,
     mempoolCount: Number.isSafeInteger(
-      Number(replay.mempoolCount),
+      replay.mempoolCount,
     )
-      ? Number(replay.mempoolCount)
+      ? replay.mempoolCount
       : null,
     mempoolSha256: replayMempoolSha256,
+    pendingMembershipCount:
+      Number.isSafeInteger(replayPendingMembershipCount)
+        ? replayPendingMembershipCount
+        : null,
+    pendingMembershipSha256: replayPendingMembershipSha256,
+    pendingProjectionSha256: replayPendingProjectionSha256,
     ready,
     state: String(worker.state ?? ""),
     tipHash: replayTipHash,
-    tipHeight: Number.isSafeInteger(Number(replay.tipHeight))
-      ? Number(replay.tipHeight)
+    tipHeight: Number.isSafeInteger(replay.tipHeight)
+      ? replay.tipHeight
       : null,
   };
 }
@@ -8443,6 +8514,7 @@ async function workAmoV8Metadata(
   let tipHeight = 0;
   let tipHash = "";
   let tipVerified = false;
+  let liveMempoolTxids = null;
   let liveMempoolSnapshot = null;
   let workerReadiness = {
     era: "",
@@ -8501,11 +8573,14 @@ async function workAmoV8Metadata(
       Number.isSafeInteger(tipHeight) &&
       tipHeight > 0 &&
       /^[0-9a-f]{64}$/u.test(tipHash);
-    liveMempoolSnapshot =
+    liveMempoolTxids =
       mempoolTxidsResult?.ok &&
       Array.isArray(mempoolTxidsResult.result)
-        ? workQ16MempoolSnapshot(mempoolTxidsResult.result)
+        ? mempoolTxidsResult.result
         : null;
+    liveMempoolSnapshot = liveMempoolTxids
+      ? workQ16MempoolSnapshot(liveMempoolTxids)
+      : null;
     workerReadiness = exactWorkAmoV8WorkerReadiness(
       operationalStatus,
       {
@@ -8585,6 +8660,13 @@ async function workAmoV8Metadata(
   ) {
     workAmoV8ReachedLatch = true;
   }
+  const pendingMembershipSnapshot =
+    migrationReadiness?.pendingWitness?.membershipSnapshot;
+  const pendingMembershipLive =
+    workQ16PendingMembershipSnapshotReady(
+      pendingMembershipSnapshot,
+      liveMempoolTxids,
+    );
   const indexReady =
     migrationReadiness?.ready === true &&
     migrationReadiness?.active === true &&
@@ -8599,18 +8681,20 @@ async function workAmoV8Metadata(
       .toLowerCase() === tipHash &&
     migrationReadiness?.pendingReady === true &&
     workerReadiness.ready === true &&
-    liveMempoolSnapshot?.model ===
-      migrationReadiness?.pendingWitness?.mempoolSnapshot?.model &&
-    liveMempoolSnapshot?.count ===
-      Number(
-        migrationReadiness?.pendingWitness?.mempoolSnapshot
-          ?.count,
-      ) &&
-    liveMempoolSnapshot?.sha256 ===
+    pendingMembershipLive &&
+    workerReadiness.pendingMembershipCount ===
+      pendingMembershipSnapshot?.count &&
+    workerReadiness.pendingMembershipSha256 ===
+      String(pendingMembershipSnapshot?.sha256 ?? "")
+        .trim()
+        .toLowerCase() &&
+    workerReadiness.pendingProjectionSha256 ===
       String(
-        migrationReadiness?.pendingWitness?.mempoolSnapshot
-          ?.sha256 ?? "",
-      ).trim().toLowerCase();
+        migrationReadiness?.pendingWitness?.projection
+          ?.commitmentSha256 ?? "",
+      )
+        .trim()
+        .toLowerCase();
   const combinedEvidence = evidence
     ? {
         ...evidence,
@@ -8631,6 +8715,28 @@ async function workAmoV8Metadata(
       WORK_AMO_V8_WRITES_CONFIGURED &&
       Boolean(configuredDeclaration),
   });
+  const publicMigrationReadiness = migrationReadiness
+    ? {
+        ...migrationReadiness,
+        pendingWitness:
+          migrationReadiness.pendingWitness &&
+          typeof migrationReadiness.pendingWitness === "object" &&
+          !Array.isArray(migrationReadiness.pendingWitness)
+            ? {
+                ...migrationReadiness.pendingWitness,
+                membershipSnapshot: pendingMembershipSnapshot &&
+                    typeof pendingMembershipSnapshot === "object" &&
+                    !Array.isArray(pendingMembershipSnapshot)
+                  ? {
+                      count: pendingMembershipSnapshot.count,
+                      model: pendingMembershipSnapshot.model,
+                      sha256: pendingMembershipSnapshot.sha256,
+                    }
+                  : null,
+              }
+            : null,
+      }
+    : null;
   const payload = {
     ...status,
     activation: {
@@ -8645,7 +8751,7 @@ async function workAmoV8Metadata(
       declarationDiscovery.checked === true,
     indexReady,
     migrationReady: indexReady,
-    migrationReadiness,
+    migrationReadiness: publicMigrationReadiness,
     liveMempoolSnapshot,
     legacyWriteEmbargo: workAmoV8DeclarationEmbargoLatch,
     networkValueBeforeQ8,

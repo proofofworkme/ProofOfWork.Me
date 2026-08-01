@@ -1862,7 +1862,7 @@ assert.match(
   /canonicalSaleEvidence:[\s\S]*amountSubatoms: evidence\.amountSubatoms/u,
 );
 assert.match(reader, /workPrecisionV2Migration:livenet/u);
-assert.match(reader, /canonical-work-q16-pending-parity-v1/u);
+assert.match(reader, /canonical-work-q16-pending-parity-v2/u);
 assert.match(
   reader,
   /proofIndexWorkAmoV8ActivationLatch\([\s\S]*configuredPrecisionPins \?\? precisionLatch\?\.pins/u,
@@ -1949,7 +1949,7 @@ assert.match(
   "a marker-bound V8 relic must close before any later raw ticket spend is classified",
 );
 assert.match(backfill, /amountSubatoms/u);
-assert.match(backfill, /canonical-work-q16-pending-parity-v1/u);
+assert.match(backfill, /canonical-work-q16-pending-parity-v2/u);
 assert.match(backfill, /discoverIndexedWorkAmoV8DeclarationPins/u);
 assert.match(sql, /work_amo_v8_listing_terms/u);
 assert.match(sql, /unit_amount_subatoms/u);

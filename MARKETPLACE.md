@@ -948,8 +948,18 @@ historical Q8 frozen terms, and preactivation canonical commitments remain
 immutable. Wrong-era or provisional derived projections at or after `D+1`
 are invalidated and replayed from raw canonical evidence. Pending state is not
 part of the activation opening: pending WORK events, listing/action rows, and
-balance deltas are cleared, then rebuilt from one stable Core mempool under V8
-with exact membership, semantic, transaction, and balance parity.
+balance deltas are cleared, then rebuilt from Core mempool evidence under V8.
+Every transaction id in the exact persisted pending WORK membership set must
+remain present across both Core samples that fence the database audit, and the
+persisted event, listing, transaction, and balance rows require exact parity.
+Every member also requires all five correctly typed WORK inspection markers;
+a terminal-invalid protocol marker cannot coexist with a valid persisted WORK
+projection. The full sampled mempool count and hash remain compact audit evidence; unrelated
+transaction additions or removals between samples do not invalidate the WORK
+witness. Discovery and raw inspection of unrelated or not-yet-projected
+unconfirmed transactions remain bounded best-effort visibility; they cannot
+change confirmed state or block V8 readiness merely because the public mempool
+is larger than one scan budget or is changing continuously.
 
 The activation-opening token state contains no active legacy listing. Every
 confirmed WORK listing in `active` or `sealing` state immediately before V8
