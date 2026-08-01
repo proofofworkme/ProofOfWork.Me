@@ -1829,6 +1829,26 @@ export async function runWorkPrecisionV2Migration(
         "WORK V8 relic cutover did not close the exact activation-opening listing set.",
       );
     }
+    await client.query(
+      `
+        UPDATE proof_indexer.credit_listings listing
+        SET
+          status = 'dropped',
+          updated_at = now()
+        WHERE listing.network = 'livenet'
+          AND listing.token_id = $1
+          AND listing.status IN ('active', 'sealing')
+          AND COALESCE(
+            NULLIF(listing.payload#>>'{authorization,version}', ''),
+            NULLIF(listing.payload#>>'{saleAuthorization,version}', ''),
+            NULLIF(listing.payload#>>'{listingAuthorization,version}', ''),
+            NULLIF(listing.payload->>'authorizationVersion', ''),
+            NULLIF(listing.payload->>'version', ''),
+            ''
+          ) IN ('pwt-sale-v1', 'pwt-sale-v2')
+      `,
+      [WORK_TOKEN_ID],
+    );
     const relicAudit = await client.query(
       `
         SELECT
@@ -1867,7 +1887,11 @@ export async function runWorkPrecisionV2Migration(
       Number(relicAudit.rows[0]?.relic_count ?? -1) !== relicItems.length
     ) {
       throw new Error(
-        "WORK V8 relic cutover left an actionable pre-V8 listing or lost relic evidence.",
+        `WORK V8 relic cutover left ${Number(
+          relicAudit.rows[0]?.active_count ?? -1,
+        )} actionable pre-V8 listings or projected ${Number(
+          relicAudit.rows[0]?.relic_count ?? -1,
+        )} of ${relicItems.length} canonical relics.`,
       );
     }
     const {

@@ -1766,6 +1766,13 @@ admission expose no legacy seal, buy, or delist path; only a confirmed V8
 listing can settle. Raw ticket spends remain observable history and cannot
 resurrect a relic.
 
+The relational table can still contain stale `active`/`sealing` status labels
+for V1/V2 rows already excluded at the height-959061 canonical cutover. Those
+rows are not added to the V8 relic or refund commitments. Migration may close
+only the derived status after proving the historical authorization is exactly
+`pwt-sale-v1` or `pwt-sale-v2`; it preserves the row payload, raw event, and
+original refund snapshot. Any other extra active authorization fails closed.
+
 Pending WORK state is volatile. Migration removes pending or wrong-era WORK
 events, listing/action rows, balance deltas, and affected current snapshots,
 while retaining noncanonical transaction envelopes as recovery input. After

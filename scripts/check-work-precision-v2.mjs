@@ -1750,6 +1750,11 @@ assert.match(
   /'disabledAtBlockHeight', \$2::integer,[\s\S]*'disabledByTxid', \$3::text,[\s\S]*'relicCutoverModel', \$5::text/u,
   "relic cutover JSON parameters must carry explicit PostgreSQL types",
 );
+assert.match(
+  migration,
+  /UPDATE proof_indexer\.credit_listings listing[\s\S]*listing\.status IN \('active', 'sealing'\)[\s\S]*IN \('pwt-sale-v1', 'pwt-sale-v2'\)/u,
+  "migration must close only stale historical V1/V2 status projections outside the canonical V8 relic set",
+);
 assert.match(migration, /DELETE FROM proof_indexer\.events event/u);
 assert.match(
   migration,

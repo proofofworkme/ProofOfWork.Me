@@ -975,6 +975,15 @@ legacy listing. The relic-set count and commitment must match the exact
 activation-opening state; missing, duplicate, added, or still-actionable rows
 fail migration and readiness closed.
 
+Historical V1/V2 rows that were already excluded from the canonical closing
+token state at their height-959061 cutover are not new V8 relics and cannot
+re-enter the V8 refund set. If their derived relational status has resurfaced
+as `active` or `sealing`, migration may set only that stale status to `dropped`
+after proving the row is `pwt-sale-v1` or `pwt-sale-v2`. Its raw event,
+historical projection payload, and original refund-snapshot eligibility remain
+unchanged. Any extra active row of another authorization version fails the V8
+migration closed.
+
 The mint wire form stays byte-compatible:
 
 ```text
