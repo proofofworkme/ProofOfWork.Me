@@ -5092,7 +5092,11 @@ check("canonical credit fee fields cannot be overwritten by stale projections", 
   const mergeCreditNetworkValueRecord = isolatedFunction(
     API_PATH,
     "mergeCreditNetworkValueRecord",
-    { CREDIT_NETWORK_VALUE_FIELD_NAMES: fields },
+    {
+      CREDIT_NETWORK_VALUE_FIELD_NAMES: fields,
+      mergedCreditRecordWithExactWorkAmount: (_current, _incoming, merged) =>
+        merged,
+    },
   );
   const canonical = {
     attributedMinerFeeSats: 0,
@@ -5154,7 +5158,300 @@ check("canonical credit fee fields cannot be overwritten by stale projections", 
   );
   assert.match(
     floorMergeSource,
-    /next\.sales = mergeCanonicalHistoryItems\([\s\S]*?mergeCreditNetworkValueRecord/u,
+    /next\.sales = mergeCanonicalHistoryItems\([\s\S]*?mergeTokenSaleRecord/u,
+  );
+  assert.match(
+    floorMergeSource,
+    /transfers: mergeCanonicalHistoryItems\([\s\S]*?mergeTokenTransferRecord/u,
+  );
+});
+
+check("Q8 and Q16 WORK movement merges expose one exact active precision lane", () => {
+  const fields = [
+    "canonicalMinerFeeSats",
+    "creditAmountMoved",
+    "creditAmountMovedDecimals",
+    "creditAmountMovedPrecisionModel",
+    "creditAmountMovedStorageModel",
+    "creditAmountMovedSubatoms",
+    "creditAmountMovedUnitScale",
+    "minerFeeSats",
+  ];
+  const transferMergeString = isolatedFunction(
+    API_PATH,
+    "transferMergeString",
+  );
+  const transferMergeNumber = isolatedFunction(
+    API_PATH,
+    "transferMergeNumber",
+    { numericValue },
+  );
+  const topLevelWorkAmountRecord = isolatedFunction(
+    API_PATH,
+    "topLevelWorkAmountRecord",
+  );
+  const tokenCreditAmountMovedFields = (record) => ({
+    creditAmountMoved: record.amount,
+    creditAmountMovedDecimals: WORK_SUBATOM_DECIMALS,
+    creditAmountMovedPrecisionModel: WORK_PRECISION_V2_MODEL,
+    creditAmountMovedStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+    creditAmountMovedSubatoms: record.amountSubatoms,
+    creditAmountMovedUnitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,
+  });
+  const mergedCreditRecordWithExactWorkAmount = isolatedFunction(
+    API_PATH,
+    "mergedCreditRecordWithExactWorkAmount",
+    {
+      WORK_ATOMIC_PROJECTION_MODEL,
+      WORK_SUBATOM_PROJECTION_MODEL,
+      WORK_TOKEN_ID,
+      isWorkTokenId,
+      tokenCreditAmountMovedFields,
+      tokenLedgerAmountFields,
+      tokenLedgerAmountFromRecord,
+      topLevelWorkAmountRecord,
+      transferMergeString,
+      workRecordUsesSubatoms,
+    },
+  );
+  const mergeCreditNetworkValueRecord = isolatedFunction(
+    API_PATH,
+    "mergeCreditNetworkValueRecord",
+    {
+      CREDIT_NETWORK_VALUE_FIELD_NAMES: fields,
+      mergedCreditRecordWithExactWorkAmount,
+    },
+  );
+  const mergeTokenSaleRecord = isolatedFunction(
+    API_PATH,
+    "mergeTokenSaleRecord",
+    {
+      isDeepStrictEqual: (left, right) =>
+        JSON.stringify(left) === JSON.stringify(right),
+      mergeCreditNetworkValueRecord,
+      tokenSaleAuthorizationTermsMatch: (left, right) =>
+        left.commitment === right.commitment,
+    },
+  );
+  const mergeTokenTransferRecord = isolatedFunction(
+    API_PATH,
+    "mergeTokenTransferRecord",
+    {
+      WORK_ATOMIC_PROJECTION_MODEL,
+      WORK_SUBATOM_PROJECTION_MODEL,
+      WORK_TOKEN_ID,
+      isWorkTokenId,
+      mergeCreditNetworkValueRecord,
+      newerIso: (left, right) => String(right ?? left ?? ""),
+      tokenLedgerAmountFields,
+      tokenLedgerAmountFromRecord,
+      transferMergeNumber,
+      transferMergeString,
+      workRecordUsesSubatoms,
+    },
+  );
+  const canonicalTokenSaleLedgerAmount = isolatedFunction(
+    API_PATH,
+    "canonicalTokenSaleLedgerAmount",
+    {
+      isWorkTokenId,
+      tokenLedgerAmountFromRecord,
+      topLevelWorkAmountRecord,
+    },
+  );
+  const rawAuthorization = {
+    amountAtoms: "100000000",
+    commitment: "legacy-sale-commitment",
+    signature: "legacy-signed-authorization",
+    version: "pwt-sale-v1",
+  };
+  const rawSaleEvidence = {
+    amountAtoms: "100000000",
+    evidenceTxid: "e".repeat(64),
+  };
+  const rawSourceAmountEvidence = {
+    amount: "1",
+    amountAtoms: "100000000",
+  };
+  const q8 = {
+    amount: "1",
+    amountAtoms: "100000000",
+    amountStorageModel: WORK_ATOMIC_PROJECTION_MODEL,
+    canonicalMinerFeeCovered: true,
+    canonicalMinerFeeSats: 11,
+    legacyAmountAtoms: "100000000",
+    canonicalSaleEvidence: rawSaleEvidence,
+    saleAuthorization: rawAuthorization,
+    sourceAmountEvidence: rawSourceAmountEvidence,
+    tokenId: WORK_TOKEN_ID,
+    txid: "a".repeat(64),
+  };
+  const q16 = {
+    amount: "1",
+    amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+    amountSubatoms: "10000000000000000",
+    canonicalMinerFeeCovered: false,
+    canonicalMinerFeeSats: 999,
+    creditAmountMovedAtoms: "100000000",
+    decimals: WORK_SUBATOM_DECIMALS,
+    precisionModel: WORK_PRECISION_V2_MODEL,
+    tokenId: WORK_TOKEN_ID,
+    txid: "a".repeat(64),
+    unitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,
+  };
+  for (const merged of [
+    mergeTokenSaleRecord(q8, q16),
+    mergeTokenSaleRecord(q16, q8),
+  ]) {
+    assert.equal(merged.amountStorageModel, WORK_SUBATOM_PROJECTION_MODEL);
+    assert.equal(merged.amountSubatoms, "10000000000000000");
+    assert.equal(merged.amountAtoms, undefined);
+    assert.equal(merged.tokenAmountAtoms, undefined);
+    assert.equal(merged.creditAmountMovedAtoms, undefined);
+    assert.equal(
+      merged.creditAmountMovedSubatoms,
+      "10000000000000000",
+    );
+    assert.equal(merged.legacyAmountAtoms, "100000000");
+    assert.equal(JSON.stringify(merged.saleAuthorization), JSON.stringify(rawAuthorization));
+    assert.equal(
+      JSON.stringify(merged.canonicalSaleEvidence),
+      JSON.stringify(rawSaleEvidence),
+    );
+    assert.equal(
+      JSON.stringify(merged.sourceAmountEvidence),
+      JSON.stringify(rawSourceAmountEvidence),
+    );
+    assert.equal(merged.canonicalMinerFeeSats, 11);
+    assert.equal(
+      canonicalTokenSaleLedgerAmount(WORK_TOKEN_ID, merged, {
+        workAmountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+      }),
+      10000000000000000n,
+    );
+  }
+
+  const mergedTransfer = mergeTokenTransferRecord(
+    {
+      ...q8,
+      recipientAddress: "receiver",
+      senderAddress: "sender",
+      saleAuthorization: undefined,
+    },
+    {
+      ...q16,
+      recipientAddress: "receiver",
+      senderAddress: "sender",
+    },
+  );
+  assert.equal(
+    mergedTransfer.amountSubatoms,
+    "10000000000000000",
+  );
+  assert.equal(mergedTransfer.amountAtoms, undefined);
+  assert.equal(mergedTransfer.creditAmountMovedAtoms, undefined);
+  assert.equal(
+    tokenLedgerAmountFromRecord(WORK_TOKEN_ID, mergedTransfer, {
+      workAmountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+    }),
+    10000000000000000n,
+  );
+
+  const q8OnlyRelic = mergeTokenSaleRecord(q8, {
+    ...q8,
+    canonicalMinerFeeCovered: false,
+    canonicalMinerFeeSats: 0,
+  });
+  assert.equal(q8OnlyRelic.amountAtoms, "100000000");
+  assert.equal(q8OnlyRelic.amountSubatoms, undefined);
+  assert.equal(
+    JSON.stringify(q8OnlyRelic.saleAuthorization),
+    JSON.stringify(rawAuthorization),
+  );
+
+  for (const empty of [undefined, null, {}]) {
+    for (const [left, right] of [
+      [q8, { ...q16, saleAuthorization: empty }],
+      [{ ...q16, saleAuthorization: empty }, q8],
+    ]) {
+      const preserved = mergeTokenSaleRecord(left, right);
+      assert.equal(preserved.saleAuthorization, rawAuthorization);
+      assert.equal(preserved.canonicalSaleEvidence, rawSaleEvidence);
+      assert.equal(
+        preserved.sourceAmountEvidence,
+        rawSourceAmountEvidence,
+      );
+    }
+  }
+
+  assert.throws(
+    () => mergeTokenSaleRecord(q8, {
+      ...q16,
+      saleAuthorization: {
+        ...rawAuthorization,
+        commitment: "conflicting-sale-commitment",
+      },
+    }),
+    /sale authorizations conflict/u,
+  );
+  assert.throws(
+    () => mergeTokenSaleRecord(q8, {
+      ...q16,
+      canonicalSaleEvidence: {
+        ...rawSaleEvidence,
+        evidenceTxid: "f".repeat(64),
+      },
+    }),
+    /canonicalSaleEvidence conflicts/u,
+  );
+  assert.throws(
+    () => mergeTokenSaleRecord(q8, {
+      ...q16,
+      sourceAmountEvidence: {
+        ...rawSourceAmountEvidence,
+        amountAtoms: "200000000",
+      },
+    }),
+    /sourceAmountEvidence conflicts/u,
+  );
+
+  const fractional = mergeTokenSaleRecord(
+    {
+      ...q16,
+      amount: "0.0000000000000001",
+      amountSubatoms: "1",
+      legacyAmountAtoms: undefined,
+    },
+    {
+      ...q16,
+      amount: "0.0000000000000001",
+      amountSubatoms: "1",
+      legacyAmountAtoms: undefined,
+    },
+  );
+  assert.equal(fractional.amountSubatoms, "1");
+  assert.equal(fractional.amountAtoms, undefined);
+  assert.equal(fractional.legacyAmountAtoms, undefined);
+
+  assert.throws(
+    () => mergeTokenSaleRecord(q8, {
+      ...q16,
+      amount: "2",
+      amountSubatoms: "20000000000000000",
+    }),
+    /amount projections conflict/u,
+  );
+  assert.throws(
+    () => mergeTokenTransferRecord(q8, {
+      ...q16,
+      amount: "2",
+      amountSubatoms: "20000000000000000",
+    }),
+    /amount projections conflict/u,
+  );
+  assert.match(
+    topLevelFunctionSource(API_PATH, "scopedTokenPayloadFromState"),
+    /canonicalTokenSaleLedgerAmount/u,
   );
 });
 
@@ -38807,7 +39104,10 @@ check("compact token definitions preserve per-token market totals beyond preview
   const tokenAggregateSummaries = isolatedFunction(
     API_PATH,
     "tokenAggregateSummaries",
-    { tokenListingHasConfirmedSaleTicketSeal },
+    {
+      canonicalTokenSaleLedgerAmount: tokenLedgerAmountFromRecord,
+      tokenListingHasConfirmedSaleTicketSeal,
+    },
   );
   const tokenSummaryMetricValue = isolatedFunction(
     API_PATH,
@@ -38917,6 +39217,7 @@ check("Q16 WORK summaries preserve exact supply and rational market prices", () 
     API_PATH,
     "tokenAggregateSummaries",
     {
+      canonicalTokenSaleLedgerAmount: tokenLedgerAmountFromRecord,
       tokenListingHasConfirmedSaleTicketSeal,
       tokenLedgerApproximateNumber: (
         tokenId,
@@ -40724,7 +41025,11 @@ check("exact-tip WORK transfer projection preserves both Inception H-1 values", 
   const mergeCreditNetworkValueRecord = isolatedFunction(
     API_PATH,
     "mergeCreditNetworkValueRecord",
-    { CREDIT_NETWORK_VALUE_FIELD_NAMES: numericFields },
+    {
+      CREDIT_NETWORK_VALUE_FIELD_NAMES: numericFields,
+      mergedCreditRecordWithExactWorkAmount: (_current, _incoming, merged) =>
+        merged,
+    },
   );
   const transferHistoryItemKey = isolatedFunction(
     API_PATH,

@@ -8,6 +8,7 @@ import https from "node:https";
 import path from "node:path";
 import dns from "node:dns";
 import { URL } from "node:url";
+import { isDeepStrictEqual } from "node:util";
 import * as bitcoin from "bitcoinjs-lib";
 import * as ecc from "@bitcoinerlab/secp256k1";
 import { verifyBitcoinMessageSignature } from "./bitcoin-message-verifier.mjs";
@@ -2964,25 +2965,19 @@ function mergeTokenTransferRecord(current, incoming) {
     return current;
   }
 
+  const merged = mergeCreditNetworkValueRecord(current, incoming);
   const tokenId = transferMergeString(current, incoming, "tokenId");
   const workAmountStorageModel =
-    isWorkTokenId(tokenId) &&
-    (
-      workRecordUsesSubatoms(incoming) ||
-      workRecordUsesSubatoms(current)
-    )
+    isWorkTokenId(tokenId) && workRecordUsesSubatoms(merged)
       ? WORK_SUBATOM_PROJECTION_MODEL
       : WORK_ATOMIC_PROJECTION_MODEL;
   const atomicAmount = isWorkTokenId(tokenId)
-    ? tokenLedgerAmountFromRecord(tokenId, incoming, {
-        workAmountStorageModel,
-      }) ??
-      tokenLedgerAmountFromRecord(tokenId, current, {
+    ? tokenLedgerAmountFromRecord(tokenId, merged, {
         workAmountStorageModel,
       })
     : null;
   return {
-    ...mergeCreditNetworkValueRecord(current, incoming),
+    ...merged,
     ...(atomicAmount === null
       ? { amount: transferMergeNumber(current, incoming, "amount") }
       : tokenLedgerAmountFields(WORK_TOKEN_ID, atomicAmount, {
@@ -3011,6 +3006,68 @@ function mergeTokenTransferRecord(current, incoming) {
     tokenId,
     txid: transferMergeString(current, incoming, "txid"),
   };
+}
+
+function mergeTokenSaleRecord(current, incoming) {
+  if (!current) {
+    return incoming;
+  }
+  if (!incoming) {
+    return current;
+  }
+  const merged = mergeCreditNetworkValueRecord(current, incoming);
+  const nonemptyObject = (value) =>
+    value &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    Object.keys(value).length > 0
+      ? value
+      : null;
+  const currentAuthorization = nonemptyObject(current.saleAuthorization);
+  const incomingAuthorization = nonemptyObject(incoming.saleAuthorization);
+  if (currentAuthorization && incomingAuthorization) {
+    let termsMatch = false;
+    try {
+      termsMatch = tokenSaleAuthorizationTermsMatch(
+        currentAuthorization,
+        incomingAuthorization,
+      );
+    } catch {
+      termsMatch = false;
+    }
+    if (!termsMatch) {
+      throw new Error(
+        "Canonical WORK sale authorizations conflict during Q8/Q16 merge.",
+      );
+    }
+  }
+  const saleAuthorization =
+    incomingAuthorization ?? currentAuthorization;
+  if (saleAuthorization) {
+    merged.saleAuthorization = saleAuthorization;
+  }
+
+  for (const field of [
+    "canonicalSaleEvidence",
+    "sourceAmountEvidence",
+  ]) {
+    const currentEvidence = nonemptyObject(current[field]);
+    const incomingEvidence = nonemptyObject(incoming[field]);
+    if (
+      currentEvidence &&
+      incomingEvidence &&
+      !isDeepStrictEqual(currentEvidence, incomingEvidence)
+    ) {
+      throw new Error(
+        `Canonical WORK sale ${field} conflicts during Q8/Q16 merge.`,
+      );
+    }
+    const evidence = incomingEvidence ?? currentEvidence;
+    if (evidence) {
+      merged[field] = evidence;
+    }
+  }
+  return merged;
 }
 
 function mergeWalletHolders(baseHolders, overlayHolders) {
@@ -5160,7 +5217,7 @@ function mergeTokenHistoryPageItem(current, incoming, kind) {
       return {
         ...current,
         ...incoming,
-        sale: mergeCreditNetworkValueRecord(current.sale, incoming.sale),
+        sale: mergeTokenSaleRecord(current.sale, incoming.sale),
       };
     }
     if (current.kind === "listing" && incoming.kind === "listing") {
@@ -5192,7 +5249,15 @@ function mergeTokenHistoryPageItem(current, incoming, kind) {
     };
   }
 
-  if (kind === "mints" || kind === "sales" || kind === "transfers") {
+  if (kind === "sales") {
+    return mergeTokenSaleRecord(current, incoming);
+  }
+
+  if (kind === "transfers") {
+    return mergeTokenTransferRecord(current, incoming);
+  }
+
+  if (kind === "mints") {
     return mergeCreditNetworkValueRecord(current, incoming);
   }
 
@@ -5465,6 +5530,120 @@ function tokenStateWithCanonicalWorkTransferValues(state, projection) {
   });
 }
 
+function mergedCreditRecordWithExactWorkAmount(
+  current,
+  incoming,
+  merged,
+) {
+  const tokenId = transferMergeString(current, incoming, "tokenId");
+  if (
+    !isWorkTokenId(tokenId) ||
+    !(
+      workRecordUsesSubatoms(current) ||
+      workRecordUsesSubatoms(incoming)
+    )
+  ) {
+    return merged;
+  }
+  const amountDeclared = (record) =>
+    [
+      record?.amount,
+      record?.amountAtoms,
+      record?.amountSubatoms,
+      record?.tokenAmount,
+      record?.tokenAmountAtoms,
+      record?.tokenAmountSubatoms,
+    ].some(
+      (value) => value !== undefined && value !== null && value !== "",
+    );
+  const currentDeclared = amountDeclared(current);
+  const incomingDeclared = amountDeclared(incoming);
+  if (!currentDeclared && !incomingDeclared) {
+    return merged;
+  }
+  const exactAmount = (record, declared) =>
+    declared
+      ? tokenLedgerAmountFromRecord(
+          WORK_TOKEN_ID,
+          topLevelWorkAmountRecord(record),
+          { workAmountStorageModel: WORK_SUBATOM_PROJECTION_MODEL },
+        )
+      : null;
+  const currentAmount = exactAmount(current, currentDeclared);
+  const incomingAmount = exactAmount(incoming, incomingDeclared);
+  if (
+    (currentDeclared && currentAmount === null) ||
+    (incomingDeclared && incomingAmount === null)
+  ) {
+    throw new Error(
+      "Canonical WORK movement contains an inexact Q8/Q16 amount projection.",
+    );
+  }
+  if (
+    currentAmount !== null &&
+    incomingAmount !== null &&
+    currentAmount !== incomingAmount
+  ) {
+    throw new Error(
+      "Canonical WORK movement Q8/Q16 amount projections conflict.",
+    );
+  }
+  const amount = incomingAmount ?? currentAmount;
+  if (amount === null) {
+    return merged;
+  }
+  const {
+    amount: _amount,
+    amountAtoms: _amountAtoms,
+    amountStorageModel: _amountStorageModel,
+    amountSubatoms: _amountSubatoms,
+    creditAmountMoved: _creditAmountMoved,
+    creditAmountMovedAtoms: _creditAmountMovedAtoms,
+    creditAmountMovedDecimals: _creditAmountMovedDecimals,
+    creditAmountMovedPrecisionModel: _creditAmountMovedPrecisionModel,
+    creditAmountMovedStorageModel: _creditAmountMovedStorageModel,
+    creditAmountMovedSubatoms: _creditAmountMovedSubatoms,
+    creditAmountMovedUnitScale: _creditAmountMovedUnitScale,
+    decimals: _decimals,
+    precisionModel: _precisionModel,
+    tokenAmount: _tokenAmount,
+    tokenAmountAtoms: _tokenAmountAtoms,
+    tokenAmountSubatoms: _tokenAmountSubatoms,
+    unitScale: _unitScale,
+    ...recordWithoutActiveAmountAliases
+  } = merged;
+  void _amount;
+  void _amountAtoms;
+  void _amountStorageModel;
+  void _amountSubatoms;
+  void _creditAmountMoved;
+  void _creditAmountMovedAtoms;
+  void _creditAmountMovedDecimals;
+  void _creditAmountMovedPrecisionModel;
+  void _creditAmountMovedStorageModel;
+  void _creditAmountMovedSubatoms;
+  void _creditAmountMovedUnitScale;
+  void _decimals;
+  void _precisionModel;
+  void _tokenAmount;
+  void _tokenAmountAtoms;
+  void _tokenAmountSubatoms;
+  void _unitScale;
+  const amountFields = tokenLedgerAmountFields(
+    WORK_TOKEN_ID,
+    amount,
+    { workAmountStorageModel: WORK_SUBATOM_PROJECTION_MODEL },
+  );
+  return {
+    ...recordWithoutActiveAmountAliases,
+    ...amountFields,
+    ...tokenCreditAmountMovedFields({
+      ...amountFields,
+      tokenId: WORK_TOKEN_ID,
+    }),
+  };
+}
+
 function mergeCreditNetworkValueRecord(current, incoming) {
   const merged = {
     ...current,
@@ -5503,7 +5682,11 @@ function mergeCreditNetworkValueRecord(current, incoming) {
       merged.minerFeeSource = canonicalCreditSource.minerFeeSource;
     }
   }
-  return merged;
+  return mergedCreditRecordWithExactWorkAmount(
+    current,
+    incoming,
+    merged,
+  );
 }
 
 function mergeTokenHistoryPageWithOverlay(
@@ -13173,6 +13356,33 @@ function tokenLedgerAmountFromRecord(
     return null;
   }
   return amount;
+}
+
+function topLevelWorkAmountRecord(record) {
+  const item =
+    record && typeof record === "object" && !Array.isArray(record)
+      ? record
+      : {};
+  return {
+    amount: item.amount,
+    amountAtoms: item.amountAtoms,
+    amountStorageModel: item.amountStorageModel,
+    amountSubatoms: item.amountSubatoms,
+    amountVersion: item.amountVersion,
+    precisionModel: item.precisionModel,
+    tokenAmount: item.tokenAmount,
+    tokenAmountAtoms: item.tokenAmountAtoms,
+    tokenAmountSubatoms: item.tokenAmountSubatoms,
+    transferVersion: item.transferVersion,
+  };
+}
+
+function canonicalTokenSaleLedgerAmount(tokenId, sale, options = {}) {
+  return tokenLedgerAmountFromRecord(
+    tokenId,
+    isWorkTokenId(tokenId) ? topLevelWorkAmountRecord(sale) : sale,
+    options,
+  );
 }
 
 function tokenLedgerAmountFields(
@@ -28940,7 +29150,7 @@ function tokenAggregateSummaries(payload) {
       current.pendingSalesVolumeSats += numericValue(sale.priceSats);
       continue;
     }
-    const amount = tokenLedgerAmountFromRecord(sale.tokenId, sale, {
+    const amount = canonicalTokenSaleLedgerAmount(sale.tokenId, sale, {
       ...(isWorkTokenId(sale.tokenId)
         ? { workAmountStorageModel }
         : {}),
@@ -29305,7 +29515,15 @@ function scopedTokenPayloadFromState(tokenState, scope) {
   }
   for (const sale of sales) {
     if (sale.confirmed) {
-      const amount = ledgerAmountFromRecord(sale.tokenId, sale);
+      const amount = canonicalTokenSaleLedgerAmount(
+        sale.tokenId,
+        sale,
+        {
+          ...(isWorkTokenId(sale.tokenId)
+            ? { workAmountStorageModel }
+            : {}),
+        },
+      );
       if (workScoped && amount === null) {
         throw new Error(
           "Scoped WORK state contains a noncanonical confirmed sale.",
@@ -33702,14 +33920,14 @@ function tokenPayloadWithCanonicalHistoryFloor(canonicalPayload, payload) {
         canonicalPayload.sales,
         payload.sales,
         tokenSaleItemKey,
-        mergeCreditNetworkValueRecord,
+        mergeTokenSaleRecord,
       ),
       source: mergedSourceLabel(canonicalPayload?.source, payload?.source),
       transfers: mergeCanonicalHistoryItems(
         canonicalPayload.transfers,
         payload.transfers,
         tokenTransferHistoryItemKey,
-        mergeCreditNetworkValueRecord,
+        mergeTokenTransferRecord,
       ),
     });
   }
@@ -33782,7 +34000,7 @@ function tokenPayloadWithCanonicalHistoryFloor(canonicalPayload, payload) {
       canonicalPayload.sales,
       payload.sales,
       tokenSaleItemKey,
-      mergeCreditNetworkValueRecord,
+      mergeTokenSaleRecord,
     );
   }
   if (listingsRegressed) {
@@ -41235,7 +41453,7 @@ async function tokenValueStateFromIndexedActivity(
     indexedSales.filter((sale) => tokenIds.has(sale.tokenId)),
     overlaySales.filter((sale) => tokenIds.has(sale.tokenId)),
     tokenSaleItemKey,
-    mergeCreditNetworkValueRecord,
+    mergeTokenSaleRecord,
   );
   const scopedClosedListings = mergeTokenStateItemsByKey(
     indexedClosedListings.filter((listing) => tokenIds.has(listing.tokenId)),
@@ -48151,9 +48369,13 @@ function creditNetworkValueMetrics({
     const createdMs = creditValueEventMs(item);
     const workMovement = isWorkTokenId(item?.tokenId);
     const amountSubatoms = workMovement
-      ? workSubatomsBigIntFromRecord(item, {
-          convertLegacyAtoms: true,
-        })
+      ? kind === "sale"
+        ? canonicalTokenSaleLedgerAmount(WORK_TOKEN_ID, item, {
+            workAmountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+          })
+        : workSubatomsBigIntFromRecord(item, {
+            convertLegacyAtoms: true,
+          })
       : null;
     const amountUnits = workMovement
       ? null
@@ -49354,9 +49576,13 @@ function growthActualLiveTotalSatsAtProvider(
     const createdMs = creditValueEventMs(item);
     const workMovement = isWorkTokenId(item?.tokenId);
     const amountSubatoms = workMovement
-      ? workSubatomsBigIntFromRecord(item, {
-          convertLegacyAtoms: true,
-        })
+      ? kind === "sale"
+        ? canonicalTokenSaleLedgerAmount(WORK_TOKEN_ID, item, {
+            workAmountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+          })
+        : workSubatomsBigIntFromRecord(item, {
+            convertLegacyAtoms: true,
+          })
       : null;
     const amountUnits = workMovement
       ? null

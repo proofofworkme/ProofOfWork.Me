@@ -1824,6 +1824,15 @@ or wrong-era inputs fail closed. The resulting summary must then bind the exact
 Q16 transition state before ordinary replay, pending, public-read, or write
 readiness can become green.
 
+When that builder joins replayable Q8 movement history to the current Q16
+tables, duplicate WORK sales and transfers must agree after exact integer
+Q8-to-Q16 conversion. Their active top-level projection exposes only Q16
+subatoms; conflicting aliases fail closed. Historical signed sale
+authorizations and explicit legacy evidence remain unchanged and are not
+treated as current Q16 aliases. An explicit empty overlay cannot erase that
+evidence, and conflicting nonempty authorization or evidence records fail
+closed instead of making replay order choose the settlement record.
+
 The raw mint remains `pwt1:mint:<canonical-work-token-id>:1000`, crediting
 `100000000000` Q8 atoms before activation and
 `10000000000000000000` Q16 subatoms from activation. New WORK transfers use
