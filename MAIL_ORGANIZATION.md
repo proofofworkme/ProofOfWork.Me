@@ -38,7 +38,7 @@ Mail organization features that are already implemented in the full app:
 - CC compose support for visible additional recipients.
 - Multi-recipient compose with removable recipient chips.
 - Reply All for multi-recipient mail.
-- Approved mainnet senders can attach canonical WORK credit to a message. The message remains normal mail, while the same tx also carries the WORK registry mutation payment and era-valid atomic WORK payloads for the mail recipients: historical Q8 `pwt1:send2`, then Q16 `pwt1:send3` only after the precision declaration activates. A multi-recipient attachment uses one exact `546 * recipientCount` WORK-registry output after the `pwm1:` mail envelope and before every same-era WORK transfer record; replay attributes exactly 546 proofs to each transfer while claiming the physical output once. Raw legacy attachments retain their original scale.
+- Approved mainnet senders can attach canonical WORK credit to a message. The message remains normal mail, while the same tx also carries the WORK registry mutation payment and era-valid atomic WORK payloads for the mail recipients: historical Q8 `pwt1:send2`, then Q16 `pwt1:send3` only after the approved V8 precision declaration confirms in block `D` and activates at `D+1`. The V7 proposal never activated and its empty pins cannot authorize `send3`. A multi-recipient attachment uses one exact `546 * recipientCount` WORK-registry output after the `pwm1:` mail envelope and before every same-era WORK transfer record; replay attributes exactly 546 proofs to each transfer while claiming the physical output once. Raw legacy attachments retain their original scale.
 - Files view for confirmed attachments.
 - Desktop search for confirmed public attachments by address or confirmed ProofOfWork ID.
 - Browser view for HTML message bodies or verified `text/html` attachments by txid, rendered in a sandboxed iframe.
@@ -394,8 +394,8 @@ Useful sorting:
   Computer Files workspace.
 - Proof signal ranks the direct proofs carried by each mail transaction.
 - WORK signal ranks exact integer WORK quantities, not a live proof-price
-  conversion: historical/pre-V7 rows use Q8 atoms, while current rows from the
-  V7 activation boundary use Q16 subatoms under
+  conversion: historical/pre-V8 rows use Q8 atoms, while current rows from the
+  V8 activation boundary use Q16 subatoms under
   `canonical-work-subatoms-v2`; one legacy atom maps to exactly `100000000`
   subatoms with no price conversion. Inbound mail counts only canonical WORK
   addressed to that mailbox; outbound mail totals canonical WORK sent to all

@@ -18,6 +18,7 @@ export const WORK_AMO_V5_AUTH_VERSION = "pwt-sale-v5";
 const WORK_AMO_V5_SUCCESSOR_AUTH_VERSIONS = new Set([
   "pwt-sale-v6",
   "pwt-sale-v7",
+  "pwt-sale-v8",
 ]);
 export const WORK_AMO_V5_ACTIVATION_HEIGHT = 959_621;
 export const WORK_AMO_V5_DECLARATION_TXID =

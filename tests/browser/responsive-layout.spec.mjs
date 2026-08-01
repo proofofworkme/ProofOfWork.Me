@@ -701,8 +701,8 @@ async function assertMarketplaceGeometry(page, mode, width) {
   if (mode === "AMO") {
     await expect(
       panel,
-      `${label} must describe the proof-native V6 faces`,
-    ).toContainText("20,000, 50,000, or 100,000-proof face");
+      `${label} must describe the singleton proof-native V8 face`,
+    ).toContainText("single 25,000-proof face");
     await expect(
       panel,
       `${label} must not describe the retired USD attestor`,

@@ -146,8 +146,8 @@ import {
   canonicalRawProtocolRecordSetFromTransaction,
 } from "../server/canonical-op-return.mjs";
 import {
-  workAmoV7CanonicalTokenStateCommitment,
-} from "../server/work-amo-v7.mjs";
+  workAmoV8CanonicalTokenStateCommitment,
+} from "../server/work-amo-v8.mjs";
 import {
   WORK_SUBATOM_PROJECTION_MODEL,
   WORK_TOKEN_ID,
@@ -3239,7 +3239,7 @@ function buildRawAdversarialOpeningEconomicState({
     tokenStateCommitment:
       workState.amountStorageModel ===
         WORK_SUBATOM_PROJECTION_MODEL
-        ? workAmoV7CanonicalTokenStateCommitment(workState)
+        ? workAmoV8CanonicalTokenStateCommitment(workState)
         : workAmoV5CanonicalTokenStateCommitment(workState),
   };
 }
@@ -4046,7 +4046,7 @@ function replayRawAdversarialContext(
       rawAdversarialOpeningGenericState,
     openingIdState = rawAdversarialOpeningIdState,
     openingWorkState = rawAdversarialOpeningWorkState,
-    workAmoV7 = null,
+    workAmoV8 = null,
   } = {},
 ) {
   return replayWorkAmoV5RawBlock({
@@ -4060,7 +4060,7 @@ function replayRawAdversarialContext(
     openingIdState,
     openingWorkState,
     records: context.records,
-    workAmoV7,
+    workAmoV8,
   });
 }
 
@@ -4362,7 +4362,7 @@ const rawAggregateSend3Replay =
     openingEconomicState:
       rawAggregateQ16OpeningEconomicState,
     openingWorkState: rawAggregateQ16OpeningWorkState,
-    workAmoV7: {
+    workAmoV8: {
       activationHeight: rawAdversarialBlockHeight,
     },
   });
@@ -4376,6 +4376,105 @@ assert.equal(
     ({ address }) => address === rawAdversarialActor,
   )?.balanceSubatoms,
   "8",
+);
+
+function rawQ16MintReplay(amount) {
+  const message = `pwt1:mint:${WORK_TOKEN_ID}:${amount}`;
+  const tx = {
+    vin: [
+      {
+        prevout: {
+          scriptpubkey_address: rawAdversarialActor,
+        },
+        txid: hash("e"),
+        vout: 0,
+      },
+    ],
+    vout: [
+      {
+        scriptpubkey_address:
+          WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS,
+        value: 1_000,
+      },
+      {
+        scriptpubkey: rawAdversarialOpReturnScript(message),
+        value: 0,
+      },
+    ],
+  };
+  const hydrated = rawAdversarialHydratedTransaction({
+    feeSats: 41,
+    tx,
+  });
+  const openingWorkState = normalizeWorkAmoV5RawWorkState({
+    amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+    confirmedSupplySubatoms: "0",
+    holders: [],
+    listings: [],
+  });
+  const openingEconomicState =
+    buildRawAdversarialOpeningEconomicState({
+      genericState: rawAdversarialOpeningGenericState,
+      idState: rawAdversarialOpeningIdState,
+      priorBlockHash: rawAdversarialPriorBlockHash,
+      priorBlockHeight: rawAdversarialBlockHeight - 1,
+      workState: openingWorkState,
+    });
+  const record = rawAdversarialRecord({
+    blockHash: rawAdversarialBlockHash,
+    blockHeight: rawAdversarialBlockHeight,
+    blockTransactionIndex: 1,
+    feeSats: 41,
+    protocolVout: 1,
+    tx,
+    txid: hydrated.txid,
+  });
+  return replayRawAdversarialContext(
+    rawAdversarialBlockContext([record]),
+    {
+      openingEconomicState,
+      openingWorkState,
+      workAmoV8: {
+        activationHeight: rawAdversarialBlockHeight,
+      },
+    },
+  );
+}
+
+for (const invalidWireAmount of [
+  "1",
+  "01000",
+  "1e3",
+  "+1000",
+  "1000.0",
+]) {
+  const invalidQ16MintReplay = rawQ16MintReplay(
+    invalidWireAmount,
+  );
+  const invalidQ16Mint = invalidQ16MintReplay.events.find(
+    (event) =>
+      event.protocol === "pwt1" &&
+      event.parsed?.kind === "mint" &&
+      event.parsed?.tokenId === WORK_TOKEN_ID,
+  );
+  assert.equal(invalidQ16Mint?.valid, false);
+  assert.equal(
+    invalidQ16MintReplay.workState.confirmedSupplySubatoms,
+    "0",
+  );
+}
+
+const exactQ16MintReplay = rawQ16MintReplay(1_000);
+const exactQ16Mint = exactQ16MintReplay.events.find(
+  (event) =>
+    event.protocol === "pwt1" &&
+    event.parsed?.kind === "mint" &&
+    event.parsed?.tokenId === WORK_TOKEN_ID,
+);
+assert.equal(exactQ16Mint?.valid, true);
+assert.equal(
+  exactQ16MintReplay.workState.confirmedSupplySubatoms,
+  "10000000000000000000",
 );
 
 for (const registryPayments of [[1_091], [1_093]]) {

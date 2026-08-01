@@ -735,12 +735,12 @@ version and its own complete canonical tuple. A payload flag, aggregate
 lifecycle row, missing event, duplicate event or mismatched tuple cannot
 substitute for that singleton evidence and fails closed.
 
-For a historical V6 or other pre-V7 Q8 WORK `credit_listings` row, the
+For a historical V6 or other pre-V8 Q8 WORK `credit_listings` row, the
 relational `amount` value and immutable `work_amo_v6_listing_terms.amount_atoms`
 are exact atom integers, independent of whether definition metadata is
-present. Before the V7 activation boundary, public readers set `amountAtoms`
+present. Before the V8 activation boundary, public readers set `amountAtoms`
 from that integer and derive the human amount with eight decimal places; for
-example, `10` stored atoms is `0.0000001 WORK`, not `10 WORK`. At V7
+example, `10` stored atoms is `0.0000001 WORK`, not `10 WORK`. At V8
 activation, current shared projections convert that column to exact Q16
 subatoms while the immutable V6 terms table and raw historical records retain
 their original Q8 scale.
@@ -751,7 +751,13 @@ new-listing admission must not hide an already confirmed, canonical,
 evidence-complete V6 listing or the frozen rights of a valid historical V4/V5
 listing. Ordinary index freshness and canonical-read safeguards still apply.
 
-## Staged WORK Precision Protocol V2 / AMO Unit Protocol V7 (`pwt-sale-v7`)
+## Historical unactivated WORK Precision Protocol V2 / AMO Unit Protocol V7 (`pwt-sale-v7`)
+
+V7 never acquired a confirmed declaration or activation boundary. Its pins
+remain empty, its write gate remains disabled, and V8 supersedes it. The full
+proposal is retained below as historical design and audit evidence; every
+activation statement in this V7 section is counterfactual and must not be used
+as current protocol authority.
 
 V7 is a new declaration-bound protocol era. It does not edit the confirmed V6
 declaration, reinterpret V6 signed fields, or replace V6 before activation.
@@ -905,6 +911,192 @@ re-enable V6 or `send2`; readiness failure can only pause governed writes.
 After V7 activation, new V6 listings and new `send2` transfers are invalid,
 but valid pre-activation listings of every supported historical version
 remain visible and settleable under their original frozen terms.
+
+## Approved WORK Precision Protocol V2 / AMO Unit Protocol V8 (`pwt-sale-v8`)
+
+V8 is the approved additive declaration-bound successor to the current Q8/V6
+era. It does not manufacture a V7 activation, alter any historical signed
+payload, or reinterpret an earlier frozen term. If the earliest exact valid V8
+declaration confirms in block `D`, V8 activates at the opening of `D+1`.
+
+The precision and state models are:
+
+```text
+authorizationVersion = pwt-sale-v8
+transferVersion = send3
+globalPrecisionModel = canonical-work-subatoms-v2
+precisionMigrationModel = canonical-work-q8-to-q16-migration-v1
+amountStorageModel = work-subatoms-v2
+tokenStateModel = canonical-work-token-state-subatoms-v3
+relicCutoverModel = canonical-work-amo-v8-preactivation-relic-cutover-v1
+WORK_DECIMALS = 16
+SUBATOMS_PER_WORK = 10000000000000000
+SUBATOMS_PER_LEGACY_ATOM = 100000000
+MAX_SUPPLY_SUBATOMS = 210000000000000000000000
+MINT_AMOUNT_SUBATOMS = 10000000000000000000
+```
+
+One subatom is exactly `0.0000000000000001 WORK`. At the activation opening,
+every confirmed current Q8 maximum-supply, mint-increment, supply, and holder
+balance integer scales by exactly `10^8`: `legacyAtoms * 100000000`. Converted
+supply must equal the sum of converted balances and must remain within the
+exact maximum. The conversion changes divisibility only; it creates no WORK,
+changes no owner, and uses no floating-point or magnitude inference.
+
+Raw confirmed transaction bytes, OP_RETURN records, original signed objects,
+historical Q8 frozen terms, and preactivation canonical commitments remain
+immutable. Wrong-era or provisional derived projections at or after `D+1`
+are invalidated and replayed from raw canonical evidence. Pending state is not
+part of the activation opening: pending WORK events, listing/action rows, and
+balance deltas are cleared, then rebuilt from one stable Core mempool under V8
+with exact membership, semantic, transaction, and balance parity.
+
+The activation-opening token state contains no active legacy listing. Every
+confirmed WORK listing in `active` or `sealing` state immediately before V8
+activation, regardless of its historical authorization version, is committed
+to the sorted V8 relic-cutover set and projected as:
+
+```text
+status = dropped
+actionable = false
+relic = true
+refundEligible = true
+disabledAtBlockHeight = D+1
+disabledByTxid = V8 declaration txid
+disabledReason = work-amo-v8-preactivation-relic
+relicCutoverModel = canonical-work-amo-v8-preactivation-relic-cutover-v1
+```
+
+Its raw record and original frozen terms remain visible as history, but its
+reservation is released. The official Computer exposes no legacy seal, buy,
+or delist preparation or settlement path after the boundary. A later ticket
+spend remains observable chain evidence but cannot resurrect or settle that
+legacy listing. The relic-set count and commitment must match the exact
+activation-opening state; missing, duplicate, added, or still-actionable rows
+fail migration and readiness closed.
+
+The mint wire form stays byte-compatible:
+
+```text
+pwt1:mint:<canonical-work-token-id>:1000
+```
+
+It credits `100000000000` Q8 atoms before V8 activation and
+`10000000000000000000` Q16 subatoms from activation. Every other raw WORK mint
+amount is invalid. New current-state transfers from activation use only:
+
+```text
+pwt1:send3:<canonical-work-token-id>:<amount-subatoms>:<recipient-address>
+```
+
+`amount-subatoms` is a positive canonical base-10 integer. Signs, exponents,
+commas, whitespace, leading-zero aliases, zero, and decimal text are invalid.
+Historical `send` and `send2` records replay at their original scale, but
+cannot create a postactivation mutation. Each transfer retains the exact
+546-proof registry requirement and the already documented same-era aggregate
+payment rules.
+
+The V8 listing authorization is closed shape and commits the static listing
+identity, sale-ticket anchor, sole proof face, and exact models:
+
+```text
+version = pwt-sale-v8
+unitModel = canonical-work-amo-proof-unit-v3
+amountModel = canonical-work-amo-proof-unit-amount-v3
+stateOrderModel = canonical-proof-state-order-v1
+unitWorkOracleModel = canonical-work-prefix-before-action-v1
+bondTransitionModel = canonical-compute-then-bond-v1
+blockSequencerModel = canonical-work-amo-full-position-block-sequencer-v4
+unitFaceProofs = 25000
+```
+
+No other face is valid. The signed intent cannot supply `amount`,
+`amountAtoms`, `amountSubatoms`, `unitAmountAtoms`, `unitAmountSubatoms`,
+`priceSats`, `minimumPriceSats`, network-value fields, canonical position, or
+client-derived frozen terms. Those values exist only after confirmation.
+
+For listing `L`, use unsigned arbitrary-precision integers:
+
+```text
+F = 25000 proofs
+N = canonical networkValueBeforeQ8 immediately before L
+S = 21000000 WORK
+A = 10000000000000000 subatoms per WORK
+Q = 100000000 network-value scale
+
+unitPriceSats = F
+unitAmountSubatoms = floor(F * S * A * Q / N)
+unitMinimumPriceSats = ceil(
+  unitAmountSubatoms * N / (S * A * Q)
+)
+```
+
+`N` must be positive; `unitAmountSubatoms` must be within `1..S*A`; and
+`unitMinimumPriceSats` must be positive and no greater than `F`. Integer
+multiplication occurs before division. Binary floating point, USD, rounded
+display values, and scale guessing are never validation inputs.
+
+Canonical event order remains:
+
+```text
+(blockHeight, blockTransactionIndex, protocolVout, recordOrdinal)
+```
+
+At each position, derive from the exact prefix state, validate Q16
+spendability, freeze the V8 terms, and then apply that listing record's
+distinct registry contribution. Apply a transaction's miner fee exactly once
+after every protocol record in that transaction and before the next
+transaction. No batch, worker schedule, or database query order may alter the
+result.
+
+Only a confirmed V8 listing may be sealed or purchased after activation.
+Seal and buy must reference its exact frozen V8 position and terms and never
+consult a later network value. A V8 delist may close its own V8 sale ticket;
+no V8 action may reference a pre-V8 relic as an actionable listing.
+
+The additive preactivation release is intentionally empty and inert:
+
+- every `WORK_AMO_V8_DECLARATION_*` pin and
+  `WORK_AMO_V8_ACTIVATION_HEIGHT` is empty;
+- `WORK_AMO_V8_WRITES_ENABLED=0`;
+- every V7 declaration pin remains empty and
+  `WORK_AMO_V7_WRITES_ENABLED=0`;
+- Q8/V6 remains authoritative until exact V8 declaration evidence confirms;
+  and
+- `send3` and `pwt-sale-v8` preparation fail closed before activation.
+
+The authoritative V8 declaration is the earliest exact valid declaration by
+confirmed block height and transaction index. Its transaction must be
+canonical; input zero must spend the declared authority script; the pinned
+registry output must meet the declared minimum; and the pinned protocol output
+and record must contain the exact committed declaration bytes. The carrier and
+qualifying registry payment must each be unambiguous. Record these pins
+together:
+
+```text
+WORK_AMO_V8_DECLARATION_TXID
+WORK_AMO_V8_DECLARATION_HEIGHT
+WORK_AMO_V8_DECLARATION_BLOCK_HASH
+WORK_AMO_V8_DECLARATION_BLOCK_INDEX
+WORK_AMO_V8_DECLARATION_MEMO_SHA256
+WORK_AMO_V8_DECLARATION_MEMO_BYTES
+WORK_AMO_V8_DECLARATION_PROTOCOL_VOUT
+WORK_AMO_V8_DECLARATION_RECORD_ORDINAL
+WORK_AMO_V8_DECLARATION_REGISTRY_PAYMENT_VOUT
+WORK_AMO_V8_ACTIVATION_HEIGHT
+WORK_AMO_V8_WRITES_ENABLED
+```
+
+V8 readiness requires all configured pins to match canonical Core evidence,
+`WORK_AMO_V8_ACTIVATION_HEIGHT=D+1`, a persistent activation latch, the exact
+immutable `workPrecisionV2Migration:livenet` marker and relic-set commitment,
+Q8/Q16 conservation, installed constraint definitions, activation-opening and
+activation-through-tip replay, current pending rebuild parity, API/worker/
+relational-index/ledger agreement, exact Core tip height/hash, and
+`WORK_AMO_V8_WRITES_ENABLED=1`. Partial pins or any disagreement close writes.
+Once the exact `D+1` boundary is observed or persistently latched, removing or
+malforming configuration can only pause V8; it cannot restore Q8, `send2`, V6
+listing admission, or any legacy settlement path.
 
 ## Current Infinity Bond / POWB Model
 

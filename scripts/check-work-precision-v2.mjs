@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 
 import {
@@ -24,31 +25,44 @@ import {
   workSubatomsToLegacyAtoms,
 } from "../server/work-units.mjs";
 import {
-  WORK_AMO_V7_ALLOWED_FACE_PROOFS,
-  WORK_AMO_V7_AUTH_VERSION,
-  WORK_AMO_V7_DECIMALS,
-  WORK_AMO_V7_GLOBAL_PRECISION_MODEL,
-  WORK_AMO_V7_LEGACY_ATOM_TO_SUBATOM_SCALE,
-  WORK_AMO_V7_MAX_SUPPLY_SUBATOMS,
-  WORK_AMO_V7_MINT_AMOUNT_SUBATOMS,
-  WORK_AMO_V7_MODELS,
-  WORK_AMO_V7_PRECISION_MIGRATION_MODEL,
-  WORK_AMO_V7_PRECISION_MODEL,
-  WORK_AMO_V7_SUBATOMS_PER_WORK,
-  WORK_AMO_V7_TRANSFER_VERSION,
-  deriveWorkAmoV7FrozenTerms,
-  validateWorkAmoV7ListingCutover,
-  validateWorkAmoV7FrozenTerms,
-  workAmoV7CanonicalTokenStateCommitment,
-  workAmoV7CanonicalTokenStatePreimage,
-  workAmoV7UnitTerms,
-} from "../server/work-amo-v7.mjs";
+  WORK_AMO_V8_ALLOWED_FACE_PROOFS,
+  WORK_AMO_V8_AUTH_VERSION,
+  WORK_AMO_V8_DECIMALS,
+  WORK_AMO_V8_GLOBAL_PRECISION_MODEL,
+  WORK_AMO_V8_LEGACY_ATOM_TO_SUBATOM_SCALE,
+  WORK_AMO_V8_MAX_SUPPLY_SUBATOMS,
+  WORK_AMO_V8_MINT_AMOUNT_SUBATOMS,
+  WORK_AMO_V8_MODELS,
+  WORK_AMO_V8_PRECISION_MIGRATION_MODEL,
+  WORK_AMO_V8_PRECISION_MODEL,
+  WORK_AMO_V8_RELIC_CUTOVER_MODEL,
+  WORK_AMO_V8_SUBATOMS_PER_WORK,
+  WORK_AMO_V8_TRANSFER_VERSION,
+  deriveWorkAmoV8FrozenTerms,
+  validateWorkAmoV8ListingCutover,
+  validateWorkAmoV8FrozenTerms,
+  workAmoV8CanonicalTokenStateCommitment,
+  workAmoV8CanonicalTokenStatePreimage,
+  workAmoV8UnitTerms,
+} from "../server/work-amo-v8.mjs";
 import {
-  buildWorkAmoV7DeclarationText,
-  workAmoV7DeclarationCommitment,
-} from "../server/work-amo-v7-declaration.mjs";
+  workPrecisionV2MarkerReady,
+  workPrecisionV2RelicCutoverReady,
+} from "../server/work-precision-v2-marker.mjs";
+import {
+  WORK_AMO_V8_ACTIVATION_LATCH_MODEL,
+  workAmoV8ActivationLatchReady,
+} from "../server/work-amo-v8-activation-latch.mjs";
+import {
+  buildWorkAmoV8DeclarationText,
+  workAmoV8DeclarationCommitment,
+} from "../server/work-amo-v8-declaration.mjs";
+import {
+  WORK_PRECISION_V2_STATIC_CONSTRAINT_DEFINITIONS,
+} from "../server/work-precision-v2-schema.mjs";
 import {
   WORK_AMO_V6_AUTH_VERSION,
+  WORK_AMO_V6_BLOCK_SEQUENCER_MODEL,
   WORK_AMO_V6_MODELS,
   validateWorkAmoV6FrozenTerms,
   validateWorkAmoV6StaticAuthorization,
@@ -59,14 +73,19 @@ import {
 } from "../server/work-amo-v6-declaration.mjs";
 import {
   WORK_AMO_V5_ATOMS_PER_WORK,
+  WORK_AMO_V5_DECLARATION_AUTHORITY_SCRIPT_PUBKEY,
+  WORK_AMO_V5_DECLARATION_MIN_PAYMENT_SATS,
   WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS,
+  WORK_AMO_V5_PAYLOAD_COMMITMENT_MODEL,
 } from "../server/work-amo-v5.mjs";
 import {
   workPrecisionV2CurrentPayloadIsExact,
   workPrecisionV2ProjectCurrentPayload,
+  workPrecisionV2RelicListingProjection,
 } from "../server/db/proof-index-reader.mjs";
 import {
   canonicalWorkPrecisionV2Rows,
+  scaleWorkPrecisionV2TokenState,
   scaleWorkPrecisionV2Rows,
   verifyWorkPrecisionV2RowsConserved,
   workPrecisionV2ConstraintAudit,
@@ -326,46 +345,46 @@ assert.equal(
   "precision metadata must not accept a string alias for the canonical decimal count",
 );
 
-assert.equal(WORK_AMO_V7_AUTH_VERSION, "pwt-sale-v7");
-assert.equal(WORK_AMO_V7_TRANSFER_VERSION, "send3");
-assert.equal(WORK_AMO_V7_DECIMALS, 16);
+assert.equal(WORK_AMO_V8_AUTH_VERSION, "pwt-sale-v8");
+assert.equal(WORK_AMO_V8_TRANSFER_VERSION, "send3");
+assert.equal(WORK_AMO_V8_DECIMALS, 16);
 assert.equal(
-  WORK_AMO_V7_SUBATOMS_PER_WORK.toString(),
+  WORK_AMO_V8_SUBATOMS_PER_WORK.toString(),
   WORK_SUBATOM_UNIT_SCALE_TEXT,
 );
 assert.equal(
-  WORK_AMO_V7_LEGACY_ATOM_TO_SUBATOM_SCALE,
+  WORK_AMO_V8_LEGACY_ATOM_TO_SUBATOM_SCALE,
   WORK_SUBATOM_CONVERSION_FACTOR,
 );
 assert.equal(
-  WORK_AMO_V7_MAX_SUPPLY_SUBATOMS.toString(),
+  WORK_AMO_V8_MAX_SUPPLY_SUBATOMS.toString(),
   "210000000000000000000000",
 );
 assert.equal(
-  WORK_AMO_V7_MINT_AMOUNT_SUBATOMS.toString(),
+  WORK_AMO_V8_MINT_AMOUNT_SUBATOMS.toString(),
   "10000000000000000000",
 );
-assert.equal(WORK_AMO_V7_PRECISION_MODEL, WORK_SUBATOM_PROJECTION_MODEL);
-assert.equal(WORK_AMO_V7_GLOBAL_PRECISION_MODEL, WORK_PRECISION_V2_MODEL);
+assert.equal(WORK_AMO_V8_PRECISION_MODEL, WORK_SUBATOM_PROJECTION_MODEL);
+assert.equal(WORK_AMO_V8_GLOBAL_PRECISION_MODEL, WORK_PRECISION_V2_MODEL);
 assert.equal(
-  WORK_AMO_V7_PRECISION_MIGRATION_MODEL,
+  WORK_AMO_V8_PRECISION_MIGRATION_MODEL,
   WORK_PRECISION_V2_MIGRATION_MODEL,
 );
 assert.deepEqual(
-  [...WORK_AMO_V7_ALLOWED_FACE_PROOFS],
-  [20_000, 50_000, 100_000],
+  [...WORK_AMO_V8_ALLOWED_FACE_PROOFS],
+  [25_000],
 );
 
 const launchNetworkValueQ8 = 21_000_000n * 100_000_000n;
-for (const face of WORK_AMO_V7_ALLOWED_FACE_PROOFS) {
-  const terms = workAmoV7UnitTerms({
+for (const face of WORK_AMO_V8_ALLOWED_FACE_PROOFS) {
+  const terms = workAmoV8UnitTerms({
     networkValueBeforeQ8: launchNetworkValueQ8.toString(),
     unitFaceProofs: face,
   });
   assert.equal(terms.valid, true);
   assert.equal(
     terms.unitAmountSubatoms,
-    (BigInt(face) * WORK_AMO_V7_SUBATOMS_PER_WORK).toString(),
+    (BigInt(face) * WORK_AMO_V8_SUBATOMS_PER_WORK).toString(),
   );
   assert.equal(terms.unitPriceSats, String(face));
   assert.equal(terms.unitMinimumPriceSats, String(face));
@@ -373,20 +392,20 @@ for (const face of WORK_AMO_V7_ALLOWED_FACE_PROOFS) {
 }
 const nonLegacyAlignedNetworkValueQ8 =
   launchNetworkValueQ8 + 1n;
-const preciseV7Terms = workAmoV7UnitTerms({
+const preciseV7Terms = workAmoV8UnitTerms({
   networkValueBeforeQ8:
     nonLegacyAlignedNetworkValueQ8.toString(),
-  unitFaceProofs: 20_000,
+  unitFaceProofs: 25_000,
 });
 const v7FormulaDenominator =
   21_000_000n *
-  WORK_AMO_V7_SUBATOMS_PER_WORK *
+  WORK_AMO_V8_SUBATOMS_PER_WORK *
   100_000_000n;
 assert.equal(preciseV7Terms.valid, true);
 assert.equal(
   preciseV7Terms.unitAmountSubatoms,
   (
-    (20_000n * v7FormulaDenominator) /
+    (25_000n * v7FormulaDenominator) /
     nonLegacyAlignedNetworkValueQ8
   ).toString(),
 );
@@ -405,21 +424,21 @@ assert.notEqual(
   BigInt(preciseV7Terms.unitAmountSubatoms) %
     WORK_SUBATOM_CONVERSION_FACTOR,
   0n,
-  "V7 must retain precision below one historical atom",
+  "V8 must retain precision below one historical atom",
 );
 assert.equal(
-  workAmoV7UnitTerms({
+  workAmoV8UnitTerms({
     networkValueBeforeQ8: "0",
-    unitFaceProofs: 20_000,
+    unitFaceProofs: 25_000,
   }).reasonCode,
-  "work-amo-v7-network-value-before-invalid",
+  "work-amo-v8-network-value-before-invalid",
 );
 assert.equal(
-  workAmoV7UnitTerms({
+  workAmoV8UnitTerms({
     networkValueBeforeQ8: "1",
-    unitFaceProofs: 20_000,
+    unitFaceProofs: 25_000,
   }).reasonCode,
-  "work-amo-v7-unit-amount-exceeds-supply",
+  "work-amo-v8-unit-amount-exceeds-supply",
 );
 for (const networkValueBeforeQ8 of [
   ` ${launchNetworkValueQ8}`,
@@ -429,12 +448,12 @@ for (const networkValueBeforeQ8 of [
   "2.1e15",
 ]) {
   assert.equal(
-    workAmoV7UnitTerms({
+    workAmoV8UnitTerms({
       networkValueBeforeQ8,
-      unitFaceProofs: 20_000,
+      unitFaceProofs: 25_000,
     }).reasonCode,
-    "work-amo-v7-network-value-before-invalid",
-    `V7 network value must reject integer alias ${JSON.stringify(networkValueBeforeQ8)}`,
+    "work-amo-v8-network-value-before-invalid",
+    `V8 network value must reject integer alias ${JSON.stringify(networkValueBeforeQ8)}`,
   );
 }
 
@@ -447,7 +466,7 @@ const position = (blockHeight) => ({
   recordOrdinal: 0,
 });
 assert.equal(
-  validateWorkAmoV7ListingCutover({
+  validateWorkAmoV8ListingCutover({
     activationHeight,
     authorizationVersion: "pwt-sale-v6",
     listingPosition: position(activationHeight - 1),
@@ -455,7 +474,7 @@ assert.equal(
   true,
 );
 assert.equal(
-  validateWorkAmoV7ListingCutover({
+  validateWorkAmoV8ListingCutover({
     activationHeight,
     authorizationVersion: "pwt-sale-v6",
     listingPosition: position(activationHeight - 1),
@@ -463,23 +482,23 @@ assert.equal(
   true,
 );
 assert.equal(
-  validateWorkAmoV7ListingCutover({
+  validateWorkAmoV8ListingCutover({
     activationHeight,
-    authorizationVersion: WORK_AMO_V7_AUTH_VERSION,
+    authorizationVersion: WORK_AMO_V8_AUTH_VERSION,
     listingPosition: position(activationHeight - 1),
   }).valid,
   false,
 );
 assert.equal(
-  validateWorkAmoV7ListingCutover({
+  validateWorkAmoV8ListingCutover({
     activationHeight,
-    authorizationVersion: WORK_AMO_V7_AUTH_VERSION,
+    authorizationVersion: WORK_AMO_V8_AUTH_VERSION,
     listingPosition: position(activationHeight - 1),
   }).reasonCode,
-  "work-amo-v7-listing-before-activation",
+  "work-amo-v8-listing-before-activation",
 );
 assert.equal(
-  validateWorkAmoV7ListingCutover({
+  validateWorkAmoV8ListingCutover({
     activationHeight,
     authorizationVersion: "pwt-sale-v6",
     listingPosition: position(activationHeight),
@@ -487,24 +506,24 @@ assert.equal(
   false,
 );
 assert.equal(
-  validateWorkAmoV7ListingCutover({
+  validateWorkAmoV8ListingCutover({
     activationHeight,
     authorizationVersion: "pwt-sale-v6",
     listingPosition: position(activationHeight),
   }).reasonCode,
-  "work-amo-v7-version-required",
+  "work-amo-v8-version-required",
 );
 assert.equal(
-  validateWorkAmoV7ListingCutover({
+  validateWorkAmoV8ListingCutover({
     activationHeight,
-    authorizationVersion: WORK_AMO_V7_AUTH_VERSION,
+    authorizationVersion: WORK_AMO_V8_AUTH_VERSION,
     listingPosition: position(activationHeight),
   }).valid,
   true,
 );
 
 const strictV7Authorization = {
-  ...WORK_AMO_V7_MODELS,
+  ...WORK_AMO_V8_MODELS,
   anchorScriptPubKey: `5120${"ab".repeat(32)}`,
   anchorSigHashType: 0x83,
   anchorType: "sale-ticket-v1",
@@ -521,8 +540,8 @@ const strictV7Authorization = {
     "0306baa226e3a87a99547df2144f2e6206a4a479a46df41ec1618945c064568237",
   ticker: "WORK",
   tokenId: WORK_TOKEN_ID,
-  unitFaceProofs: 20_000,
-  version: WORK_AMO_V7_AUTH_VERSION,
+  unitFaceProofs: 25_000,
+  version: WORK_AMO_V8_AUTH_VERSION,
 };
 const strictV7Position = {
   blockHash: "22".repeat(32),
@@ -532,7 +551,7 @@ const strictV7Position = {
   recordOrdinal: 0,
 };
 const strictV7BondQ8 = 546n * 100_000_000n;
-const strictV7Derived = deriveWorkAmoV7FrozenTerms(
+const strictV7Derived = deriveWorkAmoV8FrozenTerms(
   strictV7Authorization,
   {
     activationHeight,
@@ -540,55 +559,55 @@ const strictV7Derived = deriveWorkAmoV7FrozenTerms(
     listingPosition: strictV7Position,
     networkValueBeforeQ8: launchNetworkValueQ8.toString(),
     spendableAmountSubatoms:
-      WORK_AMO_V7_MAX_SUPPLY_SUBATOMS.toString(),
+      WORK_AMO_V8_MAX_SUPPLY_SUBATOMS.toString(),
   },
 );
 assert.equal(strictV7Derived.valid, true);
 assert.equal(
-  deriveWorkAmoV7FrozenTerms(strictV7Authorization, {
+  deriveWorkAmoV8FrozenTerms(strictV7Authorization, {
     activationHeight,
     listingBondContributionQ8: strictV7BondQ8.toString(),
     listingPosition: strictV7Position,
     networkValueBeforeQ8: ` ${launchNetworkValueQ8}`,
     spendableAmountSubatoms:
-      WORK_AMO_V7_MAX_SUPPLY_SUBATOMS.toString(),
+      WORK_AMO_V8_MAX_SUPPLY_SUBATOMS.toString(),
   }).reasonCode,
-  "work-amo-v7-network-value-before-invalid",
-  "confirmed V7 derivation must reject whitespace in N-before",
+  "work-amo-v8-network-value-before-invalid",
+  "confirmed V8 derivation must reject whitespace in N-before",
 );
 assert.equal(
-  deriveWorkAmoV7FrozenTerms(strictV7Authorization, {
+  deriveWorkAmoV8FrozenTerms(strictV7Authorization, {
     activationHeight,
     listingBondContributionQ8: strictV7BondQ8.toString(),
     listingPosition: strictV7Position,
     networkValueBeforeQ8: launchNetworkValueQ8.toString(),
     spendableAmountSubatoms:
-      ` ${WORK_AMO_V7_MAX_SUPPLY_SUBATOMS}`,
+      ` ${WORK_AMO_V8_MAX_SUPPLY_SUBATOMS}`,
   }).reasonCode,
-  "work-amo-v7-spendable-balance-unavailable",
-  "confirmed V7 derivation must reject whitespace in spendable subatoms",
+  "work-amo-v8-spendable-balance-unavailable",
+  "confirmed V8 derivation must reject whitespace in spendable subatoms",
 );
 assert.equal(
-  deriveWorkAmoV7FrozenTerms(strictV7Authorization, {
+  deriveWorkAmoV8FrozenTerms(strictV7Authorization, {
     activationHeight,
     listingBondContributionQ8: strictV7BondQ8.toString(),
     listingPosition: strictV7Position,
     networkValueBeforeQ8: launchNetworkValueQ8.toString(),
     spendableAmountSubatoms: Number(
-      WORK_AMO_V7_MAX_SUPPLY_SUBATOMS,
+      WORK_AMO_V8_MAX_SUPPLY_SUBATOMS,
     ),
   }).reasonCode,
-  "work-amo-v7-spendable-balance-unavailable",
-  "unsafe Number must never authorize a V7 subatom spend",
+  "work-amo-v8-spendable-balance-unavailable",
+  "unsafe Number must never authorize a V8 subatom spend",
 );
 assert.equal(
-  validateWorkAmoV7FrozenTerms({
+  validateWorkAmoV8FrozenTerms({
     ...strictV7Derived.frozenTerms,
     unitAmountSubatoms:
       ` ${strictV7Derived.frozenTerms.unitAmountSubatoms}`,
   }).reasonCode,
-  "work-amo-v7-frozen-terms-invalid",
-  "frozen V7 subatoms must be a canonical integer string",
+  "work-amo-v8-frozen-terms-invalid",
+  "frozen V8 subatoms must be a canonical integer string",
 );
 
 const oneLegacyAtomOpening = {
@@ -602,7 +621,7 @@ const oneLegacyAtomOpening = {
   listings: [],
 };
 const openingPreimage =
-  workAmoV7CanonicalTokenStatePreimage(oneLegacyAtomOpening);
+  workAmoV8CanonicalTokenStatePreimage(oneLegacyAtomOpening);
 assert.equal(openingPreimage.confirmedSupplySubatoms, "100000000");
 assert.equal(openingPreimage.definition.decimals, 16);
 assert.equal(
@@ -611,11 +630,11 @@ assert.equal(
 );
 assert.equal(openingPreimage.reservedSubatoms, "0");
 assert.deepEqual(
-  workAmoV7CanonicalTokenStateCommitment(oneLegacyAtomOpening),
-  workAmoV7CanonicalTokenStateCommitment(openingPreimage),
+  workAmoV8CanonicalTokenStateCommitment(oneLegacyAtomOpening),
+  workAmoV8CanonicalTokenStateCommitment(openingPreimage),
 );
 assert.throws(() =>
-  workAmoV7CanonicalTokenStatePreimage({
+  workAmoV8CanonicalTokenStatePreimage({
     ...oneLegacyAtomOpening,
     confirmedSupplySubatoms: "100000001",
   }),
@@ -820,90 +839,89 @@ assert.notDeepEqual(
     },
   ),
 );
-assert.deepEqual(
-  workPrecisionV2ConstraintAudit({
-    definitionPrecision:
-      "work-atoms-v1 work-subatoms-v2 10000000000000000",
-    transitionModels:
-      "canonical-work-amo-full-position-block-sequencer-v3 canonical-work-token-state-subatoms-v2",
-    v6Deactivation: "CHECK (listing_block_height < 1200000)",
-    v6Values: "2100000000000000 100000000",
-    v7Values:
-      "210000000000000000000000 10000000000000000",
-  }),
-  {
-    definitionPrecisionReady: true,
-    v6DeactivationInstalled: true,
-    v6Q8Ready: true,
-    v7Q16Ready: true,
-    v7TransitionReady: true,
-  },
-);
-for (const [field, definitions] of [
-  [
-    "v6DeactivationInstalled",
-    {
-      definitionPrecision:
-        "work-atoms-v1 work-subatoms-v2 10000000000000000",
-      transitionModels:
-        "canonical-work-amo-full-position-block-sequencer-v3 canonical-work-token-state-subatoms-v2",
-      v6Values: "2100000000000000 100000000",
-      v7Values:
-        "210000000000000000000000 10000000000000000",
-    },
-  ],
-  [
-    "definitionPrecisionReady",
-    {
-      definitionPrecision: "work-subatoms-v2 10000000000000000",
-      transitionModels:
-        "canonical-work-amo-full-position-block-sequencer-v3 canonical-work-token-state-subatoms-v2",
-      v6Values: "2100000000000000 100000000",
-      v7Values:
-        "210000000000000000000000 10000000000000000",
-    },
-  ],
-  [
-    "v6Q8Ready",
-    {
-      definitionPrecision:
-        "work-atoms-v1 work-subatoms-v2 10000000000000000",
-      transitionModels:
-        "canonical-work-amo-full-position-block-sequencer-v3 canonical-work-token-state-subatoms-v2",
-      v6Values:
-        "2100000000000000 100000000 10000000000000000",
-      v7Values:
-        "210000000000000000000000 10000000000000000",
-    },
-  ],
-  [
-    "v7Q16Ready",
-    {
-      definitionPrecision:
-        "work-atoms-v1 work-subatoms-v2 10000000000000000",
-      transitionModels:
-        "canonical-work-amo-full-position-block-sequencer-v3 canonical-work-token-state-subatoms-v2",
-      v6Values: "2100000000000000 100000000",
-      v7Values: "210000000000000000000000",
-    },
-  ],
-  [
-    "v7TransitionReady",
-    {
-      definitionPrecision:
-        "work-atoms-v1 work-subatoms-v2 10000000000000000",
-      transitionModels:
-        "canonical-work-token-state-subatoms-v2",
-      v6Values: "2100000000000000 100000000",
-      v7Values:
-        "210000000000000000000000 10000000000000000",
-    },
-  ],
+const canonicalConstraintDefinitions = Object.freeze({
+  ...WORK_PRECISION_V2_STATIC_CONSTRAINT_DEFINITIONS,
+  v6Deactivation: "CHECK ((listing_block_height < 1200000))",
+});
+assert.deepEqual(workPrecisionV2ConstraintAudit(canonicalConstraintDefinitions), {
+  definitionPrecisionReady: true,
+  transitionReady: true,
+  v6DeactivationInstalled: true,
+  v6Q8Ready: true,
+  v7Q16Ready: true,
+  v7TransitionReady: true,
+  v8FrozenReady: true,
+  v8IdentityReady: true,
+  v8PositionsReady: true,
+  v8Q16Ready: true,
+  v8TransitionReady: true,
+  v8ValuesReady: true,
+});
+for (const [field, key, target] of [
+  ["definitionPrecisionReady", "definitionPrecision", "10000000000000000000"],
+  ["v6Q8Ready", "v6Values", "100000"],
+  ["v6DeactivationInstalled", "v6Deactivation", "1200000"],
+  ["v8ValuesReady", "v8Values", "25000"],
+  ["v8IdentityReady", "v8Identity", WORK_AMO_V8_AUTH_VERSION],
+  ["v8PositionsReady", "v8Positions", "listing_record_ordinal"],
+  ["v8FrozenReady", "v8Frozen", WORK_AMO_V8_MODELS.unitModel],
+  ["v8TransitionReady", "transitionModels", "canonical-work-amo-full-position-block-sequencer-v4"],
 ]) {
+  const definitions = {
+    ...canonicalConstraintDefinitions,
+    [key]: canonicalConstraintDefinitions[key].replace(target, "mutated"),
+  };
   assert.equal(
     workPrecisionV2ConstraintAudit(definitions)[field],
     false,
     `${field} must fail closed when its exact schema evidence is absent`,
+  );
+}
+
+function wrappedConstraint(definition, operator) {
+  const source = String(definition);
+  assert.equal(source.startsWith("CHECK ("), true);
+  assert.equal(source.endsWith(")"), true);
+  const expression = source.slice("CHECK (".length, -1);
+  return `CHECK ((${operator === "OR" ? "true OR " : ""}${expression}${
+    operator === "AND" ? " AND true" : ""
+  }))`;
+}
+
+for (const [field, key] of [
+  ["definitionPrecisionReady", "definitionPrecision"],
+  ["v6Q8Ready", "v6Values"],
+  ["v8ValuesReady", "v8Values"],
+  ["v8IdentityReady", "v8Identity"],
+  ["v8PositionsReady", "v8Positions"],
+  ["v8FrozenReady", "v8Frozen"],
+  ["v8TransitionReady", "transitionModels"],
+]) {
+  for (const operator of ["OR", "AND"]) {
+    const definitions = {
+      ...canonicalConstraintDefinitions,
+      [key]: wrappedConstraint(canonicalConstraintDefinitions[key], operator),
+    };
+    assert.equal(
+      workPrecisionV2ConstraintAudit(definitions)[field],
+      false,
+      `${field} must reject an exact constraint hidden inside an ${
+        operator === "OR" ? "always-true wrapper" : "extra-clause wrapper"
+      }`,
+    );
+  }
+}
+for (const v6Deactivation of [
+  "CHECK (((listing_block_height < 1200000) OR true))",
+  "CHECK (((listing_block_height < 1200000) AND true))",
+]) {
+  assert.equal(
+    workPrecisionV2ConstraintAudit({
+      ...canonicalConstraintDefinitions,
+      v6Deactivation,
+    }).v6DeactivationInstalled,
+    false,
+    "the dynamic V6 boundary shape must reject tautologies and extra clauses",
   );
 }
 
@@ -1014,64 +1032,56 @@ assert.deepEqual(
       "e3c735bfb17c69384de7d64acf3701cd9df36e20de8e27805bb712c17df14d1e",
   },
 );
-const migratedFirstV6Preimage =
-  workAmoV7CanonicalTokenStatePreimage({
-    confirmedSupplySubatoms:
-      WORK_AMO_V7_SUBATOMS_PER_WORK.toString(),
-    holders: [
-      {
-        address: firstV6ListingSeller,
-        balanceSubatoms:
-          WORK_AMO_V7_SUBATOMS_PER_WORK.toString(),
-      },
-    ],
-    listings: [
-      {
-        amountSubatoms: "1000000000",
-        frozenTerms: firstV6ListingFrozenTerms,
-        listingId: firstV6ListingTxid,
-        priceSats: "20000",
-        saleAuthorization: firstV6ListingAuthorization,
-        sellerAddress: firstV6ListingSeller,
-      },
-    ],
-  });
+const migratedFirstV6 = scaleWorkPrecisionV2TokenState({
+  confirmedSupplyAtoms: WORK_AMO_V5_ATOMS_PER_WORK.toString(),
+  holders: [
+    {
+      address: firstV6ListingSeller,
+      balanceAtoms: WORK_AMO_V5_ATOMS_PER_WORK.toString(),
+    },
+  ],
+  listings: [
+    {
+      amountAtoms: "10",
+      frozenTerms: firstV6ListingFrozenTerms,
+      listingId: firstV6ListingTxid,
+      priceSats: "20000",
+      saleAuthorization: firstV6ListingAuthorization,
+      sellerAddress: firstV6ListingSeller,
+    },
+  ],
+});
+assert.deepEqual(migratedFirstV6.subatomState.listings, []);
+assert.equal(migratedFirstV6.subatomState.reservedSubatoms, "0");
+assert.equal(migratedFirstV6.relicCutover.count, 1);
 assert.equal(
-  migratedFirstV6Preimage.listings[0].amountSubatoms,
-  "1000000000",
+  migratedFirstV6.relicCutover.items[0].listingId,
+  firstV6ListingTxid,
 );
+assert.equal(migratedFirstV6.relicCutover.items[0].amountAtoms, "10");
 assert.equal(
-  migratedFirstV6Preimage.listings[0].frozenTerms.unitAmountAtoms,
-  "10",
-);
-assert.equal(
-  "unitAmountSubatoms" in
-    migratedFirstV6Preimage.listings[0].frozenTerms,
-  false,
-  "Q16 current-state migration must preserve immutable V6 frozen terms",
+  migratedFirstV6.relicCutover.model,
+  "canonical-work-amo-v8-preactivation-relic-cutover-v1",
 );
 
-const v7Text = buildWorkAmoV7DeclarationText();
-const v7Commitment = workAmoV7DeclarationCommitment();
+const v7Text = buildWorkAmoV8DeclarationText();
+const v7Commitment = workAmoV8DeclarationCommitment();
 assert.equal(v7Commitment.text, v7Text);
-assert.equal(v7Commitment.payloadBytes, 8136);
+assert.equal(v7Commitment.payloadBytes, 5586);
 assert.equal(
   v7Commitment.payloadSha256,
-  "48d154fd53ba70163771607b7bb43a1786f78cdcad02f260ab5806e9f2f195b0",
+  "0ef1432816fb93480b02a5302ce1c074d38f84a38e01150d57cf1df87d68024d",
 );
-assert.equal(v7Commitment.protocolRecordBytes, 8143);
+assert.equal(v7Commitment.protocolRecordBytes, 5593);
 assert.equal(
   v7Commitment.protocolRecordSha256,
-  "e85a332b2647381e5e69c5e85be59bb873adc89d1745c768643af0f0bfd75527",
+  "1ba53b285f95f8d69f0272c8e75c76b09cd3bd26281c68e665749368e7694528",
 );
-assert.match(v7Text, /authorizationVersion=pwt-sale-v7/u);
+assert.match(v7Text, /authorizationVersion=pwt-sale-v8/u);
 assert.match(v7Text, /transferVersion=send3/u);
 assert.match(v7Text, /workDecimals=16/u);
 assert.match(v7Text, /mintAmountSubatoms=10000000000000000000/u);
-assert.match(
-  v7Text,
-  /volatile pending WORK event listing action and balance-delta projections are purged while noncanonical transaction envelopes remain raw recovery input/u,
-);
+assert.match(v7Text, /allowedFaceProofs=25000/u);
 assert.match(v7Text, /subatomsPerWork=10000000000000000/u);
 assert.match(v7Text, /legacyAtomToSubatomScale=100000000/u);
 assert.match(v7Text, /unitAmountSubatoms=floor/u);
@@ -1080,6 +1090,507 @@ assert.match(v7Text, /unitMinimumPriceSats=ceil/u);
 assert.doesNotMatch(v7Text, /unitPriceProofs=|unitMinimumPriceProofs=/u);
 assert.match(v7Text, /network value remains exact Q8/u);
 assert.match(v7Text, /no external price feed/u);
+
+const fixtureSha256 = (value) =>
+  createHash("sha256")
+    .update(Buffer.from(value, "utf8"))
+    .digest("hex");
+const markerPins = Object.freeze({
+  activationHeight: 1_200_000,
+  declarationBlockHash: "cd".repeat(32),
+  declarationBlockIndex: 3,
+  declarationHeight: 1_199_999,
+  declarationMemoBytes: v7Commitment.protocolRecordBytes,
+  declarationMemoSha256: v7Commitment.protocolRecordSha256,
+  declarationProtocolVout: 1,
+  declarationRecordOrdinal: 0,
+  declarationRegistryPaymentVout: 0,
+  declarationTxid: "ab".repeat(32),
+});
+const declarationEvidenceCommitted = Object.freeze({
+  authorityScriptPubKey:
+    WORK_AMO_V5_DECLARATION_AUTHORITY_SCRIPT_PUBKEY,
+  blockHash: markerPins.declarationBlockHash,
+  blockHeight: markerPins.declarationHeight,
+  blockTransactionIndex: markerPins.declarationBlockIndex,
+  inputCount: 1,
+  outputCount: 2,
+  payloadBytes: markerPins.declarationMemoBytes,
+  payloadSha256: markerPins.declarationMemoSha256,
+  protocol: "pwm1",
+  protocolVout: markerPins.declarationProtocolVout,
+  recordOrdinal: markerPins.declarationRecordOrdinal,
+  registryAddress: WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS,
+  registryPaymentSats: String(
+    WORK_AMO_V5_DECLARATION_MIN_PAYMENT_SATS,
+  ),
+  registryPaymentVout: markerPins.declarationRegistryPaymentVout,
+  txid: markerPins.declarationTxid,
+});
+const declarationEvidenceCommitment = fixtureSha256(
+  `ProofOfWork.Me/WORK-PRECISION-V2-DECLARATION-EVIDENCE/v1\n${JSON.stringify(
+    declarationEvidenceCommitted,
+  )}`,
+);
+const emptyRowsCommitment = Object.freeze({
+  count: 0,
+  payloadBytes: 2,
+  sha256: fixtureSha256("[]"),
+});
+const exactMigrationMarker = Object.freeze({
+  activationHeight: markerPins.activationHeight,
+  activationOpening: {
+    declarationClosingStatePayloadBytes: 1,
+    declarationClosingStateSha256: "11".repeat(32),
+    declarationTransitionModel: WORK_AMO_V6_BLOCK_SEQUENCER_MODEL,
+    legacyTokenStateCommitment: {
+      model: WORK_AMO_V5_PAYLOAD_COMMITMENT_MODEL,
+      payloadBytes: 1,
+      sha256: "22".repeat(32),
+    },
+    subatomTokenStateCommitment: {
+      model: WORK_AMO_V5_PAYLOAD_COMMITMENT_MODEL,
+      payloadBytes: 1,
+      sha256: "33".repeat(32),
+    },
+  },
+  after: {
+    balances: emptyRowsCommitment,
+    listings: emptyRowsCommitment,
+  },
+  before: {
+    balances: emptyRowsCommitment,
+    listings: emptyRowsCommitment,
+  },
+  completedAt: "2026-07-31T00:00:00.000Z",
+  conversionFactor: "100000000",
+  declarationBlockHash: markerPins.declarationBlockHash,
+  declarationBlockIndex: markerPins.declarationBlockIndex,
+  declarationEvidence: {
+    ...declarationEvidenceCommitted,
+    commitmentSha256: declarationEvidenceCommitment,
+    coreVerified: true,
+    evidenceComplete: true,
+    indexVerified: true,
+    model:
+      "canonical-work-precision-v2-declaration-core-index-evidence-v1",
+  },
+  declarationHeight: markerPins.declarationHeight,
+  declarationMemoBytes: markerPins.declarationMemoBytes,
+  declarationMemoSha256: markerPins.declarationMemoSha256,
+  declarationProtocolVout: markerPins.declarationProtocolVout,
+  declarationRecordOrdinal: markerPins.declarationRecordOrdinal,
+  declarationRegistryPaymentVout:
+    markerPins.declarationRegistryPaymentVout,
+  declarationTextBytes: v7Commitment.payloadBytes,
+  declarationTextSha256: v7Commitment.payloadSha256,
+  declarationTxid: markerPins.declarationTxid,
+  decimals: 16,
+  derivedProjectionPolicy: "invalidate-and-replay-from-activation",
+  globalPrecisionModel: WORK_PRECISION_V2_MODEL,
+  legacyDecimals: 8,
+  legacyProjectionModel: WORK_LEGACY_ATOMIC_PROJECTION_MODEL,
+  maxSupplySubatoms: WORK_AMO_V8_MAX_SUPPLY_SUBATOMS.toString(),
+  migrationModel: WORK_PRECISION_V2_MIGRATION_MODEL,
+  mintAmountSubatoms: WORK_AMO_V8_MINT_AMOUNT_SUBATOMS.toString(),
+  model: WORK_PRECISION_V2_MIGRATION_MODEL,
+  network: "livenet",
+  projectionModel: WORK_SUBATOM_PROJECTION_MODEL,
+  rawConfirmedHistoryMutation: "none",
+  relicCutover: migratedFirstV6.relicCutover,
+  replayFromHeight: markerPins.activationHeight,
+  snapshotPolicy:
+    "preserve-preactivation-canonical-invalidate-wrong-era-derived-require-post-migration-current-snapshot",
+  status: "complete",
+  transferVersion: WORK_AMO_V8_TRANSFER_VERSION,
+  unitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,
+  updatedAt: "2026-07-31T00:00:00.000Z",
+  version: WORK_AMO_V8_AUTH_VERSION,
+});
+assert.equal(
+  workPrecisionV2MarkerReady(exactMigrationMarker, markerPins),
+  true,
+);
+assert.equal(
+  workPrecisionV2RelicCutoverReady(
+    exactMigrationMarker.relicCutover,
+  ),
+  true,
+);
+assert.equal(
+  workPrecisionV2MarkerReady(
+    { ...exactMigrationMarker, unexpected: true },
+    markerPins,
+  ),
+  false,
+);
+assert.equal(
+  workPrecisionV2MarkerReady(
+    {
+      ...exactMigrationMarker,
+      relicCutover: {
+        ...exactMigrationMarker.relicCutover,
+        items: exactMigrationMarker.relicCutover.items.map((item) => ({
+          ...item,
+          amountAtoms: "11",
+        })),
+      },
+    },
+    markerPins,
+  ),
+  false,
+);
+assert.equal(
+  workPrecisionV2MarkerReady(
+    { ...exactMigrationMarker, relicCutover: undefined },
+    markerPins,
+  ),
+  false,
+);
+
+const firstV6ListingAmountSubatoms = legacyWorkAtomsToSubatoms(
+  firstV6ListingFrozenTerms.unitAmountAtoms,
+);
+const exactRelicListing = Object.freeze({
+  amount: formatWorkSubatoms(firstV6ListingAmountSubatoms),
+  amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+  amountSubatoms: firstV6ListingAmountSubatoms,
+  blockHash: firstV6ListingFrozenTerms.listingBlockHash,
+  blockHeight: firstV6ListingFrozenTerms.listingBlockHeight,
+  blockIndex: firstV6ListingFrozenTerms.listingBlockIndex,
+  buyerAddress: "must-not-survive",
+  closeTxid: "ef".repeat(32),
+  closedTxid: "ef".repeat(32),
+  confirmed: true,
+  decimals: WORK_SUBATOM_DECIMALS,
+  listingId: firstV6ListingTxid,
+  network: "livenet",
+  precisionModel: WORK_PRECISION_V2_MODEL,
+  priceSats: Number(firstV6ListingFrozenTerms.unitPriceSats),
+  protocolVout: firstV6ListingFrozenTerms.listingProtocolVout,
+  recordOrdinal: firstV6ListingFrozenTerms.listingRecordOrdinal,
+  saleAuthorization: firstV6ListingAuthorization,
+  saleTxid: "ef".repeat(32),
+  sellerAddress: firstV6ListingSeller,
+  status: "dropped",
+  ticker: "WORK",
+  tokenId: WORK_TOKEN_ID,
+  txid: firstV6ListingTxid,
+  unitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,
+});
+const exactRelicPayload = Object.freeze({
+  actionable: false,
+  disabledAtBlockHeight: markerPins.activationHeight,
+  disabledByTxid: markerPins.declarationTxid,
+  disabledReason: "work-amo-v8-preactivation-relic",
+  legacyAmountAtoms: firstV6ListingFrozenTerms.unitAmountAtoms,
+  legacyAmountStorageModel: WORK_LEGACY_ATOMIC_PROJECTION_MODEL,
+  precisionMigrationModel: WORK_PRECISION_V2_MIGRATION_MODEL,
+  relic: true,
+  relicCutoverModel: WORK_AMO_V8_RELIC_CUTOVER_MODEL,
+  refundEligible: true,
+  saleAuthorization: firstV6ListingAuthorization,
+});
+const exactRelicRow = Object.freeze({
+  amount: firstV6ListingAmountSubatoms,
+  listing_block_hash: firstV6ListingFrozenTerms.listingBlockHash,
+  listing_block_height: firstV6ListingFrozenTerms.listingBlockHeight,
+  listing_event_block_hash: firstV6ListingFrozenTerms.listingBlockHash,
+  listing_event_block_height: firstV6ListingFrozenTerms.listingBlockHeight,
+  listing_event_block_index: firstV6ListingFrozenTerms.listingBlockIndex,
+  listing_event_match_count: "1",
+  listing_event_protocol_vout:
+    firstV6ListingFrozenTerms.listingProtocolVout,
+  listing_event_record_ordinal:
+    firstV6ListingFrozenTerms.listingRecordOrdinal,
+  listing_event_status: "confirmed",
+  listing_id: firstV6ListingTxid,
+  listing_transaction_block_index:
+    firstV6ListingFrozenTerms.listingBlockIndex,
+  listing_tx_status: "confirmed",
+  payload: exactRelicPayload,
+  price_sats: firstV6ListingFrozenTerms.unitPriceSats,
+  seller_address: firstV6ListingSeller,
+  status: "dropped",
+  token_id: WORK_TOKEN_ID,
+});
+const exactRelicProjectionInput = Object.freeze({
+  listing: exactRelicListing,
+  marker: exactMigrationMarker,
+  network: "livenet",
+  pins: markerPins,
+  row: exactRelicRow,
+});
+const exactRelicProjection = workPrecisionV2RelicListingProjection(
+  exactRelicProjectionInput,
+);
+assert.ok(exactRelicProjection);
+assert.equal(exactRelicProjection.status, "disabled");
+assert.equal(exactRelicProjection.actionable, false);
+assert.equal(exactRelicProjection.relic, true);
+assert.equal(exactRelicProjection.refundEligible, true);
+assert.equal(exactRelicProjection.closedConfirmed, true);
+assert.equal(exactRelicProjection.closeTxid, "");
+assert.equal(exactRelicProjection.closedTxid, "");
+assert.equal(exactRelicProjection.saleTxid, undefined);
+assert.equal(exactRelicProjection.buyerAddress, "");
+assert.equal(
+  exactRelicProjection.amountSubatoms,
+  firstV6ListingAmountSubatoms,
+);
+assert.equal(
+  Object.prototype.hasOwnProperty.call(
+    exactRelicProjection,
+    "amountAtoms",
+  ),
+  false,
+);
+
+const relicProjectionWith = ({ listing, marker, network, pins, row }) =>
+  workPrecisionV2RelicListingProjection({
+    listing: listing ?? exactRelicListing,
+    marker: marker ?? exactMigrationMarker,
+    network: network ?? "livenet",
+    pins: pins ?? markerPins,
+    row: row ?? exactRelicRow,
+  });
+for (const [label, input] of [
+  ["non-livenet", { network: "testnet" }],
+  [
+    "unexpected pin field",
+    { pins: { ...markerPins, unexpected: true } },
+  ],
+  [
+    "wrong declaration pin",
+    { pins: { ...markerPins, declarationTxid: "00".repeat(32) } },
+  ],
+  [
+    "unexpected marker field",
+    { marker: { ...exactMigrationMarker, unexpected: true } },
+  ],
+  ["active relational status", { row: { ...exactRelicRow, status: "active" } }],
+  [
+    "off-by-one relational amount",
+    { row: { ...exactRelicRow, amount: String(BigInt(firstV6ListingAmountSubatoms) + 1n) } },
+  ],
+  [
+    "wrong relational seller",
+    { row: { ...exactRelicRow, seller_address: "wrong" } },
+  ],
+  [
+    "wrong relational price",
+    { row: { ...exactRelicRow, price_sats: "20001" } },
+  ],
+  [
+    "duplicate canonical listing event",
+    { row: { ...exactRelicRow, listing_event_match_count: "2" } },
+  ],
+  [
+    "post-activation listing position",
+    {
+      listing: {
+        ...exactRelicListing,
+        blockHeight: markerPins.activationHeight,
+      },
+      row: {
+        ...exactRelicRow,
+        listing_block_height: markerPins.activationHeight,
+        listing_event_block_height: markerPins.activationHeight,
+      },
+    },
+  ],
+  [
+    "wrong actionable overlay",
+    {
+      row: {
+        ...exactRelicRow,
+        payload: { ...exactRelicPayload, actionable: true },
+      },
+    },
+  ],
+  [
+    "wrong disable height overlay",
+    {
+      row: {
+        ...exactRelicRow,
+        payload: {
+          ...exactRelicPayload,
+          disabledAtBlockHeight: markerPins.activationHeight + 1,
+        },
+      },
+    },
+  ],
+  [
+    "wrong disable tx overlay",
+    {
+      row: {
+        ...exactRelicRow,
+        payload: {
+          ...exactRelicPayload,
+          disabledByTxid: "00".repeat(32),
+        },
+      },
+    },
+  ],
+  [
+    "wrong legacy amount overlay",
+    {
+      row: {
+        ...exactRelicRow,
+        payload: { ...exactRelicPayload, legacyAmountAtoms: "11" },
+      },
+    },
+  ],
+  [
+    "wrong legacy storage overlay",
+    {
+      row: {
+        ...exactRelicRow,
+        payload: {
+          ...exactRelicPayload,
+          legacyAmountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+        },
+      },
+    },
+  ],
+  [
+    "wrong precision migration overlay",
+    {
+      row: {
+        ...exactRelicRow,
+        payload: {
+          ...exactRelicPayload,
+          precisionMigrationModel: "wrong",
+        },
+      },
+    },
+  ],
+  [
+    "wrong relic cutover overlay",
+    {
+      row: {
+        ...exactRelicRow,
+        payload: { ...exactRelicPayload, relicCutoverModel: "wrong" },
+      },
+    },
+  ],
+  [
+    "missing relic flag",
+    {
+      row: {
+        ...exactRelicRow,
+        payload: { ...exactRelicPayload, relic: false },
+      },
+    },
+  ],
+  [
+    "nonrefundable overlay",
+    {
+      row: {
+        ...exactRelicRow,
+        payload: { ...exactRelicPayload, refundEligible: false },
+      },
+    },
+  ],
+  [
+    "off-by-one projected subatom amount",
+    {
+      listing: {
+        ...exactRelicListing,
+        amountSubatoms: String(BigInt(firstV6ListingAmountSubatoms) + 1n),
+      },
+    },
+  ],
+  [
+    "special V3 nonrefundable relic",
+    {
+      listing: {
+        ...exactRelicListing,
+        saleAuthorization: {
+          ...firstV6ListingAuthorization,
+          version: "pwt-sale-v3",
+        },
+      },
+      row: {
+        ...exactRelicRow,
+        payload: {
+          ...exactRelicPayload,
+          refundEligible: false,
+          saleAuthorization: {
+            ...firstV6ListingAuthorization,
+            version: "pwt-sale-v3",
+          },
+        },
+      },
+    },
+  ],
+]) {
+  assert.equal(
+    relicProjectionWith(input),
+    null,
+    `${label} must never project as a refundable V8 relic`,
+  );
+}
+
+const exactActivationLatch = Object.freeze({
+  activationHeight: markerPins.activationHeight,
+  authorityScriptPubKey:
+    WORK_AMO_V5_DECLARATION_AUTHORITY_SCRIPT_PUBKEY,
+  coreVerified: true,
+  declarationBlockHash: markerPins.declarationBlockHash,
+  declarationBlockIndex: markerPins.declarationBlockIndex,
+  declarationHeight: markerPins.declarationHeight,
+  declarationMemoBytes: markerPins.declarationMemoBytes,
+  declarationMemoSha256: markerPins.declarationMemoSha256,
+  declarationProtocolVout: markerPins.declarationProtocolVout,
+  declarationRecordOrdinal: markerPins.declarationRecordOrdinal,
+  declarationRegistryPaymentVout:
+    markerPins.declarationRegistryPaymentVout,
+  declarationTxid: markerPins.declarationTxid,
+  evidenceComplete: true,
+  firstObservedTipHash: "ef".repeat(32),
+  firstObservedTipHeight: markerPins.activationHeight,
+  indexVerified: true,
+  inputCount: 1,
+  model: WORK_AMO_V8_ACTIVATION_LATCH_MODEL,
+  network: "livenet",
+  observedAt: "2026-07-31T00:00:00.000Z",
+  outputCount: 2,
+  protocol: "pwm1",
+  reached: true,
+  registryAddress: WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS,
+  registryPaymentSats: String(
+    WORK_AMO_V5_DECLARATION_MIN_PAYMENT_SATS,
+  ),
+});
+assert.equal(
+  workAmoV8ActivationLatchReady(exactActivationLatch, markerPins),
+  true,
+);
+assert.equal(
+  workAmoV8ActivationLatchReady(
+    { ...exactActivationLatch, unexpected: true },
+    markerPins,
+  ),
+  false,
+);
+assert.equal(
+  workAmoV8ActivationLatchReady(
+    {
+      ...exactActivationLatch,
+      firstObservedTipHeight: markerPins.activationHeight + 1,
+    },
+    markerPins,
+  ),
+  false,
+);
+assert.equal(
+  workAmoV8ActivationLatchReady(
+    { ...exactActivationLatch, declarationMemoSha256: "00".repeat(32) },
+    markerPins,
+  ),
+  false,
+);
 
 const repoRoot = new URL("../", import.meta.url);
 const [server, reader, backfill, sql, app, migration] =
@@ -1121,9 +1632,9 @@ for (const [label, source] of [
     `${label} must carry explicit Q16 metadata`,
   );
 }
-assert.match(server, /WORK_AMO_V7_WRITES_ENABLED/u);
-assert.match(server, /WORK_AMO_V7_LEGACY_WRITE_EMBARGO/u);
-assert.match(server, /discoverExactWorkAmoV7Declaration/u);
+assert.match(server, /WORK_AMO_V8_WRITES_ENABLED/u);
+assert.match(server, /WORK_AMO_V8_LEGACY_WRITE_EMBARGO/u);
+assert.match(server, /discoverExactWorkAmoV8Declaration/u);
 assert.match(
   server,
   /canonicalSaleEvidence:[\s\S]*amountSubatoms: evidence\.amountSubatoms/u,
@@ -1132,7 +1643,7 @@ assert.match(reader, /workPrecisionV2Migration:livenet/u);
 assert.match(reader, /canonical-work-q16-pending-parity-v1/u);
 assert.match(
   reader,
-  /proofIndexWorkAmoV7ActivationLatch\([\s\S]*configuredPrecisionPins \?\? precisionLatch\?\.pins/u,
+  /proofIndexWorkAmoV8ActivationLatch\([\s\S]*configuredPrecisionPins \?\? precisionLatch\?\.pins/u,
 );
 assert.match(
   reader,
@@ -1143,10 +1654,19 @@ assert.match(
   reader,
   /exactHeightConstraint\([\s\S]*row\.v6_deactivation_constraint,[\s\S]*"<",[\s\S]*pins\.activationHeight/u,
 );
+assert.doesNotMatch(
+  reader,
+  /constraintHasEvery|logicalOrCount/u,
+  "reader readiness must use exact shared schema attestation, not fragment matching",
+);
+assert.match(
+  reader,
+  /definition: sharedConstraintAudit\.definitionPrecisionReady[\s\S]*transition: sharedConstraintAudit\.transitionReady[\s\S]*v6: sharedConstraintAudit\.v6Q8Ready[\s\S]*sharedConstraintAudit\.v8ValuesReady/u,
+);
 assert.match(reader, /cd\.metadata AS token_metadata/u);
 assert.match(
   reader,
-  /export async function proofIndexWorkAmoV7ListingTerms/u,
+  /export async function proofIndexWorkAmoV8ListingTerms/u,
 );
 assert.match(
   reader,
@@ -1154,7 +1674,7 @@ assert.match(
 );
 assert.match(
   reader,
-  /canonicalTokenListingEventJoinSql[\s\S]*WORK_AMO_V7_AUTH_VERSION[\s\S]*canonicalTokenListingSealEventJoinSql/u,
+  /canonicalTokenListingEventJoinSql[\s\S]*WORK_AMO_V8_AUTH_VERSION[\s\S]*canonicalTokenListingSealEventJoinSql/u,
 );
 assert.match(
   reader,
@@ -1176,10 +1696,40 @@ assert.match(
   reader,
   /exactWorkPrecisionObjectKeys\(marker, markerKeys\)/u,
 );
+assert.match(
+  reader,
+  /function tokenInvalidEventFromRow[\s\S]*workAmount = workAmountProjection\(payload, \{ allowZero: true \}\)[\s\S]*workAmountProjectionMetadataForAmount\(workAmount\)/u,
+  "indexed invalid WORK events must preserve an exact Q16 amount projection instead of coercing through Number",
+);
+assert.match(
+  server,
+  /parsedTxAttemptedWorkAmountFields[\s\S]*attemptedAmountSubatoms:[\s\S]*attemptedPrecisionModel:[\s\S]*parsedTxAttemptedWorkAmountFields\?\.amount/u,
+  "rejected canonical send3 records must retain attempted subatoms and precision metadata",
+);
+assert.match(
+  app,
+  /type PowTokenState = \{[\s\S]*confirmedSupplySubatoms\?: string;[\s\S]*pendingSupplySubatoms\?: string;[\s\S]*precisionModel\?: string;/u,
+  "frontend state types must expose exact Q16 supply metadata",
+);
+assert.match(
+  app,
+  /function tokenSummaryMetadata[\s\S]*confirmedSupplySubatoms: state\.confirmedSupplySubatoms[\s\S]*pendingSupplySubatoms: state\.pendingSupplySubatoms[\s\S]*precisionModel: state\.precisionModel/u,
+  "frontend summary normalization must retain exact Q16 top-level metadata",
+);
+assert.match(
+  app,
+  /const WORK_TOKEN_DEFINITION:[\s\S]*maxSupplySubatoms: WORK_TOKEN_MAX_SUPPLY_SUBATOMS[\s\S]*mintAmountSubatoms: WORK_TOKEN_MINT_AMOUNT_SUBATOMS[\s\S]*precisionModel: WORK_TOKEN_PRECISION_MODEL/u,
+  "the frontend canonical WORK definition must expose Q16 max-supply and mint units",
+);
+assert.match(
+  reader,
+  /const relicListing = relicProjectionContext[\s\S]*closedListings\.push\(relicListing\);[\s\S]*continue;[\s\S]*row\.listing_tx_status === "confirmed"/u,
+  "a marker-bound V8 relic must close before any later raw ticket spend is classified",
+);
 assert.match(backfill, /amountSubatoms/u);
 assert.match(backfill, /canonical-work-q16-pending-parity-v1/u);
-assert.match(backfill, /discoverIndexedWorkAmoV7DeclarationPins/u);
-assert.match(sql, /work_amo_v7_listing_terms/u);
+assert.match(backfill, /discoverIndexedWorkAmoV8DeclarationPins/u);
+assert.match(sql, /work_amo_v8_listing_terms/u);
 assert.match(sql, /unit_amount_subatoms/u);
 assert.match(sql, /workPrecisionV2Migration:livenet/u);
 assert.match(migration, /WORK_PRECISION_V2_MIGRATION_APPLY/u);
@@ -1188,7 +1738,13 @@ assert.match(migration, /listing_block_height < \$\{pins\.activationHeight\}/u);
 assert.match(migration, /DELETE FROM proof_indexer\.events event/u);
 assert.match(
   migration,
-  /event\.status <> 'confirmed'[\s\S]*event\.block_height >= \$2/u,
+  /event\.status = 'pending'[\s\S]*event\.block_height >= \$2/u,
+  "migration removes volatile pending and wrong-era derived events without deleting preactivation relic history",
+);
+assert.match(
+  migration,
+  /UPDATE proof_indexer\.credit_listings listing[\s\S]*amount = listing\.amount \* \$3::numeric[\s\S]*'legacyAmountAtoms'[\s\S]*listing_tx\.block_height < \$2/u,
+  "every retained preactivation listing row must carry an exact Q8-to-Q16 amount conversion witness",
 );
 assert.match(
   migration,
@@ -1203,5 +1759,5 @@ assert.match(migration, /100000000/u);
 assert.match(migration, /conservation/iu);
 
 console.log(
-  "WORK Precision Protocol V2 contract: global Q16 units, immutable Q8 conversion, V7 pricing, cutover, metadata and cross-plane wiring pass.",
+  "WORK Precision Protocol V2 contract: global Q16 units, immutable Q8 conversion, V8 pricing, cutover, metadata and cross-plane wiring pass.",
 );

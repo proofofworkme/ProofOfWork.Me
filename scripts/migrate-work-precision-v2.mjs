@@ -11,24 +11,36 @@ import {
   WORK_AMO_V5_DECLARATION_AUTHORITY_SCRIPT_PUBKEY,
   WORK_AMO_V5_DECLARATION_MIN_PAYMENT_SATS,
   WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS,
+  WORK_AMO_V5_PRE_UNIT_RELIC_AMOUNT_ATOMS,
+  WORK_AMO_V5_PRE_UNIT_RELIC_LISTING_TXID,
+  WORK_AMO_V5_PRE_UNIT_RELIC_PRICE_SATS,
+  WORK_AMO_V5_PRE_UNIT_RELIC_SELLER_ADDRESS,
 } from "../server/work-amo-v5.mjs";
 import {
   workAmoV6CanonicalTokenStateCommitment,
 } from "../server/work-amo-v6.mjs";
 import {
-  WORK_AMO_V7_AUTH_VERSION,
-  WORK_AMO_V7_DECIMALS,
-  WORK_AMO_V7_GLOBAL_PRECISION_MODEL,
-  WORK_AMO_V7_MAX_SUPPLY_SUBATOMS,
-  WORK_AMO_V7_MINT_AMOUNT_SUBATOMS,
-  WORK_AMO_V7_PRECISION_MIGRATION_MODEL,
-  WORK_AMO_V7_TRANSFER_VERSION,
-  workAmoV7CanonicalTokenStateCommitment,
-  workAmoV7CanonicalTokenStatePreimage,
-} from "../server/work-amo-v7.mjs";
+  WORK_AMO_V8_AUTH_VERSION,
+  WORK_AMO_V8_DECIMALS,
+  WORK_AMO_V8_GLOBAL_PRECISION_MODEL,
+  WORK_AMO_V8_MAX_SUPPLY_SUBATOMS,
+  WORK_AMO_V8_MINT_AMOUNT_SUBATOMS,
+  WORK_AMO_V8_PRECISION_MIGRATION_MODEL,
+  WORK_AMO_V8_RELIC_CUTOVER_MODEL,
+  WORK_AMO_V8_TRANSFER_VERSION,
+  workAmoV8CanonicalTokenStateCommitment,
+  workAmoV8CanonicalTokenStatePreimage,
+} from "../server/work-amo-v8.mjs";
 import {
-  workAmoV7DeclarationCommitment,
-} from "../server/work-amo-v7-declaration.mjs";
+  workAmoV8DeclarationCommitment,
+} from "../server/work-amo-v8-declaration.mjs";
+import {
+  WORK_AMO_V8_ACTIVATION_LATCH_META_KEY,
+  workAmoV8ActivationLatchReady,
+} from "../server/work-amo-v8-activation-latch.mjs";
+import {
+  workPrecisionV2ConstraintAudit as sharedWorkPrecisionV2ConstraintAudit,
+} from "../server/work-precision-v2-schema.mjs";
 import {
   WORK_LEGACY_ATOMIC_PROJECTION_MODEL,
   WORK_LEGACY_DECIMALS,
@@ -47,7 +59,7 @@ const { Pool } = pg;
 export const WORK_PRECISION_V2_MIGRATION_MODEL =
   "canonical-work-q8-to-q16-migration-v1";
 export const WORK_PRECISION_V2_ACTIVATION_CONSTRAINT =
-  "work_amo_v7_terms_activation";
+  "work_amo_v8_terms_activation";
 export const WORK_PRECISION_V2_V6_DEACTIVATION_CONSTRAINT =
   "work_amo_v6_terms_deactivation";
 export const WORK_PRECISION_V2_EVIDENCE_MODEL =
@@ -157,6 +169,15 @@ export function workPrecisionV2RowsCommitment(rows, options) {
   });
 }
 
+export function workPrecisionV2ObjectCommitment(value) {
+  const payload = stableJson(value);
+  return Object.freeze({
+    count: Array.isArray(value) ? value.length : 1,
+    payloadBytes: Buffer.byteLength(payload, "utf8"),
+    sha256: sha256Hex(Buffer.from(payload, "utf8")),
+  });
+}
+
 export function scaleWorkPrecisionV2Rows(
   rows,
   {
@@ -210,41 +231,59 @@ export function scaleWorkPrecisionV2TokenState(legacyTokenState) {
       holder.balanceAtoms,
     ),
   }));
-  const listings = (Array.isArray(legacyTokenState?.listings)
+  const relicListings = (Array.isArray(legacyTokenState?.listings)
     ? legacyTokenState.listings
-    : []).map((listing) => ({
-    amountSubatoms: legacyWorkAtomsToSubatoms(
-      listing.amountAtoms,
-    ),
-    frozenTerms: listing.frozenTerms,
-    listingAuthorization: listing.listingAuthorization,
-    listingId: listing.listingId,
-    priceSats: listing.priceSats,
-    saleAuthorization: listing.saleAuthorization,
-    sellerAddress: listing.sellerAddress,
-  }));
-  const subatomState = workAmoV7CanonicalTokenStatePreimage({
+    : [])
+    .map((listing) => ({
+      amountAtoms: exactInteger(listing.amountAtoms),
+      listingId: normalizedLower(listing.listingId),
+      priceSats: exactInteger(listing.priceSats),
+      sellerAddress: String(listing.sellerAddress ?? "").trim(),
+    }))
+    .sort((left, right) =>
+      Buffer.compare(
+        Buffer.from(left.listingId, "utf8"),
+        Buffer.from(right.listingId, "utf8"),
+      ),
+    );
+  if (
+    relicListings.some(
+      (listing) =>
+        !TXID_PATTERN.test(listing.listingId) ||
+        !listing.sellerAddress,
+    )
+  ) {
+    throw new Error(
+      "WORK precision migration found a noncanonical pre-V8 listing relic.",
+    );
+  }
+  const subatomState = workAmoV8CanonicalTokenStatePreimage({
     confirmedSupplySubatoms: legacyWorkAtomsToSubatoms(
       legacyTokenState.confirmedSupplyAtoms,
       { allowZero: true },
     ),
     holders,
-    listings,
+    listings: [],
   });
   return Object.freeze({
     legacyCommitment,
     legacyTokenState,
+    relicCutover: Object.freeze({
+      ...workPrecisionV2ObjectCommitment(relicListings),
+      items: Object.freeze(relicListings),
+      model: WORK_AMO_V8_RELIC_CUTOVER_MODEL,
+    }),
     subatomCommitment:
-      workAmoV7CanonicalTokenStateCommitment(subatomState),
+      workAmoV8CanonicalTokenStateCommitment(subatomState),
     subatomState,
   });
 }
 
 export function configuredWorkPrecisionV2Pins(
   env = process.env,
-  declarationCommitment = workAmoV7DeclarationCommitment(),
+  declarationCommitment = workAmoV8DeclarationCommitment(),
 ) {
-  const prefix = "WORK_AMO_V7_";
+  const prefix = "WORK_AMO_V8_";
   const declarationTxid = canonicalConfiguredHash(
     env[`${prefix}DECLARATION_TXID`],
   );
@@ -725,10 +764,17 @@ async function exactCoreTipEvidence(rpc) {
   });
 }
 
-async function constraintDefinition(client, tableName, constraintName) {
+async function constraintDefinition(
+  client,
+  tableName,
+  constraintName,
+  { requireValidated = false } = {},
+) {
   const result = await client.query(
     `
-      SELECT pg_get_constraintdef(constraint_row.oid) AS definition
+      SELECT
+        pg_get_constraintdef(constraint_row.oid) AS definition,
+        constraint_row.convalidated
       FROM pg_constraint constraint_row
       WHERE constraint_row.conrelid = to_regclass($1)
         AND constraint_row.conname = $2
@@ -736,58 +782,32 @@ async function constraintDefinition(client, tableName, constraintName) {
     `,
     [`proof_indexer.${tableName}`, constraintName],
   );
-  return String(result.rows[0]?.definition ?? "");
+  const row = result.rows[0];
+  return requireValidated && row?.convalidated !== true
+    ? ""
+    : String(row?.definition ?? "");
+}
+
+function exactHeightConstraintDefinition(
+  definition,
+  operator,
+  height,
+) {
+  const escapedOperator = operator.replace(
+    /[.*+?^${}()|[\]\\]/gu,
+    "\\$&",
+  );
+  const normalized = String(definition ?? "")
+    .replace(/\s+/gu, " ")
+    .trim();
+  return new RegExp(
+    `^CHECK \\(\\(*listing_block_height ${escapedOperator} ${height}\\)*\\)$`,
+    "u",
+  ).test(normalized);
 }
 
 export function workPrecisionV2ConstraintAudit(definitions) {
-  const source =
-    definitions &&
-    typeof definitions === "object" &&
-    !Array.isArray(definitions)
-      ? definitions
-      : {};
-  const definitionPrecision = String(
-    source.definitionPrecision ?? "",
-  );
-  const v6Values = String(source.v6Values ?? "");
-  const v6Deactivation = String(
-    source.v6Deactivation ?? "",
-  );
-  const v7Values = String(source.v7Values ?? "");
-  const transitionModels = String(
-    source.transitionModels ?? "",
-  );
-  const hasIntegerLiteral = (definition, value) =>
-    new RegExp(`(?:^|[^0-9])${value}(?:[^0-9]|$)`, "u").test(
-      definition,
-    );
-  return Object.freeze({
-    definitionPrecisionReady:
-      definitionPrecision.includes("work-atoms-v1") &&
-      definitionPrecision.includes("work-subatoms-v2") &&
-      hasIntegerLiteral(
-        definitionPrecision,
-        "10000000000000000",
-      ),
-    v6Q8Ready:
-      v6Values.includes("2100000000000000") &&
-      !v6Values.includes("210000000000000000000000") &&
-      !hasIntegerLiteral(v6Values, "10000000000000000"),
-    v6DeactivationInstalled:
-      /listing_block_height\s*<\s*[1-9][0-9]*/u.test(
-        v6Deactivation,
-      ),
-    v7Q16Ready:
-      v7Values.includes("210000000000000000000000") &&
-      hasIntegerLiteral(v7Values, "10000000000000000"),
-    v7TransitionReady:
-      transitionModels.includes(
-        "canonical-work-amo-full-position-block-sequencer-v3",
-      ) &&
-      transitionModels.includes(
-        "canonical-work-token-state-subatoms-v2",
-      ),
-  });
+  return sharedWorkPrecisionV2ConstraintAudit(definitions);
 }
 
 export async function auditWorkPrecisionV2Schema(client) {
@@ -796,8 +816,28 @@ export async function auditWorkPrecisionV2Schema(client) {
       SELECT
         to_regclass('proof_indexer.work_amo_v6_listing_terms') IS NOT NULL
           AS v6_terms_ready,
-        to_regclass('proof_indexer.work_amo_v7_listing_terms') IS NOT NULL
+        to_regclass('proof_indexer.work_amo_v8_listing_terms') IS NOT NULL
           AS v7_terms_ready,
+        EXISTS (
+          SELECT 1
+          FROM pg_trigger trigger_row
+          WHERE trigger_row.tgrelid =
+              'proof_indexer.work_amo_v6_listing_terms'::regclass
+            AND trigger_row.tgname =
+              'work_amo_v6_listing_terms_immutable'
+            AND trigger_row.tgenabled <> 'D'
+            AND trigger_row.tgisinternal = false
+        ) AS v6_immutable_ready,
+        EXISTS (
+          SELECT 1
+          FROM pg_trigger trigger_row
+          WHERE trigger_row.tgrelid =
+              'proof_indexer.work_amo_v7_listing_terms'::regclass
+            AND trigger_row.tgname =
+              'work_amo_v7_listing_terms_immutable'
+            AND trigger_row.tgenabled <> 'D'
+            AND trigger_row.tgisinternal = false
+        ) AS v7_history_immutable_ready,
         EXISTS (
           SELECT 1
           FROM pg_trigger trigger_row
@@ -805,9 +845,9 @@ export async function auditWorkPrecisionV2Schema(client) {
           JOIN pg_namespace namespace
             ON namespace.oid = relation.relnamespace
           WHERE namespace.nspname = 'proof_indexer'
-            AND relation.relname = 'work_amo_v7_listing_terms'
+            AND relation.relname = 'work_amo_v8_listing_terms'
             AND trigger_row.tgname =
-              'work_amo_v7_listing_terms_immutable'
+              'work_amo_v8_listing_terms_immutable'
             AND trigger_row.tgenabled <> 'D'
             AND trigger_row.tgisinternal = false
         ) AS v7_immutable_ready,
@@ -831,26 +871,49 @@ export async function auditWorkPrecisionV2Schema(client) {
       client,
       "credit_definitions",
       "credit_definitions_work_precision",
+      { requireValidated: true },
     ),
     v6Values: await constraintDefinition(
       client,
       "work_amo_v6_listing_terms",
       "work_amo_v6_terms_values",
+      { requireValidated: true },
     ),
     v6Deactivation: await constraintDefinition(
       client,
       "work_amo_v6_listing_terms",
       WORK_PRECISION_V2_V6_DEACTIVATION_CONSTRAINT,
+      { requireValidated: true },
     ),
     v7Values: await constraintDefinition(
       client,
-      "work_amo_v7_listing_terms",
-      "work_amo_v7_terms_values",
+      "work_amo_v8_listing_terms",
+      "work_amo_v8_terms_values",
+      { requireValidated: true },
+    ),
+    v8Identity: await constraintDefinition(
+      client,
+      "work_amo_v8_listing_terms",
+      "work_amo_v8_terms_identity",
+      { requireValidated: true },
+    ),
+    v8Positions: await constraintDefinition(
+      client,
+      "work_amo_v8_listing_terms",
+      "work_amo_v8_terms_positions",
+      { requireValidated: true },
+    ),
+    v8Frozen: await constraintDefinition(
+      client,
+      "work_amo_v8_listing_terms",
+      "work_amo_v8_terms_frozen_payload",
+      { requireValidated: true },
     ),
     transitionModels: await constraintDefinition(
       client,
       "work_amo_block_transitions",
       "work_amo_block_transitions_models",
+      { requireValidated: true },
     ),
   };
   const constraints = workPrecisionV2ConstraintAudit(definitions);
@@ -858,17 +921,25 @@ export async function auditWorkPrecisionV2Schema(client) {
   const ready =
     row.v6_terms_ready === true &&
     row.v7_terms_ready === true &&
+    row.v6_immutable_ready === true &&
+    row.v7_history_immutable_ready === true &&
     row.v7_immutable_ready === true &&
     row.marker_immutable_ready === true &&
     constraints.definitionPrecisionReady &&
     constraints.v6Q8Ready &&
     constraints.v7Q16Ready &&
+    constraints.v8IdentityReady &&
+    constraints.v8PositionsReady &&
+    constraints.v8FrozenReady &&
     constraints.v7TransitionReady;
   return Object.freeze({
     ...constraints,
     markerImmutableReady: row.marker_immutable_ready === true,
     ready,
     v6TermsReady: row.v6_terms_ready === true,
+    v6ImmutableReady: row.v6_immutable_ready === true,
+    v7HistoryImmutableReady:
+      row.v7_history_immutable_ready === true,
     v7ImmutableReady: row.v7_immutable_ready === true,
     v7TermsReady: row.v7_terms_ready === true,
   });
@@ -890,14 +961,14 @@ function definitionPrecisionState(row) {
     String(metadata.unitScale ?? "") === WORK_LEGACY_UNIT_SCALE_TEXT;
   const q16 =
     String(row?.max_supply ?? "") ===
-      WORK_AMO_V7_MAX_SUPPLY_SUBATOMS.toString() &&
+      WORK_AMO_V8_MAX_SUPPLY_SUBATOMS.toString() &&
     String(row?.mint_amount ?? "") ===
-      WORK_AMO_V7_MINT_AMOUNT_SUBATOMS.toString() &&
+      WORK_AMO_V8_MINT_AMOUNT_SUBATOMS.toString() &&
     metadata.amountStorageModel === WORK_SUBATOM_PROJECTION_MODEL &&
-    Number(metadata.decimals) === WORK_AMO_V7_DECIMALS &&
+    Number(metadata.decimals) === WORK_AMO_V8_DECIMALS &&
     String(metadata.unitScale ?? "") ===
       WORK_SUBATOM_UNIT_SCALE_TEXT &&
-    metadata.precisionModel === WORK_AMO_V7_GLOBAL_PRECISION_MODEL;
+    metadata.precisionModel === WORK_AMO_V8_GLOBAL_PRECISION_MODEL;
   return q8 ? "q8" : q16 ? "q16" : "invalid";
 }
 
@@ -931,7 +1002,9 @@ async function readMigrationState(client) {
             listing_id,
             amount::text AS amount
           FROM proof_indexer.credit_listings
-          WHERE network = 'livenet' AND token_id = $1
+          WHERE network = 'livenet'
+            AND token_id = $1
+            AND status IN ('active', 'sealing')
           ORDER BY listing_id ASC
         `,
         [WORK_TOKEN_ID],
@@ -1085,6 +1158,50 @@ export function workPrecisionV2MarkerMatches(stored, expected) {
   );
 }
 
+async function exactWorkAmoV8ActivationLatch(client, pins) {
+  const result = await client.query(
+    `
+      SELECT value
+      FROM proof_indexer.meta
+      WHERE key = $1
+      LIMIT 2
+    `,
+    [WORK_AMO_V8_ACTIVATION_LATCH_META_KEY],
+  );
+  if (
+    result.rows.length !== 1 ||
+    !workAmoV8ActivationLatchReady(
+      result.rows[0]?.value,
+      pins,
+    )
+  ) {
+    throw new Error(
+      "WORK precision V2 migration requires the exact immutable AMO V8 activation latch.",
+    );
+  }
+  return result.rows[0].value;
+}
+
+async function exactCoreWorkAmoV8ActivationBoundary(
+  pins,
+  latch,
+  rpc,
+) {
+  const activationHash = normalizedLower(
+    await rpc("getblockhash", [pins.activationHeight]),
+  );
+  if (
+    !/^[0-9a-f]{64}$/u.test(activationHash) ||
+    activationHash !== normalizedLower(latch.firstObservedTipHash) ||
+    Number(latch.firstObservedTipHeight) !== pins.activationHeight
+  ) {
+    throw new Error(
+      "WORK precision V2 activation latch does not bind canonical Core block D+1.",
+    );
+  }
+  return activationHash;
+}
+
 export async function runWorkPrecisionV2Migration(
   client,
   {
@@ -1144,6 +1261,14 @@ export async function runWorkPrecisionV2Migration(
       ? rpc
       : (method, params = []) =>
           canonicalBitcoinRpc(env, method, params);
+  const activationLatch =
+    await exactWorkAmoV8ActivationLatch(client, pins);
+  const activationBlockHash =
+    await exactCoreWorkAmoV8ActivationBoundary(
+      pins,
+      activationLatch,
+      rpcCall,
+    );
   const [indexedEvidence, coreEvidence, coreTip] =
     await Promise.all([
       indexedWorkPrecisionV2DeclarationEvidence(client, pins),
@@ -1166,9 +1291,13 @@ export async function runWorkPrecisionV2Migration(
     migrationStateFromLegacyTokenState(
       activationOpening.legacyTokenState,
     );
-  const expectedScaledState = scaledState(activationLegacyState, {
+  const scaledOpeningBalances = scaledState(activationLegacyState, {
     includePending: false,
-  });
+  }).balances;
+  const expectedScaledState = {
+    balances: scaledOpeningBalances,
+    listings: [],
+  };
   const before = stateCommitments(activationLegacyState, {
     includePending: false,
   });
@@ -1192,6 +1321,7 @@ export async function runWorkPrecisionV2Migration(
       subatomTokenStateCommitment:
         activationOpening.subatomCommitment,
     },
+    relicCutover: activationOpening.relicCutover,
     after,
     before,
     completedAt:
@@ -1210,17 +1340,17 @@ export async function runWorkPrecisionV2Migration(
     declarationTextBytes: pins.declarationTextBytes,
     declarationTextSha256: pins.declarationTextSha256,
     declarationTxid: pins.declarationTxid,
-    decimals: WORK_AMO_V7_DECIMALS,
-    globalPrecisionModel: WORK_AMO_V7_GLOBAL_PRECISION_MODEL,
+    decimals: WORK_AMO_V8_DECIMALS,
+    globalPrecisionModel: WORK_AMO_V8_GLOBAL_PRECISION_MODEL,
     derivedProjectionPolicy:
       "invalidate-and-replay-from-activation",
     legacyDecimals: WORK_LEGACY_DECIMALS,
     legacyProjectionModel: WORK_LEGACY_ATOMIC_PROJECTION_MODEL,
     maxSupplySubatoms:
-      WORK_AMO_V7_MAX_SUPPLY_SUBATOMS.toString(),
+      WORK_AMO_V8_MAX_SUPPLY_SUBATOMS.toString(),
     mintAmountSubatoms:
-      WORK_AMO_V7_MINT_AMOUNT_SUBATOMS.toString(),
-    migrationModel: WORK_AMO_V7_PRECISION_MIGRATION_MODEL,
+      WORK_AMO_V8_MINT_AMOUNT_SUBATOMS.toString(),
+    migrationModel: WORK_AMO_V8_PRECISION_MIGRATION_MODEL,
     model: WORK_PRECISION_V2_MIGRATION_MODEL,
     network: "livenet",
     projectionModel: WORK_SUBATOM_PROJECTION_MODEL,
@@ -1232,10 +1362,10 @@ export async function runWorkPrecisionV2Migration(
       apply || migrationAlreadyComplete
         ? "complete"
         : "ready-to-apply",
-    transferVersion: WORK_AMO_V7_TRANSFER_VERSION,
+    transferVersion: WORK_AMO_V8_TRANSFER_VERSION,
     unitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,
     updatedAt: markerTimestamp,
-    version: WORK_AMO_V7_AUTH_VERSION,
+    version: WORK_AMO_V8_AUTH_VERSION,
   };
   if (initialPrecision === "q16") {
     if (
@@ -1248,24 +1378,30 @@ export async function runWorkPrecisionV2Migration(
     }
     const currentConstraint = await constraintDefinition(
       client,
-      "work_amo_v7_listing_terms",
+      "work_amo_v8_listing_terms",
       WORK_PRECISION_V2_ACTIVATION_CONSTRAINT,
+      { requireValidated: true },
     );
     const currentV6Constraint = await constraintDefinition(
       client,
       "work_amo_v6_listing_terms",
       WORK_PRECISION_V2_V6_DEACTIVATION_CONSTRAINT,
+      { requireValidated: true },
     );
     if (
-      !currentConstraint.includes(
-        `listing_block_height >= ${pins.activationHeight}`,
+      !exactHeightConstraintDefinition(
+        currentConstraint,
+        ">=",
+        pins.activationHeight,
       ) ||
-      !currentV6Constraint.includes(
-        `listing_block_height < ${pins.activationHeight}`,
+      !exactHeightConstraintDefinition(
+        currentV6Constraint,
+        "<",
+        pins.activationHeight,
       )
     ) {
       throw new Error(
-        "WORK Q16 storage is missing an exact V6/V7 activation boundary constraint.",
+        "WORK Q16 storage is missing an exact V6/V8 activation boundary constraint.",
       );
     }
     return {
@@ -1286,16 +1422,14 @@ export async function runWorkPrecisionV2Migration(
       "WORK precision marker exists while canonical storage is still Q8.",
     );
   }
-  if (!apply) {
-    return {
-      applied: false,
-      declarationEvidence,
-      marker,
-      precision: "q8",
-      schema,
-      status: "ready-to-apply",
-    };
-  }
+  const transactionMarker = apply
+    ? marker
+    : {
+        ...marker,
+        completedAt: markerTimestamp,
+        status: "complete",
+        updatedAt: markerTimestamp,
+      };
 
   await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
   try {
@@ -1317,7 +1451,7 @@ export async function runWorkPrecisionV2Migration(
           proof_indexer.credit_listings,
           proof_indexer.work_amo_listing_terms,
           proof_indexer.work_amo_v6_listing_terms,
-          proof_indexer.work_amo_v7_listing_terms,
+          proof_indexer.work_amo_v8_listing_terms,
           proof_indexer.work_amo_block_transitions,
           proof_indexer.ledger_snapshots,
           proof_indexer.meta
@@ -1332,6 +1466,21 @@ export async function runWorkPrecisionV2Migration(
         "WORK definition changed before precision migration lock.",
       );
     }
+    const lockedActivationLatch =
+      await exactWorkAmoV8ActivationLatch(client, pins);
+    if (
+      stableJson(lockedActivationLatch) !== stableJson(activationLatch)
+    ) {
+      throw new Error(
+        "WORK AMO V8 activation latch changed before precision migration lock.",
+      );
+    }
+    const lockedActivationBlockHash =
+      await exactCoreWorkAmoV8ActivationBoundary(
+        pins,
+        lockedActivationLatch,
+        rpcCall,
+      );
     const lockedIndexedEvidence =
       await indexedWorkPrecisionV2DeclarationEvidence(client, pins);
     const lockedActivationOpening =
@@ -1346,10 +1495,17 @@ export async function runWorkPrecisionV2Migration(
     const lockedCoreTip = await exactCoreTipEvidence(rpcCall);
     const lockedIndexTipResult = await client.query(
       `
-        SELECT height, block_hash
-        FROM proof_indexer.blocks
-        WHERE network = 'livenet' AND canonical = true
-        ORDER BY height DESC
+        WITH tip AS (
+          SELECT max(height) AS height
+          FROM proof_indexer.blocks
+          WHERE network = 'livenet' AND canonical = true
+        )
+        SELECT block.height, block.block_hash
+        FROM proof_indexer.blocks block
+        JOIN tip ON tip.height = block.height
+        WHERE block.network = 'livenet'
+          AND block.canonical = true
+        ORDER BY block.block_hash ASC
         LIMIT 2
       `,
     );
@@ -1361,18 +1517,35 @@ export async function runWorkPrecisionV2Migration(
         stableJson(activationOpening) ||
       lockedCoreTip.height !== coreTip.height ||
       lockedCoreTip.hash !== coreTip.hash ||
-      lockedIndexTipResult.rows.length < 1 ||
-      Number(lockedIndexTip?.height) !== lockedCoreTip.height ||
+      lockedActivationBlockHash !== activationBlockHash ||
+      lockedIndexTipResult.rows.length !== 1 ||
+      Number(lockedIndexTip?.height) !== pins.declarationHeight ||
       normalizedLower(lockedIndexTip?.block_hash) !==
-        lockedCoreTip.hash
+        pins.declarationBlockHash
     ) {
       throw new Error(
         "WORK precision migration evidence, activation opening, or exact index/Core tip changed after transactional locks.",
       );
     }
+    await client.query(
+      `
+        DELETE FROM proof_indexer.work_amo_v8_listing_terms
+        WHERE network = 'livenet'
+          AND listing_block_height < $1
+      `,
+      [pins.activationHeight],
+    );
+    await client.query(
+      `
+        DELETE FROM proof_indexer.work_amo_v6_listing_terms
+        WHERE network = 'livenet'
+          AND listing_block_height >= $1
+      `,
+      [pins.activationHeight],
+    );
     const existingActivationConstraint = await constraintDefinition(
       client,
-      "work_amo_v7_listing_terms",
+      "work_amo_v8_listing_terms",
       WORK_PRECISION_V2_ACTIVATION_CONSTRAINT,
     );
     const existingV6DeactivationConstraint =
@@ -1383,34 +1556,38 @@ export async function runWorkPrecisionV2Migration(
       );
     if (
       existingActivationConstraint &&
-      !existingActivationConstraint.includes(
-        `listing_block_height >= ${pins.activationHeight}`,
+      !exactHeightConstraintDefinition(
+        existingActivationConstraint,
+        ">=",
+        pins.activationHeight,
       )
     ) {
       throw new Error(
-        "WORK AMO V7 activation constraint has a different height.",
+        "WORK AMO V8 activation constraint has a different height.",
       );
     }
     if (!existingActivationConstraint) {
       await client.query(
         `
-          ALTER TABLE proof_indexer.work_amo_v7_listing_terms
+          ALTER TABLE proof_indexer.work_amo_v8_listing_terms
           ADD CONSTRAINT ${WORK_PRECISION_V2_ACTIVATION_CONSTRAINT}
           CHECK (listing_block_height >= ${pins.activationHeight})
           NOT VALID
         `,
       );
-      await client.query(
-        `
-          ALTER TABLE proof_indexer.work_amo_v7_listing_terms
-          VALIDATE CONSTRAINT ${WORK_PRECISION_V2_ACTIVATION_CONSTRAINT}
-        `,
-      );
     }
+    await client.query(
+      `
+        ALTER TABLE proof_indexer.work_amo_v8_listing_terms
+        VALIDATE CONSTRAINT ${WORK_PRECISION_V2_ACTIVATION_CONSTRAINT}
+      `,
+    );
     if (
       existingV6DeactivationConstraint &&
-      !existingV6DeactivationConstraint.includes(
-        `listing_block_height < ${pins.activationHeight}`,
+      !exactHeightConstraintDefinition(
+        existingV6DeactivationConstraint,
+        "<",
+        pins.activationHeight,
       )
     ) {
       throw new Error(
@@ -1426,20 +1603,20 @@ export async function runWorkPrecisionV2Migration(
           NOT VALID
         `,
       );
-      await client.query(
-        `
-          ALTER TABLE proof_indexer.work_amo_v6_listing_terms
-          VALIDATE CONSTRAINT ${WORK_PRECISION_V2_V6_DEACTIVATION_CONSTRAINT}
-        `,
-      );
     }
+    await client.query(
+      `
+        ALTER TABLE proof_indexer.work_amo_v6_listing_terms
+        VALIDATE CONSTRAINT ${WORK_PRECISION_V2_V6_DEACTIVATION_CONSTRAINT}
+      `,
+    );
     await client.query(
       `
         DELETE FROM proof_indexer.events event
         WHERE event.network = 'livenet'
           AND event.protocol = 'pwt1'
           AND (
-            event.status <> 'confirmed'
+            event.status = 'pending'
             OR event.block_height >= $2
           )
           AND lower(COALESCE(
@@ -1458,7 +1635,7 @@ export async function runWorkPrecisionV2Migration(
         WHERE listing.network = 'livenet'
           AND listing.token_id = $1
           AND (
-            listing.status IN ('pending', 'dropped', 'orphaned')
+            listing.status = 'pending'
             OR NOT EXISTS (
               SELECT 1
               FROM proof_indexer.transactions listing_tx
@@ -1470,6 +1647,42 @@ export async function runWorkPrecisionV2Migration(
           )
       `,
       [WORK_TOKEN_ID, pins.activationHeight],
+    );
+    await client.query(
+      `
+        UPDATE proof_indexer.credit_listings listing
+        SET
+          amount = listing.amount * $3::numeric,
+          payload = listing.payload || jsonb_build_object(
+            'legacyAmountAtoms', listing.amount::text,
+            'legacyAmountStorageModel', $4,
+            'precisionMigrationModel', $5
+          ),
+          updated_at = now()
+        WHERE listing.network = 'livenet'
+          AND listing.token_id = $1
+          AND listing.amount::text ~ '^[1-9][0-9]*$'
+          AND EXISTS (
+            SELECT 1
+            FROM proof_indexer.transactions listing_tx
+            JOIN proof_indexer.blocks listing_block
+              ON listing_block.network = listing_tx.network
+             AND listing_block.block_hash = listing_tx.block_hash
+             AND listing_block.height = listing_tx.block_height
+             AND listing_block.canonical = true
+            WHERE listing_tx.network = listing.network
+              AND listing_tx.txid = listing.listing_id
+              AND listing_tx.status = 'confirmed'
+              AND listing_tx.block_height < $2
+          )
+      `,
+      [
+        WORK_TOKEN_ID,
+        pins.activationHeight,
+        WORK_SUBATOM_CONVERSION_FACTOR.toString(),
+        WORK_LEGACY_ATOMIC_PROJECTION_MODEL,
+        WORK_PRECISION_V2_MIGRATION_MODEL,
+      ],
     );
     await client.query(
       `
@@ -1509,6 +1722,39 @@ export async function runWorkPrecisionV2Migration(
       `,
       [WORK_TOKEN_ID],
     );
+    const preUnitRelicUpdate = await client.query(
+      `
+        UPDATE proof_indexer.credit_listings listing
+        SET
+          status = 'dropped',
+          updated_at = now()
+        WHERE listing.network = 'livenet'
+          AND listing.token_id = $1
+          AND listing.listing_id = $2
+          AND listing.amount = $3::numeric * $7::numeric
+          AND listing.seller_address = $4
+          AND listing.price_sats = $5
+          AND listing.payload->>'legacyAmountAtoms' = $3
+          AND listing.payload->>'legacyAmountStorageModel' = $6
+          AND listing.payload->>'precisionMigrationModel' = $8
+          AND listing.status IN ('active', 'sealing')
+      `,
+      [
+        WORK_TOKEN_ID,
+        WORK_AMO_V5_PRE_UNIT_RELIC_LISTING_TXID,
+        WORK_AMO_V5_PRE_UNIT_RELIC_AMOUNT_ATOMS,
+        WORK_AMO_V5_PRE_UNIT_RELIC_SELLER_ADDRESS,
+        WORK_AMO_V5_PRE_UNIT_RELIC_PRICE_SATS,
+        WORK_LEGACY_ATOMIC_PROJECTION_MODEL,
+        WORK_SUBATOM_CONVERSION_FACTOR.toString(),
+        WORK_PRECISION_V2_MIGRATION_MODEL,
+      ],
+    );
+    if (preUnitRelicUpdate.rowCount !== 1) {
+      throw new Error(
+        "WORK V8 precision migration did not close the exact nonrefundable V5 pre-unit relic.",
+      );
+    }
     await client.query(
       `
         INSERT INTO proof_indexer.credit_balances (
@@ -1533,140 +1779,96 @@ export async function runWorkPrecisionV2Migration(
       `,
       [WORK_TOKEN_ID, JSON.stringify(expectedScaledState.balances)],
     );
-    await client.query(
+    const relicItems = activationOpening.relicCutover.items;
+    const relicUpdate = await client.query(
       `
-        WITH opening AS (
+        WITH relic AS (
           SELECT *
-          FROM jsonb_to_recordset($3::jsonb) AS item(
-            listing_id text,
-            amount text
+          FROM jsonb_to_recordset($4::jsonb) AS item(
+            "amountAtoms" text,
+            "listingId" text,
+            "priceSats" text,
+            "sellerAddress" text
           )
         )
         UPDATE proof_indexer.credit_listings listing
         SET
-          amount = opening.amount::numeric,
-          buyer_address = NULL,
-          close_txid = NULL,
-          seal_txid = (
-            SELECT lower(COALESCE(
-              NULLIF(seal.payload->>'sealTxid', ''),
-              seal.txid
-            ))
-            FROM proof_indexer.events seal
-            WHERE seal.network = listing.network
-              AND seal.kind = 'token-listing-sealed'
-              AND seal.status = 'confirmed'
-              AND seal.valid = true
-              AND seal.block_height <= $2
-              AND lower(COALESCE(
-                seal.payload->>'listingId',
-                ''
-              )) = listing.listing_id
-            ORDER BY
-              seal.block_height DESC,
-              seal.block_index DESC,
-              seal.op_return_vout DESC,
-              seal.record_ordinal DESC
-            LIMIT 1
+          amount = relic."amountAtoms"::numeric * $6::numeric,
+          payload = listing.payload || jsonb_build_object(
+            'actionable', false,
+            'disabledAtBlockHeight', $2,
+            'disabledByTxid', $3,
+            'disabledReason', 'work-amo-v8-preactivation-relic',
+            'legacyAmountAtoms', relic."amountAtoms",
+            'relic', true,
+            'relicCutoverModel', $5,
+            'refundEligible', true
           ),
-          payload = CASE
-            WHEN EXISTS (
-              SELECT 1
-              FROM proof_indexer.events seal
-              WHERE seal.network = listing.network
-                AND seal.kind = 'token-listing-sealed'
-                AND seal.status = 'confirmed'
-                AND seal.valid = true
-                AND seal.block_height <= $2
-                AND lower(COALESCE(
-                  seal.payload->>'listingId',
-                  ''
-                )) = listing.listing_id
-            )
-            THEN listing.payload
-            ELSE listing.payload - ARRAY[
-              'actionAuthorization',
-              'buyerAddress',
-              'sealAt',
-              'sealBlockHeight',
-              'sealBlockIndex',
-              'sealConfirmed',
-              'sealDataBytes',
-              'sealMinerFeeSats',
-              'sealProtocolVout',
-              'sealRecordOrdinal',
-              'sealTxid'
-            ]::text[]
-          END,
-          status = CASE
-            WHEN EXISTS (
-              SELECT 1
-              FROM proof_indexer.events seal
-              WHERE seal.network = listing.network
-                AND seal.kind = 'token-listing-sealed'
-                AND seal.status = 'confirmed'
-                AND seal.valid = true
-                AND seal.block_height <= $2
-                AND lower(COALESCE(
-                  seal.payload->>'listingId',
-                  ''
-                )) = listing.listing_id
-            )
-            THEN 'sealing'
-            ELSE 'active'
-          END,
+          status = 'dropped',
           updated_at = now()
-        FROM opening
+        FROM relic
         WHERE listing.network = 'livenet'
           AND listing.token_id = $1
-          AND listing.listing_id = opening.listing_id
+          AND listing.listing_id = relic."listingId"
+          AND listing.seller_address = relic."sellerAddress"
+          AND listing.price_sats::text = relic."priceSats"
+          AND listing.status IN ('active', 'sealing')
       `,
       [
         WORK_TOKEN_ID,
-        pins.declarationHeight,
-        JSON.stringify(expectedScaledState.listings),
+        pins.activationHeight,
+        pins.declarationTxid,
+        JSON.stringify(relicItems),
+        WORK_AMO_V8_RELIC_CUTOVER_MODEL,
+        WORK_SUBATOM_CONVERSION_FACTOR.toString(),
       ],
     );
-    const openingListingCount = await client.query(
-      `
-        SELECT count(*)::integer AS count
-        FROM proof_indexer.credit_listings listing
-        JOIN jsonb_to_recordset($2::jsonb) AS opening(
-          listing_id text,
-          amount text
-        ) ON opening.listing_id = listing.listing_id
-        WHERE listing.network = 'livenet'
-          AND listing.token_id = $1
-          AND listing.amount = opening.amount::numeric
-          AND listing.status IN ('active', 'sealing')
-      `,
-      [WORK_TOKEN_ID, JSON.stringify(expectedScaledState.listings)],
-    );
-    if (
-      Number(openingListingCount.rows[0]?.count ?? 0) !==
-        expectedScaledState.listings.length
-    ) {
+    if (relicUpdate.rowCount !== relicItems.length) {
       throw new Error(
-        "WORK activation-opening listing projection is incomplete.",
+        "WORK V8 relic cutover did not close the exact activation-opening listing set.",
       );
     }
-    await client.query(
+    const relicAudit = await client.query(
       `
-        UPDATE proof_indexer.credit_listings listing
-        SET status = 'orphaned', updated_at = now()
-        FROM proof_indexer.transactions listing_tx
+        SELECT
+          count(*) FILTER (
+            WHERE listing.status IN ('active', 'sealing')
+          )::integer AS active_count,
+          count(*) FILTER (
+            WHERE listing.status = 'dropped'
+              AND listing.payload->>'relic' = 'true'
+              AND listing.payload->>'actionable' = 'false'
+              AND listing.payload->>'relicCutoverModel' = $3
+              AND listing.payload->>'disabledByTxid' = $4
+          )::integer AS relic_count
+        FROM proof_indexer.credit_listings listing
         WHERE listing.network = 'livenet'
           AND listing.token_id = $1
-          AND listing.status IN ('pending', 'active', 'sealing')
-          AND listing_tx.network = listing.network
-          AND listing_tx.txid = listing.listing_id
           AND (
-            listing_tx.block_height >= $2
-            OR listing_tx.status <> 'confirmed'
+            listing.status IN ('active', 'sealing')
+            OR listing.listing_id IN (
+              SELECT item."listingId"
+              FROM jsonb_to_recordset($2::jsonb) AS item(
+                "listingId" text
+              )
+            )
           )
       `,
-      [WORK_TOKEN_ID, pins.activationHeight],
+      [
+        WORK_TOKEN_ID,
+        JSON.stringify(relicItems),
+        WORK_AMO_V8_RELIC_CUTOVER_MODEL,
+        pins.declarationTxid,
+      ],
     );
+    if (
+      Number(relicAudit.rows[0]?.active_count ?? -1) !== 0 ||
+      Number(relicAudit.rows[0]?.relic_count ?? -1) !== relicItems.length
+    ) {
+      throw new Error(
+        "WORK V8 relic cutover left an actionable pre-V8 listing or lost relic evidence.",
+      );
+    }
     const {
       maxSupplyAtoms: _legacyMaxSupplyAtoms,
       mintAmountAtoms: _legacyMintAmountAtoms,
@@ -1677,12 +1879,12 @@ export async function runWorkPrecisionV2Migration(
     const metadata = withWorkSubatomPrecisionMetadata({
       ...legacyDefinitionMetadata,
       maxSupplySubatoms:
-        WORK_AMO_V7_MAX_SUPPLY_SUBATOMS.toString(),
+        WORK_AMO_V8_MAX_SUPPLY_SUBATOMS.toString(),
       mintAmountSubatoms:
-        WORK_AMO_V7_MINT_AMOUNT_SUBATOMS.toString(),
+        WORK_AMO_V8_MINT_AMOUNT_SUBATOMS.toString(),
       precisionMigrationModel:
         WORK_PRECISION_V2_MIGRATION_MODEL,
-      precisionModel: WORK_AMO_V7_GLOBAL_PRECISION_MODEL,
+      precisionModel: WORK_AMO_V8_GLOBAL_PRECISION_MODEL,
     });
     await client.query(
       `
@@ -1698,8 +1900,8 @@ export async function runWorkPrecisionV2Migration(
       `,
       [
         WORK_TOKEN_ID,
-        WORK_AMO_V7_MAX_SUPPLY_SUBATOMS.toString(),
-        WORK_AMO_V7_MINT_AMOUNT_SUBATOMS.toString(),
+        WORK_AMO_V8_MAX_SUPPLY_SUBATOMS.toString(),
+        WORK_AMO_V8_MINT_AMOUNT_SUBATOMS.toString(),
         JSON.stringify(metadata),
         WORK_MAX_SUPPLY_ATOMS,
         WORK_MINT_AMOUNT_ATOMS,
@@ -1726,34 +1928,12 @@ export async function runWorkPrecisionV2Migration(
         keyField: "address",
       },
     );
-    const migratedOpeningListings = await client.query(
-      `
-        SELECT listing.listing_id, listing.amount::text AS amount
-        FROM proof_indexer.credit_listings listing
-        JOIN jsonb_to_recordset($2::jsonb) AS opening(
-          listing_id text,
-          amount text
-        ) ON opening.listing_id = listing.listing_id
-        WHERE listing.network = 'livenet'
-          AND listing.token_id = $1
-        ORDER BY listing.listing_id ASC
-      `,
-      [WORK_TOKEN_ID, JSON.stringify(expectedScaledState.listings)],
-    );
-    verifyWorkPrecisionV2RowsConserved(
-      activationLegacyState.listings,
-      migratedOpeningListings.rows,
-      {
-        amountField: "amount",
-        keyField: "listing_id",
-      },
-    );
     if (
       stableJson(
         stateCommitments(
           {
             balances: migratedState.balances,
-            listings: migratedOpeningListings.rows,
+            listings: migratedState.listings,
           },
           { includePending: false },
         ),
@@ -1771,7 +1951,7 @@ export async function runWorkPrecisionV2Migration(
       `,
       [
         WORK_PRECISION_V2_MIGRATION_META_KEY,
-        JSON.stringify(marker),
+        JSON.stringify(transactionMarker),
       ],
     );
     const storedMarkerResult = await client.query(
@@ -1787,20 +1967,21 @@ export async function runWorkPrecisionV2Migration(
       storedMarkerResult.rows.length !== 1 ||
       !workPrecisionV2MarkerMatches(
         storedMarkerResult.rows[0]?.value,
-        marker,
+        transactionMarker,
       )
     ) {
       throw new Error(
         "Immutable WORK precision V2 migration marker conflicts.",
       );
     }
-    await client.query("COMMIT");
+    await client.query(apply ? "COMMIT" : "ROLLBACK");
     return {
-      applied: true,
-      marker: storedMarkerResult.rows[0].value,
-      precision: "q16",
+      applied: apply,
+      ...(apply ? {} : { declarationEvidence }),
+      marker: apply ? storedMarkerResult.rows[0].value : marker,
+      precision: apply ? "q16" : "q8",
       schema,
-      status: "complete",
+      status: apply ? "complete" : "ready-to-apply",
     };
   } catch (error) {
     await client.query("ROLLBACK").catch(() => {});

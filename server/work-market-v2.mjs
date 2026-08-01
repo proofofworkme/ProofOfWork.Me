@@ -1258,7 +1258,7 @@ export function workMarketplaceWriteActionIsGoverned(
   { paysWorkRegistry = false } = {},
 ) {
   const actionName = String(action?.action ?? "").trim().toLowerCase();
-  if (!["list5", "seal5", "buy5"].includes(actionName)) {
+  if (!["list5", "seal5", "buy5", "delist5"].includes(actionName)) {
     return false;
   }
   const tokenId = String(action?.tokenId ?? "").trim().toLowerCase();

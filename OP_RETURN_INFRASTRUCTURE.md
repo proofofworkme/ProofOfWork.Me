@@ -1402,13 +1402,13 @@ to the same listing and authorization version at its own identical full
 position. Missing, duplicate or mismatched listing/seal evidence fails closed;
 stored lifecycle state or payload booleans cannot manufacture confirmation.
 
-For a historical V6 or other pre-V7 Q8 WORK row,
+For a historical V6 or other pre-V8 Q8 WORK row,
 `credit_listings.amount` and the immutable
-`work_amo_v6_listing_terms.amount_atoms` are atom counts. Before V7 activation,
+`work_amo_v6_listing_terms.amount_atoms` are atom counts. Before V8 activation,
 readers must interpret the shared value as atoms even if token metadata is
 absent or legacy-shaped, emit that integer as `amountAtoms`, and format the
 public eight-decimal WORK amount from it. Thus a stored value of `10` projects
-as `0.0000001 WORK`. At V7 activation, current shared listing projections
+as `0.0000001 WORK`. At V8 activation, current shared listing projections
 convert to Q16 subatoms; the immutable V6 terms table and raw historical
 records retain their original Q8 scale.
 
@@ -1511,7 +1511,12 @@ canonical tip and release:
 - Wallet and AMO public listing preflights expose only the 20,000, 50,000, and
   100,000-proof V6 faces from the commit-bound UI release.
 
-### Staged WORK Q16 / AMO V7 gate
+### Historical unactivated WORK Q16 / AMO V7 gate
+
+V7 never acquired canonical declaration evidence and never activated. Keep
+this complete section as the historical staging proposal, with every V7 pin
+empty and `WORK_AMO_V7_WRITES_ENABLED=0`; V8 supersedes it. Nothing in this
+section can serve as current declaration, migration, or write authority.
 
 WORK Precision Protocol V2 and AMO Unit Protocol V7 form one activation
 boundary. The code and additive schema may be deployed before the declaration,
@@ -1650,10 +1655,215 @@ canonical V7/send3 action, rollback means closing writes and restoring the
 same release from backup/replay; it never means reverting the declaration,
 dividing live balances heuristically, or rewriting confirmed history.
 
+### Approved WORK Q16 / AMO V8 gate
+
+WORK Precision Protocol V2 and AMO Unit Protocol V8 share one exact activation
+boundary. The release is additive and may be deployed before a declaration,
+but the production preactivation state must be empty and inert:
+
+```text
+WORK_AMO_V7_DECLARATION_TXID=
+WORK_AMO_V7_DECLARATION_HEIGHT=
+WORK_AMO_V7_DECLARATION_BLOCK_HASH=
+WORK_AMO_V7_DECLARATION_BLOCK_INDEX=
+WORK_AMO_V7_DECLARATION_MEMO_SHA256=
+WORK_AMO_V7_DECLARATION_MEMO_BYTES=
+WORK_AMO_V7_DECLARATION_PROTOCOL_VOUT=
+WORK_AMO_V7_DECLARATION_RECORD_ORDINAL=
+WORK_AMO_V7_DECLARATION_REGISTRY_PAYMENT_VOUT=
+WORK_AMO_V7_ACTIVATION_HEIGHT=
+WORK_AMO_V7_WRITES_ENABLED=0
+
+WORK_AMO_V8_DECLARATION_TXID=
+WORK_AMO_V8_DECLARATION_HEIGHT=
+WORK_AMO_V8_DECLARATION_BLOCK_HASH=
+WORK_AMO_V8_DECLARATION_BLOCK_INDEX=
+WORK_AMO_V8_DECLARATION_MEMO_SHA256=
+WORK_AMO_V8_DECLARATION_MEMO_BYTES=
+WORK_AMO_V8_DECLARATION_PROTOCOL_VOUT=
+WORK_AMO_V8_DECLARATION_RECORD_ORDINAL=
+WORK_AMO_V8_DECLARATION_REGISTRY_PAYMENT_VOUT=
+WORK_AMO_V8_ACTIVATION_HEIGHT=
+WORK_AMO_V8_WRITES_ENABLED=0
+```
+
+In this state the API and worker report V8 not ready, reject `send3` and
+`pwt-sale-v8` preparation, and preserve Q8/V6 as the current protocol. A
+partial V8 pin set is invalid, not a progressive configuration. Deploying
+Q16 constants, tables, builders, or UI code alone cannot change canonical
+precision, close legacy listings, or authorize V8.
+
+Generate the exact declaration with:
+
+```text
+npm run build:work-amo-v8-declaration
+```
+
+The declaration selection rule chooses the earliest exact valid declaration
+by confirmed block height and transaction index. The transaction must be
+canonical; input zero must spend the declared authority scriptPubKey; the
+pinned registry output must pay at least the declared minimum to the declared
+registry; and the pinned protocol output and record ordinal must carry the
+exact generated declaration bytes. Carrier and payment candidates must each
+be unambiguous. A later duplicate cannot move activation. The builder's final
+presentation newline is outside `declaration.text`, its byte count, and both
+hashes.
+
+If the exact declaration confirms in block `D`, record all V8 pins together
+and set `WORK_AMO_V8_ACTIVATION_HEIGHT=D+1`. Activation is the opening of the
+first confirmed block after `D`; never derive it from time, mempool presence,
+client input, or a later operator choice. Canonical discovery closes V6
+listing and `send2` admission as soon as `D` is known so a legacy write cannot
+cross into `D+1`. A persistent `workAmoV8ActivationLatch:livenet` binds the
+observed boundary. Once observed or latched, missing or malformed pins can
+only pause V8 and cannot restore Q8, V6 admission, `send2`, or legacy AMO
+settlement.
+
+The active precision surface is:
+
+```text
+globalModel=canonical-work-subatoms-v2
+migrationModel=canonical-work-q8-to-q16-migration-v1
+storageModel=work-subatoms-v2
+tokenStateModel=canonical-work-token-state-subatoms-v3
+relicCutoverModel=canonical-work-amo-v8-preactivation-relic-cutover-v1
+decimals=16
+unitScale=10000000000000000
+legacyMultiplier=100000000
+transferOpcode=pwt1:send3
+amoAuthorization=pwt-sale-v8
+allowedFaceProofs=25000
+```
+
+At the opening of `D+1`, exact integer multiplication by `100000000` converts
+the current Q8 maximum supply, mint increment, confirmed supply, and every
+holder balance to Q16. Converted supply must equal the sum of converted
+balances, remain within `210000000000000000000000` subatoms, and preserve each
+owner's exact human WORK value. The conversion never uses floating point,
+scale guessing, or a rounded decimal field. Raw confirmed bytes, historical
+Q8 terms, and preactivation canonical commitments remain unchanged.
+
+Activation does not carry legacy reservations forward. The declaration-height
+closing token state is read in exact canonical order and every confirmed WORK
+listing in `active` or `sealing` state is sorted into the immutable
+`canonical-work-amo-v8-preactivation-relic-cutover-v1` set. The Q16 opening
+state has an empty active-listing set. Migration updates each committed row to
+non-actionable relic history, releases its reservation, binds its disable
+height and declaration txid, and requires `refundEligible=true`. It must leave
+zero pre-V8 `active` or `sealing` rows. Official preparation and broadcast
+admission expose no legacy seal, buy, or delist path; only a confirmed V8
+listing can settle. Raw ticket spends remain observable history and cannot
+resurrect a relic.
+
+Pending WORK state is volatile. Migration removes pending or wrong-era WORK
+events, listing/action rows, balance deltas, and affected current snapshots,
+while retaining noncanonical transaction envelopes as recovery input. After
+activation replay reaches the exact tip, rebuild pending projections from one
+stable Core mempool under V8 and require exact membership, semantic,
+transaction, and balance parity before readiness can turn green.
+
+The raw mint remains `pwt1:mint:<canonical-work-token-id>:1000`, crediting
+`100000000000` Q8 atoms before activation and
+`10000000000000000000` Q16 subatoms from activation. New WORK transfers use
+only `pwt1:send3:<canonical-work-token-id>:<amount-subatoms>:<recipient>`.
+Historical `send`/`send2` records remain scale-qualified replay evidence but
+cannot mutate postactivation state.
+
+V8 listing projections use exact integer fields:
+
+```text
+version = pwt-sale-v8
+unitModel = canonical-work-amo-proof-unit-v3
+amountModel = canonical-work-amo-proof-unit-amount-v3
+stateOrderModel = canonical-proof-state-order-v1
+unitWorkOracleModel = canonical-work-prefix-before-action-v1
+bondTransitionModel = canonical-compute-then-bond-v1
+blockSequencerModel = canonical-work-amo-full-position-block-sequencer-v4
+F = 25000
+S = 21000000
+A = 10000000000000000
+Q = 100000000
+unitPriceSats = F
+unitAmountSubatoms = floor(F*S*A*Q/N)
+unitMinimumPriceSats = ceil(unitAmountSubatoms*N/(S*A*Q))
+```
+
+`N` is the positive canonical `networkValueBeforeQ8` immediately before the
+listing at `(blockHeight, blockTransactionIndex, protocolVout,
+recordOrdinal)`. Multiplication precedes division. The Computer freezes the
+terms, validates Q16 spendability, applies the listing's distinct registry
+contribution, then applies the transaction miner fee once after all records in
+that transaction. V8 admits no face except exactly 25,000 proofs. Only V8
+seal, buy, and delist actions may reference a V8 listing, and seal or buy never
+reprice it.
+
+The precision migration is idempotent and defaults to read-only. Before apply,
+it must prove:
+
+- exact configured declaration text/carrier hashes, canonical block and
+  transaction index, protocol output/record ordinal, authority input, and
+  unambiguous registry-payment output;
+- canonical declaration block `D`, opening block `D+1`, and the persistent
+  activation latch;
+- no conflicting declaration, marker, or precision state;
+- exact Q8 definition, supply, holders, and declaration-height closing state;
+- exact `10^8` conversion, Q16 conservation, and maximum-supply bounds;
+- an exact sorted relic-cutover set matching every and only pre-V8 active or
+  sealing WORK listing, with no reservation in the Q16 opening state;
+- immutable preactivation commitments and deterministic invalidation of only
+  wrong-era/current projections at and after `D+1`; and
+- installed Q16, V8 activation, and V6 deactivation constraint definitions,
+  not merely constraint names.
+
+Apply writes one immutable `workPrecisionV2Migration:livenet` marker bound to
+the V8 pins, activation opening, Q8-before/Q16-after token commitments,
+relic-cutover commitment and items, row counts, conservation results, replay
+policy, and exact models. Reapplying the same migration must return the same
+marker without mutation. A marker-shaped object, converted rows without the
+marker, a mismatched relic set, or constraints with unexpected definitions
+cannot authorize reads or writes.
+
+V8 readiness must agree at one exact Core tip across API and worker:
+
+- all V8 pins are complete and match canonical evidence;
+- `WORK_AMO_V8_ACTIVATION_HEIGHT=D+1` and the activation latch agree;
+- the completed migration and relic-cutover marker validates exactly;
+- activation-opening and activation-through-tip replay are complete;
+- SQL constraint definitions and V8 frozen-term rows are exact;
+- canonical ledger, relational index, API, and worker state have parity;
+- pending rebuild parity is current;
+- exact Core tip height/hash and public summary readiness agree; and
+- `WORK_AMO_V8_WRITES_ENABLED=1` is the only enabled governed WORK gate.
+
+Deployment sequence:
+
+1. Build and test the exact release with every V7/V8 pin empty and both gates
+   off; verify Q8/V6 and every current public route remain exact-tip green.
+2. Deploy only additive schema, parser, migration, replay, readiness, and UI
+   support. Confirm no V8 declaration, Q16 mutation, or relic cutover occurred.
+3. Generate and publish the exact V8 declaration through the local wallet.
+4. After canonical confirmation, capture all declaration pins and `D+1` while
+   keeping `WORK_AMO_V8_WRITES_ENABLED=0`.
+5. Take and verify a database backup. Run
+   `npm run migrate:work-precision-v2` read-only; inspect declaration,
+   conservation, relic, constraint, and replay evidence; then use the explicit
+   apply mode.
+6. Rebuild activation through the exact tip, rebuild pending state, and prove
+   API/worker/index/ledger parity, one-subatom round trips, the singleton face,
+   legacy-action rejection, and V8 peak-order behavior.
+7. Enable only `WORK_AMO_V8_WRITES_ENABLED=1`, deploy all public surfaces from
+   the same commit-bound archive, and repeat the production exact-tip sweep.
+
+Any disagreement keeps V8 closed. Before activation, rollback removes only
+the additive staged release. After Q16 activation, rollback means closing
+writes and restoring the same V8 release from backup and replay; it never
+means dividing balances, restoring legacy reservations, reopening V6, or
+rewriting confirmed history.
+
 ### WORK atomic-unit cutover
 
 This section preserves the completed historical Q8 atomic-unit migration and
-its rollback boundary as operational history. During that pre-V7 era, WORK
+its rollback boundary as operational history. During the pre-V8 era, WORK
 used eight decimal places and one WORK equaled `100000000` atoms. Once
 the definition metadata is marked `work-atoms-v1`, the existing numeric
 definition, balance, pending-delta, and listing columns store WORK atoms; the
@@ -2429,9 +2639,9 @@ pwt1:send3:<canonical-work-token-id>:<amount-subatoms>:<recipient-address>
 
 `pwt1:send` remains the current whole-credit transfer form for generic
 non-WORK credits and immutable legacy whole-WORK history. Canonical WORK
-transfers before the staged Q16 activation use `send2`; `amount-atoms` is a
+transfers before the V8 Q16 activation use `send2`; `amount-atoms` is a
 positive canonical integer and one WORK equals `100000000` atoms. At and after
-Q16 activation, new WORK transfers use `send3`; `amount-subatoms` is a
+V8 Q16 activation, new WORK transfers use `send3`; `amount-subatoms` is a
 positive canonical integer and one WORK equals `10000000000000000` subatoms.
 Neither opcode accepts an exponent, sign, comma, whitespace alias,
 leading-zero alias, zero, or decimal text. Both are WORK-only, and each is
@@ -2448,10 +2658,12 @@ do not reprice. The staged, declaration-gated successor is `pwt-sale-v6`: it
 selects only `20,000`, `50,000`, or `100,000` proofs and derives the exact WORK
 atoms from the network value immediately before the listing. V6 has no USD
 consensus input, quote, attestation, key, quorum, or validity window; any USD
-equivalent is display-only. After the Q16 declaration activates, V7 uses the
-same proof faces and canonical order but freezes exact `unitAmountSubatoms`
-under `pwt-sale-v7`; new V6 listings are then invalid while prior frozen V6
-listings remain settleable. Non-WORK listings remain V1. The surrounding
+equivalent is display-only. After the V8 Q16 declaration activates, only the
+25,000-proof face and canonical order are valid for new WORK listings, with
+exact `unitAmountSubatoms` frozen under `pwt-sale-v8`. New V6 listings are
+invalid and every pre-V8 active or sealing WORK listing is a non-actionable
+relic with its reservation released; it cannot be sealed, bought, or delisted
+through a legacy path. Non-WORK listings remain V1. The surrounding
 `list5`/`seal5`/`buy5`/`delist5` messages and sale-ticket UTXO contract remain
 compatible.
 

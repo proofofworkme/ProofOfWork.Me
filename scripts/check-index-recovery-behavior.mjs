@@ -168,10 +168,12 @@ import {
   workAmoV6FrozenTermsMatch,
 } from "../server/work-amo-v6.mjs";
 import {
-  WORK_AMO_V7_AUTH_VERSION,
-  WORK_AMO_V7_GLOBAL_PRECISION_MODEL,
-  WORK_AMO_V7_TRANSFER_VERSION,
-} from "../server/work-amo-v7.mjs";
+  WORK_AMO_V8_AUTH_VERSION,
+  WORK_AMO_V8_GLOBAL_PRECISION_MODEL,
+  WORK_AMO_V8_MODELS,
+  WORK_AMO_V8_TRANSFER_VERSION,
+  validateWorkAmoV8StaticAuthorization,
+} from "../server/work-amo-v8.mjs";
 import {
   normalizedWorkAmoV5Bip141Witness,
   workAmoV5Bip141WitnessesEqual,
@@ -1217,16 +1219,18 @@ function isolatedFunction(path, name, globals = {}) {
     WORK_AMO_V5_ACTIVATION_HEIGHT,
     WORK_AMO_V5_AUTH_VERSION,
     WORK_AMO_V6_AUTH_VERSION,
-    WORK_AMO_V7_AUTH_VERSION,
-    WORK_AMO_V7_GLOBAL_PRECISION_MODEL,
-    WORK_AMO_V7_MAX_SUPPLY_SUBATOMS: WORK_TOKEN_MAX_SUPPLY_SUBATOMS,
-    WORK_AMO_V7_TRANSFER_VERSION,
+    WORK_AMO_V8_AUTH_VERSION,
+    WORK_AMO_V8_GLOBAL_PRECISION_MODEL,
+    WORK_AMO_V8_MAX_SUPPLY_SUBATOMS: WORK_TOKEN_MAX_SUPPLY_SUBATOMS,
+    WORK_AMO_V8_TRANSFER_VERSION,
     WORK_AMO_V6_DECLARATION_PINS_CONFIGURED: false,
-    WORK_AMO_V7_DECLARATION_PINS_CONFIGURED: false,
+    WORK_AMO_V8_DECLARATION_PINS_CONFIGURED: false,
     WORK_Q16_PENDING_MEMPOOL_MODEL:
       "canonical-core-mempool-txid-set-v1",
     WORK_Q16_PENDING_REBUILD_MODEL:
       "canonical-work-q16-pending-rebuild-v1",
+    WORK_Q16_SUMMARY_UNIT_PRICE_MODEL:
+      "exact-work-q16-sats-per-unit-ratio-v1",
     WORK_PROJECTION_STATE_INVALID: "invalid",
     WORK_PROJECTION_STATE_Q16: "q16",
     WORK_PROJECTION_STATE_Q8: "q8",
@@ -1243,7 +1247,7 @@ function isolatedFunction(path, name, globals = {}) {
     TOKEN_SALE_AUTH_ATOMS_VERSION,
     TOKEN_SALE_AUTH_WORK_AMO_V5_VERSION: WORK_AMO_V5_AUTH_VERSION,
     TOKEN_SALE_AUTH_WORK_AMO_V6_VERSION: WORK_AMO_V6_AUTH_VERSION,
-    TOKEN_SALE_AUTH_WORK_AMO_V7_VERSION: WORK_AMO_V7_AUTH_VERSION,
+    TOKEN_SALE_AUTH_WORK_AMO_V8_VERSION: WORK_AMO_V8_AUTH_VERSION,
     VALUE_Q8_SCALE,
     BOND_VALUE_Q8_SCALE,
     BOND_TOKEN_IDS: scopedBondTokenIds,
@@ -1303,7 +1307,7 @@ function isolatedFunction(path, name, globals = {}) {
     compareTokenHolderBalances,
     applyWorkAmoV6PublicListingReadPolicy: (state) => state,
     configuredWorkPrecisionV2ReaderPins: () => null,
-    proofIndexWorkAmoV7ActivationLatch: async () => null,
+    proofIndexWorkAmoV8ActivationLatch: async () => null,
     proofIndexWorkPrecisionV2MigrationReadiness: async () => null,
     currentWorkMarketAuthorizationVersionsAtSnapshot: async (
       _network,
@@ -1412,8 +1416,8 @@ function isolatedFunction(path, name, globals = {}) {
       referenceBlockWitnesses: [],
       workAmoV6: null,
     }),
-    workAmoV7ReplayInputsForBlock: async () => ({
-      workAmoV7: null,
+    workAmoV8ReplayInputsForBlock: async () => ({
+      workAmoV8: null,
     }),
     workBalanceProjection,
     workAtomsBigIntFromRecord,
@@ -1429,8 +1433,8 @@ function isolatedFunction(path, name, globals = {}) {
     validateWorkPrecisionMetadata,
     workProjectionItem,
     upsertWorkAmoV6ListingProjection: async () => {},
-    upsertWorkAmoV7ListingProjection: async () => {},
-    discoverIndexedWorkAmoV7DeclarationPins: async () => null,
+    upsertWorkAmoV8ListingProjection: async () => {},
+    discoverIndexedWorkAmoV8DeclarationPins: async () => null,
     pendingCoreWorkMarketplaceVerifierContext: async () => null,
     withWorkPrecisionMetadata,
     uniqueMarketplaceMutationActivity,
@@ -1476,6 +1480,27 @@ function isolatedFunction(path, name, globals = {}) {
           "workBalanceFieldsFromAtoms",
           "workBalanceFieldsFromSubatoms",
         ],
+        canonicalWorkQ16SummaryUnitPriceDescriptor: [
+          "workQ16SummaryUnitPriceDescriptor",
+        ],
+        compareWorkQ16SummaryUnitPrices: [
+          "canonicalWorkQ16SummaryUnitPriceDescriptor",
+        ],
+        compactTokenSummaryPayload: [
+          "canonicalWorkQ16SummaryUnitPriceDescriptor",
+          "tokenSummaryWorkAmountStorageModel",
+        ],
+        mergedTokenSummaryMetric: [
+          "canonicalUnsignedDecimalText",
+        ],
+        tokenAggregateSummaries: [
+          "compareWorkQ16SummaryUnitPrices",
+          "tokenSummaryWorkAmountStorageModel",
+          "workQ16SummaryUnitPriceDescriptor",
+        ],
+        tokenSummaryWorkAmountStorageModel: [
+          "exactWorkAmountStorageModelFromState",
+        ],
         tokenMintHistoryItemKey: ["canonicalTokenReplayPosition"],
         tokenReplayEntriesForRegistry: ["canonicalTokenReplayPosition"],
         tokenStateFromTransactions: [
@@ -1499,6 +1524,9 @@ function isolatedFunction(path, name, globals = {}) {
           "tokenCreditAmountMovedFields",
         ],
         tokenVerifierItemsFromState: ["canonicalVerifierItemPosition"],
+        workQ16SummaryUnitPriceDescriptor: [
+          "roundedUnsignedRatioDecimalText",
+        ],
         workAmoV5QuoteHeadCommitmentProjection: [
           "exactCanonicalAmoPositionInteger",
         ],
@@ -1564,6 +1592,8 @@ function isolatedFunction(path, name, globals = {}) {
             "activeTokenListingFromCreditListingRow",
             "canonicalTokenSaleEvidenceForListing",
             "canonicalTokenListingEventJoinSql",
+            "exactWorkPrecisionV2RelicProjectionContext",
+            "workPrecisionV2RelicListingProjection",
             "workListingAmountProjection",
           ],
           proofIndexWalletTokenOverlayPayload: [
@@ -1867,7 +1897,7 @@ const WORK_MARKET_GOVERNED_AUTH_VERSIONS_FIXTURE = new Set([
   "pwt-sale-v4",
   WORK_AMO_V5_AUTH_VERSION,
   WORK_AMO_V6_AUTH_VERSION,
-  WORK_AMO_V7_AUTH_VERSION,
+  WORK_AMO_V8_AUTH_VERSION,
 ]);
 
 check("server parses signed non-WORK outputs without free identifiers", () => {
@@ -2009,11 +2039,14 @@ check("WORK broadcast admission matches raw single-output and first-actor rules"
     "signedWorkMarketplaceWriteActions",
     {
       TOKEN_BUY_ACTION: "buy5",
+      TOKEN_DELIST_ACTION: "delist5",
       TOKEN_LIST_ACTION: "list5",
       TOKEN_LISTING_ANCHOR_VOUT: 2,
       TOKEN_MIN_MUTATION_PRICE_SATS: 546,
       TOKEN_PROTOCOL_PREFIX: "pwt1:",
       TOKEN_SALE_AUTH_WORK_AMO_V5_VERSION: WORK_AMO_V5_AUTH_VERSION,
+      TOKEN_SALE_AUTH_WORK_AMO_V6_VERSION: WORK_AMO_V6_AUTH_VERSION,
+      TOKEN_SALE_AUTH_WORK_AMO_V8_VERSION: WORK_AMO_V8_AUTH_VERSION,
       TOKEN_SALE_AUTH_WORK_MARKET_V4_VERSION: WORK_AMO_V4_AUTH_VERSION,
       TOKEN_SEAL_ACTION: "seal5",
       TX_FETCH_CONCURRENCY: 4,
@@ -6642,6 +6675,96 @@ check("WORK atomic sends and sale authorizations preserve one atom", () => {
   );
 });
 
+check("AMO V8 authorization parse roundtrip preserves the signed block sequencer model", () => {
+  const constants = {
+    TOKEN_LISTING_ANCHOR_SIGHASH_TYPE: 0x83,
+    TOKEN_LISTING_ANCHOR_TYPE: "sale-ticket-v1",
+    TOKEN_LISTING_ANCHOR_VALUE_SATS: 546,
+    TOKEN_LISTING_ANCHOR_VOUT: 2,
+    TOKEN_SALE_AUTH_ATOMS_VERSION: "pwt-sale-v2",
+    TOKEN_SALE_AUTH_VERSION: "pwt-sale-v1",
+    TOKEN_SALE_AUTH_WORK_AMO_V5_VERSION: WORK_AMO_V5_AUTH_VERSION,
+    TOKEN_SALE_AUTH_WORK_AMO_V6_VERSION: WORK_AMO_V6_AUTH_VERSION,
+    TOKEN_SALE_AUTH_WORK_AMO_V8_VERSION: WORK_AMO_V8_AUTH_VERSION,
+    TOKEN_SALE_AUTH_WORK_MARKET_V2_VERSION: "pwt-sale-v3",
+    TOKEN_SALE_AUTH_WORK_MARKET_V4_VERSION: "pwt-sale-v4",
+    TOKEN_SALE_AUTH_WORK_MARKET_VERSIONS: new Set([
+      "pwt-sale-v3",
+      "pwt-sale-v4",
+    ]),
+  };
+  const tokenSaleAuthorizationDraft = isolatedFunction(
+    API_PATH,
+    "tokenSaleAuthorizationDraft",
+    {
+      ...constants,
+      normalizeTokenTicker: (value) => String(value).trim().toUpperCase(),
+    },
+  );
+  const parseTokenSaleAuthorizationJson = isolatedFunction(
+    API_PATH,
+    "parseTokenSaleAuthorizationJson",
+    {
+      ...constants,
+      WORK_TOKEN_TICKER: "WORK",
+      isValidBitcoinAddress: () => true,
+      normalizeTokenTicker: (value) => String(value).trim().toUpperCase(),
+      tokenSaleAuthorizationDraft,
+      validPublicKeyHex: () => true,
+      validSignatureHex: () => true,
+      validateWorkAmoV5StaticAuthorization,
+      validateWorkAmoV6StaticAuthorization,
+      validateWorkAmoV8StaticAuthorization: (authorization) =>
+        validateWorkAmoV8StaticAuthorization({ ...authorization }),
+      validateWorkMarketV2Authorization: () => ({ valid: true }),
+      validateWorkMarketV4Authorization: () => ({ valid: true }),
+      workAmoV5CanonicalExpiryMs,
+    },
+  );
+  const authorization = {
+    ...WORK_AMO_V8_MODELS,
+    anchorScriptPubKey: `0014${"22".repeat(20)}`,
+    anchorSigHashType: 0x83,
+    anchorType: "sale-ticket-v1",
+    anchorValueSats: 546,
+    anchorVout: 2,
+    buyerAddress: "",
+    expiresAt: "",
+    network: "livenet",
+    nonce: "v8-block-sequencer-roundtrip",
+    registryAddress: WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS,
+    sellerAddress: "1F1p9UEHuH5KTFR7Zsx93Khdrqhj6t5nFv",
+    sellerPublicKey: `02${"11".repeat(32)}`,
+    ticker: "WORK",
+    tokenId: WORK_TOKEN_ID,
+    unitFaceProofs: 25_000,
+    version: WORK_AMO_V8_AUTH_VERSION,
+  };
+  const parsed = parseTokenSaleAuthorizationJson(
+    JSON.stringify(authorization),
+    "livenet",
+  );
+  assert.equal(
+    parsed.blockSequencerModel,
+    WORK_AMO_V8_MODELS.blockSequencerModel,
+  );
+  assert.equal(
+    validateWorkAmoV8StaticAuthorization({ ...parsed }).valid,
+    true,
+  );
+  for (const blockSequencerModel of [undefined, "", "sequencer-decoy-v1"]) {
+    const invalid = { ...authorization };
+    if (blockSequencerModel === undefined) {
+      delete invalid.blockSequencerModel;
+    } else {
+      invalid.blockSequencerModel = blockSequencerModel;
+    }
+    assert.throws(() =>
+      parseTokenSaleAuthorizationJson(JSON.stringify(invalid), "livenet"),
+    );
+  }
+});
+
 check("wallet holder overlays preserve WORK and POWB for one address", () => {
   const mergeWalletHolders = isolatedFunction(
     API_PATH,
@@ -10449,8 +10572,8 @@ check("Inception fixes attachment value at issuance and adds only later INCB mar
       INCB_NETWORK_VALUE_ACCOUNTING_MODEL:
         INCEPTION_NETWORK_VALUE_ACCOUNTING_MODEL,
       INCB_VALUE_SNAPSHOT_MODEL: INCEPTION_VALUE_SNAPSHOT_MODEL,
-      WORK_AMO_V7_CONFIGURED_ACTIVATION_HEIGHT: 0,
-      WORK_AMO_V7_DECLARATION_PINS_CONFIGURED: false,
+      WORK_AMO_V8_CONFIGURED_ACTIVATION_HEIGHT: 0,
+      WORK_AMO_V8_DECLARATION_PINS_CONFIGURED: false,
       WORK_TOKEN_ID,
       WORK_TRANSFER_VALUE_PROJECTION_MODEL:
         "canonical-work-transfer-value-projection-v1",
@@ -15028,8 +15151,8 @@ check("the hot worker publishes a fresh canonical summary with conservative cove
         "fixed-incb-issuance-plus-market-flow-v1",
       INCB_VALUE_SNAPSHOT_MODEL:
         "canonical-summary-h-minus-one-v1",
-      WORK_AMO_V7_CONFIGURED_ACTIVATION_HEIGHT: 1,
-      WORK_AMO_V7_DECLARATION_PINS_CONFIGURED: true,
+      WORK_AMO_V8_CONFIGURED_ACTIVATION_HEIGHT: 1,
+      WORK_AMO_V8_DECLARATION_PINS_CONFIGURED: true,
       WORK_TOKEN_ID:
         "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8",
       WORK_TRANSFER_VALUE_PROJECTION_MODEL:
@@ -15720,7 +15843,7 @@ check("WORK precision audit accepts marker-bound Q16 with preserved exact Q8 his
     {
       INCB_RANGE_REPLAY_WITNESS_MANIFEST_MODEL,
       NETWORK: "livenet",
-      WORK_AMO_V7_GLOBAL_PRECISION_MODEL:
+      WORK_AMO_V8_GLOBAL_PRECISION_MODEL:
         WORK_PRECISION_V2_MODEL,
       WORK_ATOMIC_PROJECTION_MODEL,
       WORK_DECIMALS,
@@ -16131,8 +16254,8 @@ check("canonical summary publication allows cumulative INCB dust across independ
         "fixed-incb-issuance-plus-market-flow-v1",
       INCB_VALUE_SNAPSHOT_MODEL:
         "canonical-summary-h-minus-one-v1",
-      WORK_AMO_V7_CONFIGURED_ACTIVATION_HEIGHT: 1,
-      WORK_AMO_V7_DECLARATION_PINS_CONFIGURED: true,
+      WORK_AMO_V8_CONFIGURED_ACTIVATION_HEIGHT: 1,
+      WORK_AMO_V8_DECLARATION_PINS_CONFIGURED: true,
       WORK_TOKEN_ID:
         "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8",
       WORK_TRANSFER_VALUE_PROJECTION_MODEL:
@@ -16694,8 +16817,8 @@ check("canonical summary accounting is exact for the 958382 H-1 state and unsafe
         "fixed-incb-issuance-plus-market-flow-v1",
       INCB_VALUE_SNAPSHOT_MODEL:
         "canonical-summary-h-minus-one-v1",
-      WORK_AMO_V7_CONFIGURED_ACTIVATION_HEIGHT: 1,
-      WORK_AMO_V7_DECLARATION_PINS_CONFIGURED: true,
+      WORK_AMO_V8_CONFIGURED_ACTIVATION_HEIGHT: 1,
+      WORK_AMO_V8_DECLARATION_PINS_CONFIGURED: true,
       WORK_TOKEN_ID:
         "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8",
       WORK_TRANSFER_VALUE_PROJECTION_MODEL:
@@ -17882,14 +18005,14 @@ check("table-backed token listings bind the definition alias exactly once", () =
   );
 });
 
-check("AMO V7 declaration discovery uses one exact-tip protocol-record index", () => {
+check("AMO V8 declaration discovery uses one exact-tip protocol-record index", () => {
   const readerSource = topLevelFunctionSource(
     READER_PATH,
-    "proofIndexWorkAmoV7DeclarationCandidates",
+    "proofIndexWorkAmoV8DeclarationCandidates",
   );
   const discoverySource = topLevelFunctionSource(
     API_PATH,
-    "discoverExactWorkAmoV7Declaration",
+    "discoverExactWorkAmoV8Declaration",
   );
   assert.match(
     readerSource,
@@ -17906,7 +18029,7 @@ check("AMO V7 declaration discovery uses one exact-tip protocol-record index", (
   );
   assert.match(
     discoverySource,
-    /proofIndexWorkAmoV7DeclarationCandidates\([\s\S]*expectedTipHash: startHash[\s\S]*expectedTipHeight: startHeight/u,
+    /proofIndexWorkAmoV8DeclarationCandidates\([\s\S]*expectedTipHash: startHash[\s\S]*expectedTipHeight: startHeight/u,
   );
   assert.match(
     discoverySource,
@@ -17919,14 +18042,14 @@ check("AMO V7 declaration discovery uses one exact-tip protocol-record index", (
   );
 });
 
-check("AMO V7 block replay uses its proven canonical prefix without a live-tip cycle", () => {
+check("AMO V8 block replay uses its proven canonical prefix without a live-tip cycle", () => {
   const discoverySource = topLevelFunctionSource(
     API_PATH,
-    "discoverExactWorkAmoV7Declaration",
+    "discoverExactWorkAmoV8Declaration",
   );
   const replaySource = topLevelFunctionSource(
     API_PATH,
-    "workAmoV7ReplayInputsForBlock",
+    "workAmoV8ReplayInputsForBlock",
   );
   const projectionSource = topLevelFunctionSource(
     API_PATH,
@@ -17934,7 +18057,7 @@ check("AMO V7 block replay uses its proven canonical prefix without a live-tip c
   );
   const precisionSource = topLevelFunctionSource(
     API_PATH,
-    "workAmoV7ReplayPrecisionOptions",
+    "workAmoV8ReplayPrecisionOptions",
   );
   const ledgerSource = topLevelFunctionSource(
     API_PATH,
@@ -17942,25 +18065,25 @@ check("AMO V7 block replay uses its proven canonical prefix without a live-tip c
   );
   assert.match(
     replaySource,
-    /discoverExactWorkAmoV7Declaration\([\s\S]*canonicalPrefix: context/u,
+    /discoverExactWorkAmoV8Declaration\([\s\S]*canonicalPrefix: context/u,
   );
   assert.doesNotMatch(
     replaySource,
-    /getblockcount|proofIndexWorkAmoV7DeclarationCandidates/u,
+    /getblockcount|proofIndexWorkAmoV8DeclarationCandidates/u,
   );
   assert.match(
     discoverySource,
-    /exactCheckpointRequested[\s\S]*proofIndexCanonicalTransactionsPayload\([\s\S]*workAmoV7DeclarationCandidatesFromCanonicalCheckpoint/u,
+    /exactCheckpointRequested[\s\S]*proofIndexCanonicalTransactionsPayload\([\s\S]*workAmoV8DeclarationCandidatesFromCanonicalCheckpoint/u,
     "historical precision selection must read the exact canonical checkpoint rather than the current index tip",
   );
   assert.match(
     discoverySource,
-    /proofIndexWorkAmoV7DeclarationCandidates\(/u,
+    /proofIndexWorkAmoV8DeclarationCandidates\(/u,
     "public declaration discovery must retain its efficient exact-live-tip reader",
   );
   assert.match(
     projectionSource,
-    /workAmoV7ReplayInputsForBlock\(\s*context,\s*requiredBlockHeight/u,
+    /workAmoV8ReplayInputsForBlock\(\s*context,\s*requiredBlockHeight/u,
   );
   assert.match(
     precisionSource,
@@ -17968,7 +18091,7 @@ check("AMO V7 block replay uses its proven canonical prefix without a live-tip c
   );
   assert.match(
     ledgerSource,
-    /workAmoV7ReplayPrecisionOptions\(\s*network,\s*exactHeight,\s*exactHash/u,
+    /workAmoV8ReplayPrecisionOptions\(\s*network,\s*exactHeight,\s*exactHash/u,
   );
 });
 
@@ -34267,7 +34390,7 @@ check(
       listingId: listingTxid,
       saleAuthorization: {
         tokenId: WORK_TOKEN_ID,
-        version: WORK_AMO_V7_AUTH_VERSION,
+        version: WORK_AMO_V8_AUTH_VERSION,
       },
       ticker: "WORK",
       tokenId: WORK_TOKEN_ID,
@@ -34309,7 +34432,7 @@ check(
         registryAddress: "registry",
         saleAuthorization: {
           tokenId: WORK_TOKEN_ID,
-          version: WORK_AMO_V7_AUTH_VERSION,
+          version: WORK_AMO_V8_AUTH_VERSION,
         },
         sellerAddress: "seller",
         ticker: "WORK",
@@ -37921,6 +38044,256 @@ check("compact token definitions preserve per-token market totals beyond preview
     assert.equal(compact.stats.confirmedSalesVolumeSats, 100);
     assert.equal(compact.stats.pendingSalesVolumeSats, 250);
   }
+});
+
+check("Q16 WORK summaries preserve exact supply and rational market prices", () => {
+  const tokenListingHasConfirmedSaleTicketSeal = (listing) =>
+    listing?.sealConfirmed === true;
+  const tokenAggregateSummaries = isolatedFunction(
+    API_PATH,
+    "tokenAggregateSummaries",
+    {
+      tokenListingHasConfirmedSaleTicketSeal,
+      tokenLedgerApproximateNumber: (
+        tokenId,
+        amount,
+        { workAmountStorageModel = "" } = {},
+      ) => {
+        assert.notEqual(
+          workAmountStorageModel,
+          WORK_SUBATOM_PROJECTION_MODEL,
+          "Q16 WORK summary prices must not use Number conversion",
+        );
+        return isWorkTokenId(tokenId)
+          ? Number(formatWorkAtoms(amount))
+          : Number(amount);
+      },
+    },
+  );
+  const q16Definition = {
+    amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+    confirmed: true,
+    decimals: WORK_SUBATOM_DECIMALS,
+    precisionModel: WORK_PRECISION_V2_MODEL,
+    ticker: "WORK",
+    tokenId: WORK_TOKEN_ID,
+    unitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,
+  };
+  const q16Payload = {
+    amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+    decimals: WORK_SUBATOM_DECIMALS,
+    precisionModel: WORK_PRECISION_V2_MODEL,
+    unitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,
+    tokens: [q16Definition],
+    mints: [
+      {
+        amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+        amountSubatoms: "30000000000000001",
+        confirmed: true,
+        minterAddress: "holder",
+        precisionModel: WORK_PRECISION_V2_MODEL,
+        tokenId: WORK_TOKEN_ID,
+      },
+      {
+        amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+        amountSubatoms: "1",
+        confirmed: false,
+        minterAddress: "pending-holder",
+        precisionModel: WORK_PRECISION_V2_MODEL,
+        tokenId: WORK_TOKEN_ID,
+      },
+    ],
+    transfers: [],
+    sales: [
+      {
+        amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+        amountSubatoms: "10000000000000001",
+        buyerAddress: "buyer",
+        confirmed: true,
+        precisionModel: WORK_PRECISION_V2_MODEL,
+        priceSats: 25_000,
+        sellerAddress: "holder",
+        tokenId: WORK_TOKEN_ID,
+      },
+    ],
+    listings: [
+      {
+        amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+        amountSubatoms: "20000000000000000",
+        confirmed: true,
+        precisionModel: WORK_PRECISION_V2_MODEL,
+        priceSats: 25_000,
+        sealConfirmed: true,
+        tokenId: WORK_TOKEN_ID,
+      },
+      {
+        amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+        amountSubatoms: "20000000000000001",
+        confirmed: true,
+        precisionModel: WORK_PRECISION_V2_MODEL,
+        priceSats: 25_000,
+        sealConfirmed: true,
+        tokenId: WORK_TOKEN_ID,
+      },
+    ],
+  };
+  const q16 = tokenAggregateSummaries(q16Payload).get(WORK_TOKEN_ID);
+  assert.equal(q16.confirmedSupply, "3.0000000000000001");
+  assert.equal(q16.confirmedSupplySubatoms, "30000000000000001");
+  assert.equal(q16.pendingSupply, "0.0000000000000001");
+  assert.equal(q16.pendingSupplySubatoms, "1");
+  assert.equal(q16.lastSalePricePerToken, "24999.9999999999975");
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(q16.lastSalePricePerTokenExact)),
+    {
+      amountSubatoms: "10000000000000001",
+      decimal: "24999.9999999999975",
+      denominator: "10000000000000001",
+      model: "exact-work-q16-sats-per-unit-ratio-v1",
+      numerator: "250000000000000000000",
+      priceSats: "25000",
+      unitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,
+    },
+  );
+  assert.equal(q16.lowestAskPricePerToken, "12499.999999999999375");
+  assert.equal(
+    q16.lowestAskPricePerTokenExact.amountSubatoms,
+    "20000000000000001",
+    "exact cross-multiplication must select the lower ask when Number rounds both asks together",
+  );
+  assert.doesNotThrow(() => JSON.stringify(q16));
+
+  const tokenSummaryMetricValue = isolatedFunction(
+    API_PATH,
+    "tokenSummaryMetricValue",
+  );
+  const tokenSummarySupplyMetricValue = isolatedFunction(
+    API_PATH,
+    "tokenSummarySupplyMetricValue",
+    { tokenSummaryMetricValue },
+  );
+  const mergedTokenSummaryMetric = isolatedFunction(
+    API_PATH,
+    "mergedTokenSummaryMetric",
+    { tokenSummaryMetricValue, tokenSummarySupplyMetricValue },
+  );
+  const summaryWithoutRawSupply = { ...q16 };
+  delete summaryWithoutRawSupply.confirmedSupplySubatoms;
+  delete summaryWithoutRawSupply.pendingSupplySubatoms;
+  const compactTokenSummaryPayload = isolatedFunction(
+    API_PATH,
+    "compactTokenSummaryPayload",
+    {
+      SUMMARY_MARKET_LIMIT: 40,
+      mergedTokenSummaryMetric,
+      normalizeTokenScope: (value) => String(value ?? "").toLowerCase(),
+      numericValue: (value) => Number(value) || 0,
+      recentByCreatedAt: (items, limit) =>
+        (Array.isArray(items) ? items : []).slice(0, limit),
+      recentClosedTokenListings: (items, limit) =>
+        (Array.isArray(items) ? items : []).slice(0, limit),
+      tokenAggregateSummaries: () =>
+        new Map([[WORK_TOKEN_ID, summaryWithoutRawSupply]]),
+      tokenListingHasConfirmedSaleTicketSeal,
+      tokenMatchesScope: (token, scope) => token?.tokenId === scope,
+      tokenPayloadWithScopedHolderIdentity: (payload) => payload,
+      tokenSummaryListings: (items, limit) =>
+        (Array.isArray(items) ? items : []).slice(0, limit),
+      tokenSummaryMetricValue,
+      tokenSummarySupplyMetricValue,
+    },
+  );
+  const compactPayload = {
+    ...q16Payload,
+    confirmedSupply: q16.confirmedSupply,
+    holders: [],
+    pendingSupply: q16.pendingSupply,
+    stats: {},
+  };
+  const once = compactTokenSummaryPayload(compactPayload, WORK_TOKEN_ID);
+  const twice = compactTokenSummaryPayload(once, WORK_TOKEN_ID);
+  for (const compact of [once, twice]) {
+    const token = compact.tokens[0];
+    assert.equal(token.confirmedSupply, "3.0000000000000001");
+    assert.equal(token.confirmedSupplySubatoms, "30000000000000001");
+    assert.equal(token.pendingSupply, "0.0000000000000001");
+    assert.equal(token.pendingSupplySubatoms, "1");
+    assert.equal(typeof token.confirmedSupplySubatoms, "string");
+    assert.equal(typeof token.lastSalePricePerToken, "string");
+    assert.equal(
+      token.lowestAskPricePerTokenExact.amountSubatoms,
+      "20000000000000001",
+    );
+    assert.doesNotThrow(() => JSON.stringify(compact));
+  }
+
+  const q8 = tokenAggregateSummaries({
+    listings: [{
+      amountAtoms: "100000001",
+      confirmed: true,
+      priceSats: 100,
+      sealConfirmed: true,
+      tokenId: WORK_TOKEN_ID,
+    }],
+    mints: [{
+      amountAtoms: "100000001",
+      confirmed: true,
+      minterAddress: "legacy-holder",
+      tokenId: WORK_TOKEN_ID,
+    }],
+    sales: [{
+      amountAtoms: "100000001",
+      buyerAddress: "legacy-buyer",
+      confirmed: true,
+      priceSats: 100,
+      sellerAddress: "legacy-holder",
+      tokenId: WORK_TOKEN_ID,
+    }],
+    tokens: [{
+      amountStorageModel: WORK_ATOMIC_PROJECTION_MODEL,
+      confirmed: true,
+      decimals: WORK_DECIMALS,
+      ticker: "WORK",
+      tokenId: WORK_TOKEN_ID,
+      unitScale: WORK_UNIT_SCALE_TEXT,
+    }],
+    transfers: [],
+  }).get(WORK_TOKEN_ID);
+  assert.equal(q8.confirmedSupply, "1.00000001");
+  assert.equal(typeof q8.lastSalePricePerToken, "number");
+  assert.equal(typeof q8.lowestAskPricePerToken, "number");
+  assert.equal(q8.lastSalePricePerTokenExact, undefined);
+  assert.equal(q8.confirmedSupplySubatoms, undefined);
+
+  const genericTokenId = "f".repeat(64);
+  const generic = tokenAggregateSummaries({
+    listings: [{
+      amount: 4,
+      confirmed: true,
+      priceSats: 400,
+      sealConfirmed: true,
+      tokenId: genericTokenId,
+    }],
+    mints: [{
+      amount: 10,
+      confirmed: true,
+      minterAddress: "generic-holder",
+      tokenId: genericTokenId,
+    }],
+    sales: [{
+      amount: 2,
+      buyerAddress: "generic-buyer",
+      confirmed: true,
+      priceSats: 300,
+      sellerAddress: "generic-holder",
+      tokenId: genericTokenId,
+    }],
+    tokens: [{ confirmed: true, tokenId: genericTokenId }],
+    transfers: [],
+  }).get(genericTokenId);
+  assert.equal(generic.confirmedSupply, 10);
+  assert.equal(generic.lastSalePricePerToken, 150);
+  assert.equal(generic.lowestAskPricePerToken, 100);
 });
 
 check("summary provenance rejects missing and mismatched required component IDs", async () => {
@@ -55917,7 +56290,7 @@ check("AMO V6 readiness selects exact listing-version SQL arrays", async () => {
   );
 });
 
-check("sequential public cutovers require explicit V6 and V7 authorization", async () => {
+check("sequential public cutovers require explicit V6 and V8 authorization", async () => {
   const listing = {
     amount: "0.0000001",
     amountAtoms: "10",
@@ -56021,7 +56394,7 @@ check("sequential public cutovers require explicit V6 and V7 authorization", asy
     precisionModel: WORK_PRECISION_V2_MODEL,
     saleAuthorization: {
       tokenId: WORK_TOKEN_ID,
-      version: WORK_AMO_V7_AUTH_VERSION,
+      version: WORK_AMO_V8_AUTH_VERSION,
     },
     unitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,
   };
@@ -56035,20 +56408,20 @@ check("sequential public cutovers require explicit V6 and V7 authorization", asy
       ],
     ).listings.length,
     0,
-    "a V7 listing must fail closed until V7 is explicitly authorized",
+    "a V8 listing must fail closed until V8 is explicitly authorized",
   );
   assert.equal(
     applyWorkAmoV6PublicListingReadPolicy(
       { ...structuredClone(state), listings: [v7Listing] },
       [
-        WORK_AMO_V7_AUTH_VERSION,
+        WORK_AMO_V8_AUTH_VERSION,
         WORK_AMO_V6_AUTH_VERSION,
         WORK_AMO_V5_AUTH_VERSION,
         WORK_AMO_V4_AUTH_VERSION,
       ],
     ).listings.length,
     1,
-    "an exact V7 authorization set admits the Q16 listing",
+    "an exact V8 authorization set admits the Q16 listing",
   );
 
   const cutoverOrder = [];
@@ -56447,6 +56820,7 @@ check("terminal listing rows require exact close identity before sale activity",
       canonicalTokenSaleEvidenceForListing,
       canonicalWorkMarketV3ListingProjectionSql,
       dateIso,
+      exactWorkPrecisionV2RelicProjectionContext: async () => null,
       normalizedLowerText,
       objectRecord: (value) =>
         value && typeof value === "object" && !Array.isArray(value)
@@ -56457,6 +56831,7 @@ check("terminal listing rows require exact close identity before sale activity",
       tokenListingTransactionCanProjectActive: () => true,
       tokenStateScopeSql: () => "",
       validTxid,
+      workPrecisionV2RelicListingProjection: () => null,
     },
   );
   const pool = {

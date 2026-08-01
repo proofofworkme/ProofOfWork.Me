@@ -349,6 +349,7 @@ expect(
 );
 
 const app = contents.get("src/App.tsx");
+const proofApi = read("server/proof-api.mjs");
 const exactAmount = contents.get("src/exactAmount.ts");
 const walletUtxoPolicy = contents.get("src/walletUtxos.ts");
 const transferTokenSource = app.slice(
@@ -366,6 +367,10 @@ const listTokenSource = app.slice(
 const sealTokenListingSource = app.slice(
   app.indexOf("async function sealTokenListing"),
   app.indexOf("async function delistTokenListing"),
+);
+const delistTokenListingSource = app.slice(
+  app.indexOf("async function delistTokenListing"),
+  app.indexOf("async function buyTokenListing"),
 );
 const buyTokenListingSource = app.slice(
   app.indexOf("async function buyTokenListing"),
@@ -784,7 +789,7 @@ expect(
     /normalizedTokenListAmountUnits !== null[\s\S]*normalizedTokenListAmountUnits <= walletSpendableTokenAtoms/.test(
       canListTokenSource,
     ) &&
-    /const workAmoListInputReady = Boolean\([\s\S]*workAmoV6FaceProofsAllowed\(tokenListFaceProofs\)[\s\S]*workAmoListingWritesReady\(workFloorQuote\)[\s\S]*workAmoEstimateForFace\([\s\S]*tokenListFaceProofs[\s\S]*walletSpendableTokenAtoms > 0n/.test(
+    /const workAmoV8ListingTermsSelected =[\s\S]*workV8DeclarationBoundaryObserved\(workFloorQuote\)[\s\S]*const workAmoListInputReady = Boolean\([\s\S]*workAmoV8ListingTermsSelected[\s\S]*workAmoV8FaceProofsAllowed\(tokenListFaceProofs\)[\s\S]*workAmoV6FaceProofsAllowed\(tokenListFaceProofs\)[\s\S]*workAmoListingWritesReady\(workFloorQuote\)[\s\S]*workAmoEstimateForFace\([\s\S]*tokenListFaceProofs[\s\S]*walletSpendableTokenAtoms > 0n/.test(
       canListTokenSource,
     ) &&
     !/max=\{Math\.max\(1, listSpendableBalance\)\}/.test(app) &&
@@ -1194,6 +1199,10 @@ const signTokenSaleTicketAuthorizationBlock =
   app.match(/async function signTokenSaleTicketAuthorization[\s\S]*?function encodeCompactSize/)?.[0] ?? "";
 const tokenWalletWorkspaceBlock =
   app.match(/function TokenWalletWorkspace\([\s\S]*?function TokenApp\(/)?.[0] ?? "";
+const walletRecoverableV3WorkRelicsSource =
+  tokenWalletWorkspaceBlock.match(
+    /const walletRecoverableV3WorkRelics =[\s\S]*?const walletTokenById/,
+  )?.[0] ?? "";
 const walletV3RelicRecoveryBlock =
   tokenWalletWorkspaceBlock.match(
     /\{walletRecoverableV3WorkRelics\.length \? \([\s\S]*?\) : null\}/,
@@ -1227,9 +1236,15 @@ expect(
     ),
 );
 expect(
-  "Wallet exposes canonical owner-only V3 WORK relic recovery through delist5",
-  /const walletRecoverableV3WorkRelics = normalizedWalletAddress[\s\S]*closedListings[\s\S]*item\.relic === true[\s\S]*item\.confirmed === true[\s\S]*closedListingIdsWithCloseTransaction[\s\S]*item\.sellerAddress\.trim\(\)\.toLowerCase\(\) ===\s*normalizedWalletAddress[\s\S]*isWorkToken\(item\)[\s\S]*item\.saleAuthorization\.version ===\s*TOKEN_SALE_AUTH_WORK_MARKET_V2_VERSION/.test(
-    tokenWalletWorkspaceBlock,
+  "Wallet preserves owner-only V3 WORK relic recovery before V8 and hides it after activation",
+  /normalizedWalletAddress &&\s*!workV8DeclarationBoundaryObserved\(workFloorQuote\)\s*\?\s*closedListings/.test(
+    walletRecoverableV3WorkRelicsSource,
+  ) &&
+    /item\.relic === true[\s\S]*item\.confirmed === true[\s\S]*!closedListingIdsWithCloseTransaction\.has\([\s\S]*tokenListingStateKey\(item\)[\s\S]*item\.sellerAddress\.trim\(\)\.toLowerCase\(\) ===\s*normalizedWalletAddress[\s\S]*isWorkToken\(item\)[\s\S]*item\.saleAuthorization\.version ===\s*TOKEN_SALE_AUTH_WORK_MARKET_V2_VERSION/.test(
+      walletRecoverableV3WorkRelicsSource,
+    ) &&
+    /\)\s*:\s*\[\];\s*const walletTokenById/.test(
+      walletRecoverableV3WorkRelicsSource,
   ) &&
     /V3 WORK sale-ticket recovery[\s\S]*cannot be sealed or bought[\s\S]*Recover with delist5/.test(
       walletV3RelicRecoveryBlock,
@@ -1245,7 +1260,7 @@ expect(
     ),
 );
 expect(
-  "WORK AMO keeps V6 readiness immutable and cuts over to fail-closed V7 admission",
+  "WORK AMO keeps V6 readiness immutable and cuts over to fail-closed V8 admission",
   /WORK_AMO_V6_ALLOWED_FACE_PROOFS\s*=\s*\[20_000,\s*50_000,\s*100_000\]\s*as const/.test(
     app,
   ) &&
@@ -1261,38 +1276,38 @@ expect(
     /function workAmoV6ListingWritesReady[\s\S]*workAmoV6SettlementWritesReady\(quote\)[\s\S]*status\?\.listingWritesEnabled === true/.test(
       app,
     ) &&
-    /function workV7ActivationReached[\s\S]*status\?\.version === TOKEN_SALE_AUTH_WORK_AMO_SUBATOM_VERSION[\s\S]*status\.activation\?\.reached === true/.test(
+    /function workV8ActivationReached[\s\S]*status\?\.version === TOKEN_SALE_AUTH_WORK_AMO_SUBATOM_VERSION[\s\S]*status\.activation\?\.reached === true/.test(
       workAmoV6ProofUnitSource,
     ) &&
-    /function workV7WriteAdmissionReady[\s\S]*workV7ActivationReached\(quote\)[\s\S]*status\?\.activation\?\.active === true[\s\S]*status\?\.activation\?\.evidenceComplete === true[\s\S]*status\?\.protocolReady === true[\s\S]*status\.writeAdmission === true/.test(
+    /function workV8WriteAdmissionReady[\s\S]*workV8ActivationReached\(quote\)[\s\S]*status\?\.activation\?\.active === true[\s\S]*status\?\.activation\?\.evidenceComplete === true[\s\S]*status\?\.protocolReady === true[\s\S]*status\.writeAdmission === true/.test(
       workAmoV6ProofUnitSource,
     ) &&
-    /type WorkAmoV7Status = \{[\s\S]*pinsConfigured\?: boolean;[\s\S]*pinsRequested\?: boolean/.test(
+    /type WorkAmoV8Status = \{[\s\S]*pinsConfigured\?: boolean;[\s\S]*pinsRequested\?: boolean/.test(
       app,
     ) &&
-    /function workV7DeclarationBoundaryObserved[\s\S]*legacyWriteEmbargo === true[\s\S]*pinsRequested === true[\s\S]*pinsConfigured === true[\s\S]*declarationConfirmed === true[\s\S]*reached === true/.test(
+    /function workV8DeclarationBoundaryObserved[\s\S]*legacyWriteEmbargo === true[\s\S]*pinsRequested === true[\s\S]*pinsConfigured === true[\s\S]*declarationConfirmed === true[\s\S]*reached === true/.test(
       workAmoV6ProofUnitSource,
     ) &&
-    /function workWriteModeForQuote[\s\S]*status\?\.version !== TOKEN_SALE_AUTH_WORK_AMO_SUBATOM_VERSION[\s\S]*return "paused"[\s\S]*status\?\.pinsRequested === true[\s\S]*status\.pinsConfigured !== true[\s\S]*status\?\.pinsConfigured === true[\s\S]*status\.activation\?\.tipVerified !== true[\s\S]*workV7DeclarationBoundaryObserved\(quote\)[\s\S]*workV7WriteAdmissionReady\(quote\)[\s\S]*workAmoV6ActivationReady\(quote\) \? "legacy-q8" : "paused"/.test(
+    /function workWriteModeForQuote[\s\S]*status\?\.version !== TOKEN_SALE_AUTH_WORK_AMO_SUBATOM_VERSION[\s\S]*return "paused"[\s\S]*status\?\.pinsRequested === true[\s\S]*status\.pinsConfigured !== true[\s\S]*status\?\.pinsConfigured === true[\s\S]*status\.activation\?\.tipVerified !== true[\s\S]*workV8DeclarationBoundaryObserved\(quote\)[\s\S]*workV8WriteAdmissionReady\(quote\)[\s\S]*workAmoV6ActivationReady\(quote\) \? "legacy-q8" : "paused"/.test(
       workAmoV6ProofUnitSource,
     ) &&
-    /const workV7DeclarationBoundaryLatchRef = useRef\(false\)/.test(app) &&
-    /function applyWorkFloorQuote[\s\S]*boundaryWasLatched[\s\S]*failClosedWorkAmoV7Status[\s\S]*work-amo-v7-exact-tip-regressed/.test(
+    /const workV8DeclarationBoundaryLatchRef = useRef\(false\)/.test(app) &&
+    /function applyWorkFloorQuote[\s\S]*boundaryWasLatched[\s\S]*failClosedWorkAmoV8Status[\s\S]*work-amo-v8-exact-tip-regressed/.test(
       app,
     ) &&
     /async function freshWorkWriteMode[\s\S]*boundaryWasLatched && !boundaryObserved[\s\S]*"paused"[\s\S]*expectedMode && mode !== expectedMode/.test(
       app,
     ) &&
-    /function assertWorkAmoSettlementEnabled[\s\S]*!workV7ActivationReached\(quote\)[\s\S]*assertWorkAmoV6SettlementEnabled\(quote\)[\s\S]*!workAmoSettlementWritesReady\(quote\)/.test(
+    /function assertWorkAmoSettlementEnabled[\s\S]*!workV8DeclarationBoundaryObserved\(quote\)[\s\S]*assertWorkAmoV6SettlementEnabled\(quote\)[\s\S]*!workAmoSettlementWritesReady\(quote\)/.test(
       workAmoV6ProofUnitSource,
     ) &&
-    /function assertWorkAmoListingEnabled[\s\S]*!workV7ActivationReached\(quote\)[\s\S]*assertWorkAmoV6ListingEnabled\(quote\)[\s\S]*!workAmoListingWritesReady\(quote\)/.test(
+    /function assertWorkAmoListingEnabled[\s\S]*!workV8DeclarationBoundaryObserved\(quote\)[\s\S]*assertWorkAmoV6ListingEnabled\(quote\)[\s\S]*!workAmoListingWritesReady\(quote\)/.test(
       workAmoV6ProofUnitSource,
     ) &&
     /assertWorkAmoListingEnabled\(freshFloor\)/.test(listTokenSource),
 );
 expect(
-  "WORK AMO V6 and V7 serialize only the proof face and label USD as display-only",
+  "WORK AMO V6 and V8 serialize only the proof face and label USD as display-only",
   /function tokenSaleAuthorizationWireDraft[\s\S]*isWorkAmoDerivedUnitAuthorization\(draft\.version\)[\s\S]*amount:\s*_amount[\s\S]*amountAtoms:\s*_amountAtoms[\s\S]*priceSats:\s*_priceSats[\s\S]*return wire/.test(
     app,
   ) &&
@@ -1302,22 +1317,28 @@ expect(
     /WORK_AMO_V6_STATIC_AUTHORIZATION_KEYS[\s\S]*"unitFaceProofs"[\s\S]*"anchorSignature"/.test(
       app,
     ) &&
-    /WORK_AMO_V7_STATIC_AUTHORIZATION_KEYS\s*=\s*WORK_AMO_V6_STATIC_AUTHORIZATION_KEYS/.test(
+    /WORK_AMO_V8_STATIC_AUTHORIZATION_KEYS\s*=\s*\[[\s\S]*\.\.\.WORK_AMO_V6_STATIC_AUTHORIZATION_KEYS,[\s\S]*"blockSequencerModel"/.test(
       app,
     ) &&
-    /unitFaceProofs:[\s\S]*\(v6Authorization \|\| v7Authorization\)[\s\S]*workAmoV6FaceProofsAllowed/.test(
+    /blockSequencerModel: v8Authorization[\s\S]*WORK_AMO_V8_BLOCK_SEQUENCER_MODEL/.test(
       app,
     ) &&
-    /WORK_AMO_V6_ALLOWED_FACE_PROOFS\.map/.test(tokenWalletWorkspaceBlock) &&
-    /20,000, 50,000, or 100,000-proof/.test(app) &&
+    /unitFaceProofs:[\s\S]*v6Authorization[\s\S]*workAmoV6FaceProofsAllowed[\s\S]*v8Authorization[\s\S]*workAmoV8FaceProofsAllowed/.test(
+      app,
+    ) &&
+    /workAmoAllowedFaceProofs\.map/.test(tokenWalletWorkspaceBlock) &&
+    /const workAmoAllowedFaceProofs = workAmoV8TermsVisible[\s\S]*WORK_AMO_V8_ALLOWED_FACE_PROOFS[\s\S]*WORK_AMO_V6_ALLOWED_FACE_PROOFS/.test(
+      tokenWalletWorkspaceBlock,
+    ) &&
+    /WORK_AMO_V8_ALLOWED_FACE_PROOFS\s*=\s*\[25_000\]\s*as const/.test(app) &&
     /USD is display-only/.test(tokenWalletWorkspaceBlock) &&
-    /workEstimate = workAmoEstimateForFace\([\s\S]*unitFaceProofs:\s*workListing[\s\S]*TOKEN_SALE_AUTH_WORK_AMO_SUBATOM_VERSION[\s\S]*TOKEN_SALE_AUTH_WORK_AMO_PROOF_UNIT_VERSION/.test(
+    /workEstimate = workAmoEstimateForFace\([\s\S]*unitFaceProofs:\s*workListing[\s\S]*TOKEN_SALE_AUTH_WORK_AMO_SUBATOM_VERSION/.test(
       listTokenSource,
     ) &&
     /const estimate =\s*listing\.confirmed !== true\s*&&\s*rawEstimate/.test(
       app,
     ) &&
-    /const freshAdmission = await freshWorkWriteMode\(\)[\s\S]*preparedWorkListingMode = freshAdmission\.mode[\s\S]*workV7Listing = preparedWorkListingMode === "native-q16"[\s\S]*beforeBroadcast:[\s\S]*freshWorkWriteMode\(preparedWorkListingMode\)/.test(
+    /const freshAdmission = await freshWorkWriteMode\(\)[\s\S]*preparedWorkListingMode = freshAdmission\.mode[\s\S]*workV8Listing = preparedWorkListingMode === "native-q16"[\s\S]*version: workListing[\s\S]*workV8Listing[\s\S]*TOKEN_SALE_AUTH_WORK_AMO_SUBATOM_VERSION[\s\S]*TOKEN_SALE_AUTH_WORK_AMO_PROOF_UNIT_VERSION[\s\S]*beforeBroadcast:[\s\S]*freshWorkWriteMode\(preparedWorkListingMode\)/.test(
       listTokenSource,
     ) &&
     /selectedListTokenIsWork\s*\?\s*\([\s\S]*work-amo-face-selector[\s\S]*\)\s*:\s*\([\s\S]*Amount[\s\S]*Price proofs/.test(
@@ -1325,7 +1346,7 @@ expect(
     ),
 );
 expect(
-  "confirmed V4 through V7 AMO terms freeze seal and buy without current-price repricing",
+  "confirmed AMO terms freeze without repricing and only the active protocol era can settle",
   /WORK_AMO_V1_FACE_USD_CENTS\s*=\s*\[\s*1000,\s*2000,\s*5000,\s*10000,\s*20000,\s*50000,\s*100000,\s*200000,\s*500000,\s*1000000,[\s\S]*function workAmoHistoricalFaceUsdCents[\s\S]*WORK_AMO_V1_FACE_USD_CENTS\.some/.test(
     app,
   ) &&
@@ -1335,10 +1356,25 @@ expect(
     /function workAmoV6FrozenProjection[\s\S]*WORK_AMO_V6_FROZEN_TERM_KEYS[\s\S]*unitFaceProofs[\s\S]*listingProtocolVout[\s\S]*listingRecordOrdinal[\s\S]*networkValueAfterQ8 !==[\s\S]*networkValueBeforeQ8 \+ listingBondContributionQ8[\s\S]*workAmoV6UnitTerms\([\s\S]*amountAtoms\.toString\(\) !== expected\.unitAmountAtoms[\s\S]*priceSats\.toString\(\) !== expected\.unitPriceSats/.test(
       app,
     ) &&
-    /function workAmoV7FrozenProjection[\s\S]*WORK_AMO_V7_FROZEN_TERM_KEYS[\s\S]*unitAmountSubatoms[\s\S]*workAmoV7UnitTerms\([\s\S]*listingAmountSubatoms !== amountSubatoms[\s\S]*String\(listing\.amountAtoms \?\? ""\) !== ""/.test(
+    /function workAmoV8FrozenProjection[\s\S]*WORK_AMO_V8_FROZEN_TERM_KEYS[\s\S]*unitAmountSubatoms[\s\S]*workAmoV8UnitTerms\([\s\S]*listingAmountSubatoms !== amountSubatoms[\s\S]*String\(listing\.amountAtoms \?\? ""\) !== ""/.test(
       app,
     ) &&
-    /function workAmoFrozenTerms[\s\S]*TOKEN_SALE_AUTH_WORK_AMO_SUBATOM_VERSION[\s\S]*workAmoV7FrozenProjection\(listing\)[\s\S]*TOKEN_SALE_AUTH_WORK_AMO_PROOF_UNIT_VERSION[\s\S]*workAmoV6FrozenProjection\(listing\)[\s\S]*amountAtoms \* WORK_LEGACY_TO_CANONICAL_FACTOR/.test(
+    /function workAmoListingFaceProofs[\s\S]*const v8 =[\s\S]*workAmoV8FaceProofsAllowed\(rawFace\)[\s\S]*workAmoV6FaceProofsAllowed\(rawFace\)/.test(
+      app,
+    ) &&
+    /function workAmoV6FrozenProjection[\s\S]*!workAmoV6FaceProofsAllowed\(faceProofs\)/.test(
+      app,
+    ) &&
+    /function workAmoV8FrozenProjection[\s\S]*!workAmoV8FaceProofsAllowed\(faceProofs\)/.test(
+      app,
+    ) &&
+    /function confirmWorkAmoEstimateListing[\s\S]*workAmoProofFaceLabel\(faceProofs\)/.test(
+      app,
+    ) &&
+    /function confirmWorkAmoFrozenAction[\s\S]*workAmoProofFaceLabel\(frozen\.faceProofs\)/.test(
+      app,
+    ) &&
+    /function workAmoFrozenTerms[\s\S]*TOKEN_SALE_AUTH_WORK_AMO_SUBATOM_VERSION[\s\S]*workAmoV8FrozenProjection\(listing\)[\s\S]*TOKEN_SALE_AUTH_WORK_AMO_PROOF_UNIT_VERSION[\s\S]*workAmoV6FrozenProjection\(listing\)[\s\S]*amountAtoms \* WORK_LEGACY_TO_CANONICAL_FACTOR/.test(
       app,
     ) &&
     /const v5ProjectionComplete =[\s\S]*WORK_AMO_UNIT_MODEL[\s\S]*WORK_AMO_STATE_ORDER_MODEL[\s\S]*unitUsdQuoteTxid[\s\S]*listingBlockHeight[\s\S]*frozenNetworkValueAfterQ8 ===[\s\S]*frozenNetworkValueBeforeQ8 \+ frozenListingBondContributionQ8/.test(
@@ -1350,6 +1386,9 @@ expect(
     /const freshAdmission = await freshWorkWriteMode\(\)[\s\S]*preparedWorkSettlementMode = freshAdmission\.mode[\s\S]*assertWorkAmoSettlementEnabled\(freshAdmission\.quote\)/.test(
       sealTokenListingSource,
     ) &&
+    /assertWorkAmoListingWriteEra\([\s\S]*listing,[\s\S]*preparedWorkSettlementMode/.test(
+      sealTokenListingSource,
+    ) &&
     /workAmoStaticAuthorizationForListing\(listing\)/.test(
       sealTokenListingSource,
     ) &&
@@ -1357,6 +1396,9 @@ expect(
       sealTokenListingSource,
     ) &&
     /const freshAdmission = await freshWorkWriteMode\(\)[\s\S]*preparedWorkSettlementMode = freshAdmission\.mode[\s\S]*assertWorkAmoSettlementEnabled\(freshAdmission\.quote\)/.test(
+      buyTokenListingSource,
+    ) &&
+    /assertWorkAmoListingWriteEra\([\s\S]*listing,[\s\S]*preparedWorkSettlementMode/.test(
       buyTokenListingSource,
     ) &&
     /tokenSellerPaymentRequiredSats\(listing\)/.test(
@@ -1368,23 +1410,26 @@ expect(
     /confirmWorkAmoFrozenAction\("purchase", listing\)/.test(
       buyTokenListingSource,
     ) &&
-    [sealTokenListingSource, buyTokenListingSource].every(
+    /freshWorkWriteMode\(\)[\s\S]*assertWorkAmoSettlementEnabled\(freshAdmission\.quote\)[\s\S]*assertWorkAmoListingWriteEra\([\s\S]*allowLegacyWithoutFrozen: true[\s\S]*beforeBroadcast/.test(
+      delistTokenListingSource,
+    ) &&
+    [sealTokenListingSource, buyTokenListingSource, delistTokenListingSource].every(
       (source) =>
-        /beforeBroadcast:[\s\S]*freshWorkWriteMode\(preparedWorkSettlementMode\)/.test(
+        /beforeBroadcast:[\s\S]*freshWorkWriteMode\([\s\S]*preparedWorkSettlementMode/.test(
           source,
         ),
     ),
 );
 expect(
-  "AMO V6 remains exact Q8 while V7 derives exact Q16 subatoms without a USD oracle",
+  "AMO V6 remains exact Q8 while V8 derives exact Q16 subatoms without a USD oracle",
   /function workAmoV6UnitTerms[\s\S]*WORK_AMO_V6_ATOMS_PER_WORK[\s\S]*100_000_000n[\s\S]*const amountAtoms = \(BigInt\(face\) \* valueDenominator\) \/ networkValue[\s\S]*amountAtoms \* networkValue \+ valueDenominator - 1n/.test(
     workAmoV6ProofUnitSource,
   ) &&
-    /function workAmoV7UnitTerms[\s\S]*WORK_AMO_V7_SUBATOMS_PER_WORK[\s\S]*100_000_000n[\s\S]*const amountSubatoms =[\s\S]*\(BigInt\(face\) \* valueDenominator\) \/ networkValue[\s\S]*amountSubatoms \* networkValue \+ valueDenominator - 1n/.test(
+    /function workAmoV8UnitTerms[\s\S]*WORK_AMO_V8_SUBATOMS_PER_WORK[\s\S]*100_000_000n[\s\S]*const amountSubatoms =[\s\S]*\(BigInt\(face\) \* valueDenominator\) \/ networkValue[\s\S]*amountSubatoms \* networkValue \+ valueDenominator - 1n/.test(
       workAmoV6ProofUnitSource,
     ) &&
     !/\/api\/v1\/work-amo-v6\/attestation/.test(app) &&
-    !/\/api\/v1\/work-amo-v7\/attestation/.test(app) &&
+    !/\/api\/v1\/work-amo-v8\/attestation/.test(app) &&
     !/WorkUsdAttestation|unitUsdAttestation|WORK_AMO_V6_USD_ORACLE_MODEL|WORK_AMO_V6_ORACLE_SOURCE_IDS|fetchWorkAmoV6Attestation/.test(
       app,
     ) &&
@@ -1392,7 +1437,7 @@ expect(
     !/btcUsd/.test(canListTokenSource),
 );
 expect(
-  "WORK transfer UI writes send3 only under V7 admission and never falls back after activation",
+  "WORK transfer UI writes send3 only under V8 admission and never falls back after activation",
   /const TOKEN_SEND_ATOMS_ACTION = "send2"/.test(app) &&
     /const TOKEN_SEND_SUBATOMS_ACTION = "send3"/.test(app) &&
     /function buildTokenSendPayload[\s\S]*workWriteMode === "paused"[\s\S]*No legacy send2 fallback is permitted[\s\S]*workWriteMode === "native-q16"[\s\S]*TOKEN_SEND_SUBATOMS_ACTION[\s\S]*amountSubatoms\.toString\(\)[\s\S]*workLegacyAtomsFromSubatoms\(amountSubatoms\)[\s\S]*TOKEN_SEND_ATOMS_ACTION/.test(
@@ -1418,7 +1463,7 @@ expect(
     ),
 );
 expect(
-  "WORK mint UI pauses every single and chained entry point when V7 admission is unknown or not ready",
+  "WORK mint UI pauses every single and chained entry point when V8 admission is unknown or not ready",
   /function assertWorkMintWriteEnabled[\s\S]*isWorkToken\(token\)[\s\S]*workWriteModeForQuote\(quote\) === "paused"[\s\S]*No mint transaction was created/u.test(
     app,
   ) &&
@@ -1448,11 +1493,11 @@ expect(
     ),
 );
 expect(
-  "native V7 listings reject legacy amount aliases while historical listings normalize by exact multiplication",
+  "native V8 listings reject legacy amount aliases while historical listings normalize by exact multiplication",
   /function normalizeTokenListingRecord[\s\S]*TOKEN_SALE_AUTH_WORK_AMO_SUBATOM_VERSION[\s\S]*\? "native-q16"[\s\S]*isWorkMarketSaleAuthorizationVersion[\s\S]*\? "legacy-q8"/.test(
     app,
   ) &&
-    /function workAmoV7FrozenProjection[\s\S]*listingAmountSubatoms !== amountSubatoms[\s\S]*String\(listing\.amountAtoms \?\? ""\) !== ""/.test(
+    /function workAmoV8FrozenProjection[\s\S]*listingAmountSubatoms !== amountSubatoms[\s\S]*String\(listing\.amountAtoms \?\? ""\) !== ""/.test(
       app,
     ) &&
     /function workAmoFrozenTerms[\s\S]*amountAtoms \* WORK_LEGACY_TO_CANONICAL_FACTOR/.test(
@@ -1461,7 +1506,7 @@ expect(
 );
 
 expect(
-  "historical V5 quote sequences remain exact while proof-native V6 and V7 have no manual publication path",
+  "historical V5 quote sequences remain exact while proof-native V6 and V8 have no manual publication path",
   /type WorkAmoV5FrozenTerms[\s\S]*unitUsdQuoteSequence\?: string;/.test(
     app,
   ) &&
@@ -1784,17 +1829,25 @@ expect(
   /marketplaceMode/.test(app) && /activityMode/.test(app) && /growthMode/.test(app),
 );
 expect(
-  "AMO UI preserves distinct V6, V4 relic, and historical Marketplace V1 views",
+  "AMO UI preserves the active era, exact pre-V8 relics, and historical Marketplace V1",
   /aria-label="WORK AMO protocol view"/.test(app) &&
     /<span>AMO<\/span>/.test(app) &&
-    /<span>V4 Relic<\/span>/.test(app) &&
+    /workV8BoundaryObserved \? "Pre-V8 Relics" : "V4 Relic"/.test(app) &&
     /<span>Marketplace V1 Relic<\/span>/.test(app) &&
-    /\? "V4 Relic Sale Tickets"\s*:\s*"AMO Units"/.test(app) &&
-    /These WORK listings were disabled at activation height[\s\S]*choose a 20,000,[\s\S]*50,000, or 100,000-proof face[\s\S]*freezes the exact WORK amount/.test(
+    /<h3>Pre-V8 AMO Relics<\/h3>[\s\S]*cannot be sealed, purchased, or delisted/.test(
+      app,
+    ) &&
+    /function workAmoPreV8RelicRows[\s\S]*canonical-work-amo-v8-preactivation-relic-cutover-v1[\s\S]*WORK_LEGACY_TO_CANONICAL_FACTOR/.test(
+      app,
+    ) &&
+    /relicCutover:[\s\S]*migrationReadiness\?\.ready === true[\s\S]*marker\?\.relicCutover/.test(
+      proofApi,
+    ) &&
+    /These WORK listings were disabled at activation height[\s\S]*new V8 unit is exactly 25,000 proofs[\s\S]*exact 16-decimal WORK/.test(
       app,
     ) &&
     !/Sellers may create new \$20, \$50, or \$100 AMO/.test(app) &&
-    /<h3>WORK AMO State<\/h3>[\s\S]*New 20,000, 50,000, and 100,000-proof intents commit only[\s\S]*Confirmation order derives the exact WORK/.test(
+    /<h3>WORK AMO State<\/h3>[\s\S]*single 25,000-proof face[\s\S]*exact 16-decimal WORK/.test(
       app,
     ),
 );
