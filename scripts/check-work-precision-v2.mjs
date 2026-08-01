@@ -1740,6 +1740,11 @@ assert.match(
   /'legacyAmountStorageModel', \$4::text,[\s\S]*'precisionMigrationModel', \$5::text/u,
   "migration JSON construction must type text parameters explicitly for PostgreSQL",
 );
+assert.match(
+  migration,
+  /listing\.payload->>'legacyAmountAtoms' =\s*\(\$3::numeric\)::text/u,
+  "migration relic matching must compare the reused numeric parameter as text",
+);
 assert.match(migration, /DELETE FROM proof_indexer\.events event/u);
 assert.match(
   migration,

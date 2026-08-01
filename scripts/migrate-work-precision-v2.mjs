@@ -1734,7 +1734,8 @@ export async function runWorkPrecisionV2Migration(
           AND listing.amount = $3::numeric * $7::numeric
           AND listing.seller_address = $4
           AND listing.price_sats = $5
-          AND listing.payload->>'legacyAmountAtoms' = $3
+          AND listing.payload->>'legacyAmountAtoms' =
+            ($3::numeric)::text
           AND listing.payload->>'legacyAmountStorageModel' = $6
           AND listing.payload->>'precisionMigrationModel' = $8
           AND listing.status IN ('active', 'sealing')
