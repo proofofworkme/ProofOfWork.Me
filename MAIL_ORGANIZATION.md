@@ -330,6 +330,36 @@ Multi-recipient mail:
 - Reply targets the sender; Reply All targets the sender plus other payment-output recipients, excluding the connected wallet address.
 - Keep the current cap at 10 recipients until wallet signing UX and fee estimates have more production mileage.
 
+WORK attachment admission:
+
+- Mail without a WORK attachment remains ordinary mail. A paused or unavailable
+  governed WORK write lane must not prevent a valid proofs-only message from
+  being prepared.
+- For an approved mainnet sender, the composer exposes the WORK field only from
+  authoritative wallet-scoped credit state. Entering Compose or Inbox with a
+  positive spendable WORK balance must hydrate the canonical WORK holder and
+  reservation state through the fresh wallet-scoped token read; a broad token
+  summary, stale cached balance, or locally estimated balance is not sufficient
+  spend authority.
+- Once the sender enters a positive WORK amount, Send also requires a current
+  WORK protocol-admission read. Before the V8 declaration boundary, an exactly
+  Q8-representable attachment writes `pwt1:send2`. At and after the V8 boundary,
+  it writes `pwt1:send3` only when exact Q16 admission is ready. An observed V8
+  boundary never falls back to `send2`.
+- A positive WORK attachment fails closed while wallet authority or protocol
+  admission is loading, unavailable, stale, paused, or inconsistent. The Send
+  control stays disabled and the composer renders a visible status explaining
+  the current reason, including the protocol reason code when one is available.
+- Other explicit disabled states remain distinguishable: no connected sender,
+  missing or unresolved recipients, no message/subject/attachment, invalid
+  proof or fee inputs, insufficient spendable WORK after reservations and
+  pending outgoing transfers, aggregate OP_RETURN data over the carrier limit,
+  and an in-progress send. A busy send is single-flight; a second form submit
+  must not prepare or request a second wallet signature.
+- The preview and final preflight use exact integers. Q8 history retains its
+  original atom scale, Q16 uses subatoms, and displayed decimal text is never
+  the spendability or protocol-mode authority.
+
 Subject:
 
 - Write optional subjects as `pwm1:s:<subject-base64url>`.

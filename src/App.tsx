@@ -7544,6 +7544,18 @@ function workWriteModeForQuote(
   return workAmoV6ActivationReady(quote) ? "legacy-q8" : "paused";
 }
 
+function workWritePauseReason(quote: WorkFloorQuote | undefined) {
+  return String(
+    workV8DeclarationBoundaryObserved(quote)
+      ? quote?.workAmoV8?.reasonCode ??
+          quote?.workAmoV8?.activation?.reasonCode ??
+          ""
+      : quote?.workAmoV6?.activation?.reasonCode ??
+          quote?.workAmoV6?.reasonCode ??
+          "",
+  ).trim();
+}
+
 function assertWorkMintWriteEnabled(
   token: Pick<PowTokenDefinition, "ticker" | "tokenId">,
   quote: WorkFloorQuote | undefined,
@@ -19317,6 +19329,8 @@ export default function App() {
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
   const [replyParentTxid, setReplyParentTxid] = useState<string | undefined>();
   const [busy, setBusy] = useState(false);
+  const [mailSendBusy, setMailSendBusy] = useState(false);
+  const [mailWorkAdmissionError, setMailWorkAdmissionError] = useState("");
   const [idMarketplaceAction, setIdMarketplaceAction] =
     useState<IdMarketplaceAction>("idle");
   const activeWorkspaceStatusKey = landingMode
@@ -19434,6 +19448,7 @@ export default function App() {
   const workFloorRefreshInFlightRef =
     useRef<Promise<WorkFloorQuote | undefined> | null>(null);
   const workFloorRefreshInFlightFreshRef = useRef(false);
+  const mailSendInFlightRef = useRef(false);
   const acceptedRegistryStateRef = useRef<PowRegistryState | undefined>();
   const acceptedTokenStatesRef = useRef(
     new Map<string, PowTokenState>(),
@@ -19621,6 +19636,8 @@ export default function App() {
       workV8DeclarationBoundaryObserved(quote);
     const boundaryWasLatched =
       workV8DeclarationBoundaryLatchRef.current;
+    const v8BoundaryNeedsFailClosedRetention =
+      boundaryWasLatched || incomingBoundaryObserved;
     if (incomingBoundaryObserved) {
       workV8DeclarationBoundaryLatchRef.current = true;
     }
@@ -19638,14 +19655,16 @@ export default function App() {
       if (!current) {
         return undefined;
       }
-      const retained = {
-        ...current,
-        workAmoV8: failClosedWorkAmoV8Status(
-          current.workAmoV8,
-          safetyBoundQuote.workAmoV8,
-          "work-amo-v8-exact-tip-regressed",
-        ),
-      };
+      const retained = v8BoundaryNeedsFailClosedRetention
+        ? {
+            ...current,
+            workAmoV8: failClosedWorkAmoV8Status(
+              current.workAmoV8,
+              safetyBoundQuote.workAmoV8,
+              "work-amo-v8-exact-tip-regressed",
+            ),
+          }
+        : current;
       acceptedWorkFloorQuoteRef.current = retained;
       setWorkFloorQuote(retained);
       return retained;
@@ -19678,9 +19697,7 @@ export default function App() {
         : workWriteModeForQuote(freshQuote);
     applyWorkFloorQuote(freshQuote);
     if (mode === "paused") {
-      const reason = String(
-        freshQuote.workAmoV8?.reasonCode ?? "",
-      ).trim();
+      const reason = workWritePauseReason(freshQuote);
       throw new Error(
         `WORK precision writes are paused${reason ? ` (${reason})` : ""}. No transaction was created.`,
       );
@@ -20055,7 +20072,10 @@ export default function App() {
   const totalResolvedRecipients =
     recipientResolution.recipients.length +
     ccRecipientResolution.recipients.length;
-  const messageWorkAmountAtoms = positiveWorkAtoms(messageWorkAmount) ?? 0n;
+  const parsedMessageWorkAmountAtoms = workAtomsFromDecimal(messageWorkAmount);
+  const messageWorkAmountInvalid =
+    messageWorkAmount.trim() !== "" && parsedMessageWorkAmountAtoms === null;
+  const messageWorkAmountAtoms = parsedMessageWorkAmountAtoms ?? 0n;
   const messageWorkAmountValue = workNumberFromAtoms(messageWorkAmountAtoms);
   const accountWorkTokenLaneClean =
     accountTokenLaneStatuses.work.loaded &&
@@ -20131,6 +20151,23 @@ export default function App() {
     address,
     network,
   );
+  const mailWorkAttachmentRequested =
+    messageWorkAttachmentAllowed && messageWorkAmountAtoms > 0n;
+  const mailWorkFloorHydrationRequired = mailWorkAttachmentRequested;
+  const mailWorkWriteMode = workWriteModeForQuote(workFloorQuote);
+  const mailWorkAdmissionChecking =
+    mailWorkFloorHydrationRequired &&
+    !workFloorQuote &&
+    !mailWorkAdmissionError;
+  const mailWorkAdmissionUnavailable =
+    mailWorkFloorHydrationRequired &&
+    !workFloorQuote &&
+    Boolean(mailWorkAdmissionError);
+  const mailWorkAdmissionPaused =
+    mailWorkAttachmentRequested &&
+    Boolean(workFloorQuote) &&
+    mailWorkWriteMode === "paused";
+  const mailWorkPauseReason = workWritePauseReason(workFloorQuote);
   const workAttachmentVisible =
     messageWorkAttachmentAllowed &&
     (workAttachmentSpendableAtoms > 0n || messageWorkAmountAtoms > 0n);
@@ -20163,7 +20200,7 @@ export default function App() {
               WORK_TOKEN_ID,
               workDecimalFromAtoms(messageWorkAmountAtoms),
               recipientAddress,
-              workWriteModeForQuote(workFloorQuote),
+              mailWorkWriteMode,
             ),
           )
             .filter(Boolean)
@@ -20172,19 +20209,66 @@ export default function App() {
       messageWorkAmountAtoms,
       messageWorkRecipientAddresses,
       messageWorkAttachmentAllowed,
-      workFloorQuote,
+      mailWorkWriteMode,
     ],
   );
+  const mailWorkPayloadUnavailable =
+    mailWorkAttachmentRequested &&
+    !mailWorkAdmissionChecking &&
+    !mailWorkAdmissionPaused &&
+    messageWorkRecipientAddresses.length > 0 &&
+    workAttachmentPayloads.length === 0;
   const workAttachmentTotalAtoms =
     messageWorkAmountAtoms * BigInt(workAttachmentPayloads.length);
   const workAttachmentTotalAmount = workNumberFromAtoms(
     workAttachmentTotalAtoms,
   );
   const workAttachmentBalanceOk =
-    messageWorkAmountAtoms <= 0n ||
-    (messageWorkAttachmentAllowed &&
-      workAttachmentPayloads.length > 0 &&
-      workAttachmentTotalAtoms <= workAttachmentSpendableAtoms);
+    !messageWorkAmountInvalid &&
+    (messageWorkAmountAtoms <= 0n ||
+      (messageWorkAttachmentAllowed &&
+        workAttachmentPayloads.length > 0 &&
+        workAttachmentTotalAtoms <= workAttachmentSpendableAtoms));
+  const mailWorkWalletAuthorityLoading =
+    mailWorkAttachmentRequested &&
+    !accountWorkSpendabilityState &&
+    (accountTokenLaneStatuses.work.loading ||
+      accountTokenLaneStatuses.all.loading ||
+      (!accountTokenLaneStatuses.work.loaded &&
+        !accountTokenLaneStatuses.work.error &&
+        !accountTokenLaneStatuses.all.loaded &&
+        !accountTokenLaneStatuses.all.error));
+  const mailWorkWalletAuthorityError =
+    mailWorkAttachmentRequested &&
+    !accountWorkSpendabilityState &&
+    !mailWorkWalletAuthorityLoading
+      ? accountTokenLaneStatuses.work.error ||
+        accountTokenLaneStatuses.all.error ||
+        "Verified spendable WORK is unavailable."
+      : "";
+  const mailWorkBalanceInsufficient =
+    mailWorkAttachmentRequested &&
+    workAttachmentPayloads.length > 0 &&
+    workAttachmentTotalAtoms > workAttachmentSpendableAtoms;
+  const mailWorkAdmissionReason = messageWorkAmountInvalid
+    ? "Enter a WORK amount using up to 16 decimal places, or 0 for no WORK attachment."
+    : mailWorkWalletAuthorityLoading
+      ? "Checking verified spendable WORK before enabling Send."
+      : mailWorkWalletAuthorityError
+        ? `Spendable WORK is unavailable (${mailWorkWalletAuthorityError}).`
+        : mailWorkAdmissionChecking
+          ? "Checking the current WORK transfer protocol before enabling Send."
+          : mailWorkAdmissionUnavailable
+            ? mailWorkAdmissionError
+            : mailWorkAdmissionPaused
+              ? `WORK transfers are paused${mailWorkPauseReason ? ` (${mailWorkPauseReason})` : ""}. Send will unlock when verified write admission is ready.`
+              : mailWorkPayloadUnavailable
+                ? mailWorkWriteMode === "legacy-q8"
+                  ? "Before V8 activates, WORK attachments must resolve exactly to eight decimal places."
+                  : "The WORK attachment could not be encoded under the current verified transfer protocol."
+                : mailWorkBalanceInsufficient
+                  ? `WORK attachment total ${formatWorkAmount(workAttachmentTotalAtoms)} exceeds ${formatWorkAmount(workAttachmentSpendableAtoms)} spendable WORK.`
+                  : "";
   const composeDataCarrierBytes = useMemo(
     () =>
       dataCarrierBytesForPayloads([
@@ -20206,9 +20290,15 @@ export default function App() {
     totalResolvedRecipients <= MAX_RECIPIENTS &&
     !recipientResolution.error &&
     !ccRecipientResolution.error &&
+    !messageWorkAmountInvalid &&
     workAttachmentBalanceOk &&
     composeDataCarrierBytes <= MAX_DATA_CARRIER_BYTES &&
-    !busy;
+    !mailSendBusy;
+  const composeSendState = mailSendBusy
+    ? "busy"
+    : canSend
+      ? "ready"
+      : "disabled";
   const normalizedIdName = normalizePowId(idName);
   const idRegistrationPayload = useMemo(
     () =>
@@ -22435,6 +22525,38 @@ export default function App() {
 
     void refreshRush(true);
   }, [network, rushMode]);
+
+  useEffect(() => {
+    if (network !== "livenet" || !mailWorkFloorHydrationRequired) {
+      setMailWorkAdmissionError("");
+      return;
+    }
+
+    let cancelled = false;
+    const refreshMailWorkAdmission = () => {
+      setMailWorkAdmissionError("");
+      void refreshWorkFloor(true, true).then((quote) => {
+        if (!cancelled && !quote && !acceptedWorkFloorQuoteRef.current) {
+          setMailWorkAdmissionError(
+            "Verified WORK transfer admission is unavailable. Refresh and try again; no transaction can be prepared.",
+          );
+        }
+      });
+    };
+
+    refreshMailWorkAdmission();
+    const interval = window.setInterval(
+      refreshMailWorkAdmission,
+      WORK_FLOOR_LIVE_REFRESH_MS,
+    );
+    window.addEventListener("focus", refreshMailWorkAdmission);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      window.removeEventListener("focus", refreshMailWorkAdmission);
+    };
+  }, [mailWorkFloorHydrationRequired, network]);
 
   useEffect(() => {
     if (
@@ -26980,6 +27102,10 @@ export default function App() {
   async function sendOpReturn(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
+    if (mailSendInFlightRef.current || mailSendBusy) {
+      return;
+    }
+
     if (!window.unisat) {
       setStatus({ tone: "bad", text: "Connect UniSat first." });
       return;
@@ -27001,6 +27127,14 @@ export default function App() {
       return;
     }
 
+    if (messageWorkAmountInvalid) {
+      setStatus({
+        tone: "bad",
+        text: "Enter a WORK amount using up to 16 decimal places, or 0 for no WORK attachment.",
+      });
+      return;
+    }
+
     let resolvedRecipients = recipientResolution;
     let resolvedCcRecipients = ccRecipientResolution;
     const recipientInput = recipient.trim();
@@ -27009,7 +27143,8 @@ export default function App() {
       needsRegistryResolution(recipientInput, network) ||
       needsRegistryResolution(ccRecipientInput, network);
 
-    setBusy(true);
+    mailSendInFlightRef.current = true;
+    setMailSendBusy(true);
     setStatus({
       tone: "idle",
       text: shouldResolveId
@@ -27391,7 +27526,8 @@ export default function App() {
         text: errorMessage(error, "Transaction failed."),
       });
     } finally {
-      setBusy(false);
+      mailSendInFlightRef.current = false;
+      setMailSendBusy(false);
     }
   }
 
@@ -31722,8 +31858,7 @@ export default function App() {
                 <ComposePane
                   amountSats={amountSats}
                   attachment={attachment}
-                  busy={busy}
-                  canSend={canSend}
+                  busy={mailSendBusy}
                   contacts={contactsForNetwork}
                   dataCarrierBytes={composeDataCarrierBytes}
                   draftMode
@@ -31738,6 +31873,8 @@ export default function App() {
                   recipient={recipient}
                   recipientError={Boolean(recipientResolution.error)}
                   recipientNote={recipientNote}
+                  sendState={composeSendState}
+                  sendStatus={mailWorkAdmissionReason}
                   sender={address}
                   setAttachment={setAttachment}
                   setAttachmentFile={(file) => void attachFile(file)}
@@ -31777,8 +31914,7 @@ export default function App() {
                 <ComposePane
                   amountSats={amountSats}
                   attachment={attachment}
-                  busy={busy}
-                  canSend={canSend}
+                  busy={mailSendBusy}
                   contacts={contactsForNetwork}
                   feeRate={feeRate}
                   memo={memo}
@@ -31791,6 +31927,8 @@ export default function App() {
                   recipient={recipient}
                   recipientError={Boolean(recipientResolution.error)}
                   recipientNote={recipientNote}
+                  sendState={composeSendState}
+                  sendStatus={mailWorkAdmissionReason}
                   sender={address}
                   setAttachment={setAttachment}
                   setAttachmentFile={(file) => void attachFile(file)}
@@ -48893,7 +49031,6 @@ function ComposePane({
   amountSats,
   attachment,
   busy,
-  canSend,
   ccRecipient,
   ccRecipientError,
   ccRecipientNote,
@@ -48908,6 +49045,8 @@ function ComposePane({
   recipient,
   recipientError,
   recipientNote,
+  sendState,
+  sendStatus,
   sender,
   setAttachment,
   setAttachmentFile,
@@ -48929,7 +49068,6 @@ function ComposePane({
   amountSats: number;
   attachment?: MailAttachment;
   busy: boolean;
-  canSend: boolean;
   ccRecipient: string;
   ccRecipientError: boolean;
   ccRecipientNote: string;
@@ -48944,6 +49082,8 @@ function ComposePane({
   recipient: string;
   recipientError: boolean;
   recipientNote: string;
+  sendState: "ready" | "disabled" | "busy";
+  sendStatus: string;
   sender: string;
   setAttachment: (value: MailAttachment | undefined) => void;
   setAttachmentFile: (file: File) => void;
@@ -48994,14 +49134,36 @@ function ComposePane({
               </span>
             </button>
           ) : null}
-          <button className="primary" disabled={!canSend} type="submit">
+          <button
+            aria-busy={sendState === "busy"}
+            aria-describedby={sendStatus ? "compose-send-status" : undefined}
+            className="primary mail-send-button"
+            data-state={sendState}
+            disabled={sendState !== "ready"}
+            type="submit"
+          >
             <span className="button-content">
-              <Send size={16} />
-              <span>{busy ? "Sending" : "Send"}</span>
+              {sendState === "busy" ? (
+                <RefreshCw className="mail-send-spinner" size={16} />
+              ) : (
+                <Send size={16} />
+              )}
+              <span>{sendState === "busy" ? "Sending…" : "Send"}</span>
             </span>
           </button>
         </div>
       </div>
+
+      {sendStatus ? (
+        <p
+          aria-live="polite"
+          className="field-note compose-send-status"
+          id="compose-send-status"
+          role="status"
+        >
+          {sendStatus}
+        </p>
+      ) : null}
 
       {parentTxid ? (
         <div className="reply-banner">
