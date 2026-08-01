@@ -1415,10 +1415,72 @@ code {
   color: #ffffff;
 }
 
-.primary:hover,
-.compose-button:hover {
+.primary:hover:not(:disabled),
+.compose-button:hover:not(:disabled) {
   background: var(--accent-strong);
   border-color: var(--accent-strong);
+}
+
+.mail-send-button {
+  transition:
+    box-shadow 160ms ease,
+    transform 160ms ease;
+}
+
+.mail-send-button[data-state="ready"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--surface);
+  opacity: 1;
+}
+
+.mail-send-button[data-state="ready"]:hover:not(:disabled) {
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+  color: var(--surface);
+  transform: translateY(-1px);
+}
+
+.mail-send-button[data-state="ready"]:focus-visible {
+  box-shadow: var(--focus);
+  outline: 2px solid var(--parchment);
+  outline-offset: 3px;
+}
+
+.mail-send-button[data-state="disabled"]:disabled {
+  background: var(--surface-soft);
+  border-color: var(--border-strong);
+  color: var(--text-muted);
+  cursor: not-allowed;
+  opacity: 1;
+  box-shadow: none;
+  transform: none;
+}
+
+.mail-send-button[data-state="busy"]:disabled {
+  background: var(--surface-soft);
+  border-color: var(--accent);
+  color: var(--accent-strong);
+  cursor: progress;
+  opacity: 1;
+  box-shadow: none;
+  transform: none;
+}
+
+.mail-send-spinner {
+  animation: mail-send-spin 820ms linear infinite;
+}
+
+@keyframes mail-send-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mail-send-spinner {
+    animation: none;
+  }
 }
 
 .small {

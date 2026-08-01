@@ -125,10 +125,104 @@ for (const [path, text] of contents) {
 }
 
 const css = contents.get("src/styles.css");
+function cssHexVariable(name) {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return css.match(new RegExp(`${escaped}:\\s*(#[0-9a-f]{6})`, "i"))?.[1] ?? "";
+}
+
+function relativeLuminance(hex) {
+  if (!/^#[0-9a-f]{6}$/iu.test(hex)) return 0;
+  const channels = [1, 3, 5].map((start) =>
+    Number.parseInt(hex.slice(start, start + 2), 16) / 255,
+  );
+  const [red, green, blue] = channels.map((channel) =>
+    channel <= 0.04045
+      ? channel / 12.92
+      : ((channel + 0.055) / 1.055) ** 2.4,
+  );
+  return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+}
+
+function cssContrastRatio(foregroundName, backgroundName) {
+  const foreground = relativeLuminance(cssHexVariable(foregroundName));
+  const background = relativeLuminance(cssHexVariable(backgroundName));
+  const lighter = Math.max(foreground, background);
+  const darker = Math.min(foreground, background);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
 const max1400Css = cssMediaBlock("max-width: 1400px");
 const max1180Css = cssMediaBlock("max-width: 1180px");
 const max1100Css = cssMediaBlock("max-width: 1100px");
 const topbarActionsBlock = cssBlock(".topbar-actions");
+const mailSendBlock = cssBlock(".mail-send-button");
+const mailSendReadyBlock = cssBlock('.mail-send-button[data-state="ready"]');
+const mailSendReadyHoverBlock = cssBlock(
+  '.mail-send-button[data-state="ready"]:hover:not(:disabled)',
+);
+const mailSendReadyFocusBlock = cssBlock(
+  '.mail-send-button[data-state="ready"]:focus-visible',
+);
+const mailSendDisabledBlock = cssBlock(
+  '.mail-send-button[data-state="disabled"]:disabled',
+);
+const mailSendBusyBlock = cssBlock(
+  '.mail-send-button[data-state="busy"]:disabled',
+);
+expect(
+  "Mail Send state colors change without a low-contrast interpolation",
+  /transition:\s*[\s\S]*box-shadow 160ms ease[\s\S]*transform 160ms ease/.test(
+    mailSendBlock,
+  ) &&
+    !/(?:background(?:-color)?|border-color|color|opacity)\s+\d+ms/.test(
+      mailSendBlock,
+    ),
+);
+expect(
+  "Mail Send ready and hover states use readable primary contrast",
+  /background:\s*var\(--accent\)/.test(mailSendReadyBlock) &&
+    /color:\s*var\(--surface\)/.test(mailSendReadyBlock) &&
+    /opacity:\s*1/.test(mailSendReadyBlock) &&
+    /background:\s*var\(--accent-strong\)/.test(mailSendReadyHoverBlock) &&
+    /color:\s*var\(--surface\)/.test(mailSendReadyHoverBlock) &&
+    cssContrastRatio("--surface", "--accent") >= 4.5 &&
+    cssContrastRatio("--surface", "--accent-strong") >= 4.5,
+);
+expect(
+  "Mail Send disabled state is opaque, neutral, and readable",
+  /background:\s*var\(--surface-soft\)/.test(mailSendDisabledBlock) &&
+    /border-color:\s*var\(--border-strong\)/.test(mailSendDisabledBlock) &&
+    /color:\s*var\(--text-muted\)/.test(mailSendDisabledBlock) &&
+    /cursor:\s*not-allowed/.test(mailSendDisabledBlock) &&
+    /opacity:\s*1/.test(mailSendDisabledBlock) &&
+    cssContrastRatio("--text-muted", "--surface-soft") >= 4.5,
+);
+expect(
+  "Mail Send busy state is distinct, readable, and communicates progress",
+  /background:\s*var\(--surface-soft\)/.test(mailSendBusyBlock) &&
+    /border-color:\s*var\(--accent\)/.test(mailSendBusyBlock) &&
+    /color:\s*var\(--accent-strong\)/.test(mailSendBusyBlock) &&
+    /cursor:\s*progress/.test(mailSendBusyBlock) &&
+    /opacity:\s*1/.test(mailSendBusyBlock) &&
+    /\.mail-send-spinner\s*\{[\s\S]*animation:\s*mail-send-spin/.test(css) &&
+    /@media\s*\(prefers-reduced-motion:\s*reduce\)[\s\S]*\.mail-send-spinner\s*\{[\s\S]*animation:\s*none/.test(
+      css,
+    ) &&
+    cssContrastRatio("--accent-strong", "--surface-soft") >= 4.5,
+);
+expect(
+  "Mail Send has a strong keyboard focus indicator",
+  /outline:\s*2px solid var\(--parchment\)/.test(mailSendReadyFocusBlock) &&
+    /outline-offset:\s*3px/.test(mailSendReadyFocusBlock) &&
+    /box-shadow:\s*var\(--focus\)/.test(mailSendReadyFocusBlock),
+);
+expect(
+  "disabled primary buttons cannot receive enabled hover styling",
+  /\.primary:hover:not\(:disabled\)/.test(css) &&
+    /\.compose-button:hover:not\(:disabled\)/.test(css) &&
+    !/\.primary:hover\s*,/.test(css) &&
+    !/\.compose-button:hover\s*\{/.test(css),
+);
 expect("shared topbar has a fixed height token", /--topbar-height:\s*64px/.test(css));
 expect(
   "shared topbar cannot expand vertically on desktop",
@@ -349,6 +443,18 @@ expect(
 );
 
 const app = contents.get("src/App.tsx");
+const applyWorkFloorQuoteBlock = app.slice(
+  app.indexOf("function applyWorkFloorQuote"),
+  app.indexOf("async function freshWorkWriteMode"),
+);
+const composePaneBlock = app.slice(
+  app.indexOf("function ComposePane("),
+  app.indexOf("function AttachmentCard("),
+);
+const sendOpReturnBlock = app.slice(
+  app.indexOf("async function sendOpReturn"),
+  app.indexOf("async function createInfinityBond"),
+);
 const proofApi = read("server/proof-api.mjs");
 const exactAmount = contents.get("src/exactAmount.ts");
 const walletUtxoPolicy = contents.get("src/walletUtxos.ts");
@@ -840,7 +946,84 @@ expect(
     ) &&
     /postProtocolPayments:[\s\S]*WORK_TOKEN_REGISTRY_ADDRESS[\s\S]*postProtocolPayloads:\s*attachedWorkPayloads/.test(
       app,
-  ),
+    ),
+);
+expect(
+  "mail WORK attachment readiness hydrates canonical admission before Send can enable",
+  /const mailWorkAttachmentRequested\s*=/.test(app) &&
+    /const mailWorkFloorHydrationRequired\s*=/.test(app) &&
+    /const mailWorkWriteMode\s*=[\s\S]*workWriteModeForQuote\(workFloorQuote\)/.test(
+      app,
+    ) &&
+    /const mailWorkAdmissionChecking\s*=[\s\S]*mailWorkFloorHydrationRequired/.test(
+      app,
+    ) &&
+    /const mailWorkAdmissionPaused\s*=[\s\S]*mailWorkWriteMode/.test(app) &&
+    (app.match(/mailWorkFloorHydrationRequired/g)?.length ?? 0) >= 3 &&
+    /useEffect\(\(\) => \{[\s\S]{0,1800}mailWorkFloorHydrationRequired[\s\S]{0,1800}(?:refreshWorkFloor|fetchWorkFloorQuote)/.test(
+      app,
+    ),
+);
+expect(
+  "pre-boundary floor regressions cannot manufacture a V8 write embargo",
+  /const v8BoundaryNeedsFailClosedRetention\s*=\s*boundaryWasLatched\s*\|\|\s*incomingBoundaryObserved/.test(
+    applyWorkFloorQuoteBlock,
+  ) &&
+    (applyWorkFloorQuoteBlock.match(/v8BoundaryNeedsFailClosedRetention/g)
+      ?.length ?? 0) >= 2 &&
+    /(?:if\s*\(v8BoundaryNeedsFailClosedRetention\)|v8BoundaryNeedsFailClosedRetention\s*\?)[\s\S]*failClosedWorkAmoV8Status/.test(
+      applyWorkFloorQuoteBlock,
+    ),
+);
+expect(
+  "mail send admission exposes an explicit visible readiness reason",
+  /const mailWorkAdmissionReason\s*=/.test(app) &&
+    /const messageWorkAmountInvalid\s*=/.test(app) &&
+    /messageWorkAmount\.trim\(\)\s*!==\s*""[\s\S]*parsedMessageWorkAmountAtoms\s*===\s*null/.test(
+      app,
+    ) &&
+    /Enter a WORK amount using up to 16 decimal places/.test(app) &&
+    /const mailWorkBalanceInsufficient\s*=/.test(app) &&
+    /WORK attachment total \$\{formatWorkAmount\(workAttachmentTotalAtoms\)\} exceeds/.test(
+      app,
+    ) &&
+    /const \[mailWorkAdmissionError, setMailWorkAdmissionError\]/.test(app) &&
+    /refreshWorkFloor\(true, true\)[\s\S]*Verified WORK transfer admission is unavailable/.test(
+      app,
+    ) &&
+    /const composeSendState\s*=[\s\S]*mailSendBusy[\s\S]*"busy"[\s\S]*"ready"[\s\S]*"disabled"/.test(
+      app,
+    ) &&
+    /sendState=\{composeSendState\}/.test(app) &&
+    /sendStatus=\{[\s\S]{0,300}mailWorkAdmissionReason[\s\S]{0,300}\}/.test(
+      app,
+    ) &&
+    /sendStatus:\s*string/.test(composePaneBlock) &&
+    /id="compose-send-status"/.test(composePaneBlock) &&
+    /aria-live="polite"/.test(composePaneBlock) &&
+    /\{sendStatus\}/.test(composePaneBlock),
+);
+expect(
+  "mail Send uses dedicated ready, disabled, and busy interaction states",
+  /const \[mailSendBusy, setMailSendBusy\] = useState\(false\)/.test(app) &&
+    /const mailSendInFlightRef = useRef\(false\)/.test(app) &&
+    /mailSendInFlightRef\.current \|\| mailSendBusy/.test(sendOpReturnBlock) &&
+    /mailSendInFlightRef\.current = true/.test(sendOpReturnBlock) &&
+    /finally\s*\{[\s\S]*mailSendInFlightRef\.current = false/.test(
+      sendOpReturnBlock,
+    ) &&
+    /setMailSendBusy\(true\)/.test(sendOpReturnBlock) &&
+    /finally\s*\{[\s\S]*setMailSendBusy\(false\)/.test(sendOpReturnBlock) &&
+    /sendState:\s*"ready"\s*\|\s*"disabled"\s*\|\s*"busy"/.test(
+      composePaneBlock,
+    ) &&
+    /className="primary mail-send-button"/.test(composePaneBlock) &&
+    /data-state=\{sendState\}/.test(composePaneBlock) &&
+    /aria-busy=\{sendState === "busy"\}/.test(composePaneBlock) &&
+    /disabled=\{sendState !== "ready"\}/.test(composePaneBlock) &&
+    /aria-describedby=[\s\S]{0,180}compose-send-status/.test(composePaneBlock) &&
+    /sendState === "busy"[\s\S]*Sending/.test(composePaneBlock) &&
+    !/busy\s*\?\s*"Sending"\s*:\s*"Send"/.test(composePaneBlock),
 );
 const mailWorkSignalBlock =
   app.match(
