@@ -118,9 +118,11 @@ unconfirmed V7 cannot disable V6, and V7 cannot admit a write until its
 declaration, deterministic migration, activation replay, parity, exact-tip
 readiness, and separate gate agree.
 
-WORK Precision Protocol V2 / AMO Unit Protocol V8 is the approved additive
-successor. If its exact declaration confirms in block `D`, activation is the
-opening of `D+1`. Canonical current WORK then uses exactly sixteen decimal
+WORK Precision Protocol V2 / AMO Unit Protocol V8 is the confirmed additive
+successor. Declaration transaction
+`f90e1faf572ef8253ca5959731b9d9e99c74bced4397380059878936712bee7a`
+is canonical at height `960600`, transaction index `2369`; activation is the
+opening of height `960601`. Canonical current WORK then uses exactly sixteen decimal
 places: one WORK is `10000000000000000` subatoms, one subatom is
 `0.0000000000000001 WORK`, and every Q8 atom becomes exactly `100000000`
 subatoms by integer multiplication. Balances, supply, and the 21,000,000 WORK
@@ -132,8 +134,8 @@ and the single exact face `25000` proofs, with the exact
 listing's bond is applied. Every active or sealing pre-V8 WORK listing becomes
 a non-actionable relic at activation, its reservation is released, and no
 legacy seal, buy, or delist path remains. Only a confirmed V8 listing may
-settle. Preactivation deployment keeps all V8 declaration pins empty and its
-write gate off; V8 admission opens only after exact declaration evidence, the
+settle. The exact V8 declaration pins are recorded while its write gate stays
+off for migration; V8 admission opens only after exact declaration evidence, the
 Q8-to-Q16 migration marker, activation replay, relic-cutover commitment,
 database constraints, parity, exact-tip readiness, and the independent V8 gate
 all agree.
@@ -216,6 +218,7 @@ The archive captured a live Phase 1 ignition, not a polished brand campaign.
 - 2026-07-30: AMO replay readiness is corrected to consume the immutable V5 H-1 seed evidence directly. Snapshot pruning, rebuild, range replay, and invalidation paths preserve the evidence and completed-migration dependencies, with a schema trigger as the database backstop. A missing replaceable H-1 canonical-summary row no longer blocks V6 admission or authorizes fabricated history.
 - 2026-07-30: WORK Precision Protocol V2 / AMO Unit Protocol V7 is staged as a new declaration-bound era instead of silently changing V6. Its activation boundary converts every confirmed canonical Q8 atom to exactly 100,000,000 Q16 subatoms, preserving balances, reservations, active-listing value, raw history, and the 21,000,000 WORK cap. Noncanonical mempool pending deltas are cleared and rebuilt under V7 rules. Legacy `send2` and V6 records replay at their original scale; post-activation writes require `send3` and `pwt-sale-v7`. The release may be deployed before the declaration with V7 closed, but it must leave the confirmed V6 protocol usable until the V7 boundary actually activates.
 - 2026-07-31: V7 never activated; V8 supersedes it without manufacturing V7 history. WORK Precision Protocol V2 / AMO Unit Protocol V8 becomes the approved additive successor. The exact declaration block `D` opens Q16 and `pwt-sale-v8` at `D+1`; every Q8 atom scales to exactly 100,000,000 subatoms, pending WORK projections rebuild under the active era, and the only new AMO face is exactly 25,000 proofs. All active or sealing pre-V8 WORK listings become non-actionable relics with reservations released and no legacy settlement actions. V8 remains closed while its pins are empty and opens only after exact evidence, migration, replay, relic-cutover, parity, exact-tip readiness, and the V8 write gate agree.
+- 2026-08-01: V8 declaration tx `f90e1faf572ef8253ca5959731b9d9e99c74bced4397380059878936712bee7a` confirms at height 960600/index 2369 and fixes activation at 960601. Its exact declaration is the raw `pwm1:m` carrier at vout 3 inside a subject/reply/body Mail envelope; activation evidence verifies that physical output directly rather than substituting the envelope aggregate at vout 1. All pins are recorded together and writes remain closed until Q16 migration, replay, relic cutover, pending parity, and exact-tip readiness pass.
 
 The emotional shape is a breakthrough moment: years of ProofOfWork/app experiments meeting modern agents and becoming legible all at once.
 

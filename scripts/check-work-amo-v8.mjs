@@ -42,6 +42,7 @@ import {
   WORK_AMO_V6_MODELS,
 } from "../server/work-amo-v6.mjs";
 import {
+  workAmoV8DeclarationCarrierEvidence,
   workAmoV8DeclarationCommitment,
 } from "../server/work-amo-v8-declaration.mjs";
 import {
@@ -219,6 +220,85 @@ assert.match(
 assert.match(
   declarationCommitment.text,
   /earliest exact valid declaration transaction by confirmed block height then transaction index is authoritative/u,
+);
+
+function opReturnOutput(text) {
+  const payload = Buffer.from(text, "utf8");
+  let pushData;
+  if (payload.length <= 0x4b) {
+    pushData = Buffer.from([payload.length]);
+  } else if (payload.length <= 0xff) {
+    pushData = Buffer.from([0x4c, payload.length]);
+  } else if (payload.length <= 0xffff) {
+    pushData = Buffer.alloc(3);
+    pushData[0] = 0x4d;
+    pushData.writeUInt16LE(payload.length, 1);
+  } else {
+    throw new RangeError("test OP_RETURN payload exceeds PUSHDATA2");
+  }
+  return {
+    scriptPubKey: {
+      hex: Buffer.concat([
+        Buffer.from([0x6a]),
+        pushData,
+        payload,
+      ]).toString("hex"),
+    },
+  };
+}
+
+const declarationMailEnvelope = {
+  vout: [
+    { scriptPubKey: { hex: "76a914" + "11".repeat(20) + "88ac" } },
+    opReturnOutput("pwm1:s:VjggRGVjbGFyYXRpb24"),
+    opReturnOutput(`pwm1:r:${"ab".repeat(32)}`),
+    opReturnOutput(declarationCommitment.protocolRecord),
+    { scriptPubKey: { hex: "76a914" + "22".repeat(20) + "88ac" } },
+    opReturnOutput(
+      `pwt1:send2:${WORK_TOKEN_ID}:100000000:1F1p9UEHuH5KTFR7Zsx93Khdrqhj6t5nFv`,
+    ),
+  ],
+};
+const declarationCarrier = workAmoV8DeclarationCarrierEvidence(
+  declarationMailEnvelope,
+  {
+    commitment: declarationCommitment,
+    protocolVout: 3,
+    recordOrdinal: 0,
+  },
+);
+assert.equal(declarationCarrier?.protocol, "pwm1");
+assert.equal(declarationCarrier?.protocolVout, 3);
+assert.equal(declarationCarrier?.recordOrdinal, 0);
+assert.equal(
+  declarationCarrier?.payloadSha256,
+  declarationCommitment.protocolRecordSha256,
+);
+assert.equal(
+  workAmoV8DeclarationCarrierEvidence(declarationMailEnvelope, {
+    commitment: declarationCommitment,
+    protocolVout: 1,
+    recordOrdinal: 0,
+  }),
+  null,
+  "the subject-position PWM aggregate must not replace the exact declaration carrier",
+);
+assert.equal(
+  workAmoV8DeclarationCarrierEvidence(
+    {
+      vout: [
+        ...declarationMailEnvelope.vout,
+        opReturnOutput(declarationCommitment.protocolRecord),
+      ],
+    },
+    {
+      commitment: declarationCommitment,
+      protocolVout: 3,
+      recordOrdinal: 0,
+    },
+  ),
+  null,
+  "duplicate exact declaration carriers must fail closed",
 );
 
 function listingPosition(overrides = {}) {

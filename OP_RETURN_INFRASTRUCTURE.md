@@ -1709,6 +1709,17 @@ be unambiguous. A later duplicate cannot move activation. The builder's final
 presentation newline is outside `declaration.text`, its byte count, and both
 hashes.
 
+The declaration confirmed at height `960600`, zero-based transaction index
+`2369`, in block
+`00000000000000000001ec938998cde4fd86ee6e3c672a6d3d95200cd8a984ac`.
+Its exact full `pwm1:m` carrier is vout `3`, record ordinal `0`, `5593` bytes,
+SHA-256
+`1ba53b285f95f8d69f0272c8e75c76b09cd3bd26281c68e665749368e7694528`;
+the unique qualifying registry payment is vout `4`, and activation is height
+`960601`. Verify that physical carrier output directly. The Mail envelope also
+contains subject and reply parts and may aggregate at vout `1` for mailbox
+projection, but that aggregate is not declaration-carrier evidence.
+
 If the exact declaration confirms in block `D`, record all V8 pins together
 and set `WORK_AMO_V8_ACTIVATION_HEIGHT=D+1`. Activation is the opening of the
 first confirmed block after `D`; never derive it from time, mempool presence,

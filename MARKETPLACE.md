@@ -1054,7 +1054,7 @@ Seal and buy must reference its exact frozen V8 position and terms and never
 consult a later network value. A V8 delist may close its own V8 sale ticket;
 no V8 action may reference a pre-V8 relic as an actionable listing.
 
-The additive preactivation release is intentionally empty and inert:
+The additive preactivation release was intentionally empty and inert:
 
 - every `WORK_AMO_V8_DECLARATION_*` pin and
   `WORK_AMO_V8_ACTIVATION_HEIGHT` is empty;
@@ -1064,6 +1064,28 @@ The additive preactivation release is intentionally empty and inert:
 - Q8/V6 remains authoritative until exact V8 declaration evidence confirms;
   and
 - `send3` and `pwt-sale-v8` preparation fail closed before activation.
+
+The authoritative declaration has now confirmed with these canonical pins:
+
+```text
+declarationTxid = f90e1faf572ef8253ca5959731b9d9e99c74bced4397380059878936712bee7a
+declarationHeight = 960600
+declarationBlockHash = 00000000000000000001ec938998cde4fd86ee6e3c672a6d3d95200cd8a984ac
+declarationBlockIndex = 2369
+declarationMemoSha256 = 1ba53b285f95f8d69f0272c8e75c76b09cd3bd26281c68e665749368e7694528
+declarationMemoBytes = 5593
+declarationProtocolVout = 3
+declarationRecordOrdinal = 0
+declarationRegistryPaymentVout = 4
+activationHeight = 960601
+```
+
+The transaction's subject and reply parts are separate `pwm1` outputs. Mail
+indexing may aggregate that envelope at vout 1, but declaration evidence binds
+the exact raw `pwm1:m` carrier at vout 3. The carrier and registry payment are
+each unique. Production keeps V8 writes closed while the activation migration
+and replay gates are being completed; the confirmed boundary cannot restore
+V6 or `send2` admission.
 
 The authoritative V8 declaration is the earliest exact valid declaration by
 confirmed block height and transaction index. Its transaction must be

@@ -122,6 +122,20 @@ function fixtureFailureRecord({ transient = false } = {}) {
   };
 }
 
+const v8CoreDeclarationVerifier = topLevelFunctionSource(
+  "exactWorkAmoV8CoreDeclarationEvidence",
+);
+assert.match(
+  v8CoreDeclarationVerifier,
+  /workAmoV8DeclarationCarrierEvidence\(hydrated,[\s\S]*declarationProtocolVout/u,
+  "the V8 latch must verify the exact raw declaration carrier output",
+);
+assert.doesNotMatch(
+  v8CoreDeclarationVerifier,
+  /canonicalRawProtocolRecordSetFromTransaction/u,
+  "the V8 latch must not select the subject-position PWM aggregate",
+);
+
 function emitFixtureFailure(options) {
   const line = JSON.stringify({
     ...fixtureFailureRecord(options),
@@ -188,24 +202,27 @@ async function runChecks() {
     readFileSync(API_PROOF_INDEX_CONFIG_PATH, "utf8"),
     readFileSync(WORKER_SERVICE_PATH, "utf8"),
   ]) {
-    for (const pin of [
-      "TXID",
-      "HEIGHT",
-      "BLOCK_HASH",
-      "BLOCK_INDEX",
-      "MEMO_SHA256",
-      "MEMO_BYTES",
-      "PROTOCOL_VOUT",
-      "RECORD_ORDINAL",
-      "REGISTRY_PAYMENT_VOUT",
-    ]) {
+    const expectedPins = {
+      BLOCK_HASH:
+        "00000000000000000001ec938998cde4fd86ee6e3c672a6d3d95200cd8a984ac",
+      BLOCK_INDEX: "2369",
+      HEIGHT: "960600",
+      MEMO_BYTES: "5593",
+      MEMO_SHA256:
+        "1ba53b285f95f8d69f0272c8e75c76b09cd3bd26281c68e665749368e7694528",
+      PROTOCOL_VOUT: "3",
+      RECORD_ORDINAL: "0",
+      REGISTRY_PAYMENT_VOUT: "4",
+      TXID: "f90e1faf572ef8253ca5959731b9d9e99c74bced4397380059878936712bee7a",
+    };
+    for (const [pin, expected] of Object.entries(expectedPins)) {
       assert.deepEqual(
         deploymentEnvironmentValues(
           deploymentSource,
           `WORK_AMO_V8_DECLARATION_${pin}`,
         ),
-        [""],
-        `AMO V8 declaration ${pin} must deploy empty before publication`,
+        [expected],
+        `AMO V8 declaration ${pin} must match canonical confirmation evidence`,
       );
     }
     assert.deepEqual(
@@ -213,8 +230,8 @@ async function runChecks() {
         deploymentSource,
         "WORK_AMO_V8_ACTIVATION_HEIGHT",
       ),
-      [""],
-      "AMO V8 D+1 activation must deploy empty before publication",
+      ["960601"],
+      "AMO V8 D+1 activation must match the canonical boundary",
     );
     assert.deepEqual(
       deploymentEnvironmentValues(
@@ -230,8 +247,8 @@ async function runChecks() {
       readFileSync(API_PROOF_INDEX_CONFIG_PATH, "utf8"),
       "WORK_AMO_V6_WRITES_ENABLED",
     ),
-    ["1"],
-    "the active V6 API write gate must not be silently overridden",
+    ["0"],
+    "the historical V6 API write gate must remain closed after V8 activation",
   );
   const v7DeclarationCommitment = workAmoV8DeclarationCommitment();
   const emptyV7Config = workerWorkAmoV8DeclarationConfig({});

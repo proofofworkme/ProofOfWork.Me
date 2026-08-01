@@ -965,7 +965,7 @@ expect(
     ),
 );
 expect(
-  "AMO V6 production starts declared, indexed, and write-open without an oracle credential",
+  "AMO V6 remains exactly pinned for replay and write-closed after the V8 boundary without an oracle credential",
   [
       "TXID",
       "HEIGHT",
@@ -996,7 +996,7 @@ expect(
         service,
       ),
     ) &&
-    /Environment=WORK_AMO_V6_WRITES_ENABLED=1$/mu.test(service) &&
+    /Environment=WORK_AMO_V6_WRITES_ENABLED=0$/mu.test(service) &&
     !/WORK_AMO_V6_(?:ORACLE|ATTESTOR)|work-amo-v6-oracle-key/u.test(
       service,
     ),

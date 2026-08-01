@@ -142,6 +142,7 @@ import {
   workAmoV6DeclarationCommitment,
 } from "../server/work-amo-v6-declaration.mjs";
 import {
+  workAmoV8DeclarationCarrierEvidence,
   workAmoV8DeclarationCommitment,
 } from "../server/work-amo-v8-declaration.mjs";
 import {
@@ -10121,20 +10122,24 @@ async function exactWorkAmoV8CoreDeclarationEvidence(
     _powBlockIndex: blockIndex,
     height: pins.declarationHeight,
   });
-  const recordSet =
-    canonicalRawProtocolRecordSetFromTransaction(hydrated);
-  const record = recordSet.records.find(
-    (candidate) =>
-      candidate.protocol === "pwm1" &&
-      candidate.protocolVout ===
-        pins.declarationProtocolVout &&
-      candidate.recordOrdinal ===
-        pins.declarationRecordOrdinal,
-  );
+  const record = workAmoV8DeclarationCarrierEvidence(hydrated, {
+    commitment: WORK_AMO_V8_EXPECTED_DECLARATION_COMMITMENT,
+    protocolVout: pins.declarationProtocolVout,
+    recordOrdinal: pins.declarationRecordOrdinal,
+  });
   const registryOutput =
     hydrated?.vout?.[
       pins.declarationRegistryPaymentVout
     ];
+  const registryPaymentCandidates = (hydrated?.vout ?? [])
+    .map((output, vout) => ({ output, vout }))
+    .filter(
+      ({ output }) =>
+        addressFromVout(output) ===
+          WORK_AMO_USD_QUOTE_REGISTRY_ADDRESS &&
+        satsFromVout(output) >=
+          BigInt(WORK_AMO_V5_DECLARATION_MIN_PAYMENT_SATS),
+    );
   const evidence = {
     authorityScriptPubKey:
       firstInputPrevoutScriptpubkey(hydrated),
@@ -10149,17 +10154,17 @@ async function exactWorkAmoV8CoreDeclarationEvidence(
       ? hydrated.vout.length
       : 0,
     payloadBytes: Buffer.byteLength(
-      String(record?.message ?? ""),
+      String(record?.protocolRecord ?? ""),
       "utf8",
     ),
-    payloadSha256: createHash("sha256")
-      .update(Buffer.from(String(record?.message ?? ""), "utf8"))
-      .digest("hex"),
+    payloadSha256: record?.payloadSha256 ?? "",
     protocol: String(record?.protocol ?? ""),
     protocolVout: Number(record?.protocolVout),
     recordOrdinal: Number(record?.recordOrdinal),
     registryAddress: addressFromVout(registryOutput),
     registryPaymentSats: satsFromVout(registryOutput).toString(),
+    registryPaymentCandidateCount:
+      registryPaymentCandidates.length,
     registryPaymentVout:
       pins.declarationRegistryPaymentVout,
     txid: normalizedLowerText(hydrated?.txid),
@@ -10183,14 +10188,18 @@ async function exactWorkAmoV8CoreDeclarationEvidence(
       pins.declarationProtocolVout ||
     evidence.recordOrdinal !==
       pins.declarationRecordOrdinal ||
-    record?.rawDecodeValid !== true ||
-    record?.message !==
+    record?.decodeValid !== true ||
+    record?.exactCarrierCount !== 1 ||
+    record?.protocolRecord !==
       WORK_AMO_V8_EXPECTED_DECLARATION_COMMITMENT?.protocolRecord ||
     evidence.payloadBytes !== pins.declarationMemoBytes ||
     evidence.payloadSha256 !==
       pins.declarationMemoSha256 ||
     evidence.registryAddress !==
       WORK_AMO_USD_QUOTE_REGISTRY_ADDRESS ||
+    evidence.registryPaymentCandidateCount !== 1 ||
+    registryPaymentCandidates[0]?.vout !==
+      pins.declarationRegistryPaymentVout ||
     BigInt(evidence.registryPaymentSats) <
       BigInt(WORK_AMO_V5_DECLARATION_MIN_PAYMENT_SATS) ||
     evidence.inputCount < 1 ||
