@@ -984,6 +984,17 @@ historical projection payload, and original refund-snapshot eligibility remain
 unchanged. Any extra active row of another authorization version fails the V8
 migration closed.
 
+Historical V1 table rows can encode their derived `amount` as whole WORK even
+when their immutable raw `pwt1:list5` authorization determines an exact Q8
+amount. Migration and its idempotent conservation audit therefore decode the
+raw carrier, require its one valid confirmed event and listing projection to
+agree on every version, token, and amount alias, and never guess from the table column's
+magnitude. The one-time repair is bounded to the two canonical affected
+listing txids and exact before/after integers. A full-payload compare-and-set
+may update only the Q16 derived amount and its explicit legacy-atom migration
+metadata; the raw event and authorization stay unchanged. Every other repair
+set fails closed.
+
 The mint wire form stays byte-compatible:
 
 ```text

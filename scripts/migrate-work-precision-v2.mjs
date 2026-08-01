@@ -51,6 +51,7 @@ import {
   WORK_SUBATOM_UNIT_SCALE_TEXT,
   WORK_TOKEN_ID,
   legacyWorkAtomsToSubatoms,
+  workAmountAtomsFromRecord,
   withWorkSubatomPrecisionMetadata,
 } from "../server/work-units.mjs";
 
@@ -74,6 +75,33 @@ const HEX_BYTES_PATTERN = /^(?:[0-9a-f]{2})+$/u;
 const UNSIGNED_INTEGER_PATTERN = /^(?:0|[1-9][0-9]*)$/u;
 const SIGNED_INTEGER_PATTERN = /^-?(?:0|[1-9][0-9]*)$/u;
 const BITCOIN_RPC_TIMEOUT_MS = 15_000;
+const WORK_PRECISION_V2_LEGACY_LISTING_AUTH_VERSIONS = new Set([
+  "pwt-sale-v1",
+  "pwt-sale-v2",
+  "pwt-sale-v3",
+  "pwt-sale-v4",
+  "pwt-sale-v5",
+  "pwt-sale-v6",
+]);
+const WORK_PRECISION_V2_CANONICAL_LEGACY_LISTING_REPAIRS =
+  Object.freeze([
+    Object.freeze({
+      authorizationVersion: "pwt-sale-v1",
+      expectedAmountSubatoms: "60000000000000000000",
+      legacyAmountAtoms: "600000000000",
+      listingId:
+        "551cb9020def00e9ad5735d4b475d563f2099a0fe593be0b93eeb24d685a1a24",
+      storedAmountSubatoms: "600000000000",
+    }),
+    Object.freeze({
+      authorizationVersion: "pwt-sale-v1",
+      expectedAmountSubatoms: "10000000000000000000",
+      legacyAmountAtoms: "100000000000",
+      listingId:
+        "c2890ff36db1db137491eb694a526758d7f9400679b4dad611526d410be391f7",
+      storedAmountSubatoms: "100000000000",
+    }),
+  ]);
 
 function normalizedLower(value) {
   return String(value ?? "").trim().toLowerCase();
@@ -218,6 +246,361 @@ export function verifyWorkPrecisionV2RowsConserved(
     );
   }
   return true;
+}
+
+function legacyListingAuthorizationVersions(payload) {
+  const item =
+    payload && typeof payload === "object" && !Array.isArray(payload)
+      ? payload
+      : {};
+  const saleAuthorization =
+    item.saleAuthorization &&
+    typeof item.saleAuthorization === "object" &&
+    !Array.isArray(item.saleAuthorization)
+      ? item.saleAuthorization
+      : {};
+  const listingAuthorization =
+    item.listingAuthorization &&
+    typeof item.listingAuthorization === "object" &&
+    !Array.isArray(item.listingAuthorization)
+      ? item.listingAuthorization
+      : {};
+  return [
+    item.version,
+    item.authorizationVersion,
+    saleAuthorization.version,
+    listingAuthorization.version,
+  ]
+    .filter(
+      (value) =>
+        value !== undefined && value !== null && value !== "",
+    )
+    .map((value) => normalizedLower(value));
+}
+
+function exactLegacyListingAuthorizationVersion(records) {
+  const versions = records.flatMap((record) =>
+    legacyListingAuthorizationVersions(record),
+  );
+  const unique = [...new Set(versions)];
+  if (unique.length !== 1) {
+    throw new Error(
+      "WORK precision migration found conflicting legacy listing authorization versions.",
+    );
+  }
+  const [version] = unique;
+  if (!WORK_PRECISION_V2_LEGACY_LISTING_AUTH_VERSIONS.has(version)) {
+    throw new Error(
+      `WORK precision migration found unsupported legacy listing authorization ${version}.`,
+    );
+  }
+  return version;
+}
+
+function exactLegacyListingTokenId(records) {
+  const tokenIds = records.flatMap((record) => {
+    const item =
+      record && typeof record === "object" && !Array.isArray(record)
+        ? record
+        : {};
+    const saleAuthorization =
+      item.saleAuthorization &&
+      typeof item.saleAuthorization === "object" &&
+      !Array.isArray(item.saleAuthorization)
+        ? item.saleAuthorization
+        : {};
+    const listingAuthorization =
+      item.listingAuthorization &&
+      typeof item.listingAuthorization === "object" &&
+      !Array.isArray(item.listingAuthorization)
+        ? item.listingAuthorization
+        : {};
+    return [
+      item.tokenId,
+      saleAuthorization.tokenId,
+      listingAuthorization.tokenId,
+    ]
+      .filter(
+        (value) =>
+          value !== undefined && value !== null && value !== "",
+      )
+      .map((value) => normalizedLower(value));
+  });
+  const unique = [...new Set(tokenIds)];
+  if (unique.length !== 1 || unique[0] !== WORK_TOKEN_ID) {
+    throw new Error(
+      "WORK precision migration legacy listing token evidence conflicts.",
+    );
+  }
+  return unique[0];
+}
+
+function exactLegacyListingAmountAtoms(record, label) {
+  const item =
+    record && typeof record === "object" && !Array.isArray(record)
+      ? record
+      : {};
+  const saleAuthorization =
+    item.saleAuthorization &&
+    typeof item.saleAuthorization === "object" &&
+    !Array.isArray(item.saleAuthorization)
+      ? item.saleAuthorization
+      : {};
+  const listingAuthorization =
+    item.listingAuthorization &&
+    typeof item.listingAuthorization === "object" &&
+    !Array.isArray(item.listingAuthorization)
+      ? item.listingAuthorization
+      : {};
+  const candidates = [
+    ["amountAtoms", item.amountAtoms, true],
+    ["tokenAmountAtoms", item.tokenAmountAtoms, true],
+    [
+      "saleAuthorization.amountAtoms",
+      saleAuthorization.amountAtoms,
+      true,
+    ],
+    [
+      "listingAuthorization.amountAtoms",
+      listingAuthorization.amountAtoms,
+      true,
+    ],
+    ["amount", item.amount, false],
+    ["tokenAmount", item.tokenAmount, false],
+    ["saleAuthorization.amount", saleAuthorization.amount, false],
+    [
+      "listingAuthorization.amount",
+      listingAuthorization.amount,
+      false,
+    ],
+  ]
+    .filter(
+      ([, value]) =>
+        value !== undefined && value !== null && value !== "",
+    )
+    .map(([name, value, atoms]) => ({
+      atoms: workAmountAtomsFromRecord(
+        atoms ? { amountAtoms: value } : { amount: value },
+        { allowZero: true },
+      ),
+      name,
+    }));
+  if (candidates.length === 0) {
+    throw new Error(
+      `WORK precision migration ${label} has no exact legacy amount evidence.`,
+    );
+  }
+  const unique = [...new Set(candidates.map((candidate) => candidate.atoms))];
+  if (unique.length !== 1) {
+    throw new Error(
+      `WORK precision migration ${label} has conflicting legacy amount aliases.`,
+    );
+  }
+  return unique[0];
+}
+
+function rawLegacyListingAuthorization(rawPayload) {
+  const match = /^pwt1:list5:([A-Za-z0-9_-]+)$/u.exec(
+    String(rawPayload ?? ""),
+  );
+  if (!match) {
+    throw new Error(
+      "WORK precision migration legacy listing raw event is not an exact list5 record.",
+    );
+  }
+  const bytes = Buffer.from(match[1], "base64url");
+  if (
+    bytes.length === 0 ||
+    bytes.toString("base64url") !== match[1]
+  ) {
+    throw new Error(
+      "WORK precision migration legacy listing authorization is not canonical base64url.",
+    );
+  }
+  const json = bytes.toString("utf8");
+  if (!Buffer.from(json, "utf8").equals(bytes)) {
+    throw new Error(
+      "WORK precision migration legacy listing authorization is not exact UTF-8.",
+    );
+  }
+  let authorization;
+  try {
+    authorization = JSON.parse(json);
+  } catch {
+    throw new Error(
+      "WORK precision migration legacy listing authorization is not JSON.",
+    );
+  }
+  if (
+    !authorization ||
+    typeof authorization !== "object" ||
+    Array.isArray(authorization)
+  ) {
+    throw new Error(
+      "WORK precision migration legacy listing authorization is not an object.",
+    );
+  }
+  return authorization;
+}
+
+function exactLegacyListingEvidence(row) {
+  if (exactInteger(row?.event_count ?? "0") !== "1") {
+    throw new Error(
+      "WORK precision migration requires exactly one confirmed legacy listing event.",
+    );
+  }
+  const rawAuthorization = rawLegacyListingAuthorization(
+    row?.event_raw_payload,
+  );
+  const eventPayload =
+    row?.event_payload &&
+    typeof row.event_payload === "object" &&
+    !Array.isArray(row.event_payload)
+      ? row.event_payload
+      : {};
+  const projectionPayload =
+    row?.payload &&
+    typeof row.payload === "object" &&
+    !Array.isArray(row.payload)
+      ? row.payload
+      : {};
+  const authorizationVersion = exactLegacyListingAuthorizationVersion([
+    rawAuthorization,
+    eventPayload,
+    projectionPayload,
+  ]);
+  exactLegacyListingTokenId([
+    rawAuthorization,
+    eventPayload,
+    projectionPayload,
+  ]);
+  const rawAmountAtoms = exactLegacyListingAmountAtoms(
+    rawAuthorization,
+    "raw authorization",
+  );
+  const eventAmountAtoms = exactLegacyListingAmountAtoms(
+    eventPayload,
+    "canonical event projection",
+  );
+  const projectionAmountAtoms = exactLegacyListingAmountAtoms(
+    projectionPayload,
+    "listing projection",
+  );
+  if (
+    rawAmountAtoms !== eventAmountAtoms ||
+    rawAmountAtoms !== projectionAmountAtoms
+  ) {
+    throw new Error(
+      "WORK precision migration legacy listing amount evidence conflicts with its raw event.",
+    );
+  }
+  return Object.freeze({
+    authorizationVersion,
+    legacyAmountAtoms: rawAmountAtoms,
+    rawAuthorizationSha256: sha256Hex(
+      Buffer.from(stableJson(rawAuthorization), "utf8"),
+    ),
+    rawPayloadBytes: Buffer.byteLength(
+      String(row?.event_raw_payload ?? ""),
+      "utf8",
+    ),
+    rawPayloadSha256: sha256Hex(
+      Buffer.from(String(row?.event_raw_payload ?? ""), "utf8"),
+    ),
+  });
+}
+
+export function workPrecisionV2LegacyListingRepairs(rows) {
+  const repairs = [];
+  const listingIds = new Set();
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const listingId = normalizedLower(row?.listing_id);
+    const payload =
+      row?.payload &&
+      typeof row.payload === "object" &&
+      !Array.isArray(row.payload)
+        ? row.payload
+        : {};
+    if (!TXID_PATTERN.test(listingId)) {
+      throw new Error(
+        "WORK precision migration found an invalid legacy listing identity.",
+      );
+    }
+    if (listingIds.has(listingId)) {
+      throw new Error(
+        "WORK precision migration found duplicate legacy listing evidence.",
+      );
+    }
+    listingIds.add(listingId);
+    const evidence = exactLegacyListingEvidence(row);
+    const storedAmountSubatoms = exactInteger(row?.amount);
+    const expectedAmountSubatoms = legacyWorkAtomsToSubatoms(
+      evidence.legacyAmountAtoms,
+      { allowZero: true },
+    );
+    const metadataReady =
+      String(payload.legacyAmountAtoms ?? "") ===
+        evidence.legacyAmountAtoms &&
+      String(payload.legacyAmountStorageModel ?? "") ===
+        WORK_LEGACY_ATOMIC_PROJECTION_MODEL &&
+      String(payload.precisionMigrationModel ?? "") ===
+        WORK_PRECISION_V2_MIGRATION_MODEL;
+    if (
+      storedAmountSubatoms === expectedAmountSubatoms &&
+      metadataReady
+    ) {
+      continue;
+    }
+    const repair = {
+      authorizationVersion: evidence.authorizationVersion,
+      expectedAmountSubatoms,
+      legacyAmountAtoms: evidence.legacyAmountAtoms,
+      listingId,
+      metadataRepairRequired: !metadataReady,
+      projectionPayloadSha256: sha256Hex(
+        Buffer.from(stableJson(payload), "utf8"),
+      ),
+      rawAuthorizationSha256: evidence.rawAuthorizationSha256,
+      rawPayloadBytes: evidence.rawPayloadBytes,
+      rawPayloadSha256: evidence.rawPayloadSha256,
+      storedAmountSubatoms,
+      valueRepairRequired:
+        storedAmountSubatoms !== expectedAmountSubatoms,
+    };
+    Object.defineProperty(repair, "projectionPayloadJson", {
+      enumerable: false,
+      value: stableJson(payload),
+    });
+    repairs.push(Object.freeze(repair));
+  }
+  return Object.freeze(
+    repairs.sort((left, right) =>
+      Buffer.compare(
+        Buffer.from(left.listingId, "utf8"),
+        Buffer.from(right.listingId, "utf8"),
+      ),
+    ),
+  );
+}
+
+function assertCanonicalWorkPrecisionV2LegacyListingRepairSet(
+  repairs,
+) {
+  const actual = repairs.map((repair) => ({
+    authorizationVersion: repair.authorizationVersion,
+    expectedAmountSubatoms: repair.expectedAmountSubatoms,
+    legacyAmountAtoms: repair.legacyAmountAtoms,
+    listingId: repair.listingId,
+    storedAmountSubatoms: repair.storedAmountSubatoms,
+  }));
+  if (
+    stableJson(actual) !==
+    stableJson(WORK_PRECISION_V2_CANONICAL_LEGACY_LISTING_REPAIRS)
+  ) {
+    throw new Error(
+      "WORK precision migration legacy listing repair set is not the exact canonical two-row set.",
+    );
+  }
 }
 
 export function scaleWorkPrecisionV2TokenState(legacyTokenState) {
@@ -1022,6 +1405,124 @@ async function readMigrationState(client) {
   };
 }
 
+async function reconcileWorkPrecisionV2LegacyListingAmounts(
+  client,
+  pins,
+  { apply = false } = {},
+) {
+  const result = await client.query(
+    `
+      SELECT
+        listing.listing_id,
+        listing.amount::text AS amount,
+        listing.payload,
+        COALESCE(listing_event.event_count, 0)::text AS event_count,
+        listing_event.raw_payload AS event_raw_payload,
+        listing_event.payload AS event_payload
+      FROM proof_indexer.credit_listings listing
+      JOIN proof_indexer.transactions listing_tx
+        ON listing_tx.network = listing.network
+       AND listing_tx.txid = listing.listing_id
+       AND listing_tx.status = 'confirmed'
+       AND listing_tx.block_height < $2
+      JOIN proof_indexer.blocks listing_block
+        ON listing_block.network = listing_tx.network
+       AND listing_block.block_hash = listing_tx.block_hash
+       AND listing_block.height = listing_tx.block_height
+       AND listing_block.canonical = true
+      JOIN LATERAL (
+        SELECT
+          count(*) OVER ()::integer AS event_count,
+          event.raw_payload,
+          event.payload
+        FROM proof_indexer.events event
+        WHERE event.network = listing.network
+          AND event.txid = listing.listing_id
+          AND event.status = 'confirmed'
+          AND event.valid = true
+          AND event.protocol = 'pwt1'
+          AND event.kind = 'token-listing'
+          AND event.raw_payload LIKE 'pwt1:list5:%'
+          AND event.block_height = listing_tx.block_height
+          AND event.block_index = listing_tx.block_index
+        ORDER BY event.event_key ASC
+        LIMIT 1
+      ) listing_event ON true
+      WHERE listing.network = 'livenet'
+        AND listing.token_id = $1
+      ORDER BY listing.listing_id ASC
+      FOR UPDATE OF listing
+    `,
+    [WORK_TOKEN_ID, pins.activationHeight],
+  );
+  const repairs = workPrecisionV2LegacyListingRepairs(result.rows);
+  if (apply) {
+    if (repairs.length > 0) {
+      assertCanonicalWorkPrecisionV2LegacyListingRepairSet(repairs);
+    }
+    for (const repair of repairs) {
+      const update = await client.query(
+        `
+          UPDATE proof_indexer.credit_listings listing
+          SET
+            amount = $3::numeric,
+            payload = COALESCE(listing.payload, '{}'::jsonb) ||
+              jsonb_build_object(
+                'legacyAmountAtoms', $4::text,
+                'legacyAmountStorageModel', $5::text,
+                'precisionMigrationModel', $6::text
+              ),
+            updated_at = now()
+          WHERE listing.network = 'livenet'
+            AND listing.token_id = $1
+            AND listing.listing_id = $2
+            AND listing.amount = $7::numeric
+            AND listing.payload = $8::jsonb
+        `,
+        [
+          WORK_TOKEN_ID,
+          repair.listingId,
+          repair.expectedAmountSubatoms,
+          repair.legacyAmountAtoms,
+          WORK_LEGACY_ATOMIC_PROJECTION_MODEL,
+          WORK_PRECISION_V2_MIGRATION_MODEL,
+          repair.storedAmountSubatoms,
+          repair.projectionPayloadJson,
+        ],
+      );
+      if (update.rowCount !== 1) {
+        throw new Error(
+          `WORK precision migration could not guard legacy listing repair ${repair.listingId}.`,
+        );
+      }
+    }
+    const verified =
+      await reconcileWorkPrecisionV2LegacyListingAmounts(
+        client,
+        pins,
+      );
+    if (!verified.ready) {
+      throw new Error(
+        "WORK Q16 legacy listing repair did not restore exact conservation.",
+      );
+    }
+    return Object.freeze({
+      ...verified,
+      repairPlan: Object.freeze({
+        ...workPrecisionV2ObjectCommitment(repairs),
+        items: repairs,
+      }),
+      repaired: repairs.length,
+    });
+  }
+  return Object.freeze({
+    ...workPrecisionV2ObjectCommitment(repairs),
+    items: repairs,
+    ready: repairs.length === 0,
+    repaired: apply ? repairs.length : 0,
+  });
+}
+
 async function readWorkPrecisionV2ActivationOpening(
   client,
   pins,
@@ -1404,13 +1905,66 @@ export async function runWorkPrecisionV2Migration(
         "WORK Q16 storage is missing an exact V6/V8 activation boundary constraint.",
       );
     }
-    return {
-      applied: false,
-      marker: existingMarker,
-      precision: "q16",
-      schema,
-      status: "complete",
-    };
+    await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
+    try {
+      await client.query(
+        `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`,
+        [WORK_PRECISION_V2_MIGRATION_META_KEY],
+      );
+      await client.query(
+        `
+          LOCK TABLE
+            proof_indexer.blocks,
+            proof_indexer.transactions,
+            proof_indexer.events,
+            proof_indexer.credit_definitions,
+            proof_indexer.credit_listings,
+            proof_indexer.meta
+          IN SHARE ROW EXCLUSIVE MODE
+        `,
+      );
+      const lockedMarkerResult = await client.query(
+        `
+          SELECT value
+          FROM proof_indexer.meta
+          WHERE key = $1
+          LIMIT 2
+        `,
+        [WORK_PRECISION_V2_MIGRATION_META_KEY],
+      );
+      if (
+        lockedMarkerResult.rows.length !== 1 ||
+        !workPrecisionV2MarkerMatches(
+          lockedMarkerResult.rows[0]?.value,
+          marker,
+        )
+      ) {
+        throw new Error(
+          "WORK Q16 listing conservation repair lost its immutable migration marker.",
+        );
+      }
+      const legacyListingConservation =
+        await reconcileWorkPrecisionV2LegacyListingAmounts(
+          client,
+          pins,
+          { apply },
+        );
+      await client.query(apply ? "COMMIT" : "ROLLBACK");
+      return {
+        applied: legacyListingConservation.repaired > 0,
+        legacyListingConservation,
+        marker: existingMarker,
+        precision: "q16",
+        schema,
+        status:
+          legacyListingConservation.ready || apply
+            ? "complete"
+            : "listing-repair-ready",
+      };
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => {});
+      throw error;
+    }
   }
   if (initialPrecision !== "q8") {
     throw new Error(
@@ -1684,6 +2238,12 @@ export async function runWorkPrecisionV2Migration(
         WORK_PRECISION_V2_MIGRATION_MODEL,
       ],
     );
+    const legacyListingConservation =
+      await reconcileWorkPrecisionV2LegacyListingAmounts(
+        client,
+        pins,
+        { apply: true },
+      );
     await client.query(
       `
         DELETE FROM proof_indexer.meta
@@ -2003,6 +2563,7 @@ export async function runWorkPrecisionV2Migration(
     return {
       applied: apply,
       ...(apply ? {} : { declarationEvidence }),
+      legacyListingConservation,
       marker: apply ? storedMarkerResult.rows[0].value : marker,
       precision: apply ? "q16" : "q8",
       schema,

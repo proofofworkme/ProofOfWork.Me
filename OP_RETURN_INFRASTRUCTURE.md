@@ -1773,6 +1773,18 @@ only the derived status after proving the historical authorization is exactly
 `pwt-sale-v1` or `pwt-sale-v2`; it preserves the row payload, raw event, and
 original refund snapshot. Any other extra active authorization fails closed.
 
+Some historical V1 projection rows stored whole WORK in the relational
+`amount` column while their immutable raw `pwt1:list5` authorization determines
+an exact Q8 amount. Q16 conversion must decode that raw carrier, require one
+matching valid confirmed event, and require all event/listing version, token, and
+amount aliases to agree; it never infers units from the ambiguous table value.
+The idempotent migration path audits every confirmed preactivation legacy
+listing under the immutable marker and, under serializable locks, permits only
+the exact two-row canonical repair set. Each mutation compares the complete
+projection payload and current amount before updating only its derived Q16
+amount plus explicit legacy-atom migration metadata. A second run must report
+`ready: true`, zero remaining items, and zero repaired rows.
+
 Pending WORK state is volatile. Migration removes pending or wrong-era WORK
 events, listing/action rows, balance deltas, and affected current snapshots,
 while retaining noncanonical transaction envelopes as recovery input. After
