@@ -26,19 +26,30 @@ import {
   workAmoV5CanonicalPayloadCommitment,
 } from "../server/work-amo-v5.mjs";
 import {
+  workPrecisionV2MarkerReady as sharedWorkPrecisionV2MarkerReady,
+} from "../server/work-precision-v2-marker.mjs";
+import {
+  workPrecisionV2ConstraintAudit as sharedWorkPrecisionV2ConstraintAudit,
+} from "../server/work-precision-v2-schema.mjs";
+import {
   WORK_AMO_V6_BLOCK_SEQUENCER_MODEL,
 } from "../server/work-amo-v6.mjs";
 import {
-  WORK_AMO_V7_AUTH_VERSION,
-  WORK_AMO_V7_BLOCK_SEQUENCER_MODEL,
-  WORK_AMO_V7_MINT_AMOUNT_SUBATOMS,
-  WORK_AMO_V7_TOKEN_STATE_PREIMAGE_MODEL,
-  WORK_AMO_V7_TRANSFER_VERSION,
-  workAmoV7CanonicalTokenStateCommitment,
-} from "../server/work-amo-v7.mjs";
+  WORK_AMO_V8_AUTH_VERSION,
+  WORK_AMO_V8_BLOCK_SEQUENCER_MODEL,
+  WORK_AMO_V8_MINT_AMOUNT_SUBATOMS,
+  WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL,
+  WORK_AMO_V8_TRANSFER_VERSION,
+  workAmoV8CanonicalTokenStateCommitment,
+} from "../server/work-amo-v8.mjs";
 import {
-  workAmoV7DeclarationCommitment,
-} from "../server/work-amo-v7-declaration.mjs";
+  workAmoV8DeclarationCommitment,
+} from "../server/work-amo-v8-declaration.mjs";
+import {
+  WORK_AMO_V8_ACTIVATION_LATCH_META_KEY,
+  WORK_AMO_V8_ACTIVATION_LATCH_MODEL,
+  workAmoV8ActivationLatchReady as sharedWorkAmoV8ActivationLatchReady,
+} from "../server/work-amo-v8-activation-latch.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
@@ -224,23 +235,19 @@ const WORK_PRECISION_V2_DERIVED_PROJECTION_POLICY =
   "invalidate-and-replay-from-activation";
 const WORK_PRECISION_Q8_ERA = "q8";
 const WORK_PRECISION_Q16_ERA = "q16";
-const WORK_AMO_V7_ACTIVATION_LATCH_META_KEY =
-  "workAmoV7ActivationLatch:livenet";
-const WORK_AMO_V7_ACTIVATION_LATCH_MODEL =
-  "canonical-work-amo-v7-activation-latch-v1";
-const WORK_AMO_V7_PENDING_REBUILD_META_KEY =
+const WORK_AMO_V8_PENDING_REBUILD_META_KEY =
   "workQ16PendingRebuild:livenet";
-const WORK_AMO_V7_PENDING_REBUILD_MODEL =
+const WORK_AMO_V8_PENDING_REBUILD_MODEL =
   "canonical-work-q16-pending-rebuild-v1";
-const WORK_AMO_V7_PENDING_MEMPOOL_MODEL =
+const WORK_AMO_V8_PENDING_MEMPOOL_MODEL =
   "canonical-core-mempool-txid-set-v1";
-const WORK_AMO_V7_PENDING_PROJECTION_MODEL =
+const WORK_AMO_V8_PENDING_PROJECTION_MODEL =
   "canonical-work-q16-pending-projection-v1";
-const WORK_AMO_V7_PENDING_MEMPOOL_DOMAIN =
+const WORK_AMO_V8_PENDING_MEMPOOL_DOMAIN =
   "ProofOfWork.Me/WORK-Q16-PENDING-MEMPOOL/v1";
-const WORK_AMO_V7_PENDING_PROJECTION_DOMAIN_PREFIX =
+const WORK_AMO_V8_PENDING_PROJECTION_DOMAIN_PREFIX =
   "ProofOfWork.Me/WORK-Q16-PENDING-";
-const WORK_AMO_V7_PENDING_WITNESS_MAX_AGE_MS = Math.min(
+const WORK_AMO_V8_PENDING_WITNESS_MAX_AGE_MS = Math.min(
   10 * 60_000,
   Math.max(
     60_000,
@@ -250,8 +257,8 @@ const WORK_AMO_V7_PENDING_WITNESS_MAX_AGE_MS = Math.min(
     ) || 2 * 60_000,
   ),
 );
-const WORK_AMO_V7_EXPECTED_DECLARATION_COMMITMENT =
-  workAmoV7DeclarationCommitment();
+const WORK_AMO_V8_EXPECTED_DECLARATION_COMMITMENT =
+  workAmoV8DeclarationCommitment();
 const WORK_PRECISION_CORE_RPC_TIMEOUT_MS = Math.min(
   30_000,
   Math.max(
@@ -376,42 +383,42 @@ function exactJsonInteger(value, { minimum = 0 } = {}) {
   );
 }
 
-export function workerWorkAmoV7DeclarationConfig(env = process.env) {
+export function workerWorkAmoV8DeclarationConfig(env = process.env) {
   const declarationTxid = canonicalConfiguredHash(
-    env.WORK_AMO_V7_DECLARATION_TXID,
+    env.WORK_AMO_V8_DECLARATION_TXID,
   );
   const declarationHeight = canonicalConfiguredInteger(
-    env.WORK_AMO_V7_DECLARATION_HEIGHT,
+    env.WORK_AMO_V8_DECLARATION_HEIGHT,
     { minimum: 1 },
   );
   const declarationBlockHash = canonicalConfiguredHash(
-    env.WORK_AMO_V7_DECLARATION_BLOCK_HASH,
+    env.WORK_AMO_V8_DECLARATION_BLOCK_HASH,
   );
   const declarationBlockIndex = canonicalConfiguredInteger(
-    env.WORK_AMO_V7_DECLARATION_BLOCK_INDEX,
+    env.WORK_AMO_V8_DECLARATION_BLOCK_INDEX,
   );
   const declarationMemoSha256 = canonicalConfiguredHash(
-    env.WORK_AMO_V7_DECLARATION_MEMO_SHA256,
+    env.WORK_AMO_V8_DECLARATION_MEMO_SHA256,
   );
   const declarationMemoBytes = canonicalConfiguredInteger(
-    env.WORK_AMO_V7_DECLARATION_MEMO_BYTES,
+    env.WORK_AMO_V8_DECLARATION_MEMO_BYTES,
     { minimum: 1 },
   );
   const declarationProtocolVout = canonicalConfiguredInteger(
-    env.WORK_AMO_V7_DECLARATION_PROTOCOL_VOUT,
+    env.WORK_AMO_V8_DECLARATION_PROTOCOL_VOUT,
   );
   const declarationRecordOrdinal = canonicalConfiguredInteger(
-    env.WORK_AMO_V7_DECLARATION_RECORD_ORDINAL,
+    env.WORK_AMO_V8_DECLARATION_RECORD_ORDINAL,
   );
   const declarationRegistryPaymentVout = canonicalConfiguredInteger(
-    env.WORK_AMO_V7_DECLARATION_REGISTRY_PAYMENT_VOUT,
+    env.WORK_AMO_V8_DECLARATION_REGISTRY_PAYMENT_VOUT,
   );
   const configuredActivationHeight = canonicalConfiguredInteger(
-    env.WORK_AMO_V7_ACTIVATION_HEIGHT,
+    env.WORK_AMO_V8_ACTIVATION_HEIGHT,
     { minimum: 1 },
   );
   const rawWritesSource = String(
-    env.WORK_AMO_V7_WRITES_ENABLED ?? "",
+    env.WORK_AMO_V8_WRITES_ENABLED ?? "",
   );
   const rawWritesEnabled = rawWritesSource.trim();
   const writesEnabled = /^(?:1|true|yes)$/iu.test(rawWritesEnabled);
@@ -419,16 +426,16 @@ export function workerWorkAmoV7DeclarationConfig(env = process.env) {
     rawWritesEnabled === "" ||
     /^(?:0|false|no)$/iu.test(rawWritesEnabled);
   const rawValues = [
-    env.WORK_AMO_V7_DECLARATION_TXID,
-    env.WORK_AMO_V7_DECLARATION_HEIGHT,
-    env.WORK_AMO_V7_DECLARATION_BLOCK_HASH,
-    env.WORK_AMO_V7_DECLARATION_BLOCK_INDEX,
-    env.WORK_AMO_V7_DECLARATION_MEMO_SHA256,
-    env.WORK_AMO_V7_DECLARATION_MEMO_BYTES,
-    env.WORK_AMO_V7_DECLARATION_PROTOCOL_VOUT,
-    env.WORK_AMO_V7_DECLARATION_RECORD_ORDINAL,
-    env.WORK_AMO_V7_DECLARATION_REGISTRY_PAYMENT_VOUT,
-    env.WORK_AMO_V7_ACTIVATION_HEIGHT,
+    env.WORK_AMO_V8_DECLARATION_TXID,
+    env.WORK_AMO_V8_DECLARATION_HEIGHT,
+    env.WORK_AMO_V8_DECLARATION_BLOCK_HASH,
+    env.WORK_AMO_V8_DECLARATION_BLOCK_INDEX,
+    env.WORK_AMO_V8_DECLARATION_MEMO_SHA256,
+    env.WORK_AMO_V8_DECLARATION_MEMO_BYTES,
+    env.WORK_AMO_V8_DECLARATION_PROTOCOL_VOUT,
+    env.WORK_AMO_V8_DECLARATION_RECORD_ORDINAL,
+    env.WORK_AMO_V8_DECLARATION_REGISTRY_PAYMENT_VOUT,
+    env.WORK_AMO_V8_ACTIVATION_HEIGHT,
   ].map((value) => String(value ?? ""));
   const requested =
     rawValues.some((value) => value !== "") ||
@@ -444,9 +451,9 @@ export function workerWorkAmoV7DeclarationConfig(env = process.env) {
       declarationBlockIndex !== null &&
       /^[0-9a-f]{64}$/u.test(declarationMemoSha256) &&
       declarationMemoBytes ===
-        WORK_AMO_V7_EXPECTED_DECLARATION_COMMITMENT.protocolRecordBytes &&
+        WORK_AMO_V8_EXPECTED_DECLARATION_COMMITMENT.protocolRecordBytes &&
       declarationMemoSha256 ===
-        WORK_AMO_V7_EXPECTED_DECLARATION_COMMITMENT.protocolRecordSha256 &&
+        WORK_AMO_V8_EXPECTED_DECLARATION_COMMITMENT.protocolRecordSha256 &&
       declarationProtocolVout !== null &&
       declarationRecordOrdinal === 0 &&
       declarationRegistryPaymentVout !== null,
@@ -578,6 +585,7 @@ export function workerWorkPrecisionV2MarkerReady(
     "network",
     "projectionModel",
     "rawConfirmedHistoryMutation",
+    "relicCutover",
     "replayFromHeight",
     "snapshotPolicy",
     "status",
@@ -610,6 +618,7 @@ export function workerWorkPrecisionV2MarkerReady(
   ].sort();
   return Boolean(
     config.configured === true &&
+      sharedWorkPrecisionV2MarkerReady(marker, config) &&
       exactObjectKeys(marker, markerKeys) &&
       exactObjectKeys(activationOpening, [
         "declarationClosingStatePayloadBytes",
@@ -625,11 +634,11 @@ export function workerWorkPrecisionV2MarkerReady(
       marker.migrationModel === WORK_PRECISION_V2_MIGRATION_MODEL &&
       marker.status === "complete" &&
       marker.network === "livenet" &&
-      marker.version === WORK_AMO_V7_AUTH_VERSION &&
+      marker.version === WORK_AMO_V8_AUTH_VERSION &&
       marker.globalPrecisionModel === WORK_PRECISION_V2_MODEL &&
       marker.projectionModel === WORK_SUBATOM_PROJECTION_MODEL &&
       marker.legacyProjectionModel === WORK_ATOMIC_PROJECTION_MODEL &&
-      marker.transferVersion === WORK_AMO_V7_TRANSFER_VERSION &&
+      marker.transferVersion === WORK_AMO_V8_TRANSFER_VERSION &&
       marker.legacyDecimals === WORK_DECIMALS &&
       marker.decimals === WORK_SUBATOM_DECIMALS &&
       String(marker.conversionFactor ?? "") ===
@@ -637,7 +646,7 @@ export function workerWorkPrecisionV2MarkerReady(
       String(marker.unitScale ?? "") === WORK_SUBATOM_UNIT_SCALE_TEXT &&
       String(marker.maxSupplySubatoms ?? "") === WORK_Q16_MAX_SUPPLY &&
       String(marker.mintAmountSubatoms ?? "") ===
-        WORK_AMO_V7_MINT_AMOUNT_SUBATOMS.toString() &&
+        WORK_AMO_V8_MINT_AMOUNT_SUBATOMS.toString() &&
       marker.rawConfirmedHistoryMutation ===
         WORK_PRECISION_V2_RAW_HISTORY_POLICY &&
       marker.derivedProjectionPolicy ===
@@ -660,9 +669,9 @@ export function workerWorkPrecisionV2MarkerReady(
       marker.declarationRegistryPaymentVout ===
         config.declarationRegistryPaymentVout &&
       marker.declarationTextBytes ===
-        WORK_AMO_V7_EXPECTED_DECLARATION_COMMITMENT.payloadBytes &&
+        WORK_AMO_V8_EXPECTED_DECLARATION_COMMITMENT.payloadBytes &&
       marker.declarationTextSha256 ===
-        WORK_AMO_V7_EXPECTED_DECLARATION_COMMITMENT.payloadSha256 &&
+        WORK_AMO_V8_EXPECTED_DECLARATION_COMMITMENT.payloadSha256 &&
       Number.isFinite(Date.parse(String(marker.completedAt ?? ""))) &&
       Number.isFinite(Date.parse(String(marker.updatedAt ?? ""))) &&
       activationOpening.declarationTransitionModel ===
@@ -737,91 +746,18 @@ export function workerWorkPrecisionV2MarkerReady(
   );
 }
 
-export function workerWorkAmoV7ActivationLatchReady(
+export function workerWorkAmoV8ActivationLatchReady(
   latchValue,
   declarationConfig,
 ) {
-  const latch = objectRecord(latchValue);
   const config = objectRecord(declarationConfig);
-  const registryPaymentSats = String(
-    latch.registryPaymentSats ?? "",
-  );
   return Boolean(
     config.configured === true &&
-      exactObjectKeys(
-        latch,
-        [
-          "activationHeight",
-          "authorityScriptPubKey",
-          "coreVerified",
-          "declarationBlockHash",
-          "declarationBlockIndex",
-          "declarationHeight",
-          "declarationMemoBytes",
-          "declarationMemoSha256",
-          "declarationProtocolVout",
-          "declarationRecordOrdinal",
-          "declarationRegistryPaymentVout",
-          "declarationTxid",
-          "evidenceComplete",
-          "firstObservedTipHash",
-          "firstObservedTipHeight",
-          "indexVerified",
-          "inputCount",
-          "model",
-          "network",
-          "observedAt",
-          "outputCount",
-          "protocol",
-          "reached",
-          "registryAddress",
-          "registryPaymentSats",
-        ],
-      ) &&
-      latch.model === WORK_AMO_V7_ACTIVATION_LATCH_MODEL &&
-      latch.network === "livenet" &&
-      latch.reached === true &&
-      latch.activationHeight === config.activationHeight &&
-      latch.declarationTxid ===
-        config.declarationTxid &&
-      latch.declarationHeight === config.declarationHeight &&
-      latch.declarationBlockHash ===
-        config.declarationBlockHash &&
-      latch.declarationBlockIndex ===
-        config.declarationBlockIndex &&
-      latch.declarationMemoBytes ===
-        config.declarationMemoBytes &&
-      latch.declarationMemoSha256 ===
-        config.declarationMemoSha256 &&
-      latch.declarationProtocolVout ===
-        config.declarationProtocolVout &&
-      latch.declarationRecordOrdinal ===
-        config.declarationRecordOrdinal &&
-      latch.declarationRegistryPaymentVout ===
-        config.declarationRegistryPaymentVout &&
-      latch.authorityScriptPubKey ===
-        WORK_AMO_V5_DECLARATION_AUTHORITY_SCRIPT_PUBKEY &&
-      latch.protocol === "pwm1" &&
-      String(latch.registryAddress ?? "").trim() ===
-        WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS &&
-      typeof latch.registryPaymentSats === "string" &&
-      latch.registryPaymentSats === registryPaymentSats.trim() &&
-      /^(?:0|[1-9][0-9]*)$/u.test(registryPaymentSats) &&
-      BigInt(registryPaymentSats) >=
-        BigInt(WORK_AMO_V5_DECLARATION_MIN_PAYMENT_SATS) &&
-      exactJsonInteger(latch.inputCount, { minimum: 1 }) &&
-      exactJsonInteger(latch.outputCount, { minimum: 1 }) &&
-      latch.coreVerified === true &&
-      latch.indexVerified === true &&
-      latch.evidenceComplete === true &&
-      exactJsonInteger(latch.firstObservedTipHeight, {
-        minimum: config.activationHeight,
-      }) &&
-      /^[0-9a-f]{64}$/u.test(
-        latch.firstObservedTipHash,
-      ) &&
-      typeof latch.observedAt === "string" &&
-      Number.isFinite(Date.parse(String(latch.observedAt ?? "")))
+      sharedWorkAmoV8ActivationLatchReady(
+        latchValue,
+        config,
+        { network: "livenet" },
+      )
   );
 }
 
@@ -901,7 +837,7 @@ async function readWorkerWorkPrecisionState(pool) {
       NETWORK,
       WORK_TOKEN_ID,
       WORK_PRECISION_V2_MIGRATION_META_KEY,
-      WORK_AMO_V7_ACTIVATION_LATCH_META_KEY,
+      WORK_AMO_V8_ACTIVATION_LATCH_META_KEY,
     ],
   );
   const row = result.rows[0] ?? {};
@@ -930,13 +866,13 @@ async function assertWorkAtomicProjectionReady(
       replayRequired: false,
     };
   }
-  const declarationConfig = workerWorkAmoV7DeclarationConfig();
+  const declarationConfig = workerWorkAmoV8DeclarationConfig();
   if (
     declarationConfig.requested === true &&
     declarationConfig.configured !== true
   ) {
     throw new Error(
-      "Proof index worker is paused because the AMO V7 declaration pins are partial or do not match the compiled declaration.",
+      "Proof index worker is paused because the AMO V8 declaration pins are partial or do not match the compiled declaration.",
     );
   }
   const state = await readWorkerWorkPrecisionState(pool);
@@ -1012,7 +948,7 @@ async function assertWorkAtomicProjectionReady(
     metadata.precisionModel !== WORK_PRECISION_V2_MODEL ||
     metadata.precisionMigrationModel !==
       WORK_PRECISION_V2_MIGRATION_MODEL ||
-    !workerWorkAmoV7ActivationLatchReady(
+    !workerWorkAmoV8ActivationLatchReady(
       state.activationLatch,
       declarationConfig,
     ) ||
@@ -1022,7 +958,7 @@ async function assertWorkAtomicProjectionReady(
     )
   ) {
     const error = new Error(
-      "Proof index worker is fail-closed at the AMO V7 boundary until the exact Q16 definition and immutable precision migration marker are installed.",
+      "Proof index worker is fail-closed at the AMO V8 boundary until the exact Q16 definition and immutable precision migration marker are installed.",
     );
     error.workPrecision = {
       activationHeight: declarationConfig.activationHeight,
@@ -1254,13 +1190,13 @@ async function assertAmoPositionSchemaReady(
             AND indexname =
               'events_confirmed_governed_position_uidx'
         ) AS governed_position_unique_ready,
-        to_regclass('proof_indexer.work_amo_v7_listing_terms') IS NOT NULL
+        to_regclass('proof_indexer.work_amo_v8_listing_terms') IS NOT NULL
           AS v7_listing_terms_ready,
         (
           SELECT count(*) = 17
           FROM information_schema.columns
           WHERE table_schema = 'proof_indexer'
-            AND table_name = 'work_amo_v7_listing_terms'
+            AND table_name = 'work_amo_v8_listing_terms'
             AND column_name IN (
               'listing_id',
               'listing_txid',
@@ -1284,12 +1220,12 @@ async function assertAmoPositionSchemaReady(
           SELECT count(*) = 19
           FROM information_schema.columns
           WHERE table_schema = 'proof_indexer'
-            AND table_name = 'work_amo_v7_listing_terms'
+            AND table_name = 'work_amo_v8_listing_terms'
         ) AND NOT EXISTS (
           SELECT 1
           FROM information_schema.columns
           WHERE table_schema = 'proof_indexer'
-            AND table_name = 'work_amo_v7_listing_terms'
+            AND table_name = 'work_amo_v8_listing_terms'
             AND column_name = 'unit_amount_atoms'
         ) AS v7_listing_terms_evidence_ready,
         (
@@ -1300,17 +1236,57 @@ async function assertAmoPositionSchemaReady(
           JOIN pg_namespace namespace
             ON namespace.oid = relation.relnamespace
           WHERE namespace.nspname = 'proof_indexer'
-            AND relation.relname = 'work_amo_v7_listing_terms'
+            AND relation.relname = 'work_amo_v8_listing_terms'
             AND constraint_row.contype = 'c'
             AND constraint_row.convalidated = true
             AND constraint_row.conname IN (
-              'work_amo_v7_terms_identity',
-              'work_amo_v7_terms_values',
-              'work_amo_v7_terms_positions',
-              'work_amo_v7_terms_frozen_payload',
-              'work_amo_v7_terms_activation'
+              'work_amo_v8_terms_identity',
+              'work_amo_v8_terms_values',
+              'work_amo_v8_terms_positions',
+              'work_amo_v8_terms_frozen_payload',
+              'work_amo_v8_terms_activation'
             )
         ) AS v7_policy_constraints_ready,
+        (
+          SELECT pg_get_constraintdef(constraint_row.oid)
+          FROM pg_constraint constraint_row
+          WHERE constraint_row.conrelid =
+              'proof_indexer.work_amo_v8_listing_terms'::regclass
+            AND constraint_row.conname =
+              'work_amo_v8_terms_identity'
+            AND constraint_row.convalidated = true
+          LIMIT 1
+        ) AS v8_identity_constraint,
+        (
+          SELECT pg_get_constraintdef(constraint_row.oid)
+          FROM pg_constraint constraint_row
+          WHERE constraint_row.conrelid =
+              'proof_indexer.work_amo_v8_listing_terms'::regclass
+            AND constraint_row.conname =
+              'work_amo_v8_terms_values'
+            AND constraint_row.convalidated = true
+          LIMIT 1
+        ) AS v8_values_constraint,
+        (
+          SELECT pg_get_constraintdef(constraint_row.oid)
+          FROM pg_constraint constraint_row
+          WHERE constraint_row.conrelid =
+              'proof_indexer.work_amo_v8_listing_terms'::regclass
+            AND constraint_row.conname =
+              'work_amo_v8_terms_positions'
+            AND constraint_row.convalidated = true
+          LIMIT 1
+        ) AS v8_positions_constraint,
+        (
+          SELECT pg_get_constraintdef(constraint_row.oid)
+          FROM pg_constraint constraint_row
+          WHERE constraint_row.conrelid =
+              'proof_indexer.work_amo_v8_listing_terms'::regclass
+            AND constraint_row.conname =
+              'work_amo_v8_terms_frozen_payload'
+            AND constraint_row.convalidated = true
+          LIMIT 1
+        ) AS v8_frozen_constraint,
         (
           SELECT pg_get_constraintdef(constraint_row.oid)
           FROM pg_constraint constraint_row
@@ -1319,9 +1295,9 @@ async function assertAmoPositionSchemaReady(
           JOIN pg_namespace namespace
             ON namespace.oid = relation.relnamespace
           WHERE namespace.nspname = 'proof_indexer'
-            AND relation.relname = 'work_amo_v7_listing_terms'
+            AND relation.relname = 'work_amo_v8_listing_terms'
             AND constraint_row.conname =
-              'work_amo_v7_terms_activation'
+              'work_amo_v8_terms_activation'
           LIMIT 1
         ) AS v7_activation_constraint,
         (
@@ -1361,9 +1337,19 @@ async function assertAmoPositionSchemaReady(
         ) AS transition_immutability_ready,
         EXISTS (
           SELECT 1
+          FROM pg_trigger trigger_row
+          WHERE trigger_row.tgrelid =
+              'proof_indexer.work_amo_v7_listing_terms'::regclass
+            AND trigger_row.tgname =
+              'work_amo_v7_listing_terms_immutable'
+            AND trigger_row.tgenabled <> 'D'
+            AND trigger_row.tgisinternal = false
+        ) AS v7_history_immutability_ready,
+        EXISTS (
+          SELECT 1
           FROM information_schema.columns
           WHERE table_schema = 'proof_indexer'
-            AND table_name = 'work_amo_v7_listing_terms'
+            AND table_name = 'work_amo_v8_listing_terms'
             AND column_name = 'listing_record_ordinal'
             AND is_nullable = 'NO'
             AND column_default IS NULL
@@ -1376,9 +1362,9 @@ async function assertAmoPositionSchemaReady(
           JOIN pg_namespace namespace
             ON namespace.oid = relation.relnamespace
           WHERE namespace.nspname = 'proof_indexer'
-            AND relation.relname = 'work_amo_v7_listing_terms'
+            AND relation.relname = 'work_amo_v8_listing_terms'
             AND trigger_row.tgname =
-              'work_amo_v7_listing_terms_immutable'
+              'work_amo_v8_listing_terms_immutable'
             AND trigger_row.tgenabled <> 'D'
             AND trigger_row.tgisinternal = false
         ) AS v7_immutability_ready,
@@ -1437,6 +1423,14 @@ async function assertAmoPositionSchemaReady(
   const transitionConstraint = String(
     row.transition_model_constraint ?? "",
   );
+  const q16ConstraintAudit =
+    sharedWorkPrecisionV2ConstraintAudit({
+      transitionModels: transitionConstraint,
+      v8Frozen: row.v8_frozen_constraint,
+      v8Identity: row.v8_identity_constraint,
+      v8Positions: row.v8_positions_constraint,
+      v8Values: row.v8_values_constraint,
+    });
   const precisionMarkerImmutabilityDefinition = String(
     row.precision_marker_immutability_definition ?? "",
   );
@@ -1451,8 +1445,12 @@ async function assertAmoPositionSchemaReady(
     ) ||
     row.transition_token_state_ready !== true ||
     row.transition_immutability_ready !== true ||
-    !transitionConstraint.includes(WORK_AMO_V7_BLOCK_SEQUENCER_MODEL) ||
-    !transitionConstraint.includes(WORK_AMO_V7_TOKEN_STATE_PREIMAGE_MODEL) ||
+    q16ConstraintAudit.v8TransitionReady !== true ||
+    q16ConstraintAudit.v8ValuesReady !== true ||
+    q16ConstraintAudit.v8IdentityReady !== true ||
+    q16ConstraintAudit.v8PositionsReady !== true ||
+    q16ConstraintAudit.v8FrozenReady !== true ||
+    row.v7_history_immutability_ready !== true ||
     row.v7_ordinal_constraint_ready !== true ||
     row.v7_immutability_ready !== true ||
     row.precision_marker_immutability_ready !== true ||
@@ -1460,11 +1458,11 @@ async function assertAmoPositionSchemaReady(
       WORK_PRECISION_V2_MIGRATION_META_KEY,
     ) ||
     !precisionMarkerImmutabilityDefinition.includes(
-      WORK_AMO_V7_ACTIVATION_LATCH_META_KEY,
+      WORK_AMO_V8_ACTIVATION_LATCH_META_KEY,
     )
   ) {
     throw new Error(
-      "Proof index worker is fail-closed until the exact AMO V7 Q16 schema, activation constraint, and immutable replay models are installed.",
+      "Proof index worker is fail-closed until the exact AMO V8 Q16 schema, activation constraint, and immutable replay models are installed.",
     );
   }
 }
@@ -1568,11 +1566,11 @@ function canonicalWorkPrecisionListingRows(
       const v7TermsPresent =
         row?.v7_authorization_version !== null &&
         row?.v7_authorization_version !== undefined;
-      if (authorizationVersion === WORK_AMO_V7_AUTH_VERSION) {
+      if (authorizationVersion === WORK_AMO_V8_AUTH_VERSION) {
         if (
           !v7TermsPresent ||
           String(row.v7_authorization_version) !==
-            WORK_AMO_V7_AUTH_VERSION ||
+            WORK_AMO_V8_AUTH_VERSION ||
           canonicalWorkPrecisionUnsignedInteger(
             row.v7_unit_amount_subatoms,
             { positive: true },
@@ -1587,12 +1585,12 @@ function canonicalWorkPrecisionListingRows(
             workAmoV5CanonicalPayloadCommitment(frozenTerms).sha256
         ) {
           throw new TypeError(
-            "work-precision-relational-v7-terms-invalid",
+            "work-precision-relational-v8-terms-invalid",
           );
         }
       } else if (v7TermsPresent) {
         throw new TypeError(
-          "work-precision-relational-legacy-v7-terms-invalid",
+          "work-precision-relational-legacy-v8-terms-invalid",
         );
       }
     }
@@ -1752,11 +1750,11 @@ export function workerWorkPrecisionConfirmedReplayEnvelopeReady({
       Number(activation.blockHeight) === Number(activationHeight) &&
       normalizedLowerText(activation.previousBlockHash) ===
         normalizedDeclarationBlockHash &&
-      activation.model === WORK_AMO_V7_BLOCK_SEQUENCER_MODEL &&
+      activation.model === WORK_AMO_V8_BLOCK_SEQUENCER_MODEL &&
       activation.stateCommitmentModel ===
         WORK_AMO_V5_STATE_COMMITMENT_MODEL &&
       activation.workTokenStateModel ===
-        WORK_AMO_V7_TOKEN_STATE_PREIMAGE_MODEL &&
+        WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL &&
       activationPayload.precisionMigrationMarkerKey ===
         WORK_PRECISION_V2_MIGRATION_META_KEY &&
       Number(activationPayload.activationHeight) ===
@@ -1775,11 +1773,11 @@ export function workerWorkPrecisionConfirmedReplayEnvelopeReady({
       ) &&
       Number(latest.blockHeight) === Number(tipHeight) &&
       normalizedLowerText(latest.blockHash) === normalizedTipHash &&
-      latest.model === WORK_AMO_V7_BLOCK_SEQUENCER_MODEL &&
+      latest.model === WORK_AMO_V8_BLOCK_SEQUENCER_MODEL &&
       latest.stateCommitmentModel ===
         WORK_AMO_V5_STATE_COMMITMENT_MODEL &&
       latest.workTokenStateModel ===
-        WORK_AMO_V7_TOKEN_STATE_PREIMAGE_MODEL &&
+        WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL &&
       Number(transitionCount) === expectedTransitionCount &&
       Number(invalidTransitionCount) === 0 &&
       Number(invalidPrecisionEventCount) === 0 &&
@@ -1906,7 +1904,7 @@ function workerWorkQ16PendingCommitment(domain, rows) {
   return createHash("sha256")
     .update(
       Buffer.from(
-        `${WORK_AMO_V7_PENDING_PROJECTION_DOMAIN_PREFIX}${domain}/v1\n${
+        `${WORK_AMO_V8_PENDING_PROJECTION_DOMAIN_PREFIX}${domain}/v1\n${
           canonicalWorkerJsonText(rows)
         }`,
         "utf8",
@@ -1932,11 +1930,11 @@ function canonicalWorkerMempoolSnapshot(value) {
   txids.sort(compareUtf8);
   return {
     count: txids.length,
-    model: WORK_AMO_V7_PENDING_MEMPOOL_MODEL,
+    model: WORK_AMO_V8_PENDING_MEMPOOL_MODEL,
     sha256: createHash("sha256")
       .update(
         Buffer.from(
-          `${WORK_AMO_V7_PENDING_MEMPOOL_DOMAIN}\n${
+          `${WORK_AMO_V8_PENDING_MEMPOOL_DOMAIN}\n${
             canonicalWorkerJsonText(txids)
           }`,
           "utf8",
@@ -1983,7 +1981,7 @@ export function workerWorkPrecisionPendingProjection({
       "PROJECTION",
       projectionParts,
     ),
-    model: WORK_AMO_V7_PENDING_PROJECTION_MODEL,
+    model: WORK_AMO_V8_PENDING_PROJECTION_MODEL,
   };
 }
 
@@ -2165,7 +2163,7 @@ export function workerWorkPrecisionPendingWitnessReady(
         "stopReason",
         "unresolved",
       ]) &&
-      witness.model === WORK_AMO_V7_PENDING_REBUILD_MODEL &&
+      witness.model === WORK_AMO_V8_PENDING_REBUILD_MODEL &&
       witness.network === "livenet" &&
       witness.ready === true &&
       witness.activationHeight === config.activationHeight &&
@@ -2183,7 +2181,7 @@ export function workerWorkPrecisionPendingWitnessReady(
         minimum: config.activationHeight,
       }) &&
       witnessedTip.hash === normalizedLowerText(witnessedTip.hash) &&
-      witnessedMempool.model === WORK_AMO_V7_PENDING_MEMPOOL_MODEL &&
+      witnessedMempool.model === WORK_AMO_V8_PENDING_MEMPOOL_MODEL &&
       witnessedMempool.count === txids.length &&
       canonicalWorkerJsonText(witnessedMempool.txids) ===
         canonicalWorkerJsonText(txids) &&
@@ -2195,13 +2193,13 @@ export function workerWorkPrecisionPendingWitnessReady(
       ) &&
       witnessedMempool.sha256 ===
         canonicalWorkerMempoolSnapshot(txids).sha256 &&
-      currentMempool.model === WORK_AMO_V7_PENDING_MEMPOOL_MODEL &&
+      currentMempool.model === WORK_AMO_V8_PENDING_MEMPOOL_MODEL &&
       currentMempool.count === witnessedMempool.count &&
       currentMempool.sha256 === witnessedMempool.sha256 &&
       canonicalWorkerJsonText(currentMempool.txids) ===
         canonicalWorkerJsonText(txids) &&
       witnessedProjection.model ===
-        WORK_AMO_V7_PENDING_PROJECTION_MODEL &&
+        WORK_AMO_V8_PENDING_PROJECTION_MODEL &&
       witnessedParity.ready === true &&
       currentParity.ready === true &&
       canonicalWorkerJsonText(witnessedParity) ===
@@ -2232,7 +2230,7 @@ export function workerWorkPrecisionPendingWitnessReady(
       Number.isFinite(Number(nowMs)) &&
       Number(nowMs) >= generatedAtMs &&
       Number(nowMs) - generatedAtMs <=
-        WORK_AMO_V7_PENDING_WITNESS_MAX_AGE_MS
+        WORK_AMO_V8_PENDING_WITNESS_MAX_AGE_MS
   );
 }
 
@@ -2251,7 +2249,7 @@ async function assertWorkPrecisionReplayReady(pool, precision) {
     !Number.isFinite(Date.parse(String(precision.markerCompletedAt ?? "")))
   ) {
     throw new Error(
-      "Proof index worker cannot verify AMO V7 replay without the exact activation and migration completion.",
+      "Proof index worker cannot verify AMO V8 replay without the exact activation and migration completion.",
     );
   }
   const declarationBlockHash = normalizedLowerText(
@@ -2262,7 +2260,7 @@ async function assertWorkPrecisionReplayReady(pool, precision) {
     !/^[0-9a-f]{64}$/u.test(declarationBlockHash)
   ) {
     throw new Error(
-      "Proof index worker cannot verify AMO V7 replay without the exact declaration-height predecessor.",
+      "Proof index worker cannot verify AMO V8 replay without the exact declaration-height predecessor.",
     );
   }
   const coreTipBefore = await readExactWorkerCoreTip();
@@ -2547,14 +2545,14 @@ async function assertWorkPrecisionReplayReady(pool, precision) {
       [
         NETWORK,
         activationHeight,
-        WORK_AMO_V7_BLOCK_SEQUENCER_MODEL,
-        WORK_AMO_V7_TOKEN_STATE_PREIMAGE_MODEL,
+        WORK_AMO_V8_BLOCK_SEQUENCER_MODEL,
+        WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL,
         WORK_AMO_V5_STATE_COMMITMENT_MODEL,
         WORK_AMO_V5_NETWORK_ACCUMULATOR_MODEL,
         WORK_AMO_V5_PAYLOAD_COMMITMENT_MODEL,
         precision.markerCompletedAt,
         WORK_TOKEN_ID,
-        WORK_AMO_V7_AUTH_VERSION,
+        WORK_AMO_V8_AUTH_VERSION,
         WORK_SUBATOM_PROJECTION_MODEL,
         declarationBlockHash,
       ],
@@ -2585,15 +2583,15 @@ async function assertWorkPrecisionReplayReady(pool, precision) {
             listing.payload->'listingFrozenTerms',
             listing.payload->'frozenTerms'
           ) AS frozen_terms,
-          v7.authorization_version AS v7_authorization_version,
-          v7.unit_amount_subatoms::text AS
+          v8.authorization_version AS v7_authorization_version,
+          v8.unit_amount_subatoms::text AS
             v7_unit_amount_subatoms,
-          v7.unit_price_sats::text AS v7_unit_price_sats,
-          v7.frozen_terms AS v7_frozen_terms
+          v8.unit_price_sats::text AS v7_unit_price_sats,
+          v8.frozen_terms AS v7_frozen_terms
         FROM proof_indexer.credit_listings listing
-        LEFT JOIN proof_indexer.work_amo_v7_listing_terms v7
-          ON v7.network = listing.network
-         AND v7.listing_id = listing.listing_id
+        LEFT JOIN proof_indexer.work_amo_v8_listing_terms v8
+          ON v8.network = listing.network
+         AND v8.listing_id = listing.listing_id
         WHERE listing.network = $1
           AND listing.token_id = $2
           AND listing.status IN ('active', 'sealing')
@@ -2632,7 +2630,7 @@ async function assertWorkPrecisionReplayReady(pool, precision) {
   let closingCommitment = null;
   try {
     closingCommitment =
-      workAmoV7CanonicalTokenStateCommitment(closingTokenState);
+      workAmoV8CanonicalTokenStateCommitment(closingTokenState);
   } catch {
     closingCommitment = null;
   }
@@ -2670,7 +2668,7 @@ async function assertWorkPrecisionReplayReady(pool, precision) {
     });
   if (!ready) {
     throw new Error(
-      "Proof index worker is fail-closed until AMO V7 has exact activation-to-tip replay, Q16 relational parity, and a post-migration current snapshot.",
+      "Proof index worker is fail-closed until AMO V8 has exact activation-to-tip replay, Q16 relational parity, and a post-migration current snapshot.",
     );
   }
   return {
@@ -2714,7 +2712,7 @@ async function assertWorkPrecisionPendingReady(
       "Proof index worker refuses pending readiness before exact confirmed replay.",
     );
   }
-  const declarationConfig = workerWorkAmoV7DeclarationConfig();
+  const declarationConfig = workerWorkAmoV8DeclarationConfig();
   const witnessResult = await pool.query(
     `
       SELECT value
@@ -2722,7 +2720,7 @@ async function assertWorkPrecisionPendingReady(
       WHERE key = $1
       LIMIT 2
     `,
-    [WORK_AMO_V7_PENDING_REBUILD_META_KEY],
+    [WORK_AMO_V8_PENDING_REBUILD_META_KEY],
   );
   const witness = objectRecord(witnessResult.rows[0]?.value);
   const witnessedMempool = objectRecord(witness.mempoolSnapshot);
@@ -2853,7 +2851,7 @@ async function assertWorkPrecisionPendingReady(
             )
           )
       `,
-      [NETWORK, WORK_TOKEN_ID, WORK_AMO_V7_AUTH_VERSION],
+      [NETWORK, WORK_TOKEN_ID, WORK_AMO_V8_AUTH_VERSION],
     ),
   ]);
   const projection = workerWorkPrecisionPendingProjection({
@@ -4455,7 +4453,7 @@ async function runCycle(pool, lastSuccess, runtime) {
     )
   ) {
     throw new Error(
-      "Proof index worker requires confirmed block replay before the isolated pending rebuild in the AMO V7 Q16 era.",
+      "Proof index worker requires confirmed block replay before the isolated pending rebuild in the AMO V8 Q16 era.",
     );
   }
   let canonicalProgress = null;
@@ -4509,7 +4507,7 @@ async function runCycle(pool, lastSuccess, runtime) {
         );
         if (workPrecision.era === WORK_PRECISION_Q16_ERA) {
           throw new Error(
-            "Proof index worker cannot complete the AMO V7 cycle until the backfill-owned pending projection is rebuilt.",
+            "Proof index worker cannot complete the AMO V8 cycle until the backfill-owned pending projection is rebuilt.",
           );
         }
       }
@@ -4638,7 +4636,7 @@ async function runCycle(pool, lastSuccess, runtime) {
         (phase) => phase.kind === "best-effort-pending",
       )
         ? {
-            model: WORK_AMO_V7_PENDING_REBUILD_MODEL,
+            model: WORK_AMO_V8_PENDING_REBUILD_MODEL,
             owner: "backfill",
             ready: workPrecisionReplay.ready === true,
           }
@@ -4683,7 +4681,7 @@ async function runCycle(pool, lastSuccess, runtime) {
     pendingRebuild:
       workPrecision.era === WORK_PRECISION_Q16_ERA
         ? {
-            model: WORK_AMO_V7_PENDING_REBUILD_MODEL,
+            model: WORK_AMO_V8_PENDING_REBUILD_MODEL,
             owner: "backfill",
             ready: workPrecisionReplay.ready === true,
           }
@@ -4767,7 +4765,7 @@ async function runCycle(pool, lastSuccess, runtime) {
 
 export async function runWorkerMain() {
   if (DRY_RUN) {
-    const declarationConfig = workerWorkAmoV7DeclarationConfig();
+    const declarationConfig = workerWorkAmoV8DeclarationConfig();
     console.log(
       JSON.stringify(
         {
@@ -4808,13 +4806,13 @@ export async function runWorkerMain() {
           pendingStatusLimit: PENDING_STATUS_LIMIT,
           requireWorkAtomicProjection: REQUIRE_WORK_ATOMIC_PROJECTION,
           statusTimeoutMs: STATUS_REQUEST_TIMEOUT_MS,
-          workAmoV7Declaration: {
+          workAmoV8Declaration: {
             activationHeight: declarationConfig.activationHeight,
             configured: declarationConfig.configured,
             requested: declarationConfig.requested,
           },
           workPrecisionPolicy:
-            "q8-before-v7-boundary-q16-latched-no-fallback",
+            "q8-before-v8-boundary-q16-latched-no-fallback",
         },
         null,
         2,

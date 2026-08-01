@@ -13,9 +13,7 @@ EnvironmentFile=-/etc/proofofwork-api/bitcoin-rpc.env
 EnvironmentFile=/etc/proofofwork-api/internal-verifier.env
 Environment=NETWORK=livenet
 Environment=POW_INDEX_REQUIRE_WORK_ATOMS=1
-# AMO V7/Q16 remains fail-closed until all declaration pins are populated.
-# Once the configured activation boundary is observed, the worker latches Q16
-# and will not fall back to the historical Q8/V6 projection.
+# The superseded V7 proposal remains explicitly empty and disabled.
 Environment=WORK_AMO_V7_DECLARATION_TXID=
 Environment=WORK_AMO_V7_DECLARATION_HEIGHT=
 Environment=WORK_AMO_V7_DECLARATION_BLOCK_HASH=
@@ -27,6 +25,20 @@ Environment=WORK_AMO_V7_DECLARATION_RECORD_ORDINAL=
 Environment=WORK_AMO_V7_DECLARATION_REGISTRY_PAYMENT_VOUT=
 Environment=WORK_AMO_V7_ACTIVATION_HEIGHT=
 Environment=WORK_AMO_V7_WRITES_ENABLED=0
+# AMO V8/Q16 remains fail-closed until all declaration pins are populated.
+# Once the configured activation boundary is observed, the worker latches Q16
+# and will not fall back to the historical Q8/V6 projection.
+Environment=WORK_AMO_V8_DECLARATION_TXID=
+Environment=WORK_AMO_V8_DECLARATION_HEIGHT=
+Environment=WORK_AMO_V8_DECLARATION_BLOCK_HASH=
+Environment=WORK_AMO_V8_DECLARATION_BLOCK_INDEX=
+Environment=WORK_AMO_V8_DECLARATION_MEMO_SHA256=
+Environment=WORK_AMO_V8_DECLARATION_MEMO_BYTES=
+Environment=WORK_AMO_V8_DECLARATION_PROTOCOL_VOUT=
+Environment=WORK_AMO_V8_DECLARATION_RECORD_ORDINAL=
+Environment=WORK_AMO_V8_DECLARATION_REGISTRY_PAYMENT_VOUT=
+Environment=WORK_AMO_V8_ACTIVATION_HEIGHT=
+Environment=WORK_AMO_V8_WRITES_ENABLED=0
 Environment=POW_API_BASE=http://127.0.0.1:8081
 Environment=POW_INDEX_WORKER_INTERVAL_MS=30000
 Environment=POW_INDEX_WORKER_BACKFILL_MAX_PAGES=20

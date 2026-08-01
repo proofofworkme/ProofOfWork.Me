@@ -27,8 +27,8 @@ const workAmoV6Migration = readFileSync(
   "scripts/migrate-work-amo-v6.mjs",
   "utf8",
 );
-const workAmoV7Core = readFileSync("server/work-amo-v7.mjs", "utf8");
-const workAmoV7Migration = readFileSync(
+const workAmoV8Core = readFileSync("server/work-amo-v8.mjs", "utf8");
+const workAmoV8Migration = readFileSync(
   "scripts/migrate-work-precision-v2.mjs",
   "utf8",
 );
@@ -1221,10 +1221,12 @@ expectAll("server WORK market invalid txid history recovers related listings", s
 
 expectAll("server compact token summaries preserve existing row supply metrics", server, [
   /function tokenSummaryMetricValue\(value\)[\s\S]*Number\.isFinite\(number\) && number >= 0/,
-  /function mergedTokenSummaryMetric\(token,\s*summary,\s*key,\s*preserveExisting\)[\s\S]*preserveExisting && tokenValue !== undefined/,
+  /function mergedTokenSummaryMetric\([\s\S]*\{ workAmountStorageModel = "" \} = \{\},[\s\S]*preserveExisting && tokenValue !== undefined/,
   /const preserveExistingTokenMetrics = payload\.summaryOnly === true/,
-  /confirmedSupply:\s*mergedTokenSummaryMetric\(\s*token,\s*summary,\s*"confirmedSupply",\s*preserveExistingTokenMetrics,\s*\)/,
-  /pendingSupply:\s*mergedTokenSummaryMetric\(\s*token,\s*summary,\s*"pendingSupply",\s*preserveExistingTokenMetrics,\s*\)/,
+  /confirmedSupply:\s*mergedTokenSummaryMetric\(\s*token,\s*summary,\s*"confirmedSupply",\s*preserveExistingTokenMetrics,\s*summaryMetricOptions,\s*\)/,
+  /pendingSupply:\s*mergedTokenSummaryMetric\(\s*token,\s*summary,\s*"pendingSupply",\s*preserveExistingTokenMetrics,\s*summaryMetricOptions,\s*\)/,
+  /next\.confirmedSupplySubatoms = confirmedSupplySubatoms/,
+  /next\.pendingSupplySubatoms = pendingSupplySubatoms/,
   /nextConfirmedSupply > scopedConfirmedSupply[\s\S]*nextPendingSupply > scopedPendingSupply/,
 ]);
 
@@ -1719,7 +1721,7 @@ expectAll("historical AMO V5 migration preserves relic and invalid-history disti
   /proof_indexer\.work_amo_listing_terms/,
   /WORK_AMO_V5_MIGRATION_APPLY/,
 ]);
-expectAll("AMO V6 production remains exactly declared and write-open before the V7 boundary", proofIndexDeploy, [
+expectAll("AMO V6 production remains exactly declared and write-open before the V8 boundary", proofIndexDeploy, [
   /^Environment=WORK_AMO_V6_DECLARATION_TXID=975fd82aa84995e014b240618ee1a1254d0a735e6e1241372d0bed0a0d9f0799$/mu,
   /^Environment=WORK_AMO_V6_DECLARATION_HEIGHT=960218$/mu,
   /^Environment=WORK_AMO_V6_DECLARATION_BLOCK_HASH=00000000000000000001ac35a5b7e43c782297fcb9cde0fb458fbd5451ad55df$/mu,
@@ -1738,64 +1740,64 @@ expect(
   ),
 );
 expectAll(
-  "AMO V7 production is staged with empty declaration pins and a closed independent write gate",
+  "AMO V8 production is staged with empty declaration pins and a closed independent write gate",
   proofIndexDeploy,
   [
-    /^Environment=WORK_AMO_V7_DECLARATION_TXID=$/mu,
-    /^Environment=WORK_AMO_V7_DECLARATION_HEIGHT=$/mu,
-    /^Environment=WORK_AMO_V7_DECLARATION_BLOCK_HASH=$/mu,
-    /^Environment=WORK_AMO_V7_DECLARATION_BLOCK_INDEX=$/mu,
-    /^Environment=WORK_AMO_V7_DECLARATION_MEMO_SHA256=$/mu,
-    /^Environment=WORK_AMO_V7_DECLARATION_MEMO_BYTES=$/mu,
-    /^Environment=WORK_AMO_V7_DECLARATION_PROTOCOL_VOUT=$/mu,
-    /^Environment=WORK_AMO_V7_DECLARATION_RECORD_ORDINAL=$/mu,
-    /^Environment=WORK_AMO_V7_DECLARATION_REGISTRY_PAYMENT_VOUT=$/mu,
-    /^Environment=WORK_AMO_V7_ACTIVATION_HEIGHT=$/mu,
-    /^Environment=WORK_AMO_V7_WRITES_ENABLED=0$/mu,
+    /^Environment=WORK_AMO_V8_DECLARATION_TXID=$/mu,
+    /^Environment=WORK_AMO_V8_DECLARATION_HEIGHT=$/mu,
+    /^Environment=WORK_AMO_V8_DECLARATION_BLOCK_HASH=$/mu,
+    /^Environment=WORK_AMO_V8_DECLARATION_BLOCK_INDEX=$/mu,
+    /^Environment=WORK_AMO_V8_DECLARATION_MEMO_SHA256=$/mu,
+    /^Environment=WORK_AMO_V8_DECLARATION_MEMO_BYTES=$/mu,
+    /^Environment=WORK_AMO_V8_DECLARATION_PROTOCOL_VOUT=$/mu,
+    /^Environment=WORK_AMO_V8_DECLARATION_RECORD_ORDINAL=$/mu,
+    /^Environment=WORK_AMO_V8_DECLARATION_REGISTRY_PAYMENT_VOUT=$/mu,
+    /^Environment=WORK_AMO_V8_ACTIVATION_HEIGHT=$/mu,
+    /^Environment=WORK_AMO_V8_WRITES_ENABLED=0$/mu,
   ],
 );
 expectAll(
-  "AMO V7 index worker is staged with the same empty declaration pins and closed write gate",
+  "AMO V8 index worker is staged with the same empty declaration pins and closed write gate",
   proofIndexerWorkerService,
   [
-    /^Environment=WORK_AMO_V7_DECLARATION_TXID=$/mu,
-    /^Environment=WORK_AMO_V7_DECLARATION_HEIGHT=$/mu,
-    /^Environment=WORK_AMO_V7_DECLARATION_BLOCK_HASH=$/mu,
-    /^Environment=WORK_AMO_V7_DECLARATION_BLOCK_INDEX=$/mu,
-    /^Environment=WORK_AMO_V7_DECLARATION_MEMO_SHA256=$/mu,
-    /^Environment=WORK_AMO_V7_DECLARATION_MEMO_BYTES=$/mu,
-    /^Environment=WORK_AMO_V7_DECLARATION_PROTOCOL_VOUT=$/mu,
-    /^Environment=WORK_AMO_V7_DECLARATION_RECORD_ORDINAL=$/mu,
-    /^Environment=WORK_AMO_V7_DECLARATION_REGISTRY_PAYMENT_VOUT=$/mu,
-    /^Environment=WORK_AMO_V7_ACTIVATION_HEIGHT=$/mu,
-    /^Environment=WORK_AMO_V7_WRITES_ENABLED=0$/mu,
+    /^Environment=WORK_AMO_V8_DECLARATION_TXID=$/mu,
+    /^Environment=WORK_AMO_V8_DECLARATION_HEIGHT=$/mu,
+    /^Environment=WORK_AMO_V8_DECLARATION_BLOCK_HASH=$/mu,
+    /^Environment=WORK_AMO_V8_DECLARATION_BLOCK_INDEX=$/mu,
+    /^Environment=WORK_AMO_V8_DECLARATION_MEMO_SHA256=$/mu,
+    /^Environment=WORK_AMO_V8_DECLARATION_MEMO_BYTES=$/mu,
+    /^Environment=WORK_AMO_V8_DECLARATION_PROTOCOL_VOUT=$/mu,
+    /^Environment=WORK_AMO_V8_DECLARATION_RECORD_ORDINAL=$/mu,
+    /^Environment=WORK_AMO_V8_DECLARATION_REGISTRY_PAYMENT_VOUT=$/mu,
+    /^Environment=WORK_AMO_V8_ACTIVATION_HEIGHT=$/mu,
+    /^Environment=WORK_AMO_V8_WRITES_ENABLED=0$/mu,
   ],
 );
 expectAll(
-  "AMO V7 worker treats any requested pin as fail-closed and requires exact D+1 configuration",
+  "AMO V8 worker treats any requested pin as fail-closed and requires exact D+1 configuration",
   proofIndexerWorker,
   [
-    /export function workerWorkAmoV7DeclarationConfig/,
+    /export function workerWorkAmoV8DeclarationConfig/,
     /rawValues\.some\(\(value\) => value !== ""\)[\s\S]*writesEnabled[\s\S]*!writesDisabled/,
     /configuredActivationHeight === declarationHeight \+ 1/,
     /declarationConfig\.requested === true &&[\s\S]*declarationConfig\.configured !== true[\s\S]*declaration pins are partial/,
   ],
 );
 expectAll(
-  "AMO V7 API, backfill, and precision migration reject noncanonical pin aliases consistently",
-  `${server}\n${proofIndexerBackfill}\n${workAmoV7Migration}`,
+  "AMO V8 API, backfill, and precision migration reject noncanonical pin aliases consistently",
+  `${server}\n${proofIndexerBackfill}\n${workAmoV8Migration}`,
   [
-    /function canonicalWorkAmoV7ConfiguredInteger[\s\S]*const raw = String\(value \?\? ""\);[\s\S]*\/\^\(\?:0\|\[1-9\]\[0-9\]\*\)\$\//,
-    /function canonicalWorkAmoV7ConfiguredHash[\s\S]*const raw = String\(value \?\? ""\);[\s\S]*\/\^\[0-9a-f\]\{64\}\$\//,
-    /WORK_AMO_V7_WRITES_SOURCE[\s\S]*WORK_AMO_V7_WRITES_SOURCE !== WORK_AMO_V7_WRITES_RAW/,
-    /WORK_AMO_V7_DECLARATION_PINS_REQUESTED[\s\S]*\.some\(\(value\) => String\(value \?\? ""\)\.length > 0\)/,
+    /function canonicalWorkAmoV8ConfiguredInteger[\s\S]*const raw = String\(value \?\? ""\);[\s\S]*\/\^\(\?:0\|\[1-9\]\[0-9\]\*\)\$\//,
+    /function canonicalWorkAmoV8ConfiguredHash[\s\S]*const raw = String\(value \?\? ""\);[\s\S]*\/\^\[0-9a-f\]\{64\}\$\//,
+    /WORK_AMO_V8_WRITES_SOURCE[\s\S]*WORK_AMO_V8_WRITES_SOURCE !== WORK_AMO_V8_WRITES_RAW/,
+    /WORK_AMO_V8_DECLARATION_PINS_REQUESTED[\s\S]*\.some\(\(value\) => String\(value \?\? ""\)\.length > 0\)/,
     /function optionalSafeInteger[\s\S]*UNSIGNED_INTEGER_PATTERN\.test\(raw\)/,
     /function canonicalConfiguredHash[\s\S]*TXID_PATTERN\.test\(raw\)/,
     /configuredActivationHeight !== declarationHeight \+ 1/,
   ],
 );
 expectAll(
-  "AMO V7 worker binds Q16 replay to stable Core, exact DB tip hashes, chain continuity, snapshot, and relational parity",
+  "AMO V8 worker binds Q16 replay to stable Core, exact DB tip hashes, chain continuity, snapshot, and relational parity",
   proofIndexerWorker,
   [
     /async function readExactWorkerCoreTip[\s\S]*getblockchaininfo[\s\S]*getblockhash[\s\S]*stable: true/,
@@ -1807,7 +1809,7 @@ expectAll(
   ],
 );
 expectAll(
-  "AMO V7 worker never publishes ready before the backfill-owned pending witness is exact",
+  "AMO V8 worker never publishes ready before the backfill-owned pending witness is exact",
   proofIndexerWorker,
   [
     /export function workerWorkPrecisionPendingWitnessReady[\s\S]*witness\.ready === true[\s\S]*WORK_SUBATOM_PROJECTION_MODEL[\s\S]*canonicalWorkerMempoolSnapshot/,
@@ -1817,7 +1819,7 @@ expectAll(
   ],
 );
 expectAll(
-  "AMO V7 backfill owns one durable pending witness and marks it ready only after exact Core and DB recomputation",
+  "AMO V8 backfill owns one durable pending witness and marks it ready only after exact Core and DB recomputation",
   proofIndexerBackfill,
   [
     /WORK_Q16_PENDING_REBUILD_META_KEY =\s*"workQ16PendingRebuild:livenet"/,
@@ -1857,8 +1859,8 @@ expectAll("AMO V6 index migration is immutable, declaration-bound, and consumed 
   /proofIndexWorkAmoV6MigrationReadiness/,
 ]);
 expectAll(
-  "WORK V7 keeps the historical Q8 scale immutable and introduces explicit Q16 subatoms",
-  `${workUnits}\n${workAmoV7Core}`,
+  "WORK V8 keeps the historical Q8 scale immutable and introduces explicit Q16 subatoms",
+  `${workUnits}\n${workAmoV8Core}`,
   [
     /WORK_DECIMALS = 8/,
     /WORK_UNIT_SCALE = 100_000_000n/,
@@ -1866,9 +1868,9 @@ expectAll(
     /WORK_SUBATOM_UNIT_SCALE = 10_000_000_000_000_000n/,
     /WORK_SUBATOM_CONVERSION_FACTOR =\s*WORK_SUBATOM_UNIT_SCALE \/ WORK_LEGACY_UNIT_SCALE/,
     /WORK_AMO_DECIMALS = WORK_LEGACY_DECIMALS/,
-    /WORK_AMO_V7_AUTH_VERSION = "pwt-sale-v7"/,
-    /WORK_AMO_V7_TRANSFER_VERSION = "send3"/,
-    /WORK_AMO_V7_SUBATOMS_PER_WORK =\s*WORK_SUBATOM_UNIT_SCALE/,
+    /WORK_AMO_V8_AUTH_VERSION = "pwt-sale-v8"/,
+    /WORK_AMO_V8_TRANSFER_VERSION = "send3"/,
+    /WORK_AMO_V8_SUBATOMS_PER_WORK =\s*WORK_SUBATOM_UNIT_SCALE/,
   ],
 );
 expectAll(
@@ -1898,29 +1900,36 @@ expectAll(
   ],
 );
 expectAll(
-  "AMO V7 derives Q16 proof faces and keeps V4 through V6 frozen settlements replayable",
-  workAmoV7Core,
+  "AMO V8 derives the singleton Q16 face and excludes pre-V8 relics from active settlement",
+  workAmoV8Core,
   [
-    /WORK_AMO_V7_ALLOWED_FACE_PROOFS = Object\.freeze\(\[\s*20_000,\s*50_000,\s*100_000,\s*\]\)/,
-    /export function workAmoV7UnitTerms\([\s\S]*unitAmountSubatoms = workAmoFloorDiv[\s\S]*unitMinimumPriceSats = workAmoCeilDiv/,
-    /function canonicalWorkAmoV7TokenStateListing[\s\S]*WORK_AMO_V7_AUTH_VERSION[\s\S]*WORK_AMO_V6_AUTH_VERSION[\s\S]*legacyWorkAtomsToSubatoms[\s\S]*WORK_AMO_V5_AUTH_VERSION[\s\S]*WORK_AMO_V4_AUTH_VERSION/,
-    /validateWorkAmoV7SealOrBuyTerms[\s\S]*validateWorkAmoV6SealOrBuyTerms/,
+    /WORK_AMO_V8_ALLOWED_FACE_PROOFS = Object\.freeze\(\[\s*25_000,\s*\]\)/,
+    /export function workAmoV8UnitTerms\([\s\S]*unitAmountSubatoms = workAmoFloorDiv[\s\S]*unitMinimumPriceSats = workAmoCeilDiv/,
+    /function canonicalWorkAmoV8TokenStateListing[\s\S]*version === WORK_AMO_V8_AUTH_VERSION[\s\S]*return null/,
+    /validateWorkAmoV8SealOrBuyTerms[\s\S]*listingVersion !== WORK_AMO_V8_AUTH_VERSION[\s\S]*work-amo-v8-relic-listing-nonsettleable/,
   ],
 );
 expectAll(
   "WORK transfers cut over deterministically from send2 to send3 without a postactivation fallback",
-  `${workAmoV7Core}\n${server}`,
+  `${workAmoV8Core}\n${server}`,
   [
-    /export function workAmoV7TransferEraDecision[\s\S]*v7Required = height >= activation[\s\S]*nativeV7 !== v7Required[\s\S]*work-amo-v7-send3-required[\s\S]*work-amo-v7-send3-before-activation/,
-    /TOKEN_SEND_SUBATOMS_ACTION = WORK_AMO_V7_TRANSFER_VERSION/,
+    /export function workAmoV8TransferEraDecision[\s\S]*v8Required = height >= activation[\s\S]*nativeV8 !== v8Required[\s\S]*work-amo-v8-send3-required[\s\S]*work-amo-v8-send3-before-activation/,
+    /TOKEN_SEND_SUBATOMS_ACTION = WORK_AMO_V8_TRANSFER_VERSION/,
     /TOKEN_SEND_SUBATOMS_ACTION !== "send3"/,
     /parts\.length === 4 && parts\[0\] === TOKEN_SEND_SUBATOMS_ACTION[\s\S]*canonicalWorkSubatomsText\(parts\[2\]\)[\s\S]*amountVersion: TOKEN_SEND_SUBATOMS_ACTION/,
-    /workAmoV7TransferEraDecision\([\s\S]*activationHeight:[\s\S]*blockHeight,[\s\S]*confirmed,[\s\S]*projectionModel:[\s\S]*transferVersion: parsedTransferVersion/,
+    /workAmoV8TransferEraDecision\([\s\S]*activationHeight:[\s\S]*blockHeight,[\s\S]*confirmed,[\s\S]*projectionModel:[\s\S]*transferVersion: parsedTransferVersion/,
+  ],
+);
+expectAll(
+  "the active V8 order book admits only V8 listings while prior versions remain history",
+  proofIndexReader,
+  [
+    /async function currentWorkMarketAuthorizationVersionsAtSnapshot[\s\S]*return \[WORK_AMO_V8_AUTH_VERSION\]/,
   ],
 );
 expectAll(
   "WORK precision migration binds the declaration-height close and rebuilds the activation opening",
-  `${workAmoV7Migration}\n${proofIndexerSchema}\n${proofIndexReader}\n${server}`,
+  `${workAmoV8Migration}\n${proofIndexerSchema}\n${proofIndexReader}\n${server}`,
   [
     /canonical-work-q8-to-q16-migration-v1/,
     /workPrecisionV2Migration:livenet/,
@@ -1930,7 +1939,7 @@ expectAll(
     /DELETE FROM proof_indexer\.credit_balances[\s\S]*INSERT INTO proof_indexer\.credit_balances/,
     /DELETE FROM proof_indexer\.work_amo_block_transitions[\s\S]*block_height >= \$1/,
     /work_precision_v2_marker_immutable/,
-    /CREATE TABLE IF NOT EXISTS proof_indexer\.work_amo_v7_listing_terms/,
+    /CREATE TABLE IF NOT EXISTS proof_indexer\.work_amo_v8_listing_terms/,
     /export async function proofIndexWorkPrecisionV2MigrationReadiness/,
     /\) AS tip_height,[\s\S]*\) AS tip_hash,[\s\S]*\) AS transition_height,[\s\S]*\) AS transition_hash/,
     /const tipHash = normalizedLowerText\(row\.tip_hash\)[\s\S]*normalizedLowerText\(row\.transition_hash\) === tipHash/,
@@ -2553,14 +2562,14 @@ expect(
   ),
 );
 expect(
-  "package exposes AMO V7 declaration, protocol, peak-load, and precision checks",
-  /"build:work-amo-v7-declaration":\s*"node scripts\/build-work-amo-v7-declaration\.mjs"/.test(
+  "package exposes AMO V8 declaration, protocol, peak-load, and precision checks",
+  /"build:work-amo-v8-declaration":\s*"node scripts\/build-work-amo-v8-declaration\.mjs"/.test(
     packageJson,
   ) &&
-    /"check:work-amo-v7":\s*"node scripts\/check-work-amo-v7\.mjs"/.test(
+    /"check:work-amo-v8":\s*"node scripts\/check-work-amo-v8\.mjs && node scripts\/check-work-amo-v8-gates\.mjs"/.test(
       packageJson,
     ) &&
-    /"check:work-amo-v7-peak":\s*"node --expose-gc scripts\/check-work-amo-v7-peak\.mjs"/.test(
+    /"check:work-amo-v8-peak":\s*"node --expose-gc scripts\/check-work-amo-v8-peak\.mjs"/.test(
       packageJson,
     ) &&
     /"check:work-precision-v2":\s*"node scripts\/check-work-precision-v2\.mjs"/.test(

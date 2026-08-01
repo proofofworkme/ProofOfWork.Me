@@ -10,7 +10,7 @@ It is distilled from current repository docs and public launch memory captured t
 - Launch memory reviewed: 2026-06-08
 - Full 2026-06-09 archive re-reviewed: 2026-06-17
 - Full 2026-07-14 archive re-reviewed: 2026-07-15
-- Operational memory updated: 2026-07-30
+- Operational memory updated: 2026-07-31
 - Public archives reviewed: `/home/sixer/Downloads/twitter-2026-05-19-4780579747040c69c6ee36267c276b61d1375ffa6de1fde07a0d945892fafea7`, `/home/sixer/Downloads/twitter-2026-06-09-4780579747040c69c6ee36267c276b61d1375ffa6de1fde07a0d945892fafea7`, `/home/sixer/Downloads/twitter-2026-07-14-4780579747040c69c6ee36267c276b61d1375ffa6de1fde07a0d945892fafea7`
 - 2026-07-14 archive inventory reviewed without sampling: 2,486 active tweet records, 39 deleted-tweet records, 67 long-form Note Tweet records, 2,486 active headers, and 39 deleted headers. Active and deleted tweet IDs were each unique; 271 active records were retweets.
 - Core domains: `www.proofofwork.me`, `proofofwork.me`, `id.proofofwork.me`, `computer.proofofwork.me`, `desktop.proofofwork.me`, `browser.proofofwork.me`, `amo.proofofwork.me`, legacy `marketplace.proofofwork.me`, `credit.proofofwork.me`, `token.proofofwork.me`, `tokens.proofofwork.me`, `wallet.proofofwork.me`, `work.proofofwork.me`, `infinity.proofofwork.me`, `inception.proofofwork.me`, `log.proofofwork.me`, `growth.proofofwork.me`
@@ -98,6 +98,11 @@ fail-closed unless exact declaration evidence, migration, replay parity,
 exact-tip readiness and the write gate all agree. Valid V4/V5 listings
 confirmed before activation keep their frozen settlement rights.
 
+V7 status: the following WORK Precision Protocol V2 / AMO Unit Protocol V7
+proposal never acquired declaration evidence or protocol authority and is
+superseded by V8. It is preserved as historical design, not a live activation
+path; its declaration pins stay empty and its write gate stays disabled.
+
 WORK Precision Protocol V2 / AMO Unit Protocol V7 is the staged
 whole-Computer precision successor. It does not rewrite V6. After its exact
 declaration confirms and activation begins at the following block, canonical
@@ -112,6 +117,26 @@ compute-then-bond order. Deployment is fail-closed: an unconfigured or
 unconfirmed V7 cannot disable V6, and V7 cannot admit a write until its
 declaration, deterministic migration, activation replay, parity, exact-tip
 readiness, and separate gate agree.
+
+WORK Precision Protocol V2 / AMO Unit Protocol V8 is the approved additive
+successor. If its exact declaration confirms in block `D`, activation is the
+opening of `D+1`. Canonical current WORK then uses exactly sixteen decimal
+places: one WORK is `10000000000000000` subatoms, one subatom is
+`0.0000000000000001 WORK`, and every Q8 atom becomes exactly `100000000`
+subatoms by integer multiplication. Balances, supply, and the 21,000,000 WORK
+cap conserve exactly; raw confirmed history is not rewritten. Pending WORK
+projections are cleared and rebuilt from one stable mempool under V8 rules.
+New transfers use `pwt1:send3`. New governed listings use only `pwt-sale-v8`
+and the single exact face `25000` proofs, with the exact
+`unitAmountSubatoms` frozen at confirmed canonical position before that
+listing's bond is applied. Every active or sealing pre-V8 WORK listing becomes
+a non-actionable relic at activation, its reservation is released, and no
+legacy seal, buy, or delist path remains. Only a confirmed V8 listing may
+settle. Preactivation deployment keeps all V8 declaration pins empty and its
+write gate off; V8 admission opens only after exact declaration evidence, the
+Q8-to-Q16 migration marker, activation replay, relic-cutover commitment,
+database constraints, parity, exact-tip readiness, and the independent V8 gate
+all agree.
 
 AMO V5 replay readiness is anchored by the one immutable
 `canonical-work-amo-v5-h-minus-one-seed-evidence-v1` row. The Computer
@@ -190,6 +215,7 @@ The archive captured a live Phase 1 ignition, not a polished brand campaign.
 - 2026-07-30: Confirmed AMO V6 read visibility is governed by exact declaration and immutable migration evidence, not by the production write switch. Once that read evidence is complete, current token state, exact and broad listing history, Credit, Wallet, AMO, and snapshot-backed surfaces must project the same canonical V6 listing exactly once even while new writes remain closed. Missing or conflicting evidence fails the V6 projection closed without hiding valid grandfathered V4/V5 settlement rights.
 - 2026-07-30: AMO replay readiness is corrected to consume the immutable V5 H-1 seed evidence directly. Snapshot pruning, rebuild, range replay, and invalidation paths preserve the evidence and completed-migration dependencies, with a schema trigger as the database backstop. A missing replaceable H-1 canonical-summary row no longer blocks V6 admission or authorizes fabricated history.
 - 2026-07-30: WORK Precision Protocol V2 / AMO Unit Protocol V7 is staged as a new declaration-bound era instead of silently changing V6. Its activation boundary converts every confirmed canonical Q8 atom to exactly 100,000,000 Q16 subatoms, preserving balances, reservations, active-listing value, raw history, and the 21,000,000 WORK cap. Noncanonical mempool pending deltas are cleared and rebuilt under V7 rules. Legacy `send2` and V6 records replay at their original scale; post-activation writes require `send3` and `pwt-sale-v7`. The release may be deployed before the declaration with V7 closed, but it must leave the confirmed V6 protocol usable until the V7 boundary actually activates.
+- 2026-07-31: V7 never activated; V8 supersedes it without manufacturing V7 history. WORK Precision Protocol V2 / AMO Unit Protocol V8 becomes the approved additive successor. The exact declaration block `D` opens Q16 and `pwt-sale-v8` at `D+1`; every Q8 atom scales to exactly 100,000,000 subatoms, pending WORK projections rebuild under the active era, and the only new AMO face is exactly 25,000 proofs. All active or sealing pre-V8 WORK listings become non-actionable relics with reservations released and no legacy settlement actions. V8 remains closed while its pins are empty and opens only after exact evidence, migration, replay, relic-cutover, parity, exact-tip readiness, and the V8 write gate agree.
 
 The emotional shape is a breakthrough moment: years of ProofOfWork/app experiments meeting modern agents and becoming legible all at once.
 
@@ -257,7 +283,7 @@ Future agents must preserve these unless the user explicitly asks for a migratio
 - Current credit prefix: `pwt1:`
 - Credit creation pays the built-in index fee to `tokens@proofofwork.me`; credit mints and transfers pay the credit's own registry directly.
 - Credit ids are creation txids. The creation event defines ticker, max supply, mint amount, mint price, and the credit registry address.
-- Generic credit transfers use `pwt1:send:<token-create-txid>:<amount>:<recipient-address>`. Canonical WORK historically uses `pwt1:send2:<canonical-work-token-id>:<amount-atoms>:<recipient-address>` at eight decimals; after the staged precision declaration activates it uses `pwt1:send3:<canonical-work-token-id>:<amount-subatoms>:<recipient-address>` at sixteen decimals. Every form uses a 546-proof registry mutation payment, and historical bytes retain their original scale.
+- Generic credit transfers use `pwt1:send:<token-create-txid>:<amount>:<recipient-address>`. Canonical WORK historically uses `pwt1:send2:<canonical-work-token-id>:<amount-atoms>:<recipient-address>` at eight decimals; after the approved V8 precision declaration activates it uses `pwt1:send3:<canonical-work-token-id>:<amount-subatoms>:<recipient-address>` at sixteen decimals. Every form uses a 546-proof registry mutation payment, and historical bytes retain their original scale.
 - Credit mint prices are owner-set with a 546-proof minimum. ProofOfWork does not take a global fee on mints.
 - Credit marketplace writes are live sale-ticket records. Preserve the invariant: reserve seller balance, seal exact terms, require buyer ticket spend, seller payment, and credit registry mutation fee.
 - A spent sale-ticket outpoint closes its listing. Production should prefer Bitcoin Core UTXO spend state for this check when RPC is configured, with address-history scans used as recovery context. If the spend is a valid `buy5`, the sale must appear in credit sales, market logs, Growth, and any summary surface after refresh.

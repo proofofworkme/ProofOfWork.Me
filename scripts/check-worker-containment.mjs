@@ -23,8 +23,8 @@ import {
   shouldEscalateWorkerFailure,
   workerBackfillPhasePlan,
   workerNoProgressFromMeta,
-  workerWorkAmoV7ActivationLatchReady,
-  workerWorkAmoV7DeclarationConfig,
+  workerWorkAmoV8ActivationLatchReady,
+  workerWorkAmoV8DeclarationConfig,
   workerWorkPrecisionConfirmedReplayEnvelopeReady,
   workerWorkPrecisionCoreTipReady,
   workerWorkPrecisionEra,
@@ -37,8 +37,8 @@ import {
   workerWorkPrecisionV2MarkerReady,
 } from "./run-proof-indexer-worker.mjs";
 import {
-  workAmoV7DeclarationCommitment,
-} from "../server/work-amo-v7-declaration.mjs";
+  workAmoV8DeclarationCommitment,
+} from "../server/work-amo-v8-declaration.mjs";
 import {
   WORK_AMO_V5_DECLARATION_AUTHORITY_SCRIPT_PUBKEY,
   WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS,
@@ -202,27 +202,27 @@ async function runChecks() {
       assert.deepEqual(
         deploymentEnvironmentValues(
           deploymentSource,
-          `WORK_AMO_V7_DECLARATION_${pin}`,
+          `WORK_AMO_V8_DECLARATION_${pin}`,
         ),
         [""],
-        `AMO V7 declaration ${pin} must deploy empty before publication`,
+        `AMO V8 declaration ${pin} must deploy empty before publication`,
       );
     }
     assert.deepEqual(
       deploymentEnvironmentValues(
         deploymentSource,
-        "WORK_AMO_V7_ACTIVATION_HEIGHT",
+        "WORK_AMO_V8_ACTIVATION_HEIGHT",
       ),
       [""],
-      "AMO V7 D+1 activation must deploy empty before publication",
+      "AMO V8 D+1 activation must deploy empty before publication",
     );
     assert.deepEqual(
       deploymentEnvironmentValues(
         deploymentSource,
-        "WORK_AMO_V7_WRITES_ENABLED",
+        "WORK_AMO_V8_WRITES_ENABLED",
       ),
       ["0"],
-      "AMO V7 writes must deploy disabled",
+      "AMO V8 writes must deploy disabled",
     );
   }
   assert.deepEqual(
@@ -233,85 +233,85 @@ async function runChecks() {
     ["1"],
     "the active V6 API write gate must not be silently overridden",
   );
-  const v7DeclarationCommitment = workAmoV7DeclarationCommitment();
-  const emptyV7Config = workerWorkAmoV7DeclarationConfig({});
+  const v7DeclarationCommitment = workAmoV8DeclarationCommitment();
+  const emptyV7Config = workerWorkAmoV8DeclarationConfig({});
   assert.equal(emptyV7Config.requested, false);
   assert.equal(emptyV7Config.configured, false);
   assert.equal(
-    workerWorkAmoV7DeclarationConfig({
-      WORK_AMO_V7_WRITES_ENABLED: "0",
+    workerWorkAmoV8DeclarationConfig({
+      WORK_AMO_V8_WRITES_ENABLED: "0",
     }).requested,
     false,
-    "the staged disabled write gate alone must not request V7",
+    "the staged disabled write gate alone must not request V8",
   );
   assert.equal(
-    workerWorkAmoV7DeclarationConfig({
-      WORK_AMO_V7_WRITES_ENABLED: "1",
+    workerWorkAmoV8DeclarationConfig({
+      WORK_AMO_V8_WRITES_ENABLED: "1",
     }).requested,
     true,
     "enabling writes must request the complete declaration",
   );
   assert.equal(
-    workerWorkAmoV7DeclarationConfig({
-      WORK_AMO_V7_WRITES_ENABLED: "perhaps",
+    workerWorkAmoV8DeclarationConfig({
+      WORK_AMO_V8_WRITES_ENABLED: "perhaps",
     }).requested,
     true,
     "a malformed nonempty write gate must fail closed as requested",
   );
-  const partialV7Config = workerWorkAmoV7DeclarationConfig({
-    WORK_AMO_V7_DECLARATION_HEIGHT: "100",
+  const partialV7Config = workerWorkAmoV8DeclarationConfig({
+    WORK_AMO_V8_DECLARATION_HEIGHT: "100",
   });
   assert.equal(partialV7Config.requested, true);
   assert.equal(partialV7Config.configured, false);
   const configuredV7Environment = {
-    WORK_AMO_V7_ACTIVATION_HEIGHT: "101",
-    WORK_AMO_V7_DECLARATION_BLOCK_HASH: "c".repeat(64),
-    WORK_AMO_V7_DECLARATION_BLOCK_INDEX: "8",
-    WORK_AMO_V7_DECLARATION_HEIGHT: "100",
-    WORK_AMO_V7_DECLARATION_MEMO_BYTES: String(
+    WORK_AMO_V8_ACTIVATION_HEIGHT: "101",
+    WORK_AMO_V8_DECLARATION_BLOCK_HASH: "c".repeat(64),
+    WORK_AMO_V8_DECLARATION_BLOCK_INDEX: "8",
+    WORK_AMO_V8_DECLARATION_HEIGHT: "100",
+    WORK_AMO_V8_DECLARATION_MEMO_BYTES: String(
       v7DeclarationCommitment.protocolRecordBytes,
     ),
-    WORK_AMO_V7_DECLARATION_MEMO_SHA256:
+    WORK_AMO_V8_DECLARATION_MEMO_SHA256:
       v7DeclarationCommitment.protocolRecordSha256,
-    WORK_AMO_V7_DECLARATION_PROTOCOL_VOUT: "3",
-    WORK_AMO_V7_DECLARATION_RECORD_ORDINAL: "0",
-    WORK_AMO_V7_DECLARATION_REGISTRY_PAYMENT_VOUT: "4",
-    WORK_AMO_V7_DECLARATION_TXID: "d".repeat(64),
+    WORK_AMO_V8_DECLARATION_PROTOCOL_VOUT: "3",
+    WORK_AMO_V8_DECLARATION_RECORD_ORDINAL: "0",
+    WORK_AMO_V8_DECLARATION_REGISTRY_PAYMENT_VOUT: "4",
+    WORK_AMO_V8_DECLARATION_TXID: "d".repeat(64),
   };
-  const configuredV7 = workerWorkAmoV7DeclarationConfig(
+  const configuredV7 = workerWorkAmoV8DeclarationConfig(
     configuredV7Environment,
   );
   assert.equal(configuredV7.requested, true);
   assert.equal(configuredV7.configured, true);
   assert.equal(configuredV7.activationHeight, 101);
   assert.equal(
-    workerWorkAmoV7DeclarationConfig({
+    workerWorkAmoV8DeclarationConfig({
       ...configuredV7Environment,
-      WORK_AMO_V7_ACTIVATION_HEIGHT: "102",
+      WORK_AMO_V8_ACTIVATION_HEIGHT: "102",
     }).configured,
     false,
-    "AMO V7 activation must be declaration height plus exactly one",
+    "AMO V8 activation must be declaration height plus exactly one",
   );
   for (const name of [
-    "WORK_AMO_V7_ACTIVATION_HEIGHT",
-    "WORK_AMO_V7_DECLARATION_TXID",
-    "WORK_AMO_V7_DECLARATION_HEIGHT",
-    "WORK_AMO_V7_DECLARATION_BLOCK_HASH",
-    "WORK_AMO_V7_DECLARATION_BLOCK_INDEX",
-    "WORK_AMO_V7_DECLARATION_MEMO_SHA256",
-    "WORK_AMO_V7_DECLARATION_MEMO_BYTES",
-    "WORK_AMO_V7_DECLARATION_PROTOCOL_VOUT",
-    "WORK_AMO_V7_DECLARATION_RECORD_ORDINAL",
-    "WORK_AMO_V7_DECLARATION_REGISTRY_PAYMENT_VOUT",
+    "WORK_AMO_V8_ACTIVATION_HEIGHT",
+    "WORK_AMO_V8_DECLARATION_TXID",
+    "WORK_AMO_V8_DECLARATION_HEIGHT",
+    "WORK_AMO_V8_DECLARATION_BLOCK_HASH",
+    "WORK_AMO_V8_DECLARATION_BLOCK_INDEX",
+    "WORK_AMO_V8_DECLARATION_MEMO_SHA256",
+    "WORK_AMO_V8_DECLARATION_MEMO_BYTES",
+    "WORK_AMO_V8_DECLARATION_PROTOCOL_VOUT",
+    "WORK_AMO_V8_DECLARATION_RECORD_ORDINAL",
+    "WORK_AMO_V8_DECLARATION_REGISTRY_PAYMENT_VOUT",
   ]) {
-    const singlePin = workerWorkAmoV7DeclarationConfig({ [name]: "0" });
+    const singlePin = workerWorkAmoV8DeclarationConfig({ [name]: "0" });
     assert.equal(singlePin.requested, true, `${name}=0 must be requested`);
-    assert.equal(singlePin.configured, false, `${name}=0 must not configure V7`);
+    assert.equal(singlePin.configured, false, `${name}=0 must not configure V8`);
   }
   for (const invalidIndex of ["-1", "-0", "01"]) {
-    const invalid = workerWorkAmoV7DeclarationConfig({
+    const invalid = workerWorkAmoV8DeclarationConfig({
       ...configuredV7Environment,
-      WORK_AMO_V7_DECLARATION_BLOCK_INDEX: invalidIndex,
+      WORK_AMO_V8_DECLARATION_BLOCK_INDEX: invalidIndex,
     });
     assert.equal(invalid.requested, true);
     assert.equal(
@@ -321,12 +321,12 @@ async function runChecks() {
     );
   }
   for (const [name, invalidValue] of [
-    ["WORK_AMO_V7_DECLARATION_HEIGHT", " 100"],
-    ["WORK_AMO_V7_DECLARATION_BLOCK_INDEX", "8 "],
-    ["WORK_AMO_V7_DECLARATION_TXID", "D".repeat(64)],
-    ["WORK_AMO_V7_DECLARATION_BLOCK_HASH", ` ${"c".repeat(64)}`],
+    ["WORK_AMO_V8_DECLARATION_HEIGHT", " 100"],
+    ["WORK_AMO_V8_DECLARATION_BLOCK_INDEX", "8 "],
+    ["WORK_AMO_V8_DECLARATION_TXID", "D".repeat(64)],
+    ["WORK_AMO_V8_DECLARATION_BLOCK_HASH", ` ${"c".repeat(64)}`],
   ]) {
-    const invalid = workerWorkAmoV7DeclarationConfig({
+    const invalid = workerWorkAmoV8DeclarationConfig({
       ...configuredV7Environment,
       [name]: invalidValue,
     });
@@ -338,8 +338,8 @@ async function runChecks() {
     );
   }
   for (const invalidGate of [" 0", "0 ", " true", "false "]) {
-    const invalid = workerWorkAmoV7DeclarationConfig({
-      WORK_AMO_V7_WRITES_ENABLED: invalidGate,
+    const invalid = workerWorkAmoV8DeclarationConfig({
+      WORK_AMO_V8_WRITES_ENABLED: invalidGate,
     });
     assert.equal(
       invalid.requested,
@@ -374,7 +374,7 @@ async function runChecks() {
     firstObservedTipHeight: 101,
     indexVerified: true,
     inputCount: 1,
-    model: "canonical-work-amo-v7-activation-latch-v1",
+    model: "canonical-work-amo-v8-activation-latch-v1",
     network: "livenet",
     observedAt: "2026-07-31T12:00:00.000Z",
     outputCount: 5,
@@ -384,15 +384,33 @@ async function runChecks() {
     registryPaymentSats: "546",
   };
   assert.equal(
-    workerWorkAmoV7ActivationLatchReady(
+    workerWorkAmoV8ActivationLatchReady(
       activationLatch,
       configuredV7,
     ),
     true,
   );
   assert.equal(
-    workerWorkAmoV7ActivationLatchReady(
+    workerWorkAmoV8ActivationLatchReady(
       { ...activationLatch, declarationHeight: 99 },
+      configuredV7,
+    ),
+    false,
+  );
+  assert.equal(
+    workerWorkAmoV8ActivationLatchReady(
+      {
+        ...activationLatch,
+        firstObservedTipHeight:
+          configuredV7.activationHeight + 1,
+      },
+      configuredV7,
+    ),
+    false,
+  );
+  assert.equal(
+    workerWorkAmoV8ActivationLatchReady(
+      { ...activationLatch, unexpected: true },
       configuredV7,
     ),
     false,
@@ -497,6 +515,13 @@ async function runChecks() {
     network: "livenet",
     projectionModel: "work-subatoms-v2",
     rawConfirmedHistoryMutation: "none",
+    relicCutover: {
+      count: 0,
+      items: [],
+      model: "canonical-work-amo-v8-preactivation-relic-cutover-v1",
+      payloadBytes: 2,
+      sha256: emptyRowsSha256,
+    },
     replayFromHeight: configuredV7.activationHeight,
     snapshotPolicy:
       "preserve-preactivation-canonical-invalidate-wrong-era-derived-require-post-migration-current-snapshot",
@@ -504,7 +529,7 @@ async function runChecks() {
     transferVersion: "send3",
     unitScale: "10000000000000000",
     updatedAt: markerTimestamp,
-    version: "pwt-sale-v7",
+    version: "pwt-sale-v8",
   };
   assert.equal(
     workerWorkPrecisionV2MarkerReady(
@@ -720,7 +745,7 @@ async function runChecks() {
     activationHeight: 101,
     activationTransition: {
       blockHeight: 101,
-      model: "canonical-work-amo-full-position-block-sequencer-v3",
+      model: "canonical-work-amo-full-position-block-sequencer-v4",
       payload: {
         activationHeight: 101,
         openingSufficientState: {
@@ -734,7 +759,7 @@ async function runChecks() {
       stateCommitmentModel:
         "canonical-work-amo-sufficient-state-sha256-v1",
       workTokenStateModel:
-        "canonical-work-token-state-subatoms-v2",
+        "canonical-work-token-state-subatoms-v3",
     },
     coreTip: replayCoreTip,
     declarationBlockHash: replayDeclarationHash,
@@ -743,11 +768,11 @@ async function runChecks() {
     latestTransition: {
       blockHash: replayTipHash,
       blockHeight: 102,
-      model: "canonical-work-amo-full-position-block-sequencer-v3",
+      model: "canonical-work-amo-full-position-block-sequencer-v4",
       stateCommitmentModel:
         "canonical-work-amo-sufficient-state-sha256-v1",
       workTokenStateModel:
-        "canonical-work-token-state-subatoms-v2",
+        "canonical-work-token-state-subatoms-v3",
     },
     markerOpeningCommitment: replayCommitment,
     snapshot: replaySnapshot,

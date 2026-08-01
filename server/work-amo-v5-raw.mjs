@@ -77,15 +77,20 @@ import {
 } from "./work-amo-v6.mjs";
 import {
   WORK_AMO_V7_AUTH_VERSION,
-  WORK_AMO_V7_BLOCK_SEQUENCER_MODEL,
-  WORK_AMO_V7_MAX_SUPPLY_SUBATOMS,
-  WORK_AMO_V7_MINT_AMOUNT_SUBATOMS,
-  deriveWorkAmoV7FrozenTerms,
-  validateWorkAmoV7SealOrBuyTerms,
-  validateWorkAmoV7StaticAuthorization,
   workAmoV7CanonicalTokenStateCommitment,
   workAmoV7CanonicalTokenStatePreimage,
 } from "./work-amo-v7.mjs";
+import {
+  WORK_AMO_V8_AUTH_VERSION,
+  WORK_AMO_V8_BLOCK_SEQUENCER_MODEL,
+  WORK_AMO_V8_MAX_SUPPLY_SUBATOMS,
+  WORK_AMO_V8_MINT_AMOUNT_SUBATOMS,
+  deriveWorkAmoV8FrozenTerms,
+  validateWorkAmoV8SealOrBuyTerms,
+  validateWorkAmoV8StaticAuthorization,
+  workAmoV8CanonicalTokenStateCommitment,
+  workAmoV8CanonicalTokenStatePreimage,
+} from "./work-amo-v8.mjs";
 
 const TXID_PATTERN = /^[0-9a-f]{64}$/u;
 const INTEGER_PATTERN = /^(?:0|[1-9][0-9]*)$/u;
@@ -100,7 +105,7 @@ const WORK_AMO_V5_RESERVED_TOKEN_IDS = new Set([
 const WORK_AMO_VALUE_Q8_SCALE = 100_000_000n;
 const WORK_AMO_V5_MOVEMENT_DENOMINATOR =
   WORK_AMO_V5_MAX_SUPPLY * WORK_AMO_V5_ATOMS_PER_WORK;
-const WORK_AMO_V7_MOVEMENT_DENOMINATOR =
+const WORK_AMO_V8_MOVEMENT_DENOMINATOR =
   WORK_AMO_V5_MAX_SUPPLY * WORK_SUBATOM_UNIT_SCALE;
 const WORK_AMO_V5_GROWTH_VALUE_MULTIPLE = 5n;
 const WORK_AMO_V5_ID_DENSITY_NUMERATOR = 26_868_933_906_745_133n;
@@ -655,12 +660,17 @@ export function normalizeWorkAmoV5RawGenericState(value) {
 }
 
 function workStateFromProjection(value) {
+  const v7 =
+    value?.model === "canonical-work-token-state-subatoms-v2";
   const q16 =
     value?.amountStorageModel === WORK_SUBATOM_PROJECTION_MODEL ||
-    value?.model === "canonical-work-token-state-subatoms-v2" ||
+    v7 ||
+    value?.model === "canonical-work-token-state-subatoms-v3" ||
     value?.confirmedSupplySubatoms !== undefined;
   const preimage = q16
-    ? workAmoV7CanonicalTokenStatePreimage(value)
+    ? v7
+      ? workAmoV7CanonicalTokenStatePreimage(value)
+      : workAmoV8CanonicalTokenStatePreimage(value)
     : workAmoV6CanonicalTokenStatePreimage(value);
   const listings = new Map(
     preimage.listings.map((listing) => [
@@ -1013,7 +1023,9 @@ function strictWorkStateFromProjection(value, expectedCommitment) {
     state = workStateFromProjection(value);
     commitment =
       state.amountStorageModel === WORK_SUBATOM_PROJECTION_MODEL
-        ? workAmoV7CanonicalTokenStateCommitment(value)
+        ? value?.model === "canonical-work-token-state-subatoms-v2"
+          ? workAmoV7CanonicalTokenStateCommitment(value)
+          : workAmoV8CanonicalTokenStateCommitment(value)
         : workAmoV6CanonicalTokenStateCommitment(value);
   } catch {
     throw new TypeError(
@@ -1379,7 +1391,7 @@ function movementValueDescriptor(movement) {
   return {
     amount,
     denominator: q16
-      ? WORK_AMO_V7_MOVEMENT_DENOMINATOR
+      ? WORK_AMO_V8_MOVEMENT_DENOMINATOR
       : WORK_AMO_V5_MOVEMENT_DENOMINATOR,
     key: `${q16 ? "q16" : "q8"}:${amount}`,
   };
@@ -2156,7 +2168,7 @@ function evaluatePwm(record, context) {
         const attachedWorkLiveValueAtSendQ8 =
           (amountAtoms * openingNetworkValueQ8) /
           (q16Send
-            ? WORK_AMO_V7_MOVEMENT_DENOMINATOR
+            ? WORK_AMO_V8_MOVEMENT_DENOMINATOR
             : WORK_AMO_V5_MOVEMENT_DENOMINATOR);
         const attachedWorkIssuanceUnits =
           attachedWorkLiveValueAtSendQ8 / WORK_AMO_VALUE_Q8_SCALE;
@@ -3027,20 +3039,20 @@ function evaluateGenericPwt(record, context, parsed) {
 }
 
 function workAuthorizationsMatch(left, right) {
-  const v7 =
-    left?.version === WORK_AMO_V7_AUTH_VERSION ||
-    right?.version === WORK_AMO_V7_AUTH_VERSION;
-  if (v7) {
+  const v8 =
+    left?.version === WORK_AMO_V8_AUTH_VERSION ||
+    right?.version === WORK_AMO_V8_AUTH_VERSION;
+  if (v8) {
     if (
-      left?.version !== WORK_AMO_V7_AUTH_VERSION ||
-      right?.version !== WORK_AMO_V7_AUTH_VERSION
+      left?.version !== WORK_AMO_V8_AUTH_VERSION ||
+      right?.version !== WORK_AMO_V8_AUTH_VERSION
     ) {
       return false;
     }
     const leftValidation =
-      validateWorkAmoV7StaticAuthorization(left);
+      validateWorkAmoV8StaticAuthorization(left);
     const rightValidation =
-      validateWorkAmoV7StaticAuthorization(right);
+      validateWorkAmoV8StaticAuthorization(right);
     if (!leftValidation.valid || !rightValidation.valid) {
       return false;
     }
@@ -3214,7 +3226,7 @@ function evaluateWorkPwt(record, context, parsed) {
     workState.amountStorageModel ===
       WORK_SUBATOM_PROJECTION_MODEL;
   const v7ActivationHeight = exactSafeInteger(
-    context.workAmoV7?.activationHeight,
+    context.workAmoV8?.activationHeight,
     { positive: true },
   );
   const v7Active =
@@ -3274,7 +3286,7 @@ function evaluateWorkPwt(record, context, parsed) {
   }
   const amountAtoms =
     parsed.kind === "mint" && q16
-      ? WORK_AMO_V7_MINT_AMOUNT_SUBATOMS
+      ? BigInt(parsed.amount) * WORK_SUBATOM_UNIT_SCALE
       : BigInt(
           exactUnsignedText(
             q16 ? parsed.amountSubatoms : parsed.amountAtoms,
@@ -3290,13 +3302,18 @@ function evaluateWorkPwt(record, context, parsed) {
   if (parsed.kind === "mint") {
     if (
       !isWorkAmoV5LivenetAddress(senderAddress) ||
+      (
+        q16 &&
+        parsed.payload !==
+          `pwt1:mint:${WORK_TOKEN_ID}:1000`
+      ) ||
       amountAtoms !==
         (q16
-          ? WORK_AMO_V7_MINT_AMOUNT_SUBATOMS
+          ? WORK_AMO_V8_MINT_AMOUNT_SUBATOMS
           : 100_000_000_000n) ||
       workState.confirmedSupplyAtoms + amountAtoms >
         (q16
-          ? WORK_AMO_V7_MAX_SUPPLY_SUBATOMS
+          ? WORK_AMO_V8_MAX_SUPPLY_SUBATOMS
           : WORK_AMO_V5_MAX_SUPPLY *
             WORK_AMO_V5_ATOMS_PER_WORK) ||
       !adjustWorkBalance(
@@ -3398,7 +3415,7 @@ function evaluateWorkPwt(record, context, parsed) {
       const attachedWorkLiveValueAtSendQ8 =
         (amountAtoms * openingNetworkValueQ8) /
         (q16
-          ? WORK_AMO_V7_MOVEMENT_DENOMINATOR
+          ? WORK_AMO_V8_MOVEMENT_DENOMINATOR
           : WORK_AMO_V5_MOVEMENT_DENOMINATOR);
       const attachedWorkIssuanceUnits =
         attachedWorkLiveValueAtSendQ8 / WORK_AMO_VALUE_Q8_SCALE;
@@ -3484,19 +3501,19 @@ function evaluateWorkPwt(record, context, parsed) {
       WORK_AMO_V6_AUTH_VERSION;
     const v7Authorization =
       parsed.saleAuthorization?.version ===
-      WORK_AMO_V7_AUTH_VERSION;
+      WORK_AMO_V8_AUTH_VERSION;
     const staticValidation = v7Authorization
       ? v7Active
-        ? validateWorkAmoV7StaticAuthorization(
+        ? validateWorkAmoV8StaticAuthorization(
             parsed.saleAuthorization,
           )
         : {
-            reasonCode: "work-amo-v7-before-activation",
+            reasonCode: "work-amo-v8-before-activation",
             valid: false,
           }
       : v7Active
         ? {
-            reasonCode: "work-amo-v7-version-required",
+            reasonCode: "work-amo-v8-version-required",
             valid: false,
           }
       : v6Authorization
@@ -3549,9 +3566,9 @@ function evaluateWorkPwt(record, context, parsed) {
       { runtime: context.economicRuntime },
     );
     const derivedTerms = v7Authorization
-      ? deriveWorkAmoV7FrozenTerms(authorization, {
+      ? deriveWorkAmoV8FrozenTerms(authorization, {
           activationHeight:
-            context.workAmoV7.activationHeight,
+            context.workAmoV8.activationHeight,
           listingBondContributionQ8:
             hypothetical.bondContributionQ8,
           listingPosition: record.position,
@@ -3629,7 +3646,7 @@ function evaluateWorkPwt(record, context, parsed) {
       parsed.kind === "seal" &&
       [
         WORK_AMO_V6_AUTH_VERSION,
-        WORK_AMO_V7_AUTH_VERSION,
+        WORK_AMO_V8_AUTH_VERSION,
       ].includes(listing.saleAuthorization?.version) &&
       normalizedTxid(
         listing.saleAuthorization?.anchorTxid,
@@ -3698,13 +3715,13 @@ function evaluateWorkPwt(record, context, parsed) {
                 record.position,
               ),
             }
-          : listingVersion === WORK_AMO_V7_AUTH_VERSION
-            ? validateWorkAmoV7SealOrBuyTerms({
+          : listingVersion === WORK_AMO_V8_AUTH_VERSION
+            ? validateWorkAmoV8SealOrBuyTerms({
                 actionAuthorization:
                   parsed.saleAuthorization,
                 actionPosition: record.position,
                 activationHeight:
-                  context.workAmoV7?.activationHeight,
+                  context.workAmoV8?.activationHeight,
                 listingAuthorization:
                   listing.saleAuthorization,
                 listingFrozenTerms: listing.frozenTerms,
@@ -3817,8 +3834,8 @@ function evaluateWorkPwt(record, context, parsed) {
       if (listing.saleAuthorization?.version !== "pwt-sale-v4") {
         const signed =
           listing.saleAuthorization?.version ===
-          WORK_AMO_V7_AUTH_VERSION
-            ? validateWorkAmoV7StaticAuthorization(
+          WORK_AMO_V8_AUTH_VERSION
+            ? validateWorkAmoV8StaticAuthorization(
                 parsed.saleAuthorization,
               )
             : listing.saleAuthorization?.version ===
@@ -4779,13 +4796,13 @@ function normalizedWorkAmoV6ReplayContext({
   };
 }
 
-function normalizedWorkAmoV7ReplayContext({
+function normalizedWorkAmoV8ReplayContext({
   blockHeight,
-  workAmoV7,
+  workAmoV8,
   workState,
 } = {}) {
   const activationHeight = exactSafeInteger(
-    workAmoV7?.activationHeight,
+    workAmoV8?.activationHeight,
     { positive: true },
   );
   if (activationHeight === null || blockHeight < activationHeight) {
@@ -4794,7 +4811,7 @@ function normalizedWorkAmoV7ReplayContext({
         WORK_SUBATOM_PROJECTION_MODEL
     ) {
       throw new TypeError(
-        "work-amo-v7-q16-state-before-activation",
+        "work-amo-v8-q16-state-before-activation",
       );
     }
     return { commitment: null, evaluation: null };
@@ -4804,14 +4821,14 @@ function normalizedWorkAmoV7ReplayContext({
       WORK_SUBATOM_PROJECTION_MODEL
   ) {
     throw new TypeError(
-      "work-amo-v7-q16-opening-state-required",
+      "work-amo-v8-q16-opening-state-required",
     );
   }
   return {
     commitment: {
       activationHeight,
       amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
-      blockSequencerModel: WORK_AMO_V7_BLOCK_SEQUENCER_MODEL,
+      blockSequencerModel: WORK_AMO_V8_BLOCK_SEQUENCER_MODEL,
     },
     evaluation: {
       activationHeight,
@@ -4833,7 +4850,7 @@ export function replayWorkAmoV5RawBlock({
   openingWorkState,
   referenceBlockWitnesses = [],
   workAmoV6 = null,
-  workAmoV7 = null,
+  workAmoV8 = null,
 } = {}) {
   const openingValidation = validateWorkAmoV5SufficientState(
     openingEconomicState,
@@ -4975,9 +4992,9 @@ export function replayWorkAmoV5RawBlock({
     referenceBlockWitnesses,
     workAmoV6,
   });
-  const v7Replay = normalizedWorkAmoV7ReplayContext({
+  const v7Replay = normalizedWorkAmoV8ReplayContext({
     blockHeight: requiredBlockHeight,
-    workAmoV7,
+    workAmoV8,
     workState: workOpeningState,
   });
   const countsByTxid = new Map();
@@ -5067,7 +5084,7 @@ export function replayWorkAmoV5RawBlock({
       ? { workAmoV6: v6Replay.commitment }
       : {}),
     ...(v7Replay.commitment
-      ? { workAmoV7: v7Replay.commitment }
+      ? { workAmoV8: v7Replay.commitment }
       : {}),
   });
   for (let index = 0; index < ordered.length; index += 1) {
@@ -5108,7 +5125,7 @@ export function replayWorkAmoV5RawBlock({
           protocolRecordCountsByTxid,
           validPwaRecordCountsByTxid,
           workAmoV6: v6Replay.evaluation,
-          workAmoV7: v7Replay.evaluation,
+          workAmoV8: v7Replay.evaluation,
           workAggregateRegistryGroupsByTxid,
           workSendsByTxid,
           workState,
@@ -5374,7 +5391,7 @@ export function replayWorkAmoV5RawBlock({
     workAmoV5RawIdStateCommitment(publicIdState);
   const tokenStateCommitment =
     v7Replay.commitment
-      ? workAmoV7CanonicalTokenStateCommitment(publicWorkState)
+      ? workAmoV8CanonicalTokenStateCommitment(publicWorkState)
       : workAmoV6CanonicalTokenStateCommitment(publicWorkState);
   const closingValidation = validateWorkAmoV5SufficientState({
     ...economicState,
@@ -5437,7 +5454,7 @@ export function replayWorkAmoV5RawBlock({
         }
       : {}),
     ...(v7Replay.commitment
-      ? { workAmoV7: v7Replay.commitment }
+      ? { workAmoV8: v7Replay.commitment }
       : {}),
     records: ordered,
     stateCommitment,
@@ -5467,18 +5484,18 @@ function workListingProjectionFromCanonicalState(
   listing,
   preserved = null,
 ) {
-  const v7 =
+  const v8 =
     listing?.saleAuthorization?.version ===
-      WORK_AMO_V7_AUTH_VERSION;
+      WORK_AMO_V8_AUTH_VERSION;
   if (
-    !v7 &&
+    !v8 &&
     listing?.saleAuthorization?.version !==
       WORK_AMO_V6_AUTH_VERSION
   ) {
     return null;
   }
   const amountAtoms = String(
-    v7 ? listing?.amountSubatoms : listing?.amountAtoms,
+    v8 ? listing?.amountSubatoms : listing?.amountAtoms,
   ).trim();
   const listingId = normalizedTxid(listing?.listingId);
   const position = listingPosition(listing);
@@ -5502,10 +5519,10 @@ function workListingProjectionFromCanonicalState(
       ? preserved
       : {}),
     ...listing,
-    amount: v7
+    amount: v8
       ? formatWorkSubatoms(amountAtoms)
       : formatWorkAtomsAmo(amountAtoms),
-    ...(v7
+    ...(v8
       ? {
           amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
           amountSubatoms: amountAtoms,
@@ -5615,7 +5632,7 @@ export function projectWorkAmoV5RawEvents(
     const closedListing =
       [
         WORK_AMO_V6_AUTH_VERSION,
-        WORK_AMO_V7_AUTH_VERSION,
+        WORK_AMO_V8_AUTH_VERSION,
       ].includes(governedClosedListing)
         ? projection.closedListing
         : null;
@@ -5626,7 +5643,7 @@ export function projectWorkAmoV5RawEvents(
     const referencedGovernedListing =
       [
         WORK_AMO_V6_AUTH_VERSION,
-        WORK_AMO_V7_AUTH_VERSION,
+        WORK_AMO_V8_AUTH_VERSION,
       ].includes(governedReferencedListing)
         ? referencedListing
         : null;

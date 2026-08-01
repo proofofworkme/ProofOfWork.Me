@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 
 import { readFileSync } from "node:fs";
-import "./check-work-amo-v7-gates.mjs";
+import "./check-work-amo-v8-gates.mjs";
 import {
   workAmountUnitsForStorageModel,
   workBalanceProjection,
   workSupplyFieldsForStorageModel,
 } from "../server/db/proof-index-reader.mjs";
 import {
-  workerWorkAmoV7DeclarationConfig,
+  workerWorkAmoV8DeclarationConfig,
   workerWorkPrecisionConfirmedReplayEnvelopeReady,
   workerWorkPrecisionCoreTipReady,
   workerWorkPrecisionPendingProjection,
@@ -16,8 +16,8 @@ import {
   workerWorkPrecisionSnapshotReady,
 } from "./run-proof-indexer-worker.mjs";
 import {
-  workAmoV7DeclarationCommitment,
-} from "../server/work-amo-v7-declaration.mjs";
+  workAmoV8DeclarationCommitment,
+} from "../server/work-amo-v8-declaration.mjs";
 import {
   configuredWorkPrecisionV2Pins,
 } from "./migrate-work-precision-v2.mjs";
@@ -26,9 +26,9 @@ import {
   WORK_AMO_V5_STATE_COMMITMENT_MODEL,
 } from "../server/work-amo-v5.mjs";
 import {
-  WORK_AMO_V7_BLOCK_SEQUENCER_MODEL,
-  WORK_AMO_V7_TOKEN_STATE_PREIMAGE_MODEL,
-} from "../server/work-amo-v7.mjs";
+  WORK_AMO_V8_BLOCK_SEQUENCER_MODEL,
+  WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL,
+} from "../server/work-amo-v8.mjs";
 import {
   WORK_ATOMIC_PROJECTION_MODEL,
   WORK_DECIMALS,
@@ -55,17 +55,17 @@ const workAmoV6DeclarationBuilder = readFileSync(
   "scripts/build-work-amo-v6-declaration.mjs",
   "utf8",
 );
-const workAmoV7 = readFileSync("server/work-amo-v7.mjs", "utf8");
-const workAmoV7Migration = readFileSync(
+const workAmoV8 = readFileSync("server/work-amo-v8.mjs", "utf8");
+const workAmoV8Migration = readFileSync(
   "scripts/migrate-work-precision-v2.mjs",
   "utf8",
 );
-const workAmoV7DeclarationBuilder = readFileSync(
-  "scripts/build-work-amo-v7-declaration.mjs",
+const workAmoV8DeclarationBuilder = readFileSync(
+  "scripts/build-work-amo-v8-declaration.mjs",
   "utf8",
 );
-const workAmoV7Declaration = readFileSync(
-  "server/work-amo-v7-declaration.mjs",
+const workAmoV8Declaration = readFileSync(
+  "server/work-amo-v8-declaration.mjs",
   "utf8",
 );
 const workUnits = readFileSync("server/work-units.mjs", "utf8");
@@ -104,26 +104,26 @@ const normalizedQuotedItems = (value) =>
     .map((match) => match[1])
     .sort()
     .join(",");
-const workAmoV7Commitment = workAmoV7DeclarationCommitment();
-const exactWorkAmoV7WorkerEnv = {
-  WORK_AMO_V7_ACTIVATION_HEIGHT: "101",
-  WORK_AMO_V7_DECLARATION_BLOCK_HASH: "b".repeat(64),
-  WORK_AMO_V7_DECLARATION_BLOCK_INDEX: "0",
-  WORK_AMO_V7_DECLARATION_HEIGHT: "100",
-  WORK_AMO_V7_DECLARATION_MEMO_BYTES: String(
-    workAmoV7Commitment.protocolRecordBytes,
+const workAmoV8Commitment = workAmoV8DeclarationCommitment();
+const exactWorkAmoV8WorkerEnv = {
+  WORK_AMO_V8_ACTIVATION_HEIGHT: "101",
+  WORK_AMO_V8_DECLARATION_BLOCK_HASH: "b".repeat(64),
+  WORK_AMO_V8_DECLARATION_BLOCK_INDEX: "0",
+  WORK_AMO_V8_DECLARATION_HEIGHT: "100",
+  WORK_AMO_V8_DECLARATION_MEMO_BYTES: String(
+    workAmoV8Commitment.protocolRecordBytes,
   ),
-  WORK_AMO_V7_DECLARATION_MEMO_SHA256:
-    workAmoV7Commitment.protocolRecordSha256,
-  WORK_AMO_V7_DECLARATION_PROTOCOL_VOUT: "1",
-  WORK_AMO_V7_DECLARATION_RECORD_ORDINAL: "0",
-  WORK_AMO_V7_DECLARATION_REGISTRY_PAYMENT_VOUT: "2",
-  WORK_AMO_V7_DECLARATION_TXID: "a".repeat(64),
-  WORK_AMO_V7_WRITES_ENABLED: "0",
+  WORK_AMO_V8_DECLARATION_MEMO_SHA256:
+    workAmoV8Commitment.protocolRecordSha256,
+  WORK_AMO_V8_DECLARATION_PROTOCOL_VOUT: "1",
+  WORK_AMO_V8_DECLARATION_RECORD_ORDINAL: "0",
+  WORK_AMO_V8_DECLARATION_REGISTRY_PAYMENT_VOUT: "2",
+  WORK_AMO_V8_DECLARATION_TXID: "a".repeat(64),
+  WORK_AMO_V8_WRITES_ENABLED: "0",
 };
 const workPrecisionV2PinsReject = (env) => {
   try {
-    configuredWorkPrecisionV2Pins(env, workAmoV7Commitment);
+    configuredWorkPrecisionV2Pins(env, workAmoV8Commitment);
     return false;
   } catch {
     return true;
@@ -156,7 +156,7 @@ const workerFixtureReplayEnvelope = {
   activationTransition: {
     blockHash: "c".repeat(64),
     blockHeight: 101,
-    model: WORK_AMO_V7_BLOCK_SEQUENCER_MODEL,
+    model: WORK_AMO_V8_BLOCK_SEQUENCER_MODEL,
     payload: {
       activationHeight: 101,
       openingSufficientState: {
@@ -169,7 +169,7 @@ const workerFixtureReplayEnvelope = {
     },
     previousBlockHash: workerFixtureDeclarationHash,
     stateCommitmentModel: WORK_AMO_V5_STATE_COMMITMENT_MODEL,
-    workTokenStateModel: WORK_AMO_V7_TOKEN_STATE_PREIMAGE_MODEL,
+    workTokenStateModel: WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL,
   },
   coreTip: {
     blockHash: workerFixtureTipHash,
@@ -182,11 +182,11 @@ const workerFixtureReplayEnvelope = {
   latestTransition: {
     blockHash: workerFixtureTipHash,
     blockHeight: 102,
-    model: WORK_AMO_V7_BLOCK_SEQUENCER_MODEL,
+    model: WORK_AMO_V8_BLOCK_SEQUENCER_MODEL,
     payload: {},
     previousBlockHash: "c".repeat(64),
     stateCommitmentModel: WORK_AMO_V5_STATE_COMMITMENT_MODEL,
-    workTokenStateModel: WORK_AMO_V7_TOKEN_STATE_PREIMAGE_MODEL,
+    workTokenStateModel: WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL,
   },
   markerOpeningCommitment: workerFixtureOpeningCommitment,
   snapshot: workerFixtureSnapshot,
@@ -1063,76 +1063,76 @@ expect(
     ),
 );
 expect(
-  "worker V7 configuration treats every nonempty pin and an enabled write gate as requested while an all-empty closed gate stays staged",
-  workerWorkAmoV7DeclarationConfig({
-    WORK_AMO_V7_WRITES_ENABLED: "0",
+  "worker V8 configuration treats every nonempty pin and an enabled write gate as requested while an all-empty closed gate stays staged",
+  workerWorkAmoV8DeclarationConfig({
+    WORK_AMO_V8_WRITES_ENABLED: "0",
   }).requested === false &&
-    workerWorkAmoV7DeclarationConfig({
-      WORK_AMO_V7_DECLARATION_HEIGHT: "0",
-      WORK_AMO_V7_WRITES_ENABLED: "0",
+    workerWorkAmoV8DeclarationConfig({
+      WORK_AMO_V8_DECLARATION_HEIGHT: "0",
+      WORK_AMO_V8_WRITES_ENABLED: "0",
     }).requested === true &&
-    workerWorkAmoV7DeclarationConfig({
-      WORK_AMO_V7_DECLARATION_HEIGHT: "-1",
-      WORK_AMO_V7_WRITES_ENABLED: "0",
+    workerWorkAmoV8DeclarationConfig({
+      WORK_AMO_V8_DECLARATION_HEIGHT: "-1",
+      WORK_AMO_V8_WRITES_ENABLED: "0",
     }).requested === true &&
-    workerWorkAmoV7DeclarationConfig({
-      WORK_AMO_V7_DECLARATION_HEIGHT: "01",
-      WORK_AMO_V7_WRITES_ENABLED: "0",
+    workerWorkAmoV8DeclarationConfig({
+      WORK_AMO_V8_DECLARATION_HEIGHT: "01",
+      WORK_AMO_V8_WRITES_ENABLED: "0",
     }).configured === false &&
-    workerWorkAmoV7DeclarationConfig({
-      WORK_AMO_V7_DECLARATION_HEIGHT: "-0",
-      WORK_AMO_V7_WRITES_ENABLED: "0",
+    workerWorkAmoV8DeclarationConfig({
+      WORK_AMO_V8_DECLARATION_HEIGHT: "-0",
+      WORK_AMO_V8_WRITES_ENABLED: "0",
     }).configured === false &&
-    workerWorkAmoV7DeclarationConfig({
-      WORK_AMO_V7_WRITES_ENABLED: " 0",
+    workerWorkAmoV8DeclarationConfig({
+      WORK_AMO_V8_WRITES_ENABLED: " 0",
     }).requested === true &&
-    workerWorkAmoV7DeclarationConfig({
-      WORK_AMO_V7_WRITES_ENABLED: "1",
+    workerWorkAmoV8DeclarationConfig({
+      WORK_AMO_V8_WRITES_ENABLED: "1",
     }).requested === true &&
-    workerWorkAmoV7DeclarationConfig(exactWorkAmoV7WorkerEnv)
+    workerWorkAmoV8DeclarationConfig(exactWorkAmoV8WorkerEnv)
       .configured === true &&
-    workerWorkAmoV7DeclarationConfig({
-      ...exactWorkAmoV7WorkerEnv,
-      WORK_AMO_V7_ACTIVATION_HEIGHT: "102",
+    workerWorkAmoV8DeclarationConfig({
+      ...exactWorkAmoV8WorkerEnv,
+      WORK_AMO_V8_ACTIVATION_HEIGHT: "102",
     }).configured === false &&
-    workerWorkAmoV7DeclarationConfig({
-      ...exactWorkAmoV7WorkerEnv,
-      WORK_AMO_V7_ACTIVATION_HEIGHT: " 101",
+    workerWorkAmoV8DeclarationConfig({
+      ...exactWorkAmoV8WorkerEnv,
+      WORK_AMO_V8_ACTIVATION_HEIGHT: " 101",
     }).configured === false &&
-    workerWorkAmoV7DeclarationConfig({
-      ...exactWorkAmoV7WorkerEnv,
-      WORK_AMO_V7_DECLARATION_TXID: "A".repeat(64),
+    workerWorkAmoV8DeclarationConfig({
+      ...exactWorkAmoV8WorkerEnv,
+      WORK_AMO_V8_DECLARATION_TXID: "A".repeat(64),
     }).configured === false,
 );
 expect(
-  "precision migration accepts only exact canonical V7 declaration pins and exact D+1 activation",
+  "precision migration accepts only exact canonical V8 declaration pins and exact D+1 activation",
   configuredWorkPrecisionV2Pins(
-    { WORK_AMO_V7_WRITES_ENABLED: "0" },
-    workAmoV7Commitment,
+    { WORK_AMO_V8_WRITES_ENABLED: "0" },
+    workAmoV8Commitment,
   ).configured === false &&
     configuredWorkPrecisionV2Pins(
-      exactWorkAmoV7WorkerEnv,
-      workAmoV7Commitment,
+      exactWorkAmoV8WorkerEnv,
+      workAmoV8Commitment,
     ).configured === true &&
     configuredWorkPrecisionV2Pins(
-      exactWorkAmoV7WorkerEnv,
-      workAmoV7Commitment,
+      exactWorkAmoV8WorkerEnv,
+      workAmoV8Commitment,
     ).activationHeight === 101 &&
     workPrecisionV2PinsReject({
-      ...exactWorkAmoV7WorkerEnv,
-      WORK_AMO_V7_DECLARATION_HEIGHT: "01",
+      ...exactWorkAmoV8WorkerEnv,
+      WORK_AMO_V8_DECLARATION_HEIGHT: "01",
     }) &&
     workPrecisionV2PinsReject({
-      ...exactWorkAmoV7WorkerEnv,
-      WORK_AMO_V7_DECLARATION_HEIGHT: "-0",
+      ...exactWorkAmoV8WorkerEnv,
+      WORK_AMO_V8_DECLARATION_HEIGHT: "-0",
     }) &&
     workPrecisionV2PinsReject({
-      ...exactWorkAmoV7WorkerEnv,
-      WORK_AMO_V7_ACTIVATION_HEIGHT: " 101",
+      ...exactWorkAmoV8WorkerEnv,
+      WORK_AMO_V8_ACTIVATION_HEIGHT: " 101",
     }) &&
     workPrecisionV2PinsReject({
-      ...exactWorkAmoV7WorkerEnv,
-      WORK_AMO_V7_DECLARATION_TXID: "A".repeat(64),
+      ...exactWorkAmoV8WorkerEnv,
+      WORK_AMO_V8_DECLARATION_TXID: "A".repeat(64),
     }),
 );
 expect(
@@ -1320,7 +1320,7 @@ expect(
 );
 expect(
   "worker pending witness binds Q16, Core, mempool, all pending relations, complete scan, and freshness",
-  /export function workerWorkPrecisionPendingWitnessReady[\s\S]*witness\.ready === true[\s\S]*WORK_SUBATOM_PROJECTION_MODEL[\s\S]*WORK_PRECISION_V2_MODEL[\s\S]*invalidLegacyMutationCount[\s\S]*workerWorkPrecisionCoreTipReady[\s\S]*canonicalWorkerMempoolSnapshot\(txids\)[\s\S]*canonicalWorkerJsonText\(witnessedProjection\) ===\s*canonicalWorkerJsonText\(currentProjection\)[\s\S]*scan\.complete === true[\s\S]*scan\.canonicalDeferred[\s\S]*scan\.unresolved[\s\S]*WORK_AMO_V7_PENDING_WITNESS_MAX_AGE_MS/u.test(
+  /export function workerWorkPrecisionPendingWitnessReady[\s\S]*witness\.ready === true[\s\S]*WORK_SUBATOM_PROJECTION_MODEL[\s\S]*WORK_PRECISION_V2_MODEL[\s\S]*invalidLegacyMutationCount[\s\S]*workerWorkPrecisionCoreTipReady[\s\S]*canonicalWorkerMempoolSnapshot\(txids\)[\s\S]*canonicalWorkerJsonText\(witnessedProjection\) ===\s*canonicalWorkerJsonText\(currentProjection\)[\s\S]*scan\.complete === true[\s\S]*scan\.canonicalDeferred[\s\S]*scan\.unresolved[\s\S]*WORK_AMO_V8_PENDING_WITNESS_MAX_AGE_MS/u.test(
     worker,
   ),
 );
@@ -1341,7 +1341,7 @@ expect(
   /workPrecision\.era === WORK_PRECISION_Q16_ERA[\s\S]*pendingRequired: true,[\s\S]*ready: false,[\s\S]*state: "canonical-phase-complete"/u.test(
     worker,
   ) &&
-    /workPrecision\.era === WORK_PRECISION_Q16_ERA[\s\S]*await assertWorkPrecisionPendingReady\([\s\S]*pendingRebuild:[\s\S]*WORK_AMO_V7_PENDING_REBUILD_MODEL[\s\S]*ready: workPrecisionReplay\.ready === true/u.test(
+    /workPrecision\.era === WORK_PRECISION_Q16_ERA[\s\S]*await assertWorkPrecisionPendingReady\([\s\S]*pendingRebuild:[\s\S]*WORK_AMO_V8_PENDING_REBUILD_MODEL[\s\S]*ready: workPrecisionReplay\.ready === true/u.test(
       worker,
     ),
 );
@@ -1353,10 +1353,10 @@ expect(
     /WORK_Q16_PENDING_REBUILD_MODEL =\s*"canonical-work-q16-pending-rebuild-v1"/u.test(
       backfill,
     ) &&
-    /WORK_AMO_V7_PENDING_REBUILD_META_KEY =\s*"workQ16PendingRebuild:livenet"/u.test(
+    /WORK_AMO_V8_PENDING_REBUILD_META_KEY =\s*"workQ16PendingRebuild:livenet"/u.test(
       worker,
     ) &&
-    /WORK_AMO_V7_PENDING_REBUILD_MODEL =\s*"canonical-work-q16-pending-rebuild-v1"/u.test(
+    /WORK_AMO_V8_PENDING_REBUILD_MODEL =\s*"canonical-work-q16-pending-rebuild-v1"/u.test(
       worker,
     ),
 );
@@ -1546,7 +1546,7 @@ expect(
     ),
 );
 expect(
-  "WORK precision keeps immutable V6 Q8 units separate from canonical V7 Q16 subatoms",
+  "WORK precision keeps immutable V6 Q8 units separate from canonical V8 Q16 subatoms",
   /export const WORK_DECIMALS = 8;/u.test(workUnits) &&
     /export const WORK_UNIT_SCALE = 100_000_000n;/u.test(workUnits) &&
     /export const WORK_SUBATOM_DECIMALS = 16;/u.test(workUnits) &&
@@ -1562,11 +1562,11 @@ expect(
     /export const WORK_AMO_UNIT_SCALE = WORK_LEGACY_UNIT_SCALE;/u.test(
       workUnits,
     ) &&
-    /export const WORK_AMO_V7_DECIMALS = WORK_SUBATOM_DECIMALS;/u.test(
-      workAmoV7,
+    /export const WORK_AMO_V8_DECIMALS = WORK_SUBATOM_DECIMALS;/u.test(
+      workAmoV8,
     ) &&
-    /export const WORK_AMO_V7_SUBATOMS_PER_WORK =\s*WORK_SUBATOM_UNIT_SCALE/u.test(
-      workAmoV7,
+    /export const WORK_AMO_V8_SUBATOMS_PER_WORK =\s*WORK_SUBATOM_UNIT_SCALE/u.test(
+      workAmoV8,
     ),
 );
 expect(
@@ -1588,44 +1588,44 @@ expect(
     ),
 );
 expect(
-  "AMO V7 derives proof-native Q16 terms while preserving legacy settlement witnesses",
-  /WORK_AMO_V7_AUTH_VERSION = "pwt-sale-v7"/u.test(workAmoV7) &&
-    /WORK_AMO_V7_TRANSFER_VERSION = "send3"/u.test(workAmoV7) &&
-    /WORK_AMO_V7_ALLOWED_FACE_PROOFS = Object\.freeze\(\[\s*20_000,\s*50_000,\s*100_000,\s*\]\)/u.test(
-      workAmoV7,
+  "AMO V8 derives the singleton proof-native Q16 unit while rejecting legacy relic settlements",
+  /WORK_AMO_V8_AUTH_VERSION = "pwt-sale-v8"/u.test(workAmoV8) &&
+    /WORK_AMO_V8_TRANSFER_VERSION = "send3"/u.test(workAmoV8) &&
+    /WORK_AMO_V8_ALLOWED_FACE_PROOFS = Object\.freeze\(\[\s*25_000,\s*\]\)/u.test(
+      workAmoV8,
     ) &&
-    /export function workAmoV7UnitTerms\(\{[\s\S]*unitAmountSubatoms = workAmoFloorDiv\([\s\S]*unitPriceSats \* denominator,[\s\S]*networkValue,[\s\S]*unitMinimumPriceSats = workAmoCeilDiv\([\s\S]*unitAmountSubatoms \* networkValue/u.test(
-      workAmoV7,
+    /export function workAmoV8UnitTerms\(\{[\s\S]*unitAmountSubatoms = workAmoFloorDiv\([\s\S]*unitPriceSats \* denominator,[\s\S]*networkValue,[\s\S]*unitMinimumPriceSats = workAmoCeilDiv\([\s\S]*unitAmountSubatoms \* networkValue/u.test(
+      workAmoV8,
     ) &&
-    /function canonicalWorkAmoV7TokenStateListing[\s\S]*WORK_AMO_V7_AUTH_VERSION[\s\S]*WORK_AMO_V6_AUTH_VERSION[\s\S]*legacyWorkAtomsToSubatoms[\s\S]*WORK_AMO_V5_AUTH_VERSION[\s\S]*WORK_AMO_V4_AUTH_VERSION/u.test(
-      workAmoV7,
+    /function canonicalWorkAmoV8TokenStateListing[\s\S]*version === WORK_AMO_V8_AUTH_VERSION[\s\S]*validateWorkAmoV8StaticAuthorization[\s\S]*validateWorkAmoV8FrozenTerms[\s\S]*return null;/u.test(
+      workAmoV8,
     ) &&
-    /validateWorkAmoV7SealOrBuyTerms[\s\S]*validateWorkAmoV6SealOrBuyTerms/u.test(
-      workAmoV7,
+    /validateWorkAmoV8SealOrBuyTerms[\s\S]*listingVersion !== WORK_AMO_V8_AUTH_VERSION[\s\S]*work-amo-v8-relic-listing-nonsettleable[\s\S]*validateWorkAmoV8FrozenTerms/u.test(
+      workAmoV8,
     ),
 );
 expect(
-  "send3 is mandatory exactly at the confirmed V7 boundary with no legacy fallback",
-  /export function workAmoV7TransferEraDecision[\s\S]*v7Required = height >= activation[\s\S]*v7Required =\s*projectionModel === WORK_SUBATOM_PROJECTION_MODEL[\s\S]*nativeV7 !== v7Required[\s\S]*work-amo-v7-send3-required[\s\S]*work-amo-v7-send3-before-activation/u.test(
-    workAmoV7,
+  "send3 is mandatory exactly at the confirmed V8 boundary with no legacy fallback",
+  /export function workAmoV8TransferEraDecision[\s\S]*v8Required = height >= activation[\s\S]*v8Required =\s*projectionModel === WORK_SUBATOM_PROJECTION_MODEL[\s\S]*nativeV8 !== v8Required[\s\S]*work-amo-v8-send3-required[\s\S]*work-amo-v8-send3-before-activation/u.test(
+    workAmoV8,
   ) &&
-    /TOKEN_SEND_SUBATOMS_ACTION = WORK_AMO_V7_TRANSFER_VERSION/u.test(
+    /TOKEN_SEND_SUBATOMS_ACTION = WORK_AMO_V8_TRANSFER_VERSION/u.test(
       server,
     ) &&
     /TOKEN_SEND_SUBATOMS_ACTION !== "send3"/u.test(server) &&
     /function canonicalWorkSubatomsText[\s\S]*text !== text\.trim\(\)[\s\S]*WORK_TOKEN_MAX_SUPPLY_SUBATOMS[\s\S]*parts\.length === 4 && parts\[0\] === TOKEN_SEND_SUBATOMS_ACTION[\s\S]*canonicalWorkSubatomsText\(parts\[2\]\)[\s\S]*amountVersion: TOKEN_SEND_SUBATOMS_ACTION/u.test(
       server,
     ) &&
-    /parsed\.tokenId !== WORK_TOKEN_ID[\s\S]*workAmoV7TransferEraDecision\([\s\S]*activationHeight:[\s\S]*blockHeight,[\s\S]*confirmed,[\s\S]*projectionModel:[\s\S]*transferVersion: parsedTransferVersion/u.test(
+    /parsed\.tokenId !== WORK_TOKEN_ID[\s\S]*workAmoV8TransferEraDecision\([\s\S]*activationHeight:[\s\S]*blockHeight,[\s\S]*confirmed,[\s\S]*projectionModel:[\s\S]*transferVersion: parsedTransferVersion/u.test(
       server,
     ),
 );
 expect(
-  "V7 metadata separates an irreversible reached boundary from exact write readiness",
-  /export function workAmoV7StatusFromEvidence[\s\S]*const activation = \{[\s\S]*reached: Boolean\([\s\S]*indexed >= expected\.activationHeight[\s\S]*evidenceComplete =[\s\S]*precisionMigrationReady === true[\s\S]*protocolReady: ready[\s\S]*writeAdmission: settlementWritesEnabled/u.test(
-    workAmoV7,
+  "V8 metadata separates an irreversible reached boundary from exact write readiness",
+  /export function workAmoV8StatusFromEvidence[\s\S]*const activation = \{[\s\S]*reached: Boolean\([\s\S]*indexed >= expected\.activationHeight[\s\S]*evidenceComplete =[\s\S]*precisionMigrationReady === true[\s\S]*protocolReady: ready[\s\S]*writeAdmission: settlementWritesEnabled/u.test(
+    workAmoV8,
   ) &&
-    /let workAmoV7ReachedLatch = false[\s\S]*async function workAmoV7Metadata[\s\S]*tipVerified[\s\S]*tipHeight >= expectedDeclaration\.activationHeight[\s\S]*workAmoV7ReachedLatch = true[\s\S]*proofIndexWorkPrecisionV2MigrationReadiness/u.test(
+    /let workAmoV8ReachedLatch = false[\s\S]*async function workAmoV8Metadata[\s\S]*tipVerified[\s\S]*tipHeight >= expectedDeclaration\.activationHeight[\s\S]*workAmoV8ReachedLatch = true[\s\S]*proofIndexWorkPrecisionV2MigrationReadiness/u.test(
       server,
     ) &&
     /const indexReady =[\s\S]*migrationReadiness\?\.ready === true[\s\S]*migrationReadiness\?\.parityReady === true[\s\S]*migrationReadiness\?\.replayReady === true[\s\S]*Number\(migrationReadiness\?\.tipHeight\) === tipHeight/u.test(
@@ -1634,134 +1634,143 @@ expect(
     /Number\(migrationReadiness\?\.tipHeight\) === tipHeight[\s\S]*String\(migrationReadiness\?\.tipHash \?\? ""\)[\s\S]*\.toLowerCase\(\) === tipHash/u.test(
       server,
     ) &&
-    /activation: \{[\s\S]*reached: workAmoV7ReachedLatch,[\s\S]*tipVerified,[\s\S]*migrationReadiness,[\s\S]*writesConfigured: WORK_AMO_V7_WRITES_CONFIGURED/u.test(
+    /activation: \{[\s\S]*reached: workAmoV8ReachedLatch,[\s\S]*tipVerified,[\s\S]*migrationReadiness,[\s\S]*writesConfigured: WORK_AMO_V8_WRITES_CONFIGURED/u.test(
       server,
     ) &&
-    /withWorkMarketplaceV4Metadata[\s\S]*workAmoV7Metadata\(network,[\s\S]*workAmoV7,[\s\S]*floor:[\s\S]*workAmoV7,[\s\S]*workFloor:[\s\S]*workAmoV7/u.test(
+    /withWorkMarketplaceV4Metadata[\s\S]*workAmoV8Metadata\(network,[\s\S]*workAmoV8,[\s\S]*floor:[\s\S]*workAmoV8,[\s\S]*workFloor:[\s\S]*workAmoV8/u.test(
       server,
     ),
 );
 expect(
-  "API V7 pins accept only raw canonical integers and lowercase hashes while every malformed nonempty request stays fail-closed",
-  /function canonicalWorkAmoV7ConfiguredInteger\([\s\S]*const raw = String\(value \?\? ""\);[\s\S]*\/\^\(\?:0\|\[1-9\]\[0-9\]\*\)\$\//u.test(
+  "API V8 pins accept only raw canonical integers and lowercase hashes while every malformed nonempty request stays fail-closed",
+  /function canonicalWorkAmoV8ConfiguredInteger\([\s\S]*const raw = String\(value \?\? ""\);[\s\S]*\/\^\(\?:0\|\[1-9\]\[0-9\]\*\)\$\//u.test(
     server,
   ) &&
-    /function canonicalWorkAmoV7ConfiguredInteger\([\s\S]*Number\.isSafeInteger\(parsed\) && parsed >= minimum/u.test(
+    /function canonicalWorkAmoV8ConfiguredInteger\([\s\S]*Number\.isSafeInteger\(parsed\) && parsed >= minimum/u.test(
       server,
     ) &&
-    /function canonicalWorkAmoV7ConfiguredHash\([\s\S]*const raw = String\(value \?\? ""\);[\s\S]*\/\^\[0-9a-f\]\{64\}\$\//u.test(
+    /function canonicalWorkAmoV8ConfiguredHash\([\s\S]*const raw = String\(value \?\? ""\);[\s\S]*\/\^\[0-9a-f\]\{64\}\$\//u.test(
       server,
     ) &&
-    /const WORK_AMO_V7_WRITES_SOURCE = String\([\s\S]*const WORK_AMO_V7_WRITES_RAW = WORK_AMO_V7_WRITES_SOURCE\.trim\(\);[\s\S]*const WORK_AMO_V7_WRITES_REQUESTED =\s*WORK_AMO_V7_WRITES_CONFIGURED \|\|[\s\S]*WORK_AMO_V7_WRITES_SOURCE !== WORK_AMO_V7_WRITES_RAW/u.test(
+    /const WORK_AMO_V8_WRITES_SOURCE = String\([\s\S]*const WORK_AMO_V8_WRITES_RAW = WORK_AMO_V8_WRITES_SOURCE\.trim\(\);[\s\S]*const WORK_AMO_V8_WRITES_REQUESTED =\s*WORK_AMO_V8_WRITES_CONFIGURED \|\|[\s\S]*WORK_AMO_V8_WRITES_SOURCE !== WORK_AMO_V8_WRITES_RAW/u.test(
       server,
     ) &&
-    /const WORK_AMO_V7_ACTIVATION_HEIGHT_RAW = String\([\s\S]*canonicalWorkAmoV7ConfiguredInteger\([\s\S]*WORK_AMO_V7_EXPECTED_ACTIVATION_HEIGHT[\s\S]*WORK_AMO_V7_DECLARATION_HEIGHT \+ 1/u.test(
+    /const WORK_AMO_V8_ACTIVATION_HEIGHT_RAW = String\([\s\S]*canonicalWorkAmoV8ConfiguredInteger\([\s\S]*WORK_AMO_V8_EXPECTED_ACTIVATION_HEIGHT[\s\S]*WORK_AMO_V8_DECLARATION_HEIGHT \+ 1/u.test(
       server,
     ) &&
-    /const WORK_AMO_V7_DECLARATION_PINS_REQUESTED =\s*WORK_AMO_V7_WRITES_REQUESTED \|\|[\s\S]*process\.env\.WORK_AMO_V7_DECLARATION_HEIGHT[\s\S]*process\.env\.WORK_AMO_V7_ACTIVATION_HEIGHT[\s\S]*\.some\(\(value\) => String\(value \?\? ""\)\.length > 0\)/u.test(
+    /const WORK_AMO_V8_DECLARATION_PINS_REQUESTED =\s*WORK_AMO_V8_WRITES_REQUESTED \|\|[\s\S]*process\.env\.WORK_AMO_V8_DECLARATION_HEIGHT[\s\S]*process\.env\.WORK_AMO_V8_ACTIVATION_HEIGHT[\s\S]*\.some\(\(value\) => String\(value \?\? ""\)\.length > 0\)/u.test(
       server,
     ) &&
-    /const WORK_AMO_V7_DECLARATION_PINS_CONFIGURED =[\s\S]*Number\.isSafeInteger\(WORK_AMO_V7_ACTIVATION_HEIGHT\)[\s\S]*WORK_AMO_V7_ACTIVATION_HEIGHT ===\s*WORK_AMO_V7_EXPECTED_ACTIVATION_HEIGHT/u.test(
+    /const WORK_AMO_V8_DECLARATION_PINS_CONFIGURED =[\s\S]*Number\.isSafeInteger\(WORK_AMO_V8_ACTIVATION_HEIGHT\)[\s\S]*WORK_AMO_V8_ACTIVATION_HEIGHT ===\s*WORK_AMO_V8_EXPECTED_ACTIVATION_HEIGHT/u.test(
       server,
     ) &&
-    /const WORK_AMO_V7_DECLARATION_PIN_STATE =[\s\S]*\? "configured"[\s\S]*WORK_AMO_V7_DECLARATION_PINS_REQUESTED[\s\S]*\? "invalid"[\s\S]*: "unrequested"/u.test(
+    /const WORK_AMO_V8_DECLARATION_PIN_STATE =[\s\S]*\? "configured"[\s\S]*WORK_AMO_V8_DECLARATION_PINS_REQUESTED[\s\S]*\? "invalid"[\s\S]*: "unrequested"/u.test(
       server,
     ) &&
-    /pinsRequested: WORK_AMO_V7_DECLARATION_PINS_REQUESTED[\s\S]*pinsConfigured: Boolean\(configuredDeclaration\)/u.test(
+    /pinsRequested: WORK_AMO_V8_DECLARATION_PINS_REQUESTED[\s\S]*pinsConfigured: Boolean\(configuredDeclaration\)/u.test(
       server,
     ),
 );
 expect(
-  "backfill and precision migration use the same strict V7 pin grammar as API and worker",
-  /function canonicalWorkAmoV7ConfiguredInteger\([\s\S]*const raw = String\(value \?\? ""\);[\s\S]*\/\^\(\?:0\|\[1-9\]\[0-9\]\*\)\$\//u.test(
+  "backfill and precision migration use the same strict V8 pin grammar as API and worker",
+  /function canonicalWorkAmoV8ConfiguredInteger\([\s\S]*const raw = String\(value \?\? ""\);[\s\S]*\/\^\(\?:0\|\[1-9\]\[0-9\]\*\)\$\//u.test(
     backfill,
   ) &&
-    /function canonicalWorkAmoV7ConfiguredHash\([\s\S]*const raw = String\(value \?\? ""\);[\s\S]*\/\^\[0-9a-f\]\{64\}\$\//u.test(
+    /function canonicalWorkAmoV8ConfiguredHash\([\s\S]*const raw = String\(value \?\? ""\);[\s\S]*\/\^\[0-9a-f\]\{64\}\$\//u.test(
       backfill,
     ) &&
-    /const WORK_AMO_V7_CONFIGURED_ACTIVATION_HEIGHT =\s*canonicalWorkAmoV7ConfiguredInteger\([\s\S]*process\.env\.WORK_AMO_V7_ACTIVATION_HEIGHT[\s\S]*WORK_AMO_V7_CONFIGURED_ACTIVATION_HEIGHT ===\s*WORK_AMO_V7_EXPECTED_ACTIVATION_HEIGHT/u.test(
+    /const WORK_AMO_V8_CONFIGURED_ACTIVATION_HEIGHT =\s*canonicalWorkAmoV8ConfiguredInteger\([\s\S]*process\.env\.WORK_AMO_V8_ACTIVATION_HEIGHT[\s\S]*WORK_AMO_V8_CONFIGURED_ACTIVATION_HEIGHT ===\s*WORK_AMO_V8_EXPECTED_ACTIVATION_HEIGHT/u.test(
       backfill,
     ) &&
     /function optionalSafeInteger\([\s\S]*const raw = String\(value \?\? ""\);[\s\S]*UNSIGNED_INTEGER_PATTERN\.test\(raw\)[\s\S]*Number\.isSafeInteger\(parsed\)/u.test(
-      workAmoV7Migration,
+      workAmoV8Migration,
     ) &&
     /function canonicalConfiguredHash\([\s\S]*const raw = String\(value \?\? ""\);[\s\S]*TXID_PATTERN\.test\(raw\)/u.test(
-      workAmoV7Migration,
+      workAmoV8Migration,
     ) &&
     /export function configuredWorkPrecisionV2Pins\([\s\S]*canonicalConfiguredHash\([\s\S]*optionalSafeInteger\([\s\S]*configuredActivationHeight !== declarationHeight \+ 1/u.test(
-      workAmoV7Migration,
+      workAmoV8Migration,
     ),
 );
 expect(
-  "broadcast admission gates transfers and AMO actions on V7 before considering V6",
+  "broadcast admission gates transfers and AMO actions on V8 before considering V6",
   /signedTransactionOutputs\(txHex\)[\s\S]*workTransferActions[\s\S]*parsed\?\.kind !== "send"[\s\S]*workTransferRequiredRegistryPaymentSats[\s\S]*selectWorkAmoV5DistinctRegistryPayment\([\s\S]*requiredSats:\s*workTransferRequiredRegistryPaymentSats[\s\S]*workTransferRegistryPaymentValid[\s\S]*workMintActions[\s\S]*parsed\?\.kind !== "mint"/u.test(
     workAmoBroadcastAdmission,
   ) &&
-    /WORK_AMO_V7_DECLARATION_PINS_REQUESTED &&[\s\S]*!WORK_AMO_V7_DECLARATION_PINS_CONFIGURED[\s\S]*WORK_AMO_V7_PINS_INVALID/u.test(
+    /WORK_AMO_V8_DECLARATION_PINS_REQUESTED &&[\s\S]*!WORK_AMO_V8_DECLARATION_PINS_CONFIGURED[\s\S]*WORK_AMO_V8_PINS_INVALID/u.test(
       workAmoBroadcastAdmission,
     ) &&
-    /if \(WORK_AMO_V7_DECLARATION_PINS_CONFIGURED\)[\s\S]*workAmoV7Metadata\([\s\S]*activation\?\.reached !== true[\s\S]*activation\?\.tipVerified !== true[\s\S]*WORK_AMO_V7_ACTIVATION_UNKNOWN/u.test(
+    /if \(WORK_AMO_V8_DECLARATION_PINS_CONFIGURED\)[\s\S]*workAmoV8Metadata\([\s\S]*activation\?\.reached !== true[\s\S]*activation\?\.tipVerified !== true[\s\S]*WORK_AMO_V8_ACTIVATION_UNKNOWN/u.test(
       workAmoBroadcastAdmission,
     ) &&
-    /activation\?\.reached === true[\s\S]*metadata\?\.writeAdmission === true[\s\S]*metadata\?\.protocolReady === true[\s\S]*metadata\?\.evidenceComplete === true[\s\S]*TOKEN_SEND_SUBATOMS_ACTION[\s\S]*workAmoV7BroadcastDecision/u.test(
+    /activation\?\.reached === true[\s\S]*metadata\?\.writeAdmission === true[\s\S]*metadata\?\.protocolReady === true[\s\S]*metadata\?\.evidenceComplete === true[\s\S]*TOKEN_SEND_SUBATOMS_ACTION[\s\S]*workAmoV8BroadcastDecision/u.test(
       workAmoBroadcastAdmission,
     ) &&
-    /WORK_AMO_V7_SEND3_BEFORE_ACTIVATION[\s\S]*if \(WORK_AMO_V6_DECLARATION_PINS_CONFIGURED\)/u.test(
+    /WORK_AMO_V8_SEND3_BEFORE_ACTIVATION[\s\S]*if \(WORK_AMO_V6_DECLARATION_PINS_CONFIGURED\)/u.test(
       workAmoBroadcastAdmission,
     ) &&
     workAmoBroadcastAdmission.indexOf(
-      "if (WORK_AMO_V7_DECLARATION_PINS_CONFIGURED)",
+      "if (WORK_AMO_V8_DECLARATION_PINS_CONFIGURED)",
     ) <
       workAmoBroadcastAdmission.indexOf(
         "if (WORK_AMO_V6_DECLARATION_PINS_CONFIGURED)",
       ),
 );
 expect(
-  "WORK mint broadcast admission preserves the exact wire amount and fails closed with all other V7 writes after activation",
+  "WORK mint broadcast admission preserves the exact wire amount and fails closed with all other V8 writes after activation",
   /workMintActions\.some\([\s\S]*mint\.amount !== WORK_TOKEN_MINT_AMOUNT[\s\S]*WORK_MINT_AMOUNT_INVALID/u.test(
     workAmoBroadcastAdmission,
   ) &&
-    /activation\?\.reached === true[\s\S]*workTransferActions\.length > 0 \|\|[\s\S]*workMintActions\.length > 0[\s\S]*metadata\?\.writeAdmission === true[\s\S]*metadata\?\.protocolReady === true[\s\S]*metadata\?\.evidenceComplete === true[\s\S]*WORK_AMO_V7_WRITES_PAUSED/u.test(
+    /activation\?\.reached === true[\s\S]*workTransferActions\.length > 0 \|\|[\s\S]*workMintActions\.length > 0[\s\S]*metadata\?\.writeAdmission === true[\s\S]*metadata\?\.protocolReady === true[\s\S]*metadata\?\.evidenceComplete === true[\s\S]*WORK_AMO_V8_WRITES_PAUSED/u.test(
       workAmoBroadcastAdmission,
     ) &&
-    /if \(workMintActions\.length > 0\)[\s\S]*workMintActions\.length === 1[\s\S]*workTransferActions\.length === 0[\s\S]*actions\.length === 0[\s\S]*signedTokenProtocolRecords\.length === 1[\s\S]*paysWorkRegistry === true[\s\S]*WORK_AMO_V7_MINT_SHAPE_INVALID/u.test(
+    /if \(workMintActions\.length > 0\)[\s\S]*workMintActions\.length === 1[\s\S]*workTransferActions\.length === 0[\s\S]*actions\.length === 0[\s\S]*signedTokenProtocolRecords\.length === 1[\s\S]*paysWorkRegistry === true[\s\S]*WORK_AMO_V8_MINT_SHAPE_INVALID/u.test(
       workAmoBroadcastAdmission,
     ) &&
-    /workMintActions\[0\]\.amount !== WORK_TOKEN_MINT_AMOUNT[\s\S]*WORK_AMO_V7_MINT_AMOUNT_INVALID/u.test(
+    /workMintActions\[0\]\.amount !== WORK_TOKEN_MINT_AMOUNT[\s\S]*WORK_AMO_V8_MINT_AMOUNT_INVALID/u.test(
       workAmoBroadcastAdmission,
     ) &&
-    /WORK_AMO_V7_DECLARATION_PINS_REQUESTED[\s\S]*WORK_MINT_AMOUNT_INVALID[\s\S]*if \(WORK_AMO_V7_DECLARATION_PINS_CONFIGURED\)/u.test(
+    /WORK_AMO_V8_DECLARATION_PINS_REQUESTED[\s\S]*WORK_MINT_AMOUNT_INVALID[\s\S]*if \(WORK_AMO_V8_DECLARATION_PINS_CONFIGURED\)/u.test(
       workAmoBroadcastAdmission,
     ),
 );
 expect(
-  "precision migration binds exact declaration evidence and rebuilds the D+1 opening deterministically",
+  "precision migration binds exact declaration evidence and relicizes the D+1 opening deterministically",
   /WORK_PRECISION_V2_MIGRATION_MODEL =\s*"canonical-work-q8-to-q16-migration-v1"/u.test(
-    workAmoV7Migration,
+    workAmoV8Migration,
   ) &&
     /indexedWorkPrecisionV2DeclarationEvidence[\s\S]*JOIN proof_indexer\.op_returns carrier[\s\S]*carrier\.vout = \$5[\s\S]*carrier\.output_index = \$6/u.test(
-      workAmoV7Migration,
+      workAmoV8Migration,
     ) &&
     /indexedWorkPrecisionV2DeclarationEvidence[\s\S]*carrier\.payload_text[\s\S]*carrier\.payload_hex[\s\S]*carrier\.data_bytes/u.test(
-      workAmoV7Migration,
+      workAmoV8Migration,
     ) &&
     /coreWorkPrecisionV2DeclarationEvidence[\s\S]*getblockhash[\s\S]*getblock[\s\S]*declarationProtocolVout/u.test(
-      workAmoV7Migration,
+      workAmoV8Migration,
     ) &&
     /readWorkPrecisionV2ActivationOpening[\s\S]*transition\.block_height = \$1[\s\S]*scaleWorkPrecisionV2TokenState/u.test(
-      workAmoV7Migration,
+      workAmoV8Migration,
     ) &&
     /readWorkPrecisionV2ActivationOpening[\s\S]*canonical-work-amo-full-position-block-sequencer-v2/u.test(
-      workAmoV7Migration,
+      workAmoV8Migration,
     ) &&
     /DELETE FROM proof_indexer\.credit_balances[\s\S]*INSERT INTO proof_indexer\.credit_balances[\s\S]*expectedScaledState\.balances/u.test(
-      workAmoV7Migration,
+      workAmoV8Migration,
     ) &&
-    /UPDATE proof_indexer\.credit_listings[\s\S]*opening\.amount::numeric[\s\S]*listing_tx\.block_height >= \$2[\s\S]*DELETE FROM proof_indexer\.work_amo_block_transitions[\s\S]*block_height >= \$1/u.test(
-      workAmoV7Migration,
+    /scaleWorkPrecisionV2TokenState[\s\S]*const relicListings =[\s\S]*listings: \[\][\s\S]*WORK_AMO_V8_RELIC_CUTOVER_MODEL/u.test(
+      workAmoV8Migration,
+    ) &&
+    /expectedScaledState = \{[\s\S]*balances: scaledOpeningBalances,[\s\S]*listings: \[\][\s\S]*relicCutover: activationOpening\.relicCutover/u.test(
+      workAmoV8Migration,
+    ) &&
+    /WITH relic AS[\s\S]*'actionable', false[\s\S]*'relic', true[\s\S]*'relicCutoverModel'[\s\S]*status = 'dropped'/u.test(
+      workAmoV8Migration,
+    ) &&
+    /AS active_count[\s\S]*AS relic_count[\s\S]*active_count \?\? -1\) !== 0[\s\S]*relic_count \?\? -1\) !== relicItems\.length/u.test(
+      workAmoV8Migration,
     ) &&
     /verifyWorkPrecisionV2RowsConserved[\s\S]*WORK_PRECISION_V2_MIGRATION_META_KEY[\s\S]*workPrecisionV2MarkerMatches/u.test(
-      workAmoV7Migration,
+      workAmoV8Migration,
     ),
 );
 expect(
@@ -1775,7 +1784,7 @@ expect(
     /event\.block_height < \$11[\s\S]*event\.raw_payload LIKE 'pwt1:send3:%'[\s\S]*event\.kind = 'token-listing'[\s\S]*saleAuthorization'->>'version'[\s\S]*= \$12/u.test(
       reader,
     ) &&
-    /WORK_AMO_V7_AUTH_VERSION,[\s\S]*WORK_AMO_V7_BLOCK_SEQUENCER_MODEL/u.test(
+    /WORK_AMO_V8_AUTH_VERSION,[\s\S]*WORK_AMO_V8_BLOCK_SEQUENCER_MODEL/u.test(
       reader,
     ) &&
     /Number\(row\.invalid_post_activation_legacy_count\) === 0[\s\S]*Number\(row\.invalid_pre_activation_v7_count\) === 0/u.test(
@@ -1832,7 +1841,10 @@ expect(
     /function workDefinitionProjectionState[\s\S]*const q8 =[\s\S]*WORK_ATOMIC_PROJECTION_MODEL[\s\S]*const q16 =[\s\S]*WORK_SUBATOM_PROJECTION_MODEL[\s\S]*WORK_PROJECTION_STATE_INVALID/u.test(
       backfill,
     ) &&
-    /function workPrecisionV2MarkerAuthorizesQ16[\s\S]*marker\.status === "complete"[\s\S]*marker\.projectionModel === WORK_SUBATOM_PROJECTION_MODEL[\s\S]*marker\.globalPrecisionModel === WORK_AMO_V7_GLOBAL_PRECISION_MODEL/u.test(
+    /workPrecisionV2MarkerReady as sharedWorkPrecisionV2MarkerReady/u.test(
+      backfill,
+    ) &&
+    /function workPrecisionV2MarkerAuthorizesQ16[\s\S]*sharedWorkPrecisionV2MarkerReady\(marker, pins,[\s\S]*network: NETWORK/u.test(
       backfill,
     ) &&
     /async function upsertProjection[\s\S]*WORK definition projection cannot update without one exact active Q8 or Q16 model[\s\S]*WORK holder projection cannot update without one exact active Q8 or Q16 model[\s\S]*WORK listing projection cannot update without one exact active Q8 or Q16 model/u.test(
@@ -1847,16 +1859,16 @@ expect(
   /async function protocolIntegrityItemForPersistence[\s\S]*item\?\.kind[\s\S]*"token-mint"[\s\S]*isWorkTokenId\(item\?\.tokenId\)[\s\S]*currentWorkPrecisionV2Marker[\s\S]*const activationHeight = Number\(marker\?\.activationHeight\)[\s\S]*blockHeight >= activationHeight[\s\S]*String\(item\?\.amount \?\? ""\) !== "1000"[\s\S]*amountSubatoms: WORK_TOKEN_MINT_AMOUNT_SUBATOMS/u.test(
     backfill,
   ) &&
-    /const WORK_TOKEN_MINT_AMOUNT_SUBATOMS =\s*WORK_AMO_V7_MINT_AMOUNT_SUBATOMS\.toString\(\)/u.test(
+    /const WORK_TOKEN_MINT_AMOUNT_SUBATOMS =\s*WORK_AMO_V8_MINT_AMOUNT_SUBATOMS\.toString\(\)/u.test(
       backfill,
     ),
 );
 expect(
   "backfill reconstructs Mail and Inception WORK attachments in canonical Q16 across both transfer eras",
-  /function preparedProtocolItemsWithCanonicalMailAttachments[\s\S]*const nativeQ16 =[\s\S]*WORK_SUBATOM_PROJECTION_MODEL[\s\S]*WORK_AMO_V7_TRANSFER_VERSION[\s\S]*canonicalWorkSubatomsText\(item\?\.amountSubatoms\)[\s\S]*BigInt\(amountAtoms\) \* WORK_ATOM_TO_SUBATOM_SCALE/u.test(
+  /function preparedProtocolItemsWithCanonicalMailAttachments[\s\S]*const nativeQ16 =[\s\S]*WORK_SUBATOM_PROJECTION_MODEL[\s\S]*WORK_AMO_V8_TRANSFER_VERSION[\s\S]*canonicalWorkSubatomsText\(item\?\.amountSubatoms\)[\s\S]*BigInt\(amountAtoms\) \* WORK_ATOM_TO_SUBATOM_SCALE/u.test(
     backfill,
   ) &&
-    /nativeQ16[\s\S]*item\?\.amountAtoms[\s\S]*!nativeQ16[\s\S]*item\?\.amountSubatoms[\s\S]*withWorkSubatomPrecisionMetadata\([\s\S]*amountSubatoms,[\s\S]*legacyAmountAtoms:[\s\S]*legacyAmountStorageModel:[\s\S]*precisionModel: WORK_AMO_V7_GLOBAL_PRECISION_MODEL/u.test(
+    /nativeQ16[\s\S]*item\?\.amountAtoms[\s\S]*!nativeQ16[\s\S]*item\?\.amountSubatoms[\s\S]*withWorkSubatomPrecisionMetadata\([\s\S]*amountSubatoms,[\s\S]*legacyAmountAtoms:[\s\S]*legacyAmountStorageModel:[\s\S]*precisionModel: WORK_AMO_V8_GLOBAL_PRECISION_MODEL/u.test(
       backfill,
     ) &&
     /existing\.amountSubatoms !== transfer\.amountSubatoms/u.test(
@@ -1864,7 +1876,7 @@ expect(
     ),
 );
 expect(
-  "V7 replay readiness rejects stale, forked, missing-model, and Q8 snapshots at the exact tip",
+  "V8 replay readiness rejects stale, forked, missing-model, and Q8 snapshots at the exact tip",
   /current_snapshot\.snapshot_height,[\s\S]*current_snapshot\.snapshot_hash,[\s\S]*current_snapshot\.snapshot_work_amount_storage_model/u.test(
     reader,
   ) &&
@@ -1879,35 +1891,44 @@ expect(
     ),
 );
 expect(
-  "V7 declaration builder adds one presentation newline outside the exact declaration commitment",
+  "V8 declaration builder adds one presentation newline outside the exact declaration commitment",
   /presentation newline is not part of declaration\.text or either hash/u.test(
-    workAmoV7DeclarationBuilder,
+    workAmoV8DeclarationBuilder,
   ) &&
     /process\.stdout\.write\(`\$\{declaration\.text\}\\n`\);/u.test(
-      workAmoV7DeclarationBuilder,
+      workAmoV8DeclarationBuilder,
     ) &&
-    /mintRule=the WORK mint wire record remains pwt1:mint:<token-id>:1000; before activation it credits exactly 100000000000 historical atoms and from activation it credits exactly 10000000000000000000 subatoms/u.test(
-      workAmoV7Declaration,
+    /precisionRule=from activation,[\s\S]*maximum supply, mint increment, supply, balances, transfers, reservations, and listing amounts use exactly sixteen decimal places/u.test(
+      workAmoV8Declaration,
+    ) &&
+    /precisionMigrationRule=at the activation opening boundary,[\s\S]*each confirmed canonical current eight-decimal WORK atom becomes exactly 100000000 sixteen-decimal subatoms[\s\S]*raw confirmed history is not rewritten/u.test(
+      workAmoV8Declaration,
+    ) &&
+    /allowedFaceProofs=\$\{WORK_AMO_V8_ALLOWED_FACE_PROOFS\.join\(","\)\}/u.test(
+      workAmoV8Declaration,
     ) &&
     /unitFormula=unitPriceSats=F;unitAmountSubatoms=floor[\s\S]*unitMinimumPriceSats=ceil/u.test(
-      workAmoV7Declaration,
+      workAmoV8Declaration,
     ) &&
     !/unitPriceProofs=|unitMinimumPriceProofs=/u.test(
-      workAmoV7Declaration,
+      workAmoV8Declaration,
     ) &&
-    /readinessFailureRule=once the canonical D\+1 activation boundary is observed or persistently latched[\s\S]*never re-enables legacy send send2 or a pre-V7 new-listing protocol[\s\S]*delisting an existing canonical listing remains permitted/u.test(
-      workAmoV7Declaration,
+    /settlementRule=a confirmed V8 listing may be sealed or purchased only with its frozen terms[\s\S]*readinessFailureRule=[\s\S]*no legacy precision or listing protocol is re-enabled after activation/u.test(
+      workAmoV8Declaration,
     ),
 );
 expect(
-  "V7 admission auto-discovers the exact declaration and irreversibly closes legacy writes without a manual-pin window",
-  /async function discoverExactWorkAmoV7Declaration[\s\S]*workAmoV7DeclarationEmbargoLatch = true[\s\S]*canonical-registry-discovery/u.test(
+  "V8 admission auto-discovers the exact declaration and irreversibly closes legacy writes without a manual-pin window",
+  /async function discoverExactWorkAmoV8Declaration[\s\S]*workAmoV8DeclarationEmbargoLatch = true[\s\S]*canonical-registry-discovery/u.test(
     server,
   ) &&
-    /WORK_AMO_V7_DECLARATION_DISCOVERY_UNAVAILABLE[\s\S]*WORK_AMO_V7_LEGACY_WRITE_EMBARGO[\s\S]*WORK_AMO_V7_PINS_REQUIRED_AFTER_DECLARATION/u.test(
+    /WORK_AMO_V8_DECLARATION_DISCOVERY_UNAVAILABLE[\s\S]*WORK_AMO_V8_LEGACY_WRITE_EMBARGO[\s\S]*WORK_AMO_V8_PINS_REQUIRED_AFTER_DECLARATION/u.test(
       server,
     ) &&
-    /async function discoverIndexedWorkAmoV7DeclarationPins[\s\S]*Earliest AMO V7 declaration[\s\S]*persistWorkAmoV7ActivationLatch/u.test(
+    /async function discoverIndexedWorkAmoV8DeclarationPins[\s\S]*exact_carrier_count[\s\S]*registry_payment_count[\s\S]*ORDER BY[\s\S]*tx\.block_height ASC,[\s\S]*tx\.block_index ASC/u.test(
+      backfill,
+    ) &&
+    /async function persistWorkAmoV8ActivationLatch/u.test(
       backfill,
     ),
 );

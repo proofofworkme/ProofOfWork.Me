@@ -28,9 +28,9 @@ import {
   workAtomsValueAtFloorQ8,
 } from "../server/work-units.mjs";
 import {
-  WORK_AMO_V7_AUTH_VERSION,
-  WORK_AMO_V7_TRANSFER_VERSION,
-} from "../server/work-amo-v7.mjs";
+  WORK_AMO_V8_AUTH_VERSION,
+  WORK_AMO_V8_TRANSFER_VERSION,
+} from "../server/work-amo-v8.mjs";
 
 const repoRoot = new URL("../", import.meta.url);
 const [
@@ -102,8 +102,8 @@ const backfillWorkProjectionItem = isolatedTypeScriptFunction(
   backfill,
   "workProjectionItem",
   {
-    WORK_AMO_V7_AUTH_VERSION,
-    WORK_AMO_V7_TRANSFER_VERSION,
+    WORK_AMO_V8_AUTH_VERSION,
+    WORK_AMO_V8_TRANSFER_VERSION,
     WORK_PRECISION_V2_MODEL,
     WORK_SUBATOM_PROJECTION_MODEL,
     formatWorkSubatoms,
@@ -832,7 +832,7 @@ assert.equal(idempotentRepairQueries.at(-1).sql, "COMMIT");
 
 assert.match(
   backfill,
-  /action === "send" \|\|[\s\S]*action === "send2" \|\|[\s\S]*action === WORK_AMO_V7_TRANSFER_VERSION/u,
+  /action === "send" \|\|[\s\S]*action === "send2" \|\|[\s\S]*action === WORK_AMO_V8_TRANSFER_VERSION/u,
 );
 assert.match(backfill, /--audit-work-atoms/u);
 assert.match(backfill, /--migrate-work-atoms/u);
