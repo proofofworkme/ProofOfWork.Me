@@ -1797,12 +1797,12 @@ export async function runWorkPrecisionV2Migration(
           amount = relic."amountAtoms"::numeric * $6::numeric,
           payload = listing.payload || jsonb_build_object(
             'actionable', false,
-            'disabledAtBlockHeight', $2,
-            'disabledByTxid', $3,
+            'disabledAtBlockHeight', $2::integer,
+            'disabledByTxid', $3::text,
             'disabledReason', 'work-amo-v8-preactivation-relic',
             'legacyAmountAtoms', relic."amountAtoms",
             'relic', true,
-            'relicCutoverModel', $5,
+            'relicCutoverModel', $5::text,
             'refundEligible', true
           ),
           status = 'dropped',

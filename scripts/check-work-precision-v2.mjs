@@ -1745,6 +1745,11 @@ assert.match(
   /listing\.payload->>'legacyAmountAtoms' =\s*\(\$3::numeric\)::text/u,
   "migration relic matching must compare the reused numeric parameter as text",
 );
+assert.match(
+  migration,
+  /'disabledAtBlockHeight', \$2::integer,[\s\S]*'disabledByTxid', \$3::text,[\s\S]*'relicCutoverModel', \$5::text/u,
+  "relic cutover JSON parameters must carry explicit PostgreSQL types",
+);
 assert.match(migration, /DELETE FROM proof_indexer\.events event/u);
 assert.match(
   migration,
