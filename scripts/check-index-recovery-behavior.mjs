@@ -171,6 +171,7 @@ import {
   WORK_AMO_V8_AUTH_VERSION,
   WORK_AMO_V8_GLOBAL_PRECISION_MODEL,
   WORK_AMO_V8_MODELS,
+  WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL,
   WORK_AMO_V8_TRANSFER_VERSION,
   validateWorkAmoV8StaticAuthorization,
   workAmoV8CanonicalTokenStateCommitment,
@@ -49933,6 +49934,107 @@ check("AMO V5 relational WORK state releases only unambiguous legacy reservation
   }
 });
 
+check("AMO V8 relational closing evidence reads canonical Q16 units", async () => {
+  const balanceRows = [
+    {
+      address: "q16-holder-a",
+      balance_subatoms: "209999999999999999999999",
+    },
+    {
+      address: "q16-holder-b",
+      balance_subatoms: "1",
+    },
+  ];
+  let listingQuery = "";
+  let listingRows = [];
+  const client = {
+    async query(sql) {
+      const text = String(sql);
+      if (text.includes("proof_indexer.credit_balances")) {
+        return { rows: structuredClone(balanceRows) };
+      }
+      if (text.includes("proof_indexer.credit_listings")) {
+        listingQuery = text;
+        return { rows: structuredClone(listingRows) };
+      }
+      throw new Error(`Unexpected Q16 relational query: ${text}`);
+    },
+  };
+  const evidenceReader = isolatedFunction(
+    READER_PATH,
+    "proofIndexWorkAmoV8RelationalTokenStateEvidence",
+    {
+      WORK_AMO_V8_AUTH_VERSION,
+      WORK_TOKEN_ID,
+      proofIndexPool: () => client,
+      workAmoV8CanonicalTokenStateCommitment,
+    },
+  );
+  const expected = workAmoV8CanonicalTokenStateCommitment({
+    confirmedSupplySubatoms: "210000000000000000000000",
+    holders: balanceRows.map((row) => ({
+      address: row.address,
+      balanceSubatoms: row.balance_subatoms,
+    })),
+    listings: [],
+  });
+  const evidence = await evidenceReader("livenet", expected);
+  assert.equal(evidence.complete, true);
+  assert.equal(
+    evidence.confirmedSupplySubatoms,
+    "210000000000000000000000",
+  );
+  assert.equal(evidence.holderCount, 2);
+  assert.equal(evidence.listingCount, 0);
+  assert.deepEqual(evidence.commitment, expected);
+  assert.match(
+    listingQuery,
+    /LEFT JOIN proof_indexer\.work_amo_v8_listing_terms v8_terms/u,
+  );
+  assert.match(
+    listingQuery,
+    /v8_terms\.unit_amount_subatoms = listing\.amount/u,
+  );
+  assert.match(
+    listingQuery,
+    /listing\.payload->'workAmoV8FrozenTerms' =\s*v8_terms\.frozen_terms/u,
+  );
+
+  const mismatch = await evidenceReader("livenet", {
+    ...expected,
+    sha256: "f".repeat(64),
+  });
+  assert.equal(mismatch.complete, false);
+  assert.equal(
+    mismatch.reason,
+    "relational-v8-token-state-commitment-mismatch",
+  );
+
+  listingRows = [{
+    authorization_version: WORK_AMO_V8_AUTH_VERSION,
+    immutable_terms_complete: false,
+  }];
+  const missingTerms = await evidenceReader("livenet", expected);
+  assert.equal(missingTerms.complete, false);
+  assert.equal(
+    missingTerms.reason,
+    "relational-v8-listing-terms-invalid",
+  );
+
+  const closingSource = topLevelFunctionSource(
+    API_PATH,
+    "workFloorWithVerifiedWorkAmoV5ClosingState",
+  );
+  assert.match(
+    closingSource,
+    /transition\.workTokenStateModel\s*===\s*WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL/u,
+  );
+  assert.match(
+    closingSource,
+    /proofIndexWorkAmoV8RelationalTokenStateEvidence/u,
+  );
+});
+
 check("the first V6 listing crosses replay binding into atomic persistence without trusting its zero placeholder", async () => {
   const listingId =
     "b259fa601676287eca2ea94c9142cd13b45fde7031ec98967f15306df6ef7936";
@@ -52000,6 +52102,7 @@ check("AMO V5 transition closing value publishes and chains across adjacent bloc
       WORK_NETWORK_VALUE_ACCOUNTING_MODEL,
       WORK_AMO_V5_RAW_BLOCK_DESCRIPTOR_MODEL,
       WORK_AMO_V5_RAW_TRANSITION_CHAIN_MODEL,
+      WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL,
       WORK_TOKEN_MAX_SUPPLY,
       decimalTextFromQ8,
       exactWorkAmoV5RawBlockDescriptorCommitment,
@@ -52009,6 +52112,9 @@ check("AMO V5 transition closing value publishes and chains across adjacent bloc
       proofIndexWorkAmoBlockTransition: async () =>
         transitions.get(blockH1),
       proofIndexWorkAmoRelationalTokenStateEvidence: async () => ({
+        complete: true,
+      }),
+      proofIndexWorkAmoV8RelationalTokenStateEvidence: async () => ({
         complete: true,
       }),
       proofIndexWorkAmoLegacyBootstrapCarryEvidence: async () => ({
@@ -52546,6 +52652,7 @@ check("AMO V5 legacy carry preserves committed N while publishing valid-only mar
       WORK_AMO_V5_NETWORK_ACCUMULATOR_MODEL,
       WORK_AMO_V5_RAW_BLOCK_DESCRIPTOR_MODEL,
       WORK_AMO_V5_RAW_TRANSITION_CHAIN_MODEL,
+      WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL,
       WORK_NETWORK_VALUE_ACCOUNTING_MODEL,
       decimalTextFromQ8,
       exactWorkAmoV5RawBlockDescriptorCommitment,
@@ -52556,6 +52663,9 @@ check("AMO V5 legacy carry preserves committed N while publishing valid-only mar
       proofIndexWorkAmoLegacyBootstrapCarryEvidence: async () =>
         currentEvidence,
       proofIndexWorkAmoRelationalTokenStateEvidence: async () => ({
+        complete: true,
+      }),
+      proofIndexWorkAmoV8RelationalTokenStateEvidence: async () => ({
         complete: true,
       }),
       validateWorkAmoV5SufficientState: (candidate) => ({

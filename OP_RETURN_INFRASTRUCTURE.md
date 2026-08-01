@@ -1833,6 +1833,12 @@ treated as current Q16 aliases. An explicit empty overlay cannot erase that
 evidence, and conflicting nonempty authorization or evidence records fail
 closed instead of making replay order choose the settlement record.
 
+Post-V8 transition closing-state audits bind the relational tables through
+the V8 Q16 token-state preimage (`confirmedSupplySubatoms`, holder subatoms,
+and immutable V8 listing terms). Historical V5/V6 transition audits retain
+their original Q8 commitment path; a generic outer commitment cannot choose
+the precision lane without the transition's explicit token-state model.
+
 The raw mint remains `pwt1:mint:<canonical-work-token-id>:1000`, crediting
 `100000000000` Q8 atoms before activation and
 `10000000000000000000` Q16 subatoms from activation. New WORK transfers use

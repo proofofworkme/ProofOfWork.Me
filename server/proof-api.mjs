@@ -192,6 +192,7 @@ import {
 import {
   WORK_AMO_V8_ALLOWED_FACE_PROOFS,
   WORK_AMO_V8_AUTH_VERSION,
+  WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL,
   WORK_AMO_V8_TRANSFER_VERSION,
   validateWorkAmoV8StaticAuthorization,
   workAmoV8BroadcastDecision,
@@ -264,6 +265,7 @@ import {
   proofIndexWorkAmoGenericTokenStatePreimage,
   proofIndexWorkAmoLegacyBootstrapCarryEvidence,
   proofIndexWorkAmoRelationalTokenStateEvidence,
+  proofIndexWorkAmoV8RelationalTokenStateEvidence,
   proofIndexWorkAmoReplayReadiness,
   proofIndexWorkAmoV8ActivationLatch,
   proofIndexWorkAmoV6MigrationReadiness,
@@ -54289,10 +54291,16 @@ async function workFloorWithVerifiedWorkAmoV5ClosingState(
   }
   const [relationalTokenState, legacyBootstrapEvidence] =
     await Promise.all([
-      proofIndexWorkAmoRelationalTokenStateEvidence(
-        network,
-        state.tokenStateCommitment,
-      ),
+      transition.workTokenStateModel ===
+      WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL
+        ? proofIndexWorkAmoV8RelationalTokenStateEvidence(
+            network,
+            state.tokenStateCommitment,
+          )
+        : proofIndexWorkAmoRelationalTokenStateEvidence(
+            network,
+            state.tokenStateCommitment,
+          ),
       proofIndexWorkAmoLegacyBootstrapCarryEvidence(network),
     ]);
   if (relationalTokenState?.complete !== true) {

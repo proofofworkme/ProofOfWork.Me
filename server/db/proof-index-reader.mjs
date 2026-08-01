@@ -7508,6 +7508,190 @@ export async function proofIndexWorkAmoRelationalTokenStateEvidence(
   };
 }
 
+export async function proofIndexWorkAmoV8RelationalTokenStateEvidence(
+  network,
+  expectedTokenStateCommitment = null,
+) {
+  const pool = proofIndexPool();
+  if (!pool) {
+    return { complete: false, reason: "database-not-configured" };
+  }
+  const [balanceResult, listingResult] = await Promise.all([
+    pool.query(
+      `
+        SELECT
+          address,
+          confirmed_balance::text AS balance_subatoms
+        FROM proof_indexer.credit_balances
+        WHERE network = $1
+          AND lower(token_id) = $2
+          AND confirmed_balance > 0
+        ORDER BY address
+      `,
+      [network, WORK_TOKEN_ID],
+    ),
+    pool.query(
+      `
+        SELECT
+          listing.listing_id,
+          listing.seller_address,
+          listing.amount::text AS amount_subatoms,
+          listing.price_sats::text AS price_sats,
+          listing.payload->'listingAuthorization'
+            AS listing_authorization,
+          listing.payload->'saleAuthorization'
+            AS sale_authorization,
+          COALESCE(
+            listing.payload->'saleAuthorization'->>'version',
+            listing.payload->'listingAuthorization'->>'version',
+            ''
+          ) AS authorization_version,
+          v8_terms.frozen_terms,
+          v8_terms.listing_id IS NOT NULL
+            AS immutable_terms_complete
+        FROM proof_indexer.credit_listings listing
+        JOIN proof_indexer.transactions listing_tx
+          ON listing_tx.network = listing.network
+         AND listing_tx.txid = listing.listing_id
+         AND listing_tx.status = 'confirmed'
+        JOIN proof_indexer.blocks listing_block
+          ON listing_block.network = listing_tx.network
+         AND listing_block.block_hash = listing_tx.block_hash
+         AND listing_block.height = listing_tx.block_height
+         AND listing_block.canonical = true
+        LEFT JOIN proof_indexer.work_amo_v8_listing_terms v8_terms
+          ON v8_terms.network = listing.network
+         AND v8_terms.listing_id = listing.listing_id
+         AND v8_terms.listing_txid = listing.listing_id
+         AND v8_terms.token_id = lower(listing.token_id)
+         AND v8_terms.authorization_version = $3
+         AND v8_terms.authorization_version = COALESCE(
+           listing.payload->'saleAuthorization'->>'version',
+           listing.payload->'listingAuthorization'->>'version',
+           ''
+         )
+         AND v8_terms.unit_amount_subatoms = listing.amount
+         AND v8_terms.unit_price_sats = listing.price_sats
+         AND (
+           listing.payload->'listingFrozenTerms' IS NULL
+           OR listing.payload->'listingFrozenTerms' =
+             v8_terms.frozen_terms
+         )
+         AND (
+           listing.payload->'frozenTerms' IS NULL
+           OR listing.payload->'frozenTerms' =
+             v8_terms.frozen_terms
+         )
+         AND (
+           listing.payload->'workAmoFrozenTerms' IS NULL
+           OR listing.payload->'workAmoFrozenTerms' =
+             v8_terms.frozen_terms
+         )
+         AND (
+           listing.payload->'workAmoV6FrozenTerms' IS NULL
+           OR listing.payload->'workAmoV6FrozenTerms' =
+             v8_terms.frozen_terms
+         )
+         AND (
+           listing.payload->'workAmoV8FrozenTerms' IS NULL
+           OR listing.payload->'workAmoV8FrozenTerms' =
+             v8_terms.frozen_terms
+         )
+        WHERE listing.network = $1
+          AND lower(listing.token_id) = $2
+          AND listing.status IN ('active', 'sealing')
+        ORDER BY listing.listing_id
+      `,
+      [network, WORK_TOKEN_ID, WORK_AMO_V8_AUTH_VERSION],
+    ),
+  ]);
+  const holders = balanceResult.rows.map((row) => ({
+    address: String(row.address ?? ""),
+    balanceSubatoms: String(row.balance_subatoms ?? ""),
+  }));
+  let confirmedSupplySubatoms;
+  try {
+    confirmedSupplySubatoms = holders
+      .reduce((total, holder) => {
+        if (!/^[1-9][0-9]*$/u.test(holder.balanceSubatoms)) {
+          throw new Error("relational-v8-token-state-balance-invalid");
+        }
+        return total + BigInt(holder.balanceSubatoms);
+      }, 0n)
+      .toString();
+  } catch (error) {
+    return {
+      complete: false,
+      reason:
+        error?.message ??
+        "relational-v8-token-state-balance-invalid",
+    };
+  }
+  const invalidV8Listing = listingResult.rows.find(
+    (row) =>
+      String(row.authorization_version ?? "").trim() !==
+        WORK_AMO_V8_AUTH_VERSION ||
+      row.immutable_terms_complete !== true,
+  );
+  if (invalidV8Listing) {
+    return {
+      complete: false,
+      reason: "relational-v8-listing-terms-invalid",
+    };
+  }
+  const listings = listingResult.rows.map((row) => ({
+    amountSubatoms: String(row.amount_subatoms ?? ""),
+    frozenTerms: row.frozen_terms,
+    listingAuthorization: row.listing_authorization,
+    listingId: String(row.listing_id ?? "").trim().toLowerCase(),
+    priceSats: String(row.price_sats ?? ""),
+    saleAuthorization:
+      row.sale_authorization ?? row.listing_authorization,
+    sellerAddress: String(row.seller_address ?? ""),
+  }));
+  let commitment;
+  try {
+    commitment = workAmoV8CanonicalTokenStateCommitment({
+      confirmedSupplySubatoms,
+      holders,
+      listings,
+    });
+  } catch (error) {
+    return {
+      complete: false,
+      reason:
+        error?.message ?? "relational-v8-token-state-invalid",
+    };
+  }
+  const expectedModel = String(expectedTokenStateCommitment?.model ?? "");
+  const expectedSha256 = String(
+    expectedTokenStateCommitment?.sha256 ?? "",
+  )
+    .trim()
+    .toLowerCase();
+  const expectedPayloadBytes = Number(
+    expectedTokenStateCommitment?.payloadBytes,
+  );
+  const expectedMatches =
+    expectedTokenStateCommitment === null ||
+    (
+      expectedModel === commitment.model &&
+      expectedSha256 === commitment.sha256 &&
+      expectedPayloadBytes === commitment.payloadBytes
+    );
+  return {
+    commitment,
+    complete: expectedMatches,
+    confirmedSupplySubatoms,
+    holderCount: holders.length,
+    listingCount: listings.length,
+    model: "canonical-work-amo-v8-relational-token-state-audit-v1",
+    ...(expectedMatches
+      ? {}
+      : { reason: "relational-v8-token-state-commitment-mismatch" }),
+  };
+}
+
 export function workAmoV5GenericTokenStatePreimageFromRows({
   balanceRows,
   blockHash,
