@@ -1776,8 +1776,10 @@ original refund snapshot. Any other extra active authorization fails closed.
 Some historical V1 projection rows stored whole WORK in the relational
 `amount` column while their immutable raw `pwt1:list5` authorization determines
 an exact Q8 amount. Q16 conversion must decode that raw carrier, require one
-matching valid confirmed event, and require all event/listing version, token, and
-amount aliases to agree; it never infers units from the ambiguous table value.
+matching valid confirmed replay event, and require all event/listing version,
+token, and available amount aliases to agree; it never infers units from the
+ambiguous table value. V5/V6 unit-form authorizations bind the deterministic
+unit inputs while their valid replay event supplies the derived Q8 amount.
 The idempotent migration path audits every confirmed preactivation legacy
 listing under the immutable marker and, under serializable locks, permits only
 the exact two-row canonical repair set. Each mutation compares the complete

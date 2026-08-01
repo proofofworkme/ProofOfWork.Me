@@ -933,6 +933,46 @@ assert.deepEqual(
   },
   "legacy listing repair must derive Q8 atoms from immutable event payload rather than an ambiguous historical table amount",
 );
+assert.deepEqual(
+  workPrecisionV2LegacyListingRepairs([
+    {
+      amount: "5100000000",
+      event_count: "1",
+      event_payload: {
+        amount: "0.00000051",
+        amountAtoms: "51",
+        saleAuthorization: {
+          tokenId: WORK_TOKEN_ID,
+          unitFaceProofs: 100000,
+          version: "pwt-sale-v6",
+        },
+        tokenId: WORK_TOKEN_ID,
+      },
+      event_raw_payload: legacyListingRawPayload({
+        tokenId: WORK_TOKEN_ID,
+        unitFaceProofs: 100000,
+        version: "pwt-sale-v6",
+      }),
+      listing_id: "c".repeat(64),
+      payload: {
+        amount: "0.00000051",
+        amountAtoms: "51",
+        legacyAmountAtoms: "51",
+        legacyAmountStorageModel:
+          WORK_LEGACY_ATOMIC_PROJECTION_MODEL,
+        precisionMigrationModel: WORK_PRECISION_V2_MIGRATION_MODEL,
+        saleAuthorization: {
+          tokenId: WORK_TOKEN_ID,
+          unitFaceProofs: 100000,
+          version: "pwt-sale-v6",
+        },
+        tokenId: WORK_TOKEN_ID,
+      },
+    },
+  ]),
+  [],
+  "unit-era raw authorizations bind their inputs while canonical replay supplies the exact derived Q8 amount",
+);
 const metadataOnlyListingRepair =
   workPrecisionV2LegacyListingRepairs([
     {

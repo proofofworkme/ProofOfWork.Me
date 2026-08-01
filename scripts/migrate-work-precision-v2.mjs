@@ -335,7 +335,11 @@ function exactLegacyListingTokenId(records) {
   return unique[0];
 }
 
-function exactLegacyListingAmountAtoms(record, label) {
+function exactLegacyListingAmountAtoms(
+  record,
+  label,
+  { allowMissing = false } = {},
+) {
   const item =
     record && typeof record === "object" && !Array.isArray(record)
       ? record
@@ -386,6 +390,9 @@ function exactLegacyListingAmountAtoms(record, label) {
       name,
     }));
   if (candidates.length === 0) {
+    if (allowMissing) {
+      return null;
+    }
     throw new Error(
       `WORK precision migration ${label} has no exact legacy amount evidence.`,
     );
@@ -477,6 +484,7 @@ function exactLegacyListingEvidence(row) {
   const rawAmountAtoms = exactLegacyListingAmountAtoms(
     rawAuthorization,
     "raw authorization",
+    { allowMissing: true },
   );
   const eventAmountAtoms = exactLegacyListingAmountAtoms(
     eventPayload,
@@ -487,8 +495,18 @@ function exactLegacyListingEvidence(row) {
     "listing projection",
   );
   if (
-    rawAmountAtoms !== eventAmountAtoms ||
-    rawAmountAtoms !== projectionAmountAtoms
+    rawAmountAtoms === null &&
+    !["pwt-sale-v5", "pwt-sale-v6"].includes(
+      authorizationVersion,
+    )
+  ) {
+    throw new Error(
+      "WORK precision migration raw authorization has no exact legacy amount evidence.",
+    );
+  }
+  if (
+    eventAmountAtoms !== projectionAmountAtoms ||
+    (rawAmountAtoms !== null && rawAmountAtoms !== eventAmountAtoms)
   ) {
     throw new Error(
       "WORK precision migration legacy listing amount evidence conflicts with its raw event.",
@@ -496,7 +514,7 @@ function exactLegacyListingEvidence(row) {
   }
   return Object.freeze({
     authorizationVersion,
-    legacyAmountAtoms: rawAmountAtoms,
+    legacyAmountAtoms: rawAmountAtoms ?? eventAmountAtoms,
     rawAuthorizationSha256: sha256Hex(
       Buffer.from(stableJson(rawAuthorization), "utf8"),
     ),
