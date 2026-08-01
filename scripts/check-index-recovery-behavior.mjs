@@ -18294,6 +18294,257 @@ check("the canonical summary publisher rejects mixed snapshot identities", async
 });
 
 check("exact canonical summaries require current conserved token balances", async () => {
+  const canonicalBootstrapConstraints = [
+    "activation",
+    "definition",
+    "markerImmutable",
+    "transition",
+    "v6",
+    "v6Deactivation",
+    "v6Immutable",
+    "v7HistoryImmutable",
+    "v7Immutable",
+    "v8",
+  ];
+  const canonicalSummaryBootstrapReady = isolatedFunction(
+    READER_PATH,
+    "workPrecisionV2CanonicalSummaryBootstrapReady",
+    {
+      WORK_AMO_V8_GLOBAL_PRECISION_MODEL,
+      WORK_PRECISION_V2_CANONICAL_BOOTSTRAP_CONSTRAINTS:
+        canonicalBootstrapConstraints,
+      WORK_PRECISION_V2_MIGRATION_MODEL,
+      WORK_SUBATOM_DECIMALS,
+      WORK_SUBATOM_PROJECTION_MODEL,
+      WORK_SUBATOM_UNIT_SCALE_TEXT,
+    },
+  );
+  const bootstrapHash = "d".repeat(64);
+  const bootstrapPins = {
+    activationHeight: 102,
+    declarationBlockHash: "a".repeat(64),
+    declarationBlockIndex: 7,
+    declarationHeight: 101,
+    declarationMemoBytes: 5593,
+    declarationMemoSha256: "b".repeat(64),
+    declarationProtocolVout: 3,
+    declarationRecordOrdinal: 0,
+    declarationRegistryPaymentVout: 4,
+    declarationTxid: "c".repeat(64),
+  };
+  const bootstrapReadiness = {
+    activationHeight: 102,
+    active: false,
+    canonical: true,
+    canonicalSummaryBootstrapReady: true,
+    confirmed: true,
+    confirmedReplayReady: true,
+    constraints: Object.fromEntries(
+      canonicalBootstrapConstraints.map((constraint) => [constraint, true]),
+    ),
+    constraintsReady: true,
+    declarationEvidence: {
+      blockHash: bootstrapPins.declarationBlockHash,
+      blockHeight: bootstrapPins.declarationHeight,
+      blockTransactionIndex: bootstrapPins.declarationBlockIndex,
+      evidenceComplete: true,
+      payloadBytes: bootstrapPins.declarationMemoBytes,
+      payloadSha256: bootstrapPins.declarationMemoSha256,
+      protocolVout: bootstrapPins.declarationProtocolVout,
+      recordOrdinal: bootstrapPins.declarationRecordOrdinal,
+      registryPaymentVout: bootstrapPins.declarationRegistryPaymentVout,
+      txid: bootstrapPins.declarationTxid,
+    },
+    declarationIndexReady: true,
+    definitionReady: true,
+    evidenceComplete: true,
+    exactTipReady: true,
+    legacyProjectionReady: true,
+    marker: {
+      activationHeight: bootstrapPins.activationHeight,
+      declarationHeight: bootstrapPins.declarationHeight,
+      declarationTxid: bootstrapPins.declarationTxid,
+      decimals: WORK_SUBATOM_DECIMALS,
+      globalPrecisionModel: WORK_AMO_V8_GLOBAL_PRECISION_MODEL,
+      model: WORK_PRECISION_V2_MIGRATION_MODEL,
+      projectionModel: WORK_SUBATOM_PROJECTION_MODEL,
+      status: "complete",
+      unitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,
+    },
+    markerReady: true,
+    openingReady: true,
+    parityReady: true,
+    pendingReady: false,
+    precision: {
+      amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+      decimals: WORK_SUBATOM_DECIMALS,
+      unitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,
+    },
+    ready: false,
+    replayReady: false,
+    snapshotTokenStateReady: false,
+    tipHash: bootstrapHash,
+    tipHeight: 102,
+  };
+  const bootstrapOptions = {
+    allowCanonicalSummaryBootstrap: true,
+    exactCheckpointHash: bootstrapHash,
+    exactCheckpointHeight: 102,
+  };
+  assert.equal(
+    canonicalSummaryBootstrapReady(
+      bootstrapReadiness,
+      bootstrapPins,
+      bootstrapOptions,
+    ),
+    true,
+    "an exact relational Q16 state may bootstrap only the missing summary witness",
+  );
+  for (const field of [
+    "canonical",
+    "canonicalSummaryBootstrapReady",
+    "confirmed",
+    "confirmedReplayReady",
+    "constraintsReady",
+    "declarationIndexReady",
+    "definitionReady",
+    "evidenceComplete",
+    "exactTipReady",
+    "legacyProjectionReady",
+    "markerReady",
+    "openingReady",
+    "parityReady",
+  ]) {
+    assert.equal(
+      canonicalSummaryBootstrapReady(
+        { ...bootstrapReadiness, [field]: false },
+        bootstrapPins,
+        bootstrapOptions,
+      ),
+      false,
+      `${field} must fail the canonical-summary bootstrap closed`,
+    );
+  }
+  assert.equal(
+    canonicalSummaryBootstrapReady(
+      bootstrapReadiness,
+      bootstrapPins,
+      { ...bootstrapOptions, allowCanonicalSummaryBootstrap: false },
+    ),
+    false,
+  );
+  const migrationReadinessSource = topLevelFunctionSource(
+    READER_PATH,
+    "proofIndexWorkPrecisionV2MigrationReadiness",
+  );
+  assert.match(
+    migrationReadinessSource,
+    /const confirmedReplayReady =[\s\S]*Number\(row\.transition_height\) === tipHeight[\s\S]*normalizedLowerText\(row\.transition_hash\) === tipHash[\s\S]*row\.transition_model === WORK_AMO_V8_BLOCK_SEQUENCER_MODEL[\s\S]*row\.work_token_state_model ===[\s\S]*Number\(row\.transition_count\) === expectedTransitionCount[\s\S]*Number\(row\.invalid_transition_count\) === 0[\s\S]*activationOpeningReady[\s\S]*closingTokenStateReady/u,
+  );
+  assert.match(
+    migrationReadinessSource,
+    /const replayReady = confirmedReplayReady && snapshotReplayReady/u,
+  );
+  assert.match(
+    migrationReadinessSource,
+    /const markerReady = workPrecisionV2MarkerBindsReader\(marker, pins\);[\s\S]*const declarationIndexReady =[\s\S]*indexedWorkPrecisionEvidenceMatchesMarker\(row, marker\);/u,
+  );
+  assert.match(
+    migrationReadinessSource,
+    /const confirmedStateReadyWithinSnapshot =[\s\S]*markerReady[\s\S]*declarationIndexReady[\s\S]*definitionReady[\s\S]*constraintsReady[\s\S]*stateCommitmentsReady[\s\S]*confirmedReplayReady[\s\S]*legacyProjectionReady/u,
+  );
+  assert.match(
+    migrationReadinessSource,
+    /const canonicalSummaryBootstrapReady =[\s\S]*confirmedStateReadyWithinSnapshot && exactTipReady/u,
+  );
+  assert.equal(
+    canonicalSummaryBootstrapReady(
+      bootstrapReadiness,
+      bootstrapPins,
+      { ...bootstrapOptions, exactCheckpointHash: "e".repeat(64) },
+    ),
+    false,
+  );
+  assert.equal(
+    canonicalSummaryBootstrapReady(
+      {
+        ...bootstrapReadiness,
+        constraints: {
+          ...bootstrapReadiness.constraints,
+          markerImmutable: false,
+        },
+      },
+      bootstrapPins,
+      bootstrapOptions,
+    ),
+    false,
+  );
+  let policyReadiness = bootstrapReadiness;
+  const currentPrecisionPolicy = isolatedFunction(
+    READER_PATH,
+    "payloadWithCurrentWorkPrecisionReadPolicy",
+    {
+      WORK_ATOMIC_PROJECTION_MODEL,
+      WORK_SUBATOM_PROJECTION_MODEL,
+      configuredWorkPrecisionV2ReaderPins: () => bootstrapPins,
+      normalizedLowerText: (value) =>
+        String(value ?? "").trim().toLowerCase(),
+      proofIndexWorkAmoV8ActivationLatch: async () => ({ reached: true }),
+      proofIndexWorkPrecisionV2MigrationReadiness: async () => policyReadiness,
+      workPrecisionV2CanonicalSummaryBootstrapReady:
+        canonicalSummaryBootstrapReady,
+      workPrecisionV2CurrentPayloadIsExact: () => true,
+      workPrecisionV2ProjectCurrentPayload: (payload) => payload,
+    },
+  );
+  const exactRelationalPayload = {
+    holders: [
+      {
+        amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+        tokenId: WORK_TOKEN_ID,
+      },
+    ],
+    indexedThroughBlock: 102,
+    indexedThroughBlockHash: bootstrapHash,
+    source: "proof-indexer-token-state-tables",
+    tokens: [
+      {
+        amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+        tokenId: WORK_TOKEN_ID,
+      },
+    ],
+  };
+  assert.equal(
+    await currentPrecisionPolicy(
+      "livenet",
+      exactRelationalPayload,
+      {
+        ...bootstrapOptions,
+        requireExactCheckpoint: true,
+      },
+    ),
+    exactRelationalPayload,
+    "the internal exact-checkpoint read must break only the summary-witness cycle",
+  );
+  assert.equal(
+    await currentPrecisionPolicy("livenet", exactRelationalPayload),
+    null,
+    "the same not-ready state must remain unavailable without the internal bootstrap option",
+  );
+  policyReadiness = {
+    ...bootstrapReadiness,
+    active: true,
+    pendingReady: true,
+    ready: true,
+    replayReady: true,
+    snapshotTokenStateReady: true,
+  };
+  assert.equal(
+    await currentPrecisionPolicy("livenet", exactRelationalPayload),
+    exactRelationalPayload,
+    "ordinary reads reopen only after full readiness",
+  );
+
   const tokenTablePayloadHasConservedBalances = isolatedFunction(
     API_PATH,
     "tokenTablePayloadHasConservedBalances",
@@ -18392,6 +18643,7 @@ check("exact canonical summaries require current conserved token balances", asyn
   );
 
   let requestedHeight = 0;
+  let requestedHash = "";
   let tablePayload = null;
   const exactTokenTablePayloadForCanonicalLedger = isolatedFunction(
     API_PATH,
@@ -18403,27 +18655,194 @@ check("exact canonical summaries require current conserved token balances", asyn
         options,
       ) => {
         requestedHeight = options.exactHeight;
+        requestedHash = options.exactHash;
         return tablePayload;
       },
       freshDataUnavailableError: (message) => new Error(message),
       tokenTablePayloadHasConservedBalances,
     },
   );
+  const exactHash = "c".repeat(64);
   await rejection(
-    exactTokenTablePayloadForCanonicalLedger("livenet", "fixture", 101),
+    exactTokenTablePayloadForCanonicalLedger(
+      "livenet",
+      "fixture",
+      101,
+      exactHash,
+    ),
     (error) => /exact conserved token balances are unavailable/u.test(error.message),
   );
   assert.equal(requestedHeight, 101);
+  assert.equal(requestedHash, exactHash);
   await rejection(
-    exactTokenTablePayloadForCanonicalLedger("livenet", "fixture", 0),
-    (error) => /exact positive token-table checkpoint/u.test(error.message),
+    exactTokenTablePayloadForCanonicalLedger("livenet", "fixture", 0, exactHash),
+    (error) => /exact positive hash-bound token-table checkpoint/u.test(error.message),
+  );
+  await rejection(
+    exactTokenTablePayloadForCanonicalLedger("livenet", "fixture", 101, ""),
+    (error) => /exact positive hash-bound token-table checkpoint/u.test(error.message),
   );
   tablePayload = conserved;
   assert.equal(
-    await exactTokenTablePayloadForCanonicalLedger("livenet", "fixture", 102),
+    await exactTokenTablePayloadForCanonicalLedger(
+      "livenet",
+      "fixture",
+      102,
+      exactHash,
+    ),
     conserved,
   );
   assert.equal(requestedHeight, 102);
+  assert.equal(requestedHash, exactHash);
+
+  const tokenTableReadSource = topLevelFunctionSource(
+    API_PATH,
+    "currentProofIndexTokenTablePayloadForLedger",
+  );
+  assert.match(
+    tokenTableReadSource,
+    /proofIndexCanonicalSummaryTokenTablePayload\(network, \{[\s\S]*exactHash: options\.exactHash,[\s\S]*exactHeight: options\.exactHeight[\s\S]*payloadIndexedThroughBlockHash\(payload\) !== exactHash/u,
+  );
+  const tokenPayloadReaderSource = topLevelFunctionSource(
+    READER_PATH,
+    "proofIndexTokenPayload",
+  );
+  assert.doesNotMatch(
+    tokenPayloadReaderSource,
+    /canonicalSummaryBootstrap/u,
+    "public token reads must have no bootstrap option",
+  );
+  let relationalFixture = {
+    holders: [],
+    indexedThroughBlock: 102,
+    indexedThroughBlockHash: bootstrapHash,
+    listings: [
+      {
+        listingId: "1".repeat(64),
+        saleAuthorization: { version: WORK_AMO_V8_AUTH_VERSION },
+        tokenId: WORK_TOKEN_ID,
+      },
+    ],
+    mints: [],
+    source: "proof-indexer-token-state-tables",
+    tokens: [],
+  };
+  let requestedScope = "";
+  let precisionOptions = null;
+  const cutoverOrder = [];
+  const canonicalSummaryTokenTablePayload = isolatedFunction(
+    READER_PATH,
+    "proofIndexCanonicalSummaryTokenTablePayload",
+    {
+      WORK_AMO_V8_AUTH_VERSION,
+      applyWorkAmoV5CutoverToTokenState: (payload) => {
+        cutoverOrder.push("v5-project");
+        assert.ok(payload.workAmoV5Activation);
+        assert.ok(payload.workAmoV5PreUnitRelicEvidence);
+        return { ...payload, workAmoV5ProjectionReady: true };
+      },
+      applyWorkAmoV6PublicListingReadPolicy: (payload, versions) => ({
+        ...payload,
+        listings: payload.listings.filter((listing) =>
+          versions.includes(listing.saleAuthorization?.version)
+        ),
+      }),
+      applyWorkMarketV2CutoverToTokenState: (payload) => {
+        cutoverOrder.push("v2-project");
+        return payload;
+      },
+      normalizedLowerText: (value) =>
+        String(value ?? "").trim().toLowerCase(),
+      payloadWithCurrentWorkPrecisionReadPolicy: async (
+        _network,
+        payload,
+        options,
+      ) => {
+        precisionOptions = options;
+        return payload;
+      },
+      payloadWithVerifiedWorkMarketV4Activation: async (
+        _pool,
+        _network,
+        payload,
+      ) => payload,
+      payloadWithVerifiedWorkAmoV5Activation: async (
+        _network,
+        payload,
+      ) => {
+        cutoverOrder.push("v5-hydrate");
+        return {
+          ...payload,
+          workAmoV5Activation: { canonical: true },
+          workAmoV5PreUnitRelicEvidence: { canonical: true },
+        };
+      },
+      proofIndexPool: () => ({}),
+      proofIndexTokenPayloadFromCurrentTables: async (
+        _pool,
+        _network,
+        scope,
+      ) => {
+        requestedScope = scope;
+        return relationalFixture;
+      },
+      workListingAuthorizationAllowed: (listing, versions) =>
+        versions.includes(listing.saleAuthorization?.version),
+    },
+  );
+  const bootstrappedTokenTable =
+    await canonicalSummaryTokenTablePayload("livenet", {
+      exactHash: bootstrapHash,
+      exactHeight: 102,
+    });
+  assert.equal(requestedScope, "all");
+  assert.equal(precisionOptions.allowCanonicalSummaryBootstrap, true);
+  assert.equal(precisionOptions.requireExactCheckpoint, true);
+  assert.deepEqual(cutoverOrder, [
+    "v2-project",
+    "v5-hydrate",
+    "v5-project",
+  ]);
+  assert.equal(bootstrappedTokenTable.workAmoV5ProjectionReady, true);
+  assert.equal(bootstrappedTokenTable.listings.length, 1);
+  assert.equal(
+    bootstrappedTokenTable.listings[0].saleAuthorization.version,
+    WORK_AMO_V8_AUTH_VERSION,
+    "a confirmed V8 listing must survive the internal relational bootstrap",
+  );
+  relationalFixture = {
+    ...relationalFixture,
+    source: "proof-indexer-token-state-snapshot",
+  };
+  assert.equal(
+    await canonicalSummaryTokenTablePayload("livenet", {
+      exactHash: bootstrapHash,
+      exactHeight: 102,
+    }),
+    null,
+    "snapshot-backed state cannot enter the bootstrap lane",
+  );
+  relationalFixture = {
+    ...relationalFixture,
+    indexedThroughBlockHash: "e".repeat(64),
+    source: "proof-indexer-token-state-tables",
+  };
+  assert.equal(
+    await canonicalSummaryTokenTablePayload("livenet", {
+      exactHash: bootstrapHash,
+      exactHeight: 102,
+    }),
+    null,
+    "the relational state must be hash-bound to the requested checkpoint",
+  );
+  const tableProjectionSource = topLevelFunctionSource(
+    READER_PATH,
+    "proofIndexTokenPayloadFromCurrentTables",
+  );
+  assert.match(
+    tableProjectionSource,
+    /scanPayload\.indexedThroughBlockHash[\s\S]*scanSourceHashes\.blockScan[\s\S]*indexedThroughBlockHash/u,
+  );
 });
 
 check("table-backed token listings bind the definition alias exactly once", () => {

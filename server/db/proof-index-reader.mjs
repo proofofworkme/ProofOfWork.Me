@@ -2627,6 +2627,9 @@ async function payloadWithCurrentWorkPrecisionReadPolicy(
   network,
   payload,
   {
+    allowCanonicalSummaryBootstrap = false,
+    exactCheckpointHash = "",
+    exactCheckpointHeight = 0,
     requireExactCheckpoint = false,
     requireSupplyEnvelope = true,
   } = {},
@@ -2678,13 +2681,21 @@ async function payloadWithCurrentWorkPrecisionReadPolicy(
       network,
       pins,
     ).catch(() => null);
+  const fullReadiness =
+    readiness?.ready === true &&
+    readiness?.active === true &&
+    readiness?.evidenceComplete === true &&
+    readiness?.parityReady === true &&
+    readiness?.pendingReady === true &&
+    readiness?.replayReady === true;
+  const bootstrapReadiness =
+    workPrecisionV2CanonicalSummaryBootstrapReady(readiness, pins, {
+      allowCanonicalSummaryBootstrap,
+      exactCheckpointHash,
+      exactCheckpointHeight,
+    });
   if (
-    readiness?.ready !== true ||
-    readiness?.active !== true ||
-    readiness?.evidenceComplete !== true ||
-    readiness?.parityReady !== true ||
-    readiness?.pendingReady !== true ||
-    readiness?.replayReady !== true ||
+    (!fullReadiness && !bootstrapReadiness) ||
     !workPrecisionV2CurrentPayloadIsExact(
       currentPayload,
       pins.activationHeight,
@@ -2696,7 +2707,7 @@ async function payloadWithCurrentWorkPrecisionReadPolicy(
   const snapshotBacked = normalizedLowerText(
     currentPayload.source,
   ).includes("snapshot");
-  if (snapshotBacked || requireExactCheckpoint) {
+  if (snapshotBacked || requireExactCheckpoint || bootstrapReadiness) {
     const payloadHash = normalizedLowerText(
       currentPayload.indexedThroughBlockHash,
     );
@@ -2708,6 +2719,83 @@ async function payloadWithCurrentWorkPrecisionReadPolicy(
     }
   }
   return currentPayload;
+}
+
+const WORK_PRECISION_V2_CANONICAL_BOOTSTRAP_CONSTRAINTS = Object.freeze([
+  "activation",
+  "definition",
+  "markerImmutable",
+  "transition",
+  "v6",
+  "v6Deactivation",
+  "v6Immutable",
+  "v7HistoryImmutable",
+  "v7Immutable",
+  "v8",
+]);
+
+function workPrecisionV2CanonicalSummaryBootstrapReady(
+  readiness,
+  pins,
+  {
+    allowCanonicalSummaryBootstrap = false,
+    exactCheckpointHash = "",
+    exactCheckpointHeight = 0,
+  } = {},
+) {
+  const state =
+    readiness && typeof readiness === "object" && !Array.isArray(readiness)
+      ? readiness
+      : {};
+  const expected =
+    pins && typeof pins === "object" && !Array.isArray(pins) ? pins : {};
+  const precision =
+    state.precision &&
+    typeof state.precision === "object" &&
+    !Array.isArray(state.precision)
+      ? state.precision
+      : {};
+  const constraints =
+    state.constraints &&
+    typeof state.constraints === "object" &&
+    !Array.isArray(state.constraints)
+      ? state.constraints
+      : {};
+  const checkpointHeight = Number(exactCheckpointHeight);
+  const checkpointHash = String(exactCheckpointHash ?? "")
+    .trim()
+    .toLowerCase();
+  const lowerText = (value) => String(value ?? "").trim().toLowerCase();
+  const sameInteger = (left, right) =>
+    Number.isSafeInteger(Number(left)) && Number(left) === Number(right);
+  return (
+    allowCanonicalSummaryBootstrap === true &&
+    Number.isSafeInteger(checkpointHeight) &&
+    checkpointHeight >= Number(expected.activationHeight) &&
+    /^[0-9a-f]{64}$/u.test(checkpointHash) &&
+    state.canonical === true &&
+    state.canonicalSummaryBootstrapReady === true &&
+    state.confirmed === true &&
+    state.confirmedReplayReady === true &&
+    state.constraintsReady === true &&
+    state.declarationIndexReady === true &&
+    state.definitionReady === true &&
+    state.evidenceComplete === true &&
+    state.exactTipReady === true &&
+    state.legacyProjectionReady === true &&
+    state.markerReady === true &&
+    state.openingReady === true &&
+    state.parityReady === true &&
+    sameInteger(state.activationHeight, expected.activationHeight) &&
+    sameInteger(state.tipHeight, checkpointHeight) &&
+    lowerText(state.tipHash) === checkpointHash &&
+    precision.amountStorageModel === WORK_SUBATOM_PROJECTION_MODEL &&
+    precision.decimals === WORK_SUBATOM_DECIMALS &&
+    String(precision.unitScale ?? "") === WORK_SUBATOM_UNIT_SCALE_TEXT &&
+    WORK_PRECISION_V2_CANONICAL_BOOTSTRAP_CONSTRAINTS.every(
+      (constraint) => constraints[constraint] === true,
+    )
+  );
 }
 
 function workAmoV6PublicListingReadSql(
@@ -4886,7 +4974,7 @@ export async function proofIndexWorkPrecisionV2MigrationReadiness(
     tipHeight >= pins.activationHeight
       ? tipHeight - pins.activationHeight + 1
       : -1;
-  const replayReady =
+  const confirmedReplayReady =
     Number.isSafeInteger(tipHeight) &&
     tipHeight >= pins.activationHeight &&
     Number(row.transition_height) === tipHeight &&
@@ -4895,20 +4983,23 @@ export async function proofIndexWorkPrecisionV2MigrationReadiness(
     row.transition_model === WORK_AMO_V8_BLOCK_SEQUENCER_MODEL &&
     row.work_token_state_model ===
       WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL &&
-    Number(row.snapshot_height) === tipHeight &&
-    snapshotHash === tipHash &&
-    row.snapshot_work_amount_storage_model ===
-      WORK_SUBATOM_PROJECTION_MODEL &&
-    snapshotTokenStateReady &&
     Number(row.transition_count) === expectedTransitionCount &&
     Number(row.invalid_transition_count) === 0 &&
     activationOpeningReady &&
     closingTokenStateReady;
+  const snapshotReplayReady =
+    Number(row.snapshot_height) === tipHeight &&
+    snapshotHash === tipHash &&
+    row.snapshot_work_amount_storage_model ===
+      WORK_SUBATOM_PROJECTION_MODEL &&
+    snapshotTokenStateReady;
+  const replayReady = confirmedReplayReady && snapshotReplayReady;
   const stateCommitmentsReady =
     closingTokenStateReady && relationalParityReady;
-  const readyWithinSnapshot =
-    workPrecisionV2MarkerBindsReader(marker, pins) &&
-    indexedWorkPrecisionEvidenceMatchesMarker(row, marker) &&
+  const markerReady = workPrecisionV2MarkerBindsReader(marker, pins);
+  const declarationIndexReady =
+    indexedWorkPrecisionEvidenceMatchesMarker(row, marker);
+  const definitionReady =
     String(row.max_supply ?? "") ===
       "210000000000000000000000" &&
     String(row.mint_amount ?? "") ===
@@ -4917,13 +5008,23 @@ export async function proofIndexWorkPrecisionV2MigrationReadiness(
     Number(metadata.decimals) === WORK_SUBATOM_DECIMALS &&
     String(metadata.unitScale ?? "") ===
       WORK_SUBATOM_UNIT_SCALE_TEXT &&
-    metadata.precisionModel === WORK_PRECISION_V2_MODEL &&
-    Object.values(constraints).every(Boolean) &&
-    stateCommitmentsReady &&
-    replayReady &&
-    pendingReady &&
+    metadata.precisionModel === WORK_PRECISION_V2_MODEL;
+  const constraintsReady = Object.values(constraints).every(Boolean);
+  const legacyProjectionReady =
     Number(row.invalid_post_activation_legacy_count) === 0 &&
     Number(row.invalid_pre_activation_v7_count) === 0;
+  const confirmedStateReadyWithinSnapshot =
+    markerReady &&
+    declarationIndexReady &&
+    definitionReady &&
+    constraintsReady &&
+    stateCommitmentsReady &&
+    confirmedReplayReady &&
+    legacyProjectionReady;
+  const readyWithinSnapshot =
+    confirmedStateReadyWithinSnapshot &&
+    snapshotReplayReady &&
+    pendingReady;
   await client.query("COMMIT");
   transactionOpen = false;
   const freshTipResult = await client.query(
@@ -4948,18 +5049,27 @@ export async function proofIndexWorkPrecisionV2MigrationReadiness(
     normalizedLowerText(
       freshTipResult.rows[0]?.block_hash,
     ) === tipHash;
+  const canonicalSummaryBootstrapReady =
+    confirmedStateReadyWithinSnapshot && exactTipReady;
   const ready = readyWithinSnapshot && exactTipReady;
   return {
     activationHeight: pins.activationHeight,
     active: ready,
+    canonicalSummaryBootstrapReady,
     canonical: true,
     confirmed: true,
+    confirmedReplayReady,
     constraints,
+    constraintsReady,
+    declarationIndexReady,
+    definitionReady,
     declarationEvidence: marker?.declarationEvidence ?? null,
     evidenceComplete:
       marker?.declarationEvidence?.evidenceComplete === true,
     exactTipReady,
+    legacyProjectionReady,
     marker,
+    markerReady,
     model: WORK_PRECISION_V2_MIGRATION_MODEL,
     openingReady: activationOpeningReady,
     parityReady: stateCommitmentsReady,
@@ -4972,6 +5082,7 @@ export async function proofIndexWorkPrecisionV2MigrationReadiness(
     },
     ready,
     replayReady,
+    snapshotReplayReady,
     snapshotTokenStateReady,
     snapshotHash,
     status: ready ? "complete" : "not-ready",
@@ -24679,6 +24790,13 @@ async function proofIndexTokenPayloadFromCurrentTables(pool, network, scope) {
     indexedThroughBlockFromItems(sales) ?? 0,
     indexedThroughBlockFromItems(closedListings) ?? 0,
   );
+  const scanPayload = objectRecord(scan?.payload);
+  const scanSourceHashes = objectRecord(scan?.source_hashes);
+  const indexedThroughBlockHash = normalizedLowerText(
+    scanPayload.indexedThroughBlockHash ??
+      scanPayload.blockHash ??
+      scanSourceHashes.blockScan,
+  );
   const indexedAt = newestDateIso([
     scan?.generated_at,
     ...holders.map((holder) => holder.updatedAt),
@@ -24706,6 +24824,9 @@ async function proofIndexTokenPayloadFromCurrentTables(pool, network, scope) {
     indexTxid: "",
     indexedAt,
     indexedThroughBlock: indexedThroughBlock || undefined,
+    ...(/^[0-9a-f]{64}$/u.test(indexedThroughBlockHash)
+      ? { indexedThroughBlockHash }
+      : {}),
     invalidEvents,
     listings,
     minMutationPriceSats: TOKEN_LISTING_ANCHOR_VALUE_SATS,
@@ -24726,6 +24847,90 @@ async function proofIndexTokenPayloadFromCurrentTables(pool, network, scope) {
     },
     }),
   );
+}
+
+export async function proofIndexCanonicalSummaryTokenTablePayload(
+  network,
+  { exactHash = "", exactHeight = 0 } = {},
+) {
+  const pool = proofIndexPool();
+  const checkpointHeight = Number(exactHeight);
+  const checkpointHash = normalizedLowerText(exactHash);
+  if (
+    !pool ||
+    network !== "livenet" ||
+    !Number.isSafeInteger(checkpointHeight) ||
+    checkpointHeight <= 0 ||
+    !/^[0-9a-f]{64}$/u.test(checkpointHash)
+  ) {
+    return null;
+  }
+  const relationalPayload =
+    await proofIndexTokenPayloadFromCurrentTables(pool, network, "all");
+  if (
+    relationalPayload?.source !== "proof-indexer-token-state-tables" ||
+    Number(relationalPayload.indexedThroughBlock) !== checkpointHeight ||
+    normalizedLowerText(relationalPayload.indexedThroughBlockHash) !==
+      checkpointHash
+  ) {
+    return null;
+  }
+  const precisionPayload =
+    await payloadWithCurrentWorkPrecisionReadPolicy(
+      network,
+      relationalPayload,
+      {
+        allowCanonicalSummaryBootstrap: true,
+        exactCheckpointHash: checkpointHash,
+        exactCheckpointHeight: checkpointHeight,
+        requireExactCheckpoint: true,
+      },
+    );
+  if (
+    !precisionPayload ||
+    precisionPayload.source !== "proof-indexer-token-state-tables" ||
+    Number(precisionPayload.indexedThroughBlock) !== checkpointHeight ||
+    normalizedLowerText(precisionPayload.indexedThroughBlockHash) !==
+      checkpointHash
+  ) {
+    return null;
+  }
+  const activatedPayload =
+    await payloadWithVerifiedWorkMarketV4Activation(
+      pool,
+      network,
+      precisionPayload,
+    );
+  const currentV8Payload = applyWorkAmoV6PublicListingReadPolicy(
+    activatedPayload,
+    [WORK_AMO_V8_AUTH_VERSION],
+  );
+  const legacyCutoverPayload = applyWorkMarketV2CutoverToTokenState(
+    currentV8Payload,
+  );
+  const result = applyWorkAmoV5CutoverToTokenState(
+    await payloadWithVerifiedWorkAmoV5Activation(
+      network,
+      legacyCutoverPayload,
+    ),
+  );
+  if (
+    result?.source !== "proof-indexer-token-state-tables" ||
+    Number(result.indexedThroughBlock) !== checkpointHeight ||
+    normalizedLowerText(result.indexedThroughBlockHash) !== checkpointHash ||
+    (Array.isArray(result.listings)
+      ? result.listings.some(
+          (listing) =>
+            !workListingAuthorizationAllowed(
+              listing,
+              [WORK_AMO_V8_AUTH_VERSION],
+            ),
+        )
+      : false)
+  ) {
+    return null;
+  }
+  return result;
 }
 
 async function scopedHoldersFromBalances(pool, network, tokenId) {

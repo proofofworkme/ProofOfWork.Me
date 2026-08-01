@@ -1811,6 +1811,19 @@ reuse when it is missing or mismatched, and repairs it in the replacement
 summary. Readiness never infers Q16 token state from an outer summary height or
 from a stale pre-migration payload.
 
+The first replacement summary cannot depend on its own readiness witness. Its
+authenticated loopback builder has one internal-only bootstrap lane that reads
+the unscoped live relational token tables at the exact requested height and
+block hash. That lane is unavailable to public token reads and governed writes,
+accepts only the `proof-indexer-token-state-tables` source, preserves confirmed
+V8 listings, and opens only after the immutable migration marker and declaration
+carrier, every installed constraint, the complete activation-through-tip
+transition chain, relational commitment parity, legacy embargo, and a second
+exact-tip check all pass. Snapshot, scoped, stale-hash, incomplete-transition,
+or wrong-era inputs fail closed. The resulting summary must then bind the exact
+Q16 transition state before ordinary replay, pending, public-read, or write
+readiness can become green.
+
 The raw mint remains `pwt1:mint:<canonical-work-token-id>:1000`, crediting
 `100000000000` Q8 atoms before activation and
 `10000000000000000000` Q16 subatoms from activation. New WORK transfers use

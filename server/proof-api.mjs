@@ -227,6 +227,7 @@ import {
   proofIndexAddressMailPayload,
   proofIndexCanonicalActivityPayload,
   proofIndexCanonicalInceptionMintWitnessesPayload,
+  proofIndexCanonicalSummaryTokenTablePayload,
   proofIndexCanonicalWorkListingById,
   proofIndexCanonicalSummaryLedgerPayload,
   proofIndexCanonicalStateMetaPayload,
@@ -41384,16 +41385,35 @@ async function currentProofIndexTokenTablePayloadForLedger(
     return null;
   }
 
-  const payload = await payloadWithFallbackAfterMs(
-    proofIndexTokenPayload(network, "", new URLSearchParams()).catch((error) => {
-      console.error(
-        `Proof index token-table overlay failed for ${label}: ${errorSummary(error)}`,
-      );
-      return null;
-    }),
+  const bootstrapPayload = await payloadWithFallbackAfterMs(
+    proofIndexCanonicalSummaryTokenTablePayload(network, {
+      exactHash: options.exactHash,
+      exactHeight: options.exactHeight,
+    }).catch((error) => {
+        console.error(
+          `Proof index canonical-summary token bootstrap failed for ${label}: ${errorSummary(error)}`,
+        );
+        return null;
+      }),
     null,
     SUMMARY_PROOF_INDEX_READ_WAIT_MS,
   );
+  const payload =
+    bootstrapPayload ??
+    await payloadWithFallbackAfterMs(
+      proofIndexTokenPayload(
+        network,
+        "",
+        new URLSearchParams(),
+      ).catch((error) => {
+        console.error(
+          `Proof index token-table overlay failed for ${label}: ${errorSummary(error)}`,
+        );
+        return null;
+      }),
+      null,
+      SUMMARY_PROOF_INDEX_READ_WAIT_MS,
+    );
   if (
     !payload ||
     rejectEmptyMainnetTokenPayload(
@@ -41406,10 +41426,17 @@ async function currentProofIndexTokenTablePayloadForLedger(
     return null;
   }
   const exactHeight = Number(options.exactHeight);
+  const exactHash = String(options.exactHash ?? "")
+    .trim()
+    .toLowerCase();
   if (Number.isSafeInteger(exactHeight) && exactHeight > 0) {
-    if (proofIndexPayloadIndexedThroughBlock(payload) !== exactHeight) {
+    if (
+      proofIndexPayloadIndexedThroughBlock(payload) !== exactHeight ||
+      !/^[0-9a-f]{64}$/u.test(exactHash) ||
+      payloadIndexedThroughBlockHash(payload) !== exactHash
+    ) {
       console.error(
-        `Rejected ${label} token-table overlay: coverage is not exact at block ${exactHeight}.`,
+        `Rejected ${label} token-table overlay: coverage is not exact and hash-bound at block ${exactHeight}.`,
       );
       return null;
     }
@@ -41616,16 +41643,24 @@ async function exactTokenTablePayloadForCanonicalLedger(
   network,
   label,
   exactHeight,
+  exactHash,
 ) {
-  if (!Number.isSafeInteger(exactHeight) || exactHeight <= 0) {
+  const normalizedExactHash = String(exactHash ?? "")
+    .trim()
+    .toLowerCase();
+  if (
+    !Number.isSafeInteger(exactHeight) ||
+    exactHeight <= 0 ||
+    !/^[0-9a-f]{64}$/u.test(normalizedExactHash)
+  ) {
     throw freshDataUnavailableError(
-      `Rejected ${label}: an exact positive token-table checkpoint is required.`,
+      `Rejected ${label}: an exact positive hash-bound token-table checkpoint is required.`,
     );
   }
   const payload = await currentProofIndexTokenTablePayloadForLedger(
     network,
     label,
-    { exactHeight },
+    { exactHash: normalizedExactHash, exactHeight },
   );
   if (!payload || !tokenTablePayloadHasConservedBalances(payload)) {
     throw freshDataUnavailableError(
@@ -41768,7 +41803,12 @@ async function buildIndexedCanonicalLedgerPayload(
       null,
       SUMMARY_PROOF_INDEX_READ_WAIT_MS,
     ),
-    exactTokenTablePayloadForCanonicalLedger(network, label, exactHeight),
+    exactTokenTablePayloadForCanonicalLedger(
+      network,
+      label,
+      exactHeight,
+      exactHash,
+    ),
     indexedTokenMarketSummaryOverlay(network).catch((error) => {
       console.error(
         `WORK pre-consistency marketplace overlay failed: ${errorSummary(error)}`,
