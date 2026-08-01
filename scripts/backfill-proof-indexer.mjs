@@ -21802,6 +21802,7 @@ function workQ16PendingMembership({
     txids.add(txid);
   };
   const workMintDecisionCounts = new Map();
+  const validProjectionCounts = new Map();
   for (const row of Array.isArray(eventRows) ? eventRows : []) {
     addRequiredTxid("event", row?.event_id, row?.txid);
     const txid = normalizedLowerText(row?.txid);
@@ -21823,6 +21824,12 @@ function workQ16PendingMembership({
         Number(workMintDecisionCounts.get(txid) ?? 0) + 1,
       );
     }
+    if (isHexTxid(txid) && row?.valid === true) {
+      validProjectionCounts.set(
+        txid,
+        Number(validProjectionCounts.get(txid) ?? 0) + 1,
+      );
+    }
   }
   for (const row of Array.isArray(listingRows) ? listingRows : []) {
     addRequiredTxid(
@@ -21830,6 +21837,13 @@ function workQ16PendingMembership({
       row?.listing_id,
       row?.membership_txid,
     );
+    const txid = normalizedLowerText(row?.membership_txid);
+    if (isHexTxid(txid)) {
+      validProjectionCounts.set(
+        txid,
+        Number(validProjectionCounts.get(txid) ?? 0) + 1,
+      );
+    }
   }
   for (const row of Array.isArray(recoveryRows) ? recoveryRows : []) {
     const raw = objectValue(row?.raw_tx);
@@ -21877,13 +21891,20 @@ function workQ16PendingMembership({
     addRequiredTxid("recovery", row?.txid, row?.txid);
     const txid = normalizedLowerText(row?.txid);
     const decisionCount = Number(workMintDecisionCounts.get(txid) ?? 0);
+    const validProjectionCount = Number(
+      validProjectionCounts.get(txid) ?? 0,
+    );
     const terminalMarker =
       resolvedInvalid || protocolResolvedInvalid;
     let invalidReason = "";
-    if (attemptCount > 1) {
-      invalidReason = "ambiguous-multi-mint-recovery";
-    } else if (recoveryNeeded) {
+    if (recoveryNeeded) {
       invalidReason = "work-recovery-unresolved";
+    } else if (protocolResolvedInvalid && validProjectionCount > 0) {
+      invalidReason = "protocol-terminal-valid-projection-conflict";
+    } else if (attemptCount > 1) {
+      invalidReason = protocolResolvedInvalid
+        ? ""
+        : "ambiguous-multi-mint-recovery";
     } else if (decisionCount === 0 && !terminalMarker) {
       invalidReason = "work-decision-missing";
     } else if (decisionCount > 1 || (decisionCount > 0 && resolvedInvalid)) {
@@ -21948,16 +21969,18 @@ function workQ16PendingInspectionMarkerReason(
       ? "work-inspection-zero-attempt-conflict"
       : "";
   }
-  if (attemptCount > 1) {
-    return "ambiguous-multi-mint-recovery";
-  }
   if (recoveryNeeded) {
     return "work-recovery-unresolved";
   }
-  const terminalMarker = resolvedInvalid || protocolResolvedInvalid;
   if (protocolResolvedInvalid && validProjectionCount > 0) {
     return "protocol-terminal-valid-projection-conflict";
   }
+  if (attemptCount > 1) {
+    return protocolResolvedInvalid
+      ? ""
+      : "ambiguous-multi-mint-recovery";
+  }
+  const terminalMarker = resolvedInvalid || protocolResolvedInvalid;
   if (decisionCount === 0 && !terminalMarker) {
     return "work-decision-missing";
   }

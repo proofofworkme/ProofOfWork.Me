@@ -1120,8 +1120,8 @@ async function runChecks() {
       pendingWorkMintAttemptCount: 2,
       pendingWorkMintInspectionVersion: 1,
       pendingWorkMintRecoveryNeeded: false,
-      pendingWorkMintResolvedInvalid: true,
-      pendingProtocolResolvedInvalid: true,
+      pendingWorkMintResolvedInvalid: false,
+      pendingProtocolResolvedInvalid: false,
     },
     {
       pendingWorkMintAttemptCount: "1",
@@ -1214,6 +1214,53 @@ async function runChecks() {
     }).ready,
     true,
     "one exact invalid supply-cap decision may coexist with the terminal-invalid protocol marker",
+  );
+  const multiMintTerminalRaw = {
+    pendingWorkMintAttemptCount: 2,
+    pendingWorkMintInspectionVersion: 1,
+    pendingWorkMintRecoveryNeeded: false,
+    pendingWorkMintResolvedInvalid: false,
+    pendingProtocolResolvedInvalid: true,
+  };
+  assert.equal(
+    workerWorkPrecisionPendingParity({
+      balanceRows: [],
+      eventRows: [],
+      listingRows: [],
+      mempoolTxids: pendingMempoolTxids,
+      recoveryRows: [{
+        raw_tx: multiMintTerminalRaw,
+        status: "pending",
+        txid: pendingMemberTxid,
+      }],
+      transactionRows: [{
+        raw_tx: multiMintTerminalRaw,
+        status: "pending",
+        txid: pendingMemberTxid,
+      }],
+    }).ready,
+    true,
+    "a whole-transaction terminal-invalid marker resolves a fully inspected multi-mint attempt",
+  );
+  assert.equal(
+    workerWorkPrecisionPendingParity({
+      balanceRows: [],
+      eventRows: pendingEventRows,
+      listingRows: [],
+      mempoolTxids: pendingMempoolTxids,
+      recoveryRows: [{
+        raw_tx: multiMintTerminalRaw,
+        status: "pending",
+        txid: pendingMemberTxid,
+      }],
+      transactionRows: [{
+        raw_tx: multiMintTerminalRaw,
+        status: "pending",
+        txid: pendingMemberTxid,
+      }],
+    }).ready,
+    false,
+    "a terminal-invalid multi-mint marker cannot coexist with a valid persisted WORK projection",
   );
   const malformedMembershipParity = workerWorkPrecisionPendingParity({
     balanceRows: [],

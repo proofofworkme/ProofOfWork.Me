@@ -13591,6 +13591,87 @@ check("Q16 pending readiness audits persisted WORK rows without requiring a full
   );
 });
 
+check("Q16 pending membership resolves only fully terminal multi-mint attempts", () => {
+  const canonicalJsonText = isolatedFunction(
+    BACKFILL_PATH,
+    "canonicalJsonText",
+  );
+  const workQ16PendingCommitment = (domain, rows) =>
+    createHash("sha256")
+      .update(
+        Buffer.from(
+          `ProofOfWork.Me/WORK-Q16-PENDING-${domain}/v1\n${
+            canonicalJsonText(rows)
+          }`,
+          "utf8",
+        ),
+      )
+      .digest("hex");
+  const pendingMembership = isolatedFunction(
+    BACKFILL_PATH,
+    "workQ16PendingMembership",
+    {
+      canonicalJsonText,
+      compareCanonicalUtf8,
+      isHexTxid: (value) => /^[0-9a-f]{64}$/u.test(String(value)),
+      normalizedLowerText: (value) =>
+        String(value ?? "").trim().toLowerCase(),
+      objectValue: (value) =>
+        value && typeof value === "object" && !Array.isArray(value)
+          ? value
+          : {},
+      workQ16PendingCommitment,
+    },
+  );
+  const txid = "d".repeat(64);
+  const terminalRaw = {
+    pendingProtocolResolvedInvalid: true,
+    pendingWorkMintAttemptCount: 2,
+    pendingWorkMintInspectionVersion: 1,
+    pendingWorkMintRecoveryNeeded: false,
+    pendingWorkMintResolvedInvalid: false,
+  };
+  const recoveryRow = {
+    raw_tx: terminalRaw,
+    status: "pending",
+    txid,
+  };
+  const resolved = pendingMembership({
+    eventRows: [],
+    listingRows: [],
+    recoveryRows: [recoveryRow],
+  });
+  assert.equal(resolved.invalidCount, 0);
+  assert.deepEqual(Array.from(resolved.expectedTxids), [txid]);
+  assert.equal(
+    pendingMembership({
+      eventRows: [],
+      listingRows: [],
+      recoveryRows: [{
+        ...recoveryRow,
+        raw_tx: {
+          ...terminalRaw,
+          pendingProtocolResolvedInvalid: false,
+        },
+      }],
+    }).invalidCount,
+    1,
+  );
+  assert.equal(
+    pendingMembership({
+      eventRows: [{
+        event_id: "valid-work-sibling",
+        kind: "token-listing",
+        txid,
+        valid: true,
+      }],
+      listingRows: [],
+      recoveryRows: [recoveryRow],
+    }).invalidCount,
+    1,
+  );
+});
+
 check("mempool scan cursor crosses the processed-txid retention boundary", () => {
   const isHexTxid = (value) => /^[0-9a-f]{64}$/u.test(String(value));
   const normalizedMempoolScanCursor = isolatedFunction(

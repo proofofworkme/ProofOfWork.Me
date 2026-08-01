@@ -1398,6 +1398,15 @@ expect(
     ) &&
     /function workerWorkPrecisionPendingInspectionMarkerReason[\s\S]*protocol-terminal-valid-projection-conflict[\s\S]*invalidInspectionRows/u.test(
       worker,
+    ) &&
+    /attemptCount > 1[\s\S]*protocolResolvedInvalid[\s\S]*ambiguous-multi-mint-recovery/u.test(
+      backfill,
+    ) &&
+    /attemptCount > 1[\s\S]*protocolResolvedInvalid[\s\S]*ambiguous-multi-mint-recovery/u.test(
+      reader,
+    ) &&
+    /attemptCount > 1[\s\S]*protocolResolvedInvalid[\s\S]*ambiguous-multi-mint-recovery/u.test(
+      worker,
     ),
 );
 expect(
