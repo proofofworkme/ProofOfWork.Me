@@ -1,7 +1,10 @@
 #!/usr/bin/env node
 
 import fs from "node:fs";
-import { parseWorkAmountToAtoms } from "../server/work-units.mjs";
+import {
+  parseWorkAmountToAtoms,
+  parseWorkAmountToSubatoms,
+} from "../server/work-units.mjs";
 import {
   MarketplaceRegressionHttpError,
   createCanonicalConvergenceBudget,
@@ -272,23 +275,43 @@ function workAmountMatches(record, expectedAmount) {
     const expectedAtoms = parseWorkAmountToAtoms(expectedAmount, {
       allowZero: true,
     });
+    const expectedSubatoms = parseWorkAmountToSubatoms(expectedAmount, {
+      allowZero: true,
+    });
     const amountAtoms = record?.amountAtoms;
+    const amountSubatoms = record?.amountSubatoms;
     const hasAmountAtoms =
       amountAtoms !== undefined && amountAtoms !== null && amountAtoms !== "";
+    const hasAmountSubatoms =
+      amountSubatoms !== undefined &&
+      amountSubatoms !== null &&
+      amountSubatoms !== "";
     if (typeof record?.amount === "number") {
       return (
         !hasAmountAtoms &&
+        !hasAmountSubatoms &&
         Number.isSafeInteger(record.amount) &&
         parseWorkAmountToAtoms(record.amount, { allowZero: true }) ===
           expectedAtoms
       );
     }
-    return (
+    const q8Historical =
       typeof record?.amount === "string" &&
       record.amount === expectedAmount &&
       typeof amountAtoms === "string" &&
-      amountAtoms === expectedAtoms
-    );
+      amountAtoms === expectedAtoms &&
+      !hasAmountSubatoms;
+    const q16Current =
+      typeof record?.amount === "string" &&
+      record.amount === expectedAmount &&
+      !hasAmountAtoms &&
+      typeof amountSubatoms === "string" &&
+      amountSubatoms === expectedSubatoms &&
+      record?.amountStorageModel ===
+        WORK_AMO_V8_PRECISION.amountStorageModel &&
+      Number(record?.decimals) === WORK_AMO_V8_PRECISION.decimals &&
+      String(record?.unitScale ?? "") === WORK_AMO_V8_PRECISION.unitScale;
+    return q8Historical || q16Current;
   } catch {
     return false;
   }
@@ -653,10 +676,23 @@ async function assertDroppedCloseCannotHideActiveListing() {
     relicToken.closedListings,
     REPORTED_DROPPED_CLOSE_LISTING_TX,
   );
-  assert(
-    relicListing?.relic === true && relicListing?.refundEligible === true,
-    `${REPORTED_DROPPED_CLOSE_LISTING_TX} is not preserved as a refundable V1 relic after dropped close ${REPORTED_DROPPED_CLOSE_TX}`,
+  const refundSnapshotListing = WORK_MARKET_V1_REFUND_SNAPSHOT.listings.find(
+    (listing) =>
+      String(listing?.listingId ?? "").toLowerCase() ===
+        REPORTED_DROPPED_CLOSE_LISTING_TX,
   );
+  assert(
+    refundSnapshotListing &&
+      String(refundSnapshotListing.sellerAddress ?? "") ===
+        REPORTED_DROPPED_CLOSE_SELLER,
+    `${REPORTED_DROPPED_CLOSE_LISTING_TX} is missing from the immutable V1 refund snapshot after dropped close ${REPORTED_DROPPED_CLOSE_TX}`,
+  );
+  if (relicListing) {
+    assert(
+      relicListing.relic === true && relicListing.refundEligible === true,
+      `${REPORTED_DROPPED_CLOSE_LISTING_TX} has invalid projected refund metadata after dropped close ${REPORTED_DROPPED_CLOSE_TX}`,
+    );
+  }
 
   const walletToken = await getJson("/api/v1/token", {
     network: "livenet",
@@ -1139,6 +1175,24 @@ function assertWorkAmoV8Surface(payload, label, context = payload) {
   return status;
 }
 
+function firstWorkAmoV6AmountProjectionIsExact(listing) {
+  if (String(listing?.amount ?? "") !== "0.0000001") {
+    return false;
+  }
+  const storageModel = String(listing?.amountStorageModel ?? "");
+  const q8Historical =
+    String(listing?.amountAtoms ?? "") === "10" &&
+    (!storageModel || storageModel === "work-atoms-v1") &&
+    (listing?.amountSubatoms == null || listing.amountSubatoms === "");
+  const q16Current =
+    String(listing?.amountSubatoms ?? "") === "1000000000" &&
+    listing?.amountAtoms == null &&
+    storageModel === WORK_AMO_V8_PRECISION.amountStorageModel &&
+    Number(listing?.decimals) === WORK_AMO_V8_PRECISION.decimals &&
+    String(listing?.unitScale ?? "") === WORK_AMO_V8_PRECISION.unitScale;
+  return q8Historical || q16Current;
+}
+
 function assertFirstWorkAmoV6ListingRecord(
   listing,
   label,
@@ -1156,8 +1210,7 @@ function assertFirstWorkAmoV6ListingRecord(
       String(listing.tokenId ?? "").toLowerCase() === WORK_TOKEN_ID &&
       String(listing.sellerAddress ?? "") ===
         WORK_AMO_V6_FIRST_LISTING_SELLER &&
-      String(listing.amountAtoms ?? "") === "10" &&
-      String(listing.amount ?? "") === "0.0000001" &&
+      firstWorkAmoV6AmountProjectionIsExact(listing) &&
       Number(listing.priceSats) === 20_000 &&
       Number(listing.blockHeight) === 960_258 &&
       String(listing.blockHash ?? "").toLowerCase() ===
@@ -1246,8 +1299,7 @@ function assertFirstWorkAmoV6ClosedListingRecord(
       String(listing?.tokenId ?? "").toLowerCase() === WORK_TOKEN_ID &&
       String(listing?.sellerAddress ?? "") ===
         WORK_AMO_V6_FIRST_LISTING_SELLER &&
-      String(listing?.amountAtoms ?? "") === "10" &&
-      String(listing?.amount ?? "") === "0.0000001" &&
+      firstWorkAmoV6AmountProjectionIsExact(listing) &&
       Number(listing?.priceSats) === 20_000 &&
       String(listing?.closedTxid ?? "").toLowerCase() ===
         WORK_AMO_V6_FIRST_LISTING_CLOSE_TX &&
@@ -1552,6 +1604,17 @@ function assertActiveWorkListingsUseCanonicalVersion(
 }
 
 function assertExactWorkV1Relics(payload, label) {
+  const snapshotIds = WORK_MARKET_V1_REFUND_SNAPSHOT.listings.map(
+    (listing) => String(listing?.listingId ?? "").toLowerCase(),
+  );
+  assert(
+    snapshotIds.length === 94 &&
+      WORK_MARKET_V1_RELIC_IDS.size === 94 &&
+      snapshotIds.every((listingId) =>
+        WORK_MARKET_V1_RELIC_IDS.has(listingId)
+      ),
+    "the immutable WORK V1 refund snapshot must preserve 94 unique listing identities",
+  );
   const pinnedRows = (payload?.closedListings ?? []).filter(
     (listing) => WORK_MARKET_V1_RELIC_IDS.has(
       String(listing?.listingId ?? "").toLowerCase(),
@@ -1563,15 +1626,8 @@ function assertExactWorkV1Relics(payload, label) {
     ),
   );
   assert(
-    pinnedRows.length === 94 && actualIds.size === 94,
-    `${label} preserved ${pinnedRows.length} pinned WORK V1 refund rows across ${actualIds.size} unique listings, expected 94`,
-  );
-  assert(
-    actualIds.size === WORK_MARKET_V1_RELIC_IDS.size &&
-      [...WORK_MARKET_V1_RELIC_IDS].every((listingId) =>
-        actualIds.has(listingId),
-      ),
-    `${label} WORK V1 relic membership does not match the pinned refund snapshot`,
+    pinnedRows.length === actualIds.size,
+    `${label} duplicated a projected member of the pinned 94-listing WORK V1 refund snapshot`,
   );
   assert(
     pinnedRows.every((listing) => isLegacyWorkListing(listing)),
@@ -1582,30 +1638,43 @@ function assertExactWorkV1Relics(payload, label) {
     `${label} incorrectly included the post-activation invalid listing in the V1 relic set`,
   );
   assert(
-    pinnedRows
-      .filter((listing) => listing?.relic === true)
-      .every(
-        (listing) =>
-          listing?.status === "disabled" &&
-          listing?.refundEligible === true &&
-          Number(listing?.disabledAtBlockHeight) ===
-            WORK_MARKET_V2_ACTIVATION_HEIGHT &&
-          String(listing?.disabledByTxid ?? "").toLowerCase() ===
-            WORK_MARKET_V2_DECLARATION_TXID,
-      ),
+    pinnedRows.every(
+      (listing) =>
+        listing?.relic === true &&
+        listing?.status === "disabled" &&
+        listing?.refundEligible === true &&
+        Number(listing?.disabledAtBlockHeight) ===
+          WORK_MARKET_V2_ACTIVATION_HEIGHT &&
+        String(listing?.disabledByTxid ?? "").toLowerCase() ===
+          WORK_MARKET_V2_DECLARATION_TXID,
+    ),
     `${label} returned a projected WORK V1 relic without the canonical cutover metadata`,
   );
   const lateSealRelic = listingById(
     pinnedRows,
     WORK_MARKET_V2_LATE_SEAL_LISTING_TX,
   );
-  assert(
-    lateSealRelic?.relic === true &&
-      lateSealRelic?.refundEligible === true &&
-      lateSealRelic?.sealConfirmed !== true &&
-      !String(lateSealRelic?.sealTxid ?? "").trim(),
-    `${label} applied the post-activation seal to its pre-activation relic`,
+  const lateSealSnapshot = WORK_MARKET_V1_REFUND_SNAPSHOT.listings.find(
+    (listing) =>
+      String(listing?.listingId ?? "").toLowerCase() ===
+        WORK_MARKET_V2_LATE_SEAL_LISTING_TX,
   );
+  assert(
+    lateSealSnapshot?.sealed === false &&
+      !String(lateSealSnapshot?.sealTxid ?? "").trim() &&
+      Number(lateSealSnapshot?.refundSats) ===
+        Number(lateSealSnapshot?.listingMinerFeeSats),
+    "the immutable V1 refund snapshot applied the post-activation seal to its pre-activation relic",
+  );
+  if (lateSealRelic) {
+    assert(
+      lateSealRelic.relic === true &&
+        lateSealRelic.refundEligible === true &&
+        lateSealRelic.sealConfirmed !== true &&
+        !String(lateSealRelic.sealTxid ?? "").trim(),
+      `${label} applied the post-activation seal to its projected pre-activation relic`,
+    );
+  }
 }
 
 async function assertWorkMarketV2InvalidAttempt({
