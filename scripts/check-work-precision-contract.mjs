@@ -885,7 +885,11 @@ assert.match(worker, /assertWorkAtomicProjectionReady/u);
 assert.match(workerUnit, /Environment=POW_INDEX_REQUIRE_WORK_ATOMS=1/u);
 assert.match(
   ledgerAudit,
-  /function workAmountMatches[\s\S]*typeof record\?\.amount === "string"[\s\S]*typeof record\?\.amountAtoms === "string"/u,
+  /function workAmountMatches[\s\S]*const q8Historical =[\s\S]*typeof amountAtoms === "string"[\s\S]*!hasAmountSubatoms/u,
+);
+assert.match(
+  ledgerAudit,
+  /const q16Current =[\s\S]*typeof amountSubatoms === "string"[\s\S]*amountStorageModel === WORK_SUBATOM_PROJECTION_MODEL[\s\S]*WORK_SUBATOM_DECIMALS[\s\S]*WORK_SUBATOM_UNIT_SCALE_TEXT/u,
 );
 assert.match(ledgerAudit, /workAmountMatches\(item, "101000"\)/u);
 assert.match(ledgerAudit, /workAmountMatches\(item, "10000"\)/u);
@@ -897,7 +901,7 @@ assert.doesNotMatch(
 
 console.log(
   JSON.stringify({
-    checks: 130,
+    checks: 131,
     model: WORK_ATOMIC_PROJECTION_MODEL,
     ok: true,
     tokenId: WORK_TOKEN_ID,

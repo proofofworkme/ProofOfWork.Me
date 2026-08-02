@@ -912,9 +912,9 @@ After V7 activation, new V6 listings and new `send2` transfers are invalid,
 but valid pre-activation listings of every supported historical version
 remain visible and settleable under their original frozen terms.
 
-## Approved WORK Precision Protocol V2 / AMO Unit Protocol V8 (`pwt-sale-v8`)
+## Active WORK Precision Protocol V2 / AMO Unit Protocol V8 (`pwt-sale-v8`)
 
-V8 is the approved additive declaration-bound successor to the current Q8/V6
+V8 is the active additive declaration-bound successor to the historical Q8/V6
 era. It does not manufacture a V7 activation, alter any historical signed
 payload, or reinterpret an earlier frozen term. If the earliest exact valid V8
 declaration confirms in block `D`, V8 activates at the opening of `D+1`.
@@ -1116,9 +1116,10 @@ activationHeight = 960601
 The transaction's subject and reply parts are separate `pwm1` outputs. Mail
 indexing may aggregate that envelope at vout 1, but declaration evidence binds
 the exact raw `pwm1:m` carrier at vout 3. The carrier and registry payment are
-each unique. Production keeps V8 writes closed while the activation migration
-and replay gates are being completed; the confirmed boundary cannot restore
-V6 or `send2` admission.
+each unique. On 2026-08-01 production completed the activation migration,
+replay, parity, and readiness gates and opened only
+`WORK_AMO_V8_WRITES_ENABLED=1`; every governed legacy write gate remains
+disabled. The confirmed boundary cannot restore V6 or `send2` admission.
 
 The authoritative V8 declaration is the earliest exact valid declaration by
 confirmed block height and transaction index. Its transaction must be

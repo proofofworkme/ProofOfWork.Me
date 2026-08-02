@@ -263,8 +263,8 @@ async function runChecks() {
         deploymentSource,
         "WORK_AMO_V8_WRITES_ENABLED",
       ),
-      ["0"],
-      "AMO V8 writes must deploy disabled",
+      ["1"],
+      "AMO V8 deployment write gate must be enabled",
     );
   }
   assert.deepEqual(

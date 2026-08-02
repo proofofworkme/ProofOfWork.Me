@@ -1661,7 +1661,7 @@ canonical V7/send3 action, rollback means closing writes and restoring the
 same release from backup/replay; it never means reverting the declaration,
 dividing live balances heuristically, or rewriting confirmed history.
 
-### Approved WORK Q16 / AMO V8 gate
+### Active WORK Q16 / AMO V8 gate
 
 WORK Precision Protocol V2 and AMO Unit Protocol V8 share one exact activation
 boundary. The release is additive and may be deployed before a declaration,
@@ -1990,6 +1990,15 @@ Deployment sequence:
    legacy-action rejection, and V8 peak-order behavior.
 7. Enable only `WORK_AMO_V8_WRITES_ENABLED=1`, deploy all public surfaces from
    the same commit-bound archive, and repeat the production exact-tip sweep.
+
+Production completed gate one on 2026-08-01 after the exact declaration,
+Q8-to-Q16 migration, 23-listing relic cutover, activation-through-tip replay,
+database constraints, pending witness, API/worker/index/ledger parity, and
+exact-tip readiness agreed. The active production gate set is
+`WORK_AMO_V8_WRITES_ENABLED=1` with `WORK_MARKETPLACE_WRITES_ENABLED=0`,
+`WORK_AMO_V5_WRITES_ENABLED=0`, `WORK_AMO_V6_WRITES_ENABLED=0`, and
+`WORK_AMO_V7_WRITES_ENABLED=0`. Any loss of readiness still closes V8 writes;
+it never reopens a legacy protocol.
 
 Any disagreement keeps V8 closed. Before activation, rollback removes only
 the additive staged release. After Q16 activation, rollback means closing
@@ -2635,7 +2644,7 @@ The credit endpoint:
 - WORK's permanent price floor is derived from live confirmed ProofOfWork Computer network value, not from pending mempool visibility: `work_floor_sats = live_network_value_sats / 21,000,000 WORK`. The inverse `21,000,000 / live_network_value_sats` is the WORK-per-proof ratio.
 - Historical WORK Marketplace Pricing Protocol V2 is declaration-tx anchored at `4c53252c6e9279726e1456f4d846274bfa33f778b633d32a68ed36906b38083f` and activated at declaration height plus one. Its confirmed governed WORK list/seal/buy validation loaded the exact green canonical summary at H-1, required the authorization's `oracleBlockHeight`, `oracleBlockHash`, and `oracleNetworkValueQ8` to match it, recomputed the integer-ceiling minimum total seller price from `amountAtoms`, and failed closed on any unavailable or mismatched dependency. A missed next-block commitment was stale; confirmation did not rescue it. This is replay documentation, not the current AMO write protocol.
 - WORK Marketplace Pricing Protocol V4 remains replayable historical design. AMO `pwt-sale-v5` governed WORK list/seal/buy actions from activation height 959621 until the V6 cutover. A listing chose only `$20`, `$50`, or `$100`; exact WORK atoms and proof price derived at its complete canonical position from the preceding valid `pwa1:usd1` quote and the network value immediately before the listing. Those terms froze at confirmation. Valid pre-V6 V5 listings remain settleable without current-floor repricing, while new V5 listings from V6 activation are invalid audit history.
-- WORK AMO V6 is anchored by declaration transaction
+- Historical WORK AMO V6 is anchored by declaration transaction
   `975fd82aa84995e014b240618ee1a1254d0a735e6e1241372d0bed0a0d9f0799`
   and an independent write gate. From activation height `960219`, new
   governed listings use
@@ -2643,11 +2652,24 @@ The credit endpoint:
   The listing's exact WORK atoms derive at its complete canonical position
   from the network value immediately before the listing; no USD quote,
   attestation, signer, source quorum, or validity window is part of V6
-  consensus. USD is display-only. V5 listings validly confirmed before the
-  cutover keep their frozen terms and may settle; new V5 listings after the
-  cutover are invalid audit history. Declaration pins, the immutable migration
-  marker, activation-range replay, exact-tip parity and the explicit V6 write
-  gate must all agree before production admits V6 actions.
+  consensus. USD is display-only. During the V6 era, V5 listings validly
+  confirmed before its cutover kept their frozen terms and could settle; new V5
+  listings after that cutover were invalid audit history. V6 declaration pins,
+  the immutable migration marker, activation-range replay, exact-tip parity and
+  the explicit V6 write gate had to agree before production admitted V6
+  actions. At V8 activation every remaining active or sealing pre-V8 listing
+  became a non-actionable relic with no legacy settlement path.
+- Active WORK Precision Protocol V2 / AMO Unit Protocol V8 is anchored by
+  declaration transaction
+  `f90e1faf572ef8253ca5959731b9d9e99c74bced4397380059878936712bee7a`,
+  confirmed at height `960600`/index `2369` and active from height `960601`.
+  Canonical current WORK uses sixteen decimals and exact integer Q16 subatoms;
+  new transfers use `pwt1:send3`, and new governed listings use only
+  `pwt-sale-v8` with the exact 25,000-proof face. Gate one opened on 2026-08-01
+  only after migration, replay, relic-cutover, constraints, pending parity,
+  API/worker/index/ledger parity, and exact-tip readiness agreed. Only
+  `WORK_AMO_V8_WRITES_ENABLED=1` is enabled; every legacy governed WORK gate
+  remains zero, and any readiness disagreement fails V8 writes closed.
 - WORK value accounting exposes both live and frozen values. Live network value reprices confirmed WORK movement at the current live floor and is the site-facing value. Frozen network value records the confirmation-time value of each WORK movement plus fixed event components such as proof payments, registry mutation fees, marketplace mutation fees, sale payments, and miner fees where available.
 - WORK is the only credit whose amount moved adds credit movement network value. Non-WORK credits remain confirmed proof-flow records and must not derive value from manipulable illiquid floors.
 - Credit mint-out is confirmed-only at the protocol/indexing layer: a credit is canonically minted out only when confirmed supply reaches max supply. UI mint controls also pause when confirmed plus pending mints fill the remaining supply, because pending records can consume the last valid mint slots if they confirm.

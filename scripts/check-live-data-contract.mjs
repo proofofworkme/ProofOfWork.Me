@@ -1753,7 +1753,7 @@ expect(
   ),
 );
 expectAll(
-  "AMO V8 production pins the confirmed declaration while keeping the independent write gate closed for migration",
+  "AMO V8 production pins the confirmed declaration with the independent deployment write gate open",
   proofIndexDeploy,
   [
     /^Environment=WORK_AMO_V8_DECLARATION_TXID=f90e1faf572ef8253ca5959731b9d9e99c74bced4397380059878936712bee7a$/mu,
@@ -1766,11 +1766,11 @@ expectAll(
     /^Environment=WORK_AMO_V8_DECLARATION_RECORD_ORDINAL=0$/mu,
     /^Environment=WORK_AMO_V8_DECLARATION_REGISTRY_PAYMENT_VOUT=4$/mu,
     /^Environment=WORK_AMO_V8_ACTIVATION_HEIGHT=960601$/mu,
-    /^Environment=WORK_AMO_V8_WRITES_ENABLED=0$/mu,
+    /^Environment=WORK_AMO_V8_WRITES_ENABLED=1$/mu,
   ],
 );
 expectAll(
-  "AMO V8 index worker carries the same confirmed declaration pins and closed migration gate",
+  "AMO V8 index worker carries the same confirmed declaration pins and open deployment write gate",
   proofIndexerWorkerService,
   [
     /^Environment=WORK_AMO_V8_DECLARATION_TXID=f90e1faf572ef8253ca5959731b9d9e99c74bced4397380059878936712bee7a$/mu,
@@ -1783,7 +1783,7 @@ expectAll(
     /^Environment=WORK_AMO_V8_DECLARATION_RECORD_ORDINAL=0$/mu,
     /^Environment=WORK_AMO_V8_DECLARATION_REGISTRY_PAYMENT_VOUT=4$/mu,
     /^Environment=WORK_AMO_V8_ACTIVATION_HEIGHT=960601$/mu,
-    /^Environment=WORK_AMO_V8_WRITES_ENABLED=0$/mu,
+    /^Environment=WORK_AMO_V8_WRITES_ENABLED=1$/mu,
   ],
 );
 expectAll(
