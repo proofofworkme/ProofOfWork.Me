@@ -13897,6 +13897,16 @@ check("Q16 pending readiness audits persisted WORK rows without requiring a full
     /SELECT\s+event_id,\s+txid,\s+kind,\s+protocol,\s+protocol_vout,/u,
     "the pending witness must not select a synthetic events.protocol_vout column",
   );
+  assert.match(
+    source,
+    /listing\.listing_id,[\s\S]*listing\.status,[\s\S]*listing\.payload[\s\S]*FROM proof_indexer\.credit_listings listing[\s\S]*LEFT JOIN proof_indexer\.transactions seal_tx/u,
+    "the pending witness must qualify joined listing fields against the listing relation",
+  );
+  assert.doesNotMatch(
+    source,
+    /SELECT\s+listing_id,\s+status,/u,
+    "the pending witness must not leave the joined status column ambiguous",
+  );
 });
 
 check("Q16 pending membership resolves only fully terminal multi-mint attempts", () => {

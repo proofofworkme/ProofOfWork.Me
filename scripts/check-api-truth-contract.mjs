@@ -1374,6 +1374,13 @@ for (const [surface, source] of [
         source,
       ),
   );
+  expect(
+    `${surface} qualifies every joined pending-listing projection`,
+    /listing\.listing_id,[\s\S]*listing\.status,[\s\S]*listing\.seller_address,[\s\S]*listing\.buyer_address,[\s\S]*listing\.amount::text,[\s\S]*listing\.price_sats::text,[\s\S]*listing\.sale_ticket_txid,[\s\S]*listing\.seal_txid,[\s\S]*listing\.payload[\s\S]*FROM proof_indexer\.credit_listings listing[\s\S]*LEFT JOIN proof_indexer\.transactions seal_tx/u.test(
+      source,
+    ) &&
+      !/SELECT\s+listing_id,\s+status,/u.test(source),
+  );
 }
 expect(
   "worker publishes no Q16-ready state before the pending audit completes",

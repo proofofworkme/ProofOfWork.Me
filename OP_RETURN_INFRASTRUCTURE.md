@@ -1852,6 +1852,10 @@ The Q16 pending witness preserves the public protocol-position name
 `op_return_vout`. Backfill, worker verification, and reader readiness must all
 select `op_return_vout AS protocol_vout`; an unaliased synthetic column name
 is a schema error and keeps the witness explicitly not ready.
+The same audit joins pending listings to their seal transactions, so every
+projected listing field is qualified through the `listing` relation; the two
+relations both expose `status`, and an unqualified projection is rejected as
+ambiguous rather than being treated as readiness evidence.
 
 The raw mint remains `pwt1:mint:<canonical-work-token-id>:1000`, crediting
 `100000000000` Q8 atoms before activation and

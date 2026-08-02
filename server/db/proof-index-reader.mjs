@@ -4734,14 +4734,14 @@ export async function proofIndexWorkPrecisionV2MigrationReadiness(
       client.query(
         `
           SELECT
-            listing_id,
-            status,
-            seller_address,
-            buyer_address,
-            amount::text,
-            price_sats::text,
-            sale_ticket_txid,
-            seal_txid,
+            listing.listing_id,
+            listing.status,
+            listing.seller_address,
+            listing.buyer_address,
+            listing.amount::text,
+            listing.price_sats::text,
+            listing.sale_ticket_txid,
+            listing.seal_txid,
             CASE
               WHEN listing.status = 'pending'
                 THEN lower(listing.listing_id)
@@ -4752,7 +4752,7 @@ export async function proofIndexWorkPrecisionV2MigrationReadiness(
               ELSE NULL
             END AS membership_txid,
             seal_tx.status AS seal_transaction_status,
-            payload
+            listing.payload
           FROM proof_indexer.credit_listings listing
           LEFT JOIN proof_indexer.transactions seal_tx
             ON seal_tx.network = listing.network

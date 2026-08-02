@@ -1842,6 +1842,13 @@ expectAll(
     /op_return_vout AS protocol_vout[\s\S]*FROM proof_indexer\.events/,
   ],
 );
+expectAll(
+  "AMO V8 pending projections qualify joined listing state across writer, worker, and reader",
+  `${proofIndexerBackfill}\n${proofIndexerWorker}\n${proofIndexReader}`,
+  [
+    /listing\.listing_id,[\s\S]*listing\.status,[\s\S]*listing\.payload[\s\S]*FROM proof_indexer\.credit_listings listing[\s\S]*LEFT JOIN proof_indexer\.transactions seal_tx/,
+  ],
+);
 expectAll("AMO V6 historical and preactivation writes retain proof-native Q8 terms and one exact readiness gate", workAmoV6Core, [
   /WORK_AMO_V6_AUTH_VERSION = "pwt-sale-v6"/,
   /WORK_AMO_V6_ALLOWED_FACE_PROOFS = Object\.freeze\(\[\s*20_000,\s*50_000,\s*100_000,\s*\]\)/,
