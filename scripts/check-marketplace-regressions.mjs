@@ -110,6 +110,12 @@ const WORK_MARKET_V1_REFUND_SNAPSHOT = JSON.parse(
 const WORK_MARKET_V1_RELIC_IDS = new Set(
   WORK_MARKET_V1_REFUND_SNAPSHOT.listings.map((listing) => listing.listingId),
 );
+const WORK_MARKET_V1_REFUND_LISTINGS_BY_ID = new Map(
+  WORK_MARKET_V1_REFUND_SNAPSHOT.listings.map((listing) => [
+    String(listing?.listingId ?? "").toLowerCase(),
+    listing,
+  ]),
+);
 const POWB_TOKEN_ID =
   "a3d0bc8528f91dfc52400a885bed7e49235396aa82aa9f95db41be629f1d5562";
 const SELLER = "1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x";
@@ -502,6 +508,76 @@ async function getJson(
   return requestJson(path, params, { retryCount, timeoutMs });
 }
 
+function canonicalSummarySnapshotIds(summarySet) {
+  return [
+    summarySet?.marketplace?.snapshotId,
+    summarySet?.token?.snapshotId,
+    summarySet?.work?.snapshotId,
+    summarySet?.growth?.snapshotId,
+  ].map((value) => String(value ?? "").trim());
+}
+
+function canonicalSummarySetHasOneSnapshot(summarySet) {
+  const snapshotIds = canonicalSummarySnapshotIds(summarySet);
+  return (
+    snapshotIds.every((snapshotId) => snapshotId !== "") &&
+    new Set(snapshotIds).size === 1
+  );
+}
+
+async function convergedFreshCanonicalSummarySet() {
+  return waitForCanonicalConvergenceWithinBudget({
+    budget: marketplaceCanonicalConvergenceBudget,
+    isReady: canonicalSummarySetHasOneSnapshot,
+    isRetryableValue: (summarySet) =>
+      canonicalSummarySnapshotIds(summarySet).every(
+        (snapshotId) => snapshotId !== "",
+      ),
+    label: "fresh canonical summary snapshot alignment",
+    pollIntervalMs: WORK_AMO_CONVERGENCE_POLL_MS,
+    read: async ({ remainingMs }) => {
+      const requestOptions = {
+        canonicalErrorDetails: true,
+        retryCount: 0,
+        timeoutMs: Math.max(
+          1,
+          Math.min(REQUEST_TIMEOUT_MS, Math.floor(remainingMs)),
+        ),
+      };
+      const [marketplace, token, work, growth] = await Promise.all([
+        requestJson(
+          "/api/v1/marketplace-summary",
+          { fresh: 1, network: "livenet" },
+          requestOptions,
+        ),
+        requestJson(
+          "/api/v1/token-summary",
+          { asset: WORK_TOKEN_ID, fresh: 1, network: "livenet" },
+          requestOptions,
+        ),
+        requestJson(
+          "/api/v1/work-summary",
+          { fresh: 1, network: "livenet" },
+          requestOptions,
+        ),
+        requestJson(
+          "/api/v1/growth-summary",
+          { fresh: 1, network: "livenet" },
+          requestOptions,
+        ),
+      ]);
+      return { growth, marketplace, token, work };
+    },
+    onRetry: ({ attempt, delayMs, error }) => {
+      console.log(
+        `WAIT  [${GATE_LABEL}] canonical summary snapshot alignment after attempt ${attempt}: ${
+          error?.code ?? error?.serverMessage ?? "snapshot-id-transition"
+        }; retrying in ${delayMs}ms`,
+      );
+    },
+  });
+}
+
 async function timedGetJson(path, params = {}) {
   const startedAt = Date.now();
   const json = await getJson(path, params);
@@ -676,10 +752,8 @@ async function assertDroppedCloseCannotHideActiveListing() {
     relicToken.closedListings,
     REPORTED_DROPPED_CLOSE_LISTING_TX,
   );
-  const refundSnapshotListing = WORK_MARKET_V1_REFUND_SNAPSHOT.listings.find(
-    (listing) =>
-      String(listing?.listingId ?? "").toLowerCase() ===
-        REPORTED_DROPPED_CLOSE_LISTING_TX,
+  const refundSnapshotListing = WORK_MARKET_V1_REFUND_LISTINGS_BY_ID.get(
+    REPORTED_DROPPED_CLOSE_LISTING_TX,
   );
   assert(
     refundSnapshotListing &&
@@ -1654,10 +1728,8 @@ function assertExactWorkV1Relics(payload, label) {
     pinnedRows,
     WORK_MARKET_V2_LATE_SEAL_LISTING_TX,
   );
-  const lateSealSnapshot = WORK_MARKET_V1_REFUND_SNAPSHOT.listings.find(
-    (listing) =>
-      String(listing?.listingId ?? "").toLowerCase() ===
-        WORK_MARKET_V2_LATE_SEAL_LISTING_TX,
+  const lateSealSnapshot = WORK_MARKET_V1_REFUND_LISTINGS_BY_ID.get(
+    WORK_MARKET_V2_LATE_SEAL_LISTING_TX,
   );
   assert(
     lateSealSnapshot?.sealed === false &&
@@ -2418,36 +2490,63 @@ const recentWaitingForSealItem = listingById(
   workCutoverToken.closedListings,
   REPORTED_RECENT_WAITING_FOR_SEAL_LISTING_TX,
 );
+const recentWaitingForSealRefund =
+  WORK_MARKET_V1_REFUND_LISTINGS_BY_ID.get(
+    REPORTED_RECENT_WAITING_FOR_SEAL_LISTING_TX,
+  );
 assert(
-  recentWaitingForSealItem?.relic === true &&
-    recentWaitingForSealItem?.refundEligible === true &&
-    tokenListingHasConfirmedSeal(recentWaitingForSealItem) &&
-    String(recentWaitingForSealItem?.sealTxid ?? "").toLowerCase() ===
+  recentWaitingForSealRefund?.sealed === true &&
+    String(recentWaitingForSealRefund?.sealTxid ?? "").toLowerCase() ===
       REPORTED_RECENT_WAITING_FOR_SEAL_SEAL_TX &&
-    workAmountMatches(recentWaitingForSealItem, "130") &&
-    recentWaitingForSealItem?.priceSats === 81325 &&
-    recentWaitingForSealItem?.sellerAddress ===
+    recentWaitingForSealRefund?.sellerAddress ===
       CARBONZ_TAPROOT_LISTING_ADDRESS,
-  `${REPORTED_RECENT_WAITING_FOR_SEAL_LISTING_TX} is not returned as a refundable V1 relic`,
+  `${REPORTED_RECENT_WAITING_FOR_SEAL_LISTING_TX} is missing its exact immutable V1 refund evidence`,
 );
+if (recentWaitingForSealItem) {
+  assert(
+    recentWaitingForSealItem.relic === true &&
+      recentWaitingForSealItem.refundEligible === true &&
+      tokenListingHasConfirmedSeal(recentWaitingForSealItem) &&
+      String(recentWaitingForSealItem.sealTxid ?? "").toLowerCase() ===
+        REPORTED_RECENT_WAITING_FOR_SEAL_SEAL_TX &&
+      workAmountMatches(recentWaitingForSealItem, "130") &&
+      recentWaitingForSealItem.priceSats === 81325 &&
+      recentWaitingForSealItem.sellerAddress ===
+        CARBONZ_TAPROOT_LISTING_ADDRESS,
+    `${REPORTED_RECENT_WAITING_FOR_SEAL_LISTING_TX} has incomplete projected V1 relic data`,
+  );
+}
 const sealableItem = listingById(
   workCutoverToken.closedListings,
   REPORTED_CONFIRMED_SEALABLE_LISTING_TX,
 );
-assert(
-  sealableItem?.relic === true && sealableItem?.refundEligible === true,
-  `${REPORTED_CONFIRMED_SEALABLE_LISTING_TX} is not returned as a refundable V1 relic`,
+const sealableRefund = WORK_MARKET_V1_REFUND_LISTINGS_BY_ID.get(
+  REPORTED_CONFIRMED_SEALABLE_LISTING_TX,
 );
 assert(
-  sealableItem?.tokenId === WORK_TOKEN_ID &&
-    sealableItem?.registryAddress &&
-    sealableItem?.sellerAddress &&
-    sealableItem?.saleAuthorization?.version === "pwt-sale-v1" &&
-    sealableItem?.saleAuthorization?.anchorType === "sale-ticket-v1" &&
-    sealableItem?.saleAuthorization?.anchorVout === 2 &&
-    sealableItem?.saleAuthorization?.anchorValueSats === 546,
-  `${REPORTED_CONFIRMED_SEALABLE_LISTING_TX} is missing complete sale-ticket listing fields`,
+  sealableRefund?.sealed === true &&
+    /^[0-9a-f]{64}$/u.test(String(sealableRefund?.sealTxid ?? "")) &&
+    sealableRefund?.version === "pwt-sale-v1" &&
+    Number(sealableRefund?.refundSats) ===
+      Number(sealableRefund?.listingMinerFeeSats) +
+        Number(sealableRefund?.sealMinerFeeSats) +
+        Number(sealableRefund?.sealPaymentSats),
+  `${REPORTED_CONFIRMED_SEALABLE_LISTING_TX} is missing its exact immutable V1 refund evidence`,
 );
+if (sealableItem) {
+  assert(
+    sealableItem.relic === true &&
+      sealableItem.refundEligible === true &&
+      sealableItem.tokenId === WORK_TOKEN_ID &&
+      sealableItem.registryAddress &&
+      sealableItem.sellerAddress &&
+      sealableItem.saleAuthorization?.version === "pwt-sale-v1" &&
+      sealableItem.saleAuthorization?.anchorType === "sale-ticket-v1" &&
+      sealableItem.saleAuthorization?.anchorVout === 2 &&
+      sealableItem.saleAuthorization?.anchorValueSats === 546,
+    `${REPORTED_CONFIRMED_SEALABLE_LISTING_TX} has incomplete projected sale-ticket fields`,
+  );
+}
 const {
   elapsedMs: reportedDroppedListingMs,
   json: reportedDroppedListing,
@@ -2651,14 +2750,24 @@ for (const txid of [REPORTED_RECENT_WAITING_FOR_SEAL_LISTING_TX]) {
     `${txid} remained active in Carbonz wallet state after the Marketplace V2 cutover`,
   );
   const relic = listingById(carbonzTaprootWalletToken.closedListings, txid);
+  const refund = WORK_MARKET_V1_REFUND_LISTINGS_BY_ID.get(txid);
   assert(
-    relic?.relic === true &&
-      relic?.refundEligible === true &&
-      tokenListingHasConfirmedSeal(relic) &&
-      String(relic?.sealTxid ?? "").toLowerCase() ===
-        REPORTED_RECENT_WAITING_FOR_SEAL_SEAL_TX,
-    `${txid} is missing its confirmed pre-cutover seal in Carbonz wallet V1 relics`,
+    refund?.sealed === true &&
+      String(refund?.sealTxid ?? "").toLowerCase() ===
+        REPORTED_RECENT_WAITING_FOR_SEAL_SEAL_TX &&
+      refund?.sellerAddress === CARBONZ_TAPROOT_LISTING_ADDRESS,
+    `${txid} is missing its confirmed pre-cutover seal in the immutable V1 refund snapshot`,
   );
+  if (relic) {
+    assert(
+      relic.relic === true &&
+        relic.refundEligible === true &&
+        tokenListingHasConfirmedSeal(relic) &&
+        String(relic.sealTxid ?? "").toLowerCase() ===
+          REPORTED_RECENT_WAITING_FOR_SEAL_SEAL_TX,
+      `${txid} has incomplete projected Carbonz wallet V1 relic data`,
+    );
+  }
 }
 assert(
   !listingById(
@@ -2924,19 +3033,11 @@ assertActiveWorkListingsUseCanonicalVersion(
   workToken,
   "Fresh WORK token payload",
 );
-const workSummary = await getJson("/api/v1/work-summary", {
-  network: "livenet",
-  fresh: 1,
-});
-const workTokenSummary = await getJson("/api/v1/token-summary", {
-  network: "livenet",
-  asset: WORK_TOKEN_ID,
-  fresh: 1,
-});
-const growthSummary = await getJson("/api/v1/growth-summary", {
-  network: "livenet",
-  fresh: 1,
-});
+const alignedFreshSummaries = await convergedFreshCanonicalSummarySet();
+const workSummary = alignedFreshSummaries.work;
+const workTokenSummary = alignedFreshSummaries.token;
+const growthSummary = alignedFreshSummaries.growth;
+const alignedMarketplaceFreshSummary = alignedFreshSummaries.marketplace;
 const activeWorkListingCount = (workToken.listings ?? []).length;
 const workSummaryToken = (workSummary.token?.tokens ?? []).find(
   (item) => item?.tokenId === WORK_TOKEN_ID,
@@ -2961,14 +3062,15 @@ assert(
   `/api/v1/token-summary?asset=WORK&fresh=1 reports ${scopedSummaryToken?.openListings} open WORK listings, expected ${activeWorkListingCount}`,
 );
 assert(
-  workSummary.snapshotId === marketplaceFreshSummary.snapshotId &&
+  workSummary.snapshotId === alignedMarketplaceFreshSummary.snapshotId &&
+    workSummary.snapshotId === workTokenSummary.snapshotId &&
     workSummary.snapshotId === growthSummary.snapshotId,
-  `summary snapshot mismatch: work=${workSummary.snapshotId ?? "none"} marketplace=${marketplaceFreshSummary.snapshotId ?? "none"} growth=${growthSummary.snapshotId ?? "none"}`,
+  `summary snapshot mismatch: work=${workSummary.snapshotId ?? "none"} marketplace=${alignedMarketplaceFreshSummary.snapshotId ?? "none"} token=${workTokenSummary.snapshotId ?? "none"} growth=${growthSummary.snapshotId ?? "none"}`,
 );
 assert(
   numbersAgree(
     workSummary.floor?.networkValueSats,
-    marketplaceFreshSummary.workFloor?.networkValueSats,
+    alignedMarketplaceFreshSummary.workFloor?.networkValueSats,
   ) &&
     numbersAgree(
       workSummary.floor?.networkValueSats,
@@ -2978,18 +3080,18 @@ assert(
       workSummary.floor?.networkValueSats,
       growthSummary.actualValue?.totalSats,
     ),
-  `summary network value mismatch: work=${workSummary.floor?.networkValueSats} marketplace=${marketplaceFreshSummary.workFloor?.networkValueSats} growthFloor=${growthSummary.workFloor?.networkValueSats} growth=${growthSummary.actualValue?.totalSats}`,
+  `summary network value mismatch: work=${workSummary.floor?.networkValueSats} marketplace=${alignedMarketplaceFreshSummary.workFloor?.networkValueSats} growthFloor=${growthSummary.workFloor?.networkValueSats} growth=${growthSummary.actualValue?.totalSats}`,
 );
 assert(
   numbersAgree(
     workSummary.floor?.floorSats,
-    marketplaceFreshSummary.workFloor?.floorSats,
+    alignedMarketplaceFreshSummary.workFloor?.floorSats,
   ) &&
     numbersAgree(
       workSummary.floor?.floorSats,
       growthSummary.workFloor?.floorSats,
     ),
-  `WORK floor mismatch: work=${workSummary.floor?.floorSats} marketplace=${marketplaceFreshSummary.workFloor?.floorSats} growth=${growthSummary.workFloor?.floorSats}`,
+  `WORK floor mismatch: work=${workSummary.floor?.floorSats} marketplace=${alignedMarketplaceFreshSummary.workFloor?.floorSats} growth=${growthSummary.workFloor?.floorSats}`,
 );
 const confirmedSealedListings = (workToken.listings ?? []).filter(
   tokenListingHasConfirmedSeal,

@@ -6007,6 +6007,20 @@ const canonicalCatchUpError = new MarketplaceRegressionHttpError(
   },
 );
 assert.equal(isRetryableCanonicalReadError(canonicalCatchUpError), true);
+assert.equal(
+  isRetryableCanonicalReadError(
+    new MarketplaceRegressionHttpError(
+      "https://computer.proofofwork.me/api/v1/token",
+      503,
+      {
+        details: { code: "CANONICAL_WALLET_INDEX_UNAVAILABLE" },
+        error:
+          "Fresh wallet credit state is temporarily unavailable for WORK.",
+      },
+    ),
+  ),
+  true,
+);
 
 const canonicalHashA = "a".repeat(64);
 const canonicalHashB = "b".repeat(64);
