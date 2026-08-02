@@ -909,6 +909,73 @@ async function runChecks() {
     listingRows: [],
     transactionRows: pendingTransactionRows,
   });
+  const volatileRefreshedProjection =
+    workerWorkPrecisionPendingProjection({
+      balanceRows: [],
+      eventRows: pendingEventRows,
+      listingRows: [],
+      transactionRows: [{
+        ...pendingTransactionRows[0],
+        raw_tx: {
+          ...pendingTransactionRows[0].raw_tx,
+          fee: 1234,
+          indexedFrom: "mempool",
+          item: { refreshed: true },
+          statusObservation: {
+            observedAt: "2026-08-02T01:39:23.495Z",
+            status: "pending",
+          },
+          vin: [{ txid: "a".repeat(64), vout: 0 }],
+          vout: [{ value: 0.00000546 }],
+        },
+      }],
+    });
+  assert.deepEqual(
+    volatileRefreshedProjection,
+    pendingProjection,
+    "volatile transaction-envelope refreshes must not stale the exact WORK readiness projection",
+  );
+  const markerChangedProjection =
+    workerWorkPrecisionPendingProjection({
+      balanceRows: [],
+      eventRows: pendingEventRows,
+      listingRows: [],
+      transactionRows: [{
+        ...pendingTransactionRows[0],
+        raw_tx: {
+          ...pendingTransactionRows[0].raw_tx,
+          pendingWorkMintAttemptCount: 1,
+        },
+      }],
+    });
+  assert.equal(
+    pendingProjection.model,
+    "canonical-work-q16-pending-projection-v3",
+  );
+  assert.notEqual(
+    markerChangedProjection.transactions.sha256,
+    pendingProjection.transactions.sha256,
+    "every WORK inspection-marker mutation must invalidate the transaction readiness commitment",
+  );
+  for (const transactionMutation of [
+    { status: "dropped" },
+    { txid: "8".repeat(64) },
+  ]) {
+    const changedProjection = workerWorkPrecisionPendingProjection({
+      balanceRows: [],
+      eventRows: pendingEventRows,
+      listingRows: [],
+      transactionRows: [{
+        ...pendingTransactionRows[0],
+        ...transactionMutation,
+      }],
+    });
+    assert.notEqual(
+      changedProjection.transactions.sha256,
+      pendingProjection.transactions.sha256,
+      "transaction identity and relational status remain exact readiness inputs",
+    );
+  }
   const pendingParity = workerWorkPrecisionPendingParity({
     balanceRows: [],
     eventRows: pendingEventRows,

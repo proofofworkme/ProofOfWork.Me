@@ -1873,6 +1873,18 @@ the stable Core and exact relational audit commits. Any intervening pending
 state change makes the prior projection commitment disagree and closes
 readiness; a failed replacement explicitly publishes not-ready evidence.
 
+The pending transaction commitment uses
+`canonical-work-q16-pending-projection-v3`. It commits each member's canonical
+`txid`, relational `status`, and the five inspection fields
+`pendingProtocolResolvedInvalid`, `pendingWorkMintAttemptCount`,
+`pendingWorkMintInspectionVersion`, `pendingWorkMintRecoveryNeeded`, and
+`pendingWorkMintResolvedInvalid`. Volatile envelope metadata such as
+`indexedFrom`, raw carrier `item`, and `statusObservation.observedAt` is not a
+readiness input: its protocol meaning is already committed by the exact event,
+listing, membership, marker, and balance projections. A marker, status, txid,
+or protocol projection change still invalidates the witness immediately, while
+a routine observation-timestamp refresh cannot create a false readiness gap.
+
 The worker persists the full confirmed-plus-pending Q16 replay proof only in
 the completed cycle's `lastSuccess` envelope. The ordinary `starting`,
 `running`, and `canonical-phase-complete` states carry that envelope unchanged;

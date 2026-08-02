@@ -65,6 +65,10 @@ import {
   workPrecisionV2MarkerReady as sharedWorkPrecisionV2MarkerReady,
 } from "../server/work-precision-v2-marker.mjs";
 import {
+  WORK_Q16_PENDING_PROJECTION_MODEL,
+  workQ16PendingTransactionProjectionRows,
+} from "../server/work-q16-pending-projection.mjs";
+import {
   WORK_MARKET_V2_AUTH_VERSION,
   WORK_MARKET_V4_AUTH_VERSION,
 } from "../server/work-market-v2.mjs";
@@ -209,8 +213,6 @@ const WORK_Q16_PENDING_REBUILD_MODEL =
   "canonical-work-q16-pending-rebuild-v2";
 const WORK_Q16_PENDING_MEMPOOL_MODEL =
   "canonical-core-mempool-txid-set-v1";
-const WORK_Q16_PENDING_PROJECTION_MODEL =
-  "canonical-work-q16-pending-projection-v2";
 function canonicalWorkAmoV8ConfiguredInteger(
   value,
   { minimum = 0 } = {},
@@ -22515,7 +22517,9 @@ async function persistExactWorkQ16PendingWitness(
         count: transactionResult.rows.length,
         sha256: workQ16PendingCommitment(
           "TRANSACTIONS",
-          transactionResult.rows,
+          workQ16PendingTransactionProjectionRows(
+            transactionResult.rows,
+          ),
         ),
       },
     };

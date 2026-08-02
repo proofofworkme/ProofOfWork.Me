@@ -48,6 +48,10 @@ import {
   workPrecisionV2MarkerReady as sharedWorkPrecisionV2MarkerReady,
 } from "../work-precision-v2-marker.mjs";
 import {
+  WORK_Q16_PENDING_PROJECTION_MODEL,
+  workQ16PendingTransactionProjectionRows,
+} from "../work-q16-pending-projection.mjs";
+import {
   workPrecisionV2ConstraintAudit as sharedWorkPrecisionV2ConstraintAudit,
 } from "../work-precision-v2-schema.mjs";
 import {
@@ -288,8 +292,6 @@ const WORK_Q16_PENDING_REBUILD_MODEL =
   "canonical-work-q16-pending-rebuild-v2";
 const WORK_Q16_PENDING_MEMPOOL_MODEL =
   "canonical-core-mempool-txid-set-v1";
-const WORK_Q16_PENDING_PROJECTION_MODEL =
-  "canonical-work-q16-pending-projection-v2";
 const WORK_Q16_PENDING_WITNESS_MAX_AGE_MS = Math.min(
   10 * 60_000,
   Math.max(
@@ -4883,7 +4885,9 @@ export async function proofIndexWorkPrecisionV2MigrationReadiness(
         count: pendingTransactionResult.rows.length,
         sha256: workQ16PendingCommitment(
           "TRANSACTIONS",
-          pendingTransactionResult.rows,
+          workQ16PendingTransactionProjectionRows(
+            pendingTransactionResult.rows,
+          ),
         ),
       },
     };

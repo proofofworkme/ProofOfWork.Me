@@ -64,6 +64,10 @@ const workAmoV8WorkerReadiness = readFileSync(
   "server/work-amo-v8-worker-readiness.mjs",
   "utf8",
 );
+const workQ16PendingProjection = readFileSync(
+  "server/work-q16-pending-projection.mjs",
+  "utf8",
+);
 const workAmoV8Migration = readFileSync(
   "scripts/migrate-work-precision-v2.mjs",
   "utf8",
@@ -1375,6 +1379,19 @@ expect(
     /invalidLegacyResult[\s\S]*const stableCore =[\s\S]*const stableMempool = membership\.expectedTxids\.every[\s\S]*mempoolBeforeTxids\.has\(txid\)[\s\S]*mempoolAfterTxids\.has\(txid\)[\s\S]*workerWorkPrecisionPendingWitnessReady/u.test(
       worker,
     ),
+);
+expect(
+  "all Q16 readiness surfaces share the semantic transaction projection instead of volatile raw envelopes",
+  /canonical-work-q16-pending-projection-v3/u.test(
+    workQ16PendingProjection,
+  ) &&
+    /pendingProtocolResolvedInvalid[\s\S]*pendingWorkMintAttemptCount[\s\S]*pendingWorkMintInspectionVersion[\s\S]*pendingWorkMintRecoveryNeeded[\s\S]*pendingWorkMintResolvedInvalid/u.test(
+      workQ16PendingProjection,
+    ) &&
+    [backfillQ16PendingWitness, worker, readerPrecisionV2Readiness]
+      .every((source) =>
+        /workQ16PendingTransactionProjectionRows/u.test(source)
+      ),
 );
 for (const [surface, source] of [
   ["backfill pending witness", backfillQ16PendingWitness],

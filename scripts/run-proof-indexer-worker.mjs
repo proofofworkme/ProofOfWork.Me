@@ -29,6 +29,10 @@ import {
   workPrecisionV2MarkerReady as sharedWorkPrecisionV2MarkerReady,
 } from "../server/work-precision-v2-marker.mjs";
 import {
+  WORK_Q16_PENDING_PROJECTION_MODEL as WORK_AMO_V8_PENDING_PROJECTION_MODEL,
+  workQ16PendingTransactionProjectionRows,
+} from "../server/work-q16-pending-projection.mjs";
+import {
   workPrecisionV2ConstraintAudit as sharedWorkPrecisionV2ConstraintAudit,
 } from "../server/work-precision-v2-schema.mjs";
 import {
@@ -241,8 +245,6 @@ const WORK_AMO_V8_PENDING_REBUILD_MODEL =
   "canonical-work-q16-pending-rebuild-v2";
 const WORK_AMO_V8_PENDING_MEMPOOL_MODEL =
   "canonical-core-mempool-txid-set-v1";
-const WORK_AMO_V8_PENDING_PROJECTION_MODEL =
-  "canonical-work-q16-pending-projection-v2";
 const WORK_AMO_V8_PENDING_MEMPOOL_DOMAIN =
   "ProofOfWork.Me/WORK-Q16-PENDING-MEMPOOL/v1";
 const WORK_AMO_V8_PENDING_PROJECTION_DOMAIN_PREFIX =
@@ -1964,7 +1966,9 @@ export function workerWorkPrecisionPendingProjection({
     balances: Array.isArray(balanceRows) ? balanceRows : [],
     events: Array.isArray(eventRows) ? eventRows : [],
     listings: Array.isArray(listingRows) ? listingRows : [],
-    transactions: Array.isArray(transactionRows) ? transactionRows : [],
+    transactions: workQ16PendingTransactionProjectionRows(
+      transactionRows,
+    ),
   };
   const projectionParts = Object.fromEntries(
     Object.entries(rowSets).map(([key, rows]) => [
