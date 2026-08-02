@@ -62,6 +62,26 @@ const WORK_AMO_V5_MODELS = {
 };
 const WORK_AMO_V6_AUTH_VERSION = "pwt-sale-v6";
 const WORK_AMO_V6_ALLOWED_FACE_PROOFS = [20_000, 50_000, 100_000];
+const WORK_AMO_V8_AUTH_VERSION = "pwt-sale-v8";
+const WORK_AMO_V8_ALLOWED_FACE_PROOFS = [25_000];
+const WORK_AMO_V8_DECLARATION_TXID =
+  "f90e1faf572ef8253ca5959731b9d9e99c74bced4397380059878936712bee7a";
+const WORK_AMO_V8_DECLARATION_BLOCK_HASH =
+  "00000000000000000001ec938998cde4fd86ee6e3c672a6d3d95200cd8a984ac";
+const WORK_AMO_V8_DECLARATION_HEIGHT = 960_600;
+const WORK_AMO_V8_DECLARATION_BLOCK_INDEX = 2_369;
+const WORK_AMO_V8_DECLARATION_PROTOCOL_VOUT = 3;
+const WORK_AMO_V8_DECLARATION_RECORD_ORDINAL = 0;
+const WORK_AMO_V8_DECLARATION_REGISTRY_PAYMENT_VOUT = 4;
+const WORK_AMO_V8_DECLARATION_MEMO_SHA256 =
+  "1ba53b285f95f8d69f0272c8e75c76b09cd3bd26281c68e665749368e7694528";
+const WORK_AMO_V8_DECLARATION_MEMO_BYTES = 5_593;
+const WORK_AMO_V8_ACTIVATION_HEIGHT = 960_601;
+const WORK_AMO_V8_PRECISION = Object.freeze({
+  amountStorageModel: "work-subatoms-v2",
+  decimals: 16,
+  unitScale: "10000000000000000",
+});
 const WORK_AMO_V6_FIRST_LISTING_TX =
   "b259fa601676287eca2ea94c9142cd13b45fde7031ec98967f15306df6ef7936";
 const WORK_AMO_V6_FIRST_LISTING_BLOCK_HASH =
@@ -213,7 +233,7 @@ const REQUEST_RETRY_COUNT = Number(
 const ID_RECORD_MAX_MS = Number(
   process.env.MARKETPLACE_ID_RECORD_MAX_MS ?? 15_000,
 );
-const WORK_AMO_V5_CONVERGENCE_MAX_MS = Math.min(
+const WORK_AMO_CONVERGENCE_MAX_MS = Math.min(
   300_000,
   Math.max(
     1_000,
@@ -222,7 +242,7 @@ const WORK_AMO_V5_CONVERGENCE_MAX_MS = Math.min(
     ) || 180_000,
   ),
 );
-const WORK_AMO_V5_CONVERGENCE_POLL_MS = Math.min(
+const WORK_AMO_CONVERGENCE_POLL_MS = Math.min(
   10_000,
   Math.max(
     100,
@@ -400,7 +420,7 @@ async function requestJson(
 }
 
 const marketplaceCanonicalConvergenceBudget =
-  createCanonicalConvergenceBudget(WORK_AMO_V5_CONVERGENCE_MAX_MS);
+  createCanonicalConvergenceBudget(WORK_AMO_CONVERGENCE_MAX_MS);
 
 async function convergedFreshCanonicalJson(path, params, kind) {
   return waitForCanonicalConvergenceWithinBudget({
@@ -416,7 +436,7 @@ async function convergedFreshCanonicalJson(path, params, kind) {
       kind === "work-token"
         ? "WORK AMO canonical token readiness"
         : `fresh canonical ${path} readiness`,
-    pollIntervalMs: WORK_AMO_V5_CONVERGENCE_POLL_MS,
+    pollIntervalMs: WORK_AMO_CONVERGENCE_POLL_MS,
     read: ({ remainingMs }) =>
       requestJson(path, params, {
         canonicalErrorDetails: true,
@@ -773,7 +793,37 @@ function workAmoV6StatusFromPayload(payload, context = payload) {
   ].find((status) => status && typeof status === "object");
 }
 
+function workAmoV8StatusFromPayload(payload, context = payload) {
+  return [
+    context?.workAmoV8,
+    context?.floor?.workAmoV8,
+    context?.workFloor?.workAmoV8,
+    payload?.workAmoV8,
+  ].find((status) => status && typeof status === "object");
+}
+
+function workAmoV8IsAuthoritative(status) {
+  return (
+    status?.activation?.reached === true ||
+    status?.migrationReadiness?.active === true
+  );
+}
+
+function workAmoV8StatusIndexReady(status) {
+  return (
+    workAmoV8IsAuthoritative(status) &&
+    status?.version === WORK_AMO_V8_AUTH_VERSION &&
+    status?.indexReady === true &&
+    status?.ready === true &&
+    status?.migrationReadiness?.ready === true
+  );
+}
+
 function canonicalWorkAmoStatusIndexReady(payload) {
+  const v8 = workAmoV8StatusFromPayload(payload);
+  if (workAmoV8IsAuthoritative(v8)) {
+    return workAmoV8StatusIndexReady(v8);
+  }
   const v6 = workAmoV6StatusFromPayload(payload);
   return v6?.pinsConfigured === true
     ? v6.indexReady === true
@@ -781,6 +831,10 @@ function canonicalWorkAmoStatusIndexReady(payload) {
 }
 
 function isRetryableWorkAmoTipRacePayload(payload) {
+  const v8 = workAmoV8StatusFromPayload(payload);
+  if (workAmoV8IsAuthoritative(v8)) {
+    return !workAmoV8StatusIndexReady(v8);
+  }
   const v6 = workAmoV6StatusFromPayload(payload);
   return v6?.pinsConfigured === true && v6.indexReady !== true
     ? true
@@ -804,7 +858,7 @@ function isRetryableWorkAmoV5TipRacePayload(payload) {
   );
 }
 
-async function convergedWorkAmoV5Token({ fresh = true } = {}) {
+async function convergedWorkAmoToken({ fresh = true } = {}) {
   return getJson("/api/v1/token", {
     network: "livenet",
     asset: WORK_TOKEN_ID,
@@ -814,6 +868,9 @@ async function convergedWorkAmoV5Token({ fresh = true } = {}) {
 
 function assertWorkAmoV5Readiness(payload, label, context = payload) {
   const status = workAmoV5StatusFromPayload(payload, context);
+  const v8Authoritative = workAmoV8IsAuthoritative(
+    workAmoV8StatusFromPayload(payload, context),
+  );
   assert(status, `${label} is missing WORK AMO V5 status`);
   assert(
     status.active === true &&
@@ -840,6 +897,19 @@ function assertWorkAmoV5Readiness(payload, label, context = payload) {
     ),
     `${label} does not expose the exact AMO V5 model identifiers`,
   );
+  if (v8Authoritative) {
+    assert(
+      status.indexReady === false &&
+        status.protocolWritesEnabled === false &&
+        status.listingWritesEnabled === false &&
+        status.writesEnabled === false &&
+        status.quoteReady === false &&
+        status.quoteHead === null &&
+        status.reasonCode === "work-amo-v5-index-not-ready",
+      `${label} did not preserve V5 as closed historical evidence after V8 activation`,
+    );
+    return status;
+  }
   assert(
     status.indexReady === true,
     `${label} reports that canonical AMO V5 replay is not ready`,
@@ -961,6 +1031,109 @@ function assertWorkAmoV6Surface(payload, label, context = payload) {
         status.settlementWritesEnabled === false &&
         status.listingWritesEnabled === false,
       `${label} enabled V6 writes before exact activation evidence`,
+    );
+  }
+  return status;
+}
+
+function assertWorkAmoV8Surface(payload, label, context = payload) {
+  const status = workAmoV8StatusFromPayload(payload, context);
+  assert(status, `${label} is missing WORK AMO V8 status`);
+  const activation = status.activation;
+  const declaration = activation?.declaration;
+  const migration = status.migrationReadiness;
+  assert(
+    status.version === WORK_AMO_V8_AUTH_VERSION &&
+      workAmoV8IsAuthoritative(status) &&
+      activation?.active === true &&
+      activation?.canonical === true &&
+      activation?.confirmed === true &&
+      activation?.evidenceComplete === true &&
+      activation?.tipVerified === true &&
+      Number(activation?.activationHeight) === WORK_AMO_V8_ACTIVATION_HEIGHT,
+    `${label} does not expose authoritative WORK AMO V8 activation evidence`,
+  );
+  assert(
+    String(declaration?.txid ?? "").toLowerCase() ===
+        WORK_AMO_V8_DECLARATION_TXID &&
+      String(declaration?.blockHash ?? "").toLowerCase() ===
+        WORK_AMO_V8_DECLARATION_BLOCK_HASH &&
+      Number(declaration?.blockHeight) === WORK_AMO_V8_DECLARATION_HEIGHT &&
+      Number(declaration?.blockTransactionIndex) ===
+        WORK_AMO_V8_DECLARATION_BLOCK_INDEX &&
+      Number(declaration?.activationHeight) === WORK_AMO_V8_ACTIVATION_HEIGHT &&
+      Number(declaration?.protocolVout) ===
+        WORK_AMO_V8_DECLARATION_PROTOCOL_VOUT &&
+      Number(declaration?.recordOrdinal) ===
+        WORK_AMO_V8_DECLARATION_RECORD_ORDINAL &&
+      Number(declaration?.registryPaymentVout) ===
+        WORK_AMO_V8_DECLARATION_REGISTRY_PAYMENT_VOUT &&
+      String(declaration?.payloadSha256 ?? "").toLowerCase() ===
+        WORK_AMO_V8_DECLARATION_MEMO_SHA256 &&
+      Number(declaration?.payloadBytes) ===
+        WORK_AMO_V8_DECLARATION_MEMO_BYTES,
+    `${label} changed the exact confirmed WORK AMO V8 declaration`,
+  );
+  assert(
+    migration?.ready === true &&
+      migration?.active === true &&
+      migration?.canonical === true &&
+      migration?.confirmed === true &&
+      migration?.evidenceComplete === true &&
+      migration?.parityReady === true &&
+      migration?.replayReady === true &&
+      migration?.pendingReady === true &&
+      migration?.precision?.amountStorageModel ===
+        WORK_AMO_V8_PRECISION.amountStorageModel &&
+      Number(migration?.precision?.decimals) ===
+        WORK_AMO_V8_PRECISION.decimals &&
+      String(migration?.precision?.unitScale ?? "") ===
+        WORK_AMO_V8_PRECISION.unitScale,
+    `${label} does not expose exact ready Q16 migration and pending evidence`,
+  );
+  assert(
+    status.indexReady === true &&
+      status.migrationReady === true &&
+      status.precisionMigrationReady === true &&
+      status.ready === true &&
+      status.workerReadiness?.ready === true,
+    `${label} is not fully ready at the authoritative V8 tip`,
+  );
+  const writesEnabled = status.protocolWritesEnabled === true;
+  assert(
+    status.settlementWritesEnabled === writesEnabled &&
+      status.listingWritesEnabled === writesEnabled &&
+      status.writeAdmission === writesEnabled &&
+      status.writesConfigured === writesEnabled &&
+      (writesEnabled
+        ? String(status.reasonCode ?? "") === ""
+        : status.reasonCode === "work-amo-v8-writes-paused"),
+    `${label} does not preserve the single WORK AMO V8 write-gate invariant`,
+  );
+  assert(
+    status.relicCutover?.model ===
+        "canonical-work-amo-v8-preactivation-relic-cutover-v1" &&
+      Number(status.relicCutover?.count) === 23 &&
+      status.relicCutover?.items?.length === 23,
+    `${label} changed the exact 23-listing V8 relic cutover`,
+  );
+  if (/^[1-9][0-9]*$/u.test(String(status.networkValueBeforeQ8 ?? ""))) {
+    const observedFaces = Object.keys(status.estimates ?? {})
+      .map(Number)
+      .sort((left, right) => left - right);
+    assert(
+      JSON.stringify(observedFaces) ===
+        JSON.stringify(WORK_AMO_V8_ALLOWED_FACE_PROOFS),
+      `${label} does not expose the singleton 25,000-proof V8 face`,
+    );
+    const estimate = status.estimates?.["25000"];
+    assert(
+      estimate?.estimateOnly === true &&
+        Number(estimate?.unitFaceProofs) === 25_000 &&
+        String(estimate?.unitPriceSats) === "25000" &&
+        /^[1-9][0-9]*$/u.test(String(estimate?.unitAmountSubatoms ?? "")) &&
+        !("unitAmountAtoms" in estimate),
+      `${label} exposes an invalid or Q8-authoritative V8 unit estimate`,
     );
   }
   return status;
@@ -1196,6 +1369,10 @@ async function assertFirstWorkAmoV6ListingProjection(token) {
 }
 
 function expectedActiveWorkMarketVersion(payload, context = payload) {
+  const workAmoV8 = workAmoV8StatusFromPayload(payload, context);
+  if (workAmoV8IsAuthoritative(workAmoV8)) {
+    return WORK_AMO_V8_AUTH_VERSION;
+  }
   const workAmoV6 = workAmoV6StatusFromPayload(payload, context);
   if (
     workAmoV6?.activation?.active === true &&
@@ -1248,6 +1425,83 @@ function expectedActiveWorkMarketVersion(payload, context = payload) {
     : WORK_MARKET_V3_AUTH_VERSION;
 }
 
+function assertWorkAmoEraSelectionContract() {
+  const readyV6 = {
+    activation: { active: true },
+    indexReady: true,
+    pinsConfigured: true,
+    ready: true,
+    version: WORK_AMO_V6_AUTH_VERSION,
+  };
+  const reachedV8 = {
+    activation: { active: true, reached: true },
+    indexReady: false,
+    migrationReadiness: { active: true, ready: true },
+    ready: false,
+    version: WORK_AMO_V8_AUTH_VERSION,
+  };
+  const readyV8 = {
+    ...reachedV8,
+    indexReady: true,
+    ready: true,
+  };
+  const pinnedOnlyV8 = {
+    activation: { active: false, reached: false },
+    indexReady: false,
+    migrationReadiness: { active: false, ready: false },
+    pinsConfigured: true,
+    ready: false,
+    version: WORK_AMO_V8_AUTH_VERSION,
+  };
+  assert(
+    canonicalWorkAmoStatusIndexReady({
+      workAmoV6: readyV6,
+      workAmoV8: pinnedOnlyV8,
+    }),
+    "a merely pinned preactivation V8 status must retain V6 precedence",
+  );
+  assert(
+    !canonicalWorkAmoStatusIndexReady({
+      workAmoV6: readyV6,
+      workAmoV8: reachedV8,
+    }) &&
+      isRetryableWorkAmoTipRacePayload({
+        workAmoV6: readyV6,
+        workAmoV8: reachedV8,
+      }),
+    "authoritative but red V8 must not fall back to ready V6",
+  );
+  assert(
+    canonicalWorkAmoStatusIndexReady({
+      workAmoV6: { ...readyV6, indexReady: false },
+      workAmoV8: readyV8,
+    }) &&
+      !isRetryableWorkAmoTipRacePayload({
+        workAmoV6: { ...readyV6, indexReady: false },
+        workAmoV8: readyV8,
+      }),
+    "fully ready V8 must converge even though superseded V6 is closed",
+  );
+  assert(
+    !canonicalWorkAmoStatusIndexReady({
+      workAmoV6: readyV6,
+      workAmoV8: { ...readyV8, version: "pwt-sale-v8-invalid" },
+    }) &&
+      expectedActiveWorkMarketVersion({
+        workAmoV6: readyV6,
+        workAmoV8: { ...reachedV8, version: "" },
+      }) === WORK_AMO_V8_AUTH_VERSION,
+    "an authoritative malformed V8 status must fail closed in the V8 era",
+  );
+  assert(
+    expectedActiveWorkMarketVersion({ workAmoV6: readyV6 }) ===
+      WORK_AMO_V6_AUTH_VERSION,
+    "pre-V8 V6 active-version selection must remain intact",
+  );
+}
+
+assertWorkAmoEraSelectionContract();
+
 function assertActiveWorkListingsUseCanonicalVersion(
   payload,
   label,
@@ -1298,17 +1552,19 @@ function assertActiveWorkListingsUseCanonicalVersion(
 }
 
 function assertExactWorkV1Relics(payload, label) {
-  const relics = (payload?.closedListings ?? []).filter(
-    (listing) =>
-      listing?.relic === true &&
-      isLegacyWorkListing(listing),
+  const pinnedRows = (payload?.closedListings ?? []).filter(
+    (listing) => WORK_MARKET_V1_RELIC_IDS.has(
+      String(listing?.listingId ?? "").toLowerCase(),
+    ),
   );
   const actualIds = new Set(
-    relics.map((listing) => String(listing?.listingId ?? "").toLowerCase()),
+    pinnedRows.map((listing) =>
+      String(listing?.listingId ?? "").toLowerCase()
+    ),
   );
   assert(
-    relics.length === 94 && actualIds.size === 94,
-    `${label} returned ${relics.length} WORK V1 relic/refund rows across ${actualIds.size} unique listings, expected 94`,
+    pinnedRows.length === 94 && actualIds.size === 94,
+    `${label} preserved ${pinnedRows.length} pinned WORK V1 refund rows across ${actualIds.size} unique listings, expected 94`,
   );
   assert(
     actualIds.size === WORK_MARKET_V1_RELIC_IDS.size &&
@@ -1318,30 +1574,35 @@ function assertExactWorkV1Relics(payload, label) {
     `${label} WORK V1 relic membership does not match the pinned refund snapshot`,
   );
   assert(
-    relics.every((listing) => listing?.refundEligible === true),
-    `${label} returned a pinned WORK V1 relic that is not refund eligible`,
+    pinnedRows.every((listing) => isLegacyWorkListing(listing)),
+    `${label} changed the historical authorization version of a pinned WORK V1 refund row`,
   );
   assert(
     !actualIds.has(WORK_MARKET_V2_POST_ACTIVATION_LISTING_TX),
     `${label} incorrectly included the post-activation invalid listing in the V1 relic set`,
   );
   assert(
-    relics.every(
-      (listing) =>
-        listing?.status === "disabled" &&
-        Number(listing?.disabledAtBlockHeight) ===
-          WORK_MARKET_V2_ACTIVATION_HEIGHT &&
-        String(listing?.disabledByTxid ?? "").toLowerCase() ===
-          WORK_MARKET_V2_DECLARATION_TXID,
-    ),
-    `${label} returned a WORK V1 relic without the canonical cutover metadata`,
+    pinnedRows
+      .filter((listing) => listing?.relic === true)
+      .every(
+        (listing) =>
+          listing?.status === "disabled" &&
+          listing?.refundEligible === true &&
+          Number(listing?.disabledAtBlockHeight) ===
+            WORK_MARKET_V2_ACTIVATION_HEIGHT &&
+          String(listing?.disabledByTxid ?? "").toLowerCase() ===
+            WORK_MARKET_V2_DECLARATION_TXID,
+      ),
+    `${label} returned a projected WORK V1 relic without the canonical cutover metadata`,
   );
   const lateSealRelic = listingById(
-    relics,
+    pinnedRows,
     WORK_MARKET_V2_LATE_SEAL_LISTING_TX,
   );
   assert(
-    lateSealRelic?.sealConfirmed !== true &&
+    lateSealRelic?.relic === true &&
+      lateSealRelic?.refundEligible === true &&
+      lateSealRelic?.sealConfirmed !== true &&
       !String(lateSealRelic?.sealTxid ?? "").trim(),
     `${label} applied the post-activation seal to its pre-activation relic`,
   );
@@ -1388,7 +1649,7 @@ async function assertWorkMarketV2CutoverContract({
 } = {}) {
   const token =
     providedToken ??
-    (await convergedWorkAmoV5Token({
+    (await convergedWorkAmoToken({
       fresh,
     }));
   assertActiveWorkListingsUseCanonicalVersion(
@@ -1415,7 +1676,7 @@ async function assertWorkAmoV5CutoverContract({
 } = {}) {
   const token =
     providedToken ??
-    (await convergedWorkAmoV5Token({
+    (await convergedWorkAmoToken({
       fresh,
     }));
   assertWorkAmoV5Readiness(token, "/api/v1/token?asset=WORK");
@@ -1574,11 +1835,15 @@ async function runFastMarketplaceRegressionGate() {
     );
   });
 
+  await step("WORK AMO V8 Q16 activation and write gate", async () => {
+    await assertWorkAmoV8Surface(
+      cutoverToken,
+      "/api/v1/token?asset=WORK",
+    );
+  });
+
   await step("first confirmed WORK AMO V6 listing lifecycle", async () => {
-    const status = workAmoV6StatusFromPayload(cutoverToken);
-    if (status?.activation?.active === true && status?.ready === true) {
-      await assertFirstWorkAmoV6ListingProjection(cutoverToken);
-    }
+    await assertFirstWorkAmoV6ListingProjection(cutoverToken);
   });
 
   await step("active and closed WORK listing truth", async () => {
@@ -1847,6 +2112,11 @@ await assertWorkAmoV6Surface(
   workCutoverToken,
   "/api/v1/token?asset=WORK",
 );
+await assertWorkAmoV8Surface(
+  workCutoverToken,
+  "/api/v1/token?asset=WORK",
+);
+await assertFirstWorkAmoV6ListingProjection(workCutoverToken);
 
 const activeListing = await tokenHistory("listings", { q: LISTING_TX });
 assert(

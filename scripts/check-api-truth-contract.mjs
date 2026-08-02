@@ -45,6 +45,10 @@ const server = readFileSync("server/proof-api.mjs", "utf8");
 const reader = readFileSync("server/db/proof-index-reader.mjs", "utf8");
 const backfill = readFileSync("scripts/backfill-proof-indexer.mjs", "utf8");
 const worker = readFileSync("scripts/run-proof-indexer-worker.mjs", "utf8");
+const marketplaceRegressions = readFileSync(
+  "scripts/check-marketplace-regressions.mjs",
+  "utf8",
+);
 const workAmoV5 = readFileSync("server/work-amo-v5.mjs", "utf8");
 const workAmoV6 = readFileSync("server/work-amo-v6.mjs", "utf8");
 const workAmoV6Migration = readFileSync(
@@ -56,6 +60,10 @@ const workAmoV6DeclarationBuilder = readFileSync(
   "utf8",
 );
 const workAmoV8 = readFileSync("server/work-amo-v8.mjs", "utf8");
+const workAmoV8WorkerReadiness = readFileSync(
+  "server/work-amo-v8-worker-readiness.mjs",
+  "utf8",
+);
 const workAmoV8Migration = readFileSync(
   "scripts/migrate-work-precision-v2.mjs",
   "utf8",
@@ -1399,6 +1407,40 @@ expect(
   /runCanonicalBeforePending\([\s\S]*runBackfillPhase\(backfillPhases\[0\]\)[\s\S]*pendingStatus = await refreshPendingStatusesSafely\(\);[\s\S]*runBackfillPhase\(backfillPhases\[1\]\)[\s\S]*assertWorkPrecisionPendingReady/u.test(
     worker,
   ),
+);
+expect(
+  "normal worker phases preserve and consume only the last fully successful Q16 proof",
+  /const currentSuccess = \{[\s\S]*workPrecision: runtime\.workPrecision[\s\S]*lastSuccess: currentSuccess/u.test(
+    worker,
+  ) &&
+    /canonicalPhase,[\s\S]*lastSuccess,[\s\S]*lastSuccessAt: lastSuccess\?\.finishedAt \?\? null[\s\S]*state: "canonical-phase-complete"/u.test(
+      worker,
+    ) &&
+    !/lastSuccess: canonicalSuccess/u.test(worker) &&
+    /WORK_AMO_V8_TRANSIENT_WORKER_STATES[\s\S]*"canonical-phase-complete"[\s\S]*"running"[\s\S]*"starting"/u.test(
+      workAmoV8WorkerReadiness,
+    ) &&
+    /lastSuccess\.workPrecision[\s\S]*durableReplay\.ready === true[\s\S]*replay\.tipHeight === tipHeight[\s\S]*replay\.tipHash === normalizedHash\(tipHash\)/u.test(
+      workAmoV8WorkerReadiness,
+    ) &&
+    /idleProofReady[\s\S]*replayCommitmentsEqual\(currentReplay, durableReplay\)/u.test(
+      workAmoV8WorkerReadiness,
+    ),
+);
+expect(
+  "marketplace deployment convergence selects authoritative V8 before historical V6 and V5",
+  /function workAmoV8IsAuthoritative[\s\S]*activation\?\.reached === true[\s\S]*migrationReadiness\?\.active === true/u.test(
+    marketplaceRegressions,
+  ) &&
+    /function canonicalWorkAmoStatusIndexReady[\s\S]*workAmoV8IsAuthoritative\(v8\)[\s\S]*workAmoV8StatusIndexReady\(v8\)[\s\S]*workAmoV6StatusFromPayload/u.test(
+      marketplaceRegressions,
+    ) &&
+    /function expectedActiveWorkMarketVersion[\s\S]*workAmoV8IsAuthoritative\(workAmoV8\)[\s\S]*return WORK_AMO_V8_AUTH_VERSION[\s\S]*workAmoV6StatusFromPayload/u.test(
+      marketplaceRegressions,
+    ) &&
+    /assertWorkAmoEraSelectionContract\(\)/u.test(
+      marketplaceRegressions,
+    ),
 );
 expect(
   "backfill and worker share one durable Q16 pending witness key and model",

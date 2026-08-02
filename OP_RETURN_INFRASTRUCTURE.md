@@ -1867,6 +1867,17 @@ maintenance runs second, and the isolated mempool backfill publishes the final
 pending witness last. No status-maintenance mutation may occur between that
 witness and its readiness audit.
 
+The worker persists the full confirmed-plus-pending Q16 replay proof only in
+the completed cycle's `lastSuccess` envelope. The ordinary `starting`,
+`running`, and `canonical-phase-complete` states carry that envelope unchanged;
+the confirmed-only phase is reported separately and cannot relabel itself as a
+success. During those three healthy in-progress states the API may use the
+durable proof only while it still binds the live Core tip and the current
+migration witness membership and projection commitments. A missing proof, a
+changed tip, stale or mismatched witness, or any explicit failed worker state
+keeps V8 closed. This preserves continuous availability during normal cycles
+without weakening exact-tip or fail-closed readiness.
+
 The raw mint remains `pwt1:mint:<canonical-work-token-id>:1000`, crediting
 `100000000000` Q8 atoms before activation and
 `10000000000000000000` Q16 subatoms from activation. New WORK transfers use

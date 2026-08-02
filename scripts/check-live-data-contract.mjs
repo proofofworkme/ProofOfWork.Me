@@ -5,6 +5,10 @@ const electrumClient = readFileSync("server/electrum-client.mjs", "utf8");
 const proofIndexReader = readFileSync("server/db/proof-index-reader.mjs", "utf8");
 const proofIndexerBackfill = readFileSync("scripts/backfill-proof-indexer.mjs", "utf8");
 const proofIndexerWorker = readFileSync("scripts/run-proof-indexer-worker.mjs", "utf8");
+const marketplaceRegressions = readFileSync(
+  "scripts/check-marketplace-regressions.mjs",
+  "utf8",
+);
 const proofIndexerWorkerService = readFileSync(
   "deploy/proofofwork-indexer-worker.service",
   "utf8",
@@ -28,6 +32,10 @@ const workAmoV6Migration = readFileSync(
   "utf8",
 );
 const workAmoV8Core = readFileSync("server/work-amo-v8.mjs", "utf8");
+const workAmoV8WorkerReadiness = readFileSync(
+  "server/work-amo-v8-worker-readiness.mjs",
+  "utf8",
+);
 const workAmoV8Migration = readFileSync(
   "scripts/migrate-work-precision-v2.mjs",
   "utf8",
@@ -1824,6 +1832,26 @@ expectAll(
     /pendingRequired: true,[\s\S]*ready: false,[\s\S]*state: "canonical-phase-complete"/,
     /runCanonicalBeforePending\([\s\S]*runBackfillPhase\(backfillPhases\[0\]\)[\s\S]*pendingStatus = await refreshPendingStatusesSafely\(\);[\s\S]*runBackfillPhase\(backfillPhases\[1\]\)/,
     /await assertWorkPrecisionPendingReady\([\s\S]*pendingRebuild:[\s\S]*ready: workPrecisionReplay\.ready === true/,
+  ],
+);
+expectAll(
+  "AMO V8 readiness remains available through healthy worker phases without accepting failed state",
+  `${proofIndexerWorker}\n${workAmoV8WorkerReadiness}`,
+  [
+    /const currentSuccess = \{[\s\S]*workPrecision: runtime\.workPrecision[\s\S]*lastSuccess: currentSuccess/,
+    /canonicalPhase,[\s\S]*lastSuccess,[\s\S]*state: "canonical-phase-complete"/,
+    /WORK_AMO_V8_TRANSIENT_WORKER_STATES[\s\S]*"canonical-phase-complete"[\s\S]*"running"[\s\S]*"starting"/,
+    /lastSuccess\.workPrecision[\s\S]*stateReady[\s\S]*durableReplay\.ready === true[\s\S]*replay\.tipHash === normalizedHash\(tipHash\)/,
+  ],
+);
+expectAll(
+  "marketplace deploy checks converge on authoritative V8 while preserving legacy history audits",
+  marketplaceRegressions,
+  [
+    /function canonicalWorkAmoStatusIndexReady[\s\S]*workAmoV8IsAuthoritative\(v8\)[\s\S]*workAmoV8StatusIndexReady\(v8\)[\s\S]*workAmoV6StatusFromPayload/,
+    /function isRetryableWorkAmoTipRacePayload[\s\S]*workAmoV8IsAuthoritative\(v8\)[\s\S]*!workAmoV8StatusIndexReady\(v8\)/,
+    /function assertWorkAmoV8Surface[\s\S]*WORK_AMO_V8_PRECISION[\s\S]*WORK_AMO_V8_ALLOWED_FACE_PROOFS/,
+    /assertWorkAmoV5CutoverContract[\s\S]*assertWorkAmoV6Surface[\s\S]*assertWorkAmoV8Surface/,
   ],
 );
 expectAll(

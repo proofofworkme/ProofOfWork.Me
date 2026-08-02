@@ -206,6 +206,9 @@ import {
   workAmoV8DeclarationCommitment,
 } from "./work-amo-v8-declaration.mjs";
 import {
+  exactWorkAmoV8WorkerReadiness,
+} from "./work-amo-v8-worker-readiness.mjs";
+import {
   tokenListingCanProjectCloseActivity,
 } from "./token-listing-lifecycle.mjs";
 import {
@@ -8476,95 +8479,6 @@ function workQ16PendingMembershipSnapshotReady(
       String(snapshot.sha256 ?? "").trim().toLowerCase() === sha256 &&
       canonicalTxids.every((txid) => live.has(txid))
   );
-}
-
-function exactWorkAmoV8WorkerReadiness(
-  operationalStatus,
-  { liveMempoolSnapshot, network, tipHash, tipHeight },
-) {
-  const worker =
-    operationalStatus?.worker &&
-    typeof operationalStatus.worker === "object" &&
-    !Array.isArray(operationalStatus.worker)
-      ? operationalStatus.worker
-      : {};
-  const workPrecision =
-    worker?.workPrecision &&
-    typeof worker.workPrecision === "object" &&
-    !Array.isArray(worker.workPrecision)
-      ? worker.workPrecision
-      : {};
-  const replay =
-    workPrecision?.replay &&
-    typeof workPrecision.replay === "object" &&
-    !Array.isArray(workPrecision.replay)
-      ? workPrecision.replay
-      : {};
-  const workerFinishedAt = String(worker.finishedAt ?? "");
-  const workerLastSuccessAt = String(worker.lastSuccessAt ?? "");
-  const nestedLastSuccessAt = String(
-    worker?.lastSuccess?.finishedAt ?? "",
-  );
-  const replayTipHash = String(replay.tipHash ?? "");
-  const replayMempoolSha256 = String(
-    replay.mempoolSha256 ?? "",
-  );
-  const replayPendingMembershipCount = replay.pendingMembershipCount;
-  const replayPendingMembershipSha256 = String(
-    replay.pendingMembershipSha256 ?? "",
-  );
-  const replayPendingProjectionSha256 = String(
-    replay.pendingProjectionSha256 ?? "",
-  );
-  const successIdentityReady =
-    workerFinishedAt.length > 0 &&
-    workerFinishedAt === workerLastSuccessAt &&
-    workerFinishedAt === nestedLastSuccessAt;
-  const ready =
-    operationalStatus?.network === network &&
-    worker.network === network &&
-    worker.ok === true &&
-    worker.state === "idle" &&
-    successIdentityReady &&
-    workPrecision.era === "q16" &&
-    replay.era === "q16" &&
-    replay.ready === true &&
-    replay.replayRequired === true &&
-    Number.isSafeInteger(replay.tipHeight) &&
-    replay.tipHeight === tipHeight &&
-    /^[0-9a-f]{64}$/u.test(replayTipHash) &&
-    replayTipHash === tipHash &&
-    liveMempoolSnapshot?.model ===
-      "canonical-core-mempool-txid-set-v1" &&
-    Number.isSafeInteger(replay.mempoolCount) &&
-    replay.mempoolCount >= 0 &&
-    /^[0-9a-f]{64}$/u.test(replayMempoolSha256) &&
-    Number.isSafeInteger(replayPendingMembershipCount) &&
-    replayPendingMembershipCount >= 0 &&
-    /^[0-9a-f]{64}$/u.test(replayPendingMembershipSha256) &&
-    /^[0-9a-f]{64}$/u.test(replayPendingProjectionSha256);
-  return {
-    era: String(workPrecision.era ?? ""),
-    finishedAt: workerFinishedAt,
-    mempoolCount: Number.isSafeInteger(
-      replay.mempoolCount,
-    )
-      ? replay.mempoolCount
-      : null,
-    mempoolSha256: replayMempoolSha256,
-    pendingMembershipCount:
-      Number.isSafeInteger(replayPendingMembershipCount)
-        ? replayPendingMembershipCount
-        : null,
-    pendingMembershipSha256: replayPendingMembershipSha256,
-    pendingProjectionSha256: replayPendingProjectionSha256,
-    ready,
-    state: String(worker.state ?? ""),
-    tipHash: replayTipHash,
-    tipHeight: Number.isSafeInteger(replay.tipHeight)
-      ? replay.tipHeight
-      : null,
-  };
 }
 
 async function workAmoV8Metadata(

@@ -4818,7 +4818,7 @@ async function runCycle(pool, lastSuccess, runtime) {
   }
   let canonicalProgress = null;
   let clearedNoProgress = noProgress;
-  let canonicalSuccess = lastSuccess;
+  let canonicalPhase = null;
   let pendingBackfill = {
     attempted: false,
     error: null,
@@ -4929,7 +4929,7 @@ async function runCycle(pool, lastSuccess, runtime) {
     );
     runtime.noProgress = clearedNoProgress;
     const canonicalFinishedAt = new Date();
-    canonicalSuccess = {
+    canonicalPhase = {
       durationMs: canonicalFinishedAt.getTime() - startedAt.getTime(),
       finishedAt: canonicalFinishedAt.toISOString(),
       pendingStatus: lastSuccess?.pendingStatus ?? null,
@@ -4938,10 +4938,11 @@ async function runCycle(pool, lastSuccess, runtime) {
     await writeWorkerMeta(pool, {
       apiBase: API_BASE,
       backfillPhase: phase.kind,
+      canonicalPhase,
       canonicalProgress,
       consecutiveFailures: 0,
-      lastSuccess: canonicalSuccess,
-      lastSuccessAt: canonicalSuccess.finishedAt,
+      lastSuccess,
+      lastSuccessAt: lastSuccess?.finishedAt ?? null,
       network: runtime.network,
       noProgress: clearedNoProgress,
       ok: workPrecisionReplay.ready === true,
@@ -5089,6 +5090,7 @@ async function runCycle(pool, lastSuccess, runtime) {
     finishedAt: finishedAt.toISOString(),
     pendingStatus,
     startedAt: startedAt.toISOString(),
+    workPrecision: runtime.workPrecision,
   };
   const value = {
     apiBase: API_BASE,

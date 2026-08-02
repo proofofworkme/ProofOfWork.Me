@@ -195,6 +195,21 @@ async function runChecks() {
   );
   assert.match(
     workerSource,
+    /const currentSuccess = \{[\s\S]*workPrecision: runtime\.workPrecision[\s\S]*lastSuccess: currentSuccess/u,
+    "a completed worker cycle must persist its full Q16 proof under lastSuccess",
+  );
+  assert.match(
+    workerSource,
+    /canonicalPhase,[\s\S]*lastSuccess,[\s\S]*lastSuccessAt: lastSuccess\?\.finishedAt \?\? null[\s\S]*state: "canonical-phase-complete"/u,
+    "the confirmed-only phase must preserve the prior completed-cycle proof",
+  );
+  assert.doesNotMatch(
+    workerSource,
+    /lastSuccess: canonicalSuccess/u,
+    "a confirmed-only phase must never relabel itself as the completed Q16 proof",
+  );
+  assert.match(
+    workerSource,
     /getblockchaininfo[\s\S]*getblockhash[\s\S]*Core tip changed across the Q16 relational replay audit/u,
     "Q16 replay must remain bracketed by stable first-party Core tip evidence",
   );
