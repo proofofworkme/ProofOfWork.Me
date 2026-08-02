@@ -1878,11 +1878,14 @@ the completed cycle's `lastSuccess` envelope. The ordinary `starting`,
 `running`, and `canonical-phase-complete` states carry that envelope unchanged;
 the confirmed-only phase is reported separately and cannot relabel itself as a
 success. During those three healthy in-progress states the API may use the
-durable proof only while it still binds the live Core tip and the current
-migration witness membership and projection commitments. A missing proof, a
-changed tip, stale or mismatched witness, or any explicit failed worker state
-keeps V8 closed. This preserves continuous availability during normal cycles
-without weakening exact-tip or fail-closed readiness.
+durable proof only while it still binds the live Core tip. The reader's current
+transactional migration proof independently owns pending membership and
+projection readiness, so a newly committed exact pending witness does not have
+to equal the prior cycle's diagnostic pending hashes. A missing worker proof,
+changed tip, stale or invalid reader witness, missing live member, or any
+explicit failed worker state keeps V8 closed. This preserves continuous
+availability during normal cycles without weakening exact-tip or fail-closed
+readiness.
 
 The raw mint remains `pwt1:mint:<canonical-work-token-id>:1000`, crediting
 `100000000000` Q8 atoms before activation and

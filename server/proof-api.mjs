@@ -8781,20 +8781,7 @@ async function workAmoV8Metadata(
       .toLowerCase() === tipHash &&
     migrationReadiness?.pendingReady === true &&
     workerReadiness.ready === true &&
-    pendingMembershipLive &&
-    workerReadiness.pendingMembershipCount ===
-      pendingMembershipSnapshot?.count &&
-    workerReadiness.pendingMembershipSha256 ===
-      String(pendingMembershipSnapshot?.sha256 ?? "")
-        .trim()
-        .toLowerCase() &&
-    workerReadiness.pendingProjectionSha256 ===
-      String(
-        migrationReadiness?.pendingWitness?.projection
-          ?.commitmentSha256 ?? "",
-      )
-        .trim()
-        .toLowerCase();
+    pendingMembershipLive;
   const combinedEvidence = evidence
     ? {
         ...evidence,

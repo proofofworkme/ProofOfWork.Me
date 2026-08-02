@@ -1849,6 +1849,18 @@ expectAll(
     /lastSuccess\.workPrecision[\s\S]*stateReady[\s\S]*durableReplay\.ready === true[\s\S]*replay\.tipHash === normalizedHash\(tipHash\)/,
   ],
 );
+expect(
+  "AMO V8 combines one exact-tip worker proof with the independently current reader pending witness",
+  /const indexReady =[\s\S]*migrationReadiness\?\.pendingReady === true &&[\s\S]*workerReadiness\.ready === true &&[\s\S]*pendingMembershipLive;/.test(
+    server,
+  ) &&
+    !/workerReadiness\.pendingMembershipCount ===[\s\S]*pendingMembershipSnapshot\?\.count/.test(
+      server,
+    ) &&
+    !/workerReadiness\.pendingProjectionSha256 ===[\s\S]*migrationReadiness\?\.pendingWitness/.test(
+      server,
+    ),
+);
 expectAll(
   "marketplace deploy checks converge on authoritative V8 while preserving legacy history audits",
   marketplaceRegressions,

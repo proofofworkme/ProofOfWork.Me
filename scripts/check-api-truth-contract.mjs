@@ -1448,6 +1448,18 @@ expect(
     ),
 );
 expect(
+  "V8 readiness keeps completed-worker and current-reader pending proofs independent at one Core tip",
+  /const indexReady =[\s\S]*migrationReadiness\?\.pendingReady === true &&[\s\S]*workerReadiness\.ready === true &&[\s\S]*pendingMembershipLive;/u.test(
+    server,
+  ) &&
+    !/workerReadiness\.pendingMembershipCount ===[\s\S]*pendingMembershipSnapshot\?\.count/u.test(
+      server,
+    ) &&
+    !/workerReadiness\.pendingProjectionSha256 ===[\s\S]*migrationReadiness\?\.pendingWitness/u.test(
+      server,
+    ),
+);
+expect(
   "marketplace deployment convergence selects authoritative V8 before historical V6 and V5",
   /function workAmoV8IsAuthoritative[\s\S]*activation\?\.reached === true[\s\S]*migrationReadiness\?\.active === true/u.test(
     marketplaceRegressions,
