@@ -185,6 +185,16 @@ async function runChecks() {
   );
   assert.match(
     workerSource,
+    /transition\.work_token_state_model <> \$4[\s\S]*transition\.payload->>'workTokenStateModel'\s*IS DISTINCT FROM \$4/u,
+    "V8 replay must bind both the transition column and top-level payload token-state model",
+  );
+  assert.doesNotMatch(
+    workerSource,
+    /transition\.payload->'closingTokenState'\s*->>'model'\s*IS DISTINCT FROM \$4/u,
+    "the canonical bare closingTokenState preimage must not be required to duplicate its top-level model",
+  );
+  assert.match(
+    workerSource,
     /getblockchaininfo[\s\S]*getblockhash[\s\S]*Core tip changed across the Q16 relational replay audit/u,
     "Q16 replay must remain bracketed by stable first-party Core tip evidence",
   );

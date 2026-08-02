@@ -2707,8 +2707,8 @@ async function assertWorkPrecisionReplayReady(pool, precision) {
                 OR transition.payload->'closingSufficientState'
                      ->'tokenStateCommitment'->>'model'
                   IS DISTINCT FROM $7
-                OR transition.payload->'closingTokenState'
-                     ->>'model' IS DISTINCT FROM $4
+                OR transition.payload->>'workTokenStateModel'
+                  IS DISTINCT FROM $4
                 OR (
                   transition.block_height = $2
                   AND transition.previous_block_hash <> $12
@@ -2967,17 +2967,20 @@ async function assertWorkPrecisionReplayReady(pool, precision) {
       tipHeight,
       transitionCount: row.transition_count,
     });
+  const relationalParityReady = workerWorkPrecisionRelationalParity({
+    balanceRows: balanceResult.rows,
+    closingTokenState,
+    listingRows: listingResult.rows,
+  });
   const ready =
     replayEnvelopeReady &&
     commitmentReady &&
-    workerWorkPrecisionRelationalParity({
-      balanceRows: balanceResult.rows,
-      closingTokenState,
-      listingRows: listingResult.rows,
-    });
+    relationalParityReady;
   if (!ready) {
     throw new Error(
-      "Proof index worker is fail-closed until AMO V8 has exact activation-to-tip replay, Q16 relational parity, and a post-migration current snapshot.",
+      "Proof index worker is fail-closed until AMO V8 has exact activation-to-tip replay, Q16 relational parity, and a post-migration current snapshot " +
+        `(envelope=${replayEnvelopeReady}, commitment=${commitmentReady}, ` +
+        `relational=${relationalParityReady}, invalidTransitions=${Number(row.invalid_transition_count)}).`,
     );
   }
   return {

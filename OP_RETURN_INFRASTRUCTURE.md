@@ -1839,6 +1839,14 @@ and immutable V8 listing terms). Historical V5/V6 transition audits retain
 their original Q8 commitment path; a generic outer commitment cannot choose
 the precision lane without the transition's explicit token-state model.
 
+The canonical V8 transition records `workTokenStateModel` at the transition
+payload root and in the indexed `work_token_state_model` column. Its
+`closingTokenState` remains the bare committed preimage—amount storage model,
+confirmed supply, holders, and listings—without a duplicate nested `model`
+field. Worker replay validates both authoritative model locations and then
+recomputes the bare preimage commitment; it must not reject or rewrite valid
+transitions because that nested duplicate is absent.
+
 The raw mint remains `pwt1:mint:<canonical-work-token-id>:1000`, crediting
 `100000000000` Q8 atoms before activation and
 `10000000000000000000` Q16 subatoms from activation. New WORK transfers use

@@ -1806,7 +1806,14 @@ expectAll(
     /previous_transition\.closing_state_sha256 <>[\s\S]*transition\.opening_state_sha256/,
     /workerWorkPrecisionSnapshotReady[\s\S]*consistencyStatus === "green"[\s\S]*WORK_SUBATOM_PROJECTION_MODEL/,
     /workerWorkPrecisionRelationalParity\(\{[\s\S]*balanceRows: balanceResult\.rows[\s\S]*listingRows: listingResult\.rows/,
+    /transition\.work_token_state_model <> \$4[\s\S]*transition\.payload->>'workTokenStateModel'\s*IS DISTINCT FROM \$4/,
   ],
+);
+expect(
+  "AMO V8 worker does not require a duplicate model inside the canonical bare closingTokenState preimage",
+  !/transition\.payload->'closingTokenState'\s*->>'model'\s*IS DISTINCT FROM \$4/.test(
+    proofIndexerWorker,
+  ),
 );
 expectAll(
   "AMO V8 worker never publishes ready before the backfill-owned pending witness is exact",

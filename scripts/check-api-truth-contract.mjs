@@ -1310,6 +1310,15 @@ expect(
     ),
 );
 expect(
+  "worker Q16 readiness validates the canonical top-level token-state model without mutating the bare closing preimage",
+  /transition\.work_token_state_model <> \$4[\s\S]*transition\.payload->>'workTokenStateModel'\s*IS DISTINCT FROM \$4/u.test(
+    worker,
+  ) &&
+    !/transition\.payload->'closingTokenState'\s*->>'model'\s*IS DISTINCT FROM \$4/u.test(
+      worker,
+    ),
+);
+expect(
   "worker Q16 readiness binds all snapshot hashes and model before full relational parity",
   /jsonb_build_object\([\s\S]*'consistencyStatus'[\s\S]*'payloadBlockHash'[\s\S]*'sourceBlockHash'[\s\S]*'summaryBlockHash'[\s\S]*'workAmountStorageModel'[\s\S]*WORK_SUBATOM_PROJECTION_MODEL/u.test(
     worker,
