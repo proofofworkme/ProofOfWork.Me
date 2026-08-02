@@ -15537,7 +15537,12 @@ check("same-height pending membership versions the canonical Log snapshot", asyn
   const runCycleSource = topLevelFunctionSource(WORKER_PATH, "runCycle");
   assert.match(
     runCycleSource,
-    /runCanonicalBeforePending\([\s\S]*runBackfillPhase\(backfillPhases\[0\]\)[\s\S]*runBackfillPhase\(backfillPhases\[1\]\)[\s\S]*pendingStatus = await refreshPendingStatuses\(pool\);/u,
+    /runCanonicalBeforePending\([\s\S]*runBackfillPhase\(backfillPhases\[0\]\)[\s\S]*pendingStatus = await refreshPendingStatusesSafely\(\);[\s\S]*runBackfillPhase\(backfillPhases\[1\]\)/u,
+  );
+  assert.doesNotMatch(
+    runCycleSource,
+    /async \(\) => \{\s*await runBackfillPhase\(backfillPhases\[1\]\);\s*pendingStatus = await refreshPendingStatusesSafely\(\);/u,
+    "pending status maintenance must not stale the final Q16 pending witness",
   );
 });
 

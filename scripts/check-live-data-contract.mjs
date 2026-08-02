@@ -1822,6 +1822,7 @@ expectAll(
     /export function workerWorkPrecisionPendingWitnessReady[\s\S]*witness\.ready === true[\s\S]*WORK_SUBATOM_PROJECTION_MODEL[\s\S]*canonicalWorkerMempoolSnapshot/,
     /async function assertWorkPrecisionPendingReady[\s\S]*stableCore[\s\S]*stableMempool[\s\S]*workerWorkPrecisionPendingWitnessReady/,
     /pendingRequired: true,[\s\S]*ready: false,[\s\S]*state: "canonical-phase-complete"/,
+    /runCanonicalBeforePending\([\s\S]*runBackfillPhase\(backfillPhases\[0\]\)[\s\S]*pendingStatus = await refreshPendingStatusesSafely\(\);[\s\S]*runBackfillPhase\(backfillPhases\[1\]\)/,
     /await assertWorkPrecisionPendingReady\([\s\S]*pendingRebuild:[\s\S]*ready: workPrecisionReplay\.ready === true/,
   ],
 );

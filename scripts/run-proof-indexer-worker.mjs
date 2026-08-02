@@ -4825,6 +4825,7 @@ async function runCycle(pool, lastSuccess, runtime) {
     ok: null,
     timedOut: null,
   };
+  let pendingStatus = null;
   let workPrecisionReplay = {
     era: workPrecision.era,
     ready: workPrecision.era !== WORK_PRECISION_Q16_ERA,
@@ -4949,6 +4950,26 @@ async function runCycle(pool, lastSuccess, runtime) {
       workPrecision: runtime.workPrecision,
     });
   };
+  const refreshPendingStatusesSafely = async () => {
+    try {
+      return await refreshPendingStatuses(pool);
+    } catch (error) {
+      const failedStatus = {
+        checked: 0,
+        deferred: 0,
+        error: cappedChildError(error?.message ?? error),
+        errors: 1,
+        unavailable: true,
+      };
+      console.error(
+        JSON.stringify({
+          error: failedStatus.error,
+          phase: "pending-status-scheduling",
+        }),
+      );
+      return failedStatus;
+    }
+  };
   if (
     backfillPhases.length === 2 &&
     backfillPhases[0]?.kind === "confirmed" &&
@@ -4956,12 +4977,16 @@ async function runCycle(pool, lastSuccess, runtime) {
   ) {
     await runCanonicalBeforePending(
       () => runBackfillPhase(backfillPhases[0]),
-      () => runBackfillPhase(backfillPhases[1]),
+      async () => {
+        pendingStatus = await refreshPendingStatusesSafely();
+        await runBackfillPhase(backfillPhases[1]);
+      },
     );
   } else {
     for (const phase of backfillPhases) {
       await runBackfillPhase(phase);
     }
+    pendingStatus = await refreshPendingStatusesSafely();
   }
   if (!canonicalProgress) {
     canonicalProgress = await readCanonicalWorkerProgress(
@@ -5005,24 +5030,6 @@ async function runCycle(pool, lastSuccess, runtime) {
   };
   if (runtime.stopping) {
     throw workerStoppingError();
-  }
-  let pendingStatus;
-  try {
-    pendingStatus = await refreshPendingStatuses(pool);
-  } catch (error) {
-    pendingStatus = {
-      checked: 0,
-      deferred: 0,
-      error: cappedChildError(error?.message ?? error),
-      errors: 1,
-      unavailable: true,
-    };
-    console.error(
-      JSON.stringify({
-        error: pendingStatus.error,
-        phase: "pending-status-scheduling",
-      }),
-    );
   }
   workPrecisionConfirmedReplay = await assertWorkPrecisionReplayReady(
     pool,

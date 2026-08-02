@@ -321,8 +321,11 @@ Continuous worker cycles use
 `POW_INDEX_WORKER_BACKFILL_SOURCES=block-scan,mempool-scan` as the hot path.
 The worker runs that hot path as two sequential child phases under its one
 writer: `block-scan` catches up and publishes the exact canonical-summary
-bundle first, then `mempool-scan` runs with canonical-summary publication
-disabled. The bounded mempool scanner gives best-effort pending visibility
+bundle first, then stale pending-status maintenance is fully awaited, and only
+then `mempool-scan` runs with canonical-summary publication disabled. In the
+Q16 era that pending-only child commits the final pending witness after every
+worker-owned status mutation. The bounded mempool scanner gives best-effort
+pending visibility
 without being allowed to delay that confirmed publication or the next
 confirmed pass: it stops at a transaction boundary after its 15-second
 scheduling budget, verifies at most five protocol-bearing mempool txids per
@@ -771,7 +774,10 @@ The worker requires the real production cluster unit
 `starting`, `running`, `idle`, and `failed` state in `worker:lastRun`, and keeps
 the last successful cycle visible across an in-progress or failed cycle. The
 confirmed scanner runs before pending-status cleanup; if confirmed catch-up
-fails, that cycle does not refresh the best-effort pending overlay. A structured
+fails, that cycle does not refresh the best-effort pending overlay. In Q16
+cycles, cleanup also completes before the pending-only child publishes its
+witness, so the worker cannot invalidate its own readiness proof afterward. A
+structured
 `block-scan-verification` failure is containable only when it carries the
 trusted `CanonicalTransactionContentInvariantError` class and
 `POW_CANONICAL_TX_CONTENT_INVARIANT` code and the worker can prove an
@@ -1856,6 +1862,10 @@ The same audit joins pending listings to their seal transactions, so every
 projected listing field is qualified through the `listing` relation; the two
 relations both expose `status`, and an unqualified projection is rejected as
 ambiguous rather than being treated as readiness evidence.
+Within each Q16 worker cycle, confirmed replay completes first, pending status
+maintenance runs second, and the isolated mempool backfill publishes the final
+pending witness last. No status-maintenance mutation may occur between that
+witness and its readiness audit.
 
 The raw mint remains `pwt1:mint:<canonical-work-token-id>:1000`, crediting
 `100000000000` Q8 atoms before activation and

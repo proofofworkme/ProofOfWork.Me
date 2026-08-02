@@ -1419,6 +1419,11 @@ async function runChecks() {
   );
   assert.deepEqual(order, ["canonical", "pending"]);
   assert.deepEqual(pendingResult, { checked: 1 });
+  assert.match(
+    workerSource,
+    /runCanonicalBeforePending\([\s\S]*runBackfillPhase\(backfillPhases\[0\]\)[\s\S]*pendingStatus = await refreshPendingStatusesSafely\(\);[\s\S]*runBackfillPhase\(backfillPhases\[1\]\)[\s\S]*assertWorkPrecisionPendingReady/u,
+    "Q16 status maintenance must finish before the backfill-owned pending witness",
+  );
   const blockedOrder = [];
   await assert.rejects(
     runCanonicalBeforePending(
@@ -1879,6 +1884,7 @@ async function runChecks() {
       circuitActivation: "contained-retry",
       genericEscalation: true,
       pendingOnlySourceBoundary: true,
+      pendingStatusBeforeWitness: true,
       pendingWitnessExact: true,
       pendingWatchdogReturnsControl: true,
       progressReset: true,

@@ -672,7 +672,10 @@ expect(
     ) &&
     /publicLogRelational: finalPublicLogFingerprint\.hash/u.test(backfill) &&
     /publicLogFingerprint: finalPublicLogFingerprint/u.test(backfill) &&
-    /runCanonicalBeforePending\([\s\S]*runBackfillPhase\(backfillPhases\[0\]\)[\s\S]*runBackfillPhase\(backfillPhases\[1\]\)[\s\S]*pendingStatus = await refreshPendingStatuses\(pool\);/u.test(
+    /runCanonicalBeforePending\([\s\S]*runBackfillPhase\(backfillPhases\[0\]\)[\s\S]*pendingStatus = await refreshPendingStatusesSafely\(\);[\s\S]*runBackfillPhase\(backfillPhases\[1\]\)/u.test(
+      worker,
+    ) &&
+    !/async \(\) => \{\s*await runBackfillPhase\(backfillPhases\[1\]\);\s*pendingStatus = await refreshPendingStatusesSafely\(\);/u.test(
       worker,
     ),
 );
@@ -1390,6 +1393,12 @@ expect(
     /workPrecision\.era === WORK_PRECISION_Q16_ERA[\s\S]*await assertWorkPrecisionPendingReady\([\s\S]*pendingRebuild:[\s\S]*WORK_AMO_V8_PENDING_REBUILD_MODEL[\s\S]*ready: workPrecisionReplay\.ready === true/u.test(
       worker,
     ),
+);
+expect(
+  "worker status maintenance precedes the final backfill-owned Q16 pending witness",
+  /runCanonicalBeforePending\([\s\S]*runBackfillPhase\(backfillPhases\[0\]\)[\s\S]*pendingStatus = await refreshPendingStatusesSafely\(\);[\s\S]*runBackfillPhase\(backfillPhases\[1\]\)[\s\S]*assertWorkPrecisionPendingReady/u.test(
+    worker,
+  ),
 );
 expect(
   "backfill and worker share one durable Q16 pending witness key and model",
