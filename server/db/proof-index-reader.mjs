@@ -4710,7 +4710,7 @@ export async function proofIndexWorkPrecisionV2MigrationReadiness(
             txid,
             kind,
             protocol,
-            protocol_vout,
+            op_return_vout AS protocol_vout,
             record_ordinal,
             valid,
             raw_payload,

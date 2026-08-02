@@ -1835,6 +1835,13 @@ expectAll(
     /persistExactWorkQ16PendingWitness[\s\S]*getrawmempool[\s\S]*WORK_PROJECTION_STATE_Q16[\s\S]*workQ16PendingCommitment[\s\S]*recheckedMempoolSnapshot[\s\S]*recheckedTipHeight[\s\S]*ready: true[\s\S]*complete: true/,
   ],
 );
+expectAll(
+  "AMO V8 pending projections use the canonical events output column across writer, worker, and reader",
+  `${proofIndexerBackfill}\n${proofIndexerWorker}\n${proofIndexReader}`,
+  [
+    /op_return_vout AS protocol_vout[\s\S]*FROM proof_indexer\.events/,
+  ],
+);
 expectAll("AMO V6 historical and preactivation writes retain proof-native Q8 terms and one exact readiness gate", workAmoV6Core, [
   /WORK_AMO_V6_AUTH_VERSION = "pwt-sale-v6"/,
   /WORK_AMO_V6_ALLOWED_FACE_PROOFS = Object\.freeze\(\[\s*20_000,\s*50_000,\s*100_000,\s*\]\)/,

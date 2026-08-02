@@ -22301,7 +22301,7 @@ async function persistExactWorkQ16PendingWitness(
             txid,
             kind,
             protocol,
-            protocol_vout,
+            op_return_vout AS protocol_vout,
             record_ordinal,
             valid,
             raw_payload,

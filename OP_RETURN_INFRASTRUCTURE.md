@@ -1847,6 +1847,12 @@ field. Worker replay validates both authoritative model locations and then
 recomputes the bare preimage commitment; it must not reject or rewrite valid
 transitions because that nested duplicate is absent.
 
+The Q16 pending witness preserves the public protocol-position name
+`protocolVout`, but its relational source is the canonical events column
+`op_return_vout`. Backfill, worker verification, and reader readiness must all
+select `op_return_vout AS protocol_vout`; an unaliased synthetic column name
+is a schema error and keeps the witness explicitly not ready.
+
 The raw mint remains `pwt1:mint:<canonical-work-token-id>:1000`, crediting
 `100000000000` Q8 atoms before activation and
 `10000000000000000000` Q16 subatoms from activation. New WORK transfers use

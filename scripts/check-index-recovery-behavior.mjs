@@ -13887,6 +13887,16 @@ check("Q16 pending readiness audits persisted WORK rows without requiring a full
     source,
     /membership\.expectedTxids/u,
   );
+  assert.match(
+    source,
+    /op_return_vout AS protocol_vout[\s\S]*FROM proof_indexer\.events/u,
+    "the pending witness must project the canonical events column through its protocol-position alias",
+  );
+  assert.doesNotMatch(
+    source,
+    /SELECT\s+event_id,\s+txid,\s+kind,\s+protocol,\s+protocol_vout,/u,
+    "the pending witness must not select a synthetic events.protocol_vout column",
+  );
 });
 
 check("Q16 pending membership resolves only fully terminal multi-mint attempts", () => {

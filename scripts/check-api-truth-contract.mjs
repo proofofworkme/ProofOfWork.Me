@@ -69,6 +69,21 @@ const workAmoV8Declaration = readFileSync(
   "utf8",
 );
 const workUnits = readFileSync("server/work-units.mjs", "utf8");
+const backfillQ16PendingWitness = sourceSliceBetween(
+  backfill,
+  /async function persistExactWorkQ16PendingWitness/,
+  /async function storeMempoolScanState/,
+);
+const workerQ16PendingAudit = sourceSliceBetween(
+  worker,
+  /async function assertWorkPrecisionPendingReady/,
+  /function endpoint/,
+);
+const readerPrecisionV2Readiness = sourceSliceBetween(
+  reader,
+  /export async function proofIndexWorkPrecisionV2MigrationReadiness/,
+  /export async function proofIndexWorkAmoV8ActivationLatch/,
+);
 const workAmoV6IndexedDeclarationEvidence =
   /export async function indexedWorkAmoV6DeclarationEvidence[\s\S]*?(?=export async function coreWorkAmoV6DeclarationEvidence)/u.exec(
     workAmoV6Migration,
@@ -1345,6 +1360,21 @@ expect(
       worker,
     ),
 );
+for (const [surface, source] of [
+  ["backfill pending witness", backfillQ16PendingWitness],
+  ["worker pending audit", workerQ16PendingAudit],
+  ["reader pending readiness", readerPrecisionV2Readiness],
+]) {
+  expect(
+    `${surface} uses the canonical event output column with one protocol-position alias`,
+    /op_return_vout AS protocol_vout[\s\S]*FROM proof_indexer\.events/u.test(
+      source,
+    ) &&
+      !/SELECT\s+event_id,\s+txid,\s+kind,\s+protocol,\s+protocol_vout,/u.test(
+        source,
+      ),
+  );
+}
 expect(
   "worker publishes no Q16-ready state before the pending audit completes",
   /workPrecision\.era === WORK_PRECISION_Q16_ERA[\s\S]*pendingRequired: true,[\s\S]*ready: false,[\s\S]*state: "canonical-phase-complete"/u.test(
