@@ -137,6 +137,11 @@ const marketplaceMutationEqualitySource = sourceSliceBetween(
   /addCheck\(\s*"marketplace-mutation-fees-counted"/,
   /addCheck\(\s*"work-amo-v5-legacy-bootstrap-carry-proven"/,
 );
+const q16MempoolBackfillSource = sourceSliceBetween(
+  proofIndexerBackfill,
+  /async function backfillMempoolScanSource/,
+  /async function backfillSource/,
+);
 expect(
   "canonical ledger builds the expensive WORK floor exactly once",
   (canonicalLedgerBuilderSource.match(/workFloorPayloadFromState\(/gu) ?? [])
@@ -1863,6 +1868,18 @@ expectAll(
     /storeWorkQ16PendingWitnessNotReady[\s\S]*ready: false/,
     /persistExactWorkQ16PendingWitness[\s\S]*getrawmempool[\s\S]*WORK_PROJECTION_STATE_Q16[\s\S]*workQ16PendingCommitment[\s\S]*recheckedMempoolSnapshot[\s\S]*recheckedTipHeight[\s\S]*ready: true[\s\S]*complete: true/,
   ],
+);
+expect(
+  "AMO V8 pending rebuild keeps the prior exact witness visible until replacement commit",
+  /const q16PendingActive =[\s\S]*const state = await mempoolScanState/.test(
+    q16MempoolBackfillSource,
+  ) &&
+    !/storeWorkQ16PendingWitnessNotReady[\s\S]*pending-rebuild-in-progress/.test(
+      q16MempoolBackfillSource,
+    ) &&
+    /await persistExactWorkQ16PendingWitness\(client/.test(
+      q16MempoolBackfillSource,
+    ),
 );
 expectAll(
   "AMO V8 pending projections use the canonical events output column across writer, worker, and reader",

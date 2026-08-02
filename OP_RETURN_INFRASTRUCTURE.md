@@ -1866,6 +1866,12 @@ Within each Q16 worker cycle, confirmed replay completes first, pending status
 maintenance runs second, and the isolated mempool backfill publishes the final
 pending witness last. No status-maintenance mutation may occur between that
 witness and its readiness audit.
+An ordinary pending scan does not replace the last exact witness with an
+in-progress placeholder. The prior witness remains independently checkable
+while the replacement is built, and the replacement is published only after
+the stable Core and exact relational audit commits. Any intervening pending
+state change makes the prior projection commitment disagree and closes
+readiness; a failed replacement explicitly publishes not-ready evidence.
 
 The worker persists the full confirmed-plus-pending Q16 replay proof only in
 the completed cycle's `lastSuccess` envelope. The ordinary `starting`,

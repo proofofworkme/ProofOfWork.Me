@@ -23169,13 +23169,6 @@ async function backfillMempoolScanSource(client, source) {
     await currentWorkProjectionState(client, {
       refresh: true,
     }) === WORK_PROJECTION_STATE_Q16;
-  if (q16PendingActive) {
-    await storeWorkQ16PendingWitnessNotReady(
-      client,
-      "pending-rebuild-in-progress",
-      initialMempoolSnapshot,
-    );
-  }
   const state = await mempoolScanState(client);
   const entries = Object.entries(mempool ?? {})
     .filter(([txid]) => isHexTxid(txid))

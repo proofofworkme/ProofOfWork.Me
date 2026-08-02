@@ -82,6 +82,11 @@ const backfillQ16PendingWitness = sourceSliceBetween(
   /async function persistExactWorkQ16PendingWitness/,
   /async function storeMempoolScanState/,
 );
+const backfillMempoolScan = sourceSliceBetween(
+  backfill,
+  /async function backfillMempoolScanSource/,
+  /async function backfillSource/,
+);
 const workerQ16PendingAudit = sourceSliceBetween(
   worker,
   /async function assertWorkPrecisionPendingReady/,
@@ -1407,6 +1412,21 @@ expect(
   /runCanonicalBeforePending\([\s\S]*runBackfillPhase\(backfillPhases\[0\]\)[\s\S]*pendingStatus = await refreshPendingStatusesSafely\(\);[\s\S]*runBackfillPhase\(backfillPhases\[1\]\)[\s\S]*assertWorkPrecisionPendingReady/u.test(
     worker,
   ),
+);
+expect(
+  "the pending scan retains the last exact witness until its atomic replacement is complete",
+  /const q16PendingActive =[\s\S]*const state = await mempoolScanState/u.test(
+    backfillMempoolScan,
+  ) &&
+    !/storeWorkQ16PendingWitnessNotReady[\s\S]*pending-rebuild-in-progress/u.test(
+      backfillMempoolScan,
+    ) &&
+    /await persistExactWorkQ16PendingWitness\(client/u.test(
+      backfillMempoolScan,
+    ) &&
+    /catch \(error\)[\s\S]*storeWorkQ16PendingWitnessNotReady/u.test(
+      backfillQ16PendingWitness,
+    ),
 );
 expect(
   "normal worker phases preserve and consume only the last fully successful Q16 proof",
