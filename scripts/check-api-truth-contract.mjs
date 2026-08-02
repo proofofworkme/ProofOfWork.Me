@@ -831,6 +831,33 @@ expect(
     ),
 );
 expect(
+  "ledger audit retries only classified canonical read failures inside one shared bounded budget",
+  /createCanonicalConvergenceBudget/u.test(ledgerAudit) &&
+    /MarketplaceRegressionHttpError/u.test(ledgerAudit) &&
+    /waitForCanonicalConvergenceWithinBudget/u.test(ledgerAudit) &&
+    /LEDGER_AUDIT_CANONICAL_CONVERGENCE_MAX_MS/u.test(ledgerAudit) &&
+    /ledgerAuditCanonicalConvergenceBudget/u.test(ledgerAudit) &&
+    /throw new MarketplaceRegressionHttpError\(/u.test(ledgerAudit) &&
+    /isReady: \(\) => true/u.test(ledgerAudit) &&
+    /isRetryableValue: \(\) => false/u.test(ledgerAudit),
+);
+expect(
+  "ledger audit accepts only exact historical Q8 or metadata-bound current Q16 WORK amounts",
+  /parseWorkAmountToAtoms/u.test(ledgerAudit) &&
+    /parseWorkAmountToSubatoms/u.test(ledgerAudit) &&
+    /const q8Historical =/u.test(ledgerAudit) &&
+    /const q16Current =/u.test(ledgerAudit) &&
+    /!hasAmountAtoms/u.test(ledgerAudit) &&
+    /!hasAmountSubatoms/u.test(ledgerAudit) &&
+    /amountStorageModel === WORK_SUBATOM_PROJECTION_MODEL/u.test(ledgerAudit) &&
+    /Number\(record\?\.decimals\) === WORK_SUBATOM_DECIMALS/u.test(
+      ledgerAudit,
+    ) &&
+    /String\(record\?\.unitScale \?\? ""\) === WORK_SUBATOM_UNIT_SCALE_TEXT/u.test(
+      ledgerAudit,
+    ),
+);
+expect(
   "ledger audit brackets fresh cross-ledger reads with stable sentinels",
   /CROSS_LEDGER_AUDIT_MAX_ATTEMPTS = 3/u.test(ledgerAudit) &&
     (stableCrossLedgerAudit.match(

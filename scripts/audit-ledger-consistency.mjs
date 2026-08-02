@@ -1,4 +1,10 @@
-import { parseWorkAmountToAtoms } from "../server/work-units.mjs";
+import {
+  parseWorkAmountToAtoms,
+  parseWorkAmountToSubatoms,
+  WORK_SUBATOM_DECIMALS,
+  WORK_SUBATOM_PROJECTION_MODEL,
+  WORK_SUBATOM_UNIT_SCALE_TEXT,
+} from "../server/work-units.mjs";
 import {
   WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_BLOCK_HASH,
   WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_BLOCK_HEIGHT,
@@ -15,6 +21,11 @@ import {
   exactBondLedgerState,
   exactCreditFrozenValueState,
 } from "./ledger-audit-exact.mjs";
+import {
+  createCanonicalConvergenceBudget,
+  MarketplaceRegressionHttpError,
+  waitForCanonicalConvergenceWithinBudget,
+} from "./marketplace-canonical-convergence.mjs";
 
 const DEFAULT_API_BASE = "https://work.proofofwork.me";
 const NETWORK = process.env.NETWORK ?? "livenet";
@@ -90,17 +101,39 @@ const HISTORY_AUDIT_MAX_PAGES = 10;
 const AUDIT_REQUEST_TIMEOUT_MS = Number(
   process.env.AUDIT_REQUEST_TIMEOUT_MS ?? 45_000,
 );
+const LEDGER_AUDIT_CANONICAL_CONVERGENCE_MAX_MS = Math.min(
+  300_000,
+  Math.max(
+    1_000,
+    Number(
+      process.env.LEDGER_AUDIT_CANONICAL_CONVERGENCE_MAX_MS ?? 180_000,
+    ) || 180_000,
+  ),
+);
+const LEDGER_AUDIT_CANONICAL_CONVERGENCE_POLL_MS = Math.min(
+  10_000,
+  Math.max(
+    100,
+    Number(
+      process.env.LEDGER_AUDIT_CANONICAL_CONVERGENCE_POLL_MS ?? 2_000,
+    ) || 2_000,
+  ),
+);
 const CROSS_LEDGER_AUDIT_MAX_ATTEMPTS = 3;
 const MIN_INFINITY_BOND_FLOW_SATS = 47_234_999;
 const GROWTH_VALUE_MULTIPLE = 5;
 const failures = [];
+const ledgerAuditCanonicalConvergenceBudget =
+  createCanonicalConvergenceBudget(
+    LEDGER_AUDIT_CANONICAL_CONVERGENCE_MAX_MS,
+  );
 
 function endpoint(path) {
   const separator = path.includes("?") ? "&" : "?";
   return `${API_BASE}${path}${separator}network=${encodeURIComponent(NETWORK)}`;
 }
 
-async function readJson(path) {
+async function requestJson(path) {
   const controller = new AbortController();
   const timeout = setTimeout(
     () => controller.abort(),
@@ -118,9 +151,37 @@ async function readJson(path) {
     clearTimeout(timeout);
   }
   if (!response.ok) {
-    throw new Error(`${path} returned HTTP ${response.status}`);
+    let errorPayload = null;
+    try {
+      errorPayload = await response.json();
+    } catch {
+      // Non-JSON failures remain non-retryable and preserve their HTTP status.
+    }
+    throw new MarketplaceRegressionHttpError(
+      endpoint(path),
+      response.status,
+      errorPayload,
+    );
   }
   return response.json();
+}
+
+async function readJson(path) {
+  return waitForCanonicalConvergenceWithinBudget({
+    budget: ledgerAuditCanonicalConvergenceBudget,
+    isReady: () => true,
+    isRetryableValue: () => false,
+    label: `ledger audit ${path}`,
+    pollIntervalMs: LEDGER_AUDIT_CANONICAL_CONVERGENCE_POLL_MS,
+    read: () => requestJson(path),
+    onRetry: ({ attempt, delayMs, error }) => {
+      console.warn(
+        `Ledger audit canonical read ${path} is converging after attempt ${attempt}: ${
+          error?.code ?? error?.serverMessage ?? "canonical-read-unavailable"
+        }; retrying in ${delayMs}ms`,
+      );
+    },
+  });
 }
 
 async function readJsonPaths(paths) {
@@ -159,16 +220,46 @@ function numbersAgree(left, right) {
 
 function workAmountMatches(record, expectedAmount) {
   try {
-    const expectedAtoms = parseWorkAmountToAtoms(String(expectedAmount), {
+    const expectedAmountText = String(expectedAmount);
+    const expectedAtoms = parseWorkAmountToAtoms(expectedAmountText, {
       allowZero: true,
     });
-    return (
+    const expectedSubatoms = parseWorkAmountToSubatoms(expectedAmountText, {
+      allowZero: true,
+    });
+    const amountAtoms = record?.amountAtoms;
+    const amountSubatoms = record?.amountSubatoms;
+    const hasAmountAtoms =
+      amountAtoms !== undefined && amountAtoms !== null && amountAtoms !== "";
+    const hasAmountSubatoms =
+      amountSubatoms !== undefined &&
+      amountSubatoms !== null &&
+      amountSubatoms !== "";
+    if (typeof record?.amount === "number") {
+      return (
+        !hasAmountAtoms &&
+        !hasAmountSubatoms &&
+        Number.isSafeInteger(record.amount) &&
+        parseWorkAmountToAtoms(record.amount, { allowZero: true }) ===
+          expectedAtoms
+      );
+    }
+    const q8Historical =
       typeof record?.amount === "string" &&
-      parseWorkAmountToAtoms(record.amount, { allowZero: true }) ===
-        expectedAtoms &&
-      typeof record?.amountAtoms === "string" &&
-      record.amountAtoms === expectedAtoms
-    );
+      record.amount === expectedAmountText &&
+      typeof amountAtoms === "string" &&
+      amountAtoms === expectedAtoms &&
+      !hasAmountSubatoms;
+    const q16Current =
+      typeof record?.amount === "string" &&
+      record.amount === expectedAmountText &&
+      !hasAmountAtoms &&
+      typeof amountSubatoms === "string" &&
+      amountSubatoms === expectedSubatoms &&
+      record?.amountStorageModel === WORK_SUBATOM_PROJECTION_MODEL &&
+      Number(record?.decimals) === WORK_SUBATOM_DECIMALS &&
+      String(record?.unitScale ?? "") === WORK_SUBATOM_UNIT_SCALE_TEXT;
+    return q8Historical || q16Current;
   } catch {
     return false;
   }
