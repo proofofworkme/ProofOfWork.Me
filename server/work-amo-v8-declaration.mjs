@@ -1,6 +1,9 @@
 import { createHash } from "node:crypto";
 
 import {
+  canonicalProtocolCandidateFromOutput,
+} from "./canonical-op-return.mjs";
+import {
   WORK_AMO_V8_ALLOWED_FACE_PROOFS,
   WORK_AMO_V8_AMOUNT_MODEL,
   WORK_AMO_V8_AUTH_VERSION,
@@ -93,5 +96,66 @@ export function workAmoV8DeclarationCommitment() {
       .update(Buffer.from(protocolRecord, "utf8"))
       .digest("hex"),
     text,
+  });
+}
+
+export function workAmoV8DeclarationCarrierEvidence(
+  transaction,
+  {
+    commitment = workAmoV8DeclarationCommitment(),
+    protocolVout,
+    recordOrdinal,
+  } = {},
+) {
+  if (
+    !transaction ||
+    typeof transaction !== "object" ||
+    Array.isArray(transaction) ||
+    !Array.isArray(transaction.vout) ||
+    !commitment ||
+    typeof commitment !== "object" ||
+    typeof commitment.protocolRecord !== "string" ||
+    !Number.isSafeInteger(protocolVout) ||
+    protocolVout < 0 ||
+    recordOrdinal !== 0
+  ) {
+    return null;
+  }
+  const exactCarriers = [];
+  for (
+    let candidateVout = 0;
+    candidateVout < transaction.vout.length;
+    candidateVout += 1
+  ) {
+    const candidate = canonicalProtocolCandidateFromOutput(
+      transaction.vout[candidateVout],
+    );
+    if (
+      candidate?.decodeValid === true &&
+      candidate.prefix === "pwm1:" &&
+      candidate.text === commitment.protocolRecord
+    ) {
+      exactCarriers.push({ candidate, protocolVout: candidateVout });
+    }
+  }
+  if (
+    exactCarriers.length !== 1 ||
+    exactCarriers[0].protocolVout !== protocolVout
+  ) {
+    return null;
+  }
+  const { candidate } = exactCarriers[0];
+  const protocolRecord = candidate.text;
+  return Object.freeze({
+    decodeValid: true,
+    exactCarrierCount: exactCarriers.length,
+    payloadBytes: Buffer.byteLength(protocolRecord, "utf8"),
+    payloadSha256: createHash("sha256")
+      .update(Buffer.from(protocolRecord, "utf8"))
+      .digest("hex"),
+    protocol: "pwm1",
+    protocolRecord,
+    protocolVout,
+    recordOrdinal,
   });
 }

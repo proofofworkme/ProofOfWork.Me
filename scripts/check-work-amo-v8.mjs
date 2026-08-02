@@ -42,8 +42,12 @@ import {
   WORK_AMO_V6_MODELS,
 } from "../server/work-amo-v6.mjs";
 import {
+  workAmoV8DeclarationCarrierEvidence,
   workAmoV8DeclarationCommitment,
 } from "../server/work-amo-v8-declaration.mjs";
+import {
+  exactWorkAmoV8WorkerReadiness,
+} from "../server/work-amo-v8-worker-readiness.mjs";
 import {
   WORK_LEGACY_ATOMIC_PROJECTION_MODEL,
   WORK_PRECISION_V2_MIGRATION_MODEL,
@@ -219,6 +223,85 @@ assert.match(
 assert.match(
   declarationCommitment.text,
   /earliest exact valid declaration transaction by confirmed block height then transaction index is authoritative/u,
+);
+
+function opReturnOutput(text) {
+  const payload = Buffer.from(text, "utf8");
+  let pushData;
+  if (payload.length <= 0x4b) {
+    pushData = Buffer.from([payload.length]);
+  } else if (payload.length <= 0xff) {
+    pushData = Buffer.from([0x4c, payload.length]);
+  } else if (payload.length <= 0xffff) {
+    pushData = Buffer.alloc(3);
+    pushData[0] = 0x4d;
+    pushData.writeUInt16LE(payload.length, 1);
+  } else {
+    throw new RangeError("test OP_RETURN payload exceeds PUSHDATA2");
+  }
+  return {
+    scriptPubKey: {
+      hex: Buffer.concat([
+        Buffer.from([0x6a]),
+        pushData,
+        payload,
+      ]).toString("hex"),
+    },
+  };
+}
+
+const declarationMailEnvelope = {
+  vout: [
+    { scriptPubKey: { hex: "76a914" + "11".repeat(20) + "88ac" } },
+    opReturnOutput("pwm1:s:VjggRGVjbGFyYXRpb24"),
+    opReturnOutput(`pwm1:r:${"ab".repeat(32)}`),
+    opReturnOutput(declarationCommitment.protocolRecord),
+    { scriptPubKey: { hex: "76a914" + "22".repeat(20) + "88ac" } },
+    opReturnOutput(
+      `pwt1:send2:${WORK_TOKEN_ID}:100000000:1F1p9UEHuH5KTFR7Zsx93Khdrqhj6t5nFv`,
+    ),
+  ],
+};
+const declarationCarrier = workAmoV8DeclarationCarrierEvidence(
+  declarationMailEnvelope,
+  {
+    commitment: declarationCommitment,
+    protocolVout: 3,
+    recordOrdinal: 0,
+  },
+);
+assert.equal(declarationCarrier?.protocol, "pwm1");
+assert.equal(declarationCarrier?.protocolVout, 3);
+assert.equal(declarationCarrier?.recordOrdinal, 0);
+assert.equal(
+  declarationCarrier?.payloadSha256,
+  declarationCommitment.protocolRecordSha256,
+);
+assert.equal(
+  workAmoV8DeclarationCarrierEvidence(declarationMailEnvelope, {
+    commitment: declarationCommitment,
+    protocolVout: 1,
+    recordOrdinal: 0,
+  }),
+  null,
+  "the subject-position PWM aggregate must not replace the exact declaration carrier",
+);
+assert.equal(
+  workAmoV8DeclarationCarrierEvidence(
+    {
+      vout: [
+        ...declarationMailEnvelope.vout,
+        opReturnOutput(declarationCommitment.protocolRecord),
+      ],
+    },
+    {
+      commitment: declarationCommitment,
+      protocolVout: 3,
+      recordOrdinal: 0,
+    },
+  ),
+  null,
+  "duplicate exact declaration carriers must fail closed",
 );
 
 function listingPosition(overrides = {}) {
@@ -837,6 +920,134 @@ assert.equal(
   }).reasonCode,
   "work-amo-v8-writes-paused",
   "V8 delist admission fails closed with every other governed write",
+);
+
+const readinessTipHeight = 1_200_321;
+const readinessTipHash = "ab".repeat(32);
+const readinessFinishedAt = "2026-08-01T12:34:56.000Z";
+const successfulWorkPrecision = {
+  era: "q16",
+  replay: {
+    era: "q16",
+    mempoolCount: 12,
+    mempoolSha256: "bc".repeat(32),
+    pendingMembershipCount: 3,
+    pendingMembershipSha256: "cd".repeat(32),
+    pendingProjectionSha256: "de".repeat(32),
+    ready: true,
+    replayRequired: true,
+    tipHash: readinessTipHash,
+    tipHeight: readinessTipHeight,
+  },
+};
+const successfulWorker = {
+  finishedAt: readinessFinishedAt,
+  lastSuccess: {
+    finishedAt: readinessFinishedAt,
+    workPrecision: successfulWorkPrecision,
+  },
+  lastSuccessAt: readinessFinishedAt,
+  network: "livenet",
+  ok: true,
+  state: "idle",
+  workPrecision: successfulWorkPrecision,
+};
+const readinessOptions = {
+  liveMempoolSnapshot: {
+    count: 12,
+    model: "canonical-core-mempool-txid-set-v1",
+    sha256: "bc".repeat(32),
+  },
+  network: "livenet",
+  tipHash: readinessTipHash,
+  tipHeight: readinessTipHeight,
+};
+assert.equal(
+  exactWorkAmoV8WorkerReadiness(
+    { network: "livenet", worker: successfulWorker },
+    readinessOptions,
+  ).ready,
+  true,
+  "the exact idle Q16 worker proof is ready",
+);
+for (const state of ["starting", "running", "canonical-phase-complete"]) {
+  const transientWorker = {
+    ...successfulWorker,
+    finishedAt: undefined,
+    ok: state === "canonical-phase-complete" ? false : true,
+    state,
+    workPrecision: {
+      era: "q16",
+      replay: {
+        era: "q16",
+        pendingRequired: true,
+        ready: false,
+        replayRequired: true,
+      },
+    },
+  };
+  assert.equal(
+    exactWorkAmoV8WorkerReadiness(
+      { network: "livenet", worker: transientWorker },
+      readinessOptions,
+    ).ready,
+    true,
+    `${state} preserves the last fully successful Q16 proof`,
+  );
+}
+assert.equal(
+  exactWorkAmoV8WorkerReadiness(
+    {
+      network: "livenet",
+      worker: { ...successfulWorker, state: "failed-retrying" },
+    },
+    readinessOptions,
+  ).ready,
+  false,
+  "an explicit worker failure state closes readiness",
+);
+assert.equal(
+  exactWorkAmoV8WorkerReadiness(
+    {
+      network: "livenet",
+      worker: {
+        ...successfulWorker,
+        lastSuccess: { finishedAt: readinessFinishedAt },
+        state: "running",
+      },
+    },
+    readinessOptions,
+  ).ready,
+  false,
+  "a transient state without a durable successful proof is closed",
+);
+assert.equal(
+  exactWorkAmoV8WorkerReadiness(
+    { network: "livenet", worker: successfulWorker },
+    { ...readinessOptions, tipHeight: readinessTipHeight + 1 },
+  ).ready,
+  false,
+  "a new canonical tip invalidates the prior worker proof",
+);
+assert.equal(
+  exactWorkAmoV8WorkerReadiness(
+    {
+      network: "livenet",
+      worker: {
+        ...successfulWorker,
+        workPrecision: {
+          ...successfulWorkPrecision,
+          replay: {
+            ...successfulWorkPrecision.replay,
+            pendingProjectionSha256: "ef".repeat(32),
+          },
+        },
+      },
+    },
+    readinessOptions,
+  ).ready,
+  false,
+  "idle metadata cannot disagree with its durable proof",
 );
 
 process.stdout.write(

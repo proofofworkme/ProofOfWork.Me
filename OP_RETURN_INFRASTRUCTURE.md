@@ -321,8 +321,11 @@ Continuous worker cycles use
 `POW_INDEX_WORKER_BACKFILL_SOURCES=block-scan,mempool-scan` as the hot path.
 The worker runs that hot path as two sequential child phases under its one
 writer: `block-scan` catches up and publishes the exact canonical-summary
-bundle first, then `mempool-scan` runs with canonical-summary publication
-disabled. The bounded mempool scanner gives best-effort pending visibility
+bundle first, then stale pending-status maintenance is fully awaited, and only
+then `mempool-scan` runs with canonical-summary publication disabled. In the
+Q16 era that pending-only child commits the final pending witness after every
+worker-owned status mutation. The bounded mempool scanner gives best-effort
+pending visibility
 without being allowed to delay that confirmed publication or the next
 confirmed pass: it stops at a transaction boundary after its 15-second
 scheduling budget, verifies at most five protocol-bearing mempool txids per
@@ -771,7 +774,10 @@ The worker requires the real production cluster unit
 `starting`, `running`, `idle`, and `failed` state in `worker:lastRun`, and keeps
 the last successful cycle visible across an in-progress or failed cycle. The
 confirmed scanner runs before pending-status cleanup; if confirmed catch-up
-fails, that cycle does not refresh the best-effort pending overlay. A structured
+fails, that cycle does not refresh the best-effort pending overlay. In Q16
+cycles, cleanup also completes before the pending-only child publishes its
+witness, so the worker cannot invalidate its own readiness proof afterward. A
+structured
 `block-scan-verification` failure is containable only when it carries the
 trusted `CanonicalTransactionContentInvariantError` class and
 `POW_CANONICAL_TX_CONTENT_INVARIANT` code and the worker can prove an
@@ -1655,7 +1661,7 @@ canonical V7/send3 action, rollback means closing writes and restoring the
 same release from backup/replay; it never means reverting the declaration,
 dividing live balances heuristically, or rewriting confirmed history.
 
-### Approved WORK Q16 / AMO V8 gate
+### Active WORK Q16 / AMO V8 gate
 
 WORK Precision Protocol V2 and AMO Unit Protocol V8 share one exact activation
 boundary. The release is additive and may be deployed before a declaration,
@@ -1709,6 +1715,17 @@ be unambiguous. A later duplicate cannot move activation. The builder's final
 presentation newline is outside `declaration.text`, its byte count, and both
 hashes.
 
+The declaration confirmed at height `960600`, zero-based transaction index
+`2369`, in block
+`00000000000000000001ec938998cde4fd86ee6e3c672a6d3d95200cd8a984ac`.
+Its exact full `pwm1:m` carrier is vout `3`, record ordinal `0`, `5593` bytes,
+SHA-256
+`1ba53b285f95f8d69f0272c8e75c76b09cd3bd26281c68e665749368e7694528`;
+the unique qualifying registry payment is vout `4`, and activation is height
+`960601`. Verify that physical carrier output directly. The Mail envelope also
+contains subject and reply parts and may aggregate at vout `1` for mailbox
+projection, but that aggregate is not declaration-carrier evidence.
+
 If the exact declaration confirms in block `D`, record all V8 pins together
 and set `WORK_AMO_V8_ACTIVATION_HEIGHT=D+1`. Activation is the opening of the
 first confirmed block after `D`; never derive it from time, mempool presence,
@@ -1755,12 +1772,132 @@ admission expose no legacy seal, buy, or delist path; only a confirmed V8
 listing can settle. Raw ticket spends remain observable history and cannot
 resurrect a relic.
 
+The relational table can still contain stale `active`/`sealing` status labels
+for V1/V2 rows already excluded at the height-959061 canonical cutover. Those
+rows are not added to the V8 relic or refund commitments. Migration may close
+only the derived status after proving the historical authorization is exactly
+`pwt-sale-v1` or `pwt-sale-v2`; it preserves the row payload, raw event, and
+original refund snapshot. Any other extra active authorization fails closed.
+
+Some historical V1 projection rows stored whole WORK in the relational
+`amount` column while their immutable raw `pwt1:list5` authorization determines
+an exact Q8 amount. Q16 conversion must decode that raw carrier, require one
+matching valid confirmed replay event, and require all event/listing version,
+token, and available amount aliases to agree; it never infers units from the
+ambiguous table value. V5/V6 unit-form authorizations bind the deterministic
+unit inputs while their valid replay event supplies the derived Q8 amount.
+The idempotent migration path audits every confirmed preactivation legacy
+listing under the immutable marker and, under serializable locks, permits only
+the exact two-row canonical repair set. Each mutation compares the complete
+projection payload and current amount before updating only its derived Q16
+amount plus explicit legacy-atom migration metadata. A second run must report
+`ready: true`, zero remaining items, and zero repaired rows.
+
 Pending WORK state is volatile. Migration removes pending or wrong-era WORK
 events, listing/action rows, balance deltas, and affected current snapshots,
 while retaining noncanonical transaction envelopes as recovery input. After
-activation replay reaches the exact tip, rebuild pending projections from one
-stable Core mempool under V8 and require exact membership, semantic,
-transaction, and balance parity before readiness can turn green.
+activation replay reaches the exact tip, rebuild pending projections from Core
+mempool evidence under V8. Every txid in the exact persisted pending WORK set
+must remain present across both Core samples that fence the database audit, and
+exact event, listing, transaction, legacy-era, and balance-delta parity is
+required before readiness can turn green. Every member also requires all five
+correctly typed WORK inspection markers, and a terminal-invalid protocol marker
+cannot coexist with a valid persisted WORK projection. The full sampled mempool count and
+hash remain compact audit evidence; unrelated additions or removals between
+samples do not invalidate the WORK witness. Raw discovery of unrelated or
+not-yet-projected unconfirmed transactions remains bounded best-effort work; it
+is not canonical and a mempool larger than one scan budget—or unrelated
+continuous churn—cannot indefinitely pause confirmed V8 state.
+
+Canonical-summary publication is current under Q16 only when the same exact
+tip snapshot embeds `tokenStatePayloads[WORK]` derived from that block's
+complete canonical V8 closing transition. The publisher commitment-checks the
+embedded state against the transition, bypasses same-tip and exact-checkpoint
+reuse when it is missing or mismatched, and repairs it in the replacement
+summary. Readiness never infers Q16 token state from an outer summary height or
+from a stale pre-migration payload.
+
+The first replacement summary cannot depend on its own readiness witness. Its
+authenticated loopback builder has one internal-only bootstrap lane that reads
+the unscoped live relational token tables at the exact requested height and
+block hash. That lane is unavailable to public token reads and governed writes,
+accepts only the `proof-indexer-token-state-tables` source, preserves confirmed
+V8 listings, and opens only after the immutable migration marker and declaration
+carrier, every installed constraint, the complete activation-through-tip
+transition chain, relational commitment parity, legacy embargo, and a second
+exact-tip check all pass. Snapshot, scoped, stale-hash, incomplete-transition,
+or wrong-era inputs fail closed. The resulting summary must then bind the exact
+Q16 transition state before ordinary replay, pending, public-read, or write
+readiness can become green.
+
+When that builder joins replayable Q8 movement history to the current Q16
+tables, duplicate WORK sales and transfers must agree after exact integer
+Q8-to-Q16 conversion. Their active top-level projection exposes only Q16
+subatoms; conflicting aliases fail closed. Historical signed sale
+authorizations and explicit legacy evidence remain unchanged and are not
+treated as current Q16 aliases. An explicit empty overlay cannot erase that
+evidence, and conflicting nonempty authorization or evidence records fail
+closed instead of making replay order choose the settlement record.
+
+Post-V8 transition closing-state audits bind the relational tables through
+the V8 Q16 token-state preimage (`confirmedSupplySubatoms`, holder subatoms,
+and immutable V8 listing terms). Historical V5/V6 transition audits retain
+their original Q8 commitment path; a generic outer commitment cannot choose
+the precision lane without the transition's explicit token-state model.
+
+The canonical V8 transition records `workTokenStateModel` at the transition
+payload root and in the indexed `work_token_state_model` column. Its
+`closingTokenState` remains the bare committed preimage—amount storage model,
+confirmed supply, holders, and listings—without a duplicate nested `model`
+field. Worker replay validates both authoritative model locations and then
+recomputes the bare preimage commitment; it must not reject or rewrite valid
+transitions because that nested duplicate is absent.
+
+The Q16 pending witness preserves the public protocol-position name
+`protocolVout`, but its relational source is the canonical events column
+`op_return_vout`. Backfill, worker verification, and reader readiness must all
+select `op_return_vout AS protocol_vout`; an unaliased synthetic column name
+is a schema error and keeps the witness explicitly not ready.
+The same audit joins pending listings to their seal transactions, so every
+projected listing field is qualified through the `listing` relation; the two
+relations both expose `status`, and an unqualified projection is rejected as
+ambiguous rather than being treated as readiness evidence.
+Within each Q16 worker cycle, confirmed replay completes first, pending status
+maintenance runs second, and the isolated mempool backfill publishes the final
+pending witness last. No status-maintenance mutation may occur between that
+witness and its readiness audit.
+An ordinary pending scan does not replace the last exact witness with an
+in-progress placeholder. The prior witness remains independently checkable
+while the replacement is built, and the replacement is published only after
+the stable Core and exact relational audit commits. Any intervening pending
+state change makes the prior projection commitment disagree and closes
+readiness; a failed replacement explicitly publishes not-ready evidence.
+
+The pending transaction commitment uses
+`canonical-work-q16-pending-projection-v3`. It commits each member's canonical
+`txid`, relational `status`, and the five inspection fields
+`pendingProtocolResolvedInvalid`, `pendingWorkMintAttemptCount`,
+`pendingWorkMintInspectionVersion`, `pendingWorkMintRecoveryNeeded`, and
+`pendingWorkMintResolvedInvalid`. Volatile envelope metadata such as
+`indexedFrom`, raw carrier `item`, and `statusObservation.observedAt` is not a
+readiness input: its protocol meaning is already committed by the exact event,
+listing, membership, marker, and balance projections. A marker, status, txid,
+or protocol projection change still invalidates the witness immediately, while
+a routine observation-timestamp refresh cannot create a false readiness gap.
+
+The worker persists the full confirmed-plus-pending Q16 replay proof only in
+the completed cycle's `lastSuccess` envelope. The ordinary `starting`,
+`running`, and `canonical-phase-complete` states carry that envelope unchanged;
+the confirmed-only phase is reported separately and cannot relabel itself as a
+success. During those three healthy in-progress states the API may use the
+durable proof only while it still binds the live Core tip. The reader's current
+transactional migration proof independently owns pending membership and
+projection readiness, so a newly committed exact pending witness does not have
+to equal the prior cycle's diagnostic pending hashes. A missing worker proof,
+changed tip, stale or invalid reader witness, missing live member, or any
+explicit failed worker state keeps V8 closed. This preserves continuous
+availability during normal cycles without weakening exact-tip or fail-closed
+readiness.
 
 The raw mint remains `pwt1:mint:<canonical-work-token-id>:1000`, crediting
 `100000000000` Q8 atoms before activation and
@@ -1853,6 +1990,15 @@ Deployment sequence:
    legacy-action rejection, and V8 peak-order behavior.
 7. Enable only `WORK_AMO_V8_WRITES_ENABLED=1`, deploy all public surfaces from
    the same commit-bound archive, and repeat the production exact-tip sweep.
+
+Production completed gate one on 2026-08-01 after the exact declaration,
+Q8-to-Q16 migration, 23-listing relic cutover, activation-through-tip replay,
+database constraints, pending witness, API/worker/index/ledger parity, and
+exact-tip readiness agreed. The active production gate set is
+`WORK_AMO_V8_WRITES_ENABLED=1` with `WORK_MARKETPLACE_WRITES_ENABLED=0`,
+`WORK_AMO_V5_WRITES_ENABLED=0`, `WORK_AMO_V6_WRITES_ENABLED=0`, and
+`WORK_AMO_V7_WRITES_ENABLED=0`. Any loss of readiness still closes V8 writes;
+it never reopens a legacy protocol.
 
 Any disagreement keeps V8 closed. Before activation, rollback removes only
 the additive staged release. After Q16 activation, rollback means closing
@@ -2416,7 +2562,7 @@ The canonical livenet ledger payload:
 - May serve a useful cached ledger for fast first paint only when summary projections also correct active sale-ticket listings against current node spend state; deep refresh continues in the background and must converge on confirmed chain truth.
 - Replays WORK mint summaries from canonical mint events and treats pending WORK mints as availability pressure only. Pending mints can reduce available mint slots in the UI, but they do not change confirmed supply, holders, floor, or network value.
 - Orders pending WORK mint candidates by lowercase txid. A fast supply-cap rejection is allowed only from exact-tip confirmed supply plus a complete, Bitcoin Core-current prefix of earlier candidates; otherwise the verifier falls back instead of guessing.
-- Revalidates only Core-current accepted/provisional supply-capped pending WORK decisions that disagree with exact confirmed supply plus lowercase-txid candidate order. Core-absent database rows never consume a pending slot. Every pending protocol transaction carries a versioned WORK-inspection marker, so a persisted PWM envelope cannot hide a deferred WORK companion and every legacy row receives one bounded inspection pass. Existing rows record exact raw WORK-message count and a recovery-pending marker before the broad verifier runs; a one-time 30-second verifier window must succeed before that marker clears. Deferred and multi-mint transactions form conservative ordering barriers: the rotating recovery lane rechecks that transaction and every later WORK decision because neither a missing decision nor raw message count proves how many mints its registry payment can fund. Ordinary verified single-mint rows stop consuming verifier work. A resolved permanent-invalid mint removes any older volatile valid/supply-cap decision only when the raw transaction contains an actual WORK mint attempt, then records a terminal transaction marker without publishing a provisional invalid event. A Core-current pending protocol transaction likewise receives a separate terminal-invalid marker only after the verifier returns a nonempty, entirely invalid result; unresolved verifier failures remain unmarked and retry. The mempool writer locks the transaction row before atomically replacing the complete volatile WORK mint/audit set, while the canonical block scanner removes only volatile WORK mint/audit rows before storing confirmed truth. Confirmed block-backed rows are never rewritten by the mempool path.
+- Revalidates only Core-current accepted/provisional supply-capped pending WORK decisions that disagree with exact confirmed supply plus lowercase-txid candidate order. Core-absent database rows never consume a pending slot. Every pending protocol transaction carries a versioned WORK-inspection marker, so a persisted PWM envelope cannot hide a deferred WORK companion and every legacy row receives one bounded inspection pass. Existing rows record exact raw WORK-message count and a recovery-pending marker before the broad verifier runs; a one-time 30-second verifier window must succeed before that marker clears. Deferred and unresolved multi-mint transactions form conservative ordering barriers: the rotating recovery lane rechecks that transaction and every later WORK decision because neither a missing decision nor raw message count proves how many mints its registry payment can fund. An exact whole-transaction terminal-invalid marker resolves a fully inspected multi-mint transaction only when no valid persisted WORK projection coexists with it. Ordinary verified single-mint rows stop consuming verifier work. A resolved permanent-invalid mint removes any older volatile valid/supply-cap decision only when the raw transaction contains an actual WORK mint attempt, then records a terminal transaction marker without publishing a provisional invalid event. A Core-current pending protocol transaction likewise receives a separate terminal-invalid marker only after the verifier returns a nonempty, entirely invalid result; unresolved verifier failures remain unmarked and retry. The mempool writer locks the transaction row before atomically replacing the complete volatile WORK mint/audit set, while the canonical block scanner removes only volatile WORK mint/audit rows before storing confirmed truth. Confirmed block-backed rows are never rewritten by the mempool path.
 - Core-only WORK marketplace replay uses the current exact-tip relational WORK state and a bounded 30-second verifier window rather than rebuilding the full external registry history. When that exact state proves a pending listing exceeds its seller's spendable balance, the verifier returns a specific invalid decision so the worker can terminalize it; non-exact or fallback balance state remains unresolved.
 - Promotes pending WORK and credit listings into confirmed state through the shared credit payload, deduping by listing txid and sale-ticket outpoint so confirmation does not leave duplicate pending rows behind.
 - Current relational token-state reads remove an active listing as soon as a valid pending or confirmed close event exists; dropped close events never suppress the listing. This keeps full token payloads and fresh summary projections on the same mempool lifecycle.
@@ -2498,7 +2644,7 @@ The credit endpoint:
 - WORK's permanent price floor is derived from live confirmed ProofOfWork Computer network value, not from pending mempool visibility: `work_floor_sats = live_network_value_sats / 21,000,000 WORK`. The inverse `21,000,000 / live_network_value_sats` is the WORK-per-proof ratio.
 - Historical WORK Marketplace Pricing Protocol V2 is declaration-tx anchored at `4c53252c6e9279726e1456f4d846274bfa33f778b633d32a68ed36906b38083f` and activated at declaration height plus one. Its confirmed governed WORK list/seal/buy validation loaded the exact green canonical summary at H-1, required the authorization's `oracleBlockHeight`, `oracleBlockHash`, and `oracleNetworkValueQ8` to match it, recomputed the integer-ceiling minimum total seller price from `amountAtoms`, and failed closed on any unavailable or mismatched dependency. A missed next-block commitment was stale; confirmation did not rescue it. This is replay documentation, not the current AMO write protocol.
 - WORK Marketplace Pricing Protocol V4 remains replayable historical design. AMO `pwt-sale-v5` governed WORK list/seal/buy actions from activation height 959621 until the V6 cutover. A listing chose only `$20`, `$50`, or `$100`; exact WORK atoms and proof price derived at its complete canonical position from the preceding valid `pwa1:usd1` quote and the network value immediately before the listing. Those terms froze at confirmation. Valid pre-V6 V5 listings remain settleable without current-floor repricing, while new V5 listings from V6 activation are invalid audit history.
-- WORK AMO V6 is anchored by declaration transaction
+- Historical WORK AMO V6 is anchored by declaration transaction
   `975fd82aa84995e014b240618ee1a1254d0a735e6e1241372d0bed0a0d9f0799`
   and an independent write gate. From activation height `960219`, new
   governed listings use
@@ -2506,11 +2652,24 @@ The credit endpoint:
   The listing's exact WORK atoms derive at its complete canonical position
   from the network value immediately before the listing; no USD quote,
   attestation, signer, source quorum, or validity window is part of V6
-  consensus. USD is display-only. V5 listings validly confirmed before the
-  cutover keep their frozen terms and may settle; new V5 listings after the
-  cutover are invalid audit history. Declaration pins, the immutable migration
-  marker, activation-range replay, exact-tip parity and the explicit V6 write
-  gate must all agree before production admits V6 actions.
+  consensus. USD is display-only. During the V6 era, V5 listings validly
+  confirmed before its cutover kept their frozen terms and could settle; new V5
+  listings after that cutover were invalid audit history. V6 declaration pins,
+  the immutable migration marker, activation-range replay, exact-tip parity and
+  the explicit V6 write gate had to agree before production admitted V6
+  actions. At V8 activation every remaining active or sealing pre-V8 listing
+  became a non-actionable relic with no legacy settlement path.
+- Active WORK Precision Protocol V2 / AMO Unit Protocol V8 is anchored by
+  declaration transaction
+  `f90e1faf572ef8253ca5959731b9d9e99c74bced4397380059878936712bee7a`,
+  confirmed at height `960600`/index `2369` and active from height `960601`.
+  Canonical current WORK uses sixteen decimals and exact integer Q16 subatoms;
+  new transfers use `pwt1:send3`, and new governed listings use only
+  `pwt-sale-v8` with the exact 25,000-proof face. Gate one opened on 2026-08-01
+  only after migration, replay, relic-cutover, constraints, pending parity,
+  API/worker/index/ledger parity, and exact-tip readiness agreed. Only
+  `WORK_AMO_V8_WRITES_ENABLED=1` is enabled; every legacy governed WORK gate
+  remains zero, and any readiness disagreement fails V8 writes closed.
 - WORK value accounting exposes both live and frozen values. Live network value reprices confirmed WORK movement at the current live floor and is the site-facing value. Frozen network value records the confirmation-time value of each WORK movement plus fixed event components such as proof payments, registry mutation fees, marketplace mutation fees, sale payments, and miner fees where available.
 - WORK is the only credit whose amount moved adds credit movement network value. Non-WORK credits remain confirmed proof-flow records and must not derive value from manipulable illiquid floors.
 - Credit mint-out is confirmed-only at the protocol/indexing layer: a credit is canonically minted out only when confirmed supply reaches max supply. UI mint controls also pause when confirmed plus pending mints fill the remaining supply, because pending records can consume the last valid mint slots if they confirm.

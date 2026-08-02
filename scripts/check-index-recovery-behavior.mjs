@@ -171,8 +171,10 @@ import {
   WORK_AMO_V8_AUTH_VERSION,
   WORK_AMO_V8_GLOBAL_PRECISION_MODEL,
   WORK_AMO_V8_MODELS,
+  WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL,
   WORK_AMO_V8_TRANSFER_VERSION,
   validateWorkAmoV8StaticAuthorization,
+  workAmoV8CanonicalTokenStateCommitment,
 } from "../server/work-amo-v8.mjs";
 import {
   normalizedWorkAmoV5Bip141Witness,
@@ -1228,7 +1230,7 @@ function isolatedFunction(path, name, globals = {}) {
     WORK_Q16_PENDING_MEMPOOL_MODEL:
       "canonical-core-mempool-txid-set-v1",
     WORK_Q16_PENDING_REBUILD_MODEL:
-      "canonical-work-q16-pending-rebuild-v1",
+      "canonical-work-q16-pending-rebuild-v2",
     WORK_Q16_SUMMARY_UNIT_PRICE_MODEL:
       "exact-work-q16-sats-per-unit-ratio-v1",
     WORK_PROJECTION_STATE_INVALID: "invalid",
@@ -5091,7 +5093,11 @@ check("canonical credit fee fields cannot be overwritten by stale projections", 
   const mergeCreditNetworkValueRecord = isolatedFunction(
     API_PATH,
     "mergeCreditNetworkValueRecord",
-    { CREDIT_NETWORK_VALUE_FIELD_NAMES: fields },
+    {
+      CREDIT_NETWORK_VALUE_FIELD_NAMES: fields,
+      mergedCreditRecordWithExactWorkAmount: (_current, _incoming, merged) =>
+        merged,
+    },
   );
   const canonical = {
     attributedMinerFeeSats: 0,
@@ -5153,7 +5159,300 @@ check("canonical credit fee fields cannot be overwritten by stale projections", 
   );
   assert.match(
     floorMergeSource,
-    /next\.sales = mergeCanonicalHistoryItems\([\s\S]*?mergeCreditNetworkValueRecord/u,
+    /next\.sales = mergeCanonicalHistoryItems\([\s\S]*?mergeTokenSaleRecord/u,
+  );
+  assert.match(
+    floorMergeSource,
+    /transfers: mergeCanonicalHistoryItems\([\s\S]*?mergeTokenTransferRecord/u,
+  );
+});
+
+check("Q8 and Q16 WORK movement merges expose one exact active precision lane", () => {
+  const fields = [
+    "canonicalMinerFeeSats",
+    "creditAmountMoved",
+    "creditAmountMovedDecimals",
+    "creditAmountMovedPrecisionModel",
+    "creditAmountMovedStorageModel",
+    "creditAmountMovedSubatoms",
+    "creditAmountMovedUnitScale",
+    "minerFeeSats",
+  ];
+  const transferMergeString = isolatedFunction(
+    API_PATH,
+    "transferMergeString",
+  );
+  const transferMergeNumber = isolatedFunction(
+    API_PATH,
+    "transferMergeNumber",
+    { numericValue },
+  );
+  const topLevelWorkAmountRecord = isolatedFunction(
+    API_PATH,
+    "topLevelWorkAmountRecord",
+  );
+  const tokenCreditAmountMovedFields = (record) => ({
+    creditAmountMoved: record.amount,
+    creditAmountMovedDecimals: WORK_SUBATOM_DECIMALS,
+    creditAmountMovedPrecisionModel: WORK_PRECISION_V2_MODEL,
+    creditAmountMovedStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+    creditAmountMovedSubatoms: record.amountSubatoms,
+    creditAmountMovedUnitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,
+  });
+  const mergedCreditRecordWithExactWorkAmount = isolatedFunction(
+    API_PATH,
+    "mergedCreditRecordWithExactWorkAmount",
+    {
+      WORK_ATOMIC_PROJECTION_MODEL,
+      WORK_SUBATOM_PROJECTION_MODEL,
+      WORK_TOKEN_ID,
+      isWorkTokenId,
+      tokenCreditAmountMovedFields,
+      tokenLedgerAmountFields,
+      tokenLedgerAmountFromRecord,
+      topLevelWorkAmountRecord,
+      transferMergeString,
+      workRecordUsesSubatoms,
+    },
+  );
+  const mergeCreditNetworkValueRecord = isolatedFunction(
+    API_PATH,
+    "mergeCreditNetworkValueRecord",
+    {
+      CREDIT_NETWORK_VALUE_FIELD_NAMES: fields,
+      mergedCreditRecordWithExactWorkAmount,
+    },
+  );
+  const mergeTokenSaleRecord = isolatedFunction(
+    API_PATH,
+    "mergeTokenSaleRecord",
+    {
+      isDeepStrictEqual: (left, right) =>
+        JSON.stringify(left) === JSON.stringify(right),
+      mergeCreditNetworkValueRecord,
+      tokenSaleAuthorizationTermsMatch: (left, right) =>
+        left.commitment === right.commitment,
+    },
+  );
+  const mergeTokenTransferRecord = isolatedFunction(
+    API_PATH,
+    "mergeTokenTransferRecord",
+    {
+      WORK_ATOMIC_PROJECTION_MODEL,
+      WORK_SUBATOM_PROJECTION_MODEL,
+      WORK_TOKEN_ID,
+      isWorkTokenId,
+      mergeCreditNetworkValueRecord,
+      newerIso: (left, right) => String(right ?? left ?? ""),
+      tokenLedgerAmountFields,
+      tokenLedgerAmountFromRecord,
+      transferMergeNumber,
+      transferMergeString,
+      workRecordUsesSubatoms,
+    },
+  );
+  const canonicalTokenSaleLedgerAmount = isolatedFunction(
+    API_PATH,
+    "canonicalTokenSaleLedgerAmount",
+    {
+      isWorkTokenId,
+      tokenLedgerAmountFromRecord,
+      topLevelWorkAmountRecord,
+    },
+  );
+  const rawAuthorization = {
+    amountAtoms: "100000000",
+    commitment: "legacy-sale-commitment",
+    signature: "legacy-signed-authorization",
+    version: "pwt-sale-v1",
+  };
+  const rawSaleEvidence = {
+    amountAtoms: "100000000",
+    evidenceTxid: "e".repeat(64),
+  };
+  const rawSourceAmountEvidence = {
+    amount: "1",
+    amountAtoms: "100000000",
+  };
+  const q8 = {
+    amount: "1",
+    amountAtoms: "100000000",
+    amountStorageModel: WORK_ATOMIC_PROJECTION_MODEL,
+    canonicalMinerFeeCovered: true,
+    canonicalMinerFeeSats: 11,
+    legacyAmountAtoms: "100000000",
+    canonicalSaleEvidence: rawSaleEvidence,
+    saleAuthorization: rawAuthorization,
+    sourceAmountEvidence: rawSourceAmountEvidence,
+    tokenId: WORK_TOKEN_ID,
+    txid: "a".repeat(64),
+  };
+  const q16 = {
+    amount: "1",
+    amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+    amountSubatoms: "10000000000000000",
+    canonicalMinerFeeCovered: false,
+    canonicalMinerFeeSats: 999,
+    creditAmountMovedAtoms: "100000000",
+    decimals: WORK_SUBATOM_DECIMALS,
+    precisionModel: WORK_PRECISION_V2_MODEL,
+    tokenId: WORK_TOKEN_ID,
+    txid: "a".repeat(64),
+    unitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,
+  };
+  for (const merged of [
+    mergeTokenSaleRecord(q8, q16),
+    mergeTokenSaleRecord(q16, q8),
+  ]) {
+    assert.equal(merged.amountStorageModel, WORK_SUBATOM_PROJECTION_MODEL);
+    assert.equal(merged.amountSubatoms, "10000000000000000");
+    assert.equal(merged.amountAtoms, undefined);
+    assert.equal(merged.tokenAmountAtoms, undefined);
+    assert.equal(merged.creditAmountMovedAtoms, undefined);
+    assert.equal(
+      merged.creditAmountMovedSubatoms,
+      "10000000000000000",
+    );
+    assert.equal(merged.legacyAmountAtoms, "100000000");
+    assert.equal(JSON.stringify(merged.saleAuthorization), JSON.stringify(rawAuthorization));
+    assert.equal(
+      JSON.stringify(merged.canonicalSaleEvidence),
+      JSON.stringify(rawSaleEvidence),
+    );
+    assert.equal(
+      JSON.stringify(merged.sourceAmountEvidence),
+      JSON.stringify(rawSourceAmountEvidence),
+    );
+    assert.equal(merged.canonicalMinerFeeSats, 11);
+    assert.equal(
+      canonicalTokenSaleLedgerAmount(WORK_TOKEN_ID, merged, {
+        workAmountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+      }),
+      10000000000000000n,
+    );
+  }
+
+  const mergedTransfer = mergeTokenTransferRecord(
+    {
+      ...q8,
+      recipientAddress: "receiver",
+      senderAddress: "sender",
+      saleAuthorization: undefined,
+    },
+    {
+      ...q16,
+      recipientAddress: "receiver",
+      senderAddress: "sender",
+    },
+  );
+  assert.equal(
+    mergedTransfer.amountSubatoms,
+    "10000000000000000",
+  );
+  assert.equal(mergedTransfer.amountAtoms, undefined);
+  assert.equal(mergedTransfer.creditAmountMovedAtoms, undefined);
+  assert.equal(
+    tokenLedgerAmountFromRecord(WORK_TOKEN_ID, mergedTransfer, {
+      workAmountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+    }),
+    10000000000000000n,
+  );
+
+  const q8OnlyRelic = mergeTokenSaleRecord(q8, {
+    ...q8,
+    canonicalMinerFeeCovered: false,
+    canonicalMinerFeeSats: 0,
+  });
+  assert.equal(q8OnlyRelic.amountAtoms, "100000000");
+  assert.equal(q8OnlyRelic.amountSubatoms, undefined);
+  assert.equal(
+    JSON.stringify(q8OnlyRelic.saleAuthorization),
+    JSON.stringify(rawAuthorization),
+  );
+
+  for (const empty of [undefined, null, {}]) {
+    for (const [left, right] of [
+      [q8, { ...q16, saleAuthorization: empty }],
+      [{ ...q16, saleAuthorization: empty }, q8],
+    ]) {
+      const preserved = mergeTokenSaleRecord(left, right);
+      assert.equal(preserved.saleAuthorization, rawAuthorization);
+      assert.equal(preserved.canonicalSaleEvidence, rawSaleEvidence);
+      assert.equal(
+        preserved.sourceAmountEvidence,
+        rawSourceAmountEvidence,
+      );
+    }
+  }
+
+  assert.throws(
+    () => mergeTokenSaleRecord(q8, {
+      ...q16,
+      saleAuthorization: {
+        ...rawAuthorization,
+        commitment: "conflicting-sale-commitment",
+      },
+    }),
+    /sale authorizations conflict/u,
+  );
+  assert.throws(
+    () => mergeTokenSaleRecord(q8, {
+      ...q16,
+      canonicalSaleEvidence: {
+        ...rawSaleEvidence,
+        evidenceTxid: "f".repeat(64),
+      },
+    }),
+    /canonicalSaleEvidence conflicts/u,
+  );
+  assert.throws(
+    () => mergeTokenSaleRecord(q8, {
+      ...q16,
+      sourceAmountEvidence: {
+        ...rawSourceAmountEvidence,
+        amountAtoms: "200000000",
+      },
+    }),
+    /sourceAmountEvidence conflicts/u,
+  );
+
+  const fractional = mergeTokenSaleRecord(
+    {
+      ...q16,
+      amount: "0.0000000000000001",
+      amountSubatoms: "1",
+      legacyAmountAtoms: undefined,
+    },
+    {
+      ...q16,
+      amount: "0.0000000000000001",
+      amountSubatoms: "1",
+      legacyAmountAtoms: undefined,
+    },
+  );
+  assert.equal(fractional.amountSubatoms, "1");
+  assert.equal(fractional.amountAtoms, undefined);
+  assert.equal(fractional.legacyAmountAtoms, undefined);
+
+  assert.throws(
+    () => mergeTokenSaleRecord(q8, {
+      ...q16,
+      amount: "2",
+      amountSubatoms: "20000000000000000",
+    }),
+    /amount projections conflict/u,
+  );
+  assert.throws(
+    () => mergeTokenTransferRecord(q8, {
+      ...q16,
+      amount: "2",
+      amountSubatoms: "20000000000000000",
+    }),
+    /amount projections conflict/u,
+  );
+  assert.match(
+    topLevelFunctionSource(API_PATH, "scopedTokenPayloadFromState"),
+    /canonicalTokenSaleLedgerAmount/u,
   );
 });
 
@@ -13480,6 +13779,217 @@ check("rebroadcast pending transactions clear every prior drop observation", asy
   assert.match(statement, /- 'statusObservation'/u);
 });
 
+check("Q16 pending readiness audits persisted WORK rows without requiring a full raw mempool sweep", () => {
+  const membershipStable = isolatedFunction(
+    BACKFILL_PATH,
+    "workQ16PendingMembershipStableAcrossSnapshots",
+    {
+      WORK_Q16_PENDING_MEMPOOL_MODEL:
+        "canonical-core-mempool-txid-set-v1",
+      canonicalMempoolTxidSnapshot: isolatedFunction(
+        BACKFILL_PATH,
+        "canonicalMempoolTxidSnapshot",
+        {
+          WORK_Q16_PENDING_MEMPOOL_MODEL:
+            "canonical-core-mempool-txid-set-v1",
+          Buffer,
+          canonicalJsonText: isolatedFunction(
+            BACKFILL_PATH,
+            "canonicalJsonText",
+          ),
+          compareCanonicalUtf8,
+          createHash,
+          isHexTxid: (value) =>
+            /^[0-9a-f]{64}$/u.test(String(value)),
+          normalizedLowerText: (value) =>
+            String(value ?? "").trim().toLowerCase(),
+          objectValue: (value) =>
+            value && typeof value === "object" && !Array.isArray(value)
+              ? value
+              : {},
+        },
+      ),
+      isHexTxid: (value) =>
+        /^[0-9a-f]{64}$/u.test(String(value)),
+    },
+  );
+  const snapshot = isolatedFunction(
+    BACKFILL_PATH,
+    "canonicalMempoolTxidSnapshot",
+    {
+      WORK_Q16_PENDING_MEMPOOL_MODEL:
+        "canonical-core-mempool-txid-set-v1",
+      Buffer,
+      canonicalJsonText: isolatedFunction(
+        BACKFILL_PATH,
+        "canonicalJsonText",
+      ),
+      compareCanonicalUtf8,
+      createHash,
+      isHexTxid: (value) =>
+        /^[0-9a-f]{64}$/u.test(String(value)),
+      normalizedLowerText: (value) =>
+        String(value ?? "").trim().toLowerCase(),
+      objectValue: (value) =>
+        value && typeof value === "object" && !Array.isArray(value)
+          ? value
+          : {},
+    },
+  );
+  const workTxid = "a".repeat(64);
+  const unrelatedTxid = "b".repeat(64);
+  const laterUnrelatedTxid = "c".repeat(64);
+  const initial = snapshot([workTxid, unrelatedTxid]);
+  const churned = snapshot([workTxid, laterUnrelatedTxid]);
+  assert.throws(
+    () => snapshot(null),
+    /exact Core mempool array or verbose object/u,
+  );
+  assert.equal(membershipStable(initial, churned, [workTxid]), true);
+  assert.equal(
+    membershipStable(initial, snapshot([laterUnrelatedTxid]), [workTxid]),
+    false,
+  );
+  assert.equal(
+    membershipStable(
+      { ...initial, count: initial.count + 1 },
+      churned,
+      [workTxid],
+    ),
+    false,
+  );
+  assert.equal(
+    membershipStable(
+      initial,
+      { ...churned, model: "wrong-model" },
+      [workTxid],
+    ),
+    false,
+  );
+
+  const source = topLevelFunctionSource(
+    BACKFILL_PATH,
+    "persistExactWorkQ16PendingWitness",
+  );
+  assert.match(
+    source,
+    /workQ16PendingMembershipStableAcrossSnapshots/u,
+  );
+  assert.match(
+    source,
+    /persisted-pending-work-projection-audit-v1/u,
+  );
+  assert.match(
+    source,
+    /bounded-best-effort-unconfirmed-discovery-v1/u,
+  );
+  assert.match(
+    source,
+    /membership\.expectedTxids/u,
+  );
+  assert.match(
+    source,
+    /op_return_vout AS protocol_vout[\s\S]*FROM proof_indexer\.events/u,
+    "the pending witness must project the canonical events column through its protocol-position alias",
+  );
+  assert.doesNotMatch(
+    source,
+    /SELECT\s+event_id,\s+txid,\s+kind,\s+protocol,\s+protocol_vout,/u,
+    "the pending witness must not select a synthetic events.protocol_vout column",
+  );
+  assert.match(
+    source,
+    /listing\.listing_id,[\s\S]*listing\.status,[\s\S]*listing\.payload[\s\S]*FROM proof_indexer\.credit_listings listing[\s\S]*LEFT JOIN proof_indexer\.transactions seal_tx/u,
+    "the pending witness must qualify joined listing fields against the listing relation",
+  );
+  assert.doesNotMatch(
+    source,
+    /SELECT\s+listing_id,\s+status,/u,
+    "the pending witness must not leave the joined status column ambiguous",
+  );
+});
+
+check("Q16 pending membership resolves only fully terminal multi-mint attempts", () => {
+  const canonicalJsonText = isolatedFunction(
+    BACKFILL_PATH,
+    "canonicalJsonText",
+  );
+  const workQ16PendingCommitment = (domain, rows) =>
+    createHash("sha256")
+      .update(
+        Buffer.from(
+          `ProofOfWork.Me/WORK-Q16-PENDING-${domain}/v1\n${
+            canonicalJsonText(rows)
+          }`,
+          "utf8",
+        ),
+      )
+      .digest("hex");
+  const pendingMembership = isolatedFunction(
+    BACKFILL_PATH,
+    "workQ16PendingMembership",
+    {
+      canonicalJsonText,
+      compareCanonicalUtf8,
+      isHexTxid: (value) => /^[0-9a-f]{64}$/u.test(String(value)),
+      normalizedLowerText: (value) =>
+        String(value ?? "").trim().toLowerCase(),
+      objectValue: (value) =>
+        value && typeof value === "object" && !Array.isArray(value)
+          ? value
+          : {},
+      workQ16PendingCommitment,
+    },
+  );
+  const txid = "d".repeat(64);
+  const terminalRaw = {
+    pendingProtocolResolvedInvalid: true,
+    pendingWorkMintAttemptCount: 2,
+    pendingWorkMintInspectionVersion: 1,
+    pendingWorkMintRecoveryNeeded: false,
+    pendingWorkMintResolvedInvalid: false,
+  };
+  const recoveryRow = {
+    raw_tx: terminalRaw,
+    status: "pending",
+    txid,
+  };
+  const resolved = pendingMembership({
+    eventRows: [],
+    listingRows: [],
+    recoveryRows: [recoveryRow],
+  });
+  assert.equal(resolved.invalidCount, 0);
+  assert.deepEqual(Array.from(resolved.expectedTxids), [txid]);
+  assert.equal(
+    pendingMembership({
+      eventRows: [],
+      listingRows: [],
+      recoveryRows: [{
+        ...recoveryRow,
+        raw_tx: {
+          ...terminalRaw,
+          pendingProtocolResolvedInvalid: false,
+        },
+      }],
+    }).invalidCount,
+    1,
+  );
+  assert.equal(
+    pendingMembership({
+      eventRows: [{
+        event_id: "valid-work-sibling",
+        kind: "token-listing",
+        txid,
+        valid: true,
+      }],
+      listingRows: [],
+      recoveryRows: [recoveryRow],
+    }).invalidCount,
+    1,
+  );
+});
+
 check("mempool scan cursor crosses the processed-txid retention boundary", () => {
   const isHexTxid = (value) => /^[0-9a-f]{64}$/u.test(String(value));
   const normalizedMempoolScanCursor = isolatedFunction(
@@ -15027,7 +15537,12 @@ check("same-height pending membership versions the canonical Log snapshot", asyn
   const runCycleSource = topLevelFunctionSource(WORKER_PATH, "runCycle");
   assert.match(
     runCycleSource,
-    /runCanonicalBeforePending\([\s\S]*runBackfillPhase\(backfillPhases\[0\]\)[\s\S]*runBackfillPhase\(backfillPhases\[1\]\)[\s\S]*pendingStatus = await refreshPendingStatuses\(pool\);/u,
+    /runCanonicalBeforePending\([\s\S]*runBackfillPhase\(backfillPhases\[0\]\)[\s\S]*pendingStatus = await refreshPendingStatusesSafely\(\);[\s\S]*runBackfillPhase\(backfillPhases\[1\]\)/u,
+  );
+  assert.doesNotMatch(
+    runCycleSource,
+    /async \(\) => \{\s*await runBackfillPhase\(backfillPhases\[1\]\);\s*pendingStatus = await refreshPendingStatusesSafely\(\);/u,
+    "pending status maintenance must not stale the final Q16 pending witness",
   );
 });
 
@@ -15098,9 +15613,150 @@ check("an outer ledger height cannot promote embedded token state", () => {
   assert.equal(state.indexedThroughBlock, 120);
 });
 
+check("Q16 canonical summary reuse binds the real token-state commitment and checkpoint model", async () => {
+  const objectValue = (value) =>
+    value && typeof value === "object" && !Array.isArray(value)
+      ? value
+      : {};
+  const canonicalJsonText = isolatedFunction(
+    BACKFILL_PATH,
+    "canonicalJsonText",
+  );
+  const stateMatches = isolatedFunction(
+    BACKFILL_PATH,
+    "exactWorkQ16LedgerSnapshotStateMatches",
+    {
+      WORK_PRECISION_V2_MODEL,
+      WORK_SUBATOM_DECIMALS,
+      WORK_SUBATOM_PROJECTION_MODEL,
+      WORK_SUBATOM_UNIT_SCALE_TEXT,
+      canonicalJsonText,
+      objectValue,
+      workAmoV8CanonicalTokenStateCommitment,
+    },
+  );
+  const expected = {
+    amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+    confirmedSupplySubatoms: "1",
+    decimals: WORK_SUBATOM_DECIMALS,
+    holders: [{ address: "holder", balanceSubatoms: "1" }],
+    indexedThroughBlock: 960_601,
+    indexedThroughBlockHash: "a".repeat(64),
+    listings: [],
+    precisionModel: WORK_PRECISION_V2_MODEL,
+    unitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,
+  };
+  assert.equal(stateMatches({ ...expected }, expected), true);
+  assert.equal(
+    stateMatches({ ...expected, decimals: "16" }, expected),
+    false,
+  );
+  assert.equal(
+    stateMatches(
+      {
+        ...expected,
+        confirmedSupplySubatoms: "2",
+        holders: [{ address: "holder", balanceSubatoms: "2" }],
+      },
+      expected,
+    ),
+    false,
+  );
+  assert.equal(
+    stateMatches(
+      { ...expected, indexedThroughBlockHash: "b".repeat(64) },
+      expected,
+    ),
+    false,
+  );
+
+  const projectionModelAtHeight = isolatedFunction(
+    BACKFILL_PATH,
+    "workProjectionModelAtHeight",
+    {
+      WORK_ATOMIC_PROJECTION_MODEL,
+      WORK_SUBATOM_PROJECTION_MODEL,
+      currentWorkPrecisionV2Marker: async () => ({
+        activationHeight: 960_601,
+      }),
+      currentWorkProjectionModel: async () =>
+        WORK_SUBATOM_PROJECTION_MODEL,
+    },
+  );
+  assert.equal(
+    await projectionModelAtHeight({}, 960_600),
+    WORK_ATOMIC_PROJECTION_MODEL,
+  );
+  assert.equal(
+    await projectionModelAtHeight({}, 960_601),
+    WORK_SUBATOM_PROJECTION_MODEL,
+  );
+  assert.equal(await projectionModelAtHeight({}, 0), "");
+
+  const tokenStatePayloads = isolatedFunction(
+    BACKFILL_PATH,
+    "canonicalSummaryTokenStatePayloads",
+    {
+      WORK_ATOMIC_PROJECTION_MODEL,
+      WORK_SUBATOM_PROJECTION_MODEL,
+      objectValue,
+    },
+  );
+  assert.equal(
+    JSON.stringify(tokenStatePayloads(
+      WORK_SUBATOM_PROJECTION_MODEL,
+      [
+        {
+          tokenStatePayloads: { legacy: true },
+          workAmountStorageModel: WORK_ATOMIC_PROJECTION_MODEL,
+        },
+        {
+          tokenStatePayloads: { current: true },
+          workAmountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+        },
+      ],
+    )),
+    JSON.stringify({ current: true }),
+  );
+  const mergedSameModelStates = tokenStatePayloads(
+    WORK_SUBATOM_PROJECTION_MODEL,
+    [
+      {
+        tokenStatePayloads: {
+          priorOnly: true,
+          shared: "previous",
+        },
+        workAmountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+      },
+      {
+        tokenStatePayloads: {
+          latestOnly: true,
+          shared: "ledger",
+        },
+        workAmountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+      },
+    ],
+  );
+  assert.equal(mergedSameModelStates.priorOnly, true);
+  assert.equal(mergedSameModelStates.latestOnly, true);
+  assert.equal(mergedSameModelStates.shared, "ledger");
+  assert.equal(
+    JSON.stringify(tokenStatePayloads(
+      WORK_SUBATOM_PROJECTION_MODEL,
+      [{
+        tokenStatePayloads: { current: true },
+        workAmountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+      }],
+      { historicalCheckpoint: true },
+    )),
+    JSON.stringify({}),
+  );
+});
+
 check("the hot worker publishes a fresh canonical summary with conservative coverage", async () => {
   const objectPayload = (value) =>
     value && typeof value === "object" && !Array.isArray(value) ? value : null;
+  const objectValue = (value) => objectPayload(value) ?? {};
   const numberOrNull = (value) =>
     Number.isFinite(Number(value)) ? Number(value) : null;
   const summaryPayloadConservativeCoverage = isolatedFunction(
@@ -15130,6 +15786,28 @@ check("the hot worker publishes a fresh canonical summary with conservative cove
     count: 2,
     hash: "f".repeat(64),
     pending: 0,
+  };
+  const workTokenId =
+    "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8";
+  const exactWorkState = {
+    amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+    confirmedSupplySubatoms: "1000000000000000000",
+    decimals: WORK_SUBATOM_DECIMALS,
+    holders: [],
+    indexedThroughBlock: 101,
+    indexedThroughBlockHash: "",
+    listings: [],
+    marker: "exact-transition-q16",
+    precisionModel: WORK_PRECISION_V2_MODEL,
+    unitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,
+  };
+  const exactWorkQ16CanonicalSummaryState = async (_client, payload) => {
+    const candidate = objectValue(payload?.tokenStatePayloads)[workTokenId];
+    return {
+      ready: candidate?.marker === exactWorkState.marker,
+      required: true,
+      state: exactWorkState,
+    };
   };
   const canonicalSummaryCoverage = isolatedFunction(
     BACKFILL_PATH,
@@ -15305,16 +15983,34 @@ check("the hot worker publishes a fresh canonical summary with conservative cove
       REQUIRED_CURRENT_SUMMARY_KEYS: requiredKeys,
       WORK_MARKET_V2_AUTH_VERSION: "pwt-sale-v3",
       WORK_MARKET_V4_AUTH_VERSION: "pwt-sale-v4",
-      WORK_TOKEN_ID:
-        "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8",
+      WORK_TOKEN_ID: workTokenId,
+      canonicalSummaryTokenStatePayloads: (
+        workAmountStorageModel,
+        sources,
+        { historicalCheckpoint = false } = {},
+      ) => {
+        if (historicalCheckpoint) {
+          return {};
+        }
+        return sources.reduce((merged, source) =>
+          source?.workAmountStorageModel === workAmountStorageModel
+            ? {
+                ...merged,
+                ...objectValue(source?.tokenStatePayloads),
+              }
+            : merged,
+        {});
+      },
       canonicalSummaryAccountingModelsCurrent,
       canonicalSummaryCoverage,
       createHash,
-      currentWorkProjectionModel: async () =>
+      workProjectionModelAtHeight: async () =>
         WORK_SUBATOM_PROJECTION_MODEL,
+      exactWorkQ16CanonicalSummaryState,
       latestBlockScanCheckpoint: async () => ({ height: 101 }),
       numberOrNull,
       objectPayload,
+      objectValue,
       publicLogRelationalFingerprint: async () => publicLogFingerprint,
       publicLogFingerprintsMatch: (left, right) =>
         left?.hash === right?.hash &&
@@ -15338,7 +16034,14 @@ check("the hot worker publishes a fresh canonical summary with conservative cove
             ok: true,
             snapshotId: "full-101",
             status: "consistent",
+            tokenStatePayloads: {
+              [workTokenId]: {
+                amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+                marker: "stale-ledger-work-state",
+              },
+            },
             tokenState: { indexedThroughBlock: 101, marker: "canonical" },
+            workAmountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
           },
           snapshotId: "full-101",
           summaryPayloads: Object.fromEntries(
@@ -15361,7 +16064,7 @@ check("the hot worker publishes a fresh canonical summary with conservative cove
   const result = await storeCanonicalSummarySnapshot({
     async query(sql, params) {
       inserted.push({ params: Array.from(params), sql: String(sql) });
-      return { rows: [] };
+      return { rows: [{ snapshot_id: String(params[1]) }] };
     },
   });
   assert.equal(result.skipped, false);
@@ -15371,6 +16074,18 @@ check("the hot worker publishes a fresh canonical summary with conservative cove
   const stored = JSON.parse(inserted[0].params[7]);
   assert.equal(stored.indexedThroughBlock, 101);
   assert.equal(stored.tokenState.marker, "canonical");
+  assert.equal(
+    stored.tokenStatePayloads[workTokenId].marker,
+    "exact-transition-q16",
+  );
+  assert.equal(
+    stored.tokenStatePayloads[workTokenId].amountStorageModel,
+    WORK_SUBATOM_PROJECTION_MODEL,
+  );
+  assert.equal(
+    stored.tokenStatePayloads[workTokenId].decimals,
+    WORK_SUBATOM_DECIMALS,
+  );
   assert.equal(
     stored.workAmountStorageModel,
     WORK_SUBATOM_PROJECTION_MODEL,
@@ -15437,6 +16152,35 @@ check("the hot worker publishes a fresh canonical summary with conservative cove
     summaryPayloads: currentSummaryPayloads,
     summaryRefresh: { publicLogFingerprint },
   };
+  const repairedMissingStateResult = await storeCanonicalSummarySnapshot({
+    async query(sql, params) {
+      inserted.push({ params: Array.from(params), sql: String(sql) });
+      return { rows: [{ snapshot_id: String(params[1]) }] };
+    },
+  });
+  assert.equal(repairedMissingStateResult.skipped, false);
+  assert.equal(inserted.length, 2);
+  const repairedMissingState = JSON.parse(inserted[1].params[7]);
+  assert.equal(
+    repairedMissingState.tokenStatePayloads[workTokenId].marker,
+    "exact-transition-q16",
+  );
+  await rejection(
+    storeCanonicalSummarySnapshot({
+      async query(sql, params) {
+        inserted.push({ params: Array.from(params), sql: String(sql) });
+        return { rows: [] };
+      },
+    }),
+    (error) => /immutable and cannot be repaired in place/u.test(error.message),
+    "A protected same-tip snapshot no-op was reported as a successful Q16 repair",
+  );
+  assert.match(inserted[2].sql, /RETURNING snapshot_id/u);
+
+  previousPayload = {
+    ...previousPayload,
+    tokenStatePayloads: { [workTokenId]: exactWorkState },
+  };
   const currentResult = await storeCanonicalSummarySnapshot({
     async query() {
       throw new Error("A current same-tip accounting snapshot must not write");
@@ -15445,7 +16189,7 @@ check("the hot worker publishes a fresh canonical summary with conservative cove
   assert.equal(currentResult.skipped, true);
   assert.equal(currentResult.reason, "already-current");
   assert.equal(currentResult.snapshotId, "full-101-current-models");
-  assert.equal(inserted.length, 1);
+  assert.equal(inserted.length, 3);
 });
 
 check("ledger snapshot retention preserves pinned issuance oracles", async () => {
@@ -17353,6 +18097,13 @@ check("canonical summary timeouts fail closed unless an eligible prior snapshot 
       canonicalSummaryAccountingModelsCurrent: () => true,
       canonicalSummaryCoverage: () => 100,
       canonicalSummaryRefreshCanDefer,
+      workProjectionModelAtHeight: async () =>
+        WORK_SUBATOM_PROJECTION_MODEL,
+      exactWorkQ16CanonicalSummaryState: async () => ({
+        ready: true,
+        required: true,
+        state: {},
+      }),
       latestBlockScanCheckpoint: async () => ({
         blockHash: latestHash,
         height: 101,
@@ -17421,6 +18172,13 @@ check("an Inception summary barrier is exact and cannot defer", async () => {
       canonicalSummaryAccountingModelsCurrent: () => true,
       canonicalSummaryCoverage: () => 101,
       canonicalSummaryRefreshCanDefer: () => true,
+      workProjectionModelAtHeight: async () =>
+        WORK_SUBATOM_PROJECTION_MODEL,
+      exactWorkQ16CanonicalSummaryState: async () => ({
+        ready: true,
+        required: true,
+        state: {},
+      }),
       latestBlockScanCheckpoint: async () => ({
         blockHash: checkpointHash,
         height: 101,
@@ -17448,6 +18206,7 @@ check("an Inception summary barrier is exact and cannot defer", async () => {
         },
         summaryPayloads: {},
       }),
+      storedLedgerSnapshotPayload: async () => ({}),
       unpagedEndpoint: (pathname) =>
         new URL(`http://127.0.0.1:8081${pathname}`),
     },
@@ -17757,6 +18516,7 @@ check("canonical summary node:http preserves status semantics and caps bodies", 
 check("the canonical summary publisher rejects mixed snapshot identities", async () => {
   const objectPayload = (value) =>
     value && typeof value === "object" && !Array.isArray(value) ? value : null;
+  const objectValue = (value) => objectPayload(value) ?? {};
   const numberOrNull = (value) =>
     Number.isFinite(Number(value)) ? Number(value) : null;
   const requiredKeys = [
@@ -17801,9 +18561,17 @@ check("the canonical summary publisher rejects mixed snapshot identities", async
       canonicalSummaryAccountingModelsCurrent,
       canonicalSummaryCoverage,
       createHash,
+      workProjectionModelAtHeight: async () =>
+        WORK_SUBATOM_PROJECTION_MODEL,
+      exactWorkQ16CanonicalSummaryState: async () => ({
+        ready: false,
+        required: true,
+        state: {},
+      }),
       latestBlockScanCheckpoint: async () => ({ height: 101 }),
       numberOrNull,
       objectPayload,
+      objectValue,
       publicLogRelationalFingerprint: async () => ({
         contract: "proof-index-public-log-fingerprint-v1",
         count: 1,
@@ -17849,6 +18617,257 @@ check("the canonical summary publisher rejects mixed snapshot identities", async
 });
 
 check("exact canonical summaries require current conserved token balances", async () => {
+  const canonicalBootstrapConstraints = [
+    "activation",
+    "definition",
+    "markerImmutable",
+    "transition",
+    "v6",
+    "v6Deactivation",
+    "v6Immutable",
+    "v7HistoryImmutable",
+    "v7Immutable",
+    "v8",
+  ];
+  const canonicalSummaryBootstrapReady = isolatedFunction(
+    READER_PATH,
+    "workPrecisionV2CanonicalSummaryBootstrapReady",
+    {
+      WORK_AMO_V8_GLOBAL_PRECISION_MODEL,
+      WORK_PRECISION_V2_CANONICAL_BOOTSTRAP_CONSTRAINTS:
+        canonicalBootstrapConstraints,
+      WORK_PRECISION_V2_MIGRATION_MODEL,
+      WORK_SUBATOM_DECIMALS,
+      WORK_SUBATOM_PROJECTION_MODEL,
+      WORK_SUBATOM_UNIT_SCALE_TEXT,
+    },
+  );
+  const bootstrapHash = "d".repeat(64);
+  const bootstrapPins = {
+    activationHeight: 102,
+    declarationBlockHash: "a".repeat(64),
+    declarationBlockIndex: 7,
+    declarationHeight: 101,
+    declarationMemoBytes: 5593,
+    declarationMemoSha256: "b".repeat(64),
+    declarationProtocolVout: 3,
+    declarationRecordOrdinal: 0,
+    declarationRegistryPaymentVout: 4,
+    declarationTxid: "c".repeat(64),
+  };
+  const bootstrapReadiness = {
+    activationHeight: 102,
+    active: false,
+    canonical: true,
+    canonicalSummaryBootstrapReady: true,
+    confirmed: true,
+    confirmedReplayReady: true,
+    constraints: Object.fromEntries(
+      canonicalBootstrapConstraints.map((constraint) => [constraint, true]),
+    ),
+    constraintsReady: true,
+    declarationEvidence: {
+      blockHash: bootstrapPins.declarationBlockHash,
+      blockHeight: bootstrapPins.declarationHeight,
+      blockTransactionIndex: bootstrapPins.declarationBlockIndex,
+      evidenceComplete: true,
+      payloadBytes: bootstrapPins.declarationMemoBytes,
+      payloadSha256: bootstrapPins.declarationMemoSha256,
+      protocolVout: bootstrapPins.declarationProtocolVout,
+      recordOrdinal: bootstrapPins.declarationRecordOrdinal,
+      registryPaymentVout: bootstrapPins.declarationRegistryPaymentVout,
+      txid: bootstrapPins.declarationTxid,
+    },
+    declarationIndexReady: true,
+    definitionReady: true,
+    evidenceComplete: true,
+    exactTipReady: true,
+    legacyProjectionReady: true,
+    marker: {
+      activationHeight: bootstrapPins.activationHeight,
+      declarationHeight: bootstrapPins.declarationHeight,
+      declarationTxid: bootstrapPins.declarationTxid,
+      decimals: WORK_SUBATOM_DECIMALS,
+      globalPrecisionModel: WORK_AMO_V8_GLOBAL_PRECISION_MODEL,
+      model: WORK_PRECISION_V2_MIGRATION_MODEL,
+      projectionModel: WORK_SUBATOM_PROJECTION_MODEL,
+      status: "complete",
+      unitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,
+    },
+    markerReady: true,
+    openingReady: true,
+    parityReady: true,
+    pendingReady: false,
+    precision: {
+      amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+      decimals: WORK_SUBATOM_DECIMALS,
+      unitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,
+    },
+    ready: false,
+    replayReady: false,
+    snapshotTokenStateReady: false,
+    tipHash: bootstrapHash,
+    tipHeight: 102,
+  };
+  const bootstrapOptions = {
+    allowCanonicalSummaryBootstrap: true,
+    exactCheckpointHash: bootstrapHash,
+    exactCheckpointHeight: 102,
+  };
+  assert.equal(
+    canonicalSummaryBootstrapReady(
+      bootstrapReadiness,
+      bootstrapPins,
+      bootstrapOptions,
+    ),
+    true,
+    "an exact relational Q16 state may bootstrap only the missing summary witness",
+  );
+  for (const field of [
+    "canonical",
+    "canonicalSummaryBootstrapReady",
+    "confirmed",
+    "confirmedReplayReady",
+    "constraintsReady",
+    "declarationIndexReady",
+    "definitionReady",
+    "evidenceComplete",
+    "exactTipReady",
+    "legacyProjectionReady",
+    "markerReady",
+    "openingReady",
+    "parityReady",
+  ]) {
+    assert.equal(
+      canonicalSummaryBootstrapReady(
+        { ...bootstrapReadiness, [field]: false },
+        bootstrapPins,
+        bootstrapOptions,
+      ),
+      false,
+      `${field} must fail the canonical-summary bootstrap closed`,
+    );
+  }
+  assert.equal(
+    canonicalSummaryBootstrapReady(
+      bootstrapReadiness,
+      bootstrapPins,
+      { ...bootstrapOptions, allowCanonicalSummaryBootstrap: false },
+    ),
+    false,
+  );
+  const migrationReadinessSource = topLevelFunctionSource(
+    READER_PATH,
+    "proofIndexWorkPrecisionV2MigrationReadiness",
+  );
+  assert.match(
+    migrationReadinessSource,
+    /const confirmedReplayReady =[\s\S]*Number\(row\.transition_height\) === tipHeight[\s\S]*normalizedLowerText\(row\.transition_hash\) === tipHash[\s\S]*row\.transition_model === WORK_AMO_V8_BLOCK_SEQUENCER_MODEL[\s\S]*row\.work_token_state_model ===[\s\S]*Number\(row\.transition_count\) === expectedTransitionCount[\s\S]*Number\(row\.invalid_transition_count\) === 0[\s\S]*activationOpeningReady[\s\S]*closingTokenStateReady/u,
+  );
+  assert.match(
+    migrationReadinessSource,
+    /const replayReady = confirmedReplayReady && snapshotReplayReady/u,
+  );
+  assert.match(
+    migrationReadinessSource,
+    /const markerReady = workPrecisionV2MarkerBindsReader\(marker, pins\);[\s\S]*const declarationIndexReady =[\s\S]*indexedWorkPrecisionEvidenceMatchesMarker\(row, marker\);/u,
+  );
+  assert.match(
+    migrationReadinessSource,
+    /const confirmedStateReadyWithinSnapshot =[\s\S]*markerReady[\s\S]*declarationIndexReady[\s\S]*definitionReady[\s\S]*constraintsReady[\s\S]*stateCommitmentsReady[\s\S]*confirmedReplayReady[\s\S]*legacyProjectionReady/u,
+  );
+  assert.match(
+    migrationReadinessSource,
+    /const canonicalSummaryBootstrapReady =[\s\S]*confirmedStateReadyWithinSnapshot && exactTipReady/u,
+  );
+  assert.equal(
+    canonicalSummaryBootstrapReady(
+      bootstrapReadiness,
+      bootstrapPins,
+      { ...bootstrapOptions, exactCheckpointHash: "e".repeat(64) },
+    ),
+    false,
+  );
+  assert.equal(
+    canonicalSummaryBootstrapReady(
+      {
+        ...bootstrapReadiness,
+        constraints: {
+          ...bootstrapReadiness.constraints,
+          markerImmutable: false,
+        },
+      },
+      bootstrapPins,
+      bootstrapOptions,
+    ),
+    false,
+  );
+  let policyReadiness = bootstrapReadiness;
+  const currentPrecisionPolicy = isolatedFunction(
+    READER_PATH,
+    "payloadWithCurrentWorkPrecisionReadPolicy",
+    {
+      WORK_ATOMIC_PROJECTION_MODEL,
+      WORK_SUBATOM_PROJECTION_MODEL,
+      configuredWorkPrecisionV2ReaderPins: () => bootstrapPins,
+      normalizedLowerText: (value) =>
+        String(value ?? "").trim().toLowerCase(),
+      proofIndexWorkAmoV8ActivationLatch: async () => ({ reached: true }),
+      proofIndexWorkPrecisionV2MigrationReadiness: async () => policyReadiness,
+      workPrecisionV2CanonicalSummaryBootstrapReady:
+        canonicalSummaryBootstrapReady,
+      workPrecisionV2CurrentPayloadIsExact: () => true,
+      workPrecisionV2ProjectCurrentPayload: (payload) => payload,
+    },
+  );
+  const exactRelationalPayload = {
+    holders: [
+      {
+        amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+        tokenId: WORK_TOKEN_ID,
+      },
+    ],
+    indexedThroughBlock: 102,
+    indexedThroughBlockHash: bootstrapHash,
+    source: "proof-indexer-token-state-tables",
+    tokens: [
+      {
+        amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+        tokenId: WORK_TOKEN_ID,
+      },
+    ],
+  };
+  assert.equal(
+    await currentPrecisionPolicy(
+      "livenet",
+      exactRelationalPayload,
+      {
+        ...bootstrapOptions,
+        requireExactCheckpoint: true,
+      },
+    ),
+    exactRelationalPayload,
+    "the internal exact-checkpoint read must break only the summary-witness cycle",
+  );
+  assert.equal(
+    await currentPrecisionPolicy("livenet", exactRelationalPayload),
+    null,
+    "the same not-ready state must remain unavailable without the internal bootstrap option",
+  );
+  policyReadiness = {
+    ...bootstrapReadiness,
+    active: true,
+    pendingReady: true,
+    ready: true,
+    replayReady: true,
+    snapshotTokenStateReady: true,
+  };
+  assert.equal(
+    await currentPrecisionPolicy("livenet", exactRelationalPayload),
+    exactRelationalPayload,
+    "ordinary reads reopen only after full readiness",
+  );
+
   const tokenTablePayloadHasConservedBalances = isolatedFunction(
     API_PATH,
     "tokenTablePayloadHasConservedBalances",
@@ -17947,6 +18966,7 @@ check("exact canonical summaries require current conserved token balances", asyn
   );
 
   let requestedHeight = 0;
+  let requestedHash = "";
   let tablePayload = null;
   const exactTokenTablePayloadForCanonicalLedger = isolatedFunction(
     API_PATH,
@@ -17958,27 +18978,194 @@ check("exact canonical summaries require current conserved token balances", asyn
         options,
       ) => {
         requestedHeight = options.exactHeight;
+        requestedHash = options.exactHash;
         return tablePayload;
       },
       freshDataUnavailableError: (message) => new Error(message),
       tokenTablePayloadHasConservedBalances,
     },
   );
+  const exactHash = "c".repeat(64);
   await rejection(
-    exactTokenTablePayloadForCanonicalLedger("livenet", "fixture", 101),
+    exactTokenTablePayloadForCanonicalLedger(
+      "livenet",
+      "fixture",
+      101,
+      exactHash,
+    ),
     (error) => /exact conserved token balances are unavailable/u.test(error.message),
   );
   assert.equal(requestedHeight, 101);
+  assert.equal(requestedHash, exactHash);
   await rejection(
-    exactTokenTablePayloadForCanonicalLedger("livenet", "fixture", 0),
-    (error) => /exact positive token-table checkpoint/u.test(error.message),
+    exactTokenTablePayloadForCanonicalLedger("livenet", "fixture", 0, exactHash),
+    (error) => /exact positive hash-bound token-table checkpoint/u.test(error.message),
+  );
+  await rejection(
+    exactTokenTablePayloadForCanonicalLedger("livenet", "fixture", 101, ""),
+    (error) => /exact positive hash-bound token-table checkpoint/u.test(error.message),
   );
   tablePayload = conserved;
   assert.equal(
-    await exactTokenTablePayloadForCanonicalLedger("livenet", "fixture", 102),
+    await exactTokenTablePayloadForCanonicalLedger(
+      "livenet",
+      "fixture",
+      102,
+      exactHash,
+    ),
     conserved,
   );
   assert.equal(requestedHeight, 102);
+  assert.equal(requestedHash, exactHash);
+
+  const tokenTableReadSource = topLevelFunctionSource(
+    API_PATH,
+    "currentProofIndexTokenTablePayloadForLedger",
+  );
+  assert.match(
+    tokenTableReadSource,
+    /proofIndexCanonicalSummaryTokenTablePayload\(network, \{[\s\S]*exactHash: options\.exactHash,[\s\S]*exactHeight: options\.exactHeight[\s\S]*payloadIndexedThroughBlockHash\(payload\) !== exactHash/u,
+  );
+  const tokenPayloadReaderSource = topLevelFunctionSource(
+    READER_PATH,
+    "proofIndexTokenPayload",
+  );
+  assert.doesNotMatch(
+    tokenPayloadReaderSource,
+    /canonicalSummaryBootstrap/u,
+    "public token reads must have no bootstrap option",
+  );
+  let relationalFixture = {
+    holders: [],
+    indexedThroughBlock: 102,
+    indexedThroughBlockHash: bootstrapHash,
+    listings: [
+      {
+        listingId: "1".repeat(64),
+        saleAuthorization: { version: WORK_AMO_V8_AUTH_VERSION },
+        tokenId: WORK_TOKEN_ID,
+      },
+    ],
+    mints: [],
+    source: "proof-indexer-token-state-tables",
+    tokens: [],
+  };
+  let requestedScope = "";
+  let precisionOptions = null;
+  const cutoverOrder = [];
+  const canonicalSummaryTokenTablePayload = isolatedFunction(
+    READER_PATH,
+    "proofIndexCanonicalSummaryTokenTablePayload",
+    {
+      WORK_AMO_V8_AUTH_VERSION,
+      applyWorkAmoV5CutoverToTokenState: (payload) => {
+        cutoverOrder.push("v5-project");
+        assert.ok(payload.workAmoV5Activation);
+        assert.ok(payload.workAmoV5PreUnitRelicEvidence);
+        return { ...payload, workAmoV5ProjectionReady: true };
+      },
+      applyWorkAmoV6PublicListingReadPolicy: (payload, versions) => ({
+        ...payload,
+        listings: payload.listings.filter((listing) =>
+          versions.includes(listing.saleAuthorization?.version)
+        ),
+      }),
+      applyWorkMarketV2CutoverToTokenState: (payload) => {
+        cutoverOrder.push("v2-project");
+        return payload;
+      },
+      normalizedLowerText: (value) =>
+        String(value ?? "").trim().toLowerCase(),
+      payloadWithCurrentWorkPrecisionReadPolicy: async (
+        _network,
+        payload,
+        options,
+      ) => {
+        precisionOptions = options;
+        return payload;
+      },
+      payloadWithVerifiedWorkMarketV4Activation: async (
+        _pool,
+        _network,
+        payload,
+      ) => payload,
+      payloadWithVerifiedWorkAmoV5Activation: async (
+        _network,
+        payload,
+      ) => {
+        cutoverOrder.push("v5-hydrate");
+        return {
+          ...payload,
+          workAmoV5Activation: { canonical: true },
+          workAmoV5PreUnitRelicEvidence: { canonical: true },
+        };
+      },
+      proofIndexPool: () => ({}),
+      proofIndexTokenPayloadFromCurrentTables: async (
+        _pool,
+        _network,
+        scope,
+      ) => {
+        requestedScope = scope;
+        return relationalFixture;
+      },
+      workListingAuthorizationAllowed: (listing, versions) =>
+        versions.includes(listing.saleAuthorization?.version),
+    },
+  );
+  const bootstrappedTokenTable =
+    await canonicalSummaryTokenTablePayload("livenet", {
+      exactHash: bootstrapHash,
+      exactHeight: 102,
+    });
+  assert.equal(requestedScope, "all");
+  assert.equal(precisionOptions.allowCanonicalSummaryBootstrap, true);
+  assert.equal(precisionOptions.requireExactCheckpoint, true);
+  assert.deepEqual(cutoverOrder, [
+    "v2-project",
+    "v5-hydrate",
+    "v5-project",
+  ]);
+  assert.equal(bootstrappedTokenTable.workAmoV5ProjectionReady, true);
+  assert.equal(bootstrappedTokenTable.listings.length, 1);
+  assert.equal(
+    bootstrappedTokenTable.listings[0].saleAuthorization.version,
+    WORK_AMO_V8_AUTH_VERSION,
+    "a confirmed V8 listing must survive the internal relational bootstrap",
+  );
+  relationalFixture = {
+    ...relationalFixture,
+    source: "proof-indexer-token-state-snapshot",
+  };
+  assert.equal(
+    await canonicalSummaryTokenTablePayload("livenet", {
+      exactHash: bootstrapHash,
+      exactHeight: 102,
+    }),
+    null,
+    "snapshot-backed state cannot enter the bootstrap lane",
+  );
+  relationalFixture = {
+    ...relationalFixture,
+    indexedThroughBlockHash: "e".repeat(64),
+    source: "proof-indexer-token-state-tables",
+  };
+  assert.equal(
+    await canonicalSummaryTokenTablePayload("livenet", {
+      exactHash: bootstrapHash,
+      exactHeight: 102,
+    }),
+    null,
+    "the relational state must be hash-bound to the requested checkpoint",
+  );
+  const tableProjectionSource = topLevelFunctionSource(
+    READER_PATH,
+    "proofIndexTokenPayloadFromCurrentTables",
+  );
+  assert.match(
+    tableProjectionSource,
+    /scanPayload\.indexedThroughBlockHash[\s\S]*scanSourceHashes\.blockScan[\s\S]*indexedThroughBlockHash/u,
+  );
 });
 
 check("table-backed token listings bind the definition alias exactly once", () => {
@@ -37943,7 +39130,10 @@ check("compact token definitions preserve per-token market totals beyond preview
   const tokenAggregateSummaries = isolatedFunction(
     API_PATH,
     "tokenAggregateSummaries",
-    { tokenListingHasConfirmedSaleTicketSeal },
+    {
+      canonicalTokenSaleLedgerAmount: tokenLedgerAmountFromRecord,
+      tokenListingHasConfirmedSaleTicketSeal,
+    },
   );
   const tokenSummaryMetricValue = isolatedFunction(
     API_PATH,
@@ -38053,6 +39243,7 @@ check("Q16 WORK summaries preserve exact supply and rational market prices", () 
     API_PATH,
     "tokenAggregateSummaries",
     {
+      canonicalTokenSaleLedgerAmount: tokenLedgerAmountFromRecord,
       tokenListingHasConfirmedSaleTicketSeal,
       tokenLedgerApproximateNumber: (
         tokenId,
@@ -39860,7 +41051,11 @@ check("exact-tip WORK transfer projection preserves both Inception H-1 values", 
   const mergeCreditNetworkValueRecord = isolatedFunction(
     API_PATH,
     "mergeCreditNetworkValueRecord",
-    { CREDIT_NETWORK_VALUE_FIELD_NAMES: numericFields },
+    {
+      CREDIT_NETWORK_VALUE_FIELD_NAMES: numericFields,
+      mergedCreditRecordWithExactWorkAmount: (_current, _incoming, merged) =>
+        merged,
+    },
   );
   const transferHistoryItemKey = isolatedFunction(
     API_PATH,
@@ -48764,6 +49959,107 @@ check("AMO V5 relational WORK state releases only unambiguous legacy reservation
   }
 });
 
+check("AMO V8 relational closing evidence reads canonical Q16 units", async () => {
+  const balanceRows = [
+    {
+      address: "q16-holder-a",
+      balance_subatoms: "209999999999999999999999",
+    },
+    {
+      address: "q16-holder-b",
+      balance_subatoms: "1",
+    },
+  ];
+  let listingQuery = "";
+  let listingRows = [];
+  const client = {
+    async query(sql) {
+      const text = String(sql);
+      if (text.includes("proof_indexer.credit_balances")) {
+        return { rows: structuredClone(balanceRows) };
+      }
+      if (text.includes("proof_indexer.credit_listings")) {
+        listingQuery = text;
+        return { rows: structuredClone(listingRows) };
+      }
+      throw new Error(`Unexpected Q16 relational query: ${text}`);
+    },
+  };
+  const evidenceReader = isolatedFunction(
+    READER_PATH,
+    "proofIndexWorkAmoV8RelationalTokenStateEvidence",
+    {
+      WORK_AMO_V8_AUTH_VERSION,
+      WORK_TOKEN_ID,
+      proofIndexPool: () => client,
+      workAmoV8CanonicalTokenStateCommitment,
+    },
+  );
+  const expected = workAmoV8CanonicalTokenStateCommitment({
+    confirmedSupplySubatoms: "210000000000000000000000",
+    holders: balanceRows.map((row) => ({
+      address: row.address,
+      balanceSubatoms: row.balance_subatoms,
+    })),
+    listings: [],
+  });
+  const evidence = await evidenceReader("livenet", expected);
+  assert.equal(evidence.complete, true);
+  assert.equal(
+    evidence.confirmedSupplySubatoms,
+    "210000000000000000000000",
+  );
+  assert.equal(evidence.holderCount, 2);
+  assert.equal(evidence.listingCount, 0);
+  assert.deepEqual(evidence.commitment, expected);
+  assert.match(
+    listingQuery,
+    /LEFT JOIN proof_indexer\.work_amo_v8_listing_terms v8_terms/u,
+  );
+  assert.match(
+    listingQuery,
+    /v8_terms\.unit_amount_subatoms = listing\.amount/u,
+  );
+  assert.match(
+    listingQuery,
+    /listing\.payload->'workAmoV8FrozenTerms' =\s*v8_terms\.frozen_terms/u,
+  );
+
+  const mismatch = await evidenceReader("livenet", {
+    ...expected,
+    sha256: "f".repeat(64),
+  });
+  assert.equal(mismatch.complete, false);
+  assert.equal(
+    mismatch.reason,
+    "relational-v8-token-state-commitment-mismatch",
+  );
+
+  listingRows = [{
+    authorization_version: WORK_AMO_V8_AUTH_VERSION,
+    immutable_terms_complete: false,
+  }];
+  const missingTerms = await evidenceReader("livenet", expected);
+  assert.equal(missingTerms.complete, false);
+  assert.equal(
+    missingTerms.reason,
+    "relational-v8-listing-terms-invalid",
+  );
+
+  const closingSource = topLevelFunctionSource(
+    API_PATH,
+    "workFloorWithVerifiedWorkAmoV5ClosingState",
+  );
+  assert.match(
+    closingSource,
+    /transition\.workTokenStateModel\s*===\s*WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL/u,
+  );
+  assert.match(
+    closingSource,
+    /proofIndexWorkAmoV8RelationalTokenStateEvidence/u,
+  );
+});
+
 check("the first V6 listing crosses replay binding into atomic persistence without trusting its zero placeholder", async () => {
   const listingId =
     "b259fa601676287eca2ea94c9142cd13b45fde7031ec98967f15306df6ef7936";
@@ -50831,6 +52127,7 @@ check("AMO V5 transition closing value publishes and chains across adjacent bloc
       WORK_NETWORK_VALUE_ACCOUNTING_MODEL,
       WORK_AMO_V5_RAW_BLOCK_DESCRIPTOR_MODEL,
       WORK_AMO_V5_RAW_TRANSITION_CHAIN_MODEL,
+      WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL,
       WORK_TOKEN_MAX_SUPPLY,
       decimalTextFromQ8,
       exactWorkAmoV5RawBlockDescriptorCommitment,
@@ -50840,6 +52137,9 @@ check("AMO V5 transition closing value publishes and chains across adjacent bloc
       proofIndexWorkAmoBlockTransition: async () =>
         transitions.get(blockH1),
       proofIndexWorkAmoRelationalTokenStateEvidence: async () => ({
+        complete: true,
+      }),
+      proofIndexWorkAmoV8RelationalTokenStateEvidence: async () => ({
         complete: true,
       }),
       proofIndexWorkAmoLegacyBootstrapCarryEvidence: async () => ({
@@ -51377,6 +52677,7 @@ check("AMO V5 legacy carry preserves committed N while publishing valid-only mar
       WORK_AMO_V5_NETWORK_ACCUMULATOR_MODEL,
       WORK_AMO_V5_RAW_BLOCK_DESCRIPTOR_MODEL,
       WORK_AMO_V5_RAW_TRANSITION_CHAIN_MODEL,
+      WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL,
       WORK_NETWORK_VALUE_ACCOUNTING_MODEL,
       decimalTextFromQ8,
       exactWorkAmoV5RawBlockDescriptorCommitment,
@@ -51387,6 +52688,9 @@ check("AMO V5 legacy carry preserves committed N while publishing valid-only mar
       proofIndexWorkAmoLegacyBootstrapCarryEvidence: async () =>
         currentEvidence,
       proofIndexWorkAmoRelationalTokenStateEvidence: async () => ({
+        complete: true,
+      }),
+      proofIndexWorkAmoV8RelationalTokenStateEvidence: async () => ({
         complete: true,
       }),
       validateWorkAmoV5SufficientState: (candidate) => ({

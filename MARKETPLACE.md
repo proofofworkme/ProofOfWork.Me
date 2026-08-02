@@ -912,9 +912,9 @@ After V7 activation, new V6 listings and new `send2` transfers are invalid,
 but valid pre-activation listings of every supported historical version
 remain visible and settleable under their original frozen terms.
 
-## Approved WORK Precision Protocol V2 / AMO Unit Protocol V8 (`pwt-sale-v8`)
+## Active WORK Precision Protocol V2 / AMO Unit Protocol V8 (`pwt-sale-v8`)
 
-V8 is the approved additive declaration-bound successor to the current Q8/V6
+V8 is the active additive declaration-bound successor to the historical Q8/V6
 era. It does not manufacture a V7 activation, alter any historical signed
 payload, or reinterpret an earlier frozen term. If the earliest exact valid V8
 declaration confirms in block `D`, V8 activates at the opening of `D+1`.
@@ -948,8 +948,18 @@ historical Q8 frozen terms, and preactivation canonical commitments remain
 immutable. Wrong-era or provisional derived projections at or after `D+1`
 are invalidated and replayed from raw canonical evidence. Pending state is not
 part of the activation opening: pending WORK events, listing/action rows, and
-balance deltas are cleared, then rebuilt from one stable Core mempool under V8
-with exact membership, semantic, transaction, and balance parity.
+balance deltas are cleared, then rebuilt from Core mempool evidence under V8.
+Every transaction id in the exact persisted pending WORK membership set must
+remain present across both Core samples that fence the database audit, and the
+persisted event, listing, transaction, and balance rows require exact parity.
+Every member also requires all five correctly typed WORK inspection markers;
+a terminal-invalid protocol marker cannot coexist with a valid persisted WORK
+projection. The full sampled mempool count and hash remain compact audit evidence; unrelated
+transaction additions or removals between samples do not invalidate the WORK
+witness. Discovery and raw inspection of unrelated or not-yet-projected
+unconfirmed transactions remain bounded best-effort visibility; they cannot
+change confirmed state or block V8 readiness merely because the public mempool
+is larger than one scan budget or is changing continuously.
 
 The activation-opening token state contains no active legacy listing. Every
 confirmed WORK listing in `active` or `sealing` state immediately before V8
@@ -974,6 +984,29 @@ spend remains observable chain evidence but cannot resurrect or settle that
 legacy listing. The relic-set count and commitment must match the exact
 activation-opening state; missing, duplicate, added, or still-actionable rows
 fail migration and readiness closed.
+
+Historical V1/V2 rows that were already excluded from the canonical closing
+token state at their height-959061 cutover are not new V8 relics and cannot
+re-enter the V8 refund set. If their derived relational status has resurfaced
+as `active` or `sealing`, migration may set only that stale status to `dropped`
+after proving the row is `pwt-sale-v1` or `pwt-sale-v2`. Its raw event,
+historical projection payload, and original refund-snapshot eligibility remain
+unchanged. Any extra active row of another authorization version fails the V8
+migration closed.
+
+Historical V1 table rows can encode their derived `amount` as whole WORK even
+when their immutable raw `pwt1:list5` authorization determines an exact Q8
+amount. Migration and its idempotent conservation audit therefore decode the
+raw carrier, require its one valid confirmed replay event and listing
+projection to agree on every version, token, and available amount alias, and
+never guess from the table column's magnitude. Unit-era V5/V6 raw
+authorizations bind their deterministic unit inputs while the valid canonical
+replay event supplies the derived Q8 amount. The one-time repair is bounded to
+the two canonical affected
+listing txids and exact before/after integers. A full-payload compare-and-set
+may update only the Q16 derived amount and its explicit legacy-atom migration
+metadata; the raw event and authorization stay unchanged. Every other repair
+set fails closed.
 
 The mint wire form stays byte-compatible:
 
@@ -1054,7 +1087,7 @@ Seal and buy must reference its exact frozen V8 position and terms and never
 consult a later network value. A V8 delist may close its own V8 sale ticket;
 no V8 action may reference a pre-V8 relic as an actionable listing.
 
-The additive preactivation release is intentionally empty and inert:
+The additive preactivation release was intentionally empty and inert:
 
 - every `WORK_AMO_V8_DECLARATION_*` pin and
   `WORK_AMO_V8_ACTIVATION_HEIGHT` is empty;
@@ -1064,6 +1097,29 @@ The additive preactivation release is intentionally empty and inert:
 - Q8/V6 remains authoritative until exact V8 declaration evidence confirms;
   and
 - `send3` and `pwt-sale-v8` preparation fail closed before activation.
+
+The authoritative declaration has now confirmed with these canonical pins:
+
+```text
+declarationTxid = f90e1faf572ef8253ca5959731b9d9e99c74bced4397380059878936712bee7a
+declarationHeight = 960600
+declarationBlockHash = 00000000000000000001ec938998cde4fd86ee6e3c672a6d3d95200cd8a984ac
+declarationBlockIndex = 2369
+declarationMemoSha256 = 1ba53b285f95f8d69f0272c8e75c76b09cd3bd26281c68e665749368e7694528
+declarationMemoBytes = 5593
+declarationProtocolVout = 3
+declarationRecordOrdinal = 0
+declarationRegistryPaymentVout = 4
+activationHeight = 960601
+```
+
+The transaction's subject and reply parts are separate `pwm1` outputs. Mail
+indexing may aggregate that envelope at vout 1, but declaration evidence binds
+the exact raw `pwm1:m` carrier at vout 3. The carrier and registry payment are
+each unique. On 2026-08-01 production completed the activation migration,
+replay, parity, and readiness gates and opened only
+`WORK_AMO_V8_WRITES_ENABLED=1`; every governed legacy write gate remains
+disabled. The confirmed boundary cannot restore V6 or `send2` admission.
 
 The authoritative V8 declaration is the earliest exact valid declaration by
 confirmed block height and transaction index. Its transaction must be

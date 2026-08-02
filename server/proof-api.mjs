@@ -8,6 +8,7 @@ import https from "node:https";
 import path from "node:path";
 import dns from "node:dns";
 import { URL } from "node:url";
+import { isDeepStrictEqual } from "node:util";
 import * as bitcoin from "bitcoinjs-lib";
 import * as ecc from "@bitcoinerlab/secp256k1";
 import { verifyBitcoinMessageSignature } from "./bitcoin-message-verifier.mjs";
@@ -191,6 +192,7 @@ import {
 import {
   WORK_AMO_V8_ALLOWED_FACE_PROOFS,
   WORK_AMO_V8_AUTH_VERSION,
+  WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL,
   WORK_AMO_V8_TRANSFER_VERSION,
   validateWorkAmoV8StaticAuthorization,
   workAmoV8BroadcastDecision,
@@ -203,6 +205,9 @@ import {
 import {
   workAmoV8DeclarationCommitment,
 } from "./work-amo-v8-declaration.mjs";
+import {
+  exactWorkAmoV8WorkerReadiness,
+} from "./work-amo-v8-worker-readiness.mjs";
 import {
   tokenListingCanProjectCloseActivity,
 } from "./token-listing-lifecycle.mjs";
@@ -227,6 +232,7 @@ import {
   proofIndexAddressMailPayload,
   proofIndexCanonicalActivityPayload,
   proofIndexCanonicalInceptionMintWitnessesPayload,
+  proofIndexCanonicalSummaryTokenTablePayload,
   proofIndexCanonicalWorkListingById,
   proofIndexCanonicalSummaryLedgerPayload,
   proofIndexCanonicalStateMetaPayload,
@@ -262,6 +268,7 @@ import {
   proofIndexWorkAmoGenericTokenStatePreimage,
   proofIndexWorkAmoLegacyBootstrapCarryEvidence,
   proofIndexWorkAmoRelationalTokenStateEvidence,
+  proofIndexWorkAmoV8RelationalTokenStateEvidence,
   proofIndexWorkAmoReplayReadiness,
   proofIndexWorkAmoV8ActivationLatch,
   proofIndexWorkAmoV6MigrationReadiness,
@@ -2963,25 +2970,19 @@ function mergeTokenTransferRecord(current, incoming) {
     return current;
   }
 
+  const merged = mergeCreditNetworkValueRecord(current, incoming);
   const tokenId = transferMergeString(current, incoming, "tokenId");
   const workAmountStorageModel =
-    isWorkTokenId(tokenId) &&
-    (
-      workRecordUsesSubatoms(incoming) ||
-      workRecordUsesSubatoms(current)
-    )
+    isWorkTokenId(tokenId) && workRecordUsesSubatoms(merged)
       ? WORK_SUBATOM_PROJECTION_MODEL
       : WORK_ATOMIC_PROJECTION_MODEL;
   const atomicAmount = isWorkTokenId(tokenId)
-    ? tokenLedgerAmountFromRecord(tokenId, incoming, {
-        workAmountStorageModel,
-      }) ??
-      tokenLedgerAmountFromRecord(tokenId, current, {
+    ? tokenLedgerAmountFromRecord(tokenId, merged, {
         workAmountStorageModel,
       })
     : null;
   return {
-    ...mergeCreditNetworkValueRecord(current, incoming),
+    ...merged,
     ...(atomicAmount === null
       ? { amount: transferMergeNumber(current, incoming, "amount") }
       : tokenLedgerAmountFields(WORK_TOKEN_ID, atomicAmount, {
@@ -3010,6 +3011,68 @@ function mergeTokenTransferRecord(current, incoming) {
     tokenId,
     txid: transferMergeString(current, incoming, "txid"),
   };
+}
+
+function mergeTokenSaleRecord(current, incoming) {
+  if (!current) {
+    return incoming;
+  }
+  if (!incoming) {
+    return current;
+  }
+  const merged = mergeCreditNetworkValueRecord(current, incoming);
+  const nonemptyObject = (value) =>
+    value &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    Object.keys(value).length > 0
+      ? value
+      : null;
+  const currentAuthorization = nonemptyObject(current.saleAuthorization);
+  const incomingAuthorization = nonemptyObject(incoming.saleAuthorization);
+  if (currentAuthorization && incomingAuthorization) {
+    let termsMatch = false;
+    try {
+      termsMatch = tokenSaleAuthorizationTermsMatch(
+        currentAuthorization,
+        incomingAuthorization,
+      );
+    } catch {
+      termsMatch = false;
+    }
+    if (!termsMatch) {
+      throw new Error(
+        "Canonical WORK sale authorizations conflict during Q8/Q16 merge.",
+      );
+    }
+  }
+  const saleAuthorization =
+    incomingAuthorization ?? currentAuthorization;
+  if (saleAuthorization) {
+    merged.saleAuthorization = saleAuthorization;
+  }
+
+  for (const field of [
+    "canonicalSaleEvidence",
+    "sourceAmountEvidence",
+  ]) {
+    const currentEvidence = nonemptyObject(current[field]);
+    const incomingEvidence = nonemptyObject(incoming[field]);
+    if (
+      currentEvidence &&
+      incomingEvidence &&
+      !isDeepStrictEqual(currentEvidence, incomingEvidence)
+    ) {
+      throw new Error(
+        `Canonical WORK sale ${field} conflicts during Q8/Q16 merge.`,
+      );
+    }
+    const evidence = incomingEvidence ?? currentEvidence;
+    if (evidence) {
+      merged[field] = evidence;
+    }
+  }
+  return merged;
 }
 
 function mergeWalletHolders(baseHolders, overlayHolders) {
@@ -5159,7 +5222,7 @@ function mergeTokenHistoryPageItem(current, incoming, kind) {
       return {
         ...current,
         ...incoming,
-        sale: mergeCreditNetworkValueRecord(current.sale, incoming.sale),
+        sale: mergeTokenSaleRecord(current.sale, incoming.sale),
       };
     }
     if (current.kind === "listing" && incoming.kind === "listing") {
@@ -5191,7 +5254,15 @@ function mergeTokenHistoryPageItem(current, incoming, kind) {
     };
   }
 
-  if (kind === "mints" || kind === "sales" || kind === "transfers") {
+  if (kind === "sales") {
+    return mergeTokenSaleRecord(current, incoming);
+  }
+
+  if (kind === "transfers") {
+    return mergeTokenTransferRecord(current, incoming);
+  }
+
+  if (kind === "mints") {
     return mergeCreditNetworkValueRecord(current, incoming);
   }
 
@@ -5464,6 +5535,120 @@ function tokenStateWithCanonicalWorkTransferValues(state, projection) {
   });
 }
 
+function mergedCreditRecordWithExactWorkAmount(
+  current,
+  incoming,
+  merged,
+) {
+  const tokenId = transferMergeString(current, incoming, "tokenId");
+  if (
+    !isWorkTokenId(tokenId) ||
+    !(
+      workRecordUsesSubatoms(current) ||
+      workRecordUsesSubatoms(incoming)
+    )
+  ) {
+    return merged;
+  }
+  const amountDeclared = (record) =>
+    [
+      record?.amount,
+      record?.amountAtoms,
+      record?.amountSubatoms,
+      record?.tokenAmount,
+      record?.tokenAmountAtoms,
+      record?.tokenAmountSubatoms,
+    ].some(
+      (value) => value !== undefined && value !== null && value !== "",
+    );
+  const currentDeclared = amountDeclared(current);
+  const incomingDeclared = amountDeclared(incoming);
+  if (!currentDeclared && !incomingDeclared) {
+    return merged;
+  }
+  const exactAmount = (record, declared) =>
+    declared
+      ? tokenLedgerAmountFromRecord(
+          WORK_TOKEN_ID,
+          topLevelWorkAmountRecord(record),
+          { workAmountStorageModel: WORK_SUBATOM_PROJECTION_MODEL },
+        )
+      : null;
+  const currentAmount = exactAmount(current, currentDeclared);
+  const incomingAmount = exactAmount(incoming, incomingDeclared);
+  if (
+    (currentDeclared && currentAmount === null) ||
+    (incomingDeclared && incomingAmount === null)
+  ) {
+    throw new Error(
+      "Canonical WORK movement contains an inexact Q8/Q16 amount projection.",
+    );
+  }
+  if (
+    currentAmount !== null &&
+    incomingAmount !== null &&
+    currentAmount !== incomingAmount
+  ) {
+    throw new Error(
+      "Canonical WORK movement Q8/Q16 amount projections conflict.",
+    );
+  }
+  const amount = incomingAmount ?? currentAmount;
+  if (amount === null) {
+    return merged;
+  }
+  const {
+    amount: _amount,
+    amountAtoms: _amountAtoms,
+    amountStorageModel: _amountStorageModel,
+    amountSubatoms: _amountSubatoms,
+    creditAmountMoved: _creditAmountMoved,
+    creditAmountMovedAtoms: _creditAmountMovedAtoms,
+    creditAmountMovedDecimals: _creditAmountMovedDecimals,
+    creditAmountMovedPrecisionModel: _creditAmountMovedPrecisionModel,
+    creditAmountMovedStorageModel: _creditAmountMovedStorageModel,
+    creditAmountMovedSubatoms: _creditAmountMovedSubatoms,
+    creditAmountMovedUnitScale: _creditAmountMovedUnitScale,
+    decimals: _decimals,
+    precisionModel: _precisionModel,
+    tokenAmount: _tokenAmount,
+    tokenAmountAtoms: _tokenAmountAtoms,
+    tokenAmountSubatoms: _tokenAmountSubatoms,
+    unitScale: _unitScale,
+    ...recordWithoutActiveAmountAliases
+  } = merged;
+  void _amount;
+  void _amountAtoms;
+  void _amountStorageModel;
+  void _amountSubatoms;
+  void _creditAmountMoved;
+  void _creditAmountMovedAtoms;
+  void _creditAmountMovedDecimals;
+  void _creditAmountMovedPrecisionModel;
+  void _creditAmountMovedStorageModel;
+  void _creditAmountMovedSubatoms;
+  void _creditAmountMovedUnitScale;
+  void _decimals;
+  void _precisionModel;
+  void _tokenAmount;
+  void _tokenAmountAtoms;
+  void _tokenAmountSubatoms;
+  void _unitScale;
+  const amountFields = tokenLedgerAmountFields(
+    WORK_TOKEN_ID,
+    amount,
+    { workAmountStorageModel: WORK_SUBATOM_PROJECTION_MODEL },
+  );
+  return {
+    ...recordWithoutActiveAmountAliases,
+    ...amountFields,
+    ...tokenCreditAmountMovedFields({
+      ...amountFields,
+      tokenId: WORK_TOKEN_ID,
+    }),
+  };
+}
+
 function mergeCreditNetworkValueRecord(current, incoming) {
   const merged = {
     ...current,
@@ -5502,7 +5687,11 @@ function mergeCreditNetworkValueRecord(current, incoming) {
       merged.minerFeeSource = canonicalCreditSource.minerFeeSource;
     }
   }
-  return merged;
+  return mergedCreditRecordWithExactWorkAmount(
+    current,
+    incoming,
+    merged,
+  );
 }
 
 function mergeTokenHistoryPageWithOverlay(
@@ -8220,10 +8409,19 @@ function workAmoV8Estimates(networkValueBeforeQ8) {
 }
 
 function workQ16MempoolSnapshot(txids) {
-  const canonicalTxids = (Array.isArray(txids) ? txids : [])
-    .map((txid) => String(txid ?? "").trim().toLowerCase())
-    .filter((txid) => /^[0-9a-f]{64}$/u.test(txid))
-    .sort(compareCanonicalUtf8);
+  if (!Array.isArray(txids)) {
+    return null;
+  }
+  const normalizedTxids = txids.map((txid) =>
+    String(txid ?? "").trim().toLowerCase()
+  );
+  if (
+    normalizedTxids.some((txid) => !/^[0-9a-f]{64}$/u.test(txid)) ||
+    normalizedTxids.length !== new Set(normalizedTxids).size
+  ) {
+    return null;
+  }
+  const canonicalTxids = [...normalizedTxids].sort(compareCanonicalUtf8);
   return {
     count: canonicalTxids.length,
     model: "canonical-core-mempool-txid-set-v1",
@@ -8238,76 +8436,49 @@ function workQ16MempoolSnapshot(txids) {
   };
 }
 
-function exactWorkAmoV8WorkerReadiness(
-  operationalStatus,
-  { liveMempoolSnapshot, network, tipHash, tipHeight },
+function workQ16PendingMembershipSnapshotReady(
+  snapshotValue,
+  liveMempoolTxids,
 ) {
-  const worker =
-    operationalStatus?.worker &&
-    typeof operationalStatus.worker === "object" &&
-    !Array.isArray(operationalStatus.worker)
-      ? operationalStatus.worker
+  if (!Array.isArray(liveMempoolTxids)) {
+    return false;
+  }
+  const snapshot =
+    snapshotValue &&
+    typeof snapshotValue === "object" &&
+    !Array.isArray(snapshotValue)
+      ? snapshotValue
       : {};
-  const workPrecision =
-    worker?.workPrecision &&
-    typeof worker.workPrecision === "object" &&
-    !Array.isArray(worker.workPrecision)
-      ? worker.workPrecision
-      : {};
-  const replay =
-    workPrecision?.replay &&
-    typeof workPrecision.replay === "object" &&
-    !Array.isArray(workPrecision.replay)
-      ? workPrecision.replay
-      : {};
-  const workerFinishedAt = String(worker.finishedAt ?? "");
-  const workerLastSuccessAt = String(worker.lastSuccessAt ?? "");
-  const nestedLastSuccessAt = String(
-    worker?.lastSuccess?.finishedAt ?? "",
+  const txids = Array.isArray(snapshot.txids)
+    ? snapshot.txids.map((txid) =>
+        String(txid ?? "").trim().toLowerCase()
+      )
+    : [];
+  const canonicalTxids = [...txids].sort(compareCanonicalUtf8);
+  const live = new Set(
+    liveMempoolTxids
+      .map((txid) => String(txid ?? "").trim().toLowerCase())
+      .filter((txid) => /^[0-9a-f]{64}$/u.test(txid)),
   );
-  const replayTipHash = String(replay.tipHash ?? "");
-  const replayMempoolSha256 = String(
-    replay.mempoolSha256 ?? "",
+  const sha256 = sha256Hex(
+    Buffer.from(
+      `ProofOfWork.Me/WORK-Q16-PENDING-MEMBERSHIP/v1\n${
+        JSON.stringify(canonicalTxids)
+      }`,
+      "utf8",
+    ),
   );
-  const successIdentityReady =
-    workerFinishedAt.length > 0 &&
-    workerFinishedAt === workerLastSuccessAt &&
-    workerFinishedAt === nestedLastSuccessAt;
-  const ready =
-    operationalStatus?.network === network &&
-    worker.network === network &&
-    worker.ok === true &&
-    worker.state === "idle" &&
-    successIdentityReady &&
-    workPrecision.era === "q16" &&
-    replay.era === "q16" &&
-    replay.ready === true &&
-    replay.replayRequired === true &&
-    Number(replay.tipHeight) === tipHeight &&
-    /^[0-9a-f]{64}$/u.test(replayTipHash) &&
-    replayTipHash === tipHash &&
-    liveMempoolSnapshot?.model ===
-      "canonical-core-mempool-txid-set-v1" &&
-    Number(replay.mempoolCount) ===
-      liveMempoolSnapshot.count &&
-    /^[0-9a-f]{64}$/u.test(replayMempoolSha256) &&
-    replayMempoolSha256 === liveMempoolSnapshot.sha256;
-  return {
-    era: String(workPrecision.era ?? ""),
-    finishedAt: workerFinishedAt,
-    mempoolCount: Number.isSafeInteger(
-      Number(replay.mempoolCount),
-    )
-      ? Number(replay.mempoolCount)
-      : null,
-    mempoolSha256: replayMempoolSha256,
-    ready,
-    state: String(worker.state ?? ""),
-    tipHash: replayTipHash,
-    tipHeight: Number.isSafeInteger(Number(replay.tipHeight))
-      ? Number(replay.tipHeight)
-      : null,
-  };
+  return Boolean(
+    snapshot.model ===
+      "canonical-work-q16-pending-membership-v2" &&
+      Number.isSafeInteger(snapshot.count) &&
+      snapshot.count === canonicalTxids.length &&
+      canonicalTxids.length === new Set(canonicalTxids).size &&
+      canonicalTxids.every((txid) => /^[0-9a-f]{64}$/u.test(txid)) &&
+      JSON.stringify(txids) === JSON.stringify(canonicalTxids) &&
+      String(snapshot.sha256 ?? "").trim().toLowerCase() === sha256 &&
+      canonicalTxids.every((txid) => live.has(txid))
+  );
 }
 
 async function workAmoV8Metadata(
@@ -8443,6 +8614,7 @@ async function workAmoV8Metadata(
   let tipHeight = 0;
   let tipHash = "";
   let tipVerified = false;
+  let liveMempoolTxids = null;
   let liveMempoolSnapshot = null;
   let workerReadiness = {
     era: "",
@@ -8501,11 +8673,14 @@ async function workAmoV8Metadata(
       Number.isSafeInteger(tipHeight) &&
       tipHeight > 0 &&
       /^[0-9a-f]{64}$/u.test(tipHash);
-    liveMempoolSnapshot =
+    liveMempoolTxids =
       mempoolTxidsResult?.ok &&
       Array.isArray(mempoolTxidsResult.result)
-        ? workQ16MempoolSnapshot(mempoolTxidsResult.result)
+        ? mempoolTxidsResult.result
         : null;
+    liveMempoolSnapshot = liveMempoolTxids
+      ? workQ16MempoolSnapshot(liveMempoolTxids)
+      : null;
     workerReadiness = exactWorkAmoV8WorkerReadiness(
       operationalStatus,
       {
@@ -8585,6 +8760,13 @@ async function workAmoV8Metadata(
   ) {
     workAmoV8ReachedLatch = true;
   }
+  const pendingMembershipSnapshot =
+    migrationReadiness?.pendingWitness?.membershipSnapshot;
+  const pendingMembershipLive =
+    workQ16PendingMembershipSnapshotReady(
+      pendingMembershipSnapshot,
+      liveMempoolTxids,
+    );
   const indexReady =
     migrationReadiness?.ready === true &&
     migrationReadiness?.active === true &&
@@ -8599,18 +8781,7 @@ async function workAmoV8Metadata(
       .toLowerCase() === tipHash &&
     migrationReadiness?.pendingReady === true &&
     workerReadiness.ready === true &&
-    liveMempoolSnapshot?.model ===
-      migrationReadiness?.pendingWitness?.mempoolSnapshot?.model &&
-    liveMempoolSnapshot?.count ===
-      Number(
-        migrationReadiness?.pendingWitness?.mempoolSnapshot
-          ?.count,
-      ) &&
-    liveMempoolSnapshot?.sha256 ===
-      String(
-        migrationReadiness?.pendingWitness?.mempoolSnapshot
-          ?.sha256 ?? "",
-      ).trim().toLowerCase();
+    pendingMembershipLive;
   const combinedEvidence = evidence
     ? {
         ...evidence,
@@ -8631,6 +8802,28 @@ async function workAmoV8Metadata(
       WORK_AMO_V8_WRITES_CONFIGURED &&
       Boolean(configuredDeclaration),
   });
+  const publicMigrationReadiness = migrationReadiness
+    ? {
+        ...migrationReadiness,
+        pendingWitness:
+          migrationReadiness.pendingWitness &&
+          typeof migrationReadiness.pendingWitness === "object" &&
+          !Array.isArray(migrationReadiness.pendingWitness)
+            ? {
+                ...migrationReadiness.pendingWitness,
+                membershipSnapshot: pendingMembershipSnapshot &&
+                    typeof pendingMembershipSnapshot === "object" &&
+                    !Array.isArray(pendingMembershipSnapshot)
+                  ? {
+                      count: pendingMembershipSnapshot.count,
+                      model: pendingMembershipSnapshot.model,
+                      sha256: pendingMembershipSnapshot.sha256,
+                    }
+                  : null,
+              }
+            : null,
+      }
+    : null;
   const payload = {
     ...status,
     activation: {
@@ -8645,7 +8838,7 @@ async function workAmoV8Metadata(
       declarationDiscovery.checked === true,
     indexReady,
     migrationReady: indexReady,
-    migrationReadiness,
+    migrationReadiness: publicMigrationReadiness,
     liveMempoolSnapshot,
     legacyWriteEmbargo: workAmoV8DeclarationEmbargoLatch,
     networkValueBeforeQ8,
@@ -13066,6 +13259,33 @@ function tokenLedgerAmountFromRecord(
     return null;
   }
   return amount;
+}
+
+function topLevelWorkAmountRecord(record) {
+  const item =
+    record && typeof record === "object" && !Array.isArray(record)
+      ? record
+      : {};
+  return {
+    amount: item.amount,
+    amountAtoms: item.amountAtoms,
+    amountStorageModel: item.amountStorageModel,
+    amountSubatoms: item.amountSubatoms,
+    amountVersion: item.amountVersion,
+    precisionModel: item.precisionModel,
+    tokenAmount: item.tokenAmount,
+    tokenAmountAtoms: item.tokenAmountAtoms,
+    tokenAmountSubatoms: item.tokenAmountSubatoms,
+    transferVersion: item.transferVersion,
+  };
+}
+
+function canonicalTokenSaleLedgerAmount(tokenId, sale, options = {}) {
+  return tokenLedgerAmountFromRecord(
+    tokenId,
+    isWorkTokenId(tokenId) ? topLevelWorkAmountRecord(sale) : sale,
+    options,
+  );
 }
 
 function tokenLedgerAmountFields(
@@ -28833,7 +29053,7 @@ function tokenAggregateSummaries(payload) {
       current.pendingSalesVolumeSats += numericValue(sale.priceSats);
       continue;
     }
-    const amount = tokenLedgerAmountFromRecord(sale.tokenId, sale, {
+    const amount = canonicalTokenSaleLedgerAmount(sale.tokenId, sale, {
       ...(isWorkTokenId(sale.tokenId)
         ? { workAmountStorageModel }
         : {}),
@@ -29198,7 +29418,15 @@ function scopedTokenPayloadFromState(tokenState, scope) {
   }
   for (const sale of sales) {
     if (sale.confirmed) {
-      const amount = ledgerAmountFromRecord(sale.tokenId, sale);
+      const amount = canonicalTokenSaleLedgerAmount(
+        sale.tokenId,
+        sale,
+        {
+          ...(isWorkTokenId(sale.tokenId)
+            ? { workAmountStorageModel }
+            : {}),
+        },
+      );
       if (workScoped && amount === null) {
         throw new Error(
           "Scoped WORK state contains a noncanonical confirmed sale.",
@@ -33595,14 +33823,14 @@ function tokenPayloadWithCanonicalHistoryFloor(canonicalPayload, payload) {
         canonicalPayload.sales,
         payload.sales,
         tokenSaleItemKey,
-        mergeCreditNetworkValueRecord,
+        mergeTokenSaleRecord,
       ),
       source: mergedSourceLabel(canonicalPayload?.source, payload?.source),
       transfers: mergeCanonicalHistoryItems(
         canonicalPayload.transfers,
         payload.transfers,
         tokenTransferHistoryItemKey,
-        mergeCreditNetworkValueRecord,
+        mergeTokenTransferRecord,
       ),
     });
   }
@@ -33675,7 +33903,7 @@ function tokenPayloadWithCanonicalHistoryFloor(canonicalPayload, payload) {
       canonicalPayload.sales,
       payload.sales,
       tokenSaleItemKey,
-      mergeCreditNetworkValueRecord,
+      mergeTokenSaleRecord,
     );
   }
   if (listingsRegressed) {
@@ -41128,7 +41356,7 @@ async function tokenValueStateFromIndexedActivity(
     indexedSales.filter((sale) => tokenIds.has(sale.tokenId)),
     overlaySales.filter((sale) => tokenIds.has(sale.tokenId)),
     tokenSaleItemKey,
-    mergeCreditNetworkValueRecord,
+    mergeTokenSaleRecord,
   );
   const scopedClosedListings = mergeTokenStateItemsByKey(
     indexedClosedListings.filter((listing) => tokenIds.has(listing.tokenId)),
@@ -41278,16 +41506,35 @@ async function currentProofIndexTokenTablePayloadForLedger(
     return null;
   }
 
-  const payload = await payloadWithFallbackAfterMs(
-    proofIndexTokenPayload(network, "", new URLSearchParams()).catch((error) => {
-      console.error(
-        `Proof index token-table overlay failed for ${label}: ${errorSummary(error)}`,
-      );
-      return null;
-    }),
+  const bootstrapPayload = await payloadWithFallbackAfterMs(
+    proofIndexCanonicalSummaryTokenTablePayload(network, {
+      exactHash: options.exactHash,
+      exactHeight: options.exactHeight,
+    }).catch((error) => {
+        console.error(
+          `Proof index canonical-summary token bootstrap failed for ${label}: ${errorSummary(error)}`,
+        );
+        return null;
+      }),
     null,
     SUMMARY_PROOF_INDEX_READ_WAIT_MS,
   );
+  const payload =
+    bootstrapPayload ??
+    await payloadWithFallbackAfterMs(
+      proofIndexTokenPayload(
+        network,
+        "",
+        new URLSearchParams(),
+      ).catch((error) => {
+        console.error(
+          `Proof index token-table overlay failed for ${label}: ${errorSummary(error)}`,
+        );
+        return null;
+      }),
+      null,
+      SUMMARY_PROOF_INDEX_READ_WAIT_MS,
+    );
   if (
     !payload ||
     rejectEmptyMainnetTokenPayload(
@@ -41300,10 +41547,17 @@ async function currentProofIndexTokenTablePayloadForLedger(
     return null;
   }
   const exactHeight = Number(options.exactHeight);
+  const exactHash = String(options.exactHash ?? "")
+    .trim()
+    .toLowerCase();
   if (Number.isSafeInteger(exactHeight) && exactHeight > 0) {
-    if (proofIndexPayloadIndexedThroughBlock(payload) !== exactHeight) {
+    if (
+      proofIndexPayloadIndexedThroughBlock(payload) !== exactHeight ||
+      !/^[0-9a-f]{64}$/u.test(exactHash) ||
+      payloadIndexedThroughBlockHash(payload) !== exactHash
+    ) {
       console.error(
-        `Rejected ${label} token-table overlay: coverage is not exact at block ${exactHeight}.`,
+        `Rejected ${label} token-table overlay: coverage is not exact and hash-bound at block ${exactHeight}.`,
       );
       return null;
     }
@@ -41510,16 +41764,24 @@ async function exactTokenTablePayloadForCanonicalLedger(
   network,
   label,
   exactHeight,
+  exactHash,
 ) {
-  if (!Number.isSafeInteger(exactHeight) || exactHeight <= 0) {
+  const normalizedExactHash = String(exactHash ?? "")
+    .trim()
+    .toLowerCase();
+  if (
+    !Number.isSafeInteger(exactHeight) ||
+    exactHeight <= 0 ||
+    !/^[0-9a-f]{64}$/u.test(normalizedExactHash)
+  ) {
     throw freshDataUnavailableError(
-      `Rejected ${label}: an exact positive token-table checkpoint is required.`,
+      `Rejected ${label}: an exact positive hash-bound token-table checkpoint is required.`,
     );
   }
   const payload = await currentProofIndexTokenTablePayloadForLedger(
     network,
     label,
-    { exactHeight },
+    { exactHash: normalizedExactHash, exactHeight },
   );
   if (!payload || !tokenTablePayloadHasConservedBalances(payload)) {
     throw freshDataUnavailableError(
@@ -41662,7 +41924,12 @@ async function buildIndexedCanonicalLedgerPayload(
       null,
       SUMMARY_PROOF_INDEX_READ_WAIT_MS,
     ),
-    exactTokenTablePayloadForCanonicalLedger(network, label, exactHeight),
+    exactTokenTablePayloadForCanonicalLedger(
+      network,
+      label,
+      exactHeight,
+      exactHash,
+    ),
     indexedTokenMarketSummaryOverlay(network).catch((error) => {
       console.error(
         `WORK pre-consistency marketplace overlay failed: ${errorSummary(error)}`,
@@ -48005,9 +48272,13 @@ function creditNetworkValueMetrics({
     const createdMs = creditValueEventMs(item);
     const workMovement = isWorkTokenId(item?.tokenId);
     const amountSubatoms = workMovement
-      ? workSubatomsBigIntFromRecord(item, {
-          convertLegacyAtoms: true,
-        })
+      ? kind === "sale"
+        ? canonicalTokenSaleLedgerAmount(WORK_TOKEN_ID, item, {
+            workAmountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+          })
+        : workSubatomsBigIntFromRecord(item, {
+            convertLegacyAtoms: true,
+          })
       : null;
     const amountUnits = workMovement
       ? null
@@ -49208,9 +49479,13 @@ function growthActualLiveTotalSatsAtProvider(
     const createdMs = creditValueEventMs(item);
     const workMovement = isWorkTokenId(item?.tokenId);
     const amountSubatoms = workMovement
-      ? workSubatomsBigIntFromRecord(item, {
-          convertLegacyAtoms: true,
-        })
+      ? kind === "sale"
+        ? canonicalTokenSaleLedgerAmount(WORK_TOKEN_ID, item, {
+            workAmountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+          })
+        : workSubatomsBigIntFromRecord(item, {
+            convertLegacyAtoms: true,
+          })
       : null;
     const amountUnits = workMovement
       ? null
@@ -53917,10 +54192,16 @@ async function workFloorWithVerifiedWorkAmoV5ClosingState(
   }
   const [relationalTokenState, legacyBootstrapEvidence] =
     await Promise.all([
-      proofIndexWorkAmoRelationalTokenStateEvidence(
-        network,
-        state.tokenStateCommitment,
-      ),
+      transition.workTokenStateModel ===
+      WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL
+        ? proofIndexWorkAmoV8RelationalTokenStateEvidence(
+            network,
+            state.tokenStateCommitment,
+          )
+        : proofIndexWorkAmoRelationalTokenStateEvidence(
+            network,
+            state.tokenStateCommitment,
+          ),
       proofIndexWorkAmoLegacyBootstrapCarryEvidence(network),
     ]);
   if (relationalTokenState?.complete !== true) {

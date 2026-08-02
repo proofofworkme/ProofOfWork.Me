@@ -364,7 +364,8 @@ assert.equal(
     { action: "delist5", tokenId: WORK_TOKEN_ID },
     { paysWorkRegistry: true },
   ),
-  false,
+  true,
+  "WORK delist5 writes remain governed at the broadcast boundary",
 );
 
 const sameBlockActionA = {

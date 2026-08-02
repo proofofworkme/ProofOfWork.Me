@@ -89,6 +89,7 @@ import {
   scaleWorkPrecisionV2Rows,
   verifyWorkPrecisionV2RowsConserved,
   workPrecisionV2ConstraintAudit,
+  workPrecisionV2LegacyListingRepairs,
   workPrecisionV2RowsCommitment,
 } from "./migrate-work-precision-v2.mjs";
 
@@ -838,6 +839,227 @@ assert.notDeepEqual(
       pendingField: "pending_delta",
     },
   ),
+);
+const legacyListingRawPayload = (authorization) =>
+  `pwt1:list5:${Buffer.from(
+    JSON.stringify(authorization),
+    "utf8",
+  ).toString("base64url")}`;
+const legacyListingRepairRows = [
+  {
+    amount: "600000000000",
+    event_count: "1",
+    event_payload: {
+      amount: "6000",
+      amountAtoms: "600000000000",
+      saleAuthorization: {
+        amount: "6000",
+        version: "pwt-sale-v1",
+      },
+      tokenId: WORK_TOKEN_ID,
+    },
+    event_raw_payload: legacyListingRawPayload({
+      amount: "6000",
+      tokenId: WORK_TOKEN_ID,
+      version: "pwt-sale-v1",
+    }),
+    listing_id: "a".repeat(64),
+    payload: {
+      amount: "6000",
+      amountAtoms: "600000000000",
+      saleAuthorization: {
+        amount: "6000",
+        amountAtoms: "600000000000",
+        version: "pwt-sale-v1",
+      },
+      tokenId: WORK_TOKEN_ID,
+    },
+  },
+  {
+    amount: "10000000000000000000",
+    event_count: "1",
+    event_payload: {
+      amount: "1000",
+      amountAtoms: "100000000000",
+      saleAuthorization: {
+        amount: "1000",
+        version: "pwt-sale-v1",
+      },
+      tokenId: WORK_TOKEN_ID,
+    },
+    event_raw_payload: legacyListingRawPayload({
+      amount: "1000",
+      tokenId: WORK_TOKEN_ID,
+      version: "pwt-sale-v1",
+    }),
+    listing_id: "b".repeat(64),
+    payload: {
+      amount: "1000",
+      amountAtoms: "100000000000",
+      legacyAmountAtoms: "100000000000",
+      legacyAmountStorageModel:
+        WORK_LEGACY_ATOMIC_PROJECTION_MODEL,
+      precisionMigrationModel: WORK_PRECISION_V2_MIGRATION_MODEL,
+      saleAuthorization: {
+        amount: "1000",
+        amountAtoms: "100000000000",
+        version: "pwt-sale-v1",
+      },
+      tokenId: WORK_TOKEN_ID,
+    },
+  },
+];
+const legacyListingRepairs = workPrecisionV2LegacyListingRepairs(
+  legacyListingRepairRows,
+);
+assert.equal(legacyListingRepairs.length, 1);
+assert.deepEqual(
+  {
+    authorizationVersion:
+      legacyListingRepairs[0].authorizationVersion,
+    expectedAmountSubatoms:
+      legacyListingRepairs[0].expectedAmountSubatoms,
+    legacyAmountAtoms: legacyListingRepairs[0].legacyAmountAtoms,
+    listingId: legacyListingRepairs[0].listingId,
+    storedAmountSubatoms:
+      legacyListingRepairs[0].storedAmountSubatoms,
+  },
+  {
+    authorizationVersion: "pwt-sale-v1",
+    expectedAmountSubatoms: "60000000000000000000",
+    legacyAmountAtoms: "600000000000",
+    listingId: "a".repeat(64),
+    storedAmountSubatoms: "600000000000",
+  },
+  "legacy listing repair must derive Q8 atoms from immutable event payload rather than an ambiguous historical table amount",
+);
+assert.deepEqual(
+  workPrecisionV2LegacyListingRepairs([
+    {
+      amount: "5100000000",
+      event_count: "1",
+      event_payload: {
+        amount: "0.00000051",
+        amountAtoms: "51",
+        saleAuthorization: {
+          tokenId: WORK_TOKEN_ID,
+          unitFaceProofs: 100000,
+          version: "pwt-sale-v6",
+        },
+        tokenId: WORK_TOKEN_ID,
+      },
+      event_raw_payload: legacyListingRawPayload({
+        tokenId: WORK_TOKEN_ID,
+        unitFaceProofs: 100000,
+        version: "pwt-sale-v6",
+      }),
+      listing_id: "c".repeat(64),
+      payload: {
+        amount: "0.00000051",
+        amountAtoms: "51",
+        legacyAmountAtoms: "51",
+        legacyAmountStorageModel:
+          WORK_LEGACY_ATOMIC_PROJECTION_MODEL,
+        precisionMigrationModel: WORK_PRECISION_V2_MIGRATION_MODEL,
+        saleAuthorization: {
+          tokenId: WORK_TOKEN_ID,
+          unitFaceProofs: 100000,
+          version: "pwt-sale-v6",
+        },
+        tokenId: WORK_TOKEN_ID,
+      },
+    },
+  ]),
+  [],
+  "unit-era raw authorizations bind their inputs while canonical replay supplies the exact derived Q8 amount",
+);
+const metadataOnlyListingRepair =
+  workPrecisionV2LegacyListingRepairs([
+    {
+      ...legacyListingRepairRows[1],
+      payload: {
+        ...legacyListingRepairRows[1].payload,
+        legacyAmountAtoms: "wrong",
+      },
+    },
+  ]);
+assert.equal(metadataOnlyListingRepair.length, 1);
+assert.equal(metadataOnlyListingRepair[0].metadataRepairRequired, true);
+assert.equal(metadataOnlyListingRepair[0].valueRepairRequired, false);
+assert.throws(
+  () =>
+    workPrecisionV2LegacyListingRepairs([
+      {
+        ...legacyListingRepairRows[0],
+        event_payload: {
+          ...legacyListingRepairRows[0].event_payload,
+          amountAtoms: "600000000001",
+        },
+      },
+    ]),
+  /conflicting legacy amount aliases/u,
+);
+assert.throws(
+  () =>
+    workPrecisionV2LegacyListingRepairs([
+      {
+        ...legacyListingRepairRows[0],
+        event_raw_payload: legacyListingRawPayload({
+          amount: "6000",
+          tokenId: WORK_TOKEN_ID,
+          version: "pwt-sale-v7",
+        }),
+      },
+    ]),
+  /conflicting legacy listing authorization versions/u,
+);
+assert.throws(
+  () => {
+    const unsupportedAuthorization = {
+      amount: "6000",
+      tokenId: WORK_TOKEN_ID,
+      version: "pwt-sale-v7",
+    };
+    return workPrecisionV2LegacyListingRepairs([
+      {
+        ...legacyListingRepairRows[0],
+        event_payload: {
+          ...legacyListingRepairRows[0].event_payload,
+          saleAuthorization: unsupportedAuthorization,
+        },
+        event_raw_payload: legacyListingRawPayload(
+          unsupportedAuthorization,
+        ),
+        payload: {
+          ...legacyListingRepairRows[0].payload,
+          saleAuthorization: unsupportedAuthorization,
+        },
+      },
+    ]);
+  },
+  /unsupported legacy listing authorization pwt-sale-v7/u,
+);
+assert.throws(
+  () =>
+    workPrecisionV2LegacyListingRepairs([
+      {
+        ...legacyListingRepairRows[0],
+        event_count: "2",
+      },
+    ]),
+  /exactly one confirmed legacy listing event/u,
+);
+assert.throws(
+  () =>
+    workPrecisionV2LegacyListingRepairs([{
+      amount: "1",
+      listing_id: "invalid",
+      payload: {
+        amountAtoms: "1",
+        authorizationVersion: "pwt-sale-v6",
+      },
+    }]),
+  /invalid legacy listing identity/u,
 );
 const canonicalConstraintDefinitions = Object.freeze({
   ...WORK_PRECISION_V2_STATIC_CONSTRAINT_DEFINITIONS,
@@ -1640,7 +1862,7 @@ assert.match(
   /canonicalSaleEvidence:[\s\S]*amountSubatoms: evidence\.amountSubatoms/u,
 );
 assert.match(reader, /workPrecisionV2Migration:livenet/u);
-assert.match(reader, /canonical-work-q16-pending-parity-v1/u);
+assert.match(reader, /canonical-work-q16-pending-parity-v2/u);
 assert.match(
   reader,
   /proofIndexWorkAmoV8ActivationLatch\([\s\S]*configuredPrecisionPins \?\? precisionLatch\?\.pins/u,
@@ -1727,7 +1949,7 @@ assert.match(
   "a marker-bound V8 relic must close before any later raw ticket spend is classified",
 );
 assert.match(backfill, /amountSubatoms/u);
-assert.match(backfill, /canonical-work-q16-pending-parity-v1/u);
+assert.match(backfill, /canonical-work-q16-pending-parity-v2/u);
 assert.match(backfill, /discoverIndexedWorkAmoV8DeclarationPins/u);
 assert.match(sql, /work_amo_v8_listing_terms/u);
 assert.match(sql, /unit_amount_subatoms/u);
@@ -1735,6 +1957,26 @@ assert.match(sql, /workPrecisionV2Migration:livenet/u);
 assert.match(migration, /WORK_PRECISION_V2_MIGRATION_APPLY/u);
 assert.match(migration, /work_amo_v6_terms_deactivation/u);
 assert.match(migration, /listing_block_height < \$\{pins\.activationHeight\}/u);
+assert.match(
+  migration,
+  /'legacyAmountStorageModel', \$4::text,[\s\S]*'precisionMigrationModel', \$5::text/u,
+  "migration JSON construction must type text parameters explicitly for PostgreSQL",
+);
+assert.match(
+  migration,
+  /listing\.payload->>'legacyAmountAtoms' =\s*\(\$3::numeric\)::text/u,
+  "migration relic matching must compare the reused numeric parameter as text",
+);
+assert.match(
+  migration,
+  /'disabledAtBlockHeight', \$2::integer,[\s\S]*'disabledByTxid', \$3::text,[\s\S]*'relicCutoverModel', \$5::text/u,
+  "relic cutover JSON parameters must carry explicit PostgreSQL types",
+);
+assert.match(
+  migration,
+  /UPDATE proof_indexer\.credit_listings listing[\s\S]*listing\.status IN \('active', 'sealing'\)[\s\S]*IN \('pwt-sale-v1', 'pwt-sale-v2'\)/u,
+  "migration must close only stale historical V1/V2 status projections outside the canonical V8 relic set",
+);
 assert.match(migration, /DELETE FROM proof_indexer\.events event/u);
 assert.match(
   migration,

@@ -45,6 +45,10 @@ const server = readFileSync("server/proof-api.mjs", "utf8");
 const reader = readFileSync("server/db/proof-index-reader.mjs", "utf8");
 const backfill = readFileSync("scripts/backfill-proof-indexer.mjs", "utf8");
 const worker = readFileSync("scripts/run-proof-indexer-worker.mjs", "utf8");
+const marketplaceRegressions = readFileSync(
+  "scripts/check-marketplace-regressions.mjs",
+  "utf8",
+);
 const workAmoV5 = readFileSync("server/work-amo-v5.mjs", "utf8");
 const workAmoV6 = readFileSync("server/work-amo-v6.mjs", "utf8");
 const workAmoV6Migration = readFileSync(
@@ -56,6 +60,14 @@ const workAmoV6DeclarationBuilder = readFileSync(
   "utf8",
 );
 const workAmoV8 = readFileSync("server/work-amo-v8.mjs", "utf8");
+const workAmoV8WorkerReadiness = readFileSync(
+  "server/work-amo-v8-worker-readiness.mjs",
+  "utf8",
+);
+const workQ16PendingProjection = readFileSync(
+  "server/work-q16-pending-projection.mjs",
+  "utf8",
+);
 const workAmoV8Migration = readFileSync(
   "scripts/migrate-work-precision-v2.mjs",
   "utf8",
@@ -69,6 +81,26 @@ const workAmoV8Declaration = readFileSync(
   "utf8",
 );
 const workUnits = readFileSync("server/work-units.mjs", "utf8");
+const backfillQ16PendingWitness = sourceSliceBetween(
+  backfill,
+  /async function persistExactWorkQ16PendingWitness/,
+  /async function storeMempoolScanState/,
+);
+const backfillMempoolScan = sourceSliceBetween(
+  backfill,
+  /async function backfillMempoolScanSource/,
+  /async function backfillSource/,
+);
+const workerQ16PendingAudit = sourceSliceBetween(
+  worker,
+  /async function assertWorkPrecisionPendingReady/,
+  /function endpoint/,
+);
+const readerPrecisionV2Readiness = sourceSliceBetween(
+  reader,
+  /export async function proofIndexWorkPrecisionV2MigrationReadiness/,
+  /export async function proofIndexWorkAmoV8ActivationLatch/,
+);
 const workAmoV6IndexedDeclarationEvidence =
   /export async function indexedWorkAmoV6DeclarationEvidence[\s\S]*?(?=export async function coreWorkAmoV6DeclarationEvidence)/u.exec(
     workAmoV6Migration,
@@ -657,7 +689,10 @@ expect(
     ) &&
     /publicLogRelational: finalPublicLogFingerprint\.hash/u.test(backfill) &&
     /publicLogFingerprint: finalPublicLogFingerprint/u.test(backfill) &&
-    /runCanonicalBeforePending\([\s\S]*runBackfillPhase\(backfillPhases\[0\]\)[\s\S]*runBackfillPhase\(backfillPhases\[1\]\)[\s\S]*pendingStatus = await refreshPendingStatuses\(pool\);/u.test(
+    /runCanonicalBeforePending\([\s\S]*runBackfillPhase\(backfillPhases\[0\]\)[\s\S]*pendingStatus = await refreshPendingStatusesSafely\(\);[\s\S]*runBackfillPhase\(backfillPhases\[1\]\)/u.test(
+      worker,
+    ) &&
+    !/async \(\) => \{\s*await runBackfillPhase\(backfillPhases\[1\]\);\s*pendingStatus = await refreshPendingStatusesSafely\(\);/u.test(
       worker,
     ),
 );
@@ -793,6 +828,33 @@ expect(
     !/supply\.acceptedSupply/u.test(pendingWorkSupplyCapVerifier) &&
     /proof-indexer-pending-work-supply-cap-verifier/u.test(
       pendingWorkSupplyCapVerifier,
+    ),
+);
+expect(
+  "ledger audit retries only classified canonical read failures inside one shared bounded budget",
+  /createCanonicalConvergenceBudget/u.test(ledgerAudit) &&
+    /MarketplaceRegressionHttpError/u.test(ledgerAudit) &&
+    /waitForCanonicalConvergenceWithinBudget/u.test(ledgerAudit) &&
+    /LEDGER_AUDIT_CANONICAL_CONVERGENCE_MAX_MS/u.test(ledgerAudit) &&
+    /ledgerAuditCanonicalConvergenceBudget/u.test(ledgerAudit) &&
+    /throw new MarketplaceRegressionHttpError\(/u.test(ledgerAudit) &&
+    /isReady: \(\) => true/u.test(ledgerAudit) &&
+    /isRetryableValue: \(\) => false/u.test(ledgerAudit),
+);
+expect(
+  "ledger audit accepts only exact historical Q8 or metadata-bound current Q16 WORK amounts",
+  /parseWorkAmountToAtoms/u.test(ledgerAudit) &&
+    /parseWorkAmountToSubatoms/u.test(ledgerAudit) &&
+    /const q8Historical =/u.test(ledgerAudit) &&
+    /const q16Current =/u.test(ledgerAudit) &&
+    /!hasAmountAtoms/u.test(ledgerAudit) &&
+    /!hasAmountSubatoms/u.test(ledgerAudit) &&
+    /amountStorageModel === WORK_SUBATOM_PROJECTION_MODEL/u.test(ledgerAudit) &&
+    /Number\(record\?\.decimals\) === WORK_SUBATOM_DECIMALS/u.test(
+      ledgerAudit,
+    ) &&
+    /String\(record\?\.unitScale \?\? ""\) === WORK_SUBATOM_UNIT_SCALE_TEXT/u.test(
+      ledgerAudit,
     ),
 );
 expect(
@@ -965,7 +1027,7 @@ expect(
     ),
 );
 expect(
-  "AMO V6 production starts declared, indexed, and write-open without an oracle credential",
+  "AMO V6 remains exactly pinned for replay and write-closed after the V8 boundary without an oracle credential",
   [
       "TXID",
       "HEIGHT",
@@ -996,7 +1058,7 @@ expect(
         service,
       ),
     ) &&
-    /Environment=WORK_AMO_V6_WRITES_ENABLED=1$/mu.test(service) &&
+    /Environment=WORK_AMO_V6_WRITES_ENABLED=0$/mu.test(service) &&
     !/WORK_AMO_V6_(?:ORACLE|ATTESTOR)|work-amo-v6-oracle-key/u.test(
       service,
     ),
@@ -1310,6 +1372,15 @@ expect(
     ),
 );
 expect(
+  "worker Q16 readiness validates the canonical top-level token-state model without mutating the bare closing preimage",
+  /transition\.work_token_state_model <> \$4[\s\S]*transition\.payload->>'workTokenStateModel'\s*IS DISTINCT FROM \$4/u.test(
+    worker,
+  ) &&
+    !/transition\.payload->'closingTokenState'\s*->>'model'\s*IS DISTINCT FROM \$4/u.test(
+      worker,
+    ),
+);
+expect(
   "worker Q16 readiness binds all snapshot hashes and model before full relational parity",
   /jsonb_build_object\([\s\S]*'consistencyStatus'[\s\S]*'payloadBlockHash'[\s\S]*'sourceBlockHash'[\s\S]*'summaryBlockHash'[\s\S]*'workAmountStorageModel'[\s\S]*WORK_SUBATOM_PROJECTION_MODEL/u.test(
     worker,
@@ -1319,8 +1390,8 @@ expect(
     ),
 );
 expect(
-  "worker pending witness binds Q16, Core, mempool, all pending relations, complete scan, and freshness",
-  /export function workerWorkPrecisionPendingWitnessReady[\s\S]*witness\.ready === true[\s\S]*WORK_SUBATOM_PROJECTION_MODEL[\s\S]*WORK_PRECISION_V2_MODEL[\s\S]*invalidLegacyMutationCount[\s\S]*workerWorkPrecisionCoreTipReady[\s\S]*canonicalWorkerMempoolSnapshot\(txids\)[\s\S]*canonicalWorkerJsonText\(witnessedProjection\) ===\s*canonicalWorkerJsonText\(currentProjection\)[\s\S]*scan\.complete === true[\s\S]*scan\.canonicalDeferred[\s\S]*scan\.unresolved[\s\S]*WORK_AMO_V8_PENDING_WITNESS_MAX_AGE_MS/u.test(
+  "worker pending witness binds Q16, stable Core membership for persisted WORK, every projected relation, and freshness",
+  /export function workerWorkPrecisionPendingWitnessReady[\s\S]*witness\.ready === true[\s\S]*WORK_SUBATOM_PROJECTION_MODEL[\s\S]*WORK_PRECISION_V2_MODEL[\s\S]*invalidLegacyMutationCount[\s\S]*workerWorkPrecisionCoreTipReady[\s\S]*canonicalWorkerMempoolSnapshot\(currentMempoolTxids\)[\s\S]*canonicalWorkerJsonText\(witnessedProjection\) ===\s*canonicalWorkerJsonText\(currentProjection\)[\s\S]*scan\.complete === true[\s\S]*persisted-pending-work-projection-audit-v1[\s\S]*bounded-best-effort-unconfirmed-discovery-v1[\s\S]*WORK_AMO_V8_PENDING_WITNESS_MAX_AGE_MS/u.test(
     worker,
   ),
 );
@@ -1329,13 +1400,48 @@ expect(
   /async function assertWorkPrecisionPendingReady[\s\S]*confirmedReplay\?\.ready !== true[\s\S]*readExactWorkerCoreMempoolSnapshot/u.test(
     worker,
   ) &&
-    /SELECT address, pending_delta::text[\s\S]*event\.status = 'pending'[\s\S]*status IN \('pending', 'sealing'\)/u.test(
+    /SELECT address, pending_delta::text[\s\S]*AND status = 'pending'[\s\S]*listing\.status = 'pending'[\s\S]*listing\.status = 'sealing'/u.test(
       worker,
     ) &&
-    /invalidLegacyResult[\s\S]*const stableCore =[\s\S]*const stableMempool =[\s\S]*workerWorkPrecisionPendingWitnessReady/u.test(
+    /invalidLegacyResult[\s\S]*const stableCore =[\s\S]*const stableMempool = membership\.expectedTxids\.every[\s\S]*mempoolBeforeTxids\.has\(txid\)[\s\S]*mempoolAfterTxids\.has\(txid\)[\s\S]*workerWorkPrecisionPendingWitnessReady/u.test(
       worker,
     ),
 );
+expect(
+  "all Q16 readiness surfaces share the semantic transaction projection instead of volatile raw envelopes",
+  /canonical-work-q16-pending-projection-v3/u.test(
+    workQ16PendingProjection,
+  ) &&
+    /pendingProtocolResolvedInvalid[\s\S]*pendingWorkMintAttemptCount[\s\S]*pendingWorkMintInspectionVersion[\s\S]*pendingWorkMintRecoveryNeeded[\s\S]*pendingWorkMintResolvedInvalid/u.test(
+      workQ16PendingProjection,
+    ) &&
+    [backfillQ16PendingWitness, worker, readerPrecisionV2Readiness]
+      .every((source) =>
+        /workQ16PendingTransactionProjectionRows/u.test(source)
+      ),
+);
+for (const [surface, source] of [
+  ["backfill pending witness", backfillQ16PendingWitness],
+  ["worker pending audit", workerQ16PendingAudit],
+  ["reader pending readiness", readerPrecisionV2Readiness],
+]) {
+  expect(
+    `${surface} uses the canonical event output column with one protocol-position alias`,
+    /op_return_vout AS protocol_vout[\s\S]*FROM proof_indexer\.events/u.test(
+      source,
+    ) &&
+      !/SELECT\s+event_id,\s+txid,\s+kind,\s+protocol,\s+protocol_vout,/u.test(
+        source,
+      ),
+  );
+  expect(
+    `${surface} qualifies every joined pending-listing projection`,
+    /listing\.listing_id,[\s\S]*listing\.status,[\s\S]*listing\.seller_address,[\s\S]*listing\.buyer_address,[\s\S]*listing\.amount::text,[\s\S]*listing\.price_sats::text,[\s\S]*listing\.sale_ticket_txid,[\s\S]*listing\.seal_txid,[\s\S]*listing\.payload[\s\S]*FROM proof_indexer\.credit_listings listing[\s\S]*LEFT JOIN proof_indexer\.transactions seal_tx/u.test(
+      source,
+    ) &&
+      !/SELECT\s+listing_id,\s+status,/u.test(source),
+  );
+}
 expect(
   "worker publishes no Q16-ready state before the pending audit completes",
   /workPrecision\.era === WORK_PRECISION_Q16_ERA[\s\S]*pendingRequired: true,[\s\S]*ready: false,[\s\S]*state: "canonical-phase-complete"/u.test(
@@ -1346,17 +1452,84 @@ expect(
     ),
 );
 expect(
+  "worker status maintenance precedes the final backfill-owned Q16 pending witness",
+  /runCanonicalBeforePending\([\s\S]*runBackfillPhase\(backfillPhases\[0\]\)[\s\S]*pendingStatus = await refreshPendingStatusesSafely\(\);[\s\S]*runBackfillPhase\(backfillPhases\[1\]\)[\s\S]*assertWorkPrecisionPendingReady/u.test(
+    worker,
+  ),
+);
+expect(
+  "the pending scan retains the last exact witness until its atomic replacement is complete",
+  /const q16PendingActive =[\s\S]*const state = await mempoolScanState/u.test(
+    backfillMempoolScan,
+  ) &&
+    !/storeWorkQ16PendingWitnessNotReady[\s\S]*pending-rebuild-in-progress/u.test(
+      backfillMempoolScan,
+    ) &&
+    /await persistExactWorkQ16PendingWitness\(client/u.test(
+      backfillMempoolScan,
+    ) &&
+    /catch \(error\)[\s\S]*storeWorkQ16PendingWitnessNotReady/u.test(
+      backfillQ16PendingWitness,
+    ),
+);
+expect(
+  "normal worker phases preserve and consume only the last fully successful Q16 proof",
+  /const currentSuccess = \{[\s\S]*workPrecision: runtime\.workPrecision[\s\S]*lastSuccess: currentSuccess/u.test(
+    worker,
+  ) &&
+    /canonicalPhase,[\s\S]*lastSuccess,[\s\S]*lastSuccessAt: lastSuccess\?\.finishedAt \?\? null[\s\S]*state: "canonical-phase-complete"/u.test(
+      worker,
+    ) &&
+    !/lastSuccess: canonicalSuccess/u.test(worker) &&
+    /WORK_AMO_V8_TRANSIENT_WORKER_STATES[\s\S]*"canonical-phase-complete"[\s\S]*"running"[\s\S]*"starting"/u.test(
+      workAmoV8WorkerReadiness,
+    ) &&
+    /lastSuccess\.workPrecision[\s\S]*durableReplay\.ready === true[\s\S]*replay\.tipHeight === tipHeight[\s\S]*replay\.tipHash === normalizedHash\(tipHash\)/u.test(
+      workAmoV8WorkerReadiness,
+    ) &&
+    /idleProofReady[\s\S]*replayCommitmentsEqual\(currentReplay, durableReplay\)/u.test(
+      workAmoV8WorkerReadiness,
+    ),
+);
+expect(
+  "V8 readiness keeps completed-worker and current-reader pending proofs independent at one Core tip",
+  /const indexReady =[\s\S]*migrationReadiness\?\.pendingReady === true &&[\s\S]*workerReadiness\.ready === true &&[\s\S]*pendingMembershipLive;/u.test(
+    server,
+  ) &&
+    !/workerReadiness\.pendingMembershipCount ===[\s\S]*pendingMembershipSnapshot\?\.count/u.test(
+      server,
+    ) &&
+    !/workerReadiness\.pendingProjectionSha256 ===[\s\S]*migrationReadiness\?\.pendingWitness/u.test(
+      server,
+    ),
+);
+expect(
+  "marketplace deployment convergence selects authoritative V8 before historical V6 and V5",
+  /function workAmoV8IsAuthoritative[\s\S]*activation\?\.reached === true[\s\S]*migrationReadiness\?\.active === true/u.test(
+    marketplaceRegressions,
+  ) &&
+    /function canonicalWorkAmoStatusIndexReady[\s\S]*workAmoV8IsAuthoritative\(v8\)[\s\S]*workAmoV8StatusIndexReady\(v8\)[\s\S]*workAmoV6StatusFromPayload/u.test(
+      marketplaceRegressions,
+    ) &&
+    /function expectedActiveWorkMarketVersion[\s\S]*workAmoV8IsAuthoritative\(workAmoV8\)[\s\S]*return WORK_AMO_V8_AUTH_VERSION[\s\S]*workAmoV6StatusFromPayload/u.test(
+      marketplaceRegressions,
+    ) &&
+    /assertWorkAmoEraSelectionContract\(\)/u.test(
+      marketplaceRegressions,
+    ),
+);
+expect(
   "backfill and worker share one durable Q16 pending witness key and model",
   /WORK_Q16_PENDING_REBUILD_META_KEY =\s*"workQ16PendingRebuild:livenet"/u.test(
     backfill,
   ) &&
-    /WORK_Q16_PENDING_REBUILD_MODEL =\s*"canonical-work-q16-pending-rebuild-v1"/u.test(
+    /WORK_Q16_PENDING_REBUILD_MODEL =\s*"canonical-work-q16-pending-rebuild-v2"/u.test(
       backfill,
     ) &&
     /WORK_AMO_V8_PENDING_REBUILD_META_KEY =\s*"workQ16PendingRebuild:livenet"/u.test(
       worker,
     ) &&
-    /WORK_AMO_V8_PENDING_REBUILD_MODEL =\s*"canonical-work-q16-pending-rebuild-v1"/u.test(
+    /WORK_AMO_V8_PENDING_REBUILD_MODEL =\s*"canonical-work-q16-pending-rebuild-v2"/u.test(
       worker,
     ),
 );
@@ -1368,20 +1541,63 @@ expect(
     /async function persistExactWorkQ16PendingWitness[\s\S]*getrawmempool[\s\S]*WORK_PROJECTION_STATE_Q16[\s\S]*workQ16PendingCommitment[\s\S]*recheckedMempoolSnapshot[\s\S]*recheckedTipHeight[\s\S]*ready: true[\s\S]*complete: true/u.test(
       backfill,
     ) &&
-    /canonicalDeferred: 0,[\s\S]*unresolved: 0,[\s\S]*WORK_Q16_PENDING_REBUILD_META_KEY[\s\S]*await client\.query\("COMMIT"\)/u.test(
+    /persisted-pending-work-projection-audit-v1[\s\S]*bounded-best-effort-unconfirmed-discovery-v1[\s\S]*WORK_Q16_PENDING_REBUILD_META_KEY[\s\S]*await client\.query\("COMMIT"\)/u.test(
       backfill,
     ),
 );
 expect(
-  "Q16 pending readiness proves mempool membership, transaction parity, and zero noncanonical balance deltas",
-  /function workQ16PendingParity[\s\S]*outsideMempoolTxids[\s\S]*missingTransactionTxids[\s\S]*pending-work-events-do-not-mutate-holder-balances-v1[\s\S]*canonical-work-q16-pending-parity-v1[\s\S]*ready:/u.test(
+  "Q16 pending readiness separates exact persisted-state parity from bounded best-effort discovery",
+  /function workQ16PendingMembershipStableAcrossSnapshots[\s\S]*WORK_Q16_PENDING_MEMPOOL_MODEL[\s\S]*initialMembership\.has\(txid\)[\s\S]*finalMembership\.has\(txid\)/u.test(
+    backfill,
+  ) &&
+    /async function persistExactWorkQ16PendingWitness[\s\S]*workQ16PendingMembershipStableAcrossSnapshots[\s\S]*membership\.expectedTxids[\s\S]*persisted-pending-work-projection-audit-v1[\s\S]*bounded-best-effort-unconfirmed-discovery-v1/u.test(
+      backfill,
+    ) &&
+    !/finalSha256 === initialSha256/u.test(backfill),
+);
+expect(
+  "Q16 pending readiness proves mempool membership, exact inspection markers, transaction parity, and zero noncanonical balance deltas",
+  /function workQ16PendingMembership[\s\S]*canonical-work-q16-pending-membership-v2[\s\S]*function workQ16PendingInspectionMarkerReason[\s\S]*pendingWorkMintAttemptCount[\s\S]*pendingProtocolResolvedInvalid[\s\S]*function workQ16PendingParity[\s\S]*outsideMempoolTxids[\s\S]*missingTransactionTxids[\s\S]*invalidInspectionRows[\s\S]*pending-work-events-do-not-mutate-holder-balances-v1[\s\S]*canonical-work-q16-pending-parity-v2[\s\S]*ready:/u.test(
     backfill,
   ) &&
     /const parity = workQ16PendingParity\([\s\S]*if \(!parity\.ready\)[\s\S]*parity,[\s\S]*projection/u.test(
       backfill,
     ) &&
-    /function workQ16PendingParity[\s\S]*canonical-work-q16-pending-parity-v1[\s\S]*pendingParity\.ready === true[\s\S]*pendingWitness\.parity/u.test(
+    /function workQ16PendingParity[\s\S]*canonical-work-q16-pending-parity-v2[\s\S]*pendingParity\.ready === true[\s\S]*pendingWitness\.parity/u.test(
       reader,
+    ) &&
+    /function workQ16PendingInspectionMarkerReason[\s\S]*protocol-terminal-valid-projection-conflict[\s\S]*invalidInspectionRows/u.test(
+      reader,
+    ) &&
+    /function workerWorkPrecisionPendingInspectionMarkerReason[\s\S]*protocol-terminal-valid-projection-conflict[\s\S]*invalidInspectionRows/u.test(
+      worker,
+    ) &&
+    /attemptCount > 1[\s\S]*protocolResolvedInvalid[\s\S]*ambiguous-multi-mint-recovery/u.test(
+      backfill,
+    ) &&
+    /attemptCount > 1[\s\S]*protocolResolvedInvalid[\s\S]*ambiguous-multi-mint-recovery/u.test(
+      reader,
+    ) &&
+    /attemptCount > 1[\s\S]*protocolResolvedInvalid[\s\S]*ambiguous-multi-mint-recovery/u.test(
+      worker,
+    ),
+);
+expect(
+  "AMO V8 accepts only an exact Core mempool array and keeps full pending membership internal",
+  /function workQ16MempoolSnapshot[\s\S]*!Array\.isArray\(txids\)[\s\S]*normalizedTxids\.some[\s\S]*new Set\(normalizedTxids\)\.size[\s\S]*return null/u.test(
+    server,
+  ) &&
+    /liveMempoolTxids =\s*mempoolTxidsResult\?\.ok &&[\s\S]*Array\.isArray\(mempoolTxidsResult\.result\)[\s\S]*: null[\s\S]*liveMempoolSnapshot = liveMempoolTxids/u.test(
+      server,
+    ) &&
+    /const publicMigrationReadiness =[\s\S]*membershipSnapshot:[\s\S]*count: pendingMembershipSnapshot\.count,[\s\S]*model: pendingMembershipSnapshot\.model,[\s\S]*sha256: pendingMembershipSnapshot\.sha256,[\s\S]*migrationReadiness: publicMigrationReadiness/u.test(
+      server,
+    ) &&
+    /function canonicalWorkerMempoolSnapshot[\s\S]*!Array\.isArray\(value\)[\s\S]*getrawmempool\(false\) array/u.test(
+      worker,
+    ) &&
+    /function canonicalMempoolTxidSnapshot[\s\S]*!Array\.isArray\(mempool\) && !verboseMempool[\s\S]*exact Core mempool array or verbose object/u.test(
+      backfill,
     ),
 );
 expect(
@@ -1634,7 +1850,7 @@ expect(
     /Number\(migrationReadiness\?\.tipHeight\) === tipHeight[\s\S]*String\(migrationReadiness\?\.tipHash \?\? ""\)[\s\S]*\.toLowerCase\(\) === tipHash/u.test(
       server,
     ) &&
-    /activation: \{[\s\S]*reached: workAmoV8ReachedLatch,[\s\S]*tipVerified,[\s\S]*migrationReadiness,[\s\S]*writesConfigured: WORK_AMO_V8_WRITES_CONFIGURED/u.test(
+    /activation: \{[\s\S]*reached: workAmoV8ReachedLatch,[\s\S]*tipVerified,[\s\S]*migrationReadiness: publicMigrationReadiness,[\s\S]*writesConfigured: WORK_AMO_V8_WRITES_CONFIGURED/u.test(
       server,
     ) &&
     /withWorkMarketplaceV4Metadata[\s\S]*workAmoV8Metadata\(network,[\s\S]*workAmoV8,[\s\S]*floor:[\s\S]*workAmoV8,[\s\S]*workFloor:[\s\S]*workAmoV8/u.test(
@@ -1804,7 +2020,7 @@ expect(
     ),
 );
 expect(
-  "Q16 snapshots are stamped and selected only by one exact active WORK precision model",
+  "snapshots are stamped and selected by the exact WORK precision model at their checkpoint",
   /function workDefinitionStorageModel[\s\S]*const q8 =[\s\S]*WORK_ATOMIC_PROJECTION_MODEL[\s\S]*const q16 =[\s\S]*WORK_SUBATOM_PROJECTION_MODEL[\s\S]*: ""/u.test(
     reader,
   ) &&
@@ -1817,7 +2033,7 @@ expect(
     /async function storeLedgerSnapshot[\s\S]*currentWorkProjectionModel\(client,[\s\S]*if \(!workAmountStorageModel\)[\s\S]*snapshotPayload = \{[\s\S]*workAmountStorageModel/u.test(
       backfill,
     ) &&
-    /async function storeCanonicalSummarySnapshot[\s\S]*currentWorkProjectionModel\(client,[\s\S]*if \(!workAmountStorageModel\)[\s\S]*snapshotPayload = \{[\s\S]*workAmountStorageModel/u.test(
+    /async function storeCanonicalSummarySnapshot[\s\S]*workProjectionModelAtHeight\(\s*client,\s*summaryCheckpointHeight[\s\S]*if \(!workAmountStorageModel\)[\s\S]*snapshotPayload = \{[\s\S]*workAmountStorageModel/u.test(
       backfill,
     ) &&
     /async function ledgerSnapshot\([\s\S]*payload->>'workAmountStorageModel' =\s*ANY\(\$3::text\[\]\)[\s\S]*currentWorkAmountStorageModel\(pool, network\)[\s\S]*payload->>'workAmountStorageModel' = \$2/u.test(

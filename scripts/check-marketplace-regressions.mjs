@@ -1,7 +1,10 @@
 #!/usr/bin/env node
 
 import fs from "node:fs";
-import { parseWorkAmountToAtoms } from "../server/work-units.mjs";
+import {
+  parseWorkAmountToAtoms,
+  parseWorkAmountToSubatoms,
+} from "../server/work-units.mjs";
 import {
   MarketplaceRegressionHttpError,
   createCanonicalConvergenceBudget,
@@ -62,6 +65,26 @@ const WORK_AMO_V5_MODELS = {
 };
 const WORK_AMO_V6_AUTH_VERSION = "pwt-sale-v6";
 const WORK_AMO_V6_ALLOWED_FACE_PROOFS = [20_000, 50_000, 100_000];
+const WORK_AMO_V8_AUTH_VERSION = "pwt-sale-v8";
+const WORK_AMO_V8_ALLOWED_FACE_PROOFS = [25_000];
+const WORK_AMO_V8_DECLARATION_TXID =
+  "f90e1faf572ef8253ca5959731b9d9e99c74bced4397380059878936712bee7a";
+const WORK_AMO_V8_DECLARATION_BLOCK_HASH =
+  "00000000000000000001ec938998cde4fd86ee6e3c672a6d3d95200cd8a984ac";
+const WORK_AMO_V8_DECLARATION_HEIGHT = 960_600;
+const WORK_AMO_V8_DECLARATION_BLOCK_INDEX = 2_369;
+const WORK_AMO_V8_DECLARATION_PROTOCOL_VOUT = 3;
+const WORK_AMO_V8_DECLARATION_RECORD_ORDINAL = 0;
+const WORK_AMO_V8_DECLARATION_REGISTRY_PAYMENT_VOUT = 4;
+const WORK_AMO_V8_DECLARATION_MEMO_SHA256 =
+  "1ba53b285f95f8d69f0272c8e75c76b09cd3bd26281c68e665749368e7694528";
+const WORK_AMO_V8_DECLARATION_MEMO_BYTES = 5_593;
+const WORK_AMO_V8_ACTIVATION_HEIGHT = 960_601;
+const WORK_AMO_V8_PRECISION = Object.freeze({
+  amountStorageModel: "work-subatoms-v2",
+  decimals: 16,
+  unitScale: "10000000000000000",
+});
 const WORK_AMO_V6_FIRST_LISTING_TX =
   "b259fa601676287eca2ea94c9142cd13b45fde7031ec98967f15306df6ef7936";
 const WORK_AMO_V6_FIRST_LISTING_BLOCK_HASH =
@@ -86,6 +109,12 @@ const WORK_MARKET_V1_REFUND_SNAPSHOT = JSON.parse(
 );
 const WORK_MARKET_V1_RELIC_IDS = new Set(
   WORK_MARKET_V1_REFUND_SNAPSHOT.listings.map((listing) => listing.listingId),
+);
+const WORK_MARKET_V1_REFUND_LISTINGS_BY_ID = new Map(
+  WORK_MARKET_V1_REFUND_SNAPSHOT.listings.map((listing) => [
+    String(listing?.listingId ?? "").toLowerCase(),
+    listing,
+  ]),
 );
 const POWB_TOKEN_ID =
   "a3d0bc8528f91dfc52400a885bed7e49235396aa82aa9f95db41be629f1d5562";
@@ -213,7 +242,7 @@ const REQUEST_RETRY_COUNT = Number(
 const ID_RECORD_MAX_MS = Number(
   process.env.MARKETPLACE_ID_RECORD_MAX_MS ?? 15_000,
 );
-const WORK_AMO_V5_CONVERGENCE_MAX_MS = Math.min(
+const WORK_AMO_CONVERGENCE_MAX_MS = Math.min(
   300_000,
   Math.max(
     1_000,
@@ -222,7 +251,7 @@ const WORK_AMO_V5_CONVERGENCE_MAX_MS = Math.min(
     ) || 180_000,
   ),
 );
-const WORK_AMO_V5_CONVERGENCE_POLL_MS = Math.min(
+const WORK_AMO_CONVERGENCE_POLL_MS = Math.min(
   10_000,
   Math.max(
     100,
@@ -252,23 +281,43 @@ function workAmountMatches(record, expectedAmount) {
     const expectedAtoms = parseWorkAmountToAtoms(expectedAmount, {
       allowZero: true,
     });
+    const expectedSubatoms = parseWorkAmountToSubatoms(expectedAmount, {
+      allowZero: true,
+    });
     const amountAtoms = record?.amountAtoms;
+    const amountSubatoms = record?.amountSubatoms;
     const hasAmountAtoms =
       amountAtoms !== undefined && amountAtoms !== null && amountAtoms !== "";
+    const hasAmountSubatoms =
+      amountSubatoms !== undefined &&
+      amountSubatoms !== null &&
+      amountSubatoms !== "";
     if (typeof record?.amount === "number") {
       return (
         !hasAmountAtoms &&
+        !hasAmountSubatoms &&
         Number.isSafeInteger(record.amount) &&
         parseWorkAmountToAtoms(record.amount, { allowZero: true }) ===
           expectedAtoms
       );
     }
-    return (
+    const q8Historical =
       typeof record?.amount === "string" &&
       record.amount === expectedAmount &&
       typeof amountAtoms === "string" &&
-      amountAtoms === expectedAtoms
-    );
+      amountAtoms === expectedAtoms &&
+      !hasAmountSubatoms;
+    const q16Current =
+      typeof record?.amount === "string" &&
+      record.amount === expectedAmount &&
+      !hasAmountAtoms &&
+      typeof amountSubatoms === "string" &&
+      amountSubatoms === expectedSubatoms &&
+      record?.amountStorageModel ===
+        WORK_AMO_V8_PRECISION.amountStorageModel &&
+      Number(record?.decimals) === WORK_AMO_V8_PRECISION.decimals &&
+      String(record?.unitScale ?? "") === WORK_AMO_V8_PRECISION.unitScale;
+    return q8Historical || q16Current;
   } catch {
     return false;
   }
@@ -400,7 +449,7 @@ async function requestJson(
 }
 
 const marketplaceCanonicalConvergenceBudget =
-  createCanonicalConvergenceBudget(WORK_AMO_V5_CONVERGENCE_MAX_MS);
+  createCanonicalConvergenceBudget(WORK_AMO_CONVERGENCE_MAX_MS);
 
 async function convergedFreshCanonicalJson(path, params, kind) {
   return waitForCanonicalConvergenceWithinBudget({
@@ -416,7 +465,7 @@ async function convergedFreshCanonicalJson(path, params, kind) {
       kind === "work-token"
         ? "WORK AMO canonical token readiness"
         : `fresh canonical ${path} readiness`,
-    pollIntervalMs: WORK_AMO_V5_CONVERGENCE_POLL_MS,
+    pollIntervalMs: WORK_AMO_CONVERGENCE_POLL_MS,
     read: ({ remainingMs }) =>
       requestJson(path, params, {
         canonicalErrorDetails: true,
@@ -457,6 +506,76 @@ async function getJson(
     return convergedFreshCanonicalJson(path, params, convergenceKind);
   }
   return requestJson(path, params, { retryCount, timeoutMs });
+}
+
+function canonicalSummarySnapshotIds(summarySet) {
+  return [
+    summarySet?.marketplace?.snapshotId,
+    summarySet?.token?.snapshotId,
+    summarySet?.work?.snapshotId,
+    summarySet?.growth?.snapshotId,
+  ].map((value) => String(value ?? "").trim());
+}
+
+function canonicalSummarySetHasOneSnapshot(summarySet) {
+  const snapshotIds = canonicalSummarySnapshotIds(summarySet);
+  return (
+    snapshotIds.every((snapshotId) => snapshotId !== "") &&
+    new Set(snapshotIds).size === 1
+  );
+}
+
+async function convergedFreshCanonicalSummarySet() {
+  return waitForCanonicalConvergenceWithinBudget({
+    budget: marketplaceCanonicalConvergenceBudget,
+    isReady: canonicalSummarySetHasOneSnapshot,
+    isRetryableValue: (summarySet) =>
+      canonicalSummarySnapshotIds(summarySet).every(
+        (snapshotId) => snapshotId !== "",
+      ),
+    label: "fresh canonical summary snapshot alignment",
+    pollIntervalMs: WORK_AMO_CONVERGENCE_POLL_MS,
+    read: async ({ remainingMs }) => {
+      const requestOptions = {
+        canonicalErrorDetails: true,
+        retryCount: 0,
+        timeoutMs: Math.max(
+          1,
+          Math.min(REQUEST_TIMEOUT_MS, Math.floor(remainingMs)),
+        ),
+      };
+      const [marketplace, token, work, growth] = await Promise.all([
+        requestJson(
+          "/api/v1/marketplace-summary",
+          { fresh: 1, network: "livenet" },
+          requestOptions,
+        ),
+        requestJson(
+          "/api/v1/token-summary",
+          { asset: WORK_TOKEN_ID, fresh: 1, network: "livenet" },
+          requestOptions,
+        ),
+        requestJson(
+          "/api/v1/work-summary",
+          { fresh: 1, network: "livenet" },
+          requestOptions,
+        ),
+        requestJson(
+          "/api/v1/growth-summary",
+          { fresh: 1, network: "livenet" },
+          requestOptions,
+        ),
+      ]);
+      return { growth, marketplace, token, work };
+    },
+    onRetry: ({ attempt, delayMs, error }) => {
+      console.log(
+        `WAIT  [${GATE_LABEL}] canonical summary snapshot alignment after attempt ${attempt}: ${
+          error?.code ?? error?.serverMessage ?? "snapshot-id-transition"
+        }; retrying in ${delayMs}ms`,
+      );
+    },
+  });
 }
 
 async function timedGetJson(path, params = {}) {
@@ -633,10 +752,21 @@ async function assertDroppedCloseCannotHideActiveListing() {
     relicToken.closedListings,
     REPORTED_DROPPED_CLOSE_LISTING_TX,
   );
-  assert(
-    relicListing?.relic === true && relicListing?.refundEligible === true,
-    `${REPORTED_DROPPED_CLOSE_LISTING_TX} is not preserved as a refundable V1 relic after dropped close ${REPORTED_DROPPED_CLOSE_TX}`,
+  const refundSnapshotListing = WORK_MARKET_V1_REFUND_LISTINGS_BY_ID.get(
+    REPORTED_DROPPED_CLOSE_LISTING_TX,
   );
+  assert(
+    refundSnapshotListing &&
+      String(refundSnapshotListing.sellerAddress ?? "") ===
+        REPORTED_DROPPED_CLOSE_SELLER,
+    `${REPORTED_DROPPED_CLOSE_LISTING_TX} is missing from the immutable V1 refund snapshot after dropped close ${REPORTED_DROPPED_CLOSE_TX}`,
+  );
+  if (relicListing) {
+    assert(
+      relicListing.relic === true && relicListing.refundEligible === true,
+      `${REPORTED_DROPPED_CLOSE_LISTING_TX} has invalid projected refund metadata after dropped close ${REPORTED_DROPPED_CLOSE_TX}`,
+    );
+  }
 
   const walletToken = await getJson("/api/v1/token", {
     network: "livenet",
@@ -773,7 +903,37 @@ function workAmoV6StatusFromPayload(payload, context = payload) {
   ].find((status) => status && typeof status === "object");
 }
 
+function workAmoV8StatusFromPayload(payload, context = payload) {
+  return [
+    context?.workAmoV8,
+    context?.floor?.workAmoV8,
+    context?.workFloor?.workAmoV8,
+    payload?.workAmoV8,
+  ].find((status) => status && typeof status === "object");
+}
+
+function workAmoV8IsAuthoritative(status) {
+  return (
+    status?.activation?.reached === true ||
+    status?.migrationReadiness?.active === true
+  );
+}
+
+function workAmoV8StatusIndexReady(status) {
+  return (
+    workAmoV8IsAuthoritative(status) &&
+    status?.version === WORK_AMO_V8_AUTH_VERSION &&
+    status?.indexReady === true &&
+    status?.ready === true &&
+    status?.migrationReadiness?.ready === true
+  );
+}
+
 function canonicalWorkAmoStatusIndexReady(payload) {
+  const v8 = workAmoV8StatusFromPayload(payload);
+  if (workAmoV8IsAuthoritative(v8)) {
+    return workAmoV8StatusIndexReady(v8);
+  }
   const v6 = workAmoV6StatusFromPayload(payload);
   return v6?.pinsConfigured === true
     ? v6.indexReady === true
@@ -781,6 +941,10 @@ function canonicalWorkAmoStatusIndexReady(payload) {
 }
 
 function isRetryableWorkAmoTipRacePayload(payload) {
+  const v8 = workAmoV8StatusFromPayload(payload);
+  if (workAmoV8IsAuthoritative(v8)) {
+    return !workAmoV8StatusIndexReady(v8);
+  }
   const v6 = workAmoV6StatusFromPayload(payload);
   return v6?.pinsConfigured === true && v6.indexReady !== true
     ? true
@@ -804,7 +968,7 @@ function isRetryableWorkAmoV5TipRacePayload(payload) {
   );
 }
 
-async function convergedWorkAmoV5Token({ fresh = true } = {}) {
+async function convergedWorkAmoToken({ fresh = true } = {}) {
   return getJson("/api/v1/token", {
     network: "livenet",
     asset: WORK_TOKEN_ID,
@@ -814,6 +978,9 @@ async function convergedWorkAmoV5Token({ fresh = true } = {}) {
 
 function assertWorkAmoV5Readiness(payload, label, context = payload) {
   const status = workAmoV5StatusFromPayload(payload, context);
+  const v8Authoritative = workAmoV8IsAuthoritative(
+    workAmoV8StatusFromPayload(payload, context),
+  );
   assert(status, `${label} is missing WORK AMO V5 status`);
   assert(
     status.active === true &&
@@ -840,6 +1007,19 @@ function assertWorkAmoV5Readiness(payload, label, context = payload) {
     ),
     `${label} does not expose the exact AMO V5 model identifiers`,
   );
+  if (v8Authoritative) {
+    assert(
+      status.indexReady === false &&
+        status.protocolWritesEnabled === false &&
+        status.listingWritesEnabled === false &&
+        status.writesEnabled === false &&
+        status.quoteReady === false &&
+        status.quoteHead === null &&
+        status.reasonCode === "work-amo-v5-index-not-ready",
+      `${label} did not preserve V5 as closed historical evidence after V8 activation`,
+    );
+    return status;
+  }
   assert(
     status.indexReady === true,
     `${label} reports that canonical AMO V5 replay is not ready`,
@@ -966,6 +1146,127 @@ function assertWorkAmoV6Surface(payload, label, context = payload) {
   return status;
 }
 
+function assertWorkAmoV8Surface(payload, label, context = payload) {
+  const status = workAmoV8StatusFromPayload(payload, context);
+  assert(status, `${label} is missing WORK AMO V8 status`);
+  const activation = status.activation;
+  const declaration = activation?.declaration;
+  const migration = status.migrationReadiness;
+  assert(
+    status.version === WORK_AMO_V8_AUTH_VERSION &&
+      workAmoV8IsAuthoritative(status) &&
+      activation?.active === true &&
+      activation?.canonical === true &&
+      activation?.confirmed === true &&
+      activation?.evidenceComplete === true &&
+      activation?.tipVerified === true &&
+      Number(activation?.activationHeight) === WORK_AMO_V8_ACTIVATION_HEIGHT,
+    `${label} does not expose authoritative WORK AMO V8 activation evidence`,
+  );
+  assert(
+    String(declaration?.txid ?? "").toLowerCase() ===
+        WORK_AMO_V8_DECLARATION_TXID &&
+      String(declaration?.blockHash ?? "").toLowerCase() ===
+        WORK_AMO_V8_DECLARATION_BLOCK_HASH &&
+      Number(declaration?.blockHeight) === WORK_AMO_V8_DECLARATION_HEIGHT &&
+      Number(declaration?.blockTransactionIndex) ===
+        WORK_AMO_V8_DECLARATION_BLOCK_INDEX &&
+      Number(declaration?.activationHeight) === WORK_AMO_V8_ACTIVATION_HEIGHT &&
+      Number(declaration?.protocolVout) ===
+        WORK_AMO_V8_DECLARATION_PROTOCOL_VOUT &&
+      Number(declaration?.recordOrdinal) ===
+        WORK_AMO_V8_DECLARATION_RECORD_ORDINAL &&
+      Number(declaration?.registryPaymentVout) ===
+        WORK_AMO_V8_DECLARATION_REGISTRY_PAYMENT_VOUT &&
+      String(declaration?.payloadSha256 ?? "").toLowerCase() ===
+        WORK_AMO_V8_DECLARATION_MEMO_SHA256 &&
+      Number(declaration?.payloadBytes) ===
+        WORK_AMO_V8_DECLARATION_MEMO_BYTES,
+    `${label} changed the exact confirmed WORK AMO V8 declaration`,
+  );
+  assert(
+    migration?.ready === true &&
+      migration?.active === true &&
+      migration?.canonical === true &&
+      migration?.confirmed === true &&
+      migration?.evidenceComplete === true &&
+      migration?.parityReady === true &&
+      migration?.replayReady === true &&
+      migration?.pendingReady === true &&
+      migration?.precision?.amountStorageModel ===
+        WORK_AMO_V8_PRECISION.amountStorageModel &&
+      Number(migration?.precision?.decimals) ===
+        WORK_AMO_V8_PRECISION.decimals &&
+      String(migration?.precision?.unitScale ?? "") ===
+        WORK_AMO_V8_PRECISION.unitScale,
+    `${label} does not expose exact ready Q16 migration and pending evidence`,
+  );
+  assert(
+    status.indexReady === true &&
+      status.migrationReady === true &&
+      status.precisionMigrationReady === true &&
+      status.ready === true &&
+      status.workerReadiness?.ready === true,
+    `${label} is not fully ready at the authoritative V8 tip`,
+  );
+  const writesEnabled = status.protocolWritesEnabled === true;
+  assert(
+    status.settlementWritesEnabled === writesEnabled &&
+      status.listingWritesEnabled === writesEnabled &&
+      status.writeAdmission === writesEnabled &&
+      status.writesConfigured === writesEnabled &&
+      (writesEnabled
+        ? String(status.reasonCode ?? "") === ""
+        : status.reasonCode === "work-amo-v8-writes-paused"),
+    `${label} does not preserve the single WORK AMO V8 write-gate invariant`,
+  );
+  assert(
+    status.relicCutover?.model ===
+        "canonical-work-amo-v8-preactivation-relic-cutover-v1" &&
+      Number(status.relicCutover?.count) === 23 &&
+      status.relicCutover?.items?.length === 23,
+    `${label} changed the exact 23-listing V8 relic cutover`,
+  );
+  if (/^[1-9][0-9]*$/u.test(String(status.networkValueBeforeQ8 ?? ""))) {
+    const observedFaces = Object.keys(status.estimates ?? {})
+      .map(Number)
+      .sort((left, right) => left - right);
+    assert(
+      JSON.stringify(observedFaces) ===
+        JSON.stringify(WORK_AMO_V8_ALLOWED_FACE_PROOFS),
+      `${label} does not expose the singleton 25,000-proof V8 face`,
+    );
+    const estimate = status.estimates?.["25000"];
+    assert(
+      estimate?.estimateOnly === true &&
+        Number(estimate?.unitFaceProofs) === 25_000 &&
+        String(estimate?.unitPriceSats) === "25000" &&
+        /^[1-9][0-9]*$/u.test(String(estimate?.unitAmountSubatoms ?? "")) &&
+        !("unitAmountAtoms" in estimate),
+      `${label} exposes an invalid or Q8-authoritative V8 unit estimate`,
+    );
+  }
+  return status;
+}
+
+function firstWorkAmoV6AmountProjectionIsExact(listing) {
+  if (String(listing?.amount ?? "") !== "0.0000001") {
+    return false;
+  }
+  const storageModel = String(listing?.amountStorageModel ?? "");
+  const q8Historical =
+    String(listing?.amountAtoms ?? "") === "10" &&
+    (!storageModel || storageModel === "work-atoms-v1") &&
+    (listing?.amountSubatoms == null || listing.amountSubatoms === "");
+  const q16Current =
+    String(listing?.amountSubatoms ?? "") === "1000000000" &&
+    listing?.amountAtoms == null &&
+    storageModel === WORK_AMO_V8_PRECISION.amountStorageModel &&
+    Number(listing?.decimals) === WORK_AMO_V8_PRECISION.decimals &&
+    String(listing?.unitScale ?? "") === WORK_AMO_V8_PRECISION.unitScale;
+  return q8Historical || q16Current;
+}
+
 function assertFirstWorkAmoV6ListingRecord(
   listing,
   label,
@@ -983,8 +1284,7 @@ function assertFirstWorkAmoV6ListingRecord(
       String(listing.tokenId ?? "").toLowerCase() === WORK_TOKEN_ID &&
       String(listing.sellerAddress ?? "") ===
         WORK_AMO_V6_FIRST_LISTING_SELLER &&
-      String(listing.amountAtoms ?? "") === "10" &&
-      String(listing.amount ?? "") === "0.0000001" &&
+      firstWorkAmoV6AmountProjectionIsExact(listing) &&
       Number(listing.priceSats) === 20_000 &&
       Number(listing.blockHeight) === 960_258 &&
       String(listing.blockHash ?? "").toLowerCase() ===
@@ -1073,8 +1373,7 @@ function assertFirstWorkAmoV6ClosedListingRecord(
       String(listing?.tokenId ?? "").toLowerCase() === WORK_TOKEN_ID &&
       String(listing?.sellerAddress ?? "") ===
         WORK_AMO_V6_FIRST_LISTING_SELLER &&
-      String(listing?.amountAtoms ?? "") === "10" &&
-      String(listing?.amount ?? "") === "0.0000001" &&
+      firstWorkAmoV6AmountProjectionIsExact(listing) &&
       Number(listing?.priceSats) === 20_000 &&
       String(listing?.closedTxid ?? "").toLowerCase() ===
         WORK_AMO_V6_FIRST_LISTING_CLOSE_TX &&
@@ -1196,6 +1495,10 @@ async function assertFirstWorkAmoV6ListingProjection(token) {
 }
 
 function expectedActiveWorkMarketVersion(payload, context = payload) {
+  const workAmoV8 = workAmoV8StatusFromPayload(payload, context);
+  if (workAmoV8IsAuthoritative(workAmoV8)) {
+    return WORK_AMO_V8_AUTH_VERSION;
+  }
   const workAmoV6 = workAmoV6StatusFromPayload(payload, context);
   if (
     workAmoV6?.activation?.active === true &&
@@ -1248,6 +1551,83 @@ function expectedActiveWorkMarketVersion(payload, context = payload) {
     : WORK_MARKET_V3_AUTH_VERSION;
 }
 
+function assertWorkAmoEraSelectionContract() {
+  const readyV6 = {
+    activation: { active: true },
+    indexReady: true,
+    pinsConfigured: true,
+    ready: true,
+    version: WORK_AMO_V6_AUTH_VERSION,
+  };
+  const reachedV8 = {
+    activation: { active: true, reached: true },
+    indexReady: false,
+    migrationReadiness: { active: true, ready: true },
+    ready: false,
+    version: WORK_AMO_V8_AUTH_VERSION,
+  };
+  const readyV8 = {
+    ...reachedV8,
+    indexReady: true,
+    ready: true,
+  };
+  const pinnedOnlyV8 = {
+    activation: { active: false, reached: false },
+    indexReady: false,
+    migrationReadiness: { active: false, ready: false },
+    pinsConfigured: true,
+    ready: false,
+    version: WORK_AMO_V8_AUTH_VERSION,
+  };
+  assert(
+    canonicalWorkAmoStatusIndexReady({
+      workAmoV6: readyV6,
+      workAmoV8: pinnedOnlyV8,
+    }),
+    "a merely pinned preactivation V8 status must retain V6 precedence",
+  );
+  assert(
+    !canonicalWorkAmoStatusIndexReady({
+      workAmoV6: readyV6,
+      workAmoV8: reachedV8,
+    }) &&
+      isRetryableWorkAmoTipRacePayload({
+        workAmoV6: readyV6,
+        workAmoV8: reachedV8,
+      }),
+    "authoritative but red V8 must not fall back to ready V6",
+  );
+  assert(
+    canonicalWorkAmoStatusIndexReady({
+      workAmoV6: { ...readyV6, indexReady: false },
+      workAmoV8: readyV8,
+    }) &&
+      !isRetryableWorkAmoTipRacePayload({
+        workAmoV6: { ...readyV6, indexReady: false },
+        workAmoV8: readyV8,
+      }),
+    "fully ready V8 must converge even though superseded V6 is closed",
+  );
+  assert(
+    !canonicalWorkAmoStatusIndexReady({
+      workAmoV6: readyV6,
+      workAmoV8: { ...readyV8, version: "pwt-sale-v8-invalid" },
+    }) &&
+      expectedActiveWorkMarketVersion({
+        workAmoV6: readyV6,
+        workAmoV8: { ...reachedV8, version: "" },
+      }) === WORK_AMO_V8_AUTH_VERSION,
+    "an authoritative malformed V8 status must fail closed in the V8 era",
+  );
+  assert(
+    expectedActiveWorkMarketVersion({ workAmoV6: readyV6 }) ===
+      WORK_AMO_V6_AUTH_VERSION,
+    "pre-V8 V6 active-version selection must remain intact",
+  );
+}
+
+assertWorkAmoEraSelectionContract();
+
 function assertActiveWorkListingsUseCanonicalVersion(
   payload,
   label,
@@ -1298,53 +1678,75 @@ function assertActiveWorkListingsUseCanonicalVersion(
 }
 
 function assertExactWorkV1Relics(payload, label) {
-  const relics = (payload?.closedListings ?? []).filter(
-    (listing) =>
-      listing?.relic === true &&
-      isLegacyWorkListing(listing),
+  const snapshotIds = WORK_MARKET_V1_REFUND_SNAPSHOT.listings.map(
+    (listing) => String(listing?.listingId ?? "").toLowerCase(),
+  );
+  assert(
+    snapshotIds.length === 94 &&
+      WORK_MARKET_V1_RELIC_IDS.size === 94 &&
+      snapshotIds.every((listingId) =>
+        WORK_MARKET_V1_RELIC_IDS.has(listingId)
+      ),
+    "the immutable WORK V1 refund snapshot must preserve 94 unique listing identities",
+  );
+  const pinnedRows = (payload?.closedListings ?? []).filter(
+    (listing) => WORK_MARKET_V1_RELIC_IDS.has(
+      String(listing?.listingId ?? "").toLowerCase(),
+    ),
   );
   const actualIds = new Set(
-    relics.map((listing) => String(listing?.listingId ?? "").toLowerCase()),
+    pinnedRows.map((listing) =>
+      String(listing?.listingId ?? "").toLowerCase()
+    ),
   );
   assert(
-    relics.length === 94 && actualIds.size === 94,
-    `${label} returned ${relics.length} WORK V1 relic/refund rows across ${actualIds.size} unique listings, expected 94`,
+    pinnedRows.length === actualIds.size,
+    `${label} duplicated a projected member of the pinned 94-listing WORK V1 refund snapshot`,
   );
   assert(
-    actualIds.size === WORK_MARKET_V1_RELIC_IDS.size &&
-      [...WORK_MARKET_V1_RELIC_IDS].every((listingId) =>
-        actualIds.has(listingId),
-      ),
-    `${label} WORK V1 relic membership does not match the pinned refund snapshot`,
-  );
-  assert(
-    relics.every((listing) => listing?.refundEligible === true),
-    `${label} returned a pinned WORK V1 relic that is not refund eligible`,
+    pinnedRows.every((listing) => isLegacyWorkListing(listing)),
+    `${label} changed the historical authorization version of a pinned WORK V1 refund row`,
   );
   assert(
     !actualIds.has(WORK_MARKET_V2_POST_ACTIVATION_LISTING_TX),
     `${label} incorrectly included the post-activation invalid listing in the V1 relic set`,
   );
   assert(
-    relics.every(
+    pinnedRows.every(
       (listing) =>
+        listing?.relic === true &&
         listing?.status === "disabled" &&
+        listing?.refundEligible === true &&
         Number(listing?.disabledAtBlockHeight) ===
           WORK_MARKET_V2_ACTIVATION_HEIGHT &&
         String(listing?.disabledByTxid ?? "").toLowerCase() ===
           WORK_MARKET_V2_DECLARATION_TXID,
     ),
-    `${label} returned a WORK V1 relic without the canonical cutover metadata`,
+    `${label} returned a projected WORK V1 relic without the canonical cutover metadata`,
   );
   const lateSealRelic = listingById(
-    relics,
+    pinnedRows,
+    WORK_MARKET_V2_LATE_SEAL_LISTING_TX,
+  );
+  const lateSealSnapshot = WORK_MARKET_V1_REFUND_LISTINGS_BY_ID.get(
     WORK_MARKET_V2_LATE_SEAL_LISTING_TX,
   );
   assert(
-    lateSealRelic?.sealConfirmed !== true &&
-      !String(lateSealRelic?.sealTxid ?? "").trim(),
-    `${label} applied the post-activation seal to its pre-activation relic`,
+    lateSealSnapshot?.sealed === false &&
+      !String(lateSealSnapshot?.sealTxid ?? "").trim() &&
+      Number(lateSealSnapshot?.refundSats) ===
+        Number(lateSealSnapshot?.listingMinerFeeSats),
+    "the immutable V1 refund snapshot applied the post-activation seal to its pre-activation relic",
   );
+  if (lateSealRelic) {
+    assert(
+      lateSealRelic.relic === true &&
+        lateSealRelic.refundEligible === true &&
+        lateSealRelic.sealConfirmed !== true &&
+        !String(lateSealRelic.sealTxid ?? "").trim(),
+      `${label} applied the post-activation seal to its projected pre-activation relic`,
+    );
+  }
 }
 
 async function assertWorkMarketV2InvalidAttempt({
@@ -1388,7 +1790,7 @@ async function assertWorkMarketV2CutoverContract({
 } = {}) {
   const token =
     providedToken ??
-    (await convergedWorkAmoV5Token({
+    (await convergedWorkAmoToken({
       fresh,
     }));
   assertActiveWorkListingsUseCanonicalVersion(
@@ -1415,7 +1817,7 @@ async function assertWorkAmoV5CutoverContract({
 } = {}) {
   const token =
     providedToken ??
-    (await convergedWorkAmoV5Token({
+    (await convergedWorkAmoToken({
       fresh,
     }));
   assertWorkAmoV5Readiness(token, "/api/v1/token?asset=WORK");
@@ -1574,11 +1976,15 @@ async function runFastMarketplaceRegressionGate() {
     );
   });
 
+  await step("WORK AMO V8 Q16 activation and write gate", async () => {
+    await assertWorkAmoV8Surface(
+      cutoverToken,
+      "/api/v1/token?asset=WORK",
+    );
+  });
+
   await step("first confirmed WORK AMO V6 listing lifecycle", async () => {
-    const status = workAmoV6StatusFromPayload(cutoverToken);
-    if (status?.activation?.active === true && status?.ready === true) {
-      await assertFirstWorkAmoV6ListingProjection(cutoverToken);
-    }
+    await assertFirstWorkAmoV6ListingProjection(cutoverToken);
   });
 
   await step("active and closed WORK listing truth", async () => {
@@ -1847,6 +2253,11 @@ await assertWorkAmoV6Surface(
   workCutoverToken,
   "/api/v1/token?asset=WORK",
 );
+await assertWorkAmoV8Surface(
+  workCutoverToken,
+  "/api/v1/token?asset=WORK",
+);
+await assertFirstWorkAmoV6ListingProjection(workCutoverToken);
 
 const activeListing = await tokenHistory("listings", { q: LISTING_TX });
 assert(
@@ -2079,36 +2490,63 @@ const recentWaitingForSealItem = listingById(
   workCutoverToken.closedListings,
   REPORTED_RECENT_WAITING_FOR_SEAL_LISTING_TX,
 );
+const recentWaitingForSealRefund =
+  WORK_MARKET_V1_REFUND_LISTINGS_BY_ID.get(
+    REPORTED_RECENT_WAITING_FOR_SEAL_LISTING_TX,
+  );
 assert(
-  recentWaitingForSealItem?.relic === true &&
-    recentWaitingForSealItem?.refundEligible === true &&
-    tokenListingHasConfirmedSeal(recentWaitingForSealItem) &&
-    String(recentWaitingForSealItem?.sealTxid ?? "").toLowerCase() ===
+  recentWaitingForSealRefund?.sealed === true &&
+    String(recentWaitingForSealRefund?.sealTxid ?? "").toLowerCase() ===
       REPORTED_RECENT_WAITING_FOR_SEAL_SEAL_TX &&
-    workAmountMatches(recentWaitingForSealItem, "130") &&
-    recentWaitingForSealItem?.priceSats === 81325 &&
-    recentWaitingForSealItem?.sellerAddress ===
+    recentWaitingForSealRefund?.sellerAddress ===
       CARBONZ_TAPROOT_LISTING_ADDRESS,
-  `${REPORTED_RECENT_WAITING_FOR_SEAL_LISTING_TX} is not returned as a refundable V1 relic`,
+  `${REPORTED_RECENT_WAITING_FOR_SEAL_LISTING_TX} is missing its exact immutable V1 refund evidence`,
 );
+if (recentWaitingForSealItem) {
+  assert(
+    recentWaitingForSealItem.relic === true &&
+      recentWaitingForSealItem.refundEligible === true &&
+      tokenListingHasConfirmedSeal(recentWaitingForSealItem) &&
+      String(recentWaitingForSealItem.sealTxid ?? "").toLowerCase() ===
+        REPORTED_RECENT_WAITING_FOR_SEAL_SEAL_TX &&
+      workAmountMatches(recentWaitingForSealItem, "130") &&
+      recentWaitingForSealItem.priceSats === 81325 &&
+      recentWaitingForSealItem.sellerAddress ===
+        CARBONZ_TAPROOT_LISTING_ADDRESS,
+    `${REPORTED_RECENT_WAITING_FOR_SEAL_LISTING_TX} has incomplete projected V1 relic data`,
+  );
+}
 const sealableItem = listingById(
   workCutoverToken.closedListings,
   REPORTED_CONFIRMED_SEALABLE_LISTING_TX,
 );
-assert(
-  sealableItem?.relic === true && sealableItem?.refundEligible === true,
-  `${REPORTED_CONFIRMED_SEALABLE_LISTING_TX} is not returned as a refundable V1 relic`,
+const sealableRefund = WORK_MARKET_V1_REFUND_LISTINGS_BY_ID.get(
+  REPORTED_CONFIRMED_SEALABLE_LISTING_TX,
 );
 assert(
-  sealableItem?.tokenId === WORK_TOKEN_ID &&
-    sealableItem?.registryAddress &&
-    sealableItem?.sellerAddress &&
-    sealableItem?.saleAuthorization?.version === "pwt-sale-v1" &&
-    sealableItem?.saleAuthorization?.anchorType === "sale-ticket-v1" &&
-    sealableItem?.saleAuthorization?.anchorVout === 2 &&
-    sealableItem?.saleAuthorization?.anchorValueSats === 546,
-  `${REPORTED_CONFIRMED_SEALABLE_LISTING_TX} is missing complete sale-ticket listing fields`,
+  sealableRefund?.sealed === true &&
+    /^[0-9a-f]{64}$/u.test(String(sealableRefund?.sealTxid ?? "")) &&
+    sealableRefund?.version === "pwt-sale-v1" &&
+    Number(sealableRefund?.refundSats) ===
+      Number(sealableRefund?.listingMinerFeeSats) +
+        Number(sealableRefund?.sealMinerFeeSats) +
+        Number(sealableRefund?.sealPaymentSats),
+  `${REPORTED_CONFIRMED_SEALABLE_LISTING_TX} is missing its exact immutable V1 refund evidence`,
 );
+if (sealableItem) {
+  assert(
+    sealableItem.relic === true &&
+      sealableItem.refundEligible === true &&
+      sealableItem.tokenId === WORK_TOKEN_ID &&
+      sealableItem.registryAddress &&
+      sealableItem.sellerAddress &&
+      sealableItem.saleAuthorization?.version === "pwt-sale-v1" &&
+      sealableItem.saleAuthorization?.anchorType === "sale-ticket-v1" &&
+      sealableItem.saleAuthorization?.anchorVout === 2 &&
+      sealableItem.saleAuthorization?.anchorValueSats === 546,
+    `${REPORTED_CONFIRMED_SEALABLE_LISTING_TX} has incomplete projected sale-ticket fields`,
+  );
+}
 const {
   elapsedMs: reportedDroppedListingMs,
   json: reportedDroppedListing,
@@ -2312,14 +2750,24 @@ for (const txid of [REPORTED_RECENT_WAITING_FOR_SEAL_LISTING_TX]) {
     `${txid} remained active in Carbonz wallet state after the Marketplace V2 cutover`,
   );
   const relic = listingById(carbonzTaprootWalletToken.closedListings, txid);
+  const refund = WORK_MARKET_V1_REFUND_LISTINGS_BY_ID.get(txid);
   assert(
-    relic?.relic === true &&
-      relic?.refundEligible === true &&
-      tokenListingHasConfirmedSeal(relic) &&
-      String(relic?.sealTxid ?? "").toLowerCase() ===
-        REPORTED_RECENT_WAITING_FOR_SEAL_SEAL_TX,
-    `${txid} is missing its confirmed pre-cutover seal in Carbonz wallet V1 relics`,
+    refund?.sealed === true &&
+      String(refund?.sealTxid ?? "").toLowerCase() ===
+        REPORTED_RECENT_WAITING_FOR_SEAL_SEAL_TX &&
+      refund?.sellerAddress === CARBONZ_TAPROOT_LISTING_ADDRESS,
+    `${txid} is missing its confirmed pre-cutover seal in the immutable V1 refund snapshot`,
   );
+  if (relic) {
+    assert(
+      relic.relic === true &&
+        relic.refundEligible === true &&
+        tokenListingHasConfirmedSeal(relic) &&
+        String(relic.sealTxid ?? "").toLowerCase() ===
+          REPORTED_RECENT_WAITING_FOR_SEAL_SEAL_TX,
+      `${txid} has incomplete projected Carbonz wallet V1 relic data`,
+    );
+  }
 }
 assert(
   !listingById(
@@ -2585,19 +3033,11 @@ assertActiveWorkListingsUseCanonicalVersion(
   workToken,
   "Fresh WORK token payload",
 );
-const workSummary = await getJson("/api/v1/work-summary", {
-  network: "livenet",
-  fresh: 1,
-});
-const workTokenSummary = await getJson("/api/v1/token-summary", {
-  network: "livenet",
-  asset: WORK_TOKEN_ID,
-  fresh: 1,
-});
-const growthSummary = await getJson("/api/v1/growth-summary", {
-  network: "livenet",
-  fresh: 1,
-});
+const alignedFreshSummaries = await convergedFreshCanonicalSummarySet();
+const workSummary = alignedFreshSummaries.work;
+const workTokenSummary = alignedFreshSummaries.token;
+const growthSummary = alignedFreshSummaries.growth;
+const alignedMarketplaceFreshSummary = alignedFreshSummaries.marketplace;
 const activeWorkListingCount = (workToken.listings ?? []).length;
 const workSummaryToken = (workSummary.token?.tokens ?? []).find(
   (item) => item?.tokenId === WORK_TOKEN_ID,
@@ -2622,14 +3062,15 @@ assert(
   `/api/v1/token-summary?asset=WORK&fresh=1 reports ${scopedSummaryToken?.openListings} open WORK listings, expected ${activeWorkListingCount}`,
 );
 assert(
-  workSummary.snapshotId === marketplaceFreshSummary.snapshotId &&
+  workSummary.snapshotId === alignedMarketplaceFreshSummary.snapshotId &&
+    workSummary.snapshotId === workTokenSummary.snapshotId &&
     workSummary.snapshotId === growthSummary.snapshotId,
-  `summary snapshot mismatch: work=${workSummary.snapshotId ?? "none"} marketplace=${marketplaceFreshSummary.snapshotId ?? "none"} growth=${growthSummary.snapshotId ?? "none"}`,
+  `summary snapshot mismatch: work=${workSummary.snapshotId ?? "none"} marketplace=${alignedMarketplaceFreshSummary.snapshotId ?? "none"} token=${workTokenSummary.snapshotId ?? "none"} growth=${growthSummary.snapshotId ?? "none"}`,
 );
 assert(
   numbersAgree(
     workSummary.floor?.networkValueSats,
-    marketplaceFreshSummary.workFloor?.networkValueSats,
+    alignedMarketplaceFreshSummary.workFloor?.networkValueSats,
   ) &&
     numbersAgree(
       workSummary.floor?.networkValueSats,
@@ -2639,18 +3080,18 @@ assert(
       workSummary.floor?.networkValueSats,
       growthSummary.actualValue?.totalSats,
     ),
-  `summary network value mismatch: work=${workSummary.floor?.networkValueSats} marketplace=${marketplaceFreshSummary.workFloor?.networkValueSats} growthFloor=${growthSummary.workFloor?.networkValueSats} growth=${growthSummary.actualValue?.totalSats}`,
+  `summary network value mismatch: work=${workSummary.floor?.networkValueSats} marketplace=${alignedMarketplaceFreshSummary.workFloor?.networkValueSats} growthFloor=${growthSummary.workFloor?.networkValueSats} growth=${growthSummary.actualValue?.totalSats}`,
 );
 assert(
   numbersAgree(
     workSummary.floor?.floorSats,
-    marketplaceFreshSummary.workFloor?.floorSats,
+    alignedMarketplaceFreshSummary.workFloor?.floorSats,
   ) &&
     numbersAgree(
       workSummary.floor?.floorSats,
       growthSummary.workFloor?.floorSats,
     ),
-  `WORK floor mismatch: work=${workSummary.floor?.floorSats} marketplace=${marketplaceFreshSummary.workFloor?.floorSats} growth=${growthSummary.workFloor?.floorSats}`,
+  `WORK floor mismatch: work=${workSummary.floor?.floorSats} marketplace=${alignedMarketplaceFreshSummary.workFloor?.floorSats} growth=${growthSummary.workFloor?.floorSats}`,
 );
 const confirmedSealedListings = (workToken.listings ?? []).filter(
   tokenListingHasConfirmedSeal,

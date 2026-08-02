@@ -5,6 +5,10 @@ const electrumClient = readFileSync("server/electrum-client.mjs", "utf8");
 const proofIndexReader = readFileSync("server/db/proof-index-reader.mjs", "utf8");
 const proofIndexerBackfill = readFileSync("scripts/backfill-proof-indexer.mjs", "utf8");
 const proofIndexerWorker = readFileSync("scripts/run-proof-indexer-worker.mjs", "utf8");
+const marketplaceRegressions = readFileSync(
+  "scripts/check-marketplace-regressions.mjs",
+  "utf8",
+);
 const proofIndexerWorkerService = readFileSync(
   "deploy/proofofwork-indexer-worker.service",
   "utf8",
@@ -28,6 +32,10 @@ const workAmoV6Migration = readFileSync(
   "utf8",
 );
 const workAmoV8Core = readFileSync("server/work-amo-v8.mjs", "utf8");
+const workAmoV8WorkerReadiness = readFileSync(
+  "server/work-amo-v8-worker-readiness.mjs",
+  "utf8",
+);
 const workAmoV8Migration = readFileSync(
   "scripts/migrate-work-precision-v2.mjs",
   "utf8",
@@ -128,6 +136,11 @@ const marketplaceMutationEqualitySource = sourceSliceBetween(
   ledgerSnapshotChecksSource,
   /addCheck\(\s*"marketplace-mutation-fees-counted"/,
   /addCheck\(\s*"work-amo-v5-legacy-bootstrap-carry-proven"/,
+);
+const q16MempoolBackfillSource = sourceSliceBetween(
+  proofIndexerBackfill,
+  /async function backfillMempoolScanSource/,
+  /async function backfillSource/,
 );
 expect(
   "canonical ledger builds the expensive WORK floor exactly once",
@@ -1721,7 +1734,7 @@ expectAll("historical AMO V5 migration preserves relic and invalid-history disti
   /proof_indexer\.work_amo_listing_terms/,
   /WORK_AMO_V5_MIGRATION_APPLY/,
 ]);
-expectAll("AMO V6 production remains exactly declared and write-open before the V8 boundary", proofIndexDeploy, [
+expectAll("AMO V6 production remains exactly declared for replay and write-closed at the V8 boundary", proofIndexDeploy, [
   /^Environment=WORK_AMO_V6_DECLARATION_TXID=975fd82aa84995e014b240618ee1a1254d0a735e6e1241372d0bed0a0d9f0799$/mu,
   /^Environment=WORK_AMO_V6_DECLARATION_HEIGHT=960218$/mu,
   /^Environment=WORK_AMO_V6_DECLARATION_BLOCK_HASH=00000000000000000001ac35a5b7e43c782297fcb9cde0fb458fbd5451ad55df$/mu,
@@ -1731,7 +1744,7 @@ expectAll("AMO V6 production remains exactly declared and write-open before the 
   /^Environment=WORK_AMO_V6_DECLARATION_PROTOCOL_VOUT=3$/mu,
   /^Environment=WORK_AMO_V6_DECLARATION_RECORD_ORDINAL=0$/mu,
   /^Environment=WORK_AMO_V6_DECLARATION_REGISTRY_PAYMENT_VOUT=4$/mu,
-  /^Environment=WORK_AMO_V6_WRITES_ENABLED=1$/mu,
+  /^Environment=WORK_AMO_V6_WRITES_ENABLED=0$/mu,
 ]);
 expect(
   "AMO V6 production has no oracle credential or attestor configuration",
@@ -1740,37 +1753,37 @@ expect(
   ),
 );
 expectAll(
-  "AMO V8 production is staged with empty declaration pins and a closed independent write gate",
+  "AMO V8 production pins the confirmed declaration with the independent deployment write gate open",
   proofIndexDeploy,
   [
-    /^Environment=WORK_AMO_V8_DECLARATION_TXID=$/mu,
-    /^Environment=WORK_AMO_V8_DECLARATION_HEIGHT=$/mu,
-    /^Environment=WORK_AMO_V8_DECLARATION_BLOCK_HASH=$/mu,
-    /^Environment=WORK_AMO_V8_DECLARATION_BLOCK_INDEX=$/mu,
-    /^Environment=WORK_AMO_V8_DECLARATION_MEMO_SHA256=$/mu,
-    /^Environment=WORK_AMO_V8_DECLARATION_MEMO_BYTES=$/mu,
-    /^Environment=WORK_AMO_V8_DECLARATION_PROTOCOL_VOUT=$/mu,
-    /^Environment=WORK_AMO_V8_DECLARATION_RECORD_ORDINAL=$/mu,
-    /^Environment=WORK_AMO_V8_DECLARATION_REGISTRY_PAYMENT_VOUT=$/mu,
-    /^Environment=WORK_AMO_V8_ACTIVATION_HEIGHT=$/mu,
-    /^Environment=WORK_AMO_V8_WRITES_ENABLED=0$/mu,
+    /^Environment=WORK_AMO_V8_DECLARATION_TXID=f90e1faf572ef8253ca5959731b9d9e99c74bced4397380059878936712bee7a$/mu,
+    /^Environment=WORK_AMO_V8_DECLARATION_HEIGHT=960600$/mu,
+    /^Environment=WORK_AMO_V8_DECLARATION_BLOCK_HASH=00000000000000000001ec938998cde4fd86ee6e3c672a6d3d95200cd8a984ac$/mu,
+    /^Environment=WORK_AMO_V8_DECLARATION_BLOCK_INDEX=2369$/mu,
+    /^Environment=WORK_AMO_V8_DECLARATION_MEMO_SHA256=1ba53b285f95f8d69f0272c8e75c76b09cd3bd26281c68e665749368e7694528$/mu,
+    /^Environment=WORK_AMO_V8_DECLARATION_MEMO_BYTES=5593$/mu,
+    /^Environment=WORK_AMO_V8_DECLARATION_PROTOCOL_VOUT=3$/mu,
+    /^Environment=WORK_AMO_V8_DECLARATION_RECORD_ORDINAL=0$/mu,
+    /^Environment=WORK_AMO_V8_DECLARATION_REGISTRY_PAYMENT_VOUT=4$/mu,
+    /^Environment=WORK_AMO_V8_ACTIVATION_HEIGHT=960601$/mu,
+    /^Environment=WORK_AMO_V8_WRITES_ENABLED=1$/mu,
   ],
 );
 expectAll(
-  "AMO V8 index worker is staged with the same empty declaration pins and closed write gate",
+  "AMO V8 index worker carries the same confirmed declaration pins and open deployment write gate",
   proofIndexerWorkerService,
   [
-    /^Environment=WORK_AMO_V8_DECLARATION_TXID=$/mu,
-    /^Environment=WORK_AMO_V8_DECLARATION_HEIGHT=$/mu,
-    /^Environment=WORK_AMO_V8_DECLARATION_BLOCK_HASH=$/mu,
-    /^Environment=WORK_AMO_V8_DECLARATION_BLOCK_INDEX=$/mu,
-    /^Environment=WORK_AMO_V8_DECLARATION_MEMO_SHA256=$/mu,
-    /^Environment=WORK_AMO_V8_DECLARATION_MEMO_BYTES=$/mu,
-    /^Environment=WORK_AMO_V8_DECLARATION_PROTOCOL_VOUT=$/mu,
-    /^Environment=WORK_AMO_V8_DECLARATION_RECORD_ORDINAL=$/mu,
-    /^Environment=WORK_AMO_V8_DECLARATION_REGISTRY_PAYMENT_VOUT=$/mu,
-    /^Environment=WORK_AMO_V8_ACTIVATION_HEIGHT=$/mu,
-    /^Environment=WORK_AMO_V8_WRITES_ENABLED=0$/mu,
+    /^Environment=WORK_AMO_V8_DECLARATION_TXID=f90e1faf572ef8253ca5959731b9d9e99c74bced4397380059878936712bee7a$/mu,
+    /^Environment=WORK_AMO_V8_DECLARATION_HEIGHT=960600$/mu,
+    /^Environment=WORK_AMO_V8_DECLARATION_BLOCK_HASH=00000000000000000001ec938998cde4fd86ee6e3c672a6d3d95200cd8a984ac$/mu,
+    /^Environment=WORK_AMO_V8_DECLARATION_BLOCK_INDEX=2369$/mu,
+    /^Environment=WORK_AMO_V8_DECLARATION_MEMO_SHA256=1ba53b285f95f8d69f0272c8e75c76b09cd3bd26281c68e665749368e7694528$/mu,
+    /^Environment=WORK_AMO_V8_DECLARATION_MEMO_BYTES=5593$/mu,
+    /^Environment=WORK_AMO_V8_DECLARATION_PROTOCOL_VOUT=3$/mu,
+    /^Environment=WORK_AMO_V8_DECLARATION_RECORD_ORDINAL=0$/mu,
+    /^Environment=WORK_AMO_V8_DECLARATION_REGISTRY_PAYMENT_VOUT=4$/mu,
+    /^Environment=WORK_AMO_V8_ACTIVATION_HEIGHT=960601$/mu,
+    /^Environment=WORK_AMO_V8_WRITES_ENABLED=1$/mu,
   ],
 );
 expectAll(
@@ -1806,7 +1819,14 @@ expectAll(
     /previous_transition\.closing_state_sha256 <>[\s\S]*transition\.opening_state_sha256/,
     /workerWorkPrecisionSnapshotReady[\s\S]*consistencyStatus === "green"[\s\S]*WORK_SUBATOM_PROJECTION_MODEL/,
     /workerWorkPrecisionRelationalParity\(\{[\s\S]*balanceRows: balanceResult\.rows[\s\S]*listingRows: listingResult\.rows/,
+    /transition\.work_token_state_model <> \$4[\s\S]*transition\.payload->>'workTokenStateModel'\s*IS DISTINCT FROM \$4/,
   ],
+);
+expect(
+  "AMO V8 worker does not require a duplicate model inside the canonical bare closingTokenState preimage",
+  !/transition\.payload->'closingTokenState'\s*->>'model'\s*IS DISTINCT FROM \$4/.test(
+    proofIndexerWorker,
+  ),
 );
 expectAll(
   "AMO V8 worker never publishes ready before the backfill-owned pending witness is exact",
@@ -1815,7 +1835,40 @@ expectAll(
     /export function workerWorkPrecisionPendingWitnessReady[\s\S]*witness\.ready === true[\s\S]*WORK_SUBATOM_PROJECTION_MODEL[\s\S]*canonicalWorkerMempoolSnapshot/,
     /async function assertWorkPrecisionPendingReady[\s\S]*stableCore[\s\S]*stableMempool[\s\S]*workerWorkPrecisionPendingWitnessReady/,
     /pendingRequired: true,[\s\S]*ready: false,[\s\S]*state: "canonical-phase-complete"/,
+    /runCanonicalBeforePending\([\s\S]*runBackfillPhase\(backfillPhases\[0\]\)[\s\S]*pendingStatus = await refreshPendingStatusesSafely\(\);[\s\S]*runBackfillPhase\(backfillPhases\[1\]\)/,
     /await assertWorkPrecisionPendingReady\([\s\S]*pendingRebuild:[\s\S]*ready: workPrecisionReplay\.ready === true/,
+  ],
+);
+expectAll(
+  "AMO V8 readiness remains available through healthy worker phases without accepting failed state",
+  `${proofIndexerWorker}\n${workAmoV8WorkerReadiness}`,
+  [
+    /const currentSuccess = \{[\s\S]*workPrecision: runtime\.workPrecision[\s\S]*lastSuccess: currentSuccess/,
+    /canonicalPhase,[\s\S]*lastSuccess,[\s\S]*state: "canonical-phase-complete"/,
+    /WORK_AMO_V8_TRANSIENT_WORKER_STATES[\s\S]*"canonical-phase-complete"[\s\S]*"running"[\s\S]*"starting"/,
+    /lastSuccess\.workPrecision[\s\S]*stateReady[\s\S]*durableReplay\.ready === true[\s\S]*replay\.tipHash === normalizedHash\(tipHash\)/,
+  ],
+);
+expect(
+  "AMO V8 combines one exact-tip worker proof with the independently current reader pending witness",
+  /const indexReady =[\s\S]*migrationReadiness\?\.pendingReady === true &&[\s\S]*workerReadiness\.ready === true &&[\s\S]*pendingMembershipLive;/.test(
+    server,
+  ) &&
+    !/workerReadiness\.pendingMembershipCount ===[\s\S]*pendingMembershipSnapshot\?\.count/.test(
+      server,
+    ) &&
+    !/workerReadiness\.pendingProjectionSha256 ===[\s\S]*migrationReadiness\?\.pendingWitness/.test(
+      server,
+    ),
+);
+expectAll(
+  "marketplace deploy checks converge on authoritative V8 while preserving legacy history audits",
+  marketplaceRegressions,
+  [
+    /function canonicalWorkAmoStatusIndexReady[\s\S]*workAmoV8IsAuthoritative\(v8\)[\s\S]*workAmoV8StatusIndexReady\(v8\)[\s\S]*workAmoV6StatusFromPayload/,
+    /function isRetryableWorkAmoTipRacePayload[\s\S]*workAmoV8IsAuthoritative\(v8\)[\s\S]*!workAmoV8StatusIndexReady\(v8\)/,
+    /function assertWorkAmoV8Surface[\s\S]*WORK_AMO_V8_PRECISION[\s\S]*WORK_AMO_V8_ALLOWED_FACE_PROOFS/,
+    /assertWorkAmoV5CutoverContract[\s\S]*assertWorkAmoV6Surface[\s\S]*assertWorkAmoV8Surface/,
   ],
 );
 expectAll(
@@ -1823,9 +1876,35 @@ expectAll(
   proofIndexerBackfill,
   [
     /WORK_Q16_PENDING_REBUILD_META_KEY =\s*"workQ16PendingRebuild:livenet"/,
-    /WORK_Q16_PENDING_REBUILD_MODEL =\s*"canonical-work-q16-pending-rebuild-v1"/,
+    /WORK_Q16_PENDING_REBUILD_MODEL =\s*"canonical-work-q16-pending-rebuild-v2"/,
     /storeWorkQ16PendingWitnessNotReady[\s\S]*ready: false/,
     /persistExactWorkQ16PendingWitness[\s\S]*getrawmempool[\s\S]*WORK_PROJECTION_STATE_Q16[\s\S]*workQ16PendingCommitment[\s\S]*recheckedMempoolSnapshot[\s\S]*recheckedTipHeight[\s\S]*ready: true[\s\S]*complete: true/,
+  ],
+);
+expect(
+  "AMO V8 pending rebuild keeps the prior exact witness visible until replacement commit",
+  /const q16PendingActive =[\s\S]*const state = await mempoolScanState/.test(
+    q16MempoolBackfillSource,
+  ) &&
+    !/storeWorkQ16PendingWitnessNotReady[\s\S]*pending-rebuild-in-progress/.test(
+      q16MempoolBackfillSource,
+    ) &&
+    /await persistExactWorkQ16PendingWitness\(client/.test(
+      q16MempoolBackfillSource,
+    ),
+);
+expectAll(
+  "AMO V8 pending projections use the canonical events output column across writer, worker, and reader",
+  `${proofIndexerBackfill}\n${proofIndexerWorker}\n${proofIndexReader}`,
+  [
+    /op_return_vout AS protocol_vout[\s\S]*FROM proof_indexer\.events/,
+  ],
+);
+expectAll(
+  "AMO V8 pending projections qualify joined listing state across writer, worker, and reader",
+  `${proofIndexerBackfill}\n${proofIndexerWorker}\n${proofIndexReader}`,
+  [
+    /listing\.listing_id,[\s\S]*listing\.status,[\s\S]*listing\.payload[\s\S]*FROM proof_indexer\.credit_listings listing[\s\S]*LEFT JOIN proof_indexer\.transactions seal_tx/,
   ],
 );
 expectAll("AMO V6 historical and preactivation writes retain proof-native Q8 terms and one exact readiness gate", workAmoV6Core, [
