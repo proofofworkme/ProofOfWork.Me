@@ -236,6 +236,7 @@ import {
   proofIndexCanonicalWorkListingById,
   proofIndexCanonicalSummaryLedgerPayload,
   proofIndexCanonicalStateMetaPayload,
+  proofIndexCanonicalTransactionPositionsPayload,
   proofIndexCanonicalTransactionsPayload,
   proofIndexConfirmedValueEventsAfterBlock,
   proofIndexCreditListingsPayload,
@@ -12308,6 +12309,161 @@ async function annotateBlockOrder(txs, network, options = {}) {
     const blockHash = transactionBlockHash(tx);
     const index = blockIndexes.get(blockHash)?.get(txid);
     return Number.isSafeInteger(index) ? { ...tx, _powBlockIndex: index } : tx;
+  });
+}
+
+async function hydrateLegacyGenericTokenBlockOrderFromProofIndex(
+  txs,
+  network,
+) {
+  if (network !== "livenet" || !Array.isArray(txs) || txs.length === 0) {
+    return txs;
+  }
+
+  const candidates = new Map();
+  for (const tx of txs) {
+    if (
+      !transactionConfirmed(tx) ||
+      transactionBlockIndex(tx) !== undefined
+    ) {
+      continue;
+    }
+    const txid = transactionTxid(tx);
+    const blockHash = transactionBlockHash(tx);
+    const blockHeight = transactionBlockHeight(tx);
+    if (
+      !txid ||
+      !blockHash ||
+      !Number.isSafeInteger(blockHeight) ||
+      blockHeight < 1 ||
+      blockHeight >= WORK_AMO_V5_ACTIVATION_HEIGHT
+    ) {
+      continue;
+    }
+    const prior = candidates.get(txid);
+    if (
+      prior &&
+      (prior.blockHash !== blockHash || prior.blockHeight !== blockHeight)
+    ) {
+      throw new Error(
+        `Legacy token replay transaction ${txid} has conflicting source positions.`,
+      );
+    }
+    candidates.set(txid, { blockHash, blockHeight, txid });
+  }
+  if (candidates.size === 0) {
+    return txs;
+  }
+
+  const positions = await proofIndexCanonicalTransactionPositionsPayload(
+    network,
+    [...candidates.keys()],
+  );
+  if (!Array.isArray(positions)) {
+    throw new Error(
+      "Canonical proof-index positions are unavailable for legacy token replay.",
+    );
+  }
+
+  const indexes = new Map();
+  for (const position of positions) {
+    const txid = String(position?.txid ?? "").trim().toLowerCase();
+    const candidate = candidates.get(txid);
+    if (!candidate) {
+      continue;
+    }
+    const blockHash = String(position?.blockHash ?? "").trim().toLowerCase();
+    const blockHeight = Number(position?.blockHeight);
+    const blockIndex = Number(position?.blockIndex);
+    if (
+      blockHash !== candidate.blockHash ||
+      blockHeight !== candidate.blockHeight ||
+      !Number.isSafeInteger(blockIndex) ||
+      blockIndex < 0 ||
+      indexes.has(txid)
+    ) {
+      throw new Error(
+        `Canonical proof-index position conflicts with legacy token replay transaction ${txid}.`,
+      );
+    }
+    indexes.set(txid, blockIndex);
+  }
+  const missingTxid = [...candidates.keys()].find(
+    (txid) => !indexes.has(txid),
+  );
+  if (missingTxid) {
+    throw new Error(
+      `Canonical proof-index position is unavailable for legacy token replay transaction ${missingTxid}.`,
+    );
+  }
+
+  return txs.map((tx) => {
+    const txid = transactionTxid(tx);
+    const blockIndex = indexes.get(txid);
+    if (!Number.isSafeInteger(blockIndex)) {
+      return tx;
+    }
+    const candidate = candidates.get(txid);
+    if (
+      !candidate ||
+      !transactionConfirmed(tx) ||
+      transactionBlockHash(tx) !== candidate.blockHash ||
+      transactionBlockHeight(tx) !== candidate.blockHeight
+    ) {
+      throw new Error(
+        `Legacy token replay transaction ${txid} has conflicting source positions.`,
+      );
+    }
+    const existingBlockIndex = transactionBlockIndex(tx);
+    if (
+      existingBlockIndex !== undefined &&
+      existingBlockIndex !== blockIndex
+    ) {
+      throw new Error(
+        `Legacy token replay transaction ${txid} conflicts with its canonical proof-index block index.`,
+      );
+    }
+    return existingBlockIndex === undefined
+      ? { ...tx, _powBlockIndex: blockIndex }
+      : tx;
+  });
+}
+
+async function fetchLegacyGenericTokenReplayTransactions(
+  registryAddress,
+  network,
+) {
+  return hydrateLegacyGenericTokenBlockOrderFromProofIndex(
+    await fetchRegistryTransactions(registryAddress, network),
+    network,
+  );
+}
+
+async function fetchLegacyGenericTokenReplayRegistryEntries(
+  registryAddresses,
+  network,
+) {
+  const entries = await Promise.all(
+    registryAddresses.map(async (registryAddress) => [
+      registryAddress,
+      await fetchRegistryTransactions(registryAddress, network),
+    ]),
+  );
+  const combined = entries.flatMap(([, txs]) => txs);
+  const hydrated = await hydrateLegacyGenericTokenBlockOrderFromProofIndex(
+    combined,
+    network,
+  );
+  if (!Array.isArray(hydrated) || hydrated.length !== combined.length) {
+    throw new Error(
+      "Legacy generic token registry replay hydration changed transaction cardinality.",
+    );
+  }
+  let offset = 0;
+  return entries.map(([registryAddress, txs]) => {
+    const next = hydrated.slice(offset, offset + txs.length);
+    offset += txs.length;
+    return [registryAddress, next];
   });
 }
 
@@ -29002,7 +29158,10 @@ async function tokenPayload(network, tokenScope = "") {
   const bondSeedTokens = bondSeeds.flatMap((seed) => seed.seedTokens);
   const bondSeedMints = bondSeeds.flatMap((seed) => seed.seedMints);
 
-  const indexTxs = await fetchRegistryTransactions(indexAddress, network);
+  const indexTxs = await fetchLegacyGenericTokenReplayTransactions(
+    indexAddress,
+    network,
+  );
   const { tokens } = tokenDefinitionsFromTransactions(
     indexTxs,
     indexAddress,
@@ -29017,12 +29176,11 @@ async function tokenPayload(network, tokenScope = "") {
       scopedTokens.map((token) => token.registryAddress).filter(Boolean),
     ),
   ];
-  const registryEntries = await Promise.all(
-    registryAddresses.map(async (registryAddress) => [
-      registryAddress,
-      await fetchRegistryTransactions(registryAddress, network),
-    ]),
-  );
+  const registryEntries =
+    await fetchLegacyGenericTokenReplayRegistryEntries(
+      registryAddresses,
+      network,
+    );
   const registryTxs = registryEntries.flatMap(([, txs]) => txs);
   const sourceTipHeight =
     network === "livenet" ? await ledgerTipHeight(network) : null;

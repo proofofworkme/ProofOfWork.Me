@@ -26226,6 +26226,329 @@ check("ordered credit verifier seeds both bond families without generic minting"
   );
 });
 
+check("legacy generic token replay accepts only exact canonical DB order", async () => {
+  const tokenId =
+    "eab50dfec222b4d30769b9e3eb51d16a9c58c262703275bcd5d374ca964a7ba9";
+  const pendingTxid =
+    "80324e829c5213135a53da8934261a88c981a92d642943e1a4e31c2414866916";
+  const blockHash =
+    "00000000000000000002019439f49d1333ac548e36a9aa6578f3f475e4a8be9a";
+  const sourceTransaction = {
+    status: {
+      block_hash: blockHash,
+      block_height: 949_463,
+      confirmed: true,
+    },
+    txid: tokenId,
+  };
+  const pendingTransaction = {
+    status: { confirmed: false },
+    txid: pendingTxid,
+  };
+  const transactionBlockHash = (tx) => tx.status?.block_hash ?? "";
+  const transactionBlockHeight = (tx) => tx.status?.block_height;
+  const transactionBlockIndex = (tx) =>
+    tx._powBlockIndex ?? tx.status?.block_index;
+  const transactionConfirmed = (tx) => tx.status?.confirmed === true;
+  const transactionTxid = (tx) => String(tx?.txid ?? "").toLowerCase();
+
+  let requestedTxids = [];
+  const hydrate = isolatedFunction(
+    API_PATH,
+    "hydrateLegacyGenericTokenBlockOrderFromProofIndex",
+    {
+      WORK_AMO_V5_ACTIVATION_HEIGHT: 959_621,
+      proofIndexCanonicalTransactionPositionsPayload: async (
+        network,
+        txids,
+      ) => {
+        assert.equal(network, "livenet");
+        requestedTxids = txids;
+        return [{
+          blockHash,
+          blockHeight: 949_463,
+          blockIndex: 818,
+          txid: tokenId,
+        }];
+      },
+      transactionBlockHash,
+      transactionBlockHeight,
+      transactionBlockIndex,
+      transactionConfirmed,
+      transactionTxid,
+    },
+  );
+  const hydrated = await hydrate(
+    [sourceTransaction, pendingTransaction],
+    "livenet",
+  );
+  assert.deepEqual(Array.from(requestedTxids), [tokenId]);
+  assert.equal(hydrated[0]._powBlockIndex, 818);
+  assert.equal(hydrated[1]._powBlockIndex, undefined);
+  assert.equal(sourceTransaction._powBlockIndex, undefined);
+
+  const conflictingHydrator = isolatedFunction(
+    API_PATH,
+    "hydrateLegacyGenericTokenBlockOrderFromProofIndex",
+    {
+      WORK_AMO_V5_ACTIVATION_HEIGHT: 959_621,
+      proofIndexCanonicalTransactionPositionsPayload: async () => [{
+        blockHash: "f".repeat(64),
+        blockHeight: 949_463,
+        blockIndex: 818,
+        txid: tokenId,
+      }],
+      transactionBlockHash,
+      transactionBlockHeight,
+      transactionBlockIndex,
+      transactionConfirmed,
+      transactionTxid,
+    },
+  );
+  await assert.rejects(
+    conflictingHydrator([sourceTransaction], "livenet"),
+    /Canonical proof-index position conflicts/u,
+  );
+
+  const missingHydrator = isolatedFunction(
+    API_PATH,
+    "hydrateLegacyGenericTokenBlockOrderFromProofIndex",
+    {
+      WORK_AMO_V5_ACTIVATION_HEIGHT: 959_621,
+      proofIndexCanonicalTransactionPositionsPayload: async () => [],
+      transactionBlockHash,
+      transactionBlockHeight,
+      transactionBlockIndex,
+      transactionConfirmed,
+      transactionTxid,
+    },
+  );
+  await assert.rejects(
+    missingHydrator([sourceTransaction], "livenet"),
+    /Canonical proof-index position is unavailable/u,
+  );
+
+  const secondTxid = "7".repeat(64);
+  const thirdTxid = "8".repeat(64);
+  const secondBlockHash = "9".repeat(64);
+  const thirdBlockHash = "a".repeat(64);
+  const legacyTransaction = (txid, blockHeight, sourceBlockHash) => ({
+    status: {
+      block_hash: sourceBlockHash,
+      block_height: blockHeight,
+      confirmed: true,
+    },
+    txid,
+  });
+  const canonicalPositionsByTxid = new Map([
+    [tokenId, { blockHash, blockHeight: 949_463, blockIndex: 818 }],
+    [secondTxid, {
+      blockHash: secondBlockHash,
+      blockHeight: 949_464,
+      blockIndex: 12,
+    }],
+    [thirdTxid, {
+      blockHash: thirdBlockHash,
+      blockHeight: 949_465,
+      blockIndex: 13,
+    }],
+  ]);
+  let canonicalPositionQueries = 0;
+  let combinedRequestedTxids = [];
+  const indexedDuplicate = {
+    ...sourceTransaction,
+    _powBlockIndex: 818,
+    status: { ...sourceTransaction.status },
+  };
+  const batchHydrator = isolatedFunction(
+    API_PATH,
+    "hydrateLegacyGenericTokenBlockOrderFromProofIndex",
+    {
+      WORK_AMO_V5_ACTIVATION_HEIGHT: 959_621,
+      proofIndexCanonicalTransactionPositionsPayload: async (
+        network,
+        txids,
+      ) => {
+        assert.equal(network, "livenet");
+        canonicalPositionQueries += 1;
+        combinedRequestedTxids = txids;
+        return txids.map((txid) => ({
+          ...canonicalPositionsByTxid.get(txid),
+          txid,
+        }));
+      },
+      transactionBlockHash,
+      transactionBlockHeight,
+      transactionBlockIndex,
+      transactionConfirmed,
+      transactionTxid,
+    },
+  );
+  const registryHistories = new Map([
+    ["registry-a", [
+      { ...sourceTransaction, status: { ...sourceTransaction.status } },
+      pendingTransaction,
+    ]],
+    ["registry-b", [
+      indexedDuplicate,
+      legacyTransaction(secondTxid, 949_464, secondBlockHash),
+    ]],
+    ["registry-c", [
+      legacyTransaction(thirdTxid, 949_465, thirdBlockHash),
+    ]],
+  ]);
+  const fetchRegistryEntries = isolatedFunction(
+    API_PATH,
+    "fetchLegacyGenericTokenReplayRegistryEntries",
+    {
+      fetchRegistryTransactions: async (registryAddress, network) => {
+        assert.equal(network, "livenet");
+        return registryHistories.get(registryAddress);
+      },
+      hydrateLegacyGenericTokenBlockOrderFromProofIndex: batchHydrator,
+    },
+  );
+  const registryEntries = await fetchRegistryEntries(
+    ["registry-a", "registry-b", "registry-c"],
+    "livenet",
+  );
+  assert.equal(canonicalPositionQueries, 1);
+  assert.deepEqual(
+    Array.from(combinedRequestedTxids),
+    [tokenId, secondTxid, thirdTxid],
+  );
+  assert.equal(registryEntries.length, 3);
+  assert.equal(registryEntries[0][0], "registry-a");
+  assert.equal(registryEntries[0][1].length, 2);
+  assert.equal(registryEntries[0][1][0]._powBlockIndex, 818);
+  assert.equal(registryEntries[0][1][1]._powBlockIndex, undefined);
+  assert.equal(registryEntries[1][1].length, 2);
+  assert.equal(registryEntries[1][1][0]._powBlockIndex, 818);
+  assert.equal(registryEntries[1][1][0], indexedDuplicate);
+  assert.equal(registryEntries[1][1][1]._powBlockIndex, 12);
+  assert.equal(registryEntries[2][1][0]._powBlockIndex, 13);
+  assert.notEqual(registryEntries[0][1][0], registryEntries[1][1][0]);
+
+  const conflictingRegistryEntries = isolatedFunction(
+    API_PATH,
+    "fetchLegacyGenericTokenReplayRegistryEntries",
+    {
+      fetchRegistryTransactions: async (registryAddress) => [{
+        ...sourceTransaction,
+        status: {
+          ...sourceTransaction.status,
+          ...(registryAddress === "registry-conflict"
+            ? { block_hash: "b".repeat(64) }
+            : {}),
+        },
+      }],
+      hydrateLegacyGenericTokenBlockOrderFromProofIndex: batchHydrator,
+    },
+  );
+  await assert.rejects(
+    conflictingRegistryEntries(
+      ["registry-a", "registry-conflict"],
+      "livenet",
+    ),
+    /conflicting source positions/u,
+  );
+  assert.equal(canonicalPositionQueries, 1);
+
+  const conflictingIndexRegistryEntries = isolatedFunction(
+    API_PATH,
+    "fetchLegacyGenericTokenReplayRegistryEntries",
+    {
+      fetchRegistryTransactions: async (registryAddress) => [{
+        ...sourceTransaction,
+        ...(registryAddress === "registry-index-conflict"
+          ? { _powBlockIndex: 819 }
+          : {}),
+        status: { ...sourceTransaction.status },
+      }],
+      hydrateLegacyGenericTokenBlockOrderFromProofIndex: batchHydrator,
+    },
+  );
+  await assert.rejects(
+    conflictingIndexRegistryEntries(
+      ["registry-missing", "registry-index-conflict"],
+      "livenet",
+    ),
+    /conflicts with its canonical proof-index block index/u,
+  );
+  assert.equal(canonicalPositionQueries, 2);
+
+  let queryText = "";
+  let queryParams = [];
+  const canonicalPositions = isolatedFunction(
+    READER_PATH,
+    "proofIndexCanonicalTransactionPositionsPayload",
+    {
+      proofIndexPool: () => ({
+        query: async (text, params) => {
+          queryText = text;
+          queryParams = params;
+          return {
+            rows: [{
+              block_hash: blockHash,
+              block_height: 949_463,
+              block_index: 818,
+              txid: tokenId,
+            }],
+          };
+        },
+      }),
+    },
+  );
+  const positions = await canonicalPositions(
+    "livenet",
+    [tokenId.toUpperCase(), tokenId, "bad"],
+  );
+  assert.equal(positions.length, 1);
+  assert.equal(positions[0].blockHash, blockHash);
+  assert.equal(positions[0].blockHeight, 949_463);
+  assert.equal(positions[0].blockIndex, 818);
+  assert.equal(positions[0].txid, tokenId);
+  assert.equal(queryParams[0], "livenet");
+  assert.deepEqual(Array.from(queryParams[1]), [tokenId]);
+  assert.match(
+    queryText,
+    /JOIN proof_indexer\.blocks canonical_block[\s\S]*canonical_block\.canonical = true/u,
+  );
+  assert.match(queryText, /transaction_row\.status = 'confirmed'/u);
+  assert.match(
+    queryText,
+    /lower\(COALESCE\(transaction_row\.raw_tx->>'txid', ''\)\) =\s+lower\(transaction_row\.txid\)/u,
+  );
+  assert.match(queryText, /transaction_row\.block_index IS NOT NULL/u);
+  assert.match(
+    queryText,
+    /raw_tx->'canonicalBlockScan'[\s\S]*blockHash/u,
+  );
+  assert.doesNotMatch(
+    queryText,
+    /raw_tx->'canonicalBlockScan'->>'blockIndex'/u,
+    "canonical top-level _powBlockIndex must not depend on an absent scan blockIndex",
+  );
+  assert.match(
+    queryText,
+    /raw_tx->>'_powBlockIndex'[\s\S]*transaction_row\.block_index/u,
+  );
+
+  const tokenPayloadSource = topLevelFunctionSource(API_PATH, "tokenPayload");
+  assert.match(
+    tokenPayloadSource,
+    /const indexTxs = await fetchLegacyGenericTokenReplayTransactions/u,
+  );
+  assert.match(
+    tokenPayloadSource,
+    /await fetchLegacyGenericTokenReplayRegistryEntries\([\s\S]*registryAddresses/u,
+  );
+  assert.doesNotMatch(
+    tokenPayloadSource,
+    /registryAddresses\.map\([\s\S]*fetchLegacyGenericTokenReplayTransactions/u,
+  );
+});
+
 check("canonical bond mint replay unlocks only later INCB mutations", () => {
   const tokenId = INCB_TOKEN_ID;
   const registryAddress = "registry";

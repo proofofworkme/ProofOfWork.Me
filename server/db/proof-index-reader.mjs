@@ -18207,6 +18207,87 @@ function normalizedStatus(status) {
   return value === "orphaned" ? "dropped" : "";
 }
 
+export async function proofIndexCanonicalTransactionPositionsPayload(
+  network,
+  txids,
+) {
+  const pool = proofIndexPool();
+  if (!pool) {
+    return null;
+  }
+  const normalizedTxids = [
+    ...new Set(
+      (Array.isArray(txids) ? txids : [])
+        .map((txid) => String(txid ?? "").trim().toLowerCase())
+        .filter((txid) => /^[0-9a-f]{64}$/u.test(txid)),
+    ),
+  ];
+  if (normalizedTxids.length === 0) {
+    return [];
+  }
+  if (normalizedTxids.length > 4_096) {
+    throw new RangeError(
+      "Canonical transaction position lookup exceeds the bounded batch size.",
+    );
+  }
+
+  const result = await pool.query(
+    `
+      SELECT
+        transaction_row.txid,
+        lower(transaction_row.block_hash) AS block_hash,
+        transaction_row.block_height,
+        transaction_row.block_index
+      FROM proof_indexer.transactions transaction_row
+      JOIN proof_indexer.blocks canonical_block
+        ON canonical_block.network = transaction_row.network
+       AND canonical_block.block_hash = transaction_row.block_hash
+       AND canonical_block.height = transaction_row.block_height
+       AND canonical_block.canonical = true
+      WHERE transaction_row.network = $1
+        AND transaction_row.txid = ANY($2::text[])
+        AND transaction_row.status = 'confirmed'
+        AND lower(COALESCE(transaction_row.raw_tx->>'txid', '')) =
+          lower(transaction_row.txid)
+        AND transaction_row.block_index IS NOT NULL
+        AND jsonb_typeof(
+          transaction_row.raw_tx->'canonicalBlockScan'
+        ) = 'object'
+        AND transaction_row.raw_tx->'canonicalBlockScan'->>'network' = $1
+        AND transaction_row.raw_tx->'canonicalBlockScan'->>'height' ~
+          '^[0-9]+$'
+        AND (
+          transaction_row.raw_tx->'canonicalBlockScan'->>'height'
+        )::integer = transaction_row.block_height
+        AND transaction_row.raw_tx->'canonicalBlockScan'->>'blockHash' ~
+          '^[0-9a-fA-F]{64}$'
+        AND lower(
+          transaction_row.raw_tx->'canonicalBlockScan'->>'blockHash'
+        ) = lower(transaction_row.block_hash)
+        AND transaction_row.raw_tx->>'_powBlockIndex' ~ '^[0-9]+$'
+        AND (
+          transaction_row.raw_tx->>'_powBlockIndex'
+        )::integer = transaction_row.block_index
+      ORDER BY transaction_row.txid ASC
+    `,
+    [network, normalizedTxids],
+  );
+  return result.rows.flatMap((row) => {
+    const txid = String(row?.txid ?? "").trim().toLowerCase();
+    const blockHash = String(row?.block_hash ?? "").trim().toLowerCase();
+    const blockHeight = Number(row?.block_height);
+    const blockIndex = Number(row?.block_index);
+    return /^[0-9a-f]{64}$/u.test(txid) &&
+        /^[0-9a-f]{64}$/u.test(blockHash) &&
+        Number.isSafeInteger(blockHeight) &&
+        blockHeight > 0 &&
+        Number.isSafeInteger(blockIndex) &&
+        blockIndex >= 0
+      ? [{ blockHash, blockHeight, blockIndex, txid }]
+      : [];
+  });
+}
+
 export async function proofIndexTxStatusPayload(txid, network, options = {}) {
   const pool = proofIndexPool();
   if (!pool) {
