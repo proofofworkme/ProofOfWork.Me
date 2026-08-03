@@ -186,7 +186,7 @@ assert.match(postgresQueryHealthService, /ProtectSystem=strict/u);
 assert.match(postgresQueryHealthTimer, /OnCalendar=\*:0\/5/u);
 assert.match(
   releasePublish,
-  /-c safe\.directory="\$\{checkout\}\/\.git" -c core\.hooksPath=\/dev\/null/u,
+  /--upload-pack="\/usr\/bin\/git -c safe\.directory=\$\{checkout\}\/\.git upload-pack"/u,
 );
 
 for (const requiredPath of [
