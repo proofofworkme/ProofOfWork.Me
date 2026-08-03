@@ -684,6 +684,7 @@ deploy/proofofwork-indexer-worker.service
 deploy/Caddyfile
 deploy/caddy-hardening.conf
 deploy/proofofwork-caddy-log-tmpfiles.conf
+deploy/proofofwork-ui-runtime-tmpfiles.conf
 deploy/wireguard-ui.conf
 deploy/wireguard-node.conf
 deploy/zz-proofofwork-api-private-network.conf
@@ -795,7 +796,8 @@ validate the tracked Caddyfile, then verify HSTS, CSP, COOP, immutable hashed
 asset caching, document revalidation, and gzip/zstd responses on every public
 surface. Verify the effective Caddy unit retains only `CAP_NET_BIND_SERVICE` in
 both its capability bounding and ambient sets. Install
-`proofofwork-caddy-log-tmpfiles.conf`, run `systemd-tmpfiles --create`, and
+`proofofwork-caddy-log-tmpfiles.conf` and
+`proofofwork-ui-runtime-tmpfiles.conf`, run `systemd-tmpfiles --create`, and
 restart Caddy after installing the tracked file-writer configuration. Every
 configured HTTP and HTTPS endpoint, including the raw-IP rejection endpoint,
 emits bounded JSON request metadata to owner-only
@@ -2511,8 +2513,15 @@ staging, failed, and `/var/tmp/proofofwork-ui-*` roots carrying a canonical
 contain exactly `format=proofofwork-rebuildable-ui-stage-v1`, the path-derived
 `class`, and the path-derived `release_id`; an absent or divergent marker retains
 the tree. Candidates with unsafe ownership/modes, special files, or any root or
-nested mount fail closed. UI provenance and cleanup share the nonblocking
-`/run/lock/proofofwork-ui-deploy.lock`. Pre-deploy, previous, rollback, and other
+nested mount fail closed. UI provenance, cleanup, and deployment share the
+nonblocking `/run/proofofwork-ui/deploy.lock` below an owner-only,
+tmpfiles-managed runtime directory. The two scheduled jobs explicitly grant
+that directory as their only runtime lock write path under
+`ProtectSystem=strict`. A transactional deploy may pass its already-held
+descriptor through `POW_UI_DEPLOY_LOCK_FD`; each helper proves that descriptor
+resolves to the exact configured lock before using it. The live `/var/www`
+parent and every active surface must be owner-controlled and not group/world
+writable. Pre-deploy, previous, rollback, and other
 historical trees remain outside automatic cleanup. Review the exact dry-run
 before enabling the applying service. Both the applying cleanup and recursive
 provenance verifier are bounded to 30 minutes; the recursive jobs run at nice

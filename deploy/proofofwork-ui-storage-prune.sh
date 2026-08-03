@@ -23,9 +23,15 @@ for root in "${www_root}" "${var_tmp_root}"; do
     exit 64
   fi
 done
+www_root_mode="$(stat --format=%a -- "${www_root}")"
+www_root_owner="$(stat --format=%u -- "${www_root}")"
+if ((8#${www_root_mode} & 07022)) || [[ "${www_root_owner}" != "${EUID}" ]]; then
+  echo "UI root must be owner-controlled and not group/world writable: ${www_root}" >&2
+  exit 64
+fi
 
-deploy_lock="${POW_UI_DEPLOY_LOCK:-/run/lock/proofofwork-ui-deploy.lock}"
-if [[ "${deploy_lock}" != "/run/lock/proofofwork-ui-deploy.lock" &&
+deploy_lock="${POW_UI_DEPLOY_LOCK:-/run/proofofwork-ui/deploy.lock}"
+if [[ "${deploy_lock}" != "/run/proofofwork-ui/deploy.lock" &&
   "${POW_UI_ALLOW_TEST_ROOTS:-}" != "1" ]]; then
   echo "Non-production UI deployment lock requires POW_UI_ALLOW_TEST_ROOTS=1." >&2
   exit 64
@@ -38,21 +44,33 @@ if [[ ! -d "${lock_parent}" || -L "${lock_parent}" ||
 fi
 lock_parent_mode="$(stat --format=%a -- "${lock_parent}")"
 lock_parent_owner="$(stat --format=%u -- "${lock_parent}")"
-if ((8#${lock_parent_mode} & 0002)) || [[ "${lock_parent_owner}" != "${EUID}" ]]; then
-  echo "UI deployment lock parent has unsafe ownership or world-write access." >&2
+if ((8#${lock_parent_mode} & 07022)) || [[ "${lock_parent_owner}" != "${EUID}" ]]; then
+  echo "UI deployment lock parent has unsafe ownership or mode." >&2
   exit 64
 fi
 if [[ -e "${deploy_lock}" || -L "${deploy_lock}" ]]; then
   if [[ ! -f "${deploy_lock}" || -L "${deploy_lock}" ||
     "$(realpath -e -- "${deploy_lock}")" != "${deploy_lock}" ||
     "$(stat --format=%u -- "${deploy_lock}")" != "${EUID}" ]] ||
-    ((8#$(stat --format=%a -- "${deploy_lock}") & 0022)); then
+    ((8#$(stat --format=%a -- "${deploy_lock}") & 07022)); then
     echo "UI deployment lock must be a canonical owner-controlled regular file." >&2
     exit 64
   fi
 fi
-exec {deploy_lock_fd}>"${deploy_lock}"
-chmod 0600 "${deploy_lock}"
+inherited_deploy_lock_fd="${POW_UI_DEPLOY_LOCK_FD:-}"
+if [[ -n "${inherited_deploy_lock_fd}" ]]; then
+  if [[ ! "${inherited_deploy_lock_fd}" =~ ^[1-9][0-9]*$ ]] ||
+    ((inherited_deploy_lock_fd < 3)) ||
+    [[ ! -f "/proc/self/fd/${inherited_deploy_lock_fd}" ]] ||
+    [[ "$(realpath -e -- "/proc/self/fd/${inherited_deploy_lock_fd}" 2>/dev/null || true)" != "${deploy_lock}" ]]; then
+    echo "Inherited UI deployment lock descriptor is invalid." >&2
+    exit 64
+  fi
+  deploy_lock_fd="${inherited_deploy_lock_fd}"
+else
+  exec {deploy_lock_fd}>"${deploy_lock}"
+  chmod 0600 "${deploy_lock}"
+fi
 if ! flock --exclusive --nonblock "${deploy_lock_fd}"; then
   echo "Another UI deployment or cleanup operation holds ${deploy_lock}." >&2
   exit 1

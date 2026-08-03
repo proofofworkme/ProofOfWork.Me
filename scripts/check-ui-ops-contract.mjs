@@ -22,6 +22,9 @@ const read = (file) => readFileSync(file, "utf8");
 const caddy = read("deploy/Caddyfile");
 const caddyService = read("deploy/caddy-hardening.conf");
 const caddyTmpfiles = read("deploy/proofofwork-caddy-log-tmpfiles.conf");
+const uiRuntimeTmpfiles = read(
+  "deploy/proofofwork-ui-runtime-tmpfiles.conf",
+);
 const storageHealth = read("deploy/proofofwork-ui-storage-health.sh");
 const storageHealthService = read(
   "deploy/proofofwork-ui-storage-health.service",
@@ -82,6 +85,11 @@ assert.match(
   caddyTmpfiles,
   /f \/var\/log\/caddy\/access\.json 0600 caddy caddy/u,
 );
+assert.match(uiRuntimeTmpfiles, /d \/run\/proofofwork-ui 0700 root root/u);
+assert.match(
+  uiRuntimeTmpfiles,
+  /f \/run\/proofofwork-ui\/deploy\.lock 0600 root root/u,
+);
 
 for (const threshold of [
   "POW_STORAGE_WARN_PERCENT=75",
@@ -111,7 +119,10 @@ assert.match(storagePrune, /validate_marker/u);
 assert.match(storagePrune, /reject_nested_mounts/u);
 assert.match(storagePrune, /flock --exclusive --nonblock/u);
 assert.match(storagePrune, /-perm \/7022/u);
-assert.match(storagePruneService, /ReadWritePaths=\/var\/www \/var\/tmp/u);
+assert.match(
+  storagePruneService,
+  /ReadWritePaths=\/var\/www \/var\/tmp \/run\/proofofwork-ui/u,
+);
 assert.match(storagePruneService, /ProtectSystem=strict/u);
 assert.match(storagePruneService, /^TimeoutStartSec=30m$/mu);
 assert.match(storagePruneTimer, /OnCalendar=\*-\*-\* 01:10:00 UTC/u);
@@ -141,6 +152,10 @@ assert.match(
   /mv --no-target-directory -- "\$\{temporary\}" "\$\{manifest\}"/u,
 );
 assert.match(provenanceService, /ProtectSystem=strict/u);
+assert.match(
+  provenanceService,
+  /ReadWritePaths=\/run\/proofofwork-ui/u,
+);
 assert.match(provenanceService, /^TimeoutStartSec=30m$/mu);
 assert.match(provenanceTimer, /OnCalendar=\*:0\/15/u);
 assert.match(provenanceTimer, /Persistent=true/u);
@@ -173,12 +188,65 @@ for (const service of [
   }
 }
 
+for (const lockAwareScript of [storagePrune, provenance]) {
+  assert.match(
+    lockAwareScript,
+    /POW_UI_DEPLOY_LOCK:-\/run\/proofofwork-ui\/deploy\.lock/u,
+  );
+  assert.match(lockAwareScript, /POW_UI_DEPLOY_LOCK_FD/u);
+  assert.match(lockAwareScript, /\/proc\/self\/fd\//u);
+  assert.match(
+    lockAwareScript,
+    /UI root must be owner-controlled and not group\/world writable/u,
+  );
+}
+assert.match(provenance, /Release surface contains foreign-owned content/u);
+
 const run = (script, arguments_, env) =>
   spawnSync("bash", [script, ...arguments_], {
     cwd: process.cwd(),
     encoding: "utf8",
     env: { ...process.env, ...env },
   });
+const runWithInheritedLock = (
+  script,
+  arguments_,
+  env,
+  openedLock = env.POW_UI_DEPLOY_LOCK,
+) =>
+  spawnSync(
+    "bash",
+    [
+      "-c",
+      'set -Eeuo pipefail; script="$1"; lock="$2"; shift 2; exec 9>"${lock}"; chmod 0600 "${lock}"; flock --exclusive 9; POW_UI_DEPLOY_LOCK_FD=9 "${script}" "$@" 9>&9',
+      "ui-inherited-lock-test",
+      script,
+      openedLock,
+      ...arguments_,
+    ],
+    {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      env: { ...process.env, ...env },
+    },
+  );
+const runWhileLockHeldSeparately = (script, arguments_, env) =>
+  spawnSync(
+    "bash",
+    [
+      "-c",
+      'set -Eeuo pipefail; script="$1"; lock="$2"; shift 2; exec 8>"${lock}"; chmod 0600 "${lock}"; flock --exclusive 8; "${script}" "$@"',
+      "ui-independent-lock-test",
+      script,
+      env.POW_UI_DEPLOY_LOCK,
+      ...arguments_,
+    ],
+    {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      env: { ...process.env, ...env },
+    },
+  );
 const runChecked = (command, arguments_) => {
   const result = spawnSync(command, arguments_, { encoding: "utf8" });
   assert.equal(
@@ -211,8 +279,10 @@ const fixture = mkdtempSync(join(tmpdir(), "proofofwork-ui-ops-"));
 try {
   const www = join(fixture, "www");
   const varTmp = join(fixture, "var-tmp");
-  mkdirSync(www);
-  mkdirSync(varTmp);
+  mkdirSync(www, { mode: 0o755 });
+  mkdirSync(varTmp, { mode: 0o755 });
+  chmodSync(www, 0o755);
+  chmodSync(varTmp, 0o755);
   const makeDirectory = (root, name, ageDays) => {
     const directory = join(root, name);
     mkdirSync(directory, { mode: 0o755 });
@@ -306,6 +376,74 @@ try {
     fakeMountinfo,
     `1 0 0:1 / ${join(oldStage, "nested-mount")} rw - tmpfs tmpfs rw\n`,
   );
+  chmodSync(fixture, 0o770);
+  const unsafeLockParent = run(
+    "deploy/proofofwork-ui-storage-prune.sh",
+    ["--dry-run"],
+    cleanupEnvironment,
+  );
+  assert.equal(unsafeLockParent.status, 64, unsafeLockParent.stderr);
+  assert.match(unsafeLockParent.stderr, /lock parent has unsafe/u);
+  chmodSync(fixture, 0o700);
+
+  writeFileSync(cleanupEnvironment.POW_UI_DEPLOY_LOCK, "", { mode: 0o660 });
+  chmodSync(cleanupEnvironment.POW_UI_DEPLOY_LOCK, 0o660);
+  const unsafeLockFile = run(
+    "deploy/proofofwork-ui-storage-prune.sh",
+    ["--dry-run"],
+    cleanupEnvironment,
+  );
+  assert.equal(unsafeLockFile.status, 64, unsafeLockFile.stderr);
+  assert.match(unsafeLockFile.stderr, /owner-controlled regular file/u);
+  chmodSync(cleanupEnvironment.POW_UI_DEPLOY_LOCK, 0o600);
+
+  for (const inheritedDescriptor of ["not-a-fd", "9"]) {
+    const invalidInheritedDescriptor = run(
+      "deploy/proofofwork-ui-storage-prune.sh",
+      ["--dry-run"],
+      {
+        ...cleanupEnvironment,
+        POW_UI_DEPLOY_LOCK_FD: inheritedDescriptor,
+      },
+    );
+    assert.equal(
+      invalidInheritedDescriptor.status,
+      64,
+      invalidInheritedDescriptor.stderr,
+    );
+    assert.match(invalidInheritedDescriptor.stderr, /descriptor is invalid/u);
+  }
+
+  const wrongInheritedDescriptor = runWithInheritedLock(
+    "deploy/proofofwork-ui-storage-prune.sh",
+    ["--dry-run"],
+    cleanupEnvironment,
+    join(fixture, "wrong-ui-deploy.lock"),
+  );
+  assert.equal(
+    wrongInheritedDescriptor.status,
+    64,
+    wrongInheritedDescriptor.stderr,
+  );
+  assert.match(wrongInheritedDescriptor.stderr, /descriptor is invalid/u);
+
+  const independentlyHeldLock = runWhileLockHeldSeparately(
+    "deploy/proofofwork-ui-storage-prune.sh",
+    ["--dry-run"],
+    cleanupEnvironment,
+  );
+  assert.equal(independentlyHeldLock.status, 1, independentlyHeldLock.stderr);
+  assert.match(independentlyHeldLock.stderr, /Another UI deployment/u);
+
+  chmodSync(www, 0o775);
+  const unsafeUiRoot = run(
+    "deploy/proofofwork-ui-storage-prune.sh",
+    ["--dry-run"],
+    cleanupEnvironment,
+  );
+  assert.equal(unsafeUiRoot.status, 64, unsafeUiRoot.stderr);
+  assert.match(unsafeUiRoot.stderr, /owner-controlled/u);
+  chmodSync(www, 0o755);
   const mountedTree = run(
     "deploy/proofofwork-ui-storage-prune.sh",
     ["--dry-run"],
@@ -321,6 +459,13 @@ try {
   );
   assert.equal(dryRun.status, 0, dryRun.stderr);
   assert.match(dryRun.stdout, /would_prune/u);
+  const inheritedDryRun = runWithInheritedLock(
+    "deploy/proofofwork-ui-storage-prune.sh",
+    ["--dry-run"],
+    cleanupEnvironment,
+  );
+  assert.equal(inheritedDryRun.status, 0, inheritedDryRun.stderr);
+  assert.match(inheritedDryRun.stdout, /would_prune/u);
   assert.doesNotMatch(dryRun.stdout, /rollback-preserved|previous-preserved|pre-preserved/u);
   for (const preserved of [
     rollback,
@@ -525,6 +670,15 @@ try {
     POW_UI_ALLOW_TEST_ROOTS: "1",
     POW_UI_DEPLOY_LOCK: join(fixture, "ui-deploy.lock"),
   };
+  chmodSync(www, 0o775);
+  const unsafeProvenanceRoot = run(
+    "deploy/proofofwork-ui-release-provenance.sh",
+    ["verify"],
+    provenanceEnvironment,
+  );
+  assert.equal(unsafeProvenanceRoot.status, 64, unsafeProvenanceRoot.stderr);
+  assert.match(unsafeProvenanceRoot.stderr, /owner-controlled/u);
+  chmodSync(www, 0o755);
   const recordArchive = (archivePath, commit = fullCommit) =>
     run(
       "deploy/proofofwork-ui-release-provenance.sh",
@@ -702,6 +856,13 @@ try {
   );
   assert.equal(verify.status, 0, verify.stderr);
   assert.match(verify.stdout, /status=verified/u);
+  const inheritedVerify = runWithInheritedLock(
+    "deploy/proofofwork-ui-release-provenance.sh",
+    ["verify"],
+    provenanceEnvironment,
+  );
+  assert.equal(inheritedVerify.status, 0, inheritedVerify.stderr);
+  assert.match(inheritedVerify.stdout, /status=verified/u);
 
   const surfaceMountinfo = join(fixture, "surface-mountinfo");
   writeFileSync(

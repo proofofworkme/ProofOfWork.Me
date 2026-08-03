@@ -18,9 +18,15 @@ for root in "${ui_root}" "${archive_root}"; do
     exit 64
   fi
 done
+ui_root_mode="$(stat --format=%a -- "${ui_root}")"
+ui_root_owner="$(stat --format=%u -- "${ui_root}")"
+if ((8#${ui_root_mode} & 07022)) || [[ "${ui_root_owner}" != "${EUID}" ]]; then
+  echo "UI root must be owner-controlled and not group/world writable: ${ui_root}" >&2
+  exit 64
+fi
 
-deploy_lock="${POW_UI_DEPLOY_LOCK:-/run/lock/proofofwork-ui-deploy.lock}"
-if [[ "${deploy_lock}" != "/run/lock/proofofwork-ui-deploy.lock" &&
+deploy_lock="${POW_UI_DEPLOY_LOCK:-/run/proofofwork-ui/deploy.lock}"
+if [[ "${deploy_lock}" != "/run/proofofwork-ui/deploy.lock" &&
   "${POW_UI_ALLOW_TEST_ROOTS:-}" != "1" ]]; then
   echo "Non-production UI deployment lock requires POW_UI_ALLOW_TEST_ROOTS=1." >&2
   exit 64
@@ -33,21 +39,33 @@ if [[ ! -d "${lock_parent}" || -L "${lock_parent}" ||
 fi
 lock_parent_mode="$(stat --format=%a -- "${lock_parent}")"
 lock_parent_owner="$(stat --format=%u -- "${lock_parent}")"
-if ((8#${lock_parent_mode} & 0002)) || [[ "${lock_parent_owner}" != "${EUID}" ]]; then
-  echo "UI deployment lock parent has unsafe ownership or world-write access." >&2
+if ((8#${lock_parent_mode} & 07022)) || [[ "${lock_parent_owner}" != "${EUID}" ]]; then
+  echo "UI deployment lock parent has unsafe ownership or mode." >&2
   exit 64
 fi
 if [[ -e "${deploy_lock}" || -L "${deploy_lock}" ]]; then
   if [[ ! -f "${deploy_lock}" || -L "${deploy_lock}" ||
     "$(realpath -e -- "${deploy_lock}")" != "${deploy_lock}" ||
     "$(stat --format=%u -- "${deploy_lock}")" != "${EUID}" ]] ||
-    ((8#$(stat --format=%a -- "${deploy_lock}") & 0022)); then
+    ((8#$(stat --format=%a -- "${deploy_lock}") & 07022)); then
     echo "UI deployment lock must be a canonical owner-controlled regular file." >&2
     exit 64
   fi
 fi
-exec {deploy_lock_fd}>"${deploy_lock}"
-chmod 0600 "${deploy_lock}"
+inherited_deploy_lock_fd="${POW_UI_DEPLOY_LOCK_FD:-}"
+if [[ -n "${inherited_deploy_lock_fd}" ]]; then
+  if [[ ! "${inherited_deploy_lock_fd}" =~ ^[1-9][0-9]*$ ]] ||
+    ((inherited_deploy_lock_fd < 3)) ||
+    [[ ! -f "/proc/self/fd/${inherited_deploy_lock_fd}" ]] ||
+    [[ "$(realpath -e -- "/proc/self/fd/${inherited_deploy_lock_fd}" 2>/dev/null || true)" != "${deploy_lock}" ]]; then
+    echo "Inherited UI deployment lock descriptor is invalid." >&2
+    exit 64
+  fi
+  deploy_lock_fd="${inherited_deploy_lock_fd}"
+else
+  exec {deploy_lock_fd}>"${deploy_lock}"
+  chmod 0600 "${deploy_lock}"
+fi
 if ! flock --exclusive --nonblock "${deploy_lock_fd}"; then
   echo "Another UI deployment or cleanup operation holds ${deploy_lock}." >&2
   exit 1
@@ -383,7 +401,7 @@ attest_source_checkout() {
 validate_surface_directory() {
   local surface="$1"
   local directory="$2"
-  local unexpected unreadable unsafe_mode asset_reference
+  local unexpected unreadable unsafe_mode foreign_owner asset_reference
   local -a asset_references=()
   if [[ ! -d "${directory}" || -L "${directory}" || "$(realpath -e "${directory}")" != "${directory}" ]]; then
     echo "Release surface must be a real canonical directory: ${directory}" >&2
@@ -407,6 +425,11 @@ validate_surface_directory() {
   unsafe_mode="$(find "${directory}" -xdev \( -type d -o -type f \) -perm /7022 -print -quit)"
   if [[ -n "${unsafe_mode}" ]]; then
     echo "Release surface contains an unsafe writable or special mode: ${unsafe_mode}" >&2
+    return 1
+  fi
+  foreign_owner="$(find "${directory}" -xdev ! -uid "${EUID}" -print -quit)"
+  if [[ -n "${foreign_owner}" ]]; then
+    echo "Release surface contains foreign-owned content: ${foreign_owner}" >&2
     return 1
   fi
   mapfile -t asset_references < <(

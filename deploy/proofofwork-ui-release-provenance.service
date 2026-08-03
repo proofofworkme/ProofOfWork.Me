@@ -14,6 +14,7 @@ ProtectControlGroups=true
 ProtectKernelLogs=true
 ProtectKernelModules=true
 ProtectKernelTunables=true
+ReadWritePaths=/run/proofofwork-ui
 CapabilityBoundingSet=
 AmbientCapabilities=
 RestrictSUIDSGID=true
