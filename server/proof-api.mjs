@@ -715,7 +715,7 @@ const PENDING_TOKEN_LIVENESS_CHECK_CONCURRENCY = Number(
 const PERSISTED_CACHE_DIR =
   process.env.POW_API_CACHE_DIR ?? path.join(process.cwd(), ".pow-api-cache");
 const PROOF_INDEX_HEALTH_MAX_AGE_MS = Number(
-  process.env.POW_INDEX_HEALTH_MAX_AGE_MS ?? 120_000,
+  process.env.POW_INDEX_HEALTH_MAX_AGE_MS ?? 10 * 60_000,
 );
 const HEALTH_CHECK_TIMEOUT_MS = Number(
   process.env.POW_API_HEALTH_CHECK_TIMEOUT_MS ?? 5_000,

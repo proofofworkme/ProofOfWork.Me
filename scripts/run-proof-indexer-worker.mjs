@@ -255,8 +255,8 @@ const WORK_AMO_V8_PENDING_WITNESS_MAX_AGE_MS = Math.min(
     60_000,
     Number(
       process.env.POW_INDEX_WORKER_PENDING_WITNESS_MAX_AGE_MS ??
-        2 * 60_000,
-    ) || 2 * 60_000,
+        10 * 60_000,
+    ) || 10 * 60_000,
   ),
 );
 const WORK_AMO_V8_EXPECTED_DECLARATION_COMMITMENT =

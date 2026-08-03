@@ -182,9 +182,12 @@ function sourceSliceBetween(text, startPattern, endPattern) {
   return end === -1 ? rest : rest.slice(0, end);
 }
 
-function serviceEnvironmentNumber(name) {
+function serviceEnvironmentNumber(
+  name,
+  source = proofIndexerWorkerService,
+) {
   const matches = [
-    ...proofIndexerWorkerService.matchAll(
+    ...source.matchAll(
       new RegExp(`^Environment=${name}=([0-9]+)\\s*$`, "gmu"),
     ),
   ];
@@ -571,6 +574,7 @@ expectAll("production worker pins confirmed-first and liveness budgets", proofIn
   /POW_INDEX_STATUS_FETCH_TIMEOUT_MS=5000/,
   /POW_INDEX_PENDING_STATUS_BUDGET_MS=15000/,
   /POW_INDEX_PENDING_STATUS_CONCURRENCY=5/,
+  /POW_INDEX_WORKER_PENDING_WITNESS_MAX_AGE_MS=600000/,
   /POW_INDEX_CANONICAL_SUMMARY_REFRESH_TIMEOUT_MS=600000/,
   /POW_INDEX_WORKER_BACKFILL_TIMEOUT_MS=900000/,
   /POW_INDEX_WORKER_PARITY_TIMEOUT_MS=120000/,
@@ -581,6 +585,17 @@ const canonicalSummaryRefreshTimeoutMs = serviceEnvironmentNumber(
 const workerBackfillTimeoutMs = serviceEnvironmentNumber(
   "POW_INDEX_WORKER_BACKFILL_TIMEOUT_MS",
 );
+const apiHealthMaxAgeMs = serviceEnvironmentNumber(
+  "POW_INDEX_HEALTH_MAX_AGE_MS",
+  proofIndexDeploy,
+);
+const apiPendingWitnessMaxAgeMs = serviceEnvironmentNumber(
+  "POW_INDEX_WORKER_PENDING_WITNESS_MAX_AGE_MS",
+  proofIndexDeploy,
+);
+const workerPendingWitnessMaxAgeMs = serviceEnvironmentNumber(
+  "POW_INDEX_WORKER_PENDING_WITNESS_MAX_AGE_MS",
+);
 expect(
   "production worker canonical-summary timeout parses as the configured 600000ms",
   canonicalSummaryRefreshTimeoutMs === 600_000,
@@ -589,6 +604,32 @@ expect(
   "production worker child timeout leaves at least 300000ms beyond canonical-summary work",
   Number.isSafeInteger(workerBackfillTimeoutMs) &&
     workerBackfillTimeoutMs >= canonicalSummaryRefreshTimeoutMs + 300_000,
+);
+expect(
+  "production API worker-health freshness is pinned to the ten-minute ceiling",
+  apiHealthMaxAgeMs === 600_000,
+);
+expect(
+  "production API and worker share the ten-minute pending-witness ceiling",
+  apiPendingWitnessMaxAgeMs === 600_000 &&
+    workerPendingWitnessMaxAgeMs === apiPendingWitnessMaxAgeMs,
+);
+expectAll("API worker-health fallback uses the ten-minute ceiling", server, [
+  /POW_INDEX_HEALTH_MAX_AGE_MS \?\? 10 \* 60_000/u,
+]);
+expectAll(
+  "reader pending-witness fallback uses the ten-minute ceiling",
+  proofIndexReader,
+  [
+    /POW_INDEX_WORKER_PENDING_WITNESS_MAX_AGE_MS \?\?[\s\S]*10 \* 60_000[\s\S]*\|\| 10 \* 60_000/u,
+  ],
+);
+expectAll(
+  "worker pending-witness fallback uses the ten-minute ceiling",
+  proofIndexerWorker,
+  [
+    /POW_INDEX_WORKER_PENDING_WITNESS_MAX_AGE_MS \?\?[\s\S]*10 \* 60_000[\s\S]*\|\| 10 \* 60_000/u,
+  ],
 );
 expectAll("hot worker summary publication is canonical, conservative, and health-gated", proofIndexerBackfill + proofIndexReader + server, [
   /STORE_CANONICAL_SUMMARY_SNAPSHOT/,

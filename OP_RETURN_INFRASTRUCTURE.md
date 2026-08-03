@@ -346,12 +346,15 @@ outside this pending-only worker mode. Inside the pending-only child it is
 capped at 20 seconds and shortened further by elapsed child time so at least
 nine seconds remain for error handling, cursor persistence, and shutdown; if
 that headroom is already exhausted, the inspection is deferred without
-starting. Production pins those bounds with
+starting. Production pins those scan, verifier, and watchdog bounds with
 `POW_INDEX_MEMPOOL_SCAN_BUDGET_MS=15000`,
 `POW_INDEX_MEMPOOL_SCAN_MAX_PROTOCOL_TXIDS=5`, and
 `POW_INDEX_PENDING_VERIFIER_TIMEOUT_MS=5000`, plus
 `POW_INDEX_WORKER_PENDING_BACKFILL_TIMEOUT_MS=30000`; the backfill script also
-clamps the routine overrides to those maximums. The block scanner uses local
+clamps the routine overrides to those maximums. Production separately pins
+`POW_INDEX_WORKER_PENDING_WITNESS_MAX_AGE_MS=600000` for the API and worker;
+their parsers clamp that witness age to no more than ten minutes. The block
+scanner uses local
 Bitcoin Core RPC verbosity 2 to scan blocks after the database's indexed height
 for ProofOfWork OP_RETURN prefixes, then writes discovered txids through the
 normal projection writer. It hydrates and verifies input prevouts only for
@@ -767,11 +770,20 @@ filesystem. Merge `deploy/electrs-network.toml` into
 `172.27.0.1` mempool bridge, while both the API and worker use that same private
 address. The hardening unit runs the Docker bridge preflight before electrs so a
 missing or changed bridge fails closed; never restore a wildcard Electrum
-listener. The API proof-index override moves
-rebuildable cache state to `/data/proofofwork-api-cache`, requires that mount,
-sets the proof-index health freshness ceiling to 120 seconds, and disables core
-dumps. Create that directory as `powadmin` before starting the API; copy only
-complete cache JSON if retaining a warm cache, never orphan `*.tmp` files.
+listener. The API proof-index override moves rebuildable cache state to
+`/data/proofofwork-api-cache`, requires that mount, and disables core dumps.
+Production pins the API/worker Q16 pending-witness ceiling to ten minutes and
+pins API worker-health freshness to the same value. The worker's exact
+relational cycle can take about four minutes at production scale, followed by
+its bounded 30-second interval; the former two-minute ceilings therefore
+expired healthy evidence well before the next comparable cycle could complete.
+The ten-minute value covers two measured refresh cadences with limited jitter;
+the pending-witness parser enforces it as the maximum, while worker-health age
+remains an explicit production setting. It does not weaken exact tip/hash,
+epoch, replay, parity, projection, or live Core mempool-membership checks, and
+an explicit worker failure remains immediately not ready. Create the cache
+directory as `powadmin` before starting the API; copy only complete cache JSON
+if retaining a warm cache, never orphan `*.tmp` files.
 The public UI host and node host use the tracked WireGuard templates as a
 private transport. The API process binds only to `127.0.0.1:8081`; the hardened
 socket proxy exposes `10.77.0.2:8081` only on the tunnel, and Caddy proxies
