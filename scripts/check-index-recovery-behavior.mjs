@@ -18763,7 +18763,7 @@ check("exact canonical summaries require current conserved token balances", asyn
   );
   const migrationReadinessSource = topLevelFunctionSource(
     READER_PATH,
-    "proofIndexWorkPrecisionV2MigrationReadiness",
+    "proofIndexWorkPrecisionV2MigrationReadinessFullAudit",
   );
   assert.match(
     migrationReadinessSource,
@@ -54259,6 +54259,106 @@ check("WORK precision V2 readiness cache is exact, positive-only, and coalesced"
     JSON.stringify(directFingerprint.readinessEpochs[0]),
     JSON.stringify([0, "12"]),
   );
+  const readinessRequestKey = isolatedFunction(
+    READER_PATH,
+    "workPrecisionV2ReadinessRequestKey",
+    {
+      normalizedWorkAmoV6ExpectedPins: (value) => value,
+      workPrecisionV2ReadinessValueSha256: readinessValueSha256,
+    },
+  );
+  const compactFingerprintFromRows = isolatedFunction(
+    READER_PATH,
+    "workPrecisionV2ReadinessCompactFingerprintFromRows",
+    {
+      normalizedWorkAmoV6ExpectedPins: (value) => value,
+      normalizedWorkPrecisionV2ReadinessEpochs: readinessEpochs,
+      workPrecisionV2ReadinessFingerprintIso: readinessFingerprintIso,
+      workPrecisionV2ReadinessValueSha256: readinessValueSha256,
+      WORK_PRECISION_V2_READINESS_CACHE_TTL_MS: 30_000,
+    },
+  );
+  const compactRow = {
+    max_prepared_transactions: "0",
+    postmaster_started_at: "2026-08-02T19:59:00.000Z",
+    readiness_epochs: exactRow.readiness_epochs,
+    readiness_queue_count: 0,
+    search_path: "pg_catalog, pg_temp",
+  };
+  const directCompactFingerprint = compactFingerprintFromRows(
+    [compactRow],
+    "livenet",
+    pins,
+    fixedNow,
+  );
+  assert.equal(typeof directCompactFingerprint?.key, "string");
+  assert.equal(directCompactFingerprint.key.length, 64);
+  assert.equal(
+    directCompactFingerprint.expiresAt,
+    fixedNow + 30_000,
+  );
+  assert.equal(
+    readinessRequestKey("livenet", pins),
+    readinessRequestKey("livenet", structuredClone(pins)),
+  );
+  const alternatePins = {
+    ...pins,
+    declarationRecordOrdinal: pins.declarationRecordOrdinal + 1,
+  };
+  assert.notEqual(
+    readinessRequestKey("livenet", pins),
+    readinessRequestKey("livenet", alternatePins),
+  );
+  assert.notEqual(
+    directCompactFingerprint.key,
+    compactFingerprintFromRows(
+      [{
+        ...compactRow,
+        readiness_epochs: compactRow.readiness_epochs.map((entry, index) =>
+          index === 0 ? [0, "13"] : entry
+        ),
+      }],
+      "livenet",
+      pins,
+      fixedNow,
+    )?.key,
+  );
+  assert.equal(
+    compactFingerprintFromRows(
+      [{ ...compactRow, readiness_queue_count: 1 }],
+      "livenet",
+      pins,
+      fixedNow,
+    ),
+    null,
+  );
+  assert.equal(
+    compactFingerprintFromRows(
+      [{ ...compactRow, readiness_epochs: compactRow.readiness_epochs.slice(1) }],
+      "livenet",
+      pins,
+      fixedNow,
+    ),
+    null,
+  );
+  assert.equal(
+    compactFingerprintFromRows(
+      [{ ...compactRow, max_prepared_transactions: "1" }],
+      "livenet",
+      pins,
+      fixedNow,
+    ),
+    null,
+  );
+  assert.equal(
+    compactFingerprintFromRows(
+      [{ ...compactRow, search_path: "public, pg_catalog" }],
+      "livenet",
+      pins,
+      fixedNow,
+    ),
+    null,
+  );
   const securityDriftFingerprints = securityDriftContracts.map(
     (constraintDefinitions) =>
       fingerprintFromRows(
@@ -54643,46 +54743,72 @@ check("WORK precision V2 readiness cache is exact, positive-only, and coalesced"
   );
   assert.equal(expiredCache.size, 0);
 
-  const fingerprintSource = topLevelFunctionSource(
+  const compactFingerprintSource = topLevelFunctionSource(
     READER_PATH,
-    "proofIndexWorkPrecisionV2ReadinessFingerprint",
+    "proofIndexWorkPrecisionV2ReadinessCompactFingerprint",
   );
   assert.match(
-    fingerprintSource,
-    /canonical_tip[\s\S]*latest_transition[\s\S]*current_snapshot[\s\S]*pending_witness[\s\S]*worker_marker/u,
-  );
-  assert.match(
-    fingerprintSource,
+    compactFingerprintSource,
     /proof_indexer\.readiness_epoch_shards[\s\S]*proof_indexer\.readiness_epoch_queue/u,
   );
   assert.match(
-    fingerprintSource,
+    compactFingerprintSource,
+    /max_prepared_transactions[\s\S]*search_path[\s\S]*pg_postmaster_start_time\(\)/u,
+  );
+  assert.doesNotMatch(
+    compactFingerprintSource,
+    /canonical_tip|current_snapshot|worker_marker/u,
+  );
+  assert.match(
+    compactFingerprintSource,
+    /pool\.connect\(\)[\s\S]*BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY[\s\S]*SET LOCAL search_path = pg_catalog, pg_temp[\s\S]*COMMIT[\s\S]*ROLLBACK/u,
+  );
+  const epochContractSource = topLevelFunctionSource(
+    READER_PATH,
+    "proofIndexWorkPrecisionV2ReadinessEpochContractAttestation",
+  );
+  assert.match(
+    epochContractSource,
     /max_prepared_transactions[\s\S]*pg_auth_members[\s\S]*aclexplode/u,
   );
-  assert.match(fingerprintSource, /relpersistence/u);
-  assert.match(fingerprintSource, /relrowsecurity/u);
-  assert.match(fingerprintSource, /relforcerowsecurity/u);
-  assert.match(fingerprintSource, /relhasrules[\s\S]*pg_rewrite/u);
+  assert.match(epochContractSource, /relpersistence/u);
+  assert.match(epochContractSource, /relrowsecurity/u);
+  assert.match(epochContractSource, /relforcerowsecurity/u);
+  assert.match(epochContractSource, /relhasrules[\s\S]*pg_rewrite/u);
   assert.match(
-    fingerprintSource,
+    epochContractSource,
     /pg_get_expr[\s\S]*pg_attribute[\s\S]*pg_attrdef/u,
   );
   assert.match(
-    fingerprintSource,
+    epochContractSource,
     /has_any_column_privilege[\s\S]*has_function_privilege/u,
   );
-  assert.match(fingerprintSource, /pg_get_constraintdef/u);
+  assert.match(epochContractSource, /pg_get_constraintdef/u);
   assert.match(
-    fingerprintSource,
+    epochContractSource,
     /pg_index[\s\S]*pg_am[\s\S]*pg_inherits/u,
   );
-  assert.match(
-    fingerprintSource,
-    /pool\.connect\(\)[\s\S]*BEGIN READ ONLY[\s\S]*SET LOCAL search_path = pg_catalog, pg_temp[\s\S]*COMMIT[\s\S]*ROLLBACK/u,
+  const checkpointSource = topLevelFunctionSource(
+    READER_PATH,
+    "workPrecisionV2MigrationReadinessWithCompactCheckpoint",
+  );
+  assert.equal(
+    checkpointSource.indexOf("exactCheckpointSingleFlight(") <
+      checkpointSource.indexOf("await loadCompact()"),
+    true,
+    "the stable request single-flight must start before any compact SQL",
   );
   assert.match(
-    fingerprintSource,
-    /snapshot\.payload \? 'summaryPayloads'[\s\S]*ORDER BY snapshot\.indexed_through_block DESC NULLS LAST,\s*snapshot\.generated_at DESC/u,
+    checkpointSource,
+    /const admissionKey = `\$\{force === true \? "force" : "normal"\}:\$\{[\s\S]*requestKey[\s\S]*\}`/u,
+  );
+  assert.match(
+    checkpointSource,
+    /const initialFingerprint = await loadCompact\(\)[\s\S]*await loadCatalogAttestation\(initialFingerprint\)[\s\S]*await loadFull\(initialFingerprint\)[\s\S]*const settledFingerprint = await loadCompact\(\)/u,
+  );
+  assert.match(
+    checkpointSource,
+    /const settledAt = Number\(now\(\)\)[\s\S]*settledAt \+ WORK_PRECISION_V2_READINESS_CACHE_TTL_MS[\s\S]*pendingValidThrough/u,
   );
   const readinessSource = topLevelFunctionSource(
     READER_PATH,
@@ -54690,23 +54816,44 @@ check("WORK precision V2 readiness cache is exact, positive-only, and coalesced"
   );
   assert.match(
     readinessSource,
-    /requestOptions\.force === true[\s\S]*requestOptions\.singleFlightBypass === true[\s\S]*workPrecisionV2MigrationReadinessWithCache/u,
+    /workPrecisionV2ReadinessRequestKey\([\s\S]*workPrecisionV2MigrationReadinessWithCompactCheckpoint/u,
   );
   assert.match(
     readinessSource,
-    /const fingerprint =\s*await proofIndexWorkPrecisionV2ReadinessFingerprint\([\s\S]*?pins,\s*\);\s*if \(\s*!fingerprint\?\.key \|\|\s*fingerprint\.positiveEligible !== true/u,
+    /loadCatalogAttestation:[\s\S]*proofIndexWorkPrecisionV2ReadinessEpochContractAttestation[\s\S]*loadCompact:[\s\S]*proofIndexWorkPrecisionV2ReadinessCompactFingerprint[\s\S]*loadFull:[\s\S]*proofIndexWorkPrecisionV2MigrationReadinessFullAudit/u,
   );
   assert.match(
     readinessSource,
-    /singleFlightBypass: true/u,
+    /loadFull: \(fingerprint\) =>[\s\S]*workPrecisionV2MigrationFullAuditWithBound[\s\S]*requestKey: `\$\{requestKey\}:\$\{fingerprint\.key\}`/u,
+  );
+  assert.doesNotMatch(
+    readinessSource,
+    /proofIndexWorkPrecisionV2ReadinessFingerprint/u,
+  );
+  assert.equal(
+    Array.from(
+      fileSource(READER_PATH).matchAll(
+        /\bproofIndexWorkPrecisionV2ReadinessFingerprint\(/gu,
+      ),
+    ).length,
+    1,
+    "the legacy monolithic fingerprint must remain definition-only",
+  );
+  const fullAuditSource = topLevelFunctionSource(
+    READER_PATH,
+    "proofIndexWorkPrecisionV2MigrationReadinessFullAudit",
   );
   assert.match(
-    readinessSource,
-    /const refreshFingerprint =[\s\S]*proofIndexWorkPrecisionV2ReadinessFingerprint[\s\S]*\.catch\(\(\) => null\)/u,
-  );
-  assert.match(
-    readinessSource,
+    fullAuditSource,
     /BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY[\s\S]*SET LOCAL search_path = pg_catalog, pg_temp/u,
+  );
+  assert.match(
+    fullAuditSource,
+    /snapshot\.payload \? 'tokenStatePayloads'[\s\S]*ORDER BY snapshot\.indexed_through_block DESC NULLS LAST,\s*snapshot\.generated_at DESC/u,
+  );
+  assert.doesNotMatch(
+    readinessSource,
+    /singleFlightBypass|fingerprintBypass|compactFingerprintBypass/u,
   );
   assert.match(
     fileSource(POSTGRES_PATH),
@@ -54716,6 +54863,630 @@ check("WORK precision V2 readiness cache is exact, positive-only, and coalesced"
     fileSource(READINESS_EPOCH_PATH),
     /^BEGIN;\nSET LOCAL search_path = pg_catalog, pg_temp;/u,
   );
+});
+
+check("WORK precision V2 compact checkpoints bound concurrency and cache only settled positives", async () => {
+  const singleFlight = isolatedFunction(
+    READER_PATH,
+    "exactCheckpointSingleFlight",
+  );
+  const deepFreezeSnapshot = isolatedFunction(
+    READER_PATH,
+    "deepFreezeReadinessSnapshot",
+  );
+  const reusableReadiness = isolatedFunction(
+    READER_PATH,
+    "reusableWorkPrecisionV2MigrationReadiness",
+  );
+  const rememberReadiness = isolatedFunction(
+    READER_PATH,
+    "rememberWorkPrecisionV2MigrationReadiness",
+    {
+      deepFreezeReadinessSnapshot: deepFreezeSnapshot,
+      WORK_PRECISION_V2_READINESS_CACHE_MAX_ENTRIES: 4,
+    },
+  );
+  const reusablePositive = isolatedFunction(
+    READER_PATH,
+    "workPrecisionV2MigrationReadinessResultIsReusablePositive",
+  );
+  const readinessWithCheckpoint = isolatedFunction(
+    READER_PATH,
+    "workPrecisionV2MigrationReadinessWithCompactCheckpoint",
+    {
+      exactCheckpointSingleFlight: singleFlight,
+      rememberWorkPrecisionV2MigrationReadiness: rememberReadiness,
+      reusableWorkPrecisionV2MigrationReadiness: reusableReadiness,
+      workPrecisionV2MigrationReadinessResultIsReusablePositive:
+        reusablePositive,
+      WORK_PRECISION_V2_READINESS_CACHE_TTL_MS: 30_000,
+    },
+  );
+  const boundedFullAudit = isolatedFunction(
+    READER_PATH,
+    "workPrecisionV2MigrationFullAuditWithBound",
+    { workPrecisionV2MigrationFullAuditTail: Promise.resolve() },
+  );
+  const baseNow = Date.parse("2026-08-02T20:00:30.000Z");
+  const tipHash = "d".repeat(64);
+  const readyAt = (pendingValidThrough, label) => ({
+    active: true,
+    canonical: true,
+    confirmed: true,
+    evidenceComplete: true,
+    exactTipReady: true,
+    label,
+    nested: { exact: true },
+    parityReady: true,
+    pendingReady: true,
+    pendingValidThrough: new Date(pendingValidThrough).toISOString(),
+    ready: true,
+    replayReady: true,
+    snapshotHash: tipHash,
+    tipHash,
+    tipHeight: 960_768,
+  });
+  const fingerprint = (key) => ({
+    key,
+    positiveEligible: true,
+    postmasterStartedAt: "2026-08-02T19:59:00.000Z",
+  });
+
+  let clock = baseNow;
+  const inFlight = new Map();
+  const readyCache = new Map();
+  let compactLoads = 0;
+  let catalogLoads = 0;
+  let fullLoads = 0;
+  let releaseColdAudit;
+  let markColdAuditEntered;
+  const coldAuditGate = new Promise((resolve) => {
+    releaseColdAudit = resolve;
+  });
+  const coldAuditEntered = new Promise((resolve) => {
+    markColdAuditEntered = resolve;
+  });
+  const stableFingerprint = fingerprint("epoch-a");
+  const coldRequest = {
+    inFlight,
+    loadCatalogAttestation: async () => {
+      catalogLoads += 1;
+      return true;
+    },
+    loadCompact: async () => {
+      compactLoads += 1;
+      return stableFingerprint;
+    },
+    loadFull: async () => {
+      fullLoads += 1;
+      markColdAuditEntered();
+      await coldAuditGate;
+      clock = baseNow + 45_000;
+      return readyAt(baseNow + 180_000, "cold");
+    },
+    now: () => clock,
+    readyCache,
+    requestKey: "stable-pins",
+  };
+  const coldCalls = Array.from(
+    { length: 24 },
+    () => readinessWithCheckpoint(coldRequest),
+  );
+  await coldAuditEntered;
+  assert.equal(compactLoads, 1);
+  assert.equal(catalogLoads, 1);
+  assert.equal(fullLoads, 1);
+  releaseColdAudit();
+  const coldResults = await Promise.all(coldCalls);
+  assert.equal(coldResults.every((result) => result === coldResults[0]), true);
+  assert.equal(Object.isFrozen(coldResults[0]), true);
+  assert.equal(Object.isFrozen(coldResults[0].nested), true);
+  assert.equal(compactLoads, 2);
+  assert.equal(inFlight.size, 0);
+  assert.equal(
+    readyCache.get(stableFingerprint.key)?.expiresAt,
+    baseNow + 75_000,
+    "the TTL must start when the slow full audit settles",
+  );
+
+  const warmCompactBefore = compactLoads;
+  const warmResults = await Promise.all(
+    Array.from({ length: 24 }, () =>
+      readinessWithCheckpoint({
+        ...coldRequest,
+        loadCatalogAttestation: async () => {
+          throw new Error("warm cache unexpectedly reloaded catalog proof");
+        },
+        loadFull: async () => {
+          throw new Error("warm cache unexpectedly ran a full audit");
+        },
+      })
+    ),
+  );
+  assert.equal(compactLoads, warmCompactBefore + 1);
+  assert.equal(warmResults.every((result) => result === coldResults[0]), true);
+
+  let forceFullLoads = 0;
+  const forcedResults = await Promise.all(
+    Array.from({ length: 24 }, () =>
+      readinessWithCheckpoint({
+        ...coldRequest,
+        force: true,
+        loadFull: async () => {
+          forceFullLoads += 1;
+          return readyAt(baseNow + 180_000, "forced");
+        },
+      })
+    ),
+  );
+  assert.equal(forceFullLoads, 1);
+  assert.equal(forcedResults.every((result) => result === forcedResults[0]), true);
+  assert.notEqual(forcedResults[0], coldResults[0]);
+  assert.equal(inFlight.size, 0);
+
+  let negativeFullLoads = 0;
+  const negativeRequest = {
+    inFlight: new Map(),
+    loadCatalogAttestation: async () => true,
+    loadCompact: async () => fingerprint("epoch-negative"),
+    loadFull: async () => {
+      negativeFullLoads += 1;
+      return { ready: false };
+    },
+    now: () => clock,
+    readyCache: new Map(),
+    requestKey: "negative-pins",
+  };
+  const concurrentNegatives = await Promise.all(
+    Array.from(
+      { length: 24 },
+      () => readinessWithCheckpoint(negativeRequest),
+    ),
+  );
+  assert.equal(negativeFullLoads, 1);
+  assert.equal(
+    concurrentNegatives.every((result) => result === concurrentNegatives[0]),
+    true,
+  );
+  assert.equal(negativeRequest.readyCache.size, 0);
+  await readinessWithCheckpoint(negativeRequest);
+  assert.equal(negativeFullLoads, 2);
+
+  let driftCompactLoads = 0;
+  let driftFullLoads = 0;
+  const driftCache = new Map();
+  const driftRequest = {
+    inFlight: new Map(),
+    loadCatalogAttestation: async () => true,
+    loadCompact: async () => {
+      driftCompactLoads += 1;
+      return driftCompactLoads % 2 === 1
+        ? fingerprint("epoch-before")
+        : fingerprint("epoch-after");
+    },
+    loadFull: async () => {
+      driftFullLoads += 1;
+      return readyAt(baseNow + 180_000, "drifted");
+    },
+    now: () => clock,
+    readyCache: driftCache,
+    requestKey: "drift-pins",
+  };
+  assert.deepEqual(
+    await Promise.all(
+      Array.from(
+        { length: 24 },
+        () => readinessWithCheckpoint(driftRequest),
+      ),
+    ),
+    Array(24).fill(null),
+  );
+  assert.equal(driftFullLoads, 1);
+  assert.equal(driftCompactLoads, 2);
+  assert.equal(driftCache.size, 0);
+
+  let failedFullLoads = 0;
+  const failedRequest = {
+    inFlight: new Map(),
+    loadCatalogAttestation: async () => true,
+    loadCompact: async () => fingerprint("epoch-failure"),
+    loadFull: async () => {
+      failedFullLoads += 1;
+      if (failedFullLoads === 1) {
+        throw new Error("expected compact-checkpoint audit failure");
+      }
+      return readyAt(baseNow + 180_000, "recovered");
+    },
+    now: () => clock,
+    readyCache: new Map(),
+    requestKey: "failure-pins",
+  };
+  const failedCalls = await Promise.allSettled(
+    Array.from(
+      { length: 24 },
+      () => readinessWithCheckpoint(failedRequest),
+    ),
+  );
+  assert.equal(
+    failedCalls.every(
+      (result) =>
+        result.status === "rejected" &&
+        /expected compact-checkpoint audit failure/u.test(
+          String(result.reason?.message),
+        ),
+    ),
+    true,
+  );
+  assert.equal(failedFullLoads, 1);
+  assert.equal(failedRequest.inFlight.size, 0);
+  assert.equal(
+    (await readinessWithCheckpoint(failedRequest))?.label,
+    "recovered",
+  );
+  assert.equal(failedFullLoads, 2);
+
+  const pendingCapClock = baseNow + 200_000;
+  const pendingCapCache = new Map();
+  const pendingCapFingerprint = fingerprint("epoch-pending-cap");
+  await readinessWithCheckpoint({
+    inFlight: new Map(),
+    loadCatalogAttestation: async () => true,
+    loadCompact: async () => pendingCapFingerprint,
+    loadFull: async () =>
+      readyAt(pendingCapClock + 5_000, "pending-cap"),
+    now: () => pendingCapClock,
+    readyCache: pendingCapCache,
+    requestKey: "pending-cap-pins",
+  });
+  assert.equal(
+    pendingCapCache.get(pendingCapFingerprint.key)?.expiresAt,
+    pendingCapClock + 5_000,
+  );
+
+  let catalogRejectedFullLoads = 0;
+  assert.equal(
+    await readinessWithCheckpoint({
+      inFlight: new Map(),
+      loadCatalogAttestation: async () => false,
+      loadCompact: async () => fingerprint("epoch-catalog-rejected"),
+      loadFull: async () => {
+        catalogRejectedFullLoads += 1;
+        return readyAt(baseNow + 180_000, "unexpected");
+      },
+      now: () => clock,
+      readyCache: new Map(),
+      requestKey: "catalog-rejected-pins",
+    }),
+    null,
+  );
+  assert.equal(catalogRejectedFullLoads, 0);
+
+  const boundedInFlight = new Map();
+  let activeAudits = 0;
+  let maxActiveAudits = 0;
+  let auditLoads = 0;
+  let releaseAuditA;
+  let releaseAuditB;
+  let markAuditAEntered;
+  let markAuditBEntered;
+  const auditAGate = new Promise((resolve) => {
+    releaseAuditA = resolve;
+  });
+  const auditBGate = new Promise((resolve) => {
+    releaseAuditB = resolve;
+  });
+  const auditAEntered = new Promise((resolve) => {
+    markAuditAEntered = resolve;
+  });
+  const auditBEntered = new Promise((resolve) => {
+    markAuditBEntered = resolve;
+  });
+  const runBoundedAudit = (key, gate, markEntered) =>
+    boundedFullAudit({
+      inFlight: boundedInFlight,
+      load: async () => {
+        auditLoads += 1;
+        activeAudits += 1;
+        maxActiveAudits = Math.max(maxActiveAudits, activeAudits);
+        markEntered();
+        await gate;
+        activeAudits -= 1;
+        return key;
+      },
+      requestKey: `stable-pins:${key}`,
+    });
+  const auditA = runBoundedAudit("epoch-a", auditAGate, markAuditAEntered);
+  await auditAEntered;
+  const auditB = runBoundedAudit("epoch-b", auditBGate, markAuditBEntered);
+  await Promise.resolve();
+  assert.equal(auditLoads, 1);
+  assert.equal(activeAudits, 1);
+  releaseAuditA();
+  await auditBEntered;
+  assert.equal(auditLoads, 2);
+  assert.equal(activeAudits, 1);
+  releaseAuditB();
+  assert.deepEqual(await Promise.all([auditA, auditB]), ["epoch-a", "epoch-b"]);
+  assert.equal(maxActiveAudits, 1);
+  assert.equal(boundedInFlight.size, 0);
+
+  const crossOuterInFlight = new Map();
+  const crossAuditInFlight = new Map();
+  const crossReadyCache = new Map();
+  const crossFingerprintA = fingerprint("epoch-cross-a");
+  const crossFingerprintB = fingerprint("epoch-cross-b");
+  const crossFingerprintBSettled = fingerprint("epoch-cross-b-settled");
+  let crossActiveAudits = 0;
+  let crossMaxActiveAudits = 0;
+  let crossAuditLoads = 0;
+  let crossBCompactLoads = 0;
+  let releaseCrossAuditA;
+  let releaseCrossAuditB;
+  let markCrossAuditAEntered;
+  let markCrossAuditBEntered;
+  const crossAuditAGate = new Promise((resolve) => {
+    releaseCrossAuditA = resolve;
+  });
+  const crossAuditBGate = new Promise((resolve) => {
+    releaseCrossAuditB = resolve;
+  });
+  const crossAuditAEntered = new Promise((resolve) => {
+    markCrossAuditAEntered = resolve;
+  });
+  const crossAuditBEntered = new Promise((resolve) => {
+    markCrossAuditBEntered = resolve;
+  });
+  const crossLoadFull = (observedFingerprint) =>
+    boundedFullAudit({
+      inFlight: crossAuditInFlight,
+      load: async () => {
+        crossAuditLoads += 1;
+        crossActiveAudits += 1;
+        crossMaxActiveAudits = Math.max(
+          crossMaxActiveAudits,
+          crossActiveAudits,
+        );
+        const isA = observedFingerprint.key === crossFingerprintA.key;
+        (isA ? markCrossAuditAEntered : markCrossAuditBEntered)();
+        await (isA ? crossAuditAGate : crossAuditBGate);
+        crossActiveAudits -= 1;
+        return readyAt(
+          baseNow + 300_000,
+          isA ? "cross-a" : "cross-b",
+        );
+      },
+      requestKey: `stable-cross-pins:${observedFingerprint.key}`,
+    });
+  const normalCrossCall = readinessWithCheckpoint({
+    inFlight: crossOuterInFlight,
+    loadCatalogAttestation: async () => true,
+    loadCompact: async () => crossFingerprintA,
+    loadFull: crossLoadFull,
+    now: () => clock,
+    readyCache: crossReadyCache,
+    requestKey: "stable-cross-pins",
+  });
+  await crossAuditAEntered;
+  const forceCrossCall = readinessWithCheckpoint({
+    force: true,
+    inFlight: crossOuterInFlight,
+    loadCatalogAttestation: async () => true,
+    loadCompact: async () => {
+      crossBCompactLoads += 1;
+      return crossBCompactLoads === 1
+        ? crossFingerprintB
+        : crossFingerprintBSettled;
+    },
+    loadFull: crossLoadFull,
+    now: () => clock,
+    readyCache: crossReadyCache,
+    requestKey: "stable-cross-pins",
+  });
+  await Promise.resolve();
+  assert.equal(crossAuditLoads, 1);
+  assert.equal(crossActiveAudits, 1);
+  releaseCrossAuditA();
+  await crossAuditBEntered;
+  assert.equal(crossAuditLoads, 2);
+  assert.equal(crossActiveAudits, 1);
+  releaseCrossAuditB();
+  const [normalCrossResult, forceCrossResult] = await Promise.all([
+    normalCrossCall,
+    forceCrossCall,
+  ]);
+  assert.equal(normalCrossResult?.label, "cross-a");
+  assert.equal(forceCrossResult, null);
+  assert.equal(crossAuditLoads, 2);
+  assert.equal(crossMaxActiveAudits, 1);
+  assert.equal(crossOuterInFlight.size, 0);
+  assert.equal(crossAuditInFlight.size, 0);
+  assert.equal(crossReadyCache.has(crossFingerprintA.key), true);
+  assert.equal(crossReadyCache.has(crossFingerprintB.key), false);
+  assert.equal(crossReadyCache.has(crossFingerprintBSettled.key), false);
+});
+
+check("WORK precision V2 epoch catalog attestation is postmaster-bound and positive-only", async () => {
+  const singleFlight = isolatedFunction(
+    READER_PATH,
+    "exactCheckpointSingleFlight",
+  );
+  const attestationWithCache = isolatedFunction(
+    READER_PATH,
+    "workPrecisionV2ReadinessEpochContractAttestationWithCache",
+    { exactCheckpointSingleFlight: singleFlight },
+  );
+  const postmasterStartedAt = "2026-08-02T19:59:00.000Z";
+  const inFlight = new Map();
+  const readyCache = new Map();
+  let loads = 0;
+  let releaseAttestation;
+  const gate = new Promise((resolve) => {
+    releaseAttestation = resolve;
+  });
+  const request = {
+    expectedPostmasterStartedAt: postmasterStartedAt,
+    inFlight,
+    load: async () => {
+      loads += 1;
+      await gate;
+      return { postmasterStartedAt, ready: true };
+    },
+    readyCache,
+  };
+  const concurrent = Array.from(
+    { length: 24 },
+    () => attestationWithCache(request),
+  );
+  await Promise.resolve();
+  assert.equal(loads, 1);
+  releaseAttestation();
+  assert.deepEqual(await Promise.all(concurrent), Array(24).fill(true));
+  assert.equal(inFlight.size, 0);
+  assert.equal(readyCache.get(postmasterStartedAt), true);
+  assert.equal(
+    await attestationWithCache({
+      ...request,
+      load: async () => {
+        throw new Error("cached attestation unexpectedly reloaded");
+      },
+    }),
+    true,
+  );
+
+  let rejectedLoads = 0;
+  const rejectedRequest = {
+    expectedPostmasterStartedAt: "2026-08-02T20:01:00.000Z",
+    inFlight: new Map(),
+    load: async () => {
+      rejectedLoads += 1;
+      return {
+        postmasterStartedAt: "2026-08-02T20:00:59.000Z",
+        ready: true,
+      };
+    },
+    readyCache: new Map(),
+  };
+  assert.equal(await attestationWithCache(rejectedRequest), false);
+  assert.equal(await attestationWithCache(rejectedRequest), false);
+  assert.equal(rejectedLoads, 2);
+
+  let failedLoads = 0;
+  const failedRequest = {
+    expectedPostmasterStartedAt: "2026-08-02T20:02:00.000Z",
+    inFlight: new Map(),
+    load: async () => {
+      failedLoads += 1;
+      if (failedLoads === 1) {
+        throw new Error("expected attestation read failure");
+      }
+      return {
+        postmasterStartedAt: "2026-08-02T20:02:00.000Z",
+        ready: true,
+      };
+    },
+    readyCache: new Map(),
+  };
+  await assert.rejects(
+    attestationWithCache(failedRequest),
+    /expected attestation read failure/u,
+  );
+  assert.equal(failedRequest.inFlight.size, 0);
+  assert.equal(await attestationWithCache(failedRequest), true);
+  assert.equal(failedLoads, 2);
+});
+
+check("checked-out PostgreSQL clients serialize readiness and migration queries", () => {
+  const awaitedDeclarationOffsets = (source, name) => {
+    const offsets = Array.from(
+      source.matchAll(new RegExp(`const ${name} =`, "gu")),
+      (match) => match.index,
+    );
+    for (const offset of offsets) {
+      const nextSource = source.slice(
+        offset,
+        source.indexOf(";", offset) + 1,
+      );
+      assert.match(
+        nextSource,
+        /await\s+[A-Za-z_$][\w$.]*\s*\(/u,
+      );
+    }
+    return offsets;
+  };
+  const assertSequentialDeclarations = (source, names) => {
+    let previousOffset = -1;
+    for (const name of names) {
+      const [offset] = awaitedDeclarationOffsets(source, name);
+      assert.equal(
+        offset > previousOffset,
+        true,
+        `${name} must be declared after the prior awaited query`,
+      );
+      previousOffset = offset;
+    }
+  };
+  const readinessSource = topLevelFunctionSource(
+    READER_PATH,
+    "proofIndexWorkPrecisionV2MigrationReadinessFullAudit",
+  );
+  assert.doesNotMatch(readinessSource, /Promise\.all\(/u);
+  assertSequentialDeclarations(readinessSource, [
+    "balanceResult",
+    "listingResult",
+    "pendingBalanceResult",
+    "pendingEventResult",
+    "pendingListingResult",
+    "pendingRecoveryResult",
+    "pendingInvalidLegacyResult",
+  ]);
+
+  const pendingWitnessSource = topLevelFunctionSource(
+    BACKFILL_PATH,
+    "persistExactWorkQ16PendingWitness",
+  );
+  assert.doesNotMatch(pendingWitnessSource, /Promise\.all\(/u);
+  assertSequentialDeclarations(pendingWitnessSource, [
+    "stateResult",
+    "balanceResult",
+    "eventResult",
+    "listingResult",
+    "recoveryResult",
+    "invalidLegacyResult",
+  ]);
+
+  const atomicMigrationSource = topLevelFunctionSource(
+    BACKFILL_PATH,
+    "migrateWorkAtomicProjection",
+  );
+  assert.doesNotMatch(atomicMigrationSource, /Promise\.all\(/u);
+  assertSequentialDeclarations(atomicMigrationSource, [
+    "beforeBalances",
+    "beforeListings",
+    "issuanceOraclesBefore",
+  ]);
+  const afterBalanceOffsets = awaitedDeclarationOffsets(
+    atomicMigrationSource,
+    "afterBalances",
+  );
+  const afterListingOffsets = awaitedDeclarationOffsets(
+    atomicMigrationSource,
+    "afterListings",
+  );
+  const afterOracleOffsets = awaitedDeclarationOffsets(
+    atomicMigrationSource,
+    "issuanceOraclesAfter",
+  );
+  assert.equal(afterBalanceOffsets.length, 2);
+  assert.equal(afterListingOffsets.length, 2);
+  assert.equal(afterOracleOffsets.length, 2);
+  for (let index = 0; index < 2; index += 1) {
+    assert.equal(
+      afterBalanceOffsets[index] < afterListingOffsets[index] &&
+        afterListingOffsets[index] < afterOracleOffsets[index],
+      true,
+      `after-state query branch ${index + 1} must be serial`,
+    );
+  }
 });
 
 check("AMO V5 status reuse keeps only proven exact-tip positives", () => {

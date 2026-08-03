@@ -213,8 +213,13 @@ import {
 let proofIndexReadPool = null;
 const workAmoReplayReadinessInFlight = new Map();
 const workAmoReplayReadinessReadyCache = new Map();
-const workPrecisionV2MigrationReadinessInFlight = new Map();
+const workPrecisionV2MigrationReadinessRequestInFlight = new Map();
 const workPrecisionV2MigrationReadinessReadyCache = new Map();
+const workPrecisionV2MigrationFullAuditInFlight = new Map();
+// Full relational audits are serialized per process; compact reads stay free.
+let workPrecisionV2MigrationFullAuditTail = Promise.resolve();
+const workPrecisionV2ReadinessEpochContractInFlight = new Map();
+const workPrecisionV2ReadinessEpochContractReadyCache = new Map();
 const INFINITY_BOND_MEMO = "powb";
 const INFINITY_BOND_KIND = "infinity-bond";
 const INCEPTION_BOND_MEMO = "incb";
@@ -471,6 +476,12 @@ export async function closeProofIndexReadPool() {
     await proofIndexReadPool.end();
     proofIndexReadPool = null;
   }
+  workPrecisionV2MigrationReadinessRequestInFlight.clear();
+  workPrecisionV2MigrationReadinessReadyCache.clear();
+  workPrecisionV2MigrationFullAuditInFlight.clear();
+  workPrecisionV2MigrationFullAuditTail = Promise.resolve();
+  workPrecisionV2ReadinessEpochContractInFlight.clear();
+  workPrecisionV2ReadinessEpochContractReadyCache.clear();
 }
 
 function featureEnabled(rawValue, feature) {
@@ -4381,6 +4392,605 @@ function normalizedWorkPrecisionV2ReadinessEpochs(value) {
     : null;
 }
 
+function workPrecisionV2ReadinessRequestKey(
+  network,
+  expectedPins,
+) {
+  const pins = normalizedWorkAmoV6ExpectedPins(expectedPins);
+  if (!pins || network !== "livenet") {
+    return "";
+  }
+  return workPrecisionV2ReadinessValueSha256({
+    model: "proof-index-work-precision-v2-compact-request-v1",
+    network,
+    pins,
+  });
+}
+
+function workPrecisionV2ReadinessCompactFingerprintFromRows(
+  rows,
+  network,
+  expectedPins,
+  now = Date.now(),
+) {
+  const pins = normalizedWorkAmoV6ExpectedPins(expectedPins);
+  if (
+    !pins ||
+    network !== "livenet" ||
+    !Array.isArray(rows) ||
+    rows.length !== 1 ||
+    !Number.isFinite(now)
+  ) {
+    return null;
+  }
+  const row = rows[0] ?? {};
+  const readinessEpochs = normalizedWorkPrecisionV2ReadinessEpochs(
+    row.readiness_epochs,
+  );
+  const readinessQueueCount = Number(row.readiness_queue_count);
+  const postmasterStartedAt = workPrecisionV2ReadinessFingerprintIso(
+    row.postmaster_started_at,
+  );
+  const maxPreparedTransactions = String(
+    row.max_prepared_transactions ?? "",
+  );
+  const searchPath = String(row.search_path ?? "");
+  if (
+    !readinessEpochs ||
+    readinessQueueCount !== 0 ||
+    !postmasterStartedAt ||
+    maxPreparedTransactions !== "0" ||
+    searchPath !== "pg_catalog, pg_temp"
+  ) {
+    return null;
+  }
+  const fingerprint = {
+    maxPreparedTransactions,
+    model: "proof-index-work-precision-v2-compact-fingerprint-v1",
+    network,
+    pins,
+    postmasterStartedAt,
+    readinessEpochs,
+    searchPath,
+  };
+  return {
+    ...fingerprint,
+    expiresAt: now + WORK_PRECISION_V2_READINESS_CACHE_TTL_MS,
+    key: workPrecisionV2ReadinessValueSha256(fingerprint),
+    positiveEligible: true,
+  };
+}
+
+async function proofIndexWorkPrecisionV2ReadinessCompactFingerprint(
+  pool,
+  network,
+  pins,
+  now = Date.now(),
+) {
+  const client = await pool.connect();
+  let transactionOpen = false;
+  try {
+    await client.query(
+      "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY",
+    );
+    transactionOpen = true;
+    await client.query(
+      "SET LOCAL search_path = pg_catalog, pg_temp",
+    );
+    const result = await client.query(
+      `
+      SELECT
+        (
+          SELECT jsonb_agg(
+            jsonb_build_array(shard, epoch::text)
+            ORDER BY shard
+          )
+          FROM proof_indexer.readiness_epoch_shards
+          WHERE network = $1
+        ) AS readiness_epochs,
+        (
+          SELECT count(*)::integer
+          FROM proof_indexer.readiness_epoch_queue
+        ) AS readiness_queue_count,
+        current_setting('max_prepared_transactions')
+          AS max_prepared_transactions,
+        current_setting('search_path') AS search_path,
+        pg_postmaster_start_time() AS postmaster_started_at
+      `,
+      [network],
+    );
+    const fingerprint =
+      workPrecisionV2ReadinessCompactFingerprintFromRows(
+        result.rows,
+        network,
+        pins,
+        now,
+      );
+    await client.query("COMMIT");
+    transactionOpen = false;
+    return fingerprint;
+  } catch (error) {
+    if (transactionOpen) {
+      await client.query("ROLLBACK").catch(() => {});
+    }
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+async function proofIndexWorkPrecisionV2ReadinessEpochContractAttestation(
+  pool,
+) {
+  const client = await pool.connect();
+  let transactionOpen = false;
+  try {
+    await client.query(
+      "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY",
+    );
+    transactionOpen = true;
+    await client.query(
+      "SET LOCAL search_path = pg_catalog, pg_temp",
+    );
+    const result = await client.query(
+      `
+      SELECT
+        pg_postmaster_start_time() AS postmaster_started_at,
+        jsonb_build_object(
+          'epochSecurity', jsonb_build_object(
+            'maxPreparedTransactions',
+              current_setting('max_prepared_transactions'),
+            'searchPath', current_setting('search_path'),
+            'ownerRole', (
+              SELECT jsonb_build_object(
+                'bypassRls', role_row.rolbypassrls,
+                'canLogin', role_row.rolcanlogin,
+                'createDb', role_row.rolcreatedb,
+                'createRole', role_row.rolcreaterole,
+                'membershipEdges', (
+                  SELECT count(*)::integer
+                  FROM pg_auth_members membership
+                  WHERE membership.roleid = role_row.oid
+                     OR membership.member = role_row.oid
+                ),
+                'name', role_row.rolname,
+                'replication', role_row.rolreplication,
+                'schemaUsage', has_schema_privilege(
+                  role_row.oid,
+                  'proof_indexer',
+                  'USAGE'
+                ),
+                'superuser', role_row.rolsuper
+              )
+              FROM pg_roles role_row
+              WHERE role_row.rolname =
+                'proof_indexer_readiness_owner'
+              LIMIT 1
+            ),
+            'relations', COALESCE((
+              SELECT jsonb_agg(
+                jsonb_build_object(
+                  'accessMethod', relation_access_method.amname,
+                  'appColumnMutation',
+                    has_any_column_privilege(
+                      'proof_indexer',
+                      relation.oid,
+                      'INSERT,UPDATE,REFERENCES'
+                    ),
+                  'appMutation', has_table_privilege(
+                    'proof_indexer',
+                    relation.oid,
+                    'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER'
+                  ),
+                  'appSelect', has_table_privilege(
+                    'proof_indexer',
+                    relation.oid,
+                    'SELECT'
+                  ),
+                  'appSelectAclCount', (
+                    SELECT count(*)::integer
+                    FROM aclexplode(COALESCE(
+                      relation.relacl,
+                      acldefault('r', relation.relowner)
+                    )) privilege
+                    WHERE privilege.grantee =
+                        'proof_indexer'::regrole
+                      AND privilege.privilege_type = 'SELECT'
+                  ),
+                  'appSelectGrantableCount', (
+                    SELECT count(*)::integer
+                    FROM aclexplode(COALESCE(
+                      relation.relacl,
+                      acldefault('r', relation.relowner)
+                    )) privilege
+                    WHERE privilege.grantee =
+                        'proof_indexer'::regrole
+                      AND privilege.privilege_type = 'SELECT'
+                      AND privilege.is_grantable
+                  ),
+                  'columnMutationAclCount', (
+                    SELECT count(*)::integer
+                    FROM pg_attribute attribute_row
+                    CROSS JOIN LATERAL aclexplode(
+                      attribute_row.attacl
+                    ) privilege
+                    WHERE attribute_row.attrelid = relation.oid
+                      AND attribute_row.attnum > 0
+                      AND attribute_row.attisdropped = false
+                      AND privilege.grantee <> relation.relowner
+                      AND privilege.privilege_type IN (
+                        'INSERT',
+                        'UPDATE',
+                        'REFERENCES'
+                      )
+                  ),
+                  'columnPublicAclCount', (
+                    SELECT count(*)::integer
+                    FROM pg_attribute attribute_row
+                    CROSS JOIN LATERAL aclexplode(
+                      attribute_row.attacl
+                    ) privilege
+                    WHERE attribute_row.attrelid = relation.oid
+                      AND attribute_row.attnum > 0
+                      AND attribute_row.attisdropped = false
+                      AND privilege.grantee = 0
+                  ),
+                  'columns', COALESCE((
+                    SELECT jsonb_agg(
+                      jsonb_build_array(
+                        attribute_row.attnum::integer,
+                        attribute_row.attname,
+                        format_type(
+                          attribute_row.atttypid,
+                          attribute_row.atttypmod
+                        ),
+                        attribute_row.attnotnull,
+                        attribute_row.attisdropped,
+                        attribute_row.attidentity <> '',
+                        attribute_row.attgenerated <> '',
+                        pg_get_expr(
+                          default_row.adbin,
+                          default_row.adrelid
+                        )
+                      ) ORDER BY attribute_row.attnum
+                    )
+                    FROM pg_attribute attribute_row
+                    LEFT JOIN pg_attrdef default_row
+                      ON default_row.adrelid = attribute_row.attrelid
+                     AND default_row.adnum = attribute_row.attnum
+                    WHERE attribute_row.attrelid = relation.oid
+                      AND attribute_row.attnum > 0
+                  ), '[]'::jsonb),
+                  'constraints', COALESCE((
+                    SELECT jsonb_agg(
+                      jsonb_build_array(
+                        constraint_row.contype::text,
+                        constraint_row.convalidated,
+                        pg_get_constraintdef(constraint_row.oid)
+                      ) ORDER BY
+                        constraint_row.contype::text,
+                        pg_get_constraintdef(constraint_row.oid)
+                    )
+                    FROM pg_constraint constraint_row
+                    WHERE constraint_row.conrelid = relation.oid
+                  ), '[]'::jsonb),
+                  'forceRls', relation.relforcerowsecurity,
+                  'hasRules', relation.relhasrules,
+                  'indexes', COALESCE((
+                    SELECT jsonb_agg(
+                      jsonb_build_array(
+                        index_relation.relname,
+                        index_access_method.amname,
+                        index_row.indisvalid,
+                        index_row.indisready,
+                        index_row.indislive,
+                        index_row.indisunique,
+                        index_row.indimmediate,
+                        index_row.indisprimary,
+                        index_row.indisexclusion,
+                        index_row.indnullsnotdistinct,
+                        pg_get_expr(
+                          index_row.indpred,
+                          index_row.indrelid
+                        ),
+                        pg_get_expr(
+                          index_row.indexprs,
+                          index_row.indrelid
+                        ),
+                        pg_get_indexdef(index_row.indexrelid)
+                      ) ORDER BY index_relation.relname
+                    )
+                    FROM pg_index index_row
+                    JOIN pg_class index_relation
+                      ON index_relation.oid = index_row.indexrelid
+                    JOIN pg_am index_access_method
+                      ON index_access_method.oid = index_relation.relam
+                    WHERE index_row.indrelid = relation.oid
+                  ), '[]'::jsonb),
+                  'inheritanceEdges', (
+                    SELECT count(*)::integer
+                    FROM pg_inherits inheritance_row
+                    WHERE inheritance_row.inhrelid = relation.oid
+                       OR inheritance_row.inhparent = relation.oid
+                  ),
+                  'kind', relation.relkind,
+                  'name', relation.relname,
+                  'owner', relation_owner.rolname,
+                  'persistence', relation.relpersistence,
+                  'publicAclCount', (
+                    SELECT count(*)::integer
+                    FROM aclexplode(COALESCE(
+                      relation.relacl,
+                      acldefault('r', relation.relowner)
+                    )) privilege
+                    WHERE privilege.grantee = 0
+                  ),
+                  'rls', relation.relrowsecurity,
+                  'rewriteRuleCount', (
+                    SELECT count(*)::integer
+                    FROM pg_rewrite rewrite_row
+                    WHERE rewrite_row.ev_class = relation.oid
+                  ),
+                  'unexpectedMutationAclCount', (
+                    SELECT count(*)::integer
+                    FROM aclexplode(COALESCE(
+                      relation.relacl,
+                      acldefault('r', relation.relowner)
+                    )) privilege
+                    WHERE privilege.grantee <> relation.relowner
+                      AND privilege.privilege_type IN (
+                        'INSERT',
+                        'UPDATE',
+                        'DELETE',
+                        'TRUNCATE',
+                        'REFERENCES',
+                        'TRIGGER'
+                      )
+                  )
+                ) ORDER BY relation.relname
+              )
+              FROM pg_class relation
+              JOIN pg_namespace namespace_row
+                ON namespace_row.oid = relation.relnamespace
+              JOIN pg_roles relation_owner
+                ON relation_owner.oid = relation.relowner
+              JOIN pg_am relation_access_method
+                ON relation_access_method.oid = relation.relam
+              WHERE namespace_row.nspname = 'proof_indexer'
+                AND relation.relname IN (
+                  'readiness_epoch_queue',
+                  'readiness_epoch_shards'
+                )
+            ), '[]'::jsonb)
+          ),
+          'sourceRelations', COALESCE((
+            SELECT jsonb_agg(
+              jsonb_build_object(
+                'accessMethod', access_method.amname,
+                'forceRls', relation.relforcerowsecurity,
+                'hasRules', relation.relhasrules,
+                'inheritanceEdges', (
+                  SELECT count(*)::integer
+                  FROM pg_inherits inheritance_row
+                  WHERE inheritance_row.inhrelid = relation.oid
+                     OR inheritance_row.inhparent = relation.oid
+                ),
+                'kind', relation.relkind,
+                'name', relation.relname,
+                'owner', relation_owner.rolname,
+                'persistence', relation.relpersistence,
+                'rewriteRuleCount', (
+                  SELECT count(*)::integer
+                  FROM pg_rewrite rewrite_row
+                  WHERE rewrite_row.ev_class = relation.oid
+                ),
+                'rls', relation.relrowsecurity
+              ) ORDER BY relation.relname
+            )
+            FROM pg_class relation
+            JOIN pg_namespace namespace_row
+              ON namespace_row.oid = relation.relnamespace
+            JOIN pg_roles relation_owner
+              ON relation_owner.oid = relation.relowner
+            JOIN pg_am access_method
+              ON access_method.oid = relation.relam
+            WHERE namespace_row.nspname = 'proof_indexer'
+              AND relation.relname IN (
+                'blocks',
+                'credit_balances',
+                'credit_definitions',
+                'credit_listings',
+                'events',
+                'ledger_snapshots',
+                'meta',
+                'op_returns',
+                'transactions',
+                'tx_inputs',
+                'tx_outputs',
+                'work_amo_block_transitions',
+                'work_amo_listing_terms',
+                'work_amo_v6_listing_terms',
+                'work_amo_v7_listing_terms',
+                'work_amo_v8_listing_terms'
+              )
+          ), '[]'::jsonb),
+          'triggers', COALESCE((
+            SELECT jsonb_agg(
+              jsonb_build_array(
+                table_row.relname,
+                trigger_row.tgname,
+                trigger_row.tgenabled,
+                trigger_row.tgisinternal,
+                pg_get_triggerdef(trigger_row.oid)
+              ) ORDER BY table_row.relname, trigger_row.tgname
+            )
+            FROM pg_trigger trigger_row
+            JOIN pg_class table_row
+              ON table_row.oid = trigger_row.tgrelid
+            JOIN pg_namespace namespace_row
+              ON namespace_row.oid = table_row.relnamespace
+            WHERE namespace_row.nspname = 'proof_indexer'
+              AND table_row.relname IN (
+                'blocks',
+                'credit_balances',
+                'credit_definitions',
+                'credit_listings',
+                'events',
+                'ledger_snapshots',
+                'meta',
+                'op_returns',
+                'readiness_epoch_queue',
+                'readiness_epoch_shards',
+                'transactions',
+                'tx_inputs',
+                'tx_outputs',
+                'work_amo_block_transitions',
+                'work_amo_listing_terms',
+                'work_amo_v6_listing_terms',
+                'work_amo_v7_listing_terms',
+                'work_amo_v8_listing_terms'
+              )
+              AND (
+                table_row.relname IN (
+                  'readiness_epoch_queue',
+                  'readiness_epoch_shards'
+                )
+                OR (
+                  trigger_row.tgisinternal = false
+                  AND trigger_row.tgname LIKE 'readiness_epoch_%'
+                )
+              )
+          ), '[]'::jsonb),
+          'epochFunctions', COALESCE((
+            SELECT jsonb_agg(
+              jsonb_build_object(
+                'name', function_row.proname,
+                'appExecute', has_function_privilege(
+                  'proof_indexer',
+                  function_row.oid,
+                  'EXECUTE'
+                ),
+                'appExecuteAclCount', (
+                  SELECT count(*)::integer
+                  FROM aclexplode(COALESCE(
+                    function_row.proacl,
+                    acldefault('f', function_row.proowner)
+                  )) privilege
+                  WHERE privilege.grantee =
+                      'proof_indexer'::regrole
+                    AND privilege.privilege_type = 'EXECUTE'
+                ),
+                'appExecuteGrantableCount', (
+                  SELECT count(*)::integer
+                  FROM aclexplode(COALESCE(
+                    function_row.proacl,
+                    acldefault('f', function_row.proowner)
+                  )) privilege
+                  WHERE privilege.grantee =
+                      'proof_indexer'::regrole
+                    AND privilege.privilege_type = 'EXECUTE'
+                    AND privilege.is_grantable
+                ),
+                'language', language_row.lanname,
+                'owner', function_owner.rolname,
+                'publicExecuteAclCount', (
+                  SELECT count(*)::integer
+                  FROM aclexplode(COALESCE(
+                    function_row.proacl,
+                    acldefault('f', function_row.proowner)
+                  )) privilege
+                  WHERE privilege.grantee = 0
+                    AND privilege.privilege_type = 'EXECUTE'
+                ),
+                'securityDefiner', function_row.prosecdef,
+                'settings', function_row.proconfig,
+                'source', function_row.prosrc,
+                'unexpectedExecuteAclCount', (
+                  SELECT count(*)::integer
+                  FROM aclexplode(COALESCE(
+                    function_row.proacl,
+                    acldefault('f', function_row.proowner)
+                  )) privilege
+                  WHERE privilege.privilege_type = 'EXECUTE'
+                    AND privilege.grantee NOT IN (
+                      function_row.proowner,
+                      'proof_indexer'::regrole
+                    )
+                )
+              ) ORDER BY function_row.proname
+            )
+            FROM pg_proc function_row
+            JOIN pg_namespace namespace_row
+              ON namespace_row.oid = function_row.pronamespace
+            JOIN pg_language language_row
+              ON language_row.oid = function_row.prolang
+            JOIN pg_roles function_owner
+              ON function_owner.oid = function_row.proowner
+            WHERE namespace_row.nspname = 'proof_indexer'
+              AND function_row.proname IN (
+                'commit_livenet_readiness_epoch',
+                'enqueue_livenet_readiness_epoch',
+                'enqueue_livenet_readiness_epoch_for_meta'
+              )
+          ), '[]'::jsonb)
+        ) AS definitions
+      `,
+    );
+    const row = result.rows[0] ?? {};
+    const postmasterStartedAt =
+      workPrecisionV2ReadinessFingerprintIso(
+        row.postmaster_started_at,
+      );
+    const ready =
+      result.rows.length === 1 &&
+      Boolean(postmasterStartedAt) &&
+      workPrecisionV2ReadinessEpochContractReady(row.definitions);
+    await client.query("COMMIT");
+    transactionOpen = false;
+    return { postmasterStartedAt, ready };
+  } catch (error) {
+    if (transactionOpen) {
+      await client.query("ROLLBACK").catch(() => {});
+    }
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+async function workPrecisionV2ReadinessEpochContractAttestationWithCache({
+  expectedPostmasterStartedAt,
+  inFlight,
+  load,
+  readyCache,
+}) {
+  if (!expectedPostmasterStartedAt) {
+    return false;
+  }
+  if (readyCache.get(expectedPostmasterStartedAt) === true) {
+    return true;
+  }
+  return exactCheckpointSingleFlight(
+    inFlight,
+    expectedPostmasterStartedAt,
+    async () => {
+      const attestation = await load();
+      const ready = Boolean(
+        attestation?.ready === true &&
+          attestation.postmasterStartedAt ===
+            expectedPostmasterStartedAt,
+      );
+      if (ready) {
+        // Production DDL requires an application restart, so an exact
+        // postmaster-bound positive remains valid for this process lifetime.
+        readyCache.clear();
+        readyCache.set(expectedPostmasterStartedAt, true);
+      }
+      return ready;
+    },
+  );
+}
+
 function workPrecisionV2ReadinessFingerprintFromRows(
   rows,
   network,
@@ -5263,6 +5873,36 @@ function workPrecisionV2MigrationReadinessResultIsExactPositive(
   );
 }
 
+function workPrecisionV2MigrationReadinessResultIsReusablePositive(
+  result,
+  now = Date.now(),
+) {
+  const tipHeight = Number(result?.tipHeight);
+  const tipHash = normalizedLowerText(result?.tipHash);
+  const snapshotHash = normalizedLowerText(result?.snapshotHash);
+  const pendingValidThroughMs = Date.parse(
+    String(result?.pendingValidThrough ?? ""),
+  );
+  return Boolean(
+    Number.isFinite(now) &&
+      result?.ready === true &&
+      result?.active === true &&
+      result?.canonical === true &&
+      result?.confirmed === true &&
+      result?.evidenceComplete === true &&
+      result?.exactTipReady === true &&
+      result?.parityReady === true &&
+      result?.pendingReady === true &&
+      result?.replayReady === true &&
+      Number.isSafeInteger(tipHeight) &&
+      tipHeight > 0 &&
+      /^[0-9a-f]{64}$/u.test(tipHash) &&
+      snapshotHash === tipHash &&
+      Number.isFinite(pendingValidThroughMs) &&
+      pendingValidThroughMs > now
+  );
+}
+
 function reusableWorkPrecisionV2MigrationReadiness(
   cache,
   key,
@@ -5358,6 +5998,185 @@ async function workPrecisionV2MigrationReadinessWithCache({
   );
 }
 
+async function workPrecisionV2MigrationReadinessWithCompactCache({
+  fingerprint,
+  inFlight,
+  load,
+  readyCache,
+  refreshFingerprint,
+}) {
+  if (fingerprint?.positiveEligible !== true || !fingerprint.key) {
+    return null;
+  }
+  const cached = reusableWorkPrecisionV2MigrationReadiness(
+    readyCache,
+    fingerprint.key,
+  );
+  if (cached) {
+    if (
+      workPrecisionV2MigrationReadinessResultIsReusablePositive(
+        cached,
+      )
+    ) {
+      return cached;
+    }
+    readyCache.delete(fingerprint.key);
+  }
+  return exactCheckpointSingleFlight(
+    inFlight,
+    fingerprint.key,
+    async () => {
+      const result = await load();
+      if (
+        !workPrecisionV2MigrationReadinessResultIsReusablePositive(
+          result,
+        )
+      ) {
+        return result?.ready === true ? null : result;
+      }
+      const settledFingerprint = await refreshFingerprint();
+      if (
+        settledFingerprint?.key !== fingerprint.key ||
+        settledFingerprint?.positiveEligible !== true ||
+        !workPrecisionV2MigrationReadinessResultIsReusablePositive(
+          result,
+        )
+      ) {
+        return null;
+      }
+      return rememberWorkPrecisionV2MigrationReadiness(
+        readyCache,
+        fingerprint.key,
+        result,
+        Math.min(
+          fingerprint.expiresAt,
+          settledFingerprint.expiresAt,
+          Date.parse(String(result.pendingValidThrough)),
+        ),
+      );
+    },
+  );
+}
+
+async function workPrecisionV2MigrationReadinessWithCompactCheckpoint({
+  force = false,
+  inFlight,
+  loadCatalogAttestation,
+  loadCompact,
+  loadFull,
+  now = Date.now,
+  readyCache,
+  requestKey,
+}) {
+  if (!requestKey || typeof now !== "function") {
+    return null;
+  }
+  // Force may share a fresh audit, but must never join a normal cache hit.
+  const admissionKey = `${force === true ? "force" : "normal"}:${
+    requestKey
+  }`;
+  return exactCheckpointSingleFlight(
+    inFlight,
+    admissionKey,
+    async () => {
+      const initialFingerprint = await loadCompact();
+      if (
+        !initialFingerprint?.key ||
+        initialFingerprint.positiveEligible !== true ||
+        !initialFingerprint.postmasterStartedAt
+      ) {
+        return null;
+      }
+      if (force !== true) {
+        const readAt = Number(now());
+        const cached = Number.isFinite(readAt)
+          ? reusableWorkPrecisionV2MigrationReadiness(
+              readyCache,
+              initialFingerprint.key,
+              readAt,
+            )
+          : null;
+        if (
+          cached &&
+          workPrecisionV2MigrationReadinessResultIsReusablePositive(
+            cached,
+            readAt,
+          )
+        ) {
+          return cached;
+        }
+        if (cached) {
+          readyCache.delete(initialFingerprint.key);
+        }
+      }
+      if (
+        await loadCatalogAttestation(initialFingerprint) !== true
+      ) {
+        return null;
+      }
+      const result = await loadFull(initialFingerprint);
+      const settledFingerprint = await loadCompact();
+      if (
+        !settledFingerprint?.key ||
+        settledFingerprint.positiveEligible !== true ||
+        settledFingerprint.key !== initialFingerprint.key
+      ) {
+        return null;
+      }
+      const settledAt = Number(now());
+      if (
+        !Number.isFinite(settledAt) ||
+        !workPrecisionV2MigrationReadinessResultIsReusablePositive(
+          result,
+          settledAt,
+        )
+      ) {
+        return result?.ready === true ? null : result;
+      }
+      const pendingValidThrough = Date.parse(
+        String(result.pendingValidThrough ?? ""),
+      );
+      const expiresAt = Math.min(
+        settledAt + WORK_PRECISION_V2_READINESS_CACHE_TTL_MS,
+        pendingValidThrough,
+      );
+      if (!Number.isFinite(expiresAt) || expiresAt <= settledAt) {
+        return null;
+      }
+      return rememberWorkPrecisionV2MigrationReadiness(
+        readyCache,
+        settledFingerprint.key,
+        result,
+        expiresAt,
+      );
+    },
+  );
+}
+
+async function workPrecisionV2MigrationFullAuditWithBound({
+  inFlight,
+  load,
+  requestKey,
+}) {
+  const existing = inFlight.get(requestKey);
+  if (existing) {
+    return existing;
+  }
+  const predecessor = workPrecisionV2MigrationFullAuditTail.catch(
+    () => {},
+  );
+  const pending = predecessor.then(load);
+  inFlight.set(requestKey, pending);
+  workPrecisionV2MigrationFullAuditTail = pending.catch(() => {});
+  try {
+    return await pending;
+  } finally {
+    if (inFlight.get(requestKey) === pending) {
+      inFlight.delete(requestKey);
+    }
+  }
+}
+
 export async function proofIndexWorkPrecisionV2MigrationReadiness(
   network,
   expectedPins,
@@ -5365,71 +6184,55 @@ export async function proofIndexWorkPrecisionV2MigrationReadiness(
 ) {
   const pool = proofIndexPool();
   const pins = normalizedWorkAmoV6ExpectedPins(expectedPins);
-  if (!pool || network !== "livenet" || !pins) {
+  const requestKey = workPrecisionV2ReadinessRequestKey(
+    network,
+    pins,
+  );
+  if (!pool || !requestKey) {
     return null;
   }
   const requestOptions = Object.freeze({ ...options });
-  if (requestOptions.fingerprintBypass !== true) {
-    const fingerprint =
-      await proofIndexWorkPrecisionV2ReadinessFingerprint(
+  return workPrecisionV2MigrationReadinessWithCompactCheckpoint({
+    force: requestOptions.force === true,
+    inFlight: workPrecisionV2MigrationReadinessRequestInFlight,
+    loadCatalogAttestation: (fingerprint) =>
+      workPrecisionV2ReadinessEpochContractAttestationWithCache({
+        expectedPostmasterStartedAt:
+          fingerprint.postmasterStartedAt,
+        inFlight: workPrecisionV2ReadinessEpochContractInFlight,
+        load: () =>
+          proofIndexWorkPrecisionV2ReadinessEpochContractAttestation(
+            pool,
+          ),
+        readyCache: workPrecisionV2ReadinessEpochContractReadyCache,
+      }),
+    loadCompact: () =>
+      proofIndexWorkPrecisionV2ReadinessCompactFingerprint(
         pool,
         network,
         pins,
-      );
-    if (
-      !fingerprint?.key ||
-      fingerprint.positiveEligible !== true
-    ) {
-      return null;
-    }
-    const load = () =>
-      proofIndexWorkPrecisionV2MigrationReadiness(
-        network,
-        pins,
-        {
-          ...requestOptions,
-          fingerprintBypass: true,
-          singleFlightBypass: true,
-        },
-      );
-    const refreshFingerprint = () =>
-      proofIndexWorkPrecisionV2ReadinessFingerprint(
-        pool,
-        network,
-        pins,
-      ).catch(() => null);
-    if (
-      requestOptions.force === true ||
-      requestOptions.singleFlightBypass === true
-    ) {
-      const result = await load();
-      if (
-        !workPrecisionV2MigrationReadinessResultIsExactPositive(
-          result,
-          fingerprint,
-        )
-      ) {
-        return result?.ready === true ? null : result;
-      }
-      const settledFingerprint = await refreshFingerprint();
-      return settledFingerprint?.key === fingerprint.key &&
-          workPrecisionV2MigrationReadinessResultIsExactPositive(
-            result,
-            settledFingerprint,
-          )
-        ? result
-        : null;
-    }
-    if (fingerprint?.key) {
-      return workPrecisionV2MigrationReadinessWithCache({
-        fingerprint,
-        inFlight: workPrecisionV2MigrationReadinessInFlight,
-        load,
-        readyCache: workPrecisionV2MigrationReadinessReadyCache,
-        refreshFingerprint,
-      });
-    }
-  }
+      ),
+    loadFull: (fingerprint) =>
+      workPrecisionV2MigrationFullAuditWithBound({
+        inFlight: workPrecisionV2MigrationFullAuditInFlight,
+        load: () =>
+          proofIndexWorkPrecisionV2MigrationReadinessFullAudit(
+            pool,
+            network,
+            pins,
+          ),
+        requestKey: `${requestKey}:${fingerprint.key}`,
+      }),
+    readyCache: workPrecisionV2MigrationReadinessReadyCache,
+    requestKey,
+  });
+}
+
+async function proofIndexWorkPrecisionV2MigrationReadinessFullAudit(
+  pool,
+  network,
+  pins,
+) {
   const client = await pool.connect();
   let transactionOpen = false;
   try {
@@ -5882,9 +6685,8 @@ export async function proofIndexWorkPrecisionV2MigrationReadiness(
     transactionOpen = false;
     return null;
   }
-  const [balanceResult, listingResult] = await Promise.all([
-    client.query(
-      `
+  const balanceResult = await client.query(
+    `
         SELECT
           address,
           confirmed_balance::text,
@@ -5892,11 +6694,11 @@ export async function proofIndexWorkPrecisionV2MigrationReadiness(
         FROM proof_indexer.credit_balances
         WHERE network = $1 AND token_id = $2
         ORDER BY address ASC
-      `,
-      [network, WORK_TOKEN_ID],
-    ),
-    client.query(
-      `
+    `,
+    [network, WORK_TOKEN_ID],
+  );
+  const listingResult = await client.query(
+    `
         SELECT
           listing.listing_id,
           listing.seller_address,
@@ -5951,16 +6753,15 @@ export async function proofIndexWorkPrecisionV2MigrationReadiness(
           AND listing.token_id = $2
           AND listing.status IN ('active', 'sealing')
         ORDER BY listing.listing_id ASC
-      `,
-      [
-        network,
-        WORK_TOKEN_ID,
-        WORK_AMO_V8_AUTH_VERSION,
-        WORK_AMO_V6_AUTH_VERSION,
-        WORK_AMO_V5_AUTH_VERSION,
-      ],
-    ),
-  ]);
+    `,
+    [
+      network,
+      WORK_TOKEN_ID,
+      WORK_AMO_V8_AUTH_VERSION,
+      WORK_AMO_V6_AUTH_VERSION,
+      WORK_AMO_V5_AUTH_VERSION,
+    ],
+  );
   const row = stateResult.rows[0];
   const marker = row.migration_marker;
   const metadata = objectRecord(row.definition_metadata);
@@ -6158,31 +6959,27 @@ export async function proofIndexWorkPrecisionV2MigrationReadiness(
           txid,
         ) < 0,
     );
+  const pendingGeneratedAtMs = Date.parse(
+    String(pendingWitness.generatedAt ?? ""),
+  );
   let pendingReady = false;
   if (
     pendingWitnessResult.rows.length === 1 &&
     pendingMembershipTxidsCanonical
   ) {
-    const [
-      pendingBalanceResult,
-      pendingEventResult,
-      pendingListingResult,
-      pendingRecoveryResult,
-      pendingInvalidLegacyResult,
-    ] = await Promise.all([
-      client.query(
-        `
+    const pendingBalanceResult = await client.query(
+      `
           SELECT address, pending_delta::text
           FROM proof_indexer.credit_balances
           WHERE network = $1
             AND token_id = $2
             AND pending_delta <> 0
           ORDER BY address ASC
-        `,
-        [network, WORK_TOKEN_ID],
-      ),
-      client.query(
-        `
+      `,
+      [network, WORK_TOKEN_ID],
+    );
+    const pendingEventResult = await client.query(
+      `
           SELECT
             event_id,
             txid,
@@ -6206,11 +7003,11 @@ export async function proofIndexWorkPrecisionV2MigrationReadiness(
             )) = $2
           ORDER BY txid ASC, protocol_vout ASC, record_ordinal ASC,
             event_id ASC
-        `,
-        [network, WORK_TOKEN_ID],
-      ),
-      client.query(
-        `
+      `,
+      [network, WORK_TOKEN_ID],
+    );
+    const pendingListingResult = await client.query(
+      `
           SELECT
             listing.listing_id,
             listing.status,
@@ -6245,11 +7042,11 @@ export async function proofIndexWorkPrecisionV2MigrationReadiness(
               )
             )
           ORDER BY listing.listing_id ASC
-        `,
-        [network, WORK_TOKEN_ID],
-      ),
-      client.query(
-        `
+      `,
+      [network, WORK_TOKEN_ID],
+    );
+    const pendingRecoveryResult = await client.query(
+      `
           SELECT txid, status, raw_tx
           FROM proof_indexer.transactions
           WHERE network = $1
@@ -6285,11 +7082,11 @@ export async function proofIndexWorkPrecisionV2MigrationReadiness(
                 IN ('false', 'true')
             ) IS NOT TRUE
           ORDER BY txid ASC
-        `,
-        [network],
-      ),
-      client.query(
-        `
+      `,
+      [network],
+    );
+    const pendingInvalidLegacyResult = await client.query(
+      `
           SELECT count(*)::integer AS invalid_count
           FROM proof_indexer.events event
           WHERE event.network = $1
@@ -6315,10 +7112,9 @@ export async function proofIndexWorkPrecisionV2MigrationReadiness(
                 )) <> $3
               )
             )
-        `,
-        [network, WORK_TOKEN_ID, WORK_AMO_V8_AUTH_VERSION],
-      ),
-    ]);
+      `,
+      [network, WORK_TOKEN_ID, WORK_AMO_V8_AUTH_VERSION],
+    );
     const pendingMembership = workQ16PendingMembership({
       eventRows: pendingEventResult.rows,
       listingRows: pendingListingResult.rows,
@@ -6367,9 +7163,6 @@ export async function proofIndexWorkPrecisionV2MigrationReadiness(
         ),
       },
     };
-    const pendingGeneratedAtMs = Date.parse(
-      String(pendingWitness.generatedAt ?? ""),
-    );
     const pendingParity = workQ16PendingParity({
       balances: pendingBalanceResult.rows,
       events: pendingEventResult.rows,

@@ -2046,17 +2046,17 @@ V8 readiness must agree at one exact Core tip across API and worker:
 - `WORK_AMO_V8_WRITES_ENABLED=1` is the only enabled governed WORK gate.
 
 The V8 readiness reader coalesces identical in-flight checks and retains only a
-proven-positive result for at most 30 seconds. Every invocation first reads a
-compact necessary-condition fingerprint covering the canonical index tip, V8
-transition and summary commitments, migration marker, pending witness and
-projection, worker success evidence, every configured pin, an ordered vector
-of all 64 commit-deferred readiness-epoch shards, a zero committed epoch queue,
-and the exact readiness trigger/function security contract. Each transaction
-that changes any full-audit relation queues one epoch increment and applies it
-at commit; a rollback cannot advance the vector. An ineligible or malformed
-fingerprint fails closed before the wide audit, and negative results are never
-cached. A cache hit is accepted only after a second compact read returns the
-same exact vector and evidence.
+proven-positive result for at most 30 seconds. Before either positive reuse or
+a full audit, each coalesced request reads one small necessary-condition
+checkpoint containing every configured pin, the PostgreSQL postmaster start
+time, `max_prepared_transactions`, the fixed connection search path, an
+ordered vector of all 64 commit-deferred readiness-epoch shards, and a zero
+committed epoch queue. Each transaction that changes any full-audit relation
+queues one epoch increment and applies it at commit; a rollback cannot advance
+the vector. An ineligible or malformed checkpoint fails closed before the wide
+audit, and negative results are never cached. A positive cache hit is accepted
+only when this fresh checkpoint exactly names the cached epoch/postmaster
+identity.
 
 That standing security contract requires `max_prepared_transactions=0`; one
 isolated no-login, non-privileged owner with no membership edges; permanent
@@ -2069,33 +2069,48 @@ ordinary permanent `proof_indexer`-owned heaps with RLS off and no rewrite or
 inheritance topology; SELECT-only app access with no table or column mutation
 grants; no public table or function access; and exact owner, PL/pgSQL,
 `SECURITY DEFINER`, fixed-search-path, and execute-ACL evidence for all three
-epoch functions. Catalog, ACL, role, RLS, relation, constraint, function, or
-prepared-transaction drift changes the compact fingerprint and makes it
-ineligible before cache reuse or a full audit.
+epoch functions. The catalog-only proof of that standing contract is
+positive-only, coalesced, and retained for this API process only under the exact
+PostgreSQL postmaster start time. A process start or PostgreSQL restart
+therefore reattests it before any full audit can become ready.
+Prepared-transaction or connection search-path drift remains part of every
+small checkpoint. Catalog, ACL, role, RLS, relation, constraint, or function
+drift is governed by the stop-both-processes DDL boundary below and requires
+the API and worker restart that discards the process proof.
 
 Every database connection starts with `search_path=pg_catalog,pg_temp`. Each
-compact fingerprint runs in its own read-only transaction and both it and the
-full repeatable-read audit set that path locally before catalog reads, preventing
-writable schemas or temporary objects from shadowing catalog evidence. This is
-a steady-state DML and standing-catalog integrity contract. All
+small checkpoint and catalog attestation runs in its own read-only transaction,
+and both they and the full repeatable-read audit set that path locally before
+catalog reads, preventing writable schemas or temporary objects from shadowing
+catalog evidence. This is a steady-state DML and standing-catalog integrity
+contract. All
 `proof_indexer` DDL remains a trusted maintenance operation: stop both API and
 worker before DDL, apply and validate the complete catalog change, then restart
 them so no positive process cache can span privileged schema work. It does not
 claim to authenticate arbitrary concurrent privileged DDL.
 
 A cache miss runs the full parity audit in one read-only repeatable-read
-transaction, fenced by identical compact fingerprints before and after it. The
-API then performs one exact live sweep: Core tip, Core mempool, and the
-lightweight durable worker-success proof are sampled before the reader; after
-the reader they are sampled again and must retain the same Core tip and worker
-proof. The final mempool sample is the only public pending-status source, and
-the readiness witness must still be current and prove its relevant pending
-membership subset. Concurrent API requests coalesce only when they share the
-same exact reader-result identity and final live inputs; no second status cache
-is retained. Forced broadcast admission bypasses both positive reuse and
-singleflight. It runs the final canonical-checkpoint callback immediately
-before the fresh V8 proof, then performs no further asynchronous admission step
-between that proof and submission.
+transaction, fenced by identical small checkpoints before and after it. Full
+audits are globally serialized to one active database audit. Callers may share
+that audit only when both their configured pins and initial epoch/postmaster
+checkpoint are identical; a changed checkpoint queues a distinct audit. The
+positive TTL starts only after the final fence has settled and is capped by the
+pending witness validity time, so a slow cold audit cannot install an already
+expired entry. The API then performs one exact live sweep: Core tip, Core
+mempool, and the lightweight durable worker-success proof are sampled before
+the reader; after the reader they are sampled again and must retain the same
+Core tip and worker proof. The final mempool sample is the only public
+pending-status source, and the readiness witness must still be current and
+prove its relevant pending membership subset. Concurrent API requests coalesce
+only when they share the same exact reader-result identity and final live
+inputs; no second status cache is retained. Forced broadcast admission never
+reuses a settled readiness cache entry. Concurrent forced requests for the same
+configured pins may share one fresh fenced flight; any epoch change within
+that flight makes it fail closed. Every forced audit remains inside the same
+global one-at-a-time database bound. The admission path runs the final
+canonical-checkpoint callback immediately before the fresh V8 proof, then
+performs no further asynchronous admission step between that proof and
+submission.
 
 Deployment sequence:
 

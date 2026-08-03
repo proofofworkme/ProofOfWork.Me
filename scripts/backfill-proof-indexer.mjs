@@ -8356,29 +8356,19 @@ async function migrateWorkAtomicProjection(client) {
       `,
     );
     const before = await auditWorkAtomicProjection(client, { lock: true });
-    const [
-      beforeBalances,
-      beforeListings,
-      issuanceOraclesBefore,
-    ] = await Promise.all([
-      workAtomicBalanceMigrationRows(client),
-      workAtomicListingMigrationRows(client),
-      workAtomicIssuanceOracleSnapshotState(client),
-    ]);
+    const beforeBalances = await workAtomicBalanceMigrationRows(client);
+    const beforeListings = await workAtomicListingMigrationRows(client);
+    const issuanceOraclesBefore =
+      await workAtomicIssuanceOracleSnapshotState(client);
     assertWorkAtomicIssuanceOracleSnapshots(issuanceOraclesBefore);
     if (before.atomic) {
       const invalidatedSnapshotIds =
         await invalidateWorkAtomicDerivedSnapshots(client);
       const after = await auditWorkAtomicProjection(client);
-      const [
-        afterBalances,
-        afterListings,
-        issuanceOraclesAfter,
-      ] = await Promise.all([
-        workAtomicBalanceMigrationRows(client),
-        workAtomicListingMigrationRows(client),
-        workAtomicIssuanceOracleSnapshotState(client),
-      ]);
+      const afterBalances = await workAtomicBalanceMigrationRows(client);
+      const afterListings = await workAtomicListingMigrationRows(client);
+      const issuanceOraclesAfter =
+        await workAtomicIssuanceOracleSnapshotState(client);
       assertWorkAtomicBalanceMigration(beforeBalances, afterBalances, {
         alreadyAtomic: true,
       });
@@ -8516,15 +8506,10 @@ async function migrateWorkAtomicProjection(client) {
     const invalidatedSnapshotIds =
       await invalidateWorkAtomicDerivedSnapshots(client);
     const after = await auditWorkAtomicProjection(client);
-    const [
-      afterBalances,
-      afterListings,
-      issuanceOraclesAfter,
-    ] = await Promise.all([
-      workAtomicBalanceMigrationRows(client),
-      workAtomicListingMigrationRows(client),
-      workAtomicIssuanceOracleSnapshotState(client),
-    ]);
+    const afterBalances = await workAtomicBalanceMigrationRows(client);
+    const afterListings = await workAtomicListingMigrationRows(client);
+    const issuanceOraclesAfter =
+      await workAtomicIssuanceOracleSnapshotState(client);
     assertWorkAtomicBalanceMigration(beforeBalances, afterBalances);
     assertWorkAtomicListingMigration(beforeListings, afterListings);
     assertWorkAtomicIssuanceOracleSnapshots(
@@ -22241,16 +22226,8 @@ async function persistExactWorkQ16PendingWitness(
         IN SHARE MODE
       `,
     );
-    const [
-      stateResult,
-      balanceResult,
-      eventResult,
-      listingResult,
-      recoveryResult,
-      invalidLegacyResult,
-    ] = await Promise.all([
-      client.query(
-        `
+    const stateResult = await client.query(
+      `
           SELECT
             definition.max_supply::text,
             definition.mint_amount::text,
@@ -22278,15 +22255,15 @@ async function persistExactWorkQ16PendingWitness(
             AND definition.token_id = $2
           LIMIT 2
         `,
-        [
-          NETWORK,
-          WORK_TOKEN_ID,
-          WORK_PRECISION_V2_MIGRATION_META_KEY,
-          WORK_AMO_V8_ACTIVATION_LATCH_META_KEY,
-        ],
-      ),
-      client.query(
-        `
+      [
+        NETWORK,
+        WORK_TOKEN_ID,
+        WORK_PRECISION_V2_MIGRATION_META_KEY,
+        WORK_AMO_V8_ACTIVATION_LATCH_META_KEY,
+      ],
+    );
+    const balanceResult = await client.query(
+      `
           SELECT address, pending_delta::text
           FROM proof_indexer.credit_balances
           WHERE network = $1
@@ -22294,10 +22271,10 @@ async function persistExactWorkQ16PendingWitness(
             AND pending_delta <> 0
           ORDER BY address ASC
         `,
-        [NETWORK, WORK_TOKEN_ID],
-      ),
-      client.query(
-        `
+      [NETWORK, WORK_TOKEN_ID],
+    );
+    const eventResult = await client.query(
+      `
           SELECT
             event_id,
             txid,
@@ -22322,10 +22299,10 @@ async function persistExactWorkQ16PendingWitness(
           ORDER BY txid ASC, protocol_vout ASC, record_ordinal ASC,
             event_id ASC
         `,
-        [NETWORK, WORK_TOKEN_ID],
-      ),
-      client.query(
-        `
+      [NETWORK, WORK_TOKEN_ID],
+    );
+    const listingResult = await client.query(
+      `
           SELECT
             listing.listing_id,
             listing.status,
@@ -22361,10 +22338,10 @@ async function persistExactWorkQ16PendingWitness(
             )
           ORDER BY listing.listing_id ASC
         `,
-        [NETWORK, WORK_TOKEN_ID],
-      ),
-      client.query(
-        `
+      [NETWORK, WORK_TOKEN_ID],
+    );
+    const recoveryResult = await client.query(
+      `
           SELECT txid, status, raw_tx
           FROM proof_indexer.transactions
           WHERE network = $1
@@ -22401,10 +22378,10 @@ async function persistExactWorkQ16PendingWitness(
             ) IS NOT TRUE
           ORDER BY txid ASC
         `,
-        [NETWORK],
-      ),
-      client.query(
-        `
+      [NETWORK],
+    );
+    const invalidLegacyResult = await client.query(
+      `
           SELECT count(*)::integer AS invalid_count
           FROM proof_indexer.events event
           WHERE event.network = $1
@@ -22431,9 +22408,8 @@ async function persistExactWorkQ16PendingWitness(
               )
             )
         `,
-        [NETWORK, WORK_TOKEN_ID, WORK_AMO_V8_AUTH_VERSION],
-      ),
-    ]);
+      [NETWORK, WORK_TOKEN_ID, WORK_AMO_V8_AUTH_VERSION],
+    );
     if (stateResult.rows.length !== 1) {
       throw new Error(
         "WORK Q16 pending witness requires one exact definition, marker, and latch.",
