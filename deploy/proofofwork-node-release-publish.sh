@@ -390,7 +390,8 @@ trap cleanup EXIT
 empty_template="${build_root}/empty-git-template"
 /usr/bin/mkdir --mode=0700 -- "${empty_template}"
 assembled_checkout="${build_root}/proofofwork-api"
-GIT_OPTIONAL_LOCKS=0 /usr/bin/git -c protocol.file.allow=always -c core.hooksPath=/dev/null \
+GIT_OPTIONAL_LOCKS=0 /usr/bin/git -c protocol.file.allow=always \
+  -c safe.directory="${checkout}/.git" -c core.hooksPath=/dev/null \
   clone --quiet --no-local --no-checkout --template="${empty_template}" -- "${checkout}" "${assembled_checkout}"
 GIT_OPTIONAL_LOCKS=0 /usr/bin/git -c safe.directory="${assembled_checkout}" -c core.hooksPath=/dev/null \
   -C "${assembled_checkout}" remote remove origin

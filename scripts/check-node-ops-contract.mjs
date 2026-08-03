@@ -184,6 +184,10 @@ assert.match(postgresQueryHealthService, /^Requisite=postgresql@16-main\.service
 assert.match(postgresQueryHealthService, /^TimeoutStartSec=20s$/mu);
 assert.match(postgresQueryHealthService, /ProtectSystem=strict/u);
 assert.match(postgresQueryHealthTimer, /OnCalendar=\*:0\/5/u);
+assert.match(
+  releasePublish,
+  /-c safe\.directory="\$\{checkout\}\/\.git" -c core\.hooksPath=\/dev\/null/u,
+);
 
 for (const requiredPath of [
   "deploy/postgresql-observability.conf",
