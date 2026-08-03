@@ -213,6 +213,8 @@ import {
 let proofIndexReadPool = null;
 const workAmoReplayReadinessInFlight = new Map();
 const workAmoReplayReadinessReadyCache = new Map();
+const workPrecisionV2MigrationReadinessInFlight = new Map();
+const workPrecisionV2MigrationReadinessReadyCache = new Map();
 const INFINITY_BOND_MEMO = "powb";
 const INFINITY_BOND_KIND = "infinity-bond";
 const INCEPTION_BOND_MEMO = "incb";
@@ -292,6 +294,10 @@ const WORK_Q16_PENDING_REBUILD_MODEL =
   "canonical-work-q16-pending-rebuild-v2";
 const WORK_Q16_PENDING_MEMPOOL_MODEL =
   "canonical-core-mempool-txid-set-v1";
+const WORK_Q16_PENDING_MEMBERSHIP_MODEL =
+  "canonical-work-q16-pending-membership-v2";
+const WORK_PRECISION_V2_READINESS_CACHE_TTL_MS = 30_000;
+const WORK_PRECISION_V2_READINESS_CACHE_MAX_ENTRIES = 4;
 const WORK_Q16_PENDING_WITNESS_MAX_AGE_MS = Math.min(
   10 * 60_000,
   Math.max(
@@ -3948,14 +3954,1481 @@ function indexedWorkPrecisionEvidenceMatchesMarker(row, marker) {
   );
 }
 
+function workPrecisionV2ReadinessFingerprintIso(value) {
+  const parsed = value instanceof Date ? value.getTime() : Date.parse(value);
+  return Number.isFinite(parsed) ? new Date(parsed).toISOString() : "";
+}
+
+function workPrecisionV2ReadinessValueSha256(value) {
+  return createHash("sha256")
+    .update(
+      Buffer.from(
+        `ProofOfWork.Me/WORK-PRECISION-V2-READINESS-FINGERPRINT/v1\n${
+          stableWorkPrecisionJson(value)
+        }`,
+        "utf8",
+      ),
+    )
+    .digest("hex");
+}
+
+function workPrecisionV2ReadinessEpochContractReady(value) {
+  const contract = objectRecord(value);
+  const security = objectRecord(contract.epochSecurity);
+  const ownerRole = objectRecord(security.ownerRole);
+  const relations = Array.isArray(security.relations)
+    ? security.relations
+    : [];
+  const triggers = Array.isArray(contract.triggers)
+    ? contract.triggers
+    : [];
+  const functions = Array.isArray(contract.epochFunctions)
+    ? contract.epochFunctions
+    : [];
+  const sourceRelations = Array.isArray(contract.sourceRelations)
+    ? contract.sourceRelations
+    : [];
+  if (
+    String(security.maxPreparedTransactions ?? "") !== "0" ||
+    security.searchPath !== "pg_catalog, pg_temp" ||
+    ownerRole.name !== "proof_indexer_readiness_owner" ||
+    ownerRole.canLogin !== false ||
+    ownerRole.superuser !== false ||
+    ownerRole.createRole !== false ||
+    ownerRole.createDb !== false ||
+    ownerRole.replication !== false ||
+    ownerRole.bypassRls !== false ||
+    Number(ownerRole.membershipEdges) !== 0 ||
+    ownerRole.schemaUsage !== true
+  ) {
+    return false;
+  }
+  const expectedRelationConstraints = new Map([
+    [
+      "readiness_epoch_queue",
+      new Set([
+        "c|true|check (((shard >= 0) and (shard < 64)))",
+        "p|true|primary key (transaction_id)",
+        "t|true|trigger deferrable initially deferred",
+      ]),
+    ],
+    [
+      "readiness_epoch_shards",
+      new Set([
+        "c|true|check ((epoch >= 1))",
+        "c|true|check (((shard >= 0) and (shard < 64)))",
+        "p|true|primary key (network, shard)",
+      ]),
+    ],
+  ]);
+  const expectedRelationColumns = new Map([
+    [
+      "readiness_epoch_queue",
+      [
+        [1, "transaction_id", "xid8", true, false, false, false, null],
+        [2, "network", "text", true, false, false, false, null],
+        [3, "shard", "smallint", true, false, false, false, null],
+        [
+          4,
+          "enqueued_at",
+          "timestamp with time zone",
+          true,
+          false,
+          false,
+          false,
+          "clock_timestamp()",
+        ],
+      ],
+    ],
+    [
+      "readiness_epoch_shards",
+      [
+        [1, "network", "text", true, false, false, false, null],
+        [2, "shard", "smallint", true, false, false, false, null],
+        [3, "epoch", "bigint", true, false, false, false, null],
+        [
+          4,
+          "updated_at",
+          "timestamp with time zone",
+          true,
+          false,
+          false,
+          false,
+          "clock_timestamp()",
+        ],
+      ],
+    ],
+  ]);
+  const expectedRelationIndexes = new Map([
+    [
+      "readiness_epoch_queue",
+      [[
+        "readiness_epoch_queue_pkey",
+        "btree",
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        false,
+        false,
+        null,
+        null,
+        "CREATE UNIQUE INDEX readiness_epoch_queue_pkey ON proof_indexer.readiness_epoch_queue USING btree (transaction_id)",
+      ]],
+    ],
+    [
+      "readiness_epoch_shards",
+      [[
+        "readiness_epoch_shards_pkey",
+        "btree",
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        false,
+        false,
+        null,
+        null,
+        "CREATE UNIQUE INDEX readiness_epoch_shards_pkey ON proof_indexer.readiness_epoch_shards USING btree (network, shard)",
+      ]],
+    ],
+  ]);
+  if (relations.length !== expectedRelationConstraints.size) {
+    return false;
+  }
+  const seenRelations = new Set();
+  for (const relationRow of relations) {
+    const relation = objectRecord(relationRow);
+    const name = String(relation.name ?? "");
+    const expectedConstraints = expectedRelationConstraints.get(name);
+    const expectedColumns = expectedRelationColumns.get(name);
+    const expectedIndexes = expectedRelationIndexes.get(name);
+    const columns = Array.isArray(relation.columns)
+      ? relation.columns
+      : [];
+    const indexes = Array.isArray(relation.indexes)
+      ? relation.indexes
+      : [];
+    const constraints = Array.isArray(relation.constraints)
+      ? relation.constraints
+      : [];
+    const normalizedConstraints = new Set(
+      constraints.map((constraint) => {
+        if (!Array.isArray(constraint) || constraint.length !== 3) {
+          return "";
+        }
+        return `${String(constraint[0] ?? "")}|${
+          constraint[1] === true
+        }|${String(constraint[2] ?? "")
+          .replace(/\s+/gu, " ")
+          .trim()
+          .toLowerCase()}`;
+      }),
+    );
+    if (
+      !expectedConstraints ||
+      !expectedColumns ||
+      !expectedIndexes ||
+      seenRelations.has(name) ||
+      relation.owner !== "proof_indexer_readiness_owner" ||
+      relation.kind !== "r" ||
+      relation.persistence !== "p" ||
+      relation.accessMethod !== "heap" ||
+      Number(relation.inheritanceEdges) !== 0 ||
+      relation.rls !== false ||
+      relation.forceRls !== false ||
+      relation.hasRules !== false ||
+      Number(relation.rewriteRuleCount) !== 0 ||
+      relation.appSelect !== true ||
+      Number(relation.appSelectAclCount) !== 1 ||
+      Number(relation.appSelectGrantableCount) !== 0 ||
+      relation.appMutation !== false ||
+      relation.appColumnMutation !== false ||
+      Number(relation.publicAclCount) !== 0 ||
+      Number(relation.columnPublicAclCount) !== 0 ||
+      Number(relation.unexpectedMutationAclCount) !== 0 ||
+      Number(relation.columnMutationAclCount) !== 0 ||
+      JSON.stringify(columns) !== JSON.stringify(expectedColumns) ||
+      JSON.stringify(indexes) !== JSON.stringify(expectedIndexes) ||
+      normalizedConstraints.size !== expectedConstraints.size ||
+      [...expectedConstraints].some(
+        (constraint) => !normalizedConstraints.has(constraint),
+      )
+    ) {
+      return false;
+    }
+    seenRelations.add(name);
+  }
+  const expectedSourceRelations = new Set([
+    "blocks",
+    "credit_balances",
+    "credit_definitions",
+    "credit_listings",
+    "events",
+    "ledger_snapshots",
+    "meta",
+    "op_returns",
+    "transactions",
+    "tx_inputs",
+    "tx_outputs",
+    "work_amo_block_transitions",
+    "work_amo_listing_terms",
+    "work_amo_v6_listing_terms",
+    "work_amo_v7_listing_terms",
+    "work_amo_v8_listing_terms",
+  ]);
+  if (sourceRelations.length !== expectedSourceRelations.size) {
+    return false;
+  }
+  const seenSourceRelations = new Set();
+  for (const sourceRow of sourceRelations) {
+    const source = objectRecord(sourceRow);
+    const name = String(source.name ?? "");
+    if (
+      !expectedSourceRelations.has(name) ||
+      seenSourceRelations.has(name) ||
+      source.owner !== "proof_indexer" ||
+      source.kind !== "r" ||
+      source.persistence !== "p" ||
+      source.accessMethod !== "heap" ||
+      source.rls !== false ||
+      source.forceRls !== false ||
+      source.hasRules !== false ||
+      Number(source.rewriteRuleCount) !== 0 ||
+      Number(source.inheritanceEdges) !== 0
+    ) {
+      return false;
+    }
+    seenSourceRelations.add(name);
+  }
+  const dataTables = [
+    "blocks",
+    "credit_balances",
+    "credit_definitions",
+    "credit_listings",
+    "events",
+    "ledger_snapshots",
+    "op_returns",
+    "transactions",
+    "tx_inputs",
+    "tx_outputs",
+    "work_amo_block_transitions",
+    "work_amo_listing_terms",
+    "work_amo_v6_listing_terms",
+    "work_amo_v7_listing_terms",
+    "work_amo_v8_listing_terms",
+  ];
+  const expectedTriggers = new Map(
+    dataTables.map((table) => [
+      `${table}:readiness_epoch_${table}`,
+      {
+        deferred: false,
+        events: ["delete", "insert", "truncate", "update"],
+        functionName: "enqueue_livenet_readiness_epoch",
+        rowLevel: false,
+        table,
+      },
+    ]),
+  );
+  expectedTriggers.set("meta:readiness_epoch_meta", {
+    deferred: false,
+    events: ["delete", "insert", "update"],
+    functionName: "enqueue_livenet_readiness_epoch_for_meta",
+    rowLevel: true,
+    table: "meta",
+  });
+  expectedTriggers.set("meta:readiness_epoch_meta_truncate", {
+    deferred: false,
+    events: ["truncate"],
+    functionName: "enqueue_livenet_readiness_epoch",
+    rowLevel: false,
+    table: "meta",
+  });
+  expectedTriggers.set(
+    "readiness_epoch_queue:readiness_epoch_commit",
+    {
+      deferred: true,
+      events: ["insert"],
+      functionName: "commit_livenet_readiness_epoch",
+      rowLevel: true,
+      table: "readiness_epoch_queue",
+    },
+  );
+  if (triggers.length !== expectedTriggers.size) {
+    return false;
+  }
+  const seenTriggers = new Set();
+  for (const trigger of triggers) {
+    if (!Array.isArray(trigger) || trigger.length !== 5) {
+      return false;
+    }
+    const table = String(trigger[0] ?? "");
+    const name = String(trigger[1] ?? "");
+    const enabled = String(trigger[2] ?? "");
+    const internal = trigger[3];
+    const definition = String(trigger[4] ?? "")
+      .replace(/\s+/gu, " ")
+      .trim()
+      .toLowerCase();
+    const key = `${table}:${name}`;
+    const expected = expectedTriggers.get(key);
+    if (
+      !expected ||
+      seenTriggers.has(key) ||
+      enabled !== "A" ||
+      internal !== false
+    ) {
+      return false;
+    }
+    seenTriggers.add(key);
+    const triggerMatch = definition.match(
+      /^create (constraint )?trigger ([a-z0-9_]+) after (.+) on proof_indexer\.([a-z0-9_]+) (deferrable initially deferred )?for each (row|statement) execute function proof_indexer\.([a-z0-9_]+)\(\)$/u,
+    );
+    const events = triggerMatch
+      ? triggerMatch[3].split(" or ").sort()
+      : [];
+    if (
+      !triggerMatch ||
+      Boolean(triggerMatch[1]) !== expected.deferred ||
+      triggerMatch[2] !== name ||
+      triggerMatch[4] !== table ||
+      Boolean(triggerMatch[5]) !== expected.deferred ||
+      triggerMatch[6] !== (expected.rowLevel ? "row" : "statement") ||
+      triggerMatch[7] !== expected.functionName ||
+      JSON.stringify(events) !==
+        JSON.stringify([...expected.events].sort())
+    ) {
+      return false;
+    }
+  }
+  const normalizedFunctionSources = new Map([
+    [
+      "enqueue_livenet_readiness_epoch",
+      "DECLARE current_transaction_id xid8 := pg_catalog.pg_current_xact_id(); BEGIN INSERT INTO proof_indexer.readiness_epoch_queue ( transaction_id, network, shard ) VALUES ( current_transaction_id, 'livenet', pg_catalog.mod(current_transaction_id::text::numeric, 64)::smallint ) ON CONFLICT (transaction_id) DO NOTHING; RETURN NULL; END;",
+    ],
+    [
+      "enqueue_livenet_readiness_epoch_for_meta",
+      "DECLARE prior_key text := CASE WHEN TG_OP IN ('UPDATE', 'DELETE') THEN OLD.key ELSE NULL END; current_key text := CASE WHEN TG_OP IN ('INSERT', 'UPDATE') THEN NEW.key ELSE NULL END; current_transaction_id xid8; BEGIN IF prior_key IN ( 'workPrecisionV2Migration:livenet', 'workQ16PendingRebuild:livenet' ) OR current_key IN ( 'workPrecisionV2Migration:livenet', 'workQ16PendingRebuild:livenet' ) THEN current_transaction_id := pg_catalog.pg_current_xact_id(); INSERT INTO proof_indexer.readiness_epoch_queue ( transaction_id, network, shard ) VALUES ( current_transaction_id, 'livenet', pg_catalog.mod(current_transaction_id::text::numeric, 64)::smallint ) ON CONFLICT (transaction_id) DO NOTHING; END IF; RETURN NULL; END;",
+    ],
+    [
+      "commit_livenet_readiness_epoch",
+      "BEGIN IF NEW.transaction_id <> pg_catalog.pg_current_xact_id() THEN RAISE EXCEPTION 'Readiness epoch queue transaction mismatch'; END IF; UPDATE proof_indexer.readiness_epoch_shards SET epoch = epoch + 1, updated_at = pg_catalog.clock_timestamp() WHERE network = NEW.network AND shard = NEW.shard; IF NOT FOUND THEN RAISE EXCEPTION 'Missing readiness epoch shard for network % shard %', NEW.network, NEW.shard; END IF; DELETE FROM proof_indexer.readiness_epoch_queue WHERE transaction_id = NEW.transaction_id; RETURN NULL; END;",
+    ],
+  ]);
+  if (functions.length !== normalizedFunctionSources.size) {
+    return false;
+  }
+  const seenFunctions = new Set();
+  for (const functionRow of functions) {
+    const definition = objectRecord(functionRow);
+    const name = String(definition.name ?? "");
+    const expectedSource = normalizedFunctionSources.get(name);
+    const settings = Array.isArray(definition.settings)
+      ? definition.settings.map(String)
+      : [];
+    const source = String(definition.source ?? "")
+      .replace(/\s+/gu, " ")
+      .trim();
+    if (
+      !expectedSource ||
+      seenFunctions.has(name) ||
+      definition.owner !== "proof_indexer_readiness_owner" ||
+      definition.language !== "plpgsql" ||
+      definition.appExecute !== true ||
+      Number(definition.appExecuteAclCount) !== 1 ||
+      Number(definition.appExecuteGrantableCount) !== 0 ||
+      Number(definition.publicExecuteAclCount) !== 0 ||
+      Number(definition.unexpectedExecuteAclCount) !== 0 ||
+      definition.securityDefiner !== true ||
+      settings.length !== 1 ||
+      settings[0] !== "search_path=pg_catalog, pg_temp" ||
+      source !== expectedSource
+    ) {
+      return false;
+    }
+    seenFunctions.add(name);
+  }
+  return seenRelations.size === expectedRelationConstraints.size &&
+    seenSourceRelations.size === expectedSourceRelations.size &&
+    seenTriggers.size === expectedTriggers.size &&
+    seenFunctions.size === normalizedFunctionSources.size;
+}
+
+function normalizedWorkPrecisionV2ReadinessEpochs(value) {
+  if (!Array.isArray(value) || value.length !== 64) {
+    return null;
+  }
+  const epochs = value.map((entry) => {
+    if (!Array.isArray(entry) || entry.length !== 2) {
+      return null;
+    }
+    const shard = Number(entry[0]);
+    const epoch = String(entry[1] ?? "");
+    return Number.isSafeInteger(shard) &&
+        shard >= 0 &&
+        shard < 64 &&
+        /^[1-9][0-9]*$/u.test(epoch)
+      ? [shard, epoch]
+      : null;
+  });
+  return epochs.every(Boolean) &&
+      epochs.every((entry, index) => entry[0] === index)
+    ? epochs
+    : null;
+}
+
+function workPrecisionV2ReadinessFingerprintFromRows(
+  rows,
+  network,
+  expectedPins,
+  now = Date.now(),
+) {
+  const pins = normalizedWorkAmoV6ExpectedPins(expectedPins);
+  if (
+    !pins ||
+    network !== "livenet" ||
+    !Array.isArray(rows) ||
+    rows.length < 1 ||
+    !Number.isFinite(now)
+  ) {
+    return null;
+  }
+  const observedRows = rows.map((observedRow) =>
+    Object.fromEntries(
+      Object.entries(observedRow ?? {}).map(([key, value]) => [
+        key,
+        value instanceof Date ? value.toISOString() : value,
+      ]),
+    )
+  );
+  const observedFingerprint = {
+    network,
+    pins,
+    rows: observedRows,
+  };
+  const observed = {
+    expiresAt: now + WORK_PRECISION_V2_READINESS_CACHE_TTL_MS,
+    key: workPrecisionV2ReadinessValueSha256(observedFingerprint),
+    positiveEligible: false,
+  };
+  if (rows.length !== 1) {
+    return observed;
+  }
+  const row = rows[0] ?? {};
+  const readinessEpochs = normalizedWorkPrecisionV2ReadinessEpochs(
+    row.readiness_epochs,
+  );
+  const readinessQueueCount = Number(row.readiness_queue_count);
+  const constraintDefinitions = objectRecord(
+    row.constraint_definitions,
+  );
+  const tipHeight = Number(row.tip_height);
+  const tipHash = normalizedLowerText(row.tip_hash);
+  const transitionHeight = Number(row.transition_height);
+  const transitionHash = normalizedLowerText(row.transition_hash);
+  const transitionCreatedAt = workPrecisionV2ReadinessFingerprintIso(
+    row.transition_created_at,
+  );
+  const snapshotHeight = Number(row.snapshot_height);
+  const snapshotHash = normalizedLowerText(row.snapshot_hash);
+  const snapshotId = String(row.snapshot_id ?? "").trim();
+  const snapshotGeneratedAt = workPrecisionV2ReadinessFingerprintIso(
+    row.snapshot_generated_at,
+  );
+  const snapshotSourceHashes = objectRecord(row.snapshot_source_hashes);
+  const migrationMarker = objectRecord(row.migration_marker);
+  const migrationUpdatedAt = workPrecisionV2ReadinessFingerprintIso(
+    row.migration_updated_at,
+  );
+  const pendingWitness = objectRecord(row.pending_witness);
+  const pendingUpdatedAt = workPrecisionV2ReadinessFingerprintIso(
+    row.pending_updated_at,
+  );
+  const pendingGeneratedAtMs = Date.parse(
+    String(pendingWitness.generatedAt ?? ""),
+  );
+  const pendingMempool = objectRecord(pendingWitness.mempoolSnapshot);
+  const pendingMembership = objectRecord(
+    pendingWitness.membershipSnapshot,
+  );
+  const pendingProjection = objectRecord(pendingWitness.projection);
+  const workerLastSuccess = objectRecord(row.worker_last_success);
+  const workerLastSuccessAt = String(
+    row.worker_last_success_at ?? "",
+  ).trim();
+  const workerFinishedAt = String(
+    workerLastSuccess.finishedAt ?? "",
+  ).trim();
+  const workerPrecision = objectRecord(workerLastSuccess.workPrecision);
+  const workerReplay = objectRecord(workerPrecision.replay);
+  const pendingExpiresAt =
+    pendingGeneratedAtMs + WORK_Q16_PENDING_WITNESS_MAX_AGE_MS;
+  const expiresAt = Math.min(
+    now + WORK_PRECISION_V2_READINESS_CACHE_TTL_MS,
+    pendingExpiresAt,
+  );
+  if (
+    !readinessEpochs ||
+    readinessQueueCount !== 0 ||
+    !workPrecisionV2ReadinessEpochContractReady(
+      constraintDefinitions,
+    ) ||
+    !Number.isSafeInteger(tipHeight) ||
+    tipHeight < pins.activationHeight ||
+    !/^[0-9a-f]{64}$/u.test(tipHash) ||
+    transitionHeight !== tipHeight ||
+    transitionHash !== tipHash ||
+    row.transition_model !== WORK_AMO_V8_BLOCK_SEQUENCER_MODEL ||
+    row.transition_work_token_state_model !==
+      WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL ||
+    row.transition_complete !== true ||
+    !/^[0-9a-f]{64}$/u.test(
+      normalizedLowerText(row.transition_opening_state_sha256),
+    ) ||
+    !/^[0-9a-f]{64}$/u.test(
+      normalizedLowerText(row.transition_closing_state_sha256),
+    ) ||
+    !/^[0-9a-f]{64}$/u.test(
+      normalizedLowerText(row.transition_event_set_sha256),
+    ) ||
+    !transitionCreatedAt ||
+    snapshotHeight !== tipHeight ||
+    snapshotHash !== tipHash ||
+    !snapshotId ||
+    !snapshotGeneratedAt ||
+    row.snapshot_work_amount_storage_model !==
+      WORK_SUBATOM_PROJECTION_MODEL ||
+    normalizedLowerText(snapshotSourceHashes.blockScan) !== tipHash ||
+    !workPrecisionV2MarkerBindsReader(migrationMarker, pins) ||
+    !migrationUpdatedAt ||
+    pendingWitness.model !== WORK_Q16_PENDING_REBUILD_MODEL ||
+    pendingWitness.network !== network ||
+    pendingWitness.ready !== true ||
+    Number(pendingWitness.activationHeight) !== pins.activationHeight ||
+    normalizedLowerText(pendingWitness.declarationTxid) !==
+      pins.declarationTxid ||
+    Number(pendingWitness.canonicalTip?.height) !== tipHeight ||
+    normalizedLowerText(pendingWitness.canonicalTip?.hash) !== tipHash ||
+    pendingMempool.model !== WORK_Q16_PENDING_MEMPOOL_MODEL ||
+    !Number.isSafeInteger(pendingMempool.count) ||
+    pendingMempool.count < 0 ||
+    !/^[0-9a-f]{64}$/u.test(
+      normalizedLowerText(pendingMempool.sha256),
+    ) ||
+    pendingMembership.model !== WORK_Q16_PENDING_MEMBERSHIP_MODEL ||
+    !Number.isSafeInteger(pendingMembership.count) ||
+    pendingMembership.count < 0 ||
+    !/^[0-9a-f]{64}$/u.test(
+      normalizedLowerText(pendingMembership.sha256),
+    ) ||
+    pendingProjection.model !== WORK_Q16_PENDING_PROJECTION_MODEL ||
+    !/^[0-9a-f]{64}$/u.test(
+      normalizedLowerText(pendingProjection.commitmentSha256),
+    ) ||
+    !pendingUpdatedAt ||
+    !Number.isFinite(pendingGeneratedAtMs) ||
+    now < pendingGeneratedAtMs ||
+    expiresAt <= now ||
+    !workerLastSuccessAt ||
+    workerFinishedAt !== workerLastSuccessAt ||
+    workerPrecision.era !== "q16" ||
+    workerReplay.era !== "q16" ||
+    workerReplay.ready !== true ||
+    workerReplay.replayRequired !== true ||
+    Number(workerReplay.tipHeight) !== tipHeight ||
+    normalizedLowerText(workerReplay.tipHash) !== tipHash ||
+    !Number.isSafeInteger(Number(workerReplay.tipHeight))
+  ) {
+    return observed;
+  }
+  const migrationMarkerSha256 =
+    workPrecisionV2ReadinessValueSha256(migrationMarker);
+  const pendingWitnessSha256 =
+    workPrecisionV2ReadinessValueSha256(pendingWitness);
+  const workerProof = {
+    era: workerPrecision.era,
+    replay: {
+      era: workerReplay.era,
+      mempoolCount: workerReplay.mempoolCount ?? null,
+      mempoolSha256: normalizedLowerText(workerReplay.mempoolSha256),
+      pendingMembershipCount:
+        workerReplay.pendingMembershipCount ?? null,
+      pendingMembershipSha256: normalizedLowerText(
+        workerReplay.pendingMembershipSha256,
+      ),
+      pendingProjectionSha256: normalizedLowerText(
+        workerReplay.pendingProjectionSha256,
+      ),
+      ready: workerReplay.ready,
+      replayRequired: workerReplay.replayRequired,
+      tipHash: normalizedLowerText(workerReplay.tipHash),
+      tipHeight: Number(workerReplay.tipHeight),
+    },
+  };
+  const fingerprint = {
+    constraintDefinitions,
+    migrationMarkerSha256,
+    network,
+    pendingUpdatedAt,
+    pendingValidThroughMs: pendingExpiresAt,
+    pendingWitnessSha256,
+    pins,
+    readinessEpochs,
+    snapshot: {
+      blockHash: snapshotHash,
+      generatedAt: snapshotGeneratedAt,
+      height: snapshotHeight,
+      snapshotId,
+      sourceHashes: snapshotSourceHashes,
+      workAmountStorageModel:
+        row.snapshot_work_amount_storage_model,
+    },
+    tipHash,
+    tipHeight,
+    transition: {
+      blockHash: transitionHash,
+      blockHeight: transitionHeight,
+      closingStateSha256: normalizedLowerText(
+        row.transition_closing_state_sha256,
+      ),
+      createdAt: transitionCreatedAt,
+      eventSetSha256: normalizedLowerText(
+        row.transition_event_set_sha256,
+      ),
+      model: row.transition_model,
+      openingStateSha256: normalizedLowerText(
+        row.transition_opening_state_sha256,
+      ),
+      workTokenStateModel:
+        row.transition_work_token_state_model,
+    },
+    workerProof,
+  };
+  return {
+    ...fingerprint,
+    expiresAt,
+    key: workPrecisionV2ReadinessValueSha256(fingerprint),
+    positiveEligible: true,
+  };
+}
+
+async function proofIndexWorkPrecisionV2ReadinessFingerprint(
+  pool,
+  network,
+  pins,
+  now = Date.now(),
+) {
+  const client = await pool.connect();
+  let transactionOpen = false;
+  try {
+    await client.query("BEGIN READ ONLY");
+    transactionOpen = true;
+    await client.query(
+      "SET LOCAL search_path = pg_catalog, pg_temp",
+    );
+    const result = await client.query(
+      `
+      WITH maximum_tip AS (
+        SELECT max(height)::integer AS height
+        FROM proof_indexer.blocks
+        WHERE network = $1 AND canonical = true
+      ),
+      canonical_tip AS (
+        SELECT block.height, lower(block.block_hash) AS block_hash
+        FROM proof_indexer.blocks block
+        JOIN maximum_tip ON maximum_tip.height = block.height
+        WHERE block.network = $1 AND block.canonical = true
+        ORDER BY block.block_hash
+        LIMIT 2
+      ),
+      migration_marker AS (
+        SELECT value, updated_at
+        FROM proof_indexer.meta
+        WHERE key = $2
+        LIMIT 1
+      ),
+      latest_transition AS (
+        SELECT
+          transition.block_height,
+          lower(transition.block_hash) AS block_hash,
+          transition.model,
+          transition.work_token_state_model,
+          transition.opening_state_sha256,
+          transition.closing_state_sha256,
+          transition.event_set_sha256,
+          transition.complete,
+          transition.created_at
+        FROM proof_indexer.work_amo_block_transitions transition
+        WHERE transition.network = $1
+          AND transition.complete = true
+        ORDER BY transition.block_height DESC
+        LIMIT 1
+      ),
+      current_snapshot AS (
+        SELECT
+          snapshot.snapshot_id,
+          snapshot.indexed_through_block,
+          lower(snapshot.source_hashes->>'blockScan') AS block_hash,
+          snapshot.generated_at,
+          snapshot.source_hashes,
+          snapshot.payload->>'workAmountStorageModel'
+            AS work_amount_storage_model
+        FROM proof_indexer.ledger_snapshots snapshot
+        CROSS JOIN migration_marker migration
+        WHERE snapshot.network = $1
+          AND snapshot.generated_at >=
+            (migration.value->>'completedAt')::timestamptz
+          AND snapshot.payload ? 'summaryPayloads'
+          AND snapshot.payload ? 'tokenStatePayloads'
+          AND snapshot.payload->'tokenStatePayloads' ? $4
+          AND snapshot.payload->>'workAmountStorageModel' = $5
+          AND COALESCE(
+            snapshot.consistency->>'ok',
+            snapshot.payload->>'ok',
+            'false'
+          ) = 'true'
+          AND COALESCE(
+            snapshot.consistency->>'status',
+            snapshot.payload->>'status',
+            ''
+          ) = 'green'
+          AND snapshot.payload->'summaryRefresh'->>'mode' =
+            'canonical-summary-refresh'
+          AND lower(COALESCE(
+            snapshot.source_hashes->>'blockScan',
+            ''
+          )) ~ '^[0-9a-f]{64}$'
+          AND lower(COALESCE(
+            snapshot.payload->>'indexedThroughBlockHash',
+            ''
+          )) = lower(snapshot.source_hashes->>'blockScan')
+          AND lower(COALESCE(
+            snapshot.payload->'summaryRefresh'
+              ->>'indexedThroughBlockHash',
+            ''
+          )) = lower(snapshot.source_hashes->>'blockScan')
+        ORDER BY snapshot.indexed_through_block DESC NULLS LAST,
+          snapshot.generated_at DESC
+        LIMIT 1
+      ),
+      pending_witness AS (
+        SELECT value, updated_at
+        FROM proof_indexer.meta
+        WHERE key = $3
+        LIMIT 1
+      ),
+      worker_marker AS (
+        SELECT
+          value->'lastSuccess' AS last_success,
+          value->>'lastSuccessAt' AS last_success_at
+        FROM proof_indexer.meta
+        WHERE key = 'worker:lastRun'
+        LIMIT 1
+      ),
+      readiness_epoch AS (
+        SELECT
+          jsonb_agg(
+            jsonb_build_array(shard, epoch::text)
+            ORDER BY shard
+          ) AS epochs,
+          count(*)::integer AS shard_count
+        FROM proof_indexer.readiness_epoch_shards
+        WHERE network = $1
+      ),
+      readiness_queue AS (
+        SELECT count(*)::integer AS queue_count
+        FROM proof_indexer.readiness_epoch_queue
+      ),
+      constraint_definitions AS (
+        SELECT jsonb_build_object(
+          'constraints', COALESCE((
+            SELECT jsonb_agg(
+              jsonb_build_array(
+                table_row.relname,
+                constraint_row.conname,
+                constraint_row.convalidated,
+                pg_get_constraintdef(constraint_row.oid)
+              ) ORDER BY table_row.relname, constraint_row.conname
+            )
+            FROM pg_constraint constraint_row
+            JOIN pg_class table_row
+              ON table_row.oid = constraint_row.conrelid
+            JOIN pg_namespace namespace_row
+              ON namespace_row.oid = table_row.relnamespace
+            WHERE namespace_row.nspname = 'proof_indexer'
+              AND table_row.relname IN (
+                'credit_definitions',
+                'work_amo_block_transitions',
+                'work_amo_v6_listing_terms',
+                'work_amo_v7_listing_terms',
+                'work_amo_v8_listing_terms'
+              )
+          ), '[]'::jsonb),
+          'epochSecurity', jsonb_build_object(
+            'maxPreparedTransactions',
+              current_setting('max_prepared_transactions'),
+            'searchPath', current_setting('search_path'),
+            'ownerRole', (
+              SELECT jsonb_build_object(
+                'bypassRls', role_row.rolbypassrls,
+                'canLogin', role_row.rolcanlogin,
+                'createDb', role_row.rolcreatedb,
+                'createRole', role_row.rolcreaterole,
+                'membershipEdges', (
+                  SELECT count(*)::integer
+                  FROM pg_auth_members membership
+                  WHERE membership.roleid = role_row.oid
+                     OR membership.member = role_row.oid
+                ),
+                'name', role_row.rolname,
+                'replication', role_row.rolreplication,
+                'schemaUsage', has_schema_privilege(
+                  role_row.oid,
+                  'proof_indexer',
+                  'USAGE'
+                ),
+                'superuser', role_row.rolsuper
+              )
+              FROM pg_roles role_row
+              WHERE role_row.rolname =
+                'proof_indexer_readiness_owner'
+              LIMIT 1
+            ),
+            'relations', COALESCE((
+              SELECT jsonb_agg(
+                jsonb_build_object(
+                  'accessMethod', relation_access_method.amname,
+                  'appColumnMutation',
+                    has_any_column_privilege(
+                      'proof_indexer',
+                      relation.oid,
+                      'INSERT,UPDATE,REFERENCES'
+                    ),
+                  'appMutation', has_table_privilege(
+                    'proof_indexer',
+                    relation.oid,
+                    'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER'
+                  ),
+                  'appSelect', has_table_privilege(
+                    'proof_indexer',
+                    relation.oid,
+                    'SELECT'
+                  ),
+                  'appSelectAclCount', (
+                    SELECT count(*)::integer
+                    FROM aclexplode(COALESCE(
+                      relation.relacl,
+                      acldefault('r', relation.relowner)
+                    )) privilege
+                    WHERE privilege.grantee =
+                        'proof_indexer'::regrole
+                      AND privilege.privilege_type = 'SELECT'
+                  ),
+                  'appSelectGrantableCount', (
+                    SELECT count(*)::integer
+                    FROM aclexplode(COALESCE(
+                      relation.relacl,
+                      acldefault('r', relation.relowner)
+                    )) privilege
+                    WHERE privilege.grantee =
+                        'proof_indexer'::regrole
+                      AND privilege.privilege_type = 'SELECT'
+                      AND privilege.is_grantable
+                  ),
+                  'columnMutationAclCount', (
+                    SELECT count(*)::integer
+                    FROM pg_attribute attribute_row
+                    CROSS JOIN LATERAL aclexplode(
+                      attribute_row.attacl
+                    ) privilege
+                    WHERE attribute_row.attrelid = relation.oid
+                      AND attribute_row.attnum > 0
+                      AND attribute_row.attisdropped = false
+                      AND privilege.grantee <> relation.relowner
+                      AND privilege.privilege_type IN (
+                        'INSERT',
+                        'UPDATE',
+                        'REFERENCES'
+                      )
+                  ),
+                  'columnPublicAclCount', (
+                    SELECT count(*)::integer
+                    FROM pg_attribute attribute_row
+                    CROSS JOIN LATERAL aclexplode(
+                      attribute_row.attacl
+                    ) privilege
+                    WHERE attribute_row.attrelid = relation.oid
+                      AND attribute_row.attnum > 0
+                      AND attribute_row.attisdropped = false
+                      AND privilege.grantee = 0
+                  ),
+                  'columns', COALESCE((
+                    SELECT jsonb_agg(
+                      jsonb_build_array(
+                        attribute_row.attnum::integer,
+                        attribute_row.attname,
+                        format_type(
+                          attribute_row.atttypid,
+                          attribute_row.atttypmod
+                        ),
+                        attribute_row.attnotnull,
+                        attribute_row.attisdropped,
+                        attribute_row.attidentity <> '',
+                        attribute_row.attgenerated <> '',
+                        pg_get_expr(
+                          default_row.adbin,
+                          default_row.adrelid
+                        )
+                      ) ORDER BY attribute_row.attnum
+                    )
+                    FROM pg_attribute attribute_row
+                    LEFT JOIN pg_attrdef default_row
+                      ON default_row.adrelid = attribute_row.attrelid
+                     AND default_row.adnum = attribute_row.attnum
+                    WHERE attribute_row.attrelid = relation.oid
+                      AND attribute_row.attnum > 0
+                  ), '[]'::jsonb),
+                  'constraints', COALESCE((
+                    SELECT jsonb_agg(
+                      jsonb_build_array(
+                        constraint_row.contype::text,
+                        constraint_row.convalidated,
+                        pg_get_constraintdef(constraint_row.oid)
+                      ) ORDER BY
+                        constraint_row.contype::text,
+                        pg_get_constraintdef(constraint_row.oid)
+                    )
+                    FROM pg_constraint constraint_row
+                    WHERE constraint_row.conrelid = relation.oid
+                  ), '[]'::jsonb),
+                  'forceRls', relation.relforcerowsecurity,
+                  'hasRules', relation.relhasrules,
+                  'indexes', COALESCE((
+                    SELECT jsonb_agg(
+                      jsonb_build_array(
+                        index_relation.relname,
+                        index_access_method.amname,
+                        index_row.indisvalid,
+                        index_row.indisready,
+                        index_row.indislive,
+                        index_row.indisunique,
+                        index_row.indimmediate,
+                        index_row.indisprimary,
+                        index_row.indisexclusion,
+                        index_row.indnullsnotdistinct,
+                        pg_get_expr(
+                          index_row.indpred,
+                          index_row.indrelid
+                        ),
+                        pg_get_expr(
+                          index_row.indexprs,
+                          index_row.indrelid
+                        ),
+                        pg_get_indexdef(index_row.indexrelid)
+                      ) ORDER BY index_relation.relname
+                    )
+                    FROM pg_index index_row
+                    JOIN pg_class index_relation
+                      ON index_relation.oid = index_row.indexrelid
+                    JOIN pg_am index_access_method
+                      ON index_access_method.oid = index_relation.relam
+                    WHERE index_row.indrelid = relation.oid
+                  ), '[]'::jsonb),
+                  'inheritanceEdges', (
+                    SELECT count(*)::integer
+                    FROM pg_inherits inheritance_row
+                    WHERE inheritance_row.inhrelid = relation.oid
+                       OR inheritance_row.inhparent = relation.oid
+                  ),
+                  'kind', relation.relkind,
+                  'name', relation.relname,
+                  'owner', relation_owner.rolname,
+                  'persistence', relation.relpersistence,
+                  'publicAclCount', (
+                    SELECT count(*)::integer
+                    FROM aclexplode(COALESCE(
+                      relation.relacl,
+                      acldefault('r', relation.relowner)
+                    )) privilege
+                    WHERE privilege.grantee = 0
+                  ),
+                  'rls', relation.relrowsecurity,
+                  'rewriteRuleCount', (
+                    SELECT count(*)::integer
+                    FROM pg_rewrite rewrite_row
+                    WHERE rewrite_row.ev_class = relation.oid
+                  ),
+                  'unexpectedMutationAclCount', (
+                    SELECT count(*)::integer
+                    FROM aclexplode(COALESCE(
+                      relation.relacl,
+                      acldefault('r', relation.relowner)
+                    )) privilege
+                    WHERE privilege.grantee <> relation.relowner
+                      AND privilege.privilege_type IN (
+                        'INSERT',
+                        'UPDATE',
+                        'DELETE',
+                        'TRUNCATE',
+                        'REFERENCES',
+                        'TRIGGER'
+                      )
+                  )
+                ) ORDER BY relation.relname
+              )
+              FROM pg_class relation
+              JOIN pg_namespace namespace_row
+                ON namespace_row.oid = relation.relnamespace
+              JOIN pg_roles relation_owner
+                ON relation_owner.oid = relation.relowner
+              JOIN pg_am relation_access_method
+                ON relation_access_method.oid = relation.relam
+              WHERE namespace_row.nspname = 'proof_indexer'
+                AND relation.relname IN (
+                  'readiness_epoch_queue',
+                  'readiness_epoch_shards'
+                )
+            ), '[]'::jsonb)
+          ),
+          'sourceRelations', COALESCE((
+            SELECT jsonb_agg(
+              jsonb_build_object(
+                'accessMethod', access_method.amname,
+                'forceRls', relation.relforcerowsecurity,
+                'hasRules', relation.relhasrules,
+                'inheritanceEdges', (
+                  SELECT count(*)::integer
+                  FROM pg_inherits inheritance_row
+                  WHERE inheritance_row.inhrelid = relation.oid
+                     OR inheritance_row.inhparent = relation.oid
+                ),
+                'kind', relation.relkind,
+                'name', relation.relname,
+                'owner', relation_owner.rolname,
+                'persistence', relation.relpersistence,
+                'rewriteRuleCount', (
+                  SELECT count(*)::integer
+                  FROM pg_rewrite rewrite_row
+                  WHERE rewrite_row.ev_class = relation.oid
+                ),
+                'rls', relation.relrowsecurity
+              ) ORDER BY relation.relname
+            )
+            FROM pg_class relation
+            JOIN pg_namespace namespace_row
+              ON namespace_row.oid = relation.relnamespace
+            JOIN pg_roles relation_owner
+              ON relation_owner.oid = relation.relowner
+            JOIN pg_am access_method
+              ON access_method.oid = relation.relam
+            WHERE namespace_row.nspname = 'proof_indexer'
+              AND relation.relname IN (
+                'blocks',
+                'credit_balances',
+                'credit_definitions',
+                'credit_listings',
+                'events',
+                'ledger_snapshots',
+                'meta',
+                'op_returns',
+                'transactions',
+                'tx_inputs',
+                'tx_outputs',
+                'work_amo_block_transitions',
+                'work_amo_listing_terms',
+                'work_amo_v6_listing_terms',
+                'work_amo_v7_listing_terms',
+                'work_amo_v8_listing_terms'
+              )
+          ), '[]'::jsonb),
+          'triggers', COALESCE((
+            SELECT jsonb_agg(
+              jsonb_build_array(
+                table_row.relname,
+                trigger_row.tgname,
+                trigger_row.tgenabled,
+                trigger_row.tgisinternal,
+                pg_get_triggerdef(trigger_row.oid)
+              ) ORDER BY table_row.relname, trigger_row.tgname
+            )
+            FROM pg_trigger trigger_row
+            JOIN pg_class table_row
+              ON table_row.oid = trigger_row.tgrelid
+            JOIN pg_namespace namespace_row
+              ON namespace_row.oid = table_row.relnamespace
+            WHERE namespace_row.nspname = 'proof_indexer'
+              AND table_row.relname IN (
+                'blocks',
+                'credit_balances',
+                'credit_definitions',
+                'credit_listings',
+                'events',
+                'ledger_snapshots',
+                'meta',
+                'op_returns',
+                'readiness_epoch_queue',
+                'readiness_epoch_shards',
+                'transactions',
+                'tx_inputs',
+                'tx_outputs',
+                'work_amo_block_transitions',
+                'work_amo_listing_terms',
+                'work_amo_v6_listing_terms',
+                'work_amo_v7_listing_terms',
+                'work_amo_v8_listing_terms'
+              )
+              AND (
+                table_row.relname IN (
+                  'readiness_epoch_queue',
+                  'readiness_epoch_shards'
+                )
+                OR (
+                  trigger_row.tgisinternal = false
+                  AND trigger_row.tgname LIKE 'readiness_epoch_%'
+                )
+              )
+          ), '[]'::jsonb),
+          'epochFunctions', COALESCE((
+            SELECT jsonb_agg(
+              jsonb_build_object(
+                'name', function_row.proname,
+                'appExecute', has_function_privilege(
+                  'proof_indexer',
+                  function_row.oid,
+                  'EXECUTE'
+                ),
+                'appExecuteAclCount', (
+                  SELECT count(*)::integer
+                  FROM aclexplode(COALESCE(
+                    function_row.proacl,
+                    acldefault('f', function_row.proowner)
+                  )) privilege
+                  WHERE privilege.grantee =
+                      'proof_indexer'::regrole
+                    AND privilege.privilege_type = 'EXECUTE'
+                ),
+                'appExecuteGrantableCount', (
+                  SELECT count(*)::integer
+                  FROM aclexplode(COALESCE(
+                    function_row.proacl,
+                    acldefault('f', function_row.proowner)
+                  )) privilege
+                  WHERE privilege.grantee =
+                      'proof_indexer'::regrole
+                    AND privilege.privilege_type = 'EXECUTE'
+                    AND privilege.is_grantable
+                ),
+                'language', language_row.lanname,
+                'owner', function_owner.rolname,
+                'publicExecuteAclCount', (
+                  SELECT count(*)::integer
+                  FROM aclexplode(COALESCE(
+                    function_row.proacl,
+                    acldefault('f', function_row.proowner)
+                  )) privilege
+                  WHERE privilege.grantee = 0
+                    AND privilege.privilege_type = 'EXECUTE'
+                ),
+                'securityDefiner', function_row.prosecdef,
+                'settings', function_row.proconfig,
+                'source', function_row.prosrc,
+                'unexpectedExecuteAclCount', (
+                  SELECT count(*)::integer
+                  FROM aclexplode(COALESCE(
+                    function_row.proacl,
+                    acldefault('f', function_row.proowner)
+                  )) privilege
+                  WHERE privilege.privilege_type = 'EXECUTE'
+                    AND privilege.grantee NOT IN (
+                      function_row.proowner,
+                      'proof_indexer'::regrole
+                    )
+                )
+              ) ORDER BY function_row.proname
+            )
+            FROM pg_proc function_row
+            JOIN pg_namespace namespace_row
+              ON namespace_row.oid = function_row.pronamespace
+            JOIN pg_language language_row
+              ON language_row.oid = function_row.prolang
+            JOIN pg_roles function_owner
+              ON function_owner.oid = function_row.proowner
+            WHERE namespace_row.nspname = 'proof_indexer'
+              AND function_row.proname IN (
+                'commit_livenet_readiness_epoch',
+                'enqueue_livenet_readiness_epoch',
+                'enqueue_livenet_readiness_epoch_for_meta'
+              )
+          ), '[]'::jsonb)
+        ) AS definitions
+      )
+      SELECT
+        epoch.epochs AS readiness_epochs,
+        queue_state.queue_count AS readiness_queue_count,
+        definitions.definitions AS constraint_definitions,
+        canonical_tip.height AS tip_height,
+        canonical_tip.block_hash AS tip_hash,
+        transition.block_height AS transition_height,
+        transition.block_hash AS transition_hash,
+        transition.model AS transition_model,
+        transition.work_token_state_model
+          AS transition_work_token_state_model,
+        transition.opening_state_sha256
+          AS transition_opening_state_sha256,
+        transition.closing_state_sha256
+          AS transition_closing_state_sha256,
+        transition.event_set_sha256 AS transition_event_set_sha256,
+        transition.complete AS transition_complete,
+        transition.created_at AS transition_created_at,
+        snapshot.snapshot_id,
+        snapshot.indexed_through_block AS snapshot_height,
+        snapshot.block_hash AS snapshot_hash,
+        snapshot.generated_at AS snapshot_generated_at,
+        snapshot.source_hashes AS snapshot_source_hashes,
+        snapshot.work_amount_storage_model
+          AS snapshot_work_amount_storage_model,
+        migration.value AS migration_marker,
+        migration.updated_at AS migration_updated_at,
+        pending.value AS pending_witness,
+        pending.updated_at AS pending_updated_at,
+        worker.last_success AS worker_last_success,
+        worker.last_success_at AS worker_last_success_at
+      FROM (SELECT 1 AS singleton) base
+      LEFT JOIN canonical_tip ON true
+      LEFT JOIN migration_marker migration ON true
+      LEFT JOIN latest_transition transition ON true
+      LEFT JOIN current_snapshot snapshot ON true
+      LEFT JOIN pending_witness pending ON true
+      LEFT JOIN worker_marker worker ON true
+      LEFT JOIN readiness_epoch epoch ON true
+      LEFT JOIN readiness_queue queue_state ON true
+      LEFT JOIN constraint_definitions definitions ON true
+      `,
+      [
+        network,
+        WORK_PRECISION_V2_MIGRATION_META_KEY,
+        WORK_Q16_PENDING_REBUILD_META_KEY,
+        WORK_TOKEN_ID,
+        WORK_SUBATOM_PROJECTION_MODEL,
+      ],
+    );
+    const fingerprint = workPrecisionV2ReadinessFingerprintFromRows(
+      result.rows,
+      network,
+      pins,
+      now,
+    );
+    await client.query("COMMIT");
+    transactionOpen = false;
+    return fingerprint;
+  } catch (error) {
+    if (transactionOpen) {
+      await client.query("ROLLBACK").catch(() => {});
+    }
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+function workPrecisionV2MigrationReadinessResultIsExactPositive(
+  result,
+  fingerprint,
+) {
+  return Boolean(
+    fingerprint?.key &&
+      fingerprint.positiveEligible === true &&
+      result?.ready === true &&
+      result?.active === true &&
+      result?.canonical === true &&
+      result?.confirmed === true &&
+      result?.evidenceComplete === true &&
+      result?.exactTipReady === true &&
+      result?.parityReady === true &&
+      result?.pendingReady === true &&
+      result?.replayReady === true &&
+      Number(result.tipHeight) === fingerprint.tipHeight &&
+      normalizedLowerText(result.tipHash) === fingerprint.tipHash &&
+      normalizedLowerText(result.snapshotHash) === fingerprint.tipHash &&
+      workPrecisionV2ReadinessValueSha256(result.marker) ===
+        fingerprint.migrationMarkerSha256 &&
+      workPrecisionV2ReadinessValueSha256(result.pendingWitness) ===
+        fingerprint.pendingWitnessSha256 &&
+      Date.parse(String(result.pendingValidThrough ?? "")) ===
+        fingerprint.pendingValidThroughMs
+  );
+}
+
+function reusableWorkPrecisionV2MigrationReadiness(
+  cache,
+  key,
+  now = Date.now(),
+) {
+  const entry = cache.get(key);
+  if (!entry || Number(entry.expiresAt) <= now || !entry.result) {
+    if (entry) {
+      cache.delete(key);
+    }
+    return null;
+  }
+  return entry.result;
+}
+
+function rememberWorkPrecisionV2MigrationReadiness(
+  cache,
+  key,
+  result,
+  expiresAt,
+  maxEntries = WORK_PRECISION_V2_READINESS_CACHE_MAX_ENTRIES,
+) {
+  const immutableResult = deepFreezeReadinessSnapshot({ ...result });
+  cache.delete(key);
+  cache.set(key, { expiresAt, result: immutableResult });
+  while (cache.size > maxEntries) {
+    const oldestKey = cache.keys().next().value;
+    if (oldestKey === undefined) {
+      break;
+    }
+    cache.delete(oldestKey);
+  }
+  return immutableResult;
+}
+
+async function workPrecisionV2MigrationReadinessWithCache({
+  fingerprint,
+  inFlight,
+  load,
+  readyCache,
+  refreshFingerprint,
+}) {
+  if (fingerprint?.positiveEligible !== true || !fingerprint.key) {
+    return null;
+  }
+  const cached = reusableWorkPrecisionV2MigrationReadiness(
+    readyCache,
+    fingerprint.key,
+  );
+  if (cached) {
+    const settledFingerprint = await refreshFingerprint();
+    return settledFingerprint?.key === fingerprint.key &&
+        workPrecisionV2MigrationReadinessResultIsExactPositive(
+          cached,
+          settledFingerprint,
+        )
+      ? cached
+      : null;
+  }
+  return exactCheckpointSingleFlight(
+    inFlight,
+    fingerprint.key,
+    async () => {
+      const result = await load();
+      if (
+        !workPrecisionV2MigrationReadinessResultIsExactPositive(
+          result,
+          fingerprint,
+        )
+      ) {
+        return result?.ready === true ? null : result;
+      }
+      const settledFingerprint = await refreshFingerprint();
+      if (
+        settledFingerprint?.key !== fingerprint.key ||
+        !workPrecisionV2MigrationReadinessResultIsExactPositive(
+          result,
+          settledFingerprint,
+        )
+      ) {
+        return null;
+      }
+      return rememberWorkPrecisionV2MigrationReadiness(
+        readyCache,
+        fingerprint.key,
+        result,
+        Math.min(
+          fingerprint.expiresAt,
+          settledFingerprint.expiresAt,
+        ),
+      );
+    },
+  );
+}
+
 export async function proofIndexWorkPrecisionV2MigrationReadiness(
   network,
   expectedPins,
+  options = {},
 ) {
   const pool = proofIndexPool();
   const pins = normalizedWorkAmoV6ExpectedPins(expectedPins);
   if (!pool || network !== "livenet" || !pins) {
     return null;
+  }
+  const requestOptions = Object.freeze({ ...options });
+  if (requestOptions.fingerprintBypass !== true) {
+    const fingerprint =
+      await proofIndexWorkPrecisionV2ReadinessFingerprint(
+        pool,
+        network,
+        pins,
+      );
+    if (
+      !fingerprint?.key ||
+      fingerprint.positiveEligible !== true
+    ) {
+      return null;
+    }
+    const load = () =>
+      proofIndexWorkPrecisionV2MigrationReadiness(
+        network,
+        pins,
+        {
+          ...requestOptions,
+          fingerprintBypass: true,
+          singleFlightBypass: true,
+        },
+      );
+    const refreshFingerprint = () =>
+      proofIndexWorkPrecisionV2ReadinessFingerprint(
+        pool,
+        network,
+        pins,
+      ).catch(() => null);
+    if (
+      requestOptions.force === true ||
+      requestOptions.singleFlightBypass === true
+    ) {
+      const result = await load();
+      if (
+        !workPrecisionV2MigrationReadinessResultIsExactPositive(
+          result,
+          fingerprint,
+        )
+      ) {
+        return result?.ready === true ? null : result;
+      }
+      const settledFingerprint = await refreshFingerprint();
+      return settledFingerprint?.key === fingerprint.key &&
+          workPrecisionV2MigrationReadinessResultIsExactPositive(
+            result,
+            settledFingerprint,
+          )
+        ? result
+        : null;
+    }
+    if (fingerprint?.key) {
+      return workPrecisionV2MigrationReadinessWithCache({
+        fingerprint,
+        inFlight: workPrecisionV2MigrationReadinessInFlight,
+        load,
+        readyCache: workPrecisionV2MigrationReadinessReadyCache,
+        refreshFingerprint,
+      });
+    }
   }
   const client = await pool.connect();
   let transactionOpen = false;
@@ -3964,6 +5437,9 @@ export async function proofIndexWorkPrecisionV2MigrationReadiness(
       "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY",
     );
     transactionOpen = true;
+    await client.query(
+      "SET LOCAL search_path = pg_catalog, pg_temp",
+    );
   const stateResult = await client.query(
     `
       SELECT
@@ -5078,6 +6554,12 @@ export async function proofIndexWorkPrecisionV2MigrationReadiness(
     openingReady: activationOpeningReady,
     parityReady: stateCommitmentsReady,
     pendingReady,
+    pendingValidThrough: Number.isFinite(pendingGeneratedAtMs)
+      ? new Date(
+          pendingGeneratedAtMs +
+            WORK_Q16_PENDING_WITNESS_MAX_AGE_MS,
+        ).toISOString()
+      : null,
     pendingWitness,
     precision: {
       amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
@@ -19537,6 +21019,34 @@ export async function proofIndexOperationalStatusPayload(network) {
               : worker.updatedAt,
           }
         : null,
+  };
+}
+
+export async function proofIndexWorkAmoV8WorkerStatusPayload(network) {
+  const pool = proofIndexPool();
+  if (!pool || network !== "livenet") {
+    return null;
+  }
+  const result = await pool.query(
+    `
+      SELECT value AS worker, updated_at
+      FROM proof_indexer.meta
+      WHERE key = 'worker:lastRun'
+      LIMIT 1
+    `,
+  );
+  const row = result.rows[0];
+  const worker = objectRecord(row?.worker);
+  return {
+    network,
+    worker: Object.keys(worker).length > 0
+      ? {
+          ...worker,
+          updatedAt: row?.updated_at
+            ? dateIso(row.updated_at)
+            : worker.updatedAt,
+        }
+      : null,
   };
 }
 

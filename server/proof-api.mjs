@@ -258,6 +258,7 @@ import {
   proofIndexTokenHistoryReadEligibility,
   proofIndexTokenHistoryPayload,
   proofIndexTokenListingCloseOutspendPayload,
+  proofIndexWorkAmoV8WorkerStatusPayload,
   proofIndexTokenReadEligibility,
   proofIndexTokenMarketSummaryOverlayPayload,
   proofIndexTxStatusPayload,
@@ -8369,13 +8370,178 @@ async function workAmoV8ReplayPrecisionOptions(
 }
 
 let workAmoV8ReachedLatch = false;
-let workAmoV8StatusCache = {
-  expiresAt: 0,
-  network: "",
-  payload: null,
-  tipHash: "",
-  tipHeight: 0,
-};
+const workAmoV8MetadataInFlight = new Map();
+const workAmoV8MigrationReadinessIdentities = new WeakMap();
+let workAmoV8MigrationReadinessIdentitySequence = 0;
+
+function workAmoV8MigrationReadinessIdentity(readiness) {
+  if (
+    !readiness ||
+    typeof readiness !== "object" ||
+    Array.isArray(readiness) ||
+    readiness.ready !== true ||
+    readiness.active !== true ||
+    readiness.canonical !== true ||
+    readiness.confirmed !== true ||
+    readiness.evidenceComplete !== true ||
+    readiness.exactTipReady !== true ||
+    readiness.parityReady !== true ||
+    readiness.pendingReady !== true ||
+    readiness.replayReady !== true
+  ) {
+    return "";
+  }
+  const existing = workAmoV8MigrationReadinessIdentities.get(readiness);
+  if (existing) {
+    return existing;
+  }
+  workAmoV8MigrationReadinessIdentitySequence += 1;
+  const identity = `exact-readiness-${workAmoV8MigrationReadinessIdentitySequence}`;
+  workAmoV8MigrationReadinessIdentities.set(readiness, identity);
+  return identity;
+}
+
+function workAmoV8StatusCacheKey({
+  expectedDeclaration = null,
+  liveMempoolSnapshot = null,
+  migrationReadinessIdentity = "",
+  network = "",
+  networkValueBeforeQ8 = "",
+  tipHash = "",
+  tipHeight = 0,
+  workerReadiness = null,
+} = {}) {
+  const declaration = expectedDeclaration ?? {};
+  const normalizedTipHash = String(tipHash ?? "").trim().toLowerCase();
+  const normalizedTipHeight = Number(tipHeight);
+  const declarationHash = String(declaration.blockHash ?? "")
+    .trim()
+    .toLowerCase();
+  const mempool = liveMempoolSnapshot ?? {};
+  const worker = workerReadiness ?? {};
+  const declarationIntegers = [
+    declaration.activationHeight,
+    declaration.blockHeight,
+    declaration.blockTransactionIndex,
+    declaration.minimumPaymentSats,
+    declaration.payloadBytes,
+    declaration.protocolVout,
+    declaration.recordOrdinal,
+    declaration.registryPaymentVout,
+  ].map(Number);
+  const declarationHashes = [
+    declarationHash,
+    String(declaration.payloadSha256 ?? "").trim().toLowerCase(),
+    String(declaration.txid ?? "").trim().toLowerCase(),
+  ];
+  if (
+    network !== "livenet" ||
+    !Number.isSafeInteger(normalizedTipHeight) ||
+    normalizedTipHeight < 1 ||
+    !/^[0-9a-f]{64}$/u.test(normalizedTipHash) ||
+    declarationIntegers.some((value) => !Number.isSafeInteger(value)) ||
+    declarationHashes.some((value) => !/^[0-9a-f]{64}$/u.test(value)) ||
+    !/^exact-readiness-[1-9][0-9]*$/u.test(migrationReadinessIdentity) ||
+    mempool.model !== "canonical-core-mempool-txid-set-v1" ||
+    !Number.isSafeInteger(mempool.count) ||
+    mempool.count < 0 ||
+    !/^[0-9a-f]{64}$/u.test(
+      String(mempool.sha256 ?? "").trim().toLowerCase(),
+    ) ||
+    typeof worker.ready !== "boolean"
+  ) {
+    return "";
+  }
+  return JSON.stringify({
+    declaration: {
+      activationHeight: declarationIntegers[0],
+      authorityScriptPubKey: String(
+        declaration.authorityScriptPubKey ?? "",
+      ).trim().toLowerCase(),
+      blockHash: declarationHash,
+      blockHeight: declarationIntegers[1],
+      blockTransactionIndex: declarationIntegers[2],
+      minimumPaymentSats: declarationIntegers[3],
+      payloadBytes: declarationIntegers[4],
+      payloadSha256: declarationHashes[1],
+      protocolVout: declarationIntegers[5],
+      recordOrdinal: declarationIntegers[6],
+      registryAddress: String(declaration.registryAddress ?? "").trim(),
+      registryPaymentVout: declarationIntegers[7],
+      txid: declarationHashes[2],
+    },
+    liveMempoolSnapshot: {
+      count: mempool.count,
+      model: mempool.model,
+      sha256: String(mempool.sha256).trim().toLowerCase(),
+    },
+    migrationReadinessIdentity,
+    network,
+    networkValueBeforeQ8: String(networkValueBeforeQ8 ?? ""),
+    tipHash: normalizedTipHash,
+    tipHeight: normalizedTipHeight,
+    workerReadiness: {
+      era: String(worker.era ?? ""),
+      finishedAt: String(worker.finishedAt ?? ""),
+      mempoolCount: worker.mempoolCount ?? null,
+      mempoolSha256: String(worker.mempoolSha256 ?? "")
+        .trim()
+        .toLowerCase(),
+      pendingMembershipCount: worker.pendingMembershipCount ?? null,
+      pendingMembershipSha256: String(
+        worker.pendingMembershipSha256 ?? "",
+      ).trim().toLowerCase(),
+      pendingProjectionSha256: String(
+        worker.pendingProjectionSha256 ?? "",
+      ).trim().toLowerCase(),
+      proofSource: String(worker.proofSource ?? ""),
+      ready: worker.ready,
+      state: String(worker.state ?? ""),
+      tipHash: String(worker.tipHash ?? "").trim().toLowerCase(),
+      tipHeight: Number.isSafeInteger(Number(worker.tipHeight))
+        ? Number(worker.tipHeight)
+        : null,
+    },
+  });
+}
+
+async function workAmoV8MetadataSingleFlight(inFlight, key, load) {
+  const existing = inFlight.get(key);
+  if (existing) {
+    return existing;
+  }
+  const pending = Promise.resolve().then(load);
+  inFlight.set(key, pending);
+  try {
+    return await pending;
+  } finally {
+    if (inFlight.get(key) === pending) {
+      inFlight.delete(key);
+    }
+  }
+}
+
+function deepFreezeWorkAmoV8StatusSnapshot(value, seen = new WeakSet()) {
+  if (
+    value === null ||
+    typeof value !== "object" ||
+    seen.has(value)
+  ) {
+    return value;
+  }
+  const prototype = Object.getPrototypeOf(value);
+  const plainObject =
+    prototype === null ||
+    Object.getPrototypeOf(prototype) === null;
+  if (!Array.isArray(value) && !plainObject) {
+    return value;
+  }
+  seen.add(value);
+  for (const child of Object.values(value)) {
+    deepFreezeWorkAmoV8StatusSnapshot(child, seen);
+  }
+  return Object.freeze(value);
+}
 
 function workAmoV8Estimates(networkValueBeforeQ8) {
   if (
@@ -8481,9 +8647,162 @@ function workQ16PendingMembershipSnapshotReady(
   );
 }
 
+function workAmoV8ExactLiveProbeKey(
+  probe,
+  { includeMempool = true } = {},
+) {
+  const candidate = probe && typeof probe === "object" &&
+      !Array.isArray(probe)
+    ? probe
+    : {};
+  const tipHeight = Number(candidate.tipHeight);
+  const tipHash = String(candidate.tipHash ?? "")
+    .trim()
+    .toLowerCase();
+  const mempool = candidate.liveMempoolSnapshot ?? {};
+  const worker = candidate.workerReadiness ?? {};
+  if (
+    !Number.isSafeInteger(tipHeight) ||
+    tipHeight < 1 ||
+    !/^[0-9a-f]{64}$/u.test(tipHash) ||
+    mempool.model !== "canonical-core-mempool-txid-set-v1" ||
+    !Number.isSafeInteger(mempool.count) ||
+    mempool.count < 0 ||
+    !/^[0-9a-f]{64}$/u.test(
+      String(mempool.sha256 ?? "").trim().toLowerCase(),
+    ) ||
+    typeof worker.ready !== "boolean"
+  ) {
+    return "";
+  }
+  return JSON.stringify({
+    ...(includeMempool
+      ? {
+          liveMempoolSnapshot: {
+            count: mempool.count,
+            model: mempool.model,
+            sha256: String(mempool.sha256).trim().toLowerCase(),
+          },
+        }
+      : {}),
+    tipHash,
+    tipHeight,
+    workerReadiness: {
+      era: String(worker.era ?? ""),
+      finishedAt: String(worker.finishedAt ?? ""),
+      mempoolCount: worker.mempoolCount ?? null,
+      mempoolSha256: String(worker.mempoolSha256 ?? "")
+        .trim()
+        .toLowerCase(),
+      pendingMembershipCount: worker.pendingMembershipCount ?? null,
+      pendingMembershipSha256: String(
+        worker.pendingMembershipSha256 ?? "",
+      ).trim().toLowerCase(),
+      pendingProjectionSha256: String(
+        worker.pendingProjectionSha256 ?? "",
+      ).trim().toLowerCase(),
+      proofSource: String(worker.proofSource ?? ""),
+      ready: worker.ready,
+      state: String(worker.state ?? ""),
+      tipHash: String(worker.tipHash ?? "").trim().toLowerCase(),
+      tipHeight: Number.isSafeInteger(Number(worker.tipHeight))
+        ? Number(worker.tipHeight)
+        : null,
+    },
+  });
+}
+
+async function workAmoV8ExactLiveProbe(network) {
+  const [
+    tipHeightResult,
+    tipHashResult,
+    mempoolTxidsResult,
+    operationalStatus,
+  ] = await Promise.all([
+    bitcoinRpc("getblockcount", []),
+    bitcoinRpc("getbestblockhash", []),
+    bitcoinRpc("getrawmempool", [false]),
+    proofIndexWorkAmoV8WorkerStatusPayload(network),
+  ]);
+  if (
+    tipHeightResult?.ok !== true ||
+    tipHashResult?.ok !== true ||
+    mempoolTxidsResult?.ok !== true ||
+    !Array.isArray(mempoolTxidsResult.result)
+  ) {
+    return null;
+  }
+  const tipHeight = Number(tipHeightResult.result);
+  const tipHash = String(tipHashResult.result ?? "")
+    .trim()
+    .toLowerCase();
+  const liveMempoolTxids = [...mempoolTxidsResult.result];
+  const liveMempoolSnapshot = workQ16MempoolSnapshot(
+    liveMempoolTxids,
+  );
+  const workerReadiness = exactWorkAmoV8WorkerReadiness(
+    operationalStatus,
+    {
+      liveMempoolSnapshot,
+      network,
+      tipHash,
+      tipHeight,
+    },
+  );
+  const probe = {
+    liveMempoolSnapshot,
+    liveMempoolTxids,
+    tipHash,
+    tipHeight,
+    workerReadiness,
+  };
+  return workAmoV8ExactLiveProbeKey(probe) ? probe : null;
+}
+
+async function workAmoV8ExactReadinessSweep(
+  network,
+  expectedDeclaration,
+  { force = false } = {},
+) {
+  const before = await workAmoV8ExactLiveProbe(network);
+  const beforeKey = workAmoV8ExactLiveProbeKey(before, {
+    includeMempool: false,
+  });
+  if (!beforeKey) {
+    return null;
+  }
+  const migrationReadiness =
+    await proofIndexWorkPrecisionV2MigrationReadiness(
+      network,
+      expectedDeclaration,
+      { force },
+    ).catch(() => null);
+  const after = await workAmoV8ExactLiveProbe(network);
+  if (
+    workAmoV8ExactLiveProbeKey(after, {
+      includeMempool: false,
+    }) !== beforeKey ||
+    (migrationReadiness?.ready === true &&
+      !(Date.parse(
+        String(migrationReadiness.pendingValidThrough ?? ""),
+      ) > Date.now()))
+  ) {
+    return null;
+  }
+  return {
+    migrationReadiness,
+    probe: after,
+  };
+}
+
 async function workAmoV8Metadata(
   network,
-  { force = false, summaryPayload = null } = {},
+  {
+    exactReadinessProbe = null,
+    force = false,
+    singleFlightBypass = false,
+    summaryPayload = null,
+  } = {},
 ) {
   const configuredDeclaration = configuredWorkAmoV8Declaration();
   const persistentActivationLatch =
@@ -8616,6 +8935,9 @@ async function workAmoV8Metadata(
   let tipVerified = false;
   let liveMempoolTxids = null;
   let liveMempoolSnapshot = null;
+  let readinessCacheKey = "";
+  let declarationTx = null;
+  let canonicalDeclarationHash = "";
   let workerReadiness = {
     era: "",
     finishedAt: "",
@@ -8634,75 +8956,111 @@ async function workAmoV8Metadata(
         ).catch(() => null)
       : null;
   try {
-    const [
-      declarationTx,
-      declarationHashResult,
-      tipHeightResult,
-      tipHashResult,
-      mempoolTxidsResult,
-      operationalStatus,
-    ] = await Promise.all([
-      fetchTransactionFromBitcoinRpc(
-        expectedDeclaration.txid,
-        network,
-        {
-          bypassCache: true,
-          requireCanonicalPrevouts: true,
-        },
-      ),
-      bitcoinRpc("getblockhash", [
-        expectedDeclaration.blockHeight,
-      ]),
-      bitcoinRpc("getblockcount", []),
-      bitcoinRpc("getbestblockhash", []),
-      bitcoinRpc("getrawmempool", [false]),
-      proofIndexOperationalStatusPayload(network),
-    ]);
-    const canonicalDeclarationHash = String(
-      declarationHashResult?.ok
-        ? declarationHashResult.result
-        : "",
-    ).trim().toLowerCase();
-    tipHeight = Number(
-      tipHeightResult?.ok ? tipHeightResult.result : 0,
-    );
-    tipHash = String(
-      tipHashResult?.ok ? tipHashResult.result : "",
-    ).trim().toLowerCase();
+    const reusableProbe =
+      exactReadinessProbe &&
+      typeof exactReadinessProbe === "object" &&
+      !Array.isArray(exactReadinessProbe)
+        ? exactReadinessProbe
+        : null;
+    if (reusableProbe) {
+      tipHeight = Number(reusableProbe.tipHeight);
+      tipHash = String(reusableProbe.tipHash ?? "").trim().toLowerCase();
+      liveMempoolTxids = Array.isArray(reusableProbe.liveMempoolTxids)
+        ? [...reusableProbe.liveMempoolTxids]
+        : null;
+      liveMempoolSnapshot = liveMempoolTxids
+        ? workQ16MempoolSnapshot(liveMempoolTxids)
+        : null;
+      workerReadiness =
+        reusableProbe.workerReadiness &&
+        typeof reusableProbe.workerReadiness === "object" &&
+        !Array.isArray(reusableProbe.workerReadiness)
+          ? { ...reusableProbe.workerReadiness }
+          : workerReadiness;
+    } else {
+      const liveProbe = await workAmoV8ExactLiveProbe(network);
+      if (!liveProbe) {
+        throw freshDataUnavailableError(
+          "The exact WORK AMO V8 Core/indexer probe is unavailable.",
+        );
+      }
+      tipHeight = liveProbe.tipHeight;
+      tipHash = liveProbe.tipHash;
+      liveMempoolTxids = [...liveProbe.liveMempoolTxids];
+      liveMempoolSnapshot = liveProbe.liveMempoolSnapshot;
+      workerReadiness = liveProbe.workerReadiness;
+    }
     tipVerified =
       Number.isSafeInteger(tipHeight) &&
       tipHeight > 0 &&
       /^[0-9a-f]{64}$/u.test(tipHash);
-    liveMempoolTxids =
-      mempoolTxidsResult?.ok &&
-      Array.isArray(mempoolTxidsResult.result)
-        ? mempoolTxidsResult.result
-        : null;
-    liveMempoolSnapshot = liveMempoolTxids
-      ? workQ16MempoolSnapshot(liveMempoolTxids)
-      : null;
-    workerReadiness = exactWorkAmoV8WorkerReadiness(
-      operationalStatus,
-      {
-        liveMempoolSnapshot,
-        network,
+    if (
+      tipVerified &&
+      tipHeight >= expectedDeclaration.activationHeight &&
+      force !== true
+    ) {
+      workAmoV8ReachedLatch = true;
+      migrationReadiness =
+        await proofIndexWorkPrecisionV2MigrationReadiness(
+          network,
+          expectedDeclaration,
+          { force },
+        ).catch(() => null);
+    }
+    readinessCacheKey = workAmoV8StatusCacheKey({
+      expectedDeclaration,
+      liveMempoolSnapshot,
+      migrationReadinessIdentity:
+        workAmoV8MigrationReadinessIdentity(migrationReadiness),
+      network,
+      networkValueBeforeQ8,
+      tipHash,
+      tipHeight,
+      workerReadiness,
+    });
+    if (
+      force !== true &&
+      singleFlightBypass !== true &&
+      readinessCacheKey
+    ) {
+      const immutableProbe = deepFreezeWorkAmoV8StatusSnapshot({
+        liveMempoolTxids: [...liveMempoolTxids],
         tipHash,
         tipHeight,
-      },
-    );
-    if (
-      !workAmoV8ReachedLatch &&
-      !force &&
-      workAmoV8StatusCache.network === network &&
-      workAmoV8StatusCache.tipHeight === tipHeight &&
-      workAmoV8StatusCache.tipHash === tipHash &&
-      workAmoV8StatusCache.expiresAt > Date.now() &&
-      workAmoV8StatusCache.payload
-    ) {
-      return workAmoV8StatusCache.payload;
+        workerReadiness: { ...workerReadiness },
+      });
+      return workAmoV8MetadataSingleFlight(
+        workAmoV8MetadataInFlight,
+        readinessCacheKey,
+        () =>
+          workAmoV8Metadata(network, {
+            exactReadinessProbe: immutableProbe,
+            singleFlightBypass: true,
+            summaryPayload,
+          }),
+      );
     }
-    const declarationBlockHash =
-      transactionBlockHash(declarationTx);
+    const [resolvedDeclarationTx, declarationHashResult] =
+      await Promise.all([
+        fetchTransactionFromBitcoinRpc(
+          expectedDeclaration.txid,
+          network,
+          {
+            bypassCache: true,
+            requireCanonicalPrevouts: true,
+          },
+        ),
+        bitcoinRpc("getblockhash", [
+          expectedDeclaration.blockHeight,
+        ]),
+      ]);
+    declarationTx = resolvedDeclarationTx;
+    canonicalDeclarationHash = String(
+      declarationHashResult?.ok
+        ? declarationHashResult.result
+        : "",
+    ).trim().toLowerCase();
+    const declarationBlockHash = transactionBlockHash(declarationTx);
     const blockTxidIndex =
       declarationBlockHash === expectedDeclaration.blockHash
         ? await fetchCoreBlockTxidIndex(declarationBlockHash)
@@ -8730,28 +9088,37 @@ async function workAmoV8Metadata(
       workAmoV8DeclarationEmbargoLatch = true;
       workAmoV8DiscoveredDeclaration ??= expectedDeclaration;
     }
-    if (
-      tipVerified &&
-      tipHeight >= expectedDeclaration.activationHeight
-    ) {
-      workAmoV8ReachedLatch = true;
-      migrationReadiness =
-        await proofIndexWorkPrecisionV2MigrationReadiness(
-          network,
-          expectedDeclaration,
-        ).catch(() => null);
-    }
   } catch (error) {
     console.error(
       `WORK AMO V8 readiness verification failed: ${errorSummary(error)}`,
     );
   }
-  if (workAmoV8ReachedLatch && !migrationReadiness) {
-    migrationReadiness =
-      await proofIndexWorkPrecisionV2MigrationReadiness(
-        network,
-        expectedDeclaration,
-      ).catch(() => null);
+  if (
+    workAmoV8ReachedLatch ||
+    (tipVerified &&
+      tipHeight >= expectedDeclaration.activationHeight)
+  ) {
+    const finalSweep = await workAmoV8ExactReadinessSweep(
+      network,
+      expectedDeclaration,
+      { force },
+    ).catch(() => null);
+    migrationReadiness = finalSweep?.migrationReadiness ?? null;
+    if (finalSweep?.probe) {
+      tipHeight = finalSweep.probe.tipHeight;
+      tipHash = finalSweep.probe.tipHash;
+      liveMempoolTxids = [...finalSweep.probe.liveMempoolTxids];
+      liveMempoolSnapshot = finalSweep.probe.liveMempoolSnapshot;
+      workerReadiness = finalSweep.probe.workerReadiness;
+      tipVerified = true;
+    } else {
+      tipVerified = false;
+      workerReadiness = {
+        ...workerReadiness,
+        ready: false,
+        state: "exact-readiness-sweep-unavailable",
+      };
+    }
   }
   if (
     migrationReadiness?.marker?.status === "complete" &&
@@ -8780,6 +9147,9 @@ async function workAmoV8Metadata(
       .trim()
       .toLowerCase() === tipHash &&
     migrationReadiness?.pendingReady === true &&
+    Date.parse(
+      String(migrationReadiness?.pendingValidThrough ?? ""),
+    ) > Date.now() &&
     workerReadiness.ready === true &&
     pendingMembershipLive;
   const combinedEvidence = evidence
@@ -8862,13 +9232,6 @@ async function workAmoV8Metadata(
     tipHeight,
     workerReadiness,
     writesConfigured: WORK_AMO_V8_WRITES_CONFIGURED,
-  };
-  workAmoV8StatusCache = {
-    expiresAt: Date.now() + 15_000,
-    network,
-    payload,
-    tipHash,
-    tipHeight,
   };
   return payload;
 }
@@ -9652,7 +10015,11 @@ async function assertWorkMarketplaceV4AdmissionOracle(actions, network) {
   }
 }
 
-async function assertWorkMarketplaceBroadcastAllowed(txHex, network) {
+async function assertWorkMarketplaceBroadcastAllowed(
+  txHex,
+  network,
+  options = {},
+) {
   if (network !== "livenet") {
     return;
   }
@@ -9798,6 +10165,7 @@ async function assertWorkMarketplaceBroadcastAllowed(txHex, network) {
     },
   );
   const actions = await signedWorkMarketplaceWriteActions(txHex, network);
+  await options.beforeSubmit?.();
   if (
     actions.length === 0 &&
     workTransferActions.length === 0 &&
@@ -10303,8 +10671,9 @@ async function broadcastSlipstreamPayload(request, options = {}) {
     throw new Error("Invalid transaction hex.");
   }
 
-  await assertWorkMarketplaceBroadcastAllowed(txHex, "livenet");
-  await options.beforeSubmit?.();
+  await assertWorkMarketplaceBroadcastAllowed(txHex, "livenet", {
+    beforeSubmit: options.beforeSubmit,
+  });
   const result = await submitSlipstreamTransaction(txHex);
   await cachePendingTokenTransactionByTxid(
     result.txid,
@@ -10390,8 +10759,9 @@ async function broadcastNodePayload(request, network, options = {}) {
     throw new Error("Invalid transaction hex.");
   }
 
-  await assertWorkMarketplaceBroadcastAllowed(txHex, network);
-  await options.beforeSubmit?.();
+  await assertWorkMarketplaceBroadcastAllowed(txHex, network, {
+    beforeSubmit: options.beforeSubmit,
+  });
   const result = await submitNodeTransaction(txHex, network);
   await cachePendingTokenTransactionByTxid(
     result.txid,

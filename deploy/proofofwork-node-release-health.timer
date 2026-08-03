@@ -1,0 +1,12 @@
+[Unit]
+Description=Verify ProofOfWork node release provenance daily
+
+[Timer]
+OnCalendar=*-*-* 04:15:00 UTC
+RandomizedDelaySec=15min
+FixedRandomDelay=true
+Persistent=true
+Unit=proofofwork-node-release-health.service
+
+[Install]
+WantedBy=timers.target

@@ -1587,7 +1587,7 @@ expect(
   /function workQ16MempoolSnapshot[\s\S]*!Array\.isArray\(txids\)[\s\S]*normalizedTxids\.some[\s\S]*new Set\(normalizedTxids\)\.size[\s\S]*return null/u.test(
     server,
   ) &&
-    /liveMempoolTxids =\s*mempoolTxidsResult\?\.ok &&[\s\S]*Array\.isArray\(mempoolTxidsResult\.result\)[\s\S]*: null[\s\S]*liveMempoolSnapshot = liveMempoolTxids/u.test(
+    /async function workAmoV8ExactLiveProbe[\s\S]*mempoolTxidsResult\?\.ok !== true[\s\S]*!Array\.isArray\(mempoolTxidsResult\.result\)[\s\S]*return null[\s\S]*liveMempoolTxids = \[\.\.\.mempoolTxidsResult\.result\][\s\S]*workQ16MempoolSnapshot/u.test(
       server,
     ) &&
     /const publicMigrationReadiness =[\s\S]*membershipSnapshot:[\s\S]*count: pendingMembershipSnapshot\.count,[\s\S]*model: pendingMembershipSnapshot\.model,[\s\S]*sha256: pendingMembershipSnapshot\.sha256,[\s\S]*migrationReadiness: publicMigrationReadiness/u.test(

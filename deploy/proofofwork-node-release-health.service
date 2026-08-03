@@ -1,10 +1,15 @@
 [Unit]
-Description=Prune managed ProofOfWork node release backups
+Description=Verify ProofOfWork node release provenance and archive coverage
 RequiresMountsFor=/data/proofofwork-release-backups
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/sbin/proofofwork-release-prune /data/proofofwork-release-backups/managed 3
+ExecStart=/usr/local/sbin/proofofwork-node-release-health
+Environment=POW_RELEASE_MAX_CHECKOUT_COUNT=9
+Nice=10
+IOSchedulingClass=idle
+CPUWeight=10
+IOWeight=10
 TimeoutStartSec=30m
 NoNewPrivileges=true
 PrivateTmp=true
@@ -15,15 +20,9 @@ ProtectControlGroups=true
 ProtectKernelLogs=true
 ProtectKernelModules=true
 ProtectKernelTunables=true
-ReadWritePaths=/data/proofofwork-release-backups/managed
 CapabilityBoundingSet=
 AmbientCapabilities=
 RestrictSUIDSGID=true
 LockPersonality=true
 RestrictRealtime=true
 SystemCallArchitectures=native
-UMask=0077
-Nice=10
-IOSchedulingClass=idle
-CPUWeight=10
-IOWeight=10

@@ -1,0 +1,12 @@
+[Unit]
+Description=Verify ProofOfWork UI release provenance every fifteen minutes
+
+[Timer]
+OnCalendar=*:0/15
+RandomizedDelaySec=2min
+FixedRandomDelay=true
+Persistent=true
+Unit=proofofwork-ui-release-provenance.service
+
+[Install]
+WantedBy=timers.target

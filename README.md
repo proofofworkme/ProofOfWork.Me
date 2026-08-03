@@ -596,6 +596,11 @@ Log -> /?log=1
 Growth -> /?growth=1
 ```
 
+`nft.proofofwork.me` is a compatibility hostname for the default Computer
+build; there is no separate NFT route or build switch. Deploy its static root
+from the same exact generic Computer build as `computer.proofofwork.me` so it
+cannot drift into an untracked legacy release.
+
 To build a landing-page-only deployment for `proofofwork.me`:
 
 ```bash
@@ -787,6 +792,8 @@ npm run indexer:parity
 npm run check:mail-regressions
 npm run check:marketplace-regressions
 npm run check:ui
+npm run check:node-ops
+npm run check:ui-ops
 ```
 
 `check:mail-regressions` proves indexed Inbox/Sent mail, Infinity Bond Log/Event search for the OTC self-send regression tx, and subject/body rendering for historical mail whose body must be repaired from raw tx data. `check:marketplace-regressions` proves WORK delist, sale, wallet, summary, sold-listing closure, confirmed sealed listing visibility, the first confirmed V6 listing's exact singleton projection and canonical position, POWB transfer visibility, and Log close/sale/transfer status stay aligned. `indexer:parity` proves the database snapshot, event rows, participants/refs, registry, summaries, token history, address-mail, and tx-status samples match the canonical ledger contract.

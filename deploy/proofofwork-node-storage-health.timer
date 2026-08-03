@@ -1,0 +1,12 @@
+[Unit]
+Description=Check ProofOfWork node storage every five minutes
+
+[Timer]
+OnCalendar=*:0/5
+RandomizedDelaySec=30s
+FixedRandomDelay=true
+Persistent=true
+Unit=proofofwork-node-storage-health.service
+
+[Install]
+WantedBy=timers.target

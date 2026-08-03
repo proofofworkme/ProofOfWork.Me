@@ -1,13 +1,12 @@
 [Unit]
-Description=Prune managed ProofOfWork node release backups
-RequiresMountsFor=/data/proofofwork-release-backups
+Description=Prune bounded ProofOfWork UI deployment scratch
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/sbin/proofofwork-release-prune /data/proofofwork-release-backups/managed 3
+ExecStart=/usr/local/sbin/proofofwork-ui-storage-prune --apply
 TimeoutStartSec=30m
 NoNewPrivileges=true
-PrivateTmp=true
+PrivateTmp=false
 PrivateDevices=true
 ProtectSystem=strict
 ProtectHome=true
@@ -15,7 +14,7 @@ ProtectControlGroups=true
 ProtectKernelLogs=true
 ProtectKernelModules=true
 ProtectKernelTunables=true
-ReadWritePaths=/data/proofofwork-release-backups/managed
+ReadWritePaths=/var/www /var/tmp
 CapabilityBoundingSet=
 AmbientCapabilities=
 RestrictSUIDSGID=true

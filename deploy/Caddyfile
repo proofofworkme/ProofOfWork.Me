@@ -1,4 +1,37 @@
+{
+	admin 127.0.0.1:2019
+	log default {
+		exclude http.log.access
+	}
+	log ui_access {
+		include http.log.access
+		output file /var/log/caddy/access.json {
+			mode 0600
+			roll_size 25MiB
+			roll_interval 24h
+			roll_keep 8
+			roll_keep_for 168h
+		}
+		format filter {
+			fields {
+				request>client_ip delete
+				request>remote_ip delete
+				request>remote_port delete
+				request>headers delete
+				request>uri regexp \?.*$ ""
+				resp_headers delete
+			}
+			wrap json
+		}
+	}
+}
+
+(common_access_log) {
+	log
+}
+
 (common_headers) {
+	import common_access_log
 	header {
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		Content-Security-Policy "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https://*.proofofwork.me wss://*.proofofwork.me; frame-src 'self'; worker-src 'self' blob:; manifest-src 'self'; upgrade-insecure-requests"
@@ -11,6 +44,7 @@
 }
 
 (landing_headers) {
+	import common_access_log
 	header {
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		Content-Security-Policy "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https://*.proofofwork.me wss://*.proofofwork.me; frame-src 'self' https://www.youtube.com https://www.youtube-nocookie.com; worker-src 'self' blob:; manifest-src 'self'; upgrade-insecure-requests"
@@ -128,7 +162,30 @@
 }
 
 http://77.42.91.106 {
+	import common_access_log
 	respond "HTTPS hostname required." 421
+}
+
+http://proofofwork.me,
+http://www.proofofwork.me,
+http://id.proofofwork.me,
+http://computer.proofofwork.me,
+http://desktop.proofofwork.me,
+http://browser.proofofwork.me,
+http://amo.proofofwork.me,
+http://marketplace.proofofwork.me,
+http://growth.proofofwork.me,
+http://log.proofofwork.me,
+http://nft.proofofwork.me,
+http://credit.proofofwork.me,
+http://token.proofofwork.me,
+http://tokens.proofofwork.me,
+http://wallet.proofofwork.me,
+http://work.proofofwork.me,
+http://infinity.proofofwork.me,
+http://inception.proofofwork.me {
+	import common_access_log
+	redir https://{host}{uri} 308
 }
 
 proofofwork.me {

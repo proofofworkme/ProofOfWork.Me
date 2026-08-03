@@ -680,6 +680,7 @@ deploy/install-node-runtime.sh
 deploy/proofofwork-indexer-worker.service
 deploy/Caddyfile
 deploy/caddy-hardening.conf
+deploy/proofofwork-caddy-log-tmpfiles.conf
 deploy/wireguard-ui.conf
 deploy/wireguard-node.conf
 deploy/zz-proofofwork-api-private-network.conf
@@ -694,16 +695,38 @@ deploy/proofofwork-ufw-log-tmpfiles.conf
 deploy/journald-storage.conf
 deploy/coredump-disable-sysctl.conf
 deploy/postgresql-backup.conf
+deploy/postgresql-observability.conf
 deploy/pg-basebackup-timer-override.conf
 deploy/var-backups-postgresql.mount
+deploy/proof-indexer-db-observability.sql
+deploy/proof-indexer-readiness-epoch.sql
 deploy/proofofwork-postgres-logical-backup.sh
 deploy/proofofwork-postgres-logical-backup.service
 deploy/proofofwork-postgres-logical-backup.timer
+deploy/proofofwork-postgres-query-health.sh
+deploy/proofofwork-postgres-query-health.service
+deploy/proofofwork-postgres-query-health.timer
 deploy/proofofwork-release-prune.sh
 deploy/proofofwork-ui-release-prune.service
 deploy/proofofwork-ui-release-prune.timer
 deploy/proofofwork-node-release-prune.service
 deploy/proofofwork-node-release-prune.timer
+deploy/proofofwork-node-release-publish.sh
+deploy/proofofwork-node-release-health.sh
+deploy/proofofwork-node-release-health.service
+deploy/proofofwork-node-release-health.timer
+deploy/proofofwork-node-storage-health.sh
+deploy/proofofwork-node-storage-health.service
+deploy/proofofwork-node-storage-health.timer
+deploy/proofofwork-ui-release-provenance.sh
+deploy/proofofwork-ui-release-provenance.service
+deploy/proofofwork-ui-release-provenance.timer
+deploy/proofofwork-ui-storage-health.sh
+deploy/proofofwork-ui-storage-health.service
+deploy/proofofwork-ui-storage-health.timer
+deploy/proofofwork-ui-storage-prune.sh
+deploy/proofofwork-ui-storage-prune.service
+deploy/proofofwork-ui-storage-prune.timer
 deploy/proofofwork-deploy-tmpfiles.conf
 ```
 
@@ -759,7 +782,18 @@ Install the Caddy unit hardening drop-in,
 validate the tracked Caddyfile, then verify HSTS, CSP, COOP, immutable hashed
 asset caching, document revalidation, and gzip/zstd responses on every public
 surface. Verify the effective Caddy unit retains only `CAP_NET_BIND_SERVICE` in
-both its capability bounding and ambient sets. Browser HTML is always rendered as static content inside an opaque
+both its capability bounding and ambient sets. Install
+`proofofwork-caddy-log-tmpfiles.conf`, run `systemd-tmpfiles --create`, and
+restart Caddy after installing the tracked file-writer configuration. Every
+configured HTTP and HTTPS endpoint, including the raw-IP rejection endpoint,
+emits bounded JSON request metadata to owner-only
+`/var/log/caddy/access.json`; query strings, request/response headers, and
+remote ports and both client-address fields are deleted. Rotation is capped at
+25 MiB per file, eight retained rolls, and seven days. Verify one request with
+a synthetic query proves that the query, headers, and client address do not
+reach the log before treating access logging as healthy.
+
+Browser HTML is always rendered as static content inside an opaque
 iframe with both scripts and forms disabled; confirmed content never receives a
 wallet-provider execution lane. Before `srcdoc` serialization, the Browser parses
 HTML in an inert template, removes meta/base/executable/embed elements, strips
@@ -844,6 +878,16 @@ suspend/resume loop. Install `proofofwork-deploy-tmpfiles.conf` to keep deploy
 scratch under its own three-day `/var/tmp/proofofwork-deploy` namespace rather
 than deleting arbitrary `/tmp` content.
 
+Install `proofofwork-node-storage-health.sh` as executable
+`/usr/local/sbin/proofofwork-node-storage-health`, then install and enable its
+service and timer on the node host. Every five minutes it checks both `/` and
+the mandatory separate `/data` mount. Block and inode use warn at 75% and fail
+critically at 85%; the node additionally requires at least 10 GiB free on `/`
+and 100 GiB free on `/data`. The service emits one bounded structured line per
+mount and exits nonzero for warning or critical state, leaving the failed unit
+and journal evidence visible to host monitoring. A missing or unexpectedly
+nested `/data` mount is critical. The check is read-only and never prunes data.
+
 PostgreSQL recovery uses two independent layers. Bind
 `/data/proofofwork-postgres-backups/physical` onto
 `/var/backups/postgresql` with the tracked mount unit, then enable Ubuntu's
@@ -855,6 +899,35 @@ Apply `deploy/proof-indexer-db-role-limits.sql` as PostgreSQL superuser and
 restart the API and worker pools. It caps each `proof_indexer` backend at 1 GB
 of temporary files and logs any temporary file of at least 256 MB, preventing a
 single accidental sort from exhausting root while keeping large-spill evidence.
+Install `postgresql-observability.conf` as
+`/etc/postgresql/16/main/conf.d/90-proofofwork-observability.conf` only after
+verifying that the PostgreSQL 16 `pg_stat_statements` library is installed.
+Capture the effective `shared_preload_libraries` baseline first and merge
+`pg_stat_statements` with every required library in a separate cluster-local
+setting; the tracked fragment intentionally does not replace that list.
+Validate the complete effective configuration before restart, restart
+PostgreSQL in an approved maintenance window, then apply
+`proof-indexer-db-observability.sql` to the `proof_indexer` database. The SQL
+creates the extension and revokes public access to every extension-member view
+and function, so retained normalized-query evidence remains operator-only. The
+fragment enables normalized query ids, I/O and WAL timing, five-second
+slow-query logging without bind values, lock waits, and slow autovacuum
+evidence. This is a PostgreSQL restart, not a reload-only change.
+
+Install `proofofwork-postgres-query-health.sh` as executable
+`/usr/local/sbin/proofofwork-postgres-query-health`, then install and enable its
+service and timer. Its five-minute `pg_stat_activity` sample is aggregate-only:
+it logs cluster-wide client connections plus database-scoped active sessions,
+oldest active age, identical-query fanout, lock waiters and oldest lock-wait
+age, and idle or aborted-in-transaction sessions without logging query text or
+parameters. Fanout of 4, an active query aged 20 seconds, 70 cluster client
+connections, a lock wait aged 5 seconds, or an idle transaction is warning
+state. Fanout of 8, an active query aged 60 seconds, 90 cluster client
+connections, or a lock wait aged 20 seconds is critical. The service has a
+`Requisite` dependency on the PostgreSQL cluster, so a health sample can never
+start a deliberately stopped database during maintenance. These thresholds
+expose request stampedes and pool exhaustion while the retained
+`pg_stat_statements` data supports later normalized-query diagnosis.
 Full token-state and mint-stat reads select canonical mint winners and restore
 their deterministic display order in the API process, instead of sorting the
 wide event payload twice in PostgreSQL. Paginated mint history keeps its
@@ -1972,12 +2045,75 @@ V8 readiness must agree at one exact Core tip across API and worker:
 - exact Core tip height/hash and public summary readiness agree; and
 - `WORK_AMO_V8_WRITES_ENABLED=1` is the only enabled governed WORK gate.
 
+The V8 readiness reader coalesces identical in-flight checks and retains only a
+proven-positive result for at most 30 seconds. Every invocation first reads a
+compact necessary-condition fingerprint covering the canonical index tip, V8
+transition and summary commitments, migration marker, pending witness and
+projection, worker success evidence, every configured pin, an ordered vector
+of all 64 commit-deferred readiness-epoch shards, a zero committed epoch queue,
+and the exact readiness trigger/function security contract. Each transaction
+that changes any full-audit relation queues one epoch increment and applies it
+at commit; a rollback cannot advance the vector. An ineligible or malformed
+fingerprint fails closed before the wide audit, and negative results are never
+cached. A cache hit is accepted only after a second compact read returns the
+same exact vector and evidence.
+
+That standing security contract requires `max_prepared_transactions=0`; one
+isolated no-login, non-privileged owner with no membership edges; permanent
+owner-bound epoch tables using the ordinary heap access method with RLS
+disabled, no rewrite rules or inheritance edges, exact four-column type/
+nullability/default/generated/identity shape, one exact primary btree index,
+and exact primary-key/check/deferred-trigger constraints; exactly one total
+trigger on the queue and none on the shards; all 16 audit-source relations as
+ordinary permanent `proof_indexer`-owned heaps with RLS off and no rewrite or
+inheritance topology; SELECT-only app access with no table or column mutation
+grants; no public table or function access; and exact owner, PL/pgSQL,
+`SECURITY DEFINER`, fixed-search-path, and execute-ACL evidence for all three
+epoch functions. Catalog, ACL, role, RLS, relation, constraint, function, or
+prepared-transaction drift changes the compact fingerprint and makes it
+ineligible before cache reuse or a full audit.
+
+Every database connection starts with `search_path=pg_catalog,pg_temp`. Each
+compact fingerprint runs in its own read-only transaction and both it and the
+full repeatable-read audit set that path locally before catalog reads, preventing
+writable schemas or temporary objects from shadowing catalog evidence. This is
+a steady-state DML and standing-catalog integrity contract. All
+`proof_indexer` DDL remains a trusted maintenance operation: stop both API and
+worker before DDL, apply and validate the complete catalog change, then restart
+them so no positive process cache can span privileged schema work. It does not
+claim to authenticate arbitrary concurrent privileged DDL.
+
+A cache miss runs the full parity audit in one read-only repeatable-read
+transaction, fenced by identical compact fingerprints before and after it. The
+API then performs one exact live sweep: Core tip, Core mempool, and the
+lightweight durable worker-success proof are sampled before the reader; after
+the reader they are sampled again and must retain the same Core tip and worker
+proof. The final mempool sample is the only public pending-status source, and
+the readiness witness must still be current and prove its relevant pending
+membership subset. Concurrent API requests coalesce only when they share the
+same exact reader-result identity and final live inputs; no second status cache
+is retained. Forced broadcast admission bypasses both positive reuse and
+singleflight. It runs the final canonical-checkpoint callback immediately
+before the fresh V8 proof, then performs no further asynchronous admission step
+between that proof and submission.
+
 Deployment sequence:
 
 1. Build and test the exact release with every V7/V8 pin empty and both gates
    off; verify Q8/V6 and every current public route remain exact-tip green.
-2. Deploy only additive schema, parser, migration, replay, readiness, and UI
-   support. Confirm no V8 declaration, Q16 mutation, or relic cutover occurred.
+2. Stop the API and worker, then apply
+   `deploy/proof-indexer-readiness-epoch.sql` as PostgreSQL superuser. The SQL is
+   one self-contained transaction and must commit before any candidate reader
+   can start. Verify exactly 64 epoch shards, zero committed queue rows, all 18
+   `ENABLE ALWAYS` readiness triggers, the queue's sole deferred total trigger,
+   no shard triggers, rewrite rules, extra indexes, or inheritance edges, exact
+   epoch-table columns/defaults, exact source heap/topology evidence, isolated
+   owner, app-role privileges, safe search path, and
+   `max_prepared_transactions=0`.
+   Deploy only additive
+   schema, parser, migration, replay, readiness, and UI support, then restart the
+   old-compatible worker and API. Confirm no V8 declaration, Q16 mutation, or
+   relic cutover occurred.
 3. Generate and publish the exact V8 declaration through the local wallet.
 4. After canonical confirmation, capture all declaration pins and `D+1` while
    keeping `WORK_AMO_V8_WRITES_ENABLED=0`.
@@ -2276,14 +2412,103 @@ gate reopens.
 
 Production application releases must be staged from one exact commit, install
 dependencies before the swap, preserve one rollback outside the live path, and
-leave `/opt/proofofwork-api` as a clean checkout at the recorded commit. Managed
-UI and node release archives have dedicated allowlisted retention directories;
-each deployment publishes its archive and SHA-256 sidecar from temporary names
-before invoking retention. The prune service validates every sidecar, accepts
-only the host-specific UI or node filename family, and must never target
-historical recovery trees or a live release. Install root-executed scripts as
-`root:root 0755`, unit/config files as `root:root 0644`, and create their
-mandatory retention directories before starting the services.
+leave `/opt/proofofwork-api` detached at the recorded commit. The release
+attestors read and hash every tracked path directly; skip-worktree,
+assume-unchanged, fsmonitor, or status output cannot hide drift. The live tree
+must have one intentional runtime owner (normally `powadmin`), no mounted
+subtrees, no group/world-writable or special modes, Git-exact tracked executable
+bits, no non-ignored untracked paths, and no ignored paths outside
+`node_modules/`. Normalize a freshly staged production clone with
+`chmod --recursive go-w /opt/proofofwork-api`; if a tracked executable bit still
+differs from Git, replace it with a fresh detached checkout instead of guessing.
+
+Managed UI and node release archives have dedicated allowlisted retention
+directories. A canonical checksum sidecar contains exactly one
+`<64 lowercase hex><two spaces><archive basename>` line. Retention accepts the
+historical absolute form only when its target is exactly the canonical
+retention root plus that allowlisted basename; it warns but does not rewrite
+historical evidence. Arbitrary paths, symlinks, unsafe ownership/modes, extra
+tokens or lines, and checksum failures are never accepted. The prune script
+fails closed unless the active UI manifest exactly matches its archive-adjacent
+provenance or at least one strict node provenance-v2 archive matches the live
+commit and tree. That active archive remains protected even when it falls
+outside the ordinary keep window.
+
+One unverified archive must not block retention of every independent verified
+pair. The prune script retains and skips unverifiable archives, counts only
+verified pairs toward the keep limit, safely prunes older verified pairs, then
+exits nonzero so the integrity gap remains alert-visible. It never fabricates a
+missing checksum after the fact. Restore a missing sidecar only from trusted
+deployment evidence and only after separately proving the archived bytes;
+otherwise keep the archive quarantined for operator review.
+Both host-specific retention services are bounded to 30 minutes and run at
+nice 10 with idle I/O and low CPU/I/O weights so recursive checksums cannot
+compete with the serving path indefinitely.
+
+For node releases, install `proofofwork-node-release-publish.sh` as executable
+`/usr/local/sbin/proofofwork-node-release-publish`. After the exact checkout is
+live and detached, pass the publisher a root-owned, non-writable regular request
+file under `/var/tmp/proofofwork-deploy` whose allowlisted name contains the live
+seven-character commit prefix. Its bytes are never trusted, extracted, or copied.
+The publisher directly proves the live Git tree and complete runtime, enforces
+the 8 GiB source/compressed caps and free-space headroom, creates clean Git
+metadata without importing live hooks/config, copies only the attested runtime,
+and proves the assembled checkout again. It assigns the clean metadata to the
+live runtime owner/group, preserves numeric ownership and safe modes in the tar,
+and records commit, tree, archive size/digest/times, runtime entry count/bytes,
+and the length-prefixed path/type/mode/uid/gid/content SHA-256 in strict
+`proof-of-work-node-release-provenance-v2`. It publishes the canonical checksum
+and provenance first, makes the archive visible last, and never overwrites
+existing evidence.
+
+Install and enable the node release-health service and timer. The daily verifier
+repeats the recursive tracked and full-runtime attestation without `git status`,
+validates safe archive/checksum/provenance ownership and modes, and requires at
+least one v2 archive whose commit, tree, runtime entry count/bytes, and runtime
+SHA-256 all match live. The recursive daily job runs at nice 10 with idle I/O,
+low CPU/I/O weights, and a bounded 30-minute start timeout. It warns when
+`/opt` contains more than nine
+`proofofwork-api*` checkouts but never deletes them; rollback, incident, or
+recovery directories require separate operator classification and approval.
+Install root-executed scripts as `root:root 0755`, unit/config files as
+`root:root 0644`, and create their mandatory retention directories before
+starting the services.
+
+On the UI host, install the storage-health, bounded scratch-prune, and release-
+provenance scripts plus their services and timers. Storage health runs every
+five minutes, warns at 75% block/inode use, becomes critical at 85% or below
+10 GiB free, and never deletes data. The daily scratch cleaner defaults to
+dry-run and may automatically remove only age-qualified allowlisted stage,
+staging, failed, and `/var/tmp/proofofwork-ui-*` roots carrying a canonical
+`.proofofwork-rebuildable-stage-v1` marker. That owner-controlled marker must
+contain exactly `format=proofofwork-rebuildable-ui-stage-v1`, the path-derived
+`class`, and the path-derived `release_id`; an absent or divergent marker retains
+the tree. Candidates with unsafe ownership/modes, special files, or any root or
+nested mount fail closed. UI provenance and cleanup share the nonblocking
+`/run/lock/proofofwork-ui-deploy.lock`. Pre-deploy, previous, rollback, and other
+historical trees remain outside automatic cleanup. Review the exact dry-run
+before enabling the applying service. Both the applying cleanup and recursive
+provenance verifier are bounded to 30 minutes; the recursive jobs run at nice
+10 with idle I/O and low CPU/I/O weights.
+
+The UI provenance recorder requires `--source-checkout` at one canonical,
+detached, recursively verified Git checkout staged below
+`/var/tmp/proofofwork-deploy`; the supplied full 40- or 64-hex commit must equal
+its HEAD. Ignored source paths are forbidden except below `node_modules/`; that
+dependency tree is recursively bounded and bound by its path/type/mode/uid/gid/
+content SHA-256, entry count, and byte count. Ignored Vite env/local files or
+other build inputs fail closed. The recorder also requires one checksum-verified
+managed archive containing only `surfaces/<surface>/...`. It rejects traversal,
+links, special files, duplicates, unexpected paths, extraction-size excess,
+mounted surface/source subtrees, and unsafe evidence or surface modes. It
+compares every active surface's relative paths, bytes, modes, and file count to
+the privately extracted archive before atomically recording
+`proofofwork-ui-release-v3` with the exact source commit, tree, and dependency
+proof. The 15-minute verifier rehashes every active root and retained archive
+evidence. The `nft` hostname is a compatibility alias, not an independent build:
+its file count and mode-sensitive tree SHA-256 must exactly equal generic
+Computer during both record and verify. Do not label a legacy, mixed-commit, or
+partially served UI as commit-bound; redeploy or deliberately retire divergence.
 
 Production Ubuntu uses Apport, not `systemd-coredump`. Install
 `coredump-disable-sysctl.conf` as
@@ -2887,7 +3112,8 @@ After changing the API or production build, verify:
 - Growth can load real chain metrics, including credit creations, mints, transfers, listings, and sales, and render the modeled-vs-real proofs/USD value graph without layout overlap on desktop and mobile.
 - WORK and Growth show matching confirmed network value in proofs/live USD using `/api/v1/work-floor` and `/api/v1/prices/btc-usd`; `actualValue.totalUsd` reconciles to `actualValue.totalSats / 100000000 * btcUsd`.
 - `npm run check:live-data` passes locally.
-- `npm run check:api-truth`, `npm run check:hardening`, and `npm run check:ui` pass locally.
+- `npm run check:api-truth`, `npm run check:hardening`, `npm run check:ui`,
+  `npm run check:node-ops`, and `npm run check:ui-ops` pass locally.
 - `npm run audit:ledger` passes against production.
 - Known attachment transactions reconstruct with valid size and SHA-256.
 - Known HTML message-body transactions render through Browser from `pwm1:m`.

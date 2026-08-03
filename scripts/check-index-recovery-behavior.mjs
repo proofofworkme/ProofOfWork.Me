@@ -215,6 +215,11 @@ const API_PATH = new URL("../server/proof-api.mjs", import.meta.url);
 const APP_PATH = new URL("../src/App.tsx", import.meta.url);
 const BACKFILL_PATH = new URL("./backfill-proof-indexer.mjs", import.meta.url);
 const READER_PATH = new URL("../server/db/proof-index-reader.mjs", import.meta.url);
+const POSTGRES_PATH = new URL("../server/db/postgres.mjs", import.meta.url);
+const READINESS_EPOCH_PATH = new URL(
+  "../deploy/proof-indexer-readiness-epoch.sql",
+  import.meta.url,
+);
 const SCHEMA_PATH = new URL("../server/sql/proof-indexer-v1.sql", import.meta.url);
 const WORK_AMO_V5_PATH = new URL(
   "../server/work-amo-v5.mjs",
@@ -39628,6 +39633,25 @@ check("broadcast rate identity trusts only the loopback proxy boundary", () => {
 });
 
 check("broadcast rejects absent origins and a checkpoint change before submit", async () => {
+  const workAdmissionSource = topLevelFunctionSource(
+    API_PATH,
+    "assertWorkMarketplaceBroadcastAllowed",
+  );
+  assert.match(
+    workAdmissionSource,
+    /signedWorkMarketplaceWriteActions[\s\S]*await options\.beforeSubmit\?\.\(\)[\s\S]*workAmoV8Metadata/u,
+  );
+  for (const functionName of [
+    "broadcastSlipstreamPayload",
+    "broadcastNodePayload",
+  ]) {
+    const source = topLevelFunctionSource(API_PATH, functionName);
+    assert.match(
+      source,
+      /assertWorkMarketplaceBroadcastAllowed[\s\S]*beforeSubmit: options\.beforeSubmit/u,
+    );
+    assert.doesNotMatch(source, /await options\.beforeSubmit\?\.\(\)/u);
+  }
   const allowed = isolatedFunction(API_PATH, "broadcastOriginAllowed", {
     BROADCAST_ALLOW_MISSING_ORIGIN: false,
     BROADCAST_EXTRA_ALLOWED_ORIGINS: new Set(),
@@ -53385,6 +53409,1313 @@ check("AMO V5 readiness coalesces only identical exact checkpoints", async () =>
   await readinessWithCache(negativeRequest);
   await readinessWithCache(negativeRequest);
   assert.equal(negativeLoads, 2);
+});
+
+check("AMO V8 request coalescing binds exact reader identity and live inputs", () => {
+  const statusCacheKey = isolatedFunction(
+    API_PATH,
+    "workAmoV8StatusCacheKey",
+  );
+  const readinessIdentity = isolatedFunction(
+    API_PATH,
+    "workAmoV8MigrationReadinessIdentity",
+    {
+      workAmoV8MigrationReadinessIdentities: new WeakMap(),
+      workAmoV8MigrationReadinessIdentitySequence: 0,
+    },
+  );
+  const liveProbeKey = isolatedFunction(
+    API_PATH,
+    "workAmoV8ExactLiveProbeKey",
+  );
+  const declarationBlockHash = "a".repeat(64);
+  const tipHash = "b".repeat(64);
+  const expectedDeclaration = {
+    activationHeight: 960_601,
+    authorityScriptPubKey: `5120${"c".repeat(64)}`,
+    blockHash: declarationBlockHash,
+    blockHeight: 960_600,
+    blockTransactionIndex: 2_369,
+    minimumPaymentSats: 546,
+    payloadBytes: 128,
+    payloadSha256: "d".repeat(64),
+    protocolVout: 1,
+    recordOrdinal: 0,
+    registryAddress: "bc1ptestregistry",
+    registryPaymentVout: 0,
+    txid: "e".repeat(64),
+  };
+  const liveMempoolSnapshot = {
+    count: 7,
+    model: "canonical-core-mempool-txid-set-v1",
+    sha256: "f".repeat(64),
+  };
+  const workerReadiness = {
+    era: "q16",
+    finishedAt: "2026-08-02T20:00:00.000Z",
+    mempoolCount: 7,
+    mempoolSha256: "f".repeat(64),
+    pendingMembershipCount: 2,
+    pendingMembershipSha256: "1".repeat(64),
+    pendingProjectionSha256: "2".repeat(64),
+    proofSource: "idle-last-success",
+    ready: true,
+    state: "idle",
+    tipHash,
+    tipHeight: 960_768,
+  };
+  const inputs = {
+    expectedDeclaration,
+    liveMempoolSnapshot,
+    migrationReadinessIdentity: "exact-readiness-1",
+    network: "livenet",
+    networkValueBeforeQ8: "123456789",
+    tipHash,
+    tipHeight: 960_768,
+    workerReadiness,
+  };
+  const liveProbe = {
+    liveMempoolSnapshot,
+    tipHash,
+    tipHeight: 960_768,
+    workerReadiness,
+  };
+  const changedMempoolProbe = {
+    ...liveProbe,
+    liveMempoolSnapshot: {
+      ...liveMempoolSnapshot,
+      count: 8,
+      sha256: "3".repeat(64),
+    },
+  };
+  assert.notEqual(liveProbeKey(liveProbe), liveProbeKey(changedMempoolProbe));
+  assert.equal(
+    liveProbeKey(liveProbe, { includeMempool: false }),
+    liveProbeKey(changedMempoolProbe, { includeMempool: false }),
+  );
+  const readinessKey = statusCacheKey(inputs);
+  assert.notEqual(readinessKey, "");
+  for (const changedInputs of [
+    {
+      ...inputs,
+      migrationReadinessIdentity: "exact-readiness-2",
+    },
+    {
+      ...inputs,
+      expectedDeclaration: {
+        ...expectedDeclaration,
+        txid: "3".repeat(64),
+      },
+    },
+    {
+      ...inputs,
+      liveMempoolSnapshot: {
+        ...liveMempoolSnapshot,
+        sha256: "4".repeat(64),
+      },
+    },
+    {
+      ...inputs,
+      networkValueBeforeQ8: "123456790",
+    },
+    {
+      ...inputs,
+      tipHash: "5".repeat(64),
+      workerReadiness: {
+        ...workerReadiness,
+        tipHash: "5".repeat(64),
+      },
+    },
+    {
+      ...inputs,
+      workerReadiness: {
+        ...workerReadiness,
+        finishedAt: "2026-08-02T20:00:01.000Z",
+      },
+    },
+    {
+      ...inputs,
+      workerReadiness: {
+        ...workerReadiness,
+        pendingProjectionSha256: "6".repeat(64),
+      },
+    },
+  ]) {
+    assert.notEqual(statusCacheKey(changedInputs), readinessKey);
+  }
+  assert.equal(
+    statusCacheKey({
+      ...inputs,
+      expectedDeclaration: {
+        ...expectedDeclaration,
+        blockHash: "invalid",
+      },
+    }),
+    "",
+  );
+  assert.notEqual(
+    statusCacheKey({
+      ...inputs,
+      workerReadiness: { ...workerReadiness, ready: false },
+    }),
+    readinessKey,
+  );
+  assert.equal(
+    statusCacheKey({
+      ...inputs,
+      migrationReadinessIdentity: "",
+    }),
+    "",
+  );
+  const exactReadiness = {
+    active: true,
+    canonical: true,
+    confirmed: true,
+    evidenceComplete: true,
+    exactTipReady: true,
+    parityReady: true,
+    pendingReady: true,
+    ready: true,
+    replayReady: true,
+  };
+  const firstIdentity = readinessIdentity(exactReadiness);
+  assert.match(firstIdentity, /^exact-readiness-[1-9][0-9]*$/u);
+  assert.equal(readinessIdentity(exactReadiness), firstIdentity);
+  assert.notEqual(readinessIdentity({ ...exactReadiness }), firstIdentity);
+  assert.equal(
+    readinessIdentity({ ...exactReadiness, pendingReady: false }),
+    "",
+  );
+
+  const apiSource = readFileSync(API_PATH, "utf8");
+  assert.doesNotMatch(apiSource, /WORK_AMO_V8_STATUS_CACHE_TTL_MS/u);
+  assert.doesNotMatch(apiSource, /workAmoV8StatusCache\.payload/u);
+  const metadataSource = topLevelFunctionSource(
+    API_PATH,
+    "workAmoV8Metadata",
+  );
+  assert.match(
+    metadataSource,
+    /proofIndexWorkPrecisionV2MigrationReadiness[\s\S]*workAmoV8StatusCacheKey[\s\S]*workAmoV8MetadataSingleFlight/u,
+  );
+  assert.match(
+    metadataSource,
+    /workAmoV8ExactReadinessSweep[\s\S]*pendingValidThrough/u,
+  );
+  const sweepSource = topLevelFunctionSource(
+    API_PATH,
+    "workAmoV8ExactReadinessSweep",
+  );
+  assert.match(
+    sweepSource,
+    /workAmoV8ExactLiveProbe\(network\)[\s\S]*proofIndexWorkPrecisionV2MigrationReadiness[\s\S]*workAmoV8ExactLiveProbe\(network\)/u,
+  );
+  assert.match(sweepSource, /pendingValidThrough[\s\S]*Date\.now/u);
+  const exactProbeSource = topLevelFunctionSource(
+    API_PATH,
+    "workAmoV8ExactLiveProbe",
+  );
+  assert.match(
+    exactProbeSource,
+    /proofIndexWorkAmoV8WorkerStatusPayload/u,
+  );
+  assert.doesNotMatch(
+    exactProbeSource,
+    /proofIndexOperationalStatusPayload/u,
+  );
+});
+
+check("AMO V8 metadata coalesces identical exact live probes", async () => {
+  const singleFlight = isolatedFunction(
+    API_PATH,
+    "workAmoV8MetadataSingleFlight",
+  );
+  const inFlight = new Map();
+  let loads = 0;
+  let release;
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  const load = async () => {
+    loads += 1;
+    await gate;
+    return { ready: true };
+  };
+  const first = singleFlight(inFlight, "same-exact-probe", load);
+  const second = singleFlight(inFlight, "same-exact-probe", load);
+  await Promise.resolve();
+  assert.equal(loads, 1);
+  release();
+  assert.deepEqual(
+    await Promise.all([first, second]),
+    [{ ready: true }, { ready: true }],
+  );
+  assert.equal(inFlight.size, 0);
+  await Promise.all([
+    singleFlight(inFlight, "tip-a", async () => {
+      loads += 1;
+      return "a";
+    }),
+    singleFlight(inFlight, "tip-b", async () => {
+      loads += 1;
+      return "b";
+    }),
+  ]);
+  assert.equal(loads, 3);
+  await assert.rejects(
+    singleFlight(inFlight, "retry", async () => {
+      throw new Error("expected metadata readiness failure");
+    }),
+    /expected metadata readiness failure/u,
+  );
+  assert.equal(inFlight.has("retry"), false);
+  assert.equal(
+    await singleFlight(inFlight, "retry", async () => "recovered"),
+    "recovered",
+  );
+  const metadataSource = topLevelFunctionSource(
+    API_PATH,
+    "workAmoV8Metadata",
+  );
+  assert.match(
+    metadataSource,
+    /force !== true[\s\S]*singleFlightBypass !== true[\s\S]*workAmoV8MetadataSingleFlight/u,
+  );
+  assert.match(
+    metadataSource,
+    /exactReadinessProbe: immutableProbe[\s\S]*singleFlightBypass: true/u,
+  );
+});
+
+check("WORK precision V2 readiness cache is exact, positive-only, and coalesced", async () => {
+  assert.match(
+    readFileSync(READER_PATH, "utf8"),
+    /const WORK_PRECISION_V2_READINESS_CACHE_TTL_MS = 30_000;/u,
+  );
+  const stableReadinessJson = isolatedFunction(
+    READER_PATH,
+    "stableWorkPrecisionJson",
+  );
+  const readinessValueSha256 = isolatedFunction(
+    READER_PATH,
+    "workPrecisionV2ReadinessValueSha256",
+    { stableWorkPrecisionJson: stableReadinessJson },
+  );
+  const readinessFingerprintIso = isolatedFunction(
+    READER_PATH,
+    "workPrecisionV2ReadinessFingerprintIso",
+  );
+  const readinessEpochs = isolatedFunction(
+    READER_PATH,
+    "normalizedWorkPrecisionV2ReadinessEpochs",
+  );
+  const readinessEpochContract = isolatedFunction(
+    READER_PATH,
+    "workPrecisionV2ReadinessEpochContractReady",
+    {
+      objectRecord: (value) =>
+        value && typeof value === "object" && !Array.isArray(value)
+          ? value
+          : {},
+    },
+  );
+  const pins = {
+    activationHeight: 960_601,
+    declarationBlockHash: "1".repeat(64),
+    declarationBlockIndex: 2_369,
+    declarationHeight: 960_600,
+    declarationMemoBytes: 128,
+    declarationMemoSha256: "2".repeat(64),
+    declarationProtocolVout: 1,
+    declarationRecordOrdinal: 0,
+    declarationRegistryPaymentVout: 0,
+    declarationTxid: "3".repeat(64),
+  };
+  const transitionModel = "test-work-amo-v8-transition";
+  const tokenStateModel = "test-work-amo-v8-token-state";
+  const storageModel = "test-work-subatoms";
+  const pendingModel = "test-work-q16-pending";
+  const mempoolModel = "test-core-mempool";
+  const membershipModel = "test-work-q16-membership";
+  const projectionModel = "test-work-q16-projection";
+  const pendingMaxAgeMs = 120_000;
+  const fixedNow = Date.parse("2026-08-02T20:00:30.000Z");
+  const tipHeight = 960_768;
+  const tipHash = "4".repeat(64);
+  const mempoolSha256 = "5".repeat(64);
+  const membershipSha256 = "6".repeat(64);
+  const projectionSha256 = "7".repeat(64);
+  const finishedAt = "2026-08-02T20:00:28.000Z";
+  const migrationMarker = { model: "test-migration", status: "complete" };
+  const readinessDataTables = [
+    "blocks",
+    "credit_balances",
+    "credit_definitions",
+    "credit_listings",
+    "events",
+    "ledger_snapshots",
+    "op_returns",
+    "transactions",
+    "tx_inputs",
+    "tx_outputs",
+    "work_amo_block_transitions",
+    "work_amo_listing_terms",
+    "work_amo_v6_listing_terms",
+    "work_amo_v7_listing_terms",
+    "work_amo_v8_listing_terms",
+  ];
+  const readinessContract = {
+    constraints: [[
+      "credit_definitions",
+      "work_precision",
+      true,
+      "CHECK (...)"
+    ]],
+    epochSecurity: {
+      maxPreparedTransactions: "0",
+      searchPath: "pg_catalog, pg_temp",
+      ownerRole: {
+        bypassRls: false,
+        canLogin: false,
+        createDb: false,
+        createRole: false,
+        membershipEdges: 0,
+        name: "proof_indexer_readiness_owner",
+        replication: false,
+        schemaUsage: true,
+        superuser: false,
+      },
+      relations: [
+        {
+          accessMethod: "heap",
+          appColumnMutation: false,
+          appMutation: false,
+          appSelect: true,
+          appSelectAclCount: 1,
+          appSelectGrantableCount: 0,
+          columnMutationAclCount: 0,
+          columnPublicAclCount: 0,
+          columns: [
+            [1, "transaction_id", "xid8", true, false, false, false, null],
+            [2, "network", "text", true, false, false, false, null],
+            [3, "shard", "smallint", true, false, false, false, null],
+            [
+              4,
+              "enqueued_at",
+              "timestamp with time zone",
+              true,
+              false,
+              false,
+              false,
+              "clock_timestamp()",
+            ],
+          ],
+          constraints: [
+            [
+              "c",
+              true,
+              "CHECK (((shard >= 0) AND (shard < 64)))",
+            ],
+            ["p", true, "PRIMARY KEY (transaction_id)"],
+            ["t", true, "TRIGGER DEFERRABLE INITIALLY DEFERRED"],
+          ],
+          forceRls: false,
+          hasRules: false,
+          indexes: [[
+            "readiness_epoch_queue_pkey",
+            "btree",
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            false,
+            false,
+            null,
+            null,
+            "CREATE UNIQUE INDEX readiness_epoch_queue_pkey ON proof_indexer.readiness_epoch_queue USING btree (transaction_id)",
+          ]],
+          inheritanceEdges: 0,
+          kind: "r",
+          name: "readiness_epoch_queue",
+          owner: "proof_indexer_readiness_owner",
+          persistence: "p",
+          publicAclCount: 0,
+          rls: false,
+          rewriteRuleCount: 0,
+          unexpectedMutationAclCount: 0,
+        },
+        {
+          accessMethod: "heap",
+          appColumnMutation: false,
+          appMutation: false,
+          appSelect: true,
+          appSelectAclCount: 1,
+          appSelectGrantableCount: 0,
+          columnMutationAclCount: 0,
+          columnPublicAclCount: 0,
+          columns: [
+            [1, "network", "text", true, false, false, false, null],
+            [2, "shard", "smallint", true, false, false, false, null],
+            [3, "epoch", "bigint", true, false, false, false, null],
+            [
+              4,
+              "updated_at",
+              "timestamp with time zone",
+              true,
+              false,
+              false,
+              false,
+              "clock_timestamp()",
+            ],
+          ],
+          constraints: [
+            ["c", true, "CHECK ((epoch >= 1))"],
+            [
+              "c",
+              true,
+              "CHECK (((shard >= 0) AND (shard < 64)))",
+            ],
+            ["p", true, "PRIMARY KEY (network, shard)"],
+          ],
+          forceRls: false,
+          hasRules: false,
+          indexes: [[
+            "readiness_epoch_shards_pkey",
+            "btree",
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            false,
+            false,
+            null,
+            null,
+            "CREATE UNIQUE INDEX readiness_epoch_shards_pkey ON proof_indexer.readiness_epoch_shards USING btree (network, shard)",
+          ]],
+          inheritanceEdges: 0,
+          kind: "r",
+          name: "readiness_epoch_shards",
+          owner: "proof_indexer_readiness_owner",
+          persistence: "p",
+          publicAclCount: 0,
+          rls: false,
+          rewriteRuleCount: 0,
+          unexpectedMutationAclCount: 0,
+        },
+      ],
+    },
+    epochFunctions: [
+      {
+        appExecute: true,
+        appExecuteAclCount: 1,
+        appExecuteGrantableCount: 0,
+        language: "plpgsql",
+        name: "commit_livenet_readiness_epoch",
+        owner: "proof_indexer_readiness_owner",
+        publicExecuteAclCount: 0,
+        securityDefiner: true,
+        settings: ["search_path=pg_catalog, pg_temp"],
+        source: "BEGIN IF NEW.transaction_id <> pg_catalog.pg_current_xact_id() THEN RAISE EXCEPTION 'Readiness epoch queue transaction mismatch'; END IF; UPDATE proof_indexer.readiness_epoch_shards SET epoch = epoch + 1, updated_at = pg_catalog.clock_timestamp() WHERE network = NEW.network AND shard = NEW.shard; IF NOT FOUND THEN RAISE EXCEPTION 'Missing readiness epoch shard for network % shard %', NEW.network, NEW.shard; END IF; DELETE FROM proof_indexer.readiness_epoch_queue WHERE transaction_id = NEW.transaction_id; RETURN NULL; END;",
+        unexpectedExecuteAclCount: 0,
+      },
+      {
+        appExecute: true,
+        appExecuteAclCount: 1,
+        appExecuteGrantableCount: 0,
+        language: "plpgsql",
+        name: "enqueue_livenet_readiness_epoch",
+        owner: "proof_indexer_readiness_owner",
+        publicExecuteAclCount: 0,
+        securityDefiner: true,
+        settings: ["search_path=pg_catalog, pg_temp"],
+        source: "DECLARE current_transaction_id xid8 := pg_catalog.pg_current_xact_id(); BEGIN INSERT INTO proof_indexer.readiness_epoch_queue ( transaction_id, network, shard ) VALUES ( current_transaction_id, 'livenet', pg_catalog.mod(current_transaction_id::text::numeric, 64)::smallint ) ON CONFLICT (transaction_id) DO NOTHING; RETURN NULL; END;",
+        unexpectedExecuteAclCount: 0,
+      },
+      {
+        appExecute: true,
+        appExecuteAclCount: 1,
+        appExecuteGrantableCount: 0,
+        language: "plpgsql",
+        name: "enqueue_livenet_readiness_epoch_for_meta",
+        owner: "proof_indexer_readiness_owner",
+        publicExecuteAclCount: 0,
+        securityDefiner: true,
+        settings: ["search_path=pg_catalog, pg_temp"],
+        source: "DECLARE prior_key text := CASE WHEN TG_OP IN ('UPDATE', 'DELETE') THEN OLD.key ELSE NULL END; current_key text := CASE WHEN TG_OP IN ('INSERT', 'UPDATE') THEN NEW.key ELSE NULL END; current_transaction_id xid8; BEGIN IF prior_key IN ( 'workPrecisionV2Migration:livenet', 'workQ16PendingRebuild:livenet' ) OR current_key IN ( 'workPrecisionV2Migration:livenet', 'workQ16PendingRebuild:livenet' ) THEN current_transaction_id := pg_catalog.pg_current_xact_id(); INSERT INTO proof_indexer.readiness_epoch_queue ( transaction_id, network, shard ) VALUES ( current_transaction_id, 'livenet', pg_catalog.mod(current_transaction_id::text::numeric, 64)::smallint ) ON CONFLICT (transaction_id) DO NOTHING; END IF; RETURN NULL; END;",
+        unexpectedExecuteAclCount: 0,
+      },
+    ],
+    sourceRelations: [...readinessDataTables, "meta"]
+      .sort()
+      .map((name) => ({
+        accessMethod: "heap",
+        forceRls: false,
+        hasRules: false,
+        inheritanceEdges: 0,
+        kind: "r",
+        name,
+        owner: "proof_indexer",
+        persistence: "p",
+        rewriteRuleCount: 0,
+        rls: false,
+      })),
+    triggers: [
+      ...readinessDataTables.map((table) => [
+        table,
+        `readiness_epoch_${table}`,
+        "A",
+        false,
+        `CREATE TRIGGER readiness_epoch_${table} AFTER INSERT OR DELETE OR UPDATE OR TRUNCATE ON proof_indexer.${table} FOR EACH STATEMENT EXECUTE FUNCTION proof_indexer.enqueue_livenet_readiness_epoch()`,
+      ]),
+      [
+        "meta",
+        "readiness_epoch_meta",
+        "A",
+        false,
+        "CREATE TRIGGER readiness_epoch_meta AFTER INSERT OR DELETE OR UPDATE ON proof_indexer.meta FOR EACH ROW EXECUTE FUNCTION proof_indexer.enqueue_livenet_readiness_epoch_for_meta()",
+      ],
+      [
+        "meta",
+        "readiness_epoch_meta_truncate",
+        "A",
+        false,
+        "CREATE TRIGGER readiness_epoch_meta_truncate AFTER TRUNCATE ON proof_indexer.meta FOR EACH STATEMENT EXECUTE FUNCTION proof_indexer.enqueue_livenet_readiness_epoch()",
+      ],
+      [
+        "readiness_epoch_queue",
+        "readiness_epoch_commit",
+        "A",
+        false,
+        "CREATE CONSTRAINT TRIGGER readiness_epoch_commit AFTER INSERT ON proof_indexer.readiness_epoch_queue DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION proof_indexer.commit_livenet_readiness_epoch()",
+      ],
+    ],
+  };
+  assert.equal(readinessEpochContract(readinessContract), true);
+  assert.equal(
+    readinessEpochContract({
+      ...readinessContract,
+      triggers: readinessContract.triggers.slice(1),
+    }),
+    false,
+  );
+  assert.equal(
+    readinessEpochContract({
+      ...readinessContract,
+      triggers: readinessContract.triggers.map((trigger, index) =>
+        index === 0
+          ? [trigger[0], trigger[1], "O", trigger[3], trigger[4]]
+          : trigger
+      ),
+    }),
+    false,
+  );
+  const driftedReadinessContract = (mutate) => {
+    const drifted = structuredClone(readinessContract);
+    mutate(drifted);
+    return drifted;
+  };
+  const securityDriftContracts = [
+    driftedReadinessContract((contract) => {
+      contract.epochSecurity.maxPreparedTransactions = "1";
+    }),
+    driftedReadinessContract((contract) => {
+      contract.epochSecurity.searchPath = "public, pg_catalog";
+    }),
+    driftedReadinessContract((contract) => {
+      contract.epochSecurity.ownerRole.canLogin = true;
+    }),
+    driftedReadinessContract((contract) => {
+      contract.epochSecurity.ownerRole.superuser = true;
+    }),
+    driftedReadinessContract((contract) => {
+      contract.epochSecurity.ownerRole.bypassRls = true;
+    }),
+    driftedReadinessContract((contract) => {
+      contract.epochSecurity.ownerRole.membershipEdges = 1;
+    }),
+    driftedReadinessContract((contract) => {
+      contract.epochSecurity.ownerRole.schemaUsage = false;
+    }),
+    driftedReadinessContract((contract) => {
+      contract.epochSecurity.relations[0].owner = "proof_indexer";
+    }),
+    driftedReadinessContract((contract) => {
+      contract.epochSecurity.relations[0].appMutation = true;
+      contract.epochSecurity.relations[0]
+        .unexpectedMutationAclCount = 1;
+    }),
+    driftedReadinessContract((contract) => {
+      contract.epochSecurity.relations[0].appColumnMutation = true;
+      contract.epochSecurity.relations[0].columnMutationAclCount = 1;
+    }),
+    driftedReadinessContract((contract) => {
+      contract.epochSecurity.relations[0].persistence = "u";
+    }),
+    driftedReadinessContract((contract) => {
+      contract.epochSecurity.relations[0].accessMethod = "unexpected_am";
+    }),
+    driftedReadinessContract((contract) => {
+      contract.epochSecurity.relations[0].inheritanceEdges = 1;
+    }),
+    driftedReadinessContract((contract) => {
+      contract.epochSecurity.relations[0].indexes.push([
+        "unexpected_expression_index",
+        "btree",
+        true,
+        true,
+        true,
+        false,
+        true,
+        false,
+        false,
+        false,
+        null,
+        "proof_indexer.malicious_index_expression()",
+        "CREATE INDEX unexpected_expression_index ON proof_indexer.readiness_epoch_queue USING btree (proof_indexer.malicious_index_expression())",
+      ]);
+    }),
+    driftedReadinessContract((contract) => {
+      contract.epochSecurity.relations[0].rls = true;
+    }),
+    driftedReadinessContract((contract) => {
+      contract.epochSecurity.relations[0].columns[3][7] =
+        "proof_indexer.malicious_default()";
+    }),
+    driftedReadinessContract((contract) => {
+      contract.epochSecurity.relations[0].columns.push([
+        5,
+        "unexpected_column",
+        "integer",
+        false,
+        false,
+        false,
+        false,
+        "proof_indexer.malicious_default()",
+      ]);
+    }),
+    driftedReadinessContract((contract) => {
+      contract.epochSecurity.relations[0].hasRules = true;
+      contract.epochSecurity.relations[0].rewriteRuleCount = 1;
+    }),
+    driftedReadinessContract((contract) => {
+      contract.triggers.push([
+        "readiness_epoch_queue",
+        "unexpected_queue_trigger",
+        "A",
+        true,
+        "CREATE TRIGGER unexpected_queue_trigger BEFORE INSERT ON proof_indexer.readiness_epoch_queue FOR EACH ROW EXECUTE FUNCTION proof_indexer.enqueue_livenet_readiness_epoch()",
+      ]);
+    }),
+    driftedReadinessContract((contract) => {
+      contract.triggers.push([
+        "readiness_epoch_shards",
+        "unexpected_shard_trigger",
+        "A",
+        true,
+        "CREATE TRIGGER unexpected_shard_trigger BEFORE UPDATE ON proof_indexer.readiness_epoch_shards FOR EACH ROW EXECUTE FUNCTION proof_indexer.enqueue_livenet_readiness_epoch()",
+      ]);
+    }),
+    driftedReadinessContract((contract) => {
+      contract.sourceRelations[0].kind = "p";
+    }),
+    driftedReadinessContract((contract) => {
+      contract.sourceRelations[0].accessMethod = "unexpected_am";
+    }),
+    driftedReadinessContract((contract) => {
+      contract.sourceRelations[0].inheritanceEdges = 1;
+    }),
+    driftedReadinessContract((contract) => {
+      contract.sourceRelations[0].hasRules = true;
+      contract.sourceRelations[0].rewriteRuleCount = 1;
+    }),
+    driftedReadinessContract((contract) => {
+      contract.epochSecurity.relations[0].constraints =
+        contract.epochSecurity.relations[0].constraints.filter(
+          (constraint) => constraint[0] !== "p",
+        );
+    }),
+    driftedReadinessContract((contract) => {
+      contract.epochFunctions[0].owner = "proof_indexer";
+    }),
+    driftedReadinessContract((contract) => {
+      contract.epochFunctions[0].language = "sql";
+    }),
+    driftedReadinessContract((contract) => {
+      contract.epochFunctions[0].publicExecuteAclCount = 1;
+      contract.epochFunctions[0].unexpectedExecuteAclCount = 1;
+    }),
+  ];
+  for (const driftedContract of securityDriftContracts) {
+    assert.equal(readinessEpochContract(driftedContract), false);
+  }
+  const pendingWitness = {
+    activationHeight: pins.activationHeight,
+    canonicalTip: { hash: tipHash, height: tipHeight },
+    declarationTxid: pins.declarationTxid,
+    generatedAt: "2026-08-02T20:00:29.000Z",
+    membershipSnapshot: {
+      count: 2,
+      model: membershipModel,
+      sha256: membershipSha256,
+    },
+    mempoolSnapshot: {
+      count: 7,
+      model: mempoolModel,
+      sha256: mempoolSha256,
+    },
+    model: pendingModel,
+    network: "livenet",
+    projection: {
+      commitmentSha256: projectionSha256,
+      model: projectionModel,
+    },
+    ready: true,
+  };
+  const exactRow = {
+    constraint_definitions: readinessContract,
+    migration_marker: migrationMarker,
+    migration_updated_at: "2026-08-02T20:00:29.250Z",
+    pending_updated_at: "2026-08-02T20:00:29.500Z",
+    pending_witness: pendingWitness,
+    readiness_epochs: Array.from(
+      { length: 64 },
+      (_, shard) => [shard, String(12 + shard)],
+    ),
+    readiness_queue_count: 0,
+    snapshot_generated_at: "2026-08-02T20:00:29.750Z",
+    snapshot_hash: tipHash,
+    snapshot_height: tipHeight,
+    snapshot_id: "test-snapshot",
+    snapshot_source_hashes: { blockScan: tipHash },
+    snapshot_work_amount_storage_model: storageModel,
+    tip_hash: tipHash,
+    tip_height: tipHeight,
+    transition_height: tipHeight,
+    transition_closing_state_sha256: "8".repeat(64),
+    transition_complete: true,
+    transition_created_at: "2026-08-02T20:00:29.625Z",
+    transition_event_set_sha256: "9".repeat(64),
+    transition_hash: tipHash,
+    transition_model: transitionModel,
+    transition_opening_state_sha256: "a".repeat(64),
+    transition_work_token_state_model: tokenStateModel,
+    worker_last_success: {
+      finishedAt,
+      workPrecision: {
+        era: "q16",
+        replay: {
+          era: "q16",
+          mempoolCount: 7,
+          mempoolSha256,
+          pendingMembershipCount: 2,
+          pendingMembershipSha256: membershipSha256,
+          pendingProjectionSha256: projectionSha256,
+          ready: true,
+          replayRequired: true,
+          tipHash,
+          tipHeight,
+        },
+      },
+    },
+    worker_last_success_at: finishedAt,
+  };
+  const fingerprintFromRows = isolatedFunction(
+    READER_PATH,
+    "workPrecisionV2ReadinessFingerprintFromRows",
+    {
+      normalizedWorkAmoV6ExpectedPins: (value) => value,
+      normalizedWorkPrecisionV2ReadinessEpochs: readinessEpochs,
+      workPrecisionV2MarkerBindsReader: (marker) =>
+        marker?.status === "complete",
+      workPrecisionV2ReadinessEpochContractReady:
+        readinessEpochContract,
+      workPrecisionV2ReadinessFingerprintIso: readinessFingerprintIso,
+      workPrecisionV2ReadinessValueSha256: readinessValueSha256,
+      WORK_AMO_V8_BLOCK_SEQUENCER_MODEL: transitionModel,
+      WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL: tokenStateModel,
+      WORK_PRECISION_V2_READINESS_CACHE_TTL_MS: 30_000,
+      WORK_Q16_PENDING_MEMBERSHIP_MODEL: membershipModel,
+      WORK_Q16_PENDING_MEMPOOL_MODEL: mempoolModel,
+      WORK_Q16_PENDING_PROJECTION_MODEL: projectionModel,
+      WORK_Q16_PENDING_REBUILD_MODEL: pendingModel,
+      WORK_Q16_PENDING_WITNESS_MAX_AGE_MS: pendingMaxAgeMs,
+      WORK_SUBATOM_PROJECTION_MODEL: storageModel,
+    },
+  );
+  const directFingerprint = fingerprintFromRows(
+    [exactRow],
+    "livenet",
+    pins,
+    fixedNow,
+  );
+  assert.equal(typeof directFingerprint?.key, "string");
+  assert.equal(directFingerprint.key.length, 64);
+  assert.equal(directFingerprint.expiresAt, fixedNow + 30_000);
+  assert.equal(
+    JSON.stringify(directFingerprint.readinessEpochs[0]),
+    JSON.stringify([0, "12"]),
+  );
+  const securityDriftFingerprints = securityDriftContracts.map(
+    (constraintDefinitions) =>
+      fingerprintFromRows(
+        [{
+          ...exactRow,
+          constraint_definitions: constraintDefinitions,
+        }],
+        "livenet",
+        pins,
+        fixedNow,
+      ),
+  );
+  for (const driftedFingerprint of securityDriftFingerprints) {
+    assert.equal(driftedFingerprint?.positiveEligible, false);
+  }
+  const changedEpochRow = {
+    ...exactRow,
+    readiness_epochs: exactRow.readiness_epochs.map((entry, index) =>
+      index === 0 ? [0, "13"] : entry
+    ),
+  };
+  assert.notEqual(
+    fingerprintFromRows(
+      [changedEpochRow],
+      "livenet",
+      pins,
+      fixedNow,
+    )?.key,
+    directFingerprint.key,
+  );
+  assert.equal(
+    fingerprintFromRows(
+      [{ ...exactRow, readiness_queue_count: 1 }],
+      "livenet",
+      pins,
+      fixedNow,
+    )?.positiveEligible,
+    false,
+  );
+  const exactLargeEpochRow = {
+    ...exactRow,
+    readiness_epochs: exactRow.readiness_epochs.map((entry, index) =>
+      index === 0 ? [0, "9007199254740992"] : entry
+    ),
+  };
+  const changedLargeEpochRow = {
+    ...exactLargeEpochRow,
+    readiness_epochs: exactLargeEpochRow.readiness_epochs.map(
+      (entry, index) =>
+        index === 0 ? [0, "9007199254740993"] : entry,
+    ),
+  };
+  assert.notEqual(
+    fingerprintFromRows(
+      [exactLargeEpochRow],
+      "livenet",
+      pins,
+      fixedNow,
+    )?.key,
+    fingerprintFromRows(
+      [changedLargeEpochRow],
+      "livenet",
+      pins,
+      fixedNow,
+    )?.key,
+  );
+  const exactPositiveReadiness = isolatedFunction(
+    READER_PATH,
+    "workPrecisionV2MigrationReadinessResultIsExactPositive",
+    { workPrecisionV2ReadinessValueSha256: readinessValueSha256 },
+  );
+  const directReady = {
+    active: true,
+    canonical: true,
+    confirmed: true,
+    evidenceComplete: true,
+    exactTipReady: true,
+    marker: migrationMarker,
+    parityReady: true,
+    pendingReady: true,
+    pendingValidThrough: new Date(
+      directFingerprint.pendingValidThroughMs,
+    ).toISOString(),
+    pendingWitness,
+    ready: true,
+    replayReady: true,
+    snapshotHash: tipHash,
+    tipHash,
+    tipHeight,
+  };
+  assert.equal(
+    exactPositiveReadiness(directReady, directFingerprint),
+    true,
+  );
+  const changedPendingRow = JSON.parse(JSON.stringify(exactRow));
+  changedPendingRow.pending_witness.membershipSnapshot.sha256 =
+    "b".repeat(64);
+  const changedPendingFingerprint = fingerprintFromRows(
+    [changedPendingRow],
+    "livenet",
+    pins,
+    fixedNow,
+  );
+  assert.equal(changedPendingFingerprint?.positiveEligible, true);
+  assert.notEqual(
+    changedPendingFingerprint?.key,
+    directFingerprint.key,
+  );
+  const changedWorkerRow = JSON.parse(JSON.stringify(exactRow));
+  changedWorkerRow.worker_last_success.workPrecision.replay.tipHash =
+    "c".repeat(64);
+  assert.equal(
+    fingerprintFromRows(
+      [changedWorkerRow],
+      "livenet",
+      pins,
+      fixedNow,
+    )?.positiveEligible,
+    false,
+  );
+  const independentWorkerRow = JSON.parse(JSON.stringify(exactRow));
+  independentWorkerRow.worker_last_success.workPrecision.replay.mempoolSha256 =
+    "c".repeat(64);
+  assert.equal(
+    fingerprintFromRows(
+      [independentWorkerRow],
+      "livenet",
+      pins,
+      fixedNow,
+    )?.positiveEligible,
+    true,
+  );
+  const changedTipRow = JSON.parse(JSON.stringify(exactRow));
+  changedTipRow.tip_hash = "d".repeat(64);
+  assert.equal(
+    fingerprintFromRows(
+      [changedTipRow],
+      "livenet",
+      pins,
+      fixedNow,
+    )?.positiveEligible,
+    false,
+  );
+  assert.equal(
+    exactPositiveReadiness(
+      {
+        ...directReady,
+        pendingWitness: {
+          ...pendingWitness,
+          ready: false,
+        },
+      },
+      directFingerprint,
+    ),
+    false,
+  );
+  const expiringPendingRow = JSON.parse(JSON.stringify(exactRow));
+  expiringPendingRow.pending_witness.generatedAt =
+    "2026-08-02T19:58:31.000Z";
+  const expiringFingerprint = fingerprintFromRows(
+    [expiringPendingRow],
+    "livenet",
+    pins,
+    fixedNow,
+  );
+  assert.equal(expiringFingerprint.expiresAt, fixedNow + 1_000);
+
+  const singleFlight = isolatedFunction(
+    READER_PATH,
+    "exactCheckpointSingleFlight",
+  );
+  const deepFreezeSnapshot = isolatedFunction(
+    READER_PATH,
+    "deepFreezeReadinessSnapshot",
+  );
+  const reusableReadiness = isolatedFunction(
+    READER_PATH,
+    "reusableWorkPrecisionV2MigrationReadiness",
+  );
+  const rememberReadiness = isolatedFunction(
+    READER_PATH,
+    "rememberWorkPrecisionV2MigrationReadiness",
+    {
+      deepFreezeReadinessSnapshot: deepFreezeSnapshot,
+      WORK_PRECISION_V2_READINESS_CACHE_MAX_ENTRIES: 4,
+    },
+  );
+  const exactPositive = (result, fingerprint) =>
+    result?.ready === true &&
+    result?.fingerprintKey === fingerprint?.key;
+  const readinessWithCache = isolatedFunction(
+    READER_PATH,
+    "workPrecisionV2MigrationReadinessWithCache",
+    {
+      exactCheckpointSingleFlight: singleFlight,
+      rememberWorkPrecisionV2MigrationReadiness: rememberReadiness,
+      reusableWorkPrecisionV2MigrationReadiness: reusableReadiness,
+      workPrecisionV2MigrationReadinessResultIsExactPositive:
+        exactPositive,
+    },
+  );
+  let securityDriftFullAuditLoads = 0;
+  for (const driftedFingerprint of securityDriftFingerprints) {
+    assert.equal(
+      await readinessWithCache({
+        fingerprint: driftedFingerprint,
+        inFlight: new Map(),
+        load: async () => {
+          securityDriftFullAuditLoads += 1;
+          return { ready: true };
+        },
+        readyCache: new Map(),
+        refreshFingerprint: async () => driftedFingerprint,
+      }),
+      null,
+    );
+  }
+  assert.equal(securityDriftFullAuditLoads, 0);
+  const now = Date.now();
+  const fingerprint = {
+    expiresAt: now + 30_000,
+    key: "fingerprint-a",
+    positiveEligible: true,
+  };
+  const readyCache = new Map();
+  const inFlight = new Map();
+  let positiveLoads = 0;
+  let releasePositive;
+  const positiveGate = new Promise((resolve) => {
+    releasePositive = resolve;
+  });
+  const loadPositive = async () => {
+    positiveLoads += 1;
+    await positiveGate;
+    return {
+      fingerprintKey: fingerprint.key,
+      nested: { exact: true },
+      ready: true,
+    };
+  };
+  const positiveRequest = {
+    fingerprint,
+    inFlight,
+    load: loadPositive,
+    readyCache,
+    refreshFingerprint: async () => fingerprint,
+  };
+  const first = readinessWithCache(positiveRequest);
+  const second = readinessWithCache(positiveRequest);
+  await Promise.resolve();
+  assert.equal(positiveLoads, 1);
+  releasePositive();
+  const [firstReady, secondReady] = await Promise.all([first, second]);
+  assert.equal(firstReady, secondReady);
+  assert.equal(Object.isFrozen(firstReady), true);
+  assert.equal(Object.isFrozen(firstReady.nested), true);
+  assert.equal(inFlight.size, 0);
+  assert.equal(readyCache.size, 1);
+  assert.throws(() => {
+    firstReady.nested.exact = false;
+  }, TypeError);
+  const thirdReady = await readinessWithCache({
+    ...positiveRequest,
+    load: async () => {
+      positiveLoads += 1;
+      throw new Error("cached readiness unexpectedly reloaded");
+    },
+  });
+  assert.equal(thirdReady, firstReady);
+  assert.equal(positiveLoads, 1);
+
+  const changedFingerprint = {
+    expiresAt: now + 30_000,
+    key: "fingerprint-b",
+    positiveEligible: true,
+  };
+  const changedReady = await readinessWithCache({
+    fingerprint: changedFingerprint,
+    inFlight,
+    load: async () => {
+      positiveLoads += 1;
+      return {
+        fingerprintKey: changedFingerprint.key,
+        ready: true,
+      };
+    },
+    readyCache,
+    refreshFingerprint: async () => changedFingerprint,
+  });
+  assert.equal(
+    Number(readyCache.get(fingerprint.key)?.expiresAt) > Date.now(),
+    true,
+    "the original positive must still be inside its TTL",
+  );
+  assert.equal(changedReady.fingerprintKey, changedFingerprint.key);
+  assert.equal(positiveLoads, 2);
+
+  let negativeLoads = 0;
+  const negativeFingerprint = {
+    expiresAt: now + 30_000,
+    key: "fingerprint-negative",
+    positiveEligible: true,
+  };
+  const negativeRequest = {
+    fingerprint: negativeFingerprint,
+    inFlight: new Map(),
+    load: async () => {
+      negativeLoads += 1;
+      return {
+        fingerprintKey: negativeFingerprint.key,
+        ready: false,
+      };
+    },
+    readyCache: new Map(),
+    refreshFingerprint: async () => negativeFingerprint,
+  };
+  await readinessWithCache(negativeRequest);
+  await readinessWithCache(negativeRequest);
+  assert.equal(negativeLoads, 2);
+  assert.equal(negativeRequest.readyCache.size, 0);
+
+  let invalidatedLoads = 0;
+  const invalidatedCache = new Map();
+  const invalidatedRequest = {
+    fingerprint: {
+      expiresAt: now + 30_000,
+      key: "fingerprint-before",
+      positiveEligible: true,
+    },
+    inFlight: new Map(),
+    load: async () => {
+      invalidatedLoads += 1;
+      return {
+        fingerprintKey: "fingerprint-before",
+        ready: true,
+      };
+    },
+    readyCache: invalidatedCache,
+    refreshFingerprint: async () => ({
+      expiresAt: now + 30_000,
+      key: "fingerprint-after",
+      positiveEligible: true,
+    }),
+  };
+  assert.equal(await readinessWithCache(invalidatedRequest), null);
+  assert.equal(await readinessWithCache(invalidatedRequest), null);
+  assert.equal(invalidatedLoads, 2);
+  assert.equal(invalidatedCache.size, 0);
+
+  let ineligibleLoads = 0;
+  assert.equal(
+    await readinessWithCache({
+      fingerprint: {
+        expiresAt: now + 30_000,
+        key: "fingerprint-ineligible",
+        positiveEligible: false,
+      },
+      inFlight: new Map(),
+      load: async () => {
+        ineligibleLoads += 1;
+        return { ready: true };
+      },
+      readyCache: new Map(),
+      refreshFingerprint: async () => null,
+    }),
+    null,
+  );
+  assert.equal(ineligibleLoads, 0);
+
+  const expiredCache = new Map([
+    [
+      "expired",
+      {
+        expiresAt: now - 1,
+        result: { ready: true },
+      },
+    ],
+  ]);
+  assert.equal(
+    reusableReadiness(expiredCache, "expired", now),
+    null,
+  );
+  assert.equal(expiredCache.size, 0);
+
+  const fingerprintSource = topLevelFunctionSource(
+    READER_PATH,
+    "proofIndexWorkPrecisionV2ReadinessFingerprint",
+  );
+  assert.match(
+    fingerprintSource,
+    /canonical_tip[\s\S]*latest_transition[\s\S]*current_snapshot[\s\S]*pending_witness[\s\S]*worker_marker/u,
+  );
+  assert.match(
+    fingerprintSource,
+    /proof_indexer\.readiness_epoch_shards[\s\S]*proof_indexer\.readiness_epoch_queue/u,
+  );
+  assert.match(
+    fingerprintSource,
+    /max_prepared_transactions[\s\S]*pg_auth_members[\s\S]*aclexplode/u,
+  );
+  assert.match(fingerprintSource, /relpersistence/u);
+  assert.match(fingerprintSource, /relrowsecurity/u);
+  assert.match(fingerprintSource, /relforcerowsecurity/u);
+  assert.match(fingerprintSource, /relhasrules[\s\S]*pg_rewrite/u);
+  assert.match(
+    fingerprintSource,
+    /pg_get_expr[\s\S]*pg_attribute[\s\S]*pg_attrdef/u,
+  );
+  assert.match(
+    fingerprintSource,
+    /has_any_column_privilege[\s\S]*has_function_privilege/u,
+  );
+  assert.match(fingerprintSource, /pg_get_constraintdef/u);
+  assert.match(
+    fingerprintSource,
+    /pg_index[\s\S]*pg_am[\s\S]*pg_inherits/u,
+  );
+  assert.match(
+    fingerprintSource,
+    /pool\.connect\(\)[\s\S]*BEGIN READ ONLY[\s\S]*SET LOCAL search_path = pg_catalog, pg_temp[\s\S]*COMMIT[\s\S]*ROLLBACK/u,
+  );
+  assert.match(
+    fingerprintSource,
+    /snapshot\.payload \? 'summaryPayloads'[\s\S]*ORDER BY snapshot\.indexed_through_block DESC NULLS LAST,\s*snapshot\.generated_at DESC/u,
+  );
+  const readinessSource = topLevelFunctionSource(
+    READER_PATH,
+    "proofIndexWorkPrecisionV2MigrationReadiness",
+  );
+  assert.match(
+    readinessSource,
+    /requestOptions\.force === true[\s\S]*requestOptions\.singleFlightBypass === true[\s\S]*workPrecisionV2MigrationReadinessWithCache/u,
+  );
+  assert.match(
+    readinessSource,
+    /const fingerprint =\s*await proofIndexWorkPrecisionV2ReadinessFingerprint\([\s\S]*?pins,\s*\);\s*if \(\s*!fingerprint\?\.key \|\|\s*fingerprint\.positiveEligible !== true/u,
+  );
+  assert.match(
+    readinessSource,
+    /singleFlightBypass: true/u,
+  );
+  assert.match(
+    readinessSource,
+    /const refreshFingerprint =[\s\S]*proofIndexWorkPrecisionV2ReadinessFingerprint[\s\S]*\.catch\(\(\) => null\)/u,
+  );
+  assert.match(
+    readinessSource,
+    /BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY[\s\S]*SET LOCAL search_path = pg_catalog, pg_temp/u,
+  );
+  assert.match(
+    fileSource(POSTGRES_PATH),
+    /options: "-c search_path=pg_catalog,pg_temp"/u,
+  );
+  assert.match(
+    fileSource(READINESS_EPOCH_PATH),
+    /^BEGIN;\nSET LOCAL search_path = pg_catalog, pg_temp;/u,
+  );
 });
 
 check("AMO V5 status reuse keeps only proven exact-tip positives", () => {

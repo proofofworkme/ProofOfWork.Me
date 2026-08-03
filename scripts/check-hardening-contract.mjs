@@ -110,7 +110,7 @@ assert.equal(
 assert.doesNotMatch(caddy, /reverse_proxy http:\/\/65\.108\.122\.87/u);
 assert.match(
   caddy,
-  /http:\/\/77\.42\.91\.106 \{\s+respond "HTTPS hostname required\." 421\s+\}/u,
+  /http:\/\/77\.42\.91\.106 \{\s+import common_access_log\s+respond "HTTPS hostname required\." 421\s+\}/u,
 );
 assert.doesNotMatch(
   caddy,

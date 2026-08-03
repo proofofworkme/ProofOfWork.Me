@@ -39,6 +39,8 @@
     "check:ui": "node scripts/check-ui-contract.mjs",
     "check:ui:browser": "playwright test --config playwright.ui.config.mjs",
     "check:hardening": "node scripts/check-hardening-contract.mjs",
+    "check:node-ops": "node scripts/check-node-ops-contract.mjs",
+    "check:ui-ops": "node scripts/check-ui-ops-contract.mjs",
     "check:api-truth": "node scripts/check-api-truth-contract.mjs",
     "check:canonical-order": "node scripts/check-canonical-order.mjs",
     "check:server-globals": "node scripts/check-server-free-identifiers.mjs",

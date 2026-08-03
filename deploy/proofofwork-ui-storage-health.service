@@ -1,11 +1,15 @@
 [Unit]
-Description=Prune managed ProofOfWork node release backups
-RequiresMountsFor=/data/proofofwork-release-backups
+Description=Check ProofOfWork UI disk and inode runway
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/sbin/proofofwork-release-prune /data/proofofwork-release-backups/managed 3
-TimeoutStartSec=30m
+ExecStart=/usr/local/sbin/proofofwork-ui-storage-health
+Environment=POW_STORAGE_WARN_PERCENT=75
+Environment=POW_STORAGE_CRITICAL_PERCENT=85
+Environment=POW_STORAGE_WARN_INODE_PERCENT=75
+Environment=POW_STORAGE_CRITICAL_INODE_PERCENT=85
+Environment=POW_STORAGE_ROOT_MIN_FREE_BYTES=10737418240
+TimeoutStartSec=30s
 NoNewPrivileges=true
 PrivateTmp=true
 PrivateDevices=true
@@ -15,15 +19,9 @@ ProtectControlGroups=true
 ProtectKernelLogs=true
 ProtectKernelModules=true
 ProtectKernelTunables=true
-ReadWritePaths=/data/proofofwork-release-backups/managed
 CapabilityBoundingSet=
 AmbientCapabilities=
 RestrictSUIDSGID=true
 LockPersonality=true
 RestrictRealtime=true
 SystemCallArchitectures=native
-UMask=0077
-Nice=10
-IOSchedulingClass=idle
-CPUWeight=10
-IOWeight=10
