@@ -8460,6 +8460,7 @@ check("confirmed invalid credit events remain visible without becoming valid", a
   );
   const row = {
     block_hash: blockHash,
+    block_index: 17,
     effective_status: "confirmed",
     kind: "token-event-invalid",
     network: "livenet",
@@ -8482,6 +8483,8 @@ check("confirmed invalid credit events remain visible without becoming valid", a
       txid,
     },
     protocol: "pwt1",
+    op_return_vout: 2,
+    record_ordinal: 1,
     registry_address: registryAddress,
     ticker: "WORK",
     token_id: tokenId,
@@ -8510,6 +8513,9 @@ check("confirmed invalid credit events remain visible without becoming valid", a
   assert.equal(mapped.registryMutationFeeSats, 0);
   assert.equal(mapped.blockHeight, 950_123);
   assert.equal(mapped.blockHash, blockHash);
+  assert.equal(mapped.blockIndex, 17);
+  assert.equal(mapped.protocolVout, 2);
+  assert.equal(mapped.recordOrdinal, 1);
   assert.equal(mapped.senderAddress, senderAddress);
   assert.equal(mapped.recipientAddress, recipientAddress);
   assert.deepEqual(Array.from(mapped.participants), [
@@ -8700,6 +8706,11 @@ check("confirmed invalid credit events remain visible without becoming valid", a
   assert.match(query.sql, /e\.protocol = 'pwt1'/u);
   assert.match(query.sql, /e\.valid = false OR e\.kind = 'token-event-invalid'/u);
   assert.match(query.sql, /t\.status = 'confirmed'/u);
+  assert.match(query.sql, /t\.block_height = e\.block_height/u);
+  assert.match(query.sql, /t\.block_index = e\.block_index/u);
+  assert.match(query.sql, /canonical_invalid_block\.canonical = true/u);
+  assert.match(query.sql, /e\.op_return_vout/u);
+  assert.match(query.sql, /e\.record_ordinal/u);
   assert.match(query.sql, /t\.raw_tx AS transaction_raw_tx/u);
   assert.match(query.sql, /FROM proof_indexer\.event_participants/u);
 
@@ -19820,6 +19831,223 @@ check("the canonical summary publisher rejects mixed snapshot identities", async
     (error) => /not one exact snapshot/u.test(error.message),
   );
   assert.equal(writes, 0);
+});
+
+check("canonical WORK lifecycle state rebinds unique relational event positions", async () => {
+  const normalizedLowerText = (value) =>
+    String(value ?? "").trim().toLowerCase();
+  const canonicalWorkLifecycleExpectationKey = isolatedFunction(
+    READER_PATH,
+    "canonicalWorkLifecycleExpectationKey",
+  );
+  const canonicalWorkLifecyclePositionFromRow = isolatedFunction(
+    READER_PATH,
+    "canonicalWorkLifecyclePositionFromRow",
+    { normalizedLowerText },
+  );
+  const workLifecyclePositionPatch = isolatedFunction(
+    READER_PATH,
+    "workLifecyclePositionPatch",
+  );
+  const canonicalWorkCutoverRelicListing = isolatedFunction(
+    READER_PATH,
+    "canonicalWorkCutoverRelicListing",
+    {
+      WORK_AMO_V5_ACTIVATION_HEIGHT,
+      WORK_AMO_V5_DECLARATION_TXID,
+      WORK_AMO_V5_PRE_UNIT_RELIC_DISABLED_REASON:
+        "work-amo-v5-pre-unit-relic",
+      WORK_AMO_V8_RELIC_CUTOVER_MODEL:
+        "canonical-work-amo-v8-preactivation-relic-cutover-v1",
+      WORK_MARKET_V2_ACTIVATION_HEIGHT,
+      WORK_MARKET_V2_DECLARATION_TXID,
+      WORK_MARKET_V4_DECLARATION_HEIGHT: 959_619,
+      WORK_MARKET_V4_DECLARATION_TXID: "4".repeat(64),
+      configuredWorkPrecisionV2ReaderPins: () => null,
+      normalizedLowerText,
+      validTxid,
+    },
+  );
+  const payloadWithCanonicalWorkLifecyclePositions = isolatedFunction(
+    READER_PATH,
+    "payloadWithCanonicalWorkLifecyclePositions",
+    {
+      WORK_TOKEN_ID,
+      canonicalWorkCutoverRelicListing,
+      canonicalWorkLifecycleExpectationKey,
+      canonicalWorkLifecyclePositionFromRow,
+      isWorkTokenId,
+      normalizedLowerText,
+      validTxid,
+      workLifecyclePositionPatch,
+    },
+  );
+
+  const listingId = "a".repeat(64);
+  const sealTxid = "b".repeat(64);
+  const closeTxid = "c".repeat(64);
+  const relicListingId = "d".repeat(64);
+  const relicSpendTxid = "e".repeat(64);
+  const payload = {
+    closedListings: [
+      {
+        blockHash: "3".repeat(64),
+        blockHeight: 950_003,
+        blockIndex: 3,
+        closedBlockHash: "3".repeat(64),
+        closedBlockHeight: 950_003,
+        closedBlockIndex: 3,
+        closedConfirmed: true,
+        closedProtocolVout: 3,
+        closedRecordOrdinal: 0,
+        closedTxid: closeTxid,
+        confirmed: true,
+        listingId,
+        protocolVout: 3,
+        recordOrdinal: 0,
+        sealBlockHash: "2".repeat(64),
+        sealBlockHeight: 950_002,
+        sealBlockIndex: 2,
+        sealConfirmed: true,
+        sealProtocolVout: 2,
+        sealRecordOrdinal: 0,
+        sealTxid,
+        status: "sold",
+        tokenId: WORK_TOKEN_ID,
+      },
+      {
+        closedConfirmed: true,
+        closedTxid: relicSpendTxid,
+        confirmed: true,
+        disabledAtBlockHeight: WORK_MARKET_V2_ACTIVATION_HEIGHT,
+        disabledByTxid: WORK_MARKET_V2_DECLARATION_TXID,
+        disabledReason: "work-market-v2-cutover",
+        listingId: relicListingId,
+        relic: true,
+        status: "disabled",
+        tokenId: WORK_TOKEN_ID,
+      },
+    ],
+    listings: [],
+    network: "livenet",
+    tokens: [{ tokenId: WORK_TOKEN_ID }],
+  };
+  let mode = "exact";
+  let capturedQuery = null;
+  const pool = {
+    async query(sql, params) {
+      capturedQuery = { params, sql: String(sql) };
+      const roles = params[1];
+      const txids = params[2];
+      const listingIds = params[3];
+      let rows = roles.map((role, index) => ({
+        block_hash:
+          role === "listing"
+            ? (index === 0 ? "1" : "4").repeat(64)
+            : role === "seal"
+              ? "2".repeat(64)
+              : "3".repeat(64),
+        block_height: 950_001 + index,
+        block_index: 101 + index,
+        listing_id: listingIds[index],
+        match_count: "1",
+        op_return_vout: 1 + index,
+        record_ordinal: 0,
+        role,
+        txid: txids[index],
+      }));
+      if (mode === "missing") {
+        rows = rows.filter((row) => row.role !== "close");
+      }
+      if (mode === "duplicate") {
+        const close = rows.find((row) => row.role === "close");
+        rows = [...rows, { ...close }];
+      }
+      return { rows };
+    },
+  };
+  const positioned = await payloadWithCanonicalWorkLifecyclePositions(
+    pool,
+    "livenet",
+    payload,
+  );
+  assert.ok(positioned);
+  assert.deepEqual(Array.from(capturedQuery.params[1]), [
+    "listing",
+    "seal",
+    "close",
+    "listing",
+  ]);
+  assert.equal(capturedQuery.params[4], WORK_TOKEN_ID);
+  assert.match(capturedQuery.sql, /event_block\.canonical = true/u);
+  assert.match(capturedQuery.sql, /e\.kind = 'token-listing-closed'/u);
+  const terminal = positioned.closedListings[0];
+  assert.equal(terminal.blockHash, "1".repeat(64));
+  assert.equal(terminal.blockIndex, 101);
+  assert.equal(terminal.protocolVout, 1);
+  assert.equal(terminal.sealBlockHash, "2".repeat(64));
+  assert.equal(terminal.sealBlockIndex, 102);
+  assert.equal(terminal.sealProtocolVout, 2);
+  assert.equal(terminal.closedBlockHash, "3".repeat(64));
+  assert.equal(terminal.closedBlockIndex, 103);
+  assert.equal(terminal.closedProtocolVout, 3);
+  assert.equal(
+    positioned.closedListings[1].closedTxid,
+    relicSpendTxid,
+    "a real sale-ticket spend remains visible on the public cutover relic",
+  );
+  assert.equal(positioned.closedListings[1].blockHash, "4".repeat(64));
+
+  mode = "missing";
+  assert.equal(
+    await payloadWithCanonicalWorkLifecyclePositions(pool, "livenet", payload),
+    null,
+    "missing exact close evidence must fail closed",
+  );
+  mode = "duplicate";
+  assert.equal(
+    await payloadWithCanonicalWorkLifecyclePositions(pool, "livenet", payload),
+    null,
+    "duplicate exact close evidence must fail closed",
+  );
+
+  const pendingWorkVerifierStageCanonicalCutoverRelic = isolatedFunction(
+    API_PATH,
+    "pendingWorkVerifierStageCanonicalCutoverRelic",
+    {
+      WORK_AMO_V5_ACTIVATION_HEIGHT,
+      WORK_AMO_V5_DECLARATION_TXID,
+      WORK_AMO_V5_PRE_UNIT_RELIC_DISABLED_REASON:
+        "work-amo-v5-pre-unit-relic",
+      WORK_AMO_V8_ACTIVATION_HEIGHT: 960_601,
+      WORK_AMO_V8_DECLARATION_TXID: "f".repeat(64),
+      WORK_AMO_V8_RELIC_CUTOVER_MODEL:
+        "canonical-work-amo-v8-preactivation-relic-cutover-v1",
+      WORK_MARKET_V2_ACTIVATION_HEIGHT,
+      WORK_MARKET_V2_DECLARATION_TXID,
+      WORK_MARKET_V4_ACTIVATION_HEIGHT: 959_620,
+      WORK_MARKET_V4_DECLARATION_TXID: "4".repeat(64),
+    },
+  );
+  assert.equal(
+    pendingWorkVerifierStageCanonicalCutoverRelic(payload.closedListings[1]),
+    true,
+  );
+  assert.equal(
+    pendingWorkVerifierStageCanonicalCutoverRelic({
+      ...payload.closedListings[1],
+      disabledByTxid: "0".repeat(64),
+    }),
+    false,
+  );
+  const confirmedListingSource = topLevelFunctionSource(
+    API_PATH,
+    "pendingWorkVerifierStageConfirmedListing",
+  );
+  assert.match(
+    confirmedListingSource,
+    /pendingWorkVerifierStageCanonicalCutoverRelic[\s\S]*pendingWorkVerifierStageDeleteFields[\s\S]*closedTxid: ""/u,
+  );
 });
 
 check("exact canonical summaries require current conserved token balances", async () => {

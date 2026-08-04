@@ -67,6 +67,7 @@ import {
   applyWorkMarketV2CutoverToTokenState,
   WORK_MARKET_V2_AUTH_VERSION,
   WORK_MARKET_V2_ACTIVATION_HEIGHT,
+  WORK_MARKET_V2_DECLARATION_TXID,
   WORK_MARKET_V4_AUTH_VERSION,
   WORK_MARKET_V4_DECLARATION_AUTHORITY,
   WORK_MARKET_V4_DECLARATION_BLOCK_HASH,
@@ -323,7 +324,7 @@ const WORK_Q16_PENDING_VERIFIER_STAGE_REQUEST_MODEL =
 const WORK_Q16_PENDING_VERIFIER_STAGE_MODEL =
   "canonical-work-q16-pending-verifier-stage-v2";
 const WORK_Q16_PENDING_VERIFIER_STAGE_CODE_VERSION =
-  "proof-api-canonical-work-q16-pending-verifier-stage-v3";
+  "proof-api-canonical-work-q16-pending-verifier-stage-v4";
 const WORK_Q16_PENDING_ABSENCE_EVIDENCE_MODEL =
   "canonical-work-q16-pending-absence-evidence-v1";
 const WORK_Q16_PENDING_DROP_CONFIRMATION_MS = 300_000;
@@ -27985,6 +27986,9 @@ function tokenInvalidEventFromRow(row) {
       rowNumber(row, "transaction_block_height") ||
       rowNumber(row, "block_height") ||
       rowNumber(payload, "blockHeight"),
+    ...(row?.block_index !== undefined && row?.block_index !== null
+      ? { blockIndex: Number(row.block_index) }
+      : {}),
     confirmed: effectiveStatus === "confirmed",
     createdAt: dateIso(
       payload.createdAt ??
@@ -28006,11 +28010,17 @@ function tokenInvalidEventFromRow(row) {
     protocol: String(payload.protocol ?? row?.protocol ?? "pwt1")
       .trim()
       .toLowerCase(),
+    ...(row?.op_return_vout !== undefined && row?.op_return_vout !== null
+      ? { protocolVout: Number(row.op_return_vout) }
+      : {}),
     reason: String(payload.reason ?? validationErrors[0] ?? "").trim(),
     recipientAddress,
     proofPaymentSats: 0,
     registryAddress,
     registryMutationFeeSats: 0,
+    ...(row?.record_ordinal !== undefined && row?.record_ordinal !== null
+      ? { recordOrdinal: Number(row.record_ordinal) }
+      : {}),
     salePaymentSats: 0,
     senderAddress,
     status: effectiveStatus,
@@ -28032,6 +28042,9 @@ function tokenInvalidEventSelectSql() {
     e.valid,
     e.validation_errors,
     e.block_height,
+    e.block_index,
+    e.op_return_vout,
+    e.record_ordinal,
     e.block_time,
     e.event_time,
     e.created_at,
@@ -28147,6 +28160,14 @@ function tokenInvalidEventQueryParts(
       JOIN proof_indexer.transactions t
         ON t.network = e.network
        AND t.txid = e.txid
+       AND t.status = 'confirmed'
+       AND t.block_height = e.block_height
+       AND t.block_index = e.block_index
+      JOIN proof_indexer.blocks canonical_invalid_block
+        ON canonical_invalid_block.network = t.network
+       AND canonical_invalid_block.block_hash = t.block_hash
+       AND canonical_invalid_block.height = t.block_height
+       AND canonical_invalid_block.canonical = true
       LEFT JOIN proof_indexer.credit_listings cl_invalid
         ON cl_invalid.network = e.network
        AND cl_invalid.listing_id = lower(e.payload->>'listingId')
@@ -28283,6 +28304,355 @@ async function proofIndexTokenMarketEventsFromTables(pool, network, scope) {
   return {
     closedListings: closedListings.sort(compareTokenItemsByTime),
     sales: sales.sort(compareTokenItemsByTime),
+  };
+}
+
+function canonicalWorkLifecycleExpectationKey(role, txid, listingId) {
+  return `${role}:${txid}:${listingId}`;
+}
+
+function canonicalWorkLifecyclePositionFromRow(row) {
+  const blockHash = normalizedLowerText(row?.block_hash);
+  const blockHeight = Number(row?.block_height);
+  const blockIndex = Number(row?.block_index);
+  const protocolVout = Number(row?.op_return_vout);
+  const recordOrdinal = Number(row?.record_ordinal);
+  if (
+    !/^[0-9a-f]{64}$/u.test(blockHash) ||
+    !Number.isSafeInteger(blockHeight) ||
+    blockHeight < 1 ||
+    !Number.isSafeInteger(blockIndex) ||
+    blockIndex < 0 ||
+    !Number.isSafeInteger(protocolVout) ||
+    protocolVout < 0 ||
+    !Number.isSafeInteger(recordOrdinal) ||
+    recordOrdinal < 0 ||
+    Number(row?.match_count) !== 1
+  ) {
+    return null;
+  }
+  return {
+    blockHash,
+    blockHeight,
+    blockIndex,
+    protocolVout,
+    recordOrdinal,
+  };
+}
+
+function workLifecyclePositionPatch(position, prefix = "") {
+  const field = (name) =>
+    prefix
+      ? `${prefix}${name[0].toUpperCase()}${name.slice(1)}`
+      : name;
+  return {
+    [field("blockHash")]: position.blockHash,
+    [field("blockHeight")]: position.blockHeight,
+    [field("blockIndex")]: position.blockIndex,
+    [field("protocolVout")]: position.protocolVout,
+    [field("recordOrdinal")]: position.recordOrdinal,
+  };
+}
+
+function canonicalWorkCutoverRelicListing(listing) {
+  if (
+    listing?.relic !== true ||
+    listing?.confirmed !== true ||
+    listing?.closedConfirmed !== true ||
+    normalizedLowerText(listing?.status) !== "disabled"
+  ) {
+    return false;
+  }
+  const pins = configuredWorkPrecisionV2ReaderPins();
+  const exactCutovers = [
+    {
+      height: WORK_MARKET_V2_ACTIVATION_HEIGHT,
+      reason: "work-market-v2-cutover",
+      txid: WORK_MARKET_V2_DECLARATION_TXID,
+    },
+    {
+      height: WORK_MARKET_V4_DECLARATION_HEIGHT + 1,
+      reason: "work-market-v4-cutover",
+      txid: WORK_MARKET_V4_DECLARATION_TXID,
+    },
+    {
+      height: WORK_AMO_V5_ACTIVATION_HEIGHT,
+      reason: WORK_AMO_V5_PRE_UNIT_RELIC_DISABLED_REASON,
+      txid: WORK_AMO_V5_DECLARATION_TXID,
+    },
+    ...(pins
+      ? [{
+          height: pins.activationHeight,
+          reason: "work-amo-v8-preactivation-relic",
+          relicCutoverModel: WORK_AMO_V8_RELIC_CUTOVER_MODEL,
+          txid: pins.declarationTxid,
+        }]
+      : []),
+  ];
+  return exactCutovers.some(
+    (cutover) =>
+      Number(listing.disabledAtBlockHeight) === cutover.height &&
+      normalizedLowerText(listing.disabledByTxid) === cutover.txid &&
+      normalizedLowerText(listing.disabledReason) === cutover.reason &&
+      (
+        !cutover.relicCutoverModel ||
+        listing.relicCutoverModel === cutover.relicCutoverModel
+      ),
+  );
+}
+
+async function payloadWithCanonicalWorkLifecyclePositions(
+  pool,
+  network,
+  payload,
+) {
+  if (
+    network !== "livenet" ||
+    !payload ||
+    typeof payload !== "object" ||
+    Array.isArray(payload)
+  ) {
+    return payload;
+  }
+  const workPresent = (Array.isArray(payload.tokens) ? payload.tokens : [])
+    .some((token) => isWorkTokenId(token?.tokenId));
+  if (!workPresent) {
+    return payload;
+  }
+
+  const expectations = [];
+  const expectationKeys = new Set();
+  const addExpectation = (role, txidValue, listingIdValue) => {
+    const txid = normalizedLowerText(txidValue);
+    const listingId = normalizedLowerText(listingIdValue);
+    if (!validTxid(txid) || !validTxid(listingId)) {
+      return false;
+    }
+    const key = canonicalWorkLifecycleExpectationKey(
+      role,
+      txid,
+      listingId,
+    );
+    if (expectationKeys.has(key)) {
+      return false;
+    }
+    expectationKeys.add(key);
+    expectations.push({ key, listingId, role, txid });
+    return true;
+  };
+  const collectListing = (listing, { closed = false } = {}) => {
+    if (
+      listing?.confirmed !== true ||
+      !isWorkTokenId(listing?.tokenId)
+    ) {
+      return true;
+    }
+    const listingId = normalizedLowerText(listing?.listingId);
+    if (!addExpectation("listing", listingId, listingId)) {
+      return false;
+    }
+    if (
+      listing?.sealConfirmed === true &&
+      !addExpectation("seal", listing?.sealTxid, listingId)
+    ) {
+      return false;
+    }
+    if (
+      closed &&
+      listing?.closedConfirmed === true &&
+      !canonicalWorkCutoverRelicListing(listing) &&
+      !addExpectation("close", listing?.closedTxid, listingId)
+    ) {
+      return false;
+    }
+    return true;
+  };
+  const listings = Array.isArray(payload.listings) ? payload.listings : [];
+  const closedListings = Array.isArray(payload.closedListings)
+    ? payload.closedListings
+    : [];
+  if (
+    listings.some((listing) => !collectListing(listing)) ||
+    closedListings.some(
+      (listing) => !collectListing(listing, { closed: true }),
+    )
+  ) {
+    return null;
+  }
+  if (expectations.length === 0) {
+    return payload;
+  }
+
+  const result = await pool.query(
+    `
+      WITH expected AS (
+        SELECT role, txid, listing_id
+        FROM unnest($2::text[], $3::text[], $4::text[])
+          AS rows(role, txid, listing_id)
+      )
+      SELECT
+        expected.role,
+        expected.txid,
+        expected.listing_id,
+        event_tx.block_hash,
+        e.block_height,
+        e.block_index,
+        e.op_return_vout,
+        e.record_ordinal,
+        COUNT(*) OVER (
+          PARTITION BY expected.role, expected.txid, expected.listing_id
+        ) AS match_count
+      FROM expected
+      JOIN proof_indexer.events e
+        ON e.network = $1
+       AND e.txid = expected.txid
+       AND e.protocol = 'pwt1'
+       AND e.status = 'confirmed'
+       AND e.valid = true
+       AND (
+         (
+           expected.role = 'listing'
+           AND e.kind = 'token-listing'
+           AND lower(COALESCE(
+             NULLIF(e.payload->>'listingId', ''),
+             e.txid
+           )) = expected.listing_id
+         )
+         OR (
+           expected.role = 'seal'
+           AND e.kind = 'token-listing-sealed'
+           AND lower(e.payload->>'listingId') = expected.listing_id
+         )
+         OR (
+           expected.role = 'close'
+           AND e.kind = 'token-listing-closed'
+           AND lower(e.payload->>'listingId') = expected.listing_id
+         )
+       )
+      JOIN proof_indexer.transactions event_tx
+        ON event_tx.network = e.network
+       AND event_tx.txid = e.txid
+       AND event_tx.status = 'confirmed'
+       AND event_tx.block_height = e.block_height
+       AND event_tx.block_index = e.block_index
+      JOIN proof_indexer.blocks event_block
+        ON event_block.network = event_tx.network
+       AND event_block.block_hash = event_tx.block_hash
+       AND event_block.height = event_tx.block_height
+       AND event_block.canonical = true
+      LEFT JOIN proof_indexer.credit_listings cl
+        ON cl.network = e.network
+       AND cl.listing_id = expected.listing_id
+      WHERE lower(COALESCE(
+        NULLIF(e.payload->>'tokenId', ''),
+        NULLIF(e.payload->'saleAuthorization'->>'tokenId', ''),
+        NULLIF(e.payload->'listingAuthorization'->>'tokenId', ''),
+        cl.token_id,
+        ''
+      )) = $5
+      ORDER BY expected.role, expected.txid, expected.listing_id
+    `,
+    [
+      network,
+      expectations.map((item) => item.role),
+      expectations.map((item) => item.txid),
+      expectations.map((item) => item.listingId),
+      WORK_TOKEN_ID,
+    ],
+  );
+  const positions = new Map();
+  for (const row of result.rows) {
+    const key = canonicalWorkLifecycleExpectationKey(
+      normalizedLowerText(row?.role),
+      normalizedLowerText(row?.txid),
+      normalizedLowerText(row?.listing_id),
+    );
+    const position = canonicalWorkLifecyclePositionFromRow(row);
+    if (!expectationKeys.has(key) || !position || positions.has(key)) {
+      return null;
+    }
+    positions.set(key, position);
+  }
+  if (positions.size !== expectations.length) {
+    return null;
+  }
+
+  const positionedListing = (listing, { closed = false } = {}) => {
+    if (
+      listing?.confirmed !== true ||
+      !isWorkTokenId(listing?.tokenId)
+    ) {
+      return listing;
+    }
+    const listingId = normalizedLowerText(listing.listingId);
+    const opening = positions.get(
+      canonicalWorkLifecycleExpectationKey(
+        "listing",
+        listingId,
+        listingId,
+      ),
+    );
+    if (!opening) {
+      return null;
+    }
+    let positioned = {
+      ...listing,
+      ...workLifecyclePositionPatch(opening),
+    };
+    if (listing.sealConfirmed === true) {
+      const seal = positions.get(
+        canonicalWorkLifecycleExpectationKey(
+          "seal",
+          normalizedLowerText(listing.sealTxid),
+          listingId,
+        ),
+      );
+      if (!seal) {
+        return null;
+      }
+      positioned = {
+        ...positioned,
+        ...workLifecyclePositionPatch(seal, "seal"),
+      };
+    }
+    if (
+      closed &&
+      listing.closedConfirmed === true &&
+      !canonicalWorkCutoverRelicListing(listing)
+    ) {
+      const close = positions.get(
+        canonicalWorkLifecycleExpectationKey(
+          "close",
+          normalizedLowerText(listing.closedTxid),
+          listingId,
+        ),
+      );
+      if (!close) {
+        return null;
+      }
+      positioned = {
+        ...positioned,
+        ...workLifecyclePositionPatch(close, "closed"),
+      };
+    }
+    return positioned;
+  };
+  const positionedListings = listings.map((listing) =>
+    positionedListing(listing),
+  );
+  const positionedClosedListings = closedListings.map((listing) =>
+    positionedListing(listing, { closed: true }),
+  );
+  if (
+    positionedListings.some((listing) => !listing) ||
+    positionedClosedListings.some((listing) => !listing)
+  ) {
+    return null;
+  }
+  return {
+    ...payload,
+    closedListings: positionedClosedListings,
+    listings: positionedListings,
   };
 }
 
@@ -28769,15 +29139,24 @@ async function proofIndexTokenPayloadFromCurrentTables(pool, network, scope) {
     tokens: enrichedTokens,
     transfers,
   };
-  return applyWorkMarketV2CutoverToTokenState(
-    await payloadWithVerifiedWorkMarketV4Activation(pool, network, {
+  const positionedPayload =
+    await payloadWithCanonicalWorkLifecyclePositions(pool, network, {
     ...payload,
     stats: {
       ...salesStats(sales),
       ...tokenStateStats(payload, enrichedTokens, mints, transfers, invalidEvents),
       indexedThroughBlock: indexedThroughBlock || undefined,
     },
-    }),
+    });
+  if (!positionedPayload) {
+    return null;
+  }
+  return applyWorkMarketV2CutoverToTokenState(
+    await payloadWithVerifiedWorkMarketV4Activation(
+      pool,
+      network,
+      positionedPayload,
+    ),
   );
 }
 

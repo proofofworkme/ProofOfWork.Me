@@ -123,6 +123,7 @@ import {
   WORK_AMO_V5_MAX_QUOTE_AGE_BLOCKS,
   WORK_AMO_V5_NETWORK_ACCUMULATOR_MODEL,
   WORK_AMO_V5_PAYLOAD_COMMITMENT_MODEL,
+  WORK_AMO_V5_PRE_UNIT_RELIC_DISABLED_REASON,
   WORK_AMO_V5_USD_QUOTE_PREFIX,
   WORK_AMO_V5_UNIT_MODEL,
   WORK_AMO_V5_UNIT_USD_ORACLE_MODEL,
@@ -192,6 +193,7 @@ import {
 import {
   WORK_AMO_V8_ALLOWED_FACE_PROOFS,
   WORK_AMO_V8_AUTH_VERSION,
+  WORK_AMO_V8_RELIC_CUTOVER_MODEL,
   WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL,
   WORK_AMO_V8_TRANSFER_VERSION,
   validateWorkAmoV8StaticAuthorization,
@@ -1079,7 +1081,7 @@ const PENDING_WORK_VERIFIER_STAGE_REQUEST_MODEL =
 const PENDING_WORK_VERIFIER_STAGE_MODEL =
   "canonical-work-q16-pending-verifier-stage-v2";
 const PENDING_WORK_VERIFIER_STAGE_CODE_VERSION =
-  "proof-api-canonical-work-q16-pending-verifier-stage-v3";
+  "proof-api-canonical-work-q16-pending-verifier-stage-v4";
 const PENDING_WORK_HISTORICAL_LISTING_SCOPE_MODEL =
   "canonical-pre-v8-work-listing-scope-v1";
 const PENDING_WORK_HISTORICAL_LISTING_AUTH_VERSIONS = Object.freeze([
@@ -58219,16 +58221,41 @@ const PENDING_WORK_STAGE_SEAL_FIELDS = Object.freeze([
 ]);
 const PENDING_WORK_STAGE_CLOSE_FIELDS = Object.freeze([
   "buyerAddress",
+  "canonicalSaleEvidence",
+  "closeAt",
+  "closeTransactionBlockHeight",
+  "closeTxid",
   "closedAt",
   "closedBlockHash",
   "closedBlockHeight",
   "closedBlockIndex",
   "closedByCanonicalOutpointSpend",
+  "closedBySpendableOutspend",
   "closedConfirmed",
+  "closedDataBytes",
+  "closedFrozenNetworkValueSats",
+  "closedLiveNetworkValueSats",
+  "closedMinerFeeCanonical",
   "closedMinerFeeSats",
+  "closedMinerFeeSource",
   "closedProtocolVout",
   "closedRecordOrdinal",
   "closedTxid",
+  "closedVin",
+  "lifecycleStatus",
+  "saleAt",
+  "saleBlockHash",
+  "saleBlockHeight",
+  "saleBlockIndex",
+  "saleBuyerAddress",
+  "saleConfirmed",
+  "saleDataBytes",
+  "saleMinerFeeSats",
+  "salePaymentSats",
+  "saleProtocolVout",
+  "saleRecordOrdinal",
+  "saleTransactionBlockHeight",
+  "saleTxid",
 ]);
 
 function pendingWorkVerifierStageDeleteFields(value, fields) {
@@ -58237,6 +58264,53 @@ function pendingWorkVerifierStageDeleteFields(value, fields) {
     delete next[field];
   }
   return next;
+}
+
+function pendingWorkVerifierStageCanonicalCutoverRelic(listing) {
+  if (
+    listing?.relic !== true ||
+    listing?.confirmed !== true ||
+    listing?.closedConfirmed !== true ||
+    listing?.status !== "disabled"
+  ) {
+    return false;
+  }
+  const disabledAtBlockHeight = Number(listing.disabledAtBlockHeight);
+  const disabledByTxid = String(listing.disabledByTxid ?? "");
+  const disabledReason = String(listing.disabledReason ?? "");
+  const exactCutovers = [
+    {
+      disabledAtBlockHeight: WORK_MARKET_V2_ACTIVATION_HEIGHT,
+      disabledByTxid: WORK_MARKET_V2_DECLARATION_TXID,
+      disabledReason: "work-market-v2-cutover",
+    },
+    {
+      disabledAtBlockHeight: WORK_MARKET_V4_ACTIVATION_HEIGHT,
+      disabledByTxid: WORK_MARKET_V4_DECLARATION_TXID,
+      disabledReason: "work-market-v4-cutover",
+    },
+    {
+      disabledAtBlockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT,
+      disabledByTxid: WORK_AMO_V5_DECLARATION_TXID,
+      disabledReason: WORK_AMO_V5_PRE_UNIT_RELIC_DISABLED_REASON,
+    },
+    {
+      disabledAtBlockHeight: WORK_AMO_V8_ACTIVATION_HEIGHT,
+      disabledByTxid: WORK_AMO_V8_DECLARATION_TXID,
+      disabledReason: "work-amo-v8-preactivation-relic",
+      relicCutoverModel: WORK_AMO_V8_RELIC_CUTOVER_MODEL,
+    },
+  ];
+  return exactCutovers.some(
+    (cutover) =>
+      disabledAtBlockHeight === cutover.disabledAtBlockHeight &&
+      disabledByTxid === cutover.disabledByTxid &&
+      disabledReason === cutover.disabledReason &&
+      (
+        !cutover.relicCutoverModel ||
+        listing.relicCutoverModel === cutover.relicCutoverModel
+      ),
+  );
 }
 
 function pendingWorkVerifierStageConfirmedListing(value, { closed = false } = {}) {
@@ -58306,17 +58380,18 @@ function pendingWorkVerifierStageConfirmedListing(value, { closed = false } = {}
     listing.saleAuthorization = staticAuthorization;
   }
   if (closed) {
-    const canonicalRelic =
-      listing.relic === true &&
-      listing.actionable === false &&
-      listing.status === "disabled" &&
-      listing.closedConfirmed === true &&
-      String(listing.closedTxid ?? "") === "" &&
-      Number(listing.disabledAtBlockHeight) ===
-        WORK_AMO_V8_ACTIVATION_HEIGHT &&
-      String(listing.disabledByTxid ?? "") ===
-        WORK_AMO_V8_DECLARATION_TXID;
-    if (!canonicalRelic) {
+    const canonicalCutoverRelic =
+      pendingWorkVerifierStageCanonicalCutoverRelic(listing);
+    if (canonicalCutoverRelic) {
+      listing = {
+        ...pendingWorkVerifierStageDeleteFields(
+          listing,
+          PENDING_WORK_STAGE_CLOSE_FIELDS,
+        ),
+        closedConfirmed: true,
+        closedTxid: "",
+      };
+    } else {
       if (!/^[0-9a-f]{64}$/u.test(String(listing.closedTxid ?? ""))) {
         throw pendingWorkVerifierStageError(
           "PENDING_WORK_STAGE_BASE_INVALID",
