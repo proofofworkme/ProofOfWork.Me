@@ -20121,6 +20121,107 @@ check("canonical WORK lifecycle state rebinds unique relational event positions"
   );
 });
 
+check("pending WORK confirmed base collapses only its exact legacy invalid sibling", () => {
+  const collapse = isolatedFunction(
+    API_PATH,
+    "pendingWorkVerifierStageCollapseExactLegacyInvalidSibling",
+    {
+      WORK_AMO_V5_ACTIVATION_HEIGHT,
+      WORK_TOKEN_ID,
+    },
+  );
+  const pendingWorkVerifierStageSortUniqueItems = isolatedFunction(
+    API_PATH,
+    "pendingWorkVerifierStageSortUniqueItems",
+    {
+      compareCanonicalUtf8,
+      pendingWorkVerifierStageError: (code, message, details = {}) =>
+        Object.assign(new Error(message), { details: { code, ...details } }),
+    },
+  );
+  const txid =
+    "55fdd6f89cfc3daa331b84efa635dcb5918f689517f725686252874f02c4d0c3";
+  const base = {
+    blockHash:
+      "00000000000000000001c38b6ae31983f39643a2180a56448e3f242119fe861d",
+    blockHeight: 958_985,
+    blockIndex: 3_908,
+    confirmed: true,
+    network: "livenet",
+    protocol: "pwt1",
+    protocolVout: 1,
+    recordOrdinal: 0,
+    status: "confirmed",
+    tokenId: WORK_TOKEN_ID,
+    txid,
+    valid: false,
+  };
+  const generic = {
+    ...base,
+    kind: "token-event-invalid",
+    reason: "no-valid-token-event",
+    validationErrors: ["no-valid-token-event"],
+  };
+  const specific = {
+    ...base,
+    kind: "token-listing-invalid",
+    listingId: txid,
+    reason: "The canonical first-party verifier rejected this protocol event.",
+    saleAuthorization: { version: "pwt-sale-v2" },
+    validationErrors: [
+      "The canonical first-party verifier rejected this protocol event.",
+    ],
+  };
+  const exactCollapse = collapse([generic, specific]);
+  assert.equal(
+    exactCollapse.length,
+    1,
+    "the exact chain-pinned generic sibling yields to its specific audit row",
+  );
+  assert.equal(exactCollapse[0], specific);
+  const coarseKey = (item) =>
+    `${item.txid}:${item.protocolVout}:${item.recordOrdinal}`;
+  const rejects = (items, label) => {
+    assert.equal(collapse(items).length, items.length, label);
+    assert.throws(
+      () =>
+        pendingWorkVerifierStageSortUniqueItems(
+          collapse(items),
+          coarseKey,
+        ),
+      /duplicate or unkeyed event/u,
+      label,
+    );
+  };
+  rejects(
+    [
+      { ...generic, blockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT },
+      { ...specific, blockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT },
+    ],
+    "a post-V5 pair is not collapsed",
+  );
+  rejects(
+    [generic, specific, { ...specific }],
+    "non-singleton sibling cardinality is not collapsed",
+  );
+  rejects(
+    [generic, { ...specific, network: "testnet" }],
+    "canonical identity mismatch is not collapsed",
+  );
+  rejects(
+    [generic, { ...specific, saleAuthorization: { version: "pwt-sale-v3" } }],
+    "a near-match authorization version is not collapsed",
+  );
+  rejects(
+    [{ ...generic, listingId: txid }, specific],
+    "a generic row carrying listing identity is not collapsed",
+  );
+  assert.match(
+    topLevelFunctionSource(API_PATH, "pendingWorkVerifierStageConfirmedBase"),
+    /invalidEvents[\s\S]*pendingWorkVerifierStageCollapseExactLegacyInvalidSibling/u,
+  );
+});
+
 check("exact canonical summaries require current conserved token balances", async () => {
   assert.match(
     fileSource(READER_PATH),

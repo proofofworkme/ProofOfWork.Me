@@ -58202,6 +58202,97 @@ function pendingWorkVerifierStageSortUniqueItems(items, keyForItem) {
   );
 }
 
+// Confirmed public audit history intentionally retains both the generic and
+// specific invalid projections for this one pre-V5 record. Pending replay is
+// one decision per raw record, so only this immutable chain-bound pair yields
+// to its more specific listing audit row.
+function pendingWorkVerifierStageCollapseExactLegacyInvalidSibling(items) {
+  const groups = new Map();
+  for (const [index, item] of items.entries()) {
+    const txid = String(item?.txid ?? "");
+    const protocolVout = Number(item?.protocolVout);
+    const recordOrdinal = Number(item?.recordOrdinal);
+    const key = /^[0-9a-f]{64}$/u.test(txid) &&
+        Number.isSafeInteger(protocolVout) &&
+        protocolVout >= 0 &&
+        Number.isSafeInteger(recordOrdinal) &&
+        recordOrdinal >= 0
+      ? `${txid}:${protocolVout}:${recordOrdinal}`
+      : `unkeyed:${index}`;
+    groups.set(key, [...(groups.get(key) ?? []), item]);
+  }
+  const collapsed = [];
+  for (const group of groups.values()) {
+    if (group.length !== 2) {
+      collapsed.push(...group);
+      continue;
+    }
+    const [first, second] = group;
+    const identityFields = [
+      "blockHash",
+      "blockHeight",
+      "blockIndex",
+      "confirmed",
+      "network",
+      "protocol",
+      "protocolVout",
+      "recordOrdinal",
+      "status",
+      "tokenId",
+      "txid",
+      "valid",
+    ];
+    const aligned = identityFields.every(
+      (field) => first?.[field] === second?.[field],
+    );
+    const pinned = group.every(
+      (item) =>
+        item?.txid ===
+          "55fdd6f89cfc3daa331b84efa635dcb5918f689517f725686252874f02c4d0c3" &&
+        item?.blockHash ===
+          "00000000000000000001c38b6ae31983f39643a2180a56448e3f242119fe861d" &&
+        item?.blockHeight === 958_985 &&
+        item.blockHeight < WORK_AMO_V5_ACTIVATION_HEIGHT &&
+        item?.blockIndex === 3_908 &&
+        item?.protocolVout === 1 &&
+        item?.recordOrdinal === 0 &&
+        item?.network === "livenet" &&
+        item?.protocol === "pwt1" &&
+        item?.tokenId === WORK_TOKEN_ID &&
+        item?.status === "confirmed" &&
+        item?.confirmed === true &&
+        item?.valid === false,
+    );
+    const generic = group.find(
+      (item) =>
+        item?.kind === "token-event-invalid" &&
+        item?.reason === "no-valid-token-event" &&
+        Array.isArray(item?.validationErrors) &&
+        item.validationErrors.length === 1 &&
+        item.validationErrors[0] === "no-valid-token-event" &&
+        !Object.prototype.hasOwnProperty.call(item, "listingId"),
+    );
+    const specific = group.find(
+      (item) =>
+        item?.kind === "token-listing-invalid" &&
+        item?.listingId === item?.txid &&
+        item?.reason ===
+          "The canonical first-party verifier rejected this protocol event." &&
+        Array.isArray(item?.validationErrors) &&
+        item.validationErrors.length === 1 &&
+        item.validationErrors[0] ===
+          "The canonical first-party verifier rejected this protocol event." &&
+        item?.saleAuthorization?.version === "pwt-sale-v2",
+    );
+    if (aligned && pinned && generic && specific && generic !== specific) {
+      collapsed.push(specific);
+    } else {
+      collapsed.push(...group);
+    }
+  }
+  return collapsed;
+}
+
 const PENDING_WORK_STAGE_SEAL_FIELDS = Object.freeze([
   "sealAt",
   "sealBlockHash",
@@ -58551,14 +58642,16 @@ function pendingWorkVerifierStageConfirmedBase(payload, tip) {
     eventKey,
   );
   const invalidEvents = pendingWorkVerifierStageSortUniqueItems(
-    (Array.isArray(payload.invalidEvents) ? payload.invalidEvents : [])
-      .filter(
-        (item) =>
-          item?.confirmed === true &&
-          item?.valid === false &&
-          isWorkTokenId(item?.tokenId),
-      )
-      .map((item) => ({ ...confirmedEvent(item), valid: false })),
+    pendingWorkVerifierStageCollapseExactLegacyInvalidSibling(
+      (Array.isArray(payload.invalidEvents) ? payload.invalidEvents : [])
+        .filter(
+          (item) =>
+            item?.confirmed === true &&
+            item?.valid === false &&
+            isWorkTokenId(item?.tokenId),
+        )
+        .map((item) => ({ ...confirmedEvent(item), valid: false })),
+    ),
     eventKey,
   );
   const listings = pendingWorkVerifierStageSortUniqueItems(
