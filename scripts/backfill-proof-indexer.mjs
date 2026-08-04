@@ -25489,9 +25489,6 @@ async function pendingWorkQ16StageCandidate(client, messages, txid = "") {
                 listing_tx.raw_tx->'canonicalBlockScan'->'height'
               ) = 'number'
               AND jsonb_typeof(
-                listing_tx.raw_tx->'canonicalBlockScan'->'blockIndex'
-              ) = 'number'
-              AND jsonb_typeof(
                 listing_tx.raw_tx->'_powBlockIndex'
               ) = 'number'
               AND listing_tx.raw_tx->'canonicalBlockScan'->>'network' =
@@ -25500,8 +25497,22 @@ async function pendingWorkQ16StageCandidate(client, messages, txid = "") {
                 listing_tx.block_hash
               AND listing_tx.raw_tx->'canonicalBlockScan'->>'height' =
                 listing_tx.block_height::text
-              AND listing_tx.raw_tx->'canonicalBlockScan'->>'blockIndex' =
-                listing_tx.block_index::text
+              AND (
+                (
+                  jsonb_typeof(
+                    listing_tx.raw_tx->'canonicalBlockScan'->'blockIndex'
+                  ) = 'number'
+                  AND listing_tx.raw_tx->'canonicalBlockScan'->>'blockIndex' =
+                    listing_tx.block_index::text
+                )
+                OR (
+                  NOT (
+                    listing_tx.raw_tx->'canonicalBlockScan' ? 'blockIndex'
+                  )
+                  AND listing_tx.raw_tx->>'_powBlockIndex' =
+                    listing_tx.block_index::text
+                )
+              )
               AND listing_tx.raw_tx->>'_powBlockIndex' =
                 listing_tx.block_index::text
               AND event.raw_payload IS NOT NULL

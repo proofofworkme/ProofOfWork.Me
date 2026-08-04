@@ -15810,6 +15810,11 @@ check("Q16 staging fails closed for unknown or ambiguous marketplace scope", asy
         text,
         /listing_tx\.raw_tx->'canonicalBlockScan'->>'blockHash'/u,
       );
+      assert.match(
+        text,
+        /NOT \(\s*listing_tx\.raw_tx->'canonicalBlockScan' \? 'blockIndex'\s*\)[\s\S]*listing_tx\.raw_tx->>'_powBlockIndex' =\s*listing_tx\.block_index::text/u,
+        "legacy parents may use an absent nested index only when the exact legacy index matches the canonical transaction row",
+      );
       return { rows: historicalRows };
     },
   });
