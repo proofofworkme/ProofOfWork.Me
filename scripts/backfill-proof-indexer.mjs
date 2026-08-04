@@ -2618,17 +2618,34 @@ async function bitcoinRpcOnce(method, params = []) {
       method: "POST",
       signal: controller.signal,
     });
-    if (!response.ok) {
-      throw new Error(`Bitcoin RPC ${method} returned HTTP ${response.status}`);
+    let payload;
+    try {
+      payload = await response.json();
+    } catch (error) {
+      if (!response.ok) {
+        const httpError = new Error(
+          `Bitcoin RPC ${method} returned HTTP ${response.status}`,
+        );
+        httpError.statusCode = response.status;
+        throw httpError;
+      }
+      throw error;
     }
-    const payload = await response.json();
     if (payload?.error) {
       const rpcError = new Error(
         `Bitcoin RPC ${method} failed: ${payload.error.message ?? payload.error.code}`,
       );
       rpcError.rpcCode = Number(payload.error.code);
       rpcError.rpcMethod = method;
+      rpcError.statusCode = response.status;
       throw rpcError;
+    }
+    if (!response.ok) {
+      const httpError = new Error(
+        `Bitcoin RPC ${method} returned HTTP ${response.status}`,
+      );
+      httpError.statusCode = response.status;
+      throw httpError;
     }
     return payload.result;
   } finally {
@@ -22303,6 +22320,33 @@ async function authoritativeWorkQ16PendingAbsence(txid) {
   };
 }
 
+async function mempoolHydrationMissDisposition(
+  txid,
+  { q16PendingActive = false } = {},
+) {
+  if (!q16PendingActive) {
+    return "unresolved";
+  }
+  try {
+    const observation = await authoritativeWorkQ16PendingAbsence(txid);
+    if (observation?.absent === true) {
+      return "absent";
+    }
+    if (observation?.status === "confirmed") {
+      return "confirmed";
+    }
+  } catch (error) {
+    console.error(
+      JSON.stringify({
+        error: error?.message ?? String(error),
+        phase: "mempool-hydration-miss-disposition",
+        txid: normalizedLowerText(txid),
+      }),
+    );
+  }
+  return "unresolved";
+}
+
 async function workQ16PendingAbsencePlan({
   absentPriorTxids,
   priorObservations,
@@ -26850,6 +26894,17 @@ async function backfillMempoolScanSource(client, source) {
     }
     const tx = await freshRawTransactionFromCore(txid);
     if (!tx) {
+      const hydrationMissDisposition =
+        await mempoolHydrationMissDisposition(txid, {
+          q16PendingActive,
+        });
+      if (hydrationMissDisposition === "absent") {
+        continue;
+      }
+      if (hydrationMissDisposition === "confirmed") {
+        canonicalDeferred += 1;
+        continue;
+      }
       unresolved += 1;
       if (q16PendingActive) {
         q16PendingUnresolved += 1;

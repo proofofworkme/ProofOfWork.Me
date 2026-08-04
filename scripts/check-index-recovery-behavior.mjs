@@ -14670,6 +14670,127 @@ check("Q16 pending removals require a second Core absence at least five minutes 
   );
 });
 
+check("Bitcoin RPC preserves Core error codes carried by HTTP 500", async () => {
+  let response = {
+    async json() {
+      return {
+        error: { code: -5, message: "No such mempool transaction" },
+        id: "proof-indexer-backfill",
+        result: null,
+      };
+    },
+    ok: false,
+    status: 500,
+  };
+  const rpcOnce = isolatedFunction(BACKFILL_PATH, "bitcoinRpcOnce", {
+    AbortController,
+    BITCOIN_RPC_PASSWORD: "",
+    BITCOIN_RPC_TIMEOUT_MS: 5_000,
+    BITCOIN_RPC_URL: "http://127.0.0.1:8332",
+    BITCOIN_RPC_USER: "",
+    clearTimeout,
+    fetch: async () => response,
+    setTimeout,
+  });
+
+  await assert.rejects(
+    () => rpcOnce("getrawtransaction", ["a".repeat(64), true]),
+    (error) => {
+      assert.equal(error.rpcCode, -5);
+      assert.equal(error.rpcMethod, "getrawtransaction");
+      assert.equal(error.statusCode, 500);
+      assert.match(error.message, /No such mempool transaction/u);
+      return true;
+    },
+  );
+
+  response = {
+    async json() {
+      throw new SyntaxError("not JSON");
+    },
+    ok: false,
+    status: 500,
+  };
+  await assert.rejects(
+    () => rpcOnce("getrawtransaction", ["b".repeat(64), true]),
+    (error) => {
+      assert.equal(error.rpcCode, undefined);
+      assert.equal(error.statusCode, 500);
+      assert.equal(
+        error.message,
+        "Bitcoin RPC getrawtransaction returned HTTP 500",
+      );
+      return true;
+    },
+  );
+});
+
+check("Q16 mempool hydration misses fail closed unless Core proves departure", async () => {
+  const txid = "a".repeat(64);
+  let observation = { absent: true, status: "dropped" };
+  let authorityCalls = 0;
+  const logged = [];
+  const disposition = isolatedFunction(
+    BACKFILL_PATH,
+    "mempoolHydrationMissDisposition",
+    {
+      authoritativeWorkQ16PendingAbsence: async (candidateTxid) => {
+        authorityCalls += 1;
+        assert.equal(candidateTxid, txid);
+        if (observation instanceof Error) {
+          throw observation;
+        }
+        return observation;
+      },
+      console: {
+        error(value) {
+          logged.push(JSON.parse(value));
+        },
+      },
+      normalizedLowerText: (value) =>
+        String(value ?? "").trim().toLowerCase(),
+    },
+  );
+
+  assert.equal(
+    await disposition(txid, { q16PendingActive: false }),
+    "unresolved",
+  );
+  assert.equal(authorityCalls, 0);
+  assert.equal(
+    await disposition(txid, { q16PendingActive: true }),
+    "absent",
+  );
+  observation = { absent: false, status: "confirmed" };
+  assert.equal(
+    await disposition(txid, { q16PendingActive: true }),
+    "confirmed",
+  );
+  observation = { absent: false, status: "pending" };
+  assert.equal(
+    await disposition(txid, { q16PendingActive: true }),
+    "unresolved",
+  );
+  observation = new Error("Core status unavailable");
+  assert.equal(
+    await disposition(txid, { q16PendingActive: true }),
+    "unresolved",
+  );
+  assert.equal(logged.length, 1);
+  assert.equal(logged[0].phase, "mempool-hydration-miss-disposition");
+  assert.equal(logged[0].txid, txid);
+
+  const scanSource = topLevelFunctionSource(
+    BACKFILL_PATH,
+    "backfillMempoolScanSource",
+  );
+  assert.match(
+    scanSource,
+    /freshRawTransactionFromCore\(txid\)[\s\S]*mempoolHydrationMissDisposition\(txid[\s\S]*hydrationMissDisposition === "absent"[\s\S]*hydrationMissDisposition === "confirmed"[\s\S]*q16PendingUnresolved \+= 1/u,
+    "a vanished arbitrary candidate must not poison the Q16 witness after authoritative Core departure proof",
+  );
+});
+
 check("mempool scan cursor crosses the processed-txid retention boundary", () => {
   const isHexTxid = (value) => /^[0-9a-f]{64}$/u.test(String(value));
   const normalizedMempoolScanCursor = isolatedFunction(
