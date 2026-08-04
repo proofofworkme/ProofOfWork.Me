@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { execFile } from "node:child_process";
-import { timingSafeEqual } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
 import fs from "node:fs/promises";
 import http from "node:http";
 import https from "node:https";
@@ -206,6 +206,7 @@ import {
   workAmoV8DeclarationCommitment,
 } from "./work-amo-v8-declaration.mjs";
 import {
+  exactWorkAmoV8WorkerLastSuccessReadiness,
   exactWorkAmoV8WorkerReadiness,
 } from "./work-amo-v8-worker-readiness.mjs";
 import {
@@ -244,6 +245,7 @@ import {
   proofIndexLogHistoryReadEligibility,
   proofIndexLogHistoryPayload,
   proofIndexOperationalStatusPayload,
+  proofIndexReadinessEpochCheckpoint,
   proofIndexWorkAmoV8DeclarationCandidates,
   proofIndexReadFeatureEnabled,
   proofIndexReadUnconfirmedTxStatus,
@@ -278,6 +280,7 @@ import {
   proofIndexWorkAmoV5Declaration,
   proofIndexWorkUsdQuoteByTxid,
   proofIndexWorkUsdQuoteHead,
+  workPrecisionV2CurrentPayloadIsExact,
 } from "./db/proof-index-reader.mjs";
 
 bitcoin.initEccLib(ecc);
@@ -1069,6 +1072,25 @@ const WORK_TOKEN_MINT_AMOUNT_ATOMS =
 const WORK_TOKEN_MINT_AMOUNT_SUBATOMS =
   BigInt(WORK_TOKEN_MINT_AMOUNT) * WORK_SUBATOM_UNIT_SCALE;
 const PENDING_WORK_MINT_WITNESS_LIMIT = 32;
+const PENDING_WORK_VERIFIER_STAGE_MAX_TXIDS = 512;
+const PENDING_WORK_VERIFIER_STAGE_REQUEST_MODEL =
+  "canonical-work-q16-pending-verifier-stage-request-v2";
+const PENDING_WORK_VERIFIER_STAGE_MODEL =
+  "canonical-work-q16-pending-verifier-stage-v2";
+const PENDING_WORK_VERIFIER_STAGE_CODE_VERSION =
+  "proof-api-canonical-work-q16-pending-verifier-stage-v2";
+const PENDING_WORK_ABSENCE_EVIDENCE_MODEL =
+  "canonical-work-q16-pending-absence-evidence-v1";
+const PENDING_WORK_DROP_CONFIRMATION_MS = 300_000;
+const PENDING_WORK_ABSENCE_CONTRACT = "proof-of-work-tx-status-v2";
+const PENDING_WORK_ABSENCE_REASON =
+  "absent-from-synced-unpruned-mainnet-bitcoin-core-txindex-and-mempool";
+const PENDING_WORK_ABSENCE_SOURCES = Object.freeze([
+  "bitcoin-core:getrawtransaction",
+  "bitcoin-core:getmempoolentry",
+  "bitcoin-core:getblockchaininfo",
+  "bitcoin-core:getindexinfo:txindex",
+]);
 const CREDIT_MINER_FEE_ACCOUNTING_MODEL =
   "canonical-unique-tx-input-output-v1";
 const INCEPTION_ISSUANCE_ACCOUNTING_MODEL =
@@ -10016,14 +10038,7 @@ async function assertWorkMarketplaceV4AdmissionOracle(actions, network) {
   }
 }
 
-async function assertWorkMarketplaceBroadcastAllowed(
-  txHex,
-  network,
-  options = {},
-) {
-  if (network !== "livenet") {
-    return;
-  }
+function workAmoV8SignedMutationShape(txHex, network) {
   const signedOutputs = signedTransactionOutputs(txHex);
   const signedEconomicOutputs =
     signedWorkAmoEconomicOutputs(signedOutputs, network);
@@ -10165,6 +10180,171 @@ async function assertWorkMarketplaceBroadcastAllowed(
       }];
     },
   );
+  return {
+    signedProofProtocolRecords,
+    signedTokenProtocolRecords,
+    workMintActions,
+    workTransferActions,
+    workTransferRegistryPaymentValid,
+  };
+}
+
+function workAmoV8ActiveMutationDecision(
+  shape,
+  actions,
+  {
+    metadata = null,
+    network = "livenet",
+    requireWorkMutation = false,
+  } = {},
+) {
+  const signedTokenProtocolRecords = Array.isArray(
+    shape?.signedTokenProtocolRecords,
+  )
+    ? shape.signedTokenProtocolRecords
+    : [];
+  const workTransferActions = Array.isArray(shape?.workTransferActions)
+    ? shape.workTransferActions
+    : [];
+  const workMintActions = Array.isArray(shape?.workMintActions)
+    ? shape.workMintActions
+    : [];
+  const marketplaceActions = Array.isArray(actions) ? actions : [];
+  if (workTransferActions.length > 0) {
+    const transferShapeValid =
+      workMintActions.length === 0 &&
+      marketplaceActions.length === 0 &&
+      signedTokenProtocolRecords.length === workTransferActions.length &&
+      workTransferActions.every(
+        (transfer) =>
+          transfer.canonicalParsed === true &&
+          transfer.amountVersion === TOKEN_SEND_SUBATOMS_ACTION,
+      ) &&
+      shape?.workTransferRegistryPaymentValid === true;
+    return transferShapeValid
+      ? { allowed: true, mutationKind: "transfer" }
+      : {
+          allowed: false,
+          code: "WORK_AMO_V8_TRANSFER_SHAPE_INVALID",
+          message:
+            "WORK AMO V8 transfer requires one or more canonical send3 records plus either one registry payment per record or one exact aggregate registry payment covering every record.",
+          reasonCode: "work-amo-v8-transfer-shape-invalid",
+          statusCode: 400,
+        };
+  }
+  if (workMintActions.length > 0) {
+    const mintShapeValid =
+      workMintActions.length === 1 &&
+      marketplaceActions.length === 0 &&
+      signedTokenProtocolRecords.length === 1 &&
+      workMintActions[0].canonicalParsed === true &&
+      workMintActions[0].paysWorkRegistry === true;
+    if (!mintShapeValid) {
+      return {
+        allowed: false,
+        code: "WORK_AMO_V8_MINT_SHAPE_INVALID",
+        message:
+          "WORK AMO V8 mint requires one canonical mint record and one distinct 1,000-proof registry payment.",
+        reasonCode: "work-amo-v8-mint-shape-invalid",
+        statusCode: 400,
+      };
+    }
+    if (workMintActions[0].amount !== WORK_TOKEN_MINT_AMOUNT) {
+      return {
+        allowed: false,
+        code: "WORK_AMO_V8_MINT_AMOUNT_INVALID",
+        message: "WORK mint amount must be exactly 1,000 WORK.",
+        reasonCode: "work-amo-v8-mint-amount-invalid",
+        statusCode: 400,
+      };
+    }
+    return { allowed: true, mutationKind: "mint" };
+  }
+  if (marketplaceActions.length === 0) {
+    return requireWorkMutation && signedTokenProtocolRecords.length > 0
+      ? {
+          allowed: false,
+          code: "WORK_AMO_V8_TRANSACTION_INVALID",
+          message:
+            "Active WORK transaction does not contain a canonical AMO V8 mutation.",
+          reasonCode: "work-amo-v8-work-mutation-unrecognized",
+          statusCode: 400,
+        }
+      : { allowed: true };
+  }
+  const tipHeight = Number(metadata?.tipHeight);
+  const candidateActions = marketplaceActions.map((action) =>
+    action.action === TOKEN_LIST_ACTION
+      ? action
+      : {
+          ...action,
+          actionPosition: {
+            blockHash: "00".repeat(32),
+            blockHeight:
+              Number.isSafeInteger(tipHeight) && tipHeight > 0
+                ? tipHeight + 1
+                : WORK_AMO_V8_ACTIVATION_HEIGHT,
+            blockTransactionIndex: 0,
+            protocolVout: 0,
+            recordOrdinal: 0,
+          },
+        },
+  );
+  const decision = workAmoV8BroadcastDecision(candidateActions, {
+    legacyValidation: ({
+      actionAuthorization,
+      listingAuthorization,
+      listingFrozenTerms,
+    }) => {
+      const validation = validateWorkAmoV5ReferencedAuthorization(
+        actionAuthorization,
+        {
+          listingAuthorization,
+          listingFrozenTerms,
+        },
+      );
+      return validation.valid
+        ? {
+            frozenTerms: listingFrozenTerms,
+            valid: true,
+          }
+        : validation;
+    },
+    metadata: {
+      ...(metadata ?? {}),
+      // Callers enforce operational readiness separately. This decision is
+      // intentionally limited to the active protocol shape and signed terms.
+      listingWritesEnabled: true,
+      protocolWritesEnabled: true,
+    },
+    network,
+  });
+  return decision.allowed
+    ? { ...decision, mutationKind: "marketplace" }
+    : {
+        ...decision,
+        message:
+          decision.code === "WORK_AMO_V8_WRITES_PAUSED" ||
+          decision.code === "WORK_AMO_V8_EVIDENCE_NOT_READY"
+            ? "WORK AMO V8 protocol validation could not prove the active declaration boundary."
+            : "WORK AMO V8 rejected this listing or frozen settlement transaction.",
+      };
+}
+
+async function assertWorkMarketplaceBroadcastAllowed(
+  txHex,
+  network,
+  options = {},
+) {
+  if (network !== "livenet") {
+    return;
+  }
+  const shape = workAmoV8SignedMutationShape(txHex, network);
+  const {
+    workMintActions,
+    workTransferActions,
+    workTransferRegistryPaymentValid,
+  } = shape;
   const actions = await signedWorkMarketplaceWriteActions(txHex, network);
   await options.beforeSubmit?.();
   if (
@@ -10174,12 +10354,9 @@ async function assertWorkMarketplaceBroadcastAllowed(
   ) {
     return;
   }
-  const workAmoV8AdmissionMetadata =
-    network === "livenet"
-      ? await workAmoV8Metadata(network, {
-          force: true,
-        })
-      : null;
+  const workAmoV8AdmissionMetadata = await workAmoV8Metadata(network, {
+    force: true,
+  });
   const delistOnly =
     actions.length > 0 &&
     workTransferActions.length === 0 &&
@@ -10315,145 +10492,52 @@ async function assertWorkMarketplaceBroadcastAllowed(
       throw error;
     }
     if (metadata?.activation?.reached === true) {
+      const protocolReady =
+        metadata?.writeAdmission === true &&
+        metadata?.protocolReady === true &&
+        metadata?.evidenceComplete === true;
       if (
-        workTransferActions.length > 0 ||
-        workMintActions.length > 0
+        (workTransferActions.length > 0 ||
+          workMintActions.length > 0) &&
+        !protocolReady
       ) {
-        const protocolReady =
-          metadata?.writeAdmission === true &&
-          metadata?.protocolReady === true &&
-          metadata?.evidenceComplete === true;
-        if (!protocolReady) {
-          const error = new Error(
-            "WORK AMO V8 writes are paused until exact declaration evidence, Q16 replay, current relational and pending parity, and write admission are ready.",
-          );
-          error.statusCode = 503;
-          error.details = {
-            code: "WORK_AMO_V8_WRITES_PAUSED",
-            reasonCode:
-              metadata?.reasonCode ??
-              "work-amo-v8-writes-paused",
-            workAmoV8: metadata,
-          };
-          throw error;
-        }
+        const error = new Error(
+          "WORK AMO V8 writes are paused until exact declaration evidence, Q16 replay, current relational and pending parity, and write admission are ready.",
+        );
+        error.statusCode = 503;
+        error.details = {
+          code: "WORK_AMO_V8_WRITES_PAUSED",
+          reasonCode:
+            metadata?.reasonCode ?? "work-amo-v8-writes-paused",
+          workAmoV8: metadata,
+        };
+        throw error;
       }
-      if (workTransferActions.length > 0) {
-        const transferShapeValid =
-          workMintActions.length === 0 &&
-          actions.length === 0 &&
-          signedTokenProtocolRecords.length ===
-            workTransferActions.length &&
-          workTransferActions.every(
-            (transfer) =>
-              transfer.canonicalParsed === true &&
-              transfer.amountVersion ===
-                TOKEN_SEND_SUBATOMS_ACTION,
-          ) &&
-          workTransferRegistryPaymentValid;
-        if (!transferShapeValid) {
-          const error = new Error(
-            "WORK AMO V8 transfer requires one or more canonical send3 records plus either one registry payment per record or one exact aggregate registry payment covering every record.",
-          );
-          error.statusCode = 400;
-          error.details = {
-            code: "WORK_AMO_V8_TRANSFER_SHAPE_INVALID",
-            reasonCode: "work-amo-v8-transfer-shape-invalid",
-            workAmoV8: metadata,
-          };
-          throw error;
-        }
+      if (
+        actions.length > 0 &&
+        (metadata?.protocolWritesEnabled !== true ||
+          (newListingAttempt && metadata?.listingWritesEnabled !== true))
+      ) {
+        const error = new Error(
+          "WORK AMO V8 governed writes are paused until exact declaration evidence, Q16 migration, canonical replay, current parity, and the explicit write gate are ready.",
+        );
+        error.statusCode = 503;
+        error.details = {
+          code: "WORK_AMO_V8_WRITES_PAUSED",
+          reasonCode:
+            metadata?.reasonCode ?? "work-amo-v8-writes-paused",
+          workAmoV8: metadata,
+        };
+        throw error;
       }
-      if (workMintActions.length > 0) {
-        const mintShapeValid =
-          workMintActions.length === 1 &&
-          workTransferActions.length === 0 &&
-          actions.length === 0 &&
-          signedTokenProtocolRecords.length === 1 &&
-          workMintActions[0].canonicalParsed === true &&
-          workMintActions[0].paysWorkRegistry === true;
-        if (!mintShapeValid) {
-          const error = new Error(
-            "WORK AMO V8 mint requires one canonical mint record and one distinct 1,000-proof registry payment.",
-          );
-          error.statusCode = 400;
-          error.details = {
-            code: "WORK_AMO_V8_MINT_SHAPE_INVALID",
-            reasonCode: "work-amo-v8-mint-shape-invalid",
-            workAmoV8: metadata,
-          };
-          throw error;
-        }
-        if (workMintActions[0].amount !== WORK_TOKEN_MINT_AMOUNT) {
-          const error = new Error(
-            "WORK mint amount must be exactly 1,000 WORK.",
-          );
-          error.statusCode = 400;
-          error.details = {
-            code: "WORK_AMO_V8_MINT_AMOUNT_INVALID",
-            reasonCode: "work-amo-v8-mint-amount-invalid",
-            workAmoV8: metadata,
-          };
-          throw error;
-        }
-        return;
-      }
-      if (actions.length === 0) {
-        return;
-      }
-      const tipHeight = Number(metadata?.tipHeight);
-      const candidateActions = actions.map((action) =>
-        action.action === TOKEN_LIST_ACTION
-          ? action
-          : {
-              ...action,
-              actionPosition: {
-                blockHash: "00".repeat(32),
-                blockHeight:
-                  Number.isSafeInteger(tipHeight) && tipHeight > 0
-                    ? tipHeight + 1
-                    : WORK_AMO_V8_ACTIVATION_HEIGHT,
-                blockTransactionIndex: 0,
-                protocolVout: 0,
-                recordOrdinal: 0,
-              },
-            },
-      );
-      const decision = workAmoV8BroadcastDecision(
-        candidateActions,
-        {
-          legacyValidation: ({
-            actionAuthorization,
-            listingAuthorization,
-            listingFrozenTerms,
-          }) => {
-            const validation =
-              validateWorkAmoV5ReferencedAuthorization(
-                actionAuthorization,
-                {
-                  listingAuthorization,
-                  listingFrozenTerms,
-                },
-              );
-            return validation.valid
-              ? {
-                  frozenTerms: listingFrozenTerms,
-                  valid: true,
-                }
-              : validation;
-          },
-          metadata,
-          network,
-        },
+      const decision = workAmoV8ActiveMutationDecision(
+        shape,
+        actions,
+        { metadata, network },
       );
       if (!decision.allowed) {
-        const paused =
-          decision.code === "WORK_AMO_V8_WRITES_PAUSED" ||
-          decision.code === "WORK_AMO_V8_EVIDENCE_NOT_READY";
         const error = new Error(
-          paused
-            ? "WORK AMO V8 governed writes are paused until exact declaration evidence, Q16 migration, canonical replay, current parity, and the explicit write gate are ready."
-            : "WORK AMO V8 rejected this listing or frozen settlement transaction.",
+          decision.message ?? "Active WORK transaction shape is invalid.",
         );
         error.statusCode = decision.statusCode;
         error.details = {
@@ -11270,6 +11354,9 @@ async function fetchTransactionFromBitcoinRpc(txid, network, options = {}) {
     cached &&
     (!options.requireCanonicalPrevouts ||
       cached?._powCanonicalRpcHydration === true) &&
+    (options.includeRawHex !== true ||
+      (typeof cached?.hex === "string" &&
+        cached.hex.length > 0)) &&
     (options.includePrevouts === false || transactionInputsHavePrevouts(cached))
   ) {
     return cached;
@@ -11294,6 +11381,28 @@ async function fetchTransactionFromBitcoinRpc(txid, network, options = {}) {
   }
 
   const raw = response.result;
+  let rawHex = "";
+  let rawHexTransaction = null;
+  if (options.includeRawHex === true) {
+    rawHex = String(raw.hex ?? "").trim().toLowerCase();
+    let rawHexTxid = "";
+    try {
+      rawHexTransaction = bitcoin.Transaction.fromHex(rawHex);
+      rawHexTxid = rawHexTransaction.getId();
+    } catch {
+      rawHexTxid = "";
+    }
+    if (
+      !/^[0-9a-f]+$/u.test(rawHex) ||
+      rawHex.length % 2 !== 0 ||
+      String(raw.txid ?? "").trim().toLowerCase() !== normalizedTxid ||
+      rawHexTxid !== normalizedTxid
+    ) {
+      throw new Error(
+        `Bitcoin Core returned raw transaction bytes that do not bind to ${normalizedTxid}.`,
+      );
+    }
+  }
   if (
     options.requireCanonicalPrevouts &&
     !(Array.isArray(raw.vout) ? raw.vout : []).every((output) => {
@@ -11342,6 +11451,7 @@ async function fetchTransactionFromBitcoinRpc(txid, network, options = {}) {
           network,
           {
             bypassCache: options.bypassCache === true,
+            cacheResult: options.cacheResult !== false,
             includePrevouts: false,
             requireCanonicalPrevouts: options.requireCanonicalPrevouts === true,
           },
@@ -11361,6 +11471,38 @@ async function fetchTransactionFromBitcoinRpc(txid, network, options = {}) {
       return nextInput;
     },
   );
+  if (
+    options.includeRawHex === true &&
+    (
+      !rawHexTransaction ||
+      rawHexTransaction.version !== Number(raw.version ?? 0) ||
+      rawHexTransaction.locktime !== Number(raw.locktime ?? 0) ||
+      rawHexTransaction.ins.length !== vin.length ||
+      rawHexTransaction.outs.length !== vout.length ||
+      rawHexTransaction.ins.some((input, index) => {
+        const hydrated = vin[index];
+        return (
+          Buffer.from(input.hash).reverse().toString("hex") !==
+            hydrated?.txid ||
+          Number(input.index) !== hydrated?.vout ||
+          Number(input.sequence) !== hydrated?.sequence ||
+          Buffer.from(input.script).toString("hex") !== hydrated?.scriptsig
+        );
+      }) ||
+      rawHexTransaction.outs.some((output, index) => {
+        const hydrated = vout[index];
+        return (
+          Number(output.value) !== hydrated?.value ||
+          Buffer.from(output.script).toString("hex") !==
+            hydrated?.scriptpubkey
+        );
+      })
+    )
+  ) {
+    throw new Error(
+      `Bitcoin Core raw transaction bytes disagree with verbose transaction ${normalizedTxid}.`,
+    );
+  }
   const confirmations = Number(raw.confirmations ?? 0);
   const confirmed = confirmations > 0;
   const mempoolEntry = confirmed
@@ -11392,6 +11534,7 @@ async function fetchTransactionFromBitcoinRpc(txid, network, options = {}) {
     fee: Number.isFinite(Number(raw.fee))
       ? Math.round(Number(raw.fee) * 100_000_000)
       : undefined,
+    ...(rawHex ? { hex: rawHex } : {}),
     locktime: Number(raw.locktime ?? 0),
     size: Number(raw.size ?? 0),
     status,
@@ -11412,7 +11555,7 @@ async function fetchTransactionFromBitcoinRpc(txid, network, options = {}) {
     );
   }
 
-  if (confirmed) {
+  if (confirmed && options.cacheResult !== false) {
     TRANSACTION_CACHE.set(cacheKey, tx);
     if (TRANSACTION_CACHE.size > MAX_TRANSACTION_CACHE_SIZE) {
       TRANSACTION_CACHE.delete(TRANSACTION_CACHE.keys().next().value);
@@ -12324,7 +12467,8 @@ async function hydrateLegacyGenericTokenBlockOrderFromProofIndex(
   for (const tx of txs) {
     if (
       !transactionConfirmed(tx) ||
-      transactionBlockIndex(tx) !== undefined
+      transactionBlockIndex(tx) !== undefined ||
+      !transactionHasRawTokenProtocol(tx)
     ) {
       continue;
     }
@@ -12429,12 +12573,23 @@ async function hydrateLegacyGenericTokenBlockOrderFromProofIndex(
   });
 }
 
+function transactionHasRawTokenProtocol(tx) {
+  return (Array.isArray(tx?.vout) ? tx.vout : []).some(
+    (output) =>
+      canonicalProtocolCandidateFromOutput(output)?.prefix ===
+      TOKEN_PROTOCOL_PREFIX,
+  );
+}
+
 async function fetchLegacyGenericTokenReplayTransactions(
   registryAddress,
   network,
 ) {
+  const protocolTransactions = (
+    await fetchRegistryTransactions(registryAddress, network)
+  ).filter(transactionHasRawTokenProtocol);
   return hydrateLegacyGenericTokenBlockOrderFromProofIndex(
-    await fetchRegistryTransactions(registryAddress, network),
+    protocolTransactions,
     network,
   );
 }
@@ -12446,7 +12601,9 @@ async function fetchLegacyGenericTokenReplayRegistryEntries(
   const entries = await Promise.all(
     registryAddresses.map(async (registryAddress) => [
       registryAddress,
-      await fetchRegistryTransactions(registryAddress, network),
+      (await fetchRegistryTransactions(registryAddress, network)).filter(
+        transactionHasRawTokenProtocol,
+      ),
     ]),
   );
   const combined = entries.flatMap(([, txs]) => txs);
@@ -32262,8 +32419,25 @@ function workTokenDeltaTransactionsWithoutUnverifiedMarketMutations(
   );
 }
 
-function workTokenStateWithDeltaTransactions(state, txs, network) {
-  txs = workTokenDeltaTransactionsWithoutUnverifiedMarketMutations(txs, network);
+function workTokenStateWithDeltaTransactions(
+  state,
+  txs,
+  network,
+  privateReplayCapability = null,
+) {
+  // Passing this exact private capability selects the ordered, copy-on-write
+  // pending ledger used only by the atomic WORK staging route.
+  const exactPendingStageReplay =
+    privateReplayCapability === workTokenStateWithDeltaTransactions;
+  txs =
+    exactPendingStageReplay
+      ? Array.isArray(txs)
+        ? txs
+        : []
+      : workTokenDeltaTransactionsWithoutUnverifiedMarketMutations(
+          txs,
+          network,
+        );
   if (txs.length === 0) {
     return state;
   }
@@ -32487,6 +32661,7 @@ function workTokenStateWithDeltaTransactions(state, txs, network) {
     let parsedTxRecordOrdinal;
     let parsedTxTokenId = "";
     let rejectedTxMessage = null;
+    const rejectedTxMessages = [];
 
     for (const { message, protocolVout, recordOrdinal } of messageEntries) {
       const parsed = parseTokenPayload(message, network);
@@ -32523,12 +32698,14 @@ function workTokenStateWithDeltaTransactions(state, txs, network) {
         remainingRegistrySats -= WORK_TOKEN_MINT_PRICE_SATS;
         if (confirmed) {
           confirmedSupply += parsed.amount;
+        } else {
+          pendingSupply += parsed.amount;
+        }
+        if (confirmed || exactPendingStageReplay) {
           holderBalances.set(
             actorAddress,
             (holderBalances.get(actorAddress) ?? 0n) + mintAmountUnits,
           );
-        } else {
-          pendingSupply += parsed.amount;
         }
         mints.push({
           ...ledgerAmountFields(mintAmountUnits),
@@ -32566,7 +32743,10 @@ function workTokenStateWithDeltaTransactions(state, txs, network) {
         ) {
           continue;
         }
-        if (confirmed && spendableBalance < parsedAmount) {
+        if (
+          (confirmed || exactPendingStageReplay) &&
+          spendableBalance < parsedAmount
+        ) {
           const reservedBalance = reservedBalanceFor(actorAddress);
           rejectedTxMessage = insufficientTokenBalanceInvalidEvent({
             actorAddress,
@@ -32580,11 +32760,12 @@ function workTokenStateWithDeltaTransactions(state, txs, network) {
           });
           rejectedTxMessage.protocolVout = protocolVout;
           rejectedTxMessage.recordOrdinal = recordOrdinal;
+          rejectedTxMessages.push(rejectedTxMessage);
           continue;
         }
 
         remainingRegistrySats -= TOKEN_MIN_MUTATION_PRICE_SATS;
-        if (confirmed) {
+        if (confirmed || exactPendingStageReplay) {
           holderBalances.set(
             actorAddress,
             (holderBalances.get(actorAddress) ?? 0n) - parsedAmount,
@@ -32754,7 +32935,7 @@ function workTokenStateWithDeltaTransactions(state, txs, network) {
           !spendsTokenListingAnchor(eventSpentOutpoints, listing) ||
           paymentAmountFromSnapshots(paymentOutputs, listing.sellerAddress) <
             tokenSellerPaymentRequiredSats(listing) ||
-          (confirmed &&
+          ((confirmed || exactPendingStageReplay) &&
             (holderBalances.get(listing.sellerAddress) ?? 0n) < listingAmount)
         ) {
           continue;
@@ -32773,7 +32954,7 @@ function workTokenStateWithDeltaTransactions(state, txs, network) {
           txid,
         });
         listings.delete(listing.listingId);
-        if (confirmed) {
+        if (confirmed || exactPendingStageReplay) {
           holderBalances.set(
             listing.sellerAddress,
             (holderBalances.get(listing.sellerAddress) ?? 0n) - listingAmount,
@@ -32811,8 +32992,34 @@ function workTokenStateWithDeltaTransactions(state, txs, network) {
       }
     }
 
-    if (acceptedTxMessage) {
+    if (exactPendingStageReplay && rejectedTxMessages.length > 0) {
       invalidEvents = invalidEvents.filter((event) => event.txid !== txid);
+      for (const rejectedMessage of rejectedTxMessages) {
+        invalidEvents.push({
+          ...rejectedMessage,
+          attemptedKind: "send",
+          auditMinerFeeSats: minerFeeSats,
+          auditRegistryPaymentSats: originalRegistrySats,
+          auditTotalCostSats: minerFeeSats + originalRegistrySats,
+          blockHash,
+          blockHeight,
+          blockIndex,
+          confirmed: false,
+          createdAt,
+          kind: "send",
+          network,
+          registryAddress: WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
+          tokenId: WORK_TOKEN_ID,
+          txid,
+        });
+      }
+      changed = true;
+    }
+
+    if (acceptedTxMessage) {
+      if (!exactPendingStageReplay || rejectedTxMessages.length === 0) {
+        invalidEvents = invalidEvents.filter((event) => event.txid !== txid);
+      }
       existingTxids.add(txid);
       continue;
     }
@@ -57482,17 +57689,45 @@ function exactCoreTipFromBlockchainInfo(response) {
   const info = response?.ok === true ? response.result : null;
   const height = Number(info?.blocks);
   const headers = Number(info?.headers);
+  const verificationProgress = Number(info?.verificationprogress);
   const blockHash = String(info?.bestblockhash ?? "").trim().toLowerCase();
   if (
+    info?.chain !== "main" ||
+    info?.initialblockdownload !== false ||
     !Number.isSafeInteger(height) ||
     height <= 0 ||
     !Number.isSafeInteger(headers) ||
     headers !== height ||
+    !Number.isFinite(verificationProgress) ||
+    verificationProgress < 0.999 ||
     !/^[0-9a-f]{64}$/u.test(blockHash)
   ) {
     return null;
   }
   return { blockHash, height };
+}
+
+function exactCoreNodeAuthority(chainResponse, indexResponse) {
+  const tip = exactCoreTipFromBlockchainInfo(chainResponse);
+  const chain = chainResponse?.ok === true ? chainResponse.result : null;
+  const txindex =
+    indexResponse?.ok === true ? indexResponse.result?.txindex : null;
+  const txindexHeight = Number(txindex?.best_block_height);
+  if (
+    !tip ||
+    chain?.pruned !== false ||
+    !txindex ||
+    txindex.synced !== true ||
+    !Number.isSafeInteger(txindexHeight) ||
+    txindexHeight !== tip.height
+  ) {
+    return null;
+  }
+  return {
+    ...tip,
+    txindexHeight,
+    verificationProgress: Number(chain.verificationprogress),
+  };
 }
 
 function proofIndexExactlyCoversCoreTip(status, canonical, tip) {
@@ -57510,6 +57745,1991 @@ function proofIndexExactlyCoversCoreTip(status, canonical, tip) {
     (fault == null || fault?.active === false) &&
     rebuildTrustState === "complete"
   );
+}
+
+function pendingWorkVerifierStageError(code, message, details = {}) {
+  const error = new Error(message);
+  error.statusCode = 503;
+  error.details = {
+    code,
+    ...details,
+  };
+  return error;
+}
+
+function pendingWorkVerifierStageExactObjectKeys(value, expectedKeys) {
+  return Boolean(
+    value &&
+      typeof value === "object" &&
+      !Array.isArray(value) &&
+      Object.getPrototypeOf(value) === Object.prototype &&
+      isDeepStrictEqual(
+        Object.keys(value).sort(compareCanonicalUtf8),
+        [...expectedKeys].sort(compareCanonicalUtf8),
+      ),
+  );
+}
+
+function pendingWorkVerifierStageTxidArray(value, label) {
+  if (
+    !Array.isArray(value) ||
+    value.length > PENDING_WORK_VERIFIER_STAGE_MAX_TXIDS ||
+    value.some(
+      (txid, index) =>
+        typeof txid !== "string" ||
+        !/^[0-9a-f]{64}$/u.test(txid) ||
+        (index > 0 &&
+          compareCanonicalUtf8(value[index - 1], txid) >= 0),
+    )
+  ) {
+    throw pendingWorkVerifierStageError(
+      "PENDING_WORK_STAGE_REQUEST_INVALID",
+      `${label} must be a sorted unique array of at most ${PENDING_WORK_VERIFIER_STAGE_MAX_TXIDS} lowercase transaction ids.`,
+      { field: label },
+    );
+  }
+  return [...value];
+}
+
+function pendingWorkVerifierStageCanonicalIso(value) {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const timeMs = Date.parse(value);
+  return Number.isFinite(timeMs) && new Date(timeMs).toISOString() === value
+    ? { timeMs, value }
+    : null;
+}
+
+function pendingWorkVerifierStageAbsenceEvidence(value) {
+  if (
+    !pendingWorkVerifierStageExactObjectKeys(value, [
+      "model",
+      "observations",
+    ]) ||
+    value.model !== PENDING_WORK_ABSENCE_EVIDENCE_MODEL ||
+    !Array.isArray(value.observations) ||
+    value.observations.length > PENDING_WORK_VERIFIER_STAGE_MAX_TXIDS
+  ) {
+    throw pendingWorkVerifierStageError(
+      "PENDING_WORK_STAGE_ABSENCE_EVIDENCE_INVALID",
+      "Pending WORK absence evidence has an invalid envelope.",
+    );
+  }
+  const observations = value.observations.map((observation, index) => {
+    const firstAbsentAt = pendingWorkVerifierStageCanonicalIso(
+      observation?.firstAbsentAt,
+    );
+    const lastAbsentAt = pendingWorkVerifierStageCanonicalIso(
+      observation?.lastAbsentAt,
+    );
+    if (
+      !pendingWorkVerifierStageExactObjectKeys(observation, [
+        "absenceCount",
+        "absenceProven",
+        "contract",
+        "firstAbsentAt",
+        "lastAbsentAt",
+        "reason",
+        "sources",
+        "txid",
+      ]) ||
+      !/^[0-9a-f]{64}$/u.test(String(observation.txid ?? "")) ||
+      (index > 0 &&
+        compareCanonicalUtf8(
+          value.observations[index - 1]?.txid,
+          observation.txid,
+        ) >= 0) ||
+      observation.absenceProven !== true ||
+      !Number.isSafeInteger(observation.absenceCount) ||
+      observation.absenceCount < 1 ||
+      !firstAbsentAt ||
+      !lastAbsentAt ||
+      lastAbsentAt.timeMs < firstAbsentAt.timeMs ||
+      observation.contract !== PENDING_WORK_ABSENCE_CONTRACT ||
+      observation.reason !== PENDING_WORK_ABSENCE_REASON ||
+      !isDeepStrictEqual(
+        observation.sources,
+        PENDING_WORK_ABSENCE_SOURCES,
+      )
+    ) {
+      throw pendingWorkVerifierStageError(
+        "PENDING_WORK_STAGE_ABSENCE_EVIDENCE_INVALID",
+        "Pending WORK absence evidence contains a malformed observation.",
+        { observationIndex: index },
+      );
+    }
+    return {
+      absenceCount: observation.absenceCount,
+      absenceProven: true,
+      contract: PENDING_WORK_ABSENCE_CONTRACT,
+      firstAbsentAt: firstAbsentAt.value,
+      lastAbsentAt: lastAbsentAt.value,
+      reason: PENDING_WORK_ABSENCE_REASON,
+      sources: [...PENDING_WORK_ABSENCE_SOURCES],
+      txid: observation.txid,
+    };
+  });
+  return {
+    model: PENDING_WORK_ABSENCE_EVIDENCE_MODEL,
+    observations,
+  };
+}
+
+function pendingWorkVerifierStageRequest(value) {
+  if (
+    !pendingWorkVerifierStageExactObjectKeys(value, [
+      "absenceEvidence",
+      "confirmedRemovalTxids",
+      "model",
+      "network",
+      "parentWitnessSha256",
+      "priorMembershipTxids",
+      "removalTxids",
+      "replayTxids",
+    ]) ||
+    value.model !== PENDING_WORK_VERIFIER_STAGE_REQUEST_MODEL ||
+    value.network !== "livenet" ||
+    !/^[0-9a-f]{64}$/u.test(String(value.parentWitnessSha256 ?? ""))
+  ) {
+    throw pendingWorkVerifierStageError(
+      "PENDING_WORK_STAGE_REQUEST_INVALID",
+      "Pending WORK verifier stage request is malformed.",
+    );
+  }
+  const priorMembershipTxids = pendingWorkVerifierStageTxidArray(
+    value.priorMembershipTxids,
+    "priorMembershipTxids",
+  );
+  const replayTxids = pendingWorkVerifierStageTxidArray(
+    value.replayTxids,
+    "replayTxids",
+  );
+  const confirmedRemovalTxids = pendingWorkVerifierStageTxidArray(
+    value.confirmedRemovalTxids,
+    "confirmedRemovalTxids",
+  );
+  const removalTxids = pendingWorkVerifierStageTxidArray(
+    value.removalTxids,
+    "removalTxids",
+  );
+  const priorMembership = new Set(priorMembershipTxids);
+  const replay = new Set(replayTxids);
+  const confirmedRemovals = new Set(confirmedRemovalTxids);
+  if (
+    confirmedRemovalTxids.some(
+      (txid) => !priorMembership.has(txid) || replay.has(txid),
+    ) ||
+    removalTxids.some(
+      (txid) =>
+        !priorMembership.has(txid) ||
+        replay.has(txid) ||
+        confirmedRemovals.has(txid),
+    )
+  ) {
+    throw pendingWorkVerifierStageError(
+      "PENDING_WORK_STAGE_REQUEST_INVALID",
+      "Pending WORK confirmed and dropped removals must be disjoint prior members and cannot also be replayed.",
+    );
+  }
+  const absenceEvidence = pendingWorkVerifierStageAbsenceEvidence(
+    value.absenceEvidence,
+  );
+  const observedTxids = new Set();
+  for (const observation of absenceEvidence.observations) {
+    if (
+      observedTxids.has(observation.txid) ||
+      !priorMembership.has(observation.txid) ||
+      replay.has(observation.txid) ||
+      confirmedRemovals.has(observation.txid)
+    ) {
+      throw pendingWorkVerifierStageError(
+        "PENDING_WORK_STAGE_ABSENCE_EVIDENCE_INVALID",
+        "Pending WORK absence observations must be unique absent prior members disjoint from confirmed removals.",
+        { txid: observation.txid },
+      );
+    }
+    observedTxids.add(observation.txid);
+  }
+  const eligibleRemovalTxids = absenceEvidence.observations
+    .filter((observation) => {
+      const firstAbsentMs = Date.parse(observation.firstAbsentAt);
+      const lastAbsentMs = Date.parse(observation.lastAbsentAt);
+      return (
+        observation.absenceCount >= 2 &&
+        lastAbsentMs >= firstAbsentMs + PENDING_WORK_DROP_CONFIRMATION_MS
+      );
+    })
+    .map((observation) => observation.txid);
+  if (!isDeepStrictEqual(removalTxids, eligibleRemovalTxids)) {
+    throw pendingWorkVerifierStageError(
+      "PENDING_WORK_STAGE_REMOVAL_EVIDENCE_INSUFFICIENT",
+      "Pending WORK removals must equal the exact eligible repeated-absence subset.",
+      { eligibleRemovalTxids },
+    );
+  }
+  const priorDepartureTxids = priorMembershipTxids.filter(
+    (txid) => !replay.has(txid),
+  );
+  const declaredDepartureTxids = [
+    ...confirmedRemovalTxids,
+    ...observedTxids,
+  ].sort(compareCanonicalUtf8);
+  if (!isDeepStrictEqual(priorDepartureTxids, declaredDepartureTxids)) {
+    throw pendingWorkVerifierStageError(
+      "PENDING_WORK_STAGE_DEPARTURE_PARTITION_INVALID",
+      "Every unreplayed prior WORK member must be declared exactly once as confirmed or authoritatively absent.",
+      { declaredDepartureTxids, priorDepartureTxids },
+    );
+  }
+  return {
+    absenceEvidence,
+    confirmedRemovalTxids,
+    model: value.model,
+    network: value.network,
+    parentWitnessSha256: value.parentWitnessSha256,
+    priorMembershipTxids,
+    removalTxids,
+    replayTxids,
+  };
+}
+
+function pendingWorkVerifierStageCoreMempool(response) {
+  if (response?.ok !== true || !Array.isArray(response.result)) {
+    throw pendingWorkVerifierStageError(
+      "PENDING_WORK_STAGE_CORE_MEMPOOL_UNAVAILABLE",
+      "Bitcoin Core did not return an exact mempool membership snapshot.",
+    );
+  }
+  const txids = response.result.map((txid) => String(txid ?? ""));
+  if (
+    txids.some((txid) => !/^[0-9a-f]{64}$/u.test(txid)) ||
+    new Set(txids).size !== txids.length
+  ) {
+    throw pendingWorkVerifierStageError(
+      "PENDING_WORK_STAGE_CORE_MEMPOOL_INVALID",
+      "Bitcoin Core returned a malformed mempool membership snapshot.",
+    );
+  }
+  txids.sort(compareCanonicalUtf8);
+  return { membership: new Set(txids), txids };
+}
+
+function pendingWorkVerifierStageValidateMembership(
+  request,
+  mempool,
+) {
+  const missingReplayTxids = request.replayTxids.filter(
+    (txid) => !mempool.membership.has(txid),
+  );
+  const presentRemovalTxids = request.removalTxids.filter((txid) =>
+    mempool.membership.has(txid),
+  );
+  const replay = new Set(request.replayTxids);
+  const confirmedRemovals = new Set(request.confirmedRemovalTxids);
+  const presentConfirmedRemovalTxids = request.confirmedRemovalTxids.filter(
+    (txid) => mempool.membership.has(txid),
+  );
+  const unreplayedPresentPriorTxids = request.priorMembershipTxids.filter(
+    (txid) => mempool.membership.has(txid) && !replay.has(txid),
+  );
+  const absentPriorTxids = request.priorMembershipTxids.filter(
+    (txid) =>
+      !mempool.membership.has(txid) && !confirmedRemovals.has(txid),
+  );
+  const observedTxids = request.absenceEvidence.observations.map(
+    (observation) => observation.txid,
+  );
+  if (
+    missingReplayTxids.length > 0 ||
+    presentRemovalTxids.length > 0 ||
+    presentConfirmedRemovalTxids.length > 0 ||
+    unreplayedPresentPriorTxids.length > 0 ||
+    !isDeepStrictEqual(absentPriorTxids, observedTxids)
+  ) {
+    throw pendingWorkVerifierStageError(
+      "PENDING_WORK_STAGE_MEMBERSHIP_CHANGED",
+      "Pending WORK replay, removal, or absence membership does not match Bitcoin Core.",
+      {
+        missingReplayTxids,
+        presentConfirmedRemovalTxids,
+        presentRemovalTxids,
+        unreplayedPresentPriorTxids,
+      },
+    );
+  }
+}
+
+function pendingWorkVerifierStageJsonClone(value) {
+  try {
+    return JSON.parse(JSON.stringify(value));
+  } catch (error) {
+    throw pendingWorkVerifierStageError(
+      "PENDING_WORK_STAGE_BASE_INVALID",
+      "Canonical WORK state contains a non-JSON value.",
+      { reason: errorSummary(error) },
+    );
+  }
+}
+
+function pendingWorkVerifierStageWithoutPendingFields(value) {
+  const source =
+    value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  return Object.fromEntries(
+    Object.entries(source).filter(
+      ([field]) => !field.toLowerCase().startsWith("pending"),
+    ),
+  );
+}
+
+function pendingWorkVerifierStageConfirmedItem(
+  value,
+  fieldMap = {},
+) {
+  const confirmationField = fieldMap.confirmationField ?? "confirmed";
+  const blockHashField = fieldMap.blockHashField ?? "blockHash";
+  const blockHeightField = fieldMap.blockHeightField ?? "blockHeight";
+  const blockIndexField = fieldMap.blockIndexField ?? "blockIndex";
+  const protocolVoutField = fieldMap.protocolVoutField ?? "protocolVout";
+  const recordOrdinalField = fieldMap.recordOrdinalField ?? "recordOrdinal";
+  if (value?.[confirmationField] !== true) {
+    throw pendingWorkVerifierStageError(
+      "PENDING_WORK_STAGE_BASE_INVALID",
+      "Canonical WORK base contains an unconfirmed event.",
+    );
+  }
+  if (!/^[0-9a-f]{64}$/u.test(String(value?.[blockHashField] ?? ""))) {
+    throw pendingWorkVerifierStageError(
+      "PENDING_WORK_STAGE_BASE_POSITION_INVALID",
+      "Canonical WORK base event is missing its exact action block hash.",
+    );
+  }
+  let position;
+  try {
+    position = canonicalVerifierItemPosition(
+      value,
+      fieldMap,
+      { requireConfirmed: true },
+    );
+  } catch (error) {
+    throw pendingWorkVerifierStageError(
+      "PENDING_WORK_STAGE_BASE_POSITION_INVALID",
+      "Canonical WORK base event position is incomplete.",
+      { reason: errorSummary(error) },
+    );
+  }
+  if (!/^[0-9a-f]{64}$/u.test(String(position.blockHash ?? ""))) {
+    throw pendingWorkVerifierStageError(
+      "PENDING_WORK_STAGE_BASE_POSITION_INVALID",
+      "Canonical WORK base event is not bound to an exact block hash.",
+    );
+  }
+  return pendingWorkVerifierStageJsonClone({
+    ...pendingWorkVerifierStageWithoutPendingFields(value),
+    [blockHashField]: position.blockHash,
+    [blockHeightField]: position.blockHeight,
+    [blockIndexField]: position.blockIndex,
+    [confirmationField]: true,
+    [protocolVoutField]: position.protocolVout,
+    [recordOrdinalField]: position.recordOrdinal,
+  });
+}
+
+function pendingWorkVerifierStageSortUniqueItems(items, keyForItem) {
+  const seen = new Set();
+  for (const item of items) {
+    const key = keyForItem(item);
+    if (!key || seen.has(key)) {
+      throw pendingWorkVerifierStageError(
+        "PENDING_WORK_STAGE_BASE_INVALID",
+        "Canonical WORK base contains a duplicate or unkeyed event.",
+        { key: key || null },
+      );
+    }
+    seen.add(key);
+  }
+  return items.sort(
+    (left, right) =>
+      Number(left.blockHeight ?? 0) - Number(right.blockHeight ?? 0) ||
+      Number(left.blockIndex ?? 0) - Number(right.blockIndex ?? 0) ||
+      Number(left.protocolVout ?? 0) - Number(right.protocolVout ?? 0) ||
+      Number(left.recordOrdinal ?? 0) - Number(right.recordOrdinal ?? 0) ||
+      compareCanonicalUtf8(keyForItem(left), keyForItem(right)),
+  );
+}
+
+const PENDING_WORK_STAGE_SEAL_FIELDS = Object.freeze([
+  "sealAt",
+  "sealBlockHash",
+  "sealBlockHeight",
+  "sealBlockIndex",
+  "sealConfirmed",
+  "sealDataBytes",
+  "sealFrozenNetworkValueSats",
+  "sealLiveNetworkValueSats",
+  "sealMinerFeeCanonical",
+  "sealMinerFeeSats",
+  "sealMinerFeeSource",
+  "sealProtocolVout",
+  "sealRecordOrdinal",
+  "sealTransactionBlockHeight",
+  "sealTxid",
+]);
+const PENDING_WORK_STAGE_CLOSE_FIELDS = Object.freeze([
+  "buyerAddress",
+  "closedAt",
+  "closedBlockHash",
+  "closedBlockHeight",
+  "closedBlockIndex",
+  "closedByCanonicalOutpointSpend",
+  "closedConfirmed",
+  "closedMinerFeeSats",
+  "closedProtocolVout",
+  "closedRecordOrdinal",
+  "closedTxid",
+]);
+
+function pendingWorkVerifierStageDeleteFields(value, fields) {
+  const next = { ...value };
+  for (const field of fields) {
+    delete next[field];
+  }
+  return next;
+}
+
+function pendingWorkVerifierStageConfirmedListing(value, { closed = false } = {}) {
+  let listing = pendingWorkVerifierStageConfirmedItem(value);
+  const listingId = String(listing.listingId ?? "").trim().toLowerCase();
+  if (
+    !/^[0-9a-f]{64}$/u.test(listingId) ||
+    listing.tokenId !== WORK_TOKEN_ID ||
+    listing.network !== "livenet" ||
+    listing.registryAddress !== WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS ||
+    !isValidBitcoinAddress(listing.sellerAddress, "livenet")
+  ) {
+    throw pendingWorkVerifierStageError(
+      "PENDING_WORK_STAGE_BASE_INVALID",
+      "Canonical WORK base contains a malformed listing.",
+      { listingId: listingId || null },
+    );
+  }
+  listing.listingId = listingId;
+  listing.status =
+    closed && listing.relic === true ? listing.status : closed ? "closed" : "active";
+  if (listing.sealConfirmed === true) {
+    if (!/^[0-9a-f]{64}$/u.test(String(listing.sealTxid ?? ""))) {
+      throw pendingWorkVerifierStageError(
+        "PENDING_WORK_STAGE_BASE_INVALID",
+        "Canonical WORK listing has confirmed seal state without an exact seal transaction id.",
+        { listingId },
+      );
+    }
+    listing = pendingWorkVerifierStageConfirmedItem(listing, {
+      blockHashField: "sealBlockHash",
+      blockHeightField: "sealBlockHeight",
+      blockIndexField: "sealBlockIndex",
+      confirmationField: "sealConfirmed",
+      protocolVoutField: "sealProtocolVout",
+      recordOrdinalField: "sealRecordOrdinal",
+    });
+  } else {
+    let staticAuthorization;
+    try {
+      staticAuthorization = tokenSaleAuthorizationDraft(
+        listing.listingAuthorization ?? listing.saleAuthorization,
+      );
+    } catch (error) {
+      throw pendingWorkVerifierStageError(
+        "PENDING_WORK_STAGE_BASE_INVALID",
+        "Canonical WORK listing has no valid confirmed static authorization.",
+        { listingId, reason: errorSummary(error) },
+      );
+    }
+    if (
+      (!closed ||
+        staticAuthorization.version === TOKEN_SALE_AUTH_WORK_AMO_V8_VERSION) &&
+      !validateWorkAmoV8StaticAuthorization(staticAuthorization).valid
+    ) {
+      throw pendingWorkVerifierStageError(
+        "PENDING_WORK_STAGE_BASE_INVALID",
+        "Canonical WORK listing static authorization is not valid AMO V8 state.",
+        { listingId },
+      );
+    }
+    listing = pendingWorkVerifierStageDeleteFields(
+      listing,
+      PENDING_WORK_STAGE_SEAL_FIELDS,
+    );
+    listing.listingAuthorization = staticAuthorization;
+    listing.saleAuthorization = staticAuthorization;
+  }
+  if (closed) {
+    const canonicalRelic =
+      listing.relic === true &&
+      listing.actionable === false &&
+      listing.status === "disabled" &&
+      listing.closedConfirmed === true &&
+      String(listing.closedTxid ?? "") === "" &&
+      Number(listing.disabledAtBlockHeight) ===
+        WORK_AMO_V8_ACTIVATION_HEIGHT &&
+      String(listing.disabledByTxid ?? "") ===
+        WORK_AMO_V8_DECLARATION_TXID;
+    if (!canonicalRelic) {
+      if (!/^[0-9a-f]{64}$/u.test(String(listing.closedTxid ?? ""))) {
+        throw pendingWorkVerifierStageError(
+          "PENDING_WORK_STAGE_BASE_INVALID",
+          "Canonical WORK listing has confirmed close state without an exact close transaction id.",
+          { listingId },
+        );
+      }
+      listing = pendingWorkVerifierStageConfirmedItem(listing, {
+        blockHashField: "closedBlockHash",
+        blockHeightField: "closedBlockHeight",
+        blockIndexField: "closedBlockIndex",
+        confirmationField: "closedConfirmed",
+        protocolVoutField: "closedProtocolVout",
+        recordOrdinalField: "closedRecordOrdinal",
+      });
+    }
+  } else {
+    listing = pendingWorkVerifierStageDeleteFields(
+      listing,
+      PENDING_WORK_STAGE_CLOSE_FIELDS,
+    );
+  }
+  return listing;
+}
+
+function pendingWorkVerifierStageConfirmedBase(payload, tip) {
+  if (
+    payload?.source !== "proof-indexer-token-state-tables" ||
+    payload?.network !== "livenet" ||
+    Number(payload.indexedThroughBlock) !== tip.height ||
+    String(payload.indexedThroughBlockHash ?? "") !== tip.blockHash ||
+    !workPrecisionV2CurrentPayloadIsExact(
+      payload,
+      WORK_AMO_V8_ACTIVATION_HEIGHT,
+      { requireSupplyEnvelope: true },
+    )
+  ) {
+    throw pendingWorkVerifierStageError(
+      "PENDING_WORK_STAGE_BASE_UNAVAILABLE",
+      "The relational token tables do not provide an exact-tip Q16 WORK base.",
+    );
+  }
+  const sourceWorkTokens = (Array.isArray(payload.tokens) ? payload.tokens : [])
+    .filter((token) => isWorkTokenId(token?.tokenId));
+  if (sourceWorkTokens.length !== 1) {
+    throw pendingWorkVerifierStageError(
+      "PENDING_WORK_STAGE_BASE_INVALID",
+      "Canonical WORK base must contain exactly one WORK definition.",
+    );
+  }
+  const sourceToken = sourceWorkTokens[0];
+  const canonicalDefinition = canonicalWorkTokenDefinition(
+    "livenet",
+    WORK_SUBATOM_PROJECTION_MODEL,
+  );
+  for (const field of [
+    "amountStorageModel",
+    "decimals",
+    "maxSupplySubatoms",
+    "mintAmountSubatoms",
+    "precisionModel",
+    "registryAddress",
+    "ticker",
+    "tokenId",
+    "unitScale",
+  ]) {
+    if (String(sourceToken?.[field] ?? "") !== String(canonicalDefinition[field])) {
+      throw pendingWorkVerifierStageError(
+        "PENDING_WORK_STAGE_BASE_INVALID",
+        "Canonical WORK definition does not match the declared Q16 definition.",
+        { field },
+      );
+    }
+  }
+
+  const holders = [];
+  const holderAddresses = new Set();
+  let confirmedSupplySubatoms = 0n;
+  for (const holder of (Array.isArray(payload.holders) ? payload.holders : [])
+    .filter((candidate) => isWorkTokenId(candidate?.tokenId))) {
+    const address = String(holder.address ?? "").trim();
+    const balanceSubatoms = canonicalWorkSubatomsText(
+      holder.balanceSubatoms,
+    );
+    if (
+      !isValidBitcoinAddress(address, "livenet") ||
+      !balanceSubatoms ||
+      BigInt(balanceSubatoms) <= 0n ||
+      holderAddresses.has(address) ||
+      holder.amountStorageModel !== WORK_SUBATOM_PROJECTION_MODEL ||
+      holder.precisionModel !== WORK_PRECISION_V2_MODEL
+    ) {
+      throw pendingWorkVerifierStageError(
+        "PENDING_WORK_STAGE_BASE_INVALID",
+        "Canonical WORK base contains a malformed authoritative holder balance.",
+        { address: address || null },
+      );
+    }
+    holderAddresses.add(address);
+    confirmedSupplySubatoms += BigInt(balanceSubatoms);
+    holders.push({
+      address,
+      ...workBalanceFieldsFromSubatoms(balanceSubatoms),
+      pendingDelta: formatWorkSubatoms(0n),
+      pendingDeltaSubatoms: "0",
+      registryAddress: WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
+      ticker: WORK_TOKEN_TICKER,
+      tokenId: WORK_TOKEN_ID,
+    });
+  }
+  holders.sort((left, right) =>
+    compareCanonicalUtf8(left.address, right.address),
+  );
+  if (
+    holders.length === 0 ||
+    confirmedSupplySubatoms <= 0n ||
+    confirmedSupplySubatoms > WORK_TOKEN_MAX_SUPPLY_SUBATOMS
+  ) {
+    throw pendingWorkVerifierStageError(
+      "PENDING_WORK_STAGE_BASE_INVALID",
+      "Canonical WORK base has no conserved authoritative holder supply.",
+    );
+  }
+
+  const confirmedEvent = (item) => {
+    const confirmed = pendingWorkVerifierStageConfirmedItem(item);
+    if (!/^[0-9a-f]{64}$/u.test(String(confirmed.txid ?? ""))) {
+      throw pendingWorkVerifierStageError(
+        "PENDING_WORK_STAGE_BASE_INVALID",
+        "Canonical WORK base event has no exact transaction id.",
+      );
+    }
+    return {
+      ...confirmed,
+      network: "livenet",
+      status: "confirmed",
+      ticker: WORK_TOKEN_TICKER,
+      tokenId: WORK_TOKEN_ID,
+    };
+  };
+  const eventKey = (item) =>
+    `${item.txid}:${item.protocolVout}:${item.recordOrdinal}`;
+  const mints = pendingWorkVerifierStageSortUniqueItems(
+    (Array.isArray(payload.mints) ? payload.mints : [])
+      .filter(
+        (item) => item?.confirmed === true && isWorkTokenId(item?.tokenId),
+      )
+      .map(confirmedEvent),
+    eventKey,
+  );
+  const transfers = pendingWorkVerifierStageSortUniqueItems(
+    (Array.isArray(payload.transfers) ? payload.transfers : [])
+      .filter(
+        (item) => item?.confirmed === true && isWorkTokenId(item?.tokenId),
+      )
+      .map(confirmedEvent),
+    eventKey,
+  );
+  const invalidEvents = pendingWorkVerifierStageSortUniqueItems(
+    (Array.isArray(payload.invalidEvents) ? payload.invalidEvents : [])
+      .filter(
+        (item) =>
+          item?.confirmed === true &&
+          item?.valid === false &&
+          isWorkTokenId(item?.tokenId),
+      )
+      .map((item) => ({ ...confirmedEvent(item), valid: false })),
+    eventKey,
+  );
+  const listings = pendingWorkVerifierStageSortUniqueItems(
+    (Array.isArray(payload.listings) ? payload.listings : [])
+      .filter(
+        (item) => item?.confirmed === true && isWorkTokenId(item?.tokenId),
+      )
+      .map((item) => pendingWorkVerifierStageConfirmedListing(item)),
+    (item) => item.listingId,
+  );
+  const closedListings = pendingWorkVerifierStageSortUniqueItems(
+    (Array.isArray(payload.closedListings) ? payload.closedListings : [])
+      .filter(
+        (item) =>
+          item?.confirmed === true &&
+          item?.closedConfirmed === true &&
+          isWorkTokenId(item?.tokenId),
+      )
+      .map((item) =>
+        pendingWorkVerifierStageConfirmedListing(item, { closed: true }),
+      ),
+    (item) => `${item.listingId}:${item.closedTxid}`,
+  );
+  const sales = pendingWorkVerifierStageSortUniqueItems(
+    (Array.isArray(payload.sales) ? payload.sales : [])
+      .filter(
+        (item) => item?.confirmed === true && isWorkTokenId(item?.tokenId),
+      )
+      .map(confirmedEvent),
+    eventKey,
+  );
+  if (mints.length === 0) {
+    throw pendingWorkVerifierStageError(
+      "PENDING_WORK_STAGE_BASE_INVALID",
+      "Canonical WORK base has no confirmed mint history.",
+    );
+  }
+  const supplyText = confirmedSupplySubatoms.toString();
+  const token = {
+    ...canonicalDefinition,
+    confirmedMints: mints.length,
+    confirmedSupply: formatWorkSubatoms(confirmedSupplySubatoms),
+    confirmedSupplySubatoms: supplyText,
+    holderCount: holders.length,
+    pendingMints: 0,
+    pendingSupply: formatWorkSubatoms(0n),
+    pendingSupplySubatoms: "0",
+  };
+  const state = pendingWorkVerifierStageJsonClone({
+    amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+    blockHash: tip.blockHash,
+    canonicalCoverage: true,
+    closedListings,
+    confirmedSupply: formatWorkSubatoms(confirmedSupplySubatoms),
+    confirmedSupplySubatoms: supplyText,
+    coverageHeight: tip.height,
+    decimals: WORK_SUBATOM_DECIMALS,
+    holders,
+    indexedThroughBlock: tip.height,
+    indexedThroughBlockHash: tip.blockHash,
+    invalidEvents,
+    listings,
+    mints,
+    network: "livenet",
+    pendingSupply: formatWorkSubatoms(0n),
+    pendingSupplySubatoms: "0",
+    precisionModel: WORK_PRECISION_V2_MODEL,
+    sales,
+    source: "proof-indexer-token-state-tables-confirmed-work-base",
+    stats: {
+      confirmedMints: mints.length,
+      confirmedTokens: 1,
+      confirmedTransfers: transfers.length,
+      holders: holders.length,
+      invalidEvents: invalidEvents.length,
+      pendingMints: 0,
+      pendingTokens: 0,
+      pendingTransfers: 0,
+    },
+    tokens: [token],
+    transfers,
+    unitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,
+  });
+  if (
+    !workPrecisionV2CurrentPayloadIsExact(
+      state,
+      WORK_AMO_V8_ACTIVATION_HEIGHT,
+      { requireSupplyEnvelope: true },
+    ) ||
+    !tokenTablePayloadHasConservedBalances(state)
+  ) {
+    throw pendingWorkVerifierStageError(
+      "PENDING_WORK_STAGE_BASE_CONSERVATION_INVALID",
+      "Canonical WORK confirmed base failed Q16 supply conservation.",
+    );
+  }
+  let tokenStateCommitment;
+  try {
+    tokenStateCommitment = workAmoV8CanonicalTokenStateCommitment(state);
+  } catch (error) {
+    throw pendingWorkVerifierStageError(
+      "PENDING_WORK_STAGE_BASE_COMMITMENT_INVALID",
+      "Canonical WORK confirmed base failed the AMO V8 state commitment.",
+      { reason: errorSummary(error) },
+    );
+  }
+  const payloadCommitment = workAmoV5CanonicalPayloadCommitment({
+    canonicalTip: { hash: tip.blockHash, height: tip.height },
+    closedListings,
+    confirmedSupplySubatoms: supplyText,
+    holders,
+    invalidEvents,
+    listings,
+    mints,
+    model: "canonical-work-q16-confirmed-base-v1",
+    network: "livenet",
+    sales,
+    token,
+    transfers,
+  });
+  return {
+    commitment: {
+      ...payloadCommitment,
+      tokenStateCommitment,
+    },
+    state,
+  };
+}
+
+function pendingWorkVerifierStageCoreAuthority(
+  chainResponse,
+  indexResponse,
+  tip,
+) {
+  const chain = chainResponse?.ok === true ? chainResponse.result : null;
+  const txindex =
+    indexResponse?.ok === true ? indexResponse.result?.txindex : null;
+  const verificationProgress = Number(chain?.verificationprogress);
+  const txindexHeight = Number(txindex?.best_block_height);
+  if (
+    !chain ||
+    chain.chain !== "main" ||
+    chain.pruned !== false ||
+    chain.initialblockdownload !== false ||
+    !Number.isFinite(verificationProgress) ||
+    verificationProgress < 0.999 ||
+    !txindex ||
+    txindex.synced !== true ||
+    !Number.isSafeInteger(txindexHeight) ||
+    txindexHeight !== tip?.height
+  ) {
+    throw pendingWorkVerifierStageError(
+      "PENDING_WORK_STAGE_CORE_AUTHORITY_UNAVAILABLE",
+      "Bitcoin Core is not a synced, unpruned mainnet node with txindex at the exact tip.",
+    );
+  }
+}
+
+async function pendingWorkVerifierStageProveCoreAbsence(txids) {
+  const failures = [];
+  await mapWithConcurrency(
+    txids,
+    Math.min(8, Math.max(1, TX_FETCH_CONCURRENCY)),
+    async (txid) => {
+      const [transactionResponse, mempoolResponse] = await Promise.all([
+        bitcoinRpc("getrawtransaction", [txid, true]).catch(() => null),
+        bitcoinRpc("getmempoolentry", [txid]).catch(() => null),
+      ]);
+      if (
+        !transactionResponse ||
+        transactionResponse.ok === true ||
+        Number(transactionResponse?.error?.code) !== -5 ||
+        !mempoolResponse ||
+        mempoolResponse.ok === true ||
+        Number(mempoolResponse?.error?.code) !== -5
+      ) {
+        failures.push(txid);
+      }
+    },
+  );
+  if (failures.length > 0) {
+    failures.sort(compareCanonicalUtf8);
+    throw pendingWorkVerifierStageError(
+      "PENDING_WORK_STAGE_ABSENCE_UNPROVEN",
+      "Bitcoin Core could not prove every declared absent prior member absent from both txindex and mempool.",
+      { txids: failures },
+    );
+  }
+}
+
+async function pendingWorkVerifierStageProveCoreConfirmedRemovals(
+  txids,
+  tip,
+) {
+  if (
+    !tip ||
+    !Number.isSafeInteger(tip.height) ||
+    tip.height < 1 ||
+    !/^[0-9a-f]{64}$/u.test(String(tip.blockHash ?? ""))
+  ) {
+    throw pendingWorkVerifierStageError(
+      "PENDING_WORK_STAGE_CONFIRMED_REMOVAL_UNPROVEN",
+      "Pending WORK confirmed-removal proof requires one exact Core tip.",
+    );
+  }
+  return mapWithConcurrency(
+    txids,
+    Math.min(8, Math.max(1, TX_FETCH_CONCURRENCY)),
+    async (txid) => {
+      let transactionResponse;
+      try {
+        transactionResponse = await bitcoinRpc("getrawtransaction", [
+          txid,
+          true,
+        ]);
+      } catch (error) {
+        throw pendingWorkVerifierStageError(
+          "PENDING_WORK_STAGE_CONFIRMED_REMOVAL_UNPROVEN",
+          "Bitcoin Core confirmed-removal transaction lookup failed.",
+          { reason: errorSummary(error), txid },
+        );
+      }
+      const transaction = transactionResponse?.ok === true
+        ? transactionResponse.result
+        : null;
+      const transactionTxid = String(transaction?.txid ?? "")
+        .trim()
+        .toLowerCase();
+      const blockHash = String(transaction?.blockhash ?? "")
+        .trim()
+        .toLowerCase();
+      const rawHex = String(transaction?.hex ?? "").trim().toLowerCase();
+      let rawTransactionTxid = "";
+      try {
+        rawTransactionTxid = bitcoin.Transaction.fromHex(rawHex).getId();
+      } catch {
+        rawTransactionTxid = "";
+      }
+      if (
+        !transaction ||
+        transactionTxid !== txid ||
+        rawTransactionTxid !== txid ||
+        !/^[0-9a-f]{64}$/u.test(blockHash) ||
+        !/^[0-9a-f]+$/u.test(rawHex) ||
+        rawHex.length % 2 !== 0 ||
+        Number(transaction.confirmations) <= 0
+      ) {
+        throw pendingWorkVerifierStageError(
+          "PENDING_WORK_STAGE_CONFIRMED_REMOVAL_UNPROVEN",
+          "Bitcoin Core did not return exact confirmed raw transaction evidence for a prior WORK member.",
+          { txid },
+        );
+      }
+
+      let headerResponse;
+      try {
+        headerResponse = await bitcoinRpc("getblockheader", [blockHash, true]);
+      } catch (error) {
+        throw pendingWorkVerifierStageError(
+          "PENDING_WORK_STAGE_CONFIRMED_REMOVAL_UNPROVEN",
+          "Bitcoin Core confirmed-removal block-header lookup failed.",
+          { reason: errorSummary(error), txid },
+        );
+      }
+      const header = headerResponse?.ok === true ? headerResponse.result : null;
+      const blockHeight = Number(header?.height);
+      const expectedConfirmations = Number.isSafeInteger(blockHeight)
+        ? tip.height - blockHeight + 1
+        : 0;
+      if (
+        !header ||
+        String(header.hash ?? "").trim().toLowerCase() !== blockHash ||
+        !Number.isSafeInteger(blockHeight) ||
+        blockHeight < 1 ||
+        blockHeight > tip.height ||
+        expectedConfirmations < 1 ||
+        Number(header.confirmations) !== expectedConfirmations ||
+        Number(transaction.confirmations) !== expectedConfirmations
+      ) {
+        throw pendingWorkVerifierStageError(
+          "PENDING_WORK_STAGE_CONFIRMED_REMOVAL_UNPROVEN",
+          "Bitcoin Core confirmed-removal evidence is not bound to the staged tip.",
+          { blockHash, blockHeight, txid },
+        );
+      }
+
+      let canonicalHashResponse;
+      try {
+        canonicalHashResponse = await bitcoinRpc("getblockhash", [blockHeight]);
+      } catch (error) {
+        throw pendingWorkVerifierStageError(
+          "PENDING_WORK_STAGE_CONFIRMED_REMOVAL_UNPROVEN",
+          "Bitcoin Core confirmed-removal canonical-height lookup failed.",
+          { blockHeight, reason: errorSummary(error), txid },
+        );
+      }
+      if (
+        canonicalHashResponse?.ok !== true ||
+        String(canonicalHashResponse.result ?? "").trim().toLowerCase() !==
+          blockHash
+      ) {
+        throw pendingWorkVerifierStageError(
+          "PENDING_WORK_STAGE_CONFIRMED_REMOVAL_UNPROVEN",
+          "Bitcoin Core did not prove the confirmed-removal block canonical at its height.",
+          { blockHash, blockHeight, txid },
+        );
+      }
+      return {
+        blockHash,
+        blockHeight,
+        confirmations: expectedConfirmations,
+        txid,
+      };
+    },
+  );
+}
+
+function pendingWorkVerifierStageRawTransaction(tx, txid, network) {
+  const mempoolTime = Number(tx?.status?.mempool_time);
+  const txHex = String(tx?.hex ?? "").trim().toLowerCase();
+  let rawHexTxid = "";
+  try {
+    rawHexTxid = bitcoin.Transaction.fromHex(txHex).getId();
+  } catch {
+    rawHexTxid = "";
+  }
+  if (
+    tx?._powCanonicalRpcHydration !== true ||
+    transactionTxid(tx) !== txid ||
+    !/^[0-9a-f]+$/u.test(txHex) ||
+    txHex.length % 2 !== 0 ||
+    rawHexTxid !== txid ||
+    transactionConfirmed(tx) ||
+    !transactionHasCompleteCanonicalPrevouts(tx) ||
+    !Number.isSafeInteger(mempoolTime) ||
+    mempoolTime * 1000 < Date.UTC(2009, 0, 3, 18, 15, 5) ||
+    mempoolTime * 1000 > Date.now() + 5 * 60_000
+  ) {
+    throw pendingWorkVerifierStageError(
+      "PENDING_WORK_STAGE_TRANSACTION_HYDRATION_INVALID",
+      "Bitcoin Core did not provide a complete canonical pending transaction with prevouts and a stable mempool epoch.",
+      { txid },
+    );
+  }
+  let recordSet;
+  try {
+    recordSet = canonicalRawProtocolRecordSetFromTransaction(tx);
+  } catch (error) {
+    throw pendingWorkVerifierStageError(
+      "PENDING_WORK_STAGE_RAW_PROTOCOL_INVALID",
+      "Pending WORK transaction has invalid raw protocol evidence.",
+      { reason: errorSummary(error), txid },
+    );
+  }
+  const records = recordSet.records.filter(
+    (record) => record?.protocol === "pwt1",
+  );
+  const decodedMessages = decodedProtocolMessages(
+    tx.vout ?? [],
+    TOKEN_PROTOCOL_PREFIX,
+  );
+  if (
+    records.length === 0 ||
+    records.some((record) => record?.rawDecodeValid !== true) ||
+    !isDeepStrictEqual(
+      decodedMessages,
+      records.map((record) => record.message),
+    )
+  ) {
+    throw pendingWorkVerifierStageError(
+      "PENDING_WORK_STAGE_RAW_PROTOCOL_INVALID",
+      "Pending WORK transaction raw pwt1 bytes do not exactly match its replay messages.",
+      { txid },
+    );
+  }
+  const parsedMessages = records.map((record) =>
+    pendingWorkVerifierStageParsedMessage(record.message, network),
+  );
+  if (parsedMessages.some((parsed) => !parsed)) {
+    throw pendingWorkVerifierStageError(
+      "PENDING_WORK_STAGE_SCOPE_INVALID",
+      "Pending WORK transaction contains a pwt1 record whose WORK scope cannot be proven.",
+      { txid },
+    );
+  }
+  return {
+    mempoolCreatedAt: new Date(mempoolTime * 1000).toISOString(),
+    mempoolTime,
+    parsedMessages,
+    records,
+    transaction: tx,
+    txid,
+  };
+}
+
+function pendingWorkVerifierStageDecodedObject(value) {
+  try {
+    const decoded = JSON.parse(decodeTextBase64Url(String(value ?? "")));
+    return decoded && typeof decoded === "object" && !Array.isArray(decoded)
+      ? decoded
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function pendingWorkVerifierStageParsedMessage(message, network) {
+  const parsed = parseTokenPayload(message, network);
+  if (parsed) {
+    return parsed;
+  }
+  if (!String(message ?? "").startsWith(TOKEN_PROTOCOL_PREFIX)) {
+    return null;
+  }
+  const parts = String(message)
+    .slice(TOKEN_PROTOCOL_PREFIX.length)
+    .split(":");
+  const action = String(parts[0] ?? "").trim().toLowerCase();
+  if (
+    [
+      TOKEN_MINT_ACTION,
+      TOKEN_SEND_ACTION,
+      TOKEN_SEND_ATOMS_ACTION,
+      TOKEN_SEND_SUBATOMS_ACTION,
+    ].includes(action)
+  ) {
+    const tokenId = String(parts[1] ?? "").trim().toLowerCase();
+    return tokenId === WORK_TOKEN_ID
+      ? {
+          kind:
+            action === TOKEN_MINT_ACTION ? "mint" : "send",
+          pendingWorkStageMalformed: true,
+          rawAction: action,
+          tokenId,
+        }
+      : null;
+  }
+  if (action === TOKEN_LIST_ACTION) {
+    const saleAuthorization = pendingWorkVerifierStageDecodedObject(parts[1]);
+    return String(saleAuthorization?.tokenId ?? "").trim().toLowerCase() ===
+        WORK_TOKEN_ID
+      ? {
+          kind: "list",
+          pendingWorkStageMalformed: true,
+          rawAction: action,
+          saleAuthorization,
+        }
+      : null;
+  }
+  if (action === TOKEN_SEAL_ACTION) {
+    const saleAuthorization = pendingWorkVerifierStageDecodedObject(parts[2]);
+    return String(saleAuthorization?.tokenId ?? "").trim().toLowerCase() ===
+        WORK_TOKEN_ID
+      ? {
+          kind: "seal",
+          listingId: String(parts[1] ?? "").trim().toLowerCase(),
+          pendingWorkStageMalformed: true,
+          rawAction: action,
+          saleAuthorization,
+        }
+      : null;
+  }
+  if ([TOKEN_BUY_ACTION, TOKEN_DELIST_ACTION].includes(action)) {
+    const listingId = String(parts[1] ?? "").trim().toLowerCase();
+    return /^[0-9a-f]{64}$/u.test(listingId)
+      ? {
+          kind: action === TOKEN_BUY_ACTION ? "buy" : "delist",
+          listingId,
+          pendingWorkStageMalformed: true,
+          rawAction: action,
+        }
+      : null;
+  }
+  return null;
+}
+
+async function pendingWorkVerifierStageRecheckMempoolEpochs(
+  transactionRecords,
+) {
+  await mapWithConcurrency(
+    transactionRecords,
+    Math.min(8, Math.max(1, TX_FETCH_CONCURRENCY)),
+    async (record) => {
+      const response = await bitcoinRpc("getmempoolentry", [record.txid])
+        .catch(() => null);
+      if (
+        response?.ok !== true ||
+        Number(response.result?.time) !== record.mempoolTime
+      ) {
+        throw pendingWorkVerifierStageError(
+          "PENDING_WORK_STAGE_BINDING_CHANGED",
+          "A pending WORK transaction changed mempool acceptance epoch during staged replay.",
+          { txid: record.txid },
+        );
+      }
+    },
+  );
+}
+
+function pendingWorkVerifierStageProveWorkScope(
+  transactionRecords,
+  baseState,
+  mempool,
+) {
+  const confirmedListings = new Map();
+  for (const listing of [
+    ...(Array.isArray(baseState?.listings) ? baseState.listings : []),
+    ...(Array.isArray(baseState?.closedListings)
+      ? baseState.closedListings
+      : []),
+  ]) {
+    const listingId = String(listing?.listingId ?? "").trim().toLowerCase();
+    if (/^[0-9a-f]{64}$/u.test(listingId)) {
+      confirmedListings.set(listingId, listing);
+    }
+  }
+  for (const record of transactionRecords) {
+    for (const parsed of record.parsedMessages) {
+      let tokenId = "";
+      if (parsed.kind === "mint" || parsed.kind === "send") {
+        tokenId = String(parsed.tokenId ?? "").trim().toLowerCase();
+      } else if (parsed.kind === "list" || parsed.kind === "seal") {
+        tokenId = String(parsed.saleAuthorization?.tokenId ?? "")
+          .trim()
+          .toLowerCase();
+      } else if (parsed.kind === "buy" || parsed.kind === "delist") {
+        const listingId = String(parsed.listingId ?? "").trim().toLowerCase();
+        const listing = confirmedListings.get(listingId);
+        if (!listing && mempool.membership.has(listingId)) {
+          throw pendingWorkVerifierStageError(
+            "PENDING_WORK_STAGE_UNCONFIRMED_LISTING_PARENT",
+            "A pending WORK marketplace action references an unconfirmed mempool listing parent.",
+            { listingId, txid: record.txid },
+          );
+        }
+        if (!listing) {
+          throw pendingWorkVerifierStageError(
+            "PENDING_WORK_STAGE_LISTING_PARENT_UNPROVEN",
+            "A pending marketplace action cannot be proven to reference a confirmed WORK listing.",
+            { listingId: listingId || null, txid: record.txid },
+          );
+        }
+        tokenId = String(listing.tokenId ?? "").trim().toLowerCase();
+      } else {
+        throw pendingWorkVerifierStageError(
+          "PENDING_WORK_STAGE_SCOPE_INVALID",
+          "Pending verifier stage accepts only declared WORK mint, transfer, and marketplace pwt1 actions.",
+          { kind: parsed.kind ?? null, txid: record.txid },
+        );
+      }
+      if (tokenId !== WORK_TOKEN_ID) {
+        throw pendingWorkVerifierStageError(
+          "PENDING_WORK_STAGE_SCOPE_INVALID",
+          "Pending verifier stage transaction is not exclusively WORK-scoped.",
+          { tokenId: tokenId || null, txid: record.txid },
+        );
+      }
+      if (parsed.pendingWorkStageMalformed === true) {
+        continue;
+      }
+      if (parsed.kind === "seal") {
+        const listingId = String(parsed.listingId ?? "").trim().toLowerCase();
+        if (!confirmedListings.has(listingId)) {
+          throw pendingWorkVerifierStageError(
+            mempool.membership.has(listingId)
+              ? "PENDING_WORK_STAGE_UNCONFIRMED_LISTING_PARENT"
+              : "PENDING_WORK_STAGE_LISTING_PARENT_UNPROVEN",
+            mempool.membership.has(listingId)
+              ? "A pending WORK seal references an unconfirmed mempool listing parent."
+              : "A pending WORK seal cannot prove its confirmed listing parent.",
+            { listingId: listingId || null, txid: record.txid },
+          );
+        }
+      }
+    }
+  }
+}
+
+function pendingWorkVerifierStageReplayState(state, transaction, network) {
+  const replayed = workTokenStateWithDeltaTransactions(
+    state,
+    [transaction],
+    network,
+    workTokenStateWithDeltaTransactions,
+  );
+  return {
+    ...replayed,
+    canonicalCoverage: true,
+    holders: (Array.isArray(replayed?.holders) ? replayed.holders : []).map(
+      (holder) => ({
+        ...holder,
+        pendingDelta: formatWorkSubatoms(0n),
+        pendingDeltaSubatoms: "0",
+        registryAddress: WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
+        ticker: WORK_TOKEN_TICKER,
+        tokenId: WORK_TOKEN_ID,
+      }),
+    ),
+  };
+}
+
+function pendingWorkVerifierStageOrderConflictReason(state, parsedMessages) {
+  for (const parsed of parsedMessages) {
+    if (!["buy", "delist", "seal"].includes(parsed?.kind)) {
+      continue;
+    }
+    const listingId = String(parsed.listingId ?? "").trim().toLowerCase();
+    const closedListing = (Array.isArray(state?.closedListings)
+      ? state.closedListings
+      : []
+    ).find(
+      (listing) =>
+        String(listing?.listingId ?? "").trim().toLowerCase() === listingId,
+    );
+    if (closedListing?.closedConfirmed === false) {
+      return (
+        "Referenced ProofOfWork credit listing was already closed by an " +
+        "earlier pending WORK transaction in declared lexicographic order."
+      );
+    }
+  }
+  return (
+    "No valid WORK event was produced for this raw pwt1 record in the " +
+    "declared pending replay order."
+  );
+}
+
+function pendingWorkVerifierStageActorAddress(transaction) {
+  return inputAddresses(Array.isArray(transaction?.vin) ? transaction.vin : [])[0] ?? "";
+}
+
+function pendingWorkVerifierStageListing(state, listingId) {
+  const normalizedListingId = String(listingId ?? "").trim().toLowerCase();
+  return [
+    ...(Array.isArray(state?.listings) ? state.listings : []),
+    ...(Array.isArray(state?.closedListings) ? state.closedListings : []),
+  ].find(
+    (listing) =>
+      String(listing?.listingId ?? "").trim().toLowerCase() ===
+        normalizedListingId,
+  ) ?? null;
+}
+
+function pendingWorkVerifierStageInvalidEvidence(
+  state,
+  transaction,
+  parsed,
+  rawRecord,
+) {
+  const actor = pendingWorkVerifierStageActorAddress(transaction);
+  const authorization = parsed?.saleAuthorization &&
+      typeof parsed.saleAuthorization === "object" &&
+      !Array.isArray(parsed.saleAuthorization)
+    ? parsed.saleAuthorization
+    : null;
+  const listing = pendingWorkVerifierStageListing(
+    state,
+    parsed?.listingId,
+  );
+  const recipientAddress = String(parsed?.recipientAddress ?? "").trim();
+  const sellerAddress = String(
+    authorization?.sellerAddress ?? listing?.sellerAddress ?? "",
+  ).trim();
+  const buyerAddress = String(
+    authorization?.buyerAddress ?? listing?.buyerAddress ?? "",
+  ).trim();
+  const participants = [...new Set([
+    actor,
+    recipientAddress,
+    sellerAddress,
+    buyerAddress,
+  ].filter(Boolean))];
+  const evidence = {
+    ...(actor ? { actor, senderAddress: actor } : {}),
+    ...(buyerAddress ? { buyerAddress } : {}),
+    dataBytes: Buffer.byteLength(String(rawRecord?.message ?? ""), "utf8"),
+    ...(parsed?.listingId ? { listingId: parsed.listingId } : {}),
+    ...(parsed?.kind === "mint" && actor ? { minterAddress: actor } : {}),
+    ...(participants.length > 0 ? { participants } : {}),
+    ...(recipientAddress ? { recipientAddress } : {}),
+    ...(authorization ? { saleAuthorization: authorization } : {}),
+    ...(sellerAddress ? { sellerAddress } : {}),
+  };
+  for (const field of [
+    "amount",
+    "amountAtoms",
+    "amountStorageModel",
+    "amountSubatoms",
+    "amountVersion",
+    "decimals",
+    "precisionModel",
+    "rawAction",
+    "unitScale",
+  ]) {
+    if (
+      parsed?.[field] !== undefined &&
+      parsed?.[field] !== null &&
+      parsed?.[field] !== ""
+    ) {
+      evidence[field] = parsed[field];
+    }
+  }
+  return evidence;
+}
+
+async function pendingWorkVerifierStageTransactionInvalidReason(
+  state,
+  record,
+  network,
+  tipHeight,
+) {
+  try {
+    const shape = workAmoV8SignedMutationShape(
+      record.transaction.hex,
+      network,
+    );
+    const actions = await signedWorkMarketplaceWriteActions(
+      record.transaction.hex,
+      network,
+    );
+    const decision = workAmoV8ActiveMutationDecision(
+      shape,
+      actions,
+      {
+        metadata: {
+          activation: {
+            activationHeight: WORK_AMO_V8_ACTIVATION_HEIGHT,
+          },
+          activationHeight: WORK_AMO_V8_ACTIVATION_HEIGHT,
+          tipHeight,
+        },
+        network,
+        requireWorkMutation: true,
+      },
+    );
+    if (!decision.allowed) {
+      return decision.message ?? "Active WORK transaction shape is invalid.";
+    }
+  } catch (error) {
+    const statusCode = Number(error?.statusCode);
+    if (Number.isSafeInteger(statusCode) && statusCode >= 400 && statusCode < 500) {
+      return error?.message ?? "Active WORK transaction shape is invalid.";
+    }
+    throw pendingWorkVerifierStageError(
+      "PENDING_WORK_STAGE_ADMISSION_UNAVAILABLE",
+      "The active WORK transaction-shape validator could not resolve a staged transaction.",
+      { reason: errorSummary(error), txid: record.txid },
+    );
+  }
+  const deterministicReason = await tokenVerifierDeterministicInvalidReason(
+    network,
+    state,
+    record.txid,
+    false,
+    {
+      exactPendingCoreState: true,
+      transaction: record.transaction,
+    },
+  );
+  return deterministicReason;
+}
+
+function pendingWorkVerifierStageStableDecisionItem(
+  item,
+  mempoolCreatedAt,
+) {
+  const stable = { ...item };
+  for (const field of [
+    "checkedAt",
+    "fetchedAt",
+    "generatedAt",
+    "indexedAt",
+    "observedAt",
+    "updatedAt",
+  ]) {
+    delete stable[field];
+  }
+  if (stable.kind === "token-listing-sealed") {
+    stable.sealAt = mempoolCreatedAt;
+  } else if (stable.kind === "token-listing-closed") {
+    stable.closedAt = mempoolCreatedAt;
+  } else {
+    stable.createdAt = mempoolCreatedAt;
+  }
+  return stable;
+}
+
+function pendingWorkVerifierStageCanonicalItem(
+  item,
+  txid,
+  records,
+  mempoolCreatedAt,
+) {
+  const tokenId = String(item?.tokenId ?? "").trim().toLowerCase();
+  const protocolVout = Number(item?.protocolVout);
+  const recordOrdinal = Number(item?.recordOrdinal);
+  const stableMempoolCreatedAt = pendingWorkVerifierStageCanonicalIso(
+    mempoolCreatedAt,
+  );
+  if (
+    tokenId !== WORK_TOKEN_ID ||
+    typeof item?.valid !== "boolean" ||
+    !stableMempoolCreatedAt ||
+    !Number.isSafeInteger(protocolVout) ||
+    protocolVout < 0 ||
+    !Number.isSafeInteger(recordOrdinal) ||
+    recordOrdinal < 0 ||
+    !records.some(
+      (record) =>
+        record.protocolVout === protocolVout &&
+        record.recordOrdinal === recordOrdinal,
+    )
+  ) {
+    throw pendingWorkVerifierStageError(
+      "PENDING_WORK_STAGE_DECISION_INVALID",
+      "Pending WORK replay produced a noncanonical verifier item.",
+      { txid },
+    );
+  }
+  return pendingWorkVerifierStageJsonClone({
+    ...pendingWorkVerifierStageStableDecisionItem(
+      item,
+      stableMempoolCreatedAt.value,
+    ),
+    confirmed: false,
+    network: "livenet",
+    payload: records.find(
+      (record) =>
+        record.protocolVout === protocolVout &&
+        record.recordOrdinal === recordOrdinal,
+    )?.message,
+    protocol: "pwt1",
+    status: "pending",
+    tokenId: WORK_TOKEN_ID,
+    txid,
+    valid: item.valid,
+  });
+}
+
+function pendingWorkVerifierStageRecordPositionKey(value) {
+  const protocolVout = Number(value?.protocolVout);
+  const recordOrdinal = Number(value?.recordOrdinal);
+  return Number.isSafeInteger(protocolVout) &&
+      protocolVout >= 0 &&
+      Number.isSafeInteger(recordOrdinal) &&
+      recordOrdinal >= 0
+    ? `${protocolVout}:${recordOrdinal}`
+    : "";
+}
+
+function pendingWorkVerifierStageDecisionOutcomes(decisions) {
+  const outcomes = (Array.isArray(decisions) ? decisions : []).flatMap(
+    (decision) =>
+      (Array.isArray(decision?.items) ? decision.items : []).map((item) => {
+        return {
+          kind: String(item?.kind ?? "").trim().toLowerCase(),
+          protocolVout: Number(item?.protocolVout),
+          rawPayloadSha256: createHash("sha256")
+            .update(Buffer.from(String(item?.payload ?? ""), "utf8"))
+            .digest("hex"),
+          recordOrdinal: Number(item?.recordOrdinal),
+          txid: String(decision?.txid ?? "").trim().toLowerCase(),
+          valid: item?.valid === true,
+        };
+      }),
+  );
+  if (
+    outcomes.some(
+      (outcome) =>
+        !outcome.kind ||
+        !/^[0-9a-f]{64}$/u.test(outcome.txid) ||
+        !Number.isSafeInteger(outcome.protocolVout) ||
+        outcome.protocolVout < 0 ||
+        !Number.isSafeInteger(outcome.recordOrdinal) ||
+        outcome.recordOrdinal < 0,
+    )
+  ) {
+    throw pendingWorkVerifierStageError(
+      "PENDING_WORK_STAGE_DECISION_INVALID",
+      "Pending WORK decision outcomes contain an invalid protocol position.",
+    );
+  }
+  outcomes.sort(
+    (left, right) =>
+      compareCanonicalUtf8(left.txid, right.txid) ||
+      left.protocolVout - right.protocolVout ||
+      left.recordOrdinal - right.recordOrdinal ||
+      compareCanonicalUtf8(left.kind, right.kind) ||
+      Number(left.valid) - Number(right.valid),
+  );
+  if (
+    outcomes.some(
+      (outcome, index) =>
+        index > 0 &&
+        isDeepStrictEqual(outcome, outcomes[index - 1]),
+    )
+  ) {
+    throw pendingWorkVerifierStageError(
+      "PENDING_WORK_STAGE_DECISION_INVALID",
+      "Pending WORK decision outcomes contain a duplicate event identity.",
+    );
+  }
+  return outcomes;
+}
+
+async function pendingWorkVerifierStageDecisions(
+  baseState,
+  transactionRecords,
+  network,
+  tipHeight,
+) {
+  let state = baseState;
+  const decisions = [];
+  for (const record of transactionRecords) {
+    const priorState = state;
+    const transactionInvalidReason =
+      await pendingWorkVerifierStageTransactionInvalidReason(
+        priorState,
+        record,
+        network,
+        tipHeight,
+      );
+    const nextState = transactionInvalidReason
+      ? priorState
+      : pendingWorkVerifierStageReplayState(
+          priorState,
+          record.transaction,
+          network,
+        );
+    const items = (transactionInvalidReason
+      ? []
+      : tokenVerifierItemsFromState(nextState, record.txid))
+      .map((item) =>
+        pendingWorkVerifierStageCanonicalItem(
+          item,
+          record.txid,
+          record.records,
+          record.mempoolCreatedAt,
+        ),
+      );
+    const coveredPositions = new Set(
+      items.map(pendingWorkVerifierStageRecordPositionKey),
+    );
+    const uncoveredRecords = record.records.filter(
+      (rawRecord) =>
+        !coveredPositions.has(
+          pendingWorkVerifierStageRecordPositionKey(rawRecord),
+        ),
+    );
+    if (uncoveredRecords.length > 0) {
+      const deterministicReason = transactionInvalidReason ||
+        (uncoveredRecords.length === 1
+        ? await tokenVerifierDeterministicInvalidReason(
+            network,
+            priorState,
+            record.txid,
+            false,
+            {
+              exactPendingCoreState: true,
+              transaction: record.transaction,
+            },
+          )
+        : "");
+      for (const rawRecord of uncoveredRecords) {
+        const recordIndex = record.records.indexOf(rawRecord);
+        const parsedMessage = record.parsedMessages[recordIndex];
+        items.push({
+          ...pendingWorkVerifierStageInvalidEvidence(
+            priorState,
+            record.transaction,
+            parsedMessage,
+            rawRecord,
+          ),
+          attemptedKind: String(
+            parsedMessage?.kind ?? "unknown",
+          )
+            .trim()
+            .toLowerCase(),
+          confirmed: false,
+          createdAt: record.mempoolCreatedAt,
+          kind: "token-event-invalid",
+          network,
+          payload: rawRecord.message,
+          protocol: "pwt1",
+          protocolVout: rawRecord.protocolVout,
+          reason:
+            (parsedMessage?.pendingWorkStageMalformed === true
+              ? `Malformed WORK-scoped ${
+                  String(parsedMessage.rawAction ?? "pwt1")
+                } record.`
+              : "") ||
+            (uncoveredRecords.length === 1 ? deterministicReason : "") ||
+            pendingWorkVerifierStageOrderConflictReason(
+              priorState,
+              [parsedMessage],
+            ),
+          recordOrdinal: rawRecord.recordOrdinal,
+          status: "pending",
+          ticker: WORK_TOKEN_TICKER,
+          tokenId: WORK_TOKEN_ID,
+          txid: record.txid,
+          valid: false,
+        });
+      }
+    }
+    items.sort((left, right) =>
+      Number(left.protocolVout) - Number(right.protocolVout) ||
+      Number(left.recordOrdinal) - Number(right.recordOrdinal) ||
+      compareCanonicalUtf8(String(left.kind ?? ""), String(right.kind ?? "")) ||
+      compareCanonicalUtf8(
+        workAmoV5CanonicalPayloadCommitment(left).sha256,
+        workAmoV5CanonicalPayloadCommitment(right).sha256,
+      )
+    );
+    decisions.push({ items, txid: record.txid });
+    state = nextState;
+  }
+  return decisions;
+}
+
+function pendingWorkVerifierStageCommitmentSha256(label, value) {
+  return workAmoV5CanonicalPayloadCommitment({ label, value }).sha256;
+}
+
+async function pendingWorkVerifierStagePayload(value) {
+  const request = pendingWorkVerifierStageRequest(value);
+  const [initialChain, initialIndex, initialMempoolResponse, initialStatus, initialCanonical, initialReadinessEpoch] =
+    await Promise.all([
+      bitcoinRpc("getblockchaininfo", []),
+      bitcoinRpc("getindexinfo", ["txindex"]),
+      bitcoinRpc("getrawmempool", [false]),
+      proofIndexOperationalStatusPayload(request.network),
+      proofIndexCanonicalStateMetaPayload(request.network),
+      proofIndexReadinessEpochCheckpoint(request.network),
+    ]);
+  const initialTip = exactCoreTipFromBlockchainInfo(initialChain);
+  if (
+    !initialTip ||
+    !initialReadinessEpoch ||
+    !proofIndexExactlyCoversCoreTip(
+      initialStatus,
+      initialCanonical,
+      initialTip,
+    )
+  ) {
+    throw pendingWorkVerifierStageError(
+      "PENDING_WORK_STAGE_EXACT_TIP_UNAVAILABLE",
+      "The proof index does not exactly cover the current Bitcoin Core tip.",
+    );
+  }
+  pendingWorkVerifierStageCoreAuthority(
+    initialChain,
+    initialIndex,
+    initialTip,
+  );
+  const initialMempool = pendingWorkVerifierStageCoreMempool(
+    initialMempoolResponse,
+  );
+  pendingWorkVerifierStageValidateMembership(request, initialMempool);
+  const absenceTxids = request.absenceEvidence.observations.map(
+    (observation) => observation.txid,
+  );
+  const [, initialConfirmedRemovalProof] = await Promise.all([
+    pendingWorkVerifierStageProveCoreAbsence(absenceTxids),
+    pendingWorkVerifierStageProveCoreConfirmedRemovals(
+      request.confirmedRemovalTxids,
+      initialTip,
+    ),
+  ]);
+
+  const [initialTokenPayload, transactions] = await Promise.all([
+    proofIndexCanonicalSummaryTokenTablePayload(request.network, {
+      exactHash: initialTip.blockHash,
+      exactHeight: initialTip.height,
+    }),
+    mapWithConcurrency(
+      request.replayTxids,
+      Math.min(8, Math.max(1, TX_FETCH_CONCURRENCY)),
+      async (txid) => {
+        try {
+          return await fetchTransactionFromBitcoinRpc(
+            txid,
+            request.network,
+            {
+              bypassCache: true,
+              cacheResult: false,
+              includeRawHex: true,
+              requireCanonicalPrevouts: true,
+            },
+          );
+        } catch (error) {
+          throw pendingWorkVerifierStageError(
+            "PENDING_WORK_STAGE_TRANSACTION_HYDRATION_INVALID",
+            "Bitcoin Core could not bind a pending transaction's raw bytes, verbose fields, and canonical prevouts.",
+            { reason: errorSummary(error), txid },
+          );
+        }
+      },
+    ),
+  ]);
+  const initialBase = pendingWorkVerifierStageConfirmedBase(
+    initialTokenPayload,
+    initialTip,
+  );
+  const transactionRecords = transactions.map((transaction, index) =>
+    pendingWorkVerifierStageRawTransaction(
+      transaction,
+      request.replayTxids[index],
+      request.network,
+    ),
+  );
+  pendingWorkVerifierStageProveWorkScope(
+    transactionRecords,
+    initialBase.state,
+    initialMempool,
+  );
+  const decisions = await pendingWorkVerifierStageDecisions(
+    initialBase.state,
+    transactionRecords,
+    request.network,
+    initialTip.height,
+  );
+  if (
+    decisions.length !== request.replayTxids.length ||
+    decisions.some(
+      (decision, index) => {
+        if (
+          decision.txid !== request.replayTxids[index] ||
+          !Array.isArray(decision.items) ||
+          decision.items.length === 0
+        ) {
+          return true;
+        }
+        const coveredPositions = new Set(
+          decision.items.map(pendingWorkVerifierStageRecordPositionKey),
+        );
+        return transactionRecords[index].records.some(
+          (record) =>
+            !coveredPositions.has(
+              pendingWorkVerifierStageRecordPositionKey(record),
+            ),
+        );
+      },
+    )
+  ) {
+    throw pendingWorkVerifierStageError(
+      "PENDING_WORK_STAGE_DECISION_INVALID",
+      "Pending WORK replay did not produce a position-complete decision for every raw pwt1 record.",
+    );
+  }
+
+  const finalTokenPayload =
+    await proofIndexCanonicalSummaryTokenTablePayload(request.network, {
+      exactHash: initialTip.blockHash,
+      exactHeight: initialTip.height,
+    });
+  const [finalChain, finalIndex, finalMempoolResponse, finalStatus, finalCanonical] =
+    await Promise.all([
+      bitcoinRpc("getblockchaininfo", []),
+      bitcoinRpc("getindexinfo", ["txindex"]),
+      bitcoinRpc("getrawmempool", [false]),
+      proofIndexOperationalStatusPayload(request.network),
+      proofIndexCanonicalStateMetaPayload(request.network),
+    ]);
+  const finalTip = exactCoreTipFromBlockchainInfo(finalChain);
+  if (
+    !finalTip ||
+    finalTip.height !== initialTip.height ||
+    finalTip.blockHash !== initialTip.blockHash ||
+    !proofIndexExactlyCoversCoreTip(finalStatus, finalCanonical, finalTip)
+  ) {
+    throw pendingWorkVerifierStageError(
+      "PENDING_WORK_STAGE_BINDING_CHANGED",
+      "Bitcoin Core or the proof index tip changed while the pending WORK stage was built.",
+    );
+  }
+  pendingWorkVerifierStageCoreAuthority(finalChain, finalIndex, finalTip);
+  const finalMempool = pendingWorkVerifierStageCoreMempool(
+    finalMempoolResponse,
+  );
+  pendingWorkVerifierStageValidateMembership(request, finalMempool);
+  const [, finalConfirmedRemovalProof] = await Promise.all([
+    pendingWorkVerifierStageProveCoreAbsence(absenceTxids),
+    pendingWorkVerifierStageProveCoreConfirmedRemovals(
+      request.confirmedRemovalTxids,
+      finalTip,
+    ),
+    pendingWorkVerifierStageRecheckMempoolEpochs(transactionRecords),
+  ]);
+  if (
+    !isDeepStrictEqual(
+      finalConfirmedRemovalProof,
+      initialConfirmedRemovalProof,
+    )
+  ) {
+    throw pendingWorkVerifierStageError(
+      "PENDING_WORK_STAGE_BINDING_CHANGED",
+      "Confirmed WORK departure evidence changed while the pending stage was built.",
+    );
+  }
+  const finalBase = pendingWorkVerifierStageConfirmedBase(
+    finalTokenPayload,
+    finalTip,
+  );
+  const finalReadinessEpoch =
+    await proofIndexReadinessEpochCheckpoint(request.network);
+  if (
+    !finalReadinessEpoch ||
+    !isDeepStrictEqual(finalReadinessEpoch, initialReadinessEpoch) ||
+    !isDeepStrictEqual(finalBase.commitment, initialBase.commitment)
+  ) {
+    throw pendingWorkVerifierStageError(
+      "PENDING_WORK_STAGE_BINDING_CHANGED",
+      "The confirmed WORK base or readiness epoch changed while the pending stage was built.",
+    );
+  }
+
+  const priorMembershipSha256 = pendingWorkVerifierStageCommitmentSha256(
+    "PRIOR-MEMBERSHIP",
+    request.priorMembershipTxids,
+  );
+  const orderedReplaySha256 = pendingWorkVerifierStageCommitmentSha256(
+    "ORDERED-REPLAY",
+    request.replayTxids,
+  );
+  const confirmedRemovalSha256 = pendingWorkVerifierStageCommitmentSha256(
+    "CONFIRMED-REMOVALS",
+    request.confirmedRemovalTxids,
+  );
+  const removalSha256 = pendingWorkVerifierStageCommitmentSha256(
+    "REMOVALS",
+    request.removalTxids,
+  );
+  const absenceEvidenceSha256 = pendingWorkVerifierStageCommitmentSha256(
+    "ABSENCE-EVIDENCE",
+    request.absenceEvidence,
+  );
+  const decisionsSha256 = pendingWorkVerifierStageCommitmentSha256(
+    "DECISIONS",
+    decisions,
+  );
+  const decisionOutcomes = pendingWorkVerifierStageDecisionOutcomes(decisions);
+  const decisionOutcomesSha256 = pendingWorkVerifierStageCommitmentSha256(
+    "DECISION-OUTCOMES",
+    decisionOutcomes,
+  );
+  const stageCore = {
+    absenceEvidence: request.absenceEvidence,
+    absenceEvidenceSha256,
+    canonicalTip: {
+      hash: finalTip.blockHash,
+      height: finalTip.height,
+    },
+    codeVersion: PENDING_WORK_VERIFIER_STAGE_CODE_VERSION,
+    confirmedBaseCommitment: finalBase.commitment,
+    confirmedRemovalCount: request.confirmedRemovalTxids.length,
+    confirmedRemovalSha256,
+    confirmedRemovalTxids: request.confirmedRemovalTxids,
+    decisionCount: decisions.length,
+    decisionOutcomeCount: decisionOutcomes.length,
+    decisionOutcomesSha256,
+    decisionsSha256,
+    model: PENDING_WORK_VERIFIER_STAGE_MODEL,
+    network: request.network,
+    orderedReplayCount: request.replayTxids.length,
+    orderedReplaySha256,
+    parentWitnessSha256: request.parentWitnessSha256,
+    pendingDropConfirmationMs: PENDING_WORK_DROP_CONFIRMATION_MS,
+    priorMembershipCount: request.priorMembershipTxids.length,
+    priorMembershipSha256,
+    priorMembershipTxids: request.priorMembershipTxids,
+    readinessEpochCheckpoint: finalReadinessEpoch,
+    removalCount: request.removalTxids.length,
+    removalSha256,
+    removalTxids: request.removalTxids,
+    replayTxids: request.replayTxids,
+    requestModel: request.model,
+  };
+  const stageCommitment = workAmoV5CanonicalPayloadCommitment(stageCore);
+  return {
+    decisions,
+    model: PENDING_WORK_VERIFIER_STAGE_MODEL,
+    stage: {
+      ...stageCore,
+      stagePayloadBytes: stageCommitment.payloadBytes,
+      stageSha256: stageCommitment.sha256,
+    },
+  };
 }
 
 function exactPendingWorkMintStats(stats, txid) {
@@ -59388,24 +61608,26 @@ async function livePendingRegistryPayload(network) {
 }
 
 async function proveCurrentIdAbsence(network) {
-  const [scan, tipHeight, pending] = await Promise.all([
+  const [scan, tipResponse, pending] = await Promise.all([
     proofIndexOperationalStatusPayload(network),
-    healthNodeTipHeight(),
+    bitcoinRpc("getblockchaininfo", []),
     livePendingRegistryPayload(network),
   ]);
+  const tip = exactCoreTipFromBlockchainInfo(tipResponse);
+  const tipHeight = tip?.height;
   const indexedThroughBlock = Number(scan?.indexedThroughBlock) || 0;
-  const workerLastSuccessMs = Date.parse(scan?.worker?.lastSuccessAt ?? "");
-  const workerFresh =
-    Number.isFinite(workerLastSuccessMs) &&
-    Date.now() - workerLastSuccessMs <= PROOF_INDEX_HEALTH_MAX_AGE_MS;
+  const workerReadiness = proofIndexWorkerExactTipReadiness(scan, {
+    network,
+    tipHash: tip?.blockHash,
+    tipHeight,
+  });
   const current =
     Boolean(scan) &&
     scan?.scan?.complete === true &&
     Boolean(String(scan?.scan?.blockHash ?? "")) &&
     Number.isSafeInteger(tipHeight) &&
     indexedThroughBlock === tipHeight &&
-    scan?.worker?.ok === true &&
-    workerFresh &&
+    workerReadiness.ready === true &&
     Number(scan?.readModels?.confirmedIds?.count) > 0;
   if (!current) {
     const error = new Error(
@@ -59661,6 +61883,7 @@ async function loadHealthPayload() {
     databaseOutcome,
     canonicalOutcome,
     tipOutcome,
+    txindexOutcome,
     backendOutcome,
     addressIndex,
     rootDisk,
@@ -59679,6 +61902,10 @@ async function loadHealthPayload() {
       HEALTH_CHECK_TIMEOUT_MS,
     ),
     promiseOutcomeWithin(
+      bitcoinRpc("getindexinfo", ["txindex"]),
+      HEALTH_CHECK_TIMEOUT_MS,
+    ),
+    promiseOutcomeWithin(
       fetchJson(`${MEMPOOL_BASE_MAINNET}/api/v1/backend-info`, {
         signal: AbortSignal.timeout(HEALTH_CHECK_TIMEOUT_MS),
       }),
@@ -59693,6 +61920,13 @@ async function loadHealthPayload() {
   const database = databaseOutcome.ok ? databaseOutcome.value : null;
   const canonical = canonicalOutcome.ok ? canonicalOutcome.value : null;
   const chainInfo = tipOutcome.value?.ok ? tipOutcome.value.result : null;
+  const txindexInfo = txindexOutcome.value?.ok
+    ? txindexOutcome.value.result?.txindex
+    : null;
+  const coreAuthority = exactCoreNodeAuthority(
+    tipOutcome.ok ? tipOutcome.value : null,
+    txindexOutcome.ok ? txindexOutcome.value : null,
+  );
   const tipHeight = Number(chainInfo?.blocks);
   const sampledBestBlockHash = String(chainInfo?.bestblockhash ?? "")
     .trim()
@@ -59734,13 +61968,13 @@ async function loadHealthPayload() {
     Number.isSafeInteger(tipHeight) && indexedThroughBlock > 0
       ? Math.max(0, indexedThroughBlock - tipHeight)
       : null;
-  const workerLastSuccessAt = String(database?.worker?.lastSuccessAt ?? "");
-  const workerLastSuccessMs = Date.parse(workerLastSuccessAt);
-  const workerAgeMs = Number.isFinite(workerLastSuccessMs)
-    ? Math.max(0, Date.now() - workerLastSuccessMs)
-    : null;
-  const workerFresh =
-    workerAgeMs !== null && workerAgeMs <= PROOF_INDEX_HEALTH_MAX_AGE_MS;
+  const workerReadiness = proofIndexWorkerExactTipReadiness(database, {
+    network: "livenet",
+    tipHash: sampledBestBlockHash,
+    tipHeight,
+  });
+  const workerAgeMs = workerReadiness.ageMs;
+  const workerFresh = workerReadiness.fresh;
   const workerNoProgress =
     database?.worker?.noProgress &&
     typeof database.worker.noProgress === "object" &&
@@ -59750,8 +61984,48 @@ async function loadHealthPayload() {
       ? database.worker.noProgress
       : null;
   const workerContainmentActive = workerNoProgress?.active === true;
-  const workerOk =
-    database?.worker?.ok === true && !workerContainmentActive;
+  const workerOk = workerReadiness.ready === true;
+  const pendingHealthEnvelope = workerReadiness.q16Required
+    ? database?.worker?.lastSuccess
+    : database?.worker;
+  const pendingEventHealth =
+    pendingHealthEnvelope?.pendingEventHealth &&
+    typeof pendingHealthEnvelope.pendingEventHealth === "object" &&
+    !Array.isArray(pendingHealthEnvelope.pendingEventHealth)
+      ? pendingHealthEnvelope.pendingEventHealth
+      : null;
+  const pendingStatus =
+    pendingHealthEnvelope?.pendingStatus &&
+    typeof pendingHealthEnvelope.pendingStatus === "object" &&
+    !Array.isArray(pendingHealthEnvelope.pendingStatus)
+      ? pendingHealthEnvelope.pendingStatus
+      : null;
+  const pendingEventHealthRequired = workerReadiness.q16Required;
+  const pendingGlobalUnresolved = pendingEventHealth?.globalUnresolved;
+  const pendingQ16Unresolved = pendingEventHealth?.q16PendingUnresolved;
+  const pendingEventHealthOk =
+    !pendingEventHealthRequired ||
+    (pendingEventHealth?.model ===
+      "bounded-best-effort-pending-event-health-v1" &&
+      pendingEventHealth?.required === true &&
+      pendingEventHealth?.scope ===
+        "all-observed-pending-protocol-events" &&
+      Number.isSafeInteger(pendingGlobalUnresolved) &&
+      pendingGlobalUnresolved === 0 &&
+      Number.isSafeInteger(pendingQ16Unresolved) &&
+      pendingQ16Unresolved === 0 &&
+      pendingEventHealth?.ok === true);
+  const pendingStatusErrors = pendingStatus?.errors;
+  const pendingStatusUnavailable = pendingStatus?.unavailable === true;
+  const pendingStatusUnavailableValid =
+    pendingStatus?.unavailable === undefined ||
+    pendingStatus?.unavailable === false;
+  const pendingStatusOk =
+    !pendingEventHealthRequired ||
+    (Number.isSafeInteger(pendingStatusErrors) &&
+      pendingStatusErrors === 0 &&
+      pendingStatusUnavailableValid);
+  const pendingAccuracyOk = pendingEventHealthOk && pendingStatusOk;
   const canonicalFault = canonical?.fault ?? {};
   const canonicalRebuild = canonical?.rebuild ?? {};
   const rebuildTrustState = canonicalRebuildTrustState(
@@ -59779,7 +62053,7 @@ async function loadHealthPayload() {
     aheadBlocks === 0 &&
     canonicalStateOk &&
     workerOk &&
-    workerFresh &&
+    pendingAccuracyOk &&
     readModelsOk &&
     summarySnapshotOk;
   const indexAvailable =
@@ -59791,7 +62065,7 @@ async function loadHealthPayload() {
     readModelsOk;
   const diskOk = rootDisk.ok && cacheDisk.ok;
   const available =
-    Number.isSafeInteger(tipHeight) &&
+    coreAuthority !== null &&
     backendOutcome.ok &&
     addressIndex.ok &&
     electrum.ok &&
@@ -59847,10 +62121,24 @@ async function loadHealthPayload() {
       },
       node: {
         bestBlockHash: sampledBestBlockHash || null,
-        ok:
-          Number.isSafeInteger(tipHeight) &&
-          /^[0-9a-f]{64}$/u.test(sampledBestBlockHash),
+        chain: String(chainInfo?.chain ?? ""),
+        headers: Number.isSafeInteger(Number(chainInfo?.headers))
+          ? Number(chainInfo.headers)
+          : null,
+        initialBlockDownload: chainInfo?.initialblockdownload === true,
+        ok: coreAuthority !== null,
+        pruned:
+          typeof chainInfo?.pruned === "boolean" ? chainInfo.pruned : null,
         tipHeight,
+        txindexHeight: Number.isSafeInteger(Number(txindexInfo?.best_block_height))
+          ? Number(txindexInfo.best_block_height)
+          : null,
+        txindexSynced: txindexInfo?.synced === true,
+        verificationProgress: Number.isFinite(
+            Number(chainInfo?.verificationprogress),
+          )
+          ? Number(chainInfo.verificationprogress)
+          : null,
       },
       worker: {
         ageMs: workerAgeMs,
@@ -59886,10 +62174,39 @@ async function loadHealthPayload() {
           database?.worker?.consecutiveFailures ?? 0,
         ),
         error: String(database?.worker?.error ?? ""),
-        lastSuccessAt:
-          Number.isFinite(workerLastSuccessMs) ? workerLastSuccessAt : null,
+        lastSuccessAt: workerReadiness.lastSuccessAt,
         maxAgeMs: PROOF_INDEX_HEALTH_MAX_AGE_MS,
-        ok: workerOk && workerFresh,
+        ok: workerOk && pendingAccuracyOk,
+        proofReady: workerReadiness.proofReady,
+        proofSource: workerReadiness.proofSource,
+        pendingEvents: {
+          globalUnresolved:
+            Number.isSafeInteger(pendingGlobalUnresolved)
+              ? pendingGlobalUnresolved
+              : null,
+          model: String(pendingEventHealth?.model ?? ""),
+          ok: pendingEventHealthOk,
+          q16PendingUnresolved:
+            Number.isSafeInteger(pendingQ16Unresolved)
+              ? pendingQ16Unresolved
+              : null,
+          required: pendingEventHealthRequired,
+          scope: String(pendingEventHealth?.scope ?? ""),
+          status: {
+            checked: Number.isSafeInteger(pendingStatus?.checked)
+              ? pendingStatus.checked
+              : null,
+            deferred: Number.isSafeInteger(pendingStatus?.deferred)
+              ? pendingStatus.deferred
+              : null,
+            errors: Number.isSafeInteger(pendingStatusErrors)
+              ? pendingStatusErrors
+              : null,
+            ok: pendingStatusOk,
+            unavailable: pendingStatusUnavailable,
+            unavailableValid: pendingStatusUnavailableValid,
+          },
+        },
         phase: database?.worker?.phase ?? database?.worker?.state ?? null,
       },
     },
@@ -60013,6 +62330,64 @@ function summarySnapshotCoversCanonicalReadModels(status) {
   );
 }
 
+function proofIndexWorkerExactTipReadiness(
+  status,
+  { network, nowMs = Date.now(), tipHash, tipHeight },
+) {
+  const worker = status?.worker && typeof status.worker === "object"
+    ? status.worker
+    : {};
+  const lastSuccessAt = String(worker.lastSuccessAt ?? "");
+  const lastSuccessMs = Date.parse(lastSuccessAt);
+  const ageMs = Number.isFinite(lastSuccessMs)
+    ? Math.max(0, Number(nowMs) - lastSuccessMs)
+    : null;
+  const fresh =
+    ageMs !== null &&
+    Number.isFinite(Number(nowMs)) &&
+    ageMs <= PROOF_INDEX_HEALTH_MAX_AGE_MS;
+  const normalizedTipHash = String(tipHash ?? "").trim().toLowerCase();
+  const storedHash = String(status?.scan?.blockHash ?? "")
+    .trim()
+    .toLowerCase();
+  const exactTip =
+    status?.network === network &&
+    status?.scan?.complete === true &&
+    Number.isSafeInteger(tipHeight) &&
+    Number(status?.indexedThroughBlock) === tipHeight &&
+    Number(status?.scan?.tipHeight) === tipHeight &&
+    /^[0-9a-f]{64}$/u.test(normalizedTipHash) &&
+    storedHash === normalizedTipHash;
+  const q16Required =
+    worker?.workPrecision?.era === "q16" ||
+    worker?.lastSuccess?.workPrecision?.era === "q16" ||
+    !Number.isSafeInteger(WORK_AMO_V8_ACTIVATION_HEIGHT) ||
+    (Number.isSafeInteger(tipHeight) &&
+      tipHeight >= WORK_AMO_V8_ACTIVATION_HEIGHT);
+  const durable = exactWorkAmoV8WorkerLastSuccessReadiness(status, {
+    network,
+    tipHash: normalizedTipHash,
+    tipHeight,
+  });
+  const proofReady = q16Required
+    ? durable.ready === true
+    : worker.network === network &&
+      worker.ok === true &&
+      durable.failureActive !== true;
+  return {
+    ageMs,
+    failureActive: durable.failureActive === true,
+    fresh,
+    lastSuccessAt: Number.isFinite(lastSuccessMs) ? lastSuccessAt : null,
+    proofReady,
+    proofSource: q16Required
+      ? String(durable.proofSource ?? "")
+      : "current-worker",
+    q16Required,
+    ready: exactTip && fresh && proofReady,
+  };
+}
+
 async function loadCanonicalPublicReadGate(network) {
   if (network !== "livenet" || !PROOF_INDEX_REQUIRED) {
     return { ok: true };
@@ -60023,11 +62398,9 @@ async function loadCanonicalPublicReadGate(network) {
     bitcoinRpc("getblockchaininfo", []),
   ]);
   const indexedThroughBlock = Number(status?.indexedThroughBlock) || 0;
-  const chainInfo = tipResponse?.ok ? tipResponse.result : null;
-  const tipHeight = Number(chainInfo?.blocks);
-  const bestBlockHash = String(chainInfo?.bestblockhash ?? "")
-    .trim()
-    .toLowerCase();
+  const exactCoreTip = exactCoreTipFromBlockchainInfo(tipResponse);
+  const tipHeight = exactCoreTip?.height;
+  const bestBlockHash = exactCoreTip?.blockHash ?? "";
   const storedHash = String(status?.scan?.blockHash ?? "").toLowerCase();
   const indexedHashResponse =
     Number.isSafeInteger(indexedThroughBlock) &&
@@ -60047,10 +62420,12 @@ async function loadCanonicalPublicReadGate(network) {
   const rebuild = canonical?.rebuild ?? {};
   const fault = canonical?.fault ?? {};
   const rebuildTrustState = canonicalRebuildTrustState(rebuild, network);
-  const workerLastSuccessMs = Date.parse(status?.worker?.lastSuccessAt ?? "");
-  const workerFresh =
-    Number.isFinite(workerLastSuccessMs) &&
-    Date.now() - workerLastSuccessMs <= PROOF_INDEX_HEALTH_MAX_AGE_MS;
+  const workerReadiness = proofIndexWorkerExactTipReadiness(status, {
+    network,
+    tipHash: bestBlockHash,
+    tipHeight,
+  });
+  const workerFresh = workerReadiness.fresh;
   const readModelsOk =
     Number(status?.readModels?.confirmedIds?.count) > 0 &&
     Number(status?.readModels?.confirmedTransfers?.count) > 0;
@@ -60074,8 +62449,7 @@ async function loadCanonicalPublicReadGate(network) {
     indexedThroughBlock === tipHeight;
   const ready =
     atTip &&
-    workerFresh &&
-    status?.worker?.ok === true;
+    workerReadiness.ready === true;
   return {
     atTip,
     available,
@@ -60092,7 +62466,8 @@ async function loadCanonicalPublicReadGate(network) {
     storedHash: storedHash || null,
     tipHeight: Number.isSafeInteger(tipHeight) ? tipHeight : null,
     workerFresh,
-    workerOk: status?.worker?.ok === true,
+    workerOk: workerReadiness.proofReady,
+    workerProofSource: workerReadiness.proofSource,
     readModelsOk,
     summarySnapshot: status?.summarySnapshot ?? null,
     summarySnapshotOk,
@@ -60286,6 +62661,39 @@ async function handleRequest(request, response) {
         ),
         "no-store",
       );
+      return;
+    }
+
+    if (
+      request.method === "POST" &&
+      url.pathname ===
+        "/api/v1/internal/pending-work-verifier-stage"
+    ) {
+      if (!internalVerifierRequestAllowed(request)) {
+        errorResponse(response, 404, "Not found.");
+        return;
+      }
+      try {
+        const payload = await readJsonRequestBody(request, 1_000_000, {
+          label: "pending WORK verifier stage body",
+          timeoutMs: 15_000,
+        });
+        jsonResponse(
+          response,
+          200,
+          await pendingWorkVerifierStagePayload(payload),
+          "no-store",
+        );
+      } catch (error) {
+        if (error?.statusCode === 503) {
+          throw error;
+        }
+        throw pendingWorkVerifierStageError(
+          "PENDING_WORK_STAGE_UNAVAILABLE",
+          "Pending WORK verifier stage could not be built.",
+          { reason: errorSummary(error) },
+        );
+      }
       return;
     }
 

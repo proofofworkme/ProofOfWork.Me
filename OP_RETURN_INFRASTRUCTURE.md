@@ -2011,19 +2011,96 @@ in-progress placeholder. The prior witness remains independently checkable
 while the replacement is built, and the replacement is published only after
 the stable Core and exact relational audit commits. Any intervening pending
 state change makes the prior projection commitment disagree and closes
-readiness; a failed replacement explicitly publishes not-ready evidence.
+readiness. A failed replacement rolls back without overwriting the prior
+witness; preserving that evidence cannot keep readiness green because the
+reader independently rechecks its tip, membership, projection commitment, and
+age against current state.
+
+The post-V8 pending rebuild is one staged all-or-nothing publication, not a
+series of per-transaction Q16 writes. Backfill combines the prior persisted
+membership with newly discovered WORK candidates and explicit removals, then
+submits the exact set to the authenticated loopback
+`/api/v1/internal/pending-work-verifier-stage` verifier. The v2 stage binds its
+parent witness, canonical Core tip, confirmed relational base commitment,
+lexicographically ordered replay, every raw `pwt1:` record position, stable
+valid-or-invalid decisions, dropped-transaction absence evidence, and
+separately proven confirmed departures. Confirmed departures require exact raw
+txid, positive confirmation count at the staged tip, and canonical block-header
+identity; dropped departures require two exact Core absences at least five
+minutes apart. A transaction whose WORK scope or referenced marketplace parent
+is unknown or ambiguous stays unresolved and cannot fall through to the legacy
+writer. Only positively proven non-WORK transactions may use that legacy path.
+Pending transactions that combine a WORK mutation with a `pwid1:` mutation are
+also fail-closed: the WORK stage does not yet commit the ordered pending-ID base,
+so it must not publish a cached or independently raced ID decision. Mixed WORK
+with `pwa1:`, `pwm1:`, or `pwr1:` remains admissible when every raw companion is
+covered by the same atomic publication.
+
+Publication runs in one serializable database transaction under the pending
+table locks. It rechecks the parent membership, confirmed base, stage hashes,
+Core tip, and mempool membership; replaces the complete volatile WORK
+projection set; audits transaction, event, listing, semantic, and balance
+parity; then stores the verifier stage and readiness witness in the same
+commit. Every raw `pwt1:` position must have an explicit staged outcome, so a
+valid sibling cannot hide a malformed or invalid record. Confirmed rows are
+never rewritten by this transaction. Any fence, coverage, parity, or liveness
+failure rolls the entire publication back.
 
 The pending transaction commitment uses
-`canonical-work-q16-pending-projection-v3`. It commits each member's canonical
+`canonical-work-q16-pending-projection-v5`. It commits each member's canonical
 `txid`, relational `status`, and the five inspection fields
 `pendingProtocolResolvedInvalid`, `pendingWorkMintAttemptCount`,
 `pendingWorkMintInspectionVersion`, `pendingWorkMintRecoveryNeeded`, and
-`pendingWorkMintResolvedInvalid`. Volatile envelope metadata such as
-`indexedFrom`, raw carrier `item`, and `statusObservation.observedAt` is not a
-readiness input: its protocol meaning is already committed by the exact event,
-listing, membership, marker, and balance projections. A marker, status, txid,
-or protocol projection change still invalidates the witness immediately, while
-a routine observation-timestamp refresh cannot create a false readiness gap.
+`pendingWorkMintResolvedInvalid`. The same projection now commits every
+governed pending event in each WORK member transaction and the exact
+`event_participants` and `event_refs` rows derived from those event payloads.
+Publication rejects a missing, extra, or changed address, role, PowID, token,
+listing, parent, seal, closed-transaction, or sale-ticket reference. Both
+search relations also advance the readiness epoch, so a post-publication
+mutation closes readiness instead of leaving a green stale witness. Volatile
+envelope metadata such as `statusObservation.observedAt` remains outside the
+readiness commitment. The stage removes the legacy `indexedFrom` and raw
+carrier `item` overlay, and V5 explicitly commits their absence so Mail cannot
+render stale transaction-envelope data over the governed event projection.
+V5 also commits the exact pending `mail_items` rows for valid PWM companions,
+including nullable sender, subject, parent, body, and event-time fields; a
+missing row, ghost row, stale nullable field, or later Mail mutation closes
+readiness. The `mail_items` relation advances the readiness epoch alongside
+the event search relations.
+
+The heavyweight `indexer:parity` deployment gate separately audits the exact
+semantic contents of `event_participants` and `event_refs` for every event
+status that public Log and Mail reads can render: `pending`, `confirmed`,
+`dropped`, and `orphaned`. Expected rows are canonically derived from each
+persisted event payload alone; a stale `mail_items` row cannot certify a stale
+participant. Observed relation values are compared byte-for-byte, so
+whitespace-corrupt or otherwise stale addresses, roles, PowIDs, reference
+types, and reference values fail the gate. Mail backfill reconciles its
+sender/recipient rows as an exact set, deleting stale extras as well as
+inserting missing rows.
+
+The same repeatable-read parity snapshot separately derives the one exact
+`mail_items` row for every valid rendered PWM event and compares every
+nullable field, event time, integer amount, data length, status, and full JSON
+message. Missing, duplicate, extra, or semantically changed rows fail, as do
+the legacy transaction `item` or `indexedFrom` fields that could otherwise
+act as an independent rendering source. Address Mail reads no longer append or
+fall back to `transactions.raw_tx.item`; canonical event and relational Mail
+rows are their only data authority. Operational `statusObservation` evidence
+remains allowed for generic pending-drop scheduling because it is not a
+rendering source; the atomic Q16 witness still commits its absence for governed
+members. A supervised one-time repair is deliberately explicit:
+
+```bash
+POW_INDEX_REPAIR_CANONICAL_MAIL_PROJECTION=1 \
+  npm run indexer:backfill -- --repair-canonical-mail-projection
+```
+
+It runs under a serializable transaction, replaces drifted Mail rows, removes
+ghosts and rendering overlays, and rechecks the exact projection before
+commit. Confirmed history remains canonical; the other statuses remain
+best-effort mempool and reorg visibility even though all stored render
+relations must be internally exact before deployment.
 
 The worker persists the full confirmed-plus-pending Q16 replay proof only in
 the completed cycle's `lastSuccess` envelope. The ordinary `starting`,
@@ -2038,6 +2115,32 @@ changed tip, stale or invalid reader witness, missing live member, or any
 explicit failed worker state keeps V8 closed. This preserves continuous
 availability during normal cycles without weakening exact-tip or fail-closed
 readiness.
+
+The bounded mempool scan records both Q16-specific unresolved candidates and a
+global unresolved count for every observed protocol transaction. Q16
+publication remains scoped to the former, but completed worker metadata also
+publishes `pendingEventHealth`. At or after V8 activation, public `/health`
+requires the exact model and both counters at zero. A generic verifier failure
+therefore degrades whole-index accuracy health without taking confirmed
+canonical read availability offline. This is a bounded current-mempool signal,
+not a claim that pending visibility is canonical or permanent.
+
+A recent published Q16 witness may be reused only when its typed scan-health
+tuple exactly equals the current scan: global unresolved count, Q16 unresolved
+count, and stop reason. Either red-to-green recovery or a newly unresolved
+generic protocol event forces an atomic republication, even when WORK
+membership itself is unchanged. The completed cycle's `pendingStatus` comes
+from the same durable `lastSuccess` envelope as `pendingEventHealth`; any
+nonzero status error count, unavailable status sweep, or malformed status
+shape keeps whole-index health red. A bounded deferred count remains
+diagnostic rather than fatal.
+
+`/health` also requires one exact Bitcoin Core authority before it can be
+ready: main chain, headers equal to blocks, initial block download disabled,
+verification progress of at least 0.999, an unpruned node, and a synced
+`txindex` whose best height equals the sampled tip. The canonical public-read
+and current-ID proof gates use the same strict synchronized tip shape. A
+height/hash pair alone cannot certify node health.
 
 The raw mint remains `pwt1:mint:<canonical-work-token-id>:1000`, crediting
 `100000000000` Q8 atoms before activation and
@@ -2131,7 +2234,7 @@ owner-bound epoch tables using the ordinary heap access method with RLS
 disabled, no rewrite rules or inheritance edges, exact four-column type/
 nullability/default/generated/identity shape, one exact primary btree index,
 and exact primary-key/check/deferred-trigger constraints; exactly one total
-trigger on the queue and none on the shards; all 16 audit-source relations as
+trigger on the queue and none on the shards; all 19 audit-source relations as
 ordinary permanent `proof_indexer`-owned heaps with RLS off and no rewrite or
 inheritance topology; SELECT-only app access with no table or column mutation
 grants; no public table or function access; and exact owner, PL/pgSQL,
@@ -2186,7 +2289,7 @@ Deployment sequence:
 2. Stop the API and worker, then apply
    `deploy/proof-indexer-readiness-epoch.sql` as PostgreSQL superuser. The SQL is
    one self-contained transaction and must commit before any candidate reader
-   can start. Verify exactly 64 epoch shards, zero committed queue rows, all 18
+   can start. Verify exactly 64 epoch shards, zero committed queue rows, all 21
    `ENABLE ALWAYS` readiness triggers, the queue's sole deferred total trigger,
    no shard triggers, rewrite rules, extra indexes, or inheritance edges, exact
    epoch-table columns/defaults, exact source heap/topology evidence, isolated

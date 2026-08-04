@@ -48,7 +48,13 @@ import {
   workPrecisionV2MarkerReady as sharedWorkPrecisionV2MarkerReady,
 } from "../work-precision-v2-marker.mjs";
 import {
+  WORK_Q16_PENDING_CANONICAL_SEAL_BLOCK_JOIN_SQL,
+  WORK_Q16_PENDING_CANONICAL_SEAL_PROOF_SQL,
   WORK_Q16_PENDING_PROJECTION_MODEL,
+  workQ16PendingEventParticipantProjectionRows,
+  workQ16PendingEventRefProjectionRows,
+  workQ16PendingMailProjectionParity,
+  workQ16PendingMailProjectionRows,
   workQ16PendingTransactionProjectionRows,
 } from "../work-q16-pending-projection.mjs";
 import {
@@ -148,6 +154,7 @@ import {
   isWorkAmoV5LivenetAddress,
   parseWorkAmoV5GenericSaleAuthorization,
   validateWorkAmoV5FrozenTerms,
+  workAmoV5CanonicalPayloadCommitment,
   workAmoV5CutoverActivationIsExact,
   workAmoV5PreUnitRelicEvidenceIsExact,
   workAmoV5WorkStateWithoutLegacyListingReservations,
@@ -296,12 +303,39 @@ const WORK_PRECISION_V2_DECLARATION_INDEX_EVIDENCE_DOMAIN =
   "ProofOfWork.Me/WORK-PRECISION-V2-DECLARATION-EVIDENCE/v1";
 const WORK_Q16_PENDING_REBUILD_META_KEY =
   "workQ16PendingRebuild:livenet";
+const WORK_Q16_PENDING_ATTEMPT_META_KEY =
+  "workQ16PendingAttempt:livenet";
+const WORK_Q16_PENDING_ATTEMPT_MODEL =
+  "canonical-work-q16-pending-publication-attempt-v1";
 const WORK_Q16_PENDING_REBUILD_MODEL =
   "canonical-work-q16-pending-rebuild-v2";
 const WORK_Q16_PENDING_MEMPOOL_MODEL =
   "canonical-core-mempool-txid-set-v1";
 const WORK_Q16_PENDING_MEMBERSHIP_MODEL =
   "canonical-work-q16-pending-membership-v2";
+const WORK_Q16_PENDING_VERIFIER_STAGE_MAX_TXIDS = 512;
+const WORK_Q16_PENDING_VERIFIER_STAGE_REQUEST_MODEL =
+  "canonical-work-q16-pending-verifier-stage-request-v2";
+const WORK_Q16_PENDING_VERIFIER_STAGE_MODEL =
+  "canonical-work-q16-pending-verifier-stage-v2";
+const WORK_Q16_PENDING_VERIFIER_STAGE_CODE_VERSION =
+  "proof-api-canonical-work-q16-pending-verifier-stage-v2";
+const WORK_Q16_PENDING_ABSENCE_EVIDENCE_MODEL =
+  "canonical-work-q16-pending-absence-evidence-v1";
+const WORK_Q16_PENDING_DROP_CONFIRMATION_MS = 300_000;
+const WORK_Q16_PENDING_ABSENCE_CONTRACT = "proof-of-work-tx-status-v2";
+const WORK_Q16_PENDING_ABSENCE_REASON =
+  "absent-from-synced-unpruned-mainnet-bitcoin-core-txindex-and-mempool";
+const WORK_Q16_PENDING_ABSENCE_SOURCES = Object.freeze([
+  "bitcoin-core:getrawtransaction",
+  "bitcoin-core:getmempoolentry",
+  "bitcoin-core:getblockchaininfo",
+  "bitcoin-core:getindexinfo:txindex",
+]);
+const WORK_PRECISION_READINESS_EPOCH_CHECKPOINT_MODEL =
+  "proof-index-worker-readiness-epoch-checkpoint-v1";
+const WORK_PRECISION_READINESS_EPOCH_CHECKPOINT_DOMAIN =
+  "ProofOfWork.Me/PROOF-INDEX-WORKER-READINESS-EPOCH-CHECKPOINT/v1";
 const WORK_PRECISION_V2_READINESS_CACHE_TTL_MS = 30_000;
 const WORK_PRECISION_V2_READINESS_CACHE_MAX_ENTRIES = 4;
 const WORK_Q16_PENDING_WITNESS_MAX_AGE_MS = Math.min(
@@ -3224,26 +3258,41 @@ function workQ16PendingMembership({
     txids.add(txid);
   };
   const workMintDecisionCounts = new Map();
+  const validWorkMintDecisionCounts = new Map();
   const validProjectionCounts = new Map();
   for (const row of Array.isArray(eventRows) ? eventRows : []) {
     addRequiredTxid("event", row?.event_id, row?.txid);
     const txid = normalizedLowerText(row?.txid);
     const payload = objectRecord(row?.payload);
     const kind = normalizedLowerText(row?.kind);
-    const workMintDecision =
-      (kind === "token-mint" && row?.valid === true) ||
+    const validWorkMintDecision =
+      kind === "token-mint" && row?.valid === true;
+    const invalidWorkMintDecision =
       (kind === "token-event-invalid" &&
         row?.valid === false &&
         (
+          ["mint", "token-mint"].includes(
+            normalizedLowerText(
+              payload.attemptedKind ?? payload.rawAction,
+            ),
+          ) ||
           payload.provisionalReason === "supply-cap" ||
           String(payload.reason ?? "").startsWith(
             "WORK mint exceeds max supply:",
           )
         ));
+    const workMintDecision =
+      validWorkMintDecision || invalidWorkMintDecision;
     if (isTxid(txid) && workMintDecision) {
       workMintDecisionCounts.set(
         txid,
         Number(workMintDecisionCounts.get(txid) ?? 0) + 1,
+      );
+    }
+    if (isTxid(txid) && validWorkMintDecision) {
+      validWorkMintDecisionCounts.set(
+        txid,
+        Number(validWorkMintDecisionCounts.get(txid) ?? 0) + 1,
       );
     }
     if (isTxid(txid) && row?.valid === true) {
@@ -3313,24 +3362,23 @@ function workQ16PendingMembership({
     addRequiredTxid("recovery", row?.txid, row?.txid);
     const txid = normalizedLowerText(row?.txid);
     const decisionCount = Number(workMintDecisionCounts.get(txid) ?? 0);
+    const validMintDecisionCount = Number(
+      validWorkMintDecisionCounts.get(txid) ?? 0,
+    );
     const validProjectionCount = Number(
       validProjectionCounts.get(txid) ?? 0,
     );
-    const terminalMarker =
-      resolvedInvalid || protocolResolvedInvalid;
     let invalidReason = "";
     if (recoveryNeeded) {
       invalidReason = "work-recovery-unresolved";
     } else if (protocolResolvedInvalid && validProjectionCount > 0) {
       invalidReason = "protocol-terminal-valid-projection-conflict";
-    } else if (attemptCount > 1) {
-      invalidReason = protocolResolvedInvalid
-        ? ""
-        : "ambiguous-multi-mint-recovery";
-    } else if (decisionCount === 0 && !terminalMarker) {
-      invalidReason = "work-decision-missing";
-    } else if (decisionCount > 1 || (decisionCount > 0 && resolvedInvalid)) {
-      invalidReason = "work-decision-conflict";
+    } else if (decisionCount !== attemptCount) {
+      invalidReason = "work-decision-count-mismatch";
+    } else if (
+      resolvedInvalid !== (validMintDecisionCount === 0)
+    ) {
+      invalidReason = "work-resolved-invalid-marker-mismatch";
     }
     if (invalidReason) {
       invalidMembers.push({
@@ -3367,6 +3415,7 @@ function workQ16PendingMembership({
 function workQ16PendingInspectionMarkerReason(
   row,
   decisionCount = 0,
+  validMintDecisionCount = 0,
   validProjectionCount = 0,
 ) {
   const raw = objectRecord(row?.raw_tx);
@@ -3390,6 +3439,7 @@ function workQ16PendingInspectionMarkerReason(
     return recoveryNeeded ||
         resolvedInvalid ||
         decisionCount !== 0 ||
+        validMintDecisionCount !== 0 ||
         (protocolResolvedInvalid && validProjectionCount > 0)
       ? "work-inspection-zero-attempt-conflict"
       : "";
@@ -3400,17 +3450,11 @@ function workQ16PendingInspectionMarkerReason(
   if (protocolResolvedInvalid && validProjectionCount > 0) {
     return "protocol-terminal-valid-projection-conflict";
   }
-  if (attemptCount > 1) {
-    return protocolResolvedInvalid
-      ? ""
-      : "ambiguous-multi-mint-recovery";
+  if (decisionCount !== attemptCount) {
+    return "work-decision-count-mismatch";
   }
-  const terminalMarker = resolvedInvalid || protocolResolvedInvalid;
-  if (decisionCount === 0 && !terminalMarker) {
-    return "work-decision-missing";
-  }
-  if (decisionCount > 1 || (decisionCount > 0 && resolvedInvalid)) {
-    return "work-decision-conflict";
+  if (resolvedInvalid !== (validMintDecisionCount === 0)) {
+    return "work-resolved-invalid-marker-mismatch";
   }
   return "";
 }
@@ -3456,25 +3500,39 @@ function workQ16PendingParity({
       transactionRows.get(txid)?.status !== "pending",
   );
   const workMintDecisionCounts = new Map();
+  const validWorkMintDecisionCounts = new Map();
   const validProjectionCounts = new Map();
   for (const row of Array.isArray(events) ? events : []) {
     const txid = normalizedLowerText(row?.txid);
     const payload = objectRecord(row?.payload);
     const kind = normalizedLowerText(row?.kind);
-    const decision =
-      (kind === "token-mint" && row?.valid === true) ||
+    const validMintDecision =
+      kind === "token-mint" && row?.valid === true;
+    const invalidMintDecision =
       (kind === "token-event-invalid" &&
         row?.valid === false &&
         (
+          ["mint", "token-mint"].includes(
+            normalizedLowerText(
+              payload.attemptedKind ?? payload.rawAction,
+            ),
+          ) ||
           payload.provisionalReason === "supply-cap" ||
           String(payload.reason ?? "").startsWith(
             "WORK mint exceeds max supply:",
           )
         ));
+    const decision = validMintDecision || invalidMintDecision;
     if (isTxid(txid) && decision) {
       workMintDecisionCounts.set(
         txid,
         Number(workMintDecisionCounts.get(txid) ?? 0) + 1,
+      );
+    }
+    if (isTxid(txid) && validMintDecision) {
+      validWorkMintDecisionCounts.set(
+        txid,
+        Number(validWorkMintDecisionCounts.get(txid) ?? 0) + 1,
       );
     }
     if (isTxid(txid) && row?.valid === true) {
@@ -3501,6 +3559,7 @@ function workQ16PendingParity({
     const reason = workQ16PendingInspectionMarkerReason(
       row,
       Number(workMintDecisionCounts.get(txid) ?? 0),
+      Number(validWorkMintDecisionCounts.get(txid) ?? 0),
       Number(validProjectionCounts.get(txid) ?? 0),
     );
     return reason ? [{ reason, txid }] : [];
@@ -4181,8 +4240,11 @@ function workPrecisionV2ReadinessEpochContractReady(value) {
     "credit_balances",
     "credit_definitions",
     "credit_listings",
+    "event_participants",
+    "event_refs",
     "events",
     "ledger_snapshots",
+    "mail_items",
     "meta",
     "op_returns",
     "transactions",
@@ -4223,8 +4285,11 @@ function workPrecisionV2ReadinessEpochContractReady(value) {
     "credit_balances",
     "credit_definitions",
     "credit_listings",
+    "event_participants",
+    "event_refs",
     "events",
     "ledger_snapshots",
+    "mail_items",
     "op_returns",
     "transactions",
     "tx_inputs",
@@ -4325,7 +4390,7 @@ function workPrecisionV2ReadinessEpochContractReady(value) {
     ],
     [
       "enqueue_livenet_readiness_epoch_for_meta",
-      "DECLARE prior_key text := CASE WHEN TG_OP IN ('UPDATE', 'DELETE') THEN OLD.key ELSE NULL END; current_key text := CASE WHEN TG_OP IN ('INSERT', 'UPDATE') THEN NEW.key ELSE NULL END; current_transaction_id xid8; BEGIN IF prior_key IN ( 'workPrecisionV2Migration:livenet', 'workQ16PendingRebuild:livenet' ) OR current_key IN ( 'workPrecisionV2Migration:livenet', 'workQ16PendingRebuild:livenet' ) THEN current_transaction_id := pg_catalog.pg_current_xact_id(); INSERT INTO proof_indexer.readiness_epoch_queue ( transaction_id, network, shard ) VALUES ( current_transaction_id, 'livenet', pg_catalog.mod(current_transaction_id::text::numeric, 64)::smallint ) ON CONFLICT (transaction_id) DO NOTHING; END IF; RETURN NULL; END;",
+      "DECLARE prior_key text := CASE WHEN TG_OP IN ('UPDATE', 'DELETE') THEN OLD.key ELSE NULL END; current_key text := CASE WHEN TG_OP IN ('INSERT', 'UPDATE') THEN NEW.key ELSE NULL END; current_transaction_id xid8; BEGIN IF prior_key IN ( 'workPrecisionV2Migration:livenet', 'workQ16PendingAttempt:livenet', 'workQ16PendingRebuild:livenet' ) OR current_key IN ( 'workPrecisionV2Migration:livenet', 'workQ16PendingAttempt:livenet', 'workQ16PendingRebuild:livenet' ) THEN current_transaction_id := pg_catalog.pg_current_xact_id(); INSERT INTO proof_indexer.readiness_epoch_queue ( transaction_id, network, shard ) VALUES ( current_transaction_id, 'livenet', pg_catalog.mod(current_transaction_id::text::numeric, 64)::smallint ) ON CONFLICT (transaction_id) DO NOTHING; END IF; RETURN NULL; END;",
     ],
     [
       "commit_livenet_readiness_epoch",
@@ -4392,6 +4457,516 @@ function normalizedWorkPrecisionV2ReadinessEpochs(value) {
       epochs.every((entry, index) => entry[0] === index)
     ? epochs
     : null;
+}
+
+function exactObjectKeys(value, expectedKeys) {
+  if (
+    !value ||
+    typeof value !== "object" ||
+    Array.isArray(value) ||
+    !Array.isArray(expectedKeys)
+  ) {
+    return false;
+  }
+  const actual = Object.keys(value).sort(compareCanonicalUtf8);
+  const expected = [...expectedKeys].sort(compareCanonicalUtf8);
+  return stableWorkPrecisionJson(actual) === stableWorkPrecisionJson(expected);
+}
+
+function canonicalWorkPrecisionV2ReadinessEpochCheckpoint(
+  value,
+  network = "livenet",
+) {
+  const checkpoint = objectRecord(value);
+  const readinessEpochs = normalizedWorkPrecisionV2ReadinessEpochs(
+    checkpoint.readinessEpochs,
+  );
+  const core = {
+    maxPreparedTransactions: String(
+      checkpoint.maxPreparedTransactions ?? "",
+    ),
+    model: checkpoint.model,
+    network: checkpoint.network,
+    postmasterStartedAt: String(checkpoint.postmasterStartedAt ?? ""),
+    queueCount: Number(checkpoint.queueCount),
+    readinessEpochs,
+    searchPath: String(checkpoint.searchPath ?? ""),
+  };
+  if (
+    !exactObjectKeys(checkpoint, [
+      "maxPreparedTransactions",
+      "model",
+      "network",
+      "postmasterStartedAt",
+      "queueCount",
+      "readinessEpochs",
+      "searchPath",
+      "sha256",
+    ]) ||
+    !readinessEpochs ||
+    core.model !== WORK_PRECISION_READINESS_EPOCH_CHECKPOINT_MODEL ||
+    core.network !== network ||
+    core.maxPreparedTransactions !== "0" ||
+    core.queueCount !== 0 ||
+    core.searchPath !== "pg_catalog, pg_temp" ||
+    !Number.isFinite(Date.parse(core.postmasterStartedAt))
+  ) {
+    return null;
+  }
+  const sha256 = createHash("sha256")
+    .update(
+      Buffer.from(
+        `${WORK_PRECISION_READINESS_EPOCH_CHECKPOINT_DOMAIN}\n${
+          stableWorkPrecisionJson(core)
+        }`,
+        "utf8",
+      ),
+    )
+    .digest("hex");
+  return checkpoint.sha256 === sha256 ? { ...core, sha256 } : null;
+}
+
+function canonicalWorkQ16PendingAttemptForRead(
+  value,
+  network = "livenet",
+) {
+  const attempt = objectRecord(value);
+  const initialMempool = objectRecord(attempt.initialMempool);
+  const identity = {
+    initialMempool,
+    model: attempt.model,
+    network: attempt.network,
+    requestSha256: normalizedLowerText(attempt.requestSha256),
+    startedAt: String(attempt.startedAt ?? ""),
+  };
+  if (
+    !exactObjectKeys(attempt, [
+      "attemptId",
+      "completedAt",
+      "initialMempool",
+      "model",
+      "network",
+      "publicationReadinessEpochCheckpoint",
+      "requestSha256",
+      "stageSha256",
+      "startedAt",
+      "status",
+      "witnessGeneratedAt",
+    ]) ||
+    !exactObjectKeys(initialMempool, ["count", "model", "sha256"]) ||
+    attempt.model !== WORK_Q16_PENDING_ATTEMPT_MODEL ||
+    attempt.network !== network ||
+    attempt.status !== "published" ||
+    initialMempool.model !== WORK_Q16_PENDING_MEMPOOL_MODEL ||
+    !Number.isSafeInteger(initialMempool.count) ||
+    initialMempool.count < 0 ||
+    !/^[0-9a-f]{64}$/u.test(normalizedLowerText(initialMempool.sha256)) ||
+    !/^[0-9a-f]{64}$/u.test(identity.requestSha256) ||
+    !Number.isFinite(Date.parse(identity.startedAt)) ||
+    !Number.isFinite(Date.parse(String(attempt.completedAt ?? ""))) ||
+    attempt.completedAt !== attempt.witnessGeneratedAt ||
+    Date.parse(attempt.completedAt) < Date.parse(identity.startedAt) ||
+    !/^[0-9a-f]{64}$/u.test(normalizedLowerText(attempt.stageSha256)) ||
+    !canonicalWorkPrecisionV2ReadinessEpochCheckpoint(
+      attempt.publicationReadinessEpochCheckpoint,
+      network,
+    ) ||
+    attempt.attemptId !==
+      workAmoV5CanonicalPayloadCommitment(identity).sha256
+  ) {
+    return null;
+  }
+  return { ...attempt, initialMempool };
+}
+
+function workQ16PendingVerifierStageTxids(value) {
+  if (
+    !Array.isArray(value) ||
+    value.length > WORK_Q16_PENDING_VERIFIER_STAGE_MAX_TXIDS ||
+    value.some(
+      (txid, index) =>
+        typeof txid !== "string" ||
+        !/^[0-9a-f]{64}$/u.test(txid) ||
+        (index > 0 && compareCanonicalUtf8(value[index - 1], txid) >= 0),
+    )
+  ) {
+    return null;
+  }
+  return [...value];
+}
+
+function workQ16PendingVerifierStageCanonicalIso(value) {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const timeMs = Date.parse(value);
+  return Number.isFinite(timeMs) && new Date(timeMs).toISOString() === value
+    ? { timeMs, value }
+    : null;
+}
+
+function workQ16PendingVerifierStageComponentSha256(label, value) {
+  try {
+    return workAmoV5CanonicalPayloadCommitment({ label, value }).sha256;
+  } catch {
+    return "";
+  }
+}
+
+function workQ16PendingVerifierStageConfirmedBaseReady(
+  value,
+  expectedTokenStateCommitment,
+) {
+  const commitment = objectRecord(value);
+  const tokenStateCommitment = objectRecord(
+    commitment.tokenStateCommitment,
+  );
+  return Boolean(
+    exactObjectKeys(commitment, [
+      "model",
+      "payloadBytes",
+      "sha256",
+      "tokenStateCommitment",
+    ]) &&
+      commitment.model === WORK_AMO_V5_PAYLOAD_COMMITMENT_MODEL &&
+      Number.isSafeInteger(commitment.payloadBytes) &&
+      commitment.payloadBytes > 0 &&
+      /^[0-9a-f]{64}$/u.test(String(commitment.sha256 ?? "")) &&
+      workPrecisionCommitmentShapeReady(tokenStateCommitment, {
+        model: WORK_AMO_V5_PAYLOAD_COMMITMENT_MODEL,
+      }) &&
+      stableWorkPrecisionJson(tokenStateCommitment) ===
+        stableWorkPrecisionJson(expectedTokenStateCommitment)
+  );
+}
+
+function workQ16PendingVerifierStageAbsenceReady(
+  value,
+  {
+    confirmedRemovalTxids,
+    priorMembershipTxids,
+    removalTxids,
+    replayTxids,
+  } = {},
+) {
+  const evidence = objectRecord(value);
+  if (
+    !exactObjectKeys(evidence, ["model", "observations"]) ||
+    evidence.model !== WORK_Q16_PENDING_ABSENCE_EVIDENCE_MODEL ||
+    !Array.isArray(evidence.observations) ||
+    evidence.observations.length >
+      WORK_Q16_PENDING_VERIFIER_STAGE_MAX_TXIDS
+  ) {
+    return false;
+  }
+  const prior = new Set(priorMembershipTxids);
+  const replay = new Set(replayTxids);
+  const removals = new Set(removalTxids);
+  const confirmedRemovals = new Set(confirmedRemovalTxids);
+  const observedTxids = [];
+  for (const [index, observationValue] of evidence.observations.entries()) {
+    const observation = objectRecord(observationValue);
+    const firstAbsentAt = workQ16PendingVerifierStageCanonicalIso(
+      observation.firstAbsentAt,
+    );
+    const lastAbsentAt = workQ16PendingVerifierStageCanonicalIso(
+      observation.lastAbsentAt,
+    );
+    const txid = String(observation.txid ?? "");
+    if (
+      !exactObjectKeys(observation, [
+        "absenceCount",
+        "absenceProven",
+        "contract",
+        "firstAbsentAt",
+        "lastAbsentAt",
+        "reason",
+        "sources",
+        "txid",
+      ]) ||
+      !/^[0-9a-f]{64}$/u.test(txid) ||
+      (index > 0 &&
+        compareCanonicalUtf8(observedTxids[index - 1], txid) >= 0) ||
+      observation.absenceProven !== true ||
+      !Number.isSafeInteger(observation.absenceCount) ||
+      observation.absenceCount < 1 ||
+      !firstAbsentAt ||
+      !lastAbsentAt ||
+      lastAbsentAt.timeMs < firstAbsentAt.timeMs ||
+      observation.contract !== WORK_Q16_PENDING_ABSENCE_CONTRACT ||
+      observation.reason !== WORK_Q16_PENDING_ABSENCE_REASON ||
+      stableWorkPrecisionJson(observation.sources) !==
+        stableWorkPrecisionJson(WORK_Q16_PENDING_ABSENCE_SOURCES) ||
+      !prior.has(txid) ||
+      replay.has(txid) ||
+      confirmedRemovals.has(txid) ||
+      (removals.has(txid) &&
+        (observation.absenceCount < 2 ||
+          lastAbsentAt.timeMs <
+            firstAbsentAt.timeMs + WORK_Q16_PENDING_DROP_CONFIRMATION_MS))
+    ) {
+      return false;
+    }
+    observedTxids.push(txid);
+  }
+  const expectedAbsentPriorTxids = priorMembershipTxids.filter(
+    (txid) => !replay.has(txid) && !confirmedRemovals.has(txid),
+  );
+  return Boolean(
+    stableWorkPrecisionJson(observedTxids) ===
+      stableWorkPrecisionJson(expectedAbsentPriorTxids) &&
+      stableWorkPrecisionJson(observedTxids) ===
+        stableWorkPrecisionJson(removalTxids) &&
+      removalTxids.every((txid) => prior.has(txid)) &&
+      removalTxids.every((txid) => observedTxids.includes(txid))
+  );
+}
+
+function workQ16PendingVerifierStageDecisionOutcomes(rows) {
+  return (Array.isArray(rows) ? rows : [])
+    .map((row) => ({
+      kind: normalizedLowerText(row?.kind),
+      protocolVout: Number(row?.protocol_vout),
+      rawPayloadSha256: createHash("sha256")
+        .update(Buffer.from(String(row?.raw_payload ?? ""), "utf8"))
+        .digest("hex"),
+      recordOrdinal: Number(row?.record_ordinal),
+      txid: normalizedLowerText(row?.txid),
+      valid: row?.valid === true,
+    }))
+    .sort(
+      (left, right) =>
+        compareCanonicalUtf8(left.txid, right.txid) ||
+        left.protocolVout - right.protocolVout ||
+        left.recordOrdinal - right.recordOrdinal ||
+        compareCanonicalUtf8(left.kind, right.kind) ||
+        Number(left.valid) - Number(right.valid),
+    );
+}
+
+function workQ16PendingVerifierStageReady(
+  stageValue,
+  {
+    confirmedRemovalRows,
+    expectedTokenStateCommitment,
+    eventRows,
+    membershipTxids,
+    network,
+    tipHash,
+    tipHeight,
+  } = {},
+) {
+  const stage = objectRecord(stageValue);
+  const canonicalTip = objectRecord(stage.canonicalTip);
+  if (
+    !exactObjectKeys(stage, [
+      "absenceEvidence",
+      "absenceEvidenceSha256",
+      "canonicalTip",
+      "codeVersion",
+      "confirmedBaseCommitment",
+      "confirmedRemovalCount",
+      "confirmedRemovalSha256",
+      "confirmedRemovalTxids",
+      "decisionCount",
+      "decisionOutcomeCount",
+      "decisionOutcomesSha256",
+      "decisionsSha256",
+      "model",
+      "network",
+      "orderedReplayCount",
+      "orderedReplaySha256",
+      "parentWitnessSha256",
+      "pendingDropConfirmationMs",
+      "priorMembershipCount",
+      "priorMembershipSha256",
+      "priorMembershipTxids",
+      "readinessEpochCheckpoint",
+      "removalCount",
+      "removalSha256",
+      "removalTxids",
+      "replayTxids",
+      "requestModel",
+      "stagePayloadBytes",
+      "stageSha256",
+    ]) ||
+    stage.model !== WORK_Q16_PENDING_VERIFIER_STAGE_MODEL ||
+    stage.requestModel !== WORK_Q16_PENDING_VERIFIER_STAGE_REQUEST_MODEL ||
+    stage.codeVersion !== WORK_Q16_PENDING_VERIFIER_STAGE_CODE_VERSION ||
+    stage.network !== network ||
+    stage.pendingDropConfirmationMs !==
+      WORK_Q16_PENDING_DROP_CONFIRMATION_MS ||
+    !exactObjectKeys(canonicalTip, ["hash", "height"]) ||
+    canonicalTip.hash !== tipHash ||
+    canonicalTip.height !== tipHeight ||
+    !/^[0-9a-f]{64}$/u.test(String(stage.parentWitnessSha256 ?? "")) ||
+    !/^[0-9a-f]{64}$/u.test(String(stage.decisionsSha256 ?? "")) ||
+    !/^[0-9a-f]{64}$/u.test(String(stage.decisionOutcomesSha256 ?? "")) ||
+    !canonicalWorkPrecisionV2ReadinessEpochCheckpoint(
+      stage.readinessEpochCheckpoint,
+      network,
+    )
+  ) {
+    return false;
+  }
+  const priorMembershipTxids = workQ16PendingVerifierStageTxids(
+    stage.priorMembershipTxids,
+  );
+  const replayTxids = workQ16PendingVerifierStageTxids(stage.replayTxids);
+  const removalTxids = workQ16PendingVerifierStageTxids(stage.removalTxids);
+  const confirmedRemovalTxids = workQ16PendingVerifierStageTxids(
+    stage.confirmedRemovalTxids,
+  );
+  const prior = new Set(priorMembershipTxids ?? []);
+  const replay = new Set(replayTxids ?? []);
+  const removals = new Set(removalTxids ?? []);
+  const confirmedRemovals = new Set(confirmedRemovalTxids ?? []);
+  const decisionOutcomes =
+    workQ16PendingVerifierStageDecisionOutcomes(eventRows);
+  const priorDeparturePartition = priorMembershipTxids?.filter(
+    (txid) =>
+      replay.has(txid) || removals.has(txid) || confirmedRemovals.has(txid),
+  );
+  const confirmedRemovalRowTxids = workQ16PendingVerifierStageTxids(
+    (Array.isArray(confirmedRemovalRows) ? confirmedRemovalRows : []).map(
+      (row) => String(row?.txid ?? ""),
+    ),
+  );
+  if (
+    !priorMembershipTxids ||
+    !replayTxids ||
+    !removalTxids ||
+    !confirmedRemovalTxids ||
+    !confirmedRemovalRowTxids ||
+    stableWorkPrecisionJson(replayTxids) !==
+      stableWorkPrecisionJson(membershipTxids) ||
+    stableWorkPrecisionJson(priorDeparturePartition) !==
+      stableWorkPrecisionJson(priorMembershipTxids) ||
+    stableWorkPrecisionJson(confirmedRemovalRowTxids) !==
+      stableWorkPrecisionJson(confirmedRemovalTxids) ||
+    removalTxids.some((txid) => replay.has(txid)) ||
+    confirmedRemovalTxids.some(
+      (txid) => replay.has(txid) || removals.has(txid),
+    ) ||
+    removalTxids.some((txid) => !prior.has(txid)) ||
+    confirmedRemovalTxids.some((txid) => !prior.has(txid)) ||
+    stage.priorMembershipCount !== priorMembershipTxids.length ||
+    stage.orderedReplayCount !== replayTxids.length ||
+    stage.removalCount !== removalTxids.length ||
+    stage.confirmedRemovalCount !== confirmedRemovalTxids.length ||
+    stage.decisionCount !== replayTxids.length ||
+    stage.decisionOutcomeCount !== decisionOutcomes.length ||
+    stage.decisionOutcomesSha256 !==
+      workQ16PendingVerifierStageComponentSha256(
+        "DECISION-OUTCOMES",
+        decisionOutcomes,
+      ) ||
+    stage.priorMembershipSha256 !==
+      workQ16PendingVerifierStageComponentSha256(
+        "PRIOR-MEMBERSHIP",
+        priorMembershipTxids,
+      ) ||
+    stage.orderedReplaySha256 !==
+      workQ16PendingVerifierStageComponentSha256(
+        "ORDERED-REPLAY",
+        replayTxids,
+      ) ||
+    stage.removalSha256 !==
+      workQ16PendingVerifierStageComponentSha256("REMOVALS", removalTxids) ||
+    stage.confirmedRemovalSha256 !==
+      workQ16PendingVerifierStageComponentSha256(
+        "CONFIRMED-REMOVALS",
+        confirmedRemovalTxids,
+      ) ||
+    stage.absenceEvidenceSha256 !==
+      workQ16PendingVerifierStageComponentSha256(
+        "ABSENCE-EVIDENCE",
+        stage.absenceEvidence,
+      ) ||
+    !workQ16PendingVerifierStageConfirmedBaseReady(
+      stage.confirmedBaseCommitment,
+      expectedTokenStateCommitment,
+    ) ||
+    !workQ16PendingVerifierStageAbsenceReady(stage.absenceEvidence, {
+      confirmedRemovalTxids,
+      priorMembershipTxids,
+      removalTxids,
+      replayTxids,
+    })
+  ) {
+    return false;
+  }
+  const { stagePayloadBytes, stageSha256, ...stageCore } = stage;
+  try {
+    const stageCommitment = workAmoV5CanonicalPayloadCommitment(stageCore);
+    return Boolean(
+      Number.isSafeInteger(stagePayloadBytes) &&
+        stagePayloadBytes > 0 &&
+        stagePayloadBytes === stageCommitment.payloadBytes &&
+        stageSha256 === stageCommitment.sha256
+    );
+  } catch {
+    return false;
+  }
+}
+
+async function readWorkPrecisionV2ReadinessEpochCheckpoint(
+  client,
+  network,
+) {
+  const result = await client.query(
+    `
+      SELECT
+        (
+          SELECT jsonb_agg(
+            jsonb_build_array(shard, epoch::text)
+            ORDER BY shard
+          )
+          FROM proof_indexer.readiness_epoch_shards
+          WHERE network = $1
+        ) AS readiness_epochs,
+        (
+          SELECT count(*)::integer
+          FROM proof_indexer.readiness_epoch_queue
+        ) AS queue_count,
+        current_setting('max_prepared_transactions')
+          AS max_prepared_transactions,
+        current_setting('search_path') AS search_path,
+        pg_postmaster_start_time() AS postmaster_started_at
+    `,
+    [network],
+  );
+  const row = result.rows[0] ?? {};
+  const core = {
+    maxPreparedTransactions: String(row.max_prepared_transactions ?? ""),
+    model: WORK_PRECISION_READINESS_EPOCH_CHECKPOINT_MODEL,
+    network,
+    postmasterStartedAt: workPrecisionV2ReadinessFingerprintIso(
+      row.postmaster_started_at,
+    ),
+    queueCount: Number(row.queue_count),
+    readinessEpochs: normalizedWorkPrecisionV2ReadinessEpochs(
+      row.readiness_epochs,
+    ),
+    searchPath: String(row.search_path ?? ""),
+  };
+  const checkpoint = {
+    ...core,
+    sha256: createHash("sha256")
+      .update(
+        Buffer.from(
+          `${WORK_PRECISION_READINESS_EPOCH_CHECKPOINT_DOMAIN}\n${
+            stableWorkPrecisionJson(core)
+          }`,
+          "utf8",
+        ),
+      )
+      .digest("hex"),
+  };
+  return canonicalWorkPrecisionV2ReadinessEpochCheckpoint(
+    checkpoint,
+    network,
+  );
 }
 
 function workPrecisionV2ReadinessRequestKey(
@@ -4802,8 +5377,11 @@ async function proofIndexWorkPrecisionV2ReadinessEpochContractAttestation(
                 'credit_balances',
                 'credit_definitions',
                 'credit_listings',
+                'event_participants',
+                'event_refs',
                 'events',
                 'ledger_snapshots',
+                'mail_items',
                 'meta',
                 'op_returns',
                 'transactions',
@@ -4837,8 +5415,11 @@ async function proofIndexWorkPrecisionV2ReadinessEpochContractAttestation(
                 'credit_balances',
                 'credit_definitions',
                 'credit_listings',
+                'event_participants',
+                'event_refs',
                 'events',
                 'ledger_snapshots',
+                'mail_items',
                 'meta',
                 'op_returns',
                 'readiness_epoch_queue',
@@ -5057,6 +5638,10 @@ function workPrecisionV2ReadinessFingerprintFromRows(
     row.migration_updated_at,
   );
   const pendingWitness = objectRecord(row.pending_witness);
+  const pendingAttempt = canonicalWorkQ16PendingAttemptForRead(
+    row.pending_attempt,
+    network,
+  );
   const pendingUpdatedAt = workPrecisionV2ReadinessFingerprintIso(
     row.pending_updated_at,
   );
@@ -5077,6 +5662,36 @@ function workPrecisionV2ReadinessFingerprintFromRows(
   ).trim();
   const workerPrecision = objectRecord(workerLastSuccess.workPrecision);
   const workerReplay = objectRecord(workerPrecision.replay);
+  const currentReadinessEpochCore = {
+    maxPreparedTransactions: String(
+      row.max_prepared_transactions ?? "",
+    ),
+    model: WORK_PRECISION_READINESS_EPOCH_CHECKPOINT_MODEL,
+    network,
+    postmasterStartedAt: workPrecisionV2ReadinessFingerprintIso(
+      row.postmaster_started_at,
+    ),
+    queueCount: readinessQueueCount,
+    readinessEpochs,
+    searchPath: String(row.search_path ?? ""),
+  };
+  const currentReadinessEpochCheckpoint =
+    canonicalWorkPrecisionV2ReadinessEpochCheckpoint(
+      {
+        ...currentReadinessEpochCore,
+        sha256: createHash("sha256")
+          .update(
+            Buffer.from(
+              `${WORK_PRECISION_READINESS_EPOCH_CHECKPOINT_DOMAIN}\n${
+                stableWorkPrecisionJson(currentReadinessEpochCore)
+              }`,
+              "utf8",
+            ),
+          )
+          .digest("hex"),
+      },
+      network,
+    );
   const pendingExpiresAt =
     pendingGeneratedAtMs + WORK_Q16_PENDING_WITNESS_MAX_AGE_MS;
   const expiresAt = Math.min(
@@ -5117,6 +5732,8 @@ function workPrecisionV2ReadinessFingerprintFromRows(
     normalizedLowerText(snapshotSourceHashes.blockScan) !== tipHash ||
     !workPrecisionV2MarkerBindsReader(migrationMarker, pins) ||
     !migrationUpdatedAt ||
+    !pendingAttempt ||
+    !currentReadinessEpochCheckpoint ||
     pendingWitness.model !== WORK_Q16_PENDING_REBUILD_MODEL ||
     pendingWitness.network !== network ||
     pendingWitness.ready !== true ||
@@ -5125,6 +5742,12 @@ function workPrecisionV2ReadinessFingerprintFromRows(
       pins.declarationTxid ||
     Number(pendingWitness.canonicalTip?.height) !== tipHeight ||
     normalizedLowerText(pendingWitness.canonicalTip?.hash) !== tipHash ||
+    pendingAttempt.stageSha256 !==
+      pendingWitness.verifierStage?.stageSha256 ||
+    pendingAttempt.witnessGeneratedAt !== pendingWitness.generatedAt ||
+    stableWorkPrecisionJson(
+      pendingAttempt.publicationReadinessEpochCheckpoint,
+    ) !== stableWorkPrecisionJson(currentReadinessEpochCheckpoint) ||
     pendingMempool.model !== WORK_Q16_PENDING_MEMPOOL_MODEL ||
     !Number.isSafeInteger(pendingMempool.count) ||
     pendingMempool.count < 0 ||
@@ -5146,6 +5769,7 @@ function workPrecisionV2ReadinessFingerprintFromRows(
     now < pendingGeneratedAtMs ||
     expiresAt <= now ||
     !workerLastSuccessAt ||
+    row.worker_ok === false ||
     workerFinishedAt !== workerLastSuccessAt ||
     workerPrecision.era !== "q16" ||
     workerReplay.era !== "q16" ||
@@ -5161,6 +5785,8 @@ function workPrecisionV2ReadinessFingerprintFromRows(
     workPrecisionV2ReadinessValueSha256(migrationMarker);
   const pendingWitnessSha256 =
     workPrecisionV2ReadinessValueSha256(pendingWitness);
+  const pendingAttemptSha256 =
+    workPrecisionV2ReadinessValueSha256(pendingAttempt);
   const workerProof = {
     era: workerPrecision.era,
     replay: {
@@ -5186,6 +5812,7 @@ function workPrecisionV2ReadinessFingerprintFromRows(
     migrationMarkerSha256,
     network,
     pendingUpdatedAt,
+    pendingAttemptSha256,
     pendingValidThroughMs: pendingExpiresAt,
     pendingWitnessSha256,
     pins,
@@ -5333,10 +5960,21 @@ async function proofIndexWorkPrecisionV2ReadinessFingerprint(
         WHERE key = $3
         LIMIT 1
       ),
+      pending_attempt AS (
+        SELECT value, updated_at
+        FROM proof_indexer.meta
+        WHERE key = $6
+        LIMIT 1
+      ),
       worker_marker AS (
         SELECT
           value->'lastSuccess' AS last_success,
-          value->>'lastSuccessAt' AS last_success_at
+          value->>'lastSuccessAt' AS last_success_at,
+          CASE
+            WHEN jsonb_typeof(value->'ok') = 'boolean'
+              THEN (value->>'ok')::boolean
+            ELSE NULL
+          END AS ok
         FROM proof_indexer.meta
         WHERE key = 'worker:lastRun'
         LIMIT 1
@@ -5643,8 +6281,11 @@ async function proofIndexWorkPrecisionV2ReadinessFingerprint(
                 'credit_balances',
                 'credit_definitions',
                 'credit_listings',
+                'event_participants',
+                'event_refs',
                 'events',
                 'ledger_snapshots',
+                'mail_items',
                 'meta',
                 'op_returns',
                 'transactions',
@@ -5678,8 +6319,11 @@ async function proofIndexWorkPrecisionV2ReadinessFingerprint(
                 'credit_balances',
                 'credit_definitions',
                 'credit_listings',
+                'event_participants',
+                'event_refs',
                 'events',
                 'ledger_snapshots',
+                'mail_items',
                 'meta',
                 'op_returns',
                 'readiness_epoch_queue',
@@ -5781,6 +6425,10 @@ async function proofIndexWorkPrecisionV2ReadinessFingerprint(
       SELECT
         epoch.epochs AS readiness_epochs,
         queue_state.queue_count AS readiness_queue_count,
+        current_setting('max_prepared_transactions')
+          AS max_prepared_transactions,
+        current_setting('search_path') AS search_path,
+        pg_postmaster_start_time() AS postmaster_started_at,
         definitions.definitions AS constraint_definitions,
         canonical_tip.height AS tip_height,
         canonical_tip.block_hash AS tip_hash,
@@ -5807,14 +6455,18 @@ async function proofIndexWorkPrecisionV2ReadinessFingerprint(
         migration.updated_at AS migration_updated_at,
         pending.value AS pending_witness,
         pending.updated_at AS pending_updated_at,
+        attempt.value AS pending_attempt,
+        attempt.updated_at AS pending_attempt_updated_at,
         worker.last_success AS worker_last_success,
-        worker.last_success_at AS worker_last_success_at
+        worker.last_success_at AS worker_last_success_at,
+        worker.ok AS worker_ok
       FROM (SELECT 1 AS singleton) base
       LEFT JOIN canonical_tip ON true
       LEFT JOIN migration_marker migration ON true
       LEFT JOIN latest_transition transition ON true
       LEFT JOIN current_snapshot snapshot ON true
       LEFT JOIN pending_witness pending ON true
+      LEFT JOIN pending_attempt attempt ON true
       LEFT JOIN worker_marker worker ON true
       LEFT JOIN readiness_epoch epoch ON true
       LEFT JOIN readiness_queue queue_state ON true
@@ -5826,6 +6478,7 @@ async function proofIndexWorkPrecisionV2ReadinessFingerprint(
         WORK_Q16_PENDING_REBUILD_META_KEY,
         WORK_TOKEN_ID,
         WORK_SUBATOM_PROJECTION_MODEL,
+        WORK_Q16_PENDING_ATTEMPT_META_KEY,
       ],
     );
     const fingerprint = workPrecisionV2ReadinessFingerprintFromRows(
@@ -5870,6 +6523,8 @@ function workPrecisionV2MigrationReadinessResultIsExactPositive(
         fingerprint.migrationMarkerSha256 &&
       workPrecisionV2ReadinessValueSha256(result.pendingWitness) ===
         fingerprint.pendingWitnessSha256 &&
+      workPrecisionV2ReadinessValueSha256(result.pendingAttempt) ===
+        fingerprint.pendingAttemptSha256 &&
       Date.parse(String(result.pendingValidThrough ?? "")) ===
         fingerprint.pendingValidThroughMs
   );
@@ -6245,6 +6900,8 @@ async function proofIndexWorkPrecisionV2MigrationReadinessFullAudit(
     await client.query(
       "SET LOCAL search_path = pg_catalog, pg_temp",
     );
+    const readinessEpochCheckpoint =
+      await readWorkPrecisionV2ReadinessEpochCheckpoint(client, network);
   const stateResult = await client.query(
     `
       SELECT
@@ -6996,16 +7653,36 @@ async function proofIndexWorkPrecisionV2MigrationReadinessFullAudit(
   const snapshotHash = normalizedLowerText(row.snapshot_hash);
   const pendingWitnessResult = await client.query(
     `
-      SELECT value
+      SELECT key, value
       FROM proof_indexer.meta
-      WHERE key = $1
-      LIMIT 2
+      WHERE key = ANY($1::text[])
+      ORDER BY key ASC
     `,
-    [WORK_Q16_PENDING_REBUILD_META_KEY],
+    [[
+      WORK_Q16_PENDING_ATTEMPT_META_KEY,
+      WORK_Q16_PENDING_REBUILD_META_KEY,
+    ]],
+  );
+  const pendingMeta = new Map(
+    pendingWitnessResult.rows.map((metaRow) => [
+      String(metaRow.key),
+      metaRow.value,
+    ]),
   );
   const pendingWitness = objectRecord(
-    pendingWitnessResult.rows[0]?.value,
+    pendingMeta.get(WORK_Q16_PENDING_REBUILD_META_KEY),
   );
+  const pendingAttempt = canonicalWorkQ16PendingAttemptForRead(
+    pendingMeta.get(WORK_Q16_PENDING_ATTEMPT_META_KEY),
+    network,
+  );
+  const pendingVerifierStage = objectRecord(
+    pendingWitness.verifierStage,
+  );
+  const pendingConfirmedRemovalTxids =
+    workQ16PendingVerifierStageTxids(
+      pendingVerifierStage.confirmedRemovalTxids,
+    ) ?? [];
   const pendingMempool = objectRecord(
     pendingWitness.mempoolSnapshot,
   );
@@ -7015,6 +7692,8 @@ async function proofIndexWorkPrecisionV2MigrationReadinessFullAudit(
   const pendingProjection = objectRecord(
     pendingWitness.projection,
   );
+  const pendingScan = objectRecord(pendingWitness.scan);
+  const pendingTip = objectRecord(pendingWitness.canonicalTip);
   const pendingMembershipTxids =
     Array.isArray(pendingMembershipSnapshot.txids)
       ? pendingMembershipSnapshot.txids.map(normalizedLowerText)
@@ -7038,7 +7717,10 @@ async function proofIndexWorkPrecisionV2MigrationReadinessFullAudit(
   );
   let pendingReady = false;
   if (
-    pendingWitnessResult.rows.length === 1 &&
+    pendingWitnessResult.rows.length === 2 &&
+    pendingMeta.size === 2 &&
+    Boolean(pendingAttempt) &&
+    Boolean(readinessEpochCheckpoint) &&
     pendingMembershipTxidsCanonical
   ) {
     const pendingBalanceResult = await client.query(
@@ -7095,7 +7777,7 @@ async function proofIndexWorkPrecisionV2MigrationReadinessFullAudit(
               WHEN listing.status = 'pending'
                 THEN lower(listing.listing_id)
               WHEN listing.status = 'sealing'
-                AND COALESCE(seal_tx.status, '') <> 'confirmed'
+                AND (${WORK_Q16_PENDING_CANONICAL_SEAL_PROOF_SQL}) IS NOT TRUE
                 AND COALESCE(listing.seal_txid, '') <> ''
                 THEN lower(listing.seal_txid)
               ELSE NULL
@@ -7106,13 +7788,14 @@ async function proofIndexWorkPrecisionV2MigrationReadinessFullAudit(
           LEFT JOIN proof_indexer.transactions seal_tx
             ON seal_tx.network = listing.network
            AND seal_tx.txid = lower(listing.seal_txid)
+          ${WORK_Q16_PENDING_CANONICAL_SEAL_BLOCK_JOIN_SQL}
           WHERE listing.network = $1
             AND listing.token_id = $2
             AND (
               listing.status = 'pending'
               OR (
                 listing.status = 'sealing'
-                AND COALESCE(seal_tx.status, '') <> 'confirmed'
+                AND (${WORK_Q16_PENDING_CANONICAL_SEAL_PROOF_SQL}) IS NOT TRUE
               )
             )
           ORDER BY listing.listing_id ASC
@@ -7189,11 +7872,184 @@ async function proofIndexWorkPrecisionV2MigrationReadinessFullAudit(
       `,
       [network, WORK_TOKEN_ID, WORK_AMO_V8_AUTH_VERSION],
     );
+    const pendingConfirmedRemovalResult = await client.query(
+      `
+        WITH canonical_tip AS (
+          SELECT block.height, block.block_hash
+          FROM proof_indexer.blocks block
+          WHERE block.network = $1
+            AND block.canonical = true
+          ORDER BY block.height DESC
+          LIMIT 1
+        )
+        SELECT tx.txid
+        FROM proof_indexer.transactions tx
+        JOIN proof_indexer.blocks block
+          ON block.network = tx.network
+         AND block.block_hash = tx.block_hash
+         AND block.height = tx.block_height
+         AND block.canonical = true
+        CROSS JOIN canonical_tip tip
+        WHERE tx.network = $1
+          AND tx.txid = ANY($2::text[])
+          AND tx.status = 'confirmed'
+          AND tip.height = $3
+          AND tip.block_hash = $4
+          AND block.height <= tip.height
+          AND tx.block_hash ~ '^[0-9a-f]{64}$'
+          AND tx.block_index IS NOT NULL
+          AND tx.block_index >= 0
+          AND jsonb_typeof(tx.raw_tx) = 'object'
+          AND tx.raw_tx->>'txid' = tx.txid
+          AND jsonb_typeof(
+            tx.raw_tx->'canonicalBlockScan'
+          ) = 'object'
+          AND (
+            SELECT array_agg(scan_key ORDER BY scan_key)
+            FROM jsonb_object_keys(
+              tx.raw_tx->'canonicalBlockScan'
+            ) AS scan_keys(scan_key)
+          ) = ARRAY[
+            'blockHash',
+            'blockIndex',
+            'height',
+            'network'
+          ]::text[]
+          AND jsonb_typeof(
+            tx.raw_tx->'canonicalBlockScan'->'blockHash'
+          ) = 'string'
+          AND tx.raw_tx->'canonicalBlockScan'->>'blockHash' =
+            tx.block_hash
+          AND jsonb_typeof(
+            tx.raw_tx->'canonicalBlockScan'->'height'
+          ) = 'number'
+          AND tx.raw_tx->'canonicalBlockScan'->>'height' =
+            tx.block_height::text
+          AND jsonb_typeof(
+            tx.raw_tx->'canonicalBlockScan'->'blockIndex'
+          ) = 'number'
+          AND tx.raw_tx->'canonicalBlockScan'->>'blockIndex' =
+            tx.block_index::text
+          AND jsonb_typeof(
+            tx.raw_tx->'canonicalBlockScan'->'network'
+          ) = 'string'
+          AND tx.raw_tx->'canonicalBlockScan'->>'network' = $1
+          AND jsonb_typeof(tx.raw_tx->'_powBlockIndex') = 'number'
+          AND tx.raw_tx->>'_powBlockIndex' = tx.block_index::text
+        ORDER BY tx.txid ASC
+      `,
+      [
+        network,
+        pendingConfirmedRemovalTxids,
+        tipHeight,
+        tipHash,
+      ],
+    );
     const pendingMembership = workQ16PendingMembership({
       eventRows: pendingEventResult.rows,
       listingRows: pendingListingResult.rows,
       recoveryRows: pendingRecoveryResult.rows,
     });
+    const pendingGovernedProtocols = [
+      "pwa1",
+      "pwid1",
+      "pwm1",
+      "pwr1",
+      "pwt1",
+    ];
+    const pendingProjectionEventResult = await client.query(
+      `
+        SELECT
+          event_id,
+          txid,
+          kind,
+          protocol,
+          op_return_vout AS protocol_vout,
+          record_ordinal,
+          valid,
+          raw_payload,
+          payload
+        FROM proof_indexer.events
+        WHERE network = $1
+          AND status = 'pending'
+          AND txid = ANY($2::text[])
+          AND protocol = ANY($3::text[])
+        ORDER BY txid ASC, protocol ASC,
+          protocol_vout ASC NULLS LAST, record_ordinal ASC,
+          event_id ASC
+      `,
+      [network, pendingMembership.expectedTxids, pendingGovernedProtocols],
+    );
+    const pendingEventParticipantResult = await client.query(
+      `
+        SELECT
+          event.event_id,
+          event.txid,
+          event.protocol,
+          event.op_return_vout AS protocol_vout,
+          event.record_ordinal,
+          participant.address,
+          participant.role,
+          COALESCE(participant.powid, '') AS powid
+        FROM proof_indexer.events event
+        JOIN proof_indexer.event_participants participant
+          ON participant.event_id = event.event_id
+        WHERE event.network = $1
+          AND event.status = 'pending'
+          AND event.txid = ANY($2::text[])
+          AND event.protocol = ANY($3::text[])
+        ORDER BY event.txid ASC, event.protocol ASC,
+          event.op_return_vout ASC NULLS LAST,
+          event.record_ordinal ASC, event.event_id ASC,
+          participant.address ASC, participant.role ASC,
+          COALESCE(participant.powid, '') ASC
+      `,
+      [network, pendingMembership.expectedTxids, pendingGovernedProtocols],
+    );
+    const pendingEventRefResult = await client.query(
+      `
+        SELECT
+          event.event_id,
+          event.txid,
+          event.protocol,
+          event.op_return_vout AS protocol_vout,
+          event.record_ordinal,
+          ref.ref_type,
+          ref.ref_value
+        FROM proof_indexer.events event
+        JOIN proof_indexer.event_refs ref
+          ON ref.event_id = event.event_id
+        WHERE event.network = $1
+          AND event.status = 'pending'
+          AND event.txid = ANY($2::text[])
+          AND event.protocol = ANY($3::text[])
+        ORDER BY event.txid ASC, event.protocol ASC,
+          event.op_return_vout ASC NULLS LAST,
+          event.record_ordinal ASC, event.event_id ASC,
+          ref.ref_type ASC, ref.ref_value ASC
+      `,
+      [network, pendingMembership.expectedTxids, pendingGovernedProtocols],
+    );
+    const pendingMailResult = await client.query(
+      `
+        SELECT
+          txid,
+          status,
+          sender_address,
+          subject,
+          parent_txid,
+          body_text,
+          amount_sats::text,
+          data_bytes,
+          message,
+          event_time
+        FROM proof_indexer.mail_items
+        WHERE network = $1
+          AND txid = ANY($2::text[])
+        ORDER BY txid ASC
+      `,
+      [network, pendingMembership.expectedTxids],
+    );
     const pendingTransactionResult = await client.query(
       `
         SELECT txid, status, raw_tx
@@ -7205,6 +8061,15 @@ async function proofIndexWorkPrecisionV2MigrationReadinessFullAudit(
       `,
       [network, pendingMembership.expectedTxids],
     );
+    const pendingTransactionProjectionRows =
+      workQ16PendingTransactionProjectionRows(
+        pendingTransactionResult.rows,
+      );
+    const pendingMailProjectionReady =
+      workQ16PendingMailProjectionParity({
+        eventRows: pendingProjectionEventResult.rows,
+        mailRows: pendingMailResult.rows,
+      }).ready;
     const pendingProjectionParts = {
       balances: {
         count: pendingBalanceResult.rows.length,
@@ -7213,11 +8078,29 @@ async function proofIndexWorkPrecisionV2MigrationReadinessFullAudit(
           pendingBalanceResult.rows,
         ),
       },
+      eventParticipants: {
+        count: pendingEventParticipantResult.rows.length,
+        sha256: workQ16PendingCommitment(
+          "EVENT-PARTICIPANTS",
+          workQ16PendingEventParticipantProjectionRows(
+            pendingEventParticipantResult.rows,
+          ),
+        ),
+      },
+      eventRefs: {
+        count: pendingEventRefResult.rows.length,
+        sha256: workQ16PendingCommitment(
+          "EVENT-REFS",
+          workQ16PendingEventRefProjectionRows(
+            pendingEventRefResult.rows,
+          ),
+        ),
+      },
       events: {
-        count: pendingEventResult.rows.length,
+        count: pendingProjectionEventResult.rows.length,
         sha256: workQ16PendingCommitment(
           "EVENTS",
-          pendingEventResult.rows,
+          pendingProjectionEventResult.rows,
         ),
       },
       listings: {
@@ -7227,13 +8110,18 @@ async function proofIndexWorkPrecisionV2MigrationReadinessFullAudit(
           pendingListingResult.rows,
         ),
       },
+      mailItems: {
+        count: pendingMailResult.rows.length,
+        sha256: workQ16PendingCommitment(
+          "MAIL-ITEMS",
+          workQ16PendingMailProjectionRows(pendingMailResult.rows),
+        ),
+      },
       transactions: {
         count: pendingTransactionResult.rows.length,
         sha256: workQ16PendingCommitment(
           "TRANSACTIONS",
-          workQ16PendingTransactionProjectionRows(
-            pendingTransactionResult.rows,
-          ),
+          pendingTransactionProjectionRows,
         ),
       },
     };
@@ -7246,6 +8134,56 @@ async function proofIndexWorkPrecisionV2MigrationReadinessFullAudit(
       transactions: pendingTransactionResult.rows,
     });
     pendingReady =
+      exactObjectKeys(pendingWitness, [
+        "activationHeight",
+        "amountStorageModel",
+        "canonicalTip",
+        "declarationTxid",
+        "generatedAt",
+        "invalidLegacyMutationCount",
+        "membershipSnapshot",
+        "mempoolSnapshot",
+        "model",
+        "network",
+        "parity",
+        "precisionModel",
+        "projection",
+        "ready",
+        "scan",
+        "verifierStage",
+      ]) &&
+      exactObjectKeys(pendingTip, ["hash", "height"]) &&
+      exactObjectKeys(pendingMempool, ["count", "model", "sha256"]) &&
+      exactObjectKeys(pendingMembershipSnapshot, [
+        "count",
+        "model",
+        "sha256",
+        "txids",
+      ]) &&
+      exactObjectKeys(pendingProjection, [
+        "balances",
+        "commitmentSha256",
+        "eventParticipants",
+        "eventRefs",
+        "events",
+        "listings",
+        "mailItems",
+        "model",
+        "transactions",
+      ]) &&
+      exactObjectKeys(pendingScan, [
+        "canonicalDeferred",
+        "complete",
+        "completeModel",
+        "discoveryModel",
+        "globalUnresolved",
+        "inspectedTxids",
+        "mempoolMembershipCount",
+        "protocolTxids",
+        "q16PendingUnresolved",
+        "scanned",
+        "stopReason",
+      ]) &&
       pendingWitness.model ===
         WORK_Q16_PENDING_REBUILD_MODEL &&
       pendingWitness.network === network &&
@@ -7260,9 +8198,22 @@ async function proofIndexWorkPrecisionV2MigrationReadinessFullAudit(
         WORK_AMO_V8_GLOBAL_PRECISION_MODEL &&
       Number(pendingWitness.invalidLegacyMutationCount) === 0 &&
       Number(pendingInvalidLegacyResult.rows[0]?.invalid_count) === 0 &&
-      Number(pendingWitness.canonicalTip?.height) === tipHeight &&
-      normalizedLowerText(pendingWitness.canonicalTip?.hash) ===
-        tipHash &&
+      Number(pendingTip.height) === tipHeight &&
+      normalizedLowerText(pendingTip.hash) === tipHash &&
+      pendingAttempt.stageSha256 === pendingVerifierStage.stageSha256 &&
+      pendingAttempt.witnessGeneratedAt === pendingWitness.generatedAt &&
+      stableWorkPrecisionJson(
+        pendingAttempt.publicationReadinessEpochCheckpoint,
+      ) === stableWorkPrecisionJson(readinessEpochCheckpoint) &&
+      workQ16PendingVerifierStageReady(pendingVerifierStage, {
+        confirmedRemovalRows: pendingConfirmedRemovalResult.rows,
+        expectedTokenStateCommitment: closingTokenStateCommitment,
+        eventRows: pendingEventResult.rows,
+        membershipTxids: pendingMembershipTxids,
+        network,
+        tipHash,
+        tipHeight,
+      }) &&
       pendingMempool.model === WORK_Q16_PENDING_MEMPOOL_MODEL &&
       Number.isSafeInteger(pendingMempool.count) &&
       pendingMempool.count >= 0 &&
@@ -7280,13 +8231,20 @@ async function proofIndexWorkPrecisionV2MigrationReadinessFullAudit(
       pendingProjection.model ===
         WORK_Q16_PENDING_PROJECTION_MODEL &&
       pendingParity.ready === true &&
+      pendingMailProjectionReady &&
+      pendingTransactionProjectionRows.every(
+        (row) => row.volatileOverlayAbsent === true,
+      ) &&
       stableWorkPrecisionJson(
         objectRecord(pendingWitness.parity),
       ) === stableWorkPrecisionJson(pendingParity) &&
       stableWorkPrecisionJson({
         balances: pendingProjection.balances,
+        eventParticipants: pendingProjection.eventParticipants,
+        eventRefs: pendingProjection.eventRefs,
         events: pendingProjection.events,
         listings: pendingProjection.listings,
+        mailItems: pendingProjection.mailItems,
         transactions: pendingProjection.transactions,
       }) === stableWorkPrecisionJson(pendingProjectionParts) &&
       normalizedLowerText(
@@ -7296,22 +8254,30 @@ async function proofIndexWorkPrecisionV2MigrationReadinessFullAudit(
           "PROJECTION",
           pendingProjectionParts,
         ) &&
-      pendingWitness.scan?.complete === true &&
-      pendingWitness.scan?.completeModel ===
-        "persisted-pending-work-projection-audit-v1" &&
-      pendingWitness.scan?.discoveryModel ===
+      pendingScan.complete === true &&
+      pendingScan.completeModel ===
+        "atomic-staged-pending-work-projection-audit-v1" &&
+      pendingScan.discoveryModel ===
         "bounded-best-effort-unconfirmed-discovery-v1" &&
-      Number.isSafeInteger(
-        pendingWitness.scan?.mempoolMembershipCount,
-      ) &&
-      pendingWitness.scan.mempoolMembershipCount ===
-        pendingMempool.count &&
-      Number.isSafeInteger(pendingWitness.scan?.inspectedTxids) &&
-      pendingWitness.scan.inspectedTxids >= 0 &&
-      pendingWitness.scan.inspectedTxids <= pendingMempool.count &&
-      Number.isFinite(
-        pendingGeneratedAtMs,
-      ) &&
+      Number.isSafeInteger(pendingScan.canonicalDeferred) &&
+      pendingScan.canonicalDeferred >= 0 &&
+      Number.isSafeInteger(pendingScan.globalUnresolved) &&
+      pendingScan.globalUnresolved >= 0 &&
+      Number.isSafeInteger(pendingScan.q16PendingUnresolved) &&
+      pendingScan.q16PendingUnresolved === 0 &&
+      pendingScan.stopReason === "" &&
+      Number.isSafeInteger(pendingScan.mempoolMembershipCount) &&
+      pendingScan.mempoolMembershipCount === pendingMempool.count &&
+      Number.isSafeInteger(pendingScan.inspectedTxids) &&
+      pendingScan.inspectedTxids >= 0 &&
+      pendingScan.inspectedTxids <= pendingMempool.count &&
+      Number.isSafeInteger(pendingScan.protocolTxids) &&
+      pendingScan.protocolTxids >= 0 &&
+      Number.isSafeInteger(pendingScan.scanned) &&
+      pendingScan.scanned >= 0 &&
+      Number.isFinite(pendingGeneratedAtMs) &&
+      new Date(pendingGeneratedAtMs).toISOString() ===
+        pendingWitness.generatedAt &&
       Date.now() >= pendingGeneratedAtMs &&
       Date.now() - pendingGeneratedAtMs <=
         WORK_Q16_PENDING_WITNESS_MAX_AGE_MS;
@@ -7422,6 +8388,7 @@ async function proofIndexWorkPrecisionV2MigrationReadinessFullAudit(
     model: WORK_PRECISION_V2_MIGRATION_MODEL,
     openingReady: activationOpeningReady,
     parityReady: stateCommitmentsReady,
+    pendingAttempt,
     pendingReady,
     pendingValidThrough: Number.isFinite(pendingGeneratedAtMs)
       ? new Date(
@@ -17864,18 +18831,6 @@ function canonicalEventPayload(payload) {
   return item;
 }
 
-function rawTransactionItemPayload(row) {
-  const raw = row?.transaction_raw_tx;
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
-    return {};
-  }
-  const item = raw.item;
-  if (item && typeof item === "object" && !Array.isArray(item)) {
-    return item;
-  }
-  return raw;
-}
-
 function normalizedText(value) {
   return String(value ?? "").trim();
 }
@@ -27581,6 +28536,81 @@ export async function proofIndexCanonicalSummaryTokenTablePayload(
   return result;
 }
 
+export async function proofIndexReadinessEpochCheckpoint(network) {
+  const pool = proofIndexPool();
+  if (!pool || network !== "livenet") {
+    return null;
+  }
+  const result = await pool.query(
+    `
+      SELECT
+        (
+          SELECT jsonb_agg(
+            jsonb_build_array(shard, epoch::text)
+            ORDER BY shard
+          )
+          FROM proof_indexer.readiness_epoch_shards
+          WHERE network = $1
+        ) AS epochs,
+        (
+          SELECT count(*)::integer
+          FROM proof_indexer.readiness_epoch_queue
+        ) AS queue_count,
+        current_setting('max_prepared_transactions')
+          AS max_prepared_transactions,
+        current_setting('search_path') AS search_path,
+        pg_postmaster_start_time() AS postmaster_started_at
+    `,
+    [network],
+  );
+  if (result.rows.length !== 1) {
+    return null;
+  }
+  const row = result.rows[0] ?? {};
+  const readinessEpochs = normalizedWorkPrecisionV2ReadinessEpochs(
+    row.epochs,
+  );
+  const queueCount = Number(row.queue_count);
+  const maxPreparedTransactions = String(
+    row.max_prepared_transactions ?? "",
+  );
+  const searchPath = String(row.search_path ?? "");
+  const postmasterStartedAtMs = row.postmaster_started_at instanceof Date
+    ? row.postmaster_started_at.getTime()
+    : Date.parse(String(row.postmaster_started_at ?? ""));
+  if (
+    !readinessEpochs ||
+    queueCount !== 0 ||
+    maxPreparedTransactions !== "0" ||
+    searchPath !== "pg_catalog, pg_temp" ||
+    !Number.isFinite(postmasterStartedAtMs)
+  ) {
+    return null;
+  }
+  const checkpoint = {
+    maxPreparedTransactions,
+    model: WORK_PRECISION_READINESS_EPOCH_CHECKPOINT_MODEL,
+    network,
+    postmasterStartedAt: new Date(postmasterStartedAtMs).toISOString(),
+    queueCount,
+    readinessEpochs,
+    searchPath,
+  };
+  return {
+    ...checkpoint,
+    sha256: createHash("sha256")
+      .update(
+        Buffer.from(
+          `${WORK_PRECISION_READINESS_EPOCH_CHECKPOINT_DOMAIN}\n${
+            stableWorkPrecisionJson(checkpoint)
+          }`,
+          "utf8",
+        ),
+      )
+      .digest("hex"),
+  };
+}
+
 async function scopedHoldersFromBalances(pool, network, tokenId) {
   const result = await pool.query(
     `
@@ -31783,7 +32813,7 @@ function mailMemoFromEvent(row, payload) {
   return "";
 }
 
-function mailParticipantRecordsFromRow(row, payload, rawPayload = {}) {
+function mailParticipantRecordsFromRow(row, payload) {
   const participantRows = Array.isArray(row.participants)
     ? row.participants
     : [];
@@ -31797,18 +32827,10 @@ function mailParticipantRecordsFromRow(row, payload, rawPayload = {}) {
       address,
       role: "participant",
     })),
-    ...stringList(rawPayload.participants).map((address) => ({
-      address,
-      role: "participant",
-    })),
     ...recipientAddressRecords(payload.recipients),
-    ...recipientAddressRecords(rawPayload.recipients),
     { address: payload.actor, role: "sender" },
     { address: payload.senderAddress, role: "sender" },
-    { address: rawPayload.actor, role: "sender" },
-    { address: rawPayload.senderAddress, role: "sender" },
     { address: payload.counterparty, role: "recipient" },
-    { address: rawPayload.counterparty, role: "recipient" },
   ];
   const unique = new Map();
   for (const record of records) {
@@ -31821,14 +32843,6 @@ function mailParticipantRecordsFromRow(row, payload, rawPayload = {}) {
       address: value,
       role,
     });
-  }
-  return [...unique.values()];
-}
-
-function mailParticipantsFromRow(row, payload, rawPayload = {}) {
-  const unique = new Map();
-  for (const participant of mailParticipantRecordsFromRow(row, payload, rawPayload)) {
-    unique.set(normalizedAddressKey(participant.address), participant.address);
   }
   return [...unique.values()];
 }
@@ -31869,19 +32883,13 @@ function mailRecipientRowsFromSource(source) {
     .filter((recipient) => recipient.address);
 }
 
-function exactMailRecipientRows(payload, rawPayload, fallbackAddresses, totalAmountSats) {
+function exactMailRecipientRows(payload, fallbackAddresses, totalAmountSats) {
   const payloadRows = mailRecipientRowsFromSource(payload);
-  const rawRows = mailRecipientRowsFromSource(rawPayload);
   const payloadExactRows = payloadRows.filter((row) => row.vout !== undefined);
-  const rawExactRows = rawRows.filter((row) => row.vout !== undefined);
   const rows =
     payloadExactRows.length > 0
       ? payloadExactRows
-      : rawExactRows.length > 0
-        ? rawExactRows
-        : payloadRows.length > 0
-          ? payloadRows
-          : rawRows;
+      : payloadRows;
   const byAddressAndVout = new Map();
   for (const row of rows) {
     const key = `${normalizedAddressKey(row.address)}:${row.vout ?? ""}`;
@@ -32107,20 +33115,14 @@ function canonicalMailAttachedCreditsFromRow(row, recipientAddresses) {
 
 function addressMailRowPayloads(row, address, network) {
   const payload = normalizeEventPayload(canonicalEventPayload(row.payload), row);
-  const rawPayload = normalizeEventPayload(
-    canonicalEventPayload(rawTransactionItemPayload(row)),
-    row,
-  );
   const targetAddress = normalizedAddress(address);
   const targetKey = normalizedAddressKey(targetAddress);
   const actor =
     knownMailAddress(payload.actor) ||
     knownMailAddress(payload.senderAddress) ||
-    knownMailAddress(rawPayload.actor) ||
-    knownMailAddress(rawPayload.senderAddress) ||
     knownMailAddress(row.sender_address);
   const actorKey = normalizedAddressKey(actor);
-  const participantRecords = mailParticipantRecordsFromRow(row, payload, rawPayload);
+  const participantRecords = mailParticipantRecordsFromRow(row, payload);
   const roleRecipientAddresses = participantRecords
     .filter((participant) =>
       ["recipient", "receiver", "counterparty"].includes(participant.role),
@@ -32141,7 +33143,6 @@ function addressMailRowPayloads(row, address, network) {
   );
   const recipients = exactMailRecipientRows(
     payload,
-    rawPayload,
     recipientAddresses,
     totalAmountSats,
   );
@@ -32159,11 +33160,7 @@ function addressMailRowPayloads(row, address, network) {
   const memo = mailMemoFromEvent(row, payload);
   const parentTxid = String(row.parent_txid ?? payload.parentTxid ?? "").trim();
   const payloadAttachment = objectRecord(payload.attachment);
-  const rawAttachment = objectRecord(rawPayload.attachment);
-  const attachment =
-    Object.keys(payloadAttachment).length > 0
-      ? payloadAttachment
-      : rawAttachment;
+  const attachment = payloadAttachment;
   const items = [];
 
   if (actorKey && actorKey === targetKey) {
@@ -32335,10 +33332,6 @@ export async function proofIndexAddressMailPayload(network, address) {
   const addressCandidates = [
     ...new Set([targetAddress, targetAddress.toLowerCase()].filter(Boolean)),
   ];
-  const addressCandidateKeys = [
-    ...new Set(addressCandidates.map((value) => normalizedAddressKey(value))),
-  ];
-
   const rowsResult = await pool.query(
     `
       WITH candidate_events AS (
@@ -32453,19 +33446,13 @@ export async function proofIndexAddressMailPayload(network, address) {
       SELECT
         e.payload,
         e.kind,
-        CASE
-          WHEN 'confirmed' = ANY(ARRAY[e.status, m.status, t.status]) THEN 'confirmed'
-          WHEN 'dropped' = ANY(ARRAY[e.status, m.status, t.status]) THEN 'dropped'
-          WHEN 'orphaned' = ANY(ARRAY[e.status, m.status, t.status]) THEN 'orphaned'
-          ELSE e.status
-        END AS status,
+        e.status,
         e.event_time,
         e.block_time,
         e.created_at,
         e.block_height,
         e.txid,
         e.event_id,
-        t.raw_tx AS transaction_raw_tx,
         m.subject,
         m.sender_address,
         m.parent_txid,
@@ -32487,12 +33474,9 @@ export async function proofIndexAddressMailPayload(network, address) {
           '[]'::jsonb
         ) AS participants
       FROM proof_indexer.events e
-      LEFT JOIN proof_indexer.mail_items m
+      JOIN proof_indexer.mail_items m
         ON m.network = e.network
        AND m.txid = e.txid
-      LEFT JOIN proof_indexer.transactions t
-        ON t.network = e.network
-       AND t.txid = e.txid
       LEFT JOIN proof_indexer.event_participants ep
         ON ep.event_id = e.event_id
       LEFT JOIN canonical_work_attachments
@@ -32508,15 +33492,12 @@ export async function proofIndexAddressMailPayload(network, address) {
         e.payload,
         e.kind,
         e.status,
-        m.status,
-        t.status,
         e.event_time,
         e.block_time,
         e.created_at,
         e.block_height,
         e.txid,
         e.event_id,
-        t.raw_tx,
         m.subject,
         m.sender_address,
         m.parent_txid,
@@ -32532,101 +33513,9 @@ export async function proofIndexAddressMailPayload(network, address) {
     [network, addressCandidates, ADDRESS_MAIL_EVENT_KINDS, WORK_TOKEN_ID],
   );
 
-  const transactionOverlayResult = await pool.query(
-    `
-      SELECT
-        t.raw_tx->'item' AS payload,
-        COALESCE(t.raw_tx->'item'->>'kind', '') AS kind,
-        t.status,
-        COALESCE(
-          CASE
-            WHEN t.raw_tx->'item'->>'createdAt' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T'
-              THEN (t.raw_tx->'item'->>'createdAt')::timestamptz
-            ELSE NULL
-          END,
-          t.block_time,
-          t.confirmed_at,
-          t.first_seen_at
-        ) AS event_time,
-        t.block_time,
-        t.first_seen_at AS created_at,
-        t.txid,
-        NULL::bigint AS event_id,
-        t.raw_tx AS transaction_raw_tx,
-        NULL::text AS subject,
-        COALESCE(
-          t.raw_tx->'item'->>'senderAddress',
-          t.raw_tx->'item'->>'actor'
-        ) AS sender_address,
-        NULL::text AS parent_txid,
-        t.raw_tx->'item'->>'memo' AS body_text,
-        CASE
-          WHEN t.raw_tx->'item'->>'amountSats' ~ '^[0-9]+$'
-            THEN (t.raw_tx->'item'->>'amountSats')::bigint
-          ELSE NULL
-        END AS amount_sats,
-        '[]'::jsonb AS attached_credit_events,
-        '[]'::jsonb AS participants
-      FROM proof_indexer.transactions t
-      WHERE t.network = $1
-        AND t.raw_tx ? 'item'
-        AND lower(COALESCE(t.raw_tx->'item'->>'kind', '')) = ANY($3::text[])
-        AND t.status IN ('pending', 'confirmed', 'dropped', 'orphaned')
-        AND (
-          lower(COALESCE(t.raw_tx->'item'->>'actor', '')) = ANY($2::text[])
-          OR lower(COALESCE(t.raw_tx->'item'->>'senderAddress', '')) = ANY($2::text[])
-          OR lower(COALESCE(t.raw_tx->'item'->>'counterparty', '')) = ANY($2::text[])
-          OR EXISTS (
-            SELECT 1
-            FROM jsonb_array_elements_text(
-              CASE
-                WHEN jsonb_typeof(t.raw_tx->'item'->'participants') = 'array'
-                  THEN t.raw_tx->'item'->'participants'
-                ELSE '[]'::jsonb
-              END
-            ) participant(address)
-            WHERE lower(participant.address) = ANY($2::text[])
-          )
-          OR EXISTS (
-            SELECT 1
-            FROM jsonb_array_elements(
-              CASE
-                WHEN jsonb_typeof(t.raw_tx->'item'->'recipients') = 'array'
-                  THEN t.raw_tx->'item'->'recipients'
-                ELSE '[]'::jsonb
-              END
-            ) recipient(record)
-            WHERE lower(COALESCE(
-              recipient.record->>'address',
-              recipient.record->>'display',
-              ''
-            )) = ANY($2::text[])
-          )
-        )
-      ORDER BY
-        COALESCE(
-          CASE
-            WHEN t.raw_tx->'item'->>'createdAt' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T'
-              THEN (t.raw_tx->'item'->>'createdAt')::timestamptz
-            ELSE NULL
-          END,
-          t.block_time,
-          t.confirmed_at,
-          t.first_seen_at
-        ) DESC,
-        t.txid DESC
-      LIMIT 1000
-    `,
-    [
-      network,
-      addressCandidateKeys,
-      ADDRESS_MAIL_EVENT_KINDS.map((kind) => kind.toLowerCase()),
-    ],
-  );
-
   const inboxMessages = [];
   const sentMessages = [];
-  for (const row of [...rowsResult.rows, ...transactionOverlayResult.rows]) {
+  for (const row of rowsResult.rows) {
     for (const item of addressMailRowPayloads(row, targetAddress, network)) {
       if (item.folder === "sent") {
         sentMessages.push(item.message);
@@ -32645,15 +33534,12 @@ export async function proofIndexAddressMailPayload(network, address) {
     indexedAt: new Date().toISOString(),
     network,
     sentMessages: dedupedSentMessages,
-    source:
-      transactionOverlayResult.rows.length > 0
-        ? "proof-indexer-mail+proof-indexer-transaction-mail-overlay"
-        : "proof-indexer-mail",
+    source: "proof-indexer-mail",
     stats: {
       inbox: dedupedInboxMessages.filter((message) => message.confirmed).length,
       incoming: dedupedInboxMessages.filter((message) => !message.confirmed)
         .length,
-      indexedEvents: rowsResult.rows.length + transactionOverlayResult.rows.length,
+      indexedEvents: rowsResult.rows.length,
       scanFailed: false,
       scannedTransactions: 0,
       sent: dedupedSentMessages.filter(

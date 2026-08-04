@@ -29,6 +29,19 @@ import {
 } from "../server/canonical-op-return.mjs";
 import { compareCanonicalUtf8 } from "../server/canonical-order.mjs";
 import {
+  PROOF_INDEX_EVENT_RELATION_PARITY_MODEL,
+  proofIndexCanonicalEventRelationParity,
+  proofIndexEventParticipantsForItem,
+  proofIndexEventRefsForItem,
+  proofIndexMailParticipantAliasesForItem,
+} from "../server/proof-index-event-relations.mjs";
+import {
+  PROOF_INDEX_MAIL_PROJECTION_PARITY_MODEL,
+  PROOF_INDEX_RENDERED_MAIL_KINDS,
+  proofIndexCanonicalMailProjectionParity,
+  proofIndexCanonicalMailProjectionRows,
+} from "../server/proof-index-mail-projection.mjs";
+import {
   WORK_ATOMIC_PROJECTION_MODEL,
   WORK_DECIMALS,
   WORK_LEGACY_ATOMIC_PROJECTION_MODEL,
@@ -73,6 +86,9 @@ import {
   workMarketV2ActivationForReplay,
   workMarketV4ActivationReached,
 } from "../server/work-market-v2.mjs";
+import {
+  exactWorkAmoV8WorkerLastSuccessReadiness,
+} from "../server/work-amo-v8-worker-readiness.mjs";
 import {
   tokenListingCanProjectCloseActivity,
 } from "../server/token-listing-lifecycle.mjs";
@@ -214,6 +230,10 @@ import {
 const API_PATH = new URL("../server/proof-api.mjs", import.meta.url);
 const APP_PATH = new URL("../src/App.tsx", import.meta.url);
 const BACKFILL_PATH = new URL("./backfill-proof-indexer.mjs", import.meta.url);
+const INDEXER_PARITY_PATH = new URL(
+  "./check-proof-indexer-parity.mjs",
+  import.meta.url,
+);
 const READER_PATH = new URL("../server/db/proof-index-reader.mjs", import.meta.url);
 const POSTGRES_PATH = new URL("../server/db/postgres.mjs", import.meta.url);
 const READINESS_EPOCH_PATH = new URL(
@@ -13291,8 +13311,11 @@ check("worker status transitions are proven, race-safe, and projection-safe", as
   assert.match(pendingQueries[2].sql, /\bpayload\b/iu);
   assert.doesNotMatch(pendingQueries[2].sql, /\bmessage\b|\bmetadata\b/iu);
   assert.match(pendingQueries[3].sql, /UPDATE proof_indexer\.mail_items/iu);
-  assert.match(pendingQueries[3].sql, /\bmessage\b/iu);
-  assert.doesNotMatch(pendingQueries[3].sql, /\bpayload\b|\bmetadata\b/iu);
+  assert.match(
+    pendingQueries[3].sql,
+    /status = event\.status,[\s\S]*event_time = event\.event_time,[\s\S]*message = event\.payload/iu,
+  );
+  assert.doesNotMatch(pendingQueries[3].sql, /\bmetadata\b/iu);
   assert.match(
     pendingQueries[4].sql,
     /UPDATE proof_indexer\.file_attachments/iu,
@@ -13304,7 +13327,7 @@ check("worker status transitions are proven, race-safe, and projection-safe", as
     pendingQueries[2].sql,
     /ELSE LEAST\([\s\S]*event_time[\s\S]*to_timestamp/iu,
   );
-  for (const queryIndex of [2, 3, 4]) {
+  for (const queryIndex of [2, 4]) {
     assert.match(pendingQueries[queryIndex].sql, /- 'createdAt'/u);
     assert.match(pendingQueries[queryIndex].sql, /- 'timestamp'/u);
     assert.match(
@@ -13622,12 +13645,19 @@ check("rapid authoritative absences preserve one confirmation epoch", async () =
     new Date(baseMs).toISOString(),
   );
   assert.equal(rapid.state.raw_tx.statusObservation.absenceProven, true);
-  for (const table of ["events", "mail_items", "file_attachments"]) {
+  for (const table of ["events", "file_attachments"]) {
     const transition = rapid.statements.find(({ sql }) =>
       new RegExp(`UPDATE proof_indexer\\.${table}`, "iu").test(sql),
     );
     assert.match(transition.sql, /'dropped', true/iu);
   }
+  const mailTransition = rapid.statements.find(({ sql }) =>
+    /UPDATE proof_indexer\.mail_items/iu.test(sql)
+  );
+  assert.match(
+    mailTransition.sql,
+    /status = event\.status,[\s\S]*event_time = event\.event_time,[\s\S]*message = event\.payload/iu,
+  );
 
   const pendingReset = makeClient();
   await statusUpdate(
@@ -13882,7 +13912,7 @@ check("Q16 pending readiness audits persisted WORK rows without requiring a full
   );
   assert.match(
     source,
-    /persisted-pending-work-projection-audit-v1/u,
+    /atomic-staged-pending-work-projection-audit-v1/u,
   );
   assert.match(
     source,
@@ -13911,6 +13941,264 @@ check("Q16 pending readiness audits persisted WORK rows without requiring a full
     source,
     /SELECT\s+listing_id,\s+status,/u,
     "the pending witness must not leave the joined status column ambiguous",
+  );
+  const bootstrapLockSource = topLevelFunctionSource(
+    BACKFILL_PATH,
+    "lockWorkQ16PendingBootstrapAuditTables",
+  );
+  for (const [label, lockSource] of [
+    ["empty-parent bootstrap", bootstrapLockSource],
+    ["pending publication", source],
+  ]) {
+    assert.match(
+      lockSource,
+      /LOCK TABLE[\s\S]*proof_indexer\.transactions[\s\S]*proof_indexer\.meta[\s\S]*IN SHARE ROW EXCLUSIVE MODE/u,
+      `${label} must fence every app-owned readiness source table`,
+    );
+    assert.doesNotMatch(
+      lockSource,
+      /LOCK TABLE[\s\S]*proof_indexer\.readiness_epoch_(?:queue|shards)[\s\S]*IN SHARE ROW EXCLUSIVE MODE/u,
+      `${label} must not request a write-grade lock on SELECT-only readiness relations`,
+    );
+  }
+
+  const pendingProjectionSql = readFileSync(
+    new URL(
+      "../server/work-q16-pending-projection.mjs",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  assert.match(
+    pendingProjectionSql,
+    /WORK_Q16_PENDING_CANONICAL_SEAL_PROOF_SQL[\s\S]*seal_tx\.status = 'confirmed'[\s\S]*seal_block\.block_hash IS NOT NULL[\s\S]*canonicalBlockScan[\s\S]*_powBlockIndex/u,
+    "a confirmed status alone must not prove that a sealing listing left pending membership",
+  );
+  for (const [label, path, minimumUses] of [
+    ["backfill", BACKFILL_PATH, 5],
+    ["worker", WORKER_PATH, 2],
+    ["reader", READER_PATH, 2],
+  ]) {
+    const implementation = readFileSync(path, "utf8");
+    assert.ok(
+      (
+        implementation.match(
+          /WORK_Q16_PENDING_CANONICAL_SEAL_PROOF_SQL/gu,
+        ) ?? []
+      ).length >= minimumUses,
+      `${label} must apply the exact seal proof to every Q16 sealing membership and projection branch`,
+    );
+    assert.doesNotMatch(
+      implementation,
+      /COALESCE\(seal_tx\.status, ''\) <> 'confirmed'/u,
+      `${label} must keep a status-confirmed seal pending until its canonical proof is exact`,
+    );
+  }
+
+  const workerReadinessSource = topLevelFunctionSource(
+    WORKER_PATH,
+    "assertWorkPrecisionPendingReady",
+  );
+  assert.match(
+    workerReadinessSource,
+    /pool\.connect\(\)[\s\S]*BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY/u,
+    "the worker must audit one pending witness and relational projection from one repeatable-read snapshot",
+  );
+  assert.doesNotMatch(
+    workerReadinessSource,
+    /pool\.query\(/u,
+    "the pending audit must not mix independent pool snapshots",
+  );
+  assert.match(
+    workerReadinessSource,
+    /readWorkerReadinessEpochCheckpoint[\s\S]*stableEpoch/u,
+    "the worker must reject same-tip relational writes that race its snapshot",
+  );
+  assert.match(
+    workerReadinessSource,
+    /COMMIT[\s\S]*readExactWorkerCoreTip[\s\S]*stableCore[\s\S]*stableMempool/u,
+    "the worker must revalidate Core after closing the database snapshot",
+  );
+  assert.match(
+    workerReadinessSource,
+    /droppedRemovalTxids[\s\S]*confirmedRemovalTxids[\s\S]*stableMempool[\s\S]*!mempoolBeforeTxids\.has\(txid\)[\s\S]*!mempoolAfterTxids\.has\(txid\)/u,
+    "the worker must reject a staged dropped or confirmed departure that reappears in either Core mempool sample",
+  );
+  const workerEpochSource = topLevelFunctionSource(
+    WORKER_PATH,
+    "readWorkerReadinessEpochCheckpoint",
+  );
+  assert.match(
+    workerEpochSource,
+    /readiness_epoch_shards[\s\S]*readiness_epoch_queue[\s\S]*max_prepared_transactions[\s\S]*search_path[\s\S]*pg_postmaster_start_time/u,
+    "the shared worker checkpoint must bind all readiness shards, queue state, transaction mode, search path, and postmaster identity",
+  );
+});
+
+check("Q16 empty-parent bootstrap is exact, locked, and fail-closed", async () => {
+  const emptyParent = isolatedFunction(
+    BACKFILL_PATH,
+    "exactWorkQ16PendingEmptyParent",
+    {
+      NETWORK: "livenet",
+      WORK_AMO_V8_ACTIVATION_LATCH_META_KEY:
+        "workAmoV8ActivationLatch:livenet",
+      WORK_AMO_V8_BLOCK_SEQUENCER_MODEL:
+        "canonical-work-amo-v8-block-sequencer-v1",
+      WORK_AMO_V8_CONFIGURED_ACTIVATION_HEIGHT: 958_432,
+      WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL:
+        "canonical-work-amo-v8-token-state-preimage-v1",
+      WORK_PRECISION_V2_MIGRATION_META_KEY:
+        "workPrecisionV2Migration:livenet",
+      WORK_PROJECTION_STATE_Q16: "q16",
+      WORK_Q16_PENDING_CANONICAL_SEAL_BLOCK_JOIN_SQL: "",
+      WORK_Q16_PENDING_CANONICAL_SEAL_PROOF_SQL:
+        "seal_tx.status = 'confirmed'",
+      WORK_Q16_PENDING_EMPTY_PARENT_MODEL:
+        "canonical-work-q16-pending-empty-parent-v1",
+      WORK_Q16_PENDING_REBUILD_META_KEY:
+        "workQ16PendingRebuild:livenet",
+      WORK_TOKEN_ID: "work",
+      canonicalWorkQ16PendingParentWitness: () => {
+        throw new Error("malformed-present-parent");
+      },
+      exactWorkAmoV8ActivationLatch: () => true,
+      isHexTxid: (value) => /^[0-9a-f]{64}$/u.test(String(value)),
+      lockWorkQ16PendingBootstrapAuditTables: async () => {},
+      normalizedLowerText: (value) =>
+        String(value ?? "").trim().toLowerCase(),
+      normalizedWorkAmoV5BlockTransition: () => ({
+        closingCommitment: { sha256: "c".repeat(64) },
+        closingTokenState: {},
+        model: "canonical-work-amo-v8-block-sequencer-v1",
+        transitionChainCommitment: { sha256: "d".repeat(64) },
+      }),
+      objectValue: (value) =>
+        value && typeof value === "object" && !Array.isArray(value)
+          ? value
+          : {},
+      workAmoV5CanonicalPayloadCommitment: (value) => ({
+        sha256: createHash("sha256")
+          .update(JSON.stringify(value))
+          .digest("hex"),
+      }),
+      workAmoV8CanonicalTokenStateCommitment: () => ({
+        sha256: "e".repeat(64),
+      }),
+      workDefinitionProjectionState: () => "q16",
+      workPrecisionV2MarkerAuthorizesQ16: () => true,
+      workQ16PendingCommitment: (domain, rows) =>
+        createHash("sha256")
+          .update(`${domain}:${JSON.stringify(rows)}`)
+          .digest("hex"),
+    },
+  );
+  const stateRow = {
+    activation_latch: { ready: true },
+    migration_marker: { status: "complete" },
+    previous_block_hash: "b".repeat(64),
+    tip_hash: "a".repeat(64),
+    tip_height: 958_500,
+    transition_complete: true,
+    transition_model: "canonical-work-amo-v8-block-sequencer-v1",
+    transition_payload: {},
+    work_token_state_model:
+      "canonical-work-amo-v8-token-state-preimage-v1",
+  };
+  const clientForCounts = (counts = {}) => ({
+    async query(sql) {
+      const text = String(sql);
+      if (text.includes("FROM proof_indexer.meta WHERE key = $1")) {
+        return { rowCount: 0, rows: [] };
+      }
+      if (text.includes("WITH canonical_tip AS")) {
+        return { rowCount: 1, rows: [stateRow] };
+      }
+      if (text.includes("AS recovery_count")) {
+        return {
+          rowCount: 1,
+          rows: [{
+            balance_count: 0,
+            event_count: 0,
+            listing_count: 0,
+            recovery_count: 0,
+            ...counts,
+          }],
+        };
+      }
+      throw new Error(`Unexpected bootstrap query: ${text}`);
+    },
+  });
+  const parent = await emptyParent(clientForCounts());
+  assert.equal(parent.bootstrap, true);
+  assert.equal(parent.witness.ready, false);
+  assert.equal(
+    parent.witness.model,
+    "canonical-work-q16-pending-empty-parent-v1",
+  );
+  assert.deepEqual(Array.from(parent.membershipTxids), []);
+  assert.equal(parent.witness.membershipSnapshot.count, 0);
+  for (const field of [
+    "event_count",
+    "listing_count",
+    "recovery_count",
+    "balance_count",
+  ]) {
+    await rejection(
+      emptyParent(clientForCounts({ [field]: 1 })),
+      (error) => /requires zero persisted pending WORK/u.test(error.message),
+    );
+  }
+  await rejection(
+    emptyParent({
+      async query() {
+        return { rowCount: 1, rows: [{ value: { malformed: true } }] };
+      },
+    }),
+    (error) => error.message === "malformed-present-parent",
+  );
+
+  const contextSource = topLevelFunctionSource(
+    BACKFILL_PATH,
+    "workQ16PendingStageContext",
+  );
+  const stageStoreSource = topLevelFunctionSource(
+    BACKFILL_PATH,
+    "storeCurrentWorkQ16PendingStage",
+  );
+  const attemptStoreSource = topLevelFunctionSource(
+    BACKFILL_PATH,
+    "storeWorkQ16PendingRunningAttempt",
+  );
+  const publicationSource = topLevelFunctionSource(
+    BACKFILL_PATH,
+    "persistExactWorkQ16PendingWitness",
+  );
+  assert.match(
+    contextSource,
+    /BEGIN ISOLATION LEVEL REPEATABLE READ[\s\S]*lockWorkQ16PendingBootstrapAuditTables[\s\S]*exactWorkQ16PendingEmptyParent/u,
+  );
+  const emptyParentSource = topLevelFunctionSource(
+    BACKFILL_PATH,
+    "exactWorkQ16PendingEmptyParent",
+  );
+  assert.match(
+    emptyParentSource,
+    /pendingWorkMintResolvedInvalid[\s\S]*pendingProtocolResolvedInvalid[\s\S]*AS recovery_count/u,
+  );
+  assert.match(stageStoreSource, /lockedWorkQ16PendingParent/u);
+  assert.match(attemptStoreSource, /lockedWorkQ16PendingParent/u);
+  assert.match(
+    publicationSource,
+    /BEGIN ISOLATION LEVEL SERIALIZABLE[\s\S]*LOCK TABLE[\s\S]*lockedWorkQ16PendingParent[\s\S]*Persisted pending WORK membership diverged/u,
+  );
+  const migrationSource = readFileSync(
+    new URL("./migrate-work-precision-v2.mjs", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    migrationSource,
+    /raw_tx = transaction\.raw_tx - ARRAY\[[\s\S]*pendingWorkMintAttemptCount[\s\S]*pendingWorkMintResolvedInvalid[\s\S]*pendingProtocolResolvedInvalid[\s\S]*DELETE FROM proof_indexer\.meta[\s\S]*workQ16PendingRebuild:livenet/u,
   );
 });
 
@@ -13952,7 +14240,7 @@ check("Q16 pending membership resolves only fully terminal multi-mint attempts",
     pendingWorkMintAttemptCount: 2,
     pendingWorkMintInspectionVersion: 1,
     pendingWorkMintRecoveryNeeded: false,
-    pendingWorkMintResolvedInvalid: false,
+    pendingWorkMintResolvedInvalid: true,
   };
   const recoveryRow = {
     raw_tx: terminalRaw,
@@ -13960,7 +14248,14 @@ check("Q16 pending membership resolves only fully terminal multi-mint attempts",
     txid,
   };
   const resolved = pendingMembership({
-    eventRows: [],
+    eventRows: [0, 1].map((recordOrdinal) => ({
+      event_id: `invalid-work-mint-${recordOrdinal}`,
+      kind: "token-event-invalid",
+      payload: { attemptedKind: "token-mint" },
+      record_ordinal: recordOrdinal,
+      txid,
+      valid: false,
+    })),
     listingRows: [],
     recoveryRows: [recoveryRow],
   });
@@ -13974,9 +14269,17 @@ check("Q16 pending membership resolves only fully terminal multi-mint attempts",
         ...recoveryRow,
         raw_tx: {
           ...terminalRaw,
-          pendingProtocolResolvedInvalid: false,
+          pendingWorkMintResolvedInvalid: false,
         },
       }],
+      eventRows: [0, 1].map((recordOrdinal) => ({
+        event_id: `invalid-work-mint-${recordOrdinal}`,
+        kind: "token-event-invalid",
+        payload: { attemptedKind: "token-mint" },
+        record_ordinal: recordOrdinal,
+        txid,
+        valid: false,
+      })),
     }).invalidCount,
     1,
   );
@@ -13987,11 +14290,101 @@ check("Q16 pending membership resolves only fully terminal multi-mint attempts",
         kind: "token-listing",
         txid,
         valid: true,
-      }],
+      }, ...[0, 1].map((recordOrdinal) => ({
+        event_id: `invalid-work-mint-${recordOrdinal}`,
+        kind: "token-event-invalid",
+        payload: { attemptedKind: "token-mint" },
+        record_ordinal: recordOrdinal,
+        txid,
+        valid: false,
+      }))],
       listingRows: [],
       recoveryRows: [recoveryRow],
     }).invalidCount,
     1,
+  );
+});
+
+check("Q16 pending removals require a second Core absence at least five minutes later", async () => {
+  const txid = "e".repeat(64);
+  const firstAbsentAt = "2026-08-04T12:00:00.000Z";
+  let nowMs = Date.parse(firstAbsentAt);
+  class FixedDate extends Date {
+    static now() {
+      return nowMs;
+    }
+  }
+  const authoritative = async (candidateTxid) => ({
+    absent: true,
+    observation: {
+      absenceProven: true,
+      absenceCount: 1,
+      firstAbsentAt: new Date(nowMs).toISOString(),
+      lastAbsentAt: new Date(nowMs).toISOString(),
+      contract: "proof-of-work-tx-status-v2",
+      reason:
+        "absent-from-synced-unpruned-mainnet-bitcoin-core-txindex-and-mempool",
+      sources: [
+        "bitcoin-core:getrawtransaction:txindex",
+        "bitcoin-core:getmempoolentry",
+      ],
+      txid: candidateTxid,
+    },
+    status: "dropped",
+  });
+  const plan = isolatedFunction(
+    BACKFILL_PATH,
+    "workQ16PendingAbsencePlan",
+    {
+      Date: FixedDate,
+      Map,
+      WORK_Q16_PENDING_ABSENCE_EVIDENCE_MODEL:
+        "canonical-work-q16-pending-absence-evidence-v1",
+      WORK_Q16_PENDING_DROP_CONFIRMATION_MS: 300_000,
+      authoritativeWorkQ16PendingAbsence: authoritative,
+      boundedMapWithConcurrency: async (values, _limit, map) =>
+        Promise.all(values.map(map)),
+      canonicalWorkQ16PendingAbsenceEvidence: (value) => value,
+      canonicalWorkQ16PendingAbsenceObservation: (value) => value,
+      canonicalWorkQ16PendingTxids: (values) =>
+        Array.from(values).sort(compareCanonicalUtf8),
+      compareCanonicalUtf8,
+    },
+  );
+  const first = await plan({
+    absentPriorTxids: [txid],
+    priorObservations: new Map(),
+  });
+  assert.deepEqual(Array.from(first.removalTxids), []);
+  assert.equal(first.absenceEvidence.observations[0].absenceCount, 1);
+
+  const priorObservation = first.absenceEvidence.observations[0];
+  nowMs += 299_999;
+  const tooSoon = await plan({
+    absentPriorTxids: [txid],
+    priorObservations: new Map([[txid, priorObservation]]),
+  });
+  assert.deepEqual(Array.from(tooSoon.removalTxids), []);
+  assert.equal(tooSoon.absenceEvidence.observations[0].absenceCount, 1);
+  assert.equal(
+    tooSoon.absenceEvidence.observations[0].lastAbsentAt,
+    firstAbsentAt,
+  );
+
+  nowMs += 1;
+  const eligible = await plan({
+    absentPriorTxids: [txid],
+    priorObservations: new Map([[txid, priorObservation]]),
+  });
+  assert.deepEqual(Array.from(eligible.removalTxids), [txid]);
+  assert.equal(eligible.absenceEvidence.observations[0].absenceCount, 2);
+  assert.equal(
+    eligible.absenceEvidence.observations[0].firstAbsentAt,
+    firstAbsentAt,
+  );
+  assert.equal(
+    eligible.absenceEvidence.observations[0].lastAbsentAt,
+    "2026-08-04T12:05:00.000Z",
   );
 });
 
@@ -14609,7 +15002,18 @@ check("pending WORK inspection survives a persisted sibling envelope", async () 
   const pendingWorkMintVerifierResolved = isolatedFunction(
     BACKFILL_PATH,
     "pendingWorkMintVerifierResolved",
-    { WORK_TOKEN_ID: workTokenId },
+    {
+      pendingWorkMintOutcomeItems: isolatedFunction(
+        BACKFILL_PATH,
+        "pendingWorkMintOutcomeItems",
+        {
+          WORK_TOKEN_ID: workTokenId,
+          normalizedLowerText: (value) =>
+            String(value ?? "").trim().toLowerCase(),
+        },
+      ),
+      WORK_TOKEN_ID: workTokenId,
+    },
   );
   const pendingProtocolTransactionObservation = isolatedFunction(
     BACKFILL_PATH,
@@ -14650,7 +15054,7 @@ check("pending WORK inspection survives a persisted sibling envelope", async () 
     ]),
     false,
   );
-  assert.equal(pendingWorkMintVerifierResolved(siblingEnvelope), false);
+  assert.equal(pendingWorkMintVerifierResolved(siblingEnvelope, 1), false);
   assert.equal(
     pendingWorkMintVerifierResolved([
       ...siblingEnvelope,
@@ -14662,7 +15066,7 @@ check("pending WORK inspection survives a persisted sibling envelope", async () 
           valid: true,
         },
       },
-    ]),
+    ], 1),
     true,
   );
   const observation = pendingProtocolTransactionObservation(
@@ -15039,7 +15443,286 @@ check("Core-present dropped protocol transactions revive through verifier and up
   databaseCanonical = false;
 });
 
-check("supervised pending recovery processes 118 WORK candidates before persisting its witness", async () => {
+check("Q16 staging fails closed for unknown or ambiguous marketplace scope", async () => {
+  const workTokenId =
+    "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8";
+  const otherTokenId = "b".repeat(64);
+  const listingId = "a".repeat(64);
+  const classify = isolatedFunction(
+    BACKFILL_PATH,
+    "pendingWorkQ16StageCandidate",
+    {
+      NETWORK: "livenet",
+      WORK_AMO_V8_TRANSFER_VERSION: "send3",
+      WORK_TOKEN_ID: workTokenId,
+      compareCanonicalUtf8,
+      decodeBase64UrlJson: () => null,
+      isHexTxid: (value) => /^[0-9a-f]{64}$/u.test(String(value)),
+      normalizedLowerText: (value) =>
+        String(value ?? "").trim().toLowerCase(),
+    },
+  );
+  const clientWithRows = (rows) => ({
+    async query(sql, params) {
+      assert.match(String(sql), /lower\(listing\.token_id\) AS token_id/u);
+      assert.deepEqual(Array.from(params[1]), [listingId]);
+      return { rows };
+    },
+  });
+  const buyMessage = [{
+    decodeValid: true,
+    prefix: "pwt1:",
+    text: `pwt1:buy5:${listingId}:fixture`,
+  }];
+  assert.equal(await classify(clientWithRows([]), buyMessage), "conflict");
+  assert.equal(
+    await classify(
+      clientWithRows([{ listing_id: listingId, token_id: workTokenId }]),
+      buyMessage,
+    ),
+    "work",
+  );
+  assert.equal(
+    await classify(
+      clientWithRows([{ listing_id: listingId, token_id: otherTokenId }]),
+      buyMessage,
+    ),
+    "other",
+  );
+  assert.equal(
+    await classify(
+      clientWithRows([
+        { listing_id: listingId, token_id: otherTokenId },
+        { listing_id: listingId, token_id: workTokenId },
+      ]),
+      buyMessage,
+    ),
+    "conflict",
+  );
+  assert.equal(
+    await classify(clientWithRows([]), [
+      {
+        decodeValid: true,
+        prefix: "pwt1:",
+        text: `pwt1:mint:${workTokenId}:1000`,
+      },
+      {
+        decodeValid: true,
+        prefix: "pwt1:",
+        text: `pwt1:mint:${otherTokenId}:1000`,
+      },
+    ]),
+    "conflict",
+  );
+  const genericCreateTxid = "c".repeat(64);
+  const createMessage = [{
+    decodeValid: true,
+    prefix: "pwt1:",
+    text: "pwt1:create:GENERIC:1000:10:546:registry",
+  }];
+  assert.equal(
+    await classify(clientWithRows([]), createMessage, genericCreateTxid),
+    "other",
+    "an unrelated credit creation must use its own txid scope and must not stall WORK publication",
+  );
+  assert.equal(
+    await classify(clientWithRows([]), createMessage, workTokenId),
+    "conflict",
+    "a reappearing WORK creation transaction remains fail-closed",
+  );
+  assert.equal(
+    await classify(clientWithRows([]), createMessage),
+    "conflict",
+    "a creation without a transaction-bound token identity remains fail-closed",
+  );
+  const scanComplete = isolatedFunction(
+    BACKFILL_PATH,
+    "workQ16PendingScanComplete",
+  );
+  assert.equal(scanComplete(0, ""), true);
+  assert.equal(scanComplete(1, ""), false);
+  assert.equal(scanComplete(0, "time-budget"), false);
+  const reusableScanHealthMatches = isolatedFunction(
+    BACKFILL_PATH,
+    "workQ16PendingReusableScanHealthMatches",
+  );
+  const reusableWitness = {
+    ready: true,
+    scan: {
+      complete: true,
+      globalUnresolved: 0,
+      q16PendingUnresolved: 0,
+      stopReason: "",
+    },
+  };
+  assert.equal(
+    reusableScanHealthMatches(reusableWitness, {
+      globalUnresolved: 0,
+      q16PendingUnresolved: 0,
+      stopReason: "",
+    }),
+    true,
+  );
+  assert.equal(
+    reusableScanHealthMatches(reusableWitness, {
+      globalUnresolved: 1,
+      q16PendingUnresolved: 0,
+      stopReason: "",
+    }),
+    false,
+    "a newly unresolved generic event must force witness republication",
+  );
+  assert.equal(
+    reusableScanHealthMatches(
+      {
+        ...reusableWitness,
+        scan: { ...reusableWitness.scan, globalUnresolved: 1 },
+      },
+      {
+        globalUnresolved: 0,
+        q16PendingUnresolved: 0,
+        stopReason: "",
+      },
+    ),
+    false,
+    "recovery to zero unresolved events must force a green witness republication",
+  );
+  const redReusableWitness = {
+    ...reusableWitness,
+    scan: { ...reusableWitness.scan, globalUnresolved: 1 },
+  };
+  assert.equal(
+    reusableScanHealthMatches(redReusableWitness, {
+      globalUnresolved: 1,
+      q16PendingUnresolved: 0,
+      stopReason: "",
+    }),
+    true,
+    "an unchanged red health tuple may reuse its already-red witness",
+  );
+  for (const [label, witness, current] of [
+    [
+      "Q16 unresolved mismatch",
+      reusableWitness,
+      { globalUnresolved: 0, q16PendingUnresolved: 1, stopReason: "" },
+    ],
+    [
+      "stop reason mismatch",
+      reusableWitness,
+      {
+        globalUnresolved: 0,
+        q16PendingUnresolved: 0,
+        stopReason: "time-budget",
+      },
+    ],
+    [
+      "string witness counter",
+      {
+        ...reusableWitness,
+        scan: { ...reusableWitness.scan, globalUnresolved: "0" },
+      },
+      { globalUnresolved: 0, q16PendingUnresolved: 0, stopReason: "" },
+    ],
+    [
+      "string current counter",
+      reusableWitness,
+      { globalUnresolved: "0", q16PendingUnresolved: 0, stopReason: "" },
+    ],
+  ]) {
+    assert.equal(
+      reusableScanHealthMatches(witness, current),
+      false,
+      label,
+    );
+  }
+  const mempoolScanSource = topLevelFunctionSource(
+    BACKFILL_PATH,
+    "backfillMempoolScanSource",
+  );
+  assert.match(
+    mempoolScanSource,
+    /pendingWorkQ16StageCandidate\(\s*client,\s*messages,\s*txid,?\s*\)/u,
+    "Q16 classification must bind create scope to the candidate transaction id",
+  );
+  assert.match(
+    mempoolScanSource,
+    /workQ16PendingScanComplete\(\s*q16PendingUnresolved,\s*stopReason,?\s*\)/u,
+    "only Q16-relevant ambiguity may stall an otherwise complete WORK publication scan",
+  );
+  assert.match(
+    mempoolScanSource,
+    /workQ16PendingReusableScanHealthMatches\([\s\S]*globalUnresolved: unresolved[\s\S]*reusableScanHealthMatches/u,
+    "witness reuse must bind the current whole-mempool unresolved health tuple",
+  );
+  assert.match(
+    mempoolScanSource,
+    /catch \(error\) \{[\s\S]*?unresolved \+= 1;[\s\S]*?phase: "mempool-protocol-verification"/u,
+    "generic verifier failures must remain visible in global scan health",
+  );
+  const workMintMessage = {
+    decodeValid: true,
+    prefix: "pwt1:",
+    text: `pwt1:mint:${workTokenId}:1000`,
+  };
+  for (const companion of [
+    { prefix: "pwa1:", text: "pwa1:usd1:fixture" },
+    { prefix: "pwm1:", text: "pwm1:m:fixture" },
+    { prefix: "pwr1:", text: "pwr1:fixture" },
+  ]) {
+    assert.equal(
+      await classify(clientWithRows([]), [workMintMessage, companion]),
+      "work",
+    );
+  }
+  assert.equal(
+    await classify(clientWithRows([]), [
+      workMintMessage,
+      { prefix: "pwid1:", text: "pwid1:r:fixture" },
+    ]),
+    "conflict",
+    "a pending WORK stage must not publish an ID decision whose ordered state is not bound by the stage",
+  );
+
+  const assertStatefulCompanionIsolation = isolatedFunction(
+    BACKFILL_PATH,
+    "assertWorkQ16PendingStatefulCompanionIsolation",
+    {
+      normalizedLowerText: (value) =>
+        String(value ?? "").trim().toLowerCase(),
+    },
+  );
+  assert.doesNotThrow(() =>
+    assertStatefulCompanionIsolation(
+      [{ protocol: "pwa1" }, { protocol: "pwm1" }, { protocol: "pwr1" }],
+      listingId,
+    )
+  );
+  assert.throws(
+    () =>
+      assertStatefulCompanionIsolation(
+        [{ protocol: "pwid1" }],
+        listingId,
+      ),
+    /stateful PWID mutation/u,
+  );
+
+  const stagedDecisionSource = topLevelFunctionSource(
+    BACKFILL_PATH,
+    "preparedWorkQ16PendingStageDecisions",
+  );
+  assert.match(
+    stagedDecisionSource,
+    /canonicalRawProtocolRecordSetFromTransaction[\s\S]*rawPositions[\s\S]*coveredPositions[\s\S]*does not cover every fresh raw pwt1 position/u,
+    "the publisher must independently bind every staged item to, and cover, every fresh raw pwt1 record position",
+  );
+  assert.match(
+    stagedDecisionSource,
+    /canonicalRawProtocolRecordSetFromTransaction[\s\S]*assertWorkQ16PendingStatefulCompanionIsolation[\s\S]*preparedProtocolItemsForTx/u,
+    "the raw PWID guard must run before any mixed companion verifier result can enter publication",
+  );
+});
+
+check("supervised pending recovery stages 118 WORK candidates before one atomic witness publication", async () => {
   const workTokenId =
     "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8";
   const isHexTxid = (value) => /^[0-9a-f]{64}$/u.test(String(value));
@@ -15055,10 +15738,17 @@ check("supervised pending recovery processes 118 WORK candidates before persisti
     txids.map((txid, index) => [txid, { time: 1_721_000_000 - index }]),
   );
   const pendingTransaction = (txid) => ({ txid, vin: [], vout: [] });
+  let classified = 0;
   let freshReads = 0;
-  let persisted = 0;
+  let published = 0;
+  let stagedTxids = null;
   let storedScan = null;
   let witnessScan = null;
+  const stageRequest = { fixture: "stage-request" };
+  const stageResponse = {
+    model: "fixture-stage",
+    stage: { replayTxids: txids },
+  };
   const client = {
     async query() {
       return { rowCount: 1, rows: [] };
@@ -15068,20 +15758,21 @@ check("supervised pending recovery processes 118 WORK candidates before persisti
     BACKFILL_PATH,
     "backfillMempoolScanSource",
     {
-      BACKFILL_PROCESS_STARTED_AT_MS: 1_720_999_400_000,
       BITCOIN_RPC_URL: "http://127.0.0.1:8332",
       MEMPOOL_SCAN_BUDGET_MS: 540_000,
       MEMPOOL_SCAN_MAX_PROTOCOL_TXIDS: 250,
       MEMPOOL_SCAN_MAX_TXIDS: 500,
       MEMPOOL_SCAN_SEEN_LIMIT: 10_000,
-      PENDING_LEGACY_VERIFIER_TIMEOUT_MS: 30_000,
-      PENDING_ONLY_BACKFILL: true,
-      PENDING_ONLY_CHILD_TIMEOUT_MS: 600_000,
-      PENDING_ONLY_PERSISTENCE_HEADROOM_MS: 9_000,
       WORK_AMO_V8_DECLARATION_PINS_CONFIGURED: true,
       WORK_PROJECTION_STATE_Q16: "work-q16",
-      WORK_Q16_PENDING_REBUILD_MODEL: "fixture-pending-witness",
-      WORK_TOKEN_ID: workTokenId,
+      buildWorkQ16PendingStagePlan: async (
+        _client,
+        { discoveredTxids, initialMempoolSnapshot },
+      ) => {
+        stagedTxids = discoveredTxids;
+        assert.deepEqual(initialMempoolSnapshot.txids, txids);
+        return { publishEligible: true, request: stageRequest };
+      },
       bitcoinRpc: async (method) => {
         assert.equal(method, "getrawmempool");
         return mempool;
@@ -15101,89 +15792,50 @@ check("supervised pending recovery processes 118 WORK candidates before persisti
       },
       isHexTxid,
       knownMempoolRecoveryTxids: async () => txids,
-      lockedCanonicalTransactionForMempool: async () => false,
       mempoolScanCursorForEntry,
       mempoolScanState: async () => ({
         cursor: null,
         key: "mempoolScan:livenet",
         priorityCursor: null,
         processedTxids: new Set(),
-        q16PendingProcessedTxids: new Set(),
-        q16PendingSnapshotSha256: "fixture-snapshot",
-        q16PendingWitnessModel: "fixture-pending-witness",
       }),
       mempoolScanTimeBudgetReached: () => false,
-      pendingCoreMarketplaceVerifierNeeded: () => false,
-      pendingExtendedVerifierTimeoutMs: () => 30_000,
-      pendingProtocolTransactionObservation: (txid) => ({
-        confirmed: false,
-        status: "pending",
-        txid,
-      }),
-      pendingTransactionWriteItem: (prepared, txid) => ({
-        ...(prepared[0]?.item ?? {}),
-        confirmed: false,
-        status: "pending",
-        txid,
-      }),
-      pendingWorkMintAttemptCount: () => 1,
-      pendingWorkMintDecision: () => ({ kind: "resolved-invalid" }),
-      pendingWorkMintVerifierResolved: () => true,
-      persistExactWorkQ16PendingWitness: async (_client, scan) => {
-        witnessScan = scan;
-        return { ready: true };
+      pendingWorkQ16StageCandidate: async (_client, messages) => {
+        classified += 1;
+        assert.equal(messages[0]?.prefix, "pwt1:");
+        return "work";
       },
-      persistPreparedProtocolItems: async (_client, prepared) => {
-        assert.equal(prepared.length, 1);
-        persisted += 1;
-        return { indexed: 1, skipped: 0 };
+      persistExactWorkQ16PendingWitness: async (_client, scan) => {
+        published += 1;
+        witnessScan = scan;
+        return { ready: true, stagedIndexed: 118 };
       },
       plannedMempoolScanCandidates: (entries) =>
         entries.map((entry) => ({ entry, lane: "priority" })),
-      preparedProtocolItemsForTx: async (tx, _messages, options) => {
-        assert.equal(options.pendingVerifierTimeoutMs, 30_000);
-        assert.equal(
-          options.pendingVerifierDeadlineMs,
-          1_721_000_000_000 - 9_000,
-        );
-        return [{
-          item: {
-            confirmed: false,
-            kind: "token-event-invalid",
-            provisionalReason: "supply-cap",
-            reason: "WORK mint exceeds max supply.",
-            status: "pending",
-            tokenId: workTokenId,
-            txid: tx.txid,
-            valid: false,
-          },
-          sourceLabel: "token-invalid-events",
-        }];
-      },
       protocolMessagesFromTx: () => [{
         prefix: "pwt1:",
         text: `pwt1:mint:${workTokenId}:1000`,
       }],
-      reconcilePendingWorkMintDecision: async () => ({
-        deleted: 0,
-        persistInvalid: true,
-        reconciled: true,
-      }),
+      requestWorkQ16PendingStage: async (request) => {
+        assert.equal(request, stageRequest);
+        return stageResponse;
+      },
+      workQ16PendingScanComplete: (unresolved, reason) =>
+        Number(unresolved) === 0 && String(reason ?? "") === "",
+      workQ16PendingReusableScanHealthMatches: () => false,
+      storeCurrentWorkQ16PendingStage: async () => {
+        throw new Error("a successful atomic publication must not store evidence separately");
+      },
       storeMempoolScanState: async (
         _client,
-        _key,
-        _processedTxids,
-        _cursor,
-        _priorityCursor,
-        q16Pending,
+        key,
+        processedTxids,
+        cursor,
+        priorityCursor,
       ) => {
-        storedScan = q16Pending;
+        storedScan = { cursor, key, priorityCursor, processedTxids };
       },
-      storePendingWorkMintAttemptPreinspection: async () => 1,
-      storePendingWorkMintInspection: async () => {},
       transactionHasConfirmedBlockEvidence: () => false,
-      transactionWithInputPrevouts: async (tx) => tx,
-      upsertTransaction: async () => {},
     },
   );
 
@@ -15195,11 +15847,15 @@ check("supervised pending recovery processes 118 WORK candidates before persisti
   assert.equal(result.indexed, 118);
   assert.equal(result.unresolved, 0);
   assert.equal(result.q16PendingWitnessReady, true);
-  assert.equal(freshReads, 118 * 3);
-  assert.equal(persisted, 118);
+  assert.equal(classified, 118);
+  assert.equal(freshReads, 118);
+  assert.equal(published, 1);
+  assert.deepEqual(Array.from(stagedTxids), txids);
   assert.equal(storedScan.processedTxids.length, 118);
-  assert.equal(witnessScan.processedTxids.length, 118);
-  assert.equal(witnessScan.unresolved, 0);
+  assert.equal(witnessScan.stageResponse, stageResponse);
+  assert.equal(witnessScan.stopReason, "");
+  assert.equal(witnessScan.globalUnresolved, 0);
+  assert.equal(witnessScan.q16PendingUnresolved, 0);
 });
 
 check("supply-capped mempool mints replace stale valid rows with a pending invalid audit", async () => {
@@ -15226,10 +15882,19 @@ check("supply-capped mempool mints replace stale valid rows with a pending inval
         Number.isFinite(Number(value)) ? Number(value) : null,
     },
   );
+  const pendingWorkMintOutcomeItems = isolatedFunction(
+    BACKFILL_PATH,
+    "pendingWorkMintOutcomeItems",
+    {
+      WORK_TOKEN_ID: workTokenId,
+      normalizedLowerText: (value) =>
+        String(value ?? "").trim().toLowerCase(),
+    },
+  );
   const pendingWorkMintDecision = isolatedFunction(
     BACKFILL_PATH,
     "pendingWorkMintDecision",
-    { WORK_TOKEN_ID: workTokenId },
+    { WORK_TOKEN_ID: workTokenId, pendingWorkMintOutcomeItems },
   );
   const reconcilePendingWorkMintDecision = isolatedFunction(
     BACKFILL_PATH,
@@ -15423,10 +16088,19 @@ check("resolved permanent-invalid WORK rechecks delete stale volatile decisions"
   const workTokenId =
     "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8";
   const txid = "c".repeat(64);
+  const pendingWorkMintOutcomeItems = isolatedFunction(
+    BACKFILL_PATH,
+    "pendingWorkMintOutcomeItems",
+    {
+      WORK_TOKEN_ID: workTokenId,
+      normalizedLowerText: (value) =>
+        String(value ?? "").trim().toLowerCase(),
+    },
+  );
   const pendingWorkMintDecision = isolatedFunction(
     BACKFILL_PATH,
     "pendingWorkMintDecision",
-    { WORK_TOKEN_ID: workTokenId },
+    { WORK_TOKEN_ID: workTokenId, pendingWorkMintOutcomeItems },
   );
   const reconcilePendingWorkMintDecision = isolatedFunction(
     BACKFILL_PATH,
@@ -15439,6 +16113,7 @@ check("resolved permanent-invalid WORK rechecks delete stale volatile decisions"
   );
   const prepared = [{
     item: {
+      attemptedKind: "token-mint",
       confirmed: false,
       kind: "token-event-invalid",
       reason: "WORK mint payment is incomplete.",
@@ -15452,6 +16127,7 @@ check("resolved permanent-invalid WORK rechecks delete stale volatile decisions"
     pendingWorkMintDecision([{
       item: {
         ...prepared[0].item,
+        attemptedKind: "send3",
         reason: "WORK transfer sender balance is insufficient.",
       },
     }], 0),
@@ -20662,6 +21338,7 @@ check("confirmed event replay repairs stale pending payload status", async () =>
   };
   const upsertEvent = isolatedFunction(BACKFILL_PATH, "upsertEvent", {
     NETWORK: "livenet",
+    PROOF_INDEX_RENDERED_MAIL_KINDS,
     amountSats: () => 0,
     canonicalProtocolPosition,
     dataBytes: () => 0,
@@ -24675,13 +25352,18 @@ check("public reads reject the production-shaped legacy PWT completion", async (
 
   const blockHash = "f".repeat(64);
   let rebuild = common;
+  const exactCoreTipForPublicGate = isolatedFunction(
+    API_PATH,
+    "exactCoreTipFromBlockchainInfo",
+  );
   const status = {
     indexedThroughBlock: 958600,
+    network: "livenet",
     readModels: {
       confirmedIds: { count: 1 },
       confirmedTransfers: { count: 1 },
     },
-    scan: { blockHash, complete: true },
+    scan: { blockHash, complete: true, tipHeight: 958600 },
     worker: {
       lastSuccessAt: new Date().toISOString(),
       ok: true,
@@ -24695,14 +25377,28 @@ check("public reads reject the production-shaped legacy PWT completion", async (
       PROOF_INDEX_REQUIRED: true,
       bitcoinRpc: async () => ({
         ok: true,
-        result: { bestblockhash: blockHash, blocks: 958600 },
+        result: {
+          bestblockhash: blockHash,
+          blocks: 958600,
+          chain: "main",
+          headers: 958600,
+          initialblockdownload: false,
+          verificationprogress: 1,
+        },
       }),
       canonicalRebuildTrustState,
+      exactCoreTipFromBlockchainInfo: exactCoreTipForPublicGate,
       proofIndexCanonicalStateMetaPayload: async () => ({
         fault: null,
         rebuild,
       }),
       proofIndexOperationalStatusPayload: async () => status,
+      proofIndexWorkerExactTipReadiness: () => ({
+        fresh: true,
+        proofReady: true,
+        proofSource: "fixture",
+        ready: true,
+      }),
       summarySnapshotCoversCanonicalReadModels: () => true,
     },
   );
@@ -25068,6 +25764,49 @@ check("AMO V5 stable event keys preserve every same-transaction record", () => {
   );
 });
 
+check("pending governed event keys preserve every raw protocol position", () => {
+  const txid = "8".repeat(64);
+  const stableEventKey = isolatedFunction(BACKFILL_PATH, "stableEventKey", {
+    WORK_AMO_V5_ACTIVATION_HEIGHT,
+    createHash,
+  });
+  const input = {
+    kind: "token-transfer",
+    protocol: "pwt1",
+    sourceLabel: "token-transfers",
+    txid,
+  };
+  const first = stableEventKey({
+    ...input,
+    item: {
+      confirmed: false,
+      protocolVout: 4,
+      recordOrdinal: 0,
+      status: "pending",
+      tokenId: "d".repeat(64),
+    },
+  });
+  const second = stableEventKey({
+    ...input,
+    item: {
+      confirmed: false,
+      protocolVout: 4,
+      recordOrdinal: 1,
+      status: "pending",
+      tokenId: "d".repeat(64),
+    },
+  });
+  assert.equal(
+    first,
+    `pwt1:token-transfer:${txid}:pending-position:4:0`,
+  );
+  assert.equal(
+    second,
+    `pwt1:token-transfer:${txid}:pending-position:4:1`,
+  );
+  assert.notEqual(first, second);
+});
+
 check("only true same-kind duplicates receive stable ordinals", () => {
   const txid = "f".repeat(64);
   const tokenId = "a".repeat(64);
@@ -25309,13 +26048,9 @@ check("canonical PWM aggregation classifies reply, file, and bond once", () => {
 });
 
 check("canonical mail recipients become indexed participants", () => {
-  const participantsForItem = isolatedFunction(
-    BACKFILL_PATH,
-    "participantsForItem",
-  );
   const sender = "bc1sender";
   const recipient = "bc1recipient";
-  const participants = participantsForItem({
+  const participants = proofIndexEventParticipantsForItem({
     recipients: [{ address: recipient }],
     senderAddress: sender,
   });
@@ -25330,6 +26065,496 @@ check("canonical mail recipients become indexed participants", () => {
       (participant) =>
         participant.address === sender && participant.role === "sender",
     ),
+  );
+});
+
+check("Mail participant aliases share exact event-payload fallback authority", () => {
+  const actor = "bc1actor";
+  const counterparty = "bc1counterparty";
+  const event = {
+    event_id: "44",
+    kind: "mail",
+    protocol: "pwm1",
+    status: "pending",
+    valid: true,
+  };
+  const payload = { actor, counterparty, kind: "mail", protocol: "pwm1" };
+  const aliases = proofIndexMailParticipantAliasesForItem(payload, event);
+  assert.deepEqual(aliases, [
+    { address: actor, powid: "", role: "sender" },
+    { address: counterparty, powid: "", role: "recipient" },
+  ]);
+  const participants = proofIndexEventParticipantsForItem(payload, event);
+  assert.ok(
+    participants.some((row) => row.address === actor && row.role === "actor"),
+  );
+  assert.ok(
+    participants.some((row) => row.address === actor && row.role === "sender"),
+  );
+  assert.ok(
+    participants.some(
+      (row) => row.address === counterparty && row.role === "counterparty",
+    ),
+  );
+  assert.ok(
+    participants.some(
+      (row) => row.address === counterparty && row.role === "recipient",
+    ),
+  );
+  const exact = proofIndexCanonicalEventRelationParity({
+    eventRows: [{ ...event, payload }],
+    participantRows: participants.map((row) => ({
+      ...row,
+      event_id: event.event_id,
+    })),
+    refRows: [],
+  });
+  assert.equal(exact.ready, true);
+  const missingAliases = proofIndexCanonicalEventRelationParity({
+    eventRows: [{ ...event, payload }],
+    participantRows: participants
+      .filter((row) => !["sender", "recipient"].includes(row.role))
+      .map((row) => ({ ...row, event_id: event.event_id })),
+    refRows: [],
+  });
+  assert.equal(missingAliases.ready, false);
+  assert.equal(missingAliases.participants.missingCount, 2);
+
+  assert.deepEqual(
+    proofIndexMailParticipantAliasesForItem(
+      {
+        from: " bc1from ",
+        kind: "reply",
+        protocol: "pwm1",
+        to: " bc1to ",
+      },
+      { kind: "reply", protocol: "pwm1" },
+    ),
+    [
+      { address: "bc1from", powid: "", role: "sender" },
+      { address: "bc1to", powid: "", role: "recipient" },
+    ],
+  );
+  assert.deepEqual(
+    proofIndexMailParticipantAliasesForItem(
+      { actor, counterparty },
+      { kind: "token-transfer", protocol: "pwt1" },
+    ),
+    [],
+    "Mail aliases must not leak into unrelated protocol events",
+  );
+});
+
+check("canonical event relations exactly cover every rendered participant and reference", () => {
+  const eventId = "42";
+  const payload = {
+    id: "alice",
+    listingId: "b".repeat(64),
+    ownerAddress: "bc1owner",
+    receiveAddress: "bc1receiver",
+    tokenId: "a".repeat(64),
+  };
+  const participantRows = proofIndexEventParticipantsForItem(payload).map(
+    (participant) => ({ ...participant, event_id: eventId }),
+  );
+  const refRows = proofIndexEventRefsForItem(payload).map((ref) => ({
+    event_id: eventId,
+    ref_type: ref.refType,
+    ref_value: ref.refValue,
+  }));
+  const exact = proofIndexCanonicalEventRelationParity({
+    eventRows: [{ event_id: eventId, payload }],
+    participantRows,
+    refRows,
+  });
+  assert.equal(exact.model, PROOF_INDEX_EVENT_RELATION_PARITY_MODEL);
+  assert.equal(exact.ready, true);
+  assert.equal(exact.participants.missingCount, 0);
+  assert.equal(exact.refs.extraCount, 0);
+
+  const mailEventId = "43";
+  const mailPayload = { senderAddress: "bc1sender" };
+  const mailParticipants = proofIndexEventParticipantsForItem(mailPayload)
+    .map((participant) => ({ ...participant, event_id: mailEventId }));
+  const supplementalRecipient = {
+    address: "bc1recipient",
+    event_id: mailEventId,
+    powid: "",
+    role: "recipient",
+  };
+  const circularMailSupplement = proofIndexCanonicalEventRelationParity({
+    eventRows: [{ event_id: mailEventId, payload: mailPayload }],
+    participantRows: [...mailParticipants, supplementalRecipient],
+    refRows: [],
+  });
+  assert.equal(circularMailSupplement.ready, false);
+  assert.equal(circularMailSupplement.participants.extraCount, 1);
+
+  const drifted = proofIndexCanonicalEventRelationParity({
+    eventRows: [{ event_id: eventId, payload }],
+    participantRows: [
+      ...participantRows,
+      {
+        address: "bc1staleextra",
+        event_id: eventId,
+        powid: "",
+        role: "owner",
+      },
+    ],
+    refRows: refRows.slice(1),
+  });
+  assert.equal(drifted.ready, false);
+  assert.equal(drifted.participants.extraCount, 1);
+  assert.equal(drifted.refs.missingCount, 1);
+  assert.equal(drifted.participants.extraSample[0].address, "bc1staleextra");
+
+  const whitespaceCorrupt = proofIndexCanonicalEventRelationParity({
+    eventRows: [{ event_id: eventId, payload }],
+    participantRows: participantRows.map((participant, index) =>
+      index === 0
+        ? { ...participant, address: `${participant.address} ` }
+        : participant
+    ),
+    refRows: refRows.map((ref, index) =>
+      index === 0
+        ? { ...ref, ref_value: ` ${ref.ref_value}` }
+        : ref
+    ),
+  });
+  assert.equal(whitespaceCorrupt.ready, false);
+  assert.equal(whitespaceCorrupt.participants.missingCount, 1);
+  assert.equal(whitespaceCorrupt.participants.extraCount, 1);
+  assert.equal(whitespaceCorrupt.refs.missingCount, 1);
+  assert.equal(whitespaceCorrupt.refs.extraCount, 1);
+});
+
+check("canonical Mail projection rejects every field, membership, identity, and volatile-overlay drift", () => {
+  const txid = "4".repeat(64);
+  const event = {
+    amount_sats: "546",
+    data_bytes: 27,
+    event_id: "71",
+    event_time: "2026-08-04T12:34:56.789Z",
+    kind: "mail",
+    network: "livenet",
+    payload: {
+      body: "  exact body  ",
+      confirmed: true,
+      dropped: false,
+      kind: "mail",
+      protocol: "pwm1",
+      recipients: [{ address: "bc1recipient", amountSats: 546, vout: 0 }],
+      senderAddress: "bc1sender",
+      status: "confirmed",
+      txid,
+    },
+    protocol: "pwm1",
+    status: "confirmed",
+    txid,
+    valid: true,
+  };
+  const expected = proofIndexCanonicalMailProjectionRows([event]);
+  assert.equal(expected.invalid.length, 0);
+  assert.equal(expected.rows.length, 1);
+  assert.equal(expected.rows[0].body_text, "exact body");
+  assert.equal(expected.rows[0].subject, null);
+  const exact = proofIndexCanonicalMailProjectionParity({
+    eventRows: [event],
+    mailRows: expected.rows,
+    transactionRows: [{
+      network: "livenet",
+      raw_tx: {
+        canonicalBlockScan: { network: "livenet" },
+        statusObservation: { status: "confirmed" },
+      },
+      status: "confirmed",
+      txid,
+    }],
+  });
+  assert.equal(exact.model, PROOF_INDEX_MAIL_PROJECTION_PARITY_MODEL);
+  assert.equal(exact.ready, true);
+  assert.equal(exact.volatileTransactionOverlayCount, 0);
+
+  const nullableDrift = proofIndexCanonicalMailProjectionParity({
+    eventRows: [event],
+    mailRows: [{ ...expected.rows[0], subject: "" }],
+  });
+  assert.equal(nullableDrift.ready, false);
+  assert.deepEqual(nullableDrift.mismatchedSample[0].fields, ["subject"]);
+
+  const staleConfirmed = proofIndexCanonicalMailProjectionParity({
+    eventRows: [event],
+    mailRows: [{
+      ...expected.rows[0],
+      event_time: "2026-08-04T12:34:55.000Z",
+      message: { ...expected.rows[0].message, stale: true },
+      status: "pending",
+    }],
+  });
+  assert.equal(staleConfirmed.ready, false);
+  assert.deepEqual(
+    staleConfirmed.mismatchedSample[0].fields,
+    ["event_time", "message", "status"],
+  );
+
+  assert.equal(
+    proofIndexCanonicalMailProjectionParity({
+      eventRows: [event],
+      mailRows: [],
+    }).missingCount,
+    1,
+  );
+  assert.equal(
+    proofIndexCanonicalMailProjectionParity({
+      eventRows: [],
+      mailRows: expected.rows,
+    }).extraCount,
+    1,
+  );
+  assert.equal(
+    proofIndexCanonicalMailProjectionParity({
+      eventRows: [event],
+      mailRows: [expected.rows[0], expected.rows[0]],
+    }).duplicateObservedCount,
+    1,
+  );
+  assert.equal(
+    proofIndexCanonicalMailProjectionParity({
+      eventRows: [event, { ...event, event_id: "72" }],
+      mailRows: expected.rows,
+    }).invalidEventCount,
+    1,
+  );
+  assert.equal(
+    proofIndexCanonicalMailProjectionParity({
+      eventRows: [{
+        ...event,
+        payload: { ...event.payload, txid: "5".repeat(64) },
+      }],
+      mailRows: expected.rows,
+    }).invalidEventCount,
+    1,
+  );
+  for (const [field, malformedValue] of [
+    ["confirmed", false],
+    ["confirmed", "true"],
+    ["confirmed", null],
+    ["confirmed", 1],
+    ["dropped", true],
+    ["dropped", "false"],
+    ["dropped", null],
+    ["dropped", 0],
+  ]) {
+    assert.equal(
+      proofIndexCanonicalMailProjectionParity({
+        eventRows: [{
+          ...event,
+          payload: { ...event.payload, [field]: malformedValue },
+        }],
+        mailRows: expected.rows,
+      }).invalidEventCount,
+      1,
+      `Mail payload ${field}=${JSON.stringify(malformedValue)} must fail exact identity`,
+    );
+  }
+
+  const volatile = proofIndexCanonicalMailProjectionParity({
+    eventRows: [event],
+    mailRows: expected.rows,
+    transactionRows: [
+      {
+        network: "livenet",
+        raw_tx: {
+          canonicalBlockScan: { network: "livenet" },
+          statusObservation: { observedAt: "2026-08-04T12:35:00.000Z" },
+        },
+        status: "confirmed",
+        txid,
+      },
+      {
+        network: "livenet",
+        raw_tx: { indexedFrom: "mempool", item: { kind: "mail" } },
+        status: "pending",
+        txid: "6".repeat(64),
+      },
+      {
+        network: "livenet",
+        raw_tx: { item: { kind: " Browser " } },
+        status: "confirmed",
+        txid: "7".repeat(64),
+      },
+    ],
+  });
+  assert.equal(volatile.ready, false);
+  assert.equal(volatile.volatileTransactionOverlayCount, 2);
+  assert.deepEqual(
+    volatile.volatileTransactionOverlaySample.map((row) => row.status).sort(),
+    ["confirmed", "pending"],
+  );
+});
+
+check("mail participant repair and global projection parity use only canonical event authority", () => {
+  const repairSource = topLevelFunctionSource(
+    BACKFILL_PATH,
+    "repairMailParticipants",
+  );
+  const repairRowsSource = topLevelFunctionSource(
+    BACKFILL_PATH,
+    "canonicalMailParticipantRepairRows",
+  );
+  const repairMutationSource = topLevelFunctionSource(
+    BACKFILL_PATH,
+    "repairMailParticipantsFromEventRows",
+  );
+  assert.match(
+    repairMutationSource,
+    /DELETE FROM proof_indexer\.event_participants existing[\s\S]*existing\.role IN \('sender', 'recipient'\)[\s\S]*NOT EXISTS/u,
+  );
+  assert.match(
+    repairMutationSource,
+    /ON CONFLICT \(event_id, address, role\) DO UPDATE[\s\S]*participant\.powid IS DISTINCT FROM EXCLUDED\.powid/u,
+  );
+  const paritySource = fileSource(INDEXER_PARITY_PATH);
+  const parityFunctionSource = topLevelFunctionSource(
+    INDEXER_PARITY_PATH,
+    "readRenderedProjectionParity",
+  );
+  assert.match(
+    paritySource,
+    /BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY[\s\S]*proofIndexCanonicalEventRelationParity/u,
+  );
+  assert.match(
+    paritySource,
+    /rendered-event-participant-semantic-parity[\s\S]*rendered-event-reference-semantic-parity/u,
+  );
+  assert.match(
+    paritySource,
+    /JOIN proof_indexer\.event_participants participant[\s\S]*JOIN proof_indexer\.event_refs ref/u,
+  );
+  assert.ok(
+    (
+      parityFunctionSource.match(
+        /event\.status IN \('pending', 'confirmed', 'dropped', 'orphaned'\)/gu,
+      ) ?? []
+    ).length >= 3,
+    "global relation parity must cover every event status rendered by Log and Mail",
+  );
+  assert.match(
+    parityFunctionSource,
+    /FROM proof_indexer\.mail_items mail[\s\S]*FROM proof_indexer\.transactions transaction_row/u,
+  );
+  assert.doesNotMatch(parityFunctionSource, /event\.status = 'confirmed'/u);
+  assert.doesNotMatch(parityFunctionSource, /supplementalParticipantRows/u);
+  assert.doesNotMatch(parityFunctionSource, /mailParticipantResult/u);
+  assert.match(
+    parityFunctionSource,
+    /COALESCE\(participant\.address, ''\) AS address[\s\S]*COALESCE\(participant\.role, ''\) AS role[\s\S]*COALESCE\(participant\.powid, ''\) AS powid/u,
+  );
+  assert.match(
+    parityFunctionSource,
+    /COALESCE\(ref\.ref_type, ''\) AS ref_type[\s\S]*COALESCE\(ref\.ref_value, ''\) AS ref_value/u,
+  );
+  assert.match(
+    paritySource,
+    /rendered-mail-projection-semantic-parity/u,
+  );
+  assert.match(
+    parityFunctionSource,
+    /proofIndexCanonicalMailProjectionParity\([\s\S]*transactionRows: mailTransactionResult\.rows/u,
+  );
+  assert.doesNotMatch(repairSource, /proof_indexer\.mail_items/u);
+  assert.match(
+    repairSource,
+    /FROM proof_indexer\.events[\s\S]*protocol = 'pwm1'[\s\S]*repairMailParticipantsFromEventRows/u,
+  );
+  assert.match(
+    repairRowsSource,
+    /proofIndexRenderedMailEvent\(event\)[\s\S]*proofIndexMailParticipantAliasesForItem\([\s\S]*event\.payload,[\s\S]*event/u,
+  );
+});
+
+check("canonical Mail repair is explicit, exact, overlay-complete, and the reader has no raw item authority", () => {
+  const backfillSource = fileSource(BACKFILL_PATH);
+  const repairSource = topLevelFunctionSource(
+    BACKFILL_PATH,
+    "repairCanonicalMailProjection",
+  );
+  const upsertEventSource = topLevelFunctionSource(BACKFILL_PATH, "upsertEvent");
+  const upsertProjectionSource = topLevelFunctionSource(
+    BACKFILL_PATH,
+    "upsertProjection",
+  );
+  assert.match(
+    backfillSource,
+    /--repair-canonical-mail-projection[\s\S]*POW_INDEX_REPAIR_CANONICAL_MAIL_PROJECTION=1[\s\S]*else if \(REPAIR_CANONICAL_MAIL_PROJECTION_ONLY\) \{[\s\S]*repairCanonicalMailProjection\(client\)/u,
+    "the unbounded historical rewrite must remain an explicit supervised pass",
+  );
+  assert.match(
+    repairSource,
+    /BEGIN ISOLATION LEVEL SERIALIZABLE[\s\S]*LOCK TABLE proof_indexer\.events, proof_indexer\.event_participants,[\s\S]*proof_indexer\.mail_items, proof_indexer\.transactions/u,
+  );
+  assert.match(
+    repairSource,
+    /proofIndexCanonicalMailProjectionParity\([\s\S]*transactionRows: observedTransactionRows[\s\S]*- ARRAY\['indexedFrom', 'item'\]::text\[\][\s\S]*transactionRows: afterTransactionRows/u,
+  );
+  assert.match(repairSource, /lower\(btrim\(COALESCE\(/u);
+  assert.match(
+    repairSource,
+    /event\.protocol = 'pwm1'[\s\S]*event\.kind = ANY\(\$2::text\[\]\)[\s\S]*event\.status IN \([\s\S]*'pending'[\s\S]*'confirmed'[\s\S]*'dropped'[\s\S]*'orphaned'[\s\S]*event\.valid = true/u,
+  );
+  assert.doesNotMatch(
+    repairSource,
+    /NOT \(COALESCE\(raw_tx[\s\S]*canonicalBlockScan/u,
+    "canonical confirmed transaction rows must not escape volatile overlay cleanup",
+  );
+  assert.match(
+    upsertEventSource,
+    /suppressVolatileMailOverlay[\s\S]*suppressVolatileOverlay: suppressVolatileMailOverlay[\s\S]*canonicalEventRow: result\.rows\[0\]/u,
+  );
+  assert.match(
+    upsertProjectionSource,
+    /proofIndexCanonicalMailProjectionRows\([\s\S]*canonicalEventRow[\s\S]*mailRow\.amount_sats[\s\S]*mailRow\.data_bytes[\s\S]*mailRow\.message[\s\S]*mailRow\.event_time/u,
+    "normal writes must project typed fields and JSON from one returned event row",
+  );
+
+  const readerSource = fileSource(READER_PATH);
+  const addressMailSource = topLevelFunctionSource(
+    READER_PATH,
+    "proofIndexAddressMailPayload",
+  );
+  const rowProjectionSource = topLevelFunctionSource(
+    READER_PATH,
+    "addressMailRowPayloads",
+  );
+  assert.doesNotMatch(readerSource, /function rawTransactionItemPayload/u);
+  assert.doesNotMatch(addressMailSource, /transactionOverlayResult/u);
+  assert.doesNotMatch(addressMailSource, /raw_tx->'item'/u);
+  assert.doesNotMatch(addressMailSource, /transaction-mail-overlay/u);
+  assert.match(
+    addressMailSource,
+    /JOIN proof_indexer\.mail_items m[\s\S]*for \(const row of rowsResult\.rows\)[\s\S]*source: "proof-indexer-mail"/u,
+  );
+  assert.doesNotMatch(rowProjectionSource, /rawPayload|transaction_raw_tx/u);
+
+  const workerStatusSource = topLevelFunctionSource(
+    WORKER_PATH,
+    "updateTransactionStatus",
+  );
+  const q16DropSource = topLevelFunctionSource(
+    BACKFILL_PATH,
+    "dropWorkQ16PendingStageMember",
+  );
+  assert.ok(
+    (
+      workerStatusSource.match(
+        /UPDATE proof_indexer\.mail_items mail[\s\S]*?status = event\.status,[\s\S]*?event_time = event\.event_time,[\s\S]*?message = event\.payload[\s\S]*?FROM proof_indexer\.events event/gu,
+      ) ?? []
+    ).length >= 2,
+    "pending and dropped worker transitions must copy exact event Mail state",
+  );
+  assert.match(
+    q16DropSource,
+    /UPDATE proof_indexer\.mail_items mail[\s\S]*status = event\.status,[\s\S]*event_time = event\.event_time,[\s\S]*message = event\.payload[\s\S]*FROM proof_indexer\.events event/u,
   );
 });
 
@@ -25498,7 +26723,8 @@ check("address-mail exposes exact canonical WORK siblings and fails closed on am
       normalizedAddress: (value) => String(value ?? "").trim(),
       normalizedAddressKey: (value) => String(value ?? "").trim().toLowerCase(),
       positiveNumber: (value) => Number(value) || 0,
-      recipientRows: () => [],
+      recipientRows: (addresses, amountSats) =>
+        addresses.map((address) => ({ address, amountSats, display: address })),
     },
   );
   assert.equal(
@@ -25509,7 +26735,6 @@ check("address-mail exposes exact canonical WORK siblings and fails closed on am
           { address: other, amountSats: 222, vout: 1 },
         ],
       },
-      {},
       [target, other],
       333,
     ).map(({ address, amountSats }) => ({ address, amountSats }))),
@@ -25521,27 +26746,20 @@ check("address-mail exposes exact canonical WORK siblings and fails closed on am
   assert.equal(
     exactMailRecipientRows(
       { recipients: [{ address: target, amountSats: 999 }] },
-      {
-        recipients: [
-          { address: target, amountSats: 111, vout: 0 },
-          { address: other, amountSats: 222, vout: 1 },
-        ],
-      },
       [target, other],
       333,
     ).length,
-    2,
-    "a no-vout projection must not duplicate an exact raw recipient output",
+    1,
+    "canonical event recipients must not be expanded by an independent source",
   );
   assert.equal(
     exactMailRecipientRows(
-      { recipients: [{ address: target, amountSats: 111 }] },
-      { recipients: [{ address: target, amountSats: 999 }] },
+      {},
       [target],
       999,
     )[0].amountSats,
-    111,
-    "canonical no-vout recipients must beat stale raw metadata",
+    999,
+    "relational event participants are the only recipient fallback",
   );
 
   const addressMailSource = topLevelFunctionSource(
@@ -25853,7 +27071,7 @@ check("wallet mail projection recognizes canonical senderAddress as sent activit
       canonicalEventPayload: (value) => value ?? {},
       canonicalMailAttachedCreditsFromRow: () => [],
       dateIso: (value) => new Date(value).toISOString(),
-      exactMailRecipientRows: (_payload, _raw, addresses, amountSats) =>
+      exactMailRecipientRows: (_payload, addresses, amountSats) =>
         addresses.map((address) => ({ address, amountSats, display: address })),
       knownMailAddress: (value) => String(value ?? "").trim(),
       mailMemoFromEvent: (_row, payload) => String(payload?.memo ?? ""),
@@ -25861,7 +27079,6 @@ check("wallet mail projection recognizes canonical senderAddress as sent activit
         { address: sender, role: "sender" },
         { address: recipient, role: "recipient" },
       ],
-      mailParticipantsFromRow: () => [sender, recipient],
       mailSubjectFromEvent: () => "",
       normalizeEventPayload: (value) => value ?? {},
       normalizedAddress: (value) => String(value ?? "").trim(),
@@ -25872,7 +27089,6 @@ check("wallet mail projection recognizes canonical senderAddress as sent activit
       recipientRows: (addresses, amountSats) =>
         addresses.map((address) => ({ address, amountSats, display: address })),
       recipientSummary: (recipients) => recipients[0]?.display ?? "Unknown",
-      rawTransactionItemPayload: () => ({}),
       sameMailPaymentAddress: (left, right) =>
         String(left ?? "").toLowerCase() === String(right ?? "").toLowerCase(),
     },
@@ -26466,6 +27682,76 @@ check("legacy generic token replay accepts only exact canonical DB order", async
     "80324e829c5213135a53da8934261a88c981a92d642943e1a4e31c2414866916";
   const blockHash =
     "00000000000000000002019439f49d1333ac548e36a9aa6578f3f475e4a8be9a";
+  const validUnparseableTokenOutput = {
+    scriptpubkey: "6a06707774313a78",
+    scriptpubkey_asm: "OP_RETURN 707774313a78",
+    scriptpubkey_type: "op_return",
+  };
+  const truncatedTokenOutput = {
+    scriptpubkey: "6a06707774313a",
+    scriptpubkey_asm: "OP_RETURN 707774313a",
+    scriptpubkey_type: "op_return",
+  };
+  const invalidUtf8TokenOutput = {
+    scriptpubkey: "6a06707774313aff",
+    scriptpubkey_asm: "OP_RETURN 707774313aff",
+    scriptpubkey_type: "op_return",
+  };
+  const idProtocolOutput = {
+    scriptpubkey: "6a0670776964313a",
+    scriptpubkey_asm: "OP_RETURN 70776964313a",
+    scriptpubkey_type: "op_return",
+  };
+  const asmSpoofOutput = {
+    scriptpubkey: "6a046e6f7065",
+    scriptpubkey_asm: "OP_RETURN 707774313a78",
+    scriptpubkey_type: "op_return",
+  };
+  const ordinaryPaymentOutput = {
+    scriptpubkey: `0014${"1".repeat(40)}`,
+    scriptpubkey_asm: `OP_0 OP_PUSHBYTES_20 ${"1".repeat(40)}`,
+    scriptpubkey_type: "v0_p2wpkh",
+  };
+  const transactionHasRawTokenProtocol = isolatedFunction(
+    API_PATH,
+    "transactionHasRawTokenProtocol",
+    {
+      TOKEN_PROTOCOL_PREFIX: "pwt1:",
+      canonicalProtocolCandidateFromOutput,
+    },
+  );
+  assert.equal(
+    canonicalProtocolCandidateFromOutput(validUnparseableTokenOutput)
+      ?.decodeValid,
+    true,
+  );
+  assert.equal(
+    canonicalProtocolCandidateFromOutput(validUnparseableTokenOutput)?.text,
+    "pwt1:x",
+  );
+  assert.equal(
+    canonicalProtocolCandidateFromOutput(truncatedTokenOutput)?.decodeValid,
+    false,
+  );
+  assert.equal(
+    canonicalProtocolCandidateFromOutput(invalidUtf8TokenOutput)?.decodeValid,
+    false,
+  );
+  for (const output of [
+    validUnparseableTokenOutput,
+    truncatedTokenOutput,
+    invalidUtf8TokenOutput,
+  ]) {
+    assert.equal(transactionHasRawTokenProtocol({ vout: [output] }), true);
+  }
+  for (const output of [
+    idProtocolOutput,
+    asmSpoofOutput,
+    ordinaryPaymentOutput,
+  ]) {
+    assert.equal(transactionHasRawTokenProtocol({ vout: [output] }), false);
+  }
+  assert.equal(transactionHasRawTokenProtocol({ vout: [] }), false);
   const sourceTransaction = {
     status: {
       block_hash: blockHash,
@@ -26473,11 +27759,45 @@ check("legacy generic token replay accepts only exact canonical DB order", async
       confirmed: true,
     },
     txid: tokenId,
+    vout: [validUnparseableTokenOutput],
   };
   const pendingTransaction = {
     status: { confirmed: false },
     txid: pendingTxid,
+    vout: [validUnparseableTokenOutput],
   };
+  const ordinaryPaymentTxid = "1".repeat(64);
+  const idProtocolTxid = "2".repeat(64);
+  const asmSpoofTxid = "3".repeat(64);
+  const invalidUtf8Txid = "4".repeat(64);
+  const truncatedTxid = "5".repeat(64);
+  const confirmedFixtureTransaction = (txid, output, overrides = {}) => ({
+    status: {
+      block_hash: blockHash,
+      block_height: 949_463,
+      confirmed: true,
+      ...(overrides.status ?? {}),
+    },
+    txid,
+    vout: [output],
+    ...overrides,
+  });
+  const ordinaryPaymentTransaction = confirmedFixtureTransaction(
+    ordinaryPaymentTxid,
+    ordinaryPaymentOutput,
+  );
+  const idProtocolTransaction = confirmedFixtureTransaction(
+    idProtocolTxid,
+    idProtocolOutput,
+  );
+  const asmSpoofTransaction = confirmedFixtureTransaction(
+    asmSpoofTxid,
+    asmSpoofOutput,
+  );
+  const truncatedTransaction = confirmedFixtureTransaction(
+    truncatedTxid,
+    truncatedTokenOutput,
+  );
   const transactionBlockHash = (tx) => tx.status?.block_hash ?? "";
   const transactionBlockHeight = (tx) => tx.status?.block_height;
   const transactionBlockIndex = (tx) =>
@@ -26508,16 +27828,26 @@ check("legacy generic token replay accepts only exact canonical DB order", async
       transactionBlockHeight,
       transactionBlockIndex,
       transactionConfirmed,
+      transactionHasRawTokenProtocol,
       transactionTxid,
     },
   );
   const hydrated = await hydrate(
-    [sourceTransaction, pendingTransaction],
+    [
+      sourceTransaction,
+      pendingTransaction,
+      ordinaryPaymentTransaction,
+      idProtocolTransaction,
+      asmSpoofTransaction,
+    ],
     "livenet",
   );
   assert.deepEqual(Array.from(requestedTxids), [tokenId]);
   assert.equal(hydrated[0]._powBlockIndex, 818);
   assert.equal(hydrated[1]._powBlockIndex, undefined);
+  assert.equal(hydrated[2]._powBlockIndex, undefined);
+  assert.equal(hydrated[3]._powBlockIndex, undefined);
+  assert.equal(hydrated[4]._powBlockIndex, undefined);
   assert.equal(sourceTransaction._powBlockIndex, undefined);
 
   const conflictingHydrator = isolatedFunction(
@@ -26535,6 +27865,7 @@ check("legacy generic token replay accepts only exact canonical DB order", async
       transactionBlockHeight,
       transactionBlockIndex,
       transactionConfirmed,
+      transactionHasRawTokenProtocol,
       transactionTxid,
     },
   );
@@ -26553,11 +27884,12 @@ check("legacy generic token replay accepts only exact canonical DB order", async
       transactionBlockHeight,
       transactionBlockIndex,
       transactionConfirmed,
+      transactionHasRawTokenProtocol,
       transactionTxid,
     },
   );
   await assert.rejects(
-    missingHydrator([sourceTransaction], "livenet"),
+    missingHydrator([truncatedTransaction], "livenet"),
     /Canonical proof-index position is unavailable/u,
   );
 
@@ -26565,14 +27897,27 @@ check("legacy generic token replay accepts only exact canonical DB order", async
   const thirdTxid = "8".repeat(64);
   const secondBlockHash = "9".repeat(64);
   const thirdBlockHash = "a".repeat(64);
-  const legacyTransaction = (txid, blockHeight, sourceBlockHash) => ({
+  const legacyTransaction = (
+    txid,
+    blockHeight,
+    sourceBlockHash,
+    output = validUnparseableTokenOutput,
+  ) => ({
     status: {
       block_hash: sourceBlockHash,
       block_height: blockHeight,
       confirmed: true,
     },
     txid,
+    vout: [output],
   });
+  const invalidUtf8BlockHash = "c".repeat(64);
+  const invalidUtf8Transaction = legacyTransaction(
+    invalidUtf8Txid,
+    949_466,
+    invalidUtf8BlockHash,
+    invalidUtf8TokenOutput,
+  );
   const canonicalPositionsByTxid = new Map([
     [tokenId, { blockHash, blockHeight: 949_463, blockIndex: 818 }],
     [secondTxid, {
@@ -26584,6 +27929,11 @@ check("legacy generic token replay accepts only exact canonical DB order", async
       blockHash: thirdBlockHash,
       blockHeight: 949_465,
       blockIndex: 13,
+    }],
+    [invalidUtf8Txid, {
+      blockHash: invalidUtf8BlockHash,
+      blockHeight: 949_466,
+      blockIndex: 14,
     }],
   ]);
   let canonicalPositionQueries = 0;
@@ -26614,6 +27964,7 @@ check("legacy generic token replay accepts only exact canonical DB order", async
       transactionBlockHeight,
       transactionBlockIndex,
       transactionConfirmed,
+      transactionHasRawTokenProtocol,
       transactionTxid,
     },
   );
@@ -26621,10 +27972,14 @@ check("legacy generic token replay accepts only exact canonical DB order", async
     ["registry-a", [
       { ...sourceTransaction, status: { ...sourceTransaction.status } },
       pendingTransaction,
+      ordinaryPaymentTransaction,
+      idProtocolTransaction,
+      asmSpoofTransaction,
     ]],
     ["registry-b", [
       indexedDuplicate,
       legacyTransaction(secondTxid, 949_464, secondBlockHash),
+      invalidUtf8Transaction,
     ]],
     ["registry-c", [
       legacyTransaction(thirdTxid, 949_465, thirdBlockHash),
@@ -26639,6 +27994,7 @@ check("legacy generic token replay accepts only exact canonical DB order", async
         return registryHistories.get(registryAddress);
       },
       hydrateLegacyGenericTokenBlockOrderFromProofIndex: batchHydrator,
+      transactionHasRawTokenProtocol,
     },
   );
   const registryEntries = await fetchRegistryEntries(
@@ -26648,19 +28004,65 @@ check("legacy generic token replay accepts only exact canonical DB order", async
   assert.equal(canonicalPositionQueries, 1);
   assert.deepEqual(
     Array.from(combinedRequestedTxids),
-    [tokenId, secondTxid, thirdTxid],
+    [tokenId, secondTxid, invalidUtf8Txid, thirdTxid],
   );
   assert.equal(registryEntries.length, 3);
   assert.equal(registryEntries[0][0], "registry-a");
   assert.equal(registryEntries[0][1].length, 2);
   assert.equal(registryEntries[0][1][0]._powBlockIndex, 818);
   assert.equal(registryEntries[0][1][1]._powBlockIndex, undefined);
-  assert.equal(registryEntries[1][1].length, 2);
+  assert.equal(registryEntries[1][1].length, 3);
   assert.equal(registryEntries[1][1][0]._powBlockIndex, 818);
   assert.equal(registryEntries[1][1][0], indexedDuplicate);
   assert.equal(registryEntries[1][1][1]._powBlockIndex, 12);
+  assert.equal(registryEntries[1][1][2]._powBlockIndex, 14);
   assert.equal(registryEntries[2][1][0]._powBlockIndex, 13);
   assert.notEqual(registryEntries[0][1][0], registryEntries[1][1][0]);
+  const replayedTxids = registryEntries.flatMap(([, transactions]) =>
+    transactions.map((transaction) => transaction.txid)
+  );
+  for (const excludedTxid of [
+    ordinaryPaymentTxid,
+    idProtocolTxid,
+    asmSpoofTxid,
+  ]) {
+    assert.equal(replayedTxids.includes(excludedTxid), false);
+    assert.equal(combinedRequestedTxids.includes(excludedTxid), false);
+  }
+
+  let singleReplayHydration = [];
+  const fetchRegistryReplay = isolatedFunction(
+    API_PATH,
+    "fetchLegacyGenericTokenReplayTransactions",
+    {
+      fetchRegistryTransactions: async (_registryAddress, network) => {
+        assert.equal(network, "livenet");
+        return [
+          sourceTransaction,
+          truncatedTransaction,
+          invalidUtf8Transaction,
+          ordinaryPaymentTransaction,
+          idProtocolTransaction,
+          asmSpoofTransaction,
+        ];
+      },
+      hydrateLegacyGenericTokenBlockOrderFromProofIndex: async (
+        transactions,
+        network,
+      ) => {
+        assert.equal(network, "livenet");
+        singleReplayHydration = transactions;
+        return transactions;
+      },
+      transactionHasRawTokenProtocol,
+    },
+  );
+  const singleReplay = await fetchRegistryReplay("registry-a", "livenet");
+  assert.deepEqual(
+    singleReplay.map((transaction) => transaction.txid),
+    [tokenId, truncatedTxid, invalidUtf8Txid],
+  );
+  assert.deepEqual(singleReplayHydration, singleReplay);
 
   const conflictingRegistryEntries = isolatedFunction(
     API_PATH,
@@ -26676,6 +28078,7 @@ check("legacy generic token replay accepts only exact canonical DB order", async
         },
       }],
       hydrateLegacyGenericTokenBlockOrderFromProofIndex: batchHydrator,
+      transactionHasRawTokenProtocol,
     },
   );
   await assert.rejects(
@@ -26699,6 +28102,7 @@ check("legacy generic token replay accepts only exact canonical DB order", async
         status: { ...sourceTransaction.status },
       }],
       hydrateLegacyGenericTokenBlockOrderFromProofIndex: batchHydrator,
+      transactionHasRawTokenProtocol,
     },
   );
   await assert.rejects(
@@ -29498,6 +30902,47 @@ check("canonical rebuild preparation requires an explicit supervised height", ()
     },
   );
   assert.throws(conflictingHydration, /exclusive/u);
+
+  const mailRepairConfiguration = (overrides = {}) => ({
+    CANONICAL_REBUILD: false,
+    HYDRATE_TRANSACTION_DETAILS_ONLY: false,
+    PREPARE_CANONICAL_REBUILD_ONLY: false,
+    PREPARE_CANONICAL_PWT_RANGE_REPLAY_ONLY: false,
+    REPAIR_CANONICAL_MAIL_PROJECTION: false,
+    REPAIR_CANONICAL_MAIL_PROJECTION_ONLY: false,
+    REPAIR_CANONICAL_TXIDS_ONLY: false,
+    REPAIR_INCB_ISSUANCE_ONLY: false,
+    REPAIR_ID_TXIDS_ONLY: false,
+    REPAIR_WORK_PARTICIPANTS_ONLY: false,
+    ...overrides,
+  });
+  const mailRepairWithoutApply = isolatedFunction(
+    BACKFILL_PATH,
+    "assertCanonicalRebuildConfiguration",
+    mailRepairConfiguration({
+      REPAIR_CANONICAL_MAIL_PROJECTION_ONLY: true,
+    }),
+  );
+  assert.throws(mailRepairWithoutApply, /requires POW_INDEX_REPAIR_CANONICAL_MAIL/u);
+  const mailRepairWithApply = isolatedFunction(
+    BACKFILL_PATH,
+    "assertCanonicalRebuildConfiguration",
+    mailRepairConfiguration({
+      REPAIR_CANONICAL_MAIL_PROJECTION: true,
+      REPAIR_CANONICAL_MAIL_PROJECTION_ONLY: true,
+    }),
+  );
+  assert.doesNotThrow(mailRepairWithApply);
+  const mailRepairConflict = isolatedFunction(
+    BACKFILL_PATH,
+    "assertCanonicalRebuildConfiguration",
+    mailRepairConfiguration({
+      REPAIR_CANONICAL_MAIL_PROJECTION: true,
+      REPAIR_CANONICAL_MAIL_PROJECTION_ONLY: true,
+      REPAIR_ID_TXIDS_ONLY: true,
+    }),
+  );
+  assert.throws(mailRepairConflict, /mutually exclusive/u);
 });
 
 check("canonical rebuild reset and hashed bootstrap are one transaction", async () => {
@@ -33917,7 +35362,10 @@ check("pending WORK supply-cap fast path is exact and bypasses broad replay", as
         result: {
           bestblockhash: blockHash,
           blocks: tipHeight,
+          chain: "main",
           headers: tipHeight,
+          initialblockdownload: false,
+          verificationprogress: 1,
         },
       };
     }
@@ -37526,9 +38974,242 @@ check("canonical read gating exempts node primitives only", () => {
   }
 });
 
+check("Core health requires one synced mainnet tip and exact unpruned txindex", () => {
+  const height = 100;
+  const blockHash = "7".repeat(64);
+  const chainResponse = {
+    ok: true,
+    result: {
+      bestblockhash: blockHash,
+      blocks: height,
+      chain: "main",
+      headers: height,
+      initialblockdownload: false,
+      pruned: false,
+      verificationprogress: 1,
+    },
+  };
+  const indexResponse = {
+    ok: true,
+    result: {
+      txindex: { best_block_height: height, synced: true },
+    },
+  };
+  const exactCoreTipFromBlockchainInfo = isolatedFunction(
+    API_PATH,
+    "exactCoreTipFromBlockchainInfo",
+  );
+  const exactCoreNodeAuthority = isolatedFunction(
+    API_PATH,
+    "exactCoreNodeAuthority",
+    { exactCoreTipFromBlockchainInfo },
+  );
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(
+      exactCoreNodeAuthority(chainResponse, indexResponse),
+    )),
+    {
+      blockHash,
+      height,
+      txindexHeight: height,
+      verificationProgress: 1,
+    },
+  );
+  for (const [label, changedChain, changedIndex] of [
+    [
+      "headers ahead",
+      { ...chainResponse, result: { ...chainResponse.result, headers: 101 } },
+      indexResponse,
+    ],
+    [
+      "initial block download",
+      {
+        ...chainResponse,
+        result: { ...chainResponse.result, initialblockdownload: true },
+      },
+      indexResponse,
+    ],
+    [
+      "wrong chain",
+      { ...chainResponse, result: { ...chainResponse.result, chain: "test" } },
+      indexResponse,
+    ],
+    [
+      "pruned node",
+      { ...chainResponse, result: { ...chainResponse.result, pruned: true } },
+      indexResponse,
+    ],
+    [
+      "txindex behind",
+      chainResponse,
+      {
+        ...indexResponse,
+        result: {
+          txindex: { best_block_height: height - 1, synced: true },
+        },
+      },
+    ],
+    [
+      "txindex unsynced",
+      chainResponse,
+      {
+        ...indexResponse,
+        result: {
+          txindex: { best_block_height: height, synced: false },
+        },
+      },
+    ],
+  ]) {
+    assert.equal(
+      exactCoreNodeAuthority(changedChain, changedIndex),
+      null,
+      label,
+    );
+  }
+});
+
+check("one exact-tip worker predicate preserves only healthy durable Q16 readiness", () => {
+  const tipHeight = 100;
+  const tipHash = "9".repeat(64);
+  const finishedAt = "2026-08-04T12:00:00.000Z";
+  const nowMs = Date.parse(finishedAt) + 30_000;
+  const durableWorkPrecision = {
+    era: "q16",
+    replay: {
+      era: "q16",
+      mempoolCount: 3,
+      mempoolSha256: "a".repeat(64),
+      pendingMembershipCount: 2,
+      pendingMembershipSha256: "b".repeat(64),
+      pendingProjectionSha256: "c".repeat(64),
+      ready: true,
+      replayRequired: true,
+      tipHash,
+      tipHeight,
+    },
+  };
+  const exactTipReadiness = isolatedFunction(
+    API_PATH,
+    "proofIndexWorkerExactTipReadiness",
+    {
+      PROOF_INDEX_HEALTH_MAX_AGE_MS: 120_000,
+      WORK_AMO_V8_ACTIVATION_HEIGHT: 90,
+      exactWorkAmoV8WorkerLastSuccessReadiness,
+    },
+  );
+  const status = {
+    indexedThroughBlock: tipHeight,
+    network: "livenet",
+    scan: { blockHash: tipHash, complete: true, tipHeight },
+    worker: {
+      lastSuccess: { finishedAt, workPrecision: durableWorkPrecision },
+      lastSuccessAt: finishedAt,
+      network: "livenet",
+      ok: false,
+      state: "canonical-phase-complete",
+      workPrecision: {
+        era: "q16",
+        replay: {
+          era: "q16",
+          pendingRequired: true,
+          ready: false,
+          replayRequired: true,
+        },
+      },
+    },
+  };
+  const ready = exactTipReadiness(status, {
+    network: "livenet",
+    nowMs,
+    tipHash,
+    tipHeight,
+  });
+  assert.equal(ready.ready, true);
+  assert.equal(ready.proofSource, "last-success");
+  assert.equal(ready.proofReady, true);
+  for (const [label, changedStatus, options = {}] of [
+    [
+      "scan height",
+      { ...status, scan: { ...status.scan, tipHeight: tipHeight - 1 } },
+    ],
+    [
+      "worker error",
+      { ...status, worker: { ...status.worker, error: "cycle failed" } },
+    ],
+    [
+      "containment",
+      {
+        ...status,
+        worker: { ...status.worker, noProgress: { active: true } },
+      },
+    ],
+    [
+      "precision recovery",
+      {
+        ...status,
+        worker: {
+          ...status.worker,
+          workPrecision: {
+            ...status.worker.workPrecision,
+            readinessRecoveryRequired: true,
+          },
+        },
+      },
+    ],
+    [
+      "failed state",
+      { ...status, worker: { ...status.worker, state: "failed-retrying" } },
+    ],
+    ["stale proof", status, { nowMs: nowMs + 120_001 }],
+  ]) {
+    assert.equal(
+      exactTipReadiness(changedStatus, {
+        network: "livenet",
+        nowMs,
+        tipHash,
+        tipHeight,
+        ...options,
+      }).ready,
+      false,
+      label,
+    );
+  }
+  assert.equal(
+    exactTipReadiness(status, {
+      network: "livenet",
+      nowMs,
+      tipHash: "8".repeat(64),
+      tipHeight,
+    }).ready,
+    false,
+    "a changed Core hash invalidates the durable proof",
+  );
+});
+
 check("summary catch-up does not brown out current relational reads", async () => {
   const blockHash = "a".repeat(64);
   let summaryIndexedThroughBlock = 99;
+  let chainInfo = {
+    bestblockhash: blockHash,
+    blocks: 100,
+    chain: "main",
+    headers: 100,
+    initialblockdownload: false,
+    verificationprogress: 1,
+  };
+  const exactCoreTipFromBlockchainInfo = isolatedFunction(
+    API_PATH,
+    "exactCoreTipFromBlockchainInfo",
+  );
+  const proofIndexWorkerExactTipReadiness = isolatedFunction(
+    API_PATH,
+    "proofIndexWorkerExactTipReadiness",
+    {
+      PROOF_INDEX_HEALTH_MAX_AGE_MS: 120_000,
+      WORK_AMO_V8_ACTIVATION_HEIGHT: 200,
+      exactWorkAmoV8WorkerLastSuccessReadiness,
+    },
+  );
   const summarySnapshotCoversCanonicalReadModels = isolatedFunction(
     API_PATH,
     "summarySnapshotCoversCanonicalReadModels",
@@ -37541,14 +39222,16 @@ check("summary catch-up does not brown out current relational reads", async () =
       PROOF_INDEX_REQUIRED: true,
       bitcoinRpc: async () => ({
         ok: true,
-        result: { bestblockhash: blockHash, blocks: 100 },
+        result: chainInfo,
       }),
+      exactCoreTipFromBlockchainInfo,
       proofIndexCanonicalStateMetaPayload: async () => ({
         fault: {},
         rebuild: { active: false, status: "complete" },
       }),
       proofIndexOperationalStatusPayload: async () => ({
         indexedThroughBlock: 100,
+        network: "livenet",
         readModels: {
           confirmedEvents: { count: 10, maxBlock: 99 },
           confirmedIds: { count: 1, maxBlock: 90 },
@@ -37562,15 +39245,34 @@ check("summary catch-up does not brown out current relational reads", async () =
         },
         worker: {
           lastSuccessAt: new Date().toISOString(),
+          network: "livenet",
           ok: true,
         },
       }),
+      proofIndexWorkerExactTipReadiness,
       summarySnapshotCoversCanonicalReadModels,
     },
   );
   const gate = await loadCanonicalPublicReadGate("livenet");
   assert.equal(gate.ok, true);
   assert.equal(gate.summarySnapshotOk, false);
+  chainInfo = { ...chainInfo, initialblockdownload: true };
+  assert.equal(
+    (await loadCanonicalPublicReadGate("livenet")).available,
+    false,
+    "initial block download must close canonical public availability",
+  );
+  chainInfo = {
+    ...chainInfo,
+    headers: 101,
+    initialblockdownload: false,
+  };
+  assert.equal(
+    (await loadCanonicalPublicReadGate("livenet")).available,
+    false,
+    "headers ahead of blocks must close canonical public availability",
+  );
+  chainInfo = { ...chainInfo, headers: 100 };
   summaryIndexedThroughBlock = 100;
   const changedGate = await loadCanonicalPublicReadGate("livenet");
   assert.equal(changedGate.summarySnapshotOk, true);
@@ -37590,6 +39292,19 @@ check("summary catch-up does not brown out current relational reads", async () =
 
 check("long worker cycles do not brown out exact canonical reads", async () => {
   const blockHash = "b".repeat(64);
+  const exactCoreTipFromBlockchainInfo = isolatedFunction(
+    API_PATH,
+    "exactCoreTipFromBlockchainInfo",
+  );
+  const proofIndexWorkerExactTipReadiness = isolatedFunction(
+    API_PATH,
+    "proofIndexWorkerExactTipReadiness",
+    {
+      PROOF_INDEX_HEALTH_MAX_AGE_MS: 120_000,
+      WORK_AMO_V8_ACTIVATION_HEIGHT: 200,
+      exactWorkAmoV8WorkerLastSuccessReadiness,
+    },
+  );
   const summarySnapshotCoversCanonicalReadModels = isolatedFunction(
     API_PATH,
     "summarySnapshotCoversCanonicalReadModels",
@@ -37602,14 +39317,23 @@ check("long worker cycles do not brown out exact canonical reads", async () => {
       PROOF_INDEX_REQUIRED: true,
       bitcoinRpc: async () => ({
         ok: true,
-        result: { bestblockhash: blockHash, blocks: 100 },
+        result: {
+          bestblockhash: blockHash,
+          blocks: 100,
+          chain: "main",
+          headers: 100,
+          initialblockdownload: false,
+          verificationprogress: 1,
+        },
       }),
+      exactCoreTipFromBlockchainInfo,
       proofIndexCanonicalStateMetaPayload: async () => ({
         fault: {},
         rebuild: { active: false, status: "complete" },
       }),
       proofIndexOperationalStatusPayload: async () => ({
         indexedThroughBlock: 100,
+        network: "livenet",
         readModels: {
           confirmedEvents: { count: 10, maxBlock: 100 },
           confirmedIds: { count: 1, maxBlock: 90 },
@@ -37623,9 +39347,11 @@ check("long worker cycles do not brown out exact canonical reads", async () => {
         },
         worker: {
           lastSuccessAt: new Date(Date.now() - 300_000).toISOString(),
+          network: "livenet",
           ok: false,
         },
       }),
+      proofIndexWorkerExactTipReadiness,
       summarySnapshotCoversCanonicalReadModels,
     },
   );
@@ -54375,8 +56101,11 @@ check("WORK precision V2 readiness cache is exact, positive-only, and coalesced"
     "credit_balances",
     "credit_definitions",
     "credit_listings",
+    "event_participants",
+    "event_refs",
     "events",
     "ledger_snapshots",
+    "mail_items",
     "op_returns",
     "transactions",
     "tx_inputs",
@@ -54568,7 +56297,7 @@ check("WORK precision V2 readiness cache is exact, positive-only, and coalesced"
         publicExecuteAclCount: 0,
         securityDefiner: true,
         settings: ["search_path=pg_catalog, pg_temp"],
-        source: "DECLARE prior_key text := CASE WHEN TG_OP IN ('UPDATE', 'DELETE') THEN OLD.key ELSE NULL END; current_key text := CASE WHEN TG_OP IN ('INSERT', 'UPDATE') THEN NEW.key ELSE NULL END; current_transaction_id xid8; BEGIN IF prior_key IN ( 'workPrecisionV2Migration:livenet', 'workQ16PendingRebuild:livenet' ) OR current_key IN ( 'workPrecisionV2Migration:livenet', 'workQ16PendingRebuild:livenet' ) THEN current_transaction_id := pg_catalog.pg_current_xact_id(); INSERT INTO proof_indexer.readiness_epoch_queue ( transaction_id, network, shard ) VALUES ( current_transaction_id, 'livenet', pg_catalog.mod(current_transaction_id::text::numeric, 64)::smallint ) ON CONFLICT (transaction_id) DO NOTHING; END IF; RETURN NULL; END;",
+        source: "DECLARE prior_key text := CASE WHEN TG_OP IN ('UPDATE', 'DELETE') THEN OLD.key ELSE NULL END; current_key text := CASE WHEN TG_OP IN ('INSERT', 'UPDATE') THEN NEW.key ELSE NULL END; current_transaction_id xid8; BEGIN IF prior_key IN ( 'workPrecisionV2Migration:livenet', 'workQ16PendingAttempt:livenet', 'workQ16PendingRebuild:livenet' ) OR current_key IN ( 'workPrecisionV2Migration:livenet', 'workQ16PendingAttempt:livenet', 'workQ16PendingRebuild:livenet' ) THEN current_transaction_id := pg_catalog.pg_current_xact_id(); INSERT INTO proof_indexer.readiness_epoch_queue ( transaction_id, network, shard ) VALUES ( current_transaction_id, 'livenet', pg_catalog.mod(current_transaction_id::text::numeric, 64)::smallint ) ON CONFLICT (transaction_id) DO NOTHING; END IF; RETURN NULL; END;",
         unexpectedExecuteAclCount: 0,
       },
     ],
@@ -54756,6 +56485,11 @@ check("WORK precision V2 readiness cache is exact, positive-only, and coalesced"
       contract.sourceRelations[0].rewriteRuleCount = 1;
     }),
     driftedReadinessContract((contract) => {
+      contract.sourceRelations = contract.sourceRelations.filter(
+        (relation) => relation.name !== "mail_items",
+      );
+    }),
+    driftedReadinessContract((contract) => {
       contract.epochSecurity.relations[0].constraints =
         contract.epochSecurity.relations[0].constraints.filter(
           (constraint) => constraint[0] !== "p",
@@ -54775,6 +56509,33 @@ check("WORK precision V2 readiness cache is exact, positive-only, and coalesced"
   for (const driftedContract of securityDriftContracts) {
     assert.equal(readinessEpochContract(driftedContract), false);
   }
+  const readinessEpochValues = Array.from(
+    { length: 64 },
+    (_, shard) => [shard, String(12 + shard)],
+  );
+  const readinessCheckpointCore = {
+    maxPreparedTransactions: "0",
+    model: "proof-index-worker-readiness-epoch-checkpoint-v1",
+    network: "livenet",
+    postmasterStartedAt: "2026-08-02T19:59:00.000Z",
+    queueCount: 0,
+    readinessEpochs: readinessEpochValues,
+    searchPath: "pg_catalog, pg_temp",
+  };
+  const readinessCheckpoint = {
+    ...readinessCheckpointCore,
+    sha256: createHash("sha256")
+      .update(
+        Buffer.from(
+          `ProofOfWork.Me/PROOF-INDEX-WORKER-READINESS-EPOCH-CHECKPOINT/v1\n${
+            stableReadinessJson(readinessCheckpointCore)
+          }`,
+          "utf8",
+        ),
+      )
+      .digest("hex"),
+  };
+  const verifierStageSha256 = "b".repeat(64);
   const pendingWitness = {
     activationHeight: pins.activationHeight,
     canonicalTip: { hash: tipHash, height: tipHeight },
@@ -54797,18 +56558,25 @@ check("WORK precision V2 readiness cache is exact, positive-only, and coalesced"
       model: projectionModel,
     },
     ready: true,
+    verifierStage: { stageSha256: verifierStageSha256 },
+  };
+  const pendingAttempt = {
+    publicationReadinessEpochCheckpoint: readinessCheckpoint,
+    stageSha256: verifierStageSha256,
+    witnessGeneratedAt: pendingWitness.generatedAt,
   };
   const exactRow = {
     constraint_definitions: readinessContract,
     migration_marker: migrationMarker,
     migration_updated_at: "2026-08-02T20:00:29.250Z",
     pending_updated_at: "2026-08-02T20:00:29.500Z",
+    pending_attempt: pendingAttempt,
     pending_witness: pendingWitness,
-    readiness_epochs: Array.from(
-      { length: 64 },
-      (_, shard) => [shard, String(12 + shard)],
-    ),
+    max_prepared_transactions: "0",
+    postmaster_started_at: readinessCheckpointCore.postmasterStartedAt,
+    readiness_epochs: readinessEpochValues,
     readiness_queue_count: 0,
+    search_path: "pg_catalog, pg_temp",
     snapshot_generated_at: "2026-08-02T20:00:29.750Z",
     snapshot_hash: tipHash,
     snapshot_height: tipHeight,
@@ -54850,6 +56618,9 @@ check("WORK precision V2 readiness cache is exact, positive-only, and coalesced"
     READER_PATH,
     "workPrecisionV2ReadinessFingerprintFromRows",
     {
+      canonicalWorkPrecisionV2ReadinessEpochCheckpoint: (value) => value,
+      canonicalWorkQ16PendingAttemptForRead: (value) => value,
+      createHash,
       normalizedWorkAmoV6ExpectedPins: (value) => value,
       normalizedWorkPrecisionV2ReadinessEpochs: readinessEpochs,
       workPrecisionV2MarkerBindsReader: (marker) =>
@@ -54858,9 +56629,14 @@ check("WORK precision V2 readiness cache is exact, positive-only, and coalesced"
         readinessEpochContract,
       workPrecisionV2ReadinessFingerprintIso: readinessFingerprintIso,
       workPrecisionV2ReadinessValueSha256: readinessValueSha256,
+      stableWorkPrecisionJson: stableReadinessJson,
       WORK_AMO_V8_BLOCK_SEQUENCER_MODEL: transitionModel,
       WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL: tokenStateModel,
       WORK_PRECISION_V2_READINESS_CACHE_TTL_MS: 30_000,
+      WORK_PRECISION_READINESS_EPOCH_CHECKPOINT_DOMAIN:
+        "ProofOfWork.Me/PROOF-INDEX-WORKER-READINESS-EPOCH-CHECKPOINT/v1",
+      WORK_PRECISION_READINESS_EPOCH_CHECKPOINT_MODEL:
+        "proof-index-worker-readiness-epoch-checkpoint-v1",
       WORK_Q16_PENDING_MEMBERSHIP_MODEL: membershipModel,
       WORK_Q16_PENDING_MEMPOOL_MODEL: mempoolModel,
       WORK_Q16_PENDING_PROJECTION_MODEL: projectionModel,
@@ -55065,6 +56841,7 @@ check("WORK precision V2 readiness cache is exact, positive-only, and coalesced"
     pendingValidThrough: new Date(
       directFingerprint.pendingValidThroughMs,
     ).toISOString(),
+    pendingAttempt,
     pendingWitness,
     ready: true,
     replayReady: true,
@@ -55141,6 +56918,8 @@ check("WORK precision V2 readiness cache is exact, positive-only, and coalesced"
   const expiringPendingRow = JSON.parse(JSON.stringify(exactRow));
   expiringPendingRow.pending_witness.generatedAt =
     "2026-08-02T19:58:31.000Z";
+  expiringPendingRow.pending_attempt.witnessGeneratedAt =
+    expiringPendingRow.pending_witness.generatedAt;
   const expiringFingerprint = fingerprintFromRows(
     [expiringPendingRow],
     "livenet",
@@ -55482,9 +57261,15 @@ check("WORK precision V2 readiness cache is exact, positive-only, and coalesced"
     fileSource(POSTGRES_PATH),
     /options: "-c search_path=pg_catalog,pg_temp"/u,
   );
+  const readinessEpochSql = fileSource(READINESS_EPOCH_PATH);
   assert.match(
-    fileSource(READINESS_EPOCH_PATH),
+    readinessEpochSql,
     /^BEGIN;\nSET LOCAL search_path = pg_catalog, pg_temp;/u,
+  );
+  assert.match(
+    readinessEpochSql,
+    /relation\.relname IN \([\s\S]*'event_participants',[\s\S]*'event_refs',[\s\S]*'events',[\s\S]*'ledger_snapshots',[\s\S]*'mail_items',[\s\S]*'meta',[\s\S]*\) <> 19 THEN\s+RAISE EXCEPTION 'Readiness source relation contract is invalid'/u,
+    "the readiness installer must attest Mail as one of all 19 exact source relations",
   );
 });
 
@@ -56247,8 +58032,16 @@ check("AMO V5 canonical positions and immutable projections are schema-bound", (
   assert.match(workerSource, /ordinal_constraints_ready/u);
   assert.match(workerSource, /events_confirmed_governed_position_uidx/u);
   assert.match(workerSource, /block_index = NULL/u);
-  assert.match(workerSource, /op_return_vout = NULL/u);
-  assert.match(workerSource, /record_ordinal = 0/u);
+  assert.doesNotMatch(
+    workerSource,
+    /op_return_vout = NULL/u,
+    "pending status changes must preserve the raw protocol output position",
+  );
+  assert.doesNotMatch(
+    workerSource,
+    /record_ordinal = 0/u,
+    "pending status changes must preserve the raw protocol record ordinal",
+  );
   for (const exportName of [
     "proofIndexWorkAmoV5Declaration",
     "proofIndexWorkUsdQuoteHead",
@@ -61342,6 +63135,329 @@ check("terminal listing rows require exact close identity before sale activity",
   );
   assert.equal(preV5SaleState.closedListings.length, 0);
   assert.equal(preV5SaleState.sales.length, 0);
+});
+
+check("Q16 mixed companions replace Mail exactly and suppress stale transaction overlays", async () => {
+  const txid = "9".repeat(64);
+  const clearWorkQ16PendingStageDecision = isolatedFunction(
+    BACKFILL_PATH,
+    "clearWorkQ16PendingStageDecision",
+    {
+      NETWORK: "livenet",
+      lockedCanonicalTransactionForMempool: async () => false,
+    },
+  );
+  let mailRow = {
+    body_text: "stale body",
+    event_time: "2026-08-01T00:00:00.000Z",
+    parent_txid: "8".repeat(64),
+    sender_address: "stale-sender",
+    subject: "stale subject",
+    txid,
+  };
+  const statements = [];
+  const client = {
+    async query(sql, params = []) {
+      const text = String(sql);
+      statements.push({ params, sql: text });
+      if (/DELETE FROM proof_indexer\.mail_items/u.test(text)) {
+        mailRow = null;
+      }
+      if (/INSERT INTO proof_indexer\.mail_items/u.test(text)) {
+        mailRow = {
+          amount_sats: String(params[7]),
+          body_text: params[6],
+          data_bytes: params[8],
+          event_time: params[10],
+          message: JSON.parse(params[9]),
+          parent_txid: params[5],
+          sender_address: params[3],
+          status: params[2],
+          subject: params[4],
+          txid: params[1],
+        };
+      }
+      return { rowCount: 1, rows: [] };
+    },
+  };
+
+  await clearWorkQ16PendingStageDecision(client, txid);
+  assert.equal(
+    mailRow,
+    null,
+    "a replay without PWM must remove a stale ghost Mail row",
+  );
+  const mailDelete = statements.find(({ sql }) =>
+    /DELETE FROM proof_indexer\.mail_items/u.test(sql)
+  );
+  assert.ok(mailDelete);
+  assert.doesNotMatch(
+    mailDelete.sql,
+    /status\s+IN|status\s*=/u,
+    "every noncanonical Mail status for the governed replay txid must be replaced",
+  );
+  const overlayStrip = statements.find(({ sql }) =>
+    /UPDATE proof_indexer\.transactions/u.test(sql)
+  );
+  assert.match(
+    overlayStrip.sql,
+    /- 'indexedFrom' - 'item' - 'statusObservation'/u,
+  );
+
+  mailRow = {
+    body_text: "stale body",
+    event_time: "2026-08-01T00:00:00.000Z",
+    parent_txid: "8".repeat(64),
+    sender_address: "stale-sender",
+    subject: "stale subject",
+    txid,
+  };
+  await clearWorkQ16PendingStageDecision(client, txid);
+  const upsertProjection = isolatedFunction(
+    BACKFILL_PATH,
+    "upsertProjection",
+    {
+      NETWORK: "livenet",
+      amountSats: () => 546,
+      bondTagForKind: () => null,
+      dataBytes: () => 12,
+      eventKind: () => "mail",
+      itemTime: () => null,
+      itemTxid: (item) => item.txid,
+      proofIndexCanonicalMailProjectionRows,
+      upsertWorkAmoV6ListingProjection: async () => {},
+      upsertWorkAmoV8ListingProjection: async () => {},
+    },
+  );
+  const freshMail = {
+    confirmed: false,
+    kind: "mail",
+    protocol: "pwm1",
+    status: "pending",
+    txid,
+    valid: true,
+  };
+  await upsertProjection(client, "log", freshMail, "pending", {
+    canonicalEventRow: {
+      amount_sats: "546",
+      data_bytes: 12,
+      event_time: null,
+      kind: "mail",
+      network: "livenet",
+      payload: freshMail,
+      protocol: "pwm1",
+      status: "pending",
+      txid,
+      valid: true,
+    },
+  });
+  assert.deepEqual(
+    {
+      body_text: mailRow.body_text,
+      event_time: mailRow.event_time,
+      parent_txid: mailRow.parent_txid,
+      sender_address: mailRow.sender_address,
+      subject: mailRow.subject,
+    },
+    {
+      body_text: null,
+      event_time: null,
+      parent_txid: null,
+      sender_address: null,
+      subject: null,
+    },
+    "fresh PWM replay nulls must not inherit stale nullable Mail fields",
+  );
+  assert.deepEqual(mailRow.message, freshMail);
+
+  const pendingTransactionWriteItem = isolatedFunction(
+    BACKFILL_PATH,
+    "pendingTransactionWriteItem",
+  );
+  const invalidWork = {
+    kind: "token-event-invalid",
+    protocol: "pwt1",
+    valid: false,
+  };
+  const validCompanion = {
+    kind: "mail",
+    protocol: "pwm1",
+    valid: true,
+  };
+  assert.equal(
+    pendingTransactionWriteItem(
+      [{ item: invalidWork }, { item: validCompanion }],
+      txid,
+    ).kind,
+    "mail",
+    "the transaction observation must prefer the first valid combined item",
+  );
+  assert.equal(
+    pendingTransactionWriteItem(
+      [{ item: invalidWork }, { item: { ...invalidWork, kind: "other-invalid" } }],
+      txid,
+    ).kind,
+    "token-event-invalid",
+    "the first invalid item is only the all-invalid fallback",
+  );
+
+  const stagedDecisionSource = topLevelFunctionSource(
+    BACKFILL_PATH,
+    "preparedWorkQ16PendingStageDecisions",
+  );
+  assert.match(
+    stagedDecisionSource,
+    /const combinedPrepared = \[[\s\S]*\.\.\.verifiedPrepared,[\s\S]*\.\.\.companionPrepared[\s\S]*protocolResolvedInvalid[\s\S]*combinedPrepared\.every[\s\S]*pendingTransactionWriteItem\(\s*combinedPrepared/u,
+    "terminal-invalid and transaction observation must cover WORK plus every companion",
+  );
+  assert.match(
+    stagedDecisionSource,
+    /pendingWorkMintDecision\(\s*verifiedPrepared[\s\S]*pendingWorkMintVerifierResolved\(\s*verifiedPrepared/u,
+    "WORK mint inspection markers must remain scoped to WORK verifier outcomes",
+  );
+
+  const {
+    WORK_Q16_PENDING_PROJECTION_MODEL,
+    workQ16PendingMailProjectionParity,
+    workQ16PendingMailProjectionRows,
+    workQ16PendingTransactionProjectionRows,
+  } = await import("../server/work-q16-pending-projection.mjs");
+  assert.equal(
+    WORK_Q16_PENDING_PROJECTION_MODEL,
+    "canonical-work-q16-pending-projection-v5",
+  );
+  const projectedMail = workQ16PendingMailProjectionRows([{
+    ...mailRow,
+    event_time: new Date("2026-08-04T12:34:56.789Z"),
+  }]);
+  assert.equal(projectedMail[0].event_time, "2026-08-04T12:34:56.789Z");
+  assert.equal(projectedMail[0].sender_address, null);
+  const validPwmEvent = {
+    protocol: "pwm1",
+    txid,
+    valid: true,
+  };
+  assert.equal(
+    workQ16PendingMailProjectionParity({
+      eventRows: [validPwmEvent],
+      mailRows: [mailRow],
+    }).ready,
+    true,
+  );
+  assert.equal(
+    workQ16PendingMailProjectionParity({
+      eventRows: [validPwmEvent],
+      mailRows: [],
+    }).ready,
+    false,
+    "a missing valid PWM Mail row must fail parity",
+  );
+  assert.equal(
+    workQ16PendingMailProjectionParity({
+      eventRows: [],
+      mailRows: [mailRow],
+    }).ready,
+    false,
+    "a ghost Mail row without valid PWM must fail parity",
+  );
+  assert.equal(
+    workQ16PendingMailProjectionParity({
+      eventRows: [validPwmEvent],
+      mailRows: [{ ...mailRow, status: "confirmed" }],
+    }).ready,
+    false,
+    "a Q16 member Mail row must remain relationally pending",
+  );
+  const cleanTransaction = workQ16PendingTransactionProjectionRows([{
+    raw_tx: {
+      pendingProtocolResolvedInvalid: false,
+      pendingWorkMintAttemptCount: 0,
+      pendingWorkMintInspectionVersion: 1,
+      pendingWorkMintRecoveryNeeded: false,
+      pendingWorkMintResolvedInvalid: false,
+    },
+    status: "pending",
+    txid,
+  }]);
+  const staleTransaction = workQ16PendingTransactionProjectionRows([{
+    raw_tx: {
+      indexedFrom: "mempool",
+      item: { kind: "mail" },
+      pendingProtocolResolvedInvalid: false,
+      pendingWorkMintAttemptCount: 0,
+      pendingWorkMintInspectionVersion: 1,
+      pendingWorkMintRecoveryNeeded: false,
+      pendingWorkMintResolvedInvalid: false,
+    },
+    status: "pending",
+    txid,
+  }]);
+  assert.equal(cleanTransaction[0].volatileOverlayAbsent, true);
+  assert.equal(staleTransaction[0].volatileOverlayAbsent, false);
+  assert.notDeepEqual(staleTransaction, cleanTransaction);
+
+  const witnessSource = topLevelFunctionSource(
+    BACKFILL_PATH,
+    "persistExactWorkQ16PendingWitness",
+  );
+  assert.match(
+    witnessSource,
+    /workQ16PendingMailProjectionParity[\s\S]*valid PWM companion membership/u,
+  );
+  assert.match(witnessSource, /mailItems:/u);
+  assert.match(witnessSource, /"MAIL-ITEMS"/u);
+  assert.match(witnessSource, /workQ16PendingMailProjectionRows/u);
+  assert.match(
+    witnessSource,
+    /volatileOverlayAbsent !== true[\s\S]*stale volatile Mail overlay/u,
+  );
+
+  const epochSql = readFileSync(
+    new URL("../deploy/proof-indexer-readiness-epoch.sql", import.meta.url),
+    "utf8",
+  );
+  assert.match(epochSql, /'ledger_snapshots',[\s\S]*'mail_items',[\s\S]*'op_returns'/u);
+  assert.match(epochSql, /readiness_trigger_count <> 21/u);
+  const readerSource = readFileSync(READER_PATH, "utf8");
+  assert.match(
+    readerSource,
+    /"ledger_snapshots",\s*"mail_items",\s*"meta"/u,
+    "Mail mutations must participate in the attested readiness epoch contract",
+  );
+  const workerPendingAudit = topLevelFunctionSource(
+    WORKER_PATH,
+    "assertWorkPrecisionPendingReady",
+  );
+  const workerPendingProjection = topLevelFunctionSource(
+    WORKER_PATH,
+    "workerWorkPrecisionPendingProjection",
+  );
+  const readerPendingReadiness = topLevelFunctionSource(
+    READER_PATH,
+    "proofIndexWorkPrecisionV2MigrationReadinessFullAudit",
+  );
+  for (const [label, source] of [
+    ["worker", workerPendingAudit],
+    ["reader", readerPendingReadiness],
+  ]) {
+    assert.match(
+      source,
+      /FROM proof_indexer\.mail_items[\s\S]*workQ16PendingMailProjectionParity/u,
+      `${label} must independently reject missing or ghost Q16 Mail rows`,
+    );
+  }
+  for (const [label, source] of [
+    ["worker", workerPendingProjection],
+    ["reader", readerPendingReadiness],
+  ]) {
+    assert.match(source, /mailItems/u);
+    assert.match(source, /"MAIL-ITEMS"/u);
+    assert.match(
+      source,
+      /workQ16PendingMailProjectionRows/u,
+      `${label} must close the projection shape over the exact Mail commitment`,
+    );
+  }
 });
 
 let failures = 0;

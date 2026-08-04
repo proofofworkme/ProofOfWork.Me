@@ -25,8 +25,10 @@ import {
   workerBackfillPhasePlan,
   workerCoreTipAdvanceFromError,
   workerNoProgressFromMeta,
+  workerPendingEventHealth,
   workerWorkAmoV8ActivationLatchReady,
   workerWorkAmoV8DeclarationConfig,
+  workerWorkQ16PendingParentMembershipTxids,
   workerWorkPrecisionConfirmedReplayEnvelopeReady,
   workerWorkPrecisionCoreTipReady,
   workerWorkPrecisionEra,
@@ -49,6 +51,7 @@ import {
   WORK_AMO_V5_NETWORK_ACCUMULATOR_MODEL,
   WORK_AMO_V5_PAYLOAD_COMMITMENT_MODEL,
   WORK_AMO_V5_STATE_COMMITMENT_MODEL,
+  workAmoV5CanonicalPayloadCommitment,
   workAmoV5CanonicalStateCommitment,
 } from "../server/work-amo-v5.mjs";
 import {
@@ -76,6 +79,10 @@ const WORKER_PATH = new URL(
   "./run-proof-indexer-worker.mjs",
   import.meta.url,
 );
+const PARITY_PATH = new URL(
+  "./check-proof-indexer-parity.mjs",
+  import.meta.url,
+);
 const fixtureMode = process.argv.find((value) => value.startsWith("--fixture="))
   ?.split("=")[1];
 
@@ -87,15 +94,15 @@ function deploymentEnvironmentValues(source, name) {
   return [...source.matchAll(pattern)].map((match) => match[1]);
 }
 
-function topLevelFunctionSource(name) {
-  const source = readFileSync(BACKFILL_PATH, "utf8");
+function topLevelFunctionSource(name, path = BACKFILL_PATH) {
+  const source = readFileSync(path, "utf8");
   const startPattern = new RegExp(
     `^(?:export\\s+)?(?:async\\s+)?function\\s+${name}\\s*\\(`,
     "mu",
   );
   const startMatch = startPattern.exec(source);
   if (!startMatch) {
-    throw new Error(`Could not find ${name} in ${BACKFILL_PATH.pathname}`);
+    throw new Error(`Could not find ${name} in ${path.pathname}`);
   }
   const rest = source.slice(startMatch.index + startMatch[0].length);
   const nextMatch =
@@ -267,6 +274,75 @@ if (fixtureMode === "poison-exit") {
 
 async function runChecks() {
   const workerSource = readFileSync(WORKER_PATH, "utf8");
+  const paritySource = readFileSync(PARITY_PATH, "utf8");
+  const updateTransactionStatusSource = topLevelFunctionSource(
+    "updateTransactionStatus",
+    WORKER_PATH,
+  );
+  const refreshPendingStatusesSource = topLevelFunctionSource(
+    "refreshPendingStatuses",
+    WORKER_PATH,
+  );
+  const dropWorkQ16PendingStageMemberSource = topLevelFunctionSource(
+    "dropWorkQ16PendingStageMember",
+  );
+  const upsertEventSource = topLevelFunctionSource("upsertEvent");
+  const nonconfirmedEventMetadataEnd = paritySource.indexOf(
+    ") AS nonconfirmed_events_with_block_metadata",
+  );
+  const nonconfirmedEventMetadataStart = paritySource.lastIndexOf(
+    "(\n          SELECT count(*)",
+    nonconfirmedEventMetadataEnd,
+  );
+  assert.ok(
+    nonconfirmedEventMetadataStart >= 0 &&
+      nonconfirmedEventMetadataEnd > nonconfirmedEventMetadataStart,
+    "the nonconfirmed event metadata parity invariant must remain inspectable",
+  );
+  const nonconfirmedEventMetadataSource = paritySource.slice(
+    nonconfirmedEventMetadataStart,
+    nonconfirmedEventMetadataEnd,
+  );
+  for (const source of [
+    updateTransactionStatusSource,
+    dropWorkQ16PendingStageMemberSource,
+  ]) {
+    assert.doesNotMatch(
+      source,
+      /op_return_vout\s*=\s*NULL|record_ordinal\s*=\s*0/u,
+      "pending and dropped reconciliation must preserve exact raw protocol positions",
+    );
+    assert.match(
+      source,
+      /block_height\s*=\s*NULL[\s\S]*block_index\s*=\s*NULL[\s\S]*block_time\s*=\s*NULL/u,
+      "pending and dropped reconciliation must still clear confirmed block metadata",
+    );
+  }
+  assert.match(
+    upsertEventSource,
+    /ELSE COALESCE\(\s*EXCLUDED\.op_return_vout,\s*proof_indexer\.events\.op_return_vout\s*\)[\s\S]*WHEN EXCLUDED\.op_return_vout IS NOT NULL\s*THEN EXCLUDED\.record_ordinal\s*ELSE proof_indexer\.events\.record_ordinal/u,
+    "a positionless pending refresh must not erase a previously proven raw protocol position",
+  );
+  assert.match(
+    nonconfirmedEventMetadataSource,
+    /block_height IS NOT NULL[\s\S]*block_index IS NOT NULL[\s\S]*block_time IS NOT NULL/u,
+    "nonconfirmed parity must continue rejecting confirmed block metadata",
+  );
+  assert.doesNotMatch(
+    nonconfirmedEventMetadataSource,
+    /op_return_vout|record_ordinal/u,
+    "nonconfirmed parity must treat protocol output and record ordinal as protocol metadata",
+  );
+  assert.match(
+    refreshPendingStatusesSource,
+    /workQ16PendingLegacyStatusMembership\(pool\)[\s\S]*NOT \(txid = ANY\(\$4::text\[\]\)\)/u,
+    "legacy status selection must exclude every Q16 parent-witness member",
+  );
+  assert.match(
+    updateTransactionStatusSource,
+    /LOCK TABLE proof_indexer\.transactions IN ROW EXCLUSIVE MODE[\s\S]*SELECT status, raw_tx[\s\S]*workQ16PendingLegacyStatusMembership\(client, \{ lock: true \}\)[\s\S]*q16-parent-witness-owned/u,
+    "legacy status mutation must serialize with atomic publication before rechecking Q16 ownership under a witness-row lock",
+  );
   const invalidTransitionAuditStart = workerSource.indexOf(
     "SELECT count(*)::integer\n" +
       "            FROM proof_indexer.work_amo_block_transitions transition\n" +
@@ -324,6 +400,11 @@ async function runChecks() {
     workerSource,
     /const currentSuccess = \{[\s\S]*workPrecision: runtime\.workPrecision[\s\S]*lastSuccess: currentSuccess/u,
     "a completed worker cycle must persist its full Q16 proof under lastSuccess",
+  );
+  assert.match(
+    workerSource,
+    /globalUnresolved: witness\.scan\.globalUnresolved[\s\S]*q16PendingUnresolved: witness\.scan\.q16PendingUnresolved[\s\S]*const pendingEventHealth = workerPendingEventHealth\([\s\S]*pendingEventHealth,[\s\S]*lastSuccess: currentSuccess/u,
+    "a completed worker cycle must publish generic and Q16 unresolved counts without weakening Q16 readiness",
   );
   assert.match(
     workerSource,
@@ -1097,6 +1178,43 @@ async function runChecks() {
       `confirmed replay mutation must fail: ${Object.keys(mutation)[0]}`,
     );
   }
+  const parentMembershipTxids = ["6".repeat(64), "7".repeat(64)];
+  const parentMembershipSha256 = createHash("sha256")
+    .update(
+      Buffer.from(
+        "ProofOfWork.Me/WORK-Q16-PENDING-MEMBERSHIP/v1\n" +
+          JSON.stringify(parentMembershipTxids),
+        "utf8",
+      ),
+    )
+    .digest("hex");
+  const parentWitness = {
+    membershipSnapshot: {
+      count: parentMembershipTxids.length,
+      model: "canonical-work-q16-pending-membership-v2",
+      sha256: parentMembershipSha256,
+      txids: parentMembershipTxids,
+    },
+    model: "canonical-work-q16-pending-rebuild-v2",
+    network: "livenet",
+    ready: true,
+  };
+  assert.deepEqual(
+    workerWorkQ16PendingParentMembershipTxids(parentWitness),
+    parentMembershipTxids,
+    "legacy status ownership must derive only from the exact committed Q16 parent membership",
+  );
+  assert.equal(
+    workerWorkQ16PendingParentMembershipTxids({
+      ...parentWitness,
+      membershipSnapshot: {
+        ...parentWitness.membershipSnapshot,
+        count: parentMembershipTxids.length - 1,
+      },
+    }),
+    null,
+    "a malformed Q16 parent witness must fail closed before legacy status mutation",
+  );
   const pendingMemberTxid = "7".repeat(64);
   const pendingUnrelatedTxids = Array.from(
     { length: 1_000 },
@@ -1109,6 +1227,9 @@ async function runChecks() {
   const pendingEventRows = [{
     event_id: "pending-work-event",
     kind: "token-listing",
+    protocol_vout: 1,
+    raw_payload: "pwt1:list5:fixture",
+    record_ordinal: 0,
     txid: pendingMemberTxid,
     valid: true,
   }];
@@ -1123,24 +1244,59 @@ async function runChecks() {
     status: "pending",
     txid: pendingMemberTxid,
   }];
+  const pendingEventParticipantRows = [{
+    address: "bc1pendingowner",
+    event_id: "pending-work-event",
+    powid: "work-owner",
+    protocol: "pwt1",
+    protocol_vout: 1,
+    record_ordinal: 0,
+    role: "owner",
+    txid: pendingMemberTxid,
+  }];
+  const pendingEventRefRows = [{
+    event_id: "pending-work-event",
+    protocol: "pwt1",
+    protocol_vout: 1,
+    record_ordinal: 0,
+    ref_type: "token-id",
+    ref_value: "d".repeat(64),
+    txid: pendingMemberTxid,
+  }];
+  const pendingMailRows = [{
+    amount_sats: "546",
+    body_text: null,
+    data_bytes: 12,
+    event_time: null,
+    message: { kind: "mail", protocol: "pwm1", txid: pendingMemberTxid },
+    parent_txid: null,
+    sender_address: null,
+    status: "pending",
+    subject: null,
+    txid: pendingMemberTxid,
+  }];
   const pendingProjection = workerWorkPrecisionPendingProjection({
     balanceRows: [],
+    eventParticipantRows: pendingEventParticipantRows,
+    eventRefRows: pendingEventRefRows,
     eventRows: pendingEventRows,
     listingRows: [],
+    mailRows: pendingMailRows,
     transactionRows: pendingTransactionRows,
   });
   const volatileRefreshedProjection =
     workerWorkPrecisionPendingProjection({
       balanceRows: [],
+      eventParticipantRows: pendingEventParticipantRows,
+      eventRefRows: pendingEventRefRows,
       eventRows: pendingEventRows,
       listingRows: [],
+      mailRows: pendingMailRows,
       transactionRows: [{
         ...pendingTransactionRows[0],
         raw_tx: {
           ...pendingTransactionRows[0].raw_tx,
           fee: 1234,
-          indexedFrom: "mempool",
-          item: { refreshed: true },
           statusObservation: {
             observedAt: "2026-08-02T01:39:23.495Z",
             status: "pending",
@@ -1155,9 +1311,67 @@ async function runChecks() {
     pendingProjection,
     "volatile transaction-envelope refreshes must not stale the exact WORK readiness projection",
   );
+  const nullableMailDriftProjection =
+    workerWorkPrecisionPendingProjection({
+      balanceRows: [],
+      eventParticipantRows: pendingEventParticipantRows,
+      eventRefRows: pendingEventRefRows,
+      eventRows: pendingEventRows,
+      listingRows: [],
+      mailRows: [{
+        ...pendingMailRows[0],
+        body_text: "stale body",
+        event_time: "2026-08-02T01:39:23.495Z",
+        sender_address: "stale-sender",
+        subject: "stale subject",
+      }],
+      transactionRows: pendingTransactionRows,
+    });
+  assert.notEqual(
+    nullableMailDriftProjection.mailItems.sha256,
+    pendingProjection.mailItems.sha256,
+    "every nullable PWM Mail field must be an exact readiness hash input",
+  );
+  const missingMailProjection = workerWorkPrecisionPendingProjection({
+    balanceRows: [],
+    eventParticipantRows: pendingEventParticipantRows,
+    eventRefRows: pendingEventRefRows,
+    eventRows: pendingEventRows,
+    listingRows: [],
+    mailRows: [],
+    transactionRows: pendingTransactionRows,
+  });
+  assert.notEqual(
+    missingMailProjection.mailItems.sha256,
+    pendingProjection.mailItems.sha256,
+    "missing or ghost PWM Mail membership must change the readiness hash",
+  );
+  const staleOverlayProjection =
+    workerWorkPrecisionPendingProjection({
+      balanceRows: [],
+      eventParticipantRows: pendingEventParticipantRows,
+      eventRefRows: pendingEventRefRows,
+      eventRows: pendingEventRows,
+      listingRows: [],
+      transactionRows: [{
+        ...pendingTransactionRows[0],
+        raw_tx: {
+          ...pendingTransactionRows[0].raw_tx,
+          indexedFrom: "mempool",
+          item: { refreshed: true },
+        },
+      }],
+    });
+  assert.notEqual(
+    staleOverlayProjection.transactions.sha256,
+    pendingProjection.transactions.sha256,
+    "a stale indexedFrom/item Mail overlay must invalidate Q16 readiness",
+  );
   const markerChangedProjection =
     workerWorkPrecisionPendingProjection({
       balanceRows: [],
+      eventParticipantRows: pendingEventParticipantRows,
+      eventRefRows: pendingEventRefRows,
       eventRows: pendingEventRows,
       listingRows: [],
       transactionRows: [{
@@ -1170,7 +1384,7 @@ async function runChecks() {
     });
   assert.equal(
     pendingProjection.model,
-    "canonical-work-q16-pending-projection-v3",
+    "canonical-work-q16-pending-projection-v5",
   );
   assert.notEqual(
     markerChangedProjection.transactions.sha256,
@@ -1183,6 +1397,8 @@ async function runChecks() {
   ]) {
     const changedProjection = workerWorkPrecisionPendingProjection({
       balanceRows: [],
+      eventParticipantRows: pendingEventParticipantRows,
+      eventRefRows: pendingEventRefRows,
       eventRows: pendingEventRows,
       listingRows: [],
       transactionRows: [{
@@ -1196,6 +1412,39 @@ async function runChecks() {
       "transaction identity and relational status remain exact readiness inputs",
     );
   }
+  const participantChangedProjection =
+    workerWorkPrecisionPendingProjection({
+      balanceRows: [],
+      eventParticipantRows: [{
+        ...pendingEventParticipantRows[0],
+        address: "bc1differentowner",
+      }],
+      eventRefRows: pendingEventRefRows,
+      eventRows: pendingEventRows,
+      listingRows: [],
+      transactionRows: pendingTransactionRows,
+    });
+  assert.notEqual(
+    participantChangedProjection.eventParticipants.sha256,
+    pendingProjection.eventParticipants.sha256,
+    "every rendered pending WORK participant must invalidate readiness when it changes",
+  );
+  const refChangedProjection = workerWorkPrecisionPendingProjection({
+    balanceRows: [],
+    eventParticipantRows: pendingEventParticipantRows,
+    eventRefRows: [{
+      ...pendingEventRefRows[0],
+      ref_value: "different-work-reference",
+    }],
+    eventRows: pendingEventRows,
+    listingRows: [],
+    transactionRows: pendingTransactionRows,
+  });
+  assert.notEqual(
+    refChangedProjection.eventRefs.sha256,
+    pendingProjection.eventRefs.sha256,
+    "every rendered pending WORK ID/token reference must invalidate readiness when it changes",
+  );
   const pendingParity = workerWorkPrecisionPendingParity({
     balanceRows: [],
     eventRows: pendingEventRows,
@@ -1271,6 +1520,114 @@ async function runChecks() {
     ...compactPendingMempool
   } = pendingMempool;
   const pendingNowMs = Date.now();
+  const pendingAbsenceEvidence = {
+    model: "canonical-work-q16-pending-absence-evidence-v1",
+    observations: [],
+  };
+  const pendingComponentSha256 = (label, value) =>
+    workAmoV5CanonicalPayloadCommitment({ label, value }).sha256;
+  const pendingReadinessCheckpointCore = {
+    maxPreparedTransactions: "0",
+    model: "proof-index-worker-readiness-epoch-checkpoint-v1",
+    network: "livenet",
+    postmasterStartedAt: new Date(pendingNowMs - 60_000).toISOString(),
+    queueCount: 0,
+    readinessEpochs: Array.from(
+      { length: 64 },
+      (_value, shard) => [shard, String(shard + 1)],
+    ),
+    searchPath: "pg_catalog, pg_temp",
+  };
+  const pendingReadinessCheckpoint = {
+    ...pendingReadinessCheckpointCore,
+    sha256: createHash("sha256")
+      .update(
+        Buffer.from(
+          `ProofOfWork.Me/PROOF-INDEX-WORKER-READINESS-EPOCH-CHECKPOINT/v1\n${
+            JSON.stringify(pendingReadinessCheckpointCore)
+          }`,
+          "utf8",
+        ),
+      )
+      .digest("hex"),
+  };
+  const pendingDecisionOutcomes = [{
+    kind: "token-listing",
+    protocolVout: 1,
+    rawPayloadSha256: createHash("sha256")
+      .update(Buffer.from("pwt1:list5:fixture", "utf8"))
+      .digest("hex"),
+    recordOrdinal: 0,
+    txid: pendingMemberTxid,
+    valid: true,
+  }];
+  const pendingConfirmedBaseCommitment = {
+    ...workAmoV5CanonicalPayloadCommitment({
+      fixture: "confirmed-work-base",
+    }),
+    tokenStateCommitment:
+      replayLatestTransition.payload.closingSufficientState
+        .tokenStateCommitment,
+  };
+  const pendingStageCore = {
+    absenceEvidence: pendingAbsenceEvidence,
+    absenceEvidenceSha256: pendingComponentSha256(
+      "ABSENCE-EVIDENCE",
+      pendingAbsenceEvidence,
+    ),
+    canonicalTip: {
+      hash: replayTipHash,
+      height: 102,
+    },
+    codeVersion:
+      "proof-api-canonical-work-q16-pending-verifier-stage-v2",
+    confirmedBaseCommitment: pendingConfirmedBaseCommitment,
+    confirmedRemovalCount: 0,
+    confirmedRemovalSha256: pendingComponentSha256(
+      "CONFIRMED-REMOVALS",
+      [],
+    ),
+    confirmedRemovalTxids: [],
+    decisionCount: 1,
+    decisionOutcomeCount: pendingDecisionOutcomes.length,
+    decisionOutcomesSha256: pendingComponentSha256(
+      "DECISION-OUTCOMES",
+      pendingDecisionOutcomes,
+    ),
+    decisionsSha256: pendingComponentSha256(
+      "DECISIONS",
+      [{ items: [{ valid: true }], txid: pendingMemberTxid }],
+    ),
+    model: "canonical-work-q16-pending-verifier-stage-v2",
+    network: "livenet",
+    orderedReplayCount: 1,
+    orderedReplaySha256: pendingComponentSha256(
+      "ORDERED-REPLAY",
+      [pendingMemberTxid],
+    ),
+    parentWitnessSha256: "e".repeat(64),
+    pendingDropConfirmationMs: 300_000,
+    priorMembershipCount: 1,
+    priorMembershipSha256: pendingComponentSha256(
+      "PRIOR-MEMBERSHIP",
+      [pendingMemberTxid],
+    ),
+    priorMembershipTxids: [pendingMemberTxid],
+    readinessEpochCheckpoint: pendingReadinessCheckpoint,
+    removalCount: 0,
+    removalSha256: pendingComponentSha256("REMOVALS", []),
+    removalTxids: [],
+    replayTxids: [pendingMemberTxid],
+    requestModel:
+      "canonical-work-q16-pending-verifier-stage-request-v2",
+  };
+  const pendingStageCommitment =
+    workAmoV5CanonicalPayloadCommitment(pendingStageCore);
+  const pendingVerifierStage = {
+    ...pendingStageCore,
+    stagePayloadBytes: pendingStageCommitment.payloadBytes,
+    stageSha256: pendingStageCommitment.sha256,
+  };
   const pendingWitness = {
     activationHeight: configuredV7.activationHeight,
     amountStorageModel: "work-subatoms-v2",
@@ -1292,24 +1649,53 @@ async function runChecks() {
     scan: {
       canonicalDeferred: 0,
       complete: true,
-      completeModel: "persisted-pending-work-projection-audit-v1",
+      completeModel: "atomic-staged-pending-work-projection-audit-v1",
       discoveryModel: "bounded-best-effort-unconfirmed-discovery-v1",
-      inspectedTxids: 0,
+      globalUnresolved: 0,
+      inspectedTxids: 1,
       mempoolMembershipCount: pendingMempoolTxids.length,
       protocolTxids: 0,
+      q16PendingUnresolved: 0,
       scanned: 0,
       stopReason: "",
-      unresolved: 0,
     },
+    verifierStage: pendingVerifierStage,
+  };
+  const pendingAttemptStartedAt = new Date(
+    pendingNowMs - 1_000,
+  ).toISOString();
+  const pendingAttemptIdentity = {
+    initialMempool: compactPendingMempool,
+    model: "canonical-work-q16-pending-publication-attempt-v1",
+    network: "livenet",
+    requestSha256: "d".repeat(64),
+    startedAt: pendingAttemptStartedAt,
+  };
+  const pendingAttempt = {
+    attemptId:
+      workAmoV5CanonicalPayloadCommitment(pendingAttemptIdentity).sha256,
+    completedAt: pendingWitness.generatedAt,
+    ...pendingAttemptIdentity,
+    publicationReadinessEpochCheckpoint: pendingReadinessCheckpoint,
+    stageSha256: pendingVerifierStage.stageSha256,
+    status: "published",
+    witnessGeneratedAt: pendingWitness.generatedAt,
   };
   const pendingWitnessOptions = {
+    confirmedRemovalRows: [],
     coreTip: replayCoreTip,
     declarationConfig: configuredV7,
+    expectedTokenStateCommitment:
+      replayLatestTransition.payload.closingSufficientState
+        .tokenStateCommitment,
+    eventRows: pendingEventRows,
     invalidLegacyMutationCount: 0,
     mempoolSnapshot: pendingMempool,
     nowMs: pendingNowMs,
+    pendingAttempt,
     parity: pendingParity,
     projection: pendingProjection,
+    readinessEpochCheckpoint: pendingReadinessCheckpoint,
   };
   assert.equal(
     workerWorkPrecisionPendingWitnessReady(
@@ -1365,6 +1751,25 @@ async function runChecks() {
       },
     }, {}],
     [{}, { invalidLegacyMutationCount: 1 }],
+    [{
+      verifierStage: {
+        ...pendingVerifierStage,
+        decisionsSha256: "6".repeat(64),
+      },
+    }, {}],
+    [{}, {
+      expectedTokenStateCommitment: {
+        ...pendingWitnessOptions.expectedTokenStateCommitment,
+        sha256: "6".repeat(64),
+      },
+    }],
+    [{}, { confirmedRemovalRows: [{ txid: "6".repeat(64) }] }],
+    [{
+      scan: {
+        ...pendingWitness.scan,
+        completeModel: "persisted-pending-work-projection-audit-v1",
+      },
+    }, {}],
     [{
       scan: {
         ...pendingWitness.scan,
@@ -1466,7 +1871,13 @@ async function runChecks() {
   assert.equal(
     workerWorkPrecisionPendingParity({
       balanceRows: [],
-      eventRows: [],
+      eventRows: [{
+        event_id: "pending-work-mint-invalid",
+        kind: "token-event-invalid",
+        payload: { attemptedKind: "token-mint" },
+        txid: pendingMemberTxid,
+        valid: false,
+      }],
       listingRows: [],
       mempoolTxids: pendingMempoolTxids,
       recoveryRows: [{
@@ -1498,7 +1909,7 @@ async function runChecks() {
     pendingWorkMintAttemptCount: 1,
     pendingWorkMintInspectionVersion: 1,
     pendingWorkMintRecoveryNeeded: false,
-    pendingWorkMintResolvedInvalid: false,
+    pendingWorkMintResolvedInvalid: true,
     pendingProtocolResolvedInvalid: true,
   };
   assert.equal(
@@ -1531,7 +1942,7 @@ async function runChecks() {
     pendingWorkMintAttemptCount: 2,
     pendingWorkMintInspectionVersion: 1,
     pendingWorkMintRecoveryNeeded: false,
-    pendingWorkMintResolvedInvalid: false,
+    pendingWorkMintResolvedInvalid: true,
     pendingProtocolResolvedInvalid: true,
   };
   assert.equal(
@@ -1551,8 +1962,35 @@ async function runChecks() {
         txid: pendingMemberTxid,
       }],
     }).ready,
+    false,
+    "a whole-transaction marker cannot replace exact per-record multi-mint outcomes",
+  );
+  assert.equal(
+    workerWorkPrecisionPendingParity({
+      balanceRows: [],
+      eventRows: [0, 1].map((recordOrdinal) => ({
+        event_id: `pending-work-mint-invalid-${recordOrdinal}`,
+        kind: "token-event-invalid",
+        payload: { attemptedKind: "token-mint" },
+        record_ordinal: recordOrdinal,
+        txid: pendingMemberTxid,
+        valid: false,
+      })),
+      listingRows: [],
+      mempoolTxids: pendingMempoolTxids,
+      recoveryRows: [{
+        raw_tx: multiMintTerminalRaw,
+        status: "pending",
+        txid: pendingMemberTxid,
+      }],
+      transactionRows: [{
+        raw_tx: multiMintTerminalRaw,
+        status: "pending",
+        txid: pendingMemberTxid,
+      }],
+    }).ready,
     true,
-    "a whole-transaction terminal-invalid marker resolves a fully inspected multi-mint attempt",
+    "two explicit invalid outcomes close two inspected WORK mint attempts",
   );
   assert.equal(
     workerWorkPrecisionPendingParity({
@@ -1872,6 +2310,55 @@ async function runChecks() {
   assert.equal(pendingBackfillChildTimeoutMs("15000"), 30_000);
   assert.equal(pendingBackfillChildTimeoutMs("45000"), 45_000);
   assert.equal(pendingBackfillChildTimeoutMs("900000"), 600_000);
+  assert.deepEqual(
+    workerPendingEventHealth({ era: "q8", ready: true }),
+    {
+      globalUnresolved: null,
+      model: "bounded-best-effort-pending-event-health-v1",
+      ok: true,
+      q16PendingUnresolved: null,
+      required: false,
+      scope: "all-observed-pending-protocol-events",
+    },
+    "the global pending-event health gate is explicitly not required before Q16",
+  );
+  assert.deepEqual(
+    workerPendingEventHealth({
+      era: "q16",
+      globalUnresolved: 0,
+      q16PendingUnresolved: 0,
+      ready: true,
+    }),
+    {
+      globalUnresolved: 0,
+      model: "bounded-best-effort-pending-event-health-v1",
+      ok: true,
+      q16PendingUnresolved: 0,
+      required: true,
+      scope: "all-observed-pending-protocol-events",
+    },
+    "a complete Q16 scan is healthy only when every observed protocol event resolves",
+  );
+  assert.equal(
+    workerPendingEventHealth({
+      era: "q16",
+      globalUnresolved: 1,
+      q16PendingUnresolved: 0,
+      ready: true,
+    }).ok,
+    false,
+    "a generic unresolved pending protocol event must degrade whole-index health",
+  );
+  assert.equal(
+    workerPendingEventHealth({
+      era: "q16",
+      globalUnresolved: "0",
+      q16PendingUnresolved: 0,
+      ready: true,
+    }).ok,
+    false,
+    "pending health counters must remain exact JSON integers",
+  );
 
   const pendingOnlyBackfillMode = isolatedBackfillFunction(
     "pendingOnlyBackfillMode",

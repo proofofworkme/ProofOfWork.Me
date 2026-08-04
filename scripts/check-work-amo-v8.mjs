@@ -53,6 +53,7 @@ import {
   workAmoV8DeclarationCommitment,
 } from "../server/work-amo-v8-declaration.mjs";
 import {
+  exactWorkAmoV8WorkerLastSuccessReadiness,
   exactWorkAmoV8WorkerReadiness,
 } from "../server/work-amo-v8-worker-readiness.mjs";
 import {
@@ -1189,6 +1190,48 @@ for (const state of ["starting", "running", "canonical-phase-complete"]) {
     ).ready,
     true,
     `${state} preserves the last fully successful Q16 proof`,
+  );
+}
+for (const [label, workerPatch] of [
+  ["active error", { error: "pending verifier failed" }],
+  ["consecutive failure", { consecutiveFailures: 1 }],
+  ["containment", { noProgress: { active: true } }],
+  ["precision recovery error", { workPrecisionRecoveryError: "repair failed" }],
+  [
+    "precision recovery requirement",
+    {
+      workPrecision: {
+        ...successfulWorkPrecision,
+        readinessRecoveryRequired: true,
+      },
+    },
+  ],
+  [
+    "precision readiness error",
+    {
+      workPrecision: {
+        ...successfulWorkPrecision,
+        readinessError: "recovery incomplete",
+      },
+    },
+  ],
+]) {
+  assert.equal(
+    exactWorkAmoV8WorkerLastSuccessReadiness(
+      {
+        network: "livenet",
+        worker: {
+          ...successfulWorker,
+          finishedAt: undefined,
+          ok: false,
+          state: "canonical-phase-complete",
+          ...workerPatch,
+        },
+      },
+      readinessOptions,
+    ).ready,
+    false,
+    `${label} closes durable transitional readiness`,
   );
 }
 assert.equal(

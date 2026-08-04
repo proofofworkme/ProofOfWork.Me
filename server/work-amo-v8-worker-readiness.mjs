@@ -37,9 +37,9 @@ function replayCommitmentsEqual(leftValue, rightValue) {
   return Object.keys(left).every((key) => left[key] === right[key]);
 }
 
-export function exactWorkAmoV8WorkerReadiness(
+export function exactWorkAmoV8WorkerLastSuccessReadiness(
   operationalStatus,
-  { liveMempoolSnapshot, network, tipHash, tipHeight },
+  { network, tipHash, tipHeight },
 ) {
   const worker = objectRecord(operationalStatus?.worker);
   const workerState = String(worker.state ?? "");
@@ -48,12 +48,20 @@ export function exactWorkAmoV8WorkerReadiness(
   const durableReplay = objectRecord(durableWorkPrecision.replay);
   const currentWorkPrecision = objectRecord(worker.workPrecision);
   const currentReplay = objectRecord(currentWorkPrecision.replay);
+  const noProgress = objectRecord(worker.noProgress);
   const finishedAt = String(lastSuccess.finishedAt ?? "");
+  const failureActive =
+    String(worker.error ?? "").trim().length > 0 ||
+    Number(worker.consecutiveFailures ?? 0) > 0 ||
+    noProgress.active === true ||
+    String(worker.workPrecisionRecoveryError ?? "").trim().length > 0 ||
+    currentWorkPrecision.readinessRecoveryRequired === true ||
+    String(currentWorkPrecision.readinessError ?? "").trim().length > 0;
   const transientState = WORK_AMO_V8_TRANSIENT_WORKER_STATES.has(
     workerState,
   );
   const idleState = workerState === "idle";
-  const stateReady = idleState || transientState;
+  const stateReady = (idleState || transientState) && !failureActive;
   const idleProofReady =
     !idleState ||
     (worker.ok === true &&
@@ -78,8 +86,6 @@ export function exactWorkAmoV8WorkerReadiness(
     replay.tipHeight === tipHeight &&
     /^[0-9a-f]{64}$/u.test(replay.tipHash) &&
     replay.tipHash === normalizedHash(tipHash) &&
-    liveMempoolSnapshot?.model ===
-      "canonical-core-mempool-txid-set-v1" &&
     Number.isSafeInteger(replay.mempoolCount) &&
     replay.mempoolCount >= 0 &&
     /^[0-9a-f]{64}$/u.test(replay.mempoolSha256) &&
@@ -89,6 +95,7 @@ export function exactWorkAmoV8WorkerReadiness(
     /^[0-9a-f]{64}$/u.test(replay.pendingProjectionSha256);
   return {
     era: String(durableWorkPrecision.era ?? ""),
+    failureActive,
     finishedAt,
     mempoolCount: Number.isSafeInteger(replay.mempoolCount)
       ? replay.mempoolCount
@@ -107,5 +114,22 @@ export function exactWorkAmoV8WorkerReadiness(
     tipHeight: Number.isSafeInteger(replay.tipHeight)
       ? replay.tipHeight
       : null,
+  };
+}
+
+export function exactWorkAmoV8WorkerReadiness(
+  operationalStatus,
+  { liveMempoolSnapshot, network, tipHash, tipHeight },
+) {
+  const durable = exactWorkAmoV8WorkerLastSuccessReadiness(
+    operationalStatus,
+    { network, tipHash, tipHeight },
+  );
+  return {
+    ...durable,
+    ready:
+      durable.ready === true &&
+      liveMempoolSnapshot?.model ===
+        "canonical-core-mempool-txid-set-v1",
   };
 }

@@ -1,5 +1,14 @@
 import { createProofIndexPool } from "../server/db/postgres.mjs";
 import {
+  PROOF_INDEX_EVENT_RELATION_PARITY_MODEL,
+  proofIndexCanonicalEventRelationParity,
+} from "../server/proof-index-event-relations.mjs";
+import {
+  PROOF_INDEX_MAIL_PROJECTION_PARITY_MODEL,
+  PROOF_INDEX_RENDERED_MAIL_KINDS,
+  proofIndexCanonicalMailProjectionParity,
+} from "../server/proof-index-mail-projection.mjs";
+import {
   closeProofIndexReadPool,
   compareProofIndexHistoryPayloads,
   proofIndexActivityPayload,
@@ -260,6 +269,146 @@ function arrayLength(value) {
   return Array.isArray(value) ? value.length : 0;
 }
 
+async function readRenderedProjectionParity(pool, network) {
+  const client = await pool.connect();
+  let transactionOpen = false;
+  try {
+    await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+    transactionOpen = true;
+    const eventResult = await client.query(
+      `
+        SELECT
+          event.event_id::text AS event_id,
+          event.network,
+          event.txid,
+          event.protocol,
+          event.kind,
+          event.valid,
+          event.amount_sats::text,
+          event.data_bytes,
+          event.event_time,
+          event.payload,
+          event.status
+        FROM proof_indexer.events event
+        WHERE event.network = $1
+          AND event.status IN ('pending', 'confirmed', 'dropped', 'orphaned')
+        ORDER BY event.event_id ASC
+      `,
+      [network],
+    );
+    const participantResult = await client.query(
+      `
+        SELECT
+          event.event_id::text AS event_id,
+          COALESCE(participant.address, '') AS address,
+          COALESCE(participant.role, '') AS role,
+          COALESCE(participant.powid, '') AS powid
+        FROM proof_indexer.events event
+        JOIN proof_indexer.event_participants participant
+          ON participant.event_id = event.event_id
+        WHERE event.network = $1
+          AND event.status IN ('pending', 'confirmed', 'dropped', 'orphaned')
+        ORDER BY event.event_id ASC, participant.address ASC,
+          participant.role ASC, COALESCE(participant.powid, '') ASC
+      `,
+      [network],
+    );
+    const refResult = await client.query(
+      `
+        SELECT
+          event.event_id::text AS event_id,
+          COALESCE(ref.ref_type, '') AS ref_type,
+          COALESCE(ref.ref_value, '') AS ref_value
+        FROM proof_indexer.events event
+        JOIN proof_indexer.event_refs ref
+          ON ref.event_id = event.event_id
+        WHERE event.network = $1
+          AND event.status IN ('pending', 'confirmed', 'dropped', 'orphaned')
+        ORDER BY event.event_id ASC, ref.ref_type ASC, ref.ref_value ASC
+      `,
+      [network],
+    );
+    const mailResult = await client.query(
+      `
+        SELECT
+          mail.network,
+          mail.txid,
+          mail.status,
+          mail.sender_address,
+          mail.subject,
+          mail.parent_txid,
+          mail.body_text,
+          mail.amount_sats::text,
+          mail.data_bytes,
+          mail.message,
+          mail.event_time
+        FROM proof_indexer.mail_items mail
+        WHERE mail.network = $1
+        ORDER BY mail.txid ASC
+      `,
+      [network],
+    );
+    const mailTransactionResult = await client.query(
+      `
+        SELECT
+          transaction_row.network,
+          transaction_row.txid,
+          transaction_row.status,
+          transaction_row.raw_tx
+        FROM proof_indexer.transactions transaction_row
+        WHERE transaction_row.network = $1
+          AND (
+            EXISTS (
+              SELECT 1
+              FROM proof_indexer.events event
+              WHERE event.network = transaction_row.network
+                AND event.txid = transaction_row.txid
+                AND event.protocol = 'pwm1'
+                AND event.kind = ANY($2::text[])
+                AND event.status IN (
+                  'pending',
+                  'confirmed',
+                  'dropped',
+                  'orphaned'
+                )
+                AND event.valid = true
+            )
+            OR (
+              jsonb_typeof(transaction_row.raw_tx->'item') = 'object'
+              AND lower(btrim(COALESCE(
+                transaction_row.raw_tx->'item'->>'kind',
+                ''
+              ))) = ANY($2::text[])
+            )
+          )
+        ORDER BY transaction_row.txid ASC
+      `,
+      [network, PROOF_INDEX_RENDERED_MAIL_KINDS],
+    );
+    await client.query("COMMIT");
+    transactionOpen = false;
+    return {
+      eventRelations: proofIndexCanonicalEventRelationParity({
+        eventRows: eventResult.rows,
+        participantRows: participantResult.rows,
+        refRows: refResult.rows,
+      }),
+      mailProjection: proofIndexCanonicalMailProjectionParity({
+        eventRows: eventResult.rows,
+        mailRows: mailResult.rows,
+        transactionRows: mailTransactionResult.rows,
+      }),
+    };
+  } catch (error) {
+    if (transactionOpen) {
+      await client.query("ROLLBACK").catch(() => {});
+    }
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 if (DRY_RUN) {
   console.log(
     JSON.stringify(
@@ -286,6 +435,12 @@ const pool = createProofIndexPool({
 
 try {
   const ledger = await readJson(endpoint("/api/v1/ledger-consistency"));
+  const renderedProjectionParity = await readRenderedProjectionParity(
+    pool,
+    NETWORK,
+  );
+  const eventRelationParity = renderedProjectionParity.eventRelations;
+  const mailProjectionParity = renderedProjectionParity.mailProjection;
   const countsResult = await pool.query(
     `
       SELECT
@@ -393,8 +548,6 @@ try {
             AND (
               block_height IS NOT NULL
               OR block_index IS NOT NULL
-              OR op_return_vout IS NOT NULL
-              OR record_ordinal <> 0
               OR block_time IS NOT NULL
             )
         ) AS nonconfirmed_events_with_block_metadata,
@@ -790,6 +943,41 @@ try {
       eventParticipants: rowNumber(counts, "event_participants"),
       eventRefs: rowNumber(counts, "event_refs"),
     },
+  );
+  check(
+    checks,
+    "rendered-event-participant-semantic-parity",
+    eventRelationParity.model ===
+        PROOF_INDEX_EVENT_RELATION_PARITY_MODEL &&
+      eventRelationParity.eventCount > 0 &&
+      eventRelationParity.participants.ready === true,
+    {
+      eventCount: eventRelationParity.eventCount,
+      statusCounts: eventRelationParity.statusCounts,
+      ...eventRelationParity.participants,
+    },
+  );
+  check(
+    checks,
+    "rendered-event-reference-semantic-parity",
+    eventRelationParity.model ===
+        PROOF_INDEX_EVENT_RELATION_PARITY_MODEL &&
+      eventRelationParity.eventCount > 0 &&
+      eventRelationParity.refs.ready === true,
+    {
+      eventCount: eventRelationParity.eventCount,
+      statusCounts: eventRelationParity.statusCounts,
+      ...eventRelationParity.refs,
+    },
+  );
+  check(
+    checks,
+    "rendered-mail-projection-semantic-parity",
+    mailProjectionParity.model ===
+        PROOF_INDEX_MAIL_PROJECTION_PARITY_MODEL &&
+      mailProjectionParity.expectedCount > 0 &&
+      mailProjectionParity.ready === true,
+    mailProjectionParity,
   );
   const workDelistDbResult = await pool.query(
     `

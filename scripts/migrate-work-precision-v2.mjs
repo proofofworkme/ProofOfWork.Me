@@ -2264,6 +2264,29 @@ export async function runWorkPrecisionV2Migration(
       );
     await client.query(
       `
+        UPDATE proof_indexer.transactions transaction
+        SET
+          raw_tx = transaction.raw_tx - ARRAY[
+            'pendingWorkMintAttemptCount',
+            'pendingWorkMintInspectionVersion',
+            'pendingWorkMintRecoveryNeeded',
+            'pendingWorkMintResolvedInvalid',
+            'pendingProtocolResolvedInvalid'
+          ]::text[],
+          updated_at = now()
+        WHERE transaction.network = 'livenet'
+          AND transaction.status = 'pending'
+          AND (
+            transaction.raw_tx ? 'pendingWorkMintAttemptCount'
+            OR transaction.raw_tx ? 'pendingWorkMintInspectionVersion'
+            OR transaction.raw_tx ? 'pendingWorkMintRecoveryNeeded'
+            OR transaction.raw_tx ? 'pendingWorkMintResolvedInvalid'
+            OR transaction.raw_tx ? 'pendingProtocolResolvedInvalid'
+          )
+      `,
+    );
+    await client.query(
+      `
         DELETE FROM proof_indexer.meta
         WHERE key = 'workQ16PendingRebuild:livenet'
       `,

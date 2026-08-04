@@ -73,7 +73,11 @@ function broadcastAdmissionFixture() {
   });
   const { assertWorkMarketplaceBroadcastAllowed } = isolatedFunctions(
     apiSource,
-    ["assertWorkMarketplaceBroadcastAllowed"],
+    [
+      "workAmoV8SignedMutationShape",
+      "workAmoV8ActiveMutationDecision",
+      "assertWorkMarketplaceBroadcastAllowed",
+    ],
     {
       TOKEN_DELIST_ACTION: "delist5",
       TOKEN_LIST_ACTION: "list5",

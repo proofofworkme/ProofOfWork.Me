@@ -100,9 +100,11 @@ DECLARE
 BEGIN
   IF prior_key IN (
       'workPrecisionV2Migration:livenet',
+      'workQ16PendingAttempt:livenet',
       'workQ16PendingRebuild:livenet'
     ) OR current_key IN (
       'workPrecisionV2Migration:livenet',
+      'workQ16PendingAttempt:livenet',
       'workQ16PendingRebuild:livenet'
     ) THEN
     current_transaction_id := pg_catalog.pg_current_xact_id();
@@ -198,8 +200,11 @@ BEGIN
     'credit_balances',
     'credit_definitions',
     'credit_listings',
+    'event_participants',
+    'event_refs',
     'events',
     'ledger_snapshots',
+    'mail_items',
     'op_returns',
     'transactions',
     'tx_inputs',
@@ -287,9 +292,9 @@ BEGIN
     AND trigger_row.tgisinternal = false
     AND trigger_row.tgname LIKE 'readiness_epoch_%'
     AND trigger_row.tgenabled = 'A';
-  IF readiness_trigger_count <> 18 THEN
+  IF readiness_trigger_count <> 21 THEN
     RAISE EXCEPTION
-      'Expected 18 always-enabled readiness triggers, found %',
+      'Expected 21 always-enabled readiness triggers, found %',
       readiness_trigger_count;
   END IF;
   IF NOT EXISTS (
@@ -632,8 +637,11 @@ BEGIN
         'credit_balances',
         'credit_definitions',
         'credit_listings',
+        'event_participants',
+        'event_refs',
         'events',
         'ledger_snapshots',
+        'mail_items',
         'meta',
         'op_returns',
         'transactions',
@@ -663,7 +671,7 @@ BEGIN
         WHERE inheritance_row.inhrelid = relation.oid
            OR inheritance_row.inhparent = relation.oid
       )
-  ) <> 16 THEN
+  ) <> 19 THEN
     RAISE EXCEPTION 'Readiness source relation contract is invalid';
   END IF;
   IF EXISTS (

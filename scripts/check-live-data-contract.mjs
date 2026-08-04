@@ -3,6 +3,10 @@ import { readFileSync } from "node:fs";
 const server = readFileSync("server/proof-api.mjs", "utf8");
 const electrumClient = readFileSync("server/electrum-client.mjs", "utf8");
 const proofIndexReader = readFileSync("server/db/proof-index-reader.mjs", "utf8");
+const proofIndexMailProjection = readFileSync(
+  "server/proof-index-mail-projection.mjs",
+  "utf8",
+);
 const proofIndexerBackfill = readFileSync("scripts/backfill-proof-indexer.mjs", "utf8");
 const proofIndexerWorker = readFileSync("scripts/run-proof-indexer-worker.mjs", "utf8");
 const marketplaceRegressions = readFileSync(
@@ -1014,7 +1018,7 @@ expectAll("mempool priority recovery rotates independently and preserves invalid
   /function pendingCoreMarketplaceVerifierNeeded\([\s\S]*buy5[\s\S]*delist5[\s\S]*list5[\s\S]*seal5[\s\S]*const extendedPendingVerifier =[\s\S]*pendingCoreMarketplaceVerifierNeeded\(messages\)[\s\S]*pendingExtendedVerifierTimeoutMs\(\)/,
   /const protocolResolvedInvalid =[\s\S]*rawVerifiedPrepared\.length > 0[\s\S]*rawVerifiedPrepared\.every\([\s\S]*valid === false[\s\S]*storePendingWorkMintInspection\([\s\S]*protocolResolvedInvalid/,
   /row\.status === "pending"[\s\S]*row\.eventCount === 0[\s\S]*!row\.protocolResolvedInvalid[\s\S]*!row\.resolvedInvalid/,
-  /const resolvedInvalids = items\.filter\([\s\S]*token-event-invalid[\s\S]*Number\.isSafeInteger\(workMintAttemptCount\)[\s\S]*workMintAttemptCount > 0[\s\S]*return \{ kind: "resolved-invalid", persistInvalid: false \}/,
+  /const resolvedInvalids = items\.filter\([\s\S]*token-event-invalid[\s\S]*!Number\.isSafeInteger\(workMintAttemptCount\)[\s\S]*workMintAttemptCount < 1[\s\S]*items\.length !== workMintAttemptCount[\s\S]*resolvedInvalids\.length === workMintAttemptCount[\s\S]*return \{ kind: "resolved-invalid", persistInvalid: false \}/,
   /function reconcilePendingWorkMintDecision\([\s\S]*WITH canonical_guard AS[\s\S]*e\.status IN \('pending', 'dropped', 'orphaned'\)[\s\S]*e\.kind = 'token-mint'[\s\S]*provisionalReason'[\s\S]*supply-cap/,
   /function lockedCanonicalTransactionForMempool\([\s\S]*FOR UPDATE/,
   /upsertTransaction\([\s\S]*transactionObservation[\s\S]*lockedCanonicalTransactionForMempool[\s\S]*storePendingWorkMintInspection/,
@@ -1385,21 +1389,25 @@ expect(
     firstPartyAddressUtxoSource + addressUtxoPayloadSource,
   ),
 );
-expectAll("proof index mail body projection separates subject from body", proofIndexReader + proofIndexerBackfill, [
+expectAll("proof index mail body projection separates subject from body", proofIndexReader + proofIndexMailProjection, [
   /function mailMemoFromEvent\(row,\s*payload\)[\s\S]*payload\.body \?\? payload\.message \?\? payload\.memo[\s\S]*!subjectOnlyMailBody\(storedBody\)/,
-  /function mailItemBodyText\(item\)[\s\S]*item\?\.body \?\? item\?\.message \?\? item\?\.memo[\s\S]*!subjectOnlyMailBody\(detail\)/,
+  /function mailBodyText\(payload\)[\s\S]*payload\?\.body \?\? payload\?\.message \?\? payload\?\.memo[\s\S]*!subjectOnlyMailBody\(detail\)/,
 ]);
 expectAll("proof index address mail exposes file kinds for Desktop repair", proofIndexReader, [
   /protocolKind:\s*row\.kind/,
 ]);
 expectAll("proof index address mail recovers sender-only file rows", proofIndexReader, [
   /\{\s*address:\s*row\.sender_address,\s*role:\s*"sender"\s*\}/,
-  /function rawTransactionItemPayload\(row\)/,
-  /knownMailAddress\(payload\.actor\)[\s\S]*knownMailAddress\(payload\.senderAddress\)[\s\S]*knownMailAddress\(rawPayload\.senderAddress\)[\s\S]*knownMailAddress\(row\.sender_address\)/,
+  /knownMailAddress\(payload\.actor\)[\s\S]*knownMailAddress\(payload\.senderAddress\)[\s\S]*knownMailAddress\(row\.sender_address\)/,
   /m\.sender_address/,
-  /t\.raw_tx AS transaction_raw_tx/,
   /WITH candidate_events AS \([\s\S]*proof_indexer\.event_participants ep[\s\S]*ep\.address = ANY\(\$2::text\[\]\)[\s\S]*UNION[\s\S]*proof_indexer\.mail_items m[\s\S]*m\.sender_address = ANY\(\$2::text\[\]\)[\s\S]*JOIN candidate_mail_events ce/,
 ]);
+expect(
+  "proof index address mail has no raw transaction item rendering fallback",
+  !/function rawTransactionItemPayload|function transactionOverlayResult|raw_tx->'item'/u.test(
+    proofIndexReader,
+  ),
+);
 expect("pending mempool bases must not hardcode public explorer data sources", !/explorerBase|explorerReadBases|mempool\.space/i.test(pendingMempoolBasesSource));
 expectAll("transaction hex PSBT reads stay first-party", txHexPayloadSource, [
   /fetchTransactionHexFromBitcoinRpc\(txid,\s*network\)/,
@@ -1751,8 +1759,10 @@ expectAll("current ledger reads reject non-OK summary snapshot fallback rows", s
 expectAll("DB mail reads use indexed address matching and self-send folders", proofIndexReader, [
   /function addressMailRowPayloads\(row,\s*address,\s*network\)/,
   /WITH candidate_events AS \([\s\S]*proof_indexer\.event_participants ep[\s\S]*ep\.address = ANY\(\$2::text\[\]\)/,
-  /LEFT JOIN proof_indexer\.transactions t[\s\S]*AND t\.txid = e\.txid/,
-  /WHEN 'confirmed' = ANY\(ARRAY\[e\.status,\s*m\.status,\s*t\.status\]\) THEN 'confirmed'/,
+  /JOIN proof_indexer\.mail_items m[\s\S]*m\.network = e\.network[\s\S]*m\.txid = e\.txid/,
+  /e\.status IN \('pending', 'confirmed', 'dropped', 'orphaned'\)/,
+  /const confirmed = row\.status === "confirmed"/,
+  /const deliveryStatus = row\.status === "orphaned" \? "dropped" : row\.status/,
   /const targetIsRecipient =[\s\S]*\["recipient",\s*"receiver",\s*"counterparty"\]/,
   /if \(actorKey && actorKey === targetKey\)[\s\S]*folder: "sent"/,
   /deliveryStatus !== "dropped"[\s\S]*targetIsRecipient[\s\S]*folder: "inbox"/,
@@ -1955,8 +1965,9 @@ expectAll(
   [
     /WORK_Q16_PENDING_REBUILD_META_KEY =\s*"workQ16PendingRebuild:livenet"/,
     /WORK_Q16_PENDING_REBUILD_MODEL =\s*"canonical-work-q16-pending-rebuild-v2"/,
-    /storeWorkQ16PendingWitnessNotReady[\s\S]*ready: false/,
-    /persistExactWorkQ16PendingWitness[\s\S]*getrawmempool[\s\S]*WORK_PROJECTION_STATE_Q16[\s\S]*workQ16PendingCommitment[\s\S]*recheckedMempoolSnapshot[\s\S]*recheckedTipHeight[\s\S]*ready: true[\s\S]*complete: true/,
+    /WORK_Q16_PENDING_STAGE_META_KEY =\s*"workQ16PendingStage:livenet"/,
+    /persistExactWorkQ16PendingWitness[\s\S]*WORK_PROJECTION_STATE_Q16[\s\S]*getrawmempool[\s\S]*BEGIN ISOLATION LEVEL SERIALIZABLE[\s\S]*workQ16PendingCommitment[\s\S]*recheckedMempoolSnapshot[\s\S]*recheckedTipHeight[\s\S]*ready: true[\s\S]*complete:/,
+    /atomic-staged-pending-work-projection-audit-v1[\s\S]*WORK_Q16_PENDING_REBUILD_META_KEY[\s\S]*COMMIT/,
   ],
 );
 expect(
@@ -1964,12 +1975,11 @@ expect(
   /const q16PendingActive =[\s\S]*const state = await mempoolScanState/.test(
     q16MempoolBackfillSource,
   ) &&
-    !/storeWorkQ16PendingWitnessNotReady[\s\S]*pending-rebuild-in-progress/.test(
-      q16MempoolBackfillSource,
-    ) &&
+    !/storeWorkQ16PendingWitnessNotReady/.test(proofIndexerBackfill) &&
     /await persistExactWorkQ16PendingWitness\(client/.test(
       q16MempoolBackfillSource,
-    ),
+    ) &&
+    /storeCurrentWorkQ16PendingStage/.test(q16MempoolBackfillSource),
 );
 expectAll(
   "AMO V8 pending projections use the canonical events output column across writer, worker, and reader",
@@ -2245,13 +2255,15 @@ expect(
 
 expectAll("exact ID availability requires healthy confirmed and pending coverage", currentIdCoverageSource + livePendingRegistrySource, [
   /proofIndexOperationalStatusPayload\(network\)/,
-  /healthNodeTipHeight\(\)/,
+  /bitcoinRpc\("getblockchaininfo", \[\]\)/,
+  /exactCoreTipFromBlockchainInfo\(tipResponse\)/,
   /livePendingRegistryPayload\(network\)/,
   /scan\?\.scan\?\.complete === true/,
   /Boolean\(String\(scan\?\.scan\?\.blockHash \?\? ""\)\)/,
   /indexedThroughBlock === tipHeight/,
-  /scan\?\.worker\?\.ok === true/,
-  /workerFresh/,
+  /proofIndexWorkerExactTipReadiness\(scan/,
+  /tipHash: tip\?\.blockHash/,
+  /workerReadiness\.ready === true/,
   /Number\(scan\?\.readModels\?\.confirmedIds\?\.count\) > 0/,
   /No healthy first-party pending registry reader is available/,
   /error\.statusCode = 503[\s\S]*code: "ID_AVAILABILITY_UNPROVEN"/,
@@ -2538,7 +2550,7 @@ expectAll("backfill writes both mail bond families as projections", proofIndexer
   /return bondTagForItem\(item,\s*kind\)\?\.kind \?\? kind/,
   /stableEventKeyKind\(item,\s*kind,\s*sourceLabel\)/,
   /Boolean\(bondTagForKind\(projectionKind\)\)/,
-  /mailItemBodyText\(item\)/,
+  /proofIndexCanonicalMailProjectionRows\([\s\S]*canonicalEventRow \? \[canonicalEventRow\] : \[\][\s\S]*mailRow\.body_text/,
 ]);
 
 expectAll("all confirmed token state rows must be searchable in Log", server, [
