@@ -1794,15 +1794,39 @@ async function runChecks() {
     true,
     "the pending scanner must yield at a transaction boundary once its budget is spent",
   );
+  const pendingVerifierRequestTimeoutMs = isolatedBackfillFunction(
+    "pendingVerifierRequestTimeoutMs",
+    {
+      PENDING_LEGACY_VERIFIER_TIMEOUT_MS: 30_000,
+      PENDING_VERIFIER_TIMEOUT_MS: 30_000,
+    },
+  );
+  assert.equal(pendingVerifierRequestTimeoutMs({}, 10_000), 30_000);
+  assert.equal(
+    pendingVerifierRequestTimeoutMs(
+      { pendingVerifierDeadlineMs: 35_000 },
+      10_000,
+    ),
+    25_000,
+    "each verifier spec must shrink to the absolute child deadline",
+  );
+  assert.equal(
+    pendingVerifierRequestTimeoutMs(
+      { pendingVerifierDeadlineMs: 10_999 },
+      10_000,
+    ),
+    0,
+    "a verifier must not start inside the reserved persistence window",
+  );
   const pendingExtendedVerifierTimeoutMs = isolatedBackfillFunction(
     "pendingExtendedVerifierTimeoutMs",
     {
       BACKFILL_PROCESS_STARTED_AT_MS: 0,
       PENDING_LEGACY_VERIFIER_TIMEOUT_MS: 30_000,
       PENDING_ONLY_BACKFILL: true,
-      PENDING_ONLY_CHILD_TIMEOUT_MS: 30_000,
+      PENDING_ONLY_CHILD_TIMEOUT_MS: 90_000,
       PENDING_ONLY_PERSISTENCE_HEADROOM_MS: 9_000,
-      PENDING_ONLY_VERIFIER_MAX_MS: 20_000,
+      PENDING_ONLY_VERIFIER_MAX_MS: 30_000,
     },
   );
   assert.equal(
@@ -1817,17 +1841,17 @@ async function runChecks() {
   );
   assert.equal(
     pendingExtendedVerifierTimeoutMs({
-      childTimeoutMs: 30_000,
+      childTimeoutMs: 90_000,
       nowMs: 10_000,
       pendingOnly: true,
       processStartedAtMs: 10_000,
     }),
-    20_000,
+    30_000,
   );
   assert.equal(
     pendingExtendedVerifierTimeoutMs({
-      childTimeoutMs: 30_000,
-      nowMs: 15_000,
+      childTimeoutMs: 90_000,
+      nowMs: 75_000,
       pendingOnly: true,
       processStartedAtMs: 10_000,
     }),
@@ -1835,19 +1859,19 @@ async function runChecks() {
   );
   assert.equal(
     pendingExtendedVerifierTimeoutMs({
-      childTimeoutMs: 30_000,
-      nowMs: 30_001,
+      childTimeoutMs: 90_000,
+      nowMs: 90_001,
       pendingOnly: true,
       processStartedAtMs: 10_000,
     }),
     0,
     "an exhausted pending pass must skip the extended verifier and preserve shutdown headroom",
   );
-  assert.equal(pendingBackfillChildTimeoutMs(null), 30_000);
-  assert.equal(pendingBackfillChildTimeoutMs("invalid"), 30_000);
-  assert.equal(pendingBackfillChildTimeoutMs("15000"), 20_000);
-  assert.equal(pendingBackfillChildTimeoutMs("25000"), 25_000);
-  assert.equal(pendingBackfillChildTimeoutMs("900000"), 30_000);
+  assert.equal(pendingBackfillChildTimeoutMs(null), 90_000);
+  assert.equal(pendingBackfillChildTimeoutMs("invalid"), 90_000);
+  assert.equal(pendingBackfillChildTimeoutMs("15000"), 30_000);
+  assert.equal(pendingBackfillChildTimeoutMs("45000"), 45_000);
+  assert.equal(pendingBackfillChildTimeoutMs("900000"), 600_000);
 
   const pendingOnlyBackfillMode = isolatedBackfillFunction(
     "pendingOnlyBackfillMode",

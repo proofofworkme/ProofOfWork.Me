@@ -570,7 +570,8 @@ expectAll("production worker pins confirmed-first and liveness budgets", proofIn
   /POW_INDEX_BACKFILL_BLOCK_SCAN_MAX_TXIDS=250/,
   /POW_INDEX_WORKER_BACKFILL_STORE_CANONICAL_SUMMARY_SNAPSHOT=1/,
   /POW_INDEX_MEMPOOL_SCAN_MAX_PROTOCOL_TXIDS=5/,
-  /POW_INDEX_PENDING_VERIFIER_TIMEOUT_MS=5000/,
+  /POW_INDEX_MEMPOOL_SCAN_BUDGET_MS=30000/,
+  /POW_INDEX_PENDING_VERIFIER_TIMEOUT_MS=30000/,
   /POW_INDEX_STATUS_FETCH_TIMEOUT_MS=5000/,
   /POW_INDEX_PENDING_STATUS_BUDGET_MS=15000/,
   /POW_INDEX_PENDING_STATUS_CONCURRENCY=5/,
@@ -584,6 +585,15 @@ const canonicalSummaryRefreshTimeoutMs = serviceEnvironmentNumber(
 );
 const workerBackfillTimeoutMs = serviceEnvironmentNumber(
   "POW_INDEX_WORKER_BACKFILL_TIMEOUT_MS",
+);
+const workerPendingBackfillTimeoutMs = serviceEnvironmentNumber(
+  "POW_INDEX_WORKER_PENDING_BACKFILL_TIMEOUT_MS",
+);
+const workerPendingScanBudgetMs = serviceEnvironmentNumber(
+  "POW_INDEX_MEMPOOL_SCAN_BUDGET_MS",
+);
+const workerPendingVerifierTimeoutMs = serviceEnvironmentNumber(
+  "POW_INDEX_PENDING_VERIFIER_TIMEOUT_MS",
 );
 const apiHealthMaxAgeMs = serviceEnvironmentNumber(
   "POW_INDEX_HEALTH_MAX_AGE_MS",
@@ -604,6 +614,14 @@ expect(
   "production worker child timeout leaves at least 300000ms beyond canonical-summary work",
   Number.isSafeInteger(workerBackfillTimeoutMs) &&
     workerBackfillTimeoutMs >= canonicalSummaryRefreshTimeoutMs + 300_000,
+);
+expect(
+  "production pending work admits a cold verifier and preserves child cleanup headroom",
+  workerPendingVerifierTimeoutMs === 30_000 &&
+    workerPendingScanBudgetMs === 30_000 &&
+    workerPendingBackfillTimeoutMs === 90_000 &&
+    workerPendingBackfillTimeoutMs >=
+      workerPendingScanBudgetMs + workerPendingVerifierTimeoutMs + 9_000,
 );
 expect(
   "production API worker-health freshness is pinned to the ten-minute ceiling",
@@ -991,7 +1009,7 @@ expectAll("mempool priority recovery rotates independently and preserves invalid
   /pendingWorkMintInspectionVersion[\s\S]*AS inspection_version[\s\S]*pendingWorkMintAttemptCount[\s\S]*AS attempted_mints[\s\S]*pendingWorkMintRecoveryNeeded[\s\S]*AS recovery_needed[\s\S]*pendingWorkMintResolvedInvalid[\s\S]*AS resolved_invalid[\s\S]*pendingProtocolResolvedInvalid[\s\S]*AS protocol_resolved_invalid/,
   /function storePendingWorkMintInspection\([\s\S]*jsonb_build_object\([\s\S]*pendingWorkMintInspectionVersion[\s\S]*pendingWorkMintRecoveryNeeded[\s\S]*pendingWorkMintResolvedInvalid[\s\S]*pendingProtocolResolvedInvalid[\s\S]*canonicalBlockScan/,
   /function storePendingWorkMintAttemptPreinspection\([\s\S]*pendingWorkMintAttemptCount[\s\S]*pendingWorkMintInspectionVersion[\s\S]*pendingWorkMintRecoveryNeeded', true[\s\S]*pendingWorkMintResolvedInvalid', false[\s\S]*canonicalBlockScan[\s\S]*!~ '\^\[1-9\]\[0-9\]\*\$'/,
-  /const PENDING_LEGACY_VERIFIER_TIMEOUT_MS = 30_000[\s\S]*async function canonicalRecoveryItemsForTx\(tx, messages, options = \{\}\)[\s\S]*options\?\.pendingVerifierTimeoutMs/,
+  /const PENDING_LEGACY_VERIFIER_TIMEOUT_MS = 30_000[\s\S]*function pendingVerifierRequestTimeoutMs\([\s\S]*options\?\.pendingVerifierTimeoutMs[\s\S]*async function canonicalRecoveryItemsForTx\(tx, messages, options = \{\}\)[\s\S]*pendingVerifierRequestTimeoutMs\(options\)/,
   /const workMintAttemptCount = pendingWorkMintAttemptCount\(messages\)[\s\S]*storePendingWorkMintAttemptPreinspection\([\s\S]*pendingExtendedVerifierTimeoutMs\(\)[\s\S]*preparedProtocolItemsForTx/,
   /function pendingCoreMarketplaceVerifierNeeded\([\s\S]*buy5[\s\S]*delist5[\s\S]*list5[\s\S]*seal5[\s\S]*const extendedPendingVerifier =[\s\S]*pendingCoreMarketplaceVerifierNeeded\(messages\)[\s\S]*pendingExtendedVerifierTimeoutMs\(\)/,
   /const protocolResolvedInvalid =[\s\S]*rawVerifiedPrepared\.length > 0[\s\S]*rawVerifiedPrepared\.every\([\s\S]*valid === false[\s\S]*storePendingWorkMintInspection\([\s\S]*protocolResolvedInvalid/,
@@ -1069,9 +1087,11 @@ expect(
   ) ?? []).length === 2,
 );
 expectAll("pending ordered-verifier work has bounded normal and one-time legacy delay budgets", proofIndexerBackfill + canonicalRecoverySource, [
-  /const MEMPOOL_SCAN_MAX_PROTOCOL_TXIDS = Math\.min\([\s\S]*5/,
-  /const PENDING_VERIFIER_TIMEOUT_MS = Math\.min\([\s\S]*5_000[\s\S]*Math\.max\([\s\S]*1_000/,
-  /Number\(tx\?\.height \?\? 0\) > 0[\s\S]*\? 30_000[\s\S]*: Math\.min\([\s\S]*PENDING_LEGACY_VERIFIER_TIMEOUT_MS[\s\S]*options\?\.pendingVerifierTimeoutMs/,
+  /const MEMPOOL_SCAN_MAX_PROTOCOL_TXIDS = Math\.min\([\s\S]*250[\s\S]*POW_INDEX_MEMPOOL_SCAN_MAX_PROTOCOL_TXIDS \?\? 5/,
+  /const MEMPOOL_SCAN_BUDGET_MS = Math\.min\([\s\S]*9 \* 60_000[\s\S]*POW_INDEX_MEMPOOL_SCAN_BUDGET_MS \?\? 15_000/,
+  /const PENDING_VERIFIER_TIMEOUT_MS = Math\.min\([\s\S]*30_000[\s\S]*Math\.max\([\s\S]*1_000/,
+  /function pendingVerifierRequestTimeoutMs\([\s\S]*pendingVerifierDeadlineMs[\s\S]*remainingMs < 1_000[\s\S]*Math\.min\(configured, remainingMs\)/,
+  /const verifierTimeoutMs = pendingTransaction[\s\S]*pendingVerifierRequestTimeoutMs\(options\)[\s\S]*timeoutMs: verifierTimeoutMs/,
 ]);
 
 expectAll("Log summary preserves full activity stats before compaction", compactActivitySummarySource, [
@@ -1583,11 +1603,11 @@ expectAll(
     /POW_INDEX_BACKFILL_PENDING_ONLY:[\s\S]*POW_INDEX_BACKFILL_PENDING_CHILD_TIMEOUT_MS:[\s\S]*runBestEffortPendingBackfill\(/,
     /const PENDING_ONLY_BACKFILL = pendingOnlyBackfillMode\([\s\S]*if \(PENDING_ONLY_BACKFILL\) \{[\s\S]*runPendingOnlyBackfillPass\(client, SOURCES\)[\s\S]*postSourceMaintenance: false/,
     /const MEMPOOL_SCAN_BUDGET_MS = Math\.min\([\s\S]*POW_INDEX_MEMPOOL_SCAN_BUDGET_MS \?\? 15_000/,
-    /const PENDING_ONLY_VERIFIER_MAX_MS = 20_000[\s\S]*const PENDING_ONLY_PERSISTENCE_HEADROOM_MS = 9_000/,
+    /const PENDING_ONLY_VERIFIER_MAX_MS = 30_000[\s\S]*const PENDING_ONLY_PERSISTENCE_HEADROOM_MS = 9_000/,
     /mempoolScanTimeBudgetReached\(startedAtMs,\s*scanned\)[\s\S]*stopReason = "time-budget"/,
     /pendingExtendedVerifierTimeoutMs\(\)[\s\S]*pendingVerifierTimeoutMs: extendedPendingVerifierTimeoutMs/,
-    /^Environment=POW_INDEX_MEMPOOL_SCAN_BUDGET_MS=15000$/m,
-    /^Environment=POW_INDEX_WORKER_PENDING_BACKFILL_TIMEOUT_MS=30000$/m,
+    /^Environment=POW_INDEX_MEMPOOL_SCAN_BUDGET_MS=30000$/m,
+    /^Environment=POW_INDEX_WORKER_PENDING_BACKFILL_TIMEOUT_MS=90000$/m,
   ],
 );
 expectAll("generic payload snapshots select the latest matching payload without a finite lookback", ledgerSnapshotWithPayloadSource, [

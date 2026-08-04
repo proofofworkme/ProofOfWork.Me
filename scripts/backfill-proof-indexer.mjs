@@ -450,7 +450,7 @@ const MEMPOOL_SCAN_MAX_TXIDS = Number(
   process.env.POW_INDEX_MEMPOOL_SCAN_MAX_TXIDS ?? 500,
 );
 const MEMPOOL_SCAN_MAX_PROTOCOL_TXIDS = Math.min(
-  5,
+  250,
   Math.max(
     1,
     Math.floor(
@@ -459,7 +459,7 @@ const MEMPOOL_SCAN_MAX_PROTOCOL_TXIDS = Math.min(
   ),
 );
 const MEMPOOL_SCAN_BUDGET_MS = Math.min(
-  30_000,
+  9 * 60_000,
   Math.max(
     5_000,
     Math.floor(
@@ -469,7 +469,7 @@ const MEMPOOL_SCAN_BUDGET_MS = Math.min(
   ),
 );
 const PENDING_VERIFIER_TIMEOUT_MS = Math.min(
-  5_000,
+  30_000,
   Math.max(
     1_000,
     Math.floor(
@@ -480,17 +480,17 @@ const PENDING_VERIFIER_TIMEOUT_MS = Math.min(
 );
 const PENDING_LEGACY_VERIFIER_TIMEOUT_MS = 30_000;
 const PENDING_ONLY_CHILD_TIMEOUT_MS = Math.min(
-  30_000,
+  10 * 60_000,
   Math.max(
-    20_000,
+    30_000,
     Math.floor(
       Number(
-        process.env.POW_INDEX_BACKFILL_PENDING_CHILD_TIMEOUT_MS ?? 30_000,
-      ) || 30_000,
+        process.env.POW_INDEX_BACKFILL_PENDING_CHILD_TIMEOUT_MS ?? 90_000,
+      ) || 90_000,
     ),
   ),
 );
-const PENDING_ONLY_VERIFIER_MAX_MS = 20_000;
+const PENDING_ONLY_VERIFIER_MAX_MS = 30_000;
 const PENDING_ONLY_PERSISTENCE_HEADROOM_MS = 9_000;
 const MEMPOOL_SCAN_SEEN_LIMIT = Number(
   process.env.POW_INDEX_MEMPOOL_SCAN_SEEN_LIMIT ?? 10_000,
@@ -5468,6 +5468,25 @@ function rawProtocolItemMatchesCanonical(rawItem, canonicalItem, kind) {
   return !canonicalAmount || !rawAmount || canonicalAmount === rawAmount;
 }
 
+function pendingVerifierRequestTimeoutMs(options = {}, nowMs = Date.now()) {
+  const configured = Math.min(
+    PENDING_LEGACY_VERIFIER_TIMEOUT_MS,
+    Math.max(
+      PENDING_VERIFIER_TIMEOUT_MS,
+      Number(options?.pendingVerifierTimeoutMs) ||
+        PENDING_VERIFIER_TIMEOUT_MS,
+    ),
+  );
+  const deadlineMs = Number(options?.pendingVerifierDeadlineMs);
+  if (!Number.isFinite(deadlineMs)) {
+    return configured;
+  }
+  const remainingMs = Math.floor(deadlineMs - Number(nowMs));
+  return remainingMs < 1_000
+    ? 0
+    : Math.min(configured, remainingMs);
+}
+
 async function canonicalRecoveryItemsForTx(tx, messages, options = {}) {
   const txid = String(tx?.txid ?? "").trim().toLowerCase();
   const pendingTransaction = Number(tx?.height ?? 0) <= 0;
@@ -5490,6 +5509,14 @@ async function canonicalRecoveryItemsForTx(tx, messages, options = {}) {
   for (const spec of specs.values()) {
     let payload;
     try {
+      const verifierTimeoutMs = pendingTransaction
+        ? pendingVerifierRequestTimeoutMs(options)
+        : 30_000;
+      if (verifierTimeoutMs === 0) {
+        throw new Error(
+          `Pending verifier headroom is exhausted before ${spec.label} for ${txid}.`,
+        );
+      }
       payload = await readJson(
         endpoint(spec.path, {
           ...(spec.params ?? {}),
@@ -5505,17 +5532,7 @@ async function canonicalRecoveryItemsForTx(tx, messages, options = {}) {
         }),
         {
           retries: 0,
-          timeoutMs:
-            Number(tx?.height ?? 0) > 0
-              ? 30_000
-              : Math.min(
-                  PENDING_LEGACY_VERIFIER_TIMEOUT_MS,
-                  Math.max(
-                    PENDING_VERIFIER_TIMEOUT_MS,
-                    Number(options?.pendingVerifierTimeoutMs) ||
-                      PENDING_VERIFIER_TIMEOUT_MS,
-                  ),
-                ),
+          timeoutMs: verifierTimeoutMs,
         },
       );
     } catch (error) {
@@ -23271,11 +23288,21 @@ async function backfillMempoolScanSource(client, source) {
       const rawVerifiedPrepared = await preparedProtocolItemsForTx(
         hydrated,
         messages,
-        extendedPendingVerifier
-          ? {
-              pendingVerifierTimeoutMs: extendedPendingVerifierTimeoutMs,
-            }
-          : undefined,
+        {
+          ...(PENDING_ONLY_BACKFILL
+            ? {
+                pendingVerifierDeadlineMs:
+                  BACKFILL_PROCESS_STARTED_AT_MS +
+                  PENDING_ONLY_CHILD_TIMEOUT_MS -
+                  PENDING_ONLY_PERSISTENCE_HEADROOM_MS,
+              }
+            : {}),
+          ...(extendedPendingVerifier
+            ? {
+                pendingVerifierTimeoutMs: extendedPendingVerifierTimeoutMs,
+              }
+            : {}),
+        },
       );
       const workMintResolvedInvalid =
         workMintAttemptCount > 0 &&

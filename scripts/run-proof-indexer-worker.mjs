@@ -172,10 +172,10 @@ export function pendingBackfillChildTimeoutMs(
   configured = process.env.POW_INDEX_WORKER_PENDING_BACKFILL_TIMEOUT_MS,
 ) {
   return Math.min(
-    30_000,
+    10 * 60_000,
     Math.max(
-      20_000,
-      Math.floor(Number(configured ?? 30_000) || 30_000),
+      30_000,
+      Math.floor(Number(configured ?? 90_000) || 90_000),
     ),
   );
 }

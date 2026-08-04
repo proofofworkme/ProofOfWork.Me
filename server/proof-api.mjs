@@ -53033,6 +53033,15 @@ const INTERNAL_VERIFIER_TOKEN = String(
 ).trim();
 const INTERNAL_VERIFIER_STATE_CACHE = new Map();
 
+function reusableInternalVerifierStateCacheKey(key) {
+  const normalized = String(key ?? "");
+  return (
+    normalized.startsWith("token:") ||
+    normalized.startsWith("id:") ||
+    normalized.startsWith("token-indexed-current:")
+  );
+}
+
 function pruneInternalVerifierStateCache(activeBlockHeight = 0) {
   const now = Date.now();
   const activeMarker = activeBlockHeight > 0 ? `:h${activeBlockHeight}:` : "";
@@ -53050,10 +53059,18 @@ function pruneInternalVerifierStateCache(activeBlockHeight = 0) {
     }
   }
   while (INTERNAL_VERIFIER_STATE_CACHE.size >= 16) {
-    const oldestSettled = [...INTERNAL_VERIFIER_STATE_CACHE].find(
+    const settledEntries = [...INTERNAL_VERIFIER_STATE_CACHE].filter(
       ([key, entry]) =>
         entry?.settled && !key.startsWith("canonical-context:"),
     );
+    // Shared pending replay state is expensive to hydrate and is reused across
+    // many mempool txids. Prefer evicting one-shot confirmed/per-tx states so a
+    // busy canonical block cannot force every pending verifier back to cold
+    // replay. Expiry and loader failures still remove shared state normally.
+    const oldestSettled =
+      settledEntries.find(
+        ([key]) => !reusableInternalVerifierStateCacheKey(key),
+      ) ?? settledEntries[0];
     if (!oldestSettled) {
       break;
     }

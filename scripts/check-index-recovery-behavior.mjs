@@ -14846,6 +14846,7 @@ check("Core-present dropped protocol transactions revive through verifier and up
       MEMPOOL_SCAN_MAX_TXIDS: 500,
       MEMPOOL_SCAN_SEEN_LIMIT: 10_000,
       PENDING_LEGACY_VERIFIER_TIMEOUT_MS: 30_000,
+      PENDING_ONLY_BACKFILL: false,
       bitcoinRpc: async () => ({ [target]: { time: 1_720_980_000 } }),
       freshRawTransactionFromCore: async (txid) => {
         assert.equal(txid, target);
@@ -15038,6 +15039,169 @@ check("Core-present dropped protocol transactions revive through verifier and up
   databaseCanonical = false;
 });
 
+check("supervised pending recovery processes 118 WORK candidates before persisting its witness", async () => {
+  const workTokenId =
+    "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8";
+  const isHexTxid = (value) => /^[0-9a-f]{64}$/u.test(String(value));
+  const mempoolScanCursorForEntry = ([txid, metadata]) => ({
+    time: Number(metadata?.time ?? 0),
+    txid,
+  });
+  const txids = Array.from(
+    { length: 118 },
+    (_value, index) => (index + 1).toString(16).padStart(64, "0"),
+  );
+  const mempool = Object.fromEntries(
+    txids.map((txid, index) => [txid, { time: 1_721_000_000 - index }]),
+  );
+  const pendingTransaction = (txid) => ({ txid, vin: [], vout: [] });
+  let freshReads = 0;
+  let persisted = 0;
+  let storedScan = null;
+  let witnessScan = null;
+  const client = {
+    async query() {
+      return { rowCount: 1, rows: [] };
+    },
+  };
+  const backfillMempoolScanSource = isolatedFunction(
+    BACKFILL_PATH,
+    "backfillMempoolScanSource",
+    {
+      BACKFILL_PROCESS_STARTED_AT_MS: 1_720_999_400_000,
+      BITCOIN_RPC_URL: "http://127.0.0.1:8332",
+      MEMPOOL_SCAN_BUDGET_MS: 540_000,
+      MEMPOOL_SCAN_MAX_PROTOCOL_TXIDS: 250,
+      MEMPOOL_SCAN_MAX_TXIDS: 500,
+      MEMPOOL_SCAN_SEEN_LIMIT: 10_000,
+      PENDING_LEGACY_VERIFIER_TIMEOUT_MS: 30_000,
+      PENDING_ONLY_BACKFILL: true,
+      PENDING_ONLY_CHILD_TIMEOUT_MS: 600_000,
+      PENDING_ONLY_PERSISTENCE_HEADROOM_MS: 9_000,
+      WORK_AMO_V8_DECLARATION_PINS_CONFIGURED: true,
+      WORK_PROJECTION_STATE_Q16: "work-q16",
+      WORK_Q16_PENDING_REBUILD_MODEL: "fixture-pending-witness",
+      WORK_TOKEN_ID: workTokenId,
+      bitcoinRpc: async (method) => {
+        assert.equal(method, "getrawmempool");
+        return mempool;
+      },
+      canonicalMempoolTxidSnapshot: (value) => ({
+        count: Object.keys(value).length,
+        model: "fixture-mempool-snapshot",
+        sha256: "fixture-snapshot",
+        txids: Object.keys(value).sort(),
+      }),
+      compareCanonicalUtf8: (left, right) =>
+        String(left) < String(right) ? -1 : String(left) > String(right) ? 1 : 0,
+      currentWorkProjectionState: async () => "work-q16",
+      freshRawTransactionFromCore: async (txid) => {
+        freshReads += 1;
+        return pendingTransaction(txid);
+      },
+      isHexTxid,
+      knownMempoolRecoveryTxids: async () => txids,
+      lockedCanonicalTransactionForMempool: async () => false,
+      mempoolScanCursorForEntry,
+      mempoolScanState: async () => ({
+        cursor: null,
+        key: "mempoolScan:livenet",
+        priorityCursor: null,
+        processedTxids: new Set(),
+        q16PendingProcessedTxids: new Set(),
+        q16PendingSnapshotSha256: "fixture-snapshot",
+        q16PendingWitnessModel: "fixture-pending-witness",
+      }),
+      mempoolScanTimeBudgetReached: () => false,
+      pendingCoreMarketplaceVerifierNeeded: () => false,
+      pendingExtendedVerifierTimeoutMs: () => 30_000,
+      pendingProtocolTransactionObservation: (txid) => ({
+        confirmed: false,
+        status: "pending",
+        txid,
+      }),
+      pendingTransactionWriteItem: (prepared, txid) => ({
+        ...(prepared[0]?.item ?? {}),
+        confirmed: false,
+        status: "pending",
+        txid,
+      }),
+      pendingWorkMintAttemptCount: () => 1,
+      pendingWorkMintDecision: () => ({ kind: "resolved-invalid" }),
+      pendingWorkMintVerifierResolved: () => true,
+      persistExactWorkQ16PendingWitness: async (_client, scan) => {
+        witnessScan = scan;
+        return { ready: true };
+      },
+      persistPreparedProtocolItems: async (_client, prepared) => {
+        assert.equal(prepared.length, 1);
+        persisted += 1;
+        return { indexed: 1, skipped: 0 };
+      },
+      plannedMempoolScanCandidates: (entries) =>
+        entries.map((entry) => ({ entry, lane: "priority" })),
+      preparedProtocolItemsForTx: async (tx, _messages, options) => {
+        assert.equal(options.pendingVerifierTimeoutMs, 30_000);
+        assert.equal(
+          options.pendingVerifierDeadlineMs,
+          1_721_000_000_000 - 9_000,
+        );
+        return [{
+          item: {
+            confirmed: false,
+            kind: "token-event-invalid",
+            provisionalReason: "supply-cap",
+            reason: "WORK mint exceeds max supply.",
+            status: "pending",
+            tokenId: workTokenId,
+            txid: tx.txid,
+            valid: false,
+          },
+          sourceLabel: "token-invalid-events",
+        }];
+      },
+      protocolMessagesFromTx: () => [{
+        prefix: "pwt1:",
+        text: `pwt1:mint:${workTokenId}:1000`,
+      }],
+      reconcilePendingWorkMintDecision: async () => ({
+        deleted: 0,
+        persistInvalid: true,
+        reconciled: true,
+      }),
+      storeMempoolScanState: async (
+        _client,
+        _key,
+        _processedTxids,
+        _cursor,
+        _priorityCursor,
+        q16Pending,
+      ) => {
+        storedScan = q16Pending;
+      },
+      storePendingWorkMintAttemptPreinspection: async () => 1,
+      storePendingWorkMintInspection: async () => {},
+      transactionHasConfirmedBlockEvidence: () => false,
+      transactionWithInputPrevouts: async (tx) => tx,
+      upsertTransaction: async () => {},
+    },
+  );
+
+  const result = await backfillMempoolScanSource(client, {
+    label: "mempool-scan",
+  });
+  assert.equal(result.protocolTxids, 118);
+  assert.equal(result.priorityScanned, 118);
+  assert.equal(result.indexed, 118);
+  assert.equal(result.unresolved, 0);
+  assert.equal(result.q16PendingWitnessReady, true);
+  assert.equal(freshReads, 118 * 3);
+  assert.equal(persisted, 118);
+  assert.equal(storedScan.processedTxids.length, 118);
+  assert.equal(witnessScan.processedTxids.length, 118);
+  assert.equal(witnessScan.unresolved, 0);
+});
+
 check("supply-capped mempool mints replace stale valid rows with a pending invalid audit", async () => {
   const target = "f".repeat(64);
   const workTokenId =
@@ -15111,6 +15275,7 @@ check("supply-capped mempool mints replace stale valid rows with a pending inval
       MEMPOOL_SCAN_MAX_TXIDS: 500,
       MEMPOOL_SCAN_SEEN_LIMIT: 10_000,
       PENDING_LEGACY_VERIFIER_TIMEOUT_MS: 30_000,
+      PENDING_ONLY_BACKFILL: false,
       WORK_TOKEN_ID: workTokenId,
       bitcoinRpc: async () => ({ [target]: { time: 1_720_990_000 } }),
       freshRawTransactionFromCore: async () => {
@@ -32868,6 +33033,57 @@ check("same-height verifier contexts are cached by exact block identity", async 
   assert.ok(keys[1].includes(replacementBlockHash));
 });
 
+check("confirmed verifier churn preserves unexpired shared pending replay state", () => {
+  const sharedKey = "token:livenet:all";
+  const expiredSharedKey = "id:livenet";
+  const cache = new Map([
+    [
+      sharedKey,
+      {
+        expiresAt: Date.now() + 60_000,
+        promise: Promise.resolve({}),
+        settled: true,
+      },
+    ],
+  ]);
+  for (let index = 0; index < 15; index += 1) {
+    cache.set(`token-complete:livenet:tx:${index}:h101:fixture`, {
+      expiresAt: Date.now() + 60_000,
+      promise: Promise.resolve({}),
+      settled: true,
+    });
+  }
+  const reusableInternalVerifierStateCacheKey = isolatedFunction(
+    API_PATH,
+    "reusableInternalVerifierStateCacheKey",
+  );
+  const pruneInternalVerifierStateCache = isolatedFunction(
+    API_PATH,
+    "pruneInternalVerifierStateCache",
+    {
+      INTERNAL_VERIFIER_STATE_CACHE: cache,
+      reusableInternalVerifierStateCacheKey,
+    },
+  );
+
+  pruneInternalVerifierStateCache();
+  assert.equal(cache.size, 15);
+  assert.equal(cache.has(sharedKey), true);
+  assert.equal(cache.has("token-complete:livenet:tx:0:h101:fixture"), false);
+
+  cache.set(expiredSharedKey, {
+    expiresAt: Date.now() - 1,
+    promise: Promise.resolve({}),
+    settled: true,
+  });
+  pruneInternalVerifierStateCache();
+  assert.equal(
+    cache.has(expiredSharedKey),
+    false,
+    "cache priority must never extend an expired shared replay",
+  );
+});
+
 check("canonical verifier rejects a replaced block before state hydration", async () => {
   const expectedBlockHash = "d".repeat(64);
   const replacementBlockHash = "e".repeat(64);
@@ -34447,6 +34663,14 @@ check("pending PWM envelopes survive unresolved staged verifier companions", asy
       NETWORK: "livenet",
       PENDING_LEGACY_VERIFIER_TIMEOUT_MS: 30_000,
       PENDING_VERIFIER_TIMEOUT_MS: 5_000,
+      pendingVerifierRequestTimeoutMs: isolatedFunction(
+        BACKFILL_PATH,
+        "pendingVerifierRequestTimeoutMs",
+        {
+          PENDING_LEGACY_VERIFIER_TIMEOUT_MS: 30_000,
+          PENDING_VERIFIER_TIMEOUT_MS: 5_000,
+        },
+      ),
       canonicalKindForSourceLabel: isolatedFunction(
         BACKFILL_PATH,
         "canonicalKindForSourceLabel",

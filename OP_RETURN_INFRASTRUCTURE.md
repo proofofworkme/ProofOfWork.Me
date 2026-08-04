@@ -327,31 +327,40 @@ Q16 era that pending-only child commits the final pending witness after every
 worker-owned status mutation. The bounded mempool scanner gives best-effort
 pending visibility
 without being allowed to delay that confirmed publication or the next
-confirmed pass: it stops at a transaction boundary after its 15-second
+confirmed pass: it stops at a transaction boundary after its 30-second
 scheduling budget, verifies at most five protocol-bearing mempool txids per
 pass, and persists its rotating cursor so deferred candidates remain visible
 to later cycles. This pending-only child exits after the mempool source has
 persisted its transactions and scan cursor; it does not repeat the canonical
 RUSH bootstrap, relational repairs, holder backfill, ledger snapshot, or
 canonical-summary work already owned by the confirmed phase. A separate
-30-second child watchdog terminates a pending pass that does not return after
+90-second child watchdog terminates a pending pass that does not return after
 the cooperative budget, escalating from `SIGTERM` to `SIGKILL` after one
 second and waiting for child closure before the one-writer loop proceeds.
 Committed pending writes remain idempotent; an interrupted in-flight database
 transaction rolls back and its candidate remains eligible for a later cursor
-pass. Routine pending ordered-verifier requests are capped at five seconds.
+pass. Routine pending ordered-verifier requests are capped at 30 seconds.
+Every verifier spec also shares one absolute child deadline; its individual
+timeout shrinks against that deadline and no new request starts after the
+nine-second persistence reserve begins.
 The versioned legacy WORK inspection described below remains subordinate to
 the hard child watchdog. Its historical 30-second allowance remains available
 outside this pending-only worker mode. Inside the pending-only child it is
-capped at 20 seconds and shortened further by elapsed child time so at least
+capped at 30 seconds and shortened further by elapsed child time so at least
 nine seconds remain for error handling, cursor persistence, and shutdown; if
 that headroom is already exhausted, the inspection is deferred without
 starting. Production pins those scan, verifier, and watchdog bounds with
-`POW_INDEX_MEMPOOL_SCAN_BUDGET_MS=15000`,
+`POW_INDEX_MEMPOOL_SCAN_BUDGET_MS=30000`,
 `POW_INDEX_MEMPOOL_SCAN_MAX_PROTOCOL_TXIDS=5`, and
-`POW_INDEX_PENDING_VERIFIER_TIMEOUT_MS=5000`, plus
-`POW_INDEX_WORKER_PENDING_BACKFILL_TIMEOUT_MS=30000`; the backfill script also
-clamps the routine overrides to those maximums. Production separately pins
+`POW_INDEX_PENDING_VERIFIER_TIMEOUT_MS=30000`, plus
+`POW_INDEX_WORKER_PENDING_BACKFILL_TIMEOUT_MS=90000`; the backfill script also
+clamps the hot-loop verifier to 30 seconds. During an explicitly supervised
+recovery with public reads closed, a pending-only child may temporarily raise
+the protocol-txid limit to at most 250, the cooperative scan budget to at most
+540 seconds, and its outer watchdog to at most 600 seconds. Those recovery
+overrides must be removed before the continuous worker resumes; the ordinary
+five-txid, 30-second scan and 90-second watchdog preserve confirmed-first
+scheduling. Production separately pins
 `POW_INDEX_WORKER_PENDING_WITNESS_MAX_AGE_MS=600000` for the API and worker;
 their parsers clamp that witness age to no more than ten minutes. The block
 scanner uses local
@@ -433,7 +442,10 @@ order:
    closed public-read gate. Production pins
    `POW_INTERNAL_VERIFIER_STATE_TTL_MS=120000` so every stateful transaction in
    one busy block shares the same completed ordered state instead of rebuilding
-   it after the default short cache window. Confirmed verifier requests, cache
+   it after the default short cache window. Capacity eviction prefers one-shot
+   confirmed and per-transaction entries over an unexpired shared pending
+   token or ID replay, but never extends that shared entry's configured
+   lifetime. Confirmed verifier requests, cache
    keys, and responses are bound to the exact current and previous Core block
    hashes; a same-height replacement cannot reuse the prior branch's state.
 6. Generate one new full ledger snapshot in a supervised snapshot-only run by setting
