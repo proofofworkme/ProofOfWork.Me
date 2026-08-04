@@ -13814,6 +13814,65 @@ check("rebroadcast pending transactions clear every prior drop observation", asy
   assert.match(statement, /- 'statusObservation'/u);
 });
 
+check("Q16 pending attempt absence is rejected before commitment", () => {
+  let commitmentCalls = 0;
+  const attemptModel = "canonical-work-q16-pending-publication-attempt-v1";
+  const mempoolModel = "canonical-core-mempool-txid-set-v1";
+  const canonicalAttempt = isolatedFunction(
+    BACKFILL_PATH,
+    "canonicalWorkQ16PendingAttempt",
+    {
+      NETWORK: "livenet",
+      WORK_Q16_PENDING_ATTEMPT_MODEL: attemptModel,
+      WORK_Q16_PENDING_MEMPOOL_MODEL: mempoolModel,
+      canonicalWorkQ16ReadinessEpochCheckpoint: (value) => value,
+      exactObjectKeys: (value, expectedKeys) =>
+        Boolean(
+          value &&
+          typeof value === "object" &&
+          !Array.isArray(value) &&
+          JSON.stringify(Object.keys(value).sort(compareCanonicalUtf8)) ===
+            JSON.stringify([...expectedKeys].sort(compareCanonicalUtf8)),
+        ),
+      isHexTxid: (value) => /^[0-9a-f]{64}$/u.test(String(value)),
+      normalizedLowerText: (value) =>
+        String(value ?? "").trim().toLowerCase(),
+      objectValue: (value) =>
+        value && typeof value === "object" && !Array.isArray(value)
+          ? value
+          : {},
+      workAmoV5CanonicalPayloadCommitment: (value) => {
+        commitmentCalls += 1;
+        return workAmoV5CanonicalPayloadCommitment(value);
+      },
+    },
+  );
+  assert.equal(canonicalAttempt(undefined), null);
+  assert.equal(canonicalAttempt({}), null);
+  assert.equal(commitmentCalls, 0);
+
+  const initialMempool = {
+    count: 1,
+    model: mempoolModel,
+    sha256: "a".repeat(64),
+  };
+  const identity = {
+    initialMempool,
+    model: attemptModel,
+    network: "livenet",
+    requestSha256: "b".repeat(64),
+    startedAt: "2026-08-04T19:00:00.000Z",
+  };
+  const attemptId = workAmoV5CanonicalPayloadCommitment(identity).sha256;
+  assert.equal(
+    JSON.stringify(
+      canonicalAttempt({ ...identity, attemptId, status: "running" }),
+    ),
+    JSON.stringify({ ...identity, attemptId, status: "running" }),
+  );
+  assert.equal(commitmentCalls, 1);
+});
+
 check("Q16 pending readiness audits persisted WORK rows without requiring a full raw mempool sweep", () => {
   const membershipStable = isolatedFunction(
     BACKFILL_PATH,

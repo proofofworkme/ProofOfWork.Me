@@ -22539,7 +22539,6 @@ function canonicalWorkQ16PendingAttempt(value) {
     requestSha256: normalizedLowerText(attempt.requestSha256),
     startedAt,
   };
-  const attemptId = workAmoV5CanonicalPayloadCommitment(identity).sha256;
   if (
     !["published", "running"].includes(status) ||
     !exactObjectKeys(attempt, expectedKeys) ||
@@ -22551,9 +22550,12 @@ function canonicalWorkQ16PendingAttempt(value) {
     initialMempool.count < 0 ||
     !isHexTxid(normalizedLowerText(initialMempool.sha256)) ||
     !isHexTxid(identity.requestSha256) ||
-    !Number.isFinite(Date.parse(startedAt)) ||
-    String(attempt.attemptId ?? "") !== attemptId
+    !Number.isFinite(Date.parse(startedAt))
   ) {
+    return null;
+  }
+  const attemptId = workAmoV5CanonicalPayloadCommitment(identity).sha256;
+  if (String(attempt.attemptId ?? "") !== attemptId) {
     return null;
   }
   if (status === "published") {
