@@ -14471,8 +14471,28 @@ check("Q16 empty-parent bootstrap is exact, locked, and fail-closed", async () =
   assert.match(stageStoreSource, /lockedWorkQ16PendingParent/u);
   assert.match(attemptStoreSource, /lockedWorkQ16PendingParent/u);
   assert.match(
+    attemptStoreSource,
+    /WORK_Q16_PENDING_RUNNING_ATTEMPT_META_KEY/u,
+    "a running attempt must not replace the last published attempt",
+  );
+  assert.doesNotMatch(
+    attemptStoreSource,
+    /\bWORK_Q16_PENDING_ATTEMPT_META_KEY\b/u,
+    "the canonical attempt key is publication-only",
+  );
+  assert.match(
     publicationSource,
     /BEGIN ISOLATION LEVEL SERIALIZABLE[\s\S]*LOCK TABLE[\s\S]*lockedWorkQ16PendingParent[\s\S]*Persisted pending WORK membership diverged/u,
+  );
+  assert.match(
+    publicationSource,
+    /requestedPublicationAttempt\.status === "running"[\s\S]*WORK_Q16_PENDING_RUNNING_ATTEMPT_META_KEY[\s\S]*WORK_Q16_PENDING_ATTEMPT_META_KEY/u,
+    "publication must lock the exact running or published attempt lane",
+  );
+  assert.match(
+    publicationSource,
+    /INSERT INTO proof_indexer\.meta[\s\S]*WORK_Q16_PENDING_ATTEMPT_META_KEY[\s\S]*DELETE FROM proof_indexer\.meta[\s\S]*WORK_Q16_PENDING_RUNNING_ATTEMPT_META_KEY/u,
+    "successful publication must atomically promote the attempt and clear its running fence",
   );
   const migrationSource = readFileSync(
     new URL("./migrate-work-precision-v2.mjs", import.meta.url),
@@ -58760,7 +58780,7 @@ check("WORK precision V2 readiness cache is exact, positive-only, and coalesced"
   );
   assert.match(
     checkpointSource,
-    /const admissionKey = `\$\{force === true \? "force" : "normal"\}:\$\{[\s\S]*requestKey[\s\S]*\}`/u,
+    /allowCanonicalSummaryBootstrap === true \? "bootstrap" : "full"[\s\S]*force === true \? "force" : "normal"[\s\S]*requestKey/u,
   );
   assert.match(
     checkpointSource,
@@ -58785,6 +58805,10 @@ check("WORK precision V2 readiness cache is exact, positive-only, and coalesced"
   assert.match(
     readinessSource,
     /loadFull: \(fingerprint\) =>[\s\S]*workPrecisionV2MigrationFullAuditWithBound[\s\S]*requestKey: `\$\{requestKey\}:\$\{fingerprint\.key\}`/u,
+  );
+  assert.match(
+    readinessSource,
+    /allowCanonicalSummaryBootstrap:[\s\S]*bootstrapReadyCache:[\s\S]*workPrecisionV2CanonicalBootstrapReadinessReadyCache/u,
   );
   assert.doesNotMatch(
     readinessSource,
@@ -59017,6 +59041,70 @@ check("WORK precision V2 compact checkpoints bound concurrency and cache only se
   assert.equal(negativeRequest.readyCache.size, 0);
   await readinessWithCheckpoint(negativeRequest);
   assert.equal(negativeFullLoads, 2);
+
+  const bootstrapFingerprint = fingerprint("epoch-bootstrap");
+  const bootstrapReadyCache = new Map();
+  const bootstrapNormalCache = new Map();
+  let bootstrapCompactLoads = 0;
+  let bootstrapFullLoads = 0;
+  const bootstrapRequest = {
+    allowCanonicalSummaryBootstrap: true,
+    bootstrapReadyCache,
+    inFlight: new Map(),
+    loadCatalogAttestation: async () => true,
+    loadCompact: async () => {
+      bootstrapCompactLoads += 1;
+      return bootstrapFingerprint;
+    },
+    loadFull: async () => {
+      bootstrapFullLoads += 1;
+      return {
+        canonicalSummaryBootstrapReady: true,
+        label: "bootstrap",
+        nested: { exact: true },
+        ready: false,
+      };
+    },
+    now: () => clock,
+    readyCache: bootstrapNormalCache,
+    requestKey: "bootstrap-pins",
+  };
+  const firstBootstrap = await readinessWithCheckpoint(
+    bootstrapRequest,
+  );
+  assert.equal(firstBootstrap?.label, "bootstrap");
+  assert.equal(Object.isFrozen(firstBootstrap), true);
+  assert.equal(Object.isFrozen(firstBootstrap.nested), true);
+  assert.equal(bootstrapFullLoads, 1);
+  assert.equal(bootstrapCompactLoads, 2);
+  assert.equal(bootstrapReadyCache.size, 1);
+  assert.equal(bootstrapNormalCache.size, 0);
+  const secondBootstrap = await readinessWithCheckpoint({
+    ...bootstrapRequest,
+    loadCatalogAttestation: async () => {
+      throw new Error("bootstrap cache unexpectedly reloaded catalog proof");
+    },
+    loadFull: async () => {
+      throw new Error("bootstrap cache unexpectedly ran a full audit");
+    },
+  });
+  assert.equal(secondBootstrap, firstBootstrap);
+  assert.equal(bootstrapFullLoads, 1);
+  assert.equal(bootstrapCompactLoads, 3);
+
+  let normalIsolationLoads = 0;
+  const normalIsolationResult = await readinessWithCheckpoint({
+    ...bootstrapRequest,
+    allowCanonicalSummaryBootstrap: false,
+    loadFull: async () => {
+      normalIsolationLoads += 1;
+      return { ready: false };
+    },
+  });
+  assert.equal(normalIsolationResult?.ready, false);
+  assert.equal(normalIsolationLoads, 1);
+  assert.equal(bootstrapReadyCache.size, 1);
+  assert.equal(bootstrapNormalCache.size, 0);
 
   let driftCompactLoads = 0;
   let driftFullLoads = 0;

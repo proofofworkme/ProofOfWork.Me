@@ -246,6 +246,8 @@ const WORK_Q16_PENDING_STAGE_META_KEY =
   "workQ16PendingStage:livenet";
 const WORK_Q16_PENDING_ATTEMPT_META_KEY =
   "workQ16PendingAttempt:livenet";
+const WORK_Q16_PENDING_RUNNING_ATTEMPT_META_KEY =
+  "workQ16PendingRunningAttempt:livenet";
 const WORK_Q16_PENDING_ATTEMPT_MODEL =
   "canonical-work-q16-pending-publication-attempt-v1";
 const WORK_PRECISION_READINESS_EPOCH_CHECKPOINT_MODEL =
@@ -23707,7 +23709,7 @@ async function storeWorkQ16PendingRunningAttempt(
           updated_at = EXCLUDED.updated_at
       `,
       [
-        WORK_Q16_PENDING_ATTEMPT_META_KEY,
+        WORK_Q16_PENDING_RUNNING_ATTEMPT_META_KEY,
         JSON.stringify(canonical),
         canonical.startedAt,
       ],
@@ -24379,9 +24381,12 @@ async function persistExactWorkQ16PendingWitness(
       client,
       parentWitnessResult,
     );
+    const attemptMetaKey = requestedPublicationAttempt.status === "running"
+      ? WORK_Q16_PENDING_RUNNING_ATTEMPT_META_KEY
+      : WORK_Q16_PENDING_ATTEMPT_META_KEY;
     const attemptResult = await client.query(
       `SELECT value FROM proof_indexer.meta WHERE key = $1 FOR UPDATE`,
-      [WORK_Q16_PENDING_ATTEMPT_META_KEY],
+      [attemptMetaKey],
     );
     const lockedAttempt = canonicalWorkQ16PendingAttempt(
       attemptResult.rows[0]?.value,
@@ -25251,6 +25256,10 @@ async function persistExactWorkQ16PendingWitness(
         JSON.stringify(publishedAttempt),
         generatedAt,
       ],
+    );
+    await client.query(
+      `DELETE FROM proof_indexer.meta WHERE key = $1`,
+      [WORK_Q16_PENDING_RUNNING_ATTEMPT_META_KEY],
     );
     await client.query(
       `

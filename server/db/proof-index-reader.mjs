@@ -228,6 +228,7 @@ const workAmoReplayReadinessInFlight = new Map();
 const workAmoReplayReadinessReadyCache = new Map();
 const workPrecisionV2MigrationReadinessRequestInFlight = new Map();
 const workPrecisionV2MigrationReadinessReadyCache = new Map();
+const workPrecisionV2CanonicalBootstrapReadinessReadyCache = new Map();
 const workPrecisionV2MigrationFullAuditInFlight = new Map();
 // Full relational audits are serialized per process; compact reads stay free.
 let workPrecisionV2MigrationFullAuditTail = Promise.resolve();
@@ -526,6 +527,7 @@ export async function closeProofIndexReadPool() {
   }
   workPrecisionV2MigrationReadinessRequestInFlight.clear();
   workPrecisionV2MigrationReadinessReadyCache.clear();
+  workPrecisionV2CanonicalBootstrapReadinessReadyCache.clear();
   workPrecisionV2MigrationFullAuditInFlight.clear();
   workPrecisionV2MigrationFullAuditTail = Promise.resolve();
   workPrecisionV2ReadinessEpochContractInFlight.clear();
@@ -2747,6 +2749,7 @@ async function payloadWithCurrentWorkPrecisionReadPolicy(
     await proofIndexWorkPrecisionV2MigrationReadiness(
       network,
       pins,
+      { allowCanonicalSummaryBootstrap },
     ).catch(() => null);
   const fullReadiness =
     readiness?.ready === true &&
@@ -6729,6 +6732,8 @@ async function workPrecisionV2MigrationReadinessWithCompactCache({
 }
 
 async function workPrecisionV2MigrationReadinessWithCompactCheckpoint({
+  allowCanonicalSummaryBootstrap = false,
+  bootstrapReadyCache,
   force = false,
   inFlight,
   loadCatalogAttestation,
@@ -6742,7 +6747,9 @@ async function workPrecisionV2MigrationReadinessWithCompactCheckpoint({
     return null;
   }
   // Force may share a fresh audit, but must never join a normal cache hit.
-  const admissionKey = `${force === true ? "force" : "normal"}:${
+  const admissionKey = `${
+    allowCanonicalSummaryBootstrap === true ? "bootstrap" : "full"
+  }:${force === true ? "force" : "normal"}:${
     requestKey
   }`;
   return exactCheckpointSingleFlight(
@@ -6778,6 +6785,20 @@ async function workPrecisionV2MigrationReadinessWithCompactCheckpoint({
         if (cached) {
           readyCache.delete(initialFingerprint.key);
         }
+        const bootstrapCached =
+          allowCanonicalSummaryBootstrap === true &&
+            Number.isFinite(readAt)
+            ? reusableWorkPrecisionV2MigrationReadiness(
+                bootstrapReadyCache,
+                initialFingerprint.key,
+                readAt,
+              )
+            : null;
+        if (
+          bootstrapCached?.canonicalSummaryBootstrapReady === true
+        ) {
+          return bootstrapCached;
+        }
       }
       if (
         await loadCatalogAttestation(initialFingerprint) !== true
@@ -6801,6 +6822,18 @@ async function workPrecisionV2MigrationReadinessWithCompactCheckpoint({
           settledAt,
         )
       ) {
+        if (
+          allowCanonicalSummaryBootstrap === true &&
+          Number.isFinite(settledAt) &&
+          result?.canonicalSummaryBootstrapReady === true
+        ) {
+          return rememberWorkPrecisionV2MigrationReadiness(
+            bootstrapReadyCache,
+            settledFingerprint.key,
+            result,
+            settledAt + WORK_PRECISION_V2_READINESS_CACHE_TTL_MS,
+          );
+        }
         return result?.ready === true ? null : result;
       }
       const pendingValidThrough = Date.parse(
@@ -6863,6 +6896,10 @@ export async function proofIndexWorkPrecisionV2MigrationReadiness(
   }
   const requestOptions = Object.freeze({ ...options });
   return workPrecisionV2MigrationReadinessWithCompactCheckpoint({
+    allowCanonicalSummaryBootstrap:
+      requestOptions.allowCanonicalSummaryBootstrap === true,
+    bootstrapReadyCache:
+      workPrecisionV2CanonicalBootstrapReadinessReadyCache,
     force: requestOptions.force === true,
     inFlight: workPrecisionV2MigrationReadinessRequestInFlight,
     loadCatalogAttestation: (fingerprint) =>
