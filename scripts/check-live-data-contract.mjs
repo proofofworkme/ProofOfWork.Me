@@ -1241,6 +1241,7 @@ expectAll("server token reads preserve canonical ledger rows when table state re
 ]);
 
 expectAll("server fresh token state reads fall back to valid cached snapshots", server, [
+  /url\.pathname === "\/api\/v1\/token"[\s\S]*currentProofIndexTokenPayloadForRead\([\s\S]*"token-state",[\s\S]*SUMMARY_PROOF_INDEX_READ_WAIT_MS/,
   /async function cachedTokenPayloadFallbackForRead\([\s\S]*cachedTokenPayloadSnapshotNoRefresh\(network,\s*scope\)[\s\S]*rejectEmptyMainnetTokenPayload\(network,\s*payload,\s*scope,\s*label\)[\s\S]*existingCurrentCanonicalLedgerPayloadWithinMs\([\s\S]*existingCanonicalLedgerPayload\(network\)[\s\S]*ledgerPayloadForFreshnessCompare\(ledger,\s*scope\)[\s\S]*refreshTokenPayloadCacheInBackground\(network,\s*scope\)/,
   /url\.pathname === "\/api\/v1\/token"[\s\S]*"token-state-fresh-memory"[\s\S]*cachedTokenPayloadFallbackForRead\([\s\S]*"token-state-fresh-cache"[\s\S]*Fresh credit state is still catching up/,
 ]);
