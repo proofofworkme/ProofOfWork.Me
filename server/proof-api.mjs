@@ -233,6 +233,7 @@ import {
   proofIndexAddressMailPayload,
   proofIndexCanonicalActivityPayload,
   proofIndexCanonicalInceptionMintWitnessesPayload,
+  proofIndexCanonicalHistoricalWorkListingScopes,
   proofIndexCanonicalSummaryTokenTablePayload,
   proofIndexCanonicalWorkListingById,
   proofIndexCanonicalSummaryLedgerPayload,
@@ -1078,7 +1079,22 @@ const PENDING_WORK_VERIFIER_STAGE_REQUEST_MODEL =
 const PENDING_WORK_VERIFIER_STAGE_MODEL =
   "canonical-work-q16-pending-verifier-stage-v2";
 const PENDING_WORK_VERIFIER_STAGE_CODE_VERSION =
-  "proof-api-canonical-work-q16-pending-verifier-stage-v2";
+  "proof-api-canonical-work-q16-pending-verifier-stage-v3";
+const PENDING_WORK_HISTORICAL_LISTING_SCOPE_MODEL =
+  "canonical-pre-v8-work-listing-scope-v1";
+const PENDING_WORK_HISTORICAL_LISTING_AUTH_VERSIONS = Object.freeze([
+  "pwt-sale-v1",
+  "pwt-sale-v2",
+  "pwt-sale-v3",
+  "pwt-sale-v4",
+  "pwt-sale-v5",
+  "pwt-sale-v6",
+  "pwt-sale-v7",
+]);
+const PENDING_WORK_HISTORICAL_LISTING_REASON_CODE =
+  "work-amo-v8-relic-listing-nonsettleable";
+const PENDING_WORK_HISTORICAL_LISTING_REASON =
+  "Referenced pre-V8 ProofOfWork credit listing is historical, non-actionable audit state after AMO V8 activation.";
 const PENDING_WORK_ABSENCE_EVIDENCE_MODEL =
   "canonical-work-q16-pending-absence-evidence-v1";
 const PENDING_WORK_DROP_CONFIRMATION_MS = 300_000;
@@ -58967,11 +58983,285 @@ async function pendingWorkVerifierStageRecheckMempoolEpochs(
   );
 }
 
-function pendingWorkVerifierStageProveWorkScope(
+function pendingWorkVerifierStageHistoricalListingScope(value) {
+  const scope = value && typeof value === "object" && !Array.isArray(value)
+    ? value
+    : null;
+  const listingId = String(scope?.listingId ?? "").trim().toLowerCase();
+  const tokenId = String(scope?.tokenId ?? "").trim().toLowerCase();
+  const authorizationVersion = String(scope?.authorizationVersion ?? "")
+    .trim()
+    .toLowerCase();
+  const blockHash = String(scope?.blockHash ?? "").trim().toLowerCase();
+  const rawPayloadSha256 = String(scope?.rawPayloadSha256 ?? "")
+    .trim()
+    .toLowerCase();
+  const blockHeight = Number(scope?.blockHeight);
+  const blockIndex = Number(scope?.blockIndex);
+  const protocolVout = Number(scope?.protocolVout);
+  const recordOrdinal = Number(scope?.recordOrdinal);
+  if (
+    !pendingWorkVerifierStageExactObjectKeys(scope, [
+      "authorizationVersion",
+      "blockHash",
+      "blockHeight",
+      "blockIndex",
+      "listingId",
+      "model",
+      "network",
+      "protocolVout",
+      "rawPayloadSha256",
+      "recordOrdinal",
+      "tokenId",
+    ]) ||
+    scope.model !== PENDING_WORK_HISTORICAL_LISTING_SCOPE_MODEL ||
+    scope.network !== "livenet" ||
+    !/^[0-9a-f]{64}$/u.test(listingId) ||
+    tokenId !== WORK_TOKEN_ID ||
+    !PENDING_WORK_HISTORICAL_LISTING_AUTH_VERSIONS.includes(
+      authorizationVersion,
+    ) ||
+    !/^[0-9a-f]{64}$/u.test(blockHash) ||
+    !/^[0-9a-f]{64}$/u.test(rawPayloadSha256) ||
+    !Number.isSafeInteger(blockHeight) ||
+    blockHeight <= 0 ||
+    blockHeight >= WORK_AMO_V8_ACTIVATION_HEIGHT ||
+    !Number.isSafeInteger(blockIndex) ||
+    blockIndex < 0 ||
+    !Number.isSafeInteger(protocolVout) ||
+    protocolVout < 0 ||
+    !Number.isSafeInteger(recordOrdinal) ||
+    recordOrdinal < 0
+  ) {
+    return null;
+  }
+  return {
+    authorizationVersion,
+    blockHash,
+    blockHeight,
+    blockIndex,
+    listingId,
+    model: PENDING_WORK_HISTORICAL_LISTING_SCOPE_MODEL,
+    network: "livenet",
+    protocolVout,
+    rawPayloadSha256,
+    recordOrdinal,
+    tokenId: WORK_TOKEN_ID,
+  };
+}
+
+function pendingWorkVerifierStageHistoricalListingScopeMap(scopes) {
+  const result = new Map();
+  for (const value of Array.isArray(scopes) ? scopes : []) {
+    const scope = pendingWorkVerifierStageHistoricalListingScope(value);
+    if (!scope || result.has(scope.listingId)) {
+      throw pendingWorkVerifierStageError(
+        "PENDING_WORK_STAGE_LISTING_PARENT_UNPROVEN",
+        "Canonical historical WORK listing scope evidence is malformed or ambiguous.",
+        { listingId: scope?.listingId ?? null },
+      );
+    }
+    result.set(scope.listingId, scope);
+  }
+  return result;
+}
+
+function pendingWorkVerifierStageConfirmedListingIds(baseState) {
+  return new Set(
+    [
+      ...(Array.isArray(baseState?.listings) ? baseState.listings : []),
+      ...(Array.isArray(baseState?.closedListings)
+        ? baseState.closedListings
+        : []),
+    ].flatMap((listing) => {
+      const listingId = String(listing?.listingId ?? "").trim().toLowerCase();
+      return /^[0-9a-f]{64}$/u.test(listingId) ? [listingId] : [];
+    }),
+  );
+}
+
+function pendingWorkVerifierStageMissingListingIds(
   transactionRecords,
   baseState,
   mempool,
 ) {
+  const confirmedListingIds =
+    pendingWorkVerifierStageConfirmedListingIds(baseState);
+  const listingIds = new Set();
+  for (const record of transactionRecords) {
+    for (const parsed of record.parsedMessages) {
+      if (!["buy", "delist", "seal"].includes(parsed?.kind)) {
+        continue;
+      }
+      const listingId = String(parsed?.listingId ?? "").trim().toLowerCase();
+      if (
+        /^[0-9a-f]{64}$/u.test(listingId) &&
+        !confirmedListingIds.has(listingId) &&
+        !mempool.membership.has(listingId)
+      ) {
+        listingIds.add(listingId);
+      }
+    }
+  }
+  return [...listingIds].sort(compareCanonicalUtf8);
+}
+
+async function pendingWorkVerifierStageHistoricalListingScopeFromCore(
+  value,
+  tip,
+) {
+  const scope = pendingWorkVerifierStageHistoricalListingScope(value);
+  const fail = (reason) => {
+    throw pendingWorkVerifierStageError(
+      "PENDING_WORK_STAGE_LISTING_PARENT_UNPROVEN",
+      "A historical WORK listing scope witness could not be rebound to exact canonical Bitcoin Core evidence.",
+      { listingId: scope?.listingId ?? null, reason },
+    );
+  };
+  if (
+    !scope ||
+    !tip ||
+    tip.height < WORK_AMO_V8_ACTIVATION_HEIGHT ||
+    scope.blockHeight >= tip.height
+  ) {
+    return fail("historical-listing-scope-envelope-invalid");
+  }
+  let transaction;
+  try {
+    transaction = await fetchTransactionFromBitcoinRpc(
+      scope.listingId,
+      scope.network,
+      {
+        bypassCache: true,
+        cacheResult: false,
+        includePrevouts: false,
+        includeRawHex: true,
+      },
+    );
+  } catch (error) {
+    return fail(`historical-listing-transaction:${errorSummary(error)}`);
+  }
+  if (
+    !transaction ||
+    transactionTxid(transaction) !== scope.listingId ||
+    !transactionConfirmed(transaction) ||
+    transactionBlockHash(transaction) !== scope.blockHash ||
+    !/^[0-9a-f]+$/u.test(String(transaction.hex ?? ""))
+  ) {
+    return fail("historical-listing-transaction-binding-invalid");
+  }
+  const [canonicalHashResponse, blockResponse] = await Promise.all([
+    bitcoinRpc("getblockhash", [scope.blockHeight]),
+    bitcoinRpc("getblock", [scope.blockHash, 1]),
+  ]);
+  const block = blockResponse?.ok === true ? blockResponse.result : null;
+  const blockTxids = Array.isArray(block?.tx)
+    ? block.tx.map((txid) => String(txid ?? "").trim().toLowerCase())
+    : [];
+  if (
+    canonicalHashResponse?.ok !== true ||
+    String(canonicalHashResponse.result ?? "").trim().toLowerCase() !==
+      scope.blockHash ||
+    !block ||
+    Number(block.height) !== scope.blockHeight ||
+    String(block.hash ?? "").trim().toLowerCase() !== scope.blockHash ||
+    Number(block.nTx) !== blockTxids.length ||
+    blockTxids[scope.blockIndex] !== scope.listingId
+  ) {
+    return fail("historical-listing-canonical-block-binding-invalid");
+  }
+  let records;
+  try {
+    records = canonicalRawProtocolRecordSetFromTransaction(transaction).records;
+  } catch (error) {
+    return fail(`historical-listing-raw-records:${errorSummary(error)}`);
+  }
+  const listingRecords = records.flatMap((record) => {
+    if (record?.protocol !== "pwt1" || record?.rawDecodeValid !== true) {
+      return [];
+    }
+    const parsed = parseTokenPayload(record.message, scope.network);
+    return parsed?.kind === "list" ? [{ parsed, record }] : [];
+  });
+  if (listingRecords.length !== 1) {
+    return fail("historical-listing-record-cardinality-invalid");
+  }
+  const { parsed, record } = listingRecords[0];
+  const authorization = parsed?.saleAuthorization ??
+    parsed?.listingAuthorization;
+  const rawPayloadSha256 = createHash("sha256")
+    .update(Buffer.from(String(record.message ?? ""), "utf8"))
+    .digest("hex");
+  if (
+    Number(record.protocolVout) !== scope.protocolVout ||
+    Number(record.recordOrdinal) !== scope.recordOrdinal ||
+    rawPayloadSha256 !== scope.rawPayloadSha256 ||
+    String(authorization?.tokenId ?? "").trim().toLowerCase() !==
+      WORK_TOKEN_ID ||
+    String(authorization?.version ?? "").trim().toLowerCase() !==
+      scope.authorizationVersion
+  ) {
+    return fail("historical-listing-raw-scope-binding-invalid");
+  }
+  return scope;
+}
+
+async function pendingWorkVerifierStageHistoricalListingScopes(
+  transactionRecords,
+  baseState,
+  mempool,
+  tip,
+) {
+  const listingIds = pendingWorkVerifierStageMissingListingIds(
+    transactionRecords,
+    baseState,
+    mempool,
+  );
+  if (listingIds.length === 0) {
+    return [];
+  }
+  let relationalScopes;
+  try {
+    relationalScopes = await proofIndexCanonicalHistoricalWorkListingScopes(
+      "livenet",
+      listingIds,
+      WORK_AMO_V8_ACTIVATION_HEIGHT,
+    );
+  } catch (error) {
+    throw pendingWorkVerifierStageError(
+      "PENDING_WORK_STAGE_LISTING_PARENT_UNPROVEN",
+      "Canonical historical WORK listing scope evidence is unavailable.",
+      { reason: errorSummary(error) },
+    );
+  }
+  const requested = new Set(listingIds);
+  const relationalMap = pendingWorkVerifierStageHistoricalListingScopeMap(
+    relationalScopes,
+  );
+  if ([...relationalMap.keys()].some((listingId) => !requested.has(listingId))) {
+    throw pendingWorkVerifierStageError(
+      "PENDING_WORK_STAGE_LISTING_PARENT_UNPROVEN",
+      "Canonical historical WORK listing scope evidence escaped the requested set.",
+    );
+  }
+  return mapWithConcurrency(
+    [...relationalMap.values()].sort((left, right) =>
+      compareCanonicalUtf8(left.listingId, right.listingId)
+    ),
+    Math.min(4, Math.max(1, TX_FETCH_CONCURRENCY)),
+    (scope) =>
+      pendingWorkVerifierStageHistoricalListingScopeFromCore(scope, tip),
+  );
+}
+
+function pendingWorkVerifierStageProveWorkScope(
+  transactionRecords,
+  baseState,
+  mempool,
+  historicalScopes = [],
+) {
+  const historicalListings =
+    pendingWorkVerifierStageHistoricalListingScopeMap(historicalScopes);
   const confirmedListings = new Map();
   for (const listing of [
     ...(Array.isArray(baseState?.listings) ? baseState.listings : []),
@@ -58996,6 +59286,7 @@ function pendingWorkVerifierStageProveWorkScope(
       } else if (parsed.kind === "buy" || parsed.kind === "delist") {
         const listingId = String(parsed.listingId ?? "").trim().toLowerCase();
         const listing = confirmedListings.get(listingId);
+        const historicalListing = historicalListings.get(listingId);
         if (!listing && mempool.membership.has(listingId)) {
           throw pendingWorkVerifierStageError(
             "PENDING_WORK_STAGE_UNCONFIRMED_LISTING_PARENT",
@@ -59003,14 +59294,18 @@ function pendingWorkVerifierStageProveWorkScope(
             { listingId, txid: record.txid },
           );
         }
-        if (!listing) {
+        if (!listing && !historicalListing) {
           throw pendingWorkVerifierStageError(
             "PENDING_WORK_STAGE_LISTING_PARENT_UNPROVEN",
             "A pending marketplace action cannot be proven to reference a confirmed WORK listing.",
             { listingId: listingId || null, txid: record.txid },
           );
         }
-        tokenId = String(listing.tokenId ?? "").trim().toLowerCase();
+        tokenId = String(
+          listing?.tokenId ?? historicalListing?.tokenId ?? "",
+        )
+          .trim()
+          .toLowerCase();
       } else {
         throw pendingWorkVerifierStageError(
           "PENDING_WORK_STAGE_SCOPE_INVALID",
@@ -59030,7 +59325,10 @@ function pendingWorkVerifierStageProveWorkScope(
       }
       if (parsed.kind === "seal") {
         const listingId = String(parsed.listingId ?? "").trim().toLowerCase();
-        if (!confirmedListings.has(listingId)) {
+        if (
+          !confirmedListings.has(listingId) &&
+          !historicalListings.has(listingId)
+        ) {
           throw pendingWorkVerifierStageError(
             mempool.membership.has(listingId)
               ? "PENDING_WORK_STAGE_UNCONFIRMED_LISTING_PARENT"
@@ -59111,11 +59409,34 @@ function pendingWorkVerifierStageListing(state, listingId) {
   ) ?? null;
 }
 
+function pendingWorkVerifierStageRecordHistoricalListingScopes(
+  record,
+  historicalListings,
+) {
+  const scopes = new Map();
+  for (const parsed of Array.isArray(record?.parsedMessages)
+    ? record.parsedMessages
+    : []) {
+    if (!["buy", "delist", "seal"].includes(parsed?.kind)) {
+      continue;
+    }
+    const listingId = String(parsed?.listingId ?? "").trim().toLowerCase();
+    const scope = historicalListings.get(listingId);
+    if (scope) {
+      scopes.set(listingId, scope);
+    }
+  }
+  return [...scopes.values()].sort((left, right) =>
+    compareCanonicalUtf8(left.listingId, right.listingId)
+  );
+}
+
 function pendingWorkVerifierStageInvalidEvidence(
   state,
   transaction,
   parsed,
   rawRecord,
+  historicalListingScopes = [],
 ) {
   const actor = pendingWorkVerifierStageActorAddress(transaction);
   const authorization = parsed?.saleAuthorization &&
@@ -59150,6 +59471,12 @@ function pendingWorkVerifierStageInvalidEvidence(
     ...(recipientAddress ? { recipientAddress } : {}),
     ...(authorization ? { saleAuthorization: authorization } : {}),
     ...(sellerAddress ? { sellerAddress } : {}),
+    ...(historicalListingScopes.length > 0
+      ? {
+          historicalListingScopes,
+          reasonCode: PENDING_WORK_HISTORICAL_LISTING_REASON_CODE,
+        }
+      : {}),
   };
   for (const field of [
     "amount",
@@ -59378,18 +59705,28 @@ async function pendingWorkVerifierStageDecisions(
   transactionRecords,
   network,
   tipHeight,
+  historicalScopes = [],
 ) {
   let state = baseState;
   const decisions = [];
+  const historicalListings =
+    pendingWorkVerifierStageHistoricalListingScopeMap(historicalScopes);
   for (const record of transactionRecords) {
     const priorState = state;
-    const transactionInvalidReason =
-      await pendingWorkVerifierStageTransactionInvalidReason(
-        priorState,
+    const recordHistoricalListingScopes =
+      pendingWorkVerifierStageRecordHistoricalListingScopes(
         record,
-        network,
-        tipHeight,
+        historicalListings,
       );
+    const transactionInvalidReason =
+      recordHistoricalListingScopes.length > 0
+        ? PENDING_WORK_HISTORICAL_LISTING_REASON
+        : await pendingWorkVerifierStageTransactionInvalidReason(
+            priorState,
+            record,
+            network,
+            tipHeight,
+          );
     const nextState = transactionInvalidReason
       ? priorState
       : pendingWorkVerifierStageReplayState(
@@ -59440,6 +59777,7 @@ async function pendingWorkVerifierStageDecisions(
             record.transaction,
             parsedMessage,
             rawRecord,
+            recordHistoricalListingScopes,
           ),
           attemptedKind: String(
             parsedMessage?.kind ?? "unknown",
@@ -59579,16 +59917,25 @@ async function pendingWorkVerifierStagePayload(value) {
       request.network,
     ),
   );
+  const initialHistoricalListingScopes =
+    await pendingWorkVerifierStageHistoricalListingScopes(
+      transactionRecords,
+      initialBase.state,
+      initialMempool,
+      initialTip,
+    );
   pendingWorkVerifierStageProveWorkScope(
     transactionRecords,
     initialBase.state,
     initialMempool,
+    initialHistoricalListingScopes,
   );
   const decisions = await pendingWorkVerifierStageDecisions(
     initialBase.state,
     transactionRecords,
     request.network,
     initialTip.height,
+    initialHistoricalListingScopes,
   );
   if (
     decisions.length !== request.replayTxids.length ||
@@ -59672,16 +60019,33 @@ async function pendingWorkVerifierStagePayload(value) {
     finalTokenPayload,
     finalTip,
   );
+  const finalHistoricalListingScopes =
+    await pendingWorkVerifierStageHistoricalListingScopes(
+      transactionRecords,
+      finalBase.state,
+      finalMempool,
+      finalTip,
+    );
+  pendingWorkVerifierStageProveWorkScope(
+    transactionRecords,
+    finalBase.state,
+    finalMempool,
+    finalHistoricalListingScopes,
+  );
   const finalReadinessEpoch =
     await proofIndexReadinessEpochCheckpoint(request.network);
   if (
     !finalReadinessEpoch ||
     !isDeepStrictEqual(finalReadinessEpoch, initialReadinessEpoch) ||
-    !isDeepStrictEqual(finalBase.commitment, initialBase.commitment)
+    !isDeepStrictEqual(finalBase.commitment, initialBase.commitment) ||
+    !isDeepStrictEqual(
+      finalHistoricalListingScopes,
+      initialHistoricalListingScopes,
+    )
   ) {
     throw pendingWorkVerifierStageError(
       "PENDING_WORK_STAGE_BINDING_CHANGED",
-      "The confirmed WORK base or readiness epoch changed while the pending stage was built.",
+      "The confirmed WORK base, historical listing scope, or readiness epoch changed while the pending stage was built.",
     );
   }
 

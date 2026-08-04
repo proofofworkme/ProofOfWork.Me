@@ -42,6 +42,10 @@ import {
   proofIndexCanonicalMailProjectionRows,
 } from "../server/proof-index-mail-projection.mjs";
 import {
+  workPrecisionV2CurrentPayloadIsExact,
+  workPrecisionV2ProjectCurrentPayload,
+} from "../server/db/proof-index-reader.mjs";
+import {
   WORK_ATOMIC_PROJECTION_MODEL,
   WORK_DECIMALS,
   WORK_LEGACY_ATOMIC_PROJECTION_MODEL,
@@ -1926,6 +1930,180 @@ const WORK_MARKET_GOVERNED_AUTH_VERSIONS_FIXTURE = new Set([
   WORK_AMO_V6_AUTH_VERSION,
   WORK_AMO_V8_AUTH_VERSION,
 ]);
+
+check("historical WORK listing scope is exact, singleton, and fail closed", async () => {
+  const historicalWorkListingScopeObject = isolatedFunction(
+    READER_PATH,
+    "historicalWorkListingScopeObject",
+  );
+  const historicalWorkListingScopeRawAuthorization = isolatedFunction(
+    READER_PATH,
+    "historicalWorkListingScopeRawAuthorization",
+    { historicalWorkListingScopeObject },
+  );
+  const historicalVersions = new Set(
+    Array.from({ length: 7 }, (_unused, index) =>
+      `pwt-sale-v${index + 1}`
+    ),
+  );
+  const canonicalHistoricalWorkListingScopeRow = isolatedFunction(
+    READER_PATH,
+    "canonicalHistoricalWorkListingScopeRow",
+    {
+      HISTORICAL_WORK_LISTING_SCOPE_AUTH_VERSIONS: historicalVersions,
+      HISTORICAL_WORK_LISTING_SCOPE_MODEL:
+        "canonical-pre-v8-work-listing-scope-v1",
+      historicalWorkListingScopeObject,
+      historicalWorkListingScopeRawAuthorization,
+    },
+  );
+  let resultRows = [];
+  let queryParameters = null;
+  const proofIndexCanonicalHistoricalWorkListingScopes = isolatedFunction(
+    READER_PATH,
+    "proofIndexCanonicalHistoricalWorkListingScopes",
+    {
+      HISTORICAL_WORK_LISTING_SCOPE_LIMIT: 512,
+      canonicalHistoricalWorkListingScopeRow,
+      proofIndexPool: () => ({
+        query: async (_sql, parameters) => {
+          queryParameters = parameters;
+          return { rows: resultRows };
+        },
+      }),
+    },
+  );
+  const activationHeight = 960_601;
+  const blockHash = "c".repeat(64);
+  const scopeRow = (
+    listingId,
+    {
+      authorizationVersion = "pwt-sale-v1",
+      blockHeight = activationHeight - 1,
+      tokenId = WORK_TOKEN_ID,
+      ...overrides
+    } = {},
+  ) => {
+    const rawAuthorization = {
+      anchorVout: 2,
+      tokenId,
+      version: authorizationVersion,
+    };
+    const rawPayload = `pwt1:list5:${
+      Buffer.from(JSON.stringify(rawAuthorization), "utf8").toString(
+        "base64url",
+      )
+    }`;
+    const rawBytes = Buffer.byteLength(rawPayload, "utf8");
+    return {
+      canonical_block: true,
+      canonical_block_hash: blockHash,
+      canonical_block_height: blockHeight,
+      canonical_block_network: "livenet",
+      carrier_data_bytes: rawBytes,
+      carrier_network: "livenet",
+      carrier_output_index: 0,
+      carrier_payload_hex: Buffer.from(rawPayload, "utf8").toString("hex"),
+      carrier_payload_text: rawPayload,
+      carrier_protocol: "pwt1",
+      carrier_txid: listingId,
+      carrier_vout: 1,
+      event_block_height: blockHeight,
+      event_block_index: 27,
+      event_data_bytes: rawBytes,
+      event_kind: "token-listing",
+      event_network: "livenet",
+      event_payload: {
+        blockHeight,
+        blockIndex: 27,
+        listingId,
+        payload: rawPayload,
+        protocolVout: 1,
+        recordOrdinal: 0,
+        saleAuthorization: {
+          ...rawAuthorization,
+          indexedProjection: "historical",
+        },
+        tokenId,
+        txid: listingId,
+      },
+      event_protocol: "pwt1",
+      event_protocol_vout: 1,
+      event_raw_payload: rawPayload,
+      event_record_ordinal: 0,
+      event_status: "confirmed",
+      event_txid: listingId,
+      event_valid: true,
+      transaction_block_hash: blockHash,
+      transaction_block_height: blockHeight,
+      transaction_block_index: 27,
+      transaction_network: "livenet",
+      transaction_status: "confirmed",
+      transaction_txid: listingId,
+      ...overrides,
+    };
+  };
+  const listingA = "a".repeat(64);
+  const listingB = "b".repeat(64);
+  const rowA = scopeRow(listingA);
+  const rowB = scopeRow(listingB);
+  resultRows = [rowB, rowA];
+  const evidence = await proofIndexCanonicalHistoricalWorkListingScopes(
+    "livenet",
+    [listingB.toUpperCase(), listingA, listingB],
+    activationHeight,
+  );
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(queryParameters)),
+    ["livenet", [listingA, listingB]],
+  );
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(evidence)),
+    [rowA, rowB].map((row, index) => ({
+      model: "canonical-pre-v8-work-listing-scope-v1",
+      network: "livenet",
+      listingId: index === 0 ? listingA : listingB,
+      tokenId: WORK_TOKEN_ID,
+      authorizationVersion: "pwt-sale-v1",
+      blockHash,
+      blockHeight: activationHeight - 1,
+      blockIndex: 27,
+      protocolVout: 1,
+      recordOrdinal: 0,
+      rawPayloadSha256: createHash("sha256")
+        .update(Buffer.from(row.event_raw_payload, "utf8"))
+        .digest("hex"),
+    })),
+    "canonical historical v1 witnesses must be stable and listing-id sorted",
+  );
+
+  const nonWorkTokenId = "d".repeat(64);
+  const rejectedRows = [
+    ["duplicate", [rowA, { ...rowA }]],
+    ["raw bytes", [{ ...rowA, carrier_payload_hex: "00" }]],
+    ["raw position", [{ ...rowA, carrier_output_index: 1 }]],
+    ["post activation", [scopeRow(listingA, { blockHeight: activationHeight })]],
+    ["V8 authorization", [scopeRow(listingA, {
+      authorizationVersion: WORK_AMO_V8_AUTH_VERSION,
+    })]],
+    ["non-WORK authorization", [scopeRow(listingA, {
+      tokenId: nonWorkTokenId,
+    })]],
+  ];
+  for (const [label, rows] of rejectedRows) {
+    resultRows = rows;
+    const rejected = await proofIndexCanonicalHistoricalWorkListingScopes(
+      "livenet",
+      [listingA],
+      activationHeight,
+    );
+    assert.deepEqual(
+      JSON.parse(JSON.stringify(rejected)),
+      [],
+      `${label} evidence must be omitted`,
+    );
+  }
+});
 
 check("server parses signed non-WORK outputs without free identifiers", () => {
   const bytesToHex = isolatedFunction(API_PATH, "bytesToHex", { Buffer });
@@ -15507,25 +15685,87 @@ check("Q16 staging fails closed for unknown or ambiguous marketplace scope", asy
     "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8";
   const otherTokenId = "b".repeat(64);
   const listingId = "a".repeat(64);
+  const decodeCanonicalAuthorization = isolatedFunction(
+    BACKFILL_PATH,
+    "decodeCanonicalBase64UrlJsonObject",
+  );
+  const canonicalAuthorization = {
+    tokenId: workTokenId,
+    version: "pwt-sale-v1",
+  };
+  const canonicalAuthorizationBase64 = Buffer.from(
+    JSON.stringify(canonicalAuthorization),
+    "utf8",
+  ).toString("base64url");
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(
+      decodeCanonicalAuthorization(canonicalAuthorizationBase64),
+    )),
+    canonicalAuthorization,
+  );
+  assert.equal(
+    decodeCanonicalAuthorization(`${canonicalAuthorizationBase64}=`),
+    null,
+    "a padded, noncanonical Base64URL authorization must fail closed",
+  );
+  assert.equal(
+    decodeCanonicalAuthorization(Buffer.from("[]", "utf8").toString("base64url")),
+    null,
+    "a raw authorization array must fail closed",
+  );
+  assert.equal(
+    decodeCanonicalAuthorization(Buffer.from([0xff]).toString("base64url")),
+    null,
+    "invalid UTF-8 raw authorization bytes must fail closed",
+  );
   const classify = isolatedFunction(
     BACKFILL_PATH,
     "pendingWorkQ16StageCandidate",
     {
       NETWORK: "livenet",
+      WORK_Q16_PENDING_PRE_V8_LISTING_AUTH_VERSIONS: new Set([
+        "pwt-sale-v1",
+        "pwt-sale-v2",
+        "pwt-sale-v3",
+        "pwt-sale-v4",
+        "pwt-sale-v5",
+        "pwt-sale-v6",
+        "pwt-sale-v7",
+      ]),
+      WORK_AMO_V8_EXPECTED_ACTIVATION_HEIGHT: 960_601,
       WORK_AMO_V8_TRANSFER_VERSION: "send3",
       WORK_TOKEN_ID: workTokenId,
       compareCanonicalUtf8,
-      decodeBase64UrlJson: () => null,
+      decodeCanonicalBase64UrlJsonObject: (value) =>
+        value === "fixture"
+          ? canonicalAuthorization
+          : value === "empty"
+            ? {}
+            : null,
+      decodeBase64UrlJson: (value) =>
+        value === "fixture"
+          ? canonicalAuthorization
+          : null,
       isHexTxid: (value) => /^[0-9a-f]{64}$/u.test(String(value)),
       normalizedLowerText: (value) =>
         String(value ?? "").trim().toLowerCase(),
     },
   );
-  const clientWithRows = (rows) => ({
+  const clientWithRows = (rows, historicalRows = []) => ({
     async query(sql, params) {
-      assert.match(String(sql), /lower\(listing\.token_id\) AS token_id/u);
+      const text = String(sql);
       assert.deepEqual(Array.from(params[1]), [listingId]);
-      return { rows };
+      if (/FROM proof_indexer\.credit_listings listing/u.test(text)) {
+        assert.match(text, /lower\(listing\.token_id\) AS token_id/u);
+        return { rows };
+      }
+      assert.match(text, /FROM proof_indexer\.events event/u);
+      assert.match(text, /carrier\.payload_text = event\.raw_payload/u);
+      assert.match(
+        text,
+        /listing_tx\.raw_tx->'canonicalBlockScan'->>'blockHash'/u,
+      );
+      return { rows: historicalRows };
     },
   });
   const buyMessage = [{
@@ -15534,6 +15774,51 @@ check("Q16 staging fails closed for unknown or ambiguous marketplace scope", asy
     text: `pwt1:buy5:${listingId}:fixture`,
   }];
   assert.equal(await classify(clientWithRows([]), buyMessage), "conflict");
+  assert.equal(
+    await classify(
+      clientWithRows([], [{
+        block_height: 952_975,
+        block_index: 527,
+        exact_raw_record: true,
+        listing_authorization_version: null,
+        listing_id: listingId,
+        listing_token_id: null,
+        op_return_vout: 1,
+        payload_listing_id: listingId,
+        payload_token_id: workTokenId,
+        record_ordinal: 0,
+        raw_payload: "pwt1:list5:fixture",
+        payload_raw_payload: "pwt1:list5:fixture",
+        sale_authorization_version: "pwt-sale-v1",
+        sale_token_id: workTokenId,
+      }]),
+      buyMessage,
+    ),
+    "work",
+  );
+  assert.equal(
+    await classify(
+      clientWithRows([], [{
+        block_height: 952_975,
+        block_index: 527,
+        exact_raw_record: true,
+        listing_authorization_version: null,
+        listing_id: listingId,
+        listing_token_id: null,
+        op_return_vout: 1,
+        payload_listing_id: listingId,
+        payload_token_id: workTokenId,
+        record_ordinal: 0,
+        raw_payload: "pwt1:list5:empty",
+        payload_raw_payload: "pwt1:list5:empty",
+        sale_authorization_version: "pwt-sale-v1",
+        sale_token_id: workTokenId,
+      }]),
+      buyMessage,
+    ),
+    "conflict",
+    "stored WORK aliases cannot substitute for missing raw authorization fields",
+  );
   assert.equal(
     await classify(
       clientWithRows([{ listing_id: listingId, token_id: workTokenId }]),
@@ -20024,8 +20309,37 @@ check("exact canonical summaries require current conserved token balances", asyn
     /canonicalSummaryBootstrap/u,
     "public token reads must have no bootstrap option",
   );
+  const q16FixtureMetadata = {
+    amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+    decimals: WORK_SUBATOM_DECIMALS,
+    precisionModel: WORK_PRECISION_V2_MODEL,
+    unitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,
+  };
+  const legacyRelicListingId = "4".repeat(64);
+  const legacyRelic = {
+    amount: "0.000016",
+    amountAtoms: "1600",
+    confirmed: true,
+    decimals: 8,
+    listingId: legacyRelicListingId,
+    saleAuthorization: {
+      amountAtoms: "1600",
+      tokenId: WORK_TOKEN_ID,
+      version: "pwt-sale-v3",
+    },
+    tokenId: WORK_TOKEN_ID,
+    unitScale: WORK_UNIT_SCALE_TEXT,
+  };
   let relationalFixture = {
-    holders: [],
+    ...q16FixtureMetadata,
+    closedListings: [],
+    confirmedSupplySubatoms: "1",
+    holders: [{
+      ...q16FixtureMetadata,
+      balanceSubatoms: "1",
+      pendingDeltaSubatoms: "0",
+      tokenId: WORK_TOKEN_ID,
+    }],
     indexedThroughBlock: 102,
     indexedThroughBlockHash: bootstrapHash,
     listings: [
@@ -20036,8 +20350,16 @@ check("exact canonical summaries require current conserved token balances", asyn
       },
     ],
     mints: [],
+    pendingSupplySubatoms: "0",
+    sales: [],
     source: "proof-indexer-token-state-tables",
-    tokens: [],
+    tokens: [{
+      ...q16FixtureMetadata,
+      confirmedSupplySubatoms: "1",
+      pendingSupplySubatoms: "0",
+      tokenId: WORK_TOKEN_ID,
+    }],
+    transfers: [],
   };
   let requestedScope = "";
   let precisionOptions = null;
@@ -20051,7 +20373,16 @@ check("exact canonical summaries require current conserved token balances", asyn
         cutoverOrder.push("v5-project");
         assert.ok(payload.workAmoV5Activation);
         assert.ok(payload.workAmoV5PreUnitRelicEvidence);
-        return { ...payload, workAmoV5ProjectionReady: true };
+        return {
+          ...payload,
+          closedListings: [
+            ...(Array.isArray(payload.closedListings)
+              ? payload.closedListings
+              : []),
+            legacyRelic,
+          ],
+          workAmoV5ProjectionReady: true,
+        };
       },
       applyWorkAmoV6PublicListingReadPolicy: (payload, versions) => ({
         ...payload,
@@ -20100,6 +20431,10 @@ check("exact canonical summaries require current conserved token balances", asyn
       },
       workListingAuthorizationAllowed: (listing, versions) =>
         versions.includes(listing.saleAuthorization?.version),
+      workPrecisionV2ProjectCurrentPayload: (payload) => {
+        cutoverOrder.push("q16-project-final");
+        return workPrecisionV2ProjectCurrentPayload(payload);
+      },
     },
   );
   const bootstrappedTokenTable =
@@ -20114,6 +20449,7 @@ check("exact canonical summaries require current conserved token balances", asyn
     "v2-project",
     "v5-hydrate",
     "v5-project",
+    "q16-project-final",
   ]);
   assert.equal(bootstrappedTokenTable.workAmoV5ProjectionReady, true);
   assert.equal(bootstrappedTokenTable.listings.length, 1);
@@ -20121,6 +20457,25 @@ check("exact canonical summaries require current conserved token balances", asyn
     bootstrappedTokenTable.listings[0].saleAuthorization.version,
     WORK_AMO_V8_AUTH_VERSION,
     "a confirmed V8 listing must survive the internal relational bootstrap",
+  );
+  const projectedRelic = bootstrappedTokenTable.closedListings.find(
+    (listing) => listing.listingId === legacyRelicListingId,
+  );
+  assert.equal(projectedRelic.amount, "0.000016");
+  assert.equal(projectedRelic.amountStorageModel, WORK_SUBATOM_PROJECTION_MODEL);
+  assert.equal(projectedRelic.amountSubatoms, "160000000000");
+  assert.equal(projectedRelic.amountAtoms, undefined);
+  assert.deepEqual(projectedRelic.sourceAmountEvidence, {
+    amount: "0.000016",
+    amountAtoms: "1600",
+    amountStorageModel: WORK_ATOMIC_PROJECTION_MODEL,
+    decimals: 8,
+    unitScale: WORK_UNIT_SCALE_TEXT,
+  });
+  assert.equal(
+    workPrecisionV2CurrentPayloadIsExact(bootstrappedTokenTable, 1),
+    true,
+    "a V5 cutover relic injected after the first precision read must be reprojected before the exact canonical summary is returned",
   );
   relationalFixture = {
     ...relationalFixture,
@@ -34675,6 +35030,296 @@ check("a canonical listing missing from DB context is unavailable, not invalid",
   );
   assert.equal(invalid.status, "deterministically-invalid");
   assert.equal(invalid.reason, "referenced-listing-does-not-exist");
+});
+
+check("pre-V8 WORK listing scope is proven without restoring active state", async () => {
+  const listingId = "8230a8c84264e5e56207c4eeec0a6e64daacafe7891326eeb4560c9736ccde30";
+  const pendingTxid =
+    "61c11eb4b90f03f238d645d144c6f6a4976e3928c1eff3f358e01d396307fa8c";
+  const blockHash = "9".repeat(64);
+  const rawPayload = "pwt1:list5:fixture";
+  const scope = {
+    authorizationVersion: "pwt-sale-v1",
+    blockHash,
+    blockHeight: 952_975,
+    blockIndex: 527,
+    listingId,
+    model: "canonical-pre-v8-work-listing-scope-v1",
+    network: "livenet",
+    protocolVout: 1,
+    rawPayloadSha256: createHash("sha256")
+      .update(Buffer.from(rawPayload, "utf8"))
+      .digest("hex"),
+    recordOrdinal: 0,
+    tokenId: WORK_TOKEN_ID,
+  };
+  const exactObjectKeys = (value, expectedKeys) =>
+    Boolean(
+      value &&
+      typeof value === "object" &&
+      !Array.isArray(value) &&
+      JSON.stringify(Object.keys(value).sort()) ===
+        JSON.stringify([...expectedKeys].sort()),
+    );
+  const historicalListingScope = isolatedFunction(
+    API_PATH,
+    "pendingWorkVerifierStageHistoricalListingScope",
+    {
+      PENDING_WORK_HISTORICAL_LISTING_AUTH_VERSIONS: [
+        "pwt-sale-v1",
+        "pwt-sale-v2",
+        "pwt-sale-v3",
+        "pwt-sale-v4",
+        "pwt-sale-v5",
+        "pwt-sale-v6",
+        "pwt-sale-v7",
+      ],
+      PENDING_WORK_HISTORICAL_LISTING_SCOPE_MODEL:
+        "canonical-pre-v8-work-listing-scope-v1",
+      WORK_AMO_V8_ACTIVATION_HEIGHT: 960_601,
+      pendingWorkVerifierStageExactObjectKeys: exactObjectKeys,
+    },
+  );
+  assert.equal(
+    JSON.stringify(historicalListingScope(scope)),
+    JSON.stringify(scope),
+  );
+  assert.equal(
+    historicalListingScope({ ...scope, blockHeight: 960_601 }),
+    null,
+  );
+  assert.equal(
+    historicalListingScope({ ...scope, authorizationVersion: "pwt-sale-v8" }),
+    null,
+  );
+
+  const stageError = (code, message, details = {}) => {
+    const error = new Error(message);
+    error.details = { code, ...details };
+    return error;
+  };
+  const historicalScopeMap = (scopes) =>
+    new Map((Array.isArray(scopes) ? scopes : []).map((item) => [
+      item.listingId,
+      item,
+    ]));
+  const proveWorkScope = isolatedFunction(
+    API_PATH,
+    "pendingWorkVerifierStageProveWorkScope",
+    {
+      pendingWorkVerifierStageError: stageError,
+      pendingWorkVerifierStageHistoricalListingScopeMap: historicalScopeMap,
+    },
+  );
+  const transactionRecords = [{
+    parsedMessages: [{ kind: "delist", listingId }],
+    txid: pendingTxid,
+  }];
+  const emptyBase = { closedListings: [], listings: [] };
+  const emptyMempool = { membership: new Set() };
+  assert.doesNotThrow(() =>
+    proveWorkScope(transactionRecords, emptyBase, emptyMempool, [scope])
+  );
+  assert.throws(
+    () => proveWorkScope(transactionRecords, emptyBase, emptyMempool, []),
+    (error) =>
+      error.details?.code === "PENDING_WORK_STAGE_LISTING_PARENT_UNPROVEN",
+  );
+  assert.throws(
+    () =>
+      proveWorkScope(
+        transactionRecords,
+        emptyBase,
+        { membership: new Set([listingId]) },
+        [],
+      ),
+    (error) =>
+      error.details?.code === "PENDING_WORK_STAGE_UNCONFIRMED_LISTING_PARENT",
+  );
+
+  let replayCalls = 0;
+  let admissionCalls = 0;
+  const decisions = isolatedFunction(
+    API_PATH,
+    "pendingWorkVerifierStageDecisions",
+    {
+      PENDING_WORK_HISTORICAL_LISTING_REASON:
+        "Referenced pre-V8 ProofOfWork credit listing is historical, non-actionable audit state after AMO V8 activation.",
+      PENDING_WORK_HISTORICAL_LISTING_REASON_CODE:
+        "work-amo-v8-relic-listing-nonsettleable",
+      pendingWorkVerifierStageCanonicalItem: (item) => item,
+      pendingWorkVerifierStageHistoricalListingScopeMap: historicalScopeMap,
+      pendingWorkVerifierStageInvalidEvidence: (
+        _state,
+        _transaction,
+        parsed,
+        _raw,
+        historicalListingScopes,
+      ) => ({
+        historicalListingScopes,
+        listingId: parsed.listingId,
+        reasonCode: "work-amo-v8-relic-listing-nonsettleable",
+      }),
+      pendingWorkVerifierStageJsonClone: (value) => JSON.parse(JSON.stringify(value)),
+      pendingWorkVerifierStageOrderConflictReason: () => "conflict",
+      pendingWorkVerifierStageRecordHistoricalListingScopes: (
+        record,
+        historicalListings,
+      ) => record.parsedMessages.flatMap((parsed) => {
+        const item = historicalListings.get(parsed.listingId);
+        return item ? [item] : [];
+      }),
+      pendingWorkVerifierStageRecordPositionKey: (value) =>
+        `${value.protocolVout}:${value.recordOrdinal}`,
+      pendingWorkVerifierStageReplayState: () => {
+        replayCalls += 1;
+        return {};
+      },
+      pendingWorkVerifierStageTransactionInvalidReason: async () => {
+        admissionCalls += 1;
+        return "";
+      },
+      tokenVerifierDeterministicInvalidReason: async () => "invalid",
+      tokenVerifierItemsFromState: () => [],
+      workAmoV5CanonicalPayloadCommitment: () => ({ sha256: "0".repeat(64) }),
+    },
+  );
+  const rawRecord = {
+    message: `pwt1:delist5:${listingId}`,
+    protocolVout: 2,
+    recordOrdinal: 0,
+  };
+  const [decision] = await decisions(
+    emptyBase,
+    [{
+      mempoolCreatedAt: "2026-08-04T00:00:00.000Z",
+      parsedMessages: transactionRecords[0].parsedMessages,
+      records: [rawRecord],
+      transaction: {},
+      txid: pendingTxid,
+    }],
+    "livenet",
+    961_061,
+    [scope],
+  );
+  assert.equal(replayCalls, 0);
+  assert.equal(admissionCalls, 0);
+  assert.equal(decision.items.length, 1);
+  assert.equal(decision.items[0].valid, false);
+  assert.equal(decision.items[0].listingId, listingId);
+  assert.equal(
+    decision.items[0].reasonCode,
+    "work-amo-v8-relic-listing-nonsettleable",
+  );
+  assert.equal(decision.items[0].historicalListingScopes[0].listingId, listingId);
+  assert.match(decision.items[0].reason, /historical, non-actionable/u);
+});
+
+check("historical WORK listing scope is rebound to exact Core bytes and position", async () => {
+  const listingId = "8".repeat(64);
+  const blockHash = "9".repeat(64);
+  const rawPayload = "pwt1:list5:fixture";
+  const scope = {
+    authorizationVersion: "pwt-sale-v1",
+    blockHash,
+    blockHeight: 100,
+    blockIndex: 2,
+    listingId,
+    model: "canonical-pre-v8-work-listing-scope-v1",
+    network: "livenet",
+    protocolVout: 1,
+    rawPayloadSha256: createHash("sha256")
+      .update(Buffer.from(rawPayload, "utf8"))
+      .digest("hex"),
+    recordOrdinal: 0,
+    tokenId: WORK_TOKEN_ID,
+  };
+  let blockTxid = listingId;
+  const stageError = (code, message, details = {}) => {
+    const error = new Error(message);
+    error.details = { code, ...details };
+    return error;
+  };
+  const bindFromCore = isolatedFunction(
+    API_PATH,
+    "pendingWorkVerifierStageHistoricalListingScopeFromCore",
+    {
+      WORK_AMO_V8_ACTIVATION_HEIGHT: 101,
+      bitcoinRpc: async (method) => {
+        if (method === "getblockhash") return { ok: true, result: blockHash };
+        if (method === "getblock") {
+          return {
+            ok: true,
+            result: {
+              hash: blockHash,
+              height: 100,
+              nTx: 3,
+              tx: ["a".repeat(64), "b".repeat(64), blockTxid],
+            },
+          };
+        }
+        throw new Error(`unexpected method ${method}`);
+      },
+      canonicalRawProtocolRecordSetFromTransaction: () => ({
+        records: [{
+          message: rawPayload,
+          protocol: "pwt1",
+          protocolVout: 1,
+          rawDecodeValid: true,
+          recordOrdinal: 0,
+        }],
+      }),
+      fetchTransactionFromBitcoinRpc: async () => ({
+        hex: "00",
+        status: { block_hash: blockHash, confirmed: true },
+        txid: listingId,
+      }),
+      parseTokenPayload: () => ({
+        kind: "list",
+        saleAuthorization: {
+          tokenId: WORK_TOKEN_ID,
+          version: "pwt-sale-v1",
+        },
+      }),
+      pendingWorkVerifierStageError: stageError,
+      pendingWorkVerifierStageHistoricalListingScope: (value) => value,
+      transactionBlockHash: (transaction) => transaction.status.block_hash,
+      transactionConfirmed: (transaction) => transaction.status.confirmed,
+      transactionTxid: (transaction) => transaction.txid,
+    },
+  );
+  assert.deepEqual(
+    await bindFromCore(scope, { blockHash: "c".repeat(64), height: 102 }),
+    scope,
+  );
+  blockTxid = "d".repeat(64);
+  await rejection(
+    bindFromCore(scope, { blockHash: "c".repeat(64), height: 102 }),
+    (error) =>
+      error.details?.code === "PENDING_WORK_STAGE_LISTING_PARENT_UNPROVEN",
+  );
+  const stagePayloadSource = topLevelFunctionSource(
+    API_PATH,
+    "pendingWorkVerifierStagePayload",
+  );
+  assert.equal(
+    (stagePayloadSource.match(
+      /pendingWorkVerifierStageHistoricalListingScopes\(/gu,
+    ) ?? []).length,
+    2,
+  );
+  assert.match(
+    stagePayloadSource,
+    /isDeepStrictEqual\(\s*finalHistoricalListingScopes,\s*initialHistoricalListingScopes/u,
+  );
+  assert.match(
+    topLevelFunctionSource(BACKFILL_PATH, "canonicalStoredWorkQ16PendingStage"),
+    /stage\.codeVersion !== WORK_Q16_PENDING_STAGE_CODE_VERSION/u,
+  );
+  assert.match(
+    topLevelFunctionSource(BACKFILL_PATH, "buildWorkQ16PendingStagePlan"),
+    /parentStage\.codeVersion === WORK_Q16_PENDING_STAGE_CODE_VERSION/u,
+  );
 });
 
 check("same-height verifier contexts are cached by exact block identity", async () => {

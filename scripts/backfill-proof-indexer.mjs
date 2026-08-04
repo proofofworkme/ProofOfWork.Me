@@ -239,7 +239,7 @@ const WORK_Q16_PENDING_STAGE_REQUEST_MODEL =
 const WORK_Q16_PENDING_STAGE_MODEL =
   "canonical-work-q16-pending-verifier-stage-v2";
 const WORK_Q16_PENDING_STAGE_CODE_VERSION =
-  "proof-api-canonical-work-q16-pending-verifier-stage-v2";
+  "proof-api-canonical-work-q16-pending-verifier-stage-v3";
 const WORK_Q16_PENDING_ABSENCE_EVIDENCE_MODEL =
   "canonical-work-q16-pending-absence-evidence-v1";
 const WORK_Q16_PENDING_STAGE_META_KEY =
@@ -3094,6 +3094,42 @@ function decodeBase64UrlJson(value) {
       "=",
     );
     return JSON.parse(Buffer.from(padded, "base64").toString("utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function decodeCanonicalBase64UrlJsonObject(value) {
+  if (
+    typeof value !== "string" ||
+    !/^[A-Za-z0-9_-]+$/u.test(value) ||
+    value.length % 4 === 1
+  ) {
+    return null;
+  }
+  try {
+    const normalized = value.replace(/-/gu, "+").replace(/_/gu, "/");
+    const bytes = Buffer.from(
+      normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "="),
+      "base64",
+    );
+    const canonicalEncoded = bytes
+      .toString("base64")
+      .replace(/\+/gu, "-")
+      .replace(/\//gu, "_")
+      .replace(/=+$/u, "");
+    const decodedText = bytes.toString("utf8");
+    if (
+      bytes.length === 0 ||
+      canonicalEncoded !== value ||
+      !Buffer.from(decodedText, "utf8").equals(bytes)
+    ) {
+      return null;
+    }
+    const decoded = JSON.parse(decodedText);
+    return decoded && typeof decoded === "object" && !Array.isArray(decoded)
+      ? decoded
+      : null;
   } catch {
     return null;
   }
@@ -23366,6 +23402,7 @@ function canonicalStoredWorkQ16PendingStage(value) {
   const stage = objectValue(value);
   if (
     stage.model !== WORK_Q16_PENDING_STAGE_MODEL ||
+    stage.codeVersion !== WORK_Q16_PENDING_STAGE_CODE_VERSION ||
     stage.network !== NETWORK ||
     !isHexTxid(stage.parentWitnessSha256) ||
     !isHexTxid(stage.stageSha256)
@@ -23752,6 +23789,7 @@ async function buildWorkQ16PendingStagePlan(
   const parentStage = objectValue(context.parent.witness.verifierStage);
   const publishedAttemptReady = Boolean(
     context.attempt?.status === "published" &&
+      parentStage.codeVersion === WORK_Q16_PENDING_STAGE_CODE_VERSION &&
       context.attempt.stageSha256 === parentStage.stageSha256 &&
       context.attempt.witnessGeneratedAt ===
         context.parent.witness.generatedAt &&
@@ -25283,6 +25321,16 @@ function pendingCoreMarketplaceVerifierNeeded(messages) {
   });
 }
 
+const WORK_Q16_PENDING_PRE_V8_LISTING_AUTH_VERSIONS = new Set([
+  "pwt-sale-v1",
+  "pwt-sale-v2",
+  "pwt-sale-v3",
+  "pwt-sale-v4",
+  "pwt-sale-v5",
+  "pwt-sale-v6",
+  "pwt-sale-v7",
+]);
+
 async function pendingWorkQ16StageCandidate(client, messages, txid = "") {
   const tokenMessages = (Array.isArray(messages) ? messages : []).filter(
     (message) => message?.prefix === "pwt1:",
@@ -25365,23 +25413,279 @@ async function pendingWorkQ16StageCandidate(client, messages, txid = "") {
       [NETWORK, listingIds],
     );
     const knownListingTokens = new Map();
+    const activeListingIds = new Set();
     for (const row of result.rows) {
       const listingId = normalizedLowerText(row?.listing_id);
       const tokenId = normalizedLowerText(row?.token_id);
-      if (!isHexTxid(listingId) || !tokenId) {
+      if (!isHexTxid(listingId)) {
         continue;
       }
+      activeListingIds.add(listingId);
       const tokenIds = knownListingTokens.get(listingId) ?? new Set();
       tokenIds.add(tokenId);
       knownListingTokens.set(listingId, tokenIds);
     }
-    for (const listingId of referencedListingIds) {
+    const listingScopes = new Map();
+    for (const listingId of listingIds) {
+      if (!activeListingIds.has(listingId)) {
+        continue;
+      }
       const tokenIds = knownListingTokens.get(listingId);
-      workScopes.push(
-        tokenIds?.size === 1
-          ? tokenIds.has(WORK_TOKEN_ID)
+      const [tokenId] = tokenIds ?? [];
+      listingScopes.set(
+        listingId,
+        tokenIds?.size === 1 && isHexTxid(tokenId)
+          ? tokenId === WORK_TOKEN_ID
           : null,
       );
+    }
+    const missingListingIds = listingIds.filter(
+      (listingId) => !activeListingIds.has(listingId),
+    );
+    if (missingListingIds.length > 0) {
+      const historicalResult = await client.query(
+        `
+          SELECT
+            lower(event.txid) AS listing_id,
+            lower(NULLIF(event.payload->>'listingId', '')) AS
+              payload_listing_id,
+            lower(NULLIF(event.payload->>'tokenId', '')) AS
+              payload_token_id,
+            lower(NULLIF(
+              event.payload->'saleAuthorization'->>'tokenId',
+              ''
+            )) AS sale_token_id,
+            lower(NULLIF(
+              event.payload->'listingAuthorization'->>'tokenId',
+              ''
+            )) AS listing_token_id,
+            lower(NULLIF(
+              event.payload->'saleAuthorization'->>'version',
+              ''
+            )) AS sale_authorization_version,
+            lower(NULLIF(
+              event.payload->'listingAuthorization'->>'version',
+              ''
+            )) AS listing_authorization_version,
+            event.block_height,
+            event.block_index,
+            event.op_return_vout,
+            event.record_ordinal,
+            event.raw_payload,
+            event.payload->>'payload' AS payload_raw_payload,
+            (
+              jsonb_typeof(listing_tx.raw_tx) = 'object'
+              AND listing_tx.raw_tx->>'txid' = listing_tx.txid
+              AND jsonb_typeof(
+                listing_tx.raw_tx->'canonicalBlockScan'
+              ) = 'object'
+              AND jsonb_typeof(
+                listing_tx.raw_tx->'canonicalBlockScan'->'network'
+              ) = 'string'
+              AND jsonb_typeof(
+                listing_tx.raw_tx->'canonicalBlockScan'->'blockHash'
+              ) = 'string'
+              AND jsonb_typeof(
+                listing_tx.raw_tx->'canonicalBlockScan'->'height'
+              ) = 'number'
+              AND jsonb_typeof(
+                listing_tx.raw_tx->'canonicalBlockScan'->'blockIndex'
+              ) = 'number'
+              AND jsonb_typeof(
+                listing_tx.raw_tx->'_powBlockIndex'
+              ) = 'number'
+              AND listing_tx.raw_tx->'canonicalBlockScan'->>'network' =
+                listing_tx.network
+              AND listing_tx.raw_tx->'canonicalBlockScan'->>'blockHash' =
+                listing_tx.block_hash
+              AND listing_tx.raw_tx->'canonicalBlockScan'->>'height' =
+                listing_tx.block_height::text
+              AND listing_tx.raw_tx->'canonicalBlockScan'->>'blockIndex' =
+                listing_tx.block_index::text
+              AND listing_tx.raw_tx->>'_powBlockIndex' =
+                listing_tx.block_index::text
+              AND event.raw_payload IS NOT NULL
+              AND event.raw_payload LIKE 'pwt1:list5:%'
+              AND event.payload->>'payload' = event.raw_payload
+              AND carrier.network IS NOT NULL
+              AND carrier.protocol = 'pwt1'
+              AND carrier.payload_text = event.raw_payload
+              AND lower(carrier.payload_hex) = encode(
+                convert_to(event.raw_payload, 'UTF8'),
+                'hex'
+              )
+              AND carrier.data_bytes = octet_length(
+                convert_to(event.raw_payload, 'UTF8')
+              )
+            ) AS exact_raw_record
+          FROM proof_indexer.events event
+          JOIN proof_indexer.transactions listing_tx
+            ON listing_tx.network = event.network
+           AND listing_tx.txid = event.txid
+           AND listing_tx.status = 'confirmed'
+           AND listing_tx.block_height = event.block_height
+           AND listing_tx.block_index = event.block_index
+          JOIN proof_indexer.blocks block
+            ON block.network = listing_tx.network
+           AND block.block_hash = listing_tx.block_hash
+           AND block.height = listing_tx.block_height
+           AND block.canonical = true
+          LEFT JOIN proof_indexer.op_returns carrier
+            ON carrier.network = event.network
+           AND carrier.txid = event.txid
+           AND carrier.vout = event.op_return_vout
+           AND carrier.output_index = event.record_ordinal
+          WHERE event.network = $1
+            AND event.txid = ANY($2::text[])
+            AND event.protocol = 'pwt1'
+            AND event.kind = 'token-listing'
+            AND event.status = 'confirmed'
+            AND event.valid = true
+          ORDER BY
+            listing_id ASC,
+            event.block_height ASC,
+            event.block_index ASC,
+            event.op_return_vout ASC NULLS LAST,
+            event.record_ordinal ASC NULLS LAST,
+            event.event_id ASC
+        `,
+        [NETWORK, missingListingIds],
+      );
+      const historicalCandidates = new Map();
+      for (const row of historicalResult.rows) {
+        const listingId = normalizedLowerText(row?.listing_id);
+        if (!missingListingIds.includes(listingId)) {
+          continue;
+        }
+        const candidates = historicalCandidates.get(listingId) ?? [];
+        candidates.push(row);
+        historicalCandidates.set(listingId, candidates);
+      }
+      const exactPositionInteger = (value, minimum) => {
+        if (value === undefined || value === null || value === "") {
+          return null;
+        }
+        const parsed = Number(value);
+        return Number.isSafeInteger(parsed) && parsed >= minimum
+          ? parsed
+          : null;
+      };
+      for (const listingId of missingListingIds) {
+        const candidates = historicalCandidates.get(listingId) ?? [];
+        if (candidates.length !== 1) {
+          listingScopes.set(listingId, null);
+          continue;
+        }
+        const candidate = candidates[0];
+        const rawPayload = String(candidate?.raw_payload ?? "");
+        const rawParts = rawPayload.split(":");
+        const rawAuthorization =
+          rawParts.length === 3 &&
+            rawParts[0] === "pwt1" &&
+            rawParts[1] === "list5"
+            ? decodeCanonicalBase64UrlJsonObject(rawParts[2])
+            : null;
+        const rawTokenId = normalizedLowerText(rawAuthorization?.tokenId);
+        const rawAuthorizationVersion = normalizedLowerText(
+          rawAuthorization?.version,
+        );
+        const payloadTokenId = normalizedLowerText(
+          candidate?.payload_token_id,
+        );
+        const saleTokenId = normalizedLowerText(candidate?.sale_token_id);
+        const listingTokenId = normalizedLowerText(
+          candidate?.listing_token_id,
+        );
+        const saleAuthorizationVersion = normalizedLowerText(
+          candidate?.sale_authorization_version,
+        );
+        const listingAuthorizationVersion = normalizedLowerText(
+          candidate?.listing_authorization_version,
+        );
+        const saleAuthorizationComplete = Boolean(
+          saleTokenId && saleAuthorizationVersion,
+        );
+        const listingAuthorizationComplete = Boolean(
+          listingTokenId && listingAuthorizationVersion,
+        );
+        const storedAuthorizationExact = Boolean(
+          rawTokenId &&
+          rawAuthorizationVersion &&
+          payloadTokenId === rawTokenId &&
+          (saleAuthorizationComplete || listingAuthorizationComplete) &&
+          (!saleTokenId || saleTokenId === rawTokenId) &&
+          (!listingTokenId || listingTokenId === rawTokenId) &&
+          (!saleAuthorizationVersion ||
+            saleAuthorizationVersion === rawAuthorizationVersion) &&
+          (!listingAuthorizationVersion ||
+            listingAuthorizationVersion === rawAuthorizationVersion),
+        );
+        const tokenIds = new Set(
+          [
+            payloadTokenId,
+            saleTokenId,
+            listingTokenId,
+            rawTokenId,
+          ]
+            .map(normalizedLowerText)
+            .filter(Boolean),
+        );
+        const authorizationVersions = new Set(
+          [
+            saleAuthorizationVersion,
+            listingAuthorizationVersion,
+            rawAuthorizationVersion,
+          ]
+            .map(normalizedLowerText)
+            .filter(Boolean),
+        );
+        const [tokenId] = tokenIds;
+        const [authorizationVersion] = authorizationVersions;
+        const blockHeight = exactPositionInteger(
+          candidate?.block_height,
+          1,
+        );
+        const blockIndex = exactPositionInteger(
+          candidate?.block_index,
+          0,
+        );
+        const protocolVout = exactPositionInteger(
+          candidate?.op_return_vout,
+          0,
+        );
+        const recordOrdinal = exactPositionInteger(
+          candidate?.record_ordinal,
+          0,
+        );
+        const exactHistoricalWorkListing =
+          normalizedLowerText(candidate?.payload_listing_id) === listingId &&
+          String(candidate?.payload_raw_payload ?? "") === rawPayload &&
+          rawAuthorization &&
+          storedAuthorizationExact &&
+          tokenIds.size === 1 &&
+          tokenId === WORK_TOKEN_ID &&
+          authorizationVersions.size === 1 &&
+          WORK_Q16_PENDING_PRE_V8_LISTING_AUTH_VERSIONS.has(
+            authorizationVersion,
+          ) &&
+          Number.isSafeInteger(
+            WORK_AMO_V8_EXPECTED_ACTIVATION_HEIGHT,
+          ) &&
+          WORK_AMO_V8_EXPECTED_ACTIVATION_HEIGHT > 0 &&
+          blockHeight !== null &&
+          blockHeight < WORK_AMO_V8_EXPECTED_ACTIVATION_HEIGHT &&
+          blockIndex !== null &&
+          protocolVout !== null &&
+          recordOrdinal !== null &&
+          candidate?.exact_raw_record === true;
+        listingScopes.set(
+          listingId,
+          exactHistoricalWorkListing ? true : null,
+        );
+      }
+    }
+    for (const listingId of referencedListingIds) {
+      workScopes.push(listingScopes.get(listingId) ?? null);
     }
   }
   if (workScopes.some((scope) => scope === null)) {

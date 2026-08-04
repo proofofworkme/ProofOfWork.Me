@@ -1580,7 +1580,7 @@ async function runChecks() {
       height: 102,
     },
     codeVersion:
-      "proof-api-canonical-work-q16-pending-verifier-stage-v2",
+      "proof-api-canonical-work-q16-pending-verifier-stage-v3",
     confirmedBaseCommitment: pendingConfirmedBaseCommitment,
     confirmedRemovalCount: 0,
     confirmedRemovalSha256: pendingComponentSha256(

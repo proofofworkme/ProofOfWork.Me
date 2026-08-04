@@ -73,6 +73,7 @@ function isolatedFunctions(
           Buffer.from(String(right), "utf8"),
         ),
       pendingWorkVerifierStageCanonicalItem: (item) => item,
+      pendingWorkVerifierStageHistoricalListingScopeMap: () => new Map(),
       pendingWorkVerifierStageInvalidEvidence: (
         _state,
         _transaction,
@@ -82,6 +83,7 @@ function isolatedFunctions(
         JSON.parse(JSON.stringify(value)),
       pendingWorkVerifierStageOrderConflictReason: () =>
         "Fixture pending replay conflict.",
+      pendingWorkVerifierStageRecordHistoricalListingScopes: () => [],
       pendingWorkVerifierStageRecordPositionKey: (value) =>
         `${value.protocolVout}:${value.recordOrdinal}`,
       pendingWorkVerifierStageReplayState: (state) => state,

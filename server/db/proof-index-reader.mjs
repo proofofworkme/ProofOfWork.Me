@@ -115,6 +115,7 @@ import {
   WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_REASON_CODE,
   WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_RECORD_ORDINAL,
   WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_TXID,
+  WORK_AMO_V5_LEGACY_LISTING_AUTH_VERSIONS,
   WORK_AMO_V5_MAX_QUOTE_AGE_BLOCKS as WORK_AMO_V1_MAX_QUOTE_AGE_BLOCKS,
   WORK_AMO_V5_PAYLOAD_COMMITMENT_MODEL,
   WORK_AMO_V5_PRE_UNIT_RELIC_AMOUNT_ATOMS,
@@ -176,6 +177,9 @@ import {
   validateWorkAmoV6FrozenTerms,
   workAmoV6CanonicalTokenStateCommitment,
 } from "../work-amo-v6.mjs";
+import {
+  WORK_AMO_V7_AUTH_VERSION,
+} from "../work-amo-v7.mjs";
 import {
   WORK_AMO_V8_AUTH_VERSION,
   WORK_AMO_V8_BLOCK_SEQUENCER_MODEL,
@@ -319,7 +323,7 @@ const WORK_Q16_PENDING_VERIFIER_STAGE_REQUEST_MODEL =
 const WORK_Q16_PENDING_VERIFIER_STAGE_MODEL =
   "canonical-work-q16-pending-verifier-stage-v2";
 const WORK_Q16_PENDING_VERIFIER_STAGE_CODE_VERSION =
-  "proof-api-canonical-work-q16-pending-verifier-stage-v2";
+  "proof-api-canonical-work-q16-pending-verifier-stage-v3";
 const WORK_Q16_PENDING_ABSENCE_EVIDENCE_MODEL =
   "canonical-work-q16-pending-absence-evidence-v1";
 const WORK_Q16_PENDING_DROP_CONFIRMATION_MS = 300_000;
@@ -394,6 +398,14 @@ const LEDGER_SNAPSHOT_RECENT_READ_LIMIT = 25;
 const SUMMARY_SNAPSHOT_LOOKBACK_LIMIT = 5_000;
 const TOKEN_STATE_EVENT_READ_LIMIT = 100_000;
 const TOKEN_PENDING_MINT_WITNESS_LIMIT = 32;
+const HISTORICAL_WORK_LISTING_SCOPE_LIMIT = 512;
+const HISTORICAL_WORK_LISTING_SCOPE_MODEL =
+  "canonical-pre-v8-work-listing-scope-v1";
+const HISTORICAL_WORK_LISTING_SCOPE_AUTH_VERSIONS = new Set([
+  ...WORK_AMO_V5_LEGACY_LISTING_AUTH_VERSIONS,
+  ...WORK_AMO_V8_LEGACY_AUTH_VERSIONS,
+  WORK_AMO_V7_AUTH_VERSION,
+]);
 
 function proofIndexPool() {
   if (!proofIndexDatabaseConfigured()) {
@@ -8771,6 +8783,304 @@ export async function proofIndexWorkAmoV8ListingTerms(
         pins,
       )
     : null;
+}
+
+function historicalWorkListingScopeObject(value) {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value
+    : null;
+}
+
+function historicalWorkListingScopeRawAuthorization(rawPayload) {
+  const prefix = "pwt1:list5:";
+  if (
+    typeof rawPayload !== "string" ||
+    !rawPayload.startsWith(prefix)
+  ) {
+    return null;
+  }
+  const encoded = rawPayload.slice(prefix.length);
+  if (
+    !/^[A-Za-z0-9_-]+$/u.test(encoded) ||
+    encoded.length % 4 === 1
+  ) {
+    return null;
+  }
+  try {
+    const normalized = encoded.replace(/-/gu, "+").replace(/_/gu, "/");
+    const bytes = Buffer.from(
+      normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "="),
+      "base64",
+    );
+    const canonicalEncoded = bytes
+      .toString("base64")
+      .replace(/\+/gu, "-")
+      .replace(/\//gu, "_")
+      .replace(/=+$/u, "");
+    const decodedText = bytes.toString("utf8");
+    if (
+      bytes.length === 0 ||
+      canonicalEncoded !== encoded ||
+      !Buffer.from(decodedText, "utf8").equals(bytes)
+    ) {
+      return null;
+    }
+    return historicalWorkListingScopeObject(JSON.parse(decodedText));
+  } catch {
+    return null;
+  }
+}
+
+function canonicalHistoricalWorkListingScopeRow(
+  row,
+  { activationHeight, listingId, network },
+) {
+  const exactInteger = (value, minimum = 0) => {
+    if (value === undefined || value === null || value === "") {
+      return null;
+    }
+    const numeric = Number(value);
+    return Number.isSafeInteger(numeric) && numeric >= minimum
+      ? numeric
+      : null;
+  };
+  const payload = historicalWorkListingScopeObject(row?.event_payload);
+  const rawPayload = row?.event_raw_payload;
+  const blockHash = String(row?.transaction_block_hash ?? "");
+  const blockHeight = exactInteger(row?.event_block_height, 1);
+  const blockIndex = exactInteger(row?.event_block_index);
+  const protocolVout = exactInteger(row?.event_protocol_vout);
+  const recordOrdinal = exactInteger(row?.event_record_ordinal);
+  if (
+    !payload ||
+    typeof rawPayload !== "string" ||
+    String(row?.event_network ?? "") !== network ||
+    String(row?.event_txid ?? "") !== listingId ||
+    String(row?.event_protocol ?? "") !== "pwt1" ||
+    String(row?.event_kind ?? "") !== "token-listing" ||
+    String(row?.event_status ?? "") !== "confirmed" ||
+    row?.event_valid !== true ||
+    String(row?.transaction_network ?? "") !== network ||
+    String(row?.transaction_txid ?? "") !== listingId ||
+    String(row?.transaction_status ?? "") !== "confirmed" ||
+    !/^[0-9a-f]{64}$/u.test(blockHash) ||
+    blockHeight === null ||
+    blockHeight >= activationHeight ||
+    blockIndex === null ||
+    protocolVout === null ||
+    recordOrdinal === null ||
+    exactInteger(row?.transaction_block_height, 1) !== blockHeight ||
+    exactInteger(row?.transaction_block_index) !== blockIndex ||
+    String(row?.canonical_block_network ?? "") !== network ||
+    String(row?.canonical_block_hash ?? "") !== blockHash ||
+    exactInteger(row?.canonical_block_height, 1) !== blockHeight ||
+    row?.canonical_block !== true ||
+    String(row?.carrier_network ?? "") !== network ||
+    String(row?.carrier_txid ?? "") !== listingId ||
+    exactInteger(row?.carrier_vout) !== protocolVout ||
+    exactInteger(row?.carrier_output_index) !== recordOrdinal ||
+    String(row?.carrier_protocol ?? "") !== "pwt1" ||
+    row?.carrier_payload_text !== rawPayload ||
+    row?.carrier_payload_hex !==
+      Buffer.from(rawPayload, "utf8").toString("hex") ||
+    exactInteger(row?.event_data_bytes) !==
+      Buffer.byteLength(rawPayload, "utf8") ||
+    exactInteger(row?.carrier_data_bytes) !==
+      Buffer.byteLength(rawPayload, "utf8") ||
+    payload.payload !== rawPayload ||
+    normalizedLowerText(payload.listingId) !== listingId ||
+    normalizedLowerText(payload.tokenId) !== WORK_TOKEN_ID
+  ) {
+    return null;
+  }
+  if (
+    payload.txid !== undefined &&
+    normalizedLowerText(payload.txid) !== listingId
+  ) {
+    return null;
+  }
+  const payloadPosition = [
+    ["blockHeight", blockHeight, 1],
+    ["blockIndex", blockIndex, 0],
+    ["protocolVout", protocolVout, 0],
+    ["recordOrdinal", recordOrdinal, 0],
+  ];
+  if (
+    payloadPosition.some(
+      ([field, expected, minimum]) =>
+        payload[field] !== undefined &&
+        exactInteger(payload[field], minimum) !== expected,
+    ) ||
+    (
+      payload.blockHash !== undefined &&
+      normalizedLowerText(payload.blockHash) !== blockHash
+    )
+  ) {
+    return null;
+  }
+  const authorizationFields = [
+    "saleAuthorization",
+    "listingAuthorization",
+  ].filter((field) =>
+    Object.prototype.hasOwnProperty.call(payload, field)
+  );
+  if (authorizationFields.length === 0) {
+    return null;
+  }
+  const authorizations = authorizationFields.map((field) =>
+    historicalWorkListingScopeObject(payload[field])
+  );
+  const rawAuthorization =
+    historicalWorkListingScopeRawAuthorization(rawPayload);
+  if (
+    !rawAuthorization ||
+    authorizations.some(
+      (authorization) =>
+        !authorization ||
+        normalizedLowerText(authorization.tokenId) !==
+          normalizedLowerText(rawAuthorization.tokenId) ||
+        normalizedLowerText(authorization.version) !==
+          normalizedLowerText(rawAuthorization.version),
+    )
+  ) {
+    return null;
+  }
+  const authorizationVersion = normalizedLowerText(
+    rawAuthorization.version,
+  );
+  if (
+    normalizedLowerText(rawAuthorization.tokenId) !== WORK_TOKEN_ID ||
+    !HISTORICAL_WORK_LISTING_SCOPE_AUTH_VERSIONS.has(
+      authorizationVersion,
+    ) ||
+    authorizationVersion === WORK_AMO_V8_AUTH_VERSION
+  ) {
+    return null;
+  }
+  return {
+    model: HISTORICAL_WORK_LISTING_SCOPE_MODEL,
+    network,
+    listingId,
+    tokenId: WORK_TOKEN_ID,
+    authorizationVersion,
+    blockHash,
+    blockHeight,
+    blockIndex,
+    protocolVout,
+    recordOrdinal,
+    rawPayloadSha256: createHash("sha256")
+      .update(Buffer.from(rawPayload, "utf8"))
+      .digest("hex"),
+  };
+}
+
+export async function proofIndexCanonicalHistoricalWorkListingScopes(
+  network,
+  listingIds,
+  activationHeight,
+) {
+  const pool = proofIndexPool();
+  const exactActivationHeight = Number(activationHeight);
+  if (
+    !pool ||
+    network !== "livenet" ||
+    !Array.isArray(listingIds) ||
+    !Number.isSafeInteger(exactActivationHeight) ||
+    exactActivationHeight < 1
+  ) {
+    return [];
+  }
+  const normalizedListingIds = [
+    ...new Set(
+      listingIds
+        .map(normalizedLowerText)
+        .filter((listingId) => /^[0-9a-f]{64}$/u.test(listingId)),
+    ),
+  ].sort(compareCanonicalUtf8);
+  if (
+    normalizedListingIds.length === 0 ||
+    normalizedListingIds.length > HISTORICAL_WORK_LISTING_SCOPE_LIMIT
+  ) {
+    return [];
+  }
+  const result = await pool.query(
+    `
+      SELECT
+        event_row.network AS event_network,
+        event_row.txid AS event_txid,
+        event_row.protocol AS event_protocol,
+        event_row.kind AS event_kind,
+        event_row.status AS event_status,
+        event_row.valid AS event_valid,
+        event_row.data_bytes AS event_data_bytes,
+        event_row.block_height AS event_block_height,
+        event_row.block_index AS event_block_index,
+        event_row.op_return_vout AS event_protocol_vout,
+        event_row.record_ordinal AS event_record_ordinal,
+        event_row.raw_payload AS event_raw_payload,
+        event_row.payload AS event_payload,
+        listing_tx.network AS transaction_network,
+        listing_tx.txid AS transaction_txid,
+        listing_tx.status AS transaction_status,
+        listing_tx.block_hash AS transaction_block_hash,
+        listing_tx.block_height AS transaction_block_height,
+        listing_tx.block_index AS transaction_block_index,
+        canonical_block.network AS canonical_block_network,
+        canonical_block.block_hash AS canonical_block_hash,
+        canonical_block.height AS canonical_block_height,
+        canonical_block.canonical AS canonical_block,
+        carrier.network AS carrier_network,
+        carrier.txid AS carrier_txid,
+        carrier.vout AS carrier_vout,
+        carrier.output_index AS carrier_output_index,
+        carrier.protocol AS carrier_protocol,
+        carrier.payload_text AS carrier_payload_text,
+        carrier.payload_hex AS carrier_payload_hex,
+        carrier.data_bytes AS carrier_data_bytes
+      FROM proof_indexer.events event_row
+      LEFT JOIN proof_indexer.transactions listing_tx
+        ON listing_tx.network = event_row.network
+       AND listing_tx.txid = event_row.txid
+      LEFT JOIN proof_indexer.blocks canonical_block
+        ON canonical_block.network = listing_tx.network
+       AND canonical_block.block_hash = listing_tx.block_hash
+       AND canonical_block.height = listing_tx.block_height
+      LEFT JOIN proof_indexer.op_returns carrier
+        ON carrier.network = event_row.network
+       AND carrier.txid = event_row.txid
+       AND carrier.vout = event_row.op_return_vout
+       AND carrier.output_index = event_row.record_ordinal
+      WHERE event_row.network = $1
+        AND event_row.txid = ANY($2::text[])
+        AND event_row.protocol = 'pwt1'
+        AND event_row.kind = 'token-listing'
+      ORDER BY
+        lower(event_row.txid) ASC,
+        event_row.event_id ASC,
+        carrier.vout ASC NULLS LAST,
+        carrier.output_index ASC NULLS LAST
+    `,
+    [network, normalizedListingIds],
+  );
+  const rowsByListingId = new Map(
+    normalizedListingIds.map((listingId) => [listingId, []]),
+  );
+  for (const row of result.rows) {
+    const listingId = normalizedLowerText(row?.event_txid);
+    rowsByListingId.get(listingId)?.push(row);
+  }
+  return normalizedListingIds.flatMap((listingId) => {
+    const rows = rowsByListingId.get(listingId) ?? [];
+    if (rows.length !== 1) {
+      return [];
+    }
+    const evidence = canonicalHistoricalWorkListingScopeRow(rows[0], {
+      activationHeight: exactActivationHeight,
+      listingId,
+      network,
+    });
+    return evidence ? [evidence] : [];
+  });
 }
 
 export async function proofIndexCanonicalWorkListingById(
@@ -28530,10 +28840,12 @@ export async function proofIndexCanonicalSummaryTokenTablePayload(
   const legacyCutoverPayload = applyWorkMarketV2CutoverToTokenState(
     currentV8Payload,
   );
-  const result = applyWorkAmoV5CutoverToTokenState(
-    await payloadWithVerifiedWorkAmoV5Activation(
-      network,
-      legacyCutoverPayload,
+  const result = workPrecisionV2ProjectCurrentPayload(
+    applyWorkAmoV5CutoverToTokenState(
+      await payloadWithVerifiedWorkAmoV5Activation(
+        network,
+        legacyCutoverPayload,
+      ),
     ),
   );
   if (
