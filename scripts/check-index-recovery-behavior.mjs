@@ -57259,7 +57259,7 @@ check("WORK precision V2 readiness cache is exact, positive-only, and coalesced"
   );
   assert.match(
     fileSource(POSTGRES_PATH),
-    /options: "-c search_path=pg_catalog,pg_temp"/u,
+    /options: "-c search_path=pg_catalog,\\\\ pg_temp"/u,
   );
   const readinessEpochSql = fileSource(READINESS_EPOCH_PATH);
   assert.match(

@@ -31,7 +31,7 @@ export function createProofIndexPool(options = {}) {
     connectionTimeoutMillis: Number(env.POW_INDEX_DB_CONNECT_TIMEOUT_MS ?? 10_000),
     idleTimeoutMillis: Number(env.POW_INDEX_DB_IDLE_TIMEOUT_MS ?? 30_000),
     max: Number(env.POW_INDEX_DB_POOL_MAX ?? 4),
-    options: "-c search_path=pg_catalog,pg_temp",
+    options: "-c search_path=pg_catalog,\\ pg_temp",
     statement_timeout: Number(env.POW_INDEX_DB_STATEMENT_TIMEOUT_MS ?? 120_000),
   });
 }
