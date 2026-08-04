@@ -45447,6 +45447,78 @@ check("AMO V5 public activity preserves same-transaction record identity", () =>
     2,
     "same-kind pending records must render once per raw protocol position",
   );
+  const canonicalEventIdentityDetails = isolatedFunction(
+    API_PATH,
+    "canonicalEventIdentityDetails",
+  );
+  const tokenActivityItemsFromState = isolatedFunction(
+    API_PATH,
+    "tokenActivityItemsFromState",
+    {
+      BOND_TOKEN_IDS: new Set(),
+      INCB_TOKEN_ID: "a".repeat(64),
+      WORK_TOKEN_ID: "b".repeat(64),
+      activityStatusTag: () => "Pending",
+      canonicalCreditValueFieldsFromRecord: () => ({}),
+      canonicalEventIdentityDetails,
+      canonicalInceptionMintMetadata: () => ({}),
+      isBondTokenId: () => false,
+      networkLabel: () => "Mainnet",
+      numericValue: (value) => Number(value) || 0,
+      shortAddress: (value) => String(value ?? ""),
+      tokenAmountFieldsFromRecord: () => ({}),
+      tokenCreditAmountMovedFields: () => ({}),
+    },
+  );
+  const pendingMintRecord = {
+    amount: 1,
+    confirmed: false,
+    createdAt: "2026-08-04T00:00:00.000Z",
+    eventId: 3115536,
+    minterAddress: "minter",
+    network: "livenet",
+    paidSats: 546,
+    protocolVout: 1,
+    recordOrdinal: 0,
+    registryAddress: "registry",
+    ticker: "TEST",
+    tokenId: "c".repeat(64),
+    txid: "d".repeat(64),
+  };
+  const projectedPendingMints = tokenActivityItemsFromState(
+    {
+      closedListings: [],
+      listings: [],
+      mints: [
+        pendingMintRecord,
+        { ...pendingMintRecord, eventId: 3115537, recordOrdinal: 1 },
+      ],
+      sales: [],
+      tokens: [],
+      transfers: [],
+    },
+    "registry",
+  );
+  assert.equal(projectedPendingMints.length, 2);
+  assert.equal(projectedPendingMints[0].protocol, "pwt1");
+  assert.equal(projectedPendingMints[1].protocol, "pwt1");
+  assert.equal(
+    dedupeActivityItems([
+      projectedPendingMints[0],
+      {
+        ...projectedPendingMints[0],
+        detail: "raw relational representation",
+        protocol: "pwt1",
+      },
+    ]).length,
+    1,
+    "one pending token-table projection must dedupe with its raw pwt1 event",
+  );
+  assert.equal(
+    dedupeActivityItems(projectedPendingMints).length,
+    2,
+    "pending token-table siblings must remain distinct by record ordinal",
+  );
   for (const keyForItem of [activityKey, historyActivityKey]) {
     for (const field of ["blockIndex", "protocolVout", "recordOrdinal"]) {
       const incomplete = { ...base, [field]: null };

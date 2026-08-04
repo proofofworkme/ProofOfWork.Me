@@ -26097,6 +26097,7 @@ function tokenActivityItemsFromState(state, indexAddress) {
       minerFeeSats: numericValue(token.minerFeeSats),
       network: token.network,
       participants: [token.creatorAddress, token.registryAddress].filter(Boolean),
+      protocol: "pwt1",
       proofPaymentSats: numericValue(token.creationFeeSats),
       tags: [
         activityStatusTag(token.confirmed),
@@ -26150,6 +26151,7 @@ function tokenActivityItemsFromState(state, indexAddress) {
     minerFeeSats: numericValue(mint.minerFeeSats),
     network: mint.network,
     participants: [mint.minterAddress, mint.registryAddress].filter(Boolean),
+    protocol: "pwt1",
     proofPaymentSats: numericValue(mint.paidSats),
     ...canonicalCreditValueFieldsFromRecord(mint),
     tags: [
@@ -26212,6 +26214,7 @@ function tokenActivityItemsFromState(state, indexAddress) {
       transfer.recipientAddress,
       transfer.registryAddress,
     ].filter(Boolean),
+    protocol: "pwt1",
     registryMutationFeeSats: numericValue(
       transfer.registryMutationFeeSats ?? transfer.paidSats,
     ),
@@ -26295,6 +26298,7 @@ function tokenActivityItemsFromState(state, indexAddress) {
         listing.saleAuthorization?.buyerAddress,
         listing.registryAddress,
       ].filter(Boolean),
+      protocol: "pwt1",
       tags: [
         activityStatusTag(listing.confirmed),
         networkLabel(listing.network),
@@ -26413,6 +26417,7 @@ function tokenActivityItemsFromState(state, indexAddress) {
         listing.saleAuthorization?.buyerAddress,
         listing.registryAddress,
       ].filter(Boolean),
+      protocol: "pwt1",
       tags: [
         activityStatusTag(sealConfirmed),
         networkLabel(listing.network),
@@ -26567,6 +26572,7 @@ function tokenActivityItemsFromState(state, indexAddress) {
           listing.saleAuthorization?.buyerAddress,
           listing.registryAddress,
         ].filter(Boolean),
+        protocol: "pwt1",
         tags: [
           activityStatusTag(Boolean(listing.closedConfirmed)),
           networkLabel(listing.network),
@@ -26735,6 +26741,7 @@ function tokenActivityItemsFromState(state, indexAddress) {
       sale.sellerAddress,
       sale.registryAddress,
     ].filter(Boolean),
+    protocol: "pwt1",
     saleBlockHash: salePosition.blockHash,
     saleBlockHeight: salePosition.blockHeight,
     saleBlockIndex: salePosition.blockIndex,
