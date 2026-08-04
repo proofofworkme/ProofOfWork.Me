@@ -63934,7 +63934,7 @@ async function handleRequest(request, response) {
           network,
           tokenScope,
           "token-state",
-          SUMMARY_PROOF_INDEX_READ_WAIT_MS,
+          freshRead ? TOKEN_SCOPED_FRESH_WAIT_MS : 10_000,
         );
         if (indexedPayload) {
           jsonResponse(
