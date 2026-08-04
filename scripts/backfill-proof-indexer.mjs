@@ -2653,6 +2653,13 @@ async function bitcoinRpcOnce(method, params = []) {
   }
 }
 
+function bitcoinRpcShouldRetry(method, error, attempt, retryLimit) {
+  const deterministicAbsence =
+    Number(error?.rpcCode) === -5 &&
+    ["getrawtransaction", "getmempoolentry"].includes(method);
+  return !deterministicAbsence && attempt < retryLimit;
+}
+
 async function bitcoinRpc(method, params = []) {
   let lastError = null;
   for (let attempt = 0; attempt <= BITCOIN_RPC_RETRIES; attempt += 1) {
@@ -2660,7 +2667,14 @@ async function bitcoinRpc(method, params = []) {
       return await bitcoinRpcOnce(method, params);
     } catch (error) {
       lastError = error;
-      if (attempt >= BITCOIN_RPC_RETRIES) {
+      if (
+        !bitcoinRpcShouldRetry(
+          method,
+          error,
+          attempt,
+          BITCOIN_RPC_RETRIES,
+        )
+      ) {
         break;
       }
       const delayMs = Math.min(5_000, 250 * 2 ** attempt);

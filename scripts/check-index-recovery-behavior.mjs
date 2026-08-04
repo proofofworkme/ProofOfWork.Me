@@ -14725,6 +14725,39 @@ check("Bitcoin RPC preserves Core error codes carried by HTTP 500", async () => 
   );
 });
 
+check("Bitcoin RPC retries uncertainty but not deterministic status absence", async () => {
+  const shouldRetry = isolatedFunction(
+    BACKFILL_PATH,
+    "bitcoinRpcShouldRetry",
+  );
+  const absent = Object.assign(new Error("not found"), { rpcCode: -5 });
+  assert.equal(shouldRetry("getrawtransaction", absent, 0, 2), false);
+  assert.equal(shouldRetry("getmempoolentry", absent, 0, 2), false);
+  assert.equal(shouldRetry("getblock", absent, 0, 2), true);
+  assert.equal(
+    shouldRetry(
+      "getrawtransaction",
+      Object.assign(new Error("warming up"), { rpcCode: -28 }),
+      0,
+      2,
+    ),
+    true,
+  );
+  assert.equal(
+    shouldRetry("getrawtransaction", new Error("transport"), 0, 2),
+    true,
+  );
+  assert.equal(
+    shouldRetry("getrawtransaction", new Error("transport"), 2, 2),
+    false,
+  );
+  assert.match(
+    topLevelFunctionSource(BACKFILL_PATH, "bitcoinRpc"),
+    /bitcoinRpcShouldRetry\([\s\S]*break;[\s\S]*setTimeout/u,
+    "the retry loop must classify terminal absence before it schedules delay",
+  );
+});
+
 check("Q16 mempool hydration misses fail closed unless Core proves departure", async () => {
   const txid = "a".repeat(64);
   let observation = { absent: true, status: "dropped" };
@@ -16249,8 +16282,15 @@ check("supervised pending recovery stages 118 WORK candidates before one atomic 
     { length: 118 },
     (_value, index) => (index + 1).toString(16).padStart(64, "0"),
   );
+  const departedTxid = "f".repeat(64);
   const mempool = Object.fromEntries(
-    txids.map((txid, index) => [txid, { time: 1_721_000_000 - index }]),
+    [
+      [departedTxid, { time: 1_721_000_001 }],
+      ...txids.map((txid, index) => [
+        txid,
+        { time: 1_721_000_000 - index },
+      ]),
+    ],
   );
   const pendingTransaction = (txid) => ({ txid, vin: [], vout: [] });
   let classified = 0;
@@ -16285,7 +16325,10 @@ check("supervised pending recovery stages 118 WORK candidates before one atomic 
         { discoveredTxids, initialMempoolSnapshot },
       ) => {
         stagedTxids = discoveredTxids;
-        assert.deepEqual(initialMempoolSnapshot.txids, txids);
+        assert.deepEqual(
+          initialMempoolSnapshot.txids,
+          [...txids, departedTxid].sort(compareCanonicalUtf8),
+        );
         return { publishEligible: true, request: stageRequest };
       },
       bitcoinRpc: async (method) => {
@@ -16303,10 +16346,14 @@ check("supervised pending recovery stages 118 WORK candidates before one atomic 
       currentWorkProjectionState: async () => "work-q16",
       freshRawTransactionFromCore: async (txid) => {
         freshReads += 1;
-        return pendingTransaction(txid);
+        return txid === departedTxid ? null : pendingTransaction(txid);
       },
       isHexTxid,
-      knownMempoolRecoveryTxids: async () => txids,
+      knownMempoolRecoveryTxids: async () => [departedTxid, ...txids],
+      mempoolHydrationMissDisposition: async (txid) => {
+        assert.equal(txid, departedTxid);
+        return "absent";
+      },
       mempoolScanCursorForEntry,
       mempoolScanState: async () => ({
         cursor: null,
@@ -16358,12 +16405,13 @@ check("supervised pending recovery stages 118 WORK candidates before one atomic 
     label: "mempool-scan",
   });
   assert.equal(result.protocolTxids, 118);
-  assert.equal(result.priorityScanned, 118);
+  assert.equal(result.priorityScanned, 119);
+  assert.equal(result.scanned, 119);
   assert.equal(result.indexed, 118);
   assert.equal(result.unresolved, 0);
   assert.equal(result.q16PendingWitnessReady, true);
   assert.equal(classified, 118);
-  assert.equal(freshReads, 118);
+  assert.equal(freshReads, 119);
   assert.equal(published, 1);
   assert.deepEqual(Array.from(stagedTxids), txids);
   assert.equal(storedScan.processedTxids.length, 118);
