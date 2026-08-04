@@ -3,18 +3,23 @@ import {
   WORK_AMO_V5_AUTH_VERSION,
   WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS,
   WORK_AMO_V5_MAX_SUPPLY,
+  WORK_AMO_V5_NETWORK_ACCUMULATOR_MODEL,
   WORK_AMO_V5_NETWORK_VALUE_Q8_SCALE,
+  WORK_AMO_V5_PAYLOAD_COMMITMENT_MODEL,
+  WORK_AMO_V5_STATE_COMMITMENT_MODEL,
   compareWorkAmoCanonicalPositions,
   compareWorkAmoUtf8,
   normalizeWorkAmoCanonicalPosition,
   replayWorkAmoV5CanonicalBlock,
   validateWorkAmoV5FrozenTerms,
+  validateWorkAmoV5SufficientState,
   validateWorkAmoV5StaticAuthorization,
   workAmoCanonicalPositionPrecedes,
   workAmoCeilDiv,
   workAmoFloorDiv,
   workAmoV5CanonicalHistoricalV4ListingWitness,
   workAmoV5CanonicalPayloadCommitment,
+  workAmoV5CanonicalStateCommitment,
 } from "./work-amo-v5.mjs";
 import {
   WORK_AMO_V6_AUTH_VERSION,
@@ -1021,6 +1026,224 @@ export function workAmoV8CanonicalTokenStateCommitment(tokenState) {
   return workAmoV5CanonicalPayloadCommitment(
     workAmoV8CanonicalTokenStatePreimage(tokenState),
   );
+}
+
+function exactWorkAmoV8BoundaryHash(value) {
+  return typeof value === "string" && HASH_PATTERN.test(value) ? value : "";
+}
+
+function exactWorkAmoV8BoundaryCommitment(value, expectedModel) {
+  if (
+    !value ||
+    typeof value !== "object" ||
+    Array.isArray(value) ||
+    Object.keys(value).sort().join(",") !== "model,payloadBytes,sha256" ||
+    value.model !== expectedModel ||
+    canonicalSafeInteger(value.payloadBytes, { positive: true }) === null ||
+    exactWorkAmoV8BoundaryHash(value.sha256) === ""
+  ) {
+    return null;
+  }
+  return {
+    model: value.model,
+    payloadBytes: value.payloadBytes,
+    sha256: value.sha256,
+  };
+}
+
+function exactWorkAmoV8BoundaryCommitmentsEqual(left, right) {
+  return Boolean(
+    left &&
+      right &&
+      left.model === right.model &&
+      left.payloadBytes === right.payloadBytes &&
+      left.sha256 === right.sha256
+  );
+}
+
+export function validateWorkAmoV8BoundaryTransitionPayload(value) {
+  const transition =
+    value && typeof value === "object" && !Array.isArray(value)
+      ? value
+      : {};
+  const payload =
+    transition.payload &&
+    typeof transition.payload === "object" &&
+    !Array.isArray(transition.payload)
+      ? transition.payload
+      : null;
+  const blockHeight = canonicalSafeInteger(transition.blockHeight, {
+    positive: true,
+  });
+  const blockHash = exactWorkAmoV8BoundaryHash(transition.blockHash);
+  const previousBlockHash = exactWorkAmoV8BoundaryHash(
+    transition.previousBlockHash,
+  );
+  const openingNetworkValueQ8 = canonicalUnsignedIntegerText(
+    transition.openingNetworkValueQ8,
+    { positive: true },
+  );
+  const closingNetworkValueQ8 = canonicalUnsignedIntegerText(
+    transition.closingNetworkValueQ8,
+    { positive: true },
+  );
+  const openingStateSha256 = exactWorkAmoV8BoundaryHash(
+    transition.openingStateSha256,
+  );
+  const closingStateSha256 = exactWorkAmoV8BoundaryHash(
+    transition.closingStateSha256,
+  );
+  const openingStatePayloadBytes = canonicalSafeInteger(
+    transition.openingStatePayloadBytes,
+    { positive: true },
+  );
+  const closingStatePayloadBytes = canonicalSafeInteger(
+    transition.closingStatePayloadBytes,
+    { positive: true },
+  );
+  if (
+    !payload ||
+    blockHeight === null ||
+    !blockHash ||
+    !previousBlockHash ||
+    !openingNetworkValueQ8 ||
+    !closingNetworkValueQ8 ||
+    BigInt(closingNetworkValueQ8) < BigInt(openingNetworkValueQ8) ||
+    !openingStateSha256 ||
+    !closingStateSha256 ||
+    openingStatePayloadBytes === null ||
+    closingStatePayloadBytes === null ||
+    transition.network !== "livenet" ||
+    transition.model !== WORK_AMO_V8_BLOCK_SEQUENCER_MODEL ||
+    transition.stateCommitmentModel !==
+      WORK_AMO_V5_STATE_COMMITMENT_MODEL ||
+    transition.workTokenStateModel !==
+      WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL ||
+    transition.blockAtomic !== true ||
+    transition.feeOnce !== true ||
+    transition.invalidZero !== true ||
+    transition.complete !== true ||
+    payload.model !== WORK_AMO_V8_BLOCK_SEQUENCER_MODEL ||
+    payload.network !== transition.network ||
+    payload.blockHeight !== blockHeight ||
+    payload.blockHash !== blockHash ||
+    payload.previousBlockHash !== previousBlockHash ||
+    payload.blockAtomic !== true ||
+    payload.feeOnce !== true ||
+    payload.invalidZero !== true ||
+    payload.complete !== true ||
+    payload.workTokenStateModel !==
+      WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL
+  ) {
+    return invalid("work-amo-v8-boundary-transition-envelope-invalid");
+  }
+  const openingValidation = validateWorkAmoV5SufficientState(
+    payload.openingSufficientState,
+  );
+  const closingValidation = validateWorkAmoV5SufficientState(
+    payload.closingSufficientState,
+  );
+  const openingCommitment = exactWorkAmoV8BoundaryCommitment(
+    payload.openingStateCommitment,
+    WORK_AMO_V5_STATE_COMMITMENT_MODEL,
+  );
+  const closingCommitment = exactWorkAmoV8BoundaryCommitment(
+    payload.closingStateCommitment,
+    WORK_AMO_V5_STATE_COMMITMENT_MODEL,
+  );
+  if (
+    openingValidation.valid !== true ||
+    closingValidation.valid !== true ||
+    openingValidation.state.model !==
+      WORK_AMO_V5_NETWORK_ACCUMULATOR_MODEL ||
+    closingValidation.state.model !==
+      WORK_AMO_V5_NETWORK_ACCUMULATOR_MODEL ||
+    payload.openingSufficientState.model !==
+      WORK_AMO_V5_NETWORK_ACCUMULATOR_MODEL ||
+    payload.closingSufficientState.model !==
+      WORK_AMO_V5_NETWORK_ACCUMULATOR_MODEL ||
+    payload.openingSufficientState.network !== transition.network ||
+    payload.closingSufficientState.network !== transition.network ||
+    payload.openingSufficientState.throughBlockHeight !==
+      blockHeight - 1 ||
+    payload.openingSufficientState.throughBlockHash !==
+      previousBlockHash ||
+    payload.closingSufficientState.throughBlockHeight !== blockHeight ||
+    payload.closingSufficientState.throughBlockHash !== blockHash ||
+    payload.openingSufficientState.networkValueQ8 !==
+      openingNetworkValueQ8 ||
+    payload.closingSufficientState.networkValueQ8 !==
+      closingNetworkValueQ8 ||
+    !openingCommitment ||
+    !closingCommitment
+  ) {
+    return invalid("work-amo-v8-boundary-transition-state-invalid");
+  }
+  try {
+    const canonicalOpeningCommitment =
+      workAmoV5CanonicalStateCommitment(openingValidation.state);
+    const canonicalClosingCommitment =
+      workAmoV5CanonicalStateCommitment(closingValidation.state);
+    const rawOpeningStateCommitment =
+      workAmoV5CanonicalPayloadCommitment(
+        payload.openingSufficientState,
+      );
+    const normalizedOpeningStateCommitment =
+      workAmoV5CanonicalPayloadCommitment(openingValidation.state);
+    const rawClosingStateCommitment =
+      workAmoV5CanonicalPayloadCommitment(
+        payload.closingSufficientState,
+      );
+    const normalizedClosingStateCommitment =
+      workAmoV5CanonicalPayloadCommitment(closingValidation.state);
+    const closingTokenStateCommitment =
+      workAmoV8CanonicalTokenStateCommitment(
+        payload.closingTokenState,
+      );
+    if (
+      openingCommitment.sha256 !== openingStateSha256 ||
+      openingCommitment.payloadBytes !== openingStatePayloadBytes ||
+      closingCommitment.sha256 !== closingStateSha256 ||
+      closingCommitment.payloadBytes !== closingStatePayloadBytes ||
+      !exactWorkAmoV8BoundaryCommitmentsEqual(
+        openingCommitment,
+        canonicalOpeningCommitment,
+      ) ||
+      !exactWorkAmoV8BoundaryCommitmentsEqual(
+        closingCommitment,
+        canonicalClosingCommitment,
+      ) ||
+      !exactWorkAmoV8BoundaryCommitmentsEqual(
+        rawOpeningStateCommitment,
+        normalizedOpeningStateCommitment,
+      ) ||
+      !exactWorkAmoV8BoundaryCommitmentsEqual(
+        rawClosingStateCommitment,
+        normalizedClosingStateCommitment,
+      ) ||
+      !exactWorkAmoV8BoundaryCommitmentsEqual(
+        closingValidation.state.tokenStateCommitment,
+        closingTokenStateCommitment,
+      ) ||
+      (
+        payload.closingTokenState?.model !== undefined &&
+        payload.closingTokenState.model !==
+          WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL
+      )
+    ) {
+      return invalid(
+        "work-amo-v8-boundary-transition-commitment-invalid",
+      );
+    }
+    return {
+      closingState: closingValidation.state,
+      closingTokenState: payload.closingTokenState,
+      openingState: openingValidation.state,
+      valid: true,
+    };
+  } catch {
+    return invalid("work-amo-v8-boundary-transition-commitment-invalid");
+  }
 }
 
 export function replayWorkAmoV8CanonicalBlock({

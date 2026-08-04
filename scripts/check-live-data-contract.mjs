@@ -1856,11 +1856,28 @@ expectAll(
   [
     /async function readExactWorkerCoreTip[\s\S]*getblockchaininfo[\s\S]*getblockhash[\s\S]*stable: true/,
     /const coreTipBefore = await readExactWorkerCoreTip\(\)[\s\S]*WITH canonical_tip AS[\s\S]*AS tip_height[\s\S]*AS tip_hash[\s\S]*const coreTipAfter = await readExactWorkerCoreTip\(\)/,
+    /block\.previous_block_hash <>[\s\S]*transition\.previous_block_hash/,
     /previous_transition\.block_hash <>[\s\S]*transition\.previous_block_hash/,
     /previous_transition\.closing_state_sha256 <>[\s\S]*transition\.opening_state_sha256/,
     /workerWorkPrecisionSnapshotReady[\s\S]*consistencyStatus === "green"[\s\S]*WORK_SUBATOM_PROJECTION_MODEL/,
     /workerWorkPrecisionRelationalParity\(\{[\s\S]*balanceRows: balanceResult\.rows[\s\S]*listingRows: listingResult\.rows/,
-    /transition\.work_token_state_model <> \$4[\s\S]*transition\.payload->>'workTokenStateModel'\s*IS DISTINCT FROM \$4/,
+    /transition\.model <> \$3[\s\S]*transition\.work_token_state_model <> \$4[\s\S]*transition\.state_commitment_model <> \$5/,
+    /previous_transition\.closing_network_value_q8 <>[\s\S]*transition\.opening_network_value_q8/,
+    /previous_transition\.closing_state_payload_bytes <>[\s\S]*transition\.opening_state_payload_bytes/,
+  ],
+);
+expect(
+  "AMO V8 worker historical replay does not detoast every immutable transition payload",
+  !/previous_transition\.payload/.test(proofIndexerWorker),
+);
+expectAll(
+  "AMO V8 worker and reader fully validate only the two payload boundaries",
+  `${proofIndexerWorker}\n${proofIndexReader}`,
+  [
+    /validateWorkAmoV8BoundaryTransitionPayload\(activation\)/,
+    /validateWorkAmoV8BoundaryTransitionPayload\(latest\)/,
+    /validateWorkAmoV8BoundaryTransitionPayload\(activationTransition\)/,
+    /validateWorkAmoV8BoundaryTransitionPayload\(latestTransition\)/,
   ],
 );
 expect(

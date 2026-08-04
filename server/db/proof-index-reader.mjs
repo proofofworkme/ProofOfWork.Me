@@ -180,6 +180,7 @@ import {
   WORK_AMO_V8_RELIC_CUTOVER_MODEL,
   WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL,
   WORK_AMO_V8_TRANSFER_VERSION,
+  validateWorkAmoV8BoundaryTransitionPayload,
   validateWorkAmoV8FrozenTerms,
   workAmoV8CanonicalTokenStateCommitment,
 } from "../work-amo-v8.mjs";
@@ -2745,6 +2746,7 @@ const WORK_PRECISION_V2_CANONICAL_BOOTSTRAP_CONSTRAINTS = Object.freeze([
   "definition",
   "markerImmutable",
   "transition",
+  "transitionImmutable",
   "v6",
   "v6Deactivation",
   "v6Immutable",
@@ -6314,13 +6316,37 @@ async function proofIndexWorkPrecisionV2MigrationReadinessFullAudit(
           LIMIT 1
         ) AS work_token_state_model,
         (
-          SELECT transition.payload
+          SELECT jsonb_build_object(
+            'blockAtomic', transition.block_atomic,
+            'blockHash', transition.block_hash,
+            'blockHeight', transition.block_height,
+            'closingNetworkValueQ8',
+              transition.closing_network_value_q8::text,
+            'closingStatePayloadBytes',
+              transition.closing_state_payload_bytes,
+            'closingStateSha256', transition.closing_state_sha256,
+            'complete', transition.complete,
+            'feeOnce', transition.fee_once,
+            'invalidZero', transition.invalid_zero,
+            'model', transition.model,
+            'network', transition.network,
+            'openingNetworkValueQ8',
+              transition.opening_network_value_q8::text,
+            'openingStatePayloadBytes',
+              transition.opening_state_payload_bytes,
+            'openingStateSha256', transition.opening_state_sha256,
+            'payload', transition.payload,
+            'previousBlockHash', transition.previous_block_hash,
+            'stateCommitmentModel',
+              transition.state_commitment_model,
+            'workTokenStateModel', transition.work_token_state_model
+          )
           FROM proof_indexer.work_amo_block_transitions transition
           WHERE transition.network = $1
             AND transition.complete = true
           ORDER BY transition.block_height DESC
           LIMIT 1
-        ) AS transition_payload,
+        ) AS latest_transition,
         (
           SELECT transition.model
           FROM proof_indexer.work_amo_block_transitions transition
@@ -6338,13 +6364,37 @@ async function proofIndexWorkPrecisionV2MigrationReadinessFullAudit(
           LIMIT 1
         ) AS activation_work_token_state_model,
         (
-          SELECT transition.payload
+          SELECT jsonb_build_object(
+            'blockAtomic', transition.block_atomic,
+            'blockHash', transition.block_hash,
+            'blockHeight', transition.block_height,
+            'closingNetworkValueQ8',
+              transition.closing_network_value_q8::text,
+            'closingStatePayloadBytes',
+              transition.closing_state_payload_bytes,
+            'closingStateSha256', transition.closing_state_sha256,
+            'complete', transition.complete,
+            'feeOnce', transition.fee_once,
+            'invalidZero', transition.invalid_zero,
+            'model', transition.model,
+            'network', transition.network,
+            'openingNetworkValueQ8',
+              transition.opening_network_value_q8::text,
+            'openingStatePayloadBytes',
+              transition.opening_state_payload_bytes,
+            'openingStateSha256', transition.opening_state_sha256,
+            'payload', transition.payload,
+            'previousBlockHash', transition.previous_block_hash,
+            'stateCommitmentModel',
+              transition.state_commitment_model,
+            'workTokenStateModel', transition.work_token_state_model
+          )
           FROM proof_indexer.work_amo_block_transitions transition
           WHERE transition.network = $1
             AND transition.block_height = $11
             AND transition.complete = true
           LIMIT 1
-        ) AS activation_transition_payload,
+        ) AS activation_transition,
         (
           SELECT count(*)::integer
           FROM proof_indexer.work_amo_block_transitions transition
@@ -6378,6 +6428,10 @@ async function proofIndexWorkPrecisionV2MigrationReadinessFullAudit(
               transition.complete IS DISTINCT FROM true
               OR transition.model <> $13
               OR transition.work_token_state_model <> $14
+              OR transition.state_commitment_model <> $16
+              OR transition.block_atomic IS DISTINCT FROM true
+              OR transition.fee_once IS DISTINCT FROM true
+              OR transition.invalid_zero IS DISTINCT FROM true
               OR block.block_hash IS NULL
               OR block.previous_block_hash <>
                 transition.previous_block_hash
@@ -6390,15 +6444,12 @@ async function proofIndexWorkPrecisionV2MigrationReadinessFullAudit(
                 transition.block_height > $11
                 AND (
                   previous_transition.block_hash IS NULL
+                  OR transition.opening_network_value_q8 <>
+                    previous_transition.closing_network_value_q8
                   OR transition.opening_state_sha256 <>
                     previous_transition.closing_state_sha256
-                  OR transition.payload
-                      ->'openingSufficientState'
-                      ->'tokenStateCommitment'
-                    IS DISTINCT FROM
-                      previous_transition.payload
-                        ->'closingSufficientState'
-                        ->'tokenStateCommitment'
+                  OR transition.opening_state_payload_bytes <>
+                    previous_transition.closing_state_payload_bytes
                 )
               )
             )
@@ -6555,6 +6606,16 @@ async function proofIndexWorkPrecisionV2MigrationReadinessFullAudit(
           SELECT 1
           FROM pg_trigger trigger_row
           WHERE trigger_row.tgrelid =
+              'proof_indexer.work_amo_block_transitions'::regclass
+            AND trigger_row.tgname =
+              'work_amo_block_transitions_immutable'
+            AND trigger_row.tgenabled <> 'D'
+            AND trigger_row.tgisinternal = false
+        ) AS transition_immutable_trigger,
+        EXISTS (
+          SELECT 1
+          FROM pg_trigger trigger_row
+          WHERE trigger_row.tgrelid =
               'proof_indexer.work_amo_v6_listing_terms'::regclass
             AND trigger_row.tgname =
               'work_amo_v6_listing_terms_immutable'
@@ -6678,6 +6739,7 @@ async function proofIndexWorkPrecisionV2MigrationReadinessFullAudit(
       WORK_AMO_V8_BLOCK_SEQUENCER_MODEL,
       WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL,
       WORK_SUBATOM_PROJECTION_MODEL,
+      WORK_AMO_V5_STATE_COMMITMENT_MODEL,
     ],
   );
   if (stateResult.rows.length !== 1) {
@@ -6791,6 +6853,7 @@ async function proofIndexWorkPrecisionV2MigrationReadinessFullAudit(
   const constraints = {
     definition: sharedConstraintAudit.definitionPrecisionReady,
     transition: sharedConstraintAudit.transitionReady,
+    transitionImmutable: row.transition_immutable_trigger === true,
     markerImmutable: row.marker_immutable_trigger === true,
     v6: sharedConstraintAudit.v6Q8Ready,
     v6Deactivation:
@@ -6815,9 +6878,12 @@ async function proofIndexWorkPrecisionV2MigrationReadinessFullAudit(
       row.v7_history_immutable_trigger === true,
     v7Immutable: row.v7_immutable_trigger === true,
   };
+  const activationTransition = objectRecord(row.activation_transition);
   const activationTransitionPayload = objectRecord(
-    row.activation_transition_payload,
+    activationTransition.payload,
   );
+  const activationBoundaryValidation =
+    validateWorkAmoV8BoundaryTransitionPayload(activationTransition);
   const activationTransitionOpeningCommitment = objectRecord(
     activationTransitionPayload.precisionOpeningTokenStateCommitment,
   );
@@ -6825,6 +6891,10 @@ async function proofIndexWorkPrecisionV2MigrationReadinessFullAudit(
     marker?.activationOpening?.subatomTokenStateCommitment,
   );
   const activationOpeningReady =
+    activationBoundaryValidation.valid === true &&
+    Number(activationTransition.blockHeight) === pins.activationHeight &&
+    normalizedLowerText(activationTransition.previousBlockHash) ===
+      pins.declarationBlockHash &&
     row.activation_transition_model ===
       WORK_AMO_V8_BLOCK_SEQUENCER_MODEL &&
     row.activation_work_token_state_model ===
@@ -6836,7 +6906,10 @@ async function proofIndexWorkPrecisionV2MigrationReadinessFullAudit(
     stableWorkPrecisionJson(
       activationTransitionOpeningCommitment,
     ) === stableWorkPrecisionJson(markerOpeningCommitment);
-  const transitionPayload = objectRecord(row.transition_payload);
+  const latestTransition = objectRecord(row.latest_transition);
+  const latestBoundaryValidation =
+    validateWorkAmoV8BoundaryTransitionPayload(latestTransition);
+  const transitionPayload = objectRecord(latestTransition.payload);
   const closingTokenState = objectRecord(
     transitionPayload.closingTokenState,
   );
@@ -6889,6 +6962,7 @@ async function proofIndexWorkPrecisionV2MigrationReadinessFullAudit(
     relationalParityReady = false;
   }
   const closingTokenStateReady =
+    latestBoundaryValidation.valid === true &&
     Boolean(closingTokenStateCommitment) &&
     stableWorkPrecisionJson(closingTokenStateCommitment) ===
       stableWorkPrecisionJson(
@@ -7253,6 +7327,8 @@ async function proofIndexWorkPrecisionV2MigrationReadinessFullAudit(
     Number(row.transition_height) === tipHeight &&
     /^[0-9a-f]{64}$/u.test(tipHash) &&
     normalizedLowerText(row.transition_hash) === tipHash &&
+    Number(latestTransition.blockHeight) === tipHeight &&
+    normalizedLowerText(latestTransition.blockHash) === tipHash &&
     row.transition_model === WORK_AMO_V8_BLOCK_SEQUENCER_MODEL &&
     row.work_token_state_model ===
       WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL &&

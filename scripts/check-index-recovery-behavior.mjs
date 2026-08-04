@@ -18622,11 +18622,17 @@ check("the canonical summary publisher rejects mixed snapshot identities", async
 });
 
 check("exact canonical summaries require current conserved token balances", async () => {
+  assert.match(
+    fileSource(READER_PATH),
+    /const WORK_PRECISION_V2_CANONICAL_BOOTSTRAP_CONSTRAINTS[\s\S]*"transition",[\s\S]*"transitionImmutable",/u,
+    "canonical bootstrap must explicitly allowlist transition immutability",
+  );
   const canonicalBootstrapConstraints = [
     "activation",
     "definition",
     "markerImmutable",
     "transition",
+    "transitionImmutable",
     "v6",
     "v6Deactivation",
     "v6Immutable",
@@ -18765,6 +18771,53 @@ check("exact canonical summaries require current conserved token balances", asyn
     READER_PATH,
     "proofIndexWorkPrecisionV2MigrationReadinessFullAudit",
   );
+  const invalidTransitionAuditStart = migrationReadinessSource.indexOf(
+    "FROM proof_indexer.work_amo_block_transitions transition\n" +
+      "          LEFT JOIN proof_indexer.blocks block",
+  );
+  const invalidTransitionAuditEnd = migrationReadinessSource.indexOf(
+    ") AS invalid_transition_count",
+    invalidTransitionAuditStart,
+  );
+  assert.ok(
+    invalidTransitionAuditStart >= 0 &&
+      invalidTransitionAuditEnd > invalidTransitionAuditStart,
+    "the reader historical transition audit must remain directly inspectable",
+  );
+  const invalidTransitionAudit = migrationReadinessSource.slice(
+    invalidTransitionAuditStart,
+    invalidTransitionAuditEnd,
+  );
+  assert.match(
+    invalidTransitionAudit,
+    /transition\.state_commitment_model <> \$16[\s\S]*transition\.block_atomic IS DISTINCT FROM true[\s\S]*transition\.fee_once IS DISTINCT FROM true[\s\S]*transition\.invalid_zero IS DISTINCT FROM true/u,
+    "the reader must audit exact immutable transition scalar models and completion flags",
+  );
+  assert.match(
+    invalidTransitionAudit,
+    /transition\.opening_network_value_q8 <>[\s\S]*previous_transition\.closing_network_value_q8[\s\S]*transition\.opening_state_sha256 <>[\s\S]*previous_transition\.closing_state_sha256[\s\S]*transition\.opening_state_payload_bytes <>[\s\S]*previous_transition\.closing_state_payload_bytes/u,
+    "the reader must retain exact scalar value, state, and payload-byte continuity",
+  );
+  assert.doesNotMatch(
+    invalidTransitionAudit,
+    /(?:previous_)?transition\.payload/u,
+    "the reader historical transition audit must not detoast every payload",
+  );
+  assert.ok(
+    (migrationReadinessSource.match(/'payload', transition\.payload/gu) ?? [])
+      .length >= 2,
+    "the reader must retain full activation and latest transition payload checks",
+  );
+  assert.match(
+    migrationReadinessSource,
+    /validateWorkAmoV8BoundaryTransitionPayload\(activationTransition\)[\s\S]*activationBoundaryValidation\.valid === true[\s\S]*validateWorkAmoV8BoundaryTransitionPayload\(latestTransition\)[\s\S]*latestBoundaryValidation\.valid === true/u,
+    "reader readiness must behaviorally validate both boundary payloads",
+  );
+  assert.match(
+    migrationReadinessSource,
+    /work_amo_block_transitions_immutable[\s\S]*transition_immutable_trigger[\s\S]*transitionImmutable: row\.transition_immutable_trigger === true/u,
+    "reader readiness must require the immutable transition trigger",
+  );
   assert.match(
     migrationReadinessSource,
     /const confirmedReplayReady =[\s\S]*Number\(row\.transition_height\) === tipHeight[\s\S]*normalizedLowerText\(row\.transition_hash\) === tipHash[\s\S]*row\.transition_model === WORK_AMO_V8_BLOCK_SEQUENCER_MODEL[\s\S]*row\.work_token_state_model ===[\s\S]*Number\(row\.transition_count\) === expectedTransitionCount[\s\S]*Number\(row\.invalid_transition_count\) === 0[\s\S]*activationOpeningReady[\s\S]*closingTokenStateReady/u,
@@ -18792,6 +18845,21 @@ check("exact canonical summaries require current conserved token balances", asyn
       { ...bootstrapOptions, exactCheckpointHash: "e".repeat(64) },
     ),
     false,
+  );
+  assert.equal(
+    canonicalSummaryBootstrapReady(
+      {
+        ...bootstrapReadiness,
+        constraints: {
+          ...bootstrapReadiness.constraints,
+          transitionImmutable: false,
+        },
+      },
+      bootstrapPins,
+      bootstrapOptions,
+    ),
+    false,
+    "canonical bootstrap must require immutable transition rows",
   );
   assert.equal(
     canonicalSummaryBootstrapReady(

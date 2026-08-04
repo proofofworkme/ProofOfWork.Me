@@ -8,6 +8,7 @@ import {
   AUTHORITATIVE_WORKER_CHECKPOINT_SQL,
   CANONICAL_TX_CONTENT_FAILURE_CLASS,
   CANONICAL_TX_CONTENT_FAILURE_CODE,
+  WORKER_CORE_TIP_ADVANCED_CODE,
   canonicalWorkerFailureFromError,
   canonicalWorkerFailureFromLine,
   containableCanonicalFailure,
@@ -22,6 +23,7 @@ import {
   runScript,
   shouldEscalateWorkerFailure,
   workerBackfillPhasePlan,
+  workerCoreTipAdvanceFromError,
   workerNoProgressFromMeta,
   workerWorkAmoV8ActivationLatchReady,
   workerWorkAmoV8DeclarationConfig,
@@ -29,6 +31,7 @@ import {
   workerWorkPrecisionCoreTipReady,
   workerWorkPrecisionEra,
   workerWorkPrecisionFromMeta,
+  workerWorkPrecisionForCoreTipAdvance,
   workerWorkPrecisionPendingProjection,
   workerWorkPrecisionPendingParity,
   workerWorkPrecisionPendingWitnessReady,
@@ -40,9 +43,19 @@ import {
   workAmoV8DeclarationCommitment,
 } from "../server/work-amo-v8-declaration.mjs";
 import {
+  WORK_AMO_V5_BASE_STATE_FIELDS,
   WORK_AMO_V5_DECLARATION_AUTHORITY_SCRIPT_PUBKEY,
   WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS,
+  WORK_AMO_V5_NETWORK_ACCUMULATOR_MODEL,
+  WORK_AMO_V5_PAYLOAD_COMMITMENT_MODEL,
+  WORK_AMO_V5_STATE_COMMITMENT_MODEL,
+  workAmoV5CanonicalStateCommitment,
 } from "../server/work-amo-v5.mjs";
+import {
+  WORK_AMO_V8_BLOCK_SEQUENCER_MODEL,
+  WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL,
+  workAmoV8CanonicalTokenStateCommitment,
+} from "../server/work-amo-v8.mjs";
 
 const TXID = "b".repeat(64);
 const CHECKPOINT_HASH = "a".repeat(64);
@@ -122,6 +135,92 @@ function fixtureFailureRecord({ transient = false } = {}) {
   };
 }
 
+function workPrecisionBoundaryFixture({
+  blockHash,
+  blockHeight,
+  previousBlockHash,
+}) {
+  const closingTokenState = {
+    confirmedSupplySubatoms: "0",
+    holders: [],
+    listings: [],
+  };
+  const commonState = {
+    baseState: Object.fromEntries(
+      WORK_AMO_V5_BASE_STATE_FIELDS.map((field) => [field, "0"]),
+    ),
+    creditFixedQ8: "1",
+    creditMovementFrozenValueQ8: "0",
+    genericTokenStateCommitment: {
+      model: WORK_AMO_V5_PAYLOAD_COMMITMENT_MODEL,
+      payloadBytes: 1,
+      sha256: "31".repeat(32),
+    },
+    idStateCommitment: {
+      model: WORK_AMO_V5_PAYLOAD_COMMITMENT_MODEL,
+      payloadBytes: 1,
+      sha256: "32".repeat(32),
+    },
+    model: WORK_AMO_V5_NETWORK_ACCUMULATOR_MODEL,
+    movements: [],
+    network: "livenet",
+    networkValueQ8: "1",
+    quoteHead: null,
+    tokenStateCommitment:
+      workAmoV8CanonicalTokenStateCommitment(closingTokenState),
+  };
+  const openingSufficientState = {
+    ...structuredClone(commonState),
+    throughBlockHash: previousBlockHash,
+    throughBlockHeight: blockHeight - 1,
+  };
+  const closingSufficientState = {
+    ...structuredClone(commonState),
+    throughBlockHash: blockHash,
+    throughBlockHeight: blockHeight,
+  };
+  const openingStateCommitment =
+    workAmoV5CanonicalStateCommitment(openingSufficientState);
+  const closingStateCommitment =
+    workAmoV5CanonicalStateCommitment(closingSufficientState);
+  return {
+    blockAtomic: true,
+    blockHash,
+    blockHeight,
+    closingNetworkValueQ8: "1",
+    closingStatePayloadBytes: closingStateCommitment.payloadBytes,
+    closingStateSha256: closingStateCommitment.sha256,
+    complete: true,
+    feeOnce: true,
+    invalidZero: true,
+    model: WORK_AMO_V8_BLOCK_SEQUENCER_MODEL,
+    network: "livenet",
+    openingNetworkValueQ8: "1",
+    openingStatePayloadBytes: openingStateCommitment.payloadBytes,
+    openingStateSha256: openingStateCommitment.sha256,
+    payload: {
+      blockAtomic: true,
+      blockHash,
+      blockHeight,
+      closingStateCommitment,
+      closingSufficientState,
+      closingTokenState,
+      complete: true,
+      feeOnce: true,
+      invalidZero: true,
+      model: WORK_AMO_V8_BLOCK_SEQUENCER_MODEL,
+      network: "livenet",
+      openingStateCommitment,
+      openingSufficientState,
+      previousBlockHash,
+      workTokenStateModel: WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL,
+    },
+    previousBlockHash,
+    stateCommitmentModel: WORK_AMO_V5_STATE_COMMITMENT_MODEL,
+    workTokenStateModel: WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL,
+  };
+}
+
 const v8CoreDeclarationVerifier = topLevelFunctionSource(
   "exactWorkAmoV8CoreDeclarationEvidence",
 );
@@ -168,25 +267,53 @@ if (fixtureMode === "poison-exit") {
 
 async function runChecks() {
   const workerSource = readFileSync(WORKER_PATH, "utf8");
+  const invalidTransitionAuditStart = workerSource.indexOf(
+    "SELECT count(*)::integer\n" +
+      "            FROM proof_indexer.work_amo_block_transitions transition\n" +
+      "            LEFT JOIN proof_indexer.blocks block",
+  );
+  const invalidTransitionAuditEnd = workerSource.indexOf(
+    ") AS invalid_transition_count",
+    invalidTransitionAuditStart,
+  );
+  assert.ok(
+    invalidTransitionAuditStart >= 0 &&
+      invalidTransitionAuditEnd > invalidTransitionAuditStart,
+    "the historical transition audit must remain directly inspectable",
+  );
+  const invalidTransitionAudit = workerSource.slice(
+    invalidTransitionAuditStart,
+    invalidTransitionAuditEnd,
+  );
   assert.match(
-    workerSource,
+    invalidTransitionAudit,
     /previous_transition\.closing_state_sha256 <>\s*transition\.opening_state_sha256/u,
     "every post-activation transition must chain its opening state to the prior close",
   );
   assert.match(
-    workerSource,
-    /transition\.payload->'openingSufficientState'\s*IS DISTINCT FROM\s*previous_transition\.payload\s*->'closingSufficientState'/u,
-    "the complete sufficient-state payload must be continuous",
+    invalidTransitionAudit,
+    /block\.previous_block_hash <>\s*transition\.previous_block_hash/u,
+    "the transition predecessor must match the current canonical block header",
   );
   assert.match(
-    workerSource,
-    /transition\.block_height = \$2[\s\S]*transition\.previous_block_hash <> \$12/u,
+    invalidTransitionAudit,
+    /previous_transition\.closing_network_value_q8 <>\s*transition\.opening_network_value_q8[\s\S]*previous_transition\.closing_state_payload_bytes <>\s*transition\.opening_state_payload_bytes/u,
+    "the historical transition audit must retain exact scalar value and payload-byte continuity",
+  );
+  assert.doesNotMatch(
+    invalidTransitionAudit,
+    /(?:previous_)?transition\.payload/u,
+    "the historical transition audit must not detoast every payload",
+  );
+  assert.match(
+    invalidTransitionAudit,
+    /transition\.block_height = \$2[\s\S]*transition\.previous_block_hash <> \$10/u,
     "the activation transition predecessor must be the declaration block",
   );
   assert.match(
-    workerSource,
-    /transition\.work_token_state_model <> \$4[\s\S]*transition\.payload->>'workTokenStateModel'\s*IS DISTINCT FROM \$4/u,
-    "V8 replay must bind both the transition column and top-level payload token-state model",
+    invalidTransitionAudit,
+    /transition\.model <> \$3[\s\S]*transition\.work_token_state_model <> \$4[\s\S]*transition\.state_commitment_model <> \$5/u,
+    "V8 historical replay must bind the exact immutable scalar models",
   );
   assert.doesNotMatch(
     workerSource,
@@ -213,6 +340,88 @@ async function runChecks() {
     /getblockchaininfo[\s\S]*getblockhash[\s\S]*Core tip changed across the Q16 relational replay audit/u,
     "Q16 replay must remain bracketed by stable first-party Core tip evidence",
   );
+  assert.match(
+    workerSource,
+    /afterHeight > height[\s\S]*throwIfWorkerCoreTipAdvanced\([\s\S]*"exact-core-tip-read"/u,
+    "a higher Core tip must be classified only after a fresh retained-tip check",
+  );
+  assert.match(
+    workerSource,
+    /const coreTipAdvance = workerCoreTipAdvanceFromError\(error\)[\s\S]*state: "canonical-tip-deferred"[\s\S]*continue;[\s\S]*consecutiveFailures \+= 1/u,
+    "a typed monotonic tip advance must defer before generic failure accounting",
+  );
+  assert.equal(
+    (workerSource.match(/assertWorkPrecisionReplayReady\(/gu) ?? []).length,
+    3,
+    "each cycle must retain the canonical barrier and one final confirmed replay audit",
+  );
+  assert.equal(
+    (workerSource.match(/assertWorkPrecisionPendingReady\(/gu) ?? []).length,
+    2,
+    "each cycle must run one final pending replay audit",
+  );
+  assert.ok(
+    (workerSource.match(/'payload', transition\.payload/gu) ?? []).length >= 2,
+    "activation and latest transition payloads must remain fully loaded for commitment checks",
+  );
+  assert.match(
+    workerSource,
+    /validateWorkAmoV8BoundaryTransitionPayload\(activation\)[\s\S]*validateWorkAmoV8BoundaryTransitionPayload\(latest\)[\s\S]*activationBoundary\.valid === true[\s\S]*latestBoundary\.valid === true/u,
+    "worker readiness must behaviorally validate both boundary payloads",
+  );
+  const beforeTip = { blockHash: "1".repeat(64), height: 100 };
+  const afterTip = { blockHash: "2".repeat(64), height: 101 };
+  const typedAdvance = {
+    after: afterTip,
+    before: beforeTip,
+    phase: "confirmed-index-tip-lag",
+    retainedPriorTip: true,
+  };
+  const typedAdvanceError = Object.assign(new Error("tip advanced"), {
+    code: WORKER_CORE_TIP_ADVANCED_CODE,
+    coreTipAdvance: typedAdvance,
+  });
+  assert.deepEqual(
+    workerCoreTipAdvanceFromError(typedAdvanceError),
+    typedAdvance,
+    "an exact typed monotonic Core advance is neutral-classifiable",
+  );
+  assert.equal(
+    workerCoreTipAdvanceFromError(
+      Object.assign(new Error(typedAdvanceError.message), {
+        code: "UNRELATED",
+        coreTipAdvance: typedAdvance,
+      }),
+    ),
+    null,
+    "matching error prose without the exact type must remain a failure",
+  );
+  for (const after of [
+    { ...afterTip, height: beforeTip.height },
+    { ...afterTip, height: beforeTip.height - 1 },
+  ]) {
+    assert.equal(
+      workerCoreTipAdvanceFromError(
+        Object.assign(new Error("non-monotonic tip"), {
+          code: WORKER_CORE_TIP_ADVANCED_CODE,
+          coreTipAdvance: { ...typedAdvance, after },
+        }),
+      ),
+      null,
+      "same-height and lower-height tip changes must remain failures",
+    );
+  }
+  const deferredWorkPrecision = workerWorkPrecisionForCoreTipAdvance(
+    {
+      era: "q16",
+      pendingRebuild: { owner: "backfill", ready: true },
+      replay: { era: "q16", ready: true },
+    },
+    typedAdvance,
+  );
+  assert.equal(deferredWorkPrecision.replay.ready, false);
+  assert.equal(deferredWorkPrecision.replay.deferred, true);
+  assert.equal(deferredWorkPrecision.pendingRebuild.ready, false);
   assert.match(
     workerSource,
     /sourceBlockHash[\s\S]*payloadBlockHash[\s\S]*summaryBlockHash[\s\S]*canonical-summary-refresh[\s\S]*consistencyStatus === "green"/u,
@@ -759,11 +968,29 @@ async function runChecks() {
 
   const replayTipHash = "9".repeat(64);
   const replayDeclarationHash = "8".repeat(64);
-  const replayCommitment = {
-    model: "canonical-work-amo-payload-sha256-v1",
-    payloadBytes: 32,
-    sha256: "7".repeat(64),
+  const replayActivationHash = "7".repeat(64);
+  const replayActivationTransition = workPrecisionBoundaryFixture({
+    blockHash: replayActivationHash,
+    blockHeight: 101,
+    previousBlockHash: replayDeclarationHash,
+  });
+  replayActivationTransition.payload = {
+    ...replayActivationTransition.payload,
+    activationHeight: 101,
+    precisionMigrationMarkerKey:
+      "workPrecisionV2Migration:livenet",
+    precisionOpeningTokenStateCommitment:
+      replayActivationTransition.payload.openingSufficientState
+        .tokenStateCommitment,
   };
+  const replayCommitment =
+    replayActivationTransition.payload
+      .precisionOpeningTokenStateCommitment;
+  const replayLatestTransition = workPrecisionBoundaryFixture({
+    blockHash: replayTipHash,
+    blockHeight: 102,
+    previousBlockHash: replayActivationHash,
+  });
   const replaySnapshot = {
     consistencyOk: true,
     consistencyStatus: "green",
@@ -785,37 +1012,12 @@ async function runChecks() {
   };
   const replayEnvelope = {
     activationHeight: 101,
-    activationTransition: {
-      blockHeight: 101,
-      model: "canonical-work-amo-full-position-block-sequencer-v4",
-      payload: {
-        activationHeight: 101,
-        openingSufficientState: {
-          tokenStateCommitment: replayCommitment,
-        },
-        precisionMigrationMarkerKey:
-          "workPrecisionV2Migration:livenet",
-        precisionOpeningTokenStateCommitment: replayCommitment,
-      },
-      previousBlockHash: replayDeclarationHash,
-      stateCommitmentModel:
-        "canonical-work-amo-sufficient-state-sha256-v1",
-      workTokenStateModel:
-        "canonical-work-token-state-subatoms-v3",
-    },
+    activationTransition: replayActivationTransition,
     coreTip: replayCoreTip,
     declarationBlockHash: replayDeclarationHash,
     invalidPrecisionEventCount: 0,
     invalidTransitionCount: 0,
-    latestTransition: {
-      blockHash: replayTipHash,
-      blockHeight: 102,
-      model: "canonical-work-amo-full-position-block-sequencer-v4",
-      stateCommitmentModel:
-        "canonical-work-amo-sufficient-state-sha256-v1",
-      workTokenStateModel:
-        "canonical-work-token-state-subatoms-v3",
-    },
+    latestTransition: replayLatestTransition,
     markerOpeningCommitment: replayCommitment,
     snapshot: replaySnapshot,
     tipHash: replayTipHash,
@@ -852,6 +1054,24 @@ async function runChecks() {
       activationTransition: {
         ...replayEnvelope.activationTransition,
         previousBlockHash: "6".repeat(64),
+      },
+    },
+    {
+      activationTransition: {
+        ...replayEnvelope.activationTransition,
+        payload: {
+          ...replayEnvelope.activationTransition.payload,
+          previousBlockHash: "6".repeat(64),
+        },
+      },
+    },
+    {
+      latestTransition: {
+        ...replayEnvelope.latestTransition,
+        payload: {
+          ...replayEnvelope.latestTransition.payload,
+          model: "tampered-boundary-model",
+        },
       },
     },
     {

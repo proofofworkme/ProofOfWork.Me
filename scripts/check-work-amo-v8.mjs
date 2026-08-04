@@ -13,6 +13,7 @@ import {
   WORK_AMO_V8_PRECISION_MIGRATION_MODEL,
   WORK_AMO_V8_PRECISION_MODEL,
   WORK_AMO_V8_SUBATOMS_PER_WORK,
+  WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL,
   WORK_AMO_V8_TRANSFER_VERSION,
   WORK_AMO_V8_UNIT_MODEL,
   calculateWorkAmoV8UnitTerms,
@@ -20,6 +21,7 @@ import {
   deriveWorkAmoV8FrozenTerms,
   replayWorkAmoV8CanonicalBlock,
   validateWorkAmoV8DeclarationEvidence,
+  validateWorkAmoV8BoundaryTransitionPayload,
   validateWorkAmoV8FrozenTerms,
   validateWorkAmoV8ListingCutover,
   validateWorkAmoV8SealOrBuyTerms,
@@ -32,10 +34,15 @@ import {
   workAmoV8TransferEraDecision,
 } from "../server/work-amo-v8.mjs";
 import {
+  WORK_AMO_V5_BASE_STATE_FIELDS,
   WORK_AMO_V5_DECLARATION_AUTHORITY_SCRIPT_PUBKEY,
   WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS,
   WORK_AMO_V5_MAX_SUPPLY,
+  WORK_AMO_V5_NETWORK_ACCUMULATOR_MODEL,
   WORK_AMO_V5_NETWORK_VALUE_Q8_SCALE,
+  WORK_AMO_V5_PAYLOAD_COMMITMENT_MODEL,
+  WORK_AMO_V5_STATE_COMMITMENT_MODEL,
+  workAmoV5CanonicalStateCommitment,
 } from "../server/work-amo-v5.mjs";
 import {
   WORK_AMO_V6_AUTH_VERSION,
@@ -71,6 +78,195 @@ const formulaDenominator =
   WORK_AMO_V5_MAX_SUPPLY *
   WORK_AMO_V8_SUBATOMS_PER_WORK *
   WORK_AMO_V5_NETWORK_VALUE_Q8_SCALE;
+
+function workAmoV8BoundaryFixture({ blockHash, blockHeight, previousBlockHash }) {
+  const closingTokenState = {
+    confirmedSupplySubatoms: "0",
+    holders: [],
+    listings: [],
+  };
+  const tokenStateCommitment =
+    workAmoV8CanonicalTokenStateCommitment(closingTokenState);
+  const commonState = {
+    baseState: Object.fromEntries(
+      WORK_AMO_V5_BASE_STATE_FIELDS.map((field) => [field, "0"]),
+    ),
+    creditFixedQ8: "1",
+    creditMovementFrozenValueQ8: "0",
+    genericTokenStateCommitment: {
+      model: WORK_AMO_V5_PAYLOAD_COMMITMENT_MODEL,
+      payloadBytes: 1,
+      sha256: "51".repeat(32),
+    },
+    idStateCommitment: {
+      model: WORK_AMO_V5_PAYLOAD_COMMITMENT_MODEL,
+      payloadBytes: 1,
+      sha256: "52".repeat(32),
+    },
+    model: WORK_AMO_V5_NETWORK_ACCUMULATOR_MODEL,
+    movements: [],
+    network: "livenet",
+    networkValueQ8: "1",
+    quoteHead: null,
+    tokenStateCommitment,
+  };
+  const openingSufficientState = {
+    ...structuredClone(commonState),
+    throughBlockHash: previousBlockHash,
+    throughBlockHeight: blockHeight - 1,
+  };
+  const closingSufficientState = {
+    ...structuredClone(commonState),
+    throughBlockHash: blockHash,
+    throughBlockHeight: blockHeight,
+  };
+  const openingStateCommitment =
+    workAmoV5CanonicalStateCommitment(openingSufficientState);
+  const closingStateCommitment =
+    workAmoV5CanonicalStateCommitment(closingSufficientState);
+  return {
+    blockAtomic: true,
+    blockHash,
+    blockHeight,
+    closingNetworkValueQ8: "1",
+    closingStatePayloadBytes: closingStateCommitment.payloadBytes,
+    closingStateSha256: closingStateCommitment.sha256,
+    complete: true,
+    feeOnce: true,
+    invalidZero: true,
+    model: WORK_AMO_V8_BLOCK_SEQUENCER_MODEL,
+    network: "livenet",
+    openingNetworkValueQ8: "1",
+    openingStatePayloadBytes: openingStateCommitment.payloadBytes,
+    openingStateSha256: openingStateCommitment.sha256,
+    payload: {
+      blockAtomic: true,
+      blockHash,
+      blockHeight,
+      closingStateCommitment,
+      closingSufficientState,
+      closingTokenState,
+      complete: true,
+      feeOnce: true,
+      invalidZero: true,
+      model: WORK_AMO_V8_BLOCK_SEQUENCER_MODEL,
+      network: "livenet",
+      openingStateCommitment,
+      openingSufficientState,
+      previousBlockHash,
+      workTokenStateModel: WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL,
+    },
+    previousBlockHash,
+    stateCommitmentModel: WORK_AMO_V5_STATE_COMMITMENT_MODEL,
+    workTokenStateModel: WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL,
+  };
+}
+
+const activationBoundaryFixture = workAmoV8BoundaryFixture({
+  blockHash: "61".repeat(32),
+  blockHeight: activationHeight,
+  previousBlockHash: declarationBlockHash,
+});
+const latestBoundaryFixture = workAmoV8BoundaryFixture({
+  blockHash: "62".repeat(32),
+  blockHeight: activationHeight + 1,
+  previousBlockHash: activationBoundaryFixture.blockHash,
+});
+for (const [label, fixture] of [
+  ["activation", activationBoundaryFixture],
+  ["latest", latestBoundaryFixture],
+]) {
+  assert.equal(
+    validateWorkAmoV8BoundaryTransitionPayload(fixture).valid,
+    true,
+    `${label} boundary payload must be fully valid`,
+  );
+  const payloadMutations = [
+    ["model", "broken-model"],
+    ["network", "testnet"],
+    ["blockHeight", fixture.blockHeight + 1],
+    ["blockHash", "63".repeat(32)],
+    ["previousBlockHash", "64".repeat(32)],
+    ["blockAtomic", false],
+    ["feeOnce", false],
+    ["invalidZero", false],
+    ["complete", false],
+    ["workTokenStateModel", "broken-token-state-model"],
+  ];
+  for (const [field, value] of payloadMutations) {
+    const changed = structuredClone(fixture);
+    changed.payload[field] = value;
+    assert.equal(
+      validateWorkAmoV8BoundaryTransitionPayload(changed).valid,
+      false,
+      `${label} boundary payload tamper must fail: ${field}`,
+    );
+  }
+  for (const [field, value] of [
+    ["stateCommitmentModel", "broken-state-commitment-model"],
+    ["workTokenStateModel", "broken-token-state-model"],
+    ["openingNetworkValueQ8", "2"],
+    ["closingNetworkValueQ8", "2"],
+    ["openingStateSha256", "67".repeat(32)],
+    ["closingStateSha256", "68".repeat(32)],
+    ["openingStatePayloadBytes", fixture.openingStatePayloadBytes + 1],
+    ["closingStatePayloadBytes", fixture.closingStatePayloadBytes + 1],
+  ]) {
+    const changed = structuredClone(fixture);
+    changed[field] = value;
+    assert.equal(
+      validateWorkAmoV8BoundaryTransitionPayload(changed).valid,
+      false,
+      `${label} boundary scalar tamper must fail: ${field}`,
+    );
+  }
+  for (const side of ["opening", "closing"]) {
+    const stateField = `${side}SufficientState`;
+    const commitmentField = `${side}StateCommitment`;
+    for (const [field, value] of [
+      ["model", "broken-state-model"],
+      ["throughBlockHeight", fixture.blockHeight + 2],
+      ["throughBlockHash", "65".repeat(32)],
+      ["networkValueQ8", "2"],
+    ]) {
+      const changed = structuredClone(fixture);
+      changed.payload[stateField][field] = value;
+      assert.equal(
+        validateWorkAmoV8BoundaryTransitionPayload(changed).valid,
+        false,
+        `${label} ${side} state tamper must fail: ${field}`,
+      );
+    }
+    const extraStateField = structuredClone(fixture);
+    extraStateField.payload[stateField].unexpected = true;
+    assert.equal(
+      validateWorkAmoV8BoundaryTransitionPayload(extraStateField).valid,
+      false,
+      `${label} ${side} state extra field must fail`,
+    );
+    for (const [field, value] of [
+      ["model", "broken-commitment-model"],
+      ["sha256", "66".repeat(32)],
+      ["payloadBytes", fixture.payload[commitmentField].payloadBytes + 1],
+    ]) {
+      const changed = structuredClone(fixture);
+      changed.payload[commitmentField][field] = value;
+      assert.equal(
+        validateWorkAmoV8BoundaryTransitionPayload(changed).valid,
+        false,
+        `${label} ${side} commitment tamper must fail: ${field}`,
+      );
+    }
+  }
+  const tokenStateModelTamper = structuredClone(fixture);
+  tokenStateModelTamper.payload.closingTokenState.model =
+    "broken-token-state-model";
+  assert.equal(
+    validateWorkAmoV8BoundaryTransitionPayload(tokenStateModelTamper).valid,
+    false,
+    `${label} closing token-state model tamper must fail`,
+  );
+}
 
 assert.equal(WORK_AMO_V8_AUTH_VERSION, "pwt-sale-v8");
 assert.equal(

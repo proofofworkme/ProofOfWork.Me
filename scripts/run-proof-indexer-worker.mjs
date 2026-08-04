@@ -20,7 +20,6 @@ import {
   WORK_AMO_V5_DECLARATION_AUTHORITY_SCRIPT_PUBKEY,
   WORK_AMO_V5_DECLARATION_MIN_PAYMENT_SATS,
   WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS,
-  WORK_AMO_V5_NETWORK_ACCUMULATOR_MODEL,
   WORK_AMO_V5_PAYLOAD_COMMITMENT_MODEL,
   WORK_AMO_V5_STATE_COMMITMENT_MODEL,
   workAmoV5CanonicalPayloadCommitment,
@@ -44,6 +43,7 @@ import {
   WORK_AMO_V8_MINT_AMOUNT_SUBATOMS,
   WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL,
   WORK_AMO_V8_TRANSFER_VERSION,
+  validateWorkAmoV8BoundaryTransitionPayload,
   workAmoV8CanonicalTokenStateCommitment,
 } from "../server/work-amo-v8.mjs";
 import {
@@ -349,6 +349,88 @@ function objectRecord(value) {
 
 function normalizedLowerText(value) {
   return String(value ?? "").trim().toLowerCase();
+}
+
+export const WORKER_CORE_TIP_ADVANCED_CODE =
+  "POW_INDEX_WORKER_CORE_TIP_ADVANCED";
+
+function normalizedWorkerCoreTip(value) {
+  const height = Number(value?.height);
+  const blockHash = normalizedLowerText(value?.blockHash);
+  return Number.isSafeInteger(height) &&
+      height > 0 &&
+      /^[0-9a-f]{64}$/u.test(blockHash)
+    ? { blockHash, height }
+    : null;
+}
+
+function workerCoreTipAdvancedError(beforeValue, afterValue, phase) {
+  const before = normalizedWorkerCoreTip(beforeValue);
+  const after = normalizedWorkerCoreTip(afterValue);
+  if (!before || !after || after.height <= before.height) {
+    throw new TypeError("A monotonic Core tip advance is required");
+  }
+  const coreTipAdvance = {
+    after,
+    before,
+    phase: String(phase ?? "").trim(),
+    retainedPriorTip: true,
+  };
+  const error = new Error(
+    `Proof index worker deferred after Core advanced from ${before.height}:${before.blockHash} to ${after.height}:${after.blockHash}.`,
+  );
+  error.code = WORKER_CORE_TIP_ADVANCED_CODE;
+  error.coreTipAdvance = coreTipAdvance;
+  return error;
+}
+
+export function workerCoreTipAdvanceFromError(error) {
+  if (error?.code !== WORKER_CORE_TIP_ADVANCED_CODE) {
+    return null;
+  }
+  const value = objectRecord(error?.coreTipAdvance);
+  const before = normalizedWorkerCoreTip(value.before);
+  const after = normalizedWorkerCoreTip(value.after);
+  const phase = String(value.phase ?? "").trim();
+  return before &&
+      after &&
+      after.height > before.height &&
+      phase &&
+      value.retainedPriorTip === true
+    ? {
+        after,
+        before,
+        phase,
+        retainedPriorTip: true,
+      }
+    : null;
+}
+
+export function workerWorkPrecisionForCoreTipAdvance(
+  value,
+  coreTipAdvance,
+) {
+  const workPrecision = objectRecord(value);
+  const replay = objectRecord(workPrecision.replay);
+  const pendingRebuild = objectRecord(workPrecision.pendingRebuild);
+  return {
+    ...workPrecision,
+    ...(Object.keys(pendingRebuild).length > 0
+      ? {
+          pendingRebuild: {
+            ...pendingRebuild,
+            ready: false,
+          },
+        }
+      : {}),
+    replay: {
+      ...replay,
+      coreTipAdvance,
+      deferred: true,
+      deferredReason: "core-tip-advanced",
+      ready: false,
+    },
+  };
 }
 
 function exactObjectKeys(value, expectedKeys) {
@@ -1730,6 +1812,10 @@ export function workerWorkPrecisionConfirmedReplayEnvelopeReady({
   const activationPayload = objectRecord(activation.payload);
   const latest = objectRecord(latestTransition);
   const latestPayload = objectRecord(latest.payload);
+  const activationBoundary =
+    validateWorkAmoV8BoundaryTransitionPayload(activation);
+  const latestBoundary =
+    validateWorkAmoV8BoundaryTransitionPayload(latest);
   const openingCommitment = objectRecord(
     activationPayload.precisionOpeningTokenStateCommitment,
   );
@@ -1747,6 +1833,8 @@ export function workerWorkPrecisionConfirmedReplayEnvelopeReady({
       : -1;
   return Boolean(
     expectedTransitionCount > 0 &&
+      activationBoundary.valid === true &&
+      latestBoundary.valid === true &&
       /^[0-9a-f]{64}$/u.test(normalizedTipHash) &&
       /^[0-9a-f]{64}$/u.test(normalizedDeclarationBlockHash) &&
       Number(activation.blockHeight) === Number(activationHeight) &&
@@ -1841,6 +1929,24 @@ async function workerBitcoinCoreRpc(method, params = []) {
   }
 }
 
+async function throwIfWorkerCoreTipAdvanced(
+  beforeValue,
+  afterValue,
+  phase,
+) {
+  const before = normalizedWorkerCoreTip(beforeValue);
+  const after = normalizedWorkerCoreTip(afterValue);
+  if (!before || !after || after.height <= before.height) {
+    return;
+  }
+  const retainedHash = normalizedLowerText(
+    await workerBitcoinCoreRpc("getblockhash", [before.height]),
+  );
+  if (retainedHash === before.blockHash) {
+    throw workerCoreTipAdvancedError(before, after, phase);
+  }
+}
+
 async function readExactWorkerCoreTip() {
   const before = await workerBitcoinCoreRpc(
     "getblockchaininfo",
@@ -1867,6 +1973,22 @@ async function readExactWorkerCoreTip() {
   const afterHeight = Number(after?.blocks);
   const afterHeaders = Number(after?.headers);
   const afterHash = normalizedLowerText(after?.bestblockhash);
+  const afterTip = {
+    blockHash: afterHash,
+    height: afterHeight,
+  };
+  if (
+    afterHeight > height &&
+    afterHeaders === afterHeight &&
+    /^[0-9a-f]{64}$/u.test(afterHash) &&
+    heightHash === blockHash
+  ) {
+    await throwIfWorkerCoreTipAdvanced(
+      { blockHash, height },
+      afterTip,
+      "exact-core-tip-read",
+    );
+  }
   if (
     afterHeight !== height ||
     afterHeaders !== height ||
@@ -2624,6 +2746,7 @@ async function assertWorkPrecisionReplayReady(pool, precision) {
               ON previous_transition.network = transition.network
              AND previous_transition.block_height =
                   transition.block_height - 1
+             AND previous_transition.complete = true
             WHERE transition.network = $1
               AND transition.block_height >= $2
               AND (
@@ -2635,87 +2758,12 @@ async function assertWorkPrecisionReplayReady(pool, precision) {
                 OR transition.fee_once IS DISTINCT FROM true
                 OR transition.invalid_zero IS DISTINCT FROM true
                 OR block.block_hash IS NULL
+                OR block.previous_block_hash <>
+                  transition.previous_block_hash
                 OR previous_block.block_hash IS NULL
-                OR transition.payload->>'model'
-                  IS DISTINCT FROM $3
-                OR transition.payload->>'network'
-                  IS DISTINCT FROM $1
-                OR transition.payload->>'blockHeight'
-                  IS DISTINCT FROM
-                  transition.block_height::text
-                OR lower(COALESCE(
-                  transition.payload->>'blockHash',
-                  ''
-                )) <> transition.block_hash
-                OR lower(COALESCE(
-                  transition.payload->>'previousBlockHash',
-                  ''
-                )) <> transition.previous_block_hash
-                OR transition.payload->>'blockAtomic'
-                  IS DISTINCT FROM 'true'
-                OR transition.payload->>'feeOnce'
-                  IS DISTINCT FROM 'true'
-                OR transition.payload->>'invalidZero'
-                  IS DISTINCT FROM 'true'
-                OR transition.payload->>'complete'
-                  IS DISTINCT FROM 'true'
-                OR transition.payload->'openingSufficientState'
-                     ->>'model' IS DISTINCT FROM $6
-                OR transition.payload->'closingSufficientState'
-                     ->>'model' IS DISTINCT FROM $6
-                OR transition.payload->'openingSufficientState'
-                     ->>'throughBlockHeight' IS DISTINCT FROM
-                  (transition.block_height - 1)::text
-                OR lower(COALESCE(
-                  transition.payload->'openingSufficientState'
-                    ->>'throughBlockHash',
-                  ''
-                )) <> transition.previous_block_hash
-                OR transition.payload->'closingSufficientState'
-                     ->>'throughBlockHeight' IS DISTINCT FROM
-                  transition.block_height::text
-                OR lower(COALESCE(
-                  transition.payload->'closingSufficientState'
-                    ->>'throughBlockHash',
-                  ''
-                )) <> transition.block_hash
-                OR transition.payload->'openingSufficientState'
-                     ->>'networkValueQ8' IS DISTINCT FROM
-                  transition.opening_network_value_q8::text
-                OR transition.payload->'closingSufficientState'
-                     ->>'networkValueQ8' IS DISTINCT FROM
-                  transition.closing_network_value_q8::text
-                OR transition.payload->'openingStateCommitment'
-                     ->>'model' IS DISTINCT FROM $5
-                OR lower(COALESCE(
-                  transition.payload->'openingStateCommitment'
-                    ->>'sha256',
-                  ''
-                )) <> transition.opening_state_sha256
-                OR transition.payload->'openingStateCommitment'
-                     ->>'payloadBytes' IS DISTINCT FROM
-                  transition.opening_state_payload_bytes::text
-                OR transition.payload->'closingStateCommitment'
-                     ->>'model' IS DISTINCT FROM $5
-                OR lower(COALESCE(
-                  transition.payload->'closingStateCommitment'
-                    ->>'sha256',
-                  ''
-                )) <> transition.closing_state_sha256
-                OR transition.payload->'closingStateCommitment'
-                     ->>'payloadBytes' IS DISTINCT FROM
-                  transition.closing_state_payload_bytes::text
-                OR transition.payload->'openingSufficientState'
-                     ->'tokenStateCommitment'->>'model'
-                  IS DISTINCT FROM $7
-                OR transition.payload->'closingSufficientState'
-                     ->'tokenStateCommitment'->>'model'
-                  IS DISTINCT FROM $7
-                OR transition.payload->>'workTokenStateModel'
-                  IS DISTINCT FROM $4
                 OR (
                   transition.block_height = $2
-                  AND transition.previous_block_hash <> $12
+                  AND transition.previous_block_hash <> $10
                 )
                 OR (
                   transition.block_height > $2
@@ -2729,19 +2777,32 @@ async function assertWorkPrecisionReplayReady(pool, precision) {
                       transition.opening_state_sha256
                     OR previous_transition.closing_state_payload_bytes <>
                       transition.opening_state_payload_bytes
-                    OR transition.payload->'openingSufficientState'
-                      IS DISTINCT FROM
-                      previous_transition.payload
-                        ->'closingSufficientState'
                   )
                 )
               )
           ) AS invalid_transition_count,
           (
             SELECT jsonb_build_object(
+              'blockAtomic', transition.block_atomic,
               'blockHeight', transition.block_height,
               'blockHash', transition.block_hash,
+              'closingNetworkValueQ8',
+                transition.closing_network_value_q8::text,
+              'closingStatePayloadBytes',
+                transition.closing_state_payload_bytes,
+              'closingStateSha256',
+                transition.closing_state_sha256,
+              'complete', transition.complete,
+              'feeOnce', transition.fee_once,
+              'invalidZero', transition.invalid_zero,
               'model', transition.model,
+              'network', transition.network,
+              'openingNetworkValueQ8',
+                transition.opening_network_value_q8::text,
+              'openingStatePayloadBytes',
+                transition.opening_state_payload_bytes,
+              'openingStateSha256',
+                transition.opening_state_sha256,
               'payload', transition.payload,
               'previousBlockHash', transition.previous_block_hash,
               'stateCommitmentModel',
@@ -2756,9 +2817,26 @@ async function assertWorkPrecisionReplayReady(pool, precision) {
           ) AS latest_transition,
           (
             SELECT jsonb_build_object(
+              'blockAtomic', transition.block_atomic,
               'blockHeight', transition.block_height,
               'blockHash', transition.block_hash,
+              'closingNetworkValueQ8',
+                transition.closing_network_value_q8::text,
+              'closingStatePayloadBytes',
+                transition.closing_state_payload_bytes,
+              'closingStateSha256',
+                transition.closing_state_sha256,
+              'complete', transition.complete,
+              'feeOnce', transition.fee_once,
+              'invalidZero', transition.invalid_zero,
               'model', transition.model,
+              'network', transition.network,
+              'openingNetworkValueQ8',
+                transition.opening_network_value_q8::text,
+              'openingStatePayloadBytes',
+                transition.opening_state_payload_bytes,
+              'openingStateSha256',
+                transition.opening_state_sha256,
               'payload', transition.payload,
               'previousBlockHash', transition.previous_block_hash,
               'stateCommitmentModel',
@@ -2804,10 +2882,10 @@ async function assertWorkPrecisionReplayReady(pool, precision) {
             )
             FROM proof_indexer.ledger_snapshots snapshot
             WHERE snapshot.network = $1
-              AND snapshot.generated_at >= $8::timestamptz
+              AND snapshot.generated_at >= $6::timestamptz
               AND snapshot.payload ? 'tokenStatePayloads'
-              AND snapshot.payload->'tokenStatePayloads' ? $9
-              AND snapshot.payload->>'workAmountStorageModel' = $11
+              AND snapshot.payload->'tokenStatePayloads' ? $7
+              AND snapshot.payload->>'workAmountStorageModel' = $9
             ORDER BY snapshot.indexed_through_block DESC NULLS LAST,
               snapshot.generated_at DESC
             LIMIT 1
@@ -2824,7 +2902,7 @@ async function assertWorkPrecisionReplayReady(pool, precision) {
                 event.payload->'saleAuthorization'->>'tokenId',
                 event.payload->'listingAuthorization'->>'tokenId',
                 ''
-              )) = $9
+              )) = $7
               AND (
                 (
                   event.block_height < $2
@@ -2834,7 +2912,7 @@ async function assertWorkPrecisionReplayReady(pool, precision) {
                       event.payload->'saleAuthorization'->>'version',
                       event.payload->'listingAuthorization'->>'version',
                       ''
-                    )) = $10
+                    )) = $8
                   )
                 )
                 OR (
@@ -2848,7 +2926,7 @@ async function assertWorkPrecisionReplayReady(pool, precision) {
                         event.payload->'saleAuthorization'->>'version',
                         event.payload->'listingAuthorization'->>'version',
                         ''
-                      )) <> $10
+                      )) <> $8
                     )
                   )
                 )
@@ -2861,8 +2939,6 @@ async function assertWorkPrecisionReplayReady(pool, precision) {
         WORK_AMO_V8_BLOCK_SEQUENCER_MODEL,
         WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL,
         WORK_AMO_V5_STATE_COMMITMENT_MODEL,
-        WORK_AMO_V5_NETWORK_ACCUMULATOR_MODEL,
-        WORK_AMO_V5_PAYLOAD_COMMITMENT_MODEL,
         precision.markerCompletedAt,
         WORK_TOKEN_ID,
         WORK_AMO_V8_AUTH_VERSION,
@@ -2918,6 +2994,11 @@ async function assertWorkPrecisionReplayReady(pool, precision) {
     coreTipBefore.height !== coreTipAfter.height ||
     coreTipBefore.blockHash !== coreTipAfter.blockHash
   ) {
+    await throwIfWorkerCoreTipAdvanced(
+      coreTipBefore,
+      coreTipAfter,
+      "confirmed-relational-replay-audit",
+    );
     throw new Error(
       "Proof index worker Core tip changed across the Q16 relational replay audit.",
     );
@@ -2925,6 +3006,11 @@ async function assertWorkPrecisionReplayReady(pool, precision) {
   const row = stateResult.rows[0] ?? {};
   const tipHeight = Number(row.tip_height);
   const tipHash = normalizedLowerText(row.tip_hash);
+  await throwIfWorkerCoreTipAdvanced(
+    { blockHash: tipHash, height: tipHeight },
+    coreTipAfter,
+    "confirmed-index-tip-lag",
+  );
   const latest = objectRecord(row.latest_transition);
   const activation = objectRecord(row.activation_transition);
   const latestPayload = objectRecord(latest.payload);
@@ -3228,6 +3314,21 @@ async function assertWorkPrecisionPendingReady(
   const stableCore =
     coreTipBefore.height === coreTipAfter.height &&
     coreTipBefore.blockHash === coreTipAfter.blockHash;
+  if (!stableCore) {
+    await throwIfWorkerCoreTipAdvanced(
+      coreTipBefore,
+      coreTipAfter,
+      "pending-relational-replay-audit",
+    );
+  }
+  await throwIfWorkerCoreTipAdvanced(
+    {
+      blockHash: confirmedReplay.tipHash,
+      height: confirmedReplay.tipHeight,
+    },
+    coreTipAfter,
+    "pending-confirmed-tip-lag",
+  );
   const mempoolBeforeTxids = new Set(mempoolBefore.txids);
   const mempoolAfterTxids = new Set(mempoolAfter.txids);
   const stableMempool = membership.expectedTxids.every(
@@ -5036,30 +5137,6 @@ async function runCycle(pool, lastSuccess, runtime) {
   if (runtime.stopping) {
     throw workerStoppingError();
   }
-  workPrecisionConfirmedReplay = await assertWorkPrecisionReplayReady(
-    pool,
-    workPrecision,
-  );
-  workPrecisionReplay =
-    workPrecision.era === WORK_PRECISION_Q16_ERA
-      ? await assertWorkPrecisionPendingReady(
-          pool,
-          workPrecision,
-          workPrecisionConfirmedReplay,
-        )
-      : workPrecisionConfirmedReplay;
-  runtime.workPrecision = {
-    ...runtime.workPrecision,
-    pendingRebuild:
-      workPrecision.era === WORK_PRECISION_Q16_ERA
-        ? {
-            model: WORK_AMO_V8_PENDING_REBUILD_MODEL,
-            owner: "backfill",
-            ready: workPrecisionReplay.ready === true,
-          }
-        : runtime.workPrecision.pendingRebuild,
-    replay: workPrecisionReplay,
-  };
 
   const nowMs = Date.now();
   const runParityNow =
@@ -5248,6 +5325,46 @@ export async function runWorkerMain() {
           error?.code === "POW_INDEX_WORKER_STOPPING"
         ) {
           break;
+        }
+        const coreTipAdvance = workerCoreTipAdvanceFromError(error);
+        if (coreTipAdvance) {
+          const nowMs = Date.now();
+          const retryDelayMs = finitePositiveInteger(INTERVAL_MS, 30_000);
+          const retrying = !ONCE && !runtime.stopping;
+          runtime.workPrecision = workerWorkPrecisionForCoreTipAdvance(
+            runtime.workPrecision,
+            coreTipAdvance,
+          );
+          const deferredAt = new Date(nowMs).toISOString();
+          const value = {
+            apiBase: API_BASE,
+            consecutiveFailures,
+            coreTipAdvance,
+            deferredAt,
+            error: cappedChildError(error?.message ?? error),
+            lastSuccess,
+            lastSuccessAt: lastSuccess?.finishedAt ?? null,
+            maxConsecutiveFailures: MAX_CONSECUTIVE_FAILURES,
+            network: runtime.network,
+            nextRetryAt: retrying
+              ? new Date(nowMs + retryDelayMs).toISOString()
+              : null,
+            noProgress: runtime.noProgress,
+            ok: false,
+            retryDelayMs,
+            retrying,
+            state: "canonical-tip-deferred",
+            workPrecision: runtime.workPrecision,
+          };
+          console.error(
+            JSON.stringify({ phase: "worker-cycle", ...value }),
+          );
+          await writeWorkerMeta(pool, value);
+          if (ONCE) {
+            throw error;
+          }
+          await workerSleep(runtime, retryDelayMs);
+          continue;
         }
         consecutiveFailures += 1;
         const nowMs = Date.now();

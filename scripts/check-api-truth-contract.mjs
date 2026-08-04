@@ -22,12 +22,16 @@ import {
   configuredWorkPrecisionV2Pins,
 } from "./migrate-work-precision-v2.mjs";
 import {
+  WORK_AMO_V5_BASE_STATE_FIELDS,
+  WORK_AMO_V5_NETWORK_ACCUMULATOR_MODEL,
   WORK_AMO_V5_PAYLOAD_COMMITMENT_MODEL,
   WORK_AMO_V5_STATE_COMMITMENT_MODEL,
+  workAmoV5CanonicalStateCommitment,
 } from "../server/work-amo-v5.mjs";
 import {
   WORK_AMO_V8_BLOCK_SEQUENCER_MODEL,
   WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL,
+  workAmoV8CanonicalTokenStateCommitment,
 } from "../server/work-amo-v8.mjs";
 import {
   WORK_ATOMIC_PROJECTION_MODEL,
@@ -163,11 +167,108 @@ const workPrecisionV2PinsReject = (env) => {
 };
 const workerFixtureDeclarationHash = "d".repeat(64);
 const workerFixtureTipHash = "e".repeat(64);
-const workerFixtureOpeningCommitment = {
-  model: WORK_AMO_V5_PAYLOAD_COMMITMENT_MODEL,
-  payloadBytes: 1,
-  sha256: "f".repeat(64),
+function apiTruthBoundaryFixture({ blockHash, blockHeight, previousBlockHash }) {
+  const closingTokenState = {
+    confirmedSupplySubatoms: "0",
+    holders: [],
+    listings: [],
+  };
+  const commonState = {
+    baseState: Object.fromEntries(
+      WORK_AMO_V5_BASE_STATE_FIELDS.map((field) => [field, "0"]),
+    ),
+    creditFixedQ8: "1",
+    creditMovementFrozenValueQ8: "0",
+    genericTokenStateCommitment: {
+      model: WORK_AMO_V5_PAYLOAD_COMMITMENT_MODEL,
+      payloadBytes: 1,
+      sha256: "41".repeat(32),
+    },
+    idStateCommitment: {
+      model: WORK_AMO_V5_PAYLOAD_COMMITMENT_MODEL,
+      payloadBytes: 1,
+      sha256: "42".repeat(32),
+    },
+    model: WORK_AMO_V5_NETWORK_ACCUMULATOR_MODEL,
+    movements: [],
+    network: "livenet",
+    networkValueQ8: "1",
+    quoteHead: null,
+    tokenStateCommitment:
+      workAmoV8CanonicalTokenStateCommitment(closingTokenState),
+  };
+  const openingSufficientState = {
+    ...structuredClone(commonState),
+    throughBlockHash: previousBlockHash,
+    throughBlockHeight: blockHeight - 1,
+  };
+  const closingSufficientState = {
+    ...structuredClone(commonState),
+    throughBlockHash: blockHash,
+    throughBlockHeight: blockHeight,
+  };
+  const openingStateCommitment =
+    workAmoV5CanonicalStateCommitment(openingSufficientState);
+  const closingStateCommitment =
+    workAmoV5CanonicalStateCommitment(closingSufficientState);
+  return {
+    blockAtomic: true,
+    blockHash,
+    blockHeight,
+    closingNetworkValueQ8: "1",
+    closingStatePayloadBytes: closingStateCommitment.payloadBytes,
+    closingStateSha256: closingStateCommitment.sha256,
+    complete: true,
+    feeOnce: true,
+    invalidZero: true,
+    model: WORK_AMO_V8_BLOCK_SEQUENCER_MODEL,
+    network: "livenet",
+    openingNetworkValueQ8: "1",
+    openingStatePayloadBytes: openingStateCommitment.payloadBytes,
+    openingStateSha256: openingStateCommitment.sha256,
+    payload: {
+      blockAtomic: true,
+      blockHash,
+      blockHeight,
+      closingStateCommitment,
+      closingSufficientState,
+      closingTokenState,
+      complete: true,
+      feeOnce: true,
+      invalidZero: true,
+      model: WORK_AMO_V8_BLOCK_SEQUENCER_MODEL,
+      network: "livenet",
+      openingStateCommitment,
+      openingSufficientState,
+      previousBlockHash,
+      workTokenStateModel: WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL,
+    },
+    previousBlockHash,
+    stateCommitmentModel: WORK_AMO_V5_STATE_COMMITMENT_MODEL,
+    workTokenStateModel: WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL,
+  };
+}
+const workerFixtureActivationTransition = apiTruthBoundaryFixture({
+  blockHash: "c".repeat(64),
+  blockHeight: 101,
+  previousBlockHash: workerFixtureDeclarationHash,
+});
+workerFixtureActivationTransition.payload = {
+  ...workerFixtureActivationTransition.payload,
+  activationHeight: 101,
+  precisionMigrationMarkerKey: WORK_PRECISION_V2_MIGRATION_META_KEY,
+  precisionOpeningTokenStateCommitment:
+    workerFixtureActivationTransition.payload.openingSufficientState
+      .tokenStateCommitment,
 };
+const workerFixtureOpeningCommitment =
+  workerFixtureActivationTransition.payload
+    .precisionOpeningTokenStateCommitment;
+const workerFixtureLatestTransition = apiTruthBoundaryFixture({
+  blockHash: workerFixtureTipHash,
+  blockHeight: 102,
+  previousBlockHash: workerFixtureActivationTransition.blockHash,
+});
 const workerFixtureSnapshot = {
   consistencyOk: true,
   consistencyStatus: "green",
@@ -185,24 +286,7 @@ const workerFixtureSnapshot = {
 };
 const workerFixtureReplayEnvelope = {
   activationHeight: 101,
-  activationTransition: {
-    blockHash: "c".repeat(64),
-    blockHeight: 101,
-    model: WORK_AMO_V8_BLOCK_SEQUENCER_MODEL,
-    payload: {
-      activationHeight: 101,
-      openingSufficientState: {
-        tokenStateCommitment: workerFixtureOpeningCommitment,
-      },
-      precisionMigrationMarkerKey:
-        WORK_PRECISION_V2_MIGRATION_META_KEY,
-      precisionOpeningTokenStateCommitment:
-        workerFixtureOpeningCommitment,
-    },
-    previousBlockHash: workerFixtureDeclarationHash,
-    stateCommitmentModel: WORK_AMO_V5_STATE_COMMITMENT_MODEL,
-    workTokenStateModel: WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL,
-  },
+  activationTransition: workerFixtureActivationTransition,
   coreTip: {
     blockHash: workerFixtureTipHash,
     height: 102,
@@ -211,15 +295,7 @@ const workerFixtureReplayEnvelope = {
   declarationBlockHash: workerFixtureDeclarationHash,
   invalidPrecisionEventCount: 0,
   invalidTransitionCount: 0,
-  latestTransition: {
-    blockHash: workerFixtureTipHash,
-    blockHeight: 102,
-    model: WORK_AMO_V8_BLOCK_SEQUENCER_MODEL,
-    payload: {},
-    previousBlockHash: "c".repeat(64),
-    stateCommitmentModel: WORK_AMO_V5_STATE_COMMITMENT_MODEL,
-    workTokenStateModel: WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL,
-  },
+  latestTransition: workerFixtureLatestTransition,
   markerOpeningCommitment: workerFixtureOpeningCommitment,
   snapshot: workerFixtureSnapshot,
   tipHash: workerFixtureTipHash,
@@ -1357,8 +1433,11 @@ expect(
   ),
 );
 expect(
-  "worker Q16 readiness checks transition hash, value, state, and sufficient-state continuity",
-  /previous_transition\.block_hash <>[\s\S]*transition\.previous_block_hash/u.test(
+  "worker Q16 readiness checks immutable scalar transition hash, value, state, and payload-byte continuity",
+  /block\.previous_block_hash <>[\s\S]*transition\.previous_block_hash/u.test(
+    worker,
+  ) &&
+    /previous_transition\.block_hash <>[\s\S]*transition\.previous_block_hash/u.test(
     worker,
   ) &&
     /previous_transition\.closing_network_value_q8 <>[\s\S]*transition\.opening_network_value_q8/u.test(
@@ -1367,17 +1446,27 @@ expect(
     /previous_transition\.closing_state_sha256 <>[\s\S]*transition\.opening_state_sha256/u.test(
       worker,
     ) &&
-    /transition\.payload->'openingSufficientState'[\s\S]*IS DISTINCT FROM[\s\S]*previous_transition\.payload[\s\S]*->'closingSufficientState'/u.test(
+    /previous_transition\.closing_state_payload_bytes <>[\s\S]*transition\.opening_state_payload_bytes/u.test(
       worker,
-    ),
+    ) &&
+    !/previous_transition\.payload/u.test(worker),
 );
 expect(
-  "worker Q16 readiness validates the canonical top-level token-state model without mutating the bare closing preimage",
-  /transition\.work_token_state_model <> \$4[\s\S]*transition\.payload->>'workTokenStateModel'\s*IS DISTINCT FROM \$4/u.test(
+  "worker Q16 readiness validates immutable scalar transition models without mutating the bare closing preimage",
+  /transition\.model <> \$3[\s\S]*transition\.work_token_state_model <> \$4[\s\S]*transition\.state_commitment_model <> \$5/u.test(
     worker,
   ) &&
     !/transition\.payload->'closingTokenState'\s*->>'model'\s*IS DISTINCT FROM \$4/u.test(
       worker,
+    ),
+);
+expect(
+  "worker and reader behaviorally validate the full activation and latest transition payload boundaries",
+  /validateWorkAmoV8BoundaryTransitionPayload\(activation\)[\s\S]*validateWorkAmoV8BoundaryTransitionPayload\(latest\)[\s\S]*activationBoundary\.valid === true[\s\S]*latestBoundary\.valid === true/u.test(
+    worker,
+  ) &&
+    /validateWorkAmoV8BoundaryTransitionPayload\(activationTransition\)[\s\S]*activationBoundaryValidation\.valid === true[\s\S]*validateWorkAmoV8BoundaryTransitionPayload\(latestTransition\)[\s\S]*latestBoundaryValidation\.valid === true/u.test(
+      reader,
     ),
 );
 expect(
