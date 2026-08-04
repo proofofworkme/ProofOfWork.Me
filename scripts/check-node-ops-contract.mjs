@@ -34,6 +34,9 @@ const storageHealthService = read(
 );
 const storageHealthTimer = read("deploy/proofofwork-node-storage-health.timer");
 const postgresObservability = read("deploy/postgresql-observability.conf");
+const postgresProofIndexTablespace = read(
+  "deploy/postgresql-proof-index-tablespace.conf",
+);
 const postgresObservabilitySql = read(
   "deploy/proof-indexer-db-observability.sql",
 );
@@ -161,6 +164,16 @@ for (const setting of [
 assert.doesNotMatch(postgresObservability, /^shared_preload_libraries\s*=/mu);
 assert.match(postgresObservability, /merge pg_stat_statements/u);
 assert.match(
+  postgresProofIndexTablespace,
+  /^RequiresMountsFor=\/data\/proofofwork-postgres-tablespaces\/proof_indexer_large_state_v1$/mu,
+);
+assert.match(postgresProofIndexTablespace, /^After=data\.mount$/mu);
+assert.match(postgresProofIndexTablespace, /^BindsTo=data\.mount$/mu);
+assert.match(
+  postgresProofIndexTablespace,
+  /^AssertPathIsMountPoint=\/data$/mu,
+);
+assert.match(
   postgresObservabilitySql,
   /CREATE EXTENSION IF NOT EXISTS pg_stat_statements/u,
 );
@@ -175,6 +188,30 @@ assert.match(postgresQueryHealth, /POW_POSTGRES_WARN_QUERY_FANOUT:-4/u);
 assert.match(postgresQueryHealth, /POW_POSTGRES_CRITICAL_QUERY_FANOUT:-8/u);
 assert.match(postgresQueryHealth, /POW_POSTGRES_WARN_LOCK_WAIT_SECONDS:-5/u);
 assert.match(postgresQueryHealth, /POW_POSTGRES_CRITICAL_LOCK_WAIT_SECONDS:-20/u);
+assert.match(postgresQueryHealth, /proof_indexer_large_state_v1/u);
+assert.match(
+  postgresQueryHealth,
+  /\/data\/proofofwork-postgres-tablespaces\/proof_indexer_large_state_v1/u,
+);
+assert.match(
+  postgresQueryHealth,
+  /expected_parents\(relname\)[\s\S]*ledger_snapshots[\s\S]*work_amo_block_transitions/u,
+);
+assert.match(
+  postgresQueryHealth,
+  /base_relations[\s\S]*indexes[\s\S]*closure[\s\S]*relation\.reltablespace/u,
+);
+assert.match(postgresQueryHealth, /indisvalid[\s\S]*indisready/u);
+assert.match(postgresQueryHealth, /owned_sequences/u);
+assert.match(postgresQueryHealth, /unrelated_count/u);
+assert.match(
+  postgresQueryHealth,
+  /CRITICAL PostgreSQL large-state tablespace placement differs/u,
+);
+assert.doesNotMatch(
+  postgresQueryHealth,
+  /work_amo_block_transitions[^\n]*payload|ledger_snapshots[^\n]*payload/u,
+);
 assert.match(
   postgresQueryHealth,
   /printf 'postgres database=%s cluster_client_connections=%s active=%s oldest_active_seconds=%s max_same_query_fanout=%s lock_waiters=%s oldest_lock_wait_seconds=%s idle_in_transaction=%s/u,
@@ -191,6 +228,7 @@ assert.match(
 
 for (const requiredPath of [
   "deploy/postgresql-observability.conf",
+  "deploy/postgresql-proof-index-tablespace.conf",
   "deploy/proofofwork-node-storage-health.sh",
   "deploy/proofofwork-postgres-query-health.sh",
   "deploy/proofofwork-node-release-publish.sh",

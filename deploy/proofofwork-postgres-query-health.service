@@ -1,5 +1,5 @@
 [Unit]
-Description=Check ProofOfWork PostgreSQL query contention
+Description=Check ProofOfWork PostgreSQL query and tablespace health
 Requisite=postgresql@16-main.service
 After=postgresql@16-main.service
 

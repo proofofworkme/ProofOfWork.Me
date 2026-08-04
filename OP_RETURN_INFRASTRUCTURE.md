@@ -946,9 +946,50 @@ Full token-state and mint-stat reads select canonical mint winners and restore
 their deterministic display order in the API process, instead of sorting the
 wide event payload twice in PostgreSQL. Paginated mint history keeps its
 database ordering and pagination contract.
-That setting does not cap the received WAL archive on `/data`; successful base
-backups, `pg_archivecleanup`, backup-age checks, and `/data` free-space checks
-remain mandatory. Install `pg-basebackup-timer-override.conf` as
+
+The large-state `proof_indexer.ledger_snapshots` and
+`proof_indexer.work_amo_block_transitions` relations live in the dedicated
+PostgreSQL tablespace `proof_indexer_large_state_v1` at
+`/data/proofofwork-postgres-tablespaces/proof_indexer_large_state_v1`. This is
+capacity isolation from the root logical volume, not hardware-failure
+isolation: `/` and `/data` remain on the same RAID mirror. The tablespace path
+is `postgres:postgres 0700` below a `root:postgres 0750` parent. Its owner is
+`postgres`; neither `PUBLIC` nor the application role receives `CREATE`.
+
+Install `deploy/postgresql-proof-index-tablespace.conf` as
+`/etc/systemd/system/postgresql@16-main.service.d/90-proof-index-tablespace.conf`.
+The cluster binds to `data.mount`, loudly refuses a cold start unless `/data`
+is the live mount, and is stopped if systemd observes that mount disappearing.
+After installing the drop-in, run `systemd-analyze verify`, restart the cluster
+with API and worker services stopped, and prove the dependency from the loaded
+unit before restoring application service.
+
+The one-time placement move is an approved-maintenance operation. Take and
+verify fresh physical and logical backups, stop every API/worker writer and
+backup timer except the continuous WAL receiver, reject any remaining
+application session, then use one PostgreSQL transaction with `ACCESS
+EXCLUSIVE` locks. Move only the two named parent tables and their ten exact
+user indexes. PostgreSQL moves each parent's TOAST relation and TOAST index
+with the parent; normal user indexes require explicit `ALTER INDEX ... SET
+TABLESPACE`. Compare deterministic ordered pre/post row counts and SHA-256 row
+fingerprints before commit. Any mismatch rolls the entire move back. Never use
+`ALTER ... ALL IN TABLESPACE`, filesystem moves, manual `pg_tblspc` links, or
+payload deletion/compaction for this operation.
+
+The five-minute PostgreSQL query-health check also verifies this permanent
+placement using catalogs only. Its exact dynamic closure is the two parents,
+their two TOAST relations, and all indexes attached to those four relations;
+the deployed closure is 16 relations. Every closure member must use the exact
+tablespace, every index must be valid and ready, no unrelated object may use
+it, neither parent may own a sequence, and the tablespace name, path, owner,
+and application-role privileges must remain exact. This check never detoasts
+or hashes historical JSON payloads. The node storage timer independently
+checks that `/data` remains a separate mount with adequate block, inode, and
+free-space runway.
+
+The live PostgreSQL WAL cap does not cap the received WAL archive on `/data`;
+successful base backups, `pg_archivecleanup`, backup-age checks, and `/data`
+free-space checks remain mandatory. Install `pg-basebackup-timer-override.conf` as
 `/etc/systemd/system/pg_basebackup@16-main.timer.d/override.conf` so a missed
 weekly run is started after the host returns. The tracked daily logical service publishes one atomic `dumpset`
 directory containing the custom-format `proof_indexer` dump, a
