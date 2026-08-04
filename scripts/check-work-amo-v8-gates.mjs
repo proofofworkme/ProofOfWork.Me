@@ -3,6 +3,9 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
+import {
+  workAmoV5CanonicalPayloadCommitment,
+} from "../server/work-amo-v5.mjs";
 
 const apiSource = readFileSync("server/proof-api.mjs", "utf8");
 const backfillSource = readFileSync(
@@ -55,6 +58,75 @@ function isolatedFunctions(
     `${stateSource}\n${definitions}\nthis.__checkedFunctions = {${exports}};`,
   ).runInContext(context);
   return context.__checkedFunctions;
+}
+
+{
+  const decisions = isolatedFunctions(
+    apiSource,
+    ["pendingWorkVerifierStageDecisions"],
+    {
+      WORK_TOKEN_ID: "work-token",
+      WORK_TOKEN_TICKER: "WORK",
+      compareCanonicalUtf8: (left, right) =>
+        Buffer.compare(
+          Buffer.from(String(left), "utf8"),
+          Buffer.from(String(right), "utf8"),
+        ),
+      pendingWorkVerifierStageCanonicalItem: (item) => item,
+      pendingWorkVerifierStageInvalidEvidence: (
+        _state,
+        _transaction,
+        parsed,
+      ) => ({ saleAuthorization: parsed.saleAuthorization }),
+      pendingWorkVerifierStageJsonClone: (value) =>
+        JSON.parse(JSON.stringify(value)),
+      pendingWorkVerifierStageOrderConflictReason: () =>
+        "Fixture pending replay conflict.",
+      pendingWorkVerifierStageRecordPositionKey: (value) =>
+        `${value.protocolVout}:${value.recordOrdinal}`,
+      pendingWorkVerifierStageReplayState: (state) => state,
+      pendingWorkVerifierStageTransactionInvalidReason: async () =>
+        "Fixture invalid transaction.",
+      tokenVerifierItemsFromState: () => [],
+      workAmoV5CanonicalPayloadCommitment,
+    },
+  ).pendingWorkVerifierStageDecisions;
+  const txid = "7".repeat(64);
+  const result = await decisions(
+    {},
+    [{
+      mempoolCreatedAt: "2026-08-04T12:00:00.000Z",
+      parsedMessages: [0, 1].map((index) => ({
+        kind: "buy",
+        saleAuthorization: {
+          buyerAddress: undefined,
+          sellerAddress: `seller-${index}`,
+        },
+      })),
+      records: [0, 1].map((index) => ({
+        message: `pwt1:fixture:${index}`,
+        protocolVout: index + 1,
+        recordOrdinal: 0,
+      })),
+      transaction: { vin: [] },
+      txid,
+    }],
+    "livenet",
+    1_000_000,
+  );
+  assert.equal(result.length, 1);
+  assert.equal(result[0].items.length, 2);
+  for (const item of result[0].items) {
+    assert.equal(item.kind, "token-event-invalid");
+    assert.equal(
+      Object.hasOwn(item.saleAuthorization, "buyerAddress"),
+      false,
+      "invalid decisions must commit to their JSON wire shape",
+    );
+    assert.doesNotThrow(() =>
+      workAmoV5CanonicalPayloadCommitment(item)
+    );
+  }
 }
 
 function broadcastAdmissionFixture() {
@@ -1063,5 +1135,5 @@ function indexDeclarationDiscoveryFixture(configured) {
 }
 
 console.log(
-  "WORK AMO V8 gate regressions passed: aggregate transfer admission, persistent Q16 replay, next-block liveness, and canonical declaration discovery.",
+  "WORK AMO V8 gate regressions passed: pending decision normalization, aggregate transfer admission, persistent Q16 replay, next-block liveness, and canonical declaration discovery.",
 );

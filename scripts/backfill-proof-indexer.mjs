@@ -11656,6 +11656,116 @@ async function upsertTransaction(
     : null;
 }
 
+async function reconcileLegacyPendingEventPosition(
+  client,
+  {
+    exactEventKey,
+    kind,
+    legacyEventKey,
+    protocol,
+    protocolVout,
+    recordOrdinal,
+    txid,
+  },
+) {
+  if (
+    !exactEventKey ||
+    !legacyEventKey ||
+    exactEventKey === legacyEventKey ||
+    !Number.isSafeInteger(protocolVout) ||
+    protocolVout < 0 ||
+    !Number.isSafeInteger(recordOrdinal) ||
+    recordOrdinal < 0
+  ) {
+    return { canonicalConfirmed: false, deleted: 0, promoted: 0 };
+  }
+  const result = await client.query(
+    `
+      WITH canonical_guard AS (
+        SELECT 1
+        FROM proof_indexer.transactions canonical_transaction
+        JOIN proof_indexer.blocks canonical_block
+          ON canonical_block.network = canonical_transaction.network
+         AND canonical_block.block_hash = canonical_transaction.block_hash
+         AND canonical_block.height = canonical_transaction.block_height
+         AND canonical_block.canonical = true
+        WHERE canonical_transaction.network = $1
+          AND canonical_transaction.txid = $2
+          AND canonical_transaction.status = 'confirmed'
+          AND canonical_transaction.raw_tx ? 'canonicalBlockScan'
+        LIMIT 1
+      ), exact_volatile AS (
+        SELECT 1
+        FROM proof_indexer.events exact_event
+        WHERE exact_event.network = $1
+          AND exact_event.txid = $2
+          AND exact_event.protocol = $3
+          AND exact_event.kind = $4
+          AND exact_event.event_key = $5
+          AND exact_event.status IN ('pending', 'dropped', 'orphaned')
+          AND exact_event.block_height IS NULL
+          AND exact_event.block_index IS NULL
+          AND exact_event.op_return_vout = $7
+          AND exact_event.record_ordinal = $8
+        LIMIT 1
+      ), promoted AS (
+        UPDATE proof_indexer.events legacy_event
+        SET
+          event_key = $5,
+          op_return_vout = $7,
+          record_ordinal = $8,
+          updated_at = now()
+        WHERE legacy_event.network = $1
+          AND legacy_event.txid = $2
+          AND legacy_event.protocol = $3
+          AND legacy_event.kind = $4
+          AND legacy_event.event_key = $6
+          AND legacy_event.status IN ('pending', 'dropped', 'orphaned')
+          AND legacy_event.block_height IS NULL
+          AND legacy_event.block_index IS NULL
+          AND legacy_event.op_return_vout IS NULL
+          AND NOT EXISTS (SELECT 1 FROM exact_volatile)
+          AND NOT EXISTS (SELECT 1 FROM canonical_guard)
+        RETURNING legacy_event.event_id
+      ), deleted AS (
+        DELETE FROM proof_indexer.events legacy_event
+        WHERE legacy_event.network = $1
+          AND legacy_event.txid = $2
+          AND legacy_event.protocol = $3
+          AND legacy_event.kind = $4
+          AND legacy_event.event_key = $6
+          AND legacy_event.status IN ('pending', 'dropped', 'orphaned')
+          AND legacy_event.block_height IS NULL
+          AND legacy_event.block_index IS NULL
+          AND legacy_event.op_return_vout IS NULL
+          AND EXISTS (SELECT 1 FROM exact_volatile)
+          AND NOT EXISTS (SELECT 1 FROM canonical_guard)
+        RETURNING legacy_event.event_id
+      )
+      SELECT
+        EXISTS (SELECT 1 FROM canonical_guard) AS canonical_confirmed,
+        (SELECT count(*)::integer FROM deleted) AS deleted,
+        (SELECT count(*)::integer FROM promoted) AS promoted
+    `,
+    [
+      NETWORK,
+      txid,
+      protocol,
+      kind,
+      exactEventKey,
+      legacyEventKey,
+      protocolVout,
+      recordOrdinal,
+    ],
+  );
+  return {
+    canonicalConfirmed:
+      result.rows[0]?.canonical_confirmed === true,
+    deleted: Number(result.rows[0]?.deleted ?? 0),
+    promoted: Number(result.rows[0]?.promoted ?? 0),
+  };
+}
+
 async function upsertEvent(client, sourceLabel, item) {
   const txid = itemTxid(item);
   const status = itemStatus(item);
@@ -11690,7 +11800,7 @@ async function upsertEvent(client, sourceLabel, item) {
       ].filter(Boolean)),
     ],
   };
-  const protocol = protocolForItem(item, kind);
+  const protocol = normalizedLowerText(protocolForItem(item, kind));
   const suppressVolatileMailOverlay =
     protocol === "pwm1" && PROOF_INDEX_RENDERED_MAIL_KINDS.includes(kind);
   const governedProtocol = [
@@ -11708,6 +11818,31 @@ async function upsertEvent(client, sourceLabel, item) {
     txid,
   });
   const eventTime = itemTime(indexedInput);
+  const pendingProtocolVout = Number(indexedInput?.protocolVout);
+  const pendingRecordOrdinal = Number(indexedInput?.recordOrdinal);
+  let legacyPendingEventKey = "";
+  if (
+    status !== "confirmed" &&
+    governedProtocol &&
+    Number.isSafeInteger(pendingProtocolVout) &&
+    pendingProtocolVout >= 0 &&
+    Number.isSafeInteger(pendingRecordOrdinal) &&
+    pendingRecordOrdinal >= 0
+  ) {
+    const positionlessInput = { ...indexedInput };
+    delete positionlessInput.protocolVout;
+    delete positionlessInput.recordOrdinal;
+    const candidate = stableEventKey({
+      item: positionlessInput,
+      kind: stableEventKeyKind(item, kind, sourceLabel),
+      protocol,
+      sourceLabel,
+      txid,
+    });
+    if (candidate !== eventKey) {
+      legacyPendingEventKey = candidate;
+    }
+  }
 
   const persistedTransaction = await upsertTransaction(
     client,
@@ -11720,6 +11855,9 @@ async function upsertEvent(client, sourceLabel, item) {
       suppressVolatileOverlay: suppressVolatileMailOverlay,
     },
   );
+  if (status !== "confirmed" && persistedTransaction?.confirmed === true) {
+    return { canonicalConfirmed: true, skipped: true };
+  }
   const confirmedProtocolPosition =
     status === "confirmed" && governedProtocol
       ? canonicalProtocolPosition(indexedInput)
@@ -11755,6 +11893,21 @@ async function upsertEvent(client, sourceLabel, item) {
     status === "confirmed" &&
     governedProtocol &&
     confirmedBlockHeight >= WORK_AMO_V5_ACTIVATION_HEIGHT;
+
+  if (legacyPendingEventKey) {
+    const reconciliation = await reconcileLegacyPendingEventPosition(client, {
+      exactEventKey: eventKey,
+      kind,
+      legacyEventKey: legacyPendingEventKey,
+      protocol,
+      protocolVout: pendingProtocolVout,
+      recordOrdinal: pendingRecordOrdinal,
+      txid,
+    });
+    if (reconciliation.canonicalConfirmed) {
+      return { canonicalConfirmed: true, skipped: true };
+    }
+  }
 
   const result = await client.query(
     `

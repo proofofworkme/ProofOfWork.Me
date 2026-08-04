@@ -21769,10 +21769,10 @@ function compactText(value, maxLength = 140) {
 }
 
 function activityKey(item) {
-  const governedTokenActivity = String(item?.kind ?? "")
+  const normalizedKind = String(item?.kind ?? "")
     .trim()
-    .toLowerCase()
-    .startsWith("token-");
+    .toLowerCase();
+  const governedTokenActivity = normalizedKind.startsWith("token-");
   const blockHeight =
     item?.blockHeight !== undefined &&
     item?.blockHeight !== null &&
@@ -21781,6 +21781,16 @@ function activityKey(item) {
     Number(item.blockHeight) >= 1
       ? Number(item.blockHeight)
       : null;
+  const exactPositionInteger = (field) => {
+    const value = item?.[field];
+    return value !== undefined &&
+      value !== null &&
+      value !== "" &&
+      Number.isSafeInteger(Number(value)) &&
+      Number(value) >= 0
+      ? Number(value)
+      : null;
+  };
   const legacyPositionExempt =
     item?.relic === true || item?.canonicalSynthetic === true;
   if (
@@ -21798,16 +21808,6 @@ function activityKey(item) {
     blockHeight !== null &&
     blockHeight >= WORK_AMO_V5_ACTIVATION_HEIGHT
   ) {
-    const exactPositionInteger = (field) => {
-      const value = item?.[field];
-      return value !== undefined &&
-        value !== null &&
-        value !== "" &&
-        Number.isSafeInteger(Number(value)) &&
-        Number(value) >= 0
-        ? Number(value)
-        : null;
-    };
     const blockIndex = exactPositionInteger("blockIndex");
     const protocolVout = exactPositionInteger("protocolVout");
     const recordOrdinal = exactPositionInteger("recordOrdinal");
@@ -21829,6 +21829,25 @@ function activityKey(item) {
       protocolVout,
       recordOrdinal,
     ].join(":");
+  }
+  const protocol = String(item?.protocol ?? "").trim().toLowerCase();
+  if (
+    item?.confirmed !== true &&
+    ["pwm1", "pwa1", "pwid1", "pwr1", "pwt1"].includes(protocol)
+  ) {
+    const protocolVout = exactPositionInteger("protocolVout");
+    const recordOrdinal = exactPositionInteger("recordOrdinal");
+    if (protocolVout !== null && recordOrdinal !== null) {
+      return [
+        protocol,
+        normalizedKind,
+        item?.network,
+        item?.txid,
+        "pending-position",
+        protocolVout,
+        recordOrdinal,
+      ].join(":");
+    }
   }
   if (item?.kind === "token-listing-closed" && item?.txid) {
     return `${item.kind}:${item.network}:${item.txid}`;
@@ -59408,7 +59427,7 @@ async function pendingWorkVerifierStageDecisions(
       for (const rawRecord of uncoveredRecords) {
         const recordIndex = record.records.indexOf(rawRecord);
         const parsedMessage = record.parsedMessages[recordIndex];
-        items.push({
+        items.push(pendingWorkVerifierStageJsonClone({
           ...pendingWorkVerifierStageInvalidEvidence(
             priorState,
             record.transaction,
@@ -59444,7 +59463,7 @@ async function pendingWorkVerifierStageDecisions(
           tokenId: WORK_TOKEN_ID,
           txid: record.txid,
           valid: false,
-        });
+        }));
       }
     }
     items.sort((left, right) =>

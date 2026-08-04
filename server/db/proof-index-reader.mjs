@@ -18990,6 +18990,16 @@ function historyActivityKey(item) {
     Number(item.blockHeight) >= 1
       ? Number(item.blockHeight)
       : null;
+  const exactPositionInteger = (field) => {
+    const value = item?.[field];
+    return value !== undefined &&
+      value !== null &&
+      value !== "" &&
+      Number.isSafeInteger(Number(value)) &&
+      Number(value) >= 0
+      ? Number(value)
+      : null;
+  };
   const governedTokenActivity = normalizedLowerText(item?.kind).startsWith(
     "token-",
   );
@@ -19010,16 +19020,6 @@ function historyActivityKey(item) {
     blockHeight !== null &&
     blockHeight >= WORK_AMO_V5_ACTIVATION_HEIGHT
   ) {
-    const exactPositionInteger = (field) => {
-      const value = item?.[field];
-      return value !== undefined &&
-        value !== null &&
-        value !== "" &&
-        Number.isSafeInteger(Number(value)) &&
-        Number(value) >= 0
-        ? Number(value)
-        : null;
-    };
     const blockIndex = exactPositionInteger("blockIndex");
     const protocolVout = exactPositionInteger("protocolVout");
     const recordOrdinal = exactPositionInteger("recordOrdinal");
@@ -19041,6 +19041,25 @@ function historyActivityKey(item) {
       protocolVout,
       recordOrdinal,
     ].join(":");
+  }
+  const protocol = normalizedLowerText(item?.protocol);
+  if (
+    item?.confirmed !== true &&
+    ["pwm1", "pwa1", "pwid1", "pwr1", "pwt1"].includes(protocol)
+  ) {
+    const protocolVout = exactPositionInteger("protocolVout");
+    const recordOrdinal = exactPositionInteger("recordOrdinal");
+    if (protocolVout !== null && recordOrdinal !== null) {
+      return [
+        protocol,
+        normalizedLowerText(item?.kind),
+        item?.network,
+        item?.txid,
+        "pending-position",
+        protocolVout,
+        recordOrdinal,
+      ].join(":");
+    }
   }
   if (item?.kind === "token-listing-closed" && item?.txid) {
     return `${item.kind}:${item.network}:${item.txid}`;

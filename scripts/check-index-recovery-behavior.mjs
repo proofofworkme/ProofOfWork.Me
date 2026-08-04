@@ -16377,6 +16377,22 @@ check("same-height pending membership versions the canonical Log snapshot", asyn
   assert.equal(after.count, 2);
   assert.equal(after.pending, 1);
   assert.notEqual(after.hash, before.hash);
+  const singlePendingRows = rows;
+  rows = [
+    ...singlePendingRows,
+    {
+      ...singlePendingRows[1],
+      event_id: "3",
+      payload_hash: "3".repeat(32),
+    },
+  ];
+  const duplicated = await publicLogRelationalFingerprint(client);
+  assert.equal(duplicated.count, 3);
+  assert.equal(duplicated.pending, 2);
+  assert.notEqual(duplicated.hash, after.hash);
+  rows = singlePendingRows;
+  const reconciled = await publicLogRelationalFingerprint(client);
+  assert.deepEqual(reconciled, after);
   assert.match(fingerprintSql, /md5\(e\.payload::text\)/u);
   assert.doesNotMatch(fingerprintSql, /e\.updated_at/u);
 
@@ -21216,6 +21232,11 @@ check("canonical confirmed events reject stale non-confirmed upserts", () => {
     source,
     /if \(result\.rows\.length === 0\)[\s\S]*canonicalConfirmed: true/u,
   );
+  assert.match(
+    source,
+    /status !== "confirmed" && persistedTransaction\?\.confirmed === true[\s\S]*canonicalConfirmed: true, skipped: true/u,
+    "a canonical transaction cannot acquire a new pending-position shadow",
+  );
 });
 
 check("event payload status is normalized from the authoritative relational state", () => {
@@ -25805,6 +25826,164 @@ check("pending governed event keys preserve every raw protocol position", () => 
     `pwt1:token-transfer:${txid}:pending-position:4:1`,
   );
   assert.notEqual(first, second);
+  for (const status of ["dropped", "orphaned"]) {
+    assert.equal(
+      stableEventKey({
+        ...input,
+        item: {
+          confirmed: false,
+          protocolVout: 4,
+          recordOrdinal: 0,
+          status,
+          tokenId: "d".repeat(64),
+        },
+      }),
+      first,
+      `${status} observations must retain the exact volatile position`,
+    );
+  }
+});
+
+check("exact pending hydration promotes or removes only its positionless volatile predecessor", async () => {
+  const txid = "9".repeat(64);
+  const stableEventKey = isolatedFunction(BACKFILL_PATH, "stableEventKey", {
+    WORK_AMO_V5_ACTIVATION_HEIGHT,
+    createHash,
+  });
+  const exactInput = {
+    confirmed: false,
+    id: "proof-name",
+    protocolVout: 1,
+    recordOrdinal: 0,
+    status: "pending",
+  };
+  const keyInput = {
+    kind: "id-register",
+    protocol: "pwid1",
+    sourceLabel: "registry-records",
+    txid,
+  };
+  const exactEventKey = stableEventKey({
+    ...keyInput,
+    item: exactInput,
+  });
+  const positionlessInput = { ...exactInput };
+  delete positionlessInput.protocolVout;
+  delete positionlessInput.recordOrdinal;
+  const legacyEventKey = stableEventKey({
+    ...keyInput,
+    item: positionlessInput,
+  });
+  assert.equal(
+    exactEventKey,
+    `pwid1:id-register:${txid}:pending-position:1:0`,
+  );
+  assert.equal(
+    legacyEventKey,
+    `pwid1:id-register:${txid}:proof-name`,
+  );
+  const reconcileLegacyPendingEventPosition = isolatedFunction(
+    BACKFILL_PATH,
+    "reconcileLegacyPendingEventPosition",
+    { NETWORK: "livenet" },
+  );
+  let write = null;
+  const reconciled = await reconcileLegacyPendingEventPosition(
+    {
+      async query(sql, params) {
+        write = { params: Array.from(params), sql: String(sql) };
+        return {
+          rows: [{
+            canonical_confirmed: false,
+            deleted: 1,
+            promoted: 0,
+          }],
+        };
+      },
+    },
+    {
+      exactEventKey,
+      kind: "id-register",
+      legacyEventKey,
+      protocol: "pwid1",
+      protocolVout: 1,
+      recordOrdinal: 0,
+      txid,
+    },
+  );
+  assert.deepEqual(
+    {
+      canonicalConfirmed: reconciled.canonicalConfirmed,
+      deleted: reconciled.deleted,
+      promoted: reconciled.promoted,
+    },
+    { canonicalConfirmed: false, deleted: 1, promoted: 0 },
+  );
+  assert.deepEqual(write.params, [
+    "livenet",
+    txid,
+    "pwid1",
+    "id-register",
+    exactEventKey,
+    legacyEventKey,
+    1,
+    0,
+  ]);
+  assert.match(
+    write.sql,
+    /exact_event\.event_key = \$5[\s\S]*exact_event\.status IN \('pending', 'dropped', 'orphaned'\)[\s\S]*exact_event\.op_return_vout = \$7[\s\S]*exact_event\.record_ordinal = \$8/u,
+  );
+  assert.match(
+    write.sql,
+    /UPDATE proof_indexer\.events legacy_event[\s\S]*SET[\s\S]*event_key = \$5[\s\S]*op_return_vout = \$7[\s\S]*record_ordinal = \$8[\s\S]*NOT EXISTS \(SELECT 1 FROM exact_volatile\)/u,
+  );
+  assert.match(
+    write.sql,
+    /DELETE FROM proof_indexer\.events legacy_event[\s\S]*legacy_event\.event_key = \$6[\s\S]*legacy_event\.status IN \('pending', 'dropped', 'orphaned'\)[\s\S]*legacy_event\.op_return_vout IS NULL[\s\S]*EXISTS \(SELECT 1 FROM exact_volatile\)/u,
+  );
+  assert.match(
+    write.sql,
+    /canonical_transaction\.status = 'confirmed'[\s\S]*canonical_transaction\.raw_tx \? 'canonicalBlockScan'[\s\S]*NOT EXISTS \(SELECT 1 FROM canonical_guard\)/u,
+  );
+  assert.match(
+    topLevelFunctionSource(BACKFILL_PATH, "upsertEvent"),
+    /normalizedLowerText\(protocolForItem\(item, kind\)\)[\s\S]*status !== "confirmed"[\s\S]*delete positionlessInput\.protocolVout;[\s\S]*delete positionlessInput\.recordOrdinal;[\s\S]*const candidate = stableEventKey[\s\S]*if \(legacyPendingEventKey\)[\s\S]*await reconcileLegacyPendingEventPosition[\s\S]*const result = await client\.query\([\s\S]*INSERT INTO proof_indexer\.events/u,
+    "the volatile predecessor must be promoted or removed before the exact upsert",
+  );
+
+  let invalidQueryCount = 0;
+  const invalid = await reconcileLegacyPendingEventPosition(
+    {
+      async query() {
+        invalidQueryCount += 1;
+        return {
+          rows: [{
+            canonical_confirmed: false,
+            deleted: 0,
+            promoted: 0,
+          }],
+        };
+      },
+    },
+    {
+      exactEventKey,
+      kind: "id-register",
+      legacyEventKey: exactEventKey,
+      protocol: "pwid1",
+      protocolVout: 1,
+      recordOrdinal: 0,
+      txid,
+    },
+  );
+  assert.deepEqual(
+    {
+      canonicalConfirmed: invalid.canonicalConfirmed,
+      deleted: invalid.deleted,
+      promoted: invalid.promoted,
+    },
+    { canonicalConfirmed: false, deleted: 0, promoted: 0 },
+  );
+  assert.equal(invalidQueryCount, 0);
 });
 
 check("only true same-kind duplicates receive stable ordinals", () => {
@@ -45244,6 +45423,30 @@ check("AMO V5 public activity preserves same-transaction record identity", () =>
     );
   }
   assert.equal(dedupeActivityItems([base, sibling]).length, 2);
+  const pendingBase = {
+    confirmed: false,
+    kind: "token-transfer",
+    network: "livenet",
+    protocol: "pwt1",
+    protocolVout: 6,
+    recordOrdinal: 0,
+    status: "pending",
+    txid: "f".repeat(64),
+  };
+  const pendingSibling = { ...pendingBase, recordOrdinal: 1 };
+  assert.notEqual(
+    activityKey(pendingBase),
+    activityKey(pendingSibling),
+  );
+  assert.notEqual(
+    historyActivityKey(pendingBase),
+    historyActivityKey(pendingSibling),
+  );
+  assert.equal(
+    dedupeActivityItems([pendingBase, pendingSibling]).length,
+    2,
+    "same-kind pending records must render once per raw protocol position",
+  );
   for (const keyForItem of [activityKey, historyActivityKey]) {
     for (const field of ["blockIndex", "protocolVout", "recordOrdinal"]) {
       const incomplete = { ...base, [field]: null };
