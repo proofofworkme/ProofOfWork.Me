@@ -27945,7 +27945,7 @@ function tokenInvalidEventFromRow(row) {
     addressForRoles("registry"),
   );
   const auditCosts = tokenInvalidAuditCosts(payload, row, registryAddress);
-  const tokenId = String(payload.tokenId ?? row?.token_id ?? "")
+  const tokenId = String(row?.token_id ?? payload.tokenId ?? "")
     .trim()
     .toLowerCase();
   const hasWorkAmountEvidence = [
@@ -27979,54 +27979,56 @@ function tokenInvalidEventFromRow(row) {
       : {}),
     amountSats: 0,
     ...auditCosts,
-    blockHash: String(row?.block_hash ?? payload.blockHash ?? "")
+    blockHash: String(row?.block_hash ?? "")
       .trim()
       .toLowerCase(),
     blockHeight:
       rowNumber(row, "transaction_block_height") ||
-      rowNumber(row, "block_height") ||
-      rowNumber(payload, "blockHeight"),
-    ...(row?.block_index !== undefined && row?.block_index !== null
-      ? { blockIndex: Number(row.block_index) }
-      : {}),
+      rowNumber(row, "block_height"),
+    blockIndex:
+      row?.block_index !== undefined && row?.block_index !== null
+        ? Number(row.block_index)
+        : undefined,
     confirmed: effectiveStatus === "confirmed",
     createdAt: dateIso(
-      payload.createdAt ??
-        row?.transaction_block_time ??
+      row?.transaction_block_time ??
         row?.block_time ??
         row?.event_time ??
-        row?.created_at,
+        row?.created_at ??
+        payload.createdAt,
     ),
-    kind: String(payload.kind ?? row?.kind ?? "token-event-invalid")
+    kind: String(row?.kind ?? payload.kind ?? "token-event-invalid")
       .trim()
       .toLowerCase(),
-    network: payload.network ?? row?.network,
+    network: row?.network ?? payload.network,
     frozenNetworkValueSats: 0,
     liveNetworkValueSats: 0,
     marketplaceMutationFeeSats: 0,
     minerFeeSats: 0,
     participantDetails,
     participants,
-    protocol: String(payload.protocol ?? row?.protocol ?? "pwt1")
+    protocol: String(row?.protocol ?? payload.protocol ?? "pwt1")
       .trim()
       .toLowerCase(),
-    ...(row?.op_return_vout !== undefined && row?.op_return_vout !== null
-      ? { protocolVout: Number(row.op_return_vout) }
-      : {}),
+    protocolVout:
+      row?.op_return_vout !== undefined && row?.op_return_vout !== null
+        ? Number(row.op_return_vout)
+        : undefined,
     reason: String(payload.reason ?? validationErrors[0] ?? "").trim(),
     recipientAddress,
     proofPaymentSats: 0,
     registryAddress,
     registryMutationFeeSats: 0,
-    ...(row?.record_ordinal !== undefined && row?.record_ordinal !== null
-      ? { recordOrdinal: Number(row.record_ordinal) }
-      : {}),
+    recordOrdinal:
+      row?.record_ordinal !== undefined && row?.record_ordinal !== null
+        ? Number(row.record_ordinal)
+        : undefined,
     salePaymentSats: 0,
     senderAddress,
     status: effectiveStatus,
     ticker: String(row?.ticker ?? payload.ticker ?? "").trim(),
     tokenId,
-    txid: String(payload.txid ?? row?.txid ?? "").trim().toLowerCase(),
+    txid: String(row?.txid ?? payload.txid ?? "").trim().toLowerCase(),
     valid: false,
     validationErrors,
   };
@@ -28503,6 +28505,9 @@ async function payloadWithCanonicalWorkLifecyclePositions(
           PARTITION BY expected.role, expected.txid, expected.listing_id
         ) AS match_count
       FROM expected
+      LEFT JOIN proof_indexer.credit_listings cl
+        ON cl.network = $1
+       AND cl.listing_id = expected.listing_id
       JOIN proof_indexer.events e
         ON e.network = $1
        AND e.txid = expected.txid
@@ -28512,16 +28517,65 @@ async function payloadWithCanonicalWorkLifecyclePositions(
        AND (
          (
            expected.role = 'listing'
-           AND e.kind = 'token-listing'
+           AND (
+             e.kind = 'token-listing'
+             OR (
+               e.kind = 'token-listings'
+               AND NOT (
+                 lower(COALESCE(
+                   cl.payload->'saleAuthorization'->>'version',
+                   ''
+                 )) IN (
+                   '${WORK_AMO_V5_AUTH_VERSION}',
+                   '${WORK_AMO_V6_AUTH_VERSION}',
+                   '${WORK_AMO_V8_AUTH_VERSION}'
+                 )
+                 OR lower(COALESCE(
+                   cl.payload->'listingAuthorization'->>'version',
+                   ''
+                 )) IN (
+                   '${WORK_AMO_V5_AUTH_VERSION}',
+                   '${WORK_AMO_V6_AUTH_VERSION}',
+                   '${WORK_AMO_V8_AUTH_VERSION}'
+                 )
+               )
+             )
+           )
            AND lower(COALESCE(
              NULLIF(e.payload->>'listingId', ''),
              e.txid
            )) = expected.listing_id
+           AND lower(COALESCE(
+             e.payload->'saleAuthorization'->>'version',
+             e.payload->'listingAuthorization'->>'version',
+             ''
+           )) = lower(COALESCE(
+             cl.payload->'saleAuthorization'->>'version',
+             cl.payload->'listingAuthorization'->>'version',
+             ''
+           ))
          )
          OR (
            expected.role = 'seal'
            AND e.kind = 'token-listing-sealed'
            AND lower(e.payload->>'listingId') = expected.listing_id
+           AND lower(COALESCE(
+             cl.payload->'saleAuthorization'->>'version',
+             ''
+           )) IN (
+             '${WORK_MARKET_V2_AUTH_VERSION}',
+             '${WORK_MARKET_V4_AUTH_VERSION}',
+             '${WORK_AMO_V5_AUTH_VERSION}',
+             '${WORK_AMO_V6_AUTH_VERSION}',
+             '${WORK_AMO_V8_AUTH_VERSION}'
+           )
+           AND lower(COALESCE(
+             e.payload->'saleAuthorization'->>'version',
+             ''
+           )) = lower(COALESCE(
+             cl.payload->'saleAuthorization'->>'version',
+             ''
+           ))
          )
          OR (
            expected.role = 'close'
@@ -28540,9 +28594,6 @@ async function payloadWithCanonicalWorkLifecyclePositions(
        AND event_block.block_hash = event_tx.block_hash
        AND event_block.height = event_tx.block_height
        AND event_block.canonical = true
-      LEFT JOIN proof_indexer.credit_listings cl
-        ON cl.network = e.network
-       AND cl.listing_id = expected.listing_id
       WHERE lower(COALESCE(
         NULLIF(e.payload->>'tokenId', ''),
         NULLIF(e.payload->'saleAuthorization'->>'tokenId', ''),
@@ -29139,24 +29190,21 @@ async function proofIndexTokenPayloadFromCurrentTables(pool, network, scope) {
     tokens: enrichedTokens,
     transfers,
   };
-  const positionedPayload =
-    await payloadWithCanonicalWorkLifecyclePositions(pool, network, {
-    ...payload,
-    stats: {
-      ...salesStats(sales),
-      ...tokenStateStats(payload, enrichedTokens, mints, transfers, invalidEvents),
-      indexedThroughBlock: indexedThroughBlock || undefined,
-    },
-    });
-  if (!positionedPayload) {
-    return null;
-  }
   return applyWorkMarketV2CutoverToTokenState(
-    await payloadWithVerifiedWorkMarketV4Activation(
-      pool,
-      network,
-      positionedPayload,
-    ),
+    await payloadWithVerifiedWorkMarketV4Activation(pool, network, {
+      ...payload,
+      stats: {
+        ...salesStats(sales),
+        ...tokenStateStats(
+          payload,
+          enrichedTokens,
+          mints,
+          transfers,
+          invalidEvents,
+        ),
+        indexedThroughBlock: indexedThroughBlock || undefined,
+      },
+    }),
   );
 }
 
@@ -29219,13 +29267,18 @@ export async function proofIndexCanonicalSummaryTokenTablePayload(
   const legacyCutoverPayload = applyWorkMarketV2CutoverToTokenState(
     currentV8Payload,
   );
-  const result = workPrecisionV2ProjectCurrentPayload(
+  const projectedResult = workPrecisionV2ProjectCurrentPayload(
     applyWorkAmoV5CutoverToTokenState(
       await payloadWithVerifiedWorkAmoV5Activation(
         network,
         legacyCutoverPayload,
       ),
     ),
+  );
+  const result = await payloadWithCanonicalWorkLifecyclePositions(
+    pool,
+    network,
+    projectedResult,
   );
   if (
     result?.source !== "proof-indexer-token-state-tables" ||

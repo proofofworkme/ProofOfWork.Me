@@ -8472,15 +8472,23 @@ check("confirmed invalid credit events remain visible without becoming valid", a
     payload: {
       actor: senderAddress,
       amount: 12_345,
+      blockHash: "9".repeat(64),
+      blockHeight: 1,
+      blockIndex: 99,
       counterparty: recipientAddress,
-      kind: "token-event-invalid",
+      createdAt: "2025-01-01T00:00:00.000Z",
+      kind: "token-mint",
+      network: "testnet",
+      protocol: "payload-protocol",
+      protocolVout: 7,
       reason: "no-valid-token-event",
+      recordOrdinal: 8,
       recipients: [
         { address: registryAddress, amountSats: "546" },
         { address: "bc1pchange", amountSats: "646876" },
       ],
-      tokenId,
-      txid,
+      tokenId: "5".repeat(64),
+      txid: "8".repeat(64),
     },
     protocol: "pwt1",
     op_return_vout: 2,
@@ -8503,6 +8511,10 @@ check("confirmed invalid credit events remain visible without becoming valid", a
   assert.equal(mapped.valid, false);
   assert.equal(mapped.confirmed, true);
   assert.equal(mapped.kind, "token-event-invalid");
+  assert.equal(mapped.network, "livenet");
+  assert.equal(mapped.protocol, "pwt1");
+  assert.equal(mapped.tokenId, tokenId);
+  assert.equal(mapped.txid, txid);
   assert.equal(mapped.reason, "no-valid-token-event");
   assert.equal(mapped.amount, 12_345);
   assert.equal(mapped.auditMinerFeeSats, 730);
@@ -8512,6 +8524,7 @@ check("confirmed invalid credit events remain visible without becoming valid", a
   assert.equal(mapped.minerFeeSats, 0);
   assert.equal(mapped.registryMutationFeeSats, 0);
   assert.equal(mapped.blockHeight, 950_123);
+  assert.equal(mapped.createdAt, "2026-05-20T12:00:00.000Z");
   assert.equal(mapped.blockHash, blockHash);
   assert.equal(mapped.blockIndex, 17);
   assert.equal(mapped.protocolVout, 2);
@@ -8524,6 +8537,19 @@ check("confirmed invalid credit events remain visible without becoming valid", a
     registryAddress,
   ]);
   assert.equal(mapped.participantDetails[0].powid, "sender-id");
+  const positionless = tokenInvalidEventFromRow({
+    ...row,
+    block_hash: null,
+    block_index: null,
+    op_return_vout: null,
+    record_ordinal: null,
+    transaction_block_height: null,
+  });
+  assert.equal(positionless.blockHash, "");
+  assert.equal(positionless.blockHeight, 0);
+  assert.equal(positionless.blockIndex, undefined);
+  assert.equal(positionless.protocolVout, undefined);
+  assert.equal(positionless.recordOrdinal, undefined);
 
   const tokenVerifierItemsFromState = isolatedFunction(
     API_PATH,
@@ -8643,6 +8669,14 @@ check("confirmed invalid credit events remain visible without becoming valid", a
       block_time: "2026-05-20T12:00:00.000Z",
       created_at: "2026-05-20T12:00:00.000Z",
       event_time: "2026-05-20T12:00:00.000Z",
+      payload: {
+        ...row.payload,
+        kind: "token-event-invalid",
+        network: "livenet",
+        protocol: "pwt1",
+        tokenId,
+        txid,
+      },
       status: "confirmed",
     },
     "livenet",
@@ -19872,6 +19906,11 @@ check("canonical WORK lifecycle state rebinds unique relational event positions"
     READER_PATH,
     "payloadWithCanonicalWorkLifecyclePositions",
     {
+      WORK_AMO_V5_AUTH_VERSION,
+      WORK_AMO_V6_AUTH_VERSION,
+      WORK_AMO_V8_AUTH_VERSION,
+      WORK_MARKET_V2_AUTH_VERSION,
+      WORK_MARKET_V4_AUTH_VERSION: "pwt-sale-v4",
       WORK_TOKEN_ID,
       canonicalWorkCutoverRelicListing,
       canonicalWorkLifecycleExpectationKey,
@@ -19980,7 +20019,33 @@ check("canonical WORK lifecycle state rebinds unique relational event positions"
   ]);
   assert.equal(capturedQuery.params[4], WORK_TOKEN_ID);
   assert.match(capturedQuery.sql, /event_block\.canonical = true/u);
+  assert.match(capturedQuery.sql, /e\.kind = 'token-listings'/u);
+  assert.match(
+    capturedQuery.sql,
+    /e\.payload->'saleAuthorization'->>'version'[\s\S]*cl\.payload->'saleAuthorization'->>'version'/u,
+  );
+  const sealSql = capturedQuery.sql
+    .split("expected.role = 'seal'")[1]
+    .split("expected.role = 'close'")[0];
+  assert.ok(
+    sealSql.includes(`'${WORK_AMO_V8_AUTH_VERSION}'`),
+    "the selected seal must use the established governed-version predicate",
+  );
   assert.match(capturedQuery.sql, /e\.kind = 'token-listing-closed'/u);
+  assert.doesNotMatch(
+    topLevelFunctionSource(
+      READER_PATH,
+      "proofIndexTokenPayloadFromCurrentTables",
+    ),
+    /payloadWithCanonicalWorkLifecyclePositions/u,
+  );
+  assert.match(
+    topLevelFunctionSource(
+      READER_PATH,
+      "proofIndexCanonicalSummaryTokenTablePayload",
+    ),
+    /payloadWithCanonicalWorkLifecyclePositions/u,
+  );
   const terminal = positioned.closedListings[0];
   assert.equal(terminal.blockHash, "1".repeat(64));
   assert.equal(terminal.blockIndex, 101);
@@ -20632,6 +20697,11 @@ check("exact canonical summaries require current conserved token balances", asyn
         precisionOptions = options;
         return payload;
       },
+      payloadWithCanonicalWorkLifecyclePositions: async (
+        _pool,
+        _network,
+        payload,
+      ) => payload,
       payloadWithVerifiedWorkMarketV4Activation: async (
         _pool,
         _network,
