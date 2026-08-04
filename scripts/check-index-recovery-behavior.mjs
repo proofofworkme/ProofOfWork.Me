@@ -26615,6 +26615,14 @@ check("legacy generic token replay accepts only exact canonical DB order", async
     tokenPayloadSource,
     /registryAddresses\.map\([\s\S]*fetchLegacyGenericTokenReplayTransactions/u,
   );
+  const workTokenPayloadSource = topLevelFunctionSource(
+    API_PATH,
+    "workTokenPayload",
+  );
+  assert.match(
+    workTokenPayloadSource,
+    /const registryTxs = await fetchLegacyGenericTokenReplayTransactions/u,
+  );
 });
 
 check("canonical bond mint replay unlocks only later INCB mutations", () => {

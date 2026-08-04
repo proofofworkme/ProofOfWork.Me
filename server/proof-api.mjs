@@ -28780,7 +28780,7 @@ async function workTokenPayload(network, fallbackPayload = null) {
     tokenId: WORK_TOKEN_ID,
     txid: WORK_TOKEN_ID,
   };
-  const registryTxs = await fetchRegistryTransactions(
+  const registryTxs = await fetchLegacyGenericTokenReplayTransactions(
     WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
     network,
   );
