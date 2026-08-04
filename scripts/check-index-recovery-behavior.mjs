@@ -19912,6 +19912,7 @@ check("canonical WORK lifecycle state rebinds unique relational event positions"
       WORK_MARKET_V2_AUTH_VERSION,
       WORK_MARKET_V4_AUTH_VERSION: "pwt-sale-v4",
       WORK_TOKEN_ID,
+      TOKEN_SALE_AUTH_VERSION: "pwt-sale-v1",
       canonicalWorkCutoverRelicListing,
       canonicalWorkLifecycleExpectationKey,
       canonicalWorkLifecyclePositionFromRow,
@@ -20030,6 +20031,11 @@ check("canonical WORK lifecycle state rebinds unique relational event positions"
   assert.ok(
     sealSql.includes(`'${WORK_AMO_V8_AUTH_VERSION}'`),
     "the selected seal must use the established governed-version predicate",
+  );
+  assert.ok(
+    sealSql.includes("'pwt-sale-v1'") &&
+      sealSql.includes("'pwt-sale-v2'"),
+    "exact legacy selected seals must remain position-bound history",
   );
   assert.match(capturedQuery.sql, /e\.kind = 'token-listing-closed'/u);
   assert.doesNotMatch(

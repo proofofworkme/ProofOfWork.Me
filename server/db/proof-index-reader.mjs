@@ -28563,6 +28563,8 @@ async function payloadWithCanonicalWorkLifecyclePositions(
              cl.payload->'saleAuthorization'->>'version',
              ''
            )) IN (
+             '${TOKEN_SALE_AUTH_VERSION}',
+             'pwt-sale-v2',
              '${WORK_MARKET_V2_AUTH_VERSION}',
              '${WORK_MARKET_V4_AUTH_VERSION}',
              '${WORK_AMO_V5_AUTH_VERSION}',
