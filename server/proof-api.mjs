@@ -35163,10 +35163,13 @@ async function currentExactTipTokenPayloadForRead(
   }
   const indexedThroughBlock = proofIndexPayloadIndexedThroughBlock(payload);
   const tipHeight = await payloadWithFallbackAfterMs(
-    ledgerTipHeight(network),
+    healthNodeTipHeight(),
     null,
     2_500,
   );
+  if (!Number.isSafeInteger(tipHeight) || tipHeight <= 0) {
+    return null;
+  }
   if (
     Number.isSafeInteger(indexedThroughBlock) &&
     indexedThroughBlock > 0 &&
@@ -63980,7 +63983,7 @@ async function handleRequest(request, response) {
           jsonResponse(
             response,
             200,
-            await withWorkMarketplaceV4Metadata(cachedPayload, network),
+            cachedPayload,
             TOKEN_READ_CACHE_CONTROL,
           );
           return;
@@ -63999,13 +64002,17 @@ async function handleRequest(request, response) {
           freshRead ? TOKEN_SCOPED_FRESH_WAIT_MS : 10_000,
         );
         if (indexedPayload) {
-          cacheTokenPayload(network, tokenScope, indexedPayload, {
+          const responsePayload = await withWorkMarketplaceV4Metadata(
+            indexedPayload,
+            network,
+          );
+          cacheTokenPayload(network, tokenScope, responsePayload, {
             exactTipValidated: true,
           });
           jsonResponse(
             response,
             200,
-            await withWorkMarketplaceV4Metadata(indexedPayload, network),
+            responsePayload,
             TOKEN_READ_CACHE_CONTROL,
           );
           return;
