@@ -27147,11 +27147,21 @@ function cacheTokenPayload(network, tokenScope = "", payload, options = {}) {
     staleUntil: cachedAt + TOKEN_CACHE_STALE_MS,
   });
   if (options.exactTipValidated === true) {
+    const pendingValidThroughMs = Date.parse(
+      String(
+        payload?.workAmoV8?.migrationReadiness?.pendingValidThrough ?? "",
+      ),
+    );
+    const validatedUntil =
+      cachedAt +
+      Math.min(TOKEN_CACHE_STALE_MS, PROOF_INDEX_HEALTH_MAX_AGE_MS);
     EXACT_TIP_TOKEN_CACHE.set(cacheKey, {
+      greenUntil: Number.isFinite(pendingValidThroughMs)
+        ? Math.min(validatedUntil, pendingValidThroughMs)
+        : cachedAt,
+      indexedThroughBlockHash: payloadIndexedThroughBlockHash(payload),
       payload,
-      validatedUntil:
-        cachedAt +
-        Math.min(TOKEN_CACHE_STALE_MS, PROOF_INDEX_HEALTH_MAX_AGE_MS),
+      validatedUntil,
     });
   }
   cacheJsonBody(jsonKey, body, TOKEN_CACHE_TTL_MS, TOKEN_CACHE_STALE_MS);
@@ -35148,6 +35158,7 @@ async function currentExactTipTokenPayloadForRead(
   network,
   tokenScope = "",
   label = "token-exact-tip-cache",
+  canonicalGate = null,
 ) {
   const scope = normalizeTokenScope(tokenScope);
   const cacheKey = `token:${network}:${scope}`;
@@ -35162,6 +35173,26 @@ async function currentExactTipTokenPayloadForRead(
     return null;
   }
   const indexedThroughBlock = proofIndexPayloadIndexedThroughBlock(payload);
+  const indexedThroughBlockHash = String(
+    cached?.indexedThroughBlockHash ?? payloadIndexedThroughBlockHash(payload),
+  )
+    .trim()
+    .toLowerCase();
+  const canonicalHash = String(canonicalGate?.canonicalHash ?? "")
+    .trim()
+    .toLowerCase();
+  if (canonicalGate && canonicalGate.ok === true) {
+    if (
+      canonicalGate.atTip !== true ||
+      Number(canonicalGate.indexedThroughBlock) !== indexedThroughBlock ||
+      !/^[0-9a-f]{64}$/u.test(indexedThroughBlockHash) ||
+      canonicalHash !== indexedThroughBlockHash
+    ) {
+      EXACT_TIP_TOKEN_CACHE.delete(cacheKey);
+      return null;
+    }
+    return retainedExactTipTokenPayloadForRead(payload, canonicalGate, cached);
+  }
   const tipHeight = await payloadWithFallbackAfterMs(
     healthNodeTipHeight(),
     null,
@@ -39029,6 +39060,74 @@ function cacheDerivedLedgerPayload(cacheKey, payload, ttlMs, staleMs) {
   if (shouldPersistJsonCache(cacheKey)) {
     void writePersistedJsonCache(`json:${cacheKey}`, body);
   }
+}
+
+function readOnlyRetainedWorkAmoV8Metadata(metadata) {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+    return metadata;
+  }
+  const migrationReadiness = metadata.migrationReadiness;
+  const workerReadiness = metadata.workerReadiness;
+  return {
+    ...metadata,
+    indexReady: false,
+    listingWritesEnabled: false,
+    migrationReady: false,
+    protocolReady: false,
+    protocolWritesEnabled: false,
+    ready: false,
+    reasonCode: "work-amo-v8-writes-paused",
+    settlementWritesEnabled: false,
+    writeAdmission: false,
+    ...(migrationReadiness &&
+    typeof migrationReadiness === "object" &&
+    !Array.isArray(migrationReadiness)
+      ? {
+          migrationReadiness: {
+            ...migrationReadiness,
+            exactTipReady: false,
+            pendingReady: false,
+            ready: false,
+          },
+        }
+      : {}),
+    ...(workerReadiness &&
+    typeof workerReadiness === "object" &&
+    !Array.isArray(workerReadiness)
+      ? {
+          workerReadiness: {
+            ...workerReadiness,
+            ready: false,
+          },
+        }
+      : {}),
+  };
+}
+
+function retainedExactTipTokenPayloadForRead(payload, canonicalGate, cached) {
+  if (
+    canonicalGate?.ready === true &&
+    Number(cached?.greenUntil) >= Date.now()
+  ) {
+    return payload;
+  }
+  const withReadOnlyMetadata = (container) =>
+    container && typeof container === "object" && !Array.isArray(container)
+      ? {
+          ...container,
+          workAmoV8: readOnlyRetainedWorkAmoV8Metadata(container.workAmoV8),
+        }
+      : container;
+  return {
+    ...payload,
+    workAmoV8: readOnlyRetainedWorkAmoV8Metadata(payload?.workAmoV8),
+    ...(payload?.floor && typeof payload.floor === "object"
+      ? { floor: withReadOnlyMetadata(payload.floor) }
+      : {}),
+    ...(payload?.workFloor && typeof payload.workFloor === "object"
+      ? { workFloor: withReadOnlyMetadata(payload.workFloor) }
+      : {}),
+  };
 }
 
 function cacheCanonicalLedgerPayload(network, payload) {
@@ -63336,11 +63435,13 @@ async function handleRequest(request, response) {
     const freshRead = freshReadRequested(url.searchParams);
 
     const authenticatedLoopbackRead = internalVerifierRequestAllowed(request);
+    let canonicalReadGate = null;
     if (
       canonicalPublicReadGateApplies(url.pathname) &&
       !authenticatedLoopbackRead
     ) {
       const gate = await canonicalPublicReadGate(network, { force: freshRead });
+      canonicalReadGate = gate;
       if (!gate.ok) {
         errorResponse(
           response,
@@ -63978,6 +64079,7 @@ async function handleRequest(request, response) {
           freshRead
             ? "token-state-fresh-exact-tip-memory"
             : "token-state-exact-tip-memory",
+          canonicalReadGate,
         );
         if (cachedPayload) {
           jsonResponse(
