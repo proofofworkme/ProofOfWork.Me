@@ -1242,8 +1242,12 @@ expectAll("server token reads preserve canonical ledger rows when table state re
 
 expectAll("server fresh token state reads fall back to valid cached snapshots", server, [
   /url\.pathname === "\/api\/v1\/token"[\s\S]*currentProofIndexTokenPayloadForRead\([\s\S]*"token-state",[\s\S]*freshRead \? TOKEN_SCOPED_FRESH_WAIT_MS : 10_000/,
+  /const EXACT_TIP_TOKEN_CACHE = new Map\(\)/,
+  /function cacheTokenPayload\(network,\s*tokenScope = "",\s*payload,\s*options = \{\}\)[\s\S]*EXACT_TIP_TOKEN_CACHE\.set\(cacheKey,[\s\S]*PROOF_INDEX_HEALTH_MAX_AGE_MS/,
+  /async function currentExactTipTokenPayloadForRead\([\s\S]*EXACT_TIP_TOKEN_CACHE\.get\(cacheKey\)[\s\S]*validatedUntil[\s\S]*ledgerTipHeight\(network\)[\s\S]*indexedThroughBlock === tipHeight[\s\S]*return payload;[\s\S]*EXACT_TIP_TOKEN_CACHE\.delete\(cacheKey\)/,
+  /if \(indexedPayload\) \{[\s\S]*cacheTokenPayload\(network,\s*tokenScope,\s*indexedPayload,\s*\{[\s\S]*exactTipValidated:\s*true[\s\S]*\}\)[\s\S]*withWorkMarketplaceV4Metadata\(indexedPayload,\s*network\)/,
   /async function cachedTokenPayloadFallbackForRead\([\s\S]*cachedTokenPayloadSnapshotNoRefresh\(network,\s*scope\)[\s\S]*rejectEmptyMainnetTokenPayload\(network,\s*payload,\s*scope,\s*label\)[\s\S]*existingCurrentCanonicalLedgerPayloadWithinMs\([\s\S]*existingCanonicalLedgerPayload\(network\)[\s\S]*ledgerPayloadForFreshnessCompare\(ledger,\s*scope\)[\s\S]*refreshTokenPayloadCacheInBackground\(network,\s*scope\)/,
-  /url\.pathname === "\/api\/v1\/token"[\s\S]*"token-state-fresh-memory"[\s\S]*cachedTokenPayloadFallbackForRead\([\s\S]*"token-state-fresh-cache"[\s\S]*Fresh credit state is still catching up/,
+  /url\.pathname === "\/api\/v1\/token"[\s\S]*currentExactTipTokenPayloadForRead\([\s\S]*"token-state-fresh-exact-tip-memory"[\s\S]*"token-state-exact-tip-memory"[\s\S]*currentProofIndexTokenPayloadForRead\([\s\S]*currentMemoryTokenPayloadForRead\([\s\S]*"token-state-fresh-memory"[\s\S]*cachedTokenPayloadFallbackForRead\([\s\S]*"token-state-fresh-cache"[\s\S]*Fresh credit state is still catching up/,
 ]);
 
 expectAll("server token reads always expose the AMO activation envelope", tokenRouteSource, [

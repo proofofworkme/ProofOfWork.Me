@@ -1352,6 +1352,7 @@ const BACKGROUND_PAYLOAD_REFRESHES = new Set();
 const BACKGROUND_TOKEN_REFRESHES = new Set();
 const BACKGROUND_REFRESH_LAST_STARTED = new Map();
 const RESPONSE_CACHE = new Map();
+const EXACT_TIP_TOKEN_CACHE = new Map();
 const WORK_TOKEN_LIVE_SEEN_TXIDS = new Map();
 const WORK_TOKEN_NON_MINT_HISTORY_CACHE = new Map();
 const WORK_TOKEN_PARTICIPANT_RECOVERY_CACHE = new Map();
@@ -27133,17 +27134,26 @@ function cachedTokenPayload(network, tokenScope = "") {
   );
 }
 
-function cacheTokenPayload(network, tokenScope = "", payload) {
+function cacheTokenPayload(network, tokenScope = "", payload, options = {}) {
   const scope = normalizeTokenScope(tokenScope);
   const cacheKey = `token:${network}:${scope}`;
   const payloadKey = `payload:${cacheKey}`;
   const jsonKey = `json:${cacheKey}`;
   const body = JSON.stringify(payload);
+  const cachedAt = Date.now();
   RESPONSE_CACHE.set(payloadKey, {
-    expiresAt: Date.now() + TOKEN_CACHE_TTL_MS,
+    expiresAt: cachedAt + TOKEN_CACHE_TTL_MS,
     payload,
-    staleUntil: Date.now() + TOKEN_CACHE_STALE_MS,
+    staleUntil: cachedAt + TOKEN_CACHE_STALE_MS,
   });
+  if (options.exactTipValidated === true) {
+    EXACT_TIP_TOKEN_CACHE.set(cacheKey, {
+      payload,
+      validatedUntil:
+        cachedAt +
+        Math.min(TOKEN_CACHE_STALE_MS, PROOF_INDEX_HEALTH_MAX_AGE_MS),
+    });
+  }
   cacheJsonBody(jsonKey, body, TOKEN_CACHE_TTL_MS, TOKEN_CACHE_STALE_MS);
   if (shouldPersistJsonCache(cacheKey)) {
     void writePersistedJsonCache(jsonKey, body);
@@ -35131,6 +35141,40 @@ async function currentMemoryTokenPayloadForRead(
   ) {
     return tokenPayloadWithCanonicalLedgerFloor(network, payload, scope, label);
   }
+  return null;
+}
+
+async function currentExactTipTokenPayloadForRead(
+  network,
+  tokenScope = "",
+  label = "token-exact-tip-cache",
+) {
+  const scope = normalizeTokenScope(tokenScope);
+  const cacheKey = `token:${network}:${scope}`;
+  const cached = EXACT_TIP_TOKEN_CACHE.get(cacheKey);
+  const payload = cached?.payload;
+  if (
+    !payload ||
+    Number(cached?.validatedUntil) < Date.now() ||
+    rejectEmptyMainnetTokenPayload(network, payload, scope, label)
+  ) {
+    EXACT_TIP_TOKEN_CACHE.delete(cacheKey);
+    return null;
+  }
+  const indexedThroughBlock = proofIndexPayloadIndexedThroughBlock(payload);
+  const tipHeight = await payloadWithFallbackAfterMs(
+    ledgerTipHeight(network),
+    null,
+    2_500,
+  );
+  if (
+    Number.isSafeInteger(indexedThroughBlock) &&
+    indexedThroughBlock > 0 &&
+    indexedThroughBlock === tipHeight
+  ) {
+    return payload;
+  }
+  EXACT_TIP_TOKEN_CACHE.delete(cacheKey);
   return null;
 }
 
@@ -63924,6 +63968,24 @@ async function handleRequest(request, response) {
         );
         return;
       }
+      if (!walletScoped && recoveryAddresses.length === 0) {
+        const cachedPayload = await currentExactTipTokenPayloadForRead(
+          network,
+          tokenScope,
+          freshRead
+            ? "token-state-fresh-exact-tip-memory"
+            : "token-state-exact-tip-memory",
+        );
+        if (cachedPayload) {
+          jsonResponse(
+            response,
+            200,
+            await withWorkMarketplaceV4Metadata(cachedPayload, network),
+            TOKEN_READ_CACHE_CONTROL,
+          );
+          return;
+        }
+      }
       if (
         !walletScoped &&
         recoveryAddresses.length === 0 &&
@@ -63937,6 +63999,9 @@ async function handleRequest(request, response) {
           freshRead ? TOKEN_SCOPED_FRESH_WAIT_MS : 10_000,
         );
         if (indexedPayload) {
+          cacheTokenPayload(network, tokenScope, indexedPayload, {
+            exactTipValidated: true,
+          });
           jsonResponse(
             response,
             200,
@@ -63961,6 +64026,8 @@ async function handleRequest(request, response) {
           );
           return;
         }
+      }
+      if (!walletScoped && recoveryAddresses.length === 0 && freshRead) {
         const fallbackPayload = await cachedTokenPayloadFallbackForRead(
           network,
           tokenScope,
