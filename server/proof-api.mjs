@@ -35173,21 +35173,8 @@ async function currentExactTipTokenPayloadForRead(
     return null;
   }
   const indexedThroughBlock = proofIndexPayloadIndexedThroughBlock(payload);
-  const indexedThroughBlockHash = String(
-    cached?.indexedThroughBlockHash ?? payloadIndexedThroughBlockHash(payload),
-  )
-    .trim()
-    .toLowerCase();
-  const canonicalHash = String(canonicalGate?.canonicalHash ?? "")
-    .trim()
-    .toLowerCase();
   if (canonicalGate && canonicalGate.ok === true) {
-    if (
-      canonicalGate.atTip !== true ||
-      Number(canonicalGate.indexedThroughBlock) !== indexedThroughBlock ||
-      !/^[0-9a-f]{64}$/u.test(indexedThroughBlockHash) ||
-      canonicalHash !== indexedThroughBlockHash
-    ) {
+    if (!tokenPayloadMatchesCanonicalGate(payload, canonicalGate)) {
       EXACT_TIP_TOKEN_CACHE.delete(cacheKey);
       return null;
     }
@@ -35210,6 +35197,22 @@ async function currentExactTipTokenPayloadForRead(
   }
   EXACT_TIP_TOKEN_CACHE.delete(cacheKey);
   return null;
+}
+
+function tokenPayloadMatchesCanonicalGate(payload, canonicalGate) {
+  if (!canonicalGate || canonicalGate.ok !== true || canonicalGate.atTip !== true) {
+    return false;
+  }
+  const indexedThroughBlock = proofIndexPayloadIndexedThroughBlock(payload);
+  const indexedThroughBlockHash = payloadIndexedThroughBlockHash(payload);
+  const canonicalHash = String(canonicalGate.canonicalHash ?? "")
+    .trim()
+    .toLowerCase();
+  return (
+    Number(canonicalGate.indexedThroughBlock) === indexedThroughBlock &&
+    /^[0-9a-f]{64}$/u.test(indexedThroughBlockHash) &&
+    canonicalHash === indexedThroughBlockHash
+  );
 }
 
 async function cachedTokenPayloadFallbackForRead(
@@ -64103,13 +64106,17 @@ async function handleRequest(request, response) {
           "token-state",
           freshRead ? TOKEN_SCOPED_FRESH_WAIT_MS : 10_000,
         );
-        if (indexedPayload) {
+        const indexedPayloadExact = tokenPayloadMatchesCanonicalGate(
+          indexedPayload,
+          canonicalReadGate,
+        );
+        if (indexedPayload && (!freshRead || indexedPayloadExact)) {
           const responsePayload = await withWorkMarketplaceV4Metadata(
             indexedPayload,
             network,
           );
           cacheTokenPayload(network, tokenScope, responsePayload, {
-            exactTipValidated: true,
+            exactTipValidated: indexedPayloadExact,
           });
           jsonResponse(
             response,
@@ -64126,7 +64133,10 @@ async function handleRequest(request, response) {
           tokenScope,
           "token-state-fresh-memory",
         );
-        if (cachedPayload) {
+        if (
+          cachedPayload &&
+          tokenPayloadMatchesCanonicalGate(cachedPayload, canonicalReadGate)
+        ) {
           jsonResponse(
             response,
             200,
@@ -64142,7 +64152,10 @@ async function handleRequest(request, response) {
           tokenScope,
           "token-state-fresh-cache",
         );
-        if (fallbackPayload) {
+        if (
+          fallbackPayload &&
+          tokenPayloadMatchesCanonicalGate(fallbackPayload, canonicalReadGate)
+        ) {
           jsonResponse(
             response,
             200,
