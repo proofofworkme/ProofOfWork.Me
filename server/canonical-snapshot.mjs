@@ -191,12 +191,13 @@ function snapshotDigest(payload, surface) {
       return typeof value === "bigint" ? value.toString() : value;
     },
   );
-  return createHash("sha256")
-    .update(
-      `${FULL_CANONICAL_SNAPSHOT_MODEL}\n${String(surface ?? "").trim()}\n${serialized}`,
-      "utf8",
-    )
-    .digest("hex");
+  const hash = createHash("sha256");
+  hash.update(FULL_CANONICAL_SNAPSHOT_MODEL, "utf8");
+  hash.update("\n", "utf8");
+  hash.update(String(surface ?? "").trim(), "utf8");
+  hash.update("\n", "utf8");
+  hash.update(serialized, "utf8");
+  return hash.digest("hex");
 }
 
 export function canonicalSnapshotContentSha256(payload, surface = "") {

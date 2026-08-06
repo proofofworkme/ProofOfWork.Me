@@ -132,6 +132,64 @@ test("nested provenance IDs participate in full snapshot identity", () => {
   );
 });
 
+test("canonical snapshot hashing remains byte-for-byte compatible", () => {
+  const snapshot = withFullCanonicalSnapshot(
+    tokenSnapshotFixture({
+      transfers: [
+        {
+          amount: 1,
+          detail: "line\nquote\"é😀",
+          txid: "b".repeat(64),
+        },
+      ],
+      workTransferValueProjection: {
+        canonicalSnapshot: { contentSha256: "ignored-envelope" },
+        snapshotId: "nested-provenance",
+        value: "é😀",
+      },
+    }),
+    "token-state",
+  );
+
+  assert.equal(
+    snapshot.snapshotId,
+    "88645d3e3f4263c073b25b26a571cc63ed3ca1ef144965f664e992ac69b38641",
+  );
+  assert.ok(coherentFullCanonicalSnapshot(snapshot, "token-state"));
+});
+
+test("canonical snapshot rewrap freezes only retained input containers", () => {
+  const removedEnvelopeChild = { value: "remains-mutable" };
+  const removedEnvelope = { child: removedEnvelopeChild };
+  const snapshot = withFullCanonicalSnapshot(
+    tokenSnapshotFixture({ canonicalSnapshot: removedEnvelope }),
+    "token-state",
+  );
+
+  assert.notEqual(snapshot.canonicalSnapshot, removedEnvelope);
+  assert.equal(Object.isFrozen(removedEnvelope), false);
+  assert.equal(Object.isFrozen(removedEnvelopeChild), false);
+  removedEnvelopeChild.value = "still-mutable";
+  assert.equal(removedEnvelopeChild.value, "still-mutable");
+
+  const retainedEnvelopeChild = { value: "must-freeze" };
+  const retainedEnvelope = { child: retainedEnvelopeChild };
+  const aliasedSnapshot = withFullCanonicalSnapshot(
+    tokenSnapshotFixture({
+      canonicalSnapshot: retainedEnvelope,
+      retainedEnvelope,
+    }),
+    "token-state",
+  );
+
+  assert.equal(aliasedSnapshot.retainedEnvelope, retainedEnvelope);
+  assert.equal(Object.isFrozen(retainedEnvelope), true);
+  assert.equal(Object.isFrozen(retainedEnvelopeChild), true);
+  assert.throws(() => {
+    retainedEnvelopeChild.value = "mutated";
+  }, TypeError);
+});
+
 test("canonical snapshot creation deep-freezes shallow-frozen subtrees", () => {
   const mutableGrandchild = { value: "before" };
   const shallowFrozenSubtree = Object.freeze({
