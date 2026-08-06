@@ -47,14 +47,27 @@ the route returns HTTP 503. Pending mempool data is useful visibility and may
 be stored, but pending rows must not change canonical routing, ownership, credit
 balances, WORK floor, Growth value, Log totals, or durable Files/Desktop state.
 
+Full collection responses expose `indexedAt`, `indexedThroughBlock`,
+`indexedThroughBlockHash`, `snapshotId`, and `source` when that provenance is
+available, with `summaryOnly: false` or its full-response equivalent. A
+`summaryOnly: true` response is deliberately partial: it may update a summary
+surface but cannot erase a complete collection or relabel retained full data
+with summary provenance. A successful newer authenticated full response
+replaces atomically, including when it is smaller or empty. Loading,
+unavailable, verified last-good, ready, and wallet-disconnected remain distinct
+UI states; zero is truth only after a successful canonical read proves zero.
+
 Every indexed row should be replayable and externally inspectable:
 
 - Store the raw/normalized transaction data needed to reparse the event.
 - Store the parsed protocol payload, validation result, participants, and
   important references such as parent txids, listing txids, credit ids, and sale
   ticket outpoints.
-- Store status transitions for `pending`, `confirmed`, `dropped`, and
-  `orphaned` records.
+- Store base status transitions for `pending`, `confirmed`, `dropped`, and
+  `orphaned` records, plus durable original-input and `replaced_by_txid`
+  evidence when a dropped base row is classified as replaced. `unknown` is a
+  nonterminal read result and `failed` is a known local broadcast rejection;
+  neither is inferred from absence.
 - Keep `txid` on every event so the UI can expose the normal explorer/mempool
   verification link beside database-backed data.
 - Keep canonical projections derived from confirmed rows only.
@@ -214,11 +227,12 @@ views stay canonical; `work-floor`, `work-summary`, and `growth-summary` serve
 stored canonical summary snapshots with age guards and canonical fallback.
 `marketplace-summary` must pass through the reconciled marketplace lifecycle
 builder before returning so confirmed, unspent, buyable sealed listings cannot
-be dropped by an older compacted proof-index summary snapshot. A valid sale
-ticket seal spend is active sealed inventory, not a close; if a projection row
-temporarily carries `closeTxid === sealTxid`, the summary builder must recover
-the row as sealed unless a later real buy, delist, or other non-seal spend
-closes it. Fresh marketplace and summary reads must return one coherent snapshot
+be dropped by an older compacted proof-index summary snapshot. A valid current
+seal publishes the ticket signature without spending the listing anchor. If a
+projection row temporarily carries `closeTxid === sealTxid`, the summary builder
+may recover the row as sealed only after first-party outspend truth proves that
+anchor remains unspent; a later real buy, delist, or any other spend closes it.
+Fresh marketplace and summary reads must return one coherent snapshot
 at the exact hash-verified Core tip; if that cannot be proved inside the request
 budget they return 503. Stable reads may serve a coherent hash-verified last-good
 snapshot with explicit indexed height, tip, lag, and snapshot provenance.
@@ -702,6 +716,16 @@ deploy/wireguard-node.conf
 deploy/zz-proofofwork-api-private-network.conf
 deploy/proofofwork-api-wg.socket
 deploy/proofofwork-api-wg.service
+deploy/wireguard-node-api-listener.conf
+deploy/wireguard-ui-alert.conf
+deploy/proofofwork-ops-alert.sh
+deploy/proofofwork-ops-alert@.service
+deploy/proofofwork-node-api-health.sh
+deploy/proofofwork-node-api-health.service
+deploy/proofofwork-node-api-health.timer
+deploy/proofofwork-ui-api-path-health.sh
+deploy/proofofwork-ui-api-path-health.service
+deploy/proofofwork-ui-api-path-health.timer
 deploy/proofofwork-cache-prune.service
 deploy/proofofwork-cache-prune.timer
 deploy/logrotate-timer-override.conf
@@ -722,6 +746,13 @@ deploy/proofofwork-postgres-logical-backup.timer
 deploy/proofofwork-postgres-query-health.sh
 deploy/proofofwork-postgres-query-health.service
 deploy/proofofwork-postgres-query-health.timer
+deploy/proofofwork-postgres-backup-health.sh
+deploy/proofofwork-postgres-backup-health.service
+deploy/proofofwork-postgres-backup-health.timer
+deploy/proofofwork-postgres-offsite-backup.sh
+deploy/proofofwork-postgres-offsite-backup.service
+deploy/proofofwork-postgres-offsite-backup.timer
+deploy/postgresql-backup-alerts.conf
 deploy/proofofwork-release-prune.sh
 deploy/proofofwork-ui-release-prune.service
 deploy/proofofwork-ui-release-prune.timer
@@ -803,6 +834,24 @@ socket proxy exposes `10.77.0.2:8081` only on the tunnel, and Caddy proxies
 `/api/*` plus `/health*` to that address. Host firewalls allow the tunnel peer
 and required public web/SSH ports only. The proxy service has an empty capability
 set and `LimitCORE=0`; the socket unit itself does not execute application code.
+The proxy is ordered after the API when both start together, but deliberately
+has no `Requires`, `BindsTo`, or `PartOf` relationship to the API service. A
+persistent socket or Caddy health probe therefore cannot restart an API that an
+operator deliberately stopped. During planned maintenance, stop the private
+socket first to avoid exposing proxy transport failures, then stop the API; keep
+the socket stopped until the API is ready again.
+Install `wireguard-node-api-listener.conf` as
+`/etc/systemd/system/wg-quick@wg0.service.d/90-proofofwork-api-listener.conf`
+on the node. The drop-in makes every successful `wg0` start pull the private
+API socket back up after `BindsTo` correctly stopped it with a lost tunnel; the
+socket remains bound only to `10.77.0.2`. Install `wireguard-ui-alert.conf` as
+the corresponding `90-proofofwork-alert.conf` drop-in on the UI host. Validate
+the complete unit graph with `systemd-analyze verify` and prove in an approved
+maintenance window that stopping `wg0` stops the node socket and starting
+`wg0` restores it without manual socket intervention. Caddy actively checks
+the availability-only `/health/live` endpoint and retries a transient upstream
+failure for five seconds. It never treats that availability response as proof
+that exact `/health` readiness is green.
 Install the Caddy unit hardening drop-in,
 validate the tracked Caddyfile, then verify HSTS, CSP, COOP, immutable hashed
 asset caching, document revalidation, and gzip/zstd responses on every public
@@ -818,6 +867,49 @@ remote ports and both client-address fields are deleted. Rotation is capped at
 25 MiB per file, eight retained rolls, and seven days. Verify one request with
 a synthetic query proves that the query, headers, and client address do not
 reach the log before treating access logging as healthy.
+
+Install `proofofwork-ops-alert.sh` as executable
+`/usr/local/sbin/proofofwork-ops-alert` and the template service on both hosts.
+Every tracked critical service and health check sends a deduplicated
+`daemon.crit` event to the local journal. External delivery is optional and is
+not operational until an operator installs `/etc/proofofwork-alerts/curl.conf`
+as `root:root 0600`; the curl config owns the URL, POST method, content type,
+and authentication header so secrets do not appear in the unit or process
+arguments. Local and external delivery use separate deduplication evidence.
+Webhook delivery receives three bounded attempts and is marked delivered only
+after curl succeeds; a failed webhook leaves the alert unit failed and eligible
+for the next source-event retry. Journal-only delivery is useful local evidence
+but is not an independent alert destination.
+
+On the UI host, install `proofofwork-ui-api-path-health.service` after installing
+its executable script, run the oneshot service once for verification, then
+enable and start its timer. Every two minutes it proves
+the private `10.77.0.2` availability response, the same response through local
+Caddy with TLS/SNI, and the separate public readiness response. It also samples
+the current and recently rotated owner-only Caddy JSON logs for the preceding
+five minutes, including gzip-compressed rotations, with a 32 MiB decoded bound
+per file, a 1 MiB allocation bound per record, and an explicit coverage failure
+when either bound is exceeded. The same sanitized log also retains Caddy's
+structured `http.log.error` records while the default logger preserves one copy
+of the existing journal evidence. An exact `no upstreams available` 503 with
+a nonempty Caddy error id and a `reverseproxy` error trace is a proxy transport
+failure; its matching access row is consumed once by request identity inside a
+one-second timestamp window. An ordinary access-log 503 without that Caddy
+origin evidence remains backend readiness. HTTP 502 and 504 remain transport
+failures, and all other HTTP 5xx responses are application failures; each class
+is separately labeled and thresholded. The same bounded window
+separately counts status 0 (no completed HTTP response) and API requests lasting
+at least ten seconds. Five status-0 records or ten slow requests warn; 20
+status-0 records or 50 slow requests are critical. Malformed records alert only
+when their embedded timestamp is inside the bounded window; unscoped malformed
+lines remain reported without creating a permanent warning. The check runs as
+`caddy` and cannot read secrets or mutate the web root. On the
+node, install the matching node API-health oneshot service, run it once for
+verification, then enable and start its timer. It checks
+loopback availability and exact readiness, required API/worker/socket units,
+and alerts only when the worker restart counter increases from its persisted
+baseline. A historical nonzero restart count does not create a false current
+incident.
 
 Browser HTML is always rendered as static content inside an opaque
 iframe with both scripts and forms disabled; confirmed content never receives a
@@ -850,8 +942,10 @@ from `POW_INDEX_WORKER_ERROR_INTERVAL_MS` to
 `POW_INDEX_WORKER_MAX_ERROR_INTERVAL_MS`, and an alert-ready diagnostic is
 emitted at `POW_INDEX_WORKER_NO_PROGRESS_ALERT_INTERVAL_MS`. `/health` remains
 not-ready and exposes the checkpoint, failing height, txid, repeat count, and
-next retry while `/health/live` can continue to report separately verified
-node/read-model availability. Any real checkpoint advance resets the circuit.
+next retry while `/health/live` continues to report process availability only.
+Its cached readiness fields are informational and cannot prove current node,
+worker, database, or read-model health. Any real checkpoint advance resets the
+circuit.
 Generic, unstructured failures are not contained: three consecutive failed
 cycles still make the process exit so systemd exposes and recovers the fault.
 SIGTERM/SIGINT stops the active child and cancels retries before shutdown. The
@@ -885,6 +979,36 @@ tracked as `POW_INDEX_CANONICAL_SUMMARY_REFRESH_TIMEOUT_MS`,
 `POW_INDEX_WORKER_PARITY_TIMEOUT_MS` in the worker unit. The worker and API
 service limits also set `LimitCORE=0`.
 
+A bounded or incomplete mempool pass records `pending-degraded`, leaves pending
+writes fail closed, and continues confirmed catch-up on the next loop instead of
+crash-looping the worker or taking confirmed reads offline. Supervised
+`--once` runs still publish that diagnostic evidence and exit nonzero so an
+operator or test cannot mistake incomplete pending coverage for success.
+
+Public expensive reads validate the query string, exact page/offset/cursor
+bounds, and recovery-hint count before Core or PostgreSQL work. Per-client
+limits trust `X-Forwarded-For` only from the configured loopback/WireGuard proxy
+addresses; bounded heavy/fresh admission queues, per-key singleflight, Core
+status concurrency, and exact JSON-serialized cache entry/byte ceilings contain
+the remaining work. Cyclic, BigInt, oversized, or otherwise unserializable cache
+content is refused without displacing last-good data. A nonempty worker internal
+verifier token may be sent only to an explicit HTTP loopback API URL
+(`127.0.0.1`, `::1`, or `localhost`); an unsafe configured base fails before
+fetch and the token is never logged.
+
+Production additionally pins the exact-tip token cache to 128 entries and 256
+MiB, and the confirmed-transaction cache to 20,000 entries, 256 MiB, and a
+six-hour TTL. Both refuse oversized or unserializable values and expose their
+bounded-cache counters in API health. The tracked controls are
+`POW_API_EXACT_TIP_TOKEN_CACHE_MAX_ENTRIES`,
+`POW_API_EXACT_TIP_TOKEN_CACHE_MAX_BYTES`, `MAX_TRANSACTION_CACHE_SIZE`,
+`MAX_TRANSACTION_CACHE_BYTES`, and `TRANSACTION_CACHE_TTL_MS`.
+
+Invalid input returns 400, rate/admission saturation returns 429 with
+`Retry-After`, and unprovable canonical state returns 503. Availability checks,
+price refreshes, block-txid reads, and forced canonical gates must also coalesce;
+none is an unbounded bypass around these controls.
+
 Install the cache prune unit and timer under `/etc/systemd/system/`. It deletes
 only orphan cache files named `*.tmp` older than 15 minutes. Failure to inspect
 the primary `/data/proofofwork-api-cache` path is fatal and visible in the unit;
@@ -905,8 +1029,9 @@ scratch under its own three-day `/var/tmp/proofofwork-deploy` namespace rather
 than deleting arbitrary `/tmp` content.
 
 Install `proofofwork-node-storage-health.sh` as executable
-`/usr/local/sbin/proofofwork-node-storage-health`, then install and enable its
-service and timer on the node host. Every five minutes it checks both `/` and
+`/usr/local/sbin/proofofwork-node-storage-health`, then install its oneshot
+service on the node host, run it once for verification, and enable and start its
+timer. Every five minutes it checks both `/` and
 the mandatory separate `/data` mount. Block and inode use warn at 75% and fail
 critically at 85%; the node additionally requires at least 10 GiB free on `/`
 and 100 GiB free on `/data`. The service emits one bounded structured line per
@@ -941,8 +1066,9 @@ slow-query logging without bind values, lock waits, and slow autovacuum
 evidence. This is a PostgreSQL restart, not a reload-only change.
 
 Install `proofofwork-postgres-query-health.sh` as executable
-`/usr/local/sbin/proofofwork-postgres-query-health`, then install and enable its
-service and timer. Its five-minute `pg_stat_activity` sample is aggregate-only:
+`/usr/local/sbin/proofofwork-postgres-query-health`, then install its oneshot
+service, run it once for verification, and enable and start its timer. Its
+five-minute `pg_stat_activity` sample is aggregate-only:
 it logs cluster-wide client connections plus database-scoped active sessions,
 oldest active age, identical-query fanout, lock waiters and oldest lock-wait
 age, and idle or aborted-in-transaction sessions without logging query text or
@@ -954,6 +1080,30 @@ connections, or a lock wait aged 20 seconds is critical. The service has a
 start a deliberately stopped database during maintenance. These thresholds
 expose request stampedes and pool exhaustion while the retained
 `pg_stat_statements` data supports later normalized-query diagnosis.
+Install `proofofwork-postgres-backup-health.sh` as executable
+`/usr/local/sbin/proofofwork-postgres-backup-health`, then install its oneshot
+service, run it once for verification, and enable and start its timer. The
+read-only five-minute check requires a checksum-valid
+logical dumpset no older than 30 hours, a successful physical base backup no
+older than eight days, an active WAL receiver with a WAL file updated in the
+last 30 minutes, and active WAL-compression, logical, and base-backup timers.
+Fresh WAL evidence may be a completed canonical raw segment or its compressed
+`.gz` form; `.partial` files never satisfy freshness. The 3+ GiB logical dump
+is fully rehashed when a new set or its metadata appears and at least once per
+day, not on every five-minute WAL sample. Install
+`postgresql-backup-alerts.conf` as a drop-in for
+`pg_receivewal@16-main.service`, `pg_basebackup@16-main.service`, and
+`pg_compresswal@16-main.service` so their direct failures reach the same alert
+path. If off-site backup is explicitly
+enabled, the health check additionally requires an active off-site timer and
+verified success evidence no older than 30 hours.
+
+These checks prove current evidence, freshness, and logical checksums; they do
+not prove that a base backup restores or that every WAL segment required for
+point-in-time recovery is continuous. Phase B must add `pg_verifybackup` or
+equivalent archive verification and an isolated restore/PITR drill before the
+backup system can be described as recovery-verified.
+
 Full token-state and mint-stat reads select canonical mint winners and restore
 their deterministic display order in the API process, instead of sorting the
 wide event payload twice in PostgreSQL. Paginated mint history keeps its
@@ -1016,6 +1166,41 @@ PostgreSQL data checksums remains a separate maintenance operation because it
 requires a clean database shutdown. Local physical and logical copies protect
 against database/root-volume failures, but an encrypted off-host copy is still
 required for independent disaster recovery.
+
+The tracked restic SFTP transport is deliberately default-off and is not a
+completed backup. The required sequence is: install the disabled scaffold;
+approve and independently verify the remote destination; install restic and
+protected credentials; initialize the repository once as `postgres`; create
+and verify one exact manual snapshot; complete an isolated restore/PITR drill;
+then, and only then, enable the timer. Before it can be enabled, the owner must
+approve an independent provider/host and absolute repository path, and designate
+the custodian and recovery location for the restic encryption password. Install
+restic from the approved OS source, then create `/etc/proofofwork-backup` as
+`root:postgres 0750`.
+Create `offsite.env`, `restic-password`, `ssh_config`, `known_hosts`, and
+`identity` as `root:postgres 0640`. `offsite.env` contains only:
+
+```text
+POW_OFFSITE_BACKUP_ENABLED=1
+RESTIC_REPOSITORY=sftp:proofofwork-offsite-backup:/approved/absolute/path
+```
+
+The SSH config must define only the fixed `proofofwork-offsite-backup` alias,
+pin `IdentityFile` and `UserKnownHostsFile` to those protected files, require
+strict host-key checking, disable password/interactive authentication, and set
+bounded connection and keepalive timeouts. Initialize the encrypted repository
+once as `postgres` only after independently verifying the destination and
+record the repository ID in the recovery runbook. The scheduled script itself
+never runs `restic init`, `forget`, or `prune`; it refuses an uninitialized
+repository, validates the newest local logical and physical evidence before
+upload, accepts the newest completed canonical WAL segment before or after the
+daily compression pass while excluding `.partial` files, verifies the resulting snapshot's exact
+snapshot ID, host, source paths, and freshness from the JSON result of that
+specific backup, and runs a ciphertext/data subset check. Install
+the off-site service and timer, but do not enable or start the timer until a
+read-only restore drill from that repository succeeds and the encryption
+password has an independently controlled recovery copy. Retention and
+append-only destination controls remain a separate approved design decision.
 
 Database credentials live in
 `/etc/proofofwork-api/proof-indexer-db.env`, never inside the live Git checkout.
@@ -2638,23 +2823,46 @@ seven-character commit prefix. Its bytes are never trusted, extracted, or copied
 The publisher directly proves the live Git tree and complete runtime, enforces
 the 8 GiB source/compressed caps and free-space headroom, creates clean Git
 metadata without importing live hooks/config, copies only the attested runtime,
-and proves the assembled checkout again. It assigns the clean metadata to the
-live runtime owner/group, preserves numeric ownership and safe modes in the tar,
-and records commit, tree, archive size/digest/times, runtime entry count/bytes,
-and the length-prefixed path/type/mode/uid/gid/content SHA-256 in strict
+and proves the assembled checkout again. The publisher and daily verifier run
+every Git subprocess, including child `upload-pack`/`pack-objects`, in the same
+empty inherited environment: system/global config, repository helpers, hooks,
+pagers, auto-maintenance, lazy fetches, and replacement refs cannot become
+executable policy, and every transport is denied except the publisher's fixed
+local-file clone. It assigns the clean metadata to the live runtime owner/group,
+preserves numeric ownership and safe modes in the tar, and records commit, tree,
+archive size/digest/times, runtime entry count/bytes, and the length-prefixed
+path/type/mode/uid/gid/content SHA-256 in strict
 `proof-of-work-node-release-provenance-v2`. It publishes the canonical checksum
 and provenance first, makes the archive visible last, and never overwrites
 existing evidence.
 
-Install and enable the node release-health service and timer. The daily verifier
+Install the node release-health oneshot service, run it once for verification,
+then enable and start its timer. The daily verifier
 repeats the recursive tracked and full-runtime attestation without `git status`,
 validates safe archive/checksum/provenance ownership and modes, and requires at
 least one v2 archive whose commit, tree, runtime entry count/bytes, and runtime
-SHA-256 all match live. The recursive daily job runs at nice 10 with idle I/O,
+SHA-256 all match live. Unsafe ownership, malformed evidence, or checksum
+failure is critical. A safely retained historical archive that predates a
+checksum or v2 provenance sidecar remains warning-visible but does not keep the
+service failed once current exact rollback evidence is healthy; it is never
+rewritten, deleted, or counted as verified. The recursive daily job runs at nice 10 with idle I/O,
 low CPU/I/O weights, and a bounded 30-minute start timeout. It warns when
 `/opt` contains more than nine
 `proofofwork-api*` checkouts but never deletes them; rollback, incident, or
 recovery directories require separate operator classification and approval.
+The verifier retains only `CAP_DAC_READ_SEARCH`: this is required because the
+live `.git` directory is intentionally `powadmin`-private while managed
+archives are root-private. It permits reads and traversal but no write, delete,
+ownership, or mode changes. The verifier is restricted to `AF_UNIX`, has a
+read-only protected system filesystem, and receives no `ReadWritePaths`.
+Keep the prune timer disabled and inert during this diagnostic/monitoring phase;
+do not start the prune service as part of Phase A. Its node-checkout validation
+uses the same empty inherited environment, explicit Git directory/work tree,
+no-lazy-fetch/no-replacement policy, and helper-neutralizing runtime
+configuration as the verifier. That containment is a prerequisite, not deletion
+approval. Starting the service or enabling its timer requires a separate
+operator review of fixture-only evidence and explicit approval; fixing health
+visibility does not authorize deletion.
 Install root-executed scripts as `root:root 0755`, unit/config files as
 `root:root 0644`, and create their mandatory retention directories before
 starting the services.
@@ -2708,8 +2916,12 @@ Production Ubuntu uses Apport, not `systemd-coredump`. Install
 `apport.service`, and run `sysctl --system`. Do not install a
 `systemd-coredump` storage override and assume it controls the active handler.
 After installing any units, run `systemctl daemon-reload`, restart the affected
-services, enable both timers, and verify effective `LimitNOFILE`, `LimitCORE`,
-mount requirements, timer schedules, journal limits, and `kernel.core_pattern`.
+services, enable the node API-health, UI API-path-health, PostgreSQL
+backup-health, storage-health, and release-provenance health timers described
+for the approved rollout, and verify effective `LimitNOFILE`, `LimitCORE`, mount
+requirements, timer schedules, journal limits, and `kernel.core_pattern`.
+Off-site backup and every prune/apply timer remain disabled until their separate
+configuration, evidence, and approval gates are complete.
 If these values drift in production, restore them from `deploy/` before trusting
 route-level health checks.
 
@@ -2751,6 +2963,11 @@ first-party full-node or confirmed tx truth before deploy. Proof-index
 PostgreSQL tables are derived read models for speed; stale rows, stale zeros,
 and unclosed sale-ticket projections must be repaired or bypassed when they
 disagree with confirmed chain state.
+For lifecycle changes, production verification must cover a known pending tx,
+a confirmed tx, a never-seen tx that remains `unknown`, a durably evidenced
+replacement, repeated-removal `dropped`, terminal-state revival, confirmation
+reorganization, and source unavailability returning 503 without overwriting the
+client's prior state.
 
 Production audits should follow the public app dependency order. Verify the
 standalone surfaces first: Home, IDs, Desktop, Browser, AMO, Credit,
@@ -2900,7 +3117,13 @@ VITE_LOG_ONLY=1 VITE_POW_API_BASE=https://log.proofofwork.me npm run build
 VITE_GROWTH_ONLY=1 VITE_POW_API_BASE=https://growth.proofofwork.me npm run build
 ```
 
-RUSH remains staged behind explicit build/query flags and should not be added to public navigation or production domain routing until separately approved for launch.
+RUSH remains staged behind explicit gates and should not be added to public
+navigation or production domain routing until separately approved for launch.
+Shared query routing requires `VITE_RUSH_QUERY_ENABLED=1`; a standalone build
+requires `VITE_RUSH_ONLY=1`; the API keeps
+`POW_RUSH_PUBLIC_READS_ENABLED=0` by default. Direct public RUSH reads and mint
+entrypoints remain unavailable while confirmed historical RUSH records stay
+visible in shared canonical Log/ledger aggregates.
 
 Local deploy builds can leave generated artifacts such as `dist/`, `.vite/`,
 and `.pow-api-cache/`. Treat them as rebuildable output/cache state. After
@@ -2934,8 +3157,8 @@ GET /api/v1/growth-summary?network=livenet
 GET /api/v1/consistency?network=livenet
 GET /api/v1/ledger-consistency?network=livenet
 GET /api/v1/prices/btc-usd?network=livenet
-GET /api/v1/rush?network=livenet
-GET /api/v1/rush?network=testnet4
+GET /api/v1/rush?network=livenet       # gated; default 404
+GET /api/v1/rush?network=testnet4      # gated; default 404
 GET /api/v1/address/:address/mail?network=livenet
 GET /api/v1/address/:address/utxo?network=livenet
 GET /api/v1/tx/:txid?network=livenet
@@ -2967,7 +3190,10 @@ The canonical livenet ledger payload:
   build from current canonical/proof-index event data that covers the node tip
   within the configured lag, return a current checked ledger fallback that
   already covers that tip while deeper refresh continues, or fail closed instead
-  of returning an older or lower snapshot as if it were refreshed.
+  of returning an older or unauthenticated snapshot as if it were refreshed. A
+  newer authenticated full snapshot may legitimately contain lower counts or
+  value, including an empty collection, after pending removal, replacement, a
+  chain reorganization, or a repaired projection.
 - Carries live BTC/USD metadata (`btcUsd`, `btcUsdIndexedAt`, `usdSource`) on WORK/Growth responses. `actualValue.totalUsd` is current live USD from the first-party price endpoint, while `actualValue.modelTotalUsd` is the separate Growth model USD projection.
 - Keeps pending records visible where useful, but only confirmed records affect canonical network value and the WORK floor.
 - Keeps live and frozen network value separate. Live network value is the active site value and WORK floor source. Frozen network value is the immutable confirmation-time audit stamp for WORK movement and fixed event components.
@@ -2975,7 +3201,9 @@ The canonical livenet ledger payload:
 - Counts cumulative WORK miner fees once per confirmed transaction id from complete full-node input value minus output value. This is historical Bitcoin blockspace/security expenditure, not platform revenue, retained reserves, or spendable backing.
 - Values a valid recipient-matched same-transaction WORK attachment from the last confirmed green canonical live WORK summary at H-1, hash-bound to the exact previous block. Every transaction in the bond block is excluded. Multiple Inception bonds in one block share that raw H-1 summary identity, but each bond keeps its own transaction id and block index in the bound issuance checkpoint. That same persisted H-1 oracle fixes both INCB issuance and the attachment's frozen WORK movement value; the normal sequential WORK replay floor must not replace it. Confirmation fixes the resulting INCB balance, supply, and attached WORK proof value while the underlying WORK movement stays single-counted in global Growth/WORK value. Inception network value is fixed cumulative issuance value plus confirmed INCB sale volume, transfer fees, and marketplace mutation fees. Current or later WORK value never reprices INCB.
 - Persists a compact confirmed-WORK-transfer valuation projection with each exact canonical summary. Public WORK token and transfer-history reads may overlay only rows already present in the indexed result, and only when projection snapshot id, height, and block hash match the eligible database summary and the current Bitcoin Core tip; otherwise they fail closed to the unprojected row rather than publish stale values.
-- Rejects or avoids replacing a useful cached ledger with a worse confirmed-history payload when guarded counts regress.
+- Rejects stale, unauthenticated, or internally incoherent replacement payloads;
+  it does not reject a newer authenticated full canonical snapshot merely
+  because a guarded count or value decreased.
 - May serve a useful cached ledger for fast first paint only when summary projections also correct active sale-ticket listings against current node spend state; deep refresh continues in the background and must converge on confirmed chain truth.
 - Replays WORK mint summaries from canonical mint events and treats pending WORK mints as availability pressure only. Pending mints can reduce available mint slots in the UI, but they do not change confirmed supply, holders, floor, or network value.
 - Orders pending WORK mint candidates by lowercase txid. A fast supply-cap rejection is allowed only from exact-tip confirmed supply plus a complete, Bitcoin Core-current prefix of earlier candidates; otherwise the verifier falls back instead of guessing.
@@ -2983,7 +3211,7 @@ The canonical livenet ledger payload:
 - Core-only WORK marketplace replay uses the current exact-tip relational WORK state and a bounded 30-second verifier window rather than rebuilding the full external registry history. When that exact state proves a pending listing exceeds its seller's spendable balance, the verifier returns a specific invalid decision so the worker can terminalize it; non-exact or fallback balance state remains unresolved.
 - Promotes pending WORK and credit listings into confirmed state through the shared credit payload, deduping by listing txid and sale-ticket outpoint so confirmation does not leave duplicate pending rows behind.
 - Current relational token-state reads remove an active listing as soon as a valid pending or confirmed close event exists; dropped close events never suppress the listing. This keeps full token payloads and fresh summary projections on the same mempool lifecycle.
-- Preserves sale-ticket seal metadata when WORK or credit listings promote from pending to confirmed state. Confirmed seal regressions are rejected so a refreshed payload cannot make a sealed listing look unsealed.
+- Preserves sale-ticket seal metadata when WORK or credit listings promote from pending to confirmed state. A seal cannot disappear inside one authenticated canonical snapshot, while a newer verified full snapshot may remove it after a reorganization or repaired projection.
 - Checks pending WORK and credit txids for liveness on fresh reads and prunes dropped pending transfers, listings, seals, delistings, and buys from pending overlays without changing confirmed history.
 - Counts AMO network value from sale volume plus market mutation fees. Market mutation fees remain in AMO flow and are excluded from generic Computer event flow.
 - Reports only valid AMO mutation fee/flow in the outward marketplace aliases.
@@ -3096,6 +3324,11 @@ The credit endpoint:
 
 The staged RUSH endpoint:
 
+- Is not a public production entrypoint while
+  `POW_RUSH_PUBLIC_READS_ENABLED=0`. `VITE_RUSH_QUERY_ENABLED=1` enables only an
+  explicit shared development route, while `VITE_RUSH_ONLY=1` builds the
+  standalone staged surface. Neither browser flag enables the server read or
+  broadcast gate.
 - Scans the configured RUSH registry address: `bc1qym392dfvfm024k7ukzlnvnpfvuu4kfqvu56w3e` on livenet and `tb1qyh9pgznpass4mjcl8qj9yxs3vvl9rnrk5gvw6q` on testnet4.
 - Reads confirmed and pending `pwr1:m:rush` records.
 - Requires at least 1,000 proofs paid to the RUSH registry before the RUSH OP_RETURN.
@@ -3117,9 +3350,17 @@ The mail endpoint:
 
 The tx status endpoint:
 
-- Returns `confirmed`, `pending`, or `dropped`.
-- Checks local infrastructure first and the pending fallback second.
-- Lets Outbox stop showing dropped transactions as forever-pending.
+- Returns `unknown`, `pending`, `confirmed`, `replaced`, or `dropped` from the
+  canonical lifecycle service. Outbox may separately retain `failed` for a known
+  local broadcast rejection.
+- Current full-node presence wins. Absence alone returns `unknown`; `dropped`
+  requires durable prior observation plus a complete repeated-removal witness,
+  and `replaced` additionally requires one unambiguous spender of durably
+  retained original inputs. Source failure returns 503 and preserves the prior
+  client state.
+- A later full-node pending or confirmed observation revives stale terminal
+  state. A reorganization can likewise demote an indexed confirmation until
+  current canonical evidence proves its next state.
 
 The tx endpoint:
 
@@ -3156,17 +3397,35 @@ Production rules:
 - Pending IDs must never be routable.
 - Pending mail can be shown in Incoming/Outbox, but it must not be treated as durable mail.
 - Files should only show durable confirmed attachments by default in the UI.
-- Dropped txs are txids that are not confirmed and are not visible in the configured mempool views at check time.
+- Unknown txs have no current presence proof and no durable terminal witness.
+- Dropped txs were durably observed and then passed the complete repeated-removal
+  threshold without an unambiguous conflicting spender. Replaced txs have that
+  exact conflicting-spender evidence. A single not-found response is never a
+  terminal classification.
 
-This means a tx can move:
+Representative lifecycle transitions include:
 
 ```text
 pending -> confirmed
+pending -> unknown
 pending -> dropped
+pending -> replaced
+confirmed -> unknown
+confirmed -> pending
+unknown -> pending
+unknown -> confirmed
 dropped -> pending
+dropped -> confirmed
+replaced -> pending
+replaced -> confirmed
+local failed -> pending
+local failed -> confirmed
 ```
 
-The last case can happen if a tx reappears in a mempool view after being temporarily unavailable. The UI should treat dropped as a recoverable local state, not as chain consensus.
+Revival can happen when a transaction reappears after temporary unavailability,
+or when newer node evidence supersedes stale indexed/local state. The UI should
+treat every non-confirmed label as evidence-bound application state, not chain
+consensus.
 
 ## Protocols Indexed
 

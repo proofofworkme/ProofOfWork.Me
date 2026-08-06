@@ -1,6 +1,7 @@
 [Unit]
 Description=Prune orphan ProofOfWork API cache temporary files
 RequiresMountsFor=/data/proofofwork-api-cache
+OnFailure=proofofwork-ops-alert@%n.service
 
 [Service]
 Type=oneshot

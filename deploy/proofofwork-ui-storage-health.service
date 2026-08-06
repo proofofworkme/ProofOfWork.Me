@@ -1,5 +1,6 @@
 [Unit]
 Description=Check ProofOfWork UI disk and inode runway
+OnFailure=proofofwork-ops-alert@%n.service
 
 [Service]
 Type=oneshot

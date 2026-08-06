@@ -30,6 +30,124 @@ for directory in "${retention_root}" "${checkout}" "${staging_root}"; do
     exit 1
   fi
 done
+
+# The live checkout is writable by the unprivileged runtime/deploy account while
+# this publisher runs as root. Never let Git inherit process, user, system, or
+# repository configuration that can launch helpers. Runtime configuration has
+# higher precedence than repository-local config and is inherited by child
+# upload-pack/pack-objects processes as well.
+# Git appends its canonical `git pack-objects` argv to packObjectsHook; the fixed
+# `/usr/bin/env` prefix preserves that argv under the isolated PATH without
+# permitting the repository to choose a command.
+isolated_git_environment() {
+  local trusted_checkout="$1"
+  shift
+  /usr/bin/env --ignore-environment \
+    PATH=/usr/bin:/bin \
+    LC_ALL=C \
+    GIT_CONFIG_NOSYSTEM=1 \
+    GIT_CONFIG_SYSTEM=/dev/null \
+    GIT_CONFIG_GLOBAL=/dev/null \
+    GIT_OPTIONAL_LOCKS=0 \
+    GIT_NO_LAZY_FETCH=1 \
+    GIT_NO_REPLACE_OBJECTS=1 \
+    GIT_LITERAL_PATHSPECS=1 \
+    GIT_ATTR_NOSYSTEM=1 \
+    GIT_TERMINAL_PROMPT=0 \
+    GIT_PAGER= \
+    PAGER= \
+    GIT_EDITOR=/usr/bin/false \
+    GIT_SEQUENCE_EDITOR=/usr/bin/false \
+    GIT_ASKPASS=/usr/bin/false \
+    SSH_ASKPASS=/usr/bin/false \
+    GIT_SSH=/usr/bin/false \
+    GIT_SSH_COMMAND=/usr/bin/false \
+    GIT_PROXY_COMMAND=/usr/bin/false \
+    GIT_EXTERNAL_DIFF=/usr/bin/false \
+    GIT_CONFIG_COUNT=35 \
+    GIT_CONFIG_KEY_0=safe.directory \
+    "GIT_CONFIG_VALUE_0=${trusted_checkout}" \
+    GIT_CONFIG_KEY_1=safe.directory \
+    "GIT_CONFIG_VALUE_1=${trusted_checkout}/.git" \
+    GIT_CONFIG_KEY_2=core.fsmonitor \
+    GIT_CONFIG_VALUE_2=false \
+    GIT_CONFIG_KEY_3=core.untrackedCache \
+    GIT_CONFIG_VALUE_3=false \
+    GIT_CONFIG_KEY_4=core.hooksPath \
+    GIT_CONFIG_VALUE_4=/dev/null \
+    GIT_CONFIG_KEY_5=core.pager \
+    GIT_CONFIG_VALUE_5=cat \
+    GIT_CONFIG_KEY_6=pager.show \
+    GIT_CONFIG_VALUE_6=false \
+    GIT_CONFIG_KEY_7=log.showSignature \
+    GIT_CONFIG_VALUE_7=false \
+    GIT_CONFIG_KEY_8=maintenance.auto \
+    GIT_CONFIG_VALUE_8=0 \
+    GIT_CONFIG_KEY_9=gc.auto \
+    GIT_CONFIG_VALUE_9=0 \
+    GIT_CONFIG_KEY_10=gc.autoDetach \
+    GIT_CONFIG_VALUE_10=false \
+    GIT_CONFIG_KEY_11=protocol.allow \
+    GIT_CONFIG_VALUE_11=never \
+    GIT_CONFIG_KEY_12=protocol.file.allow \
+    GIT_CONFIG_VALUE_12=always \
+    GIT_CONFIG_KEY_13=uploadpack.packObjectsHook \
+    GIT_CONFIG_VALUE_13=/usr/bin/env \
+    GIT_CONFIG_KEY_14=core.alternateRefsCommand \
+    GIT_CONFIG_VALUE_14=/usr/bin/false \
+    GIT_CONFIG_KEY_15=credential.helper \
+    GIT_CONFIG_VALUE_15= \
+    GIT_CONFIG_KEY_16=core.askPass \
+    GIT_CONFIG_VALUE_16=/usr/bin/false \
+    GIT_CONFIG_KEY_17=core.sshCommand \
+    GIT_CONFIG_VALUE_17=/usr/bin/false \
+    GIT_CONFIG_KEY_18=submodule.recurse \
+    GIT_CONFIG_VALUE_18=false \
+    GIT_CONFIG_KEY_19=fetch.recurseSubmodules \
+    GIT_CONFIG_VALUE_19=false \
+    GIT_CONFIG_KEY_20=core.excludesFile \
+    GIT_CONFIG_VALUE_20=/dev/null \
+    GIT_CONFIG_KEY_21=core.attributesFile \
+    GIT_CONFIG_VALUE_21=/dev/null \
+    GIT_CONFIG_KEY_22=core.sparseCheckout \
+    GIT_CONFIG_VALUE_22=false \
+    GIT_CONFIG_KEY_23=core.sparseCheckoutCone \
+    GIT_CONFIG_VALUE_23=false \
+    GIT_CONFIG_KEY_24=fetch.fsckObjects \
+    GIT_CONFIG_VALUE_24=true \
+    GIT_CONFIG_KEY_25=transfer.fsckObjects \
+    GIT_CONFIG_VALUE_25=true \
+    GIT_CONFIG_KEY_26=receive.fsckObjects \
+    GIT_CONFIG_VALUE_26=true \
+    GIT_CONFIG_KEY_27=pack.threads \
+    GIT_CONFIG_VALUE_27=1 \
+    GIT_CONFIG_KEY_28=pack.windowMemory \
+    GIT_CONFIG_VALUE_28=32m \
+    GIT_CONFIG_KEY_29=pack.deltaCacheSize \
+    GIT_CONFIG_VALUE_29=32m \
+    GIT_CONFIG_KEY_30=core.fileMode \
+    GIT_CONFIG_VALUE_30=true \
+    GIT_CONFIG_KEY_31=core.symlinks \
+    GIT_CONFIG_VALUE_31=true \
+    GIT_CONFIG_KEY_32=core.ignoreCase \
+    GIT_CONFIG_VALUE_32=false \
+    GIT_CONFIG_KEY_33=core.precomposeUnicode \
+    GIT_CONFIG_VALUE_33=false \
+    GIT_CONFIG_KEY_34=advice.detachedHead \
+    GIT_CONFIG_VALUE_34=false \
+    "$@"
+}
+
+isolated_checkout_git() {
+  local trusted_checkout="$1"
+  shift
+  isolated_git_environment "${trusted_checkout}" \
+    /usr/bin/git \
+    --git-dir="${trusted_checkout}/.git" \
+    --work-tree="${trusted_checkout}" \
+    "$@"
+}
+
 if [[ ! -f "${source_archive}" || -L "${source_archive}" ]]; then
   echo "Release request must be a regular, non-symlink staged file." >&2
   exit 1
@@ -61,7 +179,7 @@ fi
 # outside the freshly constructed .git directory, including ignored dependencies.
 attest_checkout() {
   local target="$1"
-  /usr/bin/python3 -I - "${target}" <<'PY'
+  isolated_git_environment "${target}" /usr/bin/python3 -I - "${target}" <<'PY'
 import hashlib
 import os
 import re
@@ -75,12 +193,17 @@ if not os.path.isdir(root) or os.path.islink(root) or os.path.realpath(root) != 
     raise SystemExit("Checkout attestation requires a canonical directory.")
 
 git_environment = dict(os.environ)
-git_environment["GIT_OPTIONAL_LOCKS"] = "0"
-git_environment["LC_ALL"] = "C"
 
 def git(*arguments, input_data=None, check=True):
     result = subprocess.run(
-        ["/usr/bin/git", "-c", f"safe.directory={root}", "-C", root, *arguments],
+        [
+            "/usr/bin/git",
+            "-C",
+            root,
+            f"--git-dir={os.path.join(root, '.git')}",
+            f"--work-tree={root}",
+            *arguments,
+        ],
         input=input_data,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -390,17 +513,15 @@ trap cleanup EXIT
 empty_template="${build_root}/empty-git-template"
 /usr/bin/mkdir --mode=0700 -- "${empty_template}"
 assembled_checkout="${build_root}/proofofwork-api"
-# The local transport starts upload-pack separately, so pin its trust to the
-# exact unprivileged live Git directory instead of widening root's safe list.
-GIT_OPTIONAL_LOCKS=0 /usr/bin/git -c protocol.file.allow=always -c core.hooksPath=/dev/null \
+# The fixed local transport starts upload-pack separately. It inherits the same
+# exact safe-directory entries and helper-neutralizing runtime configuration.
+isolated_git_environment "${checkout}" /usr/bin/git -C "${build_root}" \
   clone --quiet --no-local --no-checkout --template="${empty_template}" \
-  --upload-pack="/usr/bin/git -c safe.directory=${checkout}/.git upload-pack" \
+  --upload-pack=/usr/bin/git-upload-pack \
   -- "${checkout}" "${assembled_checkout}"
-GIT_OPTIONAL_LOCKS=0 /usr/bin/git -c safe.directory="${assembled_checkout}" -c core.hooksPath=/dev/null \
-  -C "${assembled_checkout}" remote remove origin
+isolated_checkout_git "${assembled_checkout}" remote remove origin
 printf '%s\n' "${commit}" >"${assembled_checkout}/.git/HEAD"
-GIT_OPTIONAL_LOCKS=0 /usr/bin/git -c safe.directory="${assembled_checkout}" -c core.hooksPath=/dev/null \
-  -C "${assembled_checkout}" read-tree "${commit}"
+isolated_checkout_git "${assembled_checkout}" read-tree "${commit}"
 if ((EUID == 0)); then
   # The live checkout may intentionally be owned by the unprivileged runtime
   # account. Make the clean Git metadata share that owner/group before the
@@ -453,7 +574,7 @@ fi
 
 digest_line="$(/usr/bin/sha256sum -- "${archive_tmp}")"
 digest="${digest_line%% *}"
-commit_time="$(GIT_OPTIONAL_LOCKS=0 /usr/bin/git -c safe.directory="${checkout}" -C "${checkout}" show --no-patch --format=%cI "${commit}")"
+commit_time="$(isolated_checkout_git "${checkout}" show --no-patch --format=%cI "${commit}")"
 recorded_at="$(/usr/bin/date --utc +%Y-%m-%dT%H:%M:%SZ)"
 if [[ ! "${digest}" =~ ^[0-9a-f]{64}$ ]]; then
   echo "Constructed node release digest is invalid." >&2

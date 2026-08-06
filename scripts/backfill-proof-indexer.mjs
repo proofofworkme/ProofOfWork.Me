@@ -31,6 +31,10 @@ import {
   proofIndexRenderedMailEvent,
 } from "../server/proof-index-mail-projection.mjs";
 import {
+  canonicalLifecycleInputOutpointsEvidence,
+  lifecycleInputOutpointsFromTransaction,
+} from "../server/tx-lifecycle.mjs";
+import {
   INCB_RANGE_REPLAY_EXACT_MINT_LEGACY_SNAPSHOT_MODE,
   INCB_RANGE_REPLAY_WITNESS_MANIFEST_MODEL,
   buildIncbRangeReplayWitnessManifest,
@@ -1036,9 +1040,38 @@ async function runPendingOnlyBackfillPass(
       result?.q16PendingRequired === true &&
       result?.q16PendingWitnessReady !== true
     ) {
-      throw new Error(
-        "Pending-only WORK Q16 pass did not atomically publish one complete ready witness.",
+      const boundedDeferral = [
+        "protocol-txid-limit",
+        "time-budget",
+      ].includes(String(result?.stopReason ?? ""));
+      const evidence = {
+        budgetMs: Number(result?.budgetMs) || null,
+        canonicalDeferred: Number(result?.canonicalDeferred) || 0,
+        classification: boundedDeferral
+          ? "bounded-incomplete"
+          : "verification-incomplete",
+        deferred: boundedDeferral,
+        globalUnresolved: Number(result?.unresolved) || 0,
+        mempoolSize: Number(result?.mempoolSize) || 0,
+        phase: "pending-only-work-q16-readiness",
+        protocolTxids: Number(result?.protocolTxids) || 0,
+        q16PendingUnresolved: Number(result?.q16PendingUnresolved) || 0,
+        scanned: Number(result?.scanned) || 0,
+        source: String(result?.source ?? source?.label ?? ""),
+        stopReason: String(result?.stopReason ?? ""),
+        witnessReady: false,
+      };
+      console.error(JSON.stringify(evidence));
+      if (boundedDeferral) {
+        results.push({ ...result, q16PendingDisposition: evidence });
+        continue;
+      }
+      const error = new Error(
+        "Pending-only WORK Q16 verification remained incomplete; prior ready evidence was preserved.",
       );
+      error.code = "POW_Q16_PENDING_VERIFICATION_INCOMPLETE";
+      error.details = evidence;
+      throw error;
     }
     results.push(result);
   }
@@ -2554,6 +2587,7 @@ async function readJson(url, options = {}) {
           : { body: JSON.stringify(options.body) }),
         headers: Object.keys(headers).length > 0 ? headers : undefined,
         method: options.method ?? "GET",
+        redirect: "error",
         signal: controller.signal,
       });
       if (response.status === 404 && options.allowNotFound === true) {
@@ -10900,6 +10934,9 @@ async function persistCanonicalRawTransaction(
         status = 'confirmed',
         last_seen_at = now(),
         confirmed_at = COALESCE(EXCLUDED.confirmed_at, proof_indexer.transactions.confirmed_at),
+        dropped_at = NULL,
+        dropped_reason = NULL,
+        replaced_by_txid = NULL,
         block_hash = EXCLUDED.block_hash,
         block_height = EXCLUDED.block_height,
         block_index = EXCLUDED.block_index,
@@ -11597,6 +11634,10 @@ async function upsertTransaction(
   } = {},
 ) {
   const eventTime = itemTime(item);
+  const lifecycleInputOutpoints =
+    canonicalLifecycleInputOutpointsEvidence(
+      item?.lifecycleInputOutpoints,
+    );
   const result = await client.query(
     `
       INSERT INTO proof_indexer.transactions (
@@ -11692,11 +11733,29 @@ async function upsertTransaction(
           WHEN proof_indexer.transactions.raw_tx ? 'canonicalBlockScan'
             THEN proof_indexer.transactions.raw_tx
           WHEN EXCLUDED.status IN ('pending', 'confirmed')
-            THEN COALESCE(
-              proof_indexer.transactions.raw_tx,
-              EXCLUDED.raw_tx,
-              '{}'::jsonb
-            ) - 'statusObservation'
+            THEN (
+              COALESCE(
+                proof_indexer.transactions.raw_tx,
+                EXCLUDED.raw_tx,
+                '{}'::jsonb
+              ) - 'statusObservation'
+            ) || CASE
+              WHEN
+                proof_indexer.transactions.raw_tx #>>
+                  '{lifecycleInputOutpoints,complete}' = 'true'
+              THEN jsonb_build_object(
+                'lifecycleInputOutpoints',
+                proof_indexer.transactions.raw_tx->'lifecycleInputOutpoints'
+              )
+              WHEN jsonb_typeof(
+                EXCLUDED.raw_tx->'lifecycleInputOutpoints'
+              ) = 'object'
+              THEN jsonb_build_object(
+                'lifecycleInputOutpoints',
+                EXCLUDED.raw_tx->'lifecycleInputOutpoints'
+              )
+              ELSE '{}'::jsonb
+            END
           ELSE COALESCE(proof_indexer.transactions.raw_tx, EXCLUDED.raw_tx)
         END,
         updated_at = now()
@@ -11710,7 +11769,11 @@ async function upsertTransaction(
       numberOrNull(item?.blockHeight ?? item?.height),
       numberOrNull(item?.blockIndex ?? item?._powBlockIndex),
       sourceLabel,
-      JSON.stringify({ indexedFrom: sourceLabel, item }),
+      JSON.stringify({
+        indexedFrom: sourceLabel,
+        item,
+        ...(lifecycleInputOutpoints ? { lifecycleInputOutpoints } : {}),
+      }),
       suppressVolatileOverlay === true,
       suppressStatusObservation === true,
     ],
@@ -12073,7 +12136,48 @@ async function upsertEvent(client, sourceLabel, item) {
         END,
         raw_payload = EXCLUDED.raw_payload,
         payload =
-          (proof_indexer.events.payload || EXCLUDED.payload)
+          (
+            CASE
+              WHEN EXCLUDED.status IN ('pending', 'confirmed')
+                AND (
+                  lower(COALESCE(
+                    proof_indexer.events.payload->>'lifecycleStatus',
+                    ''
+                  )) IN ('dropped', 'replaced')
+                  OR proof_indexer.events.payload ?| ARRAY[
+                    'replacedByTxid',
+                    'replacementTxid',
+                    'replacementCheck'
+                  ]
+                )
+              THEN proof_indexer.events.payload
+                - 'lifecycleStatus'
+                - 'replacedByTxid'
+                - 'replacementTxid'
+                - 'replacementCheck'
+              ELSE proof_indexer.events.payload
+            END
+            || CASE
+              WHEN EXCLUDED.status IN ('pending', 'confirmed')
+                AND (
+                  lower(COALESCE(
+                    EXCLUDED.payload->>'lifecycleStatus',
+                    ''
+                  )) IN ('dropped', 'replaced')
+                  OR EXCLUDED.payload ?| ARRAY[
+                    'replacedByTxid',
+                    'replacementTxid',
+                    'replacementCheck'
+                  ]
+                )
+              THEN EXCLUDED.payload
+                - 'lifecycleStatus'
+                - 'replacedByTxid'
+                - 'replacementTxid'
+                - 'replacementCheck'
+              ELSE EXCLUDED.payload
+            END
+          )
           || jsonb_strip_nulls(
             jsonb_build_object(
               'senderAddress', COALESCE(
@@ -13442,9 +13546,48 @@ async function upsertProjection(
           close_txid = COALESCE(NULLIF(EXCLUDED.close_txid, ''), proof_indexer.credit_listings.close_txid),
           payload =
             (
-              proof_indexer.credit_listings.payload
+              CASE
+                WHEN EXCLUDED.status <> 'dropped'
+                  AND (
+                    lower(COALESCE(
+                      proof_indexer.credit_listings.payload
+                        ->>'lifecycleStatus',
+                      ''
+                    )) IN ('dropped', 'replaced')
+                    OR proof_indexer.credit_listings.payload ?| ARRAY[
+                      'replacedByTxid',
+                      'replacementTxid',
+                      'replacementCheck'
+                    ]
+                  )
+                THEN proof_indexer.credit_listings.payload
+                  - 'lifecycleStatus'
+                  - 'replacedByTxid'
+                  - 'replacementTxid'
+                  - 'replacementCheck'
+                ELSE proof_indexer.credit_listings.payload
+              END
               || (
-                EXCLUDED.payload
+                CASE
+                  WHEN EXCLUDED.status <> 'dropped'
+                    AND (
+                      lower(COALESCE(
+                        EXCLUDED.payload->>'lifecycleStatus',
+                        ''
+                      )) IN ('dropped', 'replaced')
+                      OR EXCLUDED.payload ?| ARRAY[
+                        'replacedByTxid',
+                        'replacementTxid',
+                        'replacementCheck'
+                      ]
+                    )
+                  THEN EXCLUDED.payload
+                    - 'lifecycleStatus'
+                    - 'replacedByTxid'
+                    - 'replacementTxid'
+                    - 'replacementCheck'
+                  ELSE EXCLUDED.payload
+                END
                 - 'saleAuthorization'
                 - 'listingAuthorization'
                 - 'listingFrozenTerms'
@@ -26469,15 +26612,19 @@ async function preparedWorkQ16PendingStageDecisions(stageResponse) {
         combinedPrepared.every(
           (entry) => (entry?.item ?? entry)?.valid === false,
         );
-      const transactionObservation = pendingTransactionWriteItem(
-        combinedPrepared,
-        decision.txid,
-      ) ?? pendingProtocolTransactionObservation(
-        decision.txid,
-        workMintAttemptCount,
-        false,
-        workMintResolvedInvalid,
-      );
+      const transactionObservation = {
+        ...(pendingTransactionWriteItem(
+          combinedPrepared,
+          decision.txid,
+        ) ?? pendingProtocolTransactionObservation(
+          decision.txid,
+          workMintAttemptCount,
+          false,
+          workMintResolvedInvalid,
+        )),
+        lifecycleInputOutpoints:
+          lifecycleInputOutpointsFromTransaction(hydrated),
+      };
       const prepared = verifiedPrepared;
       return {
         companionPrepared,
@@ -27054,15 +27201,19 @@ async function backfillMempoolScanSource(client, source) {
         };
         return entry?.item ? { ...entry, item: annotatedItem } : annotatedItem;
       });
-      const transactionObservation = pendingTransactionWriteItem(
-        verifiedPrepared,
-        txid,
-      ) ?? pendingProtocolTransactionObservation(
-        txid,
-        workMintAttemptCount,
-        workMintRecoveryNeeded,
-        workMintResolvedInvalid,
-      );
+      const transactionObservation = {
+        ...(pendingTransactionWriteItem(
+          verifiedPrepared,
+          txid,
+        ) ?? pendingProtocolTransactionObservation(
+          txid,
+          workMintAttemptCount,
+          workMintRecoveryNeeded,
+          workMintResolvedInvalid,
+        )),
+        lifecycleInputOutpoints:
+          lifecycleInputOutpointsFromTransaction(hydrated),
+      };
       const beforeWrite = await freshRawTransactionFromCore(txid);
       if (!beforeWrite) {
         throw new Error(

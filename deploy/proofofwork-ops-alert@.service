@@ -1,11 +1,12 @@
 [Unit]
-Description=Prune managed ProofOfWork UI release backups
-OnFailure=proofofwork-ops-alert@%n.service
+Description=Deliver ProofOfWork operational alert for %i
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/sbin/proofofwork-release-prune /var/backups/proofofwork-ui/releases 5
-TimeoutStartSec=30m
+ExecStart=/usr/local/sbin/proofofwork-ops-alert %i
+StateDirectory=proofofwork-alerts
+StateDirectoryMode=0700
+TimeoutStartSec=60s
 NoNewPrivileges=true
 PrivateTmp=true
 PrivateDevices=true
@@ -15,15 +16,11 @@ ProtectControlGroups=true
 ProtectKernelLogs=true
 ProtectKernelModules=true
 ProtectKernelTunables=true
-ReadWritePaths=/var/backups/proofofwork-ui/releases
 CapabilityBoundingSet=
 AmbientCapabilities=
 RestrictSUIDSGID=true
 LockPersonality=true
 RestrictRealtime=true
 SystemCallArchitectures=native
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 UMask=0077
-Nice=10
-IOSchedulingClass=idle
-CPUWeight=10
-IOWeight=10

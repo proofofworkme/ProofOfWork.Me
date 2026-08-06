@@ -17,6 +17,7 @@ import {
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { spawnSync } from "node:child_process";
+import { gzipSync } from "node:zlib";
 
 const read = (file) => readFileSync(file, "utf8");
 const caddy = read("deploy/Caddyfile");
@@ -45,11 +46,23 @@ const provenanceService = read(
 const provenanceTimer = read(
   "deploy/proofofwork-ui-release-provenance.timer",
 );
+const apiPathHealth = read("deploy/proofofwork-ui-api-path-health.sh");
+const apiPathHealthService = read(
+  "deploy/proofofwork-ui-api-path-health.service",
+);
+const apiPathHealthTimer = read(
+  "deploy/proofofwork-ui-api-path-health.timer",
+);
+const opsAlert = read("deploy/proofofwork-ops-alert.sh");
+const opsAlertService = read("deploy/proofofwork-ops-alert@.service");
+const wireGuardAlert = read("deploy/wireguard-ui-alert.conf");
 
 for (const executable of [
   "deploy/proofofwork-ui-release-provenance.sh",
   "deploy/proofofwork-ui-storage-health.sh",
   "deploy/proofofwork-ui-storage-prune.sh",
+  "deploy/proofofwork-ui-api-path-health.sh",
+  "deploy/proofofwork-ops-alert.sh",
 ]) {
   assert.notEqual(
     statSync(executable).mode & 0o111,
@@ -60,7 +73,7 @@ for (const executable of [
 
 assert.match(caddy, /admin 127\.0\.0\.1:2019/u);
 assert.match(caddy, /exclude http\.log\.access/u);
-assert.match(caddy, /include http\.log\.access/u);
+assert.match(caddy, /include http\.log\.access http\.log\.error/u);
 assert.match(caddy, /output file \/var\/log\/caddy\/access\.json/u);
 assert.match(caddy, /mode 0600/u);
 assert.match(caddy, /roll_size 25MiB/u);
@@ -73,6 +86,12 @@ assert.match(caddy, /request>remote_port delete/u);
 assert.match(caddy, /request>headers delete/u);
 assert.match(caddy, /request>uri regexp \\?\?\.\*\$ ""/u);
 assert.match(caddy, /resp_headers delete/u);
+assert.equal((caddy.match(/health_uri \/health\/live/gu) ?? []).length, 2);
+assert.equal((caddy.match(/health_interval 30s/gu) ?? []).length, 2);
+assert.equal((caddy.match(/health_timeout 5s/gu) ?? []).length, 2);
+assert.equal((caddy.match(/health_status 200/gu) ?? []).length, 2);
+assert.equal((caddy.match(/lb_try_duration 5s/gu) ?? []).length, 2);
+assert.equal((caddy.match(/lb_try_interval 250ms/gu) ?? []).length, 2);
 assert.match(caddy, /\(common_access_log\) \{\s+log\s+\}/u);
 assert.match(
   caddy,
@@ -167,6 +186,38 @@ assert.match(releasePruneService, /^CPUWeight=10$/mu);
 assert.match(releasePruneService, /^IOWeight=10$/mu);
 assert.match(releasePruneService, /ProtectSystem=strict/u);
 
+assert.match(apiPathHealth, /http:\/\/10\.77\.0\.2:8081\/health\/live/u);
+assert.match(apiPathHealth, /proofofwork-op-return-api/u);
+assert.match(apiPathHealth, /transport_502_504_count/u);
+assert.match(apiPathHealth, /caddy_upstream_unavailable_503_count/u);
+assert.match(apiPathHealth, /readiness_503_count/u);
+assert.match(apiPathHealth, /other_5xx_count/u);
+assert.match(apiPathHealth, /malformed_log_records/u);
+assert.match(apiPathHealth, /status_0_count/u);
+assert.match(apiPathHealth, /slow_request_count/u);
+assert.match(apiPathHealth, /POW_UI_API_STATUS_0_WARNING_COUNT:-5/u);
+assert.match(apiPathHealth, /POW_UI_API_SLOW_WARNING_COUNT:-10/u);
+assert.match(apiPathHealth, /POW_UI_API_OTHER_5XX_WARNING_COUNT:-1/u);
+assert.match(apiPathHealth, /gzip\.open/u);
+assert.match(apiPathHealth, /recent_malformed_log_records/u);
+assert.match(apiPathHealth, /caddy_log_coverage/u);
+assert.match(apiPathHealth, /status in \(502, 504\)/u);
+assert.match(apiPathHealth, /status == 503/u);
+assert.match(apiPathHealth, /message == "no upstreams available"/u);
+assert.match(apiPathHealth, /error_trace\.startswith\("reverseproxy\."\)/u);
+assert.match(apiPathHealth, /caddy_error_pair_window_seconds = 1\.0/u);
+assert.match(apiPathHealth, /def paired_caddy_error_count\(\):/u);
+assert.match(apiPathHealth, /500 <= status <= 599/u);
+assert.match(apiPathHealth, /max_decoded_bytes = 32 \* 1024 \* 1024/u);
+assert.match(apiPathHealth, /max_record_bytes = 1024 \* 1024/u);
+assert.match(apiPathHealthService, /^User=caddy$/mu);
+assert.match(apiPathHealthService, /^OnFailure=proofofwork-ops-alert@%n\.service$/mu);
+assert.match(apiPathHealthTimer, /^OnCalendar=\*:0\/2$/mu);
+assert.match(opsAlert, /event=unit_failure/u);
+assert.match(opsAlertService, /^StateDirectory=proofofwork-alerts$/mu);
+assert.match(opsAlertService, /^ExecStart=\/usr\/local\/sbin\/proofofwork-ops-alert %i$/mu);
+assert.match(wireGuardAlert, /^OnFailure=proofofwork-ops-alert@%n\.service$/mu);
+
 for (const service of [
   storageHealthService,
   storagePruneService,
@@ -186,6 +237,19 @@ for (const service of [
   ]) {
     assert.ok(service.includes(directive), `Missing ${directive}`);
   }
+}
+for (const alertedService of [
+  caddyService,
+  storageHealthService,
+  storagePruneService,
+  provenanceService,
+  releasePruneService,
+  apiPathHealthService,
+]) {
+  assert.match(
+    alertedService,
+    /^OnFailure=proofofwork-ops-alert@%n\.service$/mu,
+  );
 }
 
 for (const lockAwareScript of [storagePrune, provenance]) {
@@ -922,6 +986,266 @@ try {
   chmodSync(unsafeModeAsset, 0o644);
 } finally {
   rmSync(fixture, { recursive: true, force: true });
+}
+
+const apiHealthFixture = mkdtempSync(join(tmpdir(), "pow-ui-api-health-"));
+try {
+  const fakeCurl = join(apiHealthFixture, "curl");
+  const accessLog = join(apiHealthFixture, "access.json");
+  writeFileSync(
+    fakeCurl,
+    `#!/usr/bin/env bash
+set -Eeuo pipefail
+output=""
+url=""
+while (($#)); do
+  case "$1" in
+    --output) output="$2"; shift 2 ;;
+    --write-out) shift 2 ;;
+    http://*|https://*) url="$1"; shift ;;
+    *) shift ;;
+  esac
+done
+if [[ "$url" == */health/live ]]; then
+  printf '%s' '{"service":"proofofwork-op-return-api","available":true,"ready":false,"mode":"availability"}' >"$output"
+  printf '200'
+elif [[ "$url" == */health ]]; then
+  printf '%s' '{"service":"proofofwork-op-return-api","available":true,"ready":true,"mode":"readiness"}' >"$output"
+  printf '200'
+else
+  exit 22
+fi
+`,
+    { mode: 0o700 },
+  );
+  chmodSync(fakeCurl, 0o700);
+  writeFileSync(accessLog, "");
+  const environment = {
+    ...process.env,
+    POW_OPS_ALLOW_TEST_ROOTS: "1",
+    POW_OPS_CURL_BIN: fakeCurl,
+    POW_UI_ACCESS_LOG: accessLog,
+  };
+  const healthyPath = spawnSync(
+    "/usr/bin/bash",
+    ["deploy/proofofwork-ui-api-path-health.sh"],
+    { encoding: "utf8", env: environment },
+  );
+  assert.equal(healthyPath.status, 0, healthyPath.stderr);
+  assert.match(
+    healthyPath.stdout,
+    /transport_502_504_count=0 caddy_upstream_unavailable_503_count=0 readiness_503_count=0 other_5xx_count=0/u,
+  );
+
+  const now = Date.now() / 1000;
+  const record = (status, duration = 0.1, extra = {}) =>
+    `${JSON.stringify({
+      logger: "http.log.access",
+      ts: now,
+      status,
+      duration,
+      request: {
+        host: "computer.proofofwork.me",
+        method: "GET",
+        proto: "HTTP/2.0",
+        uri: "/api/history",
+      },
+      ...extra,
+    })}\n`;
+  const rotatedLog = join(apiHealthFixture, "access-20260805T000000Z.json.gz");
+  writeFileSync(rotatedLog, gzipSync(record(502)));
+  utimesSync(rotatedLog, new Date(), new Date());
+  const rotatedWarning = spawnSync(
+    "/usr/bin/bash",
+    ["deploy/proofofwork-ui-api-path-health.sh"],
+    { encoding: "utf8", env: environment },
+  );
+  assert.equal(rotatedWarning.status, 1, rotatedWarning.stderr);
+  assert.match(rotatedWarning.stdout, /transport_502_504_count=1/u);
+  assert.match(rotatedWarning.stdout, /scanned_log_files=2/u);
+  unlinkSync(rotatedLog);
+
+  writeFileSync(accessLog, `{"ts":${now - 1_000},"status":\n`);
+  const oldMalformed = spawnSync(
+    "/usr/bin/bash",
+    ["deploy/proofofwork-ui-api-path-health.sh"],
+    { encoding: "utf8", env: environment },
+  );
+  assert.equal(oldMalformed.status, 0, oldMalformed.stderr);
+  assert.match(oldMalformed.stdout, /recent_malformed_log_records=0/u);
+
+  const zeroThreshold = spawnSync(
+    "/usr/bin/bash",
+    ["deploy/proofofwork-ui-api-path-health.sh"],
+    {
+      encoding: "utf8",
+      env: { ...environment, POW_UI_API_502_CRITICAL_COUNT: "0" },
+    },
+  );
+  assert.equal(zeroThreshold.status, 2, zeroThreshold.stderr);
+  assert.match(zeroThreshold.stderr, /thresholds must be positive integers/u);
+
+  writeFileSync(accessLog, record(504) + record(503));
+  const separatedWarning = spawnSync(
+    "/usr/bin/bash",
+    ["deploy/proofofwork-ui-api-path-health.sh"],
+    { encoding: "utf8", env: environment },
+  );
+  assert.equal(separatedWarning.status, 1, separatedWarning.stderr);
+  assert.match(
+    separatedWarning.stdout,
+    /transport_502_504_count=1 caddy_upstream_unavailable_503_count=0 readiness_503_count=1/u,
+  );
+  assert.match(separatedWarning.stderr, /caddy_api_transport_502_504=1/u);
+  assert.match(separatedWarning.stderr, /caddy_api_readiness_503=1/u);
+
+  const proxyUnavailableDuration = 5.000_001;
+  writeFileSync(
+    accessLog,
+    record(503, proxyUnavailableDuration, {
+      ts: now,
+      logger: "http.log.error.log0",
+      msg: "no upstreams available",
+      err_id: "fixture-error-id",
+      err_trace: "reverseproxy.statusError (reverseproxy.go:1299)",
+    }) +
+      record(503, proxyUnavailableDuration + 0.02, { ts: now + 0.002 }) +
+      record(503, 0.42, { ts: now + 0.004 }),
+  );
+  const proxyUnavailableWarning = spawnSync(
+    "/usr/bin/bash",
+    ["deploy/proofofwork-ui-api-path-health.sh"],
+    { encoding: "utf8", env: environment },
+  );
+  assert.equal(
+    proxyUnavailableWarning.status,
+    1,
+    proxyUnavailableWarning.stderr,
+  );
+  assert.match(
+    proxyUnavailableWarning.stdout,
+    /transport_502_504_count=0 caddy_upstream_unavailable_503_count=1 readiness_503_count=1/u,
+  );
+  assert.match(
+    proxyUnavailableWarning.stderr,
+    /caddy_api_upstream_unavailable_503=1/u,
+  );
+  assert.match(
+    proxyUnavailableWarning.stderr,
+    /caddy_api_readiness_503/u,
+  );
+
+  writeFileSync(accessLog, record(503, 0.42));
+  const backendReadinessWarning = spawnSync(
+    "/usr/bin/bash",
+    ["deploy/proofofwork-ui-api-path-health.sh"],
+    { encoding: "utf8", env: environment },
+  );
+  assert.equal(
+    backendReadinessWarning.status,
+    1,
+    backendReadinessWarning.stderr,
+  );
+  assert.match(
+    backendReadinessWarning.stdout,
+    /transport_502_504_count=0 caddy_upstream_unavailable_503_count=0 readiness_503_count=1/u,
+  );
+  assert.match(
+    backendReadinessWarning.stderr,
+    /caddy_api_readiness_503=1/u,
+  );
+  assert.doesNotMatch(
+    backendReadinessWarning.stderr,
+    /caddy_api_upstream_unavailable_503/u,
+  );
+
+  writeFileSync(accessLog, record(500));
+  const applicationWarning = spawnSync(
+    "/usr/bin/bash",
+    ["deploy/proofofwork-ui-api-path-health.sh"],
+    { encoding: "utf8", env: environment },
+  );
+  assert.equal(applicationWarning.status, 1, applicationWarning.stderr);
+  assert.match(applicationWarning.stdout, /other_5xx_count=1/u);
+  assert.match(applicationWarning.stderr, /caddy_api_other_5xx=1/u);
+
+  writeFileSync(
+    accessLog,
+    Array.from({ length: 5 }, () => record(500)).join(""),
+  );
+  const applicationCritical = spawnSync(
+    "/usr/bin/bash",
+    ["deploy/proofofwork-ui-api-path-health.sh"],
+    { encoding: "utf8", env: environment },
+  );
+  assert.equal(applicationCritical.status, 2, applicationCritical.stderr);
+  assert.match(applicationCritical.stderr, /caddy_api_other_5xx=5/u);
+
+  writeFileSync(
+    accessLog,
+    Array.from({ length: 5 }, () => record(0, 11)).join(""),
+  );
+  const abortedWarning = spawnSync(
+    "/usr/bin/bash",
+    ["deploy/proofofwork-ui-api-path-health.sh"],
+    { encoding: "utf8", env: environment },
+  );
+  assert.equal(abortedWarning.status, 1, abortedWarning.stderr);
+  assert.match(abortedWarning.stdout, /status_0_count=5/u);
+  assert.match(abortedWarning.stderr, /caddy_api_status_0=5/u);
+
+  writeFileSync(
+    accessLog,
+    Array.from({ length: 10 }, () => record(200, 11)).join(""),
+  );
+  const slowWarning = spawnSync(
+    "/usr/bin/bash",
+    ["deploy/proofofwork-ui-api-path-health.sh"],
+    { encoding: "utf8", env: environment },
+  );
+  assert.equal(slowWarning.status, 1, slowWarning.stderr);
+  assert.match(slowWarning.stdout, /slow_request_count=10/u);
+  assert.match(slowWarning.stderr, /caddy_api_slow_requests=10/u);
+
+  writeFileSync(
+    accessLog,
+    Array.from({ length: 5 }, () => record(502)).join("") + record(503),
+  );
+  const transportCritical = spawnSync(
+    "/usr/bin/bash",
+    ["deploy/proofofwork-ui-api-path-health.sh"],
+    { encoding: "utf8", env: environment },
+  );
+  assert.equal(transportCritical.status, 2, transportCritical.stderr);
+  assert.match(transportCritical.stderr, /caddy_api_transport_502_504=5/u);
+
+  writeFileSync(accessLog, "");
+  const oversizedLog = join(apiHealthFixture, "access-oversized.json.gz");
+  writeFileSync(
+    oversizedLog,
+    gzipSync(
+      Buffer.from(
+        `${JSON.stringify({
+          ts: now,
+          status: 200,
+          duration: 0.1,
+          request: { uri: "/api/history" },
+          padding: "x".repeat(1024 * 1024),
+        })}\n`,
+      ),
+    ),
+  );
+  utimesSync(oversizedLog, new Date(), new Date());
+  const oversizedCoverage = spawnSync(
+    "/usr/bin/bash",
+    ["deploy/proofofwork-ui-api-path-health.sh"],
+    { encoding: "utf8", env: environment },
+  );
+  assert.equal(oversizedCoverage.status, 2, oversizedCoverage.stderr);
+  assert.match(oversizedCoverage.stdout, /truncated_log_files=1/u);
+  assert.match(oversizedCoverage.stderr, /CRITICAL caddy_log_coverage/u);
+} finally {
+  rmSync(apiHealthFixture, { recursive: true, force: true });
 }
 
 console.log("UI operations contract checks passed.");

@@ -1,6 +1,7 @@
 [Unit]
 Description=Verify ProofOfWork node release provenance and archive coverage
 RequiresMountsFor=/data/proofofwork-release-backups
+OnFailure=proofofwork-ops-alert@%n.service
 
 [Service]
 Type=oneshot
@@ -20,9 +21,13 @@ ProtectControlGroups=true
 ProtectKernelLogs=true
 ProtectKernelModules=true
 ProtectKernelTunables=true
-CapabilityBoundingSet=
-AmbientCapabilities=
+# The live checkout is intentionally powadmin-private while managed release
+# archives are root-private. Grant root only the read/traverse capability Git
+# needs to inspect the former; no write or ownership capability is added.
+CapabilityBoundingSet=CAP_DAC_READ_SEARCH
+AmbientCapabilities=CAP_DAC_READ_SEARCH
 RestrictSUIDSGID=true
 LockPersonality=true
 RestrictRealtime=true
 SystemCallArchitectures=native
+RestrictAddressFamilies=AF_UNIX

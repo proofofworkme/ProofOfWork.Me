@@ -42,6 +42,7 @@
     "check:node-ops": "node scripts/check-node-ops-contract.mjs",
     "check:ui-ops": "node scripts/check-ui-ops-contract.mjs",
     "check:api-truth": "node scripts/check-api-truth-contract.mjs",
+    "check:phase-a": "node server/api-phase-a.test.mjs",
     "check:canonical-order": "node scripts/check-canonical-order.mjs",
     "check:server-globals": "node scripts/check-server-free-identifiers.mjs",
     "check:electrum-client": "node scripts/check-electrum-client.mjs",

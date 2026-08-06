@@ -216,6 +216,11 @@ const desktopAppSource = sourceSliceBetween(
   /function DesktopApp/,
   /function ActivityApp/,
 );
+const proofIndexAddressMailSource = sourceSliceBetween(
+  proofIndexReader,
+  /function addressMailRowPayloads/,
+  /export async function proofIndexEventHistoryPayload/,
+);
 const pendingMempoolBasesSource = sourceSliceBetween(
   server,
   /function pendingMempoolBases/,
@@ -867,7 +872,7 @@ expectAll("health exposes canonical worker containment diagnostics", healthPaylo
 ]);
 expectAll("concurrent and adjacent health requests share one dependency sweep", healthPayloadSource, [
   /let healthPayloadCache = null/,
-  /!healthPayloadCache\.settled \|\| healthPayloadCache\.expiresAt > now/,
+  /!healthPayloadCache\.settled \|\|[\s\S]*options\.force !== true && healthPayloadCache\.expiresAt > now/,
   /return healthPayloadCache\.promise/,
   /entry\.promise = loadHealthPayload\(\)[\s\S]*healthPayloadCache = entry/,
   /entry\.expiresAt = Date\.now\(\) \+ HEALTH_PAYLOAD_CACHE_TTL_MS/,
@@ -1006,7 +1011,7 @@ expectAll("mempool priority recovery rotates independently and preserves invalid
   /mempoolEntriesAfterCursor\([\s\S]*state\?\.priorityCursor/,
   /candidate\.lane === "priority"[\s\S]*priorityCursor =[\s\S]*mempoolScanCursorForEntry/,
   /function pendingTransactionObservationItem\([\s\S]*items\.some\(\(item\) => item\?\.valid !== false\)[\s\S]*status: "pending"/,
-  /const transactionObservation = pendingTransactionWriteItem\([\s\S]*\?\? pendingProtocolTransactionObservation\([\s\S]*upsertTransaction\([\s\S]*transactionObservation[\s\S]*"pending"/,
+  /const transactionObservation = \{[\s\S]*pendingTransactionWriteItem\([\s\S]*\?\? pendingProtocolTransactionObservation\([\s\S]*lifecycleInputOutpoints:[\s\S]*lifecycleInputOutpointsFromTransaction\(hydrated\)[\s\S]*upsertTransaction\([\s\S]*transactionObservation[\s\S]*"pending"/,
   /function mempoolRecoveryTxidsFromRows\([\s\S]*Boolean\(mempool\?\.\[row\.txid\]\)[\s\S]*remainingSlots/,
   /const attemptedMints = Math\.max\([\s\S]*row\.attemptedMints[\s\S]*row\.validDecisions[\s\S]*row\.invalidDecisions/,
   /let orderingUncertain = false[\s\S]*if \(row\.recoveryNeeded\) \{[\s\S]*orderingUncertain = true[\s\S]*if \(attemptedMints > 1\) \{[\s\S]*orderingUncertain = true/,
@@ -1192,8 +1197,8 @@ expectAll("frontend holder searches use remote holder history", app, [
 
 expectAll("scoped token holder identity survives summary compaction and paging", server + proofIndexReader, [
   /function tokenPayloadWithScopedHolderIdentity\([\s\S]*tokens\.length !== 1[\s\S]*ticker: token\.ticker[\s\S]*tokenId: token\.tokenId/,
-  /function scopedTokenPayloadFromState\([\s\S]*return tokenPayloadWithScopedHolderIdentity\([\s\S]*normalizedScope\)/,
-  /function compactTokenSummaryPayload\([\s\S]*return tokenPayloadWithScopedHolderIdentity\([\s\S]*scope\)/,
+  /function scopedTokenPayloadFromState\([\s\S]*const scopedPayload = tokenPayloadWithScopedHolderIdentity\([\s\S]*normalizedScope\);[\s\S]*transformCanonicalSnapshotPayload\([\s\S]*\(\) => scopedPayload,[\s\S]*preserveCanonicalClaim: false/,
+  /function compactTokenSummaryPayload\([\s\S]*const compactPayload = tokenPayloadWithScopedHolderIdentity\([\s\S]*scope\);[\s\S]*transformCanonicalSnapshotPayload\([\s\S]*\(\) => compactPayload,[\s\S]*preserveCanonicalClaim: false/,
   /async function workSummaryWithCurrentBtcUsd\([\s\S]*tokenPayloadWithScopedHolderIdentity\([\s\S]*WORK_TOKEN_ID/,
   /async function scopedHoldersFromBalances\([\s\S]*JOIN proof_indexer\.credit_definitions[\s\S]*ticker: row\.ticker[\s\S]*tokenId:/,
   /async function proofIndexScopedHolderHistoryPayload\([\s\S]*ticker: token\.ticker[\s\S]*tokenId: token\.token_id/,
@@ -1242,14 +1247,16 @@ expectAll("server token reads preserve canonical ledger rows when table state re
 
 expectAll("server fresh token state reads fall back to valid cached snapshots", server, [
   /url\.pathname === "\/api\/v1\/token"[\s\S]*currentProofIndexTokenPayloadForRead\([\s\S]*"token-state",[\s\S]*freshRead \? TOKEN_SCOPED_FRESH_WAIT_MS : 10_000/,
-  /const EXACT_TIP_TOKEN_CACHE = new Map\(\)/,
-  /function cacheTokenPayload\(network,\s*tokenScope = "",\s*payload,\s*options = \{\}\)[\s\S]*EXACT_TIP_TOKEN_CACHE\.set\(cacheKey,[\s\S]*PROOF_INDEX_HEALTH_MAX_AGE_MS/,
+  /const EXACT_TIP_TOKEN_CACHE = new BoundedResponseCache\(\{[\s\S]*maxBytes: EXACT_TIP_TOKEN_CACHE_MAX_BYTES,[\s\S]*maxEntries: EXACT_TIP_TOKEN_CACHE_MAX_ENTRIES/,
+  /function cacheTokenPayload\(network,\s*tokenScope = "",\s*payload,\s*options = \{\}\)[\s\S]*const cached = cachePayloadAndJson\([\s\S]*if \(!cached\.outcome\.stored\) \{[\s\S]*return false;/,
+  /const exactOutcome = EXACT_TIP_TOKEN_CACHE\.setWithOutcome\(cacheKey,[\s\S]*PROOF_INDEX_HEALTH_MAX_AGE_MS/,
+  /if \(!exactOutcome\.stored\) \{[\s\S]*EXACT_TIP_TOKEN_CACHE\.delete\(cacheKey\)/,
   /function cacheTokenPayload\([\s\S]*greenUntil:[\s\S]*pendingValidThroughMs[\s\S]*indexedThroughBlockHash: payloadIndexedThroughBlockHash\(payload\)/,
   /async function currentExactTipTokenPayloadForRead\([\s\S]*canonicalGate = null[\s\S]*EXACT_TIP_TOKEN_CACHE\.get\(cacheKey\)[\s\S]*validatedUntil[\s\S]*tokenPayloadMatchesCanonicalGate\(payload, canonicalGate\)[\s\S]*retainedExactTipTokenPayloadForRead\(payload, canonicalGate, cached\)[\s\S]*healthNodeTipHeight\(\)[\s\S]*!Number\.isSafeInteger\(tipHeight\)[\s\S]*return null;[\s\S]*indexedThroughBlock === tipHeight[\s\S]*return payload;[\s\S]*EXACT_TIP_TOKEN_CACHE\.delete\(cacheKey\)/,
   /function tokenPayloadMatchesCanonicalGate\([\s\S]*canonicalGate\.atTip !== true[\s\S]*payloadIndexedThroughBlockHash\(payload\)[\s\S]*canonicalGate\.indexedThroughBlock[\s\S]*canonicalHash === indexedThroughBlockHash/,
   /function readOnlyRetainedWorkAmoV8Metadata\([\s\S]*indexReady: false[\s\S]*listingWritesEnabled: false[\s\S]*migrationReady: false[\s\S]*protocolWritesEnabled: false[\s\S]*settlementWritesEnabled: false[\s\S]*writeAdmission: false[\s\S]*pendingReady: false/,
   /function retainedExactTipTokenPayloadForRead\([\s\S]*canonicalGate\?\.ready === true[\s\S]*cached\?\.greenUntil[\s\S]*readOnlyRetainedWorkAmoV8Metadata/,
-  /indexedPayload && \(!freshRead \|\| indexedPayloadExact\)[\s\S]*const responsePayload = await withWorkMarketplaceV4Metadata\([\s\S]*indexedPayload,[\s\S]*network,[\s\S]*\);[\s\S]*cacheTokenPayload\(network,\s*tokenScope,\s*responsePayload,\s*\{[\s\S]*exactTipValidated:\s*indexedPayloadExact[\s\S]*\}\)[\s\S]*jsonResponse\([\s\S]*responsePayload/,
+  /indexedPayload && \(!freshRead \|\| indexedPayloadExact\)[\s\S]*const responsePayload = await withWorkMarketplaceV4Metadata\([\s\S]*indexedPayload,[\s\S]*network,[\s\S]*\);[\s\S]*const coherentResponsePayload = coherentCanonicalSnapshotAtBoundary\([\s\S]*responsePayload,[\s\S]*"token-state"[\s\S]*\);[\s\S]*cacheTokenPayload\(network,\s*tokenScope,\s*coherentResponsePayload,\s*\{[\s\S]*exactTipValidated:\s*indexedPayloadExact[\s\S]*\}\)[\s\S]*jsonResponse\([\s\S]*coherentResponsePayload/,
   /async function cachedTokenPayloadFallbackForRead\([\s\S]*cachedTokenPayloadSnapshotNoRefresh\(network,\s*scope\)[\s\S]*rejectEmptyMainnetTokenPayload\(network,\s*payload,\s*scope,\s*label\)[\s\S]*existingCurrentCanonicalLedgerPayloadWithinMs\([\s\S]*existingCanonicalLedgerPayload\(network\)[\s\S]*ledgerPayloadForFreshnessCompare\(ledger,\s*scope\)[\s\S]*refreshTokenPayloadCacheInBackground\(network,\s*scope\)/,
   /url\.pathname === "\/api\/v1\/token"[\s\S]*currentExactTipTokenPayloadForRead\([\s\S]*"token-state-fresh-exact-tip-memory"[\s\S]*"token-state-exact-tip-memory"[\s\S]*canonicalReadGate[\s\S]*currentProofIndexTokenPayloadForRead\([\s\S]*currentMemoryTokenPayloadForRead\([\s\S]*"token-state-fresh-memory"[\s\S]*cachedTokenPayloadFallbackForRead\([\s\S]*"token-state-fresh-cache"[\s\S]*Fresh credit state is still catching up/,
   /const indexedPayloadExact = tokenPayloadMatchesCanonicalGate\([\s\S]*indexedPayload,[\s\S]*canonicalReadGate[\s\S]*indexedPayload && \(!freshRead \|\| indexedPayloadExact\)[\s\S]*exactTipValidated: indexedPayloadExact/,
@@ -1362,7 +1369,7 @@ expectAll("API address app reads stay first-party", server, [
   /proofIndexAddressMailPayload/,
   /async function nodeMailPayload\(address,\s*network,\s*options = \{\}\)[\s\S]*let scanError = ""[\s\S]*MAIL_ADDRESS_TX_PAGES[\s\S]*includeExternal:\s*options\.includeExternal !== false[\s\S]*preferExternal:\s*options\.preferExternal === true[\s\S]*Mail scan failed[\s\S]*scanFailed: Boolean\(scanError\)/,
   /async function indexedMailPayload\(address,\s*network\)[\s\S]*proofIndexReadFeatureEnabled\("address-mail,mail,event-history,events"\)[\s\S]*proofIndexAddressMailPayload\(network,\s*address\)/,
-  /async function reconcileMailPayloadStatuses\(payload,\s*network\)[\s\S]*txStatusPayload\(txid,\s*network\)[\s\S]*status\?\.status === "dropped"[\s\S]*return \[\]/,
+  /async function reconcileMailPayloadStatuses\(payload,\s*network\)[\s\S]*Promise\.allSettled[\s\S]*txStatusPayload\(txid,\s*network\)[\s\S]*mailMessageWithTxLifecycle\(message,\s*status\)/,
   /function mailActivityItemFromTransaction\(tx,\s*network\)[\s\S]*memo: protocolMessage\.memo[\s\S]*subject: protocolMessage\.subject/,
   /function mailPayloadHasMessages\(payload\)/,
   /function mailMessageNeedsAttachmentRepair\(message\)[\s\S]*return !message\?\.attachment/,
@@ -1415,9 +1422,9 @@ expectAll("proof index address mail recovers sender-only file rows", proofIndexR
 ]);
 expect(
   "proof index address mail has no raw transaction item rendering fallback",
-  !/function rawTransactionItemPayload|function transactionOverlayResult|raw_tx->'item'/u.test(
+  !/function rawTransactionItemPayload|function transactionOverlayResult/u.test(
     proofIndexReader,
-  ),
+  ) && !/raw_tx->'item'/u.test(proofIndexAddressMailSource),
 );
 expect("pending mempool bases must not hardcode public explorer data sources", !/explorerBase|explorerReadBases|mempool\.space/i.test(pendingMempoolBasesSource));
 expectAll("transaction hex PSBT reads stay first-party", txHexPayloadSource, [
@@ -1755,12 +1762,43 @@ expectAll("unpinned ID history reads current records and event projections", pro
   /async function currentRegistryRecordsHistoryPage\([\s\S]*confirmedIdRecordsFromCurrentTables\(/,
   /if \(!eligibility\.pagination\.snapshotId\)[\s\S]*currentRegistryRecordsHistoryPage\([\s\S]*currentRegistryEventHistoryPage\(/,
 ]);
-expectAll("wallet token listing refresh preserves bounded spendable local pending marketplace rows", app, [
-  /const TOKEN_LOCAL_PENDING_LISTING_TTL_MS = 30 \* 60_000/,
-  /function tokenListingShouldSurviveRefresh\(listing:\s*PowTokenListing\)[\s\S]*tokenListingHasPendingSaleTicketSeal\(listing\)[\s\S]*tokenListingHasSpendableSaleTicketAnchor\(listing\)[\s\S]*TOKEN_LOCAL_PENDING_LISTING_TTL_MS/,
-  /function tokenListingsWithPreservedLocalPending\([\s\S]*tokenListingShouldSurviveRefresh\(listing\)[\s\S]*mergeTokenListingsById\(incoming,\s*preserved\)/,
-  /function replaceTokenListingsForOwnerScope\([\s\S]*tokenListingShouldSurviveRefresh\(listing\)/,
-  /function applyTokenState\([\s\S]*preserveListings = true[\s\S]*tokenListingsWithPreservedLocalPending\([\s\S]*current\.listings[\s\S]*applyPendingTokenListingSeals\(state\.listings\)[\s\S]*state\.closedListings[\s\S]*setTokenListings\(accepted\.listings\)/,
+expectAll("wallet Credit lifecycle overlay is durable canonical-aware and spendability-safe", app, [
+  /LOCAL_TOKEN_BROADCAST_STORE_KEY =[\s\S]*proofofwork\.localTokenBroadcasts\.v1/,
+  /function recordLocalTokenBroadcastOverlay\([\s\S]*definitions[\s\S]*mints[\s\S]*transfers[\s\S]*listings[\s\S]*seals[\s\S]*closedListings[\s\S]*sales/,
+  /function applyLocalTokenBroadcastOverlays\([\s\S]*!targetNetwork \|\| originalEntry\.network !== targetNetwork[\s\S]*localTokenOverlayProjectionComplete[\s\S]*activeTokenListingsExcludingClosed/,
+  /function tokenProjectionReservesSpendability\([\s\S]*status === "unknown"[\s\S]*item\.lifecycleAwaitingCanonical === true/,
+  /freshCanonical[\s\S]*awaitingFreshListingObservation[\s\S]*canonicalActiveClosedListing \|\| replacementObserved/,
+  /reconcileLocalTokenBroadcastOverlayStatuses[\s\S]*LOCAL_TOKEN_BROADCAST_RECONCILE_CONCURRENCY[\s\S]*fetchBroadcastStatusEvidence/,
+  /function localTokenOverlayStatusLabel[\s\S]*Confirmed · indexing[\s\S]*Unknown · checking[\s\S]*Replaced[\s\S]*Dropped[\s\S]*Failed/,
+  /function LocalTokenLifecyclePanel[\s\S]*entry\.initiatorAddress[\s\S]*visibleEntries[\s\S]*Show more/,
+  /function refreshTerminalTokenClosureCanonicalState[\s\S]*refreshMarketplaceSummary\(true, true\)[\s\S]*reprojectLocalTokenBroadcastsFromCanonicalState/,
+]);
+expectAll("wallet Credit lifecycle reconciliation is epoch-bound and race-safe", app, [
+  /statusChangedAt: string/,
+  /function localTokenOverlayIsExpired[\s\S]*entry\.status === "unknown" \|\| localTokenOverlayIsTerminal\(entry\.status\)[\s\S]*entry\.statusChangedAt[\s\S]*entry\.recordedAt/,
+  /function localTokenOverlayStatusChangedAt[\s\S]*status === entry\.status[\s\S]*entry\.statusChangedAt[\s\S]*: checkedAt/,
+  /function mergeLocalTokenOverlayStatusUpdate[\s\S]*\.\.\.current[\s\S]*update\.status === "replaced"[\s\S]*: undefined/,
+  /const latestEntries = loadLocalTokenBroadcastOverlays\(\);[\s\S]*mergeLocalTokenOverlayStatusUpdates\(latestEntries, updates\)/,
+  /function localTokenOverlayAwaitsFreshCanonicalResolution[\s\S]*entry\.status === "replaced"[\s\S]*status === "pending" \|\| status === "confirmed"[\s\S]*return false/,
+]);
+expectAll("Mail status refreshes serialize bounded work and reject older observations", app, [
+  /function checkBroadcastTargets[\s\S]*mapLocalTokenOverlaysWithConcurrency\([\s\S]*MAIL_BROADCAST_STATUS_CHECK_CONCURRENCY/,
+  /function startBroadcastCheck[\s\S]*queue\.active = active[\s\S]*const queued = queue\.queued[\s\S]*startBroadcastCheck\(queue, \[\.\.\.queued\.targets\.values\(\)\]\)/,
+  /function runCoalescedBroadcastCheck[\s\S]*requestedKeys\.every[\s\S]*queue\.activeTargetKeys\.has[\s\S]*queue\.queued\.targets\.size < MAIL_BROADCAST_STATUS_MAX_TARGETS/,
+  /function checkMailBroadcastTargets[\s\S]*runCoalescedBroadcastCheck\([\s\S]*mailBroadcastCheckQueueRef\.current,[\s\S]*targets/,
+  /LOCAL_SENT_MESSAGE_MAX_ENTRIES = 512[\s\S]*function sanitizeStoredSentMessages[\s\S]*\.slice\(0, LOCAL_SENT_MESSAGE_MAX_ENTRIES\)[\s\S]*function loadSentMessages[\s\S]*sanitizeStoredSentMessages[\s\S]*function saveSentMessages[\s\S]*sanitizeStoredSentMessages\(messages\)/,
+  /function boundedBroadcastCheckTargets[\s\S]*MAIL_BROADCAST_STATUS_MAX_TARGETS/,
+  /function mergeObservedSentMessages[\s\S]*observedAt[\s\S]*preferSentMessage\(observed, current\)/,
+  /function broadcastCheckObservationIsCurrent[\s\S]*checkedAtMs >= currentCheckedAtMs/,
+  /function applyBroadcastCheckResults[\s\S]*!broadcastCheckObservationIsCurrent\(message, summary\.checkedAt\)/,
+]);
+expectAll("durable seal evidence preserves public base terms without granting buyability", app, [
+  /function sanitizeLocalTokenBaseSaleAuthorization[\s\S]*anchorScriptPubKey[\s\S]*anchorSignature: ""[\s\S]*anchorTxid: ""[\s\S]*sellerPublicKey/,
+  /seals: new Set\(\[[\s\S]*"sealTxid"[\s\S]*\]\),[\s\S]*transfers: new Set/,
+  /function localTokenListingWithSealLifecycle[\s\S]*saleAuthorization: listing\.saleAuthorization[\s\S]*sealConfirmed: false[\s\S]*sealLifecycleStatus: entry\.status/,
+  /function applyPendingTokenListingSeals[\s\S]*saleAuthorization: listing\.saleAuthorization[\s\S]*sealLifecycleStatus: "pending"/,
+  /function tokenListingHasActiveLocalSealLifecycle[\s\S]*sealLifecycleStatus === "pending"[\s\S]*sealLifecycleStatus === "unknown"[\s\S]*sealLifecycleStatus === "confirmed"/,
+  /function tokenListingHasConfirmedSaleTicketSeal[\s\S]*listing\.sealConfirmed === true[\s\S]*tokenSaleAuthorizationUsesSaleTicketAnchor/,
 ]);
 expectAll("current ledger reads reject non-OK summary snapshot fallback rows", server + proofIndexerBackfill, [
   /status:\s*"summary-snapshot-fallback"/,
@@ -1773,10 +1811,10 @@ expectAll("DB mail reads use indexed address matching and self-send folders", pr
   /JOIN proof_indexer\.mail_items m[\s\S]*m\.network = e\.network[\s\S]*m\.txid = e\.txid/,
   /e\.status IN \('pending', 'confirmed', 'dropped', 'orphaned'\)/,
   /const confirmed = row\.status === "confirmed"/,
-  /const deliveryStatus = row\.status === "orphaned" \? "dropped" : row\.status/,
+  /const storedDeliveryStatus =[\s\S]*row\.status === "orphaned" \? "dropped" : row\.status[\s\S]*const durableReplacement =[\s\S]*storedDeliveryStatus === "dropped"[\s\S]*payload\.lifecycleStatus[\s\S]*"replaced"[\s\S]*const deliveryStatus = durableReplacement[\s\S]*\? "replaced"[\s\S]*: storedDeliveryStatus/,
   /const targetIsRecipient =[\s\S]*\["recipient",\s*"receiver",\s*"counterparty"\]/,
   /if \(actorKey && actorKey === targetKey\)[\s\S]*folder: "sent"/,
-  /deliveryStatus !== "dropped"[\s\S]*targetIsRecipient[\s\S]*folder: "inbox"/,
+  /storedDeliveryStatus !== "dropped"[\s\S]*targetIsRecipient[\s\S]*folder: "inbox"/,
 ]);
 expectAll("local self-send broadcasts appear in Incoming immediately", app, [
   /function samePaymentAddress\(left:\s*string,\s*right:\s*string\)/,
@@ -2259,9 +2297,18 @@ expectAll("checkpoint registry reads are exact and default reads stay complete-o
 ]);
 expect(
   "canonical proof-index registry reads can correct a stale higher cached count",
-  /registryIndexedPayloadRejectReason\(orderedPayload\)/.test(
+  /const previousPayload = fullCanonicalSnapshotClaimed[\s\S]*existingRegistryPayload\(network\)/u.test(
     indexedRegistryPayloadSource,
-  ) && !/existingRegistryPayload/.test(indexedRegistryPayloadSource),
+  ) &&
+    /authenticateFullCanonicalSnapshot\([\s\S]*orderedPayload,[\s\S]*previousPayload,[\s\S]*network,[\s\S]*"registry-state"/u.test(
+      indexedRegistryPayloadSource,
+    ) &&
+    /registryIndexedPayloadRejectReason\([\s\S]*orderedPayload,[\s\S]*previousPayload/u.test(
+      indexedRegistryPayloadSource,
+    ) &&
+    /authenticatedFullCanonicalSnapshotSupersedes\([\s\S]*orderedPayload,[\s\S]*previousPayload/u.test(
+      indexedRegistryPayloadSource,
+    ),
 );
 
 expectAll("exact ID availability requires healthy confirmed and pending coverage", currentIdCoverageSource + livePendingRegistrySource, [

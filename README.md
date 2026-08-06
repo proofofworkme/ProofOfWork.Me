@@ -160,9 +160,9 @@ Launch invariants for future developers/agents:
 - Refreshes on demand to rescan address mail and check pending transaction statuses.
 - Keeps unconfirmed inbound mail in Incoming until it confirms.
 - Shows confirmed inbound mail in Inbox.
-- Tracks local broadcast attempts as pending, confirmed, or dropped.
-- Keeps pending and dropped broadcasts in Outbox.
-- Checks pending broadcasts with the full transaction lookup so missing txs become dropped instead of staying pending forever.
+- Tracks local broadcast attempts as pending, confirmed, replaced, dropped, failed, or unknown.
+- Keeps every non-confirmed broadcast in Outbox with its current evidence-backed status.
+- Checks broadcasts with the first-party full-node status route. Current node presence wins; absence remains unknown unless durable prior observation plus a complete removal or conflict witness proves dropped or replaced.
 - Lets dropped broadcasts be rebuilt from their local draft data; users must sign a fresh transaction to resend.
 - Recovers confirmed sent mail from chain data, so Sent and Files do not depend only on browser history.
 - Sorts Incoming, Inbox, and Sent by highest proofs, newest, oldest, or thread.
@@ -208,14 +208,14 @@ Launch invariants for future developers/agents:
 - Treats `seal5` as signature publication without moving the original sale-ticket anchor. A legacy seal transaction that actually spends that anchor closes the listing because the ticket is no longer buyable. If an indexed or cached projection has `closeTxid` equal to `sealTxid`, AMO recovers it only when first-party outspend truth proves the original listing ticket is still unspent.
 - Promotes pending credit listings into confirmed listing state without duplicating them, so WORK and other credit books do not show stale pending shadows after confirmation.
 - Preserves credit sale-ticket seal metadata when pending listings promote to confirmed state, so WORK listings stay sealed or sealing across cache refreshes.
-- Preserves local pending credit listings and seals across wallet/token refreshes until the canonical API sees the same listing, seal, closure, or sale, so seller action buttons do not blink away while the indexer catches up.
+- Persists a bounded public-only local lifecycle record for credit definitions, mints, transfers, listings, seals, closures, and sales across wallet/token refreshes and reloads until the canonical API resolves every expected row. Pending and confirmed-but-indexing records stay visible without becoming canonical balances, supply, volume, or spend authority; evidence-backed replaced, dropped, and failed records move to a diagnostic lifecycle panel instead of remaining live economic state.
 - Blocks duplicate credit listing seals once a valid seal is already known for the active listing.
 - Shows credit market books with All, Sealed, and Unsealed views where sale-ticket status applies. Sealed means the sale-ticket seal is confirmed and buyable; pending seal rows remain visible in All/Unsealed as sealing status. Active books can sort by price or arbitrage, while sales/listing logs stay ordered by confirmation time.
 - Keeps confirmed, unspent, buyable sealed listings in AMO summaries even when ordinary active-listing previews are capped, so older sealed inventory remains visible in Buy and public order-book views.
 - Paginates credit sales/listing logs from the API so every listing, closure, and sale remains inspectable instead of being limited to a preview.
-- Prunes dropped pending WORK and credit transactions from live pending overlays after liveness checks, so stale mempool ghosts cannot distort transfer visibility, listing visibility, balances, floor, or network value.
+- Removes evidence-backed replaced, dropped, and failed WORK/credit broadcasts from live economic projections after lifecycle checks, while retaining bounded diagnostic evidence. Stale mempool ghosts cannot distort transfer visibility, listing visibility, balances, floor, or network value, and absence alone never manufactures a terminal status.
 - Credit mint surfaces treat confirmed history as canonical mint-out, but pause user mint actions when confirmed plus pending mints would fill the remaining supply. Pending mempool records are not final, but the UI avoids letting users pay for likely overfill attempts, and WORK summary data must replay confirmed mints instead of trusting stale partial supply totals.
-- Stages RUSH as an explicit development/protocol surface behind `?rush=1` or `VITE_RUSH_ONLY=1`. It is not part of shared public navigation or production domain routing until separately approved for launch.
+- Stages RUSH as an explicit development/protocol surface. Query routing requires `VITE_RUSH_QUERY_ENABLED=1`, a standalone build requires `VITE_RUSH_ONLY=1`, and public RUSH read/mint entrypoints remain server-side default-off. Historical RUSH records remain inspectable as canonical protocol history.
 - Exposes Growth as a public dashboard for modeled ProofOfWork Computer network value versus real confirmed registry, log, file, AMO, and Credit value metrics.
 - Computes WORK, Infinity, Inception, Growth, Log, and livenet credit/token views from one canonical confirmed ledger snapshot, so public searches, logged events, and network value cannot diverge after refresh.
 - Keeps the IDs workspace limited to registration, receiver updates, and direct owner transfers.
@@ -260,11 +260,13 @@ https://growth.proofofwork.me/api/*
 
 Current production behavior:
 
+- `GET /health/live` is availability-only and answers whether the API process can respond. `GET /health` is canonical readiness and stays fail closed until the node, proof index, worker, and authenticated snapshot agree; a live response must never be presented as ready.
 - Confirmed stable mainnet registry, Log, credit/token, marketplace, summary, event, mail/file, and tx-status reads go through the ProofOfWork API and use the PostgreSQL proof index where the read flag supports that surface.
 - The proof index is a fast replayable read model, not a separate source of truth. Confirmed chain data remains canonical, and every tx-backed record should keep its txid available for normal explorer/mempool verification.
 - Canonical block replay stores normalized full-node transaction inputs, outputs, decoded OP_RETURN records, and spend links alongside the replayable event projections. These tables are a speed and audit plane over Bitcoin Core data, not a new truth source.
 - The production proof index is the default read model for confirmed Log, Event History, address mail, registry, credit/token, marketplace lifecycle, WORK, Growth, and tx-status reads where enabled. Fresh summary reads validate the stored canonical checkpoint against Bitcoin Core; volatile mempool state, raw transaction data, UTXO/outspend checks, signing support, and broadcasts still use the first-party node/API path.
 - Stable summary reads may serve the latest hash-verified coherent checkpoint and expose `served: last-good`, indexed height, Core tip, lag, and snapshot id. A requested fresh summary must contain one coherent snapshot at the exact verified Core tip; otherwise it fails closed with HTTP 503 instead of relabeling stale data as fresh.
+- Every full collection response carries provenance sufficient to identify its snapshot. Summary-only projections are explicitly partial: they may warm summary surfaces, but they cannot erase, relabel, or masquerade as complete registry, token, marketplace, bond, or Log collections. A newer verified full snapshot may legitimately shrink or become empty after pending removal, replacement, reorganization, or projection repair.
 - Stable Log, Log-history, and consistency reads follow the same rule: they bind every returned row to that one authenticated snapshot and recheck its block hash against Core after the relational read. Exact txid Log searches authenticate only their bounded event ids and canonical transaction rows instead of materializing the full activity ledger. Stale cursors, rows outside the pinned snapshot, and unproved exact txid misses fail closed. Background catch-up may keep the last-good UI readable, but fresh reads, signing preflights, and broadcasts remain unavailable until their required canonical index and summary state are at the exact Core tip. Exact-tip index truth comes from the canonical height and hash matching Core; worker-heartbeat age remains an operational health signal and must not falsely block a zero-lag wallet read.
 - The hot index worker always attempts confirmed block catch-up before pending cleanup. Only an explicit `POW_CANONICAL_TX_CONTENT_INVARIANT` emitted for malformed canonical transaction content may enter persisted, alert-visible no-progress containment with bounded exponential retries. Core/RPC, verifier HTTP, database, abort, and timeout failures remain retryable and still exit after the configured threshold so systemd can recover them. `/health` exposes a contained failing block, txid, checkpoint, repeat count, and next retry while readiness remains red.
 - The mail and Log parsers normalize `pwm1:m:powb` as `infinity-bond` and `pwm1:m:incb` as `inception-bond` for event/search/Growth accounting while still projecting both into the mailbox model. POWB remains one-for-one with confirmed recipient proof payments. INCB issuance equals direct bond proofs plus valid same-transaction WORK valued at the send-time oracle: the last confirmed green canonical live WORK summary at H-1, hash-bound to the exact previous block. Every transaction in the bond block is excluded. One whole proof of fixed value issues one INCB. Confirmation fixes that issuance value; later WORK value changes do not reprice INCB. Self-sends are the self-recipient case and appear in both Inbox and Sent.
@@ -272,7 +274,9 @@ Current production behavior:
 - The node stack does not hold funds, seed phrases, private keys, or wallet authority.
 - Browser wallets still sign locally.
 - Production raw transaction broadcasts use the same first-party node path through `POST /api/v1/broadcast/tx`. The API receives only final signed transaction hex, accepts approved ProofOfWork browser origins, applies per-client/global/concurrency limits, and pauses livenet broadcast unless the canonical index is at the exact verified Core tip.
+- Public query size, pagination, request rate, admission queue, Core/PostgreSQL concurrency, singleflight work, and response-cache entry/byte budgets are bounded before expensive work begins; production defaults are documented in [`deploy/proofofwork-api-proof-index.conf`](deploy/proofofwork-api-proof-index.conf). Cache bytes are measured from the exact JSON serialization, and cyclic, BigInt, oversized, or otherwise unserializable replacements fail closed without evicting last-good data or retaining an unaccounted response. A nonempty worker internal-verifier token is attached only to an explicit HTTP loopback API URL (`127.0.0.1`, `::1`, or `localhost`); an unsafe base is rejected before fetch.
 - Unconfirmed transactions are mempool gossip, not global truth.
+- Public transaction lifecycle responses distinguish `unknown`, `pending`, `confirmed`, `replaced`, and `dropped`. `failed` is a local Outbox state for a known local broadcast rejection, not a public node lifecycle result. Current full-node presence wins; absence alone is unknown, replacement requires one unambiguous full-node-evidenced conflicting spender of durably retained inputs, and a later observation can revive a stale terminal projection.
 - For pending visibility, the API merges the local node/indexer view with `PENDING_MEMPOOL_BASE` when configured. By default this stays on the same local node/indexer stack.
 - The unscoped credit directory (`token-history?kind=tokens`) paginates exact-tip proof-index data or the stored hash-bound Token summary instead of rebuilding full credit history. Mempool checks, raw tx lookups, UTXO/outspend checks, broadcasts, and projection fallback still use the first-party node/API path.
 - Confirmed database projections are the default fast path for supported stable reads; pending records are visible but not final.
@@ -363,7 +367,7 @@ Current production behavior:
 - `work-floor`, `work-summary`, `growth-summary`, and `marketplace-summary` expose current USD from the live first-party BTC/USD quote. `actualValue.totalUsd` is live current USD; `actualValue.modelTotalUsd` is the Growth model USD projection. Consumers that publish current numbers should use `actualValue.totalUsd` plus the response's `btcUsd`, `btcUsdIndexedAt`, and `usdSource` metadata, not `modelTotalUsd`.
 - AMO flow in WORK/Growth accounting is seller sale volume plus market mutation fees from valid listing, seal, delisting, and buy events. For WORK sales, the sale price remains a trade metric and also contributes confirmed proof flow, while the WORK amount moved contributes live/frozen credit movement value. Seller sale volume remains separate from mutation-fee flow, and market mutation fees are excluded from generic Computer event flow to avoid double counting.
 - The WORK floor announcement is part of project history as ProofOfWork mail tx `cbb8a1b4af2ea8665129e799a85dfba31cea87ef38b9a99bcf198d827c12a58c`: `$work now has a permanent ProofOfWork Computer floor.` Live indexers determine whether that tx is pending or confirmed; once confirmed, ProofOfWork history is the permanent source.
-- The staged RUSH API scans the configured network registry for valid `pwr1:m:rush` mints that pay at least 1,000 proofs to the registry before OP_RETURN. Confirmed mint ordinals determine the phase reward; pending mints are visibility only.
+- Historical RUSH replay scans the configured network registry for valid `pwr1:m:rush` mints that pay at least 1,000 proofs to the registry before OP_RETURN. Confirmed mint ordinals determine the phase reward; pending mints are visibility only. Public RUSH query, read, and mint entrypoints remain default-off until separately approved.
 - The log API exposes a normalized ProofOfWork Computer feed for registrations, receiver updates, direct transfers, listings, seals, delistings, buyer-funded marketplace purchases, messages, replies, files, attachments, credit creations, credit mints, credit transfers, credit listings, and credit sales. Address, confirmed ID, txid, protocol kind, or app label search narrows that same log surface to a specific account or transaction. The log also reports total indexed ProofOfWork protocol bytes across discovered app records.
 - Browser renders ProofOfWork HTML by txid from either the `pwm1:m` message body or a verified `pwm1:a` file attachment. It does not introduce an outside carrier; attachments keep the same size/SHA-256 verification as Files/Desktop, and message-body HTML remains bound to the transaction that carries it.
 - Confirmed and pending Browser pages render as sanitized static HTML in an opaque sandbox. The renderer strips refresh/base/navigation URLs, neutralizes forms, permits only in-memory `data:`/`blob:` media, and applies a deny-all CSP so on-chain content cannot make external requests or reach a wallet signing lane.
@@ -374,8 +378,8 @@ Current production behavior:
 - The database/read-model layer is the app-wide speed plane for that contract: once prior confirmed history is indexed, public routes should answer from the current verified snapshot, update only from newer indexed blocks and transactions, and keep embedded summaries such as Growth `workFloor` and AMO `workFloor` on the same snapshot/value as `/api/v1/work-floor` and `/api/v1/consistency`.
 - ProofOfWork.Me broadcasts intentionally spend confirmed wallet UTXOs only across mail, files, ID registry actions, and AMO actions. This prevents a selected fee rate from being dragged down by low-fee unconfirmed ancestors, which external explorers can report as a lower effective fee rate.
 - Generic wallet funding also reserves all active ProofOfWork ID and credit listing anchors for that address before selection, so working in one asset view cannot accidentally spend another asset's sale ticket.
-- A tx status can be `confirmed`, `pending`, or `dropped`.
-- A dropped tx is not treated as durable mail. Users can rebuild/resend from local draft data when available.
+- A public tx status can be `unknown`, `pending`, `confirmed`, `replaced`, or `dropped`. A known local broadcast rejection may additionally be stored as `failed` in Outbox.
+- A replaced or dropped tx is not treated as durable mail. Users can rebuild/resend from local draft data when available. Source or transport unavailability preserves the prior local state; it is not evidence for a new terminal label.
 
 Important launch invariant:
 
@@ -560,10 +564,11 @@ http://localhost:5173/?infinity=1
 http://localhost:5173/?inception=1
 ```
 
-To preview the staged RUSH credit mint page locally:
+To preview the staged RUSH credit mint page locally, explicitly enable query routing for that development process:
 
-```text
-http://localhost:5173/?rush=1
+```bash
+VITE_RUSH_QUERY_ENABLED=1 npm run dev
+# then open http://localhost:5173/?rush=1
 ```
 
 To preview the public Log locally:
@@ -782,6 +787,7 @@ The companion local contract check is:
 ```bash
 npm run check:live-data
 npm run check:api-truth
+npm run check:phase-a
 npm run check:hardening
 ```
 
@@ -864,6 +870,7 @@ Important implementation points:
 - Infinity-only deploy switch: `VITE_INFINITY_ONLY=1`.
 - Inception-only deploy switch: `VITE_INCEPTION_ONLY=1`.
 - Staged RUSH-only deploy switch: `VITE_RUSH_ONLY=1`.
+- Staged RUSH query-route switch: `VITE_RUSH_QUERY_ENABLED=1`; leave it unset in ordinary shared/public builds.
 - Log-only deploy switch: `VITE_LOG_ONLY=1`.
 - Growth-only deploy switch: `VITE_GROWTH_ONLY=1`.
 - ID registry constants: `ID_PROTOCOL_PREFIX`, `ID_REGISTRATION_PRICE_SATS`, `ID_MUTATION_PRICE_SATS`, and `ID_REGISTRY_ADDRESSES` in `src/App.tsx`.

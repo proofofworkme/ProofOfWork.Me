@@ -239,6 +239,100 @@ type UniSatChain = "BITCOIN_MAINNET" | "BITCOIN_TESTNET" | "BITCOIN_TESTNET4";
 type UniSatEvent = "accountsChanged" | "networkChanged" | "chainChanged";
 type StatusTone = AppStatusTone;
 type WorkspaceStatus = { tone: StatusTone; text: string };
+type CanonicalReadPhase =
+  | "disconnected"
+  | "last-good"
+  | "loading"
+  | "ready"
+  | "unavailable";
+type CanonicalReadState = {
+  detail?: string;
+  phase: CanonicalReadPhase;
+};
+const READY_CANONICAL_READ_STATE: CanonicalReadState = { phase: "ready" };
+
+function canonicalReadState({
+  disconnected = false,
+  error = "",
+  loaded,
+  loading,
+}: {
+  disconnected?: boolean;
+  error?: string;
+  loaded: boolean;
+  loading: boolean;
+}): CanonicalReadState {
+  if (disconnected) {
+    return { phase: "disconnected" };
+  }
+  if (error && loaded) {
+    return { detail: error, phase: "last-good" };
+  }
+  if (error) {
+    return { detail: error, phase: "unavailable" };
+  }
+  if (loading || !loaded) {
+    return { phase: "loading" };
+  }
+  return READY_CANONICAL_READ_STATE;
+}
+
+function canonicalMetric(
+  value: ReactNode,
+  readState: CanonicalReadState = READY_CANONICAL_READ_STATE,
+) {
+  if (readState.phase === "disconnected") return "Connect";
+  if (readState.phase === "loading") return "Loading…";
+  if (readState.phase === "unavailable") return "Unavailable";
+  return value;
+}
+
+function canonicalEmptyText(
+  readState: CanonicalReadState,
+  verifiedEmptyText: string,
+) {
+  if (readState.phase === "disconnected") {
+    return "Connect UniSat to load wallet-scoped Credit and WORK data.";
+  }
+  if (readState.phase === "loading") {
+    return "Loading verified chain data…";
+  }
+  if (readState.phase === "unavailable") {
+    return "Verified chain data is unavailable. No empty result has been inferred.";
+  }
+  if (readState.phase === "last-good") {
+    return `No records in the last verified snapshot. ${verifiedEmptyText}`;
+  }
+  return verifiedEmptyText;
+}
+
+function CanonicalReadNotice({
+  label,
+  state,
+}: {
+  label: string;
+  state: CanonicalReadState;
+}) {
+  const text =
+    state.phase === "disconnected"
+      ? `Connect UniSat to load wallet-scoped ${label}.`
+      : state.phase === "loading"
+        ? `Loading verified ${label}…`
+        : state.phase === "unavailable"
+          ? `${label} unavailable. No verified snapshot is available.`
+          : state.phase === "last-good"
+            ? `Showing the last verified ${label}; the current refresh is unavailable.`
+            : `Verified ${label} snapshot.`;
+  return (
+    <p
+      className={`field-note canonical-read-notice ${state.phase}`}
+      data-read-state={state.phase}
+      title={state.detail}
+    >
+      {text}
+    </p>
+  );
+}
 const INITIAL_COMPUTER_STATUS: WorkspaceStatus = {
   tone: "idle",
   text: "ProofOfWork Computer ready. Connect UniSat to load account data.",
@@ -324,7 +418,13 @@ type SortMode =
   | "sender";
 type MailSignalMode = "proofs" | "work";
 type FileFilter = "all" | "image" | "pdf" | "document" | "other";
-type BroadcastStatus = "pending" | "confirmed" | "dropped" | "unknown";
+type BroadcastStatus =
+  | "pending"
+  | "confirmed"
+  | "dropped"
+  | "failed"
+  | "replaced"
+  | "unknown";
 type BroadcastSource = "mempool" | "node" | "slipstream" | "wallet";
 type BroadcastStrategy = "mempool" | "first-party-if-multiple-op-return";
 
@@ -334,6 +434,66 @@ type TransactionBroadcastResult = {
   txid: string;
   url?: string;
 };
+
+type SignedTransactionBroadcastFailureEvidence = {
+  failureReason: string;
+  localTxid: string;
+  status: "failed" | "unknown";
+};
+
+class SignedTransactionBroadcastError extends Error {
+  readonly localTxid: string;
+  readonly status: "failed" | "unknown";
+
+  constructor(
+    localTxid: string,
+    status: "failed" | "unknown",
+    failureReason: string,
+  ) {
+    super(failureReason);
+    this.name = "SignedTransactionBroadcastError";
+    this.localTxid = localTxid;
+    this.status = status;
+  }
+}
+
+function publicBroadcastFailureReason(
+  value: unknown,
+  fallback = "Broadcast failed.",
+) {
+  const normalized = String(value ?? "")
+    .replace(/[\u0000-\u001f\u007f]+/gu, " ")
+    .replace(/\s+/gu, " ")
+    .trim();
+  if (!normalized) return fallback;
+  const rpcCode = normalized.match(/\brpc\s+code\s*:?\s*(-?\d+)\b/iu)?.[1];
+  const containsSensitiveMaterial =
+    /\b(?:psbt|raw[\s_-]*(?:transaction|tx)|tx[\s_-]*hex|signed[\s_-]*tx|signature|private[\s_-]*key|seed|mnemonic)\b/iu.test(
+      normalized,
+    ) ||
+    /\bcHNidP[A-Za-z0-9+/_=-]{8,}/u.test(normalized) ||
+    /\b(?:0x)?[0-9a-f]{96,}\b/iu.test(normalized) ||
+    /\b[A-Za-z0-9+/_=-]{180,}\b/u.test(normalized);
+  if (containsSensitiveMaterial) {
+    return `Node broadcast diagnostic material was redacted.${
+      rpcCode ? ` RPC code ${rpcCode}.` : ""
+    }`;
+  }
+  return normalized.slice(0, 240);
+}
+
+function signedTransactionBroadcastFailureEvidence(
+  error: unknown,
+): SignedTransactionBroadcastFailureEvidence | undefined {
+  if (!(error instanceof SignedTransactionBroadcastError)) return undefined;
+  const localTxid = error.localTxid.trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/u.test(localTxid)) return undefined;
+  return {
+    failureReason: publicBroadcastFailureReason(error.message),
+    localTxid,
+    status: error.status,
+  };
+}
 type MailAttachment = {
   name: string;
   mime: string;
@@ -499,14 +659,18 @@ type SentMessage = {
   lastCheckedAt?: string;
   confirmedAt?: string;
   droppedAt?: string;
+  failureReason?: string;
+  replacementTxid?: string;
   replyTo: string;
   parentTxid?: string;
   createdAt: string;
 };
 
 type BroadcastCheckResult = {
+  failureReason?: string;
   from: string;
   network: BitcoinNetwork;
+  replacementTxid?: string;
   status?: BroadcastStatus;
   txid: string;
 };
@@ -517,7 +681,28 @@ type BroadcastCheckSummary = {
   dropped: number;
   failed: number;
   pending: number;
+  replaced: number;
+  unknown: number;
+  unavailable: number;
   results: BroadcastCheckResult[];
+};
+
+type BroadcastCheckQueue = {
+  active?: Promise<BroadcastCheckSummary>;
+  activeTargetKeys: Set<string>;
+  queued?: {
+    promise: Promise<BroadcastCheckSummary>;
+    reject: (reason?: unknown) => void;
+    resolve: (summary: BroadcastCheckSummary) => void;
+    targets: Map<string, SentMessage>;
+  };
+};
+
+type MailRefreshRequestIdentity = {
+  address: string;
+  generation: number;
+  network: BitcoinNetwork;
+  requestId: number;
 };
 
 type InboxMessage = {
@@ -592,7 +777,16 @@ type PowIdExactStateItem = {
 
 type ExactDecimalValue = number | string;
 
-type PowTokenDefinition = {
+type LocalTokenLifecycleProjection = {
+  lifecycleAwaitingCanonical?: boolean;
+  lifecycleCheckedAt?: string;
+  lifecycleFailureReason?: string;
+  lifecycleReplacementTxid?: string;
+  lifecycleStatus?: BroadcastStatus;
+  localBroadcast?: true;
+};
+
+type PowTokenDefinition = LocalTokenLifecycleProjection & {
   amountStorageModel?: string;
   confirmed: boolean;
   confirmedMints?: number;
@@ -637,7 +831,7 @@ type PowTokenDefinition = {
   uncapped?: boolean;
 };
 
-type PowTokenMint = {
+type PowTokenMint = LocalTokenLifecycleProjection & {
   amount: ExactIntegerValue;
   amountAtoms?: string;
   amountSubatoms?: string;
@@ -662,7 +856,7 @@ type PowTokenMint = {
   txid: string;
 };
 
-type PowTokenTransfer = {
+type PowTokenTransfer = LocalTokenLifecycleProjection & {
   amount: ExactIntegerValue;
   amountAtoms?: string;
   amountSubatoms?: string;
@@ -771,7 +965,7 @@ type PowTokenSaleAuthorization = PowTokenSaleAuthorizationDraft & {
   anchorTxid: string;
 };
 
-type PowTokenListing = {
+type PowTokenListing = LocalTokenLifecycleProjection & {
   amount: ExactIntegerValue;
   amountAtoms?: string;
   amountSubatoms?: string;
@@ -795,6 +989,10 @@ type PowTokenListing = {
   sealFrozenNetworkValueSats?: number;
   sealLiveNetworkValueSats?: number;
   sealMinerFeeSats?: number;
+  sealLifecycleCheckedAt?: string;
+  sealLifecycleFailureReason?: string;
+  sealLifecycleReplacementTxid?: string;
+  sealLifecycleStatus?: BroadcastStatus;
   sealTxid?: string;
   sellerAddress: string;
   ticker: string;
@@ -806,6 +1004,7 @@ type PowTokenListing = {
 };
 
 type PowTokenClosedListing = PowTokenListing & {
+  awaitingFreshCanonical?: boolean;
   closedAt?: string;
   closedConfirmed?: boolean;
   closedFrozenNetworkValueSats?: number;
@@ -861,14 +1060,14 @@ type WorkAmoPreV8RelicRow = {
 type PendingTokenListingSeal = {
   listingId: string;
   network: BitcoinNetwork;
-  saleAuthorization: PowTokenSaleAuthorization;
+  saleAuthorization?: PowTokenSaleAuthorization;
   sealAt: string;
   sealTxid: string;
   sellerAddress: string;
   tokenId: string;
 };
 
-type PowTokenSale = {
+type PowTokenSale = LocalTokenLifecycleProjection & {
   amount: ExactIntegerValue;
   amountAtoms?: string;
   amountSubatoms?: string;
@@ -896,6 +1095,54 @@ type PowTokenSale = {
   ticker: string;
   tokenId: string;
   txid: string;
+};
+
+type LocalTokenBroadcastOverlay = {
+  attempts: number;
+  awaitingFreshCanonicalResolution?: boolean;
+  awaitingFreshListingObservation?: boolean;
+  checkedAt?: string;
+  closedListings: PowTokenClosedListing[];
+  createdAt: string;
+  definitions: PowTokenDefinition[];
+  failureReason?: string;
+  firstConfirmedAt?: string;
+  initiatorAddress?: string;
+  listings: PowTokenListing[];
+  mints: PowTokenMint[];
+  network: BitcoinNetwork;
+  nextCheckAt?: string;
+  recordedAt: string;
+  replacementTxid?: string;
+  sales: PowTokenSale[];
+  seals: PendingTokenListingSeal[];
+  status: BroadcastStatus;
+  statusChangedAt: string;
+  transfers: PowTokenTransfer[];
+  txid: string;
+};
+
+type LocalTokenBroadcastOverlayInput = Partial<
+  Pick<
+    LocalTokenBroadcastOverlay,
+    | "closedListings"
+    | "definitions"
+    | "initiatorAddress"
+    | "listings"
+    | "mints"
+    | "sales"
+    | "seals"
+    | "transfers"
+  >
+> & {
+  createdAt?: string;
+  network: BitcoinNetwork;
+  txid: string;
+};
+
+type LocalTokenBroadcastStore = {
+  entries: LocalTokenBroadcastOverlay[];
+  version: typeof LOCAL_TOKEN_BROADCAST_STORE_VERSION;
 };
 
 type MarketplacePurchaseReceipt = {
@@ -941,6 +1188,9 @@ type PowTokenState = {
   decimals?: number;
   hasMore?: boolean;
   holders: PowTokenHolder[];
+  indexedAt?: string;
+  indexedThroughBlock?: number;
+  indexedThroughBlockHash?: string;
   invalidEvents: PowTokenInvalidEvent[];
   listings: PowTokenListing[];
   mints: PowTokenMint[];
@@ -949,6 +1199,8 @@ type PowTokenState = {
   pendingSupplySubatoms?: string;
   precisionModel?: string;
   sales: PowTokenSale[];
+  snapshotId?: string;
+  source?: string;
   stats?: PowTokenSummaryStats;
   summaryOnly?: boolean;
   totalCounts?: Partial<Record<PowTokenCollectionKey, number | null>>;
@@ -984,9 +1236,14 @@ type PowTokenSummaryMetadata = Pick<
   | "confirmedSupplySubatoms"
   | "decimals"
   | "hasMore"
+  | "indexedAt"
+  | "indexedThroughBlock"
+  | "indexedThroughBlockHash"
   | "pendingSupplyAtoms"
   | "pendingSupplySubatoms"
   | "precisionModel"
+  | "snapshotId"
+  | "source"
   | "stats"
   | "totalCounts"
   | "unitScale"
@@ -1425,22 +1682,39 @@ type ChainedMintBuildResult = {
 
 type PowRegistryApiResponse = {
   activity?: PowActivityItem[];
+  collectionHasMore?: Record<string, boolean>;
+  hasMore?: boolean;
   indexedAt?: string;
+  indexedThroughBlock?: number;
+  indexedThroughBlockHash?: string;
   listings?: PowIdListing[];
   pendingEvents?: PowIdPendingEvent[];
   record?: PowIdRecord | null;
   records?: PowIdRecord[];
   routable?: boolean;
   sales?: PowIdMarketplaceSale[];
+  snapshotId?: string;
+  source?: string;
   status?: string;
+  summaryOnly?: boolean;
+  totalCounts?: Record<string, number | null>;
 };
 
 type PowRegistryState = {
   activity: PowActivityItem[];
+  collectionHasMore?: Record<string, boolean>;
+  hasMore?: boolean;
+  indexedAt?: string;
+  indexedThroughBlock?: number;
+  indexedThroughBlockHash?: string;
   listings: PowIdListing[];
   pendingEvents: PowIdPendingEvent[];
   records: PowIdRecord[];
   sales: PowIdMarketplaceSale[];
+  snapshotId?: string;
+  source?: string;
+  summaryOnly?: boolean;
+  totalCounts?: Record<string, number | null>;
 };
 
 type RushApiResponse = Partial<RushState>;
@@ -1495,6 +1769,17 @@ type PowMailApiResponse = {
 };
 
 type PowTxStatusApiResponse = {
+  error?: string;
+  evidence?: {
+    failureReason?: string;
+    reason?: string;
+    replacedByTxid?: string;
+    replacementTxid?: string;
+  };
+  failureReason?: string;
+  reason?: string;
+  replacedByTxid?: string;
+  replacementTxid?: string;
   status?: BroadcastStatus;
 };
 
@@ -1509,7 +1794,9 @@ const DRAFT_KEY_PREFIX = "proofofwork.draft.v1";
 const MAIL_PREFS_KEY = "proofofwork.mailPrefs.v1";
 const CONTACTS_KEY = "proofofwork.contacts.v1";
 const CUSTOM_FOLDERS_KEY = "proofofwork.customFolders.v1";
-const TOKEN_PENDING_SEALS_KEY = "proofofwork.tokenPendingSeals.v1";
+const LOCAL_TOKEN_BROADCAST_STORE_KEY =
+  "proofofwork.localTokenBroadcasts.v1";
+const LOCAL_TOKEN_BROADCAST_STORE_VERSION = 1;
 const BACKUP_APP = "ProofOfWork.Me";
 const BACKUP_VERSION = 1;
 const BACKUP_MAX_BYTES = 5 * 1024 * 1024;
@@ -1531,10 +1818,25 @@ const GROWTH_EVENT_PAGE_SIZE = 12;
 const GROWTH_AUTO_REFRESH_MS = 5 * 60_000;
 const WORK_FLOOR_LIVE_REFRESH_MS = 15_000;
 const LOG_LIVE_REFRESH_MS = 15_000;
-const BACKGROUND_FRESH_REFRESH_DELAY_MS = 1_000;
 const BTC_USD_BROWSER_CACHE_TTL_MS = 60_000;
-const TOKEN_LOCAL_PENDING_LISTING_TTL_MS = 30 * 60_000;
-const TOKEN_LOCAL_PENDING_TRANSFER_TTL_MS = 30 * 60_000;
+const LOCAL_TOKEN_BROADCAST_UNKNOWN_MAX_AGE_MS = 30 * 60_000;
+const LOCAL_TOKEN_BROADCAST_PENDING_MAX_AGE_MS = 30 * 24 * 60 * 60_000;
+const LOCAL_TOKEN_BROADCAST_TERMINAL_MAX_AGE_MS = 30 * 24 * 60 * 60_000;
+const LOCAL_TOKEN_BROADCAST_CONFIRMED_INDEXING_MAX_AGE_MS =
+  30 * 24 * 60 * 60_000;
+const LOCAL_TOKEN_BROADCAST_CONFIRMED_RECHECK_HORIZON_MS = 24 * 60 * 60_000;
+const LOCAL_TOKEN_BROADCAST_MAX_ENTRIES = 64;
+const LOCAL_TOKEN_BROADCAST_MAX_BYTES = 256 * 1024;
+const LOCAL_TOKEN_BROADCAST_MAX_ROWS_PER_FAMILY = 32;
+const LOCAL_TOKEN_BROADCAST_RECONCILE_CONCURRENCY = 4;
+const LOCAL_TOKEN_BROADCAST_RECONCILE_INTERVAL_MS = 15_000;
+const LOCAL_TOKEN_LIFECYCLE_PAGE_SIZE = 12;
+const MAIL_BROADCAST_STATUS_CHECK_CONCURRENCY =
+  LOCAL_TOKEN_BROADCAST_RECONCILE_CONCURRENCY;
+const MAIL_BROADCAST_STATUS_MAX_TARGETS = 128;
+const LOCAL_SENT_MESSAGE_MAX_ENTRIES = 512;
+const RECENT_CONFIRMED_RECHECK_HORIZON_MS = 24 * 60 * 60_000;
+const MAX_RECENT_CONFIRMED_RECHECKS = 12;
 const TX_OUTSPEND_FETCH_TIMEOUT_MS = 12_000;
 const WALLET_UTXO_FETCH_TIMEOUT_MS = 45_000;
 const WALLET_UTXO_FETCH_RETRY_DELAYS_MS = [0, 1000];
@@ -2678,6 +2980,7 @@ function isBackupStorageKey(key: string) {
     key === MAIL_PREFS_KEY ||
     key === CONTACTS_KEY ||
     key === CUSTOM_FOLDERS_KEY ||
+    key === LOCAL_TOKEN_BROADCAST_STORE_KEY ||
     key.startsWith(`${DRAFT_KEY_PREFIX}:`)
   );
 }
@@ -2685,6 +2988,9 @@ function isBackupStorageKey(key: string) {
 function validateBackupValue(key: string, value: string) {
   try {
     const parsed = JSON.parse(value) as unknown;
+    if (key === LOCAL_TOKEN_BROADCAST_STORE_KEY) {
+      return localTokenBroadcastOverlaysFromSerialized(value) !== undefined;
+    }
     if (key === SENT_KEY) {
       return Array.isArray(parsed);
     }
@@ -2714,7 +3020,21 @@ function collectBackupData() {
 
     const value = localStorage.getItem(key);
     if (typeof value === "string" && validateBackupValue(key, value)) {
-      data[key] = value;
+      if (key === LOCAL_TOKEN_BROADCAST_STORE_KEY) {
+        const entries = localTokenBroadcastOverlaysFromSerialized(value);
+        if (entries) {
+          data[key] = JSON.stringify({
+            entries,
+            version: LOCAL_TOKEN_BROADCAST_STORE_VERSION,
+          } satisfies LocalTokenBroadcastStore);
+        }
+      } else if (key === SENT_KEY) {
+        data[key] = JSON.stringify(
+          sanitizeStoredSentMessages(JSON.parse(value) as unknown),
+        );
+      } else {
+        data[key] = value;
+      }
     }
   }
 
@@ -2746,7 +3066,22 @@ function parseBackup(text: string) {
       throw new Error(`Backup contains invalid data for ${key}.`);
     }
 
-    data[key] = value;
+    if (key === LOCAL_TOKEN_BROADCAST_STORE_KEY) {
+      const entries = localTokenBroadcastOverlaysFromSerialized(value);
+      if (!entries) {
+        throw new Error("Backup contains invalid Credit lifecycle evidence.");
+      }
+      data[key] = JSON.stringify({
+        entries,
+        version: LOCAL_TOKEN_BROADCAST_STORE_VERSION,
+      } satisfies LocalTokenBroadcastStore);
+    } else if (key === SENT_KEY) {
+      data[key] = JSON.stringify(
+        sanitizeStoredSentMessages(JSON.parse(value) as unknown),
+      );
+    } else {
+      data[key] = value;
+    }
   }
 
   if (Object.keys(data).length === 0) {
@@ -2807,6 +3142,17 @@ function backupDataSummary(data: Record<string, string>) {
       }
     } catch {
       // Already validated before this helper is used.
+    }
+  }
+
+  if (data[LOCAL_TOKEN_BROADCAST_STORE_KEY]) {
+    const entries = localTokenBroadcastOverlaysFromSerialized(
+      data[LOCAL_TOKEN_BROADCAST_STORE_KEY],
+    );
+    if (entries) {
+      details.push(
+        `${entries.length} Credit lifecycle entr${entries.length === 1 ? "y" : "ies"}`,
+      );
     }
   }
 
@@ -3254,35 +3600,35 @@ function sentMessageKey(
   return `${message.network}-${message.from}-${message.txid}`;
 }
 
-function broadcastStatusRank(status: BroadcastStatus) {
-  if (status === "confirmed") {
-    return 4;
+function sentMessageObservationTime(message: SentMessage) {
+  for (const value of [
+    message.lastCheckedAt,
+    message.confirmedAt,
+    message.droppedAt,
+    message.createdAt,
+  ]) {
+    const parsed = Date.parse(String(value ?? ""));
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
   }
-
-  if (status === "pending") {
-    return 3;
-  }
-
-  if (status === "unknown") {
-    return 2;
-  }
-
-  return 1;
+  return Number.NEGATIVE_INFINITY;
 }
 
 function preferSentMessage(candidate: SentMessage, current: SentMessage) {
-  const byStatus =
-    broadcastStatusRank(sentDeliveryStatus(candidate)) -
-    broadcastStatusRank(sentDeliveryStatus(current));
-  if (byStatus !== 0) {
-    return byStatus > 0;
+  const candidateObservedAt = sentMessageObservationTime(candidate);
+  const currentObservedAt = sentMessageObservationTime(current);
+  if (candidateObservedAt !== currentObservedAt) {
+    return candidateObservedAt > currentObservedAt;
   }
 
   if (Boolean(candidate.attachment) !== Boolean(current.attachment)) {
     return Boolean(candidate.attachment);
   }
 
-  return Date.parse(candidate.createdAt) > Date.parse(current.createdAt);
+  // Sources are merged oldest-to-newest. Equal-time current evidence from the
+  // later source must be allowed to replace a stale terminal status.
+  return true;
 }
 
 function mergeSentAttachedCredits(
@@ -3319,17 +3665,38 @@ function mergeSentRecord(
   preferred: SentMessage,
   fallback: SentMessage,
 ): SentMessage {
+  const preferredStatus = sentDeliveryStatus(preferred);
+  const fallbackStatus = sentDeliveryStatus(fallback);
+  const sameStatus = preferredStatus === fallbackStatus;
   return {
     ...fallback,
     ...preferred,
     attachedCredits: mergeSentAttachedCredits(preferred, fallback),
     attachment: preferred.attachment ?? fallback.attachment,
-    confirmedAt: preferred.confirmedAt ?? fallback.confirmedAt,
-    droppedAt: preferred.droppedAt ?? fallback.droppedAt,
+    confirmedAt:
+      preferredStatus === "confirmed"
+        ? preferred.confirmedAt ??
+          (sameStatus ? fallback.confirmedAt : undefined)
+        : undefined,
+    droppedAt:
+      preferredStatus === "dropped"
+        ? preferred.droppedAt ?? (sameStatus ? fallback.droppedAt : undefined)
+        : undefined,
+    failureReason:
+      preferredStatus === "failed" || preferredStatus === "unknown"
+        ? preferred.failureReason ??
+          (sameStatus ? fallback.failureReason : undefined)
+        : undefined,
     feeRate: preferred.feeRate || fallback.feeRate,
     lastCheckedAt: preferred.lastCheckedAt ?? fallback.lastCheckedAt,
     parentTxid: preferred.parentTxid ?? fallback.parentTxid,
+    replacementTxid:
+      preferredStatus === "replaced"
+        ? preferred.replacementTxid ??
+          (sameStatus ? fallback.replacementTxid : undefined)
+        : undefined,
     recipients: preferred.recipients ?? fallback.recipients,
+    status: preferredStatus,
     subject: preferred.subject ?? fallback.subject,
     toRecipients: preferred.toRecipients ?? fallback.toRecipients,
     ccRecipients: preferred.ccRecipients ?? fallback.ccRecipients,
@@ -3357,6 +3724,50 @@ function mergeSentMessages(messages: SentMessage[]) {
   }
 
   return [...merged.values()];
+}
+
+function mergeObservedSentMessages(
+  currentMessages: SentMessage[],
+  incomingMessages: SentMessage[],
+  observedAt: string,
+) {
+  const observedAtMs = Date.parse(observedAt);
+  if (!Number.isFinite(observedAtMs)) {
+    return mergeSentMessages(incomingMessages);
+  }
+  const currentByKey = new Map(
+    mergeSentMessages(currentMessages).map((message) => [
+      sentMessageKey(message),
+      message,
+    ]),
+  );
+  return mergeSentMessages(incomingMessages).map((message) => {
+    const messageCheckedAtMs = Date.parse(message.lastCheckedAt ?? "");
+    const observed = {
+      ...message,
+      lastCheckedAt:
+        Number.isFinite(messageCheckedAtMs) && messageCheckedAtMs >= observedAtMs
+          ? message.lastCheckedAt
+          : observedAt,
+    };
+    const current = currentByKey.get(sentMessageKey(observed));
+    if (!current) return observed;
+    return preferSentMessage(observed, current)
+      ? mergeSentRecord(observed, current)
+      : mergeSentRecord(current, observed);
+  });
+}
+
+function mailRefreshRequestIsCurrent(
+  expected: MailRefreshRequestIdentity,
+  current: MailRefreshRequestIdentity,
+) {
+  return (
+    expected.address === current.address &&
+    expected.network === current.network &&
+    expected.generation === current.generation &&
+    expected.requestId === current.requestId
+  );
 }
 
 function mergeSentMessageSources(
@@ -4016,7 +4427,13 @@ function hasAttachment(
 }
 
 function normalizeBroadcastStatus(status: unknown): BroadcastStatus {
-  if (status === "confirmed" || status === "pending" || status === "dropped") {
+  if (
+    status === "confirmed" ||
+    status === "pending" ||
+    status === "dropped" ||
+    status === "failed" ||
+    status === "replaced"
+  ) {
     return status;
   }
 
@@ -4036,15 +4453,23 @@ function deliveryLabel(status: BroadcastStatus) {
     return "Dropped";
   }
 
+  if (status === "failed") {
+    return "Failed";
+  }
+
+  if (status === "replaced") {
+    return "Replaced";
+  }
+
   return status === "pending" ? "Pending" : "Checking";
 }
 
 function isVisibleSentStatus(status: BroadcastStatus) {
-  return status === "confirmed" || status === "unknown";
+  return status === "confirmed";
 }
 
 function isOutboxStatus(status: BroadcastStatus) {
-  return status === "pending" || status === "dropped";
+  return status !== "confirmed";
 }
 
 function folderLabel(folder: Folder) {
@@ -5647,15 +6072,11 @@ function storedMailRecipients(
   });
 }
 
-function loadSentMessages(): SentMessage[] {
-  try {
-    const stored = localStorage.getItem(SENT_KEY);
-    const parsed = stored ? JSON.parse(stored) : [];
-    if (!Array.isArray(parsed)) {
-      return [];
-    }
-
-    return parsed.flatMap((message): SentMessage[] => {
+function sanitizeStoredSentMessages(parsed: unknown): SentMessage[] {
+  if (!Array.isArray(parsed)) return [];
+  return parsed
+    .slice(0, LOCAL_SENT_MESSAGE_MAX_ENTRIES)
+    .flatMap((message): SentMessage[] => {
       if (!message || typeof message !== "object") {
         return [];
       }
@@ -5684,6 +6105,7 @@ function loadSentMessages(): SentMessage[] {
         sent.attachedCredits,
         network,
       );
+      const status = normalizeBroadcastStatus(sent.status);
 
       return [
         {
@@ -5695,13 +6117,22 @@ function loadSentMessages(): SentMessage[] {
             attachedCredits.length > 0 ? attachedCredits : undefined,
           attachment: storedAttachment(sent.attachment),
           confirmedAt:
-            typeof sent.confirmedAt === "string" ? sent.confirmedAt : undefined,
+            status === "confirmed" && typeof sent.confirmedAt === "string"
+              ? sent.confirmedAt
+              : undefined,
           createdAt:
             typeof sent.createdAt === "string"
               ? sent.createdAt
               : new Date().toISOString(),
           droppedAt:
-            typeof sent.droppedAt === "string" ? sent.droppedAt : undefined,
+            status === "dropped" && typeof sent.droppedAt === "string"
+              ? sent.droppedAt
+              : undefined,
+          failureReason:
+            (status === "failed" || status === "unknown") &&
+            typeof sent.failureReason === "string"
+              ? publicBroadcastFailureReason(sent.failureReason)
+              : undefined,
           feeRate:
             typeof sent.feeRate === "number" ? sent.feeRate : DEFAULT_FEE_RATE,
           from: sent.from,
@@ -5721,19 +6152,34 @@ function loadSentMessages(): SentMessage[] {
           toRecipients: toRecipients.length > 0 ? toRecipients : undefined,
           ccRecipients: ccRecipients.length > 0 ? ccRecipients : undefined,
           replyTo: typeof sent.replyTo === "string" ? sent.replyTo : sent.from,
-          status: normalizeBroadcastStatus(sent.status),
+          replacementTxid:
+            status === "replaced" &&
+            typeof sent.replacementTxid === "string" &&
+            /^[0-9a-fA-F]{64}$/.test(sent.replacementTxid)
+              ? sent.replacementTxid.toLowerCase()
+              : undefined,
+          status,
           to: sent.to,
           txid: sent.txid.toLowerCase(),
         },
       ];
     });
+}
+
+function loadSentMessages(): SentMessage[] {
+  try {
+    const stored = localStorage.getItem(SENT_KEY);
+    return sanitizeStoredSentMessages(stored ? JSON.parse(stored) : []);
   } catch {
     return [];
   }
 }
 
 function saveSentMessages(messages: SentMessage[]) {
-  localStorage.setItem(SENT_KEY, JSON.stringify(messages));
+  localStorage.setItem(
+    SENT_KEY,
+    JSON.stringify(sanitizeStoredSentMessages(messages)),
+  );
 }
 
 function loadMailPreferences(): MailPreferences {
@@ -9154,10 +9600,20 @@ function tokenListingHasSaleTicketSeal(listing: PowTokenListing) {
   return tokenSaleAuthorizationUsesSaleTicketAnchor(listing.saleAuthorization);
 }
 
+function tokenListingHasActiveLocalSealLifecycle(listing: PowTokenListing) {
+  return (
+    Boolean(listing.sealTxid) &&
+    (listing.sealLifecycleStatus === "pending" ||
+      listing.sealLifecycleStatus === "unknown" ||
+      listing.sealLifecycleStatus === "confirmed")
+  );
+}
+
 function tokenListingHasPendingSaleTicketSeal(listing: PowTokenListing) {
   return (
     listing.sealConfirmed !== true &&
-    tokenListingHasSaleTicketSeal(listing)
+    (tokenListingHasSaleTicketSeal(listing) ||
+      tokenListingHasActiveLocalSealLifecycle(listing))
   );
 }
 
@@ -9184,6 +9640,10 @@ function mergeTokenListingRecord(
       sealAt: current.sealAt,
       sealConfirmed: current.sealConfirmed,
       sealDataBytes: current.sealDataBytes,
+      sealLifecycleCheckedAt: current.sealLifecycleCheckedAt,
+      sealLifecycleFailureReason: current.sealLifecycleFailureReason,
+      sealLifecycleReplacementTxid: current.sealLifecycleReplacementTxid,
+      sealLifecycleStatus: current.sealLifecycleStatus,
       sealTxid: current.sealTxid,
     };
   }
@@ -9254,13 +9714,18 @@ function buildTokenBuyPayload(
 }
 
 function tokenListingAnchorOutpoint(listing: PowTokenListing) {
-  if (!tokenListingHasSpendableSaleTicketAnchor(listing)) {
+  if (
+    !tokenListingHasSpendableSaleTicketAnchor(listing) &&
+    !(listing.localBroadcast && tokenProjectionReservesSpendability(listing))
+  ) {
     return null;
   }
 
   return {
     txid: listing.listingId,
-    vout: listing.saleAuthorization.anchorVout,
+    vout: tokenListingHasSpendableSaleTicketAnchor(listing)
+      ? listing.saleAuthorization.anchorVout
+      : TOKEN_LISTING_ANCHOR_VOUT,
   };
 }
 
@@ -9619,9 +10084,14 @@ function tokenSummaryMetadata(
     | "confirmedSupplySubatoms"
     | "decimals"
     | "hasMore"
+    | "indexedAt"
+    | "indexedThroughBlock"
+    | "indexedThroughBlockHash"
     | "pendingSupplyAtoms"
     | "pendingSupplySubatoms"
     | "precisionModel"
+    | "snapshotId"
+    | "source"
     | "stats"
     | "totalCounts"
     | "unitScale"
@@ -9636,9 +10106,14 @@ function tokenSummaryMetadata(
     confirmedSupplySubatoms: state.confirmedSupplySubatoms,
     decimals: state.decimals,
     hasMore: state.hasMore === true,
+    indexedAt: state.indexedAt,
+    indexedThroughBlock: state.indexedThroughBlock,
+    indexedThroughBlockHash: state.indexedThroughBlockHash,
     pendingSupplyAtoms: state.pendingSupplyAtoms,
     pendingSupplySubatoms: state.pendingSupplySubatoms,
     precisionModel: state.precisionModel,
+    snapshotId: state.snapshotId,
+    source: state.source,
     stats: state.stats ? { ...state.stats } : undefined,
     totalCounts: state.totalCounts ? { ...state.totalCounts } : undefined,
     unitScale: state.unitScale,
@@ -10271,7 +10746,7 @@ function tokenLedgerFor(
           (balances.get(mint.minterAddress) ?? 0n) + amountAtoms,
         );
       }
-    } else {
+    } else if (tokenProjectionCountsAsPending(mint)) {
       pendingSupply += amount;
     }
   });
@@ -10515,8 +10990,22 @@ function activeTokenListingsExcludingClosed(
   listings: PowTokenListing[],
   closedListings: PowTokenClosedListing[],
 ) {
-  const spendableListings = listings.filter(tokenListingHasSpendableSaleTicketAnchor);
-  const closedKeys = new Set(closedListings.map(tokenListingStateKey));
+  const spendableListings = listings.filter(
+    (listing) =>
+      tokenListingHasSpendableSaleTicketAnchor(listing) ||
+      (listing.localBroadcast === true &&
+        tokenProjectionReservesSpendability(listing)),
+  );
+  const closedKeys = new Set(
+    closedListings
+      .filter(
+        (listing) =>
+          listing.localBroadcast !== true ||
+          tokenProjectionReservesSpendability(listing) ||
+          listing.awaitingFreshCanonical === true,
+      )
+      .map(tokenListingStateKey),
+  );
   if (closedKeys.size === 0) {
     return spendableListings;
   }
@@ -10672,7 +11161,9 @@ function sanitizedTokenState(state: PowTokenState): PowTokenState {
       : summaryOnly
         ? state.pendingSupply
       : mints
-          .filter((mint) => !mint.confirmed)
+          .filter(
+            (mint) => !mint.confirmed && tokenProjectionCountsAsPending(mint),
+          )
           .reduce(
             (total, mint) =>
               total + (exactIntegerBigInt(mint.amount) ?? 0n),
@@ -10758,7 +11249,7 @@ function tokenWalletBalancesFor(
             if (canReplayConfirmedBalance) {
               confirmedBalanceAtoms += amountAtoms;
             }
-          } else {
+          } else if (tokenProjectionCountsAsPending(mint)) {
             pendingIncomingAtoms += amountAtoms;
           }
         }
@@ -10790,7 +11281,7 @@ function tokenWalletBalancesFor(
                 confirmedBalanceAtoms += amountAtoms;
               }
             }
-          } else {
+          } else if (tokenProjectionCountsAsPending(transfer)) {
             if (sender) {
               pendingOutgoingAtoms += amountAtoms;
             }
@@ -10827,7 +11318,7 @@ function tokenWalletBalancesFor(
                 confirmedBalanceAtoms += amountAtoms;
               }
             }
-          } else {
+          } else if (tokenProjectionCountsAsPending(sale)) {
             if (seller) {
               pendingOutgoingAtoms += amountAtoms;
             }
@@ -10871,7 +11362,7 @@ function tokenWalletBalancesFor(
           if (canReplayConfirmedBalance) {
             confirmedBalance += amount;
           }
-        } else {
+        } else if (tokenProjectionCountsAsPending(mint)) {
           pendingIncoming += amount;
         }
       }
@@ -10900,6 +11391,10 @@ function tokenWalletBalancesFor(
               confirmedBalance += amount;
             }
           }
+          continue;
+        }
+
+        if (!tokenProjectionCountsAsPending(transfer)) {
           continue;
         }
 
@@ -10941,6 +11436,10 @@ function tokenWalletBalancesFor(
               confirmedBalance += amount;
             }
           }
+          continue;
+        }
+
+        if (!tokenProjectionCountsAsPending(sale)) {
           continue;
         }
 
@@ -11145,7 +11644,9 @@ function tokenReservedBalanceFor(
     (total, listing) =>
       listing.tokenId === tokenId &&
       listing.sellerAddress === ownerAddress &&
-      tokenListingHasSpendableSaleTicketAnchor(listing) &&
+      (tokenListingHasSpendableSaleTicketAnchor(listing) ||
+        (listing.localBroadcast === true &&
+          tokenProjectionReservesSpendability(listing))) &&
       !tokenListingIsExpired(listing)
         ? total + exactIntegerNumber(listing.amount)
         : total,
@@ -11165,7 +11666,11 @@ function tokenReservedBalanceAtomsFor(
     if (
       listing.tokenId !== tokenId ||
       listing.sellerAddress !== ownerAddress ||
-      !tokenListingHasSpendableSaleTicketAnchor(listing) ||
+      (!tokenListingHasSpendableSaleTicketAnchor(listing) &&
+        !(
+          listing.localBroadcast === true &&
+          tokenProjectionReservesSpendability(listing)
+        )) ||
       tokenListingIsExpired(listing)
     ) {
       return total;
@@ -11198,6 +11703,1551 @@ function tokenTransferSpendabilityKey(transfer: PowTokenTransfer) {
   return txid && tokenId && amountAtoms !== null && amountAtoms > 0n
     ? `${txid}:${tokenId}:${senderAddress}:${recipientAddress}:${amountAtoms}`
     : "";
+}
+
+function tokenProjectionLifecycleStatus(
+  item: { confirmed?: boolean; lifecycleStatus?: unknown; status?: unknown },
+) {
+  if (item.lifecycleStatus !== undefined || item.status !== undefined) {
+    return normalizeBroadcastStatus(item.lifecycleStatus ?? item.status);
+  }
+  return item.confirmed ? "confirmed" : "pending";
+}
+
+function tokenProjectionHasRemovalEvidence(
+  item: { confirmed?: boolean; lifecycleStatus?: unknown; status?: unknown },
+) {
+  const status = tokenProjectionLifecycleStatus(item);
+  return status === "dropped" || status === "failed" || status === "replaced";
+}
+
+function tokenProjectionCountsAsPending(
+  item: LocalTokenLifecycleProjection & { confirmed?: boolean },
+) {
+  return !item.localBroadcast || tokenProjectionLifecycleStatus(item) === "pending";
+}
+
+function tokenDefinitionCountsInMetrics(
+  token: LocalTokenLifecycleProjection & { confirmed?: boolean },
+) {
+  return token.confirmed === true || tokenProjectionCountsAsPending(token);
+}
+
+function tokenDefinitionMetricCount(
+  tokens: Array<LocalTokenLifecycleProjection & { confirmed?: boolean }>,
+) {
+  return tokens.filter(tokenDefinitionCountsInMetrics).length;
+}
+
+function tokenDefinitionAllowsLifecycleActions(
+  token: LocalTokenLifecycleProjection & { confirmed?: boolean },
+) {
+  return tokenDefinitionCountsInMetrics(token);
+}
+
+function tokenProjectionReservesSpendability(
+  item: LocalTokenLifecycleProjection & { confirmed?: boolean },
+) {
+  if (!item.localBroadcast) {
+    return true;
+  }
+  const status = tokenProjectionLifecycleStatus(item);
+  return (
+    status === "pending" ||
+    status === "unknown" ||
+    status === "confirmed" ||
+    item.lifecycleAwaitingCanonical === true
+  );
+}
+
+function tokenLifecycleStatusLabel(
+  item: LocalTokenLifecycleProjection & { confirmed?: boolean },
+  pendingLabel = "Pending",
+  confirmedLabel = "Confirmed",
+) {
+  const status = tokenProjectionLifecycleStatus(item);
+  if (status === "confirmed") {
+    return item.confirmed ? confirmedLabel : `${confirmedLabel} · indexing`;
+  }
+  if (status === "unknown") return "Unknown · checking";
+  if (status === "replaced") return "Replaced";
+  if (status === "dropped") return "Dropped";
+  if (status === "failed") return "Failed";
+  return pendingLabel;
+}
+
+function canonicalInvalidTokenTxids(invalidEvents: PowTokenInvalidEvent[]) {
+  return new Set(
+    invalidEvents
+      .map((event) => String(event.txid ?? "").trim().toLowerCase())
+      .filter((txid) => /^[0-9a-f]{64}$/u.test(txid)),
+  );
+}
+
+const LOCAL_TOKEN_SENSITIVE_FIELD =
+  /(?:psbt|raw.?tx|signed.?tx|tx.?hex|seed|mnemonic|private|secret|signature|pub(?:lic)?key|wallet)/iu;
+const LOCAL_TOKEN_RECORD_FIELDS = {
+  closedListings: new Set([
+    "amount", "amountAtoms", "amountSubatoms", "closedAt", "closedConfirmed",
+    "closedTxid", "confirmed", "createdAt", "dataBytes", "estimate", "listingId",
+    "network", "priceSats", "registryAddress", "saleAuthorization", "sellerAddress",
+    "ticker", "tokenId", "unitFaceProofs", "workAmoEstimate",
+  ]),
+  definitions: new Set([
+    "confirmed", "createdAt", "creatorAddress", "creationFeeSats", "maxSupply",
+    "maxSupplyAtoms", "maxSupplySubatoms", "mintAmount", "mintAmountAtoms",
+    "mintAmountSubatoms", "mintPriceSats", "network", "registryAddress", "ticker",
+    "tokenId", "txid", "uncapped",
+  ]),
+  listings: new Set([
+    "amount", "amountAtoms", "amountSubatoms", "confirmed", "createdAt", "dataBytes",
+    "estimate", "listingId", "network", "priceSats", "registryAddress",
+    "saleAuthorization", "sellerAddress", "ticker", "tokenId", "unitFaceProofs",
+    "workAmoEstimate",
+  ]),
+  mints: new Set([
+    "amount", "amountAtoms", "amountSubatoms", "confirmed", "createdAt", "dataBytes",
+    "minterAddress", "network", "paidSats", "registryAddress", "ticker", "tokenId",
+    "txid",
+  ]),
+  sales: new Set([
+    "amount", "amountAtoms", "amountSubatoms", "buyerAddress", "confirmed", "createdAt",
+    "listingId", "network", "paidSats", "priceSats", "registryAddress", "sellerAddress",
+    "ticker", "tokenId", "txid",
+  ]),
+  seals: new Set([
+    "listingId", "network", "sealAt", "sealTxid", "sellerAddress", "tokenId",
+  ]),
+  transfers: new Set([
+    "amount", "amountAtoms", "amountSubatoms", "amountVersion", "confirmed", "createdAt",
+    "dataBytes", "network", "paidSats", "recipientAddress", "registryAddress",
+    "senderAddress", "ticker", "tokenId", "txid",
+  ]),
+} as const;
+
+type LocalTokenOverlayFamily = keyof typeof LOCAL_TOKEN_RECORD_FIELDS;
+
+let localTokenBroadcastOverlayCache: LocalTokenBroadcastOverlay[] | undefined;
+let localTokenOverlayCapacityWarningActive = false;
+let localTokenOverlayWarningListenerReady = false;
+const localTokenOverlayWarningQueue: string[] = [];
+
+function dispatchLocalTokenOverlayWarning(message: string) {
+  window.dispatchEvent(
+    new CustomEvent("proofofwork:local-token-overlay-warning", {
+      detail: { message },
+    }),
+  );
+}
+
+function localTokenOverlayWarning(message: string) {
+  if (typeof window === "undefined") return;
+  if (!localTokenOverlayWarningListenerReady) {
+    localTokenOverlayWarningQueue.push(message);
+    return;
+  }
+  dispatchLocalTokenOverlayWarning(message);
+}
+
+function setLocalTokenOverlayWarningListenerReady(ready: boolean) {
+  localTokenOverlayWarningListenerReady = ready;
+  if (!ready) return;
+  for (const message of localTokenOverlayWarningQueue.splice(0)) {
+    dispatchLocalTokenOverlayWarning(message);
+  }
+}
+
+function sanitizeLocalTokenPublicValue(
+  value: unknown,
+  depth = 0,
+): unknown {
+  if (value === null || typeof value === "boolean") return value;
+  if (typeof value === "number") {
+    return Number.isFinite(value) && Math.abs(value) <= Number.MAX_SAFE_INTEGER
+      ? value
+      : undefined;
+  }
+  if (typeof value === "string") return value.slice(0, 2_048);
+  if (depth >= 4) return undefined;
+  if (Array.isArray(value)) {
+    return value
+      .slice(0, LOCAL_TOKEN_BROADCAST_MAX_ROWS_PER_FAMILY)
+      .flatMap((item) => {
+        const safe = sanitizeLocalTokenPublicValue(item, depth + 1);
+        return safe === undefined ? [] : [safe];
+      });
+  }
+  if (!value || typeof value !== "object") return undefined;
+  const safe: Record<string, unknown> = {};
+  for (const [key, item] of Object.entries(value).slice(0, 64)) {
+    if (
+      !/^[A-Za-z][A-Za-z0-9_]{0,63}$/u.test(key) ||
+      LOCAL_TOKEN_SENSITIVE_FIELD.test(key)
+    ) {
+      continue;
+    }
+    const sanitized = sanitizeLocalTokenPublicValue(item, depth + 1);
+    if (sanitized !== undefined) safe[key] = sanitized;
+  }
+  return safe;
+}
+
+function sanitizeLocalTokenBaseSaleAuthorization(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const source = value as Partial<PowTokenSaleAuthorization>;
+  const publicFields = [
+    "amount",
+    "amountAtoms",
+    "amountSubatoms",
+    "amountModel",
+    "anchorScriptPubKey",
+    "anchorSigHashType",
+    "anchorType",
+    "anchorValueSats",
+    "anchorVout",
+    "blockSequencerModel",
+    "bondTransitionModel",
+    "buyerAddress",
+    "expiresAt",
+    "network",
+    "nonce",
+    "minimumPriceSats",
+    "oracleBlockHash",
+    "oracleBlockHeight",
+    "oracleModel",
+    "oracleNetworkValueQ8",
+    "priceSats",
+    "registryAddress",
+    "sellerAddress",
+    "sellerPublicKey",
+    "stateOrderModel",
+    "ticker",
+    "tokenId",
+    "unitFaceUsdCents",
+    "unitFaceProofs",
+    "unitModel",
+    "unitUsdOracleModel",
+    "unitWorkOracleModel",
+    "version",
+  ] as const satisfies readonly (keyof PowTokenSaleAuthorizationDraft)[];
+  const sanitized: Record<string, unknown> = {};
+  for (const key of publicFields) {
+    const field = sanitizeLocalTokenPublicValue(source[key]);
+    if (field !== undefined) sanitized[key] = field;
+  }
+  const anchorScriptPubKey = String(source.anchorScriptPubKey ?? "")
+    .trim()
+    .toLowerCase();
+  const sellerPublicKey = String(source.sellerPublicKey ?? "")
+    .trim()
+    .toLowerCase();
+  const authorization = {
+    ...sanitized,
+    anchorScriptPubKey,
+    anchorSignature: "",
+    anchorTxid: "",
+    sellerPublicKey,
+  } as PowTokenSaleAuthorization;
+  return validPublicKeyHex(sellerPublicKey) &&
+    tokenSaleAuthorizationUsesSpendableSaleTicketAnchor(authorization)
+    ? authorization
+    : undefined;
+}
+
+function validLocalTokenOverlayNetwork(
+  value: unknown,
+): value is BitcoinNetwork {
+  return value === "livenet" || value === "testnet" || value === "testnet4";
+}
+
+function validLocalTokenOverlayTime(value: unknown, fallback: string) {
+  return typeof value === "string" && Number.isFinite(Date.parse(value))
+    ? new Date(value).toISOString()
+    : fallback;
+}
+
+function localTokenOverlayRecordIdentity(
+  family: LocalTokenOverlayFamily,
+  value: Record<string, unknown>,
+) {
+  const amount = String(
+    value.amountSubatoms ?? value.amountAtoms ?? value.amount ?? "",
+  );
+  if (family === "definitions") return String(value.tokenId ?? value.txid ?? "");
+  if (family === "mints") {
+    return `${value.txid}:${value.tokenId}:${value.minterAddress}:${amount}`;
+  }
+  if (family === "transfers") {
+    return `${value.txid}:${value.tokenId}:${value.senderAddress}:${value.recipientAddress}:${amount}`;
+  }
+  if (family === "listings") return String(value.listingId ?? "");
+  if (family === "seals") return `${value.listingId}:${value.sealTxid}`;
+  if (family === "closedListings") {
+    return `${value.listingId}:${value.closedTxid}`;
+  }
+  return `${value.listingId}:${value.txid}`;
+}
+
+function localTokenOverlayValidTokenIdentity(record: Record<string, unknown>) {
+  const tokenId = String(record.tokenId ?? "").trim().toLowerCase();
+  const ticker = String(record.ticker ?? "").trim();
+  return (
+    /^[0-9a-f]{64}$/u.test(tokenId) &&
+    Boolean(ticker) &&
+    normalizeTokenTicker(ticker) === ticker
+  );
+}
+
+function localTokenOverlayPositiveAmount(record: Record<string, unknown>) {
+  const amount = exactIntegerBigInt(
+    record.amountSubatoms ?? record.amountAtoms ?? record.amount,
+  );
+  return amount !== null && amount > 0n;
+}
+
+function localTokenOverlayValidAddress(
+  record: Record<string, unknown>,
+  field: string,
+  network: BitcoinNetwork,
+) {
+  return isValidBitcoinAddress(String(record[field] ?? "").trim(), network);
+}
+
+function localTokenOverlayListingAuthorizationMatches(
+  record: Record<string, unknown>,
+  network: BitcoinNetwork,
+) {
+  const authorization = record.saleAuthorization as
+    | PowTokenSaleAuthorization
+    | undefined;
+  if (
+    !authorization ||
+    !tokenSaleAuthorizationUsesSpendableSaleTicketAnchor(authorization)
+  ) {
+    return false;
+  }
+  const amount = exactIntegerBigInt(
+    record.amountSubatoms ?? record.amountAtoms ?? record.amount,
+  );
+  const authorizationAmount = exactIntegerBigInt(
+    authorization.amountSubatoms ??
+      authorization.amountAtoms ??
+      authorization.amount,
+  );
+  return (
+    authorization.network === network &&
+    String(authorization.tokenId ?? "").trim().toLowerCase() ===
+      String(record.tokenId ?? "").trim().toLowerCase() &&
+    normalizeTokenTicker(String(authorization.ticker ?? "")) ===
+      String(record.ticker ?? "") &&
+    samePaymentAddress(
+      String(authorization.sellerAddress ?? ""),
+      String(record.sellerAddress ?? ""),
+    ) &&
+    samePaymentAddress(
+      String(authorization.registryAddress ?? ""),
+      String(record.registryAddress ?? ""),
+    ) &&
+    amount !== null &&
+    amount === authorizationAmount &&
+    Number(authorization.priceSats) === Number(record.priceSats)
+  );
+}
+
+function localTokenOverlayRecordSemanticallyValid(
+  family: LocalTokenOverlayFamily,
+  record: Record<string, unknown>,
+  network: BitcoinNetwork,
+  txid: string,
+) {
+  if (family === "definitions") {
+    const mintAmount = exactIntegerBigInt(
+      record.mintAmountSubatoms ?? record.mintAmountAtoms ?? record.mintAmount,
+    );
+    const maxSupply = record.uncapped
+      ? null
+      : exactIntegerBigInt(
+          record.maxSupplySubatoms ?? record.maxSupplyAtoms ?? record.maxSupply,
+        );
+    return (
+      record.txid === txid &&
+      record.tokenId === txid &&
+      localTokenOverlayValidTokenIdentity(record) &&
+      localTokenOverlayValidAddress(record, "creatorAddress", network) &&
+      localTokenOverlayValidAddress(record, "registryAddress", network) &&
+      mintAmount !== null &&
+      mintAmount > 0n &&
+      (record.uncapped === true ||
+        (maxSupply !== null && maxSupply >= mintAmount)) &&
+      Number.isSafeInteger(record.creationFeeSats) &&
+      Number(record.creationFeeSats) >= 0 &&
+      Number.isSafeInteger(record.mintPriceSats) &&
+      Number(record.mintPriceSats) > 0
+    );
+  }
+  if (family === "seals") {
+    return (
+      record.sealTxid === txid &&
+      /^[0-9a-f]{64}$/u.test(String(record.listingId ?? "")) &&
+      /^[0-9a-f]{64}$/u.test(String(record.tokenId ?? "")) &&
+      localTokenOverlayValidAddress(record, "sellerAddress", network)
+    );
+  }
+  if (
+    !localTokenOverlayValidTokenIdentity(record) ||
+    !localTokenOverlayValidAddress(record, "registryAddress", network)
+  ) {
+    return false;
+  }
+  if (family === "mints") {
+    return (
+      record.txid === txid &&
+      localTokenOverlayPositiveAmount(record) &&
+      localTokenOverlayValidAddress(record, "minterAddress", network) &&
+      Number.isSafeInteger(record.paidSats) &&
+      Number(record.paidSats) >= 0
+    );
+  }
+  if (family === "transfers") {
+    return (
+      record.txid === txid &&
+      localTokenOverlayPositiveAmount(record) &&
+      localTokenOverlayValidAddress(record, "senderAddress", network) &&
+      localTokenOverlayValidAddress(record, "recipientAddress", network) &&
+      Number.isSafeInteger(record.paidSats) &&
+      Number(record.paidSats) >= 0
+    );
+  }
+  if (family === "listings" || family === "closedListings") {
+    const amount = exactIntegerBigInt(
+      record.amountSubatoms ?? record.amountAtoms ?? record.amount,
+    );
+    const authorization = record.saleAuthorization as
+      | PowTokenSaleAuthorization
+      | undefined;
+    const governedWorkIntent =
+      normalizeTokenTicker(String(record.ticker ?? "")) === WORK_TOKEN_TICKER &&
+      String(record.tokenId ?? "").trim().toLowerCase() === WORK_TOKEN_ID &&
+      amount === 0n &&
+      Number(record.priceSats) === 0 &&
+      isWorkMarketSaleAuthorizationVersion(authorization?.version) &&
+      Number.isSafeInteger(record.unitFaceProofs) &&
+      Number(record.unitFaceProofs) > 0;
+    return (
+      (family === "listings"
+        ? record.listingId === txid
+        : record.closedTxid === txid) &&
+      /^[0-9a-f]{64}$/u.test(String(record.listingId ?? "")) &&
+      localTokenOverlayValidAddress(record, "sellerAddress", network) &&
+      ((localTokenOverlayPositiveAmount(record) &&
+        Number.isSafeInteger(record.priceSats) &&
+        Number(record.priceSats) > 0) ||
+        governedWorkIntent) &&
+      localTokenOverlayListingAuthorizationMatches(record, network)
+    );
+  }
+  return (
+    record.txid === txid &&
+    localTokenOverlayPositiveAmount(record) &&
+    /^[0-9a-f]{64}$/u.test(String(record.listingId ?? "")) &&
+    localTokenOverlayValidAddress(record, "sellerAddress", network) &&
+    localTokenOverlayValidAddress(record, "buyerAddress", network) &&
+    Number.isSafeInteger(record.paidSats) &&
+    Number(record.paidSats) > 0 &&
+    Number.isSafeInteger(record.priceSats) &&
+    Number(record.priceSats) > 0
+  );
+}
+
+function sanitizeLocalTokenOverlayRecord(
+  family: LocalTokenOverlayFamily,
+  value: unknown,
+  network: BitcoinNetwork,
+  txid: string,
+) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const source = value as Record<string, unknown>;
+  if (source.network !== network) return undefined;
+  const relatedTxid = String(
+    family === "listings"
+      ? source.listingId
+      : family === "seals"
+        ? source.sealTxid
+        : family === "closedListings"
+          ? source.closedTxid
+          : source.txid,
+  )
+    .trim()
+    .toLowerCase();
+  if (relatedTxid !== txid) return undefined;
+
+  const safe: Record<string, unknown> = {};
+  for (const key of LOCAL_TOKEN_RECORD_FIELDS[family]) {
+    if (!(key in source)) continue;
+    if (key === "saleAuthorization") {
+      const authorization = sanitizeLocalTokenBaseSaleAuthorization(source[key]);
+      if (authorization) safe[key] = authorization;
+      continue;
+    }
+    const sanitized = sanitizeLocalTokenPublicValue(source[key]);
+    if (sanitized !== undefined) safe[key] = sanitized;
+  }
+  if (
+    (family === "listings" || family === "closedListings") &&
+    !safe.saleAuthorization
+  ) {
+    return undefined;
+  }
+  safe.network = network;
+  if ("confirmed" in safe) safe.confirmed = false;
+  if ("closedConfirmed" in safe) safe.closedConfirmed = false;
+  const createdAtKey = family === "seals" ? "sealAt" : "createdAt";
+  if (
+    typeof safe[createdAtKey] !== "string" ||
+    !Number.isFinite(Date.parse(safe[createdAtKey]))
+  ) {
+    return undefined;
+  }
+  const createdAt = new Date(safe[createdAtKey]).toISOString();
+  safe[createdAtKey] = createdAt;
+  return localTokenOverlayRecordSemanticallyValid(
+    family,
+    safe,
+    network,
+    txid,
+  )
+    ? safe
+    : undefined;
+}
+
+function sanitizeLocalTokenOverlayEntry(
+  value: unknown,
+): LocalTokenBroadcastOverlay | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const source = value as Partial<LocalTokenBroadcastOverlay>;
+  if (!validLocalTokenOverlayNetwork(source.network)) return undefined;
+  const txid = String(source.txid ?? "").trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/u.test(txid)) return undefined;
+  const now = new Date().toISOString();
+  const recordedAt = validLocalTokenOverlayTime(source.recordedAt, now);
+  const createdAt = validLocalTokenOverlayTime(source.createdAt, recordedAt);
+  const status = normalizeBroadcastStatus(source.status);
+  const statusChangedAt = validLocalTokenOverlayTime(
+    source.statusChangedAt ?? source.checkedAt,
+    recordedAt,
+  );
+  const rows = <T,>(family: LocalTokenOverlayFamily) =>
+    (Array.isArray(source[family]) ? source[family] : [])
+      .slice(0, LOCAL_TOKEN_BROADCAST_MAX_ROWS_PER_FAMILY)
+      .flatMap((item) => {
+        const safe = sanitizeLocalTokenOverlayRecord(
+          family,
+          item,
+          source.network as BitcoinNetwork,
+          txid,
+        );
+        return safe ? [safe as T] : [];
+      });
+  const replacementTxid = String(source.replacementTxid ?? "")
+    .trim()
+    .toLowerCase();
+  const initiatorAddress = String(source.initiatorAddress ?? "").trim();
+  const closedListings = rows<PowTokenClosedListing>("closedListings");
+  const definitions = rows<PowTokenDefinition>("definitions");
+  const listings = rows<PowTokenListing>("listings");
+  const mints = rows<PowTokenMint>("mints");
+  const sales = rows<PowTokenSale>("sales");
+  const seals = rows<PendingTokenListingSeal>("seals");
+  const transfers = rows<PowTokenTransfer>("transfers");
+  if (
+    closedListings.length +
+      definitions.length +
+      listings.length +
+      mints.length +
+      sales.length +
+      seals.length +
+      transfers.length ===
+    0
+  ) {
+    return undefined;
+  }
+  return {
+    attempts: Number.isSafeInteger(source.attempts)
+      ? Math.max(0, Math.min(100, Number(source.attempts)))
+      : 0,
+    awaitingFreshCanonicalResolution:
+      source.awaitingFreshCanonicalResolution === true,
+    awaitingFreshListingObservation:
+      source.awaitingFreshListingObservation === true,
+    checkedAt: source.checkedAt
+      ? validLocalTokenOverlayTime(source.checkedAt, recordedAt)
+      : undefined,
+    closedListings,
+    createdAt,
+    definitions,
+    failureReason: source.failureReason
+      ? publicBroadcastFailureReason(source.failureReason)
+      : undefined,
+    firstConfirmedAt:
+      status === "confirmed"
+        ? validLocalTokenOverlayTime(
+            source.firstConfirmedAt ?? source.checkedAt,
+            recordedAt,
+          )
+        : undefined,
+    initiatorAddress: isValidBitcoinAddress(initiatorAddress, source.network)
+      ? initiatorAddress
+      : undefined,
+    listings,
+    mints,
+    network: source.network,
+    nextCheckAt: source.nextCheckAt
+      ? validLocalTokenOverlayTime(source.nextCheckAt, recordedAt)
+      : undefined,
+    recordedAt,
+    replacementTxid: /^[0-9a-f]{64}$/u.test(replacementTxid)
+      ? replacementTxid
+      : undefined,
+    sales,
+    seals,
+    status,
+    statusChangedAt,
+    transfers,
+    txid,
+  };
+}
+
+function localTokenOverlayIsTerminal(status: BroadcastStatus) {
+  return status === "dropped" || status === "failed" || status === "replaced";
+}
+
+function localTokenOverlayAllowsLiveEconomicProjection(
+  entry: Pick<
+    LocalTokenBroadcastOverlay,
+    "awaitingFreshCanonicalResolution" | "status"
+  >,
+) {
+  return (
+    !localTokenOverlayIsTerminal(entry.status) ||
+    (entry.status !== "failed" &&
+      entry.awaitingFreshCanonicalResolution === true)
+  );
+}
+
+function localTokenOverlayNeedsTerminalClosureReservation(
+  entry: Pick<
+    LocalTokenBroadcastOverlay,
+    "awaitingFreshListingObservation" | "closedListings" | "status"
+  >,
+) {
+  return (
+    entry.status !== "failed" &&
+    localTokenOverlayIsTerminal(entry.status) &&
+    entry.awaitingFreshListingObservation === true &&
+    entry.closedListings.length > 0
+  );
+}
+
+function localTokenOverlayIsExpired(
+  entry: LocalTokenBroadcastOverlay,
+  nowMs = Date.now(),
+) {
+  const ageOrigin =
+    entry.status === "confirmed"
+      ? entry.firstConfirmedAt ?? entry.statusChangedAt
+      : entry.status === "unknown" || localTokenOverlayIsTerminal(entry.status)
+      ? entry.statusChangedAt
+      : entry.recordedAt;
+  const ageMs = nowMs - Date.parse(ageOrigin);
+  if (!Number.isFinite(ageMs) || ageMs < 0) return true;
+  if (entry.status === "confirmed") {
+    return ageMs > LOCAL_TOKEN_BROADCAST_CONFIRMED_INDEXING_MAX_AGE_MS;
+  }
+  if (localTokenOverlayIsTerminal(entry.status)) {
+    return ageMs > LOCAL_TOKEN_BROADCAST_TERMINAL_MAX_AGE_MS;
+  }
+  if (entry.status === "unknown") {
+    return ageMs > LOCAL_TOKEN_BROADCAST_UNKNOWN_MAX_AGE_MS;
+  }
+  return ageMs > LOCAL_TOKEN_BROADCAST_PENDING_MAX_AGE_MS;
+}
+
+function localTokenOverlayCapacityArchiveIndex(
+  entries: LocalTokenBroadcastOverlay[],
+) {
+  const terminalIndex = entries.findIndex((entry) =>
+    localTokenOverlayIsTerminal(entry.status),
+  );
+  return terminalIndex >= 0
+    ? terminalIndex
+    : entries.findIndex((entry) => entry.status === "confirmed");
+}
+
+function localTokenBroadcastOverlaysFromSerialized(raw: string | null) {
+  if (raw === null) return [];
+  if (new TextEncoder().encode(raw).byteLength > LOCAL_TOKEN_BROADCAST_MAX_BYTES) {
+    return undefined;
+  }
+  try {
+    const parsed = JSON.parse(raw) as Partial<LocalTokenBroadcastStore>;
+    if (
+      parsed.version !== LOCAL_TOKEN_BROADCAST_STORE_VERSION ||
+      !Array.isArray(parsed.entries) ||
+      parsed.entries.length > LOCAL_TOKEN_BROADCAST_MAX_ENTRIES
+    ) {
+      return undefined;
+    }
+    return parsed.entries.flatMap((entry) => {
+      const safe = sanitizeLocalTokenOverlayEntry(entry);
+      return safe ? [safe] : [];
+    });
+  } catch {
+    return undefined;
+  }
+}
+
+function localTokenOverlayKey(
+  entry: Pick<LocalTokenBroadcastOverlay, "network" | "txid">,
+) {
+  return `${entry.network}:${entry.txid}`;
+}
+
+function dispatchLocalTokenOverlayCapacityWarning() {
+  if (localTokenOverlayCapacityWarningActive) return;
+  localTokenOverlayCapacityWarningActive = true;
+  localTokenOverlayWarning(
+    "Local Credit lifecycle history reached its safe browser-storage limit. Unresolved broadcasts remain visible in this session, but new durable tracking could not be saved.",
+  );
+}
+
+function saveLocalTokenBroadcastOverlays(
+  entries: LocalTokenBroadcastOverlay[],
+  { removedKeys = new Set<string>() }: { removedKeys?: Set<string> } = {},
+) {
+  if (typeof localStorage === "undefined") return false;
+  const nowMs = Date.now();
+  let archivedCount = 0;
+  const persistedEntries =
+    localTokenBroadcastOverlaysFromSerialized(
+      localStorage.getItem(LOCAL_TOKEN_BROADCAST_STORE_KEY),
+    ) ?? [];
+  let durableEntries = mergeLocalTokenBroadcastOverlayStores(
+    persistedEntries.filter(
+      (entry) => !removedKeys.has(localTokenOverlayKey(entry)),
+    ),
+    entries,
+  )
+    .flatMap((entry) => {
+      const safe = sanitizeLocalTokenOverlayEntry(entry);
+      if (!safe) return [];
+      if (localTokenOverlayIsExpired(safe, nowMs)) {
+        archivedCount += 1;
+        return [];
+      }
+      return [safe];
+    })
+    .sort((left, right) => Date.parse(left.recordedAt) - Date.parse(right.recordedAt));
+  const resolvedFirst = () => {
+    const index = localTokenOverlayCapacityArchiveIndex(durableEntries);
+    if (index >= 0) {
+      durableEntries.splice(index, 1);
+      archivedCount += 1;
+    }
+    return index >= 0;
+  };
+  while (durableEntries.length > LOCAL_TOKEN_BROADCAST_MAX_ENTRIES) {
+    if (!resolvedFirst()) {
+      dispatchLocalTokenOverlayCapacityWarning();
+      return false;
+    }
+  }
+  let serialized = JSON.stringify({
+    entries: durableEntries,
+    version: LOCAL_TOKEN_BROADCAST_STORE_VERSION,
+  } satisfies LocalTokenBroadcastStore);
+  while (new TextEncoder().encode(serialized).byteLength > LOCAL_TOKEN_BROADCAST_MAX_BYTES) {
+    if (!resolvedFirst()) {
+      dispatchLocalTokenOverlayCapacityWarning();
+      return false;
+    }
+    serialized = JSON.stringify({
+      entries: durableEntries,
+      version: LOCAL_TOKEN_BROADCAST_STORE_VERSION,
+    } satisfies LocalTokenBroadcastStore);
+  }
+  try {
+    localStorage.setItem(LOCAL_TOKEN_BROADCAST_STORE_KEY, serialized);
+    localTokenBroadcastOverlayCache = durableEntries;
+    localTokenOverlayCapacityWarningActive = false;
+    if (archivedCount > 0) {
+      localTokenOverlayWarning(
+        `${archivedCount} local Credit lifecycle entr${archivedCount === 1 ? "y was" : "ies were"} archived after the bounded visibility window. No dropped or failed status was inferred.`,
+      );
+    }
+    return true;
+  } catch {
+    dispatchLocalTokenOverlayCapacityWarning();
+    return false;
+  }
+}
+
+function loadLocalTokenBroadcastOverlays() {
+  if (localTokenBroadcastOverlayCache) return localTokenBroadcastOverlayCache;
+  try {
+    const raw = localStorage.getItem(LOCAL_TOKEN_BROADCAST_STORE_KEY);
+    localTokenBroadcastOverlayCache =
+      localTokenBroadcastOverlaysFromSerialized(raw) ?? [];
+    // Keep expired unresolved entries in the in-memory session unless the
+    // bounded archive is successfully persisted. saveLocalTokenBroadcastOverlays
+    // owns both the durable prune and the single aggregate archive notice.
+    saveLocalTokenBroadcastOverlays(localTokenBroadcastOverlayCache);
+  } catch {
+    localTokenBroadcastOverlayCache = [];
+  }
+  return localTokenBroadcastOverlayCache;
+}
+
+function reconcileLocalTokenBroadcastStorageEvent(event: StorageEvent) {
+  if (
+    (event.key !== LOCAL_TOKEN_BROADCAST_STORE_KEY && event.key !== null) ||
+    (event.storageArea && event.storageArea !== localStorage)
+  ) {
+    return undefined;
+  }
+  if (event.key === null || event.newValue === null) {
+    localTokenBroadcastOverlayCache = [];
+    return localTokenBroadcastOverlayCache;
+  }
+  const incoming = localTokenBroadcastOverlaysFromSerialized(event.newValue);
+  if (!incoming) return undefined;
+  // The event value is the other tab's complete committed store. Replacing
+  // cache here propagates intentional removals and performs no echo write.
+  localTokenBroadcastOverlayCache = incoming;
+  return localTokenBroadcastOverlayCache;
+}
+
+function replaceLocalTokenBroadcastOverlays(entries: LocalTokenBroadcastOverlay[]) {
+  const incomingKeys = new Set(entries.map(localTokenOverlayKey));
+  const removedKeys = new Set(
+    (localTokenBroadcastOverlayCache ?? [])
+      .filter((entry) => !incomingKeys.has(localTokenOverlayKey(entry)))
+      .map(localTokenOverlayKey),
+  );
+  localTokenBroadcastOverlayCache = entries;
+  saveLocalTokenBroadcastOverlays(entries, { removedKeys });
+  return localTokenBroadcastOverlayCache ?? entries;
+}
+
+function localTokenOverlayCanonicalJson(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map(localTokenOverlayCanonicalJson).join(",")}]`;
+  }
+  if (value && typeof value === "object") {
+    return `{${Object.entries(value)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(
+        ([key, item]) =>
+          `${JSON.stringify(key)}:${localTokenOverlayCanonicalJson(item)}`,
+      )
+      .join(",")}}`;
+  }
+  return JSON.stringify(value) ?? "null";
+}
+
+function mergeLocalTokenOverlayRows<T extends object>(
+  family: LocalTokenOverlayFamily,
+  current: T[],
+  incoming: T[],
+) {
+  const byIdentity = new Map<string, T>();
+  for (const item of [...current, ...incoming]) {
+    const identity = localTokenOverlayRecordIdentity(
+      family,
+      item as Record<string, unknown>,
+    );
+    if (!identity) continue;
+    const existing = byIdentity.get(identity);
+    if (
+      !existing ||
+      localTokenOverlayCanonicalJson(item) >=
+        localTokenOverlayCanonicalJson(existing)
+    ) {
+      byIdentity.set(identity, item);
+    }
+  }
+  return [...byIdentity.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .slice(0, LOCAL_TOKEN_BROADCAST_MAX_ROWS_PER_FAMILY)
+    .map(([, item]) => item);
+}
+
+function localTokenOverlayObservationKey(entry: LocalTokenBroadcastOverlay) {
+  return localTokenOverlayCanonicalJson({
+    attempts: entry.attempts,
+    awaitingFreshCanonicalResolution: entry.awaitingFreshCanonicalResolution,
+    awaitingFreshListingObservation: entry.awaitingFreshListingObservation,
+    checkedAt: entry.checkedAt,
+    failureReason: entry.failureReason,
+    firstConfirmedAt: entry.firstConfirmedAt,
+    nextCheckAt: entry.nextCheckAt,
+    replacementTxid: entry.replacementTxid,
+    status: entry.status,
+    statusChangedAt: entry.statusChangedAt,
+  });
+}
+
+function mergeLocalTokenBroadcastOverlayEntry(
+  current: LocalTokenBroadcastOverlay,
+  incoming: LocalTokenBroadcastOverlay,
+) {
+  const currentCheckedAtMs = Date.parse(current.checkedAt ?? current.recordedAt);
+  const incomingCheckedAtMs = Date.parse(
+    incoming.checkedAt ?? incoming.recordedAt,
+  );
+  const incomingStrictlyNewer = incomingCheckedAtMs > currentCheckedAtMs;
+  const currentStrictlyNewer = currentCheckedAtMs > incomingCheckedAtMs;
+  const preferIncoming = incomingStrictlyNewer ||
+    (!currentStrictlyNewer &&
+      localTokenOverlayObservationKey(incoming) >=
+        localTokenOverlayObservationKey(current));
+  const preferred = preferIncoming ? incoming : current;
+  const fallback = preferIncoming ? current : incoming;
+  const earliest = (left: string, right: string) =>
+    Date.parse(left) <= Date.parse(right) ? left : right;
+  return {
+    ...fallback,
+    ...preferred,
+    awaitingFreshCanonicalResolution:
+      incomingStrictlyNewer || currentStrictlyNewer
+        ? preferred.awaitingFreshCanonicalResolution
+        : preferred.awaitingFreshCanonicalResolution === true ||
+          fallback.awaitingFreshCanonicalResolution === true,
+    awaitingFreshListingObservation:
+      incomingStrictlyNewer || currentStrictlyNewer
+        ? preferred.awaitingFreshListingObservation
+        : preferred.awaitingFreshListingObservation === true ||
+          fallback.awaitingFreshListingObservation === true,
+    closedListings: mergeLocalTokenOverlayRows(
+      "closedListings",
+      current.closedListings,
+      incoming.closedListings,
+    ),
+    createdAt: earliest(current.createdAt, incoming.createdAt),
+    definitions: mergeLocalTokenOverlayRows(
+      "definitions",
+      current.definitions,
+      incoming.definitions,
+    ),
+    initiatorAddress:
+      preferred.initiatorAddress ?? fallback.initiatorAddress,
+    listings: mergeLocalTokenOverlayRows(
+      "listings",
+      current.listings,
+      incoming.listings,
+    ),
+    mints: mergeLocalTokenOverlayRows("mints", current.mints, incoming.mints),
+    recordedAt: earliest(current.recordedAt, incoming.recordedAt),
+    sales: mergeLocalTokenOverlayRows("sales", current.sales, incoming.sales),
+    seals: mergeLocalTokenOverlayRows("seals", current.seals, incoming.seals),
+    transfers: mergeLocalTokenOverlayRows(
+      "transfers",
+      current.transfers,
+      incoming.transfers,
+    ),
+  };
+}
+
+function mergeLocalTokenBroadcastOverlayStores(
+  ...stores: LocalTokenBroadcastOverlay[][]
+) {
+  const byKey = new Map<string, LocalTokenBroadcastOverlay>();
+  for (const entry of stores.flat()) {
+    const key = localTokenOverlayKey(entry);
+    const current = byKey.get(key);
+    byKey.set(
+      key,
+      current ? mergeLocalTokenBroadcastOverlayEntry(current, entry) : entry,
+    );
+  }
+  return [...byKey.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([, entry]) => entry);
+}
+
+function recordLocalTokenBroadcastOverlay(
+  input: LocalTokenBroadcastOverlayInput,
+  initialObservation?: Pick<
+    SignedTransactionBroadcastFailureEvidence,
+    "failureReason" | "status"
+  >,
+) {
+  const txid = input.txid.trim().toLowerCase();
+  if (!validLocalTokenOverlayNetwork(input.network) || !/^[0-9a-f]{64}$/u.test(txid)) {
+    throw new Error("Local Credit lifecycle tracking requires a valid network and txid.");
+  }
+  const now = new Date().toISOString();
+  const entries = loadLocalTokenBroadcastOverlays();
+  const key = `${input.network}:${txid}`;
+  const current = entries.find((entry) => localTokenOverlayKey(entry) === key);
+  const status = initialObservation?.status ?? current?.status ?? "pending";
+  const statusChanged = !current || current.status !== status;
+  const next: LocalTokenBroadcastOverlay = {
+    attempts: current?.attempts ?? 0,
+    awaitingFreshCanonicalResolution:
+      current?.awaitingFreshCanonicalResolution ?? false,
+    awaitingFreshListingObservation:
+      (input.closedListings?.length ?? 0) > 0 ||
+      (current?.awaitingFreshListingObservation ?? false),
+    checkedAt: initialObservation ? now : current?.checkedAt,
+    closedListings: mergeLocalTokenOverlayRows(
+      "closedListings",
+      current?.closedListings ?? [],
+      input.closedListings ?? [],
+    ),
+    createdAt: validLocalTokenOverlayTime(input.createdAt, current?.createdAt ?? now),
+    definitions: mergeLocalTokenOverlayRows(
+      "definitions",
+      current?.definitions ?? [],
+      input.definitions ?? [],
+    ),
+    failureReason:
+      status === "failed" || status === "unknown"
+        ? initialObservation?.failureReason ??
+          (current?.status === status ? current.failureReason : undefined)
+        : undefined,
+    firstConfirmedAt: status === "confirmed" ? current?.firstConfirmedAt : undefined,
+    initiatorAddress:
+      input.initiatorAddress ?? current?.initiatorAddress,
+    listings: mergeLocalTokenOverlayRows(
+      "listings",
+      current?.listings ?? [],
+      input.listings ?? [],
+    ),
+    mints: mergeLocalTokenOverlayRows("mints", current?.mints ?? [], input.mints ?? []),
+    network: input.network,
+    nextCheckAt: current?.nextCheckAt ?? now,
+    recordedAt: current?.recordedAt ?? now,
+    replacementTxid:
+      status === "replaced" ? current?.replacementTxid : undefined,
+    sales: mergeLocalTokenOverlayRows("sales", current?.sales ?? [], input.sales ?? []),
+    seals: mergeLocalTokenOverlayRows("seals", current?.seals ?? [], input.seals ?? []),
+    status,
+    statusChangedAt: statusChanged
+      ? now
+      : current?.statusChangedAt ?? current?.recordedAt ?? now,
+    transfers: mergeLocalTokenOverlayRows(
+      "transfers",
+      current?.transfers ?? [],
+      input.transfers ?? [],
+    ),
+    txid,
+  };
+  if (!sanitizeLocalTokenOverlayEntry(next)) {
+    throw new Error(
+      "Local Credit lifecycle tracking requires at least one valid public projection row.",
+    );
+  }
+  replaceLocalTokenBroadcastOverlays([
+    ...entries.filter((entry) => localTokenOverlayKey(entry) !== key),
+    next,
+  ]);
+  return next;
+}
+
+function recordSignedTokenBroadcastFailure(
+  error: unknown,
+  projection: (
+    localTxid: string,
+    createdAt: string,
+  ) => LocalTokenBroadcastOverlayInput,
+) {
+  const evidence = signedTransactionBroadcastFailureEvidence(error);
+  if (!evidence) return undefined;
+  const createdAt = new Date().toISOString();
+  recordLocalTokenBroadcastOverlay(
+    projection(evidence.localTxid, createdAt),
+    evidence,
+  );
+  return evidence;
+}
+
+function localTokenOverlayRecordMatchesScope(
+  family: LocalTokenOverlayFamily,
+  record: Record<string, unknown>,
+  scopeKey: string,
+  targetNetwork: BitcoinNetwork,
+) {
+  if (record.network !== targetNetwork) return false;
+  if (scopeKey === DEFAULT_TOKEN_STATE_SCOPE_KEY) return true;
+  const [network, lane, tokenScope = "", walletAddress = ""] =
+    scopeKey.split(":");
+  if (network !== targetNetwork) return false;
+  const recordTokenId = String(record.tokenId ?? "").trim().toLowerCase();
+  const recordTicker = normalizeTokenTicker(String(record.ticker ?? ""));
+  const normalizedScope = tokenScope.trim().toLowerCase();
+  if (
+    normalizedScope &&
+    recordTokenId !== normalizedScope &&
+    recordTicker !== normalizeTokenTicker(normalizedScope)
+  ) {
+    return false;
+  }
+  if (lane !== "wallet" || !walletAddress) return true;
+  const participants = [
+    record.creatorAddress,
+    record.minterAddress,
+    record.senderAddress,
+    record.recipientAddress,
+    record.sellerAddress,
+    record.buyerAddress,
+  ]
+    .map((value) => String(value ?? "").trim())
+    .filter(Boolean);
+  if (family === "definitions" && participants.length === 0) return true;
+  return participants.some((participant) =>
+    samePaymentAddress(participant, walletAddress),
+  );
+}
+
+function localTokenOverlayRecordMatchesLifecyclePanelScope(
+  family: LocalTokenOverlayFamily,
+  record: Record<string, unknown>,
+  scopeKey: string,
+  targetNetwork: BitcoinNetwork,
+  initiatorAddress = "",
+) {
+  if (
+    localTokenOverlayRecordMatchesScope(
+      family,
+      record,
+      scopeKey,
+      targetNetwork,
+    )
+  ) {
+    return true;
+  }
+  if (
+    record.network !== targetNetwork ||
+    !isValidBitcoinAddress(initiatorAddress, targetNetwork)
+  ) {
+    return false;
+  }
+  const [network, lane, tokenScope = "", walletAddress = ""] =
+    scopeKey.split(":");
+  if (
+    network !== targetNetwork ||
+    lane !== "wallet" ||
+    !samePaymentAddress(initiatorAddress, walletAddress)
+  ) {
+    return false;
+  }
+  const normalizedScope = tokenScope.trim().toLowerCase();
+  const recordTokenId = String(record.tokenId ?? "").trim().toLowerCase();
+  const recordTicker = normalizeTokenTicker(String(record.ticker ?? ""));
+  return (
+    !normalizedScope ||
+    recordTokenId === normalizedScope ||
+    recordTicker === normalizeTokenTicker(normalizedScope)
+  );
+}
+
+function localTokenLifecycleProjection<T extends object>(
+  record: T,
+  entry: LocalTokenBroadcastOverlay,
+) {
+  return {
+    ...record,
+    lifecycleAwaitingCanonical: entry.awaitingFreshCanonicalResolution,
+    lifecycleCheckedAt: entry.checkedAt,
+    lifecycleFailureReason: entry.failureReason,
+    lifecycleReplacementTxid: entry.replacementTxid,
+    lifecycleStatus: entry.status,
+    localBroadcast: true as const,
+  };
+}
+
+function localTokenOverlayCanonicalRows(
+  family: Exclude<LocalTokenOverlayFamily, "seals">,
+  state: PowTokenState,
+) {
+  if (family === "definitions") return state.tokens;
+  if (family === "mints") return state.mints;
+  if (family === "transfers") return state.transfers;
+  if (family === "listings") return [...state.listings, ...state.closedListings];
+  if (family === "closedListings") return state.closedListings;
+  return state.sales;
+}
+
+function localTokenOverlayCanonicalRowConfirmed(
+  family: Exclude<LocalTokenOverlayFamily, "seals">,
+  row: Record<string, unknown>,
+) {
+  return family === "closedListings"
+    ? row.closedConfirmed === true
+    : row.confirmed === true;
+}
+
+function localTokenOverlayExpectedRowConfirmed(
+  family: Exclude<LocalTokenOverlayFamily, "seals">,
+  expected: Record<string, unknown>,
+  state: PowTokenState,
+) {
+  const identity = localTokenOverlayRecordIdentity(family, expected);
+  return localTokenOverlayCanonicalRows(family, state).some((row) => {
+    const candidate = row as unknown as Record<string, unknown>;
+    return (
+      localTokenOverlayRecordIdentity(family, candidate) === identity &&
+      localTokenOverlayCanonicalRowConfirmed(family, candidate)
+    );
+  });
+}
+
+function localTokenOverlayExpectedSealConfirmed(
+  seal: PendingTokenListingSeal,
+  state: PowTokenState,
+) {
+  return [...state.listings, ...state.closedListings].some(
+    (listing) =>
+      listing.listingId === seal.listingId &&
+      listing.sealTxid === seal.sealTxid &&
+      listing.sealConfirmed === true,
+  );
+}
+
+function localTokenOverlayProjectionComplete(
+  entry: LocalTokenBroadcastOverlay,
+  state: PowTokenState,
+) {
+  const families = [
+    "definitions",
+    "mints",
+    "transfers",
+    "listings",
+    "closedListings",
+    "sales",
+  ] as const;
+  return (
+    families.every((family) =>
+      entry[family].every((record) =>
+        localTokenOverlayExpectedRowConfirmed(
+          family,
+          record as unknown as Record<string, unknown>,
+          state,
+        ),
+      ),
+    ) &&
+    entry.seals.every((seal) => localTokenOverlayExpectedSealConfirmed(seal, state))
+  );
+}
+
+function mergeLocalTokenOverlayFamily<T extends object>(
+  family: Exclude<LocalTokenOverlayFamily, "seals">,
+  canonical: T[],
+  expected: T[],
+  entry: LocalTokenBroadcastOverlay,
+) {
+  const expectedByIdentity = new Map(
+    expected.map((record) => [
+      localTokenOverlayRecordIdentity(
+        family,
+        record as unknown as Record<string, unknown>,
+      ),
+      record,
+    ]),
+  );
+  const canonicalIdentities = new Set<string>();
+  const merged = canonical.map((record) => {
+    const identity = localTokenOverlayRecordIdentity(
+      family,
+      record as unknown as Record<string, unknown>,
+    );
+    canonicalIdentities.add(identity);
+    const local = expectedByIdentity.get(identity);
+    if (!local || localTokenOverlayCanonicalRowConfirmed(
+      family,
+      record as unknown as Record<string, unknown>,
+    )) {
+      return record;
+    }
+    return localTokenLifecycleProjection({ ...local, ...record }, entry) as T;
+  });
+  for (const record of expected) {
+    const identity = localTokenOverlayRecordIdentity(
+      family,
+      record as unknown as Record<string, unknown>,
+    );
+    if (!canonicalIdentities.has(identity)) {
+      merged.push(localTokenLifecycleProjection(record, entry) as T);
+    }
+  }
+  return merged;
+}
+
+function localTokenListingWithSealLifecycle(
+  listing: PowTokenListing,
+  seal: PendingTokenListingSeal,
+  entry: LocalTokenBroadcastOverlay,
+) {
+  return {
+    ...listing,
+    // A durable local seal stores status/display evidence only. Until the
+    // canonical row carries a verified signature, the listing's existing base
+    // authorization remains authoritative and the seal is never buyable.
+    saleAuthorization: listing.saleAuthorization,
+    sealAt: seal.sealAt,
+    sealConfirmed: false,
+    sealLifecycleCheckedAt: entry.checkedAt,
+    sealLifecycleFailureReason: entry.failureReason,
+    sealLifecycleReplacementTxid: entry.replacementTxid,
+    sealLifecycleStatus: entry.status,
+    sealTxid: seal.sealTxid,
+  };
+}
+
+function applyLocalTokenBroadcastOverlays(
+  canonicalState: PowTokenState,
+  scopeKey: string,
+  {
+    freshCanonical = false,
+    persistOverlayChanges = true,
+  }: {
+    freshCanonical?: boolean;
+    persistOverlayChanges?: boolean;
+  } = {},
+) {
+  const scopedNetwork = scopeKey.split(":")[0];
+  const stateNetworks = new Set(
+    [
+      ...canonicalState.tokens,
+      ...canonicalState.mints,
+      ...canonicalState.transfers,
+      ...canonicalState.listings,
+      ...canonicalState.closedListings,
+      ...canonicalState.sales,
+    ]
+      .map((record) => record.network)
+      .filter(validLocalTokenOverlayNetwork),
+  );
+  const targetNetwork = validLocalTokenOverlayNetwork(scopedNetwork)
+    ? scopedNetwork
+    : stateNetworks.size === 1
+      ? [...stateNetworks][0]
+      : undefined;
+  const invalidTxids = new Set(
+    canonicalState.invalidEvents
+      .filter((event) => !targetNetwork || event.network === targetNetwork)
+      .map((event) => String(event.txid ?? "").trim().toLowerCase())
+      .filter((txid) => /^[0-9a-f]{64}$/u.test(txid)),
+  );
+  const canonicalTxids = new Set(
+    [
+      ...canonicalState.tokens.map((record) => record.txid),
+      ...canonicalState.mints.map((record) => record.txid),
+      ...canonicalState.transfers.map((record) => record.txid),
+      ...canonicalState.listings.flatMap((record) => [
+        record.listingId,
+        record.sealTxid,
+      ]),
+      ...canonicalState.closedListings.flatMap((record) => [
+        record.listingId,
+        record.sealTxid,
+        record.closedTxid,
+      ]),
+      ...canonicalState.sales.map((record) => record.txid),
+    ]
+      .map((txid) => String(txid ?? "").trim().toLowerCase())
+      .filter((txid) => /^[0-9a-f]{64}$/u.test(txid)),
+  );
+  let entries = loadLocalTokenBroadcastOverlays();
+  const retainedEntries: LocalTokenBroadcastOverlay[] = [];
+  const applicableEntries: LocalTokenBroadcastOverlay[] = [];
+  let entriesChanged = false;
+
+  for (const originalEntry of entries) {
+    if (!targetNetwork || originalEntry.network !== targetNetwork) {
+      retainedEntries.push(originalEntry);
+      continue;
+    }
+    if (invalidTxids.has(originalEntry.txid)) {
+      entriesChanged = true;
+      continue;
+    }
+    if (
+      !localTokenOverlayIsTerminal(originalEntry.status) &&
+      localTokenOverlayProjectionComplete(originalEntry, canonicalState)
+    ) {
+      entriesChanged = true;
+      continue;
+    }
+    let entry = originalEntry;
+    const replacementObserved = Boolean(
+      entry.replacementTxid && canonicalTxids.has(entry.replacementTxid),
+    );
+    const canonicalActiveClosedListing = entry.closedListings.some((closed) =>
+      canonicalState.listings.some(
+        (listing) =>
+          tokenListingStateKey(listing) === tokenListingStateKey(closed) &&
+          tokenListingHasSpendableSaleTicketAnchor(listing),
+      ),
+    );
+    if (
+      freshCanonical &&
+      entry.awaitingFreshListingObservation &&
+      localTokenOverlayIsTerminal(entry.status) &&
+      (canonicalActiveClosedListing || replacementObserved)
+    ) {
+      entry = { ...entry, awaitingFreshListingObservation: false };
+      entriesChanged = true;
+    }
+    if (
+      freshCanonical &&
+      entry.awaitingFreshCanonicalResolution
+    ) {
+      const reservationFamilies = [
+        ["transfers", entry.transfers],
+        ["listings", entry.listings],
+        ["seals", entry.seals],
+        ["closedListings", entry.closedListings],
+        ["sales", entry.sales],
+      ] as const;
+      const scopeCoversReservations = reservationFamilies.every(
+        ([family, records]) =>
+          records.every((record) =>
+            localTokenOverlayRecordMatchesScope(
+              family,
+              record as unknown as Record<string, unknown>,
+              scopeKey,
+              entry.network,
+            ),
+          ),
+      );
+      const closeResolved =
+        entry.closedListings.length === 0 ||
+        canonicalActiveClosedListing ||
+        replacementObserved;
+      if (scopeCoversReservations && closeResolved) {
+        entry = { ...entry, awaitingFreshCanonicalResolution: false };
+        entriesChanged = true;
+      }
+    }
+    retainedEntries.push(entry);
+    applicableEntries.push(entry);
+  }
+  if (entriesChanged) {
+    entries = persistOverlayChanges
+      ? replaceLocalTokenBroadcastOverlays(retainedEntries)
+      : retainedEntries;
+  }
+
+  let tokens = canonicalState.tokens;
+  let mints = canonicalState.mints;
+  let transfers = canonicalState.transfers;
+  let listings = canonicalState.listings;
+  let closedListings = canonicalState.closedListings;
+  let sales = canonicalState.sales;
+
+  for (const entry of applicableEntries) {
+    const scoped = <T extends object>(
+      family: LocalTokenOverlayFamily,
+      records: T[],
+    ) =>
+      records.filter((record) =>
+        localTokenOverlayRecordMatchesScope(
+          family,
+          record as unknown as Record<string, unknown>,
+          scopeKey,
+          entry.network,
+        ),
+    );
+    const terminal = localTokenOverlayIsTerminal(entry.status);
+    if (terminal && localTokenOverlayNeedsTerminalClosureReservation(entry)) {
+      closedListings = mergeLocalTokenOverlayFamily(
+        "closedListings",
+        closedListings,
+        scoped("closedListings", entry.closedListings).map((listing) => ({
+          ...listing,
+          awaitingFreshCanonical: true,
+        })),
+        entry,
+      );
+    }
+    if (!localTokenOverlayAllowsLiveEconomicProjection(entry)) {
+      continue;
+    }
+
+    if (!terminal) {
+      tokens = mergeLocalTokenOverlayFamily(
+        "definitions",
+        tokens,
+        scoped("definitions", entry.definitions),
+        entry,
+      );
+      mints = mergeLocalTokenOverlayFamily(
+        "mints",
+        mints,
+        scoped("mints", entry.mints),
+        entry,
+      );
+    }
+    transfers = mergeLocalTokenOverlayFamily(
+      "transfers",
+      transfers,
+      scoped("transfers", entry.transfers),
+      entry,
+    );
+    listings = mergeLocalTokenOverlayFamily(
+      "listings",
+      listings,
+      scoped("listings", entry.listings),
+      entry,
+    );
+    closedListings = mergeLocalTokenOverlayFamily(
+      "closedListings",
+      closedListings,
+      scoped("closedListings", entry.closedListings).map((listing) => ({
+        ...listing,
+        awaitingFreshCanonical:
+          entry.awaitingFreshListingObservation ||
+          !localTokenOverlayIsTerminal(entry.status),
+      })),
+      entry,
+    );
+    sales = mergeLocalTokenOverlayFamily(
+      "sales",
+      sales,
+      scoped("sales", entry.sales),
+      entry,
+    );
+
+    for (const seal of scoped("seals", entry.seals)) {
+      listings = listings.map((listing) => {
+        if (
+          listing.listingId !== seal.listingId ||
+          listing.network !== seal.network ||
+          listing.sealConfirmed === true
+        ) {
+          return listing;
+        }
+        return localTokenListingWithSealLifecycle(listing, seal, entry);
+      });
+    }
+  }
+
+  return {
+    ...canonicalState,
+    closedListings,
+    listings: activeTokenListingsExcludingClosed(listings, closedListings),
+    mints,
+    sales,
+    tokens,
+    transfers,
+  };
 }
 
 function mergeTokenTransfersForSpendability(
@@ -11235,27 +13285,6 @@ function mergeTokenTransfersForSpendability(
     merged.push(...pendingSource);
   }
   return merged;
-}
-
-function tokenTransferShouldSurviveRefresh(transfer: PowTokenTransfer) {
-  if (transfer.confirmed !== false) {
-    return false;
-  }
-  const createdAtMs = Date.parse(transfer.createdAt);
-  return (
-    Number.isFinite(createdAtMs) &&
-    Date.now() - createdAtMs <= TOKEN_LOCAL_PENDING_TRANSFER_TTL_MS
-  );
-}
-
-function tokenTransfersWithPreservedLocalPending(
-  current: PowTokenTransfer[],
-  incoming: PowTokenTransfer[],
-) {
-  return mergeTokenTransfersForSpendability(
-    incoming,
-    current.filter(tokenTransferShouldSurviveRefresh),
-  );
 }
 
 function tokenSpendabilityForWallet(
@@ -11323,34 +13352,37 @@ function tokenSpendabilityForWallet(
     }
   }
   const closedListings = [...closedListingsByKey.values()];
-  const confirmedClosedListings = closedListings.filter((listing) =>
-    Boolean(listing.closedConfirmed ?? listing.confirmed),
+  const activeListings = activeTokenListingsExcludingClosed(
+    mergeTokenListingsById(state.listings, localListings),
+    closedListings,
   );
-  const pendingClosedListings = closedListings.filter(
-    (listing) => !Boolean(listing.closedConfirmed ?? listing.confirmed),
+  const reservationListingsByKey = new Map(
+    activeListings.map((listing) => [tokenListingStateKey(listing), listing]),
   );
-  const activeListings = mergeTokenListingsById(
-    tokenListingsWithPreservedLocalPending(
-      localListings,
-      state.listings,
-      confirmedClosedListings,
-    ),
-    pendingClosedListings,
-  );
+  for (const listing of closedListings) {
+    if (
+      listing.localBroadcast === true &&
+      (tokenProjectionReservesSpendability(listing) ||
+        listing.awaitingFreshCanonical === true)
+    ) {
+      reservationListingsByKey.set(tokenListingStateKey(listing), listing);
+    }
+  }
+  const reservationListings = [...reservationListingsByKey.values()];
   const reservedBalance = tokenReservedBalanceFor(
-    activeListings,
+    reservationListings,
     token.tokenId,
     walletAddress,
   );
   const reservedBalanceAtoms = exactUnits
     ? tokenReservedBalanceAtomsFor(
-        activeListings,
+        reservationListings,
         token.tokenId,
         walletAddress,
       )
     : null;
   const activeListingIds = new Set(
-    activeListings
+    reservationListings
       .filter(
         (listing) =>
           listing.tokenId === token.tokenId &&
@@ -11367,6 +13399,7 @@ function tokenSpendabilityForWallet(
       (transfer) =>
         transfer.tokenId === token.tokenId &&
         !transfer.confirmed &&
+        tokenProjectionReservesSpendability(transfer) &&
         transfer.senderAddress.trim().toLowerCase() === normalizedWalletAddress &&
         transfer.recipientAddress.trim().toLowerCase() !==
           normalizedWalletAddress,
@@ -11401,6 +13434,7 @@ function tokenSpendabilityForWallet(
   const uncoveredPendingSaleRows = [...salesByKey.values()].filter(
       (sale) =>
         !sale.confirmed &&
+        tokenProjectionReservesSpendability(sale) &&
         sale.sellerAddress.trim().toLowerCase() === normalizedWalletAddress &&
         !activeListingIds.has(sale.listingId),
     );
@@ -11519,43 +13553,6 @@ function mergeTokenListingsById(
   return [...byKey.values()];
 }
 
-function tokenListingShouldSurviveRefresh(listing: PowTokenListing) {
-  if (tokenListingHasPendingSaleTicketSeal(listing)) {
-    return true;
-  }
-
-  if (
-    listing.confirmed !== false ||
-    !tokenListingHasSpendableSaleTicketAnchor(listing)
-  ) {
-    return false;
-  }
-
-  const createdAtMs = Date.parse(listing.createdAt);
-  if (!Number.isFinite(createdAtMs)) {
-    return false;
-  }
-
-  return Date.now() - createdAtMs <= TOKEN_LOCAL_PENDING_LISTING_TTL_MS;
-}
-
-function tokenListingsWithPreservedLocalPending(
-  current: PowTokenListing[],
-  incoming: PowTokenListing[],
-  closedListings: PowTokenClosedListing[],
-) {
-  const incomingKeys = new Set(incoming.map(tokenListingStateKey));
-  const preserved = current.filter(
-    (listing) =>
-      tokenListingShouldSurviveRefresh(listing) &&
-      !incomingKeys.has(tokenListingStateKey(listing)),
-  );
-  return activeTokenListingsExcludingClosed(
-    mergeTokenListingsById(incoming, preserved),
-    closedListings,
-  );
-}
-
 function replaceTokenListingsForOwnerScope(
   current: PowTokenListing[],
   incoming: PowTokenListing[],
@@ -11583,7 +13580,8 @@ function replaceTokenListingsForOwnerScope(
 
     return (
       incomingKeys.has(`${listing.network}:${listing.listingId}`) ||
-      tokenListingShouldSurviveRefresh(listing)
+      (listing.localBroadcast === true &&
+        tokenProjectionReservesSpendability(listing))
     );
   });
 
@@ -11615,8 +13613,8 @@ function normalizePendingTokenListingSeal(
     !/^[0-9a-f]{64}$/u.test(sealTxid) ||
     !/^[0-9a-f]{64}$/u.test(tokenId) ||
     !sellerAddress ||
-    !item.saleAuthorization ||
-    !tokenSaleAuthorizationUsesSaleTicketAnchor(item.saleAuthorization)
+    (item.saleAuthorization &&
+      !tokenSaleAuthorizationUsesSaleTicketAnchor(item.saleAuthorization))
   ) {
     return undefined;
   }
@@ -11635,55 +13633,12 @@ function normalizePendingTokenListingSeal(
   };
 }
 
-function loadPendingTokenListingSeals() {
-  try {
-    const stored = localStorage.getItem(TOKEN_PENDING_SEALS_KEY);
-    const parsed = stored ? JSON.parse(stored) : [];
-    return Array.isArray(parsed)
-      ? parsed.flatMap((item) => {
-          const seal = normalizePendingTokenListingSeal(item);
-          return seal ? [seal] : [];
-        })
-      : [];
-  } catch {
-    return [];
-  }
-}
-
-function savePendingTokenListingSeals(seals: PendingTokenListingSeal[]) {
-  const byKey = new Map(
-    seals.map((seal) => [`${seal.network}:${seal.listingId}`, seal]),
-  );
-  localStorage.setItem(
-    TOKEN_PENDING_SEALS_KEY,
-    JSON.stringify([...byKey.values()]),
-  );
-}
-
-function savePendingTokenListingSeal(
-  listing: PowTokenListing,
-  saleAuthorization: PowTokenSaleAuthorization,
-  sealTxid: string,
+function applyPendingTokenListingSeals(
+  listings: PowTokenListing[],
+  seals: PendingTokenListingSeal[],
 ) {
-  const seal = normalizePendingTokenListingSeal({
-    listingId: listing.listingId,
-    network: listing.network,
-    saleAuthorization,
-    sealAt: new Date().toISOString(),
-    sealTxid,
-    sellerAddress: listing.sellerAddress,
-    tokenId: listing.tokenId,
-  });
-  if (!seal) {
-    return;
-  }
-
-  savePendingTokenListingSeals([...loadPendingTokenListingSeals(), seal]);
-}
-
-function applyPendingTokenListingSeals(listings: PowTokenListing[]) {
   const pendingByKey = new Map(
-    loadPendingTokenListingSeals().map((seal) => [
+    seals.map((seal) => [
       `${seal.network}:${seal.listingId}`,
       seal,
     ]),
@@ -11705,42 +13660,17 @@ function applyPendingTokenListingSeals(listings: PowTokenListing[]) {
 
     return {
       ...listing,
-      saleAuthorization: seal.saleAuthorization,
+      // Mempool seal bytes are useful lifecycle evidence, but the canonical
+      // base authorization remains authoritative until the signed seal is
+      // confirmed and indexed.
+      saleAuthorization: listing.saleAuthorization,
       sealAt: seal.sealAt,
       sealConfirmed: false,
+      sealLifecycleCheckedAt: seal.sealAt,
+      sealLifecycleStatus: "pending" as const,
       sealTxid: seal.sealTxid,
     };
   });
-}
-
-async function reconcileTokenListingSealStatuses(
-  listings: PowTokenListing[],
-): Promise<PowTokenListing[]> {
-  return Promise.all(
-    listings.map(async (listing) => {
-      if (
-        listing.sealConfirmed !== false ||
-        !/^[0-9a-f]{64}$/u.test(String(listing.sealTxid ?? ""))
-      ) {
-        return listing;
-      }
-
-      try {
-        const status = await fetchBroadcastStatus(
-          listing.sealTxid ?? "",
-          listing.network,
-        );
-        return status === "confirmed"
-          ? {
-              ...listing,
-              sealConfirmed: true,
-            }
-          : listing;
-      } catch {
-        return listing;
-      }
-    }),
-  );
 }
 
 function tokenHolderMatchesSearch(holder: PowTokenHolder, query: string) {
@@ -11763,7 +13693,9 @@ function tokenMintMatchesSearch(mint: PowTokenMint, query: string) {
     mint.minterAddress,
     mint.registryAddress,
     mint.ticker,
-    mint.confirmed ? "confirmed" : "pending",
+    tokenLifecycleStatusLabel(mint),
+    mint.lifecycleFailureReason ?? "",
+    mint.lifecycleReplacementTxid ?? "",
     String(mint.amount),
     String(mint.paidSats),
     formatDate(mint.createdAt),
@@ -11784,7 +13716,12 @@ function tokenListingMatchesSearch(listing: PowTokenListing, query: string) {
       networkLabel(listing.network),
       String(listing.amount),
       listing.priceSats,
-      listing.confirmed ? "confirmed" : "pending",
+      tokenLifecycleStatusLabel(listing),
+      listing.lifecycleFailureReason,
+      listing.lifecycleReplacementTxid,
+      listing.sealLifecycleStatus,
+      listing.sealLifecycleFailureReason,
+      listing.sealLifecycleReplacementTxid,
       tokenListingHasConfirmedSaleTicketSeal(listing)
         ? "sealed"
         : tokenListingHasPendingSaleTicketSeal(listing)
@@ -12968,9 +14905,15 @@ function emptyMarketplaceStats(): PowIdMarketplaceStats {
 }
 
 function marketplaceStatsFromSales(
-  sales: Array<Pick<PowIdMarketplaceSale, "confirmed" | "priceSats">>,
+  sales: Array<
+    Pick<PowIdMarketplaceSale, "confirmed" | "priceSats"> &
+      LocalTokenLifecycleProjection
+  >,
 ): PowIdMarketplaceStats {
   return sales.reduce((stats, sale) => {
+    if (!sale.confirmed && !tokenProjectionCountsAsPending(sale)) {
+      return stats;
+    }
     if (sale.confirmed) {
       stats.confirmedSales += 1;
       stats.confirmedVolumeSats += sale.priceSats;
@@ -13116,6 +15059,7 @@ function tokenMarketplaceSummaryStats({
   const networkTokens = allNetworkTokens.filter(
     (token) => !scopedTokenId || token.tokenId === scopedTokenId,
   );
+  const countableNetworkTokenCount = tokenDefinitionMetricCount(networkTokens);
   const networkListings = listings.filter(
     (listing) =>
       listing.network === network &&
@@ -13179,8 +15123,10 @@ function tokenMarketplaceSummaryStats({
   const previewConfirmedListings = networkListings.filter(
     (listing) => listing.confirmed,
   ).length;
-  const previewPendingListings =
-    networkListings.length - previewConfirmedListings;
+  const previewPendingListings = networkListings.filter(
+    (listing) =>
+      !listing.confirmed && tokenProjectionCountsAsPending(listing),
+  ).length;
   const totalOpenListings = scopedToken
     ? optionalMarketplaceCount(scopedToken.openListings)
     : summaryAppliesToNetwork
@@ -13247,7 +15193,7 @@ function tokenMarketplaceSummaryStats({
         value:
           (summaryAppliesToNetwork
             ? optionalMarketplaceCount(summary?.totalCounts?.tokens)
-            : undefined) ?? networkTokens.length,
+            : undefined) ?? countableNetworkTokenCount,
       },
       {
         label: "Confirmed Listings",
@@ -13267,7 +15213,9 @@ function tokenMarketplaceSummaryStats({
       },
       {
         label: "Pending Credits",
-        value: networkTokens.filter((token) => !token.confirmed).length,
+        value: networkTokens.filter(
+          (token) => !token.confirmed && tokenProjectionCountsAsPending(token),
+        ).length,
       },
       {
         label: "Pending Sales",
@@ -13279,9 +15227,11 @@ function tokenMarketplaceSummaryStats({
 
 function TokenMarketplaceStatsGrid({
   className = "id-launch-stats",
+  readState = READY_CANONICAL_READ_STATE,
   stats,
 }: {
   className?: string;
+  readState?: CanonicalReadState;
   stats: TokenMarketplaceSummaryStats;
 }) {
   return (
@@ -13289,9 +15239,12 @@ function TokenMarketplaceStatsGrid({
       {stats.items.map((item) => (
         <div key={item.label}>
           <strong>
-            {typeof item.value === "number"
-              ? item.value.toLocaleString()
-              : item.value}
+            {canonicalMetric(
+              typeof item.value === "number"
+                ? item.value.toLocaleString()
+                : item.value,
+              readState,
+            )}
           </strong>
           <span>{item.label}</span>
         </div>
@@ -13479,18 +15432,14 @@ function activityItemsFromAddressMail(
       confirmed,
       counterparty: message.to,
       createdAt: message.createdAt,
-      description: `${confirmed ? "Sent" : deliveryStatus === "dropped" ? "Dropped" : "Pending"} ${isFile ? "file" : isReply ? "reply" : "mail"} to ${message.to} for ${message.amountSats.toLocaleString()} proofs.`,
+      description: `${deliveryLabel(deliveryStatus)} ${isFile ? "file" : isReply ? "reply" : "mail"} to ${message.to} for ${message.amountSats.toLocaleString()} proofs.`,
       detail: message.attachment
         ? `${message.attachment.name} · ${formatBytes(message.attachment.size)}`
         : messageSubject(message),
       kind: isFile ? "file" : isReply ? "reply" : "mail",
       network: message.network,
       tags: [
-        confirmed
-          ? "Confirmed"
-          : deliveryStatus === "dropped"
-            ? "Dropped"
-            : "Pending",
+        deliveryLabel(deliveryStatus),
         networkLabel(message.network),
         "Outbound",
         `${message.amountSats.toLocaleString()} proofs`,
@@ -14453,15 +16402,7 @@ async function fetchIdRegistryState(
     path,
     targetNetwork,
   );
-  return {
-    activity: Array.isArray(payload.activity) ? payload.activity : [],
-    listings: Array.isArray(payload.listings) ? payload.listings : [],
-    pendingEvents: Array.isArray(payload.pendingEvents)
-      ? payload.pendingEvents
-      : [],
-    records: Array.isArray(payload.records) ? payload.records : [],
-    sales: Array.isArray(payload.sales) ? payload.sales : [],
-  };
+  return normalizeRegistryApiState(payload);
 }
 
 async function fetchIdRecordState(
@@ -14570,12 +16511,38 @@ function normalizeRegistryApiState(
 ): PowRegistryState {
   return {
     activity: Array.isArray(payload?.activity) ? payload.activity : [],
+    collectionHasMore:
+      payload?.collectionHasMore &&
+      typeof payload.collectionHasMore === "object"
+        ? { ...payload.collectionHasMore }
+        : undefined,
+    hasMore: payload?.hasMore === true,
+    indexedAt:
+      typeof payload?.indexedAt === "string" ? payload.indexedAt : undefined,
+    indexedThroughBlock:
+      Number.isSafeInteger(Number(payload?.indexedThroughBlock)) &&
+      Number(payload?.indexedThroughBlock) > 0
+        ? Number(payload?.indexedThroughBlock)
+        : undefined,
+    indexedThroughBlockHash:
+      typeof payload?.indexedThroughBlockHash === "string" &&
+      /^[0-9a-f]{64}$/u.test(payload.indexedThroughBlockHash.toLowerCase())
+        ? payload.indexedThroughBlockHash.toLowerCase()
+        : undefined,
     listings: Array.isArray(payload?.listings) ? payload.listings : [],
     pendingEvents: Array.isArray(payload?.pendingEvents)
       ? payload.pendingEvents
       : [],
     records: Array.isArray(payload?.records) ? payload.records : [],
     sales: Array.isArray(payload?.sales) ? payload.sales : [],
+    snapshotId:
+      typeof payload?.snapshotId === "string" ? payload.snapshotId : undefined,
+    source: typeof payload?.source === "string" ? payload.source : undefined,
+    summaryOnly: payload?.summaryOnly === true,
+    totalCounts:
+      payload?.totalCounts && typeof payload.totalCounts === "object"
+        ? { ...payload.totalCounts }
+        : undefined,
   };
 }
 
@@ -14816,6 +16783,18 @@ function normalizeTokenApiState(
     holders: Array.isArray(payload?.holders)
       ? payload.holders.map(normalizeTokenHolderRecord)
       : [],
+    indexedAt:
+      typeof payload?.indexedAt === "string" ? payload.indexedAt : undefined,
+    indexedThroughBlock:
+      Number.isSafeInteger(Number(payload?.indexedThroughBlock)) &&
+      Number(payload?.indexedThroughBlock) > 0
+        ? Number(payload?.indexedThroughBlock)
+        : undefined,
+    indexedThroughBlockHash:
+      typeof payload?.indexedThroughBlockHash === "string" &&
+      /^[0-9a-f]{64}$/u.test(payload.indexedThroughBlockHash.toLowerCase())
+        ? payload.indexedThroughBlockHash.toLowerCase()
+        : undefined,
     invalidEvents: Array.isArray(payload?.invalidEvents)
       ? payload.invalidEvents.map((event) => {
           const tokenId = String(event?.tokenId ?? "").trim().toLowerCase();
@@ -14923,6 +16902,9 @@ function normalizeTokenApiState(
     sales: Array.isArray(payload?.sales)
       ? payload.sales.map(normalizeTokenAmountRecord)
       : [],
+    snapshotId:
+      typeof payload?.snapshotId === "string" ? payload.snapshotId : undefined,
+    source: typeof payload?.source === "string" ? payload.source : undefined,
     stats:
       payload?.stats && typeof payload.stats === "object"
         ? { ...payload.stats }
@@ -16074,8 +18056,7 @@ function normalizeWorkFloorQuote(
 }
 
 type TokenStateApplyOptions = {
-  allowRegression?: boolean;
-  preserveListings?: boolean;
+  freshCanonical?: boolean;
   scopeKey?: string;
 };
 
@@ -16097,18 +18078,6 @@ function workFloorQuoteLiveValue(quote: WorkFloorQuote | undefined) {
     finiteNonNegativeNumber(quote.networkValueSats),
     finiteNonNegativeNumber(quote.actualValue?.totalSats),
     finiteNonNegativeNumber(quote.actualValue?.liveTotalSats),
-  );
-}
-
-function workFloorQuoteFrozenValue(quote: WorkFloorQuote | undefined) {
-  if (!quote) {
-    return 0;
-  }
-
-  return Math.max(
-    finiteNonNegativeNumber(quote.frozenNetworkValueSats),
-    finiteNonNegativeNumber(quote.actualValue?.frozenNetworkValueSats),
-    finiteNonNegativeNumber(quote.actualValue?.frozenTotalSats),
   );
 }
 
@@ -16138,17 +18107,6 @@ function workFloorQuoteLiveValueQ8(quote: WorkFloorQuote | undefined) {
   ]);
 }
 
-function workFloorQuoteFrozenValueQ8(quote: WorkFloorQuote | undefined) {
-  if (!quote) {
-    return null;
-  }
-  return highestExactWorkQ8([
-    quote.frozenNetworkValueQ8,
-    quote.actualValue?.frozenNetworkValueQ8,
-    quote.actualValue?.frozenTotalQ8,
-  ]);
-}
-
 function workFloorLastGoodReference(quote: WorkFloorQuote) {
   const indexedThroughBlock = Number(quote.stats?.indexedThroughBlock);
   const snapshotId = String(quote.snapshotId ?? "").trim();
@@ -16170,137 +18128,6 @@ function workFloorLastGoodStatusText(quote: WorkFloorQuote) {
   return `WORK exact-tip refresh did not produce a newer verified summary. Showing verified last-good ${workFloorLastGoodReference(quote)}. Pending mints, bonds, and transfers do not affect the confirmed WORK floor until they confirm and an exact-tip snapshot is published.`;
 }
 
-function workFloorQuoteRegresses(
-  next: WorkFloorQuote | undefined,
-  current: WorkFloorQuote | undefined,
-) {
-  if (!next || !current) {
-    return false;
-  }
-
-  const currentLiveValueQ8 = workFloorQuoteLiveValueQ8(current);
-  const nextLiveValueQ8 = workFloorQuoteLiveValueQ8(next);
-  if (
-    currentLiveValueQ8 !== null &&
-    currentLiveValueQ8 > 0n &&
-    (nextLiveValueQ8 === null || nextLiveValueQ8 < currentLiveValueQ8)
-  ) {
-    return true;
-  }
-
-  const currentLiveValue = workFloorQuoteLiveValue(current);
-  const nextLiveValue = workFloorQuoteLiveValue(next);
-  if (
-    currentLiveValueQ8 === null &&
-    currentLiveValue > 0 &&
-    nextLiveValue < currentLiveValue
-  ) {
-    return true;
-  }
-
-  const currentFrozenValueQ8 = workFloorQuoteFrozenValueQ8(current);
-  const nextFrozenValueQ8 = workFloorQuoteFrozenValueQ8(next);
-  if (
-    currentFrozenValueQ8 !== null &&
-    currentFrozenValueQ8 > 0n &&
-    (nextFrozenValueQ8 === null ||
-      nextFrozenValueQ8 < currentFrozenValueQ8)
-  ) {
-    return true;
-  }
-
-  const currentFrozenValue = workFloorQuoteFrozenValue(current);
-  const nextFrozenValue = workFloorQuoteFrozenValue(next);
-  if (
-    currentFrozenValueQ8 === null &&
-    currentFrozenValue > 0 &&
-    nextFrozenValue < currentFrozenValue
-  ) {
-    return true;
-  }
-
-  const currentPoints = current.chartPoints.length;
-  const nextPoints = next.chartPoints.length;
-  return currentPoints > 2 && nextPoints > 0 && nextPoints < currentPoints;
-}
-
-function tokenDefinitionConfirmedSupply(token: PowTokenDefinition) {
-  return exactIntegerBigInt(token.confirmedSupply) ?? 0n;
-}
-
-function tokenStateConfirmedSupplyRank(state: PowTokenState | undefined) {
-  if (!state) {
-    return 0n;
-  }
-
-  const candidates = [
-    exactIntegerBigInt(state.confirmedSupply) ?? 0n,
-    state.tokens.reduce<bigint>(
-      (total, token) => total + tokenDefinitionConfirmedSupply(token),
-      0n,
-    ),
-    state.mints
-      .filter((mint) => mint.confirmed)
-      .reduce<bigint>(
-        (total, mint) => total + (exactIntegerBigInt(mint.amount) ?? 0n),
-        0n,
-      ),
-  ];
-
-  return candidates.reduce(
-    (highest, candidate) => (candidate > highest ? candidate : highest),
-    0n,
-  );
-}
-
-function tokenStateHistoryRank(state: PowTokenState | undefined) {
-  if (!state) {
-    return 0;
-  }
-
-  return (
-    state.tokens.length +
-    state.mints.length +
-    state.transfers.length +
-    state.invalidEvents.length +
-    state.sales.length +
-    state.closedListings.length
-  );
-}
-
-function tokenStateRegresses(
-  next: PowTokenState,
-  current: PowTokenState | undefined,
-  sameScope: boolean,
-) {
-  if (!sameScope || !current || tokenStateHistoryRank(current) === 0) {
-    return false;
-  }
-
-  if (current.tokens.length > 0 && next.tokens.length === 0) {
-    return true;
-  }
-
-  const currentSupply = tokenStateConfirmedSupplyRank(current);
-  const nextSupply = tokenStateConfirmedSupplyRank(next);
-  if (currentSupply > 0n && nextSupply < currentSupply) {
-    return true;
-  }
-
-  return (
-    (current.tokens.length > 0 && next.tokens.length < current.tokens.length) ||
-    (current.mints.length > 0 && next.mints.length < current.mints.length) ||
-    (current.transfers.length > 0 &&
-      next.transfers.length < current.transfers.length) ||
-    (current.invalidEvents.length > 0 &&
-      next.invalidEvents.length < current.invalidEvents.length) ||
-    (current.sales.length > 0 && next.sales.length < current.sales.length) ||
-    (current.closedListings.length > 0 &&
-      next.closedListings.length < current.closedListings.length) ||
-    (current.creationSats > 0 && next.creationSats < current.creationSats)
-  );
-}
-
 function tokenStateScopeKey({
   address,
   network,
@@ -16318,128 +18145,6 @@ function tokenStateScopeKey({
     normalizeTokenTicker(tokenScope ?? "") || String(tokenScope ?? "").trim(),
     walletScoped ? String(address ?? "").trim() : "",
   ].join(":");
-}
-
-function registryStateRegresses(
-  next: PowRegistryState,
-  current: PowRegistryState | undefined,
-) {
-  if (!current || current.records.length === 0) {
-    return false;
-  }
-
-  return next.records.length === 0 || next.records.length < current.records.length;
-}
-
-function activityStatsRegress(
-  next: PowActivityStats,
-  current: PowActivityStats | undefined,
-) {
-  if (!current) {
-    return false;
-  }
-
-  const currentTotal = finiteNonNegativeNumber(current.total);
-  const nextTotal = finiteNonNegativeNumber(next.total);
-  const currentConfirmed = finiteNonNegativeNumber(current.confirmed);
-  const nextConfirmed = finiteNonNegativeNumber(next.confirmed);
-  return (
-    (currentTotal > 0 && nextTotal === 0) ||
-    (currentConfirmed > 0 && nextConfirmed === 0)
-  );
-}
-
-function growthSummaryNetworkValue(snapshot: GrowthSummarySnapshot | undefined) {
-  if (!snapshot) {
-    return 0;
-  }
-
-  return Math.max(
-    finiteNonNegativeNumber(snapshot.actualValue.liveNetworkValueSats),
-    finiteNonNegativeNumber(snapshot.actualValue.totalSats),
-    workFloorQuoteLiveValue(snapshot.workFloor),
-  );
-}
-
-function growthSummaryNetworkValueQ8(
-  snapshot: GrowthSummarySnapshot | undefined,
-) {
-  if (!snapshot) {
-    return null;
-  }
-  return highestExactWorkQ8([
-    snapshot.actualValue.liveNetworkValueQ8,
-    snapshot.actualValue.liveTotalQ8,
-    snapshot.actualValue.networkValueQ8,
-    snapshot.actualValue.totalQ8,
-    workFloorQuoteLiveValueQ8(snapshot.workFloor),
-  ]);
-}
-
-function growthSummaryRegresses(
-  next: GrowthSummarySnapshot,
-  current: GrowthSummarySnapshot | undefined,
-) {
-  if (!current) {
-    return false;
-  }
-
-  const currentValueQ8 = growthSummaryNetworkValueQ8(current);
-  const nextValueQ8 = growthSummaryNetworkValueQ8(next);
-  if (
-    currentValueQ8 !== null &&
-    currentValueQ8 > 0n &&
-    (nextValueQ8 === null || nextValueQ8 < currentValueQ8)
-  ) {
-    return true;
-  }
-
-  const currentValue = growthSummaryNetworkValue(current);
-  const nextValue = growthSummaryNetworkValue(next);
-  if (
-    currentValueQ8 === null &&
-    currentValue > 0 &&
-    nextValue < currentValue
-  ) {
-    return true;
-  }
-
-  return (
-    current.counts.confirmedComputerActions > 0 &&
-    next.counts.confirmedComputerActions === 0
-  );
-}
-
-function infinitySummaryRegresses(
-  next: InfinitySummarySnapshot,
-  current: InfinitySummarySnapshot | undefined,
-) {
-  if (!current) {
-    return false;
-  }
-
-  const currentNetworkValueQ8 = bondDecimalQ8(
-    current.networkValueSats,
-    current.networkValueQ8,
-  );
-  const nextNetworkValueQ8 = bondDecimalQ8(
-    next.networkValueSats,
-    next.networkValueQ8,
-  );
-  return (
-    (currentNetworkValueQ8 !== null &&
-      currentNetworkValueQ8 > 0n &&
-      (nextNetworkValueQ8 === null ||
-        nextNetworkValueQ8 < currentNetworkValueQ8)) ||
-    (compareExactIntegers(current.stats.confirmedSupply, 0) > 0 &&
-      compareExactIntegers(
-        next.stats.confirmedSupply,
-        current.stats.confirmedSupply,
-      ) < 0) ||
-    (current.stats.confirmedBondActions > 0 &&
-      next.stats.confirmedBondActions === 0) ||
-    tokenStateRegresses(next.token, current.token, true)
-  );
 }
 
 async function fetchWorkFloorQuote(
@@ -16835,25 +18540,12 @@ function normalizeGrowthSummary(
 
 async function fetchGrowthSummary(
   fresh = false,
-): Promise<{
-  activity: PowActivityItem[];
-  registry: PowRegistryState;
-  snapshot: GrowthSummarySnapshot;
-  token: PowTokenState;
-}> {
+): Promise<GrowthSummarySnapshot> {
   const payload = await fetchProofApiJson<GrowthSummaryApiResponse>(
     fresh ? "/api/v1/growth-summary?fresh=1" : "/api/v1/growth-summary",
     "livenet",
   );
-
-  return {
-    activity: Array.isArray(payload.activity?.activity)
-      ? payload.activity.activity
-      : [],
-    registry: normalizeRegistryApiState(payload.registry),
-    snapshot: normalizeGrowthSummary(payload),
-    token: normalizeTokenApiState(payload.token),
-  };
+  return normalizeGrowthSummary(payload);
 }
 
 async function fetchRushState(
@@ -17201,11 +18893,368 @@ async function fetchBroadcastStatus(
   txid: string,
   ownerNetwork: BitcoinNetwork,
 ): Promise<BroadcastStatus> {
+  return (await fetchBroadcastStatusEvidence(txid, ownerNetwork)).status;
+}
+
+async function fetchBroadcastStatusEvidence(
+  txid: string,
+  ownerNetwork: BitcoinNetwork,
+) {
   const payload = await fetchProofApiJson<PowTxStatusApiResponse>(
     `/api/v1/tx/${encodeURIComponent(txid)}/status`,
     ownerNetwork,
   );
-  return normalizeBroadcastStatus(payload.status);
+  const replacementCandidate =
+    payload.replacementTxid ??
+    payload.replacedByTxid ??
+    payload.evidence?.replacementTxid ??
+    payload.evidence?.replacedByTxid ??
+    "";
+  const replacementTxid = /^[0-9a-fA-F]{64}$/u.test(replacementCandidate)
+    ? replacementCandidate.toLowerCase()
+    : undefined;
+  const failureReason = String(
+    payload.failureReason ??
+      payload.reason ??
+      payload.evidence?.failureReason ??
+      payload.evidence?.reason ??
+      payload.error ??
+      "",
+  )
+    .trim()
+    .slice(0, 2_048);
+  return {
+    failureReason: failureReason
+      ? publicBroadcastFailureReason(failureReason)
+      : undefined,
+    replacementTxid,
+    status: normalizeBroadcastStatus(payload.status),
+  };
+}
+
+function broadcastStatusAfterObservation(
+  currentStatus: BroadcastStatus,
+  observedStatus: BroadcastStatus,
+) {
+  return currentStatus === "failed" && observedStatus === "unknown"
+    ? "failed"
+    : observedStatus;
+}
+
+function broadcastFailureReasonAfterObservation(
+  currentStatus: BroadcastStatus,
+  currentReason: string | undefined,
+  observedStatus: BroadcastStatus,
+  observedReason: string | undefined,
+) {
+  const nextStatus = broadcastStatusAfterObservation(
+    currentStatus,
+    observedStatus,
+  );
+  if (nextStatus !== "failed" && nextStatus !== "unknown") return undefined;
+  if (currentStatus === "failed" && observedStatus === "unknown") {
+    return currentReason ?? observedReason;
+  }
+  return observedReason ??
+    (currentStatus === nextStatus ? currentReason : undefined);
+}
+
+function localTokenOverlayBackoffMs(
+  entry: LocalTokenBroadcastOverlay,
+  status: BroadcastStatus,
+) {
+  const jitter = Number.parseInt(entry.txid.slice(0, 4), 16) % 1_000;
+  if (localTokenOverlayIsTerminal(status)) {
+    return (
+      Math.min(5 * 60_000 * 2 ** Math.min(entry.attempts, 8), 6 * 60 * 60_000) +
+      jitter
+    );
+  }
+  const base =
+    status === "unknown" ? 5_000 : status === "confirmed" ? 60_000 : 15_000;
+  return (
+    Math.min(base * 2 ** Math.min(entry.attempts, 6), 5 * 60_000) + jitter
+  );
+}
+
+function localTokenOverlayWithinConfirmedRecheckHorizon(
+  entry: Pick<
+    LocalTokenBroadcastOverlay,
+    "firstConfirmedAt" | "recordedAt" | "status"
+  >,
+  nowMs = Date.now(),
+) {
+  if (entry.status !== "confirmed") return true;
+  const firstConfirmedAtMs = Date.parse(
+    entry.firstConfirmedAt ?? entry.recordedAt,
+  );
+  return (
+    Number.isFinite(firstConfirmedAtMs) &&
+    nowMs - firstConfirmedAtMs <=
+      LOCAL_TOKEN_BROADCAST_CONFIRMED_RECHECK_HORIZON_MS
+  );
+}
+
+function localTokenOverlayFirstConfirmedAt(
+  entry: Pick<LocalTokenBroadcastOverlay, "firstConfirmedAt" | "status">,
+  status: BroadcastStatus,
+  checkedAt: string,
+) {
+  if (status !== "confirmed") return undefined;
+  if (entry.status === "confirmed" && entry.firstConfirmedAt) {
+    return entry.firstConfirmedAt;
+  }
+  return checkedAt;
+}
+
+function localTokenOverlayAwaitsFreshCanonicalResolution(
+  entry: Pick<
+    LocalTokenBroadcastOverlay,
+    "awaitingFreshCanonicalResolution" | "status"
+  >,
+  status: BroadcastStatus,
+) {
+  if (
+    entry.status === "replaced" &&
+    (status === "pending" || status === "confirmed")
+  ) {
+    return false;
+  }
+  if (entry.awaitingFreshCanonicalResolution) return true;
+  return status === "replaced" && entry.status !== "replaced";
+}
+
+function localTokenOverlayStatusChangedAt(
+  entry: Pick<
+    LocalTokenBroadcastOverlay,
+    "checkedAt" | "recordedAt" | "status" | "statusChangedAt"
+  >,
+  status: BroadcastStatus,
+  checkedAt: string,
+) {
+  return status === entry.status
+    ? entry.statusChangedAt ?? entry.checkedAt ?? entry.recordedAt
+    : checkedAt;
+}
+
+function localTokenOverlayStatusUpdateIsOlder(
+  current: Pick<LocalTokenBroadcastOverlay, "checkedAt">,
+  update: Pick<LocalTokenBroadcastOverlay, "checkedAt">,
+) {
+  const currentCheckedAtMs = Date.parse(current.checkedAt ?? "");
+  const updateCheckedAtMs = Date.parse(update.checkedAt ?? "");
+  if (!Number.isFinite(updateCheckedAtMs)) {
+    return Number.isFinite(currentCheckedAtMs);
+  }
+  return (
+    Number.isFinite(currentCheckedAtMs) && updateCheckedAtMs < currentCheckedAtMs
+  );
+}
+
+function mergeLocalTokenOverlayStatusUpdate(
+  current: LocalTokenBroadcastOverlay,
+  update: LocalTokenBroadcastOverlay,
+) {
+  if (
+    localTokenOverlayKey(current) !== localTokenOverlayKey(update) ||
+    localTokenOverlayStatusUpdateIsOlder(current, update)
+  ) {
+    return current;
+  }
+
+  const checkedAt = update.checkedAt ?? current.checkedAt ?? current.recordedAt;
+  const statusChanged = update.status !== current.status;
+  return {
+    ...current,
+    attempts: update.attempts,
+    awaitingFreshCanonicalResolution:
+      statusChanged
+        ? localTokenOverlayAwaitsFreshCanonicalResolution(current, update.status)
+        : current.awaitingFreshCanonicalResolution,
+    awaitingFreshListingObservation:
+      statusChanged && current.closedListings.length > 0
+        ? true
+        : current.awaitingFreshListingObservation,
+    checkedAt: update.checkedAt ?? current.checkedAt,
+    failureReason:
+      update.status === "failed" || update.status === "unknown"
+        ? update.failureReason ??
+          (current.status === update.status ? current.failureReason : undefined)
+        : undefined,
+    firstConfirmedAt: localTokenOverlayFirstConfirmedAt(
+      current,
+      update.status,
+      checkedAt,
+    ),
+    nextCheckAt: update.nextCheckAt,
+    replacementTxid:
+      update.status === "replaced"
+        ? update.replacementTxid ??
+          (current.status === "replaced" ? current.replacementTxid : undefined)
+        : undefined,
+    status: update.status,
+    statusChangedAt: localTokenOverlayStatusChangedAt(
+      current,
+      update.status,
+      checkedAt,
+    ),
+  };
+}
+
+function mergeLocalTokenOverlayStatusUpdates(
+  latestEntries: LocalTokenBroadcastOverlay[],
+  updates: LocalTokenBroadcastOverlay[],
+) {
+  const updatesByKey = new Map<string, LocalTokenBroadcastOverlay>();
+  for (const update of updates) {
+    const key = localTokenOverlayKey(update);
+    const currentUpdate = updatesByKey.get(key);
+    if (
+      !currentUpdate ||
+      !localTokenOverlayStatusUpdateIsOlder(currentUpdate, update)
+    ) {
+      updatesByKey.set(key, update);
+    }
+  }
+  return latestEntries.map((entry) => {
+    const update = updatesByKey.get(localTokenOverlayKey(entry));
+    return update ? mergeLocalTokenOverlayStatusUpdate(entry, update) : entry;
+  });
+}
+
+async function mapLocalTokenOverlaysWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T) => Promise<R>,
+) {
+  const results = new Array<R>(items.length);
+  let cursor = 0;
+  const runners = Array.from(
+    { length: Math.min(Math.max(1, concurrency), items.length) },
+    async () => {
+      while (cursor < items.length) {
+        const index = cursor;
+        cursor += 1;
+        results[index] = await worker(items[index]);
+      }
+    },
+  );
+  await Promise.all(runners);
+  return results;
+}
+
+async function reconcileLocalTokenBroadcastOverlayStatuses() {
+  const entries = loadLocalTokenBroadcastOverlays();
+  if (
+    entries.length === 0 ||
+    (typeof document !== "undefined" && document.visibilityState === "hidden")
+  ) {
+    return entries;
+  }
+  const nowMs = Date.now();
+  const due = entries.filter((entry) => {
+    if (!localTokenOverlayWithinConfirmedRecheckHorizon(entry, nowMs)) {
+      return false;
+    }
+    const nextCheckAtMs = Date.parse(entry.nextCheckAt ?? entry.recordedAt);
+    return !Number.isFinite(nextCheckAtMs) || nextCheckAtMs <= nowMs;
+  });
+  if (due.length === 0) return entries;
+
+  const updates = await mapLocalTokenOverlaysWithConcurrency(
+    due,
+    LOCAL_TOKEN_BROADCAST_RECONCILE_CONCURRENCY,
+    async (entry) => {
+      const checkedAt = new Date().toISOString();
+      try {
+        const evidence = await fetchBroadcastStatusEvidence(
+          entry.txid,
+          entry.network,
+        );
+        const status = broadcastStatusAfterObservation(
+          entry.status,
+          evidence.status,
+        );
+        const attempts =
+          status === entry.status
+            ? Math.min(100, entry.attempts + 1)
+            : 0;
+        const next: LocalTokenBroadcastOverlay = {
+          ...entry,
+          attempts,
+          awaitingFreshCanonicalResolution:
+            localTokenOverlayAwaitsFreshCanonicalResolution(
+              entry,
+              status,
+            ),
+          awaitingFreshListingObservation:
+            entry.closedListings.length > 0
+              ? status === "pending" ||
+                status === "unknown" ||
+                status === "confirmed" ||
+                localTokenOverlayIsTerminal(status)
+              : entry.awaitingFreshListingObservation,
+          checkedAt,
+          failureReason: broadcastFailureReasonAfterObservation(
+            entry.status,
+            entry.failureReason,
+            evidence.status,
+            evidence.failureReason,
+          ),
+          firstConfirmedAt: localTokenOverlayFirstConfirmedAt(
+            entry,
+            status,
+            checkedAt,
+          ),
+          nextCheckAt: new Date(
+            Date.now() +
+              localTokenOverlayBackoffMs(
+                { ...entry, attempts },
+                status,
+              ),
+          ).toISOString(),
+          replacementTxid:
+            status === "replaced"
+              ? evidence.replacementTxid
+              : undefined,
+          status,
+          statusChangedAt: localTokenOverlayStatusChangedAt(
+            entry,
+            status,
+            checkedAt,
+          ),
+        };
+        return next;
+      } catch {
+        const attempts = Math.min(100, entry.attempts + 1);
+        return {
+          ...entry,
+          attempts,
+          nextCheckAt: new Date(
+            Date.now() +
+              localTokenOverlayBackoffMs(
+                { ...entry, attempts },
+                entry.status,
+              ),
+          ).toISOString(),
+        };
+      }
+    },
+  );
+  const latestEntries = loadLocalTokenBroadcastOverlays();
+  return replaceLocalTokenBroadcastOverlays(
+    mergeLocalTokenOverlayStatusUpdates(latestEntries, updates),
+  );
+}
+
+function boundedBroadcastCheckTargets(targets: SentMessage[]) {
+  return mergeSentMessages(targets)
+    .sort(
+      (left, right) =>
+        sentMessageObservationTime(left) - sentMessageObservationTime(right) ||
+        sentMessageKey(left).localeCompare(sentMessageKey(right)),
+    )
+    .slice(0, MAIL_BROADCAST_STATUS_MAX_TARGETS);
 }
 
 function broadcastTargetsFor(
@@ -17213,32 +19262,74 @@ function broadcastTargetsFor(
   ownerNetwork: BitcoinNetwork,
   localSent: SentMessage[],
   recoveredSent: SentMessage[],
+  includeRecentConfirmed = false,
 ) {
-  return mergeSentMessages(
+  const accountMessages = mergeSentMessages(
     [...localSent, ...recoveredSent].filter(
       (message) =>
-        message.from === ownerAddress &&
-        message.network === ownerNetwork &&
-        sentDeliveryStatus(message) !== "confirmed",
+        message.from === ownerAddress && message.network === ownerNetwork,
     ),
   );
+  const nonConfirmed = boundedBroadcastCheckTargets(
+    accountMessages.filter(
+      (message) => sentDeliveryStatus(message) !== "confirmed",
+    ),
+  );
+  if (!includeRecentConfirmed) {
+    return nonConfirmed;
+  }
+
+  const cutoff = Date.now() - RECENT_CONFIRMED_RECHECK_HORIZON_MS;
+  const recentConfirmed = accountMessages
+    .filter(
+      (message) =>
+        sentDeliveryStatus(message) === "confirmed" &&
+        sentMessageObservationTime(message) >= cutoff,
+    )
+    .sort(
+      (left, right) =>
+        sentMessageObservationTime(right) - sentMessageObservationTime(left),
+    )
+    .slice(0, MAX_RECENT_CONFIRMED_RECHECKS);
+  return [
+    ...nonConfirmed.slice(
+      0,
+      Math.max(0, MAIL_BROADCAST_STATUS_MAX_TARGETS - recentConfirmed.length),
+    ),
+    ...recentConfirmed,
+  ];
 }
 
 async function checkBroadcastTargets(
   targets: SentMessage[],
 ): Promise<BroadcastCheckSummary> {
   const checkedAt = new Date().toISOString();
-  const results = await Promise.all(
-    targets.map(async (message): Promise<BroadcastCheckResult> => {
+  const boundedTargets = boundedBroadcastCheckTargets(targets);
+  const results = await mapLocalTokenOverlaysWithConcurrency(
+    boundedTargets,
+    MAIL_BROADCAST_STATUS_CHECK_CONCURRENCY,
+    async (message): Promise<BroadcastCheckResult> => {
       try {
-        const nextStatus = await fetchBroadcastStatus(
+        const evidence = await fetchBroadcastStatusEvidence(
           message.txid,
           message.network,
         );
+        const currentStatus = sentDeliveryStatus(message);
+        const status = broadcastStatusAfterObservation(
+          currentStatus,
+          evidence.status,
+        );
         return {
+          failureReason: broadcastFailureReasonAfterObservation(
+            currentStatus,
+            message.failureReason,
+            evidence.status,
+            evidence.failureReason,
+          ),
           from: message.from,
           network: message.network,
-          status: nextStatus,
+          replacementTxid: evidence.replacementTxid,
+          status,
           txid: message.txid,
         };
       } catch {
@@ -17249,7 +19340,7 @@ async function checkBroadcastTargets(
           txid: message.txid,
         };
       }
-    }),
+    },
   );
 
   const confirmed = results.filter(
@@ -17261,15 +19352,102 @@ async function checkBroadcastTargets(
   const pending = results.filter(
     (result) => result.status === "pending",
   ).length;
+  const replaced = results.filter(
+    (result) => result.status === "replaced",
+  ).length;
+  const failed = results.filter(
+    (result) => result.status === "failed",
+  ).length;
+  const unavailable = results.filter((result) => !result.status).length;
+  const unknown = results.filter((result) => result.status === "unknown").length;
 
   return {
     checkedAt,
     confirmed,
     dropped,
-    failed: results.length - confirmed - dropped - pending,
+    failed,
     pending,
+    replaced,
     results,
+    unknown,
+    unavailable,
   };
+}
+
+function startBroadcastCheck(
+  queue: BroadcastCheckQueue,
+  targets: SentMessage[],
+) {
+  const boundedTargets = boundedBroadcastCheckTargets(targets);
+  const active = checkBroadcastTargets(boundedTargets);
+  queue.active = active;
+  queue.activeTargetKeys = new Set(
+    boundedTargets.map((message) => sentMessageKey(message)),
+  );
+  const settle = () => {
+    if (queue.active !== active) return;
+    queue.active = undefined;
+    queue.activeTargetKeys.clear();
+    const queued = queue.queued;
+    queue.queued = undefined;
+    if (!queued) return;
+    startBroadcastCheck(queue, [...queued.targets.values()]).then(
+      queued.resolve,
+      queued.reject,
+    );
+  };
+  void active.then(settle, settle);
+  return active;
+}
+
+function runCoalescedBroadcastCheck(
+  queue: BroadcastCheckQueue,
+  targets: SentMessage[],
+) {
+  const boundedTargets = boundedBroadcastCheckTargets(targets);
+  if (!queue.active) {
+    return startBroadcastCheck(queue, boundedTargets);
+  }
+  const requestedKeys = boundedTargets.map((message) => sentMessageKey(message));
+  if (requestedKeys.every((key) => queue.activeTargetKeys.has(key))) {
+    return queue.active;
+  }
+  if (!queue.queued) {
+    let resolve = (_summary: BroadcastCheckSummary) => {};
+    let reject = (_reason?: unknown) => {};
+    const promise = new Promise<BroadcastCheckSummary>((resolvePromise, rejectPromise) => {
+      resolve = resolvePromise;
+      reject = rejectPromise;
+    });
+    queue.queued = {
+      promise,
+      reject,
+      resolve,
+      targets: new Map<string, SentMessage>(),
+    };
+  }
+  for (const message of boundedTargets) {
+    const key = sentMessageKey(message);
+    if (
+      queue.queued.targets.has(key) ||
+      queue.queued.targets.size < MAIL_BROADCAST_STATUS_MAX_TARGETS
+    ) {
+      queue.queued.targets.set(key, message);
+    }
+  }
+  return queue.queued.promise;
+}
+
+function broadcastCheckObservationIsCurrent(
+  message: Pick<SentMessage, "lastCheckedAt">,
+  checkedAt: string,
+) {
+  const checkedAtMs = Date.parse(checkedAt);
+  if (!Number.isFinite(checkedAtMs)) return false;
+  const currentCheckedAtMs = Date.parse(message.lastCheckedAt ?? "");
+  return (
+    !Number.isFinite(currentCheckedAtMs) || checkedAtMs >= currentCheckedAtMs
+  );
 }
 
 function applyBroadcastCheckResults<T extends SentMessage>(
@@ -17284,30 +19462,64 @@ function applyBroadcastCheckResults<T extends SentMessage>(
         item.from === message.from,
     );
 
-    if (!result?.status) {
+    if (
+      !result?.status ||
+      !broadcastCheckObservationIsCurrent(message, summary.checkedAt)
+    ) {
       return message;
     }
 
+    const currentStatus = sentDeliveryStatus(message);
+    const status = broadcastStatusAfterObservation(
+      currentStatus,
+      result.status,
+    );
     return {
       ...message,
       confirmedAt:
-        result.status === "confirmed"
+        status === "confirmed"
           ? (message.confirmedAt ?? summary.checkedAt)
-          : message.confirmedAt,
+          : undefined,
       droppedAt:
-        result.status === "dropped"
+        status === "dropped"
           ? (message.droppedAt ?? summary.checkedAt)
           : undefined,
       lastCheckedAt: summary.checkedAt,
-      status: result.status,
+      failureReason:
+        status === "failed" || status === "unknown"
+          ? broadcastFailureReasonAfterObservation(
+              currentStatus,
+              message.failureReason,
+              result.status,
+              result.failureReason,
+            )
+          : undefined,
+      replacementTxid:
+        status === "replaced" ? result.replacementTxid : undefined,
+      status,
     };
   });
 }
 
 function broadcastCheckSummaryText(summary: BroadcastCheckSummary) {
-  return `${summary.pending} pending, ${summary.confirmed} confirmed, ${summary.dropped} dropped${
-    summary.failed ? `, ${summary.failed} unavailable` : ""
+  return `${summary.pending} pending, ${summary.unknown} checking, ${summary.confirmed} confirmed, ${summary.replaced} replaced, ${summary.dropped} dropped, ${summary.failed} failed${
+    summary.unavailable ? `, ${summary.unavailable} unavailable` : ""
   }`;
+}
+
+function broadcastCheckSummaryTone(summary: BroadcastCheckSummary): StatusTone {
+  if (summary.failed > 0 || summary.unavailable === summary.results.length) {
+    return "bad";
+  }
+  if (
+    summary.dropped > 0 ||
+    summary.replaced > 0 ||
+    summary.unknown > 0 ||
+    summary.unavailable > 0
+  ) {
+    return "idle";
+  }
+  return "good";
 }
 
 function isNativeWitnessScript(script: Uint8Array) {
@@ -18697,7 +20909,7 @@ function isKnownAcceptedBroadcastMessage(message: string) {
 }
 
 function isTransientProofApiBroadcastFailure(status: number, message: string) {
-  if ([408, 425, 429, 500, 502, 503, 504].includes(status)) {
+  if ([0, 408, 425, 429, 500, 502, 503, 504].includes(status)) {
     return true;
   }
 
@@ -18795,7 +21007,9 @@ async function broadcastRawTransactionViaProofApi(
 
     if (result?.ok && result.txid) {
       if (localTxid && result.txid !== localTxid) {
-        throw new Error(
+        throw new SignedTransactionBroadcastError(
+          localTxid,
+          "unknown",
           "The ProofOfWork node returned a different transaction ID than the locally signed transaction. Broadcast result rejected.",
         );
       }
@@ -18814,6 +21028,13 @@ async function broadcastRawTransactionViaProofApi(
             ? result.payload.url
             : explorerTxUrl(result.txid, ownerNetwork),
       };
+    }
+    if (result?.ok && !result.txid && localTxid) {
+      throw new SignedTransactionBroadcastError(
+        localTxid,
+        "unknown",
+        "The ProofOfWork node accepted the broadcast request without returning a trustworthy transaction ID. Broadcast status is unknown.",
+      );
     }
 
     const status = result?.status ?? 0;
@@ -18852,10 +21073,20 @@ async function broadcastRawTransactionViaProofApi(
     }
 
     if (!transient || attempt >= PROOF_API_BROADCAST_RETRY_DELAYS_MS.length) {
+      if (localTxid) {
+        throw new SignedTransactionBroadcastError(
+          localTxid,
+          transient ? "unknown" : "failed",
+          lastMessage,
+        );
+      }
       throw new Error(lastMessage);
     }
   }
 
+  if (localTxid) {
+    throw new SignedTransactionBroadcastError(localTxid, "unknown", lastMessage);
+  }
   throw new Error(lastMessage);
 }
 
@@ -18965,9 +21196,36 @@ async function signAndBroadcastPsbtDetailed({
     rawUnsignedTransactionIntent(signedTransaction),
   );
   const rawTx = signedTransaction.toHex();
+  const localTxid = rawTransactionTxid(rawTx);
 
-  await beforeBroadcast?.();
-  return broadcastSignedRawTransaction(rawTx, network, broadcastStrategy);
+  try {
+    await beforeBroadcast?.();
+  } catch (error) {
+    if (localTxid) {
+      throw new SignedTransactionBroadcastError(
+        localTxid,
+        "failed",
+        errorMessage(error, "Final broadcast preflight failed."),
+      );
+    }
+    throw error;
+  }
+  try {
+    return await broadcastSignedRawTransaction(
+      rawTx,
+      network,
+      broadcastStrategy,
+    );
+  } catch (error) {
+    if (error instanceof SignedTransactionBroadcastError || !localTxid) {
+      throw error;
+    }
+    throw new SignedTransactionBroadcastError(
+      localTxid,
+      "unknown",
+      errorMessage(error, "Broadcast response was unavailable."),
+    );
+  }
 }
 
 async function signAndBroadcastPsbt(
@@ -19028,6 +21286,9 @@ export default function App() {
   );
   const [idSales, setIdSales] = useState<PowIdMarketplaceSale[]>([]);
   const [idActivity, setIdActivity] = useState<PowActivityItem[]>([]);
+  const [registryDataLoading, setRegistryDataLoading] = useState(false);
+  const [registryDataLoaded, setRegistryDataLoaded] = useState(false);
+  const [registryDataError, setRegistryDataError] = useState("");
   const [lastRegisteredId, setLastRegisteredId] = useState<
     PowIdRecord | undefined
   >();
@@ -19070,6 +21331,7 @@ export default function App() {
   const [tokenDataError, setTokenDataError] = useState("");
   const [marketplaceDataLoading, setMarketplaceDataLoading] = useState(false);
   const [marketplaceDataLoaded, setMarketplaceDataLoaded] = useState(false);
+  const [marketplaceDataError, setMarketplaceDataError] = useState("");
   const [tokenMarketHistoryRefreshNonce, setTokenMarketHistoryRefreshNonce] =
     useState(0);
 
@@ -19127,9 +21389,15 @@ export default function App() {
   const [growthSummary, setGrowthSummary] = useState<
     GrowthSummarySnapshot | undefined
   >();
+  const [growthDataLoading, setGrowthDataLoading] = useState(false);
+  const [growthDataLoaded, setGrowthDataLoaded] = useState(false);
+  const [growthDataError, setGrowthDataError] = useState("");
   const [infinitySummary, setInfinitySummary] = useState<
     InfinitySummarySnapshot | undefined
   >();
+  const [bondDataLoading, setBondDataLoading] = useState(false);
+  const [bondDataLoadedTokenId, setBondDataLoadedTokenId] = useState("");
+  const [bondDataError, setBondDataError] = useState("");
   const [infinityBondAmount, setInfinityBondAmount] = useState(1000);
   const [bondWorkAmount, setBondWorkAmount] = useState("0");
   const [infinityBondRecipient, setInfinityBondRecipient] = useState("");
@@ -19239,6 +21507,9 @@ export default function App() {
     PowPaginatedApiResponse<PowActivityItem> | undefined
   >();
   const [activityLoading, setActivityLoading] = useState(false);
+  const [activityDataLoading, setActivityDataLoading] = useState(false);
+  const [activityDataLoaded, setActivityDataLoaded] = useState(false);
+  const [activityDataError, setActivityDataError] = useState("");
   const [desktopLoading, setDesktopLoading] = useState(false);
   const [savedDraft, setSavedDraft] = useState<DraftMessage | undefined>();
   const [inbox, setInbox] = useState<InboxMessage[]>([]);
@@ -19445,19 +21716,33 @@ export default function App() {
   const infinityRefreshInFlightFreshRef = useRef(false);
   const infinityRefreshTokenIdRef = useRef("");
   const growthRefreshInFlightRef = useRef(false);
+  const logSurfaceRefreshInFlightRef =
+    useRef<Promise<PowActivityApiResponse | undefined> | null>(null);
   const workFloorRefreshInFlightRef =
     useRef<Promise<WorkFloorQuote | undefined> | null>(null);
   const workFloorRefreshInFlightFreshRef = useRef(false);
   const mailSendInFlightRef = useRef(false);
+  const mailBroadcastCheckQueueRef = useRef<BroadcastCheckQueue>({
+    activeTargetKeys: new Set(),
+  });
   const acceptedRegistryStateRef = useRef<PowRegistryState | undefined>();
   const acceptedTokenStatesRef = useRef(
     new Map<string, PowTokenState>(),
   );
+  const canonicalTokenStatesRef = useRef(
+    new Map<string, PowTokenState>(),
+  );
+  const localTokenOverlayReconcileInFlightRef = useRef<
+    Promise<LocalTokenBroadcastOverlay[]> | null
+  >(null);
   const activeTokenStateScopeRef = useRef(activeTokenStateScopeKey);
   activeTokenStateScopeRef.current = activeTokenStateScopeKey;
   const activeFolderRef = useRef(activeFolder);
   activeFolderRef.current = activeFolder;
   const walletSyncGenerationRef = useRef(0);
+  const mailIdentityRef = useRef({ address, network });
+  mailIdentityRef.current = { address, network };
+  const mailRefreshRequestIdRef = useRef(0);
   const acceptedWorkFloorQuoteRef = useRef<WorkFloorQuote | undefined>();
   const workV8DeclarationBoundaryLatchRef = useRef(false);
   const acceptedGrowthSummaryRef = useRef<GrowthSummarySnapshot | undefined>();
@@ -19535,23 +21820,18 @@ export default function App() {
     activityHistoryPagesRef.current.set(cacheKey, page);
     activityHistoryPageRef.current = page;
     setActivityHistoryPage(page);
-    setIdActivity((current) =>
-      mergeActivityItems(current, Array.isArray(page.items) ? page.items : []),
-    );
     return page;
   }
 
   function applyRegistryState(
     state: PowRegistryState,
     activity: PowActivityItem[] = state.activity,
-    allowRegression = false,
   ) {
     const current = acceptedRegistryStateRef.current;
-    if (!allowRegression && registryStateRegresses(state, current)) {
-      return current;
-    }
-
-    const accepted = { ...state, activity };
+    const accepted =
+      state.summaryOnly && current && current.summaryOnly !== true
+        ? current
+        : { ...state, activity };
     acceptedRegistryStateRef.current = accepted;
     setIdRegistry(accepted.records);
     setIdListings(accepted.listings);
@@ -19577,52 +21857,93 @@ export default function App() {
     setTokenDataError("");
   }
 
+  function reprojectLocalTokenBroadcastsFromCanonicalState(
+    persistOverlayChanges = true,
+  ) {
+    for (const [scopeKey, canonicalState] of canonicalTokenStatesRef.current) {
+      const projected = applyLocalTokenBroadcastOverlays(
+        canonicalState,
+        scopeKey,
+        { persistOverlayChanges },
+      );
+      acceptedTokenStatesRef.current.set(scopeKey, projected);
+      if (scopeKey === activeTokenStateScopeRef.current) {
+        renderTokenState(projected, scopeKey);
+      }
+    }
+  }
+
+  async function refreshTerminalTokenClosureCanonicalState() {
+    const globalRefresh =
+      network === "livenet"
+        ? await refreshMarketplaceSummary(true, true)
+        : undefined;
+    if (!globalRefresh) {
+      await refreshToken(true, true);
+    }
+    reprojectLocalTokenBroadcastsFromCanonicalState();
+  }
+
+  async function reconcileLocalTokenBroadcastsInApp() {
+    if (localTokenOverlayReconcileInFlightRef.current) {
+      return localTokenOverlayReconcileInFlightRef.current;
+    }
+    const previousStatuses = new Map(
+      loadLocalTokenBroadcastOverlays().map((entry) => [
+        localTokenOverlayKey(entry),
+        entry.status,
+      ]),
+    );
+    const promise = reconcileLocalTokenBroadcastOverlayStatuses().then(
+      (entries) => {
+        const terminalCloseTransition = entries.some(
+          (entry) =>
+            entry.closedListings.length > 0 &&
+            localTokenOverlayIsTerminal(entry.status) &&
+            previousStatuses.get(localTokenOverlayKey(entry)) !== entry.status,
+        );
+        const replacementReservationTransition = entries.some(
+          (entry) =>
+            entry.status === "replaced" &&
+            entry.awaitingFreshCanonicalResolution === true &&
+            previousStatuses.get(localTokenOverlayKey(entry)) !== "replaced",
+        );
+        reprojectLocalTokenBroadcastsFromCanonicalState();
+        if (terminalCloseTransition || replacementReservationTransition) {
+          void refreshTerminalTokenClosureCanonicalState();
+        }
+        return entries;
+      },
+    );
+    localTokenOverlayReconcileInFlightRef.current = promise;
+    try {
+      return await promise;
+    } finally {
+      localTokenOverlayReconcileInFlightRef.current = null;
+    }
+  }
+
   function applyTokenState(
     state: PowTokenState,
     {
-      allowRegression = false,
-      preserveListings = true,
+      freshCanonical = false,
       scopeKey = DEFAULT_TOKEN_STATE_SCOPE_KEY,
     }: TokenStateApplyOptions = {},
   ) {
-    const current = acceptedTokenStatesRef.current.get(scopeKey);
-    const incomingWalletScope = scopeKey.includes(":wallet:");
-    const falseZeroAcrossGlobalScope =
-      !incomingWalletScope &&
-      Boolean(current?.tokens.length) &&
-      state.tokens.length === 0;
-
-    if (
-      !allowRegression &&
-      (falseZeroAcrossGlobalScope ||
-        tokenStateRegresses(state, current, true))
-    ) {
-      if (current && scopeKey === activeTokenStateScopeRef.current) {
-        renderTokenState(current, scopeKey);
-      }
-      return current ?? state;
-    }
-
-    const listings = preserveListings
-      ? tokenListingsWithPreservedLocalPending(
-          current ? current.listings : [],
-          applyPendingTokenListingSeals(state.listings),
-          state.closedListings,
-        )
-      : activeTokenListingsExcludingClosed(
-          applyPendingTokenListingSeals(state.listings),
-          state.closedListings,
-        );
-    const transfers = tokenTransfersWithPreservedLocalPending(
-      scopeKey === activeTokenStateScopeRef.current ? tokenTransfers : [],
-      state.transfers,
-    );
-    const accepted = { ...state, listings, transfers };
+    const current = canonicalTokenStatesRef.current.get(scopeKey);
+    const incoming =
+      state.summaryOnly && current && current.summaryOnly !== true
+        ? current
+        : state;
+    canonicalTokenStatesRef.current.set(scopeKey, incoming);
+    const accepted = applyLocalTokenBroadcastOverlays(incoming, scopeKey, {
+      freshCanonical: freshCanonical && state.summaryOnly !== true,
+    });
     acceptedTokenStatesRef.current.set(scopeKey, accepted);
     if (scopeKey === activeTokenStateScopeRef.current) {
-      setTokenListings(accepted.listings);
       renderTokenState(accepted, scopeKey);
     }
+    void reconcileLocalTokenBroadcastsInApp();
     return accepted;
   }
 
@@ -19636,8 +21957,6 @@ export default function App() {
       workV8DeclarationBoundaryObserved(quote);
     const boundaryWasLatched =
       workV8DeclarationBoundaryLatchRef.current;
-    const v8BoundaryNeedsFailClosedRetention =
-      boundaryWasLatched || incomingBoundaryObserved;
     if (incomingBoundaryObserved) {
       workV8DeclarationBoundaryLatchRef.current = true;
     }
@@ -19651,25 +21970,6 @@ export default function App() {
             ),
           }
         : quote;
-    if (workFloorQuoteRegresses(safetyBoundQuote, current)) {
-      if (!current) {
-        return undefined;
-      }
-      const retained = v8BoundaryNeedsFailClosedRetention
-        ? {
-            ...current,
-            workAmoV8: failClosedWorkAmoV8Status(
-              current.workAmoV8,
-              safetyBoundQuote.workAmoV8,
-              "work-amo-v8-exact-tip-regressed",
-            ),
-          }
-        : current;
-      acceptedWorkFloorQuoteRef.current = retained;
-      setWorkFloorQuote(retained);
-      return retained;
-    }
-
     acceptedWorkFloorQuoteRef.current = safetyBoundQuote;
     setWorkFloorQuote(safetyBoundQuote);
     return safetyBoundQuote;
@@ -19711,22 +22011,12 @@ export default function App() {
   }
 
   function applyGrowthSummary(snapshot: GrowthSummarySnapshot) {
-    const current = acceptedGrowthSummaryRef.current;
-    if (growthSummaryRegresses(snapshot, current)) {
-      return current;
-    }
-
     acceptedGrowthSummaryRef.current = snapshot;
     setGrowthSummary(snapshot);
     return snapshot;
   }
 
   function applyInfinitySummary(snapshot: InfinitySummarySnapshot) {
-    const current = acceptedBondSummariesRef.current.get(snapshot.tokenId);
-    if (infinitySummaryRegresses(snapshot, current)) {
-      return current;
-    }
-
     acceptedBondSummariesRef.current.set(snapshot.tokenId, snapshot);
     setInfinitySummary(snapshot);
     return snapshot;
@@ -19739,6 +22029,7 @@ export default function App() {
 
   useEffect(() => {
     acceptedRegistryStateRef.current = {
+      ...acceptedRegistryStateRef.current,
       activity: idActivity,
       listings: idListings,
       pendingEvents: idPendingEvents,
@@ -19800,6 +22091,48 @@ export default function App() {
     tokenSummary,
     tokenTransfers,
   ]);
+
+  useEffect(() => {
+    const showOverlayWarning = (event: Event) => {
+      const message = String(
+        (event as CustomEvent<{ message?: string }>).detail?.message ?? "",
+      ).trim();
+      if (message) setStatus({ tone: "bad", text: message });
+    };
+    const reconcileWhenVisible = () => {
+      if (document.visibilityState === "visible") {
+        void reconcileLocalTokenBroadcastsInApp();
+      }
+    };
+    const reconcileFromStorage = (event: StorageEvent) => {
+      const entries = reconcileLocalTokenBroadcastStorageEvent(event);
+      if (!entries) return;
+      reprojectLocalTokenBroadcastsFromCanonicalState(false);
+    };
+    window.addEventListener(
+      "proofofwork:local-token-overlay-warning",
+      showOverlayWarning,
+    );
+    setLocalTokenOverlayWarningListenerReady(true);
+    loadLocalTokenBroadcastOverlays();
+    window.addEventListener("storage", reconcileFromStorage);
+    document.addEventListener("visibilitychange", reconcileWhenVisible);
+    const intervalId = window.setInterval(
+      reconcileWhenVisible,
+      LOCAL_TOKEN_BROADCAST_RECONCILE_INTERVAL_MS,
+    );
+    void reconcileLocalTokenBroadcastsInApp();
+    return () => {
+      setLocalTokenOverlayWarningListenerReady(false);
+      window.clearInterval(intervalId);
+      window.removeEventListener("storage", reconcileFromStorage);
+      document.removeEventListener("visibilitychange", reconcileWhenVisible);
+      window.removeEventListener(
+        "proofofwork:local-token-overlay-warning",
+        showOverlayWarning,
+      );
+    };
+  }, []);
 
   useEffect(() => {
     const cached = acceptedTokenStatesRef.current.get(activeTokenStateScopeKey);
@@ -21437,23 +23770,15 @@ export default function App() {
       "livenet",
     ).catch(() => []);
 
-    if (pendingSeals.length > 0) {
-      savePendingTokenListingSeals([
-        ...loadPendingTokenListingSeals(),
-        ...pendingSeals,
-      ]);
-    }
-
-    return reconcileTokenListingSealStatuses(
-      applyPendingTokenListingSeals(
-        listingPages.filter(
-          (listing) =>
-            listing.network === "livenet" &&
-            listing.tokenId === tokenScope &&
-            listing.sellerAddress === walletAddress &&
-            !tokenListingIsExpired(listing),
-        ),
+    return applyPendingTokenListingSeals(
+      listingPages.filter(
+        (listing) =>
+          listing.network === "livenet" &&
+          listing.tokenId === tokenScope &&
+          listing.sellerAddress === walletAddress &&
+          !tokenListingIsExpired(listing),
       ),
+      pendingSeals,
     );
   }
 
@@ -21659,6 +23984,7 @@ export default function App() {
       network === "livenet" &&
       selectedToken &&
       !isBondTokenDefinition(selectedToken) &&
+      tokenDefinitionAllowsLifecycleActions(selectedToken) &&
       (!isWorkToken(selectedToken) ||
         workWriteModeForQuote(workFloorQuote) !== "paused") &&
       tokenMintPayload &&
@@ -21857,7 +24183,10 @@ export default function App() {
                 activeFolder === "infinity" ||
                 activeFolder === "inception" ||
                 activeFolder === "log"
-            ? busy || refreshInProgress || !registryAddress
+            ? busy ||
+              refreshInProgress ||
+              !registryAddress ||
+              (activeFolder === "wallet" && !address)
             : !address || busy || refreshInProgress;
 
   useEffect(() => {
@@ -22143,6 +24472,13 @@ export default function App() {
     chainSentRef.current = chainSent;
   }, [chainSent]);
 
+  function checkMailBroadcastTargets(targets: SentMessage[]) {
+    return runCoalescedBroadcastCheck(
+      mailBroadcastCheckQueueRef.current,
+      targets,
+    );
+  }
+
   const checkBroadcastStatuses = useCallback(
     async (silent = false) => {
       if (!address) {
@@ -22166,14 +24502,14 @@ export default function App() {
       setCheckingBroadcasts(true);
 
       try {
-        const summary = await checkBroadcastTargets(targets);
+        const summary = await checkMailBroadcastTargets(targets);
 
         setAllSent((current) => applyBroadcastCheckResults(current, summary));
         setChainSent((current) => applyBroadcastCheckResults(current, summary));
 
         if (!silent) {
           setStatus({
-            tone: summary.failed === summary.results.length ? "bad" : "good",
+            tone: broadcastCheckSummaryTone(summary),
             text: `Outbox checked. ${broadcastCheckSummaryText(summary)}.`,
           });
         }
@@ -22350,7 +24686,14 @@ export default function App() {
         return;
       }
 
-      if (activeFolder === "token" || activeFolder === "wallet" || activeFolder === "work") {
+      if (
+        activeFolder === "token" ||
+        activeFolder === "wallet" ||
+        activeFolder === "work"
+      ) {
+        if (activeFolder === "wallet" && !address) {
+          return;
+        }
         void refreshToken(true);
         return;
       }
@@ -22411,42 +24754,26 @@ export default function App() {
   ]);
 
   useEffect(() => {
-    if (
-      (!marketplaceMode && !tokenMode && !walletMode && !workTokenMode) ||
-      Boolean(standaloneBondConfig) ||
-      network !== "livenet"
-    ) {
+    if (network !== "livenet") {
       return;
     }
 
-    let cancelled = false;
-    void (async () => {
-      if (marketplaceMode || activeFolder === "marketplace") {
-        await refreshMarketplaceSummary(true, false);
-      } else {
-        await refreshToken(true, false);
-      }
-      if (!cancelled && document.visibilityState === "visible") {
-        window.setTimeout(() => {
-          if (!cancelled && document.visibilityState === "visible") {
-            if (marketplaceMode || activeFolder === "marketplace") {
-              void refreshMarketplaceSummary(true, true);
-            } else {
-              void refreshToken(true, false);
-            }
-          }
-        }, BACKGROUND_FRESH_REFRESH_DELAY_MS);
-      }
-    })();
+    if (standaloneBondConfig) {
+      void refreshInfinity(true, false, standaloneBondConfig);
+      return;
+    }
 
-    return () => {
-      cancelled = true;
-    };
+    if (!tokenMode && !walletMode && !workTokenMode) {
+      return;
+    }
+    if (walletMode && !address) {
+      return;
+    }
+    void refreshToken(true, false);
   }, [
-    activeFolder,
-    standaloneBondConfig,
-    marketplaceMode,
+    address,
     network,
+    standaloneBondConfig,
     tokenMode,
     walletMode,
     workTokenMode,
@@ -22463,53 +24790,35 @@ export default function App() {
     }
 
     let cancelled = false;
-    let settleTimer: number | undefined;
-
-    const loadVisibleLog = (fresh = false) => {
+    const loadVisibleLog = () => {
       if (document.visibilityState !== "visible") {
         return;
       }
 
       void (async () => {
-        await loadLogHead(true, fresh);
+        await refreshLogSurface(true, false);
         if (cancelled) {
           return;
         }
 
-        const currentPageIndex = activityHistoryPageRef.current?.page ?? 0;
-        await loadLogHistoryPage(currentPageIndex, true);
         const currentProfile = activityProfileRef.current;
         if (!cancelled && currentProfile) {
           void loadActivityTarget(currentProfile.query);
         }
-
-        if (fresh) {
-          window.clearTimeout(settleTimer);
-          settleTimer = window.setTimeout(() => {
-            if (!cancelled && document.visibilityState === "visible") {
-              void loadLogHead(true, false);
-              void loadLogHistoryPage(currentPageIndex, true);
-            }
-          }, BACKGROUND_FRESH_REFRESH_DELAY_MS);
-        }
       })();
     };
 
-    void refreshLogSurface(false, false);
-    settleTimer = window.setTimeout(() => {
-      loadVisibleLog(false);
-    }, BACKGROUND_FRESH_REFRESH_DELAY_MS);
+    loadVisibleLog();
 
     const interval = window.setInterval(() => {
-      loadVisibleLog(false);
+      loadVisibleLog();
     }, LOG_LIVE_REFRESH_MS);
-    const focusHandler = () => loadVisibleLog(false);
+    const focusHandler = () => loadVisibleLog();
     window.addEventListener("focus", focusHandler);
 
     return () => {
       cancelled = true;
       window.clearInterval(interval);
-      window.clearTimeout(settleTimer);
       window.removeEventListener("focus", focusHandler);
     };
   }, [
@@ -22559,8 +24868,11 @@ export default function App() {
   }, [mailWorkFloorHydrationRequired, network]);
 
   useEffect(() => {
+    const disconnectedWalletSurface =
+      (walletMode || activeFolder === "wallet") && !address;
     if (
       network !== "livenet" ||
+      disconnectedWalletSurface ||
       (!marketplaceMode &&
         !walletMode &&
         !tokenRouteShowsWorkFloor &&
@@ -22574,28 +24886,16 @@ export default function App() {
 
     const refreshWorkFloorMetrics = () => {
       if (document.visibilityState === "visible") {
-        void (async () => {
-          const useMarketplaceSummary =
-            marketplaceMode || activeFolder === "marketplace";
-          if (useMarketplaceSummary) {
-            await refreshMarketplaceSummary(true, false);
-          } else {
-            await Promise.all([
-              refreshTokenBtcUsd(false),
-              refreshWorkFloor(true, false),
-            ]);
-          }
-          window.setTimeout(() => {
-            if (document.visibilityState === "visible") {
-              if (useMarketplaceSummary) {
-                void refreshMarketplaceSummary(true, true);
-              } else {
-                void refreshTokenBtcUsd(true);
-                void refreshWorkFloor(true, true);
-              }
-            }
-          }, BACKGROUND_FRESH_REFRESH_DELAY_MS);
-        })();
+        const useMarketplaceSummary =
+          marketplaceMode || activeFolder === "marketplace";
+        if (useMarketplaceSummary) {
+          void refreshMarketplaceSummary(true, false);
+        } else {
+          void Promise.all([
+            refreshTokenBtcUsd(false),
+            refreshWorkFloor(true, false),
+          ]);
+        }
       }
     };
 
@@ -22612,6 +24912,7 @@ export default function App() {
     };
   }, [
     activeFolder,
+    address,
     marketplaceMode,
     network,
     tokenRouteShowsWorkFloor,
@@ -22620,6 +24921,9 @@ export default function App() {
   ]);
 
   useEffect(() => {
+    if ((walletMode || activeFolder === "wallet") && !address) {
+      return;
+    }
     if (
       !marketplaceMode &&
       !tokenMode &&
@@ -22654,6 +24958,7 @@ export default function App() {
     };
   }, [
     activeFolder,
+    address,
     growthMode,
     inceptionMode,
     infinityMode,
@@ -22678,20 +24983,13 @@ export default function App() {
 
     const refreshGrowthMetrics = () => {
       if (document.visibilityState === "visible") {
-        void (async () => {
-          await refreshGrowth(true, false);
-          window.setTimeout(() => {
-            if (document.visibilityState === "visible") {
-              void refreshGrowth(true, true);
-            }
-          }, BACKGROUND_FRESH_REFRESH_DELAY_MS);
-        })();
+        void refreshGrowth(true, false);
       }
     };
     refreshGrowthMetrics();
     const interval = window.setInterval(
       refreshGrowthMetrics,
-      WORK_FLOOR_LIVE_REFRESH_MS,
+      GROWTH_AUTO_REFRESH_MS,
     );
     window.addEventListener("focus", refreshGrowthMetrics);
 
@@ -22713,46 +25011,6 @@ export default function App() {
 
     void refreshIds(true);
   }, [landingMode, network]);
-
-  useEffect(() => {
-    if (!marketplaceMode) {
-      return;
-    }
-
-    if (network !== "livenet") {
-      setNetwork("livenet");
-      return;
-    }
-
-    void refreshMarketplaceSummary(true, false);
-  }, [marketplaceMode, network]);
-
-  useEffect(() => {
-    if (!bondWorkspaceActive) {
-      return;
-    }
-
-    if (network !== "livenet") {
-      setNetwork("livenet");
-      return;
-    }
-
-    let cancelled = false;
-    void (async () => {
-      await refreshInfinity(true, false, activeBondConfig);
-      if (!cancelled && document.visibilityState === "visible") {
-        window.setTimeout(() => {
-          if (!cancelled && document.visibilityState === "visible") {
-            void refreshInfinity(true, true, activeBondConfig);
-          }
-        }, BACKGROUND_FRESH_REFRESH_DELAY_MS);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [activeBondConfig, bondWorkspaceActive, network]);
 
   useEffect(() => {
     if (
@@ -22897,6 +25155,9 @@ export default function App() {
     const syncWallet = async () => {
       const wallet = window.unisat as UnisatWallet;
       const generation = ++walletSyncGenerationRef.current;
+      mailRefreshRequestIdRef.current += 1;
+      setRefreshing(false);
+      setCheckingBroadcasts(false);
       let accounts = await wallet.getAccounts?.().catch(() => []);
       let nextAddress = accounts?.[0] ?? "";
       if (mainnetWorkspaceMode) {
@@ -22911,6 +25172,10 @@ export default function App() {
         return;
       }
 
+      mailIdentityRef.current = {
+        address: nextAddress,
+        network: nextNetwork,
+      };
       setAddress(nextAddress);
       setNetwork(nextNetwork);
       setInbox([]);
@@ -23033,13 +25298,16 @@ export default function App() {
           return;
         }
 
+        const mailObservedAt = new Date().toISOString();
         const mailState = await fetchAddressMail(nextAddress, nextNetwork);
         if (generation !== walletSyncGenerationRef.current) {
           return;
         }
         const { inboxMessages, sentMessages } = mailState;
         setInbox(inboxMessages);
-        setChainSent(sentMessages);
+        setChainSent((current) =>
+          mergeObservedSentMessages(current, sentMessages, mailObservedAt),
+        );
         setSelectedKey(selectedInboundKey("inbox", inboxMessages));
         setStatus({
           tone: "good",
@@ -23722,6 +25990,11 @@ export default function App() {
         localStorage.setItem(key, value);
       }
 
+      if (data[LOCAL_TOKEN_BROADCAST_STORE_KEY]) {
+        localTokenBroadcastOverlayCache = undefined;
+        loadLocalTokenBroadcastOverlays();
+        reprojectLocalTokenBroadcastsFromCanonicalState();
+      }
       setAllSent(loadSentMessages());
       setMailPreferences(loadMailPreferences());
       setContacts(loadContacts());
@@ -23841,17 +26114,10 @@ export default function App() {
   function applyActivityPayload(payload: PowActivityApiResponse) {
     const activity = Array.isArray(payload.activity) ? payload.activity : [];
     const stats = normalizeActivityStats(payload.stats, activity);
-    const currentStats = acceptedActivityStatsRef.current;
-    if (activity.length === 0 && activityStatsRegress(stats, currentStats)) {
-      return { activity: idActivity, stats: currentStats ?? stats };
-    }
-
     acceptedActivityStatsRef.current = stats;
     setActivityStats(stats);
     setIdActivity((current) =>
-      payload.summaryOnly || activity.length === 0
-        ? mergeActivityItems(current, activity)
-        : activity,
+      payload.summaryOnly ? mergeActivityItems(current, activity) : activity,
     );
     return { activity, stats };
   }
@@ -23864,6 +26130,8 @@ export default function App() {
       return undefined;
     }
 
+    setActivityDataLoading(true);
+    setActivityDataError("");
     if (!silent) {
       setBusyForWorkspace(requestWorkspaceKey, true);
       setStatusForWorkspace(requestWorkspaceKey, {
@@ -23876,6 +26144,8 @@ export default function App() {
       const payload = await fetchGlobalActivityPayload(network, fresh, true);
       const { activity, stats } = applyActivityPayload(payload);
       verifiedActivityReadRef.current = true;
+      setActivityDataLoaded(true);
+      setActivityDataError("");
       if (fresh) {
         clearLastGoodReadWarning(
           requestWorkspaceKey,
@@ -23892,6 +26162,8 @@ export default function App() {
       }
       return payload;
     } catch (error) {
+      const message = errorMessage(error, "Computer log load failed.");
+      setActivityDataError(message);
       const retainedLastGood =
         fresh &&
         verifiedActivityReadRef.current &&
@@ -23904,11 +26176,12 @@ export default function App() {
       if (!silent && !retainedLastGood) {
         setStatusForWorkspace(requestWorkspaceKey, {
           tone: "bad",
-          text: errorMessage(error, "Computer log load failed."),
+          text: message,
         });
       }
       return undefined;
     } finally {
+      setActivityDataLoading(false);
       if (!silent) {
         setBusyForWorkspace(requestWorkspaceKey, false);
       }
@@ -23983,9 +26256,19 @@ export default function App() {
   }
 
   async function refreshLogSurface(silent = true, fresh = false) {
-    const head = await loadLogHead(silent, fresh);
-    await loadLogHistoryPage(0, true);
-    return head;
+    if (logSurfaceRefreshInFlightRef.current) {
+      return logSurfaceRefreshInFlightRef.current;
+    }
+
+    const refreshPromise = (async () => {
+      const head = await loadLogHead(silent, fresh);
+      await loadLogHistoryPage(activityHistoryPageRef.current?.page ?? 0, true);
+      return head;
+    })().finally(() => {
+      logSurfaceRefreshInFlightRef.current = null;
+    });
+    logSurfaceRefreshInFlightRef.current = refreshPromise;
+    return refreshPromise;
   }
 
   async function loadActivityTarget(target = activityQuery) {
@@ -24225,6 +26508,7 @@ export default function App() {
       const readSource = "marketplace";
       const readAttempt = nextProofApiReadAttempt();
       setMarketplaceDataLoading(true);
+      setMarketplaceDataError("");
       if (!silent) {
         setBusyForWorkspace(requestWorkspaceKey, true);
         if (requestIsActive()) {
@@ -24243,6 +26527,7 @@ export default function App() {
         const acceptedRegistryState =
           applyRegistryState(snapshot.registry) ?? snapshot.registry;
         const acceptedTokenState = applyTokenState(snapshot.token, {
+          freshCanonical: fresh,
           scopeKey: tokenStateScopeKey({
             network: "livenet",
             tokenScope: "",
@@ -24250,6 +26535,9 @@ export default function App() {
           }),
         });
         setMarketplaceDataLoaded(true);
+        setMarketplaceDataError("");
+        setRegistryDataLoaded(true);
+        setRegistryDataError("");
         setTokenMarketHistoryRefreshNonce((current) => current + 1);
         if (btcUsdQuote) {
           setTokenBtcUsd(btcUsdQuote);
@@ -24272,7 +26560,7 @@ export default function App() {
           token: acceptedTokenState,
           workFloor: acceptedWorkFloor,
         };
-        acceptedMarketplaceSnapshotRef.current = snapshot;
+        acceptedMarketplaceSnapshotRef.current = acceptedSnapshot;
         if (fresh) {
           clearLastGoodReadWarning(
             requestWorkspaceKey,
@@ -24289,11 +26577,13 @@ export default function App() {
             : "";
           setStatusForWorkspace(requestWorkspaceKey, {
             tone: "good",
-            text: `AMO loaded. ${acceptedTokenState.tokens.length.toLocaleString()} credit${acceptedTokenState.tokens.length === 1 ? "" : "s"}, ${acceptedTokenState.listings.length.toLocaleString()} listing${acceptedTokenState.listings.length === 1 ? "" : "s"}.${floorText}`,
+            text: `AMO loaded. ${tokenDefinitionMetricCount(acceptedTokenState.tokens).toLocaleString()} credit${tokenDefinitionMetricCount(acceptedTokenState.tokens) === 1 ? "" : "s"}, ${acceptedTokenState.listings.length.toLocaleString()} listing${acceptedTokenState.listings.length === 1 ? "" : "s"}.${floorText}`,
           });
         }
         return acceptedSnapshot;
       } catch (error) {
+        const message = errorMessage(error, "AMO summary refresh failed.");
+        setMarketplaceDataError(message);
         const lastGoodSnapshot = acceptedMarketplaceSnapshotRef.current;
         const lastGoodWorkFloor = lastGoodSnapshot?.workFloor;
         if (fresh && requestIsActive() && lastGoodWorkFloor) {
@@ -24320,7 +26610,7 @@ export default function App() {
         if (!silent && !retainedLastGood) {
           setStatusForWorkspace(requestWorkspaceKey, {
             tone: "bad",
-            text: errorMessage(error, "AMO summary refresh failed."),
+            text: message,
           });
         }
         return undefined;
@@ -24381,6 +26671,8 @@ export default function App() {
     const refreshPromise = (async () => {
       const readSource = `bond:${config.tokenId}`;
       const readAttempt = nextProofApiReadAttempt();
+      setBondDataLoading(true);
+      setBondDataError("");
       if (!silent) {
         setBusyForWorkspace(requestWorkspaceKey, true);
         setStatusForWorkspace(requestWorkspaceKey, {
@@ -24401,6 +26693,7 @@ export default function App() {
         }
         const acceptedSnapshot = applyInfinitySummary(snapshot) ?? snapshot;
         const acceptedTokenState = applyTokenState(tokenState, {
+          freshCanonical: fresh,
           scopeKey: tokenStateScopeKey({
             network: "livenet",
             tokenScope: config.tokenId,
@@ -24414,6 +26707,8 @@ export default function App() {
         if (btcUsdQuote) {
           setTokenBtcUsd(btcUsdQuote);
         }
+        setBondDataLoadedTokenId(config.tokenId);
+        setBondDataError("");
         if (fresh) {
           clearLastGoodReadWarning(
             requestWorkspaceKey,
@@ -24429,6 +26724,8 @@ export default function App() {
         }
         return { ...acceptedSnapshot, token: acceptedTokenState };
       } catch (error) {
+        const message = errorMessage(error, `${config.displayName} refresh failed.`);
+        setBondDataError(message);
         const lastGoodSnapshot = acceptedBondSummariesRef.current.get(
           config.tokenId,
         );
@@ -24443,7 +26740,7 @@ export default function App() {
         if (!silent && !retainedLastGood) {
           setStatusForWorkspace(requestWorkspaceKey, {
             tone: "bad",
-            text: errorMessage(error, `${config.displayName} refresh failed.`),
+            text: message,
           });
         }
         return undefined;
@@ -24451,6 +26748,7 @@ export default function App() {
         infinityRefreshInFlightRef.current = null;
         infinityRefreshInFlightFreshRef.current = false;
         infinityRefreshTokenIdRef.current = "";
+        setBondDataLoading(false);
         if (!silent) {
           setBusyForWorkspace(requestWorkspaceKey, false);
         }
@@ -24496,6 +26794,17 @@ export default function App() {
     const tokenScope =
       workTokenMode || activeFolder === "work" ? WORK_TOKEN_ID : "";
     const walletScoped = walletMode || activeFolder === "wallet";
+    if (walletScoped && !address) {
+      setTokenDataLoading(false);
+      setTokenDataError("");
+      if (!silent) {
+        setStatusForWorkspace(requestWorkspaceKey, {
+          tone: "idle",
+          text: "Connect UniSat to load wallet-scoped Credit and WORK data.",
+        });
+      }
+      return undefined;
+    }
     const scopeKey = tokenStateScopeKey({
       address: workSummaryRead ? "" : address,
       network,
@@ -24516,7 +26825,7 @@ export default function App() {
           exactIntegerBigInt(work?.confirmedSupply) ?? state.confirmedSupply,
         )} confirmed WORK, ${holderCount.toLocaleString()} holder${holderCount === 1 ? "" : "s"}.`;
       }
-      return `Credit index loaded. ${state.tokens.length.toLocaleString()} credit${state.tokens.length === 1 ? "" : "s"}, ${state.mints.length.toLocaleString()} mint${state.mints.length === 1 ? "" : "s"}, ${state.transfers.length.toLocaleString()} transfer${state.transfers.length === 1 ? "" : "s"}.`;
+      return `Credit index loaded. ${tokenDefinitionMetricCount(state.tokens).toLocaleString()} credit${tokenDefinitionMetricCount(state.tokens) === 1 ? "" : "s"}, ${state.mints.length.toLocaleString()} mint${state.mints.length === 1 ? "" : "s"}, ${state.transfers.length.toLocaleString()} transfer${state.transfers.length === 1 ? "" : "s"}.`;
     };
 
     const existingRequest = tokenRefreshInFlightRef.current.get(scopeKey);
@@ -24596,7 +26905,10 @@ export default function App() {
             walletScoped,
           );
         }
-        const acceptedState = applyTokenState(state, { scopeKey });
+        const acceptedState = applyTokenState(state, {
+          freshCanonical: fresh,
+          scopeKey,
+        });
         const walletAddress = address;
         const walletTokenScope = walletTransferToken?.tokenId;
         if (
@@ -24646,13 +26958,11 @@ export default function App() {
           isTransientProofApiReadError(error);
         if (requestStillActive() && retainedLastGood && lastGoodState) {
           renderTokenState(lastGoodState, scopeKey);
+          setTokenDataError(message);
           showLastGoodReadWarning(requestWorkspaceKey, readSource, readAttempt, error, {
             label: workSummaryRead ? "WORK" : "ProofOfWork credit",
           });
-        } else if (
-          requestStillActive() &&
-          (!lastGoodState || !silent)
-        ) {
+        } else if (requestStillActive()) {
           setTokenDataError(message);
         }
         if (!silent && requestStillActive() && !retainedLastGood) {
@@ -25002,7 +27312,7 @@ export default function App() {
                 }
               : {
                   tone: "good",
-                  text: `${usedIndexedFallback ? "Credit market loaded from indexed state." : "Credit market loaded."} ${tokenState.tokens.length.toLocaleString()} credit${tokenState.tokens.length === 1 ? "" : "s"}, ${tokenState.listings.length.toLocaleString()} listing${tokenState.listings.length === 1 ? "" : "s"}, ${tokenState.sales.length.toLocaleString()} sale${tokenState.sales.length === 1 ? "" : "s"}.${floorText}`,
+                  text: `${usedIndexedFallback ? "Credit market loaded from indexed state." : "Credit market loaded."} ${tokenDefinitionMetricCount(tokenState.tokens).toLocaleString()} credit${tokenDefinitionMetricCount(tokenState.tokens) === 1 ? "" : "s"}, ${tokenState.listings.length.toLocaleString()} listing${tokenState.listings.length === 1 ? "" : "s"}, ${tokenState.sales.length.toLocaleString()} sale${tokenState.sales.length === 1 ? "" : "s"}.${floorText}`,
                 },
           );
         } else {
@@ -25036,10 +27346,10 @@ export default function App() {
     }
 
     growthRefreshInFlightRef.current = true;
+    setGrowthDataLoading(true);
+    setGrowthDataError("");
     if (!silent) {
       setBusyForWorkspace(requestWorkspaceKey, true);
-    }
-    if (!silent) {
       setStatusForWorkspace(requestWorkspaceKey, {
         tone: "idle",
         text: "Refreshing Growth metrics...",
@@ -25049,24 +27359,13 @@ export default function App() {
     const readAttempt = nextProofApiReadAttempt();
 
     try {
-      const [summaryPayload, btcUsdQuote] = await Promise.all([
+      const [snapshot, btcUsdQuote] = await Promise.all([
         fetchGrowthSummary(fresh),
         fetchBtcUsdPrice(fresh).catch(() => undefined),
       ]);
-      const { activity, registry: registryState, snapshot, token: tokenState } =
-        summaryPayload;
-      applyRegistryState(
-        registryState,
-        activity.length > 0 ? activity : registryState.activity,
-      );
-      applyTokenState(tokenState, {
-        scopeKey: tokenStateScopeKey({
-          network: "livenet",
-          tokenScope: "",
-          walletScoped: false,
-        }),
-      });
       const acceptedSnapshot = applyGrowthSummary(snapshot) ?? snapshot;
+      setGrowthDataLoaded(true);
+      setGrowthDataError("");
       if (btcUsdQuote) {
         setTokenBtcUsd(btcUsdQuote);
       }
@@ -25091,6 +27390,8 @@ export default function App() {
         });
       }
     } catch (error) {
+      const message = errorMessage(error, "Growth metrics refresh failed.");
+      setGrowthDataError(message);
       const lastGoodSnapshot = acceptedGrowthSummaryRef.current;
       const retainedLastGood =
         fresh &&
@@ -25104,11 +27405,12 @@ export default function App() {
       if (!silent && !retainedLastGood) {
         setStatusForWorkspace(requestWorkspaceKey, {
           tone: "bad",
-          text: errorMessage(error, "Growth metrics refresh failed."),
+          text: message,
         });
       }
     } finally {
       growthRefreshInFlightRef.current = false;
+      setGrowthDataLoading(false);
       if (!silent) {
         setBusyForWorkspace(requestWorkspaceKey, false);
       }
@@ -25170,6 +27472,11 @@ export default function App() {
   }
 
   function clearWalletSession() {
+    walletSyncGenerationRef.current += 1;
+    mailRefreshRequestIdRef.current += 1;
+    mailIdentityRef.current = { address: "", network };
+    setRefreshing(false);
+    setCheckingBroadcasts(false);
     setAddress("");
     setInbox([]);
     setChainSent([]);
@@ -25216,6 +27523,9 @@ export default function App() {
 
     try {
       const generation = ++walletSyncGenerationRef.current;
+      mailRefreshRequestIdRef.current += 1;
+      setRefreshing(false);
+      setCheckingBroadcasts(false);
       const accounts = window.unisat.requestAccounts
         ? await window.unisat.requestAccounts()
         : await window.unisat.getAccounts?.();
@@ -25240,6 +27550,12 @@ export default function App() {
         return;
       }
 
+      mailIdentityRef.current = {
+        address: firstAddress,
+        network: mainnetWorkspaceMode
+          ? "livenet"
+          : (walletNetwork ?? network),
+      };
       setAddress(firstAddress);
       setInbox([]);
       setChainSent([]);
@@ -25360,13 +27676,16 @@ export default function App() {
         }
 
         const scanNetwork = walletNetwork ?? network;
+        const mailObservedAt = new Date().toISOString();
         const mailState = await fetchAddressMail(firstAddress, scanNetwork);
         if (generation !== walletSyncGenerationRef.current) {
           return;
         }
         const { inboxMessages, sentMessages } = mailState;
         setInbox(inboxMessages);
-        setChainSent(sentMessages);
+        setChainSent((current) =>
+          mergeObservedSentMessages(current, sentMessages, mailObservedAt),
+        );
         setSelectedKey(selectedInboundKey("inbox", inboxMessages));
         setStatus({
           tone: "good",
@@ -25392,6 +27711,11 @@ export default function App() {
   }
 
   async function disconnectWallet() {
+    walletSyncGenerationRef.current += 1;
+    mailRefreshRequestIdRef.current += 1;
+    mailIdentityRef.current = { address: "", network };
+    setRefreshing(false);
+    setCheckingBroadcasts(false);
     setBusy(true);
     setStatus({ tone: "idle", text: "Disconnecting UniSat..." });
 
@@ -25411,6 +27735,10 @@ export default function App() {
   }
 
   async function chooseNetwork(nextNetwork: BitcoinNetwork) {
+    walletSyncGenerationRef.current += 1;
+    mailRefreshRequestIdRef.current += 1;
+    setRefreshing(false);
+    setCheckingBroadcasts(false);
     if (mainnetWorkspaceMode && nextNetwork !== "livenet") {
       setStatus({
         tone: "bad",
@@ -25420,6 +27748,7 @@ export default function App() {
     }
 
     if (!window.unisat?.switchChain && !window.unisat?.switchNetwork) {
+      mailIdentityRef.current = { address, network: nextNetwork };
       setNetwork(nextNetwork);
       setInbox([]);
       setChainSent([]);
@@ -25451,6 +27780,10 @@ export default function App() {
         ? await window.unisat.getAccounts()
         : [];
       const nextAddress = accounts[0] ?? verifiedAddress;
+      mailIdentityRef.current = {
+        address: nextAddress,
+        network: activeWalletNetwork,
+      };
       setNetwork(activeWalletNetwork);
       setAddress(nextAddress);
       setInbox([]);
@@ -25492,13 +27825,16 @@ export default function App() {
         return;
       }
 
+      const mailObservedAt = new Date().toISOString();
       const mailState = await fetchAddressMail(
         nextAddress,
         activeWalletNetwork,
       );
       const { inboxMessages, sentMessages } = mailState;
       setInbox(inboxMessages);
-      setChainSent(sentMessages);
+      setChainSent((current) =>
+        mergeObservedSentMessages(current, sentMessages, mailObservedAt),
+      );
       setSelectedKey(selectedInboundKey("inbox", inboxMessages));
       setStatus({
         tone: "good",
@@ -25527,6 +27863,11 @@ export default function App() {
       setIdPendingEvents([]);
       setIdSales([]);
       setIdActivity([]);
+      setRegistryDataLoading(false);
+      setRegistryDataLoaded(false);
+      setRegistryDataError(
+        `No ProofOfWork ID registry is configured for ${networkLabel(network)}.`,
+      );
       if (!silent) {
         setStatusForWorkspace(requestWorkspaceKey, {
           tone: "idle",
@@ -25538,6 +27879,7 @@ export default function App() {
 
     if (idRefreshInFlightRef.current) {
       const needsFreshRefresh = fresh && !idRefreshInFlightFreshRef.current;
+      setRegistryDataLoading(true);
       if (!silent) {
         setBusyForWorkspace(requestWorkspaceKey, true);
         setStatusForWorkspace(requestWorkspaceKey, {
@@ -25575,6 +27917,9 @@ export default function App() {
         }
         return state;
       } finally {
+        if (!needsFreshRefresh) {
+          setRegistryDataLoading(false);
+        }
         if (!silent && !needsFreshRefresh) {
           setBusyForWorkspace(requestWorkspaceKey, false);
         }
@@ -25584,6 +27929,8 @@ export default function App() {
     const refreshPromise = (async () => {
       const readSource = "registry";
       const readAttempt = nextProofApiReadAttempt();
+      setRegistryDataLoading(true);
+      setRegistryDataError("");
       if (!silent) {
         setBusyForWorkspace(requestWorkspaceKey, true);
       }
@@ -25621,6 +27968,8 @@ export default function App() {
         }
         const acceptedState = applyRegistryState(state, activity) ?? state;
         verifiedRegistryReadRef.current = true;
+        setRegistryDataLoaded(true);
+        setRegistryDataError("");
         if (fresh) {
           clearLastGoodReadWarning(
             requestWorkspaceKey,
@@ -25657,6 +28006,8 @@ export default function App() {
         }
         return acceptedState;
       } catch (error) {
+        const message = errorMessage(error, "ID registry scan failed.");
+        setRegistryDataError(message);
         const retainedLastGood =
           fresh &&
           verifiedRegistryReadRef.current &&
@@ -25667,13 +28018,14 @@ export default function App() {
         if (!silent && !retainedLastGood) {
           setStatusForWorkspace(requestWorkspaceKey, {
             tone: "bad",
-            text: errorMessage(error, "ID registry scan failed."),
+            text: message,
           });
         }
         return undefined;
       } finally {
         idRefreshInFlightRef.current = null;
         idRefreshInFlightFreshRef.current = false;
+        setRegistryDataLoading(false);
         if (!silent) {
           setBusyForWorkspace(requestWorkspaceKey, false);
         }
@@ -27137,6 +29489,9 @@ export default function App() {
 
     let resolvedRecipients = recipientResolution;
     let resolvedCcRecipients = ccRecipientResolution;
+    let persistSignedMailFailure:
+      | ((error: unknown) => SignedTransactionBroadcastFailureEvidence | undefined)
+      | undefined;
     const recipientInput = recipient.trim();
     const ccRecipientInput = ccRecipient.trim();
     const shouldResolveId =
@@ -27415,6 +29770,79 @@ export default function App() {
         text: `Waiting for UniSat signature. Fee estimate: ${paymentPsbt.feeSats.toLocaleString()} proofs.`,
       });
 
+      persistSignedMailFailure = (error) => {
+        const evidence = signedTransactionBroadcastFailureEvidence(error);
+        if (!evidence) return undefined;
+        const createdAt = new Date().toISOString();
+        const sentMessage: SentMessage = {
+          amountSats: totalRecipientSats(mailRecipients),
+          attachedCredits:
+            attachedWorkCredits.length > 0 ? attachedWorkCredits : undefined,
+          attachment,
+          ccRecipients: ccRecipients.length > 0 ? ccRecipients : undefined,
+          createdAt,
+          failureReason: evidence.failureReason,
+          feeRate,
+          from: address,
+          lastCheckedAt: createdAt,
+          memo,
+          network,
+          parentTxid: replyParentTxid,
+          recipients: mailRecipients,
+          replyTo: address,
+          status: evidence.status,
+          subject: normalizeSubject(subject) || undefined,
+          to: recipientSummary(toRecipients, recipientInput),
+          toRecipients,
+          txid: evidence.localTxid,
+        };
+        const finalizedTransfers = pendingWorkTransfers.map((transfer) => ({
+          ...transfer,
+          createdAt,
+          txid: evidence.localTxid,
+        }));
+        let lifecycle: LocalTokenBroadcastOverlay | undefined;
+        if (finalizedTransfers.length > 0) {
+          lifecycle = recordLocalTokenBroadcastOverlay(
+            {
+              createdAt,
+              initiatorAddress: address,
+              network,
+              transfers: finalizedTransfers,
+              txid: evidence.localTxid,
+            },
+            evidence,
+          );
+        }
+        setAllSent((current) => {
+          const next = mergeSentMessages([sentMessage, ...current]);
+          allSentRef.current = next;
+          saveSentMessages(next);
+          return next;
+        });
+        if (evidence.status === "unknown" && lifecycle) {
+          setTokenTransfers((current) => {
+            const additions = finalizedTransfers.map((transfer) =>
+              localTokenLifecycleProjection(transfer, lifecycle),
+            );
+            const existingKeys = new Set(
+              current.map(tokenTransferSpendabilityKey).filter(Boolean),
+            );
+            return [
+              ...additions.filter(
+                (transfer) =>
+                  !existingKeys.has(tokenTransferSpendabilityKey(transfer)),
+              ),
+              ...current,
+            ];
+          });
+        }
+        setActiveFolder("outbox");
+        setComposeOpen(false);
+        setSelectedKey(`sent-${network}-${evidence.localTxid}`);
+        return evidence;
+      };
+
       const txid = await signAndBroadcastPsbt({
         beforeBroadcast: preparedWorkAttachmentMode
           ? async () => {
@@ -27478,6 +29906,15 @@ export default function App() {
           txid,
         }),
       );
+      if (finalizedPendingWorkTransfers.length > 0) {
+        recordLocalTokenBroadcastOverlay({
+          createdAt,
+          initiatorAddress: address,
+          network,
+          transfers: finalizedPendingWorkTransfers,
+          txid,
+        });
+      }
 
       clearDraft(address, network);
       setSavedDraft(undefined);
@@ -27521,9 +29958,12 @@ export default function App() {
         void refreshToken(true);
       }
     } catch (error) {
+      const evidence = persistSignedMailFailure?.(error);
       setStatus({
         tone: "bad",
-        text: errorMessage(error, "Transaction failed."),
+        text: evidence
+          ? `${evidence.failureReason} The signed transaction is retained in Outbox as ${evidence.status}.`
+          : errorMessage(error, "Transaction failed."),
       });
     } finally {
       mailSendInFlightRef.current = false;
@@ -27569,6 +30009,9 @@ export default function App() {
     }
 
     let resolvedRecipient = infinityBondResolution;
+    let persistSignedBondFailure:
+      | ((error: unknown) => SignedTransactionBroadcastFailureEvidence | undefined)
+      | undefined;
     setBusy(true);
     setStatus({
       tone: "idle",
@@ -27769,6 +30212,107 @@ export default function App() {
         text: `Waiting for UniSat signature. Fee estimate: ${paymentPsbt.feeSats.toLocaleString()} proofs.`,
       });
 
+      persistSignedBondFailure = (error) => {
+        const evidence = signedTransactionBroadcastFailureEvidence(error);
+        if (!evidence) return undefined;
+        const createdAt = new Date().toISOString();
+        const mailRecipient: MailRecipient = {
+          address: resolvedRecipient.paymentAddress,
+          amountSats: infinityBondAmountValue,
+          display: resolvedRecipient.isId
+            ? resolvedRecipient.displayRecipient
+            : resolvedRecipient.paymentAddress,
+          id: resolvedRecipient.id,
+        };
+        const sentMessage: SentMessage = {
+          amountSats: infinityBondAmountValue,
+          attachedCredits:
+            attachedWorkCredits.length > 0 ? attachedWorkCredits : undefined,
+          createdAt,
+          failureReason: evidence.failureReason,
+          feeRate,
+          from: address,
+          lastCheckedAt: createdAt,
+          memo: activeBondConfig.memo,
+          network: "livenet",
+          recipients: [mailRecipient],
+          replyTo: address,
+          status: evidence.status,
+          subject: activeBondConfig.subject,
+          to: mailRecipient.display,
+          txid: evidence.localTxid,
+        };
+        const pendingMint: PowTokenMint = {
+          amount: infinityBondAmountValue,
+          confirmed: false,
+          createdAt,
+          dataBytes: infinityBondBytes,
+          minterAddress: mailRecipient.address,
+          network: "livenet",
+          paidSats: infinityBondAmountValue,
+          registryAddress:
+            activeBondSummary?.registryAddress ||
+            activeBondTokenDefinition?.registryAddress ||
+            "",
+          ticker: activeBondConfig.ticker,
+          tokenId: activeBondConfig.tokenId,
+          txid: evidence.localTxid,
+        };
+        const pendingWorkTransfer: PowTokenTransfer | undefined =
+          attachedWorkCredits.length > 0
+            ? {
+                amount: attachedWorkCredits[0].amount,
+                amountAtoms: attachedWorkCredits[0].amountAtoms,
+                amountSubatoms: attachedWorkCredits[0].amountSubatoms,
+                confirmed: false,
+                createdAt,
+                dataBytes: dataCarrierBytesForPayload(attachedWorkPayloads[0]),
+                network: "livenet",
+                paidSats: TOKEN_MIN_MUTATION_PRICE_SATS,
+                recipientAddress: mailRecipient.address,
+                registryAddress: WORK_TOKEN_REGISTRY_ADDRESS,
+                senderAddress: address,
+                ticker: WORK_TOKEN_TICKER,
+                tokenId: WORK_TOKEN_ID,
+                txid: evidence.localTxid,
+              }
+            : undefined;
+        const lifecycle = recordLocalTokenBroadcastOverlay(
+          {
+            createdAt,
+            initiatorAddress: address,
+            mints: [pendingMint],
+            network: "livenet",
+            transfers: pendingWorkTransfer ? [pendingWorkTransfer] : [],
+            txid: evidence.localTxid,
+          },
+          evidence,
+        );
+        setAllSent((current) => {
+          const next = mergeSentMessages([sentMessage, ...current]);
+          allSentRef.current = next;
+          saveSentMessages(next);
+          return next;
+        });
+        if (evidence.status === "unknown") {
+          setTokenMints((current) => [
+            localTokenLifecycleProjection(pendingMint, lifecycle),
+            ...current.filter((mint) => mint.txid !== evidence.localTxid),
+          ]);
+          if (pendingWorkTransfer) {
+            setTokenTransfers((current) => [
+              localTokenLifecycleProjection(pendingWorkTransfer, lifecycle),
+              ...current.filter(
+                (transfer) =>
+                  transfer.txid !== evidence.localTxid ||
+                  transfer.tokenId !== WORK_TOKEN_ID,
+              ),
+            ]);
+          }
+        }
+        return evidence;
+      };
+
       const txid = await signAndBroadcastPsbt({
         beforeBroadcast: preparedBondWorkMode
           ? async () => {
@@ -27863,6 +30407,15 @@ export default function App() {
             }
           : undefined;
 
+      recordLocalTokenBroadcastOverlay({
+        createdAt,
+        initiatorAddress: address,
+        mints: [pendingMint],
+        network: "livenet",
+        transfers: pendingWorkTransfer ? [pendingWorkTransfer] : [],
+        txid,
+      });
+
       setAllSent((current) =>
         current.some((message) => message.txid === txid)
           ? current
@@ -27907,9 +30460,12 @@ export default function App() {
       }
       void refreshInfinity(true, true, activeBondConfig);
     } catch (error) {
+      const evidence = persistSignedBondFailure?.(error);
       setStatus({
         tone: "bad",
-        text: errorMessage(error, `${activeBondConfig.displayName} failed.`),
+        text: evidence
+          ? `${evidence.failureReason} The signed ${activeBondConfig.displayName} is retained as ${evidence.status}.`
+          : errorMessage(error, `${activeBondConfig.displayName} failed.`),
       });
     } finally {
       setBusy(false);
@@ -27922,6 +30478,19 @@ export default function App() {
       return;
     }
 
+    const requestIdentity: MailRefreshRequestIdentity = {
+      address,
+      generation: walletSyncGenerationRef.current,
+      network,
+      requestId: ++mailRefreshRequestIdRef.current,
+    };
+    const ownsRequest = () =>
+      mailRefreshRequestIsCurrent(requestIdentity, {
+        ...mailIdentityRef.current,
+        generation: walletSyncGenerationRef.current,
+        requestId: mailRefreshRequestIdRef.current,
+      });
+
     setBusy(true);
     setRefreshing(true);
     setCheckingBroadcasts(true);
@@ -27931,23 +30500,33 @@ export default function App() {
     });
 
     try {
+      const mailObservedAt = new Date().toISOString();
       const mailState = await fetchAddressMail(address, network, true);
+      if (!ownsRequest()) return;
       const { inboxMessages, sentMessages } = mailState;
       const targets = broadcastTargetsFor(
         address,
         network,
         allSentRef.current,
         sentMessages,
+        true,
       );
       const summary = targets.length
-        ? await checkBroadcastTargets(targets)
+        ? await checkMailBroadcastTargets(targets)
         : undefined;
+      if (!ownsRequest()) return;
       const checkedSentMessages = summary
         ? applyBroadcastCheckResults(sentMessages, summary)
         : sentMessages;
 
       setInbox(inboxMessages);
-      setChainSent(checkedSentMessages);
+      setChainSent((current) =>
+        mergeObservedSentMessages(
+          current,
+          checkedSentMessages,
+          mailObservedAt,
+        ),
+      );
       if (summary) {
         setAllSent((current) => applyBroadcastCheckResults(current, summary));
       }
@@ -27958,18 +30537,20 @@ export default function App() {
       }
       setSelectedKey(selectedInboundKey(nextFolder, inboxMessages));
       setStatus({
-        tone:
-          summary && summary.failed === summary.results.length ? "bad" : "good",
+        tone: summary ? broadcastCheckSummaryTone(summary) : "good",
         text: `Refreshed. ${mailboxSummary(inboxMessages, checkedSentMessages)}${
           summary ? `. ${broadcastCheckSummaryText(summary)}` : ""
         }.`,
       });
     } catch (error) {
+      if (!ownsRequest()) return;
       setStatus({ tone: "bad", text: errorMessage(error, "Refresh failed.") });
     } finally {
-      setCheckingBroadcasts(false);
-      setRefreshing(false);
-      setBusy(false);
+      if (ownsRequest()) {
+        setCheckingBroadcasts(false);
+        setRefreshing(false);
+        setBusy(false);
+      }
     }
   }
 
@@ -28038,6 +30619,9 @@ export default function App() {
     setTokenAction("create");
     setBusy(true);
     setStatus({ tone: "idle", text: `Creating ${ticker} credit...` });
+    let signedFailureProjection:
+      | ((txid: string, createdAt: string) => LocalTokenBroadcastOverlayInput)
+      | undefined;
 
     try {
       await ensureWalletNetwork(window.unisat, "livenet", address);
@@ -28075,6 +30659,28 @@ export default function App() {
         return;
       }
 
+      signedFailureProjection = (txid, createdAt) => ({
+        createdAt,
+        definitions: [
+          {
+            confirmed: false,
+            createdAt,
+            creatorAddress: address,
+            creationFeeSats: TOKEN_CREATION_PRICE_SATS,
+            maxSupply,
+            mintAmount,
+            mintPriceSats,
+            network: "livenet",
+            registryAddress,
+            ticker,
+            tokenId: txid,
+            txid,
+          },
+        ],
+        initiatorAddress: address,
+        network: "livenet",
+        txid,
+      });
       const txid = await signAndBroadcastPsbt({
         inputCount: paymentPsbt.inputCount,
         network: "livenet",
@@ -28096,12 +30702,19 @@ export default function App() {
         txid,
       };
 
+      recordLocalTokenBroadcastOverlay({
+        createdAt: token.createdAt,
+        definitions: [token],
+        initiatorAddress: address,
+        network: "livenet",
+        txid,
+      });
+
       setTokenDefinitions((current) =>
         current.some((item) => item.tokenId === txid)
           ? current
           : [token, ...current],
       );
-      setTokenCreationSats((current) => current + TOKEN_CREATION_PRICE_SATS);
       setTokenSelectedId(txid);
       setStatus({
         tone: "good",
@@ -28115,9 +30728,14 @@ export default function App() {
       );
       setTokenSelectedId(txid);
     } catch (error) {
+      const evidence = signedFailureProjection
+        ? recordSignedTokenBroadcastFailure(error, signedFailureProjection)
+        : undefined;
       setStatus({
         tone: "bad",
-        text: errorMessage(error, "Credit creation failed."),
+        text: evidence
+          ? `${evidence.failureReason} The signed credit creation is retained as ${evidence.status}.`
+          : errorMessage(error, "Credit creation failed."),
       });
     } finally {
       setTokenAction("");
@@ -28226,33 +30844,57 @@ export default function App() {
           tone: "idle",
           text: `Waiting for UniSat signature ${index + 1}/${total}. Fee estimate: ${paymentPsbt.feeSats.toLocaleString()} proofs.`,
         });
-        const broadcast = await signAndBroadcastPsbtDetailed({
-          beforeBroadcast:
-            workMint && preparedWorkMintMode
-              ? async () => {
-                  await freshWorkWriteMode(preparedWorkMintMode);
-                }
-              : undefined,
-          broadcastStrategy: CHAINED_MINT_BROADCAST_STRATEGY,
-          inputCount: paymentPsbt.inputCount,
-          network: "livenet",
-          psbtHex: paymentPsbt.psbtHex,
-          wallet,
-        });
-        const txid = broadcast.txid;
-        const mint: PowTokenMint = {
+        const mintProjection = (txid: string, createdAt: string) => ({
           amount: token.mintAmount,
           confirmed: false,
-          createdAt: new Date().toISOString(),
+          createdAt,
           dataBytes: mintPayloadBytes,
           minterAddress: address,
-          network: "livenet",
+          network: "livenet" as const,
           paidSats: token.mintPriceSats,
           registryAddress: token.registryAddress,
           ticker: token.ticker,
           tokenId: token.tokenId,
           txid,
-        };
+        });
+        let broadcast: TransactionBroadcastResult;
+        try {
+          broadcast = await signAndBroadcastPsbtDetailed({
+            beforeBroadcast:
+              workMint && preparedWorkMintMode
+                ? async () => {
+                    await freshWorkWriteMode(preparedWorkMintMode);
+                  }
+                : undefined,
+            broadcastStrategy: CHAINED_MINT_BROADCAST_STRATEGY,
+            inputCount: paymentPsbt.inputCount,
+            network: "livenet",
+            psbtHex: paymentPsbt.psbtHex,
+            wallet,
+          });
+        } catch (error) {
+          recordSignedTokenBroadcastFailure(error, (txid, createdAt) => ({
+            createdAt,
+            initiatorAddress: address,
+            mints: [mintProjection(txid, createdAt)],
+            network: "livenet",
+            txid,
+          }));
+          throw error;
+        }
+        const txid = broadcast.txid;
+        const mint: PowTokenMint = mintProjection(
+          txid,
+          new Date().toISOString(),
+        );
+
+        recordLocalTokenBroadcastOverlay({
+          createdAt: mint.createdAt,
+          initiatorAddress: address,
+          mints: [mint],
+          network: "livenet",
+          txid,
+        });
 
         setTokenMints((current) =>
           current.some((item) => item.txid === txid)
@@ -28331,6 +30973,14 @@ export default function App() {
 
     if (network !== "livenet" || !mintTarget) {
       setStatus({ tone: "bad", text: "Select a mainnet credit first." });
+      return undefined;
+    }
+
+    if (!tokenDefinitionAllowsLifecycleActions(mintTarget)) {
+      setStatus({
+        tone: "bad",
+        text: "Wait for this local credit definition to return to a verified pending state or finish canonical indexing before minting.",
+      });
       return undefined;
     }
 
@@ -28556,6 +31206,9 @@ export default function App() {
       tone: "idle",
       text: `Transferring ${parsedAmount.display} ${token.ticker}...`,
     });
+    let signedFailureProjection:
+      | ((txid: string, createdAt: string) => LocalTokenBroadcastOverlayInput)
+      | undefined;
 
     try {
       await ensureWalletNetwork(window.unisat, "livenet", address);
@@ -28653,6 +31306,30 @@ export default function App() {
       }
       await assertActiveWalletAddress(window.unisat, address);
 
+      signedFailureProjection = (txid, createdAt) => ({
+        createdAt,
+        initiatorAddress: address,
+        network: "livenet",
+        transfers: [
+          {
+            amount: parsedAmount.amount,
+            amountAtoms: parsedAmount.amountAtoms,
+            amountSubatoms: parsedAmount.amountSubatoms,
+            confirmed: false,
+            createdAt,
+            dataBytes: dataCarrierBytesForPayload(payload),
+            network: "livenet",
+            paidSats: TOKEN_MIN_MUTATION_PRICE_SATS,
+            recipientAddress,
+            registryAddress: token.registryAddress,
+            senderAddress: address,
+            ticker: token.ticker,
+            tokenId: token.tokenId,
+            txid,
+          },
+        ],
+        txid,
+      });
       const txid = await signAndBroadcastPsbt({
         beforeBroadcast:
           isWorkToken(token) && preparedWorkMode
@@ -28682,6 +31359,14 @@ export default function App() {
         txid,
       };
 
+      recordLocalTokenBroadcastOverlay({
+        createdAt: transfer.createdAt,
+        initiatorAddress: address,
+        network: "livenet",
+        transfers: [transfer],
+        txid,
+      });
+
       setTokenTransfers((current) =>
         current.some((item) => item.txid === txid)
           ? current
@@ -28695,9 +31380,14 @@ export default function App() {
       void refreshToken(true);
       void refreshTokenTransferFundingReadiness().catch(() => undefined);
     } catch (error) {
+      const evidence = signedFailureProjection
+        ? recordSignedTokenBroadcastFailure(error, signedFailureProjection)
+        : undefined;
       setStatus({
         tone: "bad",
-        text: errorMessage(error, "Credit transfer failed."),
+        text: evidence
+          ? `${evidence.failureReason} The signed credit transfer is retained as ${evidence.status}.`
+          : errorMessage(error, "Credit transfer failed."),
       });
     } finally {
       setTokenAction("");
@@ -28792,6 +31482,9 @@ export default function App() {
         ? `Preparing ${workAmoProofFaceLabel(tokenListFaceProofs)} AMO ${workV8TermsSelected ? "V8" : "V6"} unit...`
         : `Listing ${parsedAmount!.display} ${token.ticker}...`,
     });
+    let signedFailureProjection:
+      | ((txid: string, createdAt: string) => LocalTokenBroadcastOverlayInput)
+      | undefined;
 
     try {
       await ensureWalletNetwork(window.unisat, "livenet", address);
@@ -29007,6 +31700,34 @@ export default function App() {
       }
 
       await assertActiveWalletAddress(window.unisat, address);
+      signedFailureProjection = (txid, createdAt) => ({
+        createdAt,
+        initiatorAddress: address,
+        listings: [
+          {
+            amount: workListing ? 0 : parsedAmount!.amount,
+            amountAtoms: workListing ? undefined : parsedAmount!.amountAtoms,
+            amountSubatoms:
+              workListing ? undefined : parsedAmount!.amountSubatoms,
+            confirmed: false,
+            createdAt,
+            dataBytes: dataCarrierBytesForPayload(payload),
+            estimate: workEstimate,
+            listingId: txid,
+            network: "livenet",
+            priceSats: workListing ? 0 : priceSats,
+            registryAddress: latestToken.registryAddress,
+            saleAuthorization,
+            sellerAddress: address,
+            ticker: latestToken.ticker,
+            tokenId: latestToken.tokenId,
+            unitFaceProofs: workListing ? tokenListFaceProofs : undefined,
+            workAmoEstimate: workEstimate,
+          },
+        ],
+        network: "livenet",
+        txid,
+      });
       const txid = await signAndBroadcastPsbt({
         beforeBroadcast:
           workListing && preparedWorkListingMode
@@ -29041,6 +31762,13 @@ export default function App() {
           : undefined,
         workAmoEstimate: workEstimate,
       };
+      recordLocalTokenBroadcastOverlay({
+        createdAt: listing.createdAt,
+        initiatorAddress: address,
+        listings: [listing],
+        network: "livenet",
+        txid,
+      });
       setTokenListings((current) =>
         current.some((item) => item.listingId === txid)
           ? current
@@ -29054,9 +31782,14 @@ export default function App() {
       });
       void refreshToken(true, true);
     } catch (error) {
+      const evidence = signedFailureProjection
+        ? recordSignedTokenBroadcastFailure(error, signedFailureProjection)
+        : undefined;
       setStatus({
         tone: "bad",
-        text: errorMessage(error, "Credit listing failed."),
+        text: evidence
+          ? `${evidence.failureReason} The signed credit listing is retained as ${evidence.status}.`
+          : errorMessage(error, "Credit listing failed."),
       });
     } finally {
       setTokenAction("");
@@ -29089,6 +31822,9 @@ export default function App() {
     setTokenAction("seal");
     setBusy(true);
     setStatus({ tone: "idle", text: "Sealing credit listing..." });
+    let signedFailureProjection:
+      | ((txid: string, createdAt: string) => LocalTokenBroadcastOverlayInput)
+      | undefined;
 
     try {
       await ensureWalletNetwork(window.unisat, "livenet", address);
@@ -29162,6 +31898,22 @@ export default function App() {
       }
 
       await assertActiveWalletAddress(window.unisat, address);
+      signedFailureProjection = (txid, createdAt) => ({
+        createdAt,
+        initiatorAddress: address,
+        network: "livenet",
+        seals: [
+          {
+            listingId: listing.listingId,
+            network: listing.network,
+            sealAt: createdAt,
+            sealTxid: txid,
+            sellerAddress: listing.sellerAddress,
+            tokenId: listing.tokenId,
+          },
+        ],
+        txid,
+      });
       const txid = await signAndBroadcastPsbt({
         beforeBroadcast: preparedWorkSettlementMode
           ? async () => {
@@ -29180,15 +31932,38 @@ export default function App() {
         psbtHex: paymentPsbt.psbtHex,
         wallet: window.unisat,
       });
-      savePendingTokenListingSeal(listing, sealedAuthorization, txid);
+      const sealAt = new Date().toISOString();
+      const pendingSeal = normalizePendingTokenListingSeal({
+        listingId: listing.listingId,
+        network: listing.network,
+        saleAuthorization: sealedAuthorization,
+        sealAt,
+        sealTxid: txid,
+        sellerAddress: listing.sellerAddress,
+        tokenId: listing.tokenId,
+      });
+      if (!pendingSeal) {
+        throw new Error(
+          "The signed sale-ticket seal could not be tracked safely. Refresh before continuing.",
+        );
+      }
+      recordLocalTokenBroadcastOverlay({
+        createdAt: sealAt,
+        initiatorAddress: address,
+        network: "livenet",
+        seals: [pendingSeal],
+        txid,
+      });
       setTokenListings((current) =>
         current.map((item) =>
           item.listingId === listing.listingId
             ? {
                 ...item,
-                saleAuthorization: sealedAuthorization,
-                sealAt: new Date().toISOString(),
+                saleAuthorization: item.saleAuthorization,
+                sealAt,
                 sealConfirmed: false,
+                sealLifecycleCheckedAt: sealAt,
+                sealLifecycleStatus: "pending",
                 sealTxid: txid,
               }
             : item,
@@ -29200,9 +31975,14 @@ export default function App() {
       });
       void refreshToken(true, true);
     } catch (error) {
+      const evidence = signedFailureProjection
+        ? recordSignedTokenBroadcastFailure(error, signedFailureProjection)
+        : undefined;
       setStatus({
         tone: "bad",
-        text: errorMessage(error, "Credit listing seal failed."),
+        text: evidence
+          ? `${evidence.failureReason} The signed credit seal is retained as ${evidence.status}.`
+          : errorMessage(error, "Credit listing seal failed."),
       });
     } finally {
       setTokenAction("");
@@ -29235,6 +32015,9 @@ export default function App() {
     setTokenAction("delist");
     setBusy(true);
     setStatus({ tone: "idle", text: "Delisting credit listing..." });
+    let signedFailureProjection:
+      | ((txid: string, createdAt: string) => LocalTokenBroadcastOverlayInput)
+      | undefined;
 
     try {
       await ensureWalletNetwork(window.unisat, "livenet", address);
@@ -29289,6 +32072,20 @@ export default function App() {
         return;
       }
 
+      signedFailureProjection = (txid, createdAt) => ({
+        closedListings: [
+          {
+            ...listing,
+            closedAt: createdAt,
+            closedConfirmed: false,
+            closedTxid: txid,
+          },
+        ],
+        createdAt,
+        initiatorAddress: address,
+        network: "livenet",
+        txid,
+      });
       const txid = await signAndBroadcastPsbt({
         beforeBroadcast: preparedWorkSettlementMode
           ? async () => {
@@ -29310,16 +32107,23 @@ export default function App() {
         signingAddress: address,
         wallet: window.unisat,
       });
+      const closedListing: PowTokenClosedListing = {
+        ...listing,
+        closedAt: new Date().toISOString(),
+        closedConfirmed: false,
+        closedTxid: txid,
+      };
+      recordLocalTokenBroadcastOverlay({
+        closedListings: [closedListing],
+        createdAt: closedListing.closedAt,
+        initiatorAddress: address,
+        network: "livenet",
+        txid,
+      });
       setTokenListings((current) =>
         current.filter((item) => item.listingId !== listing.listingId),
       );
       setTokenClosedListings((current) => {
-        const closedListing: PowTokenClosedListing = {
-          ...listing,
-          closedAt: new Date().toISOString(),
-          closedConfirmed: false,
-          closedTxid: txid,
-        };
         return current.some(
           (item) =>
             item.listingId === closedListing.listingId &&
@@ -29334,9 +32138,14 @@ export default function App() {
       });
       void refreshToken(true, true);
     } catch (error) {
+      const evidence = signedFailureProjection
+        ? recordSignedTokenBroadcastFailure(error, signedFailureProjection)
+        : undefined;
       setStatus({
         tone: "bad",
-        text: errorMessage(error, "Credit delist failed."),
+        text: evidence
+          ? `${evidence.failureReason} The signed credit delisting is retained as ${evidence.status}.`
+          : errorMessage(error, "Credit delist failed."),
       });
     } finally {
       setTokenAction("");
@@ -29405,6 +32214,9 @@ export default function App() {
         listing.amountAtoms,
       )} ${listing.ticker}...`,
     });
+    let signedFailureProjection:
+      | ((txid: string, createdAt: string) => LocalTokenBroadcastOverlayInput)
+      | undefined;
 
     try {
       await ensureWalletNetwork(window.unisat, "livenet", address);
@@ -29475,6 +32287,42 @@ export default function App() {
       }
 
       await assertActiveWalletAddress(window.unisat, address);
+      signedFailureProjection = (txid, createdAt) => {
+        const sale: PowTokenSale = {
+          amount: listing.amount,
+          amountAtoms: listing.amountAtoms,
+          amountSubatoms: listing.amountSubatoms,
+          buyerAddress: address,
+          confirmed: false,
+          createdAt,
+          listingId: listing.listingId,
+          network: "livenet",
+          paidSats:
+            tokenSellerPaymentRequiredSats(listing) +
+            TOKEN_MIN_MUTATION_PRICE_SATS,
+          priceSats: listing.priceSats,
+          registryAddress: listing.registryAddress,
+          sellerAddress: listing.sellerAddress,
+          ticker: listing.ticker,
+          tokenId: listing.tokenId,
+          txid,
+        };
+        return {
+          closedListings: [
+            {
+              ...listing,
+              closedAt: createdAt,
+              closedConfirmed: false,
+              closedTxid: txid,
+            },
+          ],
+          createdAt,
+          initiatorAddress: address,
+          network: "livenet",
+          sales: [sale],
+          txid,
+        };
+      };
       const txid = await signAndBroadcastPsbt({
         beforeBroadcast: preparedWorkSettlementMode
           ? async () => {
@@ -29514,16 +32362,24 @@ export default function App() {
         tokenId: listing.tokenId,
         txid,
       };
+      const closedListing: PowTokenClosedListing = {
+        ...listing,
+        closedAt: sale.createdAt,
+        closedConfirmed: false,
+        closedTxid: txid,
+      };
+      recordLocalTokenBroadcastOverlay({
+        closedListings: [closedListing],
+        createdAt: sale.createdAt,
+        initiatorAddress: address,
+        network: "livenet",
+        sales: [sale],
+        txid,
+      });
       setTokenListings((current) =>
         current.filter((item) => item.listingId !== listing.listingId),
       );
       setTokenClosedListings((current) => {
-        const closedListing: PowTokenClosedListing = {
-          ...listing,
-          closedAt: sale.createdAt,
-          closedConfirmed: false,
-          closedTxid: txid,
-        };
         return current.some(
           (item) =>
             item.listingId === closedListing.listingId &&
@@ -29556,9 +32412,14 @@ export default function App() {
       });
       void refreshToken(true, true);
     } catch (error) {
+      const evidence = signedFailureProjection
+        ? recordSignedTokenBroadcastFailure(error, signedFailureProjection)
+        : undefined;
       setStatus({
         tone: "bad",
-        text: errorMessage(error, "Credit purchase failed."),
+        text: evidence
+          ? `${evidence.failureReason} The signed credit purchase is retained as ${evidence.status}.`
+          : errorMessage(error, "Credit purchase failed."),
       });
     } finally {
       setTokenAction("");
@@ -29855,6 +32716,14 @@ export default function App() {
       setStatus({
         tone: "bad",
         text: "Select a live credit, connect UniSat, and resolve any mint block before starting the assistant.",
+      });
+      return;
+    }
+
+    if (!tokenDefinitionAllowsLifecycleActions(targetToken)) {
+      setStatus({
+        tone: "bad",
+        text: "Wait for this local credit definition to return to a verified pending state or finish canonical indexing before starting the mint assistant.",
       });
       return;
     }
@@ -30347,6 +33216,54 @@ export default function App() {
       ? ({ tone: "idle", text: warning.text } satisfies WorkspaceStatus)
       : undefined;
   })();
+  const registryReadState = canonicalReadState({
+    error: registryDataError,
+    loaded: registryDataLoaded,
+    loading: registryDataLoading,
+  });
+  const tokenReadState = canonicalReadState({
+    error: tokenDataError,
+    loaded: activeTokenStateLoaded,
+    loading: tokenDataLoading,
+  });
+  const walletReadState = canonicalReadState({
+    disconnected: !address,
+    error: tokenDataError,
+    loaded: activeTokenStateLoaded,
+    loading: tokenDataLoading,
+  });
+  const marketplaceReadState = canonicalReadState({
+    error: marketplaceDataError,
+    loaded: marketplaceDataLoaded,
+    loading: marketplaceDataLoading,
+  });
+  const bondReadState = canonicalReadState({
+    error: bondDataError,
+    loaded:
+      bondDataLoadedTokenId === activeBondConfig.tokenId ||
+      Boolean(activeBondSummary),
+    loading: bondDataLoading,
+  });
+  const infinityReadState = canonicalReadState({
+    error: bondDataError,
+    loaded: Boolean(infinityBondSummary),
+    loading: bondDataLoading,
+  });
+  const inceptionReadState = canonicalReadState({
+    error: bondDataError,
+    loaded: Boolean(inceptionBondSummary),
+    loading: bondDataLoading,
+  });
+  const activityReadState = canonicalReadState({
+    error: activityDataError,
+    loaded: activityDataLoaded,
+    loading: activityDataLoading,
+  });
+  const growthReadState = canonicalReadState({
+    error: growthDataError,
+    loaded: growthDataLoaded || Boolean(growthSummary),
+    loading: growthDataLoading,
+  });
 
   if (idLaunchMode) {
     return (
@@ -30367,6 +33284,7 @@ export default function App() {
           lastRegisteredId?.network === "livenet" ? lastRegisteredId : undefined
         }
         registryAddress={registryAddressForNetwork("livenet")}
+        readState={registryReadState}
         registryRecords={idRegistry.filter(
           (record) => record.network === "livenet",
         )}
@@ -30410,6 +33328,7 @@ export default function App() {
           network={network}
           onNetworkChange={chooseNetwork}
           publishListing={publishIdListing}
+          readState={marketplaceReadState}
           pendingEvents={idPendingEvents.filter(
             (event) => event.network === "livenet",
           )}
@@ -30507,16 +33426,24 @@ export default function App() {
         listSpendableBalance={walletSpendableTokenBalance}
         network={network}
         onNetworkChange={chooseNetwork}
-        onRefresh={() =>
+        onRefresh={() => {
+          if (!address) {
+            setStatus({
+              tone: "idle",
+              text: "Connect UniSat to load wallet-scoped Credit and WORK data.",
+            });
+            return;
+          }
           void refreshTokenMarketData({
             includeWorkFloor: true,
             label: "wallet market data",
-          })
-        }
+          });
+        }}
         prepareTransferCount={tokenPrepareTransferCount}
         prepareTransferFeeRate={tokenPrepareTransferFeeRate}
         prepareTransferFeeReserveSats={tokenPrepareTransferFeeReserveSats}
         prepareTransferUtxos={prepareTokenTransferUtxos}
+        readState={walletReadState}
         preparingTransferUtxos={tokenAction === "split-transfer"}
         refreshTransferFundingReadiness={() =>
           void refreshTokenTransferFundingReadiness().catch((error) =>
@@ -30603,6 +33530,7 @@ export default function App() {
         network={network}
         onNetworkChange={chooseNetwork}
         onRefresh={() => void refreshInfinity(false, true, standaloneBondConfig)}
+        readState={bondReadState}
         sales={activeBondSales}
         sealListing={sealTokenListing}
         selectedTokenId={standaloneBondConfig.tokenId}
@@ -30682,6 +33610,7 @@ export default function App() {
         prepareFeeReserveSats={tokenPrepareFeeReserveSats}
         prepareMintCount={tokenPrepareMintCount}
         prepareMintUtxos={prepareTokenMintUtxos}
+        readState={tokenReadState}
         preparingMintUtxos={tokenAction === "split"}
         selectedToken={selectedToken}
         selectedTokenId={selectedToken?.tokenId ?? ""}
@@ -30797,6 +33726,7 @@ export default function App() {
         activeNetwork={network}
         activityHistoryPage={activityHistoryPage}
         activityStats={activityStats}
+        readState={activityReadState}
         degradedReadStatus={degradedReadStatus}
         busy={activityLoading || busy}
         idActivity={idActivity.filter((item) => item.network === "livenet")}
@@ -30847,6 +33777,7 @@ export default function App() {
         )}
         registrySales={idSales.filter((sale) => sale.network === "livenet")}
         growthSummary={growthSummary}
+        readState={growthReadState}
         status={status}
         tokenDefinitions={tokenDefinitions.filter(
           (token) => token.network === "livenet",
@@ -31149,7 +34080,12 @@ export default function App() {
                 <AtSign size={17} />
                 <span>IDs</span>
               </span>
-              <strong>{ownedIdCount + walletPendingIdEvents.length}</strong>
+              <strong>
+                {canonicalMetric(
+                  ownedIdCount + walletPendingIdEvents.length,
+                  registryReadState,
+                )}
+              </strong>
             </button>
             <button
               aria-current={activeFolder === "marketplace"}
@@ -31160,7 +34096,9 @@ export default function App() {
                 <Users size={17} />
                 <span>AMO</span>
               </span>
-              <strong>{ownerControlledIds.length}</strong>
+              <strong>
+                {canonicalMetric(ownerControlledIds.length, marketplaceReadState)}
+              </strong>
             </button>
             <button
               aria-current={activeFolder === "token"}
@@ -31172,9 +34110,10 @@ export default function App() {
                 <span>Credit</span>
               </span>
               <strong>
-                {activeTokenStateLoaded
-                  ? tokenDefinitions.length.toLocaleString()
-                  : "…"}
+                {canonicalMetric(
+                  tokenDefinitions.length.toLocaleString(),
+                  tokenReadState,
+                )}
               </strong>
             </button>
             <button
@@ -31187,9 +34126,12 @@ export default function App() {
                 <span>Wallet</span>
               </span>
               <strong>
-                {walletBalanceCountLoaded
-                  ? walletTransferBalances.length.toLocaleString()
-                  : "…"}
+                {canonicalMetric(
+                  walletTransferBalances.length.toLocaleString(),
+                  walletBalanceCountLoaded ? walletReadState : {
+                    phase: address ? "loading" : "disconnected",
+                  },
+                )}
               </strong>
             </button>
             <button
@@ -31202,11 +34144,12 @@ export default function App() {
                 <span>WORK</span>
               </span>
               <strong>
-                {!activeTokenStateLoaded ||
-                (tokenLedgerLoading &&
-                  compareExactIntegers(workTokenLedger.confirmedSupply, 0) === 0)
-                  ? "..."
-                  : formatExactInteger(workTokenLedger.confirmedSupply)}
+                {canonicalMetric(
+                  formatExactInteger(workTokenLedger.confirmedSupply),
+                  tokenLedgerLoading && !activeTokenStateLoaded
+                    ? { phase: "loading" }
+                    : tokenReadState,
+                )}
               </strong>
             </button>
             <button
@@ -31219,11 +34162,12 @@ export default function App() {
                 <span>Infinity</span>
               </span>
               <strong>
-                {infinityBondSummary
-                  ? formatExactInteger(
-                      infinityBondSummary.stats.confirmedSupply,
-                    )
-                  : "…"}
+                {canonicalMetric(
+                  infinityBondSummary
+                    ? formatExactInteger(infinityBondSummary.stats.confirmedSupply)
+                    : "",
+                  infinityReadState,
+                )}
               </strong>
             </button>
             <button
@@ -31236,11 +34180,12 @@ export default function App() {
                 <span>Inception</span>
               </span>
               <strong>
-                {inceptionBondSummary
-                  ? formatExactInteger(
-                      inceptionBondSummary.stats.confirmedSupply,
-                    )
-                  : "…"}
+                {canonicalMetric(
+                  inceptionBondSummary
+                    ? formatExactInteger(inceptionBondSummary.stats.confirmedSupply)
+                    : "",
+                  inceptionReadState,
+                )}
               </strong>
             </button>
             <button
@@ -31253,9 +34198,10 @@ export default function App() {
                 <span>Log</span>
               </span>
               <strong>
-                {activityStats
-                  ? (activityStats.total ?? idActivity.length).toLocaleString()
-                  : "…"}
+                {canonicalMetric(
+                  (activityStats?.total ?? idActivity.length).toLocaleString(),
+                  activityReadState,
+                )}
               </strong>
             </button>
             <button
@@ -31276,17 +34222,21 @@ export default function App() {
               >
                 <span>Registry Network</span>
                 <strong>
-                  {idRegistry.length > 0
-                    ? idRegistry.length.toLocaleString()
-                    : "…"}
+                  {canonicalMetric(
+                    idRegistry.length.toLocaleString(),
+                    registryReadState,
+                  )}
                 </strong>
-                <small>
-                  {confirmedIdCount.toLocaleString()} confirmed ·{" "}
-                  {pendingIdCount.toLocaleString()} pending IDs
-                  {pendingIdEventCount
-                    ? ` · ${pendingIdEventCount.toLocaleString()} changes`
-                    : ""}
-                </small>
+                {registryReadState.phase === "ready" ||
+                registryReadState.phase === "last-good" ? (
+                  <small>
+                    {confirmedIdCount.toLocaleString()} confirmed ·{" "}
+                    {pendingIdCount.toLocaleString()} pending IDs
+                    {pendingIdEventCount
+                      ? ` · ${pendingIdEventCount.toLocaleString()} changes`
+                      : ""}
+                  </small>
+                ) : null}
               </div>
             ) : null}
           </nav>
@@ -31345,6 +34295,7 @@ export default function App() {
             network={network}
             pendingEvents={idPendingEvents}
             registryAddress={registryAddress}
+            readState={registryReadState}
             registryRecords={idRegistry}
             registrationBytes={idRegistrationBytes}
             lastRegisteredId={
@@ -31394,6 +34345,7 @@ export default function App() {
             network={network}
             pendingEvents={idPendingEvents}
             publishListing={publishIdListing}
+            readState={marketplaceReadState}
             registryAddress={registryAddress}
             registryListings={idListings}
             registryRecords={idRegistry}
@@ -31468,6 +34420,7 @@ export default function App() {
               tokenPrepareTransferFeeReserveSats
             }
             prepareTransferUtxos={prepareTokenTransferUtxos}
+            readState={walletReadState}
             preparingTransferUtxos={tokenAction === "split-transfer"}
             refreshTransferFundingReadiness={() =>
               void refreshTokenTransferFundingReadiness().catch((error) =>
@@ -31550,6 +34503,7 @@ export default function App() {
             prepareFeeReserveSats={tokenPrepareFeeReserveSats}
             prepareMintCount={tokenPrepareMintCount}
             prepareMintUtxos={prepareTokenMintUtxos}
+            readState={tokenReadState}
             preparingMintUtxos={tokenAction === "split"}
             selectedToken={selectedToken}
             selectedTokenId={selectedToken?.tokenId ?? ""}
@@ -31630,6 +34584,7 @@ export default function App() {
             network={network}
             onNetworkChange={chooseNetwork}
             onRefresh={() => void refreshInfinity(false, true, activeBondConfig)}
+            readState={bondReadState}
             sales={activeBondSales}
             sealListing={sealTokenListing}
             selectedTokenId={activeBondConfig.tokenId}
@@ -31698,6 +34653,7 @@ export default function App() {
             idActivity={idActivity}
             profile={activityProfile}
             query={activityQuery}
+            readState={activityReadState}
             searchedActivity={activityMail}
             setQuery={setActivityQuery}
             onClear={clearActivity}
@@ -33238,6 +36194,7 @@ function ActivityApp({
   idActivity,
   profile,
   query,
+  readState,
   searchedActivity,
   setQuery,
   status,
@@ -33256,6 +36213,7 @@ function ActivityApp({
   idActivity: PowActivityItem[];
   profile?: DesktopProfile;
   query: string;
+  readState: CanonicalReadState;
   searchedActivity: PowActivityItem[];
   setQuery: (value: string) => void;
   status: { tone: StatusTone; text: string };
@@ -33291,6 +36249,7 @@ function ActivityApp({
         idActivity={idActivity}
         profile={profile}
         query={query}
+        readState={readState}
         searchedActivity={searchedActivity}
         setQuery={setQuery}
         onClear={onClear}
@@ -33376,6 +36335,7 @@ function ActivityWorkspace({
   idActivity,
   profile,
   query,
+  readState,
   searchedActivity,
   setQuery,
   onActivityPageChange,
@@ -33390,6 +36350,7 @@ function ActivityWorkspace({
   idActivity: PowActivityItem[];
   profile?: DesktopProfile;
   query: string;
+  readState: CanonicalReadState;
   searchedActivity: PowActivityItem[];
   setQuery: (value: string) => void;
   onActivityPageChange?: (pageIndex: number) => void;
@@ -33509,19 +36470,21 @@ function ActivityWorkspace({
 
       <div className="activity-stats" aria-label="Log stats">
         <div>
-          <strong>{totalCount.toLocaleString()}</strong>
+          <strong>{canonicalMetric(totalCount.toLocaleString(), readState)}</strong>
           <span>Total actions</span>
         </div>
         <div>
-          <strong>{confirmedCount.toLocaleString()}</strong>
+          <strong>
+            {canonicalMetric(confirmedCount.toLocaleString(), readState)}
+          </strong>
           <span>Confirmed</span>
         </div>
         <div>
-          <strong>{pendingCount.toLocaleString()}</strong>
+          <strong>{canonicalMetric(pendingCount.toLocaleString(), readState)}</strong>
           <span>Pending</span>
         </div>
         <div>
-          <strong>{formatBytes(dataBytes)}</strong>
+          <strong>{canonicalMetric(formatBytes(dataBytes), readState)}</strong>
           <span>Data stored</span>
         </div>
         <div>
@@ -33529,6 +36492,8 @@ function ActivityWorkspace({
           <span>Network</span>
         </div>
       </div>
+
+      <CanonicalReadNotice label="Computer log" state={readState} />
 
       <section className="activity-feed-card">
         <div className="id-card-head">
@@ -33558,7 +36523,11 @@ function ActivityWorkspace({
             ) : null}
           </div>
         </div>
-        <ActivityFeed items={visibleItems} totalCount={totalCount} />
+        <ActivityFeed
+          items={visibleItems}
+          readState={readState}
+          totalCount={totalCount}
+        />
         <PaginationControls
           label="Actions"
           onPageChange={changePage}
@@ -33571,9 +36540,11 @@ function ActivityWorkspace({
 
 function ActivityFeed({
   items,
+  readState = READY_CANONICAL_READ_STATE,
   totalCount,
 }: {
   items: PowActivityItem[];
+  readState?: CanonicalReadState;
   totalCount: number;
 }) {
   if (totalCount === 0) {
@@ -33582,10 +36553,18 @@ function ActivityFeed({
         <div className="empty-icon" aria-hidden="true">
           <Clock size={26} />
         </div>
-        <h3>No activity</h3>
+        <h3>
+          {readState.phase === "loading"
+            ? "Loading activity"
+            : readState.phase === "unavailable"
+              ? "Activity unavailable"
+              : "No activity"}
+        </h3>
         <p>
-          Search an address, confirmed ProofOfWork ID, or txid to narrow the
-          protocol log.
+          {canonicalEmptyText(
+            readState,
+            "Search an address, confirmed ProofOfWork ID, or txid to narrow the protocol log.",
+          )}
         </p>
       </div>
     );
@@ -33715,6 +36694,7 @@ type TokenWalletAppProps = {
   prepareTransferFeeRate: number;
   prepareTransferFeeReserveSats: number;
   prepareTransferUtxos: (event: FormEvent<HTMLFormElement>) => void;
+  readState: CanonicalReadState;
   preparingTransferUtxos: boolean;
   refreshTransferFundingReadiness: () => void;
   sealListing: (listing: PowTokenListing) => void;
@@ -33786,6 +36766,7 @@ type InfinityAppProps = {
   network: BitcoinNetwork;
   onNetworkChange: (network: BitcoinNetwork) => void;
   onRefresh: () => void;
+  readState: CanonicalReadState;
   sales: PowTokenSale[];
   sealListing: (listing: PowTokenListing) => void;
   selectedTokenId: string;
@@ -33855,6 +36836,7 @@ function InfinityApp({
   network,
   onNetworkChange,
   onRefresh,
+  readState,
   sales,
   sealListing,
   selectedTokenId,
@@ -34049,6 +37031,7 @@ function InfinityApp({
 
   const workspace = (
     <section className="token-workspace token-wallet-workspace">
+        <CanonicalReadNotice label={`${bondConfig.ticker} bond ledger`} state={readState} />
         <section className="id-launch-card token-dashboard-card">
           <div className="id-card-heading">
             <div className="id-card-icon">
@@ -34063,27 +37046,27 @@ function InfinityApp({
           <div className="id-launch-stats token-stats-row">
             <div>
               <span>{inceptionAccounting ? "Fixed issued supply" : "Confirmed supply"}</span>
-              <strong>{formatExactInteger(confirmedSupply)} {bondConfig.ticker}</strong>
+              <strong>{canonicalMetric(`${formatExactInteger(confirmedSupply)} ${bondConfig.ticker}`, readState)}</strong>
             </div>
             <div>
               <span>{inceptionAccounting ? "Pending issuance" : "Pending supply"}</span>
-              <strong>{formatExactInteger(pendingSupply)} {bondConfig.ticker}</strong>
+              <strong>{canonicalMetric(`${formatExactInteger(pendingSupply)} ${bondConfig.ticker}`, readState)}</strong>
             </div>
             <div>
               <span>{inceptionAccounting ? "INCB floor" : "Bond floor"}</span>
-              <strong>{bondProofAmountDisplay(floorSats, floorQ8)} proofs / {bondConfig.ticker}</strong>
+              <strong>{canonicalMetric(`${bondProofAmountDisplay(floorSats, floorQ8)} proofs / ${bondConfig.ticker}`, readState)}</strong>
             </div>
             <div>
               <span>{inceptionAccounting ? "Inception network value" : "Network value"}</span>
-              <strong>{bondProofAmountDisplay(networkValueSats, networkValueQ8)} proofs</strong>
+              <strong>{canonicalMetric(`${bondProofAmountDisplay(networkValueSats, networkValueQ8)} proofs`, readState)}</strong>
             </div>
             <div>
               <span>Floor USD</span>
-              <strong>{tokenUsd(floorUsd)}</strong>
+              <strong>{canonicalMetric(tokenUsd(floorUsd), readState)}</strong>
             </div>
             <div>
               <span>Network USD</span>
-              <strong>{tokenUsd(networkUsd)}</strong>
+              <strong>{canonicalMetric(tokenUsd(networkUsd), readState)}</strong>
             </div>
           </div>
           {inceptionIssuanceAvailable ? (
@@ -34424,6 +37407,7 @@ function InfinityApp({
           listing={listing}
           listings={listings}
           listSpendableBalance={listSpendableBalance}
+          readState={readState}
           sealListing={sealListing}
           selectedTokenId={selectedTokenId}
           setFeeRate={setFeeRate}
@@ -34475,6 +37459,7 @@ function InfinityApp({
           feeRate={feeRate}
           listings={listings}
           network={network}
+          readState={readState}
           sales={sales}
           setFeeRate={setFeeRate}
           summary={summary}
@@ -34549,6 +37534,7 @@ function TokenWalletApp({
   prepareTransferFeeRate,
   prepareTransferFeeReserveSats,
   prepareTransferUtxos,
+  readState,
   preparingTransferUtxos,
   refreshTransferFundingReadiness,
   sealListing,
@@ -34626,6 +37612,7 @@ function TokenWalletApp({
         prepareTransferFeeRate={prepareTransferFeeRate}
         prepareTransferFeeReserveSats={prepareTransferFeeReserveSats}
         prepareTransferUtxos={prepareTransferUtxos}
+        readState={readState}
         preparingTransferUtxos={preparingTransferUtxos}
         refreshTransferFundingReadiness={refreshTransferFundingReadiness}
         sealListing={sealListing}
@@ -34702,7 +37689,155 @@ const DEFAULT_TOKEN_WALLET_WORKSPACE_COPY: Required<TokenWalletWorkspaceCopy> = 
   walletEyebrow: "Credit wallet",
 };
 
-type TokenWalletMovement = {
+function localTokenOverlayFamilySummary(entry: LocalTokenBroadcastOverlay) {
+  const families: Array<[string, number]> = [
+    ["create", entry.definitions.length],
+    ["mint", entry.mints.length],
+    ["transfer", entry.transfers.length],
+    ["listing", entry.listings.length],
+    ["seal", entry.seals.length],
+    ["close", entry.closedListings.length],
+    ["sale", entry.sales.length],
+  ];
+  return families
+    .filter(([, count]) => count > 0)
+    .map(([label, count]) => `${count > 1 ? `${count} ` : ""}${label}${count > 1 ? "s" : ""}`)
+    .join(" · ");
+}
+
+function localTokenOverlayStatusLabel(entry: LocalTokenBroadcastOverlay) {
+  if (entry.status === "confirmed") return "Confirmed · indexing";
+  if (entry.status === "unknown") return "Unknown · checking";
+  if (entry.status === "replaced") return "Replaced";
+  if (entry.status === "dropped") return "Dropped";
+  if (entry.status === "failed") return "Failed";
+  return "Pending";
+}
+
+function LocalTokenLifecyclePanel({
+  address = "",
+  network,
+  tokenScope = "",
+}: {
+  address?: string;
+  network: BitcoinNetwork;
+  tokenScope?: string;
+}) {
+  const scopeKey = tokenStateScopeKey({
+    address,
+    network,
+    tokenScope,
+    walletScoped: Boolean(address),
+  });
+  const [visibleCount, setVisibleCount] = useState(
+    LOCAL_TOKEN_LIFECYCLE_PAGE_SIZE,
+  );
+  useEffect(() => {
+    setVisibleCount(LOCAL_TOKEN_LIFECYCLE_PAGE_SIZE);
+  }, [scopeKey]);
+  const entries = loadLocalTokenBroadcastOverlays()
+    .filter((entry) => {
+      if (entry.network !== network) return false;
+      const families = [
+        "definitions",
+        "mints",
+        "transfers",
+        "listings",
+        "seals",
+        "closedListings",
+        "sales",
+      ] as const;
+      return families.some((family) =>
+        entry[family].some((record) =>
+          localTokenOverlayRecordMatchesLifecyclePanelScope(
+            family,
+            record as unknown as Record<string, unknown>,
+            scopeKey,
+            network,
+            entry.initiatorAddress,
+          ),
+        ),
+      );
+    })
+    .sort(
+      (left, right) =>
+        Date.parse(right.recordedAt) - Date.parse(left.recordedAt) ||
+        left.txid.localeCompare(right.txid),
+    );
+  if (entries.length === 0) return null;
+  const visibleEntries = entries.slice(0, visibleCount);
+  const remainingCount = entries.length - visibleEntries.length;
+
+  return (
+    <section className="id-launch-card token-lifecycle-card" aria-live="polite">
+      <div className="id-card-head">
+        <div className="empty-icon" aria-hidden="true">
+          <RefreshCw size={22} />
+        </div>
+        <div>
+          <h3>Local Credit lifecycle</h3>
+          <p>
+            Broadcast evidence stays visible until canonical indexing resolves
+            every expected row. Confirmed chain data remains authoritative.
+          </p>
+        </div>
+      </div>
+      <div className="token-list compact-token-list">
+        {visibleEntries.map((entry) => (
+          <div className="token-list-item" key={localTokenOverlayKey(entry)}>
+            <span>
+              <strong>{localTokenOverlayStatusLabel(entry)}</strong>
+              <small>
+                {localTokenOverlayFamilySummary(entry)} · {formatDate(entry.createdAt)}
+                {entry.failureReason ? ` · ${entry.failureReason}` : ""}
+              </small>
+            </span>
+            <span className="id-record-actions">
+              <a
+                className="secondary small"
+                href={explorerTxUrl(entry.txid, entry.network)}
+                rel="noreferrer"
+                target="_blank"
+              >
+                TX
+              </a>
+              {entry.replacementTxid ? (
+                <a
+                  className="secondary small"
+                  href={explorerTxUrl(entry.replacementTxid, entry.network)}
+                  rel="noreferrer"
+                  target="_blank"
+                >
+                  Replacement
+                </a>
+              ) : null}
+            </span>
+          </div>
+        ))}
+      </div>
+      {remainingCount > 0 ? (
+        <div className="id-record-actions">
+          <button
+            className="secondary small"
+            onClick={() =>
+              setVisibleCount((current) =>
+                Math.min(
+                  entries.length,
+                  current + LOCAL_TOKEN_LIFECYCLE_PAGE_SIZE,
+                ),
+              )
+            }
+            type="button"
+          >
+            Show more ({remainingCount.toLocaleString()})
+          </button>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+type TokenWalletMovement = LocalTokenLifecycleProjection & {
   amount: ExactIntegerValue;
   amountAtoms?: string;
   amountSubatoms?: string;
@@ -34788,6 +37923,7 @@ function TokenWalletWorkspace({
   prepareTransferFeeReserveSats =
     TOKEN_PREPARE_DEFAULT_TRANSFER_FEE_RESERVE_SATS,
   prepareTransferUtxos,
+  readState = READY_CANONICAL_READ_STATE,
   preparingTransferUtxos = false,
   refreshTransferFundingReadiness,
   sealListing,
@@ -34865,6 +38001,7 @@ function TokenWalletWorkspace({
   prepareTransferFeeRate?: number;
   prepareTransferFeeReserveSats?: number;
   prepareTransferUtxos?: (event: FormEvent<HTMLFormElement>) => void;
+  readState?: CanonicalReadState;
   preparingTransferUtxos?: boolean;
   refreshTransferFundingReadiness?: () => void;
   setPrepareTransferCount?: (value: number) => void;
@@ -34934,6 +38071,11 @@ function TokenWalletWorkspace({
       amountAtoms: transfer.amountAtoms,
       amountSubatoms: transfer.amountSubatoms,
       confirmed: transfer.confirmed,
+      lifecycleCheckedAt: transfer.lifecycleCheckedAt,
+      lifecycleFailureReason: transfer.lifecycleFailureReason,
+      lifecycleReplacementTxid: transfer.lifecycleReplacementTxid,
+      lifecycleStatus: transfer.lifecycleStatus,
+      localBroadcast: transfer.localBroadcast,
       frozenNetworkValueSats: transfer.frozenNetworkValueSats,
       liveNetworkValueSats: transfer.liveNetworkValueSats,
       createdAt: transfer.createdAt,
@@ -34975,6 +38117,11 @@ function TokenWalletWorkspace({
       amountAtoms: item.amountAtoms,
       amountSubatoms: item.amountSubatoms,
       confirmed: item.confirmed,
+      lifecycleCheckedAt: item.lifecycleCheckedAt,
+      lifecycleFailureReason: item.lifecycleFailureReason,
+      lifecycleReplacementTxid: item.lifecycleReplacementTxid,
+      lifecycleStatus: item.lifecycleStatus,
+      localBroadcast: item.localBroadcast,
       createdAt: item.createdAt,
       frozenNetworkValueSats: item.frozenNetworkValueSats,
       liveNetworkValueSats: item.liveNetworkValueSats,
@@ -34995,6 +38142,11 @@ function TokenWalletWorkspace({
               amountAtoms: item.amountAtoms,
               amountSubatoms: item.amountSubatoms,
               confirmed: Boolean(item.sealConfirmed),
+              lifecycleCheckedAt: item.sealLifecycleCheckedAt,
+              lifecycleFailureReason: item.sealLifecycleFailureReason,
+              lifecycleReplacementTxid: item.sealLifecycleReplacementTxid,
+              lifecycleStatus: item.sealLifecycleStatus,
+              localBroadcast: item.sealLifecycleStatus ? true as const : undefined,
               createdAt: item.sealAt ?? item.createdAt,
               frozenNetworkValueSats: item.sealFrozenNetworkValueSats,
               liveNetworkValueSats: item.sealLiveNetworkValueSats,
@@ -35015,6 +38167,11 @@ function TokenWalletWorkspace({
       amountAtoms: item.amountAtoms,
       amountSubatoms: item.amountSubatoms,
       confirmed: Boolean(item.closedConfirmed ?? item.confirmed),
+      lifecycleCheckedAt: item.lifecycleCheckedAt,
+      lifecycleFailureReason: item.lifecycleFailureReason,
+      lifecycleReplacementTxid: item.lifecycleReplacementTxid,
+      lifecycleStatus: item.lifecycleStatus,
+      localBroadcast: item.localBroadcast,
       createdAt: item.closedAt ?? item.createdAt,
       frozenNetworkValueSats: item.closedFrozenNetworkValueSats,
       liveNetworkValueSats: item.closedLiveNetworkValueSats,
@@ -35038,6 +38195,11 @@ function TokenWalletWorkspace({
             amountAtoms: sale.amountAtoms,
             amountSubatoms: sale.amountSubatoms,
             confirmed: sale.confirmed,
+            lifecycleCheckedAt: sale.lifecycleCheckedAt,
+            lifecycleFailureReason: sale.lifecycleFailureReason,
+            lifecycleReplacementTxid: sale.lifecycleReplacementTxid,
+            lifecycleStatus: sale.lifecycleStatus,
+            localBroadcast: sale.localBroadcast,
             createdAt: sale.createdAt,
             frozenNetworkValueSats: sale.frozenNetworkValueSats,
             liveNetworkValueSats: sale.liveNetworkValueSats,
@@ -35442,6 +38604,12 @@ function TokenWalletWorkspace({
           : "token-workspace token-wallet-workspace"
       }
     >
+      <CanonicalReadNotice label="wallet Credit and WORK data" state={readState} />
+      <LocalTokenLifecyclePanel
+        address={address}
+        network={transferToken?.network ?? "livenet"}
+        tokenScope={selectedTokenId}
+      />
       <section className="id-launch-card token-dashboard-card">
         <div className="id-card-heading">
           <div className="id-card-icon">
@@ -35459,11 +38627,15 @@ function TokenWalletWorkspace({
         <div className="id-launch-stats token-stats-row">
           <div>
             <span>{walletCopy.ownedLabel}</span>
-            <strong>{confirmedTokenCount.toLocaleString()}</strong>
+            <strong>
+              {canonicalMetric(confirmedTokenCount.toLocaleString(), readState)}
+            </strong>
           </div>
           <div>
             <span>Movements seen</span>
-            <strong>{walletMovements.length.toLocaleString()}</strong>
+            <strong>
+              {canonicalMetric(walletMovements.length.toLocaleString(), readState)}
+            </strong>
           </div>
           <div>
             <span>Mutation fee</span>
@@ -35538,8 +38710,14 @@ function TokenWalletWorkspace({
           ) : (
             <div className="empty-state">
               <Wallet size={28} />
-              <h3>{walletCopy.noBalanceTitle}</h3>
-              <p>{walletCopy.noBalanceBody}</p>
+              <h3>
+                {readState.phase === "loading"
+                  ? "Loading balances"
+                  : readState.phase === "unavailable"
+                    ? "Balances unavailable"
+                    : walletCopy.noBalanceTitle}
+              </h3>
+              <p>{canonicalEmptyText(readState, walletCopy.noBalanceBody)}</p>
             </div>
           )}
         </section>
@@ -35977,13 +39155,7 @@ function TokenWalletWorkspace({
                               )} ${item.ticker}`}
                         </strong>
                         <small>
-                          {!item.confirmed
-                            ? "waiting for confirmation"
-                            : sealConfirmed
-                              ? "sealed"
-                              : sealPending
-                                ? "seal pending"
-                              : "ready to seal"}{" "}
+                          {tokenMarketListingStatusLabel(item).toLowerCase()}{" "}
                           ·{" "}
                           {isWorkToken(item)
                             ? workFrozenTerms
@@ -36021,7 +39193,7 @@ function TokenWalletWorkspace({
                             Seal TX
                           </a>
                         ) : null}
-                        {!hasSeal ? (
+                        {!hasSeal && !item.sealLifecycleStatus ? (
                           <button
                             className="secondary small"
                             disabled={!readyToSeal || workSealBlocked}
@@ -36034,22 +39206,25 @@ function TokenWalletWorkspace({
                                 ? "Seal"
                                 : "Confirming"}
                           </button>
-                        ) : sealPending ? (
+                        ) : sealPending || item.sealLifecycleStatus ? (
                           <button className="secondary small" disabled type="button">
-                            Seal pending
+                            {tokenMarketListingStatusLabel(item)}
                           </button>
                         ) : null}
                         <button
                           className="secondary small"
                           disabled={
-                            isWorkToken(item) &&
-                            (!workAmoSettlementEnabled ||
-                              !workWriteEraReady)
+                            tokenProjectionHasRemovalEvidence(item) ||
+                            (isWorkToken(item) &&
+                              (!workAmoSettlementEnabled ||
+                                !workWriteEraReady))
                           }
                           onClick={() => delistListing(item)}
                           type="button"
                         >
-                          {isWorkToken(item) && !workWriteEraReady
+                          {tokenProjectionHasRemovalEvidence(item)
+                            ? tokenLifecycleStatusLabel(item)
+                            : isWorkToken(item) && !workWriteEraReady
                             ? "Relic"
                             : "Delist"}
                         </button>
@@ -36162,9 +39337,14 @@ function TokenWalletWorkspace({
                         ? movement.confirmed
                           ? "confirmed tx · rejected credit event"
                           : "rejected credit event"
-                        : movement.confirmed
-                          ? "confirmed"
-                          : "pending"}
+                        : tokenLifecycleStatusLabel(
+                            movement,
+                            "Pending",
+                            "Confirmed",
+                          ).toLowerCase()}
+                      {movement.lifecycleFailureReason
+                        ? ` · ${movement.lifecycleFailureReason}`
+                        : ""}
                       {movement.reason ? ` · ${movement.reason}` : ""}
                       {movement.auditTotalCostSats
                         ? ` · ${(movement.auditRegistryPaymentSats ?? 0).toLocaleString()} registry + ${(movement.auditMinerFeeSats ?? 0).toLocaleString()} miner = ${movement.auditTotalCostSats.toLocaleString()} proofs paid, not refunded`
@@ -36196,8 +39376,14 @@ function TokenWalletWorkspace({
         ) : (
           <div className="empty-state">
             <Clock size={28} />
-            <h3>No movements yet</h3>
-            <p>{walletCopy.movementsEmptyBody}</p>
+            <h3>
+              {readState.phase === "loading"
+                ? "Loading movements"
+                : readState.phase === "unavailable"
+                  ? "Movements unavailable"
+                  : "No movements yet"}
+            </h3>
+            <p>{canonicalEmptyText(readState, walletCopy.movementsEmptyBody)}</p>
           </div>
         )}
       </section>
@@ -36252,6 +39438,7 @@ type TokenAppProps = {
   prepareFeeReserveSats: number;
   prepareMintCount: number;
   prepareMintUtxos: (event: FormEvent<HTMLFormElement>) => void;
+  readState: CanonicalReadState;
   preparingMintUtxos: boolean;
   selectedToken: PowTokenDefinition | undefined;
   selectedTokenId: string;
@@ -36384,6 +39571,7 @@ function TokenWorkspace({
   prepareFeeReserveSats,
   prepareMintCount,
   prepareMintUtxos,
+  readState = READY_CANONICAL_READ_STATE,
   preparingMintUtxos,
   selectedToken,
   selectedTokenId,
@@ -36657,7 +39845,10 @@ function TokenWorkspace({
     selectedRemoteMintPage?.totalCount ?? selectedMatchingMints.length;
   const selectedMintTotalCount = selectedRemoteMintPage?.totalCount ?? mints.length;
   const confirmedTokenCount = tokens.filter((token) => token.confirmed).length;
-  const pendingTokenCount = tokens.length - confirmedTokenCount;
+  const pendingTokenCount = tokens.filter(
+    (token) => !token.confirmed && tokenProjectionCountsAsPending(token),
+  ).length;
+  const lifecycleTokenCount = tokenDefinitionMetricCount(tokens);
   const selectedPricePerToken =
     selectedToken && selectedToken.mintAmount > 0
       ? selectedToken.mintPriceSats / selectedToken.mintAmount
@@ -36771,6 +39962,7 @@ function TokenWorkspace({
       network === "livenet" &&
       detailToken &&
       !detailBondDefinition &&
+      tokenDefinitionAllowsLifecycleActions(detailToken) &&
       detailToken.registryAddress &&
       !detailMintedOut &&
       !detailPendingMintOut &&
@@ -36950,7 +40142,9 @@ function TokenWorkspace({
     Number(detailToken?.confirmedMints) || 0,
   );
   const detailPendingMintCount = Math.max(
-    detailMints.filter((mint) => !mint.confirmed).length,
+    detailMints.filter(
+      (mint) => !mint.confirmed && tokenProjectionCountsAsPending(mint),
+    ).length,
     Number(detailToken?.pendingMints) || 0,
   );
   const detailRegistryLabel =
@@ -37088,7 +40282,7 @@ function TokenWorkspace({
       if (mint.confirmed) {
         current.confirmedMints += 1;
         current.confirmedSupply += exactIntegerBigInt(mint.amount) ?? 0n;
-      } else {
+      } else if (tokenProjectionCountsAsPending(mint)) {
         current.pendingMints += 1;
         current.pendingSupply += exactIntegerBigInt(mint.amount) ?? 0n;
       }
@@ -37155,7 +40349,11 @@ function TokenWorkspace({
         buildTokenMintPayload(token.tokenId, token.mintAmount, token.ticker),
       ) > MAX_DATA_CARRIER_BYTES;
     const assistantCanStart = Boolean(
-      address && !busy && !mintAssistantRunning && !assistantBlocked,
+      address &&
+        tokenDefinitionAllowsLifecycleActions(token) &&
+        !busy &&
+        !mintAssistantRunning &&
+        !assistantBlocked,
     );
     const completedLabel = mintAssistantCompleted.toLocaleString();
     const remainingLabel = mintAssistantRemaining.toLocaleString();
@@ -37566,7 +40764,7 @@ function TokenWorkspace({
                 </h4>
                 <strong>{shortAddress(mint.minterAddress)}</strong>
                 <p>
-                  {mint.confirmed ? "Confirmed" : "Pending"} -{" "}
+                  {tokenLifecycleStatusLabel(mint)} -{" "}
                   {mint.paidSats.toLocaleString()} proofs
                 </p>
               </div>
@@ -38332,6 +41530,12 @@ function TokenWorkspace({
 
   return (
     <section className={workspaceClassName}>
+      <CanonicalReadNotice label="Credit ledger" state={readState} />
+      <LocalTokenLifecyclePanel
+        address={address}
+        network={network}
+        tokenScope={tokenDetailTarget || selectedTokenId}
+      />
       <div className="token-registry-strip">
         <div>
           <span>Credit index</span>
@@ -38556,7 +41760,7 @@ function TokenWorkspace({
                   {tokens.map((token) => (
                     <option key={token.tokenId} value={token.tokenId}>
                       {token.ticker} - {shortAddress(token.tokenId)} -{" "}
-                      {token.confirmed ? "confirmed" : "pending"}
+                      {tokenLifecycleStatusLabel(token).toLowerCase()}
                     </option>
                   ))}
                 </select>
@@ -38671,19 +41875,23 @@ function TokenWorkspace({
 
       <div className="id-launch-stats" aria-label="Credit stats">
         <div>
-          <strong>{tokens.length.toLocaleString()}</strong>
+          <strong>{canonicalMetric(lifecycleTokenCount.toLocaleString(), readState)}</strong>
           <span>Created credits</span>
         </div>
         <div>
-          <strong>{confirmedTokenCount.toLocaleString()}</strong>
+          <strong>
+            {canonicalMetric(confirmedTokenCount.toLocaleString(), readState)}
+          </strong>
           <span>Confirmed credits</span>
         </div>
         <div>
-          <strong>{pendingTokenCount.toLocaleString()}</strong>
+          <strong>
+            {canonicalMetric(pendingTokenCount.toLocaleString(), readState)}
+          </strong>
           <span>Pending credits</span>
         </div>
         <div>
-          <strong>{creationSats.toLocaleString()}</strong>
+          <strong>{canonicalMetric(creationSats.toLocaleString(), readState)}</strong>
           <span>Creation proofs</span>
         </div>
       </div>
@@ -38832,8 +42040,19 @@ function TokenWorkspace({
           <div className="id-record-list">
             {tokens.length === 0 ? (
               <div className="empty-state">
-                <h3>No credits yet</h3>
-                <p>Create WORK first, then mint against its credit id.</p>
+                <h3>
+                  {readState.phase === "loading"
+                    ? "Loading credits"
+                    : readState.phase === "unavailable"
+                      ? "Credits unavailable"
+                      : "No credits yet"}
+                </h3>
+                <p>
+                  {canonicalEmptyText(
+                    readState,
+                    "Create WORK first, then mint against its credit id.",
+                  )}
+                </p>
               </div>
             ) : (
               tokenDefinitionPage.items.map((token) => {
@@ -38860,7 +42079,7 @@ function TokenWorkspace({
                     <div>
                       <div className="token-record-top">
                         <strong>{token.ticker}</strong>
-                        <span>{token.confirmed ? "Confirmed" : "Pending"}</span>
+                        <span>{tokenLifecycleStatusLabel(token)}</span>
                       </div>
                       <p className="token-record-price">
                         {token.mintAmount.toLocaleString()} for{" "}
@@ -41056,6 +44275,7 @@ function GrowthApp({
   registryListings,
   registryRecords,
   registrySales,
+  readState,
   status,
   tokenDefinitions,
   tokenMints,
@@ -41075,6 +44295,7 @@ function GrowthApp({
   registryListings: PowIdListing[];
   registryRecords: PowIdRecord[];
   registrySales: PowIdMarketplaceSale[];
+  readState: CanonicalReadState;
   status: { tone: StatusTone; text: string };
   tokenDefinitions: PowTokenDefinition[];
   tokenMints: PowTokenMint[];
@@ -41110,6 +44331,7 @@ function GrowthApp({
         registryListings={registryListings}
         registryRecords={registryRecords}
         registrySales={registrySales}
+        readState={readState}
         tokenDefinitions={tokenDefinitions}
         tokenMints={tokenMints}
         tokenSales={tokenSales}
@@ -41131,6 +44353,7 @@ function GrowthWorkspace({
   registryListings,
   registryRecords,
   registrySales,
+  readState,
   tokenDefinitions,
   tokenMints,
   tokenSales,
@@ -41145,6 +44368,7 @@ function GrowthWorkspace({
   registryListings: PowIdListing[];
   registryRecords: PowIdRecord[];
   registrySales: PowIdMarketplaceSale[];
+  readState: CanonicalReadState;
   tokenDefinitions: PowTokenDefinition[];
   tokenMints: PowTokenMint[];
   tokenSales: PowTokenSale[];
@@ -41162,7 +44386,11 @@ function GrowthWorkspace({
         <section className="growth-events-card" aria-live="polite">
           <div className="id-launch-section-head">
             <div>
-              <h3>Verified Growth ledger unavailable</h3>
+              <h3>
+                {readState.phase === "loading"
+                  ? "Loading verified Growth ledger"
+                  : "Verified Growth ledger unavailable"}
+              </h3>
               <p>
                 Live financial totals are hidden until the node returns a WORK
                 ledger with complete canonical Bitcoin miner-fee coverage. The
@@ -41328,6 +44556,7 @@ function GrowthWorkspace({
 
   return (
     <section className="growth-workspace">
+      <CanonicalReadNotice label="Growth ledger" state={readState} />
       <div className="growth-hero">
         <div>
           <span className="landing-kicker">ProofOfWork Computer growth model</span>
@@ -41811,6 +45040,7 @@ function IdLaunchApp({
   idReceiveAddress,
   lastRegisteredId,
   registryAddress,
+  readState,
   registryRecords,
   registrationBytes,
   setFeeRate,
@@ -41835,6 +45065,7 @@ function IdLaunchApp({
   idReceiveAddress: string;
   lastRegisteredId?: PowIdRecord;
   registryAddress: string;
+  readState: CanonicalReadState;
   registryRecords: PowIdRecord[];
   registrationBytes: number;
   setFeeRate: (value: number) => void;
@@ -41922,19 +45153,33 @@ function IdLaunchApp({
 
           <div className="id-launch-stats" aria-label="Registry stats">
             <div>
-              <strong>{confirmedRecords.length.toLocaleString()}</strong>
+              <strong>
+                {canonicalMetric(
+                  confirmedRecords.length.toLocaleString(),
+                  readState,
+                )}
+              </strong>
               <span>Confirmed IDs</span>
             </div>
             <div>
-              <strong>{pendingRecords.length.toLocaleString()}</strong>
+              <strong>
+                {canonicalMetric(pendingRecords.length.toLocaleString(), readState)}
+              </strong>
               <span>Pending IDs</span>
             </div>
             <div>
-              <strong>{uniqueRegistryRecords.length.toLocaleString()}</strong>
+              <strong>
+                {canonicalMetric(
+                  uniqueRegistryRecords.length.toLocaleString(),
+                  readState,
+                )}
+              </strong>
               <span>Visible records</span>
             </div>
           </div>
         </div>
+
+        <CanonicalReadNotice label="ID registry" state={readState} />
 
         <div className="id-launch-grid">
           <form className="id-launch-card id-claim-card" onSubmit={submit}>
@@ -42100,7 +45345,10 @@ function IdLaunchApp({
                 allowVerification
                 empty={
                   address
-                    ? "No IDs for this wallet yet."
+                    ? canonicalEmptyText(
+                        readState,
+                        "No IDs for this wallet yet.",
+                      )
                     : "Connect UniSat to see your IDs."
                 }
                 searchPlaceholder="Search your IDs"
@@ -42132,7 +45380,10 @@ function IdLaunchApp({
           </div>
           <IdRecordList
             records={uniqueRegistryRecords}
-            empty="No registry records found yet."
+            empty={canonicalEmptyText(
+              readState,
+              "No registry records found yet.",
+            )}
             initialLimit={12}
           />
         </section>
@@ -42557,6 +45808,24 @@ function sortTokenMarketLogItems(items: TokenMarketLogItem[]) {
 }
 
 function tokenMarketListingStatusLabel(listing: PowTokenListing) {
+  if (listing.sealLifecycleStatus) {
+    return tokenLifecycleStatusLabel(
+      {
+        confirmed: listing.sealConfirmed,
+        lifecycleStatus: listing.sealLifecycleStatus,
+        localBroadcast: true,
+      },
+      "Seal pending",
+      "Seal confirmed",
+    );
+  }
+  if (listing.localBroadcast) {
+    return tokenLifecycleStatusLabel(
+      listing,
+      "Pending listing",
+      "Confirmed listing",
+    );
+  }
   if (tokenListingHasConfirmedSaleTicketSeal(listing)) {
     return "Sealed listing";
   }
@@ -42769,7 +46038,7 @@ function tokenMarketplaceRowsFor({
           (current.balances.get(mint.minterAddress) ?? 0n) + amountAtoms,
         );
       }
-    } else {
+    } else if (tokenProjectionCountsAsPending(mint)) {
       current.pendingMints += 1;
       current.pendingSupply += exactIntegerBigInt(mint.amount) ?? 0n;
     }
@@ -43036,6 +46305,7 @@ function InfinityBondMarketPanel({
   feeRate,
   listings,
   network,
+  readState,
   sales,
   setFeeRate,
   summary,
@@ -43050,6 +46320,7 @@ function InfinityBondMarketPanel({
   feeRate: number;
   listings: PowTokenListing[];
   network: BitcoinNetwork;
+  readState: CanonicalReadState;
   sales: PowTokenSale[];
   setFeeRate: (value: number) => void;
   summary?: InfinitySummarySnapshot;
@@ -43174,23 +46445,30 @@ function InfinityBondMarketPanel({
           <div>
             <span>Bond floor</span>
             <strong>
-              {bondProofAmountDisplay(
-                powbReferenceValue,
-                powbReferenceQ8,
-              )} proofs / {bondConfig.ticker}
+              {canonicalMetric(
+                `${bondProofAmountDisplay(
+                  powbReferenceValue,
+                  powbReferenceQ8,
+                )} proofs / ${bondConfig.ticker}`,
+                readState,
+              )}
             </strong>
           </div>
           <div>
             <span>USD/{bondConfig.ticker}</span>
-            <strong>{tokenUsd(powbFloorUsd)}</strong>
+            <strong>{canonicalMetric(tokenUsd(powbFloorUsd), readState)}</strong>
           </div>
           <div>
             <span>Open tickets</span>
-            <strong>{marketListings.length.toLocaleString()}</strong>
+            <strong>
+              {canonicalMetric(marketListings.length.toLocaleString(), readState)}
+            </strong>
           </div>
           <div>
             <span>Sealed</span>
-            <strong>{sealedListings.length.toLocaleString()}</strong>
+            <strong>
+              {canonicalMetric(sealedListings.length.toLocaleString(), readState)}
+            </strong>
           </div>
         </div>
         <div className="listing-fee-control token-listing-fee-control">
@@ -43240,6 +46518,8 @@ function InfinityBondMarketPanel({
                 listing.saleAuthorization.buyerAddress !== address;
               const buyLabel = !address
                 ? "Connect to buy"
+                : listing.sealLifecycleStatus
+                  ? tokenMarketListingStatusLabel(listing)
                 : !hasSeal
                   ? "Needs seal"
                   : sealPending
@@ -43269,13 +46549,7 @@ function InfinityBondMarketPanel({
                       )}{" "}
                       {bondConfig.ticker}
                     </strong>
-                    <span>
-                      {!hasSeal
-                        ? "Waiting for seal"
-                        : sealConfirmed
-                          ? "Sealed"
-                          : "Seal pending"}
-                    </span>
+                    <span>{tokenMarketListingStatusLabel(listing)}</span>
                   </div>
                   <dl>
                     <div>
@@ -43400,9 +46674,14 @@ function InfinityBondMarketPanel({
                         )} {bondConfig.ticker}
                       </strong>
                       <span>
-                        {closedListing.closedConfirmed
-                          ? "Closed listing"
-                          : "Closing listing"}
+                        {tokenLifecycleStatusLabel(
+                          {
+                            ...closedListing,
+                            confirmed: Boolean(closedListing.closedConfirmed),
+                          },
+                          "Closing listing",
+                          "Closed listing",
+                        )}
                       </span>
                     </div>
                     <dl>
@@ -43493,7 +46772,11 @@ function InfinityBondMarketPanel({
                         {bondConfig.ticker}
                       </strong>
                       <span>
-                        {item.sale.confirmed ? "Confirmed sale" : "Pending sale"}
+                        {tokenLifecycleStatusLabel(
+                          item.sale,
+                          "Pending sale",
+                          "Confirmed sale",
+                        )}
                       </span>
                     </div>
                     <dl>
@@ -43676,6 +46959,7 @@ function TokenMarketplacePanel({
   onOpenWalletWorkspace,
   onSelectedTokenMarketIdChange,
   preserveRoute = false,
+  readState = READY_CANONICAL_READ_STATE,
   sales,
   selectedTokenMarketId: controlledSelectedTokenMarketId,
   setFeeRate,
@@ -43700,6 +46984,7 @@ function TokenMarketplacePanel({
   onOpenWalletWorkspace?: (token?: PowTokenDefinition) => void;
   onSelectedTokenMarketIdChange?: (tokenId: string) => void;
   preserveRoute?: boolean;
+  readState?: CanonicalReadState;
   sales: PowTokenSale[];
   selectedTokenMarketId?: string;
   setFeeRate: (value: number) => void;
@@ -44548,14 +47833,19 @@ function TokenMarketplacePanel({
             <div className="empty-state">
               <Wallet size={28} />
               <h3>
-                {tokenMarketLoading
+                {tokenMarketLoading || readState.phase === "loading"
                   ? "Loading credit markets"
+                  : readState.phase === "unavailable"
+                    ? "Credit markets unavailable"
                   : "No credits indexed yet"}
               </h3>
               <p>
-                {tokenMarketLoading
+                {tokenMarketLoading || readState.phase === "loading"
                   ? "Confirmed credit and sale-ticket data is loading from the ProofOfWork index."
-                  : "Create credit before credit markets can open."}
+                  : canonicalEmptyText(
+                      readState,
+                      "Create credit before credit markets can open.",
+                    )}
               </p>
             </div>
           ) : (
@@ -44564,7 +47854,7 @@ function TokenMarketplacePanel({
                 <article className="id-record token-market-row" key={token.tokenId}>
                   <div>
                     <strong>{token.ticker}</strong>
-                    <span>{token.confirmed ? "Confirmed" : "Pending"}</span>
+                    <span>{tokenLifecycleStatusLabel(token)}</span>
                   </div>
                   <dl>
                     <div>
@@ -45192,6 +48482,8 @@ function TokenMarketplacePanel({
                     : "n/a";
                 const buyLabel = !address
                   ? "Connect to buy"
+                  : listing.sealLifecycleStatus
+                    ? tokenMarketListingStatusLabel(listing)
                   : isWorkToken(listing) && !workWriteEraReady
                     ? "Pre-V8 relic"
                   : isWorkToken(listing) && !workAmoProtocolWritesEnabled
@@ -45239,13 +48531,7 @@ function TokenMarketplacePanel({
                           : listing.ticker}
                       </strong>
                       <span>
-                        {!listing.confirmed
-                          ? "Estimate only"
-                          : !hasSeal
-                          ? "Waiting for seal"
-                          : sealConfirmed
-                            ? "Sealed"
-                            : "Seal pending"}
+                        {tokenMarketListingStatusLabel(listing)}
                       </span>
                     </div>
                     <dl>
@@ -45359,8 +48645,10 @@ function TokenMarketplacePanel({
             <div className="empty-state">
               <Wallet size={28} />
               <h3>
-                  {tokenMarketLoading
+                  {tokenMarketLoading || readState.phase === "loading"
                     ? "Loading credit sale tickets"
+                    : readState.phase === "unavailable"
+                      ? "Credit sale tickets unavailable"
                     : tokenListingSearchQuery
                       ? "No matching sale tickets"
                     : marketListings.length
@@ -45370,8 +48658,10 @@ function TokenMarketplacePanel({
                   : "No credit listings yet"}
               </h3>
               <p>
-                  {tokenMarketLoading
+                  {tokenMarketLoading || readState.phase === "loading"
                     ? "Confirmed listings and seals are loading from the ProofOfWork index."
+                    : readState.phase === "unavailable"
+                      ? canonicalEmptyText(readState, "")
                     : tokenListingSearchQuery
                       ? "No sale tickets match this search."
                     : marketListings.length
@@ -45431,9 +48721,14 @@ function TokenMarketplacePanel({
                           {closedListing.ticker}
                         </strong>
                         <span>
-                          {closedListing.closedConfirmed
-                            ? "Closed listing"
-                            : "Closing listing"}
+                          {tokenLifecycleStatusLabel(
+                            {
+                              ...closedListing,
+                              confirmed: Boolean(closedListing.closedConfirmed),
+                            },
+                            "Closing listing",
+                            "Closed listing",
+                          )}
                         </span>
                       </div>
                       <dl>
@@ -45525,9 +48820,11 @@ function TokenMarketplacePanel({
                           {item.sale.ticker}
                         </strong>
                         <span>
-                          {item.sale.confirmed
-                            ? "Confirmed sale"
-                            : "Pending sale"}
+                          {tokenLifecycleStatusLabel(
+                            item.sale,
+                            "Pending sale",
+                            "Confirmed sale",
+                          )}
                         </span>
                       </div>
                       <dl>
@@ -45684,13 +48981,17 @@ function TokenMarketplacePanel({
             <div className="empty-state">
               <FileText size={28} />
               <h3>
-                {tokenMarketLoading
+                {tokenMarketLoading || readState.phase === "loading"
                   ? "Loading credit market history"
+                  : readState.phase === "unavailable"
+                    ? "Credit market history unavailable"
                   : "No credit market history yet"}
               </h3>
               <p>
-                {tokenMarketLoading
+                {tokenMarketLoading || readState.phase === "loading"
                   ? "Confirmed listings, closures, and sales are loading from the ProofOfWork index."
+                  : readState.phase === "unavailable"
+                    ? canonicalEmptyText(readState, "")
                   : selectedMarketToken
                   ? `${selectedMarketToken.ticker} has no listings or sales yet.`
                   : "Credit listings and sales will appear here after they confirm or enter mempool."}
@@ -45737,6 +49038,7 @@ function MarketplaceApp({
   onNetworkChange,
   pendingEvents,
   publishListing,
+  readState,
   registryAddress,
   registryListings,
   registryRecords,
@@ -45792,6 +49094,7 @@ function MarketplaceApp({
   onNetworkChange: (network: BitcoinNetwork) => void;
   pendingEvents: PowIdPendingEvent[];
   publishListing: () => void;
+  readState: CanonicalReadState;
   registryAddress: string;
   registryListings: PowIdListing[];
   registryRecords: PowIdRecord[];
@@ -45866,9 +49169,12 @@ function MarketplaceApp({
     tokens,
   });
   const sealedTokenListings = tokenListings.filter(
-    tokenListingHasSaleTicketSeal,
+    (listing) =>
+      tokenListingHasConfirmedSaleTicketSeal(listing) ||
+      tokenListingHasPendingSaleTicketSeal(listing),
   );
   const confirmedTokenCount = tokens.filter((token) => token.confirmed).length;
+  const lifecycleTokenCount = tokenDefinitionMetricCount(tokens);
   const scopedStatus = marketplaceStatusForTab({
     active: marketplaceTab,
     idSummary: {
@@ -45913,6 +49219,7 @@ function MarketplaceApp({
       />
 
       <section className="id-launch-main">
+        <CanonicalReadNotice label="AMO ledger" state={readState} />
         <div className="id-launch-hero">
           <div>
             <span className="id-launch-kicker">
@@ -45928,34 +49235,34 @@ function MarketplaceApp({
           {marketplaceTab === "ids" ? (
             <div className="id-launch-stats" aria-label="ID AMO stats">
               <div>
-                <strong>{registryRecords.length.toLocaleString()}</strong>
+                <strong>{canonicalMetric(registryRecords.length.toLocaleString(), readState)}</strong>
                 <span>Total IDs</span>
               </div>
               <div>
-                <strong>{registryListings.length.toLocaleString()}</strong>
+                <strong>{canonicalMetric(registryListings.length.toLocaleString(), readState)}</strong>
                 <span>Active Listings</span>
               </div>
               <div>
-                <strong>{marketplaceStats.totalSales.toLocaleString()}</strong>
+                <strong>{canonicalMetric(marketplaceStats.totalSales.toLocaleString(), readState)}</strong>
                 <span>ID Sales</span>
               </div>
               <div>
                 <strong>
-                  {marketplaceStats.totalVolumeSats.toLocaleString()}
+                  {canonicalMetric(marketplaceStats.totalVolumeSats.toLocaleString(), readState)}
                 </strong>
                 <span>Volume proofs</span>
               </div>
               <div>
-                <strong>{pendingRecords.length.toLocaleString()}</strong>
+                <strong>{canonicalMetric(pendingRecords.length.toLocaleString(), readState)}</strong>
                 <span>Pending IDs</span>
               </div>
               <div>
-                <strong>{marketplaceStats.pendingSales.toLocaleString()}</strong>
+                <strong>{canonicalMetric(marketplaceStats.pendingSales.toLocaleString(), readState)}</strong>
                 <span>Pending Sales</span>
               </div>
             </div>
           ) : (
-            <TokenMarketplaceStatsGrid stats={tokenSummaryStats} />
+            <TokenMarketplaceStatsGrid readState={readState} stats={tokenSummaryStats} />
           )}
         </div>
 
@@ -45963,7 +49270,7 @@ function MarketplaceApp({
           active={marketplaceTab}
           idCount={registryListings.length}
           onChange={setMarketplaceTab}
-          tokenCount={tokens.length}
+          tokenCount={lifecycleTokenCount}
         />
 
         {marketplaceTab === "ids" ? (
@@ -46106,7 +49413,10 @@ function MarketplaceApp({
             </div>
             <IdRecordList
               records={confirmedRecords}
-              empty="No confirmed registry records found yet."
+              empty={canonicalEmptyText(
+                readState,
+                "No confirmed registry records found yet.",
+              )}
               initialLimit={24}
               searchPlaceholder="Search registry supply"
             />
@@ -46124,6 +49434,7 @@ function MarketplaceApp({
             mints={tokenMints}
             network="livenet"
             onSelectedTokenMarketIdChange={setSelectedTokenMarketId}
+            readState={readState}
             sales={tokenSales}
             selectedTokenMarketId={selectedTokenMarketId}
             setFeeRate={setFeeRate}
@@ -46162,6 +49473,7 @@ function MarketplaceWorkspace({
   network,
   pendingEvents,
   publishListing,
+  readState,
   registryAddress,
   registryListings,
   registryRecords,
@@ -46213,6 +49525,7 @@ function MarketplaceWorkspace({
   network: BitcoinNetwork;
   pendingEvents: PowIdPendingEvent[];
   publishListing: () => void;
+  readState: CanonicalReadState;
   registryAddress: string;
   registryListings: PowIdListing[];
   registryRecords: PowIdRecord[];
@@ -46274,9 +49587,9 @@ function MarketplaceWorkspace({
     (event) =>
       event.network === network && pendingIdEventTouchesAddress(event, address),
   );
-  const networkTokenCount = tokens.filter(
-    (token) => token.network === network,
-  ).length;
+  const networkTokenCount = tokenDefinitionMetricCount(
+    tokens.filter((token) => token.network === network),
+  );
   const tokenMarketRows = tokenMarketplaceRowsFor({
     address,
     listings: tokenListings,
@@ -46311,6 +49624,7 @@ function MarketplaceWorkspace({
 
   return (
     <section className="ids-workspace marketplace-workspace">
+      <CanonicalReadNotice label="AMO ledger" state={readState} />
       <div className="files-toolbar">
         <div>
           <h2>AMO</h2>
@@ -46347,19 +49661,19 @@ function MarketplaceWorkspace({
         aria-label="AMO stats"
       >
         <div>
-          <strong>{networkListings.length.toLocaleString()}</strong>
+          <strong>{canonicalMetric(networkListings.length.toLocaleString(), readState)}</strong>
           <span>Active Listings</span>
         </div>
         <div>
-          <strong>{marketplaceStats.totalSales.toLocaleString()}</strong>
+          <strong>{canonicalMetric(marketplaceStats.totalSales.toLocaleString(), readState)}</strong>
           <span>ID Sales</span>
         </div>
         <div>
-          <strong>{marketplaceStats.totalVolumeSats.toLocaleString()}</strong>
+          <strong>{canonicalMetric(marketplaceStats.totalVolumeSats.toLocaleString(), readState)}</strong>
           <span>Volume proofs</span>
         </div>
         <div>
-          <strong>{marketplaceStats.pendingSales.toLocaleString()}</strong>
+          <strong>{canonicalMetric(marketplaceStats.pendingSales.toLocaleString(), readState)}</strong>
           <span>Pending Sales</span>
         </div>
       </div>
@@ -46507,7 +49821,10 @@ function MarketplaceWorkspace({
             records={confirmedRecords}
             empty={
               registryAddress
-                ? "No confirmed registry records found yet."
+                ? canonicalEmptyText(
+                    readState,
+                    "No confirmed registry records found yet.",
+                  )
                 : "Switch to Mainnet to browse the ID AMO book."
             }
             initialLimit={24}
@@ -46520,6 +49837,7 @@ function MarketplaceWorkspace({
         <>
           <TokenMarketplaceStatsGrid
             className="id-launch-stats marketplace-workspace-stats"
+            readState={readState}
             stats={tokenSummaryStats}
           />
           <TokenMarketplacePanel
@@ -46536,6 +49854,7 @@ function MarketplaceWorkspace({
             onOpenTokenWorkspace={onOpenTokenWorkspace}
             onOpenWalletWorkspace={onOpenWalletWorkspace}
             onSelectedTokenMarketIdChange={setSelectedTokenMarketId}
+            readState={readState}
             sales={tokenSales}
             selectedTokenMarketId={selectedTokenMarketId}
             setFeeRate={setFeeRate}
@@ -46742,6 +50061,7 @@ function IdsWorkspace({
   network,
   pendingEvents,
   registryAddress,
+  readState,
   registryRecords,
   registrationBytes,
   lastRegisteredId,
@@ -46778,6 +50098,7 @@ function IdsWorkspace({
   network: BitcoinNetwork;
   pendingEvents: PowIdPendingEvent[];
   registryAddress: string;
+  readState: CanonicalReadState;
   registryRecords: PowIdRecord[];
   registrationBytes: number;
   lastRegisteredId?: PowIdRecord;
@@ -46850,7 +50171,11 @@ function IdsWorkspace({
           <h2>ProofOfWork IDs</h2>
           <span>
             {registryAddress
-              ? `${registryRecords.length} total registry record${registryRecords.length === 1 ? "" : "s"} · ${ownedIds.length} yours`
+              ? readState.phase === "ready" || readState.phase === "last-good"
+                ? `${registryRecords.length} total registry record${registryRecords.length === 1 ? "" : "s"} · ${ownedIds.length} yours`
+                : readState.phase === "loading"
+                  ? "Loading verified registry records…"
+                  : "Registry data unavailable"
               : `No registry configured for ${networkLabel(network)}`}
           </span>
         </div>
@@ -46866,6 +50191,8 @@ function IdsWorkspace({
           </span>
         </button>
       </div>
+
+      <CanonicalReadNotice label="ID registry" state={readState} />
 
       <div className="ids-content">
         <form className="id-card" onSubmit={submit}>
@@ -46972,7 +50299,10 @@ function IdsWorkspace({
 
           {ownerControlledIds.length === 0 ? (
             <p className="field-note">
-              Connect the current owner wallet to manage confirmed IDs.
+              {canonicalEmptyText(
+                readState,
+                "Connect the current owner wallet to manage confirmed IDs.",
+              )}
             </p>
           ) : (
             <>
@@ -48070,7 +51400,7 @@ function MessageList({
         : activeFolder === "incoming"
           ? "Pending inbound transactions will appear here until they confirm."
           : activeFolder === "outbox"
-            ? "Pending and dropped broadcasts will appear here."
+            ? "Pending, unknown, replaced, dropped, and failed broadcasts will appear here."
             : activeFolder === "favorites"
               ? "Star confirmed mail to keep it close."
               : activeFolder === "archive"
@@ -49653,6 +52983,26 @@ function Reader({
           <div>
             <dt>Status</dt>
             <dd>Pending</dd>
+          </div>
+        ) : null}
+        {message.folder === "sent" && message.replacementTxid ? (
+          <div>
+            <dt>Replacement</dt>
+            <dd>
+              <a
+                href={explorerTxUrl(message.replacementTxid, explorerNetwork)}
+                rel="noreferrer"
+                target="_blank"
+              >
+                {shortAddress(message.replacementTxid)}
+              </a>
+            </dd>
+          </div>
+        ) : null}
+        {message.folder === "sent" && message.failureReason ? (
+          <div>
+            <dt>{deliveryStatus === "unknown" ? "Reason" : "Failure"}</dt>
+            <dd>{message.failureReason}</dd>
           </div>
         ) : null}
         {message.folder === "sent" && message.lastCheckedAt ? (

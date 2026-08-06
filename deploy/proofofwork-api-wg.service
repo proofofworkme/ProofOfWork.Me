@@ -1,12 +1,14 @@
 [Unit]
 Description=ProofOfWork API WireGuard socket proxy
 After=proofofwork-api.service
-Requires=proofofwork-api.service
 BindsTo=wg-quick@wg0.service
 PartOf=proofofwork-api-wg.socket wg-quick@wg0.service
+OnFailure=proofofwork-ops-alert@%n.service
 
 [Service]
 ExecStart=/usr/lib/systemd/systemd-socket-proxyd 127.0.0.1:8081
+Restart=on-failure
+RestartSec=1s
 DynamicUser=true
 LimitCORE=0
 NoNewPrivileges=true

@@ -34,6 +34,123 @@ evidence_file_is_safe() {
   [[ "${owner}" == "${EUID}" ]] && ((!(8#${mode} & 07022)))
 }
 
+# The live checkout is writable by the unprivileged runtime/deploy account while
+# this retention validator has narrowly elevated read/traverse access. Never let
+# Git inherit process, user, system, or repository configuration that can launch
+# helpers. Runtime configuration has higher precedence than repository-local
+# config and is inherited by child upload-pack/pack-objects processes as well.
+# Git appends its canonical `git pack-objects` argv to packObjectsHook; the fixed
+# `/usr/bin/env` prefix preserves that argv under the isolated PATH without
+# permitting the repository to choose a command.
+isolated_git_environment() {
+  local trusted_checkout="$1"
+  shift
+  /usr/bin/env --ignore-environment \
+    PATH=/usr/bin:/bin \
+    LC_ALL=C \
+    GIT_CONFIG_NOSYSTEM=1 \
+    GIT_CONFIG_SYSTEM=/dev/null \
+    GIT_CONFIG_GLOBAL=/dev/null \
+    GIT_OPTIONAL_LOCKS=0 \
+    GIT_NO_LAZY_FETCH=1 \
+    GIT_NO_REPLACE_OBJECTS=1 \
+    GIT_LITERAL_PATHSPECS=1 \
+    GIT_ATTR_NOSYSTEM=1 \
+    GIT_TERMINAL_PROMPT=0 \
+    GIT_PAGER= \
+    PAGER= \
+    GIT_EDITOR=/usr/bin/false \
+    GIT_SEQUENCE_EDITOR=/usr/bin/false \
+    GIT_ASKPASS=/usr/bin/false \
+    SSH_ASKPASS=/usr/bin/false \
+    GIT_SSH=/usr/bin/false \
+    GIT_SSH_COMMAND=/usr/bin/false \
+    GIT_PROXY_COMMAND=/usr/bin/false \
+    GIT_EXTERNAL_DIFF=/usr/bin/false \
+    GIT_CONFIG_COUNT=35 \
+    GIT_CONFIG_KEY_0=safe.directory \
+    "GIT_CONFIG_VALUE_0=${trusted_checkout}" \
+    GIT_CONFIG_KEY_1=safe.directory \
+    "GIT_CONFIG_VALUE_1=${trusted_checkout}/.git" \
+    GIT_CONFIG_KEY_2=core.fsmonitor \
+    GIT_CONFIG_VALUE_2=false \
+    GIT_CONFIG_KEY_3=core.untrackedCache \
+    GIT_CONFIG_VALUE_3=false \
+    GIT_CONFIG_KEY_4=core.hooksPath \
+    GIT_CONFIG_VALUE_4=/dev/null \
+    GIT_CONFIG_KEY_5=core.pager \
+    GIT_CONFIG_VALUE_5=cat \
+    GIT_CONFIG_KEY_6=pager.show \
+    GIT_CONFIG_VALUE_6=false \
+    GIT_CONFIG_KEY_7=log.showSignature \
+    GIT_CONFIG_VALUE_7=false \
+    GIT_CONFIG_KEY_8=maintenance.auto \
+    GIT_CONFIG_VALUE_8=0 \
+    GIT_CONFIG_KEY_9=gc.auto \
+    GIT_CONFIG_VALUE_9=0 \
+    GIT_CONFIG_KEY_10=gc.autoDetach \
+    GIT_CONFIG_VALUE_10=false \
+    GIT_CONFIG_KEY_11=protocol.allow \
+    GIT_CONFIG_VALUE_11=never \
+    GIT_CONFIG_KEY_12=protocol.file.allow \
+    GIT_CONFIG_VALUE_12=always \
+    GIT_CONFIG_KEY_13=uploadpack.packObjectsHook \
+    GIT_CONFIG_VALUE_13=/usr/bin/env \
+    GIT_CONFIG_KEY_14=core.alternateRefsCommand \
+    GIT_CONFIG_VALUE_14=/usr/bin/false \
+    GIT_CONFIG_KEY_15=credential.helper \
+    GIT_CONFIG_VALUE_15= \
+    GIT_CONFIG_KEY_16=core.askPass \
+    GIT_CONFIG_VALUE_16=/usr/bin/false \
+    GIT_CONFIG_KEY_17=core.sshCommand \
+    GIT_CONFIG_VALUE_17=/usr/bin/false \
+    GIT_CONFIG_KEY_18=submodule.recurse \
+    GIT_CONFIG_VALUE_18=false \
+    GIT_CONFIG_KEY_19=fetch.recurseSubmodules \
+    GIT_CONFIG_VALUE_19=false \
+    GIT_CONFIG_KEY_20=core.excludesFile \
+    GIT_CONFIG_VALUE_20=/dev/null \
+    GIT_CONFIG_KEY_21=core.attributesFile \
+    GIT_CONFIG_VALUE_21=/dev/null \
+    GIT_CONFIG_KEY_22=core.sparseCheckout \
+    GIT_CONFIG_VALUE_22=false \
+    GIT_CONFIG_KEY_23=core.sparseCheckoutCone \
+    GIT_CONFIG_VALUE_23=false \
+    GIT_CONFIG_KEY_24=fetch.fsckObjects \
+    GIT_CONFIG_VALUE_24=true \
+    GIT_CONFIG_KEY_25=transfer.fsckObjects \
+    GIT_CONFIG_VALUE_25=true \
+    GIT_CONFIG_KEY_26=receive.fsckObjects \
+    GIT_CONFIG_VALUE_26=true \
+    GIT_CONFIG_KEY_27=pack.threads \
+    GIT_CONFIG_VALUE_27=1 \
+    GIT_CONFIG_KEY_28=pack.windowMemory \
+    GIT_CONFIG_VALUE_28=32m \
+    GIT_CONFIG_KEY_29=pack.deltaCacheSize \
+    GIT_CONFIG_VALUE_29=32m \
+    GIT_CONFIG_KEY_30=core.fileMode \
+    GIT_CONFIG_VALUE_30=true \
+    GIT_CONFIG_KEY_31=core.symlinks \
+    GIT_CONFIG_VALUE_31=true \
+    GIT_CONFIG_KEY_32=core.ignoreCase \
+    GIT_CONFIG_VALUE_32=false \
+    GIT_CONFIG_KEY_33=core.precomposeUnicode \
+    GIT_CONFIG_VALUE_33=false \
+    GIT_CONFIG_KEY_34=advice.detachedHead \
+    GIT_CONFIG_VALUE_34=false \
+    "$@"
+}
+
+isolated_checkout_git() {
+  local trusted_checkout="$1"
+  shift
+  isolated_git_environment "${trusted_checkout}" \
+    /usr/bin/git \
+    --git-dir="${trusted_checkout}/.git" \
+    --work-tree="${trusted_checkout}" \
+    "$@"
+}
+
 declare -A protected_archives=()
 if [[ "${release_kind}" == "ui" ]]; then
   if [[ "${ui_manifest}" != "/var/www/.proofofwork-ui-release" &&
@@ -71,12 +188,12 @@ else
   fi
   if [[ ! -d "${node_checkout}" || -L "${node_checkout}" ||
     "$(realpath -e -- "${node_checkout}")" != "${node_checkout}" ]] ||
-    [[ "$(/usr/bin/git -c safe.directory="${node_checkout}" -C "${node_checkout}" rev-parse --show-toplevel)" != "${node_checkout}" ]]; then
+    [[ "$(isolated_checkout_git "${node_checkout}" rev-parse --show-toplevel)" != "${node_checkout}" ]]; then
     echo "Refusing retention without a canonical live node checkout." >&2
     exit 2
   fi
-  live_commit="$(/usr/bin/git -c safe.directory="${node_checkout}" -C "${node_checkout}" rev-parse --verify HEAD^{commit})"
-  live_tree="$(/usr/bin/git -c safe.directory="${node_checkout}" -C "${node_checkout}" rev-parse --verify HEAD^{tree})"
+  live_commit="$(isolated_checkout_git "${node_checkout}" rev-parse --verify HEAD^{commit})"
+  live_tree="$(isolated_checkout_git "${node_checkout}" rev-parse --verify HEAD^{tree})"
   current_provenance_count=0
   while IFS= read -r -d '' provenance_file; do
     if ! evidence_file_is_safe "${provenance_file}"; then

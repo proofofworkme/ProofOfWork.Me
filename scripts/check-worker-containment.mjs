@@ -24,6 +24,7 @@ import {
   shouldEscalateWorkerFailure,
   workerBackfillPhasePlan,
   workerCoreTipAdvanceFromError,
+  workerInternalVerifierHeaders,
   workerNoProgressFromMeta,
   workerPendingEventHealth,
   workerWorkAmoV8ActivationLatchReady,
@@ -40,6 +41,7 @@ import {
   workerWorkPrecisionRelationalParity,
   workerWorkPrecisionSnapshotReady,
   workerWorkPrecisionV2MarkerReady,
+  workerReadJson,
 } from "./run-proof-indexer-worker.mjs";
 import {
   workAmoV8DeclarationCommitment,
@@ -275,6 +277,51 @@ if (fixtureMode === "poison-exit") {
 async function runChecks() {
   const workerSource = readFileSync(WORKER_PATH, "utf8");
   const paritySource = readFileSync(PARITY_PATH, "utf8");
+  const verifierToken = "v".repeat(64);
+  assert.deepEqual(
+    workerInternalVerifierHeaders(
+      new URL("http://127.0.0.1:8081/api/v1/tx/status"),
+      verifierToken,
+    ),
+    { "x-pow-internal-verifier": verifierToken },
+  );
+  let unsafeFetchCalls = 0;
+  await assert.rejects(
+    workerReadJson(
+      new URL("https://computer.proofofwork.me/api/v1/tx/status"),
+      1_000,
+      {
+        fetchImplementation: async () => {
+          unsafeFetchCalls += 1;
+          throw new Error("unsafe verifier fetch must not run");
+        },
+        internalVerifierToken: verifierToken,
+      },
+    ),
+    (error) => {
+      assert.equal(error?.code, "POW_INTERNAL_VERIFIER_TRANSPORT_UNSAFE");
+      assert.doesNotMatch(error?.message ?? "", new RegExp(verifierToken, "u"));
+      return true;
+    },
+  );
+  assert.equal(unsafeFetchCalls, 0);
+  let redirectMode = "";
+  await workerReadJson(
+    new URL("http://127.0.0.1:8081/api/v1/tx/status"),
+    1_000,
+    {
+      fetchImplementation: async (_url, options) => {
+        redirectMode = options.redirect;
+        return { json: async () => ({ ok: true }), ok: true, status: 200 };
+      },
+      internalVerifierToken: verifierToken,
+    },
+  );
+  assert.equal(
+    redirectMode,
+    "error",
+    "credential-bearing internal verifier reads must reject redirects",
+  );
   const updateTransactionStatusSource = topLevelFunctionSource(
     "updateTransactionStatus",
     WORKER_PATH,
@@ -2696,6 +2743,7 @@ async function runChecks() {
       deterministicDomainOnly: true,
       circuitActivation: "contained-retry",
       genericEscalation: true,
+      internalVerifierLoopbackOnly: true,
       pendingOnlySourceBoundary: true,
       pendingStatusBeforeWitness: true,
       pendingWitnessExact: true,

@@ -128,14 +128,6 @@ const frontendExactIntegerBigInt = (value) => {
   const text = typeof value === "string" ? value.trim() : "";
   return /^(?:0|[1-9]\d*)$/u.test(text) ? BigInt(text) : null;
 };
-const frontendCompareExactIntegers = (left, right) => {
-  const leftExact = frontendExactIntegerBigInt(left);
-  const rightExact = frontendExactIntegerBigInt(right);
-  if (leftExact === null || rightExact === null) {
-    return 0;
-  }
-  return leftExact < rightExact ? -1 : leftExact > rightExact ? 1 : 0;
-};
 const frontendExactDecimalText = (value) => {
   const text = typeof value === "number" ? String(value) : String(value ?? "").trim();
   return /^(?:0|[1-9]\d*)(?:\.\d+)?$/u.test(text) ? text : "";
@@ -195,6 +187,24 @@ const compareTokenHolderBalances = isolatedTypeScriptFunction(
   "compareTokenHolderBalances",
   { tokenHolderBalanceUnits },
 );
+const frontendNormalizeBroadcastStatus = (value) => {
+  const status = String(value ?? "").trim().toLowerCase();
+  return ["confirmed", "dropped", "failed", "pending", "replaced", "unknown"].includes(
+    status,
+  )
+    ? status
+    : "unknown";
+};
+const frontendTokenProjectionLifecycleStatus = isolatedTypeScriptFunction(
+  appSource,
+  "tokenProjectionLifecycleStatus",
+  { normalizeBroadcastStatus: frontendNormalizeBroadcastStatus },
+);
+const frontendTokenProjectionCountsAsPending = isolatedTypeScriptFunction(
+  appSource,
+  "tokenProjectionCountsAsPending",
+  { tokenProjectionLifecycleStatus: frontendTokenProjectionLifecycleStatus },
+);
 const tokenWalletBalancesFor = isolatedTypeScriptFunction(
   appSource,
   "tokenWalletBalancesFor",
@@ -205,6 +215,7 @@ const tokenWalletBalancesFor = isolatedTypeScriptFunction(
     isWorkToken: frontendIsWorkToken,
     tokenRecordAmountAtoms: frontendTokenRecordAmountAtoms,
     tokenHolderMatchesDefinition,
+    tokenProjectionCountsAsPending: frontendTokenProjectionCountsAsPending,
     tokenWalletBalanceHasAmount,
     workNumberFromAtoms: (atoms) => Number(atoms) / 100_000_000,
     workRecordAtoms: frontendWorkRecordAtoms,
@@ -216,40 +227,6 @@ const bondDecimalQ8 = isolatedTypeScriptFunction(
   {
     exactDecimalText: frontendExactDecimalText,
     exactIntegerBigInt: frontendExactIntegerBigInt,
-  },
-);
-const infinitySummaryRegresses = isolatedTypeScriptFunction(
-  appSource,
-  "infinitySummaryRegresses",
-  {
-    bondDecimalQ8,
-    compareExactIntegers: frontendCompareExactIntegers,
-    tokenStateRegresses: () => false,
-  },
-);
-const highestExactWorkQ8 = isolatedTypeScriptFunction(
-  appSource,
-  "highestExactWorkQ8",
-  { exactIntegerBigInt: frontendExactIntegerBigInt },
-);
-const workFloorQuoteLiveValueQ8 = isolatedTypeScriptFunction(
-  appSource,
-  "workFloorQuoteLiveValueQ8",
-  { highestExactWorkQ8 },
-);
-const workFloorQuoteFrozenValueQ8 = isolatedTypeScriptFunction(
-  appSource,
-  "workFloorQuoteFrozenValueQ8",
-  { highestExactWorkQ8 },
-);
-const workFloorQuoteRegresses = isolatedTypeScriptFunction(
-  appSource,
-  "workFloorQuoteRegresses",
-  {
-    workFloorQuoteFrozenValue: () => 0,
-    workFloorQuoteFrozenValueQ8,
-    workFloorQuoteLiveValue: () => 0,
-    workFloorQuoteLiveValueQ8,
   },
 );
 const exactWorkQ8AliasMatches = isolatedTypeScriptFunction(
@@ -421,62 +398,21 @@ const fractionalHolders = [
   },
 ].sort((left, right) => compareTokenHolderBalances(right, left));
 assert.equal(fractionalHolders[0].balanceAtoms, "2");
-const exactBondNetworkValueQ8 = 900_719_925_474_099_312_345_678n;
-const bondSummary = (networkValueQ8) => ({
-  networkValueQ8: networkValueQ8.toString(),
-  networkValueSats: "9007199254740993.12345678",
-  stats: {
-    confirmedBondActions: 1,
-    confirmedSupply: "9007199254740993",
-  },
-  token: {},
-});
-assert.equal(
-  infinitySummaryRegresses(
-    bondSummary(exactBondNetworkValueQ8 - 1n),
-    bondSummary(exactBondNetworkValueQ8),
-  ),
-  true,
-  "a one-Q8 bond network regression above Number precision must be rejected",
-);
-assert.equal(
-  infinitySummaryRegresses(
-    bondSummary(exactBondNetworkValueQ8),
-    bondSummary(exactBondNetworkValueQ8),
-  ),
-  false,
-);
 const exactWorkNetworkValueQ8 = 900_719_925_474_099_312_345_679n;
-const workFloorSummary = (networkValueQ8, frozenValueQ8 = networkValueQ8) => ({
-  actualValue: {
-    frozenNetworkValueQ8: frozenValueQ8.toString(),
-    frozenTotalQ8: frozenValueQ8.toString(),
-    liveNetworkValueQ8: networkValueQ8.toString(),
-    liveTotalQ8: networkValueQ8.toString(),
-    networkValueQ8: networkValueQ8.toString(),
-    totalQ8: networkValueQ8.toString(),
-  },
-  chartPoints: [{}, {}, {}],
-  frozenNetworkValueQ8: frozenValueQ8.toString(),
-  liveNetworkValueQ8: networkValueQ8.toString(),
-  networkValueQ8: networkValueQ8.toString(),
-  totalQ8: networkValueQ8.toString(),
-});
-assert.equal(
-  workFloorQuoteRegresses(
-    workFloorSummary(exactWorkNetworkValueQ8 - 1n, exactWorkNetworkValueQ8),
-    workFloorSummary(exactWorkNetworkValueQ8),
-  ),
-  true,
-  "a one-Q8 WORK network regression above Number precision must be rejected",
+assert.match(
+  appSource,
+  /function applyInfinitySummary\(snapshot:[\s\S]*acceptedBondSummariesRef\.current\.set\(snapshot\.tokenId, snapshot\)[\s\S]*setInfinitySummary\(snapshot\)/u,
+  "authenticated full bond snapshots must replace the prior snapshot even when canonical values shrink",
 );
-assert.equal(
-  workFloorQuoteRegresses(
-    workFloorSummary(exactWorkNetworkValueQ8 + 1n),
-    workFloorSummary(exactWorkNetworkValueQ8),
-  ),
-  false,
-  "a one-Q8 WORK network advance above Number precision must be accepted",
+assert.match(
+  appSource,
+  /function applyWorkFloorQuote\(quote:[\s\S]*boundaryWasLatched && !incomingBoundaryObserved[\s\S]*acceptedWorkFloorQuoteRef\.current = safetyBoundQuote/u,
+  "WORK reads must accept current quote values while keeping the independent V8 write boundary fail closed",
+);
+assert.doesNotMatch(
+  appSource,
+  /function (?:infinitySummaryRegresses|workFloorQuoteRegresses)\(/u,
+  "canonical value decreases must not be rejected by monotonic UI guards",
 );
 
 const decimalFromQ8 = (value) => {

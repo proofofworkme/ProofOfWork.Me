@@ -147,7 +147,9 @@ export function isRushRoute() {
     return true;
   }
 
-  return searchFlag("rush");
+  return (
+    import.meta.env.VITE_RUSH_QUERY_ENABLED === "1" && searchFlag("rush")
+  );
 }
 
 export function isActivityRoute() {

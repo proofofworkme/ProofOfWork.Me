@@ -1,11 +1,16 @@
 [Unit]
-Description=Prune managed ProofOfWork UI release backups
+Description=Check ProofOfWork node API availability, readiness, and worker restarts
+After=proofofwork-api.service proofofwork-indexer-worker.service
 OnFailure=proofofwork-ops-alert@%n.service
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/sbin/proofofwork-release-prune /var/backups/proofofwork-ui/releases 5
-TimeoutStartSec=30m
+User=powadmin
+Group=powadmin
+ExecStart=/usr/local/sbin/proofofwork-node-api-health
+StateDirectory=proofofwork-ops-health
+StateDirectoryMode=0750
+TimeoutStartSec=45s
 NoNewPrivileges=true
 PrivateTmp=true
 PrivateDevices=true
@@ -15,15 +20,11 @@ ProtectControlGroups=true
 ProtectKernelLogs=true
 ProtectKernelModules=true
 ProtectKernelTunables=true
-ReadWritePaths=/var/backups/proofofwork-ui/releases
 CapabilityBoundingSet=
 AmbientCapabilities=
 RestrictSUIDSGID=true
 LockPersonality=true
 RestrictRealtime=true
 SystemCallArchitectures=native
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 UMask=0077
-Nice=10
-IOSchedulingClass=idle
-CPUWeight=10
-IOWeight=10

@@ -27,6 +27,10 @@ import {
   canonicalProtocolCandidateFromOutput,
   decodeCanonicalOpReturnOutput,
 } from "../server/canonical-op-return.mjs";
+import {
+  coherentFullCanonicalSnapshot,
+  withFullCanonicalSnapshot,
+} from "../server/canonical-snapshot.mjs";
 import { compareCanonicalUtf8 } from "../server/canonical-order.mjs";
 import {
   PROOF_INDEX_EVENT_RELATION_PARITY_MODEL,
@@ -96,6 +100,13 @@ import {
 import {
   tokenListingCanProjectCloseActivity,
 } from "../server/token-listing-lifecycle.mjs";
+import {
+  canonicalLifecycleInputOutpointsEvidence,
+  exactCoreNodeAuthority,
+  exactCoreTipFromBlockchainInfo,
+  lifecycleInputOutpointsFromTransaction,
+  mailMessageWithTxLifecycle,
+} from "../server/tx-lifecycle.mjs";
 import {
   WORK_AMO_V4_AUTH_VERSION,
   WORK_AMO_V4_ORACLE_MODEL,
@@ -1239,6 +1250,8 @@ function isolatedFunction(path, name, globals = {}) {
     WORK_TOKEN_MINT_AMOUNT_ATOMS,
     WORK_TOKEN_MINT_AMOUNT_SUBATOMS,
     TOKEN_CREATION_PRICE_SATS: 546,
+    PENDING_DROP_CONFIRMATION_MS: 5 * 60_000,
+    TERMINAL_STATUS_RECHECK_WINDOW_MS: 24 * 60 * 60_000,
     WORK_TOKEN_CREATED_AT: "2026-05-15T02:57:28.000Z",
     WORK_TOKEN_CREATE_DATA_BYTES: 70,
     WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS:
@@ -1299,6 +1312,7 @@ function isolatedFunction(path, name, globals = {}) {
     canonicalIncbReplaySha256,
     buildIncbRangeReplayWitnessManifest,
     canonicalIntegerText,
+    canonicalLifecycleInputOutpointsEvidence,
     canonicalPwtReplayVerifierBindingCacheKey:
       scopedCanonicalPwtReplayVerifierBindingCacheKey,
     canonicalPwtReplayVerifierBindingDescriptor:
@@ -1320,6 +1334,7 @@ function isolatedFunction(path, name, globals = {}) {
       return "invalid";
     },
     cachedInternalVerifierState: (_key, loader) => loader(),
+    coherentFullCanonicalSnapshot,
     canonicalNonNegativeIntegerText,
     canonicalWorkAtomsText,
     canonicalWorkSubatomsText,
@@ -1379,9 +1394,11 @@ function isolatedFunction(path, name, globals = {}) {
     marketplaceMutationPaymentIdentity,
     marketplaceMutationPaymentSats,
     marketplaceMutationPaymentSatsBigInt,
+    mailMessageWithTxLifecycle,
     normalizeWorkAtoms,
     normalizeWorkSubatoms,
     legacyWorkAtomsToSubatoms,
+    lifecycleInputOutpointsFromTransaction,
     normalizedText,
     normalizedTxid,
     numericValue,
@@ -1467,7 +1484,12 @@ function isolatedFunction(path, name, globals = {}) {
     upsertWorkAmoV8ListingProjection: async () => {},
     discoverIndexedWorkAmoV8DeclarationPins: async () => null,
     pendingCoreWorkMarketplaceVerifierContext: async () => null,
+    authenticatedFullCanonicalSnapshotSupersedes: () => false,
+    transformCanonicalSnapshotPayload: (payload, _surface, transform) =>
+      transform(payload),
+    existingRegistryPayload: async () => null,
     withWorkPrecisionMetadata,
+    withFullCanonicalSnapshot,
     uniqueMarketplaceMutationActivity,
     validTxid,
     ...globals,
@@ -1582,6 +1604,9 @@ function isolatedFunction(path, name, globals = {}) {
           ],
           canonicalTokenDefinitionCreationEventJoinSql: [
             "canonicalCreditListingAlias",
+          ],
+          currentProofIndexRegistryPayload: [
+            "compareCurrentRegistryRecords",
           ],
           tokenListingActiveLifecycleSql: [
             "canonicalCreditListingAlias",
@@ -6555,6 +6580,2017 @@ check("authoritative wallet projections reject truncated pending or listing sets
   );
 });
 
+check("local Credit lifecycle truth stays visible without entering canonical economics", () => {
+  const normalizeBroadcastStatus = (value) =>
+    ["confirmed", "dropped", "failed", "pending", "replaced", "unknown"].includes(
+      String(value ?? "").trim().toLowerCase(),
+    )
+      ? String(value).trim().toLowerCase()
+      : "unknown";
+  const tokenProjectionLifecycleStatus = isolatedTypeScriptFunction(
+    APP_PATH,
+    "tokenProjectionLifecycleStatus",
+    { normalizeBroadcastStatus },
+  );
+  const tokenProjectionCountsAsPending = isolatedTypeScriptFunction(
+    APP_PATH,
+    "tokenProjectionCountsAsPending",
+    { tokenProjectionLifecycleStatus },
+  );
+  const tokenDefinitionCountsInMetrics = isolatedTypeScriptFunction(
+    APP_PATH,
+    "tokenDefinitionCountsInMetrics",
+    { tokenProjectionCountsAsPending },
+  );
+  const tokenDefinitionMetricCount = isolatedTypeScriptFunction(
+    APP_PATH,
+    "tokenDefinitionMetricCount",
+    { tokenDefinitionCountsInMetrics },
+  );
+  const tokenDefinitionAllowsLifecycleActions = isolatedTypeScriptFunction(
+    APP_PATH,
+    "tokenDefinitionAllowsLifecycleActions",
+    { tokenDefinitionCountsInMetrics },
+  );
+  const confirmed = { confirmed: true };
+  const canonicalPending = { confirmed: false };
+  const localPending = {
+    confirmed: false,
+    lifecycleStatus: "pending",
+    localBroadcast: true,
+  };
+  const localUnknown = {
+    confirmed: false,
+    lifecycleStatus: "unknown",
+    localBroadcast: true,
+  };
+  const localConfirmedIndexing = {
+    confirmed: false,
+    lifecycleStatus: "confirmed",
+    localBroadcast: true,
+  };
+  assert.equal(
+    tokenDefinitionMetricCount([
+      confirmed,
+      canonicalPending,
+      localPending,
+      localUnknown,
+      localConfirmedIndexing,
+    ]),
+    3,
+  );
+  assert.equal(tokenDefinitionAllowsLifecycleActions(localPending), true);
+  assert.equal(tokenDefinitionAllowsLifecycleActions(localUnknown), false);
+  assert.equal(
+    tokenDefinitionAllowsLifecycleActions(localConfirmedIndexing),
+    false,
+  );
+
+  const tokenProjectionReservesSpendability = isolatedTypeScriptFunction(
+    APP_PATH,
+    "tokenProjectionReservesSpendability",
+    { tokenProjectionLifecycleStatus },
+  );
+  assert.equal(
+    tokenProjectionReservesSpendability({
+      confirmed: false,
+      lifecycleAwaitingCanonical: true,
+      lifecycleStatus: "replaced",
+      localBroadcast: true,
+    }),
+    true,
+  );
+  assert.equal(
+    tokenProjectionReservesSpendability({
+      confirmed: false,
+      lifecycleAwaitingCanonical: true,
+      lifecycleStatus: "dropped",
+      localBroadcast: true,
+    }),
+    true,
+  );
+  assert.equal(
+    tokenProjectionReservesSpendability({
+      confirmed: false,
+      lifecycleStatus: "replaced",
+      localBroadcast: true,
+    }),
+    false,
+  );
+
+  const localTokenOverlayIsTerminal = isolatedTypeScriptFunction(
+    APP_PATH,
+    "localTokenOverlayIsTerminal",
+  );
+  const localTokenOverlayAllowsLiveEconomicProjection =
+    isolatedTypeScriptFunction(
+      APP_PATH,
+      "localTokenOverlayAllowsLiveEconomicProjection",
+      { localTokenOverlayIsTerminal },
+    );
+  const localTokenOverlayNeedsTerminalClosureReservation =
+    isolatedTypeScriptFunction(
+      APP_PATH,
+      "localTokenOverlayNeedsTerminalClosureReservation",
+      { localTokenOverlayIsTerminal },
+    );
+  const failedClosure = {
+    awaitingFreshCanonicalResolution: true,
+    awaitingFreshListingObservation: true,
+    closedListings: [{ listingId: "canonical-listing" }],
+    status: "failed",
+  };
+  assert.equal(
+    localTokenOverlayAllowsLiveEconomicProjection(failedClosure),
+    false,
+    "a deterministic rejection stays diagnostic even with stale reservation flags",
+  );
+  assert.equal(
+    localTokenOverlayNeedsTerminalClosureReservation(failedClosure),
+    false,
+    "a deterministic rejection cannot hide a valid canonical listing",
+  );
+  for (const status of ["dropped", "replaced"]) {
+    const unresolvedTerminalClosure = { ...failedClosure, status };
+    assert.equal(
+      localTokenOverlayAllowsLiveEconomicProjection(
+        unresolvedTerminalClosure,
+      ),
+      true,
+    );
+    assert.equal(
+      localTokenOverlayNeedsTerminalClosureReservation(
+        unresolvedTerminalClosure,
+      ),
+      true,
+      `${status} closure evidence remains reserved until a fresh canonical read`,
+    );
+  }
+
+  const localTokenOverlayFirstConfirmedAt = isolatedTypeScriptFunction(
+    APP_PATH,
+    "localTokenOverlayFirstConfirmedAt",
+  );
+  const firstConfirmedAt = "2026-08-05T12:00:00.000Z";
+  const laterCheck = "2026-08-05T12:05:00.000Z";
+  assert.equal(
+    localTokenOverlayFirstConfirmedAt(
+      { firstConfirmedAt, status: "confirmed" },
+      "confirmed",
+      laterCheck,
+    ),
+    firstConfirmedAt,
+  );
+  assert.equal(
+    localTokenOverlayFirstConfirmedAt(
+      { status: "pending" },
+      "confirmed",
+      laterCheck,
+    ),
+    laterCheck,
+  );
+  assert.equal(
+    localTokenOverlayFirstConfirmedAt(
+      { firstConfirmedAt, status: "confirmed" },
+      "pending",
+      laterCheck,
+    ),
+    undefined,
+  );
+  const reconfirmedAt = "2026-08-06T15:00:00.000Z";
+  assert.equal(
+    localTokenOverlayFirstConfirmedAt(
+      { firstConfirmedAt, status: "unknown" },
+      "confirmed",
+      reconfirmedAt,
+    ),
+    reconfirmedAt,
+    "a new confirmed epoch receives its own immutable reorg window",
+  );
+
+  const localTokenOverlayWithinConfirmedRecheckHorizon =
+    isolatedTypeScriptFunction(
+      APP_PATH,
+      "localTokenOverlayWithinConfirmedRecheckHorizon",
+      {
+        LOCAL_TOKEN_BROADCAST_CONFIRMED_RECHECK_HORIZON_MS:
+          24 * 60 * 60_000,
+      },
+    );
+  const firstConfirmedAtMs = Date.parse(firstConfirmedAt);
+  assert.equal(
+    localTokenOverlayWithinConfirmedRecheckHorizon(
+      { firstConfirmedAt, recordedAt: firstConfirmedAt, status: "confirmed" },
+      firstConfirmedAtMs + 24 * 60 * 60_000,
+    ),
+    true,
+  );
+  assert.equal(
+    localTokenOverlayWithinConfirmedRecheckHorizon(
+      { firstConfirmedAt, recordedAt: firstConfirmedAt, status: "confirmed" },
+      firstConfirmedAtMs + 24 * 60 * 60_000 + 1,
+    ),
+    false,
+  );
+
+  const localTokenOverlayAwaitsFreshCanonicalResolution =
+    isolatedTypeScriptFunction(
+      APP_PATH,
+      "localTokenOverlayAwaitsFreshCanonicalResolution",
+    );
+  assert.equal(
+    localTokenOverlayAwaitsFreshCanonicalResolution(
+      { status: "pending" },
+      "replaced",
+    ),
+    true,
+  );
+  assert.equal(
+    localTokenOverlayAwaitsFreshCanonicalResolution(
+      { awaitingFreshCanonicalResolution: false, status: "replaced" },
+      "replaced",
+    ),
+    false,
+  );
+  assert.equal(
+    localTokenOverlayAwaitsFreshCanonicalResolution(
+      { awaitingFreshCanonicalResolution: true, status: "replaced" },
+      "dropped",
+    ),
+    true,
+  );
+
+  const localTokenOverlayStatusChangedAt = isolatedTypeScriptFunction(
+    APP_PATH,
+    "localTokenOverlayStatusChangedAt",
+  );
+  const oldPendingAt = "2026-07-01T00:00:00.000Z";
+  const unknownObservedAt = "2026-08-05T12:30:00.000Z";
+  assert.equal(
+    localTokenOverlayStatusChangedAt(
+      {
+        checkedAt: oldPendingAt,
+        recordedAt: oldPendingAt,
+        status: "pending",
+        statusChangedAt: oldPendingAt,
+      },
+      "unknown",
+      unknownObservedAt,
+    ),
+    unknownObservedAt,
+    "an old pending broadcast begins a fresh unknown epoch when its status changes",
+  );
+  assert.equal(
+    localTokenOverlayStatusChangedAt(
+      {
+        checkedAt: unknownObservedAt,
+        recordedAt: oldPendingAt,
+        status: "unknown",
+        statusChangedAt: unknownObservedAt,
+      },
+      "unknown",
+      laterCheck,
+    ),
+    unknownObservedAt,
+    "same-status observations cannot slide the bounded unknown epoch",
+  );
+  assert.equal(
+    localTokenOverlayStatusChangedAt(
+      {
+        checkedAt: firstConfirmedAt,
+        recordedAt: oldPendingAt,
+        status: "confirmed",
+        statusChangedAt: firstConfirmedAt,
+      },
+      "confirmed",
+      laterCheck,
+    ),
+    firstConfirmedAt,
+    "contiguous confirmed observations retain one status epoch",
+  );
+
+  const localTokenOverlayIsExpired = isolatedTypeScriptFunction(
+    APP_PATH,
+    "localTokenOverlayIsExpired",
+    {
+      LOCAL_TOKEN_BROADCAST_CONFIRMED_INDEXING_MAX_AGE_MS:
+        30 * 24 * 60 * 60_000,
+      LOCAL_TOKEN_BROADCAST_PENDING_MAX_AGE_MS: 30 * 24 * 60 * 60_000,
+      LOCAL_TOKEN_BROADCAST_TERMINAL_MAX_AGE_MS: 30 * 24 * 60 * 60_000,
+      LOCAL_TOKEN_BROADCAST_UNKNOWN_MAX_AGE_MS: 30 * 60_000,
+      localTokenOverlayIsTerminal,
+    },
+  );
+  const expiryNow = Date.parse("2026-08-05T13:00:00.000Z");
+  const exactUnknownBoundary = new Date(
+    expiryNow - 30 * 60_000,
+  ).toISOString();
+  assert.equal(
+    localTokenOverlayIsExpired(
+      {
+        recordedAt: oldPendingAt,
+        status: "unknown",
+        statusChangedAt: exactUnknownBoundary,
+      },
+      expiryNow,
+    ),
+    false,
+    "unknown remains visible at the exact 30-minute status boundary",
+  );
+  assert.equal(
+    localTokenOverlayIsExpired(
+      {
+        recordedAt: oldPendingAt,
+        status: "unknown",
+        statusChangedAt: new Date(
+          Date.parse(exactUnknownBoundary) - 1,
+        ).toISOString(),
+      },
+      expiryNow,
+    ),
+    true,
+    "unknown expires immediately after its 30-minute status epoch",
+  );
+  assert.equal(
+    localTokenOverlayIsExpired(
+      {
+        recordedAt: new Date(expiryNow - 31 * 60_000).toISOString(),
+        status: "pending",
+        statusChangedAt: exactUnknownBoundary,
+      },
+      expiryNow,
+    ),
+    false,
+  );
+  const exactPendingBoundary = new Date(
+    expiryNow - 30 * 24 * 60 * 60_000,
+  ).toISOString();
+  assert.equal(
+    localTokenOverlayIsExpired(
+      {
+        recordedAt: exactPendingBoundary,
+        status: "pending",
+        statusChangedAt: exactPendingBoundary,
+      },
+      expiryNow,
+    ),
+    false,
+    "pending remains visible at its exact 30-day broadcast boundary",
+  );
+  assert.equal(
+    localTokenOverlayIsExpired(
+      {
+        recordedAt: new Date(Date.parse(exactPendingBoundary) - 1).toISOString(),
+        status: "pending",
+        statusChangedAt: exactPendingBoundary,
+      },
+      expiryNow,
+    ),
+    true,
+  );
+  const exactTerminalBoundary = new Date(
+    expiryNow - 30 * 24 * 60 * 60_000,
+  ).toISOString();
+  assert.equal(
+    localTokenOverlayIsExpired(
+      {
+        recordedAt: "2020-01-01T00:00:00.000Z",
+        status: "replaced",
+        statusChangedAt: exactTerminalBoundary,
+      },
+      expiryNow,
+    ),
+    false,
+    "terminal lifecycle evidence remains visible at its exact 30-day status boundary",
+  );
+  assert.equal(
+    localTokenOverlayIsExpired(
+      {
+        recordedAt: "2020-01-01T00:00:00.000Z",
+        status: "replaced",
+        statusChangedAt: new Date(
+          Date.parse(exactTerminalBoundary) - 1,
+        ).toISOString(),
+      },
+      expiryNow,
+    ),
+    true,
+  );
+  const exactConfirmedIndexingBoundary = new Date(
+    expiryNow - 30 * 24 * 60 * 60_000,
+  ).toISOString();
+  assert.equal(
+    localTokenOverlayIsExpired(
+      {
+        firstConfirmedAt: exactConfirmedIndexingBoundary,
+        recordedAt: "2020-01-01T00:00:00.000Z",
+        status: "confirmed",
+        statusChangedAt: exactConfirmedIndexingBoundary,
+      },
+      expiryNow,
+    ),
+    false,
+    "confirmed-but-indexing evidence remains visible at its exact 30-day boundary",
+  );
+  assert.equal(
+    localTokenOverlayIsExpired(
+      {
+        firstConfirmedAt: new Date(
+          Date.parse(exactConfirmedIndexingBoundary) - 1,
+        ).toISOString(),
+        recordedAt: "2020-01-01T00:00:00.000Z",
+        status: "confirmed",
+        statusChangedAt: exactConfirmedIndexingBoundary,
+      },
+      expiryNow,
+    ),
+    true,
+    "confirmed-but-indexing evidence archives after its bounded visibility window",
+  );
+
+  const normalizeTokenTicker = (value) =>
+    String(value ?? "").trim().toUpperCase();
+  const samePaymentAddress = (left, right) =>
+    String(left).startsWith("bc1") && String(right).startsWith("bc1")
+      ? String(left).toLowerCase() === String(right).toLowerCase()
+      : String(left) === String(right);
+  const isValidBitcoinAddress = (value, network) =>
+    network === "livenet" && /^bc1[a-z0-9]+$/u.test(String(value ?? ""));
+  const localTokenOverlayRecordMatchesScope = isolatedTypeScriptFunction(
+    APP_PATH,
+    "localTokenOverlayRecordMatchesScope",
+    {
+      DEFAULT_TOKEN_STATE_SCOPE_KEY: "default",
+      normalizeTokenTicker,
+      samePaymentAddress,
+    },
+  );
+  const localTokenOverlayRecordMatchesLifecyclePanelScope =
+    isolatedTypeScriptFunction(
+      APP_PATH,
+      "localTokenOverlayRecordMatchesLifecyclePanelScope",
+      {
+        isValidBitcoinAddress,
+        localTokenOverlayRecordMatchesScope,
+        normalizeTokenTicker,
+        samePaymentAddress,
+      },
+    );
+  const recipientMint = {
+    minterAddress: "bc1recipient",
+    network: "livenet",
+    ticker: "SEND",
+    tokenId: "token-id",
+  };
+  const senderScope = "livenet:wallet:token-id:bc1sender";
+  assert.equal(
+    localTokenOverlayRecordMatchesScope(
+      "mints",
+      recipientMint,
+      senderScope,
+      "livenet",
+    ),
+    false,
+    "initiator visibility must not widen a wallet's economic projection",
+  );
+  assert.equal(
+    localTokenOverlayRecordMatchesLifecyclePanelScope(
+      "mints",
+      recipientMint,
+      senderScope,
+      "livenet",
+      "bc1sender",
+    ),
+    true,
+  );
+  assert.equal(
+    localTokenOverlayRecordMatchesLifecyclePanelScope(
+      "mints",
+      recipientMint,
+      "testnet:wallet:token-id:bc1sender",
+      "testnet",
+      "bc1sender",
+    ),
+    false,
+  );
+  assert.equal(
+    localTokenOverlayRecordMatchesLifecyclePanelScope(
+      "mints",
+      recipientMint,
+      "livenet:wallet:other-token:bc1sender",
+      "livenet",
+      "bc1sender",
+    ),
+    false,
+  );
+});
+
+check("local Credit status reconciliation is monotonic and race safe", async () => {
+  const localTokenOverlayKey = isolatedTypeScriptFunction(
+    APP_PATH,
+    "localTokenOverlayKey",
+  );
+  const localTokenOverlayStatusUpdateIsOlder = isolatedTypeScriptFunction(
+    APP_PATH,
+    "localTokenOverlayStatusUpdateIsOlder",
+  );
+  const localTokenOverlayFirstConfirmedAt = isolatedTypeScriptFunction(
+    APP_PATH,
+    "localTokenOverlayFirstConfirmedAt",
+  );
+  const localTokenOverlayAwaitsFreshCanonicalResolution =
+    isolatedTypeScriptFunction(
+      APP_PATH,
+      "localTokenOverlayAwaitsFreshCanonicalResolution",
+    );
+  const localTokenOverlayStatusChangedAt = isolatedTypeScriptFunction(
+    APP_PATH,
+    "localTokenOverlayStatusChangedAt",
+  );
+  const mergeLocalTokenOverlayStatusUpdate = isolatedTypeScriptFunction(
+    APP_PATH,
+    "mergeLocalTokenOverlayStatusUpdate",
+    {
+      localTokenOverlayAwaitsFreshCanonicalResolution,
+      localTokenOverlayFirstConfirmedAt,
+      localTokenOverlayKey,
+      localTokenOverlayStatusChangedAt,
+      localTokenOverlayStatusUpdateIsOlder,
+    },
+  );
+  const mergeLocalTokenOverlayStatusUpdates = isolatedTypeScriptFunction(
+    APP_PATH,
+    "mergeLocalTokenOverlayStatusUpdates",
+    {
+      localTokenOverlayKey,
+      localTokenOverlayStatusUpdateIsOlder,
+      mergeLocalTokenOverlayStatusUpdate,
+    },
+  );
+  const firstTxid = "a".repeat(64);
+  const secondTxid = "b".repeat(64);
+  const recordedAt = "2026-08-05T12:00:00.000Z";
+  const firstCheckAt = "2026-08-05T12:01:00.000Z";
+  const secondCheckAt = "2026-08-05T12:02:00.000Z";
+  const overlay = (txid, overrides = {}) => ({
+    attempts: 0,
+    checkedAt: recordedAt,
+    closedListings: [],
+    createdAt: recordedAt,
+    definitions: [],
+    listings: [],
+    mints: [],
+    network: "livenet",
+    nextCheckAt: recordedAt,
+    recordedAt,
+    sales: [],
+    seals: [],
+    status: "pending",
+    statusChangedAt: recordedAt,
+    transfers: [],
+    txid,
+    ...overrides,
+  });
+
+  const observed = overlay(firstTxid, {
+    transfers: [{ txid: firstTxid, marker: "observed-before-request" }],
+  });
+  let latestEntries = [observed];
+  let releaseObservation;
+  const observation = new Promise((resolve) => {
+    releaseObservation = resolve;
+  });
+  const inFlight = observation.then((updates) => {
+    latestEntries = mergeLocalTokenOverlayStatusUpdates(
+      latestEntries,
+      updates,
+    );
+  });
+  latestEntries = [
+    {
+      ...observed,
+      transfers: [
+        ...observed.transfers,
+        { txid: firstTxid, marker: "recorded-during-request" },
+      ],
+    },
+    overlay(secondTxid, {
+      listings: [{ listingId: secondTxid, marker: "new-broadcast" }],
+    }),
+  ];
+  releaseObservation([
+    overlay(firstTxid, {
+      attempts: 0,
+      checkedAt: firstCheckAt,
+      firstConfirmedAt: firstCheckAt,
+      nextCheckAt: secondCheckAt,
+      status: "confirmed",
+      statusChangedAt: firstCheckAt,
+      transfers: observed.transfers,
+    }),
+  ]);
+  await inFlight;
+  assert.equal(latestEntries.length, 2, "an in-flight check cannot lose a new broadcast");
+  const reconciled = latestEntries.find((entry) => entry.txid === firstTxid);
+  assert.equal(reconciled.status, "confirmed");
+  assert.equal(
+    reconciled.transfers.length,
+    2,
+    "a status-only update cannot replace newer rows on the same entry",
+  );
+  assert.ok(
+    latestEntries.some((entry) => entry.txid === secondTxid),
+    "a status-only update retains broadcasts recorded while it was in flight",
+  );
+
+  let entriesRemovedDuringRequest = [observed];
+  let releaseRemovedObservation;
+  const removedObservation = new Promise((resolve) => {
+    releaseRemovedObservation = resolve;
+  });
+  const removedInFlight = removedObservation.then((updates) => {
+    entriesRemovedDuringRequest = mergeLocalTokenOverlayStatusUpdates(
+      entriesRemovedDuringRequest,
+      updates,
+    );
+  });
+  entriesRemovedDuringRequest = [];
+  releaseRemovedObservation([
+    overlay(firstTxid, {
+      checkedAt: firstCheckAt,
+      status: "confirmed",
+      statusChangedAt: firstCheckAt,
+    }),
+  ]);
+  await removedInFlight;
+  assert.equal(
+    entriesRemovedDuringRequest.length,
+    0,
+    "an in-flight observation cannot resurrect an entry removed from the latest store",
+  );
+
+  const newerConfirmed = overlay(firstTxid, {
+    checkedAt: secondCheckAt,
+    firstConfirmedAt: secondCheckAt,
+    status: "confirmed",
+    statusChangedAt: secondCheckAt,
+  });
+  const olderPending = overlay(firstTxid, {
+    checkedAt: firstCheckAt,
+    status: "pending",
+    statusChangedAt: firstCheckAt,
+  });
+  assert.equal(
+    mergeLocalTokenOverlayStatusUpdate(newerConfirmed, olderPending),
+    newerConfirmed,
+    "an older observation cannot roll a newer lifecycle state backward",
+  );
+
+  const replaced = overlay(firstTxid, {
+    attempts: 4,
+    awaitingFreshCanonicalResolution: true,
+    checkedAt: firstCheckAt,
+    failureReason: "replacement observed",
+    replacementTxid: "c".repeat(64),
+    status: "replaced",
+    statusChangedAt: firstCheckAt,
+  });
+  for (const revivedStatus of ["pending", "confirmed"]) {
+    const revived = mergeLocalTokenOverlayStatusUpdate(
+      replaced,
+      overlay(firstTxid, {
+        checkedAt: secondCheckAt,
+        firstConfirmedAt:
+          revivedStatus === "confirmed" ? secondCheckAt : undefined,
+        status: revivedStatus,
+        statusChangedAt: secondCheckAt,
+      }),
+    );
+    assert.equal(revived.status, revivedStatus);
+    assert.equal(revived.replacementTxid, undefined);
+    assert.equal(revived.failureReason, undefined);
+    assert.equal(
+      revived.awaitingFreshCanonicalResolution,
+      false,
+      `replaced -> ${revivedStatus} clears replacement-only reservation metadata`,
+    );
+    assert.equal(revived.statusChangedAt, secondCheckAt);
+  }
+
+  const broadcastStatusAfterObservation = isolatedTypeScriptFunction(
+    APP_PATH,
+    "broadcastStatusAfterObservation",
+  );
+  const localTokenOverlayIsTerminal = isolatedTypeScriptFunction(
+    APP_PATH,
+    "localTokenOverlayIsTerminal",
+  );
+  const localTokenOverlayAllowsLiveEconomicProjection =
+    isolatedTypeScriptFunction(
+      APP_PATH,
+      "localTokenOverlayAllowsLiveEconomicProjection",
+      { localTokenOverlayIsTerminal },
+    );
+  const localTokenOverlayNeedsTerminalClosureReservation =
+    isolatedTypeScriptFunction(
+      APP_PATH,
+      "localTokenOverlayNeedsTerminalClosureReservation",
+      { localTokenOverlayIsTerminal },
+    );
+  const failedAfterAbsence = overlay(firstTxid, {
+    awaitingFreshCanonicalResolution: true,
+    awaitingFreshListingObservation: true,
+    closedListings: [{ listingId: "still-canonical" }],
+    status: broadcastStatusAfterObservation("failed", "unknown"),
+  });
+  assert.equal(failedAfterAbsence.status, "failed");
+  assert.equal(
+    localTokenOverlayAllowsLiveEconomicProjection(failedAfterAbsence),
+    false,
+    "Core absence cannot make a failed close reserve economic state",
+  );
+  assert.equal(
+    localTokenOverlayNeedsTerminalClosureReservation(failedAfterAbsence),
+    false,
+    "reconciliation cannot hide the canonical listing behind a failed close",
+  );
+});
+
+check("local Credit lifecycle storage is bounded, portable, and cross-tab safe", () => {
+  const txA = "a".repeat(64);
+  const txB = "b".repeat(64);
+  const entry = (txid) => ({
+    attempts: 0,
+    closedListings: [],
+    createdAt: "2026-08-05T12:00:00.000Z",
+    definitions: [],
+    listings: [],
+    mints: [],
+    network: "livenet",
+    recordedAt: "2026-08-05T12:00:00.000Z",
+    sales: [],
+    seals: [],
+    status: "pending",
+    statusChangedAt: "2026-08-05T12:00:00.000Z",
+    transfers: [{ txid }],
+    txid,
+  });
+  const parseStore = isolatedTypeScriptFunction(
+    APP_PATH,
+    "localTokenBroadcastOverlaysFromSerialized",
+    {
+      LOCAL_TOKEN_BROADCAST_MAX_BYTES: 1_024,
+      LOCAL_TOKEN_BROADCAST_MAX_ENTRIES: 2,
+      LOCAL_TOKEN_BROADCAST_STORE_VERSION: 1,
+      TextEncoder,
+      sanitizeLocalTokenOverlayEntry: (value) =>
+        value?.valid === false ? undefined : value,
+    },
+  );
+  assert.deepEqual(
+    [...parseStore(JSON.stringify({ entries: [entry(txA)], version: 1 }))].map(
+      (item) => item.txid,
+    ),
+    [txA],
+  );
+  assert.equal(parseStore(JSON.stringify({ entries: [], version: 2 })), undefined);
+  assert.equal(
+    parseStore(JSON.stringify({ entries: [entry(txA), entry(txB), entry("c".repeat(64))], version: 1 })),
+    undefined,
+  );
+  assert.equal(
+    parseStore(JSON.stringify({ entries: [], padding: "x".repeat(1_024), version: 1 })),
+    undefined,
+  );
+  const localTokenOverlayIsTerminal = isolatedTypeScriptFunction(
+    APP_PATH,
+    "localTokenOverlayIsTerminal",
+  );
+  const localTokenOverlayAllowsLiveEconomicProjection =
+    isolatedTypeScriptFunction(
+      APP_PATH,
+      "localTokenOverlayAllowsLiveEconomicProjection",
+      { localTokenOverlayIsTerminal },
+    );
+  const localTokenOverlayNeedsTerminalClosureReservation =
+    isolatedTypeScriptFunction(
+      APP_PATH,
+      "localTokenOverlayNeedsTerminalClosureReservation",
+      { localTokenOverlayIsTerminal },
+    );
+  const [reloadedFailedClosure] = parseStore(
+    JSON.stringify({
+      entries: [
+        {
+          ...entry(txA),
+          awaitingFreshCanonicalResolution: true,
+          awaitingFreshListingObservation: true,
+          closedListings: [{ listingId: "still-canonical" }],
+          status: "failed",
+        },
+      ],
+      version: 1,
+    }),
+  );
+  assert.equal(
+    localTokenOverlayAllowsLiveEconomicProjection(reloadedFailedClosure),
+    false,
+    "a reloaded failed close stays outside live economic projections",
+  );
+  assert.equal(
+    localTokenOverlayNeedsTerminalClosureReservation(reloadedFailedClosure),
+    false,
+    "a reloaded failed close cannot hide or reserve its canonical listing",
+  );
+
+  const localTokenOverlayKey = isolatedTypeScriptFunction(
+    APP_PATH,
+    "localTokenOverlayKey",
+  );
+  const mergeStores = isolatedTypeScriptFunction(
+    APP_PATH,
+    "mergeLocalTokenBroadcastOverlayStores",
+    {
+      localTokenOverlayKey,
+      mergeLocalTokenBroadcastOverlayEntry: (_current, incoming) => incoming,
+    },
+  );
+  const fakeStorage = {
+    raw: JSON.stringify({ entries: [entry(txA)], version: 1 }),
+    writes: 0,
+    getItem() {
+      return this.raw;
+    },
+    setItem(_key, value) {
+      this.raw = value;
+      this.writes += 1;
+    },
+  };
+  const saveStore = isolatedTypeScriptFunction(
+    APP_PATH,
+    "saveLocalTokenBroadcastOverlays",
+    {
+      LOCAL_TOKEN_BROADCAST_MAX_BYTES: 256 * 1_024,
+      LOCAL_TOKEN_BROADCAST_MAX_ENTRIES: 64,
+      LOCAL_TOKEN_BROADCAST_STORE_KEY: "lifecycle",
+      LOCAL_TOKEN_BROADCAST_STORE_VERSION: 1,
+      TextEncoder,
+      dispatchLocalTokenOverlayCapacityWarning() {},
+      localStorage: fakeStorage,
+      localTokenBroadcastOverlayCache: undefined,
+      localTokenBroadcastOverlaysFromSerialized: (raw) =>
+        raw ? JSON.parse(raw).entries : [],
+      localTokenOverlayCapacityArchiveIndex: () => -1,
+      localTokenOverlayCapacityWarningActive: false,
+      localTokenOverlayIsExpired: () => false,
+      localTokenOverlayKey,
+      localTokenOverlayWarning() {},
+      mergeLocalTokenBroadcastOverlayStores: mergeStores,
+      sanitizeLocalTokenOverlayEntry: (value) => value,
+    },
+  );
+  assert.equal(saveStore([entry(txB)]), true);
+  assert.deepEqual(
+    JSON.parse(fakeStorage.raw).entries.map((item) => item.txid).sort(),
+    [txA, txB],
+    "a stale tab write reads the committed store immediately and retains A plus B",
+  );
+
+  const storageEventStorage = { setItemCalls: 0 };
+  const reconcileStorageEvent = isolatedTypeScriptFunction(
+    APP_PATH,
+    "reconcileLocalTokenBroadcastStorageEvent",
+    {
+      LOCAL_TOKEN_BROADCAST_STORE_KEY: "lifecycle",
+      localStorage: storageEventStorage,
+      localTokenBroadcastOverlayCache: [entry(txA)],
+      localTokenBroadcastOverlaysFromSerialized: (raw) =>
+        raw ? JSON.parse(raw).entries : [],
+    },
+  );
+  assert.deepEqual(
+    [...reconcileStorageEvent({
+      key: "lifecycle",
+      newValue: JSON.stringify({ entries: [entry(txB)], version: 1 }),
+      storageArea: storageEventStorage,
+    })].map((item) => item.txid),
+    [txB],
+    "a valid storage event is an authoritative whole-store replacement",
+  );
+  assert.deepEqual(
+    [...reconcileStorageEvent({
+      key: "lifecycle",
+      newValue: null,
+      storageArea: storageEventStorage,
+    })],
+    [],
+    "cross-tab deletion cannot resurrect a stale cached row",
+  );
+
+  const capacityIndex = isolatedTypeScriptFunction(
+    APP_PATH,
+    "localTokenOverlayCapacityArchiveIndex",
+    {
+      localTokenOverlayIsTerminal: (status) =>
+        ["dropped", "failed", "replaced"].includes(status),
+    },
+  );
+  assert.equal(capacityIndex([{ status: "pending" }, { status: "confirmed" }]), 1);
+  assert.equal(
+    capacityIndex([{ status: "confirmed" }, { status: "failed" }]),
+    1,
+    "capacity archives terminal evidence before confirmed indexing evidence",
+  );
+  assert.equal(capacityIndex([{ status: "pending" }]), -1);
+
+  const isBackupStorageKey = isolatedTypeScriptFunction(
+    APP_PATH,
+    "isBackupStorageKey",
+    {
+      CONTACTS_KEY: "contacts",
+      CUSTOM_FOLDERS_KEY: "folders",
+      DRAFT_KEY_PREFIX: "draft",
+      LOCAL_TOKEN_BROADCAST_STORE_KEY: "lifecycle",
+      MAIL_PREFS_KEY: "prefs",
+      SENT_KEY: "sent",
+    },
+  );
+  const parseBackup = isolatedTypeScriptFunction(APP_PATH, "parseBackup", {
+    BACKUP_APP: "ProofOfWork.Me",
+    BACKUP_VERSION: 1,
+    LOCAL_TOKEN_BROADCAST_STORE_KEY: "lifecycle",
+    LOCAL_TOKEN_BROADCAST_STORE_VERSION: 1,
+    isBackupStorageKey,
+    isPlainRecord: (value) =>
+      Boolean(value && typeof value === "object" && !Array.isArray(value)),
+    localTokenBroadcastOverlaysFromSerialized: (raw) =>
+      JSON.parse(raw).entries.slice(0, 1),
+    validateBackupValue: () => true,
+  });
+  const imported = parseBackup(JSON.stringify({
+    app: "ProofOfWork.Me",
+    data: {
+      lifecycle: JSON.stringify({ entries: [entry(txA), entry(txB)], version: 1 }),
+    },
+    version: 1,
+  }));
+  assert.equal(JSON.parse(imported.lifecycle).entries.length, 1);
+  assert.equal(JSON.parse(imported.lifecycle).version, 1);
+
+  const publicBroadcastFailureReason = isolatedTypeScriptFunction(
+    APP_PATH,
+    "publicBroadcastFailureReason",
+  );
+  const sanitizeStoredSentMessages = isolatedTypeScriptFunction(
+    APP_PATH,
+    "sanitizeStoredSentMessages",
+    {
+      DEFAULT_AMOUNT_SATS: 1_000,
+      DEFAULT_FEE_RATE: 1,
+      LOCAL_SENT_MESSAGE_MAX_ENTRIES: 512,
+      normalizeBroadcastStatus: (status) => status ?? "unknown",
+      publicBroadcastFailureReason,
+      storedAttachedCredits: () => [],
+      storedAttachment: () => undefined,
+      storedMailRecipients: () => [],
+    },
+  );
+  const rawSensitive = `rawTx=${"ab".repeat(200)}`;
+  const lifecycleRaw = JSON.stringify({
+    entries: [{ ...entry(txA), privateWalletMaterial: "do-not-export" }],
+    version: 1,
+  });
+  const sentRaw = JSON.stringify([
+    {
+      failureReason: rawSensitive,
+      from: "1Sender",
+      memo: "memo",
+      network: "livenet",
+      rawTx: "do-not-export",
+      replyTo: "1Sender",
+      status: "failed",
+      to: "1Recipient",
+      txid: txA,
+    },
+  ]);
+  const backupStorage = {
+    values: new Map([
+      ["lifecycle", lifecycleRaw],
+      ["sent", sentRaw],
+    ]),
+    get length() {
+      return this.values.size;
+    },
+    getItem(key) {
+      return this.values.get(key) ?? null;
+    },
+    key(index) {
+      return [...this.values.keys()][index] ?? null;
+    },
+  };
+  const collectBackupData = isolatedTypeScriptFunction(
+    APP_PATH,
+    "collectBackupData",
+    {
+      LOCAL_TOKEN_BROADCAST_STORE_KEY: "lifecycle",
+      LOCAL_TOKEN_BROADCAST_STORE_VERSION: 1,
+      SENT_KEY: "sent",
+      isBackupStorageKey,
+      localStorage: backupStorage,
+      localTokenBroadcastOverlaysFromSerialized: (raw) =>
+        JSON.parse(raw).entries.map(({ privateWalletMaterial, ...safe }) => safe),
+      sanitizeStoredSentMessages,
+      validateBackupValue: () => true,
+    },
+  );
+  const exported = collectBackupData();
+  assert.equal(exported.lifecycle.includes("privateWalletMaterial"), false);
+  assert.equal(exported.lifecycle.includes("do-not-export"), false);
+  assert.equal(exported.sent.includes("rawTx"), false);
+  assert.equal(exported.sent.includes("abababab"), false);
+  assert.match(JSON.parse(exported.sent)[0].failureReason, /redacted/iu);
+});
+
+check("Mail refresh ownership and address matching are identity safe", () => {
+  const mailRefreshRequestIsCurrent = isolatedTypeScriptFunction(
+    APP_PATH,
+    "mailRefreshRequestIsCurrent",
+  );
+  const identity = {
+    address: "1Base58Owner",
+    generation: 7,
+    network: "livenet",
+    requestId: 4,
+  };
+  assert.equal(mailRefreshRequestIsCurrent(identity, { ...identity }), true);
+  assert.equal(
+    mailRefreshRequestIsCurrent(identity, { ...identity, address: "" }),
+    false,
+  );
+  assert.equal(
+    mailRefreshRequestIsCurrent(identity, { ...identity, network: "testnet" }),
+    false,
+  );
+  assert.equal(
+    mailRefreshRequestIsCurrent(identity, { ...identity, generation: 8 }),
+    false,
+  );
+  assert.equal(
+    mailRefreshRequestIsCurrent(identity, { ...identity, requestId: 5 }),
+    false,
+  );
+
+  const samePaymentAddress = isolatedTypeScriptFunction(
+    APP_PATH,
+    "samePaymentAddress",
+  );
+  assert.equal(samePaymentAddress("bc1QExample", "BC1qexample"), true);
+  assert.equal(
+    samePaymentAddress("1Base58Owner", "1base58owner"),
+    false,
+    "Base58 address matching remains case sensitive",
+  );
+});
+
+check("Mail broadcast checks are serialized, bounded, and reject stale results", async () => {
+  const sentMessageKey = isolatedTypeScriptFunction(
+    APP_PATH,
+    "sentMessageKey",
+  );
+  const sentMessageObservationTime = isolatedTypeScriptFunction(
+    APP_PATH,
+    "sentMessageObservationTime",
+  );
+  const boundedBroadcastCheckTargets = isolatedTypeScriptFunction(
+    APP_PATH,
+    "boundedBroadcastCheckTargets",
+    {
+      MAIL_BROADCAST_STATUS_MAX_TARGETS: 3,
+      mergeSentMessages: (messages) => messages,
+      sentMessageKey,
+      sentMessageObservationTime,
+    },
+  );
+  const target = (txid, checkedAt) => ({
+    createdAt: checkedAt,
+    from: "bc1mailowner",
+    lastCheckedAt: checkedAt,
+    network: "livenet",
+    txid,
+  });
+  const targetFixtures = Array.from({ length: 10 }, (_unused, index) =>
+    target(
+      index.toString(16).padStart(64, "0"),
+      new Date(Date.parse("2026-08-05T12:00:00.000Z") + index).toISOString(),
+    ),
+  );
+  assert.equal(
+    boundedBroadcastCheckTargets(targetFixtures).length,
+    3,
+    "an untrusted Sent store cannot create an unbounded status target set",
+  );
+
+  const calls = [];
+  const releases = [];
+  const checkBroadcastTargets = (targets) =>
+    new Promise((resolve) => {
+      calls.push(targets);
+      releases.push(() =>
+        resolve({ checkedAt: new Date().toISOString(), results: [] }),
+      );
+    });
+  const startBroadcastCheck = isolatedTypeScriptFunction(
+    APP_PATH,
+    "startBroadcastCheck",
+    {
+      boundedBroadcastCheckTargets,
+      checkBroadcastTargets,
+      sentMessageKey,
+    },
+  );
+  const runCoalescedBroadcastCheck = isolatedTypeScriptFunction(
+    APP_PATH,
+    "runCoalescedBroadcastCheck",
+    {
+      MAIL_BROADCAST_STATUS_MAX_TARGETS: 3,
+      boundedBroadcastCheckTargets,
+      sentMessageKey,
+      startBroadcastCheck,
+    },
+  );
+  const queue = { activeTargetKeys: new Set() };
+  const first = runCoalescedBroadcastCheck(queue, [targetFixtures[0]]);
+  const sameTimerCheck = runCoalescedBroadcastCheck(queue, [targetFixtures[0]]);
+  assert.equal(
+    sameTimerCheck,
+    first,
+    "overlapping timer checks for the same targets coalesce into the active request",
+  );
+  const trailing = runCoalescedBroadcastCheck(queue, [targetFixtures[1]]);
+  for (const item of targetFixtures.slice(2, 8)) {
+    assert.equal(
+      runCoalescedBroadcastCheck(queue, [item]),
+      trailing,
+      "overlapping target changes share one bounded trailing request",
+    );
+  }
+  assert.equal(
+    calls.length,
+    1,
+    "a queued status check cannot overlap the active request",
+  );
+  assert.equal(queue.queued.targets.size, 3);
+  releases[0]();
+  await first;
+  await Promise.resolve();
+  assert.equal(calls.length, 2, "only one trailing check starts after settlement");
+  assert.equal(calls[1].length, 3, "the trailing target union remains bounded");
+  releases[1]();
+  await trailing;
+  assert.equal(queue.queued, undefined);
+
+  const mapLocalTokenOverlaysWithConcurrency = isolatedTypeScriptFunction(
+    APP_PATH,
+    "mapLocalTokenOverlaysWithConcurrency",
+  );
+  let active = 0;
+  let peak = 0;
+  const mapped = await mapLocalTokenOverlaysWithConcurrency(
+    Array.from({ length: 12 }, (_unused, index) => index),
+    3,
+    async (item) => {
+      active += 1;
+      peak = Math.max(peak, active);
+      await Promise.resolve();
+      active -= 1;
+      return item * 2;
+    },
+  );
+  assert.equal(peak <= 3, true, "broadcast RPC fanout honors its concurrency bound");
+  assert.deepEqual([...mapped], Array.from({ length: 12 }, (_unused, index) => index * 2));
+
+  const broadcastCheckObservationIsCurrent = isolatedTypeScriptFunction(
+    APP_PATH,
+    "broadcastCheckObservationIsCurrent",
+  );
+  const broadcastStatusAfterObservation = isolatedTypeScriptFunction(
+    APP_PATH,
+    "broadcastStatusAfterObservation",
+  );
+  const broadcastFailureReasonAfterObservation = isolatedTypeScriptFunction(
+    APP_PATH,
+    "broadcastFailureReasonAfterObservation",
+    { broadcastStatusAfterObservation },
+  );
+  const testSentDeliveryStatus = (message) => message.status ?? "unknown";
+  const applyBroadcastCheckResults = isolatedTypeScriptFunction(
+    APP_PATH,
+    "applyBroadcastCheckResults",
+    {
+      broadcastCheckObservationIsCurrent,
+      broadcastFailureReasonAfterObservation,
+      broadcastStatusAfterObservation,
+      sentDeliveryStatus: testSentDeliveryStatus,
+    },
+  );
+  const txid = "d".repeat(64);
+  const from = "bc1mailowner";
+  const latestCheckedAt = "2026-08-05T12:10:00.000Z";
+  const message = {
+    from,
+    lastCheckedAt: latestCheckedAt,
+    network: "livenet",
+    replacementTxid: "e".repeat(64),
+    status: "replaced",
+    txid,
+  };
+  const staleSummary = {
+    checkedAt: "2026-08-05T12:09:59.999Z",
+    results: [{ from, network: "livenet", status: "confirmed", txid }],
+  };
+  const staleApplied = applyBroadcastCheckResults([message], staleSummary);
+  assert.equal(
+    staleApplied[0],
+    message,
+    "an out-of-order refresh result cannot overwrite the latest Mail observation",
+  );
+  const currentSummary = {
+    checkedAt: "2026-08-05T12:11:00.000Z",
+    results: [{ from, network: "livenet", status: "pending", txid }],
+  };
+  const currentApplied = applyBroadcastCheckResults([message], currentSummary)[0];
+  assert.equal(currentApplied.status, "pending");
+  assert.equal(currentApplied.replacementTxid, undefined);
+  assert.equal(currentApplied.failureReason, undefined);
+  assert.equal(currentApplied.lastCheckedAt, currentSummary.checkedAt);
+  const deterministicFailure = {
+    ...message,
+    failureReason: "mandatory-script-verify-flag-failed",
+    replacementTxid: undefined,
+    status: "failed",
+  };
+  const absentAfterFailure = applyBroadcastCheckResults(
+    [deterministicFailure],
+    {
+      checkedAt: "2026-08-05T12:12:00.000Z",
+      results: [{ from, network: "livenet", status: "unknown", txid }],
+    },
+  )[0];
+  assert.equal(
+    absentAfterFailure.status,
+    "failed",
+    "a later Core absence cannot weaken a deterministic signed rejection to unknown",
+  );
+  assert.equal(
+    absentAfterFailure.failureReason,
+    deterministicFailure.failureReason,
+  );
+
+  const preferSentMessage = isolatedTypeScriptFunction(
+    APP_PATH,
+    "preferSentMessage",
+    { sentMessageObservationTime },
+  );
+  const normalizeBroadcastStatus = (status) =>
+    ["confirmed", "pending", "dropped", "failed", "replaced"].includes(status)
+      ? status
+      : "unknown";
+  const sentDeliveryStatus = isolatedTypeScriptFunction(
+    APP_PATH,
+    "sentDeliveryStatus",
+    { normalizeBroadcastStatus },
+  );
+  const mergeSentRecord = isolatedTypeScriptFunction(
+    APP_PATH,
+    "mergeSentRecord",
+    {
+      mergeSentAttachedCredits: (preferred) => preferred.attachedCredits,
+      sentDeliveryStatus,
+    },
+  );
+  const mergeSentMessages = isolatedTypeScriptFunction(
+    APP_PATH,
+    "mergeSentMessages",
+    { mergeSentRecord, preferSentMessage, sentMessageKey },
+  );
+  const mergeObservedSentMessages = isolatedTypeScriptFunction(
+    APP_PATH,
+    "mergeObservedSentMessages",
+    {
+      mergeSentMessages,
+      mergeSentRecord,
+      preferSentMessage,
+      sentMessageKey,
+    },
+  );
+  const fetchedConfirmed = {
+    ...message,
+    confirmedAt: "2026-08-05T12:09:00.000Z",
+    lastCheckedAt: undefined,
+    replacementTxid: undefined,
+    status: "confirmed",
+  };
+  const fetchStartedBeforeStatus = mergeObservedSentMessages(
+    [message, { ...message, txid: "f".repeat(64) }],
+    [fetchedConfirmed],
+    "2026-08-05T12:09:30.000Z",
+  );
+  assert.equal(fetchStartedBeforeStatus.length, 1);
+  assert.equal(
+    fetchStartedBeforeStatus[0].status,
+    "replaced",
+    "a direct wallet sync that started earlier cannot overwrite a newer status check",
+  );
+  const fetchStartedAfterStatus = mergeObservedSentMessages(
+    [message],
+    [fetchedConfirmed],
+    "2026-08-05T12:12:00.000Z",
+  )[0];
+  assert.equal(fetchStartedAfterStatus.status, "confirmed");
+  assert.equal(fetchStartedAfterStatus.replacementTxid, undefined);
+  assert.equal(
+    fetchStartedAfterStatus.lastCheckedAt,
+    "2026-08-05T12:12:00.000Z",
+  );
+  const olderStatusAfterDirectSync = applyBroadcastCheckResults(
+    [fetchStartedAfterStatus],
+    {
+      checkedAt: "2026-08-05T12:11:59.999Z",
+      results: [{ from, network: "livenet", status: "pending", txid }],
+    },
+  )[0];
+  assert.equal(
+    olderStatusAfterDirectSync,
+    fetchStartedAfterStatus,
+    "a status request that started earlier cannot overwrite a later direct sync",
+  );
+});
+
+check("signed transaction failures expose bounded lifecycle evidence", async () => {
+  class TestSignedTransactionBroadcastError extends Error {
+    constructor(localTxid, status, message) {
+      super(message);
+      this.localTxid = localTxid;
+      this.status = status;
+    }
+  }
+  const txid = "a".repeat(64);
+  const publicBroadcastFailureReason = isolatedTypeScriptFunction(
+    APP_PATH,
+    "publicBroadcastFailureReason",
+  );
+  const extractEvidence = isolatedTypeScriptFunction(
+    APP_PATH,
+    "signedTransactionBroadcastFailureEvidence",
+    {
+      SignedTransactionBroadcastError: TestSignedTransactionBroadcastError,
+      publicBroadcastFailureReason,
+    },
+  );
+  const evidence = extractEvidence(
+    new TestSignedTransactionBroadcastError(txid, "failed", "reject reason"),
+  );
+  assert.deepEqual({ ...evidence }, {
+    failureReason: "reject reason",
+    localTxid: txid,
+    status: "failed",
+  });
+  assert.deepEqual(
+    Object.keys(evidence).sort(),
+    ["failureReason", "localTxid", "status"],
+    "failure evidence cannot expose raw transactions, PSBTs, or signatures",
+  );
+  const sensitiveReason = [
+    "RPC code: -26",
+    `rawTx=${"ab".repeat(300)}`,
+    `psbt=cHNidP${"A".repeat(240)}`,
+    `signature=${"cd".repeat(64)}`,
+  ].join(" ");
+  const redacted = extractEvidence(
+    new TestSignedTransactionBroadcastError(txid, "failed", sensitiveReason),
+  );
+  assert.match(redacted.failureReason, /redacted/iu);
+  assert.match(redacted.failureReason, /RPC code -26/u);
+  assert.equal(redacted.failureReason.includes("cHNidP"), false);
+  assert.equal(redacted.failureReason.includes("abababab"), false);
+  assert.equal(redacted.failureReason.includes("cdcdcdcd"), false);
+  assert.equal(redacted.failureReason.length <= 240, true);
+  const isTransientProofApiBroadcastFailure = isolatedTypeScriptFunction(
+    APP_PATH,
+    "isTransientProofApiBroadcastFailure",
+  );
+  assert.equal(
+    isTransientProofApiBroadcastFailure(0, "The operation was aborted"),
+    true,
+    "a thrown transport exception is ambiguous regardless of its message text",
+  );
+
+  const makeBroadcaster = (attempt, transient) =>
+    isolatedTypeScriptFunction(
+      APP_PATH,
+      "broadcastRawTransactionViaProofApi",
+      {
+        PROOF_API_BROADCAST_RETRY_DELAYS_MS: [],
+        SignedTransactionBroadcastError: TestSignedTransactionBroadcastError,
+        countOpReturnOutputs: () => 1,
+        delay: async () => {},
+        errorMessage: (error) => error?.message ?? "request failed",
+        explorerTxUrl: () => "",
+        isKnownAcceptedBroadcastMessage: () => false,
+        isTransientProofApiBroadcastFailure:
+          typeof transient === "function" ? transient : () => transient,
+        postRawTransactionToProofApi: async () => {
+          if (attempt instanceof Error) throw attempt;
+          return attempt;
+        },
+        proofApiBroadcastErrorMessage: () => "reject reason",
+        rawTransactionTxid: () => txid,
+        recoverBroadcastTxidFromStatus: async () => false,
+      },
+    );
+  await assert.rejects(
+    makeBroadcaster(
+      { ok: false, payload: {}, responseText: "", status: 400, txid: "" },
+      false,
+    )("signed-raw", "livenet"),
+    (error) => error.localTxid === txid && error.status === "failed",
+  );
+  await assert.rejects(
+    makeBroadcaster(
+      { ok: false, payload: {}, responseText: "", status: 503, txid: "" },
+      true,
+    )("signed-raw", "livenet"),
+    (error) => error.localTxid === txid && error.status === "unknown",
+  );
+  await assert.rejects(
+    makeBroadcaster(
+      { ok: false, payload: null, responseText: "", status: 0, txid: "" },
+      true,
+    )("signed-raw", "livenet"),
+    (error) => error.localTxid === txid && error.status === "unknown",
+    "transport exhaustion without a response remains ambiguous",
+  );
+  await assert.rejects(
+    makeBroadcaster(
+      new Error("The operation was aborted"),
+      isTransientProofApiBroadcastFailure,
+    )("signed-raw", "livenet"),
+    (error) => error.localTxid === txid && error.status === "unknown",
+    "a non-regex thrown transport exception is retained as unknown",
+  );
+  await assert.rejects(
+    makeBroadcaster(
+      { ok: true, payload: {}, responseText: "", status: 200, txid: "" },
+      false,
+    )("signed-raw", "livenet"),
+    (error) => error.localTxid === txid && error.status === "unknown",
+    "HTTP success without a trustworthy returned txid remains ambiguous",
+  );
+  await assert.rejects(
+    makeBroadcaster(
+      {
+        ok: true,
+        payload: {},
+        responseText: "",
+        status: 200,
+        txid: "b".repeat(64),
+      },
+      false,
+    )("signed-raw", "livenet"),
+    (error) => error.localTxid === txid && error.status === "unknown",
+  );
+});
+
+check("persisted local Credit rows enforce family-specific public semantics", () => {
+  const normalizeTokenTicker = (value) =>
+    String(value ?? "").trim().toUpperCase();
+  const samePaymentAddress = (left, right) => String(left) === String(right);
+  const isValidBitcoinAddress = (value, network) =>
+    network === "livenet" && /^(bc1|1)[A-Za-z0-9]+$/u.test(String(value ?? ""));
+  const localTokenOverlayValidTokenIdentity = isolatedTypeScriptFunction(
+    APP_PATH,
+    "localTokenOverlayValidTokenIdentity",
+    { normalizeTokenTicker },
+  );
+  const localTokenOverlayPositiveAmount = isolatedTypeScriptFunction(
+    APP_PATH,
+    "localTokenOverlayPositiveAmount",
+    { exactIntegerBigInt: frontendExactIntegerBigInt },
+  );
+  const localTokenOverlayValidAddress = isolatedTypeScriptFunction(
+    APP_PATH,
+    "localTokenOverlayValidAddress",
+    { isValidBitcoinAddress },
+  );
+  const tokenSaleAuthorizationUsesSpendableSaleTicketAnchor = (auth) =>
+    auth?.anchorType === "ticket";
+  const localTokenOverlayListingAuthorizationMatches =
+    isolatedTypeScriptFunction(
+      APP_PATH,
+      "localTokenOverlayListingAuthorizationMatches",
+      {
+        exactIntegerBigInt: frontendExactIntegerBigInt,
+        normalizeTokenTicker,
+        samePaymentAddress,
+        tokenSaleAuthorizationUsesSpendableSaleTicketAnchor,
+      },
+    );
+  const semantic = isolatedTypeScriptFunction(
+    APP_PATH,
+    "localTokenOverlayRecordSemanticallyValid",
+    {
+      WORK_TOKEN_ID: "f".repeat(64),
+      WORK_TOKEN_TICKER: "WORK",
+      exactIntegerBigInt: frontendExactIntegerBigInt,
+      isWorkMarketSaleAuthorizationVersion: () => false,
+      localTokenOverlayListingAuthorizationMatches,
+      localTokenOverlayPositiveAmount,
+      localTokenOverlayValidAddress,
+      localTokenOverlayValidTokenIdentity,
+      normalizeTokenTicker,
+    },
+  );
+  const txid = "a".repeat(64);
+  const listingId = "c".repeat(64);
+  const tokenId = "b".repeat(64);
+  const createdAt = "2026-08-05T12:00:00.000Z";
+  const common = {
+    amount: 10,
+    createdAt,
+    network: "livenet",
+    registryAddress: "bc1Registry",
+    ticker: "TEST",
+    tokenId,
+  };
+  const authorization = {
+    amount: 10,
+    anchorType: "ticket",
+    network: "livenet",
+    priceSats: 100,
+    registryAddress: common.registryAddress,
+    sellerAddress: "1Seller",
+    ticker: "TEST",
+    tokenId,
+  };
+  const fixtures = {
+    definitions: {
+      confirmed: false,
+      createdAt,
+      creationFeeSats: 1000,
+      creatorAddress: "1Creator",
+      maxSupply: 100,
+      mintAmount: 10,
+      mintPriceSats: 546,
+      network: "livenet",
+      registryAddress: common.registryAddress,
+      ticker: "TEST",
+      tokenId: txid,
+      txid,
+    },
+    mints: {
+      ...common,
+      minterAddress: "1Minter",
+      paidSats: 546,
+      txid,
+    },
+    transfers: {
+      ...common,
+      paidSats: 546,
+      recipientAddress: "1Recipient",
+      senderAddress: "1Sender",
+      txid,
+    },
+    listings: {
+      ...common,
+      listingId: txid,
+      priceSats: 100,
+      saleAuthorization: authorization,
+      sellerAddress: "1Seller",
+    },
+    seals: {
+      listingId,
+      network: "livenet",
+      sealAt: createdAt,
+      sealTxid: txid,
+      sellerAddress: "1Seller",
+      tokenId,
+    },
+    closedListings: {
+      ...common,
+      closedTxid: txid,
+      listingId,
+      priceSats: 100,
+      saleAuthorization: authorization,
+      sellerAddress: "1Seller",
+    },
+    sales: {
+      ...common,
+      buyerAddress: "1Buyer",
+      listingId,
+      paidSats: 646,
+      priceSats: 100,
+      sellerAddress: "1Seller",
+      txid,
+    },
+  };
+  for (const [family, record] of Object.entries(fixtures)) {
+    assert.equal(semantic(family, record, "livenet", txid), true, family);
+  }
+  assert.equal(
+    semantic("definitions", { ...fixtures.definitions, creatorAddress: "" }, "livenet", txid),
+    false,
+  );
+  assert.equal(semantic("mints", { ...fixtures.mints, amount: 0 }, "livenet", txid), false);
+  assert.equal(
+    semantic("transfers", { ...fixtures.transfers, recipientAddress: "bad" }, "livenet", txid),
+    false,
+  );
+  assert.equal(
+    semantic(
+      "listings",
+      {
+        ...fixtures.listings,
+        saleAuthorization: { ...authorization, priceSats: 101 },
+      },
+      "livenet",
+      txid,
+    ),
+    false,
+  );
+  assert.equal(
+    semantic("seals", { ...fixtures.seals, sealTxid: listingId }, "livenet", txid),
+    false,
+  );
+  assert.equal(
+    semantic("closedListings", { ...fixtures.closedListings, closedTxid: listingId }, "livenet", txid),
+    false,
+  );
+  assert.equal(
+    semantic("sales", { ...fixtures.sales, buyerAddress: "bad" }, "livenet", txid),
+    false,
+  );
+});
+
+check("local Credit listing and seal persistence is public, durable, and non-buyable", () => {
+  const sensitiveField =
+    /(?:psbt|raw.?tx|signed.?tx|tx.?hex|seed|mnemonic|private|secret|signature|pub(?:lic)?key|wallet)/iu;
+  const sanitizeLocalTokenPublicValue = isolatedTypeScriptFunction(
+    APP_PATH,
+    "sanitizeLocalTokenPublicValue",
+    {
+      LOCAL_TOKEN_BROADCAST_MAX_ROWS_PER_FAMILY: 32,
+      LOCAL_TOKEN_SENSITIVE_FIELD: sensitiveField,
+    },
+  );
+  const validPublicKeyHex = (value) =>
+    /^(02|03)[0-9a-f]{64}$/u.test(String(value ?? ""));
+  const tokenSaleAuthorizationUsesSpendableSaleTicketAnchor =
+    (authorization) =>
+      authorization?.anchorType === "fixture-sale-ticket" &&
+      authorization?.anchorVout === 1 &&
+      authorization?.anchorValueSats === 546 &&
+      authorization?.anchorSigHashType === 131 &&
+      /^[0-9a-f]+$/u.test(String(authorization?.anchorScriptPubKey ?? "")) &&
+      validPublicKeyHex(authorization?.sellerPublicKey);
+  const sanitizeLocalTokenBaseSaleAuthorization = isolatedTypeScriptFunction(
+    APP_PATH,
+    "sanitizeLocalTokenBaseSaleAuthorization",
+    {
+      sanitizeLocalTokenPublicValue,
+      tokenSaleAuthorizationUsesSpendableSaleTicketAnchor,
+      validPublicKeyHex,
+    },
+  );
+  const validLocalTokenOverlayTime = isolatedTypeScriptFunction(
+    APP_PATH,
+    "validLocalTokenOverlayTime",
+  );
+  const recordFields = {
+    closedListings: new Set([
+      "amount",
+      "closedAt",
+      "closedConfirmed",
+      "closedTxid",
+      "confirmed",
+      "createdAt",
+      "listingId",
+      "network",
+      "saleAuthorization",
+      "sellerAddress",
+      "tokenId",
+    ]),
+    definitions: new Set(),
+    listings: new Set([
+      "amount",
+      "confirmed",
+      "createdAt",
+      "listingId",
+      "network",
+      "saleAuthorization",
+      "sellerAddress",
+      "tokenId",
+    ]),
+    mints: new Set(),
+    sales: new Set(),
+    seals: new Set([
+      "listingId",
+      "network",
+      "sealAt",
+      "sealTxid",
+      "sellerAddress",
+      "tokenId",
+    ]),
+    transfers: new Set(),
+  };
+  const sanitizeLocalTokenOverlayRecord = isolatedTypeScriptFunction(
+    APP_PATH,
+    "sanitizeLocalTokenOverlayRecord",
+    {
+      LOCAL_TOKEN_RECORD_FIELDS: recordFields,
+      localTokenOverlayRecordSemanticallyValid: () => true,
+      sanitizeLocalTokenBaseSaleAuthorization,
+      sanitizeLocalTokenPublicValue,
+      validLocalTokenOverlayTime,
+    },
+  );
+  const listingTxid = "1".repeat(64);
+  const closeTxid = "2".repeat(64);
+  const sealTxid = "3".repeat(64);
+  const tokenId = "4".repeat(64);
+  const sellerPublicKey = `02${"5".repeat(64)}`;
+  const saleAuthorization = {
+    anchorScriptPubKey: `0020${"6".repeat(64)}`,
+    anchorSigHashType: 131,
+    anchorSignature: "7".repeat(128),
+    anchorTxid: "8".repeat(64),
+    anchorType: "fixture-sale-ticket",
+    anchorValueSats: 546,
+    anchorVout: 1,
+    metadata: { secret: "must-not-persist" },
+    privateWalletMaterial: "must-not-persist",
+    sellerPublicKey,
+    sig: "must-not-persist",
+    version: "fixture-v1",
+    witness: ["must-not-persist"],
+  };
+  const baseListing = {
+    amount: 10,
+    confirmed: true,
+    createdAt: "2026-08-05T12:00:00.000Z",
+    listingId: listingTxid,
+    network: "livenet",
+    saleAuthorization,
+    sellerAddress: "bc1seller",
+    tokenId,
+  };
+  const safeListing = sanitizeLocalTokenOverlayRecord(
+    "listings",
+    baseListing,
+    "livenet",
+    listingTxid,
+  );
+  assert.ok(safeListing, "pending listing evidence remains persistable");
+  assert.equal(safeListing.confirmed, false);
+  assert.equal(safeListing.saleAuthorization.anchorSignature, "");
+  assert.equal(safeListing.saleAuthorization.anchorTxid, "");
+  assert.equal(
+    safeListing.saleAuthorization.anchorScriptPubKey,
+    saleAuthorization.anchorScriptPubKey,
+  );
+  assert.equal(safeListing.saleAuthorization.sellerPublicKey, sellerPublicKey);
+  assert.equal(
+    "privateWalletMaterial" in safeListing.saleAuthorization,
+    false,
+    "private wallet material is excluded from durable lifecycle evidence",
+  );
+  assert.deepEqual(
+    Object.keys(safeListing.saleAuthorization).sort(),
+    [
+      "anchorScriptPubKey",
+      "anchorSigHashType",
+      "anchorSignature",
+      "anchorTxid",
+      "anchorType",
+      "anchorValueSats",
+      "anchorVout",
+      "sellerPublicKey",
+      "version",
+    ],
+    "malformed backup keys outside the public sale-authorization allowlist are excluded",
+  );
+
+  const safeClosedListing = sanitizeLocalTokenOverlayRecord(
+    "closedListings",
+    {
+      ...baseListing,
+      closedAt: "2026-08-05T12:05:00.000Z",
+      closedConfirmed: true,
+      closedTxid: closeTxid,
+    },
+    "livenet",
+    closeTxid,
+  );
+  assert.ok(safeClosedListing, "pending closure evidence remains persistable");
+  assert.equal(safeClosedListing.closedConfirmed, false);
+  assert.equal(safeClosedListing.saleAuthorization.anchorSignature, "");
+
+  const safeSeal = sanitizeLocalTokenOverlayRecord(
+    "seals",
+    {
+      listingId: listingTxid,
+      network: "livenet",
+      saleAuthorization,
+      sealAt: "2026-08-05T12:06:00.000Z",
+      sealTxid,
+      sellerAddress: "bc1seller",
+      tokenId,
+    },
+    "livenet",
+    sealTxid,
+  );
+  assert.ok(safeSeal);
+  assert.equal(
+    "saleAuthorization" in safeSeal,
+    false,
+    "durable seal evidence never stores a signed or incomplete sale authorization",
+  );
+
+  const localTokenListingWithSealLifecycle = isolatedTypeScriptFunction(
+    APP_PATH,
+    "localTokenListingWithSealLifecycle",
+  );
+  const lifecycleListing = localTokenListingWithSealLifecycle(
+    {
+      ...baseListing,
+      saleAuthorization: safeListing.saleAuthorization,
+    },
+    {
+      listingId: listingTxid,
+      network: "livenet",
+      saleAuthorization,
+      sealAt: "2026-08-05T12:06:00.000Z",
+      sealTxid,
+      sellerAddress: "bc1seller",
+      tokenId,
+    },
+    {
+      checkedAt: "2026-08-05T12:07:00.000Z",
+      status: "pending",
+    },
+  );
+  assert.equal(
+    lifecycleListing.saleAuthorization,
+    safeListing.saleAuthorization,
+    "a persisted seal overlays lifecycle fields without replacing the base authorization",
+  );
+  assert.equal(lifecycleListing.sealConfirmed, false);
+  assert.equal(lifecycleListing.sealLifecycleStatus, "pending");
+
+  const tokenSaleAuthorizationUsesSaleTicketAnchor = (authorization) =>
+    Boolean(authorization?.anchorSignature && authorization?.anchorTxid);
+  const tokenListingHasConfirmedSaleTicketSeal = isolatedTypeScriptFunction(
+    APP_PATH,
+    "tokenListingHasConfirmedSaleTicketSeal",
+    { tokenSaleAuthorizationUsesSaleTicketAnchor },
+  );
+  const tokenListingHasSaleTicketSeal = isolatedTypeScriptFunction(
+    APP_PATH,
+    "tokenListingHasSaleTicketSeal",
+    { tokenSaleAuthorizationUsesSaleTicketAnchor },
+  );
+  const tokenListingHasActiveLocalSealLifecycle = isolatedTypeScriptFunction(
+    APP_PATH,
+    "tokenListingHasActiveLocalSealLifecycle",
+  );
+  const tokenListingHasPendingSaleTicketSeal = isolatedTypeScriptFunction(
+    APP_PATH,
+    "tokenListingHasPendingSaleTicketSeal",
+    {
+      tokenListingHasActiveLocalSealLifecycle,
+      tokenListingHasSaleTicketSeal,
+    },
+  );
+  assert.equal(tokenListingHasPendingSaleTicketSeal(lifecycleListing), true);
+  assert.equal(
+    tokenListingHasConfirmedSaleTicketSeal(lifecycleListing),
+    false,
+    "pending local seal evidence cannot make a listing buyable",
+  );
+  assert.equal(
+    tokenListingHasPendingSaleTicketSeal({
+      ...lifecycleListing,
+      sealLifecycleStatus: "replaced",
+    }),
+    false,
+    "terminal local seal evidence is not reported as actively sealing",
+  );
+
+  const tokenListingSealRank = isolatedTypeScriptFunction(
+    APP_PATH,
+    "tokenListingSealRank",
+    {
+      tokenListingHasConfirmedSaleTicketSeal,
+      tokenListingHasPendingSaleTicketSeal,
+    },
+  );
+  const applyPendingTokenListingSeals = isolatedTypeScriptFunction(
+    APP_PATH,
+    "applyPendingTokenListingSeals",
+    { tokenListingSealRank },
+  );
+  const mempoolSealListing = applyPendingTokenListingSeals(
+    [
+      {
+        ...baseListing,
+        saleAuthorization: safeListing.saleAuthorization,
+      },
+    ],
+    [
+      {
+        listingId: listingTxid,
+        network: "livenet",
+        saleAuthorization,
+        sealAt: "2026-08-05T12:06:00.000Z",
+        sealTxid,
+        sellerAddress: "bc1seller",
+        tokenId,
+      },
+    ],
+  )[0];
+  assert.equal(
+    mempoolSealListing.saleAuthorization,
+    safeListing.saleAuthorization,
+    "mempool seal discovery preserves the canonical base authorization",
+  );
+  assert.equal(mempoolSealListing.sealLifecycleStatus, "pending");
+  assert.equal(tokenListingHasConfirmedSaleTicketSeal(mempoolSealListing), false);
+
+  const mergeTokenListingRecord = isolatedTypeScriptFunction(
+    APP_PATH,
+    "mergeTokenListingRecord",
+    { tokenListingSealRank },
+  );
+  const refreshed = mergeTokenListingRecord(lifecycleListing, {
+    ...baseListing,
+    saleAuthorization: safeListing.saleAuthorization,
+  });
+  assert.equal(refreshed.sealTxid, sealTxid);
+  assert.equal(refreshed.sealLifecycleStatus, "pending");
+  assert.equal(
+    tokenListingHasConfirmedSaleTicketSeal(refreshed),
+    false,
+    "a refresh preserves truthful sealing state without granting buyability",
+  );
+
+  const localTokenOverlayKey = isolatedTypeScriptFunction(
+    APP_PATH,
+    "localTokenOverlayKey",
+  );
+  let savedEntries = [];
+  const recordLocalTokenBroadcastOverlay = isolatedTypeScriptFunction(
+    APP_PATH,
+    "recordLocalTokenBroadcastOverlay",
+    {
+      loadLocalTokenBroadcastOverlays: () => savedEntries,
+      localTokenOverlayKey,
+      mergeLocalTokenOverlayRows: (_family, current, incoming) => [
+        ...current,
+        ...incoming,
+      ],
+      replaceLocalTokenBroadcastOverlays: (entries) => {
+        savedEntries = entries;
+        return entries;
+      },
+      sanitizeLocalTokenOverlayEntry: () => ({}),
+      validLocalTokenOverlayNetwork: (network) => network === "livenet",
+      validLocalTokenOverlayTime,
+    },
+  );
+  recordLocalTokenBroadcastOverlay({
+    listings: [safeListing],
+    network: "livenet",
+    txid: listingTxid,
+  });
+  recordLocalTokenBroadcastOverlay({
+    closedListings: [safeClosedListing],
+    network: "livenet",
+    txid: closeTxid,
+  });
+  assert.equal(savedEntries.length, 2);
+  assert.equal(
+    savedEntries.find((entry) => entry.txid === listingTxid).listings.length,
+    1,
+    "pending listing evidence survives the durable record merge",
+  );
+  const savedClose = savedEntries.find((entry) => entry.txid === closeTxid);
+  assert.equal(savedClose.closedListings.length, 1);
+  assert.equal(
+    savedClose.awaitingFreshListingObservation,
+    true,
+    "a pending close remains reserved until a fresh canonical listing observation resolves it",
+  );
+});
+
 check("token spendability deducts reservations and pending sends once", () => {
   const testWorkRecordAmountAtoms = (_token, amount, amountAtoms) =>
     frontendWorkRecordAtoms(amount, amountAtoms);
@@ -6570,10 +8606,33 @@ check("token spendability deducts reservations and pending sends once", () => {
     "mergeTokenTransfersForSpendability",
     { tokenTransferSpendabilityKey },
   );
+  const tokenProjectionLifecycleStatus = isolatedTypeScriptFunction(
+    APP_PATH,
+    "tokenProjectionLifecycleStatus",
+    {
+      normalizeBroadcastStatus: (value) =>
+        String(value ?? "").trim().toLowerCase() || "unknown",
+    },
+  );
+  const tokenProjectionReservesSpendability = isolatedTypeScriptFunction(
+    APP_PATH,
+    "tokenProjectionReservesSpendability",
+    { tokenProjectionLifecycleStatus },
+  );
+  const activeTokenListingsExcludingClosed = isolatedTypeScriptFunction(
+    APP_PATH,
+    "activeTokenListingsExcludingClosed",
+    {
+      tokenListingHasSpendableSaleTicketAnchor: () => true,
+      tokenListingStateKey: (listing) => listing.listingId,
+      tokenProjectionReservesSpendability,
+    },
+  );
   const tokenSpendabilityForWallet = isolatedTypeScriptFunction(
     APP_PATH,
     "tokenSpendabilityForWallet",
     {
+      activeTokenListingsExcludingClosed,
       mergeTokenListingsById: (current, incoming) => [...current, ...incoming],
       mergeTokenTransfersForSpendability,
       isWorkToken: frontendIsWorkToken,
@@ -6592,6 +8651,7 @@ check("token spendability deducts reservations and pending sends once", () => {
           );
           return amountAtoms === null ? total : total + amountAtoms;
         }, 0n),
+      tokenProjectionReservesSpendability,
       workNumberFromAtoms: frontendWorkNumberFromAtoms,
       workRecordAtoms: frontendWorkRecordAtoms,
     },
@@ -6687,9 +8747,13 @@ check("token spendability deducts reservations and pending sends once", () => {
     [
       {
         amount: 8_000,
+        awaitingFreshCanonical: true,
         closedConfirmed: false,
         confirmed: true,
+        lifecycleStatus: "pending",
+        localBroadcast: true,
         listingId: "pending-delist",
+        network: "livenet",
         sellerAddress: "sender",
         tokenId: token.tokenId,
       },
@@ -6699,6 +8763,68 @@ check("token spendability deducts reservations and pending sends once", () => {
   );
   assert.equal(pendingCloseResult.reservedBalance, 8_000);
   assert.equal(pendingCloseResult.spendableBalance, 2_000);
+
+  const unresolvedDroppedCloseResult = tokenSpendabilityForWallet(
+    "sender",
+    token,
+    {
+      closedListings: [],
+      holders: [{ address: "sender", balance: 10_000, tokenId: token.tokenId }],
+      listings: [],
+      sales: [],
+      transfers: [],
+    },
+    [],
+    [
+      {
+        amount: 8_000,
+        awaitingFreshCanonical: true,
+        closedConfirmed: false,
+        confirmed: true,
+        lifecycleStatus: "dropped",
+        localBroadcast: true,
+        listingId: "dropped-delist",
+        network: "livenet",
+        sellerAddress: "sender",
+        tokenId: token.tokenId,
+      },
+    ],
+    [],
+    [],
+  );
+  assert.equal(unresolvedDroppedCloseResult.reservedBalance, 8_000);
+  assert.equal(unresolvedDroppedCloseResult.spendableBalance, 2_000);
+
+  const resolvedDroppedCloseResult = tokenSpendabilityForWallet(
+    "sender",
+    token,
+    {
+      closedListings: [],
+      holders: [{ address: "sender", balance: 10_000, tokenId: token.tokenId }],
+      listings: [],
+      sales: [],
+      transfers: [],
+    },
+    [],
+    [
+      {
+        amount: 8_000,
+        awaitingFreshCanonical: false,
+        closedConfirmed: false,
+        confirmed: true,
+        lifecycleStatus: "dropped",
+        localBroadcast: true,
+        listingId: "dropped-delist",
+        network: "livenet",
+        sellerAddress: "sender",
+        tokenId: token.tokenId,
+      },
+    ],
+    [],
+    [],
+  );
+  assert.equal(resolvedDroppedCloseResult.reservedBalance, 0);
+  assert.equal(resolvedDroppedCloseResult.spendableBalance, 10_000);
 });
 
 check("clean scoped account lanes suppress stale WORK and bond positives", () => {
@@ -7337,6 +9463,30 @@ check("wallet holder overlays preserve WORK and POWB for one address", () => {
     "compareTokenWalletBalanceAmounts",
     { tokenWalletBalanceAmountUnits },
   );
+  const tokenProjectionLifecycleStatus = isolatedTypeScriptFunction(
+    APP_PATH,
+    "tokenProjectionLifecycleStatus",
+    {
+      normalizeBroadcastStatus: (value) => {
+        const status = String(value ?? "").trim().toLowerCase();
+        return [
+          "confirmed",
+          "dropped",
+          "failed",
+          "pending",
+          "replaced",
+          "unknown",
+        ].includes(status)
+          ? status
+          : "unknown";
+      },
+    },
+  );
+  const tokenProjectionCountsAsPending = isolatedTypeScriptFunction(
+    APP_PATH,
+    "tokenProjectionCountsAsPending",
+    { tokenProjectionLifecycleStatus },
+  );
   const tokenWalletBalancesFor = isolatedTypeScriptFunction(
     APP_PATH,
     "tokenWalletBalancesFor",
@@ -7353,6 +9503,7 @@ check("wallet holder overlays preserve WORK and POWB for one address", () => {
             String(ticker ?? "").toUpperCase(),
         },
       ),
+      tokenProjectionCountsAsPending,
       tokenWalletBalanceHasAmount,
       workNumberFromAtoms: frontendWorkNumberFromAtoms,
       workRecordAtoms: frontendWorkRecordAtoms,
@@ -8747,6 +10898,35 @@ check("confirmed invalid credit events remain visible without becoming valid", a
   assert.match(query.sql, /e\.record_ordinal/u);
   assert.match(query.sql, /t\.raw_tx AS transaction_raw_tx/u);
   assert.match(query.sql, /FROM proof_indexer\.event_participants/u);
+  assert.match(query.sql, /LIMIT 100001/u);
+  await rejection(
+    proofIndexTokenInvalidEventsFromTables(
+      {
+        async query() {
+          return { rows: Array(100_001).fill(row) };
+        },
+      },
+      "livenet",
+      "work",
+    ),
+    (error) => /exceeds the complete-read limit/u.test(error.message),
+  );
+  for (const functionName of [
+    "proofIndexTokenListingsFromTables",
+    "proofIndexTokenTransferEventsFromTables",
+    "proofIndexTokenInvalidEventsFromTables",
+    "proofIndexTokenMarketEventsFromTables",
+  ]) {
+    const source = topLevelFunctionSource(READER_PATH, functionName);
+    assert.match(
+      source,
+      /LIMIT \$\{TOKEN_STATE_EVENT_READ_LIMIT \+ 1\}/u,
+    );
+    assert.match(
+      source,
+      /result\.rows\.length > TOKEN_STATE_EVENT_READ_LIMIT/u,
+    );
+  }
 
   const normalizedSnapshotId = isolatedFunction(
     READER_PATH,
@@ -13448,7 +15628,7 @@ check("pending status cleanup is concurrent but capped", async () => {
       PENDING_STATUS_LIMIT: 25,
       STATUS_REQUEST_TIMEOUT_MS: 5_000,
       endpoint: (pathname) => new URL(pathname, "http://127.0.0.1:8081"),
-      readJson: async () => {
+      workerReadJson: async () => {
         activeReads += 1;
         maxActiveReads = Math.max(maxActiveReads, activeReads);
         await new Promise((resolve) => setImmediate(resolve));
@@ -13567,7 +15747,10 @@ check("worker status transitions are proven, race-safe, and projection-safe", as
     /IS DISTINCT FROM[\s\S]*to_timestamp/iu,
   );
   assert.match(pendingQueries[2].sql, /payload \?\| ARRAY/iu);
-  assert.match(pendingQueries[2].sql, /WHERE[\s\S]*status = 'pending'/iu);
+  assert.match(
+    pendingQueries[2].sql,
+    /WHERE[\s\S]*status IN \('pending', 'dropped'\)/iu,
+  );
 
   const confirmedQueries = [];
   const confirmedOutcome = await statusUpdate(
@@ -13719,7 +15902,7 @@ check("worker status transitions are proven, race-safe, and projection-safe", as
   );
   assert.equal(listingUpdates.length, 2);
   const initialListingDrop = listingUpdates.find((sql) =>
-    /listing_id = \$2 AND status = 'pending'/iu.test(sql),
+    /listing_id = \$2[\s\S]*status IN \('pending', 'dropped'\)/iu.test(sql),
   );
   const lifecycleRestore = listingUpdates.find((sql) =>
     /WITH affected AS/iu.test(sql),
@@ -22089,6 +24272,7 @@ check("authoritative transaction status distinguishes proof from dependency fail
         assert.fail(`unexpected RPC method ${method}`);
       },
       errorSummary: (error) => error.message,
+      exactCoreNodeAuthority,
       freshDataUnavailableError: unavailableError,
     },
   );
@@ -22108,6 +24292,7 @@ check("authoritative transaction status distinguishes proof from dependency fail
           ? { ok: true, result: { confirmations: 0, txid } }
           : { ok: true, result: { time: 1_783_000_000 } },
       errorSummary: (error) => error.message,
+      exactCoreNodeAuthority,
       freshDataUnavailableError: unavailableError,
     },
   );
@@ -22138,6 +24323,7 @@ check("authoritative transaction status distinguishes proof from dependency fail
         return {
           ok: true,
           result: {
+            bestblockhash: blockHash,
             blocks: 123,
             chain: "main",
             headers: 123,
@@ -22148,6 +24334,7 @@ check("authoritative transaction status distinguishes proof from dependency fail
         };
       },
       errorSummary: (error) => error.message,
+      exactCoreNodeAuthority,
       freshDataUnavailableError: unavailableError,
     },
   );
@@ -22169,6 +24356,7 @@ check("authoritative transaction status distinguishes proof from dependency fail
         return {
           ok: true,
           result: {
+            bestblockhash: blockHash,
             blocks: 123,
             chain: "main",
             headers: 123,
@@ -22179,6 +24367,7 @@ check("authoritative transaction status distinguishes proof from dependency fail
         };
       },
       errorSummary: (error) => error.message,
+      exactCoreNodeAuthority,
       freshDataUnavailableError: unavailableError,
     },
   );
@@ -22196,6 +24385,7 @@ check("authoritative transaction status distinguishes proof from dependency fail
         throw new Error("rpc timeout");
       },
       errorSummary: (error) => error.message,
+      exactCoreNodeAuthority,
       freshDataUnavailableError: unavailableError,
     },
   );
@@ -26386,10 +28576,7 @@ check("public reads reject the production-shaped legacy PWT completion", async (
 
   const blockHash = "f".repeat(64);
   let rebuild = common;
-  const exactCoreTipForPublicGate = isolatedFunction(
-    API_PATH,
-    "exactCoreTipFromBlockchainInfo",
-  );
+  const exactCoreTipForPublicGate = exactCoreTipFromBlockchainInfo;
   const status = {
     indexedThroughBlock: 958600,
     network: "livenet",
@@ -28283,6 +30470,7 @@ check("wallet mail projection recognizes canonical senderAddress as sent activit
       recipientSummary: (recipients) => recipients[0]?.display ?? "Unknown",
       sameMailPaymentAddress: (left, right) =>
         String(left ?? "").toLowerCase() === String(right ?? "").toLowerCase(),
+      withCanonicalMailAttachedCredits: (message) => message,
     },
   );
 
@@ -36674,10 +38862,6 @@ check("pending WORK supply-cap fast path is exact and bypasses broad replay", as
         String(transaction?.txid ?? "").toLowerCase(),
     },
   );
-  const exactCoreTipFromBlockchainInfo = isolatedFunction(
-    API_PATH,
-    "exactCoreTipFromBlockchainInfo",
-  );
   const proofIndexExactlyCoversCoreTip = isolatedFunction(
     API_PATH,
     "proofIndexExactlyCoversCoreTip",
@@ -40477,15 +42661,6 @@ check("Core health requires one synced mainnet tip and exact unpruned txindex", 
       txindex: { best_block_height: height, synced: true },
     },
   };
-  const exactCoreTipFromBlockchainInfo = isolatedFunction(
-    API_PATH,
-    "exactCoreTipFromBlockchainInfo",
-  );
-  const exactCoreNodeAuthority = isolatedFunction(
-    API_PATH,
-    "exactCoreNodeAuthority",
-    { exactCoreTipFromBlockchainInfo },
-  );
   assert.deepEqual(
     JSON.parse(JSON.stringify(
       exactCoreNodeAuthority(chainResponse, indexResponse),
@@ -40679,10 +42854,6 @@ check("summary catch-up does not brown out current relational reads", async () =
     initialblockdownload: false,
     verificationprogress: 1,
   };
-  const exactCoreTipFromBlockchainInfo = isolatedFunction(
-    API_PATH,
-    "exactCoreTipFromBlockchainInfo",
-  );
   const proofIndexWorkerExactTipReadiness = isolatedFunction(
     API_PATH,
     "proofIndexWorkerExactTipReadiness",
@@ -40774,10 +42945,6 @@ check("summary catch-up does not brown out current relational reads", async () =
 
 check("long worker cycles do not brown out exact canonical reads", async () => {
   const blockHash = "b".repeat(64);
-  const exactCoreTipFromBlockchainInfo = isolatedFunction(
-    API_PATH,
-    "exactCoreTipFromBlockchainInfo",
-  );
   const proofIndexWorkerExactTipReadiness = isolatedFunction(
     API_PATH,
     "proofIndexWorkerExactTipReadiness",
@@ -41604,6 +43771,7 @@ check("unpinned broad ID registry uses current relational event state", async ()
     txid: confirmedRecord.txid,
   };
   let registryActivity = [confirmedRegistration, pendingEvent, listing];
+  let includePending = true;
   let scanComplete = true;
   let scanHeight = 101;
   let scanHash = "f".repeat(64);
@@ -41617,9 +43785,9 @@ check("unpinned broad ID registry uses current relational event state", async ()
       currentIdRegistryEventState: async () => ({
         activity: registryActivity,
         listings: [listing],
-        pendingEvents: [pendingEvent],
-        pendingRecords: [pendingRecord],
-        pendingSales: [pendingSale],
+        pendingEvents: includePending ? [pendingEvent] : [],
+        pendingRecords: includePending ? [pendingRecord] : [],
+        pendingSales: includePending ? [pendingSale] : [],
         sales: [confirmedSale],
       }),
       dateIso: (value) => new Date(value).toISOString(),
@@ -41670,11 +43838,34 @@ check("unpinned broad ID registry uses current relational event state", async ()
   assert.equal(current.stats.pendingChanges, 1);
   assert.equal(current.indexedThroughBlock, 101);
   assert.equal(current.indexedThroughBlockHash, "f".repeat(64));
-  assert.equal(current.snapshotId, "current-scan");
+  assert.equal(current.sourceSnapshotId, "current-scan");
+  assert.match(current.snapshotId, /^[0-9a-f]{64}$/u);
+  assert.ok(coherentFullCanonicalSnapshot(current, "registry-state"));
   assert.equal(
     current.source,
     "proof-indexer-current-id-events+proof-indexer-confirmed-id-records",
   );
+  includePending = false;
+  registryActivity = [confirmedRegistration, listing];
+  const withoutPending = await currentProofIndexRegistryPayload(
+    {},
+    "livenet",
+    { registryAddress: "bc1registry" },
+  );
+  assert.equal(withoutPending.indexedAt, current.indexedAt);
+  assert.equal(withoutPending.indexedThroughBlock, current.indexedThroughBlock);
+  assert.equal(
+    withoutPending.indexedThroughBlockHash,
+    current.indexedThroughBlockHash,
+  );
+  assert.equal(withoutPending.sourceSnapshotId, current.sourceSnapshotId);
+  assert.notEqual(withoutPending.snapshotId, current.snapshotId);
+  assert.equal(withoutPending.stats.pending, 0);
+  assert.ok(
+    coherentFullCanonicalSnapshot(withoutPending, "registry-state"),
+  );
+  includePending = true;
+  registryActivity = [confirmedRegistration, pendingEvent, listing];
   scanComplete = false;
   assert.equal(
     await currentProofIndexRegistryPayload({}, "livenet", {
@@ -43442,10 +45633,19 @@ check("fresh summary checkpoint verification detects a same-height reorg race", 
   );
 });
 
-check("broadcast rate identity trusts only the loopback proxy boundary", () => {
+check("broadcast rate identity trusts only configured proxy boundaries", () => {
+  const TRUSTED_PROXY_ADDRESSES = new Set([
+    "127.0.0.1",
+    "::1",
+    "10.77.0.1",
+  ]);
+  const publicClientKey = isolatedFunction(API_PATH, "publicClientKey", {
+    TRUSTED_PROXY_ADDRESSES,
+  });
   const broadcastClientKey = isolatedFunction(
     API_PATH,
     "broadcastClientKey",
+    { publicClientKey },
   );
   assert.equal(
     broadcastClientKey({
@@ -43459,7 +45659,14 @@ check("broadcast rate identity trusts only the loopback proxy boundary", () => {
       headers: { "x-forwarded-for": "203.0.113.8" },
       socket: { remoteAddress: "10.77.0.1" },
     }),
-    "10.77.0.1",
+    "203.0.113.8",
+  );
+  assert.equal(
+    broadcastClientKey({
+      headers: { "x-forwarded-for": "203.0.113.9" },
+      socket: { remoteAddress: "198.51.100.10" },
+    }),
+    "198.51.100.10",
   );
 });
 

@@ -443,6 +443,26 @@ expect(
 );
 
 const app = contents.get("src/App.tsx");
+const localTokenOverlayLoadBlock = app.slice(
+  app.indexOf("function loadLocalTokenBroadcastOverlays"),
+  app.indexOf("function replaceLocalTokenBroadcastOverlays"),
+);
+const localTokenOverlayScopeBlock = app.slice(
+  app.indexOf("function localTokenOverlayRecordMatchesScope"),
+  app.indexOf("function localTokenLifecycleProjection"),
+);
+const localTokenOverlayProjectionCompleteBlock = app.slice(
+  app.indexOf("function localTokenOverlayProjectionComplete"),
+  app.indexOf("function mergeLocalTokenOverlayFamily"),
+);
+const applyLocalTokenBroadcastOverlaysBlock = app.slice(
+  app.indexOf("function applyLocalTokenBroadcastOverlays"),
+  app.indexOf("function mergeTokenTransfersForSpendability"),
+);
+const localTokenLifecyclePanelBlock = app.slice(
+  app.indexOf("function LocalTokenLifecyclePanel"),
+  app.indexOf("type TokenWalletMovement"),
+);
 const applyWorkFloorQuoteBlock = app.slice(
   app.indexOf("function applyWorkFloorQuote"),
   app.indexOf("async function freshWorkWriteMode"),
@@ -546,15 +566,14 @@ expect(
     /bondProofAmountDisplay\([\s\S]*floorQ8/.test(app),
 );
 expect(
-  "bond supply regression guards compare exact bigint ranks",
-  /function tokenDefinitionConfirmedSupply[\s\S]*exactIntegerBigInt\(token\.confirmedSupply\) \?\? 0n/.test(
+  "canonical reorg snapshots may lower exact bond and credit state",
+  !/tokenStateRegresses|registryStateRegresses|growthSummaryRegresses|infinitySummaryRegresses|activityStatsRegress/.test(
     app,
   ) &&
-    /function tokenStateConfirmedSupplyRank[\s\S]*reduce<bigint>[\s\S]*exactIntegerBigInt\(mint\.amount\)[\s\S]*0n/.test(
+    /function applyGrowthSummary\(snapshot[\s\S]*acceptedGrowthSummaryRef\.current = snapshot[\s\S]*setGrowthSummary\(snapshot\)/.test(
       app,
     ) &&
-    /currentSupply > 0n && nextSupply < currentSupply/.test(app) &&
-    !/function tokenDefinitionConfirmedSupply[\s\S]{0,160}finiteNonNegativeNumber/.test(
+    /function applyInfinitySummary\(snapshot[\s\S]*acceptedBondSummariesRef\.current\.set\(snapshot\.tokenId, snapshot\)[\s\S]*setInfinitySummary\(snapshot\)/.test(
       app,
     ),
 );
@@ -617,7 +636,7 @@ expect(
     /async function fetchMarketplaceSummary[\s\S]*one coherent registry, credit, and WORK-floor snapshot/.test(
       app,
     ) &&
-    /async function refreshMarketplaceSummary[\s\S]*acceptedMarketplaceSnapshotRef\.current = snapshot[\s\S]*lastGoodSnapshot = acceptedMarketplaceSnapshotRef\.current[\s\S]*showLastGoodReadWarning/.test(
+    /async function refreshMarketplaceSummary[\s\S]*acceptedMarketplaceSnapshotRef\.current = acceptedSnapshot[\s\S]*lastGoodSnapshot = acceptedMarketplaceSnapshotRef\.current[\s\S]*showLastGoodReadWarning/.test(
       app,
     ) &&
     /async function refreshInfinity[\s\S]*lastGoodSnapshot[\s\S]*showLastGoodReadWarning/.test(
@@ -627,6 +646,85 @@ expect(
       app,
     ) &&
     /async function fetchFreshWalletTokenPreflightState[\s\S]*fresh: "1"[\s\S]*No transaction was created/.test(
+      app,
+    ),
+);
+expect(
+  "summary-only projections cannot erase or relabel complete canonical collections",
+  /type PowTokenState = \{[\s\S]*indexedThroughBlockHash\?: string;[\s\S]*snapshotId\?: string;[\s\S]*summaryOnly\?: boolean/.test(
+    app,
+  ) &&
+    /type PowRegistryState = \{[\s\S]*indexedThroughBlockHash\?: string;[\s\S]*snapshotId\?: string;[\s\S]*summaryOnly\?: boolean/.test(
+      app,
+    ) &&
+    /function applyRegistryState[\s\S]*state\.summaryOnly && current && current\.summaryOnly !== true[\s\S]*\? current[\s\S]*: \{ \.\.\.state, activity \}/.test(
+      app,
+    ) &&
+    /function applyTokenState[\s\S]*state\.summaryOnly && current && current\.summaryOnly !== true[\s\S]*\? current[\s\S]*: state/.test(
+      app,
+    ) &&
+    !/async function refreshGrowth[\s\S]*applyRegistryState\(|async function refreshGrowth[\s\S]*applyTokenState\(/.test(
+      app.slice(
+        app.indexOf("async function refreshGrowth"),
+        app.indexOf("function replyTo"),
+      ),
+    ),
+);
+expect(
+  "full canonical empty and reorged Log pages replace rather than accumulate stale events",
+  /function applyActivityPayload[\s\S]*payload\.summaryOnly \? mergeActivityItems\(current, activity\) : activity/.test(
+    app,
+  ) &&
+    !/function applyActivityPayload[\s\S]*activity\.length === 0/.test(
+      app.slice(
+        app.indexOf("function applyActivityPayload"),
+        app.indexOf("async function loadLogHead"),
+      ),
+    ) &&
+    !/function acceptActivityHistoryPage[\s\S]*setIdActivity/.test(
+      app.slice(
+        app.indexOf("function acceptActivityHistoryPage"),
+        app.indexOf("function applyRegistryState"),
+      ),
+    ),
+);
+expect(
+  "Outbox status merges prefer newer evidence and clear status-exclusive fields",
+  /function preferSentMessage[\s\S]*sentMessageObservationTime\(candidate\)[\s\S]*candidateObservedAt > currentObservedAt/.test(
+    app,
+  ) &&
+    /function mergeSentRecord[\s\S]*preferredStatus === "confirmed"[\s\S]*: undefined[\s\S]*preferredStatus === "dropped"[\s\S]*: undefined[\s\S]*preferredStatus === "replaced"[\s\S]*: undefined/.test(
+      app,
+    ) &&
+    /function applyBroadcastCheckResults[\s\S]*status === "confirmed"[\s\S]*: undefined[\s\S]*status === "dropped"[\s\S]*: undefined/.test(
+      app,
+    ) &&
+    /function broadcastCheckObservationIsCurrent[\s\S]*checkedAtMs >= currentCheckedAtMs[\s\S]*function applyBroadcastCheckResults[\s\S]*!broadcastCheckObservationIsCurrent\(message, summary\.checkedAt\)/.test(
+      app,
+    ) &&
+    /function checkBroadcastTargets[\s\S]*mapLocalTokenOverlaysWithConcurrency\([\s\S]*MAIL_BROADCAST_STATUS_CHECK_CONCURRENCY/.test(
+      app,
+    ) &&
+    /function startBroadcastCheck[\s\S]*queue\.active = active[\s\S]*const queued = queue\.queued[\s\S]*startBroadcastCheck\(queue, \[\.\.\.queued\.targets\.values\(\)\]\)/.test(
+      app,
+    ) &&
+    /function runCoalescedBroadcastCheck[\s\S]*requestedKeys\.every[\s\S]*queue\.activeTargetKeys\.has[\s\S]*queue\.queued\.targets\.size < MAIL_BROADCAST_STATUS_MAX_TARGETS/.test(
+      app,
+    ) &&
+    /function checkMailBroadcastTargets[\s\S]*runCoalescedBroadcastCheck\([\s\S]*mailBroadcastCheckQueueRef\.current,[\s\S]*targets/.test(
+      app,
+    ) &&
+    /LOCAL_SENT_MESSAGE_MAX_ENTRIES = 512[\s\S]*function sanitizeStoredSentMessages[\s\S]*\.slice\(0, LOCAL_SENT_MESSAGE_MAX_ENTRIES\)[\s\S]*function loadSentMessages[\s\S]*sanitizeStoredSentMessages[\s\S]*function saveSentMessages[\s\S]*sanitizeStoredSentMessages\(messages\)/.test(
+      app,
+    ) &&
+    /function boundedBroadcastCheckTargets[\s\S]*MAIL_BROADCAST_STATUS_MAX_TARGETS/.test(
+      app,
+    ) &&
+    /function mergeObservedSentMessages[\s\S]*observedAt[\s\S]*preferSentMessage\(observed, current\)/.test(
+      app,
+    ) &&
+    (app.match(/setChainSent\(\(current\) =>[\s\S]{0,180}mergeObservedSentMessages/g)?.length ?? 0) >= 4 &&
+    /includeRecentConfirmed[\s\S]*RECENT_CONFIRMED_RECHECK_HORIZON_MS[\s\S]*MAX_RECENT_CONFIRMED_RECHECKS/.test(
       app,
     ),
 );
@@ -786,7 +884,7 @@ expect(
     /const walletBalanceCountLoaded = address[\s\S]*accountTokenLaneStatuses\.all\.loaded[\s\S]*activeTokenStateLoaded/.test(
       app,
     ) &&
-    /\{walletBalanceCountLoaded[\s\S]*walletTransferBalances\.length\.toLocaleString\(\)/.test(
+    /canonicalMetric\([\s\S]*walletTransferBalances\.length\.toLocaleString\(\),[\s\S]*walletBalanceCountLoaded \? walletReadState/.test(
       app,
     ) &&
     !/\? tokenWalletBalances\.length\.toLocaleString\(\)/.test(app),
@@ -805,15 +903,259 @@ expect(
     !/const transfersByTxid = new Map/.test(app),
 );
 expect(
-  "pending transfer reservations survive refresh and self sends remain net zero",
-  /const TOKEN_LOCAL_PENDING_TRANSFER_TTL_MS = 30 \* 60_000/.test(app) &&
-    /function tokenTransferShouldSurviveRefresh[\s\S]*transfer\.confirmed !== false[\s\S]*TOKEN_LOCAL_PENDING_TRANSFER_TTL_MS/.test(
+  "local Credit broadcasts use one versioned bounded durable public-only store",
+  /LOCAL_TOKEN_BROADCAST_STORE_KEY =[\s\S]*proofofwork\.localTokenBroadcasts\.v1/.test(
+    app,
+  ) &&
+    /LOCAL_TOKEN_BROADCAST_STORE_VERSION = 1/.test(app) &&
+    /LOCAL_TOKEN_BROADCAST_MAX_ENTRIES = 64/.test(app) &&
+    /LOCAL_TOKEN_BROADCAST_MAX_BYTES = 256 \* 1024/.test(app) &&
+    /LOCAL_TOKEN_SENSITIVE_FIELD =[\s\S]*psbt[\s\S]*seed[\s\S]*private[\s\S]*signature[\s\S]*pub/.test(
       app,
     ) &&
-    /function tokenTransfersWithPreservedLocalPending[\s\S]*mergeTokenTransfersForSpendability\([\s\S]*incoming,[\s\S]*current\.filter\(tokenTransferShouldSurviveRefresh\)/.test(
+    /function sanitizeLocalTokenBaseSaleAuthorization[\s\S]*const publicFields = \[[\s\S]*"amount"[\s\S]*"anchorScriptPubKey"[\s\S]*"sellerPublicKey"[\s\S]*"version"[\s\S]*for \(const key of publicFields\)[\s\S]*anchorSignature: ""[\s\S]*anchorTxid: ""[\s\S]*tokenSaleAuthorizationUsesSpendableSaleTicketAnchor/.test(
       app,
     ) &&
-    /const transfers = tokenTransfersWithPreservedLocalPending\([\s\S]*tokenTransfers[\s\S]*state\.transfers[\s\S]*const accepted = \{ \.\.\.state, listings, transfers \}/.test(
+    /seals: new Set\(\[[\s\S]*"sealTxid"[\s\S]*\]\),[\s\S]*transfers: new Set/.test(
+      app,
+    ) &&
+    !/seals: new Set\(\[[\s\S]{0,300}"saleAuthorization"/.test(app) &&
+    /function sanitizeLocalTokenOverlayEntry[\s\S]*closedListings\.length \+[\s\S]*definitions\.length \+[\s\S]*listings\.length \+[\s\S]*mints\.length \+[\s\S]*sales\.length \+[\s\S]*seals\.length \+[\s\S]*transfers\.length[\s\S]*return undefined/.test(
+      app,
+    ) &&
+    /localStorage\.setItem\(LOCAL_TOKEN_BROADCAST_STORE_KEY, serialized\)/.test(
+      app,
+    ) &&
+    /localTokenBroadcastOverlaysFromSerialized\(raw\)[\s\S]*saveLocalTokenBroadcastOverlays\(localTokenBroadcastOverlayCache\)/.test(
+      localTokenOverlayLoadBlock,
+    ) &&
+    !/localTokenOverlayIsExpired\(safe\)/.test(
+      localTokenOverlayLoadBlock,
+    ) &&
+    /localStorage\.setItem\(LOCAL_TOKEN_BROADCAST_STORE_KEY, serialized\)[\s\S]*localTokenBroadcastOverlayCache = durableEntries[\s\S]*archivedCount > 0/.test(
+      app,
+    ) &&
+    /function localTokenOverlayCapacityArchiveIndex[\s\S]*localTokenOverlayIsTerminal[\s\S]*entry\.status === "confirmed"/.test(
+      app,
+    ) &&
+    /function saveLocalTokenBroadcastOverlays[\s\S]*localStorage\.getItem\(LOCAL_TOKEN_BROADCAST_STORE_KEY\)[\s\S]*mergeLocalTokenBroadcastOverlayStores/.test(
+      app,
+    ) &&
+    /function reconcileLocalTokenBroadcastStorageEvent[\s\S]*localTokenBroadcastOverlayCache = incoming[\s\S]*return localTokenBroadcastOverlayCache/.test(
+      app,
+    ) &&
+    /localTokenOverlayWarningQueue[\s\S]*setLocalTokenOverlayWarningListenerReady\(true\)[\s\S]*loadLocalTokenBroadcastOverlays\(\)/.test(
+      app,
+    ) &&
+    !/TOKEN_PENDING_SEALS_KEY|savePendingTokenListingSeal|loadPendingTokenListingSeals/.test(
+      app,
+    ),
+);
+expect(
+  "all seven Credit lifecycle families enter the authoritative tx overlay",
+  (app.match(/recordLocalTokenBroadcastOverlay\(\{/g)?.length ?? 0) >= 9 &&
+    /recordLocalTokenBroadcastOverlay\(\{[\s\S]{0,180}definitions: \[token\]/.test(
+      app,
+    ) &&
+    /recordLocalTokenBroadcastOverlay\(\{[\s\S]{0,180}mints: \[mint\]/.test(
+      app,
+    ) &&
+    /recordLocalTokenBroadcastOverlay\(\{[\s\S]{0,220}transfers: finalizedPendingWorkTransfers/.test(
+      app,
+    ) &&
+    /recordLocalTokenBroadcastOverlay\(\{[\s\S]{0,180}listings: \[listing\]/.test(
+      app,
+    ) &&
+    /recordLocalTokenBroadcastOverlay\(\{[\s\S]{0,180}seals: \[pendingSeal\]/.test(
+      app,
+    ) &&
+    /recordLocalTokenBroadcastOverlay\(\{[\s\S]{0,180}closedListings: \[closedListing\]/.test(
+      app,
+    ) &&
+    /recordLocalTokenBroadcastOverlay\(\{[\s\S]{0,220}sales: \[sale\]/.test(
+      app,
+    ) &&
+    /mergeLocalTokenOverlayRows[\s\S]*localTokenOverlayRecordIdentity/.test(app),
+);
+expect(
+  "signed Mail and Credit broadcast failures retain only sanitized public evidence",
+  /class SignedTransactionBroadcastError[\s\S]*readonly localTxid[\s\S]*readonly status/.test(
+    app,
+  ) &&
+    /function publicBroadcastFailureReason[\s\S]*diagnostic material was redacted[\s\S]*slice\(0, 240\)/.test(
+      app,
+    ) &&
+    /function signedTransactionBroadcastFailureEvidence[\s\S]*publicBroadcastFailureReason\(error\.message\)/.test(
+      app,
+    ) &&
+    /result\?\.ok && !result\.txid && localTxid[\s\S]*"unknown"/.test(app) &&
+    /transient \? "unknown" : "failed"/.test(app) &&
+    /function recordSignedTokenBroadcastFailure[\s\S]*recordLocalTokenBroadcastOverlay/.test(
+      app,
+    ) &&
+    /persistSignedMailFailure[\s\S]*saveSentMessages\(next\)[\s\S]*retained in Outbox/.test(
+      app,
+    ) &&
+    (app.match(/recordSignedTokenBroadcastFailure\(error, signedFailureProjection\)/g)?.length ?? 0) >= 5,
+);
+expect(
+  "backup export canonicalizes lifecycle and Sent stores before serialization",
+  /function collectBackupData[\s\S]*key === LOCAL_TOKEN_BROADCAST_STORE_KEY[\s\S]*localTokenBroadcastOverlaysFromSerialized\(value\)[\s\S]*entries,[\s\S]*version: LOCAL_TOKEN_BROADCAST_STORE_VERSION[\s\S]*key === SENT_KEY[\s\S]*sanitizeStoredSentMessages/.test(
+    app,
+  ) &&
+    /function parseBackup[\s\S]*key === LOCAL_TOKEN_BROADCAST_STORE_KEY[\s\S]*localTokenBroadcastOverlaysFromSerialized\(value\)[\s\S]*key === SENT_KEY[\s\S]*sanitizeStoredSentMessages/.test(
+      app,
+    ),
+);
+expect(
+  "persisted Credit overlay rows receive family-specific semantic validation",
+  /function localTokenOverlayRecordSemanticallyValid[\s\S]*family === "definitions"[\s\S]*family === "seals"[\s\S]*family === "mints"[\s\S]*family === "transfers"[\s\S]*family === "listings" \|\| family === "closedListings"/.test(
+    app,
+  ) &&
+    /function sanitizeLocalTokenOverlayRecord[\s\S]*localTokenOverlayRecordSemanticallyValid/.test(
+      app,
+    ),
+);
+expect(
+  "Mail refresh commits and cleanup remain bound to one wallet identity generation",
+  /function mailRefreshRequestIsCurrent[\s\S]*expected\.address === current\.address[\s\S]*expected\.network === current\.network[\s\S]*expected\.generation === current\.generation[\s\S]*expected\.requestId === current\.requestId/.test(
+    app,
+  ) &&
+    /async function refreshMail[\s\S]*const ownsRequest[\s\S]*if \(!ownsRequest\(\)\) return;[\s\S]*finally[\s\S]*if \(ownsRequest\(\)\)/.test(
+      app,
+    ),
+);
+expect(
+  "local Credit projection dedupes per family and never crosses networks",
+  /definitions[\s\S]*mints[\s\S]*transfers[\s\S]*listings[\s\S]*closedListings[\s\S]*sales[\s\S]*localTokenOverlayExpectedSealConfirmed/.test(
+    localTokenOverlayProjectionCompleteBlock,
+  ) &&
+    /for \(const originalEntry of entries\)[\s\S]*!targetNetwork \|\| originalEntry\.network !== targetNetwork[\s\S]*retainedEntries\.push\(originalEntry\)[\s\S]*continue;[\s\S]*invalidTxids\.has/.test(
+      applyLocalTokenBroadcastOverlaysBlock,
+    ) &&
+    /canonicalState\.invalidEvents[\s\S]*event\.network === targetNetwork/.test(
+      applyLocalTokenBroadcastOverlaysBlock,
+    ) &&
+    /function localTokenOverlayRecordMatchesScope\([\s\S]*record\.network !== targetNetwork[\s\S]*network !== targetNetwork[\s\S]*recordTokenId !== normalizedScope[\s\S]*participants\.some[\s\S]*samePaymentAddress\(participant, walletAddress\)/.test(
+      localTokenOverlayScopeBlock,
+    ) &&
+    /function localTokenOverlayRecordMatchesLifecyclePanelScope\([\s\S]*localTokenOverlayRecordMatchesScope\([\s\S]*isValidBitcoinAddress\(initiatorAddress, targetNetwork\)[\s\S]*samePaymentAddress\(initiatorAddress, walletAddress\)/.test(
+      localTokenOverlayScopeBlock,
+    ) &&
+    /const scopeCoversReservations =[\s\S]*localTokenOverlayRecordMatchesScope\([\s\S]*scopeKey,[\s\S]*entry\.network,[\s\S]*\);/.test(
+      app,
+    ) &&
+    /const scoped = <T extends object>[\s\S]*localTokenOverlayRecordMatchesScope\([\s\S]*entry\.network,[\s\S]*\);/.test(
+      applyLocalTokenBroadcastOverlaysBlock,
+    ) &&
+    !/entry\.initiatorAddress/.test(applyLocalTokenBroadcastOverlaysBlock) &&
+    /canonicalTokenStatesRef[\s\S]*applyLocalTokenBroadcastOverlays\(incoming, scopeKey/.test(app) &&
+    !/TOKEN_LOCAL_PENDING_TRANSFER_TTL_MS|tokenTransferShouldSurviveRefresh|tokenTransfersWithPreservedLocalPending|tokenListingsWithPreservedLocalPending/.test(
+      app,
+    ),
+);
+expect(
+  "Credit status reconciliation is bounded backed off visibility-aware and reorg-aware",
+  /LOCAL_TOKEN_BROADCAST_RECONCILE_CONCURRENCY = 4/.test(app) &&
+    /mapLocalTokenOverlaysWithConcurrency\([\s\S]*LOCAL_TOKEN_BROADCAST_RECONCILE_CONCURRENCY/.test(
+      app,
+    ) &&
+    /reconcileLocalTokenBroadcastOverlayStatuses[\s\S]*document\.visibilityState === "hidden"[\s\S]*fetchBroadcastStatusEvidence/.test(
+      app,
+    ) &&
+    /LOCAL_TOKEN_BROADCAST_CONFIRMED_RECHECK_HORIZON_MS[\s\S]*entry\.status === "confirmed"/.test(
+      app,
+    ) &&
+    /function localTokenOverlayFirstConfirmedAt\([\s\S]*status !== "confirmed"[\s\S]*entry\.status === "confirmed" && entry\.firstConfirmedAt[\s\S]*return checkedAt/.test(
+      app,
+    ) &&
+    /firstConfirmedAt: localTokenOverlayFirstConfirmedAt\([\s\S]*entry,[\s\S]*status,[\s\S]*checkedAt/.test(
+      app,
+    ) &&
+    /localTokenOverlayBackoffMs[\s\S]*6 \* 60 \* 60_000[\s\S]*Math\.min\(base \* 2 \*\*/.test(
+      app,
+    ) &&
+    /status === entry\.status[\s\S]*entry\.attempts \+ 1/.test(app) &&
+    /function localTokenOverlayAwaitsFreshCanonicalResolution\([\s\S]*entry\.awaitingFreshCanonicalResolution[\s\S]*status === "replaced" && entry\.status !== "replaced"/.test(
+      app,
+    ) &&
+    /statusChangedAt: string[\s\S]*function localTokenOverlayIsExpired[\s\S]*entry\.status === "unknown" \|\| localTokenOverlayIsTerminal\(entry\.status\)[\s\S]*\? entry\.statusChangedAt[\s\S]*: entry\.recordedAt/.test(
+      app,
+    ) &&
+    /LOCAL_TOKEN_BROADCAST_CONFIRMED_INDEXING_MAX_AGE_MS[\s\S]*entry\.status === "confirmed"[\s\S]*LOCAL_TOKEN_BROADCAST_CONFIRMED_INDEXING_MAX_AGE_MS/.test(
+      app,
+    ) &&
+    /function localTokenOverlayStatusChangedAt[\s\S]*status === entry\.status[\s\S]*entry\.statusChangedAt[\s\S]*: checkedAt/.test(
+      app,
+    ) &&
+    /function mergeLocalTokenOverlayStatusUpdate[\s\S]*\.\.\.current[\s\S]*replacementTxid:[\s\S]*update\.status === "replaced"[\s\S]*: undefined/.test(
+      app,
+    ) &&
+    /const latestEntries = loadLocalTokenBroadcastOverlays\(\);[\s\S]*mergeLocalTokenOverlayStatusUpdates\(latestEntries, updates\)/.test(
+      app,
+    ),
+);
+expect(
+  "Credit lifecycle keeps truthful visibility without manufacturing canonical value",
+  /function tokenProjectionCountsAsPending[\s\S]*!item\.localBroadcast \|\| tokenProjectionLifecycleStatus\(item\) === "pending"/.test(
+    app,
+  ) &&
+    /function tokenDefinitionCountsInMetrics[\s\S]*token\.confirmed === true \|\| tokenProjectionCountsAsPending\(token\)[\s\S]*function tokenDefinitionAllowsLifecycleActions[\s\S]*tokenDefinitionCountsInMetrics\(token\)/.test(
+      app,
+    ) &&
+    /function tokenProjectionReservesSpendability[\s\S]*status === "pending"[\s\S]*status === "unknown"[\s\S]*status === "confirmed"[\s\S]*item\.lifecycleAwaitingCanonical === true/.test(
+      app,
+    ) &&
+    /function localTokenOverlayAllowsLiveEconomicProjection[\s\S]*entry\.status !== "failed"[\s\S]*entry\.awaitingFreshCanonicalResolution === true/.test(
+      app,
+    ) &&
+    /function localTokenOverlayNeedsTerminalClosureReservation[\s\S]*entry\.status !== "failed"[\s\S]*entry\.awaitingFreshListingObservation === true[\s\S]*entry\.closedListings\.length > 0/.test(
+      app,
+    ) &&
+    /localTokenOverlayNeedsTerminalClosureReservation\(entry\)[\s\S]*localTokenOverlayAllowsLiveEconomicProjection\(entry\)[\s\S]*continue;/.test(
+      app,
+    ) &&
+    /pendingDirectTransferRows[\s\S]*tokenProjectionReservesSpendability\(transfer\)/.test(
+      app,
+    ) &&
+    /uncoveredPendingSaleRows[\s\S]*tokenProjectionReservesSpendability\(sale\)/.test(
+      app,
+    ) &&
+    /const reservationListingsByKey =[\s\S]*listing\.localBroadcast === true[\s\S]*tokenProjectionReservesSpendability\(listing\)[\s\S]*listing\.awaitingFreshCanonical === true[\s\S]*tokenReservedBalanceFor\([\s\S]*reservationListings/.test(
+      app,
+    ) &&
+    /tokenLedgerFor[\s\S]*tokenProjectionCountsAsPending\(mint\)/.test(app) &&
+    /function localTokenOverlayStatusLabel[\s\S]*Confirmed · indexing[\s\S]*Unknown · checking[\s\S]*Replaced[\s\S]*Dropped[\s\S]*Failed[\s\S]*function LocalTokenLifecyclePanel/.test(
+      app,
+    ) &&
+    /function LocalTokenLifecyclePanel[\s\S]*LOCAL_TOKEN_LIFECYCLE_PAGE_SIZE[\s\S]*const visibleEntries = entries\.slice\(0, visibleCount\)[\s\S]*remainingCount > 0[\s\S]*Show more \(\{remainingCount\.toLocaleString\(\)\}\)/.test(
+      localTokenLifecyclePanelBlock,
+    ) &&
+    /localTokenOverlayRecordMatchesLifecyclePanelScope\([\s\S]*entry\.initiatorAddress/.test(
+      localTokenLifecyclePanelBlock,
+    ) &&
+    /freshCanonical[\s\S]*awaitingFreshListingObservation[\s\S]*canonicalActiveClosedListing \|\| replacementObserved/.test(
+      app,
+    ) &&
+    /function refreshTerminalTokenClosureCanonicalState[\s\S]*refreshMarketplaceSummary\(true, true\)[\s\S]*refreshToken\(true, true\)[\s\S]*reprojectLocalTokenBroadcastsFromCanonicalState/.test(
+      app,
+    ) &&
+    /function localTokenListingWithSealLifecycle[\s\S]*saleAuthorization: listing\.saleAuthorization[\s\S]*sealConfirmed: false[\s\S]*sealLifecycleStatus: entry\.status/.test(
+      app,
+    ) &&
+    /function applyPendingTokenListingSeals[\s\S]*saleAuthorization: listing\.saleAuthorization[\s\S]*sealLifecycleStatus: "pending"/.test(
+      app,
+    ) &&
+    /setTokenListings\(\(current\) =>[\s\S]*saleAuthorization: item\.saleAuthorization[\s\S]*sealLifecycleStatus: "pending"/.test(
+      app,
+    ) &&
+    /function tokenListingHasActiveLocalSealLifecycle[\s\S]*sealLifecycleStatus === "pending"[\s\S]*sealLifecycleStatus === "unknown"[\s\S]*sealLifecycleStatus === "confirmed"[\s\S]*function tokenListingHasPendingSaleTicketSeal/.test(
+      app,
+    ) &&
+    /function tokenListingHasConfirmedSaleTicketSeal[\s\S]*listing\.sealConfirmed === true[\s\S]*tokenSaleAuthorizationUsesSaleTicketAnchor/.test(
+      app,
+    ) &&
+    /const replacementReservationTransition =[\s\S]*entry\.status === "replaced"[\s\S]*entry\.awaitingFreshCanonicalResolution === true[\s\S]*terminalCloseTransition \|\| replacementReservationTransition[\s\S]*refreshTerminalTokenClosureCanonicalState\(\)/.test(
       app,
     ) &&
     /transfer\.senderAddress[\s\S]*normalizedWalletAddress &&[\s\S]*transfer\.recipientAddress[\s\S]*!==[\s\S]*normalizedWalletAddress/.test(
@@ -965,13 +1307,11 @@ expect(
     ),
 );
 expect(
-  "pre-boundary floor regressions cannot manufacture a V8 write embargo",
-  /const v8BoundaryNeedsFailClosedRetention\s*=\s*boundaryWasLatched\s*\|\|\s*incomingBoundaryObserved/.test(
+  "pre-boundary floor changes render canonically while a crossed V8 boundary stays fail closed",
+  /const safetyBoundQuote =[\s\S]*boundaryWasLatched && !incomingBoundaryObserved[\s\S]*failClosedWorkAmoV8Status[\s\S]*: quote/.test(
     applyWorkFloorQuoteBlock,
   ) &&
-    (applyWorkFloorQuoteBlock.match(/v8BoundaryNeedsFailClosedRetention/g)
-      ?.length ?? 0) >= 2 &&
-    /(?:if\s*\(v8BoundaryNeedsFailClosedRetention\)|v8BoundaryNeedsFailClosedRetention\s*\?)[\s\S]*failClosedWorkAmoV8Status/.test(
+    !/workFloorQuoteRegresses|v8BoundaryNeedsFailClosedRetention/.test(
       applyWorkFloorQuoteBlock,
     ),
 );
@@ -1275,6 +1615,50 @@ expect(
   ) && !/window\.location\.search\.includes/.test(routeRegistry),
 );
 expect(
+  "RUSH query routing is production opt-in and default-off",
+  /VITE_RUSH_ONLY === "1"/.test(routeRegistry) &&
+    /VITE_RUSH_QUERY_ENABLED === "1"\s*&&\s*searchFlag\("rush"\)/.test(
+      routeRegistry,
+    ) &&
+    !/return searchFlag\("rush"\)/.test(routeRegistry),
+);
+expect(
+  "canonical counters distinguish loading unavailable last-good and verified zero",
+  /type CanonicalReadPhase =[\s\S]*"loading"[\s\S]*"unavailable"[\s\S]*"last-good"[\s\S]*"ready"/.test(
+    app,
+  ) &&
+    /function canonicalMetric[\s\S]*phase === "loading"[\s\S]*phase === "unavailable"[\s\S]*return value/.test(
+      app,
+    ) &&
+    /data-read-state=\{state\.phase\}/.test(app),
+);
+expect(
+  "wallet public Credit and WORK reads wait for a connected address",
+  /const walletScoped = walletMode \|\| activeFolder === "wallet";[\s\S]*if \(walletScoped && !address\)[\s\S]*Connect UniSat to load wallet-scoped Credit and WORK data/.test(
+    app,
+  ) &&
+    /const disconnectedWalletSurface =[\s\S]*\(walletMode \|\| activeFolder === "wallet"\) && !address/.test(
+      app,
+    ),
+);
+expect(
+  "UI polling has no delayed forced-fresh echo request",
+  !/BACKGROUND_FRESH_REFRESH_DELAY_MS/.test(app) &&
+    /GROWTH_AUTO_REFRESH_MS/.test(app) &&
+    /logSurfaceRefreshInFlightRef/.test(app),
+);
+expect(
+  "Outbox lifecycle keeps unknown nonterminal and renders replacement evidence",
+  /type BroadcastStatus =[\s\S]*"replaced"[\s\S]*"unknown"/.test(app) &&
+    /const unknown = results\.filter\([\s\S]*result\.status === "unknown"/.test(
+      app,
+    ) &&
+    /status !== "confirmed"/.test(app) &&
+    /message\.folder === "sent" && message\.replacementTxid[\s\S]*explorerTxUrl\(message\.replacementTxid/.test(
+      app,
+    ),
+);
+expect(
   "Computer restores exact folder routes on browser history navigation",
   /window\.addEventListener\("popstate", restoreComputerLocation\)/.test(app) &&
     /computerFolderFromSearch\(\) \?\? "inbox"/.test(app),
@@ -1475,7 +1859,7 @@ expect(
       workAmoV6ProofUnitSource,
     ) &&
     /const workV8DeclarationBoundaryLatchRef = useRef\(false\)/.test(app) &&
-    /function applyWorkFloorQuote[\s\S]*boundaryWasLatched[\s\S]*failClosedWorkAmoV8Status[\s\S]*work-amo-v8-exact-tip-regressed/.test(
+    /function applyWorkFloorQuote[\s\S]*boundaryWasLatched && !incomingBoundaryObserved[\s\S]*failClosedWorkAmoV8Status[\s\S]*acceptedWorkFloorQuoteRef\.current = safetyBoundQuote/.test(
       app,
     ) &&
     /async function freshWorkWriteMode[\s\S]*boundaryWasLatched && !boundaryObserved[\s\S]*"paused"[\s\S]*expectedMode && mode !== expectedMode/.test(
@@ -2282,7 +2666,7 @@ expect(
   "Computer WORK workspace shows loading state before ledger data arrives",
   /ledgerLoading/.test(app) &&
     /Loading \{detailToken\?\.ticker \?\? "credit"\} ledger/.test(app) &&
-    /tokenLedgerLoading &&[\s\S]*compareExactIntegers\(workTokenLedger\.confirmedSupply, 0\) === 0[\s\S]*\?\s*"\.\.\."/.test(
+    /canonicalMetric\([\s\S]*formatExactInteger\(workTokenLedger\.confirmedSupply\),[\s\S]*tokenLedgerLoading && !activeTokenStateLoaded[\s\S]*phase: "loading"/.test(
       app,
     ),
 );

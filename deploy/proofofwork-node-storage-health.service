@@ -2,6 +2,7 @@
 Description=Check ProofOfWork node disk and inode runway
 Requisite=data.mount
 After=data.mount
+OnFailure=proofofwork-ops-alert@%n.service
 
 [Service]
 Type=oneshot

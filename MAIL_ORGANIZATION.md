@@ -29,7 +29,7 @@ growth.proofofwork.me       public growth model dashboard
 Mail organization features that are already implemented in the full app:
 
 - Incoming vs Inbox split for unconfirmed/confirmed inbound mail.
-- Outbox vs Sent split for pending/dropped/confirmed sent mail.
+- Outbox vs Sent split for pending/unknown/replaced/dropped/failed versus confirmed sent mail.
 - Drafts in local storage.
 - Archive and Favorites in local storage.
 - Contacts in local storage.
@@ -110,7 +110,7 @@ Folder behavior:
 - Incoming shows inbound messages that are visible in mempool but not confirmed.
 - Inbox shows confirmed received messages that are not archived.
 - Sent shows confirmed messages sent by the connected account, recovered from chain data when possible.
-- Outbox shows local or chain-detected sent attempts that are pending in mempool or dropped.
+- Outbox shows local or chain-detected sent attempts that are pending, unknown, replaced, dropped, or failed.
 - Drafts shows the connected account's local unsent message.
 - Files shows confirmed messages from Inbox and Sent that contain attachments.
 - Favorites shows starred confirmed Inbox and Sent messages, including archived favorites.
@@ -227,20 +227,39 @@ Broadcast attempts should have one of these statuses:
 Pending
 Confirmed
 Dropped
-Checking
+Failed
+Replaced
+Unknown
 ```
 
 Behavior:
 
 - New broadcasts enter Outbox as Pending.
 - The app checks the txid through the selected network's first-party ProofOfWork API status route.
+- Current full-node evidence wins: a transaction seen again as pending or confirmed can revive a stale terminal local status.
+- Absence alone is Unknown and renders as Checking. Dropped requires durable prior observation plus a complete removal witness; Replaced additionally requires one unambiguous full-node-evidenced conflicting spender of the original inputs. Failed is reserved for a known rejection or broadcast failure.
+- Once a signed transaction has a locally derived txid, a deterministic node
+  rejection is retained as Failed and an ambiguous lost response is retained as
+  Unknown. Mail keeps a durable Outbox row, and attached Credit actions keep
+  their bounded expected projection. Only the txid, status, bounded public
+  reason, and allowlisted public projection are stored. Failure text is
+  content-sanitized and sensitive diagnostic material is replaced with a fixed
+  redaction while safe RPC codes remain visible; raw transaction bytes, PSBTs,
+  and signatures are never persisted. A later absence cannot weaken a
+  deterministic Failed result to Unknown; pending or confirmed node evidence
+  can revive it.
 - Confirmed txs move into Sent.
 - Confirmed sent mail is also reconstructed from the connected address transaction history, so Sent and Files survive stale local browser state.
 - Dropped txs remain in Outbox with a restore-to-draft action.
 - Dropped txs should not appear in Sent or Files.
 - Pending txs should not appear in Files by default.
 - Pending visibility is best-effort because mempool transactions are gossip. The API can merge local node/proof-indexer mempool state with a pending fallback, but confirmation is the only durable state.
-- Older local sent records without a known status can appear as Checking until the txid is verified.
+- Older local sent records without a known status enter Unknown and render as Checking until the txid is verified. Checking is presentation text, not a seventh persisted status.
+- Terminal-only metadata is cleared when newer evidence changes state: confirmation time belongs only to Confirmed, drop time only to Dropped, failure reason only to Failed/Unknown, and replacement txid only to Replaced.
+- API, node, or transport unavailability preserves the prior local status and marks the check unavailable; an observation failure must not manufacture Unknown, Dropped, Replaced, or Failed.
+- Status checks use at most four concurrent requests across a bounded batch of
+  128 txids. Repeated timer checks for the active batch coalesce, and changing
+  targets can create at most one bounded trailing batch.
 
 This prevents the app from treating dropped mempool transactions as permanent mail.
 
@@ -264,7 +283,15 @@ Behavior:
 
 - Rescan the connected address for incoming and sent ProofOfWork.Me protocol transactions.
 - Rebuild Incoming, Inbox, Sent, and Files from the latest chain/mempool view.
-- Check pending, dropped, and checking Outbox txids against the selected network's first-party ProofOfWork API status route.
+- Check pending, unknown/checking, replaced, dropped, and failed Outbox txids against the selected network's first-party ProofOfWork API status route.
+- Re-check a bounded recent window of confirmed sent txids so a chain reorganization can move stale Confirmed records back to the node-evidenced state without creating an unbounded refresh storm.
+- Treat both direct mailbox reads and tx-status reads as timestamped
+  observations, so whichever request started later wins when the two complete
+  out of order.
+- Bind every refresh result and its cleanup to the exact address, network,
+  wallet-sync generation, and refresh request id that started it. Disconnects,
+  account changes, network changes, and newer refreshes synchronously invalidate
+  older work, including the older request's final loading-state cleanup.
 - Move confirmed inbound mail into Inbox, and confirmed broadcasts into Sent and Files.
 - Keep pending Incoming or pending/dropped Outbox records out of Files until they become durable chain records.
 - Show a concise status summary after refresh.
@@ -272,6 +299,9 @@ Behavior:
 ## Local State
 
 Drafts, archive, and favorite state can stay serverless at first.
+
+Local Sent/Outbox recovery history is capped at 512 entries; canonical Sent
+history remains recoverable from indexed address-mail reads.
 
 Drafts:
 
@@ -318,6 +348,34 @@ Contacts:
 - Confirmed registry rows can expose an `Add Contact` action next to `View TX`.
 - Compose should offer saved contacts as suggestions.
 - Contacts are convenience metadata only; they do not change on-chain mail routing.
+
+Credit lifecycle evidence:
+
+- Locally broadcast credit definitions, mints, transfers, listings, seals,
+  closures, and sales use a separate bounded `localStorage` record so refreshes
+  and reloads do not erase an unresolved transaction.
+- Only allowlisted public projection fields are retained. Validated seller and
+  anchor script public keys already committed to the public sale-ticket terms
+  may be retained so an unresolved listing remains structurally usable. PSBTs,
+  raw or signed transaction bytes, seed phrases, private keys, signatures,
+  secret material, and wallet-provider state are excluded.
+- This record is diagnostic and reservation evidence only. Confirmed chain/API
+  rows remain authoritative for balances, supply, volume, ownership, and action
+  admission. The narrow exception is a locally Pending definition, which may
+  prepare its chained mint only behind the existing fail-closed fresh supply and
+  protocol preflight; it never enters canonical balances, supply, volume, or
+  ownership. Evidence-backed terminal rows remain visible without entering live
+  economic projections.
+- Stored rows are validated per lifecycle family, bounded to 64 broadcasts and
+  32 public rows per family, and capped at 256 KiB. Unknown evidence has a
+  30-minute status epoch; Pending, terminal, and confirmed-but-still-indexing
+  evidence have bounded 30-day visibility. Capacity archives terminal rows
+  first, then confirmed indexing rows, and never silently evicts unresolved
+  Pending/Unknown work.
+- Every write reconciles against the latest committed browser store so a stale
+  tab cannot erase another tab's new broadcast. A valid storage event is an
+  authoritative whole-store replacement, including deletions, and is reprojected
+  without an echo write.
 
 Multi-recipient mail:
 
@@ -400,6 +458,8 @@ Backup should export a versioned JSON file containing only supported app-local d
 - Custom folder definitions and folder membership.
 - Local contacts.
 - Local sent/outbox broadcast tracking.
+- Bounded, sanitized local Credit lifecycle evidence, including its versioned
+  cross-tab store.
 - Theme preference.
 
 Import should validate the JSON before writing anything, ignore unsupported keys, and restore only ProofOfWork.Me local storage keys. It must not include wallet private keys, seed phrases, UniSat connection state, or anything outside app-local UX data.

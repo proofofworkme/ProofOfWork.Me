@@ -13,6 +13,33 @@ import * as bitcoin from "bitcoinjs-lib";
 import * as ecc from "@bitcoinerlab/secp256k1";
 import { verifyBitcoinMessageSignature } from "./bitcoin-message-verifier.mjs";
 import {
+  BoundedResponseCache,
+  BoundedTtlValueCache,
+  LatestValueWriteCoordinator,
+  ReadAdmissionController,
+  ReadSingleFlight,
+  acquireReadAdmissionBeforeGate,
+  settleBoundedCachePlaceholder,
+} from "./api-runtime-guards.mjs";
+import {
+  canonicalSnapshotContentSha256,
+  coherentCanonicalSnapshotAtBoundary,
+  coherentFullCanonicalSnapshot,
+  fullCanonicalSnapshotClaimed,
+  transformFullCanonicalSnapshot,
+  withFullCanonicalSnapshot,
+} from "./canonical-snapshot.mjs";
+import {
+  canonicalLifecycleInputOutpointsEvidence,
+  exactCoreNodeAuthority,
+  exactCoreTipFromBlockchainInfo,
+  mailMessageWithTxLifecycle,
+  reconcileLivenetTxLifecycle,
+  replacementDispositionFromSpenderEvidence,
+  replacementDispositionFromTxOutEvidence,
+  verifiedReplacementLifecycle,
+} from "./tx-lifecycle.mjs";
+import {
   canonicalRawProtocolRecordSetFromTransaction,
   canonicalProtocolCandidateFromOutput,
 } from "./canonical-op-return.mjs";
@@ -251,7 +278,6 @@ import {
   proofIndexReadinessEpochCheckpoint,
   proofIndexWorkAmoV8DeclarationCandidates,
   proofIndexReadFeatureEnabled,
-  proofIndexReadUnconfirmedTxStatus,
   proofIndexIdRecordPayload,
   proofIndexRegistryHistoryPayload,
   proofIndexRegistryPayload,
@@ -267,6 +293,7 @@ import {
   proofIndexWorkAmoV8WorkerStatusPayload,
   proofIndexTokenReadEligibility,
   proofIndexTokenMarketSummaryOverlayPayload,
+  proofIndexCanonicalConfirmedSpendersForOutpoints,
   proofIndexTxStatusPayload,
   proofIndexValueSummaryPayload,
   proofIndexTokenSnapshotPayload,
@@ -451,6 +478,57 @@ const RESPONSE_CACHE_TTL_MS = Number(
 );
 const RESPONSE_CACHE_STALE_MS = Number(
   process.env.RESPONSE_CACHE_STALE_MS ?? 10 * 60_000,
+);
+const RESPONSE_CACHE_MAX_ENTRIES = Math.max(
+  32,
+  Math.min(
+    10_000,
+    Number(process.env.POW_API_RESPONSE_CACHE_MAX_ENTRIES ?? 512) || 512,
+  ),
+);
+const RESPONSE_CACHE_MAX_BYTES = Math.max(
+  8 * 1024 * 1024,
+  Math.min(
+    2 * 1024 * 1024 * 1024,
+    Number(
+      process.env.POW_API_RESPONSE_CACHE_MAX_BYTES ?? 256 * 1024 * 1024,
+    ) || 256 * 1024 * 1024,
+  ),
+);
+const EXACT_TIP_TOKEN_CACHE_MAX_ENTRIES = Math.max(
+  8,
+  Math.min(
+    1_024,
+    Number(process.env.POW_API_EXACT_TIP_TOKEN_CACHE_MAX_ENTRIES ?? 128) ||
+      128,
+  ),
+);
+const EXACT_TIP_TOKEN_CACHE_MAX_BYTES = Math.max(
+  8 * 1024 * 1024,
+  Math.min(
+    RESPONSE_CACHE_MAX_BYTES,
+    Number(
+      process.env.POW_API_EXACT_TIP_TOKEN_CACHE_MAX_BYTES ??
+        RESPONSE_CACHE_MAX_BYTES,
+    ) || RESPONSE_CACHE_MAX_BYTES,
+  ),
+);
+const PUBLIC_RUSH_READS_ENABLED = /^(?:1|true|yes)$/iu.test(
+  String(process.env.POW_RUSH_PUBLIC_READS_ENABLED ?? "").trim(),
+);
+const PUBLIC_READ_MAX_QUERY_BYTES = Math.max(
+  1_024,
+  Math.min(
+    64_000,
+    Number(process.env.POW_API_PUBLIC_READ_MAX_QUERY_BYTES ?? 8_192) || 8_192,
+  ),
+);
+const PUBLIC_READ_MAX_RECOVERY_HINTS = Math.max(
+  1,
+  Math.min(
+    64,
+    Number(process.env.POW_API_PUBLIC_READ_MAX_RECOVERY_HINTS ?? 12) || 12,
+  ),
 );
 const MARKETPLACE_SUMMARY_CACHE_TTL_MS = Number(
   process.env.MARKETPLACE_SUMMARY_CACHE_TTL_MS ?? RESPONSE_CACHE_TTL_MS,
@@ -676,6 +754,85 @@ const HISTORY_PAGE_DEFAULT_LIMIT = Number(
   process.env.HISTORY_PAGE_DEFAULT_LIMIT ?? 50,
 );
 const HISTORY_PAGE_MAX_LIMIT = Number(process.env.HISTORY_PAGE_MAX_LIMIT ?? 200);
+const HISTORY_MAX_PAGE = Math.max(
+  1,
+  Math.min(
+    1_000_000,
+    Number(process.env.POW_API_HISTORY_MAX_PAGE ?? 10_000) || 10_000,
+  ),
+);
+const HISTORY_MAX_OFFSET = Math.max(
+  HISTORY_PAGE_MAX_LIMIT,
+  Math.min(
+    100_000_000,
+    Number(process.env.POW_API_HISTORY_MAX_OFFSET ?? 1_000_000) || 1_000_000,
+  ),
+);
+const HEAVY_READ_MAX_ACTIVE = Math.max(
+  1,
+  Math.min(
+    128,
+    Number(process.env.POW_API_HEAVY_READ_MAX_ACTIVE ?? 8) || 8,
+  ),
+);
+const HEAVY_READ_MAX_QUEUED = Math.max(
+  1,
+  Math.min(
+    1_024,
+    Number(process.env.POW_API_HEAVY_READ_MAX_QUEUED ?? 32) || 32,
+  ),
+);
+const HEAVY_READ_QUEUE_WAIT_MS = Math.max(
+  100,
+  Math.min(
+    30_000,
+    Number(process.env.POW_API_HEAVY_READ_QUEUE_WAIT_MS ?? 1_500) || 1_500,
+  ),
+);
+const FRESH_READ_MAX_ACTIVE = Math.max(
+  1,
+  Math.min(
+    32,
+    Number(process.env.POW_API_FRESH_READ_MAX_ACTIVE ?? 2) || 2,
+  ),
+);
+const FRESH_READ_MAX_QUEUED = Math.max(
+  1,
+  Math.min(
+    256,
+    Number(process.env.POW_API_FRESH_READ_MAX_QUEUED ?? 8) || 8,
+  ),
+);
+const FRESH_READ_QUEUE_WAIT_MS = Math.max(
+  100,
+  Math.min(
+    30_000,
+    Number(process.env.POW_API_FRESH_READ_QUEUE_WAIT_MS ?? 1_000) || 1_000,
+  ),
+);
+const EXPENSIVE_READ_RATE_WINDOW_MS = Math.max(
+  1_000,
+  Math.min(
+    60 * 60_000,
+    Number(process.env.POW_API_EXPENSIVE_READ_RATE_WINDOW_MS ?? 10_000) ||
+      10_000,
+  ),
+);
+const HEAVY_READ_RATE_PER_CLIENT = Math.max(
+  1,
+  Math.min(
+    10_000,
+    Number(process.env.POW_API_HEAVY_READ_RATE_PER_CLIENT ?? 30) || 30,
+  ),
+);
+const FRESH_READ_RATE_PER_CLIENT = Math.max(
+  1,
+  Math.min(
+    1_000,
+    Number(process.env.POW_API_FRESH_READ_RATE_PER_CLIENT ?? 6) || 6,
+  ),
+);
+const MAIL_STATUS_RECONCILE_CONCURRENCY = 4;
 const BTC_USD_PRICE_CACHE_TTL_MS = Number(
   process.env.BTC_USD_PRICE_CACHE_TTL_MS ?? 60_000,
 );
@@ -690,8 +847,28 @@ const SEEDED_MAIL_ACTIVITY_CONCURRENCY = Number(
 const BLOCK_TXID_FETCH_CONCURRENCY = Number(
   process.env.BLOCK_TXID_FETCH_CONCURRENCY ?? 4,
 );
-const MAX_TRANSACTION_CACHE_SIZE = Number(
-  process.env.MAX_TRANSACTION_CACHE_SIZE ?? 100_000,
+const MAX_TRANSACTION_CACHE_SIZE = Math.max(
+  1_000,
+  Math.min(
+    100_000,
+    Number(process.env.MAX_TRANSACTION_CACHE_SIZE ?? 20_000) || 20_000,
+  ),
+);
+const MAX_TRANSACTION_CACHE_BYTES = Math.max(
+  8 * 1024 * 1024,
+  Math.min(
+    2 * 1024 * 1024 * 1024,
+    Number(process.env.MAX_TRANSACTION_CACHE_BYTES ?? 256 * 1024 * 1024) ||
+      256 * 1024 * 1024,
+  ),
+);
+const TRANSACTION_CACHE_TTL_MS = Math.max(
+  60_000,
+  Math.min(
+    30 * 24 * 60 * 60_000,
+    Number(process.env.TRANSACTION_CACHE_TTL_MS ?? 6 * 60 * 60_000) ||
+      6 * 60 * 60_000,
+  ),
 );
 const WORK_MARKET_V2_ORACLE_CACHE_MAX_ENTRIES = Math.max(
   1_000,
@@ -755,6 +932,15 @@ const BROADCAST_RATE_GLOBAL = Math.max(
 const BROADCAST_CONCURRENCY_MAX = Math.max(
   1,
   Number(process.env.POW_API_BROADCAST_CONCURRENCY_MAX ?? 4) || 4,
+);
+const TRUSTED_PROXY_ADDRESSES = new Set(
+  String(
+    process.env.POW_API_TRUSTED_PROXY_ADDRESSES ??
+      "127.0.0.1,::1,10.77.0.1",
+  )
+    .split(/[\s,]+/u)
+    .map((value) => value.trim().toLowerCase().replace(/^::ffff:/u, ""))
+    .filter(Boolean),
 );
 const BROADCAST_EXTRA_ALLOWED_ORIGINS = new Set(
   String(process.env.POW_API_BROADCAST_ALLOWED_ORIGINS ?? "")
@@ -1342,7 +1528,11 @@ const RUSH_PHASES = [
 const NETWORKS = new Set(["livenet", "testnet", "testnet4"]);
 const BLOCK_TXID_INDEX_CACHE_MAX_SIZE = 256;
 const BLOCK_TXID_INDEX_CACHE = new Map();
-const TRANSACTION_CACHE = new Map();
+const TRANSACTION_CACHE = new BoundedTtlValueCache({
+  maxBytes: MAX_TRANSACTION_CACHE_BYTES,
+  maxEntries: MAX_TRANSACTION_CACHE_SIZE,
+  ttlMs: TRANSACTION_CACHE_TTL_MS,
+});
 const PENDING_TOKEN_TRANSACTION_CACHE = new Map();
 const DROPPED_PENDING_TOKEN_TRANSACTION_CACHE = new Map();
 const GLOBAL_ACTIVITY_CACHE = new Map();
@@ -1351,8 +1541,35 @@ const BACKGROUND_LEDGER_REFRESHES = new Set();
 const BACKGROUND_PAYLOAD_REFRESHES = new Set();
 const BACKGROUND_TOKEN_REFRESHES = new Set();
 const BACKGROUND_REFRESH_LAST_STARTED = new Map();
-const RESPONSE_CACHE = new Map();
-const EXACT_TIP_TOKEN_CACHE = new Map();
+const RESPONSE_CACHE = new BoundedResponseCache({
+  maxBytes: RESPONSE_CACHE_MAX_BYTES,
+  maxEntries: RESPONSE_CACHE_MAX_ENTRIES,
+});
+const HEAVY_READ_ADMISSION = new ReadAdmissionController({
+  admissionClass: "heavy",
+  maxActive: HEAVY_READ_MAX_ACTIVE,
+  maxQueued: HEAVY_READ_MAX_QUEUED,
+  waitMs: HEAVY_READ_QUEUE_WAIT_MS,
+});
+const FRESH_READ_ADMISSION = new ReadAdmissionController({
+  admissionClass: "fresh",
+  maxActive: FRESH_READ_MAX_ACTIVE,
+  maxQueued: FRESH_READ_MAX_QUEUED,
+  waitMs: FRESH_READ_QUEUE_WAIT_MS,
+});
+const CORE_TX_STATUS_ADMISSION = new ReadAdmissionController({
+  admissionClass: "core-tx-status",
+  maxActive: HEAVY_READ_MAX_ACTIVE,
+  maxQueued: HEAVY_READ_MAX_QUEUED,
+  waitMs: HEAVY_READ_QUEUE_WAIT_MS,
+});
+const CORE_TX_STATUS_SINGLE_FLIGHT = new ReadSingleFlight({ maxKeys: 128 });
+const EXPENSIVE_READ_SINGLE_FLIGHT = new ReadSingleFlight({ maxKeys: 128 });
+const EXPENSIVE_READ_CLIENT_ATTEMPTS = new Map();
+const EXACT_TIP_TOKEN_CACHE = new BoundedResponseCache({
+  maxBytes: EXACT_TIP_TOKEN_CACHE_MAX_BYTES,
+  maxEntries: EXACT_TIP_TOKEN_CACHE_MAX_ENTRIES,
+});
 const WORK_TOKEN_LIVE_SEEN_TXIDS = new Map();
 const WORK_TOKEN_NON_MINT_HISTORY_CACHE = new Map();
 const WORK_TOKEN_PARTICIPANT_RECOVERY_CACHE = new Map();
@@ -1361,9 +1578,9 @@ const WORK_TOKEN_SEAL_RECOVERY_CACHE = new Map();
 const TOKEN_MARKET_OUTSPEND_CACHE = new Map();
 const WORK_MARKET_V2_ORACLE_CACHE = new Map();
 const BROADCAST_CLIENT_ATTEMPTS = new Map();
+const PERSISTED_CACHE_WRITE_COORDINATOR = new LatestValueWriteCoordinator();
 let broadcastActiveRequests = 0;
 let broadcastGlobalAttempts = [];
-let persistedCacheWriteSequence = 0;
 let btcUsdPriceCache = null;
 const LEDGER_TIP_HEIGHT_CACHE = new Map();
 const HEAVY_READ_STALE_SECONDS = Math.max(
@@ -1392,17 +1609,49 @@ function nodeApiBase(value) {
   return base;
 }
 
-function shouldPersistJsonCache(cacheKey) {
+function shouldPersistJsonCache(cacheKey, payload) {
+  if (cacheKey.startsWith("token:livenet:")) {
+    if (payload === undefined) {
+      return true;
+    }
+    const scope = normalizeTokenScope(
+      cacheKey.slice("token:livenet:".length),
+    );
+    if (!scope) {
+      return true;
+    }
+    return (Array.isArray(payload?.tokens) ? payload.tokens : []).some(
+      (token) =>
+        token?.confirmed === true &&
+        (normalizeTokenScope(token?.tokenId) === scope ||
+          normalizeTokenScope(token?.ticker) === scope),
+    );
+  }
   return (
     cacheKey === "activity:livenet" ||
     cacheKey === "ledger:livenet" ||
     cacheKey === "marketplace-summary:livenet" ||
     cacheKey === "registry:livenet" ||
-    cacheKey.startsWith("token:livenet:") ||
     cacheKey === "rush:livenet" ||
     cacheKey === "work-floor:livenet" ||
     cacheKey === "growth-summary:livenet"
   );
+}
+
+function canonicalSurfaceForCacheKey(cacheKey) {
+  const normalized = String(cacheKey ?? "")
+    .replace(/^(?:json|payload):/u, "")
+    .trim();
+  if (normalized.startsWith("registry:")) {
+    return "registry-state";
+  }
+  if (normalized.startsWith("token:")) {
+    return "token-state";
+  }
+  if (normalized.startsWith("ledger:")) {
+    return "canonical-ledger";
+  }
+  return "";
 }
 
 function expireResponseCacheEntry(cacheKey, staleMs) {
@@ -1523,25 +1772,35 @@ async function readPersistedJsonCache(jsonKey) {
   return "";
 }
 
-async function writePersistedJsonCache(jsonKey, body) {
+async function writePersistedJsonCacheFile(jsonKey, body) {
   let tempFile = "";
   try {
     await fs.mkdir(PERSISTED_CACHE_DIR, { recursive: true });
     const file = persistedJsonCachePath(jsonKey);
-    persistedCacheWriteSequence += 1;
-    tempFile = `${file}.${process.pid}.${Date.now()}.${persistedCacheWriteSequence}.${process.hrtime.bigint()}.tmp`;
+    tempFile = `${file}.${process.pid}.${Date.now()}.${process.hrtime.bigint()}.tmp`;
     await fs.writeFile(
       tempFile,
       JSON.stringify({ body, savedAt: new Date().toISOString() }),
       "utf8",
     );
     await fs.rename(tempFile, file);
+    tempFile = "";
+    return true;
   } catch (error) {
     if (tempFile) {
       await fs.rm(tempFile, { force: true }).catch(() => {});
     }
     console.error(`Persisted cache write failed for ${jsonKey}:`, error);
+    return false;
   }
+}
+
+function writePersistedJsonCache(jsonKey, body) {
+  return PERSISTED_CACHE_WRITE_COORDINATOR.run(
+    jsonKey,
+    body,
+    (latestBody) => writePersistedJsonCacheFile(jsonKey, latestBody),
+  );
 }
 
 async function pruneGeneratedPersistedCacheTemps(maxAgeMs = 60 * 60_000) {
@@ -1569,11 +1828,47 @@ async function pruneGeneratedPersistedCacheTemps(maxAgeMs = 60 * 60_000) {
 }
 
 function cacheJsonBody(jsonKey, body, ttlMs, staleMs) {
-  RESPONSE_CACHE.set(jsonKey, {
+  return RESPONSE_CACHE.setWithOutcome(jsonKey, {
     body,
     expiresAt: Date.now() + ttlMs,
     staleUntil: Date.now() + ttlMs + staleMs,
   });
+}
+
+function cachePayloadAndJson(cacheKey, payload, ttlMs, staleMs) {
+  const cachedAt = Date.now();
+  const body = JSON.stringify(payload);
+  const jsonKey = `json:${cacheKey}`;
+  const payloadKey = `payload:${cacheKey}`;
+  const outcome = RESPONSE_CACHE.setManyWithOutcome([
+    [
+      payloadKey,
+      {
+        expiresAt: cachedAt + ttlMs,
+        payload,
+        staleUntil: cachedAt + staleMs,
+      },
+    ],
+    [
+      jsonKey,
+      {
+        body,
+        expiresAt: cachedAt + ttlMs,
+        staleUntil: cachedAt + ttlMs + staleMs,
+      },
+    ],
+  ]);
+  return { body, cachedAt, jsonKey, outcome, payloadKey };
+}
+
+function persistAcceptedJsonCache(cacheKey, payload, cached) {
+  if (
+    cached?.outcome?.stored === true &&
+    shouldPersistJsonCache(cacheKey, payload)
+  ) {
+    void writePersistedJsonCache(cached.jsonKey, cached.body);
+  }
+  return cached?.outcome?.stored === true;
 }
 
 async function hydratePersistedJsonCache(jsonKey, staleMs) {
@@ -1587,11 +1882,29 @@ async function hydratePersistedJsonCache(jsonKey, staleMs) {
   }
 
   const now = Date.now();
-  RESPONSE_CACHE.set(jsonKey, {
+  RESPONSE_CACHE.setWithOutcome(jsonKey, {
     body,
     expiresAt: now - 1,
     staleUntil: now + staleMs,
   });
+}
+
+function cacheEntryWithoutPromise(entry) {
+  if (!entry || typeof entry !== "object") {
+    return null;
+  }
+  const { promise: _promise, ...lastGood } = entry;
+  return lastGood;
+}
+
+function restoreCacheAfterRefusedSettlement(cacheKey, placeholder, lastGood) {
+  if (RESPONSE_CACHE.peek(cacheKey) !== placeholder) {
+    return;
+  }
+  RESPONSE_CACHE.delete(cacheKey);
+  if (lastGood) {
+    RESPONSE_CACHE.setWithOutcome(cacheKey, lastGood);
+  }
 }
 
 async function cachedPayload(
@@ -1608,24 +1921,35 @@ async function cachedPayload(
 
   if (cached?.payload && now < cached.staleUntil) {
     if (!cached.promise) {
-      cached.promise = producer()
+      const lastGood = cacheEntryWithoutPromise(cached);
+      let admitted = false;
+      let placeholder;
+      const promise = Promise.resolve()
+        .then(() => (admitted ? producer() : lastGood.payload))
         .then((payload) => {
-          RESPONSE_CACHE.set(cacheKey, {
-            expiresAt: Date.now() + ttlMs,
-            payload,
-            staleUntil: Date.now() + staleMs,
-          });
+          if (!admitted) {
+            return payload;
+          }
+          settleBoundedCachePlaceholder(
+            RESPONSE_CACHE,
+            cacheKey,
+            placeholder,
+            {
+              expiresAt: Date.now() + ttlMs,
+              payload,
+              staleUntil: Date.now() + staleMs,
+            },
+            lastGood,
+          );
           return payload;
         })
         .catch((error) => {
-          RESPONSE_CACHE.set(cacheKey, {
-            ...cached,
-            promise: null,
-          });
+          restoreCacheAfterRefusedSettlement(cacheKey, placeholder, lastGood);
           console.error(`Cache refresh failed for ${cacheKey}:`, error);
-          return cached.payload;
+          return lastGood.payload;
         });
-      RESPONSE_CACHE.set(cacheKey, cached);
+      placeholder = { ...lastGood, promise };
+      admitted = RESPONSE_CACHE.setWithOutcome(cacheKey, placeholder).stored;
     }
     return cached.payload;
   }
@@ -1634,25 +1958,38 @@ async function cachedPayload(
     return cached.promise;
   }
 
-  const promise = producer()
+  let admitted = false;
+  let placeholder;
+  const promise = Promise.resolve()
+    .then(producer)
     .then((payload) => {
-      RESPONSE_CACHE.set(cacheKey, {
-        expiresAt: Date.now() + ttlMs,
-        payload,
-        staleUntil: Date.now() + staleMs,
-      });
+      if (admitted) {
+        settleBoundedCachePlaceholder(
+          RESPONSE_CACHE,
+          cacheKey,
+          placeholder,
+          {
+            expiresAt: Date.now() + ttlMs,
+            payload,
+            staleUntil: Date.now() + staleMs,
+          },
+        );
+      }
       return payload;
     })
     .catch((error) => {
-      RESPONSE_CACHE.delete(cacheKey);
+      if (admitted) {
+        restoreCacheAfterRefusedSettlement(cacheKey, placeholder, null);
+      }
       throw error;
     });
-  RESPONSE_CACHE.set(cacheKey, {
+  placeholder = {
     expiresAt: now + ttlMs,
     payload: cached?.payload,
     promise,
     staleUntil: now + staleMs,
-  });
+  };
+  admitted = RESPONSE_CACHE.setWithOutcome(cacheKey, placeholder).stored;
   return promise;
 }
 
@@ -1665,9 +2002,13 @@ async function cachedJsonResponse(
   staleMs = RESPONSE_CACHE_STALE_MS,
 ) {
   const jsonKey = `json:${cacheKey}`;
+  const canonicalSurface = canonicalSurfaceForCacheKey(cacheKey);
   const now = Date.now();
   if (shouldPersistJsonCache(cacheKey)) {
     await hydratePersistedJsonCache(jsonKey, staleMs);
+  }
+  if (canonicalSurface && RESPONSE_CACHE.get(jsonKey)?.body) {
+    cachedJsonPayload(jsonKey, canonicalSurface);
   }
 
   const cached = RESPONSE_CACHE.get(jsonKey);
@@ -1678,25 +2019,45 @@ async function cachedJsonResponse(
 
   if (cached?.body && now < cached.staleUntil) {
     if (!cached.promise) {
-      cached.promise = producer()
+      const lastGood = cacheEntryWithoutPromise(cached);
+      let admitted = false;
+      let placeholder;
+      const promise = Promise.resolve()
+        .then(() => (admitted ? producer() : JSON.parse(lastGood.body)))
         .then((payload) => {
+          payload = canonicalSurface
+            ? coherentCanonicalSnapshotAtBoundary(payload, canonicalSurface)
+            : payload;
           const body = JSON.stringify(payload);
-          cacheJsonBody(jsonKey, body, ttlMs, staleMs);
-          if (shouldPersistJsonCache(cacheKey)) {
+          if (!admitted) {
+            return lastGood.body;
+          }
+          const outcome = settleBoundedCachePlaceholder(
+            RESPONSE_CACHE,
+            jsonKey,
+            placeholder,
+            {
+              body,
+              expiresAt: Date.now() + ttlMs,
+              staleUntil: Date.now() + ttlMs + staleMs,
+            },
+            lastGood,
+          );
+          if (outcome.stored && shouldPersistJsonCache(cacheKey, payload)) {
             void writePersistedJsonCache(jsonKey, body);
           }
-          invalidateDerivedCachesForBaseCache(cacheKey);
+          if (outcome.stored) {
+            invalidateDerivedCachesForBaseCache(cacheKey);
+          }
           return body;
         })
         .catch((error) => {
-          RESPONSE_CACHE.set(jsonKey, {
-            ...cached,
-            promise: null,
-          });
+          restoreCacheAfterRefusedSettlement(jsonKey, placeholder, lastGood);
           console.error(`JSON cache refresh failed for ${cacheKey}:`, error);
-          return cached.body;
+          return lastGood.body;
         });
-      RESPONSE_CACHE.set(jsonKey, cached);
+      placeholder = { ...lastGood, promise };
+      admitted = RESPONSE_CACHE.setWithOutcome(jsonKey, placeholder).stored;
     }
     writeJsonBody(response, 200, cached.body, cacheControl, "STALE");
     return;
@@ -1708,25 +2069,45 @@ async function cachedJsonResponse(
     return;
   }
 
-  const promise = producer()
+  let admitted = false;
+  let placeholder;
+  const promise = Promise.resolve()
+    .then(producer)
     .then((payload) => {
+      payload = canonicalSurface
+        ? coherentCanonicalSnapshotAtBoundary(payload, canonicalSurface)
+        : payload;
       const body = JSON.stringify(payload);
-      cacheJsonBody(jsonKey, body, ttlMs, staleMs);
-      if (shouldPersistJsonCache(cacheKey)) {
-        void writePersistedJsonCache(jsonKey, body);
+      if (admitted) {
+        const outcome = settleBoundedCachePlaceholder(
+          RESPONSE_CACHE,
+          jsonKey,
+          placeholder,
+          {
+            body,
+            expiresAt: Date.now() + ttlMs,
+            staleUntil: Date.now() + ttlMs + staleMs,
+          },
+        );
+        if (outcome.stored && shouldPersistJsonCache(cacheKey, payload)) {
+          void writePersistedJsonCache(jsonKey, body);
+        }
       }
       return body;
     })
     .catch((error) => {
-      RESPONSE_CACHE.delete(jsonKey);
+      if (admitted) {
+        restoreCacheAfterRefusedSettlement(jsonKey, placeholder, null);
+      }
       throw error;
     });
-  RESPONSE_CACHE.set(jsonKey, {
+  placeholder = {
     body: cached?.body,
     expiresAt: now + ttlMs,
     promise,
     staleUntil: now + staleMs,
-  });
+  };
+  admitted = RESPONSE_CACHE.setWithOutcome(jsonKey, placeholder).stored;
   const body = await promise;
   writeJsonBody(response, 200, body, cacheControl, "MISS");
 }
@@ -1740,54 +2121,90 @@ function refreshedJsonResponse(
   staleMs = RESPONSE_CACHE_STALE_MS,
 ) {
   const jsonKey = `json:${cacheKey}`;
+  const canonicalSurface = canonicalSurfaceForCacheKey(cacheKey);
+  payload = canonicalSurface
+    ? coherentCanonicalSnapshotAtBoundary(payload, canonicalSurface)
+    : payload;
   const body = JSON.stringify(payload);
-  cacheJsonBody(jsonKey, body, ttlMs, staleMs);
-  if (shouldPersistJsonCache(cacheKey)) {
+  const outcome = cacheJsonBody(jsonKey, body, ttlMs, staleMs);
+  if (outcome.stored && shouldPersistJsonCache(cacheKey, payload)) {
     void writePersistedJsonCache(jsonKey, body);
   }
-  invalidateDerivedCachesForBaseCache(cacheKey);
+  if (outcome.stored) {
+    invalidateDerivedCachesForBaseCache(cacheKey);
+  }
   writeJsonBody(response, 200, body, cacheControl, "REFRESH");
 }
 
 function warmJsonCache(cacheKey, producer, ttlMs, staleMs) {
   const jsonKey = `json:${cacheKey}`;
+  const canonicalSurface = canonicalSurfaceForCacheKey(cacheKey);
   void (async () => {
     await hydratePersistedJsonCache(jsonKey, staleMs);
+    if (canonicalSurface && RESPONSE_CACHE.get(jsonKey)?.body) {
+      cachedJsonPayload(jsonKey, canonicalSurface);
+    }
     const cached = RESPONSE_CACHE.get(jsonKey);
     if (cached?.promise) {
       return;
     }
 
-    const promise = producer()
+    const lastGood = cacheEntryWithoutPromise(cached);
+    let admitted = false;
+    let placeholder;
+    const promise = Promise.resolve()
+      .then(() => (admitted ? producer() : null))
       .then((payload) => {
+        if (!admitted) {
+          return lastGood?.body ?? "";
+        }
+        payload = canonicalSurface
+          ? coherentCanonicalSnapshotAtBoundary(payload, canonicalSurface)
+          : payload;
         const body = JSON.stringify(payload);
-        cacheJsonBody(jsonKey, body, ttlMs, staleMs);
-        void writePersistedJsonCache(jsonKey, body);
-        invalidateDerivedCachesForBaseCache(cacheKey);
+        const outcome = settleBoundedCachePlaceholder(
+          RESPONSE_CACHE,
+          jsonKey,
+          placeholder,
+          {
+            body,
+            expiresAt: Date.now() + ttlMs,
+            staleUntil: Date.now() + ttlMs + staleMs,
+          },
+          lastGood,
+        );
+        if (outcome.stored) {
+          if (shouldPersistJsonCache(cacheKey, payload)) {
+            void writePersistedJsonCache(jsonKey, body);
+          }
+          invalidateDerivedCachesForBaseCache(cacheKey);
+        }
         return body;
       })
       .catch((error) => {
-        if (cached?.body) {
-          RESPONSE_CACHE.set(jsonKey, { ...cached, promise: null });
+        if (lastGood?.body) {
+          restoreCacheAfterRefusedSettlement(
+            jsonKey,
+            placeholder,
+            lastGood,
+          );
           console.error(`Startup cache refresh failed for ${cacheKey}:`, error);
-          return cached.body;
+          return lastGood.body;
         }
 
-        RESPONSE_CACHE.delete(jsonKey);
+        restoreCacheAfterRefusedSettlement(jsonKey, placeholder, null);
         console.error(`Startup cache warm failed for ${cacheKey}:`, error);
         return "";
       });
 
-    RESPONSE_CACHE.set(
-      jsonKey,
-      cached?.body
-        ? { ...cached, promise }
+    placeholder = lastGood?.body
+      ? { ...lastGood, promise }
         : {
             expiresAt: Date.now() + ttlMs,
             promise,
             staleUntil: Date.now() + staleMs,
-          },
-    );
+          };
+    admitted = RESPONSE_CACHE.setWithOutcome(jsonKey, placeholder).stored;
   })();
 }
 
@@ -1850,24 +2267,350 @@ function errorSummary(error) {
     : String(error);
 }
 
-function cachedJsonPayload(jsonKey) {
+function cachedJsonPayload(jsonKey, canonicalSurface = "") {
   const cached = RESPONSE_CACHE.get(jsonKey);
   if (!cached?.body) {
     return null;
   }
 
   try {
-    return JSON.parse(cached.body);
+    const payload = JSON.parse(cached.body);
+    if (
+      canonicalSurface &&
+      fullCanonicalSnapshotClaimed(payload) &&
+      !coherentFullCanonicalSnapshot(payload, canonicalSurface)
+    ) {
+      RESPONSE_CACHE.delete(jsonKey);
+      return null;
+    }
+    return payload;
   } catch {
     RESPONSE_CACHE.delete(jsonKey);
     return null;
   }
 }
 
-async function persistedPayloadForCache(cacheKey, staleMs) {
+const AUTHENTICATED_FULL_CANONICAL_SNAPSHOTS = new WeakMap();
+
+function authenticatedFullCanonicalSnapshotMetadata(payload, surface) {
+  if (!payload || typeof payload !== "object") {
+    return null;
+  }
+  const authentication = AUTHENTICATED_FULL_CANONICAL_SNAPSHOTS.get(payload);
+  const coherent = coherentFullCanonicalSnapshot(payload, surface);
+  return authentication?.ok === true &&
+    coherent &&
+    authentication.surface === coherent.surface &&
+    authentication.snapshotId === coherent.snapshotId &&
+    authentication.contentSha256 === coherent.contentSha256
+    ? authentication
+    : null;
+}
+
+function transformCanonicalSnapshotPayload(
+  payload,
+  surface,
+  transform,
+  options = {},
+) {
+  const authentication = authenticatedFullCanonicalSnapshotMetadata(
+    payload,
+    surface,
+  );
+  const transformed = transformFullCanonicalSnapshot(
+    payload,
+    surface,
+    transform,
+    options,
+  );
+  const coherentTransformed = authentication
+    ? coherentFullCanonicalSnapshot(transformed, surface)
+    : null;
+  return authentication && transformed !== payload && coherentTransformed
+    ? markAuthenticatedFullCanonicalSnapshot(
+        transformed,
+        { ...authentication, surface },
+        coherentTransformed,
+      )
+    : transformed;
+}
+
+function canonicalSnapshotAuthenticationIdentity(payload, surface) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return null;
+  }
+  const coherent = coherentFullCanonicalSnapshot(payload, surface);
+  if (coherent) {
+    return {
+      contentSha256: coherent.contentSha256,
+      indexedThroughBlock: coherent.indexedThroughBlock,
+      indexedThroughBlockHash: coherent.indexedThroughBlockHash,
+      kind: "full-canonical",
+      snapshotId: coherent.snapshotId,
+      surface: coherent.surface,
+    };
+  }
+  return {
+    contentSha256: canonicalSnapshotContentSha256(payload, surface),
+    indexedThroughBlock: Math.max(
+      Number(payload?.indexedThroughBlock) || 0,
+      Number(payload?.metrics?.indexedThroughBlock) || 0,
+      Number(payload?.stats?.indexedThroughBlock) || 0,
+    ),
+    indexedThroughBlockHash: String(
+      payload?.indexedThroughBlockHash ??
+        payload?.provenance?.indexedThroughBlockHash ??
+        payload?.sourceHashes?.blockScan ??
+        "",
+    )
+      .trim()
+      .toLowerCase(),
+    kind: "legacy-payload",
+    snapshotId: "",
+    surface: String(surface ?? "").trim(),
+  };
+}
+
+function authenticationPreviousIdentityMatches(authentication, payload) {
+  if (authentication?.hadPrevious !== true) {
+    return !payload;
+  }
+  const identity = canonicalSnapshotAuthenticationIdentity(
+    payload,
+    authentication?.previousSurface,
+  );
+  return Boolean(
+    identity &&
+      identity.kind === authentication.previousSnapshotKind &&
+      identity.snapshotId === authentication.previousSnapshotId &&
+      identity.contentSha256 === authentication.previousContentSha256 &&
+      identity.indexedThroughBlock ===
+        authentication.previousIndexedThroughBlock &&
+      identity.indexedThroughBlockHash ===
+        authentication.previousIndexedThroughBlockHash &&
+      identity.surface === authentication.previousSurface,
+  );
+}
+
+function fullCanonicalSnapshotShapeIsComplete(payload, surface) {
+  const arraysForSurface = {
+    "registry-state": [
+      "activity",
+      "listings",
+      "pendingEvents",
+      "records",
+      "sales",
+    ],
+    "token-state": [
+      "closedListings",
+      "holders",
+      "invalidEvents",
+      "listings",
+      "mints",
+      "sales",
+      "tokens",
+      "transfers",
+    ],
+  };
+  const requiredArrays = arraysForSurface[surface] ?? [];
+  if (
+    payload?.summaryOnly === true ||
+    !requiredArrays.every((key) => Array.isArray(payload?.[key]))
+  ) {
+    return false;
+  }
+  if (
+    surface === "registry-state" &&
+    payload?.source !==
+      "proof-indexer-current-id-events+proof-indexer-confirmed-id-records"
+  ) {
+    return false;
+  }
+  if (
+    surface === "token-state" &&
+    payload?.source !== "proof-indexer-token-state-tables"
+  ) {
+    return false;
+  }
+  if (surface !== "canonical-ledger") {
+    return Boolean(
+      payload?.stats &&
+        typeof payload.stats === "object" &&
+        !Array.isArray(payload.stats),
+    );
+  }
+
+  const sourceSnapshotId = String(payload?.sourceSnapshotId ?? "").trim();
+  const ledgerComponents = [
+    payload?.activityPayload,
+    payload?.growthSummary,
+    payload?.inceptionSummary,
+    payload?.infinitySummary,
+    payload?.workFloor,
+  ];
+  return Boolean(
+    payload?.source === "proof-indexer-indexed-canonical-ledger" &&
+      sourceSnapshotId &&
+      Array.isArray(payload?.activity) &&
+      Array.isArray(payload?.registryState?.activity) &&
+      Array.isArray(payload?.registryState?.records) &&
+      Array.isArray(payload?.tokenState?.tokens) &&
+      Array.isArray(payload?.tokenState?.mints) &&
+      Array.isArray(payload?.tokenState?.transfers) &&
+      Array.isArray(payload?.workTokenState?.tokens) &&
+      ledgerComponents.every(
+        (component) =>
+          component &&
+          typeof component === "object" &&
+          !Array.isArray(component) &&
+          String(component.snapshotId ?? "").trim() === sourceSnapshotId,
+      ) &&
+      ledgerPayloadHasCurrentChecks(payload),
+  );
+}
+
+function authenticatedFullCanonicalSnapshotSupersedes(
+  nextPayload,
+  previousPayload,
+) {
+  const authentication = nextPayload && typeof nextPayload === "object"
+    ? AUTHENTICATED_FULL_CANONICAL_SNAPSHOTS.get(nextPayload)
+    : null;
+  return Boolean(
+    authentication?.ok === true &&
+      authentication.contentSha256 ===
+        nextPayload?.canonicalSnapshot?.contentSha256 &&
+      authentication.supersedesPrevious === true &&
+      authenticationPreviousIdentityMatches(authentication, previousPayload),
+  );
+}
+
+function markAuthenticatedFullCanonicalSnapshot(
+  payload,
+  authentication,
+  coherentSnapshot = null,
+) {
+  const coherent =
+    coherentSnapshot ??
+    coherentFullCanonicalSnapshot(payload, authentication?.surface);
+  if (!coherent || authentication?.ok !== true) {
+    return payload;
+  }
+  const {
+    payload: _payloadReference,
+    previousPayload: _previousPayloadReference,
+    ...referenceFreeAuthentication
+  } = authentication;
+  AUTHENTICATED_FULL_CANONICAL_SNAPSHOTS.set(payload, {
+    ...referenceFreeAuthentication,
+    ...coherent,
+    ok: true,
+  });
+  return payload;
+}
+
+function rewrapAuthenticatedFullCanonicalSnapshot(
+  payload,
+  surface,
+  authentication,
+) {
+  return markAuthenticatedFullCanonicalSnapshot(
+    withFullCanonicalSnapshot(payload, surface),
+    { ...authentication, surface },
+  );
+}
+
+async function authenticateFullCanonicalSnapshot(
+  payload,
+  previousPayload,
+  network,
+  surface,
+) {
+  const coherent = coherentFullCanonicalSnapshot(payload, surface);
+  const previousAuthentication =
+    previousPayload && typeof previousPayload === "object"
+      ? AUTHENTICATED_FULL_CANONICAL_SNAPSHOTS.get(previousPayload)
+      : null;
+  const previousCoherent =
+    previousAuthentication?.ok === true &&
+    previousAuthentication.surface === surface
+      ? previousAuthentication
+      : coherentFullCanonicalSnapshot(previousPayload, surface);
+  const fail = (reason) => ({ ok: false, reason });
+  if (!coherent || !fullCanonicalSnapshotShapeIsComplete(payload, surface)) {
+    return fail("snapshot-envelope-or-full-shape-invalid");
+  }
+  if (
+    previousCoherent?.snapshotId === coherent.snapshotId &&
+    previousCoherent.contentSha256 !== coherent.contentSha256
+  ) {
+    return fail("same-snapshot-id-content-mismatch");
+  }
+  if (network === "livenet") {
+    let tipResponse;
+    try {
+      tipResponse = await bitcoinRpc("getblockchaininfo", []);
+    } catch {
+      return fail("bitcoin-core-tip-unavailable");
+    }
+    const tip = exactCoreTipFromBlockchainInfo(tipResponse);
+    if (
+      !tip ||
+      coherent.indexedThroughBlock !== tip.height ||
+      coherent.indexedThroughBlockHash !== tip.blockHash
+    ) {
+      return fail("snapshot-checkpoint-is-not-current-bitcoin-core-tip");
+    }
+  }
+
+  let supersedesPrevious = !previousPayload;
+  if (previousPayload && !previousCoherent) {
+    supersedesPrevious = true;
+  } else if (previousCoherent) {
+    const checkpointChanged =
+      previousCoherent.indexedThroughBlock !== coherent.indexedThroughBlock ||
+      previousCoherent.indexedThroughBlockHash !==
+        coherent.indexedThroughBlockHash;
+    if (checkpointChanged) {
+      supersedesPrevious = true;
+    } else if (previousCoherent.snapshotId !== coherent.snapshotId) {
+      // This payload was freshly rebuilt from the complete relational
+      // projection and revalidated against the current Core tip. Pending
+      // removals and projection repairs can legitimately change content at a
+      // fixed tip without changing event timestamps.
+      supersedesPrevious = true;
+    }
+  }
+  const previousIdentity = canonicalSnapshotAuthenticationIdentity(
+    previousPayload,
+    surface,
+  );
+  const authentication = {
+    ...coherent,
+    hadPrevious: Boolean(previousPayload),
+    ok: true,
+    previousContentSha256: previousIdentity?.contentSha256 ?? "",
+    previousIndexedThroughBlock:
+      previousIdentity?.indexedThroughBlock ?? 0,
+    previousIndexedThroughBlockHash:
+      previousIdentity?.indexedThroughBlockHash ?? "",
+    previousSnapshotId: previousIdentity?.snapshotId ?? "",
+    previousSnapshotKind: previousIdentity?.kind ?? "",
+    previousSurface: previousIdentity?.surface ?? surface,
+    supersedesPrevious,
+  };
+  markAuthenticatedFullCanonicalSnapshot(payload, authentication, coherent);
+  return authentication;
+}
+
+async function persistedPayloadForCache(
+  cacheKey,
+  staleMs,
+  canonicalSurface = "",
+) {
   const jsonKey = `json:${cacheKey}`;
   await hydratePersistedJsonCache(jsonKey, staleMs);
-  return cachedJsonPayload(jsonKey);
+  return cachedJsonPayload(jsonKey, canonicalSurface);
 }
 
 function registryConfirmedCount(payload) {
@@ -1929,6 +2672,14 @@ function registryPayloadLooksWorse(nextPayload, previousPayload) {
   if (!previousPayload) {
     return false;
   }
+  if (
+    authenticatedFullCanonicalSnapshotSupersedes(
+      nextPayload,
+      previousPayload,
+    )
+  ) {
+    return false;
+  }
 
   const previousConfirmed = registryConfirmedCount(previousPayload);
   const nextConfirmed = registryConfirmedCount(nextPayload);
@@ -1943,21 +2694,35 @@ async function existingRegistryPayload(network) {
   const payloadKey = `payload:registry:${network}`;
   const cachedPayload = RESPONSE_CACHE.get(payloadKey)?.payload;
   if (cachedPayload) {
-    return cachedPayload;
+    return coherentCanonicalSnapshotAtBoundary(
+      cachedPayload,
+      "registry-state",
+    );
   }
 
-  return persistedPayloadForCache(`registry:${network}`, REGISTRY_CACHE_STALE_MS);
+  return persistedPayloadForCache(
+    `registry:${network}`,
+    REGISTRY_CACHE_STALE_MS,
+    "registry-state",
+  );
 }
 
 function cacheRegistryPayload(network, payload) {
   const cacheKey = `registry:${network}`;
   const jsonKey = `json:${cacheKey}`;
   const body = JSON.stringify(payload);
-  cacheJsonBody(jsonKey, body, REGISTRY_CACHE_TTL_MS, REGISTRY_CACHE_STALE_MS);
-  if (shouldPersistJsonCache(cacheKey)) {
+  const outcome = cacheJsonBody(
+    jsonKey,
+    body,
+    REGISTRY_CACHE_TTL_MS,
+    REGISTRY_CACHE_STALE_MS,
+  );
+  if (outcome.stored && shouldPersistJsonCache(cacheKey, payload)) {
     void writePersistedJsonCache(jsonKey, body);
   }
-  invalidateDerivedCachesForBaseCache(cacheKey);
+  if (outcome.stored) {
+    invalidateDerivedCachesForBaseCache(cacheKey);
+  }
 }
 
 async function registryFallbackPayload(network) {
@@ -2028,7 +2793,14 @@ async function safeRegistryPayload(network) {
     return previousPayload;
   }
 
-  if (network === "livenet" && registryConfirmedCount(nextPayload) <= 0) {
+  if (
+    network === "livenet" &&
+    registryConfirmedCount(nextPayload) <= 0 &&
+    !authenticatedFullCanonicalSnapshotSupersedes(
+      nextPayload,
+      previousPayload,
+    )
+  ) {
     if (registryConfirmedCount(previousPayload) > 0) {
       console.error(
         "Rejected empty livenet registry payload; using previous confirmed registry state.",
@@ -2354,6 +3126,14 @@ function tokenPayloadLooksWorse(nextPayload, previousPayload) {
   if (!previousPayload) {
     return false;
   }
+  if (
+    authenticatedFullCanonicalSnapshotSupersedes(
+      nextPayload,
+      previousPayload,
+    )
+  ) {
+    return false;
+  }
 
   const next = tokenPayloadMetrics(nextPayload);
   const previous = tokenPayloadMetrics(previousPayload);
@@ -2390,12 +3170,16 @@ async function existingTokenPayload(network, tokenScope = "") {
   const payloadKey = `payload:token:${network}:${scope}`;
   const cachedPayload = RESPONSE_CACHE.get(payloadKey)?.payload;
   if (cachedPayload) {
-    return cachedPayload;
+    return coherentCanonicalSnapshotAtBoundary(
+      cachedPayload,
+      "token-state",
+    );
   }
 
   return persistedPayloadForCache(
     `token:${network}:${scope}`,
     TOKEN_CACHE_STALE_MS,
+    "token-state",
   );
 }
 
@@ -2656,7 +3440,7 @@ function tokenPayloadScopedToAddresses(payload, addresses, tokenScope = "") {
       ((payload.tokens ?? []).length === 1 && holders.length > 0),
   );
 
-  return applyWorkMarketV2CutoverToTokenState({
+  const scopedPayload = applyWorkMarketV2CutoverToTokenState({
     ...payload,
     closedListings,
     holders,
@@ -2672,6 +3456,12 @@ function tokenPayloadScopedToAddresses(payload, addresses, tokenScope = "") {
     transfers,
     walletScoped: true,
   });
+  return transformCanonicalSnapshotPayload(
+    payload,
+    "token-state",
+    () => scopedPayload,
+    { preserveCanonicalClaim: false },
+  );
 }
 
 function walletTokenItemIds(payload) {
@@ -2716,7 +3506,12 @@ function walletTokenPayloadWithCanonicalDefinitions(payload, network) {
       });
     }
   }
-  return { ...payload, tokens: [...tokensById.values()] };
+  return transformCanonicalSnapshotPayload(
+    payload,
+    "token-state",
+    () => ({ ...payload, tokens: [...tokensById.values()] }),
+    { preserveCanonicalClaim: false },
+  );
 }
 
 function walletTokenPayloadMissingDefinitions(payload) {
@@ -6696,15 +7491,12 @@ function broadcastOriginAllowed(request) {
   }
 }
 
-function broadcastClientKey(request) {
+function publicClientKey(request) {
   const remoteAddress = String(request.socket.remoteAddress ?? "unknown")
     .trim()
-    .toLowerCase();
-  const trustedProxy = [
-    "127.0.0.1",
-    "::1",
-    "::ffff:127.0.0.1",
-  ].includes(remoteAddress);
+    .toLowerCase()
+    .replace(/^::ffff:/u, "");
+  const trustedProxy = TRUSTED_PROXY_ADDRESSES.has(remoteAddress);
   const forwarded = trustedProxy
     ? String(request.headers["x-forwarded-for"] ?? "")
         .split(",")[0]
@@ -6712,6 +7504,10 @@ function broadcastClientKey(request) {
         .toLowerCase()
     : "";
   return (forwarded || remoteAddress).slice(0, 160);
+}
+
+function broadcastClientKey(request) {
+  return publicClientKey(request);
 }
 
 function broadcastRateLimitError(message, code) {
@@ -9286,35 +10082,39 @@ async function withWorkMarketplaceV4Metadata(payload, network) {
     workAmoV6Metadata(network, { summaryPayload: payload }),
     workAmoV8Metadata(network, { summaryPayload: payload }),
   ]);
-  return {
-    ...payload,
-    workAmoV5,
-    workAmoV6,
-    workAmoV8,
-    workMarketplaceV4,
-    ...(payload?.floor && typeof payload.floor === "object"
-      ? {
-          floor: {
-            ...payload.floor,
-            workAmoV5,
-            workAmoV6,
-            workAmoV8,
-            workMarketplaceV4,
-          },
-        }
-      : {}),
-    ...(payload?.workFloor && typeof payload.workFloor === "object"
-      ? {
-          workFloor: {
-            ...payload.workFloor,
-            workAmoV5,
-            workAmoV6,
-            workAmoV8,
-            workMarketplaceV4,
-          },
-        }
-      : {}),
-  };
+  return transformCanonicalSnapshotPayload(
+    payload,
+    "token-state",
+    () => ({
+      ...payload,
+      workAmoV5,
+      workAmoV6,
+      workAmoV8,
+      workMarketplaceV4,
+      ...(payload?.floor && typeof payload.floor === "object"
+        ? {
+            floor: {
+              ...payload.floor,
+              workAmoV5,
+              workAmoV6,
+              workAmoV8,
+              workMarketplaceV4,
+            },
+          }
+        : {}),
+      ...(payload?.workFloor && typeof payload.workFloor === "object"
+        ? {
+            workFloor: {
+              ...payload.workFloor,
+              workAmoV5,
+              workAmoV6,
+              workAmoV8,
+              workMarketplaceV4,
+            },
+          }
+        : {}),
+    }),
+  );
 }
 
 function bytesToHex(bytes) {
@@ -10775,6 +11575,21 @@ async function broadcastSlipstreamPayload(request, options = {}) {
     throw new Error("Invalid transaction hex.");
   }
 
+  const rushMintRequested = decodedProtocolMessages(
+    signedTransactionOutputs(txHex),
+    RUSH_PROTOCOL_PREFIX,
+  ).includes(RUSH_MINT_PAYLOAD);
+  if (rushMintRequested && !PUBLIC_RUSH_READS_ENABLED) {
+    const error = new Error("RUSH is not enabled on this public gateway.");
+    error.statusCode = 403;
+    error.details = {
+      code: "RUSH_PUBLIC_DISABLED",
+      lifecycleStatus: "failed",
+      reason: "public-rush-gate-disabled",
+    };
+    throw error;
+  }
+
   await assertWorkMarketplaceBroadcastAllowed(txHex, "livenet", {
     beforeSubmit: options.beforeSubmit,
   });
@@ -10861,6 +11676,21 @@ async function broadcastNodePayload(request, network, options = {}) {
   const txHex = String(payload?.txHex ?? payload?.tx_hex ?? "").trim();
   if (!/^[0-9a-fA-F]+$/u.test(txHex) || txHex.length % 2 !== 0) {
     throw new Error("Invalid transaction hex.");
+  }
+
+  const rushMintRequested = decodedProtocolMessages(
+    signedTransactionOutputs(txHex),
+    RUSH_PROTOCOL_PREFIX,
+  ).includes(RUSH_MINT_PAYLOAD);
+  if (rushMintRequested && !PUBLIC_RUSH_READS_ENABLED) {
+    const error = new Error("RUSH is not enabled on this public gateway.");
+    error.statusCode = 403;
+    error.details = {
+      code: "RUSH_PUBLIC_DISABLED",
+      lifecycleStatus: "failed",
+      reason: "public-rush-gate-disabled",
+    };
+    throw error;
   }
 
   await assertWorkMarketplaceBroadcastAllowed(txHex, network, {
@@ -11314,9 +12144,6 @@ async function fetchTransaction(txid, network) {
   cachePendingTokenTransaction(tx, network, "tx");
   if (transactionConfirmed(tx)) {
     TRANSACTION_CACHE.set(cacheKey, tx);
-    if (TRANSACTION_CACHE.size > MAX_TRANSACTION_CACHE_SIZE) {
-      TRANSACTION_CACHE.delete(TRANSACTION_CACHE.keys().next().value);
-    }
   }
 
   return tx;
@@ -11576,9 +12403,6 @@ async function fetchTransactionFromBitcoinRpc(txid, network, options = {}) {
 
   if (confirmed && options.cacheResult !== false) {
     TRANSACTION_CACHE.set(cacheKey, tx);
-    if (TRANSACTION_CACHE.size > MAX_TRANSACTION_CACHE_SIZE) {
-      TRANSACTION_CACHE.delete(TRANSACTION_CACHE.keys().next().value);
-    }
   }
 
   return tx;
@@ -11783,9 +12607,6 @@ async function fetchTransactionFromElectrum(
 
   if (confirmed) {
     TRANSACTION_CACHE.set(cacheKey, tx);
-    if (TRANSACTION_CACHE.size > MAX_TRANSACTION_CACHE_SIZE) {
-      TRANSACTION_CACHE.delete(TRANSACTION_CACHE.keys().next().value);
-    }
   }
 
   return tx;
@@ -17159,20 +17980,24 @@ async function spendableTokenListingsPayload(payload, network) {
   );
 
   const closedListings = sortClosedTokenListings([...closedByKey.values()]);
-  return {
-    ...reconciledPayload,
-    closedListings,
-    listings: tokenListings.listings.filter((listing) => {
-      const listingId = String(listing?.listingId ?? listing?.txid ?? "")
-        .trim()
-        .toLowerCase();
-      return listingId && !closedListingIds.has(listingId);
-    }),
-    sales: tokenSalesWithCanonicalOutspendClosures(
-      reconciledPayload.sales,
+  return transformCanonicalSnapshotPayload(
+    payload,
+    "token-state",
+    () => ({
+      ...reconciledPayload,
       closedListings,
-    ),
-  };
+      listings: tokenListings.listings.filter((listing) => {
+        const listingId = String(listing?.listingId ?? listing?.txid ?? "")
+          .trim()
+          .toLowerCase();
+        return listingId && !closedListingIds.has(listingId);
+      }),
+      sales: tokenSalesWithCanonicalOutspendClosures(
+        reconciledPayload.sales,
+        closedListings,
+      ),
+    }),
+  );
 }
 
 async function boundedSpendableTokenListingsPayload(payload, network, label) {
@@ -27135,17 +27960,19 @@ function cachedTokenPayload(network, tokenScope = "") {
 }
 
 function cacheTokenPayload(network, tokenScope = "", payload, options = {}) {
+  payload = coherentCanonicalSnapshotAtBoundary(payload, "token-state");
   const scope = normalizeTokenScope(tokenScope);
   const cacheKey = `token:${network}:${scope}`;
-  const payloadKey = `payload:${cacheKey}`;
-  const jsonKey = `json:${cacheKey}`;
-  const body = JSON.stringify(payload);
-  const cachedAt = Date.now();
-  RESPONSE_CACHE.set(payloadKey, {
-    expiresAt: cachedAt + TOKEN_CACHE_TTL_MS,
+  const cached = cachePayloadAndJson(
+    cacheKey,
     payload,
-    staleUntil: cachedAt + TOKEN_CACHE_STALE_MS,
-  });
+    TOKEN_CACHE_TTL_MS,
+    TOKEN_CACHE_STALE_MS,
+  );
+  if (!cached.outcome.stored) {
+    return false;
+  }
+  const cachedAt = cached.cachedAt;
   if (options.exactTipValidated === true) {
     const pendingValidThroughMs = Date.parse(
       String(
@@ -27155,20 +27982,24 @@ function cacheTokenPayload(network, tokenScope = "", payload, options = {}) {
     const validatedUntil =
       cachedAt +
       Math.min(TOKEN_CACHE_STALE_MS, PROOF_INDEX_HEALTH_MAX_AGE_MS);
-    EXACT_TIP_TOKEN_CACHE.set(cacheKey, {
+    const exactOutcome = EXACT_TIP_TOKEN_CACHE.setWithOutcome(cacheKey, {
       greenUntil: Number.isFinite(pendingValidThroughMs)
         ? Math.min(validatedUntil, pendingValidThroughMs)
         : cachedAt,
       indexedThroughBlockHash: payloadIndexedThroughBlockHash(payload),
       payload,
+      staleUntil: validatedUntil,
       validatedUntil,
     });
+    if (!exactOutcome.stored) {
+      EXACT_TIP_TOKEN_CACHE.delete(cacheKey);
+    }
+  } else {
+    EXACT_TIP_TOKEN_CACHE.delete(cacheKey);
   }
-  cacheJsonBody(jsonKey, body, TOKEN_CACHE_TTL_MS, TOKEN_CACHE_STALE_MS);
-  if (shouldPersistJsonCache(cacheKey)) {
-    void writePersistedJsonCache(jsonKey, body);
-  }
+  persistAcceptedJsonCache(cacheKey, payload, cached);
   invalidateDerivedCachesForBaseCache(cacheKey);
+  return true;
 }
 
 async function refreshTokenPayload(network, tokenScope = "") {
@@ -27265,17 +28096,15 @@ function refreshPayloadCacheInBackground(
   BACKGROUND_PAYLOAD_REFRESHES.add(cacheKey);
   void producer()
     .then((payload) => {
-      RESPONSE_CACHE.set(payloadKey, {
-        expiresAt: Date.now() + ttlMs,
-        payload,
-        staleUntil: Date.now() + staleMs,
-      });
-      const body = JSON.stringify(payload);
-      cacheJsonBody(`json:${cacheKey}`, body, ttlMs, staleMs);
-      if (shouldPersistJsonCache(cacheKey)) {
-        void writePersistedJsonCache(`json:${cacheKey}`, body);
+      const canonicalSurface = canonicalSurfaceForCacheKey(cacheKey);
+      payload = canonicalSurface
+        ? coherentCanonicalSnapshotAtBoundary(payload, canonicalSurface)
+        : payload;
+      const cached = cachePayloadAndJson(cacheKey, payload, ttlMs, staleMs);
+      if (cached.outcome.stored) {
+        persistAcceptedJsonCache(cacheKey, payload, cached);
+        invalidateDerivedCachesForBaseCache(cacheKey);
       }
-      invalidateDerivedCachesForBaseCache(cacheKey);
     })
     .catch((error) => {
       console.error(`Cache refresh failed for ${cacheKey}:`, error);
@@ -27293,9 +28122,15 @@ async function fastJsonBackedPayload(
   staleMs,
   fallbackPayload,
 ) {
+  const canonicalSurface = canonicalSurfaceForCacheKey(cacheKey);
   const payloadEntry = RESPONSE_CACHE.get(payloadKey);
   if (payloadEntry?.payload) {
-    return payloadEntry.payload;
+    return canonicalSurface
+      ? coherentCanonicalSnapshotAtBoundary(
+          payloadEntry.payload,
+          canonicalSurface,
+        )
+      : payloadEntry.payload;
   }
 
   const jsonKey = `json:${cacheKey}`;
@@ -27303,7 +28138,10 @@ async function fastJsonBackedPayload(
   const cachedJsonEntry = RESPONSE_CACHE.get(jsonKey);
   if (cachedJsonEntry?.body) {
     try {
-      const payload = JSON.parse(cachedJsonEntry.body);
+      const payload = cachedJsonPayload(jsonKey, canonicalSurface);
+      if (!payload) {
+        throw new Error("Persisted canonical snapshot is incoherent.");
+      }
       RESPONSE_CACHE.set(payloadKey, {
         expiresAt: Date.now() + ttlMs,
         payload,
@@ -27340,6 +28178,7 @@ async function backgroundRefreshedJsonBackedPayload(
   staleMs,
   fallbackPayload,
 ) {
+  const canonicalSurface = canonicalSurfaceForCacheKey(cacheKey);
   refreshPayloadCacheInBackground(
     cacheKey,
     payloadKey,
@@ -27350,7 +28189,12 @@ async function backgroundRefreshedJsonBackedPayload(
 
   const payloadEntry = RESPONSE_CACHE.get(payloadKey);
   if (payloadEntry?.payload) {
-    return payloadEntry.payload;
+    return canonicalSurface
+      ? coherentCanonicalSnapshotAtBoundary(
+          payloadEntry.payload,
+          canonicalSurface,
+        )
+      : payloadEntry.payload;
   }
 
   const jsonKey = `json:${cacheKey}`;
@@ -27358,7 +28202,10 @@ async function backgroundRefreshedJsonBackedPayload(
   const cachedJsonEntry = RESPONSE_CACHE.get(jsonKey);
   if (cachedJsonEntry?.body) {
     try {
-      const payload = JSON.parse(cachedJsonEntry.body);
+      const payload = cachedJsonPayload(jsonKey, canonicalSurface);
+      if (!payload) {
+        throw new Error("Persisted canonical snapshot is incoherent.");
+      }
       RESPONSE_CACHE.set(payloadKey, {
         expiresAt: Date.now() + ttlMs,
         payload,
@@ -27489,7 +28336,10 @@ async function cachedTokenPayloadSnapshotNoRefresh(network, tokenScope = "") {
   const payloadKey = `payload:token:${network}:${scope}`;
   const cachedPayloadEntry = RESPONSE_CACHE.get(payloadKey);
   if (cachedPayloadEntry?.payload) {
-    return cachedPayloadEntry.payload;
+    return coherentCanonicalSnapshotAtBoundary(
+      cachedPayloadEntry.payload,
+      "token-state",
+    );
   }
 
   const jsonKey = `json:token:${network}:${scope}`;
@@ -27497,7 +28347,10 @@ async function cachedTokenPayloadSnapshotNoRefresh(network, tokenScope = "") {
   const cachedJsonEntry = RESPONSE_CACHE.get(jsonKey);
   if (cachedJsonEntry?.body) {
     try {
-      const payload = JSON.parse(cachedJsonEntry.body);
+      const payload = cachedJsonPayload(jsonKey, "token-state");
+      if (!payload) {
+        throw new Error("Persisted token snapshot is incoherent.");
+      }
       RESPONSE_CACHE.set(payloadKey, {
         expiresAt: Date.now() - 1,
         payload,
@@ -27539,9 +28392,12 @@ async function fastCachedTokenPayload(network, tokenScope = "") {
   if (cachedJsonEntry?.body) {
     try {
       const payload = await tokenPayloadWithSpendableListings(
-        JSON.parse(cachedJsonEntry.body),
+        cachedJsonPayload(jsonKey, "token-state"),
         network,
       );
+      if (!payload) {
+        throw new Error("Persisted token snapshot is incoherent.");
+      }
       RESPONSE_CACHE.set(payloadKey, {
         expiresAt: Date.now() + TOKEN_CACHE_TTL_MS,
         payload,
@@ -28595,6 +29451,7 @@ function inboxMessagesFromTransactions(txs, address, network) {
       confirmed,
       createdAt: new Date(blockTime).toISOString(),
       from: sender,
+      lifecycleObservedAt: new Date().toISOString(),
       memo: protocolMessage.memo,
       network,
       recipients: recipients.length > 0 ? recipients : undefined,
@@ -28702,6 +29559,8 @@ function inboxMessagesFromActivityItems(items, address, network) {
     );
     const createdAt =
       item?.createdAt ?? item?.confirmedAt ?? new Date().toISOString();
+    const lifecycleObservedAt =
+      item?.observedAt ?? item?.updatedAt ?? item?.indexedAt ?? createdAt;
     return [
       {
         amountSats:
@@ -28713,6 +29572,7 @@ function inboxMessagesFromActivityItems(items, address, network) {
         confirmed: item?.confirmed !== false,
         createdAt,
         from: actor || "Unknown",
+        lifecycleObservedAt,
         memo: item?.memo ?? item?.detail ?? "",
         network,
         parentTxid: item?.parentTxid,
@@ -28764,6 +29624,7 @@ function sentMessagesFromTransactions(txs, address, network) {
         feeRate: 0,
         from: address,
         lastCheckedAt: new Date().toISOString(),
+        lifecycleObservedAt: new Date().toISOString(),
         memo: protocolMessage.memo,
         network,
         parentTxid: protocolMessage.parentTxid,
@@ -28792,6 +29653,8 @@ function sentMessagesFromActivityItems(items, address, network) {
     const attachedCredits = mailAttachedCreditsFromRecord(item, network);
     const createdAt =
       item?.createdAt ?? item?.confirmedAt ?? new Date().toISOString();
+    const lifecycleObservedAt =
+      item?.observedAt ?? item?.updatedAt ?? item?.indexedAt ?? createdAt;
     const confirmed = item?.confirmed !== false;
     const firstRecipient = recipients[0];
     return [
@@ -28809,6 +29672,7 @@ function sentMessagesFromActivityItems(items, address, network) {
         feeRate: 0,
         from: address,
         lastCheckedAt: new Date().toISOString(),
+        lifecycleObservedAt,
         memo: item?.memo ?? item?.detail ?? "",
         network,
         parentTxid: item?.parentTxid,
@@ -28919,19 +29783,47 @@ async function indexedRegistryPayload(network, options = {}) {
     registryAddress,
   })
     .then(async (payload) => {
+      const fullCanonicalSnapshotClaimed = Boolean(
+        payload?.canonicalSnapshot ||
+          payload?.snapshotKind === "full-canonical",
+      );
       const orderedPayload = payload
-        ? {
+        ? fullCanonicalSnapshotClaimed
+          ? payload
+          : {
             ...payload,
             records: (Array.isArray(payload.records) ? payload.records : [])
               .slice()
               .sort(compareRegistryRecordDisplayOrder),
           }
         : payload;
+      const previousPayload = fullCanonicalSnapshotClaimed
+        ? await existingRegistryPayload(network).catch(() => null)
+        : null;
+      const authentication = fullCanonicalSnapshotClaimed
+        ? await authenticateFullCanonicalSnapshot(
+            orderedPayload,
+            previousPayload,
+            network,
+            "registry-state",
+          )
+        : { ok: false, reason: "not-a-full-canonical-registry-snapshot" };
+      if (fullCanonicalSnapshotClaimed && authentication.ok !== true) {
+        console.error(
+          `Rejected proof-index registry snapshot authentication for ${network}: ${authentication.reason}.`,
+        );
+        return null;
+      }
       // An unpinned proof-index registry payload is built only after the reader
       // verifies a complete, hashed canonical block-scan checkpoint. It must be
       // allowed to correct a stale cache whose (noncanonical) record count was
       // higher. The live crawler path keeps its separate regression guard.
-      let rejectReason = registryIndexedPayloadRejectReason(orderedPayload);
+      let rejectReason = fullCanonicalSnapshotClaimed
+        ? registryIndexedPayloadRejectReason(
+            orderedPayload,
+            previousPayload,
+          )
+        : registryIndexedPayloadRejectReason(orderedPayload);
       const exactCheckpointMatches =
         exactCheckpointRequested &&
         proofIndexPayloadIndexedThroughBlock(orderedPayload) === exactHeight &&
@@ -28940,12 +29832,22 @@ async function indexedRegistryPayload(network, options = {}) {
           .toLowerCase() === exactHash;
       if (
         rejectReason.startsWith("stale indexedAt") &&
-        (exactCheckpointMatches ||
+        (authentication.ok === true ||
+          exactCheckpointMatches ||
           (await proofIndexPayloadHasExplicitCurrentCoverage(
             orderedPayload,
             network,
             "indexed-registry-current-coverage",
           )))
+      ) {
+        rejectReason = "";
+      }
+      if (
+        rejectReason.startsWith("confirmed ") &&
+        authenticatedFullCanonicalSnapshotSupersedes(
+          orderedPayload,
+          previousPayload,
+        )
       ) {
         rejectReason = "";
       }
@@ -28957,7 +29859,8 @@ async function indexedRegistryPayload(network, options = {}) {
       }
       if (
         network === "livenet" &&
-        registryConfirmedCount(orderedPayload) <= 0
+        registryConfirmedCount(orderedPayload) <= 0 &&
+        authentication.ok !== true
       ) {
         console.error(
           "Rejected empty proof-index registry payload for livenet.",
@@ -30304,7 +31207,7 @@ function scopedTokenPayloadFromState(tokenState, scope) {
       })()
     : tokenState;
 
-  return tokenPayloadWithScopedHolderIdentity({
+  const scopedPayload = tokenPayloadWithScopedHolderIdentity({
     ...scopedBaseState,
     closedListings,
     creationSats,
@@ -30358,6 +31261,12 @@ function scopedTokenPayloadFromState(tokenState, scope) {
       ).size,
     },
   }, normalizedScope);
+  return transformCanonicalSnapshotPayload(
+    tokenState,
+    "token-state",
+    () => scopedPayload,
+    { preserveCanonicalClaim: false },
+  );
 }
 
 async function fastTokenPayloadSnapshot(network, tokenScope = "", options = {}) {
@@ -30393,7 +31302,10 @@ async function fastTokenPayloadSnapshot(network, tokenScope = "", options = {}) 
   const cachedJsonEntry = RESPONSE_CACHE.get(jsonKey);
   if (cachedJsonEntry?.body) {
     try {
-      const rawPayload = JSON.parse(cachedJsonEntry.body);
+      const rawPayload = cachedJsonPayload(jsonKey, "token-state");
+      if (!rawPayload) {
+        throw new Error("Persisted token snapshot is incoherent.");
+      }
       const filteredPayload = tokenStateWithoutDroppedPendingTransactions(
         rawPayload,
         network,
@@ -30948,7 +31860,7 @@ function compactTokenSummaryPayload(payload, tokenScope = "") {
     transfers: collectionHasMoreValue("transfers", totalCounts.transfers, 0),
   };
 
-  return tokenPayloadWithScopedHolderIdentity({
+  const compactPayload = tokenPayloadWithScopedHolderIdentity({
     ...payload,
     closedListings: compactClosedListings,
     collectionHasMore,
@@ -31020,6 +31932,12 @@ function compactTokenSummaryPayload(payload, tokenScope = "") {
       ),
     },
   }, scope);
+  return transformCanonicalSnapshotPayload(
+    payload,
+    "token-state",
+    () => compactPayload,
+    { preserveCanonicalClaim: false },
+  );
 }
 
 function workTokenLiveSeenTxids(network) {
@@ -31134,28 +32052,32 @@ function tokenStateWithPendingStats(state) {
         .reduce((total, mint) => total + Number(mint.amount || 0), 0);
   const confirmedSales = sales.filter((sale) => sale.confirmed);
 
-  return {
-    ...state,
-    pendingSupply,
-    stats: {
-      ...(state?.stats ?? {}),
-      confirmedMints: mints.filter((mint) => mint.confirmed).length,
-      confirmedSales: confirmedSales.length,
-      confirmedSalesVolumeSats: confirmedSales.reduce(
-        (total, sale) => total + numericValue(sale.priceSats),
-        0,
-      ),
-      confirmedTransfers: transfers.filter((transfer) => transfer.confirmed)
-        .length,
-      confirmedTokens: tokens.filter((token) => token.confirmed).length,
-      holders: holders.length,
-      pendingMints: mints.filter((mint) => !mint.confirmed).length,
-      pendingSales: sales.filter((sale) => !sale.confirmed).length,
-      pendingTransfers: transfers.filter((transfer) => !transfer.confirmed)
-        .length,
-      pendingTokens: tokens.filter((token) => !token.confirmed).length,
-    },
-  };
+  return transformCanonicalSnapshotPayload(
+    state,
+    "token-state",
+    () => ({
+      ...state,
+      pendingSupply,
+      stats: {
+        ...(state?.stats ?? {}),
+        confirmedMints: mints.filter((mint) => mint.confirmed).length,
+        confirmedSales: confirmedSales.length,
+        confirmedSalesVolumeSats: confirmedSales.reduce(
+          (total, sale) => total + numericValue(sale.priceSats),
+          0,
+        ),
+        confirmedTransfers: transfers.filter((transfer) => transfer.confirmed)
+          .length,
+        confirmedTokens: tokens.filter((token) => token.confirmed).length,
+        holders: holders.length,
+        pendingMints: mints.filter((mint) => !mint.confirmed).length,
+        pendingSales: sales.filter((sale) => !sale.confirmed).length,
+        pendingTransfers: transfers.filter((transfer) => !transfer.confirmed)
+          .length,
+        pendingTokens: tokens.filter((token) => !token.confirmed).length,
+      },
+    }),
+  );
 }
 
 function tokenStateWithoutDroppedPendingTransactions(state, network) {
@@ -31284,16 +32206,20 @@ function tokenStateWithoutDroppedPendingTransactions(state, network) {
     return state;
   }
 
-  return tokenStateWithPendingStats({
-    ...state,
-    closedListings,
-    invalidEvents,
-    listings,
-    mints,
-    sales,
-    tokens,
-    transfers,
-  });
+  return transformCanonicalSnapshotPayload(
+    state,
+    "token-state",
+    () => tokenStateWithPendingStats({
+      ...state,
+      closedListings,
+      invalidEvents,
+      listings,
+      mints,
+      sales,
+      tokens,
+      transfers,
+    }),
+  );
 }
 
 async function tokenStateWithLivePendingTransactionCheck(state, network) {
@@ -34279,7 +35205,12 @@ async function tokenPayloadReadResult(payload, network, fresh, options = {}) {
   const spendablePayload = options.reconcileSpendable === false
     ? reconciledPayload
     : await tokenPayloadWithSpendableListings(reconciledPayload, network);
-  return applyWorkMarketV2CutoverToTokenState(spendablePayload);
+  const result = applyWorkMarketV2CutoverToTokenState(spendablePayload);
+  return transformCanonicalSnapshotPayload(
+    payload,
+    "token-state",
+    () => result,
+  );
 }
 
 function tokenPayloadFreshnessRank(payload) {
@@ -34365,6 +35296,9 @@ function tokenPayloadShouldReplaceForFreshness(candidate, current) {
     return false;
   }
   if (!current) {
+    return true;
+  }
+  if (authenticatedFullCanonicalSnapshotSupersedes(candidate, current)) {
     return true;
   }
 
@@ -35014,14 +35948,24 @@ async function tokenPayloadWithCanonicalWorkTransferValues(
     payload,
     summary.workTransferValueProjection,
   );
-  return {
+  const authentication = payload && typeof payload === "object"
+    ? AUTHENTICATED_FULL_CANONICAL_SNAPSHOTS.get(payload)
+    : null;
+  const result = {
     ...projected,
     indexedThroughBlockHash: summary.indexedThroughBlockHash,
-    snapshotId: summary.snapshotId,
-    source: mergedSourceLabel(
-      projected?.source,
-      "canonical-work-transfer-value-projection",
-    ),
+    ...(authentication?.ok === true
+      ? {
+          workTransferValueProjectionSource:
+            "canonical-work-transfer-value-projection",
+        }
+      : {
+          snapshotId: summary.snapshotId,
+          source: mergedSourceLabel(
+            projected?.source,
+            "canonical-work-transfer-value-projection",
+          ),
+        }),
     workTransferValueProjection: {
       indexedAt: summary.indexedAt,
       indexedThroughBlock: proofIndexPayloadIndexedThroughBlock(summary),
@@ -35031,6 +35975,13 @@ async function tokenPayloadWithCanonicalWorkTransferValues(
       snapshotId: summary.snapshotId,
     },
   };
+  return authentication?.ok === true
+    ? rewrapAuthenticatedFullCanonicalSnapshot(
+        result,
+        "token-state",
+        authentication,
+      )
+    : result;
 }
 
 async function currentProofIndexTokenPayloadForRead(
@@ -35065,6 +36016,26 @@ async function currentProofIndexTokenPayloadForRead(
     null,
     timeoutMs,
   );
+  const fullCanonicalSnapshotClaimed = Boolean(
+    payload?.canonicalSnapshot || payload?.snapshotKind === "full-canonical",
+  );
+  const previousPayload = fullCanonicalSnapshotClaimed
+    ? await existingTokenPayload(network, scope).catch(() => null)
+    : null;
+  const authentication = fullCanonicalSnapshotClaimed
+    ? await authenticateFullCanonicalSnapshot(
+        payload,
+        previousPayload,
+        network,
+        "token-state",
+      )
+    : { ok: false, reason: "not-a-full-canonical-token-snapshot" };
+  if (fullCanonicalSnapshotClaimed && authentication.ok !== true) {
+    console.error(
+      `Rejected proof-index ${label} snapshot authentication for ${scope || "all"}: ${authentication.reason}.`,
+    );
+    return null;
+  }
   if (
     payload &&
     !rejectEmptyMainnetTokenPayload(network, payload, scope, label) &&
@@ -35078,13 +36049,15 @@ async function currentProofIndexTokenPayloadForRead(
       Math.min(2_500, Math.max(1_000, timeoutMs)),
     ))
   ) {
-    const canonicalFloored = await tokenPayloadWithCanonicalLedgerFloor(
-      network,
-      payload,
-      scope,
-      label,
-      timeoutMs,
-    );
+    const canonicalFloored = authentication.ok === true
+      ? payload
+      : await tokenPayloadWithCanonicalLedgerFloor(
+          network,
+          payload,
+          scope,
+          label,
+          timeoutMs,
+        );
     return tokenPayloadWithCanonicalWorkTransferValues(
       network,
       canonicalFloored,
@@ -35135,7 +36108,12 @@ async function currentMemoryTokenPayloadForRead(
   label = "token-memory-cache",
 ) {
   const scope = normalizeTokenScope(tokenScope);
-  const payload = RESPONSE_CACHE.get(`payload:token:${network}:${scope}`)?.payload;
+  const cachedPayload =
+    RESPONSE_CACHE.get(`payload:token:${network}:${scope}`)?.payload;
+  const payload = coherentCanonicalSnapshotAtBoundary(
+    cachedPayload,
+    "token-state",
+  );
   if (
     payload &&
     !rejectEmptyMainnetTokenPayload(network, payload, scope, label) &&
@@ -35163,9 +36141,13 @@ async function currentExactTipTokenPayloadForRead(
   const scope = normalizeTokenScope(tokenScope);
   const cacheKey = `token:${network}:${scope}`;
   const cached = EXACT_TIP_TOKEN_CACHE.get(cacheKey);
-  const payload = cached?.payload;
+  const payload = coherentCanonicalSnapshotAtBoundary(
+    cached?.payload,
+    "token-state",
+  );
   if (
     !payload ||
+    payload !== cached?.payload ||
     Number(cached?.validatedUntil) < Date.now() ||
     rejectEmptyMainnetTokenPayload(network, payload, scope, label)
   ) {
@@ -35294,6 +36276,26 @@ async function indexedTokenPayloadFreshnessFloor(network, scope, options = {}) {
       return null;
     },
   );
+  const fullCanonicalSnapshotClaimed = Boolean(
+    payload?.canonicalSnapshot || payload?.snapshotKind === "full-canonical",
+  );
+  const previousPayload = fullCanonicalSnapshotClaimed
+    ? await existingTokenPayload(network, scope).catch(() => null)
+    : null;
+  const authentication = fullCanonicalSnapshotClaimed
+    ? await authenticateFullCanonicalSnapshot(
+        payload,
+        previousPayload,
+        network,
+        "token-state",
+      )
+    : { ok: false, reason: "not-a-full-canonical-token-snapshot" };
+  if (fullCanonicalSnapshotClaimed && authentication.ok !== true) {
+    console.error(
+      `Rejected proof-index token-state fresh floor snapshot authentication for ${scope || "all"}: ${authentication.reason}.`,
+    );
+    return null;
+  }
   if (
     payload &&
     !rejectEmptyMainnetTokenPayload(
@@ -35308,13 +36310,15 @@ async function indexedTokenPayloadFreshnessFloor(network, scope, options = {}) {
         `token-state fresh-floor:${scope || "all"}`,
     ))
   ) {
-    return tokenPayloadWithCanonicalLedgerFloor(
-      network,
-      payload,
-      scope,
-      `token-state fresh-floor:${scope || "all"}`,
-      options.timeoutMs ?? SUMMARY_PROOF_INDEX_READ_WAIT_MS,
-    );
+    return authentication.ok === true
+      ? payload
+      : tokenPayloadWithCanonicalLedgerFloor(
+          network,
+          payload,
+          scope,
+          `token-state fresh-floor:${scope || "all"}`,
+          options.timeoutMs ?? SUMMARY_PROOF_INDEX_READ_WAIT_MS,
+        );
   }
   return null;
 }
@@ -37426,6 +38430,13 @@ function rejectEmptyMainnetTokenPayload(network, payload, scope, label) {
   if (tokenPayloadHasKnownMainnetHistory(payload, scope)) {
     return false;
   }
+  if (
+    payload &&
+    typeof payload === "object" &&
+    AUTHENTICATED_FULL_CANONICAL_SNAPSHOTS.get(payload)?.ok === true
+  ) {
+    return false;
+  }
   console.error(
     `Rejected empty proof-index ${label} read for ${scope || "all"} on livenet.`,
   );
@@ -37547,6 +38558,14 @@ function ledgerMetricsFromState({
 
 function ledgerPayloadLooksWorse(nextPayload, previousPayload) {
   if (!previousPayload?.metrics) {
+    return false;
+  }
+  if (
+    authenticatedFullCanonicalSnapshotSupersedes(
+      nextPayload,
+      previousPayload,
+    )
+  ) {
     return false;
   }
 
@@ -38239,18 +39258,23 @@ async function ledgerWithProofIndexEventDelta(ledger, network, label) {
   console.error(
     `Accepted ${label}: applied ${deltaPayload.totalCount} proof-index events after ledger block ${ledgerBlock} through block ${indexedThroughBlock}.`,
   );
-  return {
-    ...ledger,
-    generatedAt: newerIso(ledger.generatedAt, deltaPayload.indexedAt),
-    growthSummary,
-    indexedThroughBlock,
-    metrics: {
-      ...(ledger.metrics ?? {}),
+  return transformCanonicalSnapshotPayload(
+    ledger,
+    "canonical-ledger",
+    () => ({
+      ...ledger,
+      generatedAt: newerIso(ledger.generatedAt, deltaPayload.indexedAt),
+      growthSummary,
       indexedThroughBlock,
-    },
-    source: mergedSourceLabel(ledger.source, deltaPayload.source),
-    workFloor,
-  };
+      metrics: {
+        ...(ledger.metrics ?? {}),
+        indexedThroughBlock,
+      },
+      source: mergedSourceLabel(ledger.source, deltaPayload.source),
+      workFloor,
+    }),
+    { preserveCanonicalClaim: false },
+  );
 }
 
 function proofIndexPayloadIndexedThroughBlock(payload) {
@@ -38365,14 +39389,19 @@ function ledgerWithProofIndexScanFloor(ledger, scan, tipHeight) {
   };
   const inceptionSummary = inceptionSummaryPayloadFromLedger(result);
   const infinitySummary = infinitySummaryPayloadFromLedger(result);
-  return {
-    ...result,
-    activityPayload: attachLedgerMetadata(result.activityPayload, result),
-    growthSummary: attachLedgerMetadata(growthSummary, result),
-    inceptionSummary: attachLedgerMetadata(inceptionSummary, result),
-    infinitySummary: attachLedgerMetadata(infinitySummary, result),
-    workFloor: attachLedgerMetadata(result.workFloor, result),
-  };
+  return transformCanonicalSnapshotPayload(
+    ledger,
+    "canonical-ledger",
+    () => ({
+      ...result,
+      activityPayload: attachLedgerMetadata(result.activityPayload, result),
+      growthSummary: attachLedgerMetadata(growthSummary, result),
+      inceptionSummary: attachLedgerMetadata(inceptionSummary, result),
+      infinitySummary: attachLedgerMetadata(infinitySummary, result),
+      workFloor: attachLedgerMetadata(result.workFloor, result),
+    }),
+    { preserveCanonicalClaim: false },
+  );
 }
 
 async function proofIndexScanCoversCurrentProofEvents(payload, network, label) {
@@ -38555,6 +39584,7 @@ async function existingCanonicalLedgerPayload(network) {
   const persistedPayload = await persistedPayloadForCache(
     cacheKey,
     LEDGER_CACHE_STALE_MS,
+    "canonical-ledger",
   );
   if (
     persistedPayload &&
@@ -39048,21 +40078,18 @@ async function ledgerWithReplayedCreditNetworkValues(
   console.error(
     `Replayed credit network values for ${label}: frozen ${Math.round(numericValue(workFloor.actualValue?.creditEventFrozenValueSats ?? workFloor.actualValue?.creditFrozenNetworkValueSats)).toLocaleString()} proofs, live ${Math.round(numericValue(workFloor.actualValue?.creditEventLiveValueSats ?? workFloor.actualValue?.creditLiveNetworkValueSats)).toLocaleString()} proofs.`,
   );
-  return result;
+  return transformCanonicalSnapshotPayload(
+    ledger,
+    "canonical-ledger",
+    () => result,
+    { preserveCanonicalClaim: false },
+  );
 }
 
 function cacheDerivedLedgerPayload(cacheKey, payload, ttlMs, staleMs) {
-  const payloadKey = `payload:${cacheKey}`;
-  const body = JSON.stringify(payload);
-  RESPONSE_CACHE.set(payloadKey, {
-    expiresAt: Date.now() + ttlMs,
-    payload,
-    staleUntil: Date.now() + staleMs,
-  });
-  cacheJsonBody(`json:${cacheKey}`, body, ttlMs, staleMs);
-  if (shouldPersistJsonCache(cacheKey)) {
-    void writePersistedJsonCache(`json:${cacheKey}`, body);
-  }
+  const cached = cachePayloadAndJson(cacheKey, payload, ttlMs, staleMs);
+  persistAcceptedJsonCache(cacheKey, payload, cached);
+  return cached.outcome.stored;
 }
 
 function readOnlyRetainedWorkAmoV8Metadata(metadata) {
@@ -39121,36 +40148,36 @@ function retainedExactTipTokenPayloadForRead(payload, canonicalGate, cached) {
           workAmoV8: readOnlyRetainedWorkAmoV8Metadata(container.workAmoV8),
         }
       : container;
-  return {
-    ...payload,
-    workAmoV8: readOnlyRetainedWorkAmoV8Metadata(payload?.workAmoV8),
-    ...(payload?.floor && typeof payload.floor === "object"
-      ? { floor: withReadOnlyMetadata(payload.floor) }
-      : {}),
-    ...(payload?.workFloor && typeof payload.workFloor === "object"
-      ? { workFloor: withReadOnlyMetadata(payload.workFloor) }
-      : {}),
-  };
+  return transformCanonicalSnapshotPayload(
+    payload,
+    "token-state",
+    () => ({
+      ...payload,
+      workAmoV8: readOnlyRetainedWorkAmoV8Metadata(payload?.workAmoV8),
+      ...(payload?.floor && typeof payload.floor === "object"
+        ? { floor: withReadOnlyMetadata(payload.floor) }
+        : {}),
+      ...(payload?.workFloor && typeof payload.workFloor === "object"
+        ? { workFloor: withReadOnlyMetadata(payload.workFloor) }
+        : {}),
+    }),
+    { preserveCanonicalClaim: false },
+  );
 }
 
 function cacheCanonicalLedgerPayload(network, payload) {
+  payload = coherentCanonicalSnapshotAtBoundary(payload, "canonical-ledger");
   const cacheKey = `ledger:${network}`;
-  const payloadKey = `payload:${cacheKey}`;
-  const body = JSON.stringify(payload);
-  RESPONSE_CACHE.set(payloadKey, {
-    expiresAt: Date.now() + LEDGER_CACHE_TTL_MS,
+  const cached = cachePayloadAndJson(
+    cacheKey,
     payload,
-    staleUntil: Date.now() + LEDGER_CACHE_STALE_MS,
-  });
-  cacheJsonBody(
-    `json:${cacheKey}`,
-    body,
     LEDGER_CACHE_TTL_MS,
     LEDGER_CACHE_STALE_MS,
   );
-  if (shouldPersistJsonCache(cacheKey)) {
-    void writePersistedJsonCache(`json:${cacheKey}`, body);
+  if (!cached.outcome.stored) {
+    return false;
   }
+  persistAcceptedJsonCache(cacheKey, payload, cached);
 
   if (payload?.workFloor) {
     cacheDerivedLedgerPayload(
@@ -39184,6 +40211,7 @@ function cacheCanonicalLedgerPayload(network, payload) {
       HEAVY_READ_STALE_MS,
     );
   }
+  return true;
 }
 
 function ledgerTokenStateForScope(ledger, scope) {
@@ -43473,7 +44501,47 @@ async function internalCanonicalSummaryPayload(network, options = {}) {
   };
 }
 
+function fullCanonicalLedgerPayload(payload, indexedThroughBlockHash) {
+  const hash = String(indexedThroughBlockHash ?? "").trim().toLowerCase();
+  if (
+    !payload ||
+    payload.source !== "proof-indexer-indexed-canonical-ledger" ||
+    !/^[0-9a-f]{64}$/u.test(hash)
+  ) {
+    return payload;
+  }
+  return withFullCanonicalSnapshot(
+    {
+      ...payload,
+      indexedThroughBlockHash: hash,
+      sourceHashes: {
+        ...(payload.sourceHashes ?? {}),
+        blockScan: hash,
+      },
+    },
+    "canonical-ledger",
+  );
+}
+
 async function buildCanonicalLedgerPayload(network, fresh = false) {
+  if (network === "livenet") {
+    const checkpoint = await exactCanonicalSummaryCheckpoint(network);
+    const indexed = await buildIndexedCanonicalLedgerPayload(
+      network,
+      fresh ? "fresh canonical ledger" : "canonical ledger",
+      {
+        exactHash: checkpoint.tipHash,
+        exactHeight: checkpoint.indexedThroughBlock,
+      },
+    );
+    if (!indexed) {
+      throw freshDataUnavailableError(
+        "The exact indexed canonical ledger is unavailable.",
+      );
+    }
+    return fullCanonicalLedgerPayload(indexed, checkpoint.tipHash);
+  }
+
   const emptyRegistryState = emptyRegistryPayload(network);
   const [
     activityState,
@@ -43802,18 +44870,44 @@ async function refreshCanonicalLedgerPayload(network, fresh = false) {
       `Canonical ledger refresh is unavailable for ${network}.`,
     );
   }
-  const [nextCoversTip, previousCoversTip] = await Promise.all([
-    ledgerPayloadCoversTip(next, network),
-    previous ? ledgerPayloadCoversTip(previous, network) : Promise.resolve(false),
-  ]);
+  const nextClaimsFullCanonical = Boolean(
+    next?.canonicalSnapshot || next?.snapshotKind === "full-canonical",
+  );
+  const authentication = nextClaimsFullCanonical
+    ? await authenticateFullCanonicalSnapshot(
+        next,
+        previous,
+        network,
+        "canonical-ledger",
+      )
+    : { ok: false, reason: "not-a-full-canonical-ledger-snapshot" };
+  const [nextCoversTip, previousCoversTip] = authentication.ok === true
+    ? [true, false]
+    : await Promise.all([
+        ledgerPayloadCoversTip(next, network),
+        previous
+          ? ledgerPayloadCoversTip(previous, network)
+          : Promise.resolve(false),
+      ]);
+  const shouldRejectAuthentication =
+    nextClaimsFullCanonical && authentication.ok !== true;
   const shouldRejectRegression =
     ledgerPayloadLooksWorse(next, previous) &&
     !(nextCoversTip && !previousCoversTip);
-  const payload = shouldRejectRegression ? previous : next;
+  const payload =
+    shouldRejectAuthentication || shouldRejectRegression ? previous : next;
+
+  if (!payload) {
+    throw freshDataUnavailableError(
+      `Canonical ledger snapshot authentication failed for ${network}: ${authentication.reason}.`,
+    );
+  }
 
   if (payload === previous) {
     console.error(
-      `Rejected ledger payload regression for ${network}: ${JSON.stringify(next.metrics)} < ${JSON.stringify(previous?.metrics)}.`,
+      shouldRejectAuthentication
+        ? `Rejected canonical ledger snapshot authentication for ${network}: ${authentication.reason}.`
+        : `Rejected ledger payload regression for ${network}: ${JSON.stringify(next.metrics)} < ${JSON.stringify(previous?.metrics)}.`,
     );
   }
 
@@ -43847,18 +44941,22 @@ async function canonicalLedgerPayload(network, fresh = false) {
     if (cached?.promise) {
       return cached.promise;
     }
+    const lastGood = cacheEntryWithoutPromise(cached);
+    let placeholder;
     const promise = refreshCanonicalLedgerPayload(network, true).finally(() => {
-      const current = RESPONSE_CACHE.get(payloadKey);
-      if (current?.promise === promise) {
-        RESPONSE_CACHE.set(payloadKey, { ...current, promise: null });
-      }
+      restoreCacheAfterRefusedSettlement(
+        payloadKey,
+        placeholder,
+        lastGood,
+      );
     });
-    RESPONSE_CACHE.set(payloadKey, {
+    placeholder = {
       expiresAt: cached?.expiresAt ?? Date.now(),
       payload: cached?.payload,
       promise,
       staleUntil: cached?.staleUntil ?? Date.now() + LEDGER_CACHE_STALE_MS,
-    });
+    };
+    RESPONSE_CACHE.setWithOutcome(payloadKey, placeholder);
     return promise;
   }
 
@@ -43872,17 +44970,17 @@ async function canonicalLedgerPayload(network, fresh = false) {
     return cached.promise;
   }
 
+  const lastGood = cacheEntryWithoutPromise(cached);
+  let placeholder;
   const promise = refreshCanonicalLedgerPayload(network, false).finally(() => {
-    const current = RESPONSE_CACHE.get(payloadKey);
-    if (current?.promise === promise) {
-      RESPONSE_CACHE.set(payloadKey, { ...current, promise: null });
-    }
+    restoreCacheAfterRefusedSettlement(payloadKey, placeholder, lastGood);
   });
-  RESPONSE_CACHE.set(payloadKey, {
+  placeholder = {
     expiresAt: now,
     promise,
     staleUntil: now + LEDGER_CACHE_STALE_MS,
-  });
+  };
+  RESPONSE_CACHE.setWithOutcome(payloadKey, placeholder);
   return promise;
 }
 
@@ -45435,22 +46533,13 @@ function marketplaceSummaryPayloadKey(network) {
 
 function cacheMarketplaceSummaryPayload(network, payload) {
   const cacheKey = marketplaceSummaryCacheKey(network);
-  const payloadKey = marketplaceSummaryPayloadKey(network);
-  const body = JSON.stringify(payload);
-  RESPONSE_CACHE.set(payloadKey, {
-    expiresAt: Date.now() + MARKETPLACE_SUMMARY_CACHE_TTL_MS,
+  const cached = cachePayloadAndJson(
+    cacheKey,
     payload,
-    staleUntil: Date.now() + MARKETPLACE_SUMMARY_CACHE_STALE_MS,
-  });
-  cacheJsonBody(
-    `json:${cacheKey}`,
-    body,
     MARKETPLACE_SUMMARY_CACHE_TTL_MS,
     MARKETPLACE_SUMMARY_CACHE_STALE_MS,
   );
-  if (shouldPersistJsonCache(cacheKey)) {
-    void writePersistedJsonCache(`json:${cacheKey}`, body);
-  }
+  persistAcceptedJsonCache(cacheKey, payload, cached);
   return payload;
 }
 
@@ -49702,7 +50791,12 @@ function tokenStateWithScopedTokenOverride(tokenState, scopedState, tokenId) {
       mergeTokenTransferRecord,
     ),
   };
-  return tokenStateWithPendingStats(merged);
+  return transformCanonicalSnapshotPayload(
+    tokenState,
+    "token-state",
+    () => tokenStateWithPendingStats(merged),
+    { preserveCanonicalClaim: false },
+  );
 }
 
 function growthActualBaseNetworkValue(
@@ -51631,14 +52725,18 @@ function ledgerWithHistoricalWorkFloorChart(ledger) {
     return ledger;
   }
 
-  return {
-    ...ledger,
-    growthSummary: growthSummaryWithCanonicalWorkFloor(
-      ledger.growthSummary,
+  return transformCanonicalSnapshotPayload(
+    ledger,
+    "canonical-ledger",
+    () => ({
+      ...ledger,
+      growthSummary: growthSummaryWithCanonicalWorkFloor(
+        ledger.growthSummary,
+        workFloor,
+      ),
       workFloor,
-    ),
-    workFloor,
-  };
+    }),
+  );
 }
 
 function mailPayloadHasMessages(payload) {
@@ -51664,6 +52762,10 @@ function mailMessageRichness(message) {
 }
 
 function mergeMailMessageLists(indexedMessages, scannedMessages) {
+  const lifecycleObservationMs = (message) => {
+    const timeMs = Date.parse(String(message?.lifecycleObservedAt ?? ""));
+    return Number.isFinite(timeMs) ? timeMs : null;
+  };
   const merged = new Map();
   for (const message of [
     ...(Array.isArray(indexedMessages) ? indexedMessages : []),
@@ -51678,14 +52780,20 @@ function mergeMailMessageLists(indexedMessages, scannedMessages) {
       merged.set(message.txid, message);
       continue;
     }
+    const messageObservedMs = lifecycleObservationMs(message);
+    const currentObservedMs = lifecycleObservationMs(current);
     const messageConfirmed =
       message?.confirmed === true || message?.status === "confirmed";
     const currentConfirmed =
       current?.confirmed === true || current?.status === "confirmed";
     const messagePreferred =
-      messageConfirmed !== currentConfirmed
-        ? messageConfirmed
-        : mailMessageRichness(message) >= mailMessageRichness(current);
+      messageObservedMs !== currentObservedMs &&
+      (messageObservedMs !== null || currentObservedMs !== null)
+        ? messageObservedMs !== null &&
+          (currentObservedMs === null || messageObservedMs > currentObservedMs)
+        : messageConfirmed !== currentConfirmed
+          ? messageConfirmed
+          : mailMessageRichness(message) >= mailMessageRichness(current);
     const primary = messagePreferred ? message : current;
     const secondary = messagePreferred ? current : message;
     const attachedCredits =
@@ -51701,12 +52809,24 @@ function mergeMailMessageLists(indexedMessages, scannedMessages) {
       ...primary,
       attachedCredits,
       attachment: primary.attachment ?? secondary.attachment,
-      confirmedAt: primary.confirmedAt ?? secondary.confirmedAt,
+      confirmedAt:
+        primary?.confirmed === true || primary?.status === "confirmed"
+          ? primary.confirmedAt ?? secondary.confirmedAt
+          : undefined,
       createdAt: primary.createdAt ?? secondary.createdAt,
+      droppedAt:
+        primary?.status === "dropped" ? primary.droppedAt : undefined,
+      failedAt: primary?.status === "failed" ? primary.failedAt : undefined,
       lastCheckedAt: primary.lastCheckedAt ?? secondary.lastCheckedAt,
+      lifecycleObservedAt:
+        primary.lifecycleObservedAt ?? secondary.lifecycleObservedAt,
       memo: primary.memo || secondary.memo,
       parentTxid: primary.parentTxid ?? secondary.parentTxid,
       recipients: primary.recipients ?? secondary.recipients,
+      replacedByTxid:
+        primary?.status === "replaced" ? primary.replacedByTxid : undefined,
+      replacementTxid:
+        primary?.status === "replaced" ? primary.replacementTxid : undefined,
       replyTo: primary.replyTo || secondary.replyTo,
       subject: primary.subject ?? secondary.subject,
       to: primary.to || secondary.to,
@@ -52252,14 +53372,12 @@ async function reconcileMailPayloadStatuses(payload, network) {
   const sentMessages = Array.isArray(payload.sentMessages)
     ? payload.sentMessages
     : [];
-  const statusTxids = [
-    ...inboxMessages
-      .filter((message) => !message?.confirmed)
-      .map((message) => message?.txid),
-    ...sentMessages
-      .filter((message) => message?.status !== "confirmed")
-      .map((message) => message?.txid),
-  ]
+  const statusTxids = [...inboxMessages, ...sentMessages]
+    .sort(
+      (left, right) =>
+        Date.parse(right?.createdAt ?? "") - Date.parse(left?.createdAt ?? ""),
+    )
+    .map((message) => message?.txid)
     .map((txid) => String(txid ?? "").trim().toLowerCase())
     .filter((txid) => /^[0-9a-f]{64}$/u.test(txid));
   const uniqueTxids = [...new Set(statusTxids)].slice(0, 25);
@@ -52267,9 +53385,24 @@ async function reconcileMailPayloadStatuses(payload, network) {
     return payload;
   }
 
-  const settled = await Promise.allSettled(
-    uniqueTxids.map(async (txid) => [txid, await txStatusPayload(txid, network)]),
-  );
+  const configuredConcurrency =
+    typeof MAIL_STATUS_RECONCILE_CONCURRENCY === "number"
+      ? MAIL_STATUS_RECONCILE_CONCURRENCY
+      : 4;
+  const concurrency = Math.max(1, Math.min(4, configuredConcurrency));
+  const settled = [];
+  for (let index = 0; index < uniqueTxids.length; index += concurrency) {
+    settled.push(
+      ...(await Promise.allSettled(
+        uniqueTxids
+          .slice(index, index + concurrency)
+          .map(async (txid) => [
+            txid,
+            await txStatusPayload(txid, network),
+          ]),
+      )),
+    );
+  }
   const statusByTxid = new Map();
   for (const result of settled) {
     if (result.status !== "fulfilled") {
@@ -52281,43 +53414,13 @@ async function reconcileMailPayloadStatuses(payload, network) {
     }
   }
 
-  const reconciledInbox = inboxMessages.flatMap((message) => {
+  const reconciledInbox = inboxMessages.map((message) => {
     const status = statusByTxid.get(String(message?.txid ?? "").toLowerCase());
-    if (status?.status === "dropped") {
-      return [];
-    }
-    if (status?.status === "confirmed" && !message.confirmed) {
-      return [
-        {
-          ...message,
-          attachedCredits: undefined,
-          confirmed: true,
-          confirmedAt: message.confirmedAt ?? status.indexedAt,
-        },
-      ];
-    }
-    return [message];
+    return status ? mailMessageWithTxLifecycle(message, status) : message;
   });
   const reconciledSent = sentMessages.map((message) => {
     const status = statusByTxid.get(String(message?.txid ?? "").toLowerCase());
-    if (status?.status === "dropped" && message.status !== "dropped") {
-      return {
-        ...message,
-        droppedAt: message.droppedAt ?? status.indexedAt,
-        lastCheckedAt: status.indexedAt,
-        status: "dropped",
-      };
-    }
-    if (status?.status === "confirmed" && message.status !== "confirmed") {
-      return {
-        ...message,
-        attachedCredits: undefined,
-        confirmedAt: message.confirmedAt ?? status.indexedAt,
-        lastCheckedAt: status.indexedAt,
-        status: "confirmed",
-      };
-    }
-    return message;
+    return status ? mailMessageWithTxLifecycle(message, status) : message;
   });
 
   return {
@@ -53104,29 +54207,15 @@ async function bitcoinCoreTxStatusPayload(txid, network) {
       });
     }
     const mempoolErrorCode = Number(mempoolResponse?.error?.code);
-    const chain = chainResponse?.ok ? chainResponse.result : null;
-    const blocks = Number(chain?.blocks);
-    const headers = Number(chain?.headers);
-    const verificationProgress = Number(chain?.verificationprogress);
-    const txindex = indexResponse?.ok ? indexResponse.result?.txindex : null;
-    const txindexHeight = Number(txindex?.best_block_height);
+    const coreAuthority = exactCoreNodeAuthority(
+      chainResponse,
+      indexResponse,
+    );
     if (
       !mempoolResponse ||
       mempoolResponse.ok ||
       mempoolErrorCode !== -5 ||
-      !chain ||
-      chain.chain !== "main" ||
-      chain.pruned === true ||
-      chain.initialblockdownload === true ||
-      !Number.isSafeInteger(blocks) ||
-      !Number.isSafeInteger(headers) ||
-      headers - blocks > 1 ||
-      !Number.isFinite(verificationProgress) ||
-      verificationProgress < 0.999 ||
-      !txindex ||
-      txindex.synced !== true ||
-      !Number.isSafeInteger(txindexHeight) ||
-      txindexHeight !== blocks
+      !coreAuthority
     ) {
       throw unavailable("Bitcoin Core absence proof was inconclusive.");
     }
@@ -53266,23 +54355,309 @@ async function bitcoinCoreTxStatusPayload(txid, network) {
   };
 }
 
-async function txStatusPayload(txid, network) {
-  if (proofIndexReadFeatureEnabled("tx-status,tx")) {
-    const indexedStatus = await proofIndexTxStatusPayload(txid, network, {
-      includeUnconfirmed: proofIndexReadUnconfirmedTxStatus(),
-    }).catch((error) => {
-      console.error(
-        `Proof index tx-status read failed for ${txid}: ${errorSummary(error)}`,
-      );
-      return null;
-    });
-    if (indexedStatus) {
-      return indexedStatus;
+function coalescedBitcoinCoreTxStatusPayload(txid, network, options = {}) {
+  const normalizedTxid = String(txid ?? "").trim().toLowerCase();
+  const key = `${network}:${normalizedTxid}`;
+  return CORE_TX_STATUS_SINGLE_FLIGHT.run(key, async () => {
+    const release = options.bypassAdmission === true
+      ? null
+      : await CORE_TX_STATUS_ADMISSION.acquire();
+    try {
+      return await bitcoinCoreTxStatusPayload(normalizedTxid, network);
+    } finally {
+      release?.();
     }
+  });
+}
+
+function coreAbsenceWithReplacementCheck(coreStatus, status, reason, details = {}) {
+  return {
+    ...coreStatus,
+    replacementCheck: {
+      ...details,
+      model: "proof-of-work-tx-replacement-check-v1",
+      reason,
+      status,
+    },
+  };
+}
+
+function replacementCheckUnavailable(coreStatus, reason) {
+  const error = freshDataUnavailableError(
+    "Authoritative replacement evidence is temporarily unavailable.",
+  );
+  error.details = {
+    code: "TX_REPLACEMENT_CHECK_UNAVAILABLE",
+    observedAt: coreStatus?.observedAt,
+    reason,
+    txid: coreStatus?.txid,
+  };
+  return error;
+}
+
+async function replacementAwareCoreAbsence({
+  coreStatus,
+  inputEvidence,
+  network,
+  txid,
+}) {
+  const evidence = canonicalLifecycleInputOutpointsEvidence(inputEvidence);
+  if (!evidence?.complete) {
+    return coreAbsenceWithReplacementCheck(
+      coreStatus,
+      "inconclusive",
+      "original-input-outpoint-evidence-incomplete",
+    );
   }
 
+  const spendingPrevouts = [];
+  for (let offset = 0; offset < evidence.outpoints.length; offset += 64) {
+    const outpoints = evidence.outpoints.slice(offset, offset + 64);
+    let response;
+    try {
+      response = await bitcoinRpc("gettxspendingprevout", [outpoints]);
+    } catch {
+      throw replacementCheckUnavailable(
+        coreStatus,
+        "bitcoin-core-spending-prevout-evidence-unavailable",
+      );
+    }
+    if (!response?.ok || !Array.isArray(response.result)) {
+      throw replacementCheckUnavailable(
+        coreStatus,
+        "bitcoin-core-spending-prevout-evidence-unavailable",
+      );
+    }
+    spendingPrevouts.push(...response.result);
+  }
+
+  const mempoolDisposition = replacementDispositionFromSpenderEvidence({
+    inputEvidence: evidence,
+    originalTxid: txid,
+    spendingPrevouts,
+  });
+  if (mempoolDisposition.kind === "unknown") {
+    if (
+      mempoolDisposition.reason ===
+      "bitcoin-core-spending-prevout-evidence-invalid"
+    ) {
+      throw replacementCheckUnavailable(
+        coreStatus,
+        mempoolDisposition.reason,
+      );
+    }
+    return coreAbsenceWithReplacementCheck(
+      coreStatus,
+      "inconclusive",
+      mempoolDisposition.reason,
+      mempoolDisposition.replacementCandidates?.length
+        ? {
+            replacementCandidates:
+              mempoolDisposition.replacementCandidates,
+          }
+        : {},
+    );
+  }
+
+  let confirmedCandidates;
+  try {
+    confirmedCandidates =
+      await proofIndexCanonicalConfirmedSpendersForOutpoints(
+        evidence.outpoints,
+        network,
+      );
+  } catch {
+    throw replacementCheckUnavailable(
+      coreStatus,
+      "canonical-confirmed-input-spender-evidence-unavailable",
+    );
+  }
+  const normalizedTxid = String(txid ?? "").trim().toLowerCase();
+  const mempoolCandidates = mempoolDisposition.replacementCandidates ?? [];
+  const replacementCandidates = [
+    ...new Set(
+      [...mempoolCandidates, ...confirmedCandidates]
+        .map((candidate) => String(candidate ?? "").trim().toLowerCase())
+        .filter(
+          (candidate) =>
+            /^[0-9a-f]{64}$/u.test(candidate) &&
+            candidate !== normalizedTxid,
+        ),
+    ),
+  ].sort();
+  if (replacementCandidates.length > 1) {
+    return coreAbsenceWithReplacementCheck(
+      coreStatus,
+      "inconclusive",
+      "ambiguous-current-input-spenders",
+      { replacementCandidates },
+    );
+  }
+  if (replacementCandidates.length === 0) {
+    let txOutEvidence;
+    try {
+      txOutEvidence = await mapWithConcurrency(
+        evidence.outpoints,
+        4,
+        async (outpoint) => {
+          const response = await bitcoinRpc("gettxout", [
+            outpoint.txid,
+            outpoint.vout,
+            true,
+          ]);
+          if (!response?.ok) {
+            throw new Error("Bitcoin Core UTXO evidence lookup failed.");
+          }
+          return {
+            ...outpoint,
+            unspent:
+              response.result !== null &&
+              typeof response.result === "object",
+          };
+        },
+      );
+    } catch {
+      throw replacementCheckUnavailable(
+        coreStatus,
+        "bitcoin-core-utxo-evidence-unavailable",
+      );
+    }
+    const txOutDisposition = replacementDispositionFromTxOutEvidence({
+      inputEvidence: evidence,
+      txOutEvidence,
+    });
+    if (txOutDisposition.reason === "bitcoin-core-utxo-evidence-invalid") {
+      throw replacementCheckUnavailable(coreStatus, txOutDisposition.reason);
+    }
+    return txOutDisposition.kind === "none"
+      ? coreAbsenceWithReplacementCheck(
+          coreStatus,
+          "complete",
+          "no-current-input-spender",
+        )
+      : coreAbsenceWithReplacementCheck(
+          coreStatus,
+          "inconclusive",
+          txOutDisposition.reason,
+        );
+  }
+
+  const replacementTxid = replacementCandidates[0];
+  let replacementStatus;
+  try {
+    replacementStatus = await coalescedBitcoinCoreTxStatusPayload(
+      replacementTxid,
+      network,
+    );
+  } catch {
+    throw replacementCheckUnavailable(
+      coreStatus,
+      "replacement-full-node-validation-unavailable",
+    );
+  }
+  if (!["pending", "confirmed"].includes(replacementStatus?.status)) {
+    return coreAbsenceWithReplacementCheck(
+      coreStatus,
+      "inconclusive",
+      "replacement-no-longer-current-in-full-node",
+      { replacementCandidates },
+    );
+  }
+  const candidateSource = confirmedCandidates.includes(replacementTxid)
+    ? "canonical-confirmed-input-index-and-bitcoin-core"
+    : "bitcoin-core-mempool-spender";
+  return verifiedReplacementLifecycle({
+    candidateSource,
+    coreAbsence: {
+      ...coreStatus,
+      sources: [
+        ...(Array.isArray(coreStatus?.sources) ? coreStatus.sources : []),
+        ...(candidateSource ===
+        "canonical-confirmed-input-index-and-bitcoin-core"
+          ? ["proof-indexer-canonical-confirmed-tx-input"]
+          : []),
+      ],
+    },
+    inputEvidence: evidence,
+    originalTxid: txid,
+    replacementStatus,
+    replacementTxid,
+  });
+}
+
+async function txStatusPayload(txid, network, options = {}) {
+  let indexedStatus = null;
+  let indexedStatusAvailable = false;
+  let indexedStatusError = "";
+  if (proofIndexReadFeatureEnabled("tx-status,tx")) {
+    indexedStatus = await proofIndexTxStatusPayload(txid, network, {
+      includeLifecycleInputs: true,
+      includeUnconfirmed: true,
+    })
+      .then((status) => {
+        indexedStatusAvailable = true;
+        return status;
+      })
+      .catch((error) => {
+        indexedStatusError = errorSummary(error);
+        console.error(
+          `Proof index tx-status read failed for ${txid}: ${indexedStatusError}`,
+        );
+        return null;
+      });
+  } else {
+    indexedStatusError = "transaction lifecycle index reads are disabled";
+  }
+
+  const lifecycleInputEvidence =
+    indexedStatus?._lifecycleInputOutpoints;
+  const publicIndexedStatus = indexedStatus
+    ? Object.fromEntries(
+        Object.entries(indexedStatus).filter(
+          ([key]) => key !== "_lifecycleInputOutpoints",
+        ),
+      )
+    : null;
+
   if (network === "livenet") {
-    return bitcoinCoreTxStatusPayload(txid, network);
+    let coreStatus = await coalescedBitcoinCoreTxStatusPayload(txid, network, {
+      bypassAdmission: options.bypassCoreAdmission === true,
+    });
+    if (coreStatus?.status === "dropped" && !indexedStatusAvailable) {
+      const unavailable = freshDataUnavailableError(
+        "Durable transaction lifecycle history is unavailable.",
+      );
+      unavailable.details = {
+        cause: indexedStatusError || undefined,
+        code: "TX_LIFECYCLE_INDEX_UNAVAILABLE",
+        network,
+        txid,
+      };
+      throw unavailable;
+    }
+    if (
+      coreStatus?.status === "dropped" &&
+      publicIndexedStatus &&
+      publicIndexedStatus.status !== "confirmed"
+    ) {
+      coreStatus = await replacementAwareCoreAbsence({
+        coreStatus,
+        inputEvidence: lifecycleInputEvidence,
+        network,
+        txid,
+      });
+    }
+    return reconcileLivenetTxLifecycle({
+      absenceObservation: options.absenceObservation === true,
+      coreStatus,
+      indexedStatus: publicIndexedStatus,
+      network,
+      txid,
+    });
+  }
+
+  if (publicIndexedStatus?.status === "confirmed") {
+    return publicIndexedStatus;
   }
 
   const tx = await fetchTransactionWithSourceFallback(txid, network).catch(
@@ -53407,9 +54782,11 @@ async function txPayload(txid, network) {
       confirmed: false,
       indexedAt: new Date().toISOString(),
       network,
-      status: "dropped",
+      reason: "transaction-not-found-is-not-terminal-lifecycle-proof",
+      status: "unknown",
       tx: null,
       txid,
+      verified: false,
     };
   }
 
@@ -57876,51 +59253,6 @@ function coreMempoolEntryPresent(response) {
     typeof response.result === "object" &&
     !Array.isArray(response.result)
   );
-}
-
-function exactCoreTipFromBlockchainInfo(response) {
-  const info = response?.ok === true ? response.result : null;
-  const height = Number(info?.blocks);
-  const headers = Number(info?.headers);
-  const verificationProgress = Number(info?.verificationprogress);
-  const blockHash = String(info?.bestblockhash ?? "").trim().toLowerCase();
-  if (
-    info?.chain !== "main" ||
-    info?.initialblockdownload !== false ||
-    !Number.isSafeInteger(height) ||
-    height <= 0 ||
-    !Number.isSafeInteger(headers) ||
-    headers !== height ||
-    !Number.isFinite(verificationProgress) ||
-    verificationProgress < 0.999 ||
-    !/^[0-9a-f]{64}$/u.test(blockHash)
-  ) {
-    return null;
-  }
-  return { blockHash, height };
-}
-
-function exactCoreNodeAuthority(chainResponse, indexResponse) {
-  const tip = exactCoreTipFromBlockchainInfo(chainResponse);
-  const chain = chainResponse?.ok === true ? chainResponse.result : null;
-  const txindex =
-    indexResponse?.ok === true ? indexResponse.result?.txindex : null;
-  const txindexHeight = Number(txindex?.best_block_height);
-  if (
-    !tip ||
-    chain?.pruned !== false ||
-    !txindex ||
-    txindex.synced !== true ||
-    !Number.isSafeInteger(txindexHeight) ||
-    txindexHeight !== tip.height
-  ) {
-    return null;
-  }
-  return {
-    ...tip,
-    txindexHeight,
-    verificationProgress: Number(chain.verificationprogress),
-  };
 }
 
 function proofIndexExactlyCoversCoreTip(status, canonical, tip) {
@@ -62723,15 +64055,16 @@ async function loadHealthPayload() {
       pendingQ16Unresolved === 0 &&
       pendingEventHealth?.ok === true);
   const pendingStatusErrors = pendingStatus?.errors;
+  const pendingStatusUnknown = pendingStatus?.unknown;
   const pendingStatusUnavailable = pendingStatus?.unavailable === true;
   const pendingStatusUnavailableValid =
     pendingStatus?.unavailable === undefined ||
     pendingStatus?.unavailable === false;
-  const pendingStatusOk =
-    !pendingEventHealthRequired ||
-    (Number.isSafeInteger(pendingStatusErrors) &&
+  const pendingStatusOk = pendingStatus
+    ? Number.isSafeInteger(pendingStatusErrors) &&
       pendingStatusErrors === 0 &&
-      pendingStatusUnavailableValid);
+      pendingStatusUnavailableValid
+    : !pendingEventHealthRequired;
   const pendingAccuracyOk = pendingEventHealthOk && pendingStatusOk;
   const canonicalFault = canonical?.fault ?? {};
   const canonicalRebuild = canonical?.rebuild ?? {};
@@ -62847,6 +64180,25 @@ async function loadHealthPayload() {
           ? Number(chainInfo.verificationprogress)
           : null,
       },
+      runtime: {
+        admission: {
+          coreTxStatus: CORE_TX_STATUS_ADMISSION.stats(),
+          fresh: FRESH_READ_ADMISSION.stats(),
+          heavy: HEAVY_READ_ADMISSION.stats(),
+          trackedClientWindows: EXPENSIVE_READ_CLIENT_ATTEMPTS.size,
+          trackedClientWindowsMax: 10_000,
+        },
+        cache: {
+          ...RESPONSE_CACHE.stats(),
+          exactTipToken: EXACT_TIP_TOKEN_CACHE.stats(),
+          transactions: TRANSACTION_CACHE.stats(),
+        },
+        readSnapshotModel: "canonical-snapshot-id-single-flight-v1",
+        singleFlight: {
+          coreTxStatus: CORE_TX_STATUS_SINGLE_FLIGHT.stats(),
+          publicReads: EXPENSIVE_READ_SINGLE_FLIGHT.stats(),
+        },
+      },
       worker: {
         ageMs: workerAgeMs,
         containment: {
@@ -62910,6 +64262,9 @@ async function loadHealthPayload() {
               ? pendingStatusErrors
               : null,
             ok: pendingStatusOk,
+            unknown: Number.isSafeInteger(pendingStatusUnknown)
+              ? pendingStatusUnknown
+              : null,
             unavailable: pendingStatusUnavailable,
             unavailableValid: pendingStatusUnavailableValid,
           },
@@ -62929,15 +64284,16 @@ async function loadHealthPayload() {
 }
 
 let healthPayloadCache = null;
+let lastCompletedHealthPayload = null;
 
 async function healthPayload(options = {}) {
-  if (options.force === true) {
-    return loadHealthPayload();
-  }
   const now = Date.now();
   if (
     healthPayloadCache &&
-    (!healthPayloadCache.settled || healthPayloadCache.expiresAt > now)
+    (
+      !healthPayloadCache.settled ||
+      (options.force !== true && healthPayloadCache.expiresAt > now)
+    )
   ) {
     return healthPayloadCache.promise;
   }
@@ -62950,6 +64306,7 @@ async function healthPayload(options = {}) {
   healthPayloadCache = entry;
   try {
     const payload = await entry.promise;
+    lastCompletedHealthPayload = payload;
     entry.expiresAt = Date.now() + HEALTH_PAYLOAD_CACHE_TTL_MS;
     entry.settled = true;
     return payload;
@@ -62963,6 +64320,28 @@ async function healthPayload(options = {}) {
       healthPayloadCache = null;
     }
   }
+}
+
+function processLivenessPayload() {
+  const cachedReadiness = lastCompletedHealthPayload;
+  return {
+    available: true,
+    indexedAt: new Date().toISOString(),
+    mode: "liveness",
+    ok: true,
+    process: {
+      uptimeSeconds: Math.max(0, Math.floor(process.uptime())),
+    },
+    readiness: cachedReadiness
+      ? {
+          available: cachedReadiness.available === true,
+          indexedAt: cachedReadiness.indexedAt ?? null,
+          ready: cachedReadiness.ready === true,
+        }
+      : { available: null, indexedAt: null, ready: null },
+    ready: cachedReadiness?.ready === true,
+    service: "proofofwork-op-return-api",
+  };
 }
 
 const CANONICAL_PUBLIC_READ_GATE_TTL_MS = 2_000;
@@ -63182,26 +64561,14 @@ async function loadCanonicalPublicReadGate(network) {
 }
 
 async function canonicalPublicReadGate(network, options = {}) {
-  if (options.force === true) {
-    const outcome = await promiseOutcomeWithin(
-      loadCanonicalPublicReadGate(network),
-      CANONICAL_PUBLIC_READ_GATE_TIMEOUT_MS,
-    );
-    return outcome.ok
-      ? outcome.value
-      : {
-          error: outcome.timedOut
-            ? "Canonical read gate timed out."
-            : errorSummary(outcome.error),
-          ok: false,
-          timedOut: outcome.timedOut === true,
-        };
-  }
   const now = Date.now();
   const cached = canonicalPublicReadGateCache.get(network);
   if (
     cached &&
-    (!cached.settled || cached.expiresAt > now)
+    (
+      !cached.settled ||
+      (options.force !== true && cached.expiresAt > now)
+    )
   ) {
     return cached.promise;
   }
@@ -63242,6 +64609,241 @@ async function canonicalPublicReadGate(network, options = {}) {
   return promise;
 }
 
+const HEAVY_PUBLIC_READ_PATHS = new Set([
+  "/api/v1/activity",
+  "/api/v1/activity-history",
+  "/api/v1/activity-summary",
+  "/api/v1/consistency",
+  "/api/v1/event-history",
+  "/api/v1/events",
+  "/api/v1/growth-summary",
+  "/api/v1/ids",
+  "/api/v1/ids-history",
+  "/api/v1/ids-summary",
+  "/api/v1/inception-summary",
+  "/api/v1/infinity-summary",
+  "/api/v1/ledger-consistency",
+  "/api/v1/log",
+  "/api/v1/log-history",
+  "/api/v1/log-summary",
+  "/api/v1/marketplace-summary",
+  "/api/v1/protocol-events",
+  "/api/v1/registry",
+  "/api/v1/registry-history",
+  "/api/v1/registry-summary",
+  "/api/v1/rush",
+  "/api/v1/token",
+  "/api/v1/token-history",
+  "/api/v1/token-summary",
+  "/api/v1/work-floor",
+  "/api/v1/work-summary",
+]);
+
+function publicReadAdmissionClass(pathname, freshRead) {
+  const path = String(pathname ?? "");
+  const dynamicHeavyRead =
+    path.startsWith("/api/v1/tx/") ||
+    /^\/api\/v1\/block\/[0-9a-fA-F]{64}\/txids$/u.test(path) ||
+    /^\/api\/v1\/address\/[^/]+\/(?:utxo|txs(?:\/.*)?)$/u.test(path);
+  if (path === "/api/v1/prices/btc-usd") {
+    return freshRead ? "fresh" : "";
+  }
+  if (
+    !HEAVY_PUBLIC_READ_PATHS.has(path) &&
+    !/^\/api\/v1\/ids\/[^/]+$/u.test(path) &&
+    !/^\/api\/v1\/address\/[^/]+\/mail$/u.test(path) &&
+    !dynamicHeavyRead
+  ) {
+    return "";
+  }
+  return freshRead ? "fresh" : "heavy";
+}
+
+function publicReadBadRequest(message, details = {}) {
+  const error = new Error(message);
+  error.statusCode = 400;
+  error.details = { code: "PUBLIC_READ_QUERY_INVALID", ...details };
+  return error;
+}
+
+function exactNonnegativeIntegerParameter(searchParams, key, maximum) {
+  if (!searchParams.has(key)) {
+    return;
+  }
+  const raw = String(searchParams.get(key) ?? "").trim();
+  if (!/^(?:0|[1-9][0-9]*)$/u.test(raw) || Number(raw) > maximum) {
+    throw publicReadBadRequest(
+      `${key} must be an integer no greater than ${maximum}.`,
+      { key, maximum },
+    );
+  }
+}
+
+function validatePublicReadQuery(url) {
+  const queryBytes = Buffer.byteLength(String(url.search ?? ""), "utf8");
+  if (queryBytes > PUBLIC_READ_MAX_QUERY_BYTES) {
+    throw publicReadBadRequest("The query string is too large.", {
+      maximumBytes: PUBLIC_READ_MAX_QUERY_BYTES,
+      queryBytes,
+    });
+  }
+  exactNonnegativeIntegerParameter(
+    url.searchParams,
+    "page",
+    HISTORY_MAX_PAGE,
+  );
+  exactNonnegativeIntegerParameter(
+    url.searchParams,
+    "offset",
+    HISTORY_MAX_OFFSET,
+  );
+  if (url.searchParams.has("limit")) {
+    const raw = String(url.searchParams.get("limit") ?? "").trim();
+    const maximumLimit = HISTORY_PAGE_MAX_LIMIT;
+    if (
+      !/^[1-9][0-9]*$/u.test(raw) ||
+      Number(raw) > maximumLimit
+    ) {
+      throw publicReadBadRequest(
+        `limit must be an integer from 1 through ${maximumLimit}.`,
+        { key: "limit", maximum: maximumLimit },
+      );
+    }
+  }
+  if (
+    url.searchParams.has("page") &&
+    !url.searchParams.has("offset") &&
+    !url.searchParams.has("cursor")
+  ) {
+    const page = Number(url.searchParams.get("page"));
+    const limit = url.searchParams.has("limit")
+      ? Number(url.searchParams.get("limit"))
+      : HISTORY_PAGE_DEFAULT_LIMIT;
+    const derivedOffset = page * limit;
+    if (
+      !Number.isSafeInteger(derivedOffset) ||
+      derivedOffset > HISTORY_MAX_OFFSET
+    ) {
+      throw publicReadBadRequest(
+        "page and limit exceed the bounded history offset.",
+        {
+          derivedOffset: Number.isSafeInteger(derivedOffset)
+            ? derivedOffset
+            : null,
+          maximum: HISTORY_MAX_OFFSET,
+        },
+      );
+    }
+  }
+  const cursor = String(url.searchParams.get("cursor") ?? "").trim();
+  if (cursor) {
+    const match = /^(?:snapshot:[^:\s]{1,128}:)?(\d+)$/u.exec(cursor);
+    if (!match || Number(match[1]) > HISTORY_MAX_OFFSET) {
+      throw publicReadBadRequest("cursor exceeds the bounded history range.", {
+        key: "cursor",
+        maximum: HISTORY_MAX_OFFSET,
+      });
+    }
+  }
+  const recoveryHintCount = [
+    "address",
+    "owner",
+    "ownerAddress",
+    "seller",
+    "sellerAddress",
+    "buyer",
+    "buyerAddress",
+    "q",
+    "search",
+    "txid",
+    "transaction",
+    "transactionId",
+  ].reduce(
+    (count, key) => count + url.searchParams.getAll(key).length,
+    0,
+  );
+  if (recoveryHintCount > PUBLIC_READ_MAX_RECOVERY_HINTS) {
+    throw publicReadBadRequest("Too many recovery or search hints were supplied.", {
+      maximum: PUBLIC_READ_MAX_RECOVERY_HINTS,
+      recoveryHintCount,
+    });
+  }
+}
+
+function consumeExpensiveReadRateLimit(request, admissionClass) {
+  const now = Date.now();
+  const floor = now - EXPENSIVE_READ_RATE_WINDOW_MS;
+  const perClient = admissionClass === "fresh"
+    ? FRESH_READ_RATE_PER_CLIENT
+    : HEAVY_READ_RATE_PER_CLIENT;
+  const key = `${admissionClass}:${publicClientKey(request)}`;
+  if (
+    EXPENSIVE_READ_CLIENT_ATTEMPTS.size >= 10_000 &&
+    !EXPENSIVE_READ_CLIENT_ATTEMPTS.has(key)
+  ) {
+    for (const [candidateKey, candidateAttempts] of
+      EXPENSIVE_READ_CLIENT_ATTEMPTS) {
+      if (!candidateAttempts.some((timestamp) => timestamp > floor)) {
+        EXPENSIVE_READ_CLIENT_ATTEMPTS.delete(candidateKey);
+      }
+    }
+    if (EXPENSIVE_READ_CLIENT_ATTEMPTS.size >= 10_000) {
+      const error = new Error("Read client tracking capacity is exhausted.");
+      error.statusCode = 429;
+      error.details = {
+        admissionClass,
+        code: "READ_CLIENT_TRACKING_CAPACITY",
+        retryAfterSeconds: Math.max(
+          1,
+          Math.ceil(EXPENSIVE_READ_RATE_WINDOW_MS / 1_000),
+        ),
+      };
+      throw error;
+    }
+  }
+  const attempts = (EXPENSIVE_READ_CLIENT_ATTEMPTS.get(key) ?? []).filter(
+    (timestamp) => timestamp > floor,
+  );
+  if (attempts.length >= perClient) {
+    EXPENSIVE_READ_CLIENT_ATTEMPTS.set(key, attempts);
+    const error = new Error("This client is reading expensive data too frequently.");
+    error.statusCode = 429;
+    error.details = {
+      admissionClass,
+      code: "READ_CLIENT_RATE_LIMIT",
+      limit: perClient,
+      retryAfterSeconds: Math.max(
+        1,
+        Math.ceil(EXPENSIVE_READ_RATE_WINDOW_MS / 1_000),
+      ),
+      windowMs: EXPENSIVE_READ_RATE_WINDOW_MS,
+    };
+    throw error;
+  }
+  attempts.push(now);
+  EXPENSIVE_READ_CLIENT_ATTEMPTS.set(key, attempts);
+}
+
+function expensiveReadSingleFlightKey(url, network) {
+  const search = new URLSearchParams(url.searchParams);
+  search.sort();
+  return `${network}:${url.pathname}?${search.toString()}`;
+}
+
+function singleFlightExpensiveRead(url, network, producer) {
+  return EXPENSIVE_READ_SINGLE_FLIGHT.run(
+    expensiveReadSingleFlightKey(url, network),
+    producer,
+  );
+}
+
+function singleFlightBoundedRead(scope, network, identity, producer) {
+  return EXPENSIVE_READ_SINGLE_FLIGHT.run(
+    `${scope}:${network}:${identity}`,
+    producer,
+  );
+}
+
 async function handleRequest(request, response) {
   if (request.method === "OPTIONS") {
     optionsResponse(response);
@@ -63253,6 +64855,7 @@ async function handleRequest(request, response) {
     `http://${request.headers.host ?? "localhost"}`,
   );
   const pathParts = url.pathname.split("/").filter(Boolean);
+  let readAdmissionRelease = null;
 
   try {
     if (
@@ -63421,30 +65024,63 @@ async function handleRequest(request, response) {
       url.pathname === "/api/v1/health/live"
     ) {
       const livenessRead = url.pathname.endsWith("/live");
-      const payload = await healthPayload({ force: !livenessRead });
+      if (livenessRead) {
+        jsonResponse(response, 200, processLivenessPayload(), "no-store");
+        return;
+      }
+      const payload = await healthPayload();
       jsonResponse(
         response,
-        (livenessRead ? payload.available : payload.ready) ? 200 : 503,
+        payload.ready ? 200 : 503,
         {
           ...payload,
-          mode: livenessRead ? "availability" : "readiness",
+          mode: "readiness",
+          ok: payload.ready,
         },
         "no-store",
       );
       return;
     }
 
+    if (url.pathname === "/api/v1/rush" && !PUBLIC_RUSH_READS_ENABLED) {
+      errorResponse(response, 404, "Not found.");
+      return;
+    }
+
+    validatePublicReadQuery(url);
     const network = networkFromSearch(url.searchParams);
     const freshRead = freshReadRequested(url.searchParams);
 
     const authenticatedLoopbackRead = internalVerifierRequestAllowed(request);
-    let canonicalReadGate = null;
-    if (
+    const canonicalGateApplies =
       canonicalPublicReadGateApplies(url.pathname) &&
-      !authenticatedLoopbackRead
-    ) {
-      const gate = await canonicalPublicReadGate(network, { force: freshRead });
-      canonicalReadGate = gate;
+      !authenticatedLoopbackRead;
+    const admissionClass = authenticatedLoopbackRead
+      ? ""
+      : publicReadAdmissionClass(url.pathname, freshRead) ||
+        (freshRead && canonicalGateApplies ? "fresh" : "");
+    let canonicalReadGate = null;
+    if (admissionClass) {
+      const admitted = await acquireReadAdmissionBeforeGate({
+        admission:
+          admissionClass === "fresh"
+            ? FRESH_READ_ADMISSION
+            : HEAVY_READ_ADMISSION,
+        beforeAdmission: () =>
+          consumeExpensiveReadRateLimit(request, admissionClass),
+        gate: canonicalGateApplies
+          ? () => canonicalPublicReadGate(network, { force: freshRead })
+          : null,
+      });
+      readAdmissionRelease = admitted.release;
+      canonicalReadGate = admitted.value;
+    } else if (canonicalGateApplies) {
+      canonicalReadGate = await canonicalPublicReadGate(network, {
+        force: freshRead,
+      });
+    }
+    if (canonicalGateApplies) {
+      const gate = canonicalReadGate;
       if (!gate.ok) {
         errorResponse(
           response,
@@ -63625,7 +65261,12 @@ async function handleRequest(request, response) {
       jsonResponse(
         response,
         200,
-        await btcUsdPricePayload(network, { fresh: freshRead }),
+        await singleFlightBoundedRead(
+          "btc-usd-price",
+          network,
+          freshRead ? "fresh" : "cached",
+          () => btcUsdPricePayload(network, { fresh: freshRead }),
+        ),
         freshRead ? FRESH_READ_CACHE_CONTROL : "public, max-age=60",
       );
       return;
@@ -63644,10 +65285,24 @@ async function handleRequest(request, response) {
         return;
       }
 
+      const txidIndex = await singleFlightBoundedRead(
+        "block-txids",
+        network,
+        blockHash,
+        () =>
+          network === "livenet"
+            ? fetchCoreBlockTxidIndex(blockHash)
+            : fetchBlockTxidIndex(blockHash, network),
+      );
+      if (!(txidIndex instanceof Map)) {
+        throw freshDataUnavailableError(
+          `Canonical transaction IDs are unavailable for block ${blockHash}.`,
+        );
+      }
       jsonResponse(
         response,
         200,
-        await fetchBlockTxids(blockHash, network),
+        [...txidIndex.keys()],
         "public, max-age=300",
       );
       return;
@@ -63660,7 +65315,9 @@ async function handleRequest(request, response) {
       jsonResponse(
         response,
         200,
-        await registrySummaryPayload(network, freshRead),
+        await singleFlightExpensiveRead(url, network, () =>
+          registrySummaryPayload(network, freshRead),
+        ),
         freshRead ? FRESH_READ_CACHE_CONTROL : EXPENSIVE_READ_CACHE_CONTROL,
       );
       return;
@@ -63753,11 +65410,13 @@ async function handleRequest(request, response) {
       jsonResponse(
         response,
         200,
-        await summaryPayloadWithCanonicalProvenance(
-          await activitySummaryPayload(network, freshRead),
-          network,
-          freshRead,
-          "log-summary",
+        await singleFlightExpensiveRead(url, network, async () =>
+          summaryPayloadWithCanonicalProvenance(
+            await activitySummaryPayload(network, freshRead),
+            network,
+            freshRead,
+            "log-summary",
+          ),
         ),
         freshRead ? FRESH_READ_CACHE_CONTROL : EXPENSIVE_READ_CACHE_CONTROL,
       );
@@ -63771,7 +65430,9 @@ async function handleRequest(request, response) {
       jsonResponse(
         response,
         200,
-        await ledgerConsistencyPayload(network, freshRead),
+        await singleFlightExpensiveRead(url, network, () =>
+          ledgerConsistencyPayload(network, freshRead),
+        ),
         freshRead ? FRESH_READ_CACHE_CONTROL : READ_CACHE_CONTROL,
       );
       return;
@@ -64088,7 +65749,10 @@ async function handleRequest(request, response) {
           jsonResponse(
             response,
             200,
-            cachedPayload,
+            coherentCanonicalSnapshotAtBoundary(
+              cachedPayload,
+              "token-state",
+            ),
             TOKEN_READ_CACHE_CONTROL,
           );
           return;
@@ -64115,13 +65779,17 @@ async function handleRequest(request, response) {
             indexedPayload,
             network,
           );
-          cacheTokenPayload(network, tokenScope, responsePayload, {
+          const coherentResponsePayload = coherentCanonicalSnapshotAtBoundary(
+            responsePayload,
+            "token-state",
+          );
+          cacheTokenPayload(network, tokenScope, coherentResponsePayload, {
             exactTipValidated: indexedPayloadExact,
           });
           jsonResponse(
             response,
             200,
-            responsePayload,
+            coherentResponsePayload,
             TOKEN_READ_CACHE_CONTROL,
           );
           return;
@@ -64140,7 +65808,10 @@ async function handleRequest(request, response) {
           jsonResponse(
             response,
             200,
-            await withWorkMarketplaceV4Metadata(cachedPayload, network),
+            coherentCanonicalSnapshotAtBoundary(
+              await withWorkMarketplaceV4Metadata(cachedPayload, network),
+              "token-state",
+            ),
             TOKEN_READ_CACHE_CONTROL,
           );
           return;
@@ -64159,7 +65830,10 @@ async function handleRequest(request, response) {
           jsonResponse(
             response,
             200,
-            await withWorkMarketplaceV4Metadata(fallbackPayload, network),
+            coherentCanonicalSnapshotAtBoundary(
+              await withWorkMarketplaceV4Metadata(fallbackPayload, network),
+              "token-state",
+            ),
             TOKEN_READ_CACHE_CONTROL,
           );
           return;
@@ -64172,14 +65846,17 @@ async function handleRequest(request, response) {
         jsonResponse(
           response,
           200,
-          await withWorkMarketplaceV4Metadata(
-            await walletScopedTokenPayload(
+          coherentCanonicalSnapshotAtBoundary(
+            await withWorkMarketplaceV4Metadata(
+              await walletScopedTokenPayload(
+                network,
+                tokenScope,
+                recoveryAddresses,
+                { requireCurrent: freshRead },
+              ),
               network,
-              tokenScope,
-              recoveryAddresses,
-              { requireCurrent: freshRead },
             ),
-            network,
+            "token-state",
           ),
           freshRead ? FRESH_READ_CACHE_CONTROL : TOKEN_READ_CACHE_CONTROL,
         );
@@ -64202,7 +65879,10 @@ async function handleRequest(request, response) {
       jsonResponse(
         response,
         200,
-        await withWorkMarketplaceV4Metadata(payload, network),
+        coherentCanonicalSnapshotAtBoundary(
+          await withWorkMarketplaceV4Metadata(payload, network),
+          "token-state",
+        ),
         tokenFreshRead ? FRESH_READ_CACHE_CONTROL : TOKEN_READ_CACHE_CONTROL,
       );
       return;
@@ -64236,26 +65916,33 @@ async function handleRequest(request, response) {
         );
         return;
       }
-      const tokenSummary = walletScoped
-        ? await walletScopedTokenSummaryPayload(
-            network,
-            tokenScope,
-            recoveryAddresses,
-          )
-        : await tokenSummaryPayload(network, tokenScope, freshRead, {
-            recoveryAddresses,
-          });
+      const tokenSummary = await singleFlightExpensiveRead(
+        url,
+        network,
+        async () => {
+          const payload = walletScoped
+            ? await walletScopedTokenSummaryPayload(
+                network,
+                tokenScope,
+                recoveryAddresses,
+              )
+            : await tokenSummaryPayload(network, tokenScope, freshRead, {
+                recoveryAddresses,
+              });
+          return walletScoped
+            ? payload
+            : summaryPayloadWithCanonicalProvenance(
+                payload,
+                network,
+                freshRead,
+                `token-summary:${tokenScope || "all"}`,
+              );
+        },
+      );
       jsonResponse(
         response,
         200,
-        walletScoped
-          ? tokenSummary
-          : await summaryPayloadWithCanonicalProvenance(
-              tokenSummary,
-              network,
-              freshRead,
-              `token-summary:${tokenScope || "all"}`,
-            ),
+        tokenSummary,
         freshRead ? FRESH_READ_CACHE_CONTROL : TOKEN_READ_CACHE_CONTROL,
       );
       return;
@@ -64409,14 +66096,16 @@ async function handleRequest(request, response) {
         jsonResponse(
           response,
           200,
-          await withWorkMarketplaceV4Metadata(
-            await summaryPayloadWithCanonicalProvenance(
-              await cachedWorkFloorPayload(network, true),
+          await singleFlightExpensiveRead(url, network, async () =>
+            withWorkMarketplaceV4Metadata(
+              await summaryPayloadWithCanonicalProvenance(
+                await cachedWorkFloorPayload(network, true),
+                network,
+                true,
+                "work-floor",
+              ),
               network,
-              true,
-              "work-floor",
             ),
-            network,
           ),
           FRESH_READ_CACHE_CONTROL,
         );
@@ -64424,14 +66113,16 @@ async function handleRequest(request, response) {
         jsonResponse(
           response,
           200,
-          await withWorkMarketplaceV4Metadata(
-            await summaryPayloadWithCanonicalProvenance(
-              await cachedWorkFloorPayload(network, false),
+          await singleFlightExpensiveRead(url, network, async () =>
+            withWorkMarketplaceV4Metadata(
+              await summaryPayloadWithCanonicalProvenance(
+                await cachedWorkFloorPayload(network, false),
+                network,
+                false,
+                "work-floor",
+              ),
               network,
-              false,
-              "work-floor",
             ),
-            network,
           ),
           READ_CACHE_CONTROL,
         );
@@ -64475,14 +66166,16 @@ async function handleRequest(request, response) {
       jsonResponse(
         response,
         200,
-        await withWorkMarketplaceV4Metadata(
-          await summaryPayloadWithCanonicalProvenance(
-            await workSummaryPayload(network, freshRead),
+        await singleFlightExpensiveRead(url, network, async () =>
+          withWorkMarketplaceV4Metadata(
+            await summaryPayloadWithCanonicalProvenance(
+              await workSummaryPayload(network, freshRead),
+              network,
+              freshRead,
+              "work-summary",
+            ),
             network,
-            freshRead,
-            "work-summary",
           ),
-          network,
         ),
         freshRead ? FRESH_READ_CACHE_CONTROL : READ_CACHE_CONTROL,
       );
@@ -64493,14 +66186,16 @@ async function handleRequest(request, response) {
       jsonResponse(
         response,
         200,
-        await withWorkMarketplaceV4Metadata(
-          await summaryPayloadWithCanonicalProvenance(
-            await marketplaceSummaryPayload(network, freshRead),
+        await singleFlightExpensiveRead(url, network, async () =>
+          withWorkMarketplaceV4Metadata(
+            await summaryPayloadWithCanonicalProvenance(
+              await marketplaceSummaryPayload(network, freshRead),
+              network,
+              freshRead,
+              "marketplace-summary",
+            ),
             network,
-            freshRead,
-            "marketplace-summary",
           ),
-          network,
         ),
         freshRead ? FRESH_READ_CACHE_CONTROL : READ_CACHE_CONTROL,
       );
@@ -64511,11 +66206,13 @@ async function handleRequest(request, response) {
       jsonResponse(
         response,
         200,
-        await summaryPayloadWithCanonicalProvenance(
-          await infinitySummaryPayload(network, freshRead),
-          network,
-          freshRead,
-          "infinity-summary",
+        await singleFlightExpensiveRead(url, network, async () =>
+          summaryPayloadWithCanonicalProvenance(
+            await infinitySummaryPayload(network, freshRead),
+            network,
+            freshRead,
+            "infinity-summary",
+          ),
         ),
         freshRead ? FRESH_READ_CACHE_CONTROL : READ_CACHE_CONTROL,
       );
@@ -64526,11 +66223,13 @@ async function handleRequest(request, response) {
       jsonResponse(
         response,
         200,
-        await summaryPayloadWithCanonicalProvenance(
-          await inceptionSummaryPayload(network, freshRead),
-          network,
-          freshRead,
-          "inception-summary",
+        await singleFlightExpensiveRead(url, network, async () =>
+          summaryPayloadWithCanonicalProvenance(
+            await inceptionSummaryPayload(network, freshRead),
+            network,
+            freshRead,
+            "inception-summary",
+          ),
         ),
         freshRead ? FRESH_READ_CACHE_CONTROL : READ_CACHE_CONTROL,
       );
@@ -64565,11 +66264,13 @@ async function handleRequest(request, response) {
       jsonResponse(
         response,
         200,
-        await summaryPayloadWithCanonicalProvenance(
-          await growthSummaryPayload(network, freshRead),
-          network,
-          freshRead,
-          "growth-summary",
+        await singleFlightExpensiveRead(url, network, async () =>
+          summaryPayloadWithCanonicalProvenance(
+            await growthSummaryPayload(network, freshRead),
+            network,
+            freshRead,
+            "growth-summary",
+          ),
         ),
         freshRead ? FRESH_READ_CACHE_CONTROL : READ_CACHE_CONTROL,
       );
@@ -64773,7 +66474,12 @@ async function handleRequest(request, response) {
       jsonResponse(
         response,
         200,
-        await addressUtxoPayload(address, network),
+        await singleFlightBoundedRead(
+          "address-utxo",
+          network,
+          address,
+          () => addressUtxoPayload(address, network),
+        ),
         "no-store",
       );
       return;
@@ -64805,9 +66511,15 @@ async function handleRequest(request, response) {
       jsonResponse(
         response,
         200,
-        addressPath === "txs/mempool"
-          ? await fetchAddressMempoolTransactions(address, network)
-          : await fetchAddressTransactionsPage(address, network, addressPath),
+        await singleFlightBoundedRead(
+          "address-transactions",
+          network,
+          `${address}:${addressPath}`,
+          () =>
+            addressPath === "txs/mempool"
+              ? fetchAddressMempoolTransactions(address, network)
+              : fetchAddressTransactionsPage(address, network, addressPath),
+        ),
         "no-store",
       );
       return;
@@ -64851,7 +66563,9 @@ async function handleRequest(request, response) {
       jsonResponse(
         response,
         200,
-        await txHexPayload(txid, network),
+        await singleFlightBoundedRead("tx-hex", network, txid, () =>
+          txHexPayload(txid, network),
+        ),
         "no-store",
       );
       return;
@@ -64869,11 +66583,21 @@ async function handleRequest(request, response) {
         errorResponse(response, 400, "Invalid txid.");
         return;
       }
+      const absenceObservation = /^(?:1|true|yes)$/iu.test(
+        String(url.searchParams.get("observation") ?? "").trim(),
+      );
+      if (absenceObservation && !authenticatedLoopbackRead) {
+        errorResponse(response, 404, "Not found.");
+        return;
+      }
 
       jsonResponse(
         response,
         200,
-        await txStatusPayload(txid, network),
+        await txStatusPayload(txid, network, {
+          absenceObservation,
+          bypassCoreAdmission: authenticatedLoopbackRead,
+        }),
         "no-store",
       );
       return;
@@ -64900,7 +66624,12 @@ async function handleRequest(request, response) {
       jsonResponse(
         response,
         200,
-        await txOutspendPayload(txid, vout, network),
+        await singleFlightBoundedRead(
+          "tx-outspend",
+          network,
+          `${txid}:${vout}`,
+          () => txOutspendPayload(txid, vout, network),
+        ),
         "no-store",
       );
       return;
@@ -64918,7 +66647,12 @@ async function handleRequest(request, response) {
         return;
       }
 
-      const payload = await txPayload(txid, network);
+      const payload = await singleFlightBoundedRead(
+        "tx",
+        network,
+        txid,
+        () => txPayload(txid, network),
+      );
       if (!payload.tx) {
         errorResponse(response, 404, "Transaction not found.");
         return;
@@ -64937,7 +66671,15 @@ async function handleRequest(request, response) {
     if (statusCode === 429) {
       response.setHeader(
         "Retry-After",
-        String(Math.max(1, Math.ceil(BROADCAST_RATE_WINDOW_MS / 1000))),
+        String(
+          Math.max(
+            1,
+            Math.ceil(
+              Number(error?.details?.retryAfterSeconds) ||
+                BROADCAST_RATE_WINDOW_MS / 1000,
+            ),
+          ),
+        ),
       );
     }
     if (statusCode >= 500) {
@@ -64952,6 +66694,8 @@ async function handleRequest(request, response) {
       error instanceof Error ? error.message : "Unexpected server error.",
       error && typeof error === "object" ? error.details : undefined,
     );
+  } finally {
+    readAdmissionRelease?.();
   }
 }
 

@@ -2,6 +2,7 @@
 Description=Check ProofOfWork PostgreSQL query and tablespace health
 Requisite=postgresql@16-main.service
 After=postgresql@16-main.service
+OnFailure=proofofwork-ops-alert@%n.service
 
 [Service]
 Type=oneshot

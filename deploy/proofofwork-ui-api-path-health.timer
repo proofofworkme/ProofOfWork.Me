@@ -1,0 +1,13 @@
+[Unit]
+Description=Check ProofOfWork UI-to-node API path every two minutes
+
+[Timer]
+OnCalendar=*:0/2
+AccuracySec=15s
+RandomizedDelaySec=10s
+FixedRandomDelay=true
+Persistent=true
+Unit=proofofwork-ui-api-path-health.service
+
+[Install]
+WantedBy=timers.target

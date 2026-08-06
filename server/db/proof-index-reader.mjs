@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 import { compareCanonicalUtf8 } from "../canonical-order.mjs";
+import { withFullCanonicalSnapshot } from "../canonical-snapshot.mjs";
+import { withCanonicalMailAttachedCredits } from "../tx-lifecycle.mjs";
 
 import {
   createProofIndexPool,
@@ -19689,7 +19691,11 @@ export async function proofIndexCanonicalTransactionPositionsPayload(
 export async function proofIndexTxStatusPayload(txid, network, options = {}) {
   const pool = proofIndexPool();
   if (!pool) {
-    return null;
+    const error = new Error(
+      "Proof index transaction lifecycle storage is unavailable.",
+    );
+    error.code = "PROOF_INDEX_TX_LIFECYCLE_UNAVAILABLE";
+    throw error;
   }
 
   const result = await pool.query(
@@ -19700,8 +19706,15 @@ export async function proofIndexTxStatusPayload(txid, network, options = {}) {
         transaction_row.first_seen_at,
         transaction_row.confirmed_at,
         transaction_row.dropped_at,
+        transaction_row.dropped_reason,
+        transaction_row.replaced_by_txid,
         transaction_row.last_seen_at,
         transaction_row.updated_at,
+        transaction_row.raw_tx->'statusObservation' AS status_observation,
+        COALESCE(
+          transaction_row.raw_tx->'lifecycleInputOutpoints',
+          transaction_row.raw_tx->'item'->'lifecycleInputOutpoints'
+        ) AS lifecycle_input_outpoints,
         transaction_row.block_hash,
         transaction_row.block_height,
         transaction_row.block_time,
@@ -19735,7 +19748,18 @@ export async function proofIndexTxStatusPayload(txid, network, options = {}) {
     return null;
   }
 
-  const status = normalizedStatus(row.status);
+  const storedStatus = String(row.status ?? "").trim().toLowerCase();
+  const normalizedReplacementTxid = String(row.replaced_by_txid ?? "")
+    .trim()
+    .toLowerCase();
+  const replacementTxid = /^[0-9a-f]{64}$/u.test(normalizedReplacementTxid)
+    ? normalizedReplacementTxid
+    : "";
+  const normalizedLifecycleStatus = normalizedStatus(storedStatus);
+  const status =
+    normalizedLifecycleStatus !== "confirmed" && replacementTxid
+      ? "replaced"
+      : normalizedLifecycleStatus;
   if (!status) {
     return null;
   }
@@ -19762,18 +19786,39 @@ export async function proofIndexTxStatusPayload(txid, network, options = {}) {
     return null;
   }
 
+  const statusObservation = objectRecord(row.status_observation);
   const observedAt = dateIso(
     row.updated_at ?? row.confirmed_at ?? row.dropped_at ?? row.last_seen_at,
   );
+  const firstSeenAt = row.first_seen_at
+    ? dateIso(row.first_seen_at)
+    : observedAt;
+  const lastSeenAt = row.last_seen_at
+    ? dateIso(row.last_seen_at)
+    : observedAt;
   const payload = {
     confirmed: status === "confirmed",
     contract: "proof-of-work-tx-status-v2",
+    firstSeenAt,
     indexedAt: observedAt,
+    lastSeenAt,
     network,
     observedAt,
-    sources: ["proof-indexer-canonical-block-scan"],
+    sources: [
+      status === "confirmed"
+        ? "proof-indexer-canonical-block-scan"
+        : "proof-indexer-durable-transaction-lifecycle",
+    ],
     status,
     txid: row.txid,
+    updatedAt: observedAt,
+    ...(options.includeLifecycleInputs === true
+      ? {
+          _lifecycleInputOutpoints: objectRecord(
+            row.lifecycle_input_outpoints,
+          ),
+        }
+      : {}),
   };
   if (status === "confirmed") {
     return {
@@ -19786,15 +19831,164 @@ export async function proofIndexTxStatusPayload(txid, network, options = {}) {
   }
   if (status === "pending") {
     const firstSeenMs = new Date(row.first_seen_at ?? "").getTime();
+    const absenceStartedAtMs = new Date(
+      statusObservation.absenceStartedAt ?? "",
+    ).getTime();
+    const absenceObservedAtMs = new Date(
+      statusObservation.observedAt ?? "",
+    ).getTime();
+    const absenceCount = Number(statusObservation.absenceCount);
     return {
       ...payload,
+      ...(Number.isSafeInteger(absenceCount) && absenceCount > 0
+        ? { absenceCount }
+        : {}),
+      ...(Number.isFinite(absenceObservedAtMs)
+        ? { absenceObservedAt: new Date(absenceObservedAtMs).toISOString() }
+        : {}),
+      ...(Number.isFinite(absenceStartedAtMs)
+        ? { absenceStartedAt: new Date(absenceStartedAtMs).toISOString() }
+        : {}),
       ...(Number.isFinite(firstSeenMs) && firstSeenMs >= BITCOIN_GENESIS_TIME_MS
         ? { mempoolFirstSeenAt: new Date(firstSeenMs).toISOString() }
         : {}),
       mempoolSeen: true,
     };
   }
-  return payload;
+  const droppedAtMs = new Date(row.dropped_at ?? "").getTime();
+  const absenceStartedAtMs = new Date(
+    statusObservation.absenceStartedAt ?? "",
+  ).getTime();
+  const absenceObservedAtMs = new Date(
+    statusObservation.observedAt ?? "",
+  ).getTime();
+  const absenceCount = Number(statusObservation.absenceCount);
+  const replacementStatus = String(
+    statusObservation.replacementStatus ?? "",
+  )
+    .trim()
+    .toLowerCase();
+  const replacementEvidence = objectRecord(
+    statusObservation.replacementEvidence,
+  );
+  const replacementCheck = objectRecord(
+    statusObservation.replacementCheck,
+  );
+  const reason = String(row.dropped_reason ?? "").trim() ||
+    (status === "replaced"
+      ? "replaced-by-durable-transaction-evidence"
+      : storedStatus === "orphaned"
+        ? "canonical-transaction-orphaned"
+        : "durable-repeated-core-absence");
+  return {
+    ...payload,
+    ...(Number.isFinite(absenceStartedAtMs)
+      ? { absenceStartedAt: new Date(absenceStartedAtMs).toISOString() }
+      : {}),
+    ...(Number.isSafeInteger(absenceCount) && absenceCount > 0
+      ? { absenceCount }
+      : {}),
+    absenceProven: statusObservation.absenceProven === true,
+    ...(Number.isFinite(absenceObservedAtMs)
+      ? { absenceObservedAt: new Date(absenceObservedAtMs).toISOString() }
+      : {}),
+    ...(Number.isFinite(droppedAtMs)
+      ? { droppedAt: new Date(droppedAtMs).toISOString() }
+      : {}),
+    lifecycleStatus: status,
+    reason,
+    ...(replacementCheck.model === "proof-of-work-tx-replacement-check-v1"
+      ? { replacementCheck }
+      : {}),
+    ...(replacementTxid
+      ? {
+          replacedByTxid: replacementTxid,
+          ...(replacementEvidence.model
+            ? { replacementEvidence }
+            : {}),
+          ...(["confirmed", "pending"].includes(replacementStatus)
+            ? { replacementStatus }
+            : {}),
+          replacementTxid,
+        }
+      : {}),
+  };
+}
+
+export async function proofIndexCanonicalConfirmedSpendersForOutpoints(
+  outpoints,
+  network,
+) {
+  const pool = proofIndexPool();
+  if (!pool) {
+    const error = new Error(
+      "Proof index confirmed input-spender storage is unavailable.",
+    );
+    error.code = "PROOF_INDEX_INPUT_SPENDERS_UNAVAILABLE";
+    throw error;
+  }
+  const requested = (Array.isArray(outpoints) ? outpoints : []).map(
+    (outpoint) => ({
+      txid: String(outpoint?.txid ?? "").trim().toLowerCase(),
+      vout: Number(outpoint?.vout),
+    }),
+  );
+  if (
+    requested.length === 0 ||
+    requested.length > 32 ||
+    requested.some(
+      (outpoint) =>
+        !/^[0-9a-f]{64}$/u.test(outpoint.txid) ||
+        !Number.isSafeInteger(outpoint.vout) ||
+        outpoint.vout < 0,
+    )
+  ) {
+    throw new TypeError("Canonical input-spender lookup requires bounded outpoints.");
+  }
+  const result = await pool.query(
+    `
+      WITH requested_outpoints AS (
+        SELECT requested.txid, requested.vout
+        FROM jsonb_to_recordset($2::jsonb) AS requested (
+          txid text,
+          vout integer
+        )
+      )
+      SELECT DISTINCT lower(candidate.txid) AS txid
+      FROM requested_outpoints requested
+      JOIN proof_indexer.tx_inputs candidate_input
+        ON candidate_input.network = $1
+       AND candidate_input.prev_txid = requested.txid
+       AND candidate_input.prev_vout = requested.vout
+      JOIN proof_indexer.transactions candidate
+        ON candidate.network = candidate_input.network
+       AND candidate.txid = candidate_input.txid
+       AND candidate.status = 'confirmed'
+      JOIN proof_indexer.blocks canonical_block
+        ON canonical_block.network = candidate.network
+       AND canonical_block.block_hash = candidate.block_hash
+       AND canonical_block.height = candidate.block_height
+       AND canonical_block.canonical = true
+      WHERE
+        jsonb_typeof(candidate.raw_tx->'canonicalBlockScan') = 'object'
+        AND candidate.raw_tx->'canonicalBlockScan'->>'network' = $1
+        AND candidate.raw_tx->'canonicalBlockScan'->>'height' ~ '^[0-9]+$'
+        AND (
+          candidate.raw_tx->'canonicalBlockScan'->>'height'
+        )::integer = candidate.block_height
+        AND candidate.raw_tx->'canonicalBlockScan'->>'blockHash' ~
+          '^[0-9a-fA-F]{64}$'
+        AND lower(
+          candidate.raw_tx->'canonicalBlockScan'->>'blockHash'
+        ) = lower(candidate.block_hash)
+      ORDER BY txid ASC
+    `,
+    [network, JSON.stringify(requested)],
+  );
+  return result.rows.flatMap((row) => {
+    const txid = String(row?.txid ?? "").trim().toLowerCase();
+    return /^[0-9a-f]{64}$/u.test(txid) ? [txid] : [];
+  });
 }
 
 async function ledgerSnapshot(pool, network, snapshotId = "") {
@@ -27389,10 +27583,15 @@ async function proofIndexTokenListingsFromTables(pool, network, scope) {
         AND ${canonicalWorkMarketV3ListingProjectionSql("cl")}
         ${tokenStateScopeSql(scope, "cl.token_id", "cd.ticker")}
       ORDER BY cl.updated_at DESC, cl.listing_id ASC
-      LIMIT ${TOKEN_STATE_EVENT_READ_LIMIT}
+      LIMIT ${TOKEN_STATE_EVENT_READ_LIMIT + 1}
     `,
     scoped ? [network, scope] : [network],
   );
+  if (result.rows.length > TOKEN_STATE_EVENT_READ_LIMIT) {
+    throw new Error(
+      "Current token listing projection exceeds the complete-read limit.",
+    );
+  }
   const listings = [];
   const closedListings = [];
   const sales = [];
@@ -27826,10 +28025,15 @@ async function proofIndexTokenTransferEventsFromTables(pool, network, scope) {
         COALESCE(e.event_time, e.block_time, e.created_at) DESC,
         e.txid DESC,
         e.event_id DESC
-      LIMIT ${TOKEN_STATE_EVENT_READ_LIMIT}
+      LIMIT ${TOKEN_STATE_EVENT_READ_LIMIT + 1}
     `,
     scoped ? [network, scope] : [network],
   );
+  if (result.rows.length > TOKEN_STATE_EVENT_READ_LIMIT) {
+    throw new Error(
+      "Current token transfer projection exceeds the complete-read limit.",
+    );
+  }
   return result.rows
     .map((row) =>
       tokenTransferFromEventPayload(
@@ -28233,10 +28437,15 @@ async function proofIndexTokenInvalidEventsFromTables(pool, network, scope) {
         COALESCE(t.block_time, e.event_time, e.block_time, e.created_at) DESC,
         e.txid DESC,
         e.event_id DESC
-      LIMIT ${TOKEN_STATE_EVENT_READ_LIMIT}
+      LIMIT ${TOKEN_STATE_EVENT_READ_LIMIT + 1}
     `,
     query.params,
   );
+  if (result.rows.length > TOKEN_STATE_EVENT_READ_LIMIT) {
+    throw new Error(
+      "Current invalid token-event projection exceeds the complete-read limit.",
+    );
+  }
   return result.rows
     .map(tokenInvalidEventFromRow)
     .filter((item) => item.txid && item.confirmed && item.valid === false)
@@ -28307,10 +28516,15 @@ async function proofIndexTokenMarketEventsFromTables(pool, network, scope) {
         COALESCE(e.event_time, e.block_time, e.created_at) DESC,
         e.txid DESC,
         e.event_id DESC
-      LIMIT ${TOKEN_STATE_EVENT_READ_LIMIT}
+      LIMIT ${TOKEN_STATE_EVENT_READ_LIMIT + 1}
     `,
     scoped ? [network, scope] : [network],
   );
+  if (result.rows.length > TOKEN_STATE_EVENT_READ_LIMIT) {
+    throw new Error(
+      "Current token market projection exceeds the complete-read limit.",
+    );
+  }
 
   const closedListings = [];
   const sales = [];
@@ -28897,6 +29111,23 @@ async function proofIndexTokenPayloadFromCurrentTables(pool, network, scope) {
     proofIndexTokenMarketEventsFromTables(pool, network, scope),
     latestProofIndexScanMetadata(pool, network),
   ]);
+  const scanPayload = objectRecord(scan?.payload);
+  const scanSourceHashes = objectRecord(scan?.source_hashes);
+  const scanIndexedThroughBlock = rowNumber(scan, "indexed_through_block");
+  const scanIndexedThroughBlockHash = normalizedLowerText(
+    scanPayload.indexedThroughBlockHash ??
+      scanPayload.blockHash ??
+      scanSourceHashes.blockScan,
+  );
+  if (
+    scanPayload.complete !== true ||
+    !Number.isSafeInteger(scanIndexedThroughBlock) ||
+    scanIndexedThroughBlock <= 0 ||
+    !/^[0-9a-f]{64}$/u.test(scanIndexedThroughBlockHash) ||
+    !String(scan?.snapshot_id ?? "").trim()
+  ) {
+    return null;
+  }
 
   const mints = mintRows
     .map((row) =>
@@ -29175,20 +29406,17 @@ async function proofIndexTokenPayloadFromCurrentTables(pool, network, scope) {
     0,
   );
   const indexedThroughBlock = Math.max(
-    rowNumber(scan, "indexed_through_block"),
+    scanIndexedThroughBlock,
     indexedThroughBlockFromItems(mints) ?? 0,
     indexedThroughBlockFromItems(transfers) ?? 0,
     indexedThroughBlockFromItems(invalidEvents) ?? 0,
     indexedThroughBlockFromItems(sales) ?? 0,
     indexedThroughBlockFromItems(closedListings) ?? 0,
   );
-  const scanPayload = objectRecord(scan?.payload);
-  const scanSourceHashes = objectRecord(scan?.source_hashes);
-  const indexedThroughBlockHash = normalizedLowerText(
-    scanPayload.indexedThroughBlockHash ??
-      scanPayload.blockHash ??
-      scanSourceHashes.blockScan,
-  );
+  if (indexedThroughBlock !== scanIndexedThroughBlock) {
+    return null;
+  }
+  const indexedThroughBlockHash = scanIndexedThroughBlockHash;
   const indexedAt = newestDateIso([
     scan?.generated_at,
     ...holders.map((holder) => holder.updatedAt),
@@ -29225,25 +29453,29 @@ async function proofIndexTokenPayloadFromCurrentTables(pool, network, scope) {
     mints,
     network,
     sales,
+    snapshotId: String(scan?.snapshot_id ?? ""),
     source: "proof-indexer-token-state-tables",
     tokens: enrichedTokens,
     transfers,
   };
-  return applyWorkMarketV2CutoverToTokenState(
-    await payloadWithVerifiedWorkMarketV4Activation(pool, network, {
-      ...payload,
-      stats: {
-        ...salesStats(sales),
-        ...tokenStateStats(
-          payload,
-          enrichedTokens,
-          mints,
-          transfers,
-          invalidEvents,
-        ),
-        indexedThroughBlock: indexedThroughBlock || undefined,
-      },
-    }),
+  return withFullCanonicalSnapshot(
+    applyWorkMarketV2CutoverToTokenState(
+      await payloadWithVerifiedWorkMarketV4Activation(pool, network, {
+        ...payload,
+        stats: {
+          ...salesStats(sales),
+          ...tokenStateStats(
+            payload,
+            enrichedTokens,
+            mints,
+            transfers,
+            invalidEvents,
+          ),
+          indexedThroughBlock: indexedThroughBlock || undefined,
+        },
+      }),
+    ),
+    "token-state",
   );
 }
 
@@ -29638,12 +29870,15 @@ export async function proofIndexTokenPayload(network, tokenScope, searchParams) 
     const legacyCutoverPayload = applyWorkMarketV2CutoverToTokenState(
       readPolicyPayload,
     );
-    return applyWorkAmoV5CutoverToTokenState(
+    const result = applyWorkAmoV5CutoverToTokenState(
       await payloadWithVerifiedWorkAmoV5Activation(
         network,
         legacyCutoverPayload,
       ),
     );
+    return result?.source === "proof-indexer-token-state-tables"
+      ? withFullCanonicalSnapshot(result, "token-state")
+      : result;
   };
 
   // Stable, unscoped token-state reads are live relational projections. The
@@ -32170,6 +32405,29 @@ export async function proofIndexIdRecordPayload(network, id) {
   };
 }
 
+function compareCurrentRegistryRecords(left, right) {
+  if (left?.confirmed !== right?.confirmed) {
+    return Number(right?.confirmed === true) - Number(left?.confirmed === true);
+  }
+  if (left?.confirmed === true && right?.confirmed === true) {
+    for (const field of ["blockHeight", "blockIndex", "registrationEventId"]) {
+      const leftValue = Number.isSafeInteger(Number(left?.[field]))
+        ? Number(left[field])
+        : Number.NEGATIVE_INFINITY;
+      const rightValue = Number.isSafeInteger(Number(right?.[field]))
+        ? Number(right[field])
+        : Number.NEGATIVE_INFINITY;
+      if (leftValue !== rightValue) {
+        return rightValue - leftValue;
+      }
+    }
+  }
+  return (
+    Date.parse(right?.createdAt ?? "") - Date.parse(left?.createdAt ?? "") ||
+    compareCanonicalUtf8(right?.txid, left?.txid)
+  );
+}
+
 async function currentProofIndexRegistryPayload(pool, network, options = {}) {
   const [confirmedRecords, eventState, scan] = await Promise.all([
     confirmedIdRecordsFromCurrentTables(pool, network),
@@ -32240,7 +32498,9 @@ async function currentProofIndexRegistryPayload(pool, network, options = {}) {
     ? eventState.pendingRecords
     : []
   ).filter((record) => !confirmedIds.has(normalizedLowerText(record?.id)));
-  const records = [...confirmedRecords, ...pendingRecords];
+  const records = [...confirmedRecords, ...pendingRecords].sort(
+    compareCurrentRegistryRecords,
+  );
   const listings = Array.isArray(eventState?.listings)
     ? eventState.listings
     : [];
@@ -32281,7 +32541,7 @@ async function currentProofIndexRegistryPayload(pool, network, options = {}) {
     ...confirmedRecords.map((record) => Number(record?.updatedHeight) || 0),
   );
 
-  return {
+  return withFullCanonicalSnapshot({
     activity,
     indexedAt,
     indexedThroughBlock,
@@ -32310,7 +32570,7 @@ async function currentProofIndexRegistryPayload(pool, network, options = {}) {
       transactions:
         uniqueTxidCount(activity) || uniqueTxidCount(registryItems),
     },
-  };
+  }, "registry-state");
 }
 
 export async function proofIndexRegistryPayload(network, options = {}) {
@@ -33170,6 +33430,30 @@ function eventRowPayload(row, network) {
   const recordOrdinal = canonicalPositionRequired
     ? canonicalPosition.recordOrdinal
     : exactPositionInteger(row?.record_ordinal, 0);
+  const lifecycleReplacementTxid = String(
+    payload.replacementTxid ?? payload.replacedByTxid ?? "",
+  )
+    .trim()
+    .toLowerCase();
+  const relationalLifecycleStatus = normalizedLowerText(
+    row?.status ?? payload.status,
+  );
+  const payloadLifecycleStatus = normalizedLowerText(payload.lifecycleStatus);
+  const payloadHasReplacementMetadata = [
+    "replacedByTxid",
+    "replacementTxid",
+    "replacementCheck",
+  ].some((key) => Object.prototype.hasOwnProperty.call(payload, key));
+  const revivedTerminalLifecyclePayload =
+    ["pending", "confirmed"].includes(relationalLifecycleStatus) &&
+    (["dropped", "replaced"].includes(payloadLifecycleStatus) ||
+      payloadHasReplacementMetadata);
+  const durableLifecycleStatus =
+    relationalLifecycleStatus === "dropped" &&
+    payloadLifecycleStatus === "replaced" &&
+    /^[0-9a-f]{64}$/u.test(lifecycleReplacementTxid)
+      ? "replaced"
+      : row.status ?? payload.status;
   return {
     ...payload,
     ...canonicalEventIdentityDetails({
@@ -33215,7 +33499,19 @@ function eventRowPayload(row, network) {
     protocol: row.protocol ?? payload.protocol,
     kind,
     participants: eventPayloadParticipants(payload),
-    status: row.status ?? payload.status,
+    lifecycleStatus: revivedTerminalLifecyclePayload
+      ? undefined
+      : payload.lifecycleStatus,
+    replacedByTxid: revivedTerminalLifecyclePayload
+      ? undefined
+      : payload.replacedByTxid,
+    replacementCheck: revivedTerminalLifecyclePayload
+      ? undefined
+      : payload.replacementCheck,
+    replacementTxid: revivedTerminalLifecyclePayload
+      ? undefined
+      : payload.replacementTxid,
+    status: durableLifecycleStatus,
     confirmed: row.status ? row.status === "confirmed" : payload.confirmed,
     createdAt: dateIso(
       plausibleBitcoinEventTime(
@@ -33956,8 +34252,25 @@ function addressMailRowPayloads(row, address, network) {
     sameMailPaymentAddress(credit.recipientAddress, targetAddress),
   );
   const createdAt = dateIso(row.event_time ?? row.block_time ?? row.created_at);
+  const lifecycleObservedAt = row.updated_at
+    ? dateIso(row.updated_at)
+    : createdAt;
   const confirmed = row.status === "confirmed";
-  const deliveryStatus = row.status === "orphaned" ? "dropped" : row.status;
+  const storedDeliveryStatus =
+    row.status === "orphaned" ? "dropped" : row.status;
+  const replacementTxid = String(
+    payload.replacementTxid ?? payload.replacedByTxid ?? "",
+  )
+    .trim()
+    .toLowerCase();
+  const durableReplacement =
+    storedDeliveryStatus === "dropped" &&
+    normalizedLowerText(payload.lifecycleStatus) === "replaced" &&
+    /^[0-9a-f]{64}$/u.test(replacementTxid);
+  const deliveryStatus = durableReplacement
+    ? "replaced"
+    : storedDeliveryStatus;
+  const terminal = ["dropped", "replaced"].includes(deliveryStatus);
   const subject = mailSubjectFromEvent(row, payload);
   const memo = mailMemoFromEvent(row, payload);
   const parentTxid = String(row.parent_txid ?? payload.parentTxid ?? "").trim();
@@ -33968,32 +34281,37 @@ function addressMailRowPayloads(row, address, network) {
   if (actorKey && actorKey === targetKey) {
     items.push({
       folder: "sent",
-      message: {
+      message: withCanonicalMailAttachedCredits({
         amountSats: totalAmountSats,
         attachedCredits:
-          attachedCredits.length > 0 ? attachedCredits : undefined,
+          !terminal && attachedCredits.length > 0
+            ? attachedCredits
+            : undefined,
         attachment: Object.keys(attachment).length > 0 ? attachment : undefined,
         confirmedAt: confirmed ? createdAt : undefined,
         createdAt,
         feeRate: 0,
         from: targetAddress,
-        lastCheckedAt: new Date().toISOString(),
+        lastCheckedAt: lifecycleObservedAt,
+        lifecycleObservedAt,
         memo,
         network,
         parentTxid: parentTxid || undefined,
         protocolKind: row.kind,
         recipients: recipients.length > 0 ? recipients : undefined,
         replyTo: targetAddress,
+        replacedByTxid: durableReplacement ? replacementTxid : undefined,
+        replacementTxid: durableReplacement ? replacementTxid : undefined,
         status: confirmed ? "confirmed" : deliveryStatus,
         subject: subject || undefined,
         to: recipientSummary(recipients),
         txid: row.txid,
-      },
+      }),
     });
   }
 
   if (
-    deliveryStatus !== "dropped" &&
+    storedDeliveryStatus !== "dropped" &&
     targetIsRecipient
   ) {
     const targetRecipient =
@@ -34010,7 +34328,7 @@ function addressMailRowPayloads(row, address, network) {
       );
     items.push({
       folder: "inbox",
-      message: {
+      message: withCanonicalMailAttachedCredits({
         amountSats:
           targetRecipientAmountSats ||
           positiveNumber(targetRecipient?.amountSats) ||
@@ -34023,16 +34341,18 @@ function addressMailRowPayloads(row, address, network) {
         confirmed,
         createdAt,
         from: actor || "Unknown",
+        lifecycleObservedAt,
         memo,
         network,
         parentTxid: parentTxid || undefined,
         protocolKind: row.kind,
         recipients: recipients.length > 0 ? recipients : undefined,
         replyTo: actor || "Unknown",
+        status: confirmed ? "confirmed" : deliveryStatus,
         subject: subject || undefined,
         to: targetAddress,
         txid: row.txid,
-      },
+      }),
     });
   }
 
@@ -34047,8 +34367,6 @@ function compareMailMessages(left, right) {
 }
 
 function mailMessageProjectionRank(message) {
-  const confirmed =
-    message?.confirmed === true || message?.status === "confirmed" ? 1 : 0;
   const protocol = bondTagForKind(message?.protocolKind) ? 2 : 0;
   const content = [
     ...(Array.isArray(message?.attachedCredits)
@@ -34061,7 +34379,12 @@ function mailMessageProjectionRank(message) {
   ].some(Boolean)
     ? 1
     : 0;
-  return confirmed * 100 + protocol * 10 + content;
+  return protocol * 10 + content;
+}
+
+function mailMessageLifecycleObservedMs(message) {
+  const timeMs = Date.parse(String(message?.lifecycleObservedAt ?? ""));
+  return Number.isFinite(timeMs) ? timeMs : null;
 }
 
 function mergeMailProjectionMessage(current, incoming) {
@@ -34072,34 +34395,40 @@ function mergeMailProjectionMessage(current, incoming) {
     return current;
   }
 
-  const primary =
-    mailMessageProjectionRank(incoming) >= mailMessageProjectionRank(current)
-      ? incoming
-      : current;
+  const currentObservedMs = mailMessageLifecycleObservedMs(current);
+  const incomingObservedMs = mailMessageLifecycleObservedMs(incoming);
+  const incomingPreferred =
+    currentObservedMs !== incomingObservedMs &&
+    (currentObservedMs !== null || incomingObservedMs !== null)
+      ? incomingObservedMs !== null &&
+        (currentObservedMs === null || incomingObservedMs > currentObservedMs)
+      : mailMessageProjectionRank(incoming) >=
+        mailMessageProjectionRank(current);
+  const primary = incomingPreferred ? incoming : current;
   const secondary = primary === incoming ? current : incoming;
-  const currentConfirmed =
-    current?.confirmed === true || current?.status === "confirmed";
-  const incomingConfirmed =
-    incoming?.confirmed === true || incoming?.status === "confirmed";
-  const attachedCredits =
-    currentConfirmed && incomingConfirmed
-      ? current.attachedCredits
-      : currentConfirmed !== incomingConfirmed
-        ? (currentConfirmed
-            ? current.attachedCredits
-            : incoming.attachedCredits)
-        : primary.attachedCredits ?? secondary.attachedCredits;
   return {
     ...secondary,
     ...primary,
-    attachedCredits,
+    attachedCredits: primary.attachedCredits ?? secondary.attachedCredits,
     attachment: primary.attachment ?? secondary.attachment,
-    confirmedAt: primary.confirmedAt ?? secondary.confirmedAt,
+    confirmedAt:
+      primary?.confirmed === true || primary?.status === "confirmed"
+        ? primary.confirmedAt ?? secondary.confirmedAt
+        : undefined,
     createdAt: primary.createdAt ?? secondary.createdAt,
+    droppedAt:
+      primary?.status === "dropped" ? primary.droppedAt : undefined,
+    failedAt: primary?.status === "failed" ? primary.failedAt : undefined,
     lastCheckedAt: primary.lastCheckedAt ?? secondary.lastCheckedAt,
+    lifecycleObservedAt:
+      primary.lifecycleObservedAt ?? secondary.lifecycleObservedAt,
     memo: primary.memo || secondary.memo,
     parentTxid: primary.parentTxid ?? secondary.parentTxid,
     recipients: primary.recipients ?? secondary.recipients,
+    replacedByTxid:
+      primary?.status === "replaced" ? primary.replacedByTxid : undefined,
+    replacementTxid:
+      primary?.status === "replaced" ? primary.replacementTxid : undefined,
     replyTo: primary.replyTo || secondary.replyTo,
     subject: primary.subject ?? secondary.subject,
     to: primary.to || secondary.to,
@@ -34252,6 +34581,7 @@ export async function proofIndexAddressMailPayload(network, address) {
         e.event_time,
         e.block_time,
         e.created_at,
+        e.updated_at,
         e.block_height,
         e.txid,
         e.event_id,
@@ -34297,6 +34627,7 @@ export async function proofIndexAddressMailPayload(network, address) {
         e.event_time,
         e.block_time,
         e.created_at,
+        e.updated_at,
         e.block_height,
         e.txid,
         e.event_id,
@@ -34307,6 +34638,7 @@ export async function proofIndexAddressMailPayload(network, address) {
         m.amount_sats,
         canonical_work_attachments.attached_credit_events
       ORDER BY
+        e.updated_at DESC,
         COALESCE(e.event_time, e.block_time, e.created_at) DESC,
         e.txid DESC,
         e.event_id DESC

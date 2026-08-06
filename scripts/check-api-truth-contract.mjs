@@ -46,6 +46,7 @@ import {
 } from "../server/work-units.mjs";
 
 const server = readFileSync("server/proof-api.mjs", "utf8");
+const txLifecycle = readFileSync("server/tx-lifecycle.mjs", "utf8");
 const reader = readFileSync("server/db/proof-index-reader.mjs", "utf8");
 const backfill = readFileSync("scripts/backfill-proof-indexer.mjs", "utf8");
 const worker = readFileSync("scripts/run-proof-indexer-worker.mjs", "utf8");
@@ -349,6 +350,10 @@ const provenance = sliceBetween(
   /async function summaryPayloadWithCanonicalProvenance/,
   /function growthSummaryPayloadFromLedger/,
 );
+const fullCanonicalSnapshotAuthentication = sliceBetween(
+  /const AUTHENTICATED_FULL_CANONICAL_SNAPSHOTS/,
+  /async function persistedPayloadForCache/,
+);
 const compaction = sliceBetween(
   /function compactTokenSummaryPayload/,
   /function workTokenLiveSeenTxids/,
@@ -506,6 +511,57 @@ expect(
   ) && /CANONICAL_SUMMARY_INCOHERENT/u.test(provenance),
 );
 expect(
+  "authenticated canonical snapshot refreshes retain only primitive prior identity",
+  /function authenticationPreviousIdentityMatches\(authentication, payload\)[\s\S]*previousSnapshotKind[\s\S]*previousSnapshotId[\s\S]*previousContentSha256[\s\S]*previousIndexedThroughBlock[\s\S]*previousIndexedThroughBlockHash[\s\S]*previousSurface/u.test(
+    fullCanonicalSnapshotAuthentication,
+  ) &&
+    /const \{[\s\S]*payload: _payloadReference,[\s\S]*previousPayload: _previousPayloadReference,[\s\S]*\.\.\.referenceFreeAuthentication[\s\S]*\} = authentication/u.test(
+      fullCanonicalSnapshotAuthentication,
+    ) &&
+    /AUTHENTICATED_FULL_CANONICAL_SNAPSHOTS\.set\(payload, \{[\s\S]*\.\.\.referenceFreeAuthentication,[\s\S]*\.\.\.coherent,[\s\S]*ok: true/u.test(
+      fullCanonicalSnapshotAuthentication,
+    ) &&
+    /hadPrevious: Boolean\(previousPayload\)[\s\S]*previousContentSha256:[\s\S]*previousIndexedThroughBlock:[\s\S]*previousIndexedThroughBlockHash:[\s\S]*previousSnapshotId:[\s\S]*previousSnapshotKind:[\s\S]*previousSurface:/u.test(
+      fullCanonicalSnapshotAuthentication,
+    ) &&
+    !/previousPayload:\s*previousPayload/u.test(
+      fullCanonicalSnapshotAuthentication,
+    ),
+);
+expect(
+  "canonical token and ledger transforms cannot retain stale full-snapshot claims",
+  /function transformCanonicalSnapshotPayload\([\s\S]*transformFullCanonicalSnapshot\([\s\S]*markAuthenticatedFullCanonicalSnapshot\(/u.test(
+    fullCanonicalSnapshotAuthentication,
+  ) &&
+    /async function withWorkMarketplaceV4Metadata\([\s\S]*transformCanonicalSnapshotPayload\([\s\S]*"token-state"/u.test(
+      server,
+    ) &&
+    /async function spendableTokenListingsPayload\([\s\S]*transformCanonicalSnapshotPayload\([\s\S]*"token-state"/u.test(
+      server,
+    ) &&
+    /function retainedExactTipTokenPayloadForRead\([\s\S]*transformCanonicalSnapshotPayload\([\s\S]*preserveCanonicalClaim: false/u.test(
+      server,
+    ) &&
+    /function ledgerWithHistoricalWorkFloorChart\([\s\S]*transformCanonicalSnapshotPayload\([\s\S]*"canonical-ledger"/u.test(
+      server,
+    ) &&
+    /if \(url\.pathname === "\/api\/v1\/token"\)[\s\S]*coherentCanonicalSnapshotAtBoundary\([\s\S]*"token-state"/u.test(
+      server,
+    ),
+);
+expect(
+  "registry, token, and ledger persisted full snapshots are roundtrip-validated",
+  /function cachedJsonPayload\(jsonKey, canonicalSurface = ""\)[\s\S]*fullCanonicalSnapshotClaimed\(payload\)[\s\S]*coherentFullCanonicalSnapshot\(payload, canonicalSurface\)[\s\S]*RESPONSE_CACHE\.delete\(jsonKey\)/u.test(
+    server,
+  ) &&
+    /function canonicalSurfaceForCacheKey\([\s\S]*"registry-state"[\s\S]*"token-state"[\s\S]*"canonical-ledger"/u.test(
+      server,
+    ) &&
+    /persistedPayloadForCache\([\s\S]*"registry-state"[\s\S]*persistedPayloadForCache\([\s\S]*"token-state"[\s\S]*persistedPayloadForCache\([\s\S]*"canonical-ledger"/u.test(
+      server,
+    ),
+);
+expect(
   "fresh summary provenance fails closed while catching up",
   /if \(requestedFresh && !ready\)/u.test(provenance) &&
     /CANONICAL_SUMMARY_CATCHING_UP/u.test(provenance),
@@ -625,10 +681,10 @@ expect(
 expect(
   "node health requires synced unpruned mainnet Core with exact-tip txindex",
   /function exactCoreTipFromBlockchainInfo[\s\S]*info\?\.chain !== "main"[\s\S]*initialblockdownload !== false[\s\S]*headers !== height[\s\S]*verificationProgress < 0\.999/u.test(
-    server,
+    txLifecycle,
   ) &&
     /function exactCoreNodeAuthority[\s\S]*chain\?\.pruned !== false[\s\S]*txindex\.synced !== true[\s\S]*txindexHeight !== tip\.height/u.test(
-      server,
+      txLifecycle,
     ) &&
     /bitcoinRpc\("getindexinfo", \["txindex"\]\)/u.test(healthPayload) &&
     /const available =[\s\S]*coreAuthority !== null/u.test(healthPayload) &&
@@ -768,7 +824,9 @@ expect(
       "bitcoin-core:getindexinfo:txindex",
     ].every((value) => worker.includes(value)) &&
     /SELECT status, raw_tx[\s\S]*FOR UPDATE/u.test(worker) &&
-    /WHERE network = \$1 AND txid = \$2 AND status = 'pending'/u.test(worker) &&
+    /WHERE network = \$1 AND txid = \$2[\s\S]*?status IN \('pending', 'dropped'\)/u.test(
+      worker,
+    ) &&
     /canonical-block-scan-required/u.test(worker) &&
     /repeat-absence-required/u.test(worker) &&
     /priorObservation\?\.absenceStartedAt \?\? ""/u.test(
@@ -783,7 +841,7 @@ expect(
     /normalizedStatus === "confirmed"[\s\S]*statusObservation[\s\S]*canonical-block-scan-required/u.test(
       worker,
     ) &&
-    /absenceProven:[\s\S]*normalizedStatus === "dropped" \? payload\.absenceProven : undefined/u.test(
+    /absenceProven:[\s\S]*\["dropped", "replaced"\]\.includes\(normalizedStatus\)[\s\S]*\? payload\.absenceProven[\s\S]*: undefined/u.test(
       worker,
     ) &&
     /priorObservation\?\.status === "dropped" &&[\s\S]*authoritativeDroppedStatusEvidence\(priorObservation\)/u.test(

@@ -1,0 +1,13 @@
+[Unit]
+Description=Daily encrypted off-site ProofOfWork PostgreSQL backup
+
+[Timer]
+OnCalendar=*-*-* 05:15:00 UTC
+AccuracySec=5min
+RandomizedDelaySec=30min
+FixedRandomDelay=true
+Persistent=true
+Unit=proofofwork-postgres-offsite-backup.service
+
+[Install]
+WantedBy=timers.target

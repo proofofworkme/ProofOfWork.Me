@@ -1,6 +1,7 @@
 [Unit]
 Description=Prune managed ProofOfWork node release backups
 RequiresMountsFor=/data/proofofwork-release-backups
+OnFailure=proofofwork-ops-alert@%n.service
 
 [Service]
 Type=oneshot
@@ -16,12 +17,13 @@ ProtectKernelLogs=true
 ProtectKernelModules=true
 ProtectKernelTunables=true
 ReadWritePaths=/data/proofofwork-release-backups/managed
-CapabilityBoundingSet=
-AmbientCapabilities=
+CapabilityBoundingSet=CAP_DAC_READ_SEARCH
+AmbientCapabilities=CAP_DAC_READ_SEARCH
 RestrictSUIDSGID=true
 LockPersonality=true
 RestrictRealtime=true
 SystemCallArchitectures=native
+RestrictAddressFamilies=AF_UNIX
 UMask=0077
 Nice=10
 IOSchedulingClass=idle

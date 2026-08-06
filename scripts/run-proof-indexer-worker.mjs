@@ -69,6 +69,15 @@ const API_BASE = String(process.env.POW_API_BASE ?? DEFAULT_API_BASE).replace(
   /\/+$/u,
   "",
 );
+const INTERNAL_VERIFIER_TOKEN = String(
+  process.env.POW_INTERNAL_VERIFIER_TOKEN ?? "",
+).trim();
+const INTERNAL_VERIFIER_HTTP_LOOPBACK_HOSTS = new Set([
+  "127.0.0.1",
+  "::1",
+  "[::1]",
+  "localhost",
+]);
 const NETWORK = process.env.NETWORK ?? "livenet";
 const INTERVAL_MS = Number(process.env.POW_INDEX_WORKER_INTERVAL_MS ?? 300_000);
 const ERROR_INTERVAL_MS = Number(
@@ -136,6 +145,16 @@ const PENDING_STATUS_LIMIT = Number(process.env.POW_INDEX_PENDING_STATUS_LIMIT ?
 const PENDING_MIN_AGE_MS = Number(process.env.POW_INDEX_PENDING_MIN_AGE_MS ?? 300_000);
 const PENDING_DROP_CONFIRMATION_MS = pendingDropConfirmationMs(
   process.env.POW_INDEX_PENDING_DROP_CONFIRMATION_MS,
+);
+const TERMINAL_STATUS_RECHECK_WINDOW_MS = Math.min(
+  7 * 24 * 60 * 60_000,
+  Math.max(
+    30 * 60_000,
+    Number(
+      process.env.POW_INDEX_TERMINAL_STATUS_RECHECK_WINDOW_MS ??
+        24 * 60 * 60_000,
+    ) || 24 * 60 * 60_000,
+  ),
 );
 const REQUEST_TIMEOUT_MS = Number(process.env.POW_INDEX_FETCH_TIMEOUT_MS ?? 60_000);
 const STATUS_REQUEST_TIMEOUT_MS = Number(
@@ -226,6 +245,19 @@ const MAX_CONSECUTIVE_FAILURES = Math.max(
 );
 const DRY_RUN = process.argv.includes("--dry-run");
 const ONCE = process.argv.includes("--once");
+export const WORKER_PENDING_DEGRADED_ONCE_CODE =
+  "POW_INDEX_WORKER_PENDING_DEGRADED_ONCE";
+
+export function workerPendingDegradedOnceError(cycle, once) {
+  if (once !== true || cycle?.pendingDegraded !== true) {
+    return null;
+  }
+  const error = new Error(
+    "The one-shot proof index worker completed canonical replay but pending readiness remains degraded.",
+  );
+  error.code = WORKER_PENDING_DEGRADED_ONCE_CODE;
+  return error;
+}
 const REQUIRE_WORK_ATOMIC_PROJECTION = !/^(?:0|false|no)$/iu.test(
   String(process.env.POW_INDEX_REQUIRE_WORK_ATOMS ?? "1"),
 );
@@ -4411,11 +4443,45 @@ function endpoint(pathname, params = {}) {
   return url;
 }
 
-async function readJson(url, timeoutMs = REQUEST_TIMEOUT_MS) {
+export function workerInternalVerifierHeaders(
+  url,
+  token = INTERNAL_VERIFIER_TOKEN,
+) {
+  const verifierToken = String(token ?? "").trim();
+  if (!verifierToken) {
+    return {};
+  }
+  const requestUrl = url instanceof URL ? url : new URL(String(url ?? ""));
+  const loopbackHost = INTERNAL_VERIFIER_HTTP_LOOPBACK_HOSTS.has(
+    requestUrl.hostname.toLowerCase(),
+  );
+  if (requestUrl.protocol !== "http:" || !loopbackHost) {
+    const error = new Error(
+      "The internal verifier token may be sent only to an explicit HTTP loopback API base.",
+    );
+    error.code = "POW_INTERNAL_VERIFIER_TRANSPORT_UNSAFE";
+    throw error;
+  }
+  return { "x-pow-internal-verifier": verifierToken };
+}
+
+export async function workerReadJson(
+  url,
+  timeoutMs = REQUEST_TIMEOUT_MS,
+  {
+    fetchImplementation = globalThis.fetch,
+    internalVerifierToken = INTERNAL_VERIFIER_TOKEN,
+  } = {},
+) {
+  const headers = workerInternalVerifierHeaders(url, internalVerifierToken);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetch(url, { signal: controller.signal });
+    const response = await fetchImplementation(url, {
+      headers,
+      redirect: "error",
+      signal: controller.signal,
+    });
     if (!response.ok) {
       throw new Error(`${url.pathname} returned HTTP ${response.status}`);
     }
@@ -5087,6 +5153,59 @@ function authoritativeDroppedStatusEvidence(payload) {
   );
 }
 
+export function authoritativeReplacedStatusEvidence(payload, originalTxid) {
+  const sources = new Set(
+    (Array.isArray(payload?.sources) ? payload.sources : []).map((source) =>
+      String(source),
+    ),
+  );
+  const replacementTxid = String(payload?.replacementTxid ?? "")
+    .trim()
+    .toLowerCase();
+  const replacementStatus = String(payload?.replacementStatus ?? "")
+    .trim()
+    .toLowerCase();
+  const replacementEvidence = payload?.replacementEvidence;
+  const candidateSource = String(
+    replacementEvidence?.candidateSource ?? "",
+  );
+  const candidateCurrentlyProven = replacementStatus === "pending"
+    ? sources.has("bitcoin-core:getmempoolentry")
+    : replacementStatus === "confirmed" &&
+      sources.has("bitcoin-core:getblockheader") &&
+      sources.has("bitcoin-core:getblock") &&
+      sources.has("bitcoin-core:getblockhash");
+  return (
+    payload?.absenceProven === true &&
+    payload?.confirmed === false &&
+    payload?.verified === true &&
+    payload?.contract === "proof-of-work-tx-status-v2" &&
+    payload?.reason ===
+      "original-input-spent-by-one-current-full-node-verified-transaction" &&
+    /^[0-9a-f]{64}$/u.test(replacementTxid) &&
+    replacementTxid !== originalTxid &&
+    replacementEvidence?.model === "proof-of-work-tx-replacement-v1" &&
+    replacementEvidence?.inputEvidenceModel ===
+      "proof-of-work-lifecycle-input-outpoints-v1" &&
+    String(replacementEvidence?.replacementTxid ?? "")
+      .trim()
+      .toLowerCase() === replacementTxid &&
+    String(replacementEvidence?.replacementStatus ?? "")
+      .trim()
+      .toLowerCase() === replacementStatus &&
+    [
+      "bitcoin-core-mempool-spender",
+      "canonical-confirmed-input-index-and-bitcoin-core",
+    ].includes(candidateSource) &&
+    sources.has("bitcoin-core:getrawtransaction") &&
+    sources.has("bitcoin-core:getmempoolentry") &&
+    sources.has("bitcoin-core:getblockchaininfo") &&
+    sources.has("bitcoin-core:getindexinfo:txindex") &&
+    sources.has("bitcoin-core:gettxspendingprevout") &&
+    candidateCurrentlyProven
+  );
+}
+
 async function workQ16PendingLegacyStatusMembership(
   database,
   { lock = false } = {},
@@ -5111,7 +5230,7 @@ async function workQ16PendingLegacyStatusMembership(
   return txids;
 }
 
-async function updateTransactionStatus(
+export async function updateTransactionStatus(
   client,
   txid,
   status,
@@ -5129,7 +5248,9 @@ async function updateTransactionStatus(
   );
   if (
     !/^[0-9a-f]{64}$/u.test(normalizedTxid) ||
-    !["pending", "confirmed", "dropped"].includes(normalizedStatus) ||
+    !["pending", "confirmed", "dropped", "replaced"].includes(
+      normalizedStatus,
+    ) ||
     payload?.contract !== "proof-of-work-tx-status-v2" ||
     String(payload?.network ?? "") !== NETWORK ||
     String(payload?.txid ?? "").trim().toLowerCase() !== normalizedTxid ||
@@ -5170,11 +5291,16 @@ async function updateTransactionStatus(
       throw new Error(`Unproven pending status for ${normalizedTxid}.`);
     }
     transitionTimeMs = mempoolTimeMs;
-  } else if (
+  } else if (normalizedStatus === "dropped" && (
     payload?.confirmed !== false ||
     !authoritativeDroppedStatusEvidence(payload)
-  ) {
+  )) {
     throw new Error(`Unproven dropped status for ${normalizedTxid}.`);
+  } else if (
+    normalizedStatus === "replaced" &&
+    !authoritativeReplacedStatusEvidence(payload, normalizedTxid)
+  ) {
+    throw new Error(`Unproven replaced status for ${normalizedTxid}.`);
   }
 
   if (q16Active) {
@@ -5184,7 +5310,7 @@ async function updateTransactionStatus(
   }
   const locked = await client.query(
     `
-      SELECT status, raw_tx
+      SELECT status, raw_tx, replaced_by_txid
       FROM proof_indexer.transactions
       WHERE network = $1 AND txid = $2
       FOR UPDATE
@@ -5192,10 +5318,27 @@ async function updateTransactionStatus(
     [NETWORK, normalizedTxid],
   );
   const row = locked.rows[0];
-  if (!row || row.status !== "pending") {
+  const replacementTxid = normalizedStatus === "replaced"
+    ? String(payload?.replacementTxid ?? "").trim().toLowerCase()
+    : "";
+  const replacementCheck =
+    payload?.replacementCheck &&
+    typeof payload.replacementCheck === "object" &&
+    !Array.isArray(payload.replacementCheck)
+      ? payload.replacementCheck
+      : null;
+  if (!row) {
     return { applied: false, reason: "status-race" };
   }
-  if (q16Active) {
+  const rechecksPriorTerminal =
+    row.status === "dropped" &&
+    ["pending", "confirmed", "dropped", "replaced"].includes(
+      normalizedStatus,
+    );
+  if (row.status !== "pending" && !rechecksPriorTerminal) {
+    return { applied: false, reason: "status-race" };
+  }
+  if (q16Active && row.status === "pending") {
     const q16ParentMembershipTxids =
       await workQ16PendingLegacyStatusMembership(client, { lock: true });
     if (q16ParentMembershipTxids.includes(normalizedTxid)) {
@@ -5206,13 +5349,80 @@ async function updateTransactionStatus(
   const evidence = {
     absenceCount: 0,
     absenceProven:
-      normalizedStatus === "dropped" ? payload.absenceProven : undefined,
+      ["dropped", "replaced"].includes(normalizedStatus)
+        ? payload.absenceProven
+        : undefined,
     contract: payload.contract,
     observedAt: payload.observedAt,
     reason: payload.reason ?? undefined,
+    ...(replacementCheck ? { replacementCheck } : {}),
     sources: sourceList,
     status: normalizedStatus,
+    ...(normalizedStatus === "replaced"
+      ? {
+          replacementStatus: payload.replacementStatus,
+          replacementEvidence: payload.replacementEvidence,
+          replacementTxid,
+        }
+      : {}),
   };
+  if (row.status === "dropped" && normalizedStatus === "pending") {
+    await client.query(
+      `
+        UPDATE proof_indexer.transactions
+        SET
+          raw_tx =
+            (COALESCE(raw_tx, '{}'::jsonb) - 'statusObservation')
+            || jsonb_build_object('statusObservation', $3::jsonb),
+          updated_at = now()
+        WHERE network = $1 AND txid = $2 AND status = 'dropped'
+      `,
+      [NETWORK, normalizedTxid, JSON.stringify(evidence)],
+    );
+    return {
+      applied: false,
+      reason: q16Active
+        ? "q16-staged-revival-required"
+        : "mempool-backfill-revival-required",
+    };
+  }
+  if (
+    normalizedStatus === "replaced" &&
+    row.status === "dropped" &&
+    String(row.replaced_by_txid ?? "").trim().toLowerCase() ===
+      replacementTxid
+  ) {
+    await client.query(
+      `
+        UPDATE proof_indexer.transactions
+        SET
+          raw_tx =
+            (COALESCE(raw_tx, '{}'::jsonb) - 'statusObservation')
+            || jsonb_build_object('statusObservation', $3::jsonb),
+          updated_at = now()
+        WHERE network = $1 AND txid = $2
+          AND status = 'dropped'
+          AND replaced_by_txid = $4
+      `,
+      [
+        NETWORK,
+        normalizedTxid,
+        JSON.stringify(evidence),
+        replacementTxid,
+      ],
+    );
+    const priorReplacementStatus = String(
+      row.raw_tx?.statusObservation?.replacementStatus ?? "",
+    )
+      .trim()
+      .toLowerCase();
+    const replacementEvidenceAdvanced =
+      priorReplacementStatus !==
+      String(payload?.replacementStatus ?? "").trim().toLowerCase();
+    return replacementEvidenceAdvanced
+      ? { applied: true, reason: "replacement-evidence-advanced" }
+      : { applied: false, reason: "replacement-already-recorded" };
+  }
   if (normalizedStatus === "confirmed") {
     await client.query(
       `
@@ -5222,7 +5432,8 @@ async function updateTransactionStatus(
             (COALESCE(raw_tx, '{}'::jsonb) - 'statusObservation')
             || jsonb_build_object('statusObservation', $3::jsonb),
           updated_at = now()
-        WHERE network = $1 AND txid = $2 AND status = 'pending'
+        WHERE network = $1 AND txid = $2
+          AND status IN ('pending', 'dropped')
       `,
       [NETWORK, normalizedTxid, JSON.stringify(evidence)],
     );
@@ -5234,7 +5445,14 @@ async function updateTransactionStatus(
       `
         UPDATE proof_indexer.transactions
         SET
-          first_seen_at = LEAST(first_seen_at, to_timestamp($3::double precision / 1000)),
+          status = 'pending',
+          first_seen_at = LEAST(
+            COALESCE(
+              first_seen_at,
+              to_timestamp($3::double precision / 1000)
+            ),
+            to_timestamp($3::double precision / 1000)
+          ),
           last_seen_at = now(),
           confirmed_at = NULL,
           dropped_at = NULL,
@@ -5248,7 +5466,8 @@ async function updateTransactionStatus(
             (COALESCE(raw_tx, '{}'::jsonb) - 'statusObservation')
             || jsonb_build_object('statusObservation', $4::jsonb),
           updated_at = now()
-        WHERE network = $1 AND txid = $2 AND status = 'pending'
+        WHERE network = $1 AND txid = $2
+          AND status IN ('pending', 'dropped')
       `,
       [
         NETWORK,
@@ -5264,6 +5483,7 @@ async function updateTransactionStatus(
       `
         UPDATE proof_indexer.events
         SET
+          status = 'pending',
           block_height = NULL,
           block_index = NULL,
           block_time = NULL,
@@ -5287,6 +5507,10 @@ async function updateTransactionStatus(
               - '_powBlockIndex'
               - 'createdAt'
               - 'timestamp'
+              - 'lifecycleStatus'
+              - 'replacedByTxid'
+              - 'replacementTxid'
+              - 'replacementCheck'
             )
             || jsonb_build_object(
               'confirmed', false,
@@ -5312,7 +5536,8 @@ async function updateTransactionStatus(
               'status', 'pending'
             ),
           updated_at = now()
-        WHERE network = $1 AND txid = $2 AND status = 'pending'
+        WHERE network = $1 AND txid = $2
+          AND status IN ('pending', 'dropped')
           AND (
             block_height IS NOT NULL
             OR block_index IS NOT NULL
@@ -5332,7 +5557,11 @@ async function updateTransactionStatus(
               'blockTime',
               'height',
               '_powBlockHash',
-              '_powBlockIndex'
+              '_powBlockIndex',
+              'lifecycleStatus',
+              'replacedByTxid',
+              'replacementTxid',
+              'replacementCheck'
             ]
             OR payload->'confirmed' IS DISTINCT FROM 'false'::jsonb
             OR payload->'dropped' IS DISTINCT FROM 'false'::jsonb
@@ -5394,6 +5623,7 @@ async function updateTransactionStatus(
       `
         UPDATE proof_indexer.file_attachments
         SET
+          status = 'pending',
           event_time = CASE
             WHEN event_time IS NULL
               OR event_time < TIMESTAMPTZ '2009-01-03 18:15:05+00'
@@ -5412,6 +5642,10 @@ async function updateTransactionStatus(
               - 'height'
               - 'createdAt'
               - 'timestamp'
+              - 'lifecycleStatus'
+              - 'replacedByTxid'
+              - 'replacementTxid'
+              - 'replacementCheck'
             )
             || jsonb_build_object(
               'confirmed', false,
@@ -5436,7 +5670,8 @@ async function updateTransactionStatus(
               'dropped', false,
               'status', 'pending'
             )
-        WHERE network = $1 AND txid = $2 AND status = 'pending'
+        WHERE network = $1 AND txid = $2
+          AND status IN ('pending', 'dropped')
       `,
       [NETWORK, normalizedTxid, transitionTimeMs],
     );
@@ -5454,6 +5689,7 @@ async function updateTransactionStatus(
     priorObservation?.absenceStartedAt ?? "",
   );
   const consecutiveAbsence =
+    normalizedStatus === "dropped" &&
     priorObservation?.status === "dropped" &&
     authoritativeDroppedStatusEvidence(priorObservation) &&
     Number.isSafeInteger(priorAbsenceCount) &&
@@ -5468,8 +5704,10 @@ async function updateTransactionStatus(
   evidence.absenceCount = consecutiveAbsence ? priorAbsenceCount + 1 : 1;
   evidence.absenceStartedAt = new Date(absenceStartedAtMs).toISOString();
   const repeatedAbsence =
-    consecutiveAbsence &&
-    observedAtMs >= absenceStartedAtMs + PENDING_DROP_CONFIRMATION_MS;
+    normalizedStatus === "replaced" ||
+    (consecutiveAbsence &&
+      observedAtMs >= absenceStartedAtMs + PENDING_DROP_CONFIRMATION_MS);
+  evidence.awaitingDropConfirmation = !repeatedAbsence;
 
   if (!repeatedAbsence) {
     await client.query(
@@ -5480,7 +5718,8 @@ async function updateTransactionStatus(
             (COALESCE(raw_tx, '{}'::jsonb) - 'statusObservation')
             || jsonb_build_object('statusObservation', $3::jsonb),
           updated_at = now()
-        WHERE network = $1 AND txid = $2 AND status = 'pending'
+        WHERE network = $1 AND txid = $2
+          AND status IN ('pending', 'dropped')
       `,
       [NETWORK, normalizedTxid, JSON.stringify(evidence)],
     );
@@ -5493,8 +5732,13 @@ async function updateTransactionStatus(
       SET
         status = 'dropped',
         confirmed_at = NULL,
-        dropped_at = to_timestamp($4::double precision / 1000),
+        dropped_at = CASE
+          WHEN status = 'dropped' AND dropped_at IS NOT NULL
+          THEN dropped_at
+          ELSE to_timestamp($4::double precision / 1000)
+        END,
         dropped_reason = $5,
+        replaced_by_txid = $6,
         block_hash = NULL,
         block_height = NULL,
         block_index = NULL,
@@ -5503,7 +5747,8 @@ async function updateTransactionStatus(
           (COALESCE(raw_tx, '{}'::jsonb) - 'statusObservation')
           || jsonb_build_object('statusObservation', $3::jsonb),
         updated_at = now()
-      WHERE network = $1 AND txid = $2 AND status = 'pending'
+      WHERE network = $1 AND txid = $2
+        AND status IN ('pending', 'dropped')
     `,
     [
       NETWORK,
@@ -5511,6 +5756,7 @@ async function updateTransactionStatus(
       JSON.stringify(evidence),
       observedAtMs,
       String(payload.reason),
+      replacementTxid || null,
     ],
   );
   if (dropped.rowCount !== 1) {
@@ -5533,16 +5779,47 @@ async function updateTransactionStatus(
             - 'height'
             - '_powBlockHash'
             - '_powBlockIndex'
+            - 'lifecycleStatus'
+            - 'replacedByTxid'
+            - 'replacementTxid'
+            - 'replacementCheck'
           )
           || jsonb_build_object(
             'confirmed', false,
             'dropped', true,
             'status', 'dropped'
-          ),
-        updated_at = now()
-      WHERE network = $1 AND txid = $2 AND status = 'pending'
+          )
+          || CASE
+            WHEN $3::text = 'replaced'
+            THEN jsonb_build_object(
+              'lifecycleStatus', $3::text
+            )
+            ELSE jsonb_build_object('lifecycleStatus', 'dropped')
+          END
+          || CASE
+            WHEN $3::text = 'replaced'
+            THEN jsonb_build_object(
+              'replacedByTxid', $4::text,
+              'replacementTxid', $4::text
+            )
+            ELSE '{}'::jsonb
+          END
+          || CASE
+            WHEN jsonb_typeof($5::jsonb) = 'object'
+            THEN jsonb_build_object('replacementCheck', $5::jsonb)
+            ELSE '{}'::jsonb
+          END,
+          updated_at = now()
+      WHERE network = $1 AND txid = $2
+        AND status IN ('pending', 'dropped')
     `,
-    [NETWORK, normalizedTxid],
+    [
+      NETWORK,
+      normalizedTxid,
+      normalizedStatus,
+      replacementTxid || null,
+      JSON.stringify(replacementCheck),
+    ],
   );
   await client.query(
     `
@@ -5577,15 +5854,52 @@ async function updateTransactionStatus(
       SET
         status = 'dropped',
         metadata =
-          (metadata - 'blockHash' - 'blockHeight' - 'blockTime' - 'height')
+          (
+            metadata
+            - 'blockHash'
+            - 'blockHeight'
+            - 'blockTime'
+            - 'height'
+            - 'lifecycleStatus'
+            - 'replacedByTxid'
+            - 'replacementTxid'
+            - 'replacementCheck'
+          )
           || jsonb_build_object(
             'confirmed', false,
             'dropped', true,
             'status', 'dropped'
           )
-      WHERE network = $1 AND txid = $2 AND status = 'pending'
+          || CASE
+            WHEN $3::text = 'replaced'
+            THEN jsonb_build_object(
+              'lifecycleStatus', $3::text
+            )
+            ELSE jsonb_build_object('lifecycleStatus', 'dropped')
+          END
+          || CASE
+            WHEN $3::text = 'replaced'
+            THEN jsonb_build_object(
+              'replacedByTxid', $4::text,
+              'replacementTxid', $4::text
+            )
+            ELSE '{}'::jsonb
+          END
+          || CASE
+            WHEN jsonb_typeof($5::jsonb) = 'object'
+            THEN jsonb_build_object('replacementCheck', $5::jsonb)
+            ELSE '{}'::jsonb
+          END
+      WHERE network = $1 AND txid = $2
+        AND status IN ('pending', 'dropped')
     `,
-    [NETWORK, normalizedTxid],
+    [
+      NETWORK,
+      normalizedTxid,
+      normalizedStatus,
+      replacementTxid || null,
+      JSON.stringify(replacementCheck),
+    ],
   );
   await client.query(
     `
@@ -5593,13 +5907,47 @@ async function updateTransactionStatus(
       SET
         confirmed = false,
         created_height = NULL,
-        metadata = metadata || jsonb_build_object(
-          'confirmed', false,
-          'status', 'dropped'
-        )
+        metadata =
+          (
+            metadata
+            - 'lifecycleStatus'
+            - 'replacedByTxid'
+            - 'replacementTxid'
+            - 'replacementCheck'
+          )
+          || jsonb_build_object(
+            'confirmed', false,
+            'status', 'dropped'
+          )
+          || CASE
+            WHEN $3::text = 'replaced'
+            THEN jsonb_build_object(
+              'lifecycleStatus', $3::text
+            )
+            ELSE jsonb_build_object('lifecycleStatus', 'dropped')
+          END
+          || CASE
+            WHEN $3::text = 'replaced'
+            THEN jsonb_build_object(
+              'replacedByTxid', $4::text,
+              'replacementTxid', $4::text
+            )
+            ELSE '{}'::jsonb
+          END
+          || CASE
+            WHEN jsonb_typeof($5::jsonb) = 'object'
+            THEN jsonb_build_object('replacementCheck', $5::jsonb)
+            ELSE '{}'::jsonb
+          END
       WHERE network = $1 AND create_txid = $2 AND confirmed = false
     `,
-    [NETWORK, normalizedTxid],
+    [
+      NETWORK,
+      normalizedTxid,
+      normalizedStatus,
+      replacementTxid || null,
+      JSON.stringify(replacementCheck),
+    ],
   );
   await client.query(
     `
@@ -5617,17 +5965,48 @@ async function updateTransactionStatus(
             - 'closedTxid'
             - 'saleTxid'
             - 'buyerAddress'
+            - 'lifecycleStatus'
+            - 'replacedByTxid'
+            - 'replacementTxid'
+            - 'replacementCheck'
           )
           || jsonb_build_object(
-          'confirmed', false,
-          'closedConfirmed', false,
-          'sealPending', false,
-          'status', 'dropped'
-        ),
+            'confirmed', false,
+            'closedConfirmed', false,
+            'sealPending', false,
+            'status', 'dropped'
+          )
+          || CASE
+            WHEN $3::text = 'replaced'
+            THEN jsonb_build_object(
+              'lifecycleStatus', $3::text
+            )
+            ELSE jsonb_build_object('lifecycleStatus', 'dropped')
+          END
+          || CASE
+            WHEN $3::text = 'replaced'
+            THEN jsonb_build_object(
+              'replacedByTxid', $4::text,
+              'replacementTxid', $4::text
+            )
+            ELSE '{}'::jsonb
+          END
+          || CASE
+            WHEN jsonb_typeof($5::jsonb) = 'object'
+            THEN jsonb_build_object('replacementCheck', $5::jsonb)
+            ELSE '{}'::jsonb
+          END,
         updated_at = now()
-      WHERE network = $1 AND listing_id = $2 AND status = 'pending'
+      WHERE network = $1 AND listing_id = $2
+        AND status IN ('pending', 'dropped')
     `,
-    [NETWORK, normalizedTxid],
+    [
+      NETWORK,
+      normalizedTxid,
+      normalizedStatus,
+      replacementTxid || null,
+      JSON.stringify(replacementCheck),
+    ],
   );
   await client.query(
     `
@@ -5788,7 +6167,12 @@ async function updateTransactionStatus(
     `,
     [NETWORK, normalizedTxid],
   );
-  return { applied: true, reason: "repeated-core-absence" };
+  return {
+    applied: true,
+    reason: normalizedStatus === "replaced"
+      ? "full-node-verified-replacement"
+      : "repeated-core-absence",
+  };
 }
 
 async function refreshPendingStatuses(
@@ -5803,10 +6187,51 @@ async function refreshPendingStatuses(
       SELECT txid, last_seen_at
       FROM proof_indexer.transactions
       WHERE network = $1
-        AND status = 'pending'
-        AND last_seen_at <= now() - ($2::double precision * interval '1 millisecond')
+        AND (
+          (
+            status = 'pending'
+            AND last_seen_at <= now() -
+              ($2::double precision * interval '1 millisecond')
+          )
+          OR (
+            status = 'dropped'
+            AND (
+              (
+                replaced_by_txid IS NOT NULL
+                OR raw_tx #>>
+                  '{statusObservation,replacementCheck,status}' =
+                  'inconclusive'
+                OR COALESCE(
+                  raw_tx #>>
+                    '{lifecycleInputOutpoints,complete}',
+                  raw_tx #>>
+                    '{item,lifecycleInputOutpoints,complete}'
+                ) = 'true'
+              )
+              AND (
+                dropped_at >= now() -
+                  ($5::double precision * interval '1 millisecond')
+                OR (
+                  raw_tx #>>
+                    '{statusObservation,awaitingDropConfirmation}' =
+                    'true'
+                  AND updated_at >= now() -
+                    ($6::double precision * interval '1 millisecond')
+                )
+              )
+            )
+            AND updated_at <= now() -
+              ($2::double precision * interval '1 millisecond')
+          )
+        )
         AND NOT (txid = ANY($4::text[]))
-      ORDER BY last_seen_at ASC, txid ASC
+      ORDER BY
+        CASE WHEN status = 'pending' THEN 0 ELSE 1 END,
+        CASE
+          WHEN status = 'pending' THEN last_seen_at
+          ELSE updated_at
+        END ASC,
+        txid ASC
       LIMIT $3
     `,
     [
@@ -5814,6 +6239,8 @@ async function refreshPendingStatuses(
       PENDING_MIN_AGE_MS,
       PENDING_STATUS_LIMIT,
       q16ParentMembershipTxids,
+      TERMINAL_STATUS_RECHECK_WINDOW_MS,
+      PENDING_DROP_CONFIRMATION_MS + PENDING_MIN_AGE_MS,
     ],
   );
 
@@ -5824,6 +6251,8 @@ async function refreshPendingStatuses(
     dropped: 0,
     errors: 0,
     pending: 0,
+    replaced: 0,
+    unknown: 0,
     q16ParentMembershipCount: q16ParentMembershipTxids.length,
     staleCandidates: pendingResult.rowCount,
   };
@@ -5840,17 +6269,25 @@ async function refreshPendingStatuses(
       const txid = String(row.txid);
       summary.checked += 1;
       try {
-        const payload = await readJson(
-          endpoint(`/api/v1/tx/${txid}/status`),
+        const payload = await workerReadJson(
+          endpoint(`/api/v1/tx/${txid}/status`, { observation: "1" }),
           Math.max(1, Math.min(STATUS_REQUEST_TIMEOUT_MS, remainingMs)),
         );
         const status = String(payload?.status ?? "").toLowerCase();
-        if (!["pending", "confirmed", "dropped"].includes(status)) {
+        if (
+          !["pending", "confirmed", "dropped", "replaced", "unknown"].includes(
+            status,
+          )
+        ) {
           throw new Error(
             `Unexpected tx status ${JSON.stringify(payload?.status)}`,
           );
         }
-
+        if (status === "unknown") {
+          summary.unknown += 1;
+          summary.deferred += 1;
+          continue;
+        }
         const client = await pool.connect();
         try {
           await client.query("BEGIN");
@@ -6027,11 +6464,6 @@ async function runCycle(pool, lastSuccess, runtime) {
             timedOut: pendingBackfill.timedOut,
           }),
         );
-        if (workPrecision.era === WORK_PRECISION_Q16_ERA) {
-          throw new Error(
-            "Proof index worker cannot complete the AMO V8 cycle until the backfill-owned pending projection is rebuilt.",
-          );
-        }
       }
     } else {
       await runBackfillWithRetries(backfillEnv, runtime);
@@ -6170,14 +6602,47 @@ async function runCycle(pool, lastSuccess, runtime) {
     pool,
     workPrecision,
   );
-  workPrecisionReplay =
-    workPrecision.era === WORK_PRECISION_Q16_ERA
-      ? await assertWorkPrecisionPendingReady(
-          pool,
-          workPrecision,
-          workPrecisionConfirmedReplay,
-        )
-      : workPrecisionConfirmedReplay;
+  let pendingReadinessError =
+    workPrecision.era === WORK_PRECISION_Q16_ERA &&
+    pendingBackfill.ok === false
+      ? pendingBackfill.error ||
+        "The bounded pending backfill did not complete successfully."
+      : null;
+  if (workPrecision.era === WORK_PRECISION_Q16_ERA) {
+    try {
+      if (pendingReadinessError) {
+        throw new Error(pendingReadinessError);
+      }
+      workPrecisionReplay = await assertWorkPrecisionPendingReady(
+        pool,
+        workPrecision,
+        workPrecisionConfirmedReplay,
+      );
+    } catch (error) {
+      pendingReadinessError = cappedChildError(error?.message ?? error);
+      workPrecisionReplay = {
+        confirmed: workPrecisionConfirmedReplay,
+        era: WORK_PRECISION_Q16_ERA,
+        error: pendingReadinessError,
+        globalUnresolved: null,
+        q16PendingUnresolved: null,
+        ready: false,
+        replayRequired: true,
+      };
+      console.error(
+        JSON.stringify({
+          canonicalProgress,
+          error: pendingReadinessError,
+          pendingBackfill,
+          pendingStatus,
+          phase: "worker-pending-readiness-degraded",
+          writesFailClosed: true,
+        }),
+      );
+    }
+  } else {
+    workPrecisionReplay = workPrecisionConfirmedReplay;
+  }
   runtime.workPrecision = {
     ...workPrecision,
     pendingRebuild:
@@ -6201,6 +6666,45 @@ async function runCycle(pool, lastSuccess, runtime) {
   };
   if (runtime.stopping) {
     throw workerStoppingError();
+  }
+
+  if (pendingReadinessError) {
+    const finishedAt = new Date();
+    const value = {
+      apiBase: API_BASE,
+      backfillPhases: backfillPhases.map((phase) => ({
+        kind: phase.kind,
+        sources: phase.sourceLabels,
+        storeCanonicalSummarySnapshot:
+          phase.storeCanonicalSummarySnapshot,
+      })),
+      canonicalPhase,
+      canonicalProgress,
+      consecutiveFailures: 0,
+      durationMs: finishedAt.getTime() - startedAt.getTime(),
+      error: pendingReadinessError,
+      finishedAt: finishedAt.toISOString(),
+      lastSuccess,
+      lastSuccessAt: lastSuccess?.finishedAt ?? null,
+      network: runtime.network,
+      noProgress: clearedNoProgress,
+      ok: false,
+      pendingBackfill,
+      pendingEventHealth,
+      pendingStatus,
+      startedAt: startedAt.toISOString(),
+      state: "pending-degraded",
+      workPrecision: runtime.workPrecision,
+      writesFailClosed: true,
+    };
+    await writeWorkerMeta(pool, value);
+    console.error(JSON.stringify({ phase: "worker-cycle", ...value }));
+    return {
+      canonicalProgress,
+      lastSuccess,
+      noProgress: clearedNoProgress,
+      pendingDegraded: true,
+    };
   }
 
   const nowMs = Date.now();
@@ -6277,6 +6781,7 @@ async function runCycle(pool, lastSuccess, runtime) {
     canonicalProgress,
     lastSuccess: currentSuccess,
     noProgress: clearedNoProgress,
+    pendingDegraded: false,
   };
 }
 
@@ -6379,6 +6884,10 @@ export async function runWorkerMain() {
     while (!runtime.stopping) {
       try {
         const cycle = await runCycle(pool, lastSuccess, runtime);
+        const degradedOnceError = workerPendingDegradedOnceError(cycle, ONCE);
+        if (degradedOnceError) {
+          throw degradedOnceError;
+        }
         lastSuccess = cycle.lastSuccess;
         runtime.noProgress = cycle.noProgress;
         consecutiveFailures = 0;
@@ -6392,6 +6901,9 @@ export async function runWorkerMain() {
           error?.code === "POW_INDEX_WORKER_STOPPING"
         ) {
           break;
+        }
+        if (error?.code === WORKER_PENDING_DEGRADED_ONCE_CODE) {
+          throw error;
         }
         const coreTipAdvance = workerCoreTipAdvanceFromError(error);
         if (coreTipAdvance) {

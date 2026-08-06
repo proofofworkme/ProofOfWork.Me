@@ -3,6 +3,7 @@ Description=ProofOfWork.Me PostgreSQL event indexer worker
 After=network-online.target postgresql@16-main.service proofofwork-api.service
 Wants=network-online.target proofofwork-api.service
 Requires=postgresql@16-main.service
+OnFailure=proofofwork-ops-alert@%n.service
 
 [Service]
 Type=simple

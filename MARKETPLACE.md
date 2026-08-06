@@ -1264,9 +1264,12 @@ pending sealing, and confirmed executable asks:
   older confirmed sealed inventory.
 - The Sealed tab/count means confirmed and buyable. Pending seal rows remain
   visible as sealing status in All/Unsealed until their seal confirms.
-- Wallet and Marketplace refreshes may preserve locally broadcast pending
-  listing/seal overlays until the canonical API sees the same tx or a closure,
-  so seller controls do not disappear while the indexer catches up.
+- Wallet, Credit, WORK, and Marketplace refreshes may preserve bounded,
+  public-only local lifecycle evidence for definitions, mints, transfers,
+  listings, seals, closures, and sales until the canonical API resolves every
+  expected row. Pending state may reserve spendability, but confirmed-indexing,
+  unknown, replaced, dropped, and failed local records never become canonical
+  balance, supply, volume, or action authority.
 - Regression checks must prove that every confirmed sealed WORK listing present
   in the full token payload is also present in marketplace summary, and that
   wallet-scoped listing reads preserve confirmed seal txids.
@@ -1274,19 +1277,21 @@ pending sealing, and confirmed executable asks:
 ## June 27 Sealed Summary Hardening
 
 The final audit follow-up tightened one more sale-ticket edge case: a valid
-`seal5` transaction spends the listing sale-ticket anchor, but that spend is
-not a close. It publishes the seller's executable terms.
+`seal5` transaction publishes the seller's executable terms without spending
+the original listing sale-ticket anchor.
 
 - Active-book and summary reconciliation must treat `closeTxid === sealTxid` as
-  a stale projection of the seal spend, not as a delist or sale.
+  a stale projection when first-party outspend truth proves the original ticket
+  remains unspent, not as a delist or sale.
 - Proof-index `credit_listings` rows with status such as `sealing` or a
   seal-as-close projection should be usable as a recovery overlay for confirmed
   sealed WORK/credit inventory.
 - Final summary compaction must remove stale seal-as-close rows before using
   closed listings to filter active listings.
 - `marketplace-summary?fresh=1` should wait for the configured production
-  refresh window and, if canonical refresh is still slow, return the reconciled
-  fallback rather than a raw stale snapshot, false zero, or 503.
+  refresh window and, if canonical refresh is still slow, return only a
+  reconciled, hash-verified exact-tip fallback. If no such fallback exists, it
+  must return 503 rather than a raw stale snapshot or false zero.
 - The production gate is `POW_API_BASE=https://computer.proofofwork.me npm run
   check:marketplace-regressions`; it must prove every confirmed sealed WORK
   listing present in `/api/v1/token?asset=WORK&fresh=1` is also present in
@@ -1316,15 +1321,16 @@ listing, seal, closure, delisting, and purchase remains inspectable.
 
 ## Spent Ticket Closure
 
-The sale-ticket UTXO is the settlement primitive. Once that outpoint is spent by
-a close transaction, the listing is no longer active. A valid `seal5` spend of
-the ticket anchor is the exception: it makes the listing sealed/buyable and does
-not close it.
+The sale-ticket UTXO is the settlement primitive. Once that outpoint is spent,
+the listing is no longer active. A valid current `seal5` does not spend the
+ticket anchor; it makes the still-unspent listing sealed and buyable.
 
 - A valid `buy5` spend closes the listing and records a sale.
 - A valid `delist5` spend closes the listing as a cancellation.
-- Any other confirmed non-seal observed spend still removes the listing from the
-  active book and records a closed-listing event for audit.
+- Any other confirmed observed spend, including a transaction incorrectly
+  labeled as a current seal, removes the listing from the active book and records
+  a closed-listing event for audit. Historical protocol forms remain replayable
+  under their own version rules.
 
 Pending outspends are best-effort mempool visibility. Confirmed outspends are
 canonical. Production should use Bitcoin Core `gettxout` as the fast spend-state

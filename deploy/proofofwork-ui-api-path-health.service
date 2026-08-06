@@ -1,11 +1,15 @@
 [Unit]
-Description=Prune managed ProofOfWork UI release backups
+Description=Check ProofOfWork UI-to-node API path and public readiness
+After=network-online.target caddy.service wg-quick@wg0.service
+Wants=network-online.target
 OnFailure=proofofwork-ops-alert@%n.service
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/sbin/proofofwork-release-prune /var/backups/proofofwork-ui/releases 5
-TimeoutStartSec=30m
+User=caddy
+Group=caddy
+ExecStart=/usr/local/sbin/proofofwork-ui-api-path-health
+TimeoutStartSec=45s
 NoNewPrivileges=true
 PrivateTmp=true
 PrivateDevices=true
@@ -15,15 +19,10 @@ ProtectControlGroups=true
 ProtectKernelLogs=true
 ProtectKernelModules=true
 ProtectKernelTunables=true
-ReadWritePaths=/var/backups/proofofwork-ui/releases
 CapabilityBoundingSet=
 AmbientCapabilities=
 RestrictSUIDSGID=true
 LockPersonality=true
 RestrictRealtime=true
 SystemCallArchitectures=native
-UMask=0077
-Nice=10
-IOSchedulingClass=idle
-CPUWeight=10
-IOWeight=10
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
