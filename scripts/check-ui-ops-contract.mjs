@@ -47,6 +47,7 @@ const provenanceTimer = read(
   "deploy/proofofwork-ui-release-provenance.timer",
 );
 const apiPathHealth = read("deploy/proofofwork-ui-api-path-health.sh");
+const proofApi = read("server/proof-api.mjs");
 const apiPathHealthService = read(
   "deploy/proofofwork-ui-api-path-health.service",
 );
@@ -188,6 +189,16 @@ assert.match(releasePruneService, /ProtectSystem=strict/u);
 
 assert.match(apiPathHealth, /http:\/\/10\.77\.0\.2:8081\/health\/live/u);
 assert.match(apiPathHealth, /proofofwork-op-return-api/u);
+const serverLivenessMode = proofApi.match(
+  /function processLivenessPayload\(\) \{[\s\S]*?mode: "([^"]+)",[\s\S]*?service: "proofofwork-op-return-api",[\s\S]*?\n\}/u,
+)?.[1];
+assert.equal(serverLivenessMode, "liveness");
+assert.ok(
+  apiPathHealth.includes(
+    `payload.get("mode") not in {"${serverLivenessMode}", "availability"}`,
+  ),
+  "UI API health must accept the exact server liveness mode and only the rolling availability compatibility mode.",
+);
 assert.match(apiPathHealth, /transport_502_504_count/u);
 assert.match(apiPathHealth, /caddy_upstream_unavailable_503_count/u);
 assert.match(apiPathHealth, /readiness_503_count/u);
@@ -1007,7 +1018,8 @@ while (($#)); do
   esac
 done
 if [[ "$url" == */health/live ]]; then
-  printf '%s' '{"service":"proofofwork-op-return-api","available":true,"ready":false,"mode":"availability"}' >"$output"
+  live_mode="\${POW_TEST_LIVE_MODE:-liveness}"
+  printf '{"service":"proofofwork-op-return-api","available":true,"ready":false,"mode":"%s"}' "$live_mode" >"$output"
   printf '200'
 elif [[ "$url" == */health ]]; then
   printf '%s' '{"service":"proofofwork-op-return-api","available":true,"ready":true,"mode":"readiness"}' >"$output"
@@ -1036,6 +1048,31 @@ fi
     healthyPath.stdout,
     /transport_502_504_count=0 caddy_upstream_unavailable_503_count=0 readiness_503_count=0 other_5xx_count=0/u,
   );
+
+  const rollingAvailabilityMode = spawnSync(
+    "/usr/bin/bash",
+    ["deploy/proofofwork-ui-api-path-health.sh"],
+    {
+      encoding: "utf8",
+      env: { ...environment, POW_TEST_LIVE_MODE: "availability" },
+    },
+  );
+  assert.equal(
+    rollingAvailabilityMode.status,
+    0,
+    rollingAvailabilityMode.stderr,
+  );
+
+  const unrelatedLiveMode = spawnSync(
+    "/usr/bin/bash",
+    ["deploy/proofofwork-ui-api-path-health.sh"],
+    {
+      encoding: "utf8",
+      env: { ...environment, POW_TEST_LIVE_MODE: "readiness" },
+    },
+  );
+  assert.equal(unrelatedLiveMode.status, 2, unrelatedLiveMode.stderr);
+  assert.match(unrelatedLiveMode.stderr, /liveness=invalid/u);
 
   const now = Date.now() / 1000;
   const record = (status, duration = 0.1, extra = {}) =>

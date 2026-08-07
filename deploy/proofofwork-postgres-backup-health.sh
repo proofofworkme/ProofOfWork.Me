@@ -123,7 +123,7 @@ verify_physical_backup_structure() {
   }; then
     return 1
   fi
-  for artifact in base.tar.gz backup_manifest status; do
+  for artifact in base.tar.gz backup_manifest; do
     if [[ ! -f "${backup}/${artifact}" || -L "${backup}/${artifact}" ||
       ! -s "${backup}/${artifact}" ]] ||
       [[ "$(/usr/bin/stat --format='%a' -- "${backup}/${artifact}")" != "600" ]] || {
@@ -133,6 +133,18 @@ verify_physical_backup_structure() {
       return 1
     fi
   done
+
+  artifact="${backup}/status"
+  if [[ ! -f "${artifact}" || -L "${artifact}" || ! -s "${artifact}" ]]; then
+    return 1
+  fi
+  mode="$(/usr/bin/stat --format='%a' -- "${artifact}")"
+  owner="$(/usr/bin/stat --format='%U:%G' -- "${artifact}")"
+  if { [[ "${mode}" != "600" ]] && [[ "${mode}" != "640" ]]; } || {
+    [[ "${allow_test_roots}" != "1" ]] && [[ "${owner}" != "postgres:postgres" ]];
+  }; then
+    return 1
+  fi
 }
 
 latest_logical="$(/usr/bin/find "${logical_root}" -maxdepth 1 -mindepth 1 -type d \

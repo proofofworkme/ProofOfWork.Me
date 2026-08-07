@@ -84,6 +84,21 @@ const logicalBackupService = read(
 );
 const cachePruneService = read("deploy/proofofwork-cache-prune.service");
 const infrastructure = read("OP_RETURN_INFRASTRUCTURE.md");
+const proofApi = read("server/proof-api.mjs");
+
+const serverLivenessModeMatch = proofApi.match(
+  /function processLivenessPayload\(\) \{[\s\S]{0,1000}?mode: "([^"]+)"/u,
+);
+assert.ok(
+  serverLivenessModeMatch,
+  "The API must expose an explicit process-liveness payload mode.",
+);
+const serverLivenessMode = serverLivenessModeMatch[1];
+assert.equal(
+  serverLivenessMode,
+  "liveness",
+  "The exact server /health/live payload must remain labeled liveness.",
+);
 
 for (const executable of [
   "deploy/proofofwork-node-release-publish.sh",
@@ -361,6 +376,10 @@ assert.match(opsAlertService, /^ExecStart=\/usr\/local\/sbin\/proofofwork-ops-al
 assert.match(nodeApiHealth, /http:\/\/127\.0\.0\.1:8081/u);
 assert.match(nodeApiHealth, /proofofwork-op-return-api/u);
 assert.match(nodeApiHealth, /available.*is not True/su);
+assert.match(
+  nodeApiHealth,
+  /payload\.get\("mode"\) not in \{"liveness", "availability"\}/u,
+);
 assert.match(nodeApiHealth, /ready.*is not True/su);
 assert.match(nodeApiHealth, /worker_restarts_increased/u);
 assert.match(nodeApiHealthService, /^StateDirectory=proofofwork-ops-health$/mu);
@@ -1243,7 +1262,7 @@ while (($#)); do
   esac
 done
 if [[ "$url" == */health/live ]]; then
-  printf '%s' '{"service":"proofofwork-op-return-api","available":true,"ready":false,"mode":"availability"}' >"$output"
+  printf '{"service":"proofofwork-op-return-api","available":true,"ready":false,"mode":"%s"}' "\${FAKE_LIVE_MODE:-liveness}" >"$output"
   printf '200'
 elif [[ "$url" == */health ]]; then
   if [[ "\${FAKE_READY:-1}" == "1" ]]; then
@@ -1298,6 +1317,7 @@ exec /usr/bin/sha256sum "$@"
     POW_OPS_SHA256SUM_BIN: fakeSha256sum,
     POW_TEST_SHA_COUNTER: sha256Counter,
     POW_NODE_HEALTH_STATE_ROOT: stateRoot,
+    FAKE_LIVE_MODE: serverLivenessMode,
     FAKE_READY: "1",
     FAKE_RESTARTS: "22",
   };
@@ -1308,6 +1328,29 @@ exec /usr/bin/sha256sum "$@"
   );
   assert.equal(nodeHealthy.status, 0, nodeHealthy.stderr);
   assert.match(nodeHealthy.stdout, /live_http=200 ready_http=200/u);
+  const nodeLegacyAvailabilityHealthy = spawnSync(
+    "/usr/bin/bash",
+    ["deploy/proofofwork-node-api-health.sh"],
+    {
+      encoding: "utf8",
+      env: { ...nodeHealthEnvironment, FAKE_LIVE_MODE: "availability" },
+    },
+  );
+  assert.equal(
+    nodeLegacyAvailabilityHealthy.status,
+    0,
+    nodeLegacyAvailabilityHealthy.stderr,
+  );
+  const nodeUnrelatedLiveMode = spawnSync(
+    "/usr/bin/bash",
+    ["deploy/proofofwork-node-api-health.sh"],
+    {
+      encoding: "utf8",
+      env: { ...nodeHealthEnvironment, FAKE_LIVE_MODE: "readiness" },
+    },
+  );
+  assert.equal(nodeUnrelatedLiveMode.status, 2, nodeUnrelatedLiveMode.stderr);
+  assert.match(nodeUnrelatedLiveMode.stderr, /liveness=invalid/u);
   const workerRestarted = spawnSync(
     "/usr/bin/bash",
     ["deploy/proofofwork-node-api-health.sh"],
@@ -1348,9 +1391,10 @@ exec /usr/bin/sha256sum "$@"
     '{"status":"ok","type":"basebackup"}\n',
   );
   chmodSync(physicalSet, 0o700);
-  for (const name of ["base.tar.gz", "backup_manifest", "status"]) {
+  for (const name of ["base.tar.gz", "backup_manifest"]) {
     chmodSync(join(physicalSet, name), 0o600);
   }
+  chmodSync(join(physicalSet, "status"), 0o640);
   writeFileSync(join(physicalRoot, "wal", "A".repeat(24) + ".gz"), "wal\n");
   const backupHealthEnvironment = {
     ...process.env,
@@ -1385,6 +1429,19 @@ exec /usr/bin/sha256sum "$@"
     "check\n",
     "A cached five-minute health sample must not rehash the logical dump.",
   );
+  const physicalStatus = join(physicalSet, "status");
+  chmodSync(physicalStatus, 0o600);
+  const privatePhysicalStatusHealthy = spawnSync(
+    "/usr/bin/bash",
+    ["deploy/proofofwork-postgres-backup-health.sh"],
+    { encoding: "utf8", env: backupHealthEnvironment },
+  );
+  assert.equal(
+    privatePhysicalStatusHealthy.status,
+    0,
+    privatePhysicalStatusHealthy.stderr,
+  );
+  chmodSync(physicalStatus, 0o640);
 
   const compressedWal = join(physicalRoot, "wal", "A".repeat(24) + ".gz");
   const rawWal = join(physicalRoot, "wal", "B".repeat(24));
@@ -1397,7 +1454,6 @@ exec /usr/bin/sha256sum "$@"
   );
   assert.equal(rawWalHealthy.status, 0, rawWalHealthy.stderr);
 
-  const physicalStatus = join(physicalSet, "status");
   const externalStatus = join(healthTestRoot, "external-status");
   writeFileSync(externalStatus, '{"status":"ok","type":"basebackup"}\n', {
     mode: 0o600,
@@ -1417,7 +1473,7 @@ exec /usr/bin/sha256sum "$@"
   assert.match(symlinkedPhysicalArtifact.stderr, /physical_backup=invalid_artifacts/u);
   rmSync(physicalStatus);
   writeFileSync(physicalStatus, '{"status":"ok","type":"basebackup"}\n', {
-    mode: 0o600,
+    mode: 0o640,
   });
 
   const runBackupHealth = () =>
@@ -1426,6 +1482,29 @@ exec /usr/bin/sha256sum "$@"
       ["deploy/proofofwork-postgres-backup-health.sh"],
       { encoding: "utf8", env: backupHealthEnvironment },
     );
+  chmodSync(physicalStatus, 0o660);
+  const groupWritablePhysicalStatus = runBackupHealth();
+  assert.equal(
+    groupWritablePhysicalStatus.status,
+    2,
+    groupWritablePhysicalStatus.stderr,
+  );
+  assert.match(
+    groupWritablePhysicalStatus.stderr,
+    /physical_backup=invalid_artifacts/u,
+  );
+  chmodSync(physicalStatus, 0o644);
+  const worldReadablePhysicalStatus = runBackupHealth();
+  assert.equal(
+    worldReadablePhysicalStatus.status,
+    2,
+    worldReadablePhysicalStatus.stderr,
+  );
+  assert.match(
+    worldReadablePhysicalStatus.stderr,
+    /physical_backup=invalid_artifacts/u,
+  );
+  chmodSync(physicalStatus, 0o640);
   const manifestPath = join(logicalSet, "SHA256SUMS");
   writeFileSync(manifestPath, `${dumpDigest}  proof_indexer.dump\n`);
   const omittedManifestEntry = runBackupHealth();

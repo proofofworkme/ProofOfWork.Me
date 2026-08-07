@@ -62,12 +62,12 @@ except Exception:
 if (
     payload.get("service") != "proofofwork-op-return-api"
     or payload.get("available") is not True
-    or payload.get("mode") != "availability"
+    or payload.get("mode") not in {"liveness", "availability"}
 ):
     raise SystemExit(1)
 PY
 then
-  echo "CRITICAL endpoint=live http_status=${live_code:-none} availability=invalid" >&2
+  echo "CRITICAL endpoint=live http_status=${live_code:-none} liveness=invalid" >&2
   severity=2
 fi
 

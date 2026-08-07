@@ -82,12 +82,12 @@ except Exception:
 if (
     payload.get("service") != "proofofwork-op-return-api"
     or payload.get("available") is not True
-    or payload.get("mode") != "availability"
+    or payload.get("mode") not in {"liveness", "availability"}
 ):
     raise SystemExit(1)
 PY
 then
-  echo "CRITICAL endpoint=private-live http_status=${private_code:-none} availability=invalid" >&2
+  echo "CRITICAL endpoint=private-live http_status=${private_code:-none} liveness=invalid" >&2
   severity=2
 fi
 
@@ -106,12 +106,12 @@ except Exception:
 if (
     payload.get("service") != "proofofwork-op-return-api"
     or payload.get("available") is not True
-    or payload.get("mode") != "availability"
+    or payload.get("mode") not in {"liveness", "availability"}
 ):
     raise SystemExit(1)
 PY
 then
-  echo "CRITICAL endpoint=public-live http_status=${public_live_code:-none} availability=invalid" >&2
+  echo "CRITICAL endpoint=public-live http_status=${public_live_code:-none} liveness=invalid" >&2
   severity=2
 fi
 
