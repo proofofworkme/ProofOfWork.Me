@@ -22,6 +22,7 @@ import {
   settleBoundedCachePlaceholder,
 } from "./api-runtime-guards.mjs";
 import {
+  canonicalSnapshotPublicationJsonTree,
   canonicalSnapshotContentSha256,
   coherentCanonicalSnapshotAtBoundary,
   coherentFullCanonicalSnapshot,
@@ -44511,14 +44512,14 @@ function fullCanonicalLedgerPayload(payload, indexedThroughBlockHash) {
     return payload;
   }
   return withFullCanonicalSnapshot(
-    {
+    canonicalSnapshotPublicationJsonTree({
       ...payload,
       indexedThroughBlockHash: hash,
       sourceHashes: {
         ...(payload.sourceHashes ?? {}),
         blockScan: hash,
       },
-    },
+    }),
     "canonical-ledger",
   );
 }

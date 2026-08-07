@@ -13,6 +13,7 @@ import {
   settleBoundedCachePlaceholder,
 } from "./api-runtime-guards.mjs";
 import {
+  canonicalSnapshotPublicationJsonTree,
   canonicalSnapshotContentSha256,
   coherentCanonicalSnapshotAtBoundary,
   coherentFullCanonicalSnapshot,
@@ -328,6 +329,265 @@ test("canonical snapshots reject accessors, exotics, cycles, and non-JSON values
     /strict JSON tree/u,
   );
   assert.equal(proxyReads, 0);
+});
+
+test("trusted publication normalization omits object tombstones without weakening strict snapshots", () => {
+  const projected = tokenSnapshotFixture({
+    closedListings: [
+      {
+        closedDataBytes: undefined,
+        listingId: "closed-listing",
+        saleTxid: undefined,
+      },
+    ],
+    records: [{ id: "proof-id", pgpKey: undefined }],
+    sales: [
+      {
+        closedFrozenNetworkValueSats: undefined,
+        saleId: "sale",
+      },
+    ],
+  });
+  assert.throws(
+    () => withFullCanonicalSnapshot(projected, "token-state"),
+    /strict JSON tree/u,
+  );
+
+  const projectedWire = JSON.stringify(projected);
+  const normalized = canonicalSnapshotPublicationJsonTree(projected);
+  assert.equal(JSON.stringify(normalized), projectedWire);
+  assert.deepEqual(normalized.closedListings, [
+    { listingId: "closed-listing" },
+  ]);
+  assert.deepEqual(normalized.records, [{ id: "proof-id" }]);
+  assert.deepEqual(normalized.sales, [{ saleId: "sale" }]);
+  assert.equal(
+    Object.hasOwn(projected.closedListings[0], "closedDataBytes"),
+    true,
+  );
+  assert.equal(projected.closedListings[0].closedDataBytes, undefined);
+  assert.equal(Object.hasOwn(projected.records[0], "pgpKey"), true);
+  assert.equal(projected.records[0].pgpKey, undefined);
+  assert.equal(Object.isFrozen(projected), false);
+  assert.equal(Object.isFrozen(projected.closedListings[0]), false);
+
+  const normalizedSnapshot = withFullCanonicalSnapshot(
+    normalized,
+    "token-state",
+  );
+  const wireEquivalentSnapshot = withFullCanonicalSnapshot(
+    tokenSnapshotFixture({
+      closedListings: [{ listingId: "closed-listing" }],
+      records: [{ id: "proof-id" }],
+      sales: [{ saleId: "sale" }],
+    }),
+    "token-state",
+  );
+  assert.equal(
+    normalizedSnapshot.snapshotId,
+    wireEquivalentSnapshot.snapshotId,
+  );
+  assert.ok(
+    coherentFullCanonicalSnapshot(normalizedSnapshot, "token-state"),
+  );
+  projected.closedListings[0].closedDataBytes = 123;
+  assert.equal(
+    Object.hasOwn(normalized.closedListings[0], "closedDataBytes"),
+    false,
+  );
+
+  for (const invalid of [
+    { values: [undefined] },
+    { values: [Number.NaN] },
+    { value: 1n },
+    { value: () => "unsafe" },
+    new Date("2026-08-07T12:00:00.000Z"),
+  ]) {
+    assert.throws(
+      () => canonicalSnapshotPublicationJsonTree(invalid),
+      /strict JSON tree/u,
+    );
+  }
+
+  let unsafeReads = 0;
+  const accessor = { safe: true };
+  Object.defineProperty(accessor, "unsafe", {
+    enumerable: true,
+    get() {
+      unsafeReads += 1;
+      return "read";
+    },
+  });
+  assert.throws(
+    () => canonicalSnapshotPublicationJsonTree(accessor),
+    /strict JSON tree/u,
+  );
+  const proxy = new Proxy(
+    { safe: true },
+    {
+      get(target, key, receiver) {
+        unsafeReads += 1;
+        return Reflect.get(target, key, receiver);
+      },
+    },
+  );
+  assert.throws(
+    () => canonicalSnapshotPublicationJsonTree(proxy),
+    /strict JSON tree/u,
+  );
+  assert.equal(unsafeReads, 0);
+
+  const cyclic = {};
+  cyclic.self = cyclic;
+  assert.throws(
+    () => canonicalSnapshotPublicationJsonTree(cyclic),
+    /strict JSON tree/u,
+  );
+});
+
+test("publication normalization preserves exact wire values and shared acyclic data", () => {
+  const shared = {
+    negativeZero: -0,
+    text: "line\nquote\"é😀",
+  };
+  const nullPrototype = Object.create(null);
+  Object.defineProperty(nullPrototype, "__proto__", {
+    configurable: true,
+    enumerable: true,
+    value: { safe: true },
+    writable: true,
+  });
+  nullPrototype.value = "retained";
+  const source = {
+    first: shared,
+    nullPrototype,
+    omitted: undefined,
+    second: shared,
+    values: [-0, 1e-7, 1e21, null, true, "value"],
+  };
+
+  const normalized = canonicalSnapshotPublicationJsonTree(source);
+  assert.equal(JSON.stringify(normalized), JSON.stringify(source));
+  assert.notEqual(normalized, source);
+  assert.notEqual(normalized.first, shared);
+  assert.equal(normalized.first, normalized.second);
+  assert.equal(Object.is(normalized.first.negativeZero, -0), false);
+  assert.equal(Object.is(normalized.values[0], -0), false);
+  assert.equal(Object.is(canonicalSnapshotPublicationJsonTree(-0), -0), false);
+  assert.equal(canonicalSnapshotPublicationJsonTree(null), null);
+  assert.equal(canonicalSnapshotPublicationJsonTree("root"), "root");
+  assert.throws(
+    () => canonicalSnapshotPublicationJsonTree(undefined),
+    /strict JSON tree/u,
+  );
+  assert.equal(Object.hasOwn(normalized, "omitted"), false);
+  assert.equal(
+    Object.getPrototypeOf(normalized.nullPrototype),
+    Object.prototype,
+  );
+  assert.equal(Object.hasOwn(normalized.nullPrototype, "__proto__"), true);
+  assert.deepEqual(normalized.nullPrototype.__proto__, { safe: true });
+
+  const hookedCrossRealm = runInNewContext(`
+    Object.defineProperty(Object.prototype, "toJSON", {
+      configurable: true,
+      value() { throw new Error("inherited toJSON executed"); }
+    });
+    ({ nested: { value: 1 }, safe: "retained" });
+  `);
+  assert.deepEqual(
+    canonicalSnapshotPublicationJsonTree(hookedCrossRealm),
+    { nested: { value: 1 }, safe: "retained" },
+  );
+});
+
+test("publication normalization rejects hostile array and prototype shapes without traps", () => {
+  let unsafeReads = 0;
+  const accessorArray = [];
+  Object.defineProperty(accessorArray, "0", {
+    configurable: true,
+    enumerable: true,
+    get() {
+      unsafeReads += 1;
+      return "unsafe";
+    },
+  });
+  const hiddenArray = [];
+  Object.defineProperty(hiddenArray, "0", {
+    configurable: true,
+    enumerable: false,
+    value: "hidden",
+    writable: true,
+  });
+  const symbolArray = ["safe"];
+  symbolArray[Symbol("unsafe")] = "hidden";
+  const extendedArray = ["safe"];
+  extendedArray.extra = "hidden";
+  for (const invalid of [
+    new Array(1),
+    accessorArray,
+    hiddenArray,
+    symbolArray,
+    extendedArray,
+  ]) {
+    assert.throws(
+      () => canonicalSnapshotPublicationJsonTree(invalid),
+      /strict JSON tree/u,
+    );
+  }
+  assert.equal(unsafeReads, 0);
+
+  let prototypeTraps = 0;
+  const proxyPrototype = new Proxy(Object.create(null), {
+    get(target, key, receiver) {
+      prototypeTraps += 1;
+      return Reflect.get(target, key, receiver);
+    },
+    getOwnPropertyDescriptor(target, key) {
+      prototypeTraps += 1;
+      return Reflect.getOwnPropertyDescriptor(target, key);
+    },
+    getPrototypeOf(target) {
+      prototypeTraps += 1;
+      return Reflect.getPrototypeOf(target);
+    },
+  });
+  const proxyPrototypeValue = Object.create(proxyPrototype);
+  Object.defineProperty(proxyPrototypeValue, "safe", {
+    configurable: true,
+    enumerable: true,
+    value: "retained",
+    writable: true,
+  });
+  assert.throws(
+    () => canonicalSnapshotPublicationJsonTree(proxyPrototypeValue),
+    /strict JSON tree/u,
+  );
+
+  const constructorPrototype = Object.create(null);
+  const proxyConstructor = new Proxy(Object, {
+    get(target, key, receiver) {
+      prototypeTraps += 1;
+      return Reflect.get(target, key, receiver);
+    },
+  });
+  Object.defineProperty(constructorPrototype, "constructor", {
+    configurable: true,
+    value: proxyConstructor,
+    writable: true,
+  });
+  const proxyConstructorValue = Object.create(constructorPrototype);
+  Object.defineProperty(proxyConstructorValue, "safe", {
+    configurable: true,
+    enumerable: true,
+    value: "retained",
+    writable: true,
+  });
+  assert.throws(
+    () => canonicalSnapshotPublicationJsonTree(proxyConstructorValue),
+    /strict JSON tree/u,
+  );
+  assert.equal(prototypeTraps, 0);
 });
 
 test("canonical snapshots accept only native plain containers across realms", () => {

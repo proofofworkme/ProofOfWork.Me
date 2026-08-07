@@ -13,21 +13,38 @@ function invalidSnapshotTree(reason) {
 }
 
 function nativeConstructorOwnsPrototype(prototype, name) {
+  if (!prototype || nodeTypes.isProxy(prototype)) {
+    return false;
+  }
   const constructorProperty = Object.getOwnPropertyDescriptor(
     prototype,
     "constructor",
   );
   const constructor = constructorProperty?.value;
+  if (typeof constructor !== "function" || nodeTypes.isProxy(constructor)) {
+    return false;
+  }
+  const nameProperty = Object.getOwnPropertyDescriptor(constructor, "name");
+  const prototypeProperty = Object.getOwnPropertyDescriptor(
+    constructor,
+    "prototype",
+  );
   return (
-    typeof constructor === "function" &&
-    constructor.name === name &&
-    constructor.prototype === prototype &&
+    nameProperty &&
+    "value" in nameProperty &&
+    nameProperty.value === name &&
+    prototypeProperty &&
+    "value" in prototypeProperty &&
+    prototypeProperty.value === prototype &&
     Function.prototype.toString.call(constructor) ===
       `function ${name}() { [native code] }`
   );
 }
 
 function intrinsicObjectPrototype(prototype) {
+  if (prototype !== null && nodeTypes.isProxy(prototype)) {
+    return false;
+  }
   return (
     prototype === Object.prototype ||
     (prototype !== null &&
@@ -37,6 +54,9 @@ function intrinsicObjectPrototype(prototype) {
 }
 
 function intrinsicArrayPrototype(prototype) {
+  if (prototype !== null && nodeTypes.isProxy(prototype)) {
+    return false;
+  }
   return (
     prototype === Array.prototype ||
     (Array.isArray(prototype) &&
@@ -160,6 +180,191 @@ function freezeInspectedSnapshotTree(containers) {
       Object.freeze(value);
     }
   }
+}
+
+export function canonicalSnapshotPublicationJsonTree(payload) {
+  // Database/read-model projections use explicit `undefined` values as merge
+  // tombstones. JSON responses omit those object properties, so normalize the
+  // completed trusted projection to its exact wire representation before it is
+  // hashed and frozen. Keep arrays strict: JSON's implicit undefined-to-null
+  // conversion would change their meaning.
+  const clones = new WeakMap();
+  const states = new WeakMap();
+  let normalizedRoot;
+  const stack = [
+    {
+      exiting: false,
+      inArray: false,
+      key: "",
+      parent: null,
+      root: true,
+      value: payload,
+    },
+  ];
+
+  const assign = (frame, value) => {
+    if (frame.root) {
+      normalizedRoot = value;
+      return;
+    }
+    Object.defineProperty(frame.parent, frame.key, {
+      configurable: true,
+      enumerable: true,
+      value,
+      writable: true,
+    });
+  };
+
+  while (stack.length > 0) {
+    const frame = stack.pop();
+    const current = frame.value;
+    if (frame.exiting) {
+      states.set(current, 2);
+      continue;
+    }
+    if (current === null) {
+      assign(frame, null);
+      continue;
+    }
+    const currentType = typeof current;
+    if (currentType === "undefined") {
+      if (!frame.root && !frame.inArray) {
+        continue;
+      }
+      const reason = frame.inArray
+        ? "undefined array value"
+        : "unsupported undefined value";
+      throw invalidSnapshotTree(reason);
+    }
+    if (currentType === "string" || currentType === "boolean") {
+      assign(frame, current);
+      continue;
+    }
+    if (currentType === "number") {
+      if (!Number.isFinite(current)) {
+        throw invalidSnapshotTree("non-finite number");
+      }
+      assign(frame, Object.is(current, -0) ? 0 : current);
+      continue;
+    }
+    if (currentType !== "object") {
+      throw invalidSnapshotTree(`unsupported ${currentType} value`);
+    }
+    if (nodeTypes.isProxy(current)) {
+      throw invalidSnapshotTree("Proxy objects are not allowed");
+    }
+
+    const state = states.get(current);
+    if (state === 1) {
+      throw invalidSnapshotTree("cycle detected");
+    }
+    if (state === 2) {
+      assign(frame, clones.get(current));
+      continue;
+    }
+
+    const isArray = Array.isArray(current);
+    const prototype = Object.getPrototypeOf(current);
+    if (prototype !== null && nodeTypes.isProxy(prototype)) {
+      throw invalidSnapshotTree("Proxy prototypes are not allowed");
+    }
+    if (
+      (isArray && !intrinsicArrayPrototype(prototype)) ||
+      (!isArray &&
+        prototype !== null &&
+        !intrinsicObjectPrototype(prototype))
+    ) {
+      throw invalidSnapshotTree("custom or exotic object prototype");
+    }
+
+    const children = [];
+    let arrayLength = 0;
+    const ownKeys = Reflect.ownKeys(current);
+    if (isArray) {
+      const lengthProperty = Object.getOwnPropertyDescriptor(
+        current,
+        "length",
+      );
+      const length = lengthProperty?.value;
+      if (
+        !lengthProperty ||
+        !("value" in lengthProperty) ||
+        lengthProperty.enumerable ||
+        !Number.isSafeInteger(length) ||
+        length < 0
+      ) {
+        throw invalidSnapshotTree("array length is invalid");
+      }
+      arrayLength = length;
+      let indexedProperties = 0;
+      for (const key of ownKeys) {
+        if (key === "length") {
+          continue;
+        }
+        if (
+          typeof key !== "string" ||
+          !/^(?:0|[1-9][0-9]*)$/u.test(key)
+        ) {
+          throw invalidSnapshotTree("array has a non-index property");
+        }
+        const index = Number(key);
+        if (
+          !Number.isSafeInteger(index) ||
+          index < 0 ||
+          index >= length ||
+          String(index) !== key
+        ) {
+          throw invalidSnapshotTree("array index is invalid");
+        }
+        const property = Object.getOwnPropertyDescriptor(current, key);
+        if (!property || !("value" in property) || !property.enumerable) {
+          throw invalidSnapshotTree("array accessor or hidden value");
+        }
+        indexedProperties += 1;
+        children.push({
+          inArray: true,
+          key,
+          value: property.value,
+        });
+      }
+      if (indexedProperties !== length) {
+        throw invalidSnapshotTree("sparse array");
+      }
+    } else {
+      for (const key of ownKeys) {
+        if (typeof key !== "string") {
+          throw invalidSnapshotTree("symbol property");
+        }
+        const property = Object.getOwnPropertyDescriptor(current, key);
+        if (!property || !("value" in property) || !property.enumerable) {
+          throw invalidSnapshotTree("accessor or hidden property");
+        }
+        if (property.value !== undefined) {
+          children.push({
+            inArray: false,
+            key,
+            value: property.value,
+          });
+        }
+      }
+    }
+
+    const normalized = isArray ? new Array(arrayLength) : {};
+    states.set(current, 1);
+    clones.set(current, normalized);
+    assign(frame, normalized);
+    stack.push({ exiting: true, value: current });
+    for (let index = children.length - 1; index >= 0; index -= 1) {
+      stack.push({
+        exiting: false,
+        parent: normalized,
+        root: false,
+        ...children[index],
+      });
+    }
+  }
+
+  return normalizedRoot;
 }
 
 function installCreationProof(payload, descriptor, snapshotId, surface) {

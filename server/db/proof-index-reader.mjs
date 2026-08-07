@@ -1,6 +1,9 @@
 import { createHash } from "node:crypto";
 import { compareCanonicalUtf8 } from "../canonical-order.mjs";
-import { withFullCanonicalSnapshot } from "../canonical-snapshot.mjs";
+import {
+  canonicalSnapshotPublicationJsonTree,
+  withFullCanonicalSnapshot,
+} from "../canonical-snapshot.mjs";
 import { withCanonicalMailAttachedCredits } from "../tx-lifecycle.mjs";
 
 import {
@@ -29071,6 +29074,13 @@ function assertCanonicalIncbCurrentProjection(tokens, mints, holders, context) {
   }
 }
 
+function fullCanonicalSnapshotForPublication(payload, surface) {
+  return withFullCanonicalSnapshot(
+    canonicalSnapshotPublicationJsonTree(payload),
+    surface,
+  );
+}
+
 async function proofIndexTokenPayloadFromCurrentTables(pool, network, scope) {
   await assertCurrentAmoV5CanonicalPositionUniqueness(pool, network);
   const tokens = await proofIndexTokenDefinitionsFromTables(pool, network, scope);
@@ -29458,24 +29468,21 @@ async function proofIndexTokenPayloadFromCurrentTables(pool, network, scope) {
     tokens: enrichedTokens,
     transfers,
   };
-  return withFullCanonicalSnapshot(
-    applyWorkMarketV2CutoverToTokenState(
-      await payloadWithVerifiedWorkMarketV4Activation(pool, network, {
-        ...payload,
-        stats: {
-          ...salesStats(sales),
-          ...tokenStateStats(
-            payload,
-            enrichedTokens,
-            mints,
-            transfers,
-            invalidEvents,
-          ),
-          indexedThroughBlock: indexedThroughBlock || undefined,
-        },
-      }),
-    ),
-    "token-state",
+  return applyWorkMarketV2CutoverToTokenState(
+    await payloadWithVerifiedWorkMarketV4Activation(pool, network, {
+      ...payload,
+      stats: {
+        ...salesStats(sales),
+        ...tokenStateStats(
+          payload,
+          enrichedTokens,
+          mints,
+          transfers,
+          invalidEvents,
+        ),
+        indexedThroughBlock: indexedThroughBlock || undefined,
+      },
+    }),
   );
 }
 
@@ -29877,7 +29884,7 @@ export async function proofIndexTokenPayload(network, tokenScope, searchParams) 
       ),
     );
     return result?.source === "proof-indexer-token-state-tables"
-      ? withFullCanonicalSnapshot(result, "token-state")
+      ? fullCanonicalSnapshotForPublication(result, "token-state")
       : result;
   };
 
@@ -32541,7 +32548,7 @@ async function currentProofIndexRegistryPayload(pool, network, options = {}) {
     ...confirmedRecords.map((record) => Number(record?.updatedHeight) || 0),
   );
 
-  return withFullCanonicalSnapshot({
+  return fullCanonicalSnapshotForPublication({
     activity,
     indexedAt,
     indexedThroughBlock,

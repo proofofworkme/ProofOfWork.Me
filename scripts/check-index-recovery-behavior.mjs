@@ -28,6 +28,7 @@ import {
   decodeCanonicalOpReturnOutput,
 } from "../server/canonical-op-return.mjs";
 import {
+  canonicalSnapshotPublicationJsonTree,
   coherentFullCanonicalSnapshot,
   withFullCanonicalSnapshot,
 } from "../server/canonical-snapshot.mjs";
@@ -1489,6 +1490,7 @@ function isolatedFunction(path, name, globals = {}) {
       transform(payload),
     existingRegistryPayload: async () => null,
     withWorkPrecisionMetadata,
+    canonicalSnapshotPublicationJsonTree,
     withFullCanonicalSnapshot,
     uniqueMarketplaceMutationActivity,
     validTxid,
@@ -1607,6 +1609,10 @@ function isolatedFunction(path, name, globals = {}) {
           ],
           currentProofIndexRegistryPayload: [
             "compareCurrentRegistryRecords",
+            "fullCanonicalSnapshotForPublication",
+          ],
+          proofIndexTokenPayload: [
+            "fullCanonicalSnapshotForPublication",
           ],
           tokenListingActiveLifecycleSql: [
             "canonicalCreditListingAlias",
@@ -23107,9 +23113,25 @@ check("exact canonical summaries require current conserved token balances", asyn
     tokenId: WORK_TOKEN_ID,
     unitScale: WORK_UNIT_SCALE_TEXT,
   };
+  const internalTombstoneListingId = "2".repeat(64);
+  const internalTombstoneListing = {
+    ...q16FixtureMetadata,
+    amount: "0.0000000000000001",
+    amountSubatoms: "1",
+    closedConfirmed: true,
+    closedTxid: "3".repeat(64),
+    listingId: internalTombstoneListingId,
+    saleAuthorization: {
+      tokenId: WORK_TOKEN_ID,
+      version: WORK_AMO_V8_AUTH_VERSION,
+    },
+    saleTxid: undefined,
+    status: "closed",
+    tokenId: WORK_TOKEN_ID,
+  };
   let relationalFixture = {
     ...q16FixtureMetadata,
-    closedListings: [],
+    closedListings: [internalTombstoneListing],
     confirmedSupplySubatoms: "1",
     holders: [{
       ...q16FixtureMetadata,
@@ -23247,6 +23269,16 @@ check("exact canonical summaries require current conserved token balances", asyn
   assert.equal(projectedRelic.amountStorageModel, WORK_SUBATOM_PROJECTION_MODEL);
   assert.equal(projectedRelic.amountSubatoms, "160000000000");
   assert.equal(projectedRelic.amountAtoms, undefined);
+  const internalTombstone = bootstrappedTokenTable.closedListings.find(
+    (listing) => listing.listingId === internalTombstoneListingId,
+  );
+  assert.ok(internalTombstone);
+  assert.equal(
+    Object.hasOwn(internalTombstone, "saleTxid"),
+    true,
+    "the internal canonical-summary projection must retain the sale tombstone used by downstream merges",
+  );
+  assert.equal(internalTombstone.saleTxid, undefined);
   assert.deepEqual(projectedRelic.sourceAmountEvidence, {
     amount: "0.000016",
     amountAtoms: "1600",
@@ -23287,6 +23319,11 @@ check("exact canonical summaries require current conserved token balances", asyn
   const tableProjectionSource = topLevelFunctionSource(
     READER_PATH,
     "proofIndexTokenPayloadFromCurrentTables",
+  );
+  assert.doesNotMatch(
+    tableProjectionSource,
+    /canonicalSnapshotPublicationJsonTree|fullCanonicalSnapshotForPublication|withFullCanonicalSnapshot/u,
+    "the relational table projection remains an internal merge input until an outer publication boundary",
   );
   assert.match(
     tableProjectionSource,
@@ -43741,6 +43778,7 @@ check("unpinned broad ID registry uses current relational event state", async ()
     id: "listed-id",
     network: "livenet",
     ownerAddress: "bc1seller",
+    pgpKey: undefined,
     receiveAddress: "bc1seller",
     txid: "d".repeat(64),
     updatedHeight: 100,
@@ -43825,6 +43863,13 @@ check("unpinned broad ID registry uses current relational event state", async ()
     {},
     "livenet",
     { registryAddress: "bc1registry" },
+  );
+  assert.equal(
+    Object.hasOwn(
+      current.records.find((record) => record.id === confirmedRecord.id),
+      "pgpKey",
+    ),
+    false,
   );
   assert.deepEqual(
     Array.from(current.records, (record) => record.id),
@@ -66166,6 +66211,181 @@ check("sequential public cutovers require explicit V6 and V8 authorization", asy
   assert.equal(publicPayload.listings[0].listingId, listing.listingId);
   assert.equal(publicPayload.listings[0].amountAtoms, "10");
   assert.equal(publicPayload.listings[0].amount, "0.0000001");
+});
+
+check("ready token publication omits Q16 and closed-listing tombstones", async () => {
+  const listingId = "7".repeat(64);
+  const closedListingId = "8".repeat(64);
+  const sourcePayload = {
+    closedListings: [
+      {
+        closedDataBytes: undefined,
+        closedFrozenNetworkValueSats: undefined,
+        confirmed: true,
+        listingId: closedListingId,
+        saleTxid: undefined,
+        status: "closed",
+        tokenId: WORK_TOKEN_ID,
+      },
+    ],
+    holders: [],
+    indexedAt: "2026-08-07T12:00:00.000Z",
+    indexedThroughBlock: 960_700,
+    indexedThroughBlockHash: "9".repeat(64),
+    invalidEvents: [],
+    listings: [
+      {
+        amount: "0.0000000000000001",
+        amountAtoms: undefined,
+        amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+        amountSubatoms: "1",
+        confirmed: true,
+        decimals: WORK_SUBATOM_DECIMALS,
+        listingId,
+        precisionModel: WORK_PRECISION_V2_MODEL,
+        saleAuthorization: {
+          tokenId: WORK_TOKEN_ID,
+          version: WORK_AMO_V8_AUTH_VERSION,
+        },
+        tokenId: WORK_TOKEN_ID,
+        unitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,
+      },
+    ],
+    mints: [],
+    network: "livenet",
+    sales: [],
+    snapshotId: "ready-token-source-960700",
+    source: "proof-indexer-token-state-tables",
+    stats: { indexedThroughBlock: 960_700 },
+    tokens: [],
+    transfers: [],
+  };
+  let readinessApplied = false;
+  const proofIndexTokenPayload = isolatedFunction(
+    READER_PATH,
+    "proofIndexTokenPayload",
+    {
+      applyWorkAmoV5CutoverToTokenState: (payload) => payload,
+      applyWorkMarketV2CutoverToTokenState: (payload) => payload,
+      payloadWithVerifiedWorkAmoV5Activation: async (
+        _network,
+        payload,
+      ) => payload,
+      payloadWithCurrentWorkMarketListingReadPolicy: async (
+        _network,
+        payload,
+      ) => {
+        readinessApplied = true;
+        return payload;
+      },
+      payloadWithCurrentWorkPrecisionReadPolicy: async (
+        _network,
+        payload,
+      ) => payload,
+      payloadWithVerifiedWorkMarketV4Activation: async (
+        _pool,
+        _network,
+        payload,
+      ) => payload,
+      proofIndexPool: () => ({}),
+      proofIndexTokenPayloadFromCurrentTables: async () =>
+        structuredClone(sourcePayload),
+      proofIndexTokenReadEligibility: () => ({
+        eligible: true,
+        scope: "all",
+      }),
+    },
+  );
+
+  const published = await proofIndexTokenPayload(
+    "livenet",
+    "all",
+    new URLSearchParams(),
+  );
+  assert.equal(readinessApplied, true);
+  assert.ok(coherentFullCanonicalSnapshot(published, "token-state"));
+  assert.equal(published.listings[0].listingId, listingId);
+  assert.equal(
+    Object.hasOwn(published.listings[0], "amountAtoms"),
+    false,
+  );
+  assert.equal(published.closedListings[0].listingId, closedListingId);
+  for (const field of [
+    "closedDataBytes",
+    "closedFrozenNetworkValueSats",
+    "saleTxid",
+  ]) {
+    assert.equal(Object.hasOwn(published.closedListings[0], field), false);
+  }
+});
+
+check("canonical ledger publication omits nested tombstones at the wire boundary", () => {
+  const blockHash = "a".repeat(64);
+  const sourcePayload = {
+    indexedThroughBlock: 960_700,
+    registryState: {
+      records: [{ id: "registry", pgpKey: undefined }],
+    },
+    snapshotId: "canonical-ledger-source-960700",
+    source: "proof-indexer-indexed-canonical-ledger",
+    tokenState: {
+      closedListings: [
+        {
+          closedDataBytes: undefined,
+          listingId: "b".repeat(64),
+          saleTxid: undefined,
+        },
+      ],
+    },
+    workTokenState: {
+      closedListings: [
+        {
+          closedFrozenNetworkValueSats: undefined,
+          listingId: "c".repeat(64),
+        },
+      ],
+    },
+  };
+  const fullCanonicalLedgerPayload = isolatedFunction(
+    API_PATH,
+    "fullCanonicalLedgerPayload",
+  );
+  const published = fullCanonicalLedgerPayload(sourcePayload, blockHash);
+
+  assert.ok(coherentFullCanonicalSnapshot(published, "canonical-ledger"));
+  assert.equal(published.indexedThroughBlockHash, blockHash);
+  assert.equal(published.sourceHashes.blockScan, blockHash);
+  assert.equal(
+    Object.hasOwn(published.registryState.records[0], "pgpKey"),
+    false,
+  );
+  assert.equal(
+    Object.hasOwn(published.tokenState.closedListings[0], "closedDataBytes"),
+    false,
+  );
+  assert.equal(
+    Object.hasOwn(published.tokenState.closedListings[0], "saleTxid"),
+    false,
+  );
+  assert.equal(
+    Object.hasOwn(
+      published.workTokenState.closedListings[0],
+      "closedFrozenNetworkValueSats",
+    ),
+    false,
+  );
+  assert.equal(
+    Object.hasOwn(sourcePayload.registryState.records[0], "pgpKey"),
+    true,
+    "publication must normalize a clone, not mutate the relational projection",
+  );
+  assert.equal(
+    Object.hasOwn(
+      sourcePayload.workTokenState.closedListings[0],
+      "closedFrozenNetworkValueSats",
+    ),
+    true,
+  );
 });
 
 check("all governed listing and seal SQL paths include AMO V6", () => {
