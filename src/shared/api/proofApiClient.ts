@@ -66,6 +66,8 @@ export async function fetchProofApiJson<T>(
 ): Promise<T> {
   const url = proofApiUrl(path, network);
   const isFreshRead = /(?:[?&](?:fresh|refresh|nocache)=)/u.test(url);
+  const isFreshTokenRead =
+    isFreshRead && /^\/api\/v1\/token(?:[?&]|$)/u.test(path);
   const isAddressMailRead = /^\/api\/v1\/address\/[^/]+\/mail(?:[?&]|$)/u.test(
     path,
   );
@@ -77,10 +79,14 @@ export async function fetchProofApiJson<T>(
   } else {
     options.signal?.addEventListener("abort", abortFromCaller, { once: true });
   }
-  const timeout = globalThis.setTimeout(() => {
-    timedOut = true;
-    controller.abort();
-  }, options.timeoutMs ?? (isAddressMailRead ? 180_000 : 60_000));
+  const timeout = globalThis.setTimeout(
+    () => {
+      timedOut = true;
+      controller.abort();
+    },
+    options.timeoutMs ??
+      (isAddressMailRead || isFreshTokenRead ? 180_000 : 60_000),
+  );
 
   let response: Response;
   try {

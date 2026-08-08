@@ -599,6 +599,10 @@ const PROOF_INDEX_CONFIRMED_READ_MAX_LAG_BLOCKS = (() => {
 const TOKEN_SCOPED_FRESH_WAIT_MS = Number(
   process.env.TOKEN_SCOPED_FRESH_WAIT_MS ?? 30_000,
 );
+const WORK_TOKEN_ROUTE_FRESH_WAIT_MS = Math.max(
+  TOKEN_SCOPED_FRESH_WAIT_MS,
+  Number(process.env.WORK_TOKEN_ROUTE_FRESH_WAIT_MS ?? 75_000) || 75_000,
+);
 const POWB_ACTIVITY_FRESH_WAIT_MS = Number(
   process.env.POWB_ACTIVITY_FRESH_WAIT_MS ??
     Math.min(TOKEN_SCOPED_FRESH_WAIT_MS, 15_000),
@@ -18261,6 +18265,11 @@ function normalizeTokenScope(value) {
   return ticker === WORK_TOKEN_TICKER ? WORK_TOKEN_ID : ticker;
 }
 
+function normalizePublicTokenScope(value) {
+  const scope = normalizeTokenScope(value);
+  return scope.toLowerCase() === "all" ? "" : scope;
+}
+
 function tokenMatchesScope(token, scope) {
   if (!scope) {
     return true;
@@ -27974,7 +27983,15 @@ function cacheTokenPayload(network, tokenScope = "", payload, options = {}) {
     return false;
   }
   const cachedAt = cached.cachedAt;
-  if (options.exactTipValidated === true) {
+  const exactCanonicalGateIdentity = String(
+    options.canonicalGateIdentity ?? "",
+  ).trim();
+  if (
+    options.exactTipValidated === true &&
+    exactCanonicalGateIdentity &&
+    fullTokenPayloadShapeIsComplete(payload) &&
+    authenticatedFullCanonicalSnapshotMetadata(payload, "token-state")
+  ) {
     const pendingValidThroughMs = Date.parse(
       String(
         payload?.workAmoV8?.migrationReadiness?.pendingValidThrough ?? "",
@@ -27984,6 +28001,7 @@ function cacheTokenPayload(network, tokenScope = "", payload, options = {}) {
       cachedAt +
       Math.min(TOKEN_CACHE_STALE_MS, PROOF_INDEX_HEALTH_MAX_AGE_MS);
     const exactOutcome = EXACT_TIP_TOKEN_CACHE.setWithOutcome(cacheKey, {
+      canonicalGateIdentity: exactCanonicalGateIdentity,
       greenUntil: Number.isFinite(pendingValidThroughMs)
         ? Math.min(validatedUntil, pendingValidThroughMs)
         : cachedAt,
@@ -35990,6 +36008,7 @@ async function currentProofIndexTokenPayloadForRead(
   tokenScope = "",
   label = "token-state",
   timeoutMs = 5_000,
+  readIdentity = "",
 ) {
   const scope = normalizeTokenScope(tokenScope);
   if (
@@ -36007,8 +36026,14 @@ async function currentProofIndexTokenPayloadForRead(
     return null;
   }
 
+  const indexedRead = singleFlightBoundedRead(
+    "proof-index-token-state",
+    network,
+    `${scope || "all"}:${String(readIdentity ?? "").trim() || "current"}`,
+    () => proofIndexTokenPayload(network, scope, params),
+  );
   const payload = await payloadWithFallbackAfterMs(
-    proofIndexTokenPayload(network, scope, params).catch((error) => {
+    indexedRead.catch((error) => {
       console.error(
         `Proof index ${label} read failed for ${scope || "all"}: ${errorSummary(error)}`,
       );
@@ -36103,41 +36128,12 @@ async function currentCachedTokenPayloadForRead(
   return null;
 }
 
-async function currentMemoryTokenPayloadForRead(
-  network,
-  tokenScope = "",
-  label = "token-memory-cache",
-) {
-  const scope = normalizeTokenScope(tokenScope);
-  const cachedPayload =
-    RESPONSE_CACHE.get(`payload:token:${network}:${scope}`)?.payload;
-  const payload = coherentCanonicalSnapshotAtBoundary(
-    cachedPayload,
-    "token-state",
-  );
-  if (
-    payload &&
-    !rejectEmptyMainnetTokenPayload(network, payload, scope, label) &&
-    (await payloadWithFallbackAfterMs(
-      proofIndexPayloadCoversConfirmedTip(
-        payload,
-        network,
-        `${label}:${scope || "all"}`,
-      ),
-      false,
-      2_500,
-    ))
-  ) {
-    return tokenPayloadWithCanonicalLedgerFloor(network, payload, scope, label);
-  }
-  return null;
-}
-
 async function currentExactTipTokenPayloadForRead(
   network,
   tokenScope = "",
   label = "token-exact-tip-cache",
   canonicalGate = null,
+  requireCanonicalIdentity = false,
 ) {
   const scope = normalizeTokenScope(tokenScope);
   const cacheKey = `token:${network}:${scope}`;
@@ -36157,7 +36153,12 @@ async function currentExactTipTokenPayloadForRead(
   }
   const indexedThroughBlock = proofIndexPayloadIndexedThroughBlock(payload);
   if (canonicalGate && canonicalGate.ok === true) {
-    if (!tokenPayloadMatchesCanonicalGate(payload, canonicalGate)) {
+    const gateIdentity = canonicalReadGateIdentity(canonicalGate, scope);
+    if (
+      !tokenPayloadMatchesCanonicalGate(payload, canonicalGate) ||
+      (requireCanonicalIdentity &&
+        (!gateIdentity || cached?.canonicalGateIdentity !== gateIdentity))
+    ) {
       EXACT_TIP_TOKEN_CACHE.delete(cacheKey);
       return null;
     }
@@ -36191,66 +36192,233 @@ function tokenPayloadMatchesCanonicalGate(payload, canonicalGate) {
   const canonicalHash = String(canonicalGate.canonicalHash ?? "")
     .trim()
     .toLowerCase();
+  const storedHash = String(canonicalGate.storedHash ?? "")
+    .trim()
+    .toLowerCase();
+  const gateHeight = Number(canonicalGate.indexedThroughBlock);
+  const tipHeight = Number(canonicalGate.tipHeight);
   return (
-    Number(canonicalGate.indexedThroughBlock) === indexedThroughBlock &&
+    Number.isSafeInteger(gateHeight) &&
+    gateHeight > 0 &&
+    gateHeight === tipHeight &&
+    gateHeight === indexedThroughBlock &&
     /^[0-9a-f]{64}$/u.test(indexedThroughBlockHash) &&
-    canonicalHash === indexedThroughBlockHash
+    canonicalHash === indexedThroughBlockHash &&
+    storedHash === indexedThroughBlockHash
   );
 }
 
-async function cachedTokenPayloadFallbackForRead(
+function canonicalReadGateIdentity(gate, tokenScope = "") {
+  if (
+    !gate ||
+    gate.ok !== true ||
+    gate.atTip !== true
+  ) {
+    return "";
+  }
+  const scope = String(tokenScope ?? "").trim().toLowerCase();
+  const requiresWorkAuthority =
+    !scope || scope === "all" || scope === WORK_TOKEN_ID;
+  const height = Number(gate.indexedThroughBlock);
+  const tipHeight = Number(gate.tipHeight);
+  const canonicalHash = String(gate.canonicalHash ?? "")
+    .trim()
+    .toLowerCase();
+  const storedHash = String(gate.storedHash ?? "")
+    .trim()
+    .toLowerCase();
+  const summarySnapshotId = requiresWorkAuthority
+    ? String(gate.summarySnapshot?.snapshotId ?? "").trim()
+    : "";
+  if (
+    !Number.isSafeInteger(height) ||
+    height <= 0 ||
+    height !== tipHeight ||
+    !/^[0-9a-f]{64}$/u.test(canonicalHash) ||
+    storedHash !== canonicalHash ||
+    (requiresWorkAuthority &&
+      (gate.ready !== true ||
+        gate.summarySnapshotOk !== true ||
+        !summarySnapshotId))
+  ) {
+    return "";
+  }
+  return requiresWorkAuthority
+    ? `${height}:${canonicalHash}:${summarySnapshotId}`
+    : `${height}:${canonicalHash}`;
+}
+
+function freshWorkTokenPayloadIsReady(
+  payload,
   network,
   tokenScope = "",
-  label = "token-cache-fallback",
+  canonicalGate = null,
 ) {
   const scope = normalizeTokenScope(tokenScope);
-  let payload = await cachedTokenPayloadSnapshotNoRefresh(network, scope).catch(
-    (error) => {
-      console.error(
-        `Fallback ${label} read failed for ${scope || "all"}: ${errorSummary(error)}`,
-      );
-      return null;
-    },
+  const requiresWorkAuthority =
+    !scope || scope.toLowerCase() === "all" || scope === WORK_TOKEN_ID;
+  if (network !== "livenet" || !requiresWorkAuthority) {
+    return true;
+  }
+  const workTokens = (Array.isArray(payload?.tokens) ? payload.tokens : [])
+    .filter(
+      (token) =>
+        normalizeTokenScope(token?.tokenId ?? token?.ticker) ===
+        WORK_TOKEN_ID && token?.confirmed !== false,
+    );
+  const workAmoV8 = payload?.workAmoV8;
+  const migrationReadiness = workAmoV8?.migrationReadiness;
+  const workTransferValueProjection = payload?.workTransferValueProjection;
+  const payloadHeight = proofIndexPayloadIndexedThroughBlock(payload);
+  const payloadHash = payloadIndexedThroughBlockHash(payload);
+  const projectionSnapshotId = String(
+    workTransferValueProjection?.snapshotId ?? "",
+  ).trim();
+  const gateSnapshotId = String(
+    canonicalGate?.summarySnapshot?.snapshotId ?? "",
+  ).trim();
+  return Boolean(
+    workTokens.length === 1 &&
+      payload?.workMarketplaceV4 &&
+      payload?.workAmoV5 &&
+      payload?.workAmoV6 &&
+      workAmoV8 &&
+      workAmoV8.ready === true &&
+      workAmoV8.indexReady === true &&
+      workAmoV8.migrationReady === true &&
+      workAmoV8.workerReadiness?.ready === true &&
+      migrationReadiness?.ready === true &&
+      migrationReadiness?.pendingReady === true &&
+      Date.parse(String(migrationReadiness.pendingValidThrough ?? "")) >
+        Date.now() &&
+      payload?.workTransferValueProjectionSource ===
+        "canonical-work-transfer-value-projection" &&
+      workTransferValueProjection?.model ===
+        WORK_TRANSFER_VALUE_PROJECTION_MODEL &&
+      Number(workTransferValueProjection?.indexedThroughBlock) ===
+        payloadHeight &&
+      String(workTransferValueProjection?.indexedThroughBlockHash ?? "")
+        .trim()
+        .toLowerCase() === payloadHash &&
+      projectionSnapshotId &&
+      (!canonicalGate ||
+        (gateSnapshotId && projectionSnapshotId === gateSnapshotId)),
+  );
+}
+
+function fullTokenPayloadShapeIsComplete(payload) {
+  return Boolean(
+    payload?.summaryOnly !== true &&
+      payload?.stats &&
+      typeof payload.stats === "object" &&
+      !Array.isArray(payload.stats) &&
+      [
+        "closedListings",
+        "holders",
+        "invalidEvents",
+        "listings",
+        "mints",
+        "sales",
+        "tokens",
+        "transfers",
+      ].every((key) => Array.isArray(payload?.[key])),
+  );
+}
+
+async function exactFreshTokenPayloadForRoute(
+  payload,
+  network,
+  tokenScope,
+  admittedGate,
+) {
+  const admittedIdentity = canonicalReadGateIdentity(
+    admittedGate,
+    tokenScope,
+  );
+  if (!payload || !admittedIdentity) {
+    return null;
+  }
+  const responsePayload = await withWorkMarketplaceV4Metadata(payload, network);
+  const coherentPayload = coherentCanonicalSnapshotAtBoundary(
+    responsePayload,
+    "token-state",
   );
   if (
-    payload &&
-    !rejectEmptyMainnetTokenPayload(network, payload, scope, label)
-  ) {
-    refreshTokenPayloadCacheInBackground(network, scope);
-    return tokenPayloadWithCanonicalLedgerFloor(network, payload, scope, label);
-  }
-
-  if (network === "livenet") {
-    let ledger = await existingCurrentCanonicalLedgerPayloadWithinMs(
+    !coherentPayload ||
+    !authenticatedFullCanonicalSnapshotMetadata(
+      coherentPayload,
+      "token-state",
+    ) ||
+    !fullTokenPayloadShapeIsComplete(coherentPayload) ||
+    !tokenPayloadMatchesCanonicalGate(coherentPayload, admittedGate) ||
+    !freshWorkTokenPayloadIsReady(
+      coherentPayload,
       network,
-      `token fallback ledger:${label}:${scope || "all"}`,
-      SUMMARY_PROOF_INDEX_READ_WAIT_MS,
-    );
-    if (!ledger) {
-      ledger = await existingCanonicalLedgerPayload(network).catch((error) => {
-        console.error(
-          `Fallback ${label} canonical ledger read failed for ${scope || "all"}: ${errorSummary(error)}`,
-        );
-        return null;
-      });
-    }
-    payload = ledgerPayloadForFreshnessCompare(ledger, scope);
-    if (
-      payload &&
-      !rejectEmptyMainnetTokenPayload(network, payload, scope, `${label}-ledger`)
-    ) {
-      refreshTokenPayloadCacheInBackground(network, scope);
-      refreshCanonicalLedgerPayloadInBackground(network, true);
-      return tokenPayloadWithCanonicalLedgerFloor(
-        network,
-        payload,
-        scope,
-        `${label}-ledger`,
-      );
-    }
+      tokenScope,
+      admittedGate,
+    )
+  ) {
+    return null;
   }
+  const finalGate = await canonicalPublicReadGate(network, { force: true });
+  if (
+    canonicalReadGateIdentity(finalGate, tokenScope) !== admittedIdentity ||
+    !tokenPayloadMatchesCanonicalGate(coherentPayload, finalGate) ||
+    !freshWorkTokenPayloadIsReady(
+      coherentPayload,
+      network,
+      tokenScope,
+      finalGate,
+    )
+  ) {
+    return null;
+  }
+  cacheTokenPayload(network, tokenScope, coherentPayload, {
+    canonicalGateIdentity: admittedIdentity,
+    exactTipValidated: true,
+  });
+  return coherentPayload;
+}
 
-  return null;
+async function exactCachedFreshTokenPayloadForRoute(
+  payload,
+  network,
+  tokenScope,
+  admittedGate,
+) {
+  const admittedIdentity = canonicalReadGateIdentity(
+    admittedGate,
+    tokenScope,
+  );
+  if (
+    !payload ||
+    !admittedIdentity ||
+    !authenticatedFullCanonicalSnapshotMetadata(payload, "token-state") ||
+    !fullTokenPayloadShapeIsComplete(payload) ||
+    !tokenPayloadMatchesCanonicalGate(payload, admittedGate) ||
+    !freshWorkTokenPayloadIsReady(
+      payload,
+      network,
+      tokenScope,
+      admittedGate,
+    )
+  ) {
+    return null;
+  }
+  const finalGate = await canonicalPublicReadGate(network, { force: true });
+  if (
+    canonicalReadGateIdentity(finalGate, tokenScope) !== admittedIdentity ||
+    !tokenPayloadMatchesCanonicalGate(payload, finalGate) ||
+    !freshWorkTokenPayloadIsReady(
+      payload,
+      network,
+      tokenScope,
+      finalGate,
+    )
+  ) {
+    return null;
+  }
+  return payload;
 }
 
 async function indexedTokenPayloadFreshnessFloor(network, scope, options = {}) {
@@ -65710,7 +65878,7 @@ async function handleRequest(request, response) {
     }
 
     if (url.pathname === "/api/v1/token") {
-      const tokenScope = normalizeTokenScope(
+      const tokenScope = normalizePublicTokenScope(
         url.searchParams.get("asset") ??
           url.searchParams.get("tokenId") ??
           url.searchParams.get("ticker") ??
@@ -65745,16 +65913,25 @@ async function handleRequest(request, response) {
             ? "token-state-fresh-exact-tip-memory"
             : "token-state-exact-tip-memory",
           canonicalReadGate,
+          freshRead,
         );
-        if (cachedPayload) {
+        const responsePayload = freshRead
+          ? await exactCachedFreshTokenPayloadForRoute(
+              cachedPayload,
+              network,
+              tokenScope,
+              canonicalReadGate,
+            )
+          : cachedPayload;
+        if (responsePayload) {
           jsonResponse(
             response,
             200,
             coherentCanonicalSnapshotAtBoundary(
-              cachedPayload,
+              responsePayload,
               "token-state",
             ),
-            TOKEN_READ_CACHE_CONTROL,
+            freshRead ? FRESH_READ_CACHE_CONTROL : TOKEN_READ_CACHE_CONTROL,
           );
           return;
         }
@@ -65769,13 +65946,41 @@ async function handleRequest(request, response) {
           network,
           tokenScope,
           "token-state",
-          freshRead ? TOKEN_SCOPED_FRESH_WAIT_MS : 10_000,
+          freshRead &&
+            (!tokenScope || tokenScope === WORK_TOKEN_ID)
+            ? WORK_TOKEN_ROUTE_FRESH_WAIT_MS
+            : freshRead
+              ? TOKEN_SCOPED_FRESH_WAIT_MS
+              : 10_000,
+          freshRead
+            ? canonicalReadGateIdentity(canonicalReadGate, tokenScope)
+            : "",
         );
         const indexedPayloadExact = tokenPayloadMatchesCanonicalGate(
           indexedPayload,
           canonicalReadGate,
         );
         if (indexedPayload && (!freshRead || indexedPayloadExact)) {
+          if (freshRead) {
+            const exactPayload = await exactFreshTokenPayloadForRoute(
+              indexedPayload,
+              network,
+              tokenScope,
+              canonicalReadGate,
+            );
+            if (!exactPayload) {
+              throw freshDataUnavailableError(
+                `Fresh credit state changed while it was being verified for ${tokenScope || "all"}.`,
+              );
+            }
+            jsonResponse(
+              response,
+              200,
+              exactPayload,
+              FRESH_READ_CACHE_CONTROL,
+            );
+            return;
+          }
           const responsePayload = await withWorkMarketplaceV4Metadata(
             indexedPayload,
             network,
@@ -65784,9 +65989,7 @@ async function handleRequest(request, response) {
             responsePayload,
             "token-state",
           );
-          cacheTokenPayload(network, tokenScope, coherentResponsePayload, {
-            exactTipValidated: indexedPayloadExact,
-          });
+          cacheTokenPayload(network, tokenScope, coherentResponsePayload);
           jsonResponse(
             response,
             200,
@@ -65796,49 +65999,12 @@ async function handleRequest(request, response) {
           return;
         }
       }
-      if (!walletScoped && recoveryAddresses.length === 0 && freshRead) {
-        const cachedPayload = await currentMemoryTokenPayloadForRead(
-          network,
-          tokenScope,
-          "token-state-fresh-memory",
-        );
-        if (
-          cachedPayload &&
-          tokenPayloadMatchesCanonicalGate(cachedPayload, canonicalReadGate)
-        ) {
-          jsonResponse(
-            response,
-            200,
-            coherentCanonicalSnapshotAtBoundary(
-              await withWorkMarketplaceV4Metadata(cachedPayload, network),
-              "token-state",
-            ),
-            TOKEN_READ_CACHE_CONTROL,
-          );
-          return;
-        }
-      }
-      if (!walletScoped && recoveryAddresses.length === 0 && freshRead) {
-        const fallbackPayload = await cachedTokenPayloadFallbackForRead(
-          network,
-          tokenScope,
-          "token-state-fresh-cache",
-        );
-        if (
-          fallbackPayload &&
-          tokenPayloadMatchesCanonicalGate(fallbackPayload, canonicalReadGate)
-        ) {
-          jsonResponse(
-            response,
-            200,
-            coherentCanonicalSnapshotAtBoundary(
-              await withWorkMarketplaceV4Metadata(fallbackPayload, network),
-              "token-state",
-            ),
-            TOKEN_READ_CACHE_CONTROL,
-          );
-          return;
-        }
+      if (
+        network === "livenet" &&
+        !walletScoped &&
+        recoveryAddresses.length === 0 &&
+        freshRead
+      ) {
         throw freshDataUnavailableError(
           `Fresh credit state is still catching up for ${tokenScope || "all"}.`,
         );

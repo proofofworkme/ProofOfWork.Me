@@ -1245,28 +1245,42 @@ expectAll("server token reads preserve canonical ledger rows when table state re
   /payload = await tokenPayloadWithCanonicalLedgerFloor\([\s\S]*`token-payload:\$\{scope \|\| "all"\}`/,
 ]);
 
-expectAll("server fresh token state reads fall back to valid cached snapshots", server, [
-  /url\.pathname === "\/api\/v1\/token"[\s\S]*currentProofIndexTokenPayloadForRead\([\s\S]*"token-state",[\s\S]*freshRead \? TOKEN_SCOPED_FRESH_WAIT_MS : 10_000/,
+expectAll("server fresh token reads admit only exact bounded state", server, [
+  /const WORK_TOKEN_ROUTE_FRESH_WAIT_MS = Math\.max\([\s\S]*75_000/,
+  /async function currentProofIndexTokenPayloadForRead\([\s\S]*singleFlightBoundedRead\([\s\S]*"proof-index-token-state"[\s\S]*proofIndexTokenPayload\(network,\s*scope,\s*params\)/,
   /const EXACT_TIP_TOKEN_CACHE = new BoundedResponseCache\(\{[\s\S]*maxBytes: EXACT_TIP_TOKEN_CACHE_MAX_BYTES,[\s\S]*maxEntries: EXACT_TIP_TOKEN_CACHE_MAX_ENTRIES/,
   /function cacheTokenPayload\(network,\s*tokenScope = "",\s*payload,\s*options = \{\}\)[\s\S]*const cached = cachePayloadAndJson\([\s\S]*if \(!cached\.outcome\.stored\) \{[\s\S]*return false;/,
-  /const exactOutcome = EXACT_TIP_TOKEN_CACHE\.setWithOutcome\(cacheKey,[\s\S]*PROOF_INDEX_HEALTH_MAX_AGE_MS/,
+  /options\.exactTipValidated === true[\s\S]*exactCanonicalGateIdentity[\s\S]*fullTokenPayloadShapeIsComplete\(payload\)[\s\S]*authenticatedFullCanonicalSnapshotMetadata\(payload, "token-state"\)[\s\S]*EXACT_TIP_TOKEN_CACHE\.setWithOutcome\(cacheKey/,
   /if \(!exactOutcome\.stored\) \{[\s\S]*EXACT_TIP_TOKEN_CACHE\.delete\(cacheKey\)/,
   /function cacheTokenPayload\([\s\S]*greenUntil:[\s\S]*pendingValidThroughMs[\s\S]*indexedThroughBlockHash: payloadIndexedThroughBlockHash\(payload\)/,
   /async function currentExactTipTokenPayloadForRead\([\s\S]*canonicalGate = null[\s\S]*EXACT_TIP_TOKEN_CACHE\.get\(cacheKey\)[\s\S]*validatedUntil[\s\S]*tokenPayloadMatchesCanonicalGate\(payload, canonicalGate\)[\s\S]*retainedExactTipTokenPayloadForRead\(payload, canonicalGate, cached\)[\s\S]*healthNodeTipHeight\(\)[\s\S]*!Number\.isSafeInteger\(tipHeight\)[\s\S]*return null;[\s\S]*indexedThroughBlock === tipHeight[\s\S]*return payload;[\s\S]*EXACT_TIP_TOKEN_CACHE\.delete\(cacheKey\)/,
-  /function tokenPayloadMatchesCanonicalGate\([\s\S]*canonicalGate\.atTip !== true[\s\S]*payloadIndexedThroughBlockHash\(payload\)[\s\S]*canonicalGate\.indexedThroughBlock[\s\S]*canonicalHash === indexedThroughBlockHash/,
+  /function tokenPayloadMatchesCanonicalGate\([\s\S]*canonicalGate\.atTip !== true[\s\S]*payloadIndexedThroughBlockHash\(payload\)[\s\S]*gateHeight === tipHeight[\s\S]*canonicalHash === indexedThroughBlockHash[\s\S]*storedHash === indexedThroughBlockHash/,
+  /function normalizePublicTokenScope\(value\)[\s\S]*normalizeTokenScope\(value\)[\s\S]*scope\.toLowerCase\(\) === "all" \? "" : scope/,
+  /function canonicalReadGateIdentity\(gate,\s*tokenScope = ""\)[\s\S]*requiresWorkAuthority[\s\S]*gate\.ready !== true[\s\S]*gate\.summarySnapshotOk !== true[\s\S]*summarySnapshotId/,
+  /function fullTokenPayloadShapeIsComplete\([\s\S]*"closedListings"[\s\S]*"invalidEvents"[\s\S]*"transfers"/,
+  /function freshWorkTokenPayloadIsReady\([\s\S]*requiresWorkAuthority[\s\S]*workTokens\.length === 1[\s\S]*workAmoV8\.indexReady === true[\s\S]*migrationReadiness\?\.pendingReady === true[\s\S]*pendingValidThrough[\s\S]*WORK_TRANSFER_VALUE_PROJECTION_MODEL[\s\S]*projectionSnapshotId === gateSnapshotId/,
+  /async function exactFreshTokenPayloadForRoute\([\s\S]*withWorkMarketplaceV4Metadata\(payload,\s*network\)[\s\S]*authenticatedFullCanonicalSnapshotMetadata\([\s\S]*fullTokenPayloadShapeIsComplete\(coherentPayload\)[\s\S]*canonicalPublicReadGate\(network,\s*\{ force: true \}\)[\s\S]*canonicalReadGateIdentity\(finalGate,\s*tokenScope\) !== admittedIdentity[\s\S]*canonicalGateIdentity: admittedIdentity,[\s\S]*exactTipValidated: true/,
+  /async function exactCachedFreshTokenPayloadForRoute\([\s\S]*authenticatedFullCanonicalSnapshotMetadata\(payload, "token-state"\)[\s\S]*canonicalPublicReadGate\(network,\s*\{ force: true \}\)[\s\S]*canonicalReadGateIdentity\(finalGate,\s*tokenScope\) !== admittedIdentity/,
   /function readOnlyRetainedWorkAmoV8Metadata\([\s\S]*indexReady: false[\s\S]*listingWritesEnabled: false[\s\S]*migrationReady: false[\s\S]*protocolWritesEnabled: false[\s\S]*settlementWritesEnabled: false[\s\S]*writeAdmission: false[\s\S]*pendingReady: false/,
   /function retainedExactTipTokenPayloadForRead\([\s\S]*canonicalGate\?\.ready === true[\s\S]*cached\?\.greenUntil[\s\S]*readOnlyRetainedWorkAmoV8Metadata/,
-  /indexedPayload && \(!freshRead \|\| indexedPayloadExact\)[\s\S]*const responsePayload = await withWorkMarketplaceV4Metadata\([\s\S]*indexedPayload,[\s\S]*network,[\s\S]*\);[\s\S]*const coherentResponsePayload = coherentCanonicalSnapshotAtBoundary\([\s\S]*responsePayload,[\s\S]*"token-state"[\s\S]*\);[\s\S]*cacheTokenPayload\(network,\s*tokenScope,\s*coherentResponsePayload,\s*\{[\s\S]*exactTipValidated:\s*indexedPayloadExact[\s\S]*\}\)[\s\S]*jsonResponse\([\s\S]*coherentResponsePayload/,
-  /async function cachedTokenPayloadFallbackForRead\([\s\S]*cachedTokenPayloadSnapshotNoRefresh\(network,\s*scope\)[\s\S]*rejectEmptyMainnetTokenPayload\(network,\s*payload,\s*scope,\s*label\)[\s\S]*existingCurrentCanonicalLedgerPayloadWithinMs\([\s\S]*existingCanonicalLedgerPayload\(network\)[\s\S]*ledgerPayloadForFreshnessCompare\(ledger,\s*scope\)[\s\S]*refreshTokenPayloadCacheInBackground\(network,\s*scope\)/,
-  /url\.pathname === "\/api\/v1\/token"[\s\S]*currentExactTipTokenPayloadForRead\([\s\S]*"token-state-fresh-exact-tip-memory"[\s\S]*"token-state-exact-tip-memory"[\s\S]*canonicalReadGate[\s\S]*currentProofIndexTokenPayloadForRead\([\s\S]*currentMemoryTokenPayloadForRead\([\s\S]*"token-state-fresh-memory"[\s\S]*cachedTokenPayloadFallbackForRead\([\s\S]*"token-state-fresh-cache"[\s\S]*Fresh credit state is still catching up/,
-  /const indexedPayloadExact = tokenPayloadMatchesCanonicalGate\([\s\S]*indexedPayload,[\s\S]*canonicalReadGate[\s\S]*indexedPayload && \(!freshRead \|\| indexedPayloadExact\)[\s\S]*exactTipValidated: indexedPayloadExact/,
-  /currentMemoryTokenPayloadForRead\([\s\S]*tokenPayloadMatchesCanonicalGate\(cachedPayload, canonicalReadGate\)[\s\S]*cachedTokenPayloadFallbackForRead\([\s\S]*tokenPayloadMatchesCanonicalGate\(fallbackPayload, canonicalReadGate\)/,
+  /url\.pathname === "\/api\/v1\/token"[\s\S]*currentExactTipTokenPayloadForRead\([\s\S]*exactCachedFreshTokenPayloadForRoute\([\s\S]*currentProofIndexTokenPayloadForRead\([\s\S]*!tokenScope \|\| tokenScope === WORK_TOKEN_ID[\s\S]*WORK_TOKEN_ROUTE_FRESH_WAIT_MS[\s\S]*exactFreshTokenPayloadForRoute\([\s\S]*network === "livenet"[\s\S]*Fresh credit state is still catching up/,
+  /exactPayload,[\s\S]*FRESH_READ_CACHE_CONTROL/,
+  /const indexedPayloadExact = tokenPayloadMatchesCanonicalGate\([\s\S]*indexedPayload,[\s\S]*canonicalReadGate[\s\S]*if \(freshRead\)[\s\S]*exactFreshTokenPayloadForRoute/,
 ]);
+if (
+  /cachedTokenPayloadFallbackForRead|token-state-fresh-memory|token-state-fresh-cache|refreshTokenPayloadCacheInBackground/u.test(
+    tokenRouteSource,
+  )
+) {
+  failures.push(
+    "server fresh token reads admit only exact bounded state: the public token route still contains a generic cache or legacy background refresh path",
+  );
+}
 
 expectAll("server token reads always expose the AMO activation envelope", tokenRouteSource, [
   /const responsePayload = await withWorkMarketplaceV4Metadata\([\s\S]*indexedPayload,[\s\S]*network/,
-  /if \(cachedPayload\) \{[\s\S]*jsonResponse\([\s\S]*cachedPayload/,
-  /withWorkMarketplaceV4Metadata\(fallbackPayload,\s*network\)/,
+  /const responsePayload = freshRead[\s\S]*exactCachedFreshTokenPayloadForRoute\([\s\S]*jsonResponse\([\s\S]*responsePayload/,
+  /exactFreshTokenPayloadForRoute\([\s\S]*indexedPayload,[\s\S]*network/,
   /withWorkMarketplaceV4Metadata\([\s\S]*walletScopedTokenPayload\(/,
   /withWorkMarketplaceV4Metadata\(payload,\s*network\)/,
 ]);

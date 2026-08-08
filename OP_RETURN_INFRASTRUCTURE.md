@@ -1004,6 +1004,19 @@ bounded-cache counters in API health. The tracked controls are
 `POW_API_EXACT_TIP_TOKEN_CACHE_MAX_BYTES`, `MAX_TRANSACTION_CACHE_SIZE`,
 `MAX_TRANSACTION_CACHE_BYTES`, and `TRANSACTION_CACHE_TTL_MS`.
 
+Fresh livenet full-token reads never promote the generic persisted token cache
+or start the legacy live-Core reconstruction path. Identical relational reads
+at one admitted height, block hash, and summary identity share one producer;
+each caller independently rechecks the final gate. A fresh WORK or unscoped
+response must be a complete authenticated current-table snapshot with exactly
+one WORK definition, current pending/worker readiness, and the canonical WORK
+transfer-value projection bound to the same summary snapshot, height, and hash.
+The in-memory exact-tip entry is bound to that identity and cannot be seeded by
+a stable read. Fresh responses are `no-store`. The API gives the cold WORK or
+unscoped relational producer a bounded 75-second window, while the browser
+allows 180 seconds for the producer plus authentication, metadata, and final
+gate checks; unavailable or changed authority still returns 503.
+
 Invalid input returns 400, rate/admission saturation returns 429 with
 `Retry-After`, and unprovable canonical state returns 503. Availability checks,
 price refreshes, block-txid reads, and forced canonical gates must also coalesce;

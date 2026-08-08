@@ -4346,6 +4346,543 @@ check(
   },
 );
 
+check("fresh token gates bind the indexed and Core checkpoint exactly", () => {
+  const blockHash = "a".repeat(64);
+  const height = 961_634;
+  const payload = {
+    indexedThroughBlock: height,
+    indexedThroughBlockHash: blockHash,
+  };
+  const gate = {
+    atTip: true,
+    canonicalHash: blockHash,
+    indexedThroughBlock: height,
+    ok: true,
+    ready: true,
+    storedHash: blockHash,
+    summarySnapshot: { snapshotId: "exact-summary" },
+    summarySnapshotOk: true,
+    tipHeight: height,
+  };
+  const tokenPayloadMatchesCanonicalGate = isolatedFunction(
+    API_PATH,
+    "tokenPayloadMatchesCanonicalGate",
+    {
+      payloadIndexedThroughBlockHash: (candidate) =>
+        candidate?.indexedThroughBlockHash ?? "",
+      proofIndexPayloadIndexedThroughBlock: (candidate) =>
+        Number(candidate?.indexedThroughBlock ?? 0),
+    },
+  );
+  const canonicalReadGateIdentity = isolatedFunction(
+    API_PATH,
+    "canonicalReadGateIdentity",
+    { WORK_TOKEN_ID },
+  );
+  const normalizePublicTokenScope = isolatedFunction(
+    API_PATH,
+    "normalizePublicTokenScope",
+    {
+      normalizeTokenScope: (value) => String(value ?? "").trim().toUpperCase(),
+    },
+  );
+  assert.equal(normalizePublicTokenScope("ALL"), "");
+  assert.equal(normalizePublicTokenScope("ALLOY"), "ALLOY");
+  assert.equal(tokenPayloadMatchesCanonicalGate(payload, gate), true);
+  assert.equal(
+    canonicalReadGateIdentity(gate),
+    `${height}:${blockHash}:exact-summary`,
+  );
+  assert.equal(
+    canonicalReadGateIdentity(gate, "ALL"),
+    `${height}:${blockHash}:exact-summary`,
+  );
+  assert.equal(
+    canonicalReadGateIdentity(
+      {
+        ...gate,
+        ready: false,
+        summarySnapshot: {},
+        summarySnapshotOk: false,
+      },
+      POWB_TOKEN_ID,
+    ),
+    `${height}:${blockHash}`,
+  );
+  for (const changed of [
+    { atTip: false },
+    { indexedThroughBlock: height - 1 },
+    { tipHeight: height + 1 },
+    { canonicalHash: "b".repeat(64) },
+    { storedHash: "b".repeat(64) },
+  ]) {
+    assert.equal(
+      tokenPayloadMatchesCanonicalGate(payload, { ...gate, ...changed }),
+      false,
+    );
+  }
+  for (const changed of [
+    { summarySnapshotOk: false },
+    { summarySnapshot: {} },
+    { canonicalHash: "" },
+    { ready: false },
+  ]) {
+    assert.equal(canonicalReadGateIdentity({ ...gate, ...changed }), "");
+  }
+});
+
+check("fresh WORK publication requires full ready state and a stable gate", async () => {
+  const blockHash = "b".repeat(64);
+  const height = 961_634;
+  const gate = {
+    atTip: true,
+    canonicalHash: blockHash,
+    indexedThroughBlock: height,
+    ok: true,
+    ready: true,
+    storedHash: blockHash,
+    summarySnapshot: { snapshotId: "ready-summary" },
+    summarySnapshotOk: true,
+    tipHeight: height,
+  };
+  const basePayload = {
+    closedListings: [],
+    holders: [],
+    indexedThroughBlock: height,
+    indexedThroughBlockHash: blockHash,
+    invalidEvents: [],
+    listings: [],
+    mints: [],
+    sales: [],
+    snapshotId: "ready-token",
+    stats: {},
+    tokens: [{ tokenId: WORK_TOKEN_ID }],
+    transfers: [],
+  };
+  const readyMetadata = {
+    workTransferValueProjection: {
+      indexedThroughBlock: height,
+      indexedThroughBlockHash: blockHash,
+      model: "canonical-work-transfer-value-projection-v1",
+      snapshotId: "ready-summary",
+    },
+    workTransferValueProjectionSource:
+      "canonical-work-transfer-value-projection",
+    workAmoV5: { ready: true },
+    workAmoV6: { ready: true },
+    workAmoV8: {
+      indexReady: true,
+      migrationReadiness: {
+        pendingReady: true,
+        pendingValidThrough: new Date(Date.now() + 60_000).toISOString(),
+        ready: true,
+      },
+      migrationReady: true,
+      ready: true,
+      workerReadiness: { ready: true },
+    },
+    workMarketplaceV4: { ready: true },
+  };
+  const canonicalReadGateIdentity = isolatedFunction(
+    API_PATH,
+    "canonicalReadGateIdentity",
+    { WORK_TOKEN_ID },
+  );
+  const fullTokenPayloadShapeIsComplete = isolatedFunction(
+    API_PATH,
+    "fullTokenPayloadShapeIsComplete",
+  );
+  const freshWorkTokenPayloadIsReady = isolatedFunction(
+    API_PATH,
+    "freshWorkTokenPayloadIsReady",
+    {
+      WORK_TOKEN_ID,
+      WORK_TRANSFER_VALUE_PROJECTION_MODEL:
+        "canonical-work-transfer-value-projection-v1",
+      normalizeTokenScope: (value) => String(value ?? "").toLowerCase(),
+      payloadIndexedThroughBlockHash: (candidate) =>
+        candidate?.indexedThroughBlockHash ?? "",
+      proofIndexPayloadIndexedThroughBlock: (candidate) =>
+        Number(candidate?.indexedThroughBlock ?? 0),
+    },
+  );
+  const tokenPayloadMatchesCanonicalGate = isolatedFunction(
+    API_PATH,
+    "tokenPayloadMatchesCanonicalGate",
+    {
+      payloadIndexedThroughBlockHash: (candidate) =>
+        candidate?.indexedThroughBlockHash ?? "",
+      proofIndexPayloadIndexedThroughBlock: (candidate) =>
+        Number(candidate?.indexedThroughBlock ?? 0),
+    },
+  );
+  let finalGate = gate;
+  let cached = null;
+  let authenticated = true;
+  const exactFreshTokenPayloadForRoute = isolatedFunction(
+    API_PATH,
+    "exactFreshTokenPayloadForRoute",
+    {
+      cacheTokenPayload: (_network, _scope, payload, options) => {
+        cached = { options, payload };
+        return true;
+      },
+      authenticatedFullCanonicalSnapshotMetadata: () =>
+        authenticated ? { ok: true } : null,
+      canonicalPublicReadGate: async () => finalGate,
+      canonicalReadGateIdentity,
+      coherentCanonicalSnapshotAtBoundary: (payload) => payload,
+      freshWorkTokenPayloadIsReady,
+      fullTokenPayloadShapeIsComplete,
+      tokenPayloadMatchesCanonicalGate,
+      withWorkMarketplaceV4Metadata: async (payload) => ({
+        ...payload,
+        ...readyMetadata,
+      }),
+    },
+  );
+  const accepted = await exactFreshTokenPayloadForRoute(
+    basePayload,
+    "livenet",
+    WORK_TOKEN_ID,
+    gate,
+  );
+  assert.equal(accepted?.workAmoV8?.indexReady, true);
+  assert.equal(cached?.payload, accepted);
+  assert.equal(cached?.options?.exactTipValidated, true);
+  assert.equal(
+    cached?.options?.canonicalGateIdentity,
+    `${height}:${blockHash}:ready-summary`,
+  );
+
+  authenticated = false;
+  cached = null;
+  assert.equal(
+    await exactFreshTokenPayloadForRoute(
+      basePayload,
+      "livenet",
+      WORK_TOKEN_ID,
+      gate,
+    ),
+    null,
+  );
+  assert.equal(cached, null);
+  authenticated = true;
+
+  assert.equal(
+    freshWorkTokenPayloadIsReady(
+      { ...accepted, workTransferValueProjectionSource: "" },
+      "livenet",
+      WORK_TOKEN_ID,
+      gate,
+    ),
+    false,
+  );
+  assert.equal(
+    freshWorkTokenPayloadIsReady(
+      accepted,
+      "livenet",
+      "ALL",
+      gate,
+    ),
+    true,
+  );
+  assert.equal(
+    freshWorkTokenPayloadIsReady(
+      { ...accepted, tokens: [] },
+      "livenet",
+      "",
+      gate,
+    ),
+    false,
+  );
+  assert.equal(
+    freshWorkTokenPayloadIsReady(
+      {
+        ...accepted,
+        workTransferValueProjection: {
+          ...accepted.workTransferValueProjection,
+          model: "wrong-model",
+        },
+      },
+      "livenet",
+      WORK_TOKEN_ID,
+      gate,
+    ),
+    false,
+  );
+
+  for (const key of [
+    "closedListings",
+    "holders",
+    "invalidEvents",
+    "listings",
+    "mints",
+    "sales",
+    "tokens",
+    "transfers",
+  ]) {
+    const incomplete = { ...basePayload };
+    delete incomplete[key];
+    cached = null;
+    assert.equal(
+      await exactFreshTokenPayloadForRoute(
+        incomplete,
+        "livenet",
+        WORK_TOKEN_ID,
+        gate,
+      ),
+      null,
+    );
+    assert.equal(cached, null);
+  }
+
+  finalGate = {
+    ...gate,
+    canonicalHash: "c".repeat(64),
+    storedHash: "c".repeat(64),
+  };
+  cached = null;
+  assert.equal(
+    await exactFreshTokenPayloadForRoute(
+      basePayload,
+      "livenet",
+      WORK_TOKEN_ID,
+      gate,
+    ),
+    null,
+  );
+  assert.equal(cached, null);
+
+  const exactCachedFreshTokenPayloadForRoute = isolatedFunction(
+    API_PATH,
+    "exactCachedFreshTokenPayloadForRoute",
+    {
+      authenticatedFullCanonicalSnapshotMetadata: () => ({ ok: true }),
+      canonicalPublicReadGate: async () => finalGate,
+      canonicalReadGateIdentity,
+      freshWorkTokenPayloadIsReady,
+      fullTokenPayloadShapeIsComplete,
+      tokenPayloadMatchesCanonicalGate,
+    },
+  );
+  finalGate = gate;
+  assert.equal(
+    await exactCachedFreshTokenPayloadForRoute(
+      accepted,
+      "livenet",
+      WORK_TOKEN_ID,
+      gate,
+    ),
+    accepted,
+  );
+  for (const changed of [
+    { ready: false },
+    { summarySnapshot: { snapshotId: "replacement-summary" } },
+    { summarySnapshotOk: false },
+  ]) {
+    finalGate = { ...gate, ...changed };
+    assert.equal(
+      await exactCachedFreshTokenPayloadForRoute(
+        accepted,
+        "livenet",
+        WORK_TOKEN_ID,
+        gate,
+      ),
+      null,
+    );
+  }
+});
+
+check("fresh exact-tip token cache is bound to the ready summary identity", async () => {
+  const blockHash = "e".repeat(64);
+  const height = 961_634;
+  const payload = {
+    indexedThroughBlock: height,
+    indexedThroughBlockHash: blockHash,
+  };
+  const gate = {
+    atTip: true,
+    canonicalHash: blockHash,
+    indexedThroughBlock: height,
+    ok: true,
+    ready: true,
+    storedHash: blockHash,
+    summarySnapshot: { snapshotId: "bound-summary" },
+    summarySnapshotOk: true,
+    tipHeight: height,
+  };
+  const canonicalReadGateIdentity = isolatedFunction(
+    API_PATH,
+    "canonicalReadGateIdentity",
+    { WORK_TOKEN_ID },
+  );
+  const tokenPayloadMatchesCanonicalGate = isolatedFunction(
+    API_PATH,
+    "tokenPayloadMatchesCanonicalGate",
+    {
+      payloadIndexedThroughBlockHash: (candidate) =>
+        candidate?.indexedThroughBlockHash ?? "",
+      proofIndexPayloadIndexedThroughBlock: (candidate) =>
+        Number(candidate?.indexedThroughBlock ?? 0),
+    },
+  );
+  const cacheKey = `token:livenet:${WORK_TOKEN_ID}`;
+  const exactCache = new Map([
+    [
+      cacheKey,
+      {
+        canonicalGateIdentity: canonicalReadGateIdentity(gate),
+        payload,
+        validatedUntil: Date.now() + 60_000,
+      },
+    ],
+  ]);
+  const currentExactTipTokenPayloadForRead = isolatedFunction(
+    API_PATH,
+    "currentExactTipTokenPayloadForRead",
+    {
+      EXACT_TIP_TOKEN_CACHE: exactCache,
+      canonicalReadGateIdentity,
+      coherentCanonicalSnapshotAtBoundary: (candidate) => candidate,
+      healthNodeTipHeight: async () => height,
+      normalizeTokenScope: (value) => String(value ?? "").toLowerCase(),
+      payloadWithFallbackAfterMs: async (promise) => promise,
+      proofIndexPayloadIndexedThroughBlock: (candidate) =>
+        Number(candidate?.indexedThroughBlock ?? 0),
+      rejectEmptyMainnetTokenPayload: () => false,
+      retainedExactTipTokenPayloadForRead: (candidate) => candidate,
+      tokenPayloadMatchesCanonicalGate,
+    },
+  );
+  assert.equal(
+    await currentExactTipTokenPayloadForRead(
+      "livenet",
+      WORK_TOKEN_ID,
+      "fresh-cache",
+      gate,
+      true,
+    ),
+    payload,
+  );
+  exactCache.set(cacheKey, {
+    canonicalGateIdentity: `${height}:${blockHash}:old-summary`,
+    payload,
+    validatedUntil: Date.now() + 60_000,
+  });
+  assert.equal(
+    await currentExactTipTokenPayloadForRead(
+      "livenet",
+      WORK_TOKEN_ID,
+      "fresh-cache",
+      gate,
+      true,
+    ),
+    null,
+  );
+  assert.equal(exactCache.has(cacheKey), false);
+});
+
+check("concurrent relational token reads share one underlying producer", async () => {
+  const payload = {
+    indexedThroughBlock: 961_634,
+    indexedThroughBlockHash: "d".repeat(64),
+    stats: {},
+    tokens: [{ confirmed: true, tokenId: WORK_TOKEN_ID }],
+  };
+  let producerCalls = 0;
+  const releaseProducers = [];
+  const flights = new Map();
+  const singleFlightBoundedRead = (kind, network, scope, producer) => {
+    const key = `${kind}:${network}:${scope}`;
+    if (flights.has(key)) {
+      return flights.get(key);
+    }
+    const promise = Promise.resolve()
+      .then(producer)
+      .finally(() => flights.delete(key));
+    flights.set(key, promise);
+    return promise;
+  };
+  const currentProofIndexTokenPayloadForRead = isolatedFunction(
+    API_PATH,
+    "currentProofIndexTokenPayloadForRead",
+    {
+      authenticateFullCanonicalSnapshot: async () => ({ ok: false }),
+      errorSummary: (error) => String(error?.message ?? error),
+      existingTokenPayload: async () => null,
+      normalizeTokenScope: (value) => String(value ?? "").toLowerCase(),
+      payloadWithFallbackAfterMs: async (promise) => promise,
+      proofIndexPayloadCoversConfirmedTip: async () => true,
+      proofIndexReadFeatureEnabled: () => true,
+      proofIndexTokenPayload: async () => {
+        producerCalls += 1;
+        return new Promise((resolve) => {
+          releaseProducers.push(resolve);
+        });
+      },
+      proofIndexTokenReadEligibility: () => ({ eligible: true }),
+      rejectEmptyMainnetTokenPayload: () => false,
+      singleFlightBoundedRead,
+      tokenPayloadWithCanonicalLedgerFloor: async (_network, value) => value,
+      tokenPayloadWithCanonicalWorkTransferValues: async (
+        _network,
+        value,
+      ) => value,
+    },
+  );
+  const reads = [
+    currentProofIndexTokenPayloadForRead(
+      "livenet",
+      WORK_TOKEN_ID,
+      "first",
+      75_000,
+      "gate-a",
+    ),
+    currentProofIndexTokenPayloadForRead(
+      "livenet",
+      WORK_TOKEN_ID,
+      "second",
+      75_000,
+      "gate-a",
+    ),
+    currentProofIndexTokenPayloadForRead(
+      "livenet",
+      WORK_TOKEN_ID,
+      "next-tip",
+      75_000,
+      "gate-b",
+    ),
+  ];
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(producerCalls, 2);
+  assert.equal(releaseProducers.length, 2);
+  for (const releaseProducer of releaseProducers) {
+    releaseProducer(payload);
+  }
+  const results = await Promise.all(reads);
+  assert.equal(results[0], payload);
+  assert.equal(results[1], payload);
+  assert.equal(results[2], payload);
+  assert.equal(producerCalls, 2);
+  const nextReleaseIndex = releaseProducers.length;
+  const settledRead = currentProofIndexTokenPayloadForRead(
+    "livenet",
+    WORK_TOKEN_ID,
+    "settled",
+    75_000,
+    "gate-a",
+  );
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(producerCalls, 3);
+  releaseProducers[nextReleaseIndex](payload);
+  assert.equal(
+    await settledRead,
+    payload,
+  );
+  assert.equal(producerCalls, 3);
+});
+
 check("market lifecycle remains live when event enrichment is slow", async () => {
   const listingId =
     "15aa831e339a17dd3d0a8a256268cb5e652b965ecf79a6af1423375619ad88fa";

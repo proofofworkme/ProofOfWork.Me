@@ -2319,6 +2319,12 @@ expect(
     /options\.signal\?\.removeEventListener\("abort"/.test(proofApiClient),
 );
 expect(
+  "fresh token reads allow the bounded canonical WORK projection to finish",
+  /const isFreshTokenRead =[\s\S]*\/api\\\/v1\\\/token[\s\S]*isAddressMailRead \|\| isFreshTokenRead \? 180_000 : 60_000/u.test(
+    proofApiClient,
+  ),
+);
+expect(
   "standalone Browser keeps the network selector in the form, not the shared topbar",
   /<BrowserNetworkTabs\s+network=\{network\}\s+onChange=\{setNetwork\}/.test(
     browserAppBlock,
