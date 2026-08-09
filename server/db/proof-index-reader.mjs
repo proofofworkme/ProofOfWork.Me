@@ -7400,6 +7400,7 @@ async function proofIndexWorkPrecisionV2MigrationReadinessFullAudit(
         WHERE snapshot.network = $1
           AND snapshot.generated_at >=
             (migration.value->>'completedAt')::timestamptz
+          AND snapshot.payload ? 'summaryPayloads'
           AND snapshot.payload ? 'tokenStatePayloads'
           AND snapshot.payload->'tokenStatePayloads' ? $2
           AND snapshot.payload->>'workAmountStorageModel' = $15

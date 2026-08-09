@@ -2948,6 +2948,16 @@ row-level consistency object on returned summary payloads and nested
 `/api/v1/consistency` cannot mix current top-level totals with stale embedded
 tip checks.
 
+The WORK precision-v2 full-readiness audit must select its current token-state
+snapshot from canonical summary rows: its `ledger_snapshots` selector requires
+both `summaryPayloads` and `tokenStatePayloads`. This is also the predicate
+contract for `ledger_snapshots_summary_latest_idx`. Removing the summary-row
+predicate forces the audit to scan and detoast unrelated ledger snapshots; on
+production-sized history that can outlive a worker interval, race a readiness
+epoch advance, and make an otherwise exact fresh WORK read fail closed. Keep
+the initial/settled readiness-epoch comparison intact; the indexed selector is
+the performance bound, not a relaxation of that authority check.
+
 `indexer:parity` compares the database read model with confirmed canonical
 history. Confirmed event coverage should be measured against confirmed
 canonical activity; pending canonical activity and pending database rows are

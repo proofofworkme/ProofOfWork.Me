@@ -146,6 +146,11 @@ const q16MempoolBackfillSource = sourceSliceBetween(
   /async function backfillMempoolScanSource/,
   /async function backfillSource/,
 );
+const workPrecisionV2FullAuditSource = sourceSliceBetween(
+  proofIndexReader,
+  /async function proofIndexWorkPrecisionV2MigrationReadinessFullAudit/,
+  /export async function proofIndexWorkAmoV8ActivationLatch/,
+);
 expect(
   "canonical ledger builds the expensive WORK floor exactly once",
   (canonicalLedgerBuilderSource.match(/workFloorPayloadFromState\(/gu) ?? [])
@@ -1603,6 +1608,14 @@ expectAll(
     /WHERE network = \$1[\s\S]*AND payload \? 'summaryPayloads'/,
     /AND source_hashes \? 'canonicalSummary'/,
     /ORDER BY indexed_through_block DESC NULLS LAST,\s*generated_at DESC[\s\S]*LIMIT 1/,
+  ],
+);
+expectAll(
+  "WORK precision full readiness uses the canonical-summary partial index contract",
+  workPrecisionV2FullAuditSource,
+  [
+    /LEFT JOIN LATERAL \([\s\S]*WHERE snapshot\.network = \$1[\s\S]*AND snapshot\.payload \? 'summaryPayloads'[\s\S]*AND snapshot\.payload \? 'tokenStatePayloads'[\s\S]*AND snapshot\.payload->'tokenStatePayloads' \? \$2/,
+    /ORDER BY snapshot\.indexed_through_block DESC NULLS LAST,\s*snapshot\.generated_at DESC[\s\S]*LIMIT 1/,
   ],
 );
 expectAll(
