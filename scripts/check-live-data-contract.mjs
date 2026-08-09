@@ -1261,6 +1261,7 @@ expectAll("server fresh token reads admit only exact bounded state", server, [
   /async function currentExactTipTokenPayloadForRead\([\s\S]*canonicalGate = null[\s\S]*EXACT_TIP_TOKEN_CACHE\.get\(cacheKey\)[\s\S]*validatedUntil[\s\S]*workAuthorityRequired &&[\s\S]*!canonicalGate \|\| canonicalGate\.ok !== true[\s\S]*EXACT_TIP_TOKEN_CACHE\.delete\(cacheKey\)[\s\S]*tokenPayloadMatchesCanonicalGate\(payload, canonicalGate\)[\s\S]*retainedExactTipTokenPayloadForRead\(payload, canonicalGate, cached\)[\s\S]*healthNodeTipHeight\(\)[\s\S]*indexedThroughBlock === tipHeight/,
   /function tokenPayloadMatchesCanonicalGate\([\s\S]*canonicalGate\.atTip !== true[\s\S]*payloadIndexedThroughBlockHash\(payload\)[\s\S]*gateHeight === tipHeight[\s\S]*canonicalHash === indexedThroughBlockHash[\s\S]*storedHash === indexedThroughBlockHash/,
   /function normalizePublicTokenScope\(value\)[\s\S]*normalizeTokenScope\(value\)[\s\S]*scope\.toLowerCase\(\) === "all" \? "" : scope/,
+  /function stableLivenetTokenReadRequiresExactWorkAuthority\([\s\S]*network === "livenet"[\s\S]*walletScoped !== true[\s\S]*recoveryAddressCount === 0[\s\S]*!tokenScope \|\| tokenScope === WORK_TOKEN_ID/,
   /const workTokenAuthorityRequired =[\s\S]*!tokenScope \|\| tokenScope === WORK_TOKEN_ID[\s\S]*if \(!walletScoped && recoveryAddresses\.length === 0\) \{[\s\S]*tokenReadCanonicalGate =[\s\S]*!freshRead[\s\S]*workTokenAuthorityRequired[\s\S]*canonicalPublicReadGate\(network, \{ force: true \}\)[\s\S]*currentExactTipTokenPayloadForRead\([\s\S]*tokenReadCanonicalGate/,
   /function canonicalReadGateIdentity\(gate,\s*tokenScope = ""\)[\s\S]*requiresWorkAuthority[\s\S]*workWorkerAuthorityIdentity[\s\S]*workPendingPublicationIdentity[\s\S]*gate\.workAuthorityReady !== true[\s\S]*summarySnapshotId/,
   /function fullTokenPayloadShapeIsComplete\([\s\S]*"closedListings"[\s\S]*"invalidEvents"[\s\S]*"transfers"/,
@@ -1280,6 +1281,13 @@ expectAll("server fresh token reads admit only exact bounded state", server, [
   /async function currentProofIndexTokenPayloadForRead\([\s\S]*readIdentity = ""[\s\S]*`\$\{scope \|\| "all"\}:\$\{String\(readIdentity[\s\S]*singleFlightBoundedRead/,
   /async function canonicalPublicReadGate\(network, options = \{\}\)[\s\S]*cached &&[\s\S]*options\.force !== true[\s\S]*!cached\.settled/,
 ]);
+expectAll(
+  "stable livenet WORK and ALL reads fail closed before generic fallback",
+  tokenRouteSource,
+  [
+    /Fresh credit state is still catching up for \$\{tokenScope \|\| "all"\}\.[\s\S]*stableLivenetTokenReadRequiresExactWorkAuthority\([\s\S]*Current WORK credit state cannot prove exact publication authority[\s\S]*tokenPayloadForRead\(/,
+  ],
+);
 if (
   /cachedTokenPayloadFallbackForRead|token-state-fresh-memory|token-state-fresh-cache|refreshTokenPayloadCacheInBackground/u.test(
     tokenRouteSource,

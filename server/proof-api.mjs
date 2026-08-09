@@ -18343,6 +18343,20 @@ function normalizePublicTokenScope(value) {
   return scope.toLowerCase() === "all" ? "" : scope;
 }
 
+function stableLivenetTokenReadRequiresExactWorkAuthority(
+  network,
+  tokenScope,
+  walletScoped = false,
+  recoveryAddressCount = 0,
+) {
+  return (
+    network === "livenet" &&
+    walletScoped !== true &&
+    recoveryAddressCount === 0 &&
+    (!tokenScope || tokenScope === WORK_TOKEN_ID)
+  );
+}
+
 function tokenMatchesScope(token, scope) {
   if (!scope) {
     return true;
@@ -66305,6 +66319,18 @@ async function handleRequest(request, response) {
       ) {
         throw freshDataUnavailableError(
           `Fresh credit state is still catching up for ${tokenScope || "all"}.`,
+        );
+      }
+      if (
+        stableLivenetTokenReadRequiresExactWorkAuthority(
+          network,
+          tokenScope,
+          walletScoped,
+          recoveryAddresses.length,
+        )
+      ) {
+        throw freshDataUnavailableError(
+          `Current WORK credit state cannot prove exact publication authority for ${tokenScope || "all"}.`,
         );
       }
       if (walletScoped) {

@@ -1030,7 +1030,12 @@ membership, projection, and tip.
 
 That composite authority partitions relational singleflight, binds the
 in-memory exact-tip entry, and is rechecked independently for every caller after
-the producer completes. A fresh response must also be a complete authenticated
+the producer completes. Stable global WORK/ALL full-token reads require the same
+exact current authority and fail closed if both the bound in-memory entry and
+the relational authority path miss; they cannot descend into the generic
+persisted-token or legacy live-reconstruction fallback. Non-WORK scopes and
+explicit wallet/address recovery reads retain their bounded fallback paths. A
+fresh response must also be a complete authenticated
 current-table snapshot with exactly one WORK definition and the canonical WORK
 transfer-value projection bound to the same summary snapshot, height, and hash.
 Any change to either readiness identity at the same tip and summary invalidates

@@ -5437,6 +5437,68 @@ check("fresh exact-tip token cache is bound to both WORK readiness identities", 
   );
 });
 
+check("stable livenet WORK and ALL reads cannot enter the generic fallback", () => {
+  const stableLivenetTokenReadRequiresExactWorkAuthority = isolatedFunction(
+    API_PATH,
+    "stableLivenetTokenReadRequiresExactWorkAuthority",
+    { WORK_TOKEN_ID },
+  );
+
+  for (const scope of ["", WORK_TOKEN_ID]) {
+    assert.equal(
+      stableLivenetTokenReadRequiresExactWorkAuthority(
+        "livenet",
+        scope,
+        false,
+        0,
+      ),
+      true,
+      `${scope || "ALL"} must fail closed when its exact authority path misses`,
+    );
+  }
+
+  assert.equal(
+    stableLivenetTokenReadRequiresExactWorkAuthority(
+      "livenet",
+      "generic-credit-id",
+      false,
+      0,
+    ),
+    false,
+    "stable non-WORK credit reads retain the generic fallback",
+  );
+  assert.equal(
+    stableLivenetTokenReadRequiresExactWorkAuthority(
+      "livenet",
+      WORK_TOKEN_ID,
+      true,
+      1,
+    ),
+    false,
+    "wallet-scoped WORK reads retain their bounded recovery path",
+  );
+  assert.equal(
+    stableLivenetTokenReadRequiresExactWorkAuthority(
+      "livenet",
+      WORK_TOKEN_ID,
+      false,
+      1,
+    ),
+    false,
+    "address-recovery WORK reads retain their bounded recovery path",
+  );
+  assert.equal(
+    stableLivenetTokenReadRequiresExactWorkAuthority(
+      "testnet4",
+      WORK_TOKEN_ID,
+      false,
+      0,
+    ),
+    false,
+    "non-livenet WORK reads retain their existing fallback",
+  );
+});
+
 check("relational token singleflight joins only an identical composite authority", async () => {
   const payload = {
     indexedThroughBlock: 961_634,
