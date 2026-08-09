@@ -2987,6 +2987,16 @@ epoch advance, and make an otherwise exact fresh WORK read fail closed. Keep
 the initial/settled readiness-epoch comparison intact; the indexed selector is
 the performance bound, not a relaxation of that authority check.
 
+A fresh global WORK/ALL token read binds its indexed attempt to the composite
+publication identity admitted at request start. If the indexed payload is
+missing or non-exact after the bounded indexed attempt, force one final
+canonical gate.
+A different or temporarily empty final composite identity means the state
+changed during verification; the same identity means the index is still
+catching up. Both outcomes fail closed before the generic persisted or live
+reconstruction fallback. Non-WORK and explicit wallet/address recovery reads
+keep their existing bounded behavior.
+
 `indexer:parity` compares the database read model with confirmed canonical
 history. Confirmed event coverage should be measured against confirmed
 canonical activity; pending canonical activity and pending database rows are

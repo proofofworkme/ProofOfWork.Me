@@ -36359,6 +36359,15 @@ function canonicalReadGateIdentity(gate, tokenScope = "") {
     : `${height}:${canonicalHash}`;
 }
 
+function freshWorkTokenIndexedMissDisposition(
+  admittedIdentity,
+  finalIdentity,
+) {
+  const admitted = String(admittedIdentity ?? "").trim();
+  const final = String(finalIdentity ?? "").trim();
+  return !final || final !== admitted ? "changed" : "catching-up";
+}
+
 function freshWorkTokenPayloadIsReady(
   payload,
   network,
@@ -66309,6 +66318,25 @@ async function handleRequest(request, response) {
             TOKEN_READ_CACHE_CONTROL,
           );
           return;
+        }
+        if (
+          network === "livenet" &&
+          freshRead &&
+          workTokenAuthorityRequired
+        ) {
+          const finalGate = await canonicalPublicReadGate(network, {
+            force: true,
+          });
+          if (
+            freshWorkTokenIndexedMissDisposition(
+              tokenReadCanonicalIdentity,
+              canonicalReadGateIdentity(finalGate, tokenScope),
+            ) === "changed"
+          ) {
+            throw freshDataUnavailableError(
+              `Fresh credit state changed while it was being verified for ${tokenScope || "all"}.`,
+            );
+          }
         }
       }
       if (

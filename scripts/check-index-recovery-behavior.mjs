@@ -5275,6 +5275,41 @@ check("fresh WORK publication requires full ready state and a stable gate", asyn
   }
 });
 
+check("fresh WORK and ALL indexed misses distinguish authority handoff from catch-up", () => {
+  const disposition = isolatedFunction(
+    API_PATH,
+    "freshWorkTokenIndexedMissDisposition",
+  );
+  const admittedIdentity =
+    `961634:${"b".repeat(64)}:ready-summary:${"c".repeat(64)}:${"d".repeat(64)}`;
+  const changedIdentity =
+    `961634:${"b".repeat(64)}:ready-summary:${"e".repeat(64)}:${"f".repeat(64)}`;
+
+  for (const scope of [WORK_TOKEN_ID, ""]) {
+    assert.equal(
+      disposition(admittedIdentity, changedIdentity),
+      "changed",
+      `a null ${scope || "ALL"} indexed read across B-to-C authority must report changed state`,
+    );
+    assert.equal(
+      disposition(admittedIdentity, ""),
+      "changed",
+      `a null ${scope || "ALL"} indexed read while authority is unpublished must report changed state`,
+    );
+    assert.equal(
+      disposition(admittedIdentity, admittedIdentity),
+      "catching-up",
+      `a null ${scope || "ALL"} indexed read under unchanged authority must remain catching up`,
+    );
+  }
+
+  assert.match(
+    topLevelFunctionSource(API_PATH, "handleRequest"),
+    /network === "livenet" &&[\s\S]*freshRead &&[\s\S]*workTokenAuthorityRequired[\s\S]*freshWorkTokenIndexedMissDisposition/u,
+    "the post-miss authority check must not intercept non-livenet fallback",
+  );
+});
+
 check("fresh exact-tip token cache is bound to both WORK readiness identities", async () => {
   const blockHash = "e".repeat(64);
   const height = 961_634;
