@@ -17657,7 +17657,10 @@ check("legacy mempool scan state round-trips without inventing a cursor", async 
   const mempoolScanState = isolatedFunction(
     BACKFILL_PATH,
     "mempoolScanState",
-    { NETWORK: "livenet", normalizedMempoolScanCursor },
+    {
+      NETWORK: "livenet",
+      normalizedMempoolScanCursor,
+    },
   );
   const storeMempoolScanState = isolatedFunction(
     BACKFILL_PATH,
@@ -17725,7 +17728,10 @@ check("mempool priority cursor rotates unresolved rows and persists independentl
   const mempoolScanState = isolatedFunction(
     BACKFILL_PATH,
     "mempoolScanState",
-    { NETWORK: "livenet", normalizedMempoolScanCursor },
+    {
+      NETWORK: "livenet",
+      normalizedMempoolScanCursor,
+    },
   );
   const storeMempoolScanState = isolatedFunction(
     BACKFILL_PATH,
@@ -17757,6 +17763,24 @@ check("mempool priority cursor rotates unresolved rows and persists independentl
       (candidate) => candidate.entry[0],
     ),
     priorityTxids.slice(0, 4),
+  );
+  const deferredPriorityTxid = priorityTxids[0];
+  const withDeferredPriority = plannedMempoolScanCandidates(
+    entries,
+    { cursor: null, priorityCursor: null, processedTxids },
+    priorityTxids,
+    {
+      candidateLimit: 5,
+      deferredTxids: new Set([deferredPriorityTxid]),
+      seenLimit: 100,
+    },
+  );
+  assert.equal(
+    withDeferredPriority.some(
+      (candidate) => candidate.entry[0] === deferredPriorityTxid,
+    ),
+    false,
+    "a stage-bound scheduling deferral must suppress even the priority lane",
   );
 
   const cursor = normalizedMempoolScanCursor({
@@ -18950,6 +18974,11 @@ check("Q16 staging fails closed for unknown or ambiguous marketplace scope", asy
   );
   assert.match(
     mempoolScanSource,
+    /workQ16PendingStageContext\(client\)[\s\S]*deferredTxids: liveBoundedStageTxids[\s\S]*discoveredTxids:[\s\S]*liveBoundedStageTxids[\s\S]*stagedWorkTxids[\s\S]*plannedReplayTxids[\s\S]*storeCurrentWorkQ16PendingStage\([\s\S]*\{ q16PendingUnresolved, stopReason \}/u,
+    "bounded Q16 scheduling must remain stage-bound, plan-revalidated, and separate from publication readiness",
+  );
+  assert.match(
+    mempoolScanSource,
     /catch \(error\) \{[\s\S]*?unresolved \+= 1;[\s\S]*?phase: "mempool-protocol-verification"/u,
     "generic verifier failures must remain visible in global scan health",
   );
@@ -19090,6 +19119,7 @@ check("supervised pending recovery stages 118 WORK candidates before one atomic 
       compareCanonicalUtf8: (left, right) =>
         String(left) < String(right) ? -1 : String(left) > String(right) ? 1 : 0,
       currentWorkProjectionState: async () => "work-q16",
+      workQ16PendingStageContext: async () => ({ scanCheckpoint: null }),
       freshRawTransactionFromCore: async (txid) => {
         freshReads += 1;
         return txid === departedTxid ? null : pendingTransaction(txid);
@@ -19165,6 +19195,704 @@ check("supervised pending recovery stages 118 WORK candidates before one atomic 
   assert.equal(witnessScan.stopReason, "");
   assert.equal(witnessScan.globalUnresolved, 0);
   assert.equal(witnessScan.q16PendingUnresolved, 0);
+});
+
+check("bounded Q16 scheduling checkpoints are closed, parent-bound, and atomic", async () => {
+  const checkpointModel =
+    "canonical-work-q16-pending-scan-scheduling-checkpoint-v1";
+  const checkpointKey = "workQ16PendingScanCheckpoint:livenet";
+  const parentKey = "workQ16PendingRebuild:livenet";
+  const stageKey = "workQ16PendingStage:livenet";
+  const parentWitnessSha256 = "a".repeat(64);
+  const stageSha256 = "b".repeat(64);
+  const replayTxids = ["1".repeat(64), "2".repeat(64)];
+  const isHexTxid = (value) => /^[0-9a-f]{64}$/u.test(String(value));
+  const canonicalJsonText = (value) => JSON.stringify(value);
+  const exactObjectKeys = (value, expectedKeys) =>
+    Boolean(
+      value &&
+        typeof value === "object" &&
+        !Array.isArray(value) &&
+        JSON.stringify(Object.keys(value).sort()) ===
+          JSON.stringify([...expectedKeys].sort()),
+    );
+  const canonicalWorkQ16PendingTxids = (values) => {
+    const txids = (Array.isArray(values) ? values : []).map((value) =>
+      String(value ?? "").trim().toLowerCase()
+    );
+    if (
+      txids.length > 512 ||
+      txids.some((txid) => !isHexTxid(txid)) ||
+      txids.length !== new Set(txids).size
+    ) {
+      throw new Error("invalid checkpoint replay txids");
+    }
+    return txids.sort(compareCanonicalUtf8);
+  };
+  const workQ16PendingStageLabeledSha256 = (label, value) =>
+    createHash("sha256")
+      .update(JSON.stringify({ label, value }))
+      .digest("hex");
+  const workQ16PendingBoundedScanDeferral = isolatedFunction(
+    BACKFILL_PATH,
+    "workQ16PendingBoundedScanDeferral",
+  );
+  const canonicalWorkQ16PendingScanCheckpoint = isolatedFunction(
+    BACKFILL_PATH,
+    "canonicalWorkQ16PendingScanCheckpoint",
+    {
+      NETWORK: "livenet",
+      WORK_Q16_PENDING_SCAN_CHECKPOINT_MODEL: checkpointModel,
+      canonicalJsonText,
+      canonicalWorkQ16PendingTxids,
+      exactObjectKeys,
+      isHexTxid,
+      objectValue: (value) =>
+        value && typeof value === "object" && !Array.isArray(value)
+          ? value
+          : {},
+      workQ16PendingBoundedScanDeferral,
+      workQ16PendingStageLabeledSha256,
+    },
+  );
+  const orderedReplaySha256 = workQ16PendingStageLabeledSha256(
+    "ORDERED-REPLAY",
+    replayTxids,
+  );
+  const validCheckpoint = {
+    model: checkpointModel,
+    network: "livenet",
+    orderedReplayCount: replayTxids.length,
+    orderedReplaySha256,
+    parentWitnessSha256,
+    q16PendingUnresolved: 0,
+    replayTxids,
+    stageSha256,
+    stopReason: "protocol-txid-limit",
+  };
+  assert.deepEqual(
+    Array.from(
+      canonicalWorkQ16PendingScanCheckpoint(validCheckpoint).replayTxids,
+    ),
+    replayTxids,
+  );
+  for (const invalidCheckpoint of [
+    { ...validCheckpoint, extra: true },
+    { ...validCheckpoint, model: `${checkpointModel}-wrong` },
+    { ...validCheckpoint, network: "testnet" },
+    { ...validCheckpoint, orderedReplayCount: 1 },
+    { ...validCheckpoint, orderedReplaySha256: "c".repeat(64) },
+    { ...validCheckpoint, parentWitnessSha256: "not-a-hash" },
+    { ...validCheckpoint, q16PendingUnresolved: 1 },
+    { ...validCheckpoint, replayTxids: [...replayTxids].reverse() },
+    { ...validCheckpoint, replayTxids: [replayTxids[0], replayTxids[0]] },
+    { ...validCheckpoint, stageSha256: "not-a-hash" },
+    { ...validCheckpoint, stopReason: "" },
+    { ...validCheckpoint, stopReason: "block-limit" },
+  ]) {
+    assert.equal(
+      canonicalWorkQ16PendingScanCheckpoint(invalidCheckpoint),
+      null,
+    );
+  }
+  assert.equal(
+    canonicalWorkQ16PendingScanCheckpoint({
+      ...validCheckpoint,
+      stopReason: "time-budget",
+    })?.stopReason,
+    "time-budget",
+  );
+
+  const boundWorkQ16PendingScanCheckpoint = isolatedFunction(
+    BACKFILL_PATH,
+    "boundWorkQ16PendingScanCheckpoint",
+    { canonicalJsonText, canonicalWorkQ16PendingScanCheckpoint },
+  );
+  const storedStage = {
+    orderedReplayCount: replayTxids.length,
+    orderedReplaySha256,
+    parentWitnessSha256,
+    replayTxids,
+    stageSha256,
+  };
+  assert.equal(
+    boundWorkQ16PendingScanCheckpoint(
+      validCheckpoint,
+      { sha256: parentWitnessSha256 },
+      storedStage,
+    )?.stageSha256,
+    stageSha256,
+  );
+  for (const [parent, stage] of [
+    [{ sha256: "c".repeat(64) }, storedStage],
+    [
+      { sha256: parentWitnessSha256 },
+      { ...storedStage, parentWitnessSha256: "c".repeat(64) },
+    ],
+    [
+      { sha256: parentWitnessSha256 },
+      { ...storedStage, stageSha256: "c".repeat(64) },
+    ],
+    [
+      { sha256: parentWitnessSha256 },
+      { ...storedStage, orderedReplayCount: 1 },
+    ],
+    [
+      { sha256: parentWitnessSha256 },
+      { ...storedStage, orderedReplaySha256: "c".repeat(64) },
+    ],
+    [
+      { sha256: parentWitnessSha256 },
+      { ...storedStage, replayTxids: [replayTxids[0]] },
+    ],
+  ]) {
+    assert.equal(
+      boundWorkQ16PendingScanCheckpoint(validCheckpoint, parent, stage),
+      null,
+    );
+  }
+
+  const workQ16PendingScanCheckpointForStage = isolatedFunction(
+    BACKFILL_PATH,
+    "workQ16PendingScanCheckpointForStage",
+    {
+      NETWORK: "livenet",
+      WORK_Q16_PENDING_SCAN_CHECKPOINT_MODEL: checkpointModel,
+      canonicalStoredWorkQ16PendingStage: (value) =>
+        value?.fixtureValid === true ? value : null,
+      workQ16PendingBoundedScanDeferral,
+    },
+  );
+  const fixtureStage = {
+    ...storedStage,
+    fixtureValid: true,
+  };
+  const builtCheckpoint = workQ16PendingScanCheckpointForStage(
+    fixtureStage,
+    { q16PendingUnresolved: 0, stopReason: "protocol-txid-limit" },
+  );
+  assert.deepEqual(Array.from(builtCheckpoint.replayTxids), replayTxids);
+  assert.equal(builtCheckpoint.stageSha256, stageSha256);
+  for (const [stage, health] of [
+    [{ ...fixtureStage, fixtureValid: false }, {
+      q16PendingUnresolved: 0,
+      stopReason: "protocol-txid-limit",
+    }],
+    [{ ...fixtureStage, replayTxids: [] }, {
+      q16PendingUnresolved: 0,
+      stopReason: "protocol-txid-limit",
+    }],
+    [fixtureStage, { q16PendingUnresolved: 1, stopReason: "time-budget" }],
+    [fixtureStage, { q16PendingUnresolved: 0, stopReason: "" }],
+  ]) {
+    assert.throws(
+      () => workQ16PendingScanCheckpointForStage(stage, health),
+      /requires one exact stored stage and stop reason/u,
+    );
+  }
+
+  const checkpointForStage = () => ({
+    model: checkpointModel,
+    parentWitnessSha256,
+    replayTxids,
+    stageSha256,
+  });
+  const storeCurrentWorkQ16PendingStage = isolatedFunction(
+    BACKFILL_PATH,
+    "storeCurrentWorkQ16PendingStage",
+    {
+      WORK_Q16_PENDING_REBUILD_META_KEY: parentKey,
+      WORK_Q16_PENDING_SCAN_CHECKPOINT_META_KEY: checkpointKey,
+      WORK_Q16_PENDING_STAGE_META_KEY: stageKey,
+      canonicalStoredWorkQ16PendingStage: (value) =>
+        value?.fixtureValid === true ? value : null,
+      lockWorkQ16PendingBootstrapAuditTables: async () => {
+        throw new Error("fixture unexpectedly entered bootstrap locking");
+      },
+      lockedWorkQ16PendingParent: async (_client, result) =>
+        result.rows[0].value,
+      workQ16PendingBoundedScanDeferral,
+      workQ16PendingScanCheckpointForStage: checkpointForStage,
+    },
+  );
+  const atomicStage = {
+    fixtureValid: true,
+    parentWitnessSha256,
+    replayTxids,
+    stageSha256,
+  };
+  const clientFixture = ({
+    failCheckpointWrite = false,
+    lockedParentSha256 = parentWitnessSha256,
+  } = {}) => {
+    const trace = [];
+    return {
+      async query(sql, params = []) {
+        const text = String(sql).trim();
+        const key = params[0] ?? "";
+        if (["BEGIN", "COMMIT", "ROLLBACK"].includes(text)) {
+          trace.push(text);
+          return { rowCount: 0, rows: [] };
+        }
+        if (text === "LOCK TABLE proof_indexer.meta IN ROW EXCLUSIVE MODE") {
+          trace.push("LOCK-META-ROW-EXCLUSIVE");
+          return { rowCount: 0, rows: [] };
+        }
+        if (text.startsWith("SELECT") && text.includes("FOR SHARE")) {
+          trace.push(`SELECT-SHARE:${key}`);
+          return {
+            rowCount: 1,
+            rows: [{ value: { sha256: lockedParentSha256 } }],
+          };
+        }
+        if (text.startsWith("SELECT") && text.includes("FOR UPDATE")) {
+          trace.push(`SELECT-UPDATE:${key}`);
+          return { rowCount: 0, rows: [] };
+        }
+        if (text.startsWith("INSERT")) {
+          trace.push(`INSERT:${key}`);
+          if (failCheckpointWrite && key === checkpointKey) {
+            throw new Error("fixture checkpoint write failed");
+          }
+          return { rowCount: 1, rows: [] };
+        }
+        if (text.startsWith("DELETE")) {
+          trace.push(`DELETE:${key}`);
+          return { rowCount: 0, rows: [] };
+        }
+        throw new Error(`Unexpected checkpoint store query: ${text}`);
+      },
+      trace,
+    };
+  };
+  const boundedClient = clientFixture();
+  assert.equal(
+    (await storeCurrentWorkQ16PendingStage(
+      boundedClient,
+      atomicStage,
+      { q16PendingUnresolved: 0, stopReason: "protocol-txid-limit" },
+    ))?.stageSha256,
+    stageSha256,
+  );
+  assert.deepEqual(boundedClient.trace, [
+    "BEGIN",
+    "LOCK-META-ROW-EXCLUSIVE",
+    `SELECT-SHARE:${parentKey}`,
+    `SELECT-UPDATE:${stageKey}`,
+    `SELECT-UPDATE:${checkpointKey}`,
+    `INSERT:${stageKey}`,
+    `INSERT:${checkpointKey}`,
+    "COMMIT",
+  ]);
+
+  const parentRaceClient = clientFixture({
+    lockedParentSha256: "c".repeat(64),
+  });
+  assert.equal(
+    await storeCurrentWorkQ16PendingStage(
+      parentRaceClient,
+      atomicStage,
+      { q16PendingUnresolved: 0, stopReason: "time-budget" },
+    ),
+    null,
+  );
+  assert.deepEqual(parentRaceClient.trace, [
+    "BEGIN",
+    "LOCK-META-ROW-EXCLUSIVE",
+    `SELECT-SHARE:${parentKey}`,
+    "COMMIT",
+  ]);
+
+  const failedCheckpointClient = clientFixture({
+    failCheckpointWrite: true,
+  });
+  await assert.rejects(
+    storeCurrentWorkQ16PendingStage(
+      failedCheckpointClient,
+      atomicStage,
+      { q16PendingUnresolved: 0, stopReason: "protocol-txid-limit" },
+    ),
+    /fixture checkpoint write failed/u,
+  );
+  assert.deepEqual(failedCheckpointClient.trace.slice(-2), [
+    `INSERT:${checkpointKey}`,
+    "ROLLBACK",
+  ]);
+  assert.equal(failedCheckpointClient.trace.includes("COMMIT"), false);
+
+  const completeClient = clientFixture();
+  await storeCurrentWorkQ16PendingStage(
+    completeClient,
+    atomicStage,
+    { q16PendingUnresolved: 0, stopReason: "" },
+  );
+  assert.ok(completeClient.trace.includes(`DELETE:${checkpointKey}`));
+  assert.equal(completeClient.trace.at(-1), "COMMIT");
+
+  const publicationSource = topLevelFunctionSource(
+    BACKFILL_PATH,
+    "persistExactWorkQ16PendingWitness",
+  );
+  assert.match(
+    publicationSource,
+    /BEGIN ISOLATION LEVEL SERIALIZABLE[\s\S]*DELETE FROM proof_indexer\.meta WHERE key = \$1[\s\S]*WORK_Q16_PENDING_SCAN_CHECKPOINT_META_KEY[\s\S]*COMMIT/u,
+    "successful witness publication must clear the scheduling checkpoint inside its serializable transaction",
+  );
+});
+
+check("bounded Q16 staging checkpoints exact pass progress before later publication", async () => {
+  const workTokenId =
+    "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8";
+  const isHexTxid = (value) => /^[0-9a-f]{64}$/u.test(String(value));
+  const txids = Array.from(
+    { length: 6 },
+    (_value, index) => (index + 1).toString(16).padStart(64, "0"),
+  );
+  const pendingTransaction = (txid) => ({ txid, vin: [], vout: [] });
+
+  async function runFixture(
+    storeMode,
+    passCount,
+    {
+      active = true,
+      classification = "work",
+      planMismatch = false,
+      preseedMismatch = "",
+      preseed = false,
+      publishNull = false,
+      txidCount = 6,
+    } = {},
+  ) {
+    const activeTxids = txids.slice(0, txidCount);
+    const mempool = Object.fromEntries(
+      activeTxids.map((txid, index) => [
+        txid,
+        { time: 1_721_000_000 - index },
+      ]),
+    );
+    const parentWitnessSha256 = "a".repeat(64);
+    let checkpointState = null;
+    let processedState = [];
+    let published = 0;
+    let requestCount = 0;
+    let stageSequence = 0;
+    let storedStage = null;
+    if (preseed) {
+      storedStage = {
+        parentWitnessSha256,
+        replayTxids: txids.slice(0, 5),
+        stageSha256: "b".repeat(64),
+      };
+      checkpointState = {
+        model: "fixture-bounded-stage-checkpoint",
+        parentWitnessSha256:
+          preseedMismatch === "parent"
+            ? "c".repeat(64)
+            : parentWitnessSha256,
+        replayTxids: [...storedStage.replayTxids],
+        stageSha256:
+          preseedMismatch === "stage"
+            ? "d".repeat(64)
+            : storedStage.stageSha256,
+        stopReason: "protocol-txid-limit",
+      };
+    }
+    const checkpointHistory = [];
+    const candidateHistory = [];
+    const processedHistory = [];
+    const plannedHistory = [];
+    const backfillMempoolScanSource = isolatedFunction(
+      BACKFILL_PATH,
+      "backfillMempoolScanSource",
+      {
+        BITCOIN_RPC_URL: "http://127.0.0.1:8332",
+        MEMPOOL_SCAN_BUDGET_MS: 540_000,
+        MEMPOOL_SCAN_MAX_PROTOCOL_TXIDS: 5,
+        MEMPOOL_SCAN_MAX_TXIDS: 500,
+        MEMPOOL_SCAN_SEEN_LIMIT: 10_000,
+        WORK_AMO_V8_DECLARATION_PINS_CONFIGURED: true,
+        WORK_PROJECTION_STATE_Q16: "work-q16",
+        bitcoinRpc: async (method) => {
+          assert.equal(method, "getrawmempool");
+          return mempool;
+        },
+        buildWorkQ16PendingStagePlan: async (
+          _client,
+          { discoveredTxids },
+        ) => {
+          plannedHistory.push([...discoveredTxids]);
+          const replayTxids = [...new Set([
+            ...(storedStage?.replayTxids ?? []),
+            ...discoveredTxids,
+          ])].sort(compareCanonicalUtf8);
+          if (planMismatch) {
+            replayTxids.shift();
+          }
+          return {
+            publishEligible: true,
+            request: {
+              parentWitnessSha256: "a".repeat(64),
+              replayTxids,
+            },
+            requiresAttemptFence: true,
+          };
+        },
+        canonicalMempoolTxidSnapshot: (value) => ({
+          count: Object.keys(value).length,
+          model: "fixture-mempool-snapshot",
+          sha256: "fixture-snapshot",
+          txids: Object.keys(value).sort(compareCanonicalUtf8),
+        }),
+        compareCanonicalUtf8,
+        currentWorkProjectionState: async () =>
+          active ? "work-q16" : "work-q8",
+        workQ16PendingStageContext: async () => ({
+          scanCheckpoint: checkpointState &&
+            storedStage &&
+            checkpointState.parentWitnessSha256 ===
+              storedStage.parentWitnessSha256 &&
+            checkpointState.stageSha256 === storedStage.stageSha256 &&
+            JSON.stringify(checkpointState.replayTxids) ===
+              JSON.stringify(storedStage.replayTxids)
+            ? checkpointState
+            : null,
+        }),
+        freshRawTransactionFromCore: async (txid) =>
+          pendingTransaction(txid),
+        isHexTxid,
+        knownMempoolRecoveryTxids: async () => [],
+        mempoolScanState: async () => ({
+          cursor: null,
+          key: "mempoolScan:livenet",
+          priorityCursor: null,
+          processedTxids: new Set(processedState),
+        }),
+        mempoolScanTimeBudgetReached: () => false,
+        pendingWorkQ16StageCandidate: async () => classification,
+        persistExactWorkQ16PendingWitness: async (
+          _client,
+          { stageResponse },
+        ) => {
+          published += 1;
+          if (publishNull) {
+            return null;
+          }
+          checkpointState = null;
+          return {
+            ready: true,
+            stagedIndexed: stageResponse.stage.replayTxids.length,
+          };
+        },
+        plannedMempoolScanCandidates: (
+          entries,
+          state,
+          _priorityTxids,
+          { deferredTxids },
+        ) => {
+          const candidates = entries
+            .filter(
+              ([txid]) =>
+                !state.processedTxids.has(txid) &&
+                !deferredTxids.has(txid),
+            )
+            .map((entry) => ({ entry, lane: "head" }));
+          candidateHistory.push(candidates.map(({ entry }) => entry[0]));
+          return candidates;
+        },
+        protocolMessagesFromTx: () => [{
+          decodeValid: true,
+          prefix: "pwt1:",
+          text: `pwt1:mint:${workTokenId}:1000`,
+        }],
+        requestWorkQ16PendingStage: async (request) => {
+          requestCount += 1;
+          stageSequence += 1;
+          return {
+            model: "fixture-stage",
+            stage: {
+              parentWitnessSha256,
+              replayTxids: request.replayTxids,
+              stageSha256:
+                stageSequence.toString(16).padStart(64, "e"),
+            },
+          };
+        },
+        storeCurrentWorkQ16PendingStage: async (
+          _client,
+          stage,
+          { q16PendingUnresolved, stopReason },
+        ) => {
+          if (storeMode === "throw") {
+            throw new Error("fixture stage store failed");
+          }
+          if (storeMode === "null") {
+            return null;
+          }
+          storedStage = {
+            ...stage,
+            replayTxids: [...stage.replayTxids],
+          };
+          checkpointState =
+              q16PendingUnresolved === 0 &&
+              ["protocol-txid-limit", "time-budget"].includes(stopReason) &&
+              stage.replayTxids.length > 0
+            ? {
+                model: "fixture-bounded-stage-checkpoint",
+                parentWitnessSha256: stage.parentWitnessSha256,
+                replayTxids: [...stage.replayTxids],
+                stageSha256: stage.stageSha256,
+                stopReason,
+              }
+            : null;
+          return stage;
+        },
+        storeMempoolScanState: async (
+          _client,
+          _key,
+          processedTxids,
+        ) => {
+          processedState = [...processedTxids];
+          checkpointHistory.push(checkpointState);
+          processedHistory.push([...processedTxids]);
+        },
+        storeWorkQ16PendingRunningAttempt: async (
+          _client,
+          attempt,
+        ) => attempt,
+        transactionHasConfirmedBlockEvidence: () => false,
+        workQ16PendingReusableScanHealthMatches: () => false,
+        workQ16PendingRunningAttempt: () => ({ status: "running" }),
+        workQ16PendingScanComplete: (unresolved, reason) =>
+          Number(unresolved) === 0 && String(reason ?? "") === "",
+      },
+    );
+    const results = [];
+    for (let pass = 0; pass < passCount; pass += 1) {
+      results.push(
+        await backfillMempoolScanSource(
+          { query: async () => ({ rowCount: 1, rows: [] }) },
+          { label: "mempool-scan" },
+        ),
+      );
+    }
+    return {
+      candidateHistory,
+      checkpointState,
+      checkpointHistory,
+      processedHistory,
+      published,
+      requestCount,
+      results,
+      plannedHistory,
+      storedStage,
+    };
+  }
+
+  const progressing = await runFixture("canonical", 2);
+  assert.equal(progressing.results[0].stopReason, "protocol-txid-limit");
+  assert.equal(progressing.results[0].q16PendingWitnessReady, false);
+  assert.deepEqual(Array.from(progressing.candidateHistory[0]), txids);
+  assert.deepEqual(
+    Array.from(progressing.plannedHistory[0]),
+    txids.slice(0, 5),
+  );
+  assert.deepEqual(Array.from(progressing.processedHistory[0]), []);
+  assert.deepEqual(
+    Array.from(progressing.checkpointHistory[0].replayTxids),
+    txids.slice(0, 5),
+  );
+  assert.equal(progressing.results[1].stopReason, "");
+  assert.equal(progressing.results[1].q16PendingWitnessReady, true);
+  assert.deepEqual(
+    Array.from(progressing.candidateHistory[1]),
+    txids.slice(5),
+  );
+  assert.deepEqual(Array.from(progressing.plannedHistory[1]), txids);
+  assert.deepEqual(Array.from(progressing.processedHistory[1]), txids);
+  assert.equal(progressing.checkpointHistory[1], null);
+  assert.deepEqual(
+    Array.from(progressing.storedStage.replayTxids),
+    txids.slice(0, 5),
+  );
+  assert.equal(progressing.published, 1);
+
+  const parentRace = await runFixture("null", 1);
+  assert.deepEqual(parentRace.processedHistory, [[]]);
+  assert.deepEqual(parentRace.checkpointHistory, [null]);
+  assert.equal(parentRace.storedStage, null);
+  assert.equal(parentRace.published, 0);
+
+  const failedStore = await runFixture("throw", 1);
+  assert.deepEqual(failedStore.processedHistory, [[]]);
+  assert.deepEqual(failedStore.checkpointHistory, [null]);
+  assert.equal(failedStore.results[0].unresolved, 1);
+  assert.equal(failedStore.results[0].q16PendingUnresolved, 1);
+  assert.equal(failedStore.published, 0);
+
+  for (const preseedMismatch of ["parent", "stage"]) {
+    const mismatched = await runFixture("canonical", 1, {
+      preseed: true,
+      preseedMismatch,
+    });
+    assert.deepEqual(Array.from(mismatched.candidateHistory[0]), txids);
+    assert.deepEqual(
+      Array.from(mismatched.plannedHistory[0]),
+      txids.slice(0, 5),
+    );
+    assert.deepEqual(Array.from(mismatched.processedHistory[0]), []);
+  }
+
+  const planRace = await runFixture("canonical", 1, {
+    planMismatch: true,
+    preseed: true,
+  });
+  assert.deepEqual(
+    Array.from(planRace.candidateHistory[0]),
+    txids.slice(5),
+  );
+  assert.deepEqual(Array.from(planRace.plannedHistory[0]), txids);
+  assert.equal(planRace.requestCount, 0);
+  assert.equal(planRace.published, 0);
+  assert.equal(planRace.results[0].unresolved, 1);
+  assert.equal(planRace.results[0].q16PendingUnresolved, 1);
+  assert.equal(planRace.checkpointHistory[0]?.stageSha256, "b".repeat(64));
+
+  const completeNull = await runFixture("canonical", 1, {
+    publishNull: true,
+    txidCount: 1,
+  });
+  assert.equal(completeNull.results[0].stopReason, "");
+  assert.equal(completeNull.results[0].q16PendingWitnessReady, false);
+  assert.deepEqual(completeNull.checkpointHistory, [null]);
+
+  const inactive = await runFixture("canonical", 1, {
+    active: false,
+    preseed: true,
+    txidCount: 1,
+  });
+  assert.deepEqual(Array.from(inactive.candidateHistory[0]), [txids[0]]);
+  assert.equal(inactive.checkpointHistory[0]?.stageSha256, "b".repeat(64));
+
+  const departedCheckpointMembers = await runFixture("canonical", 1, {
+    preseed: true,
+    txidCount: 4,
+  });
+  assert.deepEqual(
+    Array.from(departedCheckpointMembers.candidateHistory[0]),
+    [],
+  );
+  assert.deepEqual(
+    Array.from(departedCheckpointMembers.plannedHistory[0]),
+    txids.slice(0, 4),
+    "only checkpoint members still present in the exact initial mempool may be deferred into the fresh plan",
+  );
+
+  const unresolved = await runFixture("canonical", 1, {
+    classification: "conflict",
+    txidCount: 1,
+  });
+  assert.equal(unresolved.results[0].q16PendingUnresolved, 1);
+  assert.deepEqual(unresolved.checkpointHistory, [null]);
 });
 
 check("supply-capped mempool mints replace stale valid rows with a pending invalid audit", async () => {

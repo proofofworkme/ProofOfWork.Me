@@ -238,6 +238,10 @@ const WORK_Q16_PENDING_EMPTY_PARENT_MODEL =
   "canonical-work-q16-pending-empty-parent-v1";
 const WORK_Q16_PENDING_MEMPOOL_MODEL =
   "canonical-core-mempool-txid-set-v1";
+const WORK_Q16_PENDING_SCAN_CHECKPOINT_META_KEY =
+  "workQ16PendingScanCheckpoint:livenet";
+const WORK_Q16_PENDING_SCAN_CHECKPOINT_MODEL =
+  "canonical-work-q16-pending-scan-scheduling-checkpoint-v1";
 const WORK_Q16_PENDING_STAGE_REQUEST_MODEL =
   "canonical-work-q16-pending-verifier-stage-request-v2";
 const WORK_Q16_PENDING_STAGE_MODEL =
@@ -21738,6 +21742,113 @@ async function backfillBlockScanSource(client, source) {
   return summary;
 }
 
+function workQ16PendingBoundedScanDeferral(
+  q16PendingUnresolved,
+  stopReason,
+) {
+  return q16PendingUnresolved === 0 &&
+    ["protocol-txid-limit", "time-budget"].includes(stopReason);
+}
+
+function canonicalWorkQ16PendingScanCheckpoint(value) {
+  const checkpoint = objectValue(value);
+  if (
+    !exactObjectKeys(checkpoint, [
+      "model",
+      "network",
+      "orderedReplayCount",
+      "orderedReplaySha256",
+      "parentWitnessSha256",
+      "q16PendingUnresolved",
+      "replayTxids",
+      "stageSha256",
+      "stopReason",
+    ]) ||
+    checkpoint.model !== WORK_Q16_PENDING_SCAN_CHECKPOINT_MODEL ||
+    checkpoint.network !== NETWORK ||
+    !isHexTxid(checkpoint.parentWitnessSha256) ||
+    !isHexTxid(checkpoint.stageSha256) ||
+    !workQ16PendingBoundedScanDeferral(
+      checkpoint.q16PendingUnresolved,
+      checkpoint.stopReason,
+    )
+  ) {
+    return null;
+  }
+  try {
+    const declaredReplayTxids = checkpoint.replayTxids;
+    const replayTxids = canonicalWorkQ16PendingTxids(
+      declaredReplayTxids,
+      "bounded stage checkpoint replay",
+    );
+    if (
+      canonicalJsonText(declaredReplayTxids) !==
+        canonicalJsonText(replayTxids) ||
+      checkpoint.orderedReplayCount !== replayTxids.length ||
+      checkpoint.orderedReplaySha256 !==
+        workQ16PendingStageLabeledSha256(
+          "ORDERED-REPLAY",
+          replayTxids,
+        )
+    ) {
+      return null;
+    }
+    return { ...checkpoint, replayTxids };
+  } catch {
+    return null;
+  }
+}
+
+function workQ16PendingScanCheckpointForStage(
+  stage,
+  { q16PendingUnresolved, stopReason },
+) {
+  const canonicalStage = canonicalStoredWorkQ16PendingStage(stage);
+  if (
+    !canonicalStage ||
+    canonicalStage.replayTxids.length === 0 ||
+    !workQ16PendingBoundedScanDeferral(
+      q16PendingUnresolved,
+      stopReason,
+    )
+  ) {
+    throw new Error(
+      "WORK Q16 bounded scan progress requires one exact stored stage and stop reason.",
+    );
+  }
+  return {
+    model: WORK_Q16_PENDING_SCAN_CHECKPOINT_MODEL,
+    network: NETWORK,
+    orderedReplayCount: canonicalStage.orderedReplayCount,
+    orderedReplaySha256: canonicalStage.orderedReplaySha256,
+    parentWitnessSha256: canonicalStage.parentWitnessSha256,
+    q16PendingUnresolved,
+    replayTxids: canonicalStage.replayTxids,
+    stageSha256: canonicalStage.stageSha256,
+    stopReason,
+  };
+}
+
+function boundWorkQ16PendingScanCheckpoint(
+  checkpoint,
+  parent,
+  storedStage,
+) {
+  const canonical = canonicalWorkQ16PendingScanCheckpoint(checkpoint);
+  if (!canonical || !storedStage) {
+    return null;
+  }
+  return parent?.sha256 === canonical.parentWitnessSha256 &&
+      storedStage.parentWitnessSha256 === canonical.parentWitnessSha256 &&
+      storedStage.stageSha256 === canonical.stageSha256 &&
+      storedStage.orderedReplayCount === canonical.orderedReplayCount &&
+      storedStage.orderedReplaySha256 === canonical.orderedReplaySha256 &&
+      canonicalJsonText(storedStage.replayTxids) ===
+        canonicalJsonText(canonical.replayTxids)
+    ? canonical
+    : null;
+}
+
 async function mempoolScanState(client) {
   const key = `mempoolScan:${NETWORK}`;
   const result = await client.query(
@@ -21923,7 +22034,7 @@ function plannedMempoolScanCandidates(
   entries,
   state,
   priorityTxids,
-  { candidateLimit, seenLimit },
+  { candidateLimit, deferredTxids, seenLimit },
 ) {
   const limit = Number.isFinite(candidateLimit)
     ? Math.max(0, Math.floor(candidateLimit))
@@ -21937,12 +22048,20 @@ function plannedMempoolScanCandidates(
   const processedTxids = typeof state?.processedTxids?.has === "function"
     ? state.processedTxids
     : new Set();
+  const deferred = typeof deferredTxids?.has === "function"
+    ? deferredTxids
+    : new Set();
   const selected = new Set();
   const candidates = [];
   const urgentLimit = Math.max(0, limit - 1);
   const addCandidate = (entry, lane) => {
     const txid = String(entry?.[0] ?? "").trim().toLowerCase();
-    if (!isHexTxid(txid) || selected.has(txid) || candidates.length >= limit) {
+    if (
+      !isHexTxid(txid) ||
+      deferred.has(txid) ||
+      selected.has(txid) ||
+      candidates.length >= limit
+    ) {
       return false;
     }
     selected.add(txid);
@@ -23685,6 +23804,7 @@ async function workQ16PendingStageContext(client) {
     [[
       WORK_Q16_PENDING_ATTEMPT_META_KEY,
       WORK_Q16_PENDING_REBUILD_META_KEY,
+      WORK_Q16_PENDING_SCAN_CHECKPOINT_META_KEY,
       WORK_Q16_PENDING_STAGE_META_KEY,
     ]],
   );
@@ -23716,6 +23836,10 @@ async function workQ16PendingStageContext(client) {
     const storedStage = canonicalStoredWorkQ16PendingStage(
       values.get(WORK_Q16_PENDING_STAGE_META_KEY),
     );
+    const parentBoundStoredStage =
+      storedStage?.parentWitnessSha256 === parent.sha256
+        ? storedStage
+        : null;
     const attempt = canonicalWorkQ16PendingAttempt(
       values.get(WORK_Q16_PENDING_ATTEMPT_META_KEY),
     );
@@ -23736,17 +23860,19 @@ async function workQ16PendingStageContext(client) {
       attempt,
       parent,
       priorObservations: priorWorkQ16PendingAbsenceObservations(
-        storedStage?.parentWitnessSha256 === parent.sha256 &&
-            canonicalJsonText(storedStage.priorMembershipTxids) ===
+        parentBoundStoredStage &&
+            canonicalJsonText(parentBoundStoredStage.priorMembershipTxids) ===
               canonicalJsonText(parent.membershipTxids)
-          ? storedStage
+          ? parentBoundStoredStage
           : null,
         priorRows,
       ),
-      storedStage:
-        storedStage?.parentWitnessSha256 === parent.sha256
-          ? storedStage
-          : null,
+      scanCheckpoint: boundWorkQ16PendingScanCheckpoint(
+        values.get(WORK_Q16_PENDING_SCAN_CHECKPOINT_META_KEY),
+        parent,
+        parentBoundStoredStage,
+      ),
+      storedStage: parentBoundStoredStage,
     };
     if (bootstrapSnapshotOpen) {
       await client.query("COMMIT");
@@ -23761,13 +23887,31 @@ async function workQ16PendingStageContext(client) {
   }
 }
 
-async function storeCurrentWorkQ16PendingStage(client, stage) {
+async function storeCurrentWorkQ16PendingStage(
+  client,
+  stage,
+  { q16PendingUnresolved = Number.NaN, stopReason = "" } = {},
+) {
   const canonical = canonicalStoredWorkQ16PendingStage(stage);
   if (!canonical) {
     throw new Error("Refusing to store an invalid WORK Q16 pending stage.");
   }
+  const scanCheckpoint =
+    canonical.replayTxids.length > 0 &&
+      workQ16PendingBoundedScanDeferral(
+        q16PendingUnresolved,
+        stopReason,
+      )
+      ? workQ16PendingScanCheckpointForStage(canonical, {
+          q16PendingUnresolved,
+          stopReason,
+        })
+      : null;
   await client.query("BEGIN");
   try {
+    await client.query(
+      "LOCK TABLE proof_indexer.meta IN ROW EXCLUSIVE MODE",
+    );
     let parentResult = await client.query(
       `SELECT value FROM proof_indexer.meta WHERE key = $1 FOR SHARE`,
       [WORK_Q16_PENDING_REBUILD_META_KEY],
@@ -23791,6 +23935,10 @@ async function storeCurrentWorkQ16PendingStage(client, stage) {
       `SELECT value FROM proof_indexer.meta WHERE key = $1 FOR UPDATE`,
       [WORK_Q16_PENDING_STAGE_META_KEY],
     );
+    await client.query(
+      `SELECT value FROM proof_indexer.meta WHERE key = $1 FOR UPDATE`,
+      [WORK_Q16_PENDING_SCAN_CHECKPOINT_META_KEY],
+    );
     if (
       current.rows[0]?.value?.stageSha256 !== canonical.stageSha256
     ) {
@@ -23802,6 +23950,25 @@ async function storeCurrentWorkQ16PendingStage(client, stage) {
           DO UPDATE SET value = EXCLUDED.value, updated_at = now()
         `,
         [WORK_Q16_PENDING_STAGE_META_KEY, JSON.stringify(canonical)],
+      );
+    }
+    if (scanCheckpoint) {
+      await client.query(
+        `
+          INSERT INTO proof_indexer.meta (key, value, updated_at)
+          VALUES ($1, $2::jsonb, now())
+          ON CONFLICT (key)
+          DO UPDATE SET value = EXCLUDED.value, updated_at = now()
+        `,
+        [
+          WORK_Q16_PENDING_SCAN_CHECKPOINT_META_KEY,
+          JSON.stringify(scanCheckpoint),
+        ],
+      );
+    } else {
+      await client.query(
+        `DELETE FROM proof_indexer.meta WHERE key = $1`,
+        [WORK_Q16_PENDING_SCAN_CHECKPOINT_META_KEY],
       );
     }
     await client.query("COMMIT");
@@ -25405,6 +25572,10 @@ async function persistExactWorkQ16PendingWitness(
       [WORK_Q16_PENDING_RUNNING_ATTEMPT_META_KEY],
     );
     await client.query(
+      `DELETE FROM proof_indexer.meta WHERE key = $1`,
+      [WORK_Q16_PENDING_SCAN_CHECKPOINT_META_KEY],
+    );
+    await client.query(
       `
         INSERT INTO proof_indexer.meta (key, value, updated_at)
         VALUES ($1, $2::jsonb, $3::timestamptz)
@@ -27005,6 +27176,16 @@ async function backfillMempoolScanSource(client, source) {
       refresh: true,
     }) === WORK_PROJECTION_STATE_Q16;
   const state = await mempoolScanState(client);
+  const q16ScanContext = q16PendingActive
+    ? await workQ16PendingStageContext(client)
+    : null;
+  const currentBoundedStageCheckpoint = q16ScanContext?.scanCheckpoint ?? null;
+  const initialMempoolTxids = new Set(initialMempoolSnapshot.txids);
+  const liveBoundedStageTxids = new Set(
+    currentBoundedStageCheckpoint?.replayTxids.filter((txid) =>
+      initialMempoolTxids.has(txid)
+    ) ?? [],
+  );
   const entries = Object.entries(mempool ?? {})
     .filter(([txid]) => isHexTxid(txid))
     .sort(
@@ -27023,7 +27204,11 @@ async function backfillMempoolScanSource(client, source) {
     entries,
     state,
     priorityTxids,
-    { candidateLimit, seenLimit },
+    {
+      candidateLimit,
+      deferredTxids: liveBoundedStageTxids,
+      seenLimit,
+    },
   );
   const processed = new Set(
     [...state.processedTxids].filter((txid) => mempool?.[txid]),
@@ -27324,9 +27509,22 @@ async function backfillMempoolScanSource(client, source) {
   if (q16PendingActive) {
     try {
       const stagePlan = await buildWorkQ16PendingStagePlan(client, {
-        discoveredTxids: [...stagedWorkTxids],
+        discoveredTxids: [
+          ...new Set([
+            ...liveBoundedStageTxids,
+            ...stagedWorkTxids,
+          ]),
+        ],
         initialMempoolSnapshot,
       });
+      const plannedReplayTxids = new Set(stagePlan.request.replayTxids);
+      if ([...liveBoundedStageTxids].some((txid) =>
+        !plannedReplayTxids.has(txid)
+      )) {
+        throw new Error(
+          "WORK Q16 bounded stage checkpoint is absent from the fresh verifier plan.",
+        );
+      }
       const scanComplete = workQ16PendingScanComplete(
         q16PendingUnresolved,
         stopReason,
@@ -27386,6 +27584,7 @@ async function backfillMempoolScanSource(client, source) {
         await storeCurrentWorkQ16PendingStage(
           client,
           stageResponse.stage,
+          { q16PendingUnresolved, stopReason },
         );
       }
       if (pendingWitness) {

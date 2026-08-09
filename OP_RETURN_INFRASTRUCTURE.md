@@ -984,6 +984,17 @@ writes fail closed, and continues confirmed catch-up on the next loop instead of
 crash-looping the worker or taking confirmed reads offline. Supervised
 `--once` runs still publish that diagnostic evidence and exit nonzero so an
 operator or test cannot mistake incomplete pending coverage for success.
+When a bounded Q16 pass authenticates an exact verifier stage, the worker stores
+that stage and a separate scheduling checkpoint atomically under the same
+locked parent witness. The checkpoint is closed-shape and binds the exact
+parent hash, stage hash, and complete ordered replay commitment. A later pass
+may defer only still-live replay txids after the checkpoint, current parent,
+and current stored stage all match exactly; those deferred txids are still
+required in the new verifier plan before any request or publication. A parent
+or stage mismatch, inactive Q16 state, failed store, or malformed checkpoint
+forces normal rescan. This scheduling state never enters the global processed
+set, publishes a witness, enables pending writes, or reports readiness, and a
+successful witness publication deletes it in the same serializable transaction.
 
 Public expensive reads validate the query string, exact page/offset/cursor
 bounds, and recovery-hint count before Core or PostgreSQL work. Per-client
