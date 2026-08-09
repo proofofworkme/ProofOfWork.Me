@@ -110,12 +110,76 @@ function canonicalIndexUnavailableProvesTipCatchUp(details) {
   );
 }
 
+export function freshReadRateLimitRetryDelayMs(error) {
+  if (
+    !(error instanceof MarketplaceRegressionHttpError) ||
+    error.statusCode !== 429
+  ) {
+    return null;
+  }
+  let url;
+  try {
+    url = new URL(error.url);
+  } catch {
+    return null;
+  }
+  const freshValues = url.searchParams.getAll("fresh");
+  const networkValues = url.searchParams.getAll("network");
+  const network = String(networkValues[0] ?? "livenet")
+    .trim()
+    .toLowerCase();
+  const details = error.responsePayload?.details;
+  const limit = details?.limit;
+  const windowMs = details?.windowMs;
+  const retryAfterSeconds = details?.retryAfterSeconds;
+  const retryAfterHeader = error.retryAfterHeader;
+  const retryAfterHeaderIsCanonical =
+    typeof retryAfterHeader === "string" &&
+    /^[1-9][0-9]{0,3}$/u.test(retryAfterHeader);
+  const retryAfterHeaderSeconds = retryAfterHeaderIsCanonical
+    ? Number(retryAfterHeader)
+    : null;
+  const retryDelayMs = retryAfterSeconds * 1_000;
+  if (
+    !MARKETPLACE_REGRESSION_FRESH_CANONICAL_PATHS.has(url.pathname) ||
+    freshValues.length !== 1 ||
+    freshValues[0] !== "1" ||
+    networkValues.length > 1 ||
+    network !== "livenet" ||
+    !details ||
+    typeof details !== "object" ||
+    !Object.hasOwn(details, "admissionClass") ||
+    !Object.hasOwn(details, "code") ||
+    !Object.hasOwn(details, "limit") ||
+    !Object.hasOwn(details, "retryAfterSeconds") ||
+    !Object.hasOwn(details, "windowMs") ||
+    details.admissionClass !== "fresh" ||
+    details.code !== "READ_CLIENT_RATE_LIMIT" ||
+    error.responsePayload?.ok !== false ||
+    error.serverMessage !==
+      "This client is reading expensive data too frequently." ||
+    !Number.isSafeInteger(limit) ||
+    limit !== 6 ||
+    !Number.isSafeInteger(windowMs) ||
+    windowMs !== 10_000 ||
+    !Number.isSafeInteger(retryAfterSeconds) ||
+    retryAfterSeconds !== 10 ||
+    !retryAfterHeaderIsCanonical ||
+    retryAfterHeaderSeconds !== retryAfterSeconds ||
+    retryAfterSeconds !== Math.ceil(windowMs / 1_000) ||
+    retryDelayMs > 10_000
+  ) {
+    return null;
+  }
+  return retryDelayMs;
+}
+
 function convergenceTimeout(label, maxWaitMs, cause) {
   return new CanonicalConvergenceTimeoutError(label, maxWaitMs, cause);
 }
 
 export class MarketplaceRegressionHttpError extends Error {
-  constructor(url, statusCode, payload = null) {
+  constructor(url, statusCode, payload = null, retryAfterHeader = null) {
     const serverMessage = String(
       payload?.error ?? payload?.message ?? "",
     ).trim();
@@ -130,6 +194,7 @@ export class MarketplaceRegressionHttpError extends Error {
     this.name = "MarketplaceRegressionHttpError";
     this.code = code;
     this.responsePayload = payload;
+    this.retryAfterHeader = retryAfterHeader;
     this.serverMessage = serverMessage;
     this.statusCode = statusCode;
     this.url = String(url);
@@ -226,10 +291,13 @@ export function isRetryableWorkAmoV5TipRaceStatus(
 }
 
 export function isRetryableCanonicalReadError(error) {
-  if (
-    !(error instanceof MarketplaceRegressionHttpError) ||
-    error.statusCode !== 503
-  ) {
+  if (!(error instanceof MarketplaceRegressionHttpError)) {
+    return false;
+  }
+  if (error.statusCode === 429) {
+    return freshReadRateLimitRetryDelayMs(error) !== null;
+  }
+  if (error.statusCode !== 503) {
     return false;
   }
   const details = error.responsePayload?.details;
@@ -331,8 +399,11 @@ export async function waitForCanonicalConvergence({
         lastRetryableError,
       );
     }
+    const retryAfterMs = freshReadRateLimitRetryDelayMs(
+      lastRetryableError,
+    ) ?? 0;
     const delayMs = Math.min(
-      boundedPollIntervalMs,
+      Math.max(boundedPollIntervalMs, retryAfterMs),
       boundedMaxWaitMs - elapsedMs,
     );
     onRetry({

@@ -410,6 +410,7 @@ async function requestJson(
           url,
           response.status,
           errorPayload,
+          response.headers.get("retry-after"),
         );
       }
       const retryableStatus = [500, 502, 503, 504].includes(response.status);

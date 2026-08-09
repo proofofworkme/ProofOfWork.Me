@@ -6,6 +6,7 @@ import {
   CanonicalConvergenceTimeoutError,
   MarketplaceRegressionHttpError,
   createCanonicalConvergenceBudget,
+  freshReadRateLimitRetryDelayMs,
   isRetryableCanonicalReadError,
   isRetryableWorkAmoV5TipRaceStatus,
   marketplaceRegressionCanonicalReadKind,
@@ -161,6 +162,15 @@ const readerSource = readFileSync(
 const rawReplaySource = readFileSync(
   new URL("../server/work-amo-v5-raw.mjs", import.meta.url),
   "utf8",
+);
+const marketplaceRegressionSource = readFileSync(
+  new URL("./check-marketplace-regressions.mjs", import.meta.url),
+  "utf8",
+);
+assert.match(
+  marketplaceRegressionSource,
+  /new MarketplaceRegressionHttpError\(\s*url,\s*response\.status,\s*errorPayload,\s*response\.headers\.get\("retry-after"\),\s*\)/u,
+  "The canonical marketplace runner must bind retryable rate limits to the raw Retry-After header",
 );
 assert.doesNotMatch(
   rawReplaySource,
@@ -6073,6 +6083,226 @@ assert.equal(
   ),
   false,
 );
+
+const exactFreshReadRateLimitError = new MarketplaceRegressionHttpError(
+  "https://computer.proofofwork.me/api/v1/token-history?network=livenet&fresh=1",
+  429,
+  {
+    details: {
+      admissionClass: "fresh",
+      code: "READ_CLIENT_RATE_LIMIT",
+      limit: 6,
+      retryAfterSeconds: 10,
+      windowMs: 10_000,
+    },
+    error: "This client is reading expensive data too frequently.",
+    ok: false,
+  },
+  "10",
+);
+assert.equal(
+  freshReadRateLimitRetryDelayMs(exactFreshReadRateLimitError),
+  10_000,
+);
+assert.equal(
+  isRetryableCanonicalReadError(exactFreshReadRateLimitError),
+  true,
+);
+assert.equal(
+  isRetryableCanonicalReadError(
+    new MarketplaceRegressionHttpError(
+      exactFreshReadRateLimitError.url,
+      429,
+      null,
+      "10",
+    ),
+  ),
+  false,
+);
+assert.equal(isRetryableCanonicalReadError(new Error("429")), false);
+for (const mutate of [
+  (error) => {
+    error.statusCode = 503;
+  },
+  (error) => {
+    error.url = error.url.replace("fresh=1", "fresh=0");
+  },
+  (error) => {
+    error.url += "&fresh=1";
+  },
+  (error) => {
+    error.url = error.url.replace("network=livenet", "network=testnet");
+  },
+  (error) => {
+    error.url += "&network=livenet";
+  },
+  (error) => {
+    error.url = error.url.replace("token-history", "tx");
+  },
+  (error) => {
+    error.responsePayload.details.admissionClass = "heavy";
+  },
+  (error) => {
+    error.responsePayload.details.code = "READ_CLIENT_TRACKING_CAPACITY";
+  },
+  (error) => {
+    error.responsePayload.details.limit = 0;
+  },
+  (error) => {
+    error.responsePayload.details.limit = "6";
+  },
+  (error) => {
+    error.responsePayload.details.retryAfterSeconds = 9;
+  },
+  (error) => {
+    error.responsePayload.details.retryAfterSeconds = 10.5;
+  },
+  (error) => {
+    error.responsePayload.details.retryAfterSeconds = "10";
+  },
+  (error) => {
+    error.responsePayload.details.windowMs = 9_999;
+  },
+  (error) => {
+    error.responsePayload.details.windowMs = "10000";
+  },
+  (error) => {
+    error.responsePayload.details.windowMs = 3_600_001;
+  },
+  (error) => {
+    error.responsePayload.ok = true;
+  },
+  (error) => {
+    error.responsePayload.error = "A generic rate limit was reached.";
+    error.serverMessage = error.responsePayload.error;
+  },
+  (error) => {
+    delete error.responsePayload.details.windowMs;
+  },
+  (error) => {
+    error.retryAfterHeader = null;
+  },
+  (error) => {
+    error.retryAfterHeader = "";
+  },
+  (error) => {
+    error.retryAfterHeader = "0";
+  },
+  (error) => {
+    error.retryAfterHeader = "+10";
+  },
+  (error) => {
+    error.retryAfterHeader = "10.0";
+  },
+  (error) => {
+    error.retryAfterHeader = " 10";
+  },
+  (error) => {
+    error.retryAfterHeader = "Wed, 21 Oct 2015 07:28:00 GMT";
+  },
+  (error) => {
+    error.retryAfterHeader = "9";
+  },
+  (error) => {
+    error.retryAfterHeader = "11";
+  },
+]) {
+  const candidate = new MarketplaceRegressionHttpError(
+    exactFreshReadRateLimitError.url,
+    exactFreshReadRateLimitError.statusCode,
+    structuredClone(exactFreshReadRateLimitError.responsePayload),
+    exactFreshReadRateLimitError.retryAfterHeader,
+  );
+  mutate(candidate);
+  assert.equal(isRetryableCanonicalReadError(candidate), false);
+}
+
+let rateLimitClockMs = 0;
+let rateLimitReads = 0;
+const rateLimitSleepDelays = [];
+const rateLimitBudget = createCanonicalConvergenceBudget(180_000);
+const rateLimitedThenReady = await waitForCanonicalConvergenceWithinBudget({
+  budget: rateLimitBudget,
+  isReady: (payload) => payload?.ready === true,
+  isRetryableValue: () => false,
+  label: "fresh read rate-limit convergence",
+  now: () => rateLimitClockMs,
+  pollIntervalMs: 2_000,
+  read: async () => {
+    rateLimitReads += 1;
+    if (rateLimitReads === 1) {
+      throw exactFreshReadRateLimitError;
+    }
+    return { ready: true };
+  },
+  sleep: async (delayMs) => {
+    rateLimitSleepDelays.push(delayMs);
+    rateLimitClockMs += delayMs;
+  },
+});
+assert.equal(rateLimitedThenReady.ready, true);
+assert.equal(rateLimitReads, 2);
+assert.equal(rateLimitClockMs, 10_000);
+assert.deepEqual(rateLimitSleepDelays, [10_000]);
+assert.equal(rateLimitBudget.remainingMs, 170_000);
+
+let secondRateLimitReads = 0;
+const secondRateLimitedThenReady =
+  await waitForCanonicalConvergenceWithinBudget({
+    budget: rateLimitBudget,
+    isReady: (payload) => payload?.ready === true,
+    isRetryableValue: () => false,
+    label: "second shared fresh read rate-limit convergence",
+    now: () => rateLimitClockMs,
+    pollIntervalMs: 2_000,
+    read: async () => {
+      secondRateLimitReads += 1;
+      if (secondRateLimitReads === 1) {
+        throw exactFreshReadRateLimitError;
+      }
+      return { ready: true };
+    },
+    sleep: async (delayMs) => {
+      rateLimitSleepDelays.push(delayMs);
+      rateLimitClockMs += delayMs;
+    },
+  });
+assert.equal(secondRateLimitedThenReady.ready, true);
+assert.equal(secondRateLimitReads, 2);
+assert.equal(rateLimitClockMs, 20_000);
+assert.deepEqual(rateLimitSleepDelays, [10_000, 10_000]);
+assert.equal(rateLimitBudget.remainingMs, 160_000);
+
+let shortRateLimitClockMs = 0;
+let shortRateLimitReads = 0;
+const shortRateLimitSleepDelays = [];
+const shortRateLimitBudget = createCanonicalConvergenceBudget(5_000);
+await assert.rejects(
+  waitForCanonicalConvergenceWithinBudget({
+    budget: shortRateLimitBudget,
+    isReady: () => false,
+    isRetryableValue: () => false,
+    label: "bounded fresh read rate-limit convergence",
+    now: () => shortRateLimitClockMs,
+    pollIntervalMs: 2_000,
+    read: async () => {
+      shortRateLimitReads += 1;
+      throw exactFreshReadRateLimitError;
+    },
+    sleep: async (delayMs) => {
+      shortRateLimitSleepDelays.push(delayMs);
+      shortRateLimitClockMs += delayMs;
+    },
+  }),
+  (error) =>
+    error instanceof CanonicalConvergenceTimeoutError &&
+    error.maxWaitMs === 5_000 &&
+    error.cause === exactFreshReadRateLimitError,
+);
+assert.equal(shortRateLimitReads, 1);
+assert.equal(shortRateLimitClockMs, 5_000);
+assert.deepEqual(shortRateLimitSleepDelays, [5_000]);
+assert.equal(shortRateLimitBudget.remainingMs, 0);
 assert.equal(
   isRetryableCanonicalReadError(
     new MarketplaceRegressionHttpError(

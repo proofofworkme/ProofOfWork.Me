@@ -2976,6 +2976,15 @@ run has `missingLogEvents: []`, populated event participant/ref search indexes,
 matching WORK/Growth/summary snapshot ids, searchable known regression txids,
 pending rows limited to mempool visibility, and marketplace summaries containing
 every confirmed sealed WORK listing present in the full token payload.
+The fast marketplace runner shares one bounded canonical-convergence budget
+across its fresh reads. It may retry only the exact livenet fresh-read client
+limit response: HTTP `429`, `READ_CLIENT_RATE_LIMIT`, admission class `fresh`,
+the pinned `6` requests per `10000` ms policy, and a matching canonical
+`Retry-After: 10` header. That response waits ten seconds inside the existing
+budget before one new canonical read; malformed, unrelated, heavy-read, or
+capacity-limit `429` responses fail immediately. The runner never raises,
+disables, or bypasses the production limiter, and only a later fully valid
+canonical response can satisfy the regression gate.
 `indexer:parity` is a heavyweight database gate, not a public request-path task.
 Production worker parity may be disabled during normal hot-loop operation so
 block catch-up and public API latency stay healthy; run parity manually during
