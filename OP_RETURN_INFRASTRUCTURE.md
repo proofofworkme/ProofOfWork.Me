@@ -1016,15 +1016,28 @@ bounded-cache counters in API health. The tracked controls are
 `MAX_TRANSACTION_CACHE_BYTES`, and `TRANSACTION_CACHE_TTL_MS`.
 
 Fresh livenet full-token reads never promote the generic persisted token cache
-or start the legacy live-Core reconstruction path. Identical relational reads
-at one admitted height, block hash, and summary identity share one producer;
-each caller independently rechecks the final gate. A fresh WORK or unscoped
-response must be a complete authenticated current-table snapshot with exactly
-one WORK definition, current pending/worker readiness, and the canonical WORK
+or start the legacy live-Core reconstruction path. Fresh WORK, normalized ALL,
+and unscoped reads require one four-part exact authority: the Core/index height
+and block hash, the canonical summary snapshot identity, a completed Q16 worker
+identity, and the current pending-publication identity. The worker identity
+binds its durable finish time, tip, worker mempool, pending membership, and
+pending projection. The publication identity binds the validated witness,
+published attempt, verifier stage and publication time, the exact queue-empty
+64-shard readiness-epoch checkpoint including postmaster and PostgreSQL
+settings, and the pending mempool, membership, projection, and tip. The durable
+worker success must be no earlier than that publication and must agree with its
+membership, projection, and tip.
+
+That composite authority partitions relational singleflight, binds the
+in-memory exact-tip entry, and is rechecked independently for every caller after
+the producer completes. A fresh response must also be a complete authenticated
+current-table snapshot with exactly one WORK definition and the canonical WORK
 transfer-value projection bound to the same summary snapshot, height, and hash.
-The in-memory exact-tip entry is bound to that identity and cannot be seeded by
-a stable read. Fresh responses are `no-store`. The API gives the cold WORK or
-unscoped relational producer a bounded 75-second window, while the browser
+Any change to either readiness identity at the same tip and summary invalidates
+the exact entry and cannot join the old producer. The generic persisted token
+cache and stable reads remain nonauthority for fresh publication and cannot seed
+the exact-tip entry. Fresh responses are `no-store`. The API gives the cold WORK
+or unscoped relational producer a bounded 75-second window, while the browser
 allows 180 seconds for the producer plus authentication, metadata, and final
 gate checks; unavailable or changed authority still returns 503.
 

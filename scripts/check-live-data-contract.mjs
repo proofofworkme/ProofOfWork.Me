@@ -1258,19 +1258,27 @@ expectAll("server fresh token reads admit only exact bounded state", server, [
   /options\.exactTipValidated === true[\s\S]*exactCanonicalGateIdentity[\s\S]*fullTokenPayloadShapeIsComplete\(payload\)[\s\S]*authenticatedFullCanonicalSnapshotMetadata\(payload, "token-state"\)[\s\S]*EXACT_TIP_TOKEN_CACHE\.setWithOutcome\(cacheKey/,
   /if \(!exactOutcome\.stored\) \{[\s\S]*EXACT_TIP_TOKEN_CACHE\.delete\(cacheKey\)/,
   /function cacheTokenPayload\([\s\S]*greenUntil:[\s\S]*pendingValidThroughMs[\s\S]*indexedThroughBlockHash: payloadIndexedThroughBlockHash\(payload\)/,
-  /async function currentExactTipTokenPayloadForRead\([\s\S]*canonicalGate = null[\s\S]*EXACT_TIP_TOKEN_CACHE\.get\(cacheKey\)[\s\S]*validatedUntil[\s\S]*tokenPayloadMatchesCanonicalGate\(payload, canonicalGate\)[\s\S]*retainedExactTipTokenPayloadForRead\(payload, canonicalGate, cached\)[\s\S]*healthNodeTipHeight\(\)[\s\S]*!Number\.isSafeInteger\(tipHeight\)[\s\S]*return null;[\s\S]*indexedThroughBlock === tipHeight[\s\S]*return payload;[\s\S]*EXACT_TIP_TOKEN_CACHE\.delete\(cacheKey\)/,
+  /async function currentExactTipTokenPayloadForRead\([\s\S]*canonicalGate = null[\s\S]*EXACT_TIP_TOKEN_CACHE\.get\(cacheKey\)[\s\S]*validatedUntil[\s\S]*workAuthorityRequired &&[\s\S]*!canonicalGate \|\| canonicalGate\.ok !== true[\s\S]*EXACT_TIP_TOKEN_CACHE\.delete\(cacheKey\)[\s\S]*tokenPayloadMatchesCanonicalGate\(payload, canonicalGate\)[\s\S]*retainedExactTipTokenPayloadForRead\(payload, canonicalGate, cached\)[\s\S]*healthNodeTipHeight\(\)[\s\S]*indexedThroughBlock === tipHeight/,
   /function tokenPayloadMatchesCanonicalGate\([\s\S]*canonicalGate\.atTip !== true[\s\S]*payloadIndexedThroughBlockHash\(payload\)[\s\S]*gateHeight === tipHeight[\s\S]*canonicalHash === indexedThroughBlockHash[\s\S]*storedHash === indexedThroughBlockHash/,
   /function normalizePublicTokenScope\(value\)[\s\S]*normalizeTokenScope\(value\)[\s\S]*scope\.toLowerCase\(\) === "all" \? "" : scope/,
-  /function canonicalReadGateIdentity\(gate,\s*tokenScope = ""\)[\s\S]*requiresWorkAuthority[\s\S]*gate\.ready !== true[\s\S]*gate\.summarySnapshotOk !== true[\s\S]*summarySnapshotId/,
+  /const workTokenAuthorityRequired =[\s\S]*!tokenScope \|\| tokenScope === WORK_TOKEN_ID[\s\S]*if \(!walletScoped && recoveryAddresses\.length === 0\) \{[\s\S]*tokenReadCanonicalGate =[\s\S]*!freshRead[\s\S]*workTokenAuthorityRequired[\s\S]*canonicalPublicReadGate\(network, \{ force: true \}\)[\s\S]*currentExactTipTokenPayloadForRead\([\s\S]*tokenReadCanonicalGate/,
+  /function canonicalReadGateIdentity\(gate,\s*tokenScope = ""\)[\s\S]*requiresWorkAuthority[\s\S]*workWorkerAuthorityIdentity[\s\S]*workPendingPublicationIdentity[\s\S]*gate\.workAuthorityReady !== true[\s\S]*summarySnapshotId/,
   /function fullTokenPayloadShapeIsComplete\([\s\S]*"closedListings"[\s\S]*"invalidEvents"[\s\S]*"transfers"/,
-  /function freshWorkTokenPayloadIsReady\([\s\S]*requiresWorkAuthority[\s\S]*workTokens\.length === 1[\s\S]*workAmoV8\.indexReady === true[\s\S]*migrationReadiness\?\.pendingReady === true[\s\S]*pendingValidThrough[\s\S]*WORK_TRANSFER_VALUE_PROJECTION_MODEL[\s\S]*projectionSnapshotId === gateSnapshotId/,
+  /function freshWorkTokenPayloadIsReady\([\s\S]*requiresWorkAuthority[\s\S]*pendingPublicationAuthority[\s\S]*workAmoV8WorkerAuthorityIdentity[\s\S]*workTokens\.length === 1[\s\S]*workAmoV8\.indexReady === true[\s\S]*migrationReadiness\?\.pendingReady === true[\s\S]*workWorkerAuthorityIdentity[\s\S]*workPendingPublicationIdentity/,
+  /function freshWorkTokenPayloadIsReady\([\s\S]*pendingMembership = pendingWitness\?\.membershipSnapshot[\s\S]*pendingMembershipCount[\s\S]*pendingMembershipSha256/,
+  /function freshWorkTokenPayloadIsReady\([\s\S]*pendingProjection = pendingWitness\?\.projection[\s\S]*pendingProjectionSha256/,
+  /function freshWorkTokenPayloadIsReady\([\s\S]*pendingTip = pendingWitness\?\.canonicalTip[\s\S]*pendingTip\?\.height[\s\S]*pendingTip\?\.hash[\s\S]*workerReadiness\?\.tipHeight[\s\S]*workerReadiness\?\.tipHash/,
   /async function exactFreshTokenPayloadForRoute\([\s\S]*withWorkMarketplaceV4Metadata\(payload,\s*network\)[\s\S]*authenticatedFullCanonicalSnapshotMetadata\([\s\S]*fullTokenPayloadShapeIsComplete\(coherentPayload\)[\s\S]*canonicalPublicReadGate\(network,\s*\{ force: true \}\)[\s\S]*canonicalReadGateIdentity\(finalGate,\s*tokenScope\) !== admittedIdentity[\s\S]*canonicalGateIdentity: admittedIdentity,[\s\S]*exactTipValidated: true/,
   /async function exactCachedFreshTokenPayloadForRoute\([\s\S]*authenticatedFullCanonicalSnapshotMetadata\(payload, "token-state"\)[\s\S]*canonicalPublicReadGate\(network,\s*\{ force: true \}\)[\s\S]*canonicalReadGateIdentity\(finalGate,\s*tokenScope\) !== admittedIdentity/,
   /function readOnlyRetainedWorkAmoV8Metadata\([\s\S]*indexReady: false[\s\S]*listingWritesEnabled: false[\s\S]*migrationReady: false[\s\S]*protocolWritesEnabled: false[\s\S]*settlementWritesEnabled: false[\s\S]*writeAdmission: false[\s\S]*pendingReady: false/,
   /function retainedExactTipTokenPayloadForRead\([\s\S]*canonicalGate\?\.ready === true[\s\S]*cached\?\.greenUntil[\s\S]*readOnlyRetainedWorkAmoV8Metadata/,
   /url\.pathname === "\/api\/v1\/token"[\s\S]*currentExactTipTokenPayloadForRead\([\s\S]*exactCachedFreshTokenPayloadForRoute\([\s\S]*currentProofIndexTokenPayloadForRead\([\s\S]*!tokenScope \|\| tokenScope === WORK_TOKEN_ID[\s\S]*WORK_TOKEN_ROUTE_FRESH_WAIT_MS[\s\S]*exactFreshTokenPayloadForRoute\([\s\S]*network === "livenet"[\s\S]*Fresh credit state is still catching up/,
   /exactPayload,[\s\S]*FRESH_READ_CACHE_CONTROL/,
-  /const indexedPayloadExact = tokenPayloadMatchesCanonicalGate\([\s\S]*indexedPayload,[\s\S]*canonicalReadGate[\s\S]*if \(freshRead\)[\s\S]*exactFreshTokenPayloadForRoute/,
+  /const tokenReadCanonicalIdentity =[\s\S]*freshRead \|\| workTokenAuthorityRequired[\s\S]*canonicalReadGateIdentity\([\s\S]*tokenReadCanonicalGate[\s\S]*if \(workTokenAuthorityRequired && !tokenReadCanonicalIdentity\)[\s\S]*currentProofIndexTokenPayloadForRead\([\s\S]*tokenReadCanonicalIdentity/,
+  /const indexedPayloadExact = tokenPayloadMatchesCanonicalGate\([\s\S]*indexedPayload,[\s\S]*tokenReadCanonicalGate[\s\S]*if \(freshRead\)[\s\S]*exactFreshTokenPayloadForRoute/,
+  /if \(workTokenAuthorityRequired\) \{[\s\S]*const finalGate = await canonicalPublicReadGate\(network, \{[\s\S]*force: true[\s\S]*canonicalReadGateIdentity\(finalGate, tokenScope\) !==[\s\S]*tokenReadCanonicalIdentity[\s\S]*freshWorkTokenPayloadIsReady\([\s\S]*coherentResponsePayload/,
+  /async function currentProofIndexTokenPayloadForRead\([\s\S]*readIdentity = ""[\s\S]*`\$\{scope \|\| "all"\}:\$\{String\(readIdentity[\s\S]*singleFlightBoundedRead/,
+  /async function canonicalPublicReadGate\(network, options = \{\}\)[\s\S]*cached &&[\s\S]*options\.force !== true[\s\S]*!cached\.settled/,
 ]);
 if (
   /cachedTokenPayloadFallbackForRead|token-state-fresh-memory|token-state-fresh-cache|refreshTokenPayloadCacheInBackground/u.test(
@@ -2013,17 +2021,19 @@ expectAll(
     /lastSuccess\.workPrecision[\s\S]*stateReady[\s\S]*durableReplay\.ready === true[\s\S]*replay\.tipHash === normalizedHash\(tipHash\)/,
   ],
 );
-expect(
-  "AMO V8 combines one exact-tip worker proof with the independently current reader pending witness",
-  /const indexReady =[\s\S]*migrationReadiness\?\.pendingReady === true &&[\s\S]*workerReadiness\.ready === true &&[\s\S]*pendingMembershipLive;/.test(
-    server,
-  ) &&
-    !/workerReadiness\.pendingMembershipCount ===[\s\S]*pendingMembershipSnapshot\?\.count/.test(
-      server,
-    ) &&
-    !/workerReadiness\.pendingProjectionSha256 ===[\s\S]*migrationReadiness\?\.pendingWitness/.test(
-      server,
-    ),
+expectAll(
+  "AMO V8 fresh reads bind completed worker and current publication authority",
+  `${server}\n${proofIndexReader}\n${workAmoV8WorkerReadiness}`,
+  [
+    /WORK-AMO-V8-WORKER-AUTHORITY\/v1[\s\S]*workAmoV8WorkerAuthorityIdentity/,
+    /WORK-AMO-V8-PENDING-PUBLICATION-AUTHORITY\/v1[\s\S]*pendingAttempt[\s\S]*pendingStage[\s\S]*pendingWitness[\s\S]*publicationReadinessEpochCheckpoint/,
+    /latestProofIndexOperationalMetadata[\s\S]*pending_witness_meta[\s\S]*pending_attempt_meta[\s\S]*pending_stage_meta[\s\S]*readiness_epoch[\s\S]*readiness_queue[\s\S]*max_prepared_transactions[\s\S]*search_path[\s\S]*postmaster_started_at/,
+    /workQ16PendingPublicationAuthorityFromOperationalRow[\s\S]*canonicalWorkPrecisionV2ReadinessEpochCheckpoint[\s\S]*canonicalWorkQ16PendingAttemptForRead[\s\S]*workAmoV8PendingPublicationAuthorityIdentity/,
+    /workAuthorityReady =[\s\S]*workWorkerAuthorityIdentity[\s\S]*workPendingPublicationIdentity[\s\S]*workerFinishedAtMs >= pendingPublicationGeneratedAtMs/,
+    /function workAmoV8CompositePublicationAuthority\([\s\S]*pendingPublicationAuthority[\s\S]*membership\.count !== workerReadiness\?\.pendingMembershipCount[\s\S]*pendingProjectionSha256[\s\S]*attempt\?\.witnessGeneratedAt !== publicationAt/,
+    /const compositePublicationAuthority =[\s\S]*workAmoV8CompositePublicationAuthority\([\s\S]*const indexReady =[\s\S]*Boolean\(compositePublicationAuthority\)[\s\S]*pendingMembershipLive/,
+    /freshWorkTokenPayloadIsReady[\s\S]*pendingMembershipCount[\s\S]*pendingMembershipSha256[\s\S]*pendingProjectionSha256[\s\S]*workPendingPublicationIdentity/,
+  ],
 );
 expectAll(
   "marketplace deploy checks converge on authoritative V8 while preserving legacy history audits",

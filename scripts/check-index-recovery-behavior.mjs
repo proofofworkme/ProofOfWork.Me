@@ -97,6 +97,8 @@ import {
 } from "../server/work-market-v2.mjs";
 import {
   exactWorkAmoV8WorkerLastSuccessReadiness,
+  workAmoV8PendingPublicationAuthorityIdentity,
+  workAmoV8WorkerAuthorityIdentity,
 } from "../server/work-amo-v8-worker-readiness.mjs";
 import {
   tokenListingCanProjectCloseActivity,
@@ -303,6 +305,173 @@ const GROWTH_VALUE_MULTIPLE = 5n;
 const DEFAULT_REPLAY_WITNESS_SET_HASH = "8".repeat(64);
 const WORK_AMO_V5_H_MINUS_ONE_CANONICAL_SUMMARY_SNAPSHOT_ID =
   "cb13bc6edd20d72f6ae3919e";
+
+function stableFreshAuthorityFixtureJson(value) {
+  if (Array.isArray(value)) {
+    return `[${value.map(stableFreshAuthorityFixtureJson).join(",")}]`;
+  }
+  if (value && typeof value === "object") {
+    return "{" +
+      Object.keys(value)
+        .sort(compareCanonicalUtf8)
+        .map(
+          (key) =>
+            `${JSON.stringify(key)}:${stableFreshAuthorityFixtureJson(value[key])}`,
+        )
+        .join(",") +
+      "}";
+  }
+  return JSON.stringify(value);
+}
+
+function freshAuthorityEpochCheckpoint({
+  epoch = "11",
+  postmasterStartedAt = "2026-08-04T11:50:00.000Z",
+} = {}) {
+  const core = {
+    maxPreparedTransactions: "0",
+    model: "proof-index-worker-readiness-epoch-checkpoint-v1",
+    network: "livenet",
+    postmasterStartedAt,
+    queueCount: 0,
+    readinessEpochs: Array.from({ length: 64 }, (_, shard) => [
+      shard,
+      epoch,
+    ]),
+    searchPath: "pg_catalog, pg_temp",
+  };
+  return {
+    ...core,
+    sha256: createHash("sha256")
+      .update(
+        `ProofOfWork.Me/PROOF-INDEX-WORKER-READINESS-EPOCH-CHECKPOINT/v1\n${
+          stableFreshAuthorityFixtureJson(core)
+        }`,
+        "utf8",
+      )
+      .digest("hex"),
+  };
+}
+
+function freshWorkAuthorityFixture({
+  epoch = "11",
+  height = 961_634,
+  postmasterStartedAt = "2026-08-04T11:50:00.000Z",
+  publicationAt = "2026-08-04T12:00:01.000Z",
+  tipHash = "b".repeat(64),
+  workerFinishedAt = "2026-08-04T12:00:02.000Z",
+} = {}) {
+  const mempool = {
+    count: 3,
+    model: "canonical-core-mempool-txid-set-v1",
+    sha256: "c".repeat(64),
+  };
+  const membership = {
+    count: 2,
+    model: "canonical-work-q16-pending-membership-v2",
+    sha256: "d".repeat(64),
+  };
+  const projectionSha256 = "e".repeat(64);
+  const stageSha256 = "f".repeat(64);
+  const pendingStage = {
+    model: "canonical-work-q16-pending-verifier-stage-v2",
+    stageSha256,
+  };
+  const publicationReadinessEpochCheckpoint = freshAuthorityEpochCheckpoint({
+    epoch,
+    postmasterStartedAt,
+  });
+  const initialMempool = { ...mempool };
+  const attemptIdentity = {
+    initialMempool,
+    model: "canonical-work-q16-pending-publication-attempt-v1",
+    network: "livenet",
+    requestSha256: "1".repeat(64),
+    startedAt: "2026-08-04T11:59:59.000Z",
+  };
+  const pendingAttempt = {
+    ...attemptIdentity,
+    attemptId: workAmoV5CanonicalPayloadCommitment(attemptIdentity).sha256,
+    completedAt: publicationAt,
+    publicationReadinessEpochCheckpoint,
+    stageSha256,
+    status: "published",
+    witnessGeneratedAt: publicationAt,
+  };
+  const pendingWitness = {
+    canonicalTip: { hash: tipHash, height },
+    generatedAt: publicationAt,
+    membershipSnapshot: membership,
+    mempoolSnapshot: mempool,
+    model: "canonical-work-q16-pending-rebuild-v2",
+    network: "livenet",
+    projection: {
+      commitmentSha256: projectionSha256,
+      model: "canonical-work-q16-pending-projection-v5",
+    },
+    ready: true,
+    verifierStage: pendingStage,
+  };
+  const migrationReadiness = {
+    active: true,
+    canonical: true,
+    confirmed: true,
+    evidenceComplete: true,
+    exactTipReady: true,
+    parityReady: true,
+    pendingAttempt,
+    pendingReady: true,
+    pendingValidThrough: "2099-01-01T00:00:00.000Z",
+    pendingWitness,
+    ready: true,
+    replayReady: true,
+    tipHash,
+    tipHeight: height,
+  };
+  const pendingIdentity = workAmoV8PendingPublicationAuthorityIdentity(
+    migrationReadiness,
+    {
+      currentReadinessEpochCheckpoint: publicationReadinessEpochCheckpoint,
+      network: "livenet",
+      pendingAttemptUpdatedAt: publicationAt,
+      pendingStage,
+      pendingStageUpdatedAt: publicationAt,
+      pendingWitnessUpdatedAt: publicationAt,
+      tipHash,
+      tipHeight: height,
+    },
+  );
+  migrationReadiness.pendingPublicationAuthority = {
+    generatedAt: publicationAt,
+    identity: pendingIdentity,
+  };
+  const workerReadiness = {
+    era: "q16",
+    failureActive: false,
+    finishedAt: workerFinishedAt,
+    mempoolCount: mempool.count,
+    mempoolSha256: mempool.sha256,
+    pendingMembershipCount: membership.count,
+    pendingMembershipSha256: membership.sha256,
+    pendingProjectionSha256: projectionSha256,
+    ready: true,
+    tipHash,
+    tipHeight: height,
+  };
+  const workerIdentity = workAmoV8WorkerAuthorityIdentity(workerReadiness);
+  return {
+    height,
+    migrationReadiness,
+    pendingIdentity,
+    pendingStage,
+    publicationAt,
+    publicationReadinessEpochCheckpoint,
+    tipHash,
+    workerFinishedAt,
+    workerIdentity,
+    workerReadiness,
+  };
+}
 
 function workAmoV5LegacyBootstrapCarryRowFixture(overrides = {}) {
   const txid = WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_TXID;
@@ -4346,9 +4515,13 @@ check(
   },
 );
 
-check("fresh token gates bind the indexed and Core checkpoint exactly", () => {
+check("fresh token gates bind the four-part WORK authority exactly", () => {
   const blockHash = "a".repeat(64);
   const height = 961_634;
+  const authority = freshWorkAuthorityFixture({
+    height,
+    tipHash: blockHash,
+  });
   const payload = {
     indexedThroughBlock: height,
     indexedThroughBlockHash: blockHash,
@@ -4363,6 +4536,10 @@ check("fresh token gates bind the indexed and Core checkpoint exactly", () => {
     summarySnapshot: { snapshotId: "exact-summary" },
     summarySnapshotOk: true,
     tipHeight: height,
+    workAuthorityReady: true,
+    workPendingPublicationGeneratedAt: authority.publicationAt,
+    workPendingPublicationIdentity: authority.pendingIdentity,
+    workWorkerAuthorityIdentity: authority.workerIdentity,
   };
   const tokenPayloadMatchesCanonicalGate = isolatedFunction(
     API_PATH,
@@ -4389,13 +4566,17 @@ check("fresh token gates bind the indexed and Core checkpoint exactly", () => {
   assert.equal(normalizePublicTokenScope("ALL"), "");
   assert.equal(normalizePublicTokenScope("ALLOY"), "ALLOY");
   assert.equal(tokenPayloadMatchesCanonicalGate(payload, gate), true);
-  assert.equal(
-    canonicalReadGateIdentity(gate),
-    `${height}:${blockHash}:exact-summary`,
-  );
+  const workIdentity = canonicalReadGateIdentity(gate);
+  assert.notEqual(workIdentity, "");
+  assert.match(workIdentity, new RegExp(authority.workerIdentity, "u"));
+  assert.match(workIdentity, new RegExp(authority.pendingIdentity, "u"));
   assert.equal(
     canonicalReadGateIdentity(gate, "ALL"),
-    `${height}:${blockHash}:exact-summary`,
+    workIdentity,
+  );
+  assert.equal(
+    canonicalReadGateIdentity(gate, WORK_TOKEN_ID),
+    workIdentity,
   );
   assert.equal(
     canonicalReadGateIdentity(
@@ -4426,14 +4607,304 @@ check("fresh token gates bind the indexed and Core checkpoint exactly", () => {
     { summarySnapshot: {} },
     { canonicalHash: "" },
     { ready: false },
+    { workAuthorityReady: false },
+    { workPendingPublicationIdentity: "" },
+    { workWorkerAuthorityIdentity: "" },
   ]) {
     assert.equal(canonicalReadGateIdentity({ ...gate, ...changed }), "");
+  }
+  assert.notEqual(
+    canonicalReadGateIdentity({
+      ...gate,
+      workWorkerAuthorityIdentity: "9".repeat(64),
+    }),
+    workIdentity,
+  );
+  assert.notEqual(
+    canonicalReadGateIdentity({
+      ...gate,
+      workPendingPublicationIdentity: "8".repeat(64),
+    }),
+    workIdentity,
+  );
+});
+
+check("pending publication identity rejects epoch and publication drift", () => {
+  const authority = freshWorkAuthorityFixture();
+  const options = {
+    currentReadinessEpochCheckpoint:
+      authority.publicationReadinessEpochCheckpoint,
+    network: "livenet",
+    pendingAttemptUpdatedAt: authority.publicationAt,
+    pendingStage: authority.pendingStage,
+    pendingStageUpdatedAt: authority.publicationAt,
+    pendingWitnessUpdatedAt: authority.publicationAt,
+    tipHash: authority.tipHash,
+    tipHeight: authority.height,
+  };
+  assert.match(authority.pendingIdentity, /^[0-9a-f]{64}$/u);
+  assert.match(authority.workerIdentity, /^[0-9a-f]{64}$/u);
+  assert.notEqual(
+    workAmoV8WorkerAuthorityIdentity({
+      ...authority.workerReadiness,
+      finishedAt: "2026-08-04T12:00:03.000Z",
+    }),
+    authority.workerIdentity,
+  );
+
+  for (const [label, readiness, changedOptions] of [
+    [
+      "postmaster",
+      authority.migrationReadiness,
+      {
+        ...options,
+        currentReadinessEpochCheckpoint: freshAuthorityEpochCheckpoint({
+          postmasterStartedAt: "2026-08-04T11:51:00.000Z",
+        }),
+      },
+    ],
+    [
+      "epoch",
+      authority.migrationReadiness,
+      {
+        ...options,
+        currentReadinessEpochCheckpoint: freshAuthorityEpochCheckpoint({
+          epoch: "12",
+        }),
+      },
+    ],
+    [
+      "attempt",
+      {
+        ...authority.migrationReadiness,
+        pendingAttempt: {
+          ...authority.migrationReadiness.pendingAttempt,
+          stageSha256: "7".repeat(64),
+        },
+      },
+      options,
+    ],
+    [
+      "witness",
+      {
+        ...authority.migrationReadiness,
+        pendingWitness: {
+          ...authority.migrationReadiness.pendingWitness,
+          generatedAt: "2026-08-04T12:00:02.000Z",
+        },
+      },
+      options,
+    ],
+    [
+      "stage",
+      authority.migrationReadiness,
+      {
+        ...options,
+        pendingStage: {
+          ...authority.pendingStage,
+          stageSha256: "7".repeat(64),
+        },
+      },
+    ],
+    [
+      "meta timestamp",
+      authority.migrationReadiness,
+      {
+        ...options,
+        pendingAttemptUpdatedAt: "2026-08-04T12:00:02.000Z",
+      },
+    ],
+  ]) {
+    assert.equal(
+      workAmoV8PendingPublicationAuthorityIdentity(
+        readiness,
+        changedOptions,
+      ),
+      "",
+      `${label} drift must fail the current publication identity`,
+    );
+  }
+
+  const copiedCheckpointHash = structuredClone(
+    authority.publicationReadinessEpochCheckpoint,
+  );
+  copiedCheckpointHash.readinessEpochs[0][1] = "12";
+  assert.equal(
+    workAmoV8PendingPublicationAuthorityIdentity(
+      authority.migrationReadiness,
+      {
+        ...options,
+        currentReadinessEpochCheckpoint: copiedCheckpointHash,
+      },
+    ),
+    "",
+    "a copied checkpoint digest cannot authenticate changed shard state",
+  );
+});
+
+check("operational rows emit only an exactly current pending publication", () => {
+  const authority = freshWorkAuthorityFixture();
+  const objectRecord = (value) =>
+    value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  const normalizedLowerText = (value) =>
+    String(value ?? "").trim().toLowerCase();
+  const stableWorkPrecisionJson = isolatedFunction(
+    READER_PATH,
+    "stableWorkPrecisionJson",
+  );
+  const normalizedWorkPrecisionV2ReadinessEpochs = isolatedFunction(
+    READER_PATH,
+    "normalizedWorkPrecisionV2ReadinessEpochs",
+  );
+  const exactObjectKeys = isolatedFunction(
+    READER_PATH,
+    "exactObjectKeys",
+    { compareCanonicalUtf8, stableWorkPrecisionJson },
+  );
+  const canonicalWorkPrecisionV2ReadinessEpochCheckpoint = isolatedFunction(
+    READER_PATH,
+    "canonicalWorkPrecisionV2ReadinessEpochCheckpoint",
+    {
+      Buffer,
+      WORK_PRECISION_READINESS_EPOCH_CHECKPOINT_DOMAIN:
+        "ProofOfWork.Me/PROOF-INDEX-WORKER-READINESS-EPOCH-CHECKPOINT/v1",
+      WORK_PRECISION_READINESS_EPOCH_CHECKPOINT_MODEL:
+        "proof-index-worker-readiness-epoch-checkpoint-v1",
+      createHash,
+      exactObjectKeys,
+      normalizedWorkPrecisionV2ReadinessEpochs,
+      objectRecord,
+      stableWorkPrecisionJson,
+    },
+  );
+  const canonicalWorkQ16PendingAttemptForRead = isolatedFunction(
+    READER_PATH,
+    "canonicalWorkQ16PendingAttemptForRead",
+    {
+      WORK_Q16_PENDING_ATTEMPT_MODEL:
+        "canonical-work-q16-pending-publication-attempt-v1",
+      WORK_Q16_PENDING_MEMPOOL_MODEL:
+        "canonical-core-mempool-txid-set-v1",
+      canonicalWorkPrecisionV2ReadinessEpochCheckpoint,
+      exactObjectKeys,
+      normalizedLowerText,
+      objectRecord,
+      workAmoV5CanonicalPayloadCommitment,
+    },
+  );
+  const workPrecisionV2ReadinessFingerprintIso = isolatedFunction(
+    READER_PATH,
+    "workPrecisionV2ReadinessFingerprintIso",
+  );
+  const publicationFromRow = isolatedFunction(
+    READER_PATH,
+    "workQ16PendingPublicationAuthorityFromOperationalRow",
+    {
+      Buffer,
+      WORK_PRECISION_READINESS_EPOCH_CHECKPOINT_DOMAIN:
+        "ProofOfWork.Me/PROOF-INDEX-WORKER-READINESS-EPOCH-CHECKPOINT/v1",
+      WORK_PRECISION_READINESS_EPOCH_CHECKPOINT_MODEL:
+        "proof-index-worker-readiness-epoch-checkpoint-v1",
+      canonicalWorkPrecisionV2ReadinessEpochCheckpoint,
+      canonicalWorkQ16PendingAttemptForRead,
+      createHash,
+      normalizedLowerText,
+      normalizedWorkPrecisionV2ReadinessEpochs,
+      objectRecord,
+      stableWorkPrecisionJson,
+      workAmoV8PendingPublicationAuthorityIdentity,
+      workPrecisionV2ReadinessFingerprintIso,
+    },
+  );
+  const row = {
+    max_prepared_transactions: "0",
+    pending_attempt: authority.migrationReadiness.pendingAttempt,
+    pending_attempt_updated_at: authority.publicationAt,
+    pending_stage: authority.pendingStage,
+    pending_stage_updated_at: authority.publicationAt,
+    pending_witness: authority.migrationReadiness.pendingWitness,
+    pending_witness_updated_at: authority.publicationAt,
+    postmaster_started_at:
+      authority.publicationReadinessEpochCheckpoint.postmasterStartedAt,
+    readiness_epoch_shard_count: 64,
+    readiness_epochs:
+      authority.publicationReadinessEpochCheckpoint.readinessEpochs,
+    readiness_queue_count: 0,
+    search_path: "pg_catalog, pg_temp",
+  };
+  const expected = {
+    generatedAt: authority.publicationAt,
+    identity: authority.pendingIdentity,
+    pendingMembershipCount:
+      authority.migrationReadiness.pendingWitness.membershipSnapshot.count,
+    pendingMembershipSha256:
+      authority.migrationReadiness.pendingWitness.membershipSnapshot.sha256,
+    pendingProjectionSha256:
+      authority.migrationReadiness.pendingWitness.projection
+        .commitmentSha256,
+    tipHash: authority.tipHash,
+    tipHeight: authority.height,
+  };
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(publicationFromRow(row, "livenet", {
+      tipHash: authority.tipHash,
+      tipHeight: authority.height,
+    }))),
+    expected,
+  );
+  for (const [label, changedRow] of [
+    [
+      "stage",
+      {
+        ...row,
+        pending_stage: {
+          ...row.pending_stage,
+          stageSha256: "7".repeat(64),
+        },
+      },
+    ],
+    [
+      "meta timestamp",
+      {
+        ...row,
+        pending_attempt_updated_at: "2026-08-04T12:00:02.000Z",
+      },
+    ],
+    [
+      "epoch",
+      {
+        ...row,
+        readiness_epochs: row.readiness_epochs.map((entry, index) =>
+          index === 0 ? [0, "12"] : entry
+        ),
+      },
+    ],
+    [
+      "postmaster",
+      {
+        ...row,
+        postmaster_started_at: "2026-08-04T11:51:00.000Z",
+      },
+    ],
+  ]) {
+    assert.equal(
+      publicationFromRow(changedRow, "livenet", {
+        tipHash: authority.tipHash,
+        tipHeight: authority.height,
+      }),
+      null,
+      `${label} drift must suppress operational publication authority`,
+    );
   }
 });
 
 check("fresh WORK publication requires full ready state and a stable gate", async () => {
   const blockHash = "b".repeat(64);
   const height = 961_634;
+  const authority = freshWorkAuthorityFixture({
+    height,
+    tipHash: blockHash,
+  });
   const gate = {
     atTip: true,
     canonicalHash: blockHash,
@@ -4444,6 +4915,10 @@ check("fresh WORK publication requires full ready state and a stable gate", asyn
     summarySnapshot: { snapshotId: "ready-summary" },
     summarySnapshotOk: true,
     tipHeight: height,
+    workAuthorityReady: true,
+    workPendingPublicationGeneratedAt: authority.publicationAt,
+    workPendingPublicationIdentity: authority.pendingIdentity,
+    workWorkerAuthorityIdentity: authority.workerIdentity,
   };
   const basePayload = {
     closedListings: [],
@@ -4472,14 +4947,10 @@ check("fresh WORK publication requires full ready state and a stable gate", asyn
     workAmoV6: { ready: true },
     workAmoV8: {
       indexReady: true,
-      migrationReadiness: {
-        pendingReady: true,
-        pendingValidThrough: new Date(Date.now() + 60_000).toISOString(),
-        ready: true,
-      },
+      migrationReadiness: authority.migrationReadiness,
       migrationReady: true,
       ready: true,
-      workerReadiness: { ready: true },
+      workerReadiness: authority.workerReadiness,
     },
     workMarketplaceV4: { ready: true },
   };
@@ -4491,6 +4962,11 @@ check("fresh WORK publication requires full ready state and a stable gate", asyn
   const fullTokenPayloadShapeIsComplete = isolatedFunction(
     API_PATH,
     "fullTokenPayloadShapeIsComplete",
+  );
+  const workAmoV8CompositePublicationAuthority = isolatedFunction(
+    API_PATH,
+    "workAmoV8CompositePublicationAuthority",
+    { workAmoV8WorkerAuthorityIdentity },
   );
   const freshWorkTokenPayloadIsReady = isolatedFunction(
     API_PATH,
@@ -4504,6 +4980,8 @@ check("fresh WORK publication requires full ready state and a stable gate", asyn
         candidate?.indexedThroughBlockHash ?? "",
       proofIndexPayloadIndexedThroughBlock: (candidate) =>
         Number(candidate?.indexedThroughBlock ?? 0),
+      workAmoV8CompositePublicationAuthority,
+      workAmoV8WorkerAuthorityIdentity,
     },
   );
   const tokenPayloadMatchesCanonicalGate = isolatedFunction(
@@ -4552,7 +5030,7 @@ check("fresh WORK publication requires full ready state and a stable gate", asyn
   assert.equal(cached?.options?.exactTipValidated, true);
   assert.equal(
     cached?.options?.canonicalGateIdentity,
-    `${height}:${blockHash}:ready-summary`,
+    canonicalReadGateIdentity(gate),
   );
 
   authenticated = false;
@@ -4577,6 +5055,107 @@ check("fresh WORK publication requires full ready state and a stable gate", asyn
       gate,
     ),
     false,
+  );
+
+  for (const [label, mutate] of [
+    [
+      "membership",
+      (payload) => {
+        payload.workAmoV8.migrationReadiness.pendingWitness
+          .membershipSnapshot.sha256 = "7".repeat(64);
+      },
+    ],
+    [
+      "projection",
+      (payload) => {
+        payload.workAmoV8.migrationReadiness.pendingWitness
+          .projection.commitmentSha256 = "7".repeat(64);
+      },
+    ],
+    [
+      "tip",
+      (payload) => {
+        payload.workAmoV8.migrationReadiness.pendingWitness.canonicalTip.hash =
+          "7".repeat(64);
+      },
+    ],
+  ]) {
+    const mixed = structuredClone(accepted);
+    mutate(mixed);
+    assert.equal(
+      freshWorkTokenPayloadIsReady(
+        mixed,
+        "livenet",
+        WORK_TOKEN_ID,
+        gate,
+      ),
+      false,
+      `mixed worker/witness ${label} must fail closed`,
+    );
+  }
+
+  const unpublishedWorker = freshWorkAuthorityFixture({
+    epoch: "12",
+    height,
+    publicationAt: "2026-08-04T12:00:03.000Z",
+    tipHash: blockHash,
+    workerFinishedAt: authority.workerFinishedAt,
+  });
+  const unpublishedPayload = {
+    ...accepted,
+    workAmoV8: {
+      ...accepted.workAmoV8,
+      migrationReadiness: unpublishedWorker.migrationReadiness,
+      workerReadiness: authority.workerReadiness,
+    },
+  };
+  const unpublishedGate = {
+    ...gate,
+    workAuthorityReady: false,
+    workPendingPublicationGeneratedAt: unpublishedWorker.publicationAt,
+    workPendingPublicationIdentity: unpublishedWorker.pendingIdentity,
+  };
+  assert.equal(
+    freshWorkTokenPayloadIsReady(
+      unpublishedPayload,
+      "livenet",
+      WORK_TOKEN_ID,
+      unpublishedGate,
+    ),
+    false,
+    "a newer pending epoch cannot publish through the prior worker success",
+  );
+  const finalizedAuthority = freshWorkAuthorityFixture({
+    epoch: "12",
+    height,
+    publicationAt: unpublishedWorker.publicationAt,
+    tipHash: blockHash,
+    workerFinishedAt: "2026-08-04T12:00:04.000Z",
+  });
+  const finalizedPayload = {
+    ...accepted,
+    workAmoV8: {
+      ...accepted.workAmoV8,
+      migrationReadiness: finalizedAuthority.migrationReadiness,
+      workerReadiness: finalizedAuthority.workerReadiness,
+    },
+  };
+  const finalizedGate = {
+    ...gate,
+    workAuthorityReady: true,
+    workPendingPublicationGeneratedAt: finalizedAuthority.publicationAt,
+    workPendingPublicationIdentity: finalizedAuthority.pendingIdentity,
+    workWorkerAuthorityIdentity: finalizedAuthority.workerIdentity,
+  };
+  assert.equal(
+    freshWorkTokenPayloadIsReady(
+      finalizedPayload,
+      "livenet",
+      "ALL",
+      finalizedGate,
+    ),
+    true,
+    "the matching completed worker authority restores WORK/ALL freshness",
   );
   assert.equal(
     freshWorkTokenPayloadIsReady(
@@ -4680,6 +5259,8 @@ check("fresh WORK publication requires full ready state and a stable gate", asyn
     { ready: false },
     { summarySnapshot: { snapshotId: "replacement-summary" } },
     { summarySnapshotOk: false },
+    { workPendingPublicationIdentity: "7".repeat(64) },
+    { workWorkerAuthorityIdentity: "6".repeat(64) },
   ]) {
     finalGate = { ...gate, ...changed };
     assert.equal(
@@ -4694,9 +5275,13 @@ check("fresh WORK publication requires full ready state and a stable gate", asyn
   }
 });
 
-check("fresh exact-tip token cache is bound to the ready summary identity", async () => {
+check("fresh exact-tip token cache is bound to both WORK readiness identities", async () => {
   const blockHash = "e".repeat(64);
   const height = 961_634;
+  const authority = freshWorkAuthorityFixture({
+    height,
+    tipHash: blockHash,
+  });
   const payload = {
     indexedThroughBlock: height,
     indexedThroughBlockHash: blockHash,
@@ -4711,6 +5296,10 @@ check("fresh exact-tip token cache is bound to the ready summary identity", asyn
     summarySnapshot: { snapshotId: "bound-summary" },
     summarySnapshotOk: true,
     tipHeight: height,
+    workAuthorityReady: true,
+    workPendingPublicationGeneratedAt: authority.publicationAt,
+    workPendingPublicationIdentity: authority.pendingIdentity,
+    workWorkerAuthorityIdentity: authority.workerIdentity,
   };
   const canonicalReadGateIdentity = isolatedFunction(
     API_PATH,
@@ -4765,25 +5354,90 @@ check("fresh exact-tip token cache is bound to the ready summary identity", asyn
     ),
     payload,
   );
-  exactCache.set(cacheKey, {
-    canonicalGateIdentity: `${height}:${blockHash}:old-summary`,
+  assert.equal(
+    await currentExactTipTokenPayloadForRead(
+      "livenet",
+      WORK_TOKEN_ID,
+      "fresh-cache-immediate",
+      gate,
+      true,
+    ),
+    payload,
+    "an unchanged immediate authority keeps the exact in-memory result",
+  );
+  for (const [label, changedGate] of [
+    [
+      "worker",
+      { ...gate, workWorkerAuthorityIdentity: "7".repeat(64) },
+    ],
+    [
+      "pending publication",
+      { ...gate, workPendingPublicationIdentity: "8".repeat(64) },
+    ],
+  ]) {
+    exactCache.set(cacheKey, {
+      canonicalGateIdentity: canonicalReadGateIdentity(gate),
+      payload,
+      validatedUntil: Date.now() + 60_000,
+    });
+    assert.equal(
+      await currentExactTipTokenPayloadForRead(
+        "livenet",
+        WORK_TOKEN_ID,
+        `fresh-cache-${label}`,
+        changedGate,
+        false,
+      ),
+      null,
+      `stable and fresh WORK cache reuse must miss after the ${label} identity changes`,
+    );
+    assert.equal(exactCache.has(cacheKey), false);
+  }
+
+  for (const [label, unavailableGate] of [
+    ["missing", null],
+    ["not ok", { ...gate, ok: false }],
+  ]) {
+    exactCache.set(cacheKey, {
+      canonicalGateIdentity: canonicalReadGateIdentity(gate),
+      payload,
+      validatedUntil: Date.now() + 60_000,
+    });
+    assert.equal(
+      await currentExactTipTokenPayloadForRead(
+        "livenet",
+        WORK_TOKEN_ID,
+        `stable-work-${label}-gate`,
+        unavailableGate,
+        false,
+      ),
+      null,
+      `stable WORK cache reuse must fail closed when its gate is ${label}`,
+    );
+    assert.equal(exactCache.has(cacheKey), false);
+  }
+
+  const nonWorkTokenId = "f".repeat(64);
+  const nonWorkCacheKey = `token:livenet:${nonWorkTokenId}`;
+  exactCache.set(nonWorkCacheKey, {
+    canonicalGateIdentity: "",
     payload,
     validatedUntil: Date.now() + 60_000,
   });
   assert.equal(
     await currentExactTipTokenPayloadForRead(
       "livenet",
-      WORK_TOKEN_ID,
-      "fresh-cache",
-      gate,
-      true,
+      nonWorkTokenId,
+      "stable-non-work-height-fallback",
+      null,
+      false,
     ),
-    null,
+    payload,
+    "non-WORK stable cache reuse retains its prior height-only fallback",
   );
-  assert.equal(exactCache.has(cacheKey), false);
 });
 
-check("concurrent relational token reads share one underlying producer", async () => {
+check("relational token singleflight joins only an identical composite authority", async () => {
   const payload = {
     indexedThroughBlock: 961_634,
     indexedThroughBlockHash: "d".repeat(64),
@@ -4791,6 +5445,8 @@ check("concurrent relational token reads share one underlying producer", async (
     tokens: [{ confirmed: true, tokenId: WORK_TOKEN_ID }],
   };
   let producerCalls = 0;
+  const authorityIdentityA = `work:${"1".repeat(64)}:${"2".repeat(64)}`;
+  const authorityIdentityB = `work:${"1".repeat(64)}:${"3".repeat(64)}`;
   const releaseProducers = [];
   const flights = new Map();
   const singleFlightBoundedRead = (kind, network, scope, producer) => {
@@ -4837,21 +5493,21 @@ check("concurrent relational token reads share one underlying producer", async (
       WORK_TOKEN_ID,
       "first",
       75_000,
-      "gate-a",
+      authorityIdentityA,
     ),
     currentProofIndexTokenPayloadForRead(
       "livenet",
       WORK_TOKEN_ID,
       "second",
       75_000,
-      "gate-a",
+      authorityIdentityA,
     ),
     currentProofIndexTokenPayloadForRead(
       "livenet",
       WORK_TOKEN_ID,
       "next-tip",
       75_000,
-      "gate-b",
+      authorityIdentityB,
     ),
   ];
   await new Promise((resolve) => setImmediate(resolve));
@@ -4871,7 +5527,7 @@ check("concurrent relational token reads share one underlying producer", async (
     WORK_TOKEN_ID,
     "settled",
     75_000,
-    "gate-a",
+    authorityIdentityA,
   );
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(producerCalls, 3);
@@ -44054,6 +44710,7 @@ check("one exact-tip worker predicate preserves only healthy durable Q16 readine
       PROOF_INDEX_HEALTH_MAX_AGE_MS: 120_000,
       WORK_AMO_V8_ACTIVATION_HEIGHT: 90,
       exactWorkAmoV8WorkerLastSuccessReadiness,
+      workAmoV8WorkerAuthorityIdentity,
     },
   );
   const status = {
@@ -44142,6 +44799,132 @@ check("one exact-tip worker predicate preserves only healthy durable Q16 readine
     }).ready,
     false,
     "a changed Core hash invalidates the durable proof",
+  );
+});
+
+check("canonical WORK authority rejects a publication newer than its worker proof", async () => {
+  const height = 961_634;
+  const tipHash = "5".repeat(64);
+  const first = freshWorkAuthorityFixture({ height, tipHash });
+  const second = freshWorkAuthorityFixture({
+    epoch: "12",
+    height,
+    publicationAt: "2026-08-04T12:00:03.000Z",
+    tipHash,
+    workerFinishedAt: "2026-08-04T12:00:04.000Z",
+  });
+  const pendingPublication = (authority) => ({
+    generatedAt: authority.publicationAt,
+    identity: authority.pendingIdentity,
+    pendingMembershipCount:
+      authority.migrationReadiness.pendingWitness.membershipSnapshot.count,
+    pendingMembershipSha256:
+      authority.migrationReadiness.pendingWitness.membershipSnapshot.sha256,
+    pendingProjectionSha256:
+      authority.migrationReadiness.pendingWitness.projection
+        .commitmentSha256,
+    tipHash,
+    tipHeight: height,
+  });
+  const workerProof = (authority) => ({
+    authorityIdentity: authority.workerIdentity,
+    finishedAt: authority.workerFinishedAt,
+    fresh: true,
+    pendingMembershipCount:
+      authority.workerReadiness.pendingMembershipCount,
+    pendingMembershipSha256:
+      authority.workerReadiness.pendingMembershipSha256,
+    pendingProjectionSha256:
+      authority.workerReadiness.pendingProjectionSha256,
+    proofReady: true,
+    proofSource: "last-success",
+    ready: true,
+    tipHash,
+    tipHeight: height,
+  });
+  let currentPendingPublication = pendingPublication(first);
+  let currentWorkerProof = workerProof(first);
+  const status = {
+    indexedThroughBlock: height,
+    network: "livenet",
+    readModels: {
+      confirmedEvents: { count: 10, maxBlock: height },
+      confirmedIds: { count: 1, maxBlock: height },
+      confirmedTransfers: { count: 1, maxBlock: height },
+    },
+    scan: { blockHash: tipHash, complete: true, tipHeight: height },
+    summarySnapshot: {
+      blockHash: tipHash,
+      eligible: true,
+      indexedThroughBlock: height,
+      snapshotId: "authority-summary",
+    },
+  };
+  const loadCanonicalPublicReadGate = isolatedFunction(
+    API_PATH,
+    "loadCanonicalPublicReadGate",
+    {
+      PROOF_INDEX_REQUIRED: true,
+      bitcoinRpc: async () => ({
+        ok: true,
+        result: {
+          bestblockhash: tipHash,
+          blocks: height,
+          chain: "main",
+          headers: height,
+          initialblockdownload: false,
+          verificationprogress: 1,
+        },
+      }),
+      canonicalRebuildTrustState: () => "complete",
+      exactCoreTipFromBlockchainInfo,
+      proofIndexCanonicalStateMetaPayload: async () => ({
+        fault: {},
+        rebuild: { active: false, status: "complete" },
+      }),
+      proofIndexOperationalStatusPayload: async () => ({
+        ...status,
+        workQ16PendingPublication: currentPendingPublication,
+      }),
+      proofIndexWorkerExactTipReadiness: () => currentWorkerProof,
+      summarySnapshotCoversCanonicalReadModels: () => true,
+    },
+  );
+  assert.equal(
+    (await loadCanonicalPublicReadGate("livenet")).workAuthorityReady,
+    true,
+  );
+
+  currentPendingPublication = pendingPublication(second);
+  assert.equal(
+    (await loadCanonicalPublicReadGate("livenet")).workAuthorityReady,
+    false,
+    "publication B cannot use the older completed worker A",
+  );
+  currentPendingPublication = {
+    ...pendingPublication(first),
+    pendingMembershipSha256: "6".repeat(64),
+  };
+  assert.equal(
+    (await loadCanonicalPublicReadGate("livenet")).workAuthorityReady,
+    false,
+    "worker and publication membership must agree",
+  );
+  currentPendingPublication = {
+    ...pendingPublication(first),
+    pendingProjectionSha256: "7".repeat(64),
+  };
+  assert.equal(
+    (await loadCanonicalPublicReadGate("livenet")).workAuthorityReady,
+    false,
+    "worker and publication projection must agree",
+  );
+  currentPendingPublication = pendingPublication(second);
+  currentWorkerProof = workerProof(second);
+  assert.equal(
+    (await loadCanonicalPublicReadGate("livenet")).workAuthorityReady,
+    true,
+    "matching worker B restores the current publication authority",
   );
 });
 
@@ -44340,6 +45123,57 @@ check("canonical public-read gates cache each network independently", async () =
   await canonicalPublicReadGate("testnet");
   await canonicalPublicReadGate("livenet");
   assert.deepEqual(loads, ["livenet", "testnet"]);
+});
+
+check("a forced final gate never joins an unresolved pre-publication gate", async () => {
+  let loads = 0;
+  const releases = [];
+  const canonicalPublicReadGate = isolatedFunction(
+    API_PATH,
+    "canonicalPublicReadGate",
+    {
+      CANONICAL_PUBLIC_READ_GATE_TTL_MS: 2_000,
+      CANONICAL_PUBLIC_READ_GATE_TIMEOUT_MS: 15_000,
+      CANONICAL_PUBLIC_READ_GATE_TIMEOUT_TTL_MS: 2_000,
+      canonicalPublicReadGateCache: new Map(),
+      errorSummary: (error) => String(error?.message ?? error),
+      loadCanonicalPublicReadGate: async () => {
+        loads += 1;
+        return new Promise((resolve) => releases.push(resolve));
+      },
+      promiseOutcomeWithin: async (promise) => ({
+        ok: true,
+        timedOut: false,
+        value: await promise,
+      }),
+    },
+  );
+  const admitted = canonicalPublicReadGate("livenet");
+  await Promise.resolve();
+  assert.equal(loads, 1);
+  const forcedFinal = canonicalPublicReadGate("livenet", { force: true });
+  await Promise.resolve();
+  assert.equal(
+    loads,
+    2,
+    "the forced checkpoint must start after publication instead of joining",
+  );
+  releases[1]({ identity: "publication-b", ok: true });
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(await forcedFinal)),
+    { identity: "publication-b", ok: true },
+  );
+  releases[0]({ identity: "publication-a", ok: true });
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(await admitted)),
+    { identity: "publication-a", ok: true },
+  );
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(await canonicalPublicReadGate("livenet"))),
+    { identity: "publication-b", ok: true },
+    "the older completion must not replace the forced final authority",
+  );
+  assert.equal(loads, 2);
 });
 
 check("exact current ID reads preserve the confirmed database record", () => {
@@ -45339,6 +46173,10 @@ check("token verifier uses event-specific seal and close confirmation", () => {
 });
 
 check("operational status preserves compact canonical health coverage", async () => {
+  const authority = freshWorkAuthorityFixture({
+    height: 123,
+    tipHash: "a".repeat(64),
+  });
   let row = {
     confirmed_event_count: 23_914,
     confirmed_event_max_block: 123,
@@ -45403,6 +46241,10 @@ check("operational status preserves compact canonical health coverage", async ()
         const height = Number(value);
         return Number.isSafeInteger(height) && height > 0 ? height : 0;
       },
+      workQ16PendingPublicationAuthorityFromOperationalRow: () => ({
+        generatedAt: authority.publicationAt,
+        identity: authority.pendingIdentity,
+      }),
     },
   );
 
@@ -45446,6 +46288,35 @@ check("operational status preserves compact canonical health coverage", async ()
     ok: true,
     updatedAt: "2026-07-13T14:30:00.818Z",
   });
+  assert.deepEqual(status.workQ16PendingPublication, {
+    generatedAt: authority.publicationAt,
+    identity: authority.pendingIdentity,
+  });
+
+  const operationalQuerySource = topLevelFunctionSource(
+    READER_PATH,
+    "latestProofIndexOperationalMetadata",
+  );
+  assert.match(
+    operationalQuerySource,
+    /pending_witness_meta[\s\S]*pending_attempt_meta[\s\S]*pending_stage_meta[\s\S]*readiness_epoch[\s\S]*readiness_queue/u,
+  );
+  assert.match(
+    operationalQuerySource,
+    /current_setting\('max_prepared_transactions'\)[\s\S]*current_setting\('search_path'\)[\s\S]*pg_postmaster_start_time\(\)/u,
+  );
+  assert.match(
+    operationalQuerySource,
+    /pending_witness_meta\.value AS pending_witness[\s\S]*pending_attempt_meta\.value AS pending_attempt[\s\S]*pending_stage_meta\.value AS pending_stage[\s\S]*readiness_epoch\.epochs AS readiness_epochs/u,
+  );
+  const publicationSource = topLevelFunctionSource(
+    READER_PATH,
+    "workQ16PendingPublicationAuthorityFromOperationalRow",
+  );
+  assert.match(
+    publicationSource,
+    /canonicalWorkPrecisionV2ReadinessEpochCheckpoint[\s\S]*canonicalWorkQ16PendingAttemptForRead[\s\S]*workAmoV8PendingPublicationAuthorityIdentity/u,
+  );
 
   row = {
     ...row,
@@ -61922,7 +62793,10 @@ check("WORK precision V2 readiness cache is exact, positive-only, and coalesced"
   const exactPositiveReadiness = isolatedFunction(
     READER_PATH,
     "workPrecisionV2MigrationReadinessResultIsExactPositive",
-    { workPrecisionV2ReadinessValueSha256: readinessValueSha256 },
+    {
+      workPrecisionV2ReadinessValueSha256: readinessValueSha256,
+      workQ16PendingPublicationAuthorityIsReady: () => true,
+    },
   );
   const directReady = {
     active: true,
@@ -62396,6 +63270,7 @@ check("WORK precision V2 compact checkpoints bound concurrency and cache only se
   const reusablePositive = isolatedFunction(
     READER_PATH,
     "workPrecisionV2MigrationReadinessResultIsReusablePositive",
+    { workQ16PendingPublicationAuthorityIsReady: () => true },
   );
   const readinessWithCheckpoint = isolatedFunction(
     READER_PATH,

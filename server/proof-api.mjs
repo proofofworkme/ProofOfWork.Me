@@ -238,6 +238,7 @@ import {
 import {
   exactWorkAmoV8WorkerLastSuccessReadiness,
   exactWorkAmoV8WorkerReadiness,
+  workAmoV8WorkerAuthorityIdentity,
 } from "./work-amo-v8-worker-readiness.mjs";
 import {
   tokenListingCanProjectCloseActivity,
@@ -9490,6 +9491,71 @@ function workQ16PendingMembershipSnapshotReady(
   );
 }
 
+function workAmoV8CompositePublicationAuthority(
+  workerReadiness,
+  migrationReadiness,
+  { tipHash, tipHeight },
+) {
+  const workerIdentity = workAmoV8WorkerAuthorityIdentity(workerReadiness);
+  const publication = migrationReadiness?.pendingPublicationAuthority;
+  const witness = migrationReadiness?.pendingWitness;
+  const attempt = migrationReadiness?.pendingAttempt;
+  const membership = witness?.membershipSnapshot;
+  const projection = witness?.projection;
+  const witnessTip = witness?.canonicalTip;
+  const verifierStage = witness?.verifierStage;
+  const publicationIdentity = String(publication?.identity ?? "")
+    .trim()
+    .toLowerCase();
+  const publicationAt = String(publication?.generatedAt ?? "");
+  const publicationAtMs = Date.parse(publicationAt);
+  const workerFinishedAtMs = Date.parse(
+    String(workerReadiness?.finishedAt ?? ""),
+  );
+  const normalizedTipHash = String(tipHash ?? "").trim().toLowerCase();
+  if (
+    !/^[0-9a-f]{64}$/u.test(workerIdentity) ||
+    !/^[0-9a-f]{64}$/u.test(publicationIdentity) ||
+    !Number.isFinite(publicationAtMs) ||
+    new Date(publicationAtMs).toISOString() !== publicationAt ||
+    publicationAt !== witness?.generatedAt ||
+    !Number.isFinite(workerFinishedAtMs) ||
+    workerFinishedAtMs < publicationAtMs ||
+    !Number.isSafeInteger(tipHeight) ||
+    tipHeight < 1 ||
+    !/^[0-9a-f]{64}$/u.test(normalizedTipHash) ||
+    witnessTip?.height !== tipHeight ||
+    String(witnessTip?.hash ?? "").trim().toLowerCase() !==
+      normalizedTipHash ||
+    workerReadiness?.tipHeight !== tipHeight ||
+    String(workerReadiness?.tipHash ?? "").trim().toLowerCase() !==
+      normalizedTipHash ||
+    !Number.isSafeInteger(membership?.count) ||
+    membership.count < 0 ||
+    membership.count !== workerReadiness?.pendingMembershipCount ||
+    !/^[0-9a-f]{64}$/u.test(
+      String(membership?.sha256 ?? "").trim().toLowerCase(),
+    ) ||
+    String(membership.sha256).trim().toLowerCase() !==
+      String(workerReadiness?.pendingMembershipSha256 ?? "")
+        .trim()
+        .toLowerCase() ||
+    !/^[0-9a-f]{64}$/u.test(
+      String(projection?.commitmentSha256 ?? "").trim().toLowerCase(),
+    ) ||
+    String(projection.commitmentSha256).trim().toLowerCase() !==
+      String(workerReadiness?.pendingProjectionSha256 ?? "")
+        .trim()
+        .toLowerCase() ||
+    String(attempt?.stageSha256 ?? "").trim().toLowerCase() !==
+      String(verifierStage?.stageSha256 ?? "").trim().toLowerCase() ||
+    attempt?.witnessGeneratedAt !== publicationAt
+  ) {
+    return null;
+  }
+  return { publicationAt, publicationIdentity, workerIdentity };
+}
+
 function workAmoV8ExactLiveProbeKey(
   probe,
   { includeMempool = true } = {},
@@ -9977,6 +10043,12 @@ async function workAmoV8Metadata(
       pendingMembershipSnapshot,
       liveMempoolTxids,
     );
+  const compositePublicationAuthority =
+    workAmoV8CompositePublicationAuthority(
+      workerReadiness,
+      migrationReadiness,
+      { tipHash, tipHeight },
+    );
   const indexReady =
     migrationReadiness?.ready === true &&
     migrationReadiness?.active === true &&
@@ -9994,6 +10066,7 @@ async function workAmoV8Metadata(
       String(migrationReadiness?.pendingValidThrough ?? ""),
     ) > Date.now() &&
     workerReadiness.ready === true &&
+    Boolean(compositePublicationAuthority) &&
     pendingMembershipLive;
   const combinedEvidence = evidence
     ? {
@@ -36136,6 +36209,8 @@ async function currentExactTipTokenPayloadForRead(
   requireCanonicalIdentity = false,
 ) {
   const scope = normalizeTokenScope(tokenScope);
+  const workAuthorityRequired =
+    !scope || scope.toLowerCase() === "all" || scope === WORK_TOKEN_ID;
   const cacheKey = `token:${network}:${scope}`;
   const cached = EXACT_TIP_TOKEN_CACHE.get(cacheKey);
   const payload = coherentCanonicalSnapshotAtBoundary(
@@ -36151,12 +36226,19 @@ async function currentExactTipTokenPayloadForRead(
     EXACT_TIP_TOKEN_CACHE.delete(cacheKey);
     return null;
   }
+  if (
+    workAuthorityRequired &&
+    (!canonicalGate || canonicalGate.ok !== true)
+  ) {
+    EXACT_TIP_TOKEN_CACHE.delete(cacheKey);
+    return null;
+  }
   const indexedThroughBlock = proofIndexPayloadIndexedThroughBlock(payload);
   if (canonicalGate && canonicalGate.ok === true) {
     const gateIdentity = canonicalReadGateIdentity(canonicalGate, scope);
     if (
       !tokenPayloadMatchesCanonicalGate(payload, canonicalGate) ||
-      (requireCanonicalIdentity &&
+      ((requireCanonicalIdentity || workAuthorityRequired) &&
         (!gateIdentity || cached?.canonicalGateIdentity !== gateIdentity))
     ) {
       EXACT_TIP_TOKEN_CACHE.delete(cacheKey);
@@ -36230,6 +36312,16 @@ function canonicalReadGateIdentity(gate, tokenScope = "") {
   const summarySnapshotId = requiresWorkAuthority
     ? String(gate.summarySnapshot?.snapshotId ?? "").trim()
     : "";
+  const workWorkerAuthorityIdentity = requiresWorkAuthority
+    ? String(gate.workWorkerAuthorityIdentity ?? "")
+        .trim()
+        .toLowerCase()
+    : "";
+  const workPendingPublicationIdentity = requiresWorkAuthority
+    ? String(gate.workPendingPublicationIdentity ?? "")
+        .trim()
+        .toLowerCase()
+    : "";
   if (
     !Number.isSafeInteger(height) ||
     height <= 0 ||
@@ -36238,13 +36330,18 @@ function canonicalReadGateIdentity(gate, tokenScope = "") {
     storedHash !== canonicalHash ||
     (requiresWorkAuthority &&
       (gate.ready !== true ||
+        gate.workAuthorityReady !== true ||
         gate.summarySnapshotOk !== true ||
-        !summarySnapshotId))
+        !summarySnapshotId ||
+        !/^[0-9a-f]{64}$/u.test(workWorkerAuthorityIdentity) ||
+        !/^[0-9a-f]{64}$/u.test(workPendingPublicationIdentity)))
   ) {
     return "";
   }
   return requiresWorkAuthority
-    ? `${height}:${canonicalHash}:${summarySnapshotId}`
+    ? `${height}:${canonicalHash}:${summarySnapshotId}:${
+      workWorkerAuthorityIdentity
+    }:${workPendingPublicationIdentity}`
     : `${height}:${canonicalHash}`;
 }
 
@@ -36268,15 +36365,70 @@ function freshWorkTokenPayloadIsReady(
     );
   const workAmoV8 = payload?.workAmoV8;
   const migrationReadiness = workAmoV8?.migrationReadiness;
+  const workerReadiness = workAmoV8?.workerReadiness;
+  const pendingWitness = migrationReadiness?.pendingWitness;
+  const pendingAttempt = migrationReadiness?.pendingAttempt;
+  const pendingTip = pendingWitness?.canonicalTip;
+  const pendingMembership = pendingWitness?.membershipSnapshot;
+  const pendingProjection = pendingWitness?.projection;
+  const pendingVerifierStage = pendingWitness?.verifierStage;
+  const pendingPublicationAuthority =
+    migrationReadiness?.pendingPublicationAuthority;
   const workTransferValueProjection = payload?.workTransferValueProjection;
   const payloadHeight = proofIndexPayloadIndexedThroughBlock(payload);
   const payloadHash = payloadIndexedThroughBlockHash(payload);
+  const compositePublicationAuthority =
+    workAmoV8CompositePublicationAuthority(
+      workerReadiness,
+      migrationReadiness,
+      { tipHash: payloadHash, tipHeight: payloadHeight },
+    );
   const projectionSnapshotId = String(
     workTransferValueProjection?.snapshotId ?? "",
   ).trim();
   const gateSnapshotId = String(
     canonicalGate?.summarySnapshot?.snapshotId ?? "",
   ).trim();
+  const workerAuthorityIdentity = workAmoV8WorkerAuthorityIdentity(
+    workerReadiness,
+  );
+  const pendingPublicationIdentity = String(
+    pendingPublicationAuthority?.identity ?? "",
+  )
+    .trim()
+    .toLowerCase();
+  const pendingPublicationGeneratedAt = String(
+    pendingPublicationAuthority?.generatedAt ?? "",
+  );
+  const pendingPublicationGeneratedAtMs = Date.parse(
+    pendingPublicationGeneratedAt,
+  );
+  const workerFinishedAtMs = Date.parse(
+    String(workerReadiness?.finishedAt ?? ""),
+  );
+  const pendingMembershipCount = pendingMembership?.count;
+  const workerPendingMembershipCount =
+    workerReadiness?.pendingMembershipCount;
+  const pendingMembershipSha256 = String(
+    pendingMembership?.sha256 ?? "",
+  )
+    .trim()
+    .toLowerCase();
+  const workerPendingMembershipSha256 = String(
+    workerReadiness?.pendingMembershipSha256 ?? "",
+  )
+    .trim()
+    .toLowerCase();
+  const pendingProjectionSha256 = String(
+    pendingProjection?.commitmentSha256 ?? "",
+  )
+    .trim()
+    .toLowerCase();
+  const workerPendingProjectionSha256 = String(
+    workerReadiness?.pendingProjectionSha256 ?? "",
+  )
+    .trim()
+    .toLowerCase();
   return Boolean(
     workTokens.length === 1 &&
       payload?.workMarketplaceV4 &&
@@ -36286,9 +36438,38 @@ function freshWorkTokenPayloadIsReady(
       workAmoV8.ready === true &&
       workAmoV8.indexReady === true &&
       workAmoV8.migrationReady === true &&
-      workAmoV8.workerReadiness?.ready === true &&
+      workerReadiness?.ready === true &&
+      Boolean(compositePublicationAuthority) &&
+      /^[0-9a-f]{64}$/u.test(workerAuthorityIdentity) &&
       migrationReadiness?.ready === true &&
       migrationReadiness?.pendingReady === true &&
+      /^[0-9a-f]{64}$/u.test(pendingPublicationIdentity) &&
+      Number.isFinite(pendingPublicationGeneratedAtMs) &&
+      new Date(pendingPublicationGeneratedAtMs).toISOString() ===
+        pendingPublicationGeneratedAt &&
+      pendingPublicationGeneratedAt === pendingWitness?.generatedAt &&
+      Number.isFinite(workerFinishedAtMs) &&
+      workerFinishedAtMs >= pendingPublicationGeneratedAtMs &&
+      Number.isSafeInteger(pendingTip?.height) &&
+      pendingTip.height === payloadHeight &&
+      String(pendingTip?.hash ?? "").trim().toLowerCase() === payloadHash &&
+      Number.isSafeInteger(workerReadiness?.tipHeight) &&
+      workerReadiness.tipHeight === payloadHeight &&
+      String(workerReadiness?.tipHash ?? "").trim().toLowerCase() ===
+        payloadHash &&
+      Number.isSafeInteger(pendingMembershipCount) &&
+      pendingMembershipCount >= 0 &&
+      Number.isSafeInteger(workerPendingMembershipCount) &&
+      pendingMembershipCount === workerPendingMembershipCount &&
+      /^[0-9a-f]{64}$/u.test(pendingMembershipSha256) &&
+      pendingMembershipSha256 === workerPendingMembershipSha256 &&
+      /^[0-9a-f]{64}$/u.test(pendingProjectionSha256) &&
+      pendingProjectionSha256 === workerPendingProjectionSha256 &&
+      String(pendingAttempt?.stageSha256 ?? "").trim().toLowerCase() ===
+        String(pendingVerifierStage?.stageSha256 ?? "")
+          .trim()
+          .toLowerCase() &&
+      pendingAttempt?.witnessGeneratedAt === pendingPublicationGeneratedAt &&
       Date.parse(String(migrationReadiness.pendingValidThrough ?? "")) >
         Date.now() &&
       payload?.workTransferValueProjectionSource ===
@@ -36301,8 +36482,14 @@ function freshWorkTokenPayloadIsReady(
         .trim()
         .toLowerCase() === payloadHash &&
       projectionSnapshotId &&
-      (!canonicalGate ||
-        (gateSnapshotId && projectionSnapshotId === gateSnapshotId)),
+      canonicalGate?.workAuthorityReady === true &&
+      gateSnapshotId &&
+      projectionSnapshotId === gateSnapshotId &&
+      canonicalGate.workWorkerAuthorityIdentity === workerAuthorityIdentity &&
+      canonicalGate.workPendingPublicationIdentity ===
+        pendingPublicationIdentity &&
+      canonicalGate.workPendingPublicationGeneratedAt ===
+        pendingPublicationGeneratedAt,
   );
 }
 
@@ -64629,17 +64816,27 @@ function proofIndexWorkerExactTipReadiness(
     : worker.network === network &&
       worker.ok === true &&
       durable.failureActive !== true;
+  const authorityIdentity = q16Required
+    ? workAmoV8WorkerAuthorityIdentity(durable)
+    : "";
   return {
     ageMs,
+    authorityIdentity,
     failureActive: durable.failureActive === true,
+    finishedAt: durable.finishedAt || null,
     fresh,
     lastSuccessAt: Number.isFinite(lastSuccessMs) ? lastSuccessAt : null,
+    pendingMembershipCount: durable.pendingMembershipCount,
+    pendingMembershipSha256: durable.pendingMembershipSha256,
+    pendingProjectionSha256: durable.pendingProjectionSha256,
     proofReady,
     proofSource: q16Required
       ? String(durable.proofSource ?? "")
       : "current-worker",
     q16Required,
     ready: exactTip && fresh && proofReady,
+    tipHash: durable.tipHash,
+    tipHeight: durable.tipHeight,
   };
 }
 
@@ -64680,6 +64877,40 @@ async function loadCanonicalPublicReadGate(network) {
     tipHash: bestBlockHash,
     tipHeight,
   });
+  const pendingPublication =
+    status?.workQ16PendingPublication &&
+      typeof status.workQ16PendingPublication === "object" &&
+      !Array.isArray(status.workQ16PendingPublication)
+      ? status.workQ16PendingPublication
+      : {};
+  const workWorkerAuthorityIdentity = String(
+    workerReadiness.authorityIdentity ?? "",
+  );
+  const workPendingPublicationIdentity = String(
+    pendingPublication.identity ?? "",
+  );
+  const workPendingPublicationGeneratedAt = String(
+    pendingPublication.generatedAt ?? "",
+  );
+  const workerFinishedAtMs = Date.parse(
+    String(workerReadiness.finishedAt ?? ""),
+  );
+  const pendingPublicationGeneratedAtMs = Date.parse(
+    workPendingPublicationGeneratedAt,
+  );
+  const pendingMembershipCount = Number(
+    pendingPublication.pendingMembershipCount,
+  );
+  const pendingMembershipSha256 = String(
+    pendingPublication.pendingMembershipSha256 ?? "",
+  )
+    .trim()
+    .toLowerCase();
+  const pendingProjectionSha256 = String(
+    pendingPublication.pendingProjectionSha256 ?? "",
+  )
+    .trim()
+    .toLowerCase();
   const workerFresh = workerReadiness.fresh;
   const readModelsOk =
     Number(status?.readModels?.confirmedIds?.count) > 0 &&
@@ -64705,6 +64936,30 @@ async function loadCanonicalPublicReadGate(network) {
   const ready =
     atTip &&
     workerReadiness.ready === true;
+  const workAuthorityReady =
+    ready &&
+    /^[0-9a-f]{64}$/u.test(workWorkerAuthorityIdentity) &&
+    /^[0-9a-f]{64}$/u.test(workPendingPublicationIdentity) &&
+    Number.isFinite(workerFinishedAtMs) &&
+    Number.isFinite(pendingPublicationGeneratedAtMs) &&
+    workerFinishedAtMs >= pendingPublicationGeneratedAtMs &&
+    Number(pendingPublication.tipHeight) === tipHeight &&
+    String(pendingPublication.tipHash ?? "").trim().toLowerCase() ===
+      bestBlockHash &&
+    Number.isSafeInteger(pendingMembershipCount) &&
+    pendingMembershipCount >= 0 &&
+    pendingMembershipCount ===
+      Number(workerReadiness.pendingMembershipCount) &&
+    /^[0-9a-f]{64}$/u.test(pendingMembershipSha256) &&
+    pendingMembershipSha256 ===
+      String(workerReadiness.pendingMembershipSha256 ?? "")
+        .trim()
+        .toLowerCase() &&
+    /^[0-9a-f]{64}$/u.test(pendingProjectionSha256) &&
+    pendingProjectionSha256 ===
+      String(workerReadiness.pendingProjectionSha256 ?? "")
+        .trim()
+        .toLowerCase();
   return {
     atTip,
     available,
@@ -64723,6 +64978,12 @@ async function loadCanonicalPublicReadGate(network) {
     workerFresh,
     workerOk: workerReadiness.proofReady,
     workerProofSource: workerReadiness.proofSource,
+    workAuthorityReady,
+    workPendingPublicationGeneratedAt:
+      workPendingPublicationGeneratedAt || null,
+    workPendingPublicationIdentity:
+      workPendingPublicationIdentity || null,
+    workWorkerAuthorityIdentity: workWorkerAuthorityIdentity || null,
     readModelsOk,
     summarySnapshot: status?.summarySnapshot ?? null,
     summarySnapshotOk,
@@ -64734,9 +64995,10 @@ async function canonicalPublicReadGate(network, options = {}) {
   const cached = canonicalPublicReadGateCache.get(network);
   if (
     cached &&
+    options.force !== true &&
     (
       !cached.settled ||
-      (options.force !== true && cached.expiresAt > now)
+      cached.expiresAt > now
     )
   ) {
     return cached.promise;
@@ -65897,6 +66159,9 @@ async function handleRequest(request, response) {
       );
       const walletScoped =
         recoveryAddresses.length > 0 && walletReadRequested;
+      const workTokenAuthorityRequired =
+        !tokenScope || tokenScope === WORK_TOKEN_ID;
+      let tokenReadCanonicalGate = canonicalReadGate;
       if (walletReadRequested && recoveryAddresses.length === 0) {
         errorResponse(
           response,
@@ -65906,21 +66171,25 @@ async function handleRequest(request, response) {
         return;
       }
       if (!walletScoped && recoveryAddresses.length === 0) {
+        tokenReadCanonicalGate =
+          !freshRead && workTokenAuthorityRequired
+            ? await canonicalPublicReadGate(network, { force: true })
+            : canonicalReadGate;
         const cachedPayload = await currentExactTipTokenPayloadForRead(
           network,
           tokenScope,
           freshRead
             ? "token-state-fresh-exact-tip-memory"
             : "token-state-exact-tip-memory",
-          canonicalReadGate,
+          tokenReadCanonicalGate,
           freshRead,
         );
-        const responsePayload = freshRead
+        const responsePayload = freshRead || workTokenAuthorityRequired
           ? await exactCachedFreshTokenPayloadForRoute(
               cachedPayload,
               network,
               tokenScope,
-              canonicalReadGate,
+              tokenReadCanonicalGate,
             )
           : cachedPayload;
         if (responsePayload) {
@@ -65942,6 +66211,18 @@ async function handleRequest(request, response) {
         proofIndexReadFeatureEnabled("token-state,token-default,token") &&
         proofIndexTokenReadEligibility(tokenScope, url.searchParams).eligible
       ) {
+        const tokenReadCanonicalIdentity =
+          freshRead || workTokenAuthorityRequired
+            ? canonicalReadGateIdentity(
+                tokenReadCanonicalGate,
+                tokenScope,
+              )
+            : "";
+        if (workTokenAuthorityRequired && !tokenReadCanonicalIdentity) {
+          throw freshDataUnavailableError(
+            `The exact WORK publication authority is unavailable for ${tokenScope || "all"}.`,
+          );
+        }
         const indexedPayload = await currentProofIndexTokenPayloadForRead(
           network,
           tokenScope,
@@ -65952,13 +66233,11 @@ async function handleRequest(request, response) {
             : freshRead
               ? TOKEN_SCOPED_FRESH_WAIT_MS
               : 10_000,
-          freshRead
-            ? canonicalReadGateIdentity(canonicalReadGate, tokenScope)
-            : "",
+          tokenReadCanonicalIdentity,
         );
         const indexedPayloadExact = tokenPayloadMatchesCanonicalGate(
           indexedPayload,
-          canonicalReadGate,
+          tokenReadCanonicalGate,
         );
         if (indexedPayload && (!freshRead || indexedPayloadExact)) {
           if (freshRead) {
@@ -65966,7 +66245,7 @@ async function handleRequest(request, response) {
               indexedPayload,
               network,
               tokenScope,
-              canonicalReadGate,
+              tokenReadCanonicalGate,
             );
             if (!exactPayload) {
               throw freshDataUnavailableError(
@@ -65989,6 +66268,25 @@ async function handleRequest(request, response) {
             responsePayload,
             "token-state",
           );
+          if (workTokenAuthorityRequired) {
+            const finalGate = await canonicalPublicReadGate(network, {
+              force: true,
+            });
+            if (
+              canonicalReadGateIdentity(finalGate, tokenScope) !==
+                  tokenReadCanonicalIdentity ||
+              !freshWorkTokenPayloadIsReady(
+                coherentResponsePayload,
+                network,
+                tokenScope,
+                finalGate,
+              )
+            ) {
+              throw freshDataUnavailableError(
+                `The exact WORK publication authority changed while ${tokenScope || "all"} was being read.`,
+              );
+            }
+          }
           cacheTokenPayload(network, tokenScope, coherentResponsePayload);
           jsonResponse(
             response,

@@ -69,6 +69,9 @@ import {
   workAmoV8ActivationLatchReady as sharedWorkAmoV8ActivationLatchReady,
 } from "../work-amo-v8-activation-latch.mjs";
 import {
+  workAmoV8PendingPublicationAuthorityIdentity,
+} from "../work-amo-v8-worker-readiness.mjs";
+import {
   applyWorkMarketV2CutoverToTokenState,
   WORK_MARKET_V2_AUTH_VERSION,
   WORK_MARKET_V2_ACTIVATION_HEIGHT,
@@ -316,6 +319,8 @@ const WORK_Q16_PENDING_REBUILD_META_KEY =
   "workQ16PendingRebuild:livenet";
 const WORK_Q16_PENDING_ATTEMPT_META_KEY =
   "workQ16PendingAttempt:livenet";
+const WORK_Q16_PENDING_STAGE_META_KEY =
+  "workQ16PendingStage:livenet";
 const WORK_Q16_PENDING_ATTEMPT_MODEL =
   "canonical-work-q16-pending-publication-attempt-v1";
 const WORK_Q16_PENDING_REBUILD_MODEL =
@@ -6521,6 +6526,19 @@ async function proofIndexWorkPrecisionV2ReadinessFingerprint(
   }
 }
 
+function workQ16PendingPublicationAuthorityIsReady(value, witness) {
+  const authority = objectRecord(value);
+  const generatedAt = workPrecisionV2ReadinessFingerprintIso(
+    authority.generatedAt,
+  );
+  return Boolean(
+    generatedAt &&
+      generatedAt === authority.generatedAt &&
+      generatedAt === witness?.generatedAt &&
+      /^[0-9a-f]{64}$/u.test(String(authority.identity ?? ""))
+  );
+}
+
 function workPrecisionV2MigrationReadinessResultIsExactPositive(
   result,
   fingerprint,
@@ -6537,6 +6555,10 @@ function workPrecisionV2MigrationReadinessResultIsExactPositive(
       result?.parityReady === true &&
       result?.pendingReady === true &&
       result?.replayReady === true &&
+      workQ16PendingPublicationAuthorityIsReady(
+        result.pendingPublicationAuthority,
+        result.pendingWitness,
+      ) &&
       Number(result.tipHeight) === fingerprint.tipHeight &&
       normalizedLowerText(result.tipHash) === fingerprint.tipHash &&
       normalizedLowerText(result.snapshotHash) === fingerprint.tipHash &&
@@ -6572,6 +6594,10 @@ function workPrecisionV2MigrationReadinessResultIsReusablePositive(
       result?.parityReady === true &&
       result?.pendingReady === true &&
       result?.replayReady === true &&
+      workQ16PendingPublicationAuthorityIsReady(
+        result.pendingPublicationAuthority,
+        result.pendingWitness,
+      ) &&
       Number.isSafeInteger(tipHeight) &&
       tipHeight > 0 &&
       /^[0-9a-f]{64}$/u.test(tipHash) &&
@@ -7709,7 +7735,7 @@ async function proofIndexWorkPrecisionV2MigrationReadinessFullAudit(
   const snapshotHash = normalizedLowerText(row.snapshot_hash);
   const pendingWitnessResult = await client.query(
     `
-      SELECT key, value
+      SELECT key, value, updated_at
       FROM proof_indexer.meta
       WHERE key = ANY($1::text[])
       ORDER BY key ASC
@@ -7717,6 +7743,7 @@ async function proofIndexWorkPrecisionV2MigrationReadinessFullAudit(
     [[
       WORK_Q16_PENDING_ATTEMPT_META_KEY,
       WORK_Q16_PENDING_REBUILD_META_KEY,
+      WORK_Q16_PENDING_STAGE_META_KEY,
     ]],
   );
   const pendingMeta = new Map(
@@ -7725,12 +7752,21 @@ async function proofIndexWorkPrecisionV2MigrationReadinessFullAudit(
       metaRow.value,
     ]),
   );
+  const pendingMetaUpdatedAt = new Map(
+    pendingWitnessResult.rows.map((metaRow) => [
+      String(metaRow.key),
+      workPrecisionV2ReadinessFingerprintIso(metaRow.updated_at),
+    ]),
+  );
   const pendingWitness = objectRecord(
     pendingMeta.get(WORK_Q16_PENDING_REBUILD_META_KEY),
   );
   const pendingAttempt = canonicalWorkQ16PendingAttemptForRead(
     pendingMeta.get(WORK_Q16_PENDING_ATTEMPT_META_KEY),
     network,
+  );
+  const pendingStage = objectRecord(
+    pendingMeta.get(WORK_Q16_PENDING_STAGE_META_KEY),
   );
   const pendingVerifierStage = objectRecord(
     pendingWitness.verifierStage,
@@ -7773,11 +7809,13 @@ async function proofIndexWorkPrecisionV2MigrationReadinessFullAudit(
   );
   let pendingReady = false;
   if (
-    pendingWitnessResult.rows.length === 2 &&
-    pendingMeta.size === 2 &&
+    pendingWitnessResult.rows.length === 3 &&
+    pendingMeta.size === 3 &&
     Boolean(pendingAttempt) &&
     Boolean(readinessEpochCheckpoint) &&
-    pendingMembershipTxidsCanonical
+    pendingMembershipTxidsCanonical &&
+    stableWorkPrecisionJson(pendingStage) ===
+      stableWorkPrecisionJson(pendingVerifierStage)
   ) {
     const pendingBalanceResult = await client.query(
       `
@@ -8338,6 +8376,38 @@ async function proofIndexWorkPrecisionV2MigrationReadinessFullAudit(
       Date.now() - pendingGeneratedAtMs <=
         WORK_Q16_PENDING_WITNESS_MAX_AGE_MS;
   }
+  const pendingPublicationIdentity = pendingReady
+    ? workAmoV8PendingPublicationAuthorityIdentity(
+        {
+          pendingAttempt,
+          pendingReady,
+          pendingWitness,
+          ready: true,
+        },
+        {
+          currentReadinessEpochCheckpoint: readinessEpochCheckpoint,
+          network,
+          pendingAttemptUpdatedAt: pendingMetaUpdatedAt.get(
+            WORK_Q16_PENDING_ATTEMPT_META_KEY,
+          ),
+          pendingStage,
+          pendingStageUpdatedAt: pendingMetaUpdatedAt.get(
+            WORK_Q16_PENDING_STAGE_META_KEY,
+          ),
+          pendingWitnessUpdatedAt: pendingMetaUpdatedAt.get(
+            WORK_Q16_PENDING_REBUILD_META_KEY,
+          ),
+          tipHash,
+          tipHeight,
+        },
+      )
+    : "";
+  const workQ16PendingPublication = pendingPublicationIdentity
+    ? {
+        generatedAt: pendingWitness.generatedAt,
+        identity: pendingPublicationIdentity,
+      }
+    : null;
   const expectedTransitionCount =
     Number.isSafeInteger(tipHeight) &&
     tipHeight >= pins.activationHeight
@@ -8395,7 +8465,8 @@ async function proofIndexWorkPrecisionV2MigrationReadinessFullAudit(
   const readyWithinSnapshot =
     confirmedStateReadyWithinSnapshot &&
     snapshotReplayReady &&
-    pendingReady;
+    pendingReady &&
+    Boolean(workQ16PendingPublication);
   await client.query("COMMIT");
   transactionOpen = false;
   const freshTipResult = await client.query(
@@ -8445,6 +8516,7 @@ async function proofIndexWorkPrecisionV2MigrationReadinessFullAudit(
     openingReady: activationOpeningReady,
     parityReady: stateCommitmentsReady,
     pendingAttempt,
+    pendingPublicationAuthority: workQ16PendingPublication,
     pendingReady,
     pendingValidThrough: Number.isFinite(pendingGeneratedAtMs)
       ? new Date(
@@ -23332,6 +23404,38 @@ async function latestProofIndexOperationalMetadata(pool, network) {
         FROM proof_indexer.meta
         WHERE key = 'worker:lastRun'
         LIMIT 1
+      ),
+      pending_witness_meta AS (
+        SELECT value, updated_at
+        FROM proof_indexer.meta
+        WHERE key = $3
+        LIMIT 1
+      ),
+      pending_attempt_meta AS (
+        SELECT value, updated_at
+        FROM proof_indexer.meta
+        WHERE key = $4
+        LIMIT 1
+      ),
+      pending_stage_meta AS (
+        SELECT value, updated_at
+        FROM proof_indexer.meta
+        WHERE key = $5
+        LIMIT 1
+      ),
+      readiness_epoch AS (
+        SELECT
+          jsonb_agg(
+            jsonb_build_array(shard, epoch::text)
+            ORDER BY shard
+          ) AS epochs,
+          count(*)::integer AS shard_count
+        FROM proof_indexer.readiness_epoch_shards
+        WHERE network = $1
+      ),
+      readiness_queue AS (
+        SELECT count(*)::integer AS queue_count
+        FROM proof_indexer.readiness_epoch_queue
       )
       SELECT
         latest_scan.snapshot_id,
@@ -23357,17 +23461,142 @@ async function latestProofIndexOperationalMetadata(pool, network) {
         confirmed_events.confirmed_event_count,
         confirmed_events.confirmed_event_max_block,
         worker_meta.value AS worker,
-        worker_meta.updated_at AS worker_updated_at
+        worker_meta.updated_at AS worker_updated_at,
+        pending_witness_meta.value AS pending_witness,
+        pending_witness_meta.updated_at AS pending_witness_updated_at,
+        pending_attempt_meta.value AS pending_attempt,
+        pending_attempt_meta.updated_at AS pending_attempt_updated_at,
+        pending_stage_meta.value AS pending_stage,
+        pending_stage_meta.updated_at AS pending_stage_updated_at,
+        readiness_epoch.epochs AS readiness_epochs,
+        readiness_epoch.shard_count AS readiness_epoch_shard_count,
+        readiness_queue.queue_count AS readiness_queue_count,
+        current_setting('max_prepared_transactions')
+          AS max_prepared_transactions,
+        current_setting('search_path') AS search_path,
+        pg_postmaster_start_time() AS postmaster_started_at
       FROM confirmed_ids
       CROSS JOIN confirmed_transfers
       CROSS JOIN confirmed_events
+      CROSS JOIN readiness_epoch
+      CROSS JOIN readiness_queue
       LEFT JOIN latest_scan ON true
       LEFT JOIN latest_summary ON true
       LEFT JOIN worker_meta ON true
+      LEFT JOIN pending_witness_meta ON true
+      LEFT JOIN pending_attempt_meta ON true
+      LEFT JOIN pending_stage_meta ON true
     `,
-    [network, workAmountStorageModel],
+    [
+      network,
+      workAmountStorageModel,
+      WORK_Q16_PENDING_REBUILD_META_KEY,
+      WORK_Q16_PENDING_ATTEMPT_META_KEY,
+      WORK_Q16_PENDING_STAGE_META_KEY,
+    ],
   );
   return result.rows[0] ?? null;
+}
+
+function workQ16PendingPublicationAuthorityFromOperationalRow(
+  row,
+  network,
+  { tipHash, tipHeight },
+) {
+  const readinessEpochs = normalizedWorkPrecisionV2ReadinessEpochs(
+    row?.readiness_epochs,
+  );
+  const currentReadinessEpochCore = {
+    maxPreparedTransactions: String(
+      row?.max_prepared_transactions ?? "",
+    ),
+    model: WORK_PRECISION_READINESS_EPOCH_CHECKPOINT_MODEL,
+    network,
+    postmasterStartedAt: workPrecisionV2ReadinessFingerprintIso(
+      row?.postmaster_started_at,
+    ),
+    queueCount: Number(row?.readiness_queue_count),
+    readinessEpochs,
+    searchPath: String(row?.search_path ?? ""),
+  };
+  const currentReadinessEpochCheckpoint =
+    canonicalWorkPrecisionV2ReadinessEpochCheckpoint(
+      {
+        ...currentReadinessEpochCore,
+        sha256: createHash("sha256")
+          .update(
+            Buffer.from(
+              `${WORK_PRECISION_READINESS_EPOCH_CHECKPOINT_DOMAIN}\n${
+                stableWorkPrecisionJson(currentReadinessEpochCore)
+              }`,
+              "utf8",
+            ),
+          )
+          .digest("hex"),
+      },
+      network,
+    );
+  const pendingWitness = objectRecord(row?.pending_witness);
+  const pendingTip = objectRecord(pendingWitness.canonicalTip);
+  const pendingMembership = objectRecord(
+    pendingWitness.membershipSnapshot,
+  );
+  const pendingProjection = objectRecord(pendingWitness.projection);
+  const pendingAttempt = canonicalWorkQ16PendingAttemptForRead(
+    row?.pending_attempt,
+    network,
+  );
+  const generatedAt = workPrecisionV2ReadinessFingerprintIso(
+    pendingWitness.generatedAt,
+  );
+  if (
+    Number(row?.readiness_epoch_shard_count) !== 64 ||
+    !readinessEpochs ||
+    !currentReadinessEpochCheckpoint ||
+    !pendingAttempt ||
+    !generatedAt
+  ) {
+    return null;
+  }
+  const identity = workAmoV8PendingPublicationAuthorityIdentity(
+    {
+      pendingAttempt,
+      pendingReady: true,
+      pendingWitness,
+      ready: true,
+    },
+    {
+      currentReadinessEpochCheckpoint,
+      network,
+      pendingAttemptUpdatedAt: workPrecisionV2ReadinessFingerprintIso(
+        row?.pending_attempt_updated_at,
+      ),
+      pendingStage: row?.pending_stage,
+      pendingStageUpdatedAt: workPrecisionV2ReadinessFingerprintIso(
+        row?.pending_stage_updated_at,
+      ),
+      pendingWitnessUpdatedAt: workPrecisionV2ReadinessFingerprintIso(
+        row?.pending_witness_updated_at,
+      ),
+      tipHash,
+      tipHeight,
+    },
+  );
+  return identity
+    ? {
+        generatedAt,
+        identity,
+        pendingMembershipCount: Number(pendingMembership.count),
+        pendingMembershipSha256: normalizedLowerText(
+          pendingMembership.sha256,
+        ),
+        pendingProjectionSha256: normalizedLowerText(
+          pendingProjection.commitmentSha256,
+        ),
+        tipHash: normalizedLowerText(pendingTip.hash),
+        tipHeight: Number(pendingTip.height),
+      }
+    : null;
 }
 
 export async function proofIndexOperationalStatusPayload(network) {
@@ -23382,6 +23611,18 @@ export async function proofIndexOperationalStatusPayload(network) {
   const worker = objectRecord(row.worker);
   const summaryCoverage = objectRecord(row.summary_coverage);
   const indexedThroughBlock = rowNumber(row, "indexed_through_block");
+  const scanBlockHash = String(row.scan_block_hash ?? "")
+    .trim()
+    .toLowerCase();
+  const workQ16PendingPublication =
+    workQ16PendingPublicationAuthorityFromOperationalRow(
+      row,
+      network,
+      {
+        tipHash: scanBlockHash,
+        tipHeight: indexedThroughBlock,
+      },
+    );
   const summaryCoverageByKey = Object.fromEntries(
     [
       "growthSummary",
@@ -23465,7 +23706,7 @@ export async function proofIndexOperationalStatusPayload(network) {
       snapshotId: String(row.summary_snapshot_id ?? ""),
     },
     scan: {
-      blockHash: String(row.scan_block_hash ?? ""),
+      blockHash: scanBlockHash,
       complete:
         row.scan_payload_complete === true ||
         row.scan_metrics_complete === true ||
@@ -23480,6 +23721,7 @@ export async function proofIndexOperationalStatusPayload(network) {
         indexedThroughBlock,
     },
     source: "proof-indexer-block-scan",
+    workQ16PendingPublication,
     worker:
       Object.keys(worker).length > 0
         ? {
