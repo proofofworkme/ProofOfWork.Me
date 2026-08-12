@@ -259,7 +259,16 @@ const WORK_Q16_PENDING_STAGE_PATH =
   "/api/v1/internal/pending-work-verifier-stage";
 const WORK_Q16_PENDING_STAGE_MAX_TXIDS = 512;
 const WORK_Q16_PENDING_DROP_CONFIRMATION_MS = 300_000;
-const WORK_Q16_PENDING_REUSE_MAX_AGE_MS = 300_000;
+const WORK_Q16_PENDING_REUSE_MAX_AGE_MS = Math.min(
+  10 * 60_000,
+  Math.max(
+    60_000,
+    Number(
+      process.env.POW_INDEX_WORKER_PENDING_WITNESS_MAX_AGE_MS ??
+        10 * 60_000,
+    ) || 10 * 60_000,
+  ),
+);
 const WORK_Q16_PENDING_ABSENCE_REASON =
   "absent-from-synced-unpruned-mainnet-bitcoin-core-txindex-and-mempool";
 const WORK_Q16_PENDING_ABSENCE_SOURCES = Object.freeze([

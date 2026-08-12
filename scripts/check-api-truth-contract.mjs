@@ -1710,6 +1710,12 @@ expect(
     ) &&
     /WORK_AMO_V8_PENDING_REBUILD_MODEL =\s*"canonical-work-q16-pending-rebuild-v2"/u.test(
       worker,
+    ) &&
+    /WORK_Q16_PENDING_REUSE_MAX_AGE_MS = Math\.min\([\s\S]*POW_INDEX_WORKER_PENDING_WITNESS_MAX_AGE_MS[\s\S]*10 \* 60_000/u.test(
+      backfill,
+    ) &&
+    /WORK_AMO_V8_PENDING_WITNESS_MAX_AGE_MS = Math\.min\([\s\S]*POW_INDEX_WORKER_PENDING_WITNESS_MAX_AGE_MS[\s\S]*10 \* 60_000/u.test(
+      worker,
     ),
 );
 expect(
