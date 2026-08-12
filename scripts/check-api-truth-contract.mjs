@@ -1546,7 +1546,7 @@ expect(
 );
 expect(
   "worker pending witness binds Q16, stable Core membership for persisted WORK, every projected relation, and freshness",
-  /export function workerWorkPrecisionPendingWitnessReady[\s\S]*witness\.ready === true[\s\S]*WORK_SUBATOM_PROJECTION_MODEL[\s\S]*WORK_PRECISION_V2_MODEL[\s\S]*invalidLegacyMutationCount[\s\S]*workerWorkPrecisionCoreTipReady[\s\S]*canonicalWorkerMempoolSnapshot\(currentMempoolTxids\)[\s\S]*canonicalWorkerJsonText\(witnessedProjection\) ===\s*canonicalWorkerJsonText\(currentProjection\)[\s\S]*scan\.complete === true[\s\S]*atomic-staged-pending-work-projection-audit-v1[\s\S]*bounded-best-effort-unconfirmed-discovery-v1[\s\S]*WORK_AMO_V8_PENDING_WITNESS_MAX_AGE_MS/u.test(
+  /function workerReadinessEpochCheckpointCovers[\s\S]*BigInt\(currentEpoch\[1\]\) >= BigInt\(epoch\)[\s\S]*export function workerWorkPrecisionPendingWitnessReady[\s\S]*witness\.ready === true[\s\S]*WORK_SUBATOM_PROJECTION_MODEL[\s\S]*WORK_PRECISION_V2_MODEL[\s\S]*invalidLegacyMutationCount[\s\S]*workerWorkPrecisionCoreTipReady[\s\S]*workerReadinessEpochCheckpointCovers[\s\S]*canonicalWorkerMempoolSnapshot\(currentMempoolTxids\)[\s\S]*canonicalWorkerJsonText\(witnessedProjection\) ===\s*canonicalWorkerJsonText\(currentProjection\)[\s\S]*scan\.complete === true[\s\S]*atomic-staged-pending-work-projection-audit-v1[\s\S]*bounded-best-effort-unconfirmed-discovery-v1[\s\S]*WORK_AMO_V8_PENDING_WITNESS_MAX_AGE_MS/u.test(
     worker,
   ),
 );

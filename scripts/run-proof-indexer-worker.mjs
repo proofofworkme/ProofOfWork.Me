@@ -2311,6 +2311,30 @@ function sameWorkerReadinessEpochCheckpoint(left, right) {
   return canonicalWorkerJsonText(left) === canonicalWorkerJsonText(right);
 }
 
+function workerReadinessEpochCheckpointCovers(published, current) {
+  const left = canonicalWorkerReadinessEpochCheckpoint(published);
+  const right = canonicalWorkerReadinessEpochCheckpoint(current);
+  if (!left || !right) {
+    return false;
+  }
+  return (
+    left.model === right.model &&
+    left.network === right.network &&
+    left.maxPreparedTransactions === right.maxPreparedTransactions &&
+    left.queueCount === right.queueCount &&
+    left.searchPath === right.searchPath &&
+    left.postmasterStartedAt === right.postmasterStartedAt &&
+    left.readinessEpochs.length === right.readinessEpochs.length &&
+    left.readinessEpochs.every(([shard, epoch], index) => {
+      const currentEpoch = right.readinessEpochs[index];
+      return (
+        currentEpoch?.[0] === shard &&
+        BigInt(currentEpoch[1]) >= BigInt(epoch)
+      );
+    })
+  );
+}
+
 function workerPendingVerifierStageTxids(value) {
   if (
     !Array.isArray(value) ||
@@ -3325,7 +3349,7 @@ export function workerWorkPrecisionPendingWitnessReady(
       Boolean(attempt) &&
       attempt.stageSha256 === witness.verifierStage?.stageSha256 &&
       attempt.witnessGeneratedAt === witness.generatedAt &&
-      sameWorkerReadinessEpochCheckpoint(
+      workerReadinessEpochCheckpointCovers(
         attempt.publicationReadinessEpochCheckpoint,
         readinessEpochCheckpoint,
       ) &&

@@ -1551,6 +1551,30 @@ async function runChecks() {
       )
       .digest("hex"),
   };
+  const pendingReadinessCheckpointWithEpochDelta = (shard, delta) => {
+    const core = {
+      ...pendingReadinessCheckpointCore,
+      readinessEpochs: pendingReadinessCheckpointCore.readinessEpochs.map(
+        ([index, epoch]) => [
+          index,
+          index === shard ? (BigInt(epoch) + BigInt(delta)).toString() : epoch,
+        ],
+      ),
+    };
+    return {
+      ...core,
+      sha256: createHash("sha256")
+        .update(
+          Buffer.from(
+            `ProofOfWork.Me/PROOF-INDEX-WORKER-READINESS-EPOCH-CHECKPOINT/v1\n${
+              JSON.stringify(core)
+            }`,
+            "utf8",
+          ),
+        )
+        .digest("hex"),
+    };
+  };
   const pendingDecisionOutcomes = [{
     kind: "token-listing",
     protocolVout: 1,
@@ -1703,6 +1727,35 @@ async function runChecks() {
       pendingWitnessOptions,
     ),
     true,
+  );
+  assert.equal(
+    workerWorkPrecisionPendingWitnessReady(
+      pendingWitness,
+      {
+        ...pendingWitnessOptions,
+        readinessEpochCheckpoint: pendingReadinessCheckpointWithEpochDelta(
+          7,
+          1,
+        ),
+      },
+    ),
+    true,
+    "confirmed-phase epoch advancement must not force a Q16 pending witness refresh when projection parity is still exact",
+  );
+  assert.equal(
+    workerWorkPrecisionPendingWitnessReady(
+      pendingWitness,
+      {
+        ...pendingWitnessOptions,
+        pendingAttempt: {
+          ...pendingAttempt,
+          publicationReadinessEpochCheckpoint:
+            pendingReadinessCheckpointWithEpochDelta(7, 1),
+        },
+      },
+    ),
+    false,
+    "a pending witness publication epoch cannot be ahead of the current worker checkpoint",
   );
   const churnedMempoolTxids = [
     ...pendingMempoolTxids,
