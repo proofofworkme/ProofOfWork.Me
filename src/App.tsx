@@ -19117,9 +19117,7 @@ export default function App() {
   const [tokenCreateRegistryAddress, setTokenCreateRegistryAddress] =
     useState("");
   const [tokenTransferTokenId, setTokenTransferTokenId] = useState("");
-  const [tokenTransferAmount, setTokenTransferAmount] = useState(
-    String(WORK_TOKEN_MINT_AMOUNT),
-  );
+  const [tokenTransferAmount, setTokenTransferAmount] = useState("1");
   const [tokenTransferRecipient, setTokenTransferRecipient] = useState("");
   const [tokenListAmount, setTokenListAmount] = useState(
     String(WORK_TOKEN_MINT_AMOUNT),
@@ -21172,47 +21170,6 @@ export default function App() {
           walletReservedTokenBalance -
           Number(walletPendingTokenBalance),
       );
-  useEffect(() => {
-    if (!walletTransferToken || !walletTransferUsesExactUnits) {
-      return;
-    }
-
-    const parsedAmount = tokenAmountInput(
-      walletTransferToken,
-      tokenTransferAmount,
-    );
-    const parsedUnits = parsedAmount
-      ? tokenRecordAmountAtoms(
-          walletTransferToken,
-          parsedAmount.amount,
-          parsedAmount.amountAtoms,
-          parsedAmount.amountSubatoms,
-        )
-      : null;
-    if (
-      parsedUnits !== null &&
-      parsedUnits > 0n &&
-      parsedUnits <= walletSpendableTokenAtoms
-    ) {
-      return;
-    }
-
-    const nextAmount =
-      walletSpendableTokenAtoms > 0n
-        ? walletTransferIsWork
-          ? workDecimalFromAtoms(walletSpendableTokenAtoms)
-          : walletSpendableTokenAtoms.toString()
-        : "0";
-    if (tokenTransferAmount !== nextAmount) {
-      setTokenTransferAmount(nextAmount);
-    }
-  }, [
-    tokenTransferAmount,
-    walletSpendableTokenAtoms,
-    walletTransferIsWork,
-    walletTransferToken,
-    walletTransferUsesExactUnits,
-  ]);
   const connectedAccountStats = useMemo<AppHeaderAccountStat[]>(() => {
     if (!address) {
       return [];

@@ -806,6 +806,16 @@ expect(
     !/\? tokenWalletBalances\.length\.toLocaleString\(\)/.test(app),
 );
 expect(
+  "wallet transfer amount keeps user-entered fractional credit values under the spendable maximum",
+  /const \[tokenTransferAmount, setTokenTransferAmount\] = useState\("1"\)/.test(
+    app,
+  ) &&
+    /const tokenTransferDisabledReason =[\s\S]*tokenTransferAmountUnits > walletSpendableTokenAtoms[\s\S]*Amount exceeds/.test(
+      app,
+    ) &&
+    !/setTokenTransferAmount\(nextAmount\)/.test(app),
+);
+expect(
   "pending WORK preflight preserves multi-recipient transfer multiplicity",
   /function tokenTransferSpendabilityKey\(transfer:[\s\S]*transfer\.txid[\s\S]*transfer\.tokenId[\s\S]*transfer\.senderAddress[\s\S]*transfer\.recipientAddress[\s\S]*transfer\.amount/.test(
     app,
