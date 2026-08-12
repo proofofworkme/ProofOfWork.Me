@@ -54714,6 +54714,22 @@ check("the first V6 listing crosses replay binding into atomic persistence witho
   );
   assert.equal(persistedV8.decimals, WORK_SUBATOM_DECIMALS);
   assert.equal(persistedV8.unitScale, WORK_SUBATOM_UNIT_SCALE_TEXT);
+  const v8BlockVerifierListing = structuredClone(v8CanonicalListing);
+  delete v8BlockVerifierListing.amount;
+  delete v8BlockVerifierListing.amountSubatoms;
+  const boundV8BlockVerifierItem = bindLifecycleItem({
+    listing: v8BlockVerifierListing,
+    sourceAuthorization: v8Authorization,
+  });
+  assert.equal(boundV8BlockVerifierItem.amountAtoms, undefined);
+  assert.equal(
+    boundV8BlockVerifierItem.amountSubatoms,
+    v8FrozenTerms.unitAmountSubatoms,
+  );
+  assert.equal(
+    boundV8BlockVerifierItem.amount,
+    formatWorkSubatoms(v8FrozenTerms.unitAmountSubatoms),
+  );
 
   const signedAuthorization = {
     ...saleAuthorization,

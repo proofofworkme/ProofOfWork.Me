@@ -20287,9 +20287,40 @@ function workAmoV6ReplayListingMaterialization({
     source.sellerAddress ?? "",
   ).trim();
   const sourceTokenId = normalizedLowerText(source.tokenId);
-  const amountAtoms = v8
-    ? canonicalWorkSubatomsText(replayListing.amountSubatoms)
-    : canonicalWorkAtomsText(replayListing.amountAtoms);
+  const amountPresent = (value) =>
+    value !== undefined && value !== null && value !== "";
+  let amountAtoms = "";
+  if (v8) {
+    const expectedUnitAmount =
+      frozenValidation.frozenTerms.unitAmountSubatoms;
+    const amountSubatoms = amountPresent(
+      replayListing.amountSubatoms,
+    )
+      ? canonicalWorkSubatomsText(replayListing.amountSubatoms)
+      : "";
+    const amountAtomsAlias = amountPresent(replayListing.amountAtoms)
+      ? canonicalWorkSubatomsText(replayListing.amountAtoms)
+      : "";
+    if (
+      (
+        amountPresent(replayListing.amountSubatoms) &&
+        amountSubatoms !== expectedUnitAmount
+      ) ||
+      (
+        amountPresent(replayListing.amountAtoms) &&
+        (
+          replayListing.amountStorageModel !==
+            WORK_SUBATOM_PROJECTION_MODEL ||
+          amountAtomsAlias !== expectedUnitAmount
+        )
+      )
+    ) {
+      return fail();
+    }
+    amountAtoms = amountSubatoms || amountAtomsAlias;
+  } else {
+    amountAtoms = canonicalWorkAtomsText(replayListing.amountAtoms);
+  }
   const priceSats = canonicalIntegerText(
     replayListing.priceSats,
     { positive: true },
