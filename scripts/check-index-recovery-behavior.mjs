@@ -58100,19 +58100,21 @@ check("WORK precision V2 readiness cache is exact, positive-only, and coalesced"
     readinessEpochs: readinessEpochValues,
     searchPath: "pg_catalog, pg_temp",
   };
-  const readinessCheckpoint = {
-    ...readinessCheckpointCore,
+  const readinessCheckpointFor = (core) => ({
+    ...core,
     sha256: createHash("sha256")
       .update(
         Buffer.from(
           `ProofOfWork.Me/PROOF-INDEX-WORKER-READINESS-EPOCH-CHECKPOINT/v1\n${
-            stableReadinessJson(readinessCheckpointCore)
+            stableReadinessJson(core)
           }`,
           "utf8",
         ),
       )
       .digest("hex"),
-  };
+  });
+  const readinessCheckpoint =
+    readinessCheckpointFor(readinessCheckpointCore);
   const verifierStageSha256 = "b".repeat(64);
   const pendingWitness = {
     activationHeight: pins.activationHeight,
@@ -58365,6 +58367,41 @@ check("WORK precision V2 readiness cache is exact, positive-only, and coalesced"
       fixedNow,
     )?.key,
     directFingerprint.key,
+  );
+  const driftedPublicationCheckpointCore = {
+    ...readinessCheckpointCore,
+    readinessEpochs: readinessCheckpointCore.readinessEpochs.map(
+      (entry, index) => (index === 0 ? [0, "11"] : entry),
+    ),
+  };
+  const driftedPublicationCheckpointRow =
+    JSON.parse(JSON.stringify(exactRow));
+  driftedPublicationCheckpointRow.pending_attempt
+    .publicationReadinessEpochCheckpoint =
+      readinessCheckpointFor(driftedPublicationCheckpointCore);
+  const driftedPublicationFingerprint = fingerprintFromRows(
+    [driftedPublicationCheckpointRow],
+    "livenet",
+    pins,
+    fixedNow,
+  );
+  assert.equal(driftedPublicationFingerprint?.positiveEligible, true);
+  assert.notEqual(
+    driftedPublicationFingerprint?.key,
+    directFingerprint.key,
+  );
+  const missingPublicationCheckpointRow =
+    JSON.parse(JSON.stringify(exactRow));
+  delete missingPublicationCheckpointRow.pending_attempt
+    .publicationReadinessEpochCheckpoint;
+  assert.equal(
+    fingerprintFromRows(
+      [missingPublicationCheckpointRow],
+      "livenet",
+      pins,
+      fixedNow,
+    )?.positiveEligible,
+    false,
   );
   assert.equal(
     fingerprintFromRows(

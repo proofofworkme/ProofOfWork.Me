@@ -5708,6 +5708,11 @@ function workPrecisionV2ReadinessFingerprintFromRows(
       },
       network,
     );
+  const publicationReadinessEpochCheckpoint =
+    canonicalWorkPrecisionV2ReadinessEpochCheckpoint(
+      pendingAttempt?.publicationReadinessEpochCheckpoint,
+      network,
+    );
   const pendingExpiresAt =
     pendingGeneratedAtMs + WORK_Q16_PENDING_WITNESS_MAX_AGE_MS;
   const expiresAt = Math.min(
@@ -5750,6 +5755,7 @@ function workPrecisionV2ReadinessFingerprintFromRows(
     !migrationUpdatedAt ||
     !pendingAttempt ||
     !currentReadinessEpochCheckpoint ||
+    !publicationReadinessEpochCheckpoint ||
     pendingWitness.model !== WORK_Q16_PENDING_REBUILD_MODEL ||
     pendingWitness.network !== network ||
     pendingWitness.ready !== true ||
@@ -5761,9 +5767,6 @@ function workPrecisionV2ReadinessFingerprintFromRows(
     pendingAttempt.stageSha256 !==
       pendingWitness.verifierStage?.stageSha256 ||
     pendingAttempt.witnessGeneratedAt !== pendingWitness.generatedAt ||
-    stableWorkPrecisionJson(
-      pendingAttempt.publicationReadinessEpochCheckpoint,
-    ) !== stableWorkPrecisionJson(currentReadinessEpochCheckpoint) ||
     pendingMempool.model !== WORK_Q16_PENDING_MEMPOOL_MODEL ||
     !Number.isSafeInteger(pendingMempool.count) ||
     pendingMempool.count < 0 ||
@@ -7726,6 +7729,11 @@ async function proofIndexWorkPrecisionV2MigrationReadinessFullAudit(
     pendingMeta.get(WORK_Q16_PENDING_ATTEMPT_META_KEY),
     network,
   );
+  const publicationReadinessEpochCheckpoint =
+    canonicalWorkPrecisionV2ReadinessEpochCheckpoint(
+      pendingAttempt?.publicationReadinessEpochCheckpoint,
+      network,
+    );
   const pendingVerifierStage = objectRecord(
     pendingWitness.verifierStage,
   );
@@ -7770,6 +7778,7 @@ async function proofIndexWorkPrecisionV2MigrationReadinessFullAudit(
     pendingWitnessResult.rows.length === 2 &&
     pendingMeta.size === 2 &&
     Boolean(pendingAttempt) &&
+    Boolean(publicationReadinessEpochCheckpoint) &&
     Boolean(readinessEpochCheckpoint) &&
     pendingMembershipTxidsCanonical
   ) {
@@ -8252,9 +8261,6 @@ async function proofIndexWorkPrecisionV2MigrationReadinessFullAudit(
       normalizedLowerText(pendingTip.hash) === tipHash &&
       pendingAttempt.stageSha256 === pendingVerifierStage.stageSha256 &&
       pendingAttempt.witnessGeneratedAt === pendingWitness.generatedAt &&
-      stableWorkPrecisionJson(
-        pendingAttempt.publicationReadinessEpochCheckpoint,
-      ) === stableWorkPrecisionJson(readinessEpochCheckpoint) &&
       workQ16PendingVerifierStageReady(pendingVerifierStage, {
         confirmedRemovalRows: pendingConfirmedRemovalResult.rows,
         expectedTokenStateCommitment: closingTokenStateCommitment,
