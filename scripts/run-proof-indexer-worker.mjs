@@ -3925,7 +3925,7 @@ async function assertWorkPrecisionPendingReady(
     const readinessEpochCheckpoint =
       await readWorkerReadinessEpochCheckpoint(client);
     if (
-      !sameWorkerReadinessEpochCheckpoint(
+      !workerReadinessEpochCheckpointCovers(
         confirmedReplay.readinessEpochCheckpoint,
         readinessEpochCheckpoint,
       )
@@ -4349,11 +4349,11 @@ async function assertWorkPrecisionPendingReady(
         !mempoolBeforeTxids.has(txid) && !mempoolAfterTxids.has(txid),
     );
     const stableEpoch =
-      sameWorkerReadinessEpochCheckpoint(
+      workerReadinessEpochCheckpointCovers(
         confirmedReplay.readinessEpochCheckpoint,
         readinessEpochCheckpoint,
       ) &&
-      sameWorkerReadinessEpochCheckpoint(
+      workerReadinessEpochCheckpointCovers(
         readinessEpochCheckpoint,
         readinessEpochAfter,
       );

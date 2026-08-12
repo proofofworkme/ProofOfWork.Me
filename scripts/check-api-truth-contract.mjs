@@ -1555,10 +1555,13 @@ expect(
   /async function assertWorkPrecisionPendingReady[\s\S]*confirmedReplay\?\.ready !== true[\s\S]*readExactWorkerCoreMempoolSnapshot/u.test(
     worker,
   ) &&
+    /readinessEpochCheckpoint =[\s\S]*workerReadinessEpochCheckpointCovers\([\s\S]*confirmedReplay\.readinessEpochCheckpoint[\s\S]*readinessEpochCheckpoint/u.test(
+      worker,
+    ) &&
     /SELECT address, pending_delta::text[\s\S]*AND status = 'pending'[\s\S]*listing\.status = 'pending'[\s\S]*listing\.status = 'sealing'/u.test(
       worker,
     ) &&
-    /invalidLegacyResult[\s\S]*const stableCore =[\s\S]*const stableMempool = membership\.expectedTxids\.every[\s\S]*mempoolBeforeTxids\.has\(txid\)[\s\S]*mempoolAfterTxids\.has\(txid\)[\s\S]*workerWorkPrecisionPendingWitnessReady/u.test(
+    /invalidLegacyResult[\s\S]*const stableCore =[\s\S]*const stableMempool = membership\.expectedTxids\.every[\s\S]*mempoolBeforeTxids\.has\(txid\)[\s\S]*mempoolAfterTxids\.has\(txid\)[\s\S]*const stableEpoch =[\s\S]*workerReadinessEpochCheckpointCovers\([\s\S]*confirmedReplay\.readinessEpochCheckpoint[\s\S]*readinessEpochCheckpoint[\s\S]*workerReadinessEpochCheckpointCovers\([\s\S]*readinessEpochCheckpoint[\s\S]*readinessEpochAfter[\s\S]*workerWorkPrecisionPendingWitnessReady/u.test(
       worker,
     ),
 );

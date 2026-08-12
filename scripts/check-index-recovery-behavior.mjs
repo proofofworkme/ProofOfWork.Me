@@ -14293,8 +14293,8 @@ check("Q16 pending readiness audits persisted WORK rows without requiring a full
   );
   assert.match(
     workerReadinessSource,
-    /readWorkerReadinessEpochCheckpoint[\s\S]*stableEpoch/u,
-    "the worker must reject same-tip relational writes that race its snapshot",
+    /workerReadinessEpochCheckpointCovers\([\s\S]*confirmedReplay\.readinessEpochCheckpoint[\s\S]*readinessEpochCheckpoint[\s\S]*stableEpoch[\s\S]*workerReadinessEpochCheckpointCovers\([\s\S]*readinessEpochCheckpoint[\s\S]*readinessEpochAfter/u,
+    "the worker must accept monotonic pending-publication epochs while still rejecting stale projection parity",
   );
   assert.match(
     workerReadinessSource,

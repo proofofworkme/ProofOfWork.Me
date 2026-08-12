@@ -2068,6 +2068,14 @@ missing row, ghost row, stale nullable field, or later Mail mutation closes
 readiness. The `mail_items` relation advances the readiness epoch alongside
 the event search relations.
 
+The hot worker treats a pending witness's publication epoch as a lower bound,
+not a byte-for-byte freshness token. A later readiness epoch can cover the
+published witness only when the worker's repeatable-read audit re-derives the
+same confirmed base, every pending WORK membership row, every committed
+projection relation, and the same stage hash. This prevents harmless
+backfill-owned attempt/witness bookkeeping from browning out AMO while still
+failing closed on any actual relation, projection, or Core membership drift.
+
 The heavyweight `indexer:parity` deployment gate separately audits the exact
 semantic contents of `event_participants` and `event_refs` for every event
 status that public Log and Mail reads can render: `pending`, `confirmed`,
