@@ -18,6 +18,7 @@ import {
 } from "../server/canonical-order.mjs";
 import { createProofIndexPool } from "../server/db/postgres.mjs";
 import {
+  proofIndexCanonicalEventRelationParity,
   proofIndexEventParticipantsForItem,
   proofIndexEventRefsForItem,
   proofIndexMailParticipantAliasesForItem,
@@ -467,6 +468,12 @@ const REPAIR_WORK_PARTICIPANTS_TXIDS = [
       .filter((value) => /^[0-9a-f]{64}$/u.test(value)),
   ),
 ];
+const REPAIR_EVENT_RELATIONS = /^(?:1|true|yes)$/iu.test(
+  String(process.env.POW_INDEX_REPAIR_EVENT_RELATIONS ?? ""),
+);
+const REPAIR_EVENT_RELATIONS_ONLY = process.argv.includes(
+  "--repair-event-relations",
+);
 const REPAIR_ID_TXIDS = [
   ...new Set(
     String(process.env.POW_INDEX_REPAIR_ID_TXIDS ?? "")
@@ -729,6 +736,9 @@ function assertCanonicalRebuildConfiguration() {
   const repairCanonicalMailProjectionApply =
     typeof REPAIR_CANONICAL_MAIL_PROJECTION !== "undefined" &&
     REPAIR_CANONICAL_MAIL_PROJECTION;
+  const repairEventRelationsOnly =
+    typeof REPAIR_EVENT_RELATIONS_ONLY !== "undefined" &&
+    REPAIR_EVENT_RELATIONS_ONLY;
   const exclusiveMaintenanceModes = [
     HYDRATE_TRANSACTION_DETAILS_ONLY,
     PREPARE_CANONICAL_REBUILD_ONLY,
@@ -736,6 +746,7 @@ function assertCanonicalRebuildConfiguration() {
     REPAIR_CANONICAL_TXIDS_ONLY,
     REPAIR_ID_TXIDS_ONLY,
     REPAIR_INCB_ISSUANCE_ONLY,
+    repairEventRelationsOnly,
     repairCanonicalMailProjectionOnly,
     REPAIR_WORK_PARTICIPANTS_ONLY,
     RUSH_BOOTSTRAP_ONLY,
@@ -754,6 +765,11 @@ function assertCanonicalRebuildConfiguration() {
   ) {
     throw new Error(
       "--repair-canonical-mail-projection requires POW_INDEX_REPAIR_CANONICAL_MAIL_PROJECTION=1, and the apply flag is invalid without that exclusive mode.",
+    );
+  }
+  if (repairEventRelationsOnly !== REPAIR_EVENT_RELATIONS) {
+    throw new Error(
+      "--repair-event-relations requires POW_INDEX_REPAIR_EVENT_RELATIONS=1, and the apply flag is invalid without that exclusive mode.",
     );
   }
   if (MIGRATE_WORK_ATOMS_ONLY && !APPLY_WORK_ATOMIC_MIGRATION) {
@@ -787,6 +803,7 @@ function assertCanonicalRebuildConfiguration() {
       REPAIR_CANONICAL_TXIDS_ONLY ||
       REPAIR_ID_TXIDS_ONLY ||
       REPAIR_INCB_ISSUANCE_ONLY ||
+      repairEventRelationsOnly ||
       REPAIR_WORK_PARTICIPANTS_ONLY ||
       AUDIT_WORK_ATOMS_ONLY ||
       MIGRATE_WORK_ATOMS_ONLY ||
@@ -843,6 +860,7 @@ function assertCanonicalRebuildConfiguration() {
       PREPARE_CANONICAL_PWT_RANGE_REPLAY_ONLY ||
       REPAIR_ID_TXIDS_ONLY ||
       REPAIR_INCB_ISSUANCE_ONLY ||
+      REPAIR_EVENT_RELATIONS_ONLY ||
       REPAIR_WORK_PARTICIPANTS_ONLY ||
       RUSH_BOOTSTRAP_ONLY ||
       CANONICAL_REBUILD)
@@ -873,7 +891,8 @@ function assertCanonicalRebuildConfiguration() {
     (PREPARE_CANONICAL_REBUILD_ONLY ||
       PREPARE_CANONICAL_PWT_RANGE_REPLAY_ONLY ||
       REPAIR_CANONICAL_TXIDS_ONLY ||
-      REPAIR_INCB_ISSUANCE_ONLY)
+      REPAIR_INCB_ISSUANCE_ONLY ||
+      REPAIR_EVENT_RELATIONS_ONLY)
   ) {
     throw new Error("Canonical ID repair and replay preparation are exclusive.");
   }
@@ -888,6 +907,7 @@ function assertCanonicalRebuildConfiguration() {
       PREPARE_CANONICAL_PWT_RANGE_REPLAY_ONLY ||
       REPAIR_CANONICAL_TXIDS_ONLY ||
       REPAIR_ID_TXIDS_ONLY ||
+      REPAIR_EVENT_RELATIONS_ONLY ||
       REPAIR_WORK_PARTICIPANTS_ONLY ||
       CANONICAL_REBUILD)
   ) {
@@ -1061,6 +1081,9 @@ function pendingOnlyBackfillMaintenanceMode() {
   const repairCanonicalMailProjectionOnly =
     typeof REPAIR_CANONICAL_MAIL_PROJECTION_ONLY !== "undefined" &&
     REPAIR_CANONICAL_MAIL_PROJECTION_ONLY;
+  const repairEventRelationsOnly =
+    typeof REPAIR_EVENT_RELATIONS_ONLY !== "undefined" &&
+    REPAIR_EVENT_RELATIONS_ONLY;
   return (
     HYDRATE_TRANSACTION_DETAILS_ONLY ||
     PREPARE_CANONICAL_REBUILD_ONLY ||
@@ -1068,6 +1091,7 @@ function pendingOnlyBackfillMaintenanceMode() {
     REPAIR_ID_TXIDS_ONLY ||
     REPAIR_CANONICAL_TXIDS_ONLY ||
     REPAIR_INCB_ISSUANCE_ONLY ||
+    repairEventRelationsOnly ||
     repairCanonicalMailProjectionOnly ||
     REPAIR_WORK_PARTICIPANTS ||
     REPAIR_MINT_MINTERS ||
@@ -1359,6 +1383,9 @@ async function canonicalPwtRangeReplayRuntime(client) {
   const repairCanonicalMailProjectionOnly =
     typeof REPAIR_CANONICAL_MAIL_PROJECTION_ONLY !== "undefined" &&
     REPAIR_CANONICAL_MAIL_PROJECTION_ONLY;
+  const repairEventRelationsOnly =
+    typeof REPAIR_EVENT_RELATIONS_ONLY !== "undefined" &&
+    REPAIR_EVENT_RELATIONS_ONLY;
   const rebuild = await proofIndexerMetaValue(
     client,
     CANONICAL_REBUILD_META_KEY,
@@ -1399,6 +1426,7 @@ async function canonicalPwtRangeReplayRuntime(client) {
     REPAIR_CANONICAL_TXIDS_ONLY ||
     REPAIR_ID_TXIDS_ONLY ||
     REPAIR_INCB_ISSUANCE_ONLY ||
+    repairEventRelationsOnly ||
     repairCanonicalMailProjectionOnly ||
     REPAIR_WORK_PARTICIPANTS_ONLY ||
     DB_SUMMARY_REPAIR ||
@@ -27903,6 +27931,277 @@ async function repairConfirmedWorkTransferParticipants(client) {
   };
 }
 
+function canonicalEventRelationRows(eventRows) {
+  const participantRows = new Map();
+  const refRows = new Map();
+  for (const event of Array.isArray(eventRows) ? eventRows : []) {
+    const eventId = String(event?.event_id ?? event?.eventId ?? "").trim();
+    if (!/^[1-9][0-9]*$/u.test(eventId)) {
+      throw new Error("Canonical event relation repair event id is invalid.");
+    }
+    const payload = objectValue(event?.payload);
+    for (const participant of participantsForItem(payload, event)) {
+      const address = String(participant?.address ?? "").trim();
+      const role = String(participant?.role ?? "").trim();
+      const powid = String(participant?.powid ?? "").trim();
+      if (!address || !role) {
+        continue;
+      }
+      const key = JSON.stringify([eventId, address, role]);
+      const existing = participantRows.get(key);
+      if (existing && existing.powid !== powid) {
+        throw new Error(
+          `Canonical event relation repair found a participant powid conflict for event ${eventId}.`,
+        );
+      }
+      if (!existing) {
+        participantRows.set(key, {
+          address,
+          event_id: eventId,
+          powid,
+          role,
+        });
+      }
+    }
+    for (const ref of refsForItem(payload)) {
+      const refType = String(ref?.refType ?? ref?.ref_type ?? "").trim();
+      const refValue = String(ref?.refValue ?? ref?.ref_value ?? "").trim();
+      if (!refType || !refValue) {
+        continue;
+      }
+      const key = JSON.stringify([eventId, refType, refValue]);
+      if (!refRows.has(key)) {
+        refRows.set(key, {
+          event_id: eventId,
+          ref_type: refType,
+          ref_value: refValue,
+        });
+      }
+    }
+  }
+  const sortRows = (rows) =>
+    rows.sort((left, right) =>
+      JSON.stringify(left).localeCompare(JSON.stringify(right))
+    );
+  return {
+    participantRows: sortRows([...participantRows.values()]),
+    refRows: sortRows([...refRows.values()]),
+  };
+}
+
+async function readCanonicalEventRelationParity(client) {
+  const eventResult = await client.query(
+    `
+      SELECT
+        event.event_id::text AS event_id,
+        event.network,
+        event.txid,
+        event.protocol,
+        event.kind,
+        event.valid,
+        event.amount_sats::text,
+        event.data_bytes,
+        event.event_time,
+        event.payload,
+        event.status
+      FROM proof_indexer.events event
+      WHERE event.network = $1
+        AND event.status IN ('pending', 'confirmed', 'dropped', 'orphaned')
+      ORDER BY event.event_id ASC
+    `,
+    [NETWORK],
+  );
+  const participantResult = await client.query(
+    `
+      SELECT
+        event.event_id::text AS event_id,
+        COALESCE(participant.address, '') AS address,
+        COALESCE(participant.role, '') AS role,
+        COALESCE(participant.powid, '') AS powid
+      FROM proof_indexer.events event
+      JOIN proof_indexer.event_participants participant
+        ON participant.event_id = event.event_id
+      WHERE event.network = $1
+        AND event.status IN ('pending', 'confirmed', 'dropped', 'orphaned')
+      ORDER BY event.event_id ASC, participant.address ASC,
+        participant.role ASC, COALESCE(participant.powid, '') ASC
+    `,
+    [NETWORK],
+  );
+  const refResult = await client.query(
+    `
+      SELECT
+        event.event_id::text AS event_id,
+        COALESCE(ref.ref_type, '') AS ref_type,
+        COALESCE(ref.ref_value, '') AS ref_value
+      FROM proof_indexer.events event
+      JOIN proof_indexer.event_refs ref
+        ON ref.event_id = event.event_id
+      WHERE event.network = $1
+        AND event.status IN ('pending', 'confirmed', 'dropped', 'orphaned')
+      ORDER BY event.event_id ASC, ref.ref_type ASC, ref.ref_value ASC
+    `,
+    [NETWORK],
+  );
+  return {
+    eventRows: eventResult.rows,
+    parity: proofIndexCanonicalEventRelationParity({
+      eventRows: eventResult.rows,
+      participantRows: participantResult.rows,
+      refRows: refResult.rows,
+    }),
+    participantRows: participantResult.rows,
+    refRows: refResult.rows,
+  };
+}
+
+async function insertCanonicalEventRelationRows(client, relation, rows) {
+  const batchSize = 5_000;
+  let indexed = 0;
+  for (let index = 0; index < rows.length; index += batchSize) {
+    const batch = rows.slice(index, index + batchSize);
+    if (relation === "participants") {
+      const result = await client.query(
+        `
+          INSERT INTO proof_indexer.event_participants AS participant (
+            event_id,
+            address,
+            role,
+            powid
+          )
+          SELECT
+            candidate.event_id::bigint,
+            candidate.address,
+            candidate.role,
+            NULLIF(candidate.powid, '')
+          FROM jsonb_to_recordset($1::jsonb) AS candidate(
+            event_id text,
+            address text,
+            role text,
+            powid text
+          )
+          WHERE candidate.event_id ~ '^[1-9][0-9]*$'
+            AND candidate.address <> ''
+            AND candidate.role <> ''
+          ON CONFLICT (event_id, address, role) DO UPDATE
+          SET powid = EXCLUDED.powid
+          WHERE participant.powid IS DISTINCT FROM EXCLUDED.powid
+          RETURNING event_id
+        `,
+        [JSON.stringify(batch)],
+      );
+      indexed += Number(result.rowCount ?? 0);
+    } else if (relation === "refs") {
+      const result = await client.query(
+        `
+          INSERT INTO proof_indexer.event_refs (
+            event_id,
+            ref_type,
+            ref_value
+          )
+          SELECT
+            ref_row.event_id::bigint,
+            ref_row.ref_type,
+            ref_row.ref_value
+          FROM jsonb_to_recordset($1::jsonb) AS ref_row(
+            event_id text,
+            ref_type text,
+            ref_value text
+          )
+          WHERE ref_row.event_id ~ '^[1-9][0-9]*$'
+            AND ref_row.ref_type <> ''
+            AND ref_row.ref_value <> ''
+          ON CONFLICT DO NOTHING
+          RETURNING event_id
+        `,
+        [JSON.stringify(batch)],
+      );
+      indexed += Number(result.rowCount ?? 0);
+    } else {
+      throw new Error("Unknown canonical event relation repair target.");
+    }
+  }
+  return indexed;
+}
+
+async function repairCanonicalEventRelations(client) {
+  await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
+  try {
+    await client.query(
+      `
+        LOCK TABLE proof_indexer.events, proof_indexer.event_participants,
+          proof_indexer.event_refs
+        IN SHARE ROW EXCLUSIVE MODE
+      `,
+    );
+    const before = await readCanonicalEventRelationParity(client);
+    const expected = canonicalEventRelationRows(before.eventRows);
+    const deletedParticipants = await client.query(
+      `
+        DELETE FROM proof_indexer.event_participants participant
+        USING proof_indexer.events event
+        WHERE participant.event_id = event.event_id
+          AND event.network = $1
+          AND event.status IN ('pending', 'confirmed', 'dropped', 'orphaned')
+      `,
+      [NETWORK],
+    );
+    const deletedRefs = await client.query(
+      `
+        DELETE FROM proof_indexer.event_refs ref
+        USING proof_indexer.events event
+        WHERE ref.event_id = event.event_id
+          AND event.network = $1
+          AND event.status IN ('pending', 'confirmed', 'dropped', 'orphaned')
+      `,
+      [NETWORK],
+    );
+    const insertedParticipants = await insertCanonicalEventRelationRows(
+      client,
+      "participants",
+      expected.participantRows,
+    );
+    const insertedRefs = await insertCanonicalEventRelationRows(
+      client,
+      "refs",
+      expected.refRows,
+    );
+    const after = await readCanonicalEventRelationParity(client);
+    if (!after.parity.ready) {
+      throw new Error(
+        `Canonical event relation repair remains inexact: ${JSON.stringify(after.parity)}`,
+      );
+    }
+    await client.query("COMMIT");
+    return {
+      beforeReady: before.parity.ready,
+      participants: {
+        afterObserved: after.parity.participants.observedCount,
+        beforeExtra: before.parity.participants.extraCount,
+        beforeMissing: before.parity.participants.missingCount,
+        beforeObserved: before.parity.participants.observedCount,
+        deleted: Number(deletedParticipants.rowCount ?? 0),
+        expected: expected.participantRows.length,
+        indexed: insertedParticipants,
+      },
+      refs: {
+        afterObserved: after.parity.refs.observedCount,
+        beforeExtra: before.parity.refs.extraCount,
+        beforeMissing: before.parity.refs.missingCount,
+        beforeObserved: before.parity.refs.observedCount,
+        deleted: Number(deletedRefs.rowCount ?? 0),
+        expected: expected.refRows.length,
+        indexed: insertedRefs,
+      },
+      scannedEvents: before.eventRows.length,
+      source: "repair-canonical-event-relations",
+    };
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw error;
+  }
+}
+
 async function repairCanonicalMailProjection(client) {
   await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
   try {
@@ -30310,6 +30609,8 @@ if (DRY_RUN) {
           REPAIR_CANONICAL_MAIL_PROJECTION_ONLY,
         repairCanonicalTxids: REPAIR_CANONICAL_TXIDS,
         repairCanonicalTxidsOnly: REPAIR_CANONICAL_TXIDS_ONLY,
+        repairEventRelationsApply: REPAIR_EVENT_RELATIONS,
+        repairEventRelationsOnly: REPAIR_EVENT_RELATIONS_ONLY,
         repairMintMinters: REPAIR_MINT_MINTERS,
         rushBootstrap: {
           batchSize: RUSH_BOOTSTRAP_BATCH_SIZE,
@@ -30515,6 +30816,21 @@ try {
           {
             apiBase: API_BASE,
             canonicalMailProjectionRepair: true,
+            network: NETWORK,
+            ok: true,
+            repair,
+          },
+          null,
+          2,
+        ),
+      );
+    } else if (REPAIR_EVENT_RELATIONS_ONLY) {
+      const repair = await repairCanonicalEventRelations(client);
+      console.log(
+        JSON.stringify(
+          {
+            apiBase: API_BASE,
+            canonicalEventRelationsRepair: true,
             network: NETWORK,
             ok: true,
             repair,

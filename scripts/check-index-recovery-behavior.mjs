@@ -27474,6 +27474,51 @@ check("canonical event relations exactly cover every rendered participant and re
   assert.equal(whitespaceCorrupt.refs.extraCount, 1);
 });
 
+check("canonical event relation repair is explicit, transactional, and parity-proven", () => {
+  const backfillSource = fileSource(BACKFILL_PATH);
+  const repairSource = topLevelFunctionSource(
+    BACKFILL_PATH,
+    "repairCanonicalEventRelations",
+  );
+  const readSource = topLevelFunctionSource(
+    BACKFILL_PATH,
+    "readCanonicalEventRelationParity",
+  );
+  const relationRowsSource = topLevelFunctionSource(
+    BACKFILL_PATH,
+    "canonicalEventRelationRows",
+  );
+  const insertSource = topLevelFunctionSource(
+    BACKFILL_PATH,
+    "insertCanonicalEventRelationRows",
+  );
+  assert.match(
+    backfillSource,
+    /POW_INDEX_REPAIR_EVENT_RELATIONS[\s\S]*--repair-event-relations[\s\S]*repairEventRelationsOnly !== REPAIR_EVENT_RELATIONS[\s\S]*else if \(REPAIR_EVENT_RELATIONS_ONLY\) \{[\s\S]*repairCanonicalEventRelations\(client\)/u,
+    "global relation repair must require both the supervised mode and explicit apply flag",
+  );
+  assert.match(
+    repairSource,
+    /BEGIN ISOLATION LEVEL SERIALIZABLE[\s\S]*LOCK TABLE proof_indexer\.events, proof_indexer\.event_participants,[\s\S]*proof_indexer\.event_refs/u,
+  );
+  assert.match(
+    relationRowsSource,
+    /participantsForItem\(payload, event\)[\s\S]*refsForItem\(payload\)/u,
+  );
+  assert.match(
+    readSource,
+    /proofIndexCanonicalEventRelationParity\([\s\S]*participantRows: participantResult\.rows[\s\S]*refRows: refResult\.rows/u,
+  );
+  assert.match(
+    repairSource,
+    /DELETE FROM proof_indexer\.event_participants participant[\s\S]*DELETE FROM proof_indexer\.event_refs ref[\s\S]*insertCanonicalEventRelationRows\([\s\S]*"participants"[\s\S]*insertCanonicalEventRelationRows\([\s\S]*"refs"[\s\S]*after\.parity\.ready/u,
+  );
+  assert.match(
+    insertSource,
+    /jsonb_to_recordset\(\$1::jsonb\)[\s\S]*ON CONFLICT \(event_id, address, role\) DO UPDATE[\s\S]*participant\.powid IS DISTINCT FROM EXCLUDED\.powid[\s\S]*INSERT INTO proof_indexer\.event_refs/u,
+  );
+});
+
 check("canonical Mail projection rejects every field, membership, identity, and volatile-overlay drift", () => {
   const txid = "4".repeat(64);
   const event = {
@@ -32028,6 +32073,8 @@ check("canonical rebuild preparation requires an explicit supervised height", ()
       PREPARE_CANONICAL_REBUILD_ONLY: true,
       PREPARE_CANONICAL_PWT_RANGE_REPLAY_ONLY: false,
       REPAIR_CANONICAL_TXIDS_ONLY: false,
+      REPAIR_EVENT_RELATIONS: false,
+      REPAIR_EVENT_RELATIONS_ONLY: false,
       REPAIR_INCB_ISSUANCE_ONLY: false,
       REPAIR_ID_TXIDS: [],
       REPAIR_ID_TXIDS_ONLY: false,
@@ -32046,6 +32093,8 @@ check("canonical rebuild preparation requires an explicit supervised height", ()
       PREPARE_CANONICAL_REBUILD_ONLY: true,
       PREPARE_CANONICAL_PWT_RANGE_REPLAY_ONLY: false,
       REPAIR_CANONICAL_TXIDS_ONLY: false,
+      REPAIR_EVENT_RELATIONS: false,
+      REPAIR_EVENT_RELATIONS_ONLY: false,
       REPAIR_INCB_ISSUANCE_ONLY: false,
       REPAIR_ID_TXIDS: [],
       REPAIR_ID_TXIDS_ONLY: false,
@@ -32066,6 +32115,8 @@ check("canonical rebuild preparation requires an explicit supervised height", ()
       PREPARE_CANONICAL_REBUILD_ONLY: false,
       PREPARE_CANONICAL_PWT_RANGE_REPLAY_ONLY: true,
       REPAIR_CANONICAL_TXIDS_ONLY: false,
+      REPAIR_EVENT_RELATIONS: false,
+      REPAIR_EVENT_RELATIONS_ONLY: false,
       REPAIR_INCB_ISSUANCE_ONLY: false,
       REPAIR_ID_TXIDS_ONLY: false,
       REPAIR_WORK_PARTICIPANTS_ONLY: false,
@@ -32085,6 +32136,8 @@ check("canonical rebuild preparation requires an explicit supervised height", ()
       PREPARE_CANONICAL_REBUILD_ONLY: false,
       PREPARE_CANONICAL_PWT_RANGE_REPLAY_ONLY: true,
       REPAIR_CANONICAL_TXIDS_ONLY: false,
+      REPAIR_EVENT_RELATIONS: false,
+      REPAIR_EVENT_RELATIONS_ONLY: false,
       REPAIR_INCB_ISSUANCE_ONLY: false,
       REPAIR_ID_TXIDS_ONLY: false,
       REPAIR_WORK_PARTICIPANTS_ONLY: false,
@@ -32104,6 +32157,8 @@ check("canonical rebuild preparation requires an explicit supervised height", ()
       PREPARE_CANONICAL_REBUILD_ONLY: false,
       PREPARE_CANONICAL_PWT_RANGE_REPLAY_ONLY: true,
       REPAIR_CANONICAL_TXIDS_ONLY: false,
+      REPAIR_EVENT_RELATIONS: false,
+      REPAIR_EVENT_RELATIONS_ONLY: false,
       REPAIR_INCB_ISSUANCE_ONLY: false,
       REPAIR_ID_TXIDS_ONLY: false,
       REPAIR_WORK_PARTICIPANTS_ONLY: false,
@@ -32121,6 +32176,8 @@ check("canonical rebuild preparation requires an explicit supervised height", ()
       PREPARE_CANONICAL_REBUILD_ONLY: false,
       PREPARE_CANONICAL_PWT_RANGE_REPLAY_ONLY: false,
       REPAIR_CANONICAL_TXIDS_ONLY: false,
+      REPAIR_EVENT_RELATIONS: false,
+      REPAIR_EVENT_RELATIONS_ONLY: false,
       REPAIR_INCB_ISSUANCE_ONLY: false,
       REPAIR_ID_TXIDS_ONLY: false,
       REPAIR_WORK_PARTICIPANTS_ONLY: false,
@@ -32142,6 +32199,8 @@ check("canonical rebuild preparation requires an explicit supervised height", ()
       PREPARE_CANONICAL_REBUILD_ONLY: false,
       PREPARE_CANONICAL_PWT_RANGE_REPLAY_ONLY: false,
       REPAIR_CANONICAL_TXIDS_ONLY: false,
+      REPAIR_EVENT_RELATIONS: false,
+      REPAIR_EVENT_RELATIONS_ONLY: false,
       REPAIR_INCB_ISSUANCE_ONLY: false,
       REPAIR_ID_TXIDS_ONLY: false,
       REPAIR_WORK_PARTICIPANTS_ONLY: false,
@@ -32157,6 +32216,8 @@ check("canonical rebuild preparation requires an explicit supervised height", ()
     REPAIR_CANONICAL_MAIL_PROJECTION: false,
     REPAIR_CANONICAL_MAIL_PROJECTION_ONLY: false,
     REPAIR_CANONICAL_TXIDS_ONLY: false,
+    REPAIR_EVENT_RELATIONS: false,
+    REPAIR_EVENT_RELATIONS_ONLY: false,
     REPAIR_INCB_ISSUANCE_ONLY: false,
     REPAIR_ID_TXIDS_ONLY: false,
     REPAIR_WORK_PARTICIPANTS_ONLY: false,
@@ -32189,6 +32250,26 @@ check("canonical rebuild preparation requires an explicit supervised height", ()
     }),
   );
   assert.throws(mailRepairConflict, /mutually exclusive/u);
+  const eventRelationRepairWithoutApply = isolatedFunction(
+    BACKFILL_PATH,
+    "assertCanonicalRebuildConfiguration",
+    mailRepairConfiguration({
+      REPAIR_EVENT_RELATIONS_ONLY: true,
+    }),
+  );
+  assert.throws(
+    eventRelationRepairWithoutApply,
+    /requires POW_INDEX_REPAIR_EVENT_RELATIONS/u,
+  );
+  const eventRelationRepairWithApply = isolatedFunction(
+    BACKFILL_PATH,
+    "assertCanonicalRebuildConfiguration",
+    mailRepairConfiguration({
+      REPAIR_EVENT_RELATIONS: true,
+      REPAIR_EVENT_RELATIONS_ONLY: true,
+    }),
+  );
+  assert.doesNotThrow(eventRelationRepairWithApply);
 });
 
 check("canonical rebuild reset and hashed bootstrap are one transaction", async () => {
