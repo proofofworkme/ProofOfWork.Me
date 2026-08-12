@@ -152,6 +152,7 @@ import {
   workAmoV5ConsensusEventKind,
   workAmoV5EventSetCommitment,
   workAmoV5FrozenTermsMatch,
+  workAmoV5MovementValueAtNetworkQ8,
   workAmoV5NetworkValueQ8FromSufficientState,
   workAmoV5StatusFromEvidence,
   workAmoV5UnitTerms,
@@ -54256,9 +54257,6 @@ async function canonicalWorkMarketV2OraclesForTransactions(
   );
 }
 
-const WORK_AMO_V5_MOVEMENT_DENOMINATOR =
-  BigInt(WORK_TOKEN_MAX_SUPPLY) * WORK_UNIT_SCALE;
-
 function workAmoV5ExactInteger(value, { positive = false } = {}) {
   const text = canonicalNonNegativeIntegerText(value, {
     allowZero: !positive,
@@ -54592,15 +54590,21 @@ function workAmoV5AccumulatorNetworkValueQ8(state) {
   );
   const frozenNetworkValueQ8 =
     baseNetworkValueQ8 + creditFixedQ8 + creditMovementFrozenValueQ8;
-  const creditMovementLiveValueQ8 = (
-    Array.isArray(state?.movements) ? state.movements : []
-  ).reduce(
-    (total, movement) =>
-      total +
-      (BigInt(movement.amountAtoms) * frozenNetworkValueQ8) /
-        WORK_AMO_V5_MOVEMENT_DENOMINATOR,
-    0n,
-  );
+  let creditMovementLiveValueQ8 = 0n;
+  for (const movement of Array.isArray(state?.movements)
+    ? state.movements
+    : []) {
+    const movementValueQ8 = workAmoV5MovementValueAtNetworkQ8(
+      movement,
+      frozenNetworkValueQ8,
+    );
+    if (movementValueQ8 === null) {
+      throw new Error(
+        "Canonical AMO accumulator movement amount is not exact.",
+      );
+    }
+    creditMovementLiveValueQ8 += movementValueQ8;
+  }
   return {
     baseNetworkValueQ8,
     creditMovementLiveValueQ8,

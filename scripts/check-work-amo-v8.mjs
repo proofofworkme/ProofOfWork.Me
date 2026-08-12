@@ -35,6 +35,8 @@ import {
 } from "../server/work-amo-v8.mjs";
 import {
   WORK_AMO_V5_BASE_STATE_FIELDS,
+  WORK_AMO_V5_ATOM_MOVEMENT_DENOMINATOR,
+  WORK_AMO_V5_SUBATOM_MOVEMENT_DENOMINATOR,
   WORK_AMO_V5_DECLARATION_AUTHORITY_SCRIPT_PUBKEY,
   WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS,
   WORK_AMO_V5_MAX_SUPPLY,
@@ -43,6 +45,8 @@ import {
   WORK_AMO_V5_PAYLOAD_COMMITMENT_MODEL,
   WORK_AMO_V5_STATE_COMMITMENT_MODEL,
   workAmoV5CanonicalStateCommitment,
+  workAmoV5MovementAmountUnits,
+  workAmoV5MovementValueAtNetworkQ8,
 } from "../server/work-amo-v5.mjs";
 import {
   WORK_AMO_V6_AUTH_VERSION,
@@ -316,6 +320,64 @@ assert.equal(
 assert.equal(
   WORK_SUBATOM_CONVERSION_FACTOR,
   WORK_AMO_V8_LEGACY_ATOM_TO_SUBATOM_SCALE,
+);
+const q16OnlyMovement = {
+  amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+  amountSubatoms: "10000000000000000000",
+  identity:
+    "transfer:7d55cdba551ff257cb662f6d6799407b9679e34056f9e18fb771a440f09923ca:1:0",
+};
+const q16OnlyMovementUnits =
+  workAmoV5MovementAmountUnits(q16OnlyMovement);
+assert.equal(
+  q16OnlyMovementUnits.amount.toString(),
+  q16OnlyMovement.amountSubatoms,
+);
+assert.equal(
+  q16OnlyMovementUnits.denominator,
+  WORK_AMO_V5_SUBATOM_MOVEMENT_DENOMINATOR,
+);
+assert.equal(
+  q16OnlyMovementUnits.amountStorageModel,
+  WORK_SUBATOM_PROJECTION_MODEL,
+);
+assert.equal(
+  workAmoV5MovementValueAtNetworkQ8(
+    q16OnlyMovement,
+    WORK_AMO_V5_SUBATOM_MOVEMENT_DENOMINATOR,
+  ).toString(),
+  q16OnlyMovement.amountSubatoms,
+);
+const oneSubatomMovement = {
+  amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+  amountSubatoms: "1",
+};
+assert.equal(
+  workAmoV5MovementValueAtNetworkQ8(
+    oneSubatomMovement,
+    WORK_AMO_V5_SUBATOM_MOVEMENT_DENOMINATOR,
+  ).toString(),
+  "1",
+);
+assert.equal(
+  workAmoV5MovementAmountUnits({
+    amountAtoms: "1",
+    amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+  }),
+  null,
+);
+assert.equal(
+  workAmoV5MovementAmountUnits({
+    amountAtoms: "1",
+    amountSubatoms: "1",
+  }),
+  null,
+);
+assert.equal(
+  workAmoV5MovementAmountUnits({
+    amountAtoms: "100000000",
+  }).denominator,
+  WORK_AMO_V5_ATOM_MOVEMENT_DENOMINATOR,
 );
 assert.deepEqual(
   WORK_AMO_V8_ALLOWED_FACE_PROOFS,

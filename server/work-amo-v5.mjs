@@ -7,6 +7,8 @@ import {
   compareCanonicalUtf8,
 } from "./canonical-order.mjs";
 import {
+  WORK_ATOMIC_PROJECTION_MODEL,
+  WORK_SUBATOM_CONVERSION_FACTOR,
   WORK_SUBATOM_PROJECTION_MODEL,
   WORK_SUBATOM_UNIT_SCALE,
   WORK_TOKEN_ID,
@@ -198,6 +200,10 @@ export const WORK_AMO_V5_LISTING_ANCHOR_SIGHASH_TYPE = 0x83;
 
 export const WORK_AMO_V5_MAX_SUPPLY = 21_000_000n;
 export const WORK_AMO_V5_ATOMS_PER_WORK = 100_000_000n;
+export const WORK_AMO_V5_ATOM_MOVEMENT_DENOMINATOR =
+  WORK_AMO_V5_MAX_SUPPLY * WORK_AMO_V5_ATOMS_PER_WORK;
+export const WORK_AMO_V5_SUBATOM_MOVEMENT_DENOMINATOR =
+  WORK_AMO_V5_MAX_SUPPLY * WORK_SUBATOM_UNIT_SCALE;
 export const WORK_AMO_V5_NETWORK_VALUE_Q8_SCALE = 100_000_000n;
 export const WORK_AMO_V5_PROOFS_PER_QUOTE_UNIT = 100_000_000n;
 export const WORK_AMO_V5_USD_QUOTE_Q8_SCALE = 100_000_000n;
@@ -209,6 +215,88 @@ export const compareWorkAmoUtf8 = compareCanonicalUtf8;
 const WORK_AMO_V5_FATAL_UTF8_DECODER = new TextDecoder("utf-8", {
   fatal: true,
 });
+
+function workAmoV5ExactPositiveInteger(value) {
+  const text = String(value ?? "").trim();
+  if (!/^(?:0|[1-9][0-9]*)$/u.test(text)) {
+    return null;
+  }
+  const integer = BigInt(text);
+  return integer > 0n ? integer : null;
+}
+
+function workAmoV5AmountPresent(value) {
+  return value !== undefined && value !== null && value !== "";
+}
+
+export function workAmoV5MovementAmountUnits(movement) {
+  const amountAtomsPresent = workAmoV5AmountPresent(
+    movement?.amountAtoms,
+  );
+  const amountSubatomsPresent = workAmoV5AmountPresent(
+    movement?.amountSubatoms,
+  );
+  const storageModel = String(movement?.amountStorageModel ?? "")
+    .trim()
+    .toLowerCase();
+  if (
+    storageModel === WORK_SUBATOM_PROJECTION_MODEL &&
+    !amountSubatomsPresent
+  ) {
+    return null;
+  }
+  if (
+    storageModel === WORK_ATOMIC_PROJECTION_MODEL &&
+    !amountAtomsPresent
+  ) {
+    return null;
+  }
+  const amountAtoms = amountAtomsPresent
+    ? workAmoV5ExactPositiveInteger(movement?.amountAtoms)
+    : null;
+  const amountSubatoms = amountSubatomsPresent
+    ? workAmoV5ExactPositiveInteger(movement?.amountSubatoms)
+    : null;
+  if (
+    (amountAtomsPresent && amountAtoms === null) ||
+    (amountSubatomsPresent && amountSubatoms === null)
+  ) {
+    return null;
+  }
+  if (amountSubatoms !== null) {
+    if (
+      amountAtoms !== null &&
+      amountSubatoms !== amountAtoms * WORK_SUBATOM_CONVERSION_FACTOR
+    ) {
+      return null;
+    }
+    return {
+      amount: amountSubatoms,
+      amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+      denominator: WORK_AMO_V5_SUBATOM_MOVEMENT_DENOMINATOR,
+    };
+  }
+  if (amountAtoms !== null) {
+    return {
+      amount: amountAtoms,
+      amountStorageModel: WORK_ATOMIC_PROJECTION_MODEL,
+      denominator: WORK_AMO_V5_ATOM_MOVEMENT_DENOMINATOR,
+    };
+  }
+  return null;
+}
+
+export function workAmoV5MovementValueAtNetworkQ8(
+  movement,
+  networkValueQ8,
+) {
+  const valueQ8 = workAmoV5ExactPositiveInteger(networkValueQ8);
+  const units = workAmoV5MovementAmountUnits(movement);
+  if (!valueQ8 || !units) {
+    return null;
+  }
+  return (units.amount * valueQ8) / units.denominator;
+}
 
 export function workAmoV5WorkStateWithoutLegacyListingReservations(
   tokenState,
