@@ -54023,6 +54023,24 @@ check("AMO V8 relational closing evidence reads canonical Q16 units", async () =
     closingSource,
     /proofIndexWorkAmoV8RelationalTokenStateEvidence/u,
   );
+  const openingWorkProjectionSource = topLevelFunctionSource(
+    API_PATH,
+    "workAmoV5TokenStateCommitmentProjection",
+  );
+  assert.match(
+    openingWorkProjectionSource,
+    /workAmoV5TokenStateUsesSubatomProjection\(tokenState\)[\s\S]*normalizeWorkAmoV5RawWorkState\(tokenState\)/u,
+    "post-V8 opening WORK state must enter raw replay through the Q16 normalizer instead of the legacy atom projection",
+  );
+  const historicalMovementSource = topLevelFunctionSource(
+    API_PATH,
+    "workAmoV5HistoricalMovements",
+  );
+  assert.match(
+    historicalMovementSource,
+    /const q16 = workRecordUsesSubatoms\(item\)[\s\S]*workSubatomsBigIntFromRecord\(item\)[\s\S]*amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL[\s\S]*amountSubatoms: amountSubatoms\.toString\(\)/u,
+    "post-V8 opening WORK movements must keep Q16 subatom units in the AMO accumulator",
+  );
 });
 
 check("the first V6 listing crosses replay binding into atomic persistence without trusting its zero placeholder", async () => {

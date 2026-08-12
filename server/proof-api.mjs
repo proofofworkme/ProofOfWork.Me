@@ -54327,7 +54327,31 @@ function workAmoV5JsonNumbersAreExact(value) {
   return true;
 }
 
+function workAmoV5TokenStateUsesSubatomProjection(tokenState) {
+  const state =
+    tokenState && typeof tokenState === "object" && !Array.isArray(tokenState)
+      ? tokenState
+      : {};
+  return Boolean(
+    state.amountStorageModel === WORK_SUBATOM_PROJECTION_MODEL ||
+      state.precisionModel === WORK_PRECISION_V2_MODEL ||
+      state.model === WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL ||
+      state.confirmedSupplySubatoms !== undefined ||
+      (Array.isArray(state.holders) &&
+        state.holders.some(
+          (holder) => holder?.balanceSubatoms !== undefined,
+        )) ||
+      (Array.isArray(state.listings) &&
+        state.listings.some(
+          (listing) => listing?.amountSubatoms !== undefined,
+        )),
+  );
+}
+
 function workAmoV5TokenStateCommitmentProjection(tokenState) {
+  if (workAmoV5TokenStateUsesSubatomProjection(tokenState)) {
+    return normalizeWorkAmoV5RawWorkState(tokenState);
+  }
   const holders = (Array.isArray(tokenState?.holders)
     ? tokenState.holders
     : [])
@@ -54528,7 +54552,12 @@ function workAmoV5HistoricalMovements(tokenState, throughHeight) {
   const add = (item, kind) => {
     const blockHeight = Number(item?.blockHeight);
     const txid = String(item?.txid ?? "").trim().toLowerCase();
+    const q16 = workRecordUsesSubatoms(item);
     const amountAtoms = workAtomsBigIntFromRecord(item);
+    const amountSubatoms = q16
+      ? workSubatomsBigIntFromRecord(item)
+      : null;
+    const amountUnits = q16 ? amountSubatoms : amountAtoms;
     const blockIndex =
       item?.blockIndex === undefined ||
       item?.blockIndex === null ||
@@ -54560,8 +54589,8 @@ function workAmoV5HistoricalMovements(tokenState, throughHeight) {
       protocolVout < 0 ||
       !Number.isSafeInteger(recordOrdinal) ||
       recordOrdinal < 0 ||
-      amountAtoms === null ||
-      amountAtoms <= 0n
+      amountUnits === null ||
+      amountUnits <= 0n
     ) {
       return;
     }
@@ -54592,7 +54621,12 @@ function workAmoV5HistoricalMovements(tokenState, throughHeight) {
     }
     identities.add(identity);
     movements.push({
-      amountAtoms: amountAtoms.toString(),
+      ...(q16
+        ? {
+            amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+            amountSubatoms: amountSubatoms.toString(),
+          }
+        : { amountAtoms: amountAtoms.toString() }),
       blockHeight,
       blockIndex,
       identity,
