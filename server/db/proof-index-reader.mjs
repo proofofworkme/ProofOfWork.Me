@@ -33549,6 +33549,16 @@ const ADDRESS_MAIL_EVENT_KINDS = [
   "inception-bond",
   "infinity-bond",
 ];
+const HISTORICAL_DROPPED_MAIL_OUTBOX_WITNESSES = Object.freeze([
+  Object.freeze({
+    network: "livenet",
+    txid: "8e9074486fa0a6a75fd01f20c8a41a56ccd964be569e61e81e92c60266c001f0",
+    senderAddress: "1KNkUBREnfno2BeV7QsBf8XCWZN6YFfxPH",
+    recipientAddress:
+      "bc1p0uxp0axptr8rg9dndgtlwxn00j4hq8m88kg80tqd0t6045putwhq5ca7ed",
+    firstSeenAt: "2026-06-17T19:21:36.392Z",
+  }),
+]);
 
 function normalizedAddress(value) {
   return String(value ?? "").trim();
@@ -34045,6 +34055,47 @@ function addressMailRowPayloads(row, address, network) {
   return items;
 }
 
+function historicalDroppedMailOutboxWitnessesForAddress(network, address) {
+  const targetKey = normalizedAddressKey(address);
+  return HISTORICAL_DROPPED_MAIL_OUTBOX_WITNESSES.filter(
+    (witness) =>
+      witness.network === network &&
+      normalizedAddressKey(witness.senderAddress) === targetKey,
+  );
+}
+
+function droppedMailOutboxWitnessMessage(witness, row, address, network) {
+  const recipientAddress = normalizedAddress(witness.recipientAddress);
+  const createdAt = dateIso(row?.first_seen_at ?? witness.firstSeenAt);
+  const droppedAt = dateIso(
+    row?.dropped_at ?? row?.last_seen_at ?? witness.firstSeenAt,
+  );
+  return {
+    amountSats: 0,
+    createdAt,
+    droppedAt,
+    feeRate: 0,
+    from: normalizedAddress(address),
+    lastCheckedAt: new Date().toISOString(),
+    memo: "",
+    network,
+    protocolKind: "mail",
+    recipients: recipientAddress
+      ? [
+          {
+            address: recipientAddress,
+            amountSats: 0,
+            display: recipientAddress,
+          },
+        ]
+      : undefined,
+    replyTo: normalizedAddress(address),
+    status: "dropped",
+    to: recipientAddress || "Unknown",
+    txid: witness.txid,
+  };
+}
+
 function compareMailMessages(left, right) {
   return (
     Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
@@ -34332,6 +34383,51 @@ export async function proofIndexAddressMailPayload(network, address) {
       }
     }
   }
+  let droppedOutboxWitnesses = 0;
+  const droppedWitnesses = historicalDroppedMailOutboxWitnessesForAddress(
+    network,
+    targetAddress,
+  ).filter(
+    (witness) =>
+      !sentMessages.some(
+        (message) =>
+          String(message?.txid ?? "").trim().toLowerCase() === witness.txid,
+      ),
+  );
+  if (droppedWitnesses.length > 0) {
+    const txids = droppedWitnesses.map((witness) => witness.txid);
+    const droppedResult = await pool.query(
+      `
+        SELECT txid, first_seen_at, last_seen_at, dropped_at
+        FROM proof_indexer.transactions
+        WHERE network = $1
+          AND txid = ANY($2::text[])
+          AND status = 'dropped'
+      `,
+      [network, txids],
+    );
+    const droppedRowsByTxid = new Map(
+      droppedResult.rows.map((row) => [
+        String(row.txid ?? "").trim().toLowerCase(),
+        row,
+      ]),
+    );
+    for (const witness of droppedWitnesses) {
+      const row = droppedRowsByTxid.get(witness.txid);
+      if (!row) {
+        continue;
+      }
+      sentMessages.push(
+        droppedMailOutboxWitnessMessage(
+          witness,
+          row,
+          targetAddress,
+          network,
+        ),
+      );
+      droppedOutboxWitnesses += 1;
+    }
+  }
 
   const dedupedInboxMessages = dedupeMailProjectionMessages(inboxMessages);
   const dedupedSentMessages = dedupeMailProjectionMessages(sentMessages);
@@ -34342,11 +34438,14 @@ export async function proofIndexAddressMailPayload(network, address) {
     indexedAt: new Date().toISOString(),
     network,
     sentMessages: dedupedSentMessages,
-    source: "proof-indexer-mail",
+    source: droppedOutboxWitnesses > 0
+      ? "proof-indexer-mail+historical-dropped-mail-witness"
+      : "proof-indexer-mail",
     stats: {
       inbox: dedupedInboxMessages.filter((message) => message.confirmed).length,
       incoming: dedupedInboxMessages.filter((message) => !message.confirmed)
         .length,
+      ...(droppedOutboxWitnesses > 0 ? { droppedOutboxWitnesses } : {}),
       indexedEvents: rowsResult.rows.length,
       scanFailed: false,
       scannedTransactions: 0,

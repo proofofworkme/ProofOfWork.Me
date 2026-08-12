@@ -1376,6 +1376,9 @@ expectAll("API address app reads stay first-party", server, [
   /mailPayload\(address,\s*network,\s*\{ fresh: freshRead \}\)/,
   /async function firstPartyAddressUtxoPayload\(address,\s*network\)[\s\S]*firstPartyAddressReadBases\(network\)/,
 ]);
+expectAll("proof-index mail reader preserves sender-side dropped outbox witnesses", proofIndexReader, [
+  /HISTORICAL_DROPPED_MAIL_OUTBOX_WITNESSES[\s\S]*function historicalDroppedMailOutboxWitnessesForAddress[\s\S]*normalizedAddressKey\(witness\.senderAddress\) === targetKey[\s\S]*status = 'dropped'/,
+]);
 expectAll("interactive wallet UTXO reads use an isolated local Electrum lane", server, [
   /const ELECTRUM_INTERACTIVE_CLIENT = createElectrumClient\(\{[\s\S]*maxInFlight: ELECTRUM_INTERACTIVE_MAX_IN_FLIGHT[\s\S]*maxQueue: ELECTRUM_INTERACTIVE_MAX_QUEUE/,
   /function interactiveElectrumRequest\(method,\s*params,\s*timeoutMs = 30_000\)[\s\S]*ELECTRUM_INTERACTIVE_CLIENT\.request\(method,\s*params,\s*timeoutMs\)/,

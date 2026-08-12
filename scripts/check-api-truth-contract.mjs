@@ -750,6 +750,21 @@ expect(
     /canonical_scan_proof/u.test(reader),
 );
 expect(
+  "historical dropped mail witnesses are transaction-gated and sender-only",
+  /HISTORICAL_DROPPED_MAIL_OUTBOX_WITNESSES[\s\S]*8e9074486fa0a6a75fd01f20c8a41a56ccd964be569e61e81e92c60266c001f0[\s\S]*1KNkUBREnfno2BeV7QsBf8XCWZN6YFfxPH/u.test(
+    reader,
+  ) &&
+    /function historicalDroppedMailOutboxWitnessesForAddress[\s\S]*normalizedAddressKey\(witness\.senderAddress\) === targetKey/u.test(
+      reader,
+    ) &&
+    /SELECT txid, first_seen_at, last_seen_at, dropped_at[\s\S]*FROM proof_indexer\.transactions[\s\S]*AND status = 'dropped'/u.test(
+      reader,
+    ) &&
+    /droppedMailOutboxWitnessMessage[\s\S]*status: "dropped"[\s\S]*proof-indexer-mail\+historical-dropped-mail-witness[\s\S]*droppedOutboxWitnesses/u.test(
+      reader,
+    ),
+);
+expect(
   "worker status transitions are locked, evidence-gated, and canonical promotions are deferred",
   /const PENDING_DROP_CONFIRMATION_MS = pendingDropConfirmationMs\(\s*process\.env\.POW_INDEX_PENDING_DROP_CONFIRMATION_MS/u.test(
     worker,
