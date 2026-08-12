@@ -19528,6 +19528,34 @@ export default function App() {
     }
   }
 
+  function clearResolvedWorkAmoV8DeclarationPauseStatus(
+    quote: WorkFloorQuote | undefined,
+  ) {
+    const status = quote?.workAmoV8;
+    if (
+      !workV8WriteAdmissionReady(quote) ||
+      status?.listingWritesEnabled !== true ||
+      status?.settlementWritesEnabled !== true ||
+      String(status?.reasonCode ?? "").trim() !== ""
+    ) {
+      return;
+    }
+    setStatus((current) => {
+      if (
+        current.tone !== "bad" ||
+        !/(?:WORK precision writes are paused|AMO V8 subatom listing writes are paused|AMO governed settlement writes are paused)[\s\S]*\(work-amo-v8-declaration-evidence-mismatch\)/u.test(
+          current.text,
+        )
+      ) {
+        return current;
+      }
+      return {
+        tone: "good",
+        text: "WORK AMO V8 write admission is ready. Recreate the AMO intent with the current tip.",
+      };
+    });
+  }
+
   function acceptActivityHistoryPage(
     cacheKey: string,
     page: PowPaginatedApiResponse<PowActivityItem>,
@@ -19672,6 +19700,7 @@ export default function App() {
 
     acceptedWorkFloorQuoteRef.current = safetyBoundQuote;
     setWorkFloorQuote(safetyBoundQuote);
+    clearResolvedWorkAmoV8DeclarationPauseStatus(safetyBoundQuote);
     return safetyBoundQuote;
   }
 
