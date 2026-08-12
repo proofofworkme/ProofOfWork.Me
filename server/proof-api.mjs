@@ -36248,7 +36248,7 @@ async function indexedWalletActiveListings(
   if (
     network !== "livenet" ||
     scope !== WORK_TOKEN_ID ||
-    !proofIndexReadFeatureEnabled("token-history,token") ||
+    !proofIndexReadFeatureEnabled("event-history,events") ||
     !Array.isArray(addresses) ||
     addresses.length === 0
   ) {
@@ -36256,72 +36256,124 @@ async function indexedWalletActiveListings(
   }
 
   const listingsByKey = new Map();
+  const kinds = ["token-listing", "token-listings"];
   for (const address of addresses) {
     const value = String(address ?? "").trim();
     if (!value) {
       continue;
     }
 
-    const page = await payloadWithFallbackAfterMs(
-      proofIndexTokenMarketHistoryOverlayPayload(
-        network,
-        scope,
-        "listings",
-        new URLSearchParams({
-          address: value,
-          limit: String(limit),
-          status: "confirmed",
-        }),
-      ),
-      null,
-      WALLET_SCOPED_RECOVERY_WAIT_MS,
-    ).catch((error) => {
-      console.error(
-        `Proof index wallet active-listing lookup failed for ${value}: ${errorSummary(error)}`,
-      );
-      return null;
-    });
-    if (
-      !page ||
-      !(await proofIndexPayloadCoversConfirmedTip(
-        page,
-        network,
-        "wallet active-listing recovery",
-      ))
-    ) {
-      continue;
-    }
-
-    for (const item of Array.isArray(page.items) ? page.items : []) {
-      const listingId = String(item?.listingId ?? item?.txid ?? "")
-        .trim()
-        .toLowerCase();
-      const tokenId = normalizeTokenScope(item?.tokenId ?? item?.ticker ?? "");
-      const sellerAddress = String(
-        item?.sellerAddress ?? item?.actor ?? "",
-      ).trim();
+    for (const kind of kinds) {
+      const page = await payloadWithFallbackAfterMs(
+        proofIndexEventHistoryPayload(
+          network,
+          new URLSearchParams({
+            kind,
+            address: value,
+            limit: String(limit),
+            status: "confirmed",
+          }),
+        ),
+        null,
+        WALLET_SCOPED_RECOVERY_WAIT_MS,
+      ).catch((error) => {
+        console.error(
+          `Proof index wallet active-listing lookup failed for ${value}: ${errorSummary(error)}`,
+        );
+        return null;
+      });
       if (
-        !/^[0-9a-f]{64}$/u.test(listingId) ||
-        item?.confirmed !== true ||
-        tokenId !== WORK_TOKEN_ID ||
-        sellerAddress.toLowerCase() !== value.toLowerCase()
+        !page ||
+        !(await proofIndexPayloadCoversConfirmedTip(
+          page,
+          network,
+          "wallet active-listing recovery",
+        ))
       ) {
         continue;
       }
 
-      const listing = {
-        ...item,
-        listingId,
-        sellerAddress,
-        tokenId: WORK_TOKEN_ID,
-      };
-      listingsByKey.set(
-        tokenListingItemKey(listing),
-        mergeTokenListingRecord(
-          listingsByKey.get(tokenListingItemKey(listing)),
-          listing,
-        ),
-      );
+      for (const item of Array.isArray(page.items) ? page.items : []) {
+        const itemListing =
+          item?.listing &&
+          typeof item.listing === "object" &&
+          !Array.isArray(item.listing)
+            ? item.listing
+            : {};
+        const saleAuthorization =
+          itemListing.saleAuthorization &&
+          typeof itemListing.saleAuthorization === "object" &&
+          !Array.isArray(itemListing.saleAuthorization)
+            ? itemListing.saleAuthorization
+            : item?.saleAuthorization &&
+                typeof item.saleAuthorization === "object" &&
+                !Array.isArray(item.saleAuthorization)
+              ? item.saleAuthorization
+              : {};
+        const listingId = String(
+          itemListing.listingId ?? item?.listingId ?? item?.txid ?? "",
+        )
+          .trim()
+          .toLowerCase();
+        const tokenId = normalizeTokenScope(
+          itemListing.tokenId ??
+            saleAuthorization.tokenId ??
+            itemListing.ticker ??
+            saleAuthorization.ticker ??
+            item?.tokenId ??
+            item?.ticker ??
+            "",
+        );
+        const sellerAddress = String(
+          itemListing.sellerAddress ??
+            saleAuthorization.sellerAddress ??
+            item?.sellerAddress ??
+            item?.actor ??
+            "",
+        ).trim();
+        if (
+          !/^[0-9a-f]{64}$/u.test(listingId) ||
+          item?.confirmed !== true ||
+          tokenId !== WORK_TOKEN_ID ||
+          sellerAddress.toLowerCase() !== value.toLowerCase()
+        ) {
+          continue;
+        }
+
+        const frozenTerms =
+          itemListing.frozenTerms &&
+          typeof itemListing.frozenTerms === "object" &&
+          !Array.isArray(itemListing.frozenTerms)
+            ? itemListing.frozenTerms
+            : itemListing.workAmoFrozenTerms &&
+                typeof itemListing.workAmoFrozenTerms === "object" &&
+                !Array.isArray(itemListing.workAmoFrozenTerms)
+              ? itemListing.workAmoFrozenTerms
+              : {};
+        const listing = {
+          ...itemListing,
+          amountSubatoms:
+            itemListing.amountSubatoms ??
+            frozenTerms.unitAmountSubatoms ??
+            saleAuthorization.amountSubatoms,
+          confirmed: true,
+          createdAt: itemListing.createdAt ?? item?.createdAt,
+          listingId,
+          network: itemListing.network ?? item?.network ?? network,
+          saleAuthorization,
+          sellerAddress,
+          ticker: WORK_TOKEN_TICKER,
+          tokenId: WORK_TOKEN_ID,
+          txid: itemListing.txid ?? item?.txid ?? listingId,
+        };
+        listingsByKey.set(
+          tokenListingItemKey(listing),
+          mergeTokenListingRecord(
+            listingsByKey.get(tokenListingItemKey(listing)),
+            listing,
+          ),
+        );
+      }
     }
   }
 
@@ -36575,7 +36627,7 @@ async function tokenPayloadWithWalletActiveListings(
           ),
           source: mergedSourceLabel(
             payload?.source,
-            "proof-indexer-token-history-wallet-active-listings",
+            "proof-indexer-event-history-wallet-active-listings",
           ),
         }
       : payload;
@@ -36589,9 +36641,27 @@ async function tokenPayloadWithWalletActiveListings(
       normalizeTokenScope(listing?.tokenId) === WORK_TOKEN_ID,
   );
 
-  const scopedPayload = listings.length > 0
+  let scopedPayload = listings.length > 0
     ? tokenStateWithPreservedListingRecords(indexedPayload, { listings })
     : indexedPayload;
+  if (listings.length > 0) {
+    const spendable = await filterSpendableTokenListings(listings, network);
+    const closedListings = [
+      ...(Array.isArray(scopedPayload?.closedListings)
+        ? scopedPayload.closedListings
+        : []),
+      ...spendable.closedListings,
+    ];
+    scopedPayload = {
+      ...scopedPayload,
+      closedListings,
+      listings: spendable.listings,
+      sales: tokenSalesWithCanonicalOutspendClosures(
+        scopedPayload?.sales,
+        closedListings,
+      ),
+    };
+  }
 
   return tokenPayloadWithoutInvalidEventsForActiveListings(scopedPayload);
 }

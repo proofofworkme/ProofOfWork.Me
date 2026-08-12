@@ -6556,30 +6556,43 @@ check("wallet WORK overlay recovers active canonical V8 listings and drops match
       payloadWithFallbackAfterMs: async (promise) => promise,
       proofIndexPayloadCoversConfirmedTip: async () => true,
       proofIndexReadFeatureEnabled: () => true,
-      proofIndexTokenMarketHistoryOverlayPayload: async (
+      proofIndexEventHistoryPayload: async (
         network,
-        scope,
-        kind,
         params,
       ) => {
-        readParams = { kind, network, params, scope };
+        readParams = { network, params };
         return {
           indexedThroughBlock: 962166,
           items: [
             {
-              amountSubatoms: "752009741",
               confirmed: true,
-              listingId,
-              sellerAddress,
-              ticker: "WORK",
-              tokenId: workTokenId,
+              listing: {
+                amountAtoms: "752009741",
+                amountStorageModel: "work-subatoms-v2",
+                frozenTerms: {
+                  unitAmountSubatoms: "752009741",
+                  version: "pwt-sale-v8",
+                },
+                listingId,
+                saleAuthorization: {
+                  sellerAddress,
+                  ticker: "WORK",
+                  tokenId: workTokenId,
+                  version: "pwt-sale-v8",
+                },
+                sellerAddress,
+              },
+              txid: listingId,
             },
             {
               confirmed: true,
-              listingId: "1".repeat(64),
-              sellerAddress: "other",
-              ticker: "WORK",
-              tokenId: workTokenId,
+              listing: {
+                listingId: "1".repeat(64),
+                sellerAddress: "other",
+                ticker: "WORK",
+                tokenId: workTokenId,
+              },
+              txid: "1".repeat(64),
             },
           ],
         };
@@ -6593,8 +6606,7 @@ check("wallet WORK overlay recovers active canonical V8 listings and drops match
     [sellerAddress],
   );
   assert.equal(readParams.network, "livenet");
-  assert.equal(readParams.scope, workTokenId);
-  assert.equal(readParams.kind, "listings");
+  assert.equal(readParams.params.get("kind"), "token-listings");
   assert.equal(readParams.params.get("address"), sellerAddress);
   assert.equal(readParams.params.get("status"), "confirmed");
   assert.equal(listings.length, 1);
