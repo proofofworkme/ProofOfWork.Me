@@ -5341,14 +5341,56 @@ function workAmoV6RawPlaceholderMatchesCanonical(
     }
   }
   let canonicalAmountUnits = "";
-  try {
-    canonicalAmountUnits = v8
-      ? canonicalWorkSubatomsText(
-          workAmountSubatomsFromRecord(canonicalItem),
+  if (v8) {
+    const expectedUnitAmount =
+      canonicalFrozenTerms.frozenTerms.unitAmountSubatoms;
+    const canonicalAmountPresent = (value) =>
+      value !== undefined && value !== null && value !== "";
+    const canonicalAmountSubatoms =
+      canonicalAmountPresent(canonicalItem?.amountSubatoms)
+        ? canonicalWorkSubatomsText(canonicalItem.amountSubatoms)
+        : "";
+    const canonicalUnitAmountSubatoms =
+      canonicalAmountPresent(canonicalItem?.unitAmountSubatoms)
+        ? canonicalWorkSubatomsText(canonicalItem.unitAmountSubatoms)
+        : "";
+    const canonicalAmountAtomsAlias =
+      canonicalAmountPresent(canonicalItem?.amountAtoms)
+        ? canonicalWorkSubatomsText(canonicalItem.amountAtoms)
+        : "";
+    if (
+      (
+        canonicalAmountPresent(canonicalItem?.amountSubatoms) &&
+        canonicalAmountSubatoms !== expectedUnitAmount
+      ) ||
+      (
+        canonicalAmountPresent(canonicalItem?.unitAmountSubatoms) &&
+        canonicalUnitAmountSubatoms !== expectedUnitAmount
+      ) ||
+      (
+        canonicalAmountPresent(canonicalItem?.amountAtoms) &&
+        (
+          canonicalItem?.amountStorageModel !==
+            WORK_SUBATOM_PROJECTION_MODEL ||
+          canonicalAmountAtomsAlias !== expectedUnitAmount
         )
-      : canonicalWorkAtomsText(workAmountAtomsFromRecord(canonicalItem));
-  } catch {
-    return false;
+      )
+    ) {
+      return false;
+    }
+    canonicalAmountUnits =
+      canonicalAmountSubatoms ||
+      canonicalUnitAmountSubatoms ||
+      canonicalAmountAtomsAlias ||
+      expectedUnitAmount;
+  } else {
+    try {
+      canonicalAmountUnits = canonicalWorkAtomsText(
+        workAmountAtomsFromRecord(canonicalItem),
+      );
+    } catch {
+      return false;
+    }
   }
   const canonicalPriceSats = canonicalIntegerText(
     canonicalItem?.priceSats,

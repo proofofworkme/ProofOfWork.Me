@@ -54389,6 +54389,7 @@ check("the first V6 listing crosses replay binding into atomic persistence witho
   const v8CanonicalListing = {
     ...preparedItem,
     amount: formatWorkSubatoms(v8FrozenTerms.unitAmountSubatoms),
+    amountAtoms: v8FrozenTerms.unitAmountSubatoms,
     amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
     amountSubatoms: v8FrozenTerms.unitAmountSubatoms,
     decimals: WORK_SUBATOM_DECIMALS,
@@ -54410,6 +54411,20 @@ check("the first V6 listing crosses replay binding into atomic persistence witho
     ),
     true,
     "V8 raw list placeholders must be consumed by canonical Q16 listing recovery",
+  );
+  assert.equal(
+    rawMatchesCanonical(
+      v8PreparedItem,
+      {
+        ...v8CanonicalListing,
+        amountAtoms: (
+          BigInt(v8FrozenTerms.unitAmountSubatoms) + 1n
+        ).toString(),
+      },
+      "token-listing",
+    ),
+    false,
+    "V8 canonical amountAtoms aliases must match frozen Q16 listing terms",
   );
   assert.equal(
     rawMatchesCanonical(
