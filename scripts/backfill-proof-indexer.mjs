@@ -2016,34 +2016,49 @@ function workProjectionItem(item, options = {}) {
       source.transferVersion === WORK_AMO_V8_TRANSFER_VERSION ||
       saleAuthorization.version === WORK_AMO_V8_AUTH_VERSION
     ) {
+      const present = (value) =>
+        value !== undefined && value !== null && value !== "";
       const aliases = [
         source.amountSubatoms,
         source.tokenAmountSubatoms,
         saleAuthorization.amountSubatoms,
-      ].filter(
-        (value) =>
-          value !== undefined && value !== null && value !== "",
-      );
+      ].filter(present);
+      const sourceAmountAtomsAlias = present(source.amountAtoms)
+        ? normalizeWorkSubatoms(source.amountAtoms, {
+            allowZero: options.allowZero === true,
+          })
+        : "";
+      const amountSubatoms =
+        aliases.length === 1
+          ? normalizeWorkSubatoms(aliases[0], {
+              allowZero: options.allowZero === true,
+            })
+          : "";
       if (
         aliases.length !== 1 ||
+        (
+          present(source.amountAtoms) &&
+          (
+            source.amountStorageModel !== WORK_SUBATOM_PROJECTION_MODEL ||
+            sourceAmountAtomsAlias !== amountSubatoms
+          )
+        ) ||
         [
-          source.amountAtoms,
           source.tokenAmountAtoms,
           saleAuthorization.amountAtoms,
-        ].some(
-          (value) =>
-            value !== undefined && value !== null && value !== "",
-        )
+        ].some(present)
       ) {
         throw new TypeError(
           "Native WORK Q16 events require one unambiguous subatom amount.",
         );
       }
-      const amountSubatoms = normalizeWorkSubatoms(aliases[0], {
-        allowZero: options.allowZero === true,
-      });
+      const {
+        amountAtoms: _amountAtoms,
+        tokenAmountAtoms: _tokenAmountAtoms,
+        ...sourceWithoutLegacyAtomAliases
+      } = source;
       return withWorkSubatomPrecisionMetadata({
-        ...source,
+        ...sourceWithoutLegacyAtomAliases,
         amount: formatWorkSubatoms(amountSubatoms),
         amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
         amountSubatoms,
@@ -20499,16 +20514,18 @@ export function bindPreparedTransactionsToWorkAmoV5Replay(
             )?.saleAuthorization
           : null,
       );
-      const v6ListingMentioned = [
+      const governedListingMentioned = [
         item?.saleAuthorization?.version,
         replayListingAuthorization.version,
       ].some(
         (version) =>
-          normalizedLowerText(version) ===
+          [
             WORK_AMO_V6_AUTH_VERSION,
+            WORK_AMO_V8_AUTH_VERSION,
+          ].includes(normalizedLowerText(version)),
       );
-      const v6ListingMaterialization =
-        valid && v6ListingMentioned
+      const governedListingMaterialization =
+        valid && governedListingMentioned
         ? workAmoV6ReplayListingMaterialization({
             item,
             output,
@@ -20521,7 +20538,7 @@ export function bindPreparedTransactionsToWorkAmoV5Replay(
       let nextItem = {
         ...item,
         ...projection,
-        ...(v6ListingMaterialization ?? {}),
+        ...(governedListingMaterialization ?? {}),
         _workAmoV5ReplayBound: true,
         blockHash: position.position.blockHash,
         blockHeight: position.position.blockHeight,

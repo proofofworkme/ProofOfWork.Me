@@ -54689,6 +54689,31 @@ check("the first V6 listing crosses replay binding into atomic persistence witho
   assert.equal(persisted.priceSats, "20000");
   assert.equal(persisted.decimals, WORK_DECIMALS);
   assert.equal(persisted.unitScale, WORK_UNIT_SCALE_TEXT);
+  const boundV8Item = bindLifecycleItem({
+    listing: v8CanonicalListing,
+    sourceAuthorization: v8Authorization,
+  });
+  assert.equal(boundV8Item.amountAtoms, undefined);
+  assert.equal(
+    boundV8Item.amountSubatoms,
+    v8FrozenTerms.unitAmountSubatoms,
+  );
+  assert.equal(
+    boundV8Item.amount,
+    formatWorkSubatoms(v8FrozenTerms.unitAmountSubatoms),
+  );
+  assert.equal(
+    boundV8Item.amountStorageModel,
+    WORK_SUBATOM_PROJECTION_MODEL,
+  );
+  const persistedV8 = persistProjection(boundV8Item, { strict: true });
+  assert.equal(persistedV8.amountAtoms, undefined);
+  assert.equal(
+    persistedV8.amountSubatoms,
+    v8FrozenTerms.unitAmountSubatoms,
+  );
+  assert.equal(persistedV8.decimals, WORK_SUBATOM_DECIMALS);
+  assert.equal(persistedV8.unitScale, WORK_SUBATOM_UNIT_SCALE_TEXT);
 
   const signedAuthorization = {
     ...saleAuthorization,
