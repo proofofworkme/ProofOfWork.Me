@@ -1770,7 +1770,7 @@ const WORK_TOKEN_DEFINITION: PowTokenDefinition = {
   precisionModel: WORK_TOKEN_PRECISION_MODEL,
   unitScale: WORK_TOKEN_UNIT_SCALE,
 };
-const WORK_ATTACHMENT_ALLOWED_SENDERS = new Set(
+const WORK_ATTACHMENT_LEGACY_ALLOWED_SENDERS = new Set(
   [
     "1447TsdXtFSnVrWawSamyyQKPDNW4ALtBT",
     "1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x",
@@ -6544,10 +6544,27 @@ function protocolPaymentOutputs(
   });
 }
 
-function canAttachWorkToMessages(senderAddress: string, targetNetwork: BitcoinNetwork) {
+function canAttachWorkToMessages(
+  senderAddress: string,
+  targetNetwork: BitcoinNetwork,
+  confirmedSpendableWorkHolder: boolean,
+) {
   return (
     targetNetwork === "livenet" &&
-    WORK_ATTACHMENT_ALLOWED_SENDERS.has(senderAddress.trim().toLowerCase())
+    Boolean(senderAddress.trim()) &&
+    confirmedSpendableWorkHolder
+  );
+}
+
+function canUseLegacyWorkAttachmentSender(
+  senderAddress: string,
+  targetNetwork: BitcoinNetwork,
+) {
+  return (
+    targetNetwork === "livenet" &&
+    WORK_ATTACHMENT_LEGACY_ALLOWED_SENDERS.has(
+      senderAddress.trim().toLowerCase(),
+    )
   );
 }
 
@@ -6565,7 +6582,7 @@ function canAttachWorkToBond(
     );
   }
 
-  return canAttachWorkToMessages(senderAddress, targetNetwork);
+  return canUseLegacyWorkAttachmentSender(senderAddress, targetNetwork);
 }
 
 function attachedWorkCreditsFromVout(
@@ -20179,6 +20196,7 @@ export default function App() {
   const messageWorkAttachmentAllowed = canAttachWorkToMessages(
     address,
     network,
+    workAttachmentSpendableAtoms > 0n,
   );
   const mailWorkAttachmentRequested =
     messageWorkAttachmentAllowed && messageWorkAmountAtoms > 0n;
@@ -20313,7 +20331,12 @@ export default function App() {
       amountSats > 0 &&
       Number.isFinite(feeRate) &&
       feeRate >= 0 &&
-      (subject.trim() || memo.trim() || attachment),
+      (
+        subject.trim() ||
+        memo.trim() ||
+        attachment ||
+        mailWorkAttachmentRequested
+      ),
     ) &&
     recipientResolution.recipients.length > 0 &&
     totalResolvedRecipients <= MAX_RECIPIENTS &&
@@ -21149,6 +21172,47 @@ export default function App() {
           walletReservedTokenBalance -
           Number(walletPendingTokenBalance),
       );
+  useEffect(() => {
+    if (!walletTransferToken || !walletTransferUsesExactUnits) {
+      return;
+    }
+
+    const parsedAmount = tokenAmountInput(
+      walletTransferToken,
+      tokenTransferAmount,
+    );
+    const parsedUnits = parsedAmount
+      ? tokenRecordAmountAtoms(
+          walletTransferToken,
+          parsedAmount.amount,
+          parsedAmount.amountAtoms,
+          parsedAmount.amountSubatoms,
+        )
+      : null;
+    if (
+      parsedUnits !== null &&
+      parsedUnits > 0n &&
+      parsedUnits <= walletSpendableTokenAtoms
+    ) {
+      return;
+    }
+
+    const nextAmount =
+      walletSpendableTokenAtoms > 0n
+        ? walletTransferIsWork
+          ? workDecimalFromAtoms(walletSpendableTokenAtoms)
+          : walletSpendableTokenAtoms.toString()
+        : "0";
+    if (tokenTransferAmount !== nextAmount) {
+      setTokenTransferAmount(nextAmount);
+    }
+  }, [
+    tokenTransferAmount,
+    walletSpendableTokenAtoms,
+    walletTransferIsWork,
+    walletTransferToken,
+    walletTransferUsesExactUnits,
+  ]);
   const connectedAccountStats = useMemo<AppHeaderAccountStat[]>(() => {
     if (!address) {
       return [];
@@ -21585,6 +21649,58 @@ export default function App() {
         : 0,
     [tokenTransferPayload],
   );
+  const tokenTransferAmountUnits =
+    walletTransferToken && tokenTransferInput
+      ? tokenRecordAmountAtoms(
+          walletTransferToken,
+          tokenTransferInput.amount,
+          tokenTransferInput.amountAtoms,
+          tokenTransferInput.amountSubatoms,
+        )
+      : null;
+  const tokenTransferRecipientAddress = tokenTransferRecipient.trim();
+  const tokenTransferRecipientValid = tokenTransferRecipientAddress
+    ? isValidBitcoinAddress(tokenTransferRecipientAddress, "livenet")
+    : false;
+  const tokenTransferWorkPaused =
+    walletTransferIsWork && workWriteModeForQuote(workFloorQuote) === "paused";
+  const tokenTransferWorkPauseReason = tokenTransferWorkPaused
+    ? workWritePauseReason(workFloorQuote)
+    : "";
+  const tokenTransferAvailableLabel = walletTransferToken
+    ? `${
+        walletTransferIsWork
+          ? formatWorkAmount(walletSpendableTokenAtoms)
+          : walletSpendableTokenAtoms.toString()
+      } ${walletTransferToken.ticker}`
+    : "0 CREDIT";
+  const tokenTransferDisabledReason = !address
+    ? "Connect UniSat first."
+    : network !== "livenet"
+      ? "Switch to Mainnet before transferring credit."
+      : !walletTransferToken
+        ? "Select a credit balance to transfer."
+        : !walletTransferToken.registryAddress
+          ? "The selected credit registry is unavailable."
+          : !tokenTransferRecipientAddress
+            ? "Enter a recipient address."
+            : !tokenTransferRecipientValid
+              ? "Enter a valid mainnet recipient address."
+              : !tokenTransferInput ||
+                  tokenTransferAmountUnits === null ||
+                  tokenTransferAmountUnits <= 0n
+                ? "Enter a positive transfer amount."
+                : tokenTransferAmountUnits > walletSpendableTokenAtoms
+                  ? `Amount exceeds ${tokenTransferAvailableLabel} available after reservations and pending outgoing transfers.`
+                  : tokenTransferWorkPaused
+                    ? `WORK transfers are paused${tokenTransferWorkPauseReason ? ` (${tokenTransferWorkPauseReason})` : ""}.`
+                    : !tokenTransferPayload
+                      ? "The transfer payload could not be encoded under the current protocol."
+                      : tokenTransferBytes > MAX_DATA_CARRIER_BYTES
+                        ? "Transfer OP_RETURN data is over 100 KB."
+                        : busy
+                          ? "Another wallet action is already in progress."
+                          : "";
   const tokenListInput = walletTransferToken
     ? tokenAmountInput(walletTransferToken, tokenListAmount)
     : null;
@@ -21705,20 +21821,11 @@ export default function App() {
       walletTransferToken &&
       walletTransferToken.registryAddress &&
       tokenTransferPayload &&
-      isValidBitcoinAddress(tokenTransferRecipient.trim(), "livenet") &&
+      tokenTransferRecipientValid &&
       tokenTransferInput &&
-      tokenRecordAmountAtoms(
-        walletTransferToken,
-        tokenTransferInput.amount,
-        tokenTransferInput.amountAtoms,
-        tokenTransferInput.amountSubatoms,
-      ) !== null &&
-      tokenRecordAmountAtoms(
-        walletTransferToken,
-        tokenTransferInput.amount,
-        tokenTransferInput.amountAtoms,
-        tokenTransferInput.amountSubatoms,
-      )! <= walletSpendableTokenAtoms,
+      tokenTransferAmountUnits !== null &&
+      tokenTransferAmountUnits > 0n &&
+      tokenTransferAmountUnits <= walletSpendableTokenAtoms,
     ) &&
     tokenTransferBytes <= MAX_DATA_CARRIER_BYTES &&
     !busy;
@@ -27298,10 +27405,16 @@ export default function App() {
         | undefined;
 
       if (workAttachmentAtoms > 0n) {
-        if (!canAttachWorkToMessages(address, network)) {
+        if (
+          !canAttachWorkToMessages(
+            address,
+            network,
+            workAttachmentSpendableAtoms > 0n,
+          )
+        ) {
           setStatus({
             tone: "bad",
-            text: "WORK message attachments are enabled only for approved mainnet senders.",
+            text: "WORK message attachments require a verified spendable WORK balance on mainnet.",
           });
           return;
         }
@@ -27667,7 +27780,7 @@ export default function App() {
             text:
               activeBondConfig.folder === "inception"
                 ? "A current confirmed WORK balance is required to attach WORK to an Inception Bond."
-                : "WORK bond attachments are enabled only for approved mainnet senders.",
+                : "WORK bond attachments are enabled only for approved Infinity Bond senders.",
           });
           return;
         }
@@ -30579,6 +30692,7 @@ export default function App() {
         transferAmount={tokenTransferAmount}
         transferBalance={walletSpendableTokenBalance}
         transferBytes={tokenTransferBytes}
+        transferDisabledReason={tokenTransferDisabledReason}
         transferFundingReadiness={tokenTransferFundingReadiness}
         transferRecipient={tokenTransferRecipient}
         transferToken={walletTransferToken}
@@ -30656,6 +30770,7 @@ export default function App() {
         transferAmount={tokenTransferAmount}
         transferBalance={walletSpendableTokenBalance}
         transferBytes={tokenTransferBytes}
+        transferDisabledReason={tokenTransferDisabledReason}
         transferRecipient={tokenTransferRecipient}
         transferToken={walletTransferToken}
         transferring={tokenAction === "transfer"}
@@ -31530,6 +31645,7 @@ export default function App() {
             transferAmount={tokenTransferAmount}
             transferBalance={walletSpendableTokenBalance}
             transferBytes={tokenTransferBytes}
+            transferDisabledReason={tokenTransferDisabledReason}
             transferFundingReadiness={tokenTransferFundingReadiness}
             transferRecipient={tokenTransferRecipient}
             transferToken={walletTransferToken}
@@ -31683,6 +31799,7 @@ export default function App() {
             transferAmount={tokenTransferAmount}
             transferBalance={walletSpendableTokenBalance}
             transferBytes={tokenTransferBytes}
+            transferDisabledReason={tokenTransferDisabledReason}
             transferRecipient={tokenTransferRecipient}
             transferToken={walletTransferToken}
             transferring={tokenAction === "transfer"}
@@ -33766,6 +33883,7 @@ type TokenWalletAppProps = {
   transferAmount: string;
   transferBalance: ExactIntegerValue;
   transferBytes: number;
+  transferDisabledReason?: string;
   transferRecipient: string;
   transferFundingReadiness?: TokenTransferFundingReadiness;
   transferToken: PowTokenDefinition | undefined;
@@ -33839,6 +33957,7 @@ type InfinityAppProps = {
   transferAmount: string;
   transferBalance: ExactIntegerValue;
   transferBytes: number;
+  transferDisabledReason?: string;
   transferRecipient: string;
   transferToken: PowTokenDefinition | undefined;
   transferring: boolean;
@@ -33908,6 +34027,7 @@ function InfinityApp({
   transferAmount,
   transferBalance,
   transferBytes,
+  transferDisabledReason,
   transferRecipient,
   transferToken,
   transferring,
@@ -34469,6 +34589,7 @@ function InfinityApp({
           transferAmount={transferAmount}
           transferBalance={transferBalance}
           transferBytes={transferBytes}
+          transferDisabledReason={transferDisabledReason}
           transferRecipient={transferRecipient}
           transferToken={transferToken}
           transferring={transferring}
@@ -34600,6 +34721,7 @@ function TokenWalletApp({
   transferAmount,
   transferBalance,
   transferBytes,
+  transferDisabledReason,
   transferFundingReadiness,
   transferRecipient,
   transferToken,
@@ -34678,6 +34800,7 @@ function TokenWalletApp({
         transferAmount={transferAmount}
         transferBalance={transferBalance}
         transferBytes={transferBytes}
+        transferDisabledReason={transferDisabledReason}
         transferFundingReadiness={transferFundingReadiness}
         transferRecipient={transferRecipient}
         transferToken={transferToken}
@@ -34838,6 +34961,7 @@ function TokenWalletWorkspace({
   transferAmount,
   transferBalance,
   transferBytes,
+  transferDisabledReason = "",
   transferFundingReadiness,
   transferRecipient,
   transferToken,
@@ -34879,6 +35003,7 @@ function TokenWalletWorkspace({
   | "transferAmount"
   | "transferBalance"
   | "transferBytes"
+  | "transferDisabledReason"
   | "transferRecipient"
   | "transferToken"
   | "transferring"
@@ -35681,6 +35806,9 @@ function TokenWalletWorkspace({
                 </span>
               </span>
             </button>
+            {!canTransfer && transferDisabledReason ? (
+              <p className="field-note bad">{transferDisabledReason}</p>
+            ) : null}
           </form>
           {transferFundingPrep}
         </section>

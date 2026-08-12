@@ -10415,9 +10415,7 @@ async function assertWorkMarketplaceBroadcastAllowed(
   }
   if (
     workAmoV8AdmissionMetadata?.legacyWriteEmbargo === true &&
-    (newListingAttempt ||
-      legacyTransferAttempt ||
-      legacyMarketplaceAttempt)
+    (legacyTransferAttempt || legacyMarketplaceAttempt)
   ) {
     const error = new Error(
       "The exact AMO V8 declaration is confirmed; no pre-V8 WORK listing, settlement, delist, or legacy send/send2 transfer can enter the activation boundary.",
@@ -52143,6 +52141,53 @@ async function mailPayloadWithRecentOverlay(payload, address, network) {
   return mergeMailPayloads(payload, recentPayload);
 }
 
+function pendingOnlyMailPayload(payload) {
+  const inboxMessages = Array.isArray(payload?.inboxMessages)
+    ? payload.inboxMessages.filter((message) => !message?.confirmed)
+    : [];
+  const sentMessages = Array.isArray(payload?.sentMessages)
+    ? payload.sentMessages.filter(
+        (message) => message?.status !== "confirmed",
+      )
+    : [];
+  if (inboxMessages.length === 0 && sentMessages.length === 0) {
+    return null;
+  }
+  return {
+    ...payload,
+    inboxMessages,
+    sentMessages,
+    source: payload.source
+      ? `${payload.source}:pending-only`
+      : "recent-mail:pending-only",
+    stats: mailStats(inboxMessages, sentMessages, {
+      ...(payload.stats ?? {}),
+      pendingOnlyOverlay: true,
+    }),
+  };
+}
+
+async function mailPayloadWithPendingRecentOverlay(payload, address, network) {
+  if (!payload || network !== "livenet") {
+    return payload;
+  }
+
+  const recentPayload = await recentNodeMailPayload(address, network).catch(
+    (error) => {
+      console.error(
+        `Pending indexed mail overlay failed for ${address}: ${errorSummary(error)}`,
+      );
+      return null;
+    },
+  );
+  const pendingPayload = pendingOnlyMailPayload(recentPayload);
+  if (!pendingPayload || !mailPayloadHasMessages(pendingPayload)) {
+    return payload;
+  }
+
+  return mergeMailPayloads(payload, pendingPayload);
+}
+
 function mailEventHistoryItemNeedsActorHydration(item, address, network) {
   const txid = String(item?.txid ?? "").trim().toLowerCase();
   if (!/^[0-9a-f]{64}$/u.test(txid)) {
@@ -52426,8 +52471,13 @@ async function mailPayload(address, network, options = {}) {
           address,
           network,
         );
-        const reconciled = await reconcileMailPayloadStatuses(
+        const pendingOverlayPayload = await mailPayloadWithPendingRecentOverlay(
           eventOverlayPayload,
+          address,
+          network,
+        );
+        const reconciled = await reconcileMailPayloadStatuses(
+          pendingOverlayPayload,
           network,
         );
         return repairPendingMailWorkAttachments(

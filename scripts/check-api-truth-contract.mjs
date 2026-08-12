@@ -1571,6 +1571,18 @@ expect(
       ) &&
     /volatileOverlayAbsent/u.test(workQ16PendingProjection),
 );
+expect(
+  "indexed address-mail reads merge only recent pending mail from the node overlay",
+  /function pendingOnlyMailPayload[\s\S]*inboxMessages\.filter\(\(message\) => !message\?\.confirmed\)[\s\S]*sentMessages\.filter\([\s\S]*message\?\.status !== "confirmed"[\s\S]*pendingOnlyOverlay/u.test(
+    server,
+  ) &&
+    /async function mailPayloadWithPendingRecentOverlay[\s\S]*recentNodeMailPayload[\s\S]*pendingOnlyMailPayload[\s\S]*mergeMailPayloads/u.test(
+      server,
+    ) &&
+    /const indexedOnlyPayload = \(\) =>[\s\S]*mailPayloadWithIndexedEventOverlay[\s\S]*mailPayloadWithPendingRecentOverlay[\s\S]*reconcileMailPayloadStatuses[\s\S]*repairPendingMailWorkAttachments/u.test(
+      server,
+    ),
+);
 for (const [surface, source] of [
   ["backfill pending witness", backfillQ16PendingWitness],
   ["worker pending audit", workerQ16PendingAudit],

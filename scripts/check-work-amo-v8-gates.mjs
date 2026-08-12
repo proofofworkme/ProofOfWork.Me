@@ -4,8 +4,18 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
 import {
+  WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS,
   workAmoV5CanonicalPayloadCommitment,
 } from "../server/work-amo-v5.mjs";
+import {
+  WORK_AMO_V8_AUTH_VERSION,
+  WORK_AMO_V8_MODELS,
+  deriveWorkAmoV8FrozenTerms,
+  workAmoV8BroadcastDecision,
+} from "../server/work-amo-v8.mjs";
+import {
+  WORK_TOKEN_ID,
+} from "../server/work-units.mjs";
 
 const apiSource = readFileSync("server/proof-api.mjs", "utf8");
 const backfillSource = readFileSync(
@@ -131,19 +141,27 @@ function isolatedFunctions(
   }
 }
 
-function broadcastAdmissionFixture() {
-  const workTokenId = "work-token";
-  const registryAddress = "work-registry";
+function broadcastAdmissionFixture({
+  actions = [],
+  metadataOverrides = {},
+} = {}) {
+  const workTokenId = WORK_TOKEN_ID;
+  const registryAddress = WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS;
   const readyMetadata = Object.freeze({
     activation: {
+      activationHeight: 101,
       reached: true,
       tipVerified: true,
     },
     declarationDiscoveryReady: true,
     evidenceComplete: true,
     legacyWriteEmbargo: false,
+    listingWritesEnabled: true,
     protocolReady: true,
+    protocolWritesEnabled: true,
+    tipHeight: 200,
     writeAdmission: true,
+    ...metadataOverrides,
   });
   const { assertWorkMarketplaceBroadcastAllowed } = isolatedFunctions(
     apiSource,
@@ -157,8 +175,10 @@ function broadcastAdmissionFixture() {
       TOKEN_LIST_ACTION: "list5",
       TOKEN_MIN_MUTATION_PRICE_SATS: 546,
       TOKEN_PROTOCOL_PREFIX: "pwt1:",
+      TOKEN_SALE_AUTH_WORK_AMO_V8_VERSION: WORK_AMO_V8_AUTH_VERSION,
       TOKEN_SEND_SUBATOMS_ACTION: "send3",
       PROTOCOL_PREFIX: "pwm1:",
+      WORK_AMO_V8_ACTIVATION_HEIGHT: 101,
       WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS: registryAddress,
       WORK_AMO_V6_DECLARATION_PINS_CONFIGURED: true,
       WORK_AMO_V8_DECLARATION_PINS_CONFIGURED: true,
@@ -231,7 +251,8 @@ function broadcastAdmissionFixture() {
           ...output,
           protocolVout,
         })),
-      signedWorkMarketplaceWriteActions: async () => [],
+      signedWorkMarketplaceWriteActions: async () => actions,
+      workAmoV8BroadcastDecision,
       workAmoV8Metadata: async () => readyMetadata,
     },
   );
@@ -261,6 +282,56 @@ function broadcastAdmissionFixture() {
   return {
     assertWorkMarketplaceBroadcastAllowed,
     transaction,
+  };
+}
+
+function v8SaleAuthorizationFixture() {
+  return {
+    ...WORK_AMO_V8_MODELS,
+    anchorScriptPubKey: `76a914${"2".repeat(40)}88ac`,
+    anchorSigHashType: 0x83,
+    anchorType: "sale-ticket-v1",
+    anchorValueSats: 546,
+    anchorVout: 2,
+    buyerAddress: "",
+    expiresAt: "",
+    network: "livenet",
+    nonce: "v8-gate-regression",
+    registryAddress: WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS,
+    sellerAddress:
+      "bc1p0uxp0axptr8rg9dndgtlwxn00j4hq8m88kg80tqd0t6045putwhq5ca7ed",
+    sellerPublicKey: `02${"1".repeat(64)}`,
+    ticker: "WORK",
+    tokenId: WORK_TOKEN_ID,
+    unitFaceProofs: 25_000,
+    version: WORK_AMO_V8_AUTH_VERSION,
+  };
+}
+
+function v8MarketplaceActionFixture(action, overrides = {}) {
+  const saleAuthorization = v8SaleAuthorizationFixture();
+  return {
+    action,
+    actionPosition: {
+      blockHash: "4".repeat(64),
+      blockHeight: 102,
+      blockTransactionIndex: 0,
+      protocolVout: 0,
+      recordOrdinal: 0,
+    },
+    authVersion: WORK_AMO_V8_AUTH_VERSION,
+    canonicalParsed: true,
+    governed: true,
+    listingId: action === "list5" ? "" : "3".repeat(64),
+    paysWorkRegistry: true,
+    registryAddress: WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS,
+    saleAuthorization,
+    signedShapeValid: true,
+    staticShapeValid: true,
+    ticker: "WORK",
+    tokenId: WORK_TOKEN_ID,
+    tokenProtocolMessageCount: 1,
+    ...overrides,
   };
 }
 
@@ -362,6 +433,67 @@ function broadcastAdmissionFixture() {
       error?.details?.code ===
       "WORK_AMO_V8_TRANSFER_SHAPE_INVALID",
     "aggregate WORK transfers permit only an earlier PWM envelope",
+  );
+}
+
+{
+  const listAction = v8MarketplaceActionFixture("list5", {
+    actionPosition: {
+      blockHash: "3".repeat(64),
+      blockHeight: 101,
+      blockTransactionIndex: 0,
+      protocolVout: 2,
+      recordOrdinal: 0,
+    },
+  });
+  const { assertWorkMarketplaceBroadcastAllowed, transaction } =
+    broadcastAdmissionFixture({
+      actions: [listAction],
+      metadataOverrides: { legacyWriteEmbargo: true },
+    });
+  await assert.doesNotReject(
+    assertWorkMarketplaceBroadcastAllowed(
+      transaction(546, []),
+      "livenet",
+    ),
+    "V8 declaration embargo must not reject a valid V8 listing as legacy",
+  );
+
+  const frozen = deriveWorkAmoV8FrozenTerms(
+    listAction.saleAuthorization,
+    {
+      activationHeight: 101,
+      listingBondContributionQ8: "54600000000",
+      listingPosition: listAction.actionPosition,
+      networkValueBeforeQ8: "7000000000000000",
+      spendableAmountSubatoms: "210000000000000000000000",
+    },
+  );
+  assert.equal(frozen.valid, true);
+  const sealAction = v8MarketplaceActionFixture("seal5", {
+    actionPosition: {
+      blockHash: "5".repeat(64),
+      blockHeight: 102,
+      blockTransactionIndex: 0,
+      protocolVout: 2,
+      recordOrdinal: 0,
+    },
+    listingAuthorization: listAction.saleAuthorization,
+    listingFrozenTerms: frozen.frozenTerms,
+    listingId: "3".repeat(64),
+    listingPosition: listAction.actionPosition,
+    referencesListingFrozenTerms: true,
+  });
+  const sealFixture = broadcastAdmissionFixture({
+    actions: [sealAction],
+    metadataOverrides: { legacyWriteEmbargo: true },
+  });
+  await assert.doesNotReject(
+    sealFixture.assertWorkMarketplaceBroadcastAllowed(
+      sealFixture.transaction(546, []),
+      "livenet",
+    ),
+    "V8 declaration embargo must not reject a valid V8 seal as legacy",
   );
 }
 

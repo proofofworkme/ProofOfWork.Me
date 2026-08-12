@@ -682,19 +682,27 @@ expect(
     /Last verified balances remain visible\./.test(app),
 );
 expect(
-  "mail WORK attachments use allowlisted canonical senders",
-  /WORK_ATTACHMENT_ALLOWED_SENDERS\s*=\s*new Set/.test(app) &&
+  "legacy WORK attachment allowlist is scoped outside normal Mail",
+  /WORK_ATTACHMENT_LEGACY_ALLOWED_SENDERS\s*=\s*new Set/.test(app) &&
     /1447TsdXtFSnVrWawSamyyQKPDNW4ALtBT/.test(app) &&
     /1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x/.test(app) &&
     /1F1p9UEHuH5KTFR7Zsx93Khdrqhj6t5nFv/.test(app) &&
-    /\.map\(\(senderAddress\) => senderAddress\.toLowerCase\(\)\)/.test(app),
+    /\.map\(\(senderAddress\) => senderAddress\.toLowerCase\(\)\)/.test(app) &&
+    /function canUseLegacyWorkAttachmentSender[\s\S]*WORK_ATTACHMENT_LEGACY_ALLOWED_SENDERS/.test(
+      app,
+    ),
 );
 expect(
-  "Inception WORK attachments use verified Q16 holders while Mail and Infinity remain allowlisted",
-  /function canAttachWorkToBond[\s\S]*bondConfig\.folder === "inception"[\s\S]*targetNetwork === "livenet"[\s\S]*Boolean\(senderAddress\.trim\(\)\)[\s\S]*confirmedWorkHolder[\s\S]*return canAttachWorkToMessages\(senderAddress, targetNetwork\)/.test(
+  "Mail and Inception WORK attachments use verified Q16 holders while Infinity remains allowlisted",
+  /function canAttachWorkToMessages[\s\S]*confirmedSpendableWorkHolder/.test(
     app,
   ) &&
-    /const messageWorkAttachmentAllowed = canAttachWorkToMessages\(/.test(app) &&
+    /const messageWorkAttachmentAllowed = canAttachWorkToMessages\([\s\S]*workAttachmentSpendableAtoms > 0n/.test(
+      app,
+    ) &&
+    /function canAttachWorkToBond[\s\S]*bondConfig\.folder === "inception"[\s\S]*targetNetwork === "livenet"[\s\S]*Boolean\(senderAddress\.trim\(\)\)[\s\S]*confirmedWorkHolder[\s\S]*return canUseLegacyWorkAttachmentSender\(senderAddress, targetNetwork\)/.test(
+    app,
+  ) &&
     /const inceptionWorkHolderEligible =[\s\S]*bondWorkBalanceHasCleanLane[\s\S]*bondWorkBalanceLoaded[\s\S]*!bondWorkBalanceError[\s\S]*workAtomsFromIntegerString\([\s\S]*workAttachmentPreviewSpendability\?\.confirmedBalanceSubatoms[\s\S]*\?\? 0n\) > 0n/.test(
       app,
     ) &&
@@ -702,7 +710,13 @@ expect(
     /const bondWorkAttachmentBalanceOk =[\s\S]*bondWorkBalanceHasCleanLane[\s\S]*bondWorkBalanceLoaded[\s\S]*!bondWorkBalanceError[\s\S]*bondWorkAmountAtoms <= workAttachmentSpendableAtoms/.test(
       app,
     ) &&
-    /Inception Bonds instead expose WORK attachment to every connected mainnet address whose authoritative wallet-scoped state proves a positive confirmed WORK balance/.test(
+    /WORK attachments to normal messages are exposed to every connected mainnet sender whose authoritative wallet-scoped state proves positive spendable WORK/.test(
+      contents.get("README.md"),
+    ) &&
+    /Infinity Bonds remain a V1 allowlisted sender feature/.test(
+      contents.get("README.md"),
+    ) &&
+    /Inception Bonds expose WORK attachment to every connected mainnet address whose authoritative wallet-scoped state proves a positive confirmed WORK balance/.test(
       contents.get("README.md"),
     ),
 );

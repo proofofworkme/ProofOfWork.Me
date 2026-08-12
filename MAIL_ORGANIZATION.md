@@ -38,7 +38,7 @@ Mail organization features that are already implemented in the full app:
 - CC compose support for visible additional recipients.
 - Multi-recipient compose with removable recipient chips.
 - Reply All for multi-recipient mail.
-- Approved mainnet senders can attach canonical WORK credit to a message. The message remains normal mail, while the same tx also carries the WORK registry mutation payment and era-valid atomic WORK payloads for the mail recipients: historical Q8 `pwt1:send2`, then Q16 `pwt1:send3` only after the approved V8 precision declaration confirms in block `D` and activates at `D+1`. The V7 proposal never activated and its empty pins cannot authorize `send3`. A multi-recipient attachment uses one exact `546 * recipientCount` WORK-registry output after the `pwm1:` mail envelope and before every same-era WORK transfer record; replay attributes exactly 546 proofs to each transfer while claiming the physical output once. Raw legacy attachments retain their original scale.
+- Connected mainnet senders with authoritative spendable WORK can attach canonical WORK credit to a message. The message remains normal mail, while the same tx also carries the WORK registry mutation payment and era-valid atomic WORK payloads for the mail recipients: historical Q8 `pwt1:send2`, then Q16 `pwt1:send3` only after the approved V8 precision declaration confirms in block `D` and activates at `D+1`. The V7 proposal never activated and its empty pins cannot authorize `send3`. A multi-recipient attachment uses one exact `546 * recipientCount` WORK-registry output after the `pwm1:` mail envelope and before every same-era WORK transfer record; replay attributes exactly 546 proofs to each transfer while claiming the physical output once. Raw legacy attachments retain their original scale.
 - Files view for confirmed attachments.
 - Desktop search for confirmed public attachments by address or confirmed ProofOfWork ID.
 - Browser view for HTML message bodies or verified `text/html` attachments by txid, rendered in a sandboxed iframe.
@@ -335,7 +335,7 @@ WORK attachment admission:
 - Mail without a WORK attachment remains ordinary mail. A paused or unavailable
   governed WORK write lane must not prevent a valid proofs-only message from
   being prepared.
-- For an approved mainnet sender, the composer exposes the WORK field only from
+- For a connected mainnet sender, the composer exposes the WORK field only from
   authoritative wallet-scoped credit state. Entering Compose or Inbox with a
   positive spendable WORK balance must hydrate the canonical WORK holder and
   reservation state through the fresh wallet-scoped token read; a broad token
