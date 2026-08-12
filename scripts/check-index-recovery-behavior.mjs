@@ -6487,6 +6487,7 @@ check("fresh wallet token reads never fall back behind canonical coverage", asyn
       normalizeTokenScope: (value) => value,
       proofIndexReadFeatureEnabled: () => true,
       proofIndexWalletScopedTokenPayloadForRead: async () => null,
+      tokenPayloadWithWalletActiveListings: async (payload) => payload,
       tokenPayloadForRead: async () => {
         fallbackReads += 1;
         return {};
@@ -6521,6 +6522,7 @@ check("fresh wallet token reads never fall back behind canonical coverage", asyn
         holders: [],
         tokens: [{ tokenId: "other-token-id" }],
       }),
+      tokenPayloadWithWalletActiveListings: async (payload) => payload,
     },
   );
   const current = await currentWalletScopedTokenPayload(
@@ -6530,6 +6532,132 @@ check("fresh wallet token reads never fall back behind canonical coverage", asyn
     { requireCurrent: true },
   );
   assert.equal(current.authoritativeWallet, true);
+});
+
+check("wallet WORK overlay recovers active canonical V8 listings and drops matching invalid attempts", async () => {
+  const listingId = "07c9ca719adf7a7e94ff17c917e599e872ae1c0348f282219907c060a72b8043";
+  const sellerAddress = "17W7JZ9KjjGUwdAyXeGxhzYe2vGe8YTRzA";
+  const workTokenId = "work-token-id";
+  let readParams = null;
+  const indexedWalletActiveListings = isolatedFunction(
+    API_PATH,
+    "indexedWalletActiveListings",
+    {
+      WALLET_SCOPED_RECOVERY_WAIT_MS: 1,
+      WORK_TOKEN_ID: workTokenId,
+      compareTokenHistoryPageItems: (left, right) =>
+        String(left.listingId).localeCompare(String(right.listingId)),
+      errorSummary: (error) => String(error?.message ?? error),
+      mergeTokenListingRecord: (_current, next) => next,
+      normalizeTokenScope: (value) =>
+        String(value ?? "").toUpperCase() === "WORK"
+          ? workTokenId
+          : String(value ?? "").trim().toLowerCase(),
+      payloadWithFallbackAfterMs: async (promise) => promise,
+      proofIndexPayloadCoversConfirmedTip: async () => true,
+      proofIndexReadFeatureEnabled: () => true,
+      proofIndexTokenMarketHistoryOverlayPayload: async (
+        network,
+        scope,
+        kind,
+        params,
+      ) => {
+        readParams = { kind, network, params, scope };
+        return {
+          indexedThroughBlock: 962166,
+          items: [
+            {
+              amountSubatoms: "752009741",
+              confirmed: true,
+              listingId,
+              sellerAddress,
+              ticker: "WORK",
+              tokenId: workTokenId,
+            },
+            {
+              confirmed: true,
+              listingId: "1".repeat(64),
+              sellerAddress: "other",
+              ticker: "WORK",
+              tokenId: workTokenId,
+            },
+          ],
+        };
+      },
+      tokenListingItemKey: (item) => `${item.tokenId}:${item.listingId}`,
+    },
+  );
+  const listings = await indexedWalletActiveListings(
+    "livenet",
+    workTokenId,
+    [sellerAddress],
+  );
+  assert.equal(readParams.network, "livenet");
+  assert.equal(readParams.scope, workTokenId);
+  assert.equal(readParams.kind, "listings");
+  assert.equal(readParams.params.get("address"), sellerAddress);
+  assert.equal(readParams.params.get("status"), "confirmed");
+  assert.equal(listings.length, 1);
+  assert.equal(listings[0].listingId, listingId);
+  assert.equal(listings[0].amountSubatoms, "752009741");
+
+  const tokenActiveListingEventKey = isolatedFunction(
+    API_PATH,
+    "tokenActiveListingEventKey",
+    {
+      WORK_TOKEN_ID: workTokenId,
+      normalizeTokenScope: (value) =>
+        String(value ?? "").toUpperCase() === "WORK"
+          ? workTokenId
+          : String(value ?? "").trim().toLowerCase(),
+    },
+  );
+  const invalidEventLooksLikeListingAttempt = isolatedFunction(
+    API_PATH,
+    "invalidEventLooksLikeListingAttempt",
+  );
+  const tokenPayloadWithoutInvalidEventsForActiveListings = isolatedFunction(
+    API_PATH,
+    "tokenPayloadWithoutInvalidEventsForActiveListings",
+    { invalidEventLooksLikeListingAttempt, tokenActiveListingEventKey },
+  );
+  const payload = tokenPayloadWithoutInvalidEventsForActiveListings({
+    invalidEvents: [
+      {
+        reasonCode: "work-market-v2-version-required",
+        ticker: "WORK",
+        tokenId: workTokenId,
+        txid: listingId,
+      },
+      {
+        reasonCode: "unrelated",
+        ticker: "WORK",
+        tokenId: workTokenId,
+        txid: listingId,
+      },
+      {
+        reasonCode: "unrelated",
+        ticker: "WORK",
+        tokenId: workTokenId,
+        txid: "2".repeat(64),
+      },
+    ],
+    listings: [
+      {
+        confirmed: true,
+        listingId,
+        ticker: "WORK",
+        tokenId: workTokenId,
+      },
+    ],
+    stats: { invalidEvents: 3 },
+  });
+  assert.equal(payload.invalidEvents.length, 2);
+  assert.deepEqual(
+    payload.invalidEvents.map((event) => event.txid),
+    [listingId, "2".repeat(64)],
+  );
+  assert.equal(payload.stats.invalidEvents, 2);
 });
 
 check("authoritative wallet projections reject truncated pending or listing sets", () => {

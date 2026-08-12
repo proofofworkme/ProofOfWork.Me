@@ -8205,7 +8205,6 @@ function workAmoV8FrozenProjection(listing: PowTokenListing) {
     priceSats.toString() !== expected.unitPriceSats ||
     minimumPriceSats.toString() !== expected.unitMinimumPriceSats ||
     listingAmountSubatoms !== amountSubatoms ||
-    String(listing.amountAtoms ?? "") !== "" ||
     !Number.isSafeInteger(listingPriceSats) ||
     BigInt(listingPriceSats) !== priceSats
   ) {
@@ -9066,18 +9065,22 @@ function normalizeTokenListingRecord<
       saleAuthorization.unitFaceProofs ??
       estimate?.unitFaceProofs,
   );
+  const workNativeQ16Listing =
+    saleAuthorization.version === TOKEN_SALE_AUTH_WORK_AMO_SUBATOM_VERSION ||
+    frozenTerms?.version === TOKEN_SALE_AUTH_WORK_AMO_SUBATOM_VERSION;
   const workAmountSubatoms =
     tokenId === WORK_TOKEN_ID || ticker === WORK_TOKEN_TICKER
       ? workRecordAtoms(
           listing.amount || saleAuthorization.amount || 0,
-          frozenTerms?.unitAmountAtoms ??
-            listing.amountAtoms ??
-            saleAuthorization.amountAtoms,
+          workNativeQ16Listing
+            ? undefined
+            : frozenTerms?.unitAmountAtoms ??
+                listing.amountAtoms ??
+                saleAuthorization.amountAtoms,
           frozenTerms?.unitAmountSubatoms ??
             listing.amountSubatoms ??
             saleAuthorization.amountSubatoms,
-          saleAuthorization.version ===
-          TOKEN_SALE_AUTH_WORK_AMO_SUBATOM_VERSION
+          workNativeQ16Listing
             ? "native-q16"
             : isWorkMarketSaleAuthorizationVersion(
                   saleAuthorization.version,
@@ -9104,6 +9107,10 @@ function normalizeTokenListingRecord<
       workAmountSubatoms === null
         ? undefined
         : workAmountSubatoms.toString(),
+    amountAtoms:
+      workAmountSubatoms !== null && workNativeQ16Listing
+        ? undefined
+        : listing.amountAtoms,
     estimate,
     frozenTerms,
     listingId,
@@ -21656,7 +21663,9 @@ export default function App() {
                       : tokenTransferBytes > MAX_DATA_CARRIER_BYTES
                         ? "Transfer OP_RETURN data is over 100 KB."
                         : busy
-                          ? "Another wallet action is already in progress."
+                          ? tokenAction === "transfer"
+                            ? "Transfer is already in progress."
+                            : "Another wallet action is already in progress."
                           : "";
   const tokenListInput = walletTransferToken
     ? tokenAmountInput(walletTransferToken, tokenListAmount)

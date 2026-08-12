@@ -813,6 +813,9 @@ expect(
     /const tokenTransferDisabledReason =[\s\S]*tokenTransferAmountUnits > walletSpendableTokenAtoms[\s\S]*Amount exceeds/.test(
       app,
     ) &&
+    /busy[\s\S]*tokenAction === "transfer"[\s\S]*Transfer is already in progress[\s\S]*Another wallet action is already in progress/.test(
+      app,
+    ) &&
     !/setTokenTransferAmount\(nextAmount\)/.test(app),
 );
 expect(
@@ -1569,7 +1572,7 @@ expect(
     /function workAmoV6FrozenProjection[\s\S]*WORK_AMO_V6_FROZEN_TERM_KEYS[\s\S]*unitFaceProofs[\s\S]*listingProtocolVout[\s\S]*listingRecordOrdinal[\s\S]*networkValueAfterQ8 !==[\s\S]*networkValueBeforeQ8 \+ listingBondContributionQ8[\s\S]*workAmoV6UnitTerms\([\s\S]*amountAtoms\.toString\(\) !== expected\.unitAmountAtoms[\s\S]*priceSats\.toString\(\) !== expected\.unitPriceSats/.test(
       app,
     ) &&
-    /function workAmoV8FrozenProjection[\s\S]*WORK_AMO_V8_FROZEN_TERM_KEYS[\s\S]*unitAmountSubatoms[\s\S]*workAmoV8UnitTerms\([\s\S]*listingAmountSubatoms !== amountSubatoms[\s\S]*String\(listing\.amountAtoms \?\? ""\) !== ""/.test(
+    /function workAmoV8FrozenProjection[\s\S]*WORK_AMO_V8_FROZEN_TERM_KEYS[\s\S]*unitAmountSubatoms[\s\S]*workAmoV8UnitTerms\([\s\S]*listingAmountSubatoms !== amountSubatoms[\s\S]*!Number\.isSafeInteger\(listingPriceSats\)/.test(
       app,
     ) &&
     /function workAmoListingFaceProofs[\s\S]*const v8 =[\s\S]*workAmoV8FaceProofsAllowed\(rawFace\)[\s\S]*workAmoV6FaceProofsAllowed\(rawFace\)/.test(
@@ -1706,13 +1709,20 @@ expect(
     ),
 );
 expect(
-  "native V8 listings reject legacy amount aliases while historical listings normalize by exact multiplication",
-  /function normalizeTokenListingRecord[\s\S]*TOKEN_SALE_AUTH_WORK_AMO_SUBATOM_VERSION[\s\S]*\? "native-q16"[\s\S]*isWorkMarketSaleAuthorizationVersion[\s\S]*\? "legacy-q8"/.test(
+  "native V8 listings prefer subatoms while historical listings normalize by exact multiplication",
+  /const workNativeQ16Listing =[\s\S]*TOKEN_SALE_AUTH_WORK_AMO_SUBATOM_VERSION[\s\S]*frozenTerms\?\.version/.test(
     app,
   ) &&
-    /function workAmoV8FrozenProjection[\s\S]*listingAmountSubatoms !== amountSubatoms[\s\S]*String\(listing\.amountAtoms \?\? ""\) !== ""/.test(
+    /function normalizeTokenListingRecord[\s\S]*workNativeQ16Listing[\s\S]*\? undefined[\s\S]*frozenTerms\?\.unitAmountAtoms/.test(
       app,
     ) &&
+    /amountAtoms:[\s\S]*workAmountSubatoms !== null && workNativeQ16Listing[\s\S]*\? undefined[\s\S]*: listing\.amountAtoms/.test(
+      app,
+    ) &&
+    /function workAmoV8FrozenProjection[\s\S]*listingAmountSubatoms !== amountSubatoms[\s\S]*!Number\.isSafeInteger\(listingPriceSats\)/.test(
+      app,
+    ) &&
+    !/String\(listing\.amountAtoms \?\? ""\) !== ""/.test(app) &&
     /function workAmoFrozenTerms[\s\S]*amountAtoms \* WORK_LEGACY_TO_CANONICAL_FACTOR/.test(
       app,
     ),

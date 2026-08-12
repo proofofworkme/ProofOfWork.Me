@@ -35807,7 +35807,13 @@ async function walletScopedTokenSummaryPayload(
     "wallet-scoped-token-summary",
   );
   if (addressScopedPayload) {
-    return compactTokenSummaryPayload(addressScopedPayload, scope);
+    const indexedPayload = await tokenPayloadWithWalletActiveListings(
+      addressScopedPayload,
+      network,
+      scope,
+      recoveryAddresses,
+    );
+    return compactTokenSummaryPayload(indexedPayload, scope);
   }
   let payload = null;
   if (
@@ -35905,18 +35911,24 @@ async function walletScopedTokenPayload(
     { requireCurrent },
   );
   if (addressScopedPayload) {
+    const indexedPayload = await tokenPayloadWithWalletActiveListings(
+      addressScopedPayload,
+      network,
+      scope,
+      recoveryAddresses,
+    );
     const recoveredPayload = scope === WORK_TOKEN_ID
       ? await payloadWithFallbackAfterMs(
           tokenPayloadWithRecoveredWalletWorkTransfers(
-            addressScopedPayload,
+            indexedPayload,
             network,
             scope,
             recoveryAddresses,
           ),
-          addressScopedPayload,
+          indexedPayload,
           WALLET_SCOPED_RECOVERY_WAIT_MS,
         )
-      : addressScopedPayload;
+      : indexedPayload;
     return requireCurrent
       ? { ...recoveredPayload, authoritativeWallet: true }
       : recoveredPayload;
@@ -36155,6 +36167,167 @@ async function indexedWorkActiveListingTxids(network, addresses, limit = 200) {
   return [...txids].slice(0, Math.max(0, limit));
 }
 
+function tokenActiveListingEventKey(item) {
+  const listingId = String(item?.listingId ?? item?.txid ?? "")
+    .trim()
+    .toLowerCase();
+  if (!/^[0-9a-f]{64}$/u.test(listingId)) {
+    return "";
+  }
+  const tokenScope = normalizeTokenScope(
+    item?.tokenId ??
+      item?.ticker ??
+      item?.saleAuthorization?.tokenId ??
+      item?.saleAuthorization?.ticker ??
+      "",
+  );
+  return `${tokenScope || WORK_TOKEN_ID}:${listingId}`;
+}
+
+function invalidEventLooksLikeListingAttempt(event) {
+  const version = String(
+    event?.version ?? event?.saleAuthorization?.version ?? "",
+  ).trim();
+  const reason = String(event?.reasonCode ?? event?.reason ?? "").trim();
+  const attempted = String(
+    event?.attemptedKind ??
+      event?.attemptedAction ??
+      event?.parsedKind ??
+      event?.eventKind ??
+      event?.detail ??
+      "",
+  ).toLowerCase();
+  return (
+    version.startsWith("pwt-sale-") ||
+    reason === "work-market-v2-version-required" ||
+    attempted.includes("listing") ||
+    attempted.includes("list")
+  );
+}
+
+function tokenPayloadWithoutInvalidEventsForActiveListings(payload) {
+  const activeListingKeys = new Set(
+    (Array.isArray(payload?.listings) ? payload.listings : [])
+      .filter((listing) => listing?.confirmed === true)
+      .map(tokenActiveListingEventKey)
+      .filter(Boolean),
+  );
+  if (activeListingKeys.size === 0 || !Array.isArray(payload?.invalidEvents)) {
+    return payload;
+  }
+
+  const invalidEvents = payload.invalidEvents.filter((event) => {
+    const key = tokenActiveListingEventKey(event);
+    return (
+      !key ||
+      !activeListingKeys.has(key) ||
+      !invalidEventLooksLikeListingAttempt(event)
+    );
+  });
+  if (invalidEvents.length === payload.invalidEvents.length) {
+    return payload;
+  }
+
+  return {
+    ...payload,
+    invalidEvents,
+    stats: {
+      ...(payload.stats ?? {}),
+      invalidEvents: invalidEvents.length,
+    },
+  };
+}
+
+async function indexedWalletActiveListings(
+  network,
+  tokenScope,
+  addresses,
+  limit = 100,
+) {
+  const scope = normalizeTokenScope(tokenScope);
+  if (
+    network !== "livenet" ||
+    scope !== WORK_TOKEN_ID ||
+    !proofIndexReadFeatureEnabled("token-history,token") ||
+    !Array.isArray(addresses) ||
+    addresses.length === 0
+  ) {
+    return [];
+  }
+
+  const listingsByKey = new Map();
+  for (const address of addresses) {
+    const value = String(address ?? "").trim();
+    if (!value) {
+      continue;
+    }
+
+    const page = await payloadWithFallbackAfterMs(
+      proofIndexTokenMarketHistoryOverlayPayload(
+        network,
+        scope,
+        "listings",
+        new URLSearchParams({
+          address: value,
+          limit: String(limit),
+          status: "confirmed",
+        }),
+      ),
+      null,
+      WALLET_SCOPED_RECOVERY_WAIT_MS,
+    ).catch((error) => {
+      console.error(
+        `Proof index wallet active-listing lookup failed for ${value}: ${errorSummary(error)}`,
+      );
+      return null;
+    });
+    if (
+      !page ||
+      !(await proofIndexPayloadCoversConfirmedTip(
+        page,
+        network,
+        "wallet active-listing recovery",
+      ))
+    ) {
+      continue;
+    }
+
+    for (const item of Array.isArray(page.items) ? page.items : []) {
+      const listingId = String(item?.listingId ?? item?.txid ?? "")
+        .trim()
+        .toLowerCase();
+      const tokenId = normalizeTokenScope(item?.tokenId ?? item?.ticker ?? "");
+      const sellerAddress = String(
+        item?.sellerAddress ?? item?.actor ?? "",
+      ).trim();
+      if (
+        !/^[0-9a-f]{64}$/u.test(listingId) ||
+        item?.confirmed !== true ||
+        tokenId !== WORK_TOKEN_ID ||
+        sellerAddress.toLowerCase() !== value.toLowerCase()
+      ) {
+        continue;
+      }
+
+      const listing = {
+        ...item,
+        listingId,
+        sellerAddress,
+        tokenId: WORK_TOKEN_ID,
+      };
+      listingsByKey.set(
+        tokenListingItemKey(listing),
+        mergeTokenListingRecord(
+          listingsByKey.get(tokenListingItemKey(listing)),
+          listing,
+        ),
+      );
+    }
+  }
+
+  return [...listingsByKey.values()].sort(compareTokenHistoryPageItems);
+}
+
 function workActiveListingsFromTransactions(txs, network, recoveryAddresses = []) {
   // A first-party transaction/outspend recovery cannot independently prove a
   // pwt-sale-v3 action's canonical H-1 oracle. After the livenet cutover it
@@ -36385,8 +36558,29 @@ async function tokenPayloadWithWalletActiveListings(
       .map((address) => String(address ?? "").trim().toLowerCase())
       .filter(Boolean),
   );
-  const listings = (Array.isArray(payload?.listings)
-    ? payload.listings
+  const indexedListings = await indexedWalletActiveListings(
+    network,
+    tokenScope,
+    recoveryAddresses,
+  );
+  const indexedPayload =
+    indexedListings.length > 0
+      ? {
+          ...tokenStateWithPreservedListingRecords(payload, {
+            listings: indexedListings,
+          }),
+          indexedAt: newerIso(
+            payload?.indexedAt,
+            indexedListings[0]?.createdAt,
+          ),
+          source: mergedSourceLabel(
+            payload?.source,
+            "proof-indexer-token-history-wallet-active-listings",
+          ),
+        }
+      : payload;
+  const listings = (Array.isArray(indexedPayload?.listings)
+    ? indexedPayload.listings
     : []
   ).filter(
     (listing) =>
@@ -36395,9 +36589,11 @@ async function tokenPayloadWithWalletActiveListings(
       normalizeTokenScope(listing?.tokenId) === WORK_TOKEN_ID,
   );
 
-  return listings.length > 0
-    ? tokenStateWithPreservedListingRecords(payload, { listings })
-    : payload;
+  const scopedPayload = listings.length > 0
+    ? tokenStateWithPreservedListingRecords(indexedPayload, { listings })
+    : indexedPayload;
+
+  return tokenPayloadWithoutInvalidEventsForActiveListings(scopedPayload);
 }
 
 function emptyRegistryPayload(network) {
