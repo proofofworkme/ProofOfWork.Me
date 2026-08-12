@@ -46,6 +46,7 @@ import {
   validateWorkAmoV5StaticAuthorization,
   validateWorkAmoV5SufficientState,
   workAmoV5CanonicalExpiryMs,
+  normalizeWorkAmoCanonicalPosition,
   workAmoCanonicalPositionPrecedes,
   workAmoV5CanonicalPayloadCommitment,
   workAmoV5CanonicalStateCommitment,
@@ -3178,13 +3179,50 @@ function listingPosition(listing) {
       : authorizationVersion === WORK_AMO_V4_AUTH_VERSION
         ? 0
         : Number.NaN;
-  return {
-    blockHash: String(terms.listingBlockHash ?? "").trim().toLowerCase(),
-    blockHeight: Number(terms.listingBlockHeight),
-    blockTransactionIndex: Number(terms.listingBlockIndex),
-    protocolVout: Number(terms.listingProtocolVout),
-    recordOrdinal,
-  };
+  return (
+    normalizeWorkAmoCanonicalPosition({
+      blockHash: terms.listingBlockHash,
+      blockHeight: Number(terms.listingBlockHeight),
+      blockTransactionIndex: Number(terms.listingBlockIndex),
+      protocolVout: Number(terms.listingProtocolVout),
+      recordOrdinal,
+    }) ??
+    normalizeWorkAmoCanonicalPosition(listing?.listingPosition) ??
+    normalizeWorkAmoCanonicalPosition(listing)
+  );
+}
+
+function workAmoV8ListingSubatoms(listing) {
+  const candidates = [
+    listing?.amountSubatoms,
+    listing?.frozenTerms?.unitAmountSubatoms,
+    listing?.unitAmountSubatoms,
+    listing?.amountAtoms,
+  ];
+  const normalized = new Set();
+  for (const candidate of candidates) {
+    const text = String(candidate ?? "").trim();
+    if (
+      INTEGER_PATTERN.test(text) &&
+      BigInt(text) > 0n &&
+      BigInt(text) <= WORK_AMO_V8_MAX_SUPPLY_SUBATOMS
+    ) {
+      normalized.add(BigInt(text).toString());
+    }
+  }
+  if (normalized.size === 1) {
+    return [...normalized][0];
+  }
+  if (normalized.size > 1) {
+    return "";
+  }
+  try {
+    return parseWorkAmountToSubatoms(listing?.amount, {
+      maxSubatoms: WORK_AMO_V8_MAX_SUPPLY_SUBATOMS.toString(),
+    });
+  } catch {
+    return "";
+  }
 }
 
 function workMarketplaceDelta(kind, listing, record, registryOutputs) {
@@ -5498,28 +5536,9 @@ function workListingProjectionFromCanonicalState(
   const amountAtoms = v8
     ? ""
     : String(listing?.amountAtoms).trim();
-  let amountSubatoms = "";
-  if (v8) {
-    const directAmountSubatoms = String(
-      listing?.amountSubatoms ?? "",
-    ).trim();
-    if (
-      INTEGER_PATTERN.test(directAmountSubatoms) &&
-      BigInt(directAmountSubatoms) > 0n &&
-      BigInt(directAmountSubatoms) <=
-        WORK_AMO_V8_MAX_SUPPLY_SUBATOMS
-    ) {
-      amountSubatoms = directAmountSubatoms;
-    } else {
-      try {
-        amountSubatoms = parseWorkAmountToSubatoms(listing?.amount, {
-          maxSubatoms: WORK_AMO_V8_MAX_SUPPLY_SUBATOMS.toString(),
-        });
-      } catch {
-        amountSubatoms = "";
-      }
-    }
-  }
+  const amountSubatoms = v8
+    ? workAmoV8ListingSubatoms(listing)
+    : "";
   const listingId = normalizedTxid(listing?.listingId);
   const position = listingPosition(listing);
   if (

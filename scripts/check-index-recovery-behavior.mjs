@@ -54045,10 +54045,91 @@ check("AMO V8 relational closing evidence reads canonical Q16 units", async () =
     WORK_AMO_V5_RAW_PATH,
     "workListingProjectionFromCanonicalState",
   );
+  const rawListingSubatomsSource = topLevelFunctionSource(
+    WORK_AMO_V5_RAW_PATH,
+    "workAmoV8ListingSubatoms",
+  );
+  const rawListingPositionSource = topLevelFunctionSource(
+    WORK_AMO_V5_RAW_PATH,
+    "listingPosition",
+  );
   assert.match(
     rawProjectionSource,
-    /parseWorkAmountToSubatoms\(listing\?\.amount[\s\S]*formatWorkSubatoms\(amountSubatoms\)/u,
+    /workAmoV8ListingSubatoms\(listing\)[\s\S]*formatWorkSubatoms\(amountSubatoms\)/u,
     "confirmed V8 listing projection must format canonical subatom integers, not display decimals",
+  );
+  assert.match(
+    rawListingSubatomsSource,
+    /listing\?\.amountSubatoms[\s\S]*listing\?\.frozenTerms\?\.unitAmountSubatoms[\s\S]*listing\?\.amountAtoms[\s\S]*parseWorkAmountToSubatoms\(listing\?\.amount/u,
+    "confirmed V8 listing projection must accept internal raw replay subatoms and retain display fallback",
+  );
+  assert.match(
+    rawListingPositionSource,
+    /normalizeWorkAmoCanonicalPosition\(\{[\s\S]*blockTransactionIndex: Number\(terms\.listingBlockIndex\)[\s\S]*normalizeWorkAmoCanonicalPosition\(listing\?\.listingPosition\)[\s\S]*normalizeWorkAmoCanonicalPosition\(listing\)/u,
+    "confirmed V8 listing projection must normalize canonical listing positions instead of trusting one legacy shape",
+  );
+  const listingId =
+    "1d2fb38524d8f7a6f63f432f802a79a3cecd72648c5554d2f1f670316a2c0e91";
+  const sellerAddress =
+    "17W7JZ9KjjGUwdAyXeGxhzYe2vGe8YTRzA";
+  const listingPosition = {
+    blockHash:
+      "00000000000000000000bf886c4bf4db7b05c4c73a5b6d8b071a1823b5bf87da",
+    blockHeight: 960_602,
+    blockTransactionIndex: 2,
+    protocolVout: 1,
+    recordOrdinal: 0,
+  };
+  const q16ListSubatoms = "10000000000000000";
+  const q16ListAuthorization = {
+    ...WORK_AMO_V8_MODELS,
+    tokenId: WORK_TOKEN_ID,
+    version: WORK_AMO_V8_AUTH_VERSION,
+  };
+  const q16ListFrozenTerms = {
+    ...WORK_AMO_V8_MODELS,
+    listingBlockHash: listingPosition.blockHash,
+    listingBlockHeight: listingPosition.blockHeight,
+    listingBlockIndex: listingPosition.blockTransactionIndex,
+    listingProtocolVout: listingPosition.protocolVout,
+    listingRecordOrdinal: listingPosition.recordOrdinal,
+    unitAmountSubatoms: q16ListSubatoms,
+    version: WORK_AMO_V8_AUTH_VERSION,
+  };
+  assert.doesNotThrow(() =>
+    projectWorkAmoV5RawEvents(
+      { listings: [] },
+      [{
+        output: {
+          projection: {
+            listing: {
+              amountAtoms: BigInt(q16ListSubatoms),
+              amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+              frozenTerms: q16ListFrozenTerms,
+              listingId,
+              priceSats: 25_000n,
+              saleAuthorization: q16ListAuthorization,
+              sellerAddress,
+            },
+          },
+        },
+        parsed: {
+          kind: "list",
+          saleAuthorization: q16ListAuthorization,
+          tokenId: WORK_TOKEN_ID,
+        },
+        position: listingPosition,
+        protocol: "pwt1",
+        txid: listingId,
+        valid: true,
+      }],
+      {
+        amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+        confirmedSupplySubatoms: "0",
+        holders: [],
+        listings: [],
+      },
+    )
   );
 });
 
