@@ -5236,23 +5236,42 @@ function workAmoV6RawPlaceholderMatchesCanonical(
   const canonicalFrozenTermsSource = objectValue(
     canonicalItem?.frozenTerms ??
       canonicalItem?.workAmoFrozenTerms ??
+      canonicalItem?.workAmoV8FrozenTerms ??
       canonicalItem?.workAmoV6FrozenTerms,
   );
-  const v6Mentioned = [
+  const governedVersions = new Set([
     rawAuthorization.version,
     canonicalAuthorizationSource.version,
     canonicalFrozenTermsSource.version,
-  ].some(
-    (version) =>
-      normalizedLowerText(version) === WORK_AMO_V6_AUTH_VERSION,
-  );
+  ]
+    .map(normalizedLowerText)
+    .filter((version) =>
+      [
+        WORK_AMO_V6_AUTH_VERSION,
+        WORK_AMO_V8_AUTH_VERSION,
+      ].includes(version)
+    ));
   if (
     canonicalItem?.valid !== true ||
     !lifecycleKinds.has(canonicalKind) ||
-    !v6Mentioned
+    governedVersions.size === 0
   ) {
     return null;
   }
+  if (governedVersions.size !== 1) {
+    return false;
+  }
+  const governedVersion = [...governedVersions][0];
+  const v8 = governedVersion === WORK_AMO_V8_AUTH_VERSION;
+  const validateStaticAuthorization = v8
+    ? validateWorkAmoV8StaticAuthorization
+    : validateWorkAmoV6StaticAuthorization;
+  const validateFrozenTerms = v8
+    ? validateWorkAmoV8FrozenTerms
+    : validateWorkAmoV6FrozenTerms;
+  const frozenTermsMatch = v8
+    ? workAmoV8FrozenTermsMatch
+    : workAmoV6FrozenTermsMatch;
   const rawConfirmed = rawItem?.confirmed === true;
   const canonicalConfirmed = canonicalItem?.confirmed === true;
   if (!rawConfirmed && !canonicalConfirmed) {
@@ -5292,14 +5311,13 @@ function workAmoV6RawPlaceholderMatchesCanonical(
   ) {
     return false;
   }
-  const canonicalAuthorization =
-    validateWorkAmoV6StaticAuthorization(
-      canonicalAuthorizationSource,
-    );
+  const canonicalAuthorization = validateStaticAuthorization(
+    canonicalAuthorizationSource,
+  );
   if (!canonicalAuthorization.valid) {
     return false;
   }
-  const canonicalFrozenTerms = validateWorkAmoV6FrozenTerms(
+  const canonicalFrozenTerms = validateFrozenTerms(
     canonicalFrozenTermsSource,
     {
       authorization: canonicalAuthorization.authorization,
@@ -5312,23 +5330,23 @@ function workAmoV6RawPlaceholderMatchesCanonical(
     canonicalItem?.frozenTerms,
     canonicalItem?.workAmoFrozenTerms,
     canonicalItem?.workAmoV6FrozenTerms,
+    canonicalItem?.workAmoV8FrozenTerms,
   ]) {
     if (
       frozenTerms !== undefined &&
       frozenTerms !== null &&
-      !workAmoV6FrozenTermsMatch(
-        canonicalFrozenTerms.frozenTerms,
-        frozenTerms,
-      )
+      !frozenTermsMatch(canonicalFrozenTerms.frozenTerms, frozenTerms)
     ) {
       return false;
     }
   }
-  let canonicalAmountAtoms = "";
+  let canonicalAmountUnits = "";
   try {
-    canonicalAmountAtoms = canonicalWorkAtomsText(
-      workAmountAtomsFromRecord(canonicalItem),
-    );
+    canonicalAmountUnits = v8
+      ? canonicalWorkSubatomsText(
+          workAmountSubatomsFromRecord(canonicalItem),
+        )
+      : canonicalWorkAtomsText(workAmountAtomsFromRecord(canonicalItem));
   } catch {
     return false;
   }
@@ -5336,12 +5354,17 @@ function workAmoV6RawPlaceholderMatchesCanonical(
     canonicalItem?.priceSats,
     { positive: true },
   );
+  const frozenUnitAmount = v8
+    ? canonicalFrozenTerms.frozenTerms.unitAmountSubatoms
+    : canonicalFrozenTerms.frozenTerms.unitAmountAtoms;
+  const formattedCanonicalAmount = v8
+    ? formatWorkSubatoms(canonicalAmountUnits)
+    : formatWorkAtoms(canonicalAmountUnits);
   if (
-    !canonicalAmountAtoms ||
-    canonicalAmountAtoms !==
-      canonicalFrozenTerms.frozenTerms.unitAmountAtoms ||
+    !canonicalAmountUnits ||
+    canonicalAmountUnits !== frozenUnitAmount ||
     String(canonicalItem?.amount ?? "").trim() !==
-      formatWorkAtoms(canonicalAmountAtoms) ||
+      formattedCanonicalAmount ||
     !canonicalPriceSats ||
     canonicalPriceSats !==
       canonicalFrozenTerms.frozenTerms.unitPriceSats
@@ -5400,9 +5423,12 @@ function workAmoV6RawPlaceholderMatchesCanonical(
     value !== undefined && value !== null && value !== "";
   const rawDerivedAtomicFields = [
     rawItem?.amountAtoms,
+    rawItem?.amountSubatoms,
     rawItem?.tokenAmount,
     rawItem?.tokenAmountAtoms,
+    rawItem?.tokenAmountSubatoms,
     rawItem?.unitAmountAtoms,
+    rawItem?.unitAmountSubatoms,
     rawItem?.unitMinimumPriceSats,
     rawItem?.unitPriceSats,
   ];
@@ -5411,6 +5437,7 @@ function workAmoV6RawPlaceholderMatchesCanonical(
     rawItem?.listingFrozenTerms,
     rawItem?.workAmoFrozenTerms,
     rawItem?.workAmoV6FrozenTerms,
+    rawItem?.workAmoV8FrozenTerms,
   ];
   if (
     rawDerivedAtomicFields.some(present) ||
@@ -5430,7 +5457,7 @@ function workAmoV6RawPlaceholderMatchesCanonical(
   }
 
   const rawAuthorizationValidation =
-    validateWorkAmoV6StaticAuthorization(rawAuthorization);
+    validateStaticAuthorization(rawAuthorization);
   const staticIdentityFields = [
     "amountModel",
     "anchorScriptPubKey",
@@ -5438,6 +5465,7 @@ function workAmoV6RawPlaceholderMatchesCanonical(
     "anchorType",
     "anchorValueSats",
     "anchorVout",
+    "blockSequencerModel",
     "bondTransitionModel",
     "buyerAddress",
     "expiresAt",
@@ -20116,6 +20144,7 @@ function workAmoV6ReplayListingMaterialization({
       "anchorType",
       "anchorValueSats",
       "anchorVout",
+      "blockSequencerModel",
       "bondTransitionModel",
       "buyerAddress",
       "expiresAt",

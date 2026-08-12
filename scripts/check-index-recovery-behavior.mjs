@@ -193,8 +193,11 @@ import {
   WORK_AMO_V8_MODELS,
   WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL,
   WORK_AMO_V8_TRANSFER_VERSION,
+  deriveWorkAmoV8FrozenTerms,
+  validateWorkAmoV8FrozenTerms,
   validateWorkAmoV8StaticAuthorization,
   workAmoV8CanonicalTokenStateCommitment,
+  workAmoV8FrozenTermsMatch,
 } from "../server/work-amo-v8.mjs";
 import {
   normalizedWorkAmoV5Bip141Witness,
@@ -54238,21 +54241,31 @@ check("the first V6 listing crosses replay binding into atomic persistence witho
     "workAmoV6RawPlaceholderMatchesCanonical",
     {
       WORK_AMO_V6_AUTH_VERSION,
+      WORK_AMO_V8_AUTH_VERSION,
+      WORK_SUBATOM_DECIMALS,
+      WORK_SUBATOM_PROJECTION_MODEL,
+      WORK_SUBATOM_UNIT_SCALE_TEXT,
       WORK_TOKEN_ID,
       canonicalIntegerText,
       canonicalWorkAtomsText,
+      canonicalWorkSubatomsText,
       formatWorkAtoms,
+      formatWorkSubatoms,
       isHexTxid: isHexTxidFixture,
       normalizeWorkAmoCanonicalPosition,
       normalizedLowerText: normalizedLowerTextFixture,
       objectValue,
       validateWorkAmoV6FrozenTerms,
       validateWorkAmoV6StaticAuthorization,
+      validateWorkAmoV8FrozenTerms,
+      validateWorkAmoV8StaticAuthorization,
       workAmoCanonicalPositionPrecedes,
       workAmoV5CanonicalPayloadCommitment:
         isolatedCanonicalPayloadCommitment,
       workAmoV6FrozenTermsMatch,
+      workAmoV8FrozenTermsMatch,
       workAmountAtomsFromRecord,
+      workAmountSubatomsFromRecord,
     },
   );
   const rawMatchesCanonical = isolatedFunction(
@@ -54353,6 +54366,51 @@ check("the first V6 listing crosses replay binding into atomic persistence witho
     true,
     "V5 keeps the existing exact WORK amount matcher",
   );
+  const v8Authorization = {
+    ...saleAuthorization,
+    ...WORK_AMO_V8_MODELS,
+    unitFaceProofs: 25_000,
+    version: WORK_AMO_V8_AUTH_VERSION,
+  };
+  const v8DerivedTerms = deriveWorkAmoV8FrozenTerms(
+    v8Authorization,
+    {
+      activationHeight: position.blockHeight - 1,
+      listingBondContributionQ8: "54600000000",
+      listingPosition: position,
+      networkValueBeforeQ8:
+        "407065289490674149005636246",
+      spendableAmountSubatoms:
+        "210000000000000000000000",
+    },
+  );
+  assert.equal(v8DerivedTerms.valid, true, v8DerivedTerms.reasonCode);
+  const v8FrozenTerms = v8DerivedTerms.frozenTerms;
+  const v8CanonicalListing = {
+    ...preparedItem,
+    amount: formatWorkSubatoms(v8FrozenTerms.unitAmountSubatoms),
+    amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+    amountSubatoms: v8FrozenTerms.unitAmountSubatoms,
+    decimals: WORK_SUBATOM_DECIMALS,
+    frozenTerms: v8FrozenTerms,
+    priceSats: v8FrozenTerms.unitPriceSats,
+    saleAuthorization: v8Authorization,
+    unitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,
+    workAmoV8FrozenTerms: v8FrozenTerms,
+  };
+  const v8PreparedItem = {
+    ...preparedItem,
+    saleAuthorization: v8Authorization,
+  };
+  assert.equal(
+    rawMatchesCanonical(
+      v8PreparedItem,
+      v8CanonicalListing,
+      "token-listing",
+    ),
+    true,
+    "V8 raw list placeholders must be consumed by canonical Q16 listing recovery",
+  );
   assert.equal(
     rawMatchesCanonical(
       {
@@ -54449,22 +54507,31 @@ check("the first V6 listing crosses replay binding into atomic persistence witho
     "workAmoV6ReplayListingMaterialization",
     {
       WORK_AMO_V6_AUTH_VERSION,
+      WORK_AMO_V8_AUTH_VERSION,
       WORK_DECIMALS,
+      WORK_SUBATOM_DECIMALS,
+      WORK_SUBATOM_PROJECTION_MODEL,
+      WORK_SUBATOM_UNIT_SCALE_TEXT,
       WORK_TOKEN_ID,
       WORK_UNIT_SCALE_TEXT,
       canonicalIntegerText,
       canonicalWorkAtomsText,
+      canonicalWorkSubatomsText,
       formatWorkAtoms,
+      formatWorkSubatoms,
       isHexTxid: isHexTxidFixture,
       normalizeWorkAmoCanonicalPosition,
       normalizedLowerText: normalizedLowerTextFixture,
       objectValue,
       validateWorkAmoV6FrozenTerms,
       validateWorkAmoV6StaticAuthorization,
+      validateWorkAmoV8FrozenTerms,
+      validateWorkAmoV8StaticAuthorization,
       workAmoCanonicalPositionPrecedes,
       workAmoV5CanonicalPayloadCommitment:
         isolatedCanonicalPayloadCommitment,
       workAmoV6FrozenTermsMatch,
+      workAmoV8FrozenTermsMatch,
     },
   );
   const bind = isolatedFunction(
@@ -54613,9 +54680,18 @@ check("the first V6 listing crosses replay binding into atomic persistence witho
     anchorSignature: "00",
     anchorTxid: listingId,
   };
+  const signedV8Authorization = {
+    ...v8Authorization,
+    anchorSignature: "00",
+    anchorTxid: listingId,
+  };
   const signedListing = {
     ...canonicalListing,
     saleAuthorization: signedAuthorization,
+  };
+  const signedV8Listing = {
+    ...v8CanonicalListing,
+    saleAuthorization: signedV8Authorization,
   };
   assert.equal(
     rawMatchesCanonical(
@@ -54731,6 +54807,50 @@ check("the first V6 listing crosses replay binding into atomic persistence witho
       "token-listing-sealed",
     ),
     false,
+  );
+  const canonicalV8Seal = {
+    amount: signedV8Listing.amount,
+    amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+    amountSubatoms: signedV8Listing.amountSubatoms,
+    blockHash: sealPosition.blockHash,
+    blockHeight: sealPosition.blockHeight,
+    blockIndex: sealPosition.blockTransactionIndex,
+    confirmed: true,
+    decimals: WORK_SUBATOM_DECIMALS,
+    frozenTerms: v8FrozenTerms,
+    kind: "token-listing-sealed",
+    listingId,
+    priceSats: v8FrozenTerms.unitPriceSats,
+    protocol: "pwt1",
+    protocolVout: sealPosition.protocolVout,
+    recordOrdinal: sealPosition.recordOrdinal,
+    saleAuthorization: signedV8Authorization,
+    sealTxid,
+    sellerAddress,
+    tokenId: WORK_TOKEN_ID,
+    txid: sealTxid,
+    unitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,
+    valid: true,
+    workAmoV8FrozenTerms: v8FrozenTerms,
+  };
+  const rawV8Seal = rawLifecycleItem({
+    actionField: "sealTxid",
+    actionPosition: sealPosition,
+    actionTxid: sealTxid,
+    authorization: signedV8Authorization,
+    kind: "token-listing-sealed",
+    sellerAction: true,
+    tokenId: WORK_TOKEN_ID,
+    zeroPlaceholder: true,
+  });
+  assert.equal(
+    rawMatchesCanonical(
+      rawV8Seal,
+      canonicalV8Seal,
+      "token-listing-sealed",
+    ),
+    true,
+    "V8 raw seal placeholders must be consumed by canonical Q16 seal recovery",
   );
 
   const buyerAddress =
