@@ -65,6 +65,7 @@ import {
   formatWorkAtomsAmo,
   formatWorkSubatoms,
   parseWorkAmountToAtoms,
+  parseWorkAmountToSubatoms,
   workAmountAtomsFromRecord,
 } from "./work-units.mjs";
 import {
@@ -5494,13 +5495,35 @@ function workListingProjectionFromCanonicalState(
   ) {
     return null;
   }
-  const amountAtoms = String(
-    v8 ? listing?.amountSubatoms : listing?.amountAtoms,
-  ).trim();
+  const amountAtoms = v8
+    ? ""
+    : String(listing?.amountAtoms).trim();
+  let amountSubatoms = "";
+  if (v8) {
+    const directAmountSubatoms = String(
+      listing?.amountSubatoms ?? "",
+    ).trim();
+    if (
+      INTEGER_PATTERN.test(directAmountSubatoms) &&
+      BigInt(directAmountSubatoms) > 0n &&
+      BigInt(directAmountSubatoms) <=
+        WORK_AMO_V8_MAX_SUPPLY_SUBATOMS
+    ) {
+      amountSubatoms = directAmountSubatoms;
+    } else {
+      try {
+        amountSubatoms = parseWorkAmountToSubatoms(listing?.amount, {
+          maxSubatoms: WORK_AMO_V8_MAX_SUPPLY_SUBATOMS.toString(),
+        });
+      } catch {
+        amountSubatoms = "";
+      }
+    }
+  }
   const listingId = normalizedTxid(listing?.listingId);
   const position = listingPosition(listing);
   if (
-    !amountAtoms ||
+    !(v8 ? amountSubatoms : amountAtoms) ||
     !listingId ||
     !position?.blockHash ||
     !Number.isSafeInteger(position.blockHeight) ||
@@ -5520,12 +5543,12 @@ function workListingProjectionFromCanonicalState(
       : {}),
     ...listing,
     amount: v8
-      ? formatWorkSubatoms(amountAtoms)
+      ? formatWorkSubatoms(amountSubatoms)
       : formatWorkAtomsAmo(amountAtoms),
     ...(v8
       ? {
           amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
-          amountSubatoms: amountAtoms,
+          amountSubatoms,
         }
       : { amountAtoms }),
     blockHash: position.blockHash,

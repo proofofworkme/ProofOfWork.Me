@@ -54041,6 +54041,15 @@ check("AMO V8 relational closing evidence reads canonical Q16 units", async () =
     /const q16 = workRecordUsesSubatoms\(item\)[\s\S]*workSubatomsBigIntFromRecord\(item\)[\s\S]*amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL[\s\S]*amountSubatoms: amountSubatoms\.toString\(\)/u,
     "post-V8 opening WORK movements must keep Q16 subatom units in the AMO accumulator",
   );
+  const rawProjectionSource = topLevelFunctionSource(
+    WORK_AMO_V5_RAW_PATH,
+    "workListingProjectionFromCanonicalState",
+  );
+  assert.match(
+    rawProjectionSource,
+    /parseWorkAmountToSubatoms\(listing\?\.amount[\s\S]*formatWorkSubatoms\(amountSubatoms\)/u,
+    "confirmed V8 listing projection must format canonical subatom integers, not display decimals",
+  );
 });
 
 check("the first V6 listing crosses replay binding into atomic persistence without trusting its zero placeholder", async () => {
