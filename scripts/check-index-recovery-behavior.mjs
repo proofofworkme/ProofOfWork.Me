@@ -6556,11 +6556,12 @@ check("wallet WORK overlay recovers active canonical V8 listings and drops match
       payloadWithFallbackAfterMs: async (promise) => promise,
       proofIndexPayloadCoversConfirmedTip: async () => true,
       proofIndexReadFeatureEnabled: () => true,
-      proofIndexEventHistoryPayload: async (
+      stableProofIndexLogHistoryPayload: async (
         network,
+        kind,
         params,
       ) => {
-        readParams = { network, params };
+        readParams = { kind, network, params };
         return {
           indexedThroughBlock: 962166,
           items: [
@@ -6606,7 +6607,7 @@ check("wallet WORK overlay recovers active canonical V8 listings and drops match
     [sellerAddress],
   );
   assert.equal(readParams.network, "livenet");
-  assert.equal(readParams.params.get("kind"), "token-listings");
+  assert.equal(readParams.kind, "token-listings");
   assert.equal(readParams.params.get("address"), sellerAddress);
   assert.equal(readParams.params.get("status"), "confirmed");
   assert.equal(listings.length, 1);

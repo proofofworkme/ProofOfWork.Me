@@ -36248,7 +36248,7 @@ async function indexedWalletActiveListings(
   if (
     network !== "livenet" ||
     scope !== WORK_TOKEN_ID ||
-    !proofIndexReadFeatureEnabled("event-history,events") ||
+    !proofIndexReadFeatureEnabled("log-history,activity-history,log") ||
     !Array.isArray(addresses) ||
     addresses.length === 0
   ) {
@@ -36265,10 +36265,10 @@ async function indexedWalletActiveListings(
 
     for (const kind of kinds) {
       const page = await payloadWithFallbackAfterMs(
-        proofIndexEventHistoryPayload(
+        stableProofIndexLogHistoryPayload(
           network,
+          kind,
           new URLSearchParams({
-            kind,
             address: value,
             limit: String(limit),
             status: "confirmed",
@@ -36627,7 +36627,7 @@ async function tokenPayloadWithWalletActiveListings(
           ),
           source: mergedSourceLabel(
             payload?.source,
-            "proof-indexer-event-history-wallet-active-listings",
+            "proof-indexer-log-history-wallet-active-listings",
           ),
         }
       : payload;
