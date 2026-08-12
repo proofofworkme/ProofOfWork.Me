@@ -23844,18 +23844,13 @@ async function buildWorkQ16PendingStagePlan(
     removalTxids: absencePlan.removalTxids,
     replayTxids,
   };
-  const currentReadinessEpoch =
-    await readWorkQ16ReadinessEpochCheckpointSnapshot(client);
   const parentStage = objectValue(context.parent.witness.verifierStage);
-  const publishedAttemptReady = Boolean(
+  const publishedAttemptBindsParent = Boolean(
     context.attempt?.status === "published" &&
       parentStage.codeVersion === WORK_Q16_PENDING_STAGE_CODE_VERSION &&
       context.attempt.stageSha256 === parentStage.stageSha256 &&
       context.attempt.witnessGeneratedAt ===
-        context.parent.witness.generatedAt &&
-      canonicalJsonText(
-        context.attempt.publicationReadinessEpochCheckpoint,
-      ) === canonicalJsonText(currentReadinessEpoch),
+        context.parent.witness.generatedAt,
   );
   const membershipChanged =
     canonicalJsonText(replayTxids) !==
@@ -23866,7 +23861,7 @@ async function buildWorkQ16PendingStagePlan(
     String(context.parent.witness.generatedAt ?? ""),
   );
   const reusablePublishedWitness = Boolean(
-    publishedAttemptReady &&
+    publishedAttemptBindsParent &&
       !membershipChanged &&
       Number.isFinite(parentGeneratedAtMs) &&
       Date.now() >= parentGeneratedAtMs &&

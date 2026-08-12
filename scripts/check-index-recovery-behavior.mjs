@@ -16227,6 +16227,20 @@ check("Q16 staging fails closed for unknown or ambiguous marketplace scope", asy
     /catch \(error\) \{[\s\S]*?unresolved \+= 1;[\s\S]*?phase: "mempool-protocol-verification"/u,
     "generic verifier failures must remain visible in global scan health",
   );
+  const pendingStagePlanSource = topLevelFunctionSource(
+    BACKFILL_PATH,
+    "buildWorkQ16PendingStagePlan",
+  );
+  assert.match(
+    pendingStagePlanSource,
+    /const publishedAttemptBindsParent = Boolean\([\s\S]*context\.attempt\.stageSha256 === parentStage\.stageSha256[\s\S]*context\.attempt\.witnessGeneratedAt ===\s*context\.parent\.witness\.generatedAt/u,
+    "a reusable Q16 pending witness must still bind the published attempt to the parent witness",
+  );
+  assert.doesNotMatch(
+    pendingStagePlanSource,
+    /readWorkQ16ReadinessEpochCheckpointSnapshot|currentReadinessEpoch|publicationReadinessEpochCheckpoint[\s\S]*currentReadinessEpoch/u,
+    "a fresh confirmed-phase readiness epoch must not force needless pending witness republication when membership and scan health are unchanged",
+  );
   const workMintMessage = {
     decodeValid: true,
     prefix: "pwt1:",
@@ -27724,7 +27738,7 @@ check("canonical Mail repair is explicit, exact, overlay-complete, and the reade
   assert.doesNotMatch(addressMailSource, /transaction-mail-overlay/u);
   assert.match(
     addressMailSource,
-    /JOIN proof_indexer\.mail_items m[\s\S]*for \(const row of rowsResult\.rows\)[\s\S]*source: "proof-indexer-mail"/u,
+    /JOIN proof_indexer\.mail_items m[\s\S]*for \(const row of rowsResult\.rows\)[\s\S]*source: droppedOutboxWitnesses > 0[\s\S]*\? "proof-indexer-mail\+historical-dropped-mail-witness"[\s\S]*: "proof-indexer-mail"/u,
   );
   assert.doesNotMatch(rowProjectionSource, /rawPayload|transaction_raw_tx/u);
 
