@@ -1551,6 +1551,21 @@ expect(
   ),
 );
 expect(
+  "API pending WORK verifier stages bind the direct V8 transition closing token state",
+  /import \{[\s\S]*WORK_AMO_V8_BLOCK_SEQUENCER_MODEL[\s\S]*\} from "\.\/work-amo-v8\.mjs";/u.test(
+    server,
+  ) &&
+    /async function pendingWorkVerifierStageConfirmedTransitionCommitment[\s\S]*proofIndexWorkAmoBlockTransition\([\s\S]*workAmoV8CanonicalTokenStateCommitment\(\s*transition\?\.payload\?\.closingTokenState,?\s*\)[\s\S]*transition\.workTokenStateModel !==[\s\S]*WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL/u.test(
+    server,
+  ) &&
+    /const \[\s*initialTokenPayload,\s*initialTransitionCommitment,\s*transactions,\s*\] = await Promise\.all\([\s\S]*pendingWorkVerifierStageConfirmedTransitionCommitment\([\s\S]*const initialBase = pendingWorkVerifierStageConfirmedBase\([\s\S]*initialTransitionCommitment/u.test(
+      server,
+    ) &&
+    /const \[\s*finalTokenPayload,\s*finalTransitionCommitment,\s*\] = await Promise\.all\([\s\S]*pendingWorkVerifierStageConfirmedTransitionCommitment\([\s\S]*const finalBase = pendingWorkVerifierStageConfirmedBase\([\s\S]*finalTransitionCommitment/u.test(
+      server,
+    ),
+);
+expect(
   "worker pending audit compares stable Core and mempool samples with every pending WORK projection",
   /async function assertWorkPrecisionPendingReady[\s\S]*confirmedReplay\?\.ready !== true[\s\S]*readExactWorkerCoreMempoolSnapshot/u.test(
     worker,

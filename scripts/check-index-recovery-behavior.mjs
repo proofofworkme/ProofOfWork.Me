@@ -16234,10 +16234,29 @@ check("Q16 staging fails closed for unknown or ambiguous marketplace scope", asy
     BACKFILL_PATH,
     "buildWorkQ16PendingStagePlan",
   );
+  const pendingConfirmedBaseSource = topLevelFunctionSource(
+    BACKFILL_PATH,
+    "currentWorkQ16PendingConfirmedBase",
+  );
   assert.match(
     pendingStagePlanSource,
     /const publishedAttemptBindsParent = Boolean\([\s\S]*context\.attempt\.stageSha256 === parentStage\.stageSha256[\s\S]*context\.attempt\.witnessGeneratedAt ===\s*context\.parent\.witness\.generatedAt/u,
     "a reusable Q16 pending witness must still bind the published attempt to the parent witness",
+  );
+  assert.match(
+    pendingStagePlanSource,
+    /const parentConfirmedBaseMatchesCurrent = Boolean\([\s\S]*parentStage\.confirmedBaseCommitment\?\.tokenStateCommitment\?\.sha256 ===[\s\S]*context\.currentConfirmedBase\.tokenStateCommitment\.sha256[\s\S]*parentStage\.canonicalTip\?\.height ===[\s\S]*context\.currentConfirmedBase\.canonicalTip\.height[\s\S]*parentStage\.canonicalTip\?\.hash ===[\s\S]*context\.currentConfirmedBase\.canonicalTip\.hash/u,
+    "a reusable Q16 pending witness must still bind the parent stage to the current confirmed replay base",
+  );
+  assert.match(
+    pendingConfirmedBaseSource,
+    /workAmoV8CanonicalTokenStateCommitment\(\s*transitionPayload\.closingTokenState,?\s*\)/u,
+    "Q16 pending reuse must compare the same direct V8 closing token-state commitment as worker readiness",
+  );
+  assert.match(
+    pendingStagePlanSource,
+    /const reusablePublishedWitness = Boolean\([\s\S]*publishedAttemptBindsParent &&[\s\S]*parentConfirmedBaseMatchesCurrent &&[\s\S]*!membershipChanged/u,
+    "a stale confirmed replay base must force Q16 pending witness republication",
   );
   assert.doesNotMatch(
     pendingStagePlanSource,
@@ -16332,6 +16351,7 @@ check("supervised pending recovery stages 118 WORK candidates before one atomic 
   const pendingTransaction = (txid) => ({ txid, vin: [], vout: [] });
   let classified = 0;
   let freshReads = 0;
+  let mempoolCalls = 0;
   let published = 0;
   let stagedTxids = null;
   let storedScan = null;
@@ -16364,20 +16384,35 @@ check("supervised pending recovery stages 118 WORK candidates before one atomic 
         stagedTxids = discoveredTxids;
         assert.deepEqual(
           initialMempoolSnapshot.txids,
-          [...txids, departedTxid].sort(compareCanonicalUtf8),
+          [...txids].sort(compareCanonicalUtf8),
+          "Q16 stage planning must use a fresh just-in-time mempool snapshot",
         );
         return { publishEligible: true, request: stageRequest };
       },
-      bitcoinRpc: async (method) => {
+      bitcoinRpc: async (method, params) => {
         assert.equal(method, "getrawmempool");
-        return mempool;
+        mempoolCalls += 1;
+        if (mempoolCalls === 1) {
+          assert.equal(JSON.stringify(params), JSON.stringify([true]));
+          return mempool;
+        }
+        if (mempoolCalls === 2) {
+          assert.equal(JSON.stringify(params), JSON.stringify([false]));
+          return [...txids];
+        }
+        throw new Error("unexpected extra mempool snapshot");
       },
-      canonicalMempoolTxidSnapshot: (value) => ({
-        count: Object.keys(value).length,
-        model: "fixture-mempool-snapshot",
-        sha256: "fixture-snapshot",
-        txids: Object.keys(value).sort(),
-      }),
+      canonicalMempoolTxidSnapshot: (value) => {
+        const snapshotTxids = Array.isArray(value)
+          ? value
+          : Object.keys(value);
+        return {
+          count: snapshotTxids.length,
+          model: "fixture-mempool-snapshot",
+          sha256: "fixture-snapshot",
+          txids: snapshotTxids.sort(),
+        };
+      },
       compareCanonicalUtf8: (left, right) =>
         String(left) < String(right) ? -1 : String(left) > String(right) ? 1 : 0,
       currentWorkProjectionState: async () => "work-q16",
@@ -16441,6 +16476,7 @@ check("supervised pending recovery stages 118 WORK candidates before one atomic 
   const result = await backfillMempoolScanSource(client, {
     label: "mempool-scan",
   });
+  assert.ifError(result.error);
   assert.equal(result.protocolTxids, 118);
   assert.equal(result.priorityScanned, 119);
   assert.equal(result.scanned, 119);
@@ -16449,6 +16485,7 @@ check("supervised pending recovery stages 118 WORK candidates before one atomic 
   assert.equal(result.q16PendingWitnessReady, true);
   assert.equal(classified, 118);
   assert.equal(freshReads, 119);
+  assert.equal(mempoolCalls, 2);
   assert.equal(published, 1);
   assert.deepEqual(Array.from(stagedTxids), txids);
   assert.equal(storedScan.processedTxids.length, 118);

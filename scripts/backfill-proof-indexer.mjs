@@ -2585,9 +2585,24 @@ async function readJson(url, options = {}) {
       }
       if (!response.ok) {
         const responseText = await response.text().catch(() => "");
+        let responseDetails = null;
+        try {
+          const responsePayload = JSON.parse(responseText);
+          responseDetails = responsePayload?.details ?? null;
+        } catch {}
+        const responseCode = String(responseDetails?.code ?? "").trim();
         const requestError = new Error(
-          `${url.pathname} returned HTTP ${response.status}`,
+          `${url.pathname} returned HTTP ${response.status}${
+            responseCode ? ` (${responseCode})` : ""
+          }`,
         );
+        if (responseDetails) {
+          requestError.details = responseDetails;
+        }
+        const responseReason = String(responseDetails?.reason ?? "").trim();
+        if (responseReason) {
+          requestError.message += `: ${responseReason.slice(0, 500)}`;
+        }
         requestError.statusCode = response.status;
         requestError.responseText = responseText;
         throw requestError;
@@ -23660,6 +23675,8 @@ function canonicalStoredWorkQ16PendingStage(value) {
 }
 
 async function workQ16PendingStageContext(client) {
+  const currentConfirmedBase =
+    await currentWorkQ16PendingConfirmedBase(client);
   const readMeta = () => client.query(
     `
       SELECT key, value
@@ -23719,6 +23736,7 @@ async function workQ16PendingStageContext(client) {
         ).rows;
     const context = {
       attempt,
+      currentConfirmedBase,
       parent,
       priorObservations: priorWorkQ16PendingAbsenceObservations(
         storedStage?.parentWitnessSha256 === parent.sha256 &&
@@ -23744,6 +23762,64 @@ async function workQ16PendingStageContext(client) {
     }
     throw error;
   }
+}
+
+async function currentWorkQ16PendingConfirmedBase(client) {
+  const result = await client.query(
+    `
+      WITH canonical_tip AS (
+        SELECT block.height, block.block_hash
+        FROM proof_indexer.blocks block
+        WHERE block.network = $1 AND block.canonical = true
+        ORDER BY block.height DESC
+        LIMIT 1
+      )
+      SELECT
+        tip.height AS tip_height,
+        tip.block_hash AS tip_hash,
+        transition.model AS transition_model,
+        transition.work_token_state_model,
+        transition.complete AS transition_complete,
+        transition.payload AS transition_payload
+      FROM canonical_tip tip
+      JOIN proof_indexer.work_amo_block_transitions transition
+        ON transition.network = $1
+       AND transition.block_height = tip.height
+       AND transition.block_hash = tip.block_hash
+      LIMIT 2
+    `,
+    [NETWORK],
+  );
+  if (result.rows.length !== 1) {
+    throw new Error(
+      "WORK Q16 pending stage planning requires one exact current confirmed replay base.",
+    );
+  }
+  const row = result.rows[0];
+  const tipHeight = Number(row.tip_height);
+  const tipHash = normalizedLowerText(row.tip_hash);
+  if (
+    !Number.isSafeInteger(tipHeight) ||
+    tipHeight < WORK_AMO_V8_CONFIGURED_ACTIVATION_HEIGHT ||
+    !isHexTxid(tipHash) ||
+    row.transition_model !== WORK_AMO_V8_BLOCK_SEQUENCER_MODEL ||
+    row.work_token_state_model !== WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL ||
+    row.transition_complete !== true
+  ) {
+    throw new Error(
+      "WORK Q16 pending stage planning confirmed replay base is not exact.",
+    );
+  }
+  const transitionPayload = objectValue(row.transition_payload);
+  return {
+    canonicalTip: {
+      hash: tipHash,
+      height: tipHeight,
+    },
+    tokenStateCommitment: workAmoV8CanonicalTokenStateCommitment(
+      transitionPayload.closingTokenState,
+    ),
+  };
 }
 
 async function storeCurrentWorkQ16PendingStage(client, stage) {
@@ -23980,6 +24056,14 @@ async function buildWorkQ16PendingStagePlan(
       context.attempt.witnessGeneratedAt ===
         context.parent.witness.generatedAt,
   );
+  const parentConfirmedBaseMatchesCurrent = Boolean(
+    parentStage.confirmedBaseCommitment?.tokenStateCommitment?.sha256 ===
+      context.currentConfirmedBase.tokenStateCommitment.sha256 &&
+      parentStage.canonicalTip?.height ===
+        context.currentConfirmedBase.canonicalTip.height &&
+      parentStage.canonicalTip?.hash ===
+        context.currentConfirmedBase.canonicalTip.hash,
+  );
   const membershipChanged =
     canonicalJsonText(replayTxids) !==
       canonicalJsonText(priorMembershipTxids) ||
@@ -23990,6 +24074,7 @@ async function buildWorkQ16PendingStagePlan(
   );
   const reusablePublishedWitness = Boolean(
     publishedAttemptBindsParent &&
+      parentConfirmedBaseMatchesCurrent &&
       !membershipChanged &&
       Number.isFinite(parentGeneratedAtMs) &&
       Date.now() >= parentGeneratedAtMs &&
@@ -27295,9 +27380,12 @@ async function backfillMempoolScanSource(client, source) {
   let pendingWitness = null;
   if (q16PendingActive) {
     try {
+      const stagingMempoolSnapshot = canonicalMempoolTxidSnapshot(
+        await bitcoinRpc("getrawmempool", [false]),
+      );
       const stagePlan = await buildWorkQ16PendingStagePlan(client, {
         discoveredTxids: [...stagedWorkTxids],
-        initialMempoolSnapshot,
+        initialMempoolSnapshot: stagingMempoolSnapshot,
       });
       const scanComplete = workQ16PendingScanComplete(
         q16PendingUnresolved,
@@ -27331,7 +27419,7 @@ async function backfillMempoolScanSource(client, source) {
             client,
             workQ16PendingRunningAttempt(
               stagePlan.request,
-              initialMempoolSnapshot,
+              stagingMempoolSnapshot,
             ),
             stagePlan.request.parentWitnessSha256,
           )

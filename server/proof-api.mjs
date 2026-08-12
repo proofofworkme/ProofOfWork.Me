@@ -194,6 +194,7 @@ import {
 import {
   WORK_AMO_V8_ALLOWED_FACE_PROOFS,
   WORK_AMO_V8_AUTH_VERSION,
+  WORK_AMO_V8_BLOCK_SEQUENCER_MODEL,
   WORK_AMO_V8_RELIC_CUTOVER_MODEL,
   WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL,
   WORK_AMO_V8_TRANSFER_VERSION,
@@ -58745,7 +58746,55 @@ function pendingWorkVerifierStageConfirmedListing(value, { closed = false } = {}
   return listing;
 }
 
-function pendingWorkVerifierStageConfirmedBase(payload, tip) {
+async function pendingWorkVerifierStageConfirmedTransitionCommitment(
+  network,
+  tip,
+) {
+  const transition = await proofIndexWorkAmoBlockTransition(
+    network,
+    tip.height,
+    tip.blockHash,
+  );
+  let tokenStateCommitment = null;
+  try {
+    tokenStateCommitment = workAmoV8CanonicalTokenStateCommitment(
+      transition?.payload?.closingTokenState,
+    );
+  } catch {
+    tokenStateCommitment = null;
+  }
+  const sufficientCommitment =
+    transition?.payload?.closingSufficientState?.tokenStateCommitment;
+  if (
+    network !== "livenet" ||
+    !transition ||
+    transition.blockHeight !== tip.height ||
+    transition.blockHash !== tip.blockHash ||
+    transition.model !== WORK_AMO_V8_BLOCK_SEQUENCER_MODEL ||
+    transition.workTokenStateModel !==
+      WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL ||
+    transition.complete !== true ||
+    !tokenStateCommitment ||
+    tokenStateCommitment.model !==
+      WORK_AMO_V5_PAYLOAD_COMMITMENT_MODEL ||
+    tokenStateCommitment.sha256 !==
+      String(sufficientCommitment?.sha256 ?? "").trim().toLowerCase() ||
+    tokenStateCommitment.payloadBytes !==
+      Number(sufficientCommitment?.payloadBytes)
+  ) {
+    throw pendingWorkVerifierStageError(
+      "PENDING_WORK_STAGE_BASE_UNAVAILABLE",
+      "The canonical V8 transition closing token state is unavailable.",
+    );
+  }
+  return tokenStateCommitment;
+}
+
+function pendingWorkVerifierStageConfirmedBase(
+  payload,
+  tip,
+  tokenStateCommitment,
+) {
   if (
     payload?.source !== "proof-indexer-token-state-tables" ||
     payload?.network !== "livenet" ||
@@ -58985,9 +59034,8 @@ function pendingWorkVerifierStageConfirmedBase(payload, tip) {
       "Canonical WORK confirmed base failed Q16 supply conservation.",
     );
   }
-  let tokenStateCommitment;
   try {
-    tokenStateCommitment = workAmoV8CanonicalTokenStateCommitment(state);
+    workAmoV8CanonicalTokenStateCommitment(state);
   } catch (error) {
     throw pendingWorkVerifierStageError(
       "PENDING_WORK_STAGE_BASE_COMMITMENT_INVALID",
@@ -59009,6 +59057,18 @@ function pendingWorkVerifierStageConfirmedBase(payload, tip) {
     token,
     transfers,
   });
+  if (
+    tokenStateCommitment?.model !==
+      WORK_AMO_V5_PAYLOAD_COMMITMENT_MODEL ||
+    !Number.isSafeInteger(tokenStateCommitment.payloadBytes) ||
+    tokenStateCommitment.payloadBytes <= 0 ||
+    !/^[0-9a-f]{64}$/u.test(String(tokenStateCommitment.sha256 ?? ""))
+  ) {
+    throw pendingWorkVerifierStageError(
+      "PENDING_WORK_STAGE_BASE_COMMITMENT_INVALID",
+      "Canonical WORK confirmed base requires the direct V8 transition token-state commitment.",
+    );
+  }
   return {
     commitment: {
       ...payloadCommitment,
@@ -60281,11 +60341,19 @@ async function pendingWorkVerifierStagePayload(value) {
     ),
   ]);
 
-  const [initialTokenPayload, transactions] = await Promise.all([
+  const [
+    initialTokenPayload,
+    initialTransitionCommitment,
+    transactions,
+  ] = await Promise.all([
     proofIndexCanonicalSummaryTokenTablePayload(request.network, {
       exactHash: initialTip.blockHash,
       exactHeight: initialTip.height,
     }),
+    pendingWorkVerifierStageConfirmedTransitionCommitment(
+      request.network,
+      initialTip,
+    ),
     mapWithConcurrency(
       request.replayTxids,
       Math.min(8, Math.max(1, TX_FETCH_CONCURRENCY)),
@@ -60314,6 +60382,7 @@ async function pendingWorkVerifierStagePayload(value) {
   const initialBase = pendingWorkVerifierStageConfirmedBase(
     initialTokenPayload,
     initialTip,
+    initialTransitionCommitment,
   );
   const transactionRecords = transactions.map((transaction, index) =>
     pendingWorkVerifierStageRawTransaction(
@@ -60371,11 +60440,19 @@ async function pendingWorkVerifierStagePayload(value) {
     );
   }
 
-  const finalTokenPayload =
-    await proofIndexCanonicalSummaryTokenTablePayload(request.network, {
+  const [
+    finalTokenPayload,
+    finalTransitionCommitment,
+  ] = await Promise.all([
+    proofIndexCanonicalSummaryTokenTablePayload(request.network, {
       exactHash: initialTip.blockHash,
       exactHeight: initialTip.height,
-    });
+    }),
+    pendingWorkVerifierStageConfirmedTransitionCommitment(
+      request.network,
+      initialTip,
+    ),
+  ]);
   const [finalChain, finalIndex, finalMempoolResponse, finalStatus, finalCanonical] =
     await Promise.all([
       bitcoinRpc("getblockchaininfo", []),
@@ -60423,6 +60500,7 @@ async function pendingWorkVerifierStagePayload(value) {
   const finalBase = pendingWorkVerifierStageConfirmedBase(
     finalTokenPayload,
     finalTip,
+    finalTransitionCommitment,
   );
   const finalHistoricalListingScopes =
     await pendingWorkVerifierStageHistoricalListingScopes(
