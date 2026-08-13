@@ -8629,6 +8629,25 @@ function tokenWalletBalanceDisplay(balance: PowTokenWalletBalance) {
   );
 }
 
+function tokenAmountValueFromUnits(
+  token: PowTokenDefinition,
+  units: bigint,
+): ExactIntegerValue {
+  return isWorkToken(token) ? workNumberFromAtoms(units) : units.toString();
+}
+
+function tokenAmountDisplayFromUnits(
+  token: PowTokenDefinition,
+  units: bigint,
+) {
+  return tokenAmountDisplay(
+    token,
+    tokenAmountValueFromUnits(token, units),
+    undefined,
+    isWorkToken(token) ? units.toString() : undefined,
+  );
+}
+
 function bondUiConfigForTokenId(tokenId: string) {
   const normalized = String(tokenId ?? "").trim().toLowerCase();
   return BOND_UI_CONFIGS.find((config) => config.tokenId === normalized);
@@ -11304,6 +11323,38 @@ function tokenReservedBalanceAtomsFor(
     );
     return amountAtoms === null ? total : total + amountAtoms;
   }, 0n);
+}
+
+function tokenWalletBalanceReservedUnits(
+  balance: PowTokenWalletBalance,
+  listings: PowTokenListing[],
+  ownerAddress: string,
+) {
+  return tokenReservedBalanceAtomsFor(
+    listings,
+    balance.token.tokenId,
+    ownerAddress,
+  );
+}
+
+function tokenWalletBalanceSpendableUnits(
+  balance: PowTokenWalletBalance,
+  listings: PowTokenListing[],
+  ownerAddress: string,
+) {
+  const confirmedUnits =
+    tokenWalletBalanceAmountUnits(balance, "confirmedBalance") ?? 0n;
+  const pendingOutgoingUnits =
+    tokenWalletBalanceAmountUnits(balance, "pendingOutgoing") ?? 0n;
+  const reservedUnits = tokenWalletBalanceReservedUnits(
+    balance,
+    listings,
+    ownerAddress,
+  );
+  return [
+    confirmedUnits - pendingOutgoingUnits - reservedUnits,
+    0n,
+  ].reduce((maximum, value) => (value > maximum ? value : maximum));
 }
 
 function tokenTransferSpendabilityKey(transfer: PowTokenTransfer) {
@@ -35485,35 +35536,19 @@ function TokenWalletWorkspace({
         (balance) => balance.token.tokenId === selectedListToken.tokenId,
       )
     : undefined;
+  const selectedWalletSpendableBalanceAtoms =
+    selectedWalletBalance && selectedListToken
+      ? tokenWalletBalanceSpendableUnits(
+          selectedWalletBalance,
+          listings,
+          address,
+        ).toString()
+      : undefined;
   const transferBalanceAtoms =
     selectedListToken && isWorkToken(selectedListToken)
-      ? selectedWalletBalance?.confirmedBalanceSubatoms
+      ? selectedWalletSpendableBalanceAtoms
       : undefined;
-  const listSpendableBalanceAtoms =
-    selectedListToken
-      ? [
-          (tokenRecordAmountAtoms(
-            selectedListToken,
-            selectedWalletBalance?.confirmedBalance,
-            selectedWalletBalance?.confirmedBalanceAtoms,
-            selectedWalletBalance?.confirmedBalanceSubatoms,
-          ) ?? 0n) -
-            (tokenRecordAmountAtoms(
-              selectedListToken,
-              selectedWalletBalance?.pendingOutgoing,
-              selectedWalletBalance?.pendingOutgoingAtoms,
-              selectedWalletBalance?.pendingOutgoingSubatoms,
-            ) ?? 0n) -
-            tokenReservedBalanceAtomsFor(
-              listings,
-              selectedListToken.tokenId,
-              address,
-            ),
-          0n,
-        ]
-          .reduce((maximum, value) => (value > maximum ? value : maximum))
-          .toString()
-      : undefined;
+  const listSpendableBalanceAtoms = selectedWalletSpendableBalanceAtoms;
   const parsedListAmount = selectedListToken
     ? tokenAmountInput(selectedListToken, listAmount)
     : null;
@@ -35828,55 +35863,87 @@ function TokenWalletWorkspace({
           </div>
           {balances.length ? (
             <div className="token-list compact-token-list">
-              {balances.map((balance) => (
-                <button
-                  aria-current={selectedTokenId === balance.token.tokenId}
-                  className="token-list-item"
-                  key={balance.token.tokenId}
-                  onClick={() => setSelectedTokenId(balance.token.tokenId)}
-                  type="button"
-                >
-                  <span>
-                    <strong>{balance.token.ticker}</strong>
-                    <small>{shortAddress(balance.token.tokenId)}</small>
-                  </span>
-                  <span>
-                    <strong>
-                      {tokenAmountDisplay(
+              {balances.map((balance) => {
+                const confirmedUnits =
+                  tokenWalletBalanceAmountUnits(
+                    balance,
+                    "confirmedBalance",
+                  ) ?? 0n;
+                const pendingIncomingUnits =
+                  tokenWalletBalanceAmountUnits(
+                    balance,
+                    "pendingIncoming",
+                  ) ?? 0n;
+                const pendingOutgoingUnits =
+                  tokenWalletBalanceAmountUnits(
+                    balance,
+                    "pendingOutgoing",
+                  ) ?? 0n;
+                const reservedUnits = tokenWalletBalanceReservedUnits(
+                  balance,
+                  listings,
+                  address,
+                );
+                const spendableUnits = tokenWalletBalanceSpendableUnits(
+                  balance,
+                  listings,
+                  address,
+                );
+                const balanceNotes = [
+                  `${tokenAmountDisplayFromUnits(
+                    balance.token,
+                    confirmedUnits,
+                  )} confirmed`,
+                  reservedUnits > 0n
+                    ? `${tokenAmountDisplayFromUnits(
                         balance.token,
-                        balance.confirmedBalance,
-                        balance.confirmedBalanceAtoms,
-                        balance.confirmedBalanceSubatoms,
-                      )}{" "}
-                      {balance.token.ticker}
-                    </strong>
-                    <small>
-                      {tokenWalletBalanceHasAmount(
-                        balance,
-                        "pendingIncoming",
-                      )
-                        ? `+${tokenAmountDisplay(
-                            balance.token,
-                            balance.pendingIncoming,
-                            balance.pendingIncomingAtoms,
-                            balance.pendingIncomingSubatoms,
-                          )} pending in`
-                        : "confirmed"}
-                      {tokenWalletBalanceHasAmount(
-                        balance,
-                        "pendingOutgoing",
-                      )
-                        ? ` · -${tokenAmountDisplay(
-                            balance.token,
-                            balance.pendingOutgoing,
-                            balance.pendingOutgoingAtoms,
-                            balance.pendingOutgoingSubatoms,
-                          )} pending out`
-                        : ""}
-                    </small>
-                  </span>
-                </button>
-              ))}
+                        reservedUnits,
+                      )} reserved`
+                    : "",
+                  pendingIncomingUnits > 0n
+                    ? `+${tokenAmountDisplayFromUnits(
+                        balance.token,
+                        pendingIncomingUnits,
+                      )} pending in`
+                    : "",
+                  pendingOutgoingUnits > 0n
+                    ? `-${tokenAmountDisplayFromUnits(
+                        balance.token,
+                        pendingOutgoingUnits,
+                      )} pending out`
+                    : "",
+                ].filter(Boolean);
+
+                return (
+                  <button
+                    aria-current={selectedTokenId === balance.token.tokenId}
+                    className="token-list-item"
+                    key={balance.token.tokenId}
+                    onClick={() => setSelectedTokenId(balance.token.tokenId)}
+                    type="button"
+                  >
+                    <span>
+                      <strong>{balance.token.ticker}</strong>
+                      <small>{shortAddress(balance.token.tokenId)}</small>
+                    </span>
+                    <span>
+                      <strong>
+                        {tokenAmountDisplayFromUnits(
+                          balance.token,
+                          spendableUnits,
+                        )}{" "}
+                        {balance.token.ticker}
+                      </strong>
+                      <small>
+                        spendable
+                        {balanceNotes.length
+                          ? ` · ${balanceNotes.join(" · ")}`
+                          : ""}
+                      </small>
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           ) : (
             <div className="empty-state">
@@ -35908,12 +35975,15 @@ function TokenWalletWorkspace({
                   balances.map((balance) => (
                     <option key={balance.token.tokenId} value={balance.token.tokenId}>
                       {balance.token.ticker} ·{" "}
-                      {tokenAmountDisplay(
+                      {tokenAmountDisplayFromUnits(
                         balance.token,
-                        balance.confirmedBalance,
-                        balance.confirmedBalanceAtoms,
-                        balance.confirmedBalanceSubatoms,
-                      )} confirmed
+                        tokenWalletBalanceSpendableUnits(
+                          balance,
+                          listings,
+                          address,
+                        ),
+                      )}{" "}
+                      spendable
                     </option>
                   ))
                 ) : (
@@ -35960,7 +36030,7 @@ function TokenWalletWorkspace({
             </div>
             <div className="id-launch-stats token-stats-row">
               <div>
-                <span>Available</span>
+                <span>Spendable</span>
                 <strong>
                   {tokenAmountDisplay(
                     transferToken ?? {},
