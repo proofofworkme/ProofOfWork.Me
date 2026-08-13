@@ -10031,8 +10031,15 @@ async function signedWorkMarketplaceWriteActions(txHex, network) {
     inputOutpoints,
     network,
   );
-  const firstInputAddress =
-    originAddresses.find((address) => Boolean(address)) ?? "";
+  const originAddressSet = new Set(
+    originAddresses
+      .map((address) => String(address ?? "").trim())
+      .filter(Boolean),
+  );
+  const originHasAddress = (address) => {
+    const normalized = String(address ?? "").trim();
+    return Boolean(normalized) && originAddressSet.has(normalized);
+  };
   const anchorsByListingId = new Map(
     anchors.map((anchor) => [anchor.listingId, anchor]),
   );
@@ -10067,23 +10074,27 @@ async function signedWorkMarketplaceWriteActions(txHex, network) {
       ].includes(listingAnchor?.saleAuthorization?.version) &&
         Number.isSafeInteger(frozenPriceSats) &&
         frozenPriceSats > 0);
-    const actorMatches =
-      candidate.action === TOKEN_BUY_ACTION
-        ? firstInputAddress ===
-            String(candidate?.buyerAddress ?? authorization?.buyerAddress ?? "")
-              .trim()
-        : firstInputAddress ===
-          String(authorization?.sellerAddress ?? "").trim();
+    const sellerAddress = String(
+      authorization?.sellerAddress ?? "",
+    ).trim();
+    const candidateBuyerAddress = String(
+      candidate?.buyerAddress ?? "",
+    ).trim();
     const authorizationBuyerAddress = String(
       authorization?.buyerAddress ?? "",
     ).trim();
+    const buyerActorAddress =
+      candidateBuyerAddress || authorizationBuyerAddress;
+    const actorMatches =
+      candidate.action === TOKEN_BUY_ACTION
+        ? originHasAddress(buyerActorAddress)
+        : originHasAddress(sellerAddress);
     const buyerLockMatches =
       candidate.action !== TOKEN_BUY_ACTION ||
       !authorizationBuyerAddress ||
       (
-        authorizationBuyerAddress === firstInputAddress &&
-        authorizationBuyerAddress ===
-          String(candidate?.buyerAddress ?? "").trim()
+        authorizationBuyerAddress === candidateBuyerAddress &&
+        originHasAddress(authorizationBuyerAddress)
       );
     const referencedTermsMatch =
       candidate.action === TOKEN_LIST_ACTION ||

@@ -397,6 +397,10 @@ const pendingWorkSupplyCapVerifier = sliceBetween(
   /function pendingWorkMintFromHydratedTransaction/,
   /async function tokenVerifierDeterministicInvalidReason/,
 );
+const workMarketplaceWriteActions = sliceBetween(
+  /async function signedWorkMarketplaceWriteActions/,
+  /function canonicalWorkMarketOracleNetworkValueQ8/,
+);
 const workAmoBroadcastAdmission = sliceBetween(
   /function workAmoV8SignedMutationShape/,
   /async function broadcastSlipstreamPayload/,
@@ -2165,6 +2169,19 @@ expect(
     /WORK_AMO_V8_DECLARATION_PINS_REQUESTED[\s\S]*WORK_MINT_AMOUNT_INVALID[\s\S]*if \(WORK_AMO_V8_DECLARATION_PINS_CONFIGURED\)/u.test(
       workAmoBroadcastAdmission,
     ),
+);
+expect(
+  "marketplace broadcast admission proves sellers and buyers by any signed input address, not only the first input",
+  /const originAddressSet = new Set\([\s\S]*const originHasAddress = \(address\) =>[\s\S]*originAddressSet\.has\(normalized\)/u.test(
+    workMarketplaceWriteActions,
+  ) &&
+    /const sellerAddress = String\([\s\S]*const buyerActorAddress =[\s\S]*candidateBuyerAddress \|\| authorizationBuyerAddress[\s\S]*const actorMatches =[\s\S]*originHasAddress\(buyerActorAddress\)[\s\S]*originHasAddress\(sellerAddress\)/u.test(
+      workMarketplaceWriteActions,
+    ) &&
+    /const buyerLockMatches =[\s\S]*authorizationBuyerAddress === candidateBuyerAddress[\s\S]*originHasAddress\(authorizationBuyerAddress\)/u.test(
+      workMarketplaceWriteActions,
+    ) &&
+    !/const firstInputAddress =/u.test(workMarketplaceWriteActions),
 );
 expect(
   "precision migration binds exact declaration evidence and relicizes the D+1 opening deterministically",
