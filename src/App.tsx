@@ -8040,6 +8040,24 @@ function workAmoListingIsV8(listing: PowTokenListing) {
   );
 }
 
+function workAmoConfirmedListingAmountSubatoms(listing: PowTokenListing) {
+  if (!isWorkToken(listing) || listing.confirmed !== true) {
+    return null;
+  }
+  const subatoms = workSubatomsFromCanonicalString(listing.amountSubatoms);
+  return subatoms !== null && subatoms > 0n ? subatoms : null;
+}
+
+function workAmoConfirmedListingPriceSats(listing: PowTokenListing) {
+  if (!isWorkToken(listing) || listing.confirmed !== true) {
+    return null;
+  }
+  const priceSats = Math.floor(Number(listing.priceSats));
+  return Number.isSafeInteger(priceSats) && priceSats > 0
+    ? priceSats
+    : null;
+}
+
 function workAmoV6FrozenProjection(listing: PowTokenListing) {
   const frozen = listing.workAmoFrozenTerms ?? listing.frozenTerms;
   const authorization = listing.saleAuthorization;
@@ -36216,6 +36234,10 @@ function TokenWalletWorkspace({
                   const workFrozenTerms = isWorkToken(item)
                     ? workAmoFrozenTerms(item)
                     : null;
+                  const workConfirmedSubatoms =
+                    workAmoConfirmedListingAmountSubatoms(item);
+                  const workConfirmedPriceSats =
+                    workAmoConfirmedListingPriceSats(item);
                   const workEstimate =
                     item.workAmoEstimate ?? item.estimate;
                   const workFaceProofs = workAmoListingFaceProofs(item);
@@ -36280,6 +36302,12 @@ function TokenWalletWorkspace({
                                   BigInt(workFrozenTerms.amountSubatoms),
                                   false,
                                 )} WORK · ${workFrozenTerms.priceSats.toLocaleString()} frozen proofs`
+                              : workConfirmedSubatoms !== null &&
+                                  workConfirmedPriceSats !== null
+                                ? `${formatWorkAmountAmo(
+                                    workConfirmedSubatoms,
+                                    false,
+                                  )} WORK · ${workConfirmedPriceSats.toLocaleString()} confirmed proofs`
                               : workAmoEstimateSubatoms(workEstimate) !== null &&
                                   workEstimate?.unitPriceSats
                                 ? `${formatWorkAmountAmo(
@@ -45389,6 +45417,10 @@ function TokenMarketplacePanel({
                 const workFrozen = isWorkToken(listing)
                   ? workAmoFrozenTerms(listing)
                   : null;
+                const workConfirmedSubatoms =
+                  workAmoConfirmedListingAmountSubatoms(listing);
+                const workConfirmedPriceSats =
+                  workAmoConfirmedListingPriceSats(listing);
                 const workFaceProofs = workAmoListingFaceProofs(listing);
                 const workFaceUsdCents =
                   workAmoListingFaceUsdCents(listing);
@@ -45428,6 +45460,12 @@ function TokenMarketplacePanel({
                                 BigInt(workFrozen.amountSubatoms),
                                 false,
                               )} WORK · ${workFrozen.priceSats.toLocaleString()} frozen proofs`
+                            : workConfirmedSubatoms !== null &&
+                                workConfirmedPriceSats !== null
+                              ? `${formatWorkAmountAmo(
+                                  workConfirmedSubatoms,
+                                  false,
+                                )} WORK · ${workConfirmedPriceSats.toLocaleString()} confirmed proofs`
                             : workAmoEstimateSubatoms(workEstimate) !== null &&
                                 workEstimate?.unitPriceSats
                               ? `${formatWorkAmountAmo(
@@ -45460,6 +45498,10 @@ function TokenMarketplacePanel({
                 const workFrozen = isWorkToken(listing)
                   ? workAmoFrozenTerms(listing)
                   : null;
+                const workConfirmedSubatoms =
+                  workAmoConfirmedListingAmountSubatoms(listing);
+                const workConfirmedPriceSats =
+                  workAmoConfirmedListingPriceSats(listing);
                 const workFaceProofs = workAmoListingFaceProofs(listing);
                 const workFaceUsdCents =
                   workAmoListingFaceUsdCents(listing);
@@ -45571,6 +45613,11 @@ function TokenMarketplacePanel({
                                   BigInt(workFrozen.amountSubatoms),
                                   false,
                                 )} WORK`
+                              : workConfirmedSubatoms !== null
+                                ? `${formatWorkAmountAmo(
+                                    workConfirmedSubatoms,
+                                    false,
+                                  )} WORK`
                               : workAmoEstimateSubatoms(workEstimate) !== null
                                 ? `${formatWorkAmountAmo(
                                     workAmoEstimateSubatoms(workEstimate) ??
@@ -45591,6 +45638,8 @@ function TokenMarketplacePanel({
                           {isWorkToken(listing)
                             ? workFrozen
                               ? `${workFrozen.priceSats.toLocaleString()} proofs frozen`
+                              : workConfirmedPriceSats !== null
+                                ? `${workConfirmedPriceSats.toLocaleString()} proofs confirmed`
                               : workFaceProofs
                                 ? `${workFaceProofs.toLocaleString()} proofs fixed face`
                               : workEstimate?.unitPriceSats
@@ -45605,6 +45654,9 @@ function TokenMarketplacePanel({
                           <dd>
                             {workFrozen
                               ? "Frozen at confirmation"
+                              : workConfirmedSubatoms !== null &&
+                                  workConfirmedPriceSats !== null
+                                ? "Confirmed unsealed"
                               : "Estimate only"}
                           </dd>
                         </div>
@@ -45636,6 +45688,9 @@ function TokenMarketplacePanel({
                                 ? ` Block ${listing.workAmoFrozenTerms.listingBlockHeight.toLocaleString()}`
                                 : ""
                             }`
+                          : workConfirmedSubatoms !== null &&
+                              workConfirmedPriceSats !== null
+                            ? "Confirmed V8 sale ticket is unsealed. Settlement preparation rechecks complete immutable AMO terms before signing."
                           : "Pending WORK amount and proof price are estimates only. Confirmation order creates the canonical terms."
                         : `Reference: ${
                             listingReferenceSats > 0

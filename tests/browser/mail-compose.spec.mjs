@@ -919,6 +919,10 @@ test("AMO order book counts remote unsealed V8 listings", async ({ page }) => {
     amoUnits.getByRole("button", { name: "Unsealed 2" }),
   ).toContainText("2");
   await expect(amoUnits.getByText("Waiting for seal")).toHaveCount(2);
+  await expect(
+    amoUnits.getByText("0.0000000752009741 WORK"),
+  ).toHaveCount(3);
+  await expect(amoUnits.getByText("Pending confirmation")).toHaveCount(0);
   await expect(amoUnits.getByText("Pre-V8 relic")).toHaveCount(0);
   await expect(
     amoUnits.locator(".token-market-grid .token-market-row"),
