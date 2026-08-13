@@ -8751,19 +8751,9 @@ export async function proofIndexWorkAmoV8ListingTerms(
   if (!pins) {
     return null;
   }
-  const readiness =
-    await proofIndexWorkPrecisionV2MigrationReadiness(
-      network,
-      pins,
-    ).catch(() => null);
-  if (
-    readiness?.ready !== true ||
-    readiness?.active !== true ||
-    readiness?.parityReady !== true ||
-    readiness?.replayReady !== true
-  ) {
-    return null;
-  }
+  // Confirmed V8 listing terms are immutable. Exact-tip worker readiness gates
+  // fresh writes elsewhere, but must not make an already-indexed frozen listing
+  // unverifiable while the worker is retrying.
   const result = await pool.query(
     `
       SELECT

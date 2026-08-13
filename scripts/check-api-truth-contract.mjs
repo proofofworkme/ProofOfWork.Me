@@ -85,6 +85,11 @@ const workAmoV8Declaration = readFileSync(
   "utf8",
 );
 const workUnits = readFileSync("server/work-units.mjs", "utf8");
+const workAmoV8ListingTermsReader = sourceSliceBetween(
+  reader,
+  /export async function proofIndexWorkAmoV8ListingTerms/,
+  /function historicalWorkListingScopeObject/,
+);
 const backfillQ16PendingWitness = sourceSliceBetween(
   backfill,
   /async function persistExactWorkQ16PendingWitness/,
@@ -2035,6 +2040,21 @@ expect(
     ) &&
     /const payload = await tokenHistoryPayload\([\s\S]*const responsePayload =[\s\S]*tokenHistoryPageWithCanonicalWorkAmoV8ListingWitnesses\([\s\S]*payload[\s\S]*shadowProofIndexTokenHistory\([\s\S]*responsePayload[\s\S]*jsonResponse\([\s\S]*responsePayload/u.test(
       server,
+    ),
+);
+expect(
+  "confirmed AMO V8 listing terms remain readable while exact-tip workers retry",
+  /export async function proofIndexWorkAmoV8ListingTerms/u.test(
+    workAmoV8ListingTermsReader,
+  ) &&
+    /Confirmed V8 listing terms are immutable/u.test(
+      workAmoV8ListingTermsReader,
+    ) &&
+    /FROM proof_indexer\.work_amo_v8_listing_terms terms/u.test(
+      workAmoV8ListingTermsReader,
+    ) &&
+    !/proofIndexWorkPrecisionV2MigrationReadiness/u.test(
+      workAmoV8ListingTermsReader,
     ),
 );
 expect(
