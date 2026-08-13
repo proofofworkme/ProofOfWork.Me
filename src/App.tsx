@@ -8528,6 +8528,24 @@ function workAmoListingMatchesWriteEra(
   }
 }
 
+function workAmoListingMatchesReadEra(
+  listing: PowTokenListing,
+  quote: WorkFloorQuote | undefined,
+) {
+  if (!isWorkToken(listing)) {
+    return true;
+  }
+  if (workAmoListingIsV8(listing)) {
+    return true;
+  }
+  if (workV8DeclarationBoundaryObserved(quote)) {
+    return false;
+  }
+  return workAmoListingMatchesWriteEra(listing, quote, {
+    allowLegacyWithoutFrozen: true,
+  });
+}
+
 function workMarketPricingCommitmentMatches(
   authorization: Partial<PowTokenSaleAuthorizationDraft>,
   pricingFields: Partial<PowTokenSaleAuthorizationDraft>,
@@ -36196,6 +36214,8 @@ function TokenWalletWorkspace({
                     item.workAmoEstimate ?? item.estimate;
                   const workFaceProofs = workAmoListingFaceProofs(item);
                   const workFaceUsdCents = workAmoListingFaceUsdCents(item);
+                  const workReadEraReady =
+                    workAmoListingMatchesReadEra(item, workFloorQuote);
                   const workWriteEraReady =
                     workAmoListingMatchesWriteEra(item, workFloorQuote);
                   const workSealCanRetryFreshPreflight =
@@ -36221,7 +36241,7 @@ function TokenWalletWorkspace({
                                 : workFloorQuote?.workAmoV6?.reasonCode) ?? ""})`
                             : ""
                         }`
-                      : !workWriteEraReady
+                      : !workReadEraReady
                         ? "Pre-V8 relic"
                         : "Frozen terms unavailable";
                   const unitSats = tokenListingUnitPriceSats(item);
@@ -36312,7 +36332,7 @@ function TokenWalletWorkspace({
                           onClick={() => delistListing(item)}
                           type="button"
                         >
-                          {isWorkToken(item) && !workWriteEraReady
+                          {isWorkToken(item) && !workReadEraReady
                             ? "Relic"
                             : "Delist"}
                         </button>
@@ -45350,11 +45370,6 @@ function TokenMarketplacePanel({
                   workAmoListingFaceUsdCents(listing);
                 const workEstimate =
                   listing.workAmoEstimate ?? listing.estimate;
-                const workWriteEraReady =
-                  workAmoListingMatchesWriteEra(
-                    listing,
-                    workFloorQuote,
-                  );
                 const sealStatus = tokenListingHasConfirmedSaleTicketSeal(listing)
                   ? "sealed"
                   : tokenListingHasPendingSaleTicketSeal(listing)
@@ -45426,8 +45441,8 @@ function TokenMarketplacePanel({
                   workAmoListingFaceUsdCents(listing);
                 const workEstimate =
                   listing.workAmoEstimate ?? listing.estimate;
-                const workWriteEraReady =
-                  workAmoListingMatchesWriteEra(
+                const workReadEraReady =
+                  workAmoListingMatchesReadEra(
                     listing,
                     workFloorQuote,
                   );
@@ -45466,7 +45481,7 @@ function TokenMarketplacePanel({
                     : "n/a";
                 const buyLabel = !address
                   ? "Connect to buy"
-                  : isWorkToken(listing) && !workWriteEraReady
+                  : isWorkToken(listing) && !workReadEraReady
                     ? "Pre-V8 relic"
                   : isWorkToken(listing) && !workAmoProtocolWritesEnabled
                     ? `AMO paused${
@@ -45491,7 +45506,7 @@ function TokenMarketplacePanel({
                 const buyDisabled =
                   busy ||
                   !sealConfirmed ||
-                  (isWorkToken(listing) && !workWriteEraReady) ||
+                  (isWorkToken(listing) && !workReadEraReady) ||
                   (isWorkToken(listing) && !workAmoProtocolWritesEnabled) ||
                   (isWorkToken(listing) && !workFrozen) ||
                   listing.sellerAddress === address ||

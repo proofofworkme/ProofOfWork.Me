@@ -56,6 +56,7 @@ function workTokenDefinition() {
 
 function v8AmoListing({
   createdAt = NOW,
+  includeFrozenTerms = true,
   listingId = V8_LISTING_TXID,
   nonce = "browser-v8-listing",
   sellerAddress = SENDER,
@@ -69,28 +70,33 @@ function v8AmoListing({
     createdAt,
     dataBytes: 994,
     decimals: 16,
-    frozenTerms: {
-      amountModel: "canonical-work-amo-proof-unit-amount-v3",
-      blockSequencerModel: "canonical-work-amo-full-position-block-sequencer-v4",
-      bondTransitionModel: "canonical-compute-then-bond-v1",
-      listingBlockHash:
-        "000000000000000000006589e2b946b1ab0f6e36ee69f337601fbf0397111c34",
-      listingBlockHeight: 962_104,
-      listingBlockIndex: 567,
-      listingBondContributionQ8: "2969148577200",
-      listingNetworkValueAfterQ8: "698129253763347407892080965",
-      listingNetworkValueBeforeQ8: "698129253763344438743503765",
-      listingProtocolVout: 1,
-      listingRecordOrdinal: 0,
-      stateOrderModel: "canonical-proof-state-order-v1",
-      unitAmountSubatoms: "752009741",
-      unitFaceProofs: 25_000,
-      unitMinimumPriceSats: "25000",
-      unitModel: "canonical-work-amo-proof-unit-v3",
-      unitPriceSats: "25000",
-      unitWorkOracleModel: "canonical-work-prefix-before-action-v1",
-      version: "pwt-sale-v8",
-    },
+    ...(includeFrozenTerms
+      ? {
+          frozenTerms: {
+            amountModel: "canonical-work-amo-proof-unit-amount-v3",
+            blockSequencerModel:
+              "canonical-work-amo-full-position-block-sequencer-v4",
+            bondTransitionModel: "canonical-compute-then-bond-v1",
+            listingBlockHash:
+              "000000000000000000006589e2b946b1ab0f6e36ee69f337601fbf0397111c34",
+            listingBlockHeight: 962_104,
+            listingBlockIndex: 567,
+            listingBondContributionQ8: "2969148577200",
+            listingNetworkValueAfterQ8: "698129253763347407892080965",
+            listingNetworkValueBeforeQ8: "698129253763344438743503765",
+            listingProtocolVout: 1,
+            listingRecordOrdinal: 0,
+            stateOrderModel: "canonical-proof-state-order-v1",
+            unitAmountSubatoms: "752009741",
+            unitFaceProofs: 25_000,
+            unitMinimumPriceSats: "25000",
+            unitModel: "canonical-work-amo-proof-unit-v3",
+            unitPriceSats: "25000",
+            unitWorkOracleModel: "canonical-work-prefix-before-action-v1",
+            version: "pwt-sale-v8",
+          },
+        }
+      : {}),
     listingId,
     network: "livenet",
     precisionModel: WORK_PRECISION_MODEL,
@@ -125,28 +131,33 @@ function v8AmoListing({
     ticker: "WORK",
     tokenId: WORK_TOKEN_ID,
     unitScale: WORK_UNIT_SCALE,
-    workAmoFrozenTerms: {
-      amountModel: "canonical-work-amo-proof-unit-amount-v3",
-      blockSequencerModel: "canonical-work-amo-full-position-block-sequencer-v4",
-      bondTransitionModel: "canonical-compute-then-bond-v1",
-      listingBlockHash:
-        "000000000000000000006589e2b946b1ab0f6e36ee69f337601fbf0397111c34",
-      listingBlockHeight: 962_104,
-      listingBlockIndex: 567,
-      listingBondContributionQ8: "2969148577200",
-      listingNetworkValueAfterQ8: "698129253763347407892080965",
-      listingNetworkValueBeforeQ8: "698129253763344438743503765",
-      listingProtocolVout: 1,
-      listingRecordOrdinal: 0,
-      stateOrderModel: "canonical-proof-state-order-v1",
-      unitAmountSubatoms: "752009741",
-      unitFaceProofs: 25_000,
-      unitMinimumPriceSats: "25000",
-      unitModel: "canonical-work-amo-proof-unit-v3",
-      unitPriceSats: "25000",
-      unitWorkOracleModel: "canonical-work-prefix-before-action-v1",
-      version: "pwt-sale-v8",
-    },
+    ...(includeFrozenTerms
+      ? {
+          workAmoFrozenTerms: {
+            amountModel: "canonical-work-amo-proof-unit-amount-v3",
+            blockSequencerModel:
+              "canonical-work-amo-full-position-block-sequencer-v4",
+            bondTransitionModel: "canonical-compute-then-bond-v1",
+            listingBlockHash:
+              "000000000000000000006589e2b946b1ab0f6e36ee69f337601fbf0397111c34",
+            listingBlockHeight: 962_104,
+            listingBlockIndex: 567,
+            listingBondContributionQ8: "2969148577200",
+            listingNetworkValueAfterQ8: "698129253763347407892080965",
+            listingNetworkValueBeforeQ8: "698129253763344438743503765",
+            listingProtocolVout: 1,
+            listingRecordOrdinal: 0,
+            stateOrderModel: "canonical-proof-state-order-v1",
+            unitAmountSubatoms: "752009741",
+            unitFaceProofs: 25_000,
+            unitMinimumPriceSats: "25000",
+            unitModel: "canonical-work-amo-proof-unit-v3",
+            unitPriceSats: "25000",
+            unitWorkOracleModel: "canonical-work-prefix-before-action-v1",
+            version: "pwt-sale-v8",
+          },
+        }
+      : {}),
   };
 }
 
@@ -469,11 +480,13 @@ async function installApiFixtures(
         const listings = [
           v8AmoListing({
             createdAt: "2026-08-12T06:37:00.000Z",
+            includeFrozenTerms: false,
             listingId: V8_LISTING_TXID,
             nonce: "browser-v8-listing-one",
           }),
           v8AmoListing({
             createdAt: "2026-08-12T15:38:00.000Z",
+            includeFrozenTerms: false,
             listingId: SECOND_V8_LISTING_TXID,
             nonce: "browser-v8-listing-two",
             sellerAddress: RECIPIENT,
@@ -892,6 +905,7 @@ test("AMO order book counts remote unsealed V8 listings", async ({ page }) => {
     amoUnits.getByRole("button", { name: "Unsealed 2" }),
   ).toContainText("2");
   await expect(amoUnits.getByText("Waiting for seal")).toHaveCount(2);
+  await expect(amoUnits.getByText("Pre-V8 relic")).toHaveCount(0);
   await expect(
     amoUnits.locator(".token-market-grid .token-market-row"),
   ).toHaveCount(2);
