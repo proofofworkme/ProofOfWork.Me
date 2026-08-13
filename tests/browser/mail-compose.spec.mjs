@@ -253,7 +253,9 @@ function canonicalActualValue() {
 
 function workFloor(mode) {
   const preV8 = mode === "pre-v8";
-  const paused = mode === "paused";
+  const precisionPaused = mode === "precision-paused";
+  const paused = mode === "paused" || precisionPaused;
+  const activationReady = !paused || precisionPaused;
   return {
     actualValue: canonicalActualValue(),
     floorQ8: FLOOR_Q8,
@@ -309,11 +311,11 @@ function workFloor(mode) {
       : {
           activation: {
             activationHeight: 960_219,
-            active: !paused,
+            active: activationReady,
             confirmed: true,
             declarationConfirmed: true,
             declarationHeight: 960_218,
-            evidenceComplete: !paused,
+            evidenceComplete: activationReady,
             reached: true,
             tipVerified: true,
           },
@@ -324,7 +326,11 @@ function workFloor(mode) {
           protocolReady: !paused,
           protocolWritesEnabled: !paused,
           ready: !paused,
-          reasonCode: paused ? "work-amo-v8-writes-paused" : "",
+          reasonCode: precisionPaused
+            ? "work-amo-v8-precision-migration-not-ready"
+            : paused
+              ? "work-amo-v8-writes-paused"
+              : "",
           settlementWritesEnabled: !paused,
           version: "pwt-sale-v8",
           writeAdmission: !paused,
@@ -766,6 +772,42 @@ test("wallet V8 AMO repair hides stale invalid rows and reserves spendable WORK"
   await expect(page.getByText("Pre-V8 relic")).toHaveCount(0);
   await expect(page.getByRole("button", { exact: true, name: "Seal" })).toBeVisible();
   await expect(page.getByText("1.9999999247990259 WORK")).toBeVisible();
+});
+
+test("wallet V8 AMO seal can retry during exact-tip catch-up", async ({
+  page,
+}) => {
+  await installWallet(page);
+  await installApiFixtures(page, {
+    mode: "precision-paused",
+    repairedV8Listing: true,
+  });
+  await openConnectedWallet(page);
+
+  const listing = page
+    .locator(".token-list-item")
+    .filter({ hasText: "25,000 proofs AMO unit" });
+  await expect(listing).toBeVisible();
+  await expect(
+    listing.getByText("0.0000000752009741 WORK · 25,000 frozen proofs"),
+  ).toBeVisible();
+  await expect(listing.getByText("Pre-V8 relic")).toHaveCount(0);
+  await expect(listing.getByText("Relic")).toHaveCount(0);
+  const seal = listing.getByRole("button", { exact: true, name: "Seal" });
+  await expect(seal).toBeVisible();
+  await expect(seal).toBeEnabled();
+
+  await seal.click();
+  await expect(
+    page
+      .locator(".field-note.bad")
+      .filter({ hasText: "work-amo-v8-precision-migration-not-ready" }),
+  ).toBeVisible();
+  await expect
+    .poll(() =>
+      page.evaluate(() => window.__mailComposeFixture?.signCalls ?? 0),
+    )
+    .toBe(0);
 });
 
 test("pre-V8 mail prepares send2 once and exposes the busy state", async ({

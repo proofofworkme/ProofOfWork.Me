@@ -7634,6 +7634,20 @@ function workAmoSettlementWritesReady(quote: WorkFloorQuote | undefined) {
     : workAmoV6SettlementWritesReady(quote);
 }
 
+function workAmoSettlementCanRetryFreshPreflight(
+  quote: WorkFloorQuote | undefined,
+) {
+  const status = quote?.workAmoV8;
+  return Boolean(
+    status?.version === TOKEN_SALE_AUTH_WORK_AMO_SUBATOM_VERSION &&
+      status.activation?.active === true &&
+      status.activation?.evidenceComplete === true &&
+      status.activation?.reached === true &&
+      String(status.reasonCode ?? "").trim() ===
+        "work-amo-v8-precision-migration-not-ready",
+  );
+}
+
 function assertWorkAmoSettlementEnabled(quote: WorkFloorQuote | undefined) {
   if (!workV8DeclarationBoundaryObserved(quote)) {
     assertWorkAmoV6SettlementEnabled(quote);
@@ -36184,9 +36198,16 @@ function TokenWalletWorkspace({
                   const workFaceUsdCents = workAmoListingFaceUsdCents(item);
                   const workWriteEraReady =
                     workAmoListingMatchesWriteEra(item, workFloorQuote);
+                  const workSealCanRetryFreshPreflight =
+                    isWorkToken(item) &&
+                    !workAmoSettlementEnabled &&
+                    Boolean(workFrozenTerms) &&
+                    workWriteEraReady &&
+                    workAmoSettlementCanRetryFreshPreflight(workFloorQuote);
                   const workSealBlocked =
                     isWorkToken(item) &&
-                    (!workAmoSettlementEnabled ||
+                    ((!workAmoSettlementEnabled &&
+                      !workSealCanRetryFreshPreflight) ||
                       !workFrozenTerms ||
                       !workWriteEraReady);
                   const workSealBlockedLabel =
