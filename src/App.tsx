@@ -44139,42 +44139,6 @@ function TokenMarketplacePanel({
   const tokenReferenceById = new Map<string, TokenReferenceSnapshot>(
     rows.map((token) => [token.tokenId, token]),
   );
-  const sealedListings = marketListings.filter(
-    tokenListingHasConfirmedSaleTicketSeal,
-  );
-  const unsealedListings = marketListings.filter(
-    (listing) => !tokenListingHasConfirmedSaleTicketSeal(listing),
-  );
-  const visibleMarketListings =
-    tokenListingBookFilter === "sealed"
-      ? sealedListings
-      : tokenListingBookFilter === "unsealed"
-        ? unsealedListings
-        : marketListings;
-  const filteredMarketListings = tokenListingSearchQuery
-    ? visibleMarketListings.filter((listing) =>
-        tokenListingMatchesSearch(listing, tokenListingSearchQuery),
-      )
-    : visibleMarketListings;
-  const sortedMarketListings = sortTokenListings(
-    filteredMarketListings,
-    tokenListingSortMode,
-    tokenReferenceById,
-    workMarketFloorSats,
-  );
-  const walletMarketListings = address
-    ? sortTokenListings(
-        marketListings.filter(
-          (listing) =>
-            listing.sellerAddress === address &&
-            (!selectedMarketToken ||
-              listing.tokenId === selectedMarketToken.tokenId),
-        ),
-        tokenListingSortMode,
-        tokenReferenceById,
-        workMarketFloorSats,
-      )
-    : [];
   const tokenMarketLogItems = sortTokenMarketLogItems([
     ...marketListings.map((listing) => ({
       createdAt: listing.createdAt,
@@ -44263,21 +44227,6 @@ function TokenMarketplacePanel({
     tokenMarketLogRequestKey,
     tokenMarketLogViewKey,
   ]);
-  const visibleRows = selectedMarketToken ? [selectedMarketToken] : rows;
-  const sortedVisibleRows = sortTokenDirectoryRows(
-    visibleRows,
-    tokenDirectorySortMode,
-  );
-  const tokenMarketPage = pagedItems(
-    sortedVisibleRows,
-    tokenMarketPageIndex,
-    TOKEN_LIST_PREVIEW_COUNT,
-  );
-  const tokenListingPage = pagedItems(
-    sortedMarketListings,
-    tokenListingPageIndex,
-    TOKEN_LIST_PREVIEW_COUNT,
-  );
   const localTokenMarketLogPage = pagedItems(
     tokenMarketLogItems,
     tokenMarketLogPageIndex,
@@ -44297,6 +44246,68 @@ function TokenMarketplacePanel({
   const tokenMarketLogPage =
     activeRemoteTokenMarketLogPage ?? localTokenMarketLogPage;
   const hasTokenMarketLogItems = tokenMarketLogPage.totalCount > 0;
+  const remoteOrderBookListings =
+    activeRemoteTokenMarketLogPage?.items.flatMap((item) =>
+      item.kind === "listing" ? [item.listing] : [],
+    ) ?? [];
+  const orderBookListings =
+    remoteOrderBookListings.length > 0
+      ? activeTokenListingsExcludingClosed(
+          mergeTokenListingGroups(marketListings, remoteOrderBookListings),
+          marketClosedListings,
+        )
+      : marketListings;
+  const sealedListings = orderBookListings.filter(
+    tokenListingHasConfirmedSaleTicketSeal,
+  );
+  const unsealedListings = orderBookListings.filter(
+    (listing) => !tokenListingHasConfirmedSaleTicketSeal(listing),
+  );
+  const visibleMarketListings =
+    tokenListingBookFilter === "sealed"
+      ? sealedListings
+      : tokenListingBookFilter === "unsealed"
+        ? unsealedListings
+        : orderBookListings;
+  const filteredMarketListings = tokenListingSearchQuery
+    ? visibleMarketListings.filter((listing) =>
+        tokenListingMatchesSearch(listing, tokenListingSearchQuery),
+      )
+    : visibleMarketListings;
+  const sortedMarketListings = sortTokenListings(
+    filteredMarketListings,
+    tokenListingSortMode,
+    tokenReferenceById,
+    workMarketFloorSats,
+  );
+  const walletMarketListings = address
+    ? sortTokenListings(
+        orderBookListings.filter(
+          (listing) =>
+            listing.sellerAddress === address &&
+            (!selectedMarketToken ||
+              listing.tokenId === selectedMarketToken.tokenId),
+        ),
+        tokenListingSortMode,
+        tokenReferenceById,
+        workMarketFloorSats,
+      )
+    : [];
+  const visibleRows = selectedMarketToken ? [selectedMarketToken] : rows;
+  const sortedVisibleRows = sortTokenDirectoryRows(
+    visibleRows,
+    tokenDirectorySortMode,
+  );
+  const tokenMarketPage = pagedItems(
+    sortedVisibleRows,
+    tokenMarketPageIndex,
+    TOKEN_LIST_PREVIEW_COUNT,
+  );
+  const tokenListingPage = pagedItems(
+    sortedMarketListings,
+    tokenListingPageIndex,
+    TOKEN_LIST_PREVIEW_COUNT,
+  );
   const workMarketFloorUsd = satsToUsd(workMarketFloorSats, btcUsd);
   const workMarketNetworkUsd = workFloorQuote
     ? satsToUsd(
@@ -45316,7 +45327,7 @@ function TokenMarketplacePanel({
             value={tokenListingSearchQuery}
           />
           <MarketplaceListingBookTabs
-            allCount={marketListings.length}
+            allCount={orderBookListings.length}
             label="Credit order book filter"
             onChange={setTokenListingBookFilter}
             sealedCount={sealedListings.length}
@@ -45626,7 +45637,7 @@ function TokenMarketplacePanel({
                     ? "Loading credit sale tickets"
                     : tokenListingSearchQuery
                       ? "No matching sale tickets"
-                    : marketListings.length
+                    : orderBookListings.length
                     ? tokenListingBookFilter === "sealed"
                       ? "No sealed listings"
                     : "No unsealed listings"
@@ -45637,7 +45648,7 @@ function TokenMarketplacePanel({
                     ? "Confirmed listings and seals are loading from the ProofOfWork index."
                     : tokenListingSearchQuery
                       ? "No sale tickets match this search."
-                    : marketListings.length
+                    : orderBookListings.length
                     ? tokenListingBookFilter === "sealed"
                       ? "No sale tickets in this view have a confirmed buyable seal yet."
                     : "Every sale ticket in this view already has a seal or pending seal."

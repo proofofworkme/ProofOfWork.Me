@@ -18,6 +18,8 @@ const FLOOR_Q8 = "100000000";
 const FLOOR = "1";
 const V8_LISTING_TXID =
   "07c9ca719adf7a7e94ff17c917e599e872ae1c0348f282219907c060a72b8043";
+const SECOND_V8_LISTING_TXID =
+  "e299613d222222222222222222222222222222222222222222222222114691e0";
 
 const fundingTransaction = new bitcoin.Transaction();
 fundingTransaction.version = 2;
@@ -52,14 +54,19 @@ function workTokenDefinition() {
   };
 }
 
-function v8AmoListing() {
+function v8AmoListing({
+  createdAt = NOW,
+  listingId = V8_LISTING_TXID,
+  nonce = "browser-v8-listing",
+  sellerAddress = SENDER,
+} = {}) {
   return {
     amount: "0.0000000752009741",
     amountAtoms: "752009741",
     amountStorageModel: WORK_STORAGE_MODEL,
     amountSubatoms: "752009741",
     confirmed: true,
-    createdAt: NOW,
+    createdAt,
     dataBytes: 994,
     decimals: 16,
     frozenTerms: {
@@ -84,7 +91,7 @@ function v8AmoListing() {
       unitWorkOracleModel: "canonical-work-prefix-before-action-v1",
       version: "pwt-sale-v8",
     },
-    listingId: V8_LISTING_TXID,
+    listingId,
     network: "livenet",
     precisionModel: WORK_PRECISION_MODEL,
     priceSats: 25_000,
@@ -101,9 +108,9 @@ function v8AmoListing() {
       buyerAddress: "",
       expiresAt: "",
       network: "livenet",
-      nonce: "browser-v8-listing",
+      nonce,
       registryAddress: WORK_REGISTRY,
-      sellerAddress: SENDER,
+      sellerAddress,
       sellerPublicKey:
         "02777b8fd3dc524694c52f2b505d14eacf289430f42b5785c48b7cb4948db8499b",
       stateOrderModel: "canonical-proof-state-order-v1",
@@ -114,7 +121,7 @@ function v8AmoListing() {
       unitWorkOracleModel: "canonical-work-prefix-before-action-v1",
       version: "pwt-sale-v8",
     },
-    sellerAddress: SENDER,
+    sellerAddress,
     ticker: "WORK",
     tokenId: WORK_TOKEN_ID,
     unitScale: WORK_UNIT_SCALE,
@@ -381,6 +388,7 @@ async function installApiFixtures(
     inboxMessage = false,
     mode = "post-v8",
     repairedV8Listing = false,
+    remoteV8MarketListings = false,
   } = {},
 ) {
   const requests = [];
@@ -446,6 +454,54 @@ async function installApiFixtures(
         confirmed: true,
         status: "confirmed",
       };
+    } else if (pathname === "/api/v1/marketplace-summary") {
+      json = {
+        indexedAt: NOW,
+        network: "livenet",
+        registry: registryState(),
+        summaryOnly: true,
+        token: authoritativeWorkState(),
+        workFloor: workFloor(mode),
+      };
+    } else if (pathname === "/api/v1/token-history") {
+      const kind = searchParams.get("kind");
+      if (remoteV8MarketListings && kind === "market-log") {
+        const listings = [
+          v8AmoListing({
+            createdAt: "2026-08-12T06:37:00.000Z",
+            listingId: V8_LISTING_TXID,
+            nonce: "browser-v8-listing-one",
+          }),
+          v8AmoListing({
+            createdAt: "2026-08-12T15:38:00.000Z",
+            listingId: SECOND_V8_LISTING_TXID,
+            nonce: "browser-v8-listing-two",
+            sellerAddress: RECIPIENT,
+          }),
+        ];
+        json = {
+          indexedAt: NOW,
+          items: listings.map((listing) => ({
+            createdAt: listing.createdAt,
+            kind: "listing",
+            listing,
+            txid: listing.listingId,
+          })),
+          network: "livenet",
+          page: Number(searchParams.get("page") ?? 0),
+          pageSize: Number(searchParams.get("limit") ?? listings.length),
+          totalCount: listings.length,
+        };
+      } else {
+        json = {
+          indexedAt: NOW,
+          items: [],
+          network: "livenet",
+          page: Number(searchParams.get("page") ?? 0),
+          pageSize: Number(searchParams.get("limit") ?? 0),
+          totalCount: 0,
+        };
+      }
     } else if (
       pathname === "/api/v1/token" ||
       pathname === "/api/v1/token-summary"
@@ -808,6 +864,37 @@ test("wallet V8 AMO seal can retry during exact-tip catch-up", async ({
       page.evaluate(() => window.__mailComposeFixture?.signCalls ?? 0),
     )
     .toBe(0);
+});
+
+test("AMO order book counts remote unsealed V8 listings", async ({ page }) => {
+  await installWallet(page);
+  await installApiFixtures(page, {
+    mode: "precision-paused",
+    remoteV8MarketListings: true,
+  });
+
+  await page.goto(`/?marketplace=1&asset=${WORK_TOKEN_ID}`, {
+    waitUntil: "domcontentloaded",
+  });
+  const amoUnits = page
+    .locator(".token-market-card")
+    .filter({ has: page.getByRole("heading", { name: "AMO Units" }) })
+    .first();
+  await expect(amoUnits).toBeVisible();
+  await expect(amoUnits.getByText("No credit listings yet")).toHaveCount(0);
+  await expect(
+    amoUnits.getByRole("button", { name: "All 2" }),
+  ).toContainText("2");
+  await expect(
+    amoUnits.getByRole("button", { name: "Sealed 0" }),
+  ).toContainText("0");
+  await expect(
+    amoUnits.getByRole("button", { name: "Unsealed 2" }),
+  ).toContainText("2");
+  await expect(amoUnits.getByText("Waiting for seal")).toHaveCount(2);
+  await expect(
+    amoUnits.locator(".token-market-grid .token-market-row"),
+  ).toHaveCount(2);
 });
 
 test("pre-V8 mail prepares send2 once and exposes the busy state", async ({
