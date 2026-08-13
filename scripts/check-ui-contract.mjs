@@ -529,6 +529,9 @@ expect(
     /summarySnapshot/.test(proofApiReadState) &&
     /lagBlocks/.test(proofApiReadState) &&
     /Showing verified last-good/.test(proofApiReadState) &&
+    /Canonical scan is at the full-node tip; actions recheck live admission before signing/.test(
+      proofApiReadState,
+    ) &&
     /This view is not current/.test(proofApiReadState) &&
     /Exact-tip actions remain unavailable/.test(proofApiReadState),
 );
@@ -922,7 +925,7 @@ expect(
     /normalizedTokenListAmountUnits !== null[\s\S]*normalizedTokenListAmountUnits <= walletSpendableTokenAtoms/.test(
       canListTokenSource,
     ) &&
-    /const workAmoV8ListingTermsSelected =[\s\S]*workV8DeclarationBoundaryObserved\(workFloorQuote\)[\s\S]*const workAmoListInputReady = Boolean\([\s\S]*workAmoV8ListingTermsSelected[\s\S]*workAmoV8FaceProofsAllowed\(tokenListFaceProofs\)[\s\S]*workAmoV6FaceProofsAllowed\(tokenListFaceProofs\)[\s\S]*workAmoListingWritesReady\(workFloorQuote\)[\s\S]*workAmoEstimateForFace\([\s\S]*tokenListFaceProofs[\s\S]*walletSpendableTokenAtoms > 0n/.test(
+    /const workAmoV8ListingTermsSelected =[\s\S]*workV8DeclarationBoundaryObserved\(workFloorQuote\)[\s\S]*const workAmoListingFreshPreflightReady =[\s\S]*workAmoListingCanAttemptFreshPreflight\(workFloorQuote\)[\s\S]*const workAmoListInputReady = Boolean\([\s\S]*workAmoV8ListingTermsSelected[\s\S]*workAmoV8FaceProofsAllowed\(tokenListFaceProofs\)[\s\S]*workAmoV6FaceProofsAllowed\(tokenListFaceProofs\)[\s\S]*workAmoListingFreshPreflightReady[\s\S]*workAmoEstimateForFace\(workFloorQuote, tokenListFaceProofs\)[\s\S]*workV8CanAttemptFreshPreflight\(workFloorQuote\)[\s\S]*walletSpendableTokenAtoms > 0n/.test(
       canListTokenSource,
     ) &&
     !/max=\{Math\.max\(1, listSpendableBalance\)\}/.test(app) &&
@@ -941,7 +944,7 @@ expect(
 );
 expect(
   "wallet transfer copy names explicit admitted send2 or send3 and exposes paused WORK without changing bond copy",
-  /const workTransferMode =[\s\S]*workWriteModeForQuote\(workFloorQuote\)[\s\S]*workTransferMode === "native-q16"[\s\S]*"pwt1:send3"[\s\S]*workTransferMode === "legacy-q8"[\s\S]*"pwt1:send2"[\s\S]*"paused WORK transfer"[\s\S]*"pwt1:send"/.test(
+  /const workTransferMode =[\s\S]*workWriteModeForDraftPayload\(workFloorQuote\)[\s\S]*workTransferMode === "native-q16"[\s\S]*"pwt1:send3"[\s\S]*workTransferMode === "legacy-q8"[\s\S]*"pwt1:send2"[\s\S]*"paused WORK transfer"[\s\S]*"pwt1:send"/.test(
     app,
   ) &&
     /transferDescription:\s*`Sends a pwt1:send \$\{bondConfig\.ticker\} event/.test(
@@ -954,7 +957,7 @@ expect(
     /async function createInfinityBond[\s\S]*if \(!bondWorkAttachmentAllowed\)[\s\S]*latestWorkSpendability\.confirmedBalanceSubatoms[\s\S]*latestWorkSpendability\.spendableBalanceSubatoms/.test(
       app,
     ) &&
-    /async function createInfinityBond[\s\S]*buildTokenSendPayload\([\s\S]*WORK_TOKEN_ID[\s\S]*workWriteModeForQuote\(workFloorQuote\)/.test(
+    /async function createInfinityBond[\s\S]*preparedBondWorkMode = \(await freshWorkWriteMode\(\)\)\.mode[\s\S]*buildTokenSendPayload\([\s\S]*WORK_TOKEN_ID[\s\S]*preparedBondWorkMode/.test(
       app,
     ) &&
     /async function createInfinityBond[\s\S]*postProtocolPayments:[\s\S]*WORK_TOKEN_REGISTRY_ADDRESS[\s\S]*postProtocolPayloads:\s*attachedWorkPayloads/.test(

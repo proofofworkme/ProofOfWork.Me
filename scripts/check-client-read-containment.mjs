@@ -86,6 +86,11 @@ assert.match(
   summaryPublicationText,
   /scan checkpoint is block 958,490 at the full-node tip 958,490/iu,
 );
+assert.match(
+  summaryPublicationText,
+  /Canonical scan is at the full-node tip; actions recheck live admission before signing/iu,
+);
+assert.doesNotMatch(summaryPublicationText, /This view is not current/iu);
 
 const generic503 = new ProofApiRequestError("temporarily unavailable", {
   status: 503,

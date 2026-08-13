@@ -7477,6 +7477,23 @@ function workV8WriteAdmissionReady(quote: WorkFloorQuote | undefined) {
   );
 }
 
+function workV8CanAttemptFreshPreflight(
+  quote: WorkFloorQuote | undefined,
+) {
+  const status = quote?.workAmoV8;
+  return Boolean(
+    status?.version === TOKEN_SALE_AUTH_WORK_AMO_SUBATOM_VERSION &&
+      (status.activation?.active === true ||
+        status.activation?.reached === true ||
+        status.activation?.confirmed === true ||
+        Number(status.activation?.activationHeight) > 0) &&
+      (status.activation?.evidenceComplete === true ||
+        status.ready === true ||
+        status.protocolReady === true ||
+        status.writeAdmission === true),
+  );
+}
+
 function workV8DeclarationBoundaryObserved(
   quote: WorkFloorQuote | undefined,
 ) {
@@ -7561,6 +7578,28 @@ function workWriteModeForQuote(
   return workAmoV6ActivationReady(quote) ? "legacy-q8" : "paused";
 }
 
+function workWriteModeForDraftPayload(
+  quote: WorkFloorQuote | undefined,
+): WorkWriteMode {
+  const mode = workWriteModeForQuote(quote);
+  if (mode !== "paused") {
+    return mode;
+  }
+  if (workV8CanAttemptFreshPreflight(quote)) {
+    return "native-q16";
+  }
+  return "paused";
+}
+
+function workWriteActionCanAttemptFreshPreflight(
+  quote: WorkFloorQuote | undefined,
+) {
+  return (
+    workWriteModeForQuote(quote) !== "paused" ||
+    workV8CanAttemptFreshPreflight(quote)
+  );
+}
+
 function workWritePauseReason(quote: WorkFloorQuote | undefined) {
   return String(
     workV8DeclarationBoundaryObserved(quote)
@@ -7637,14 +7676,18 @@ function workAmoSettlementWritesReady(quote: WorkFloorQuote | undefined) {
 function workAmoSettlementCanRetryFreshPreflight(
   quote: WorkFloorQuote | undefined,
 ) {
-  const status = quote?.workAmoV8;
-  return Boolean(
-    status?.version === TOKEN_SALE_AUTH_WORK_AMO_SUBATOM_VERSION &&
-      status.activation?.active === true &&
-      status.activation?.evidenceComplete === true &&
-      status.activation?.reached === true &&
-      String(status.reasonCode ?? "").trim() ===
-        "work-amo-v8-precision-migration-not-ready",
+  return (
+    !workAmoSettlementWritesReady(quote) &&
+    workV8CanAttemptFreshPreflight(quote)
+  );
+}
+
+function workAmoListingCanAttemptFreshPreflight(
+  quote: WorkFloorQuote | undefined,
+) {
+  return (
+    workAmoListingWritesReady(quote) ||
+    workV8CanAttemptFreshPreflight(quote)
   );
 }
 
@@ -20335,7 +20378,8 @@ export default function App() {
   const mailWorkAttachmentRequested =
     messageWorkAttachmentAllowed && messageWorkAmountAtoms > 0n;
   const mailWorkFloorHydrationRequired = mailWorkAttachmentRequested;
-  const mailWorkWriteMode = workWriteModeForQuote(workFloorQuote);
+  const mailWorkAdmissionMode = workWriteModeForQuote(workFloorQuote);
+  const mailWorkWriteMode = workWriteModeForDraftPayload(workFloorQuote);
   const mailWorkAdmissionChecking =
     mailWorkFloorHydrationRequired &&
     !workFloorQuote &&
@@ -20347,7 +20391,8 @@ export default function App() {
   const mailWorkAdmissionPaused =
     mailWorkAttachmentRequested &&
     Boolean(workFloorQuote) &&
-    mailWorkWriteMode === "paused";
+    mailWorkAdmissionMode === "paused" &&
+    !workWriteActionCanAttemptFreshPreflight(workFloorQuote);
   const mailWorkPauseReason = workWritePauseReason(workFloorQuote);
   const workAttachmentVisible =
     messageWorkAttachmentAllowed &&
@@ -20444,7 +20489,7 @@ export default function App() {
             : mailWorkAdmissionPaused
               ? `WORK transfers are paused${mailWorkPauseReason ? ` (${mailWorkPauseReason})` : ""}. Send will unlock when verified write admission is ready.`
               : mailWorkPayloadUnavailable
-                ? mailWorkWriteMode === "legacy-q8"
+                ? mailWorkAdmissionMode === "legacy-q8"
                   ? "Before V8 activates, WORK attachments must resolve exactly to eight decimal places."
                   : "The WORK attachment could not be encoded under the current verified transfer protocol."
                 : mailWorkBalanceInsufficient
@@ -21185,7 +21230,7 @@ export default function App() {
               WORK_TOKEN_ID,
               workDecimalFromAtoms(bondWorkAmountAtoms),
               infinityBondResolution.paymentAddress,
-              workWriteModeForQuote(workFloorQuote),
+              workWriteModeForDraftPayload(workFloorQuote),
             ),
           ].filter(Boolean)
         : [],
@@ -21762,7 +21807,7 @@ export default function App() {
         ? workDecimalFromAtoms(tokenTransferInput.amountSubatoms ?? "0")
         : tokenTransferInput.amount,
       tokenTransferRecipient.trim(),
-      workWriteModeForQuote(workFloorQuote),
+      workWriteModeForDraftPayload(workFloorQuote),
     );
   }, [
     tokenTransferInput,
@@ -21791,7 +21836,8 @@ export default function App() {
     ? isValidBitcoinAddress(tokenTransferRecipientAddress, "livenet")
     : false;
   const tokenTransferWorkPaused =
-    walletTransferIsWork && workWriteModeForQuote(workFloorQuote) === "paused";
+    walletTransferIsWork &&
+    !workWriteActionCanAttemptFreshPreflight(workFloorQuote);
   const tokenTransferWorkPauseReason = tokenTransferWorkPaused
     ? workWritePauseReason(workFloorQuote)
     : "";
@@ -21849,19 +21895,17 @@ export default function App() {
     : 0;
   const workAmoV8ListingTermsSelected =
     workV8DeclarationBoundaryObserved(workFloorQuote);
+  const workAmoListingFreshPreflightReady =
+    workAmoListingCanAttemptFreshPreflight(workFloorQuote);
   const workAmoListInputReady = Boolean(
     walletTransferToken &&
       isWorkToken(walletTransferToken) &&
       (workAmoV8ListingTermsSelected
         ? workAmoV8FaceProofsAllowed(tokenListFaceProofs)
         : workAmoV6FaceProofsAllowed(tokenListFaceProofs)) &&
-      workAmoListingWritesReady(workFloorQuote) &&
-      Boolean(
-        workAmoEstimateForFace(
-          workFloorQuote,
-          tokenListFaceProofs,
-        ),
-      ) &&
+      workAmoListingFreshPreflightReady &&
+      (Boolean(workAmoEstimateForFace(workFloorQuote, tokenListFaceProofs)) ||
+        workV8CanAttemptFreshPreflight(workFloorQuote)) &&
       walletSpendableTokenAtoms > 0n,
   );
   const genericListInputReady = Boolean(
@@ -28794,7 +28838,7 @@ export default function App() {
     let preparedWorkMode: Exclude<WorkWriteMode, "paused"> | undefined;
     try {
       const initialWorkMode = isWorkToken(token)
-        ? workWriteModeForQuote(workFloorQuote)
+        ? workWriteModeForDraftPayload(workFloorQuote)
         : undefined;
       payload = buildTokenSendPayload(
         token.tokenId,
@@ -35159,7 +35203,7 @@ function TokenWalletWorkspace({
   const walletCopy = { ...DEFAULT_TOKEN_WALLET_WORKSPACE_COPY, ...copy };
   const workTransferMode =
     transferToken && isWorkToken(transferToken)
-      ? workWriteModeForQuote(workFloorQuote)
+      ? workWriteModeForDraftPayload(workFloorQuote)
       : undefined;
   const transferWire =
     workTransferMode === "native-q16"
@@ -35427,7 +35471,11 @@ function TokenWalletWorkspace({
     workAmoV8Enabled || workAmoV6ActivationReady(workFloorQuote);
   const workAmoSettlementEnabled =
     workAmoSettlementWritesReady(workFloorQuote);
-  const workAmoListingEnabled = workAmoListingWritesReady(workFloorQuote);
+  const workAmoSettlementActionEnabled =
+    workAmoSettlementEnabled ||
+    workAmoSettlementCanRetryFreshPreflight(workFloorQuote);
+  const workAmoListingEnabled =
+    workAmoListingCanAttemptFreshPreflight(workFloorQuote);
   const selectedWorkAmoEstimate = workAmoEstimateForFace(
     workFloorQuote,
     listFaceProofs,
@@ -35980,7 +36028,7 @@ function TokenWalletWorkspace({
               . Governed WORK actions fail closed; no WORK transaction is
               prepared.
             </p>
-          ) : selectedListTokenIsWork && !workAmoSettlementEnabled ? (
+          ) : selectedListTokenIsWork && !workAmoSettlementActionEnabled ? (
             <p className="field-note bad">
               AMO governed settlement writes are paused
               {(workAmoV8TermsVisible
@@ -35992,6 +36040,11 @@ function TokenWalletWorkspace({
                 : ""}
               . No governed WORK listing, seal, purchase, or delisting is
               prepared while the gate is closed.
+            </p>
+          ) : selectedListTokenIsWork && !workAmoSettlementEnabled ? (
+            <p className="field-note">
+              WORK settlement admission will be rechecked against the live
+              canonical tip before any transaction is prepared.
             </p>
           ) : selectedListTokenIsWork && !workAmoListingEnabled ? (
             <p className="field-note">
@@ -36085,9 +36138,11 @@ function TokenWalletWorkspace({
                 <p className="field-note work-amo-quote-authority-status">
                   Proof-native AMO write gate:{" "}
                   <strong>
-                    {workAmoListingEnabled
+                    {workAmoListingWritesReady(workFloorQuote)
                       ? "ready"
-                      : "temporarily unavailable"}
+                      : workAmoListingEnabled
+                        ? "fresh preflight"
+                        : "temporarily unavailable"}
                   </strong>
                   . No USD oracle, signed price attestation, or recurring
                   on-chain price publication is required.
@@ -36252,10 +36307,11 @@ function TokenWalletWorkspace({
                     Boolean(workFrozenTerms) &&
                     workWriteEraReady &&
                     workAmoSettlementCanRetryFreshPreflight(workFloorQuote);
+                  const workSealActionEnabled =
+                    workAmoSettlementEnabled || workSealCanRetryFreshPreflight;
                   const workSealBlocked =
                     isWorkToken(item) &&
-                    ((!workAmoSettlementEnabled &&
-                      !workSealCanRetryFreshPreflight) ||
+                    (!workSealActionEnabled ||
                       !workFrozenTerms ||
                       !workWriteEraReady);
                   const workSealBlockedLabel =
@@ -36360,7 +36416,7 @@ function TokenWalletWorkspace({
                           className="secondary small"
                           disabled={
                             isWorkToken(item) &&
-                            (!workAmoSettlementEnabled ||
+                            (!workAmoSettlementActionEnabled ||
                               !workWriteEraReady)
                           }
                           onClick={() => delistListing(item)}
@@ -44427,10 +44483,15 @@ function TokenMarketplacePanel({
   const workAmoV8TermsVisible = workV8BoundaryObserved;
   const workAmoProtocolVerified =
     workAmoV8Enabled || workAmoV6ActivationReady(workFloorQuote);
-  const workAmoProtocolWritesEnabled =
+  const workAmoProtocolWritesReady =
     workAmoSettlementWritesReady(workFloorQuote);
-  const workAmoListingWritesEnabled =
+  const workAmoProtocolWritesEnabled =
+    workAmoProtocolWritesReady ||
+    workAmoSettlementCanRetryFreshPreflight(workFloorQuote);
+  const workAmoListingWritesReadyNow =
     workAmoListingWritesReady(workFloorQuote);
+  const workAmoListingWritesEnabled =
+    workAmoListingCanAttemptFreshPreflight(workFloorQuote);
   const workAmoWriteReasonCode = String(
     (workAmoV8TermsVisible
       ? workFloorQuote?.workAmoV8?.reasonCode
@@ -44649,9 +44710,11 @@ function TokenMarketplacePanel({
                     <div>
                       <strong>Proof-native AMO write gate</strong>
                       <span>
-                        {workAmoListingWritesEnabled
+                        {workAmoListingWritesReadyNow
                           ? "Ready · canonical proof state indexed"
-                          : `Temporarily unavailable${workAmoWriteReasonCode ? ` · ${workAmoWriteReasonCode}` : ""}`}
+                          : workAmoListingWritesEnabled
+                            ? "Fresh preflight · canonical proof state indexed"
+                            : `Temporarily unavailable${workAmoWriteReasonCode ? ` · ${workAmoWriteReasonCode}` : ""}`}
                       </span>
                     </div>
                     <p className="field-note">
@@ -45371,6 +45434,12 @@ function TokenMarketplacePanel({
                 : ""}
               . Frozen listings remain visible, but no seal or purchase is
               prepared until the explicit settlement gate is enabled.
+            </p>
+          ) : selectedMarketTokenIsWork &&
+            !workAmoProtocolWritesReady ? (
+            <p className="field-note">
+              WORK settlement admission will be rechecked against the live
+              canonical tip before any purchase is prepared.
             </p>
           ) : selectedMarketTokenIsWork &&
             !workAmoListingWritesEnabled ? (

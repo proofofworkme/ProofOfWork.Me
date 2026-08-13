@@ -157,8 +157,12 @@ export function proofApiLastGoodReadStatus(
     : code === "CANONICAL_SUMMARY_UNAVAILABLE" || explicitlyAtTip
       ? "exact-tip summary publication is temporarily unavailable"
       : "exact-tip refresh is temporarily unavailable";
+  const actionText =
+    explicitlyAtTip
+      ? " Canonical scan is at the full-node tip; actions recheck live admission before signing."
+      : " This view is not current. Exact-tip actions remain unavailable.";
 
-  return `${label} ${availabilityText}. Showing verified last-good${referenceText}.${scanReference} This view is not current. Exact-tip actions remain unavailable.`;
+  return `${label} ${availabilityText}. Showing verified last-good${referenceText}.${scanReference}${actionText}`;
 }
 
 export function setProofApiReadWarning(
