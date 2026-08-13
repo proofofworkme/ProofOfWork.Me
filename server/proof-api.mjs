@@ -6035,6 +6035,238 @@ async function tokenHistoryPageWithCanonicalCreditValueOverlay(
   );
 }
 
+function workAmoV8ListingHistoryRecord(listing) {
+  if (!listing || typeof listing !== "object" || Array.isArray(listing)) {
+    return null;
+  }
+  const tokenId = normalizeTokenScope(
+    listing.tokenId ??
+      listing.saleAuthorization?.tokenId ??
+      listing.listingAuthorization?.tokenId,
+  );
+  const version = String(
+    listing.saleAuthorization?.version ??
+      listing.listingAuthorization?.version ??
+      "",
+  )
+    .trim()
+    .toLowerCase();
+  const listingId = String(listing.listingId ?? "")
+    .trim()
+    .toLowerCase();
+  if (
+    tokenId !== WORK_TOKEN_ID ||
+    version !== TOKEN_SALE_AUTH_WORK_AMO_V8_VERSION ||
+    listing.confirmed !== true ||
+    !/^[0-9a-f]{64}$/u.test(listingId)
+  ) {
+    return null;
+  }
+  return { listing, listingId };
+}
+
+function tokenHistoryWorkAmoV8ListingRecords(page, safeKind) {
+  if (!page || !Array.isArray(page.items)) {
+    return [];
+  }
+  if (safeKind === "listings") {
+    return page.items
+      .map((item) => workAmoV8ListingHistoryRecord(item))
+      .filter(Boolean);
+  }
+  if (safeKind !== "market-log") {
+    return [];
+  }
+  return page.items
+    .filter((item) => item?.kind === "listing")
+    .map((item) => workAmoV8ListingHistoryRecord(item.listing))
+    .filter(Boolean);
+}
+
+function tokenListingWithCanonicalWorkAmoV8Witness(listing, witness) {
+  const canonicalFrozenTerms =
+    witness?.listingFrozenTerms &&
+    typeof witness.listingFrozenTerms === "object" &&
+    !Array.isArray(witness.listingFrozenTerms)
+      ? witness.listingFrozenTerms
+      : null;
+  const canonicalAuthorization =
+    witness?.listingAuthorization &&
+    typeof witness.listingAuthorization === "object" &&
+    !Array.isArray(witness.listingAuthorization)
+      ? witness.listingAuthorization
+      : witness?.saleAuthorization &&
+          typeof witness.saleAuthorization === "object" &&
+          !Array.isArray(witness.saleAuthorization)
+        ? witness.saleAuthorization
+        : null;
+  if (!canonicalFrozenTerms || !canonicalAuthorization) {
+    return listing;
+  }
+  const existingFrozenTerms =
+    listing?.workAmoFrozenTerms &&
+    typeof listing.workAmoFrozenTerms === "object" &&
+    !Array.isArray(listing.workAmoFrozenTerms)
+      ? listing.workAmoFrozenTerms
+      : listing?.frozenTerms &&
+          typeof listing.frozenTerms === "object" &&
+          !Array.isArray(listing.frozenTerms)
+        ? listing.frozenTerms
+        : null;
+  if (
+    existingFrozenTerms &&
+    workAmoV5CanonicalPayloadCommitment(existingFrozenTerms).sha256 !==
+      workAmoV5CanonicalPayloadCommitment(canonicalFrozenTerms).sha256
+  ) {
+    console.error(
+      `Canonical AMO V8 listing witness corrected divergent frozen terms for ${witness.listingId}.`,
+    );
+  }
+  return {
+    ...listing,
+    ...(witness.amount !== undefined ? { amount: witness.amount } : {}),
+    ...(witness.amountAtoms !== undefined
+      ? { amountAtoms: witness.amountAtoms }
+      : {}),
+    ...(witness.amountStorageModel !== undefined
+      ? { amountStorageModel: witness.amountStorageModel }
+      : {}),
+    ...(witness.amountSubatoms !== undefined
+      ? { amountSubatoms: witness.amountSubatoms }
+      : {}),
+    ...(witness.decimals !== undefined ? { decimals: witness.decimals } : {}),
+    ...(witness.precisionModel !== undefined
+      ? { precisionModel: witness.precisionModel }
+      : {}),
+    ...(witness.unitScale !== undefined
+      ? { unitScale: witness.unitScale }
+      : {}),
+    ...(witness.blockHash ? { blockHash: witness.blockHash } : {}),
+    ...(witness.blockHeight !== undefined
+      ? { blockHeight: witness.blockHeight }
+      : {}),
+    ...(witness.blockIndex !== undefined
+      ? { blockIndex: witness.blockIndex }
+      : {}),
+    ...(witness.protocolVout !== undefined
+      ? { protocolVout: witness.protocolVout }
+      : {}),
+    ...(witness.recordOrdinal !== undefined
+      ? { recordOrdinal: witness.recordOrdinal }
+      : {}),
+    ...(witness.saleTicketTxid
+      ? { saleTicketTxid: witness.saleTicketTxid }
+      : {}),
+    ...(witness.saleTicketValueSats !== undefined
+      ? { saleTicketValueSats: witness.saleTicketValueSats }
+      : {}),
+    ...(witness.saleTicketVout !== undefined
+      ? { saleTicketVout: witness.saleTicketVout }
+      : {}),
+    ...(witness.status ? { status: witness.status } : {}),
+    ...(witness.unspent !== undefined ? { unspent: witness.unspent } : {}),
+    ...(witness.valid !== undefined ? { valid: witness.valid } : {}),
+    frozenTerms: canonicalFrozenTerms,
+    listingAuthorization: canonicalAuthorization,
+    saleAuthorization: canonicalAuthorization,
+    workAmoFrozenTerms: canonicalFrozenTerms,
+  };
+}
+
+async function tokenHistoryPageWithCanonicalWorkAmoV8ListingWitnesses(
+  page,
+  network,
+  tokenScope,
+  kind,
+) {
+  const scope = normalizeTokenScope(tokenScope);
+  const safeKind = normalizedTokenHistoryKind(kind);
+  if (
+    network !== "livenet" ||
+    scope !== WORK_TOKEN_ID ||
+    !["listings", "market-log"].includes(safeKind)
+  ) {
+    return page;
+  }
+  const records = tokenHistoryWorkAmoV8ListingRecords(page, safeKind);
+  const listingIds = [...new Set(records.map((record) => record.listingId))];
+  if (listingIds.length === 0) {
+    return page;
+  }
+  const witnesses = new Map(
+    (
+      await mapWithConcurrency(
+        listingIds,
+        Math.min(4, Math.max(1, TX_FETCH_CONCURRENCY)),
+        async (listingId) => [
+          listingId,
+          await proofIndexCanonicalWorkListingById(
+            network,
+            listingId,
+          ).catch((error) => {
+            console.error(
+              `Canonical AMO V8 listing witness read failed for ${listingId}: ${errorSummary(error)}`,
+            );
+            return null;
+          }),
+        ],
+      )
+    ).filter(([, witness]) => {
+      const version = String(witness?.version ?? "")
+        .trim()
+        .toLowerCase();
+      return (
+        witness?.valid === true &&
+        witness?.confirmed === true &&
+        witness?.unspent === true &&
+        version === TOKEN_SALE_AUTH_WORK_AMO_V8_VERSION &&
+        witness?.listingFrozenTerms
+      );
+    }),
+  );
+  if (witnesses.size === 0) {
+    return page;
+  }
+  let changed = false;
+  const items = page.items.map((item) => {
+    if (safeKind === "listings") {
+      const record = workAmoV8ListingHistoryRecord(item);
+      const witness = record ? witnesses.get(record.listingId) : null;
+      if (!witness) {
+        return item;
+      }
+      changed = true;
+      return tokenListingWithCanonicalWorkAmoV8Witness(item, witness);
+    }
+    if (item?.kind !== "listing") {
+      return item;
+    }
+    const record = workAmoV8ListingHistoryRecord(item.listing);
+    const witness = record ? witnesses.get(record.listingId) : null;
+    if (!witness) {
+      return item;
+    }
+    changed = true;
+    return {
+      ...item,
+      listing: tokenListingWithCanonicalWorkAmoV8Witness(
+        item.listing,
+        witness,
+      ),
+    };
+  });
+  return changed
+    ? {
+        ...page,
+        items,
+        source: mergedSourceLabel(
+          page.source,
+          "canonical-work-amo-v8-listing-witness",
+        ),
+      }
+    : page;
+}
+
 function mempoolBase(network) {
   let base;
   if (network === "testnet4") {
@@ -64771,7 +65003,7 @@ async function handleRequest(request, response) {
           SUMMARY_PROOF_INDEX_READ_WAIT_MS,
         );
         if (indexedPayload) {
-          const responsePayload =
+          const canonicalValuePayload =
             needsCreditNetworkValueOverlay
             ? await tokenHistoryPageWithCanonicalCreditValueOverlay(
                 indexedPayload,
@@ -64785,7 +65017,7 @@ async function handleRequest(request, response) {
             !freshProofIndexTokenHistoryRead ||
             (await payloadWithFallbackAfterMs(
               proofIndexPayloadCoversConfirmedTip(
-                responsePayload,
+                canonicalValuePayload,
                 network,
                 `token-history:${tokenScope || "all"}:${historyKind}`,
               ),
@@ -64795,12 +65027,19 @@ async function handleRequest(request, response) {
           if (
             proofIndexHistoryFreshEnough &&
             !exactTransferHistoryNeedsCanonicalRecovery(
-              responsePayload,
+              canonicalValuePayload,
               tokenScope,
               historyKind,
               url.searchParams,
             )
           ) {
+            const responsePayload =
+              await tokenHistoryPageWithCanonicalWorkAmoV8ListingWitnesses(
+                canonicalValuePayload,
+                network,
+                tokenScope,
+                historyKind,
+              );
             jsonResponse(
               response,
               200,
@@ -64820,8 +65059,15 @@ async function handleRequest(request, response) {
         url.searchParams,
         freshRead,
       );
+      const responsePayload =
+        await tokenHistoryPageWithCanonicalWorkAmoV8ListingWitnesses(
+          payload,
+          network,
+          tokenScope,
+          historyKind,
+        );
       shadowProofIndexTokenHistory(
-        payload,
+        responsePayload,
         network,
         tokenScope,
         historyKind,
@@ -64830,7 +65076,7 @@ async function handleRequest(request, response) {
       jsonResponse(
         response,
         200,
-        payload,
+        responsePayload,
         freshRead ? FRESH_READ_CACHE_CONTROL : TOKEN_READ_CACHE_CONTROL,
       );
       return;

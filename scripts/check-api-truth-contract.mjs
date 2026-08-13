@@ -2022,6 +2022,18 @@ expect(
     ),
 );
 expect(
+  "token-history hydrates confirmed AMO V8 listings with canonical frozen witnesses",
+  /async function tokenHistoryPageWithCanonicalWorkAmoV8ListingWitnesses\([\s\S]*proofIndexCanonicalWorkListingById\([\s\S]*listingFrozenTerms[\s\S]*canonical-work-amo-v8-listing-witness/u.test(
+    server,
+  ) &&
+    /const canonicalValuePayload =[\s\S]*tokenHistoryPageWithCanonicalWorkAmoV8ListingWitnesses\([\s\S]*canonicalValuePayload[\s\S]*jsonResponse\([\s\S]*responsePayload/u.test(
+      server,
+    ) &&
+    /const payload = await tokenHistoryPayload\([\s\S]*const responsePayload =[\s\S]*tokenHistoryPageWithCanonicalWorkAmoV8ListingWitnesses\([\s\S]*payload[\s\S]*shadowProofIndexTokenHistory\([\s\S]*responsePayload[\s\S]*jsonResponse\([\s\S]*responsePayload/u.test(
+      server,
+    ),
+);
+expect(
   "send3 is mandatory exactly at the confirmed V8 boundary with no legacy fallback",
   /export function workAmoV8TransferEraDecision[\s\S]*v8Required = height >= activation[\s\S]*v8Required =\s*projectionModel === WORK_SUBATOM_PROJECTION_MODEL[\s\S]*nativeV8 !== v8Required[\s\S]*work-amo-v8-send3-required[\s\S]*work-amo-v8-send3-before-activation/u.test(
     workAmoV8,
