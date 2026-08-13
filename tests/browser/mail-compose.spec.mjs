@@ -16,6 +16,8 @@ const NETWORK_VALUE_Q8 = "2100000000000000";
 const NETWORK_VALUE = "21000000";
 const FLOOR_Q8 = "100000000";
 const FLOOR = "1";
+const V8_LISTING_TXID =
+  "07c9ca719adf7a7e94ff17c917e599e872ae1c0348f282219907c060a72b8043";
 
 const fundingTransaction = new bitcoin.Transaction();
 fundingTransaction.version = 2;
@@ -50,7 +52,121 @@ function workTokenDefinition() {
   };
 }
 
-function authoritativeWorkState() {
+function v8AmoListing() {
+  return {
+    amount: "0.0000000752009741",
+    amountAtoms: "752009741",
+    amountStorageModel: WORK_STORAGE_MODEL,
+    amountSubatoms: "752009741",
+    confirmed: true,
+    createdAt: NOW,
+    dataBytes: 994,
+    decimals: 16,
+    frozenTerms: {
+      amountModel: "canonical-work-amo-proof-unit-amount-v3",
+      blockSequencerModel: "canonical-work-amo-full-position-block-sequencer-v4",
+      bondTransitionModel: "canonical-compute-then-bond-v1",
+      listingBlockHash:
+        "000000000000000000006589e2b946b1ab0f6e36ee69f337601fbf0397111c34",
+      listingBlockHeight: 962_104,
+      listingBlockIndex: 567,
+      listingBondContributionQ8: "2969148577200",
+      listingNetworkValueAfterQ8: "698129253763347407892080965",
+      listingNetworkValueBeforeQ8: "698129253763344438743503765",
+      listingProtocolVout: 1,
+      listingRecordOrdinal: 0,
+      stateOrderModel: "canonical-proof-state-order-v1",
+      unitAmountSubatoms: "752009741",
+      unitFaceProofs: 25_000,
+      unitMinimumPriceSats: "25000",
+      unitModel: "canonical-work-amo-proof-unit-v3",
+      unitPriceSats: "25000",
+      unitWorkOracleModel: "canonical-work-prefix-before-action-v1",
+      version: "pwt-sale-v8",
+    },
+    listingId: V8_LISTING_TXID,
+    network: "livenet",
+    precisionModel: WORK_PRECISION_MODEL,
+    priceSats: 25_000,
+    registryAddress: WORK_REGISTRY,
+    saleAuthorization: {
+      amountModel: "canonical-work-amo-proof-unit-amount-v3",
+      anchorScriptPubKey: "76a9144752142b83faf13d526a59212f3f228012890dbe88ac",
+      anchorSigHashType: 131,
+      anchorType: "sale-ticket-v1",
+      anchorValueSats: 546,
+      anchorVout: 2,
+      blockSequencerModel: "canonical-work-amo-full-position-block-sequencer-v4",
+      bondTransitionModel: "canonical-compute-then-bond-v1",
+      buyerAddress: "",
+      expiresAt: "",
+      network: "livenet",
+      nonce: "browser-v8-listing",
+      registryAddress: WORK_REGISTRY,
+      sellerAddress: SENDER,
+      sellerPublicKey:
+        "02777b8fd3dc524694c52f2b505d14eacf289430f42b5785c48b7cb4948db8499b",
+      stateOrderModel: "canonical-proof-state-order-v1",
+      ticker: "WORK",
+      tokenId: WORK_TOKEN_ID,
+      unitFaceProofs: 25_000,
+      unitModel: "canonical-work-amo-proof-unit-v3",
+      unitWorkOracleModel: "canonical-work-prefix-before-action-v1",
+      version: "pwt-sale-v8",
+    },
+    sellerAddress: SENDER,
+    ticker: "WORK",
+    tokenId: WORK_TOKEN_ID,
+    unitScale: WORK_UNIT_SCALE,
+    workAmoFrozenTerms: {
+      amountModel: "canonical-work-amo-proof-unit-amount-v3",
+      blockSequencerModel: "canonical-work-amo-full-position-block-sequencer-v4",
+      bondTransitionModel: "canonical-compute-then-bond-v1",
+      listingBlockHash:
+        "000000000000000000006589e2b946b1ab0f6e36ee69f337601fbf0397111c34",
+      listingBlockHeight: 962_104,
+      listingBlockIndex: 567,
+      listingBondContributionQ8: "2969148577200",
+      listingNetworkValueAfterQ8: "698129253763347407892080965",
+      listingNetworkValueBeforeQ8: "698129253763344438743503765",
+      listingProtocolVout: 1,
+      listingRecordOrdinal: 0,
+      stateOrderModel: "canonical-proof-state-order-v1",
+      unitAmountSubatoms: "752009741",
+      unitFaceProofs: 25_000,
+      unitMinimumPriceSats: "25000",
+      unitModel: "canonical-work-amo-proof-unit-v3",
+      unitPriceSats: "25000",
+      unitWorkOracleModel: "canonical-work-prefix-before-action-v1",
+      version: "pwt-sale-v8",
+    },
+  };
+}
+
+function staleInvalidListingEvent() {
+  return {
+    amount: "0.0000000752009741",
+    amountStorageModel: WORK_STORAGE_MODEL,
+    amountSubatoms: "752009741",
+    attemptedKind: "listing",
+    confirmed: true,
+    createdAt: NOW,
+    network: "livenet",
+    participants: [SENDER],
+    precisionModel: WORK_PRECISION_MODEL,
+    reason: "work-market-v2-version-required",
+    recipientAddress: "",
+    senderAddress: SENDER,
+    ticker: "WORK",
+    tokenId: WORK_TOKEN_ID,
+    txid: V8_LISTING_TXID,
+    unitScale: WORK_UNIT_SCALE,
+    valid: false,
+  };
+}
+
+function authoritativeWorkState({ repairedV8Listing = false } = {}) {
+  const listing = repairedV8Listing ? v8AmoListing() : undefined;
   return {
     amountStorageModel: WORK_STORAGE_MODEL,
     authoritativeWallet: true,
@@ -61,14 +177,16 @@ function authoritativeWorkState() {
     holders: [
       {
         address: SENDER,
-        balanceSubatoms: "1000000000000000000",
+        balanceSubatoms: repairedV8Listing
+          ? "20000000000000000"
+          : "1000000000000000000",
         pendingDeltaSubatoms: "0",
         ticker: "WORK",
         tokenId: WORK_TOKEN_ID,
       },
     ],
-    invalidEvents: [],
-    listings: [],
+    invalidEvents: repairedV8Listing ? [staleInvalidListingEvent()] : [],
+    listings: listing ? [listing] : [],
     mints: [],
     pendingSupplySubatoms: "0",
     precisionModel: WORK_PRECISION_MODEL,
@@ -200,10 +318,14 @@ function workFloor(mode) {
             tipVerified: true,
           },
           legacyWriteEmbargo: true,
+          listingWritesEnabled: !paused,
           pinsConfigured: true,
           pinsRequested: true,
           protocolReady: !paused,
+          protocolWritesEnabled: !paused,
+          ready: !paused,
           reasonCode: paused ? "work-amo-v8-writes-paused" : "",
+          settlementWritesEnabled: !paused,
           version: "pwt-sale-v8",
           writeAdmission: !paused,
         },
@@ -252,6 +374,7 @@ async function installApiFixtures(
     holdInitialFloor = false,
     inboxMessage = false,
     mode = "post-v8",
+    repairedV8Listing = false,
   } = {},
 ) {
   const requests = [];
@@ -321,7 +444,7 @@ async function installApiFixtures(
       pathname === "/api/v1/token" ||
       pathname === "/api/v1/token-summary"
     ) {
-      json = authoritativeWorkState();
+      json = authoritativeWorkState({ repairedV8Listing });
     } else if (
       pathname === "/api/v1/registry" ||
       pathname === "/api/v1/registry-summary"
@@ -373,6 +496,18 @@ async function openConnectedCompose(page) {
   await expect(page.getByRole("heading", { name: "New Message" })).toBeVisible();
   await expect(page.getByLabel("From")).toHaveValue(SENDER);
   await expect(page.getByLabel("WORK each")).toBeVisible();
+}
+
+async function openConnectedWallet(page) {
+  await page.goto("/?wallet=1", { waitUntil: "domcontentloaded" });
+  const connect = page
+    .getByRole("button", { name: /Connect (UniSat|wallet)/u })
+    .first();
+  if (await connect.isVisible({ timeout: 1_000 }).catch(() => false)) {
+    await connect.click();
+  }
+  await expect(page.locator(".topbar-wallet-button")).toContainText("1BPVvi1G");
+  await expect(page.locator(".token-wallet-workspace")).toBeVisible();
 }
 
 async function openConnectedInboxReply(page) {
@@ -614,6 +749,23 @@ test("failed initial WORK admission becomes an explicit unavailable state", asyn
         }).length,
     )
     .toBeGreaterThan(0);
+});
+
+test("wallet V8 AMO repair hides stale invalid rows and reserves spendable WORK", async ({
+  page,
+}) => {
+  await installWallet(page);
+  await installApiFixtures(page, { mode: "post-v8", repairedV8Listing: true });
+  await openConnectedWallet(page);
+
+  await expect(page.getByText("25,000 proofs AMO unit")).toBeVisible();
+  await expect(
+    page.getByText("0.0000000752009741 WORK · 25,000 frozen proofs"),
+  ).toBeVisible();
+  await expect(page.getByText("Attempted listing")).toHaveCount(0);
+  await expect(page.getByText("Pre-V8 relic")).toHaveCount(0);
+  await expect(page.getByRole("button", { exact: true, name: "Seal" })).toBeVisible();
+  await expect(page.getByText("1.9999999247990259 WORK")).toBeVisible();
 });
 
 test("pre-V8 mail prepares send2 once and exposes the busy state", async ({

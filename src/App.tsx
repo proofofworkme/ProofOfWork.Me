@@ -8017,6 +8017,15 @@ function workAmoListingFaceProofs(listing: PowTokenListing) {
     : undefined;
 }
 
+function workAmoListingIsV8(listing: PowTokenListing) {
+  const frozen = listing.workAmoFrozenTerms ?? listing.frozenTerms;
+  return (
+    listing.saleAuthorization.version ===
+      TOKEN_SALE_AUTH_WORK_AMO_SUBATOM_VERSION ||
+    frozen?.version === TOKEN_SALE_AUTH_WORK_AMO_SUBATOM_VERSION
+  );
+}
+
 function workAmoV6FrozenProjection(listing: PowTokenListing) {
   const frozen = listing.workAmoFrozenTerms ?? listing.frozenTerms;
   const authorization = listing.saleAuthorization;
@@ -8221,11 +8230,11 @@ function workAmoV8FrozenProjection(listing: PowTokenListing) {
 
 function workAmoFrozenTerms(listing: PowTokenListing) {
   const frozen = listing.workAmoFrozenTerms ?? listing.frozenTerms;
-  const v7Listing =
+  const v8Listing =
     listing.saleAuthorization.version ===
       TOKEN_SALE_AUTH_WORK_AMO_SUBATOM_VERSION ||
     frozen?.version === TOKEN_SALE_AUTH_WORK_AMO_SUBATOM_VERSION;
-  if (v7Listing) {
+  if (v8Listing) {
     return workAmoV8FrozenProjection(listing);
   }
   const v6Listing =
@@ -8494,7 +8503,7 @@ function workAmoListingMatchesWriteEra(
     return true;
   }
   const mode: Exclude<WorkWriteMode, "paused"> =
-    workV8DeclarationBoundaryObserved(quote)
+    workAmoListingIsV8(listing) || workV8DeclarationBoundaryObserved(quote)
       ? "native-q16"
       : "legacy-q8";
   try {
@@ -11541,6 +11550,13 @@ function mergeTokenListingsById(
   }
 
   return [...byKey.values()];
+}
+
+function mergeTokenListingGroups(...groups: PowTokenListing[][]) {
+  return groups.reduce<PowTokenListing[]>(
+    (merged, group) => mergeTokenListingsById(merged, group),
+    [],
+  );
 }
 
 function tokenListingShouldSurviveRefresh(listing: PowTokenListing) {
@@ -16292,6 +16308,59 @@ function tokenStateHistoryRank(state: PowTokenState | undefined) {
   );
 }
 
+function tokenEventKey(tokenId: unknown, txid: unknown) {
+  const normalizedTokenId = String(tokenId ?? "").trim().toLowerCase();
+  const normalizedTxid = String(txid ?? "").trim().toLowerCase();
+  return normalizedTokenId && /^[0-9a-f]{64}$/u.test(normalizedTxid)
+    ? `${normalizedTokenId}:${normalizedTxid}`
+    : "";
+}
+
+function tokenValidEventKeysForState(state: Pick<
+  PowTokenState,
+  "closedListings" | "listings" | "mints" | "sales" | "transfers"
+>) {
+  const keys = new Set<string>();
+  const add = (tokenId: unknown, txid: unknown) => {
+    const key = tokenEventKey(tokenId, txid);
+    if (key) {
+      keys.add(key);
+    }
+  };
+
+  state.mints.forEach((mint) => add(mint.tokenId, mint.txid));
+  state.transfers.forEach((transfer) => add(transfer.tokenId, transfer.txid));
+  state.listings.forEach((listing) => add(listing.tokenId, listing.listingId));
+  state.closedListings.forEach((listing) => {
+    add(listing.tokenId, listing.closedTxid);
+    add(listing.tokenId, listing.listingId);
+  });
+  state.sales.forEach((sale) => {
+    add(sale.tokenId, sale.txid);
+    add(sale.tokenId, sale.listingId);
+  });
+
+  return keys;
+}
+
+function tokenInvalidEventShrinkWasRepaired(
+  next: PowTokenState,
+  current: PowTokenState,
+) {
+  const nextInvalidKeys = new Set(
+    next.invalidEvents.map((event) => tokenEventKey(event.tokenId, event.txid)),
+  );
+  const missingInvalidKeys = current.invalidEvents
+    .map((event) => tokenEventKey(event.tokenId, event.txid))
+    .filter((key) => key && !nextInvalidKeys.has(key));
+  if (missingInvalidKeys.length === 0) {
+    return false;
+  }
+
+  const repairedKeys = tokenValidEventKeysForState(next);
+  return missingInvalidKeys.every((key) => repairedKeys.has(key));
+}
+
 function tokenStateRegresses(
   next: PowTokenState,
   current: PowTokenState | undefined,
@@ -16311,13 +16380,17 @@ function tokenStateRegresses(
     return true;
   }
 
+  const invalidEventsRegressed =
+    current.invalidEvents.length > 0 &&
+    next.invalidEvents.length < current.invalidEvents.length &&
+    !tokenInvalidEventShrinkWasRepaired(next, current);
+
   return (
     (current.tokens.length > 0 && next.tokens.length < current.tokens.length) ||
     (current.mints.length > 0 && next.mints.length < current.mints.length) ||
     (current.transfers.length > 0 &&
       next.transfers.length < current.transfers.length) ||
-    (current.invalidEvents.length > 0 &&
-      next.invalidEvents.length < current.invalidEvents.length) ||
+    invalidEventsRegressed ||
     (current.sales.length > 0 && next.sales.length < current.sales.length) ||
     (current.closedListings.length > 0 &&
       next.closedListings.length < current.closedListings.length) ||
@@ -21101,6 +21174,37 @@ export default function App() {
     accountWalletBalances,
     tokenWalletBalances,
   );
+  const walletReservationListings = useMemo(
+    () =>
+      activeTokenListingsExcludingClosed(
+        mergeTokenListingGroups(
+          tokenListings,
+          accountTokenState.listings,
+          accountWorkTokenState.listings,
+          accountPowbTokenState.listings,
+          accountIncbTokenState.listings,
+        ),
+        [
+          ...tokenClosedListings,
+          ...accountTokenState.closedListings,
+          ...accountWorkTokenState.closedListings,
+          ...accountPowbTokenState.closedListings,
+          ...accountIncbTokenState.closedListings,
+        ],
+      ),
+    [
+      accountIncbTokenState.closedListings,
+      accountIncbTokenState.listings,
+      accountPowbTokenState.closedListings,
+      accountPowbTokenState.listings,
+      accountTokenState.closedListings,
+      accountTokenState.listings,
+      accountWorkTokenState.closedListings,
+      accountWorkTokenState.listings,
+      tokenClosedListings,
+      tokenListings,
+    ],
+  );
   const walletBalanceCountLoaded = address
     ? accountTokenLaneStatuses.all.loaded
     : activeTokenStateLoaded;
@@ -21124,7 +21228,11 @@ export default function App() {
   const walletPendingTokenBalance =
     walletTransferBalanceRow?.pendingOutgoing ?? 0;
   const walletReservedTokenBalance = walletTransferToken
-    ? tokenReservedBalanceFor(tokenListings, walletTransferToken.tokenId, address)
+    ? tokenReservedBalanceFor(
+        walletReservationListings,
+        walletTransferToken.tokenId,
+        address,
+      )
     : 0;
   const walletTransferIsWork = Boolean(
     walletTransferToken && isWorkToken(walletTransferToken),
@@ -21154,7 +21262,7 @@ export default function App() {
   const walletReservedTokenAtoms =
     walletTransferUsesExactUnits && walletTransferToken
       ? tokenReservedBalanceAtomsFor(
-          tokenListings,
+          walletReservationListings,
           walletTransferToken.tokenId,
           address,
         )
@@ -30611,7 +30719,7 @@ export default function App() {
         listFaceProofs={tokenListFaceProofs}
         listPriceSats={tokenListPriceSats}
         listing={tokenAction === "list"}
-        listings={tokenListings}
+        listings={walletReservationListings}
         listSpendableBalance={walletSpendableTokenBalance}
         network={network}
         onNetworkChange={chooseNetwork}
@@ -31570,7 +31678,7 @@ export default function App() {
             listFaceProofs={tokenListFaceProofs}
             listPriceSats={tokenListPriceSats}
             listing={tokenAction === "list"}
-            listings={tokenListings}
+            listings={walletReservationListings}
             listSpendableBalance={walletSpendableTokenBalance}
             prepareTransferCount={tokenPrepareTransferCount}
             prepareTransferFeeRate={tokenPrepareTransferFeeRate}
@@ -35023,17 +35131,6 @@ function TokenWalletWorkspace({
       )
     : [];
   const normalizedWalletAddress = address.trim().toLowerCase();
-  const walletInvalidEvents = normalizedWalletAddress
-    ? invalidEvents.filter((event) =>
-        [
-          event.senderAddress,
-          event.recipientAddress,
-          ...(event.participants ?? []),
-        ]
-          .map((candidate) => String(candidate ?? "").trim().toLowerCase())
-          .includes(normalizedWalletAddress),
-      )
-    : [];
   const walletListingEvents = address
     ? listings.filter(
         (item) =>
@@ -35046,6 +35143,28 @@ function TokenWalletWorkspace({
         (item) =>
           item.sellerAddress === address ||
           item.saleAuthorization.buyerAddress === address,
+      )
+    : [];
+  const walletValidMovementKeys = tokenValidEventKeysForState({
+    closedListings: walletClosedListingEvents,
+    listings: walletListingEvents,
+    mints: [],
+    sales: tokenSales.filter(
+      (sale) =>
+        sale.buyerAddress === address || sale.sellerAddress === address,
+    ),
+    transfers: walletTransfers,
+  });
+  const walletInvalidEvents = normalizedWalletAddress
+    ? invalidEvents.filter((event) =>
+        !walletValidMovementKeys.has(tokenEventKey(event.tokenId, event.txid)) &&
+        [
+          event.senderAddress,
+          event.recipientAddress,
+          ...(event.participants ?? []),
+        ]
+          .map((candidate) => String(candidate ?? "").trim().toLowerCase())
+          .includes(normalizedWalletAddress),
       )
     : [];
   const walletMovements: TokenWalletMovement[] = [
