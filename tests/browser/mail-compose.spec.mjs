@@ -395,6 +395,7 @@ async function installApiFixtures(
   page,
   {
     floorFailure = false,
+    freshMarketLogFailure = false,
     holdInitialFloor = false,
     inboxMessage = false,
     mode = "post-v8",
@@ -477,6 +478,18 @@ async function installApiFixtures(
     } else if (pathname === "/api/v1/token-history") {
       const kind = searchParams.get("kind");
       if (remoteV8MarketListings && kind === "market-log") {
+        if (freshMarketLogFailure && searchParams.get("fresh") === "1") {
+          json = {
+            error: "The canonical ProofOfWork index is catching up.",
+            network: "livenet",
+            ok: false,
+          };
+          return route.fulfill({
+            body: JSON.stringify(json),
+            contentType: "application/json",
+            status,
+          });
+        }
         const listings = [
           v8AmoListing({
             createdAt: "2026-08-12T06:37:00.000Z",
@@ -882,6 +895,7 @@ test("wallet V8 AMO seal can retry during exact-tip catch-up", async ({
 test("AMO order book counts remote unsealed V8 listings", async ({ page }) => {
   await installWallet(page);
   await installApiFixtures(page, {
+    freshMarketLogFailure: true,
     mode: "precision-paused",
     remoteV8MarketListings: true,
   });
@@ -909,6 +923,15 @@ test("AMO order book counts remote unsealed V8 listings", async ({ page }) => {
   await expect(
     amoUnits.locator(".token-market-grid .token-market-row"),
   ).toHaveCount(2);
+
+  await page.getByRole("button", { name: "Refresh" }).first().click();
+  await expect(
+    amoUnits.getByRole("button", { name: "All 2" }),
+  ).toContainText("2");
+  await expect(
+    amoUnits.getByRole("button", { name: "Unsealed 2" }),
+  ).toContainText("2");
+  await expect(amoUnits.getByText("Pre-V8 relic")).toHaveCount(0);
 });
 
 test("pre-V8 mail prepares send2 once and exposes the busy state", async ({

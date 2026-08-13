@@ -15439,6 +15439,12 @@ async function fetchTokenHistoryPage<T>(
     `/api/v1/token-history?${params.toString()}`,
     targetNetwork,
   );
+  if (
+    !Array.isArray(payload.items) &&
+    typeof (payload as { error?: unknown }).error === "string"
+  ) {
+    throw new Error(String((payload as { error: string }).error));
+  }
   const rawItems = Array.isArray(payload.items) ? payload.items : [];
   const items = (
     kind === "listings" || kind === "closedListings"
@@ -44209,12 +44215,30 @@ function TokenMarketplacePanel({
 
     let cancelled = false;
     setTokenMarketLogPageLoading(true);
-    void fetchTokenHistoryPage<TokenMarketLogItem>(network, "market-log", {
+    const historyOptions = {
       fresh: tokenMarketHistoryRefreshNonce > 0,
       pageIndex: tokenMarketLogPageIndex,
       pageSize: TOKEN_LIST_PREVIEW_COUNT,
       tokenScope: selectedMarketToken?.tokenId ?? "",
-    })
+    };
+    void fetchTokenHistoryPage<TokenMarketLogItem>(
+      network,
+      "market-log",
+      historyOptions,
+    )
+      .catch((error) => {
+        if (!historyOptions.fresh) {
+          throw error;
+        }
+        return fetchTokenHistoryPage<TokenMarketLogItem>(
+          network,
+          "market-log",
+          {
+            ...historyOptions,
+            fresh: false,
+          },
+        );
+      })
       .then((page) => {
         if (!cancelled) {
           setRemoteTokenMarketLogPage({
