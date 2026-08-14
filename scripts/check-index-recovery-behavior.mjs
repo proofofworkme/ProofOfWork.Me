@@ -7220,14 +7220,16 @@ check("fresh wallet token reads fall back only to exact canonical coverage", asy
   assert.equal(current.authoritativeWallet, true);
 });
 
-check("fresh WORK token reads prefer exact canonical summary over lagging token-state", async () => {
+check("fresh WORK token reads prefer canonical summary over lagging token-state", async () => {
   const workTokenId = "work-token-id";
   const blockHash = "8".repeat(64);
   const canonicalGate = {
-    atTip: true,
+    atTip: false,
     canonicalHash: blockHash,
     indexedThroughBlock: 200,
+    lagBlocks: 1,
     ok: true,
+    tipHeight: 201,
   };
   const canonicalSummary = {
     indexedThroughBlock: 200,
@@ -7252,9 +7254,8 @@ check("fresh WORK token reads prefer exact canonical summary over lagging token-
         summaryReads += 1;
         return canonicalSummary;
       },
-      tokenPayloadMatchesCanonicalGate: (payload, gate) =>
+      tokenPayloadMatchesCanonicalIndexedGate: (payload, gate) =>
         gate?.ok === true &&
-        gate?.atTip === true &&
         Number(payload?.indexedThroughBlock) === gate.indexedThroughBlock &&
         payload?.indexedThroughBlockHash === gate.canonicalHash,
     },
@@ -7289,6 +7290,65 @@ check("fresh WORK token reads prefer exact canonical summary over lagging token-
   );
   assert.ok(summaryReadIndex >= 0);
   assert.ok(tokenStateReadIndex > summaryReadIndex);
+});
+
+check("fresh public reads can use bounded canonical last-good summaries", async () => {
+  const helper = isolatedFunction(
+    API_PATH,
+    "canonicalFreshReadCanUseLastGood",
+    {
+      CANONICAL_FRESH_LAST_GOOD_MAX_LAG_BLOCKS: 1,
+      WORK_TOKEN_ID: "work-token-id",
+      canonicalSummarySnapshotReadGateApplies: (pathname) =>
+        pathname === "/api/v1/work-floor",
+      normalizeTokenScope: (value) =>
+        String(value ?? "").trim().toUpperCase() === "WORK"
+          ? "work-token-id"
+          : String(value ?? "").trim().toLowerCase(),
+    },
+  );
+  const gate = {
+    atTip: false,
+    available: true,
+    canonicalHash: "9".repeat(64),
+    indexedThroughBlock: 200,
+    lagBlocks: 1,
+    ok: true,
+    summarySnapshotOk: true,
+  };
+  assert.equal(
+    helper(new URL("https://wallet.proofofwork.me/api/v1/work-floor"), gate),
+    true,
+  );
+  assert.equal(
+    helper(
+      new URL("https://wallet.proofofwork.me/api/v1/token?asset=WORK"),
+      gate,
+    ),
+    true,
+  );
+  assert.equal(
+    helper(
+      new URL("https://wallet.proofofwork.me/api/v1/token?asset=WORK&wallet=1&address=sender"),
+      gate,
+    ),
+    false,
+    "wallet-scoped reads must stay exact-current",
+  );
+  assert.equal(
+    helper(
+      new URL("https://wallet.proofofwork.me/api/v1/token?asset=WORK"),
+      { ...gate, lagBlocks: 2 },
+    ),
+    false,
+  );
+  assert.equal(
+    helper(
+      new URL("https://wallet.proofofwork.me/api/v1/work-floor"),
+      { ...gate, summarySnapshotOk: false },
+    ),
+    false,
+  );
 });
 
 check("wallet WORK overlay recovers active canonical V8 listings and drops matching invalid attempts", async () => {

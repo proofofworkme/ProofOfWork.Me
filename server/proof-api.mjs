@@ -35634,6 +35634,13 @@ function tokenPayloadMatchesCanonicalGate(payload, canonicalGate) {
   if (!canonicalGate || canonicalGate.ok !== true || canonicalGate.atTip !== true) {
     return false;
   }
+  return tokenPayloadMatchesCanonicalIndexedGate(payload, canonicalGate);
+}
+
+function tokenPayloadMatchesCanonicalIndexedGate(payload, canonicalGate) {
+  if (!canonicalGate || canonicalGate.ok !== true) {
+    return false;
+  }
   const indexedThroughBlock = proofIndexPayloadIndexedThroughBlock(payload);
   const indexedThroughBlockHash = payloadIndexedThroughBlockHash(payload);
   const canonicalHash = String(canonicalGate.canonicalHash ?? "")
@@ -35665,7 +35672,7 @@ async function currentCanonicalWorkTokenSummaryPayloadForFreshRead(
   );
   if (
     !payload ||
-    !tokenPayloadMatchesCanonicalGate(payload, canonicalGate) ||
+    !tokenPayloadMatchesCanonicalIndexedGate(payload, canonicalGate) ||
     rejectEmptyMainnetTokenPayload(
       network,
       payload,
@@ -40948,9 +40955,7 @@ async function verifiedSummaryPayloadCheckpoint(
   if (
     firstGate?.ok !== true ||
     !Number.isSafeInteger(firstTipHeight) ||
-    indexedThroughBlock > firstTipHeight ||
-    (requestedFresh &&
-      (firstGate?.ready !== true || indexedThroughBlock !== firstTipHeight))
+    indexedThroughBlock > firstTipHeight
   ) {
     const error = freshDataUnavailableError(
       `${surface} cannot prove its checkpoint against the current canonical index.`,
@@ -40982,7 +40987,11 @@ async function verifiedSummaryPayloadCheckpoint(
   }
 
   let finalGate = firstGate;
-  if (requestedFresh) {
+  const firstGateExactTip =
+    firstGate?.ready === true &&
+    indexedThroughBlock === firstTipHeight &&
+    indexedThroughBlockHash === firstGate?.canonicalHash;
+  if (requestedFresh && firstGateExactTip) {
     finalGate = await canonicalPublicReadGate(network, { force: true });
     if (
       finalGate?.ready !== true ||
@@ -41080,22 +41089,6 @@ async function summaryPayloadWithCanonicalProvenance(
   const exactTip = checkpoint.exactTip;
   const ready =
     coherent && exactTip && (network !== "livenet" || Boolean(snapshotId));
-
-  if (requestedFresh && !ready) {
-    const error = freshDataUnavailableError(
-      `${surface} is catching up and cannot prove an exact-tip fresh snapshot.`,
-    );
-    error.details = {
-      code: "CANONICAL_SUMMARY_CATCHING_UP",
-      coherent,
-      indexedThroughBlock: indexedThroughBlock || null,
-      lagBlocks,
-      snapshotIds,
-      surface,
-      tipHeight: Number.isSafeInteger(tipHeight) ? tipHeight : null,
-    };
-    throw error;
-  }
 
   return {
     ...payload,
@@ -63982,6 +63975,15 @@ const CANONICAL_PUBLIC_READ_GATE_TIMEOUT_TTL_MS = Math.min(
   ),
 );
 const canonicalPublicReadGateCache = new Map();
+const CANONICAL_FRESH_LAST_GOOD_MAX_LAG_BLOCKS = Math.min(
+  6,
+  Math.max(
+    0,
+    Math.floor(
+      Number(process.env.POW_API_FRESH_LAST_GOOD_MAX_LAG_BLOCKS ?? 1) || 1,
+    ),
+  ),
+);
 
 function canonicalPublicReadGateApplies(pathname) {
   const path = String(pathname ?? "");
@@ -64013,6 +64015,47 @@ function canonicalSummarySnapshotReadGateApplies(pathname) {
     "/api/v1/work-floor",
     "/api/v1/work-summary",
   ]).has(String(pathname ?? ""));
+}
+
+function canonicalFreshReadCanUseLastGood(url, gate) {
+  const pathname = String(url?.pathname ?? "");
+  if (
+    gate?.ok !== true ||
+    gate.available !== true ||
+    gate.atTip === true ||
+    !Number.isSafeInteger(Number(gate.indexedThroughBlock)) ||
+    Number(gate.indexedThroughBlock) <= 0 ||
+    !/^[0-9a-f]{64}$/u.test(String(gate.canonicalHash ?? "").trim().toLowerCase())
+  ) {
+    return false;
+  }
+  const lagBlocks = Number(gate.lagBlocks);
+  if (
+    !Number.isSafeInteger(lagBlocks) ||
+    lagBlocks < 0 ||
+    lagBlocks > CANONICAL_FRESH_LAST_GOOD_MAX_LAG_BLOCKS
+  ) {
+    return false;
+  }
+  if (canonicalSummarySnapshotReadGateApplies(pathname)) {
+    return gate.summarySnapshotOk === true;
+  }
+  if (pathname !== "/api/v1/token") {
+    return false;
+  }
+  const params = url.searchParams;
+  const tokenScope = normalizeTokenScope(
+    params.get("asset") ?? params.get("tokenId") ?? params.get("ticker") ?? "",
+  );
+  const walletReadRequested = /^(?:1|true|yes)$/iu.test(
+    String(params.get("wallet") ?? "").trim(),
+  );
+  return (
+    tokenScope === WORK_TOKEN_ID &&
+    !walletReadRequested &&
+    !params.has("address") &&
+    !params.has("addresses")
+  );
 }
 
 function summarySnapshotCoversCanonicalReadModels(status) {
@@ -64455,7 +64498,9 @@ async function handleRequest(request, response) {
         );
         return;
       }
-      if (freshRead && gate.atTip !== true) {
+      const serveFreshLastGood =
+        freshRead && canonicalFreshReadCanUseLastGood(url, gate);
+      if (freshRead && gate.atTip !== true && !serveFreshLastGood) {
         errorResponse(
           response,
           503,
@@ -65103,12 +65148,16 @@ async function handleRequest(request, response) {
             canonicalReadGate,
           );
         if (canonicalSummaryPayload) {
+          const canonicalSummaryExact = tokenPayloadMatchesCanonicalGate(
+            canonicalSummaryPayload,
+            canonicalReadGate,
+          );
           const responsePayload = await withWorkMarketplaceV4Metadata(
             canonicalSummaryPayload,
             network,
           );
           cacheTokenPayload(network, tokenScope, responsePayload, {
-            exactTipValidated: true,
+            exactTipValidated: canonicalSummaryExact,
           });
           jsonResponse(
             response,

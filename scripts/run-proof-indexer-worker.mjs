@@ -187,10 +187,10 @@ export function pendingBackfillChildTimeoutMs(
   configured = process.env.POW_INDEX_WORKER_PENDING_BACKFILL_TIMEOUT_MS,
 ) {
   return Math.min(
-    10 * 60_000,
+    60_000,
     Math.max(
-      30_000,
-      Math.floor(Number(configured ?? 90_000) || 90_000),
+      5_000,
+      Math.floor(Number(configured ?? 10_000) || 10_000),
     ),
   );
 }
@@ -6536,7 +6536,10 @@ export async function runWorkerMain() {
         const coreTipAdvance = workerCoreTipAdvanceFromError(error);
         if (coreTipAdvance) {
           const nowMs = Date.now();
-          const retryDelayMs = finitePositiveInteger(INTERVAL_MS, 30_000);
+          const retryDelayMs = workerIdleTipPollMs(
+            IDLE_TIP_POLL_MS,
+            INTERVAL_MS,
+          );
           const retrying = !ONCE && !runtime.stopping;
           runtime.workPrecision = workerWorkPrecisionForCoreTipAdvance(
             runtime.workPrecision,

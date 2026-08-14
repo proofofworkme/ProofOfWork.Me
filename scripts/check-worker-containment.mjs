@@ -2360,11 +2360,11 @@ async function runChecks() {
     0,
     "an exhausted pending pass must skip the extended verifier and preserve shutdown headroom",
   );
-  assert.equal(pendingBackfillChildTimeoutMs(null), 90_000);
-  assert.equal(pendingBackfillChildTimeoutMs("invalid"), 90_000);
-  assert.equal(pendingBackfillChildTimeoutMs("15000"), 30_000);
-  assert.equal(pendingBackfillChildTimeoutMs("45000"), 45_000);
-  assert.equal(pendingBackfillChildTimeoutMs("900000"), 600_000);
+  assert.equal(pendingBackfillChildTimeoutMs(null), 10_000);
+  assert.equal(pendingBackfillChildTimeoutMs("invalid"), 10_000);
+  assert.equal(pendingBackfillChildTimeoutMs("1000"), 5_000);
+  assert.equal(pendingBackfillChildTimeoutMs("15000"), 15_000);
+  assert.equal(pendingBackfillChildTimeoutMs("900000"), 60_000);
 
   assert.equal(typeof workerSleepUntilIntervalOrTipAdvance, "function");
   assert.equal(workerIdleTipPollMs(null, 30_000), 1_000);
@@ -2385,6 +2385,11 @@ async function runChecks() {
     assert.match(
       source,
       /runCycle\(pool, lastSuccess, runtime\)[\s\S]*workerSleepUntilIntervalOrTipAdvance\([\s\S]*cycle\.canonicalProgress/u,
+    );
+    assert.match(
+      source,
+      /const retryDelayMs = workerIdleTipPollMs\([\s\S]*IDLE_TIP_POLL_MS,[\s\S]*INTERVAL_MS[\s\S]*\)/u,
+      "tip-change deferrals must retry at poll speed, not at the full worker interval",
     );
   }
   assert.deepEqual(

@@ -625,12 +625,11 @@ expect(
     workerBackfillTimeoutMs >= canonicalSummaryRefreshTimeoutMs + 300_000,
 );
 expect(
-  "production pending work admits a cold verifier and preserves child cleanup headroom",
+  "production pending work is bounded so confirmed catch-up is not held for a cold verifier",
   workerPendingVerifierTimeoutMs === 30_000 &&
     workerPendingScanBudgetMs === 30_000 &&
-    workerPendingBackfillTimeoutMs === 90_000 &&
-    workerPendingBackfillTimeoutMs >=
-      workerPendingScanBudgetMs + workerPendingVerifierTimeoutMs + 9_000,
+    workerPendingBackfillTimeoutMs === 10_000 &&
+    workerPendingBackfillTimeoutMs < workerPendingScanBudgetMs,
 );
 expect(
   "production API worker-health freshness is pinned to the ten-minute ceiling",
@@ -713,7 +712,8 @@ expectAll("canonical read gate timeouts recover without a pinned public outage",
 expectAll("canonical exact-tip reads are not blocked by worker heartbeat age", server, [
   /const atTip =[\s\S]*available &&[\s\S]*indexedThroughBlock === tipHeight/,
   /const ready =[\s\S]*atTip &&[\s\S]*workerFresh/,
-  /if \(freshRead && gate\.atTip !== true\)/,
+  /const serveFreshLastGood =[\s\S]*canonicalFreshReadCanUseLastGood\(url, gate\)/,
+  /if \(freshRead && gate\.atTip !== true && !serveFreshLastGood\)/,
   /function walletTokenOverlayMatchesCanonicalGate\([\s\S]*gate\?\.atTip !== true/,
   /freshRead &&[\s\S]*canonicalSummarySnapshotReadGateApplies\(url\.pathname\)[\s\S]*!gate\.summarySnapshotOk/,
 ]);
@@ -1251,7 +1251,8 @@ expectAll("server fresh token state reads fall back to valid cached snapshots", 
   /function cacheTokenPayload\(network,\s*tokenScope = "",\s*payload,\s*options = \{\}\)[\s\S]*EXACT_TIP_TOKEN_CACHE\.set\(cacheKey,[\s\S]*PROOF_INDEX_HEALTH_MAX_AGE_MS/,
   /function cacheTokenPayload\([\s\S]*greenUntil:[\s\S]*pendingValidThroughMs[\s\S]*indexedThroughBlockHash: payloadIndexedThroughBlockHash\(payload\)/,
   /async function currentExactTipTokenPayloadForRead\([\s\S]*canonicalGate = null[\s\S]*EXACT_TIP_TOKEN_CACHE\.get\(cacheKey\)[\s\S]*validatedUntil[\s\S]*tokenPayloadMatchesCanonicalGate\(payload, canonicalGate\)[\s\S]*retainedExactTipTokenPayloadForRead\(payload, canonicalGate, cached\)[\s\S]*healthNodeTipHeight\(\)[\s\S]*!Number\.isSafeInteger\(tipHeight\)[\s\S]*return null;[\s\S]*indexedThroughBlock === tipHeight[\s\S]*return payload;[\s\S]*EXACT_TIP_TOKEN_CACHE\.delete\(cacheKey\)/,
-  /function tokenPayloadMatchesCanonicalGate\([\s\S]*canonicalGate\.atTip !== true[\s\S]*payloadIndexedThroughBlockHash\(payload\)[\s\S]*canonicalGate\.indexedThroughBlock[\s\S]*canonicalHash === indexedThroughBlockHash/,
+  /function tokenPayloadMatchesCanonicalGate\([\s\S]*canonicalGate\.atTip !== true[\s\S]*tokenPayloadMatchesCanonicalIndexedGate\(payload, canonicalGate\)/,
+  /function tokenPayloadMatchesCanonicalIndexedGate\([\s\S]*payloadIndexedThroughBlockHash\(payload\)[\s\S]*canonicalGate\.indexedThroughBlock[\s\S]*canonicalHash === indexedThroughBlockHash/,
   /function readOnlyRetainedWorkAmoV8Metadata\([\s\S]*indexReady: false[\s\S]*listingWritesEnabled: false[\s\S]*migrationReady: false[\s\S]*protocolWritesEnabled: false[\s\S]*settlementWritesEnabled: false[\s\S]*writeAdmission: false[\s\S]*pendingReady: false/,
   /function retainedExactTipTokenPayloadForRead\([\s\S]*canonicalGate\?\.ready === true[\s\S]*cached\?\.greenUntil[\s\S]*readOnlyRetainedWorkAmoV8Metadata/,
   /indexedPayload && \(!freshRead \|\| indexedPayloadExact\)[\s\S]*const responsePayload = await withWorkMarketplaceV4Metadata\([\s\S]*indexedPayload,[\s\S]*network,[\s\S]*\);[\s\S]*cacheTokenPayload\(network,\s*tokenScope,\s*responsePayload,\s*\{[\s\S]*exactTipValidated:\s*indexedPayloadExact[\s\S]*\}\)[\s\S]*jsonResponse\([\s\S]*responsePayload/,
@@ -1634,7 +1635,7 @@ expectAll(
     /mempoolScanTimeBudgetReached\(startedAtMs,\s*scanned\)[\s\S]*stopReason = "time-budget"/,
     /pendingExtendedVerifierTimeoutMs\(\)[\s\S]*pendingVerifierTimeoutMs: extendedPendingVerifierTimeoutMs/,
     /^Environment=POW_INDEX_MEMPOOL_SCAN_BUDGET_MS=30000$/m,
-    /^Environment=POW_INDEX_WORKER_PENDING_BACKFILL_TIMEOUT_MS=90000$/m,
+    /^Environment=POW_INDEX_WORKER_PENDING_BACKFILL_TIMEOUT_MS=10000$/m,
   ],
 );
 expectAll("generic payload snapshots select the latest matching payload without a finite lookback", ledgerSnapshotWithPayloadSource, [

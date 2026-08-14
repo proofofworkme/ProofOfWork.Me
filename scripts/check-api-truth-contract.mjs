@@ -520,9 +520,10 @@ expect(
   ) && /CANONICAL_SUMMARY_INCOHERENT/u.test(provenance),
 );
 expect(
-  "fresh summary provenance fails closed while catching up",
-  /if \(requestedFresh && !ready\)/u.test(provenance) &&
-    /CANONICAL_SUMMARY_CATCHING_UP/u.test(provenance),
+  "fresh summary provenance can serve hash-verified last-good while catching up",
+  !/CANONICAL_SUMMARY_CATCHING_UP/u.test(provenance) &&
+    /requested: requestedFresh \? "fresh" : "stable"/u.test(provenance) &&
+    /served: ready \? "exact-tip" : "last-good"/u.test(provenance),
 );
 expect(
   "truncated credit summaries preserve authoritative statistics",
@@ -654,8 +655,13 @@ expect(
     .length >= 5,
 );
 expect(
-  "fresh reads require canonical exact-tip truth without treating a stale worker heartbeat as chain lag",
-  /if \(freshRead && gate\.atTip !== true\)/u.test(requestGate) &&
+  "fresh reads require canonical exact-tip truth unless a bounded last-good read is explicit",
+  /const serveFreshLastGood =[\s\S]*canonicalFreshReadCanUseLastGood\(url, gate\)/u.test(
+    requestGate,
+  ) &&
+    /if \(freshRead && gate\.atTip !== true && !serveFreshLastGood\)/u.test(
+      requestGate,
+    ) &&
     !/if \(freshRead && gate\.ready !== true\)/u.test(requestGate) &&
     /CANONICAL_INDEX_CATCHING_UP/u.test(requestGate),
 );
