@@ -2652,6 +2652,12 @@ check("WORK AMO V8 seal shape accepts P2PKH sale-ticket signatures", async () =>
     "signedSinglePaymentAmountBeforeTokenProtocol",
     { assignWorkAmoV5EconomicOutputs },
   );
+  let listingAnchorFixture = {
+    anchorVout: 2,
+    frozenTerms: { unitPriceSats: "25000" },
+    listingId,
+    saleAuthorization: listingAuthorization,
+  };
   const signedWorkMarketplaceWriteActions = isolatedFunction(
     API_PATH,
     "signedWorkMarketplaceWriteActions",
@@ -2671,12 +2677,8 @@ check("WORK AMO V8 seal shape accepts P2PKH sale-ticket signatures", async () =>
       WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS: registryAddress,
       WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS: registryAddress,
       canonicalProtocolCandidateFromOutput,
-      canonicalWorkMarketplaceListingAnchor: async () => ({
-        anchorVout: 2,
-        frozenTerms: { unitPriceSats: "25000" },
-        listingId,
-        saleAuthorization: listingAuthorization,
-      }),
+      canonicalWorkMarketplaceListingAnchor: async () =>
+        listingAnchorFixture,
       mapWithConcurrency: async (items, _limit, mapper) =>
         Promise.all(items.map(mapper)),
       parseTokenPayload,
@@ -2731,6 +2733,86 @@ check("WORK AMO V8 seal shape accepts P2PKH sale-ticket signatures", async () =>
     result[0].signedShapeValid,
     true,
     JSON.stringify(result[0].signedShapeChecks),
+  );
+  listingAnchorFixture = {
+    anchorVout: 2,
+    listingId,
+    saleAuthorization: listingAuthorization,
+  };
+  const unavailableTerms = await signedWorkMarketplaceWriteActions(
+    "fixture",
+    "livenet",
+  );
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(unavailableTerms[0].signedShapeChecks)),
+    {
+      actorMatches: true,
+      buyerLockMatches: true,
+      delistSpendsListingAnchor: true,
+      frozenPaymentMatches: true,
+      frozenTermsReady: false,
+      referencedTermsMatch: true,
+      staticShapeValid: true,
+    },
+  );
+  assert.equal(
+    unavailableTerms[0].signedShapeReasonCode,
+    "work-amo-v8-frozen-terms-unavailable",
+  );
+  assert.equal(unavailableTerms[0].signedShapeValid, false);
+});
+
+check("WORK AMO V8 seal listing resolver reports read-model outages before signature validation", async () => {
+  const listingId =
+    "07c9ca719adf7a7e94ff17c917e599e872ae1c0348f282219907c060a72b8043";
+  const dependencyError = isolatedFunction(
+    API_PATH,
+    "workMarketplaceListingResolutionUnavailableError",
+    {
+      errorSummary: (error) =>
+        error instanceof Error && error.message
+          ? error.message
+          : String(error),
+    },
+  );
+  const resolver = isolatedFunction(
+    API_PATH,
+    "canonicalWorkMarketplaceListingAnchor",
+    {
+      fetchTransactionFromBitcoinRpc: async () => ({
+        txid: listingId,
+        status: {
+          block_hash: "a".repeat(64),
+          block_height: 1,
+          confirmed: true,
+        },
+        vout: [],
+      }),
+      proofIndexCanonicalWorkListingById: async () => {
+        throw new Error("canonical listing read unavailable");
+      },
+      workMarketplaceListingResolutionUnavailableError: dependencyError,
+    },
+  );
+  await assert.rejects(
+    () => resolver(listingId, "livenet"),
+    (error) => {
+      assert.equal(error?.statusCode, 503);
+      assert.equal(
+        error?.details?.code,
+        "WORK_MARKETPLACE_LISTING_RESOLUTION_UNAVAILABLE",
+      );
+      assert.equal(
+        error?.details?.reasonCode,
+        "work-marketplace-listing-resolution-unavailable",
+      );
+      assert.equal(error?.details?.listingId, listingId);
+      assert.match(
+        String(error?.details?.cause ?? ""),
+        /canonical listing read unavailable/u,
+      );
+      return true;
+    },
   );
 });
 

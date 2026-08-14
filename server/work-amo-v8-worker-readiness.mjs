@@ -37,14 +37,20 @@ function replayCommitmentsEqual(leftValue, rightValue) {
   return Object.keys(left).every((key) => left[key] === right[key]);
 }
 
-function confirmedReplayProof(value) {
+function hasOwnRecordProperty(record, key) {
+  return Object.prototype.hasOwnProperty.call(record, key);
+}
+
+function confirmedReplayProof(value, { requireExplicit = false } = {}) {
   const replay = objectRecord(value);
+  const hasConfirmed = hasOwnRecordProperty(replay, "confirmed");
   const confirmed = objectRecord(replay.confirmed);
-  const proof = confirmed.ready === true ? confirmed : replay;
+  const proof = hasConfirmed ? confirmed : requireExplicit ? {} : replay;
   const tipHeight = Number(proof.tipHeight);
   const tipHash = normalizedHash(proof.tipHash);
   return {
     ready:
+      (!requireExplicit || hasConfirmed) &&
       proof.ready === true &&
       proof.replayRequired === true &&
       Number.isSafeInteger(tipHeight) &&
@@ -80,7 +86,9 @@ export function exactWorkAmoV8WorkerLastSuccessReadiness(
   const idleState = workerState === "idle";
   const stateReady = (idleState || transientState) && !failureActive;
   const durableConfirmedReplay = confirmedReplayProof(durableReplay);
-  const currentConfirmedReplay = confirmedReplayProof(currentReplay);
+  const currentConfirmedReplay = confirmedReplayProof(currentReplay, {
+    requireExplicit: true,
+  });
   const normalizedTargetHash = normalizedHash(tipHash);
   const currentConfirmedProofReady =
     operationalStatus?.network === network &&

@@ -1156,6 +1156,50 @@ assert.deepEqual(
     statusCode: 400,
   },
 );
+assert.deepEqual(
+  workAmoV8BroadcastDecision(
+    [
+      {
+        action: "seal5",
+        authVersion: WORK_AMO_V8_AUTH_VERSION,
+        canonicalParsed: true,
+        paysWorkRegistry: true,
+        registryAddress:
+          WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS,
+        signedShapeChecks: {
+          actorMatches: false,
+          buyerLockMatches: true,
+          delistSpendsListingAnchor: true,
+          frozenPaymentMatches: true,
+          frozenTermsReady: false,
+          referencedTermsMatch: false,
+          staticShapeValid: true,
+        },
+        signedShapeValid: false,
+        ticker: "WORK",
+        tokenId: WORK_TOKEN_ID,
+        tokenProtocolMessageCount: 1,
+      },
+    ],
+    { metadata: readyStatus },
+  ),
+  {
+    allowed: false,
+    code: "WORK_AMO_V8_TRANSACTION_INVALID",
+    hint: "Signed WORK AMO V8 shape failed frozenTermsReady.",
+    reasonCode: "work-amo-v8-frozen-terms-unavailable",
+    shapeChecks: {
+      actorMatches: false,
+      buyerLockMatches: true,
+      delistSpendsListingAnchor: true,
+      frozenPaymentMatches: true,
+      frozenTermsReady: false,
+      referencedTermsMatch: false,
+      staticShapeValid: true,
+    },
+    statusCode: 400,
+  },
+);
 assert.equal(
   workAmoV8BroadcastDecision(
     [

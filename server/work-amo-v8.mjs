@@ -1564,10 +1564,10 @@ function workAmoV8SignedShapeRejection(action) {
           "delistSpendsListingAnchor",
           "work-amo-v8-delist-anchor-not-spent",
         ],
+        ["frozenTermsReady", "work-amo-v8-frozen-terms-unavailable"],
+        ["referencedTermsMatch", "work-amo-v8-listing-terms-mismatch"],
         ["actorMatches", "work-amo-v8-actor-proof-invalid"],
         ["buyerLockMatches", "work-amo-v8-buyer-lock-mismatch"],
-        ["referencedTermsMatch", "work-amo-v8-listing-terms-mismatch"],
-        ["frozenTermsReady", "work-amo-v8-frozen-terms-unavailable"],
         ["frozenPaymentMatches", "work-amo-v8-frozen-payment-mismatch"],
       ].find(([key]) => shapeChecks[key] === false)
     : null;

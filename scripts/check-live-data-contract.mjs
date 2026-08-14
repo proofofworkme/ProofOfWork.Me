@@ -1961,7 +1961,7 @@ expect(
   /const pendingWitnessReady =[\s\S]*migrationReadiness\?\.pendingReady === true &&[\s\S]*pendingMembershipLive;/.test(
     workAmoV8MetadataSource,
   ) &&
-    /const confirmedMigrationReady =[\s\S]*migrationReadiness\?\.canonical === true &&[\s\S]*migrationReadiness\?\.exactTipReady === true[\s\S]*migrationReadiness\?\.replayReady === true[\s\S]*tipVerified;/.test(
+    /const confirmedMigrationReady =[\s\S]*migrationReadiness\?\.canonical === true &&[\s\S]*migrationReadiness\?\.confirmedReplayReady === true[\s\S]*migrationReadiness\?\.constraintsReady === true[\s\S]*migrationReadiness\?\.declarationIndexReady === true[\s\S]*migrationReadiness\?\.definitionReady === true[\s\S]*migrationReadiness\?\.legacyProjectionReady === true[\s\S]*migrationReadiness\?\.markerReady === true[\s\S]*migrationReadiness\?\.openingReady === true[\s\S]*migrationReadiness\?\.parityReady === true[\s\S]*migrationReadiness\?\.replayReady === true[\s\S]*tipVerified;/.test(
       workAmoV8MetadataSource,
     ) &&
     /const indexReady = confirmedMigrationReady;/.test(

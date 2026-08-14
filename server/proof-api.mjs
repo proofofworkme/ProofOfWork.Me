@@ -9413,8 +9413,15 @@ async function workAmoV8Metadata(
   const confirmedMigrationReady =
     migrationReadiness?.canonical === true &&
     migrationReadiness?.confirmed === true &&
+    migrationReadiness?.confirmedReplayReady === true &&
+    migrationReadiness?.constraintsReady === true &&
+    migrationReadiness?.declarationIndexReady === true &&
+    migrationReadiness?.definitionReady === true &&
     migrationReadiness?.evidenceComplete === true &&
     migrationReadiness?.exactTipReady === true &&
+    migrationReadiness?.legacyProjectionReady === true &&
+    migrationReadiness?.markerReady === true &&
+    migrationReadiness?.openingReady === true &&
     migrationReadiness?.parityReady === true &&
     migrationReadiness?.replayReady === true &&
     Number(migrationReadiness?.tipHeight) === tipHeight &&
@@ -9651,15 +9658,36 @@ function signedSinglePaymentAmountBeforeTokenProtocol(
     : 0;
 }
 
+function workMarketplaceListingResolutionUnavailableError(txid, cause) {
+  const listingId = String(txid ?? "").trim().toLowerCase();
+  const error = new Error(
+    "WORK marketplace listing resolution is temporarily unavailable; retry once the canonical listing read model catches up.",
+  );
+  error.statusCode = 503;
+  error.details = {
+    cause: errorSummary(cause),
+    code: "WORK_MARKETPLACE_LISTING_RESOLUTION_UNAVAILABLE",
+    listingId: /^[0-9a-f]{64}$/u.test(listingId) ? listingId : null,
+    reasonCode: "work-marketplace-listing-resolution-unavailable",
+  };
+  return error;
+}
+
 async function canonicalWorkMarketplaceListingAnchor(txid, network) {
-  const [listingTx, indexedListing] = await Promise.all([
-    fetchTransactionFromBitcoinRpc(txid, network, {
-      bypassCache: true,
-      includePrevouts: false,
-      requireCanonicalPrevouts: true,
-    }),
-    proofIndexCanonicalWorkListingById(network, txid).catch(() => null),
-  ]);
+  let listingTx;
+  let indexedListing;
+  try {
+    [listingTx, indexedListing] = await Promise.all([
+      fetchTransactionFromBitcoinRpc(txid, network, {
+        bypassCache: true,
+        includePrevouts: false,
+        requireCanonicalPrevouts: true,
+      }),
+      proofIndexCanonicalWorkListingById(network, txid),
+    ]);
+  } catch (error) {
+    throw workMarketplaceListingResolutionUnavailableError(txid, error);
+  }
   if (
     !listingTx ||
     !transactionConfirmed(listingTx) ||
@@ -9673,11 +9701,16 @@ async function canonicalWorkMarketplaceListingAnchor(txid, network) {
   const listingTxid = transactionTxid(listingTx);
   const listingBlockHash = transactionBlockHash(listingTx);
   const listingBlockHeight = transactionBlockHeight(listingTx);
-  const coreBlockIndex = (
-    listingBlockHash
-      ? await fetchCoreBlockTxidIndex(listingBlockHash).catch(() => null)
-      : null
-  )?.get(listingTxid);
+  let coreBlockIndex = null;
+  if (listingBlockHash) {
+    try {
+      coreBlockIndex = (
+        await fetchCoreBlockTxidIndex(listingBlockHash)
+      )?.get(listingTxid);
+    } catch (error) {
+      throw workMarketplaceListingResolutionUnavailableError(txid, error);
+    }
+  }
   const listingOutputs = Array.isArray(listingTx.vout)
     ? listingTx.vout
     : [];
@@ -10084,8 +10117,7 @@ async function signedWorkMarketplaceWriteActions(txHex, network) {
       candidateBuyerAddress || authorizationBuyerAddress;
     const sealTicketSignatureValid =
       candidate.action === TOKEN_SEAL_ACTION &&
-      Number.isSafeInteger(frozenPriceSats) &&
-      frozenPriceSats > 0 &&
+      frozenTermsReady &&
       tokenSaleAuthorizationUsesSaleTicketAnchor(authorization) &&
       validateWorkAmoV5SaleTicketSignature({
         authorization,
@@ -10097,7 +10129,7 @@ async function signedWorkMarketplaceWriteActions(txHex, network) {
       candidate.action === TOKEN_BUY_ACTION
         ? originHasAddress(buyerActorAddress)
         : candidate.action === TOKEN_SEAL_ACTION
-          ? sealTicketSignatureValid
+          ? !frozenTermsReady || sealTicketSignatureValid
           : originHasAddress(sellerAddress);
     const buyerLockMatches =
       candidate.action !== TOKEN_BUY_ACTION ||
@@ -10155,14 +10187,14 @@ async function signedWorkMarketplaceWriteActions(txHex, network) {
         ? "work-amo-v8-static-shape-invalid"
         : !signedShapeChecks.delistSpendsListingAnchor
           ? "work-amo-v8-delist-anchor-not-spent"
-          : !signedShapeChecks.actorMatches
-            ? "work-amo-v8-actor-proof-invalid"
-            : !signedShapeChecks.buyerLockMatches
-              ? "work-amo-v8-buyer-lock-mismatch"
-              : !signedShapeChecks.referencedTermsMatch
-                ? "work-amo-v8-listing-terms-mismatch"
-                : !signedShapeChecks.frozenTermsReady
-                  ? "work-amo-v8-frozen-terms-unavailable"
+          : !signedShapeChecks.frozenTermsReady
+            ? "work-amo-v8-frozen-terms-unavailable"
+            : !signedShapeChecks.referencedTermsMatch
+              ? "work-amo-v8-listing-terms-mismatch"
+              : !signedShapeChecks.actorMatches
+                ? "work-amo-v8-actor-proof-invalid"
+                : !signedShapeChecks.buyerLockMatches
+                  ? "work-amo-v8-buyer-lock-mismatch"
                   : !signedShapeChecks.frozenPaymentMatches
                     ? "work-amo-v8-frozen-payment-mismatch"
                     : "";

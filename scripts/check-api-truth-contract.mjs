@@ -1707,7 +1707,7 @@ expect(
   /const pendingWitnessReady =[\s\S]*migrationReadiness\?\.pendingReady === true &&[\s\S]*pendingMembershipLive;/u.test(
     workAmoV8MetadataSource,
   ) &&
-    /const confirmedMigrationReady =[\s\S]*migrationReadiness\?\.canonical === true &&[\s\S]*migrationReadiness\?\.exactTipReady === true[\s\S]*migrationReadiness\?\.replayReady === true[\s\S]*tipVerified;/u.test(
+    /const confirmedMigrationReady =[\s\S]*migrationReadiness\?\.canonical === true &&[\s\S]*migrationReadiness\?\.confirmedReplayReady === true[\s\S]*migrationReadiness\?\.constraintsReady === true[\s\S]*migrationReadiness\?\.declarationIndexReady === true[\s\S]*migrationReadiness\?\.definitionReady === true[\s\S]*migrationReadiness\?\.legacyProjectionReady === true[\s\S]*migrationReadiness\?\.markerReady === true[\s\S]*migrationReadiness\?\.openingReady === true[\s\S]*migrationReadiness\?\.parityReady === true[\s\S]*migrationReadiness\?\.replayReady === true[\s\S]*tipVerified;/u.test(
       workAmoV8MetadataSource,
     ) &&
     /const indexReady = confirmedMigrationReady;/u.test(
@@ -2099,7 +2099,7 @@ expect(
     /let workAmoV8ReachedLatch = false[\s\S]*async function workAmoV8Metadata[\s\S]*tipVerified[\s\S]*tipHeight >= expectedDeclaration\.activationHeight[\s\S]*workAmoV8ReachedLatch = true[\s\S]*proofIndexWorkPrecisionV2MigrationReadiness/u.test(
       server,
     ) &&
-    /const confirmedMigrationReady =[\s\S]*migrationReadiness\?\.canonical === true[\s\S]*migrationReadiness\?\.parityReady === true[\s\S]*migrationReadiness\?\.replayReady === true[\s\S]*Number\(migrationReadiness\?\.tipHeight\) === tipHeight/u.test(
+    /const confirmedMigrationReady =[\s\S]*migrationReadiness\?\.canonical === true[\s\S]*migrationReadiness\?\.confirmedReplayReady === true[\s\S]*migrationReadiness\?\.constraintsReady === true[\s\S]*migrationReadiness\?\.declarationIndexReady === true[\s\S]*migrationReadiness\?\.definitionReady === true[\s\S]*migrationReadiness\?\.legacyProjectionReady === true[\s\S]*migrationReadiness\?\.markerReady === true[\s\S]*migrationReadiness\?\.openingReady === true[\s\S]*migrationReadiness\?\.parityReady === true[\s\S]*migrationReadiness\?\.replayReady === true[\s\S]*Number\(migrationReadiness\?\.tipHeight\) === tipHeight/u.test(
       workAmoV8MetadataSource,
     ) &&
     /Number\(migrationReadiness\?\.tipHeight\) === tipHeight[\s\S]*String\(migrationReadiness\?\.tipHash \?\? ""\)[\s\S]*\.toLowerCase\(\) === tipHash/u.test(
