@@ -141,6 +141,7 @@ import {
   validateWorkAmoV5DeclarationEvidence,
   validateWorkAmoV5FrozenTerms,
   validateWorkAmoV5ReferencedAuthorization,
+  validateWorkAmoV5SaleTicketSignature,
   validateWorkAmoV5SealOrBuyTerms,
   validateWorkAmoV5SufficientState,
   validateWorkAmoV5StaticAuthorization,
@@ -10085,10 +10086,23 @@ async function signedWorkMarketplaceWriteActions(txHex, network) {
     ).trim();
     const buyerActorAddress =
       candidateBuyerAddress || authorizationBuyerAddress;
+    const sealTicketSignatureValid =
+      candidate.action === TOKEN_SEAL_ACTION &&
+      Number.isSafeInteger(frozenPriceSats) &&
+      frozenPriceSats > 0 &&
+      tokenSaleAuthorizationUsesSaleTicketAnchor(authorization) &&
+      validateWorkAmoV5SaleTicketSignature({
+        authorization,
+        listingId: candidate.listingId,
+        network,
+        unitPriceSats: String(frozenPriceSats),
+      }).valid === true;
     const actorMatches =
       candidate.action === TOKEN_BUY_ACTION
         ? originHasAddress(buyerActorAddress)
-        : originHasAddress(sellerAddress);
+        : candidate.action === TOKEN_SEAL_ACTION
+          ? sealTicketSignatureValid
+          : originHasAddress(sellerAddress);
     const buyerLockMatches =
       candidate.action !== TOKEN_BUY_ACTION ||
       !authorizationBuyerAddress ||

@@ -2198,6 +2198,9 @@ check("WORK broadcast admission matches raw single-output and first-actor rules"
   const listingId = "a".repeat(64);
   const authorization = {
     anchorTxid: listingId,
+    anchorSignature: "30".repeat(36),
+    anchorSigHashType: 0x83,
+    anchorType: "sale-ticket-v1",
     anchorValueSats: 546,
     anchorVout: 2,
     priceSats: 0,
@@ -2205,7 +2208,8 @@ check("WORK broadcast admission matches raw single-output and first-actor rules"
     tokenId: WORK_TOKEN_ID,
     version: WORK_AMO_V5_AUTH_VERSION,
   };
-  const message = `pwt1:buy5:${listingId}:${buyerAddress}:fixture`;
+  const buyMessage = `pwt1:buy5:${listingId}:${buyerAddress}:fixture`;
+  const sealMessage = `pwt1:seal5:${listingId}:fixture`;
   const scriptFor = (address) =>
     Buffer.from(
       bitcoin.address.toOutputScript(
@@ -2213,21 +2217,25 @@ check("WORK broadcast admission matches raw single-output and first-actor rules"
         bitcoin.networks.bitcoin,
       ),
     ).toString("hex");
-  const protocolPayload = Buffer.from(message, "utf8");
-  const protocolOutput = {
-    scriptpubkey: Buffer.concat([
-      Buffer.from(
-        protocolPayload.length <= 0x4b
-          ? [0x6a, protocolPayload.length]
-          : [0x6a, 0x4c, protocolPayload.length],
-      ),
-      protocolPayload,
-    ]).toString("hex"),
-    value: 0,
+  const protocolOutput = (message) => {
+    const protocolPayload = Buffer.from(message, "utf8");
+    return {
+      scriptpubkey: Buffer.concat([
+        Buffer.from(
+          protocolPayload.length <= 0x4b
+            ? [0x6a, protocolPayload.length]
+            : [0x6a, 0x4c, protocolPayload.length],
+        ),
+        protocolPayload,
+      ]).toString("hex"),
+      value: 0,
+    };
   };
   let outputFixture = [];
   let originFixture = [buyerAddress];
+  let inputOutpointsFixture = [{ txid: listingId, vout: 2 }];
   let buyerLockFixture = "";
+  let saleTicketSignatureValidFixture = true;
   const signedWorkAmoEconomicOutputs = isolatedFunction(
     API_PATH,
     "signedWorkAmoEconomicOutputs",
@@ -2269,7 +2277,7 @@ check("WORK broadcast admission matches raw single-output and first-actor rules"
       }),
       decodedProtocolMessages: (outputs) =>
         outputs.some((output) => output.protocol === true)
-          ? [message]
+          ? [buyMessage]
           : [],
       mapWithConcurrency: async (items, _limit, mapper) =>
         Promise.all(items.map(mapper)),
@@ -2286,14 +2294,15 @@ check("WORK broadcast admission matches raw single-output and first-actor rules"
       selectWorkAmoV5DistinctRegistryPayment,
       signedSinglePaymentAmountBeforeTokenProtocol,
       signedTransactionInputAddresses: async () => originFixture,
-      signedTransactionInputOutpoints: () => [
-        { txid: listingId, vout: 2 },
-      ],
+      signedTransactionInputOutpoints: () => inputOutpointsFixture,
       signedTransactionOutputs: () => outputFixture,
       signedWorkAmoEconomicOutputs,
       tokenListingAnchorIsPresent: () => true,
       tokenSaleAuthorizationTermsMatch: () => true,
       tokenSaleAuthorizationUsesSaleTicketAnchor: () => true,
+      validateWorkAmoV5SaleTicketSignature: () => ({
+        valid: saleTicketSignatureValidFixture,
+      }),
       workMarketplaceWriteActionIsGoverned: (_action, context) =>
         context.paysWorkRegistry === true,
     },
@@ -2306,22 +2315,27 @@ check("WORK broadcast admission matches raw single-output and first-actor rules"
     scriptpubkey: scriptFor(sellerAddress),
     value,
   });
-  const actions = async (outputs, origins = [buyerAddress]) => {
+  const actions = async (
+    outputs,
+    origins = [buyerAddress],
+    inputOutpoints = [{ txid: listingId, vout: 2 }],
+  ) => {
     outputFixture = outputs;
     originFixture = origins;
+    inputOutpointsFixture = inputOutpoints;
     return signedWorkMarketplaceWriteActions("fixture", "livenet");
   };
 
   let result = await actions([
     registry(546),
     seller(2_546),
-    protocolOutput,
+    protocolOutput(buyMessage),
   ]);
   assert.equal(result[0]?.paysWorkRegistry, true);
   assert.equal(result[0]?.signedShapeValid, true);
 
   result = await actions(
-    [registry(546), seller(2_546), protocolOutput],
+    [registry(546), seller(2_546), protocolOutput(buyMessage)],
     ["", buyerAddress],
   );
   assert.equal(result[0]?.signedShapeValid, true);
@@ -2330,7 +2344,7 @@ check("WORK broadcast admission matches raw single-output and first-actor rules"
     registry(300),
     registry(246),
     seller(2_546),
-    protocolOutput,
+    protocolOutput(buyMessage),
   ]);
   assert.equal(result[0]?.paysWorkRegistry, false);
 
@@ -2338,13 +2352,13 @@ check("WORK broadcast admission matches raw single-output and first-actor rules"
     registry(546),
     seller(1_200),
     seller(1_346),
-    protocolOutput,
+    protocolOutput(buyMessage),
   ]);
   assert.equal(result[0]?.signedShapeValid, false);
 
   result = await actions(
-    [registry(546), seller(2_546), protocolOutput],
-    [otherAddress, buyerAddress],
+    [registry(546), seller(2_546), protocolOutput(buyMessage)],
+    [otherAddress],
   );
   assert.equal(result[0]?.signedShapeValid, false);
 
@@ -2352,13 +2366,34 @@ check("WORK broadcast admission matches raw single-output and first-actor rules"
   result = await actions([
     registry(546),
     seller(2_546),
-    protocolOutput,
+    protocolOutput(buyMessage),
   ]);
   assert.equal(result[0]?.signedShapeValid, false);
+  buyerLockFixture = "";
+
+  result = await actions(
+    [registry(546), protocolOutput(sealMessage)],
+    [otherAddress],
+    [],
+  );
+  assert.equal(
+    result[0]?.signedShapeValid,
+    true,
+    "seal actor proof comes from the sale-ticket signature, not the fee input",
+  );
+
+  saleTicketSignatureValidFixture = false;
+  result = await actions(
+    [registry(546), protocolOutput(sealMessage)],
+    [otherAddress],
+    [],
+  );
+  assert.equal(result[0]?.signedShapeValid, false);
+  saleTicketSignatureValidFixture = true;
 
   const malformedProtocolOutput = {
-    ...protocolOutput,
-    scriptpubkey: `${protocolOutput.scriptpubkey}0561`,
+    ...protocolOutput(buyMessage),
+    scriptpubkey: `${protocolOutput(buyMessage).scriptpubkey}0561`,
   };
   await assert.rejects(
     () =>

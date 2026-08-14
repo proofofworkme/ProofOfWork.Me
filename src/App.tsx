@@ -18919,6 +18919,7 @@ function proofApiBroadcastErrorMessage(
   const reason = String(
     details?.reason ?? mempoolAccept?.rejectReason ?? "",
   ).trim();
+  const reasonCode = String(details?.reasonCode ?? "").trim();
   const code =
     typeof details?.code === "number" || typeof details?.code === "string"
       ? String(details.code)
@@ -18927,6 +18928,9 @@ function proofApiBroadcastErrorMessage(
   const parts = [base];
   if (reason && !base.toLowerCase().includes(reason.toLowerCase())) {
     parts.push(`Reason: ${reason}`);
+  }
+  if (reasonCode && !base.includes(reasonCode)) {
+    parts.push(`Reason code: ${reasonCode}`);
   }
   if (code && !base.includes(code)) {
     parts.push(`RPC code: ${code}`);
