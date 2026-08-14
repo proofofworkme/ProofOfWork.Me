@@ -36763,14 +36763,21 @@ async function indexedWalletActiveListings(
         );
         return null;
       });
-      if (
-        !page ||
-        !(await proofIndexPayloadCoversConfirmedTip(
-          page,
-          network,
-          "wallet active-listing recovery",
-        ))
-      ) {
+      const pageCoversTip = page
+        ? await proofIndexPayloadCoversConfirmedTip(
+            page,
+            network,
+            "wallet active-listing recovery",
+          )
+        : false;
+      const pageIndexedThroughBlock = Number(
+        page?.indexedThroughBlock ??
+          page?.stats?.indexedThroughBlock,
+      );
+      const pageHasIndexedCheckpoint =
+        Number.isSafeInteger(pageIndexedThroughBlock) &&
+        pageIndexedThroughBlock > 0;
+      if (!page || (!pageCoversTip && !pageHasIndexedCheckpoint)) {
         continue;
       }
 

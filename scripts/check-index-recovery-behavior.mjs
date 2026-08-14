@@ -7225,6 +7225,7 @@ check("wallet WORK overlay recovers active canonical V8 listings and drops match
   const sellerAddress = "17W7JZ9KjjGUwdAyXeGxhzYe2vGe8YTRzA";
   const workTokenId = "work-token-id";
   let readParams = null;
+  let recoveryPageCoversTip = true;
   const indexedWalletActiveListings = isolatedFunction(
     API_PATH,
     "indexedWalletActiveListings",
@@ -7240,7 +7241,7 @@ check("wallet WORK overlay recovers active canonical V8 listings and drops match
           ? workTokenId
           : String(value ?? "").trim().toLowerCase(),
       payloadWithFallbackAfterMs: async (promise) => promise,
-      proofIndexPayloadCoversConfirmedTip: async () => true,
+      proofIndexPayloadCoversConfirmedTip: async () => recoveryPageCoversTip,
       proofIndexReadFeatureEnabled: () => true,
       stableProofIndexLogHistoryPayload: async (
         network,
@@ -7299,6 +7300,14 @@ check("wallet WORK overlay recovers active canonical V8 listings and drops match
   assert.equal(listings.length, 1);
   assert.equal(listings[0].listingId, listingId);
   assert.equal(listings[0].amountSubatoms, "752009741");
+  recoveryPageCoversTip = false;
+  const staleCheckpointListings = await indexedWalletActiveListings(
+    "livenet",
+    workTokenId,
+    [sellerAddress],
+  );
+  assert.equal(staleCheckpointListings.length, 1);
+  assert.equal(staleCheckpointListings[0].listingId, listingId);
 
   const legacyListingId = "f371ee499b94f929069fb4677446006b1bb67d6793724f2b8d6effb26499c090";
   const v6ListingId = "b259fa601676287eca2ea94c9142cd13b45fde7031ec98967f15306df6ef7936";
