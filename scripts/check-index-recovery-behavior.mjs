@@ -2442,6 +2442,298 @@ check("WORK AMO seller payment uses numeric frozen terms", () => {
   );
 });
 
+check("WORK AMO V8 seal shape accepts P2PKH sale-ticket signatures", async () => {
+  const registryAddress = WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS;
+  const listingId =
+    "07c9ca719adf7a7e94ff17c917e599e872ae1c0348f282219907c060a72b8043";
+  const baseAuthorization = {
+    ...WORK_AMO_V8_MODELS,
+    anchorSigHashType: 0x83,
+    anchorType: "sale-ticket-v1",
+    anchorValueSats: 546,
+    anchorVout: 2,
+    buyerAddress: "",
+    expiresAt: "",
+    network: "livenet",
+    nonce: "fixture-v8-p2pkh-seal",
+    registryAddress,
+    ticker: "WORK",
+    tokenId: WORK_TOKEN_ID,
+    unitFaceProofs: 25_000,
+    version: WORK_AMO_V8_AUTH_VERSION,
+  };
+  const signed = signedAmoSaleTicketFixture(baseAuthorization, {
+    listingId,
+    priceSats: "25000",
+    scriptType: "p2pkh",
+  });
+  const listingAuthorization = {
+    ...signed.authorization,
+    anchorSignature: "",
+    anchorTxid: "",
+  };
+  const sealAuthorization = signed.authorization;
+  const sealMessage = `pwt1:seal5:${listingId}:${Buffer.from(
+    JSON.stringify(sealAuthorization),
+    "utf8",
+  ).toString("base64url")}`;
+  const scriptFor = (address) =>
+    Buffer.from(
+      bitcoin.address.toOutputScript(
+        address,
+        bitcoin.networks.bitcoin,
+      ),
+    ).toString("hex");
+  const pushData = (bytes) => {
+    if (bytes.length <= 0x4b) {
+      return Buffer.concat([Buffer.from([bytes.length]), bytes]);
+    }
+    if (bytes.length <= 0xff) {
+      return Buffer.concat([
+        Buffer.from([0x4c, bytes.length]),
+        bytes,
+      ]);
+    }
+    return Buffer.concat([
+      Buffer.from([0x4d, bytes.length & 0xff, bytes.length >> 8]),
+      bytes,
+    ]);
+  };
+  const protocolOutput = (message) => {
+    const payload = Buffer.from(message, "utf8");
+    const chunks = [];
+    for (let offset = 0; offset < payload.length; offset += 520) {
+      chunks.push(pushData(payload.subarray(offset, offset + 520)));
+    }
+    return {
+      scriptpubkey: Buffer.concat([
+        Buffer.from([0x6a]),
+        ...chunks,
+      ]).toString("hex"),
+      value: 0,
+    };
+  };
+  const constants = {
+    TOKEN_BUY_ACTION: "buy5",
+    TOKEN_CREATE_ACTION: "create",
+    TOKEN_DELIST_ACTION: "delist5",
+    TOKEN_LIST_ACTION: "list5",
+    TOKEN_LISTING_ANCHOR_SIGHASH_TYPE: 0x83,
+    TOKEN_LISTING_ANCHOR_TYPE: "sale-ticket-v1",
+    TOKEN_LISTING_ANCHOR_VALUE_SATS: 546,
+    TOKEN_LISTING_ANCHOR_VOUT: 2,
+    TOKEN_MINT_ACTION: "mint",
+    TOKEN_PROTOCOL_PREFIX: "pwt1:",
+    TOKEN_SALE_AUTH_ATOMS_VERSION: "pwt-sale-v2",
+    TOKEN_SALE_AUTH_VERSION: "pwt-sale-v1",
+    TOKEN_SALE_AUTH_WORK_AMO_V5_VERSION: WORK_AMO_V5_AUTH_VERSION,
+    TOKEN_SALE_AUTH_WORK_AMO_V6_VERSION: WORK_AMO_V6_AUTH_VERSION,
+    TOKEN_SALE_AUTH_WORK_AMO_V8_VERSION: WORK_AMO_V8_AUTH_VERSION,
+    TOKEN_SALE_AUTH_WORK_MARKET_V2_VERSION: "pwt-sale-v3",
+    TOKEN_SALE_AUTH_WORK_MARKET_V4_VERSION: "pwt-sale-v4",
+    TOKEN_SALE_AUTH_WORK_MARKET_VERSIONS: new Set([
+      "pwt-sale-v3",
+      "pwt-sale-v4",
+    ]),
+    TOKEN_SEAL_ACTION: "seal5",
+    TOKEN_SEND_ACTION: "send",
+    TOKEN_SEND_ATOMS_ACTION: "send2",
+    TOKEN_SEND_SUBATOMS_ACTION: "send3",
+    WORK_TOKEN_MAX_SUPPLY: 21_000_000,
+  };
+  const tokenSaleAuthorizationDraft = isolatedFunction(
+    API_PATH,
+    "tokenSaleAuthorizationDraft",
+    {
+      ...constants,
+      normalizeTokenTicker: (value) => String(value).trim().toUpperCase(),
+    },
+  );
+  const parseTokenSaleAuthorizationJson = isolatedFunction(
+    API_PATH,
+    "parseTokenSaleAuthorizationJson",
+    {
+      ...constants,
+      WORK_TOKEN_TICKER: "WORK",
+      isValidBitcoinAddress: (address, network) => {
+        try {
+          bitcoin.address.toOutputScript(
+            address,
+            network === "livenet"
+              ? bitcoin.networks.bitcoin
+              : bitcoin.networks.testnet,
+          );
+          return true;
+        } catch {
+          return false;
+        }
+      },
+      normalizeTokenTicker: (value) => String(value).trim().toUpperCase(),
+      tokenSaleAuthorizationDraft,
+      validPublicKeyHex: (value) =>
+        /^(?:[0-9a-fA-F]{64}|(?:02|03)[0-9a-fA-F]{64}|04[0-9a-fA-F]{128})$/u.test(
+          value,
+        ),
+      validSignatureHex: (value) =>
+        /^[0-9a-fA-F]+$/u.test(value) &&
+        value.length >= 18 &&
+        value.length <= 146 &&
+        value.length % 2 === 0,
+      validateWorkAmoV5StaticAuthorization,
+      validateWorkAmoV6StaticAuthorization,
+      validateWorkAmoV8StaticAuthorization: (authorization) =>
+        validateWorkAmoV8StaticAuthorization({ ...authorization }),
+      validateWorkMarketV2Authorization: () => ({ valid: true }),
+      validateWorkMarketV4Authorization: () => ({ valid: true }),
+      workAmoV5CanonicalExpiryMs,
+    },
+  );
+  const parseTokenPayload = isolatedFunction(
+    API_PATH,
+    "parseTokenPayload",
+    {
+      ...constants,
+      WORK_TOKEN_ID,
+      decodeTextBase64Url: (value) =>
+        Buffer.from(String(value), "base64url").toString("utf8"),
+      exactIntegerText: (value) =>
+        /^(?:0|[1-9][0-9]*)$/u.test(String(value ?? ""))
+          ? String(value)
+          : "",
+      isBondTokenId: () => false,
+      isValidBitcoinAddress: () => true,
+      normalizeTokenTicker: (value) => String(value).trim().toUpperCase(),
+      parseTokenSaleAuthorizationJson,
+      workAtomsFromIntegerString: () => null,
+      workNumberFromAtoms: () => "0",
+      workSubatomsFromCanonicalString: () => null,
+      workSubatomsFromLegacyAtoms: () => null,
+    },
+  );
+  assert.equal(
+    parseTokenPayload(sealMessage, "livenet")?.saleAuthorization
+      ?.anchorTxid,
+        listingId,
+  );
+  const tokenSaleAuthorizationTermsMatch = isolatedFunction(
+    API_PATH,
+    "tokenSaleAuthorizationTermsMatch",
+    {
+      TOKEN_SALE_AUTH_WORK_AMO_V6_VERSION: WORK_AMO_V6_AUTH_VERSION,
+      TOKEN_SALE_AUTH_WORK_AMO_V8_VERSION: WORK_AMO_V8_AUTH_VERSION,
+      TOKEN_SALE_AUTH_WORK_MARKET_VERSIONS: new Set([
+        "pwt-sale-v3",
+        "pwt-sale-v4",
+      ]),
+      tokenSaleAuthorizationDraft,
+      validateWorkAmoV6StaticAuthorization,
+      validateWorkAmoV8StaticAuthorization: (authorization) =>
+        validateWorkAmoV8StaticAuthorization({ ...authorization }),
+    },
+  );
+  assert.equal(
+    tokenSaleAuthorizationTermsMatch(
+      listingAuthorization,
+      parseTokenPayload(sealMessage, "livenet")?.saleAuthorization,
+    ),
+    true,
+  );
+  const signedWorkAmoEconomicOutputs = isolatedFunction(
+    API_PATH,
+    "signedWorkAmoEconomicOutputs",
+    {
+      Buffer,
+      bitcoin,
+      bitcoinNetwork: () => bitcoin.networks.bitcoin,
+    },
+  );
+  const signedSinglePaymentAmountBeforeTokenProtocol = isolatedFunction(
+    API_PATH,
+    "signedSinglePaymentAmountBeforeTokenProtocol",
+    { assignWorkAmoV5EconomicOutputs },
+  );
+  const signedWorkMarketplaceWriteActions = isolatedFunction(
+    API_PATH,
+    "signedWorkMarketplaceWriteActions",
+    {
+      TOKEN_BUY_ACTION: "buy5",
+      TOKEN_DELIST_ACTION: "delist5",
+      TOKEN_LIST_ACTION: "list5",
+      TOKEN_LISTING_ANCHOR_VOUT: 2,
+      TOKEN_MIN_MUTATION_PRICE_SATS: 546,
+      TOKEN_PROTOCOL_PREFIX: "pwt1:",
+      TOKEN_SALE_AUTH_WORK_AMO_V5_VERSION: WORK_AMO_V5_AUTH_VERSION,
+      TOKEN_SALE_AUTH_WORK_AMO_V6_VERSION: WORK_AMO_V6_AUTH_VERSION,
+      TOKEN_SALE_AUTH_WORK_AMO_V8_VERSION: WORK_AMO_V8_AUTH_VERSION,
+      TOKEN_SALE_AUTH_WORK_MARKET_V4_VERSION: WORK_AMO_V4_AUTH_VERSION,
+      TOKEN_SEAL_ACTION: "seal5",
+      TX_FETCH_CONCURRENCY: 4,
+      WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS: registryAddress,
+      WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS: registryAddress,
+      canonicalProtocolCandidateFromOutput,
+      canonicalWorkMarketplaceListingAnchor: async () => ({
+        anchorVout: 2,
+        frozenTerms: { unitPriceSats: "25000" },
+        listingId,
+        saleAuthorization: listingAuthorization,
+      }),
+      mapWithConcurrency: async (items, _limit, mapper) =>
+        Promise.all(items.map(mapper)),
+      parseTokenPayload,
+      rawTokenSaleAuthorization: () => sealAuthorization,
+      selectWorkAmoV5DistinctRegistryPayment,
+      signedSinglePaymentAmountBeforeTokenProtocol,
+      signedTransactionInputAddresses: async () => [
+        signed.sellerAddress,
+      ],
+      signedTransactionInputOutpoints: () => [
+        { txid: "b".repeat(64), vout: 1 },
+      ],
+      signedTransactionOutputs: () => [
+        {
+          scriptpubkey: scriptFor(registryAddress),
+          value: 546,
+        },
+        protocolOutput(sealMessage),
+        {
+          scriptpubkey: scriptFor(signed.sellerAddress),
+          value: 29_743,
+        },
+      ],
+      signedWorkAmoEconomicOutputs,
+      tokenListingAnchorIsPresent: () => true,
+      tokenSaleAuthorizationTermsMatch,
+      tokenSaleAuthorizationUsesSaleTicketAnchor: (authorization) =>
+        Boolean(
+          authorization?.anchorSignature &&
+            authorization?.anchorTxid,
+        ),
+      validateWorkAmoV5SaleTicketSignature,
+      workMarketplaceWriteActionIsGoverned: (_action, context) =>
+        context.paysWorkRegistry === true,
+    },
+  );
+  const result = await signedWorkMarketplaceWriteActions(
+    "fixture",
+    "livenet",
+  );
+  assert.equal(result.length, 1);
+  assert.deepEqual(JSON.parse(JSON.stringify(result[0].signedShapeChecks)), {
+    actorMatches: true,
+    buyerLockMatches: true,
+    delistSpendsListingAnchor: true,
+    frozenPaymentMatches: true,
+    frozenTermsReady: true,
+    referencedTermsMatch: true,
+    staticShapeValid: true,
+  });
+  assert.equal(
+    result[0].signedShapeValid,
+    true,
+    JSON.stringify(result[0].signedShapeChecks),
+  );
+});
+
 check("mail activity timestamps use canonical ISO fallback", () => {
   const dateIso = isolatedFunction(API_PATH, "dateIso");
   const fallback = new Date("2026-07-25T22:30:00.000Z");

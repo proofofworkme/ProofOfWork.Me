@@ -1552,6 +1552,54 @@ export function workAmoV8StatusFromEvidence({
   };
 }
 
+function workAmoV8SignedShapeRejection(action) {
+  const shapeChecks =
+    action?.signedShapeChecks && typeof action.signedShapeChecks === "object"
+      ? action.signedShapeChecks
+      : null;
+  const failedShapeCheck = shapeChecks
+    ? [
+        ["staticShapeValid", "work-amo-v8-static-shape-invalid"],
+        [
+          "delistSpendsListingAnchor",
+          "work-amo-v8-delist-anchor-not-spent",
+        ],
+        ["actorMatches", "work-amo-v8-actor-proof-invalid"],
+        ["buyerLockMatches", "work-amo-v8-buyer-lock-mismatch"],
+        ["referencedTermsMatch", "work-amo-v8-listing-terms-mismatch"],
+        ["frozenTermsReady", "work-amo-v8-frozen-terms-unavailable"],
+        ["frozenPaymentMatches", "work-amo-v8-frozen-payment-mismatch"],
+      ].find(([key]) => shapeChecks[key] === false)
+    : null;
+  const reasonCode =
+    action?.canonicalParsed !== true
+      ? "work-amo-v8-canonical-parse-invalid"
+      : action?.paysWorkRegistry !== true
+        ? "work-amo-v8-registry-payment-missing"
+        : normalizedLowerText(action?.tokenId) !== WORK_TOKEN_ID
+          ? "work-amo-v8-token-id-invalid"
+          : String(action?.ticker ?? "").trim().toUpperCase() !== "WORK"
+            ? "work-amo-v8-ticker-invalid"
+            : String(action?.registryAddress ?? "").trim() !==
+                WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS
+              ? "work-amo-v8-registry-address-invalid"
+              : action?.tokenProtocolMessageCount !== 1
+                ? "work-amo-v8-protocol-message-count-invalid"
+                : failedShapeCheck
+                  ? failedShapeCheck[1]
+                  : String(action?.signedShapeReasonCode ?? "").trim() ||
+                    "work-amo-v8-transaction-shape-invalid";
+  return {
+    ...(failedShapeCheck
+      ? {
+          hint: `Signed WORK AMO V8 shape failed ${failedShapeCheck[0]}.`,
+        }
+      : {}),
+    reasonCode,
+    ...(shapeChecks ? { shapeChecks } : {}),
+  };
+}
+
 export function workAmoV8BroadcastDecision(
   actions,
   {
@@ -1609,10 +1657,11 @@ export function workAmoV8BroadcastDecision(
       action?.tokenProtocolMessageCount !== 1 ||
       action?.signedShapeValid !== true
     ) {
+      const rejection = workAmoV8SignedShapeRejection(action);
       return {
+        ...rejection,
         allowed: false,
         code: "WORK_AMO_V8_TRANSACTION_INVALID",
-        reasonCode: "work-amo-v8-transaction-shape-invalid",
         statusCode: 400,
       };
     }

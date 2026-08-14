@@ -10142,6 +10142,34 @@ async function signedWorkMarketplaceWriteActions(txHex, network) {
             input.vout === listingAnchor.anchorVout,
         ),
     );
+    const signedShapeChecks = {
+      actorMatches,
+      buyerLockMatches,
+      delistSpendsListingAnchor: !isDelist || delistSpendsListingAnchor,
+      frozenPaymentMatches,
+      frozenTermsReady,
+      referencedTermsMatch,
+      staticShapeValid: candidate.staticShapeValid === true,
+    };
+    const signedShapeValid = Object.values(signedShapeChecks).every(
+      Boolean,
+    );
+    const signedShapeReasonCode =
+      !signedShapeChecks.staticShapeValid
+        ? "work-amo-v8-static-shape-invalid"
+        : !signedShapeChecks.delistSpendsListingAnchor
+          ? "work-amo-v8-delist-anchor-not-spent"
+          : !signedShapeChecks.actorMatches
+            ? "work-amo-v8-actor-proof-invalid"
+            : !signedShapeChecks.buyerLockMatches
+              ? "work-amo-v8-buyer-lock-mismatch"
+              : !signedShapeChecks.referencedTermsMatch
+                ? "work-amo-v8-listing-terms-mismatch"
+                : !signedShapeChecks.frozenTermsReady
+                  ? "work-amo-v8-frozen-terms-unavailable"
+                  : !signedShapeChecks.frozenPaymentMatches
+                    ? "work-amo-v8-frozen-payment-mismatch"
+                    : "";
     return {
       ...candidate,
       authVersion: String(authorization?.version ?? "").trim(),
@@ -10183,14 +10211,9 @@ async function signedWorkMarketplaceWriteActions(txHex, network) {
             referencesListingFrozenTerms: true,
           }
         : {}),
-      signedShapeValid:
-        candidate.staticShapeValid === true &&
-        (!isDelist || delistSpendsListingAnchor) &&
-        actorMatches &&
-        buyerLockMatches &&
-        referencedTermsMatch &&
-        frozenTermsReady &&
-        frozenPaymentMatches,
+      signedShapeChecks,
+      ...(signedShapeReasonCode ? { signedShapeReasonCode } : {}),
+      signedShapeValid,
     };
   });
 }
@@ -10812,13 +10835,32 @@ async function assertWorkMarketplaceBroadcastAllowed(
         { metadata, network },
       );
       if (!decision.allowed) {
+        if (decision.code === "WORK_AMO_V8_TRANSACTION_INVALID") {
+          console.warn(
+            "WORK_AMO_V8_BROADCAST_REJECTED",
+            JSON.stringify({
+              actions: actions.map((action) => ({
+                action: action.action,
+                listingId: action.listingId,
+                tokenId: action.tokenId,
+              })),
+              code: decision.code,
+              reasonCode: decision.reasonCode,
+              shapeChecks: decision.shapeChecks ?? null,
+            }),
+          );
+        }
         const error = new Error(
           decision.message ?? "Active WORK transaction shape is invalid.",
         );
         error.statusCode = decision.statusCode;
         error.details = {
           code: decision.code,
+          ...(decision.hint ? { hint: decision.hint } : {}),
           reasonCode: decision.reasonCode,
+          ...(decision.shapeChecks
+            ? { shapeChecks: decision.shapeChecks }
+            : {}),
           workAmoV8: metadata,
         };
         throw error;
