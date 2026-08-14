@@ -7076,6 +7076,7 @@ check("fresh wallet token reads use exact or bounded canonical coverage", async 
   let cacheFallbackReads = 0;
   let exactReads = 0;
   let indexedReads = 0;
+  let summaryReads = 0;
   const walletScopedTokenPayload = isolatedFunction(
     API_PATH,
     "walletScopedTokenPayload",
@@ -7090,6 +7091,10 @@ check("fresh wallet token reads use exact or bounded canonical coverage", async 
       },
       currentExactTipTokenPayloadForRead: async () => {
         exactReads += 1;
+        return null;
+      },
+      currentCanonicalWorkTokenSummaryPayloadForFreshRead: async () => {
+        summaryReads += 1;
         return null;
       },
       currentMemoryTokenPayloadForRead: async () => null,
@@ -7132,6 +7137,7 @@ check("fresh wallet token reads use exact or bounded canonical coverage", async 
   assert.equal(cacheFallbackReads, 1);
   assert.equal(exactReads, 1);
   assert.equal(indexedReads, 1);
+  assert.equal(summaryReads, 1);
 
   let scopedReads = 0;
   const exactFallbackWalletScopedTokenPayload = isolatedFunction(
@@ -7220,16 +7226,19 @@ check("fresh wallet token reads use exact or bounded canonical coverage", async 
       WALLET_SCOPED_RECOVERY_WAIT_MS: 1,
       WORK_TOKEN_ID: "work-token-id",
       cachedTokenPayloadFallbackForRead: async () => {
-        throw new Error("bounded indexed payload should satisfy the read");
+        throw new Error("canonical summary should satisfy the read");
       },
       currentExactTipTokenPayloadForRead: async () => null,
-      currentMemoryTokenPayloadForRead: async () => null,
-      currentProofIndexTokenPayloadForRead: async () => ({
+      currentCanonicalWorkTokenSummaryPayloadForFreshRead: async () => ({
         holders: [{ address: "sender", balance: 1, tokenId: "work-token-id" }],
         indexedThroughBlock: 200,
         indexedThroughBlockHash: "8".repeat(64),
         tokens: [{ tokenId: "work-token-id" }],
       }),
+      currentMemoryTokenPayloadForRead: async () => null,
+      currentProofIndexTokenPayloadForRead: async () => {
+        throw new Error("canonical summary should short-circuit slower reads");
+      },
       normalizeTokenScope: (value) => value,
       proofIndexReadFeatureEnabled: () => true,
       proofIndexWalletScopedTokenPayloadForRead: async () => null,

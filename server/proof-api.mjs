@@ -36527,6 +36527,15 @@ async function walletScopedTokenPayload(
         canonicalGate,
       ),
     );
+    if (!payload && scope === WORK_TOKEN_ID) {
+      payload = exactWalletCandidate(
+        await currentCanonicalWorkTokenSummaryPayloadForFreshRead(
+          network,
+          scope,
+          canonicalGate,
+        ),
+      );
+    }
     if (
       !payload &&
       proofIndexReadFeatureEnabled("token-state,token-default,token")
