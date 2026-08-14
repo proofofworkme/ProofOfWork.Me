@@ -65227,10 +65227,13 @@ async function handleRequest(request, response) {
           canonicalReadGate,
         );
         if (cachedPayload) {
+          const responsePayload = tokenScope === WORK_TOKEN_ID
+            ? await withWorkMarketplaceV4Metadata(cachedPayload, network)
+            : cachedPayload;
           jsonResponse(
             response,
             200,
-            cachedPayload,
+            responsePayload,
             TOKEN_READ_CACHE_CONTROL,
           );
           return;
