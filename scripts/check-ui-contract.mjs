@@ -1640,6 +1640,12 @@ expect(
     ),
 );
 expect(
+  "WORK AMO seller payment helper coerces frozen price and sale-ticket sats numerically",
+  /function tokenSellerPaymentRequiredSats[\s\S]*workAmoFrozenTerms\(listing\)\?\.priceSats[\s\S]*Number\(\s*frozenPriceSats \?\? listing\.priceSats\s*\)[\s\S]*Number\(listing\.saleAuthorization\.anchorValueSats\)[\s\S]*return priceSats \+ anchorValueSats/.test(
+    app,
+  ),
+);
+expect(
   "AMO V6 remains exact Q8 while V8 derives exact Q16 subatoms without a USD oracle",
   /function workAmoV6UnitTerms[\s\S]*WORK_AMO_V6_ATOMS_PER_WORK[\s\S]*100_000_000n[\s\S]*const amountAtoms = \(BigInt\(face\) \* valueDenominator\) \/ networkValue[\s\S]*amountAtoms \* networkValue \+ valueDenominator - 1n/.test(
     workAmoV6ProofUnitSource,

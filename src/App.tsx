@@ -9523,7 +9523,20 @@ function tokenListingAnchorSpendMatchesAuthorization(
 }
 
 function tokenSellerPaymentRequiredSats(listing: PowTokenListing) {
-  return listing.priceSats + listing.saleAuthorization.anchorValueSats;
+  const frozenPriceSats = isWorkToken(listing)
+    ? workAmoFrozenTerms(listing)?.priceSats
+    : undefined;
+  const priceSats = Number(frozenPriceSats ?? listing.priceSats);
+  const anchorValueSats = Number(listing.saleAuthorization.anchorValueSats);
+  if (
+    !Number.isSafeInteger(priceSats) ||
+    priceSats < 0 ||
+    !Number.isSafeInteger(anchorValueSats) ||
+    anchorValueSats < 0
+  ) {
+    return 0;
+  }
+  return priceSats + anchorValueSats;
 }
 
 function tokenListingAnchorIsPresent(

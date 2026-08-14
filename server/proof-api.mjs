@@ -15672,7 +15672,36 @@ function tokenListingAnchorSpendMatchesAuthorization(vin, listing) {
 }
 
 function tokenSellerPaymentRequiredSats(listing) {
-  return listing.priceSats + listing.saleAuthorization.anchorValueSats;
+  const frozenTerms =
+    isWorkTokenId(listing?.tokenId) &&
+    listing?.workAmoFrozenTerms &&
+    typeof listing.workAmoFrozenTerms === "object" &&
+    !Array.isArray(listing.workAmoFrozenTerms)
+      ? listing.workAmoFrozenTerms
+      : isWorkTokenId(listing?.tokenId) &&
+          listing?.frozenTerms &&
+          typeof listing.frozenTerms === "object" &&
+          !Array.isArray(listing.frozenTerms)
+        ? listing.frozenTerms
+        : isWorkTokenId(listing?.tokenId) &&
+            listing?.workAmoPricing?.frozenTerms &&
+            typeof listing.workAmoPricing.frozenTerms === "object" &&
+            !Array.isArray(listing.workAmoPricing.frozenTerms)
+          ? listing.workAmoPricing.frozenTerms
+          : null;
+  const priceSats = Number(
+    frozenTerms?.unitPriceSats ?? frozenTerms?.priceSats ?? listing?.priceSats,
+  );
+  const anchorValueSats = Number(listing?.saleAuthorization?.anchorValueSats);
+  if (
+    !Number.isSafeInteger(priceSats) ||
+    priceSats < 0 ||
+    !Number.isSafeInteger(anchorValueSats) ||
+    anchorValueSats < 0
+  ) {
+    return 0;
+  }
+  return priceSats + anchorValueSats;
 }
 
 function tokenListingAnchorOutpoint(listing) {

@@ -2409,6 +2409,39 @@ check("WORK broadcast admission matches raw single-output and first-actor rules"
   );
 });
 
+check("WORK AMO seller payment uses numeric frozen terms", () => {
+  const tokenSellerPaymentRequiredSats = isolatedFunction(
+    API_PATH,
+    "tokenSellerPaymentRequiredSats",
+  );
+  assert.equal(
+    tokenSellerPaymentRequiredSats({
+      priceSats: "25000",
+      saleAuthorization: { anchorValueSats: "546" },
+      tokenId: WORK_TOKEN_ID,
+      workAmoFrozenTerms: { unitPriceSats: "25000" },
+    }),
+    25_546,
+  );
+  assert.equal(
+    tokenSellerPaymentRequiredSats({
+      priceSats: "25000546",
+      saleAuthorization: { anchorValueSats: 546 },
+      tokenId: WORK_TOKEN_ID,
+      frozenTerms: { unitPriceSats: "25000" },
+    }),
+    25_546,
+  );
+  assert.equal(
+    tokenSellerPaymentRequiredSats({
+      priceSats: "25000",
+      saleAuthorization: { anchorValueSats: "546" },
+      tokenId: "generic",
+    }),
+    25_546,
+  );
+});
+
 check("mail activity timestamps use canonical ISO fallback", () => {
   const dateIso = isolatedFunction(API_PATH, "dateIso");
   const fallback = new Date("2026-07-25T22:30:00.000Z");
