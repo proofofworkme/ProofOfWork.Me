@@ -275,6 +275,7 @@ import {
   proofIndexValueSummaryPayload,
   proofIndexTokenSnapshotPayload,
   proofIndexWalletTokenOverlayPayload,
+  payloadWithCurrentWorkMarketListingReadPolicy,
   proofIndexWorkAmoBlockTransition,
   proofIndexWorkAmoGenericTokenStatePreimage,
   proofIndexWorkAmoLegacyBootstrapCarryEvidence,
@@ -37112,8 +37113,14 @@ async function tokenPayloadWithWalletActiveListings(
           ),
         }
       : payload;
-  const listings = (Array.isArray(indexedPayload?.listings)
-    ? indexedPayload.listings
+  const currentIndexedPayload = applyWorkMarketV2CutoverToTokenState(
+    await payloadWithCurrentWorkMarketListingReadPolicy(
+      network,
+      indexedPayload,
+    ),
+  );
+  const listings = (Array.isArray(currentIndexedPayload?.listings)
+    ? currentIndexedPayload.listings
     : []
   ).filter(
     (listing) =>
@@ -37123,8 +37130,8 @@ async function tokenPayloadWithWalletActiveListings(
   );
 
   let scopedPayload = listings.length > 0
-    ? tokenStateWithPreservedListingRecords(indexedPayload, { listings })
-    : indexedPayload;
+    ? tokenStateWithPreservedListingRecords(currentIndexedPayload, { listings })
+    : currentIndexedPayload;
   if (listings.length > 0) {
     const spendable = await filterSpendableTokenListings(listings, network);
     const closedListings = [

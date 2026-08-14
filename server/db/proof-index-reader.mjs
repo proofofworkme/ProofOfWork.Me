@@ -2400,7 +2400,7 @@ function applyWorkAmoV6PublicListingReadPolicy(
   };
 }
 
-async function payloadWithCurrentWorkMarketListingReadPolicy(
+export async function payloadWithCurrentWorkMarketListingReadPolicy(
   network,
   payload,
 ) {

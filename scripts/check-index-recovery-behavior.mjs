@@ -7300,6 +7300,98 @@ check("wallet WORK overlay recovers active canonical V8 listings and drops match
   assert.equal(listings[0].listingId, listingId);
   assert.equal(listings[0].amountSubatoms, "752009741");
 
+  const legacyListingId = "f371ee499b94f929069fb4677446006b1bb67d6793724f2b8d6effb26499c090";
+  const v6ListingId = "b259fa601676287eca2ea94c9142cd13b45fde7031ec98967f15306df6ef7936";
+  let policyReads = 0;
+  const tokenPayloadWithWalletActiveListings = isolatedFunction(
+    API_PATH,
+    "tokenPayloadWithWalletActiveListings",
+    {
+      WORK_TOKEN_ID: workTokenId,
+      applyWorkMarketV2CutoverToTokenState: (payload) => payload,
+      filterSpendableTokenListings: async (recoveredListings) => ({
+        closedListings: [],
+        listings: recoveredListings,
+      }),
+      indexedWalletActiveListings: async () => [
+        {
+          confirmed: true,
+          listingId,
+          saleAuthorization: {
+            tokenId: workTokenId,
+            version: "pwt-sale-v8",
+          },
+          sellerAddress,
+          tokenId: workTokenId,
+        },
+        {
+          confirmed: true,
+          listingId: legacyListingId,
+          saleAuthorization: {
+            tokenId: workTokenId,
+            version: "pwt-sale-v1",
+          },
+          sellerAddress,
+          tokenId: workTokenId,
+        },
+        {
+          confirmed: true,
+          listingId: v6ListingId,
+          saleAuthorization: {
+            tokenId: workTokenId,
+            version: "pwt-sale-v6",
+          },
+          sellerAddress,
+          tokenId: workTokenId,
+        },
+      ],
+      mergedSourceLabel: (left, right) => [left, right].filter(Boolean).join("+"),
+      newerIso: (left, right) => right ?? left,
+      normalizeTokenScope: (value) =>
+        String(value ?? "").toUpperCase() === "WORK"
+          ? workTokenId
+          : String(value ?? "").trim().toLowerCase(),
+      payloadWithCurrentWorkMarketListingReadPolicy: async (
+        _network,
+        payload,
+      ) => {
+        policyReads += 1;
+        return {
+          ...payload,
+          listings: (payload.listings ?? []).filter(
+            (listing) =>
+              String(
+                listing?.saleAuthorization?.version ?? listing?.version ?? "",
+              ).trim() === "pwt-sale-v8",
+          ),
+        };
+      },
+      tokenPayloadWithoutInvalidEventsForActiveListings: (payload) => payload,
+      tokenSalesWithCanonicalOutspendClosures: (sales) => sales ?? [],
+      tokenStateWithPreservedListingRecords: (state, sourceState) => ({
+        ...state,
+        listings: sourceState.listings,
+      }),
+    },
+  );
+  const recoveredPayload = await tokenPayloadWithWalletActiveListings(
+    {
+      closedListings: [],
+      indexedThroughBlock: 962_374,
+      listings: [],
+      network: "livenet",
+      sales: [],
+    },
+    "livenet",
+    workTokenId,
+    [sellerAddress],
+  );
+  assert.equal(policyReads, 1);
+  assert.deepEqual(
+    recoveredPayload.listings.map((listing) => listing.listingId),
+    [listingId],
+  );
+
   const tokenActiveListingEventKey = isolatedFunction(
     API_PATH,
     "tokenActiveListingEventKey",
