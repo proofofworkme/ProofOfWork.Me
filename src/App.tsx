@@ -29507,22 +29507,16 @@ export default function App() {
         listing.listingId,
         sealedAuthorization,
       );
-      const paymentPsbt = await buildAnchoredMarketplacePsbt({
-        anchorSpendMode: "wallet",
+      const paymentPsbt = await buildPaymentPsbt({
         excludeOutpoints: activeTokenListingAnchorOutpointsForAddress(
           tokenListings,
           address,
-          { exceptListingId: listing.listingId, network: "livenet" },
+          { network: "livenet" },
         ),
         feeRate,
         fromAddress: address,
-        listing,
         network: "livenet",
         payments: [
-          {
-            address: listing.sellerAddress,
-            amountSats: tokenSellerPaymentRequiredSats(listing),
-          },
           {
             address: listing.registryAddress,
             amountSats: TOKEN_MIN_MUTATION_PRICE_SATS,
@@ -29570,7 +29564,6 @@ export default function App() {
         inputCount: paymentPsbt.inputCount,
         network: "livenet",
         psbtHex: paymentPsbt.psbtHex,
-        signInputIndexes: paymentPsbt.walletInputIndexes,
         signingAddress: address,
         wallet: window.unisat,
       });

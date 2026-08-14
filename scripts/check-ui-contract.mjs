@@ -1614,10 +1614,14 @@ expect(
     /confirmWorkAmoFrozenAction\("seal", listing\)/.test(
       sealTokenListingSource,
     ) &&
-    /buildAnchoredMarketplacePsbt\(\{[\s\S]*anchorSpendMode:\s*"wallet"[\s\S]*amountSats:\s*tokenSellerPaymentRequiredSats\(listing\)[\s\S]*amountSats:\s*TOKEN_MIN_MUTATION_PRICE_SATS[\s\S]*protocolPayloads:\s*\[payload\]/.test(
+    /buildPaymentPsbt\(\{[\s\S]*excludeOutpoints:\s*activeTokenListingAnchorOutpointsForAddress\([\s\S]*amountSats:\s*TOKEN_MIN_MUTATION_PRICE_SATS[\s\S]*protocolPayloads:\s*\[payload\]/.test(
       sealTokenListingSource,
     ) &&
-    /signAndBroadcastPsbt\(\{[\s\S]*signInputIndexes:\s*paymentPsbt\.walletInputIndexes[\s\S]*signingAddress:\s*address/.test(
+    !/anchorSpendMode:\s*"wallet"/.test(sealTokenListingSource) &&
+    !/signInputIndexes:\s*paymentPsbt\.walletInputIndexes/.test(
+      sealTokenListingSource,
+    ) &&
+    /signAndBroadcastPsbt\(\{[\s\S]*signingAddress:\s*address/.test(
       sealTokenListingSource,
     ) &&
     /const freshAdmission = await freshWorkWriteMode\(\)[\s\S]*preparedWorkSettlementMode = freshAdmission\.mode[\s\S]*assertWorkAmoSettlementEnabled\(freshAdmission\.quote\)/.test(
