@@ -29507,21 +29507,29 @@ export default function App() {
         listing.listingId,
         sealedAuthorization,
       );
-      const listingAnchor = tokenListingAnchorOutpoint(listing);
-      const paymentPsbt = await buildPaymentPsbt({
-        amountSats: TOKEN_MIN_MUTATION_PRICE_SATS,
-        excludeOutpoints: [
-          ...activeTokenListingAnchorOutpointsForAddress(tokenListings, address, {
-            network: "livenet",
-          }),
-          ...(listingAnchor ? [listingAnchor] : []),
-        ],
+      const paymentPsbt = await buildAnchoredMarketplacePsbt({
+        anchorSpendMode: "wallet",
+        excludeOutpoints: activeTokenListingAnchorOutpointsForAddress(
+          tokenListings,
+          address,
+          { exceptListingId: listing.listingId, network: "livenet" },
+        ),
         feeRate,
         fromAddress: address,
+        listing,
         network: "livenet",
+        payments: [
+          {
+            address: listing.sellerAddress,
+            amountSats: tokenSellerPaymentRequiredSats(listing),
+          },
+          {
+            address: listing.registryAddress,
+            amountSats: TOKEN_MIN_MUTATION_PRICE_SATS,
+          },
+        ],
         protocolPayloads: [payload],
         requireConfirmedUtxos: true,
-        toAddress: listing.registryAddress,
       });
       if (
         !confirmDustFeeAbsorption({
@@ -29562,6 +29570,8 @@ export default function App() {
         inputCount: paymentPsbt.inputCount,
         network: "livenet",
         psbtHex: paymentPsbt.psbtHex,
+        signInputIndexes: paymentPsbt.walletInputIndexes,
+        signingAddress: address,
         wallet: window.unisat,
       });
       savePendingTokenListingSeal(listing, sealedAuthorization, txid);
