@@ -24,8 +24,10 @@ import {
   shouldEscalateWorkerFailure,
   workerBackfillPhasePlan,
   workerCoreTipAdvanceFromError,
+  workerIdleTipPollMs,
   workerNoProgressFromMeta,
   workerPendingEventHealth,
+  workerSleepUntilIntervalOrTipAdvance,
   workerWorkAmoV8ActivationLatchReady,
   workerWorkAmoV8DeclarationConfig,
   workerWorkQ16PendingParentMembershipTxids,
@@ -2363,6 +2365,28 @@ async function runChecks() {
   assert.equal(pendingBackfillChildTimeoutMs("15000"), 30_000);
   assert.equal(pendingBackfillChildTimeoutMs("45000"), 45_000);
   assert.equal(pendingBackfillChildTimeoutMs("900000"), 600_000);
+
+  assert.equal(typeof workerSleepUntilIntervalOrTipAdvance, "function");
+  assert.equal(workerIdleTipPollMs(null, 30_000), 1_000);
+  assert.equal(workerIdleTipPollMs("250", 30_000), 1_000);
+  assert.equal(workerIdleTipPollMs("1500", 30_000), 1_500);
+  assert.equal(workerIdleTipPollMs("60000", 30_000), 30_000);
+
+  {
+    const source = readFileSync(WORKER_PATH, "utf8");
+    assert.match(
+      source,
+      /async function readWorkerCoreWakeTip\([\s\S]*workerBitcoinCoreRpc\(\s*"getblockchaininfo"[\s\S]*bestblockhash/u,
+    );
+    assert.match(
+      source,
+      /workerSleepUntilIntervalOrTipAdvance\([\s\S]*readWorkerCoreWakeTip[\s\S]*await workerSleep\(runtime, Math\.min\(poll, remainingMs\)\)[\s\S]*core-tip-advanced/u,
+    );
+    assert.match(
+      source,
+      /runCycle\(pool, lastSuccess, runtime\)[\s\S]*workerSleepUntilIntervalOrTipAdvance\([\s\S]*cycle\.canonicalProgress/u,
+    );
+  }
   assert.deepEqual(
     workerPendingEventHealth({ era: "q8", ready: true }),
     {

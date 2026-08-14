@@ -36289,23 +36289,73 @@ async function walletScopedTokenPayload(
       ? { ...recoveredPayload, authoritativeWallet: true }
       : recoveredPayload;
   }
-  if (requireCurrent) {
-    const unavailable = freshDataUnavailableError(
-      `Fresh wallet credit state is temporarily unavailable for ${scope || "all"}.`,
-    );
-    unavailable.details = { code: "CANONICAL_WALLET_INDEX_UNAVAILABLE" };
-    throw unavailable;
-  }
   let payload = null;
-  if (
+  if (requireCurrent) {
+    const canonicalGate =
+      options.canonicalReadGate &&
+      typeof options.canonicalReadGate === "object" &&
+      !Array.isArray(options.canonicalReadGate)
+        ? options.canonicalReadGate
+        : null;
+    const exactWalletCandidate = (candidate) =>
+      candidate && tokenPayloadMatchesCanonicalGate(candidate, canonicalGate)
+        ? candidate
+        : null;
+    payload = exactWalletCandidate(
+      await currentExactTipTokenPayloadForRead(
+        network,
+        scope,
+        "wallet-scoped-token-fresh-exact-tip-memory",
+        canonicalGate,
+      ),
+    );
+    if (
+      !payload &&
+      proofIndexReadFeatureEnabled("token-state,token-default,token")
+    ) {
+      payload = exactWalletCandidate(
+        await currentProofIndexTokenPayloadForRead(
+          network,
+          scope,
+          "wallet-scoped-token-fresh",
+          WALLET_SCOPED_INDEX_WAIT_MS,
+        ),
+      );
+    }
+    if (!payload) {
+      payload = exactWalletCandidate(
+        await currentMemoryTokenPayloadForRead(
+          network,
+          scope,
+          "wallet-scoped-token-fresh-memory",
+        ),
+      );
+    }
+    if (!payload) {
+      payload = exactWalletCandidate(
+        await cachedTokenPayloadFallbackForRead(
+          network,
+          scope,
+          "wallet-scoped-token-fresh-cache",
+        ),
+      );
+    }
+    if (!payload) {
+      const unavailable = freshDataUnavailableError(
+        `Fresh wallet credit state is temporarily unavailable for ${scope || "all"}.`,
+      );
+      unavailable.details = { code: "CANONICAL_WALLET_INDEX_UNAVAILABLE" };
+      throw unavailable;
+    }
+  } else if (
     network === "livenet" &&
     proofIndexReadFeatureEnabled("token-state,token-default,token")
   ) {
     payload = await currentProofIndexTokenPayloadForRead(
       network,
       scope,
-      requireCurrent ? "wallet-scoped-token-fresh" : "wallet-scoped-token",
-      requireCurrent ? WALLET_SCOPED_INDEX_WAIT_MS : 5_000,
+      "wallet-scoped-token",
+      5_000,
     );
   }
 
@@ -64965,7 +65015,7 @@ async function handleRequest(request, response) {
               network,
               tokenScope,
               recoveryAddresses,
-              { requireCurrent: freshRead },
+              { canonicalReadGate, requireCurrent: freshRead },
             ),
             network,
           ),

@@ -71,6 +71,15 @@ const API_BASE = String(process.env.POW_API_BASE ?? DEFAULT_API_BASE).replace(
 );
 const NETWORK = process.env.NETWORK ?? "livenet";
 const INTERVAL_MS = Number(process.env.POW_INDEX_WORKER_INTERVAL_MS ?? 300_000);
+export function workerIdleTipPollMs(
+  configured = process.env.POW_INDEX_WORKER_IDLE_TIP_POLL_MS,
+  intervalMs = INTERVAL_MS,
+) {
+  const interval = finitePositiveInteger(intervalMs, 30_000);
+  const poll = finitePositiveInteger(configured ?? 1_000, 1_000);
+  return Math.min(interval, Math.max(1_000, poll));
+}
+const IDLE_TIP_POLL_MS = workerIdleTipPollMs();
 const ERROR_INTERVAL_MS = Number(
   process.env.POW_INDEX_WORKER_ERROR_INTERVAL_MS ?? 60_000,
 );
@@ -2074,6 +2083,87 @@ async function readExactWorkerCoreTip() {
     height,
     stable: true,
   };
+}
+
+async function readWorkerCoreWakeTip() {
+  const info = await workerBitcoinCoreRpc("getblockchaininfo", []);
+  const height = Number(info?.blocks);
+  const headers = Number(info?.headers);
+  const blockHash = normalizedLowerText(info?.bestblockhash);
+  if (
+    !Number.isSafeInteger(height) ||
+    height < 1 ||
+    headers < height ||
+    !/^[0-9a-f]{64}$/u.test(blockHash)
+  ) {
+    throw new Error("Proof index worker received an invalid Core wake tip.");
+  }
+  return { blockHash, height };
+}
+
+export async function workerSleepUntilIntervalOrTipAdvance(
+  runtime,
+  checkpoint,
+  {
+    intervalMs = INTERVAL_MS,
+    pollMs = IDLE_TIP_POLL_MS,
+    readTip = readWorkerCoreWakeTip,
+  } = {},
+) {
+  const interval = finitePositiveInteger(intervalMs, 30_000);
+  const poll = Math.min(interval, workerIdleTipPollMs(pollMs, interval));
+  const deadlineMs = Date.now() + interval;
+  const base = normalizedCheckpoint(checkpoint);
+  let tipPollErrorLogged = false;
+  if (
+    !base ||
+    !Number.isSafeInteger(base.checkpointHeight) ||
+    base.checkpointHeight <= 0 ||
+    !/^[0-9a-f]{64}$/u.test(String(base.checkpointHash ?? ""))
+  ) {
+    await workerSleep(runtime, interval);
+    return { reason: "checkpoint-unavailable", wokeForTip: false };
+  }
+
+  while (!runtime?.stopping) {
+    const remainingMs = deadlineMs - Date.now();
+    if (remainingMs <= 0) {
+      return { reason: "interval-elapsed", wokeForTip: false };
+    }
+    await workerSleep(runtime, Math.min(poll, remainingMs));
+    if (runtime?.stopping) {
+      return { reason: "stopping", wokeForTip: false };
+    }
+    try {
+      const tip = await readTip();
+      const tipHeight = Number(tip?.height);
+      const tipHash = normalizedLowerText(tip?.blockHash);
+      if (
+        Number.isSafeInteger(tipHeight) &&
+        /^[0-9a-f]{64}$/u.test(tipHash) &&
+        (tipHeight > base.checkpointHeight ||
+          (tipHeight === base.checkpointHeight &&
+            tipHash !== base.checkpointHash))
+      ) {
+        return {
+          reason: "core-tip-advanced",
+          tip: { blockHash: tipHash, height: tipHeight },
+          wokeForTip: true,
+        };
+      }
+    } catch (error) {
+      if (!tipPollErrorLogged) {
+        tipPollErrorLogged = true;
+        console.error(
+          JSON.stringify({
+            error: cappedChildError(error?.message ?? error),
+            phase: "worker-idle-tip-poll",
+          }),
+        );
+      }
+    }
+  }
+  return { reason: "stopping", wokeForTip: false };
 }
 
 function canonicalWorkerJsonText(value) {
@@ -6300,6 +6390,7 @@ async function runCycle(pool, lastSuccess, runtime) {
     durationMs: currentSuccess.durationMs,
     finishedAt: currentSuccess.finishedAt,
     holders: INCLUDE_HOLDERS,
+    idleTipPollMs: IDLE_TIP_POLL_MS,
     lastSuccess: currentSuccess,
     lastSuccessAt: currentSuccess.finishedAt,
     network: runtime.network,
@@ -6350,6 +6441,7 @@ export async function runWorkerMain() {
           dryRun: true,
           errorIntervalMs: ERROR_INTERVAL_MS,
           holders: INCLUDE_HOLDERS,
+          idleTipPollMs: IDLE_TIP_POLL_MS,
           intervalMs: INTERVAL_MS,
           maxConsecutiveFailures: MAX_CONSECUTIVE_FAILURES,
           maxErrorIntervalMs: MAX_ERROR_INTERVAL_MS,
@@ -6430,7 +6522,10 @@ export async function runWorkerMain() {
         if (ONCE || runtime.stopping) {
           break;
         }
-        await workerSleep(runtime, INTERVAL_MS);
+        await workerSleepUntilIntervalOrTipAdvance(
+          runtime,
+          cycle.canonicalProgress,
+        );
       } catch (error) {
         if (
           runtime.stopping ||

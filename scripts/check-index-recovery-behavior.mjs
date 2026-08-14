@@ -6906,8 +6906,16 @@ check("token send preflight retries transient canonical reads only", async () =>
   );
 });
 
-check("fresh wallet token reads never fall back behind canonical coverage", async () => {
-  let fallbackReads = 0;
+check("fresh wallet token reads fall back only to exact canonical coverage", async () => {
+  const blockHash = "7".repeat(64);
+  const exactGate = {
+    atTip: true,
+    canonicalHash: blockHash,
+    indexedThroughBlock: 100,
+  };
+  let broadFallbackReads = 0;
+  let cacheFallbackReads = 0;
+  let exactReads = 0;
   let indexedReads = 0;
   const walletScopedTokenPayload = isolatedFunction(
     API_PATH,
@@ -6915,7 +6923,17 @@ check("fresh wallet token reads never fall back behind canonical coverage", asyn
     {
       BOND_TOKEN_IDS: new Set(),
       WALLET_SCOPED_INDEX_WAIT_MS: 10_000,
+      WALLET_SCOPED_RECOVERY_WAIT_MS: 1,
       WORK_TOKEN_ID: "work-token-id",
+      cachedTokenPayloadFallbackForRead: async () => {
+        cacheFallbackReads += 1;
+        return null;
+      },
+      currentExactTipTokenPayloadForRead: async () => {
+        exactReads += 1;
+        return null;
+      },
+      currentMemoryTokenPayloadForRead: async () => null,
       currentProofIndexTokenPayloadForRead: async (
         _network,
         _scope,
@@ -6923,15 +6941,19 @@ check("fresh wallet token reads never fall back behind canonical coverage", asyn
         _timeoutMs,
       ) => {
         indexedReads += 1;
-        return null;
+        return {
+          indexedThroughBlock: 99,
+          indexedThroughBlockHash: blockHash,
+        };
       },
       freshDataUnavailableError: (message) => new Error(message),
       normalizeTokenScope: (value) => value,
       proofIndexReadFeatureEnabled: () => true,
       proofIndexWalletScopedTokenPayloadForRead: async () => null,
+      tokenPayloadMatchesCanonicalGate: () => false,
       tokenPayloadWithWalletActiveListings: async (payload) => payload,
       tokenPayloadForRead: async () => {
-        fallbackReads += 1;
+        broadFallbackReads += 1;
         return {};
       },
     },
@@ -6941,12 +6963,75 @@ check("fresh wallet token reads never fall back behind canonical coverage", asyn
       "livenet",
       "work-token-id",
       ["sender"],
-      { requireCurrent: true },
+      { canonicalReadGate: exactGate, requireCurrent: true },
     ),
     (error) => /temporarily unavailable/u.test(String(error?.message)),
   );
-  assert.equal(fallbackReads, 0);
-  assert.equal(indexedReads, 0);
+  assert.equal(broadFallbackReads, 0);
+  assert.equal(cacheFallbackReads, 1);
+  assert.equal(exactReads, 1);
+  assert.equal(indexedReads, 1);
+
+  let scopedReads = 0;
+  const exactFallbackWalletScopedTokenPayload = isolatedFunction(
+    API_PATH,
+    "walletScopedTokenPayload",
+    {
+      BOND_TOKEN_IDS: new Set(),
+      WALLET_SCOPED_INDEX_WAIT_MS: 10_000,
+      WALLET_SCOPED_RECOVERY_WAIT_MS: 1,
+      WORK_TOKEN_ID: "work-token-id",
+      cachedTokenPayloadFallbackForRead: async () => {
+        throw new Error("exact cache should satisfy the fresh wallet read");
+      },
+      currentExactTipTokenPayloadForRead: async () => ({
+        holders: [{ address: "sender", balance: 1, tokenId: "work-token-id" }],
+        indexedThroughBlock: 100,
+        indexedThroughBlockHash: blockHash,
+        tokens: [{ tokenId: "work-token-id" }],
+      }),
+      currentMemoryTokenPayloadForRead: async () => null,
+      currentProofIndexTokenPayloadForRead: async () => {
+        throw new Error("exact memory should short-circuit slower reads");
+      },
+      normalizeTokenScope: (value) => value,
+      proofIndexReadFeatureEnabled: () => true,
+      proofIndexWalletScopedTokenPayloadForRead: async () => null,
+      tokenPayloadMatchesCanonicalGate: (payload, gate) =>
+        Number(payload?.indexedThroughBlock) === gate.indexedThroughBlock &&
+        payload?.indexedThroughBlockHash === gate.canonicalHash,
+      tokenPayloadScopedToAddresses: (payload, addresses) => {
+        scopedReads += 1;
+        return {
+          ...payload,
+          holders: payload.holders.filter((holder) =>
+            addresses.includes(holder.address),
+          ),
+          walletScoped: true,
+        };
+      },
+      tokenPayloadWithIndexedWalletOverlay: async (payload) => payload,
+      tokenPayloadWithWalletActiveListings: async (payload) => payload,
+      tokenPayloadForRead: async () => {
+        throw new Error("fresh wallet reads must not use broad fallback reads");
+      },
+      workTokenStateWithRecoveredListingClosesFromTransactions: (payload) =>
+        payload,
+      workTokenStateWithRecoveredListingCloseSales: async (payload) => payload,
+      tokenPayloadWithRecoveredWalletWorkTransfers: async (payload) => payload,
+      payloadWithFallbackAfterMs: async (promise) => await promise,
+      explicitWorkTokenCloseRecoveryTxs: () => [],
+    },
+  );
+  const fallbackCurrent = await exactFallbackWalletScopedTokenPayload(
+    "livenet",
+    "work-token-id",
+    ["sender"],
+    { canonicalReadGate: exactGate, requireCurrent: true },
+  );
+  assert.equal(fallbackCurrent.authoritativeWallet, true);
+  assert.equal(fallbackCurrent.walletScoped, true);
+  assert.equal(scopedReads, 1);
 
   const currentWalletScopedTokenPayload = isolatedFunction(
     API_PATH,
