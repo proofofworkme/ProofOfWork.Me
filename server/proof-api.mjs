@@ -35646,6 +35646,38 @@ function tokenPayloadMatchesCanonicalGate(payload, canonicalGate) {
   );
 }
 
+async function currentCanonicalWorkTokenSummaryPayloadForFreshRead(
+  network,
+  tokenScope,
+  canonicalGate,
+) {
+  const scope = normalizeTokenScope(tokenScope);
+  if (network !== "livenet" || scope !== WORK_TOKEN_ID) {
+    return null;
+  }
+  const payload = await storedCanonicalTokenSummaryPayload(network, scope).catch(
+    (error) => {
+      console.error(
+        `Canonical WORK token summary fresh read failed: ${errorSummary(error)}`,
+      );
+      return null;
+    },
+  );
+  if (
+    !payload ||
+    !tokenPayloadMatchesCanonicalGate(payload, canonicalGate) ||
+    rejectEmptyMainnetTokenPayload(
+      network,
+      payload,
+      scope,
+      "canonical-work-token-summary-fresh",
+    )
+  ) {
+    return null;
+  }
+  return payload;
+}
+
 async function cachedTokenPayloadFallbackForRead(
   network,
   tokenScope = "",
@@ -65058,6 +65090,30 @@ async function handleRequest(request, response) {
             response,
             200,
             cachedPayload,
+            TOKEN_READ_CACHE_CONTROL,
+          );
+          return;
+        }
+      }
+      if (!walletScoped && recoveryAddresses.length === 0 && freshRead) {
+        const canonicalSummaryPayload =
+          await currentCanonicalWorkTokenSummaryPayloadForFreshRead(
+            network,
+            tokenScope,
+            canonicalReadGate,
+          );
+        if (canonicalSummaryPayload) {
+          const responsePayload = await withWorkMarketplaceV4Metadata(
+            canonicalSummaryPayload,
+            network,
+          );
+          cacheTokenPayload(network, tokenScope, responsePayload, {
+            exactTipValidated: true,
+          });
+          jsonResponse(
+            response,
+            200,
+            responsePayload,
             TOKEN_READ_CACHE_CONTROL,
           );
           return;

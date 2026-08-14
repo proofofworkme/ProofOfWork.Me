@@ -7220,6 +7220,77 @@ check("fresh wallet token reads fall back only to exact canonical coverage", asy
   assert.equal(current.authoritativeWallet, true);
 });
 
+check("fresh WORK token reads prefer exact canonical summary over lagging token-state", async () => {
+  const workTokenId = "work-token-id";
+  const blockHash = "8".repeat(64);
+  const canonicalGate = {
+    atTip: true,
+    canonicalHash: blockHash,
+    indexedThroughBlock: 200,
+    ok: true,
+  };
+  const canonicalSummary = {
+    indexedThroughBlock: 200,
+    indexedThroughBlockHash: blockHash,
+    listings: [{ listingId: "listing", version: "pwt-sale-v8" }],
+    snapshotId: "summary-200",
+    summaryOnly: true,
+    tokens: [{ openListings: 1, tokenId: workTokenId }],
+  };
+  let summaryReads = 0;
+  const canonicalSummaryFreshRead = isolatedFunction(
+    API_PATH,
+    "currentCanonicalWorkTokenSummaryPayloadForFreshRead",
+    {
+      WORK_TOKEN_ID: workTokenId,
+      normalizeTokenScope: (value) =>
+        String(value ?? "").trim().toUpperCase() === "WORK"
+          ? workTokenId
+          : String(value ?? "").trim().toLowerCase(),
+      rejectEmptyMainnetTokenPayload: () => false,
+      storedCanonicalTokenSummaryPayload: async () => {
+        summaryReads += 1;
+        return canonicalSummary;
+      },
+      tokenPayloadMatchesCanonicalGate: (payload, gate) =>
+        gate?.ok === true &&
+        gate?.atTip === true &&
+        Number(payload?.indexedThroughBlock) === gate.indexedThroughBlock &&
+        payload?.indexedThroughBlockHash === gate.canonicalHash,
+    },
+  );
+
+  assert.equal(
+    await canonicalSummaryFreshRead("livenet", "WORK", canonicalGate),
+    canonicalSummary,
+  );
+  assert.equal(summaryReads, 1);
+  assert.equal(
+    await canonicalSummaryFreshRead("livenet", "other-token-id", canonicalGate),
+    null,
+  );
+  assert.equal(summaryReads, 1);
+  assert.equal(
+    await canonicalSummaryFreshRead(
+      "livenet",
+      "WORK",
+      { ...canonicalGate, canonicalHash: "9".repeat(64) },
+    ),
+    null,
+  );
+
+  const requestSource = topLevelFunctionSource(API_PATH, "handleRequest");
+  const summaryReadIndex = requestSource.indexOf(
+    "currentCanonicalWorkTokenSummaryPayloadForFreshRead",
+  );
+  const tokenStateReadIndex = requestSource.indexOf(
+    "currentProofIndexTokenPayloadForRead",
+    summaryReadIndex,
+  );
+  assert.ok(summaryReadIndex >= 0);
+  assert.ok(tokenStateReadIndex > summaryReadIndex);
+});
+
 check("wallet WORK overlay recovers active canonical V8 listings and drops matching invalid attempts", async () => {
   const listingId = "07c9ca719adf7a7e94ff17c917e599e872ae1c0348f282219907c060a72b8043";
   const sellerAddress = "17W7JZ9KjjGUwdAyXeGxhzYe2vGe8YTRzA";
