@@ -8656,14 +8656,11 @@ function workAmoV8MigrationReadinessIdentity(readiness) {
     !readiness ||
     typeof readiness !== "object" ||
     Array.isArray(readiness) ||
-    readiness.ready !== true ||
-    readiness.active !== true ||
     readiness.canonical !== true ||
     readiness.confirmed !== true ||
     readiness.evidenceComplete !== true ||
     readiness.exactTipReady !== true ||
     readiness.parityReady !== true ||
-    readiness.pendingReady !== true ||
     readiness.replayReady !== true
   ) {
     return "";
@@ -9058,11 +9055,7 @@ async function workAmoV8ExactReadinessSweep(
   if (
     workAmoV8ExactLiveProbeKey(after, {
       includeMempool: false,
-    }) !== beforeKey ||
-    (migrationReadiness?.ready === true &&
-      !(Date.parse(
-        String(migrationReadiness.pendingValidThrough ?? ""),
-      ) > Date.now()))
+    }) !== beforeKey
   ) {
     return null;
   }
@@ -9411,24 +9404,25 @@ async function workAmoV8Metadata(
       pendingMembershipSnapshot,
       liveMempoolTxids,
     );
-  const indexReady =
-    migrationReadiness?.ready === true &&
-    migrationReadiness?.active === true &&
+  const pendingWitnessReady =
+    migrationReadiness?.pendingReady === true &&
+    Date.parse(
+      String(migrationReadiness?.pendingValidThrough ?? ""),
+    ) > Date.now() &&
+    pendingMembershipLive;
+  const confirmedMigrationReady =
     migrationReadiness?.canonical === true &&
     migrationReadiness?.confirmed === true &&
     migrationReadiness?.evidenceComplete === true &&
+    migrationReadiness?.exactTipReady === true &&
     migrationReadiness?.parityReady === true &&
     migrationReadiness?.replayReady === true &&
     Number(migrationReadiness?.tipHeight) === tipHeight &&
     String(migrationReadiness?.tipHash ?? "")
       .trim()
       .toLowerCase() === tipHash &&
-    migrationReadiness?.pendingReady === true &&
-    Date.parse(
-      String(migrationReadiness?.pendingValidThrough ?? ""),
-    ) > Date.now() &&
-    workerReadiness.ready === true &&
-    pendingMembershipLive;
+    tipVerified;
+  const indexReady = confirmedMigrationReady;
   const combinedEvidence = evidence
     ? {
         ...evidence,
@@ -9487,6 +9481,8 @@ async function workAmoV8Metadata(
     migrationReady: indexReady,
     migrationReadiness: publicMigrationReadiness,
     liveMempoolSnapshot,
+    pendingMembershipLive,
+    pendingWitnessReady,
     legacyWriteEmbargo: workAmoV8DeclarationEmbargoLatch,
     networkValueBeforeQ8,
     persistentActivationLatch: {
@@ -9502,7 +9498,7 @@ async function workAmoV8Metadata(
     pinsRequested: WORK_AMO_V8_DECLARATION_PINS_REQUESTED,
     pinsConfigured: Boolean(configuredDeclaration),
     relicCutover:
-      migrationReadiness?.ready === true
+      indexReady === true
         ? migrationReadiness?.marker?.relicCutover ?? null
         : null,
     tipHash,
@@ -10801,7 +10797,7 @@ async function assertWorkMarketplaceBroadcastAllowed(
         !protocolReady
       ) {
         const error = new Error(
-          "WORK AMO V8 writes are paused until exact declaration evidence, Q16 replay, current relational and pending parity, and write admission are ready.",
+          "WORK AMO V8 writes are paused until exact declaration evidence, Q16 replay, current relational parity, and write admission are ready.",
         );
         error.statusCode = 503;
         error.details = {

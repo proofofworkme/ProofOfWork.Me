@@ -2082,7 +2082,7 @@ expect(
     /function workAmoPreV8RelicRows[\s\S]*canonical-work-amo-v8-preactivation-relic-cutover-v1[\s\S]*WORK_LEGACY_TO_CANONICAL_FACTOR/.test(
       app,
     ) &&
-    /relicCutover:[\s\S]*migrationReadiness\?\.ready === true[\s\S]*marker\?\.relicCutover/.test(
+    /relicCutover:[\s\S]*indexReady === true[\s\S]*migrationReadiness\?\.marker\?\.relicCutover/.test(
       proofApi,
     ) &&
     /These WORK listings were disabled at activation height[\s\S]*new V8 unit is exactly 25,000 proofs[\s\S]*exact 16-decimal WORK/.test(

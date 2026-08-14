@@ -58426,8 +58426,17 @@ check("AMO V8 request coalescing binds exact reader identity and live inputs", (
   assert.match(firstIdentity, /^exact-readiness-[1-9][0-9]*$/u);
   assert.equal(readinessIdentity(exactReadiness), firstIdentity);
   assert.notEqual(readinessIdentity({ ...exactReadiness }), firstIdentity);
+  assert.match(
+    readinessIdentity({
+      ...exactReadiness,
+      active: false,
+      pendingReady: false,
+      ready: false,
+    }),
+    /^exact-readiness-[1-9][0-9]*$/u,
+  );
   assert.equal(
-    readinessIdentity({ ...exactReadiness, pendingReady: false }),
+    readinessIdentity({ ...exactReadiness, replayReady: false }),
     "",
   );
 
@@ -58454,7 +58463,10 @@ check("AMO V8 request coalescing binds exact reader identity and live inputs", (
     sweepSource,
     /workAmoV8ExactLiveProbe\(network\)[\s\S]*proofIndexWorkPrecisionV2MigrationReadiness[\s\S]*workAmoV8ExactLiveProbe\(network\)/u,
   );
-  assert.match(sweepSource, /pendingValidThrough[\s\S]*Date\.now/u);
+  assert.doesNotMatch(
+    sweepSource,
+    /pendingValidThrough[\s\S]*Date\.now/u,
+  );
   const exactProbeSource = topLevelFunctionSource(
     API_PATH,
     "workAmoV8ExactLiveProbe",

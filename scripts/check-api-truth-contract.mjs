@@ -72,6 +72,11 @@ const workQ16PendingProjection = readFileSync(
   "server/work-q16-pending-projection.mjs",
   "utf8",
 );
+const workAmoV8MetadataSource = sourceSliceBetween(
+  server,
+  /async function workAmoV8Metadata/,
+  /async function withWorkMarketplaceV4Metadata/,
+);
 const workAmoV8Migration = readFileSync(
   "scripts/migrate-work-precision-v2.mjs",
   "utf8",
@@ -1698,15 +1703,28 @@ expect(
     ),
 );
 expect(
-  "V8 readiness keeps completed-worker and current-reader pending proofs independent at one Core tip",
-  /const indexReady =[\s\S]*migrationReadiness\?\.pendingReady === true &&[\s\S]*workerReadiness\.ready === true &&[\s\S]*pendingMembershipLive;/u.test(
-    server,
+  "V8 write readiness separates confirmed migration proof from pending mempool witness churn",
+  /const pendingWitnessReady =[\s\S]*migrationReadiness\?\.pendingReady === true &&[\s\S]*pendingMembershipLive;/u.test(
+    workAmoV8MetadataSource,
   ) &&
+    /const confirmedMigrationReady =[\s\S]*migrationReadiness\?\.canonical === true &&[\s\S]*migrationReadiness\?\.exactTipReady === true[\s\S]*migrationReadiness\?\.replayReady === true[\s\S]*tipVerified;/u.test(
+      workAmoV8MetadataSource,
+    ) &&
+    /const indexReady = confirmedMigrationReady;/u.test(
+      workAmoV8MetadataSource,
+    ) &&
+    /pendingWitnessReady,/u.test(workAmoV8MetadataSource) &&
     !/workerReadiness\.pendingMembershipCount ===[\s\S]*pendingMembershipSnapshot\?\.count/u.test(
-      server,
+      workAmoV8MetadataSource,
+    ) &&
+    !/const indexReady =[\s\S]*migrationReadiness\?\.pendingReady === true/u.test(
+      workAmoV8MetadataSource,
+    ) &&
+    !/const indexReady =[\s\S]*workerReadiness\.ready === true/u.test(
+      workAmoV8MetadataSource,
     ) &&
     !/workerReadiness\.pendingProjectionSha256 ===[\s\S]*migrationReadiness\?\.pendingWitness/u.test(
-      server,
+      workAmoV8MetadataSource,
     ),
 );
 expect(
@@ -2081,11 +2099,14 @@ expect(
     /let workAmoV8ReachedLatch = false[\s\S]*async function workAmoV8Metadata[\s\S]*tipVerified[\s\S]*tipHeight >= expectedDeclaration\.activationHeight[\s\S]*workAmoV8ReachedLatch = true[\s\S]*proofIndexWorkPrecisionV2MigrationReadiness/u.test(
       server,
     ) &&
-    /const indexReady =[\s\S]*migrationReadiness\?\.ready === true[\s\S]*migrationReadiness\?\.parityReady === true[\s\S]*migrationReadiness\?\.replayReady === true[\s\S]*Number\(migrationReadiness\?\.tipHeight\) === tipHeight/u.test(
-      server,
+    /const confirmedMigrationReady =[\s\S]*migrationReadiness\?\.canonical === true[\s\S]*migrationReadiness\?\.parityReady === true[\s\S]*migrationReadiness\?\.replayReady === true[\s\S]*Number\(migrationReadiness\?\.tipHeight\) === tipHeight/u.test(
+      workAmoV8MetadataSource,
     ) &&
     /Number\(migrationReadiness\?\.tipHeight\) === tipHeight[\s\S]*String\(migrationReadiness\?\.tipHash \?\? ""\)[\s\S]*\.toLowerCase\(\) === tipHash/u.test(
-      server,
+      workAmoV8MetadataSource,
+    ) &&
+    /relicCutover:[\s\S]*indexReady === true[\s\S]*migrationReadiness\?\.marker\?\.relicCutover/u.test(
+      workAmoV8MetadataSource,
     ) &&
     /activation: \{[\s\S]*reached: workAmoV8ReachedLatch,[\s\S]*tipVerified,[\s\S]*migrationReadiness: publicMigrationReadiness,[\s\S]*writesConfigured: WORK_AMO_V8_WRITES_CONFIGURED/u.test(
       server,

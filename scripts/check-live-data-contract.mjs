@@ -44,6 +44,11 @@ const workAmoV8Migration = readFileSync(
   "scripts/migrate-work-precision-v2.mjs",
   "utf8",
 );
+const workAmoV8MetadataSource = sourceSliceBetween(
+  server,
+  /async function workAmoV8Metadata/,
+  /async function withWorkMarketplaceV4Metadata/,
+);
 const workUnits = readFileSync("server/work-units.mjs", "utf8");
 const app = readFileSync("src/App.tsx", "utf8");
 const routeRegistry = readFileSync("src/app/routeRegistry.ts", "utf8");
@@ -1678,7 +1683,7 @@ expectAll("fresh token history can use checked proof-index snapshots", tokenHist
   /const proofIndexTokenHistoryEligibility =[\s\S]*proofIndexTokenHistoryReadEligibility\(/,
   /const freshProofIndexTokenHistoryRead =[\s\S]*freshRead[\s\S]*!exactProofIndexHistoryRead[\s\S]*!proofIndexMintHistoryRead[\s\S]*proofIndexTokenHistoryEligibility\.eligible/,
   /\(!freshRead \|\|[\s\S]*exactProofIndexHistoryRead \|\|[\s\S]*proofIndexMintHistoryRead \|\|[\s\S]*freshProofIndexTokenHistoryRead\)/,
-  /proofIndexPayloadCoversConfirmedTip\([\s\S]*responsePayload[\s\S]*`token-history:\$\{tokenScope \|\| "all"\}:\$\{historyKind\}`/,
+  /proofIndexPayloadCoversConfirmedTip\([\s\S]*canonicalValuePayload[\s\S]*`token-history:\$\{tokenScope \|\| "all"\}:\$\{historyKind\}`/,
   /freshProofIndexTokenHistoryRead[\s\S]*\? FRESH_READ_CACHE_CONTROL[\s\S]*: TOKEN_READ_CACHE_CONTROL/,
 ]);
 expectAll("token history pages carry embedded payload coverage instead of outer snapshot height", proofIndexReader, [
@@ -1952,16 +1957,35 @@ expectAll(
   ],
 );
 expect(
-  "AMO V8 combines one exact-tip worker proof with the independently current reader pending witness",
-  /const indexReady =[\s\S]*migrationReadiness\?\.pendingReady === true &&[\s\S]*workerReadiness\.ready === true &&[\s\S]*pendingMembershipLive;/.test(
-    server,
+  "AMO V8 write readiness separates confirmed migration proof from pending mempool witness churn",
+  /const pendingWitnessReady =[\s\S]*migrationReadiness\?\.pendingReady === true &&[\s\S]*pendingMembershipLive;/.test(
+    workAmoV8MetadataSource,
   ) &&
+    /const confirmedMigrationReady =[\s\S]*migrationReadiness\?\.canonical === true &&[\s\S]*migrationReadiness\?\.exactTipReady === true[\s\S]*migrationReadiness\?\.replayReady === true[\s\S]*tipVerified;/.test(
+      workAmoV8MetadataSource,
+    ) &&
+    /const indexReady = confirmedMigrationReady;/.test(
+      workAmoV8MetadataSource,
+    ) &&
+    /pendingWitnessReady,/.test(workAmoV8MetadataSource) &&
     !/workerReadiness\.pendingMembershipCount ===[\s\S]*pendingMembershipSnapshot\?\.count/.test(
-      server,
+      workAmoV8MetadataSource,
+    ) &&
+    !/const indexReady =[\s\S]*migrationReadiness\?\.pendingReady === true/.test(
+      workAmoV8MetadataSource,
+    ) &&
+    !/const indexReady =[\s\S]*workerReadiness\.ready === true/.test(
+      workAmoV8MetadataSource,
     ) &&
     !/workerReadiness\.pendingProjectionSha256 ===[\s\S]*migrationReadiness\?\.pendingWitness/.test(
-      server,
+      workAmoV8MetadataSource,
     ),
+);
+expect(
+  "AMO V8 relic cutover visibility follows confirmed write readiness, not pending witness freshness",
+  /relicCutover:[\s\S]*indexReady === true[\s\S]*migrationReadiness\?\.marker\?\.relicCutover/.test(
+    workAmoV8MetadataSource,
+  ),
 );
 expectAll(
   "marketplace deploy checks converge on authoritative V8 while preserving legacy history audits",

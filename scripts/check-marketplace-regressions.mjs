@@ -920,12 +920,18 @@ function workAmoV8IsAuthoritative(status) {
 }
 
 function workAmoV8StatusIndexReady(status) {
+  const migration = status?.migrationReadiness;
   return (
     workAmoV8IsAuthoritative(status) &&
     status?.version === WORK_AMO_V8_AUTH_VERSION &&
     status?.indexReady === true &&
     status?.ready === true &&
-    status?.migrationReadiness?.ready === true
+    migration?.canonical === true &&
+    migration?.confirmed === true &&
+    migration?.evidenceComplete === true &&
+    migration?.exactTipReady === true &&
+    migration?.parityReady === true &&
+    migration?.replayReady === true
   );
 }
 
@@ -1185,29 +1191,31 @@ function assertWorkAmoV8Surface(payload, label, context = payload) {
     `${label} changed the exact confirmed WORK AMO V8 declaration`,
   );
   assert(
-    migration?.ready === true &&
-      migration?.active === true &&
-      migration?.canonical === true &&
+    migration?.canonical === true &&
       migration?.confirmed === true &&
       migration?.evidenceComplete === true &&
+      migration?.exactTipReady === true &&
       migration?.parityReady === true &&
       migration?.replayReady === true &&
-      migration?.pendingReady === true &&
       migration?.precision?.amountStorageModel ===
         WORK_AMO_V8_PRECISION.amountStorageModel &&
       Number(migration?.precision?.decimals) ===
         WORK_AMO_V8_PRECISION.decimals &&
       String(migration?.precision?.unitScale ?? "") ===
         WORK_AMO_V8_PRECISION.unitScale,
-    `${label} does not expose exact ready Q16 migration and pending evidence`,
+    `${label} does not expose exact confirmed Q16 migration evidence`,
   );
   assert(
     status.indexReady === true &&
       status.migrationReady === true &&
       status.precisionMigrationReady === true &&
-      status.ready === true &&
-      status.workerReadiness?.ready === true,
+      status.ready === true,
     `${label} is not fully ready at the authoritative V8 tip`,
+  );
+  assert(
+    typeof status.pendingMembershipLive === "boolean" &&
+      typeof status.pendingWitnessReady === "boolean",
+    `${label} does not expose separate pending mempool witness diagnostics`,
   );
   const writesEnabled = status.protocolWritesEnabled === true;
   assert(
@@ -1562,7 +1570,17 @@ function assertWorkAmoEraSelectionContract() {
   const reachedV8 = {
     activation: { active: true, reached: true },
     indexReady: false,
-    migrationReadiness: { active: true, ready: true },
+    migrationReadiness: {
+      active: false,
+      canonical: true,
+      confirmed: true,
+      evidenceComplete: true,
+      exactTipReady: true,
+      parityReady: true,
+      pendingReady: false,
+      ready: false,
+      replayReady: true,
+    },
     ready: false,
     version: WORK_AMO_V8_AUTH_VERSION,
   };
