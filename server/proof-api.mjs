@@ -275,7 +275,6 @@ import {
   proofIndexValueSummaryPayload,
   proofIndexTokenSnapshotPayload,
   proofIndexWalletTokenOverlayPayload,
-  payloadWithCurrentWorkMarketListingReadPolicy,
   proofIndexWorkAmoBlockTransition,
   proofIndexWorkAmoGenericTokenStatePreimage,
   proofIndexWorkAmoLegacyBootstrapCarryEvidence,
@@ -37072,6 +37071,50 @@ async function workTokenStateWithIndexedActiveListings(
   };
 }
 
+function tokenPayloadWithCurrentWalletWorkRecoveryListingPolicy(
+  payload,
+  network,
+) {
+  const cutoverPayload = applyWorkMarketV2CutoverToTokenState(payload);
+  const indexedThroughBlock = Number(
+    cutoverPayload?.indexedThroughBlock ??
+      cutoverPayload?.stats?.indexedThroughBlock,
+  );
+  if (
+    network !== "livenet" ||
+    !Number.isSafeInteger(indexedThroughBlock) ||
+    indexedThroughBlock < WORK_AMO_V8_ACTIVATION_HEIGHT
+  ) {
+    return cutoverPayload;
+  }
+
+  return {
+    ...cutoverPayload,
+    listings: (Array.isArray(cutoverPayload?.listings)
+      ? cutoverPayload.listings
+      : []
+    ).filter((listing) => {
+      const tokenId = normalizeTokenScope(
+        listing?.tokenId ??
+          listing?.saleAuthorization?.tokenId ??
+          listing?.ticker ??
+          listing?.saleAuthorization?.ticker ??
+          "",
+      );
+      if (tokenId !== WORK_TOKEN_ID) {
+        return true;
+      }
+      return (
+        String(
+          listing?.saleAuthorization?.version ?? listing?.version ?? "",
+        )
+          .trim()
+          .toLowerCase() === WORK_AMO_V8_AUTH_VERSION
+      );
+    }),
+  };
+}
+
 async function tokenPayloadWithWalletActiveListings(
   payload,
   network,
@@ -37113,12 +37156,11 @@ async function tokenPayloadWithWalletActiveListings(
           ),
         }
       : payload;
-  const currentIndexedPayload = applyWorkMarketV2CutoverToTokenState(
-    await payloadWithCurrentWorkMarketListingReadPolicy(
-      network,
+  const currentIndexedPayload =
+    tokenPayloadWithCurrentWalletWorkRecoveryListingPolicy(
       indexedPayload,
-    ),
-  );
+      network,
+    );
   const listings = (Array.isArray(currentIndexedPayload?.listings)
     ? currentIndexedPayload.listings
     : []

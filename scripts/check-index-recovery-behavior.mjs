@@ -7302,13 +7302,27 @@ check("wallet WORK overlay recovers active canonical V8 listings and drops match
 
   const legacyListingId = "f371ee499b94f929069fb4677446006b1bb67d6793724f2b8d6effb26499c090";
   const v6ListingId = "b259fa601676287eca2ea94c9142cd13b45fde7031ec98967f15306df6ef7936";
-  let policyReads = 0;
+  const normalizeTestWorkScope = (value) =>
+    String(value ?? "").toUpperCase() === "WORK"
+      ? workTokenId
+      : String(value ?? "").trim().toLowerCase();
+  const tokenPayloadWithCurrentWalletWorkRecoveryListingPolicy =
+    isolatedFunction(
+      API_PATH,
+      "tokenPayloadWithCurrentWalletWorkRecoveryListingPolicy",
+      {
+        WORK_AMO_V8_ACTIVATION_HEIGHT: 960_601,
+        WORK_AMO_V8_AUTH_VERSION: "pwt-sale-v8",
+        WORK_TOKEN_ID: workTokenId,
+        applyWorkMarketV2CutoverToTokenState: (payload) => payload,
+        normalizeTokenScope: normalizeTestWorkScope,
+      },
+    );
   const tokenPayloadWithWalletActiveListings = isolatedFunction(
     API_PATH,
     "tokenPayloadWithWalletActiveListings",
     {
       WORK_TOKEN_ID: workTokenId,
-      applyWorkMarketV2CutoverToTokenState: (payload) => payload,
       filterSpendableTokenListings: async (recoveredListings) => ({
         closedListings: [],
         listings: recoveredListings,
@@ -7347,26 +7361,9 @@ check("wallet WORK overlay recovers active canonical V8 listings and drops match
       ],
       mergedSourceLabel: (left, right) => [left, right].filter(Boolean).join("+"),
       newerIso: (left, right) => right ?? left,
-      normalizeTokenScope: (value) =>
-        String(value ?? "").toUpperCase() === "WORK"
-          ? workTokenId
-          : String(value ?? "").trim().toLowerCase(),
-      payloadWithCurrentWorkMarketListingReadPolicy: async (
-        _network,
-        payload,
-      ) => {
-        policyReads += 1;
-        return {
-          ...payload,
-          listings: (payload.listings ?? []).filter(
-            (listing) =>
-              String(
-                listing?.saleAuthorization?.version ?? listing?.version ?? "",
-              ).trim() === "pwt-sale-v8",
-          ),
-        };
-      },
+      normalizeTokenScope: normalizeTestWorkScope,
       tokenPayloadWithoutInvalidEventsForActiveListings: (payload) => payload,
+      tokenPayloadWithCurrentWalletWorkRecoveryListingPolicy,
       tokenSalesWithCanonicalOutspendClosures: (sales) => sales ?? [],
       tokenStateWithPreservedListingRecords: (state, sourceState) => ({
         ...state,
@@ -7386,7 +7383,6 @@ check("wallet WORK overlay recovers active canonical V8 listings and drops match
     workTokenId,
     [sellerAddress],
   );
-  assert.equal(policyReads, 1);
   assert.deepEqual(
     recoveredPayload.listings.map((listing) => listing.listingId),
     [listingId],
