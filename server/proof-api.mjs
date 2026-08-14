@@ -9740,27 +9740,39 @@ async function canonicalWorkMarketplaceListingAnchor(txid, network) {
   }
   if (
     !listingTx ||
-    !transactionConfirmed(listingTx) ||
-    indexedListing?.canonical !== true ||
-    indexedListing?.confirmed !== true ||
-    indexedListing?.valid !== true ||
-    indexedListing?.unspent !== true
+    !transactionConfirmed(listingTx)
   ) {
+    return null;
+  }
+  if (
+    !indexedListing ||
+    indexedListing.canonical !== true ||
+    indexedListing.confirmed !== true
+  ) {
+    throw workMarketplaceListingResolutionUnavailableError(
+      txid,
+      new Error("Canonical listing read model did not expose the confirmed listing."),
+    );
+  }
+  if (indexedListing.valid !== true || indexedListing.unspent !== true) {
     return null;
   }
   const listingTxid = transactionTxid(listingTx);
   const listingBlockHash = transactionBlockHash(listingTx);
-  const listingBlockHeight = transactionBlockHeight(listingTx);
+  const rawListingBlockHeight = transactionBlockHeight(listingTx);
+  let canonicalBlockOrder = null;
   let coreBlockIndex = null;
   if (listingBlockHash) {
     try {
-      coreBlockIndex = (
-        await fetchCoreBlockTxidIndex(listingBlockHash)
-      )?.get(listingTxid);
+      canonicalBlockOrder = await fetchCoreCanonicalBlockOrder(listingBlockHash);
+      coreBlockIndex = canonicalBlockOrder.txidIndex?.get(listingTxid);
     } catch (error) {
       throw workMarketplaceListingResolutionUnavailableError(txid, error);
     }
   }
+  const listingBlockHeight = Number.isSafeInteger(rawListingBlockHeight)
+    ? rawListingBlockHeight
+    : canonicalBlockOrder?.blockHeight;
   const listingOutputs = Array.isArray(listingTx.vout)
     ? listingTx.vout
     : [];
@@ -9770,7 +9782,20 @@ async function canonicalWorkMarketplaceListingAnchor(txid, network) {
     listingBlockHeight !== indexedListing.blockHeight ||
     coreBlockIndex !== indexedListing.blockIndex
   ) {
-    return null;
+    const corePosition =
+      `${listingBlockHash || "missing"}:` +
+      `${Number.isSafeInteger(listingBlockHeight) ? listingBlockHeight : "missing"}:` +
+      `${Number.isSafeInteger(coreBlockIndex) ? coreBlockIndex : "missing"}`;
+    const indexPosition =
+      `${indexedListing.blockHash ?? "missing"}:` +
+      `${indexedListing.blockHeight ?? "missing"}:` +
+      `${indexedListing.blockIndex ?? "missing"}`;
+    throw workMarketplaceListingResolutionUnavailableError(
+      txid,
+      new Error(
+        `Canonical listing position mismatch: core ${corePosition}; index ${indexPosition}.`,
+      ),
+    );
   }
   for (
     let protocolVout = 0;

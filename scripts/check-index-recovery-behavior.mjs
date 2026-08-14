@@ -2816,6 +2816,165 @@ check("WORK AMO V8 seal listing resolver reports read-model outages before signa
   );
 });
 
+check("WORK AMO V8 seal listing resolver derives Core block height before matching frozen terms", async () => {
+  const listingId =
+    "07c9ca719adf7a7e94ff17c917e599e872ae1c0348f282219907c060a72b8043";
+  const blockHash = "b".repeat(64);
+  const listingBlockHeight = 962_104;
+  const listingBlockIndex = 567;
+  const sellerAddress = "17W7JZ9KjjGUwdAyXeGxhzYe2vGe8YTRzA";
+  const saleAuthorization = {
+    anchorValueSats: "546",
+    anchorVout: 2,
+    sellerAddress,
+    tokenId: WORK_TOKEN_ID,
+    version: WORK_AMO_V8_AUTH_VERSION,
+  };
+  const frozenTerms = {
+    listingBlockHeight,
+    unitPriceSats: "25000",
+    version: WORK_AMO_V8_AUTH_VERSION,
+  };
+  const indexedListing = {
+    blockHash,
+    blockHeight: listingBlockHeight,
+    blockIndex: listingBlockIndex,
+    canonical: true,
+    confirmed: true,
+    listingAuthorization: saleAuthorization,
+    listingFrozenTerms: frozenTerms,
+    listingId,
+    protocolVout: 0,
+    recordOrdinal: 0,
+    saleTicketValueSats: "546",
+    saleTicketVout: 2,
+    unspent: true,
+    valid: true,
+    version: WORK_AMO_V8_AUTH_VERSION,
+  };
+  let observedBlockHash = "";
+  const resolver = isolatedFunction(
+    API_PATH,
+    "canonicalWorkMarketplaceListingAnchor",
+    {
+      TOKEN_LIST_ACTION: "list",
+      TOKEN_PROTOCOL_PREFIX: "pwt1:",
+      TOKEN_SALE_AUTH_WORK_MARKET_V4_VERSION: WORK_AMO_V4_AUTH_VERSION,
+      decodedProtocolMessages: (outputs) =>
+        outputs.flatMap((output) => output?.message ? [output.message] : []),
+      fetchCoreCanonicalBlockOrder: async (candidateBlockHash) => {
+        observedBlockHash = candidateBlockHash;
+        return {
+          blockHash,
+          blockHeight: listingBlockHeight,
+          txidIndex: new Map([[listingId, listingBlockIndex]]),
+        };
+      },
+      fetchTransactionFromBitcoinRpc: async () => ({
+        status: {
+          block_hash: blockHash,
+          confirmed: true,
+        },
+        txid: listingId,
+        vout: [
+          { message: "pwt1:list:fixture" },
+          {},
+          { scriptpubkey: "51", value: 546 },
+        ],
+      }),
+      parseTokenPayload: () => ({ saleAuthorization }),
+      proofIndexCanonicalWorkListingById: async () => indexedListing,
+      rawTokenSaleAuthorization: () => saleAuthorization,
+      tokenListingAnchorIsPresent: () => true,
+      tokenSaleAuthorizationTermsMatch: () => true,
+      transactionBlockHash: (tx) => tx.status?.block_hash ?? "",
+      transactionBlockHeight: (tx) => tx.status?.block_height,
+      transactionConfirmed: (tx) => tx.status?.confirmed === true,
+      transactionTxid: (tx) => tx.txid,
+      workMarketplaceListingResolutionUnavailableError: (txid, cause) => {
+        const error = new Error(String(cause?.message ?? cause));
+        error.statusCode = 503;
+        error.details = {
+          listingId: txid,
+          reasonCode: "work-marketplace-listing-resolution-unavailable",
+        };
+        return error;
+      },
+    },
+  );
+  const anchor = await resolver(listingId, "livenet");
+  assert.equal(observedBlockHash, blockHash);
+  assert.equal(anchor?.anchorVout, 2);
+  assert.equal(anchor?.listingId, listingId);
+  assert.deepEqual(anchor?.frozenTerms, frozenTerms);
+  assert.equal(anchor?.sellerAddress, sellerAddress);
+});
+
+check("WORK AMO V8 seal listing resolver treats canonical position mismatches as retryable dependencies", async () => {
+  const listingId =
+    "07c9ca719adf7a7e94ff17c917e599e872ae1c0348f282219907c060a72b8043";
+  const blockHash = "b".repeat(64);
+  const dependencyError = isolatedFunction(
+    API_PATH,
+    "workMarketplaceListingResolutionUnavailableError",
+    {
+      errorSummary: (error) =>
+        error instanceof Error && error.message
+          ? error.message
+          : String(error),
+    },
+  );
+  const resolver = isolatedFunction(
+    API_PATH,
+    "canonicalWorkMarketplaceListingAnchor",
+    {
+      fetchCoreCanonicalBlockOrder: async () => ({
+        blockHash,
+        blockHeight: 962_103,
+        txidIndex: new Map([[listingId, 567]]),
+      }),
+      fetchTransactionFromBitcoinRpc: async () => ({
+        status: {
+          block_hash: blockHash,
+          confirmed: true,
+        },
+        txid: listingId,
+        vout: [],
+      }),
+      proofIndexCanonicalWorkListingById: async () => ({
+        blockHash,
+        blockHeight: 962_104,
+        blockIndex: 567,
+        canonical: true,
+        confirmed: true,
+        listingId,
+        unspent: true,
+        valid: true,
+      }),
+      transactionBlockHash: (tx) => tx.status?.block_hash ?? "",
+      transactionBlockHeight: (tx) => tx.status?.block_height,
+      transactionConfirmed: (tx) => tx.status?.confirmed === true,
+      transactionTxid: (tx) => tx.txid,
+      workMarketplaceListingResolutionUnavailableError: dependencyError,
+    },
+  );
+  await assert.rejects(
+    () => resolver(listingId, "livenet"),
+    (error) => {
+      assert.equal(error?.statusCode, 503);
+      assert.equal(
+        error?.details?.reasonCode,
+        "work-marketplace-listing-resolution-unavailable",
+      );
+      assert.match(
+        String(error?.details?.cause ?? ""),
+        /Canonical listing position mismatch/u,
+      );
+      return true;
+    },
+  );
+});
+
 check("mail activity timestamps use canonical ISO fallback", () => {
   const dateIso = isolatedFunction(API_PATH, "dateIso");
   const fallback = new Date("2026-07-25T22:30:00.000Z");
