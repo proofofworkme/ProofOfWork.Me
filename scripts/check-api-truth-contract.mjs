@@ -1653,11 +1653,11 @@ for (const [surface, source] of [
   );
 }
 expect(
-  "worker publishes no Q16-ready state before the pending audit completes",
+  "worker publishes confirmed Q16 readiness before best-effort pending audit completes",
   /workPrecision\.era === WORK_PRECISION_Q16_ERA[\s\S]*pendingRequired: true,[\s\S]*ready: false,[\s\S]*state: "canonical-phase-complete"/u.test(
     worker,
   ) &&
-    /workPrecision\.era === WORK_PRECISION_Q16_ERA[\s\S]*await assertWorkPrecisionPendingReady\([\s\S]*pendingRebuild:[\s\S]*WORK_AMO_V8_PENDING_REBUILD_MODEL[\s\S]*ready: workPrecisionReplay\.ready === true/u.test(
+    /workPrecision\.era === WORK_PRECISION_Q16_ERA[\s\S]*await assertWorkPrecisionPendingReady\([\s\S]*catch \(error\)[\s\S]*pendingReady: false[\s\S]*pendingRebuild:[\s\S]*WORK_AMO_V8_PENDING_REBUILD_MODEL[\s\S]*workPrecisionReplay\.pendingReady !== false/u.test(
       worker,
     ),
 );
@@ -1684,7 +1684,7 @@ expect(
     ),
 );
 expect(
-  "normal worker phases preserve and consume only the last fully successful Q16 proof",
+  "normal worker phases preserve last success while consuming current confirmed Q16 proof",
   /const currentSuccess = \{[\s\S]*workPrecision: runtime\.workPrecision[\s\S]*lastSuccess: currentSuccess/u.test(
     worker,
   ) &&
@@ -1695,10 +1695,10 @@ expect(
     /WORK_AMO_V8_TRANSIENT_WORKER_STATES[\s\S]*"canonical-phase-complete"[\s\S]*"running"[\s\S]*"starting"/u.test(
       workAmoV8WorkerReadiness,
     ) &&
-    /lastSuccess\.workPrecision[\s\S]*durableReplay\.ready === true[\s\S]*replay\.tipHeight === tipHeight[\s\S]*replay\.tipHash === normalizedHash\(tipHash\)/u.test(
+    /function confirmedReplayProof[\s\S]*const confirmed = objectRecord\(replay\.confirmed\)[\s\S]*currentConfirmedProofReady[\s\S]*durableConfirmedProofReady/u.test(
       workAmoV8WorkerReadiness,
     ) &&
-    /idleProofReady[\s\S]*replayCommitmentsEqual\(currentReplay, durableReplay\)/u.test(
+    /idleProofReady[\s\S]*currentReplay\.ready === true[\s\S]*replayCommitmentsEqual\(currentReplay, durableReplay\)[\s\S]*currentConfirmedReplay\.ready === true[\s\S]*durableConfirmedReplay\.ready === true/u.test(
       workAmoV8WorkerReadiness,
     ),
 );

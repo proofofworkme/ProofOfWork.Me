@@ -41243,7 +41243,7 @@ check("one exact-tip worker predicate preserves only healthy durable Q16 readine
     tipHeight,
   });
   assert.equal(ready.ready, true);
-  assert.equal(ready.proofSource, "last-success");
+  assert.equal(ready.proofSource, "last-success-confirmed-replay");
   assert.equal(ready.proofReady, true);
   for (const [label, changedStatus, options = {}] of [
     [
@@ -41301,6 +41301,117 @@ check("one exact-tip worker predicate preserves only healthy durable Q16 readine
     }).ready,
     false,
     "a changed Core hash invalidates the durable proof",
+  );
+  const confirmedOnlyStatus = {
+    ...status,
+    worker: {
+      ...status.worker,
+      lastSuccess: {
+        finishedAt,
+        workPrecision: {
+          era: "q16",
+          replay: {
+            confirmed: {
+              era: "q16",
+              ready: true,
+              replayRequired: true,
+              tipHash,
+              tipHeight,
+            },
+            era: "q16",
+            pendingError: "pending witness unavailable",
+            pendingReady: false,
+            pendingRequired: true,
+            ready: false,
+            replayRequired: true,
+          },
+        },
+      },
+      ok: true,
+      state: "idle",
+      finishedAt,
+      workPrecision: {
+        era: "q16",
+        replay: {
+          confirmed: {
+            era: "q16",
+            ready: true,
+            replayRequired: true,
+            tipHash,
+            tipHeight,
+          },
+          era: "q16",
+          pendingReady: false,
+          pendingRequired: true,
+          ready: false,
+          replayRequired: true,
+        },
+      },
+    },
+  };
+  const confirmedOnlyReady = exactTipReadiness(confirmedOnlyStatus, {
+    network: "livenet",
+    nowMs,
+    tipHash,
+    tipHeight,
+  });
+  assert.equal(confirmedOnlyReady.ready, true);
+  assert.equal(confirmedOnlyReady.proofSource, "idle-confirmed-replay");
+  assert.equal(confirmedOnlyReady.proofReady, true);
+  const transientConfirmedStatus = {
+    ...status,
+    worker: {
+      ...status.worker,
+      workPrecision: {
+        era: "q16",
+        replay: {
+          confirmed: {
+            era: "q16",
+            ready: true,
+            replayRequired: true,
+            tipHash,
+            tipHeight,
+          },
+          era: "q16",
+          pendingRequired: true,
+          ready: false,
+          replayRequired: true,
+        },
+      },
+    },
+  };
+  const transientConfirmedReady = exactTipReadiness(
+    transientConfirmedStatus,
+    {
+      network: "livenet",
+      nowMs,
+      tipHash,
+      tipHeight,
+    },
+  );
+  assert.equal(transientConfirmedReady.ready, true);
+  assert.equal(
+    transientConfirmedReady.proofSource,
+    "current-confirmed-replay",
+  );
+  assert.equal(
+    exactTipReadiness(
+      {
+        ...transientConfirmedStatus,
+        worker: {
+          ...transientConfirmedStatus.worker,
+          error: "pending backfill failed",
+        },
+      },
+      {
+        network: "livenet",
+        nowMs,
+        tipHash,
+        tipHeight,
+      },
+    ).ready,
+    false,
+    "a transient confirmed proof cannot bypass an active worker error",
   );
 });
 

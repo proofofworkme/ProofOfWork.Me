@@ -1936,14 +1936,14 @@ expect(
   ),
 );
 expectAll(
-  "AMO V8 worker never publishes ready before the backfill-owned pending witness is exact",
+  "AMO V8 worker publishes confirmed readiness while keeping pending witness readiness separate",
   proofIndexerWorker,
   [
     /export function workerWorkPrecisionPendingWitnessReady[\s\S]*witness\.ready === true[\s\S]*WORK_SUBATOM_PROJECTION_MODEL[\s\S]*canonicalWorkerMempoolSnapshot/,
     /async function assertWorkPrecisionPendingReady[\s\S]*stableCore[\s\S]*stableMempool[\s\S]*workerWorkPrecisionPendingWitnessReady/,
     /pendingRequired: true,[\s\S]*ready: false,[\s\S]*state: "canonical-phase-complete"/,
     /runCanonicalBeforePending\([\s\S]*runBackfillPhase\(backfillPhases\[0\]\)[\s\S]*pendingStatus = await refreshPendingStatusesSafely\(\);[\s\S]*runBackfillPhase\(backfillPhases\[1\]\)/,
-    /await assertWorkPrecisionPendingReady\([\s\S]*pendingRebuild:[\s\S]*ready: workPrecisionReplay\.ready === true/,
+    /await assertWorkPrecisionPendingReady\([\s\S]*catch \(error\)[\s\S]*pendingReady: false[\s\S]*pendingRebuild:[\s\S]*workPrecisionReplay\.pendingReady !== false/,
   ],
 );
 expectAll(
@@ -1953,7 +1953,7 @@ expectAll(
     /const currentSuccess = \{[\s\S]*workPrecision: runtime\.workPrecision[\s\S]*lastSuccess: currentSuccess/,
     /canonicalPhase,[\s\S]*lastSuccess,[\s\S]*state: "canonical-phase-complete"/,
     /WORK_AMO_V8_TRANSIENT_WORKER_STATES[\s\S]*"canonical-phase-complete"[\s\S]*"running"[\s\S]*"starting"/,
-    /lastSuccess\.workPrecision[\s\S]*stateReady[\s\S]*durableReplay\.ready === true[\s\S]*replay\.tipHash === normalizedHash\(tipHash\)/,
+    /function confirmedReplayProof[\s\S]*const confirmed = objectRecord\(replay\.confirmed\)[\s\S]*currentConfirmedProofReady[\s\S]*durableConfirmedProofReady/,
   ],
 );
 expect(

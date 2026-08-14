@@ -6051,11 +6051,6 @@ async function runCycle(pool, lastSuccess, runtime) {
             timedOut: pendingBackfill.timedOut,
           }),
         );
-        if (workPrecision.era === WORK_PRECISION_Q16_ERA) {
-          throw new Error(
-            "Proof index worker cannot complete the AMO V8 cycle until the backfill-owned pending projection is rebuilt.",
-          );
-        }
       }
     } else {
       await runBackfillWithRetries(backfillEnv, runtime);
@@ -6194,14 +6189,38 @@ async function runCycle(pool, lastSuccess, runtime) {
     pool,
     workPrecision,
   );
-  workPrecisionReplay =
-    workPrecision.era === WORK_PRECISION_Q16_ERA
-      ? await assertWorkPrecisionPendingReady(
-          pool,
-          workPrecision,
-          workPrecisionConfirmedReplay,
-        )
-      : workPrecisionConfirmedReplay;
+  let pendingReadinessError = null;
+  if (workPrecision.era === WORK_PRECISION_Q16_ERA) {
+    try {
+      workPrecisionReplay = await assertWorkPrecisionPendingReady(
+        pool,
+        workPrecision,
+        workPrecisionConfirmedReplay,
+      );
+    } catch (error) {
+      pendingReadinessError = cappedChildError(error?.message ?? error);
+      console.error(
+        JSON.stringify({
+          error: pendingReadinessError,
+          phase: "worker-pending-readiness",
+        }),
+      );
+      workPrecisionReplay = {
+        confirmed: workPrecisionConfirmedReplay,
+        era: WORK_PRECISION_Q16_ERA,
+        pendingError: pendingReadinessError,
+        pendingReady: false,
+        pendingRequired: true,
+        ready: false,
+        replayRequired: true,
+        tipHash: workPrecisionConfirmedReplay.tipHash,
+        tipHeight: workPrecisionConfirmedReplay.tipHeight,
+        transitionCount: workPrecisionConfirmedReplay.transitionCount,
+      };
+    }
+  } else {
+    workPrecisionReplay = workPrecisionConfirmedReplay;
+  }
   runtime.workPrecision = {
     ...workPrecision,
     pendingRebuild:
@@ -6211,7 +6230,9 @@ async function runCycle(pool, lastSuccess, runtime) {
         ? {
             model: WORK_AMO_V8_PENDING_REBUILD_MODEL,
             owner: "backfill",
-            ready: workPrecisionReplay.ready === true,
+            ready:
+              workPrecisionReplay.ready === true &&
+              workPrecisionReplay.pendingReady !== false,
           }
         : "not-configured",
     replay: workPrecisionReplay,

@@ -37,6 +37,23 @@ function replayCommitmentsEqual(leftValue, rightValue) {
   return Object.keys(left).every((key) => left[key] === right[key]);
 }
 
+function confirmedReplayProof(value) {
+  const replay = objectRecord(value);
+  const confirmed = objectRecord(replay.confirmed);
+  const proof = confirmed.ready === true ? confirmed : replay;
+  const tipHeight = Number(proof.tipHeight);
+  const tipHash = normalizedHash(proof.tipHash);
+  return {
+    ready:
+      proof.ready === true &&
+      proof.replayRequired === true &&
+      Number.isSafeInteger(tipHeight) &&
+      /^[0-9a-f]{64}$/u.test(tipHash),
+    tipHash,
+    tipHeight: Number.isSafeInteger(tipHeight) ? tipHeight : null,
+  };
+}
+
 export function exactWorkAmoV8WorkerLastSuccessReadiness(
   operationalStatus,
   { network, tipHash, tipHeight },
@@ -62,16 +79,31 @@ export function exactWorkAmoV8WorkerLastSuccessReadiness(
   );
   const idleState = workerState === "idle";
   const stateReady = (idleState || transientState) && !failureActive;
+  const durableConfirmedReplay = confirmedReplayProof(durableReplay);
+  const currentConfirmedReplay = confirmedReplayProof(currentReplay);
+  const normalizedTargetHash = normalizedHash(tipHash);
+  const currentConfirmedProofReady =
+    operationalStatus?.network === network &&
+    worker.network === network &&
+    stateReady &&
+    transientState &&
+    currentWorkPrecision.era === "q16" &&
+    currentConfirmedReplay.ready === true &&
+    currentConfirmedReplay.tipHeight === tipHeight &&
+    currentConfirmedReplay.tipHash === normalizedTargetHash;
   const idleProofReady =
     !idleState ||
     (worker.ok === true &&
       String(worker.finishedAt ?? "") === finishedAt &&
       currentWorkPrecision.era === "q16" &&
-      currentReplay.era === "q16" &&
-      currentReplay.ready === true &&
-      replayCommitmentsEqual(currentReplay, durableReplay));
+      (currentReplay.ready === true
+        ? replayCommitmentsEqual(currentReplay, durableReplay)
+        : currentConfirmedReplay.ready === true &&
+          durableConfirmedReplay.ready === true &&
+          currentConfirmedReplay.tipHeight === durableConfirmedReplay.tipHeight &&
+          currentConfirmedReplay.tipHash === durableConfirmedReplay.tipHash));
   const replay = replayCommitments(durableReplay);
-  const ready =
+  const durableConfirmedProofReady =
     operationalStatus?.network === network &&
     worker.network === network &&
     stateReady &&
@@ -79,13 +111,18 @@ export function exactWorkAmoV8WorkerLastSuccessReadiness(
     finishedAt.length > 0 &&
     String(worker.lastSuccessAt ?? "") === finishedAt &&
     durableWorkPrecision.era === "q16" &&
+    durableConfirmedReplay.ready === true &&
+    durableConfirmedReplay.tipHeight === tipHeight &&
+    durableConfirmedReplay.tipHash === normalizedTargetHash;
+  const pendingReady =
+    durableConfirmedProofReady &&
     durableReplay.era === "q16" &&
     durableReplay.ready === true &&
     durableReplay.replayRequired === true &&
     Number.isSafeInteger(replay.tipHeight) &&
     replay.tipHeight === tipHeight &&
     /^[0-9a-f]{64}$/u.test(replay.tipHash) &&
-    replay.tipHash === normalizedHash(tipHash) &&
+    replay.tipHash === normalizedTargetHash &&
     Number.isSafeInteger(replay.mempoolCount) &&
     replay.mempoolCount >= 0 &&
     /^[0-9a-f]{64}$/u.test(replay.mempoolSha256) &&
@@ -93,6 +130,10 @@ export function exactWorkAmoV8WorkerLastSuccessReadiness(
     replay.pendingMembershipCount >= 0 &&
     /^[0-9a-f]{64}$/u.test(replay.pendingMembershipSha256) &&
     /^[0-9a-f]{64}$/u.test(replay.pendingProjectionSha256);
+  const ready = currentConfirmedProofReady || durableConfirmedProofReady;
+  const proofReplay = currentConfirmedProofReady
+    ? currentConfirmedReplay
+    : durableConfirmedReplay;
   return {
     era: String(durableWorkPrecision.era ?? ""),
     failureActive,
@@ -107,13 +148,16 @@ export function exactWorkAmoV8WorkerLastSuccessReadiness(
         : null,
     pendingMembershipSha256: replay.pendingMembershipSha256,
     pendingProjectionSha256: replay.pendingProjectionSha256,
-    proofSource: idleState ? "idle-last-success" : "last-success",
+    pendingReady,
+    proofSource: currentConfirmedProofReady
+      ? "current-confirmed-replay"
+      : idleState
+        ? "idle-confirmed-replay"
+        : "last-success-confirmed-replay",
     ready,
     state: workerState,
-    tipHash: replay.tipHash,
-    tipHeight: Number.isSafeInteger(replay.tipHeight)
-      ? replay.tipHeight
-      : null,
+    tipHash: proofReplay.tipHash,
+    tipHeight: proofReplay.tipHeight,
   };
 }
 
