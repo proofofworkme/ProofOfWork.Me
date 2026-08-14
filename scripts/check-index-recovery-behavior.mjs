@@ -7065,7 +7065,7 @@ check("token send preflight retries transient canonical reads only", async () =>
   );
 });
 
-check("fresh wallet token reads fall back only to exact canonical coverage", async () => {
+check("fresh wallet token reads use exact or bounded canonical coverage", async () => {
   const blockHash = "7".repeat(64);
   const exactGate = {
     atTip: true,
@@ -7110,6 +7110,8 @@ check("fresh wallet token reads fall back only to exact canonical coverage", asy
       proofIndexReadFeatureEnabled: () => true,
       proofIndexWalletScopedTokenPayloadForRead: async () => null,
       tokenPayloadMatchesCanonicalGate: () => false,
+      tokenPayloadMatchesCanonicalFreshGate: () => false,
+      tokenPayloadMatchesCanonicalIndexedGate: () => false,
       tokenPayloadWithWalletActiveListings: async (payload) => payload,
       tokenPayloadForRead: async () => {
         broadFallbackReads += 1;
@@ -7159,6 +7161,12 @@ check("fresh wallet token reads fall back only to exact canonical coverage", asy
       tokenPayloadMatchesCanonicalGate: (payload, gate) =>
         Number(payload?.indexedThroughBlock) === gate.indexedThroughBlock &&
         payload?.indexedThroughBlockHash === gate.canonicalHash,
+      tokenPayloadMatchesCanonicalFreshGate: (payload, gate) =>
+        Number(payload?.indexedThroughBlock) === gate.indexedThroughBlock &&
+        payload?.indexedThroughBlockHash === gate.canonicalHash,
+      tokenPayloadMatchesCanonicalIndexedGate: (payload, gate) =>
+        Number(payload?.indexedThroughBlock) === gate.indexedThroughBlock &&
+        payload?.indexedThroughBlockHash === gate.canonicalHash,
       tokenPayloadScopedToAddresses: (payload, addresses) => {
         scopedReads += 1;
         return {
@@ -7192,6 +7200,90 @@ check("fresh wallet token reads fall back only to exact canonical coverage", asy
   assert.equal(fallbackCurrent.walletScoped, true);
   assert.equal(scopedReads, 1);
 
+  let lastGoodScopedReads = 0;
+  const lastGoodGate = {
+    atTip: false,
+    available: true,
+    canonicalHash: "8".repeat(64),
+    indexedThroughBlock: 200,
+    lagBlocks: 1,
+    ok: true,
+    storedHash: "8".repeat(64),
+    tipHeight: 201,
+  };
+  const lastGoodWalletScopedTokenPayload = isolatedFunction(
+    API_PATH,
+    "walletScopedTokenPayload",
+    {
+      BOND_TOKEN_IDS: new Set(),
+      WALLET_SCOPED_INDEX_WAIT_MS: 10_000,
+      WALLET_SCOPED_RECOVERY_WAIT_MS: 1,
+      WORK_TOKEN_ID: "work-token-id",
+      cachedTokenPayloadFallbackForRead: async () => {
+        throw new Error("bounded indexed payload should satisfy the read");
+      },
+      currentExactTipTokenPayloadForRead: async () => null,
+      currentMemoryTokenPayloadForRead: async () => null,
+      currentProofIndexTokenPayloadForRead: async () => ({
+        holders: [{ address: "sender", balance: 1, tokenId: "work-token-id" }],
+        indexedThroughBlock: 200,
+        indexedThroughBlockHash: "8".repeat(64),
+        tokens: [{ tokenId: "work-token-id" }],
+      }),
+      normalizeTokenScope: (value) => value,
+      proofIndexReadFeatureEnabled: () => true,
+      proofIndexWalletScopedTokenPayloadForRead: async () => null,
+      tokenPayloadMatchesCanonicalGate: () => false,
+      tokenPayloadMatchesCanonicalFreshGate: (payload, gate, options = {}) =>
+        options.allowLastGood === true &&
+        Number(payload?.indexedThroughBlock) === gate.indexedThroughBlock &&
+        payload?.indexedThroughBlockHash === gate.canonicalHash,
+      tokenPayloadMatchesCanonicalIndexedGate: (payload, gate) =>
+        Number(payload?.indexedThroughBlock) === gate.indexedThroughBlock &&
+        payload?.indexedThroughBlockHash === gate.canonicalHash,
+      tokenPayloadScopedToAddresses: (payload, addresses) => {
+        lastGoodScopedReads += 1;
+        return {
+          ...payload,
+          holders: payload.holders.filter((holder) =>
+            addresses.includes(holder.address),
+          ),
+          walletScoped: true,
+        };
+      },
+      tokenPayloadWithIndexedWalletOverlay: async (payload) => payload,
+      tokenPayloadWithWalletActiveListings: async (payload) => payload,
+      tokenPayloadForRead: async () => {
+        throw new Error("fresh wallet reads must not use broad fallback reads");
+      },
+      workTokenStateWithRecoveredListingClosesFromTransactions: (payload) =>
+        payload,
+      workTokenStateWithRecoveredListingCloseSales: async (payload) => payload,
+      tokenPayloadWithRecoveredWalletWorkTransfers: async (payload) => payload,
+      payloadWithFallbackAfterMs: async (promise) => await promise,
+      explicitWorkTokenCloseRecoveryTxs: () => [],
+    },
+  );
+  const lastGoodCurrent = await lastGoodWalletScopedTokenPayload(
+    "livenet",
+    "work-token-id",
+    ["sender"],
+    {
+      allowLastGood: true,
+      canonicalReadGate: lastGoodGate,
+      requireCurrent: true,
+    },
+  );
+  assert.equal(lastGoodCurrent.authoritativeWallet, true);
+  assert.equal(lastGoodCurrent.walletScoped, true);
+  assert.equal(lastGoodCurrent.authoritativeWalletCheckpoint.mode, "last-good");
+  assert.equal(
+    lastGoodCurrent.authoritativeWalletCheckpoint.indexedThroughBlock,
+    200,
+  );
+  assert.equal(lastGoodCurrent.authoritativeWalletCheckpoint.lagBlocks, 1);
+  assert.equal(lastGoodScopedReads, 1);
+
   const currentWalletScopedTokenPayload = isolatedFunction(
     API_PATH,
     "walletScopedTokenPayload",
@@ -7208,6 +7300,8 @@ check("fresh wallet token reads fall back only to exact canonical coverage", asy
         holders: [],
         tokens: [{ tokenId: "other-token-id" }],
       }),
+      tokenPayloadMatchesCanonicalGate: () => false,
+      tokenPayloadMatchesCanonicalIndexedGate: () => false,
       tokenPayloadWithWalletActiveListings: async (payload) => payload,
     },
   );
@@ -7299,6 +7393,18 @@ check("fresh public reads can use bounded canonical last-good summaries", async 
     {
       CANONICAL_FRESH_LAST_GOOD_MAX_LAG_BLOCKS: 1,
       WORK_TOKEN_ID: "work-token-id",
+      canonicalGateCanUseBoundedLastGood: (gate) =>
+        gate?.ok === true &&
+        gate.available === true &&
+        gate.atTip !== true &&
+        Number.isSafeInteger(Number(gate.indexedThroughBlock)) &&
+        Number(gate.indexedThroughBlock) > 0 &&
+        /^[0-9a-f]{64}$/u.test(
+          String(gate.canonicalHash ?? "").trim().toLowerCase(),
+        ) &&
+        Number.isSafeInteger(Number(gate.lagBlocks)) &&
+        Number(gate.lagBlocks) >= 0 &&
+        Number(gate.lagBlocks) <= 1,
       canonicalSummarySnapshotReadGateApplies: (pathname) =>
         pathname === "/api/v1/work-floor",
       normalizeTokenScope: (value) =>
@@ -7332,8 +7438,16 @@ check("fresh public reads can use bounded canonical last-good summaries", async 
       new URL("https://wallet.proofofwork.me/api/v1/token?asset=WORK&wallet=1&address=sender"),
       gate,
     ),
+    true,
+    "wallet-scoped WORK reads may use the same bounded checkpoint",
+  );
+  assert.equal(
+    helper(
+      new URL("https://wallet.proofofwork.me/api/v1/token?asset=OTHER&wallet=1&address=sender"),
+      gate,
+    ),
     false,
-    "wallet-scoped reads must stay exact-current",
+    "non-WORK wallet reads stay exact-current",
   );
   assert.equal(
     helper(

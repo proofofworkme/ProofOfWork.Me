@@ -656,7 +656,7 @@ expect(
 );
 expect(
   "fresh reads require canonical exact-tip truth unless a bounded last-good read is explicit",
-  /const serveFreshLastGood =[\s\S]*canonicalFreshReadCanUseLastGood\(url, gate\)/u.test(
+  /let serveFreshLastGood = false[\s\S]*serveFreshLastGood =[\s\S]*canonicalFreshReadCanUseLastGood\(url, gate\)/u.test(
     requestGate,
   ) &&
     /if \(freshRead && gate\.atTip !== true && !serveFreshLastGood\)/u.test(

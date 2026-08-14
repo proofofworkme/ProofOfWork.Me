@@ -2916,6 +2916,61 @@ function walletTokenOverlayMatchesCanonicalGate(overlay, gate) {
   );
 }
 
+function canonicalGateCanUseBoundedLastGood(gate) {
+  if (
+    gate?.ok !== true ||
+    gate.available !== true ||
+    gate.atTip === true ||
+    !Number.isSafeInteger(Number(gate.indexedThroughBlock)) ||
+    Number(gate.indexedThroughBlock) <= 0 ||
+    !/^[0-9a-f]{64}$/u.test(String(gate.canonicalHash ?? "").trim().toLowerCase())
+  ) {
+    return false;
+  }
+  const lagBlocks = Number(gate.lagBlocks);
+  return (
+    Number.isSafeInteger(lagBlocks) &&
+    lagBlocks >= 0 &&
+    lagBlocks <= CANONICAL_FRESH_LAST_GOOD_MAX_LAG_BLOCKS
+  );
+}
+
+function walletTokenOverlayMatchesCanonicalIndexedGate(overlay, gate) {
+  if (!walletTokenOverlayHasExactCheckpoint(overlay)) {
+    return false;
+  }
+  const overlayHeight = Number(overlay.indexedThroughBlock);
+  const overlayHash = String(overlay.indexedThroughBlockHash)
+    .trim()
+    .toLowerCase();
+  const canonicalHash = String(gate?.canonicalHash ?? "")
+    .trim()
+    .toLowerCase();
+  const storedHash = String(gate?.storedHash ?? "")
+    .trim()
+    .toLowerCase();
+  return (
+    Number(gate?.indexedThroughBlock) === overlayHeight &&
+    canonicalHash === overlayHash &&
+    storedHash === overlayHash
+  );
+}
+
+function walletTokenOverlayMatchesCanonicalFreshGate(
+  overlay,
+  gate,
+  { allowLastGood = false } = {},
+) {
+  return (
+    walletTokenOverlayMatchesCanonicalGate(overlay, gate) ||
+    (
+      allowLastGood === true &&
+      canonicalGateCanUseBoundedLastGood(gate) &&
+      walletTokenOverlayMatchesCanonicalIndexedGate(overlay, gate)
+    )
+  );
+}
+
 async function proofIndexWalletScopedTokenPayloadForRead(
   network,
   tokenScope,
@@ -2950,7 +3005,11 @@ async function proofIndexWalletScopedTokenPayloadForRead(
   }
   if (options.requireCurrent === true) {
     const gate = await canonicalPublicReadGate(network, { force: true });
-    if (!walletTokenOverlayMatchesCanonicalGate(overlay, gate)) {
+    if (
+      !walletTokenOverlayMatchesCanonicalFreshGate(overlay, gate, {
+        allowLastGood: options.allowLastGood === true,
+      })
+    ) {
       console.error(
         `Rejected ${label} wallet projection outside the exact canonical tip.`,
       );
@@ -35653,6 +35712,21 @@ function tokenPayloadMatchesCanonicalIndexedGate(payload, canonicalGate) {
   );
 }
 
+function tokenPayloadMatchesCanonicalFreshGate(
+  payload,
+  canonicalGate,
+  { allowLastGood = false } = {},
+) {
+  return (
+    tokenPayloadMatchesCanonicalGate(payload, canonicalGate) ||
+    (
+      allowLastGood === true &&
+      canonicalGateCanUseBoundedLastGood(canonicalGate) &&
+      tokenPayloadMatchesCanonicalIndexedGate(payload, canonicalGate)
+    )
+  );
+}
+
 async function currentCanonicalWorkTokenSummaryPayloadForFreshRead(
   network,
   tokenScope,
@@ -36373,12 +36447,47 @@ async function walletScopedTokenPayload(
   const scope = normalizeTokenScope(tokenScope);
   const requireCurrent =
     options.requireCurrent === true && network === "livenet";
+  const allowLastGood =
+    requireCurrent && options.allowLastGood === true;
+  const canonicalGate =
+    options.canonicalReadGate &&
+    typeof options.canonicalReadGate === "object" &&
+    !Array.isArray(options.canonicalReadGate)
+      ? options.canonicalReadGate
+      : null;
+  const withWalletAuthority = (payload) => {
+    if (!requireCurrent) {
+      return payload;
+    }
+    const checkpointLastGood =
+      allowLastGood &&
+      tokenPayloadMatchesCanonicalIndexedGate(payload, canonicalGate) &&
+      !tokenPayloadMatchesCanonicalGate(payload, canonicalGate);
+    return {
+      ...payload,
+      authoritativeWallet: true,
+      ...(checkpointLastGood
+        ? {
+            authoritativeWalletCheckpoint: {
+              indexedThroughBlock: Number(
+                canonicalGate?.indexedThroughBlock,
+              ),
+              indexedThroughBlockHash: String(
+                canonicalGate?.canonicalHash ?? "",
+              ).trim().toLowerCase(),
+              lagBlocks: Number(canonicalGate?.lagBlocks),
+              mode: "last-good",
+            },
+          }
+        : {}),
+    };
+  };
   const addressScopedPayload = await proofIndexWalletScopedTokenPayloadForRead(
     network,
     scope,
     recoveryAddresses,
     requireCurrent ? "wallet-scoped-token-fresh" : "wallet-scoped-token",
-    { requireCurrent },
+    { allowLastGood, requireCurrent },
   );
   if (addressScopedPayload) {
     const indexedPayload = await tokenPayloadWithWalletActiveListings(
@@ -36399,20 +36508,15 @@ async function walletScopedTokenPayload(
           WALLET_SCOPED_RECOVERY_WAIT_MS,
         )
       : indexedPayload;
-    return requireCurrent
-      ? { ...recoveredPayload, authoritativeWallet: true }
-      : recoveredPayload;
+    return withWalletAuthority(recoveredPayload);
   }
   let payload = null;
   if (requireCurrent) {
-    const canonicalGate =
-      options.canonicalReadGate &&
-      typeof options.canonicalReadGate === "object" &&
-      !Array.isArray(options.canonicalReadGate)
-        ? options.canonicalReadGate
-        : null;
     const exactWalletCandidate = (candidate) =>
-      candidate && tokenPayloadMatchesCanonicalGate(candidate, canonicalGate)
+      candidate &&
+        tokenPayloadMatchesCanonicalFreshGate(candidate, canonicalGate, {
+          allowLastGood,
+        })
         ? candidate
         : null;
     payload = exactWalletCandidate(
@@ -36543,9 +36647,7 @@ async function walletScopedTokenPayload(
       )
     : scopedPayload;
   const resolvedPayload = await finalPayload;
-  return requireCurrent
-    ? { ...resolvedPayload, authoritativeWallet: true }
-    : resolvedPayload;
+  return withWalletAuthority(resolvedPayload);
 }
 
 async function indexedWalletClosedListings(network, tokenScope, addresses) {
@@ -64019,22 +64121,7 @@ function canonicalSummarySnapshotReadGateApplies(pathname) {
 
 function canonicalFreshReadCanUseLastGood(url, gate) {
   const pathname = String(url?.pathname ?? "");
-  if (
-    gate?.ok !== true ||
-    gate.available !== true ||
-    gate.atTip === true ||
-    !Number.isSafeInteger(Number(gate.indexedThroughBlock)) ||
-    Number(gate.indexedThroughBlock) <= 0 ||
-    !/^[0-9a-f]{64}$/u.test(String(gate.canonicalHash ?? "").trim().toLowerCase())
-  ) {
-    return false;
-  }
-  const lagBlocks = Number(gate.lagBlocks);
-  if (
-    !Number.isSafeInteger(lagBlocks) ||
-    lagBlocks < 0 ||
-    lagBlocks > CANONICAL_FRESH_LAST_GOOD_MAX_LAG_BLOCKS
-  ) {
+  if (!canonicalGateCanUseBoundedLastGood(gate)) {
     return false;
   }
   if (canonicalSummarySnapshotReadGateApplies(pathname)) {
@@ -64050,11 +64137,19 @@ function canonicalFreshReadCanUseLastGood(url, gate) {
   const walletReadRequested = /^(?:1|true|yes)$/iu.test(
     String(params.get("wallet") ?? "").trim(),
   );
+  const walletScopedRead =
+    walletReadRequested &&
+    (params.has("address") || params.has("addresses"));
   return (
     tokenScope === WORK_TOKEN_ID &&
-    !walletReadRequested &&
-    !params.has("address") &&
-    !params.has("addresses")
+    (
+      walletScopedRead ||
+      (
+        !walletReadRequested &&
+        !params.has("address") &&
+        !params.has("addresses")
+      )
+    )
   );
 }
 
@@ -64483,6 +64578,7 @@ async function handleRequest(request, response) {
 
     const authenticatedLoopbackRead = internalVerifierRequestAllowed(request);
     let canonicalReadGate = null;
+    let serveFreshLastGood = false;
     if (
       canonicalPublicReadGateApplies(url.pathname) &&
       !authenticatedLoopbackRead
@@ -64498,7 +64594,7 @@ async function handleRequest(request, response) {
         );
         return;
       }
-      const serveFreshLastGood =
+      serveFreshLastGood =
         freshRead && canonicalFreshReadCanUseLastGood(url, gate);
       if (freshRead && gate.atTip !== true && !serveFreshLastGood) {
         errorResponse(
@@ -65251,7 +65347,11 @@ async function handleRequest(request, response) {
               network,
               tokenScope,
               recoveryAddresses,
-              { canonicalReadGate, requireCurrent: freshRead },
+              {
+                allowLastGood: freshRead && serveFreshLastGood,
+                canonicalReadGate,
+                requireCurrent: freshRead,
+              },
             ),
             network,
           ),
