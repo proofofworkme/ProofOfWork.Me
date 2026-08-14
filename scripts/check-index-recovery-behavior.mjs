@@ -41986,6 +41986,82 @@ check("one exact-tip worker predicate preserves only healthy durable Q16 readine
   assert.equal(confirmedOnlyReady.ready, true);
   assert.equal(confirmedOnlyReady.proofSource, "idle-confirmed-replay");
   assert.equal(confirmedOnlyReady.proofReady, true);
+  const durableOnlyIdleStatus = {
+    ...status,
+    worker: {
+      ...status.worker,
+      finishedAt: undefined,
+      lastSuccess: {
+        finishedAt,
+        workPrecision: {
+          era: "q16",
+          replay: {
+            confirmed: {
+              era: "q16",
+              ready: true,
+              replayRequired: true,
+              tipHash,
+              tipHeight,
+            },
+            era: "q16",
+            pendingError: "pending witness unavailable",
+            pendingReady: false,
+            pendingRequired: true,
+            ready: false,
+            replayRequired: true,
+          },
+        },
+      },
+      ok: true,
+      state: "idle",
+      workPrecision: {
+        era: "q16",
+        replay: {
+          era: "q16",
+          pendingReady: false,
+          pendingRequired: true,
+          ready: false,
+          replayRequired: true,
+        },
+      },
+    },
+  };
+  const durableOnlyReady = exactTipReadiness(durableOnlyIdleStatus, {
+    network: "livenet",
+    nowMs,
+    tipHash,
+    tipHeight,
+  });
+  assert.equal(durableOnlyReady.ready, true);
+  assert.equal(durableOnlyReady.proofSource, "idle-confirmed-replay");
+  assert.equal(durableOnlyReady.proofReady, true);
+  assert.equal(
+    exactTipReadiness(
+      {
+        ...durableOnlyIdleStatus,
+        worker: {
+          ...durableOnlyIdleStatus.worker,
+          lastSuccess: {
+            ...durableOnlyIdleStatus.worker.lastSuccess,
+            workPrecision: {
+              era: "q16",
+              replay: {
+                era: "q16",
+                pendingError: "pending witness unavailable",
+                pendingReady: false,
+                pendingRequired: true,
+                ready: false,
+                replayRequired: true,
+              },
+            },
+          },
+        },
+      },
+      { network: "livenet", nowMs, tipHash, tipHeight },
+    ).ready,
+    false,
+    "idle durable-only readiness requires an explicit confirmed proof",
+  );
   const transientConfirmedStatus = {
     ...status,
     worker: {

@@ -99,17 +99,31 @@ export function exactWorkAmoV8WorkerLastSuccessReadiness(
     currentConfirmedReplay.ready === true &&
     currentConfirmedReplay.tipHeight === tipHeight &&
     currentConfirmedReplay.tipHash === normalizedTargetHash;
+  const currentFullReplayReady = currentReplay.ready === true;
+  const currentConfirmedReplayReady =
+    currentConfirmedReplay.ready === true;
+  const currentConfirmedMatchesDurable =
+    currentConfirmedReplayReady &&
+    durableConfirmedReplay.ready === true &&
+    currentConfirmedReplay.tipHeight === durableConfirmedReplay.tipHeight &&
+    currentConfirmedReplay.tipHash === durableConfirmedReplay.tipHash;
+  const idleDurableConfirmedProofReady =
+    !currentFullReplayReady &&
+    !currentConfirmedReplayReady &&
+    currentReplay.replayRequired === true &&
+    durableConfirmedReplay.ready === true &&
+    durableConfirmedReplay.tipHeight === tipHeight &&
+    durableConfirmedReplay.tipHash === normalizedTargetHash;
   const idleProofReady =
     !idleState ||
     (worker.ok === true &&
-      String(worker.finishedAt ?? "") === finishedAt &&
+      String(worker.lastSuccessAt ?? "") === finishedAt &&
       currentWorkPrecision.era === "q16" &&
-      (currentReplay.ready === true
+      (currentFullReplayReady
         ? replayCommitmentsEqual(currentReplay, durableReplay)
-        : currentConfirmedReplay.ready === true &&
-          durableConfirmedReplay.ready === true &&
-          currentConfirmedReplay.tipHeight === durableConfirmedReplay.tipHeight &&
-          currentConfirmedReplay.tipHash === durableConfirmedReplay.tipHash));
+        : currentConfirmedReplayReady
+          ? currentConfirmedMatchesDurable
+          : idleDurableConfirmedProofReady));
   const replay = replayCommitments(durableReplay);
   const durableConfirmedProofReady =
     operationalStatus?.network === network &&

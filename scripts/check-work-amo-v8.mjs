@@ -1342,6 +1342,51 @@ for (const state of ["starting", "running", "canonical-phase-complete"]) {
     `${state} preserves the last fully successful Q16 proof`,
   );
 }
+assert.equal(
+  exactWorkAmoV8WorkerReadiness(
+    {
+      network: "livenet",
+      worker: {
+        ...successfulWorker,
+        finishedAt: undefined,
+        lastSuccess: {
+          finishedAt: readinessFinishedAt,
+          workPrecision: {
+            era: "q16",
+            replay: {
+              confirmed: {
+                era: "q16",
+                ready: true,
+                replayRequired: true,
+                tipHash: readinessTipHash,
+                tipHeight: readinessTipHeight,
+              },
+              era: "q16",
+              pendingError: "pending witness unavailable",
+              pendingReady: false,
+              pendingRequired: true,
+              ready: false,
+              replayRequired: true,
+            },
+          },
+        },
+        workPrecision: {
+          era: "q16",
+          replay: {
+            era: "q16",
+            pendingReady: false,
+            pendingRequired: true,
+            ready: false,
+            replayRequired: true,
+          },
+        },
+      },
+    },
+    readinessOptions,
+  ).ready,
+  true,
+  "idle Q16 readiness preserves a matching durable confirmed proof while pending remains unavailable",
+);
 for (const [label, workerPatch] of [
   ["active error", { error: "pending verifier failed" }],
   ["consecutive failure", { consecutiveFailures: 1 }],

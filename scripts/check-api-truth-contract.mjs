@@ -1704,7 +1704,7 @@ expect(
     /function confirmedReplayProof[\s\S]*const confirmed = objectRecord\(replay\.confirmed\)[\s\S]*currentConfirmedProofReady[\s\S]*durableConfirmedProofReady/u.test(
       workAmoV8WorkerReadiness,
     ) &&
-    /idleProofReady[\s\S]*currentReplay\.ready === true[\s\S]*replayCommitmentsEqual\(currentReplay, durableReplay\)[\s\S]*currentConfirmedReplay\.ready === true[\s\S]*durableConfirmedReplay\.ready === true/u.test(
+    /idleDurableConfirmedProofReady[\s\S]*!currentFullReplayReady[\s\S]*!currentConfirmedReplayReady[\s\S]*durableConfirmedReplay\.ready === true[\s\S]*idleProofReady[\s\S]*currentFullReplayReady[\s\S]*replayCommitmentsEqual\(currentReplay, durableReplay\)[\s\S]*currentConfirmedReplayReady[\s\S]*currentConfirmedMatchesDurable[\s\S]*idleDurableConfirmedProofReady/u.test(
       workAmoV8WorkerReadiness,
     ),
 );
