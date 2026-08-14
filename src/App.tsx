@@ -15296,6 +15296,7 @@ function mergeListingAnchorOutpoints(
 async function fetchFreshWalletTokenListingsForAnchors(
   walletAddress: string,
   tokenScope: string,
+  options: { allowCurrentFallback?: boolean } = {},
 ) {
   let lastError: unknown;
   for (const delayMs of TOKEN_SPENDABLE_RECHECK_DELAYS_MS) {
@@ -15331,6 +15332,24 @@ async function fetchFreshWalletTokenListingsForAnchors(
       }
     }
   }
+  if (options.allowCurrentFallback) {
+    const params = new URLSearchParams({
+      address: walletAddress,
+      asset: tokenScope,
+      wallet: "1",
+    });
+    const payload = await fetchProofApiJson<PowTokenApiResponse>(
+      `/api/v1/token?${params.toString()}`,
+      "livenet",
+    );
+    if (
+      payload.walletScoped === true &&
+      String(payload.source ?? "").trim() &&
+      Array.isArray(payload.listings)
+    ) {
+      return normalizeTokenListingRecords(payload.listings);
+    }
+  }
   throw lastError ?? new Error("Fresh wallet listing verification failed.");
 }
 
@@ -15356,6 +15375,10 @@ async function fetchFreshProofOfWorkListingAnchorOutpoints(
         fetchFreshWalletTokenListingsForAnchors(
           normalizedAddress,
           tokenScope,
+          {
+            allowCurrentFallback:
+              tokenScope === POWB_TOKEN_ID || tokenScope === INCB_TOKEN_ID,
+          },
         ),
       ),
     ]);

@@ -1774,10 +1774,10 @@ expect(
 );
 expect(
   "all ProofOfWork sale-ticket anchors are freshly excluded from funding selection",
-  /async function fetchFreshWalletTokenListingsForAnchors[\s\S]*fresh: "1"[\s\S]*wallet: "1"[\s\S]*authoritativeWallet !== true[\s\S]*walletScoped !== true[\s\S]*Array\.isArray\(payload\.listings\)/.test(
+  /async function fetchFreshWalletTokenListingsForAnchors[\s\S]*fresh: "1"[\s\S]*wallet: "1"[\s\S]*authoritativeWallet !== true[\s\S]*walletScoped !== true[\s\S]*Array\.isArray\(payload\.listings\)[\s\S]*options\.allowCurrentFallback[\s\S]*wallet: "1"[\s\S]*payload\.walletScoped === true[\s\S]*Array\.isArray\(payload\.listings\)/.test(
     app,
   ) &&
-    /async function fetchFreshProofOfWorkListingAnchorOutpoints[\s\S]*\["", WORK_TOKEN_ID, POWB_TOKEN_ID, INCB_TOKEN_ID\][\s\S]*fetchIdRegistryState\(network, true\)[\s\S]*fetchFreshWalletTokenListingsForAnchors[\s\S]*activeListingAnchorOutpointsForAddress[\s\S]*activeTokenListingAnchorOutpointsForAddress[\s\S]*No transaction was created/.test(
+    /async function fetchFreshProofOfWorkListingAnchorOutpoints[\s\S]*\["", WORK_TOKEN_ID, POWB_TOKEN_ID, INCB_TOKEN_ID\][\s\S]*fetchIdRegistryState\(network, true\)[\s\S]*fetchFreshWalletTokenListingsForAnchors[\s\S]*allowCurrentFallback:[\s\S]*tokenScope === POWB_TOKEN_ID \|\| tokenScope === INCB_TOKEN_ID[\s\S]*activeListingAnchorOutpointsForAddress[\s\S]*activeTokenListingAnchorOutpointsForAddress[\s\S]*No transaction was created/.test(
     app,
   ) &&
     /fetchFreshProofOfWorkListingAnchorOutpoints/.test(
