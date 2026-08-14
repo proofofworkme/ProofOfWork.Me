@@ -199,6 +199,7 @@ import {
   WORK_AMO_V8_RELIC_CUTOVER_MODEL,
   WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL,
   WORK_AMO_V8_TRANSFER_VERSION,
+  validateWorkAmoV8DeclarationEvidence,
   validateWorkAmoV8StaticAuthorization,
   workAmoV8BroadcastDecision,
   workAmoV8CanonicalTokenStateCommitment,
@@ -9065,6 +9066,44 @@ async function workAmoV8ExactReadinessSweep(
   };
 }
 
+function workAmoV8PersistentDeclarationEvidence(
+  activationLatch,
+  expectedDeclaration,
+) {
+  if (
+    activationLatch?.reached !== true ||
+    activationLatch?.coreVerified !== true ||
+    activationLatch?.indexVerified !== true ||
+    activationLatch?.evidenceComplete !== true ||
+    !expectedDeclaration
+  ) {
+    return null;
+  }
+  const evidence = {
+    activationHeight: expectedDeclaration.activationHeight,
+    authorityScriptPubKey: expectedDeclaration.authorityScriptPubKey,
+    blockHash: expectedDeclaration.blockHash,
+    blockHeight: expectedDeclaration.blockHeight,
+    blockTransactionIndex: expectedDeclaration.blockTransactionIndex,
+    canonical: true,
+    confirmed: true,
+    evidenceComplete: true,
+    minimumPaymentSats: expectedDeclaration.minimumPaymentSats,
+    payloadBytes: expectedDeclaration.payloadBytes,
+    payloadSha256: expectedDeclaration.payloadSha256,
+    protocolVout: expectedDeclaration.protocolVout,
+    recordOrdinal: expectedDeclaration.recordOrdinal,
+    registryAddress: expectedDeclaration.registryAddress,
+    registryPaymentVout: expectedDeclaration.registryPaymentVout,
+    txid: expectedDeclaration.txid,
+  };
+  return validateWorkAmoV8DeclarationEvidence(evidence, {
+    expectedDeclaration,
+  }).valid === true
+    ? evidence
+    : null;
+}
+
 async function workAmoV8Metadata(
   network,
   {
@@ -9225,6 +9264,11 @@ async function workAmoV8Metadata(
           expectedDeclaration,
         ).catch(() => null)
       : null;
+  const persistentDeclarationEvidence =
+    workAmoV8PersistentDeclarationEvidence(
+      configuredActivationLatch,
+      expectedDeclaration,
+    );
   try {
     const reusableProbe =
       exactReadinessProbe &&
@@ -9430,11 +9474,17 @@ async function workAmoV8Metadata(
       .toLowerCase() === tipHash &&
     tipVerified;
   const indexReady = confirmedMigrationReady;
-  const combinedEvidence = evidence
+  const liveEvidenceReady =
+    validateWorkAmoV8DeclarationEvidence(evidence, {
+      expectedDeclaration,
+    }).valid === true;
+  const statusEvidence =
+    liveEvidenceReady ? evidence : persistentDeclarationEvidence ?? evidence;
+  const combinedEvidence = statusEvidence
     ? {
-        ...evidence,
+        ...statusEvidence,
         evidenceComplete:
-          evidence.evidenceComplete === true &&
+          statusEvidence.evidenceComplete === true &&
           migrationReadiness?.evidenceComplete === true,
       }
     : null;

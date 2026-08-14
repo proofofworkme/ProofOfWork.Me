@@ -58567,6 +58567,49 @@ check("AMO V8 request coalescing binds exact reader identity and live inputs", (
     registryPaymentVout: 0,
     txid: "e".repeat(64),
   };
+  const persistentEvidenceForDeclaration = isolatedFunction(
+    API_PATH,
+    "workAmoV8PersistentDeclarationEvidence",
+    {
+      validateWorkAmoV8DeclarationEvidence: (evidence, options) => ({
+        valid:
+          evidence?.canonical === true &&
+          evidence?.confirmed === true &&
+          evidence?.evidenceComplete === true &&
+          evidence?.txid === options.expectedDeclaration.txid &&
+          Number(evidence?.minimumPaymentSats) ===
+            options.expectedDeclaration.minimumPaymentSats,
+      }),
+    },
+  );
+  const persistentEvidence = persistentEvidenceForDeclaration(
+    {
+      coreVerified: true,
+      evidenceComplete: true,
+      indexVerified: true,
+      reached: true,
+    },
+    expectedDeclaration,
+  );
+  assert.equal(persistentEvidence.confirmed, true);
+  assert.equal(persistentEvidence.canonical, true);
+  assert.equal(persistentEvidence.evidenceComplete, true);
+  assert.equal(
+    persistentEvidence.minimumPaymentSats,
+    expectedDeclaration.minimumPaymentSats,
+  );
+  assert.equal(
+    persistentEvidenceForDeclaration(
+      {
+        coreVerified: true,
+        evidenceComplete: false,
+        indexVerified: true,
+        reached: true,
+      },
+      expectedDeclaration,
+    ),
+    null,
+  );
   const liveMempoolSnapshot = {
     count: 7,
     model: "canonical-core-mempool-txid-set-v1",
@@ -58732,6 +58775,10 @@ check("AMO V8 request coalescing binds exact reader identity and live inputs", (
   assert.match(
     metadataSource,
     /workAmoV8ExactReadinessSweep[\s\S]*pendingValidThrough/u,
+  );
+  assert.match(
+    metadataSource,
+    /const persistentDeclarationEvidence =[\s\S]*workAmoV8PersistentDeclarationEvidence[\s\S]*const liveEvidenceReady =[\s\S]*validateWorkAmoV8DeclarationEvidence[\s\S]*const statusEvidence =[\s\S]*persistentDeclarationEvidence[\s\S]*const combinedEvidence = statusEvidence/u,
   );
   const sweepSource = topLevelFunctionSource(
     API_PATH,
