@@ -1508,7 +1508,7 @@ expect(
     /function applyWorkFloorQuote[\s\S]*boundaryWasLatched[\s\S]*failClosedWorkAmoV8Status[\s\S]*work-amo-v8-exact-tip-regressed/.test(
       app,
     ) &&
-    /function clearResolvedWorkAmoV8DeclarationPauseStatus[\s\S]*workV8WriteAdmissionReady\(quote\)[\s\S]*status\?\.listingWritesEnabled !== true[\s\S]*status\?\.settlementWritesEnabled !== true[\s\S]*work-amo-v8-declaration-evidence-mismatch[\s\S]*WORK AMO V8 write admission is ready/.test(
+    /function clearResolvedWorkAmoV8DeclarationPauseStatus[\s\S]*workV8WriteAdmissionReady\(quote\)[\s\S]*status\?\.listingWritesEnabled !== true[\s\S]*status\?\.settlementWritesEnabled !== true[\s\S]*work-amo-v8-declaration-evidence-\(\?:mismatch\|unavailable\)[\s\S]*WORK AMO V8 write admission is ready/.test(
       app,
     ) &&
     /function applyWorkFloorQuote[\s\S]*setWorkFloorQuote\(safetyBoundQuote\);[\s\S]*clearResolvedWorkAmoV8DeclarationPauseStatus\(safetyBoundQuote\)/.test(

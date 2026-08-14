@@ -1357,6 +1357,16 @@ export function validateWorkAmoV8DeclarationEvidence(
       "work-amo-v8-declaration-commitment-unconfigured",
     );
   }
+  if (
+    !evidence ||
+    typeof evidence !== "object" ||
+    Array.isArray(evidence) ||
+    evidence.confirmed !== true ||
+    evidence.canonical !== true ||
+    evidence.evidenceComplete !== true
+  ) {
+    return invalid("work-amo-v8-declaration-evidence-unavailable");
+  }
   const evidencePosition = normalizeWorkAmoCanonicalPosition({
     blockHash: evidence?.blockHash,
     blockHeight: evidence?.blockHeight,
@@ -1366,9 +1376,6 @@ export function validateWorkAmoV8DeclarationEvidence(
     recordOrdinal: evidence?.recordOrdinal,
   });
   if (
-    evidence?.confirmed !== true ||
-    evidence?.canonical !== true ||
-    evidence?.evidenceComplete !== true ||
     normalizedTxid(evidence?.txid ?? evidence?.declarationTxid) !==
       expected.txid ||
     !samePosition(evidencePosition, expected) ||

@@ -1089,8 +1089,22 @@ const reachedWithoutEvidence = workAmoV8StatusFromEvidence({
 });
 assert.equal(reachedWithoutEvidence.activation.reached, true);
 assert.equal(reachedWithoutEvidence.activation.active, false);
+assert.equal(
+  reachedWithoutEvidence.activation.reasonCode,
+  "work-amo-v8-declaration-evidence-unavailable",
+);
 assert.equal(reachedWithoutEvidence.protocolReady, false);
 assert.equal(reachedWithoutEvidence.writeAdmission, false);
+assert.equal(
+  workAmoV8StatusFromEvidence({
+    evidence: { ...declarationEvidence, payloadBytes: 1 },
+    expectedDeclaration,
+    indexedThroughBlock: listingBlockHeight,
+    precisionMigrationReady: true,
+    protocolWritesEnabled: true,
+  }).activation.reasonCode,
+  "work-amo-v8-declaration-evidence-mismatch",
+);
 assert.deepEqual(
   workAmoV8BroadcastDecision(
     [

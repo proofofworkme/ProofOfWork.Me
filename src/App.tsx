@@ -19805,7 +19805,7 @@ export default function App() {
     setStatus((current) => {
       if (
         current.tone !== "bad" ||
-        !/(?:WORK precision writes are paused|AMO V8 subatom listing writes are paused|AMO governed settlement writes are paused)[\s\S]*\(work-amo-v8-declaration-evidence-mismatch\)/u.test(
+        !/(?:WORK precision writes are paused|AMO V8 subatom listing writes are paused|AMO governed settlement writes are paused)[\s\S]*\(work-amo-v8-declaration-evidence-(?:mismatch|unavailable)\)/u.test(
           current.text,
         )
       ) {

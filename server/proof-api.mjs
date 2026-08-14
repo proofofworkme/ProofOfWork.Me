@@ -9323,9 +9323,16 @@ async function workAmoV8Metadata(
           expectedDeclaration,
         ).catch(() => null)
       : null;
+  const durableActivationLatch =
+    configuredActivationLatch?.reached === true
+      ? configuredActivationLatch
+      : configuredPinsMatchPersistent &&
+          persistentActivationLatch?.reached === true
+        ? persistentActivationLatch
+        : null;
   const persistentDeclarationEvidence =
     workAmoV8PersistentDeclarationEvidence(
-      configuredActivationLatch,
+      durableActivationLatch,
       expectedDeclaration,
     );
   try {
@@ -9538,7 +9545,7 @@ async function workAmoV8Metadata(
       expectedDeclaration,
     }).valid === true;
   const statusEvidence =
-    liveEvidenceReady ? evidence : persistentDeclarationEvidence ?? evidence;
+    liveEvidenceReady ? evidence : persistentDeclarationEvidence ?? null;
   const combinedEvidence = statusEvidence
     ? {
         ...statusEvidence,

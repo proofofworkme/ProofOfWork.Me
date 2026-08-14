@@ -59438,7 +59438,7 @@ check("AMO V8 request coalescing binds exact reader identity and live inputs", (
   );
   assert.match(
     metadataSource,
-    /const persistentDeclarationEvidence =[\s\S]*workAmoV8PersistentDeclarationEvidence[\s\S]*const liveEvidenceReady =[\s\S]*validateWorkAmoV8DeclarationEvidence[\s\S]*const statusEvidence =[\s\S]*persistentDeclarationEvidence[\s\S]*const combinedEvidence = statusEvidence/u,
+    /const durableActivationLatch =[\s\S]*configuredActivationLatch\?\.reached === true[\s\S]*configuredPinsMatchPersistent[\s\S]*persistentActivationLatch\?\.reached === true[\s\S]*const persistentDeclarationEvidence =[\s\S]*workAmoV8PersistentDeclarationEvidence\([\s\S]*durableActivationLatch[\s\S]*const liveEvidenceReady =[\s\S]*validateWorkAmoV8DeclarationEvidence[\s\S]*const statusEvidence =[\s\S]*persistentDeclarationEvidence \?\? null[\s\S]*const combinedEvidence = statusEvidence/u,
   );
   const sweepSource = topLevelFunctionSource(
     API_PATH,
