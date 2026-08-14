@@ -37150,7 +37150,7 @@ async function tokenPayloadWithWalletActiveListings(
   const indexedPayload =
     indexedListings.length > 0
       ? {
-          ...tokenStateWithPreservedListingRecords(payload, {
+          ...tokenStateWithRecoveredActiveListingRecords(payload, {
             listings: indexedListings,
           }),
           indexedAt: newerIso(
@@ -37179,7 +37179,7 @@ async function tokenPayloadWithWalletActiveListings(
   );
 
   let scopedPayload = listings.length > 0
-    ? tokenStateWithPreservedListingRecords(currentIndexedPayload, { listings })
+    ? tokenStateWithRecoveredActiveListingRecords(currentIndexedPayload, { listings })
     : currentIndexedPayload;
   if (listings.length > 0) {
     const spendable = await filterSpendableTokenListings(listings, network);

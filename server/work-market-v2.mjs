@@ -59,6 +59,7 @@ const LEGACY_WORK_MARKET_AUTH_VERSIONS = new Set([
 const WORK_MARKET_SUCCESSOR_AUTH_VERSIONS = new Set([
   "pwt-sale-v5",
   "pwt-sale-v6",
+  "pwt-sale-v8",
 ]);
 const WORK_MARKET_V1_REFUND_LISTINGS_BY_ID = new Map(
   workMarketV1RefundSnapshot.listings.flatMap((listing) => {

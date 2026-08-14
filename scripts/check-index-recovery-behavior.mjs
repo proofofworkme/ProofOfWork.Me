@@ -7223,7 +7223,7 @@ check("fresh wallet token reads fall back only to exact canonical coverage", asy
 check("wallet WORK overlay recovers active canonical V8 listings and drops matching invalid attempts", async () => {
   const listingId = "07c9ca719adf7a7e94ff17c917e599e872ae1c0348f282219907c060a72b8043";
   const sellerAddress = "17W7JZ9KjjGUwdAyXeGxhzYe2vGe8YTRzA";
-  const workTokenId = "work-token-id";
+  const workTokenId = WORK_TOKEN_ID;
   let readParams = null;
   let recoveryPageCoversTip = true;
   const indexedWalletActiveListings = isolatedFunction(
@@ -7323,10 +7323,28 @@ check("wallet WORK overlay recovers active canonical V8 listings and drops match
         WORK_AMO_V8_ACTIVATION_HEIGHT: 960_601,
         WORK_AMO_V8_AUTH_VERSION: "pwt-sale-v8",
         WORK_TOKEN_ID: workTokenId,
-        applyWorkMarketV2CutoverToTokenState: (payload) => payload,
+        applyWorkMarketV2CutoverToTokenState,
         normalizeTokenScope: normalizeTestWorkScope,
       },
     );
+  const activeRecoveryState = (state, sourceState) => {
+    const recoveredIds = new Set(
+      (Array.isArray(sourceState?.listings) ? sourceState.listings : [])
+        .map((listing) => String(listing?.listingId ?? "").toLowerCase())
+        .filter(Boolean),
+    );
+    return {
+      ...state,
+      closedListings: (Array.isArray(state?.closedListings)
+        ? state.closedListings
+        : []
+      ).filter(
+        (listing) =>
+          !recoveredIds.has(String(listing?.listingId ?? "").toLowerCase()),
+      ),
+      listings: sourceState.listings,
+    };
+  };
   const tokenPayloadWithWalletActiveListings = isolatedFunction(
     API_PATH,
     "tokenPayloadWithWalletActiveListings",
@@ -7371,9 +7389,26 @@ check("wallet WORK overlay recovers active canonical V8 listings and drops match
       mergedSourceLabel: (left, right) => [left, right].filter(Boolean).join("+"),
       newerIso: (left, right) => right ?? left,
       normalizeTokenScope: normalizeTestWorkScope,
-      tokenPayloadWithoutInvalidEventsForActiveListings: (payload) => payload,
+      tokenPayloadWithoutInvalidEventsForActiveListings: (payload) => {
+        const activeListingIds = new Set(
+          (Array.isArray(payload?.listings) ? payload.listings : [])
+            .map((listing) => String(listing?.listingId ?? "").toLowerCase())
+            .filter(Boolean),
+        );
+        return {
+          ...payload,
+          invalidEvents: (Array.isArray(payload?.invalidEvents)
+            ? payload.invalidEvents
+            : []
+          ).filter(
+            (event) =>
+              !activeListingIds.has(String(event?.txid ?? "").toLowerCase()),
+          ),
+        };
+      },
       tokenPayloadWithCurrentWalletWorkRecoveryListingPolicy,
       tokenSalesWithCanonicalOutspendClosures: (sales) => sales ?? [],
+      tokenStateWithRecoveredActiveListingRecords: activeRecoveryState,
       tokenStateWithPreservedListingRecords: (state, sourceState) => ({
         ...state,
         listings: sourceState.listings,
@@ -7384,6 +7419,12 @@ check("wallet WORK overlay recovers active canonical V8 listings and drops match
     {
       closedListings: [],
       indexedThroughBlock: 962_374,
+      invalidEvents: [{
+        reasonCode: "work-market-v2-version-required",
+        ticker: "WORK",
+        tokenId: workTokenId,
+        txid: listingId,
+      }],
       listings: [],
       network: "livenet",
       sales: [],
@@ -7395,6 +7436,14 @@ check("wallet WORK overlay recovers active canonical V8 listings and drops match
   assert.deepEqual(
     recoveredPayload.listings.map((listing) => listing.listingId),
     [listingId],
+  );
+  assert.equal(
+    recoveredPayload.invalidEvents.some((event) => event.txid === listingId),
+    false,
+  );
+  assert.equal(
+    recoveredPayload.invalidEvents.some((event) => event.txid === legacyListingId),
+    true,
   );
 
   const tokenActiveListingEventKey = isolatedFunction(
@@ -8699,6 +8748,31 @@ check("wallet legacy seal recovery enriches only its confirmed V1/V2 base listin
   assert.equal(cutover.closedListings[0].relic, true);
   assert.equal(cutover.closedListings[0].refundEligible, true);
   assert.equal(cutover.closedListings[0].status, "disabled");
+
+  const v8ListingId =
+    "07c9ca719adf7a7e94ff17c917e599e872ae1c0348f282219907c060a72b8043";
+  const v8Cutover = applyWorkMarketV2CutoverToTokenState({
+    closedListings: [],
+    indexedThroughBlock: 962_378,
+    invalidEvents: [],
+    listings: [{
+      ...baseListing,
+      amountSubatoms: "752009741",
+      blockHeight: 962_104,
+      listingId: v8ListingId,
+      network: "livenet",
+      saleAuthorization: {
+        tokenId: WORK_TOKEN_ID,
+        version: WORK_AMO_V8_AUTH_VERSION,
+      },
+      tokenId: WORK_TOKEN_ID,
+    }],
+    network: "livenet",
+  });
+  assert.equal(v8Cutover.listings.length, 1);
+  assert.equal(v8Cutover.listings[0].listingId, v8ListingId);
+  assert.equal(v8Cutover.closedListings.length, 0);
+  assert.equal(v8Cutover.invalidEvents.length, 0);
 });
 
 check("token payload regression guards compare exact Q16 WORK supply", () => {
