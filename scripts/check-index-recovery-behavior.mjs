@@ -65078,8 +65078,97 @@ check("post-V5 seal positions come only from canonical relational seal rows", as
       validTxid,
       WORK_MARKET_GOVERNED_AUTH_VERSIONS:
         WORK_MARKET_GOVERNED_AUTH_VERSIONS_FIXTURE,
+      WORK_SUBATOM_PROJECTION_MODEL,
+      WORK_TOKEN_ID,
+      isWorkTokenId,
+      workAmountProjectionMetadataForAmount: (amount) => ({
+        amount: amount.amount,
+        amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+        amountSubatoms: amount.amountSubatoms,
+      }),
+      workListingAmountProjection: () => ({
+        amount: "0.0000000000000001",
+        amountSubatoms: "1",
+      }),
     },
   );
+  const staleV8Authorization = {
+    nonce: "stale-listing-row",
+    sellerAddress: "seller",
+    ticker: "WORK",
+    tokenId: WORK_TOKEN_ID,
+    version: WORK_AMO_V8_AUTH_VERSION,
+  };
+  const canonicalSealAuthorization = {
+    ...staleV8Authorization,
+    nonce: "canonical-seal-event",
+  };
+  const canonicalSealedWork = tokenListingFromCreditListingRow(
+    {
+      amount: "1",
+      listing_block_hash: "d".repeat(64),
+      listing_block_height: WORK_AMO_V5_ACTIVATION_HEIGHT,
+      listing_block_time: "2026-07-28T00:00:00.000Z",
+      listing_event_block_hash: "d".repeat(64),
+      listing_event_block_height: WORK_AMO_V5_ACTIVATION_HEIGHT,
+      listing_event_block_index: 6,
+      listing_event_match_count: 1,
+      listing_event_protocol_vout: 2,
+      listing_event_record_ordinal: 0,
+      listing_event_status: "confirmed",
+      listing_id: listingId,
+      listing_transaction_block_index: 6,
+      listing_tx_status: "confirmed",
+      payload: {
+        blockHash: "d".repeat(64),
+        blockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT,
+        blockIndex: 6,
+        listingAuthorization: staleV8Authorization,
+        listingId,
+        protocolVout: 2,
+        recordOrdinal: 0,
+        saleAuthorization: staleV8Authorization,
+        sealConfirmed: true,
+        sealTxid,
+        tokenId: WORK_TOKEN_ID,
+      },
+      price_sats: "546",
+      registry_address: "registry",
+      sale_ticket_value_sats: "546",
+      sale_ticket_vout: 1,
+      seal_event_payload: {
+        listingId,
+        saleAuthorization: canonicalSealAuthorization,
+        tokenId: WORK_TOKEN_ID,
+      },
+      seal_event_block_hash: canonicalSealPosition.sealBlockHash,
+      seal_event_block_height: canonicalSealPosition.sealBlockHeight,
+      seal_event_block_index: canonicalSealPosition.sealBlockIndex,
+      seal_event_match_count: 1,
+      seal_event_protocol_vout: canonicalSealPosition.sealProtocolVout,
+      seal_event_record_ordinal: canonicalSealPosition.sealRecordOrdinal,
+      seal_event_status: "confirmed",
+      seal_transaction_block_height:
+        canonicalSealPosition.sealBlockHeight,
+      seal_tx_status: "confirmed",
+      seal_txid: sealTxid,
+      seller_address: "seller",
+      status: "sealing",
+      token_id: WORK_TOKEN_ID,
+    },
+    "livenet",
+  );
+  assert.deepEqual(
+    canonicalSealedWork.saleAuthorization,
+    canonicalSealAuthorization,
+  );
+  assert.deepEqual(
+    canonicalSealedWork.listingAuthorization,
+    canonicalSealAuthorization,
+  );
+  assert.equal(canonicalSealedWork.sealConfirmed, true);
+  assert.equal(canonicalSealedWork.sealTxid, sealTxid);
+
   const preV5Height = WORK_AMO_V5_ACTIVATION_HEIGHT - 1;
   const legacySealRow = {
     amount: 1,

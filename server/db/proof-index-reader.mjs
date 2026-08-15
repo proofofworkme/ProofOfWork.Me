@@ -14396,7 +14396,9 @@ function canonicalTokenListingSealEventJoinSql(listingAlias = "cl") {
   const alias = canonicalCreditListingAlias(listingAlias);
   return `LEFT JOIN LATERAL (
     SELECT
+      canonical_seal_event_row.payload AS seal_event_payload,
       canonical_seal_event_row.status AS seal_event_status,
+      canonical_seal_event_row.txid AS seal_event_txid,
       canonical_seal_tx.block_hash AS seal_event_block_hash,
       canonical_seal_event_row.block_height AS seal_event_block_height,
       canonical_seal_event_row.block_index AS seal_event_block_index,
@@ -26308,7 +26310,13 @@ function tokenListingFromCreditListingRow(row, network) {
   void ignoredPayloadSealRecordOrdinal;
   void ignoredPayloadSealTransactionBlockHeight;
   void ignoredPayloadSealTxid;
-  const saleAuthorization = objectRecord(payload.saleAuthorization);
+  const rowSaleAuthorization = objectRecord(payload.saleAuthorization);
+  const sealEventPayload = objectRecord(row?.seal_event_payload);
+  const sealEventSaleAuthorization = objectRecord(
+    sealEventPayload.saleAuthorization,
+  );
+  let saleAuthorization = rowSaleAuthorization;
+  let listingAuthorizationPatch = {};
   const status = String(row?.status ?? payload.status ?? "").trim().toLowerCase();
   const terminal = ["sold", "delisted"].includes(status);
   const listingId = String(row?.listing_id ?? payload.listingId ?? "")
@@ -26485,7 +26493,7 @@ function tokenListingFromCreditListingRow(row, network) {
   const governedWorkSeal =
     tokenId === WORK_TOKEN_ID &&
     WORK_MARKET_GOVERNED_AUTH_VERSIONS.has(
-      normalizedLowerText(saleAuthorization.version),
+      normalizedLowerText(rowSaleAuthorization.version),
     );
   const canonicalSealEventRequired =
     governedWorkSeal || postAmoV5Seal;
@@ -26493,6 +26501,23 @@ function tokenListingFromCreditListingRow(row, network) {
     sealTransactionConfirmed &&
     canonicalSealEventRequired &&
     !sealConfirmed;
+  const canonicalSealAuthorizationVersion = normalizedLowerText(
+    sealEventSaleAuthorization.version,
+  );
+  if (
+    sealConfirmed &&
+    governedWorkSeal &&
+    !invalidConfirmedSealEvidence &&
+    normalizedLowerText(sealEventSaleAuthorization.tokenId) === tokenId &&
+    canonicalSealAuthorizationVersion ===
+      normalizedLowerText(rowSaleAuthorization.version) &&
+    Object.keys(sealEventSaleAuthorization).length > 0
+  ) {
+    saleAuthorization = sealEventSaleAuthorization;
+    listingAuthorizationPatch = {
+      listingAuthorization: sealEventSaleAuthorization,
+    };
+  }
   const sealBlockHeight = invalidConfirmedSealEvidence
     ? null
     : postAmoV5Seal
@@ -26894,6 +26919,7 @@ function tokenListingFromCreditListingRow(row, network) {
       row?.registry_address ??
       saleAuthorization.registryAddress,
     saleAuthorization,
+    ...listingAuthorizationPatch,
     saleTicketTxid: tokenListingEffectiveSaleTicketTxid(
       row,
       payload,

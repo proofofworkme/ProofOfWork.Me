@@ -59834,6 +59834,27 @@ function pendingWorkVerifierStageConfirmedListing(value, { closed = false } = {}
       protocolVoutField: "sealProtocolVout",
       recordOrdinalField: "sealRecordOrdinal",
     });
+    const sealedAuthorization = tokenSaleAuthorizationDraft(
+      listing.saleAuthorization ?? listing.listingAuthorization,
+    );
+    if (sealedAuthorization.version === TOKEN_SALE_AUTH_WORK_AMO_V8_VERSION) {
+      const sealedV8Validation =
+        validateWorkAmoV8StaticAuthorization(sealedAuthorization);
+      if (!sealedV8Validation.valid) {
+        throw pendingWorkVerifierStageError(
+          "PENDING_WORK_STAGE_BASE_INVALID",
+          "Canonical sealed WORK listing static authorization is not valid AMO V8 state.",
+          { listingId },
+        );
+      }
+      listing.listingAuthorization = sealedV8Validation.authorization;
+      listing.saleAuthorization = sealedV8Validation.authorization;
+      listing = pendingWorkVerifierStageConfirmedV8Listing(
+        listing,
+        sealedV8Validation.authorization,
+        listingId,
+      );
+    }
   } else {
     let staticAuthorization;
     try {
