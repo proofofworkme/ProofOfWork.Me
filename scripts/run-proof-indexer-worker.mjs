@@ -1886,6 +1886,7 @@ export function workerWorkPrecisionConfirmedReplayEnvelopeReady({
   tipHash,
   tipHeight,
   transitionCount,
+  requireSnapshot = true,
 } = {}) {
   const activation = objectRecord(activationTransition);
   const activationPayload = objectRecord(activation.payload);
@@ -1954,10 +1955,13 @@ export function workerWorkPrecisionConfirmedReplayEnvelopeReady({
         tipHash: normalizedTipHash,
         tipHeight,
       }) &&
-      workerWorkPrecisionSnapshotReady(snapshot, {
-        tipHash: normalizedTipHash,
-        tipHeight,
-      })
+      (
+        requireSnapshot !== true ||
+        workerWorkPrecisionSnapshotReady(snapshot, {
+          tipHash: normalizedTipHash,
+          tipHeight,
+        })
+      )
   );
 }
 
@@ -3518,7 +3522,14 @@ export function workerWorkPrecisionPendingWitnessReady(
   );
 }
 
-async function assertWorkPrecisionReplayReady(pool, precision) {
+async function assertWorkPrecisionReplayReady(
+  pool,
+  precision,
+  {
+    requireCurrentSnapshot = true,
+    requireRelationalParity = true,
+  } = {},
+) {
   if (precision?.era !== WORK_PRECISION_Q16_ERA) {
     return {
       era: precision?.era ?? WORK_PRECISION_Q8_ERA,
@@ -3929,12 +3940,15 @@ async function assertWorkPrecisionReplayReady(pool, precision) {
       tipHash,
       tipHeight,
       transitionCount: row.transition_count,
+      requireSnapshot: requireCurrentSnapshot,
     });
-  const relationalParityReady = workerWorkPrecisionRelationalParity({
-    balanceRows: balanceResult.rows,
-    closingTokenState,
-    listingRows: listingResult.rows,
-  });
+  const relationalParityReady =
+    requireRelationalParity !== true ||
+    workerWorkPrecisionRelationalParity({
+      balanceRows: balanceResult.rows,
+      closingTokenState,
+      listingRows: listingResult.rows,
+    });
   const ready =
     replayEnvelopeReady &&
     commitmentReady &&
@@ -3951,6 +3965,8 @@ async function assertWorkPrecisionReplayReady(pool, precision) {
     closingTokenStateCommitment: closingCommitment,
     era: WORK_PRECISION_Q16_ERA,
     readinessEpochCheckpoint: readinessEpochAfter,
+    requireCurrentSnapshot,
+    requireRelationalParity,
     ready: true,
     replayRequired: true,
     tipHash,
@@ -6180,6 +6196,10 @@ async function runCycle(pool, lastSuccess, runtime) {
       await assertWorkPrecisionReplayReady(
         pool,
         workPrecision,
+        {
+          requireCurrentSnapshot: false,
+          requireRelationalParity: false,
+        },
       );
     workPrecisionReplay =
       workPrecision.era === WORK_PRECISION_Q16_ERA

@@ -1125,6 +1125,18 @@ async function runChecks() {
     workerWorkPrecisionConfirmedReplayEnvelopeReady(replayEnvelope),
     true,
   );
+  assert.equal(
+    workerWorkPrecisionConfirmedReplayEnvelopeReady({
+      ...replayEnvelope,
+      requireSnapshot: false,
+      snapshot: {
+        ...replaySnapshot,
+        summaryBlockHash: "6".repeat(64),
+      },
+    }),
+    true,
+    "the canonical phase may verify transition replay before the summary snapshot exists",
+  );
   for (const mutation of [
     { coreTip: { ...replayCoreTip, blockHash: "6".repeat(64) } },
     {
@@ -2216,8 +2228,8 @@ async function runChecks() {
   assert.deepEqual(pendingResult, { checked: 1 });
   assert.match(
     workerSource,
-    /runCanonicalBeforePending\([\s\S]*runBackfillPhase\(backfillPhases\[0\]\)[\s\S]*pendingStatus = await refreshPendingStatusesSafely\(\);[\s\S]*runBackfillPhase\(backfillPhases\[1\]\)[\s\S]*publishCanonicalSummaryAfterPending\(\)[\s\S]*assertWorkPrecisionPendingReady/u,
-    "Q16 pending witness must publish before the exact canonical summary refresh",
+    /assertWorkPrecisionReplayReady\([\s\S]*requireCurrentSnapshot: false,[\s\S]*requireRelationalParity: false,[\s\S]*runCanonicalBeforePending\([\s\S]*runBackfillPhase\(backfillPhases\[0\]\)[\s\S]*pendingStatus = await refreshPendingStatusesSafely\(\);[\s\S]*runBackfillPhase\(backfillPhases\[1\]\)[\s\S]*publishCanonicalSummaryAfterPending\(\)[\s\S]*assertWorkPrecisionReplayReady\(\s*pool,\s*workPrecision,\s*\)[\s\S]*assertWorkPrecisionPendingReady/u,
+    "Q16 canonical replay must relax snapshot/parity before pending witness, then recheck strictly after summary publication",
   );
   const blockedOrder = [];
   await assert.rejects(
