@@ -7541,10 +7541,17 @@ async function proofIndexWorkPrecisionV2MigrationReadinessFullAudit(
            v7_terms.listing_protocol_vout
          AND listing_event.record_ordinal =
            v7_terms.listing_record_ordinal
-         AND listing_event.payload->>'tokenId' = v7_terms.token_id
-         AND listing_event.payload
-           ->'saleAuthorization'
-           ->>'version' = v7_terms.authorization_version
+         AND lower(COALESCE(
+           listing_event.payload->>'tokenId',
+           listing_event.payload->'saleAuthorization'->>'tokenId',
+           listing_event.payload->'listingAuthorization'->>'tokenId',
+           ''
+         )) = v7_terms.token_id
+         AND COALESCE(
+           listing_event.payload->'saleAuthorization'->>'version',
+           listing_event.payload->'listingAuthorization'->>'version',
+           ''
+         ) = v7_terms.authorization_version
         WHERE listing.network = $1
           AND listing.token_id = $2
           AND listing.status IN ('active', 'sealing')
@@ -11227,8 +11234,14 @@ export async function proofIndexWorkAmoV8RelationalTokenStateEvidence(
           listing.seller_address,
           listing.amount::text AS amount_subatoms,
           listing.price_sats::text AS price_sats,
-          listing.payload->'listingAuthorization'
-            AS listing_authorization,
+          CASE
+            WHEN v8_terms.authorization_version = $3
+              THEN COALESCE(
+                listing_event.payload->'listingAuthorization',
+                listing_event.payload->'saleAuthorization'
+              )
+            ELSE listing.payload->'listingAuthorization'
+          END AS listing_authorization,
           CASE
             WHEN v8_terms.authorization_version = $3
               THEN COALESCE(
@@ -11306,10 +11319,17 @@ export async function proofIndexWorkAmoV8RelationalTokenStateEvidence(
            v8_terms.listing_protocol_vout
          AND listing_event.record_ordinal =
            v8_terms.listing_record_ordinal
-         AND listing_event.payload->>'tokenId' = v8_terms.token_id
-         AND listing_event.payload
-           ->'saleAuthorization'
-           ->>'version' = v8_terms.authorization_version
+         AND lower(COALESCE(
+           listing_event.payload->>'tokenId',
+           listing_event.payload->'saleAuthorization'->>'tokenId',
+           listing_event.payload->'listingAuthorization'->>'tokenId',
+           ''
+         )) = v8_terms.token_id
+         AND COALESCE(
+           listing_event.payload->'saleAuthorization'->>'version',
+           listing_event.payload->'listingAuthorization'->>'version',
+           ''
+         ) = v8_terms.authorization_version
         WHERE listing.network = $1
           AND lower(listing.token_id) = $2
           AND listing.status IN ('active', 'sealing')

@@ -22067,8 +22067,13 @@ check("exact canonical summaries require current conserved token balances", asyn
   );
   assert.match(
     migrationReadinessSource,
-    /WHEN v7_terms\.authorization_version = \$3[\s\S]*listing_event\.payload->'saleAuthorization'[\s\S]*END AS sale_authorization[\s\S]*LEFT JOIN proof_indexer\.events listing_event[\s\S]*listing_event\.block_height = v7_terms\.listing_block_height[\s\S]*listing_event\.payload[\s\S]*->'saleAuthorization'[\s\S]*->>'version' = v7_terms\.authorization_version/u,
+    /WHEN v7_terms\.authorization_version = \$3[\s\S]*listing_event\.payload->'saleAuthorization'[\s\S]*END AS sale_authorization[\s\S]*LEFT JOIN proof_indexer\.events listing_event[\s\S]*listing_event\.block_height = v7_terms\.listing_block_height[\s\S]*COALESCE\([\s\S]*listing_event\.payload->'saleAuthorization'->>'version'[\s\S]*listing_event\.payload->'listingAuthorization'->>'version'[\s\S]*\) = v7_terms\.authorization_version/u,
     "reader readiness must bind V8 relational listings to the confirmed signed listing event authorization",
+  );
+  assert.match(
+    migrationReadinessSource,
+    /lower\(COALESCE\([\s\S]*listing_event\.payload->>'tokenId'[\s\S]*listing_event\.payload->'saleAuthorization'->>'tokenId'[\s\S]*listing_event\.payload->'listingAuthorization'->>'tokenId'[\s\S]*\)\) = v7_terms\.token_id/u,
+    "reader readiness must bind V8 listing events by root or authorization token id",
   );
   const v8RelationalEvidenceSource = topLevelFunctionSource(
     READER_PATH,
@@ -22076,8 +22081,18 @@ check("exact canonical summaries require current conserved token balances", asyn
   );
   assert.match(
     v8RelationalEvidenceSource,
-    /WHEN v8_terms\.authorization_version = \$3[\s\S]*listing_event\.payload->'saleAuthorization'[\s\S]*END AS sale_authorization[\s\S]*LEFT JOIN proof_indexer\.events listing_event[\s\S]*listing_event\.block_height = v8_terms\.listing_block_height[\s\S]*listing_event\.payload[\s\S]*->'saleAuthorization'[\s\S]*->>'version' = v8_terms\.authorization_version/u,
+    /WHEN v8_terms\.authorization_version = \$3[\s\S]*listing_event\.payload->'listingAuthorization'[\s\S]*listing_event\.payload->'saleAuthorization'[\s\S]*END AS listing_authorization/u,
+    "V8 relational token-state evidence must not mix reduced listing authorization with signed sale authorization",
+  );
+  assert.match(
+    v8RelationalEvidenceSource,
+    /WHEN v8_terms\.authorization_version = \$3[\s\S]*listing_event\.payload->'saleAuthorization'[\s\S]*END AS sale_authorization[\s\S]*LEFT JOIN proof_indexer\.events listing_event[\s\S]*listing_event\.block_height = v8_terms\.listing_block_height[\s\S]*COALESCE\([\s\S]*listing_event\.payload->'saleAuthorization'->>'version'[\s\S]*listing_event\.payload->'listingAuthorization'->>'version'[\s\S]*\) = v8_terms\.authorization_version/u,
     "V8 relational token-state evidence must use the event-signed authorization, not the reduced listing projection",
+  );
+  assert.match(
+    v8RelationalEvidenceSource,
+    /lower\(COALESCE\([\s\S]*listing_event\.payload->>'tokenId'[\s\S]*listing_event\.payload->'saleAuthorization'->>'tokenId'[\s\S]*listing_event\.payload->'listingAuthorization'->>'tokenId'[\s\S]*\)\) = v8_terms\.token_id/u,
+    "V8 relational token-state evidence must bind listing events by root or authorization token id",
   );
   const workerReplaySource = topLevelFunctionSource(
     WORKER_PATH,
@@ -22085,8 +22100,13 @@ check("exact canonical summaries require current conserved token balances", asyn
   );
   assert.match(
     workerReplaySource,
-    /WHEN v8\.authorization_version = \$3[\s\S]*listing_event\.payload->'saleAuthorization'[\s\S]*END AS sale_authorization[\s\S]*LEFT JOIN proof_indexer\.events listing_event[\s\S]*listing_event\.block_height = v8\.listing_block_height[\s\S]*listing_event\.payload[\s\S]*->'saleAuthorization'[\s\S]*->>'version' = v8\.authorization_version/u,
+    /WHEN v8\.authorization_version = \$3[\s\S]*listing_event\.payload->'saleAuthorization'[\s\S]*END AS sale_authorization[\s\S]*LEFT JOIN proof_indexer\.events listing_event[\s\S]*listing_event\.block_height = v8\.listing_block_height[\s\S]*COALESCE\([\s\S]*listing_event\.payload->'saleAuthorization'->>'version'[\s\S]*listing_event\.payload->'listingAuthorization'->>'version'[\s\S]*\) = v8\.authorization_version/u,
     "worker Q16 relational parity must compare the signed V8 listing authorization from the confirmed event",
+  );
+  assert.match(
+    workerReplaySource,
+    /lower\(COALESCE\([\s\S]*listing_event\.payload->>'tokenId'[\s\S]*listing_event\.payload->'saleAuthorization'->>'tokenId'[\s\S]*listing_event\.payload->'listingAuthorization'->>'tokenId'[\s\S]*\)\) = v8\.token_id/u,
+    "worker Q16 relational parity must bind listing events by root or authorization token id",
   );
   assert.equal(
     canonicalSummaryBootstrapReady(

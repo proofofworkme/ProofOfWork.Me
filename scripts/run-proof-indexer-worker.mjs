@@ -3870,10 +3870,17 @@ async function assertWorkPrecisionReplayReady(
          AND listing_event.block_index = v8.listing_block_index
          AND listing_event.op_return_vout = v8.listing_protocol_vout
          AND listing_event.record_ordinal = v8.listing_record_ordinal
-         AND listing_event.payload->>'tokenId' = v8.token_id
-         AND listing_event.payload
-           ->'saleAuthorization'
-           ->>'version' = v8.authorization_version
+         AND lower(COALESCE(
+           listing_event.payload->>'tokenId',
+           listing_event.payload->'saleAuthorization'->>'tokenId',
+           listing_event.payload->'listingAuthorization'->>'tokenId',
+           ''
+         )) = v8.token_id
+         AND COALESCE(
+           listing_event.payload->'saleAuthorization'->>'version',
+           listing_event.payload->'listingAuthorization'->>'version',
+           ''
+         ) = v8.authorization_version
         WHERE listing.network = $1
           AND listing.token_id = $2
           AND listing.status IN ('active', 'sealing')
