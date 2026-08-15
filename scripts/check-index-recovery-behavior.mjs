@@ -22075,6 +22075,11 @@ check("exact canonical summaries require current conserved token balances", asyn
     /lower\(COALESCE\([\s\S]*listing_event\.payload->>'tokenId'[\s\S]*listing_event\.payload->'saleAuthorization'->>'tokenId'[\s\S]*listing_event\.payload->'listingAuthorization'->>'tokenId'[\s\S]*\)\) = v7_terms\.token_id/u,
     "reader readiness must bind V8 listing events by root or authorization token id",
   );
+  assert.match(
+    migrationReadinessSource,
+    /WHEN listing\.status = 'sealing'[\s\S]*seal_event\.payload->'saleAuthorization'[\s\S]*LEFT JOIN proof_indexer\.events seal_event[\s\S]*seal_event\.kind = 'token-listing-sealed'[\s\S]*EXISTS \([\s\S]*proof_indexer\.transactions seal_tx[\s\S]*seal_block\.canonical = true/u,
+    "reader readiness must use the canonical seal event authorization for sealing V8 listings",
+  );
   const v8RelationalEvidenceSource = topLevelFunctionSource(
     READER_PATH,
     "proofIndexWorkAmoV8RelationalTokenStateEvidence",
@@ -22094,6 +22099,11 @@ check("exact canonical summaries require current conserved token balances", asyn
     /lower\(COALESCE\([\s\S]*listing_event\.payload->>'tokenId'[\s\S]*listing_event\.payload->'saleAuthorization'->>'tokenId'[\s\S]*listing_event\.payload->'listingAuthorization'->>'tokenId'[\s\S]*\)\) = v8_terms\.token_id/u,
     "V8 relational token-state evidence must bind listing events by root or authorization token id",
   );
+  assert.match(
+    v8RelationalEvidenceSource,
+    /WHEN listing\.status = 'sealing'[\s\S]*seal_event\.payload->'saleAuthorization'[\s\S]*LEFT JOIN proof_indexer\.events seal_event[\s\S]*seal_event\.kind = 'token-listing-sealed'[\s\S]*EXISTS \([\s\S]*proof_indexer\.transactions seal_tx[\s\S]*seal_block\.canonical = true/u,
+    "V8 relational token-state evidence must use the canonical seal event authorization for sealing rows",
+  );
   const workerReplaySource = topLevelFunctionSource(
     WORKER_PATH,
     "assertWorkPrecisionReplayReady",
@@ -22107,6 +22117,11 @@ check("exact canonical summaries require current conserved token balances", asyn
     workerReplaySource,
     /lower\(COALESCE\([\s\S]*listing_event\.payload->>'tokenId'[\s\S]*listing_event\.payload->'saleAuthorization'->>'tokenId'[\s\S]*listing_event\.payload->'listingAuthorization'->>'tokenId'[\s\S]*\)\) = v8\.token_id/u,
     "worker Q16 relational parity must bind listing events by root or authorization token id",
+  );
+  assert.match(
+    workerReplaySource,
+    /WHEN listing\.status = 'sealing'[\s\S]*seal_event\.payload->'saleAuthorization'[\s\S]*LEFT JOIN proof_indexer\.events seal_event[\s\S]*seal_event\.kind = 'token-listing-sealed'[\s\S]*EXISTS \([\s\S]*proof_indexer\.transactions seal_tx[\s\S]*seal_block\.canonical = true/u,
+    "worker Q16 relational parity must use canonical seal event authorization for sealing rows",
   );
   assert.equal(
     canonicalSummaryBootstrapReady(

@@ -3838,6 +3838,11 @@ async function assertWorkPrecisionReplayReady(
           CASE
             WHEN v8.authorization_version = $3
               THEN COALESCE(
+                CASE
+                  WHEN listing.status = 'sealing'
+                    THEN seal_event.payload->'saleAuthorization'
+                  ELSE NULL
+                END,
                 listing_event.payload->'saleAuthorization',
                 listing_event.payload->'listingAuthorization'
               )
@@ -3881,6 +3886,38 @@ async function assertWorkPrecisionReplayReady(
            listing_event.payload->'listingAuthorization'->>'version',
            ''
          ) = v8.authorization_version
+        LEFT JOIN proof_indexer.events seal_event
+          ON seal_event.network = listing.network
+         AND seal_event.txid = lower(listing.seal_txid)
+         AND seal_event.protocol = 'pwt1'
+         AND seal_event.kind = 'token-listing-sealed'
+         AND seal_event.status = 'confirmed'
+         AND seal_event.valid = true
+         AND lower(seal_event.payload->>'listingId') =
+           listing.listing_id
+         AND lower(COALESCE(
+           seal_event.payload->>'tokenId',
+           seal_event.payload->'saleAuthorization'->>'tokenId',
+           ''
+         )) = v8.token_id
+         AND COALESCE(
+           seal_event.payload->'saleAuthorization'->>'version',
+           ''
+         ) = v8.authorization_version
+         AND EXISTS (
+           SELECT 1
+           FROM proof_indexer.transactions seal_tx
+           JOIN proof_indexer.blocks seal_block
+             ON seal_block.network = seal_tx.network
+            AND seal_block.block_hash = seal_tx.block_hash
+            AND seal_block.height = seal_tx.block_height
+            AND seal_block.canonical = true
+           WHERE seal_tx.network = seal_event.network
+             AND seal_tx.txid = seal_event.txid
+             AND seal_tx.status = 'confirmed'
+             AND seal_tx.block_height = seal_event.block_height
+             AND seal_tx.block_index = seal_event.block_index
+         )
         WHERE listing.network = $1
           AND listing.token_id = $2
           AND listing.status IN ('active', 'sealing')
