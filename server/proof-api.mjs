@@ -61137,6 +61137,7 @@ async function pendingWorkVerifierStageTransactionInvalidReason(
   network,
   tipHeight,
 ) {
+  let admissionDeferredToReplay = false;
   try {
     const shape = workAmoV8SignedMutationShape(
       record.transaction.hex,
@@ -61165,15 +61166,29 @@ async function pendingWorkVerifierStageTransactionInvalidReason(
       return decision.message ?? "Active WORK transaction shape is invalid.";
     }
   } catch (error) {
-    const statusCode = Number(error?.statusCode);
-    if (Number.isSafeInteger(statusCode) && statusCode >= 400 && statusCode < 500) {
-      return error?.message ?? "Active WORK transaction shape is invalid.";
+    if (
+      error?.details?.code ===
+        "WORK_MARKETPLACE_LISTING_RESOLUTION_UNAVAILABLE"
+    ) {
+      // Pending replay already proved the listing scope from Core/index state.
+      // A transient UI write-action read miss should not block the canonical
+      // pending witness when the token verifier can still decide the tx.
+      admissionDeferredToReplay = true;
+    } else {
+      const statusCode = Number(error?.statusCode);
+      if (
+        Number.isSafeInteger(statusCode) &&
+        statusCode >= 400 &&
+        statusCode < 500
+      ) {
+        return error?.message ?? "Active WORK transaction shape is invalid.";
+      }
+      throw pendingWorkVerifierStageError(
+        "PENDING_WORK_STAGE_ADMISSION_UNAVAILABLE",
+        "The active WORK transaction-shape validator could not resolve a staged transaction.",
+        { reason: errorSummary(error), txid: record.txid },
+      );
     }
-    throw pendingWorkVerifierStageError(
-      "PENDING_WORK_STAGE_ADMISSION_UNAVAILABLE",
-      "The active WORK transaction-shape validator could not resolve a staged transaction.",
-      { reason: errorSummary(error), txid: record.txid },
-    );
   }
   const deterministicReason = await tokenVerifierDeterministicInvalidReason(
     network,
@@ -61185,6 +61200,9 @@ async function pendingWorkVerifierStageTransactionInvalidReason(
       transaction: record.transaction,
     },
   );
+  if (admissionDeferredToReplay && !deterministicReason) {
+    return "";
+  }
   return deterministicReason;
 }
 

@@ -37327,6 +37327,70 @@ check("pre-V8 WORK listing scope is proven without restoring active state", asyn
   assert.match(decision.items[0].reason, /historical, non-actionable/u);
 });
 
+check("pending WORK admission defers retryable listing resolution to replay", async () => {
+  const stageError = (code, message, details = {}) => {
+    const error = new Error(message);
+    error.details = { code, ...details };
+    return error;
+  };
+  const txid = "a".repeat(64);
+  const record = {
+    transaction: { hex: "020000000001" },
+    txid,
+  };
+  const reasonFor = (admissionError, deterministicReason) =>
+    isolatedFunction(
+      API_PATH,
+      "pendingWorkVerifierStageTransactionInvalidReason",
+      {
+        WORK_AMO_V8_ACTIVATION_HEIGHT: 960_601,
+        errorSummary: (error) =>
+          error instanceof Error && error.message
+            ? error.message
+            : String(error),
+        pendingWorkVerifierStageError: stageError,
+        signedWorkMarketplaceWriteActions: async () => {
+          throw admissionError;
+        },
+        tokenVerifierDeterministicInvalidReason: async () =>
+          deterministicReason,
+        workAmoV8ActiveMutationDecision: () => {
+          throw new Error("admission decision should not run");
+        },
+        workAmoV8SignedMutationShape: () => ({ signed: true }),
+      },
+    );
+  const retryable = new Error(
+    "WORK marketplace listing resolution is temporarily unavailable; retry once the canonical listing read model catches up.",
+  );
+  retryable.statusCode = 503;
+  retryable.details = {
+    code: "WORK_MARKETPLACE_LISTING_RESOLUTION_UNAVAILABLE",
+  };
+  assert.equal(
+    await reasonFor(retryable, "canonical invalid")(
+      {},
+      record,
+      "livenet",
+      962_499,
+    ),
+    "canonical invalid",
+  );
+  assert.equal(
+    await reasonFor(retryable, "")({}, record, "livenet", 962_499),
+    "",
+    "a retryable listing-read miss may be decided valid only by canonical replay",
+  );
+  const unexpected = new Error("temporary dependency unavailable");
+  unexpected.statusCode = 503;
+  unexpected.details = { code: "OTHER_UNAVAILABLE" };
+  await assert.rejects(
+    () => reasonFor(unexpected, "")({}, record, "livenet", 962_499),
+    (error) =>
+      error.details?.code === "PENDING_WORK_STAGE_ADMISSION_UNAVAILABLE",
+  );
+});
+
 check("historical WORK listing scope is rebound to exact Core bytes and position", async () => {
   const listingId = "8".repeat(64);
   const blockHash = "9".repeat(64);
