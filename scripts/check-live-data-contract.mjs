@@ -711,7 +711,8 @@ expectAll("canonical read gate timeouts recover without a pinned public outage",
 ]);
 expectAll("canonical exact-tip reads are not blocked by worker heartbeat age", server, [
   /const atTip =[\s\S]*available &&[\s\S]*indexedThroughBlock === tipHeight/,
-  /const ready =[\s\S]*atTip &&[\s\S]*workerFresh/,
+  /const broadcastReady =[\s\S]*atTip/,
+  /const ready =[\s\S]*broadcastReady &&[\s\S]*workerReadiness\.ready === true/,
   /let serveFreshLastGood = false[\s\S]*serveFreshLastGood =[\s\S]*canonicalFreshReadCanUseLastGood\(url, gate\)/,
   /if \(freshRead && gate\.atTip !== true && !serveFreshLastGood\)/,
   /function canonicalGateCanUseBoundedLastGood\([\s\S]*lagBlocks <= CANONICAL_FRESH_LAST_GOOD_MAX_LAG_BLOCKS/,

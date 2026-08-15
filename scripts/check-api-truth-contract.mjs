@@ -601,8 +601,11 @@ expect(
     /const atTip =[\s\S]*available &&[\s\S]*indexedThroughBlock === tipHeight/u.test(
       publicGate,
     ) &&
+    /const broadcastReady =[\s\S]*atTip/u.test(publicGate) &&
     /const ready =/u.test(publicGate) &&
-    /atTip &&[\s\S]*workerReadiness\.ready === true/u.test(publicGate) &&
+    /broadcastReady &&[\s\S]*workerReadiness\.ready === true/u.test(
+      publicGate,
+    ) &&
     /proofIndexWorkerExactTipReadiness\(status/u.test(publicGate) &&
     /exactCoreTipFromBlockchainInfo\(tipResponse\)/u.test(publicGate) &&
     /indexedThroughBlock <= tipHeight/u.test(publicGate),
@@ -892,9 +895,12 @@ expect(
 );
 expect(
   "livenet broadcast requires an exact-tip verified canonical gate",
-  /canonicalPublicReadGate\(network, \{ force: true \}\)/u.test(
-    broadcastAdmission,
-  ) &&
+  /const broadcastReady =[\s\S]*atTip/u.test(publicGate) &&
+    /canonicalPublicReadGate\(network, \{ force: true \}\)/u.test(
+      broadcastAdmission,
+    ) &&
+    /admittedGate\?\.broadcastReady !== true/u.test(broadcastAdmission) &&
+    /finalGate\?\.broadcastReady !== true/u.test(broadcastAdmission) &&
     /beforeSubmit/u.test(broadcastAdmission) &&
     /BROADCAST_CANONICAL_CHECKPOINT_CHANGED/u.test(broadcastAdmission),
 );

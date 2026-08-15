@@ -45262,12 +45262,14 @@ check("broadcast rejects absent origins and a checkpoint change before submit", 
   const secondHash = "d".repeat(64);
   const gates = [
     {
+      broadcastReady: true,
       canonicalHash: firstHash,
       ready: true,
       storedHash: firstHash,
       tipHeight: 100,
     },
     {
+      broadcastReady: true,
       canonicalHash: secondHash,
       ready: true,
       storedHash: secondHash,
@@ -45301,6 +45303,46 @@ check("broadcast rejects absent origins and a checkpoint change before submit", 
       { requireCanonical: true },
     ),
     (error) => error?.details?.code === "BROADCAST_CANONICAL_CHECKPOINT_CHANGED",
+  );
+  assert.equal(submitted, false);
+
+  const mailGate = {
+    broadcastReady: true,
+    canonicalHash: firstHash,
+    ready: false,
+    storedHash: firstHash,
+    tipHeight: 101,
+  };
+  gates.push(mailGate, { ...mailGate });
+  await admission(
+    { headers: {} },
+    "livenet",
+    async ({ beforeSubmit }) => {
+      await beforeSubmit();
+      submitted = true;
+    },
+    { requireCanonical: true },
+  );
+  assert.equal(submitted, true);
+
+  submitted = false;
+  gates.push({
+    broadcastReady: false,
+    canonicalHash: firstHash,
+    ready: true,
+    storedHash: firstHash,
+    tipHeight: 102,
+  });
+  await rejection(
+    admission(
+      { headers: {} },
+      "livenet",
+      async () => {
+        submitted = true;
+      },
+      { requireCanonical: true },
+    ),
+    (error) => error?.details?.code === "BROADCAST_CANONICAL_INDEX_NOT_READY",
   );
   assert.equal(submitted, false);
 });

@@ -486,6 +486,10 @@ const canListTokenSource = app.slice(
   app.indexOf("const tokenListInput"),
   app.indexOf("const selectedTokenSupplyState"),
 );
+const tokenWalletWorkspaceSource = app.slice(
+  app.indexOf("function TokenWalletWorkspace"),
+  app.indexOf("type TokenAppProps"),
+);
 const proofApiClient = contents.get("src/shared/api/proofApiClient.ts");
 const proofApiReadState = contents.get("src/shared/api/proofApiReadState.ts");
 const logHistoryCache = contents.get("src/shared/activity/logHistoryCache.ts");
@@ -958,6 +962,15 @@ expect(
   ) &&
     /transferDescription:\s*`Sends a pwt1:send \$\{bondConfig\.ticker\} event/.test(
       app,
+    ),
+);
+expect(
+  "wallet transfer log orders newest movement first before confirmation state",
+  /const walletMovementTimeMs = \(movement: TokenWalletMovement\) =>[\s\S]*Date\.parse\(movement\.createdAt\)/.test(
+    tokenWalletWorkspaceSource,
+  ) &&
+    /\.sort\(\s*\(left, right\) =>\s*walletMovementTimeMs\(right\) - walletMovementTimeMs\(left\) \|\|\s*Number\(right\.confirmed\) - Number\(left\.confirmed\)/.test(
+      tokenWalletWorkspaceSource,
     ),
 );
 expect(

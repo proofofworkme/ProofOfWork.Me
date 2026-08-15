@@ -35624,6 +35624,10 @@ function TokenWalletWorkspace({
           .includes(normalizedWalletAddress),
       )
     : [];
+  const walletMovementTimeMs = (movement: TokenWalletMovement) => {
+    const timestamp = Date.parse(movement.createdAt);
+    return Number.isFinite(timestamp) ? timestamp : 0;
+  };
   const walletMovements: TokenWalletMovement[] = [
     ...walletTransfers.map((transfer) => ({
       amount: transfer.amount,
@@ -35749,8 +35753,8 @@ function TokenWalletWorkspace({
       : []),
   ].sort(
     (left, right) =>
+      walletMovementTimeMs(right) - walletMovementTimeMs(left) ||
       Number(right.confirmed) - Number(left.confirmed) ||
-      Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
       left.key.localeCompare(right.key),
   );
   const walletListings = address

@@ -7179,7 +7179,7 @@ async function withBroadcastAdmission(
     let admittedGate = null;
     if (network === "livenet" && options.requireCanonical === true) {
       admittedGate = await canonicalPublicReadGate(network, { force: true });
-      if (admittedGate?.ready !== true) {
+      if (admittedGate?.broadcastReady !== true) {
         const error = freshDataUnavailableError(
           "Broadcast is paused until the canonical index reaches the verified Bitcoin Core tip.",
         );
@@ -7196,7 +7196,7 @@ async function withBroadcastAdmission(
       }
       const finalGate = await canonicalPublicReadGate(network, { force: true });
       if (
-        finalGate?.ready !== true ||
+        finalGate?.broadcastReady !== true ||
         finalGate.tipHeight !== admittedGate.tipHeight ||
         finalGate.canonicalHash !== admittedGate.canonicalHash ||
         finalGate.storedHash !== admittedGate.storedHash
@@ -64547,8 +64547,9 @@ async function loadCanonicalPublicReadGate(network) {
   const atTip =
     available &&
     indexedThroughBlock === tipHeight;
+  const broadcastReady = atTip;
   const ready =
-    atTip &&
+    broadcastReady &&
     workerReadiness.ready === true;
   return {
     atTip,
@@ -64562,6 +64563,7 @@ async function loadCanonicalPublicReadGate(network) {
         : null,
     ok: available,
     ready,
+    broadcastReady,
     rebuild,
     storedHash: storedHash || null,
     tipHeight: Number.isSafeInteger(tipHeight) ? tipHeight : null,
