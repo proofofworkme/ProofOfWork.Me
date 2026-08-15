@@ -36884,7 +36884,7 @@ async function indexedWorkActiveListingTxids(network, addresses, limit = 200) {
   }
 
   const txids = new Set();
-  const kinds = ["token-listing", "token-listings"];
+  const kinds = ["token-listing", "token-listings", "token-listing-sealed"];
   for (const address of addresses) {
     const value = String(address ?? "").trim();
     if (!value) {
@@ -37017,7 +37017,7 @@ async function indexedWalletActiveListings(
   }
 
   const listingsByKey = new Map();
-  const kinds = ["token-listing", "token-listings"];
+  const kinds = ["token-listing", "token-listings", "token-listing-sealed"];
   for (const address of addresses) {
     const value = String(address ?? "").trim();
     if (!value) {
@@ -37062,22 +37062,48 @@ async function indexedWalletActiveListings(
       }
 
       for (const item of Array.isArray(page.items) ? page.items : []) {
+        const isSealEvent =
+          kind === "token-listing-sealed" ||
+          item?.kind === "token-listing-sealed";
+        const itemPosition =
+          item?.position &&
+          typeof item.position === "object" &&
+          !Array.isArray(item.position)
+            ? item.position
+            : {};
         const itemListing =
           item?.listing &&
           typeof item.listing === "object" &&
           !Array.isArray(item.listing)
             ? item.listing
             : {};
-        const saleAuthorization =
+        const listingSaleAuthorization =
           itemListing.saleAuthorization &&
           typeof itemListing.saleAuthorization === "object" &&
           !Array.isArray(itemListing.saleAuthorization)
             ? itemListing.saleAuthorization
-            : item?.saleAuthorization &&
-                typeof item.saleAuthorization === "object" &&
-                !Array.isArray(item.saleAuthorization)
-              ? item.saleAuthorization
-              : {};
+            : {};
+        const eventSaleAuthorization =
+          item?.saleAuthorization &&
+          typeof item.saleAuthorization === "object" &&
+          !Array.isArray(item.saleAuthorization)
+            ? item.saleAuthorization
+            : {};
+        const saleAuthorization =
+          Object.keys(eventSaleAuthorization).length >
+          Object.keys(listingSaleAuthorization).length
+            ? eventSaleAuthorization
+            : listingSaleAuthorization;
+        const listingAuthorization =
+          itemListing.listingAuthorization &&
+          typeof itemListing.listingAuthorization === "object" &&
+          !Array.isArray(itemListing.listingAuthorization)
+            ? itemListing.listingAuthorization
+            : item?.listingAuthorization &&
+                typeof item.listingAuthorization === "object" &&
+                !Array.isArray(item.listingAuthorization)
+              ? item.listingAuthorization
+              : saleAuthorization;
         const listingId = String(
           itemListing.listingId ?? item?.listingId ?? item?.txid ?? "",
         )
@@ -37118,6 +37144,16 @@ async function indexedWalletActiveListings(
                 !Array.isArray(itemListing.workAmoFrozenTerms)
               ? itemListing.workAmoFrozenTerms
               : {};
+        const sealTxid = String(
+          itemListing.sealTxid ??
+            item?.sealTxid ??
+            (isSealEvent ? item?.txid : "") ??
+            "",
+        )
+          .trim()
+          .toLowerCase();
+        const listingStatus =
+          itemListing.status ?? (isSealEvent ? "sealing" : item?.status);
         const listing = {
           ...itemListing,
           amountSubatoms:
@@ -37126,13 +37162,87 @@ async function indexedWalletActiveListings(
             saleAuthorization.amountSubatoms,
           confirmed: true,
           createdAt: itemListing.createdAt ?? item?.createdAt,
+          listingAuthorization,
           listingId,
           network: itemListing.network ?? item?.network ?? network,
           saleAuthorization,
+          sealAt:
+            itemListing.sealAt ??
+            item?.sealAt ??
+            (isSealEvent ? item?.blockTime ?? item?.createdAt : undefined),
+          sealBlockHash:
+            itemListing.sealBlockHash ??
+            item?.sealBlockHash ??
+            (isSealEvent
+              ? item?.blockHash ?? itemPosition.blockHash
+              : undefined),
+          sealBlockHeight:
+            itemListing.sealBlockHeight ??
+            item?.sealBlockHeight ??
+            (isSealEvent
+              ? item?.blockHeight ?? itemPosition.blockHeight
+              : undefined),
+          sealBlockIndex:
+            itemListing.sealBlockIndex ??
+            item?.sealBlockIndex ??
+            (isSealEvent
+              ? item?.blockIndex ?? itemPosition.blockTransactionIndex
+              : undefined),
+          sealConfirmed:
+            itemListing.sealConfirmed ??
+            item?.sealConfirmed ??
+            (isSealEvent ? item?.confirmed === true : undefined),
+          sealDataBytes:
+            itemListing.sealDataBytes ??
+            item?.sealDataBytes ??
+            (isSealEvent ? item?.dataBytes : undefined),
+          sealFrozenNetworkValueSats:
+            itemListing.sealFrozenNetworkValueSats ??
+            item?.sealFrozenNetworkValueSats ??
+            (isSealEvent ? item?.frozenNetworkValueSats : undefined),
+          sealLiveNetworkValueSats:
+            itemListing.sealLiveNetworkValueSats ??
+            item?.sealLiveNetworkValueSats ??
+            (isSealEvent ? item?.liveNetworkValueSats : undefined),
+          sealMinerFeeCanonical:
+            itemListing.sealMinerFeeCanonical === true ||
+            item?.sealMinerFeeCanonical === true ||
+            item?.canonicalMinerFeeCovered === true,
+          sealMinerFeeSource:
+            itemListing.sealMinerFeeSource ??
+            item?.sealMinerFeeSource ??
+            (isSealEvent ? item?.minerFeeSource : undefined),
+          sealMinerFeeSats:
+            itemListing.sealMinerFeeSats ??
+            item?.sealMinerFeeSats ??
+            (isSealEvent ? item?.minerFeeSats : undefined),
+          sealProtocolVout:
+            itemListing.sealProtocolVout ??
+            item?.sealProtocolVout ??
+            (isSealEvent
+              ? item?.protocolVout ?? itemPosition.protocolVout
+              : undefined),
+          sealRecordOrdinal:
+            itemListing.sealRecordOrdinal ??
+            item?.sealRecordOrdinal ??
+            (isSealEvent
+              ? item?.recordOrdinal ?? itemPosition.recordOrdinal
+              : undefined),
+          sealTransactionBlockHeight:
+            itemListing.sealTransactionBlockHeight ??
+            item?.sealTransactionBlockHeight ??
+            (isSealEvent
+              ? item?.blockHeight ?? itemPosition.blockHeight
+              : undefined),
+          sealTxid,
           sellerAddress,
+          status: listingStatus,
           ticker: WORK_TOKEN_TICKER,
           tokenId: WORK_TOKEN_ID,
-          txid: itemListing.txid ?? item?.txid ?? listingId,
+          txid:
+            itemListing.txid ??
+            (isSealEvent ? listingId : item?.txid) ??
+            listingId,
         };
         listingsByKey.set(
           tokenListingItemKey(listing),

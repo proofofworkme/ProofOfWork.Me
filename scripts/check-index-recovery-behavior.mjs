@@ -7480,9 +7480,10 @@ check("fresh public reads can use bounded canonical last-good summaries", async 
 
 check("wallet WORK overlay recovers active canonical V8 listings and drops matching invalid attempts", async () => {
   const listingId = "07c9ca719adf7a7e94ff17c917e599e872ae1c0348f282219907c060a72b8043";
+  const sealTxid = "4c902cf25186ff6619288141a51af533be110db40c8d57ed5cebee9c316a1ce0";
   const sellerAddress = "17W7JZ9KjjGUwdAyXeGxhzYe2vGe8YTRzA";
   const workTokenId = WORK_TOKEN_ID;
-  let readParams = null;
+  const readParams = [];
   let recoveryPageCoversTip = true;
   const indexedWalletActiveListings = isolatedFunction(
     API_PATH,
@@ -7493,7 +7494,14 @@ check("wallet WORK overlay recovers active canonical V8 listings and drops match
       compareTokenHistoryPageItems: (left, right) =>
         String(left.listingId).localeCompare(String(right.listingId)),
       errorSummary: (error) => String(error?.message ?? error),
-      mergeTokenListingRecord: (_current, next) => next,
+      mergeTokenListingRecord: (current, next) => ({
+        ...(current ?? {}),
+        ...next,
+        saleAuthorization:
+          Object.keys(next?.saleAuthorization ?? {}).length > 0
+            ? next.saleAuthorization
+            : current?.saleAuthorization,
+      }),
       normalizeTokenScope: (value) =>
         String(value ?? "").toUpperCase() === "WORK"
           ? workTokenId
@@ -7506,7 +7514,55 @@ check("wallet WORK overlay recovers active canonical V8 listings and drops match
         kind,
         params,
       ) => {
-        readParams = { kind, network, params };
+        readParams.push({ kind, network, params });
+        if (kind === "token-listing-sealed") {
+          return {
+            indexedThroughBlock: 962502,
+            items: [
+              {
+                blockHash:
+                  "000000000000000000011ecc1d199a376156ff56dd044343a5b82746e04523b4",
+                blockHeight: 962502,
+                blockIndex: 173,
+                blockTime: "2026-08-15T00:53:30.000Z",
+                confirmed: true,
+                createdAt: "2026-08-15T00:53:30.000Z",
+                dataBytes: 1640,
+                kind: "token-listing-sealed",
+                listing: {
+                  frozenTerms: {
+                    unitAmountSubatoms: "752009741",
+                    version: "pwt-sale-v8",
+                  },
+                  listingId,
+                  saleAuthorization: {
+                    sellerAddress,
+                    ticker: "WORK",
+                    tokenId: workTokenId,
+                    version: "pwt-sale-v8",
+                  },
+                  sellerAddress,
+                },
+                listingId,
+                protocolVout: 1,
+                recordOrdinal: 0,
+                saleAuthorization: {
+                  anchorSignature: "30440220",
+                  anchorTxid: listingId,
+                  sellerAddress,
+                  ticker: "WORK",
+                  tokenId: workTokenId,
+                  version: "pwt-sale-v8",
+                },
+                sealConfirmed: true,
+                sealTxid,
+                sellerAddress,
+                tokenId: workTokenId,
+                txid: sealTxid,
+              },
+            ],
+          };
+        }
         return {
           indexedThroughBlock: 962166,
           items: [
@@ -7551,13 +7607,25 @@ check("wallet WORK overlay recovers active canonical V8 listings and drops match
     workTokenId,
     [sellerAddress],
   );
-  assert.equal(readParams.network, "livenet");
-  assert.equal(readParams.kind, "token-listings");
-  assert.equal(readParams.params.get("address"), sellerAddress);
-  assert.equal(readParams.params.get("status"), "confirmed");
+  assert.deepEqual(
+    readParams.map((params) => params.kind),
+    ["token-listing", "token-listings", "token-listing-sealed"],
+  );
+  assert.equal(readParams.at(-1).network, "livenet");
+  assert.equal(readParams.at(-1).params.get("address"), sellerAddress);
+  assert.equal(readParams.at(-1).params.get("status"), "confirmed");
   assert.equal(listings.length, 1);
   assert.equal(listings[0].listingId, listingId);
   assert.equal(listings[0].amountSubatoms, "752009741");
+  assert.equal(listings[0].saleAuthorization.anchorSignature, "30440220");
+  assert.equal(listings[0].sealBlockHeight, 962502);
+  assert.equal(listings[0].sealConfirmed, true);
+  assert.equal(listings[0].sealProtocolVout, 1);
+  assert.equal(listings[0].sealRecordOrdinal, 0);
+  assert.equal(listings[0].sealTransactionBlockHeight, 962502);
+  assert.equal(listings[0].sealTxid, sealTxid);
+  assert.equal(listings[0].status, "sealing");
+  assert.equal(listings[0].txid, listingId);
   recoveryPageCoversTip = false;
   const staleCheckpointListings = await indexedWalletActiveListings(
     "livenet",
