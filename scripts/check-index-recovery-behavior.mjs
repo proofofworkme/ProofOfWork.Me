@@ -22065,6 +22065,29 @@ check("exact canonical summaries require current conserved token balances", asyn
     migrationReadinessSource,
     /const canonicalSummaryBootstrapReady =[\s\S]*confirmedStateReadyWithinSnapshot && exactTipReady/u,
   );
+  assert.match(
+    migrationReadinessSource,
+    /WHEN v7_terms\.authorization_version = \$3[\s\S]*listing_event\.payload->'saleAuthorization'[\s\S]*END AS sale_authorization[\s\S]*LEFT JOIN proof_indexer\.events listing_event[\s\S]*listing_event\.block_height = v7_terms\.listing_block_height[\s\S]*listing_event\.payload[\s\S]*->'saleAuthorization'[\s\S]*->>'version' = v7_terms\.authorization_version/u,
+    "reader readiness must bind V8 relational listings to the confirmed signed listing event authorization",
+  );
+  const v8RelationalEvidenceSource = topLevelFunctionSource(
+    READER_PATH,
+    "proofIndexWorkAmoV8RelationalTokenStateEvidence",
+  );
+  assert.match(
+    v8RelationalEvidenceSource,
+    /WHEN v8_terms\.authorization_version = \$3[\s\S]*listing_event\.payload->'saleAuthorization'[\s\S]*END AS sale_authorization[\s\S]*LEFT JOIN proof_indexer\.events listing_event[\s\S]*listing_event\.block_height = v8_terms\.listing_block_height[\s\S]*listing_event\.payload[\s\S]*->'saleAuthorization'[\s\S]*->>'version' = v8_terms\.authorization_version/u,
+    "V8 relational token-state evidence must use the event-signed authorization, not the reduced listing projection",
+  );
+  const workerReplaySource = topLevelFunctionSource(
+    WORKER_PATH,
+    "assertWorkPrecisionReplayReady",
+  );
+  assert.match(
+    workerReplaySource,
+    /WHEN v8\.authorization_version = \$3[\s\S]*listing_event\.payload->'saleAuthorization'[\s\S]*END AS sale_authorization[\s\S]*LEFT JOIN proof_indexer\.events listing_event[\s\S]*listing_event\.block_height = v8\.listing_block_height[\s\S]*listing_event\.payload[\s\S]*->'saleAuthorization'[\s\S]*->>'version' = v8\.authorization_version/u,
+    "worker Q16 relational parity must compare the signed V8 listing authorization from the confirmed event",
+  );
   assert.equal(
     canonicalSummaryBootstrapReady(
       bootstrapReadiness,

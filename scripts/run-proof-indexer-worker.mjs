@@ -3835,10 +3835,17 @@ async function assertWorkPrecisionReplayReady(
           listing.seller_address,
           listing.price_sats::text,
           listing.status,
-          COALESCE(
-            listing.payload->'listingAuthorization',
-            listing.payload->'saleAuthorization'
-          ) AS sale_authorization,
+          CASE
+            WHEN v8.authorization_version = $3
+              THEN COALESCE(
+                listing_event.payload->'saleAuthorization',
+                listing_event.payload->'listingAuthorization'
+              )
+            ELSE COALESCE(
+              listing.payload->'listingAuthorization',
+              listing.payload->'saleAuthorization'
+            )
+          END AS sale_authorization,
           COALESCE(
             listing.payload->'listingFrozenTerms',
             listing.payload->'frozenTerms'
@@ -3852,12 +3859,27 @@ async function assertWorkPrecisionReplayReady(
         LEFT JOIN proof_indexer.work_amo_v8_listing_terms v8
           ON v8.network = listing.network
          AND v8.listing_id = listing.listing_id
+        LEFT JOIN proof_indexer.events listing_event
+          ON listing_event.network = listing.network
+         AND listing_event.txid = listing.listing_id
+         AND listing_event.protocol = 'pwt1'
+         AND listing_event.kind = 'token-listing'
+         AND listing_event.status = 'confirmed'
+         AND listing_event.valid = true
+         AND listing_event.block_height = v8.listing_block_height
+         AND listing_event.block_index = v8.listing_block_index
+         AND listing_event.op_return_vout = v8.listing_protocol_vout
+         AND listing_event.record_ordinal = v8.listing_record_ordinal
+         AND listing_event.payload->>'tokenId' = v8.token_id
+         AND listing_event.payload
+           ->'saleAuthorization'
+           ->>'version' = v8.authorization_version
         WHERE listing.network = $1
           AND listing.token_id = $2
           AND listing.status IN ('active', 'sealing')
         ORDER BY listing.listing_id ASC
       `,
-      [NETWORK, WORK_TOKEN_ID],
+      [NETWORK, WORK_TOKEN_ID, WORK_AMO_V8_AUTH_VERSION],
     );
     await client.query("COMMIT");
     snapshotOpen = false;

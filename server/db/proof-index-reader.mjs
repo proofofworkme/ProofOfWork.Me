@@ -7476,10 +7476,17 @@ async function proofIndexWorkPrecisionV2MigrationReadinessFullAudit(
           listing.seller_address,
           listing.amount::text,
           listing.price_sats::text,
-          COALESCE(
-            listing.payload->'saleAuthorization',
-            listing.payload->'listingAuthorization'
-          ) AS sale_authorization,
+          CASE
+            WHEN v7_terms.authorization_version = $3
+              THEN COALESCE(
+                listing_event.payload->'saleAuthorization',
+                listing_event.payload->'listingAuthorization'
+              )
+            ELSE COALESCE(
+              listing.payload->'saleAuthorization',
+              listing.payload->'listingAuthorization'
+            )
+          END AS sale_authorization,
           CASE
             WHEN COALESCE(
               listing.payload->'saleAuthorization'->>'version',
@@ -7521,6 +7528,23 @@ async function proofIndexWorkPrecisionV2MigrationReadinessFullAudit(
          AND v7_terms.authorization_version = $3
          AND v7_terms.unit_amount_subatoms = listing.amount
          AND v7_terms.unit_price_sats = listing.price_sats
+        LEFT JOIN proof_indexer.events listing_event
+          ON listing_event.network = listing.network
+         AND listing_event.txid = listing.listing_id
+         AND listing_event.protocol = 'pwt1'
+         AND listing_event.kind = 'token-listing'
+         AND listing_event.status = 'confirmed'
+         AND listing_event.valid = true
+         AND listing_event.block_height = v7_terms.listing_block_height
+         AND listing_event.block_index = v7_terms.listing_block_index
+         AND listing_event.op_return_vout =
+           v7_terms.listing_protocol_vout
+         AND listing_event.record_ordinal =
+           v7_terms.listing_record_ordinal
+         AND listing_event.payload->>'tokenId' = v7_terms.token_id
+         AND listing_event.payload
+           ->'saleAuthorization'
+           ->>'version' = v7_terms.authorization_version
         WHERE listing.network = $1
           AND listing.token_id = $2
           AND listing.status IN ('active', 'sealing')
@@ -11205,8 +11229,14 @@ export async function proofIndexWorkAmoV8RelationalTokenStateEvidence(
           listing.price_sats::text AS price_sats,
           listing.payload->'listingAuthorization'
             AS listing_authorization,
-          listing.payload->'saleAuthorization'
-            AS sale_authorization,
+          CASE
+            WHEN v8_terms.authorization_version = $3
+              THEN COALESCE(
+                listing_event.payload->'saleAuthorization',
+                listing_event.payload->'listingAuthorization'
+              )
+            ELSE listing.payload->'saleAuthorization'
+          END AS sale_authorization,
           COALESCE(
             listing.payload->'saleAuthorization'->>'version',
             listing.payload->'listingAuthorization'->>'version',
@@ -11263,6 +11293,23 @@ export async function proofIndexWorkAmoV8RelationalTokenStateEvidence(
            OR listing.payload->'workAmoV8FrozenTerms' =
              v8_terms.frozen_terms
          )
+        LEFT JOIN proof_indexer.events listing_event
+          ON listing_event.network = listing.network
+         AND listing_event.txid = listing.listing_id
+         AND listing_event.protocol = 'pwt1'
+         AND listing_event.kind = 'token-listing'
+         AND listing_event.status = 'confirmed'
+         AND listing_event.valid = true
+         AND listing_event.block_height = v8_terms.listing_block_height
+         AND listing_event.block_index = v8_terms.listing_block_index
+         AND listing_event.op_return_vout =
+           v8_terms.listing_protocol_vout
+         AND listing_event.record_ordinal =
+           v8_terms.listing_record_ordinal
+         AND listing_event.payload->>'tokenId' = v8_terms.token_id
+         AND listing_event.payload
+           ->'saleAuthorization'
+           ->>'version' = v8_terms.authorization_version
         WHERE listing.network = $1
           AND lower(listing.token_id) = $2
           AND listing.status IN ('active', 'sealing')
