@@ -4867,9 +4867,7 @@ export function workerBackfillPhasePlan(
       canonicalBarrier: true,
       kind: "confirmed",
       sourceLabels: ["block-scan"],
-      storeCanonicalSummarySnapshot: String(
-        storeCanonicalSummarySnapshot ?? "",
-      ),
+      storeCanonicalSummarySnapshot: "0",
     },
     {
       canonicalBarrier: false,
@@ -6076,6 +6074,13 @@ async function runCycle(pool, lastSuccess, runtime) {
     BACKFILL_SOURCES,
     BACKFILL_STORE_CANONICAL_SUMMARY_SNAPSHOT,
   );
+  const summaryPublicationAfterPending =
+    /^(?:1|true|yes)$/iu.test(
+      BACKFILL_STORE_CANONICAL_SUMMARY_SNAPSHOT,
+    ) &&
+    backfillPhases.length === 2 &&
+    backfillPhases[0]?.kind === "confirmed" &&
+    backfillPhases[1]?.kind === "best-effort-pending";
   if (
     workPrecision.era === WORK_PRECISION_Q16_ERA &&
     !(
@@ -6243,6 +6248,39 @@ async function runCycle(pool, lastSuccess, runtime) {
       return failedStatus;
     }
   };
+  const publishCanonicalSummaryAfterPending = async () => {
+    if (!summaryPublicationAfterPending) {
+      return;
+    }
+    const checkpoint = normalizedCheckpoint(canonicalProgress);
+    if (
+      !Number.isSafeInteger(checkpoint.checkpointHeight) ||
+      checkpoint.checkpointHeight <= 0 ||
+      !checkpoint.checkpointHash
+    ) {
+      throw new Error(
+        "Post-pending canonical summary publication requires the confirmed replay checkpoint.",
+      );
+    }
+    await runBackfillWithRetries(
+      {
+        ...commonBackfillEnv,
+        POW_INDEX_BACKFILL_CANONICAL_SUMMARY_REQUIRED_HASH:
+          checkpoint.checkpointHash,
+        POW_INDEX_BACKFILL_CANONICAL_SUMMARY_REQUIRED_HEIGHT: String(
+          checkpoint.checkpointHeight,
+        ),
+        POW_INDEX_BACKFILL_PENDING_CHILD_TIMEOUT_MS: "",
+        POW_INDEX_BACKFILL_PENDING_ONLY: "0",
+        // This source label intentionally matches no ordinary backfill source:
+        // the child only reuses backfill's supervised summary publisher.
+        POW_INDEX_BACKFILL_SOURCES: "canonical-summary",
+        POW_INDEX_BACKFILL_STORE_CANONICAL_SUMMARY_SNAPSHOT: "1",
+        POW_INDEX_BACKFILL_STORE_LEDGER_SNAPSHOT: "0",
+      },
+      runtime,
+    );
+  };
   if (
     backfillPhases.length === 2 &&
     backfillPhases[0]?.kind === "confirmed" &&
@@ -6253,6 +6291,9 @@ async function runCycle(pool, lastSuccess, runtime) {
       async () => {
         pendingStatus = await refreshPendingStatusesSafely();
         await runBackfillPhase(backfillPhases[1]);
+        if (pendingBackfill.ok) {
+          await publishCanonicalSummaryAfterPending();
+        }
       },
     );
   } else {

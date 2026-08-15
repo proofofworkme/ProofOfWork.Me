@@ -2216,8 +2216,8 @@ async function runChecks() {
   assert.deepEqual(pendingResult, { checked: 1 });
   assert.match(
     workerSource,
-    /runCanonicalBeforePending\([\s\S]*runBackfillPhase\(backfillPhases\[0\]\)[\s\S]*pendingStatus = await refreshPendingStatusesSafely\(\);[\s\S]*runBackfillPhase\(backfillPhases\[1\]\)[\s\S]*assertWorkPrecisionPendingReady/u,
-    "Q16 status maintenance must finish before the backfill-owned pending witness",
+    /runCanonicalBeforePending\([\s\S]*runBackfillPhase\(backfillPhases\[0\]\)[\s\S]*pendingStatus = await refreshPendingStatusesSafely\(\);[\s\S]*runBackfillPhase\(backfillPhases\[1\]\)[\s\S]*publishCanonicalSummaryAfterPending\(\)[\s\S]*assertWorkPrecisionPendingReady/u,
+    "Q16 pending witness must publish before the exact canonical summary refresh",
   );
   const blockedOrder = [];
   await assert.rejects(
@@ -2241,7 +2241,7 @@ async function runChecks() {
         canonicalBarrier: true,
         kind: "confirmed",
         sourceLabels: ["block-scan"],
-        storeCanonicalSummarySnapshot: "1",
+        storeCanonicalSummarySnapshot: "0",
       },
       {
         canonicalBarrier: false,
@@ -2250,7 +2250,7 @@ async function runChecks() {
         storeCanonicalSummarySnapshot: "0",
       },
     ],
-    "the production hot path must publish confirmed summaries before pending work",
+    "the production hot path must defer summary publication until after pending witness work",
   );
   assert.deepEqual(
     workerBackfillPhasePlan("mempool-scan,block-scan", "1"),

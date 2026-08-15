@@ -1013,9 +1013,38 @@ const STORE_LEDGER_SNAPSHOT = (() => {
 const STORE_CANONICAL_SUMMARY_SNAPSHOT = /^(?:1|true|yes)$/iu.test(
   String(process.env.POW_INDEX_BACKFILL_STORE_CANONICAL_SUMMARY_SNAPSHOT ?? ""),
 );
+const CANONICAL_SUMMARY_REQUIRED_HEIGHT = Number(
+  process.env.POW_INDEX_BACKFILL_CANONICAL_SUMMARY_REQUIRED_HEIGHT ?? 0,
+);
+const CANONICAL_SUMMARY_REQUIRED_HASH = String(
+  process.env.POW_INDEX_BACKFILL_CANONICAL_SUMMARY_REQUIRED_HASH ?? "",
+)
+  .trim()
+  .toLowerCase();
 const PENDING_ONLY_BACKFILL_REQUESTED = /^(?:1|true|yes)$/iu.test(
   String(process.env.POW_INDEX_BACKFILL_PENDING_ONLY ?? ""),
 );
+
+function canonicalSummaryRequiredCheckpointFromEnv() {
+  const requested =
+    CANONICAL_SUMMARY_REQUIRED_HEIGHT > 0 || CANONICAL_SUMMARY_REQUIRED_HASH;
+  if (!requested) {
+    return null;
+  }
+  if (
+    !Number.isSafeInteger(CANONICAL_SUMMARY_REQUIRED_HEIGHT) ||
+    CANONICAL_SUMMARY_REQUIRED_HEIGHT <= 0 ||
+    !/^[0-9a-f]{64}$/u.test(CANONICAL_SUMMARY_REQUIRED_HASH)
+  ) {
+    throw new Error(
+      "Canonical summary required checkpoint needs POW_INDEX_BACKFILL_CANONICAL_SUMMARY_REQUIRED_HEIGHT and POW_INDEX_BACKFILL_CANONICAL_SUMMARY_REQUIRED_HASH.",
+    );
+  }
+  return {
+    blockHash: CANONICAL_SUMMARY_REQUIRED_HASH,
+    height: CANONICAL_SUMMARY_REQUIRED_HEIGHT,
+  };
+}
 
 function pendingOnlyBackfillMode({
   enabled,
@@ -30967,9 +30996,13 @@ try {
           const snapshot = STORE_LEDGER_SNAPSHOT
             ? await storeLedgerSnapshot(client)
             : null;
+          const canonicalSummaryRequiredCheckpoint =
+            canonicalSummaryRequiredCheckpointFromEnv();
           const canonicalSummarySnapshot =
             STORE_CANONICAL_SUMMARY_SNAPSHOT && rushBootstrap?.complete === true
-              ? await storeCanonicalSummarySnapshot(client)
+              ? await storeCanonicalSummarySnapshot(client, {
+                  requiredCheckpoint: canonicalSummaryRequiredCheckpoint,
+                })
               : STORE_CANONICAL_SUMMARY_SNAPSHOT
                 ? {
                     reason: "rush-canonical-bootstrap-in-progress",

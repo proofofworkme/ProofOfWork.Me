@@ -18293,7 +18293,7 @@ check("same-height pending membership versions the canonical Log snapshot", asyn
   const runCycleSource = topLevelFunctionSource(WORKER_PATH, "runCycle");
   assert.match(
     runCycleSource,
-    /runCanonicalBeforePending\([\s\S]*runBackfillPhase\(backfillPhases\[0\]\)[\s\S]*pendingStatus = await refreshPendingStatusesSafely\(\);[\s\S]*runBackfillPhase\(backfillPhases\[1\]\)/u,
+    /runCanonicalBeforePending\([\s\S]*runBackfillPhase\(backfillPhases\[0\]\)[\s\S]*pendingStatus = await refreshPendingStatusesSafely\(\);[\s\S]*runBackfillPhase\(backfillPhases\[1\]\)[\s\S]*publishCanonicalSummaryAfterPending\(\)/u,
   );
   assert.doesNotMatch(
     runCycleSource,
