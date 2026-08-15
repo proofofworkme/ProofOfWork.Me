@@ -172,6 +172,7 @@ import {
 } from "./shared/components/AppHeader";
 import {
   AppStatusRow,
+  type AppStatusState,
   type AppStatusTone,
 } from "./shared/components/AppStatusRow";
 import { FeeRateControl } from "./shared/components/FeeRateControl";
@@ -238,11 +239,34 @@ type LegacyBitcoinNetwork = "livenet" | "testnet";
 type UniSatChain = "BITCOIN_MAINNET" | "BITCOIN_TESTNET" | "BITCOIN_TESTNET4";
 type UniSatEvent = "accountsChanged" | "networkChanged" | "chainChanged";
 type StatusTone = AppStatusTone;
-type WorkspaceStatus = { tone: StatusTone; text: string };
+type WorkspaceStatus = AppStatusState;
 const INITIAL_COMPUTER_STATUS: WorkspaceStatus = {
   tone: "idle",
   text: "ProofOfWork Computer ready. Connect UniSat to load account data.",
 };
+
+function txStatusLink(txid: string, network: BitcoinNetwork) {
+  const displayTxid = txid.trim();
+  const normalizedTxid = displayTxid.toLowerCase();
+  return {
+    ariaLabel: `Open transaction ${normalizedTxid} on mempool`,
+    href: explorerTxUrl(normalizedTxid, network),
+    text: shortAddress(displayTxid),
+    title: `Open ${normalizedTxid} on mempool`,
+  };
+}
+
+function goodBroadcastStatus(
+  text: string,
+  txid: string,
+  network: BitcoinNetwork,
+): WorkspaceStatus {
+  return {
+    links: [txStatusLink(txid, network)],
+    text,
+    tone: "good",
+  };
+}
 type Folder =
   | "inbox"
   | "incoming"
@@ -26485,10 +26509,13 @@ export default function App() {
       );
       setIdName("");
       setIdPgpKey("");
-      setStatus({
-        tone: "good",
-        text: `${normalizedIdName}@proofofwork.me registration broadcast: ${shortAddress(txid)}.`,
-      });
+      setStatus(
+        goodBroadcastStatus(
+          `${normalizedIdName}@proofofwork.me registration broadcast: ${shortAddress(txid)}.`,
+          txid,
+          network,
+        ),
+      );
       await refreshIds(true);
       setIdRegistry((current) =>
         current.some((record) => record.txid === txid)
@@ -26640,10 +26667,13 @@ export default function App() {
         wallet: window.unisat,
       });
 
-      setStatus({
-        tone: "good",
-        text: `${successText} broadcast: ${shortAddress(txid)}.`,
-      });
+      setStatus(
+        goodBroadcastStatus(
+          `${successText} broadcast: ${shortAddress(txid)}.`,
+          txid,
+          network,
+        ),
+      );
       await refreshIds(true);
     } catch (error) {
       setStatus({
@@ -26868,10 +26898,13 @@ export default function App() {
       });
 
       setIdSaleAuthorization(JSON.stringify(authorization, null, 2));
-      setStatus({
-        tone: "good",
-        text: `${authorization.id}@proofofwork.me sale ticket broadcast: ${shortAddress(txid)}. After it confirms, seal it so buyers can settle atomically.`,
-      });
+      setStatus(
+        goodBroadcastStatus(
+          `${authorization.id}@proofofwork.me sale ticket broadcast: ${shortAddress(txid)}. After it confirms, seal it so buyers can settle atomically.`,
+          txid,
+          network,
+        ),
+      );
       await refreshIds(true);
     } catch (error) {
       setStatus({
@@ -27064,10 +27097,13 @@ export default function App() {
       });
 
       setIdSaleAuthorization(JSON.stringify(sealedAuthorization, null, 2));
-      setStatus({
-        tone: "good",
-        text: `${listing.id}@proofofwork.me sale ticket sealed: ${shortAddress(txid)}.`,
-      });
+      setStatus(
+        goodBroadcastStatus(
+          `${listing.id}@proofofwork.me sale ticket sealed: ${shortAddress(txid)}.`,
+          txid,
+          network,
+        ),
+      );
       await refreshIds(true);
     } catch (error) {
       setStatus({
@@ -27244,10 +27280,13 @@ export default function App() {
           wallet: window.unisat,
         });
 
-        setStatus({
-          tone: "good",
-          text: `Delisting for ${listing.id}@proofofwork.me broadcast: ${shortAddress(txid)}.`,
-        });
+        setStatus(
+          goodBroadcastStatus(
+            `Delisting for ${listing.id}@proofofwork.me broadcast: ${shortAddress(txid)}.`,
+            txid,
+            network,
+          ),
+        );
         await refreshIds(true);
       } catch (error) {
         setStatus({
@@ -27513,10 +27552,13 @@ export default function App() {
         wallet: window.unisat,
       });
 
-      setStatus({
-        tone: "good",
-        text: `${authorization.id}@proofofwork.me purchase broadcast: ${shortAddress(txid)}.`,
-      });
+      setStatus(
+        goodBroadcastStatus(
+          `${authorization.id}@proofofwork.me purchase broadcast: ${shortAddress(txid)}.`,
+          txid,
+          network,
+        ),
+      );
       setPurchaseReceipt({
         amountLabel: "1 ID",
         assetLabel: `${authorization.id}@proofofwork.me`,
@@ -28157,10 +28199,13 @@ export default function App() {
       setSubject("");
       setReplyParentTxid(undefined);
       setSelectedKey(`sent-${network}-${txid}`);
-      setStatus({
-        tone: "good",
-        text: `Transaction broadcast to ${mailRecipients.length} recipient${mailRecipients.length === 1 ? "" : "s"}${attachedWorkCredits.length > 0 ? ` with ${attachedCreditLabel(attachedWorkCredits)}` : ""}. ${paymentPsbt.inputCount} input${paymentPsbt.inputCount === 1 ? "" : "s"}, ${paymentPsbt.outputCount} output${paymentPsbt.outputCount === 1 ? "" : "s"}.`,
-      });
+      setStatus(
+        goodBroadcastStatus(
+          `Transaction broadcast to ${mailRecipients.length} recipient${mailRecipients.length === 1 ? "" : "s"}${attachedWorkCredits.length > 0 ? ` with ${attachedCreditLabel(attachedWorkCredits)}` : ""}: ${shortAddress(txid)}. ${paymentPsbt.inputCount} input${paymentPsbt.inputCount === 1 ? "" : "s"}, ${paymentPsbt.outputCount} output${paymentPsbt.outputCount === 1 ? "" : "s"}.`,
+          txid,
+          network,
+        ),
+      );
       if (attachedWorkCredits.length > 0) {
         void refreshToken(true);
       }
@@ -28542,10 +28587,13 @@ export default function App() {
       }
       setInfinityBondRecipient("");
       setBondWorkAmount("0");
-      setStatus({
-        tone: "good",
-        text: `${infinityBondAmountValue.toLocaleString()} proof ${activeBondConfig.displayName}${pendingWorkTransfer ? ` with ${tokenAmountDisplay(pendingWorkTransfer, pendingWorkTransfer.amount, pendingWorkTransfer.amountAtoms)} WORK` : ""} broadcast: ${shortAddress(txid)}.`,
-      });
+      setStatus(
+        goodBroadcastStatus(
+          `${infinityBondAmountValue.toLocaleString()} proof ${activeBondConfig.displayName}${pendingWorkTransfer ? ` with ${tokenAmountDisplay(pendingWorkTransfer, pendingWorkTransfer.amount, pendingWorkTransfer.amountAtoms)} WORK` : ""} broadcast: ${shortAddress(txid)}.`,
+          txid,
+          "livenet",
+        ),
+      );
       if (pendingWorkTransfer) {
         void refreshToken(true);
       }
@@ -28747,10 +28795,13 @@ export default function App() {
       );
       setTokenCreationSats((current) => current + TOKEN_CREATION_PRICE_SATS);
       setTokenSelectedId(txid);
-      setStatus({
-        tone: "good",
-        text: `${ticker} create broadcast: ${shortAddress(txid)}.`,
-      });
+      setStatus(
+        goodBroadcastStatus(
+          `${ticker} create broadcast: ${shortAddress(txid)}.`,
+          txid,
+          "livenet",
+        ),
+      );
       void refreshToken(true);
       setTokenDefinitions((current) =>
         current.some((item) => item.tokenId === txid)
@@ -28903,10 +28954,13 @@ export default function App() {
             ? current
             : [mint, ...current],
         );
-        setStatus({
-          tone: "good",
-          text: `${token.ticker} mint ${index + 1}/${total} broadcast via ${broadcast.source}: ${shortAddress(txid)}.`,
-        });
+        setStatus(
+          goodBroadcastStatus(
+            `${token.ticker} mint ${index + 1}/${total} broadcast via ${broadcast.source}: ${shortAddress(txid)}.`,
+            txid,
+            "livenet",
+          ),
+        );
 
         const nextInput = paymentPsbt.nextInput
           ? { ...paymentPsbt.nextInput, txid }
@@ -29332,10 +29386,13 @@ export default function App() {
           : [transfer, ...current],
       );
       setTokenTransferRecipient("");
-      setStatus({
-        tone: "good",
-        text: `${token.ticker} transfer broadcast: ${shortAddress(txid)}.`,
-      });
+      setStatus(
+        goodBroadcastStatus(
+          `${token.ticker} transfer broadcast: ${shortAddress(txid)}.`,
+          txid,
+          "livenet",
+        ),
+      );
       void refreshToken(true);
       void refreshTokenTransferFundingReadiness().catch(() => undefined);
     } catch (error) {
@@ -29690,12 +29747,15 @@ export default function App() {
           ? current
           : [listing, ...current],
       );
-      setStatus({
-        tone: "good",
-        text: workListing
-          ? `${workAmoProofFaceLabel(tokenListFaceProofs)} AMO ${workV8Listing ? "V8" : "V6"} intent broadcast. Its exact ${workV8Listing ? "Q16 " : ""}WORK amount remains an estimate until canonical confirmation freezes the terms: ${shortAddress(txid)}.`
-          : `${latestToken.ticker} listing broadcast: ${shortAddress(txid)}.`,
-      });
+      setStatus(
+        goodBroadcastStatus(
+          workListing
+            ? `${workAmoProofFaceLabel(tokenListFaceProofs)} AMO ${workV8Listing ? "V8" : "V6"} intent broadcast. Its exact ${workV8Listing ? "Q16 " : ""}WORK amount remains an estimate until canonical confirmation freezes the terms: ${shortAddress(txid)}.`
+            : `${latestToken.ticker} listing broadcast: ${shortAddress(txid)}.`,
+          txid,
+          "livenet",
+        ),
+      );
       void refreshToken(true, true);
     } catch (error) {
       setStatus({
@@ -29846,10 +29906,13 @@ export default function App() {
             : item,
         ),
       );
-      setStatus({
-        tone: "good",
-        text: `Credit listing sealed: ${shortAddress(txid)}.`,
-      });
+      setStatus(
+        goodBroadcastStatus(
+          `Credit listing sealed: ${shortAddress(txid)}.`,
+          txid,
+          "livenet",
+        ),
+      );
       setTokenListingActionNotes((current) => {
         const next = { ...current };
         delete next[listing.listingId];
@@ -29990,10 +30053,13 @@ export default function App() {
           ? current
           : [closedListing, ...current];
       });
-      setStatus({
-        tone: "good",
-        text: `Credit listing delisted: ${shortAddress(txid)}.`,
-      });
+      setStatus(
+        goodBroadcastStatus(
+          `Credit listing delisted: ${shortAddress(txid)}.`,
+          txid,
+          "livenet",
+        ),
+      );
       void refreshToken(true, true);
     } catch (error) {
       setStatus({
@@ -30197,10 +30263,13 @@ export default function App() {
       setTokenSales((current) =>
         current.some((item) => item.txid === txid) ? current : [sale, ...current],
       );
-      setStatus({
-        tone: "good",
-        text: `${listing.ticker} purchase broadcast: ${shortAddress(txid)}.`,
-      });
+      setStatus(
+        goodBroadcastStatus(
+          `${listing.ticker} purchase broadcast: ${shortAddress(txid)}.`,
+          txid,
+          "livenet",
+        ),
+      );
       setPurchaseReceipt({
         amountLabel: `${tokenAmountDisplay(
           listing,
@@ -30370,10 +30439,13 @@ export default function App() {
             stats: rushStatsFromMints(mints),
           };
         });
-        setStatus({
-          tone: "good",
-          text: `RUSH mint ${index + 1}/${total} broadcast via ${broadcast.source}: ${shortAddress(txid)}.`,
-        });
+        setStatus(
+          goodBroadcastStatus(
+            `RUSH mint ${index + 1}/${total} broadcast via ${broadcast.source}: ${shortAddress(txid)}.`,
+            txid,
+            mintNetwork,
+          ),
+        );
 
         const nextInput = paymentPsbt.nextInput
           ? { ...paymentPsbt.nextInput, txid }
@@ -30673,10 +30745,13 @@ export default function App() {
         setTokenMintAssistantCompleted(completed);
         setTokenMintAssistantRemaining(Math.max(0, target - completed));
         if (completed < target) {
-          setStatus({
-            tone: "good",
-            text: `Mint assistant broadcast ${completed.toLocaleString()} of ${target.toLocaleString()}: ${shortAddress(txid)}. Next prompt in ${(delayMs / 1000).toLocaleString()}s.`,
-          });
+          setStatus(
+            goodBroadcastStatus(
+              `Mint assistant broadcast ${completed.toLocaleString()} of ${target.toLocaleString()}: ${shortAddress(txid)}. Next prompt in ${(delayMs / 1000).toLocaleString()}s.`,
+              txid,
+              "livenet",
+            ),
+          );
         }
       },
       requireActive: () => tokenMintAssistantActiveRef.current,
@@ -30774,10 +30849,13 @@ export default function App() {
       return;
     }
 
-    setStatus({
-      tone: "good",
-      text: `Mint assistant broadcast ${completed.toLocaleString()} of ${total.toLocaleString()}: ${shortAddress(txid)}. Next prompt in ${(delayMs / 1000).toLocaleString()}s.`,
-    });
+    setStatus(
+      goodBroadcastStatus(
+        `Mint assistant broadcast ${completed.toLocaleString()} of ${total.toLocaleString()}: ${shortAddress(txid)}. Next prompt in ${(delayMs / 1000).toLocaleString()}s.`,
+        txid,
+        "livenet",
+      ),
+    );
     tokenMintAssistantTimerRef.current = window.setTimeout(() => {
       void runTokenMintAssistantStep(nextRemaining, delayMs, total, token);
     }, delayMs);
@@ -30877,10 +30955,13 @@ export default function App() {
         psbtHex: paymentPsbt.psbtHex,
         wallet: window.unisat,
       });
-      setStatus({
-        tone: "good",
-        text: `${transferCount.toLocaleString()} transfer lanes prepared: ${shortAddress(txid)}. Each output carries ${outputSats.toLocaleString()} proofs for one registry payment plus fee reserve. Wait for confirmation before parallel transfers.`,
-      });
+      setStatus(
+        goodBroadcastStatus(
+          `${transferCount.toLocaleString()} transfer lanes prepared: ${shortAddress(txid)}. Each output carries ${outputSats.toLocaleString()} proofs for one registry payment plus fee reserve. Wait for confirmation before parallel transfers.`,
+          txid,
+          "livenet",
+        ),
+      );
       await refreshTokenTransferFundingReadiness().catch(() => undefined);
     } catch (error) {
       setStatus({
@@ -30985,10 +31066,13 @@ export default function App() {
         psbtHex: paymentPsbt.psbtHex,
         wallet: window.unisat,
       });
-      setStatus({
-        tone: "good",
-        text: `${mintCount.toLocaleString()} mint UTXOs prepared for ${selectedToken.ticker}: ${shortAddress(txid)}. Split fee ${paymentPsbt.feeSats.toLocaleString()} proofs at ${prepareFeeRate} proof/vB. Wait for confirmation before burst minting.`,
-      });
+      setStatus(
+        goodBroadcastStatus(
+          `${mintCount.toLocaleString()} mint UTXOs prepared for ${selectedToken.ticker}: ${shortAddress(txid)}. Split fee ${paymentPsbt.feeSats.toLocaleString()} proofs at ${prepareFeeRate} proof/vB. Wait for confirmation before burst minting.`,
+          txid,
+          "livenet",
+        ),
+      );
     } catch (error) {
       setStatus({
         tone: "bad",

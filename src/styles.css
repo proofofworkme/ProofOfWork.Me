@@ -1545,9 +1545,21 @@ code {
   z-index: var(--sticky-status-z);
 }
 
-.status > span:last-child {
+.status-text {
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.status-link {
+  color: currentColor;
+  font-weight: 700;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+.status-link:hover {
+  text-decoration-thickness: 2px;
 }
 
 .status-dot {
