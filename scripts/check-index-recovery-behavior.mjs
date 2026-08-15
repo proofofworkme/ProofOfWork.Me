@@ -21624,6 +21624,127 @@ check("canonical WORK lifecycle state rebinds unique relational event positions"
     confirmedListingSource,
     /pendingWorkVerifierStageCanonicalCutoverRelic[\s\S]*pendingWorkVerifierStageDeleteFields[\s\S]*closedTxid: ""/u,
   );
+  assert.match(
+    confirmedListingSource,
+    /pendingWorkVerifierStageConfirmedV8Listing/u,
+    "confirmed V8 listings must be canonicalized before the AMO V8 commitment",
+  );
+});
+
+check("pending WORK confirmed V8 listings materialize frozen terms for readiness", () => {
+  const listingId =
+    "07c9ca719adf7a7e94ff17c917e599e872ae1c0348f282219907c060a72b8043";
+  const sellerAddress = "17W7JZ9KjjGUwdAyXeGxhzYe2vGe8YTRzA";
+  const listingPosition = {
+    blockHash:
+      "00000000000000000000bf886c4bf4db7b05c4c73a5b6d8b071a1823b5bf87da",
+    blockHeight: 962_104,
+    blockTransactionIndex: 567,
+    protocolVout: 1,
+    recordOrdinal: 0,
+  };
+  const authorization = {
+    ...WORK_AMO_V8_MODELS,
+    anchorScriptPubKey: `0014${"22".repeat(20)}`,
+    anchorSigHashType: 0x83,
+    anchorType: "sale-ticket-v1",
+    anchorValueSats: 546,
+    anchorVout: 2,
+    buyerAddress: "",
+    expiresAt: "",
+    network: "livenet",
+    nonce: "pending-v8-readiness-listing",
+    registryAddress: WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS,
+    sellerAddress,
+    sellerPublicKey: `02${"11".repeat(32)}`,
+    ticker: "WORK",
+    tokenId: WORK_TOKEN_ID,
+    unitFaceProofs: 25_000,
+    version: WORK_AMO_V8_AUTH_VERSION,
+  };
+  const terms = deriveWorkAmoV8FrozenTerms(authorization, {
+    activationHeight: listingPosition.blockHeight - 1,
+    listingBondContributionQ8: "54600000000",
+    listingPosition,
+    networkValueBeforeQ8: "407065289490674149005636246",
+    spendableAmountSubatoms: WORK_TOKEN_MAX_SUPPLY_SUBATOMS.toString(),
+  });
+  assert.equal(terms.valid, true, terms.reasonCode);
+  const canonicalize = isolatedFunction(
+    API_PATH,
+    "pendingWorkVerifierStageConfirmedV8Listing",
+    {
+      TOKEN_SALE_AUTH_WORK_AMO_V8_VERSION: WORK_AMO_V8_AUTH_VERSION,
+      canonicalNonNegativeIntegerText,
+      canonicalWorkSubatomsText,
+      pendingWorkVerifierStageError: (code, message, details = {}) =>
+        Object.assign(new Error(message), { details: { code, ...details } }),
+      validateWorkAmoV8FrozenTerms,
+      validateWorkAmoV8StaticAuthorization,
+    },
+  );
+  const listing = {
+    blockHash: listingPosition.blockHash,
+    blockHeight: listingPosition.blockHeight,
+    blockIndex: listingPosition.blockTransactionIndex,
+    listingId,
+    priceSats: "",
+    protocolVout: listingPosition.protocolVout,
+    recordOrdinal: listingPosition.recordOrdinal,
+    sellerAddress,
+    workAmoPricing: { frozenTerms: terms.frozenTerms },
+  };
+  const materialized = canonicalize(listing, authorization, listingId);
+  assert.equal(
+    materialized.amountSubatoms,
+    terms.frozenTerms.unitAmountSubatoms,
+  );
+  assert.equal(materialized.priceSats, terms.frozenTerms.unitPriceSats);
+  assert.deepEqual(materialized.frozenTerms, terms.frozenTerms);
+  assert.equal(
+    validateWorkAmoV8StaticAuthorization(
+      materialized.saleAuthorization,
+    ).valid,
+    true,
+  );
+  assert.doesNotThrow(() =>
+    workAmoV8CanonicalTokenStateCommitment({
+      confirmedSupplySubatoms: WORK_TOKEN_MAX_SUPPLY_SUBATOMS.toString(),
+      holders: [{
+        address: sellerAddress,
+        balanceSubatoms: WORK_TOKEN_MAX_SUPPLY_SUBATOMS.toString(),
+      }],
+      listings: [materialized],
+    }),
+  );
+  assert.throws(
+    () =>
+      canonicalize(
+        {
+          ...listing,
+          amountSubatoms: (
+            BigInt(terms.frozenTerms.unitAmountSubatoms) + 1n
+          ).toString(),
+        },
+        authorization,
+        listingId,
+      ),
+    /amount or price diverges/u,
+  );
+  assert.throws(
+    () =>
+      canonicalize(
+        {
+          ...listing,
+          priceSats: (
+            BigInt(terms.frozenTerms.unitPriceSats) + 1n
+          ).toString(),
+        },
+        authorization,
+        listingId,
+      ),
+    /amount or price diverges/u,
+  );
 });
 
 check("pending WORK confirmed base collapses only its exact legacy invalid sibling", () => {

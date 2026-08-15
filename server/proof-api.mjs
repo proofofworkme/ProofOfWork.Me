@@ -200,6 +200,7 @@ import {
   WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL,
   WORK_AMO_V8_TRANSFER_VERSION,
   validateWorkAmoV8DeclarationEvidence,
+  validateWorkAmoV8FrozenTerms,
   validateWorkAmoV8StaticAuthorization,
   workAmoV8BroadcastDecision,
   workAmoV8CanonicalTokenStateCommitment,
@@ -59710,6 +59711,94 @@ function pendingWorkVerifierStageCanonicalCutoverRelic(listing) {
   );
 }
 
+function pendingWorkVerifierStageConfirmedV8Listing(
+  listing,
+  staticAuthorization,
+  listingId,
+) {
+  if (staticAuthorization.version !== TOKEN_SALE_AUTH_WORK_AMO_V8_VERSION) {
+    return listing;
+  }
+  const staticValidation =
+    validateWorkAmoV8StaticAuthorization(staticAuthorization);
+  if (!staticValidation.valid) {
+    throw pendingWorkVerifierStageError(
+      "PENDING_WORK_STAGE_BASE_INVALID",
+      "Canonical WORK listing static authorization is not valid AMO V8 state.",
+      { listingId },
+    );
+  }
+  const objectValue = (value) =>
+    value && typeof value === "object" && !Array.isArray(value)
+      ? value
+      : null;
+  const frozenCandidates = [
+    listing.frozenTerms,
+    listing.workAmoV8FrozenTerms,
+    listing.workAmoFrozenTerms,
+    objectValue(listing.workAmoPricing)?.frozenTerms,
+    objectValue(listing.workMarketPricing)?.frozenTerms,
+    listing.listingFrozenTerms,
+  ];
+  const listingPosition = {
+    blockHash: listing.blockHash,
+    blockHeight: listing.blockHeight,
+    blockTransactionIndex: listing.blockIndex,
+    protocolVout: listing.protocolVout,
+    recordOrdinal: listing.recordOrdinal,
+  };
+  const frozenValidation = frozenCandidates
+    .map((candidate) =>
+      validateWorkAmoV8FrozenTerms(candidate, {
+        authorization: staticValidation.authorization,
+        listingPosition,
+      }),
+    )
+    .find((validation) => validation.valid);
+  if (!frozenValidation) {
+    throw pendingWorkVerifierStageError(
+      "PENDING_WORK_STAGE_BASE_INVALID",
+      "Canonical WORK listing has no valid confirmed AMO V8 frozen terms.",
+      { listingId },
+    );
+  }
+  const frozenTerms = frozenValidation.frozenTerms;
+  const amountSubatoms = canonicalWorkSubatomsText(
+    listing.amountSubatoms,
+  );
+  const priceSats = canonicalNonNegativeIntegerText(listing.priceSats, {
+    allowZero: false,
+  });
+  if (
+    (
+      listing.amountSubatoms !== undefined &&
+      listing.amountSubatoms !== null &&
+      listing.amountSubatoms !== "" &&
+      amountSubatoms !== frozenTerms.unitAmountSubatoms
+    ) ||
+    (
+      listing.priceSats !== undefined &&
+      listing.priceSats !== null &&
+      listing.priceSats !== "" &&
+      priceSats !== frozenTerms.unitPriceSats
+    )
+  ) {
+    throw pendingWorkVerifierStageError(
+      "PENDING_WORK_STAGE_BASE_INVALID",
+      "Canonical WORK listing amount or price diverges from AMO V8 frozen terms.",
+      { listingId },
+    );
+  }
+  return {
+    ...listing,
+    amountSubatoms: frozenTerms.unitAmountSubatoms,
+    frozenTerms,
+    listingAuthorization: staticValidation.authorization,
+    priceSats: frozenTerms.unitPriceSats,
+    saleAuthorization: staticValidation.authorization,
+  };
+}
+
 function pendingWorkVerifierStageConfirmedListing(value, { closed = false } = {}) {
   let listing = pendingWorkVerifierStageConfirmedItem(value);
   const listingId = String(listing.listingId ?? "").trim().toLowerCase();
@@ -59758,10 +59847,12 @@ function pendingWorkVerifierStageConfirmedListing(value, { closed = false } = {}
         { listingId, reason: errorSummary(error) },
       );
     }
+    const v8StaticValidation =
+      validateWorkAmoV8StaticAuthorization(staticAuthorization);
     if (
       (!closed ||
         staticAuthorization.version === TOKEN_SALE_AUTH_WORK_AMO_V8_VERSION) &&
-      !validateWorkAmoV8StaticAuthorization(staticAuthorization).valid
+      !v8StaticValidation.valid
     ) {
       throw pendingWorkVerifierStageError(
         "PENDING_WORK_STAGE_BASE_INVALID",
@@ -59775,6 +59866,13 @@ function pendingWorkVerifierStageConfirmedListing(value, { closed = false } = {}
     );
     listing.listingAuthorization = staticAuthorization;
     listing.saleAuthorization = staticAuthorization;
+    listing = pendingWorkVerifierStageConfirmedV8Listing(
+      listing,
+      v8StaticValidation.valid
+        ? v8StaticValidation.authorization
+        : staticAuthorization,
+      listingId,
+    );
   }
   if (closed) {
     const canonicalCutoverRelic =
