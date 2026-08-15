@@ -1399,6 +1399,7 @@ type TokenTransferFundingReadiness = {
 };
 
 type UtxoSelectionStrategy = "default" | "smallest-single-confirmed";
+type ListingAnchorReadMode = "strict" | "current-token-fallback";
 
 type PaymentOutputSpec = {
   address?: string;
@@ -8648,6 +8649,43 @@ function tokenAmountDisplayFromUnits(
   );
 }
 
+function tokenWalletBalanceUnitSummary(
+  balance: PowTokenWalletBalance,
+  listings: PowTokenListing[],
+  ownerAddress: string,
+) {
+  const confirmedUnits =
+    tokenWalletBalanceAmountUnits(balance, "confirmedBalance") ?? 0n;
+  const pendingIncomingUnits =
+    tokenWalletBalanceAmountUnits(balance, "pendingIncoming") ?? 0n;
+  const pendingOutgoingUnits =
+    tokenWalletBalanceAmountUnits(balance, "pendingOutgoing") ?? 0n;
+  const listedUnits = tokenWalletBalanceReservedUnits(
+    balance,
+    listings,
+    ownerAddress,
+  );
+  const spendableUnits = [
+    confirmedUnits - pendingOutgoingUnits - listedUnits,
+    0n,
+  ].reduce((maximum, value) => (value > maximum ? value : maximum));
+
+  return {
+    confirmedUnits,
+    listedUnits,
+    pendingIncomingUnits,
+    pendingOutgoingUnits,
+    spendableUnits,
+  };
+}
+
+function tokenWalletBalanceUnitDisplay(
+  balance: PowTokenWalletBalance,
+  units: bigint,
+) {
+  return `${tokenAmountDisplayFromUnits(balance.token, units)} ${balance.token.ticker}`;
+}
+
 function bondUiConfigForTokenId(tokenId: string) {
   const normalized = String(tokenId ?? "").trim().toLowerCase();
   return BOND_UI_CONFIGS.find((config) => config.tokenId === normalized);
@@ -15330,6 +15368,9 @@ async function fetchFreshWalletTokenListingsForAnchors(
       if (!isTransientProofApiReadError(error)) {
         throw error;
       }
+      if (options.allowCurrentFallback) {
+        break;
+      }
     }
   }
   if (options.allowCurrentFallback) {
@@ -15356,6 +15397,7 @@ async function fetchFreshWalletTokenListingsForAnchors(
 async function fetchFreshProofOfWorkListingAnchorOutpoints(
   walletAddress: string,
   network: BitcoinNetwork,
+  options: { allowCurrentTokenFallback?: boolean } = {},
 ) {
   const normalizedAddress = walletAddress.trim();
   if (!normalizedAddress) {
@@ -15377,6 +15419,7 @@ async function fetchFreshProofOfWorkListingAnchorOutpoints(
           tokenScope,
           {
             allowCurrentFallback:
+              options.allowCurrentTokenFallback ||
               tokenScope === POWB_TOKEN_ID || tokenScope === INCB_TOKEN_ID,
           },
         ),
@@ -16527,6 +16570,58 @@ function tokenValidEventKeysForState(state: Pick<
   });
 
   return keys;
+}
+
+function tokenListingEventKey(item: Partial<PowTokenListing> & {
+  txid?: string;
+}) {
+  const listingId = String(item.listingId ?? item.txid ?? "")
+    .trim()
+    .toLowerCase();
+  if (!/^[0-9a-f]{64}$/u.test(listingId)) {
+    return "";
+  }
+  const tokenId = String(
+    item.tokenId ?? item.saleAuthorization?.tokenId ?? "",
+  )
+    .trim()
+    .toLowerCase();
+  return tokenId ? `${tokenId}:${listingId}` : "";
+}
+
+function tokenInvalidEventLooksLikeListingAttempt(
+  event: PowTokenInvalidEvent,
+) {
+  const attempted = String(event.attemptedKind ?? "").trim().toLowerCase();
+  const reason = String(event.reason ?? "").trim();
+  return (
+    attempted.includes("list") ||
+    reason === "work-market-v2-version-required"
+  );
+}
+
+function tokenInvalidEventsWithoutActiveListingEchoes(
+  invalidEvents: PowTokenInvalidEvent[],
+  listings: PowTokenListing[],
+) {
+  const activeListingKeys = new Set(
+    listings
+      .filter((listing) => listing.confirmed === true)
+      .map(tokenListingEventKey)
+      .filter(Boolean),
+  );
+  if (activeListingKeys.size === 0) {
+    return invalidEvents;
+  }
+
+  return invalidEvents.filter((event) => {
+    const key = tokenListingEventKey(event);
+    return (
+      !key ||
+      !activeListingKeys.has(key) ||
+      !tokenInvalidEventLooksLikeListingAttempt(event)
+    );
+  });
 }
 
 function tokenInvalidEventShrinkWasRepaired(
@@ -17850,10 +17945,12 @@ async function buildPaymentPsbt({
   excludeOutpoints,
   feeRate,
   fromAddress,
+  listingAnchorReadMode = "strict",
   network,
   payments,
   postProtocolPayments,
   postProtocolPayloads = [],
+  prefetchedWalletUtxos,
   requireConfirmedUtxos = true,
   requireWalletUtxos = false,
   protocolPayloads,
@@ -17864,10 +17961,12 @@ async function buildPaymentPsbt({
   excludeOutpoints?: PowIdSpentOutpoint[];
   feeRate: number;
   fromAddress: string;
+  listingAnchorReadMode?: ListingAnchorReadMode;
   network: BitcoinNetwork;
   payments?: PaymentOutputSpec[];
   postProtocolPayments?: PaymentOutputSpec[];
   postProtocolPayloads?: string[];
+  prefetchedWalletUtxos?: MempoolUtxo[];
   requireConfirmedUtxos?: boolean;
   requireWalletUtxos?: boolean;
   protocolPayloads: string[];
@@ -17954,8 +18053,13 @@ async function buildPaymentPsbt({
     );
   const changeOutputVbytes = outputVbytesForScript(changeScript);
   const [walletUtxos, reservedListingAnchors] = await Promise.all([
-    fetchUtxos(fromAddress, network),
-    fetchFreshProofOfWorkListingAnchorOutpoints(fromAddress, network),
+    Array.isArray(prefetchedWalletUtxos)
+      ? prefetchedWalletUtxos
+      : fetchUtxos(fromAddress, network),
+    fetchFreshProofOfWorkListingAnchorOutpoints(fromAddress, network, {
+      allowCurrentTokenFallback:
+        listingAnchorReadMode === "current-token-fallback",
+    }),
   ]);
   const mergedExclusions = mergeListingAnchorOutpoints(
     excludeOutpoints ?? [],
@@ -19462,6 +19566,9 @@ export default function App() {
   const [tokenAction, setTokenAction] = useState<
     "" | "buy" | "create" | "delist" | "list" | "mint" | "seal" | "split" | "split-transfer" | "transfer"
   >("");
+  const [tokenListingActionNotes, setTokenListingActionNotes] = useState<
+    Record<string, string>
+  >({});
   useEffect(() => {
     let canceled = false;
     if (!address || network !== "livenet") {
@@ -21691,11 +21798,36 @@ export default function App() {
     }
 
     if (confirmedCreditBalances.length > 0) {
-      const creditDetail = confirmedCreditBalances
+      const creditSummaries = confirmedCreditBalances.map((balance) => ({
+        balance,
+        summary: tokenWalletBalanceUnitSummary(
+          balance,
+          walletReservationListings,
+          address,
+        ),
+      }));
+      const creditDetail = creditSummaries
         .slice(0, 4)
         .map(
-          (balance) =>
-            `${tokenWalletBalanceDisplay(balance)} ${balance.token.ticker}`,
+          ({ balance, summary }) =>
+            [
+              `confirmed ${tokenWalletBalanceUnitDisplay(
+                balance,
+                summary.confirmedUnits,
+              )}`,
+              `spendable ${tokenWalletBalanceUnitDisplay(
+                balance,
+                summary.spendableUnits,
+              )}`,
+              summary.listedUnits > 0n
+                ? `listed ${tokenWalletBalanceUnitDisplay(
+                    balance,
+                    summary.listedUnits,
+                  )}`
+                : "",
+            ]
+              .filter(Boolean)
+              .join(" · "),
         )
         .join(" · ");
       const hiddenCreditCount = Math.max(0, confirmedCreditBalances.length - 4);
@@ -21706,9 +21838,56 @@ export default function App() {
         label: "credit balance",
         value:
           confirmedCreditBalances.length === 1
-            ? `${tokenWalletBalanceDisplay(confirmedCreditBalances[0])} ${confirmedCreditBalances[0].token.ticker}`
+            ? tokenWalletBalanceUnitDisplay(
+                creditSummaries[0].balance,
+                creditSummaries[0].summary.confirmedUnits,
+              )
             : `${confirmedCreditBalances.length.toLocaleString()} credits`,
       });
+      stats.push({
+        detail: hiddenCreditCount
+          ? `${creditSummaries
+              .slice(0, 4)
+              .map(({ balance, summary }) =>
+                tokenWalletBalanceUnitDisplay(balance, summary.spendableUnits),
+              )
+              .join(" · ")} · ${hiddenCreditCount.toLocaleString()} more`
+          : creditSummaries
+              .map(({ balance, summary }) =>
+                tokenWalletBalanceUnitDisplay(balance, summary.spendableUnits),
+              )
+              .join(" · "),
+        label: "spendable credit",
+        value:
+          creditSummaries.length === 1
+            ? tokenWalletBalanceUnitDisplay(
+                creditSummaries[0].balance,
+                creditSummaries[0].summary.spendableUnits,
+              )
+            : `${creditSummaries.length.toLocaleString()} credits`,
+      });
+      const listedCreditSummaries = creditSummaries.filter(
+        ({ summary }) => summary.listedUnits > 0n,
+      );
+      if (listedCreditSummaries.length > 0) {
+        stats.push({
+          detail: listedCreditSummaries
+            .slice(0, 4)
+            .map(({ balance, summary }) =>
+              tokenWalletBalanceUnitDisplay(balance, summary.listedUnits),
+            )
+            .join(" · "),
+          label: "listed credit",
+          tone: "pending",
+          value:
+            listedCreditSummaries.length === 1
+              ? tokenWalletBalanceUnitDisplay(
+                  listedCreditSummaries[0].balance,
+                  listedCreditSummaries[0].summary.listedUnits,
+                )
+              : `${listedCreditSummaries.length.toLocaleString()} credits`,
+        });
+      }
     }
 
     for (const balance of connectedBondWalletBalances) {
@@ -21757,6 +21936,7 @@ export default function App() {
     powbWalletBalances,
     tokenListings,
     tokenWalletBalances,
+    walletReservationListings,
     walletPendingIdEvents,
   ]);
 
@@ -22429,6 +22609,7 @@ export default function App() {
         lane: AccountTokenLane,
         load: () => Promise<PowTokenState>,
         commit: (state: PowTokenState) => void,
+        options: { refresh?: () => Promise<PowTokenState> } = {},
       ) => {
         setAccountTokenLaneStatuses((current) => ({
           ...current,
@@ -22438,6 +22619,39 @@ export default function App() {
           .then((state) => {
             if (!cancelled && currentRequestId === requestId) {
               commit(state);
+              if (options.refresh) {
+                setAccountTokenLaneStatuses((current) => ({
+                  ...current,
+                  [lane]: { error: "", loaded: true, loading: true },
+                }));
+                void options
+                  .refresh()
+                  .then((freshState) => {
+                    if (!cancelled && currentRequestId === requestId) {
+                      commit(freshState);
+                      setAccountTokenLaneStatuses((current) => ({
+                        ...current,
+                        [lane]: { error: "", loaded: true, loading: false },
+                      }));
+                    }
+                  })
+                  .catch((error) => {
+                    if (!cancelled && currentRequestId === requestId) {
+                      setAccountTokenLaneStatuses((current) => ({
+                        ...current,
+                        [lane]: {
+                          error: errorMessage(
+                            error,
+                            `${ACCOUNT_TOKEN_LANE_LABELS[lane]} wallet balances are unavailable.`,
+                          ),
+                          loaded: true,
+                          loading: false,
+                        },
+                      }));
+                    }
+                  });
+                return;
+              }
               setAccountTokenLaneStatuses((current) => ({
                 ...current,
                 [lane]: { error: "", loaded: true, loading: false },
@@ -22471,7 +22685,7 @@ export default function App() {
         () =>
           fetchTokenState(
             network,
-            true,
+            false,
             WORK_TOKEN_ID,
             false,
             [address],
@@ -22479,6 +22693,18 @@ export default function App() {
             true,
           ),
         setAccountWorkTokenState,
+        {
+          refresh: () =>
+            fetchTokenState(
+              network,
+              true,
+              WORK_TOKEN_ID,
+              false,
+              [address],
+              true,
+              true,
+            ),
+        },
       );
       loadAccountTokenLane(
         "powb",
@@ -27783,10 +28009,20 @@ export default function App() {
         }));
       }
 
+      setStatus({
+        tone: "idle",
+        text: attachedWorkPayloads.length > 0
+          ? "Checking spendable proofs and WORK attachment funding..."
+          : "Checking spendable proofs and reserved listing anchors...",
+      });
       const paymentPsbt = await buildPaymentPsbt({
         excludeOutpoints: paymentExcludeOutpoints,
         feeRate,
         fromAddress: address,
+        listingAnchorReadMode:
+          attachedWorkPayloads.length > 0
+            ? "strict"
+            : "current-token-fallback",
         network,
         payments: mailRecipients.map((mailRecipient) => ({
           address: mailRecipient.address,
@@ -27804,6 +28040,7 @@ export default function App() {
               ]
             : undefined,
         postProtocolPayloads: attachedWorkPayloads,
+        prefetchedWalletUtxos: accountUtxosLoaded ? accountUtxos : undefined,
         protocolPayloads,
       });
       if (
@@ -29495,6 +29732,11 @@ export default function App() {
 
     setTokenAction("seal");
     setBusy(true);
+    setTokenListingActionNotes((current) => {
+      const next = { ...current };
+      delete next[listing.listingId];
+      return next;
+    });
     setStatus({ tone: "idle", text: "Sealing credit listing..." });
 
     try {
@@ -29608,11 +29850,21 @@ export default function App() {
         tone: "good",
         text: `Credit listing sealed: ${shortAddress(txid)}.`,
       });
+      setTokenListingActionNotes((current) => {
+        const next = { ...current };
+        delete next[listing.listingId];
+        return next;
+      });
       void refreshToken(true, true);
     } catch (error) {
+      const message = errorMessage(error, "Credit listing seal failed.");
+      setTokenListingActionNotes((current) => ({
+        ...current,
+        [listing.listingId]: message,
+      }));
       setStatus({
         tone: "bad",
-        text: errorMessage(error, "Credit listing seal failed."),
+        text: message,
       });
     } finally {
       setTokenAction("");
@@ -30913,6 +31165,7 @@ export default function App() {
         listFaceProofs={tokenListFaceProofs}
         listPriceSats={tokenListPriceSats}
         listing={tokenAction === "list"}
+        listingActionNotes={tokenListingActionNotes}
         listings={walletReservationListings}
         listSpendableBalance={walletSpendableTokenBalance}
         network={network}
@@ -31872,6 +32125,7 @@ export default function App() {
             listFaceProofs={tokenListFaceProofs}
             listPriceSats={tokenListPriceSats}
             listing={tokenAction === "list"}
+            listingActionNotes={tokenListingActionNotes}
             listings={walletReservationListings}
             listSpendableBalance={walletSpendableTokenBalance}
             prepareTransferCount={tokenPrepareTransferCount}
@@ -34120,6 +34374,7 @@ type TokenWalletAppProps = {
   listFaceProofs: number;
   listPriceSats: number;
   listing: boolean;
+  listingActionNotes: Record<string, string>;
   listings: PowTokenListing[];
   listSpendableBalance: ExactIntegerValue;
   network: BitcoinNetwork;
@@ -34839,6 +35094,7 @@ function InfinityApp({
           listFaceProofs={listFaceProofs}
           listPriceSats={listPriceSats}
           listing={listing}
+          listingActionNotes={{}}
           listings={listings}
           listSpendableBalance={listSpendableBalance}
           sealListing={sealListing}
@@ -34958,6 +35214,7 @@ function TokenWalletApp({
   listFaceProofs,
   listPriceSats,
   listing,
+  listingActionNotes,
   listings,
   listSpendableBalance,
   network,
@@ -35039,6 +35296,7 @@ function TokenWalletApp({
         listFaceProofs={listFaceProofs}
         listPriceSats={listPriceSats}
         listing={listing}
+        listingActionNotes={listingActionNotes}
         listings={listings}
         listSpendableBalance={listSpendableBalance}
         prepareTransferCount={prepareTransferCount}
@@ -35113,7 +35371,7 @@ const DEFAULT_TOKEN_WALLET_WORKSPACE_COPY: Required<TokenWalletWorkspaceCopy> = 
   noBalanceBody: "Mint or receive credit, then refresh this wallet.",
   noBalanceOption: "No credit balance",
   noBalanceTitle: "No credit balance yet",
-  ownedLabel: "Credits owned",
+  ownedLabel: "Credit types",
   transferButton: "Transfer credit",
   transferDescription:
     "Sends a ProofOfWork credit transfer event and pays the selected credit registry.",
@@ -35201,6 +35459,7 @@ function TokenWalletWorkspace({
   listFaceProofs,
   listPriceSats,
   listing,
+  listingActionNotes,
   listings,
   listSpendableBalance,
   prepareTransferCount = TOKEN_PREPARE_DEFAULT_TRANSFER_COUNT,
@@ -35253,6 +35512,7 @@ function TokenWalletWorkspace({
   | "listFaceProofs"
   | "listPriceSats"
   | "listing"
+  | "listingActionNotes"
   | "listings"
   | "listSpendableBalance"
   | "sealListing"
@@ -35350,7 +35610,10 @@ function TokenWalletWorkspace({
     transfers: walletTransfers,
   });
   const walletInvalidEvents = normalizedWalletAddress
-    ? invalidEvents.filter((event) =>
+    ? tokenInvalidEventsWithoutActiveListingEchoes(
+        invalidEvents,
+        walletListingEvents,
+      ).filter((event) =>
         !walletValidMovementKeys.has(tokenEventKey(event.tokenId, event.txid)) &&
         [
           event.senderAddress,
@@ -36441,6 +36704,8 @@ function TokenWalletWorkspace({
                       : !workReadEraReady
                         ? "Pre-V8 relic"
                         : "Frozen terms unavailable";
+                  const listingActionNote =
+                    listingActionNotes[item.listingId] ?? "";
                   const unitSats = tokenListingUnitPriceSats(item);
                   return (
                     <article className="token-list-item" key={item.listingId}>
@@ -36540,6 +36805,13 @@ function TokenWalletWorkspace({
                             : "Delist"}
                         </button>
                       </span>
+                      {workSealBlocked || listingActionNote ? (
+                        <p className="field-note bad">
+                          {workSealBlocked
+                            ? workSealBlockedLabel
+                            : listingActionNote}
+                        </p>
+                      ) : null}
                     </article>
                   );
                 })}

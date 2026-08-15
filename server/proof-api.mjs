@@ -3480,6 +3480,104 @@ async function tokenPayloadWithIndexedWalletOverlay(
   );
 }
 
+async function tokenPayloadWithIndexedWalletHolders(
+  payload,
+  network,
+  tokenScope,
+  recoveryAddresses,
+) {
+  const scope = normalizeTokenScope(tokenScope);
+  if (
+    network !== "livenet" ||
+    !scope ||
+    scope === "all" ||
+    !Array.isArray(recoveryAddresses) ||
+    recoveryAddresses.length === 0 ||
+    !proofIndexReadFeatureEnabled("token-history,token")
+  ) {
+    return payload;
+  }
+
+  const normalizedAddresses = [
+    ...new Set(
+      recoveryAddresses
+        .map((address) => String(address ?? "").trim())
+        .filter(Boolean),
+    ),
+  ];
+  if (normalizedAddresses.length === 0) {
+    return payload;
+  }
+
+  const holderPages = await Promise.all(
+    normalizedAddresses.map(async (address) => {
+      const params = new URLSearchParams({
+        kind: "holders",
+        limit: "10",
+        q: address,
+      });
+      return proofIndexTokenHistoryPayload(
+        network,
+        scope,
+        "holders",
+        params,
+      ).catch((error) => {
+        console.error(
+          `Proof index wallet holder backfill failed for ${address}: ${errorSummary(error)}`,
+        );
+        return null;
+      });
+    }),
+  );
+
+  const addressKeys = new Set(
+    normalizedAddresses.map((address) => address.toLowerCase()),
+  );
+  const holderRows = holderPages.flatMap((page) =>
+    (Array.isArray(page?.items) ? page.items : []).filter((holder) => {
+      const holderAddress = String(holder?.address ?? "").trim().toLowerCase();
+      const holderTokenId = normalizeTokenScope(holder?.tokenId);
+      const holderTicker = normalizeTokenScope(holder?.ticker);
+      return (
+        addressKeys.has(holderAddress) &&
+        (holderTokenId === scope || holderTicker === scope)
+      );
+    }),
+  );
+  if (holderRows.length === 0) {
+    return payload;
+  }
+
+  const holders = mergeWalletHolders(payload?.holders, holderRows);
+  return walletTokenPayloadWithCanonicalDefinitions(
+    {
+      ...payload,
+      holders,
+      indexedAt: holderPages
+        .map((page) => page?.indexedAt)
+        .reduce((latest, value) => newerIso(latest, value), payload?.indexedAt),
+      indexedThroughBlock:
+        Math.max(
+          numericValue(payload?.indexedThroughBlock),
+          ...holderPages.map((page) =>
+            numericValue(page?.indexedThroughBlock),
+          ),
+        ) || payload?.indexedThroughBlock,
+      source: mergedSourceLabel(
+        payload?.source,
+        "proof-indexer-credit-balances-wallet-holders",
+      ),
+      stats: {
+        ...(payload?.stats ?? {}),
+        holders: holders.length,
+        walletScoped: true,
+      },
+      walletScoped: true,
+    },
+    network,
+  );
+}
+
 function transferBalanceDeltaForAddress(
   transfer,
   address,
@@ -36358,8 +36456,14 @@ async function walletScopedTokenSummaryPayload(
     "wallet-scoped-token-summary",
   );
   if (addressScopedPayload) {
-    const indexedPayload = await tokenPayloadWithWalletActiveListings(
+    let indexedPayload = await tokenPayloadWithIndexedWalletHolders(
       addressScopedPayload,
+      network,
+      scope,
+      recoveryAddresses,
+    );
+    indexedPayload = await tokenPayloadWithWalletActiveListings(
+      indexedPayload,
       network,
       scope,
       recoveryAddresses,
@@ -36415,6 +36519,12 @@ async function walletScopedTokenSummaryPayload(
     scope,
     recoveryAddresses,
     payload?.tokens,
+  );
+  scopedPayload = await tokenPayloadWithIndexedWalletHolders(
+    scopedPayload,
+    network,
+    scope,
+    recoveryAddresses,
   );
   scopedPayload = await tokenPayloadWithWalletActiveListings(
     scopedPayload,
@@ -36497,8 +36607,14 @@ async function walletScopedTokenPayload(
     { allowLastGood, requireCurrent },
   );
   if (addressScopedPayload) {
-    const indexedPayload = await tokenPayloadWithWalletActiveListings(
+    let indexedPayload = await tokenPayloadWithIndexedWalletHolders(
       addressScopedPayload,
+      network,
+      scope,
+      recoveryAddresses,
+    );
+    indexedPayload = await tokenPayloadWithWalletActiveListings(
+      indexedPayload,
       network,
       scope,
       recoveryAddresses,
@@ -36629,6 +36745,12 @@ async function walletScopedTokenPayload(
     scope,
     recoveryAddresses,
     payload?.tokens,
+  );
+  scopedPayload = await tokenPayloadWithIndexedWalletHolders(
+    scopedPayload,
+    network,
+    scope,
+    recoveryAddresses,
   );
   scopedPayload = await tokenPayloadWithWalletActiveListings(
     scopedPayload,

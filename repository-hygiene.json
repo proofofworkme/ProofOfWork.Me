@@ -36,6 +36,7 @@
     "ledger-and-audit-evidence": [
       "BUG_BOUNTY_LEDGER.md",
       "ID_REFUNDS.md",
+      "PRODUCTION_REPAIR_SCOPE_2026-08-14.md",
       "TREASURY_LEDGER.md",
       "WORK_MARKET_V2_STALE_REFUND_REVIEW_959301.json"
     ],

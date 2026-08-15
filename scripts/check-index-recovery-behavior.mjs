@@ -7117,6 +7117,7 @@ check("fresh wallet token reads use exact or bounded canonical coverage", async 
       tokenPayloadMatchesCanonicalGate: () => false,
       tokenPayloadMatchesCanonicalFreshGate: () => false,
       tokenPayloadMatchesCanonicalIndexedGate: () => false,
+      tokenPayloadWithIndexedWalletHolders: async (payload) => payload,
       tokenPayloadWithWalletActiveListings: async (payload) => payload,
       tokenPayloadForRead: async () => {
         broadFallbackReads += 1;
@@ -7184,6 +7185,7 @@ check("fresh wallet token reads use exact or bounded canonical coverage", async 
         };
       },
       tokenPayloadWithIndexedWalletOverlay: async (payload) => payload,
+      tokenPayloadWithIndexedWalletHolders: async (payload) => payload,
       tokenPayloadWithWalletActiveListings: async (payload) => payload,
       tokenPayloadForRead: async () => {
         throw new Error("fresh wallet reads must not use broad fallback reads");
@@ -7261,6 +7263,7 @@ check("fresh wallet token reads use exact or bounded canonical coverage", async 
         };
       },
       tokenPayloadWithIndexedWalletOverlay: async (payload) => payload,
+      tokenPayloadWithIndexedWalletHolders: async (payload) => payload,
       tokenPayloadWithWalletActiveListings: async (payload) => payload,
       tokenPayloadForRead: async () => {
         throw new Error("fresh wallet reads must not use broad fallback reads");
@@ -7311,6 +7314,7 @@ check("fresh wallet token reads use exact or bounded canonical coverage", async 
       }),
       tokenPayloadMatchesCanonicalGate: () => false,
       tokenPayloadMatchesCanonicalIndexedGate: () => false,
+      tokenPayloadWithIndexedWalletHolders: async (payload) => payload,
       tokenPayloadWithWalletActiveListings: async (payload) => payload,
     },
   );
@@ -8543,6 +8547,7 @@ check("wallet holder overlays preserve WORK and POWB for one address", () => {
     const source = topLevelFunctionSource(API_PATH, functionName);
     assert.doesNotMatch(source, /scope !== POWB_TOKEN_ID/u);
     assert.match(source, /tokenPayloadWithIndexedWalletOverlay/u);
+    assert.match(source, /tokenPayloadWithIndexedWalletHolders/u);
   }
 
   const appSource = fileSource(APP_PATH);

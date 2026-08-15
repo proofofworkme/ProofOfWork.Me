@@ -396,6 +396,7 @@ async function installApiFixtures(
   {
     floorFailure = false,
     freshMarketLogFailure = false,
+    freshWorkWalletFailure = false,
     holdInitialFloor = false,
     inboxMessage = false,
     mode = "post-v8",
@@ -532,7 +533,22 @@ async function installApiFixtures(
       pathname === "/api/v1/token" ||
       pathname === "/api/v1/token-summary"
     ) {
-      json = authoritativeWorkState({ repairedV8Listing });
+      if (
+        freshWorkWalletFailure &&
+        pathname === "/api/v1/token" &&
+        searchParams.get("asset") === WORK_TOKEN_ID &&
+        searchParams.get("fresh") === "1" &&
+        searchParams.get("wallet") === "1"
+      ) {
+        json = {
+          error: "Fresh wallet credit state is temporarily unavailable for WORK.",
+          network: "livenet",
+          ok: false,
+        };
+        status = 503;
+      } else {
+        json = authoritativeWorkState({ repairedV8Listing });
+      }
     } else if (
       pathname === "/api/v1/registry" ||
       pathname === "/api/v1/registry-summary"
@@ -839,6 +855,46 @@ test("failed initial WORK admission becomes an explicit unavailable state", asyn
     .toBeGreaterThan(0);
 });
 
+test("proofs-only mail falls back from fresh WORK wallet catch-up", async ({
+  page,
+}) => {
+  await installWallet(page);
+  const fixture = await installApiFixtures(page, {
+    freshWorkWalletFailure: true,
+  });
+  await openConnectedCompose(page);
+  await fillReadyMail(page, "0");
+
+  const send = page.locator(".mail-send-button");
+  await expect(send).toHaveAttribute("data-state", "ready");
+  await send.click();
+  const psbtHex = await capturedPsbt(page);
+
+  expect(opReturnPayloads(psbtHex)).toContain("pwm1:m:Mail admission browser contract");
+  expect(
+    fixture.requests.some((requestUrl) => {
+      const url = new URL(requestUrl);
+      return (
+        url.pathname === "/api/v1/token" &&
+        url.searchParams.get("asset") === WORK_TOKEN_ID &&
+        url.searchParams.get("fresh") === "1" &&
+        url.searchParams.get("wallet") === "1"
+      );
+    }),
+  ).toBe(true);
+  expect(
+    fixture.requests.some((requestUrl) => {
+      const url = new URL(requestUrl);
+      return (
+        url.pathname === "/api/v1/token" &&
+        url.searchParams.get("asset") === WORK_TOKEN_ID &&
+        url.searchParams.get("fresh") !== "1" &&
+        url.searchParams.get("wallet") === "1"
+      );
+    }),
+  ).toBe(true);
+});
+
 test("wallet V8 AMO repair hides stale invalid rows and reserves spendable WORK", async ({
   page,
 }) => {
@@ -853,7 +909,13 @@ test("wallet V8 AMO repair hides stale invalid rows and reserves spendable WORK"
   await expect(page.getByText("Attempted listing")).toHaveCount(0);
   await expect(page.getByText("Pre-V8 relic")).toHaveCount(0);
   await expect(page.getByRole("button", { exact: true, name: "Seal" })).toBeVisible();
-  await expect(page.getByText("1.9999999247990259 WORK")).toBeVisible();
+  const balancesPanel = page
+    .locator(".token-mint-panel")
+    .filter({ hasText: "Balances" });
+  await expect(
+    balancesPanel.getByText("1.9999999247990259 WORK"),
+  ).toBeVisible();
+  await expect(balancesPanel.getByText("0.0000000752009741 reserved")).toBeVisible();
 });
 
 test("wallet V8 AMO seal can retry during exact-tip catch-up", async ({

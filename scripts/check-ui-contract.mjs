@@ -685,6 +685,15 @@ expect(
     /Last verified balances remain visible\./.test(app),
 );
 expect(
+  "WORK wallet sign-in paints current authority before background fresh refresh",
+  /const loadAccountTokenLane = \([\s\S]*options: \{ refresh\?: \(\) => Promise<PowTokenState> \} = \{\}[\s\S]*options\.refresh[\s\S]*\.refresh\(\)[\s\S]*loaded: true,[\s\S]*loading: false/.test(
+    app,
+  ) &&
+    /loadAccountTokenLane\(\s*"work"[\s\S]*fetchTokenState\(\s*network,\s*false,\s*WORK_TOKEN_ID[\s\S]*setAccountWorkTokenState,[\s\S]*refresh:\s*\(\) =>[\s\S]*fetchTokenState\(\s*network,\s*true,\s*WORK_TOKEN_ID/.test(
+      app,
+    ),
+);
+expect(
   "legacy WORK attachment allowlist is scoped outside normal Mail",
   /WORK_ATTACHMENT_LEGACY_ALLOWED_SENDERS\s*=\s*new Set/.test(app) &&
     /1447TsdXtFSnVrWawSamyyQKPDNW4ALtBT/.test(app) &&
@@ -1777,9 +1786,9 @@ expect(
   /async function fetchFreshWalletTokenListingsForAnchors[\s\S]*fresh: "1"[\s\S]*wallet: "1"[\s\S]*authoritativeWallet !== true[\s\S]*walletScoped !== true[\s\S]*Array\.isArray\(payload\.listings\)[\s\S]*options\.allowCurrentFallback[\s\S]*wallet: "1"[\s\S]*payload\.walletScoped === true[\s\S]*Array\.isArray\(payload\.listings\)/.test(
     app,
   ) &&
-    /async function fetchFreshProofOfWorkListingAnchorOutpoints[\s\S]*\["", WORK_TOKEN_ID, POWB_TOKEN_ID, INCB_TOKEN_ID\][\s\S]*fetchIdRegistryState\(network, true\)[\s\S]*fetchFreshWalletTokenListingsForAnchors[\s\S]*allowCurrentFallback:[\s\S]*tokenScope === POWB_TOKEN_ID \|\| tokenScope === INCB_TOKEN_ID[\s\S]*activeListingAnchorOutpointsForAddress[\s\S]*activeTokenListingAnchorOutpointsForAddress[\s\S]*No transaction was created/.test(
-    app,
-  ) &&
+    /async function fetchFreshProofOfWorkListingAnchorOutpoints[\s\S]*allowCurrentTokenFallback[\s\S]*\["", WORK_TOKEN_ID, POWB_TOKEN_ID, INCB_TOKEN_ID\][\s\S]*fetchIdRegistryState\(network, true\)[\s\S]*fetchFreshWalletTokenListingsForAnchors[\s\S]*allowCurrentFallback:[\s\S]*options\.allowCurrentTokenFallback[\s\S]*tokenScope === POWB_TOKEN_ID \|\| tokenScope === INCB_TOKEN_ID[\s\S]*activeListingAnchorOutpointsForAddress[\s\S]*activeTokenListingAnchorOutpointsForAddress[\s\S]*No transaction was created/.test(
+      app,
+    ) &&
     /fetchFreshProofOfWorkListingAnchorOutpoints/.test(
       chooseSellerAnchorPlanBlock,
     ) &&
@@ -1823,6 +1832,21 @@ expect(
       buildPaymentPsbtBlock,
     ) &&
     /Generic wallet outputs are shown only; preparation remains disabled/.test(
+      app,
+    ),
+);
+expect(
+  "proofs-only Mail keeps funding fast while credit-bearing sends stay strict",
+  /type ListingAnchorReadMode = "strict" \| "current-token-fallback"/.test(
+    app,
+  ) &&
+    /listingAnchorReadMode:\s*attachedWorkPayloads\.length > 0[\s\S]*\? "strict"[\s\S]*: "current-token-fallback"/.test(
+      app,
+    ) &&
+    /allowCurrentTokenFallback:[\s\S]*listingAnchorReadMode === "current-token-fallback"/.test(
+      buildPaymentPsbtBlock,
+    ) &&
+    /prefetchedWalletUtxos:\s*accountUtxosLoaded \? accountUtxos : undefined/.test(
       app,
     ),
 );

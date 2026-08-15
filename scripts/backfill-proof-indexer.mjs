@@ -27981,7 +27981,7 @@ function canonicalEventRelationRows(eventRows) {
   }
   const sortRows = (rows) =>
     rows.sort((left, right) =>
-      JSON.stringify(left).localeCompare(JSON.stringify(right))
+      compareCanonicalUtf8(JSON.stringify(left), JSON.stringify(right)),
     );
   return {
     participantRows: sortRows([...participantRows.values()]),
