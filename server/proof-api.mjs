@@ -45318,6 +45318,13 @@ function definitivePinnedLogQueryDisposition(value) {
   ]).has(String(value ?? ""));
 }
 
+function logHistoryReadRequiresFullSummaryTotal(requestedKind, eligibility) {
+  return (
+    !String(requestedKind ?? "").trim() &&
+    !String(eligibility?.pagination?.query ?? "").trim()
+  );
+}
+
 async function stableCanonicalLogSummaryPayload(network, surface) {
   const summary = await summaryPayloadWithCanonicalProvenance(
     await activitySummaryPayload(network, false),
@@ -45697,12 +45704,16 @@ async function freshProofIndexLogHistoryPayload(network, kind, searchParams) {
   const summaryTotal = Number(
     summary.totalCount ?? summary.stats?.total ?? summary.activity?.length ?? 0,
   );
+  const fullSummaryRead = logHistoryReadRequiresFullSummaryTotal(
+    requestedKind,
+    eligibility,
+  );
   if (
     pageHeight <= 0 ||
     pageHeight !== summaryHeight ||
     !pageSnapshotId ||
     pageSnapshotId !== summarySnapshotId ||
-    pageSnapshotTotal !== summaryTotal
+    (fullSummaryRead && pageSnapshotTotal !== summaryTotal)
   ) {
     const error = freshDataUnavailableError(
       "Fresh Log history does not match the exact canonical Log summary.",

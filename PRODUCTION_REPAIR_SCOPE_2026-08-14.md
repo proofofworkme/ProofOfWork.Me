@@ -784,3 +784,101 @@ Remaining approved/proposed hardening:
   rate-limited or blocked more aggressively, UI release provenance failures
   should be resolved, and inactive prune timers should be reviewed before they
   are relied on for disk control.
+
+## Production Address/Wallet Read Repair Log - 2026-08-16 16:17 ET
+
+Status: production address/wallet read repair completed after the approved
+supervised recovery scope exposed a remaining wallet rendering defect.
+
+User-visible report:
+
+- Screenshot:
+  `/home/sixer/Pictures/Screenshots/Screenshot from 2026-08-16 16-17-15.png`
+- Connected address:
+  `19MXUmBgBN3nJr2V1yvEdysZBB8cYSaHk4`.
+- Wallet page showed `Credit types 0`, `Movements seen 0`, and no balance even
+  though the address held confirmed proofs.
+
+Production evidence:
+
+- Address UTXO endpoint returned one confirmed UTXO:
+  `b4d5d1de723e45650837c758e661e5556435d11c5f93ee9a32e90f87d5cca28f:0`.
+- Confirmed address value was `38,136` proofs at block `962691`.
+- Wallet-scoped credit endpoint was authoritative and wallet-scoped, but
+  returned `holderCount: 0`, `tokenCount: 0`, `transferCount: 0`, and
+  `listingCount: 0`; the address had base proofs, not confirmed credit units in
+  that wallet credit projection.
+- Before repair, a fresh address-scoped Log-history read could fail with
+  `CANONICAL_LOG_HISTORY_MISMATCH` because the filtered page total was compared
+  against the global canonical Log summary total.
+
+Root cause:
+
+- The fresh Log-history exactness gate was correct for unfiltered public Log
+  summary reads, but too strict for filtered reads such as address searches.
+- A filtered page can legitimately return fewer rows than the global canonical
+  Log summary while still being bound to the same snapshot, block height, and
+  block hash.
+- The Wallet UI also conflated "no credit units" with "no funds" on the
+  standalone wallet surface by not showing spendable base proofs alongside
+  credit-unit balances.
+
+Implemented repair:
+
+- `server/proof-api.mjs` now requires the filtered Log page and global Log
+  summary to agree on snapshot identity and block identity, but compares the
+  page total to the global summary total only for full unfiltered Log reads.
+- `scripts/check-index-recovery-behavior.mjs` now covers an address-scoped fresh
+  Log read that returns zero matching rows while sharing the canonical snapshot.
+- `src/App.tsx` now computes connected-wallet proof availability once and shows
+  a `Spendable proofs` stat in Wallet and the Computer wallet workspace.
+- Wallet credit balances still render credit units only; base proofs now render
+  separately so an address with proofs but no credit units is not presented as
+  empty.
+
+Production actions completed:
+
+- Backed up live API file under
+  `/data/proofofwork-recovery/20260816T202446Z-address-wallet-log-filter/`.
+- Installed the patched API file on the node VPS.
+- Restarted `proofofwork-api` and `proofofwork-indexer-worker`.
+- Backed up the live Computer UI to
+  `/var/www/proofofwork-computer.previous-address-wallet-20260816T202704Z`.
+- Rebuilt and deployed the Computer UI bundle to
+  `/var/www/proofofwork-computer`.
+- Backed up the live Wallet UI to
+  `/var/www/proofofwork-wallet.previous-address-wallet-20260816T202732Z`.
+- Rebuilt and deployed the Wallet UI bundle to `/var/www/proofofwork-wallet`.
+
+Post-repair production checkpoint:
+
+- API and indexer services were both active after restart.
+- Public health returned `ok: true`, `available: true`, `ready: true`,
+  `tipHeight: 962779`, `indexedThroughBlock: 962779`, and `lagBlocks: 0`.
+- Node health showed mainnet tip `962779`, txindex height `962779`, txindex
+  synced, unpruned, and verification progress `1`.
+- Database, Electrum, disk, index, and worker health checks were green.
+- Fresh address-scoped Log-history read for
+  `19MXUmBgBN3nJr2V1yvEdysZBB8cYSaHk4` returned no error, snapshot
+  `d266e5d635a98fc02327407c`, block `962779`, consistency `green`, and
+  `totalCount: 0`.
+- Address UTXO read returned the confirmed `38,136` proof UTXO.
+- Wallet-scoped credit read returned authoritative zero credit units for the
+  address, which is distinct from its base proof balance.
+- Production Wallet and Computer HTML returned `HTTP/2 200`.
+- Deployed Wallet asset `App-7s-xMSj_.js` and Computer asset `App-BIY10O6m.js`
+  both contain the new `Spendable proofs` wallet UI.
+
+Local verification for the patch:
+
+- `npm run check:index-recovery-behavior` passed with `450/450` behavior
+  checks.
+- Computer build passed with
+  `VITE_POW_API_BASE=https://computer.proofofwork.me`.
+- Wallet build passed with `VITE_WALLET_ONLY=1` and
+  `VITE_POW_API_BASE=https://wallet.proofofwork.me`.
+- `npm run check:live-data` passed.
+- `npm run check:api-truth` passed.
+- `git diff --check` passed.
+- Production endpoint checks passed for address UTXO, wallet-scoped credit, fresh
+  Log-history, public health, and UI static assets.

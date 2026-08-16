@@ -24079,6 +24079,7 @@ check("Log coverage separates the latest event from the verified checkpoint", as
   assert.equal(summary.stats.indexedThroughBlock, 105);
 
   let pageTotal = 1;
+  let freshHistoryQuery = "";
   const freshPage = isolatedFunction(
     API_PATH,
     "freshProofIndexLogHistoryPayload",
@@ -24092,16 +24093,19 @@ check("Log coverage separates the latest event from the verified checkpoint", as
       payloadIndexedThroughBlockHash: (payload) =>
         payload.indexedThroughBlockHash ?? "",
       payloadSnapshotId: (payload) => payload.snapshotId ?? "",
+      logHistoryReadRequiresFullSummaryTotal: (requestedKind, eligibility) =>
+        !String(requestedKind ?? "").trim() &&
+        !String(eligibility?.pagination?.query ?? "").trim(),
       proofIndexLogHistoryPayload: async () => ({
         indexedThroughBlock: 105,
-        items: [{}],
+        items: pageTotal > 0 ? [{}] : [],
         latestEventBlock: 100,
         snapshotId: "snapshot-105",
         snapshotTotalCount: pageTotal,
         totalCount: pageTotal,
       }),
       proofIndexLogHistoryReadEligibility: () => ({
-        pagination: { query: "", snapshotId: "" },
+        pagination: { query: freshHistoryQuery, snapshotId: "" },
       }),
       proofIndexPayloadIndexedThroughBlock: (payload) =>
         Number(payload.indexedThroughBlock) || 0,
@@ -24128,6 +24132,16 @@ check("Log coverage separates the latest event from the verified checkpoint", as
     (candidate) => candidate?.details?.code === "CANONICAL_LOG_HISTORY_MISMATCH",
   );
   assert.equal(error.statusCode, 503);
+
+  pageTotal = 0;
+  freshHistoryQuery = "19mxumbgbn3njr2v1yvedyszbb8cysahk4";
+  const filteredPage = await freshPage(
+    "livenet",
+    "",
+    new URLSearchParams("q=19MXUmBgBN3nJr2V1yvEdysZBB8cYSaHk4&limit=20"),
+  );
+  assert.equal(filteredPage.totalCount, 0);
+  assert.equal(filteredPage.snapshotId, "snapshot-105");
 
   const canonicalFullItems = [
     {

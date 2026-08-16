@@ -21608,9 +21608,9 @@ export default function App() {
           walletReservedTokenBalance -
           Number(walletPendingTokenBalance),
       );
-  const connectedAccountStats = useMemo<AppHeaderAccountStat[]>(() => {
+  const connectedWalletProofAvailability = useMemo(() => {
     if (!address) {
-      return [];
+      return accountUtxoAvailability([], []);
     }
 
     const reservedListingOutpoints = [
@@ -21629,6 +21629,25 @@ export default function App() {
         { network },
       ),
     ];
+
+    return accountUtxoAvailability(accountUtxos, reservedListingOutpoints);
+  }, [
+    accountIncbTokenState.listings,
+    accountPowbTokenState.listings,
+    accountTokenState.listings,
+    accountUtxos,
+    accountWorkTokenState.listings,
+    address,
+    idListings,
+    network,
+    tokenListings,
+  ]);
+
+  const connectedAccountStats = useMemo<AppHeaderAccountStat[]>(() => {
+    if (!address) {
+      return [];
+    }
+
     const {
       confirmedBalanceSats,
       reservedListingUtxos,
@@ -21636,7 +21655,7 @@ export default function App() {
       spendableUtxos,
       unconfirmedSats,
       unconfirmedUtxos,
-    } = accountUtxoAvailability(accountUtxos, reservedListingOutpoints);
+    } = connectedWalletProofAvailability;
     const ownFileMessages = allFileMessages.filter(
       (message) => message.txid !== CANONICAL_WELCOME_TXID && message.attachment,
     );
@@ -21941,25 +21960,18 @@ export default function App() {
 
     return stats;
   }, [
-    accountIncbTokenState.listings,
-    accountPowbTokenState.listings,
     accountTokenLaneStatuses,
-    accountTokenState.listings,
-    accountWorkTokenState.listings,
-    accountUtxos,
     accountUtxosError,
     accountUtxosLoaded,
     accountWalletBalances,
     address,
     allFileMessages,
-    idListings,
     incomingMailAll,
     incbWalletBalances,
-    network,
     outboxMailAll,
     powbWalletBalances,
-    tokenListings,
     tokenWalletBalances,
+    connectedWalletProofAvailability,
     walletReservationListings,
     walletPendingIdEvents,
   ]);
@@ -31265,6 +31277,13 @@ export default function App() {
         prepareTransferFeeReserveSats={tokenPrepareTransferFeeReserveSats}
         prepareTransferUtxos={prepareTokenTransferUtxos}
         preparingTransferUtxos={tokenAction === "split-transfer"}
+        proofBalanceError={accountUtxosError}
+        proofBalanceLoaded={accountUtxosLoaded}
+        proofBalanceSats={connectedWalletProofAvailability.confirmedBalanceSats}
+        proofSpendableSats={connectedWalletProofAvailability.spendableSats}
+        proofSpendableUtxos={
+          connectedWalletProofAvailability.spendableUtxos.length
+        }
         refreshTransferFundingReadiness={() =>
           void refreshTokenTransferFundingReadiness().catch((error) =>
             setStatus({
@@ -32219,6 +32238,15 @@ export default function App() {
             }
             prepareTransferUtxos={prepareTokenTransferUtxos}
             preparingTransferUtxos={tokenAction === "split-transfer"}
+            proofBalanceError={accountUtxosError}
+            proofBalanceLoaded={accountUtxosLoaded}
+            proofBalanceSats={
+              connectedWalletProofAvailability.confirmedBalanceSats
+            }
+            proofSpendableSats={connectedWalletProofAvailability.spendableSats}
+            proofSpendableUtxos={
+              connectedWalletProofAvailability.spendableUtxos.length
+            }
             refreshTransferFundingReadiness={() =>
               void refreshTokenTransferFundingReadiness().catch((error) =>
                 setStatus({
@@ -32245,6 +32273,7 @@ export default function App() {
             setSelectedTokenId={setTokenTransferTokenId}
             setTransferAmount={setTokenTransferAmount}
             setTransferRecipient={setTokenTransferRecipient}
+            showProofBalance
             submitList={listToken}
             submitTransfer={transferToken}
             tokenSales={tokenSales}
@@ -34469,6 +34498,11 @@ type TokenWalletAppProps = {
   prepareTransferFeeReserveSats: number;
   prepareTransferUtxos: (event: FormEvent<HTMLFormElement>) => void;
   preparingTransferUtxos: boolean;
+  proofBalanceError: string;
+  proofBalanceLoaded: boolean;
+  proofBalanceSats: number;
+  proofSpendableSats: number;
+  proofSpendableUtxos: number;
   refreshTransferFundingReadiness: () => void;
   sealListing: (listing: PowTokenListing) => void;
   selectedTokenId: string;
@@ -35309,6 +35343,11 @@ function TokenWalletApp({
   prepareTransferFeeReserveSats,
   prepareTransferUtxos,
   preparingTransferUtxos,
+  proofBalanceError,
+  proofBalanceLoaded,
+  proofBalanceSats,
+  proofSpendableSats,
+  proofSpendableUtxos,
   refreshTransferFundingReadiness,
   sealListing,
   selectedTokenId,
@@ -35388,6 +35427,11 @@ function TokenWalletApp({
         prepareTransferFeeReserveSats={prepareTransferFeeReserveSats}
         prepareTransferUtxos={prepareTransferUtxos}
         preparingTransferUtxos={preparingTransferUtxos}
+        proofBalanceError={proofBalanceError}
+        proofBalanceLoaded={proofBalanceLoaded}
+        proofBalanceSats={proofBalanceSats}
+        proofSpendableSats={proofSpendableSats}
+        proofSpendableUtxos={proofSpendableUtxos}
         refreshTransferFundingReadiness={refreshTransferFundingReadiness}
         sealListing={sealListing}
         selectedTokenId={selectedTokenId}
@@ -35404,6 +35448,7 @@ function TokenWalletApp({
         setSelectedTokenId={setSelectedTokenId}
         setTransferAmount={setTransferAmount}
         setTransferRecipient={setTransferRecipient}
+        showProofBalance
         submitList={submitList}
         submitTransfer={submitTransfer}
         tokenSales={tokenSales}
@@ -35552,6 +35597,11 @@ function TokenWalletWorkspace({
     TOKEN_PREPARE_DEFAULT_TRANSFER_FEE_RESERVE_SATS,
   prepareTransferUtxos,
   preparingTransferUtxos = false,
+  proofBalanceError = "",
+  proofBalanceLoaded = false,
+  proofBalanceSats = 0,
+  proofSpendableSats = 0,
+  proofSpendableUtxos = 0,
   refreshTransferFundingReadiness,
   sealListing,
   selectedTokenId,
@@ -35566,6 +35616,7 @@ function TokenWalletWorkspace({
   setSelectedTokenId,
   setTransferAmount,
   setTransferRecipient,
+  showProofBalance = false,
   submitList,
   submitTransfer,
   tokenSales,
@@ -35632,7 +35683,13 @@ function TokenWalletWorkspace({
   prepareTransferFeeReserveSats?: number;
   prepareTransferUtxos?: (event: FormEvent<HTMLFormElement>) => void;
   preparingTransferUtxos?: boolean;
+  proofBalanceError?: string;
+  proofBalanceLoaded?: boolean;
+  proofBalanceSats?: number;
+  proofSpendableSats?: number;
+  proofSpendableUtxos?: number;
   refreshTransferFundingReadiness?: () => void;
+  showProofBalance?: boolean;
   setPrepareTransferCount?: (value: number) => void;
   setPrepareTransferFeeRate?: (value: number) => void;
   setPrepareTransferFeeReserveSats?: (value: number) => void;
@@ -36233,6 +36290,18 @@ function TokenWalletWorkspace({
             <span>{walletCopy.ownedLabel}</span>
             <strong>{confirmedTokenCount.toLocaleString()}</strong>
           </div>
+          {showProofBalance ? (
+            <div>
+              <span>Spendable proofs</span>
+              <strong>
+                {proofBalanceError
+                  ? "Unavailable"
+                  : proofBalanceLoaded
+                    ? `${proofSpendableSats.toLocaleString()} proofs`
+                    : "Loading"}
+              </strong>
+            </div>
+          ) : null}
           <div>
             <span>Movements seen</span>
             <strong>{walletMovements.length.toLocaleString()}</strong>
@@ -36242,6 +36311,16 @@ function TokenWalletWorkspace({
             <strong>{TOKEN_MIN_MUTATION_PRICE_SATS.toLocaleString()} proofs</strong>
           </div>
         </div>
+        {showProofBalance &&
+        proofBalanceLoaded &&
+        proofBalanceSats !== proofSpendableSats ? (
+          <p className="field-note">
+            {proofBalanceSats.toLocaleString()} confirmed proofs across{" "}
+            {proofSpendableUtxos.toLocaleString()} spendable UTXO
+            {proofSpendableUtxos === 1 ? "" : "s"}. Active sale-ticket anchors
+            are reserved.
+          </p>
+        ) : null}
       </section>
 
       <div className="token-detail-grid">
