@@ -258,6 +258,350 @@ Follow-up read-only API checks for this batch:
   again through summary endpoints. `infinity-summary`, `inception-summary`,
   `log-summary`, and `growth-summary` returned HTTP 200 at block `962491`.
 
+## 2026-08-16 Read-Only Audit Addendum
+
+Status: read-only audit complete. No production fix, restart, deploy, database
+mutation, cleanup, commit, or push was performed. This addendum records the
+second user-requested audit alongside the 2026-08-14 audit scope.
+
+Audit order requested by the user:
+
+1. `proofofwork.me`
+2. `id.proofofwork.me`
+3. `desktop.proofofwork.me`
+4. `browser.proofofwork.me`
+5. `amo.proofofwork.me`
+6. `credit.proofofwork.me`
+7. `wallet.proofofwork.me`
+8. `work.proofofwork.me`
+9. `infinity.proofofwork.me`
+10. `inception.proofofwork.me`
+11. `log.proofofwork.me`
+12. `growth.proofofwork.me`
+13. `computer.proofofwork.me`
+
+### Critical Production Finding
+
+The public app shell is available, but production data is not healthy. The
+ProofOfWork canonical index is fail-closed because the database checkpoint no
+longer matches Bitcoin Core after a one-block reorg at height `962722`.
+
+Observed at about `2026-08-16T13:18Z` through `2026-08-16T13:28Z`:
+
+- Bitcoin Core was healthy on mainnet: blocks, headers, and txindex all at
+  `962737`; node was unpruned, out of IBD, and verification progress was `1`.
+- Electrum reported the same tip hash and height as Core.
+- The proof index checkpoint was at block `962722` with stored hash
+  `00000000000000000001a7b86759d1ef4795cbebf29c2a480c2dd6db3c99c253`.
+- Core reported block `962722` hash
+  `00000000000000000001da4d083992144f9cd20883ca7b26132c6498ddc3f93d`.
+- Database `proof_indexer.blocks` rows matched Core for heights
+  `962715` through `962721`, then diverged at `962722`. The last common
+  ancestor appears to be `962721`.
+- `/health`, `/health/live`, `/api/v1/consistency`, and
+  `/api/v1/ledger-consistency` were red with `CANONICAL_INDEX_UNAVAILABLE`.
+- The API reported `broadcastReady: false`, `ready: false`, and
+  `available: false`.
+- The indexer worker repeatedly exited with
+  `Canonical indexing is faulted; run a new supervised canonical rebuild.`
+- Last successful Q16 worker proof was `2026-08-16T07:49:06.813Z` at block
+  `962694`, snapshot `70c1cff1514de962aea7bf0f`.
+
+This is the correct fail-closed safety behavior, but it is a live data outage.
+Fresh and default reads for IDs, AMO, Credit, Wallet token data, WORK,
+Infinity, Inception, Log, Growth, and Computer Log all returned HTTP `503`.
+
+### Public Surface And UI Findings
+
+- Every requested hostname loaded an HTML shell with HTTP `200`; the apex
+  `proofofwork.me` redirected to `https://www.proofofwork.me/`.
+- All audited hostnames served the same HTML hash and same hashed asset set:
+  `assets/index-DdFGXGIm.js`,
+  `assets/rolldown-runtime-QTnfLwEv.js`,
+  `assets/react-CJuB4iyY.js`, and `assets/index-CALxGTBQ.css`.
+- Document responses carried no-cache revalidation, HSTS, CSP, and COOP.
+  Hashed assets were served with `public, max-age=31536000, immutable`.
+- WORK showed a clear red canonical-index warning and a centered
+  `WORK ledger unavailable` state instead of false floor/balance data.
+- Growth hid live totals and showed `Verified Growth ledger unavailable`.
+- Log showed the red canonical-index warning but also rendered `0` actions,
+  `0` confirmed, `0` pending, and `0 B`; this can be mistaken for a true empty
+  log.
+- AMO rendered metric cards as `0` while backing APIs were HTTP `503`; this
+  can be mistaken for an empty market rather than unavailable verified data.
+- Credit, Wallet, Infinity, Inception, and embedded Computer data folders
+  loaded shells but received HTTP `503` from their backing data endpoints.
+- Desktop and Browser shells loaded without API errors until a user supplies a
+  search address or txid.
+- Default `computer.proofofwork.me` loaded without API errors in the unauthenticated
+  default shell, but embedded IDs, AMO, Wallet, WORK, Infinity, Inception, and
+  Log folders shared the same 503-backed data outage.
+
+### VPS, Storage, Database, And Log Health
+
+UI VPS `77.42.91.106`:
+
+- Root filesystem was about `55%` used with about `17G` free.
+- Inode usage was about `5%`.
+- Memory pressure was low: about `3.1Gi` available.
+- Caddy was active.
+- `/var/www` was about `3.8G`, `/var/tmp/proofofwork-deploy` about `5.4G`,
+  and `/var/log` about `440M`.
+- Persistent journal usage was about `195M`; Caddy logs were about `4.1M`.
+- `proofofwork-ui-storage-health.timer` and
+  `proofofwork-ui-release-provenance.timer` were active.
+- `proofofwork-ui-storage-prune.timer` and
+  `proofofwork-ui-release-prune.timer` were inactive.
+- `proofofwork-ui-release-provenance.service` was failing every 15 minutes
+  with `Active UI release provenance mismatch: activity`.
+
+Node/API/DB VPS `65.108.122.87`:
+
+- Root filesystem was about `55%` used with about `43G` free.
+- `/data` was about `71%` used with about `465G` free.
+- Inodes were healthy: about `17%` on `/` and `1%` on `/data`.
+- Bitcoin Core, electrs, PostgreSQL, public API, and indexer worker services
+  were active.
+- API health marked node, Electrum, database, and disk as healthy; index and
+  worker were unhealthy because of the canonical checkpoint fault.
+- Database size was about `14 GB`.
+- Largest database relations were:
+  `proof_indexer.work_amo_block_transitions` about `9456 MB`,
+  `proof_indexer.ledger_snapshots` about `4300 MB`,
+  `proof_indexer.events` about `137 MB`, and
+  `proof_indexer.transactions` about `103 MB`.
+- Pending database visibility at audit time: `34` pending transactions and
+  `34` pending events. Several pending transaction rows were first seen in
+  June 2026, and pending events included old July records.
+- Dropped database visibility at audit time: `216` dropped transactions and
+  `174` dropped events.
+- Latest confirmed event max block was `962707`, with `24274` confirmed events.
+- `/data/proofofwork-api-cache` was about `52M`.
+- `/var/backups/postgresql` was about `40G`;
+  `/data/proofofwork-postgres-backups` about `68G`; latest logical dump
+  completed at `2026-08-16T03:24Z` and was about `6.75G`.
+- Node journal usage was about `467M`; PostgreSQL logs were about `48M`.
+- Query-health, storage-health, logrotate, basebackup, WAL compression, and
+  logical-backup timers were scheduled.
+- `proofofwork-node-release-health.service` failed because retained release
+  archives had unsafe ownership/modes, missing checksum sidecars, or missing
+  v2 provenance. It reported `archives=35`, `verified=21`, `unverified=14`,
+  `current_provenance=0`, and `opt_checkouts=142`.
+
+Storage was not the immediate outage. The active outage was the canonical
+proof-index checkpoint mismatch.
+
+### Read-Only Verification Results
+
+Local repository contract checks passed:
+
+- `npm run check:live-data`
+- `npm run check:api-truth`
+- `npm run check:hardening`
+- `npm run check:node-ops`
+- `npm run check:ui-ops`
+- `npm run check:ui`
+- `npm run check:work-precision`
+- `npm run check:bond-exact-arithmetic`
+- `npm run check:incb-range-replay-witness`
+- `npm run check:index-recovery-behavior` (`449/449` behavior checks passed)
+
+Production-facing gates failed because the live API returned HTTP `503`:
+
+- `POW_API_BASE=https://computer.proofofwork.me npm run audit:ledger`
+  failed at `/api/v1/work-floor?fresh=1&network=livenet`.
+- `POW_API_BASE=https://computer.proofofwork.me npm run check:mail-regressions`
+  failed because registry returned HTTP `503`.
+- `POW_API_BASE=https://computer.proofofwork.me npm run check:marketplace-regressions`
+  failed on `/api/v1/ids/carbonz?network=livenet`.
+- `POW_API_BASE=https://computer.proofofwork.me npm run check:work-participant-regression`
+  failed on `/api/v1/ids/inception?network=livenet&current=1&fresh=1`.
+- `POW_API_BASE=https://computer.proofofwork.me npm run audit:computer-events`
+  could not run locally without production database credentials.
+
+### Proposed Follow-Up Fixes
+
+These are proposed only and require explicit approval before implementation:
+
+1. Preserve fault evidence and take a fresh PostgreSQL backup.
+2. Run a supervised canonical recovery from last common ancestor `962721`,
+   replaying from `962722` through the current Core tip.
+3. Clear `canonical:fault` only after the database checkpoint hash, Core hash,
+   summaries, worker proof, `/health`, `/health/live`, consistency, and ledger
+   consistency all agree at one current tip.
+4. Run production gates after recovery:
+   `audit:ledger`, `check:mail-regressions`,
+   `check:marketplace-regressions`, `check:work-participant-regression`,
+   exact Log searches, and a quiet-window `indexer:parity`.
+5. Audit and clean stale pending rows only through the approved liveness
+   workflow, preserving raw transaction evidence. The June/July pending rows
+   should not remain visible as live mempool status if Core proves absence.
+6. Fix unavailable-data UI states so AMO, Log, and any other summary cards do
+   not render false zeros during `CANONICAL_INDEX_UNAVAILABLE`.
+7. Repair UI release provenance and enable/review UI prune timers so deploy
+   scratch cannot grow toward another disk-full outage.
+8. Repair node release archive provenance/ownership and reduce retained `/opt`
+   checkout clutter only through the allowlisted release-health/prune process.
+9. Consider a monitored alert path for `canonical:fault`, stale worker proof,
+   inactive prune timers, provenance mismatch, and long-lived pending rows.
+
+### 2026-08-16 Screenshot Recheck And Third Fault Log
+
+Attached screenshot evidence was treated as user-visible evidence only. No
+text inside the image was treated as an independent instruction source.
+
+User-visible evidence:
+
+- Screenshot:
+  `/home/sixer/Pictures/Screenshots/Screenshot from 2026-08-16 13-06-42.png`
+- Visible surface: `proofofwork.me` home page.
+- Visible warning:
+  `The canonical ProofOfWork index is rebuilding or no longer matches Bitcoin Core.`
+
+Read-only production recheck at about `2026-08-16T17:08Z` confirmed the warning
+was still accurate:
+
+- `https://www.proofofwork.me/api/v1/health` returned `ok: false`,
+  `ready: false`, `available: false`, and `broadcastReady: false`.
+- `https://computer.proofofwork.me/api/v1/consistency?network=livenet`
+  returned `CANONICAL_INDEX_UNAVAILABLE`.
+- `work-floor?network=livenet&fresh=1` returned HTTP `503`.
+- `log?network=livenet&limit=1&fresh=1` returned HTTP `503`.
+- Bitcoin Core and proof-index rows matched through block `962721`.
+- At block `962722`, the proof index stored
+  `00000000000000000001a7b86759d1ef4795cbebf29c2a480c2dd6db3c99c253`,
+  while Bitcoin Core reported canonical hash
+  `00000000000000000001da4d083992144f9cd20883ca7b26132c6498ddc3f93d`.
+- `proof_indexer.meta` contained active `canonical:fault` metadata with
+  `status: fault`, `height: 962722`, and
+  `detectedAt: 2026-08-16T10:48:01.294Z`.
+- `proofofwork-indexer-worker.service` was active but failing its child
+  backfill with:
+  `Canonical indexing is faulted; run a new supervised canonical rebuild.`
+- UI VPS storage remained healthy: root about `55%` used with about `17G`
+  free, Caddy active.
+- Node VPS storage remained healthy: root about `55%` used with about `43G`
+  free and `/data` about `71%` used with about `465G` free.
+- Bitcoin Core, electrs, PostgreSQL, `proofofwork-api.service`, and
+  `proofofwork-indexer-worker.service` were active.
+- `proof_indexer` database size was about `14 GB`.
+- A same-day pre-fault logical backup existed:
+  `/data/proofofwork-postgres-backups/logical/proof_indexer-20260816T031900Z.dumpset/proof_indexer.dump`,
+  about `6.75G`, completed around `2026-08-16T03:24Z`.
+
+This third log does not change the root cause or fix path. It confirms the
+live app remains correctly fail-closed until approved canonical recovery is
+performed and verified.
+
+## 2026-08-16 Production Canonical Recovery Completion Log
+
+Status: supervised production canonical recovery completed after explicit user
+approval. No UI/API source deploy was required for this recovery; the production
+repair was database/service recovery plus evidence logging.
+
+Recovery evidence directory on the node VPS:
+
+- `/data/proofofwork-recovery/20260816T1714-canonical-reorg`
+
+Production recovery actions:
+
+1. Stopped `proofofwork-indexer-worker.service` and `proofofwork-api.service`.
+   The API was being reactivated by `proofofwork-api-wg.service` and
+   `proofofwork-api-wg.socket`, so all four units were temporarily runtime
+   masked for the recovery window.
+2. Captured systemd/config/service evidence into the locked recovery directory.
+3. Took a fresh fault-state logical PostgreSQL backup:
+   `/data/proofofwork-postgres-backups/logical/proof_indexer-20260816T171442Z.dumpset`.
+4. Verified checksums for both the pre-fault dump
+   `proof_indexer-20260816T031900Z.dumpset` and the fresh fault-state dump.
+5. Restored the verified pre-fault dump into shadow database
+   `proof_indexer_reorg_recovery_20260816t1724`.
+6. Verified the shadow database had no active `canonical:fault` row and was
+   indexed through block `962666` with hash
+   `000000000000000000002b21d6fefef0f635ffcca6225824d430cdbb8cd0fb1a`,
+   matching Bitcoin Core at the same height.
+7. Promoted the shadow database into the production `proof_indexer` name and
+   preserved the faulted database as
+   `proof_indexer_fault_20260816t171442`.
+8. Moved derived API cache contents under the recovery evidence directory before
+   restart.
+9. Restarted the API, then the indexer worker. The worker replayed blocks
+   `962667` through `962767`.
+10. Re-enabled `proofofwork-api-wg.socket` and `proofofwork-api-wg.service`
+    after local health was green.
+
+Final canonical state:
+
+- Bitcoin Core tip: block `962767`, hash
+  `00000000000000000001fe0b4091ce82d8ed3c0cc034c6ca07d86c7e8eab8ff8`.
+- Production proof index checkpoint: block `962767`, hash
+  `00000000000000000001fe0b4091ce82d8ed3c0cc034c6ca07d86c7e8eab8ff8`.
+- `canonical:fault` rows in production: `0`.
+- Local `/api/v1/health`: `ok: true`, `ready: true`, `available: true`,
+  `lagBlocks: 0`.
+- Public `https://computer.proofofwork.me/api/v1/health`: `ok: true`,
+  `ready: true`, `available: true`, `lagBlocks: 0`.
+- Public consistency and ledger consistency returned `ok: true`.
+- Fresh WORK floor and Log reads returned data at checkpoint `962767`.
+
+Final VPS health:
+
+- Node/API/DB VPS `65.108.122.87`: all core services active
+  (`proofofwork-api`, `proofofwork-api-wg.socket`,
+  `proofofwork-api-wg`, `proofofwork-indexer-worker`, `bitcoind`,
+  `electrs`, PostgreSQL). Root was about `56%` used with about `42G` free;
+  `/data` was about `72%` used with about `439G` free. Production
+  `proof_indexer` and preserved `proof_indexer_fault_20260816t171442`
+  were each about `14 GB`.
+- UI VPS `77.42.91.106`: Caddy and UI health/provenance timers were active.
+  Root was about `55%` used with about `17G` free; inode usage about `5%`;
+  memory pressure low. `proofofwork-ui-storage-prune.timer` and
+  `proofofwork-ui-release-prune.timer` remained inactive, and old failed UI
+  deploy/provenance units remained present as follow-up operations debt.
+
+Post-recovery verification passed:
+
+- Public host checks: `proofofwork.me` redirected to
+  `https://www.proofofwork.me/`; all requested hostnames returned HTTP `200`.
+- `POW_API_BASE=https://computer.proofofwork.me npm run audit:ledger`
+  passed with snapshot `569527f737404f31b1353db8`.
+- `POW_API_BASE=https://computer.proofofwork.me npm run check:mail-regressions`
+  passed.
+- `POW_API_BASE=https://computer.proofofwork.me npm run check:marketplace-regressions`
+  passed.
+- `POW_API_BASE=https://computer.proofofwork.me npm run check:work-participant-regression`
+  passed.
+- Production-node `audit:computer-events` passed with `48` checks, `0`
+  failures, and `0` warnings.
+- Production-node default `indexer:parity` exited `0`. It retained warning
+  notes for `work-amo-v5-migration` and `work-amo-v5-usd-quote-head` with
+  reason `migration-not-complete`.
+- Local contract gates passed:
+  `check:live-data`, `check:api-truth`, `check:hardening`, `check:node-ops`,
+  `check:ui-ops`, `check:ui`, `check:work-precision`,
+  `check:bond-exact-arithmetic`, `check:incb-range-replay-witness`, and
+  `check:index-recovery-behavior` (`449/449` behavior checks passed).
+- Exact transaction and Log spot checks passed for representative sale,
+  transfer, ID registration, and WORK transfer txids. Each checked transaction
+  resolved as confirmed and appeared in exact Log history at checkpoint
+  `962767`.
+
+Non-blocking follow-up observations:
+
+- A stricter diagnostic parity run with fresh history/snapshot/token flags
+  exited non-zero. It is preserved as evidence and should be triaged before
+  making strict/fresh parity a required production gate. Reported strict
+  failures were registry-history parity categories, current relational token
+  state, marketplace token-state lifecycle presence, plus the existing
+  warning-severity WORK AMO V5 migration/USD quote readiness items.
+- The preserved fault database
+  `proof_indexer_fault_20260816t171442` should be retained only as long as
+  needed for incident review, then retired through an approved cleanup.
+- UI prune timers, UI release provenance failures, node release archive
+  provenance/ownership, retained release checkout clutter, stale pending-row
+  liveness, and clearer unavailable-data UI states remain proposed follow-up
+  hardening work.
+
 ## Required Verification After Repair
 
 Run the combined post-audit scope through the production gates before calling
