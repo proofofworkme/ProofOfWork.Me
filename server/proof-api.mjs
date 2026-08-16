@@ -27406,6 +27406,38 @@ function isTokenActivityItem(item) {
   return TOKEN_ACTIVITY_KINDS.has(item?.kind);
 }
 
+function tokenActivityItemsFromStateForCanonicalLedger(
+  state,
+  indexAddress,
+  publicActivity,
+) {
+  const items = tokenActivityItemsFromState(state, indexAddress);
+  const publicPendingKeys = new Set();
+
+  for (const item of Array.isArray(publicActivity) ? publicActivity : []) {
+    if (item?.confirmed === true || !isTokenActivityItem(item)) {
+      continue;
+    }
+    try {
+      publicPendingKeys.add(activityKey(item));
+    } catch {
+      // Pending activity with incomplete identity is not admissible as a
+      // canonical public-log boundary.
+    }
+  }
+
+  return items.filter((item) => {
+    if (item?.confirmed === true || !isTokenActivityItem(item)) {
+      return true;
+    }
+    try {
+      return publicPendingKeys.has(activityKey(item));
+    } catch {
+      return false;
+    }
+  });
+}
+
 function rushActivityItemsFromState(state) {
   return (state.mints ?? []).map((mint) => ({
     amountSats: mint.paidSats,
@@ -44169,9 +44201,10 @@ async function buildIndexedCanonicalLedgerPayload(
     );
   }
   let activity = dedupeActivityItems([
-    ...tokenActivityItemsFromState(
+    ...tokenActivityItemsFromStateForCanonicalLedger(
       ledgerTokenState,
       ledgerTokenState?.indexAddress ?? "",
+      baseActivity,
     ),
     ...baseActivity,
   ]);
@@ -44230,9 +44263,10 @@ async function buildIndexedCanonicalLedgerPayload(
     );
   }
   activity = dedupeActivityItems([
-    ...tokenActivityItemsFromState(
+    ...tokenActivityItemsFromStateForCanonicalLedger(
       valuedTokenState,
       valuedTokenState?.indexAddress ?? "",
+      baseActivity,
     ),
     ...baseActivity,
   ]);

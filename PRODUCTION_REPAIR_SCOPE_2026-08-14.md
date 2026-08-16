@@ -678,3 +678,109 @@ Local-only blocked checks:
 - `npm run check:marketplace-regressions` requires a live API target.
 
 These are production-verification gates after deploy, not local code failures.
+
+## Production Canonical Summary Recovery Log - 2026-08-16 15:43 ET
+
+User-facing symptom:
+
+- `amo.proofofwork.me` still showed
+  `The canonical ProofOfWork index is catching up to the Bitcoin Core tip.`
+- The AMO exact-tip banner reported last-good summary block `962768`,
+  canonical scan checkpoint `962773`, and full-node tip `962774` while the
+  visible AMO book still rendered pending and confirmed sale-ticket rows.
+
+Fresh production evidence:
+
+- The node/API/DB VPS was not disk-full. Root was about `56%` used with about
+  `42G` free; `/data` was about `72%` used with about `439G` free.
+- The UI VPS was not disk-full. Root was about `55%` used with about `17G`
+  free and low memory pressure.
+- `bitcoind`, `electrs`, PostgreSQL, `proofofwork-api`, and
+  `proofofwork-indexer-worker` were active on the node VPS.
+- The production database `proof_indexer` was about `14 GB`. Largest relations
+  were `proof_indexer.work_amo_block_transitions` at about `9.6 GB` and
+  `proof_indexer.ledger_snapshots` at about `4.1 GB`.
+- Bitcoin Core and the proof-index checkpoint were able to reach the same tip,
+  but canonical summary publication failed because one pending token-state
+  projection was present in ledger activity before it was admissible through
+  public Log membership.
+- Representative pending seal tx
+  `e89bab27e511d8c0d8a6da897db666a095c169fe7cd4311da5eadfe23dc7c8e1`
+  was indexed as pending `token-listing-sealed` for listing
+  `e7a130c79cbabade61f202dbb1f1b2d3e1cda8d7b98f06da31b5d9a83db049e6`,
+  protocol vout `1`, record ordinal `0`.
+
+Root cause:
+
+- The canonical summary gate correctly rejected a count mismatch between
+  public Log activity and canonical ledger activity.
+- Confirmed activity matched, but pending activity was off by one:
+  token-state pending projection could outrun the public Log boundary during a
+  fresh exact-tip summary build.
+- This made the app fail closed with a catch-up banner even after Core and the
+  database checkpoint were current.
+
+Implemented repair:
+
+- Canonical ledger summary construction now uses
+  `tokenActivityItemsFromStateForCanonicalLedger`.
+- Confirmed token activity remains admissible from token state.
+- Pending token activity from token state is admitted only when the same
+  activity key is already present in the public Log activity boundary.
+- Pending token activity with incomplete identity is rejected from the
+  canonical public-log boundary instead of producing an unmatchable summary
+  count.
+- `scripts/check-index-recovery-behavior.mjs` now includes the regression
+  check `pending token projections cannot outrun public Log membership`.
+
+Production actions completed under the approved recovery scope:
+
+- Took fresh production evidence from the node/API/DB VPS and UI VPS.
+- Backed up the live API file under
+  `/data/proofofwork-recovery/20260816T1944-pending-projection-freshness/`.
+- Installed the patched `server/proof-api.mjs` on the node VPS.
+- Restarted `proofofwork-api` and `proofofwork-indexer-worker`.
+- Rebuilt and published the exact canonical summary using the same environment
+  pins as the production API service.
+
+Post-repair production checkpoint:
+
+- Canonical summary block: `962776`.
+- Canonical summary hash:
+  `000000000000000000020294a201dd7149c53cba6cfaab2fa8db60ee37e00d65`.
+- Canonical summary snapshot: `2ff7afe6e602246eb348d172`.
+- Public health:
+  `https://computer.proofofwork.me/api/v1/health` returned `ok: true`,
+  `ready: true`, `available: true`, `lagBlocks: 0`, and `error: null`.
+- Fresh token history, public Log history, and token market-log checks for
+  tx `e89bab27e511d8c0d8a6da897db666a095c169fe7cd4311da5eadfe23dc7c8e1`
+  all returned snapshot `2ff7afe6e602246eb348d172` with the pending seal
+  rendered as pending rather than confirmed truth.
+- Production marketplace regression gate exited `0` against
+  `https://computer.proofofwork.me`.
+
+Local verification for the patch:
+
+- `npm run check:index-recovery-behavior` passed with `450/450` behavior
+  checks.
+- `npm run check:live-data` passed.
+- `npm run check:api-truth` passed.
+- `git diff --check` passed.
+
+Remaining approved/proposed hardening:
+
+- Make canonical-summary manual/backfill jobs inherit the same active
+  production API environment pins automatically, so Q16/V8 declaration
+  settings cannot be omitted during supervised recovery.
+- Triage the nonfatal production warning
+  `Fresh payload refresh failed: Recovered WORK wallet state refuses a Q8 fallback after Q16 activation.`
+  The fail-closed behavior is correct after V8 activation, but the caller
+  should avoid attempting Q8 fallback refreshes on current WORK paths.
+- Add retention/partition planning for large derived tables, especially
+  `proof_indexer.work_amo_block_transitions` and
+  `proof_indexer.ledger_snapshots`, while preserving replay evidence and
+  rollback material.
+- Harden UI VPS operations debt: failed SSH password attempts should be
+  rate-limited or blocked more aggressively, UI release provenance failures
+  should be resolved, and inactive prune timers should be reviewed before they
+  are relied on for disk control.

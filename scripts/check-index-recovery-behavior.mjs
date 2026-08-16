@@ -10734,6 +10734,68 @@ check("canonical activity counts exactly match the public Log", () => {
   );
 });
 
+check("pending token projections cannot outrun public Log membership", () => {
+  const tokenKinds = new Set([
+    "token-create",
+    "token-mint",
+    "token-transfer",
+    "token-listing",
+    "token-listing-sealed",
+    "token-listing-closed",
+    "token-sale",
+    "token-event-invalid",
+  ]);
+  const activityKey = isolatedFunction(API_PATH, "activityKey", {
+    WORK_AMO_V5_ACTIVATION_HEIGHT,
+  });
+  const confirmedListing = {
+    blockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT + 10,
+    confirmed: true,
+    kind: "token-listing",
+    listingId: "a".repeat(64),
+    network: "livenet",
+    txid: "a".repeat(64),
+  };
+  const publicPendingSeal = {
+    confirmed: false,
+    kind: "token-listing-sealed",
+    listingId: "a".repeat(64),
+    network: "livenet",
+    protocol: "pwt1",
+    protocolVout: 1,
+    recordOrdinal: 0,
+    txid: "b".repeat(64),
+  };
+  const strayPendingListingProjection = {
+    confirmed: false,
+    kind: "token-listing",
+    listingId: "a".repeat(64),
+    network: "livenet",
+    protocol: "pwt1",
+    protocolVout: 1,
+    recordOrdinal: 0,
+    txid: "a".repeat(64),
+  };
+  const helper = isolatedFunction(
+    API_PATH,
+    "tokenActivityItemsFromStateForCanonicalLedger",
+    {
+      activityKey,
+      isTokenActivityItem: (item) => tokenKinds.has(item?.kind),
+      tokenActivityItemsFromState: () => [
+        confirmedListing,
+        publicPendingSeal,
+        strayPendingListingProjection,
+      ],
+    },
+  );
+  const activity = helper({}, "", [publicPendingSeal]);
+
+  assert.equal(activity.includes(confirmedListing), true);
+  assert.equal(activity.includes(publicPendingSeal), true);
+  assert.equal(activity.includes(strayPendingListingProjection), false);
+});
+
 check("WORK V2 relics remain paid history without synthetic closes", () => {
   const tokenActivityItemsFromState = isolatedFunction(
     API_PATH,
