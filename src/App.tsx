@@ -17306,7 +17306,7 @@ async function fetchUtxos(
         );
         if (walletUtxoSource === "wallet-curated") {
           if (
-            walletUtxos.length === 0 ||
+            walletUtxos.length > 0 &&
             walletUtxos.every(
               (utxo) => typeof utxo.status?.confirmed === "boolean",
             )
@@ -17317,6 +17317,9 @@ async function fetchUtxos(
             ownerAddress,
             ownerNetwork,
           );
+          if (walletUtxos.length === 0) {
+            return statusEvidence.length > 0 ? statusEvidence : walletUtxos;
+          }
           return enrichWalletCuratedUtxoConfirmations(
             walletUtxos,
             statusEvidence,

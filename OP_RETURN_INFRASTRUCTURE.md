@@ -353,14 +353,14 @@ starting. Production pins those scan, verifier, and watchdog bounds with
 `POW_INDEX_MEMPOOL_SCAN_BUDGET_MS=30000`,
 `POW_INDEX_MEMPOOL_SCAN_MAX_PROTOCOL_TXIDS=5`, and
 `POW_INDEX_PENDING_VERIFIER_TIMEOUT_MS=30000`, plus
-`POW_INDEX_WORKER_PENDING_BACKFILL_TIMEOUT_MS=10000`; the backfill script also
+`POW_INDEX_WORKER_PENDING_BACKFILL_TIMEOUT_MS=600000`; the backfill script also
 clamps the hot-loop verifier to 30 seconds. During an explicitly supervised
-recovery with public reads closed, a pending-only child may temporarily raise
-the protocol-txid limit to at most 250, the cooperative scan budget to at most
-540 seconds, and its outer watchdog to at most 600 seconds. Those recovery
-overrides must be removed before the continuous worker resumes; the ordinary
-five-txid, 30-second scan and 10-second watchdog preserve confirmed-first
-scheduling. Production separately pins
+recovery, and during ordinary Q16 pending witness publication after confirmed
+catch-up, the isolated pending-only child raises the protocol-txid limit to at
+most 250 and the cooperative scan budget to at most 540 seconds. The ordinary
+five-txid and 30-second scan remain the inherited hot pending defaults; the
+continuous worker applies the larger budget only to the fail-closed pending-Q16
+witness child after confirmed replay has already caught up. Production separately pins
 `POW_INDEX_WORKER_PENDING_WITNESS_MAX_AGE_MS=600000` for the API and worker;
 their parsers clamp that witness age to no more than ten minutes. The block
 scanner uses local

@@ -882,3 +882,98 @@ Local verification for the patch:
 - `git diff --check` passed.
 - Production endpoint checks passed for address UTXO, wallet-scoped credit, fresh
   Log-history, public health, and UI static assets.
+
+## Production Q16 Pending Witness And Wallet Buy Recovery Log - 2026-08-16 21:49 ET
+
+Status: supervised production recovery completed after explicit user approval to
+commit, deploy, push, merge, and ship all the way to production.
+
+User-visible report:
+
+- Screencast:
+  `/home/sixer/Videos/Screencasts/Screencast from 2026-08-16 21-49-48.webm`.
+- AMO and Home showed
+  `The canonical ProofOfWork index is catching up to the Bitcoin Core tip.`
+- The app was reported about eight blocks behind.
+- Wallet did not render spendable proof balances for connected address
+  `19MXUmBgBN3nJr2V1yvEdysZBB8cYSaHk4`.
+- AMO buying was unavailable while exact-tip write admission remained
+  fail-closed.
+
+Production evidence captured:
+
+- Node/API/DB recovery evidence directory:
+  `/data/proofofwork-recovery/20260817T020625Z-q16-pending-recovery`.
+- Captured systemd unit state, worker status, worker journal, public health,
+  selected table counts, WORK transition heads, V8 listing terms, Q16 metadata,
+  and SHA256 evidence manifests before changing services.
+- Two interrupted read-only dump attempts remain preserved as evidence in that
+  recovery directory. They were not deleted because production disk still had
+  safe headroom.
+- UI VPS backup directory:
+  `/var/backups/proofofwork-ui/20260817T021417Z-wallet-amo-q16-recovery`.
+
+Root cause:
+
+- Confirmed replay could catch up, but the canonical summary stayed fail-closed
+  because the isolated pending-Q16 witness phase did not publish a ready witness
+  on a large mempool.
+- The pending witness child inherited hot-loop mempool bounds
+  (`POW_INDEX_MEMPOOL_SCAN_MAX_PROTOCOL_TXIDS=5`) and an outer watchdog too
+  small for the recovery-sized pending scan.
+- AMO buy admission correctly stayed closed because the public WORK floor and
+  canonical summary could not be proven exact-tip.
+- The standalone wallet also trusted an empty UniSat curated UTXO response as
+  final, so addresses with confirmed base proofs could render as empty when the
+  first-party address API had confirmed spendable UTXOs.
+
+Implemented repair:
+
+- `scripts/run-proof-indexer-worker.mjs` now lets only the
+  `best-effort-pending` Q16 witness child use a 540 second mempool scan budget,
+  250 protocol txids, and 500 total txids after confirmed replay has already
+  caught up.
+- Production worker pending-child watchdog is now capped and pinned at
+  `600000` milliseconds in the service unit, with a later recovery drop-in at
+  `/etc/systemd/system/proofofwork-indexer-worker.service.d/50-q16-pending-recovery.conf`
+  preserving the active override without deleting older evidence.
+- `src/App.tsx` now falls back from an empty UniSat curated UTXO response to the
+  first-party address UTXO API, while still enriching nonempty curated UTXOs
+  with confirmation evidence.
+- Wallet, Computer, and AMO static bundles were rebuilt and deployed to their
+  production roots.
+
+Production actions completed:
+
+- Stopped and restarted the indexer worker as needed after taking fresh
+  evidence and backups.
+- Installed the patched worker script, patched worker service unit, and Q16
+  recovery drop-in on the node VPS.
+- Deployed refreshed Wallet, Computer, and AMO UI bundles on the UI VPS.
+- Preserved production evidence and backups before changing services or static
+  roots.
+
+Post-repair production checkpoint:
+
+- Public health returned `ok: true`, `ready: true`, `tipHeight: 962818`,
+  `indexedThroughBlock: 962818`, and `lagBlocks: 0`.
+- Fresh WORK floor returned `ready: true`, `writeAdmission: true`,
+  `settlementWritesEnabled: true`, and `listingWritesEnabled: true`.
+- Q16 pending witness published with `q16PendingWitnessReady: true`,
+  `q16PendingUnresolved: 0`, `protocolTxids: 23`, and `indexed: 59`.
+- Connected address `19MXUmBgBN3nJr2V1yvEdysZBB8cYSaHk4` returned two confirmed
+  spendable UTXOs totaling `48,478` proofs.
+- Node/API VPS services `proofofwork-api` and `proofofwork-indexer-worker` were
+  active; node storage was about `/` `55%` used and `/data` `74%` used.
+- UI VPS storage was about `/` `50%` used, and Caddy was active.
+- Wallet, AMO, and Computer production HTML returned `HTTP/2 200`.
+
+Local verification for the patch:
+
+- `node scripts/check-ui-contract.mjs` passed.
+- `node scripts/check-worker-containment.mjs` passed.
+- `node scripts/check-live-data-contract.mjs` passed.
+- `node scripts/check-index-recovery-behavior.mjs` passed with `450/450`
+  behavior checks.
+- `npm run build` passed.
+- Wallet, Computer, and AMO production-targeted builds passed.

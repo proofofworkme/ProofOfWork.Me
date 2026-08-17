@@ -187,7 +187,7 @@ export function pendingBackfillChildTimeoutMs(
   configured = process.env.POW_INDEX_WORKER_PENDING_BACKFILL_TIMEOUT_MS,
 ) {
   return Math.min(
-    60_000,
+    10 * 60_000,
     Math.max(
       5_000,
       Math.floor(Number(configured ?? 10_000) || 10_000),
@@ -6206,6 +6206,13 @@ async function runCycle(pool, lastSuccess, runtime) {
         phase.kind === "best-effort-pending"
           ? String(PENDING_BACKFILL_CHILD_TIMEOUT_MS)
           : "",
+      ...(phase.kind === "best-effort-pending"
+        ? {
+            POW_INDEX_MEMPOOL_SCAN_BUDGET_MS: String(9 * 60_000),
+            POW_INDEX_MEMPOOL_SCAN_MAX_PROTOCOL_TXIDS: "250",
+            POW_INDEX_MEMPOOL_SCAN_MAX_TXIDS: "500",
+          }
+        : {}),
       POW_INDEX_BACKFILL_SOURCES: phase.sourceLabels.join(","),
       POW_INDEX_BACKFILL_STORE_LEDGER_SNAPSHOT:
         phase.kind === "best-effort-pending"

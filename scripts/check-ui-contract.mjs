@@ -1829,7 +1829,7 @@ expect(
     /window\.unisat\?\.getBitcoinUtxos[\s\S]*\? "wallet-curated"[\s\S]*: "wallet-generic"/.test(
       app,
     ) &&
-    /walletUtxoSource === "wallet-curated"[\s\S]*walletUtxos\.length === 0[\s\S]*fetchAddressApiUtxos\([\s\S]*return enrichWalletCuratedUtxoConfirmations\(\s*walletUtxos,\s*statusEvidence/.test(
+    /walletUtxoSource === "wallet-curated"[\s\S]*walletUtxos\.length > 0[\s\S]*walletUtxos\.every[\s\S]*return walletUtxos[\s\S]*const statusEvidence = await fetchAddressApiUtxos\([\s\S]*walletUtxos\.length === 0[\s\S]*return statusEvidence\.length > 0 \? statusEvidence : walletUtxos[\s\S]*return enrichWalletCuratedUtxoConfirmations\(\s*walletUtxos,\s*statusEvidence/.test(
       app,
     ) &&
     /hasAttachedWalletAssets\(utxo\.inscriptions\)[\s\S]*hasAttachedWalletAssets\(utxo\.atomicals\)/.test(

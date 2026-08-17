@@ -625,11 +625,11 @@ expect(
     workerBackfillTimeoutMs >= canonicalSummaryRefreshTimeoutMs + 300_000,
 );
 expect(
-  "production pending work is bounded so confirmed catch-up is not held for a cold verifier",
+  "production pending work keeps hot scans bounded while Q16 witness publication has a supervised watchdog",
   workerPendingVerifierTimeoutMs === 30_000 &&
     workerPendingScanBudgetMs === 30_000 &&
-    workerPendingBackfillTimeoutMs === 10_000 &&
-    workerPendingBackfillTimeoutMs < workerPendingScanBudgetMs,
+    workerPendingBackfillTimeoutMs === 600_000 &&
+    workerPendingBackfillTimeoutMs >= 9 * 60_000,
 );
 expect(
   "production API worker-health freshness is pinned to the ten-minute ceiling",
@@ -1644,7 +1644,9 @@ expectAll(
     /mempoolScanTimeBudgetReached\(startedAtMs,\s*scanned\)[\s\S]*stopReason = "time-budget"/,
     /pendingExtendedVerifierTimeoutMs\(\)[\s\S]*pendingVerifierTimeoutMs: extendedPendingVerifierTimeoutMs/,
     /^Environment=POW_INDEX_MEMPOOL_SCAN_BUDGET_MS=30000$/m,
-    /^Environment=POW_INDEX_WORKER_PENDING_BACKFILL_TIMEOUT_MS=10000$/m,
+    /POW_INDEX_MEMPOOL_SCAN_MAX_PROTOCOL_TXIDS:[\s\S]*"250"/,
+    /POW_INDEX_MEMPOOL_SCAN_BUDGET_MS:[\s\S]*String\(9 \* 60_000\)/,
+    /^Environment=POW_INDEX_WORKER_PENDING_BACKFILL_TIMEOUT_MS=600000$/m,
   ],
 );
 expectAll("generic payload snapshots select the latest matching payload without a finite lookback", ledgerSnapshotWithPayloadSource, [

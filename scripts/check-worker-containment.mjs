@@ -2376,7 +2376,7 @@ async function runChecks() {
   assert.equal(pendingBackfillChildTimeoutMs("invalid"), 10_000);
   assert.equal(pendingBackfillChildTimeoutMs("1000"), 5_000);
   assert.equal(pendingBackfillChildTimeoutMs("15000"), 15_000);
-  assert.equal(pendingBackfillChildTimeoutMs("900000"), 60_000);
+  assert.equal(pendingBackfillChildTimeoutMs("900000"), 600_000);
 
   assert.equal(typeof workerSleepUntilIntervalOrTipAdvance, "function");
   assert.equal(workerIdleTipPollMs(null, 30_000), 1_000);
