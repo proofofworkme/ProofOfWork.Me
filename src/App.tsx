@@ -9542,6 +9542,28 @@ function accountUtxoAvailability(
   };
 }
 
+type WalletProofFundingContext = {
+  confirmedBalanceSats: number;
+  protectedSats: number;
+  spendableSats: number;
+};
+
+function proofFundingErrorMessage(
+  error: unknown,
+  fallback: string,
+  context: WalletProofFundingContext,
+) {
+  const message = errorMessage(error, fallback);
+  if (
+    context.protectedSats <= 0 ||
+    !/fund|utxo|proof|spendable|confirmed/i.test(message)
+  ) {
+    return message;
+  }
+
+  return `${message} ${context.spendableSats.toLocaleString()} wallet-spendable proofs are available; ${context.protectedSats.toLocaleString()} confirmed proofs are protected or unavailable in UniSat from ${context.confirmedBalanceSats.toLocaleString()} total confirmed proofs. No protected output was selected.`;
+}
+
 function spendsTokenListingAnchor(
   spentOutpoints: PowIdSpentOutpoint[],
   listing: PowTokenListing,
@@ -19832,6 +19854,12 @@ export default function App() {
   const [accountUtxos, setAccountUtxos] = useState<MempoolUtxo[]>([]);
   const [accountUtxosLoaded, setAccountUtxosLoaded] = useState(false);
   const [accountUtxosError, setAccountUtxosError] = useState("");
+  const [accountChainUtxos, setAccountChainUtxos] = useState<MempoolUtxo[]>(
+    [],
+  );
+  const [accountChainUtxosLoaded, setAccountChainUtxosLoaded] =
+    useState(false);
+  const [accountChainUtxosError, setAccountChainUtxosError] = useState("");
   const [accountTokenState, setAccountTokenState] = useState<PowTokenState>(() =>
     emptyTokenState(),
   );
@@ -21611,12 +21639,12 @@ export default function App() {
           walletReservedTokenBalance -
           Number(walletPendingTokenBalance),
       );
-  const connectedWalletProofAvailability = useMemo(() => {
+  const connectedWalletReservedOutpoints = useMemo(() => {
     if (!address) {
-      return accountUtxoAvailability([], []);
+      return [];
     }
 
-    const reservedListingOutpoints = [
+    return [
       ...activeListingAnchorOutpointsForAddress(idListings, address, {
         network,
       }),
@@ -21632,18 +21660,67 @@ export default function App() {
         { network },
       ),
     ];
-
-    return accountUtxoAvailability(accountUtxos, reservedListingOutpoints);
   }, [
     accountIncbTokenState.listings,
     accountPowbTokenState.listings,
     accountTokenState.listings,
-    accountUtxos,
     accountWorkTokenState.listings,
     address,
     idListings,
     network,
     tokenListings,
+  ]);
+
+  const connectedWalletProofAvailability = useMemo(() => {
+    if (!address) {
+      return accountUtxoAvailability([], []);
+    }
+
+    return accountUtxoAvailability(
+      accountUtxos,
+      connectedWalletReservedOutpoints,
+    );
+  }, [
+    accountUtxos,
+    address,
+    connectedWalletReservedOutpoints,
+  ]);
+
+  const connectedWalletChainProofAvailability = useMemo(() => {
+    if (!address) {
+      return accountUtxoAvailability([], []);
+    }
+
+    return accountUtxoAvailability(
+      accountChainUtxos,
+      connectedWalletReservedOutpoints,
+    );
+  }, [
+    accountChainUtxos,
+    address,
+    connectedWalletReservedOutpoints,
+  ]);
+
+  const connectedWalletProofFundingContext = useMemo(() => {
+    const chainTotalReady =
+      accountChainUtxosLoaded && !accountChainUtxosError;
+    const confirmedBalanceSats = chainTotalReady
+      ? connectedWalletChainProofAvailability.confirmedBalanceSats
+      : connectedWalletProofAvailability.confirmedBalanceSats;
+    return {
+      confirmedBalanceSats,
+      protectedSats: Math.max(
+        0,
+        confirmedBalanceSats - connectedWalletProofAvailability.spendableSats,
+      ),
+      spendableSats: connectedWalletProofAvailability.spendableSats,
+    };
+  }, [
+    accountChainUtxosError,
+    accountChainUtxosLoaded,
+    connectedWalletChainProofAvailability.confirmedBalanceSats,
+    connectedWalletProofAvailability.confirmedBalanceSats,
+    connectedWalletProofAvailability.spendableSats,
   ]);
 
   const connectedAccountStats = useMemo<AppHeaderAccountStat[]>(() => {
@@ -21652,13 +21729,17 @@ export default function App() {
     }
 
     const {
-      confirmedBalanceSats,
       reservedListingUtxos,
       spendableSats,
       spendableUtxos,
       unconfirmedSats,
       unconfirmedUtxos,
     } = connectedWalletProofAvailability;
+    const chainTotalReady =
+      accountChainUtxosLoaded && !accountChainUtxosError;
+    const confirmedBalanceSats =
+      connectedWalletProofFundingContext.confirmedBalanceSats;
+    const protectedSats = connectedWalletProofFundingContext.protectedSats;
     const ownFileMessages = allFileMessages.filter(
       (message) => message.txid !== CANONICAL_WELCOME_TXID && message.attachment,
     );
@@ -21800,8 +21881,12 @@ export default function App() {
 
     if (confirmedBalanceSats > 0) {
       stats.push({
-        detail: "Confirmed wallet UTXO value.",
-        label: "confirmed balance",
+        detail: chainTotalReady
+          ? protectedSats > 0
+            ? `${spendableSats.toLocaleString()} wallet-spendable proofs; ${protectedSats.toLocaleString()} confirmed proofs are protected or unavailable in UniSat.`
+            : "Full-node confirmed UTXO value for the connected address."
+          : "Confirmed UniSat wallet UTXO value. Full-node total is still loading.",
+        label: "total confirmed",
         tone: "strong",
         value: `${confirmedBalanceSats.toLocaleString()} proofs`,
       });
@@ -21809,9 +21894,19 @@ export default function App() {
 
     if (spendableUtxos.length > 0) {
       stats.push({
-        detail: `${spendableSats.toLocaleString()} confirmed spendable proofs across ${spendableUtxos.length.toLocaleString()} UTXO${spendableUtxos.length === 1 ? "" : "s"}.${reservedListingUtxos.length > 0 ? ` ${reservedListingUtxos.length.toLocaleString()} active listing anchor${reservedListingUtxos.length === 1 ? " is" : "s are"} reserved.` : ""}`,
-        label: "spendable utxos",
-        value: spendableUtxos.length.toLocaleString(),
+        detail: `${spendableUtxos.length.toLocaleString()} UniSat-signable confirmed UTXO${spendableUtxos.length === 1 ? "" : "s"}.${reservedListingUtxos.length > 0 ? ` ${reservedListingUtxos.length.toLocaleString()} active listing anchor${reservedListingUtxos.length === 1 ? " is" : "s are"} reserved.` : ""}`,
+        label: "spendable proofs",
+        value: `${spendableSats.toLocaleString()} proofs`,
+      });
+    }
+
+    if (protectedSats > 0) {
+      stats.push({
+        detail:
+          "Confirmed by the node, but not selected for signing because UniSat marks the output unavailable or ProofOfWork has reserved it.",
+        label: "protected proofs",
+        tone: "pending",
+        value: `${protectedSats.toLocaleString()} proofs`,
       });
     }
 
@@ -21963,6 +22058,8 @@ export default function App() {
 
     return stats;
   }, [
+    accountChainUtxosError,
+    accountChainUtxosLoaded,
     accountTokenLaneStatuses,
     accountUtxosError,
     accountUtxosLoaded,
@@ -21975,6 +22072,7 @@ export default function App() {
     powbWalletBalances,
     tokenWalletBalances,
     connectedWalletProofAvailability,
+    connectedWalletProofFundingContext,
     walletReservationListings,
     walletPendingIdEvents,
   ]);
@@ -22588,6 +22686,9 @@ export default function App() {
       setAccountUtxos([]);
       setAccountUtxosLoaded(false);
       setAccountUtxosError("");
+      setAccountChainUtxos([]);
+      setAccountChainUtxosLoaded(false);
+      setAccountChainUtxosError("");
       return;
     }
 
@@ -22608,11 +22709,29 @@ export default function App() {
             );
           }
         });
+      fetchAddressApiUtxos(address, network)
+        .then((utxos) => {
+          if (!cancelled) {
+            setAccountChainUtxos(utxos);
+            setAccountChainUtxosLoaded(true);
+            setAccountChainUtxosError("");
+          }
+        })
+        .catch((error) => {
+          if (!cancelled) {
+            setAccountChainUtxosError(
+              errorMessage(error, "Full-node wallet UTXOs are unavailable."),
+            );
+          }
+        });
     };
 
     setAccountUtxos([]);
     setAccountUtxosLoaded(false);
     setAccountUtxosError("");
+    setAccountChainUtxos([]);
+    setAccountChainUtxosLoaded(false);
+    setAccountChainUtxosError("");
     loadAccountUtxos();
     const interval = window.setInterval(loadAccountUtxos, 60_000);
     window.addEventListener("focus", loadAccountUtxos);
@@ -30304,7 +30423,11 @@ export default function App() {
     } catch (error) {
       setStatus({
         tone: "bad",
-        text: errorMessage(error, "Credit purchase failed."),
+        text: proofFundingErrorMessage(
+          error,
+          "Credit purchase failed.",
+          connectedWalletProofFundingContext,
+        ),
       });
     } finally {
       setTokenAction("");
@@ -31282,7 +31405,8 @@ export default function App() {
         preparingTransferUtxos={tokenAction === "split-transfer"}
         proofBalanceError={accountUtxosError}
         proofBalanceLoaded={accountUtxosLoaded}
-        proofBalanceSats={connectedWalletProofAvailability.confirmedBalanceSats}
+        proofBalanceSats={connectedWalletProofFundingContext.confirmedBalanceSats}
+        proofProtectedSats={connectedWalletProofFundingContext.protectedSats}
         proofSpendableSats={connectedWalletProofAvailability.spendableSats}
         proofSpendableUtxos={
           connectedWalletProofAvailability.spendableUtxos.length
@@ -32244,8 +32368,9 @@ export default function App() {
             proofBalanceError={accountUtxosError}
             proofBalanceLoaded={accountUtxosLoaded}
             proofBalanceSats={
-              connectedWalletProofAvailability.confirmedBalanceSats
+              connectedWalletProofFundingContext.confirmedBalanceSats
             }
+            proofProtectedSats={connectedWalletProofFundingContext.protectedSats}
             proofSpendableSats={connectedWalletProofAvailability.spendableSats}
             proofSpendableUtxos={
               connectedWalletProofAvailability.spendableUtxos.length
@@ -34504,6 +34629,7 @@ type TokenWalletAppProps = {
   proofBalanceError: string;
   proofBalanceLoaded: boolean;
   proofBalanceSats: number;
+  proofProtectedSats: number;
   proofSpendableSats: number;
   proofSpendableUtxos: number;
   refreshTransferFundingReadiness: () => void;
@@ -35349,6 +35475,7 @@ function TokenWalletApp({
   proofBalanceError,
   proofBalanceLoaded,
   proofBalanceSats,
+  proofProtectedSats,
   proofSpendableSats,
   proofSpendableUtxos,
   refreshTransferFundingReadiness,
@@ -35433,6 +35560,7 @@ function TokenWalletApp({
         proofBalanceError={proofBalanceError}
         proofBalanceLoaded={proofBalanceLoaded}
         proofBalanceSats={proofBalanceSats}
+        proofProtectedSats={proofProtectedSats}
         proofSpendableSats={proofSpendableSats}
         proofSpendableUtxos={proofSpendableUtxos}
         refreshTransferFundingReadiness={refreshTransferFundingReadiness}
@@ -35603,6 +35731,7 @@ function TokenWalletWorkspace({
   proofBalanceError = "",
   proofBalanceLoaded = false,
   proofBalanceSats = 0,
+  proofProtectedSats = 0,
   proofSpendableSats = 0,
   proofSpendableUtxos = 0,
   refreshTransferFundingReadiness,
@@ -35689,6 +35818,7 @@ function TokenWalletWorkspace({
   proofBalanceError?: string;
   proofBalanceLoaded?: boolean;
   proofBalanceSats?: number;
+  proofProtectedSats?: number;
   proofSpendableSats?: number;
   proofSpendableUtxos?: number;
   refreshTransferFundingReadiness?: () => void;
@@ -36318,10 +36448,13 @@ function TokenWalletWorkspace({
         proofBalanceLoaded &&
         proofBalanceSats !== proofSpendableSats ? (
           <p className="field-note">
-            {proofBalanceSats.toLocaleString()} confirmed proofs across{" "}
-            {proofSpendableUtxos.toLocaleString()} spendable UTXO
-            {proofSpendableUtxos === 1 ? "" : "s"}. Active sale-ticket anchors
-            are reserved.
+            {proofBalanceSats.toLocaleString()} total confirmed proofs.{" "}
+            {proofSpendableSats.toLocaleString()} proofs are wallet-spendable
+            across {proofSpendableUtxos.toLocaleString()} UTXO
+            {proofSpendableUtxos === 1 ? "" : "s"}.
+            {proofProtectedSats > 0
+              ? ` ${proofProtectedSats.toLocaleString()} confirmed proofs are protected or unavailable in UniSat.`
+              : " Active sale-ticket anchors are reserved when present."}
           </p>
         ) : null}
       </section>

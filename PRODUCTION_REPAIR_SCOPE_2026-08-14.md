@@ -977,3 +977,76 @@ Local verification for the patch:
   behavior checks.
 - `npm run build` passed.
 - Wallet, Computer, and AMO production-targeted builds passed.
+
+## Production Proof Balance Split Repair Log - 2026-08-17 13:49 ET
+
+Status: UI guardrail repair completed after explicit user approval to commit,
+deploy, merge, push, and ship all the way to production.
+
+User-visible report:
+
+- Screenshot:
+  `/home/sixer/Pictures/Screenshots/Screenshot from 2026-08-17 13-49-05.png`.
+- AMO showed the connected wallet as having `10,342 proofs` under a
+  `confirmed balance` style account strip while UniSat showed `0.00048478`
+  total, `0.00010342` available, and `0.00038136` unavailable.
+
+Production evidence:
+
+- First-party address UTXO endpoint for
+  `19MXUmBgBN3nJr2V1yvEdysZBB8cYSaHk4` returned two confirmed outputs:
+  `38,136` proofs at block `962691` and `10,342` proofs at block `962815`,
+  totaling `48,478` confirmed proofs.
+- Public health was green during diagnosis and after deploy. The post-deploy
+  checkpoint returned `tipHeight: 962924`, `indexedThroughBlock: 962924`,
+  `lagBlocks: 0`, worker `ok: true`, and Q16 pending unresolved `0`.
+
+Root cause:
+
+- The account strip reused the UniSat-curated signing lane as the displayed
+  confirmed proof balance.
+- That lane intentionally excludes outputs UniSat marks unavailable or outputs
+  filtered because they carry attached wallet assets, so AMO buying did not try
+  to spend the protected `38,136`-proof output.
+- The funding behavior was safe, but the label was misleading: `10,342` was
+  wallet-spendable, not the full-node confirmed total.
+
+Implemented repair:
+
+- `src/App.tsx` now loads a separate first-party full-node address UTXO lane
+  for display while preserving the UniSat-curated UTXO lane for signing.
+- Connected account stats now render `total confirmed`, `spendable proofs`,
+  and `protected proofs` instead of collapsing all three concepts into one
+  balance.
+- Wallet and Computer wallet cards now explain total confirmed proofs,
+  wallet-spendable proofs, and protected/unavailable proofs.
+- AMO purchase failure messaging now includes the proof split when a purchase
+  cannot be funded from wallet-spendable outputs.
+- `scripts/check-ui-contract.mjs` now guards the full-node total versus
+  UniSat-spendable/protected split and the AMO purchase error copy.
+
+Production actions completed:
+
+- Backed up the live UI roots under
+  `/var/backups/proofofwork-ui/20260817T1755Z-proof-balance-split`.
+- Rebuilt and deployed AMO to `/var/www/proofofwork-marketplace`.
+- Rebuilt and deployed Wallet to `/var/www/proofofwork-wallet`.
+- Rebuilt and deployed Computer to `/var/www/proofofwork-computer`.
+
+Post-repair production checkpoint:
+
+- AMO, Wallet, and Computer HTML returned `HTTP/2 200`.
+- Deployed assets:
+  - `/var/www/proofofwork-marketplace/assets/App-C7aekCC2.js`
+  - `/var/www/proofofwork-wallet/assets/App-CjGLSTSl.js`
+  - `/var/www/proofofwork-computer/assets/App-Bz60a5Fh.js`
+- All three deployed assets contain the new `total confirmed`,
+  `spendable proofs`, `protected proofs`, and protected-UniSat purchase
+  messaging.
+- UI VPS storage was healthy at about `/` `50%` used, and Caddy was active.
+
+Local verification for the patch:
+
+- `node scripts/check-ui-contract.mjs` passed.
+- `npm run build` passed.
+- AMO, Wallet, and Computer production-targeted builds passed.

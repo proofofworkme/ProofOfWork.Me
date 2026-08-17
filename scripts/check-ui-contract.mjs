@@ -1849,6 +1849,27 @@ expect(
     ),
 );
 expect(
+  "wallet proof summaries separate full-node total from UniSat-spendable protected outputs",
+  /const \[accountChainUtxos,[\s\S]*setAccountChainUtxos\] = useState<MempoolUtxo\[]>/.test(
+    app,
+  ) &&
+    /fetchAddressApiUtxos\(address,\s*network\)[\s\S]*setAccountChainUtxos\(utxos\)[\s\S]*setAccountChainUtxosLoaded\(true\)/.test(
+      app,
+    ) &&
+    /connectedWalletProofFundingContext[\s\S]*accountChainUtxosLoaded && !accountChainUtxosError[\s\S]*connectedWalletChainProofAvailability\.confirmedBalanceSats[\s\S]*connectedWalletProofAvailability\.spendableSats/.test(
+      app,
+    ) &&
+    /label: "total confirmed"[\s\S]*label: "spendable proofs"[\s\S]*label: "protected proofs"/.test(
+      app,
+    ) &&
+    /function proofFundingErrorMessage[\s\S]*wallet-spendable proofs are available[\s\S]*protected or unavailable in UniSat[\s\S]*No protected output was selected/.test(
+      app,
+    ) &&
+    /proofFundingErrorMessage\([\s\S]*"Credit purchase failed\.",[\s\S]*connectedWalletProofFundingContext/.test(
+      app,
+    ),
+);
+expect(
   "proofs-only Mail keeps funding fast while credit-bearing sends stay strict",
   /type ListingAnchorReadMode = "strict" \| "current-token-fallback"/.test(
     app,
