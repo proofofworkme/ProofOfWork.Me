@@ -42252,7 +42252,7 @@ check("health Electrum probes stop after canary failure and keep a bounded tip p
       ELECTRUM_HOST: "127.0.0.1",
       ELECTRUM_PORT: 50_001,
       HEALTH_CHECK_TIMEOUT_MS: 5_000,
-      HEALTH_ELECTRUM_TIP_PROOF_TIMEOUT_MS: 2_500,
+      HEALTH_ELECTRUM_TIP_PROOF_TIMEOUT_MS: 5_000,
       electrumHealthPayload: async (...args) => {
         calls.push(args);
         return { configured: true, ok: true };
@@ -42288,7 +42288,7 @@ check("health Electrum probes stop after canary failure and keep a bounded tip p
   );
   assert.deepEqual(afterCanaryBudget, { configured: true, ok: true });
   assert.deepEqual(JSON.parse(JSON.stringify(calls)), [
-    [957_864, "a".repeat(64), 2_500],
+    [957_864, "a".repeat(64), 5_000],
   ]);
 
   calls.length = 0;
@@ -42307,7 +42307,7 @@ check("health Electrum probes stop after canary failure and keep a bounded tip p
     { configured: true, ok: true },
   );
   assert.deepEqual(JSON.parse(JSON.stringify(calls)), [
-    [957_864, "a".repeat(64), 2_500],
+    [957_864, "a".repeat(64), 5_000],
   ]);
 
   calls.length = 0;
@@ -42326,7 +42326,7 @@ check("health Electrum probes stop after canary failure and keep a bounded tip p
     { configured: true, ok: true },
   );
   assert.deepEqual(JSON.parse(JSON.stringify(calls)), [
-    [957_864, "a".repeat(64), 4_750],
+    [957_864, "a".repeat(64), 5_000],
   ]);
 });
 

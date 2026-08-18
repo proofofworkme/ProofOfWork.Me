@@ -1810,6 +1810,6 @@ Production replay follow-up:
   returned a false red state even though Core, txindex, the proof index, worker,
   and summary snapshot were current.
 - `server/proof-api.mjs` now keeps canary failure fail-closed, but gives the
-  Electrum exact-tip header proof its own small bounded timeout floor after a
+  Electrum exact-tip header proof its own full bounded health timeout after a
   successful canary. `scripts/check-index-recovery-behavior.mjs` and
   `scripts/check-live-data-contract.mjs` guard that health resilience contract.

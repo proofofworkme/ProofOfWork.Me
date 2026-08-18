@@ -736,8 +736,8 @@ const HEALTH_ELECTRUM_TIP_PROOF_TIMEOUT_MS = Math.min(
   10_000,
   Math.max(
     1_000,
-    Number(process.env.POW_API_HEALTH_ELECTRUM_TIP_PROOF_TIMEOUT_MS ?? 2_500) ||
-      2_500,
+    Number(process.env.POW_API_HEALTH_ELECTRUM_TIP_PROOF_TIMEOUT_MS ?? 5_000) ||
+      5_000,
   ),
 );
 const HEALTH_PAYLOAD_CACHE_TTL_MS = Math.max(
