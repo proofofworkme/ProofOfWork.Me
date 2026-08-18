@@ -21566,6 +21566,8 @@ check("canonical WORK lifecycle state rebinds unique relational event positions"
   const closeTxid = "c".repeat(64);
   const relicListingId = "d".repeat(64);
   const relicSpendTxid = "e".repeat(64);
+  const outpointListingId = "f".repeat(64);
+  const outpointSpendTxid = "9".repeat(64);
   const payload = {
     closedListings: [
       {
@@ -21603,6 +21605,18 @@ check("canonical WORK lifecycle state rebinds unique relational event positions"
         listingId: relicListingId,
         relic: true,
         status: "disabled",
+        tokenId: WORK_TOKEN_ID,
+      },
+      {
+        closedBlockHash: "8".repeat(64),
+        closedBlockHeight: 950_005,
+        closedBlockIndex: 5,
+        closedByCanonicalOutpointSpend: true,
+        closedConfirmed: true,
+        closedTxid: outpointSpendTxid,
+        confirmed: true,
+        listingId: outpointListingId,
+        status: "closed",
         tokenId: WORK_TOKEN_ID,
       },
     ],
@@ -21655,6 +21669,7 @@ check("canonical WORK lifecycle state rebinds unique relational event positions"
     "seal",
     "close",
     "listing",
+    "listing",
   ]);
   assert.equal(capturedQuery.params[4], WORK_TOKEN_ID);
   assert.match(capturedQuery.sql, /event_block\.canonical = true/u);
@@ -21706,6 +21721,16 @@ check("canonical WORK lifecycle state rebinds unique relational event positions"
     "a real sale-ticket spend remains visible on the public cutover relic",
   );
   assert.equal(positioned.closedListings[1].blockHash, "4".repeat(64));
+  assert.equal(
+    positioned.closedListings[2].closedTxid,
+    outpointSpendTxid,
+    "a canonical outpoint-spend close does not require a valid close event",
+  );
+  assert.equal(positioned.closedListings[2].closedBlockHash, "8".repeat(64));
+  assert.equal(
+    positioned.closedListings[2].closedByCanonicalOutpointSpend,
+    true,
+  );
 
   mode = "missing";
   assert.equal(

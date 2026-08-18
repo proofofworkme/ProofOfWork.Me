@@ -28629,6 +28629,21 @@ async function payloadWithCanonicalWorkLifecyclePositions(
 
   const expectations = [];
   const expectationKeys = new Set();
+  const canonicalOutpointSpendClose = (listing) => {
+    const closedBlockHash = normalizedLowerText(listing?.closedBlockHash);
+    const closedBlockHeight = Number(listing?.closedBlockHeight);
+    const closedBlockIndex = Number(listing?.closedBlockIndex);
+    return (
+      listing?.closedByCanonicalOutpointSpend === true &&
+      listing?.closedConfirmed === true &&
+      validTxid(listing?.closedTxid) &&
+      /^[0-9a-f]{64}$/u.test(closedBlockHash) &&
+      Number.isSafeInteger(closedBlockHeight) &&
+      closedBlockHeight > 0 &&
+      Number.isSafeInteger(closedBlockIndex) &&
+      closedBlockIndex >= 0
+    );
+  };
   const addExpectation = (role, txidValue, listingIdValue) => {
     const txid = normalizedLowerText(txidValue);
     const listingId = normalizedLowerText(listingIdValue);
@@ -28667,6 +28682,7 @@ async function payloadWithCanonicalWorkLifecyclePositions(
     if (
       closed &&
       listing?.closedConfirmed === true &&
+      !canonicalOutpointSpendClose(listing) &&
       !canonicalWorkCutoverRelicListing(listing) &&
       !addExpectation("close", listing?.closedTxid, listingId)
     ) {
@@ -28876,6 +28892,7 @@ async function payloadWithCanonicalWorkLifecyclePositions(
     if (
       closed &&
       listing.closedConfirmed === true &&
+      !canonicalOutpointSpendClose(listing) &&
       !canonicalWorkCutoverRelicListing(listing)
     ) {
       const close = positions.get(

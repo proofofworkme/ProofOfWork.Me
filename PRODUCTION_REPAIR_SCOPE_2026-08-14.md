@@ -1575,3 +1575,33 @@ Local verification:
 - `node scripts/check-api-truth-contract.mjs` passed.
 - `node scripts/check-index-recovery-behavior.mjs` passed with `450/450`.
 - `npm run check:ui` passed.
+
+## Approved canonical outpoint close summary repair log - 2026-08-18 02:48 UTC
+
+Post-worker-repair finding:
+
+- The node deploy at commit `2d14470` put the block scan at exact tip, with
+  current token tables hash-bound and balance-conserved at block `962974`.
+- The internal canonical summary still rejected publication because the exact
+  token-table helper returned `null` after Q16 precision validation.
+- Read-only production diagnostics narrowed the drop to
+  `payloadWithCanonicalWorkLifecyclePositions`.
+- One WORK listing,
+  `e299613d6ed3e8d35aad408d439f4b4b170daeb2877199c2ac747c71114691e0`,
+  was correctly closed by canonical sale-ticket outpoint spend tx
+  `b587b787ad7a621e6096ba6b77c162793c37a61cb5b2a981c6ff6dd875a8203a`,
+  but that spend's protocol event was an invalid sale attempt
+  (`token-sale-invalid`, reason `work-amo-v5-raw-buy-state-invalid`), not a
+  valid `token-listing-closed` event.
+
+Repair:
+
+- `server/db/proof-index-reader.mjs` now treats a confirmed
+  `closedByCanonicalOutpointSpend` listing with exact spend block position as
+  already lifecycle-bound for the close position.
+- Listing and seal positions remain rebound through canonical confirmed
+  events, and ordinary close records still require valid close-event evidence.
+- `scripts/check-index-recovery-behavior.mjs` now covers canonical
+  outpoint-spend closes so an invalid buy can close an already-spent sale
+  ticket without being counted as a valid sale or blocking exact summary
+  publication.
