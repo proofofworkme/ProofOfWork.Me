@@ -1645,3 +1645,38 @@ Local verification:
 - `node scripts/check-index-recovery-behavior.mjs` passed with `450/450`.
 - `npm run check:server-globals` passed.
 - `npm run check:worker-containment` passed after the code-version bump.
+
+## Approved pending-stage tip-advance repair log - 2026-08-18 03:20 UTC
+
+Post-deploy finding:
+
+- The node and UI deploys at commit `786a555` completed, but a new block
+  arrived after the confirmed replay/summary checkpoint and before the
+  best-effort pending WORK verifier finished.
+- Production correctly failed closed: fresh market-log reads returned
+  `CANONICAL_INDEX_CATCHING_UP`/`CANONICAL_INDEX_UNAVAILABLE` instead of
+  serving an unproven pending checkpoint.
+- Worker logs showed the pending verifier repeatedly rejecting the now-stale
+  checkpoint with `PENDING_WORK_STAGE_EXACT_TIP_UNAVAILABLE`, delaying the
+  next canonical pass.
+
+Repair:
+
+- `scripts/run-proof-indexer-worker.mjs` now preflights the confirmed
+  checkpoint against the current full-node tip immediately before starting
+  pending staging.
+- If the full-node tip advanced and the prior checkpoint remains canonical,
+  the worker raises its existing `POW_INDEX_WORKER_CORE_TIP_ADVANCED` defer
+  path so the next cycle starts from a fresh confirmed replay instead of
+  retrying obsolete pending work.
+- If the checkpoint no longer matches Core at the same height, the worker
+  still fails closed as a real canonical mismatch.
+
+Local verification:
+
+- `node scripts/check-index-recovery-behavior.mjs` passed with `450/450`.
+- `npm run check:worker-containment` passed.
+- `node scripts/check-api-truth-contract.mjs` passed.
+- `npm run check:server-globals` passed.
+- `npm run check:live-data` passed.
+- `npm run check:ui` passed.

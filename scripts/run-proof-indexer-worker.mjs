@@ -2030,6 +2030,37 @@ async function throwIfWorkerCoreTipAdvanced(
   }
 }
 
+async function assertWorkerPendingCheckpointCoversCoreTip(progress) {
+  const checkpoint = normalizedCheckpoint(progress);
+  if (
+    !Number.isSafeInteger(checkpoint.checkpointHeight) ||
+    checkpoint.checkpointHeight <= 0 ||
+    !/^[0-9a-f]{64}$/u.test(String(checkpoint.checkpointHash ?? ""))
+  ) {
+    throw new Error(
+      "Proof index worker cannot start pending staging without a confirmed checkpoint.",
+    );
+  }
+  const coreTip = await readExactWorkerCoreTip();
+  await throwIfWorkerCoreTipAdvanced(
+    {
+      blockHash: checkpoint.checkpointHash,
+      height: checkpoint.checkpointHeight,
+    },
+    coreTip,
+    "pending-stage-preflight",
+  );
+  if (
+    coreTip.height !== checkpoint.checkpointHeight ||
+    coreTip.blockHash !== checkpoint.checkpointHash
+  ) {
+    throw new Error(
+      "Proof index worker confirmed checkpoint no longer matches Core before pending staging.",
+    );
+  }
+  return coreTip;
+}
+
 async function readExactWorkerCoreTip() {
   const before = await workerBitcoinCoreRpc(
     "getblockchaininfo",
@@ -6385,6 +6416,9 @@ async function runCycle(pool, lastSuccess, runtime) {
         await publishCanonicalSummaryAtConfirmedCheckpoint();
       },
       async () => {
+        await assertWorkerPendingCheckpointCoversCoreTip(
+          canonicalProgress,
+        );
         pendingStatus = await refreshPendingStatusesSafely();
         await runBackfillPhase(backfillPhases[1]);
       },

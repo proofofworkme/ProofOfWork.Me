@@ -18446,9 +18446,17 @@ check("same-height pending membership versions the canonical Log snapshot", asyn
   assert.doesNotMatch(fingerprintSql, /e\.updated_at/u);
 
   const runCycleSource = topLevelFunctionSource(WORKER_PATH, "runCycle");
+  const pendingCheckpointSource = topLevelFunctionSource(
+    WORKER_PATH,
+    "assertWorkerPendingCheckpointCoversCoreTip",
+  );
   assert.match(
     runCycleSource,
-    /runCanonicalBeforePending\([\s\S]*runBackfillPhase\(backfillPhases\[0\]\)[\s\S]*publishCanonicalSummaryAtConfirmedCheckpoint\(\)[\s\S]*pendingStatus = await refreshPendingStatusesSafely\(\);[\s\S]*runBackfillPhase\(backfillPhases\[1\]\)/u,
+    /runCanonicalBeforePending\([\s\S]*runBackfillPhase\(backfillPhases\[0\]\)[\s\S]*publishCanonicalSummaryAtConfirmedCheckpoint\(\)[\s\S]*assertWorkerPendingCheckpointCoversCoreTip\(\s*canonicalProgress,\s*\);[\s\S]*pendingStatus = await refreshPendingStatusesSafely\(\);[\s\S]*runBackfillPhase\(backfillPhases\[1\]\)/u,
+  );
+  assert.match(
+    pendingCheckpointSource,
+    /readExactWorkerCoreTip\(\)[\s\S]*throwIfWorkerCoreTipAdvanced\([\s\S]*"pending-stage-preflight"[\s\S]*confirmed checkpoint no longer matches Core/u,
   );
   assert.doesNotMatch(
     runCycleSource,
