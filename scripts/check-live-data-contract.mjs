@@ -2438,7 +2438,7 @@ expect(
 expectAll("public Log SQL counts valid confirmed or pending actions only", proofIndexReader, [
   /const conditions = \[[\s\S]*"e\.valid = true"[\s\S]*"e\.status IN \('confirmed', 'pending'\)"[\s\S]*"e\.kind = ANY\(\$2::text\[\]\)"/,
   /export async function proofIndexCanonicalActivityPayload\(\s*network,\s*options = \{\},?\s*\)[\s\S]*AND e\.valid = true[\s\S]*AND e\.status IN \('confirmed', 'pending'\)[\s\S]*AND e\.kind = ANY\(\$2::text\[\]\)/,
-  /e\.status = 'confirmed'[\s\S]*e\.updated_at <= \$\{snapshotTimeParam\}::timestamptz[\s\S]*e\.status = 'pending'[\s\S]*e\.created_at <= \$\{snapshotTimeParam\}::timestamptz/,
+  /e\.status = 'confirmed'[\s\S]*e\.updated_at <= \$\{snapshotTimeParam\}::timestamptz[\s\S]*e\.status = 'pending'[\s\S]*COALESCE\(e\.event_time, e\.created_at\) <= \$\{snapshotTimeParam\}::timestamptz/,
 ]);
 expectAll("canonical ledger can read direct proof-index event rows", proofIndexReader, [
   /export async function proofIndexCanonicalActivityPayload\(\s*network,\s*options = \{\},?\s*\)/,

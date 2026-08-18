@@ -21532,7 +21532,7 @@ export async function proofIndexLogHistoryPayload(
         )
         OR (
           e.status = 'pending'
-          AND e.created_at <= ${snapshotTimeParam}::timestamptz
+          AND COALESCE(e.event_time, e.created_at) <= ${snapshotTimeParam}::timestamptz
         )
       )
     `);
@@ -21566,7 +21566,7 @@ export async function proofIndexLogHistoryPayload(
           e.kind,
           e.status,
           e.event_time,
-          e.block_time,
+          COALESCE(e.block_time, event_tx.block_time) AS block_time,
           e.created_at,
           e.block_height,
           e.block_index,
@@ -21603,7 +21603,7 @@ export async function proofIndexLogHistoryPayload(
          AND canonical_event_block.canonical = true
         WHERE ${whereClause}
         ORDER BY
-          COALESCE(e.event_time, e.block_time, e.created_at) DESC,
+          COALESCE(e.event_time, e.block_time, event_tx.block_time, e.created_at) DESC,
           e.txid DESC,
           e.event_id DESC
         LIMIT ${limitParam}
@@ -21651,7 +21651,7 @@ export async function proofIndexLogHistoryPayload(
              OR (
                candidate.status = 'pending'
                AND terminal_tx.status <> 'confirmed'
-               AND candidate.created_at <= $5::timestamptz
+               AND COALESCE(candidate.event_time, candidate.created_at) <= $5::timestamptz
              )
            )
           WHERE terminal_tx.network = $1
@@ -21768,7 +21768,7 @@ export async function proofIndexLogHistoryPayload(
         )
         OR (
           e.status = 'pending'
-          AND e.created_at <= ${snapshotTimeParam}::timestamptz
+          AND COALESCE(e.event_time, e.created_at) <= ${snapshotTimeParam}::timestamptz
         )
       )
     `);
@@ -21822,7 +21822,7 @@ export async function proofIndexLogHistoryPayload(
                   )
                   OR (
                     e.status = 'pending'
-                    AND e.created_at <= $4::timestamptz
+                    AND COALESCE(e.event_time, e.created_at) <= $4::timestamptz
                   )
                 )
             `,
@@ -21858,7 +21858,7 @@ export async function proofIndexLogHistoryPayload(
           e.kind,
           e.status,
           e.event_time,
-          e.block_time,
+          COALESCE(e.block_time, event_tx.block_time) AS block_time,
           e.created_at,
           e.block_height,
           e.block_index,
@@ -21893,7 +21893,7 @@ export async function proofIndexLogHistoryPayload(
          AND canonical_event_block.canonical = true
         WHERE ${whereClause}
         ORDER BY
-          COALESCE(e.event_time, e.block_time, e.created_at) DESC,
+          COALESCE(e.event_time, e.block_time, event_tx.block_time, e.created_at) DESC,
           e.txid DESC,
           e.event_id DESC
         LIMIT ${totalCount}
@@ -21930,7 +21930,7 @@ export async function proofIndexLogHistoryPayload(
         e.kind,
         e.status,
         e.event_time,
-        e.block_time,
+        COALESCE(e.block_time, event_tx.block_time) AS block_time,
         e.created_at,
         e.block_height,
         e.block_index,
@@ -21965,7 +21965,7 @@ export async function proofIndexLogHistoryPayload(
        AND canonical_event_block.canonical = true
       WHERE ${whereClause}
       ORDER BY
-        COALESCE(e.event_time, e.block_time, e.created_at) DESC,
+        COALESCE(e.event_time, e.block_time, event_tx.block_time, e.created_at) DESC,
         e.txid DESC,
         e.event_id DESC
       LIMIT $${limitParam}
@@ -22097,7 +22097,7 @@ export async function proofIndexTokenMarketSummaryOverlayPayload(
         e.kind,
         e.status,
         e.event_time,
-        e.block_time,
+        COALESCE(e.block_time, event_tx.block_time) AS block_time,
         e.created_at,
         e.block_height,
         e.block_index,
@@ -22142,7 +22142,7 @@ export async function proofIndexTokenMarketSummaryOverlayPayload(
        AND cd.token_id = COALESCE(lower(e.payload->>'tokenId'), cl_event.token_id)
       WHERE ${whereClause}
       ORDER BY
-        COALESCE(e.event_time, e.block_time, e.created_at) DESC,
+        COALESCE(e.event_time, e.block_time, event_tx.block_time, e.created_at) DESC,
         e.txid DESC,
         e.event_id DESC
       LIMIT ${limitParam}
@@ -28422,7 +28422,7 @@ async function proofIndexTokenMarketEventsFromTables(pool, network, scope) {
         e.kind,
         e.status,
         e.event_time,
-        e.block_time,
+        COALESCE(e.block_time, transaction_row.block_time) AS block_time,
         e.created_at,
         e.block_height,
         e.block_index,
@@ -28472,7 +28472,12 @@ async function proofIndexTokenMarketEventsFromTables(pool, network, scope) {
         AND e.kind = ANY(ARRAY['token-sale','token-listing-closed']::text[])
         ${tokenStateScopeSql(scope, "COALESCE(cd.token_id, cl_event.token_id)", "cd.ticker")}
       ORDER BY
-        COALESCE(e.event_time, e.block_time, e.created_at) DESC,
+        COALESCE(
+          e.event_time,
+          e.block_time,
+          transaction_row.block_time,
+          e.created_at
+        ) DESC,
         e.txid DESC,
         e.event_id DESC
       LIMIT ${TOKEN_STATE_EVENT_READ_LIMIT}
@@ -32686,7 +32691,7 @@ export async function proofIndexCanonicalActivityPayload(
             )
             OR (
               e.status = 'pending'
-              AND e.created_at <= ${snapshotTimeParam}::timestamptz
+              AND COALESCE(e.event_time, e.created_at) <= ${snapshotTimeParam}::timestamptz
             )
           )
       `
@@ -32768,7 +32773,7 @@ export async function proofIndexCanonicalActivityPayload(
         e.kind,
         e.status,
         e.event_time,
-        e.block_time,
+        COALESCE(e.block_time, transaction_row.block_time) AS block_time,
         e.created_at,
         e.block_height,
         e.txid,
@@ -32988,7 +32993,12 @@ export async function proofIndexCanonicalActivityPayload(
         ON output_totals.network = e.network
        AND output_totals.txid = e.txid
       ORDER BY
-        COALESCE(e.event_time, e.block_time, e.created_at) DESC,
+        COALESCE(
+          e.event_time,
+          e.block_time,
+          transaction_row.block_time,
+          e.created_at
+        ) DESC,
         e.txid DESC,
         e.event_id DESC
     `,

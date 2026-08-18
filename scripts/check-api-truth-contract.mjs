@@ -684,7 +684,7 @@ expect(
     /boundSearchParams\.set\("snapshot", summarySnapshotId\)/u.test(
       server,
     ) &&
-    /e\.status = 'confirmed'[\s\S]*e\.updated_at <= \$\{snapshotTimeParam\}::timestamptz[\s\S]*e\.status = 'pending'[\s\S]*e\.created_at <= \$\{snapshotTimeParam\}::timestamptz/u.test(
+    /e\.status = 'confirmed'[\s\S]*e\.updated_at <= \$\{snapshotTimeParam\}::timestamptz[\s\S]*e\.status = 'pending'[\s\S]*COALESCE\(e\.event_time, e\.created_at\) <= \$\{snapshotTimeParam\}::timestamptz/u.test(
       reader,
     ) &&
     /snapshotTotalCount/u.test(reader) &&
@@ -705,7 +705,7 @@ expect(
       server,
     ) &&
     /await freshProofIndexLogPayload\(network\)/u.test(logRoute) &&
-    /e\.status = 'confirmed'[\s\S]*e\.updated_at <= \$4::timestamptz[\s\S]*e\.status = 'pending'[\s\S]*e\.created_at <= \$4::timestamptz/u.test(
+    /e\.status = 'confirmed'[\s\S]*e\.updated_at <= \$4::timestamptz[\s\S]*e\.status = 'pending'[\s\S]*COALESCE\(e\.event_time, e\.created_at\) <= \$4::timestamptz/u.test(
       reader,
     ) &&
     /snapshotTotalCount: requestedSnapshotId \? items\.length/u.test(reader),
