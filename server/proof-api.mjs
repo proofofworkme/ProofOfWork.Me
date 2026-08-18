@@ -43131,6 +43131,47 @@ async function tokenValueStateFromIndexedActivity(
     );
   };
   const tokenFor = (tokenId) => tokensById.get(String(tokenId ?? "").toLowerCase());
+  const exactActivityPositionInteger = (value, minimum) => {
+    if (value === undefined || value === null || value === "") {
+      return undefined;
+    }
+    const number = Number(value);
+    return Number.isSafeInteger(number) && number >= minimum
+      ? number
+      : undefined;
+  };
+  const activityPositionFields = (item) => {
+    const blockHash = String(item?.blockHash ?? "").trim().toLowerCase();
+    const blockHeight = exactActivityPositionInteger(item?.blockHeight, 1);
+    const blockIndex = exactActivityPositionInteger(item?.blockIndex, 0);
+    return {
+      ...canonicalEventIdentityDetails(item),
+      ...(blockHash ? { blockHash } : {}),
+      ...(blockHeight !== undefined ? { blockHeight } : {}),
+      ...(blockIndex !== undefined ? { blockIndex } : {}),
+    };
+  };
+  const prefixedActivityPositionFields = (item, prefix) => {
+    const blockHash = String(item?.blockHash ?? "").trim().toLowerCase();
+    const blockHeight = exactActivityPositionInteger(item?.blockHeight, 1);
+    const blockIndex = exactActivityPositionInteger(item?.blockIndex, 0);
+    const identity = canonicalEventIdentityDetails(item);
+    return {
+      ...(blockHash ? { [`${prefix}BlockHash`]: blockHash } : {}),
+      ...(blockHeight !== undefined
+        ? { [`${prefix}BlockHeight`]: blockHeight }
+        : {}),
+      ...(blockIndex !== undefined
+        ? { [`${prefix}BlockIndex`]: blockIndex }
+        : {}),
+      ...(identity.protocolVout !== undefined
+        ? { [`${prefix}ProtocolVout`]: identity.protocolVout }
+        : {}),
+      ...(identity.recordOrdinal !== undefined
+        ? { [`${prefix}RecordOrdinal`]: identity.recordOrdinal }
+        : {}),
+    };
+  };
   const mints = [];
   const transfers = [];
   const listingTermsById = new Map();
@@ -43312,6 +43353,7 @@ async function tokenValueStateFromIndexedActivity(
         "";
       const current = listingTermsById.get(listingId);
       const listing = {
+        ...activityPositionFields(item),
         ...tokenLedgerAmountFields(
           token.tokenId,
           ledgerAmount,
@@ -43321,7 +43363,6 @@ async function tokenValueStateFromIndexedActivity(
               : "",
           },
         ),
-        blockHeight: numericValue(item.blockHeight),
         confirmed: true,
         createdAt: item.createdAt,
         dataBytes: numericValue(item.dataBytes),
@@ -43365,6 +43406,7 @@ async function tokenValueStateFromIndexedActivity(
     }
     const sealedListing = {
       ...listing,
+      ...prefixedActivityPositionFields(item, "seal"),
       saleAuthorization:
         item.saleAuthorization && Object.keys(item.saleAuthorization).length > 0
           ? {
@@ -43424,12 +43466,13 @@ async function tokenValueStateFromIndexedActivity(
       continue;
     }
     indexedSales.push({
+      ...activityPositionFields(item),
+      ...prefixedActivityPositionFields(item, "sale"),
       ...tokenLedgerAmountFields(
         listing.tokenId,
         listingLedgerAmount,
         { workAmountStorageModel: listingWorkAmountStorageModel },
       ),
-      blockHeight: numericValue(item.blockHeight),
       buyerAddress: indexedActivityValue(
         item,
         "buyerAddress",
@@ -43458,6 +43501,7 @@ async function tokenValueStateFromIndexedActivity(
       ...canonicalCreditValueFieldsFromRecord(item),
     });
     indexedClosedListings.push({
+      ...prefixedActivityPositionFields(item, "closed"),
       ...tokenLedgerAmountFields(
         listing.tokenId,
         listingLedgerAmount,

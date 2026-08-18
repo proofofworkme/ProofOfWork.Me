@@ -1792,3 +1792,15 @@ Production replay follow-up:
 - `server/proof-api.mjs` also keeps the AMO V5 replay-position failure
   fail-closed while adding the offending tx/kind/token/tuple fields to the
   error message for production diagnostics.
+- The next exact-tip summary attempt exposed one more activity projection
+  gap: `tokenValueStateFromIndexedActivity` rebuilt confirmed sale rows from
+  Log activity with only `blockHeight`, so `tokenSaleItemKey` correctly refused
+  the post-AMO-V5 row for the recovered `d735596c...3192bdbf5` sale.
+- `server/proof-api.mjs` now preserves activity-derived primary replay fields
+  plus sale, seal, and close-prefixed replay fields when reconstructing token
+  marketplace state from indexed activity. This keeps the strict summary guard
+  intact while allowing replayed V8 sale-ticket purchases to merge with their
+  indexed market overlay.
+- `scripts/check-index-recovery-behavior.mjs` now guards that activity-derived
+  token sales, sale-ticket seals, and closed listings keep their canonical
+  positions after AMO V5 activation.

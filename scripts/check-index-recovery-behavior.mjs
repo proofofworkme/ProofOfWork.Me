@@ -12997,6 +12997,26 @@ check("Inception fixes attachment value at issuance and adds only later INCB mar
   );
   assert.match(
     tokenValueStateSource,
+    /const\s+activityPositionFields\s*=\s*\(item\)\s*=>[\s\S]*\.\.\.canonicalEventIdentityDetails\(item\)/u,
+    "activity-derived token state must keep canonical event identity fields with its primary position",
+  );
+  assert.match(
+    tokenValueStateSource,
+    /const\s+sealedListing\s*=\s*\{\s*\.\.\.listing,\s*\.\.\.prefixedActivityPositionFields\(item,\s*"seal"\),/u,
+    "activity-derived sale-ticket seals must keep their seal replay position",
+  );
+  assert.match(
+    tokenValueStateSource,
+    /indexedSales\.push\(\{\s*\.\.\.activityPositionFields\(item\),\s*\.\.\.prefixedActivityPositionFields\(item,\s*"sale"\),/u,
+    "activity-derived sales must keep both primary and sale-prefixed replay positions",
+  );
+  assert.match(
+    tokenValueStateSource,
+    /indexedClosedListings\.push\(\{\s*\.\.\.prefixedActivityPositionFields\(item,\s*"closed"\),/u,
+    "activity-derived closed listings must keep their close replay position",
+  );
+  assert.match(
+    tokenValueStateSource,
     /item\?\.amount\s*\?\?\s*item\?\.tokenAmount\s*\?\?\s*item\?\.creditAmountMoved\s*\?\?\s*fallbackAmount/u,
     "activity-derived listings must prefer their exact amount field over the approximate prose fallback",
   );
