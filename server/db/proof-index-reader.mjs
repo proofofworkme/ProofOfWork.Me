@@ -29828,10 +29828,12 @@ export async function proofIndexTokenPayload(network, tokenScope, searchParams) 
     const legacyCutoverPayload = applyWorkMarketV2CutoverToTokenState(
       readPolicyPayload,
     );
-    return applyWorkAmoV5CutoverToTokenState(
-      await payloadWithVerifiedWorkAmoV5Activation(
-        network,
-        legacyCutoverPayload,
+    return workPrecisionV2ProjectCurrentPayload(
+      applyWorkAmoV5CutoverToTokenState(
+        await payloadWithVerifiedWorkAmoV5Activation(
+          network,
+          legacyCutoverPayload,
+        ),
       ),
     );
   };

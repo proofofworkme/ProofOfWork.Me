@@ -66788,6 +66788,10 @@ check("sequential public cutovers require explicit V6 and V8 authorization", asy
         eligible: true,
         scope: "all",
       }),
+      workPrecisionV2ProjectCurrentPayload: (payload) => {
+        cutoverOrder.push("q16");
+        return workPrecisionV2ProjectCurrentPayload(payload);
+      },
     },
   );
   const closedPayload = await proofIndexTokenPayload(
@@ -66802,10 +66806,22 @@ check("sequential public cutovers require explicit V6 and V8 authorization", asy
     "all",
     new URLSearchParams(),
   );
-  assert.deepEqual(cutoverOrder, ["v2", "v5", "v2", "v5"]);
+  assert.deepEqual(cutoverOrder, ["v2", "v5", "q16", "v2", "v5", "q16"]);
   assert.equal(publicPayload.listings.length, 1);
   assert.equal(publicPayload.listings[0].listingId, listing.listingId);
-  assert.equal(publicPayload.listings[0].amountAtoms, "10");
+  assert.equal(publicPayload.listings[0].amountAtoms, undefined);
+  assert.equal(
+    publicPayload.listings[0].amountSubatoms,
+    legacyWorkAtomsToSubatoms("10"),
+  );
+  assert.equal(
+    publicPayload.listings[0].amountStorageModel,
+    WORK_SUBATOM_PROJECTION_MODEL,
+  );
+  assert.equal(
+    publicPayload.listings[0].precisionModel,
+    WORK_PRECISION_V2_MODEL,
+  );
   assert.equal(publicPayload.listings[0].amount, "0.0000001");
 });
 
