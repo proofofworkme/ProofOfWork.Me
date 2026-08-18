@@ -1782,3 +1782,10 @@ Production replay follow-up:
 - `scripts/check-index-recovery-behavior.mjs` now covers that exact V8
   sale-ticket-first recovery shape and preserves the legacy buyer-sender
   guard for older direct buys.
+- After the replay reached the then-current tip, summary publication exposed a
+  strict API replay guard for synthetic bond seed mints: confirmed POWB/INCB
+  mints derived from bond activity must carry the source protocol tuple after
+  AMO V5 activation.
+- `server/proof-api.mjs` now propagates canonical event identity fields from
+  bond activity into the derived seed mints, preserving replay order without
+  changing issuance amounts or valuation.

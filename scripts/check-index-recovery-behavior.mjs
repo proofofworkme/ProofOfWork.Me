@@ -30659,6 +30659,11 @@ check("ordered credit verifier seeds both bond families without generic minting"
     /bondMintsFromActivity\([\s\S]*registryAddress,[\s\S]*network,[\s\S]*config/u,
   );
   assert.match(
+    topLevelFunctionSource(API_PATH, "bondMintsFromActivity"),
+    /canonicalEventIdentityDetails\(item\)[\s\S]*bondRecipientAddress/u,
+    "Bond-derived seed mints must preserve the source event tuple for AMO V5 replay ordering",
+  );
+  assert.match(
     topLevelFunctionSource(
       API_PATH,
       "loadCanonicalVerifierContextFromCheckpoint",

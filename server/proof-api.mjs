@@ -22859,6 +22859,7 @@ function bondMintsFromActivity(activity, registryAddress, network, config) {
           }
           seen.add(mintKey);
           return {
+            ...canonicalEventIdentityDetails(item),
             amount: recipientMint.amount,
             bondRecipientAddress: recipientMint.minterAddress,
             bondRecipientAmountSats: recipientMint.paidSats,
