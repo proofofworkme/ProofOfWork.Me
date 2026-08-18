@@ -196,6 +196,17 @@ const REPORTED_SPENT_SEAL_LISTING_TX =
   "df5740ebf1260f04906479ec1f23a1fd64d112f368be4a056a0a4b55cff838a1";
 const REPORTED_SPENT_SEAL_TX =
   "a18c2972590631e0a53bf47a2b1a737c39142136994faf2fd04247f7c1628749";
+const REPORTED_MULTI_ANCHOR_SPEND_SELLER =
+  "17W7JZ9KjjGUwdAyXeGxhzYe2vGe8YTRzA";
+const REPORTED_MULTI_ANCHOR_SPEND_TX =
+  "4c079144b315ca08a846e7e7af3d37f5c96419a94f06af8384dc73e1ca307359";
+const REPORTED_MULTI_ANCHOR_SPENT_LISTING_TXS = [
+  "fc57450c502e054ecf23469d88f5249a578799da59d111fe234e50ca593c20e5",
+  "db836174bde97f027c85553e26af3b896b9d3f04745f32f6f99af631865c7bcc",
+  "488f31b5ac317123a2383e49eaf06fb6351f117e217bdeb9440795de431175a5",
+  "3c69d397b2ec43c8eb8a83409b7f2dc979f5b887a307f8a12e053b3ebc545a00",
+  "a8906b1f9bab7a791a5271a3e9276b8a91e0fb502a49235d4be0c1b8e8a27b79",
+];
 const REPORTED_POWB_SEALED_LISTING_TX =
   "dcac1665798675b7817a973fa990283bc9de2c77cc374361e8cb956a5f2daa46";
 const REPORTED_POWB_SEAL_TX =
@@ -2113,6 +2124,30 @@ async function runFastMarketplaceRegressionGate() {
       assert(
         !item,
         `${txid} remained active in the seller wallet after the Marketplace V2 cutover`,
+      );
+    }
+  });
+
+  await step("reported wallet preserves canonical multi-anchor closures", async () => {
+    const walletToken = await getJson("/api/v1/token", {
+      network: "livenet",
+      asset: WORK_TOKEN_ID,
+      address: REPORTED_MULTI_ANCHOR_SPEND_SELLER,
+      wallet: 1,
+      fresh: 1,
+    });
+    for (const listingTxid of REPORTED_MULTI_ANCHOR_SPENT_LISTING_TXS) {
+      assert(
+        !listingById(walletToken.listings, listingTxid),
+        `${listingTxid} is still active after ${REPORTED_MULTI_ANCHOR_SPEND_TX} spent its sale-ticket anchor`,
+      );
+      const closed = listingById(walletToken.closedListings, listingTxid);
+      assert(
+        closed?.closedTxid === REPORTED_MULTI_ANCHOR_SPEND_TX &&
+          closed?.closedConfirmed === true &&
+          closed?.closedByCanonicalOutpointSpend === true &&
+          closed?.status === "closed",
+        `${listingTxid} is missing its canonical wallet-scoped closure from ${REPORTED_MULTI_ANCHOR_SPEND_TX}`,
       );
     }
   });

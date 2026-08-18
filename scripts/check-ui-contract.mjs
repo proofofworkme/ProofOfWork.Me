@@ -1397,6 +1397,36 @@ expect(
   !/pushPsbt\(/.test(detailedSignerBlock),
 );
 expect(
+  "final signer blocks protected sale-ticket anchor spends before broadcast",
+  /async function assertTransactionIntentDoesNotSpendReservedListingAnchors[\s\S]*fetchFreshProofOfWorkListingAnchorOutpoints[\s\S]*ProofOfWork\.Me blocked this transaction[\s\S]*No transaction was broadcast/.test(
+    app,
+  ) &&
+    /allowedReservedListingAnchorOutpoints/.test(detailedSignerBlock) &&
+    (detailedSignerBlock.match(
+      /assertTransactionIntentDoesNotSpendReservedListingAnchors/g,
+    ) || []).length >= 2 &&
+    /expectedIntent/.test(detailedSignerBlock) &&
+    /rawUnsignedTransactionIntent\(signedTransaction\)/.test(
+      detailedSignerBlock,
+    ) &&
+    /allowedReservedListingAnchorOutpoints:\s*mergeListingAnchorOutpoints\(\[\s*listingAnchorOutpoint\(latestListing\)/.test(
+      app,
+    ) &&
+    /allowedReservedListingAnchorOutpoints:\s*mergeListingAnchorOutpoints\(\[\s*tokenListingAnchorOutpoint\(listing\)/.test(
+      app,
+    ),
+);
+const sealTokenListingBlock =
+  app.match(
+    /async function sealTokenListing[\s\S]*?async function delistTokenListing/,
+  )?.[0] ?? "";
+expect(
+  "credit sale-ticket seal cannot spend its listing anchor",
+  /excludeOutpoints:\s*activeTokenListingAnchorOutpointsForAddress/.test(
+    sealTokenListingBlock,
+  ) && !/allowedReservedListingAnchorOutpoints/.test(sealTokenListingBlock),
+);
+expect(
   "Computer credit state and in-flight reads are isolated by scope",
   /acceptedTokenStatesRef = useRef\(\s*new Map<string, PowTokenState>\(\)/.test(
     app,

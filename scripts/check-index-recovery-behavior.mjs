@@ -2144,6 +2144,114 @@ check("server parses signed non-WORK outputs without free identifiers", () => {
   );
 });
 
+check("broadcast gateway rejects protected sale-ticket anchor spends", async () => {
+  const signedTransactionInputOutpoints = isolatedFunction(
+    API_PATH,
+    "signedTransactionInputOutpoints",
+    { bitcoin, Buffer },
+  );
+  let queriedOutpoints = [];
+  let indexedAnchors = [];
+  let signedCloseListingIds = new Set();
+  const protectedListingAnchorSpendError = ({
+    anchors,
+    code,
+    message,
+    reasonCode,
+  }) => {
+    const error = new Error(message);
+    error.statusCode = 400;
+    error.details = { anchors, code, reasonCode };
+    return error;
+  };
+  const assertNoUnexpectedListingAnchorSpend = isolatedFunction(
+    API_PATH,
+    "assertNoUnexpectedListingAnchorSpend",
+    {
+      proofIndexActiveCreditListingAnchorMatches: async (network, outpoints) => {
+        assert.equal(network, "livenet");
+        queriedOutpoints = outpoints;
+        return indexedAnchors;
+      },
+      protectedListingAnchorSpendError,
+      signedTransactionInputOutpoints,
+      signedTokenListingCloseIds: () => signedCloseListingIds,
+    },
+  );
+  const tx = new bitcoin.Transaction();
+  tx.addInput(Buffer.from("11".repeat(32), "hex").reverse(), 2);
+  tx.addInput(Buffer.from("22".repeat(32), "hex").reverse(), 3);
+  tx.addOutput(
+    bitcoin.script.compile([
+      bitcoin.opcodes.OP_RETURN,
+      Buffer.from("not-a-market-action", "utf8"),
+    ]),
+    0n,
+  );
+  indexedAnchors = signedTransactionInputOutpoints(tx.toHex()).map(
+    (outpoint, index) => ({
+      anchorTxid: outpoint.txid,
+      anchorVout: outpoint.vout,
+      listingId: `${String(index + 1).repeat(64)}`.slice(0, 64),
+      sellerAddress: `seller-${index + 1}`,
+      tokenId: WORK_TOKEN_ID,
+    }),
+  );
+
+  await assert.rejects(
+    () => assertNoUnexpectedListingAnchorSpend(tx.toHex(), "livenet"),
+    (error) => {
+      assert.equal(error.statusCode, 400);
+      assert.equal(
+        error.details?.code,
+        "PROTECTED_LISTING_ANCHOR_MULTI_SPEND",
+      );
+      assert.equal(error.details?.anchors?.length, 2);
+      return true;
+    },
+  );
+  assert.deepEqual(
+    queriedOutpoints.map((outpoint) => outpoint.vout),
+    [2, 3],
+  );
+
+  const singleAnchorTx = new bitcoin.Transaction();
+  singleAnchorTx.addInput(Buffer.from("33".repeat(32), "hex").reverse(), 4);
+  singleAnchorTx.addOutput(
+    bitcoin.script.compile([
+      bitcoin.opcodes.OP_RETURN,
+      Buffer.from("generic-wallet-send", "utf8"),
+    ]),
+    0n,
+  );
+  indexedAnchors = signedTransactionInputOutpoints(singleAnchorTx.toHex()).map(
+    (outpoint) => ({
+      anchorTxid: outpoint.txid,
+      anchorVout: outpoint.vout,
+      listingId: "3".repeat(64),
+      sellerAddress: "seller-3",
+      tokenId: WORK_TOKEN_ID,
+    }),
+  );
+  signedCloseListingIds = new Set();
+  await assert.rejects(
+    () =>
+      assertNoUnexpectedListingAnchorSpend(singleAnchorTx.toHex(), "livenet"),
+    (error) => {
+      assert.equal(error.statusCode, 400);
+      assert.equal(
+        error.details?.code,
+        "PROTECTED_LISTING_ANCHOR_UNEXPECTED_SPEND",
+      );
+      assert.equal(error.details?.anchors?.length, 1);
+      return true;
+    },
+  );
+
+  signedCloseListingIds = new Set(["3".repeat(64)]);
+  await assertNoUnexpectedListingAnchorSpend(singleAnchorTx.toHex(), "livenet");
+});
+
 check("WORK broadcast admission resolves confirmed input addresses", async () => {
   const expectedAddress = "1BoatSLRHtKNngkdXEeobR76b53LETtpyT";
   const previousTxid = "ab".repeat(32);
@@ -3078,7 +3186,7 @@ check("WORK V3 seal confirmation requires its canonical valid event", () => {
   const readerSource = fileSource(READER_PATH);
   assert.equal(
     (readerSource.match(/seal_tx\.status AS seal_tx_status/gu) ?? []).length,
-    4,
+    5,
   );
   assert.equal(
     (readerSource.match(/canonical_seal_event\.seal_event_status/gu) ?? [])
@@ -9357,6 +9465,7 @@ check("wallet index overlay binds every WORK and bond holder to a canonical defi
   let legacySealParserRow = null;
   let walletEventQuery = null;
   let walletListingQuery = null;
+  let walletCanonicalSpendListingQuery = null;
   let checkpointQueries = 0;
   const legacySealRow = {
     block_hash:
@@ -9417,6 +9526,10 @@ check("wallet index overlay binds every WORK and bond holder to a canonical defi
         legacySealQuery = { params, text };
         return { rows: [legacySealRow] };
       }
+      if (text.includes("wallet_canonical_spent_token_listings")) {
+        walletCanonicalSpendListingQuery = { params, text };
+        return { rows: [] };
+      }
       if (text.includes("FROM proof_indexer.credit_listings cl")) {
         walletListingQuery = { params, text };
         return { rows: [] };
@@ -9466,6 +9579,7 @@ check("wallet index overlay binds every WORK and bond holder to a canonical defi
       compareTokenItemsByTime: () => 0,
       dateIso,
       eventRowPayload: (row) => row.payload ?? {},
+      mergeCanonicalTokenClosedListingRecord: (_current, incoming) => incoming,
       normalizeEventPayload: (payload) => payload,
       normalizedLowerText: (value) => String(value ?? "").trim().toLowerCase(),
       objectRecord,
@@ -9503,6 +9617,7 @@ check("wallet index overlay binds every WORK and bond holder to a canonical defi
       tokenSaleFromEventPayload: () => ({}),
       tokenScopeKey: (value) => String(value ?? "").trim().toLowerCase(),
       tokenTransferFromEventPayload: () => ({}),
+      uniqueTokenItems: (items) => items,
       validTxid: () => false,
       walletProjectionExceedsLimit: () => false,
       walletTokenListingsWithLegacySealEvents: (items) => items,
@@ -9579,6 +9694,24 @@ check("wallet index overlay binds every WORK and bond holder to a canonical defi
     walletListingQuery.text,
     /NOT EXISTS \(\s*SELECT 1\s*FROM proof_indexer\.tx_inputs active_listing_spend_input[\s\S]*active_listing_spend_tx\.status = 'confirmed'[\s\S]*active_listing_spend_block\.canonical = true[\s\S]*active_listing_spend_input\.prev_txid = lower\(COALESCE\([\s\S]*cl\.sale_ticket_txid[\s\S]*active_listing_spend_input\.prev_vout =\s*cl\.sale_ticket_vout\s*\)/u,
     "a canonical sale-ticket spend must remove the wallet listing even without a valid close event",
+  );
+  assert.ok(walletCanonicalSpendListingQuery);
+  assert.match(
+    walletCanonicalSpendListingQuery.text,
+    /wallet_canonical_spent_token_listings/u,
+  );
+  assert.match(
+    walletCanonicalSpendListingQuery.text,
+    /listing_tx\.status = 'confirmed'/u,
+  );
+  assert.match(
+    walletCanonicalSpendListingQuery.text,
+    /canonical_spend\.txid IS NOT NULL/u,
+  );
+  assert.match(
+    walletCanonicalSpendListingQuery.text,
+    /spend_tx\.status = 'confirmed'[\s\S]*spend_block\.canonical = true[\s\S]*spend_input\.prev_txid = lower\(\s*COALESCE\(NULLIF\(cl\.sale_ticket_txid, ''\), cl\.listing_id\)\s*\)[\s\S]*spend_input\.prev_vout = cl\.sale_ticket_vout/u,
+    "wallet-scoped closed listings must include bare canonical sale-ticket spends",
   );
   assert.ok(legacySealQuery);
   assert.match(

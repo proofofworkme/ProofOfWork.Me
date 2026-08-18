@@ -18998,6 +18998,80 @@ type UnsignedTransactionIntent = {
   version: number;
 };
 
+function reverseHexByteOrder(hex: string) {
+  const pairs = hex.match(/[0-9a-f]{2}/giu);
+  return pairs && pairs.join("").length === hex.length
+    ? pairs.reverse().join("").toLowerCase()
+    : "";
+}
+
+function transactionIntentInputTxidCandidates(inputHash: string) {
+  const txid = String(inputHash ?? "").trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/u.test(txid)) {
+    return [];
+  }
+  return [...new Set([txid, reverseHexByteOrder(txid)])].filter((candidate) =>
+    /^[0-9a-f]{64}$/u.test(candidate),
+  );
+}
+
+function transactionIntentSpendsOutpoint(
+  intent: UnsignedTransactionIntent,
+  outpoint: PowIdSpentOutpoint,
+) {
+  const txid = String(outpoint?.txid ?? "").trim().toLowerCase();
+  const vout = Math.floor(Number(outpoint?.vout));
+  if (!/^[0-9a-f]{64}$/u.test(txid) || !Number.isSafeInteger(vout)) {
+    return false;
+  }
+  return intent.inputs.some(
+    (input) =>
+      input.index === vout &&
+      transactionIntentInputTxidCandidates(input.hash).includes(txid),
+  );
+}
+
+async function assertTransactionIntentDoesNotSpendReservedListingAnchors({
+  allowedOutpoints = [],
+  intent,
+  network,
+  signingAddress,
+}: {
+  allowedOutpoints?: PowIdSpentOutpoint[];
+  intent: UnsignedTransactionIntent;
+  network: BitcoinNetwork;
+  signingAddress?: string;
+}) {
+  const address = String(signingAddress ?? "").trim();
+  if (!address) {
+    return;
+  }
+
+  const allowed = new Set(
+    mergeListingAnchorOutpoints(allowedOutpoints).map(
+      (outpoint) => `${outpoint.txid}:${outpoint.vout}`,
+    ),
+  );
+  const reservedListingAnchors =
+    await fetchFreshProofOfWorkListingAnchorOutpoints(address, network);
+  const blockedAnchors = reservedListingAnchors.filter(
+    (outpoint) =>
+      !allowed.has(`${outpoint.txid}:${outpoint.vout}`) &&
+      transactionIntentSpendsOutpoint(intent, outpoint),
+  );
+  if (blockedAnchors.length === 0) {
+    return;
+  }
+
+  const blockedLabels = blockedAnchors
+    .slice(0, 5)
+    .map((outpoint) => `${shortAddress(outpoint.txid)}:${outpoint.vout}`)
+    .join(", ");
+  throw new Error(
+    `ProofOfWork.Me blocked this transaction because it would spend protected sale-ticket anchor${blockedAnchors.length === 1 ? "" : "s"} ${blockedLabels}. Use the listing's delist or purchase action instead. No transaction was broadcast.`,
+  );
+}
+
 function psbtUnsignedTransactionIntent(
   psbt: bitcoin.Psbt,
 ): UnsignedTransactionIntent {
@@ -19321,6 +19395,7 @@ async function broadcastSignedRawTransaction(
 }
 
 async function signAndBroadcastPsbtDetailed({
+  allowedReservedListingAnchorOutpoints,
   beforeBroadcast,
   broadcastStrategy = "mempool",
   inputCount,
@@ -19330,6 +19405,7 @@ async function signAndBroadcastPsbtDetailed({
   signingAddress,
   wallet,
 }: {
+  allowedReservedListingAnchorOutpoints?: PowIdSpentOutpoint[];
   beforeBroadcast?: () => Promise<void>;
   broadcastStrategy?: BroadcastStrategy;
   inputCount: number;
@@ -19349,6 +19425,12 @@ async function signAndBroadcastPsbtDetailed({
     network: bitcoinNetwork(network),
   });
   const expectedIntent = psbtUnsignedTransactionIntent(unsignedPsbt);
+  await assertTransactionIntentDoesNotSpendReservedListingAnchors({
+    allowedOutpoints: allowedReservedListingAnchorOutpoints,
+    intent: expectedIntent,
+    network,
+    signingAddress,
+  });
 
   let signedPsbtHex = "";
   const requestedSignInputs = signInputIndexes?.map((index) => ({
@@ -19407,6 +19489,12 @@ async function signAndBroadcastPsbtDetailed({
   const rawTx = signedTransaction.toHex();
 
   await beforeBroadcast?.();
+  await assertTransactionIntentDoesNotSpendReservedListingAnchors({
+    allowedOutpoints: allowedReservedListingAnchorOutpoints,
+    intent: rawUnsignedTransactionIntent(signedTransaction),
+    network,
+    signingAddress,
+  });
   return broadcastSignedRawTransaction(rawTx, network, broadcastStrategy);
 }
 
@@ -26621,6 +26709,7 @@ export default function App() {
         inputCount: paymentPsbt.inputCount,
         network,
         psbtHex: paymentPsbt.psbtHex,
+        signingAddress: address,
         wallet: window.unisat,
       });
       const registeredRecord: PowIdRecord = {
@@ -26798,6 +26887,7 @@ export default function App() {
         inputCount: paymentPsbt.inputCount,
         network,
         psbtHex: paymentPsbt.psbtHex,
+        signingAddress: address,
         wallet: window.unisat,
       });
 
@@ -27028,6 +27118,7 @@ export default function App() {
         inputCount: paymentPsbt.inputCount,
         network,
         psbtHex: paymentPsbt.psbtHex,
+        signingAddress: address,
         wallet: window.unisat,
       });
 
@@ -27227,6 +27318,7 @@ export default function App() {
         inputCount: paymentPsbt.inputCount,
         network,
         psbtHex: paymentPsbt.psbtHex,
+        signingAddress: address,
         wallet: window.unisat,
       });
 
@@ -27406,6 +27498,9 @@ export default function App() {
         }
 
         const txid = await signAndBroadcastPsbt({
+          allowedReservedListingAnchorOutpoints: mergeListingAnchorOutpoints([
+            listingAnchorOutpoint(latestListing),
+          ]),
           inputCount: paymentPsbt.inputCount,
           network,
           psbtHex: paymentPsbt.psbtHex,
@@ -27678,6 +27773,9 @@ export default function App() {
       }
 
       const txid = await signAndBroadcastPsbt({
+        allowedReservedListingAnchorOutpoints: mergeListingAnchorOutpoints([
+          listingAnchorOutpoint(latestListing),
+        ]),
         inputCount: paymentPsbt.inputCount,
         network,
         psbtHex: paymentPsbt.psbtHex,
@@ -28244,6 +28342,7 @@ export default function App() {
         inputCount: paymentPsbt.inputCount,
         network,
         psbtHex: paymentPsbt.psbtHex,
+        signingAddress: address,
         wallet: window.unisat,
       });
 
@@ -28601,6 +28700,7 @@ export default function App() {
         inputCount: paymentPsbt.inputCount,
         network: "livenet",
         psbtHex: paymentPsbt.psbtHex,
+        signingAddress: address,
         wallet: window.unisat,
       });
 
@@ -28905,6 +29005,7 @@ export default function App() {
         inputCount: paymentPsbt.inputCount,
         network: "livenet",
         psbtHex: paymentPsbt.psbtHex,
+        signingAddress: address,
         wallet: window.unisat,
       });
       const token: PowTokenDefinition = {
@@ -29066,6 +29167,7 @@ export default function App() {
           inputCount: paymentPsbt.inputCount,
           network: "livenet",
           psbtHex: paymentPsbt.psbtHex,
+          signingAddress: address,
           wallet,
         });
         const txid = broadcast.txid;
@@ -29495,6 +29597,7 @@ export default function App() {
         inputCount: paymentPsbt.inputCount,
         network: "livenet",
         psbtHex: paymentPsbt.psbtHex,
+        signingAddress: address,
         wallet: window.unisat,
       });
       const transfer: PowTokenTransfer = {
@@ -29852,6 +29955,7 @@ export default function App() {
         inputCount: paymentPsbt.inputCount,
         network: "livenet",
         psbtHex: paymentPsbt.psbtHex,
+        signingAddress: address,
         wallet: window.unisat,
       });
       const listing: PowTokenListing = {
@@ -30149,6 +30253,9 @@ export default function App() {
       }
 
       const txid = await signAndBroadcastPsbt({
+        allowedReservedListingAnchorOutpoints: mergeListingAnchorOutpoints([
+          tokenListingAnchorOutpoint(listing),
+        ]),
         beforeBroadcast: preparedWorkSettlementMode
           ? async () => {
               const freshAdmission = await freshWorkWriteMode(
@@ -30338,6 +30445,9 @@ export default function App() {
 
       await assertActiveWalletAddress(window.unisat, address);
       const txid = await signAndBroadcastPsbt({
+        allowedReservedListingAnchorOutpoints: mergeListingAnchorOutpoints([
+          tokenListingAnchorOutpoint(listing),
+        ]),
         beforeBroadcast: preparedWorkSettlementMode
           ? async () => {
               const freshAdmission = await freshWorkWriteMode(
@@ -30545,6 +30655,7 @@ export default function App() {
           inputCount: paymentPsbt.inputCount,
           network: mintNetwork,
           psbtHex: paymentPsbt.psbtHex,
+          signingAddress: address,
           wallet,
         });
         const txid = broadcast.txid;
@@ -31091,6 +31202,7 @@ export default function App() {
         inputCount: paymentPsbt.inputCount,
         network: "livenet",
         psbtHex: paymentPsbt.psbtHex,
+        signingAddress: address,
         wallet: window.unisat,
       });
       setStatus(
@@ -31202,6 +31314,7 @@ export default function App() {
         inputCount: paymentPsbt.inputCount,
         network: "livenet",
         psbtHex: paymentPsbt.psbtHex,
+        signingAddress: address,
         wallet: window.unisat,
       });
       setStatus(

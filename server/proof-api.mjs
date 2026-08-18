@@ -238,6 +238,7 @@ import {
   compareProofIndexHistoryPayloads,
   proofIndexActivityPayload,
   proofIndexAddressMailPayload,
+  proofIndexActiveCreditListingAnchorMatches,
   proofIndexCanonicalActivityPayload,
   proofIndexCanonicalInceptionMintWitnessesPayload,
   proofIndexCanonicalHistoricalWorkListingScopes,
@@ -9872,6 +9873,83 @@ function signedTransactionInputOutpoints(txHex) {
   });
 }
 
+function signedTokenListingCloseIds(txHex, network) {
+  return new Set(
+    signedTransactionOutputs(txHex)
+      .flatMap((output) =>
+        decodedProtocolMessages([output], TOKEN_PROTOCOL_PREFIX),
+      )
+      .flatMap((message) => {
+        const parsed = parseTokenPayload(message, network);
+        return (parsed?.kind === "buy" || parsed?.kind === "delist") &&
+          /^[0-9a-f]{64}$/u.test(String(parsed.listingId ?? ""))
+          ? [String(parsed.listingId).toLowerCase()]
+          : [];
+      }),
+  );
+}
+
+function protectedListingAnchorSpendError({ anchors, code, message, reasonCode }) {
+  const listings = Array.isArray(anchors) ? anchors : [];
+  const error = new Error(message);
+  error.statusCode = 400;
+  error.details = {
+    anchors: listings.slice(0, 10).map((listing) => ({
+      anchorTxid: listing.anchorTxid,
+      anchorVout: listing.anchorVout,
+      listingId: listing.listingId,
+      sellerAddress: listing.sellerAddress,
+      tokenId: listing.tokenId,
+    })),
+    code,
+    reasonCode,
+  };
+  return error;
+}
+
+async function assertNoUnexpectedListingAnchorSpend(txHex, network) {
+  if (network !== "livenet") {
+    return;
+  }
+  const inputOutpoints = signedTransactionInputOutpoints(txHex);
+  const activeAnchors = await proofIndexActiveCreditListingAnchorMatches(
+    network,
+    inputOutpoints,
+  );
+  const uniqueAnchors = new Map();
+  for (const anchor of activeAnchors) {
+    const key = `${anchor.anchorTxid}:${anchor.anchorVout}`;
+    if (anchor.anchorTxid && Number.isSafeInteger(anchor.anchorVout)) {
+      uniqueAnchors.set(key, anchor);
+    }
+  }
+  if (uniqueAnchors.size <= 1) {
+    const anchor = uniqueAnchors.values().next().value;
+    if (!anchor) {
+      return;
+    }
+    const closeListingIds = signedTokenListingCloseIds(txHex, network);
+    if (closeListingIds.has(anchor.listingId)) {
+      return;
+    }
+    throw protectedListingAnchorSpendError({
+      anchors: [anchor],
+      code: "PROTECTED_LISTING_ANCHOR_UNEXPECTED_SPEND",
+      message:
+        "Broadcast rejected because the signed transaction spends an active ProofOfWork sale-ticket anchor without the matching delist or purchase action.",
+      reasonCode: "protected-listing-anchor-unexpected-spend",
+    });
+  }
+
+  throw protectedListingAnchorSpendError({
+    anchors: [...uniqueAnchors.values()],
+    code: "PROTECTED_LISTING_ANCHOR_MULTI_SPEND",
+    message:
+      "Broadcast rejected because the signed transaction spends multiple active ProofOfWork sale-ticket anchors. Use one listing delist or purchase action per transaction.",
+    reasonCode: "protected-listing-anchor-multi-spend",
+  });
+}
+
 function signedWorkAmoEconomicOutputs(outputs, network) {
   return (Array.isArray(outputs) ? outputs : []).flatMap(
     (output, vout) => {
@@ -11390,6 +11468,7 @@ async function broadcastSlipstreamPayload(request, options = {}) {
   await assertWorkMarketplaceBroadcastAllowed(txHex, "livenet", {
     beforeSubmit: options.beforeSubmit,
   });
+  await assertNoUnexpectedListingAnchorSpend(txHex, "livenet");
   const result = await submitSlipstreamTransaction(txHex);
   await cachePendingTokenTransactionByTxid(
     result.txid,
@@ -11478,6 +11557,7 @@ async function broadcastNodePayload(request, network, options = {}) {
   await assertWorkMarketplaceBroadcastAllowed(txHex, network, {
     beforeSubmit: options.beforeSubmit,
   });
+  await assertNoUnexpectedListingAnchorSpend(txHex, network);
   const result = await submitNodeTransaction(txHex, network);
   await cachePendingTokenTransactionByTxid(
     result.txid,

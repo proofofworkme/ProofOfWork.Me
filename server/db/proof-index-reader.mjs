@@ -14303,6 +14303,90 @@ function canonicalWorkMarketV3ListingProjectionSql(listingAlias = "cl") {
   )`;
 }
 
+export async function proofIndexActiveCreditListingAnchorMatches(
+  network,
+  outpoints,
+) {
+  const pool = proofIndexPool();
+  if (!pool) {
+    return [];
+  }
+
+  const normalizedOutpoints = [];
+  const seen = new Set();
+  for (const outpoint of Array.isArray(outpoints) ? outpoints : []) {
+    const txid = normalizedLowerText(outpoint?.txid);
+    const vout = Number(outpoint?.vout);
+    const key = `${txid}:${vout}`;
+    if (
+      !validTxid(txid) ||
+      !Number.isSafeInteger(vout) ||
+      vout < 0 ||
+      seen.has(key)
+    ) {
+      continue;
+    }
+    seen.add(key);
+    normalizedOutpoints.push({ txid, vout });
+  }
+  if (normalizedOutpoints.length === 0) {
+    return [];
+  }
+
+  const result = await pool.query(
+    `
+      WITH requested_anchor(prev_txid, prev_vout) AS (
+        SELECT *
+        FROM unnest($2::text[], $3::integer[])
+      )
+      SELECT DISTINCT
+        lower(cl.listing_id) AS listing_id,
+        lower(cl.token_id) AS token_id,
+        cl.seller_address,
+        lower(COALESCE(NULLIF(cl.sale_ticket_txid, ''), cl.listing_id))
+          AS anchor_txid,
+        cl.sale_ticket_vout AS anchor_vout,
+        cl.status
+      FROM requested_anchor
+      JOIN proof_indexer.credit_listings cl
+        ON cl.network = $1
+       AND lower(COALESCE(NULLIF(cl.sale_ticket_txid, ''), cl.listing_id)) =
+          requested_anchor.prev_txid
+       AND cl.sale_ticket_vout = requested_anchor.prev_vout
+      JOIN proof_indexer.transactions listing_tx
+        ON listing_tx.network = cl.network
+       AND listing_tx.txid = cl.listing_id
+       AND listing_tx.status = 'confirmed'
+      JOIN proof_indexer.blocks listing_block
+        ON listing_block.network = listing_tx.network
+       AND listing_block.block_hash = listing_tx.block_hash
+       AND listing_block.height = listing_tx.block_height
+       AND listing_block.canonical = true
+      LEFT JOIN proof_indexer.credit_definitions cd
+        ON cd.network = cl.network
+       AND cd.token_id = cl.token_id
+      WHERE ${tokenListingActiveLifecycleSql("cl")}
+        AND ${canonicalWorkMarketV3ListingProjectionSql("cl")}
+      ORDER BY lower(cl.listing_id) ASC
+      LIMIT 50
+    `,
+    [
+      network,
+      normalizedOutpoints.map((outpoint) => outpoint.txid),
+      normalizedOutpoints.map((outpoint) => outpoint.vout),
+    ],
+  );
+
+  return result.rows.map((row) => ({
+    anchorTxid: normalizedLowerText(row.anchor_txid),
+    anchorVout: rowNumber(row, "anchor_vout"),
+    listingId: normalizedLowerText(row.listing_id),
+    sellerAddress: row.seller_address,
+    status: normalizedLowerText(row.status),
+    tokenId: normalizedLowerText(row.token_id),
+  }));
+}
+
 function canonicalTokenListingEventJoinSql(listingAlias = "cl") {
   const alias = canonicalCreditListingAlias(listingAlias);
   return `LEFT JOIN LATERAL (
@@ -30373,6 +30457,131 @@ export async function proofIndexWalletTokenOverlayPayload(
     listingParamsWithLimit,
   );
 
+  const canonicalSpendListingConditions = [
+    "cl.network = $1",
+    "cl.seller_address = ANY($2::text[])",
+    "listing_tx.status = 'confirmed'",
+    "canonical_spend.txid IS NOT NULL",
+    canonicalWorkMarketV3ListingProjectionSql("cl"),
+  ];
+  const canonicalSpendListingParams = [network, addressNeedles];
+  if (scoped) {
+    canonicalSpendListingParams.push(scope);
+    const scopeParam = `$${canonicalSpendListingParams.length}`;
+    canonicalSpendListingConditions.push(
+      `(lower(cl.token_id) = ${scopeParam} OR lower(cd.ticker) = lower(${scopeParam}))`,
+    );
+  }
+  const canonicalSpendListingParamsWithLimit = [
+    ...canonicalSpendListingParams,
+    walletAuthoritativeRowLimit + 1,
+  ];
+  const canonicalSpendListingLimitParam =
+    `$${canonicalSpendListingParamsWithLimit.length}`;
+  const canonicalSpendListingResult = await pool.query(
+    `
+      /* wallet_canonical_spent_token_listings */
+      SELECT
+        cl.listing_id,
+        cl.status,
+        cl.token_id,
+        cl.seller_address,
+        cl.buyer_address,
+        cl.amount,
+        cl.price_sats,
+        cl.sale_ticket_txid,
+        cl.sale_ticket_vout,
+        cl.sale_ticket_value_sats,
+        cl.seal_txid,
+        cl.close_txid,
+        cl.payload,
+        cl.updated_at,
+        listing_tx.block_hash AS listing_block_hash,
+        listing_tx.block_height AS listing_block_height,
+        listing_tx.block_index AS listing_transaction_block_index,
+        listing_tx.block_time AS listing_block_time,
+        listing_tx.status AS listing_tx_status,
+        canonical_listing_event.listing_event_status,
+        canonical_listing_event.listing_event_block_hash,
+        canonical_listing_event.listing_event_block_height,
+        canonical_listing_event.listing_event_block_index,
+        canonical_listing_event.listing_event_protocol_vout,
+        canonical_listing_event.listing_event_record_ordinal,
+        canonical_listing_event.listing_event_match_count,
+        seal_tx.status AS seal_tx_status,
+        seal_tx.block_height AS seal_transaction_block_height,
+        canonical_seal_event.seal_event_status,
+        canonical_seal_event.seal_event_block_hash,
+        canonical_seal_event.seal_event_block_height,
+        canonical_seal_event.seal_event_block_index,
+        canonical_seal_event.seal_event_protocol_vout,
+        canonical_seal_event.seal_event_record_ordinal,
+        canonical_seal_event.seal_event_match_count,
+        canonical_spend.txid AS canonical_spend_txid,
+        canonical_spend.vin AS canonical_spend_vin,
+        canonical_spend.block_hash AS canonical_spend_block_hash,
+        canonical_spend.block_height AS canonical_spend_block_height,
+        canonical_spend.block_index AS canonical_spend_block_index,
+        canonical_spend.block_time AS canonical_spend_block_time,
+        canonical_spend.block_time AS close_transaction_block_time,
+        'confirmed'::text AS close_transaction_status,
+        canonical_spend.block_hash AS close_transaction_block_hash,
+        canonical_spend.block_height AS close_transaction_block_height,
+        canonical_spend.block_index AS close_transaction_block_index,
+        cd.ticker,
+        cd.registry_address,
+        cd.metadata AS token_metadata
+      FROM proof_indexer.credit_listings cl
+      LEFT JOIN proof_indexer.credit_definitions cd
+        ON cd.network = cl.network
+       AND cd.token_id = cl.token_id
+      LEFT JOIN proof_indexer.transactions listing_tx
+        ON listing_tx.network = cl.network
+       AND listing_tx.txid = cl.listing_id
+      ${canonicalTokenListingEventJoinSql("cl")}
+      LEFT JOIN proof_indexer.transactions seal_tx
+        ON seal_tx.network = cl.network
+       AND seal_tx.txid = cl.seal_txid
+      ${canonicalTokenListingSealEventJoinSql("cl")}
+      LEFT JOIN LATERAL (
+        SELECT
+          spend_tx.txid,
+          spend_input.vin,
+          spend_tx.block_hash,
+          spend_tx.block_height,
+          spend_tx.block_index,
+          spend_tx.block_time
+        FROM proof_indexer.tx_inputs spend_input
+        JOIN proof_indexer.transactions spend_tx
+          ON spend_tx.network = spend_input.network
+         AND spend_tx.txid = spend_input.txid
+         AND spend_tx.status = 'confirmed'
+        JOIN proof_indexer.blocks spend_block
+          ON spend_block.network = spend_tx.network
+         AND spend_block.block_hash = spend_tx.block_hash
+         AND spend_block.height = spend_tx.block_height
+         AND spend_block.canonical = true
+        WHERE spend_input.network = cl.network
+          AND spend_input.prev_txid = lower(
+            COALESCE(NULLIF(cl.sale_ticket_txid, ''), cl.listing_id)
+          )
+          AND spend_input.prev_vout = cl.sale_ticket_vout
+        ORDER BY
+          spend_tx.block_height ASC,
+          spend_tx.txid ASC,
+          spend_input.vin ASC
+        LIMIT 1
+      ) canonical_spend ON true
+      WHERE ${canonicalSpendListingConditions.join(" AND ")}
+      ORDER BY
+        canonical_spend.block_height DESC,
+        canonical_spend.txid DESC,
+        cl.listing_id ASC
+      LIMIT ${canonicalSpendListingLimitParam}
+    `,
+    canonicalSpendListingParamsWithLimit,
+  );
+
   const legacySealParams = [
     network,
     addressNeedles,
@@ -30557,6 +30766,16 @@ export async function proofIndexWalletTokenOverlayPayload(
   }
   if (
     walletProjectionExceedsLimit(
+      canonicalSpendListingResult.rows,
+      walletAuthoritativeRowLimit,
+    )
+  ) {
+    throw new Error(
+      `Wallet token overlay exceeds the ${walletAuthoritativeRowLimit}-closed-listing authoritative limit.`,
+    );
+  }
+  if (
+    walletProjectionExceedsLimit(
       legacySealResult.rows,
       walletAuthoritativeRowLimit,
     )
@@ -30632,6 +30851,7 @@ export async function proofIndexWalletTokenOverlayPayload(
   const listings = [];
   const legacySealEvents = [];
   const closedListings = [];
+  const canonicalSpendClosedListings = [];
   const invalidEvents = invalidResult.rows
     .map(tokenInvalidEventFromRow)
     .filter((item) => item.txid && item.confirmed && item.valid === false)
@@ -30756,6 +30976,65 @@ export async function proofIndexWalletTokenOverlayPayload(
       listings.push(listing);
     }
   }
+  for (const row of canonicalSpendListingResult.rows) {
+    const canonicalSpendTxid = normalizedLowerText(row.canonical_spend_txid);
+    if (!validTxid(canonicalSpendTxid)) {
+      continue;
+    }
+    const terminalRow = {
+      ...row,
+      close_txid: canonicalSpendTxid,
+      payload: {
+        ...objectRecord(row.payload),
+        closeTxid: canonicalSpendTxid,
+        status: "delisted",
+      },
+      status: "delisted",
+    };
+    const listing = tokenListingFromCreditListingRow(terminalRow, network);
+    if (!listing?.listingId || !listing?.tokenId) {
+      continue;
+    }
+    const exactCloseInteger = (value, minimum) => {
+      if (value === undefined || value === null || value === "") {
+        return null;
+      }
+      const parsed = Number(value);
+      return Number.isSafeInteger(parsed) && parsed >= minimum
+        ? parsed
+        : null;
+    };
+    canonicalSpendClosedListings.push({
+      ...listing,
+      buyerAddress: "",
+      closeTransactionBlockHeight:
+        exactCloseInteger(row.canonical_spend_block_height, 1) ?? undefined,
+      closeTxid: canonicalSpendTxid,
+      closedAt: dateIso(row.canonical_spend_block_time ?? row.updated_at),
+      closedBlockHash:
+        normalizedLowerText(row.canonical_spend_block_hash) || undefined,
+      closedBlockHeight:
+        exactCloseInteger(row.canonical_spend_block_height, 1) ?? undefined,
+      closedBlockIndex:
+        exactCloseInteger(row.canonical_spend_block_index, 0) ?? undefined,
+      closedByCanonicalOutpointSpend: true,
+      closedConfirmed: true,
+      closedTxid: canonicalSpendTxid,
+      closedVin: Number.isSafeInteger(Number(row.canonical_spend_vin))
+        ? Number(row.canonical_spend_vin)
+        : undefined,
+      confirmed: true,
+      saleAt: undefined,
+      saleBlockHash: undefined,
+      saleBlockHeight: undefined,
+      saleBlockIndex: undefined,
+      saleProtocolVout: undefined,
+      saleRecordOrdinal: undefined,
+      saleTransactionBlockHeight: undefined,
+      saleTxid: undefined,
+      status: "closed",
+    });
+  }
 
   for (const row of legacySealResult.rows) {
     const payload = eventRowPayload(row, network);
@@ -30792,6 +31071,7 @@ export async function proofIndexWalletTokenOverlayPayload(
     ...sales,
     ...mergedListings,
     ...closedListings,
+    ...canonicalSpendClosedListings,
   ];
   const [tokens, checkpoint] = await Promise.all([
     proofIndexWalletTokenDefinitions(
@@ -30824,6 +31104,9 @@ export async function proofIndexWalletTokenOverlayPayload(
       (row) => row.event_time ?? row.block_time ?? row.created_at,
     ),
     ...listingResult.rows.map((row) => row.updated_at),
+    ...canonicalSpendListingResult.rows.map(
+      (row) => row.canonical_spend_block_time ?? row.updated_at,
+    ),
     ...legacySealResult.rows.map(
       (row) => row.event_time ?? row.block_time ?? row.created_at,
     ),
@@ -30845,7 +31128,12 @@ export async function proofIndexWalletTokenOverlayPayload(
       indexedThroughBlock: checkpoint?.indexedThroughBlock,
       indexedThroughBlockHash: checkpoint?.indexedThroughBlockHash,
       invalidEvents,
-      closedListings: closedListings.sort(compareTokenItemsByTime),
+      closedListings: uniqueTokenItems(
+        [...closedListings, ...canonicalSpendClosedListings],
+        (listing) =>
+          `${listing.network ?? network}:${listing.listingId}:${listing.closedTxid ?? listing.txid}`,
+        mergeCanonicalTokenClosedListingRecord,
+      ),
       listings: mergedListings,
       network,
       sales: sales.sort(compareTokenItemsByTime),
