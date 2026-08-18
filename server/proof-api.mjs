@@ -1086,7 +1086,7 @@ const PENDING_WORK_VERIFIER_STAGE_REQUEST_MODEL =
 const PENDING_WORK_VERIFIER_STAGE_MODEL =
   "canonical-work-q16-pending-verifier-stage-v2";
 const PENDING_WORK_VERIFIER_STAGE_CODE_VERSION =
-  "proof-api-canonical-work-q16-pending-verifier-stage-v4";
+  "proof-api-canonical-work-q16-pending-verifier-stage-v5";
 const PENDING_WORK_HISTORICAL_LISTING_SCOPE_MODEL =
   "canonical-pre-v8-work-listing-scope-v1";
 const PENDING_WORK_HISTORICAL_LISTING_AUTH_VERSIONS = Object.freeze([
@@ -59645,6 +59645,57 @@ function pendingWorkVerifierStageConfirmedItem(
   });
 }
 
+function pendingWorkVerifierStageCanonicalOutpointClose(listing) {
+  if (
+    listing?.closedByCanonicalOutpointSpend !== true ||
+    listing?.closedConfirmed !== true
+  ) {
+    return null;
+  }
+  const closedTxid = String(listing.closedTxid ?? "").trim().toLowerCase();
+  const closedBlockHash = String(listing.closedBlockHash ?? "")
+    .trim()
+    .toLowerCase();
+  const closedBlockHeight = exactVerifierPositionInteger(
+    listing,
+    "closedBlockHeight",
+    1,
+  );
+  const closedBlockIndex = exactVerifierPositionInteger(
+    listing,
+    "closedBlockIndex",
+    0,
+  );
+  if (
+    !/^[0-9a-f]{64}$/u.test(closedTxid) ||
+    !/^[0-9a-f]{64}$/u.test(closedBlockHash) ||
+    closedBlockHeight === null ||
+    closedBlockIndex === null
+  ) {
+    throw pendingWorkVerifierStageError(
+      "PENDING_WORK_STAGE_BASE_POSITION_INVALID",
+      "Canonical WORK outpoint-spend close position is incomplete.",
+      { listingId: String(listing?.listingId ?? "").trim().toLowerCase() || null },
+    );
+  }
+  return pendingWorkVerifierStageJsonClone({
+    ...pendingWorkVerifierStageWithoutPendingFields(listing),
+    closeTransactionBlockHeight: closedBlockHeight,
+    closedBlockHash,
+    closedBlockHeight,
+    closedBlockIndex,
+    closedByCanonicalOutpointSpend: true,
+    closedConfirmed: true,
+    closedProtocolVout: undefined,
+    closedRecordOrdinal: undefined,
+    closedTxid,
+    saleConfirmed: false,
+    saleProtocolVout: undefined,
+    saleRecordOrdinal: undefined,
+    saleTxid: undefined,
+  });
+}
+
 function pendingWorkVerifierStageSortUniqueItems(items, keyForItem) {
   const seen = new Set();
   for (const item of items) {
@@ -60067,6 +60118,11 @@ function pendingWorkVerifierStageConfirmedListing(value, { closed = false } = {}
         closedTxid: "",
       };
     } else {
+      const outpointClose =
+        pendingWorkVerifierStageCanonicalOutpointClose(listing);
+      if (outpointClose) {
+        return outpointClose;
+      }
       if (!/^[0-9a-f]{64}$/u.test(String(listing.closedTxid ?? ""))) {
         throw pendingWorkVerifierStageError(
           "PENDING_WORK_STAGE_BASE_INVALID",

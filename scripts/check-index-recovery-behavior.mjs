@@ -21753,6 +21753,66 @@ check("canonical WORK lifecycle state rebinds unique relational event positions"
     positioned.closedListings[2].closedByCanonicalOutpointSpend,
     true,
   );
+  const pendingWorkVerifierStageCanonicalOutpointClose = isolatedFunction(
+    API_PATH,
+    "pendingWorkVerifierStageCanonicalOutpointClose",
+    {
+      exactVerifierPositionInteger: (item, field, minimum) => {
+        const value = item?.[field];
+        if (value === undefined || value === null || value === "") {
+          return null;
+        }
+        const parsed = Number(value);
+        return Number.isSafeInteger(parsed) && parsed >= minimum ? parsed : null;
+      },
+      pendingWorkVerifierStageError: (code, message, details = {}) =>
+        Object.assign(new Error(message), { details: { code, ...details } }),
+      pendingWorkVerifierStageJsonClone: (value) =>
+        JSON.parse(JSON.stringify(value)),
+      pendingWorkVerifierStageWithoutPendingFields: (value) =>
+        Object.fromEntries(
+          Object.entries(value ?? {}).filter(
+            ([field]) => !field.toLowerCase().startsWith("pending"),
+          ),
+        ),
+    },
+  );
+  const verifiedOutpointClose =
+    pendingWorkVerifierStageCanonicalOutpointClose({
+      ...positioned.closedListings[2],
+      closedProtocolVout: null,
+      closedRecordOrdinal: null,
+      pendingDelta: "0",
+      saleConfirmed: false,
+      saleProtocolVout: null,
+      saleRecordOrdinal: null,
+    });
+  assert.equal(verifiedOutpointClose.closedTxid, outpointSpendTxid);
+  assert.equal(verifiedOutpointClose.closedBlockHash, "8".repeat(64));
+  assert.equal(verifiedOutpointClose.closeTransactionBlockHeight, 950_005);
+  assert.equal(
+    Object.hasOwn(verifiedOutpointClose, "closedProtocolVout"),
+    false,
+    "outpoint-spend closure must not invent a close protocol vout",
+  );
+  assert.equal(
+    Object.hasOwn(verifiedOutpointClose, "closedRecordOrdinal"),
+    false,
+    "outpoint-spend closure must not invent a close record ordinal",
+  );
+  assert.equal(
+    Object.hasOwn(verifiedOutpointClose, "pendingDelta"),
+    false,
+    "pending verifier confirmed base must not carry pending-only fields",
+  );
+  assert.throws(
+    () =>
+      pendingWorkVerifierStageCanonicalOutpointClose({
+        ...positioned.closedListings[2],
+        closedBlockHash: "",
+      }),
+    /outpoint-spend close position is incomplete/u,
+  );
 
   mode = "missing";
   assert.equal(
@@ -21808,6 +21868,11 @@ check("canonical WORK lifecycle state rebinds unique relational event positions"
     confirmedListingSource,
     /pendingWorkVerifierStageConfirmedV8Listing/u,
     "confirmed V8 listings must be canonicalized before the AMO V8 commitment",
+  );
+  assert.match(
+    confirmedListingSource,
+    /pendingWorkVerifierStageCanonicalOutpointClose/u,
+    "confirmed outpoint-spend closures must normalize without a close event tuple",
   );
 });
 

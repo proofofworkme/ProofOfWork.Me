@@ -1608,3 +1608,40 @@ Repair:
   outpoint-spend closes so an invalid buy can close an already-spent sale
   ticket without being counted as a valid sale or blocking exact summary
   publication.
+
+## Approved pending WORK verifier outpoint-close repair log - 2026-08-18 03:01 UTC
+
+Post-summary-repair finding:
+
+- The deploy at commit `cf38ccd` restored exact-tip canonical summary
+  publication, but worker readiness still reported `ok=false`.
+- The remaining red gate was `/api/v1/internal/pending-work-verifier-stage`:
+  pending replay failed while rebuilding its confirmed WORK base because a
+  confirmed canonical outpoint-spend close had no valid close-event
+  `closedProtocolVout` or `closedRecordOrdinal`.
+- Live token-state diagnostics confirmed the production shape on listing
+  `e299613d6ed3e8d35aad408d439f4b4b170daeb2877199c2ac747c71114691e0`:
+  exact `closedTxid`, `closedBlockHash`, `closedBlockHeight`, and
+  `closedBlockIndex`, with no valid close OP_RETURN tuple because the spend
+  was an invalid buy attempt.
+
+Repair:
+
+- `server/proof-api.mjs` now normalizes confirmed
+  `closedByCanonicalOutpointSpend` listings for the pending WORK verifier by
+  requiring exact transaction/block closure proof and deliberately omitting
+  close protocol tuple fields.
+- Protocol close events still require exact `closedProtocolVout` and
+  `closedRecordOrdinal`; cutover relic handling remains unchanged.
+- The internal pending verifier code-version pin is advanced from `v4` to
+  `v5` across the API, worker, backfill, and reader so no older pending
+  witness can be reused across the new outpoint-close normalizer.
+- `scripts/check-index-recovery-behavior.mjs` now covers the pending verifier
+  outpoint-close normalizer so the live production shape remains fail-closed
+  on missing block proof without inventing protocol coordinates.
+
+Local verification:
+
+- `node scripts/check-index-recovery-behavior.mjs` passed with `450/450`.
+- `npm run check:server-globals` passed.
+- `npm run check:worker-containment` passed after the code-version bump.

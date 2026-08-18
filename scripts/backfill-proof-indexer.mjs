@@ -240,7 +240,7 @@ const WORK_Q16_PENDING_STAGE_REQUEST_MODEL =
 const WORK_Q16_PENDING_STAGE_MODEL =
   "canonical-work-q16-pending-verifier-stage-v2";
 const WORK_Q16_PENDING_STAGE_CODE_VERSION =
-  "proof-api-canonical-work-q16-pending-verifier-stage-v4";
+  "proof-api-canonical-work-q16-pending-verifier-stage-v5";
 const WORK_Q16_PENDING_ABSENCE_EVIDENCE_MODEL =
   "canonical-work-q16-pending-absence-evidence-v1";
 const WORK_Q16_PENDING_STAGE_META_KEY =
