@@ -57152,12 +57152,67 @@ check("the first V6 listing crosses replay binding into atomic persistence witho
     rawMatchesCanonical(
       {
         ...rawDirectBuy,
+        senderAddress: sellerAddress,
+      },
+      canonicalDirectBuy,
+      "token-sale",
+    ),
+    false,
+    "Legacy raw buys still require the buyer to be the spending sender",
+  );
+  assert.equal(
+    rawMatchesCanonical(
+      {
+        ...rawDirectBuy,
         amount: "0",
       },
       canonicalDirectBuy,
       "token-sale",
     ),
     false,
+  );
+  const canonicalV8DirectBuy = {
+    amount: signedV8Listing.amount,
+    amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+    amountSubatoms: signedV8Listing.amountSubatoms,
+    blockHash: buyPosition.blockHash,
+    blockHeight: buyPosition.blockHeight,
+    blockIndex: buyPosition.blockTransactionIndex,
+    buyerAddress,
+    confirmed: true,
+    decimals: WORK_SUBATOM_DECIMALS,
+    frozenTerms: v8FrozenTerms,
+    kind: "token-sale",
+    listingId,
+    priceSats: v8FrozenTerms.unitPriceSats,
+    protocol: "pwt1",
+    protocolVout: buyPosition.protocolVout,
+    recordOrdinal: buyPosition.recordOrdinal,
+    saleAuthorization: signedV8Authorization,
+    sellerAddress,
+    tokenId: WORK_TOKEN_ID,
+    txid: buyTxid,
+    unitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,
+    valid: true,
+    workAmoV8FrozenTerms: v8FrozenTerms,
+  };
+  const rawV8TicketFirstBuy = rawLifecycleItem({
+    actionField: "saleTxid",
+    actionPosition: buyPosition,
+    actionTxid: buyTxid,
+    authorization: signedV8Authorization,
+    buyerAddress,
+    kind: "token-sale",
+    sellerAction: true,
+  });
+  assert.equal(
+    rawMatchesCanonical(
+      rawV8TicketFirstBuy,
+      canonicalV8DirectBuy,
+      "token-sale",
+    ),
+    true,
+    "V8 buyer-funded sale-ticket buys may spend the seller ticket before buyer funding",
   );
 
   const delistPosition = {

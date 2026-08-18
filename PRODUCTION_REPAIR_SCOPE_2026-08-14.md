@@ -1773,3 +1773,12 @@ Production replay follow-up:
 - `scripts/check-index-recovery-behavior.mjs` now guards that replay-position
   binding contract so future AMO V8 derived sale closes can be replayed from
   full-node block data.
+- The follow-up production replay then reached the recovered `buy5` item and
+  stopped before writing replacement rows because raw recovery still assumed
+  a `token-sale` buyer had to be the transaction's first address-bearing input.
+- `scripts/backfill-proof-indexer.mjs` now lets V8 raw buy placeholders match
+  verifier-derived sales when the buyer field and frozen authorization match;
+  canonical validation still proves the buyer appears in the full input set.
+- `scripts/check-index-recovery-behavior.mjs` now covers that exact V8
+  sale-ticket-first recovery shape and preserves the legacy buyer-sender
+  guard for older direct buys.

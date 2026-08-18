@@ -5689,6 +5689,10 @@ function workAmoV6RawPlaceholderMatchesCanonical(
     const buyerAddress = String(
       canonicalItem?.buyerAddress ?? "",
     ).trim();
+    const rawSenderAddress = String(
+      rawItem?.senderAddress ?? "",
+    ).trim();
+    const rawBuyerAddress = String(rawItem?.buyerAddress ?? "").trim();
     return Boolean(
       rawAuthorizationValidation.valid &&
       rawAuthorizationValidation.authorization.anchorTxid ===
@@ -5700,8 +5704,8 @@ function workAmoV6RawPlaceholderMatchesCanonical(
           canonicalAuthorization.authorization[field],
       ) &&
       buyerAddress &&
-      String(rawItem?.buyerAddress ?? "").trim() === buyerAddress &&
-      String(rawItem?.senderAddress ?? "").trim() === buyerAddress
+      rawBuyerAddress === buyerAddress &&
+      (rawSenderAddress === buyerAddress || v8)
     );
   }
 
