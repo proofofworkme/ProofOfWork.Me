@@ -40535,7 +40535,11 @@ function tokenStateLogExpectations(tokenState) {
     (item) => item?.relic !== true,
   )) {
     const closedTxid = listing?.closedTxid || listing?.listingId;
-    if (!listing?.closedConfirmed || !closedTxid) {
+    if (
+      !listing?.closedConfirmed ||
+      !closedTxid ||
+      listing?.closedByCanonicalOutpointSpend === true
+    ) {
       continue;
     }
     add({

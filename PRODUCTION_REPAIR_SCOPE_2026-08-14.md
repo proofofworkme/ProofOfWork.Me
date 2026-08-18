@@ -1601,6 +1601,9 @@ Repair:
   already lifecycle-bound for the close position.
 - Listing and seal positions remain rebound through canonical confirmed
   events, and ordinary close records still require valid close-event evidence.
+- `server/proof-api.mjs` now skips valid close-log expectations for canonical
+  outpoint-spend closures so the consistency checker does not require an
+  invalid sale attempt to masquerade as a valid `token-listing-closed` action.
 - `scripts/check-index-recovery-behavior.mjs` now covers canonical
   outpoint-spend closes so an invalid buy can close an already-spent sale
   ticket without being counted as a valid sale or blocking exact summary

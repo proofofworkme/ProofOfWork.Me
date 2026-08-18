@@ -10913,6 +10913,7 @@ check("WORK V2 relics remain paid history without synthetic closes", () => {
     (listing) => listing.sealConfirmed !== true,
   );
   assert.ok(unsealedRelic);
+  const outpointSpendTxid = "9".repeat(64);
   const genuineClose = tokenActivityItemsFromState({
     closedListings: [
       {
@@ -10920,6 +10921,13 @@ check("WORK V2 relics remain paid history without synthetic closes", () => {
         closeTransactionBlockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT - 1,
         closedConfirmed: true,
         closedTxid: genuineCloseTxid,
+        relic: false,
+      },
+      {
+        ...unsealedRelic,
+        closedByCanonicalOutpointSpend: true,
+        closedConfirmed: true,
+        closedTxid: outpointSpendTxid,
         relic: false,
       },
     ],
@@ -10946,6 +10954,13 @@ check("WORK V2 relics remain paid history without synthetic closes", () => {
         closeTransactionBlockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT - 1,
         closedConfirmed: true,
         closedTxid: genuineCloseTxid,
+        relic: false,
+      },
+      {
+        ...unsealedRelic,
+        closedByCanonicalOutpointSpend: true,
+        closedConfirmed: true,
+        closedTxid: outpointSpendTxid,
         relic: false,
       },
     ],
@@ -10976,6 +10991,13 @@ check("WORK V2 relics remain paid history without synthetic closes", () => {
         item.kind === "token-listing-closed" && item.txid === genuineCloseTxid,
     ).length,
     1,
+  );
+  assert.equal(
+    expectations.filter(
+      (item) =>
+        item.kind === "token-listing-closed" && item.txid === outpointSpendTxid,
+    ).length,
+    0,
   );
 });
 
