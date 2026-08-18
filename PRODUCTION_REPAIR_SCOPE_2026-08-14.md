@@ -1760,3 +1760,16 @@ Local verification:
 - `npm run build` passed.
 - `npm run hygiene:fix` removed generated `dist` and Vite temp output.
 - `npm run hygiene:check` passed.
+
+Production replay follow-up:
+
+- During the approved production database replay from block `962957`, the
+  canonical block-scan stopped before writing replacement rows because the
+  backfill replay binder rejected a verifier-derived close descriptor whose
+  `projectionPosition` used the canonical `blockTransactionIndex` field.
+- `scripts/backfill-proof-indexer.mjs` now accepts canonical
+  `blockTransactionIndex` replay descriptors while preserving fallback support
+  for legacy `blockIndex` and `_powBlockIndex` fields.
+- `scripts/check-index-recovery-behavior.mjs` now guards that replay-position
+  binding contract so future AMO V8 derived sale closes can be replayed from
+  full-node block data.

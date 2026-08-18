@@ -56240,6 +56240,10 @@ check("AMO V8 relational closing evidence reads canonical Q16 units", async () =
     WORK_AMO_V5_RAW_PATH,
     "listingPosition",
   );
+  const backfillReplayPositionSource = topLevelFunctionSource(
+    BACKFILL_PATH,
+    "workAmoV5ReplayPositionKey",
+  );
   assert.match(
     rawProjectionSource,
     /workAmoV8ListingSubatoms\(listing\)[\s\S]*formatWorkSubatoms\(amountSubatoms\)/u,
@@ -56254,6 +56258,11 @@ check("AMO V8 relational closing evidence reads canonical Q16 units", async () =
     rawListingPositionSource,
     /normalizeWorkAmoCanonicalPosition\(\{[\s\S]*blockTransactionIndex: Number\(terms\.listingBlockIndex\)[\s\S]*normalizeWorkAmoCanonicalPosition\(listing\?\.listingPosition\)[\s\S]*normalizeWorkAmoCanonicalPosition\(listing\)/u,
     "confirmed V8 listing projection must normalize canonical listing positions instead of trusting one legacy shape",
+  );
+  assert.match(
+    backfillReplayPositionSource,
+    /blockTransactionIndex:\s*value\?\.blockTransactionIndex\s*\?\?\s*value\?\.blockIndex\s*\?\?\s*value\?\._powBlockIndex/u,
+    "backfill replay binding must accept canonical blockTransactionIndex descriptors as well as legacy blockIndex fields",
   );
   const listingId =
     "1d2fb38524d8f7a6f63f432f802a79a3cecd72648c5554d2f1f670316a2c0e91";

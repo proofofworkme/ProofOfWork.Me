@@ -20154,7 +20154,9 @@ function workAmoV5ReplayPositionKey(value) {
       blockHash: value?.blockHash ?? value?._powBlockHash,
       blockHeight: value?.blockHeight ?? value?.height,
       blockTransactionIndex:
-        value?.blockIndex ?? value?._powBlockIndex,
+        value?.blockTransactionIndex ??
+        value?.blockIndex ??
+        value?._powBlockIndex,
       protocolVout: value?.protocolVout,
       recordOrdinal: value?.recordOrdinal,
     },
