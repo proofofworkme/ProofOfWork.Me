@@ -36993,20 +36993,23 @@ function TokenWalletWorkspace({
                     (!workSealActionEnabled ||
                       !workFrozenTerms ||
                       !workWriteEraReady);
+                  const workPauseReasonCode = workV8ActivationReached(
+                    workFloorQuote,
+                  )
+                    ? workFloorQuote?.workAmoV8?.reasonCode
+                    : workFloorQuote?.workAmoV6?.reasonCode;
                   const workSealBlockedLabel =
-                    isWorkToken(item) && !workAmoSettlementEnabled
-                      ? `AMO paused${
-                          (workV8ActivationReached(workFloorQuote)
-                            ? workFloorQuote?.workAmoV8?.reasonCode
-                            : workFloorQuote?.workAmoV6?.reasonCode)
-                            ? ` (${(workV8ActivationReached(workFloorQuote)
-                                ? workFloorQuote?.workAmoV8?.reasonCode
-                                : workFloorQuote?.workAmoV6?.reasonCode) ?? ""})`
-                            : ""
-                        }`
-                      : !workReadEraReady
-                        ? "Pre-V8 relic"
-                        : "Frozen terms unavailable";
+                    isWorkToken(item) && !workReadEraReady
+                      ? "Pre-V8 relic"
+                      : isWorkToken(item) && !workFrozenTerms
+                        ? "Terms unavailable"
+                        : isWorkToken(item) && !workWriteEraReady
+                          ? "Wrong era"
+                          : `AMO paused${
+                              workPauseReasonCode
+                                ? ` (${workPauseReasonCode})`
+                                : ""
+                            }`;
                   const listingActionNote =
                     listingActionNotes[item.listingId] ?? "";
                   const unitSats = tokenListingUnitPriceSats(item);
@@ -37134,8 +37137,7 @@ function TokenWalletWorkspace({
                 sale tickets became read-only relics when V4 activated. They
                 cannot be sealed or bought. The seller can still publish a
                 delist5 transaction to return the seller-controlled ticket
-                output, then create a current 20,000, 50,000, or
-                100,000-proof AMO unit.
+                output, then create a current V8 25,000-proof AMO unit.
                 Registry and miner fees are final.
               </p>
               <div className="token-list compact-token-list">
@@ -46245,6 +46247,7 @@ function TokenMarketplacePanel({
           {filteredMarketListings.length ? (
             <div className="token-market-grid">
               {tokenListingPage.items.map((listing) => {
+                const listingIsWork = isWorkToken(listing);
                 const hasSeal = tokenSaleAuthorizationUsesSaleTicketAnchor(
                   listing.saleAuthorization,
                 );
@@ -46252,7 +46255,7 @@ function TokenMarketplacePanel({
                   tokenListingHasConfirmedSaleTicketSeal(listing);
                 const sealPending =
                   tokenListingHasPendingSaleTicketSeal(listing);
-                const workFrozen = isWorkToken(listing)
+                const workFrozen = listingIsWork
                   ? workAmoFrozenTerms(listing)
                   : null;
                 const workConfirmedSubatoms =
@@ -46304,22 +46307,22 @@ function TokenMarketplacePanel({
                     : "n/a";
                 const buyLabel = !address
                   ? "Connect to buy"
-                  : isWorkToken(listing) && !workReadEraReady
+                  : listingIsWork && !workReadEraReady
                     ? "Pre-V8 relic"
-                  : isWorkToken(listing) && !workAmoProtocolWritesEnabled
-                    ? `AMO paused${
-                        workAmoWriteReasonCode
-                          ? ` (${workAmoWriteReasonCode})`
-                          : ""
-                      }`
-                  : isWorkToken(listing) && !workFrozen
-                    ? listing.confirmed
-                      ? "Frozen terms unavailable"
-                      : "Terms pending confirmation"
                   : !hasSeal
                     ? "Needs seal"
                     : sealPending
                       ? "Seal pending"
+                    : listingIsWork && !workAmoProtocolWritesEnabled
+                      ? `AMO paused${
+                          workAmoWriteReasonCode
+                            ? ` (${workAmoWriteReasonCode})`
+                            : ""
+                        }`
+                    : listingIsWork && !workFrozen
+                      ? listing.confirmed
+                        ? "Terms unavailable"
+                        : "Terms pending confirmation"
                     : listing.sellerAddress === address
                       ? "Your listing"
                       : listing.saleAuthorization.buyerAddress &&
@@ -46328,10 +46331,11 @@ function TokenMarketplacePanel({
                         : "Buy";
                 const buyDisabled =
                   busy ||
+                  !address ||
                   !sealConfirmed ||
-                  (isWorkToken(listing) && !workReadEraReady) ||
-                  (isWorkToken(listing) && !workAmoProtocolWritesEnabled) ||
-                  (isWorkToken(listing) && !workFrozen) ||
+                  (listingIsWork && !workReadEraReady) ||
+                  (listingIsWork && !workAmoProtocolWritesEnabled) ||
+                  (listingIsWork && !workFrozen) ||
                   listing.sellerAddress === address ||
                   Boolean(
                     listing.saleAuthorization.buyerAddress &&
@@ -46344,9 +46348,9 @@ function TokenMarketplacePanel({
                   >
                     <div>
                       <strong>
-                        {isWorkToken(listing) && workFaceProofs
+                        {listingIsWork && workFaceProofs
                           ? `${workAmoProofFaceLabel(workFaceProofs)} AMO unit`
-                          : isWorkToken(listing) && workFaceUsdCents
+                          : listingIsWork && workFaceUsdCents
                             ? `${workAmoFaceLabel(workFaceUsdCents)} historical AMO unit`
                           : listing.ticker}
                       </strong>
@@ -46364,7 +46368,7 @@ function TokenMarketplacePanel({
                       <div>
                         <dt>Amount</dt>
                         <dd>
-                          {isWorkToken(listing)
+                          {listingIsWork
                           ? workFrozen
                               ? `${formatWorkAmountAmo(
                                   BigInt(workFrozen.amountSubatoms),
@@ -46392,7 +46396,7 @@ function TokenMarketplacePanel({
                       <div>
                         <dt>Price</dt>
                         <dd>
-                          {isWorkToken(listing)
+                          {listingIsWork
                             ? workFrozen
                               ? `${workFrozen.priceSats.toLocaleString()} proofs frozen`
                               : workConfirmedPriceSats !== null
@@ -46405,7 +46409,7 @@ function TokenMarketplacePanel({
                             : `${listing.priceSats.toLocaleString()} proofs`}
                         </dd>
                       </div>
-                      {isWorkToken(listing) ? (
+                      {listingIsWork ? (
                         <div>
                           <dt>Terms</dt>
                           <dd>
@@ -46438,7 +46442,7 @@ function TokenMarketplacePanel({
                       </div>
                     </dl>
                     <p className="field-note">
-                      {isWorkToken(listing)
+                      {listingIsWork
                         ? workFrozen
                           ? `Immutable confirmation terms. Later network value and USD quotes cannot reprice this listing.${
                               listing.workAmoFrozenTerms?.listingBlockHeight
@@ -46447,7 +46451,7 @@ function TokenMarketplacePanel({
                             }`
                           : workConfirmedSubatoms !== null &&
                               workConfirmedPriceSats !== null
-                            ? "Confirmed V8 sale ticket is unsealed. Settlement preparation rechecks complete immutable AMO terms before signing."
+                            ? "Waiting for seal. Purchase opens after the seller publishes a confirmed seal for these immutable V8 terms."
                           : "Pending WORK amount and proof price are estimates only. Confirmation order creates the canonical terms."
                         : `Reference: ${
                             listingReferenceSats > 0

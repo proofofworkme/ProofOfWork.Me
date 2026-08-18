@@ -1434,6 +1434,10 @@ const signTokenSaleTicketAuthorizationBlock =
   app.match(/async function signTokenSaleTicketAuthorization[\s\S]*?function encodeCompactSize/)?.[0] ?? "";
 const tokenWalletWorkspaceBlock =
   app.match(/function TokenWalletWorkspace\([\s\S]*?function TokenApp\(/)?.[0] ?? "";
+const tokenMarketplaceBookBlock =
+  app.match(
+    /<MarketplaceListingBookTabs[\s\S]*?<PaginationControls\s+label="Sale tickets"/,
+  )?.[0] ?? "";
 const walletRecoverableV3WorkRelicsSource =
   tokenWalletWorkspaceBlock.match(
     /const walletRecoverableV3WorkRelics =[\s\S]*?const walletTokenById/,
@@ -1670,6 +1674,19 @@ expect(
           source,
         ),
     ),
+);
+expect(
+  "AMO sale-ticket action labels prioritize seal state before WORK terms",
+  /const listingIsWork = isWorkToken\(listing\)/.test(
+    tokenMarketplaceBookBlock,
+  ) &&
+    /const buyLabel = !address[\s\S]*listingIsWork && !workReadEraReady[\s\S]*!hasSeal[\s\S]*"Needs seal"[\s\S]*sealPending[\s\S]*"Seal pending"[\s\S]*listingIsWork && !workAmoProtocolWritesEnabled[\s\S]*listingIsWork && !workFrozen[\s\S]*"Terms unavailable"[\s\S]*: "Buy"/.test(
+      tokenMarketplaceBookBlock,
+    ) &&
+    /const buyDisabled =[\s\S]*!address[\s\S]*!sealConfirmed/.test(
+      tokenMarketplaceBookBlock,
+    ) &&
+    !/Frozen terms unavailable/.test(app),
 );
 expect(
   "WORK AMO seller payment helper coerces frozen price and sale-ticket sats numerically",

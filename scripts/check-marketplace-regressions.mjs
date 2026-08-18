@@ -196,6 +196,12 @@ const REPORTED_SPENT_SEAL_LISTING_TX =
   "df5740ebf1260f04906479ec1f23a1fd64d112f368be4a056a0a4b55cff838a1";
 const REPORTED_SPENT_SEAL_TX =
   "a18c2972590631e0a53bf47a2b1a737c39142136994faf2fd04247f7c1628749";
+const REPORTED_POWB_SEALED_LISTING_TX =
+  "dcac1665798675b7817a973fa990283bc9de2c77cc374361e8cb956a5f2daa46";
+const REPORTED_POWB_SEAL_TX =
+  "720311f99aad3368946de248fd833d1c555ed0e001cbee0931ded5d099146b72";
+const REPORTED_POWB_SELLER =
+  "bc1p0e5qs2vcu6c50t6xwxuk7yfnqpwtm03rclv7wzgxzk37849xt8fssl6zvd";
 const REPORTED_OTC_UNSEALED_LISTING_TXS = [
   "15aa831e339a17dd3d0a8a256268cb5e652b965ecf79a6af1423375619ad88fa",
   "7f41658356632323b0659c935f83c2a5dcc42aefce08e8ed6d769722325d1fe9",
@@ -845,6 +851,35 @@ function listingById(items, listingId) {
   const needle = String(listingId ?? "").toLowerCase();
   return (items ?? []).find(
     (item) => String(item?.listingId ?? "").toLowerCase() === needle,
+  );
+}
+
+function assertReportedPowbSealedListing(payload, label) {
+  const listing = listingById(payload?.listings, REPORTED_POWB_SEALED_LISTING_TX);
+  if (!listing) {
+    throw new Error(
+      `${label} is missing reported sealed POWB listing ${REPORTED_POWB_SEALED_LISTING_TX}`,
+    );
+  }
+  const status = String(listing.status ?? "").toLowerCase();
+  assert(
+    listing.confirmed === true &&
+      listing.valid === true &&
+      String(listing.tokenId ?? "").toLowerCase() === POWB_TOKEN_ID &&
+      String(listing.ticker ?? "") === "POWB" &&
+      String(listing.sellerAddress ?? "") === REPORTED_POWB_SELLER &&
+      String(listing.amount ?? "") === "2000000" &&
+      Number(listing.priceSats) === 2_000_000 &&
+      ["active", "sealing"].includes(status) &&
+      tokenListingHasConfirmedSeal(listing) &&
+      String(listing.sealTxid ?? "").toLowerCase() === REPORTED_POWB_SEAL_TX &&
+      String(listing.saleAuthorization?.version ?? "") === "pwt-sale-v1" &&
+      String(listing.saleAuthorization?.anchorType ?? "") ===
+        "sale-ticket-v1" &&
+      String(listing.saleAuthorization?.anchorTxid ?? "").toLowerCase() ===
+        REPORTED_POWB_SEALED_LISTING_TX &&
+      Number(listing.saleAuthorization?.anchorValueSats) === 546,
+    `${label} changed reported sealed POWB listing terms or sale-ticket seal metadata`,
   );
 }
 
@@ -2199,6 +2234,10 @@ async function runFastMarketplaceRegressionGate() {
       "Marketplace summary",
       marketplaceSummary,
     );
+    assertReportedPowbSealedListing(
+      marketplaceSummary.token,
+      "Marketplace summary",
+    );
     const v6Status = workAmoV6StatusFromPayload(
       marketplaceSummary,
       marketplaceSummary.token,
@@ -2972,6 +3011,7 @@ assertActiveWorkListingsUseCanonicalVersion(
   "Marketplace summary",
   marketplaceSummary,
 );
+assertReportedPowbSealedListing(marketplaceSummary.token, "Marketplace summary");
 for (const txid of REPORTED_OTC_UNSEALED_LISTING_TXS) {
   const item = listingById(marketplaceSummary.token?.listings, txid);
   assert(
@@ -3034,6 +3074,10 @@ assertActiveWorkListingsUseCanonicalVersion(
   marketplaceFreshSummary.token,
   "Fresh Marketplace summary",
   marketplaceFreshSummary,
+);
+assertReportedPowbSealedListing(
+  marketplaceFreshSummary.token,
+  "Fresh Marketplace summary",
 );
 for (const txid of REPORTED_OTC_UNSEALED_LISTING_TXS) {
   const item = listingById(marketplaceFreshSummary.token?.listings, txid);

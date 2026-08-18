@@ -7,6 +7,8 @@ const API_BASE = String(process.env.POW_API_BASE ?? DEFAULT_API_BASE).replace(
 );
 const NETWORK = String(process.env.POW_NETWORK ?? "livenet");
 const FETCH_TIMEOUT_MS = Number(process.env.POW_MAIL_CHECK_TIMEOUT_MS ?? 90000);
+const GULLISH_CONTACT_TXID =
+  "b2875f7260a142d8720fd74a7d2536fb4ddc5c98cfbc16960527ba0f66365b32";
 
 const CHECKS = [
   {
@@ -17,6 +19,25 @@ const CHECKS = [
     minTotal: 1,
     mustNotInboxTxid:
       "8e9074486fa0a6a75fd01f20c8a41a56ccd964be569e61e81e92c60266c001f0",
+  },
+  {
+    address:
+      "bc1p0e5qs2vcu6c50t6xwxuk7yfnqpwtm03rclv7wzgxzk37849xt8fssl6zvd",
+    label: "gullish@proofofwork.me contact mail sender",
+    minSent: 1,
+    minTotal: 1,
+    mustBodySubject: "Trying to contact you",
+    mustBodyTxid: GULLISH_CONTACT_TXID,
+    mustSentTxid: GULLISH_CONTACT_TXID,
+  },
+  {
+    address: "1F1p9UEHuH5KTFR7Zsx93Khdrqhj6t5nFv",
+    label: "gullish contact mail recipient",
+    minInbox: 1,
+    minTotal: 1,
+    mustBodySubject: "Trying to contact you",
+    mustBodyTxid: GULLISH_CONTACT_TXID,
+    mustInboxTxid: GULLISH_CONTACT_TXID,
   },
   {
     address: "1KNkUBREnfno2BeV7QsBf8XCWZN6YFfxPH",
@@ -351,7 +372,7 @@ function assertMailbox(check, payload) {
       if (check.mustBodySubject && subject !== check.mustBodySubject) {
         failures.push(`subject/body tx ${check.mustBodyTxid} has wrong subject`);
       }
-      if (!memo.includes(check.mustBodyIncludes)) {
+      if (check.mustBodyIncludes && !memo.includes(check.mustBodyIncludes)) {
         failures.push(`subject/body tx ${check.mustBodyTxid} is missing body text`);
       }
       if (/^Subject:\s*/iu.test(memo.trim())) {

@@ -1050,3 +1050,490 @@ Local verification for the patch:
 - `node scripts/check-ui-contract.mjs` passed.
 - `npm run build` passed.
 - AMO, Wallet, and Computer production-targeted builds passed.
+
+## Production Health Audit Log - 2026-08-17 14:55 EDT
+
+Status: read-only audit completed and logged. No repository files, production
+configuration, services, deploys, commits, or pushes were changed during the
+audit itself.
+
+Audit request:
+
+- Recheck that all events are logged, tracked, and rendered correctly across
+  the application.
+- Check node health, log health, event health, database health, database space,
+  both VPS disk usage, and mempool/confirmed status rendering.
+- Pay special attention to avoiding the previous UI VPS full-disk failure mode.
+
+Data and event health evidence:
+
+- Production ledger consistency passed on the node/API VPS against the local
+  production API at `http://127.0.0.1:8081`.
+- Passing ledger snapshot:
+  `1fdaaf654028472964e15f05`.
+- Ledger snapshot covered livenet block `962931` with value
+  `7009061625111427010.97459467` proofs.
+- `/api/v1/consistency` was green with `missingLogEvents: 0`.
+- Production Computer/event audit passed against the local production API and
+  indexer database.
+- Computer/event audit confirmed:
+  - `0` confirmed events missing transaction rows.
+  - `0` confirmed events joined to non-confirmed transactions.
+  - `0` confirmed events missing raw transaction or payload evidence.
+  - `0` confirmed transactions missing block metadata.
+  - `120058` event participant rows.
+  - `48685` event reference rows.
+  - `23841` OP_RETURN rows.
+- Confirmed canonical activity count matched DB events:
+  `24048` confirmed canonical activity events.
+- Confirmed canonical action txids were covered:
+  `23436`.
+- Public log history rendered current confirmed events from snapshot
+  `d679a75c2f04d8225df85693` at block `962930`, with `24079` total log
+  items observed.
+- Mail regression passed against production.
+- Marketplace regression passed against production after its normal fresh-state
+  retry.
+- Production indexer parity passed on the node/API VPS.
+- Local live-data, node-ops, UI-ops, and WORK AMO V8 contract checks passed.
+- WORK floor credit miner fee coverage reported `0` missing confirmed events,
+  `0` missing confirmed transactions, and no missing confirmed txids.
+
+ID and mempool status evidence:
+
+- First-party registry reported `527` records total:
+  `501` confirmed records and `26` pending records.
+- Registry stats reported `pendingRecords: 26`, `pendingEvents: 0`,
+  `confirmedSales: 4`, and `salesVolumeSats: 22000`.
+- A known pending ID, `shining`, resolved with `status: pending`.
+- A known confirmed ID, `run`, resolved with `confirmed: true` and
+  `status: confirmed`.
+- External `npm run audit:ids` was inconclusive because `mempool.space` reset
+  connections during the read. This was treated as a third-party fetch failure,
+  not a first-party registry failure.
+
+Node/API/DB VPS health:
+
+- Host: `pow-bitcoin-01` at `65.108.122.87`.
+- Root filesystem was healthy: about `55%` used, about `42G` free.
+- `/data` was healthy but near the warning line: about `74%` by `df`, and the
+  API disk probe observed about `75.00%` used with about `411G` free.
+- Inodes were healthy.
+- Largest observed storage consumers:
+  - `/data/proofofwork-postgres-backups`: about `134G`.
+  - `/data/proofofwork-postgres-tablespaces`: about `29G`.
+  - `/var/lib/postgresql`: about `7.2G`.
+  - `/var/log`: about `890M`.
+- `proof_indexer` database size was about `15GB`.
+- Largest database relations were `work_amo_block_transitions` at about
+  `10GB` and `ledger_snapshots` at about `4.9GB`.
+- Large-state database tablespace was correctly placed under
+  `/data/proofofwork-postgres-tablespaces/proof_indexer_large_state_v1`.
+- Bitcoin Core was synced, not pruned, not in IBD, and txindex was synced.
+- `bitcoind`, `electrs`, `postgresql@16-main`, `proofofwork-api`,
+  `proofofwork-indexer-worker`, and WireGuard API units were active.
+- WAL/receivewal state was healthy, with the physical slot active and only
+  about `16MB` retained WAL observed.
+
+UI VPS health:
+
+- Host: `ubuntu-4gb-hel1-1` at `77.42.91.106`.
+- Root filesystem was healthy: about `50%` used, about `18G` free.
+- Inodes were healthy.
+- `/var/www` was about `3.8G`.
+- `/var/tmp/proofofwork-deploy` was about `3.6G`.
+- Caddy logs were about `17M`.
+- System journal usage was about `226M`.
+- Caddy was active, with some reverse-proxy timeout/incomplete-response noise
+  and raw-IP ACME challenge noise, but no observed disk exhaustion.
+- Public app hostnames returned successful HTML responses after expected
+  redirects.
+
+Readiness and latency findings:
+
+- Public `/health` temporarily returned HTTP `503` during the audit.
+- The failure was not a confirmed data mismatch. Observed blockers included
+  transient Electrum/address-index timeout, DB health timeout, pending-event
+  status errors, or exact-tip summary snapshot lag immediately after a new
+  block.
+- A clear local example occurred at block `962931`: Core, electrs, database,
+  worker, and indexer were healthy with lag `0`, but summary coverage was still
+  at block `962930`, so `/health` marked readiness false until the exact-tip
+  summary snapshot caught up.
+- After a short wait, local health returned green at block `962931`, with no
+  failed checks and summary snapshot `1fdaaf654028472964e15f05`.
+- App and worker journals showed no warning-or-higher entries during the
+  inspected health-flap window, so the observed readiness failures looked like
+  timing/latency gates rather than a logged crash path.
+
+Operational issues to repair before the next audit:
+
+1. Repair node release provenance.
+
+   The node release health verifier failed because the live checkout at
+   `/opt/proofofwork-api` had tracked drift, including:
+
+   - `scripts/run-proof-indexer-worker.mjs`
+   - `server/proof-api.mjs`
+
+   Follow-up repair should compare the live files against the intended
+   committed release, preserve evidence, and either commit/deploy the intended
+   state or restore the approved release state.
+
+2. Repair UI release provenance.
+
+   The UI release provenance verifier failed because active UI surfaces had
+   unsafe ownership or modes. Observed affected roots included:
+
+   - `/var/www/proofofwork-computer`
+   - `/var/www/proofofwork-marketplace`
+   - `/var/www/proofofwork-wallet`
+
+   Follow-up repair should normalize active surface ownership and modes through
+   the approved UI deployment/provenance path.
+
+3. Review and enable prune timers.
+
+   UI deploy scratch was not full during this audit, but prune timers were
+   disabled. Node release prune was also disabled. Because prior UI failure was
+   caused by disk exhaustion, follow-up repair should review retention policy,
+   enable the appropriate prune timers, and verify they preserve required
+   release evidence while preventing unbounded deploy scratch growth.
+
+4. Investigate health-gate flapping.
+
+   Exact-tip summary coverage and pending-event checks can briefly fail the
+   readiness gate after new blocks or during slow reads. Follow-up repair should
+   decide whether the readiness gate needs a grace window, clearer degraded
+   status, longer internal timeout, or improved summary generation latency.
+
+5. Watch node `/data` growth.
+
+   `/data` has substantial free space but is at the documented warning line.
+   Backups are currently the largest storage consumer. Follow-up audit should
+   check backup retention, tablespace growth, and whether storage alerting is
+   firing before the critical threshold.
+
+Next audit baseline:
+
+- Treat snapshot `1fdaaf654028472964e15f05` at block `962931` as the latest
+  passed ledger and Computer/event audit baseline from this read-only pass.
+- Re-run ledger consistency, Computer/event audit, mail regression,
+  marketplace regression, indexer parity, VPS disk checks, failed-unit checks,
+  release provenance checks, and prune timer checks before any future
+  production repair.
+
+## Read-only ordered Computer audit - 2026-08-17 22:16 UTC
+
+User request:
+
+- Audit the public surfaces in order: Home, ID, Desktop, Browser, AMO, Credit,
+  Wallet, WORK, Infinity, Inception, Log, Growth, then
+  `computer.proofofwork.me` last.
+- Use the full node to verify data before shipping anything.
+- Keep the pass read-only until improvements are separately approved.
+- Include recommendations for speed, data handling, accuracy, and hardening.
+
+Scope performed:
+
+- No production files, configs, services, deploys, commits, or pushes were
+  changed during the audit.
+- The in-app browser connector was unavailable, so the surface pass used local
+  headless Chrome/Playwright, same-origin API probes, first-party production
+  API reads, PostgreSQL proof-index reads, and Bitcoin Core checks over SSH.
+- All requested public pages returned HTTP 200 in the requested order. The apex
+  `proofofwork.me` redirected to `https://www.proofofwork.me/` as expected.
+
+Critical live finding:
+
+- At `2026-08-17 22:16 UTC`, the node API was indexed to Core tip block
+  `962951` with `lagBlocks: 0`, but public summary coverage was still block
+  `962950` at snapshot `74b8c9309ca809210eeb37b9`.
+- `/health?network=livenet` reported `ok:false`, `ready:false`, and
+  `available:false`.
+- `work-summary?network=livenet&fresh=1` returned HTTP `503` with
+  `CANONICAL_SUMMARY_UNAVAILABLE` and message
+  `The canonical ProofOfWork summary snapshot is catching up.`
+- Worker/API logs repeatedly reported
+  `PENDING_WORK_STAGE_BASE_UNAVAILABLE`: the relational token tables did not
+  provide an exact-tip Q16 WORK base.
+- Bitcoin Core verification of block `962951` returned `935` OP_RETURN
+  transactions and zero ProofOfWork protocol hits for `pwid1`, `pwm1`, `pwt1`,
+  or `pow1`. The block scan was right that no protocol events were present;
+  the summary publisher failed to advance the coherent public summary bundle
+  across a zero-protocol block.
+
+Confirmed-data health:
+
+- Production ledger audit passed at snapshot `74b8c9309ca809210eeb37b9`, with
+  confirmed value around `7009061625112567991.93552426` proofs.
+- Production Computer/event audit passed at block `962950`, with no failures or
+  warnings. Key counts included `24076` confirmed canonical events,
+  `24109` canonical activity items, `501` ID records, `238` confirmed credit
+  definitions, `604` confirmed mail items, `21873` confirmed token mints, and
+  `174` confirmed token transfers.
+- `/api/v1/consistency?network=livenet` was green for snapshot
+  `74b8c9309ca809210eeb37b9`, with `missingLogEvents: []`.
+- Mail regression passed against `https://computer.proofofwork.me`.
+- AMO/marketplace regression passed against `https://amo.proofofwork.me`,
+  including ID lookup, legacy cutover/relic state, listing lifecycle, wallet
+  scopes, and targeted WORK transfers.
+- Local contract checks passed: `check:live-data`, `check:node-ops`,
+  `check:ui-ops`, `check:api-truth`, `check:ui`, `check:work-precision-v2`,
+  and production-side `check:work-amo-v8`.
+- Sample pending events were confirmed as real Core mempool entries through
+  `/api/v1/tx-status` and Bitcoin Core. Pending rows remained visibility only,
+  not canonical ownership/value.
+
+Parity finding:
+
+- Production `npm run indexer:parity` exited non-zero.
+- Confirmed activity counts matched, but pending activity accounting differed:
+  the parity script expected `33` pending activity items while the event table
+  exposed `36` valid pending events.
+- Broad token/marketplace relational state in the parity script was empty
+  (`tokens: 0`, active listings `0`, closed listings `0`, sales `0`) even
+  though direct token, AMO, WORK, wallet, and regression endpoints returned
+  populated state.
+- Treat this as a required repair for the parity gate or its broad-state read
+  eligibility before any future production shipping gate depends on it.
+
+Surface-specific findings:
+
+- AMO displayed stale protocol copy in production: it could show V6 as
+  authoritative with `20,000`, `50,000`, and `100,000` proof faces even though
+  active V8 permits only the single `25,000` proof face.
+- Source locations to review include `src/App.tsx` around the V8/V6 branch at
+  `45263`, the listing prompt around `29616`, and the legacy listing copy
+  around `37137`.
+- WORK loaded valid data by about 30 seconds, but still showed loading copy
+  after roughly 7 seconds on the first pass. First paint should use the last
+  coherent canonical snapshot and revalidate in the background.
+- Mobile layout had repeated overflow in shared `.status-text`, plus some H1
+  and button overflow on Desktop, Browser, AMO, Growth, Infinity, and
+  Inception. Chart SVG labels on Infinity/Growth may clip or be false-positive
+  text overflow and need visual confirmation after layout changes.
+- Home had only a benign console warning for unsupported `web-share`.
+- No failed requests, broken images, or horizontal page overflow were observed
+  in the automated surface sweep.
+
+Wallet and credit observations:
+
+- Wallet UTXO read for `19MXUmBgBN3nJr2V1yvEdysZBB8cYSaHk4` returned three
+  UTXOs quickly, split correctly into one confirmed output and two pending
+  outputs. A known pending sale tx was visible as unconfirmed.
+- A real credit-holder sample
+  `1447TsdXtFSnVrWawSamyyQKPDNW4ALtBT` cross-checked cleanly: database balances
+  showed WORK and INCB, and the wallet-scoped token summary returned the same
+  holder records with zero pending deltas plus closed/sale history.
+- The wallet-scoped credit/WORK read path was slow: observed reads ranged from
+  about `7.5s` to `21.5s`, and marketplace regression previously saw wallet
+  scoped reads in the `30s` range.
+
+VPS and log health:
+
+- Node/API VPS `pow-bitcoin-01`:
+  - Root filesystem about `55%` used with about `42G` free.
+  - `/data` about `74%` used with about `411G` free; the API disk probe saw
+    about `75.03%`, which is the caution band.
+  - Large consumers: `/data/proofofwork-postgres-backups` about `135G`,
+    `/data/proofofwork-postgres-tablespaces` about `29G`,
+    `/var/lib/postgresql` about `7.2G`, and `/var/log` about `885M`.
+  - `proof_indexer` database about `15GB`.
+  - Largest relations: `work_amo_block_transitions` about `10GB`,
+    `ledger_snapshots` about `5GB`.
+  - `bitcoind`, `electrs`, PostgreSQL, API, indexer worker, and WireGuard API
+    units were active.
+  - Failed historical units remain for old deployment/tablespace attempts,
+    node release health, node release prune, and release publish.
+  - `/opt/proofofwork-api` live checkout is dirty:
+    `scripts/run-proof-indexer-worker.mjs` and `server/proof-api.mjs` differ
+    from HEAD. Observed diff includes longer pending-backfill timeout and
+    token/log read changes.
+- UI VPS `ubuntu-4gb-hel1-1`:
+  - Root filesystem about `43%` used with about `21G` free.
+  - `/var/www` about `3.8G`, `/var/tmp/proofofwork-deploy` about `1.2G`,
+    `/var/log` about `455M`.
+  - Caddy and storage-health timer were active.
+  - UI release provenance failed every 15 minutes with
+    `Active UI release provenance mismatch: activity`.
+  - Several active/release roots remain owned by `1000:1000` and/or writable,
+    including active `proofofwork-computer`, `proofofwork-marketplace`,
+    `proofofwork-wallet`, `proofofwork-log`, and related historical roots.
+
+Recommended repair order, pending user approval:
+
+1. Fix exact-tip summary publication for zero-protocol blocks so a block scan
+   with no new protocol txids still publishes a coherent summary bundle or
+   intentionally reuses the prior value under the new block hash.
+2. Decouple confirmed exact-tip summary readiness from pending-only WORK
+   verifier failure where confirmed state is hash-matched and current.
+3. Repair `indexer:parity` pending-count logic and broad token/marketplace
+   relational read eligibility.
+4. Fix AMO V8 production copy so V6 appears only as historical context and V8
+   shows the single 25,000-proof face everywhere.
+5. Add wallet-scoped materialized/read-model paths for balances, listings,
+   seals, sales, reserved anchors, and spendable WORK so Wallet/AMO reads stay
+   under a tight latency budget.
+6. Add client/server request dedupe and stale-while-revalidate first paint for
+   WORK, AMO, Wallet, Growth, Infinity, Inception, and Log.
+7. Normalize UI release provenance and repair node release provenance after
+   preserving evidence of the current production drift.
+8. Review prune timers and retention policies for UI deploy scratch, node
+   release archives, Postgres backups, and ledger snapshot growth.
+9. Tighten storage alerting before `/data` grows beyond the caution band.
+
+Do not ship from this audit baseline until the block `962951` exact-tip
+summary/readiness failure is either repaired or explicitly accepted as the
+next approved repair target.
+
+## User bug reports appended - 2026-08-18 01:31 UTC
+
+User reports reviewed:
+
+- `gullish@proofofwork.me` / X report:
+  `https://x.com/cramericaTV/status/2089438118390694229`.
+- Tweet-linked transaction:
+  `b2875f7260a142d8720fd74a7d2536fb4ddc5c98cfbc16960527ba0f66365b32`.
+- `carbonz@proofofwork.me` AMO report: connected-wallet AMO shows
+  `Frozen terms unavailable`; reporter expected a normal buy action.
+- User screenshot evidence:
+  `/home/sixer/Pictures/Screenshots/Screenshot from 2026-08-17 21-21-31.png`.
+
+Read-only verification:
+
+- The X post was readable through direct X metadata extraction after the
+  in-app browser connector was unavailable. The post complains that the
+  Computer inbox still needs fixes and links the transaction above.
+- Bitcoin Core verified transaction
+  `b2875f7260a142d8720fd74a7d2536fb4ddc5c98cfbc16960527ba0f66365b32`
+  as confirmed in block `962933` at `2026-08-17T19:05:28Z`. The transaction
+  carries a canonical `pwm1` mail subject/body pair, pays `546` proofs to
+  `1F1p9UEHuH5KTFR7Zsx93Khdrqhj6t5nFv`, and returns change to
+  `bc1p0e5qs2vcu6c50t6xwxuk7yfnqpwtm03rclv7wzgxzk37849xt8fssl6zvd`.
+- `proof_indexer.events` contains event `3602387` for that transaction:
+  `kind=mail`, `status=confirmed`, `valid=true`, `block_height=962933`,
+  `protocol=pwm1`, subject `Trying to contact you`.
+- `proof_indexer.mail_items` contains the matching confirmed mail projection,
+  and `/api/v1/event-history` plus `/api/v1/log-history` both return the tx.
+- Current ID registry state maps `gullish` owner and receive address to
+  `bc1p0e5qs2vcu6c50t6xwxuk7yfnqpwtm03rclv7wzgxzk37849xt8fssl6zvd`.
+  Therefore this transaction is sender-side mail for `gullish`, not inbox
+  mail for `gullish`.
+- `/api/v1/address/{gullish-address}/mail` returns the tx in `sentMessages`
+  with `status=confirmed`. `/api/v1/address/1F1p9UE.../mail` returns it in
+  `inboxMessages` with `confirmed=true`. If the Computer UI failed to show
+  the tx to the reporter, the likely defect is folder/search/copy visibility
+  or ID/address expectation, not missing Core data, event indexing, or mail
+  projection.
+
+AMO connected-wallet state finding:
+
+- Source review found the visible AMO label at `src/App.tsx` around the
+  connected marketplace buy-label branch: confirmed WORK listing plus missing
+  `workFrozen` currently renders `Frozen terms unavailable` before the generic
+  seal-state labels.
+- Protocol expectation: confirmed V8 WORK sale tickets are visible but are not
+  buyable until sealed; sealed non-WORK listings should render a normal `Buy`
+  action for non-seller wallets.
+- Live data check: the `gullish` marketplace row
+  `dcac1665798675b7817a973fa990283bc9de2c77cc374361e8cb956a5f2daa46`
+  is a POWB listing, not WORK. Its seal transaction
+  `720311f99aad3368946de248fd833d1c555ed0e001cbee0931ded5d099146b72`
+  is confirmed by Core and the index; the marketplace summary exposes
+  `sealConfirmed=true` and a complete anchored sale authorization.
+- Live WORK V8 term rows were not missing frozen terms: latest
+  `work_amo_v8_listing_terms` rows include `frozen_terms`, and the active WORK
+  listing table count for missing frozen terms was `0`.
+- Treat the AMO report as a required UI/state-consistency bug: a sealed POWB
+  row must not inherit WORK AMO disabled wording, and an unsealed WORK row
+  should show a clear seal state such as `Needs seal` or `Awaiting seal`, not
+  an internal frozen-terms failure unless terms are actually unavailable.
+
+Exact-tip screenshot addendum:
+
+- The user screenshot at `2026-08-17 21:21` shows Wallet connected to
+  `17W7JZ9K...Ge8YTRzA` while the banner says WORK exact-tip summary
+  publication is temporarily unavailable, last-good summary block `962950`,
+  current canonical scan checkpoint block `962969`, and full-node tip
+  `962969`.
+- A read-only node health check at `2026-08-18 01:27 UTC` reproduced the same
+  class: Core/Electrum/index were at block `962969` with `lagBlocks: 0`, but
+  summary coverage remained pinned to snapshot `74b8c9309ca809210eeb37b9` at
+  block `962950`; `/api/v1/work-summary?fresh=1` failed closed with
+  `The canonical ProofOfWork summary snapshot is catching up.`
+- This is the same critical exact-tip publication/readiness bug already logged
+  in the ordered audit, now with direct Wallet UI evidence at block `962969`.
+
+Recommended additions to the repair backlog, pending approval:
+
+1. Add a focused regression for the tweet-linked mail transaction:
+   event history, log history, mail projection, sender Sent, recipient Inbox,
+   and Computer search/folder visibility must all agree for
+   `b2875f7260a142d8720fd74a7d2536fb4ddc5c98cfbc16960527ba0f66365b32`.
+2. Fix AMO action labels so `Buy`, `Needs seal`, `Seal pending`,
+   `Your listing`, `Buyer locked`, and WORK-only term failures are mutually
+   exclusive and derived from the same confirmed seal/term state.
+3. Add regression coverage for the sealed `gullish` POWB listing
+   `dcac1665798675b7817a973fa990283bc9de2c77cc374361e8cb956a5f2daa46` so a
+   non-seller wallet sees a buyable sealed listing.
+4. Add a Wallet/AMO exact-tip UI regression that asserts stale last-good
+   summary banners cannot coexist with misleading action affordances when
+   Core/index are at tip but summary publication is pinned.
+
+## Approved bugfix implementation log - 2026-08-18 02:05 UTC
+
+Approved scope:
+
+- User approved committing, deploying, pushing, merging, and syncing local,
+  git, and production for the audit-backed fixes.
+- Implement a UI-safe AMO fix before production deploy: connected-wallet action
+  labels must derive from confirmed seal state first, then protocol/term
+  readiness.
+- Preserve read-only audit evidence and convert the new user reports into
+  regression coverage.
+
+Implementation:
+
+- `src/App.tsx` now computes a single `listingIsWork` value for marketplace
+  sale-ticket rows and evaluates buy labels in this order: connected wallet,
+  active WORK era, seal needed, seal pending, WORK write gate, WORK terms,
+  owner/buyer lock, then `Buy`.
+- The reported phrase `Frozen terms unavailable` was removed from the UI.
+  Missing WORK terms now render `Terms unavailable`, and unsealed rows render
+  `Needs seal` before any WORK-only terms failure.
+- The connected-wallet listing seal button now distinguishes pre-V8 relic,
+  missing terms, wrong era, and paused AMO write-gate states.
+- The owner-side V3 WORK recovery copy now points sellers to a current V8
+  `25,000`-proof AMO unit instead of obsolete `20,000`, `50,000`, and
+  `100,000` proof faces.
+- `scripts/check-ui-contract.mjs` now fails if AMO action labels evaluate
+  WORK term failures before seal state or if the old `Frozen terms unavailable`
+  string returns.
+- `scripts/check-mail-regressions.mjs` now checks the tweet-linked mail
+  transaction
+  `b2875f7260a142d8720fd74a7d2536fb4ddc5c98cfbc16960527ba0f66365b32`
+  in both sender Sent and recipient Inbox views.
+- `scripts/check-marketplace-regressions.mjs` now checks the reported sealed
+  POWB listing
+  `dcac1665798675b7817a973fa990283bc9de2c77cc374361e8cb956a5f2daa46`
+  and seal transaction
+  `720311f99aad3368946de248fd833d1c555ed0e001cbee0931ded5d099146b72`
+  for confirmed anchor metadata.
+
+Pre-deploy verification:
+
+- `npm run check:ui` passed.
+- `npm run build` passed.
+- `npm run check:mail-regressions` passed against
+  `https://computer.proofofwork.me`; the new gullish sender/recipient checks
+  returned indexed mail data with no scan failure.
+- `npm run check:server-globals` passed.
+- `npm run check:client-read-containment` passed.
+- `npm run check:worker-containment` passed.
+- `npm run check:live-data` passed.
+- `POW_API_BASE=https://computer.proofofwork.me npm run
+  check:marketplace-regressions` failed before deploy on the already-logged
+  production exact-tip issue: fresh WORK token reads returned HTTP `503` for
+  `Fresh credit state is still catching up`, exhausting the fast gate's
+  convergence budget.
