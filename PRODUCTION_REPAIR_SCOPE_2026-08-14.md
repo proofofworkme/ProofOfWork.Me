@@ -1813,3 +1813,9 @@ Production replay follow-up:
   Electrum exact-tip header proof its own full bounded health timeout after a
   successful canary. `scripts/check-index-recovery-behavior.mjs` and
   `scripts/check-live-data-contract.mjs` guard that health resilience contract.
+- A follow-up production health sweep showed the address-canary probe itself
+  could run past the prior shared five-second envelope while the node, worker,
+  index, and canonical summary were otherwise current. The default health
+  budget is now 10 seconds, with the exact-tip proof still bounded and
+  fail-closed, so load-related probe latency does not masquerade as data
+  corruption.

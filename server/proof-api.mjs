@@ -730,14 +730,15 @@ const PROOF_INDEX_HEALTH_MAX_AGE_MS = Number(
   process.env.POW_INDEX_HEALTH_MAX_AGE_MS ?? 10 * 60_000,
 );
 const HEALTH_CHECK_TIMEOUT_MS = Number(
-  process.env.POW_API_HEALTH_CHECK_TIMEOUT_MS ?? 5_000,
+  process.env.POW_API_HEALTH_CHECK_TIMEOUT_MS ?? 10_000,
 );
 const HEALTH_ELECTRUM_TIP_PROOF_TIMEOUT_MS = Math.min(
   10_000,
   Math.max(
     1_000,
-    Number(process.env.POW_API_HEALTH_ELECTRUM_TIP_PROOF_TIMEOUT_MS ?? 5_000) ||
-      5_000,
+    Number(
+      process.env.POW_API_HEALTH_ELECTRUM_TIP_PROOF_TIMEOUT_MS ?? 5_000,
+    ) || 5_000,
   ),
 );
 const HEALTH_PAYLOAD_CACHE_TTL_MS = Math.max(

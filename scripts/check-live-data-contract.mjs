@@ -846,6 +846,9 @@ expect(
     addressIndexHealthSource,
   ),
 );
+expectAll("health probes keep a bounded production sweep budget", server, [
+  /POW_API_HEALTH_CHECK_TIMEOUT_MS\s*\?\?\s*10_000/,
+]);
 expectAll("Electrum health proves the exact Core tip with one bounded header", electrumHealthSource, [
   /async function electrumHealthPayload\(\s*expectedHeight,\s*expectedHash,\s*timeoutMs = HEALTH_CHECK_TIMEOUT_MS,\s*\)/,
   /blockchain\.block\.header/,
