@@ -1537,3 +1537,41 @@ Pre-deploy verification:
   production exact-tip issue: fresh WORK token reads returned HTTP `503` for
   `Fresh credit state is still catching up`, exhausting the fast gate's
   convergence budget.
+
+## Approved exact-tip worker repair log - 2026-08-18 02:32 UTC
+
+Post-deploy finding:
+
+- The first approved production deploy moved both VPSs to commit `fde6f8a`,
+  but `https://computer.proofofwork.me/health` still reported `ok=false`.
+- Core, Electrum, and the block scan were exact-tip, but the summary snapshot
+  remained pinned to block `962950` while the canonical scan had advanced.
+- Worker logs showed the confirmed AMO V8 Q16 replay passing at tip, followed
+  by pending-only witness failure because the pending verifier could not obtain
+  an exact-tip relational WORK base.
+
+Repair:
+
+- `scripts/run-proof-indexer-worker.mjs` now publishes the confirmed canonical
+  summary immediately after the confirmed block-scan phase proves its
+  checkpoint, before starting the bounded best-effort pending rebuild.
+- Pending verification still runs after pending-status maintenance and remains
+  a separate fail-closed accuracy gate; the repair does not relax confirmed
+  replay, relational parity, or pending witness correctness.
+- `scripts/check-worker-containment.mjs`,
+  `scripts/check-live-data-contract.mjs`, and
+  `scripts/check-index-recovery-behavior.mjs` now enforce the confirmed-first
+  publication order.
+- A stale wallet reserved-outpoint source assertion in
+  `scripts/check-index-recovery-behavior.mjs` now matches the current
+  `connectedWalletReservedOutpoints` contract, preserving the check that
+  wallet proof spendability excludes active ID and token listing anchors.
+
+Local verification:
+
+- `npm run check:worker-containment` passed.
+- `npm run check:live-data` passed.
+- `npm run check:server-globals` passed.
+- `node scripts/check-api-truth-contract.mjs` passed.
+- `node scripts/check-index-recovery-behavior.mjs` passed with `450/450`.
+- `npm run check:ui` passed.

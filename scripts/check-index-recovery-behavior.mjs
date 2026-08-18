@@ -8722,7 +8722,10 @@ check("wallet holder overlays preserve WORK and POWB for one address", () => {
     appSource,
     /mergeAccountTokenWalletBalanceLanes\([\s\S]*accountWorkWalletBalances[\s\S]*accountPowbWalletBalances/u,
   );
-  assert.match(appSource, /accountUtxoAvailability\(accountUtxos, reservedListingOutpoints\)/u);
+  assert.match(
+    appSource,
+    /accountUtxoAvailability\(\s*accountUtxos,\s*connectedWalletReservedOutpoints,\s*\)/u,
+  );
   assert.match(appSource, /activeListingAnchorOutpointsForAddress\(idListings/u);
   assert.match(appSource, /activeTokenListingAnchorOutpointsForAddress/u);
 
@@ -18423,7 +18426,7 @@ check("same-height pending membership versions the canonical Log snapshot", asyn
   const runCycleSource = topLevelFunctionSource(WORKER_PATH, "runCycle");
   assert.match(
     runCycleSource,
-    /runCanonicalBeforePending\([\s\S]*runBackfillPhase\(backfillPhases\[0\]\)[\s\S]*pendingStatus = await refreshPendingStatusesSafely\(\);[\s\S]*runBackfillPhase\(backfillPhases\[1\]\)[\s\S]*publishCanonicalSummaryAfterPending\(\)/u,
+    /runCanonicalBeforePending\([\s\S]*runBackfillPhase\(backfillPhases\[0\]\)[\s\S]*publishCanonicalSummaryAtConfirmedCheckpoint\(\)[\s\S]*pendingStatus = await refreshPendingStatusesSafely\(\);[\s\S]*runBackfillPhase\(backfillPhases\[1\]\)/u,
   );
   assert.doesNotMatch(
     runCycleSource,

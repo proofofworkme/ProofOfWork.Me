@@ -6156,7 +6156,7 @@ async function runCycle(pool, lastSuccess, runtime) {
     BACKFILL_SOURCES,
     BACKFILL_STORE_CANONICAL_SUMMARY_SNAPSHOT,
   );
-  const summaryPublicationAfterPending =
+  const summaryPublicationAtConfirmedCheckpoint =
     /^(?:1|true|yes)$/iu.test(
       BACKFILL_STORE_CANONICAL_SUMMARY_SNAPSHOT,
     ) &&
@@ -6341,8 +6341,8 @@ async function runCycle(pool, lastSuccess, runtime) {
       return failedStatus;
     }
   };
-  const publishCanonicalSummaryAfterPending = async () => {
-    if (!summaryPublicationAfterPending) {
+  const publishCanonicalSummaryAtConfirmedCheckpoint = async () => {
+    if (!summaryPublicationAtConfirmedCheckpoint) {
       return;
     }
     const checkpoint = normalizedCheckpoint(canonicalProgress);
@@ -6352,7 +6352,7 @@ async function runCycle(pool, lastSuccess, runtime) {
       !checkpoint.checkpointHash
     ) {
       throw new Error(
-        "Post-pending canonical summary publication requires the confirmed replay checkpoint.",
+        "Confirmed canonical summary publication requires the confirmed replay checkpoint.",
       );
     }
     await runBackfillWithRetries(
@@ -6380,13 +6380,13 @@ async function runCycle(pool, lastSuccess, runtime) {
     backfillPhases[1]?.kind === "best-effort-pending"
   ) {
     await runCanonicalBeforePending(
-      () => runBackfillPhase(backfillPhases[0]),
+      async () => {
+        await runBackfillPhase(backfillPhases[0]);
+        await publishCanonicalSummaryAtConfirmedCheckpoint();
+      },
       async () => {
         pendingStatus = await refreshPendingStatusesSafely();
         await runBackfillPhase(backfillPhases[1]);
-        if (pendingBackfill.ok) {
-          await publishCanonicalSummaryAfterPending();
-        }
       },
     );
   } else {

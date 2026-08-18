@@ -2228,8 +2228,8 @@ async function runChecks() {
   assert.deepEqual(pendingResult, { checked: 1 });
   assert.match(
     workerSource,
-    /assertWorkPrecisionReplayReady\([\s\S]*requireCurrentSnapshot: false,[\s\S]*requireRelationalParity: false,[\s\S]*runCanonicalBeforePending\([\s\S]*runBackfillPhase\(backfillPhases\[0\]\)[\s\S]*pendingStatus = await refreshPendingStatusesSafely\(\);[\s\S]*runBackfillPhase\(backfillPhases\[1\]\)[\s\S]*publishCanonicalSummaryAfterPending\(\)[\s\S]*assertWorkPrecisionReplayReady\(\s*pool,\s*workPrecision,\s*\)[\s\S]*assertWorkPrecisionPendingReady/u,
-    "Q16 canonical replay must relax snapshot/parity before pending witness, then recheck strictly after summary publication",
+    /assertWorkPrecisionReplayReady\([\s\S]*requireCurrentSnapshot: false,[\s\S]*requireRelationalParity: false,[\s\S]*runCanonicalBeforePending\([\s\S]*runBackfillPhase\(backfillPhases\[0\]\)[\s\S]*publishCanonicalSummaryAtConfirmedCheckpoint\(\)[\s\S]*pendingStatus = await refreshPendingStatusesSafely\(\);[\s\S]*runBackfillPhase\(backfillPhases\[1\]\)[\s\S]*assertWorkPrecisionReplayReady\(\s*pool,\s*workPrecision,\s*\)[\s\S]*assertWorkPrecisionPendingReady/u,
+    "Q16 canonical replay must relax snapshot/parity, publish the confirmed summary, then run the pending witness and recheck strictly",
   );
   const blockedOrder = [];
   await assert.rejects(
@@ -2262,7 +2262,7 @@ async function runChecks() {
         storeCanonicalSummarySnapshot: "0",
       },
     ],
-    "the production hot path must defer summary publication until after pending witness work",
+    "the production hot path must publish confirmed summaries before pending witness work",
   );
   assert.deepEqual(
     workerBackfillPhasePlan("mempool-scan,block-scan", "1"),

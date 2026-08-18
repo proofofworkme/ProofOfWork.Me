@@ -1625,7 +1625,7 @@ expectAll("summary proof-index snapshots prefer latest summary scan rows before 
   /if \(!snapshot\) \{[\s\S]*WITH recent AS \([\s\S]*FROM proof_indexer\.ledger_snapshots[\s\S]*WHERE network = \$1[\s\S]*AND payload \? 'summaryPayloads'[\s\S]*ORDER BY generated_at DESC[\s\S]*LIMIT \$\{SUMMARY_SNAPSHOT_LOOKBACK_LIMIT\}[\s\S]*FROM recent[\s\S]*WHERE payload \? 'summaryPayloads'[\s\S]*AND payload->'summaryPayloads' \? \$2[\s\S]*ORDER BY generated_at DESC[\s\S]*LIMIT 1/,
 ]);
 expectAll(
-  "hot worker publishes canonical summaries after bounded best-effort pending work",
+  "hot worker publishes confirmed canonical summaries before bounded best-effort pending work",
   workerBackfillPhasePlanSource +
     workerRunCycleSource +
     proofIndexerBackfill +
@@ -1633,7 +1633,7 @@ expectAll(
   [
     /sourceLabels: \["block-scan"\][\s\S]*storeCanonicalSummarySnapshot: "0"/,
     /kind: "best-effort-pending"[\s\S]*sourceLabels: \["mempool-scan"\][\s\S]*storeCanonicalSummarySnapshot: "0"/,
-    /runCanonicalBeforePending\([\s\S]*runBackfillPhase\(backfillPhases\[0\]\)[\s\S]*runBackfillPhase\(backfillPhases\[1\]\)[\s\S]*publishCanonicalSummaryAfterPending\(\)/,
+    /runCanonicalBeforePending\([\s\S]*runBackfillPhase\(backfillPhases\[0\]\)[\s\S]*publishCanonicalSummaryAtConfirmedCheckpoint\(\)[\s\S]*runBackfillPhase\(backfillPhases\[1\]\)/,
     /POW_INDEX_BACKFILL_CANONICAL_SUMMARY_REQUIRED_HASH:[\s\S]*POW_INDEX_BACKFILL_CANONICAL_SUMMARY_REQUIRED_HEIGHT:/,
     /POW_INDEX_BACKFILL_SOURCES: "canonical-summary"[\s\S]*POW_INDEX_BACKFILL_STORE_CANONICAL_SUMMARY_SNAPSHOT: "1"/,
     /canonicalSummaryRequiredCheckpointFromEnv\([\s\S]*POW_INDEX_BACKFILL_CANONICAL_SUMMARY_REQUIRED_HEIGHT[\s\S]*POW_INDEX_BACKFILL_CANONICAL_SUMMARY_REQUIRED_HASH/,
@@ -1954,7 +1954,7 @@ expectAll(
     /export function workerWorkPrecisionPendingWitnessReady[\s\S]*witness\.ready === true[\s\S]*WORK_SUBATOM_PROJECTION_MODEL[\s\S]*canonicalWorkerMempoolSnapshot/,
     /async function assertWorkPrecisionPendingReady[\s\S]*stableCore[\s\S]*stableMempool[\s\S]*workerWorkPrecisionPendingWitnessReady/,
     /pendingRequired: true,[\s\S]*ready: false,[\s\S]*state: "canonical-phase-complete"/,
-    /runCanonicalBeforePending\([\s\S]*runBackfillPhase\(backfillPhases\[0\]\)[\s\S]*pendingStatus = await refreshPendingStatusesSafely\(\);[\s\S]*runBackfillPhase\(backfillPhases\[1\]\)[\s\S]*publishCanonicalSummaryAfterPending\(\)/,
+    /runCanonicalBeforePending\([\s\S]*runBackfillPhase\(backfillPhases\[0\]\)[\s\S]*publishCanonicalSummaryAtConfirmedCheckpoint\(\)[\s\S]*pendingStatus = await refreshPendingStatusesSafely\(\);[\s\S]*runBackfillPhase\(backfillPhases\[1\]\)/,
     /await assertWorkPrecisionPendingReady\([\s\S]*catch \(error\)[\s\S]*pendingReady: false[\s\S]*pendingRebuild:[\s\S]*workPrecisionReplay\.pendingReady !== false/,
   ],
 );
