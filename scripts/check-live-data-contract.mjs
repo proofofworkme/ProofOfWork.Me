@@ -745,6 +745,23 @@ expectAll("pending WORK marketplace verification replays only Core-current exact
   /token-pending-core:[\s\S]*workTokenStateWithDeltaTransactions\(/,
   /confirmedClosedListing[\s\S]*Referenced ProofOfWork credit listing is already closed/,
 ]);
+expectAll("pending WORK listing reads hydrate address misses from Core before rendering", server, [
+  /const PENDING_ADDRESS_MEMPOOL_RECOVERY_MAX_TXS = Number/,
+  /async function fetchAddressMempoolTxidsFromElectrum\([\s\S]*blockchain\.scripthash\.get_history[\s\S]*Number\(entry\?\.height\) <= 0/,
+  /async function fetchPendingTransactionsFromCoreTxids\([\s\S]*fetchTransactionFromBitcoinRpc\(txid, network, \{[\s\S]*includeRawHex: true,[\s\S]*requireCanonicalPrevouts: true/,
+  /async function fetchAddressMempoolTransactions\(address, network, options = \{\}\)[\s\S]*fetchAddressMempoolTransactionsFromCore\(address, network\)[\s\S]*\.\.\.coreRecoveredTransactions/,
+  /function pendingWorkMarketListingFromRecord\([\s\S]*validateWorkAmoV8StaticAuthorization\(authorization\)[\s\S]*tokenListingAnchorIsPresent\(vout, staticAuthorization\)/,
+  /function pendingWorkMarketPayloadFromTransactions\([\s\S]*tx\._powCanonicalRpcHydration === true[\s\S]*pendingWorkVerifierStageRawTransaction\(tx, txid, network\)/,
+  /async function tokenPayloadWithPendingAddressWorkMarketOverlay\([\s\S]*pendingWorkMarketPayloadForAddresses\(network, recoveryAddresses\)/,
+]);
+expectAll("pending WORK listing visibility cannot be bypassed by indexed fast paths", server, [
+  /async function walletScopedPayloadWithIndexedEnrichment\([\s\S]*tokenPayloadWithPendingAddressWorkMarketOverlay\([\s\S]*walletScopedPayloadUsesAuthoritativeOverlay/,
+  /async function tokenHistoryPayload\([\s\S]*pendingWorkMarketHistoryPage\([\s\S]*if \(pendingMarketPage\) \{[\s\S]*return pendingMarketPage/,
+  /url\.pathname === "\/api\/v1\/token-history"[\s\S]*const pendingWorkMarketFastPage =[\s\S]*pendingWorkMarketHistoryPage\([\s\S]*if \(pendingWorkMarketFastPage\)/,
+  /async function recoveredWorkTokenActivityItemsForLogSearch\([\s\S]*kind !== "token-listing"[\s\S]*tokenHistoryPayload\([\s\S]*"listings"/,
+  /async function exactLogHistoryMissPayload\([\s\S]*recoveredWorkTokenActivityItemsForLogSearch[\s\S]*queryDisposition: "recovered-pending-proof-event"/,
+  /async function eventHistoryRecoveryPayload\([\s\S]*recoveredWorkTokenActivityItemsForLogSearch/,
+]);
 expect(
   "credit verifier must not turn a current node tip into a negative state verdict",
   !/nodeTip|tipHeight|ledgerTipHeight/.test(tokenVerifierPayloadSource),

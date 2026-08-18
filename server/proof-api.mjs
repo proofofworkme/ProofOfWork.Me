@@ -712,6 +712,12 @@ const PENDING_TOKEN_TRANSACTION_CACHE_TTL_MS = Number(
 const PENDING_TOKEN_TRANSACTION_CACHE_MAX_SIZE = Number(
   process.env.PENDING_TOKEN_TRANSACTION_CACHE_MAX_SIZE ?? 5000,
 );
+const PENDING_ADDRESS_MEMPOOL_RECOVERY_MAX_TXS = Number(
+  process.env.PENDING_ADDRESS_MEMPOOL_RECOVERY_MAX_TXS ?? 25,
+);
+const PENDING_WORK_MARKET_READ_RECOVERY_WAIT_MS = Number(
+  process.env.PENDING_WORK_MARKET_READ_RECOVERY_WAIT_MS ?? 2_500,
+);
 const DROPPED_PENDING_TOKEN_TRANSACTION_CACHE_TTL_MS = Number(
   process.env.DROPPED_PENDING_TOKEN_TRANSACTION_CACHE_TTL_MS ?? 10 * 60_000,
 );
@@ -2998,8 +3004,17 @@ async function walletScopedPayloadWithIndexedEnrichment(
   tokenScope,
   recoveryAddresses,
 ) {
-  const currentPolicyPayload =
+  let currentPolicyPayload =
     tokenPayloadWithCurrentWalletWorkRecoveryListingPolicy(payload, network);
+  currentPolicyPayload =
+    typeof tokenPayloadWithPendingAddressWorkMarketOverlay === "function"
+      ? await tokenPayloadWithPendingAddressWorkMarketOverlay(
+          currentPolicyPayload,
+          network,
+          tokenScope,
+          recoveryAddresses,
+        )
+      : currentPolicyPayload;
   if (walletScopedPayloadUsesAuthoritativeOverlay(currentPolicyPayload)) {
     return currentPolicyPayload;
   }
@@ -3015,6 +3030,15 @@ async function walletScopedPayloadWithIndexedEnrichment(
     tokenScope,
     recoveryAddresses,
   );
+  indexedPayload =
+    typeof tokenPayloadWithPendingAddressWorkMarketOverlay === "function"
+      ? await tokenPayloadWithPendingAddressWorkMarketOverlay(
+          indexedPayload,
+          network,
+          tokenScope,
+          recoveryAddresses,
+        )
+      : indexedPayload;
   return indexedPayload;
 }
 
@@ -11862,14 +11886,27 @@ async function fetchAddressMempoolTransactions(address, network, options = {}) {
     options.includeExternal === false
       ? firstPartyAddressReadBases(network)
       : pendingMempoolBases(network);
-  const pages = await Promise.allSettled(
-    bases.map((baseUrl) =>
-      fetchAddressTransactionsPageFromBase(baseUrl, address, "txs/mempool"),
+  const [pages, coreRecoveredTransactions] = await Promise.all([
+    Promise.allSettled(
+      bases.map((baseUrl) =>
+        fetchAddressTransactionsPageFromBase(baseUrl, address, "txs/mempool"),
+      ),
     ),
-  );
+    fetchAddressMempoolTransactionsFromCore(address, network).catch((error) => {
+      console.error(
+        `Core-backed address mempool recovery failed for ${address}: ${errorSummary(error)}`,
+      );
+      return [];
+    }),
+  ]);
 
   const transactions = dedupeTransactions(
-    pages.flatMap((page) => (page.status === "fulfilled" ? page.value : [])),
+    [
+      ...coreRecoveredTransactions,
+      ...pages.flatMap((page) =>
+        page.status === "fulfilled" ? page.value : [],
+      ),
+    ],
   );
   for (const tx of transactions) {
     cachePendingTokenTransaction(tx, network, "address-mempool");
@@ -12597,6 +12634,87 @@ async function fetchAddressHistoryTxidsFromElectrum(address, network) {
         .map((txid) => txid.toLowerCase()),
     ),
   ];
+}
+
+async function fetchAddressMempoolTxidsFromElectrum(address, network) {
+  if (network !== "livenet" || !ELECTRUM_HOST || !ELECTRUM_PORT) {
+    return [];
+  }
+
+  const scripthash = scriptHashForAddress(address, network);
+  const history = await electrumRequest(
+    "blockchain.scripthash.get_history",
+    [scripthash],
+    ADDRESS_ELECTRUM_HISTORY_TIMEOUT_MS,
+  );
+  return [
+    ...new Set(
+      (Array.isArray(history) ? history : [])
+        .filter((entry) => Number(entry?.height) <= 0)
+        .map((entry) => entry?.tx_hash)
+        .filter(
+          (txid) => typeof txid === "string" && /^[0-9a-fA-F]{64}$/u.test(txid),
+        )
+        .map((txid) => txid.toLowerCase()),
+    ),
+  ];
+}
+
+async function fetchPendingTransactionsFromCoreTxids(txids, network, maxTxs) {
+  const uniqueTxids = [...new Set(Array.isArray(txids) ? txids : [])]
+    .map((txid) => String(txid ?? "").trim().toLowerCase())
+    .filter((txid) => /^[0-9a-f]{64}$/u.test(txid))
+    .slice(0, Math.max(0, Math.floor(Number(maxTxs) || 0)));
+  if (network !== "livenet" || uniqueTxids.length === 0) {
+    return [];
+  }
+
+  const txs = await mapWithConcurrency(
+    uniqueTxids,
+    Math.min(4, Math.max(1, TX_FETCH_CONCURRENCY)),
+    async (txid) => {
+      try {
+        const tx = await fetchTransactionFromBitcoinRpc(txid, network, {
+          bypassCache: true,
+          cacheResult: false,
+          includeRawHex: true,
+          requireCanonicalPrevouts: true,
+        });
+        if (
+          !tx ||
+          transactionTxid(tx) !== txid ||
+          transactionConfirmed(tx) ||
+          !Number.isSafeInteger(Number(tx.status?.mempool_time))
+        ) {
+          return null;
+        }
+        return tx;
+      } catch (error) {
+        console.error(
+          `Bitcoin Core pending transaction hydration failed for ${txid}: ${errorSummary(error)}`,
+        );
+        return null;
+      }
+    },
+  );
+  return txs.filter(Boolean);
+}
+
+async function fetchAddressMempoolTransactionsFromCore(address, network) {
+  let txids = [];
+  try {
+    txids = await fetchAddressMempoolTxidsFromElectrum(address, network);
+  } catch (error) {
+    console.error(
+      `Electrum address mempool txid lookup failed for ${address}: ${errorSummary(error)}`,
+    );
+    return [];
+  }
+  return fetchPendingTransactionsFromCoreTxids(
+    txids,
+    network,
+    PENDING_ADDRESS_MEMPOOL_RECOVERY_MAX_TXS,
+  );
 }
 
 async function fetchAddressUtxosFromElectrum(address, network) {
@@ -21130,6 +21248,550 @@ async function recoveredWorkMarketPayloadFromTransactions(
     network,
   );
   return tokenPayloadWithSpendableListings(recoveredPayload, network);
+}
+
+function pendingWorkMarketRecoveryHistoryKind(kind) {
+  const safeKind = normalizedTokenHistoryKind(kind);
+  return ["listings", "market-log", "invalidEvents"].includes(safeKind)
+    ? safeKind
+    : "";
+}
+
+function pendingWorkMarketTxidsFromSearch(searchParams) {
+  return recoveryTxidsFromSearchParams(searchParams);
+}
+
+function pendingWorkMarketAddressesFromSearch(searchParams, network) {
+  const strictAddresses = recoveryAddressesFromSearchParams(
+    searchParams,
+    network,
+  );
+  return strictAddresses.length > 0
+    ? strictAddresses
+    : recoveryAddressHintsFromSearchParams(searchParams, network).filter(
+        (address) => isValidBitcoinAddress(address, network),
+      );
+}
+
+function pendingWorkMarketAddressMatches(address, recoveryAddresses) {
+  if (!Array.isArray(recoveryAddresses) || recoveryAddresses.length === 0) {
+    return true;
+  }
+  return recoveryAddresses.some((candidate) =>
+    samePaymentAddress(candidate, address)
+  );
+}
+
+function pendingWorkMarketInvalidEvent({
+  actorAddress,
+  authorization,
+  createdAt,
+  dataBytes,
+  message,
+  minerFeeSats,
+  network,
+  protocolVout,
+  reason,
+  reasonCode,
+  recordOrdinal,
+  txid,
+}) {
+  const sellerAddress = String(
+    authorization?.sellerAddress ?? actorAddress ?? "",
+  ).trim();
+  return {
+    auditMinerFeeSats: minerFeeSats,
+    auditRegistryPaymentSats: TOKEN_MIN_MUTATION_PRICE_SATS,
+    auditTotalCostSats: TOKEN_MIN_MUTATION_PRICE_SATS + minerFeeSats,
+    attemptedKind: "list",
+    confirmed: false,
+    createdAt,
+    dataBytes,
+    kind: "token-event-invalid",
+    minerFeeSats,
+    network,
+    paidSats: TOKEN_MIN_MUTATION_PRICE_SATS,
+    payload: message,
+    participants: [
+      actorAddress,
+      sellerAddress,
+      WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
+    ].filter(Boolean),
+    protocol: "pwt1",
+    protocolVout,
+    reason,
+    reasonCode,
+    recordOrdinal,
+    registryAddress:
+      authorization?.registryAddress ?? WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
+    saleAuthorization:
+      authorization &&
+      typeof authorization === "object" &&
+      !Array.isArray(authorization)
+        ? authorization
+        : undefined,
+    sellerAddress,
+    status: "pending",
+    ticker: WORK_TOKEN_TICKER,
+    tokenId: WORK_TOKEN_ID,
+    txid,
+    valid: false,
+  };
+}
+
+function pendingWorkMarketListingFromRecord({
+  actorAddress,
+  createdAt,
+  dataBytes,
+  message,
+  minerFeeSats,
+  network,
+  protocolVout,
+  recordOrdinal,
+  tx,
+  txid,
+}) {
+  const parsed = parseTokenPayload(message, network);
+  const authorization =
+    parsed?.saleAuthorization ?? parsed?.listingAuthorization ?? null;
+  const invalid = (reasonCode, reason) => ({
+    invalidEvent: pendingWorkMarketInvalidEvent({
+      actorAddress,
+      authorization,
+      createdAt,
+      dataBytes,
+      message,
+      minerFeeSats,
+      network,
+      protocolVout,
+      reason,
+      reasonCode,
+      recordOrdinal,
+      txid,
+    }),
+  });
+
+  if (parsed?.kind !== "list") {
+    return null;
+  }
+  if (
+    String(authorization?.tokenId ?? "").trim().toLowerCase() !==
+    WORK_TOKEN_ID
+  ) {
+    return null;
+  }
+  if (
+    String(authorization?.version ?? "").trim() !==
+    TOKEN_SALE_AUTH_WORK_AMO_V8_VERSION
+  ) {
+    return invalid(
+      "pending-work-listing-version-unsupported",
+      "Pending WORK listing does not use the current AMO V8 authorization version.",
+    );
+  }
+
+  const staticValidation =
+    validateWorkAmoV8StaticAuthorization(authorization);
+  if (staticValidation.valid !== true) {
+    return invalid(
+      staticValidation.reasonCode ?? "pending-work-listing-static-invalid",
+      "Pending WORK listing static authorization is invalid.",
+    );
+  }
+  const staticAuthorization = staticValidation.authorization;
+  if (
+    staticAuthorization.tokenId !== WORK_TOKEN_ID ||
+    staticAuthorization.ticker !== WORK_TOKEN_TICKER ||
+    staticAuthorization.registryAddress !==
+      WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS
+  ) {
+    return invalid(
+      "pending-work-listing-scope-invalid",
+      "Pending WORK listing authorization is not scoped to the canonical WORK registry.",
+    );
+  }
+  if (!samePaymentAddress(actorAddress, staticAuthorization.sellerAddress)) {
+    return invalid(
+      "pending-work-listing-seller-input-missing",
+      "Pending WORK listing was not funded by the listed seller address.",
+    );
+  }
+  const vout = Array.isArray(tx?.vout) ? tx.vout : [];
+  if (
+    tokenPaymentAmountBeforeProtocol(
+      vout,
+      WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
+    ) < TOKEN_MIN_MUTATION_PRICE_SATS
+  ) {
+    return invalid(
+      "pending-work-listing-registry-fee-missing",
+      "Pending WORK listing does not pay the required registry mutation fee before the protocol record.",
+    );
+  }
+  if (!tokenListingAnchorIsPresent(vout, staticAuthorization)) {
+    return invalid(
+      "pending-work-listing-anchor-missing",
+      "Pending WORK listing sale-ticket anchor output does not match its authorization.",
+    );
+  }
+
+  const faceProofs = Number(staticAuthorization.unitFaceProofs);
+  const priceText = canonicalNonNegativeIntegerText(faceProofs, {
+    allowZero: false,
+  });
+  const listing = {
+    blockHash: undefined,
+    blockHeight: undefined,
+    blockIndex: undefined,
+    confirmed: false,
+    createdAt,
+    dataBytes,
+    estimateOnly: true,
+    listingId: txid,
+    minerFeeSats,
+    network,
+    paidSats: TOKEN_MIN_MUTATION_PRICE_SATS,
+    priceSats: faceProofs,
+    protocolVout,
+    recordOrdinal,
+    registryAddress: WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
+    saleAuthorization: staticAuthorization,
+    sellerAddress: staticAuthorization.sellerAddress,
+    status: "pending",
+    ticker: WORK_TOKEN_TICKER,
+    tokenId: WORK_TOKEN_ID,
+    txid,
+    unitFaceProofs: faceProofs,
+    workAmoEstimate: {
+      estimateOnly: true,
+      ...(priceText ? { unitPriceSats: priceText } : {}),
+      unitFaceProofs: faceProofs,
+      version: TOKEN_SALE_AUTH_WORK_AMO_V8_VERSION,
+    },
+    workMarketPricing: {
+      estimateOnly: true,
+      reasonCode: "pending-work-listing-awaiting-confirmation",
+      unitFaceProofs: faceProofs,
+      valid: true,
+      version: TOKEN_SALE_AUTH_WORK_AMO_V8_VERSION,
+    },
+  };
+  return { listing };
+}
+
+function pendingWorkMarketPayloadFromTransactions(
+  network,
+  txs,
+  recoveryAddresses = [],
+) {
+  if (network !== "livenet") {
+    return null;
+  }
+  const pendingTxs = dedupeTransactions(
+    (Array.isArray(txs) ? txs : []).filter(
+      (tx) =>
+        tx &&
+        tx._powCanonicalRpcHydration === true &&
+        !transactionConfirmed(tx) &&
+        /^[0-9a-f]{64}$/u.test(transactionTxid(tx)),
+    ),
+  );
+  if (pendingTxs.length === 0) {
+    return null;
+  }
+
+  const listings = [];
+  const invalidEvents = [];
+  for (const tx of tokenProtocolSortedTransactions(pendingTxs)) {
+    const txid = transactionTxid(tx);
+    const actorAddress = inputAddresses(Array.isArray(tx.vin) ? tx.vin : [])[0] ??
+      "";
+    if (!isValidBitcoinAddress(actorAddress, network)) {
+      continue;
+    }
+
+    let rawRecordSet;
+    try {
+      rawRecordSet = pendingWorkVerifierStageRawTransaction(tx, txid, network);
+    } catch (error) {
+      console.error(
+        `Pending WORK market transaction ${txid} failed raw recovery checks: ${errorSummary(error)}`,
+      );
+      continue;
+    }
+
+    const createdAt = rawRecordSet.mempoolCreatedAt ??
+      new Date(tokenTransactionTime(tx)).toISOString();
+    const dataBytes = proofProtocolDataBytesForVout(tx.vout ?? []);
+    const minerFeeSats = transactionMinerFeeSats(tx);
+    for (const record of rawRecordSet.records) {
+      if (record?.protocol !== "pwt1" || record?.rawDecodeValid !== true) {
+        continue;
+      }
+      const result = pendingWorkMarketListingFromRecord({
+        actorAddress,
+        createdAt,
+        dataBytes,
+        message: record.message,
+        minerFeeSats,
+        network,
+        protocolVout: record.protocolVout,
+        recordOrdinal: record.recordOrdinal,
+        tx,
+        txid,
+      });
+      if (!result) {
+        continue;
+      }
+      if (
+        result.listing &&
+        pendingWorkMarketAddressMatches(
+          result.listing.sellerAddress,
+          recoveryAddresses,
+        )
+      ) {
+        listings.push(result.listing);
+      }
+      if (
+        result.invalidEvent &&
+        pendingWorkMarketAddressMatches(
+          result.invalidEvent.sellerAddress || actorAddress,
+          recoveryAddresses,
+        )
+      ) {
+        invalidEvents.push(result.invalidEvent);
+      }
+    }
+  }
+
+  if (listings.length === 0 && invalidEvents.length === 0) {
+    return null;
+  }
+  const state = tokenStateWithPreservedListingRecords(
+    {
+      ...emptyTokenPayloadSnapshot(network),
+      indexedAt: new Date().toISOString(),
+      source: "first-party-core-pending-work-market-recovery",
+    },
+    {
+      invalidEvents: invalidEvents.sort(compareTokenHistoryPageItems),
+      listings: listings.sort(compareTokenHistoryPageItems),
+      source: "first-party-core-pending-work-market-recovery",
+    },
+  );
+  return {
+    ...state,
+    invalidEvents: invalidEvents.sort(compareTokenHistoryPageItems),
+    source: "first-party-core-pending-work-market-recovery",
+  };
+}
+
+async function pendingWorkMarketPayloadFromTxids(
+  network,
+  txids,
+  recoveryAddresses = [],
+) {
+  const txs = await fetchPendingTransactionsFromCoreTxids(
+    txids,
+    network,
+    PENDING_ADDRESS_MEMPOOL_RECOVERY_MAX_TXS,
+  );
+  return pendingWorkMarketPayloadFromTransactions(
+    network,
+    txs,
+    recoveryAddresses,
+  );
+}
+
+async function pendingWorkMarketPayloadForAddresses(
+  network,
+  recoveryAddresses,
+) {
+  if (
+    network !== "livenet" ||
+    !Array.isArray(recoveryAddresses) ||
+    recoveryAddresses.length === 0
+  ) {
+    return null;
+  }
+  const txGroups = await Promise.all(
+    recoveryAddresses.map((address) =>
+      fetchAddressMempoolTransactions(address, network, {
+        includeExternal: false,
+      }).catch((error) => {
+        console.error(
+          `Pending WORK market address recovery failed for ${address}: ${errorSummary(error)}`,
+        );
+        return [];
+      }),
+    ),
+  );
+  return pendingWorkMarketPayloadFromTransactions(
+    network,
+    txGroups.flat(),
+    recoveryAddresses,
+  );
+}
+
+async function pendingWorkMarketPayloadForSearch(
+  network,
+  searchParams,
+  recoveryAddresses = [],
+) {
+  const txids = pendingWorkMarketTxidsFromSearch(searchParams);
+  const addresses =
+    recoveryAddresses.length > 0
+      ? recoveryAddresses
+      : pendingWorkMarketAddressesFromSearch(searchParams, network);
+  const [txidPayload, addressPayload] = await Promise.all([
+    txids.length > 0
+      ? payloadWithFallbackAfterMs(
+          pendingWorkMarketPayloadFromTxids(network, txids, addresses),
+          null,
+          PENDING_WORK_MARKET_READ_RECOVERY_WAIT_MS,
+        )
+      : null,
+    addresses.length > 0
+      ? payloadWithFallbackAfterMs(
+          pendingWorkMarketPayloadForAddresses(network, addresses),
+          null,
+          PENDING_WORK_MARKET_READ_RECOVERY_WAIT_MS,
+        )
+      : null,
+  ]);
+  if (!txidPayload && !addressPayload) {
+    return null;
+  }
+  const mergedSource = {
+    ...(addressPayload ?? {}),
+    invalidEvents: [
+      ...(txidPayload?.invalidEvents ?? []),
+      ...(addressPayload?.invalidEvents ?? []),
+    ],
+    listings: [
+      ...(txidPayload?.listings ?? []),
+      ...(addressPayload?.listings ?? []),
+    ],
+    source: mergedSourceLabel(txidPayload?.source, addressPayload?.source),
+  };
+  const state = tokenStateWithPreservedListingRecords(
+    txidPayload ?? addressPayload,
+    mergedSource,
+  );
+  return {
+    ...state,
+    invalidEvents: mergeTokenStateItemsByKey(
+      txidPayload?.invalidEvents,
+      addressPayload?.invalidEvents,
+      (item) =>
+        [
+          item?.txid,
+          item?.protocolVout,
+          item?.recordOrdinal,
+          item?.reasonCode,
+        ].join(":"),
+    ),
+    indexedAt: newerIso(txidPayload?.indexedAt, addressPayload?.indexedAt),
+    source: mergedSource.source,
+  };
+}
+
+function tokenPayloadWithPendingWorkMarketOverlay(payload, overlayPayload) {
+  if (!payload || !overlayPayload) {
+    return payload;
+  }
+  const merged = tokenStateWithPreservedListingRecords(payload, overlayPayload);
+  return {
+    ...merged,
+    invalidEvents: mergeTokenStateItemsByKey(
+      payload.invalidEvents,
+      overlayPayload.invalidEvents,
+      (item) =>
+        [
+          item?.txid,
+          item?.protocolVout,
+          item?.recordOrdinal,
+          item?.reasonCode,
+        ].join(":"),
+    ),
+    indexedAt: newerIso(payload.indexedAt, overlayPayload.indexedAt),
+    source: mergedSourceLabel(payload.source, overlayPayload.source),
+  };
+}
+
+async function tokenPayloadWithPendingAddressWorkMarketOverlay(
+  payload,
+  network,
+  tokenScope,
+  recoveryAddresses = [],
+) {
+  if (
+    network !== "livenet" ||
+    normalizeTokenScope(tokenScope) !== WORK_TOKEN_ID ||
+    !Array.isArray(recoveryAddresses) ||
+    recoveryAddresses.length === 0
+  ) {
+    return payload;
+  }
+  const overlay = await payloadWithFallbackAfterMs(
+    pendingWorkMarketPayloadForAddresses(network, recoveryAddresses),
+    null,
+    PENDING_WORK_MARKET_READ_RECOVERY_WAIT_MS,
+  );
+  return tokenPayloadWithPendingWorkMarketOverlay(payload, overlay);
+}
+
+async function pendingWorkMarketHistoryPage(
+  network,
+  tokenScope,
+  kind,
+  searchParams,
+) {
+  const safeKind = pendingWorkMarketRecoveryHistoryKind(kind);
+  if (
+    network !== "livenet" ||
+    normalizeTokenScope(tokenScope) !== WORK_TOKEN_ID ||
+    !safeKind
+  ) {
+    return null;
+  }
+  const recoveryAddresses = pendingWorkMarketAddressesFromSearch(
+    searchParams,
+    network,
+  );
+  const overlay = await pendingWorkMarketPayloadForSearch(
+    network,
+    searchParams,
+    recoveryAddresses,
+  );
+  if (!overlay) {
+    return null;
+  }
+  const directItems =
+    safeKind === "market-log"
+      ? tokenMarketLogItemsFromState(overlay)
+      : safeKind === "listings"
+        ? activeTokenListingsFromState(overlay)
+        : overlay.invalidEvents ?? [];
+  const scopedItems = historyItemsMatchingAddresses(
+    directItems,
+    recoveryAddresses,
+  );
+  const items = historyItemsMatchingQuery(
+    scopedItems,
+    historyPaginationFromSearch(searchParams).query,
+  );
+  if (items.length === 0) {
+    return null;
+  }
+  return paginatedHistoryPayload({
+    indexedAt: overlay.indexedAt ?? new Date().toISOString(),
+    items,
+    kind: safeKind,
+    network,
+    pagination: historyPaginationFromSearch(searchParams),
+    source: overlay.source,
+  });
 }
 
 function emptyRushState(network = "livenet") {
@@ -36694,6 +37356,15 @@ async function walletScopedTokenSummaryPayload(
     scope,
     recoveryAddresses,
   );
+  scopedPayload =
+    typeof tokenPayloadWithPendingAddressWorkMarketOverlay === "function"
+      ? await tokenPayloadWithPendingAddressWorkMarketOverlay(
+          scopedPayload,
+          network,
+          scope,
+          recoveryAddresses,
+        )
+      : scopedPayload;
   if (scope === WORK_TOKEN_ID) {
     scopedPayload = await payloadWithFallbackAfterMs(
       tokenPayloadWithRecoveredWalletWorkTransfers(
@@ -36916,6 +37587,15 @@ async function walletScopedTokenPayload(
     scope,
     recoveryAddresses,
   );
+  scopedPayload =
+    typeof tokenPayloadWithPendingAddressWorkMarketOverlay === "function"
+      ? await tokenPayloadWithPendingAddressWorkMarketOverlay(
+          scopedPayload,
+          network,
+          scope,
+          recoveryAddresses,
+        )
+      : scopedPayload;
 
   if (BOND_TOKEN_IDS.has(scope)) {
     return requireCurrent
@@ -45790,11 +46470,13 @@ async function stableProofIndexLogHistoryPayload(
         page,
         network,
         exactQueryTxid,
+        boundSearchParams,
       );
     }
+    const finalPageItems = Array.isArray(page?.items) ? page.items : [];
     if (
       !page ||
-      (pageItems.length === 0 &&
+      (finalPageItems.length === 0 &&
         !definitivePinnedLogQueryDisposition(page.queryDisposition))
     ) {
       const error = freshDataUnavailableError(
@@ -48415,7 +49097,14 @@ async function recoveredWorkTokenActivityItemsForLogSearch(
   searchParams,
 ) {
   const recoveryTxids = recoveryTxidsFromSearchParams(searchParams);
-  if (network !== "livenet" || recoveryTxids.length === 0) {
+  const recoveryAddresses = pendingWorkMarketAddressesFromSearch(
+    searchParams,
+    network,
+  );
+  if (
+    network !== "livenet" ||
+    (recoveryTxids.length === 0 && recoveryAddresses.length === 0)
+  ) {
     return [];
   }
 
@@ -48423,9 +49112,39 @@ async function recoveredWorkTokenActivityItemsForLogSearch(
   if (
     kind &&
     kind !== "token-sale" &&
-    kind !== "token-listing-closed"
+    kind !== "token-listing-closed" &&
+    kind !== "token-listing" &&
+    kind !== "token-event-invalid"
   ) {
     return [];
+  }
+
+  if (!kind || kind === "token-listing") {
+    const pendingListingPage = await pendingWorkMarketHistoryPage(
+      network,
+      WORK_TOKEN_ID,
+      "listings",
+      searchParams,
+    ).catch((error) => {
+      console.error(
+        `Recovered pending WORK listing Log lookup failed: ${errorSummary(error)}`,
+      );
+      return null;
+    });
+    if (Array.isArray(pendingListingPage?.items) &&
+      pendingListingPage.items.length > 0) {
+      return tokenActivityItemsFromState(
+        {
+          closedListings: [],
+          listings: pendingListingPage.items,
+          mints: [],
+          sales: [],
+          tokens: [],
+          transfers: [],
+        },
+        "",
+      ).filter((item) => (kind ? item.kind === kind : true));
+    }
   }
 
   const state = {
@@ -48435,7 +49154,25 @@ async function recoveredWorkTokenActivityItemsForLogSearch(
     sales: [],
     tokens: [],
     transfers: [],
+    invalidEvents: [],
   };
+  if (!kind || kind === "token-listing") {
+    const listingsPage = await tokenHistoryPayload(
+      network,
+      WORK_TOKEN_ID,
+      "listings",
+      searchParams,
+      true,
+    ).catch((error) => {
+      console.error(
+        `Recovered WORK listing Log lookup failed: ${errorSummary(error)}`,
+      );
+      return null;
+    });
+    state.listings = Array.isArray(listingsPage?.items)
+      ? listingsPage.items
+      : [];
+  }
   if (!kind || kind === "token-sale") {
     const salesPage = await tokenHistoryPayload(
       network,
@@ -48468,13 +49205,77 @@ async function recoveredWorkTokenActivityItemsForLogSearch(
       ? closedPage.items
       : [];
   }
+  if (!kind || kind === "token-event-invalid") {
+    const invalidPage = await tokenHistoryPayload(
+      network,
+      WORK_TOKEN_ID,
+      "invalid-events",
+      searchParams,
+      true,
+    ).catch((error) => {
+      console.error(
+        `Recovered WORK invalid-event Log lookup failed: ${errorSummary(error)}`,
+      );
+      return null;
+    });
+    state.invalidEvents = Array.isArray(invalidPage?.items)
+      ? invalidPage.items
+      : [];
+  }
 
-  return tokenActivityItemsFromState(state, "").filter((item) =>
-    kind ? item.kind === kind : true,
-  );
+  const invalidActivity = (state.invalidEvents ?? []).map((event) => ({
+    ...canonicalEventIdentityDetails(event),
+    amountSats: numericValue(event?.paidSats ?? event?.amountSats),
+    actor:
+      event?.sellerAddress ??
+      event?.senderAddress ??
+      event?.minterAddress ??
+      event?.actor,
+    confirmed: event?.confirmed === true,
+    counterparty: event?.registryAddress,
+    createdAt: event?.createdAt,
+    dataBytes: numericValue(event?.dataBytes),
+    description:
+      event?.reason ??
+      `Invalid ${event?.ticker ?? "credit"} event ${shortAddress(event?.txid)}`,
+    detail: event?.reasonCode ?? "Invalid credit event",
+    kind: "token-event-invalid",
+    minerFeeSats: numericValue(event?.minerFeeSats),
+    network: event?.network ?? network,
+    participants: Array.isArray(event?.participants)
+      ? event.participants
+      : [
+          event?.sellerAddress,
+          event?.senderAddress,
+          event?.recipientAddress,
+          event?.registryAddress,
+        ].filter(Boolean),
+    protocol: "pwt1",
+    tags: [
+      activityStatusTag(event?.confirmed === true),
+      networkLabel(event?.network ?? network),
+      "Credit",
+      "Invalid",
+      event?.ticker,
+    ].filter(Boolean),
+    title: event?.confirmed === true
+      ? "Credit event invalid"
+      : "Credit event invalid pending",
+    tokenId: event?.tokenId,
+    txid: event?.txid,
+  }));
+  return dedupeActivityItems([
+    ...tokenActivityItemsFromState(state, ""),
+    ...invalidActivity,
+  ]).filter((item) => (kind ? item.kind === kind : true));
 }
 
-async function exactLogHistoryMissPayload(indexedPayload, network, txid) {
+async function exactLogHistoryMissPayload(
+  indexedPayload,
+  network,
+  txid,
+  searchParams = null,
+) {
   const normalizedTxid = String(txid ?? "").trim().toLowerCase();
   if (!indexedPayload || !/^[0-9a-f]{64}$/u.test(normalizedTxid)) {
     return null;
@@ -48519,6 +49320,45 @@ async function exactLogHistoryMissPayload(indexedPayload, network, txid) {
     return {
       ...indexedPayload,
       queryDisposition: "terminal-nonpublic",
+    };
+  }
+
+  const recoverySearchParams = new URLSearchParams(
+    searchParams ?? undefined,
+  );
+  if (!recoverySearchParams.has("q")) {
+    recoverySearchParams.set("q", normalizedTxid);
+  }
+  const recoveredTokenItems =
+    typeof recoveredWorkTokenActivityItemsForLogSearch === "function"
+      ? await recoveredWorkTokenActivityItemsForLogSearch(
+          network,
+          String(recoverySearchParams.get("kind") ?? "").trim(),
+          recoverySearchParams,
+        ).catch((error) => {
+          console.error(
+            `Exact Log pending WORK market recovery failed for ${normalizedTxid}: ${errorSummary(error)}`,
+          );
+          return [];
+        })
+      : [];
+  if (recoveredTokenItems.length > 0) {
+    return {
+      ...indexedPayload,
+      ...paginatedHistoryPayload({
+        indexedAt: new Date().toISOString(),
+        items: recoveredTokenItems,
+        kind:
+          String(recoverySearchParams.get("kind") ?? "").trim().toLowerCase() ||
+          "activity",
+        network,
+        pagination: historyPaginationFromSearch(recoverySearchParams),
+        source: mergedSourceLabel(
+          indexedPayload.source,
+          "first-party-core-pending-work-market-recovery",
+        ),
+      }),
+      queryDisposition: "recovered-pending-proof-event",
     };
   }
 
@@ -48576,11 +49416,19 @@ async function activityHistoryPayload(network, kind, searchParams, fresh = false
 
 async function eventHistoryRecoveryPayload(network, searchParams) {
   const requestedKind = String(searchParams.get("kind") ?? "").trim().toLowerCase();
-  const recoveredItems = await recoveredMailActivityItemsForHistorySearch(
-    network,
-    requestedKind,
-    searchParams,
-  );
+  const [mailItems, tokenItems] = await Promise.all([
+    recoveredMailActivityItemsForHistorySearch(
+      network,
+      requestedKind,
+      searchParams,
+    ),
+    recoveredWorkTokenActivityItemsForLogSearch(
+      network,
+      requestedKind,
+      searchParams,
+    ),
+  ]);
+  const recoveredItems = dedupeActivityItems([...mailItems, ...tokenItems]);
   if (recoveredItems.length === 0) {
     return null;
   }
@@ -48591,7 +49439,12 @@ async function eventHistoryRecoveryPayload(network, searchParams) {
     kind: requestedKind || "events",
     network,
     pagination: historyPaginationFromSearch(searchParams),
-    source: "first-party-mail-event-recovery",
+    source: mergedSourceLabel(
+      mailItems.length > 0 ? "first-party-mail-event-recovery" : "",
+      tokenItems.length > 0
+        ? "first-party-core-pending-work-market-recovery"
+        : "",
+    ),
   });
 }
 
@@ -48747,6 +49600,27 @@ async function tokenHistoryPayload(network, tokenScope, kind, searchParams, fres
     workMarketHistoryKind &&
     recoveryAddresses.length > 0;
   const recoveryBondConfig = bondConfigForTokenId(scope);
+  if (
+    scope === WORK_TOKEN_ID &&
+    network === "livenet" &&
+    (workMarketHistoryKind || safeKind === "invalidEvents") &&
+    (recoveryTxids.length > 0 || recoveryAddresses.length > 0)
+  ) {
+    const pendingMarketPage = await pendingWorkMarketHistoryPage(
+      network,
+      scope,
+      safeKind,
+      searchParams,
+    ).catch((error) => {
+      console.error(
+        `Pending WORK market history recovery failed: ${errorSummary(error)}`,
+      );
+      return null;
+    });
+    if (pendingMarketPage) {
+      return pendingMarketPage;
+    }
+  }
   if (workMarketHistoryKind && queriedWorkHistory && network === "livenet") {
     const indexedMarketPage = await payloadWithFallbackAfterMs(
       proofIndexTokenMarketHistoryOverlayPayload(
@@ -65763,6 +66637,7 @@ async function handleRequest(request, response) {
                   indexedPayload,
                   network,
                   exactLogQueryTxid,
+                  url.searchParams,
                 )
               : indexedPayload;
           jsonResponse(
@@ -65873,6 +66748,7 @@ async function handleRequest(request, response) {
                   indexedPayload,
                   network,
                   exactLogQueryTxid,
+                  url.searchParams,
                 )
               : indexedPayload;
           jsonResponse(
@@ -66208,6 +67084,38 @@ async function handleRequest(request, response) {
           "sales",
         ].includes(historyKind) &&
         recoveryAddressHintsFromSearchParams(url.searchParams, network).length > 0;
+      const pendingWorkMarketFastPage =
+        tokenScope === WORK_TOKEN_ID &&
+        network === "livenet" &&
+        (exactProofIndexTxids.length > 0 || addressScopedMarketHistory)
+          ? await pendingWorkMarketHistoryPage(
+              network,
+              tokenScope,
+              historyKind,
+              url.searchParams,
+            ).catch((error) => {
+              console.error(
+                `Pending WORK market token-history fast recovery failed: ${errorSummary(error)}`,
+              );
+              return null;
+            })
+          : null;
+      if (pendingWorkMarketFastPage) {
+        const responsePayload =
+          await tokenHistoryPageWithCanonicalWorkAmoV8ListingWitnesses(
+            pendingWorkMarketFastPage,
+            network,
+            tokenScope,
+            historyKind,
+          );
+        jsonResponse(
+          response,
+          200,
+          responsePayload,
+          freshRead ? FRESH_READ_CACHE_CONTROL : TOKEN_READ_CACHE_CONTROL,
+        );
+        return;
+      }
       if (
         (!freshRead ||
           exactProofIndexHistoryRead ||

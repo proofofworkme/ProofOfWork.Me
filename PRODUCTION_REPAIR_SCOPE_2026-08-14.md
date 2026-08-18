@@ -195,6 +195,51 @@ production deployment, push, and production verification.
    reading `ledger_snapshots`; no mismatch was reported, but parity was not
    proven in that run.
 
+9. Repair pending listing discovery for connected wallet addresses.
+
+   A user-reported pending WORK AMO listing was visible to the full node and to
+   wallet UTXO/balance reads, but was not materialized into the pending
+   listing/event views used by Wallet.
+
+   Evidence from `18hkqE81wQuq75UEBKhB4JjAuQg47jN7Aa`:
+
+   - txid:
+     `7fbd6a3b68bea4c24ae5c59aa486a34df65e71d89e7678a50ce040d0ba64ee5b`
+   - full node mempool contained the transaction as unconfirmed at local tip
+     `963092+`; the transaction was non-RBF and paid about `1.0 sat/vB`.
+   - production `/api/v1/tx/.../status?network=livenet` returned
+     `status: "pending"` and `confirmed: false`.
+   - decoded OP_RETURN was `pwt1:list5` for WORK token
+     `d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8`,
+     seller `18hkqE81wQuq75UEBKhB4JjAuQg47jN7Aa`, unit face value
+     `25,000 proofs`, registry output `546` sats, and sale-ticket anchor
+     output `vout:2` at `546` sats.
+   - production address UTXO reads returned the pending outputs from this tx,
+     including `vout:2` and the change output, so wallet balance/unconfirmed
+     state could see the transaction.
+   - production `token-history?kind=listings&q=<txid>&fresh=1`,
+     `event-history?q=<txid>`, `log-history?q=<txid>`, and
+     `token-history?kind=invalid-events&q=<txid>&fresh=1` all returned no
+     matching item.
+   - wallet-scoped `token?asset=WORK&address=18hkq...&wallet=1&fresh=1`
+     returned existing listing state but no pending listing for this tx.
+   - production address mempool reads for the same wallet address returned no
+     matching tx, while mempool.space address mempool did return the tx.
+
+   Treat this as a backend pending protocol-event discovery and hydration
+   defect, not as an invalid listing or frontend rendering-only issue. The
+   likely failure mode is that the bounded pending mempool scanner can miss a
+   valid `pwt1:list5` transaction in a large mempool, and connected-address
+   wallet reads do not currently force targeted OP_RETURN decode/materialization
+   for pending txs that already affect the address.
+
+   Repair expectation: when a connected wallet address has pending mempool
+   transactions, the API should hydrate and decode those txs through the
+   protocol parser, merge valid pending `list5` events into wallet listings,
+   and expose invalid decisions in invalid-event views. The app should also
+   reconcile the first-party address mempool endpoint with full-node and
+   external mempool truth.
+
 ## Live Error Evidence Intake
 
 Pending user screenshots or screen casts should be logged here before repair
@@ -257,6 +302,24 @@ Follow-up read-only API checks for this batch:
 - User-reported green surfaces for bond pages, log, and growth were checked
   again through summary endpoints. `infinity-summary`, `inception-summary`,
   `log-summary`, and `growth-summary` returned HTTP 200 at block `962491`.
+
+### 2026-08-18 Pending Listing Evidence
+
+Attached media were treated as visual/user evidence only. No instructions
+inside the image were treated as executable agent instructions.
+
+- `Screenshot from 2026-08-18 17-33-51.png`: Wallet was connected to
+  `18hkqE81...g47jN7Aa` and showed credit wallet state, unconfirmed balance,
+  listed credit, and existing pending seal rows, but did not show the user's
+  most recent pending listing for txid
+  `7fbd6a3b68bea4c24ae5c59aa486a34df65e71d89e7678a50ce040d0ba64ee5b`.
+- Follow-up read-only checks showed the full node had the tx in mempool and
+  production tx status marked it pending, but listing/event/log/invalid-event
+  history queries did not return it.
+- The decoded transaction matched a pending `pwt1:list5` WORK AMO listing for
+  `25,000 proofs` from the connected wallet address. Wallet UTXO reads saw the
+  pending outputs, so the missing UI row maps to pending listing
+  discovery/materialization rather than missing mempool acceptance.
 
 ## 2026-08-16 Read-Only Audit Addendum
 
