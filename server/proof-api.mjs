@@ -18193,10 +18193,19 @@ function canonicalTokenReplayPosition(item) {
     !Number.isSafeInteger(recordOrdinal) ||
     recordOrdinal < 0
   ) {
+    const identity = [
+      `txid=${String(item?.txid ?? "").trim().toLowerCase() || "missing"}`,
+      `kind=${String(item?.kind ?? item?.sourceKind ?? "").trim() || "missing"}`,
+      `tokenId=${String(item?.tokenId ?? "").trim().toLowerCase() || "missing"}`,
+      `blockHeight=${String(item?.blockHeight ?? "missing")}`,
+      `blockIndex=${String(item?.blockIndex ?? "missing")}`,
+      `protocolVout=${String(item?.protocolVout ?? "missing")}`,
+      `recordOrdinal=${String(item?.recordOrdinal ?? "missing")}`,
+    ].join(" ");
     throw new Error(
-      v5
+      `${v5
         ? "Canonical AMO V5 token replay position is incomplete."
-        : "Confirmed legacy token replay position is incomplete.",
+        : "Confirmed legacy token replay position is incomplete."} ${identity}`,
     );
   }
   return {

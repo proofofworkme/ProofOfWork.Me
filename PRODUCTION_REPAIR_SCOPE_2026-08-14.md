@@ -1789,3 +1789,6 @@ Production replay follow-up:
 - `server/proof-api.mjs` now propagates canonical event identity fields from
   bond activity into the derived seed mints, preserving replay order without
   changing issuance amounts or valuation.
+- `server/proof-api.mjs` also keeps the AMO V5 replay-position failure
+  fail-closed while adding the offending tx/kind/token/tuple fields to the
+  error message for production diagnostics.
