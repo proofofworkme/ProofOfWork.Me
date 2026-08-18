@@ -1680,3 +1680,37 @@ Local verification:
 - `npm run check:server-globals` passed.
 - `npm run check:live-data` passed.
 - `npm run check:ui` passed.
+
+## Approved public-read Core tip retry repair log - 2026-08-18 03:30 UTC
+
+Post-deploy finding:
+
+- After the pending-stage preflight repair, production recovered exact-tip
+  health and the previously failing fresh market-log queries returned 200.
+- The public marketplace regression then exposed a separate availability issue
+  under heavy exact-tip load: one `getblockchaininfo` probe returned no exact
+  Core tip while the stored proof-index checkpoint and summary snapshot were
+  otherwise current.
+- Production again failed closed with `CANONICAL_INDEX_UNAVAILABLE`, which
+  preserved accuracy but made fresh reads too sensitive to a single busy Core
+  RPC slot.
+
+Repair:
+
+- `server/proof-api.mjs` now retries the canonical public-read
+  `getblockchaininfo` proof up to three short attempts before declaring the
+  exact-tip gate unavailable.
+- The gate still requires the same exact full-node proof:
+  main chain, no initial block download, headers equal blocks, high
+  verification progress, and a 64-byte best block hash.
+- Responses that prove an inexact node state still fail closed immediately;
+  only missing/busy tip responses are retried.
+
+Local verification:
+
+- `node scripts/check-index-recovery-behavior.mjs` passed with `450/450`.
+- `node scripts/check-api-truth-contract.mjs` passed.
+- `npm run check:live-data` passed.
+- `npm run check:server-globals` passed.
+- `npm run check:worker-containment` passed.
+- `npm run check:ui` passed.

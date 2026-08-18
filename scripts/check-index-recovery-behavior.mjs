@@ -28164,6 +28164,8 @@ check("public reads reject the production-shaped legacy PWT completion", async (
     API_PATH,
     "loadCanonicalPublicReadGate",
     {
+      CANONICAL_PUBLIC_READ_GATE_TIP_ATTEMPTS: 3,
+      CANONICAL_PUBLIC_READ_GATE_TIP_RETRY_DELAY_MS: 0,
       PROOF_INDEX_HEALTH_MAX_AGE_MS: 60_000,
       PROOF_INDEX_REQUIRED: true,
       bitcoinRpc: async () => ({
@@ -42768,6 +42770,8 @@ check("summary catch-up does not brown out current relational reads", async () =
     initialblockdownload: false,
     verificationprogress: 1,
   };
+  let busyTipResponses = 1;
+  let tipProbeCalls = 0;
   const exactCoreTipFromBlockchainInfo = isolatedFunction(
     API_PATH,
     "exactCoreTipFromBlockchainInfo",
@@ -42789,12 +42793,24 @@ check("summary catch-up does not brown out current relational reads", async () =
     API_PATH,
     "loadCanonicalPublicReadGate",
     {
+      CANONICAL_PUBLIC_READ_GATE_TIP_ATTEMPTS: 3,
+      CANONICAL_PUBLIC_READ_GATE_TIP_RETRY_DELAY_MS: 0,
       PROOF_INDEX_HEALTH_MAX_AGE_MS: 120_000,
       PROOF_INDEX_REQUIRED: true,
-      bitcoinRpc: async () => ({
-        ok: true,
-        result: chainInfo,
-      }),
+      bitcoinRpc: async () => {
+        tipProbeCalls += 1;
+        if (busyTipResponses > 0) {
+          busyTipResponses -= 1;
+          return {
+            error: { message: "Work queue depth exceeded" },
+            ok: false,
+          };
+        }
+        return {
+          ok: true,
+          result: chainInfo,
+        };
+      },
       exactCoreTipFromBlockchainInfo,
       proofIndexCanonicalStateMetaPayload: async () => ({
         fault: {},
@@ -42825,6 +42841,7 @@ check("summary catch-up does not brown out current relational reads", async () =
     },
   );
   const gate = await loadCanonicalPublicReadGate("livenet");
+  assert.equal(tipProbeCalls, 2);
   assert.equal(gate.ok, true);
   assert.equal(gate.summarySnapshotOk, false);
   chainInfo = { ...chainInfo, initialblockdownload: true };
@@ -42884,6 +42901,8 @@ check("long worker cycles do not brown out exact canonical reads", async () => {
     API_PATH,
     "loadCanonicalPublicReadGate",
     {
+      CANONICAL_PUBLIC_READ_GATE_TIP_ATTEMPTS: 3,
+      CANONICAL_PUBLIC_READ_GATE_TIP_RETRY_DELAY_MS: 0,
       PROOF_INDEX_HEALTH_MAX_AGE_MS: 120_000,
       PROOF_INDEX_REQUIRED: true,
       bitcoinRpc: async () => ({

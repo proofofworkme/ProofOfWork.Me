@@ -64566,6 +64566,20 @@ const CANONICAL_PUBLIC_READ_GATE_TIMEOUT_TTL_MS = Math.min(
     Number(process.env.POW_API_CANONICAL_GATE_TIMEOUT_TTL_MS ?? 2_000) || 2_000,
   ),
 );
+const CANONICAL_PUBLIC_READ_GATE_TIP_ATTEMPTS = Math.min(
+  4,
+  Math.max(
+    1,
+    Math.floor(Number(process.env.POW_API_CANONICAL_GATE_TIP_ATTEMPTS ?? 3) || 3),
+  ),
+);
+const CANONICAL_PUBLIC_READ_GATE_TIP_RETRY_DELAY_MS = Math.min(
+  2_000,
+  Math.max(
+    0,
+    Number(process.env.POW_API_CANONICAL_GATE_TIP_RETRY_DELAY_MS ?? 250) || 250,
+  ),
+);
 const canonicalPublicReadGateCache = new Map();
 const CANONICAL_FRESH_LAST_GOOD_MAX_LAG_BLOCKS = Math.min(
   6,
@@ -64728,12 +64742,57 @@ async function loadCanonicalPublicReadGate(network) {
   if (network !== "livenet" || !PROOF_INDEX_REQUIRED) {
     return { ok: true };
   }
-  const [status, canonical, tipResponse] = await Promise.all([
+  const [status, canonical, tipProbe] = await Promise.all([
     proofIndexOperationalStatusPayload(network),
     proofIndexCanonicalStateMetaPayload(network),
-    bitcoinRpc("getblockchaininfo", []),
+    (async () => {
+      let lastError = null;
+      let tipResponse = null;
+      for (
+        let attempt = 0;
+        attempt < CANONICAL_PUBLIC_READ_GATE_TIP_ATTEMPTS;
+        attempt += 1
+      ) {
+        if (
+          attempt > 0 &&
+          CANONICAL_PUBLIC_READ_GATE_TIP_RETRY_DELAY_MS > 0
+        ) {
+          await new Promise((resolve) =>
+            setTimeout(
+              resolve,
+              CANONICAL_PUBLIC_READ_GATE_TIP_RETRY_DELAY_MS * attempt,
+            )
+          );
+        }
+        try {
+          tipResponse = await bitcoinRpc("getblockchaininfo", []);
+          const exactCoreTip = exactCoreTipFromBlockchainInfo(tipResponse);
+          if (exactCoreTip) {
+            return {
+              attempts: attempt + 1,
+              exactCoreTip,
+              tipError: "",
+              tipResponse,
+            };
+          }
+          if (tipResponse?.ok === true) {
+            break;
+          }
+        } catch (error) {
+          lastError = error;
+          tipResponse = null;
+        }
+      }
+      return {
+        attempts: CANONICAL_PUBLIC_READ_GATE_TIP_ATTEMPTS,
+        exactCoreTip: null,
+        tipError: String(lastError?.message ?? lastError ?? ""),
+        tipResponse,
+      };
+    })(),
   ]);
   const indexedThroughBlock = Number(status?.indexedThroughBlock) || 0;
+  const tipResponse = tipProbe.tipResponse;
   const exactCoreTip = exactCoreTipFromBlockchainInfo(tipResponse);
   const tipHeight = exactCoreTip?.height;
   const bestBlockHash = exactCoreTip?.blockHash ?? "";
