@@ -1819,3 +1819,10 @@ Production replay follow-up:
   budget is now 10 seconds, with the exact-tip proof still bounded and
   fail-closed, so load-related probe latency does not masquerade as data
   corruption.
+- The production marketplace regression then exposed a wallet-read performance
+  defect rather than a data mismatch: exact proof-index wallet overlays were
+  still followed by holder, active-listing, and transfer recovery probes built
+  for weaker fallback payloads. Exact hashed wallet overlays now skip those
+  redundant recovery probes while fallback payloads retain them, keeping
+  WORK wallet state authoritative without letting legacy active-listing
+  recovery dominate page loads.

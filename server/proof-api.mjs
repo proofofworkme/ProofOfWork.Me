@@ -2981,6 +2981,42 @@ function walletTokenOverlayMatchesCanonicalFreshGate(
   );
 }
 
+function walletScopedPayloadUsesAuthoritativeOverlay(payload) {
+  return (
+    payload?.walletScoped === true &&
+    String(payload?.source ?? "")
+      .split("+")
+      .includes("proof-indexer-wallet-token-overlay") &&
+    walletTokenOverlayHasExactCheckpoint(payload)
+  );
+}
+
+async function walletScopedPayloadWithIndexedEnrichment(
+  payload,
+  network,
+  tokenScope,
+  recoveryAddresses,
+) {
+  const currentPolicyPayload =
+    tokenPayloadWithCurrentWalletWorkRecoveryListingPolicy(payload, network);
+  if (walletScopedPayloadUsesAuthoritativeOverlay(currentPolicyPayload)) {
+    return currentPolicyPayload;
+  }
+  let indexedPayload = await tokenPayloadWithIndexedWalletHolders(
+    currentPolicyPayload,
+    network,
+    tokenScope,
+    recoveryAddresses,
+  );
+  indexedPayload = await tokenPayloadWithWalletActiveListings(
+    indexedPayload,
+    network,
+    tokenScope,
+    recoveryAddresses,
+  );
+  return indexedPayload;
+}
+
 async function proofIndexWalletScopedTokenPayloadForRead(
   network,
   tokenScope,
@@ -36508,14 +36544,8 @@ async function walletScopedTokenSummaryPayload(
     "wallet-scoped-token-summary",
   );
   if (addressScopedPayload) {
-    let indexedPayload = await tokenPayloadWithIndexedWalletHolders(
+    const indexedPayload = await walletScopedPayloadWithIndexedEnrichment(
       addressScopedPayload,
-      network,
-      scope,
-      recoveryAddresses,
-    );
-    indexedPayload = await tokenPayloadWithWalletActiveListings(
-      indexedPayload,
       network,
       scope,
       recoveryAddresses,
@@ -36659,19 +36689,15 @@ async function walletScopedTokenPayload(
     { allowLastGood, requireCurrent },
   );
   if (addressScopedPayload) {
-    let indexedPayload = await tokenPayloadWithIndexedWalletHolders(
+    const indexedPayload = await walletScopedPayloadWithIndexedEnrichment(
       addressScopedPayload,
       network,
       scope,
       recoveryAddresses,
     );
-    indexedPayload = await tokenPayloadWithWalletActiveListings(
-      indexedPayload,
-      network,
-      scope,
-      recoveryAddresses,
-    );
-    const recoveredPayload = scope === WORK_TOKEN_ID
+    const recoveredPayload =
+      scope === WORK_TOKEN_ID &&
+      !walletScopedPayloadUsesAuthoritativeOverlay(indexedPayload)
       ? await payloadWithFallbackAfterMs(
           tokenPayloadWithRecoveredWalletWorkTransfers(
             indexedPayload,

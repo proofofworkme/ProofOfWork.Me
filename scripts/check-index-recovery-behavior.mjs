@@ -7314,6 +7314,7 @@ check("fresh wallet token reads use exact or bounded canonical coverage", async 
       }),
       tokenPayloadMatchesCanonicalGate: () => false,
       tokenPayloadMatchesCanonicalIndexedGate: () => false,
+      walletScopedPayloadWithIndexedEnrichment: async (payload) => payload,
       tokenPayloadWithIndexedWalletHolders: async (payload) => payload,
       tokenPayloadWithWalletActiveListings: async (payload) => payload,
     },
@@ -7325,6 +7326,76 @@ check("fresh wallet token reads use exact or bounded canonical coverage", async 
     { requireCurrent: true },
   );
   assert.equal(current.authoritativeWallet, true);
+
+  const walletScopedPayloadUsesAuthoritativeOverlay = isolatedFunction(
+    API_PATH,
+    "walletScopedPayloadUsesAuthoritativeOverlay",
+    {
+      walletTokenOverlayHasExactCheckpoint: (payload) =>
+        payload?.checkpointComplete === true &&
+        payload?.indexedThroughBlockHash === payload?.sourceHashes?.blockScan &&
+        Boolean(payload?.snapshotId),
+    },
+  );
+  let holderEnrichmentReads = 0;
+  let activeListingReads = 0;
+  const walletScopedPayloadWithIndexedEnrichment = isolatedFunction(
+    API_PATH,
+    "walletScopedPayloadWithIndexedEnrichment",
+    {
+      tokenPayloadWithCurrentWalletWorkRecoveryListingPolicy: (payload) => ({
+        ...payload,
+        currentListingPolicyApplied: true,
+      }),
+      tokenPayloadWithIndexedWalletHolders: async (payload) => {
+        holderEnrichmentReads += 1;
+        return { ...payload, holderEnriched: true };
+      },
+      tokenPayloadWithWalletActiveListings: async (payload) => {
+        activeListingReads += 1;
+        return { ...payload, activeListingsEnriched: true };
+      },
+      walletScopedPayloadUsesAuthoritativeOverlay,
+    },
+  );
+  const authoritativeOverlay = await walletScopedPayloadWithIndexedEnrichment(
+    {
+      checkpointComplete: true,
+      indexedThroughBlock: 100,
+      indexedThroughBlockHash: blockHash,
+      snapshotId: "wallet-snapshot",
+      source: "proof-indexer-wallet-token-overlay+proof-indexer-wallet-address-state",
+      sourceHashes: { blockScan: blockHash },
+      walletScoped: true,
+    },
+    "livenet",
+    "work-token-id",
+    ["sender"],
+  );
+  assert.equal(authoritativeOverlay.currentListingPolicyApplied, true);
+  assert.equal(authoritativeOverlay.holderEnriched, undefined);
+  assert.equal(authoritativeOverlay.activeListingsEnriched, undefined);
+  assert.equal(holderEnrichmentReads, 0);
+  assert.equal(activeListingReads, 0);
+
+  const fallbackPayload = await walletScopedPayloadWithIndexedEnrichment(
+    {
+      checkpointComplete: true,
+      indexedThroughBlock: 100,
+      indexedThroughBlockHash: blockHash,
+      snapshotId: "wallet-snapshot",
+      source: "proof-indexer-token-state",
+      sourceHashes: { blockScan: blockHash },
+      walletScoped: true,
+    },
+    "livenet",
+    "work-token-id",
+    ["sender"],
+  );
+  assert.equal(fallbackPayload.holderEnriched, true);
+  assert.equal(fallbackPayload.activeListingsEnriched, true);
+  assert.equal(holderEnrichmentReads, 1);
+  assert.equal(activeListingReads, 1);
 });
 
 check("fresh WORK token reads prefer canonical summary over lagging token-state", async () => {
