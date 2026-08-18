@@ -1714,3 +1714,49 @@ Local verification:
 - `npm run check:server-globals` passed.
 - `npm run check:worker-containment` passed.
 - `npm run check:ui` passed.
+
+## Approved buyer-funded WORK buy validation repair log - 2026-08-18 04:32 UTC
+
+User-reported finding:
+
+- The screencast from `2026-08-18 00:13:38` showed wallet
+  `19MXUmBgBN3nJr2V1yvEdysZBB8cYSaHk4` with no loaded WORK credit
+  balance after purchasing WORK credit.
+- Full-node transaction reads showed the wallet had three confirmed
+  `pwt1:buy5` WORK purchases and no conflicting mempool transactions:
+  `b587b787ad7a621e6096ba6b77c162793c37a61cb5b2a981c6ff6dd875a8203a`,
+  `431cea7dc3c6f9136ebc5cd259a7e436580fe1234c265e0e43e7c55b1e260a07`,
+  and
+  `d735596cf0281f617905a386c1d0a1a4363684593a83e9a54d1496c3192bdbf5`.
+- The corresponding listing tickets were valid confirmed V8 WORK
+  listings, but production indexed the buys as `token-sale-invalid` with
+  `work-amo-v5-raw-buy-state-invalid`.
+
+Repair:
+
+- `server/work-amo-v5-raw.mjs` now validates buyer-funded generic-token
+  and WORK `buy5` actions by requiring the buyer address to appear
+  anywhere in the transaction inputs.
+- The validator still separately requires the canonical sale-ticket
+  outpoint spend, seller payment, registry payment, authorization match,
+  expiry check, and seller balance debit before crediting the buyer.
+- Seller-only actions continue to use the first address-bearing input for
+  list, seal, delist, mint, and send behavior.
+- `scripts/check-index-recovery-behavior.mjs` now models the real
+  sale-ticket-first PSBT shape: seller ticket input first, buyer funding
+  input later, seller payment at output zero. A missing-buyer-input
+  control remains invalid.
+
+Local verification:
+
+- `npm run check:index-recovery-behavior` passed with `450/450`.
+- `npm run check:server-globals` passed.
+- `npm run check:worker-containment` passed.
+- `npm run check:api-truth` passed.
+- `npm run check:live-data` passed.
+- `npm run check:ui` passed.
+- `npm run check:work-amo-v8` passed.
+- `npm run audit:ledger` passed against `https://work.proofofwork.me`.
+- `npm run build` passed.
+- `npm run hygiene:fix` removed generated `dist` and Vite temp output.
+- `npm run hygiene:check` passed.

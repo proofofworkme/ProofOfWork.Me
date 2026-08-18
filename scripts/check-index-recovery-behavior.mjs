@@ -53767,15 +53767,25 @@ check("AMO V5 raw replay executes ID, generic-token, and WORK buys atomically", 
     workState: openingWorkState,
   });
   const buyTx = ({
+    includeBuyerInput = true,
     listingId,
     priceSats,
     registryAddress,
   }) => ({
-    vin: [{
-      prevout: { scriptpubkey_address: buyerAddress },
-      txid: listingId,
-      vout: 2,
-    }],
+    vin: [
+      {
+        prevout: { scriptpubkey_address: sellerAddress },
+        txid: listingId,
+        vout: 2,
+      },
+      ...(includeBuyerInput
+        ? [{
+            prevout: { scriptpubkey_address: buyerAddress },
+            txid: "f".repeat(64),
+            vout: 0,
+          }]
+        : []),
+    ],
     vout: [
       {
         scriptpubkey_address: sellerAddress,
@@ -53887,6 +53897,47 @@ check("AMO V5 raw replay executes ID, generic-token, and WORK buys atomically", 
       (holder) => holder.address === buyerAddress,
     )?.balanceAtoms,
     derivedWorkTerms.frozenTerms.unitAmountAtoms,
+  );
+  const missingBuyerFundingTxid = "9".repeat(64);
+  const missingBuyerFundingRecord = rawAmoRecordFixture({
+    blockHash,
+    blockHeight,
+    blockTransactionIndex: 1,
+    feeSats: 444,
+    message:
+      `pwt1:buy5:${workListingId}:${buyerAddress}:` +
+      Buffer.from(
+        JSON.stringify(workSigned),
+        "utf8",
+      ).toString("base64url"),
+    protocol: "pwt1",
+    protocolVout: 2,
+    tx: buyTx({
+      includeBuyerInput: false,
+      listingId: workListingId,
+      priceSats: derivedWorkTerms.frozenTerms.unitPriceSats,
+      registryAddress: WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS,
+    }),
+    txid: missingBuyerFundingTxid,
+  });
+  const missingBuyerFundingReplay = replayWorkAmoV5RawBlock({
+    expectedBlockHash: blockHash,
+    expectedBlockHeight: blockHeight,
+    expectedPreviousBlockHash: priorBlockHash,
+    openingEconomicState,
+    openingGenericState,
+    openingIdState,
+    openingWorkState,
+    records: [missingBuyerFundingRecord],
+  });
+  const missingBuyerFundingOutcome =
+    missingBuyerFundingReplay.outcomes.get(
+      `${missingBuyerFundingRecord.txid}:2:0`,
+    );
+  assert.equal(missingBuyerFundingOutcome?.valid, false);
+  assert.equal(
+    missingBuyerFundingOutcome?.reasonCode,
+    "work-amo-v5-raw-buy-state-invalid",
   );
   assert.equal(replay.feeTransitions.length, 3);
   assert.deepEqual(

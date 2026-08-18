@@ -2666,7 +2666,8 @@ function genericSemanticKind(kind) {
 function evaluateGenericPwt(record, context, parsed) {
   const genericState = cloneGenericState(context.genericState);
   const derived = [];
-  const senderAddress = firstAddressBearingInput(record);
+  const inputs = inputAddresses(record);
+  const senderAddress = inputs[0] ?? "";
   if (!isWorkAmoV5LivenetAddress(senderAddress)) {
     return invalidOutcome(
       "work-amo-v5-generic-token-state-unavailable",
@@ -2950,7 +2951,7 @@ function evaluateGenericPwt(record, context, parsed) {
         role: "pwt-seller",
       });
       if (
-        senderAddress !== parsed.buyerAddress ||
+        !inputs.includes(parsed.buyerAddress) ||
         !authorization ||
         signature.valid !== true ||
         (parsed.saleAuthorization &&
@@ -3271,7 +3272,8 @@ function evaluateWorkPwt(record, context, parsed) {
   const v7Active =
     v7ActivationHeight !== null &&
     record.position.blockHeight >= v7ActivationHeight;
-  const senderAddress = firstAddressBearingInput(record);
+  const inputs = inputAddresses(record);
+  const senderAddress = inputs[0] ?? "";
   const claimed = claimedForTx(context.claimedByTxid, record.txid);
   const requiredSats =
     parsed.kind === "mint"
@@ -3824,7 +3826,7 @@ function evaluateWorkPwt(record, context, parsed) {
         role: "pwt-seller",
       });
       if (
-        senderAddress !== parsed.buyerAddress ||
+        !inputs.includes(parsed.buyerAddress) ||
         (authorization.buyerAddress &&
           authorization.buyerAddress !== parsed.buyerAddress) ||
         authorizationExpiredForRecord(authorization, record) ||
