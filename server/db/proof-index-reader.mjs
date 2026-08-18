@@ -28422,7 +28422,7 @@ async function proofIndexTokenMarketEventsFromTables(pool, network, scope) {
         e.kind,
         e.status,
         e.event_time,
-        COALESCE(e.block_time, transaction_row.block_time) AS block_time,
+        COALESCE(e.block_time, event_tx.block_time) AS block_time,
         e.created_at,
         e.block_height,
         e.block_index,
@@ -28475,7 +28475,7 @@ async function proofIndexTokenMarketEventsFromTables(pool, network, scope) {
         COALESCE(
           e.event_time,
           e.block_time,
-          transaction_row.block_time,
+          event_tx.block_time,
           e.created_at
         ) DESC,
         e.txid DESC,

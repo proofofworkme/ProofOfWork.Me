@@ -2180,6 +2180,7 @@ expectAll(
 expectAll("proof-index token state exposes the exact AMO relic boundary", proofIndexReader, [
   /async function payloadWithVerifiedWorkAmoV5Activation\([\s\S]*Promise\.all\(\[[\s\S]*proofIndexWorkAmoV5Declaration\([\s\S]*proofIndexWorkAmoV5PreUnitRelicEvidence\([\s\S]*workAmoV5CutoverActivationIsExact\(activation\)[\s\S]*workAmoV5PreUnitRelicEvidence: relicEvidence/,
   /const cutoverPayload = async \(payload\) => \{[\s\S]*applyWorkMarketV2CutoverToTokenState\([\s\S]*workPrecisionV2ProjectCurrentPayload\([\s\S]*applyWorkAmoV5CutoverToTokenState\(/,
+  /async function proofIndexTokenMarketEventsFromTables\([\s\S]*COALESCE\(e\.block_time, event_tx\.block_time\) AS block_time[\s\S]*COALESCE\([\s\S]*event_tx\.block_time/,
 ]);
 expectAll("AMO token projection preserves pre-unit listings only as nonrefundable relics", workAmoV5Core, [
   /export function applyWorkAmoV5CutoverToTokenState\([\s\S]*workAmoV5CutoverActivationIsExact\([\s\S]*workAmoV5PreUnitRelicEvidenceIsExact\([\s\S]*listingId !== WORK_AMO_V5_PRE_UNIT_RELIC_LISTING_TXID[\s\S]*version === WORK_AMO_V5_AUTH_VERSION[\s\S]*version === WORK_AMO_V4_AUTH_VERSION/,
