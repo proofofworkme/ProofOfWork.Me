@@ -858,12 +858,13 @@ expect(
   "Electrum health must not create one-shot subscriptions or version sessions",
   !/server\.version|blockchain\.headers\.subscribe/u.test(electrumHealthSource),
 );
-expectAll("health Electrum probes share one deadline and fail without a second socket", boundedHealthElectrumSource, [
+expectAll("health Electrum probes keep a bounded tip proof after the canary", boundedHealthElectrumSource, [
   /addressIndex\?\.ok !== true/,
   /tip proof was skipped/,
   /Number\(deadlineMs\) - Date\.now\(\)/,
-  /remainingMs <= 0/,
-  /electrumHealthPayload\([\s\S]*Math\.min\(HEALTH_CHECK_TIMEOUT_MS, remainingMs\)/,
+  /HEALTH_ELECTRUM_TIP_PROOF_TIMEOUT_MS/,
+  /const headerTimeoutMs = Math\.max\(/,
+  /electrumHealthPayload\([\s\S]*headerTimeoutMs/,
 ]);
 expectAll("health calls bind Electrum to the sampled Core checkpoint", server, [
   /loadHealthPayload\(\)[\s\S]*boundedHealthElectrumPayload\([\s\S]*addressIndex,[\s\S]*tipHeight,[\s\S]*sampledBestBlockHash/,

@@ -1804,3 +1804,12 @@ Production replay follow-up:
 - `scripts/check-index-recovery-behavior.mjs` now guards that activity-derived
   token sales, sale-ticket seals, and closed listings keep their canonical
   positions after AMO V5 activation.
+- Production verification then exposed a separate health-budget issue: when
+  the Electrum canary succeeded near the end of the shared five-second health
+  envelope, the exact-tip header proof had no remaining time and `/health`
+  returned a false red state even though Core, txindex, the proof index, worker,
+  and summary snapshot were current.
+- `server/proof-api.mjs` now keeps canary failure fail-closed, but gives the
+  Electrum exact-tip header proof its own small bounded timeout floor after a
+  successful canary. `scripts/check-index-recovery-behavior.mjs` and
+  `scripts/check-live-data-contract.mjs` guard that health resilience contract.

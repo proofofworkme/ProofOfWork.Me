@@ -732,6 +732,14 @@ const PROOF_INDEX_HEALTH_MAX_AGE_MS = Number(
 const HEALTH_CHECK_TIMEOUT_MS = Number(
   process.env.POW_API_HEALTH_CHECK_TIMEOUT_MS ?? 5_000,
 );
+const HEALTH_ELECTRUM_TIP_PROOF_TIMEOUT_MS = Math.min(
+  10_000,
+  Math.max(
+    1_000,
+    Number(process.env.POW_API_HEALTH_ELECTRUM_TIP_PROOF_TIMEOUT_MS ?? 2_500) ||
+      2_500,
+  ),
+);
 const HEALTH_PAYLOAD_CACHE_TTL_MS = Math.max(
   0,
   Math.min(
@@ -64167,22 +64175,20 @@ async function boundedHealthElectrumPayload(
     };
   }
   const remainingMs = Math.floor(Number(deadlineMs) - Date.now());
-  if (!Number.isSafeInteger(remainingMs) || remainingMs <= 0) {
-    return {
-      configured: true,
-      error: "Electrum health budget expired before the exact tip proof.",
-      headerHash: null,
-      headerHeight: Number.isSafeInteger(Number(expectedHeight))
-        ? Number(expectedHeight)
-        : null,
-      ok: false,
-      timedOut: true,
-    };
-  }
+  const headerTimeoutMs = Math.max(
+    1,
+    Math.min(
+      HEALTH_CHECK_TIMEOUT_MS,
+      Math.max(
+        Number.isSafeInteger(remainingMs) ? remainingMs : 0,
+        HEALTH_ELECTRUM_TIP_PROOF_TIMEOUT_MS,
+      ),
+    ),
+  );
   return electrumHealthPayload(
     expectedHeight,
     expectedHash,
-    Math.min(HEALTH_CHECK_TIMEOUT_MS, remainingMs),
+    headerTimeoutMs,
   );
 }
 

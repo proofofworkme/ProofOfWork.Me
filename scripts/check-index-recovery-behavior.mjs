@@ -42241,7 +42241,7 @@ check("Electrum health proves the exact sampled Core block header", async () => 
   assert.equal(calls.length, callCount);
 });
 
-check("health Electrum probes stop after canary failure and share one deadline", async () => {
+check("health Electrum probes stop after canary failure and keep a bounded tip proof", async () => {
   const calls = [];
   let now = 1_000;
   const boundedHealthElectrumPayload = isolatedFunction(
@@ -42252,6 +42252,7 @@ check("health Electrum probes stop after canary failure and share one deadline",
       ELECTRUM_HOST: "127.0.0.1",
       ELECTRUM_PORT: 50_001,
       HEALTH_CHECK_TIMEOUT_MS: 5_000,
+      HEALTH_ELECTRUM_TIP_PROOF_TIMEOUT_MS: 2_500,
       electrumHealthPayload: async (...args) => {
         calls.push(args);
         return { configured: true, ok: true };
@@ -42275,7 +42276,7 @@ check("health Electrum probes stop after canary failure and share one deadline",
   assert.equal(calls.length, 0);
 
   now = 5_750;
-  const expired = JSON.parse(
+  const afterCanaryBudget = JSON.parse(
     JSON.stringify(
       await boundedHealthElectrumPayload(
         { ok: true },
@@ -42285,11 +42286,12 @@ check("health Electrum probes stop after canary failure and share one deadline",
       ),
     ),
   );
-  assert.equal(expired.ok, false);
-  assert.equal(expired.timedOut, true);
-  assert.match(expired.error, /budget expired/iu);
-  assert.equal(calls.length, 0);
+  assert.deepEqual(afterCanaryBudget, { configured: true, ok: true });
+  assert.deepEqual(JSON.parse(JSON.stringify(calls)), [
+    [957_864, "a".repeat(64), 2_500],
+  ]);
 
+  calls.length = 0;
   now = 4_000;
   assert.deepEqual(
     JSON.parse(
@@ -42305,7 +42307,26 @@ check("health Electrum probes stop after canary failure and share one deadline",
     { configured: true, ok: true },
   );
   assert.deepEqual(JSON.parse(JSON.stringify(calls)), [
-    [957_864, "a".repeat(64), 1_750],
+    [957_864, "a".repeat(64), 2_500],
+  ]);
+
+  calls.length = 0;
+  now = 1_000;
+  assert.deepEqual(
+    JSON.parse(
+      JSON.stringify(
+        await boundedHealthElectrumPayload(
+          { ok: true },
+          957_864,
+          "a".repeat(64),
+          5_750,
+        ),
+      ),
+    ),
+    { configured: true, ok: true },
+  );
+  assert.deepEqual(JSON.parse(JSON.stringify(calls)), [
+    [957_864, "a".repeat(64), 4_750],
   ]);
 });
 
