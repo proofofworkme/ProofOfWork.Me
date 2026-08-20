@@ -21856,6 +21856,39 @@ export async function proofIndexLogHistoryPayload(
         )
       )
     `);
+    if (!requestedKind && !pagination.query && pagination.snapshotId) {
+      const canonicalPage = await proofIndexCanonicalActivityPayload(network, {
+        snapshotId: pagination.snapshotId,
+      });
+      const canonicalItems = Array.isArray(canonicalPage?.activity)
+        ? canonicalPage.activity
+        : [];
+      if (
+        canonicalItems.length > 0 &&
+        canonicalPage?.snapshotId === pagination.snapshotId &&
+        rowNumber(canonicalPage, "indexedThroughBlock") === snapshotHeight
+      ) {
+        const page = logHistoryPageFromItems({
+          indexedAt: canonicalPage.indexedAt ??
+            (snapshot.generated_at
+              ? dateIso(snapshot.generated_at)
+              : new Date().toISOString()),
+          indexedThroughBlock: snapshotHeight,
+          items: canonicalItems,
+          kind: "activity",
+          network,
+          pagination,
+          snapshot,
+          source: canonicalPage.source ?? "proof-indexer-events",
+        });
+        return {
+          ...page,
+          latestEventBlock: rowNumber(canonicalPage, "latestEventBlock"),
+          snapshotTotalCount: rowNumber(canonicalPage, "totalCount") ||
+            canonicalItems.length,
+        };
+      }
+    }
   }
   const whereClause = conditions.join(" AND ");
   const snapshotPage = currentRelational
@@ -29521,6 +29554,92 @@ async function proofIndexTokenPayloadFromCurrentTables(pool, network, scope) {
   );
 }
 
+async function tokenStatePayloadAtCanonicalCheckpoint(
+  pool,
+  network,
+  payload,
+  checkpointHeight,
+  checkpointHash,
+) {
+  const sourceHeight = Number(payload?.indexedThroughBlock);
+  const normalizedCheckpointHash = normalizedLowerText(checkpointHash);
+  if (
+    !pool ||
+    network !== "livenet" ||
+    !payload ||
+    payload.source !== "proof-indexer-token-state-tables" ||
+    !Number.isSafeInteger(sourceHeight) ||
+    sourceHeight <= 0 ||
+    !Number.isSafeInteger(checkpointHeight) ||
+    checkpointHeight <= 0 ||
+    sourceHeight > checkpointHeight ||
+    !/^[0-9a-f]{64}$/u.test(normalizedCheckpointHash)
+  ) {
+    return null;
+  }
+  if (sourceHeight === checkpointHeight) {
+    return normalizedLowerText(payload.indexedThroughBlockHash) ===
+      normalizedCheckpointHash
+      ? payload
+      : null;
+  }
+
+  const result = await pool.query(
+    `
+      WITH latest_scan AS (
+        SELECT COALESCE(max(indexed_through_block), 0)::integer AS height
+        FROM proof_indexer.ledger_snapshots
+        WHERE network = $1
+          AND NOT (source_hashes ? 'canonicalSummary')
+          AND (
+            source_hashes ? 'blockScan'
+            OR payload->>'source' = 'proof-indexer-block-scan'
+            OR consistency->>'status' LIKE 'block-scan%'
+          )
+      )
+      SELECT
+        EXISTS (
+          SELECT 1
+          FROM proof_indexer.blocks checkpoint_block
+          WHERE checkpoint_block.network = $1
+            AND checkpoint_block.height = $3
+            AND lower(checkpoint_block.block_hash) = $4
+            AND checkpoint_block.canonical = true
+        ) AS checkpoint_canonical,
+        latest_scan.height AS scan_height,
+        (
+          SELECT count(*)::integer
+          FROM proof_indexer.events token_event
+          WHERE token_event.network = $1
+            AND token_event.protocol = 'pwt1'
+            AND token_event.kind LIKE 'token-%'
+            AND token_event.status = 'confirmed'
+            AND token_event.block_height > $2
+            AND token_event.block_height <= $3
+        ) AS token_event_count
+      FROM latest_scan
+    `,
+    [network, sourceHeight, checkpointHeight, normalizedCheckpointHash],
+  );
+  const row = result.rows[0] ?? {};
+  if (
+    row?.checkpoint_canonical !== true ||
+    rowNumber(row, "scan_height") < checkpointHeight ||
+    rowNumber(row, "token_event_count") !== 0
+  ) {
+    return null;
+  }
+  return {
+    ...payload,
+    indexedThroughBlock: checkpointHeight,
+    indexedThroughBlockHash: normalizedCheckpointHash,
+    stats: {
+      ...(payload.stats ?? {}),
+      indexedThroughBlock: checkpointHeight,
+    },
+  };
+}
+
 export async function proofIndexCanonicalSummaryTokenTablePayload(
   network,
   { exactHash = "", exactHeight = 0 } = {},
@@ -29539,18 +29658,29 @@ export async function proofIndexCanonicalSummaryTokenTablePayload(
   }
   const relationalPayload =
     await proofIndexTokenPayloadFromCurrentTables(pool, network, "all");
+  const checkpointRelationalPayload =
+    await tokenStatePayloadAtCanonicalCheckpoint(
+      pool,
+      network,
+      relationalPayload,
+      checkpointHeight,
+      checkpointHash,
+    );
   if (
-    relationalPayload?.source !== "proof-indexer-token-state-tables" ||
-    Number(relationalPayload.indexedThroughBlock) !== checkpointHeight ||
-    normalizedLowerText(relationalPayload.indexedThroughBlockHash) !==
-      checkpointHash
+    checkpointRelationalPayload?.source !==
+      "proof-indexer-token-state-tables" ||
+    Number(checkpointRelationalPayload.indexedThroughBlock) !==
+      checkpointHeight ||
+    normalizedLowerText(
+      checkpointRelationalPayload.indexedThroughBlockHash,
+    ) !== checkpointHash
   ) {
     return null;
   }
   const precisionPayload =
     await payloadWithCurrentWorkPrecisionReadPolicy(
       network,
-      relationalPayload,
+      checkpointRelationalPayload,
       {
         allowCanonicalSummaryBootstrap: true,
         exactCheckpointHash: checkpointHash,
@@ -29609,7 +29739,13 @@ export async function proofIndexCanonicalSummaryTokenTablePayload(
   ) {
     return null;
   }
-  return result;
+  return tokenStatePayloadAtCanonicalCheckpoint(
+    pool,
+    network,
+    result,
+    checkpointHeight,
+    checkpointHash,
+  );
 }
 
 export async function proofIndexReadinessEpochCheckpoint(network) {

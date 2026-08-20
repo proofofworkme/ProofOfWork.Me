@@ -22995,6 +22995,19 @@ check("exact canonical summaries require current conserved token balances", asyn
         requestedScope = scope;
         return relationalFixture;
       },
+      tokenStatePayloadAtCanonicalCheckpoint: async (
+        _pool,
+        _network,
+        payload,
+        checkpointHeight,
+        checkpointHash,
+      ) =>
+        payload?.source === "proof-indexer-token-state-tables" &&
+        Number(payload.indexedThroughBlock) === checkpointHeight &&
+        String(payload.indexedThroughBlockHash ?? "").toLowerCase() ===
+          checkpointHash
+          ? payload
+          : null,
       workListingAuthorizationAllowed: (listing, versions) =>
         versions.includes(listing.saleAuthorization?.version),
       workPrecisionV2ProjectCurrentPayload: (payload) => {
@@ -23075,6 +23088,77 @@ check("exact canonical summaries require current conserved token balances", asyn
   assert.match(
     tableProjectionSource,
     /scanPayload\.indexedThroughBlockHash[\s\S]*scanSourceHashes\.blockScan[\s\S]*indexedThroughBlockHash/u,
+  );
+});
+
+check("token table checkpoints can advance across empty confirmed token gaps", async () => {
+  const tokenStatePayloadAtCanonicalCheckpoint = isolatedFunction(
+    READER_PATH,
+    "tokenStatePayloadAtCanonicalCheckpoint",
+    {
+      normalizedLowerText: (value) =>
+        String(value ?? "").trim().toLowerCase(),
+      rowNumber: (row, key) => Number(row?.[key] ?? 0),
+    },
+  );
+  const checkpointHash = "f".repeat(64);
+  const payload = {
+    indexedThroughBlock: 100,
+    indexedThroughBlockHash: "e".repeat(64),
+    source: "proof-indexer-token-state-tables",
+    stats: { indexedThroughBlock: 100 },
+  };
+  const queries = [];
+  const pool = {
+    async query(sql, params) {
+      queries.push({ params, sql });
+      return {
+        rows: [{
+          checkpoint_canonical: true,
+          scan_height: 101,
+          token_event_count: 0,
+        }],
+      };
+    },
+  };
+  const promoted = await tokenStatePayloadAtCanonicalCheckpoint(
+    pool,
+    "livenet",
+    payload,
+    101,
+    checkpointHash,
+  );
+  assert.equal(promoted.indexedThroughBlock, 101);
+  assert.equal(promoted.indexedThroughBlockHash, checkpointHash);
+  assert.equal(promoted.stats.indexedThroughBlock, 101);
+  assert.equal(JSON.stringify(queries[0].params), JSON.stringify([
+    "livenet",
+    100,
+    101,
+    checkpointHash,
+  ]));
+  assert.match(
+    queries[0].sql,
+    /checkpoint_block\.canonical = true[\s\S]*token_event\.protocol = 'pwt1'[\s\S]*token_event\.kind LIKE 'token-%'[\s\S]*token_event\.status = 'confirmed'/u,
+  );
+
+  pool.query = async () => ({
+    rows: [{
+      checkpoint_canonical: true,
+      scan_height: 101,
+      token_event_count: 1,
+    }],
+  });
+  assert.equal(
+    await tokenStatePayloadAtCanonicalCheckpoint(
+      pool,
+      "livenet",
+      payload,
+      101,
+      checkpointHash,
+    ),
+    null,
+    "a confirmed token event in the gap must block checkpoint promotion",
   );
 });
 
