@@ -20513,8 +20513,15 @@ function logHistoryPageFromItems({
   pagination,
   snapshot,
   source,
+  totalCount: declaredTotalCount,
 }) {
-  const totalCount = items.length;
+  const itemCount = items.length;
+  const normalizedDeclaredTotalCount = Number(declaredTotalCount);
+  const totalCount =
+    Number.isSafeInteger(normalizedDeclaredTotalCount) &&
+    normalizedDeclaredTotalCount >= itemCount
+      ? normalizedDeclaredTotalCount
+      : itemCount;
   const start = Math.min(pagination.offset, totalCount);
   const end = Math.min(totalCount, start + pagination.limit);
   const snapshotId = snapshot?.snapshot_id ?? "";
@@ -21880,6 +21887,8 @@ export async function proofIndexLogHistoryPayload(
           pagination,
           snapshot,
           source: canonicalPage.source ?? "proof-indexer-events",
+          totalCount:
+            rowNumber(canonicalPage, "totalCount") || canonicalItems.length,
         });
         return {
           ...page,
@@ -29596,6 +29605,12 @@ async function tokenStatePayloadAtCanonicalCheckpoint(
             OR payload->>'source' = 'proof-indexer-block-scan'
             OR consistency->>'status' LIKE 'block-scan%'
           )
+      ),
+      canonical_blocks AS (
+        SELECT COALESCE(max(height), 0)::integer AS height
+        FROM proof_indexer.blocks
+        WHERE network = $1
+          AND canonical = true
       )
       SELECT
         EXISTS (
@@ -29606,7 +29621,7 @@ async function tokenStatePayloadAtCanonicalCheckpoint(
             AND lower(checkpoint_block.block_hash) = $4
             AND checkpoint_block.canonical = true
         ) AS checkpoint_canonical,
-        latest_scan.height AS scan_height,
+        GREATEST(latest_scan.height, canonical_blocks.height) AS scan_height,
         (
           SELECT count(*)::integer
           FROM proof_indexer.events token_event
@@ -29618,6 +29633,7 @@ async function tokenStatePayloadAtCanonicalCheckpoint(
             AND token_event.block_height <= $3
         ) AS token_event_count
       FROM latest_scan
+      CROSS JOIN canonical_blocks
     `,
     [network, sourceHeight, checkpointHeight, normalizedCheckpointHash],
   );
