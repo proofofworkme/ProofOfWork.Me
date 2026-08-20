@@ -28787,7 +28787,7 @@ async function payloadWithCanonicalWorkLifecyclePositions(
       listingId,
     );
     if (expectationKeys.has(key)) {
-      return false;
+      return true;
     }
     expectationKeys.add(key);
     expectations.push({ key, listingId, role, txid });

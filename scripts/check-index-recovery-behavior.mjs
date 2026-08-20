@@ -21814,6 +21814,11 @@ check("canonical WORK lifecycle state rebinds unique relational event positions"
       tokenListingsWithoutClosedEvents: (listings, closedListings) => {
         const closedKeys = new Set(
           (Array.isArray(closedListings) ? closedListings : [])
+            .filter(
+              (listing) =>
+                listing?.closedByCanonicalOutpointSpend === true &&
+                listing?.closedConfirmed === true,
+            )
             .map((listing) =>
               `${normalizedLowerText(listing?.tokenId)}:${normalizedLowerText(listing?.listingId)}`,
             )
@@ -21838,6 +21843,8 @@ check("canonical WORK lifecycle state rebinds unique relational event positions"
   const relicSpendTxid = "e".repeat(64);
   const outpointListingId = "f".repeat(64);
   const outpointSpendTxid = "9".repeat(64);
+  const pendingListingId = "6".repeat(64);
+  const pendingCloseTxid = "7".repeat(64);
   const payload = {
     closedListings: [
       {
@@ -21889,11 +21896,25 @@ check("canonical WORK lifecycle state rebinds unique relational event positions"
         status: "closed",
         tokenId: WORK_TOKEN_ID,
       },
+      {
+        closedConfirmed: false,
+        closedTxid: pendingCloseTxid,
+        confirmed: true,
+        listingId: pendingListingId,
+        status: "sealing",
+        tokenId: WORK_TOKEN_ID,
+      },
     ],
     listings: [
       {
         confirmed: true,
         listingId,
+        status: "sealing",
+        tokenId: WORK_TOKEN_ID,
+      },
+      {
+        confirmed: true,
+        listingId: pendingListingId,
         status: "sealing",
         tokenId: WORK_TOKEN_ID,
       },
@@ -21909,18 +21930,32 @@ check("canonical WORK lifecycle state rebinds unique relational event positions"
       const roles = params[1];
       const txids = params[2];
       const listingIds = params[3];
+      const positionByTxid = new Map([
+        [listingId, { block: "1", height: 950_001, index: 101, vout: 1 }],
+        [sealTxid, { block: "2", height: 950_002, index: 102, vout: 2 }],
+        [closeTxid, { block: "3", height: 950_003, index: 103, vout: 3 }],
+        [
+          relicListingId,
+          { block: "4", height: 950_004, index: 104, vout: 4 },
+        ],
+        [
+          outpointListingId,
+          { block: "5", height: 950_005, index: 105, vout: 5 },
+        ],
+        [
+          pendingListingId,
+          { block: "6", height: 950_006, index: 106, vout: 6 },
+        ],
+      ]);
       let rows = roles.map((role, index) => ({
-        block_hash:
-          role === "listing"
-            ? (index === 0 ? "1" : "4").repeat(64)
-            : role === "seal"
-              ? "2".repeat(64)
-              : "3".repeat(64),
-        block_height: 950_001 + index,
-        block_index: 101 + index,
+        block_hash: (
+          positionByTxid.get(txids[index])?.block ?? "0"
+        ).repeat(64),
+        block_height: positionByTxid.get(txids[index])?.height ?? 950_000,
+        block_index: positionByTxid.get(txids[index])?.index ?? 100,
         listing_id: listingIds[index],
         match_count: "1",
-        op_return_vout: 1 + index,
+        op_return_vout: positionByTxid.get(txids[index])?.vout ?? 0,
         record_ordinal: 0,
         role,
         txid: txids[index],
@@ -21943,10 +21978,19 @@ check("canonical WORK lifecycle state rebinds unique relational event positions"
   assert.ok(positioned);
   assert.deepEqual(Array.from(capturedQuery.params[1]), [
     "listing",
+    "listing",
     "seal",
     "close",
     "listing",
     "listing",
+  ]);
+  assert.deepEqual(Array.from(capturedQuery.params[2]), [
+    pendingListingId,
+    listingId,
+    sealTxid,
+    closeTxid,
+    relicListingId,
+    outpointListingId,
   ]);
   assert.equal(capturedQuery.params[4], WORK_TOKEN_ID);
   assert.match(capturedQuery.sql, /event_block\.canonical = true/u);
@@ -21993,10 +22037,11 @@ check("canonical WORK lifecycle state rebinds unique relational event positions"
   assert.equal(terminal.closedBlockIndex, 103);
   assert.equal(terminal.closedProtocolVout, 3);
   assert.deepEqual(
-    positioned.listings,
-    [],
+    positioned.listings.map((listing) => listing.listingId),
+    [pendingListingId],
     "a canonical closed listing removes its stale active duplicate before rebinding",
   );
+  assert.equal(positioned.listings[0].blockHash, "6".repeat(64));
   assert.equal(
     positioned.closedListings[1].closedTxid,
     relicSpendTxid,
@@ -22012,6 +22057,14 @@ check("canonical WORK lifecycle state rebinds unique relational event positions"
   assert.equal(
     positioned.closedListings[2].closedByCanonicalOutpointSpend,
     true,
+  );
+  assert.equal(positioned.closedListings[3].listingId, pendingListingId);
+  assert.equal(positioned.closedListings[3].closedTxid, pendingCloseTxid);
+  assert.equal(positioned.closedListings[3].closedConfirmed, false);
+  assert.equal(
+    positioned.closedListings[3].blockHash,
+    "6".repeat(64),
+    "a pending close sibling can share the active listing's opening position",
   );
   const pendingWorkVerifierStageCanonicalOutpointClose = isolatedFunction(
     API_PATH,
