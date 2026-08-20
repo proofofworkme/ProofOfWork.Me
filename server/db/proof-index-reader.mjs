@@ -28821,10 +28821,13 @@ async function payloadWithCanonicalWorkLifecyclePositions(
     }
     return true;
   };
-  const listings = Array.isArray(payload.listings) ? payload.listings : [];
   const closedListings = Array.isArray(payload.closedListings)
     ? payload.closedListings
     : [];
+  const listings = tokenListingsWithoutClosedEvents(
+    Array.isArray(payload.listings) ? payload.listings : [],
+    closedListings,
+  );
   if (
     listings.some((listing) => !collectListing(listing)) ||
     closedListings.some(

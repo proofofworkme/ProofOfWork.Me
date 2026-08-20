@@ -21810,6 +21810,21 @@ check("canonical WORK lifecycle state rebinds unique relational event positions"
       canonicalWorkLifecyclePositionFromRow,
       isWorkTokenId,
       normalizedLowerText,
+      tokenListingsWithoutClosedEvents: (listings, closedListings) => {
+        const closedKeys = new Set(
+          (Array.isArray(closedListings) ? closedListings : [])
+            .map((listing) =>
+              `${normalizedLowerText(listing?.tokenId)}:${normalizedLowerText(listing?.listingId)}`,
+            )
+            .filter((key) => !key.endsWith(":")),
+        );
+        return (Array.isArray(listings) ? listings : []).filter(
+          (listing) =>
+            !closedKeys.has(
+              `${normalizedLowerText(listing?.tokenId)}:${normalizedLowerText(listing?.listingId)}`,
+            ),
+        );
+      },
       validTxid,
       workLifecyclePositionPatch,
     },
@@ -21874,7 +21889,14 @@ check("canonical WORK lifecycle state rebinds unique relational event positions"
         tokenId: WORK_TOKEN_ID,
       },
     ],
-    listings: [],
+    listings: [
+      {
+        confirmed: true,
+        listingId,
+        status: "sealing",
+        tokenId: WORK_TOKEN_ID,
+      },
+    ],
     network: "livenet",
     tokens: [{ tokenId: WORK_TOKEN_ID }],
   };
@@ -21969,6 +21991,11 @@ check("canonical WORK lifecycle state rebinds unique relational event positions"
   assert.equal(terminal.closedBlockHash, "3".repeat(64));
   assert.equal(terminal.closedBlockIndex, 103);
   assert.equal(terminal.closedProtocolVout, 3);
+  assert.deepEqual(
+    positioned.listings,
+    [],
+    "a canonical closed listing removes its stale active duplicate before rebinding",
+  );
   assert.equal(
     positioned.closedListings[1].closedTxid,
     relicSpendTxid,
