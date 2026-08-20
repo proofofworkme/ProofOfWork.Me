@@ -141,6 +141,7 @@ assert.match(provenance, /flock --exclusive --nonblock/u);
 assert.match(provenance, /NFT compatibility alias must exactly match Computer/u);
 assert.match(provenance, /surface_tree_sha256/u);
 assert.match(provenance, /sha256sum --binary/u);
+assert.match(provenance, /LC_ALL=C sort --zero-terminated/u);
 assert.match(provenance, /unsupported file type/u);
 assert.match(provenance, /verified_archive_sha256/u);
 assert.match(provenance, /verify_archive_payload/u);

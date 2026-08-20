@@ -464,7 +464,7 @@ surface_tree_sha256_directory() {
       digest="${digest%% *}"
       file_mode="$(stat --format=%a -- "${relative}")"
       printf '%s\0%s\0%s\n' "${relative}" "${file_mode}" "${digest}"
-    done < <(find . -xdev -type f -printf '%P\0' | sort --zero-terminated)
+    done < <(find . -xdev -type f -printf '%P\0' | LC_ALL=C sort --zero-terminated)
   } | sha256sum --binary)"
   printf '%s\n' "${result%% *}"
 }
