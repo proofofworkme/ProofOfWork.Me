@@ -21810,6 +21810,7 @@ check("canonical WORK lifecycle state rebinds unique relational event positions"
       canonicalWorkLifecyclePositionFromRow,
       isWorkTokenId,
       normalizedLowerText,
+      tokenListingId: (listing) => normalizedLowerText(listing?.listingId),
       tokenListingsWithoutClosedEvents: (listings, closedListings) => {
         const closedKeys = new Set(
           (Array.isArray(closedListings) ? closedListings : [])

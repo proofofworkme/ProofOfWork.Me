@@ -28824,10 +28824,32 @@ async function payloadWithCanonicalWorkLifecyclePositions(
   const closedListings = Array.isArray(payload.closedListings)
     ? payload.closedListings
     : [];
+  const closedLifecycleListingKeys = new Set(
+    closedListings
+      .filter(
+        (listing) =>
+          listing?.confirmed === true &&
+          listing?.closedConfirmed === true,
+      )
+      .map((listing) => {
+        const listingId = tokenListingId(listing);
+        const tokenId = normalizedLowerText(listing?.tokenId);
+        return listingId && tokenId ? `${tokenId}:${listingId}` : "";
+      })
+      .filter(Boolean),
+  );
   const listings = tokenListingsWithoutClosedEvents(
     Array.isArray(payload.listings) ? payload.listings : [],
     closedListings,
-  );
+  ).filter((listing) => {
+    const listingId = tokenListingId(listing);
+    const tokenId = normalizedLowerText(listing?.tokenId);
+    return (
+      !listingId ||
+      !tokenId ||
+      !closedLifecycleListingKeys.has(`${tokenId}:${listingId}`)
+    );
+  });
   if (
     listings.some((listing) => !collectListing(listing)) ||
     closedListings.some(
