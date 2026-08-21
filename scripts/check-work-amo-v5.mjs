@@ -70,7 +70,7 @@ import {
   WORK_AMO_V5_PRE_UNIT_RELIC_TICKET_VALUE_SATS,
   WORK_AMO_V5_PRE_UNIT_RELIC_TICKET_VOUT,
   WORK_AMO_V5_POWB_TOKEN_ID,
-  WORK_AMO_V5_RUSH_REGISTRY_ADDRESS,
+  WORK_AMO_V5_TOKEN_INDEX_ADDRESS,
   WORK_AMO_V5_STATE_ORDER_MODEL,
   WORK_AMO_V5_STATE_COMMITMENT_MODEL,
   WORK_AMO_V5_TOKEN_STATE_PREIMAGE_MODEL,
@@ -2474,7 +2474,7 @@ const rawGenericSaleAuthorization = {
   network: "livenet",
   nonce: "raw-invalid-utf8-generic",
   priceSats: 546,
-  registryAddress: WORK_AMO_V5_RUSH_REGISTRY_ADDRESS,
+  registryAddress: WORK_AMO_V5_TOKEN_INDEX_ADDRESS,
   sellerAddress: "1F1p9UEHuH5KTFR7Zsx93Khdrqhj6t5nFv",
   sellerPublicKey: `02${"11".repeat(32)}`,
   ticker: "EDGE",
@@ -3122,7 +3122,7 @@ assert.equal(
   ]).sha256,
 );
 
-const mixedProtocols = ["pwm1", "pwa1", "pwid1", "pwr1", "pwt1"];
+const mixedProtocols = ["pwm1", "pwa1", "pwid1", "pwt1"];
 const mixedProtocolEvents = mixedProtocols.map((protocol, index) => ({
   feeSats: String(index + 1),
   kind: `display-label-${index}`,
@@ -3172,8 +3172,7 @@ assert.deepEqual(
     "pwm1-valid",
     "pwa1-valid",
     "pwid1-valid",
-    "pwr1-invalid",
-    "pwt1-valid",
+    "pwt1-invalid",
   ],
 );
 assert.equal(
@@ -3434,7 +3433,7 @@ const rawAdversarialRecipient =
   WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS;
 const rawAdversarialGenericTokenId = hash("4");
 const rawAdversarialGenericRegistry =
-  WORK_AMO_V5_RUSH_REGISTRY_ADDRESS;
+  WORK_AMO_V5_TOKEN_INDEX_ADDRESS;
 const rawAdversarialOpeningGenericState =
   normalizeWorkAmoV5RawGenericState({
     holders: [],

@@ -10,7 +10,6 @@ export type AppSurface =
   | "work"
   | "infinity"
   | "inception"
-  | "rush"
   | "log"
   | "growth";
 
@@ -142,14 +141,6 @@ export function isInceptionRoute() {
   );
 }
 
-export function isRushRoute() {
-  if (import.meta.env.VITE_RUSH_ONLY === "1") {
-    return true;
-  }
-
-  return searchFlag("rush");
-}
-
 export function isActivityRoute() {
   if (
     import.meta.env.VITE_ACTIVITY_ONLY === "1" ||
@@ -186,7 +177,6 @@ export function detectAppSurface(): AppSurface {
   if (isWorkTokenRoute()) return "work";
   if (isInfinityRoute()) return "infinity";
   if (isInceptionRoute()) return "inception";
-  if (isRushRoute()) return "rush";
   if (isActivityRoute()) return "log";
   if (isGrowthRoute()) return "growth";
   return "computer";

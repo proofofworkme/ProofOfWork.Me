@@ -261,7 +261,6 @@ import {
   proofIndexIdRecordPayload,
   proofIndexRegistryHistoryPayload,
   proofIndexRegistryPayload,
-  proofIndexRushPayload,
   proofIndexShadowFeatureEnabled,
   proofIndexSnapshotPayload,
   proofIndexTokenMarketHistoryOverlayPayload,
@@ -815,8 +814,6 @@ const SLIPSTREAM_CLIENT_CODE_REQUIRED_MESSAGE =
 const PROTOCOL_PREFIX = "pwm1:";
 const ID_PROTOCOL_PREFIX = "pwid1:";
 const TOKEN_PROTOCOL_PREFIX = "pwt1:";
-const RUSH_PROTOCOL_PREFIX = "pwr1:";
-const RUSH_MINT_PAYLOAD = "pwr1:m:rush";
 const INFINITY_BOND_MEMO = "powb";
 const INCEPTION_BOND_MEMO = "incb";
 const INFINITY_BOND_KIND = "infinity-bond";
@@ -1318,47 +1315,6 @@ const ID_REGISTRY_ADDRESSES = {
 const TOKEN_INDEX_ADDRESSES = {
   livenet: "1L4xrDurN9VghknrbsSju2vQb6oXZe1Pbn",
 };
-const RUSH_REGISTRY_ADDRESSES = {
-  livenet: "bc1qym392dfvfm024k7ukzlnvnpfvuu4kfqvu56w3e",
-  testnet4: "tb1qyh9pgznpass4mjcl8qj9yxs3vvl9rnrk5gvw6q",
-};
-const RUSH_MINT_PRICE_SATS = 1000;
-const RUSH_DECIMALS = 6n;
-const RUSH_BASE_UNITS = 1_000_000n;
-const RUSH_TOTAL_SUPPLY_UNITS = 1_000_000_000n * RUSH_BASE_UNITS;
-const RUSH_MAX_REWARDED_MINTS = 50_000;
-const RUSH_PHASES = [
-  {
-    endOrdinal: 5000,
-    phase: 1,
-    rewardUnits: 50_000n * RUSH_BASE_UNITS,
-    startOrdinal: 1,
-  },
-  {
-    endOrdinal: 15000,
-    phase: 2,
-    rewardUnits: 30_000n * RUSH_BASE_UNITS,
-    startOrdinal: 5001,
-  },
-  {
-    endOrdinal: 30000,
-    phase: 3,
-    rewardUnits: 18_000n * RUSH_BASE_UNITS,
-    startOrdinal: 15001,
-  },
-  {
-    endOrdinal: 45000,
-    phase: 4,
-    rewardUnits: 10_000n * RUSH_BASE_UNITS,
-    startOrdinal: 30001,
-  },
-  {
-    endOrdinal: 50000,
-    phase: 5,
-    rewardUnits: 6_000n * RUSH_BASE_UNITS,
-    startOrdinal: 45001,
-  },
-];
 
 const NETWORKS = new Set(["livenet", "testnet", "testnet4"]);
 const BLOCK_TXID_INDEX_CACHE_MAX_SIZE = 256;
@@ -1420,7 +1376,6 @@ function shouldPersistJsonCache(cacheKey) {
     cacheKey === "marketplace-summary:livenet" ||
     cacheKey === "registry:livenet" ||
     cacheKey.startsWith("token:livenet:") ||
-    cacheKey === "rush:livenet" ||
     cacheKey === "work-floor:livenet" ||
     cacheKey === "growth-summary:livenet"
   );
@@ -10762,7 +10717,7 @@ function workAmoV8SignedMutationShape(txHex, network) {
     (output, protocolVout) =>
       decodedOpReturnMessages([output])
         .filter((message) =>
-          /^(?:pwa1|pwid1|pwm1|pwr1|pwt1):/u.test(message),
+          /^(?:pwa1|pwid1|pwm1|pwt1):/u.test(message),
         )
         .map((message) => ({ message, protocolVout })),
   );
@@ -13972,8 +13927,7 @@ function proofProtocolDataBytesForVout(vout) {
       (message) =>
         message.startsWith(PROTOCOL_PREFIX) ||
         message.startsWith(ID_PROTOCOL_PREFIX) ||
-        message.startsWith(TOKEN_PROTOCOL_PREFIX) ||
-        message.startsWith(RUSH_PROTOCOL_PREFIX),
+        message.startsWith(TOKEN_PROTOCOL_PREFIX),
     )
     .reduce((total, message) => total + Buffer.byteLength(message, "utf8"), 0);
 }
@@ -14421,100 +14375,6 @@ function paymentOutputsBeforeTokenProtocol(vout) {
 
     return [{ address: output.scriptpubkey_address, amountSats: output.value }];
   });
-}
-
-function firstRushOutputIndex(vout) {
-  return vout.findIndex((output) => {
-    if (output.scriptpubkey_type !== "op_return") {
-      return false;
-    }
-
-    return decodedProtocolMessages([output], RUSH_PROTOCOL_PREFIX).some(
-      (message) => message === RUSH_MINT_PAYLOAD,
-    );
-  });
-}
-
-function rushPaymentAmountBeforeProtocol(vout, address) {
-  const protocolIndex = firstRushOutputIndex(vout);
-  return vout.reduce((total, output, index) => {
-    if (
-      output.scriptpubkey_address === address &&
-      typeof output.value === "number" &&
-      output.value > 0 &&
-      (protocolIndex === -1 || index < protocolIndex)
-    ) {
-      return total + output.value;
-    }
-
-    return total;
-  }, 0);
-}
-
-function rushPhaseForOrdinal(ordinal) {
-  if (!Number.isSafeInteger(ordinal) || ordinal < 1) {
-    return undefined;
-  }
-
-  return RUSH_PHASES.find(
-    (phase) => ordinal >= phase.startOrdinal && ordinal <= phase.endOrdinal,
-  );
-}
-
-function rushRewardUnitsForOrdinal(ordinal) {
-  return rushPhaseForOrdinal(ordinal)?.rewardUnits ?? 0n;
-}
-
-function formatRushUnits(units) {
-  const sign = units < 0n ? "-" : "";
-  const absolute = units < 0n ? -units : units;
-  const whole = absolute / RUSH_BASE_UNITS;
-  const fractional = absolute % RUSH_BASE_UNITS;
-  if (fractional === 0n) {
-    return `${sign}${whole.toString()}`;
-  }
-
-  const decimals = fractional
-    .toString()
-    .padStart(Number(RUSH_DECIMALS), "0")
-    .replace(/0+$/u, "");
-  return `${sign}${whole.toString()}.${decimals}`;
-}
-
-function rushStatsFromMints(mints) {
-  const confirmedMints = mints.filter((mint) => mint.confirmed).length;
-  const pendingMints = mints.filter((mint) => !mint.confirmed).length;
-  const rewardedMints = Math.min(confirmedMints, RUSH_MAX_REWARDED_MINTS);
-  const overflowMints = Math.max(0, confirmedMints - RUSH_MAX_REWARDED_MINTS);
-  const distributedUnits = mints.reduce((total, mint) => {
-    if (!mint.confirmed || mint.overflow) {
-      return total;
-    }
-
-    return total + BigInt(mint.amountUnits || "0");
-  }, 0n);
-  const remainingUnits =
-    distributedUnits >= RUSH_TOTAL_SUPPLY_UNITS
-      ? 0n
-      : RUSH_TOTAL_SUPPLY_UNITS - distributedUnits;
-  const nextOrdinal =
-    rewardedMints >= RUSH_MAX_REWARDED_MINTS ? null : rewardedMints + 1;
-  const nextPhase = nextOrdinal ? rushPhaseForOrdinal(nextOrdinal) : undefined;
-
-  return {
-    confirmedMints,
-    currentPhase: nextPhase?.phase ?? null,
-    distributed: formatRushUnits(distributedUnits),
-    nextOrdinal,
-    nextReward: nextOrdinal
-      ? formatRushUnits(rushRewardUnitsForOrdinal(nextOrdinal))
-      : "0",
-    overflowMints,
-    pendingMints,
-    remaining: formatRushUnits(remainingUnits),
-    rewardedMints,
-    totalSupply: "1000000000",
-  };
 }
 
 function normalizeTokenTicker(value) {
@@ -21794,170 +21654,6 @@ async function pendingWorkMarketHistoryPage(
   });
 }
 
-function emptyRushState(network = "livenet") {
-  return {
-    indexedAt: new Date().toISOString(),
-    mints: [],
-    network,
-    registryAddress: RUSH_REGISTRY_ADDRESSES[network] ?? "",
-    stats: rushStatsFromMints([]),
-  };
-}
-
-function rushStateFromTransactions(txs, registryAddress, network) {
-  if (!registryAddress) {
-    return emptyRushState(network);
-  }
-
-  const mints = [];
-  let confirmedOrdinal = 0;
-
-  for (const tx of tokenProtocolSortedTransactions(txs)) {
-    const txid = transactionTxid(tx);
-    if (!txid || mints.some((mint) => mint.txid === txid)) {
-      continue;
-    }
-
-    const vin = Array.isArray(tx.vin) ? tx.vin : [];
-    const vout = Array.isArray(tx.vout) ? tx.vout : [];
-    const minterAddress = transactionInputAddresses(vin)[0] ?? "";
-    if (!isValidBitcoinAddress(minterAddress, network)) {
-      continue;
-    }
-
-    const messages = decodedProtocolMessages(vout, RUSH_PROTOCOL_PREFIX);
-    if (!messages.includes(RUSH_MINT_PAYLOAD)) {
-      continue;
-    }
-
-    if (
-      rushPaymentAmountBeforeProtocol(vout, registryAddress) <
-      RUSH_MINT_PRICE_SATS
-    ) {
-      continue;
-    }
-
-    const confirmed = transactionConfirmed(tx);
-    const ordinal = confirmed ? (confirmedOrdinal += 1) : undefined;
-    const rewardOrdinal = ordinal ?? confirmedOrdinal + 1;
-    const rewardUnits = rushRewardUnitsForOrdinal(rewardOrdinal);
-    const phase = rushPhaseForOrdinal(rewardOrdinal);
-
-    mints.push({
-      amount: formatRushUnits(rewardUnits),
-      amountUnits: rewardUnits.toString(),
-      confirmed,
-      createdAt: new Date(tokenTransactionTime(tx)).toISOString(),
-      dataBytes: proofProtocolDataBytesForVout(vout),
-      minterAddress,
-      network,
-      ordinal,
-      overflow: confirmed ? rewardUnits === 0n : false,
-      paidSats: RUSH_MINT_PRICE_SATS,
-      phase: phase?.phase,
-      registryAddress,
-      txid,
-    });
-  }
-
-  const sortedMints = mints.sort(
-    (left, right) =>
-      Number(right.confirmed) - Number(left.confirmed) ||
-      (right.ordinal ?? Number.MAX_SAFE_INTEGER) -
-        (left.ordinal ?? Number.MAX_SAFE_INTEGER) ||
-      Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
-      compareCanonicalUtf8(left.txid, right.txid),
-  );
-
-  return {
-    indexedAt: new Date().toISOString(),
-    mints: sortedMints,
-    network,
-    registryAddress,
-    stats: rushStatsFromMints(sortedMints),
-  };
-}
-
-function rushStateFromIndexedMintEvents(
-  items,
-  registryAddress,
-  network,
-  indexedAt,
-) {
-  if (!registryAddress || !Array.isArray(items)) {
-    throw freshDataUnavailableError(
-      "The canonical indexed RUSH mint stream is unavailable.",
-    );
-  }
-  const ordered = [...items].sort(
-    (left, right) =>
-      numericValue(left?.blockHeight) - numericValue(right?.blockHeight) ||
-      numericValue(left?.blockIndex) - numericValue(right?.blockIndex) ||
-      compareCanonicalUtf8(left?.txid, right?.txid),
-  );
-  const seen = new Set();
-  const mints = ordered.map((item, index) => {
-    const txid = String(item?.txid ?? "").trim().toLowerCase();
-    const blockHeight = Number(item?.blockHeight);
-    const blockIndex = Number(item?.blockIndex);
-    const minterAddress = String(
-      item?.minterAddress ?? item?.senderAddress ?? item?.actor ?? "",
-    ).trim();
-    if (
-      item?.kind !== "rush-mint" ||
-      item?.confirmed !== true ||
-      item?.valid === false ||
-      item?.validationMode !== "canonical-ordered-rush-index" ||
-      item?.registryAddress !== registryAddress ||
-      numericValue(item?.paidSats ?? item?.amountSats) < RUSH_MINT_PRICE_SATS ||
-      !/^[0-9a-f]{64}$/u.test(txid) ||
-      seen.has(txid) ||
-      !Number.isSafeInteger(blockHeight) ||
-      blockHeight <= 0 ||
-      !Number.isSafeInteger(blockIndex) ||
-      blockIndex < 0 ||
-      !isValidBitcoinAddress(minterAddress, network)
-    ) {
-      throw freshDataUnavailableError(
-        `The indexed RUSH mint at ordinal ${index + 1} is not canonical.`,
-      );
-    }
-    seen.add(txid);
-    const ordinal = index + 1;
-    const rewardUnits = rushRewardUnitsForOrdinal(ordinal);
-    const phase = rushPhaseForOrdinal(ordinal);
-    return {
-      amount: formatRushUnits(rewardUnits),
-      amountUnits: rewardUnits.toString(),
-      blockHeight,
-      blockIndex,
-      confirmed: true,
-      createdAt: new Date(item.createdAt ?? item.blockTime).toISOString(),
-      dataBytes: numericValue(item.dataBytes),
-      minterAddress,
-      network,
-      ordinal,
-      overflow: rewardUnits === 0n,
-      paidSats: RUSH_MINT_PRICE_SATS,
-      phase: phase?.phase,
-      registryAddress,
-      txid,
-    };
-  });
-  const sortedMints = mints.sort(
-    (left, right) =>
-      right.ordinal - left.ordinal ||
-      compareCanonicalUtf8(left.txid, right.txid),
-  );
-  return {
-    indexedAt: indexedAt ?? new Date().toISOString(),
-    mints: sortedMints,
-    network,
-    registryAddress,
-    stats: rushStatsFromMints(sortedMints),
-  };
-}
-
 function idEventMinimumPaymentSats(kind) {
   return kind === "register"
     ? ID_REGISTRATION_PRICE_SATS
@@ -23244,7 +22940,7 @@ function activityKey(item) {
   const protocol = String(item?.protocol ?? "").trim().toLowerCase();
   if (
     item?.confirmed !== true &&
-    ["pwm1", "pwa1", "pwid1", "pwr1", "pwt1"].includes(protocol)
+    ["pwm1", "pwa1", "pwid1", "pwt1"].includes(protocol)
   ) {
     const protocolVout = exactPositionInteger("protocolVout");
     const recordOrdinal = exactPositionInteger("recordOrdinal");
@@ -28235,35 +27931,6 @@ function tokenActivityItemsFromStateForCanonicalLedger(
   });
 }
 
-function rushActivityItemsFromState(state) {
-  return (state.mints ?? []).map((mint) => ({
-    amountSats: mint.paidSats,
-    actor: mint.minterAddress,
-    confirmed: mint.confirmed,
-    counterparty: mint.registryAddress,
-    createdAt: mint.createdAt,
-    dataBytes: mint.dataBytes,
-    description: `${mint.amount} RUSH minted by ${shortAddress(mint.minterAddress)}.`,
-    detail: mint.ordinal
-      ? `Mint #${mint.ordinal.toLocaleString()} Â· phase ${mint.phase ?? "overflow"}`
-      : `Pending mint Â· estimated phase ${mint.phase ?? "overflow"}`,
-    kind: "rush-mint",
-    network: mint.network,
-    participants: [mint.minterAddress, mint.registryAddress].filter(Boolean),
-    tags: [
-      activityStatusTag(mint.confirmed),
-      networkLabel(mint.network),
-      "RUSH",
-      "Credit",
-      "Mint",
-      `${mint.amount} RUSH`,
-      `${mint.paidSats.toLocaleString()} registry proofs`,
-    ],
-    title: mint.confirmed ? "RUSH mint" : "RUSH mint pending",
-    txid: mint.txid,
-  }));
-}
-
 function addActivityAddress(addresses, address, network) {
   if (typeof address === "string" && isValidBitcoinAddress(address, network)) {
     addresses.add(address);
@@ -29013,15 +28680,6 @@ async function fastCachedTokenPayload(network, tokenScope = "") {
   };
 }
 
-function cachedRushPayload(network) {
-  return cachedPayload(
-    `payload:rush:${network}`,
-    () => rushPayload(network),
-    TOKEN_CACHE_TTL_MS,
-    TOKEN_CACHE_STALE_MS,
-  );
-}
-
 function shouldAutoRefreshTokenScope(_scope) {
   return false;
 }
@@ -29120,19 +28778,14 @@ async function globalActivityPayload(network, fresh = false) {
   }
 
   const mailActivity = mailActivityItemsFromTransactions(mailTxs, network);
-  const [tokenState, rushState] = await Promise.all([
-    fastTokenPayloadSnapshot(network).catch(() => null),
-    (fresh ? rushPayload(network) : cachedRushPayload(network)).catch(() => null),
-  ]);
+  const tokenState = await fastTokenPayloadSnapshot(network).catch(() => null);
   const tokenActivity = tokenState
     ? tokenActivityItemsFromState(tokenState, tokenState.indexAddress ?? "")
     : [];
-  const rushActivity = rushState ? rushActivityItemsFromState(rushState) : [];
   const activity = dedupeActivityItems([
     ...(registry.activity ?? []),
     ...mailActivity,
     ...tokenActivity,
-    ...rushActivity,
   ]);
   const dataBytes = totalProtocolDataBytes(activity);
   const fileActions = activity.filter((item) => item.kind === "file").length;
@@ -29148,9 +28801,6 @@ async function globalActivityPayload(network, fresh = false) {
   ).length;
   const akActions = activity.filter((item) =>
     String(item.kind).startsWith("ak-"),
-  ).length;
-  const rushActions = activity.filter((item) =>
-    String(item.kind).startsWith("rush-"),
   ).length;
   const indexedThroughBlock = indexedThroughBlockFromItems(activity);
 
@@ -29170,7 +28820,6 @@ async function globalActivityPayload(network, fresh = false) {
       messages: messageActions,
       pending: activity.filter((item) => !item.confirmed).length,
       registry: (registry.activity ?? []).length,
-      rush: rushActions,
       tokens: tokenActions,
       total: activity.length,
     },
@@ -38592,9 +38241,6 @@ function activityStatsFromItems(activity, baseStats = {}) {
   const tokenActions = activity.filter((item) =>
     String(item.kind).startsWith("token-"),
   ).length;
-  const rushActions = activity.filter((item) =>
-    String(item.kind).startsWith("rush-"),
-  ).length;
   const akActions = activity.filter((item) =>
     String(item.kind).startsWith("ak-"),
   ).length;
@@ -38609,7 +38255,6 @@ function activityStatsFromItems(activity, baseStats = {}) {
     infinityBonds: infinityBondActions,
     messages: messageActions,
     pending: activity.filter((item) => !item.confirmed).length,
-    rush: rushActions,
     tokens: tokenActions,
     total: activity.length,
   };
@@ -39513,7 +39158,6 @@ function sourceCollectionFingerprint(items) {
 function ledgerSourceHashes({
   activityState,
   registryState,
-  rushState,
   seededMailActivityState,
   tokenState,
   workTokenState,
@@ -39522,7 +39166,6 @@ function ledgerSourceHashes({
     activity: sourceCollectionFingerprint(activityState?.activity),
     registry: sourceCollectionFingerprint(registryState?.activity),
     registryRecords: sourceCollectionFingerprint(registryState?.records),
-    rushMints: sourceCollectionFingerprint(rushState?.mints),
     seededMail: sourceCollectionFingerprint(seededMailActivityState?.activity),
     tokenMints: sourceCollectionFingerprint(tokenState?.mints),
     tokenSales: sourceCollectionFingerprint(tokenState?.sales),
@@ -41002,7 +40645,6 @@ async function ledgerWithReplayedCreditNetworkValues(
   const sourceHashes = ledgerSourceHashes({
     activityState: activityPayload,
     registryState,
-    rushState: ledger.rushState,
     seededMailActivityState: ledger.seededMailActivityState,
     tokenState,
     workTokenState,
@@ -44900,7 +44542,6 @@ async function buildIndexedCanonicalLedgerPayload(
   const [
     activityState,
     registrySnapshot,
-    rushState,
     btcUsdQuote,
     currentTokenTableState,
     currentMarketOverlay,
@@ -44910,7 +44551,6 @@ async function buildIndexedCanonicalLedgerPayload(
       exactHash,
       exactHeight,
     }),
-    strictCanonicalRushPayload(network, exactHeight),
     payloadWithFallbackAfterMs(
       btcUsdPricePayload(network, { fresh: false }),
       null,
@@ -45015,7 +44655,6 @@ async function buildIndexedCanonicalLedgerPayload(
       ? seededMailActivityState.activity
       : []),
     ...(Array.isArray(registryState?.activity) ? registryState.activity : []),
-    ...(rushState ? rushActivityItemsFromState(rushState) : []),
   ]);
   const ledgerTokenStateWithPowb = indexedPowbState
     ? tokenStateWithScopedTokenOverride(
@@ -45192,7 +44831,6 @@ async function buildIndexedCanonicalLedgerPayload(
     ...ledgerSourceHashes({
       activityState,
       registryState,
-      rushState,
       seededMailActivityState,
       tokenState: valuedTokenState,
       workTokenState: valuedWorkTokenState,
@@ -45222,7 +44860,6 @@ async function buildIndexedCanonicalLedgerPayload(
     metrics,
     network,
     registryState,
-    rushState,
     seededMailActivityState,
     snapshotId,
     source: "proof-indexer-indexed-canonical-ledger",
@@ -45546,7 +45183,6 @@ async function buildCanonicalLedgerPayload(network, fresh = false) {
     registryState,
     tokenState,
     workTokenState,
-    rushState,
     btcUsdQuote,
     sourceTipHeight,
   ] = await Promise.all([
@@ -45563,7 +45199,6 @@ async function buildCanonicalLedgerPayload(network, fresh = false) {
         ),
     ledgerTokenPayload(network, "", fresh),
     ledgerTokenPayload(network, WORK_TOKEN_ID, fresh),
-    (fresh ? rushPayload(network) : cachedRushPayload(network)).catch(() => null),
     network === "livenet"
       ? btcUsdPricePayload(network, { fresh })
       : Promise.resolve(null),
@@ -45595,7 +45230,6 @@ async function buildCanonicalLedgerPayload(network, fresh = false) {
       ? seededMailActivityState.activity
       : []),
     ...(Array.isArray(registryState?.activity) ? registryState.activity : []),
-    ...(rushState ? rushActivityItemsFromState(rushState) : []),
   ]);
   let ledgerTokenState = valueTokenState;
   for (const config of BOND_TOKEN_CONFIGS) {
@@ -45777,7 +45411,6 @@ async function buildCanonicalLedgerPayload(network, fresh = false) {
   const sourceHashes = ledgerSourceHashes({
     activityState,
     registryState,
-    rushState,
     seededMailActivityState,
     tokenState: ledgerTokenState,
     workTokenState: valuedWorkTokenState,
@@ -45799,7 +45432,6 @@ async function buildCanonicalLedgerPayload(network, fresh = false) {
     metrics,
     network,
     registryState,
-    rushState,
     seededMailActivityState,
     snapshotId,
     sourceHashes,
@@ -50198,51 +49830,6 @@ async function tokenHistoryPayload(network, tokenScope, kind, searchParams, fres
         snapshotId: payload.snapshotId,
       }
     : page;
-}
-
-async function rushPayload(network) {
-  const registryAddress = RUSH_REGISTRY_ADDRESSES[network] ?? "";
-  if (!registryAddress) {
-    return emptyRushState(network);
-  }
-
-  const txs = await fetchRegistryTransactions(registryAddress, network);
-  return {
-    ...rushStateFromTransactions(txs, registryAddress, network),
-    source: mempoolBase(network),
-    transactions: txs.length,
-  };
-}
-
-async function strictCanonicalRushPayload(network, indexedThroughBlock) {
-  const registryAddress = RUSH_REGISTRY_ADDRESSES[network] ?? "";
-  const payload = await proofIndexRushPayload(
-    network,
-    indexedThroughBlock,
-    { allowIncompleteScan: true },
-  );
-  if (
-    !payload ||
-    payload.source !== "proof-indexer-rush-canonical" ||
-    payload.indexedThroughBlock !== indexedThroughBlock ||
-    !/^[0-9a-f]{64}$/u.test(payload.indexedThroughBlockHash ?? "")
-  ) {
-    throw freshDataUnavailableError(
-      "The full-node-verified RUSH index is not exact at the canonical checkpoint.",
-    );
-  }
-  return {
-    ...rushStateFromIndexedMintEvents(
-      payload.mints,
-      registryAddress,
-      network,
-      payload.indexedAt,
-    ),
-    indexedThroughBlock,
-    indexedThroughBlockHash: payload.indexedThroughBlockHash,
-    source: payload.source,
-    transactions: payload.mints.length,
-  };
 }
 
 function growthElapsedYears() {
@@ -67390,30 +66977,6 @@ async function handleRequest(request, response) {
         ),
         freshRead ? FRESH_READ_CACHE_CONTROL : READ_CACHE_CONTROL,
       );
-      return;
-    }
-
-    if (url.pathname === "/api/v1/rush") {
-      if (freshRead) {
-        clearResponseCache(`rush:${network}`, `payload:rush:${network}`);
-        refreshedJsonResponse(
-          response,
-          `rush:${network}`,
-          await rushPayload(network),
-          FRESH_READ_CACHE_CONTROL,
-          TOKEN_CACHE_TTL_MS,
-          TOKEN_CACHE_STALE_MS,
-        );
-      } else {
-        await cachedJsonResponse(
-          response,
-          `rush:${network}`,
-          () => cachedRushPayload(network),
-          TOKEN_READ_CACHE_CONTROL,
-          TOKEN_CACHE_TTL_MS,
-          TOKEN_CACHE_STALE_MS,
-        );
-      }
       return;
     }
 

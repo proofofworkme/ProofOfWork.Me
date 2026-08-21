@@ -188,8 +188,6 @@ export const WORK_AMO_V5_ID_REGISTRY_ADDRESS =
   "bc1qfwytlzyr3ym3enz2eutwtjsf9kkf6uqkjydk3e";
 export const WORK_AMO_V5_TOKEN_INDEX_ADDRESS =
   "1L4xrDurN9VghknrbsSju2vQb6oXZe1Pbn";
-export const WORK_AMO_V5_RUSH_REGISTRY_ADDRESS =
-  "bc1qym392dfvfm024k7ukzlnvnpfvuu4kfqvu56w3e";
 export const WORK_AMO_V5_POWB_TOKEN_ID =
   "a3d0bc8528f91dfc52400a885bed7e49235396aa82aa9f95db41be629f1d5562";
 export const WORK_AMO_V5_INCB_TOKEN_ID =
@@ -1748,12 +1746,6 @@ export function parseWorkAmoV5RawPwidRecord(payload) {
     ...(ownerAddress ? { ownerAddress, receiveAddress } : {}),
     ...(saleAuthorization ? { saleAuthorization } : {}),
   };
-}
-
-export function parseWorkAmoV5RawPwrRecord(payload) {
-  return String(payload ?? "") === "pwr1:m:rush"
-    ? { kind: "rush-mint", payload: "pwr1:m:rush" }
-    : null;
 }
 
 export function isWorkAmoV5BrowserHtmlBody(value) {
@@ -3716,7 +3708,7 @@ export function workAmoV5CanonicalPayloadCommitment(value) {
 
 export function workAmoV5ConsensusEventKind(protocol, valid) {
   const normalizedProtocol = normalizedLowerText(protocol);
-  return ["pwm1", "pwa1", "pwid1", "pwr1", "pwt1"].includes(
+  return ["pwm1", "pwa1", "pwid1", "pwt1"].includes(
     normalizedProtocol,
   ) && typeof valid === "boolean"
     ? `${normalizedProtocol}-${valid ? "valid" : "invalid"}`
@@ -4108,7 +4100,7 @@ export function workAmoV5EventSetCommitment(events) {
     if (
       !position ||
       !txid ||
-      !["pwm1", "pwa1", "pwid1", "pwr1", "pwt1"].includes(protocol) ||
+      !["pwm1", "pwa1", "pwid1", "pwt1"].includes(protocol) ||
       !kind ||
       typeof event?.valid !== "boolean" ||
       !transactionMinerFeeSats ||

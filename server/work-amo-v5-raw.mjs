@@ -24,7 +24,6 @@ import {
   WORK_AMO_V5_NETWORK_ACCUMULATOR_MODEL,
   WORK_AMO_V5_NETWORK_VALUE_Q8_SCALE,
   WORK_AMO_V5_POWB_TOKEN_ID,
-  WORK_AMO_V5_RUSH_REGISTRY_ADDRESS,
   WORK_AMO_V5_TOKEN_INDEX_ADDRESS,
   WORK_AMO_V4_AUTH_VERSION,
   assignWorkAmoV5EconomicOutputs,
@@ -36,7 +35,6 @@ import {
   parseWorkAmoV5IdSaleAuthorization,
   parseWorkAmoV5PwmMessages,
   parseWorkAmoV5RawPwidRecord,
-  parseWorkAmoV5RawPwrRecord,
   parseWorkAmoV5RawPwtRecord,
   selectWorkAmoV5DistinctRegistryPayment,
   validateWorkAmoUsdQuoteEvidence,
@@ -2265,48 +2263,6 @@ function evaluatePwm(record, context) {
   };
 }
 
-function evaluatePwr(record, context) {
-  const parsed = parseWorkAmoV5RawPwrRecord(record.message);
-  if (!parsed) {
-    return invalidOutcome(
-      "work-amo-v5-raw-pwr-invalid",
-      null,
-      "rush-mint",
-    );
-  }
-  const senderAddress = firstAddressBearingInput(record);
-  const claimed = claimedForTx(context.claimedByTxid, record.txid);
-  const registry = aggregateClaim(record, claimed, {
-    address: WORK_AMO_V5_RUSH_REGISTRY_ADDRESS,
-    requireBeforeProtocol: true,
-    requiredSats: WORK_AMO_V5_WORK_MINT_PAYMENT_SATS,
-    role: "pwr-registry",
-  });
-  if (!registry || !isWorkAmoV5LivenetAddress(senderAddress)) {
-    return invalidOutcome(
-      "work-amo-v5-raw-pwr-payment-invalid",
-      parsed,
-      "rush-mint",
-    );
-  }
-  return {
-    claimed,
-    derived: [],
-    output: { registryPayments: registry.outputs },
-    parsed,
-    reasonCode: "",
-    semanticKind: "rush-mint",
-    stateDelta: normalizeStateDelta({
-      baseContributions: [{
-        field: "computerEventFlowSats",
-        value: String(WORK_AMO_V5_WORK_MINT_PAYMENT_SATS),
-      }],
-      economicOutputs: registry.outputs,
-    }),
-    valid: true,
-  };
-}
-
 function transactionTimeMs(record) {
   const candidate = record?.canonicalBlockTimeMs;
   return Number.isSafeInteger(candidate) && candidate >= 0
@@ -3955,9 +3911,6 @@ function evaluateRecord(record, context) {
   if (record.protocol === "pwid1") {
     return evaluatePwid(record, context);
   }
-  if (record.protocol === "pwr1") {
-    return evaluatePwr(record, context);
-  }
   if (record.protocol === "pwt1") {
     return evaluatePwt(record, context);
   }
@@ -3982,7 +3935,7 @@ function canonicalRecord(record) {
   if (
     !txid ||
     !position ||
-    !["pwa1", "pwm1", "pwid1", "pwr1", "pwt1"].includes(protocol) ||
+    !["pwa1", "pwm1", "pwid1", "pwt1"].includes(protocol) ||
     !record?.tx ||
     !transactionMinerFeeSats ||
     (
@@ -5102,7 +5055,6 @@ export function replayWorkAmoV5RawBlock({
   const events = [];
   const feeTransitions = [];
   const validTxids = new Set();
-  const pwrCandidateSeenByTxid = new Set();
   const workSendsByTxid = new Map();
   let transitionChainCommitment = rawTransitionChainCommitment({
     block: {
@@ -5133,27 +5085,11 @@ export function replayWorkAmoV5RawBlock({
     const claimedBefore = new Set(
       claimedByTxid.get(record.txid) ?? [],
     );
-    const exactPwr =
-      record.protocol === "pwr1"
-        ? parseWorkAmoV5RawPwrRecord(record.message)
-        : null;
-    const duplicatePwr =
-      Boolean(exactPwr) &&
-      pwrCandidateSeenByTxid.has(record.txid);
-    if (exactPwr) {
-      pwrCandidateSeenByTxid.add(record.txid);
-    }
     const outcome = record.rawDecodeValid === false
       ? invalidOutcome(
           record.rawDecodeReasonCode,
           null,
           "protocol-event-invalid",
-        )
-      : duplicatePwr
-      ? invalidOutcome(
-          "work-amo-v5-duplicate-pwr-record",
-          exactPwr,
-          "rush-mint",
         )
       : evaluateRecord(record, {
           blockOpeningEconomicState,

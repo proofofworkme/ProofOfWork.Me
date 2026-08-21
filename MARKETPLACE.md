@@ -400,12 +400,12 @@ recomputed full opening and closing state commitments. Pre-release V1
 sequencer rows may remain immutable evidence, but only V2 transitions are
 selected or published.
 
-Replay starts from every raw Core `pwm1`, `pwa1`, `pwid1`, `pwr1`, and `pwt1`
+Replay starts from every raw Core `pwm1`, `pwa1`, `pwid1`, and `pwt1`
 candidate, including malformed and ultimately invalid records. One
 transaction-wide output-ownership map prevents two protocol records from
 claiming the same economic output. A `pwa1` quote and a WORK `pwt1` registry
 payment each require the first qualifying single output in vout order; two
-smaller outputs cannot be aggregated. ID, RUSH, and non-WORK credit registry
+smaller outputs cannot be aggregated. ID and non-WORK credit registry
 payments use the deterministic multi-output allocator: constrained and
 claim-all roles first, then larger requirements; choose the smallest sufficient
 single output or the deterministic largest-first prefix. That allocator is
@@ -460,7 +460,7 @@ no second transaction fee.
 
 All `pwm1` outputs in one transaction form one ordered PWM envelope, even when
 ordinary payment outputs appear between its parts. If any other governed
-`pwa1`, `pwid1`, `pwr1`, or `pwt1` candidate appears strictly between the
+`pwa1`, `pwid1`, or `pwt1` candidate appears strictly between the
 first and last PWM part, the PWM aggregate is invalid with stable reason
 `work-amo-v5-raw-pwm-envelope-noncontiguous` and contributes zero. The
 intervening governed records remain independently ordered and evaluated.

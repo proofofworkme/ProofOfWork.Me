@@ -189,7 +189,7 @@ Launch invariants for future developers/agents:
 - Adds a standalone public Browser app that loads a txid, renders HTML from a message body or verified `text/html` attachment in a sandbox, and exposes a Computer-native HTML template.
 - Keeps wallet signing outside Browser-rendered HTML pages.
 - Exposes Browser as a first-class Computer sidebar workspace, so HTML pages are part of the ProofOfWork Computer and not only a standalone subdomain.
-- Stages Confessions as a 140-character social app for ProofOfWork IDs. Links, Files-backed small image attachments, editable social profiles, replies, likes, reposts, follows, tips, profile earnings, and the Following timeline are planned as a separate `pwc1:` meta protocol, not as ID registry mutations.
+- Stages Boost as a 140-character social app for ProofOfWork IDs. Links, Files-backed small image attachments, editable social profiles, replies, likes, reposts, follows, tips, profile earnings, and the Following timeline are planned as a separate `pwb1:` meta protocol, not as ID registry mutations.
 - Recognizes the canonical `Welcome to ProofOfWork.Me.html` transaction by txid only after its body or attachment has been returned and verified from chain-backed API data; the client does not synthesize replacement file contents.
 - Projects Browser-readable HTML message bodies into Files/Desktop as virtual `.html` files, so users can send HTML as a message body without needing an attachment.
 - Supports fractional fee rates, including sub-1 proof/vB values like `0.1`.
@@ -215,7 +215,6 @@ Launch invariants for future developers/agents:
 - Paginates credit sales/listing logs from the API so every listing, closure, and sale remains inspectable instead of being limited to a preview.
 - Prunes dropped pending WORK and credit transactions from live pending overlays after liveness checks, so stale mempool ghosts cannot distort transfer visibility, listing visibility, balances, floor, or network value.
 - Credit mint surfaces treat confirmed history as canonical mint-out, but pause user mint actions when confirmed plus pending mints would fill the remaining supply. Pending mempool records are not final, but the UI avoids letting users pay for likely overfill attempts, and WORK summary data must replay confirmed mints instead of trusting stale partial supply totals.
-- Stages RUSH as an explicit development/protocol surface behind `?rush=1` or `VITE_RUSH_ONLY=1`. It is not part of shared public navigation or production domain routing until separately approved for launch.
 - Exposes Growth as a public dashboard for modeled ProofOfWork Computer network value versus real confirmed registry, log, file, AMO, and Credit value metrics.
 - Computes WORK, Infinity, Inception, Growth, Log, and livenet credit/token views from one canonical confirmed ledger snapshot, so public searches, logged events, and network value cannot diverge after refresh.
 - Keeps the IDs workspace limited to registration, receiver updates, and direct owner transfers.
@@ -351,7 +350,7 @@ Current production behavior:
   definitions, API/worker/index/ledger parity, exact-tip Core readiness, and
   the independent V8 write gate all agree.
 - The AMO V5 cutover projects pre-unit listing `4e9cedced2252cd183608dc9176415a913c4f6aa5e8307a732179a2240b6feb1` as one non-reserving, non-actionable, non-refundable closed relic only when `canonical-work-amo-v5-pre-unit-relic-v1` proves its exact canonical event, position, payload, 1,251 data bytes, 3,890-proof miner fee, 546-proof registry payment, sale-ticket output, and both declarations. The original row stays replayable. Missing, duplicate, pointer-only, pending-spend, close-without-ticket-spend, or mismatched evidence suppresses it without manufacturing history or allowing stale snapshot fallback. A canonical spend of sale-ticket output 2 retires the relic; invalid events and other output spends do not.
-- AMO V5 replay classifies every raw Core protocol candidate and owns economic outputs transaction-wide before any relational projection is written. PWA and WORK registry payments require one qualifying output. The deterministic shared allocator applies only to ID, RUSH, and generic-credit registry-payment requirements; it never aggregates PWA, WORK-registry, or seller settlement, and seller settlement is one signed output covering price plus the returned anchor. Invalid-only transactions add no event value or miner fee. The activation H-1 state is the one legacy bootstrap; every later block opens from the prior raw transition's committed economic, WORK, generic-credit, and PowID closing states. Backfill binds each exact raw or deterministic-derived position to one replay outcome before persistence, so invalid audit rows cannot mutate derived state.
+- AMO V5 replay classifies every raw Core protocol candidate and owns economic outputs transaction-wide before any relational projection is written. PWA and WORK registry payments require one qualifying output. The deterministic shared allocator applies only to ID and generic-credit registry-payment requirements; it never aggregates PWA, WORK-registry, or seller settlement, and seller settlement is one signed output covering price plus the returned anchor. Invalid-only transactions add no event value or miner fee. The activation H-1 state is the one legacy bootstrap; every later block opens from the prior raw transition's committed economic, WORK, generic-credit, and PowID closing states. Backfill binds each exact raw or deterministic-derived position to one replay outcome before persistence, so invalid audit rows cannot mutate derived state.
 - V5 replay readiness does not require the original replaceable canonical-summary ledger row to remain present. It loads exactly one immutable `canonical-work-amo-v5-h-minus-one-seed-evidence-v1` row, recomputes its closed payload and sufficient-state commitments, proves its canonical height/hash and exact ledger metadata, and binds its historical summary id/hash/network-value Q8 to the completed V5 migration seed, bootstrap commitment, and first activation opening state. The historical summary identity is provenance only; a missing prunable summary row is not restored or synthesized. Duplicate, tampered, noncanonical, cross-network, or marker-divergent evidence fails closed.
 - That immutable H-1 bootstrap contains one evidence-bound historical carry under `canonical-work-amo-v5-legacy-bootstrap-carry-v1`, from invalid WORK listing tx `5eb0a876603a7551653806b932533dc27a884631a581caa2e36dcf129b8278e8`. The exact canonical evidence is height 959311/index 2552, protocol output 1, ordinal 0, block hash `000000000000000000005a63a2c00834b92746ab0658c9f0c98aeb509724e8f9`, and reason `work-market-v4-version-required`. The transaction contributes no valid marketplace activity, mutation fee, miner-fee flow, listing reservation, or derived state. Its 546-proof mutation payment and 2,216-proof miner cost survive only inside the already committed legacy-bootstrap basis. Valid outward marketplace fee/flow aliases exclude the 546 proofs and expose the reconciliation as `legacyBootstrapMarketplaceCarrySats: 546`, `legacyBootstrapSats: 2730`, `legacyBootstrapGrowthValueQ8: "273000000000"`, `legacyBootstrapCreditFixedSats: 2762`, and `legacyBootstrapCreditFixedQ8: "276200000000"`, with exact `workAmoV5LegacyBootstrap` evidence. Any evidence mismatch fails closed. The committed transition N/Q8 values remain unchanged; retroactively reseeding height 959620 requires a new on-chain protocol version.
 - AMO V5 counters are deliberately separate: physical decoded Core parts are `rawProtocolCandidateCount`; logical raw records after per-transaction PWM aggregation are `protocolRecordCount`; persisted raw plus deterministic zero-delta/no-claim/no-fee children are `eventCount`.
@@ -363,7 +362,6 @@ Current production behavior:
 - `work-floor`, `work-summary`, `growth-summary`, and `marketplace-summary` expose current USD from the live first-party BTC/USD quote. `actualValue.totalUsd` is live current USD; `actualValue.modelTotalUsd` is the Growth model USD projection. Consumers that publish current numbers should use `actualValue.totalUsd` plus the response's `btcUsd`, `btcUsdIndexedAt`, and `usdSource` metadata, not `modelTotalUsd`.
 - AMO flow in WORK/Growth accounting is seller sale volume plus market mutation fees from valid listing, seal, delisting, and buy events. For WORK sales, the sale price remains a trade metric and also contributes confirmed proof flow, while the WORK amount moved contributes live/frozen credit movement value. Seller sale volume remains separate from mutation-fee flow, and market mutation fees are excluded from generic Computer event flow to avoid double counting.
 - The WORK floor announcement is part of project history as ProofOfWork mail tx `cbb8a1b4af2ea8665129e799a85dfba31cea87ef38b9a99bcf198d827c12a58c`: `$work now has a permanent ProofOfWork Computer floor.` Live indexers determine whether that tx is pending or confirmed; once confirmed, ProofOfWork history is the permanent source.
-- The staged RUSH API scans the configured network registry for valid `pwr1:m:rush` mints that pay at least 1,000 proofs to the registry before OP_RETURN. Confirmed mint ordinals determine the phase reward; pending mints are visibility only.
 - The log API exposes a normalized ProofOfWork Computer feed for registrations, receiver updates, direct transfers, listings, seals, delistings, buyer-funded marketplace purchases, messages, replies, files, attachments, credit creations, credit mints, credit transfers, credit listings, and credit sales. Address, confirmed ID, txid, protocol kind, or app label search narrows that same log surface to a specific account or transaction. The log also reports total indexed ProofOfWork protocol bytes across discovered app records.
 - Browser renders ProofOfWork HTML by txid from either the `pwm1:m` message body or a verified `pwm1:a` file attachment. It does not introduce an outside carrier; attachments keep the same size/SHA-256 verification as Files/Desktop, and message-body HTML remains bound to the transaction that carries it.
 - Confirmed and pending Browser pages render as sanitized static HTML in an opaque sandbox. The renderer strips refresh/base/navigation URLs, neutralizes forms, permits only in-memory `data:`/`blob:` media, and applies a deny-all CSP so on-chain content cannot make external requests or reach a wallet signing lane.
@@ -449,44 +447,44 @@ The UI may accept confirmed ProofOfWork IDs in owner/receive fields, but `pwid1:
 `pwid1:delist5` cancels a listing by spending the sale ticket and paying the mutation fee. Historical `list2`/`buy2`/`delist2`, `list3`/`buy3`/`delist3`, and `list4`/`buy4`/`delist4` events remain readable for replay, but new marketplace writes use `list5`/`seal5`/`buy5`/`delist5`.
 Pending `pwid1:u`, `pwid1:t`, `pwid1:list5`, `pwid1:seal5`, `pwid1:delist5`, and `pwid1:buy5` events are exposed as in-flight changes for touched wallets. They do not change canonical owner/receiver routing until confirmed.
 
-## Staged Confessions Protocol
+## Staged Boost Protocol
 
-Confessions is staged as a separate ProofOfWork ID social meta protocol, not as a change to the canonical `pwid1:` registry. It is not a public production surface until separately approved.
+Boost is staged as a separate ProofOfWork ID social meta protocol, not as a change to the canonical `pwid1:` registry. It is not a public production surface until separately approved.
 
 Planned event shape:
 
 ```text
-pwc1:profile:<profile-json-base64url>
-pwc1:post:<post-json-base64url>
-pwc1:reply:<parent-txid>:<post-json-base64url>
-pwc1:like:<target-txid>
-pwc1:repost:<target-txid>
-pwc1:follow:<target-id-base64url>
-pwc1:tip:<target-id-base64url>:<amount-proofs>
-pwc1:hide:<target-txid>
+pwb1:profile:<profile-json-base64url>
+pwb1:post:<post-json-base64url>
+pwb1:reply:<parent-txid>:<post-json-base64url>
+pwb1:like:<target-txid>
+pwb1:repost:<target-txid>
+pwb1:follow:<target-id-base64url>
+pwb1:tip:<target-id-base64url>:<amount-proofs>
+pwb1:hide:<target-txid>
 ```
 
 Rules to preserve while implementing the live writer/indexer:
 
-- Confessions and reply text are capped at 140 user-visible characters.
-- Every confirmed PowID has a blank Confessions profile by default. The default location is `ProofOfWork`.
-- Profile metadata uses `pwc1:profile:<profile-json-base64url>` and requires 546 proofs to the profile owner's own confirmed PowID receiver. Newer confirmed profile proofs replace older profile fields.
-- Profile fields are capped at 50 characters for name, 160 for bio, 30 for location, and 100 for website. Birthday is optional. Profile banner images are Files-backed references capped at 100 KB and ride the same 546-proof `pwc1:profile` proof to the owner's own PowID receiver.
-- Post JSON may include links and one image attachment reference under 100 KB before encoding. The image bytes should be created through the ProofOfWork Files attachment layer, and Confessions should store only the file txid/proof/hash/size pointer. The final transaction must still fit the aggregate OP_RETURN carrier limit.
+- Boost and reply text are capped at 140 user-visible characters.
+- Every confirmed PowID has a blank Boost profile by default. The default location is `ProofOfWork`.
+- Profile metadata uses `pwb1:profile:<profile-json-base64url>` and requires 546 proofs to the profile owner's own confirmed PowID receiver. Newer confirmed profile proofs replace older profile fields.
+- Profile fields are capped at 50 characters for name, 160 for bio, 30 for location, and 100 for website. Birthday is optional. Profile banner images are Files-backed references capped at 100 KB and ride the same 546-proof `pwb1:profile` proof to the owner's own PowID receiver.
+- Post JSON may include links and one image attachment reference under 100 KB before encoding. The image bytes should be created through the ProofOfWork Files attachment layer, and Boost should store only the file txid/proof/hash/size pointer. The final transaction must still fit the aggregate OP_RETURN carrier limit.
 - Images should render inline in feeds and profiles from Files, while still exposing size/hash proof metadata in detailed views.
 - Confirmed ProofOfWork IDs are the account namespace.
-- The staged Confessions UI derives profile shells and payment receivers from confirmed `pwid1` registry records only; preview-only social accounts must not stand in for real PowIDs.
+- The staged Boost UI derives profile shells and payment receivers from confirmed `pwid1` registry records only; preview-only social accounts must not stand in for real PowIDs.
 - Pending IDs are visible but not routable social identities.
-- Likes, reposts, follows, and paid replies require at least 546 proofs to the immediate target's confirmed ProofOfWork ID receiver before the `pwc1:` OP_RETURN.
+- Likes, reposts, follows, and paid replies require at least 546 proofs to the immediate target's confirmed ProofOfWork ID receiver before the `pwb1:` OP_RETURN.
 - Following someone pays 546 proofs to that user's confirmed PowID receiver and creates the confirmed follow graph.
 - Tips pay a user-chosen amount to the target profile's confirmed PowID receiver.
 - Profiles should show confirmed followers, following, confirmed social proofs earned by source, pending social proofs separately, and the user's WORK balance when available.
 - Profiles should expose tabs for Posts, Replies, Likes, and Media. Reposts are inline profile timeline items in Posts, not a separate tab. Proofs/earnings stay in the profile summary.
-- Authors can archive/hide their own Confessions from default app/profile indexing with a 546-proof `pwc1:hide` event. The original record remains on-chain and can still appear in raw chain/log views.
+- Authors can archive/hide their own Boost from default app/profile indexing with a 546-proof `pwb1:hide` event. The original record remains on-chain and can still appear in raw chain/log views.
 - The Following timeline shows posts from followed PowIDs ordered by post time.
 - Likes, reposts, and replies are disabled until the target post or reply is confirmed.
 - A reply to a reply pays the immediate parent author, not automatically the original thread author.
-- Confirmed ProofOfWork history is canonical. Pending Confessions records are visibility only.
+- Confirmed ProofOfWork history is canonical. Pending Boost records are visibility only.
 - Wallet signing stays local; the API reads, indexes, verifies, and broadcasts already-signed transactions only.
 
 ## Run
@@ -520,13 +518,13 @@ To preview the public Browser locally:
 http://localhost:5173/?browser=1
 ```
 
-To preview the staged Confessions app locally:
+To preview the staged Boost app locally:
 
 ```text
-http://localhost:5173/?confessions=1
-http://localhost:5173/?confessions=1&view=home
-http://localhost:5173/?confessions=1&view=following
-http://localhost:5173/?confessions=1&view=profile&profile=proofofwork
+http://localhost:5173/?boost=1
+http://localhost:5173/?boost=1&view=home
+http://localhost:5173/?boost=1&view=following
+http://localhost:5173/?boost=1&view=profile&profile=proofofwork
 ```
 
 To preview the standalone AMO app locally:
@@ -558,12 +556,6 @@ To preview the Infinity and Inception Bond markets locally:
 ```text
 http://localhost:5173/?infinity=1
 http://localhost:5173/?inception=1
-```
-
-To preview the staged RUSH credit mint page locally:
-
-```text
-http://localhost:5173/?rush=1
 ```
 
 To preview the public Log locally:
@@ -631,7 +623,7 @@ To build the public Browser app for production:
 VITE_BROWSER_ONLY=1 VITE_POW_API_BASE=https://browser.proofofwork.me npm run build
 ```
 
-The staged Confessions app is local-only until separately approved. Do not add it to public navigation or production builds.
+The staged Boost app is local-only until separately approved. Do not add it to public navigation or production builds.
 
 To build the standalone AMO app for production:
 
@@ -667,12 +659,6 @@ To build the standalone Inception Bond / INCB market for production:
 
 ```bash
 VITE_INCEPTION_ONLY=1 VITE_POW_API_BASE=https://inception.proofofwork.me npm run build
-```
-
-To build the staged standalone RUSH credit mint page:
-
-```bash
-VITE_RUSH_ONLY=1 VITE_POW_API_BASE=https://rush.proofofwork.me npm run build
 ```
 
 To build the standalone Log app for production:
@@ -840,14 +826,13 @@ Important implementation points:
 - Root landing route switch: `isLandingRoute()` in `src/app/routeRegistry.ts`.
 - Public Desktop route switch: `isDesktopRoute()` in `src/app/routeRegistry.ts`.
 - Public Browser route switch: `isBrowserRoute()` in `src/app/routeRegistry.ts`.
-- Staged Confessions route switch: `isConfessionsRoute()` in `src/app/routeRegistry.ts`; it returns true only on local preview hosts unless launch scope changes.
+- Staged Boost route switch: `isBoostRoute()` in `src/app/routeRegistry.ts`; it returns true only on local preview hosts unless launch scope changes.
 - Standalone AMO route switch: `isMarketplaceRoute()` in `src/app/routeRegistry.ts` (retained internal compatibility name).
 - Standalone Credit route switch: `isTokenRoute()` in `src/app/routeRegistry.ts`.
 - Standalone Wallet route switch: `isWalletRoute()` in `src/app/routeRegistry.ts`.
 - Standalone WORK route switch: `isWorkTokenRoute()` in `src/app/routeRegistry.ts`.
 - Standalone Infinity route switch: `isInfinityRoute()` in `src/app/routeRegistry.ts`.
 - Standalone Inception route switch: `isInceptionRoute()` in `src/app/routeRegistry.ts`.
-- Staged RUSH route switch: `isRushRoute()` in `src/app/routeRegistry.ts`.
 - Log route switch: `isActivityRoute()` in `src/app/routeRegistry.ts`.
 - Growth route switch: `isGrowthRoute()` in `src/app/routeRegistry.ts`.
 - Live data contract: `scripts/check-live-data-contract.mjs`.
@@ -856,21 +841,20 @@ Important implementation points:
 - ID-only deploy switch: `VITE_ID_LAUNCH_ONLY=1`.
 - Desktop-only deploy switch: `VITE_DESKTOP_ONLY=1`.
 - Browser-only deploy switch: `VITE_BROWSER_ONLY=1`.
-- Confessions-only deploy switch: `VITE_CONFESSIONS_ONLY=1` for local/staged builds only.
+- Boost-only deploy switch: `VITE_BOOST_ONLY=1` for local/staged builds only.
 - AMO-only deploy switch: `VITE_MARKETPLACE_ONLY=1` (retained internal compatibility name).
 - Credit-only deploy switch: `VITE_TOKEN_ONLY=1`.
 - Wallet-only deploy switch: `VITE_WALLET_ONLY=1`.
 - WORK-only deploy switch: `VITE_WORK_TOKEN_ONLY=1`.
 - Infinity-only deploy switch: `VITE_INFINITY_ONLY=1`.
 - Inception-only deploy switch: `VITE_INCEPTION_ONLY=1`.
-- Staged RUSH-only deploy switch: `VITE_RUSH_ONLY=1`.
 - Log-only deploy switch: `VITE_LOG_ONLY=1`.
 - Growth-only deploy switch: `VITE_GROWTH_ONLY=1`.
 - ID registry constants: `ID_PROTOCOL_PREFIX`, `ID_REGISTRATION_PRICE_SATS`, `ID_MUTATION_PRICE_SATS`, and `ID_REGISTRY_ADDRESSES` in `src/App.tsx`.
 - Local contacts storage: `CONTACTS_KEY`, `loadContacts()`, `saveContacts()`, and `ContactsWorkspace` in `src/App.tsx`.
 - Public Desktop UI: `DesktopApp`, `DesktopWorkspace`, `publicDesktopMail()`, and `fetchAddressMail()` in `src/App.tsx`.
 - Public Browser UI: `BrowserApp`, `fetchBrowserPage()`, `browserPageFromTransaction()`, and `browserTemplateHtml()` in `src/App.tsx`.
-- Staged Confessions UI: `ConfessionsApp` in `src/features/confessions/ConfessionsApp.tsx`.
+- Staged Boost UI: `BoostApp` in `src/features/boost/BoostApp.tsx`.
 - In-app file preview UI: `AttachmentViewer`, `FileInspector`, `attachmentPreviewKind()`, and `attachmentText()` in `src/App.tsx`.
 - ID write format: `buildIdRegistrationPayload()`.
 - ID mutation formats: `buildIdReceiverUpdatePayload()` and `buildIdTransferPayload()`.

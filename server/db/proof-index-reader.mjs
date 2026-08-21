@@ -385,7 +385,6 @@ const PUBLIC_LOG_EVENT_KINDS = new Set([
   "infinity-bond",
   "mail",
   "reply",
-  "rush-mint",
   "token-create",
   "token-listing",
   "token-listing-closed",
@@ -8081,7 +8080,6 @@ async function proofIndexWorkPrecisionV2MigrationReadinessFullAudit(
       "pwa1",
       "pwid1",
       "pwm1",
-      "pwr1",
       "pwt1",
     ];
     const pendingProjectionEventResult = await client.query(
@@ -10256,7 +10254,7 @@ async function assertCurrentAmoV5CanonicalPositionUniqueness(pool, network) {
         AND event_row.op_return_vout >= 0
         AND event_row.record_ordinal >= 0
         AND event_row.protocol = ANY(
-          ARRAY['pwm1','pwa1','pwid1','pwr1','pwt1']::text[]
+          ARRAY['pwm1','pwa1','pwid1','pwt1']::text[]
         )
       GROUP BY
         event_row.block_height,
@@ -10396,7 +10394,7 @@ export async function proofIndexWorkAmoCanonicalEvents(
           AND event_row.status = 'confirmed'
           AND event_tx.status = 'confirmed'
           AND event_row.protocol = ANY(
-            ARRAY['pwm1','pwa1','pwid1','pwr1','pwt1']::text[]
+            ARRAY['pwm1','pwa1','pwid1','pwt1']::text[]
           )
           AND event_tx.block_height BETWEEN $2 AND $3
       )
@@ -10487,7 +10485,7 @@ export async function proofIndexWorkAmoCanonicalEvents(
       WHERE event_row.network = $1
         AND event_row.status = 'confirmed'
         AND event_row.protocol = ANY(
-          ARRAY['pwm1','pwa1','pwid1','pwr1','pwt1']::text[]
+          ARRAY['pwm1','pwa1','pwid1','pwt1']::text[]
         )
         AND event_row.block_height BETWEEN $2 AND $3
         AND (
@@ -12274,7 +12272,7 @@ export async function proofIndexWorkAmoReplayReadiness(
               WHERE duplicate_event.network = $1
                 AND duplicate_event.status = 'confirmed'
                 AND duplicate_event.protocol = ANY(
-                  ARRAY['pwm1','pwa1','pwid1','pwr1','pwt1']::text[]
+                  ARRAY['pwm1','pwa1','pwid1','pwt1']::text[]
                 )
                 AND duplicate_event.block_height BETWEEN $5 AND $3
                 AND duplicate_event.block_height >= 1
@@ -12581,7 +12579,7 @@ export async function proofIndexWorkAmoReplayReadiness(
           AND event_row.status = 'confirmed'
           AND event_tx.status = 'confirmed'
           AND event_row.protocol = ANY(
-            ARRAY['pwm1','pwa1','pwid1','pwr1','pwt1']::text[]
+            ARRAY['pwm1','pwa1','pwid1','pwt1']::text[]
           )
           AND event_tx.block_height BETWEEN $5 AND $3
       `,
@@ -19621,7 +19619,7 @@ function historyActivityKey(item) {
   const protocol = normalizedLowerText(item?.protocol);
   if (
     item?.confirmed !== true &&
-    ["pwm1", "pwa1", "pwid1", "pwr1", "pwt1"].includes(protocol)
+    ["pwm1", "pwa1", "pwid1", "pwt1"].includes(protocol)
   ) {
     const protocolVout = exactPositionInteger("protocolVout");
     const recordOrdinal = exactPositionInteger("recordOrdinal");
@@ -23820,229 +23818,6 @@ export async function proofIndexCanonicalStateMetaPayload(network) {
     return null;
   }
   return canonicalStateMetaFromPool(pool, network);
-}
-
-export async function proofIndexRushPayload(
-  network,
-  expectedHeight = 0,
-  options = {},
-) {
-  const pool = proofIndexPool();
-  if (!pool || network !== "livenet") {
-    return null;
-  }
-  const status = await proofIndexOperationalStatusPayload(network);
-  const indexedThroughBlock = Number(status?.indexedThroughBlock);
-  const indexedThroughBlockHash = String(status?.scan?.blockHash ?? "")
-    .trim()
-    .toLowerCase();
-  if (
-    (options.allowIncompleteScan !== true &&
-      status?.scan?.complete !== true) ||
-    !Number.isSafeInteger(indexedThroughBlock) ||
-    indexedThroughBlock <= 0 ||
-    (Number.isSafeInteger(Number(expectedHeight)) &&
-      Number(expectedHeight) > 0 &&
-      indexedThroughBlock !== Number(expectedHeight)) ||
-    !/^[0-9a-f]{64}$/u.test(indexedThroughBlockHash)
-  ) {
-    return null;
-  }
-
-  const markerResult = await pool.query(
-    `
-      SELECT value
-      FROM proof_indexer.meta
-      WHERE key = $1
-      LIMIT 1
-    `,
-    [`rushCanonicalBootstrap:${network}`],
-  );
-  const marker = objectRecord(markerResult.rows[0]?.value);
-  const bootstrapHeight = Number(marker?.indexedThroughBlock);
-  const bootstrapHash = normalizedLowerText(marker?.indexedThroughBlockHash);
-  const expectedMintCount = Number(marker?.mintCount);
-  if (
-    Number(marker?.version) !== 1 ||
-    marker?.network !== network ||
-    !Number.isSafeInteger(bootstrapHeight) ||
-    bootstrapHeight <= 0 ||
-    bootstrapHeight > indexedThroughBlock ||
-    !/^[0-9a-f]{64}$/u.test(bootstrapHash) ||
-    !Number.isSafeInteger(expectedMintCount) ||
-    expectedMintCount < 0
-  ) {
-    return null;
-  }
-
-  const result = await pool.query(
-    `
-      WITH bootstrap_block AS (
-        SELECT canonical
-        FROM proof_indexer.blocks
-        WHERE network = $1
-          AND height = $2
-          AND block_hash = $3
-        LIMIT 1
-      ),
-      rush_events AS (
-        SELECT
-          e.*,
-          rush_tx.status AS transaction_status,
-          COALESCE(rush_tx.status, e.status) AS effective_status,
-          rush_tx.block_height AS transaction_block_height,
-          rush_tx.block_index AS transaction_block_index,
-          rush_tx.block_hash AS block_hash,
-          rush_block.block_hash AS canonical_block_hash,
-          (
-            (
-              e.status = 'confirmed'
-              AND e.block_height IS NULL
-              AND rush_tx.block_height IS NULL
-            )
-            OR COALESCE(e.block_height, 0) >=
-              ${WORK_AMO_V5_ACTIVATION_HEIGHT}
-            OR COALESCE(rush_tx.block_height, 0) >=
-              ${WORK_AMO_V5_ACTIVATION_HEIGHT}
-          ) AS canonical_position_required,
-          count(*) FILTER (WHERE e.block_height <= $2) OVER ()::int AS bootstrap_mint_count
-        FROM proof_indexer.events e
-        LEFT JOIN proof_indexer.transactions rush_tx
-          ON rush_tx.network = e.network
-         AND rush_tx.txid = e.txid
-         AND rush_tx.status = 'confirmed'
-         AND rush_tx.block_height = e.block_height
-         AND rush_tx.block_index = e.block_index
-        LEFT JOIN proof_indexer.blocks rush_block
-          ON rush_block.network = rush_tx.network
-         AND rush_block.height = rush_tx.block_height
-         AND rush_block.block_hash = rush_tx.block_hash
-         AND rush_block.canonical = true
-        WHERE e.network = $1
-          AND e.protocol = 'pwr1'
-          AND e.kind = 'rush-mint'
-          AND e.status = 'confirmed'
-          AND e.valid = true
-          AND (e.block_height IS NULL OR e.block_height <= $4)
-      )
-      SELECT
-        rush_events.*,
-        COALESCE((SELECT canonical FROM bootstrap_block), false) AS bootstrap_canonical
-      FROM rush_events
-      ORDER BY
-        block_height ASC,
-        block_index ASC NULLS LAST,
-        op_return_vout ASC NULLS LAST,
-        record_ordinal ASC NULLS LAST,
-        txid ASC,
-        event_id ASC
-    `,
-    [network, bootstrapHeight, bootstrapHash, indexedThroughBlock],
-  );
-  const bootstrapMintCount = Number(
-    result.rows[0]?.bootstrap_mint_count ?? (expectedMintCount === 0 ? 0 : -1),
-  );
-  const bootstrapCanonical =
-    result.rows[0]?.bootstrap_canonical === true ||
-    (expectedMintCount === 0 &&
-      Boolean(
-        (
-          await pool.query(
-            `
-              SELECT 1
-              FROM proof_indexer.blocks
-              WHERE network = $1
-                AND height = $2
-                AND block_hash = $3
-                AND canonical = true
-              LIMIT 1
-            `,
-            [network, bootstrapHeight, bootstrapHash],
-          )
-        ).rows[0],
-      ));
-  const exactInteger = (value, minimum = 0) => {
-    if (value === undefined || value === null || value === "") {
-      return null;
-    }
-    const parsed =
-      typeof value === "number"
-        ? value
-        : typeof value === "string" && /^(?:0|[1-9][0-9]*)$/u.test(value)
-          ? Number(value)
-          : Number.NaN;
-    return Number.isSafeInteger(parsed) && parsed >= minimum ? parsed : null;
-  };
-  const canonicalPositionKeys = new Set();
-  const invalidCanonicalRow = result.rows.some((row) => {
-    const blockHeight = exactInteger(row.block_height, 1);
-    const blockIndex = exactInteger(row.block_index);
-    const transactionBlockHeight = exactInteger(
-      row.transaction_block_height,
-      1,
-    );
-    const transactionBlockIndex = exactInteger(
-      row.transaction_block_index,
-    );
-    const txid = normalizedLowerText(row.txid);
-    const blockHash = normalizedLowerText(row.block_hash);
-    const canonicalBlockHash = normalizedLowerText(
-      row.canonical_block_hash,
-    );
-    if (
-      normalizedLowerText(row.transaction_status) !== "confirmed" ||
-      blockHeight === null ||
-      blockIndex === null ||
-      transactionBlockHeight !== blockHeight ||
-      transactionBlockIndex !== blockIndex ||
-      !/^[0-9a-f]{64}$/u.test(txid) ||
-      !/^[0-9a-f]{64}$/u.test(blockHash) ||
-      canonicalBlockHash !== blockHash
-    ) {
-      return true;
-    }
-    if (blockHeight < WORK_AMO_V5_ACTIVATION_HEIGHT) {
-      return false;
-    }
-    const protocolVout = exactInteger(row.op_return_vout);
-    const recordOrdinal = exactInteger(row.record_ordinal);
-    if (protocolVout === null || recordOrdinal === null) {
-      return true;
-    }
-    const positionKey = [
-      blockHeight,
-      blockIndex,
-      protocolVout,
-      recordOrdinal,
-    ].join(":");
-    if (canonicalPositionKeys.has(positionKey)) {
-      return true;
-    }
-    canonicalPositionKeys.add(positionKey);
-    return false;
-  });
-  if (
-    !bootstrapCanonical ||
-    bootstrapMintCount !== expectedMintCount ||
-    invalidCanonicalRow ||
-    result.rows.some(
-      (row) =>
-        Number(row.block_height) > indexedThroughBlock ||
-        normalizedLowerText(row.protocol) !== "pwr1",
-    )
-  ) {
-    return null;
-  }
-
-  return {
-    bootstrap: marker,
-    indexedAt: status.indexedAt,
-    indexedThroughBlock,
-    indexedThroughBlockHash,
-    mints: result.rows.map((row) => eventRowPayload(row, network)),
-    network,
-    source: "proof-indexer-rush-canonical",
-  };
 }
 
 function canonicalCoreScriptType(type) {

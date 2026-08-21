@@ -388,7 +388,6 @@ const PUBLIC_LOG_EVENT_KINDS = new Set([
   "infinity-bond",
   "mail",
   "reply",
-  "rush-mint",
   "token-create",
   "token-listing",
   "token-listing-closed",
@@ -570,54 +569,8 @@ const MEMPOOL_SCAN_SEEN_LIMIT = Number(
   process.env.POW_INDEX_MEMPOOL_SCAN_SEEN_LIMIT ?? 10_000,
 );
 // Only protocols with a canonical block-scan parser/verifier belong here.
-// pwc1 remains staged. RUSH is indexed as an ordered, full-node-verified
-// stream so canonical summaries never need to replay its complete history.
-const PROTOCOL_PREFIXES = ["pwm1:", "pwa1:", "pwid1:", "pwr1:", "pwt1:"];
-const RUSH_PROTOCOL_PREFIX = "pwr1:";
-const RUSH_MINT_PAYLOAD = "pwr1:m:rush";
-const RUSH_REGISTRY_ADDRESS = "bc1qym392dfvfm024k7ukzlnvnpfvuu4kfqvu56w3e";
-const RUSH_MINT_PRICE_SATS = 1_000n;
-const RUSH_BOOTSTRAP_META_KEY = `rushCanonicalBootstrap:${NETWORK}`;
-const RUSH_DISCOVERY_META_KEY = `rushCanonicalDiscovery:${NETWORK}`;
-const RUSH_BOOTSTRAP_VERSION = 1;
-const RUSH_BOOTSTRAP_ONLY = process.argv.includes("--bootstrap-rush");
-const RUSH_BOOTSTRAP_ENABLED =
-  RUSH_BOOTSTRAP_ONLY ||
-  !/^(?:0|false|no|off)$/iu.test(
-    String(process.env.POW_INDEX_RUSH_BOOTSTRAP_ENABLED ?? "1"),
-  );
-const RUSH_BOOTSTRAP_BATCH_SIZE = Math.min(
-  1_000,
-  Math.max(
-    1,
-    Math.floor(
-      Number(process.env.POW_INDEX_RUSH_BOOTSTRAP_BATCH_SIZE ?? 250) || 250,
-    ),
-  ),
-);
-const RUSH_BOOTSTRAP_MAX_TXIDS = Math.max(
-  0,
-  Math.floor(
-    Number(
-      process.env.POW_INDEX_RUSH_BOOTSTRAP_MAX_TXIDS ??
-        (RUSH_BOOTSTRAP_ONLY ? 0 : RUSH_BOOTSTRAP_BATCH_SIZE),
-    ) || 0,
-  ),
-);
-const RUSH_ELECTRUM_HOST = String(
-  process.env.ELECTRUM_HOST ?? "127.0.0.1",
-).trim();
-const RUSH_ELECTRUM_PORT = Number(process.env.ELECTRUM_PORT ?? 50_001);
-const RUSH_ELECTRUM_TIMEOUT_MS = Math.min(
-  180_000,
-  Math.max(
-    10_000,
-    Math.floor(
-      Number(process.env.POW_INDEX_RUSH_ELECTRUM_TIMEOUT_MS ?? 120_000) ||
-        120_000,
-    ),
-  ),
-);
+// pwb1 remains staged until the Boost indexer/writer is enabled.
+const PROTOCOL_PREFIXES = ["pwm1:", "pwa1:", "pwid1:", "pwt1:"];
 const MAIL_ATTACHMENT_MAX_BYTES = 60_000;
 const INCLUDE_SCOPED_HOLDERS = !/^(?:0|false|no)$/iu.test(
   String(process.env.POW_INDEX_BACKFILL_HOLDERS ?? "1"),
@@ -749,7 +702,6 @@ function assertCanonicalRebuildConfiguration() {
     repairEventRelationsOnly,
     repairCanonicalMailProjectionOnly,
     REPAIR_WORK_PARTICIPANTS_ONLY,
-    RUSH_BOOTSTRAP_ONLY,
     AUDIT_WORK_ATOMS_ONLY,
     MIGRATE_WORK_ATOMS_ONLY,
     repairWorkAtomicEventsOnly,
@@ -862,7 +814,6 @@ function assertCanonicalRebuildConfiguration() {
       REPAIR_INCB_ISSUANCE_ONLY ||
       REPAIR_EVENT_RELATIONS_ONLY ||
       REPAIR_WORK_PARTICIPANTS_ONLY ||
-      RUSH_BOOTSTRAP_ONLY ||
       CANONICAL_REBUILD)
   ) {
     throw new Error(
@@ -1124,7 +1075,6 @@ function pendingOnlyBackfillMaintenanceMode() {
     repairCanonicalMailProjectionOnly ||
     REPAIR_WORK_PARTICIPANTS ||
     REPAIR_MINT_MINTERS ||
-    RUSH_BOOTSTRAP_ONLY ||
     AUDIT_WORK_ATOMS_ONLY ||
     MIGRATE_WORK_ATOMS_ONLY ||
     repairWorkAtomicEventsOnly ||
@@ -1450,7 +1400,6 @@ async function canonicalPwtRangeReplayRuntime(client) {
     MIGRATE_WORK_ATOMS_ONLY ||
     repairWorkAtomicEventsOnly ||
     VERIFY_WORK_ATOMS_POST_BOOTSTRAP_ONLY ||
-    RUSH_BOOTSTRAP_ONLY ||
     PREPARE_CANONICAL_REBUILD_ONLY ||
     REPAIR_CANONICAL_TXIDS_ONLY ||
     REPAIR_ID_TXIDS_ONLY ||
@@ -3657,7 +3606,6 @@ function protocolItemsFromTx(tx, message) {
     const invalidKind = {
       "pwa1:": "work-usd-quote",
       "pwid1:": "id-event",
-      "pwr1:": "rush-event",
       "pwt1:": "token-event",
     }[message?.prefix] ?? "protocol-event";
     return [
@@ -3762,42 +3710,6 @@ function protocolItemsFromTx(tx, message) {
       }];
     }
     return [{ ...base, id }];
-  }
-
-  if (message.prefix === "pwr1:") {
-    const base = baseProtocolItem(tx, message, "rush-mint");
-    const registryPaymentSats = (Array.isArray(base.recipients)
-      ? base.recipients
-      : []
-    ).reduce(
-      (total, recipient) =>
-        String(recipient?.address ?? "") === RUSH_REGISTRY_ADDRESS
-          ? total + BigInt(String(recipient?.amountSats ?? "0"))
-          : total,
-      0n,
-    );
-    const minterAddress = senderAddressFromTx(tx);
-    const item = {
-      ...base,
-      amountSats: RUSH_MINT_PRICE_SATS.toString(),
-      minterAddress,
-      paidSats: RUSH_MINT_PRICE_SATS.toString(),
-      registryAddress: RUSH_REGISTRY_ADDRESS,
-      validationMode: "canonical-ordered-rush-index",
-    };
-    if (
-      String(message.text ?? "") !== RUSH_MINT_PAYLOAD ||
-      !minterAddress ||
-      registryPaymentSats < RUSH_MINT_PRICE_SATS
-    ) {
-      return [
-        invalidProtocolItem(
-          item,
-          "Malformed RUSH mint or missing canonical registry payment.",
-        ),
-      ];
-    }
-    return [{ ...item, valid: true }];
   }
 
   if (message.prefix === "pwa1:") {
@@ -3926,11 +3838,6 @@ function protocolItemsFromTx(tx, message) {
 function rawProtocolItemsForTx(tx, messages) {
   const mailItem = aggregatePwmProtocolItem(tx, messages);
   const pwmMessages = messages.filter((message) => message?.prefix === "pwm1:");
-  const rushMessage =
-    messages.find(
-      (message) =>
-        message?.prefix === "pwr1:" && message?.text === "pwr1:m:rush",
-    ) ?? messages.find((message) => message?.prefix === "pwr1:");
   const invalidMailItem =
     pwmMessages.length > 0 && !mailItem
       ? invalidProtocolItem(
@@ -3957,7 +3864,6 @@ function rawProtocolItemsForTx(tx, messages) {
     ...(mailItem ? [mailItem] : []),
     ...(invalidMailItem ? [invalidMailItem] : []),
     ...canonicalBondMintItemsFromMailItem(mailItem),
-    ...(rushMessage ? protocolItemsFromTx(tx, rushMessage) : []),
     ...messages
       .filter((message) =>
         ["pwa1:", "pwid1:", "pwt1:"].includes(message?.prefix),
@@ -6288,7 +6194,6 @@ async function persistPreparedProtocolItems(client, preparedItems) {
         "pwm1",
         "pwa1",
         "pwid1",
-        "pwr1",
         "pwt1",
       ].includes(String(item?.protocol ?? "").trim().toLowerCase());
       const confirmedGoverned =
@@ -9457,9 +9362,6 @@ function protocolForItem(item, kind) {
   if (kind.startsWith("id") || item?.id || item?.ownerAddress || item?.receiveAddress) {
     return "pwid1";
   }
-  if (kind.startsWith("rush")) {
-    return "pwr1";
-  }
   if (
     ["mail", "reply", "file", "attachment", "browser"].includes(kind) ||
     Boolean(bondTagForKind(kind))
@@ -9616,7 +9518,6 @@ function stableEventKey({ item, kind, protocol, sourceLabel, txid }) {
     "pwm1",
     "pwa1",
     "pwid1",
-    "pwr1",
     "pwt1",
   ].includes(String(protocol ?? "").trim().toLowerCase());
   const confirmed =
@@ -11104,480 +11005,6 @@ async function persistCanonicalRawTransaction(
   });
 }
 
-function rushElectrumScriptHash() {
-  const script = bitcoin.address.toOutputScript(
-    RUSH_REGISTRY_ADDRESS,
-    bitcoin.networks.bitcoin,
-  );
-  return Buffer.from(createHash("sha256").update(script).digest())
-    .reverse()
-    .toString("hex");
-}
-
-function rushElectrumHistory() {
-  return new Promise((resolve, reject) => {
-    const socket = net.createConnection({
-      host: RUSH_ELECTRUM_HOST,
-      port: RUSH_ELECTRUM_PORT,
-    });
-    let buffer = "";
-    let settled = false;
-    const finish = (error, value) => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      clearTimeout(timer);
-      socket.destroy();
-      if (error) {
-        reject(error);
-      } else {
-        resolve(value);
-      }
-    };
-    const timer = setTimeout(
-      () => finish(new Error("RUSH Electrum history discovery timed out.")),
-      RUSH_ELECTRUM_TIMEOUT_MS,
-    );
-    socket.setKeepAlive(true, 30_000);
-    socket.setNoDelay(true);
-    socket.on("connect", () => {
-      socket.write(
-        `${JSON.stringify({
-          id: "rush-canonical-bootstrap",
-          jsonrpc: "2.0",
-          method: "blockchain.scripthash.get_history",
-          params: [rushElectrumScriptHash()],
-        })}\n`,
-      );
-    });
-    socket.on("data", (chunk) => {
-      buffer += chunk.toString("utf8");
-      if (Buffer.byteLength(buffer, "utf8") > 32 * 1024 * 1024) {
-        finish(new Error("RUSH Electrum history exceeded the response limit."));
-        return;
-      }
-      const newline = buffer.indexOf("\n");
-      if (newline < 0) {
-        return;
-      }
-      try {
-        const response = JSON.parse(buffer.slice(0, newline));
-        if (response?.error) {
-          finish(
-            new Error(
-              response.error.message ?? "RUSH Electrum history failed.",
-            ),
-          );
-          return;
-        }
-        if (!Array.isArray(response?.result)) {
-          finish(new Error("RUSH Electrum history returned an invalid result."));
-          return;
-        }
-        finish(null, response.result);
-      } catch (error) {
-        finish(error);
-      }
-    });
-    socket.on("error", (error) => finish(error));
-    socket.on("end", () => {
-      if (!settled) {
-        finish(new Error("RUSH Electrum history connection ended early."));
-      }
-    });
-  });
-}
-
-function canonicalRushHistoryEntries(history, indexedThroughBlock) {
-  if (!Number.isSafeInteger(indexedThroughBlock) || indexedThroughBlock <= 0) {
-    throw new Error("RUSH discovery requires a positive canonical checkpoint.");
-  }
-  const entriesByTxid = new Map();
-  for (const entry of Array.isArray(history) ? history : []) {
-    const txid = String(entry?.tx_hash ?? "").trim().toLowerCase();
-    const height = Number(entry?.height);
-    if (!isHexTxid(txid) || !Number.isSafeInteger(height)) {
-      throw new Error("RUSH Electrum history contains a malformed entry.");
-    }
-    if (height <= 0 || height > indexedThroughBlock) {
-      continue;
-    }
-    const previous = entriesByTxid.get(txid);
-    if (previous !== undefined && previous !== height) {
-      throw new Error(`RUSH history has conflicting heights for ${txid}.`);
-    }
-    entriesByTxid.set(txid, height);
-  }
-  return [...entriesByTxid]
-    .map(([txid, height]) => ({ height, txid }))
-    .sort(
-      (left, right) =>
-        left.height - right.height ||
-        compareCanonicalUtf8(left.txid, right.txid),
-    );
-}
-
-function rushDiscoveryHash(entries) {
-  return createHash("sha256").update(JSON.stringify(entries)).digest("hex");
-}
-
-async function validRushMintCountThroughHeight(client, height) {
-  const result = await client.query(
-    `
-      SELECT count(*)::int AS count
-      FROM proof_indexer.events
-      WHERE network = $1
-        AND protocol = 'pwr1'
-        AND kind = 'rush-mint'
-        AND status = 'confirmed'
-        AND valid = true
-        AND block_height <= $2
-    `,
-    [NETWORK, height],
-  );
-  return Number(result.rows[0]?.count ?? 0);
-}
-
-async function canonicalRushBootstrapIsComplete(client, checkpoint) {
-  const marker = await proofIndexerMetaValue(client, RUSH_BOOTSTRAP_META_KEY);
-  if (
-    marker?.version !== RUSH_BOOTSTRAP_VERSION ||
-    marker?.network !== NETWORK ||
-    marker?.registryAddress !== RUSH_REGISTRY_ADDRESS ||
-    !Number.isSafeInteger(Number(marker?.indexedThroughBlock)) ||
-    Number(marker.indexedThroughBlock) <= 0 ||
-    !isHexTxid(marker?.indexedThroughBlockHash) ||
-    Number(marker.indexedThroughBlock) > Number(checkpoint?.height) ||
-    !Number.isSafeInteger(Number(marker?.mintCount)) ||
-    Number(marker.mintCount) < 0
-  ) {
-    return null;
-  }
-  const canonicalHash = String(
-    await bitcoinRpc("getblockhash", [Number(marker.indexedThroughBlock)]),
-  )
-    .trim()
-    .toLowerCase();
-  if (canonicalHash !== marker.indexedThroughBlockHash) {
-    return null;
-  }
-  const mintCount = await validRushMintCountThroughHeight(
-    client,
-    Number(marker.indexedThroughBlock),
-  );
-  return mintCount === Number(marker.mintCount)
-    ? { ...marker, complete: true }
-    : null;
-}
-
-async function canonicalRushDiscovery(client, checkpoint) {
-  const stored = await proofIndexerMetaValue(client, RUSH_DISCOVERY_META_KEY);
-  if (
-    stored?.version === RUSH_BOOTSTRAP_VERSION &&
-    stored?.network === NETWORK &&
-    stored?.registryAddress === RUSH_REGISTRY_ADDRESS &&
-    Number.isSafeInteger(Number(stored?.indexedThroughBlock)) &&
-    Number(stored.indexedThroughBlock) > 0 &&
-    isHexTxid(stored?.indexedThroughBlockHash) &&
-    Array.isArray(stored?.entries) &&
-    Number.isSafeInteger(Number(stored?.cursor)) &&
-    Number(stored.cursor) >= 0 &&
-    Number(stored.cursor) <= stored.entries.length &&
-    stored?.historyHash === rushDiscoveryHash(stored.entries)
-  ) {
-    const canonicalHash = String(
-      await bitcoinRpc("getblockhash", [Number(stored.indexedThroughBlock)]),
-    )
-      .trim()
-      .toLowerCase();
-    if (canonicalHash === stored.indexedThroughBlockHash) {
-      return stored;
-    }
-  }
-
-  const history = await rushElectrumHistory();
-  const entries = canonicalRushHistoryEntries(history, checkpoint.height);
-  const checkpointHash = String(
-    await bitcoinRpc("getblockhash", [checkpoint.height]),
-  )
-    .trim()
-    .toLowerCase();
-  if (checkpointHash !== checkpoint.blockHash) {
-    throw new Error(
-      `RUSH discovery checkpoint ${checkpoint.height} changed before persistence.`,
-    );
-  }
-  const discovery = {
-    cursor: 0,
-    discoveredAt: new Date().toISOString(),
-    entries,
-    historyEntryCount: entries.length,
-    historyHash: rushDiscoveryHash(entries),
-    indexedTransactions: 0,
-    indexedThroughBlock: checkpoint.height,
-    indexedThroughBlockHash: checkpoint.blockHash,
-    network: NETWORK,
-    registryAddress: RUSH_REGISTRY_ADDRESS,
-    version: RUSH_BOOTSTRAP_VERSION,
-  };
-  await storeProofIndexerMeta(client, RUSH_DISCOVERY_META_KEY, discovery);
-  return discovery;
-}
-
-async function canonicalRushBootstrapTransaction(entry, blockCache) {
-  const height = Number(entry?.height);
-  const txid = String(entry?.txid ?? "").trim().toLowerCase();
-  if (!Number.isSafeInteger(height) || height <= 0 || !isHexTxid(txid)) {
-    throw new Error("RUSH bootstrap received an invalid history entry.");
-  }
-  const blockHash = String(await bitcoinRpc("getblockhash", [height]))
-    .trim()
-    .toLowerCase();
-  const raw = await rawTransactionFromCore(txid);
-  if (
-    !isHexTxid(blockHash) ||
-    !raw ||
-    Number(raw.confirmations) <= 0 ||
-    String(raw.blockhash ?? "").trim().toLowerCase() !== blockHash
-  ) {
-    throw new Error(`Bitcoin Core rejected RUSH transaction ${txid}.`);
-  }
-  const messages = protocolMessagesFromTx(raw).filter(
-    (message) => message?.prefix === RUSH_PROTOCOL_PREFIX,
-  );
-  if (messages.length === 0) {
-    return null;
-  }
-
-  // The registry history contains unrelated payments. Only actual pwr1
-  // candidates need a full block envelope, canonical transaction position,
-  // and input-prevout hydration.
-  if (!blockCache.has(height)) {
-    blockCache.set(
-      height,
-      (async () => {
-        const block = await bitcoinRpc("getblock", [blockHash, 1]);
-        const txids = Array.isArray(block?.tx) ? block.tx : [];
-        if (
-          !isHexTxid(blockHash) ||
-          String(block?.hash ?? "").trim().toLowerCase() !== blockHash ||
-          Number(block?.height) !== height ||
-          txids.length === 0 ||
-          txids.some((candidate) => !isHexTxid(candidate))
-        ) {
-          throw new Error(`Bitcoin Core returned an invalid RUSH block ${height}.`);
-        }
-        return { block, blockHash, txids };
-      })(),
-    );
-  }
-  const { block, txids } = await blockCache.get(height);
-  const blockIndex = txids.findIndex(
-    (candidate) => String(candidate).toLowerCase() === txid,
-  );
-  if (blockIndex < 0) {
-    throw new Error(`RUSH transaction ${txid} is absent from block ${height}.`);
-  }
-  const hydrated = await transactionWithInputPrevouts({
-    ...raw,
-    _powBlockHash: blockHash,
-    _powBlockIndex: blockIndex,
-    _powPreviousBlockHash: String(block?.previousblockhash ?? "")
-      .trim()
-      .toLowerCase(),
-    blocktime: block?.time,
-    height,
-  });
-  assertHydratedProtocolTransaction(hydrated);
-  const hydratedMessages = protocolMessagesFromTx(hydrated).filter(
-    (message) => message?.prefix === RUSH_PROTOCOL_PREFIX,
-  );
-  if (
-    hydratedMessages.length !== messages.length ||
-    hydratedMessages.some(
-      (message, index) =>
-        message.text !== messages[index]?.text ||
-        message.voutIndex !== messages[index]?.voutIndex,
-    )
-  ) {
-    throw new Error(`RUSH transaction ${txid} changed during hydration.`);
-  }
-  return {
-    block,
-    blockHash,
-    height,
-    hydrated,
-    items: await preparedProtocolItemsForTx(hydrated, hydratedMessages),
-    txid,
-  };
-}
-
-async function ensureCanonicalRushBootstrap(client) {
-  if (!RUSH_BOOTSTRAP_ENABLED || NETWORK !== "livenet") {
-    return {
-      complete: NETWORK !== "livenet",
-      disabled: true,
-      source: "rush-canonical-bootstrap",
-    };
-  }
-  const checkpoint = await latestBlockScanCheckpoint(client, {
-    useStoredCheckpoint: true,
-  });
-  if (!Number.isSafeInteger(checkpoint?.height) || !isHexTxid(checkpoint?.blockHash)) {
-    throw new Error("RUSH bootstrap requires a canonical block-scan checkpoint.");
-  }
-  const complete = await canonicalRushBootstrapIsComplete(client, checkpoint);
-  if (complete) {
-    return {
-      complete: true,
-      indexedThroughBlock: checkpoint.height,
-      mintCount: complete.mintCount,
-      source: "rush-canonical-bootstrap",
-    };
-  }
-
-  let discovery = await canonicalRushDiscovery(client, checkpoint);
-  let processedThisRun = 0;
-  while (
-    discovery.cursor < discovery.entries.length &&
-    (RUSH_BOOTSTRAP_MAX_TXIDS === 0 ||
-      processedThisRun < RUSH_BOOTSTRAP_MAX_TXIDS)
-  ) {
-    const remainingBudget =
-      RUSH_BOOTSTRAP_MAX_TXIDS === 0
-        ? RUSH_BOOTSTRAP_BATCH_SIZE
-        : Math.min(
-            RUSH_BOOTSTRAP_BATCH_SIZE,
-            RUSH_BOOTSTRAP_MAX_TXIDS - processedThisRun,
-          );
-    const entries = discovery.entries.slice(
-      discovery.cursor,
-      discovery.cursor + remainingBudget,
-    );
-    const blockCache = new Map();
-    const prepared = await boundedMapWithConcurrency(
-      entries,
-      PREVOUT_HYDRATION_CONCURRENCY,
-      (entry) => canonicalRushBootstrapTransaction(entry, blockCache),
-    );
-    const canonicalAtCommit = String(
-      await bitcoinRpc("getblockhash", [discovery.indexedThroughBlock]),
-    )
-      .trim()
-      .toLowerCase();
-    if (canonicalAtCommit !== discovery.indexedThroughBlockHash) {
-      throw new Error("RUSH bootstrap checkpoint changed before batch commit.");
-    }
-
-    await client.query("BEGIN");
-    try {
-      let indexedTransactions = Number(discovery.indexedTransactions) || 0;
-      for (const item of prepared.filter(Boolean)) {
-        await persistCanonicalBlock(
-          client,
-          item.block,
-          item.height,
-          item.blockHash,
-        );
-        await persistCanonicalRawTransaction(client, item.hydrated, {
-          blockHash: item.blockHash,
-          blockTime: item.block?.time,
-          height: item.height,
-        });
-        await removeVolatileProtocolEventsForCanonicalTransaction(
-          client,
-          item.txid,
-        );
-        await persistPreparedProtocolItems(client, item.items);
-        indexedTransactions += 1;
-      }
-      discovery = {
-        ...discovery,
-        cursor: discovery.cursor + entries.length,
-        indexedTransactions,
-        updatedAt: new Date().toISOString(),
-      };
-      await storeProofIndexerMeta(client, RUSH_DISCOVERY_META_KEY, discovery);
-      await client.query("COMMIT");
-    } catch (error) {
-      await client.query("ROLLBACK");
-      throw error;
-    }
-    processedThisRun += entries.length;
-    console.log(
-      JSON.stringify({
-        cursor: discovery.cursor,
-        historyEntryCount: discovery.entries.length,
-        indexedTransactions: discovery.indexedTransactions,
-        phase: "rush-canonical-bootstrap",
-      }),
-    );
-  }
-
-  if (discovery.cursor < discovery.entries.length) {
-    return {
-      complete: false,
-      cursor: discovery.cursor,
-      historyEntryCount: discovery.entries.length,
-      indexedTransactions: discovery.indexedTransactions,
-      source: "rush-canonical-bootstrap",
-    };
-  }
-
-  const canonicalHash = String(
-    await bitcoinRpc("getblockhash", [discovery.indexedThroughBlock]),
-  )
-    .trim()
-    .toLowerCase();
-  if (canonicalHash !== discovery.indexedThroughBlockHash) {
-    throw new Error("RUSH bootstrap checkpoint changed before completion.");
-  }
-  const mintCount = await validRushMintCountThroughHeight(
-    client,
-    discovery.indexedThroughBlock,
-  );
-  const marker = {
-    completedAt: new Date().toISOString(),
-    historyEntryCount: discovery.historyEntryCount,
-    historyHash: discovery.historyHash,
-    indexedThroughBlock: discovery.indexedThroughBlock,
-    indexedThroughBlockHash: discovery.indexedThroughBlockHash,
-    indexedTransactions: discovery.indexedTransactions,
-    mintCount,
-    network: NETWORK,
-    registryAddress: RUSH_REGISTRY_ADDRESS,
-    version: RUSH_BOOTSTRAP_VERSION,
-  };
-  const checkpointBlock = await bitcoinRpc("getblock", [canonicalHash, 1]);
-  if (
-    String(checkpointBlock?.hash ?? "").trim().toLowerCase() !== canonicalHash ||
-    Number(checkpointBlock?.height) !== discovery.indexedThroughBlock
-  ) {
-    throw new Error("Bitcoin Core returned an invalid RUSH completion block.");
-  }
-  await client.query("BEGIN");
-  try {
-    await persistCanonicalBlock(
-      client,
-      checkpointBlock,
-      discovery.indexedThroughBlock,
-      canonicalHash,
-    );
-    await storeProofIndexerMeta(client, RUSH_BOOTSTRAP_META_KEY, marker);
-    await client.query("COMMIT");
-  } catch (error) {
-    await client.query("ROLLBACK");
-    throw error;
-  }
-  return {
-    complete: true,
-    indexedThroughBlock: checkpoint.height,
-    mintCount,
-    source: "rush-canonical-bootstrap",
-  };
-}
-
 async function hydrateHistoricalCanonicalTransactionDetails(client) {
   let afterHeight = TX_DETAIL_HYDRATION_AFTER_HEIGHT;
   let afterBlockIndex = TX_DETAIL_HYDRATION_AFTER_BLOCK_INDEX;
@@ -12046,7 +11473,6 @@ async function upsertEvent(client, sourceLabel, item) {
     "pwm1",
     "pwa1",
     "pwid1",
-    "pwr1",
     "pwt1",
   ].includes(protocol);
   const eventKey = stableEventKey({
@@ -18201,7 +17627,7 @@ async function prepareCanonicalRebuild(client) {
         WHERE network = $1
           AND protocol = ANY($2::text[])
       `,
-      [NETWORK, ["pwid1", "pwt1", "pwm1", "pwa1", "pwr1"]],
+      [NETWORK, ["pwid1", "pwt1", "pwm1", "pwa1"]],
     );
     await client.query(`DELETE FROM proof_indexer.id_records WHERE network = $1`, [
       NETWORK,
@@ -18302,12 +17728,6 @@ async function prepareCanonicalRebuild(client) {
     ]);
     await client.query(`DELETE FROM proof_indexer.meta WHERE key = $1`, [
       `mempoolScan:${NETWORK}`,
-    ]);
-    await client.query(`DELETE FROM proof_indexer.meta WHERE key = ANY($1::text[])`, [
-      [
-        `rushCanonicalBootstrap:${NETWORK}`,
-        `rushCanonicalDiscovery:${NETWORK}`,
-      ],
     ]);
     await storeProofIndexerMeta(client, CANONICAL_REBUILD_META_KEY, value);
     await storeBlockScanSnapshot(client, {
@@ -20498,7 +19918,7 @@ export function bindPreparedTransactionsToWorkAmoV5Replay(
   preparedTransactions,
   transition,
 ) {
-  const protocols = new Set(["pwa1", "pwid1", "pwm1", "pwr1", "pwt1"]);
+  const protocols = new Set(["pwa1", "pwid1", "pwm1", "pwt1"]);
   const replayByPosition = new Map();
   for (const record of Array.isArray(transition?.replayRecords)
     ? transition.replayRecords
@@ -20755,7 +20175,7 @@ async function workAmoV5CanonicalBlockEventSet(client, transition) {
         AND event_row.status = 'confirmed'
         AND event_row.block_height = $2
         AND event_row.protocol = ANY(
-          ARRAY['pwm1','pwa1','pwid1','pwr1','pwt1']::text[]
+          ARRAY['pwm1','pwa1','pwid1','pwt1']::text[]
         )
       ORDER BY
         event_row.block_index,
@@ -24933,7 +24353,7 @@ async function persistExactWorkQ16PendingWitness(
       [
         NETWORK,
         stage.replayTxids,
-        ["pwa1", "pwid1", "pwm1", "pwr1", "pwt1"],
+        ["pwa1", "pwid1", "pwm1", "pwt1"],
       ],
     );
     const expectedStagedEventOutcomes =
@@ -25194,7 +24614,7 @@ async function persistExactWorkQ16PendingWitness(
         "WORK Q16 pending membership contains a malformed or unresolved persisted WORK row.",
       );
     }
-    const governedProtocols = ["pwa1", "pwid1", "pwm1", "pwr1", "pwt1"];
+    const governedProtocols = ["pwa1", "pwid1", "pwm1", "pwt1"];
     const projectionEventResult = await client.query(
       `
         SELECT
@@ -26541,7 +25961,7 @@ function assertWorkQ16PendingCompanionCoverage(
   companionPrepared,
   txid,
 ) {
-  const governedProtocols = new Set(["pwa1", "pwid1", "pwm1", "pwr1"]);
+  const governedProtocols = new Set(["pwa1", "pwid1", "pwm1"]);
   const records = (Array.isArray(rawRecords) ? rawRecords : []).filter(
     (record) => governedProtocols.has(normalizedLowerText(record?.protocol)),
   );
@@ -26777,7 +26197,7 @@ async function clearWorkQ16PendingStageDecision(client, txid) {
         AND event.protocol = ANY($3::text[])
         AND event.status IN ('pending', 'dropped', 'orphaned')
     `,
-    [NETWORK, txid, ["pwa1", "pwid1", "pwm1", "pwr1", "pwt1"]],
+    [NETWORK, txid, ["pwa1", "pwid1", "pwm1", "pwt1"]],
   );
   await client.query(
     `
@@ -30647,12 +30067,6 @@ if (DRY_RUN) {
         repairEventRelationsApply: REPAIR_EVENT_RELATIONS,
         repairEventRelationsOnly: REPAIR_EVENT_RELATIONS_ONLY,
         repairMintMinters: REPAIR_MINT_MINTERS,
-        rushBootstrap: {
-          batchSize: RUSH_BOOTSTRAP_BATCH_SIZE,
-          enabled: RUSH_BOOTSTRAP_ENABLED,
-          maxTxids: RUSH_BOOTSTRAP_MAX_TXIDS,
-          only: RUSH_BOOTSTRAP_ONLY,
-        },
         repairIdTxids: REPAIR_ID_TXIDS,
         repairIdTxidsOnly: REPAIR_ID_TXIDS_ONLY,
         repairIncbIssuance: REPAIR_INCB_ISSUANCE_ONLY,
@@ -30790,23 +30204,6 @@ try {
       } catch (error) {
         await client.query("ROLLBACK");
         throw error;
-      }
-    } else if (RUSH_BOOTSTRAP_ONLY) {
-      const rushBootstrap = await ensureCanonicalRushBootstrap(client);
-      console.log(
-        JSON.stringify(
-          {
-            apiBase: API_BASE,
-            network: NETWORK,
-            ok: rushBootstrap.complete === true,
-            rushBootstrap,
-          },
-          null,
-          2,
-        ),
-      );
-      if (rushBootstrap.complete !== true) {
-        process.exitCode = 1;
       }
     } else if (PREPARE_CANONICAL_PWT_RANGE_REPLAY_ONLY) {
       const prepared = await prepareCanonicalPwtRangeReplay(client);
@@ -30970,13 +30367,10 @@ try {
           ),
         );
       } else {
-        let rushBootstrap = null;
         if (!REPAIR_WORK_PARTICIPANTS_ONLY) {
           for (const source of SOURCES) {
             results.push(await backfillSource(client, source));
           }
-          rushBootstrap = await ensureCanonicalRushBootstrap(client);
-          results.push(rushBootstrap);
           results.push(await repairMailParticipants(client));
           results.push(await repairConfirmedListingSealMetadata(client));
         }
@@ -31005,16 +30399,11 @@ try {
           const canonicalSummaryRequiredCheckpoint =
             canonicalSummaryRequiredCheckpointFromEnv();
           const canonicalSummarySnapshot =
-            STORE_CANONICAL_SUMMARY_SNAPSHOT && rushBootstrap?.complete === true
+            STORE_CANONICAL_SUMMARY_SNAPSHOT
               ? await storeCanonicalSummarySnapshot(client, {
                   requiredCheckpoint: canonicalSummaryRequiredCheckpoint,
                 })
-              : STORE_CANONICAL_SUMMARY_SNAPSHOT
-                ? {
-                    reason: "rush-canonical-bootstrap-in-progress",
-                    skipped: true,
-                  }
-                : null;
+              : null;
           console.log(
             JSON.stringify(
               {

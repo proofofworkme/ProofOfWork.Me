@@ -90,7 +90,6 @@ import {
   isLandingRoute,
   isLocalPreviewHost,
   isMarketplaceRoute,
-  isRushRoute,
   isTokenRoute,
   isWalletRoute,
   isWorkTokenRoute,
@@ -101,26 +100,6 @@ import {
   CHAINED_MINT_MAX_COUNT,
   executeChainedMintRun,
 } from "./chained-mint";
-import { RushApp } from "./features/rush/RushApp";
-import {
-  buildRushMintPayload,
-  emptyRushState,
-  RUSH_CHAINED_MINT_DEFAULT_COUNT,
-  RUSH_CHAINED_MINT_DEFAULT_DELAY_MS,
-  RUSH_CHAINED_MINT_MAX_COUNT,
-  RUSH_CHAINED_MINT_MAX_DELAY_MS,
-  RUSH_MAX_REWARDED_MINTS,
-  RUSH_MINT_PRICE_SATS,
-  RUSH_PROTOCOL_PREFIX,
-  formatRushUnits,
-  rushPhaseForOrdinal,
-  rushRegistryAddressForNetwork,
-  rushRewardForOrdinal,
-  rushRewardUnitsForOrdinal,
-  rushStatsFromMints,
-  type RushMintRecord,
-  type RushState,
-} from "./features/rush/rushProtocol";
 import {
   canonicalWorkDecimal,
   formatWorkAmountAmo,
@@ -323,7 +302,6 @@ const STANDALONE_ROUTE_PARAMS = [
   "work",
   "infinity",
   "inception",
-  "rush",
   "log",
   "growth",
 ];
@@ -1118,8 +1096,7 @@ type PowActivityKind =
   | "token-listing-closed"
   | "token-sale"
   | "token-transfer"
-  | "token-event-invalid"
-  | "rush-mint";
+  | "token-event-invalid";
 
 type PowActivityItem = {
   amountSats?: number;
@@ -1467,8 +1444,6 @@ type PowRegistryState = {
   records: PowIdRecord[];
   sales: PowIdMarketplaceSale[];
 };
-
-type RushApiResponse = Partial<RushState>;
 
 type PowTokenApiResponse = Partial<PowTokenState> & {
   authoritativeWallet?: boolean;
@@ -6302,8 +6277,7 @@ function proofProtocolDataBytesForVout(vout: Array<Record<string, unknown>>) {
       (message) =>
         message.startsWith(PROTOCOL_PREFIX) ||
         message.startsWith(ID_PROTOCOL_PREFIX) ||
-        message.startsWith(TOKEN_PROTOCOL_PREFIX) ||
-        message.startsWith(RUSH_PROTOCOL_PREFIX),
+        message.startsWith(TOKEN_PROTOCOL_PREFIX),
     )
     .reduce(
       (total, message) => total + new TextEncoder().encode(message).byteLength,
@@ -6775,132 +6749,6 @@ function paymentOutputsBeforeTokenProtocol(
 
     return [{ address: output.scriptpubkey_address, amountSats: output.value }];
   });
-}
-
-function firstRushOutputIndex(vout: Array<Record<string, unknown>>) {
-  return vout.findIndex((output) => {
-    if (output.scriptpubkey_type !== "op_return") {
-      return false;
-    }
-
-    return decodedProtocolMessages([output], RUSH_PROTOCOL_PREFIX).some(
-      (message) => message === buildRushMintPayload(),
-    );
-  });
-}
-
-function rushPaymentAmountBeforeProtocol(
-  vout: Array<Record<string, unknown>>,
-  address: string,
-) {
-  const protocolIndex = firstRushOutputIndex(vout);
-  return vout.reduce((total, output, index) => {
-    if (
-      output.scriptpubkey_address === address &&
-      typeof output.value === "number" &&
-      output.value > 0 &&
-      (protocolIndex === -1 || index < protocolIndex)
-    ) {
-      return total + output.value;
-    }
-
-    return total;
-  }, 0);
-}
-
-function rushProtocolSortedTransactions(txs: Array<Record<string, unknown>>) {
-  return txs.slice().sort((left, right) => {
-    const leftConfirmed = transactionConfirmed(left);
-    const rightConfirmed = transactionConfirmed(right);
-    if (leftConfirmed !== rightConfirmed) {
-      return Number(rightConfirmed) - Number(leftConfirmed);
-    }
-
-    return (
-      (transactionBlockHeight(left) ?? Number.MAX_SAFE_INTEGER) -
-        (transactionBlockHeight(right) ?? Number.MAX_SAFE_INTEGER) ||
-      (transactionBlockIndex(left) ?? Number.MAX_SAFE_INTEGER) -
-        (transactionBlockIndex(right) ?? Number.MAX_SAFE_INTEGER) ||
-      String(transactionTxid(left)).localeCompare(String(transactionTxid(right)))
-    );
-  });
-}
-
-function rushStateFromTransactions(
-  txs: Array<Record<string, unknown>>,
-  registryAddress: string,
-  targetNetwork: BitcoinNetwork,
-): RushState {
-  const mints: RushMintRecord[] = [];
-  let confirmedOrdinal = 0;
-
-  for (const tx of rushProtocolSortedTransactions(txs)) {
-    const txid = transactionTxid(tx);
-    if (!txid || mints.some((mint) => mint.txid === txid)) {
-      continue;
-    }
-
-    const vin = Array.isArray(tx.vin)
-      ? (tx.vin as Array<Record<string, unknown>>)
-      : [];
-    const vout = Array.isArray(tx.vout)
-      ? (tx.vout as Array<Record<string, unknown>>)
-      : [];
-    const minterAddress = transactionInputAddresses(vin)[0] ?? "";
-    if (!isValidBitcoinAddress(minterAddress, targetNetwork)) {
-      continue;
-    }
-
-    const messages = decodedProtocolMessages(vout, RUSH_PROTOCOL_PREFIX);
-    if (!messages.includes(buildRushMintPayload())) {
-      continue;
-    }
-
-    const paidSats = rushPaymentAmountBeforeProtocol(vout, registryAddress);
-    if (paidSats < RUSH_MINT_PRICE_SATS) {
-      continue;
-    }
-
-    const confirmed = transactionConfirmed(tx);
-    const createdAt = new Date(tokenTransactionTime(tx)).toISOString();
-    const ordinal = confirmed ? (confirmedOrdinal += 1) : undefined;
-    const rewardOrdinal = ordinal ?? confirmedOrdinal + 1;
-    const rewardUnits = rushRewardUnitsForOrdinal(rewardOrdinal);
-    const phase = rushPhaseForOrdinal(rewardOrdinal);
-
-    mints.push({
-      amount: formatRushUnits(rewardUnits),
-      amountUnits: rewardUnits.toString(),
-      confirmed,
-      createdAt,
-      dataBytes: proofProtocolDataBytesForVout(vout),
-      minterAddress,
-      network: targetNetwork,
-      ordinal,
-      overflow: confirmed ? rewardUnits === 0n : false,
-      paidSats: RUSH_MINT_PRICE_SATS,
-      phase: phase?.phase,
-      registryAddress,
-      txid,
-    });
-  }
-
-  const sortedMints = mints.sort(
-    (left, right) =>
-      Number(right.confirmed) - Number(left.confirmed) ||
-      (right.ordinal ?? Number.MAX_SAFE_INTEGER) -
-        (left.ordinal ?? Number.MAX_SAFE_INTEGER) ||
-      Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
-      left.txid.localeCompare(right.txid),
-  );
-
-  return {
-    indexedAt: new Date().toISOString(),
-    mints: sortedMints,
-    network: targetNetwork,
-    registryAddress,
-    stats: rushStatsFromMints(sortedMints),
-  };
 }
 
 function normalizeTokenTicker(value: string) {
@@ -17280,34 +17128,6 @@ async function fetchGrowthSummary(
   };
 }
 
-async function fetchRushState(
-  targetNetwork: BitcoinNetwork,
-  fresh = false,
-): Promise<RushState> {
-  const registryAddress = rushRegistryAddressForNetwork(targetNetwork);
-  if (!registryAddress) {
-    return emptyRushState(targetNetwork);
-  }
-
-  const payload = await fetchProofApiJson<RushApiResponse>(
-    fresh ? "/api/v1/rush?fresh=1" : "/api/v1/rush",
-    targetNetwork,
-  );
-  return {
-    indexedAt:
-      typeof payload.indexedAt === "string"
-        ? payload.indexedAt
-        : new Date().toISOString(),
-    mints: Array.isArray(payload.mints) ? payload.mints : [],
-    network: targetNetwork,
-    registryAddress:
-      typeof payload.registryAddress === "string"
-        ? payload.registryAddress
-        : registryAddress,
-    stats: payload.stats ?? emptyRushState(targetNetwork).stats,
-  };
-}
-
 async function fetchUtxos(
   ownerAddress: string,
   ownerNetwork: BitcoinNetwork,
@@ -19521,7 +19341,6 @@ export default function App() {
     : infinityMode
       ? INFINITY_BOND_UI
       : undefined;
-  const rushMode = isRushRoute();
   const activityMode = isActivityRoute();
   const growthMode = isGrowthRoute();
   const mainnetRegistryMode =
@@ -19692,14 +19511,6 @@ export default function App() {
     useState(0);
   const [tokenMintAssistantRunning, setTokenMintAssistantRunning] =
     useState(false);
-  const [rushState, setRushState] = useState<RushState>(() => emptyRushState());
-  const [rushMintCount, setRushMintCount] = useState(
-    RUSH_CHAINED_MINT_DEFAULT_COUNT,
-  );
-  const [rushMintDelayMs, setRushMintDelayMs] = useState(
-    RUSH_CHAINED_MINT_DEFAULT_DELAY_MS,
-  );
-  const [rushMinting, setRushMinting] = useState(false);
   const [tokenAction, setTokenAction] = useState<
     "" | "buy" | "create" | "delist" | "list" | "mint" | "seal" | "split" | "split-transfer" | "transfer"
   >("");
@@ -19781,7 +19592,6 @@ export default function App() {
       !tokenMode &&
       !walletMode &&
       !workTokenMode &&
-      !rushMode &&
       !activityMode &&
       !infinityMode &&
       !inceptionMode &&
@@ -19882,9 +19692,7 @@ export default function App() {
                     ? "infinity"
                     : inceptionMode
                       ? "inception"
-                      : rushMode
-                        ? "rush"
-                        : activityMode
+                      : activityMode
                           ? "log"
                           : growthMode
                             ? "growth"
@@ -20009,7 +19817,6 @@ export default function App() {
   const verifiedActivityReadRef = useRef(false);
   const tokenMintAssistantActiveRef = useRef(false);
   const tokenMintAssistantTimerRef = useRef<number | undefined>(undefined);
-  const rushMintActiveRef = useRef(false);
   const activityHistoryPageRef =
     useRef<PowPaginatedApiResponse<PowActivityItem> | undefined>(undefined);
   const activityHistoryPagesRef = useRef(
@@ -22694,7 +22501,6 @@ export default function App() {
       workTokenMode ||
       infinityMode ||
       inceptionMode ||
-      rushMode ||
       activityMode ||
       growthMode
     ) {
@@ -22728,7 +22534,6 @@ export default function App() {
     infinityMode,
     landingMode,
     marketplaceMode,
-    rushMode,
     tokenMode,
     walletMode,
     workTokenMode,
@@ -23184,8 +22989,7 @@ export default function App() {
       walletMode ||
       workTokenMode ||
       infinityMode ||
-      inceptionMode ||
-      rushMode
+      inceptionMode
     ) {
       return;
     }
@@ -23237,7 +23041,6 @@ export default function App() {
     inceptionMode,
     infinityMode,
     network,
-    rushMode,
     tokenMode,
     walletMode,
     workTokenMode,
@@ -23261,8 +23064,7 @@ export default function App() {
       walletMode ||
       workTokenMode ||
       infinityMode ||
-      inceptionMode ||
-      rushMode
+      inceptionMode
     ) {
       return;
     }
@@ -23277,7 +23079,6 @@ export default function App() {
     mainnetRegistryMode,
     marketplaceMode,
     network,
-    rushMode,
     tokenMode,
     walletMode,
     workTokenMode,
@@ -23390,14 +23191,6 @@ export default function App() {
     activityMode,
     network,
   ]);
-
-  useEffect(() => {
-    if (!rushMode || !rushRegistryAddressForNetwork(network)) {
-      return;
-    }
-
-    void refreshRush(true);
-  }, [network, rushMode]);
 
   useEffect(() => {
     if (network !== "livenet" || !mailWorkFloorHydrationRequired) {
@@ -23873,25 +23666,6 @@ export default function App() {
           return;
         }
 
-        if (rushMode) {
-          const rushNetwork = rushRegistryAddressForNetwork(nextNetwork)
-            ? nextNetwork
-            : "livenet";
-          await ensureWalletNetwork(
-            window.unisat as UnisatWallet,
-            rushNetwork,
-            nextAddress,
-          );
-          const state = await fetchRushState(rushNetwork, true);
-          setNetwork(rushNetwork);
-          setRushState(state);
-          setStatus({
-            tone: "good",
-            text: `${shortAddress(nextAddress)} connected. RUSH mint ready.`,
-          });
-          return;
-        }
-
         if (mainnetWorkspaceMode) {
           await ensureWalletNetwork(wallet, "livenet", nextAddress);
           const state = await fetchIdRegistryState("livenet");
@@ -23962,7 +23736,6 @@ export default function App() {
     mainnetWorkspaceMode,
     marketplaceMode,
     network,
-    rushMode,
     standaloneBondConfig,
     tokenMode,
     walletMode,
@@ -24243,7 +24016,6 @@ export default function App() {
       workTokenMode ||
       infinityMode ||
       inceptionMode ||
-      rushMode ||
       activityMode ||
       growthMode
     ) {
@@ -24280,7 +24052,6 @@ export default function App() {
       workTokenMode ||
       infinityMode ||
       inceptionMode ||
-      rushMode ||
       activityMode ||
       growthMode
     ) {
@@ -25552,51 +25323,6 @@ export default function App() {
     return refreshPromise;
   }
 
-  async function refreshRush(silent = false, fresh = false) {
-    const requestWorkspaceKey = activeWorkspaceStatusKeyRef.current;
-    const registryAddress = rushRegistryAddressForNetwork(network);
-    if (!registryAddress) {
-      setRushState(emptyRushState(network));
-      if (!silent) {
-        setStatusForWorkspace(requestWorkspaceKey, {
-          tone: "idle",
-          text: `No RUSH registry configured for ${networkLabel(network)}.`,
-        });
-      }
-      return;
-    }
-
-    if (!silent) {
-      setBusyForWorkspace(requestWorkspaceKey, true);
-      setStatusForWorkspace(requestWorkspaceKey, {
-        tone: "idle",
-        text: "Scanning RUSH registry...",
-      });
-    }
-
-    try {
-      const state = await fetchRushState(network, fresh);
-      setRushState(state);
-      if (!silent) {
-        setStatusForWorkspace(requestWorkspaceKey, {
-          tone: "good",
-          text: `RUSH loaded. ${state.stats.confirmedMints.toLocaleString()} confirmed mint${state.stats.confirmedMints === 1 ? "" : "s"}, ${state.stats.pendingMints.toLocaleString()} pending.`,
-        });
-      }
-    } catch (error) {
-      if (!silent) {
-        setStatusForWorkspace(requestWorkspaceKey, {
-          tone: "bad",
-          text: errorMessage(error, "RUSH scan failed."),
-        });
-      }
-    } finally {
-      if (!silent) {
-        setBusyForWorkspace(requestWorkspaceKey, false);
-      }
-    }
-  }
-
   async function refreshWorkFloor(
     silent = false,
     fresh = !silent,
@@ -26331,36 +26057,9 @@ export default function App() {
       setSelectedKey("");
 
       if (!nextAddress) {
-        if (rushMode) {
-          const rushRegistry = rushRegistryAddressForNetwork(activeWalletNetwork);
-          setRushState(
-            rushRegistry
-              ? await fetchRushState(activeWalletNetwork, true)
-              : emptyRushState(activeWalletNetwork),
-          );
-        }
         setStatus({
           tone: "good",
           text: `${networkLabel(activeWalletNetwork)} ready.`,
-        });
-        return;
-      }
-
-      if (rushMode) {
-        const rushRegistry = rushRegistryAddressForNetwork(activeWalletNetwork);
-        if (!rushRegistry) {
-          setRushState(emptyRushState(activeWalletNetwork));
-          setStatus({
-            tone: "idle",
-            text: `No RUSH registry configured for ${networkLabel(activeWalletNetwork)}.`,
-          });
-          return;
-        }
-        const state = await fetchRushState(activeWalletNetwork, true);
-        setRushState(state);
-        setStatus({
-          tone: "good",
-          text: `${networkLabel(activeWalletNetwork)} ready. RUSH registry loaded.`,
         });
         return;
       }
@@ -30545,255 +30244,6 @@ export default function App() {
     }
   }
 
-  async function runRushChainedMint({
-    count,
-    delayMs,
-    onBroadcast,
-    requireActive,
-  }: {
-    count: number;
-    delayMs: number;
-    onBroadcast?: (completed: number, txid: string) => void;
-    requireActive: () => boolean;
-  }) {
-    const wallet = window.unisat;
-    if (!wallet?.signPsbt) {
-      throw new Error("UniSat signPsbt is not available.");
-    }
-    const mintNetwork = network;
-    const registryAddress = rushRegistryAddressForNetwork(mintNetwork);
-    if (!registryAddress) {
-      throw new Error(`No RUSH registry configured for ${networkLabel(mintNetwork)}.`);
-    }
-    await ensureWalletNetwork(wallet, mintNetwork, address);
-
-    const total = Math.min(
-      RUSH_CHAINED_MINT_MAX_COUNT,
-      Math.max(1, Math.floor(count)),
-    );
-    const payload = buildRushMintPayload();
-    const opReturnScripts = protocolOutputScripts([payload]);
-    const registryScript = scriptForAddress(
-      registryAddress,
-      mintNetwork,
-      "RUSH registry",
-    );
-    const changeScript = scriptForAddress(
-      address,
-      mintNetwork,
-      "Connected wallet",
-    );
-    const fixedOutputVbytes =
-      outputVbytesForScript(registryScript) +
-      opReturnScripts.reduce(
-        (totalVbytes, script) => totalVbytes + outputVbytesForScript(script),
-        0,
-      );
-    const changeOutputVbytes = outputVbytesForScript(changeScript);
-    const estimatedFeePerMint = Math.ceil(
-      estimateTxVbytes(1, fixedOutputVbytes + changeOutputVbytes) * feeRate,
-    );
-    const initialInputs = await selectChainedInitialInputs({
-      feeRate,
-      fromAddress: address,
-      network: mintNetwork,
-      totalRequiredSats:
-        total * RUSH_MINT_PRICE_SATS +
-        total * estimatedFeePerMint +
-        DUST_SATS,
-    });
-    const latestState = await fetchRushState(mintNetwork, true);
-    setRushState(latestState);
-    if (latestState.stats.nextOrdinal === null) {
-      throw new Error("RUSH rewarded supply is fully minted.");
-    }
-    const remainingRewarded =
-      RUSH_MAX_REWARDED_MINTS - latestState.stats.rewardedMints;
-    if (total > remainingRewarded) {
-      throw new Error(
-        `Only ${remainingRewarded.toLocaleString()} rewarded RUSH mint${remainingRewarded === 1 ? "" : "s"} remain. Lower the run count.`,
-      );
-    }
-
-    const result = await executeChainedMintRun<ChainedMintInput, RushMintRecord>({
-      buildAndBroadcastStep: async ({ currentInputs, index, isLast }) => {
-        if (!requireActive()) {
-          throw new Error("RUSH chained mint stopped.");
-        }
-
-        const paymentPsbt = buildChainedMintPsbt({
-          feeRate,
-          fixedOutputs: [
-            {
-              address: registryAddress,
-              amountSats: RUSH_MINT_PRICE_SATS,
-            },
-            { amountSats: 0, script: opReturnScripts[0] },
-          ],
-          fromAddress: address,
-          inputs: currentInputs,
-          isLast,
-          network: mintNetwork,
-        });
-        if (
-          paymentPsbt.dustFeeSats > 0 &&
-          !confirmDustFeeAbsorption({
-            dustFeeSats: paymentPsbt.dustFeeSats,
-            feeRate,
-            feeSats: paymentPsbt.feeSats,
-          })
-        ) {
-          throw new Error(dustFeeAbsorptionCanceledText());
-        }
-
-        setStatus({
-          tone: "idle",
-          text: `Waiting for UniSat signature ${index + 1}/${total}. Fee estimate: ${paymentPsbt.feeSats.toLocaleString()} proofs.`,
-        });
-        const broadcast = await signAndBroadcastPsbtDetailed({
-          broadcastStrategy: CHAINED_MINT_BROADCAST_STRATEGY,
-          inputCount: paymentPsbt.inputCount,
-          network: mintNetwork,
-          psbtHex: paymentPsbt.psbtHex,
-          signingAddress: address,
-          wallet,
-        });
-        const txid = broadcast.txid;
-        const ordinal = latestState.stats.rewardedMints + index + 1;
-        const rewardUnits = rushRewardUnitsForOrdinal(ordinal);
-        const phase = rushPhaseForOrdinal(ordinal);
-        const mint: RushMintRecord = {
-          amount: formatRushUnits(rewardUnits),
-          amountUnits: rewardUnits.toString(),
-          confirmed: false,
-          createdAt: new Date().toISOString(),
-          dataBytes: dataCarrierBytesForPayload(payload),
-          minterAddress: address,
-          network: mintNetwork,
-          overflow: rewardUnits === 0n,
-          paidSats: RUSH_MINT_PRICE_SATS,
-          phase: phase?.phase,
-          registryAddress,
-          txid,
-        };
-
-        setRushState((current) => {
-          const mints = current.mints.some((item) => item.txid === txid)
-            ? current.mints
-            : [mint, ...current.mints];
-          return {
-            ...current,
-            indexedAt: new Date().toISOString(),
-            mints,
-            stats: rushStatsFromMints(mints),
-          };
-        });
-        setStatus(
-          goodBroadcastStatus(
-            `RUSH mint ${index + 1}/${total} broadcast via ${broadcast.source}: ${shortAddress(txid)}.`,
-            txid,
-            mintNetwork,
-          ),
-        );
-
-        const nextInput = paymentPsbt.nextInput
-          ? { ...paymentPsbt.nextInput, txid }
-          : undefined;
-        return {
-          feeSats: paymentPsbt.feeSats,
-          nextInputs: nextInput ? [nextInput] : [],
-          pendingRecord: mint,
-          txid,
-        };
-      },
-      count: total,
-      delayMs,
-      initialInputs,
-      isActive: requireActive,
-      onProgress: (event) => {
-        if (event.kind === "broadcast") {
-          onBroadcast?.(event.index + 1, event.txid);
-        }
-      },
-    });
-
-    return result.txids;
-  }
-
-  async function mintRush(event?: FormEvent<HTMLFormElement>) {
-    event?.preventDefault();
-    if (!window.unisat) {
-      setStatus({ tone: "bad", text: "Connect UniSat first." });
-      return;
-    }
-    if (!window.unisat.signPsbt) {
-      setStatus({
-        tone: "bad",
-        text: "UniSat signPsbt is not available. Update UniSat and try again.",
-      });
-      return;
-    }
-    if (!address || !isValidBitcoinAddress(address, network)) {
-      setStatus({
-        tone: "bad",
-        text: `Connect a valid ${networkLabel(network)} wallet first.`,
-      });
-      return;
-    }
-    if (!rushRegistryAddressForNetwork(network)) {
-      setStatus({
-        tone: "bad",
-        text: `No RUSH registry configured for ${networkLabel(network)}.`,
-      });
-      return;
-    }
-    if (dataCarrierBytesForPayload(buildRushMintPayload()) > MAX_DATA_CARRIER_BYTES) {
-      setStatus({ tone: "bad", text: "RUSH mint OP_RETURN is over 100 KB." });
-      return;
-    }
-
-    const target = Math.min(
-      RUSH_CHAINED_MINT_MAX_COUNT,
-      Math.max(1, Math.floor(rushMintCount)),
-    );
-    const delayMs = Math.min(
-      RUSH_CHAINED_MINT_MAX_DELAY_MS,
-      Math.max(0, Math.floor(rushMintDelayMs)),
-    );
-
-    rushMintActiveRef.current = true;
-    setRushMinting(true);
-    setBusy(true);
-    setStatus({ tone: "idle", text: `Starting ${target} RUSH mint${target === 1 ? "" : "s"}...` });
-
-    try {
-      const txids = await runRushChainedMint({
-        count: target,
-        delayMs,
-        requireActive: () => rushMintActiveRef.current,
-      });
-      setStatus({
-        tone: "good",
-        text: `RUSH run broadcast ${txids.length.toLocaleString()} transaction${txids.length === 1 ? "" : "s"}.`,
-      });
-    } catch (error) {
-      setStatus({
-        tone: "bad",
-        text: errorMessage(error, "RUSH mint failed."),
-      });
-    } finally {
-      rushMintActiveRef.current = false;
-      setRushMinting(false);
-      setBusy(false);
-    }
-  }
-
-  function stopRushMint() {
-    rushMintActiveRef.current = false;
-    setRushMinting(false);
-    setStatus({ tone: "idle", text: "RUSH mint run stopped." });
-  }
-
   function clearTokenMintAssistantTimer() {
     if (tokenMintAssistantTimerRef.current !== undefined) {
       window.clearTimeout(tokenMintAssistantTimerRef.current);
@@ -31736,33 +31186,6 @@ export default function App() {
             label: workTokenMode ? "WORK market data" : "credit data",
           })
         }
-      />
-    );
-  }
-
-  if (rushMode) {
-    return (
-      <RushApp
-        accountStats={connectedAccountStats}
-        address={address}
-        busy={busy}
-        connectWallet={connectWallet}
-        disconnectWallet={disconnectWallet}
-        feeRate={feeRate}
-        hasUnisat={hasUnisat}
-        mintCount={rushMintCount}
-        mintDelayMs={rushMintDelayMs}
-        minting={rushMinting}
-        network={network}
-        onMint={mintRush}
-        onNetworkChange={chooseNetwork}
-        onRefresh={() => void refreshRush()}
-        onStopMint={stopRushMint}
-        setFeeRate={setFeeRate}
-        setMintCount={setRushMintCount}
-        setMintDelayMs={setRushMintDelayMs}
-        state={rushState}
-        status={status}
       />
     );
   }

@@ -17,7 +17,6 @@ const files = [
   "src/features/landing/LandingApp.tsx",
   "src/features/landing/LandingRoot.tsx",
   "src/main.tsx",
-  "src/features/rush/RushApp.tsx",
   "src/shared/activity/logHistoryCache.ts",
   "src/shared/api/proofApiClient.ts",
   "src/shared/api/proofApiReadState.ts",
@@ -480,7 +479,7 @@ const delistTokenListingSource = app.slice(
 );
 const buyTokenListingSource = app.slice(
   app.indexOf("async function buyTokenListing"),
-  app.indexOf("async function runRushChainedMint"),
+  app.indexOf("function clearTokenMintAssistantTimer"),
 );
 const canListTokenSource = app.slice(
   app.indexOf("const tokenListInput"),
@@ -2105,11 +2104,9 @@ expect(
   ) && !/<AppHeader[\s\S]*?onNetworkChange=\{setNetwork\}/.test(browserAppBlock),
 );
 const appStatusRow = contents.get("src/shared/components/AppStatusRow.tsx");
-const rushApp = contents.get("src/features/rush/RushApp.tsx");
 const appStatusRowUsages = app.match(/<AppStatusRow[\s\S]*?\/>/g) ?? [];
 const featureStatusRowUsages = [
   ...(landingApp.match(/<AppStatusRow[\s\S]*?\/>/g) ?? []),
-  ...(rushApp.match(/<AppStatusRow[\s\S]*?\/>/g) ?? []),
 ];
 expect("App pages do not opt out of compact shared nav", !/domainNavCompact=\{false\}/.test(app));
 expect("App pages do not duplicate the topbar class", !/className="topbar"/.test(app));
@@ -2121,8 +2118,7 @@ expect("shared status row component exists", /export function AppStatusRow/.test
 expect(
   "status row markup is centralized",
   (appStatusRow.match(/status-dot/g) || []).length === 1 &&
-    (app.match(/status-dot/g) || []).length === 0 &&
-    (rushApp.match(/status-dot/g) || []).length === 0,
+    (app.match(/status-dot/g) || []).length === 0,
 );
 expect("routes use shared AppStatusRow", appStatusRowUsages.length >= 9);
 expect(
@@ -2131,12 +2127,12 @@ expect(
 );
 expect(
   "feature route status rows are persistent",
-  featureStatusRowUsages.length >= 2 &&
+  featureStatusRowUsages.length >= 1 &&
     featureStatusRowUsages.every((usage) => /\bpersistent\b/.test(usage)),
 );
 expect(
   "routes do not duplicate status class templates",
-  !/className=\{`status /.test(app) && !/className=\{`status /.test(rushApp),
+  !/className=\{`status /.test(app),
 );
 expect(
   "shared status row has fixed height",

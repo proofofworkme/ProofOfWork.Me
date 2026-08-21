@@ -2949,7 +2949,7 @@ async function canonicalPositionAudit(client) {
         AND event_row.status = 'confirmed'
         AND transaction_row.status = 'confirmed'
         AND event_row.protocol = ANY(
-          ARRAY['pwm1','pwa1','pwid1','pwr1','pwt1']::text[]
+          ARRAY['pwm1','pwa1','pwid1','pwt1']::text[]
         )
         AND transaction_row.block_height >= $3
     `,
@@ -3164,7 +3164,7 @@ async function canonicalWorkAmoEventSetEvidence(
         WHERE event_row.network = 'livenet'
           AND event_row.status = 'confirmed'
           AND event_row.protocol = ANY(
-            ARRAY['pwm1','pwa1','pwid1','pwr1','pwt1']::text[]
+            ARRAY['pwm1','pwa1','pwid1','pwt1']::text[]
           )
           AND event_row.block_height BETWEEN $1 AND $2
           AND (
@@ -3536,7 +3536,7 @@ async function canonicalWorkAmoEventSetEvidence(
       WHERE event_row.network = 'livenet'
         AND event_row.status = 'confirmed'
         AND event_row.protocol = ANY(
-          ARRAY['pwm1','pwa1','pwid1','pwr1','pwt1']::text[]
+          ARRAY['pwm1','pwa1','pwid1','pwt1']::text[]
         )
         AND event_row.block_height BETWEEN $1 AND $2
     `,
@@ -5245,7 +5245,7 @@ export async function runWorkAmoV5Migration(
           WHERE
             status = 'confirmed'
             AND block_height >= 959621
-            AND protocol IN ('pwm1', 'pwa1', 'pwid1', 'pwr1', 'pwt1')
+            AND protocol IN ('pwm1', 'pwa1', 'pwid1', 'pwt1')
             AND block_index IS NOT NULL
             AND op_return_vout IS NOT NULL
         `,

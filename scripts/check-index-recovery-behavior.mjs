@@ -132,7 +132,6 @@ import {
   WORK_AMO_V5_PRE_UNIT_RELIC_LISTING_TXID,
   WORK_AMO_V5_PRE_UNIT_RELIC_PROTOCOL_VOUT,
   WORK_AMO_V5_PRE_UNIT_RELIC_RECORD_ORDINAL,
-  WORK_AMO_V5_RUSH_REGISTRY_ADDRESS,
   WORK_AMO_V5_TOKEN_INDEX_ADDRESS,
   WORK_AMO_V5_STATE_ORDER_MODEL,
   WORK_AMO_V5_UNIT_MODEL,
@@ -148,7 +147,6 @@ import {
   parseWorkAmoV5IdSaleAuthorization,
   parseWorkAmoV5PwmMessages,
   parseWorkAmoV5RawPwidRecord,
-  parseWorkAmoV5RawPwrRecord,
   parseWorkAmoV5RawPwtRecord,
   parseWorkAmoUsdQuoteRecord,
   selectWorkAmoV5DistinctRegistryPayment,
@@ -1216,7 +1214,6 @@ function isolatedFunction(path, name, globals = {}) {
       "workSummary",
     ],
     MIGRATE_WORK_ATOMS_ONLY: false,
-    RUSH_BOOTSTRAP_ONLY: false,
     VERIFY_WORK_ATOMS_POST_BOOTSTRAP_ONLY: false,
     console: {
       error() {},
@@ -17907,7 +17904,6 @@ check("Q16 staging fails closed for unknown or ambiguous marketplace scope", asy
   for (const companion of [
     { prefix: "pwa1:", text: "pwa1:usd1:fixture" },
     { prefix: "pwm1:", text: "pwm1:m:fixture" },
-    { prefix: "pwr1:", text: "pwr1:fixture" },
   ]) {
     assert.equal(
       await classify(clientWithRows([]), [workMintMessage, companion]),
@@ -17933,7 +17929,7 @@ check("Q16 staging fails closed for unknown or ambiguous marketplace scope", asy
   );
   assert.doesNotThrow(() =>
     assertStatefulCompanionIsolation(
-      [{ protocol: "pwa1" }, { protocol: "pwm1" }, { protocol: "pwr1" }],
+      [{ protocol: "pwa1" }, { protocol: "pwm1" }],
       listingId,
     )
   );
@@ -25176,368 +25172,6 @@ check("canonical registry state can replace a stale higher cached count", async 
   assert.equal(rejectArguments[0].records.length, payload.records.length);
 });
 
-check("indexed RUSH history is complete and ordered by canonical blocks", async () => {
-  const firstTxid = "1".repeat(64);
-  const secondTxid = "2".repeat(64);
-  const canonicalRushHistoryEntries = isolatedFunction(
-    BACKFILL_PATH,
-    "canonicalRushHistoryEntries",
-    { isHexTxid: (value) => /^[0-9a-f]{64}$/u.test(String(value)) },
-  );
-  assert.deepEqual(
-    JSON.parse(
-      JSON.stringify(
-        canonicalRushHistoryEntries(
-          [
-            { height: 100, tx_hash: secondTxid },
-            { height: 0, tx_hash: "3".repeat(64) },
-            { height: 102, tx_hash: "4".repeat(64) },
-            { height: 100, tx_hash: firstTxid },
-          ],
-          101,
-        ),
-      ),
-    ),
-    [
-      { height: 100, txid: firstTxid },
-      { height: 100, txid: secondTxid },
-    ],
-  );
-  assert.throws(
-    () =>
-      canonicalRushHistoryEntries(
-        [
-          { height: 100, tx_hash: firstTxid },
-          { height: 101, tx_hash: firstTxid },
-        ],
-        101,
-      ),
-    /conflicting heights/u,
-  );
-  const rushStateFromIndexedMintEvents = isolatedFunction(
-    API_PATH,
-    "rushStateFromIndexedMintEvents",
-    {
-      freshDataUnavailableError: (message) => new Error(message),
-      formatRushUnits: (units) => String(units),
-      isValidBitcoinAddress: (address) => address.startsWith("bc1"),
-      numericValue: (value) => Number(value ?? 0),
-      RUSH_MINT_PRICE_SATS: 1_000,
-      rushPhaseForOrdinal: (ordinal) => ({ phase: ordinal }),
-      rushRewardUnitsForOrdinal: (ordinal) => BigInt(ordinal * 10),
-      rushStatsFromMints: (mints) => ({ confirmedMints: mints.length }),
-    },
-  );
-  const indexedItem = (txid, blockIndex) => ({
-    blockHeight: 100,
-    blockIndex,
-    confirmed: true,
-    createdAt: "2026-01-01T00:00:00.000Z",
-    dataBytes: 11,
-    kind: "rush-mint",
-    minterAddress: `bc1minter${blockIndex}`,
-    paidSats: 1_000,
-    registryAddress: "bc1registry",
-    txid,
-    valid: true,
-    validationMode: "canonical-ordered-rush-index",
-  });
-  const state = rushStateFromIndexedMintEvents(
-    [indexedItem(firstTxid, 1), indexedItem(secondTxid, 0)],
-    "bc1registry",
-    "livenet",
-    "2026-01-02T00:00:00.000Z",
-  );
-  assert.deepEqual(
-    JSON.parse(
-      JSON.stringify(
-        state.mints.map((mint) => [mint.txid, mint.blockIndex, mint.ordinal]),
-      ),
-    ),
-    [
-      [firstTxid, 1, 2],
-      [secondTxid, 0, 1],
-    ],
-  );
-  assert.equal(state.stats.confirmedMints, 2);
-  assert.throws(
-    () =>
-      rushStateFromIndexedMintEvents(
-        [
-          {
-            ...indexedItem(firstTxid, 0),
-            validationMode: "unproven",
-          },
-        ],
-        "bc1registry",
-        "livenet",
-      ),
-    /not canonical/u,
-  );
-});
-
-check("canonical RUSH bootstrap replaces volatile rows before persistence and rolls back failures", async () => {
-  const checkpointHash = "a".repeat(64);
-  const itemBlockHash = "b".repeat(64);
-  const txid = "c".repeat(64);
-  async function runFixture({ failCleanup = false } = {}) {
-    const events = [];
-    const discovery = {
-      cursor: 0,
-      entries: [{ height: 90, txid }],
-      historyEntryCount: 1,
-      historyHash: "d".repeat(64),
-      indexedThroughBlock: 100,
-      indexedThroughBlockHash: checkpointHash,
-      indexedTransactions: 0,
-      network: "livenet",
-    };
-    const ensureCanonicalRushBootstrap = isolatedFunction(
-      BACKFILL_PATH,
-      "ensureCanonicalRushBootstrap",
-      {
-        NETWORK: "livenet",
-        PREVOUT_HYDRATION_CONCURRENCY: 1,
-        RUSH_BOOTSTRAP_BATCH_SIZE: 250,
-        RUSH_BOOTSTRAP_ENABLED: true,
-        RUSH_BOOTSTRAP_MAX_TXIDS: 0,
-        RUSH_BOOTSTRAP_META_KEY: "rush:bootstrap",
-        RUSH_BOOTSTRAP_VERSION: 1,
-        RUSH_DISCOVERY_META_KEY: "rush:discovery",
-        RUSH_REGISTRY_ADDRESS: "bc1rushregistry",
-        bitcoinRpc: async (method) => {
-          if (method === "getblockhash") return checkpointHash;
-          if (method === "getblock") {
-            return {
-              hash: checkpointHash,
-              height: 100,
-              time: 1_700_000_100,
-            };
-          }
-          throw new Error(`unexpected RPC method ${method}`);
-        },
-        canonicalRushBootstrapIsComplete: async () => null,
-        canonicalRushBootstrapTransaction: async () => ({
-          block: {
-            hash: itemBlockHash,
-            height: 90,
-            time: 1_700_000_090,
-          },
-          blockHash: itemBlockHash,
-          height: 90,
-          hydrated: { txid },
-          items: [{ item: { kind: "rush-mint", txid } }],
-          txid,
-        }),
-        canonicalRushDiscovery: async () => discovery,
-        isHexTxid: (value) => /^[0-9a-f]{64}$/u.test(String(value)),
-        latestBlockScanCheckpoint: async () => ({
-          blockHash: checkpointHash,
-          height: 100,
-        }),
-        boundedMapWithConcurrency: async (items, _concurrency, mapper) =>
-          Promise.all(items.map(mapper)),
-        persistCanonicalBlock: async (_client, _block, height) => {
-          events.push(`block:${height}`);
-        },
-        persistCanonicalRawTransaction: async () => {
-          events.push("raw");
-        },
-        persistPreparedProtocolItems: async () => {
-          events.push("persist");
-          return { indexed: 1, skipped: 0 };
-        },
-        removeVolatileProtocolEventsForCanonicalTransaction: async (
-          _client,
-          actualTxid,
-        ) => {
-          assert.equal(actualTxid, txid);
-          events.push("volatile-cleanup");
-          if (failCleanup) {
-            throw new Error("canonical volatile cleanup failed");
-          }
-          return 1;
-        },
-        storeProofIndexerMeta: async (_client, key) => {
-          events.push(`meta:${key}`);
-        },
-        validRushMintCountThroughHeight: async () => 1,
-      },
-    );
-    const client = {
-      async query(sql) {
-        events.push(String(sql).trim());
-        return { rows: [] };
-      },
-    };
-    return {
-      ensureCanonicalRushBootstrap,
-      events,
-      run: () => ensureCanonicalRushBootstrap(client),
-    };
-  }
-
-  const successful = await runFixture();
-  const result = await successful.run();
-  assert.equal(result.complete, true);
-  assert.ok(successful.events.indexOf("raw") >= 0);
-  assert.ok(
-    successful.events.indexOf("raw") <
-      successful.events.indexOf("volatile-cleanup"),
-  );
-  assert.ok(
-    successful.events.indexOf("volatile-cleanup") <
-      successful.events.indexOf("persist"),
-  );
-  assert.equal(
-    successful.events.filter((event) => event === "COMMIT").length,
-    2,
-  );
-
-  const failed = await runFixture({ failCleanup: true });
-  await rejection(
-    failed.run(),
-    (error) => /canonical volatile cleanup failed/u.test(error.message),
-  );
-  assert.ok(failed.events.includes("raw"));
-  assert.ok(failed.events.includes("volatile-cleanup"));
-  assert.equal(failed.events.includes("persist"), false);
-  assert.equal(failed.events.at(-1), "ROLLBACK");
-  assert.equal(failed.events.includes("COMMIT"), false);
-});
-
-check("partial RUSH reads require the explicit exact-checkpoint mode", async () => {
-  const blockHash = "9".repeat(64);
-  const bootstrapHash = "8".repeat(64);
-  let queries = 0;
-  let statusHeight = 101;
-  let statusHash = blockHash;
-  let marker = {
-    indexedThroughBlock: 100,
-    indexedThroughBlockHash: bootstrapHash,
-    mintCount: 1,
-    network: "livenet",
-    version: 1,
-  };
-  let eventRows = [
-    {
-      block_hash: bootstrapHash,
-      block_height: 100,
-      block_index: 0,
-      bootstrap_canonical: true,
-      bootstrap_mint_count: 1,
-      canonical_block_hash: bootstrapHash,
-      payload: { kind: "rush-mint", txid: "7".repeat(64) },
-      protocol: "pwr1",
-      transaction_block_height: 100,
-      transaction_block_index: 0,
-      transaction_status: "confirmed",
-      txid: "7".repeat(64),
-    },
-  ];
-  const pool = {
-    async query(sql) {
-      queries += 1;
-      if (String(sql).includes("SELECT value")) {
-        return {
-          rows: [{ value: marker }],
-        };
-      }
-      return { rows: eventRows };
-    },
-  };
-  const proofIndexRushPayload = isolatedFunction(
-    READER_PATH,
-    "proofIndexRushPayload",
-    {
-      eventRowPayload: (row) => row.payload,
-      normalizedLowerText: (value) => String(value ?? "").toLowerCase(),
-      objectRecord: (value) => value ?? {},
-      proofIndexOperationalStatusPayload: async () => ({
-        indexedAt: "2026-07-15T00:00:00.000Z",
-        indexedThroughBlock: statusHeight,
-        scan: { blockHash: statusHash, complete: false },
-      }),
-      proofIndexPool: () => pool,
-    },
-  );
-
-  assert.equal(await proofIndexRushPayload("livenet", 101), null);
-  assert.equal(queries, 0);
-  assert.equal(
-    await proofIndexRushPayload("livenet", 102, {
-      allowIncompleteScan: true,
-    }),
-    null,
-  );
-  assert.equal(queries, 0);
-  const accepted = await proofIndexRushPayload("livenet", 101, {
-    allowIncompleteScan: true,
-  });
-  assert.equal(accepted.indexedThroughBlock, 101);
-  assert.equal(accepted.indexedThroughBlockHash, blockHash);
-  assert.equal(accepted.mints.length, 1);
-  assert.equal(queries, 2);
-
-  const postV5BlockHash = "a".repeat(64);
-  const postV5TxidA = "b".repeat(64);
-  const postV5TxidB = "c".repeat(64);
-  statusHeight = WORK_AMO_V5_ACTIVATION_HEIGHT;
-  statusHash = postV5BlockHash;
-  marker = {
-    indexedThroughBlock: statusHeight,
-    indexedThroughBlockHash: postV5BlockHash,
-    mintCount: 2,
-    network: "livenet",
-    version: 1,
-  };
-  const postV5Row = (txid, recordOrdinal = 0) => ({
-    block_hash: postV5BlockHash,
-    block_height: statusHeight,
-    block_index: 3,
-    bootstrap_canonical: true,
-    bootstrap_mint_count: marker.mintCount,
-    canonical_block_hash: postV5BlockHash,
-    event_id: txid === postV5TxidA ? 1 : 2,
-    op_return_vout: 4,
-    payload: { kind: "rush-mint", txid },
-    protocol: "pwr1",
-    record_ordinal: recordOrdinal,
-    transaction_block_height: statusHeight,
-    transaction_block_index: 3,
-    transaction_status: "confirmed",
-    txid,
-  });
-  eventRows = [postV5Row(postV5TxidA), postV5Row(postV5TxidB)];
-  assert.equal(
-    await proofIndexRushPayload("livenet", statusHeight, {
-      allowIncompleteScan: true,
-    }),
-    null,
-    "duplicate post-V5 canonical positions must fail closed before mapping",
-  );
-
-  marker = { ...marker, mintCount: 1 };
-  eventRows = [postV5Row(postV5TxidA, null)].map((row) => ({
-    ...row,
-    bootstrap_mint_count: 1,
-  }));
-  assert.equal(
-    await proofIndexRushPayload("livenet", statusHeight, {
-      allowIncompleteScan: true,
-    }),
-    null,
-    "a NULL post-V5 RUSH record ordinal must fail closed",
-  );
-  const rushSource = topLevelFunctionSource(
-    READER_PATH,
-    "proofIndexRushPayload",
-  );
-  assert.match(rushSource, /rush_tx\.block_height = e\.block_height/u);
-  assert.match(rushSource, /rush_tx\.block_index = e\.block_index/u);
-  assert.match(rushSource, /rush_block\.canonical = true/u);
-});
-
 check("internal canonical routes require token, loopback socket, and loopback Host", () => {
   const token = "t".repeat(64);
   const internalVerifierRequestAllowed = isolatedFunction(
@@ -27927,7 +27561,6 @@ check("active range replay is fail-closed to one block-scan source", async () =>
     REPAIR_ID_TXIDS_ONLY: false,
     REPAIR_INCB_ISSUANCE_ONLY: false,
     REPAIR_WORK_PARTICIPANTS_ONLY: false,
-    RUSH_BOOTSTRAP_ONLY: false,
     STORE_CANONICAL_SUMMARY_SNAPSHOT: false,
     STORE_LEDGER_SNAPSHOT: false,
     VERIFY_WORK_ATOMS_POST_BOOTSTRAP_ONLY: false,
@@ -29227,55 +28860,19 @@ check("pwm1 outputs aggregate once while staged protocols stay unscanned", () =>
     {
       aggregatePwmProtocolItem,
       canonicalBondMintItemsFromMailItem: () => [],
-      protocolItemsFromTx: (_tx, message) =>
-        message?.prefix === "pwr1:"
-          ? [{ kind: "rush-mint", protocol: "pwr1" }]
-          : assert.fail("unexpected protocol reached the raw block-scan parser"),
+      protocolItemsFromTx: () =>
+        assert.fail("unexpected protocol reached the raw block-scan parser"),
     },
   );
   const aggregated = rawProtocolItemsForTx(
     { txid: "1".repeat(64) },
     [
       ...messages,
-      { prefix: "pwr1:", text: "pwr1:m:rush", voutIndex: 5 },
-      { prefix: "pwc1:", text: "pwc1:profile:staged", voutIndex: 6 },
+      { prefix: "pwb1:", text: "pwb1:profile:staged", voutIndex: 6 },
     ],
   );
-  assert.equal(aggregated.length, 2);
+  assert.equal(aggregated.length, 1);
   assert.equal(aggregated[0].amountSats, "1000");
-  assert.equal(aggregated[1].kind, "rush-mint");
-
-  const parseRush = isolatedFunction(BACKFILL_PATH, "protocolItemsFromTx", {
-    RUSH_MINT_PAYLOAD: "pwr1:m:rush",
-    RUSH_MINT_PRICE_SATS: 1_000n,
-    RUSH_REGISTRY_ADDRESS: "bc1rushregistry",
-    baseProtocolItem: () => ({
-      confirmed: true,
-      kind: "rush-mint",
-      recipients: [{ address: "bc1rushregistry", amountSats: "1000" }],
-      txid: "4".repeat(64),
-    }),
-    invalidProtocolItem: (item, reason) => ({
-      ...item,
-      kind: `${item.kind}-invalid`,
-      reason,
-      valid: false,
-    }),
-    senderAddressFromTx: () => "bc1rushminter",
-  });
-  const validRush = parseRush(
-    { txid: "4".repeat(64) },
-    { prefix: "pwr1:", text: "pwr1:m:rush", voutIndex: 2 },
-  );
-  assert.equal(validRush[0].kind, "rush-mint");
-  assert.equal(validRush[0].valid, true);
-  assert.equal(validRush[0].validationMode, "canonical-ordered-rush-index");
-  const invalidRush = parseRush(
-    { txid: "5".repeat(64) },
-    { prefix: "pwr1:", text: "pwr1:m:unknown", voutIndex: 2 },
-  );
-  assert.equal(invalidRush[0].kind, "rush-mint-invalid");
-  assert.equal(invalidRush[0].valid, false);
 
   const protocolMessagesFromTx = isolatedFunction(
     BACKFILL_PATH,
@@ -29295,13 +28892,11 @@ check("pwm1 outputs aggregate once while staged protocols stay unscanned", () =>
   };
   const scanned = protocolMessagesFromTx({
     vout: [
-      opReturn("pwr1:m:rush"),
-      opReturn("pwc1:profile:staged"),
+      opReturn("pwb1:profile:staged"),
       opReturn("pwm1:m:hello"),
     ],
   });
   assert.deepEqual(Array.from(scanned, (message) => message.prefix), [
-    "pwr1:",
     "pwm1:",
   ]);
 });
@@ -34437,7 +34032,6 @@ check("canonical rebuild reset and hashed bootstrap are one transaction", async 
     "pwt1",
     "pwm1",
     "pwa1",
-    "pwr1",
   ]);
   assert.ok(calls.includes("seed-work"));
   assert.ok(calls.includes("migrate-credit-units"));
@@ -50270,7 +49864,7 @@ check("AMO V5 current readers reject a globally duplicated canonical position", 
   assert.match(auditSql, /event_block\.canonical = true/u);
   assert.match(
     auditSql,
-    /ARRAY\['pwm1','pwa1','pwid1','pwr1','pwt1'\]/u,
+    /ARRAY\['pwm1','pwa1','pwid1','pwt1'\]/u,
   );
   assert.match(auditSql, /event_row\.status = 'confirmed'/u);
   assert.match(auditSql, /event_row\.block_height >= \$2/u);
@@ -50916,7 +50510,6 @@ check("AMO canonical OP_RETURN decoding is byte-exact, fatal, and shared", () =>
     "pwm1:",
     "pwa1:",
     "pwid1:",
-    "pwr1:",
     "pwt1:",
   ]) {
     const bytes = Buffer.from(`${prefix}fixture`, "utf8");
@@ -52369,7 +51962,7 @@ check("AMO V5 Core hydration preserves and replays a governed coinbase candidate
   );
   const blockHeight = WORK_AMO_V5_ACTIVATION_HEIGHT + 30;
   const previousBlockHash = "1".repeat(64);
-  const message = "pwr1:m:not-rush";
+  const message = "pwa1:not-usd";
   const scriptHex = rawAmoFixtureOpReturnScript(message);
   const raw = new bitcoin.Transaction();
   raw.version = 2;
@@ -52450,7 +52043,7 @@ check("AMO V5 Core hydration preserves and replays a governed coinbase candidate
   assert.equal(scanned.rawProtocolCandidateCount, 1);
   assert.equal(scanned.records.length, 1);
   const candidate = scanned.records[0];
-  assert.equal(candidate.protocol, "pwr1");
+  assert.equal(candidate.protocol, "pwa1");
   assert.equal(candidate.message, message);
   const emptyGenericState =
     normalizeWorkAmoV5RawGenericState({
@@ -52510,7 +52103,7 @@ check("AMO V5 Core hydration preserves and replays a governed coinbase candidate
   assert.equal(outcome?.valid, false);
   assert.equal(
     outcome?.reasonCode,
-    "work-amo-v5-raw-pwr-invalid",
+    "work-amo-v5-quote-payload-invalid",
   );
   assert.equal(replay.rawProtocolCandidateCount, 1);
   assert.equal(replay.protocolRecordCount, 1);
@@ -53882,21 +53475,6 @@ check("AMO V5 PWID raw parser matches live registration, update, and transfer se
   );
 });
 
-check("AMO V5 PWR raw parser accepts exactly the live rush payload", () => {
-  assert.deepEqual(
-    parseWorkAmoV5RawPwrRecord("pwr1:m:rush"),
-    { kind: "rush-mint", payload: "pwr1:m:rush" },
-  );
-  for (const payload of [
-    "",
-    "pwr1:m:RUSH",
-    "pwr1:m:rush:",
-    "pwr1:m:rush\n",
-  ]) {
-    assert.equal(parseWorkAmoV5RawPwrRecord(payload), null);
-  }
-});
-
 check("AMO V5 PWM parser preserves attachment, reply, and bond boundaries", () => {
   const parentTxid = "e".repeat(64);
   const ordinary = parseWorkAmoV5PwmMessages([
@@ -54793,132 +54371,6 @@ check("AMO V5 raw replay executes ID, generic-token, and WORK buys atomically", 
   assert.equal(queryCount, 2);
 });
 
-check("AMO V5 raw replay ignores malformed PWR before the first exact mint and charges its transaction once", () => {
-  const blockHeight = WORK_AMO_V5_ACTIVATION_HEIGHT + 2;
-  const blockHash = "9".repeat(64);
-  const priorBlockHash = "8".repeat(64);
-  const txid = "7".repeat(64);
-  const actorAddress = "1F1p9UEHuH5KTFR7Zsx93Khdrqhj6t5nFv";
-  const openingGenericState =
-    normalizeWorkAmoV5RawGenericState({
-      holders: [],
-      listings: [],
-      tokens: [],
-    });
-  const openingIdState = normalizeWorkAmoV5RawIdState({
-    listings: [],
-    records: [],
-  });
-  const openingWorkState = {
-    confirmedSupplyAtoms: "0",
-    holders: [],
-    listings: [],
-  };
-  const openingEconomicState = rawAmoOpeningEconomicStateFixture({
-    genericState: openingGenericState,
-    idState: openingIdState,
-    throughBlockHash: priorBlockHash,
-    throughBlockHeight: blockHeight - 1,
-    workState: openingWorkState,
-  });
-  const feeSats = 77;
-  const tx = {
-    vin: [{
-      prevout: { scriptpubkey_address: actorAddress },
-      txid: "6".repeat(64),
-      vout: 0,
-    }],
-    vout: [
-      {
-        scriptpubkey_address:
-          WORK_AMO_V5_RUSH_REGISTRY_ADDRESS,
-        value: 1_000,
-      },
-      { scriptpubkey: "6a", value: 0 },
-      { scriptpubkey: "6a", value: 0 },
-      { scriptpubkey: "6a", value: 0 },
-    ],
-  };
-  const messages = [
-    "pwr1:m:not-rush",
-    "pwr1:m:rush",
-    "pwr1:m:rush",
-  ];
-  const records = messages.map((message, index) =>
-    rawAmoRecordFixture({
-      blockHash,
-      blockHeight,
-      blockTransactionIndex: 1,
-      feeSats,
-      message,
-      protocol: "pwr1",
-      protocolVout: index + 1,
-      transactionProtocolRecordCount: messages.length,
-      tx,
-      txid,
-    }),
-  );
-  const replay = replayWorkAmoV5RawBlock({
-    expectedBlockHash: blockHash,
-    expectedBlockHeight: blockHeight,
-    expectedPreviousBlockHash: priorBlockHash,
-    openingEconomicState,
-    openingGenericState,
-    openingIdState,
-    openingWorkState,
-    records,
-  });
-  const malformed = replay.outcomes.get(`${txid}:1:0`);
-  const firstExact = replay.outcomes.get(`${txid}:2:0`);
-  const secondExact = replay.outcomes.get(`${txid}:3:0`);
-  assert.equal(malformed?.valid, false);
-  assert.equal(
-    malformed?.reasonCode,
-    "work-amo-v5-raw-pwr-invalid",
-  );
-  assert.equal(firstExact?.valid, true);
-  assert.deepEqual(firstExact?.stateDelta.baseContributions, [{
-    field: "computerEventFlowSats",
-    value: "1000",
-  }]);
-  assert.deepEqual(
-    firstExact?.stateDelta.economicOutputs.map(
-      ({ attributedSats, role, vout }) => ({
-        attributedSats,
-        role,
-        vout,
-      }),
-    ),
-    [{ attributedSats: "1000", role: "pwr-registry", vout: 0 }],
-  );
-  assert.equal(secondExact?.valid, false);
-  assert.equal(
-    secondExact?.reasonCode,
-    "work-amo-v5-duplicate-pwr-record",
-  );
-  assert.equal(
-    replay.economicState.baseState.computerEventFlowSats,
-    (
-      BigInt(
-        openingEconomicState.baseState.computerEventFlowSats,
-      ) + 1_000n
-    ).toString(),
-  );
-  assert.equal(replay.feeTransitions.length, 1);
-  assert.deepEqual(replay.feeTransitions[0], {
-    creditFixedQ8Added: (BigInt(feeSats) * 100_000_000n).toString(),
-    networkValueAfterQ8:
-      replay.feeTransitions[0].networkValueAfterQ8,
-    networkValueBeforeQ8:
-      replay.feeTransitions[0].networkValueBeforeQ8,
-    transitionChainCommitmentAfter:
-      replay.feeTransitions[0].transitionChainCommitmentAfter,
-    transactionMinerFeeSats: String(feeSats),
-    txid: records[0].txid,
-    valid: true,
-  });
-});
-
 check("AMO V5 raw replay rejects malformed attachment-only PWM without claims or fees", () => {
   const blockHeight = WORK_AMO_V5_ACTIVATION_HEIGHT + 5;
   const blockHash = "b".repeat(64);
@@ -55056,7 +54508,7 @@ check("AMO V5 backfill binds and persists raw PWM plus derived bond children wit
         mintAmount: "1",
         mintPriceSats: "1",
         registryAddress:
-          WORK_AMO_V5_RUSH_REGISTRY_ADDRESS,
+          WORK_AMO_V5_TOKEN_INDEX_ADDRESS,
         ticker: "POWB",
         tokenId: WORK_AMO_V5_POWB_TOKEN_ID,
       }],
@@ -62767,7 +62219,7 @@ check("AMO V5 canonical positions and immutable projections are schema-bound", (
   );
   for (const required of [
     /event_row\.record_ordinal IS NULL/u,
-    /duplicate_event\.protocol = ANY\(\s*ARRAY\['pwm1','pwa1','pwid1','pwr1','pwt1'\]::text\[\]\s*\)/u,
+    /duplicate_event\.protocol = ANY\(\s*ARRAY\['pwm1','pwa1','pwid1','pwt1'\]::text\[\]\s*\)/u,
     /duplicate_tx\.block_height = duplicate_event\.block_height/u,
     /duplicate_tx\.block_index = duplicate_event\.block_index/u,
     /duplicate_block\.canonical = true/u,
@@ -62992,7 +62444,6 @@ check("AMO V5 canonical positions and immutable projections are schema-bound", (
       "WORK_AMO_V5_V1_ACTIVATION_HEIGHT",
       "WORK_AMO_V5_ID_REGISTRY_ADDRESS",
       "WORK_AMO_V5_TOKEN_INDEX_ADDRESS",
-      "WORK_AMO_V5_RUSH_REGISTRY_ADDRESS",
       "WORK_AMO_V5_POWB_TOKEN_ID",
       "WORK_AMO_V5_INCB_TOKEN_ID",
     ]) {

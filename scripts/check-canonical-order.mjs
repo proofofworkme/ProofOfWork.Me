@@ -113,7 +113,6 @@ const requiredConsensusFunctions = new Map([
     [
       "canonicalIncbRangeReplayCompletionWitnesses",
       "canonicalPwtRangeReplayVerificationIsValid",
-      "canonicalRushHistoryEntries",
       "rebuildConfirmedCreditBalancesFromCanonicalEvents",
     ],
   ],

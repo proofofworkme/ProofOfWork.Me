@@ -5267,22 +5267,6 @@ pre {
   transition: width 160ms ease;
 }
 
-.rush-phase-list,
-.rush-mint-list {
-  display: grid;
-  gap: 8px;
-  min-width: 0;
-}
-
-.rush-phase-list .data-row {
-  grid-template-columns: minmax(0, 0.35fr) minmax(0, 1fr);
-}
-
-.rush-mint-list .data-row {
-  align-items: start;
-  grid-template-columns: minmax(0, 1fr) auto;
-}
-
 .pixel-stage {
   align-items: center;
   background: var(--surface-soft);

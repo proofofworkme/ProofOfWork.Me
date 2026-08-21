@@ -1,6 +1,6 @@
 # ProofOfWork OP_RETURN Infrastructure
 
-ProofOfWork.Me has a first-party OP_RETURN API layer for the existing `pwm1:` mail/files protocol, `pwid1:` ID registry protocol, `pwt1:` credit protocol, and the staged `pwr1:` RUSH mint protocol.
+ProofOfWork.Me has a first-party OP_RETURN API layer for the existing `pwm1:` mail/files protocol, `pwid1:` ID registry protocol, and `pwt1:` credit protocol.
 
 The current product direction is OP_RETURN only. Future protocol work should improve this OP_RETURN indexer and API before introducing any new carrier.
 
@@ -331,9 +331,9 @@ confirmed pass: it stops at a transaction boundary after its 30-second
 scheduling budget, verifies at most five protocol-bearing mempool txids per
 pass, and persists its rotating cursor so deferred candidates remain visible
 to later cycles. This pending-only child exits after the mempool source has
-persisted its transactions and scan cursor; it does not repeat the canonical
-RUSH bootstrap, relational repairs, holder backfill, ledger snapshot, or
-canonical-summary work already owned by the confirmed phase. A separate
+persisted its transactions and scan cursor; it does not repeat relational
+repairs, holder backfill, ledger snapshot, or canonical-summary work already
+owned by the confirmed phase. A separate
 90-second child watchdog terminates a pending pass that does not return after
 the cooperative budget, escalating from `SIGTERM` to `SIGKILL` after one
 second and waiting for child closure before the one-writer loop proceeds.
@@ -645,11 +645,10 @@ the node, database, or cache refresh is slower than the HTTP budget.
 When a new confirmed checkpoint outruns the stored summaries, the hot worker
 requests one authenticated internal bundle built from the canonical relational
 read models. The API validates the complete hashed checkpoint against Bitcoin
-Core and the Electrum header both before and after construction, requires exact
-conserved token balance/holder tables, and performs a fresh ordered RUSH
-registry read whose complete Electrum history is hydrated and ordered against
-canonical Core blocks. Each mandatory activity, registry, and token projection
-must independently cover the exact checkpoint. It then returns ledger, WORK,
+Core and the Electrum header both before and after construction and requires
+exact conserved token balance/holder tables. Each mandatory activity,
+registry, and token projection must independently cover the exact checkpoint.
+It then returns ledger, WORK,
 Growth, AMO, Infinity, Inception, and
 work-floor payloads bound to one snapshot ID. The
 publisher never derives valuation changes from aggregate DB event deltas.
@@ -1102,13 +1101,13 @@ fee is applied once after the final protocol record. A block projection is not
 published until its hash, every relevant position, every transition, and its
 resulting checkpoint have been verified.
 
-The raw block evaluator enumerates every Core `pwm1`, `pwa1`, `pwid1`, `pwr1`,
-and `pwt1` candidate before consulting any database projection. It owns one
+The raw block evaluator enumerates every Core `pwm1`, `pwa1`, `pwid1`, and
+`pwt1` candidate before consulting any database projection. It owns one
 claimed-vout set per transaction. A required reuse invalidates the later
 record; PWM claim-all also fails when there is no candidate output or any
 candidate was already claimed. PWA and WORK registry payments select the first
-qualifying single output in vout order and never aggregate. PWID, PWR, and
-non-WORK PWT registry-payment requirements use the shared deterministic
+qualifying single output in vout order and never aggregate. PWID and non-WORK
+PWT registry-payment requirements use the shared deterministic
 allocator: claim-all and constrained roles first, then larger requirements,
 with the smallest sufficient single output or a largest-first deterministic
 prefix. The allocator never funds or aggregates PWA, WORK-registry, or seller
@@ -1390,7 +1389,7 @@ exact `protocolVout`, lowercase even-length `scriptPubKeyHex` beginning with
 bind a deterministic derived-child witness plus their parent `derivedId` and
 recipient/output derivation; they never consume the raw parts a second time.
 Ordinary payment outputs may appear between PWM parts. Another governed
-`pwa1`, `pwid1`, `pwr1`, or `pwt1` candidate strictly between the first and
+`pwa1`, `pwid1`, or `pwt1` candidate strictly between the first and
 last PWM part makes the single PWM aggregate invalid and zero-delta with
 reason `work-amo-v5-raw-pwm-envelope-noncontiguous`; those intervening
 governed records still evaluate at their own canonical positions.
@@ -2033,7 +2032,7 @@ writer. Only positively proven non-WORK transactions may use that legacy path.
 Pending transactions that combine a WORK mutation with a `pwid1:` mutation are
 also fail-closed: the WORK stage does not yet commit the ordered pending-ID base,
 so it must not publish a cached or independently raced ID decision. Mixed WORK
-with `pwa1:`, `pwm1:`, or `pwr1:` remains admissible when every raw companion is
+with `pwa1:` or `pwm1:` remains admissible when every raw companion is
 covered by the same atomic publication.
 
 Publication runs in one serializable database transaction under the pending
@@ -2884,7 +2883,6 @@ On `localhost` and `127.0.0.1`, shared app navigation uses local route flags ins
 /?work=1
 /?infinity=1
 /?inception=1
-/?rush=1
 /?log=1
 /?growth=1
 ```
@@ -2903,12 +2901,9 @@ VITE_WALLET_ONLY=1 VITE_POW_API_BASE=https://wallet.proofofwork.me npm run build
 VITE_WORK_TOKEN_ONLY=1 VITE_POW_API_BASE=https://work.proofofwork.me npm run build
 VITE_INFINITY_ONLY=1 VITE_POW_API_BASE=https://infinity.proofofwork.me npm run build
 VITE_INCEPTION_ONLY=1 VITE_POW_API_BASE=https://inception.proofofwork.me npm run build
-VITE_RUSH_ONLY=1 VITE_POW_API_BASE=https://rush.proofofwork.me npm run build
 VITE_LOG_ONLY=1 VITE_POW_API_BASE=https://log.proofofwork.me npm run build
 VITE_GROWTH_ONLY=1 VITE_POW_API_BASE=https://growth.proofofwork.me npm run build
 ```
-
-RUSH remains staged behind explicit build/query flags and should not be added to public navigation or production domain routing until separately approved for launch.
 
 Local deploy builds can leave generated artifacts such as `dist/`, `.vite/`,
 and `.pow-api-cache/`. Treat them as rebuildable output/cache state. After
@@ -2942,8 +2937,6 @@ GET /api/v1/growth-summary?network=livenet
 GET /api/v1/consistency?network=livenet
 GET /api/v1/ledger-consistency?network=livenet
 GET /api/v1/prices/btc-usd?network=livenet
-GET /api/v1/rush?network=livenet
-GET /api/v1/rush?network=testnet4
 GET /api/v1/address/:address/mail?network=livenet
 GET /api/v1/address/:address/utxo?network=livenet
 GET /api/v1/tx/:txid?network=livenet
@@ -3026,8 +3019,8 @@ The log endpoint:
 - Starts from the canonical registry and all known ProofOfWork ID owner/receiver addresses.
 - Crawls the ProofOfWork mail/file address graph by reading `pwm1:` transactions, discovering senders and recipients, and expanding until the configured safety cap.
 - Supports server-backed search by address, confirmed ProofOfWork ID, txid, protocol kind, participant, token id, or app label against the same ledger-backed event set.
-- Exposes a normalized read-only log feed for registrations, receiver updates, direct transfers, listings, seals, delistings, buyer-funded marketplace transfers, messages, replies, files, attachments, credit creations, credit mints, credit transfers, credit listings, credit sales, and staged RUSH mints when enabled by the indexer.
-- Reports total indexed ProofOfWork protocol data bytes across all discovered app OP_RETURN payloads, including marketplace listing/seal/buy/delist records and staged RUSH mint records when enabled by the indexer.
+- Exposes a normalized read-only log feed for registrations, receiver updates, direct transfers, listings, seals, delistings, buyer-funded marketplace transfers, messages, replies, files, attachments, credit creations, credit mints, credit transfers, credit listings, and credit sales.
+- Reports total indexed ProofOfWork protocol data bytes across all discovered app OP_RETURN payloads, including marketplace listing/seal/buy/delist records.
 
 The Growth app:
 
@@ -3101,16 +3094,6 @@ The credit endpoint:
 - The WORK dashboard computes and displays this live floor from the same Growth inputs, using the first-party node-backed BTC/USD endpoint for USD translations. It also charts confirmed floor history from WORK deployment onward. The dashboard must keep the live floor visually separate from the credit's owner-set mint price.
 - Historical WORK floor announcement mail tx: `cbb8a1b4af2ea8665129e799a85dfba31cea87ef38b9a99bcf198d827c12a58c`. Its subject is `$work now has a permanent ProofOfWork Computer floor.` The tx status should be read from the node/API at runtime; docs preserve the txid and decoded intent, not a stale confirmation claim.
 - Treats pending credit records as visibility only; confirmed records are canonical.
-
-The staged RUSH endpoint:
-
-- Scans the configured RUSH registry address: `bc1qym392dfvfm024k7ukzlnvnpfvuu4kfqvu56w3e` on livenet and `tb1qyh9pgznpass4mjcl8qj9yxs3vvl9rnrk5gvw6q` on testnet4.
-- Reads confirmed and pending `pwr1:m:rush` records.
-- Requires at least 1,000 proofs paid to the RUSH registry before the RUSH OP_RETURN.
-- Credits the minter from the first input address.
-- Assigns canonical ordinals only to confirmed valid mints using block height, transaction position, and txid fallback ordering.
-- Computes the fixed 1,000,000,000 RUSH supply schedule across 50,000 rewarded mints: 50,000 RUSH for mints 1-5,000; 30,000 for 5,001-15,000; 18,000 for 15,001-30,000; 10,000 for 30,001-45,000; 6,000 for 45,001-50,000.
-- Treats pending RUSH records as visibility only; confirmed records are canonical.
 
 The mail endpoint:
 
@@ -3258,20 +3241,20 @@ tokens@proofofwork.me
 1L4xrDurN9VghknrbsSju2vQb6oXZe1Pbn
 ```
 
-Staged Confessions:
+Staged Boost:
 
 ```text
-pwc1:profile:<profile-json-base64url>
-pwc1:post:<post-json-base64url>
-pwc1:reply:<parent-txid>:<post-json-base64url>
-pwc1:like:<target-txid>
-pwc1:repost:<target-txid>
-pwc1:follow:<target-id-base64url>
-pwc1:tip:<target-id-base64url>:<amount-proofs>
-pwc1:hide:<target-txid>
+pwb1:profile:<profile-json-base64url>
+pwb1:post:<post-json-base64url>
+pwb1:reply:<parent-txid>:<post-json-base64url>
+pwb1:like:<target-txid>
+pwb1:repost:<target-txid>
+pwb1:follow:<target-id-base64url>
+pwb1:tip:<target-id-base64url>:<amount-proofs>
+pwb1:hide:<target-txid>
 ```
 
-Confessions is staged/local-only behind `/?confessions=1` and `VITE_CONFESSIONS_ONLY=1`. It is not a public production surface until separately approved. The live indexer/writer is not enabled yet. Planned validation keeps posts and replies capped at 140 user-visible characters, lets post JSON include links and one Files-backed image reference under 100 KB before encoding, resolves accounts through confirmed ProofOfWork IDs, and requires 546 proofs to the immediate social target's confirmed ID receiver for likes, reposts, follows, and paid replies. The staged UI derives profile shells and payment receivers from confirmed `pwid1` registry records only; preview-only social accounts must not masquerade as real PowIDs. Image bytes should be created through the ProofOfWork Files attachment layer, while Confessions records store the file txid/proof/hash/size pointer and render the image inline from Files. Every confirmed PowID has a blank Confessions profile by default with location defaulting to `ProofOfWork`; `pwc1:profile:<profile-json-base64url>` updates name, bio, location, website, optional birthday, and optional Files-backed banner reference by paying 546 proofs to the owner's own confirmed PowID receiver. Name is capped at 50 characters, bio at 160, location at 30, website at 100, and banner image references point to Files-backed images capped at 100 KB. Likes, reposts, and replies are disabled until the target record is confirmed. Follows create a confirmed follow graph and power a Following timeline ordered by post time. Tips pay any user-chosen amount to the target profile receiver. Profiles should expose followers, following, Posts/Replies/Likes/Media tabs, inline reposts in Posts, confirmed social proofs earned by source, pending social proofs separately, and WORK balance when available. A confirmed `pwc1:hide` event from the author pays 546 proofs and hides the target record from default app/profile indexes without deleting it from ProofOfWork. Replies to replies pay the parent reply author, not automatically the original post author.
+Boost is staged/local-only behind `/?boost=1` and `VITE_BOOST_ONLY=1`. It is not a public production surface until separately approved. The live indexer/writer is not enabled yet. Planned validation keeps posts and replies capped at 140 user-visible characters, lets post JSON include links and one Files-backed image reference under 100 KB before encoding, resolves accounts through confirmed ProofOfWork IDs, and requires 546 proofs to the immediate social target's confirmed ID receiver for likes, reposts, follows, and paid replies. The staged UI derives profile shells and payment receivers from confirmed `pwid1` registry records only; preview-only social accounts must not masquerade as real PowIDs. Image bytes should be created through the ProofOfWork Files attachment layer, while Boost records store the file txid/proof/hash/size pointer and render the image inline from Files. Every confirmed PowID has a blank Boost profile by default with location defaulting to `ProofOfWork`; `pwb1:profile:<profile-json-base64url>` updates name, bio, location, website, optional birthday, and optional Files-backed banner reference by paying 546 proofs to the owner's own confirmed PowID receiver. Name is capped at 50 characters, bio at 160, location at 30, website at 100, and banner image references point to Files-backed images capped at 100 KB. Likes, reposts, and replies are disabled until the target record is confirmed. Follows create a confirmed follow graph and power a Following timeline ordered by post time. Tips pay any user-chosen amount to the target profile receiver. Profiles should expose followers, following, Posts/Replies/Likes/Media tabs, inline reposts in Posts, confirmed social proofs earned by source, pending social proofs separately, and WORK balance when available. A confirmed `pwb1:hide` event from the author pays 546 proofs and hides the target record from default app/profile indexes without deleting it from ProofOfWork. Replies to replies pay the parent reply author, not automatically the original post author.
 
 ## Launch Rule
 

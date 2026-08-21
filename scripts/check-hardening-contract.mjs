@@ -302,8 +302,6 @@ for (const electrumLimit of [
   );
 }
 assert.match(apiService, /WALLET_SCOPED_INDEX_WAIT_MS=10000/u);
-assert.match(workerService, /POW_INDEX_RUSH_BOOTSTRAP_BATCH_SIZE=250/u);
-assert.match(workerService, /POW_INDEX_RUSH_ELECTRUM_TIMEOUT_MS=120000/u);
 assert.match(workerService, /ELECTRUM_HOST=172\.27\.0\.1/u);
 assert.match(workerService, /ELECTRUM_PORT=50001/u);
 
