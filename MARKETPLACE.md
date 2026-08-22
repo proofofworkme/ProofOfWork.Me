@@ -113,10 +113,10 @@ The on-chain declaration source for this rule is
 build:bond-hard-price-declaration` emits the exact declaration text plus the
 `pwm1:m:` protocol-record commitment. `npm run
 prepare:bond-hard-price-declaration` emits the local-wallet signing draft:
-input zero must spend the declared authority script, the transaction must carry
-the exact `pwm1:m:` declaration record, and it must include one pinned
-546-proof registry payment to `infinity@proofofwork.me` and one pinned
-546-proof registry payment to `inception@proofofwork.me`.
+input zero must spend the declared authority script and the transaction must
+carry the exact `pwm1:m:` declaration record. Mail recipients, self-send
+outputs, attached WORK, additional payments, and miner fee can signal value but
+are not declaration evidence and cannot change activation or listing terms.
 
 After the declaration confirms, record its canonical pins together:
 
@@ -129,16 +129,13 @@ BOND_HARD_PRICE_DECLARATION_MEMO_SHA256
 BOND_HARD_PRICE_DECLARATION_MEMO_BYTES
 BOND_HARD_PRICE_DECLARATION_PROTOCOL_VOUT
 BOND_HARD_PRICE_DECLARATION_RECORD_ORDINAL
-BOND_HARD_PRICE_DECLARATION_POWB_REGISTRY_PAYMENT_VOUT
-BOND_HARD_PRICE_DECLARATION_INCB_REGISTRY_PAYMENT_VOUT
 BOND_HARD_PRICE_ACTIVATION_HEIGHT
 BOND_HARD_PRICE_WRITES_ENABLED
 ```
 
 The authoritative declaration is the earliest exact valid declaration by
-confirmed block height and transaction index. Its exact carrier and each
-qualifying registry payment must be unambiguous; a later duplicate cannot move
-activation.
+confirmed block height and transaction index. Its exact carrier must be
+unambiguous; a later duplicate cannot move activation.
 
 This is intentionally different from governed WORK AMO units. WORK V8 admits
 only the declared 25,000-proof face and derives exact Q16 WORK subatoms at the

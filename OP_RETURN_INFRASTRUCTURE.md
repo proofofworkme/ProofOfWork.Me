@@ -2959,7 +2959,7 @@ The registry endpoint:
 - Keeps pending IDs visible but not routable.
 - Exposes confirmed and pending ID marketplace events, including `list5`, `seal5`, `buy5`, and `delist5`.
 - Exposes AMO sales data from valid `buy5` buyer-funded ID transfers: sale count and seller-price volume, split between confirmed canonical sales and pending mempool-visible sales. Legacy buy events remain replayable history but are not included in the public AMO metric.
-- Exposes Credits and Bonds AMO tabs over confirmed credit creations, mints, transfers, holders, registries, active sale-ticket listings, settled credit sales, and POWB/INCB hard-price bond sale-ticket books with Inception and Infinity sub-tabs. The POWB/INCB hard-price declaration source is `server/bond-hard-price-declaration.mjs`; `npm run build:bond-hard-price-declaration` emits its exact `pwm1:m:` commitment and `npm run prepare:bond-hard-price-declaration` emits the local-wallet signing draft.
+- Exposes Credits and Bonds AMO tabs over confirmed credit creations, mints, transfers, holders, registries, active sale-ticket listings, settled credit sales, and POWB/INCB hard-price bond sale-ticket books with Inception and Infinity sub-tabs. The POWB/INCB hard-price declaration source is `server/bond-hard-price-declaration.mjs`; `npm run build:bond-hard-price-declaration` emits its exact `pwm1:m:` commitment and `npm run prepare:bond-hard-price-declaration` emits the authority-input local-wallet signing draft.
 - Exposes registry records, pending events, listings, and registry-specific activity.
 
 The canonical livenet ledger payload:

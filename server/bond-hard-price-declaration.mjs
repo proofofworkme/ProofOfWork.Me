@@ -16,11 +16,9 @@ export const BOND_HARD_PRICE_DECLARATION_AUTHORITY_ADDRESS =
   "1F1p9UEHuH5KTFR7Zsx93Khdrqhj6t5nFv";
 export const BOND_HARD_PRICE_DECLARATION_AUTHORITY_SCRIPT_PUBKEY =
   "76a91499b91dd27a616a71c0a1e9db6a86ceb8cff284c588ac";
-export const BOND_HARD_PRICE_DECLARATION_MIN_PAYMENT_SATS = 546;
 export const BOND_HARD_PRICE_DECLARATION_TOKENS = Object.freeze([
   Object.freeze({
     displayName: "Infinity Bond",
-    registryAddress: "1H1arP2xpam6MZmHt6k1tB83stqVdH6ANK",
     registryId: "infinity@proofofwork.me",
     ticker: "POWB",
     tokenId:
@@ -28,7 +26,6 @@ export const BOND_HARD_PRICE_DECLARATION_TOKENS = Object.freeze([
   }),
   Object.freeze({
     displayName: "Inception Bond",
-    registryAddress: "16nhWuGM7irqp1yRK3rykz7tPTUeyZZD9a",
     registryId: "inception@proofofwork.me",
     ticker: "INCB",
     tokenId:
@@ -47,17 +44,16 @@ export function buildBondHardPriceDeclarationText() {
     `tokens=${BOND_HARD_PRICE_DECLARATION_TOKENS.map((token) => token.ticker).join(",")}`,
     `declarationAuthorityAddress=${BOND_HARD_PRICE_DECLARATION_AUTHORITY_ADDRESS}`,
     `declarationAuthorityScriptPubKey=${BOND_HARD_PRICE_DECLARATION_AUTHORITY_SCRIPT_PUBKEY}`,
-    `declarationMinimumRegistryPaymentProofs=${BOND_HARD_PRICE_DECLARATION_MIN_PAYMENT_SATS}`,
     ...BOND_HARD_PRICE_DECLARATION_TOKENS.flatMap((token) => [
       `${token.ticker.toLowerCase()}DisplayName=${token.displayName}`,
       `${token.ticker.toLowerCase()}TokenId=${token.tokenId}`,
       `${token.ticker.toLowerCase()}RegistryId=${token.registryId}`,
-      `${token.ticker.toLowerCase()}DeclarationRegistryAddress=${token.registryAddress}`,
     ]),
     "declarationPurpose=declares the canonical livenet AMO rule for hard-price POWB and INCB bond listings",
-    "declarationEvidenceRule=this declaration is valid only when its transaction is confirmed and canonical, input zero spends the declared authority scriptPubKey, the pinned POWB and INCB registry outputs each pay at least the declared minimum to their declared registry address, and the pinned protocol output and record contain this exact declaration text",
-    "declarationSelectionRule=the earliest exact valid declaration transaction by confirmed block height then transaction index is authoritative; its exact carrier and each qualifying registry payment output must be unambiguous, and a later duplicate cannot move activation",
+    "declarationEvidenceRule=this declaration is valid only when its transaction is confirmed and canonical, input zero spends the declared authority scriptPubKey, and the pinned protocol output and record contain this exact declaration text",
+    "declarationSelectionRule=the earliest exact valid declaration transaction by confirmed block height then transaction index is authoritative; its exact carrier must be unambiguous, and a later duplicate cannot move activation",
     "activation=the first confirmed block after this declaration transaction",
+    "valueSignalRule=mail recipients, self-send outputs, attached WORK, additional payments, and miner fee can signal value but are not declaration evidence and cannot change activation or listing terms",
     "quantityRule=the seller chooses any positive whole POWB or INCB quantity; the quantity is not constrained to a WORK face or fixed lot size",
     "priceRule=the seller chooses an exact positive integer total proof price; the listing does not derive price from floor, network value, or current WORK value",
     "hardPriceRule=confirmation freezes the signed pwt-sale-v1 quantity, price, seller, optional buyer lock, nonce, expiry, and ticket anchor",
@@ -68,7 +64,7 @@ export function buildBondHardPriceDeclarationText() {
     "amountStorageRule=POWB and INCB listing quantities are exact whole-token integers under their reserved synthetic assets",
     "issuanceSeparationRule=POWB and INCB issuance remains bound to confirmed Infinity Bond and Inception Bond projections; generic pwt1:create or pwt1:mint events cannot issue these reserved assets",
     "surfaceRule=AMO shows hard-price bond sale tickets in the Bonds tab with separate Inception and Infinity books; the Credits tab remains the non-bond credit and governed WORK market surface",
-    "readinessFailureRule=declaration-evidence mismatch, incomplete pins, exact-tip disagreement, ambiguous carrier, ambiguous registry payment, or disabled protocol writes pauses official hard-price bond listing admission",
+    "readinessFailureRule=declaration-evidence mismatch, incomplete pins, exact-tip disagreement, ambiguous carrier, or disabled protocol writes pauses official hard-price bond listing admission",
     "implementationRule=the open-source ProofOfWork.Me computer enforces this rule from canonical confirmed ProofOfWork state; pending mempool visibility is informational only",
   ].join("\n");
 }
@@ -115,34 +111,19 @@ export function bondHardPriceDeclarationOnChainDraft() {
       declarationMemoSha256: commitment.protocolRecordSha256,
       declarationProtocolVout: "<vout containing exact pwm1:m record>",
       declarationRecordOrdinal: 0,
-      declarationRegistryPaymentVouts: Object.freeze(
-        Object.fromEntries(
-          BOND_HARD_PRICE_DECLARATION_TOKENS.map((token) => [
-            token.ticker.toLowerCase(),
-            `<vout paying ${token.registryAddress}>`,
-          ]),
-        ),
-      ),
       declarationTxid: "<confirmed declaration txid>",
     }),
-    minimumRegistryPaymentSats:
-      BOND_HARD_PRICE_DECLARATION_MIN_PAYMENT_SATS,
     network: BOND_HARD_PRICE_DECLARATION_NETWORK,
+    optionalValueSignals: Object.freeze([
+      "mail recipients",
+      "self-send outputs",
+      "attached WORK",
+      "additional payments",
+      "miner fee",
+    ]),
     protocolRecord: commitment.protocolRecord,
     protocolRecordBytes: commitment.protocolRecordBytes,
     protocolRecordSha256: commitment.protocolRecordSha256,
-    registryPayments: Object.freeze(
-      BOND_HARD_PRICE_DECLARATION_TOKENS.map((token) =>
-        Object.freeze({
-          address: token.registryAddress,
-          minimumPaymentSats:
-            BOND_HARD_PRICE_DECLARATION_MIN_PAYMENT_SATS,
-          registryId: token.registryId,
-          ticker: token.ticker,
-          tokenId: token.tokenId,
-        }),
-      ),
-    ),
     subjectRecord: bondHardPriceDeclarationSubjectRecord(),
   });
 }
@@ -208,30 +189,6 @@ export function bondHardPriceDeclarationCarrierEvidence(
   });
 }
 
-function outputAddress(output) {
-  return String(
-    output?.scriptpubkey_address ??
-      output?.scriptPubKey?.address ??
-      (Array.isArray(output?.scriptPubKey?.addresses)
-        ? output.scriptPubKey.addresses[0]
-        : "") ??
-      "",
-  ).trim();
-}
-
-function outputValueSats(output) {
-  const value = output?.value;
-  if (Number.isSafeInteger(value) && value >= 0) {
-    return value;
-  }
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric) || numeric < 0) {
-    return null;
-  }
-  const sats = Math.round(numeric * 100_000_000);
-  return Number.isSafeInteger(sats) ? sats : null;
-}
-
 function firstInputPrevoutScriptPubKey(transaction) {
   return String(
     transaction?.vin?.[0]?.prevout?.scriptpubkey ??
@@ -248,7 +205,6 @@ export function bondHardPriceDeclarationTransactionEvidence(
     commitment = bondHardPriceDeclarationCommitment(),
     protocolVout,
     recordOrdinal,
-    registryPaymentVouts = {},
   } = {},
 ) {
   const carrier = bondHardPriceDeclarationCarrierEvidence(transaction, {
@@ -257,54 +213,11 @@ export function bondHardPriceDeclarationTransactionEvidence(
     recordOrdinal,
   });
   const authorityScriptPubKey = firstInputPrevoutScriptPubKey(transaction);
-  const registryPayments = BOND_HARD_PRICE_DECLARATION_TOKENS.map(
-    (token) => {
-      const key = token.ticker.toLowerCase();
-      const expectedVout = Number(registryPaymentVouts[key]);
-      const registryPaymentVout = Number.isSafeInteger(expectedVout)
-        ? expectedVout
-        : null;
-      const registryOutput =
-        registryPaymentVout === null
-          ? null
-          : transaction?.vout?.[registryPaymentVout];
-      const candidates = (Array.isArray(transaction?.vout)
-        ? transaction.vout
-        : []
-      )
-        .map((output, vout) => ({ output, vout }))
-        .filter(({ output }) => {
-          const sats = outputValueSats(output);
-          return (
-            outputAddress(output) === token.registryAddress &&
-            sats !== null &&
-            sats >= BOND_HARD_PRICE_DECLARATION_MIN_PAYMENT_SATS
-          );
-        });
-      return Object.freeze({
-        address: outputAddress(registryOutput),
-        candidateCount: candidates.length,
-        expectedAddress: token.registryAddress,
-        minimumPaymentSats:
-          BOND_HARD_PRICE_DECLARATION_MIN_PAYMENT_SATS,
-        registryId: token.registryId,
-        registryPaymentSats: outputValueSats(registryOutput),
-        registryPaymentVout,
-        ticker: token.ticker,
-        tokenId: token.tokenId,
-        valid:
-          registryPaymentVout !== null &&
-          candidates.length === 1 &&
-          candidates[0]?.vout === registryPaymentVout,
-      });
-    },
-  );
   const txid = String(transaction?.txid ?? "").trim().toLowerCase();
   const evidenceComplete =
     carrier !== null &&
     authorityScriptPubKey ===
-      BOND_HARD_PRICE_DECLARATION_AUTHORITY_SCRIPT_PUBKEY &&
-    registryPayments.every((payment) => payment.valid === true);
+      BOND_HARD_PRICE_DECLARATION_AUTHORITY_SCRIPT_PUBKEY;
   return Object.freeze({
     authorityScriptPubKey,
     carrier,
@@ -314,7 +227,6 @@ export function bondHardPriceDeclarationTransactionEvidence(
     expectedProtocolRecordBytes: commitment.protocolRecordBytes,
     expectedProtocolRecordSha256: commitment.protocolRecordSha256,
     model: BOND_HARD_PRICE_DECLARATION_EVIDENCE_MODEL,
-    registryPayments: Object.freeze(registryPayments),
     txid,
   });
 }

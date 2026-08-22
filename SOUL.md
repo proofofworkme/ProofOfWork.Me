@@ -156,8 +156,10 @@ while all evidence agrees; disagreement closes writes without restoring Q8,
 POWB/INCB hard-price bond AMO must use the same on-chain declaration discipline
 as WORK AMO declarations. A hard-price declaration is not merely a local
 document: it must be an exact confirmed `pwm1:m` carrier with authority input
-evidence, pinned registry payments, canonical block position, next-block
-activation, and recorded pins before agents should treat it as authoritative.
+evidence, canonical block position, next-block activation, and recorded pins
+before agents should treat it as authoritative. Mail recipients, self-send
+outputs, attached WORK, additional payments, and miner fee can signal value but
+are not declaration evidence.
 
 AMO V5 replay readiness is anchored by the one immutable
 `canonical-work-amo-v5-h-minus-one-seed-evidence-v1` row. The Computer
