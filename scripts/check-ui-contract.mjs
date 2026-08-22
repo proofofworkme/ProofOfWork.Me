@@ -24,6 +24,7 @@ const files = [
   "src/shared/components/AppStatusRow.tsx",
   "src/shared/components/BrowserNetworkTabs.tsx",
   "src/shared/components/DomainNav.tsx",
+  "src/shared/components/FeeRateControl.tsx",
   "src/shared/components/HeaderActionsMenu.tsx",
   "src/shared/protocol/idRegistry.ts",
   "src/styles.css",
@@ -442,6 +443,38 @@ expect(
 );
 
 const app = contents.get("src/App.tsx");
+const feeRateControl = contents.get("src/shared/components/FeeRateControl.tsx");
+expect(
+  "fee rate selector exposes only approved sat/vB presets with one sat default wiring",
+  /FEE_RATE_PRESETS\s*=\s*\[0\.1,\s*0\.5,\s*1,\s*2\]\s*as const/.test(
+    feeRateControl,
+  ) &&
+    /Fee sat\/vB/.test(feeRateControl) &&
+    /\{preset\} sat/.test(feeRateControl) &&
+    /const DEFAULT_FEE_RATE = 1;/.test(app) &&
+    /FEE_RATE_PRESETS\.map/.test(app) &&
+    !/\[0\.1,\s*0\.25,\s*0\.5,\s*1,\s*2,\s*5\]/.test(app) &&
+    !/\[1,\s*2,\s*5,\s*10\]/.test(feeRateControl),
+);
+expect(
+  "AMO exposes hard-price bond listings with Inception and Infinity sub-tabs",
+  /type MarketplaceTab = "ids" \| "tokens" \| "bonds"/.test(app) &&
+    /type BondMarketplaceTab = "inception" \| "infinity"/.test(app) &&
+    /function BondMarketplacePanel\(/.test(app) &&
+    /<h3>Bond Listings<\/h3>/.test(app) &&
+    /INCEPTION_BOND_UI/.test(app) &&
+    /INFINITY_BOND_UI/.test(app) &&
+    /aria-label="Bond listing tabs"/.test(app) &&
+    /bondConfig=\{activeBondConfig\}/.test(app),
+);
+expect(
+  "bond listings commit arbitrary whole quantity and exact hard price outside WORK faces",
+  /const selectedListTokenIsBond = Boolean/.test(app) &&
+    /Hard price proofs/.test(app) &&
+    /Bond listings commit the exact whole-token quantity/.test(app) &&
+    /not governed WORK units/.test(app) &&
+    /hard-price listing/.test(app),
+);
 const applyWorkFloorQuoteBlock = app.slice(
   app.indexOf("function applyWorkFloorQuote"),
   app.indexOf("async function freshWorkWriteMode"),
@@ -1615,7 +1648,7 @@ expect(
     /const freshAdmission = await freshWorkWriteMode\(\)[\s\S]*preparedWorkListingMode = freshAdmission\.mode[\s\S]*workV8Listing = preparedWorkListingMode === "native-q16"[\s\S]*version: workListing[\s\S]*workV8Listing[\s\S]*TOKEN_SALE_AUTH_WORK_AMO_SUBATOM_VERSION[\s\S]*TOKEN_SALE_AUTH_WORK_AMO_PROOF_UNIT_VERSION[\s\S]*beforeBroadcast:[\s\S]*freshWorkWriteMode\(preparedWorkListingMode\)/.test(
       listTokenSource,
     ) &&
-    /selectedListTokenIsWork\s*\?\s*\([\s\S]*work-amo-face-selector[\s\S]*\)\s*:\s*\([\s\S]*Amount[\s\S]*Price proofs/.test(
+    /selectedListTokenIsWork\s*\?\s*\([\s\S]*work-amo-face-selector[\s\S]*\)\s*:\s*\([\s\S]*Amount[\s\S]*Hard price proofs[\s\S]*Price proofs/.test(
       tokenWalletWorkspaceBlock,
     ),
 );
@@ -2619,7 +2652,7 @@ expect(
     /function optionalMarketplaceMetric\(value: unknown\)[\s\S]*value === null[\s\S]*value === undefined[\s\S]*value === ""[\s\S]*return undefined/.test(
       app,
     ) &&
-    /summary:\s*tokenSummary/.test(app) &&
+    /summary:\s*selectedTokenMarket \? tokenSummary : undefined/.test(app) &&
     /scopedToken\.confirmedSales/.test(tokenMarketplaceSummaryStatsBlock) &&
     /summaryStats\?\.confirmedSalesVolumeSats/.test(
       tokenMarketplaceSummaryStatsBlock,

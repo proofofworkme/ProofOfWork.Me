@@ -94,6 +94,27 @@ Wallet and AMO both use this model. Wallet is the connected-address
 ownership/action surface; AMO is the public discovery and purchase
 surface.
 
+## Current Bond Hard-Price AMO Model
+
+POWB and INCB use the same credit sale-ticket lifecycle under their reserved
+synthetic assets, but AMO exposes them through a dedicated Bonds tab with
+Inception and Infinity sub-tabs. The Bonds tab is for bond listings; the
+Credits tab remains the non-bond credit and governed WORK market surface.
+
+Bond listings are hard-price `pwt-sale-v1` tickets. A seller chooses any
+positive whole POWB or INCB quantity and an exact total proof price. The signed
+sale-ticket terms carry that quantity, price, seller, optional buyer lock,
+nonce, expiry, and ticket anchor. Confirmation freezes those public terms; a
+later seal, buy, floor move, transfer, bond, or WORK network-value change does
+not derive a new amount, select a face, or reprice the listing.
+
+This is intentionally different from governed WORK AMO units. WORK V8 admits
+only the declared 25,000-proof face and derives exact Q16 WORK subatoms at the
+listing's canonical position. POWB and INCB are uncapped bond assets: they keep
+the seller's chosen whole-bond quantity and hard proof price, while their
+network values and floors remain read-model/accounting outputs from confirmed
+bond issuance, transfers, sales, and mutation fees.
+
 ## Historical WORK Marketplace Pricing Protocol V2
 
 Canonical WORK marketplace pricing is governed by declaration transaction

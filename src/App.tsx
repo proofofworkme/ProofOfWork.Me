@@ -154,7 +154,10 @@ import {
   type AppStatusState,
   type AppStatusTone,
 } from "./shared/components/AppStatusRow";
-import { FeeRateControl } from "./shared/components/FeeRateControl";
+import {
+  FEE_RATE_PRESETS,
+  FeeRateControl,
+} from "./shared/components/FeeRateControl";
 import { ProgressBar } from "./shared/components/ProgressBar";
 import { SocialFooter } from "./shared/components/SocialFooter";
 import {
@@ -3237,7 +3240,7 @@ function confirmDustFeeAbsorption({
   return window.confirm(
     [
       `${extraFeeSats.toLocaleString()} proofs of below-dust change will be added to the miner fee.`,
-      `Selected fee rate: ${feeRate} proof/vB.`,
+      `Selected fee rate: ${feeRate} sat/vB.`,
       `Estimated fee: ${feeSats.toLocaleString()} proofs.`,
       "Use a larger confirmed UTXO or batch payments to avoid this. Continue signing?",
     ].join("\n\n"),
@@ -30769,7 +30772,7 @@ export default function App() {
       });
       setStatus(
         goodBroadcastStatus(
-          `${mintCount.toLocaleString()} mint UTXOs prepared for ${selectedToken.ticker}: ${shortAddress(txid)}. Split fee ${paymentPsbt.feeSats.toLocaleString()} proofs at ${prepareFeeRate} proof/vB. Wait for confirmation before burst minting.`,
+          `${mintCount.toLocaleString()} mint UTXOs prepared for ${selectedToken.ticker}: ${shortAddress(txid)}. Split fee ${paymentPsbt.feeSats.toLocaleString()} proofs at ${prepareFeeRate} sat/vB. Wait for confirmation before burst minting.`,
           txid,
           "livenet",
         ),
@@ -30794,6 +30797,14 @@ export default function App() {
       ? ({ tone: "idle", text: warning.text } satisfies WorkspaceStatus)
       : undefined;
   })();
+  const refreshBondMarkets = () => {
+    void refreshTokenMarketData({
+      includeWorkFloor: true,
+      label: "bond AMO",
+    });
+    void refreshInfinity(false, true, INCEPTION_BOND_UI);
+    void refreshInfinity(false, true, INFINITY_BOND_UI);
+  };
 
   if (idLaunchMode) {
     return (
@@ -30901,6 +30912,8 @@ export default function App() {
           tokenMarketLoading={tokenMarketplaceLoading}
           workFloorLoading={workFloorLoading}
           workFloorQuote={workFloorQuote}
+          inceptionSummary={inceptionBondSummary}
+          infinitySummary={infinityBondSummary}
           buyTokenListing={buyTokenListing}
           useListing={(listing) => {
             setIdSaleAuthorization(
@@ -30910,6 +30923,7 @@ export default function App() {
             setIdPurchaseOwnerAddress(address);
             setIdPurchaseReceiveAddress(listing.receiveAddress ?? "");
           }}
+          onRefreshBonds={refreshBondMarkets}
           onRefreshIds={() => void refreshIds()}
           onRefreshTokens={() =>
             void refreshTokenMarketData({
@@ -31855,6 +31869,8 @@ export default function App() {
             tokenMarketLoading={tokenMarketplaceLoading}
             workFloorLoading={workFloorLoading}
             workFloorQuote={workFloorQuote}
+            inceptionSummary={inceptionBondSummary}
+            infinitySummary={infinityBondSummary}
             onOpenTokenWorkspace={openTokenWorkspace}
             onOpenWalletWorkspace={openWalletWorkspace}
             useListing={(listing) => {
@@ -31865,6 +31881,7 @@ export default function App() {
               setIdPurchaseOwnerAddress(address);
               setIdPurchaseReceiveAddress(listing.receiveAddress ?? "");
             }}
+            onRefreshBonds={refreshBondMarkets}
             onRefreshIds={() => void refreshIds()}
             onRefreshTokens={() =>
               void refreshTokenMarketData({
@@ -34905,9 +34922,9 @@ function InfinityApp({
           copy={{
             balancesDescription: `${bondConfig.ticker} held by the connected address.`,
             fallbackTicker: bondConfig.ticker,
-            listingDescription: `Creates a ${bondConfig.ticker} sale-ticket listing paid to the ${bondConfig.displayName} registry.`,
+            listingDescription: `Creates a hard-price ${bondConfig.ticker} sale-ticket listing paid to the ${bondConfig.displayName} registry. Choose any whole quantity and exact total proof price.`,
             listingFeeDescription: `Used when sealing or closing your ${bondConfig.ticker} listings.`,
-            listButton: `List ${bondConfig.ticker}`,
+            listButton: `List ${bondConfig.ticker} hard price`,
             listProgressButton: "Listing",
             movementsEmptyBody: `Your ${bondConfig.ticker} transfer and trade history will appear here.`,
             noBalanceBody: "Create or receive a bond, then refresh this wallet.",
@@ -35632,6 +35649,9 @@ function TokenWalletWorkspace({
   const selectedListTokenIsWork = Boolean(
     selectedListToken && isWorkToken(selectedListToken),
   );
+  const selectedListTokenIsBond = Boolean(
+    selectedListToken && isBondTokenDefinition(selectedListToken),
+  );
   const workAmoV8Enabled = workV8ActivationReached(workFloorQuote);
   const workAmoV8TermsVisible =
     workV8DeclarationBoundaryObserved(workFloorQuote);
@@ -35885,17 +35905,34 @@ function TokenWalletWorkspace({
               />
             </label>
             <label>
-              Split fee proof/vB
+              Split fee sat/vB
               <input
-                min={0.01}
+                min={0.1}
                 onChange={(event) =>
                   setPrepareTransferFeeRate(Number(event.target.value))
                 }
-                step={0.01}
+                step={0.1}
                 type="number"
                 value={prepareTransferFeeRate || ""}
               />
             </label>
+          </div>
+          <div
+            className="fee-presets token-split-fee-presets"
+            aria-label="Transfer split fee presets"
+          >
+            {FEE_RATE_PRESETS.map((preset) => (
+              <button
+                aria-pressed={
+                  Math.abs(prepareTransferFeeRate - preset) < 0.00000001
+                }
+                key={preset}
+                onClick={() => setPrepareTransferFeeRate(preset)}
+                type="button"
+              >
+                {preset} sat
+              </button>
+            ))}
           </div>
           <p className="field-note">
             Creates self-send outputs only, uses confirmed wallet-curated
@@ -36378,7 +36415,7 @@ function TokenWalletWorkspace({
                     />
                   </label>
                   <label>
-                    Price proofs
+                    {selectedListTokenIsBond ? "Hard price proofs" : "Price proofs"}
                     <input
                       min={1}
                       onChange={(event) =>
@@ -36428,6 +36465,14 @@ function TokenWalletWorkspace({
                     <small>{listPositionNote}</small>
                   </div>
                 </div>
+                {selectedListTokenIsBond ? (
+                  <p className="field-note">
+                    Bond listings commit the exact whole-token quantity and the
+                    exact total proof price in the sale-ticket terms. POWB and
+                    INCB are not governed WORK units: there is no fixed face,
+                    no derived amount, and no repricing after confirmation.
+                  </p>
+                ) : null}
               </>
             )}
             <label>
@@ -36469,6 +36514,8 @@ function TokenWalletWorkspace({
                     ? walletCopy.listProgressButton
                     : selectedListTokenIsWork
                       ? `Create ${workAmoProofFaceLabel(listFaceProofs)} AMO intent`
+                      : selectedListTokenIsBond
+                        ? `Create ${selectedListToken?.ticker ?? walletCopy.fallbackTicker} hard-price listing`
                       : walletCopy.listButton}
                 </span>
               </span>
@@ -37881,7 +37928,7 @@ function TokenWorkspace({
           <div className="token-utxo-dashboard">
             <div>
               <span>Split tx fee rate</span>
-              <strong>{normalizedPrepareFeeRate.toLocaleString()} proof/vB</strong>
+              <strong>{normalizedPrepareFeeRate.toLocaleString()} sat/vB</strong>
               <p>
                 Miner fee for the one self-send transaction that creates mint
                 UTXOs.
@@ -37931,27 +37978,27 @@ function TokenWorkspace({
               />
             </label>
             <label>
-              Split fee proof/vB
+              Split fee sat/vB
               <input
-                min={0.01}
+                min={0.1}
                 onChange={(event) =>
                   setPrepareFeeRate(Number(event.target.value))
                 }
-                step={0.01}
+                step={0.1}
                 type="number"
                 value={prepareFeeRate || ""}
               />
             </label>
           </div>
           <div className="fee-presets token-split-fee-presets" aria-label="Split fee presets">
-            {[0.1, 0.25, 0.5, 1, 2, 5].map((preset) => (
+            {FEE_RATE_PRESETS.map((preset) => (
               <button
-                aria-pressed={prepareFeeRate === preset}
+                aria-pressed={Math.abs(prepareFeeRate - preset) < 0.00000001}
                 key={preset}
                 onClick={() => setPrepareFeeRate(preset)}
                 type="button"
               >
-                {preset}
+                {preset} sat
               </button>
             ))}
           </div>
@@ -39040,16 +39087,9 @@ function TokenWorkspace({
                   </span>
                 ) : null}
               </label>
-              <label>
-                Fee rate
-                <input
-                  min={0.1}
-                  onChange={(event) => setFeeRate(Number(event.target.value))}
-                  step={0.1}
-                  type="number"
-                  value={feeRate}
-                />
-              </label>
+              <div className="wide">
+                <FeeRateControl feeRate={feeRate} setFeeRate={setFeeRate} />
+              </div>
             </div>
             <div className="token-template-action">
               <button
@@ -41973,7 +42013,7 @@ function GrowthWorkspace({
                 {GROWTH_MODEL_INPUTS.canonicalFee.toLocaleString("en-US", {
                   maximumFractionDigits: 5,
                 })}{" "}
-                proof/vB
+                sat/vB
               </dd>
             </div>
           </dl>
@@ -42742,7 +42782,8 @@ function IdLaunchApp({
   );
 }
 
-type MarketplaceTab = "ids" | "tokens";
+type MarketplaceTab = "ids" | "tokens" | "bonds";
+type BondMarketplaceTab = "inception" | "infinity";
 
 type TokenMarketplaceRow = PowTokenDefinition & {
   confirmedMints: number;
@@ -43560,11 +43601,13 @@ function tokenMarketplaceRowsFor({
 
 function MarketplaceTabs({
   active,
+  bondCount,
   idCount,
   onChange,
   tokenCount,
 }: {
   active: MarketplaceTab;
+  bondCount: number;
   idCount: number;
   onChange: (tab: MarketplaceTab) => void;
   tokenCount: number;
@@ -43575,6 +43618,7 @@ function MarketplaceTabs({
         [
           ["ids", "IDs", idCount],
           ["tokens", "Credits", tokenCount],
+          ["bonds", "Bonds", bondCount],
         ] as const
       ).map(([tab, label, count]) => (
         <button
@@ -43599,13 +43643,19 @@ function marketplaceStatusIsTokenScoped(text: string) {
   return /(?:Credit index|credit market|WORK floor)/iu.test(text);
 }
 
+function marketplaceStatusIsBondScoped(text: string) {
+  return /(?:bond|POWB|INCB|Infinity|Inception)/iu.test(text);
+}
+
 function marketplaceStatusForTab({
   active,
+  bondSummary,
   idSummary,
   status,
   tokenSummary,
 }: {
   active: MarketplaceTab;
+  bondSummary: { tone: StatusTone; text: string };
   idSummary: { tone: StatusTone; text: string };
   status: { tone: StatusTone; text: string };
   tokenSummary: { tone: StatusTone; text: string };
@@ -43614,15 +43664,35 @@ function marketplaceStatusForTab({
     return status;
   }
 
-  if (active === "tokens" && marketplaceStatusIsIdScoped(status.text)) {
+  if (
+    active === "bonds" &&
+    (marketplaceStatusIsIdScoped(status.text) ||
+      marketplaceStatusIsTokenScoped(status.text))
+  ) {
+    return bondSummary;
+  }
+
+  if (
+    active === "tokens" &&
+    (marketplaceStatusIsIdScoped(status.text) ||
+      marketplaceStatusIsBondScoped(status.text))
+  ) {
     return tokenSummary;
   }
 
-  if (active === "ids" && marketplaceStatusIsTokenScoped(status.text)) {
+  if (
+    active === "ids" &&
+    (marketplaceStatusIsTokenScoped(status.text) ||
+      marketplaceStatusIsBondScoped(status.text))
+  ) {
     return idSummary;
   }
 
   return status;
+}
+
+function listingCountForBondToken(listings: PowTokenListing[], tokenId: string) {
+  return listings.filter((listing) => listing.tokenId === tokenId).length;
 }
 
 function InfinityBondMarketPanel({
@@ -44257,6 +44327,131 @@ function InfinityBondMarketPanel({
         />
       </section>
     </div>
+  );
+}
+
+function BondMarketplacePanel({
+  address,
+  btcUsd,
+  busy,
+  buyListing,
+  closedListings,
+  feeRate,
+  inceptionSummary,
+  infinitySummary,
+  listings,
+  network,
+  sales,
+  setFeeRate,
+  tokens,
+}: {
+  address: string;
+  btcUsd: number;
+  busy: boolean;
+  buyListing: (listing: PowTokenListing) => void;
+  closedListings: PowTokenClosedListing[];
+  feeRate: number;
+  inceptionSummary?: InfinitySummarySnapshot;
+  infinitySummary?: InfinitySummarySnapshot;
+  listings: PowTokenListing[];
+  network: BitcoinNetwork;
+  sales: PowTokenSale[];
+  setFeeRate: (value: number) => void;
+  tokens: PowTokenDefinition[];
+}) {
+  const [activeBondTab, setActiveBondTab] = useState<BondMarketplaceTab>(() => {
+    const target = tokenRouteTarget();
+    const normalizedTicker = normalizeTokenTicker(target);
+    return target === POWB_TOKEN_ID || normalizedTicker === POWB_TOKEN_TICKER
+      ? "infinity"
+      : "inception";
+  });
+  const activeBondConfig =
+    activeBondTab === "infinity" ? INFINITY_BOND_UI : INCEPTION_BOND_UI;
+  const activeSummary =
+    activeBondTab === "infinity" ? infinitySummary : inceptionSummary;
+  const bondListings = listings.filter(
+    (listing) => listing.network === network && BOND_TOKEN_IDS.has(listing.tokenId),
+  );
+  const bondSales = sales.filter(
+    (sale) => sale.network === network && BOND_TOKEN_IDS.has(sale.tokenId),
+  );
+  const sealedBondListings = bondListings.filter(tokenListingHasSaleTicketSeal);
+  const listingCountFor = (config: BondUiConfig) =>
+    bondListings.filter((listing) => listing.tokenId === config.tokenId).length;
+  const bondTabOptions = [
+    ["inception", INCEPTION_BOND_UI],
+    ["infinity", INFINITY_BOND_UI],
+  ] as const;
+
+  return (
+    <>
+      <section className="id-card token-market-card">
+        <div className="id-card-head">
+          <div className="empty-icon" aria-hidden="true">
+            <InfinityIcon size={24} />
+          </div>
+          <div>
+            <h3>Bond Listings</h3>
+            <p>
+              POWB and INCB use hard-price sale tickets. Sellers choose any
+              whole quantity and exact total proof price; buyers settle by
+              spending the sealed ticket.
+            </p>
+          </div>
+        </div>
+        <div
+          className="id-launch-stats token-floor-stats"
+          aria-label="Bond AMO stats"
+        >
+          <div>
+            <span>Inception tickets</span>
+            <strong>{listingCountFor(INCEPTION_BOND_UI).toLocaleString()}</strong>
+          </div>
+          <div>
+            <span>Infinity tickets</span>
+            <strong>{listingCountFor(INFINITY_BOND_UI).toLocaleString()}</strong>
+          </div>
+          <div>
+            <span>Sealed tickets</span>
+            <strong>{sealedBondListings.length.toLocaleString()}</strong>
+          </div>
+          <div>
+            <span>Bond sales</span>
+            <strong>{bondSales.length.toLocaleString()}</strong>
+          </div>
+        </div>
+        <div className="marketplace-tabs marketplace-bond-tabs" aria-label="Bond listing tabs">
+          {bondTabOptions.map(([tab, config]) => (
+            <button
+              aria-pressed={activeBondTab === tab}
+              key={tab}
+              onClick={() => setActiveBondTab(tab)}
+              type="button"
+            >
+              <span>{config.displayName.replace(" Bond", "")}</span>
+              <strong>{listingCountFor(config).toLocaleString()}</strong>
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <InfinityBondMarketPanel
+        address={address}
+        bondConfig={activeBondConfig}
+        btcUsd={btcUsd}
+        busy={busy}
+        buyListing={buyListing}
+        closedListings={closedListings}
+        feeRate={feeRate}
+        listings={listings}
+        network={network}
+        sales={sales}
+        setFeeRate={setFeeRate}
+        summary={activeSummary}
+        tokens={tokens}
+      />
+    </>
   );
 }
 
@@ -46427,8 +46622,11 @@ function MarketplaceApp({
   tokenMarketLoading,
   workFloorLoading,
   workFloorQuote,
+  inceptionSummary,
+  infinitySummary,
   buyTokenListing,
   useListing,
+  onRefreshBonds,
   onRefreshIds,
   onRefreshTokens,
 }: {
@@ -46484,14 +46682,24 @@ function MarketplaceApp({
   tokenMarketLoading: boolean;
   workFloorLoading: boolean;
   workFloorQuote?: WorkFloorQuote;
+  inceptionSummary?: InfinitySummarySnapshot;
+  infinitySummary?: InfinitySummarySnapshot;
   buyTokenListing: (listing: PowTokenListing) => void;
   useListing: (listing: PowIdListing) => void;
+  onRefreshBonds: () => void;
   onRefreshIds: () => void;
   onRefreshTokens: () => void;
 }) {
   const initialTokenMarketTarget = tokenRouteTarget();
+  const initialTokenMarketTicker = normalizeTokenTicker(initialTokenMarketTarget);
+  const initialMarketplaceTab: MarketplaceTab =
+    BOND_TOKEN_IDS.has(initialTokenMarketTarget) ||
+    initialTokenMarketTicker === POWB_TOKEN_TICKER ||
+    initialTokenMarketTicker === INCB_TOKEN_TICKER
+      ? "bonds"
+      : "tokens";
   const [marketplaceTab, setMarketplaceTab] =
-    useState<MarketplaceTab>("tokens");
+    useState<MarketplaceTab>(initialMarketplaceTab);
   const [selectedTokenMarketId, setSelectedTokenMarketId] = useState(
     initialTokenMarketTarget,
   );
@@ -46507,14 +46715,37 @@ function MarketplaceApp({
     pendingIdEventTouchesAddress(event, address),
   );
   const marketplaceStats = marketplaceStatsFromSales(registrySales);
+  const creditTokens = tokens.filter((token) => !isBondTokenDefinition(token));
+  const creditTokenListings = tokenListings.filter(
+    (listing) => !BOND_TOKEN_IDS.has(listing.tokenId),
+  );
+  const creditTokenClosedListings = tokenClosedListings.filter(
+    (listing) => !BOND_TOKEN_IDS.has(listing.tokenId),
+  );
+  const creditTokenMints = tokenMints.filter(
+    (mint) => !BOND_TOKEN_IDS.has(mint.tokenId),
+  );
+  const creditTokenSales = tokenSales.filter(
+    (sale) => !BOND_TOKEN_IDS.has(sale.tokenId),
+  );
+  const creditTokenTransfers = tokenTransfers.filter(
+    (transfer) => !BOND_TOKEN_IDS.has(transfer.tokenId),
+  );
+  const bondListings = tokenListings.filter((listing) =>
+    BOND_TOKEN_IDS.has(listing.tokenId),
+  );
+  const bondSales = tokenSales.filter((sale) =>
+    BOND_TOKEN_IDS.has(sale.tokenId),
+  );
+  const sealedBondListings = bondListings.filter(tokenListingHasSaleTicketSeal);
   const tokenMarketRows = tokenMarketplaceRowsFor({
     address,
-    listings: tokenListings,
-    mints: tokenMints,
+    listings: creditTokenListings,
+    mints: creditTokenMints,
     network: "livenet",
-    sales: tokenSales,
-    tokens,
-    transfers: tokenTransfers,
+    sales: creditTokenSales,
+    tokens: creditTokens,
+    transfers: creditTokenTransfers,
   });
   const selectedTokenMarket = tokenMarketRows.find(
     (token) =>
@@ -46522,20 +46753,24 @@ function MarketplaceApp({
       token.ticker === normalizeTokenTicker(selectedTokenMarketId),
   );
   const tokenSummaryStats = tokenMarketplaceSummaryStats({
-    listings: tokenListings,
+    listings: creditTokenListings,
     network: "livenet",
-    sales: tokenSales,
-    summary: tokenSummary,
+    sales: creditTokenSales,
+    summary: selectedTokenMarket ? tokenSummary : undefined,
     token: selectedTokenMarket,
     tokenScope: selectedTokenMarketId,
-    tokens,
+    tokens: creditTokens,
   });
-  const sealedTokenListings = tokenListings.filter(
+  const sealedTokenListings = creditTokenListings.filter(
     tokenListingHasSaleTicketSeal,
   );
-  const confirmedTokenCount = tokens.filter((token) => token.confirmed).length;
+  const confirmedTokenCount = creditTokens.filter((token) => token.confirmed).length;
   const scopedStatus = marketplaceStatusForTab({
     active: marketplaceTab,
+    bondSummary: {
+      tone: "good",
+      text: `Bond listings loaded in AMO. ${bondListings.length.toLocaleString()} open ticket${bondListings.length === 1 ? "" : "s"}, ${sealedBondListings.length.toLocaleString()} sealed or sealing, ${bondSales.length.toLocaleString()} sale${bondSales.length === 1 ? "" : "s"}.`,
+    },
     idSummary: {
       tone: "good",
       text: `ID sale tickets loaded in AMO. ${confirmedRecords.length.toLocaleString()} confirmed, ${registryListings.length.toLocaleString()} active listing${registryListings.length === 1 ? "" : "s"}, ${pendingRecords.length.toLocaleString()} pending.`,
@@ -46543,10 +46778,15 @@ function MarketplaceApp({
     status,
     tokenSummary: {
       tone: "good",
-      text: `Credit market loaded. ${confirmedTokenCount.toLocaleString()} confirmed credit${confirmedTokenCount === 1 ? "" : "s"}, ${tokenListings.length.toLocaleString()} open listing${tokenListings.length === 1 ? "" : "s"}, ${sealedTokenListings.length.toLocaleString()} sealed or sealing.`,
+      text: `Credit market loaded. ${confirmedTokenCount.toLocaleString()} confirmed credit${confirmedTokenCount === 1 ? "" : "s"}, ${creditTokenListings.length.toLocaleString()} open listing${creditTokenListings.length === 1 ? "" : "s"}, ${sealedTokenListings.length.toLocaleString()} sealed or sealing.`,
     },
   });
   const refreshMarketplaceTab = () => {
+    if (marketplaceTab === "bonds") {
+      onRefreshBonds();
+      return;
+    }
+
     if (marketplaceTab === "tokens") {
       onRefreshTokens();
       return;
@@ -46585,8 +46825,8 @@ function MarketplaceApp({
             </span>
             <h2>Trade ProofOfWork-native assets.</h2>
             <p>
-              IDs and credits trade through sale tickets: sellers reserve the
-              asset, seal exact terms, and buyers settle on ProofOfWork.
+              IDs, credits, and bonds trade through sale tickets: sellers reserve
+              the asset, seal exact terms, and buyers settle on ProofOfWork.
             </p>
           </div>
 
@@ -46619,6 +46859,37 @@ function MarketplaceApp({
                 <span>Pending Sales</span>
               </div>
             </div>
+          ) : marketplaceTab === "bonds" ? (
+            <div className="id-launch-stats" aria-label="Bond AMO stats">
+              <div>
+                <strong>{bondListings.length.toLocaleString()}</strong>
+                <span>Open Tickets</span>
+              </div>
+              <div>
+                <strong>{sealedBondListings.length.toLocaleString()}</strong>
+                <span>Sealed Tickets</span>
+              </div>
+              <div>
+                <strong>{bondSales.length.toLocaleString()}</strong>
+                <span>Bond Sales</span>
+              </div>
+              <div>
+                <strong>
+                  {listingCountForBondToken(bondListings, INCB_TOKEN_ID).toLocaleString()}
+                </strong>
+                <span>INCB Tickets</span>
+              </div>
+              <div>
+                <strong>
+                  {listingCountForBondToken(bondListings, POWB_TOKEN_ID).toLocaleString()}
+                </strong>
+                <span>POWB Tickets</span>
+              </div>
+              <div>
+                <strong>2</strong>
+                <span>Bond Books</span>
+              </div>
+            </div>
           ) : (
             <TokenMarketplaceStatsGrid stats={tokenSummaryStats} />
           )}
@@ -46626,9 +46897,10 @@ function MarketplaceApp({
 
         <MarketplaceTabs
           active={marketplaceTab}
+          bondCount={bondListings.length}
           idCount={registryListings.length}
           onChange={setMarketplaceTab}
-          tokenCount={tokens.length}
+          tokenCount={creditTokens.length}
         />
 
         {marketplaceTab === "ids" ? (
@@ -46777,23 +47049,39 @@ function MarketplaceApp({
             />
           </section>
         </div>
-        ) : (
-          <TokenMarketplacePanel
+        ) : marketplaceTab === "bonds" ? (
+          <BondMarketplacePanel
             address={address}
             btcUsd={btcUsd}
             busy={busy}
             buyListing={buyTokenListing}
             closedListings={tokenClosedListings}
             feeRate={feeRate}
+            inceptionSummary={inceptionSummary}
+            infinitySummary={infinitySummary}
             listings={tokenListings}
-            mints={tokenMints}
             network="livenet"
-            onSelectedTokenMarketIdChange={setSelectedTokenMarketId}
             sales={tokenSales}
-            selectedTokenMarketId={selectedTokenMarketId}
             setFeeRate={setFeeRate}
             tokens={tokens}
-            transfers={tokenTransfers}
+          />
+        ) : (
+          <TokenMarketplacePanel
+            address={address}
+            btcUsd={btcUsd}
+            busy={busy}
+            buyListing={buyTokenListing}
+            closedListings={creditTokenClosedListings}
+            feeRate={feeRate}
+            listings={creditTokenListings}
+            mints={creditTokenMints}
+            network="livenet"
+            onSelectedTokenMarketIdChange={setSelectedTokenMarketId}
+            sales={creditTokenSales}
+            selectedTokenMarketId={selectedTokenMarketId}
+            setFeeRate={setFeeRate}
+            tokens={creditTokens}
+            transfers={creditTokenTransfers}
             tokenMarketHistoryRefreshNonce={tokenMarketHistoryRefreshNonce}
             tokenMarketLoading={tokenMarketLoading}
             workFloorLoading={workFloorLoading}
@@ -46853,9 +47141,12 @@ function MarketplaceWorkspace({
   tokenMarketLoading,
   workFloorLoading,
   workFloorQuote,
+  inceptionSummary,
+  infinitySummary,
   onOpenTokenWorkspace,
   onOpenWalletWorkspace,
   useListing,
+  onRefreshBonds,
   onRefreshIds,
   onRefreshTokens,
 }: {
@@ -46906,15 +47197,25 @@ function MarketplaceWorkspace({
   tokenMarketLoading: boolean;
   workFloorLoading: boolean;
   workFloorQuote?: WorkFloorQuote;
+  inceptionSummary?: InfinitySummarySnapshot;
+  infinitySummary?: InfinitySummarySnapshot;
   onOpenTokenWorkspace?: (token?: PowTokenDefinition) => void;
   onOpenWalletWorkspace?: (token?: PowTokenDefinition) => void;
   useListing: (listing: PowIdListing) => void;
+  onRefreshBonds: () => void;
   onRefreshIds: () => void;
   onRefreshTokens: () => void;
 }) {
   const initialTokenMarketTarget = tokenRouteTarget();
+  const initialTokenMarketTicker = normalizeTokenTicker(initialTokenMarketTarget);
+  const initialMarketplaceTab: MarketplaceTab =
+    BOND_TOKEN_IDS.has(initialTokenMarketTarget) ||
+    initialTokenMarketTicker === POWB_TOKEN_TICKER ||
+    initialTokenMarketTicker === INCB_TOKEN_TICKER
+      ? "bonds"
+      : "tokens";
   const [marketplaceTab, setMarketplaceTab] =
-    useState<MarketplaceTab>("tokens");
+    useState<MarketplaceTab>(initialMarketplaceTab);
   const [selectedTokenMarketId, setSelectedTokenMarketId] = useState(
     initialTokenMarketTarget,
   );
@@ -46939,17 +47240,40 @@ function MarketplaceWorkspace({
     (event) =>
       event.network === network && pendingIdEventTouchesAddress(event, address),
   );
-  const networkTokenCount = tokens.filter(
+  const creditTokens = tokens.filter((token) => !isBondTokenDefinition(token));
+  const creditTokenListings = tokenListings.filter(
+    (listing) => !BOND_TOKEN_IDS.has(listing.tokenId),
+  );
+  const creditTokenClosedListings = tokenClosedListings.filter(
+    (listing) => !BOND_TOKEN_IDS.has(listing.tokenId),
+  );
+  const creditTokenMints = tokenMints.filter(
+    (mint) => !BOND_TOKEN_IDS.has(mint.tokenId),
+  );
+  const creditTokenSales = tokenSales.filter(
+    (sale) => !BOND_TOKEN_IDS.has(sale.tokenId),
+  );
+  const creditTokenTransfers = tokenTransfers.filter(
+    (transfer) => !BOND_TOKEN_IDS.has(transfer.tokenId),
+  );
+  const bondListings = tokenListings.filter(
+    (listing) => listing.network === network && BOND_TOKEN_IDS.has(listing.tokenId),
+  );
+  const bondSales = tokenSales.filter(
+    (sale) => sale.network === network && BOND_TOKEN_IDS.has(sale.tokenId),
+  );
+  const sealedBondListings = bondListings.filter(tokenListingHasSaleTicketSeal);
+  const networkTokenCount = creditTokens.filter(
     (token) => token.network === network,
   ).length;
   const tokenMarketRows = tokenMarketplaceRowsFor({
     address,
-    listings: tokenListings,
-    mints: tokenMints,
+    listings: creditTokenListings,
+    mints: creditTokenMints,
     network,
-    sales: tokenSales,
-    tokens,
-    transfers: tokenTransfers,
+    sales: creditTokenSales,
+    tokens: creditTokens,
+    transfers: creditTokenTransfers,
   });
   const selectedTokenMarket = tokenMarketRows.find(
     (token) =>
@@ -46957,15 +47281,20 @@ function MarketplaceWorkspace({
       token.ticker === normalizeTokenTicker(selectedTokenMarketId),
   );
   const tokenSummaryStats = tokenMarketplaceSummaryStats({
-    listings: tokenListings,
+    listings: creditTokenListings,
     network,
-    sales: tokenSales,
-    summary: tokenSummary,
+    sales: creditTokenSales,
+    summary: selectedTokenMarket ? tokenSummary : undefined,
     token: selectedTokenMarket,
     tokenScope: selectedTokenMarketId,
-    tokens,
+    tokens: creditTokens,
   });
   const refreshMarketplaceTab = () => {
+    if (marketplaceTab === "bonds") {
+      onRefreshBonds();
+      return;
+    }
+
     if (marketplaceTab === "tokens") {
       onRefreshTokens();
       return;
@@ -46981,7 +47310,7 @@ function MarketplaceWorkspace({
           <h2>AMO</h2>
           <span>
             {registryAddress
-              ? `${networkListings.length.toLocaleString()} ID listings · ${networkTokenCount.toLocaleString()} credits`
+              ? `${networkListings.length.toLocaleString()} ID listings · ${networkTokenCount.toLocaleString()} credits · ${bondListings.length.toLocaleString()} bond tickets`
               : `No AMO registry configured for ${networkLabel(network)}`}
           </span>
         </div>
@@ -47000,6 +47329,7 @@ function MarketplaceWorkspace({
 
       <MarketplaceTabs
         active={marketplaceTab}
+        bondCount={bondListings.length}
         idCount={networkListings.length}
         onChange={setMarketplaceTab}
         tokenCount={networkTokenCount}
@@ -47181,6 +47511,53 @@ function MarketplaceWorkspace({
         </section>
       </div>
         </>
+      ) : marketplaceTab === "bonds" ? (
+        <>
+          <div
+            className="id-launch-stats marketplace-workspace-stats"
+            aria-label="Bond AMO stats"
+          >
+            <div>
+              <strong>{bondListings.length.toLocaleString()}</strong>
+              <span>Open Tickets</span>
+            </div>
+            <div>
+              <strong>{sealedBondListings.length.toLocaleString()}</strong>
+              <span>Sealed Tickets</span>
+            </div>
+            <div>
+              <strong>{bondSales.length.toLocaleString()}</strong>
+              <span>Bond Sales</span>
+            </div>
+            <div>
+              <strong>
+                {listingCountForBondToken(bondListings, INCB_TOKEN_ID).toLocaleString()}
+              </strong>
+              <span>INCB Tickets</span>
+            </div>
+            <div>
+              <strong>
+                {listingCountForBondToken(bondListings, POWB_TOKEN_ID).toLocaleString()}
+              </strong>
+              <span>POWB Tickets</span>
+            </div>
+          </div>
+          <BondMarketplacePanel
+            address={address}
+            btcUsd={btcUsd}
+            busy={busy}
+            buyListing={buyTokenListing}
+            closedListings={tokenClosedListings}
+            feeRate={feeRate}
+            inceptionSummary={inceptionSummary}
+            infinitySummary={infinitySummary}
+            listings={tokenListings}
+            network={network}
+            sales={tokenSales}
+            setFeeRate={setFeeRate}
+            tokens={tokens}
+          />
+        </>
       ) : (
         <>
           <TokenMarketplaceStatsGrid
@@ -47192,20 +47569,20 @@ function MarketplaceWorkspace({
             btcUsd={btcUsd}
             busy={busy}
             buyListing={buyTokenListing}
-            closedListings={tokenClosedListings}
+            closedListings={creditTokenClosedListings}
             computerMode
             feeRate={feeRate}
-            listings={tokenListings}
-            mints={tokenMints}
+            listings={creditTokenListings}
+            mints={creditTokenMints}
             network={network}
             onOpenTokenWorkspace={onOpenTokenWorkspace}
             onOpenWalletWorkspace={onOpenWalletWorkspace}
             onSelectedTokenMarketIdChange={setSelectedTokenMarketId}
-            sales={tokenSales}
+            sales={creditTokenSales}
             selectedTokenMarketId={selectedTokenMarketId}
             setFeeRate={setFeeRate}
-            tokens={tokens}
-            transfers={tokenTransfers}
+            tokens={creditTokens}
+            transfers={creditTokenTransfers}
             tokenMarketHistoryRefreshNonce={tokenMarketHistoryRefreshNonce}
             tokenMarketLoading={tokenMarketLoading}
             workFloorLoading={workFloorLoading}

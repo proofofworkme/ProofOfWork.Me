@@ -2959,7 +2959,7 @@ The registry endpoint:
 - Keeps pending IDs visible but not routable.
 - Exposes confirmed and pending ID marketplace events, including `list5`, `seal5`, `buy5`, and `delist5`.
 - Exposes AMO sales data from valid `buy5` buyer-funded ID transfers: sale count and seller-price volume, split between confirmed canonical sales and pending mempool-visible sales. Legacy buy events remain replayable history but are not included in the public AMO metric.
-- Exposes a Credits AMO tab over confirmed credit creations, mints, transfers, holders, registries, active sale-ticket listings, and settled credit sales.
+- Exposes Credits and Bonds AMO tabs over confirmed credit creations, mints, transfers, holders, registries, active sale-ticket listings, settled credit sales, and POWB/INCB hard-price bond sale-ticket books with Inception and Infinity sub-tabs.
 - Exposes registry records, pending events, listings, and registry-specific activity.
 
 The canonical livenet ledger payload:
