@@ -26,6 +26,7 @@
     "check:work-amo-v7-peak:full": "node --expose-gc scripts/check-work-amo-v7-peak.mjs --full",
     "build:work-amo-v8-declaration": "node scripts/build-work-amo-v8-declaration.mjs",
     "build:bond-hard-price-declaration": "node scripts/build-bond-hard-price-declaration.mjs",
+    "prepare:bond-hard-price-declaration": "node scripts/prepare-bond-hard-price-declaration.mjs",
     "check:work-amo-v8": "node scripts/check-work-amo-v8.mjs && node scripts/check-work-amo-v8-gates.mjs",
     "check:work-amo-v8-peak": "node --expose-gc scripts/check-work-amo-v8-peak.mjs",
     "check:work-amo-v8-peak:full": "node --expose-gc scripts/check-work-amo-v8-peak.mjs --full",

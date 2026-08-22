@@ -153,6 +153,12 @@ together before gate one opened on 2026-08-01. Admission remains open only
 while all evidence agrees; disagreement closes writes without restoring Q8,
 `send2`, or any legacy settlement path.
 
+POWB/INCB hard-price bond AMO must use the same on-chain declaration discipline
+as WORK AMO declarations. A hard-price declaration is not merely a local
+document: it must be an exact confirmed `pwm1:m` carrier with authority input
+evidence, pinned registry payments, canonical block position, next-block
+activation, and recorded pins before agents should treat it as authoritative.
+
 AMO V5 replay readiness is anchored by the one immutable
 `canonical-work-amo-v5-h-minus-one-seed-evidence-v1` row. The Computer
 recomputes that row's committed H-1 preimages, verifies its canonical block

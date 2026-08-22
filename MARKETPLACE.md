@@ -108,11 +108,37 @@ nonce, expiry, and ticket anchor. Confirmation freezes those public terms; a
 later seal, buy, floor move, transfer, bond, or WORK network-value change does
 not derive a new amount, select a face, or reprice the listing.
 
-The declaration artifact for this rule is
+The on-chain declaration source for this rule is
 `server/bond-hard-price-declaration.mjs`. `npm run
 build:bond-hard-price-declaration` emits the exact declaration text plus the
-`pwm1:m:` protocol-record commitment for POWB and INCB hard-price bond AMO
-listings.
+`pwm1:m:` protocol-record commitment. `npm run
+prepare:bond-hard-price-declaration` emits the local-wallet signing draft:
+input zero must spend the declared authority script, the transaction must carry
+the exact `pwm1:m:` declaration record, and it must include one pinned
+546-proof registry payment to `infinity@proofofwork.me` and one pinned
+546-proof registry payment to `inception@proofofwork.me`.
+
+After the declaration confirms, record its canonical pins together:
+
+```text
+BOND_HARD_PRICE_DECLARATION_TXID
+BOND_HARD_PRICE_DECLARATION_HEIGHT
+BOND_HARD_PRICE_DECLARATION_BLOCK_HASH
+BOND_HARD_PRICE_DECLARATION_BLOCK_INDEX
+BOND_HARD_PRICE_DECLARATION_MEMO_SHA256
+BOND_HARD_PRICE_DECLARATION_MEMO_BYTES
+BOND_HARD_PRICE_DECLARATION_PROTOCOL_VOUT
+BOND_HARD_PRICE_DECLARATION_RECORD_ORDINAL
+BOND_HARD_PRICE_DECLARATION_POWB_REGISTRY_PAYMENT_VOUT
+BOND_HARD_PRICE_DECLARATION_INCB_REGISTRY_PAYMENT_VOUT
+BOND_HARD_PRICE_ACTIVATION_HEIGHT
+BOND_HARD_PRICE_WRITES_ENABLED
+```
+
+The authoritative declaration is the earliest exact valid declaration by
+confirmed block height and transaction index. Its exact carrier and each
+qualifying registry payment must be unambiguous; a later duplicate cannot move
+activation.
 
 This is intentionally different from governed WORK AMO units. WORK V8 admits
 only the declared 25,000-proof face and derives exact Q16 WORK subatoms at the
