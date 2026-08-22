@@ -3,6 +3,7 @@ Description=ProofOfWork.Me PostgreSQL event indexer worker
 After=network-online.target postgresql@16-main.service proofofwork-api.service
 Wants=network-online.target proofofwork-api.service
 Requires=postgresql@16-main.service
+PartOf=postgresql@16-main.service proofofwork-api.service
 
 [Service]
 Type=simple
@@ -79,7 +80,7 @@ Environment=POW_INDEX_WORKER_MAX_ERROR_INTERVAL_MS=900000
 Environment=POW_INDEX_WORKER_NO_PROGRESS_ALERT_INTERVAL_MS=900000
 ExecStartPre=/usr/bin/pg_isready --quiet --host=127.0.0.1 --port=5432 --dbname=proof_indexer
 ExecStart=/opt/node-v24.18.0-linux-x64/bin/node /opt/proofofwork-api/scripts/run-proof-indexer-worker.mjs --loop
-Restart=on-failure
+Restart=always
 RestartSec=15
 TimeoutStopSec=30
 KillMode=control-group
@@ -103,3 +104,4 @@ UMask=0027
 
 [Install]
 WantedBy=multi-user.target
+WantedBy=postgresql@16-main.service

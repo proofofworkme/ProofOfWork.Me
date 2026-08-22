@@ -167,6 +167,12 @@ assert.match(
 assert.match(workerService, /ProtectSystem=full/u);
 assert.match(workerService, /ProtectHome=true/u);
 assert.match(
+  workerService,
+  /^PartOf=postgresql@16-main\.service proofofwork-api\.service$/mu,
+);
+assert.match(workerService, /^Restart=always$/mu);
+assert.match(workerService, /^WantedBy=postgresql@16-main\.service$/mu);
+assert.match(
   apiNodeRuntime,
   /ExecStart=\nExecStart=\/opt\/node-v24\.18\.0-linux-x64\/bin\/node \/opt\/proofofwork-api\/server\/proof-api\.mjs/u,
 );

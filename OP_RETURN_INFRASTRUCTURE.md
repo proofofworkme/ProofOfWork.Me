@@ -829,7 +829,12 @@ landing-page header policy grants the separate YouTube frame origins used by its
 public video.
 
 The worker requires the real production cluster unit
-`postgresql@16-main.service`, checks `pg_isready` before startup, records
+`postgresql@16-main.service`, is installed under both `multi-user.target` and
+`postgresql@16-main.service`, and is `PartOf` PostgreSQL plus the API service so
+planned package or database restarts do not strand the hot index loop. Its
+systemd restart policy is `Restart=always`; a clean unexpected loop exit should
+therefore restart, while an explicit operator stop remains an intentional
+maintenance action. The worker checks `pg_isready` before startup, records
 `starting`, `running`, `idle`, and `failed` state in `worker:lastRun`, and keeps
 the last successful cycle visible across an in-progress or failed cycle. The
 confirmed scanner runs before pending-status cleanup; if confirmed catch-up
