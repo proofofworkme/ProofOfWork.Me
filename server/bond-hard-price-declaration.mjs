@@ -207,3 +207,114 @@ export function bondHardPriceDeclarationCarrierEvidence(
     recordOrdinal,
   });
 }
+
+function outputAddress(output) {
+  return String(
+    output?.scriptpubkey_address ??
+      output?.scriptPubKey?.address ??
+      (Array.isArray(output?.scriptPubKey?.addresses)
+        ? output.scriptPubKey.addresses[0]
+        : "") ??
+      "",
+  ).trim();
+}
+
+function outputValueSats(output) {
+  const value = output?.value;
+  if (Number.isSafeInteger(value) && value >= 0) {
+    return value;
+  }
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric < 0) {
+    return null;
+  }
+  const sats = Math.round(numeric * 100_000_000);
+  return Number.isSafeInteger(sats) ? sats : null;
+}
+
+function firstInputPrevoutScriptPubKey(transaction) {
+  return String(
+    transaction?.vin?.[0]?.prevout?.scriptpubkey ??
+      transaction?.vin?.[0]?.prevout?.scriptPubKey?.hex ??
+      "",
+  )
+    .trim()
+    .toLowerCase();
+}
+
+export function bondHardPriceDeclarationTransactionEvidence(
+  transaction,
+  {
+    commitment = bondHardPriceDeclarationCommitment(),
+    protocolVout,
+    recordOrdinal,
+    registryPaymentVouts = {},
+  } = {},
+) {
+  const carrier = bondHardPriceDeclarationCarrierEvidence(transaction, {
+    commitment,
+    protocolVout,
+    recordOrdinal,
+  });
+  const authorityScriptPubKey = firstInputPrevoutScriptPubKey(transaction);
+  const registryPayments = BOND_HARD_PRICE_DECLARATION_TOKENS.map(
+    (token) => {
+      const key = token.ticker.toLowerCase();
+      const expectedVout = Number(registryPaymentVouts[key]);
+      const registryPaymentVout = Number.isSafeInteger(expectedVout)
+        ? expectedVout
+        : null;
+      const registryOutput =
+        registryPaymentVout === null
+          ? null
+          : transaction?.vout?.[registryPaymentVout];
+      const candidates = (Array.isArray(transaction?.vout)
+        ? transaction.vout
+        : []
+      )
+        .map((output, vout) => ({ output, vout }))
+        .filter(({ output }) => {
+          const sats = outputValueSats(output);
+          return (
+            outputAddress(output) === token.registryAddress &&
+            sats !== null &&
+            sats >= BOND_HARD_PRICE_DECLARATION_MIN_PAYMENT_SATS
+          );
+        });
+      return Object.freeze({
+        address: outputAddress(registryOutput),
+        candidateCount: candidates.length,
+        expectedAddress: token.registryAddress,
+        minimumPaymentSats:
+          BOND_HARD_PRICE_DECLARATION_MIN_PAYMENT_SATS,
+        registryId: token.registryId,
+        registryPaymentSats: outputValueSats(registryOutput),
+        registryPaymentVout,
+        ticker: token.ticker,
+        tokenId: token.tokenId,
+        valid:
+          registryPaymentVout !== null &&
+          candidates.length === 1 &&
+          candidates[0]?.vout === registryPaymentVout,
+      });
+    },
+  );
+  const txid = String(transaction?.txid ?? "").trim().toLowerCase();
+  const evidenceComplete =
+    carrier !== null &&
+    authorityScriptPubKey ===
+      BOND_HARD_PRICE_DECLARATION_AUTHORITY_SCRIPT_PUBKEY &&
+    registryPayments.every((payment) => payment.valid === true);
+  return Object.freeze({
+    authorityScriptPubKey,
+    carrier,
+    evidenceComplete,
+    expectedAuthorityScriptPubKey:
+      BOND_HARD_PRICE_DECLARATION_AUTHORITY_SCRIPT_PUBKEY,
+    expectedProtocolRecordBytes: commitment.protocolRecordBytes,
+    expectedProtocolRecordSha256: commitment.protocolRecordSha256,
+    model: BOND_HARD_PRICE_DECLARATION_EVIDENCE_MODEL,
+    registryPayments: Object.freeze(registryPayments),
+    txid,
+  });
+}
