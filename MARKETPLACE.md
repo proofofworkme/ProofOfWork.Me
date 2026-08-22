@@ -108,6 +108,12 @@ nonce, expiry, and ticket anchor. Confirmation freezes those public terms; a
 later seal, buy, floor move, transfer, bond, or WORK network-value change does
 not derive a new amount, select a face, or reprice the listing.
 
+The declaration artifact for this rule is
+`server/bond-hard-price-declaration.mjs`. `npm run
+build:bond-hard-price-declaration` emits the exact declaration text plus the
+`pwm1:m:` protocol-record commitment for POWB and INCB hard-price bond AMO
+listings.
+
 This is intentionally different from governed WORK AMO units. WORK V8 admits
 only the declared 25,000-proof face and derives exact Q16 WORK subatoms at the
 listing's canonical position. POWB and INCB are uncapped bond assets: they keep

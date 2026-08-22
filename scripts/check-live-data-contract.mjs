@@ -49,6 +49,14 @@ const workAmoV8MetadataSource = sourceSliceBetween(
   /async function workAmoV8Metadata/,
   /async function withWorkMarketplaceV4Metadata/,
 );
+const bondHardPriceDeclaration = readFileSync(
+  "server/bond-hard-price-declaration.mjs",
+  "utf8",
+);
+const bondHardPriceDeclarationBuilder = readFileSync(
+  "scripts/build-bond-hard-price-declaration.mjs",
+  "utf8",
+);
 const workUnits = readFileSync("server/work-units.mjs", "utf8");
 const app = readFileSync("src/App.tsx", "utf8");
 const routeRegistry = readFileSync("src/app/routeRegistry.ts", "utf8");
@@ -2515,6 +2523,32 @@ expectAll("Infinity and Inception recipient-credit markets are wired", server + 
   /address:\s*resolvedRecipient\.paymentAddress/,
   /minterAddress:\s*mailRecipient\.address/,
 ]);
+expectAll(
+  "POWB and INCB hard-price AMO declaration is explicit and buildable",
+  bondHardPriceDeclaration + bondHardPriceDeclarationBuilder + packageJson,
+  [
+    /buildBondHardPriceDeclarationText/,
+    /bondHardPriceDeclarationCommitment/,
+    /"ProofOfWork\.Me POWB and INCB Hard-Price Bond AMO Declaration"/,
+    /BOND_HARD_PRICE_DECLARATION_AUTH_VERSION = "pwt-sale-v1"/,
+    /BOND_HARD_PRICE_DECLARATION_LIFECYCLE =\s*"list5\/seal5\/buy5\/delist5"/,
+    /"a3d0bc8528f91dfc52400a885bed7e49235396aa82aa9f95db41be629f1d5562"/,
+    /"3cb25745f937f2b4e5508e5400189fe8fe679cd8e84bfa1e9176d70c9761f15d"/,
+    /"infinity@proofofwork\.me"/,
+    /"inception@proofofwork\.me"/,
+    /quantityRule=the seller chooses any positive whole POWB or INCB quantity/,
+    /priceRule=the seller chooses an exact positive integer total proof price/,
+    /hardPriceRule=confirmation freezes the signed pwt-sale-v1 quantity, price/,
+    /nonRepricingRule=a later seal, buy, delist attempt, transfer, bond, floor move, network-value change, or WORK value change cannot derive a different amount or reprice the listing/,
+    /workSeparationRule=POWB and INCB are not governed WORK units/,
+    /settlementRule=a confirmed bond listing may be sealed, bought, or delisted only against its frozen signed terms/,
+    /issuanceSeparationRule=POWB and INCB issuance remains bound to confirmed Infinity Bond and Inception Bond projections/,
+    /implementationRule=the open-source ProofOfWork\.Me computer enforces this rule from canonical confirmed ProofOfWork state/,
+    /"build:bond-hard-price-declaration":\s*"node scripts\/build-bond-hard-price-declaration\.mjs"/,
+    /bondHardPriceDeclarationCommitment/,
+    /The presentation newline is not part of declaration\.text or either hash/,
+  ],
+);
 expectAll("Inception issuance is fixed from the exact green H-1 WORK snapshot", server, [
   /"canonical-pre-bond-live-network-value-v2"/,
   /"canonical-summary-h-minus-one-v1"/,
