@@ -13207,9 +13207,17 @@ function tokenHasConfirmedMarketplaceSales(token: PowTokenDefinition) {
   );
 }
 
-function summedTokenMarketplaceCount(
+type TokenMarketplaceMetricKey =
+  | "confirmedOpenListings"
+  | "pendingOpenListings"
+  | "confirmedSales"
+  | "confirmedSalesVolumeSats"
+  | "pendingSales"
+  | "pendingSalesVolumeSats";
+
+function summedTokenMarketplaceMetric(
   tokens: PowTokenDefinition[],
-  key: "confirmedOpenListings" | "pendingOpenListings",
+  key: TokenMarketplaceMetricKey,
 ) {
   const counts = tokens.map((token) => optionalMarketplaceCount(token[key]));
   return counts.length > 0 && counts.every((count) => count !== undefined)
@@ -13275,6 +13283,18 @@ function tokenMarketplaceSummaryStats({
   );
   const scopedPendingSummaryIsSafe =
     allNetworkTokens.length === 1 || topLevelPendingSales === 0;
+  const networkConfirmedSales = scopedToken
+    ? undefined
+    : summedTokenMarketplaceMetric(networkTokens, "confirmedSales");
+  const networkConfirmedSalesVolumeSats = scopedToken
+    ? undefined
+    : summedTokenMarketplaceMetric(networkTokens, "confirmedSalesVolumeSats");
+  const networkPendingSales = scopedToken
+    ? undefined
+    : summedTokenMarketplaceMetric(networkTokens, "pendingSales");
+  const networkPendingSalesVolumeSats = scopedToken
+    ? undefined
+    : summedTokenMarketplaceMetric(networkTokens, "pendingSalesVolumeSats");
   const authoritativeMarketStats = scopedToken
     ? {
         confirmedSales:
@@ -13296,14 +13316,24 @@ function tokenMarketplaceSummaryStats({
             ? optionalMarketplaceCount(summaryStats?.pendingSalesVolumeSats)
             : undefined),
       }
-    : summaryAppliesToNetwork
-      ? {
-          confirmedSales: summaryStats?.confirmedSales,
-          confirmedVolumeSats: summaryStats?.confirmedSalesVolumeSats,
-          pendingSales: summaryStats?.pendingSales,
-          pendingVolumeSats: summaryStats?.pendingSalesVolumeSats,
-        }
-      : undefined;
+    : {
+        confirmedSales:
+          networkConfirmedSales ??
+          (summaryAppliesToNetwork ? summaryStats?.confirmedSales : undefined),
+        confirmedVolumeSats:
+          networkConfirmedSalesVolumeSats ??
+          (summaryAppliesToNetwork
+            ? summaryStats?.confirmedSalesVolumeSats
+            : undefined),
+        pendingSales:
+          networkPendingSales ??
+          (summaryAppliesToNetwork ? summaryStats?.pendingSales : undefined),
+        pendingVolumeSats:
+          networkPendingSalesVolumeSats ??
+          (summaryAppliesToNetwork
+            ? summaryStats?.pendingSalesVolumeSats
+            : undefined),
+      };
   const marketStats = marketplaceStatsWithAuthoritativeSummary(
     previewMarketStats,
     authoritativeMarketStats,
@@ -13320,10 +13350,10 @@ function tokenMarketplaceSummaryStats({
       : undefined;
   const networkConfirmedListings = scopedToken
     ? undefined
-    : summedTokenMarketplaceCount(networkTokens, "confirmedOpenListings");
+    : summedTokenMarketplaceMetric(networkTokens, "confirmedOpenListings");
   const networkPendingListings = scopedToken
     ? undefined
-    : summedTokenMarketplaceCount(networkTokens, "pendingOpenListings");
+    : summedTokenMarketplaceMetric(networkTokens, "pendingOpenListings");
   const confirmedListings =
     optionalMarketplaceCount(scopedToken?.confirmedOpenListings) ??
     networkConfirmedListings ??
@@ -46765,7 +46795,7 @@ function MarketplaceApp({
     listings: creditTokenListings,
     network: "livenet",
     sales: creditTokenSales,
-    summary: selectedTokenMarket ? tokenSummary : undefined,
+    summary: tokenSummary,
     token: selectedTokenMarket,
     tokenScope: selectedTokenMarketId,
     tokens: creditTokens,
@@ -47293,7 +47323,7 @@ function MarketplaceWorkspace({
     listings: creditTokenListings,
     network,
     sales: creditTokenSales,
-    summary: selectedTokenMarket ? tokenSummary : undefined,
+    summary: tokenSummary,
     token: selectedTokenMarket,
     tokenScope: selectedTokenMarketId,
     tokens: creditTokens,

@@ -2652,7 +2652,23 @@ expect(
     /function optionalMarketplaceMetric\(value: unknown\)[\s\S]*value === null[\s\S]*value === undefined[\s\S]*value === ""[\s\S]*return undefined/.test(
       app,
     ) &&
-    /summary:\s*selectedTokenMarket \? tokenSummary : undefined/.test(app) &&
+    (app.match(/summary:\s*tokenSummary/g)?.length ?? 0) >= 2 &&
+    !/summary:\s*selectedTokenMarket \? tokenSummary : undefined/.test(app) &&
+    /function summedTokenMarketplaceMetric[\s\S]*counts\.every\(\(count\) => count !== undefined\)/.test(
+      app,
+    ) &&
+    /summedTokenMarketplaceMetric\(networkTokens, "confirmedSales"\)/.test(
+      tokenMarketplaceSummaryStatsBlock,
+    ) &&
+    /summedTokenMarketplaceMetric\(networkTokens, "confirmedSalesVolumeSats"\)/.test(
+      tokenMarketplaceSummaryStatsBlock,
+    ) &&
+    /summedTokenMarketplaceMetric\(networkTokens, "pendingSales"\)/.test(
+      tokenMarketplaceSummaryStatsBlock,
+    ) &&
+    /summedTokenMarketplaceMetric\(networkTokens, "pendingSalesVolumeSats"\)/.test(
+      tokenMarketplaceSummaryStatsBlock,
+    ) &&
     /scopedToken\.confirmedSales/.test(tokenMarketplaceSummaryStatsBlock) &&
     /summaryStats\?\.confirmedSalesVolumeSats/.test(
       tokenMarketplaceSummaryStatsBlock,
@@ -2673,13 +2689,13 @@ expect(
       tokenMarketplaceSummaryStatsBlock,
     ) &&
     /scopedToken\?\.pendingOpenListings/.test(tokenMarketplaceSummaryStatsBlock) &&
-    /function summedTokenMarketplaceCount[\s\S]*counts\.every\(\(count\) => count !== undefined\)/.test(
+    /function summedTokenMarketplaceMetric[\s\S]*counts\.every\(\(count\) => count !== undefined\)/.test(
       app,
     ) &&
-    /summedTokenMarketplaceCount\(networkTokens, "confirmedOpenListings"\)/.test(
+    /summedTokenMarketplaceMetric\(networkTokens, "confirmedOpenListings"\)/.test(
       tokenMarketplaceSummaryStatsBlock,
     ) &&
-    /summedTokenMarketplaceCount\(networkTokens, "pendingOpenListings"\)/.test(
+    /summedTokenMarketplaceMetric\(networkTokens, "pendingOpenListings"\)/.test(
       tokenMarketplaceSummaryStatsBlock,
     ) &&
     /networkConfirmedListings \?\?[\s\S]*previewConfirmedListings/.test(
