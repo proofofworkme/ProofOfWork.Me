@@ -30625,6 +30625,154 @@ function tokenSummaryListings(items, limit = SUMMARY_MARKET_LIMIT) {
   );
 }
 
+const TOKEN_SUMMARY_MARKET_PREVIEW_KEYS = [
+  "_powEventIndex",
+  "amount",
+  "amountAtoms",
+  "amountSats",
+  "amountStorageModel",
+  "amountSubatoms",
+  "blockHash",
+  "blockHeight",
+  "blockIndex",
+  "blockTime",
+  "canonicalVerifier",
+  "closeTxid",
+  "closedAt",
+  "closedBlockHash",
+  "closedConfirmed",
+  "closedTxid",
+  "confirmed",
+  "createdAt",
+  "dataBytes",
+  "decimals",
+  "derived",
+  "derivedId",
+  "dropped",
+  "firstInputPrevoutScriptpubkey",
+  "frozenNetworkValueSats",
+  "frozenTerms",
+  "indexedFrom",
+  "kind",
+  "listingId",
+  "liveNetworkValueSats",
+  "marketplaceMutationFeeSats",
+  "minerFeeSats",
+  "network",
+  "participants",
+  "position",
+  "precisionModel",
+  "priceSats",
+  "protocol",
+  "protocolVout",
+  "reasonCode",
+  "recipients",
+  "recordOrdinal",
+  "registryAddress",
+  "saleAuthorization",
+  "saleTicketTxid",
+  "saleTicketValueSats",
+  "saleTicketVout",
+  "sealAt",
+  "sealBlockHash",
+  "sealBlockHeight",
+  "sealBlockIndex",
+  "sealConfirmed",
+  "sealDataBytes",
+  "sealFrozenNetworkValueSats",
+  "sealLiveNetworkValueSats",
+  "sealMinerFeeCanonical",
+  "sealMinerFeeSats",
+  "sealProtocolVout",
+  "sealRecordOrdinal",
+  "sealTransactionBlockHeight",
+  "sealTxid",
+  "sellerAddress",
+  "senderAddress",
+  "status",
+  "ticker",
+  "timestamp",
+  "tokenId",
+  "txid",
+  "unitFaceProofs",
+  "unitFaceUsdCents",
+  "unitScale",
+  "valid",
+  "validationMode",
+  "workAmoFrozenTerms",
+  "workAmoV8FrozenTerms",
+];
+
+const TOKEN_SUMMARY_INVALID_EVENT_PREVIEW_KEYS = [
+  "amount",
+  "amountAtoms",
+  "amountStorageModel",
+  "amountSubatoms",
+  "attemptedAmount",
+  "attemptedAmountAtoms",
+  "attemptedAmountStorageModel",
+  "attemptedAmountSubatoms",
+  "attemptedDecimals",
+  "attemptedKind",
+  "attemptedPrecisionModel",
+  "attemptedUnitScale",
+  "auditMinerFeeSats",
+  "auditRegistryPaymentSats",
+  "auditTotalCostSats",
+  "blockHash",
+  "blockHeight",
+  "blockIndex",
+  "blockTime",
+  "canonicalVerifier",
+  "confirmed",
+  "createdAt",
+  "dataBytes",
+  "decimals",
+  "dropped",
+  "kind",
+  "listingId",
+  "network",
+  "participantDetails",
+  "participants",
+  "position",
+  "precisionModel",
+  "protocol",
+  "reason",
+  "reasonCode",
+  "recipientAddress",
+  "recipients",
+  "registryAddress",
+  "saleAuthorization",
+  "saleTicketTxid",
+  "saleTicketValueSats",
+  "sealConfirmed",
+  "sealTxid",
+  "sellerAddress",
+  "senderAddress",
+  "status",
+  "ticker",
+  "timestamp",
+  "tokenId",
+  "txid",
+  "unitScale",
+  "valid",
+  "validationErrors",
+  "validationMode",
+];
+
+function tokenSummaryPreviewRecord(record, keys) {
+  if (!record || typeof record !== "object" || Array.isArray(record)) {
+    return record;
+  }
+  const preview = {};
+  for (const key of keys) {
+    if (Object.prototype.hasOwnProperty.call(record, key)) {
+      preview[key] = record[key];
+    }
+  }
+  return preview;
+}
+
 function recentClosedTokenListings(items, limit = SUMMARY_MARKET_LIMIT) {
   const eventTime = (item) => {
     const parsed = Date.parse(String(item?.closedAt ?? item?.createdAt ?? ""));
@@ -31537,6 +31685,9 @@ function compactTokenSummaryPayload(payload, tokenScope = "", options = {}) {
   const mints = Array.isArray(payload.mints) ? payload.mints : [];
   const sales = Array.isArray(payload.sales) ? payload.sales : [];
   const transfers = Array.isArray(payload.transfers) ? payload.transfers : [];
+  const invalidEvents = Array.isArray(payload.invalidEvents)
+    ? payload.invalidEvents
+    : [];
   const tokenDefinitions = Array.isArray(payload.tokens) ? payload.tokens : [];
   const sealedActiveListingsByKey = new Map(
     rawListings
@@ -31622,6 +31773,7 @@ function compactTokenSummaryPayload(payload, tokenScope = "", options = {}) {
   const scope = normalizeTokenScope(tokenScope);
   const includeAllScopedListings =
     options.includeAllScopedListings !== false;
+  const compactMarketRecords = options.compactMarketRecords === true;
   const includeAllActiveListings =
     walletScopedSummary || (Boolean(scope) && includeAllScopedListings);
   const closedListingLimit = walletScopedSummary
@@ -31964,12 +32116,26 @@ function compactTokenSummaryPayload(payload, tokenScope = "", options = {}) {
     return next;
   });
 
+  const compactMarketRecord = (record) =>
+    compactMarketRecords
+      ? tokenSummaryPreviewRecord(record, TOKEN_SUMMARY_MARKET_PREVIEW_KEYS)
+      : record;
   const compactClosedListings = recentClosedTokenListings(
     closedListings,
     closedListingLimit,
-  );
+  ).map(compactMarketRecord);
   const compactHolders = holders.slice(0, holderLimit);
-  const compactListings = tokenSummaryListings(listings, listingLimit);
+  const compactListings = tokenSummaryListings(listings, listingLimit).map(
+    compactMarketRecord,
+  );
+  const compactInvalidEvents = compactMarketRecords
+    ? recentByCreatedAt(invalidEvents, SUMMARY_MARKET_LIMIT).map((event) =>
+        tokenSummaryPreviewRecord(
+          event,
+          TOKEN_SUMMARY_INVALID_EVENT_PREVIEW_KEYS,
+        ),
+      )
+    : invalidEvents;
   const compactSales = recentByCreatedAt(payload.sales, saleLimit);
   const summarizedOpenListings = (() => {
     const counts = tokens.map((token) => explicitCount(token?.openListings));
@@ -32044,6 +32210,7 @@ function compactTokenSummaryPayload(payload, tokenScope = "", options = {}) {
     collectionHasMore,
     hasMore: Object.values(collectionHasMore).some(Boolean),
     holders: compactHolders,
+    invalidEvents: compactInvalidEvents,
     listings: compactListings,
     mints: [],
     sales: compactSales,
@@ -38307,6 +38474,7 @@ function compactWorkSummaryPayload(payload) {
       payload.token && typeof payload.token === "object"
         ? compactTokenSummaryPayload(payload.token, WORK_TOKEN_ID, {
             includeAllScopedListings: false,
+            compactMarketRecords: true,
           })
         : payload.token,
   };
@@ -38327,6 +38495,7 @@ function compactMarketplaceSummaryReadPayload(payload) {
       payload.token && typeof payload.token === "object"
         ? compactTokenSummaryPayload(payload.token, "", {
             includeAllScopedListings: false,
+            compactMarketRecords: true,
           })
         : payload.token,
   };
@@ -66803,6 +66972,7 @@ async function handleRequest(request, response) {
         !walletScoped && compactRead
           ? compactTokenSummaryPayload(rawTokenSummary, tokenScope, {
               includeAllScopedListings: false,
+              compactMarketRecords: true,
             })
           : rawTokenSummary;
       jsonResponse(
