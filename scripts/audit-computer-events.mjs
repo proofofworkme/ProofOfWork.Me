@@ -433,6 +433,13 @@ try {
     check("all-confirmed-events-have-raw-transaction-or-payload", rowNumber(db, "confirmed_events_missing_raw_transaction") === 0, {
       missing: rowNumber(db, "confirmed_events_missing_raw_transaction"),
     }),
+    check(
+      "all-confirmed-transactions-have-raw-transaction",
+      rowNumber(db, "confirmed_transactions_missing_raw") === 0,
+      {
+        missing: rowNumber(db, "confirmed_transactions_missing_raw"),
+      },
+    ),
     check("event-search-index-populated", rowNumber(db, "event_refs") > 0 && rowNumber(db, "event_participants") > 0, {
       eventParticipants: rowNumber(db, "event_participants"),
       eventRefs: rowNumber(db, "event_refs"),

@@ -1474,7 +1474,7 @@ expectAll("transaction hex PSBT reads stay first-party", txHexPayloadSource, [
 ]);
 expect("transaction hex PSBT reads must not call public explorer fallbacks", !/explorerBase|explorerReadBases|fetchTextViaHttps|mempool\.space/i.test(txHexPayloadSource));
 expectAll("wallet scoped token reads keep confirmed lifecycle history", server, [
-  /function compactTokenSummaryPayload\(payload,\s*tokenScope = ""\)[\s\S]*const walletScopedSummary =[\s\S]*payload\.walletScoped === true \|\| stats\.walletScoped === true/,
+  /function compactTokenSummaryPayload\(payload,\s*tokenScope = ""(?:,\s*options = \{\})?\)[\s\S]*const walletScopedSummary =[\s\S]*payload\.walletScoped === true \|\| stats\.walletScoped === true/,
   /const closedListingLimit = walletScopedSummary[\s\S]*Math\.max\(closedListings\.length,\s*SUMMARY_MARKET_LIMIT\)/,
   /const compactClosedListings = recentClosedTokenListings\([\s\S]*closedListingLimit[\s\S]*closedListings:\s*compactClosedListings/,
   /function tokenStateWithPreservedListingRecords\(state,\s*sourceState\)[\s\S]*const preservedClosedListingIds = new Set\([\s\S]*sourceState\?\.closedListings[\s\S]*if \(!preservedClosedListingIds\.has\(listingId\)\)/,
@@ -1594,7 +1594,7 @@ expectAll("marketplace summary and tabs keep confirmed sealed inventory canonica
   /async function workTokenStateForSummaryRead\([\s\S]*tokenPayloadForRead\([\s\S]*reconcileListingStatus:\s*fresh[\s\S]*reconcileSpendable:\s*fresh/,
   /async function tokenSummaryPayload\([\s\S]*summaryRecoveryAddresses\.length === 0 &&[\s\S]*scope !== WORK_TOKEN_ID/,
   /async function reconciledLivenetMarketplaceSummaryPayload\([\s\S]*workTokenStateForSummaryRead\([\s\S]*tokenStateWithPreservedListingRecords/,
-  /const includeAllActiveListings = walletScopedSummary \|\| Boolean\(scope\)/,
+  /const includeAllScopedListings =[\s\S]*options\.includeAllScopedListings !== false[\s\S]*const includeAllActiveListings =[\s\S]*walletScopedSummary \|\| \(Boolean\(scope\) && includeAllScopedListings\)/,
   /openListings: mergedTokenSummaryMetric\([\s\S]*"openListings"[\s\S]*preserveExistingTokenMetrics/,
   /function workFloorWithIndexedMarketSummaryOverlay\([\s\S]*tokenSaleVolumeSats[\s\S]*marketplaceSaleVolumeSats/,
   /function marketplaceSummaryHasIndexedMarketOverlay\([\s\S]*proof-indexer-token-market-summary-overlay/,

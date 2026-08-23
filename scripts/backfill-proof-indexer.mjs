@@ -10713,6 +10713,33 @@ async function persistCanonicalListingOutpointSpendsFromBlock(
       : null;
   let inputCount = 0;
   for (const { blockIndex, inputs, tx, txid } of spenders) {
+    const canonicalRawTx = {
+      ...tx,
+      _powBlockIndex: blockIndex,
+      canonicalBlockScan: {
+        blockHash: String(blockHash ?? "").trim().toLowerCase(),
+        blockIndex,
+        height,
+        network: NETWORK,
+      },
+    };
+    const details = canonicalTransactionDetailRows(canonicalRawTx);
+    const inputValueSats = details.inputs.reduce((total, input) => {
+      if (!Number.isSafeInteger(input.value_sats)) {
+        throw new Error(
+          `Canonical listing spender ${txid} has an input without a value.`,
+        );
+      }
+      return total + input.value_sats;
+    }, 0);
+    const outputValueSats = details.outputs.reduce(
+      (total, output) => total + output.value_sats,
+      0,
+    );
+    const feeSats = inputValueSats - outputValueSats;
+    if (!Number.isSafeInteger(feeSats) || feeSats < 0) {
+      throw new Error(`Canonical listing spender ${txid} has an invalid fee.`);
+    }
     await client.query(
       `
         INSERT INTO proof_indexer.transactions (
@@ -10726,11 +10753,13 @@ async function persistCanonicalListingOutpointSpendsFromBlock(
           block_height,
           block_index,
           block_time,
+          fee_sats,
           vsize,
           weight,
           version,
           locktime,
-          source
+          source,
+          raw_tx
         )
         VALUES (
           $1,
@@ -10747,7 +10776,8 @@ async function persistCanonicalListingOutpointSpendsFromBlock(
           $8,
           $9,
           $10,
-          'canonical-listing-outpoint-scan'
+          'canonical-listing-outpoint-scan',
+          $11::jsonb
         )
         ON CONFLICT (network, txid)
         DO UPDATE SET
@@ -10761,27 +10791,35 @@ async function persistCanonicalListingOutpointSpendsFromBlock(
           block_height = EXCLUDED.block_height,
           block_index = EXCLUDED.block_index,
           block_time = EXCLUDED.block_time,
+          fee_sats = COALESCE(
+            EXCLUDED.fee_sats,
+            proof_indexer.transactions.fee_sats
+          ),
           vsize = COALESCE(
-            proof_indexer.transactions.vsize,
-            EXCLUDED.vsize
+            EXCLUDED.vsize,
+            proof_indexer.transactions.vsize
           ),
           weight = COALESCE(
-            proof_indexer.transactions.weight,
-            EXCLUDED.weight
+            EXCLUDED.weight,
+            proof_indexer.transactions.weight
           ),
           version = COALESCE(
-            proof_indexer.transactions.version,
-            EXCLUDED.version
+            EXCLUDED.version,
+            proof_indexer.transactions.version
           ),
           locktime = COALESCE(
-            proof_indexer.transactions.locktime,
-            EXCLUDED.locktime
+            EXCLUDED.locktime,
+            proof_indexer.transactions.locktime
           ),
           source = CASE
             WHEN proof_indexer.transactions.raw_tx IS NOT NULL
               THEN proof_indexer.transactions.source
             ELSE EXCLUDED.source
           END,
+          raw_tx = COALESCE(
+            proof_indexer.transactions.raw_tx,
+            EXCLUDED.raw_tx
+          ),
           updated_at = now()
       `,
       [
@@ -10791,12 +10829,18 @@ async function persistCanonicalListingOutpointSpendsFromBlock(
         String(blockHash ?? "").trim().toLowerCase(),
         height,
         blockIndex,
+        feeSats,
         numberOrNull(tx?.vsize),
         numberOrNull(tx?.weight),
         numberOrNull(tx?.version),
         numberOrNull(tx?.locktime),
+        JSON.stringify(canonicalRawTx),
       ],
     );
+    await persistCanonicalTransactionDetails(client, canonicalRawTx, {
+      details,
+      spentAt: eventTime,
+    });
     await client.query(
       `
         INSERT INTO proof_indexer.tx_inputs (

@@ -7182,10 +7182,16 @@ check("fresh wallet token reads use exact or bounded canonical coverage", async 
   let exactReads = 0;
   let indexedReads = 0;
   let summaryReads = 0;
+  const walletScopedTokenCacheStubs = {
+    cachedWalletScopedTokenPayload: () => null,
+    rememberWalletScopedTokenPayload: (_cacheKey, payload) => payload,
+    walletScopedTokenCacheKey: () => "",
+  };
   const walletScopedTokenPayload = isolatedFunction(
     API_PATH,
     "walletScopedTokenPayload",
     {
+      ...walletScopedTokenCacheStubs,
       BOND_TOKEN_IDS: new Set(),
       WALLET_SCOPED_INDEX_WAIT_MS: 10_000,
       WALLET_SCOPED_RECOVERY_WAIT_MS: 1,
@@ -7250,6 +7256,7 @@ check("fresh wallet token reads use exact or bounded canonical coverage", async 
     API_PATH,
     "walletScopedTokenPayload",
     {
+      ...walletScopedTokenCacheStubs,
       BOND_TOKEN_IDS: new Set(),
       WALLET_SCOPED_INDEX_WAIT_MS: 10_000,
       WALLET_SCOPED_RECOVERY_WAIT_MS: 1,
@@ -7328,6 +7335,7 @@ check("fresh wallet token reads use exact or bounded canonical coverage", async 
     API_PATH,
     "walletScopedTokenPayload",
     {
+      ...walletScopedTokenCacheStubs,
       BOND_TOKEN_IDS: new Set(),
       WALLET_SCOPED_INDEX_WAIT_MS: 10_000,
       WALLET_SCOPED_RECOVERY_WAIT_MS: 1,
@@ -7405,6 +7413,7 @@ check("fresh wallet token reads use exact or bounded canonical coverage", async 
     API_PATH,
     "walletScopedTokenPayload",
     {
+      ...walletScopedTokenCacheStubs,
       BOND_TOKEN_IDS: new Set(),
       WALLET_SCOPED_INDEX_WAIT_MS: 10_000,
       WORK_TOKEN_ID: "work-token-id",

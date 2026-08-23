@@ -15113,6 +15113,9 @@ async function fetchTokenState(
   if (walletScoped && addressHints.length > 0) {
     params.set("wallet", "1");
   }
+  if (summary) {
+    params.set("compact", "1");
+  }
   const query = params.toString();
   const payload = await fetchProofApiJson<PowTokenApiResponse>(
     query
@@ -16732,8 +16735,12 @@ async function fetchWorkSummary(
   targetNetwork: BitcoinNetwork,
   fresh = false,
 ): Promise<WorkSummarySnapshot> {
+  const params = new URLSearchParams({ compact: "1" });
+  if (fresh) {
+    params.set("fresh", "1");
+  }
   const payload = await fetchProofApiJson<WorkSummaryApiResponse>(
-    fresh ? "/api/v1/work-summary?fresh=1" : "/api/v1/work-summary",
+    `/api/v1/work-summary?${params.toString()}`,
     targetNetwork,
   );
   const token = normalizeTokenApiState(payload.token);
@@ -16760,10 +16767,12 @@ async function fetchWorkSummary(
 async function fetchMarketplaceSummary(
   fresh = false,
 ): Promise<MarketplaceSummarySnapshot> {
+  const params = new URLSearchParams({ compact: "1" });
+  if (fresh) {
+    params.set("fresh", "1");
+  }
   const payload = await fetchProofApiJson<MarketplaceSummaryApiResponse>(
-    fresh
-      ? "/api/v1/marketplace-summary?fresh=1"
-      : "/api/v1/marketplace-summary",
+    `/api/v1/marketplace-summary?${params.toString()}`,
     "livenet",
   );
 
