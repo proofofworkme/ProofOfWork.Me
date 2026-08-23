@@ -1247,6 +1247,7 @@ function isolatedFunction(path, name, globals = {}) {
     WORK_TOKEN_MINT_PRICE_SATS: 1_000,
     WORK_TOKEN_TICKER: "WORK",
     tokenIndexAddressForNetwork: () => "",
+    TOKEN_MIN_MUTATION_PRICE_SATS: 546,
     WORK_AMO_V5_ACTIVATION_HEIGHT,
     WORK_AMO_V5_AUTH_VERSION,
     WORK_AMO_V6_AUTH_VERSION,
@@ -1548,6 +1549,7 @@ function isolatedFunction(path, name, globals = {}) {
         ],
         tokenTransferFromIndexedActivityItem: [
           "canonicalCreditValueFieldsFromRecord",
+          "tokenTransferRegistryMutationFeeSatsFromActivity",
           "tokenCreditAmountMovedFields",
         ],
         tokenStateWithCreditNetworkValueDetails: [
@@ -1594,6 +1596,7 @@ function isolatedFunction(path, name, globals = {}) {
           eventRowPayload: [
             "canonicalMovementPositionFromEventRow",
             "idRegistryProtocolFeeSats",
+            "tokenTransferRegistryMutationFeeSats",
           ],
           proofIndexCreditListingsPayload: [
             "canonicalTokenListingEventJoinSql",
@@ -1686,7 +1689,11 @@ function isolatedFunction(path, name, globals = {}) {
           ],
           tokenTransferFromEventPayload: [
             "canonicalMovementPositionFromEventRow",
+            "tokenTransferRegistryMutationFeeSats",
             "workAmountProjectionMetadataForAmount",
+          ],
+          tokenTransferRegistryMutationFeeSats: [
+            "normalizedLowerText",
           ],
           workAmountProjection: [
             "formatWorkAmountByProjectionMeta",
@@ -6662,7 +6669,7 @@ check("post-AMO-V5 ID registrations require and expose one exact canonical posit
   );
 });
 
-check("valid PWID lifecycle rows project their fixed protocol fee", () => {
+check("valid PWID and token lifecycle rows project their fixed protocol fee", () => {
   const eventRowPayload = isolatedFunction(READER_PATH, "eventRowPayload", {
     ID_MUTATION_PRICE_SATS: 546,
     ID_REGISTRATION_PRICE_SATS: 1_000,
@@ -6790,6 +6797,53 @@ check("valid PWID lifecycle rows project their fixed protocol fee", () => {
     0,
     "unsupported PWID kinds must not receive a canonical protocol fee",
   );
+  const tokenTransfer = eventRowPayload(
+    {
+      ...rowFor("token-transfer", {
+        amount_sats: "0",
+        protocol: "pwt1",
+        payload: {
+          amountSats: 0,
+          kind: "token-transfer",
+          protocol: "pwt1",
+          tokenId: POWB_TOKEN_ID,
+          txid,
+        },
+      }),
+    },
+    "livenet",
+  );
+  assert.equal(
+    tokenTransfer.amountSats,
+    546,
+    "valid pwt1 token transfers must project the fixed registry fee",
+  );
+  assert.equal(tokenTransfer.paidSats, 546);
+  assert.equal(tokenTransfer.registryMutationFeeSats, 546);
+  assert.equal(
+    eventRowPayload(
+      rowFor("token-transfer", {
+        amount_sats: "0",
+        protocol: "pwt1",
+        valid: false,
+        payload: {
+          amountSats: 0,
+          kind: "token-transfer",
+          protocol: "pwt1",
+          tokenId: POWB_TOKEN_ID,
+          txid,
+        },
+      }),
+      "livenet",
+    ).amountSats,
+    0,
+    "invalid pwt1 token transfers must not receive a canonical protocol fee",
+  );
+  assert.match(
+    topLevelFunctionSource(BACKFILL_PATH, "canonicalRecoveryItemsForTx"),
+    /normalizedKind === "token-transfer"[\s\S]*TOKEN_MIN_MUTATION_PRICE_SATS[\s\S]*canonicalItem\?\.amountSats/u,
+    "indexer recovery normalization must persist valid token transfers with the fixed mutation fee",
+  );
 
   const confirmedValueDeltaSource = topLevelFunctionSource(
     READER_PATH,
@@ -6797,13 +6851,13 @@ check("valid PWID lifecycle rows project their fixed protocol fee", () => {
   );
   assert.match(
     confirmedValueDeltaSource,
-    /e\.protocol = 'pwid1' AND e\.kind = 'id-register'[\s\S]*THEN \$\{ID_REGISTRATION_PRICE_SATS\}[\s\S]*e\.protocol = 'pwid1' AND e\.kind IN \([\s\S]*'id-update'[\s\S]*'id-transfer'[\s\S]*'id-list'[\s\S]*'id-seal'[\s\S]*'id-delist'[\s\S]*'id-buy'[\s\S]*THEN \$\{ID_MUTATION_PRICE_SATS\}[\s\S]*ELSE e\.amount_sats/u,
-    "incremental value-event recovery must derive the same fixed PWID fees",
+    /e\.protocol = 'pwid1' AND e\.kind = 'id-register'[\s\S]*THEN \$\{ID_REGISTRATION_PRICE_SATS\}[\s\S]*e\.protocol = 'pwid1' AND e\.kind IN \([\s\S]*'id-update'[\s\S]*'id-transfer'[\s\S]*'id-list'[\s\S]*'id-seal'[\s\S]*'id-delist'[\s\S]*'id-buy'[\s\S]*THEN \$\{ID_MUTATION_PRICE_SATS\}[\s\S]*e\.protocol = 'pwt1' AND e\.kind = 'token-transfer'[\s\S]*THEN \$\{TOKEN_MIN_MUTATION_PRICE_SATS\}[\s\S]*ELSE e\.amount_sats/u,
+    "incremental value-event recovery must derive the same fixed protocol fees",
   );
   assert.match(
     topLevelFunctionSource(READER_PATH, "proofIndexValueSummaryPayload"),
-    /protocol = 'pwid1' AND kind = 'id-register'[\s\S]*THEN \$\{ID_REGISTRATION_PRICE_SATS\}[\s\S]*protocol = 'pwid1' AND kind IN \([\s\S]*'id-update'[\s\S]*'id-transfer'[\s\S]*'id-list'[\s\S]*'id-seal'[\s\S]*'id-delist'[\s\S]*'id-buy'[\s\S]*THEN \$\{ID_MUTATION_PRICE_SATS\}[\s\S]*ELSE amount_sats/u,
-    "value-summary fallback must derive the same fixed PWID fees",
+    /protocol = 'pwid1' AND kind = 'id-register'[\s\S]*THEN \$\{ID_REGISTRATION_PRICE_SATS\}[\s\S]*protocol = 'pwid1' AND kind IN \([\s\S]*'id-update'[\s\S]*'id-transfer'[\s\S]*'id-list'[\s\S]*'id-seal'[\s\S]*'id-delist'[\s\S]*'id-buy'[\s\S]*THEN \$\{ID_MUTATION_PRICE_SATS\}[\s\S]*protocol = 'pwt1' AND kind = 'token-transfer'[\s\S]*THEN \$\{TOKEN_MIN_MUTATION_PRICE_SATS\}[\s\S]*ELSE amount_sats/u,
+    "value-summary fallback must derive the same fixed protocol fees",
   );
 });
 
@@ -13045,6 +13099,15 @@ check("Inception fixes attachment value at issuance and adds only later INCB mar
     const number = Number(row?.[key]);
     return Number.isFinite(number) ? number : 0;
   };
+  const tokenTransferRegistryMutationFeeSats = isolatedFunction(
+    READER_PATH,
+    "tokenTransferRegistryMutationFeeSats",
+    {
+      TOKEN_MIN_MUTATION_PRICE_SATS: 546,
+      normalizedLowerText: (value) =>
+        String(value ?? "").trim().toLowerCase(),
+    },
+  );
   const tokenTransferFromEventPayload = isolatedFunction(
     READER_PATH,
     "tokenTransferFromEventPayload",
@@ -13053,6 +13116,7 @@ check("Inception fixes attachment value at issuance and adds only later INCB mar
       dateIso: (value) => value,
       isWorkTokenId: (value) => value === WORK_TOKEN_ID,
       rowNumber,
+      tokenTransferRegistryMutationFeeSats,
       tokenRegistryAddressFromPayload: () => "bc1workregistry",
       tokenTransferAmountFromTags: () => 0,
     },
@@ -13060,6 +13124,11 @@ check("Inception fixes attachment value at issuance and adds only later INCB mar
   const apiIdentityDetails = isolatedFunction(
     API_PATH,
     "canonicalEventIdentityDetails",
+  );
+  const tokenTransferRegistryMutationFeeSatsFromActivity = isolatedFunction(
+    API_PATH,
+    "tokenTransferRegistryMutationFeeSatsFromActivity",
+    { TOKEN_MIN_MUTATION_PRICE_SATS: 546 },
   );
   const tokenTransferFromIndexedActivityItem = isolatedFunction(
     API_PATH,
@@ -13073,9 +13142,12 @@ check("Inception fixes attachment value at issuance and adds only later INCB mar
         keys.map((key) => item?.[key]).find(Boolean) ?? "",
       isWorkTokenId: (value) => value === WORK_TOKEN_ID,
       numericValue,
+      tokenTransferRegistryMutationFeeSatsFromActivity,
       tokenLedgerAmountFields: testTokenLedgerAmountFields,
-      tokenLedgerAmountFromRecord: (_tokenId, record) =>
-        workAtomsBigIntFromRecord(record),
+      tokenLedgerAmountFromRecord: (tokenId, record) =>
+        tokenId === WORK_TOKEN_ID
+          ? workAtomsBigIntFromRecord(record)
+          : numericValue(record?.amount),
     },
   );
   const mailAttachedCreditsFromRecord = isolatedFunction(
@@ -13133,6 +13205,50 @@ check("Inception fixes attachment value at issuance and adds only later INCB mar
       "livenet",
     );
   });
+  const powbTransfer = tokenTransferFromEventPayload(
+    {
+      amount: "27420000",
+      amountSats: 0,
+      confirmed: true,
+      kind: "token-transfer",
+      protocol: "pwt1",
+      recipientAddress,
+      senderAddress: "bc1sender",
+      ticker: "POWB",
+      tokenId: POWB_TOKEN_ID,
+      txid: "7a2436c755719eb2bd53e355b340617896453d075f97aa964767813e5670393d",
+      valid: true,
+    },
+    {
+      amount_sats: "0",
+      block_height: blockHeight,
+      event_id: 402,
+      kind: "token-transfer",
+      network: "livenet",
+      protocol: "pwt1",
+      status: "confirmed",
+      valid: true,
+    },
+  );
+  assert.equal(powbTransfer.amount, "27420000");
+  assert.equal(
+    powbTransfer.paidSats,
+    546,
+    "valid generic credit transfers must attribute the fixed registry fee even when amount_sats is zero",
+  );
+  assert.equal(powbTransfer.registryMutationFeeSats, 546);
+  const indexedPowbTransfer = tokenTransferFromIndexedActivityItem(
+    powbTransfer,
+    {
+      registryAddress: "1H1arP2xpam6MZmHt6k1tB83stqVdH6ANK",
+      ticker: "POWB",
+      tokenId: POWB_TOKEN_ID,
+    },
+    "livenet",
+  );
+  assert.equal(indexedPowbTransfer?.amount, 27420000);
+  assert.equal(indexedPowbTransfer?.paidSats, 546);
+  assert.equal(indexedPowbTransfer?.registryMutationFeeSats, 546);
   const pipelineAttachedCredits = mailAttachedCreditsFromRecord(
     {
       attachedCredits: [2, 3].map((protocolVout, index) => ({

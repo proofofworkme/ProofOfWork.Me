@@ -264,6 +264,7 @@ const BOND_TAGS = [
 ];
 const ID_REGISTRATION_PRICE_SATS = 1_000;
 const ID_MUTATION_PRICE_SATS = 546;
+const TOKEN_MIN_MUTATION_PRICE_SATS = 546;
 const ID_REGISTRY_ADDRESSES = {
   livenet: "bc1qfwytlzyr3ym3enz2eutwtjsf9kkf6uqkjydk3e",
 };
@@ -15060,6 +15061,10 @@ function tokenTransferFromEventPayload(payload, row = {}) {
       rowNumber(payload, "tokenAmount") ||
       tokenTransferAmountFromTags(payload, ticker);
   const position = canonicalMovementPositionFromEventRow(payload, row);
+  const registryMutationFeeSats = tokenTransferRegistryMutationFeeSats(
+    payload,
+    row,
+  );
   return {
     ...canonicalEventIdentityDetails({
       ...payload,
@@ -15090,15 +15095,29 @@ function tokenTransferFromEventPayload(payload, row = {}) {
     liveNetworkValueSats: rowNumber(payload, "liveNetworkValueSats"),
     minerFeeSats: rowNumber(payload, "minerFeeSats"),
     network: payload?.network ?? row.network,
-    paidSats: rowNumber(payload, "paidSats") || rowNumber(payload, "amountSats"),
+    paidSats: registryMutationFeeSats,
     recipientAddress,
-    registryMutationFeeSats: rowNumber(payload, "registryMutationFeeSats"),
+    registryMutationFeeSats,
     registryAddress,
     senderAddress,
     ticker,
     tokenId,
     txid: String(payload?.txid ?? row.txid ?? "").trim().toLowerCase(),
   };
+}
+
+function tokenTransferRegistryMutationFeeSats(payload, row = {}) {
+  const protocol = normalizedLowerText(row?.protocol ?? payload?.protocol);
+  const kind = normalizedLowerText(row?.kind ?? payload?.kind);
+  if (
+    (protocol && protocol !== "pwt1") ||
+    (kind && kind !== "token-transfer") ||
+    row?.valid === false ||
+    payload?.valid === false
+  ) {
+    return 0;
+  }
+  return TOKEN_MIN_MUTATION_PRICE_SATS;
 }
 
 function exactSafeInteger(value, { positive = false } = {}) {
@@ -33577,6 +33596,18 @@ function eventRowPayload(row, network) {
           // override the fee committed by the valid lifecycle kind.
           amountSats: idRegistryFeeSats,
         };
+  const tokenTransferFeeSats = tokenTransferRegistryMutationFeeSats(
+    payload,
+    { ...row, kind, protocol: rowProtocol },
+  );
+  const canonicalTokenTransferFeePatch =
+    tokenTransferFeeSats > 0
+      ? {
+          amountSats: tokenTransferFeeSats,
+          paidSats: tokenTransferFeeSats,
+          registryMutationFeeSats: tokenTransferFeeSats,
+        }
+      : {};
   const auditCosts = invalidTokenEvent
     ? tokenInvalidAuditCosts(payload, row, registryAddress)
     : {};
@@ -33617,6 +33648,7 @@ function eventRowPayload(row, network) {
     }),
     ...canonicalMinerFeePatch,
     ...canonicalIdRegistryFeePatch,
+    ...canonicalTokenTransferFeePatch,
     ...(invalidTokenEvent
       ? {
           amountSats: 0,
@@ -35790,6 +35822,8 @@ export async function proofIndexValueSummaryPayload(network) {
                   'id-buy'
                 )
                   THEN ${ID_MUTATION_PRICE_SATS}
+                WHEN protocol = 'pwt1' AND kind = 'token-transfer'
+                  THEN ${TOKEN_MIN_MUTATION_PRICE_SATS}
                 ELSE amount_sats
               END
             ),
@@ -36037,6 +36071,8 @@ export async function proofIndexConfirmedValueEventsAfterBlock(
               'id-buy'
             )
               THEN ${ID_MUTATION_PRICE_SATS}
+            WHEN e.protocol = 'pwt1' AND e.kind = 'token-transfer'
+              THEN ${TOKEN_MIN_MUTATION_PRICE_SATS}
             ELSE e.amount_sats
           END AS amount_sats,
           e.block_height,

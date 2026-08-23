@@ -43736,6 +43736,8 @@ function tokenTransferFromIndexedActivityItem(
     ledgerAmount,
     { workAmountStorageModel },
   );
+  const registryMutationFeeSats =
+    tokenTransferRegistryMutationFeeSatsFromActivity(item);
   return {
     ...canonicalEventIdentityDetails(item),
     ...amountFields,
@@ -43770,9 +43772,7 @@ function tokenTransferFromIndexedActivityItem(
     ...canonicalMinerFeeDetailsFromActivity(item),
     minerFeeSats: numericValue(item.minerFeeSats),
     network,
-    paidSats: numericValue(
-      item.registryMutationFeeSats ?? item.paidSats ?? item.amountSats,
-    ),
+    paidSats: registryMutationFeeSats,
     recipientAddress: indexedActivityValue(
       item,
       "recipientAddress",
@@ -43783,7 +43783,7 @@ function tokenTransferFromIndexedActivityItem(
       token.registryAddress ??
       item.recipients?.[0]?.address ??
       "",
-    registryMutationFeeSats: numericValue(item.registryMutationFeeSats),
+    registryMutationFeeSats,
     senderAddress: indexedActivityValue(item, "senderAddress", "actor"),
     ticker: token.ticker,
     tokenId: token.tokenId,
@@ -43805,6 +43805,20 @@ function tokenTransferFromIndexedActivityItem(
     liveNetworkValueSats: numericValue(item.liveNetworkValueSats),
     ...canonicalCreditValueFieldsFromRecord(item),
   };
+}
+
+function tokenTransferRegistryMutationFeeSatsFromActivity(item) {
+  const protocol = String(item?.protocol ?? "").trim().toLowerCase();
+  const kind = String(item?.kind ?? "").trim().toLowerCase();
+  if (
+    (protocol && protocol !== "pwt1") ||
+    (kind && kind !== "token-transfer") ||
+    item?.valid === false ||
+    item?.confirmed === false
+  ) {
+    return 0;
+  }
+  return TOKEN_MIN_MUTATION_PRICE_SATS;
 }
 
 async function tokenValueStateFromIndexedActivity(

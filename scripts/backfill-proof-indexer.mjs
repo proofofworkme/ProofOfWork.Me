@@ -397,6 +397,7 @@ const PUBLIC_LOG_EVENT_KINDS = new Set([
   "token-transfer",
   "work-usd-quote",
 ]);
+const TOKEN_MIN_MUTATION_PRICE_SATS = 546;
 const PAGE_LIMIT = Number(process.env.POW_INDEX_BACKFILL_LIMIT ?? 200);
 const MAX_PAGES = Number(process.env.POW_INDEX_BACKFILL_MAX_PAGES ?? 2000);
 const REQUEST_TIMEOUT_MS = Number(process.env.POW_INDEX_FETCH_TIMEOUT_MS ?? 60_000);
@@ -5896,6 +5897,11 @@ async function canonicalRecoveryItemsForTx(tx, messages, options = {}) {
         // The sale row carries only seller price; the 546 anchor refund is
         // intentionally excluded from both rows.
         normalizedAmountSats = 546;
+      } else if (normalizedKind === "token-transfer") {
+        normalizedAmountSats =
+          canonicalItem?.valid === false || rawItem?.valid === false
+            ? 0
+            : TOKEN_MIN_MUTATION_PRICE_SATS;
       } else {
         normalizedAmountSats =
           canonicalItem?.amountSats ??
