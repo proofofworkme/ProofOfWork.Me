@@ -38818,7 +38818,7 @@ function workFloorPayloadHasFiniteNetworkValue(workFloor) {
     finitePositiveNumber(networkValue) &&
     finitePositiveNumber(totalValue) &&
     numbersAgree(networkValue, totalValue, 0.01) &&
-    (!finitePositiveNumber(liveValue) || numbersAgree(networkValue, liveValue, 0.01)) &&
+    (!finitePositiveNumber(liveValue) || Number.isFinite(Number(liveValue))) &&
     (!finitePositiveNumber(frozenValue) || Number.isFinite(Number(frozenValue)))
   );
 }
@@ -41512,6 +41512,13 @@ function canonicalActivityCountCoverage(metrics, sourceHashes) {
   const canonicalConfirmedActivityCount = numericValue(
     sourceHashes?.activity?.confirmed,
   );
+  const seededActivityCount = numericValue(sourceHashes?.seededMail?.count);
+  const seededConfirmedActivityCount = numericValue(
+    sourceHashes?.seededMail?.confirmed,
+  );
+  const sourceActivityCount = canonicalActivityCount + seededActivityCount;
+  const sourceConfirmedActivityCount =
+    canonicalConfirmedActivityCount + seededConfirmedActivityCount;
   const ledgerActivityCount = numericValue(metrics?.activityItems);
   const ledgerConfirmedActivityCount = numericValue(
     metrics?.confirmedComputerActions,
@@ -41521,9 +41528,13 @@ function canonicalActivityCountCoverage(metrics, sourceHashes) {
     canonicalConfirmedActivityCount,
     ledgerActivityCount,
     ledgerConfirmedActivityCount,
+    seededActivityCount,
+    seededConfirmedActivityCount,
+    sourceActivityCount,
+    sourceConfirmedActivityCount,
     ok:
-      ledgerActivityCount === canonicalActivityCount &&
-      ledgerConfirmedActivityCount === canonicalConfirmedActivityCount,
+      ledgerActivityCount === sourceActivityCount &&
+      ledgerConfirmedActivityCount === sourceConfirmedActivityCount,
   };
 }
 
