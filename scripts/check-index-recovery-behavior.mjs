@@ -56389,8 +56389,12 @@ check("AMO V8 relational closing evidence reads canonical Q16 units", async () =
   );
   assert.match(
     openingWorkProjectionSource,
-    /workAmoV5TokenStateUsesSubatomProjection\(tokenState\)[\s\S]*normalizeWorkAmoV5RawWorkState\(tokenState\)/u,
-    "post-V8 opening WORK state must enter raw replay through the Q16 normalizer instead of the legacy atom projection",
+    /const stateUsesSubatoms =[\s\S]*workAmoV5LegacyAtomsForSeedProjection\(tokenState,[\s\S]*confirmedSupplySubatoms/u,
+    "post-V8 opening WORK state must project exact Q16 subatoms back to legacy atoms for AMO V5 seed evidence",
+  );
+  assert.doesNotMatch(
+    openingWorkProjectionSource,
+    /workAmoV5TokenStateUsesSubatomProjection\(tokenState\)[\s\S]*return normalizeWorkAmoV5RawWorkState\(tokenState\)/u,
   );
   const historicalMovementSource = topLevelFunctionSource(
     API_PATH,

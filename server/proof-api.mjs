@@ -60,6 +60,7 @@ import {
   workAmountAtomsFromRecord,
   workAmountSubatomsFromRecord,
   workAtomsValueAtFloorQ8,
+  workSubatomsToLegacyAtoms,
   workSubatomsValueAtFloorQ8,
 } from "./work-units.mjs";
 import {
@@ -56750,10 +56751,91 @@ function workAmoV5TokenStateUsesSubatomProjection(tokenState) {
   );
 }
 
-function workAmoV5TokenStateCommitmentProjection(tokenState) {
-  if (workAmoV5TokenStateUsesSubatomProjection(tokenState)) {
-    return normalizeWorkAmoV5RawWorkState(tokenState);
+function workAmoV5LegacyAtomsForSeedProjection(
+  source,
+  {
+    allowZero = false,
+    amountFields = [],
+    atomFields = [],
+    sourceUsesSubatoms = false,
+    subatomFields = [],
+  } = {},
+) {
+  const item =
+    source && typeof source === "object" && !Array.isArray(source)
+      ? source
+      : {};
+  const candidates = [];
+  const addCandidate = (value) => {
+    if (value !== "") {
+      candidates.push(value);
+    }
+  };
+  const addAtom = (value) => {
+    if (value === undefined || value === null || value === "") {
+      return;
+    }
+    const atomText = canonicalWorkAtomsText(value, { allowZero });
+    if (atomText) {
+      addCandidate(atomText);
+      return;
+    }
+    if (!sourceUsesSubatoms) {
+      addCandidate("");
+      return;
+    }
+    const subatomText = canonicalWorkSubatomsText(value, { allowZero });
+    if (!subatomText) {
+      addCandidate("");
+      return;
+    }
+    try {
+      addCandidate(workSubatomsToLegacyAtoms(subatomText, { allowZero }));
+    } catch {
+      addCandidate("");
+    }
+  };
+  const addSubatom = (value) => {
+    if (value === undefined || value === null || value === "") {
+      return;
+    }
+    const subatomText = canonicalWorkSubatomsText(value, { allowZero });
+    if (!subatomText) {
+      addCandidate("");
+      return;
+    }
+    try {
+      addCandidate(workSubatomsToLegacyAtoms(subatomText, { allowZero }));
+    } catch {
+      addCandidate("");
+    }
+  };
+  const addAmount = (value) => {
+    if (value === undefined || value === null || value === "") {
+      return;
+    }
+    try {
+      addCandidate(parseWorkAmountToAtoms(value, { allowZero }));
+    } catch {
+      addCandidate("");
+    }
+  };
+  for (const field of atomFields) {
+    addAtom(item[field]);
   }
+  for (const field of subatomFields) {
+    addSubatom(item[field]);
+  }
+  for (const field of amountFields) {
+    addAmount(item[field]);
+  }
+  const unique = [...new Set(candidates)];
+  return unique.length === 1 ? unique[0] : "";
+}
+
+function workAmoV5TokenStateCommitmentProjection(tokenState) {
+  const stateUsesSubatoms =
+    workAmoV5TokenStateUsesSubatomProjection(tokenState);
   const holders = (Array.isArray(tokenState?.holders)
     ? tokenState.holders
     : [])
@@ -56763,12 +56845,16 @@ function workAmoV5TokenStateCommitmentProjection(tokenState) {
     )
     .map((holder) => ({
       address: String(holder?.address ?? "").trim(),
-      balanceAtoms:
-        canonicalWorkAtomsText(
-          holder?.balanceAtoms ??
-            parseWorkAmountToAtoms(holder?.balance ?? 0),
-          { allowZero: true },
-        ) || "0",
+      balanceAtoms: workAmoV5LegacyAtomsForSeedProjection(holder, {
+        allowZero: true,
+        amountFields: ["balance"],
+        atomFields: ["balanceAtoms"],
+        sourceUsesSubatoms:
+          stateUsesSubatoms ||
+          holder?.amountStorageModel === WORK_SUBATOM_PROJECTION_MODEL ||
+          holder?.precisionModel === WORK_PRECISION_V2_MODEL,
+        subatomFields: ["balanceSubatoms"],
+      }) || "0",
     }))
     .sort((left, right) =>
       compareWorkAmoUtf8(left.address, right.address)
@@ -56781,13 +56867,15 @@ function workAmoV5TokenStateCommitmentProjection(tokenState) {
         String(listing?.tokenId ?? "").trim().toLowerCase() === WORK_TOKEN_ID,
     )
     .map((listing) => ({
-      amountAtoms:
-        canonicalWorkAtomsText(
-          listing?.amountAtoms ??
-            workAmountAtomsFromRecord(listing, {
-              storedAmountIsAtoms: false,
-            }),
-        ) || "",
+      amountAtoms: workAmoV5LegacyAtomsForSeedProjection(listing, {
+        amountFields: ["amount"],
+        atomFields: ["amountAtoms"],
+        sourceUsesSubatoms:
+          stateUsesSubatoms ||
+          listing?.amountStorageModel === WORK_SUBATOM_PROJECTION_MODEL ||
+          listing?.precisionModel === WORK_PRECISION_V2_MODEL,
+        subatomFields: ["amountSubatoms"],
+      }) || "",
       frozenTerms:
         listing?.frozenTerms ??
         listing?.workAmoPricing?.frozenTerms ??
@@ -56803,10 +56891,13 @@ function workAmoV5TokenStateCommitmentProjection(tokenState) {
       compareWorkAmoUtf8(left.listingId, right.listingId)
     );
   return {
-    confirmedSupplyAtoms:
-      canonicalWorkAtomsText(tokenState?.confirmedSupplyAtoms, {
-        allowZero: true,
-      }) || "0",
+    confirmedSupplyAtoms: workAmoV5LegacyAtomsForSeedProjection(tokenState, {
+      allowZero: true,
+      amountFields: ["confirmedSupply"],
+      atomFields: ["confirmedSupplyAtoms"],
+      sourceUsesSubatoms: stateUsesSubatoms,
+      subatomFields: ["confirmedSupplySubatoms"],
+    }) || "0",
     holders,
     listings,
   };
