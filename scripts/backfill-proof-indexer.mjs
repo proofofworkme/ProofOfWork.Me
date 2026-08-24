@@ -10942,7 +10942,7 @@ async function persistCanonicalListingOutpointSpendsFromBlock(
       : null;
   let inputCount = 0;
   for (const { blockIndex, inputs, tx, txid } of spenders) {
-    const canonicalRawTx = {
+    const canonicalRawTx = await transactionWithInputPrevouts({
       ...tx,
       _powBlockIndex: blockIndex,
       canonicalBlockScan: {
@@ -10951,7 +10951,7 @@ async function persistCanonicalListingOutpointSpendsFromBlock(
         height,
         network: NETWORK,
       },
-    };
+    });
     const details = canonicalTransactionDetailRows(canonicalRawTx);
     const inputValueSats = details.inputs.reduce((total, input) => {
       if (!Number.isSafeInteger(input.value_sats)) {
