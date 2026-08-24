@@ -782,3 +782,12 @@ Additional verification:
 - `npm run check:server-globals`
 - `npm run check:api-truth`
 - `npm run check:worker-containment`
+
+Production follow-up:
+
+- The first generic reserved-namespace quarantine deploy reached the intended
+  replay branch, but PostgreSQL rejected the new `jsonb_build_object` parameter
+  with `could not determine data type of parameter $4`.
+- The permanent fix casts the quarantine `reason` and `reasonCode` parameters as
+  text inside the row update, and the recovery regression now checks the typed
+  SQL shape alongside the invalidation behavior.

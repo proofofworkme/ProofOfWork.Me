@@ -32735,6 +32735,8 @@ check("canonical credit replay quarantines stale malformed INCB projection rows"
   assert.equal(writes.length, 2);
   assert.match(writes[0].sql, /UPDATE proof_indexer\.events/u);
   assert.match(writes[0].sql, /token-event-invalid/u);
+  assert.match(writes[0].sql, /\$3::text/u);
+  assert.match(writes[0].sql, /\$4::text/u);
   assert.equal(writes[0].params[1], 9001);
   assert.match(
     writes[0].params[2],
