@@ -789,5 +789,5 @@ Production follow-up:
   replay branch, but PostgreSQL rejected the new `jsonb_build_object` parameter
   with `could not determine data type of parameter $4`.
 - The permanent fix casts the quarantine `reason` and `reasonCode` parameters as
-  text inside the row update, and the recovery regression now checks the typed
-  SQL shape alongside the invalidation behavior.
+  text inside both reserved bond row updates, and the recovery regression now
+  checks the typed SQL shape alongside the invalidation behavior.

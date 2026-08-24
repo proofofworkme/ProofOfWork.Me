@@ -32747,6 +32747,8 @@ check("canonical credit replay quarantines stale malformed INCB projection rows"
     "canonical-incb-bond-projection-invalid",
   );
   assert.equal(writes[1].params[1], 9002);
+  assert.match(writes[1].sql, /\$3::text/u);
+  assert.match(writes[1].sql, /\$4::text/u);
   assert.match(
     writes[1].params[2],
     /attempts a generic mint in the reserved INCB namespace/u,

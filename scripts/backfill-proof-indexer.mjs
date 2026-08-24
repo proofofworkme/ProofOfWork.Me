@@ -6979,9 +6979,9 @@ async function rebuildConfirmedCreditBalancesFromCanonicalEvents(
                   'valid',
                   false,
                   'reason',
-                  $3,
+                  $3::text,
                   'reasonCode',
-                  $4
+                  $4::text
                 ),
               updated_at = now()
             WHERE network = $1
