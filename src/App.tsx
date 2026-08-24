@@ -11207,7 +11207,7 @@ function accountTokenLaneLabelForWriteTarget(
 }
 
 function accountTokenLaneHasCleanAuthority(
-  token: PowTokenDefinition,
+  token: Pick<PowTokenDefinition, "ticker" | "tokenId">,
   statuses: AccountTokenLaneStatuses,
 ) {
   if (statuses.all.loaded && !statuses.all.error) {
@@ -21698,8 +21698,10 @@ export default function App() {
         ? ""
         : "Credit balances are still syncing. Wait for verified credit balances before creating a transaction.";
     }
-    const laneStatus = accountTokenLaneStatuses[lane];
-    if (laneStatus.loaded && !laneStatus.error) {
+    if (
+      token &&
+      accountTokenLaneHasCleanAuthority(token, accountTokenLaneStatuses)
+    ) {
       return "";
     }
     const laneLabel = accountTokenLaneLabelForWriteTarget(token);

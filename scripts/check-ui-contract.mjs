@@ -2537,7 +2537,10 @@ expect(
   /function accountTokenLaneForDefinition\(\s*token: Pick<PowTokenDefinition, "ticker" \| "tokenId">/.test(
     app,
   ) &&
-    /const walletWritePreflightBlockReasonForToken = \([\s\S]*const lane = token \? accountTokenLaneForDefinition\(token\) : null[\s\S]*if \(laneStatus\.loaded && !laneStatus\.error\) \{[\s\S]*return "";/.test(
+    /function accountTokenLaneHasCleanAuthority\(\s*token: Pick<PowTokenDefinition, "ticker" \| "tokenId">,[\s\S]*statuses\.all\.loaded[\s\S]*statuses\[lane\]\.loaded/.test(
+      app,
+    ) &&
+    /const walletWritePreflightBlockReasonForToken = \([\s\S]*const lane = token \? accountTokenLaneForDefinition\(token\) : null[\s\S]*token &&[\s\S]*accountTokenLaneHasCleanAuthority\(token, accountTokenLaneStatuses\)[\s\S]*return "";/.test(
       app,
     ) &&
     /const tokenWalletWritePreflightBlockReason =[\s\S]*walletWritePreflightBlockReasonForToken\(walletTransferToken\)/.test(
