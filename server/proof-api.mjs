@@ -38804,6 +38804,9 @@ function workFloorPayloadHasFiniteNetworkValue(workFloor) {
     workFloor.frozenNetworkValueSats ??
     workFloor.actualValue?.frozenNetworkValueSats ??
     workFloor.actualValue?.frozenTotalSats;
+  const declaresMinerFeeAccounting =
+    workFloor.actualValue?.creditMinerFeeAccountingModel != null ||
+    workFloor.actualValue?.creditMinerFeeCoverage != null;
   const hasCurrentMinerFeeAccounting =
     workFloor.network !== "livenet" ||
     (workFloor.actualValue?.creditMinerFeeAccountingModel ===
@@ -38814,7 +38817,7 @@ function workFloorPayloadHasFiniteNetworkValue(workFloor) {
         ),
       ));
   return (
-    hasCurrentMinerFeeAccounting &&
+    (!declaresMinerFeeAccounting || hasCurrentMinerFeeAccounting) &&
     finitePositiveNumber(networkValue) &&
     finitePositiveNumber(totalValue) &&
     numbersAgree(networkValue, totalValue, 0.01) &&
