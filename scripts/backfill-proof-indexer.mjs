@@ -19728,20 +19728,24 @@ async function assertWorkAmoV5HMinusOneCaptureCheckpoint(
   const rebuildApplies =
     rebuild?.network === NETWORK &&
     ["active", "complete"].includes(rebuild?.status);
+  const storedCheckpointMatches =
+    checkpoint.height === blockHeight &&
+    checkpoint.blockHash === blockHash;
+  const rebuildCheckpointMatches =
+    rebuildApplies &&
+    Number(rebuild.indexedThroughBlock) === blockHeight &&
+    String(rebuild.indexedThroughBlockHash ?? "")
+      .trim()
+      .toLowerCase() === blockHash;
   if (
-    checkpoint.height !== blockHeight ||
-    checkpoint.blockHash !== blockHash ||
+    (!storedCheckpointMatches && !rebuildCheckpointMatches) ||
     Number(row.exact_block_count) !== 1 ||
     Number(row.maximum_block_height) !== blockHeight ||
     Number(row.later_block_count) !== 0 ||
     Number(row.later_transaction_count) !== 0 ||
     Number(row.later_event_count) !== 0 ||
     Number(row.transition_count) !== 0 ||
-    (rebuildApplies &&
-      (Number(rebuild.indexedThroughBlock) !== blockHeight ||
-        String(rebuild.indexedThroughBlockHash ?? "")
-          .trim()
-          .toLowerCase() !== blockHash))
+    (rebuildApplies && !rebuildCheckpointMatches)
   ) {
     throw new Error(
       `Canonical AMO V5 H-1 seed capture requires the exact unadvanced checkpoint ${blockHeight}:${blockHash}.`,

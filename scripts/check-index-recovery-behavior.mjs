@@ -51495,6 +51495,10 @@ check("AMO V5 seed capture precedes replay and immutable evidence cannot be clea
     BACKFILL_PATH,
     "captureWorkAmoV5HMinusOneSeedEvidence",
   );
+  const captureGuard = topLevelFunctionSource(
+    BACKFILL_PATH,
+    "assertWorkAmoV5HMinusOneCaptureCheckpoint",
+  );
   const internalSeedPayload =
     isolatedFunction(
       BACKFILL_PATH,
@@ -51518,6 +51522,14 @@ check("AMO V5 seed capture precedes replay and immutable evidence cannot be clea
   assert.match(
     capture,
     /LOCK TABLE[\s\S]*proof_indexer\.ledger_snapshots[\s\S]*IN SHARE ROW EXCLUSIVE MODE/u,
+  );
+  assert.match(
+    captureGuard,
+    /storedCheckpointMatches[\s\S]*rebuildCheckpointMatches[\s\S]*!storedCheckpointMatches && !rebuildCheckpointMatches/u,
+  );
+  assert.match(
+    captureGuard,
+    /rebuildApplies && !rebuildCheckpointMatches/u,
   );
   for (const relation of [
     "proof_indexer.event_participants",
