@@ -19702,13 +19702,6 @@ async function assertWorkAmoV5HMinusOneCaptureCheckpoint(
         ) AS later_block_count,
         (
           SELECT count(*)::integer
-          FROM proof_indexer.transactions
-          WHERE network = $1
-            AND status = 'confirmed'
-            AND block_height > $2
-        ) AS later_transaction_count,
-        (
-          SELECT count(*)::integer
           FROM proof_indexer.events
           WHERE network = $1
             AND status = 'confirmed'
@@ -19742,7 +19735,6 @@ async function assertWorkAmoV5HMinusOneCaptureCheckpoint(
     Number(row.exact_block_count) !== 1 ||
     Number(row.maximum_block_height) !== blockHeight ||
     Number(row.later_block_count) !== 0 ||
-    Number(row.later_transaction_count) !== 0 ||
     Number(row.later_event_count) !== 0 ||
     Number(row.transition_count) !== 0 ||
     (rebuildApplies && !rebuildCheckpointMatches)

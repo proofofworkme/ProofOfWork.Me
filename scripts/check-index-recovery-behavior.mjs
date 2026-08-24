@@ -51531,6 +51531,7 @@ check("AMO V5 seed capture precedes replay and immutable evidence cannot be clea
     captureGuard,
     /rebuildApplies && !rebuildCheckpointMatches/u,
   );
+  assert.doesNotMatch(captureGuard, /later_transaction_count/u);
   for (const relation of [
     "proof_indexer.event_participants",
     "proof_indexer.event_refs",
