@@ -15110,6 +15110,10 @@ function canonicalSummaryAccountingModelsCurrent(summaryPayloads = {}) {
     summaryPayloads?.inceptionSummary?.stats?.confirmedSupply,
     { positive: true },
   );
+  const inceptionConfirmedSupplyOrZero = exactInteger(
+    summaryPayloads?.inceptionSummary?.stats?.confirmedSupply,
+    { allowZero: true },
+  );
   const inceptionBondSaleVolumeSats = exactInteger(
     inceptionActual?.bondSaleVolumeSats,
   );
@@ -15312,28 +15316,49 @@ function canonicalSummaryAccountingModelsCurrent(summaryPayloads = {}) {
     inceptionFloorQ8 === expectedInceptionFloorQ8 &&
     inceptionLiveFloorQ8 === expectedInceptionFloorQ8 &&
     inceptionFrozenFloorQ8 === expectedInceptionFloorQ8;
+  const preInceptionIssuanceCurrent =
+    Number.isSafeInteger(confirmedInceptionMints) &&
+    confirmedInceptionMints === 0 &&
+    inceptionConfirmedSupplyOrZero === 0n &&
+    [
+      inceptionNetworkValueQ8,
+      inceptionLiveNetworkValueQ8,
+      inceptionFrozenNetworkValueQ8,
+      topLevelInceptionNetworkValueQ8,
+      inceptionFloorQ8,
+      inceptionLiveFloorQ8,
+      inceptionFrozenFloorQ8,
+    ].every((value) => value === null || value === 0n);
+  const declaresMinerFeeAccounting =
+    summaryPayloads?.workFloor?.actualValue
+      ?.creditMinerFeeAccountingModel != null ||
+    coverage != null;
+  const minerFeeAccountingCurrent =
+    !declaresMinerFeeAccounting
+      ? summaryCoverage < WORK_AMO_V8_CONFIGURED_ACTIVATION_HEIGHT
+      : String(
+          summaryPayloads?.workFloor?.actualValue
+            ?.creditMinerFeeAccountingModel ?? "",
+        ) === "canonical-unique-tx-input-output-v1" &&
+        coverage?.complete === true &&
+        coverage?.source ===
+          "proof-indexer-normalized-input-output-totals" &&
+        Number.isSafeInteger(confirmedEvents) &&
+        confirmedEvents > 0 &&
+        coveredConfirmedEvents === confirmedEvents &&
+        Number(coverage?.missingConfirmedEvents) === 0 &&
+        Number.isSafeInteger(confirmedTransactions) &&
+        confirmedTransactions > 0 &&
+        coveredConfirmedTransactions === confirmedTransactions &&
+        Number(coverage?.missingConfirmedTransactions) === 0 &&
+        Array.isArray(coverage?.missingConfirmedTxids) &&
+        coverage.missingConfirmedTxids.length === 0;
   return (
     exactWorkNetworkValue !== null &&
-    String(
-      summaryPayloads?.workFloor?.actualValue
-        ?.creditMinerFeeAccountingModel ?? "",
-    ) === "canonical-unique-tx-input-output-v1" &&
+    minerFeeAccountingCurrent &&
     workTransferProjectionCurrent &&
-    inceptionIssuanceCurrent &&
-    inceptionNetworkValueCurrent &&
-    coverage?.complete === true &&
-    coverage?.source ===
-      "proof-indexer-normalized-input-output-totals" &&
-    Number.isSafeInteger(confirmedEvents) &&
-    confirmedEvents > 0 &&
-    coveredConfirmedEvents === confirmedEvents &&
-    Number(coverage?.missingConfirmedEvents) === 0 &&
-    Number.isSafeInteger(confirmedTransactions) &&
-    confirmedTransactions > 0 &&
-    coveredConfirmedTransactions === confirmedTransactions &&
-    Number(coverage?.missingConfirmedTransactions) === 0 &&
-    Array.isArray(coverage?.missingConfirmedTxids) &&
-    coverage.missingConfirmedTxids.length === 0
+    (preInceptionIssuanceCurrent || inceptionIssuanceCurrent) &&
+    (preInceptionIssuanceCurrent || inceptionNetworkValueCurrent)
   );
 }
 
@@ -16019,6 +16044,7 @@ async function storeCanonicalSummarySnapshot(client, options = {}) {
   const ledgerActivityPending = Number(
     ledger?.activityPayload?.stats?.pending ??
       ledger?.metrics?.pending ??
+      finalPublicLogFingerprint.pending ??
       -1,
   );
   if (
