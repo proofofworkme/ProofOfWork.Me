@@ -11175,7 +11175,9 @@ function walletBalancesForConnection(
   return address ? accountBalances : routeBalances;
 }
 
-function accountTokenLaneForDefinition(token: PowTokenDefinition) {
+function accountTokenLaneForDefinition(
+  token: Pick<PowTokenDefinition, "ticker" | "tokenId">,
+) {
   if (
     tokenScopeMatchesToken(token, WORK_TOKEN_ID) ||
     tokenScopeMatchesToken(token, WORK_TOKEN_TICKER)
@@ -11195,6 +11197,13 @@ function accountTokenLaneForDefinition(token: PowTokenDefinition) {
     return "incb" as const;
   }
   return null;
+}
+
+function accountTokenLaneLabelForWriteTarget(
+  token: Pick<PowTokenDefinition, "ticker" | "tokenId"> | undefined,
+) {
+  const lane = token ? accountTokenLaneForDefinition(token) : null;
+  return lane ? ACCOUNT_TOKEN_LANE_LABELS[lane] : "credit";
 }
 
 function accountTokenLaneHasCleanAuthority(
@@ -21674,6 +21683,31 @@ export default function App() {
         ? "Credit balances are still syncing. Wait for verified credit balances before creating a transaction."
         : "";
   const walletWritesReady = walletWritePreflightBlockReason === "";
+  const walletWritePreflightBlockReasonForToken = (
+    token: Pick<PowTokenDefinition, "ticker" | "tokenId"> | undefined,
+  ) => {
+    if (!address) {
+      return "Connect UniSat first.";
+    }
+    if (!walletProofsReadyForWrites) {
+      return "Wallet proofs are still syncing. Wait for verified wallet proofs before creating a transaction.";
+    }
+    const lane = token ? accountTokenLaneForDefinition(token) : null;
+    if (!lane) {
+      return walletCreditLanesReadyForWrites
+        ? ""
+        : "Credit balances are still syncing. Wait for verified credit balances before creating a transaction.";
+    }
+    const laneStatus = accountTokenLaneStatuses[lane];
+    if (laneStatus.loaded && !laneStatus.error) {
+      return "";
+    }
+    const laneLabel = accountTokenLaneLabelForWriteTarget(token);
+    return `${laneLabel} balances are still syncing. Wait for verified ${laneLabel} balances before creating a transaction.`;
+  };
+  const walletWritesReadyForToken = (
+    token: Pick<PowTokenDefinition, "ticker" | "tokenId"> | undefined,
+  ) => walletWritePreflightBlockReasonForToken(token) === "";
 
   const connectedAccountStats = useMemo<AppHeaderAccountStat[]>(() => {
     if (!address) {
@@ -22201,6 +22235,15 @@ export default function App() {
   const tokenTransferWorkPauseReason = tokenTransferWorkPaused
     ? workWritePauseReason(workFloorQuote)
     : "";
+  const tokenWalletWritePreflightBlockReason =
+    walletTransferToken
+      ? walletWritePreflightBlockReasonForToken(walletTransferToken)
+      : walletWritePreflightBlockReason;
+  const tokenWalletWritesReady =
+    tokenWalletWritePreflightBlockReason === "";
+  const selectedTokenWalletWritesReady = selectedToken
+    ? walletWritesReadyForToken(selectedToken)
+    : walletWritesReady;
   const tokenTransferAvailableLabel = walletTransferToken
     ? `${
         walletTransferIsWork
@@ -22212,8 +22255,8 @@ export default function App() {
     ? "Connect UniSat first."
     : network !== "livenet"
       ? "Switch to Mainnet before transferring credit."
-      : walletWritePreflightBlockReason
-        ? walletWritePreflightBlockReason
+      : tokenWalletWritePreflightBlockReason
+        ? tokenWalletWritePreflightBlockReason
       : !walletTransferToken
         ? "Select a credit balance to transfer."
         : !walletTransferToken.registryAddress
@@ -22280,7 +22323,7 @@ export default function App() {
   const canListToken =
     Boolean(
       address &&
-        walletWritesReady &&
+        tokenWalletWritesReady &&
         walletTransferToken &&
         (workAmoListInputReady || genericListInputReady) &&
         (!tokenListBuyerAddress.trim() ||
@@ -22337,7 +22380,7 @@ export default function App() {
   const canMintToken =
     Boolean(
       address &&
-      walletWritesReady &&
+      selectedTokenWalletWritesReady &&
       network === "livenet" &&
       selectedToken &&
       !isBondTokenDefinition(selectedToken) &&
@@ -22354,7 +22397,7 @@ export default function App() {
   const canTransferToken =
     Boolean(
       address &&
-      walletWritesReady &&
+      tokenWalletWritesReady &&
       network === "livenet" &&
       walletTransferToken &&
       walletTransferToken.registryAddress &&
@@ -22370,7 +22413,7 @@ export default function App() {
   const canPrepareTokenMintUtxos =
     Boolean(
       address &&
-      walletWritesReady &&
+      selectedTokenWalletWritesReady &&
       network === "livenet" &&
       selectedToken &&
       !isBondTokenDefinition(selectedToken) &&
@@ -28664,13 +28707,18 @@ export default function App() {
     }
   }
 
-  function reportWalletWritePreflightBlock() {
-    if (!walletWritePreflightBlockReason) {
+  function reportWalletWritePreflightBlock(
+    token?: Pick<PowTokenDefinition, "ticker" | "tokenId">,
+  ) {
+    const reason = token
+      ? walletWritePreflightBlockReasonForToken(token)
+      : walletWritePreflightBlockReason;
+    if (!reason) {
       return false;
     }
     setStatus({
       tone: "bad",
-      text: walletWritePreflightBlockReason,
+      text: reason,
     });
     return true;
   }
@@ -29076,7 +29124,7 @@ export default function App() {
       return undefined;
     }
 
-    if (reportWalletWritePreflightBlock()) {
+    if (reportWalletWritePreflightBlock(mintTarget)) {
       return undefined;
     }
 
@@ -29251,7 +29299,7 @@ export default function App() {
       setStatus({ tone: "bad", text: "Select a mainnet credit first." });
       return;
     }
-    if (reportWalletWritePreflightBlock()) {
+    if (reportWalletWritePreflightBlock(token)) {
       return;
     }
     const parsedAmount = tokenAmountInput(token, tokenTransferAmount);
@@ -29512,7 +29560,7 @@ export default function App() {
       setStatus({ tone: "bad", text: "Select a mainnet credit first." });
       return;
     }
-    if (reportWalletWritePreflightBlock()) {
+    if (reportWalletWritePreflightBlock(token)) {
       return;
     }
     if (workListing && reportWorkAmoListingWriteBlock()) {
@@ -29849,7 +29897,7 @@ export default function App() {
       return;
     }
 
-    if (reportWalletWritePreflightBlock()) {
+    if (reportWalletWritePreflightBlock(listing)) {
       return;
     }
     if (isWorkToken(listing) && reportWorkAmoSettlementWriteBlock(listing)) {
@@ -30023,7 +30071,7 @@ export default function App() {
       return;
     }
 
-    if (reportWalletWritePreflightBlock()) {
+    if (reportWalletWritePreflightBlock(listing)) {
       return;
     }
     if (isWorkToken(listing) && reportWorkAmoSettlementWriteBlock(listing)) {
@@ -30199,7 +30247,7 @@ export default function App() {
       return;
     }
 
-    if (reportWalletWritePreflightBlock()) {
+    if (reportWalletWritePreflightBlock(listing)) {
       return;
     }
     if (isWorkToken(listing) && reportWorkAmoSettlementWriteBlock(listing)) {
@@ -30736,7 +30784,7 @@ export default function App() {
       return;
     }
 
-    if (reportWalletWritePreflightBlock()) {
+    if (reportWalletWritePreflightBlock(selectedToken)) {
       return;
     }
 
