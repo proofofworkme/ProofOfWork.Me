@@ -16037,6 +16037,29 @@ async function storeCanonicalSummarySnapshot(client, options = {}) {
       (value) => value !== latestIndexedThroughBlockHash,
     )
   ) {
+    console.error(
+      JSON.stringify({
+        accountingModelsCurrent:
+          canonicalSummaryAccountingModelsCurrent(summaryPayloads),
+        finalPublicLogFingerprint,
+        indexedThroughBlock,
+        latestIndexedHeight,
+        latestIndexedThroughBlockHash,
+        ledgerActivityPending,
+        ledgerActivityTotal,
+        ledgerSnapshotId: String(ledger.snapshotId ?? "").trim(),
+        logSummaryPending,
+        logSummaryTotal,
+        phase: "canonical-summary-exact-snapshot-check",
+        publicLogFingerprintStable: publicLogFingerprintsMatch(
+          currentPublicLogFingerprint,
+          finalPublicLogFingerprint,
+        ),
+        snapshotId,
+        summaryCheckpointHashes: [...new Set(summaryCheckpointHashes)],
+        summarySnapshotIds: [...new Set(summarySnapshotIds)],
+      }),
+    );
     throw new Error(
       `Canonical summary refresh is not one exact snapshot through block ${latestIndexedHeight}`,
     );
