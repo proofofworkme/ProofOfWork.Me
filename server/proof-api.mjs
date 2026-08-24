@@ -36144,6 +36144,45 @@ function mergeTokenPayloadWithCanonicalFloor(canonicalPayload, payload, scope) {
   }));
 }
 
+function tokenStateWithoutTokenId(tokenState, tokenId) {
+  const normalizedTokenId = normalizeTokenScope(tokenId);
+  if (!tokenState || !normalizedTokenId) {
+    return tokenState;
+  }
+  const filterItems = (items) =>
+    Array.isArray(items)
+      ? items.filter(
+          (item) => normalizeTokenScope(item?.tokenId) !== normalizedTokenId,
+        )
+      : items;
+  const {
+    amountStorageModel: _amountStorageModel,
+    confirmedSupplyAtoms: _confirmedSupplyAtoms,
+    confirmedSupplySubatoms: _confirmedSupplySubatoms,
+    pendingSupplyAtoms: _pendingSupplyAtoms,
+    pendingSupplySubatoms: _pendingSupplySubatoms,
+    precisionModel: _precisionModel,
+    ...rest
+  } = tokenState;
+  void _amountStorageModel;
+  void _confirmedSupplyAtoms;
+  void _confirmedSupplySubatoms;
+  void _pendingSupplyAtoms;
+  void _pendingSupplySubatoms;
+  void _precisionModel;
+  return tokenStateWithPendingStats({
+    ...rest,
+    closedListings: filterItems(tokenState.closedListings),
+    holders: filterItems(tokenState.holders),
+    invalidEvents: filterItems(tokenState.invalidEvents),
+    listings: filterItems(tokenState.listings),
+    mints: filterItems(tokenState.mints),
+    sales: filterItems(tokenState.sales),
+    tokens: filterItems(tokenState.tokens),
+    transfers: filterItems(tokenState.transfers),
+  });
+}
+
 function tokenStateWithAuthoritativeCurrentListings(tokenState, currentState) {
   if (
     !tokenState ||
@@ -44984,12 +45023,26 @@ async function buildIndexedCanonicalLedgerPayload(
   markTiming("sources");
   const tableWorkAmountStorageModel =
     exactWorkAmountStorageModelFromState(currentTokenTableState);
+  let currentTokenTableStateForLedger = currentTokenTableState;
   if (
     tableWorkAmountStorageModel !== expectedWorkAmountStorageModel
   ) {
-    throw freshDataUnavailableError(
-      `Rejected ${label}: the canonical WORK definition conflicts with the exact replay precision era.`,
-    );
+    if (
+      expectedWorkAmountStorageModel === WORK_ATOMIC_PROJECTION_MODEL &&
+      tableWorkAmountStorageModel === WORK_SUBATOM_PROJECTION_MODEL
+    ) {
+      console.error(
+        `Using replay-derived WORK history for ${label} because the exact checkpoint is before the current WORK precision era.`,
+      );
+      currentTokenTableStateForLedger = tokenStateWithoutTokenId(
+        currentTokenTableState,
+        WORK_TOKEN_ID,
+      );
+    } else {
+      throw freshDataUnavailableError(
+        `Rejected ${label}: the canonical WORK definition conflicts with the exact replay precision era.`,
+      );
+    }
   }
   const sourceTipHeight = exactHeight;
   const registryState = registrySnapshot;
@@ -45005,7 +45058,7 @@ async function buildIndexedCanonicalLedgerPayload(
   const ledgerTokenTableState = tokenStateWithAuthoritativeCurrentListings(
     mergeTokenPayloadWithCanonicalFloor(
       tokenState,
-      currentTokenTableState,
+      currentTokenTableStateForLedger,
       "",
     ),
     currentTokenTableState,
