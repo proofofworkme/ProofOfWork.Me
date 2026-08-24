@@ -918,7 +918,7 @@ test("wallet V8 AMO repair hides stale invalid rows and reserves spendable WORK"
   await expect(balancesPanel.getByText("0.0000000752009741 reserved")).toBeVisible();
 });
 
-test("wallet V8 AMO seal can retry during exact-tip catch-up", async ({
+test("wallet V8 AMO paused admission disables create, seal, and delist", async ({
   page,
 }) => {
   await installWallet(page);
@@ -937,13 +937,21 @@ test("wallet V8 AMO seal can retry during exact-tip catch-up", async ({
   ).toBeVisible();
   await expect(listing.getByText("Pre-V8 relic")).toHaveCount(0);
   await expect(listing.getByText("Relic")).toHaveCount(0);
-  const seal = listing.getByRole("button", { exact: true, name: "Seal" });
+  const create = page.getByRole("button", {
+    name: "Create 25,000 proofs AMO intent",
+  });
+  await expect(create).toBeVisible();
+  await expect(create).toBeDisabled();
+  const seal = listing.getByRole("button", {
+    name: /AMO paused \(work-amo-v8-precision-migration-not-ready\)/u,
+  });
   await expect(seal).toBeVisible();
-  await expect(seal).toBeEnabled();
-
-  await seal.click();
+  await expect(seal).toBeDisabled();
   await expect(
-    page
+    listing.getByRole("button", { exact: true, name: "Delist" }),
+  ).toBeDisabled();
+  await expect(
+    listing
       .locator(".field-note.bad")
       .filter({ hasText: "work-amo-v8-precision-migration-not-ready" }),
   ).toBeVisible();
@@ -980,15 +988,14 @@ test("AMO order book counts remote unsealed V8 listings", async ({ page }) => {
   await expect(
     amoUnits.getByRole("button", { name: "Unsealed 2" }),
   ).toContainText("2");
-  await expect(amoUnits.getByText("Waiting for seal")).toHaveCount(2);
+  const amoRows = amoUnits.locator(".token-market-grid .token-market-row");
+  await expect(amoRows.filter({ hasText: "Waiting for seal" })).toHaveCount(2);
   await expect(
-    amoUnits.getByText("0.0000000752009741 WORK"),
-  ).toHaveCount(3);
+    amoRows.filter({ hasText: "0.0000000752009741 WORK" }),
+  ).toHaveCount(2);
   await expect(amoUnits.getByText("Pending confirmation")).toHaveCount(0);
   await expect(amoUnits.getByText("Pre-V8 relic")).toHaveCount(0);
-  await expect(
-    amoUnits.locator(".token-market-grid .token-market-row"),
-  ).toHaveCount(2);
+  await expect(amoRows).toHaveCount(2);
 
   await page.getByRole("button", { name: "Refresh" }).first().click();
   await expect(

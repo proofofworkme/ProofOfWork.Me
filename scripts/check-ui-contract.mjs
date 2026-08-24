@@ -970,9 +970,13 @@ expect(
     /normalizedTokenListAmountUnits !== null[\s\S]*normalizedTokenListAmountUnits <= walletSpendableTokenAtoms/.test(
       canListTokenSource,
     ) &&
-    /const workAmoV8ListingTermsSelected =[\s\S]*workV8DeclarationBoundaryObserved\(workFloorQuote\)[\s\S]*const workAmoListingFreshPreflightReady =[\s\S]*workAmoListingCanAttemptFreshPreflight\(workFloorQuote\)[\s\S]*const workAmoListInputReady = Boolean\([\s\S]*workAmoV8ListingTermsSelected[\s\S]*workAmoV8FaceProofsAllowed\(tokenListFaceProofs\)[\s\S]*workAmoV6FaceProofsAllowed\(tokenListFaceProofs\)[\s\S]*workAmoListingFreshPreflightReady[\s\S]*workAmoEstimateForFace\(workFloorQuote, tokenListFaceProofs\)[\s\S]*workV8CanAttemptFreshPreflight\(workFloorQuote\)[\s\S]*walletSpendableTokenAtoms > 0n/.test(
+    /reportWorkAmoListingWriteBlock\(\)[\s\S]*setTokenAction\("list"\)/.test(
+      listTokenSource,
+    ) &&
+    /const workAmoV8ListingTermsSelected =[\s\S]*workV8DeclarationBoundaryObserved\(workFloorQuote\)[\s\S]*const workAmoListingWritesReadyNow =[\s\S]*workAmoListingWritesReady\(workFloorQuote\)[\s\S]*const workAmoListInputReady = Boolean\([\s\S]*workAmoV8ListingTermsSelected[\s\S]*workAmoV8FaceProofsAllowed\(tokenListFaceProofs\)[\s\S]*workAmoV6FaceProofsAllowed\(tokenListFaceProofs\)[\s\S]*workAmoListingWritesReadyNow[\s\S]*Boolean\(workAmoEstimateForFace\(workFloorQuote, tokenListFaceProofs\)\)[\s\S]*walletSpendableTokenAtoms > 0n/.test(
       canListTokenSource,
     ) &&
+    /const canListToken =[\s\S]*walletWritesReady/.test(canListTokenSource) &&
     !/max=\{Math\.max\(1, listSpendableBalance\)\}/.test(app) &&
     !/fetchTokenState|tokenWalletBalancesFor|walletMode|activeFolder/.test(
       listTokenSource,

@@ -1017,6 +1017,9 @@ expectAll("PWM block parsing aggregates value once and projects bond credits wit
   /validationMode: `canonical-\$\{bondTag\.ticker\.toLowerCase\(\)\}-bond-projection`/,
   /amountSats: 0/,
   /eventKeyVout: ordinal/,
+  /const projectionReason =[\s\S]*canonicalBondMintProjectionInvalidReason\(normalizedItem\)/,
+  /canonical-incb-bond-projection-invalid/,
+  /reservedBondCreditViolationReason\(projectionCheckedItem\)/,
   /Malformed or unknown aggregated PWM protocol payload/,
 ]);
 expectAll("reader exposes exact canonical raw chain state", canonicalTransactionsReaderSource, [

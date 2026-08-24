@@ -1719,8 +1719,15 @@ function isolatedFunction(path, name, globals = {}) {
           canonicalMempoolTxidSnapshot: [
             "canonicalJsonText",
           ],
+          canonicalRecoveryItemsForTx: [
+            "canonicalBondMintProjectionInvalidReason",
+          ],
           canonicalIncbIssuanceQ8Projection: [
             "canonicalIncbAttachedWorkQuantity",
+          ],
+          canonicalBondMintProjectionInvalidReason: [
+            "canonicalBondMintProjectionStructure",
+            "incbIssuanceMetadataInvalidReason",
           ],
           incbIssuanceMetadataInvalidReason: [
             "canonicalIncbAttachedWorkQuantity",
@@ -30301,7 +30308,7 @@ check("reserved bond credits reject generic create and mint supply", () => {
 
   assert.match(
     topLevelFunctionSource(BACKFILL_PATH, "canonicalRecoveryItemsForTx"),
-    /reservedBondCreditViolationReason\(normalizedItem\)/u,
+    /canonicalBondMintProjectionInvalidReason\(normalizedItem\)[\s\S]*reservedBondCreditViolationReason\(projectionCheckedItem\)/u,
   );
   assert.match(
     topLevelFunctionSource(BACKFILL_PATH, "persistPreparedProtocolItems"),

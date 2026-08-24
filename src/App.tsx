@@ -7549,24 +7549,6 @@ function workAmoSettlementWritesReady(quote: WorkFloorQuote | undefined) {
     : workAmoV6SettlementWritesReady(quote);
 }
 
-function workAmoSettlementCanRetryFreshPreflight(
-  quote: WorkFloorQuote | undefined,
-) {
-  return (
-    !workAmoSettlementWritesReady(quote) &&
-    workV8CanAttemptFreshPreflight(quote)
-  );
-}
-
-function workAmoListingCanAttemptFreshPreflight(
-  quote: WorkFloorQuote | undefined,
-) {
-  return (
-    workAmoListingWritesReady(quote) ||
-    workV8CanAttemptFreshPreflight(quote)
-  );
-}
-
 function assertWorkAmoSettlementEnabled(quote: WorkFloorQuote | undefined) {
   if (!workV8DeclarationBoundaryObserved(quote)) {
     assertWorkAmoV6SettlementEnabled(quote);
@@ -9215,7 +9197,8 @@ function tokenListingHasSaleTicketSeal(listing: PowTokenListing) {
 function tokenListingHasPendingSaleTicketSeal(listing: PowTokenListing) {
   return (
     listing.sealConfirmed !== true &&
-    tokenListingHasSaleTicketSeal(listing)
+    (tokenListingHasSaleTicketSeal(listing) ||
+      /^[0-9a-f]{64}$/u.test(String(listing.sealTxid ?? "")))
   );
 }
 
@@ -18895,11 +18878,13 @@ function transactionIntentSpendsOutpoint(
 
 async function assertTransactionIntentDoesNotSpendReservedListingAnchors({
   allowedOutpoints = [],
+  allowCurrentTokenFallback = false,
   intent,
   network,
   signingAddress,
 }: {
   allowedOutpoints?: PowIdSpentOutpoint[];
+  allowCurrentTokenFallback?: boolean;
   intent: UnsignedTransactionIntent;
   network: BitcoinNetwork;
   signingAddress?: string;
@@ -18915,7 +18900,9 @@ async function assertTransactionIntentDoesNotSpendReservedListingAnchors({
     ),
   );
   const reservedListingAnchors =
-    await fetchFreshProofOfWorkListingAnchorOutpoints(address, network);
+    await fetchFreshProofOfWorkListingAnchorOutpoints(address, network, {
+      allowCurrentTokenFallback,
+    });
   const blockedAnchors = reservedListingAnchors.filter(
     (outpoint) =>
       !allowed.has(`${outpoint.txid}:${outpoint.vout}`) &&
@@ -19261,6 +19248,7 @@ async function signAndBroadcastPsbtDetailed({
   beforeBroadcast,
   broadcastStrategy = "mempool",
   inputCount,
+  listingAnchorReadMode = "strict",
   network,
   psbtHex,
   signInputIndexes,
@@ -19271,6 +19259,7 @@ async function signAndBroadcastPsbtDetailed({
   beforeBroadcast?: () => Promise<void>;
   broadcastStrategy?: BroadcastStrategy;
   inputCount: number;
+  listingAnchorReadMode?: ListingAnchorReadMode;
   network: BitcoinNetwork;
   psbtHex: string;
   signInputIndexes?: number[];
@@ -19289,6 +19278,7 @@ async function signAndBroadcastPsbtDetailed({
   const expectedIntent = psbtUnsignedTransactionIntent(unsignedPsbt);
   await assertTransactionIntentDoesNotSpendReservedListingAnchors({
     allowedOutpoints: allowedReservedListingAnchorOutpoints,
+    allowCurrentTokenFallback: listingAnchorReadMode === "current-token-fallback",
     intent: expectedIntent,
     network,
     signingAddress,
@@ -19353,6 +19343,7 @@ async function signAndBroadcastPsbtDetailed({
   await beforeBroadcast?.();
   await assertTransactionIntentDoesNotSpendReservedListingAnchors({
     allowedOutpoints: allowedReservedListingAnchorOutpoints,
+    allowCurrentTokenFallback: listingAnchorReadMode === "current-token-fallback",
     intent: rawUnsignedTransactionIntent(signedTransaction),
     network,
     signingAddress,
@@ -21659,6 +21650,30 @@ export default function App() {
     connectedWalletProofAvailability.confirmedBalanceSats,
     connectedWalletProofAvailability.spendableSats,
   ]);
+  const walletProofsReadyForWrites = Boolean(
+    address &&
+      accountUtxosLoaded &&
+      !accountUtxosError &&
+      accountChainUtxosLoaded &&
+      !accountChainUtxosError,
+  );
+  const walletCreditLanesReadyForWrites = Boolean(
+    address &&
+      (Object.values(accountTokenLaneStatuses) as AccountTokenLaneStatus[]).every(
+        (laneStatus) =>
+          laneStatus.loaded &&
+          !laneStatus.loading &&
+          !laneStatus.error,
+      ),
+  );
+  const walletWritePreflightBlockReason = !address
+    ? "Connect UniSat first."
+    : !walletProofsReadyForWrites
+      ? "Wallet proofs are still syncing. Wait for verified wallet proofs before creating a transaction."
+      : !walletCreditLanesReadyForWrites
+        ? "Credit balances are still syncing. Wait for verified credit balances before creating a transaction."
+        : "";
+  const walletWritesReady = walletWritePreflightBlockReason === "";
 
   const connectedAccountStats = useMemo<AppHeaderAccountStat[]>(() => {
     if (!address) {
@@ -22197,6 +22212,8 @@ export default function App() {
     ? "Connect UniSat first."
     : network !== "livenet"
       ? "Switch to Mainnet before transferring credit."
+      : walletWritePreflightBlockReason
+        ? walletWritePreflightBlockReason
       : !walletTransferToken
         ? "Select a credit balance to transfer."
         : !walletTransferToken.registryAddress
@@ -22240,17 +22257,16 @@ export default function App() {
     : 0;
   const workAmoV8ListingTermsSelected =
     workV8DeclarationBoundaryObserved(workFloorQuote);
-  const workAmoListingFreshPreflightReady =
-    workAmoListingCanAttemptFreshPreflight(workFloorQuote);
+  const workAmoListingWritesReadyNow =
+    workAmoListingWritesReady(workFloorQuote);
   const workAmoListInputReady = Boolean(
     walletTransferToken &&
       isWorkToken(walletTransferToken) &&
       (workAmoV8ListingTermsSelected
         ? workAmoV8FaceProofsAllowed(tokenListFaceProofs)
         : workAmoV6FaceProofsAllowed(tokenListFaceProofs)) &&
-      workAmoListingFreshPreflightReady &&
-      (Boolean(workAmoEstimateForFace(workFloorQuote, tokenListFaceProofs)) ||
-        workV8CanAttemptFreshPreflight(workFloorQuote)) &&
+      workAmoListingWritesReadyNow &&
+      Boolean(workAmoEstimateForFace(workFloorQuote, tokenListFaceProofs)) &&
       walletSpendableTokenAtoms > 0n,
   );
   const genericListInputReady = Boolean(
@@ -22264,6 +22280,7 @@ export default function App() {
   const canListToken =
     Boolean(
       address &&
+        walletWritesReady &&
         walletTransferToken &&
         (workAmoListInputReady || genericListInputReady) &&
         (!tokenListBuyerAddress.trim() ||
@@ -22320,6 +22337,7 @@ export default function App() {
   const canMintToken =
     Boolean(
       address &&
+      walletWritesReady &&
       network === "livenet" &&
       selectedToken &&
       !isBondTokenDefinition(selectedToken) &&
@@ -22336,6 +22354,7 @@ export default function App() {
   const canTransferToken =
     Boolean(
       address &&
+      walletWritesReady &&
       network === "livenet" &&
       walletTransferToken &&
       walletTransferToken.registryAddress &&
@@ -22351,6 +22370,7 @@ export default function App() {
   const canPrepareTokenMintUtxos =
     Boolean(
       address &&
+      walletWritesReady &&
       network === "livenet" &&
       selectedToken &&
       !isBondTokenDefinition(selectedToken) &&
@@ -22366,6 +22386,7 @@ export default function App() {
   const canPrepareTokenTransferUtxos =
     Boolean(
       address &&
+        walletWritesReady &&
         network === "livenet" &&
         tokenPrepareTransferCountValue >= 1 &&
         tokenPrepareTransferCountValue <= TOKEN_PREPARE_MAX_TRANSFER_COUNT &&
@@ -22377,6 +22398,7 @@ export default function App() {
   const canCreateToken =
     Boolean(
       address &&
+      walletWritesReady &&
       network === "livenet" &&
       tokenIndexAddress &&
       tokenCreatePayload &&
@@ -28081,6 +28103,8 @@ export default function App() {
             }
           : undefined,
         inputCount: paymentPsbt.inputCount,
+        listingAnchorReadMode:
+          attachedWorkPayloads.length > 0 ? "strict" : "current-token-fallback",
         network,
         psbtHex: paymentPsbt.psbtHex,
         signingAddress: address,
@@ -28640,6 +28664,45 @@ export default function App() {
     }
   }
 
+  function reportWalletWritePreflightBlock() {
+    if (!walletWritePreflightBlockReason) {
+      return false;
+    }
+    setStatus({
+      tone: "bad",
+      text: walletWritePreflightBlockReason,
+    });
+    return true;
+  }
+
+  function reportWorkAmoListingWriteBlock() {
+    if (workAmoListingWritesReady(workFloorQuote)) {
+      return false;
+    }
+    const reason = workWritePauseReason(workFloorQuote);
+    setStatus({
+      tone: "bad",
+      text: `AMO proof-unit listing writes are paused${reason ? ` (${reason})` : ""}. No listing was created.`,
+    });
+    return true;
+  }
+
+  function reportWorkAmoSettlementWriteBlock(listing?: PowTokenListing) {
+    if (workAmoSettlementWritesReady(workFloorQuote)) {
+      return false;
+    }
+    const reason = workWritePauseReason(workFloorQuote);
+    const message = `AMO governed settlement writes are paused${reason ? ` (${reason})` : ""}. No WORK transaction was created.`;
+    if (listing) {
+      setTokenListingActionNotes((current) => ({
+        ...current,
+        [listing.listingId]: message,
+      }));
+    }
+    setStatus({ tone: "bad", text: message });
+    return true;
+  }
+
   async function createToken(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -28658,6 +28721,10 @@ export default function App() {
 
     if (network !== "livenet" || !tokenIndexAddress) {
       setStatus({ tone: "bad", text: "Credit creation is mainnet only." });
+      return;
+    }
+
+    if (reportWalletWritePreflightBlock()) {
       return;
     }
 
@@ -29009,6 +29076,10 @@ export default function App() {
       return undefined;
     }
 
+    if (reportWalletWritePreflightBlock()) {
+      return undefined;
+    }
+
     try {
       assertWorkMintWriteEnabled(mintTarget, workFloorQuote);
     } catch (error) {
@@ -29178,6 +29249,9 @@ export default function App() {
 
     if (network !== "livenet" || !token) {
       setStatus({ tone: "bad", text: "Select a mainnet credit first." });
+      return;
+    }
+    if (reportWalletWritePreflightBlock()) {
       return;
     }
     const parsedAmount = tokenAmountInput(token, tokenTransferAmount);
@@ -29436,6 +29510,12 @@ export default function App() {
 
     if (network !== "livenet" || !token) {
       setStatus({ tone: "bad", text: "Select a mainnet credit first." });
+      return;
+    }
+    if (reportWalletWritePreflightBlock()) {
+      return;
+    }
+    if (workListing && reportWorkAmoListingWriteBlock()) {
       return;
     }
     const parsedAmount = workListing
@@ -29769,6 +29849,13 @@ export default function App() {
       return;
     }
 
+    if (reportWalletWritePreflightBlock()) {
+      return;
+    }
+    if (isWorkToken(listing) && reportWorkAmoSettlementWriteBlock(listing)) {
+      return;
+    }
+
     setTokenAction("seal");
     setBusy(true);
     setTokenListingActionNotes((current) => {
@@ -29933,6 +30020,13 @@ export default function App() {
 
     if (listing.sellerAddress !== address) {
       setStatus({ tone: "bad", text: "Only the seller can delist this listing." });
+      return;
+    }
+
+    if (reportWalletWritePreflightBlock()) {
+      return;
+    }
+    if (isWorkToken(listing) && reportWorkAmoSettlementWriteBlock(listing)) {
       return;
     }
 
@@ -30102,6 +30196,13 @@ export default function App() {
         tone: "bad",
         text: "This WORK listing does not expose complete immutable AMO terms. No purchase was created.",
       });
+      return;
+    }
+
+    if (reportWalletWritePreflightBlock()) {
+      return;
+    }
+    if (isWorkToken(listing) && reportWorkAmoSettlementWriteBlock(listing)) {
       return;
     }
 
@@ -30635,6 +30736,10 @@ export default function App() {
       return;
     }
 
+    if (reportWalletWritePreflightBlock()) {
+      return;
+    }
+
     const transferCount = tokenPrepareTransferCountValue;
     const futureFeeReserveSats = Math.max(
       0,
@@ -30734,6 +30839,10 @@ export default function App() {
 
     if (network !== "livenet" || !selectedToken) {
       setStatus({ tone: "bad", text: "Select a mainnet credit first." });
+      return;
+    }
+
+    if (reportWalletWritePreflightBlock()) {
       return;
     }
 
@@ -35701,11 +35810,9 @@ function TokenWalletWorkspace({
     workAmoV8Enabled || workAmoV6ActivationReady(workFloorQuote);
   const workAmoSettlementEnabled =
     workAmoSettlementWritesReady(workFloorQuote);
-  const workAmoSettlementActionEnabled =
-    workAmoSettlementEnabled ||
-    workAmoSettlementCanRetryFreshPreflight(workFloorQuote);
-  const workAmoListingEnabled =
-    workAmoListingCanAttemptFreshPreflight(workFloorQuote);
+  const workAmoSettlementActionEnabled = workAmoSettlementEnabled;
+  const workAmoListingEnabled = workAmoListingWritesReady(workFloorQuote);
+  const workAmoWriteReasonCode = workWritePauseReason(workFloorQuote);
   const selectedWorkAmoEstimate = workAmoEstimateForFace(
     workFloorQuote,
     listFaceProofs,
@@ -36319,34 +36426,21 @@ function TokenWalletWorkspace({
               . Governed WORK actions fail closed; no WORK transaction is
               prepared.
             </p>
-          ) : selectedListTokenIsWork && !workAmoSettlementActionEnabled ? (
+          ) : selectedListTokenIsWork && !workAmoSettlementEnabled ? (
             <p className="field-note bad">
               AMO governed settlement writes are paused
-              {(workAmoV8TermsVisible
-                ? workFloorQuote?.workAmoV8?.reasonCode
-                : workFloorQuote?.workAmoV6?.reasonCode)
-                ? ` (${workAmoV8TermsVisible
-                    ? workFloorQuote?.workAmoV8?.reasonCode
-                    : workFloorQuote?.workAmoV6?.reasonCode})`
+              {workAmoWriteReasonCode
+                ? ` (${workAmoWriteReasonCode})`
                 : ""}
               . No governed WORK listing, seal, purchase, or delisting is
               prepared while the gate is closed.
             </p>
-          ) : selectedListTokenIsWork && !workAmoSettlementEnabled ? (
-            <p className="field-note">
-              WORK settlement admission will be rechecked against the live
-              canonical tip before any transaction is prepared.
-            </p>
           ) : selectedListTokenIsWork && !workAmoListingEnabled ? (
-            <p className="field-note">
+            <p className="field-note bad">
               New proof-native AMO units are temporarily read-only because
               the canonical listing write gate is paused
-              {(workAmoV8TermsVisible
-                ? workFloorQuote?.workAmoV8?.reasonCode
-                : workFloorQuote?.workAmoV6?.reasonCode)
-                ? ` (${workAmoV8TermsVisible
-                    ? workFloorQuote?.workAmoV8?.reasonCode
-                    : workFloorQuote?.workAmoV6?.reasonCode})`
+              {workAmoWriteReasonCode
+                ? ` (${workAmoWriteReasonCode})`
                 : ""}
               . {workAmoV8TermsVisible
                 ? "Only confirmed V8 listings retain settlement eligibility; every pre-V8 listing is a read-only relic."
@@ -36429,10 +36523,10 @@ function TokenWalletWorkspace({
                 <p className="field-note work-amo-quote-authority-status">
                   Proof-native AMO write gate:{" "}
                   <strong>
-                    {workAmoListingWritesReady(workFloorQuote)
+                    {workAmoListingEnabled
                       ? "ready"
-                      : workAmoListingEnabled
-                        ? "fresh preflight"
+                      : workAmoWriteReasonCode
+                        ? `paused (${workAmoWriteReasonCode})`
                         : "temporarily unavailable"}
                   </strong>
                   . No USD oracle, signed price attestation, or recurring
@@ -36602,14 +36696,7 @@ function TokenWalletWorkspace({
                     workAmoListingMatchesReadEra(item, workFloorQuote);
                   const workWriteEraReady =
                     workAmoListingMatchesWriteEra(item, workFloorQuote);
-                  const workSealCanRetryFreshPreflight =
-                    isWorkToken(item) &&
-                    !workAmoSettlementEnabled &&
-                    Boolean(workFrozenTerms) &&
-                    workWriteEraReady &&
-                    workAmoSettlementCanRetryFreshPreflight(workFloorQuote);
-                  const workSealActionEnabled =
-                    workAmoSettlementEnabled || workSealCanRetryFreshPreflight;
+                  const workSealActionEnabled = workAmoSettlementEnabled;
                   const workSealBlocked =
                     isWorkToken(item) &&
                     (!workSealActionEnabled ||
@@ -44945,13 +45032,10 @@ function TokenMarketplacePanel({
     workAmoV8Enabled || workAmoV6ActivationReady(workFloorQuote);
   const workAmoProtocolWritesReady =
     workAmoSettlementWritesReady(workFloorQuote);
-  const workAmoProtocolWritesEnabled =
-    workAmoProtocolWritesReady ||
-    workAmoSettlementCanRetryFreshPreflight(workFloorQuote);
+  const workAmoProtocolWritesEnabled = workAmoProtocolWritesReady;
   const workAmoListingWritesReadyNow =
     workAmoListingWritesReady(workFloorQuote);
-  const workAmoListingWritesEnabled =
-    workAmoListingCanAttemptFreshPreflight(workFloorQuote);
+  const workAmoListingWritesEnabled = workAmoListingWritesReadyNow;
   const workAmoWriteReasonCode = String(
     (workAmoV8TermsVisible
       ? workFloorQuote?.workAmoV8?.reasonCode
@@ -45172,9 +45256,7 @@ function TokenMarketplacePanel({
                       <span>
                         {workAmoListingWritesReadyNow
                           ? "Ready · canonical proof state indexed"
-                          : workAmoListingWritesEnabled
-                            ? "Fresh preflight · canonical proof state indexed"
-                            : `Temporarily unavailable${workAmoWriteReasonCode ? ` · ${workAmoWriteReasonCode}` : ""}`}
+                          : `Paused${workAmoWriteReasonCode ? ` · ${workAmoWriteReasonCode}` : ""}`}
                       </span>
                     </div>
                     <p className="field-note">

@@ -5941,14 +5941,30 @@ async function canonicalRecoveryItemsForTx(tx, messages, options = {}) {
       normalizedItem.validationMode =
         "canonical-incb-bond-projection";
     }
-    const reservedReason = reservedBondCreditViolationReason(normalizedItem);
-    const integrityItem = reservedReason
+    const normalizedTokenId = String(normalizedItem?.tokenId ?? "")
+      .trim()
+      .toLowerCase();
+    const projectionReason =
+      normalizedKind === "token-mint" &&
+      normalizedTokenId === INCB_TOKEN_ID
+        ? canonicalBondMintProjectionInvalidReason(normalizedItem)
+        : "";
+    const projectionCheckedItem = projectionReason
       ? tokenProtocolIntegrityInvalidItem(
           normalizedItem,
+          `Canonical INCB bond projection rejected: ${projectionReason}.`,
+          "canonical-incb-bond-projection-invalid",
+        )
+      : normalizedItem;
+    const reservedReason =
+      reservedBondCreditViolationReason(projectionCheckedItem);
+    const integrityItem = reservedReason
+      ? tokenProtocolIntegrityInvalidItem(
+          projectionCheckedItem,
           reservedReason,
           "reserved-bond-credit-namespace",
         )
-      : normalizedItem;
+      : projectionCheckedItem;
     normalizedRecovered.push({
       ...recoveredItem,
       item: integrityItem,
