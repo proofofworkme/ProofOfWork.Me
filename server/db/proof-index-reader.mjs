@@ -29015,6 +29015,9 @@ function assertCanonicalIncbCurrentProjection(tokens, mints, holders, context) {
     }
     return total + balance;
   }, 0n);
+  if (confirmedMints.length === 0 && confirmedBalanceSupply === 0n) {
+    return;
+  }
   if (
     confirmedMints.length === 0 ||
     confirmedMintSupply <= 0n ||
