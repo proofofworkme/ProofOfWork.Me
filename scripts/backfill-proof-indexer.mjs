@@ -1864,6 +1864,16 @@ function activePwtRangeReplay(rebuild) {
   return assertCanonicalPwtRangeReplayState(rebuild) === "active";
 }
 
+function activeCanonicalRebuild(rebuild) {
+  return Boolean(
+    rebuild &&
+      typeof rebuild === "object" &&
+      rebuild.network === NETWORK &&
+      rebuild.status === "active" &&
+      rebuild.active !== false,
+  );
+}
+
 function newPwtRangeReplayVerifierBinding(rangeReplayFromHeight, createdAt) {
   return {
     bindingId: randomBytes(32).toString("hex"),
@@ -21218,6 +21228,7 @@ async function backfillBlockScanSource(client, source) {
     if (
       ((typeof STORE_CANONICAL_SUMMARY_SNAPSHOT !== "undefined" &&
         STORE_CANONICAL_SUMMARY_SNAPSHOT) ||
+        activeCanonicalRebuild(canonicalRebuild) ||
         activePwtRangeReplay(canonicalRebuild)) &&
       protocolCandidates.some(({ messages }) =>
         protocolMessagesContainInceptionBond(messages)
