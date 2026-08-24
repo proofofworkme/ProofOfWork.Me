@@ -1725,6 +1725,13 @@ function isolatedFunction(path, name, globals = {}) {
           canonicalIncbIssuanceQ8Projection: [
             "canonicalIncbAttachedWorkQuantity",
           ],
+          canonicalIncbIssuanceMintProjection: [
+            "incbIssuanceMetadataInvalidReason",
+          ],
+          canonicalBondMintProjection: [
+            "canonicalBondMintProjectionStructure",
+            "canonicalIncbIssuanceMintProjection",
+          ],
           canonicalBondMintProjectionInvalidReason: [
             "canonicalBondMintProjectionStructure",
             "incbIssuanceMetadataInvalidReason",
@@ -1747,6 +1754,8 @@ function isolatedFunction(path, name, globals = {}) {
           ],
           rebuildConfirmedCreditBalancesFromCanonicalEvents: [
             "assertCanonicalWorkProjection",
+            "canonicalBondMintProjection",
+            "canonicalBondMintProjectionInvalidReason",
           ],
           seedCanonicalWorkDefinition: [
             "currentWorkProjectionModel",
@@ -32622,6 +32631,96 @@ check("complete canonical token replay publishes conserved balances", async () =
       ["bob", "3"],
       ["carol", "2"],
     ],
+  );
+});
+
+check("canonical credit replay quarantines stale malformed INCB projection rows", async () => {
+  const accountingModel = "canonical-pre-bond-live-network-value-v2";
+  const txid =
+    "b00b9451bded7d2b7d339556ad2dc5d375e5b52ad877a1d3e2b29149dfc72ccf";
+  const writes = [];
+  const rebuildConfirmedCreditBalancesFromCanonicalEvents = isolatedFunction(
+    BACKFILL_PATH,
+    "rebuildConfirmedCreditBalancesFromCanonicalEvents",
+    {
+      BOND_TAGS: [{ ticker: "INCB", tokenId: INCB_TOKEN_ID }],
+      INCB_ISSUANCE_ACCOUNTING_MODEL: accountingModel,
+      INCB_TOKEN_ID,
+      NETWORK: "livenet",
+      assertCanonicalWorkProjection: async () => ({
+        model: WORK_ATOMIC_PROJECTION_MODEL,
+        state: "q8",
+      }),
+    },
+  );
+  const result = await rebuildConfirmedCreditBalancesFromCanonicalEvents({
+    async query(sql, params = []) {
+      const text = String(sql);
+      if (text.includes("FROM proof_indexer.credit_definitions")) {
+        return {
+          rows: [{
+            confirmed: true,
+            created_height: 958_000,
+            max_supply: "0",
+            metadata: {
+              blockIndex: 0,
+              canonicalSynthetic: true,
+              issuanceAccountingModel: accountingModel,
+              issuanceUnitSats: 1,
+              issuanceValuationFixedAtSend: true,
+              uncapped: true,
+            },
+            mint_amount: "0",
+            ticker: "INCB",
+            token_id: INCB_TOKEN_ID,
+          }],
+        };
+      }
+      if (text.includes("FROM proof_indexer.events")) {
+        return {
+          rows: [{
+            canonical_block_height: 963_788,
+            canonical_block_index: 1,
+            canonical_protocol_vout: 3,
+            canonical_record_ordinal: 0,
+            event_id: 9001,
+            event_key: `token-mint:${txid}`,
+            kind: "token-mint",
+            payload: {
+              amount: "116657103344743",
+              amountSats: 0,
+              confirmed: true,
+              minterAddress: "bc1pincbprojectionrecipient",
+              sourceBondTxid: txid,
+              ticker: "INCB",
+              tokenId: INCB_TOKEN_ID,
+              txid,
+              validationMode: "canonical-incb-bond-projection",
+            },
+            txid,
+          }],
+        };
+      }
+      if (text.includes("sum(confirmed_balance)")) {
+        return { rows: [] };
+      }
+      writes.push({ params: Array.from(params), sql: text });
+      return { rows: [] };
+    },
+  });
+  assert.equal(result.holders, 0);
+  assert.equal(result.tokens, 0);
+  assert.equal(writes.length, 1);
+  assert.match(writes[0].sql, /UPDATE proof_indexer\.events/u);
+  assert.match(writes[0].sql, /token-event-invalid/u);
+  assert.equal(writes[0].params[1], 9001);
+  assert.match(
+    writes[0].params[2],
+    /Canonical INCB bond projection rejected/u,
+  );
+  assert.equal(
+    writes[0].params[3],
+    "canonical-incb-bond-projection-invalid",
   );
 });
 

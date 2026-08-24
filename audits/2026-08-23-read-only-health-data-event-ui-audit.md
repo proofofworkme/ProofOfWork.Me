@@ -749,3 +749,32 @@ Production deployment requirements:
 - Re-run production health checks and marketplace regression after services are
   live to confirm that the public API is no longer serving
   `CANONICAL_INDEX_UNAVAILABLE`.
+
+## Production Verification Addendum - 2026-08-24
+
+The first production deploy proved that the recovery-time INCB projection guard
+was necessary but not sufficient: an already-persisted confirmed row for
+`b00b9451bded7d2b7d339556ad2dc5d375e5b52ad877a1d3e2b29149dfc72ccf`
+remained `kind=token-mint`, `valid=true` in the canonical replay input. The
+worker still failed while rebuilding confirmed credit balances, before a fresh
+recovery pass could replace that stale row.
+
+Final permanent server hardening:
+
+- Canonical credit balance replay now detects malformed INCB bond projection
+  rows already stored as valid `token-mint` events.
+- Those stale rows are rewritten in `proof_indexer.events` as
+  `token-event-invalid`, `valid=false`, with
+  `reasonCode=canonical-incb-bond-projection-invalid`.
+- The invalid row is skipped for supply/balance replay, while true generic
+  POWB/INCB namespace mint attempts still fail closed.
+- Regression coverage now includes the production-shaped stale-row txid above,
+  proving the worker quarantines it instead of crashing.
+
+Additional verification:
+
+- `npm run check:index-recovery-behavior` with 448/448 behavior checks passing.
+- `npm run check:live-data`
+- `npm run check:server-globals`
+- `npm run check:api-truth`
+- `npm run check:worker-containment`

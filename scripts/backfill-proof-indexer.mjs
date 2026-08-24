@@ -6892,13 +6892,62 @@ async function rebuildConfirmedCreditBalancesFromCanonicalEvents(
     }
     const definition = definitions.get(tokenId);
     if (row.kind === "token-mint") {
+      const bondProjectionItem = {
+        ...payload,
+        kind: row.kind,
+        protocol: "pwt1",
+        txid: row.txid,
+      };
+      const bondProjectionInvalidReason =
+        definition.ticker === "INCB"
+          ? canonicalBondMintProjectionInvalidReason(bondProjectionItem)
+          : "";
+      if (bondProjectionInvalidReason) {
+        const reason =
+          `Canonical INCB bond projection rejected: ${bondProjectionInvalidReason}.`;
+        await client.query(
+          `
+            UPDATE proof_indexer.events
+            SET
+              kind = 'token-event-invalid',
+              valid = false,
+              validation_errors = ARRAY[$3]::text[],
+              payload =
+                COALESCE(payload, '{}'::jsonb)
+                || jsonb_build_object(
+                  'attemptedKind',
+                  COALESCE(payload->>'attemptedKind', kind),
+                  'kind',
+                  'token-event-invalid',
+                  'valid',
+                  false,
+                  'reason',
+                  $3,
+                  'reasonCode',
+                  $4
+                ),
+              updated_at = now()
+            WHERE network = $1
+              AND event_id = $2
+              AND kind = 'token-mint'
+              AND valid = true
+          `,
+          [
+            NETWORK,
+            row.event_id,
+            reason,
+            "canonical-incb-bond-projection-invalid",
+          ],
+        );
+        continue;
+      }
       const expectedBondProjection =
         definition.ticker === "INCB"
           ? definition.issuanceAccountingModel ===
               INCB_ISSUANCE_ACCOUNTING_MODEL &&
             definition.issuanceValuationFixedAtSend === true &&
             definition.issuanceUnitSats === 1 &&
-            canonicalBondMintProjection(payload)
+            canonicalBondMintProjection(bondProjectionItem)
           : definition.ticker === "POWB" &&
             payload.confirmed === true &&
             String(payload.ticker ?? "").trim().toUpperCase() ===
