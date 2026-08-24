@@ -2966,6 +2966,63 @@ function walletScopedPayloadUsesAuthoritativeOverlay(payload) {
   );
 }
 
+function walletScopedTokenPayloadWithComputedStats(payload, tokenScope = "") {
+  const stats =
+    payload?.stats && typeof payload.stats === "object" &&
+      !Array.isArray(payload.stats)
+      ? payload.stats
+      : {};
+  if (payload?.walletScoped !== true && stats.walletScoped !== true) {
+    return payload;
+  }
+  const holders = Array.isArray(payload?.holders) ? payload.holders : [];
+  const invalidEvents = Array.isArray(payload?.invalidEvents)
+    ? payload.invalidEvents
+    : [];
+  const listings = Array.isArray(payload?.listings) ? payload.listings : [];
+  const mints = Array.isArray(payload?.mints) ? payload.mints : [];
+  const sales = Array.isArray(payload?.sales) ? payload.sales : [];
+  const tokens = Array.isArray(payload?.tokens) ? payload.tokens : [];
+  const transfers = Array.isArray(payload?.transfers)
+    ? payload.transfers
+    : [];
+  const confirmedListings = listings.filter((listing) =>
+    listing?.confirmed === true
+  ).length;
+  const pendingListings = listings.filter((listing) =>
+    listing?.confirmed !== true
+  ).length;
+  return {
+    ...payload,
+    stats: {
+      ...stats,
+      activeListings: listings.length,
+      confirmedListings,
+      confirmedMints: mints.filter((mint) => mint?.confirmed === true).length,
+      confirmedOpenListings: confirmedListings,
+      confirmedSales: sales.filter((sale) => sale?.confirmed === true).length,
+      confirmedTokens: tokens.filter((token) => token?.confirmed === true)
+        .length,
+      confirmedTransfers: transfers.filter((transfer) =>
+        transfer?.confirmed === true
+      ).length,
+      holders: holders.length,
+      invalidEvents: invalidEvents.length,
+      openListings: listings.length,
+      pendingListings,
+      pendingMints: mints.filter((mint) => mint?.confirmed !== true).length,
+      pendingOpenListings: pendingListings,
+      pendingSales: sales.filter((sale) => sale?.confirmed !== true).length,
+      pendingTokens: tokens.filter((token) => token?.confirmed !== true).length,
+      pendingTransfers: transfers.filter((transfer) =>
+        transfer?.confirmed !== true
+      ).length,
+      tokenScope: normalizeTokenScope(tokenScope || stats.tokenScope || ""),
+      walletScoped: true,
+    },
+  };
+}
+
 async function walletScopedPayloadWithIndexedEnrichment(
   payload,
   network,
@@ -2984,7 +3041,10 @@ async function walletScopedPayloadWithIndexedEnrichment(
         )
       : currentPolicyPayload;
   if (walletScopedPayloadUsesAuthoritativeOverlay(currentPolicyPayload)) {
-    return currentPolicyPayload;
+    return walletScopedTokenPayloadWithComputedStats(
+      currentPolicyPayload,
+      tokenScope,
+    );
   }
   let indexedPayload = await tokenPayloadWithIndexedWalletHolders(
     currentPolicyPayload,
@@ -3007,7 +3067,10 @@ async function walletScopedPayloadWithIndexedEnrichment(
           recoveryAddresses,
         )
       : indexedPayload;
-  return indexedPayload;
+  return walletScopedTokenPayloadWithComputedStats(
+    indexedPayload,
+    tokenScope,
+  );
 }
 
 async function proofIndexWalletScopedTokenPayloadForRead(
@@ -9146,6 +9209,37 @@ function workAmoV8ExactLiveProbeKey(
   ) {
     return "";
   }
+  const workerIdentity = includeMempool
+    ? {
+        era: String(worker.era ?? ""),
+        finishedAt: String(worker.finishedAt ?? ""),
+        mempoolCount: worker.mempoolCount ?? null,
+        mempoolSha256: String(worker.mempoolSha256 ?? "")
+          .trim()
+          .toLowerCase(),
+        pendingMembershipCount: worker.pendingMembershipCount ?? null,
+        pendingMembershipSha256: String(
+          worker.pendingMembershipSha256 ?? "",
+        ).trim().toLowerCase(),
+        pendingProjectionSha256: String(
+          worker.pendingProjectionSha256 ?? "",
+        ).trim().toLowerCase(),
+        proofSource: String(worker.proofSource ?? ""),
+        ready: worker.ready,
+        state: String(worker.state ?? ""),
+        tipHash: String(worker.tipHash ?? "").trim().toLowerCase(),
+        tipHeight: Number.isSafeInteger(Number(worker.tipHeight))
+          ? Number(worker.tipHeight)
+          : null,
+      }
+    : {
+        ready: worker.ready,
+        state: String(worker.state ?? ""),
+        tipHash: String(worker.tipHash ?? "").trim().toLowerCase(),
+        tipHeight: Number.isSafeInteger(Number(worker.tipHeight))
+          ? Number(worker.tipHeight)
+          : null,
+      };
   return JSON.stringify({
     ...(includeMempool
       ? {
@@ -9158,28 +9252,7 @@ function workAmoV8ExactLiveProbeKey(
       : {}),
     tipHash,
     tipHeight,
-    workerReadiness: {
-      era: String(worker.era ?? ""),
-      finishedAt: String(worker.finishedAt ?? ""),
-      mempoolCount: worker.mempoolCount ?? null,
-      mempoolSha256: String(worker.mempoolSha256 ?? "")
-        .trim()
-        .toLowerCase(),
-      pendingMembershipCount: worker.pendingMembershipCount ?? null,
-      pendingMembershipSha256: String(
-        worker.pendingMembershipSha256 ?? "",
-      ).trim().toLowerCase(),
-      pendingProjectionSha256: String(
-        worker.pendingProjectionSha256 ?? "",
-      ).trim().toLowerCase(),
-      proofSource: String(worker.proofSource ?? ""),
-      ready: worker.ready,
-      state: String(worker.state ?? ""),
-      tipHash: String(worker.tipHash ?? "").trim().toLowerCase(),
-      tipHeight: Number.isSafeInteger(Number(worker.tipHeight))
-        ? Number(worker.tipHeight)
-        : null,
-    },
+    workerReadiness: workerIdentity,
   });
 }
 
@@ -37217,7 +37290,10 @@ async function walletScopedTokenSummaryPayload(
     );
   }
 
-  return compactTokenSummaryPayload(scopedPayload, scope);
+  return compactTokenSummaryPayload(
+    walletScopedTokenPayloadWithComputedStats(scopedPayload, scope),
+    scope,
+  );
 }
 
 function walletScopedTokenCacheKey(
@@ -37511,9 +37587,11 @@ async function walletScopedTokenPayload(
       : scopedPayload;
 
   if (BOND_TOKEN_IDS.has(scope)) {
+    const computedBondPayload =
+      walletScopedTokenPayloadWithComputedStats(scopedPayload, scope);
     const bondPayload = requireCurrent
-      ? { ...scopedPayload, authoritativeWallet: true }
-      : scopedPayload;
+      ? { ...computedBondPayload, authoritativeWallet: true }
+      : computedBondPayload;
     return rememberWalletScopedTokenPayload(walletCacheKey, bondPayload);
   }
 
@@ -37539,7 +37617,9 @@ async function walletScopedTokenPayload(
   const resolvedPayload = await finalPayload;
   return rememberWalletScopedTokenPayload(
     walletCacheKey,
-    withWalletAuthority(resolvedPayload),
+    withWalletAuthority(
+      walletScopedTokenPayloadWithComputedStats(resolvedPayload, scope),
+    ),
   );
 }
 

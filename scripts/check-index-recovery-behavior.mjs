@@ -7255,6 +7255,7 @@ check("fresh wallet token reads use exact or bounded canonical coverage", async 
   const walletScopedTokenCacheStubs = {
     cachedWalletScopedTokenPayload: () => null,
     rememberWalletScopedTokenPayload: (_cacheKey, payload) => payload,
+    walletScopedTokenPayloadWithComputedStats: (payload) => payload,
     walletScopedTokenCacheKey: () => "",
   };
   const walletScopedTokenPayload = isolatedFunction(
@@ -7539,6 +7540,7 @@ check("fresh wallet token reads use exact or bounded canonical coverage", async 
         activeListingReads += 1;
         return { ...payload, activeListingsEnriched: true };
       },
+      walletScopedTokenPayloadWithComputedStats: (payload) => payload,
       walletScopedPayloadUsesAuthoritativeOverlay,
     },
   );
@@ -60167,6 +60169,29 @@ check("AMO V8 request coalescing binds exact reader identity and live inputs", (
     liveProbeKey(liveProbe, { includeMempool: false }),
     liveProbeKey(changedMempoolProbe, { includeMempool: false }),
   );
+  const changedWorkerTimestampProbe = {
+    ...liveProbe,
+    workerReadiness: {
+      ...workerReadiness,
+      finishedAt: "2026-08-02T20:00:01.000Z",
+      pendingProjectionSha256: "6".repeat(64),
+    },
+  };
+  assert.equal(
+    liveProbeKey(liveProbe, { includeMempool: false }),
+    liveProbeKey(changedWorkerTimestampProbe, { includeMempool: false }),
+  );
+  const notReadyWorkerProbe = {
+    ...liveProbe,
+    workerReadiness: {
+      ...workerReadiness,
+      ready: false,
+    },
+  };
+  assert.notEqual(
+    liveProbeKey(liveProbe, { includeMempool: false }),
+    liveProbeKey(notReadyWorkerProbe, { includeMempool: false }),
+  );
   const readinessKey = statusCacheKey(inputs);
   assert.notEqual(readinessKey, "");
   for (const changedInputs of [
@@ -60375,6 +60400,57 @@ check("AMO V8 metadata coalesces identical exact live probes", async () => {
     metadataSource,
     /exactReadinessProbe: immutableProbe[\s\S]*singleFlightBypass: true/u,
   );
+});
+
+check("wallet-scoped token stats include pending overlay listings", () => {
+  const recomputeStats = isolatedFunction(
+    API_PATH,
+    "walletScopedTokenPayloadWithComputedStats",
+    {
+      normalizeTokenScope: (value) =>
+        String(value ?? "").trim().toLowerCase(),
+    },
+  );
+  const payload = {
+    holders: [{ address: "17W7" }],
+    invalidEvents: [{ txid: "invalid" }],
+    listings: [
+      { confirmed: true, listingId: "confirmed" },
+      { confirmed: false, listingId: "pending" },
+    ],
+    mints: [{ confirmed: true }, { confirmed: false }],
+    sales: [{ confirmed: true }, { confirmed: false }],
+    stats: {
+      activeListings: 0,
+      confirmedListings: 0,
+      pendingListings: 0,
+      tokenScope: "stale",
+      walletScoped: true,
+    },
+    tokens: [{ confirmed: true }, { confirmed: false }],
+    transfers: [{ confirmed: true }, { confirmed: false }],
+    walletScoped: true,
+  };
+  const withStats = recomputeStats(payload, "WORK");
+  assert.equal(withStats.stats.activeListings, 2);
+  assert.equal(withStats.stats.openListings, 2);
+  assert.equal(withStats.stats.confirmedListings, 1);
+  assert.equal(withStats.stats.confirmedOpenListings, 1);
+  assert.equal(withStats.stats.pendingListings, 1);
+  assert.equal(withStats.stats.pendingOpenListings, 1);
+  assert.equal(withStats.stats.confirmedMints, 1);
+  assert.equal(withStats.stats.pendingMints, 1);
+  assert.equal(withStats.stats.confirmedSales, 1);
+  assert.equal(withStats.stats.pendingSales, 1);
+  assert.equal(withStats.stats.confirmedTokens, 1);
+  assert.equal(withStats.stats.pendingTokens, 1);
+  assert.equal(withStats.stats.confirmedTransfers, 1);
+  assert.equal(withStats.stats.pendingTransfers, 1);
+  assert.equal(withStats.stats.holders, 1);
+  assert.equal(withStats.stats.invalidEvents, 1);
+  assert.equal(withStats.stats.tokenScope, "work");
+  const unscoped = { listings: [{ confirmed: false }], stats: {} };
+  assert.strictEqual(recomputeStats(unscoped), unscoped);
 });
 
 check("WORK precision V2 readiness cache is exact, positive-only, and coalesced", async () => {
