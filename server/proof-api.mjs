@@ -57045,11 +57045,20 @@ function workAmoV5HistoricalMovements(tokenState, throughHeight) {
   const add = (item, kind) => {
     const blockHeight = Number(item?.blockHeight);
     const txid = String(item?.txid ?? "").trim().toLowerCase();
-    const q16 = workRecordUsesSubatoms(item);
-    const amountAtoms = workAtomsBigIntFromRecord(item);
-    const amountSubatoms = q16
+    const q16Source = workRecordUsesSubatoms(item);
+    const amountSubatoms = q16Source
       ? workSubatomsBigIntFromRecord(item)
       : null;
+    const legacySeedMovement =
+      q16Source && throughHeight < WORK_AMO_V5_ACTIVATION_HEIGHT;
+    const amountAtoms =
+      workAtomsBigIntFromRecord(item) ??
+      (legacySeedMovement &&
+        amountSubatoms !== null &&
+        amountSubatoms % WORK_SUBATOM_CONVERSION_FACTOR === 0n
+        ? amountSubatoms / WORK_SUBATOM_CONVERSION_FACTOR
+        : null);
+    const q16 = q16Source && !legacySeedMovement;
     const amountUnits = q16 ? amountSubatoms : amountAtoms;
     const blockIndex =
       item?.blockIndex === undefined ||

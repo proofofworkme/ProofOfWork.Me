@@ -56402,8 +56402,13 @@ check("AMO V8 relational closing evidence reads canonical Q16 units", async () =
   );
   assert.match(
     historicalMovementSource,
-    /const q16 = workRecordUsesSubatoms\(item\)[\s\S]*workSubatomsBigIntFromRecord\(item\)[\s\S]*amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL[\s\S]*amountSubatoms: amountSubatoms\.toString\(\)/u,
-    "post-V8 opening WORK movements must keep Q16 subatom units in the AMO accumulator",
+    /legacySeedMovement[\s\S]*throughHeight < WORK_AMO_V5_ACTIVATION_HEIGHT[\s\S]*amountSubatoms % WORK_SUBATOM_CONVERSION_FACTOR === 0n[\s\S]*amountSubatoms \/ WORK_SUBATOM_CONVERSION_FACTOR/u,
+    "pre-V5 seed movements must project exact Q16 subatoms back to legacy atoms",
+  );
+  assert.match(
+    historicalMovementSource,
+    /const q16 = q16Source && !legacySeedMovement[\s\S]*amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL[\s\S]*amountSubatoms: amountSubatoms\.toString\(\)/u,
+    "post-activation WORK movements must keep Q16 subatom units in the AMO accumulator",
   );
   const rawProjectionSource = topLevelFunctionSource(
     WORK_AMO_V5_RAW_PATH,
