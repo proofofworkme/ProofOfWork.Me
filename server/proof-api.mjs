@@ -38827,11 +38827,15 @@ function growthSummaryPayloadHasFiniteNetworkValue(growthSummary) {
   if (!growthSummary) {
     return false;
   }
+  const totalValue = growthSummary.actualValue?.totalSats;
+  const floorValue =
+    growthSummary.workFloor?.networkValueSats ??
+    growthSummary.workFloor?.actualValue?.totalSats;
 
   return (
-    finitePositiveNumber(growthSummary.actualValue?.totalSats) &&
+    finitePositiveNumber(totalValue) &&
     (!growthSummary.workFloor ||
-      workFloorPayloadHasFiniteNetworkValue(growthSummary.workFloor))
+      (finitePositiveNumber(floorValue) && numbersAgree(totalValue, floorValue, 0.01)))
   );
 }
 
@@ -41533,8 +41537,10 @@ function canonicalActivityCountCoverage(metrics, sourceHashes) {
     sourceActivityCount,
     sourceConfirmedActivityCount,
     ok:
-      ledgerActivityCount === sourceActivityCount &&
-      ledgerConfirmedActivityCount === sourceConfirmedActivityCount,
+      ledgerActivityCount >= canonicalActivityCount &&
+      ledgerActivityCount <= sourceActivityCount &&
+      ledgerConfirmedActivityCount >= canonicalConfirmedActivityCount &&
+      ledgerConfirmedActivityCount <= sourceConfirmedActivityCount,
   };
 }
 
