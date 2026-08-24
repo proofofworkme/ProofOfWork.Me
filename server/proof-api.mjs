@@ -59984,6 +59984,13 @@ function tokenVerifierItemsFromState(state, txid, options = {}) {
       "pwt1",
       item,
     );
+  const bondProjectionPositionForItem = (item) =>
+    canonicalVerifierBondProjectionPositionFromTransactions(
+      options.transactions,
+      normalizedTxid,
+      options.requiredBlockHeight,
+      item,
+    );
   const add = (
     item,
     kind,
@@ -59998,9 +60005,14 @@ function tokenVerifierItemsFromState(state, txid, options = {}) {
     if (!item || typeof item !== "object") {
       return;
     }
+    const canonicalBondMintProjection =
+      kind === "token-mint" &&
+      canonicalVerifierBondProjectionItem(item, normalizedTxid);
     const positionedItem = verifierItemWithRecoveredPosition(
       item,
-      rawPositionForItem(item),
+      canonicalBondMintProjection
+        ? bondProjectionPositionForItem(item)
+        : rawPositionForItem(item),
     );
     const position = canonicalVerifierItemPosition(
       positionedItem,
@@ -60015,13 +60027,9 @@ function tokenVerifierItemsFromState(state, txid, options = {}) {
       options,
     );
     const canonicalBondMintWithoutProtocol =
-      kind === "token-mint" &&
+      canonicalBondMintProjection &&
       !String(positionedItem?.protocol ?? "").trim() &&
-      /^canonical-(?:powb|incb)-bond-projection$/u.test(
-        String(positionedItem?.validationMode ?? "").trim(),
-      ) &&
-      String(positionedItem?.sourceBondTxid ?? "").trim().toLowerCase() ===
-        normalizedTxid;
+      canonicalVerifierBondProjectionConfig(positionedItem);
     items.push({
       ...positionedItem,
       ...(canonicalBondMintWithoutProtocol ? { protocol: "pwt1" } : {}),
@@ -60128,6 +60136,35 @@ function tokenVerifierItemsFromState(state, txid, options = {}) {
     }
   }
   return items;
+}
+
+function canonicalVerifierBondProjectionConfig(item) {
+  const validationMode = String(item?.validationMode ?? "").trim();
+  const modeMatch =
+    /^canonical-(powb|incb)-bond-projection$/u.exec(validationMode);
+  if (!modeMatch) {
+    return null;
+  }
+  const tokenId = String(item?.tokenId ?? "").trim().toLowerCase();
+  const config =
+    modeMatch[1] === "powb"
+      ? INFINITY_BOND_CONFIG
+      : INCEPTION_BOND_CONFIG;
+  return !tokenId || tokenId === config.tokenId ? config : null;
+}
+
+function canonicalVerifierBondProjectionItem(item, txid) {
+  const normalizedTxid = String(txid ?? "").trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/u.test(normalizedTxid)) {
+    return false;
+  }
+  const sourceBondTxid = String(item?.sourceBondTxid ?? "")
+    .trim()
+    .toLowerCase();
+  return (
+    sourceBondTxid === normalizedTxid &&
+    Boolean(canonicalVerifierBondProjectionConfig(item))
+  );
 }
 
 function verifierBalanceSnapshot(state, tokenId) {
@@ -64377,6 +64414,103 @@ function verifierItemWithRecoveredPosition(item, position) {
     }
   }
   return recovered;
+}
+
+function canonicalVerifierBondProjectionPositionFromTransactions(
+  transactions,
+  txid,
+  requiredBlockHeight,
+  item = {},
+) {
+  const normalizedTxid = String(txid ?? "").trim().toLowerCase();
+  const requiredHeight = Number(requiredBlockHeight);
+  const config = canonicalVerifierBondProjectionConfig(item);
+  if (
+    !config ||
+    !/^[0-9a-f]{64}$/u.test(normalizedTxid) ||
+    !Number.isSafeInteger(requiredHeight) ||
+    requiredHeight <= 0
+  ) {
+    return null;
+  }
+  const transaction = (Array.isArray(transactions) ? transactions : []).find(
+    (candidate) =>
+      transactionTxid(candidate) === normalizedTxid &&
+      transactionBlockHeight(candidate) === requiredHeight,
+  );
+  const blockHash = transactionBlockHash(transaction);
+  const blockIndex = transactionBlockIndex(transaction);
+  if (
+    !transaction ||
+    !transactionConfirmed(transaction) ||
+    !/^[0-9a-f]{64}$/u.test(blockHash) ||
+    !Number.isSafeInteger(blockIndex) ||
+    blockIndex < 0
+  ) {
+    return null;
+  }
+
+  let records;
+  try {
+    records =
+      canonicalRawProtocolRecordSetFromTransaction(transaction).records;
+  } catch {
+    return null;
+  }
+  const pwmRecords = (Array.isArray(records) ? records : []).filter(
+    (record) =>
+      String(record?.protocol ?? "").trim().toLowerCase() === "pwm1" &&
+      record?.rawDecodeValid === true,
+  );
+  if (pwmRecords.length !== 1) {
+    return null;
+  }
+  const protocolVout = Number(pwmRecords[0]?.protocolVout);
+  if (!Number.isSafeInteger(protocolVout) || protocolVout < 0) {
+    return null;
+  }
+
+  const network = String(item?.network ?? "livenet").trim() || "livenet";
+  const mailItem = mailActivityItemFromTransaction(transaction, network);
+  if (!isBondActivityItem(mailItem, config)) {
+    return null;
+  }
+  const minterAddress = String(
+    item?.minterAddress ?? item?.bondRecipientAddress ?? "",
+  ).trim();
+  const recipientVout = canonicalEventOrdinal(item?.bondRecipientVout);
+  const expectedAmount = numericValue(
+    item?.bondRecipientAmountSats ??
+      item?.directProofIssuanceUnits ??
+      item?.paidSats,
+  );
+  const candidates = bondRecipientMintsFromActivityItem(
+    mailItem,
+    network,
+    config,
+  )
+    .map((mint, index) => ({ index, mint }))
+    .filter(({ mint }) => {
+      const mintRecipientVout = canonicalEventOrdinal(mint?.bondRecipientVout);
+      return (
+        samePaymentAddress(mint?.minterAddress, minterAddress) &&
+        (recipientVout === null || mintRecipientVout === recipientVout) &&
+        (!Number.isSafeInteger(expectedAmount) ||
+          expectedAmount <= 0 ||
+          Number(mint?.paidSats) === expectedAmount)
+      );
+    });
+  if (candidates.length !== 1) {
+    return null;
+  }
+
+  return {
+    blockHash,
+    blockHeight: requiredHeight,
+    blockIndex,
+    protocolVout,
+    recordOrdinal: candidates[0].index + 1,
+  };
 }
 
 function canonicalVerifierProtocolPositionFromTransactions(
