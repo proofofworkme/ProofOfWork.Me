@@ -791,3 +791,12 @@ Production follow-up:
 - The permanent fix casts the quarantine `reason` and `reasonCode` parameters as
   text inside both reserved bond row updates, and the recovery regression now
   checks the typed SQL shape alongside the invalidation behavior.
+- Production then reached canonical replay but exact summary refresh rejected
+  `inceptionSummary` because a legacy reserved-bond invalid row lacked
+  `sourceKind`/`sourceBondTxid` metadata and left one INCB attachment counted as
+  unvalued.
+- The final hardening adds idempotent replay-time metadata repair for confirmed
+  reserved POWB/INCB invalid rows, and future quarantine writes now include
+  `sourceBondTxid`, `sourceKind`, `ticker`, `tokenId`, `txid`, `confirmed`, and
+  invalid status fields so exact bond summaries can exclude rejected bond
+  attempts without weakening the validator.

@@ -6688,6 +6688,89 @@ async function rebuildConfirmedCreditBalancesFromCanonicalEvents(
         .join(", ")}`,
     );
   }
+  const bondDefinitionsForInvalidRepair = {
+    INCB: [...definitions.entries()].find(([, definition]) =>
+      definition.ticker === "INCB"
+    )?.[0] ?? "",
+    POWB: [...definitions.entries()].find(([, definition]) =>
+      definition.ticker === "POWB"
+    )?.[0] ?? "",
+  };
+  if (
+    bondDefinitionsForInvalidRepair.INCB ||
+    bondDefinitionsForInvalidRepair.POWB
+  ) {
+    await client.query(
+      `
+        UPDATE proof_indexer.events e
+        SET
+          payload =
+            COALESCE(e.payload, '{}'::jsonb)
+            || jsonb_build_object(
+              'sourceBondTxid',
+              COALESCE(NULLIF(e.payload->>'sourceBondTxid', ''), e.txid),
+              'sourceKind',
+              COALESCE(
+                NULLIF(e.payload->>'sourceKind', ''),
+                CASE
+                  WHEN lower(COALESCE(e.payload->>'tokenId', '')) = $2 THEN $3::text
+                  WHEN lower(COALESCE(e.payload->>'tokenId', '')) = $5 THEN $6::text
+                  ELSE ''
+                END
+              ),
+              'ticker',
+              COALESCE(
+                NULLIF(e.payload->>'ticker', ''),
+                CASE
+                  WHEN lower(COALESCE(e.payload->>'tokenId', '')) = $2 THEN $4::text
+                  WHEN lower(COALESCE(e.payload->>'tokenId', '')) = $5 THEN $7::text
+                  ELSE ''
+                END
+              ),
+              'tokenId',
+              COALESCE(NULLIF(e.payload->>'tokenId', ''), ''),
+              'txid',
+              COALESCE(NULLIF(e.payload->>'txid', ''), e.txid),
+              'confirmed',
+              true,
+              'valid',
+              false,
+              'kind',
+              'token-event-invalid'
+            ),
+          updated_at = now()
+        WHERE e.network = $1
+          AND e.protocol = 'pwt1'
+          AND e.status = 'confirmed'
+          AND e.kind = 'token-event-invalid'
+          AND e.valid = false
+          AND lower(COALESCE(e.payload->>'attemptedKind', '')) = 'token-mint'
+          AND COALESCE(e.payload->>'reasonCode', '') IN (
+            'canonical-incb-bond-projection-invalid',
+            'reserved-bond-credit-namespace'
+          )
+          AND lower(COALESCE(e.payload->>'tokenId', '')) IN ($2, $5)
+          AND (
+            COALESCE(e.payload->>'sourceBondTxid', '') = ''
+            OR COALESCE(e.payload->>'sourceKind', '') = ''
+            OR COALESCE(e.payload->>'ticker', '') = ''
+            OR COALESCE(e.payload->>'txid', '') = ''
+            OR COALESCE(e.payload->>'confirmed', '') <> 'true'
+            OR COALESCE(e.payload->>'valid', '') <> 'false'
+            OR COALESCE(e.payload->>'kind', '') <> 'token-event-invalid'
+          )
+      `,
+      [
+        NETWORK,
+        bondDefinitionsForInvalidRepair.INCB,
+        "inception-bond",
+        "INCB",
+        bondDefinitionsForInvalidRepair.POWB,
+        "infinity-bond",
+        "POWB",
+      ],
+    );
+  }
   const eventsResult = await client.query(
     `
       SELECT
@@ -6892,6 +6975,15 @@ async function rebuildConfirmedCreditBalancesFromCanonicalEvents(
     }
     const definition = definitions.get(tokenId);
     if (row.kind === "token-mint") {
+      const reservedBondSourceKind =
+        definition.ticker === "INCB"
+          ? "inception-bond"
+          : definition.ticker === "POWB"
+            ? "infinity-bond"
+            : "";
+      const reservedBondSourceTxid = String(
+        payload.sourceBondTxid ?? row.txid ?? "",
+      ).trim().toLowerCase();
       const bondProjectionItem = {
         ...payload,
         kind: row.kind,
@@ -6924,7 +7016,19 @@ async function rebuildConfirmedCreditBalancesFromCanonicalEvents(
                   'reason',
                   $3::text,
                   'reasonCode',
-                  $4::text
+                  $4::text,
+                  'sourceBondTxid',
+                  COALESCE(NULLIF(payload->>'sourceBondTxid', ''), $5::text),
+                  'sourceKind',
+                  COALESCE(NULLIF(payload->>'sourceKind', ''), $6::text),
+                  'ticker',
+                  COALESCE(NULLIF(payload->>'ticker', ''), $7::text),
+                  'tokenId',
+                  COALESCE(NULLIF(payload->>'tokenId', ''), $8::text),
+                  'txid',
+                  COALESCE(NULLIF(payload->>'txid', ''), $5::text),
+                  'confirmed',
+                  true
                 ),
               updated_at = now()
             WHERE network = $1
@@ -6937,6 +7041,10 @@ async function rebuildConfirmedCreditBalancesFromCanonicalEvents(
             row.event_id,
             reason,
             "canonical-incb-bond-projection-invalid",
+            reservedBondSourceTxid,
+            reservedBondSourceKind,
+            definition.ticker,
+            tokenId,
           ],
         );
         continue;
@@ -6981,7 +7089,19 @@ async function rebuildConfirmedCreditBalancesFromCanonicalEvents(
                   'reason',
                   $3::text,
                   'reasonCode',
-                  $4::text
+                  $4::text,
+                  'sourceBondTxid',
+                  COALESCE(NULLIF(payload->>'sourceBondTxid', ''), $5::text),
+                  'sourceKind',
+                  COALESCE(NULLIF(payload->>'sourceKind', ''), $6::text),
+                  'ticker',
+                  COALESCE(NULLIF(payload->>'ticker', ''), $7::text),
+                  'tokenId',
+                  COALESCE(NULLIF(payload->>'tokenId', ''), $8::text),
+                  'txid',
+                  COALESCE(NULLIF(payload->>'txid', ''), $5::text),
+                  'confirmed',
+                  true
                 ),
               updated_at = now()
             WHERE network = $1
@@ -6994,6 +7114,10 @@ async function rebuildConfirmedCreditBalancesFromCanonicalEvents(
             row.event_id,
             reason,
             "reserved-bond-credit-namespace",
+            reservedBondSourceTxid,
+            reservedBondSourceKind,
+            definition.ticker,
+            tokenId,
           ],
         );
         continue;

@@ -32732,31 +32732,56 @@ check("canonical credit replay quarantines stale malformed INCB projection rows"
   });
   assert.equal(result.holders, 0);
   assert.equal(result.tokens, 0);
-  assert.equal(writes.length, 2);
-  assert.match(writes[0].sql, /UPDATE proof_indexer\.events/u);
-  assert.match(writes[0].sql, /token-event-invalid/u);
-  assert.match(writes[0].sql, /\$3::text/u);
-  assert.match(writes[0].sql, /\$4::text/u);
-  assert.equal(writes[0].params[1], 9001);
+  assert.equal(writes.length, 3);
+  assert.match(writes[0].sql, /UPDATE proof_indexer\.events e/u);
+  assert.match(writes[0].sql, /sourceBondTxid/u);
+  assert.match(writes[0].sql, /sourceKind/u);
+  assert.match(writes[0].sql, /reserved-bond-credit-namespace/u);
+  assert.deepEqual(writes[0].params, [
+    "livenet",
+    INCB_TOKEN_ID,
+    "inception-bond",
+    "INCB",
+    "",
+    "infinity-bond",
+    "POWB",
+  ]);
+  assert.match(writes[1].sql, /UPDATE proof_indexer\.events/u);
+  assert.match(writes[1].sql, /token-event-invalid/u);
+  assert.match(writes[1].sql, /\$3::text/u);
+  assert.match(writes[1].sql, /\$4::text/u);
+  assert.match(writes[1].sql, /sourceBondTxid/u);
+  assert.match(writes[1].sql, /sourceKind/u);
+  assert.equal(writes[1].params[1], 9001);
   assert.match(
-    writes[0].params[2],
+    writes[1].params[2],
     /Canonical INCB bond projection rejected/u,
   );
   assert.equal(
-    writes[0].params[3],
+    writes[1].params[3],
     "canonical-incb-bond-projection-invalid",
   );
-  assert.equal(writes[1].params[1], 9002);
-  assert.match(writes[1].sql, /\$3::text/u);
-  assert.match(writes[1].sql, /\$4::text/u);
+  assert.equal(writes[1].params[4], txid);
+  assert.equal(writes[1].params[5], "inception-bond");
+  assert.equal(writes[1].params[6], "INCB");
+  assert.equal(writes[1].params[7], INCB_TOKEN_ID);
+  assert.equal(writes[2].params[1], 9002);
+  assert.match(writes[2].sql, /\$3::text/u);
+  assert.match(writes[2].sql, /\$4::text/u);
+  assert.match(writes[2].sql, /sourceBondTxid/u);
+  assert.match(writes[2].sql, /sourceKind/u);
   assert.match(
-    writes[1].params[2],
+    writes[2].params[2],
     /attempts a generic mint in the reserved INCB namespace/u,
   );
   assert.equal(
-    writes[1].params[3],
+    writes[2].params[3],
     "reserved-bond-credit-namespace",
   );
+  assert.equal(writes[2].params[4], genericTxid);
+  assert.equal(writes[2].params[5], "inception-bond");
+  assert.equal(writes[2].params[6], "INCB");
+  assert.equal(writes[2].params[7], INCB_TOKEN_ID);
 });
 
 check("stored supply can decrease only in the explicit scoped INCB repair", async () => {
