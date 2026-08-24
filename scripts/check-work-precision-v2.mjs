@@ -285,6 +285,20 @@ assert.equal(
   "1000000000",
   "a normalized legacy projection may preserve atoms only when its Q16 alias is exact",
 );
+assert.equal(
+  workAmountSubatomsFromRecord(
+    {
+      amountAtoms: "102400000000",
+      amountStorageModel: WORK_LEGACY_ATOMIC_PROJECTION_MODEL,
+      saleAuthorization: {
+        amountAtoms: "102400000000",
+      },
+    },
+    { allowLegacy: true },
+  ),
+  "10240000000000000000",
+  "duplicate legacy atom aliases are accepted only when they normalize to one exact amount",
+);
 assert.throws(
   () =>
     workAmountSubatomsFromRecord(

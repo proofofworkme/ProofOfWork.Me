@@ -744,7 +744,7 @@ expectAll("stateful block discoveries require the first-party ordered verifier",
   /validationMode:[\s\S]*canonical-first-party-state/,
 ]);
 expectAll("ordered credit verifier distinguishes deterministic invalidity from unresolved state", tokenVerifierPayloadSource, [
-  /tokenVerifierItemsFromState\(\s*state,\s*normalizedTxid,\s*\{\s*requireConfirmed,\s*requiredBlockHeight\s*\}/,
+  /tokenVerifierItemsFromState\(\s*state,\s*normalizedTxid,\s*\{\s*requireConfirmed,\s*requiredBlockHeight,[\s\S]*transactions: state\.transactions/,
   /tokenVerifierDeterministicInvalidReason\(/,
   /if \(invalidReason\) \{[\s\S]*valid: false/,
   /if \(items\.length === 0\) \{[\s\S]*error\.statusCode = 503[\s\S]*code: "TOKEN_VERIFIER_UNRESOLVED"/,
@@ -781,7 +781,7 @@ expect(
   !/nodeTip|tipHeight|ledgerTipHeight/.test(tokenVerifierPayloadSource),
 );
 expectAll("ordered ID verifier fails closed when registry replay has no verdict", idVerifierPayloadSource, [
-  /idVerifierItemsFromState\(\s*bundle\.state,\s*normalizedTxid,\s*\{\s*requireConfirmed,\s*requiredBlockHeight\s*\}/,
+  /idVerifierItemsFromState\(\s*bundle\.state,\s*normalizedTxid,\s*\{\s*requireConfirmed,\s*requiredBlockHeight,[\s\S]*transactions: bundle\.transactions/,
   /idVerifierDeterministicInvalidReason\(/,
   /if \(invalidReason\) \{[\s\S]*valid: false/,
   /if \(items\.length === 0\) \{[\s\S]*error\.statusCode = 503[\s\S]*code: "ID_VERIFIER_UNRESOLVED"/,
