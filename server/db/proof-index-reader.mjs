@@ -2733,13 +2733,12 @@ async function payloadWithCurrentWorkPrecisionReadPolicy(
       payload.stats?.indexedThroughBlock ??
       0,
   );
+  const snapshotHeightKnown =
+    Number.isSafeInteger(snapshotHeight) && snapshotHeight > 0;
   const boundaryApplies =
-    latch?.reached === true ||
-    snapshotHeight === 0 ||
-    (
-      Number.isSafeInteger(snapshotHeight) &&
-      snapshotHeight >= pins.activationHeight
-    );
+    snapshotHeightKnown
+      ? snapshotHeight >= pins.activationHeight
+      : latch?.reached === true || snapshotHeight === 0;
   if (!boundaryApplies) {
     return payload;
   }
