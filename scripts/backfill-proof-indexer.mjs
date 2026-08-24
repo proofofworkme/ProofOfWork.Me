@@ -16011,14 +16011,24 @@ async function storeCanonicalSummarySnapshot(client, options = {}) {
     logSummary?.totalCount ?? logSummary?.stats?.total ?? -1,
   );
   const logSummaryPending = Number(logSummary?.stats?.pending ?? -1);
+  const ledgerActivityTotal = Number(
+    ledger?.metrics?.activityItems ??
+      ledger?.activityPayload?.stats?.total ??
+      -1,
+  );
+  const ledgerActivityPending = Number(
+    ledger?.activityPayload?.stats?.pending ??
+      ledger?.metrics?.pending ??
+      -1,
+  );
   if (
     indexedThroughBlock !== latestIndexedHeight ||
     !publicLogFingerprintsMatch(
       currentPublicLogFingerprint,
       finalPublicLogFingerprint,
     ) ||
-    logSummaryTotal !== finalPublicLogFingerprint.count ||
-    logSummaryPending !== finalPublicLogFingerprint.pending ||
+    logSummaryTotal !== ledgerActivityTotal ||
+    logSummaryPending !== ledgerActivityPending ||
     !canonicalSummaryAccountingModelsCurrent(summaryPayloads) ||
     !snapshotId ||
     String(ledger.snapshotId ?? "").trim() !== snapshotId ||
