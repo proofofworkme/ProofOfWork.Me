@@ -28930,10 +28930,20 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
       return [];
     }
 
-    const eventMessage = decodedProtocolMessages(vout, ID_PROTOCOL_PREFIX)
-      .map((message) => message.slice(ID_PROTOCOL_PREFIX.length))
-      .map((payload) => parseIdEventPayload(payload, network))
-      .find(Boolean);
+    const eventEntry = vout
+      .flatMap((output, protocolVout) =>
+        decodedProtocolMessages([output], ID_PROTOCOL_PREFIX)
+          .map((message, recordOrdinal) => ({
+            eventMessage: parseIdEventPayload(
+              message.slice(ID_PROTOCOL_PREFIX.length),
+              network,
+            ),
+            protocolVout,
+            recordOrdinal,
+          })),
+      )
+      .find((entry) => Boolean(entry.eventMessage));
+    const eventMessage = eventEntry?.eventMessage;
     if (!eventMessage) {
       return [];
     }
@@ -28953,6 +28963,8 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
       dataBytes: proofProtocolDataBytesForVout(vout),
       inputAddresses: inputAddresses(vin),
       network,
+      protocolVout: eventEntry.protocolVout,
+      recordOrdinal: eventEntry.recordOrdinal,
       txid,
     };
     const eventSpentOutpoints = spentOutpoints(vin);
@@ -59891,6 +59903,14 @@ function canonicalVerifierItemPosition(
 function tokenVerifierItemsFromState(state, txid, options = {}) {
   const normalizedTxid = String(txid ?? "").trim().toLowerCase();
   const items = [];
+  const rawPositionForItem = (item) =>
+    canonicalVerifierProtocolPositionFromTransactions(
+      options.transactions,
+      normalizedTxid,
+      options.requiredBlockHeight,
+      "pwt1",
+      item,
+    );
   const add = (
     item,
     kind,
@@ -59905,8 +59925,12 @@ function tokenVerifierItemsFromState(state, txid, options = {}) {
     if (!item || typeof item !== "object") {
       return;
     }
-    const position = canonicalVerifierItemPosition(
+    const positionedItem = verifierItemWithRecoveredPosition(
       item,
+      rawPositionForItem(item),
+    );
+    const position = canonicalVerifierItemPosition(
+      positionedItem,
       {
         blockHashField,
         blockHeightField,
@@ -59919,14 +59943,14 @@ function tokenVerifierItemsFromState(state, txid, options = {}) {
     );
     const canonicalBondMintWithoutProtocol =
       kind === "token-mint" &&
-      !String(item?.protocol ?? "").trim() &&
+      !String(positionedItem?.protocol ?? "").trim() &&
       /^canonical-(?:powb|incb)-bond-projection$/u.test(
-        String(item?.validationMode ?? "").trim(),
+        String(positionedItem?.validationMode ?? "").trim(),
       ) &&
-      String(item?.sourceBondTxid ?? "").trim().toLowerCase() ===
+      String(positionedItem?.sourceBondTxid ?? "").trim().toLowerCase() ===
         normalizedTxid;
     items.push({
-      ...item,
+      ...positionedItem,
       ...(canonicalBondMintWithoutProtocol ? { protocol: "pwt1" } : {}),
       ...position,
       kind,
@@ -63975,7 +63999,11 @@ async function tokenVerifierPayload(network, tokenScope, txid, options = {}) {
   const items = tokenVerifierItemsFromState(
     state,
     normalizedTxid,
-    { requireConfirmed, requiredBlockHeight },
+    {
+      requireConfirmed,
+      requiredBlockHeight,
+      transactions: state.transactions,
+    },
   ).filter(
     (item) =>
       !requireConfirmed ||
@@ -64151,6 +64179,14 @@ async function idVerifierStateBundle(network) {
 
 function idVerifierItemsFromState(state, txid, options = {}) {
   const normalizedTxid = String(txid ?? "").trim().toLowerCase();
+  const rawPositionForItem = (item) =>
+    canonicalVerifierProtocolPositionFromTransactions(
+      options.transactions,
+      normalizedTxid,
+      options.requiredBlockHeight,
+      "pwid1",
+      item,
+    );
   const activity = (Array.isArray(state?.activity) ? state.activity : []).filter(
     (item) =>
       [
@@ -64167,7 +64203,15 @@ function idVerifierItemsFromState(state, txid, options = {}) {
   );
   return activity.map((item) => {
     const listingId = String(item?.listingId ?? "").toLowerCase();
-    const itemPosition = canonicalVerifierItemPosition(item, {}, options);
+    const positionedItem = verifierItemWithRecoveredPosition(
+      item,
+      rawPositionForItem(item),
+    );
+    const itemPosition = canonicalVerifierItemPosition(
+      positionedItem,
+      {},
+      options,
+    );
     const exactV5Item =
       itemPosition.confirmed === true &&
       Number(itemPosition.blockHeight) >= WORK_AMO_V5_ACTIVATION_HEIGHT;
@@ -64220,7 +64264,7 @@ function idVerifierItemsFromState(state, txid, options = {}) {
     const merged = {
       ...(listing ?? {}),
       ...(sale ?? {}),
-      ...item,
+      ...positionedItem,
       id: item?.id ?? sale?.id ?? listing?.id,
       ownerAddress:
         item?.ownerAddress ?? sale?.buyerAddress ?? sale?.ownerAddress,
@@ -64228,11 +64272,128 @@ function idVerifierItemsFromState(state, txid, options = {}) {
         item?.receiveAddress ?? sale?.receiveAddress ?? sale?.buyerAddress,
       sellerAddress: item?.sellerAddress ?? sale?.sellerAddress,
     };
+    const positionedMerged = verifierItemWithRecoveredPosition(
+      merged,
+      rawPositionForItem(merged),
+    );
     return {
-      ...merged,
-      ...canonicalVerifierItemPosition(merged, {}, options),
+      ...positionedMerged,
+      ...canonicalVerifierItemPosition(positionedMerged, {}, options),
     };
   });
+}
+
+function verifierItemWithRecoveredPosition(item, position) {
+  if (!position || !item || typeof item !== "object" || Array.isArray(item)) {
+    return item;
+  }
+  const recovered = { ...item };
+  for (const field of [
+    "blockHash",
+    "blockHeight",
+    "blockIndex",
+    "protocolVout",
+    "recordOrdinal",
+  ]) {
+    if (
+      recovered[field] === undefined ||
+      recovered[field] === null ||
+      recovered[field] === ""
+    ) {
+      recovered[field] = position[field];
+    }
+  }
+  return recovered;
+}
+
+function canonicalVerifierProtocolPositionFromTransactions(
+  transactions,
+  txid,
+  requiredBlockHeight,
+  protocol,
+  item = {},
+) {
+  const normalizedTxid = String(txid ?? "").trim().toLowerCase();
+  const requiredHeight = Number(requiredBlockHeight);
+  if (
+    !/^[0-9a-f]{64}$/u.test(normalizedTxid) ||
+    !Number.isSafeInteger(requiredHeight) ||
+    requiredHeight <= 0
+  ) {
+    return null;
+  }
+  const transaction = (Array.isArray(transactions) ? transactions : []).find(
+    (candidate) =>
+      transactionTxid(candidate) === normalizedTxid &&
+      transactionBlockHeight(candidate) === requiredHeight,
+  );
+  const blockHash = transactionBlockHash(transaction);
+  const blockIndex = transactionBlockIndex(transaction);
+  if (
+    !transaction ||
+    !transactionConfirmed(transaction) ||
+    !/^[0-9a-f]{64}$/u.test(blockHash) ||
+    !Number.isSafeInteger(blockIndex) ||
+    blockIndex < 0
+  ) {
+    return null;
+  }
+  let records;
+  try {
+    records =
+      canonicalRawProtocolRecordSetFromTransaction(transaction).records;
+  } catch {
+    return null;
+  }
+  const requestedProtocol = String(protocol ?? "").trim().toLowerCase();
+  const protocolRecords = (Array.isArray(records) ? records : []).filter(
+    (record) => String(record?.protocol ?? "").trim().toLowerCase() ===
+      requestedProtocol,
+  );
+  const requestedVout = exactVerifierPositionInteger(item, "protocolVout", 0);
+  const requestedOrdinal = exactVerifierPositionInteger(
+    item,
+    "recordOrdinal",
+    0,
+  );
+  const candidates = protocolRecords.filter((record) => {
+    const protocolVout = Number(record?.protocolVout);
+    const recordOrdinal = Number(record?.recordOrdinal);
+    return (
+      Number.isSafeInteger(protocolVout) &&
+      protocolVout >= 0 &&
+      Number.isSafeInteger(recordOrdinal) &&
+      recordOrdinal >= 0 &&
+      (requestedVout === null || protocolVout === requestedVout) &&
+      (requestedOrdinal === null || recordOrdinal === requestedOrdinal)
+    );
+  });
+  const selected =
+    candidates.length === 1
+      ? candidates[0]
+      : requestedVout === null &&
+          requestedOrdinal === null &&
+          protocolRecords.length === 1
+        ? protocolRecords[0]
+        : null;
+  const protocolVout = Number(selected?.protocolVout);
+  const recordOrdinal = Number(selected?.recordOrdinal);
+  if (
+    !selected ||
+    !Number.isSafeInteger(protocolVout) ||
+    protocolVout < 0 ||
+    !Number.isSafeInteger(recordOrdinal) ||
+    recordOrdinal < 0
+  ) {
+    return null;
+  }
+  return {
+    blockHash,
+    blockHeight: requiredHeight,
+    blockIndex,
+    protocolVout,
+    recordOrdinal,
+  };
 }
 
 async function idVerifierDeterministicInvalidReason(
@@ -64357,7 +64518,11 @@ async function idVerifierPayload(network, txid, options = {}) {
   const items = idVerifierItemsFromState(
     bundle.state,
     normalizedTxid,
-    { requireConfirmed, requiredBlockHeight },
+    {
+      requireConfirmed,
+      requiredBlockHeight,
+      transactions: bundle.transactions,
+    },
   ).filter(
     (item) =>
       !requireConfirmed ||

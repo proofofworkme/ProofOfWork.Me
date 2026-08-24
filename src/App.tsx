@@ -1233,9 +1233,12 @@ type PowIdSaleAuthorization = PowIdSaleAuthorizationDraft & {
 };
 
 type PowIdChainOrder = {
+  blockHash?: string;
   blockHeight?: number;
   blockIndex?: number;
   dataBytes: number;
+  protocolVout?: number;
+  recordOrdinal?: number;
 };
 
 type PowIdEvent = PowIdChainOrder &
@@ -13775,10 +13778,21 @@ function idRegistryStateFromTransactions(
       return [];
     }
 
-    const eventMessage = decodedProtocolMessages(vout, ID_PROTOCOL_PREFIX)
-      .map((message) => message.slice(ID_PROTOCOL_PREFIX.length))
-      .map((payload) => parseIdEventPayload(payload, targetNetwork))
-      .find(Boolean);
+    const eventEntry = vout
+      .flatMap((output, protocolVout) =>
+        decodedProtocolMessages([output], ID_PROTOCOL_PREFIX).map(
+          (message, recordOrdinal) => ({
+            eventMessage: parseIdEventPayload(
+              message.slice(ID_PROTOCOL_PREFIX.length),
+              targetNetwork,
+            ),
+            protocolVout,
+            recordOrdinal,
+          }),
+        ),
+      )
+      .find((entry) => Boolean(entry.eventMessage));
+    const eventMessage = eventEntry?.eventMessage;
     if (!eventMessage) {
       return [];
     }
@@ -13792,6 +13806,7 @@ function idRegistryStateFromTransactions(
     const blockTime = tokenTransactionTime(tx);
     const baseEvent = {
       amountSats: amount,
+      blockHash: transactionBlockHash(tx),
       blockHeight: transactionBlockHeight(tx),
       blockIndex: transactionBlockIndex(tx),
       confirmed,
@@ -13799,6 +13814,8 @@ function idRegistryStateFromTransactions(
       dataBytes: proofProtocolDataBytesForVout(vout),
       inputAddresses: transactionInputAddresses(vin),
       network: targetNetwork,
+      protocolVout: eventEntry.protocolVout,
+      recordOrdinal: eventEntry.recordOrdinal,
       txid,
     };
     const spentOutpoints = transactionSpentOutpoints(vin);
