@@ -32638,6 +32638,8 @@ check("canonical credit replay quarantines stale malformed INCB projection rows"
   const accountingModel = "canonical-pre-bond-live-network-value-v2";
   const txid =
     "b00b9451bded7d2b7d339556ad2dc5d375e5b52ad877a1d3e2b29149dfc72ccf";
+  const genericTxid =
+    "c00c9451bded7d2b7d339556ad2dc5d375e5b52ad877a1d3e2b29149dfc72ccf";
   const writes = [];
   const rebuildConfirmedCreditBalancesFromCanonicalEvents = isolatedFunction(
     BACKFILL_PATH,
@@ -32678,27 +32680,47 @@ check("canonical credit replay quarantines stale malformed INCB projection rows"
       }
       if (text.includes("FROM proof_indexer.events")) {
         return {
-          rows: [{
-            canonical_block_height: 963_788,
-            canonical_block_index: 1,
-            canonical_protocol_vout: 3,
-            canonical_record_ordinal: 0,
-            event_id: 9001,
-            event_key: `token-mint:${txid}`,
-            kind: "token-mint",
-            payload: {
-              amount: "116657103344743",
-              amountSats: 0,
-              confirmed: true,
-              minterAddress: "bc1pincbprojectionrecipient",
-              sourceBondTxid: txid,
-              ticker: "INCB",
-              tokenId: INCB_TOKEN_ID,
+          rows: [
+            {
+              canonical_block_height: 963_788,
+              canonical_block_index: 1,
+              canonical_protocol_vout: 3,
+              canonical_record_ordinal: 0,
+              event_id: 9001,
+              event_key: `token-mint:${txid}`,
+              kind: "token-mint",
+              payload: {
+                amount: "116657103344743",
+                amountSats: 0,
+                confirmed: true,
+                minterAddress: "bc1pincbprojectionrecipient",
+                sourceBondTxid: txid,
+                ticker: "INCB",
+                tokenId: INCB_TOKEN_ID,
+                txid,
+                validationMode: "canonical-incb-bond-projection",
+              },
               txid,
-              validationMode: "canonical-incb-bond-projection",
             },
-            txid,
-          }],
+            {
+              canonical_block_height: 963_788,
+              canonical_block_index: 2,
+              canonical_protocol_vout: 3,
+              canonical_record_ordinal: 0,
+              event_id: 9002,
+              event_key: `token-mint:${genericTxid}`,
+              kind: "token-mint",
+              payload: {
+                amount: "1000",
+                confirmed: true,
+                minterAddress: "bc1pincbgenericrecipient",
+                ticker: "INCB",
+                tokenId: INCB_TOKEN_ID,
+                txid: genericTxid,
+              },
+              txid: genericTxid,
+            },
+          ],
         };
       }
       if (text.includes("sum(confirmed_balance)")) {
@@ -32710,7 +32732,7 @@ check("canonical credit replay quarantines stale malformed INCB projection rows"
   });
   assert.equal(result.holders, 0);
   assert.equal(result.tokens, 0);
-  assert.equal(writes.length, 1);
+  assert.equal(writes.length, 2);
   assert.match(writes[0].sql, /UPDATE proof_indexer\.events/u);
   assert.match(writes[0].sql, /token-event-invalid/u);
   assert.equal(writes[0].params[1], 9001);
@@ -32721,6 +32743,15 @@ check("canonical credit replay quarantines stale malformed INCB projection rows"
   assert.equal(
     writes[0].params[3],
     "canonical-incb-bond-projection-invalid",
+  );
+  assert.equal(writes[1].params[1], 9002);
+  assert.match(
+    writes[1].params[2],
+    /attempts a generic mint in the reserved INCB namespace/u,
+  );
+  assert.equal(
+    writes[1].params[3],
+    "reserved-bond-credit-namespace",
   );
 });
 

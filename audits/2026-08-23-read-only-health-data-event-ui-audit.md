@@ -766,10 +766,14 @@ Final permanent server hardening:
 - Those stale rows are rewritten in `proof_indexer.events` as
   `token-event-invalid`, `valid=false`, with
   `reasonCode=canonical-incb-bond-projection-invalid`.
-- The invalid row is skipped for supply/balance replay, while true generic
-  POWB/INCB namespace mint attempts still fail closed.
+- Generic POWB/INCB namespace mint attempts that reached replay as stale valid
+  `token-mint` rows are also rewritten to `token-event-invalid`, `valid=false`,
+  with `reasonCode=reserved-bond-credit-namespace`.
+- Invalidated rows are skipped for supply/balance replay, so one stale reserved
+  bond row cannot halt the worker or brown out the API.
 - Regression coverage now includes the production-shaped stale-row txid above,
-  proving the worker quarantines it instead of crashing.
+  plus a generic reserved-namespace stale row, proving the worker quarantines
+  both classes instead of crashing.
 
 Additional verification:
 

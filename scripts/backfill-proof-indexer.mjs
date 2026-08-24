@@ -6960,9 +6960,43 @@ async function rebuildConfirmedCreditBalancesFromCanonicalEvents(
             /^[1-9]\d*$/u.test(String(payload.amount ?? "").trim()) &&
             Number(payload.amountSats ?? 0) === 0;
       if (["POWB", "INCB"].includes(definition.ticker) && !expectedBondProjection) {
-        throw new Error(
-          `Canonical credit event ${eventLabel} attempts a generic mint in the reserved ${definition.ticker} namespace`,
+        const reason =
+          `Canonical credit event ${eventLabel} attempts a generic mint in the reserved ${definition.ticker} namespace`;
+        await client.query(
+          `
+            UPDATE proof_indexer.events
+            SET
+              kind = 'token-event-invalid',
+              valid = false,
+              validation_errors = ARRAY[$3]::text[],
+              payload =
+                COALESCE(payload, '{}'::jsonb)
+                || jsonb_build_object(
+                  'attemptedKind',
+                  COALESCE(payload->>'attemptedKind', kind),
+                  'kind',
+                  'token-event-invalid',
+                  'valid',
+                  false,
+                  'reason',
+                  $3,
+                  'reasonCode',
+                  $4
+                ),
+              updated_at = now()
+            WHERE network = $1
+              AND event_id = $2
+              AND kind = 'token-mint'
+              AND valid = true
+          `,
+          [
+            NETWORK,
+            row.event_id,
+            reason,
+            "reserved-bond-credit-namespace",
+          ],
         );
+        continue;
       }
       if (!definition.canonicalSynthetic) {
         const eventHeight = Number(row.canonical_block_height);
