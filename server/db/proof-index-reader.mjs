@@ -19186,7 +19186,41 @@ function workListingAmountProjection(
     authorizationVersion &&
     authorizationVersion !== WORK_AMO_V8_AUTH_VERSION
   ) {
-    const legacyProjection = workAmountProjection(item);
+    const legacySaleAuthorization = recordWithoutWorkAmountAliases(
+      saleAuthorization,
+    );
+    const legacyProjection = workAmountProjection({
+      ...recordWithoutWorkAmountAliases(item),
+      amount: item.legacyAmount ?? saleAuthorization.amount ?? item.amount,
+      amountAtoms:
+        item.legacyAmountAtoms ??
+        saleAuthorization.legacyAmountAtoms ??
+        saleAuthorization.amountAtoms ??
+        item.amountAtoms,
+      amountStorageModel:
+        item.legacyAmountStorageModel ??
+        saleAuthorization.legacyAmountStorageModel ??
+        WORK_ATOMIC_PROJECTION_MODEL,
+      decimals: WORK_DECIMALS,
+      saleAuthorization: {
+        ...legacySaleAuthorization,
+        amount:
+          legacySaleAuthorization.legacyAmount ??
+          saleAuthorization.amount,
+        amountAtoms:
+          legacySaleAuthorization.legacyAmountAtoms ??
+          saleAuthorization.amountAtoms ??
+          item.legacyAmountAtoms ??
+          item.amountAtoms,
+        amountStorageModel:
+          legacySaleAuthorization.legacyAmountStorageModel ??
+          item.legacyAmountStorageModel ??
+          WORK_ATOMIC_PROJECTION_MODEL,
+        decimals: WORK_DECIMALS,
+        unitScale: WORK_UNIT_SCALE_TEXT,
+      },
+      unitScale: WORK_UNIT_SCALE_TEXT,
+    });
     if (
       legacyProjection.amountStorageModel !==
         WORK_ATOMIC_PROJECTION_MODEL ||
