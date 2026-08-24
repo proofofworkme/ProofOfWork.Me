@@ -11005,8 +11005,9 @@ async function persistCanonicalListingOutpointSpendsFromBlock(
           $8,
           $9,
           $10,
+          $11,
           'canonical-listing-outpoint-scan',
-          $11::jsonb
+          $12::jsonb
         )
         ON CONFLICT (network, txid)
         DO UPDATE SET
