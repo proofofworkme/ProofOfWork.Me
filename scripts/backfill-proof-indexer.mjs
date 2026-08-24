@@ -17963,6 +17963,14 @@ async function prepareCanonicalRebuild(client) {
       [NETWORK],
     );
     await client.query(
+      `DELETE FROM proof_indexer.work_amo_v8_listing_terms WHERE network = $1`,
+      [NETWORK],
+    );
+    await client.query(
+      `DELETE FROM proof_indexer.work_amo_v7_listing_terms WHERE network = $1`,
+      [NETWORK],
+    );
+    await client.query(
       `DELETE FROM proof_indexer.work_amo_v6_listing_terms WHERE network = $1`,
       [NETWORK],
     );

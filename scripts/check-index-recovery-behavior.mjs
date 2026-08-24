@@ -34309,6 +34309,10 @@ check("canonical rebuild reset and hashed bootstrap are one transaction", async 
     "proof_indexer.mail_items",
     "proof_indexer.file_attachments",
     "proof_indexer.ledger_snapshots",
+    "proof_indexer.work_amo_listing_terms",
+    "proof_indexer.work_amo_v6_listing_terms",
+    "proof_indexer.work_amo_v7_listing_terms",
+    "proof_indexer.work_amo_v8_listing_terms",
   ]) {
     assert.match(sql, new RegExp(table.replace(".", "\\."), "u"));
   }
