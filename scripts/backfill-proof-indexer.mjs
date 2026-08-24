@@ -553,6 +553,16 @@ const PENDING_VERIFIER_TIMEOUT_MS = Math.min(
   ),
 );
 const PENDING_LEGACY_VERIFIER_TIMEOUT_MS = 30_000;
+const CONFIRMED_VERIFIER_TIMEOUT_MS = Math.min(
+  120_000,
+  Math.max(
+    PENDING_LEGACY_VERIFIER_TIMEOUT_MS,
+    Math.floor(
+      Number(process.env.POW_INDEX_CONFIRMED_VERIFIER_TIMEOUT_MS ?? 60_000) ||
+        60_000,
+    ),
+  ),
+);
 const PENDING_ONLY_CHILD_TIMEOUT_MS = Math.min(
   10 * 60_000,
   Math.max(
@@ -5760,7 +5770,7 @@ async function canonicalRecoveryItemsForTx(tx, messages, options = {}) {
     try {
       const verifierTimeoutMs = pendingTransaction
         ? pendingVerifierRequestTimeoutMs(options)
-        : 30_000;
+        : CONFIRMED_VERIFIER_TIMEOUT_MS;
       if (verifierTimeoutMs === 0) {
         throw new Error(
           `Pending verifier headroom is exhausted before ${spec.label} for ${txid}.`,
