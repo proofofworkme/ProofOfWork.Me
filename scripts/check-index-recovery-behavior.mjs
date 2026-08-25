@@ -59632,6 +59632,50 @@ check("AMO V5 legacy carry preserves committed N while publishing valid-only mar
     published.workAmoV5Transition.closingStateCommitment.sha256,
     commitment.sha256,
   );
+  const carryIncludedWorkFloor = {
+    ...workFloor,
+    actualValue: {
+      ...workFloor.actualValue,
+      baseNetworkValueQ8: committedBaseNetworkValueQ8.toString(),
+      tokenMarketplaceFeeSats:
+        committedBaseState.tokenMarketplaceFeeSats,
+    },
+  };
+  const carryIncludedReconciliation = reconcile(
+    state,
+    value,
+    carryIncludedWorkFloor,
+    evidence,
+  );
+  assert.equal(carryIncludedReconciliation.valid, true);
+  assert.equal(
+    carryIncludedReconciliation.legacyBootstrap.baseCarryMode,
+    "published-valid-includes-carry",
+  );
+  assert.equal(
+    carryIncludedReconciliation.validBaseState.tokenMarketplaceFeeSats,
+    200n,
+  );
+  assert.equal(
+    carryIncludedReconciliation.legacyBootstrap.publishedBaseNetworkValueQ8,
+    committedBaseNetworkValueQ8.toString(),
+  );
+  const carryIncludedProjected = closingProjection(
+    state,
+    value,
+    carryIncludedWorkFloor,
+    carryIncludedReconciliation,
+  );
+  assert.equal(carryIncludedProjected.flowFields.tokenMarketplaceFeeSats, 200);
+  assert.equal(carryIncludedProjected.flowFields.marketplaceFeeSats, 300);
+  assert.equal(
+    carryIncludedProjected.flowFields.legacyBootstrapMarketplaceCarrySats,
+    546,
+  );
+  assert.equal(
+    carryIncludedProjected.exactAliases.networkValueQ8,
+    state.networkValueQ8,
+  );
 
   const mismatchedEvidence = {
     ...evidence,

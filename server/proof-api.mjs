@@ -57293,19 +57293,34 @@ function workAmoV5LegacyBootstrapReconciliation(
   }
   const committedBaseState = {};
   const validBaseState = {};
+  let legacyBootstrapBaseCarryMode = "published-valid-excludes-carry";
   for (const field of WORK_AMO_V5_BASE_STATE_FIELDS) {
     const committed = workAmoV5ExactInteger(state?.baseState?.[field]);
-    const valid = workAmoV5ExactInteger(
+    const published = workAmoV5ExactInteger(
       workFloor?.actualValue?.[field],
     );
-    if (committed === null || valid === null) {
+    if (committed === null || published === null) {
       return invalid(`legacy-bootstrap-base-field-missing:${field}`);
     }
     const expectedCarry =
       field === "tokenMarketplaceFeeSats"
         ? BigInt(evidence.marketplaceMutationFeeSats)
         : 0n;
-    if (committed !== valid + expectedCarry) {
+    let valid = published;
+    if (field === "tokenMarketplaceFeeSats") {
+      if (committed === published + expectedCarry) {
+        legacyBootstrapBaseCarryMode = "published-valid-excludes-carry";
+      } else if (
+        committed === published &&
+        expectedCarry > 0n &&
+        published >= expectedCarry
+      ) {
+        valid = published - expectedCarry;
+        legacyBootstrapBaseCarryMode = "published-valid-includes-carry";
+      } else {
+        return invalid(`legacy-bootstrap-base-field-diverged:${field}`);
+      }
+    } else if (committed !== valid + expectedCarry) {
       return invalid(`legacy-bootstrap-base-field-diverged:${field}`);
     }
     committedBaseState[field] = committed;
@@ -57320,12 +57335,17 @@ function workAmoV5LegacyBootstrapReconciliation(
   const validBaseNetworkValueQ8 =
     growthActualBaseStateTotalQ8(validBaseState);
   const legacyBootstrapGrowthValueQ8 = BigInt(evidence.growthValueQ8);
+  const publishedBaseNetworkValueMatches =
+    publishedValidBaseNetworkValueQ8 === validBaseNetworkValueQ8 ||
+    (legacyBootstrapBaseCarryMode ===
+      "published-valid-includes-carry" &&
+      publishedValidBaseNetworkValueQ8 === committedBaseNetworkValueQ8);
   if (
     committedBaseNetworkValueQ8 === null ||
     publishedValidBaseNetworkValueQ8 === null ||
     growthActualBaseStateTotalQ8(committedBaseState) !==
       committedBaseNetworkValueQ8 ||
-    publishedValidBaseNetworkValueQ8 !== validBaseNetworkValueQ8 ||
+    !publishedBaseNetworkValueMatches ||
     committedBaseNetworkValueQ8 !==
       validBaseNetworkValueQ8 + legacyBootstrapGrowthValueQ8
   ) {
@@ -57416,8 +57436,11 @@ function workAmoV5LegacyBootstrapReconciliation(
   );
   const legacyBootstrap = {
     ...evidence,
+    baseCarryMode: legacyBootstrapBaseCarryMode,
     committedBaseState: committedState,
     committedCreditFixedQ8: committedCreditFixedQ8.toString(),
+    publishedBaseNetworkValueQ8:
+      publishedValidBaseNetworkValueQ8.toString(),
     validActivityContributionSats: 0,
     validBaseNetworkValueQ8: validBaseNetworkValueQ8.toString(),
     validBaseState: validState,
