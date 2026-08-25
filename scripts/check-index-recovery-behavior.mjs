@@ -2024,6 +2024,52 @@ const WORK_MARKET_GOVERNED_AUTH_VERSIONS_FIXTURE = new Set([
   WORK_AMO_V8_AUTH_VERSION,
 ]);
 
+check("Q16 maintenance delists only stale confirmed WORK listings", () => {
+  const repairSource = topLevelFunctionSource(
+    BACKFILL_PATH,
+    "reconcileWorkQ16ConfirmedListingsFromLatestTransition",
+  );
+  assert.match(
+    repairSource,
+    /currentWorkProjectionModel\([\s\S]*WORK_SUBATOM_PROJECTION_MODEL/u,
+  );
+  assert.match(
+    repairSource,
+    /transition\.model = \$3[\s\S]*WORK_AMO_V8_BLOCK_SEQUENCER_MODEL/u,
+  );
+  assert.match(
+    repairSource,
+    /transition\.work_token_state_model = \$4[\s\S]*WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL/u,
+  );
+  assert.match(
+    repairSource,
+    /jsonb_array_elements\([\s\S]*closing_token_state->'listings'/u,
+  );
+  assert.match(
+    repairSource,
+    /listing\.token_id = \$2[\s\S]*WORK_TOKEN_ID/u,
+  );
+  assert.match(
+    repairSource,
+    /listing\.status IN \('active', 'sealing'\)/u,
+  );
+  assert.match(
+    repairSource,
+    /NOT EXISTS \([\s\S]*FROM state_listing[\s\S]*state_listing\.listing_id = listing\.listing_id/u,
+  );
+  assert.match(
+    repairSource,
+    /status = 'delisted'[\s\S]*'work-q16-canonical-state-absence'/u,
+  );
+
+  const backfillSource = fileSource(BACKFILL_PATH);
+  assert.match(
+    backfillSource,
+    /repairConfirmedListingSealMetadata\(client\)[\s\S]*reconcileWorkQ16ConfirmedListingsFromLatestTransition\(\s*client,\s*\)/u,
+    "Q16 confirmed listing reconciliation must run after seal metadata repair",
+  );
+});
+
 check("historical WORK listing scope is exact, singleton, and fail closed", async () => {
   const historicalWorkListingScopeObject = isolatedFunction(
     READER_PATH,

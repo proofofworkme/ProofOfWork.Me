@@ -28545,6 +28545,119 @@ async function repairConfirmedListingSealMetadata(client) {
   };
 }
 
+async function reconcileWorkQ16ConfirmedListingsFromLatestTransition(client) {
+  const workProjectionModel = await currentWorkProjectionModel(client, {
+    refresh: true,
+  });
+  if (workProjectionModel !== WORK_SUBATOM_PROJECTION_MODEL) {
+    return {
+      indexed: 0,
+      skipped: 0,
+      source: "repair-work-q16-confirmed-listing-state",
+      status: "not-q16",
+    };
+  }
+  const result = await client.query(
+    `
+      WITH latest_transition AS MATERIALIZED (
+        SELECT
+          transition.block_height,
+          transition.block_hash,
+          transition.payload->'closingTokenState' AS closing_token_state
+        FROM proof_indexer.work_amo_block_transitions transition
+        JOIN proof_indexer.blocks block
+          ON block.network = transition.network
+         AND block.block_hash = transition.block_hash
+         AND block.height = transition.block_height
+         AND block.canonical = true
+        WHERE transition.network = $1
+          AND transition.complete = true
+          AND transition.model = $3
+          AND transition.work_token_state_model = $4
+        ORDER BY transition.block_height DESC
+        LIMIT 1
+      ),
+      state_listing AS MATERIALIZED (
+        SELECT DISTINCT lower(item->>'listingId') AS listing_id
+        FROM latest_transition,
+          jsonb_array_elements(
+            CASE
+              WHEN jsonb_typeof(
+                closing_token_state->'listings'
+              ) = 'array'
+                THEN closing_token_state->'listings'
+              ELSE '[]'::jsonb
+            END
+          ) item
+        WHERE item->>'listingId' ~ '^[0-9a-fA-F]{64}$'
+      ),
+      stale_listing AS MATERIALIZED (
+        SELECT
+          listing.listing_id,
+          listing.status AS previous_status,
+          latest_transition.block_height,
+          latest_transition.block_hash
+        FROM proof_indexer.credit_listings listing
+        CROSS JOIN latest_transition
+        WHERE listing.network = $1
+          AND listing.token_id = $2
+          AND listing.status IN ('active', 'sealing')
+          AND NOT EXISTS (
+            SELECT 1
+            FROM state_listing
+            WHERE state_listing.listing_id = listing.listing_id
+          )
+      )
+      UPDATE proof_indexer.credit_listings listing
+      SET
+        status = 'delisted',
+        buyer_address = NULL,
+        close_txid = NULL,
+        payload =
+          (
+            COALESCE(listing.payload, '{}'::jsonb)
+            - 'buyerAddress'
+            - 'closeTxid'
+            - 'closedTxid'
+            - 'saleTxid'
+          )
+          || jsonb_build_object(
+            'canonicalQ16ListingState',
+              jsonb_build_object(
+                'absentFromClosingTokenState', true,
+                'blockHash', stale_listing.block_hash,
+                'blockHeight', stale_listing.block_height,
+                'model', $5::text,
+                'previousStatus', stale_listing.previous_status
+              ),
+            'closedConfirmed', true,
+            'disabledReason', 'work-q16-canonical-state-absence',
+            'sealPending', false,
+            'status', 'delisted'
+          ),
+        updated_at = now()
+      FROM stale_listing
+      WHERE listing.network = $1
+        AND listing.listing_id = stale_listing.listing_id
+        AND listing.token_id = $2
+        AND listing.status IN ('active', 'sealing')
+      RETURNING listing.listing_id
+    `,
+    [
+      NETWORK,
+      WORK_TOKEN_ID,
+      WORK_AMO_V8_BLOCK_SEQUENCER_MODEL,
+      WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL,
+      "canonical-work-q16-confirmed-listing-state-repair-v1",
+    ],
+  );
+  return {
+    indexed: result.rows.length,
+    skipped: 0,
+    source: "repair-work-q16-confirmed-listing-state",
+  };
+}
+
 async function repairWorkMintMinterAttribution(client) {
   if (!REPAIR_MINT_MINTERS) {
     return { indexed: 0, skipped: 0, source: "repair-mint-minters" };
@@ -30759,6 +30872,11 @@ try {
           }
           results.push(await repairMailParticipants(client));
           results.push(await repairConfirmedListingSealMetadata(client));
+          results.push(
+            await reconcileWorkQ16ConfirmedListingsFromLatestTransition(
+              client,
+            ),
+          );
         }
         results.push(await repairConfirmedWorkTransferParticipants(client));
         if (REPAIR_WORK_PARTICIPANTS_ONLY) {
