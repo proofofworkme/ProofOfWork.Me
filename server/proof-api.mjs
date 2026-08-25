@@ -4401,13 +4401,20 @@ function tokenSummaryListingsCoveredByMarketLifecycle(payload, lifecycle) {
   );
 }
 
-async function indexedTokenMarketSummaryOverlay(network, tokenScope = "") {
+async function indexedTokenMarketSummaryOverlay(
+  network,
+  tokenScope = "",
+  options = {},
+) {
   if (
     network !== "livenet" ||
     !proofIndexReadFeatureEnabled("token-state,token-default,token")
   ) {
     return null;
   }
+  const exactHeight = Number(options.exactHeight);
+  const exactCheckpoint =
+    Number.isSafeInteger(exactHeight) && exactHeight > 0;
 
   const [eventPayload, lifecyclePayload] = await Promise.all([
     payloadWithFallbackAfterMs(
@@ -4461,12 +4468,19 @@ async function indexedTokenMarketSummaryOverlay(network, tokenScope = "") {
     complete: true,
     lifecycleTotalCount: numericValue(lifecycle.stats?.totalCount),
   };
-  if (
-    !(await proofIndexPayloadCoversConfirmedTip(
-      payload,
-      network,
-      `token-market-lifecycle:${normalizeTokenScope(tokenScope) || "all"}`,
-    ))
+  const label =
+    `token-market-lifecycle:${normalizeTokenScope(tokenScope) || "all"}`;
+  if (exactCheckpoint) {
+    const indexedThroughBlock =
+      proofIndexPayloadIndexedThroughBlock(payload);
+    if (indexedThroughBlock !== exactHeight) {
+      console.error(
+        `Rejected exact ${label} proof-index read: indexedThroughBlock ${indexedThroughBlock || "unknown"}, expected ${exactHeight}.`,
+      );
+      return null;
+    }
+  } else if (
+    !(await proofIndexPayloadCoversConfirmedTip(payload, network, label))
   ) {
     return null;
   }
@@ -45034,7 +45048,10 @@ async function buildIndexedCanonicalLedgerPayload(
       exactHeight,
       exactHash,
     ),
-    indexedTokenMarketSummaryOverlay(network).catch((error) => {
+    indexedTokenMarketSummaryOverlay(network, "", {
+      exactHash,
+      exactHeight,
+    }).catch((error) => {
       console.error(
         `WORK pre-consistency marketplace overlay failed: ${errorSummary(error)}`,
       );

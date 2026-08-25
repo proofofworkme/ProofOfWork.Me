@@ -5070,6 +5070,8 @@ check("market lifecycle remains live when event enrichment is slow", async () =>
         stats: { complete: true, totalCount: 1 },
       }),
       proofIndexPayloadCoversConfirmedTip: async () => true,
+      proofIndexPayloadIndexedThroughBlock: (payload) =>
+        Number(payload?.indexedThroughBlock ?? 0),
       proofIndexReadFeatureEnabled: () => true,
       proofIndexTokenMarketSummaryOverlayPayload: () =>
         new Promise(() => {}),
@@ -5088,6 +5090,58 @@ check("market lifecycle remains live when event enrichment is slow", async () =>
   const result = await indexedTokenMarketSummaryOverlay("livenet", "");
   assert.equal(result.listings[0].listingId, listingId);
   assert.equal(result.indexedThroughBlock, 957712);
+});
+
+check("market lifecycle accepts exact checkpoint coverage during rebuild", async () => {
+  const listingId =
+    "15aa831e339a17dd3d0a8a256268cb5e652b965ecf79a6af1423375619ad88fa";
+  let currentTipChecks = 0;
+  const indexedTokenMarketSummaryOverlay = isolatedFunction(
+    API_PATH,
+    "indexedTokenMarketSummaryOverlay",
+    {
+      SUMMARY_PROOF_INDEX_READ_WAIT_MS: 10,
+      errorSummary: (error) => String(error?.message ?? error),
+      normalizeTokenScope: (value) => String(value ?? "").toLowerCase(),
+      numericValue: (value) => Number(value) || 0,
+      payloadWithFallbackAfterMs: async (promise) => promise,
+      proofIndexCreditListingsPayload: async () => ({
+        indexedAt: "2026-07-12T14:28:54.000Z",
+        indexedThroughBlock: 957712,
+        items: [{ listingId }],
+        stats: { complete: true, totalCount: 1 },
+      }),
+      proofIndexPayloadCoversConfirmedTip: async () => {
+        currentTipChecks += 1;
+        return false;
+      },
+      proofIndexPayloadIndexedThroughBlock: (payload) =>
+        Number(payload?.indexedThroughBlock ?? 0),
+      proofIndexReadFeatureEnabled: () => true,
+      proofIndexTokenMarketSummaryOverlayPayload: async () => null,
+      tokenMarketLifecycleOverlayFromCreditListings: (payload) => ({
+        closedListings: [],
+        indexedAt: payload.indexedAt,
+        indexedThroughBlock: payload.indexedThroughBlock,
+        listings: payload.items,
+        sales: [],
+        source: "proof-indexer-credit-listing-lifecycle",
+        stats: payload.stats,
+      }),
+    },
+  );
+  const exact = await indexedTokenMarketSummaryOverlay("livenet", "", {
+    exactHeight: 957712,
+  });
+  assert.equal(exact.listings[0].listingId, listingId);
+  assert.equal(currentTipChecks, 0);
+  const mismatched = await indexedTokenMarketSummaryOverlay("livenet", "", {
+    exactHeight: 957713,
+  });
+  assert.equal(mismatched, null);
+  const live = await indexedTokenMarketSummaryOverlay("livenet", "");
+  assert.equal(live, null);
+  assert.equal(currentTipChecks, 1);
 });
 
 check("market lifecycle overrides stale event closures", async () => {
@@ -5109,6 +5163,8 @@ check("market lifecycle overrides stale event closures", async () => {
         stats: { complete: true, totalCount: 1 },
       }),
       proofIndexPayloadCoversConfirmedTip: async () => true,
+      proofIndexPayloadIndexedThroughBlock: (payload) =>
+        Number(payload?.indexedThroughBlock ?? 0),
       proofIndexReadFeatureEnabled: () => true,
       proofIndexTokenMarketSummaryOverlayPayload: async () => ({
         closedListings: [
