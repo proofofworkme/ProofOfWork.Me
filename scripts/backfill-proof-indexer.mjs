@@ -24602,11 +24602,37 @@ async function persistExactWorkQ16PendingWitness(
           WHERE transaction.network = $1
             AND transaction.status = 'pending'
             AND (
-              transaction.raw_tx ? 'pendingWorkMintAttemptCount'
-              OR transaction.raw_tx ? 'pendingWorkMintInspectionVersion'
-              OR transaction.raw_tx ? 'pendingWorkMintRecoveryNeeded'
-              OR transaction.raw_tx ? 'pendingWorkMintResolvedInvalid'
-              OR transaction.raw_tx ? 'pendingProtocolResolvedInvalid'
+              (
+                jsonb_typeof(
+                  transaction.raw_tx->'pendingWorkMintAttemptCount'
+                ) = 'number'
+                AND transaction.raw_tx->>'pendingWorkMintAttemptCount' ~
+                  '^[1-9][0-9]*$'
+              )
+              OR (
+                transaction.txid = ANY($3::text[])
+                AND jsonb_typeof(
+                  transaction.raw_tx->'pendingWorkMintAttemptCount'
+                ) = 'number'
+                AND jsonb_typeof(
+                  transaction.raw_tx->'pendingWorkMintInspectionVersion'
+                ) = 'number'
+                AND jsonb_typeof(
+                  transaction.raw_tx->'pendingWorkMintRecoveryNeeded'
+                ) = 'boolean'
+                AND jsonb_typeof(
+                  transaction.raw_tx->'pendingWorkMintResolvedInvalid'
+                ) = 'boolean'
+                AND jsonb_typeof(
+                  transaction.raw_tx->'pendingProtocolResolvedInvalid'
+                ) = 'boolean'
+                AND transaction.raw_tx->>'pendingWorkMintAttemptCount' = '0'
+                AND transaction.raw_tx->>'pendingWorkMintInspectionVersion' = '1'
+                AND transaction.raw_tx->>'pendingWorkMintRecoveryNeeded' = 'false'
+                AND transaction.raw_tx->>'pendingWorkMintResolvedInvalid' = 'false'
+                AND transaction.raw_tx->>'pendingProtocolResolvedInvalid'
+                  IN ('false', 'true')
+              )
             )
         )
         SELECT txid
@@ -24614,7 +24640,7 @@ async function persistExactWorkQ16PendingWitness(
         WHERE txid ~ '^[0-9a-f]{64}$'
         ORDER BY txid ASC
       `,
-      [NETWORK, WORK_TOKEN_ID],
+      [NETWORK, WORK_TOKEN_ID, lockedParent.membershipTxids],
     );
     const expectedPersistedMembership = lockedParent.membershipTxids.filter(
       (txid) => !confirmedTransitionTxids.includes(txid),

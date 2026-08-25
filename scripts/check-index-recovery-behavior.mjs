@@ -16391,8 +16391,8 @@ check("Q16 empty-parent bootstrap is exact, locked, and fail-closed", async () =
   );
   assert.match(
     publicationSource,
-    /pending_members[\s\S]*pendingWorkMintAttemptCount[\s\S]*pendingWorkMintInspectionVersion[\s\S]*pendingWorkMintRecoveryNeeded[\s\S]*pendingWorkMintResolvedInvalid[\s\S]*pendingProtocolResolvedInvalid[\s\S]*Persisted pending WORK membership diverged/u,
-    "publication membership must count the same pending recovery-marker rows as the parent witness",
+    /pending_members[\s\S]*pendingWorkMintAttemptCount[\s\S]*transaction\.txid = ANY\(\$3::text\[\]\)[\s\S]*pendingWorkMintInspectionVersion[\s\S]*pendingWorkMintRecoveryNeeded[\s\S]*pendingWorkMintResolvedInvalid[\s\S]*pendingProtocolResolvedInvalid[\s\S]*lockedParent\.membershipTxids[\s\S]*Persisted pending WORK membership diverged/u,
+    "publication membership must count parent-bound terminal recovery-marker rows without admitting unrelated terminal markers",
   );
   assert.match(
     publicationSource,
