@@ -41893,6 +41893,9 @@ function ledgerSnapshotChecks({
   const marketplaceMutationFeeSats = numericValue(
     workFloor?.actualValue?.marketplaceMutationFeeSats,
   );
+  const legacyBootstrapMarketplaceCarrySats = numericValue(
+    workFloor?.actualValue?.legacyBootstrapMarketplaceCarrySats,
+  );
   const marketplaceSaleVolumeSats = numericValue(
     workFloor?.actualValue?.marketplaceSaleVolumeSats ??
       workFloor?.actualValue?.marketplaceVolumeSats,
@@ -41983,10 +41986,15 @@ function ledgerSnapshotChecks({
   });
   addCheck(
     "marketplace-mutation-fees-counted",
-    numbersAgree(confirmedMarketplaceMutationFeeSats, marketplaceFeeSats) &&
-      numbersAgree(confirmedMarketplaceMutationFeeSats, marketplaceMutationFeeSats),
+    numbersAgree(marketplaceFeeSats, marketplaceMutationFeeSats) &&
+      numbersAgree(
+        confirmedMarketplaceMutationFeeSats,
+        marketplaceMutationFeeSats +
+          legacyBootstrapMarketplaceCarrySats,
+      ),
     {
       confirmedMarketplaceMutationFeeSats,
+      legacyBootstrapMarketplaceCarrySats,
       marketplaceFeeSats,
       marketplaceMutationFeeSats,
     },

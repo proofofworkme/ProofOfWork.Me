@@ -155,7 +155,7 @@ const verifiedWorkAmoV5ClosingStateSource = sourceSliceBetween(
 );
 const marketplaceMutationEqualitySource = sourceSliceBetween(
   ledgerSnapshotChecksSource,
-  /addCheck\(\s*"marketplace-mutation-fees-counted"/,
+  /const confirmedMarketplaceMutationFeeSats = confirmedActivityFlowSats/,
   /addCheck\(\s*"work-amo-v5-legacy-bootstrap-carry-proven"/,
 );
 const q16MempoolBackfillSource = sourceSliceBetween(
@@ -2792,16 +2792,12 @@ expectAll("credit frozen value proves valid flows plus the explicit legacy carry
   /flows\.reduce\([\s\S]*BigInt\(legacyCreditFixedQ8\)/,
   /BigInt\(legacyCreditFixedQ8\) \+[\s\S]*BigInt\(postActivationCreditFixedQ8\)/,
 ]);
-expectAll("marketplace consistency keeps strict valid-only equality", marketplaceMutationEqualitySource, [
-  /numbersAgree\(confirmedMarketplaceMutationFeeSats, marketplaceFeeSats\)/,
-  /numbersAgree\(confirmedMarketplaceMutationFeeSats, marketplaceMutationFeeSats\)/,
+expectAll("marketplace consistency keeps valid-only fees plus explicit legacy carry", marketplaceMutationEqualitySource, [
+  /const legacyBootstrapMarketplaceCarrySats = numericValue/,
+  /numbersAgree\(marketplaceFeeSats, marketplaceMutationFeeSats\)/,
+  /confirmedMarketplaceMutationFeeSats,[\s\S]*marketplaceMutationFeeSats \+[\s\S]*legacyBootstrapMarketplaceCarrySats/,
+  /legacyBootstrapMarketplaceCarrySats/,
 ]);
-expect(
-  "marketplace fee equality is not relaxed by the legacy bootstrap carry",
-  !/\|\||legacyBootstrap|WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY/u.test(
-    marketplaceMutationEqualitySource,
-  ),
-);
 
 expectAll("confirmed token protocol failures stay diagnosable", server, [
   /invalidEvents:\s*\[\]/,
