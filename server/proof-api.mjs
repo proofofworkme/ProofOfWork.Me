@@ -61089,10 +61089,10 @@ function pendingWorkVerifierStageSortUniqueItems(items, keyForItem) {
   );
 }
 
-// Confirmed public audit history intentionally retains both the generic and
-// specific invalid projections for this one pre-V5 record. Pending replay is
-// one decision per raw record, so only this immutable chain-bound pair yields
-// to its more specific listing audit row.
+// Confirmed public audit history can retain both generic and specific invalid
+// projections for one raw listing record. Pending replay is one decision per
+// raw record, so exact generic siblings yield to their more specific listing
+// audit row.
 function pendingWorkVerifierStageCollapseExactLegacyInvalidSibling(items) {
   const groups = new Map();
   for (const [index, item] of items.entries()) {
@@ -61132,17 +61132,8 @@ function pendingWorkVerifierStageCollapseExactLegacyInvalidSibling(items) {
     const aligned = identityFields.every(
       (field) => first?.[field] === second?.[field],
     );
-    const pinned = group.every(
+    const canonicalIdentity = group.every(
       (item) =>
-        item?.txid ===
-          "55fdd6f89cfc3daa331b84efa635dcb5918f689517f725686252874f02c4d0c3" &&
-        item?.blockHash ===
-          "00000000000000000001c38b6ae31983f39643a2180a56448e3f242119fe861d" &&
-        item?.blockHeight === 958_985 &&
-        item.blockHeight < WORK_AMO_V5_ACTIVATION_HEIGHT &&
-        item?.blockIndex === 3_908 &&
-        item?.protocolVout === 1 &&
-        item?.recordOrdinal === 0 &&
         item?.network === "livenet" &&
         item?.protocol === "pwt1" &&
         item?.tokenId === WORK_TOKEN_ID &&
@@ -61154,24 +61145,39 @@ function pendingWorkVerifierStageCollapseExactLegacyInvalidSibling(items) {
       (item) =>
         item?.kind === "token-event-invalid" &&
         item?.reason === "no-valid-token-event" &&
-        Array.isArray(item?.validationErrors) &&
-        item.validationErrors.length === 1 &&
-        item.validationErrors[0] === "no-valid-token-event" &&
+        (
+          item?.validationErrors === undefined ||
+          (
+            Array.isArray(item.validationErrors) &&
+            item.validationErrors.length === 1 &&
+            item.validationErrors[0] === "no-valid-token-event"
+          )
+        ) &&
         !Object.prototype.hasOwnProperty.call(item, "listingId"),
     );
     const specific = group.find(
       (item) =>
-        item?.kind === "token-listing-invalid" &&
-        item?.listingId === item?.txid &&
+        /^token-listing-[a-z-]*invalid$/u.test(String(item?.kind ?? "")) &&
         item?.reason ===
           "The canonical first-party verifier rejected this protocol event." &&
-        Array.isArray(item?.validationErrors) &&
-        item.validationErrors.length === 1 &&
-        item.validationErrors[0] ===
-          "The canonical first-party verifier rejected this protocol event." &&
-        item?.saleAuthorization?.version === "pwt-sale-v2",
+        (
+          item?.validationErrors === undefined ||
+          (
+            Array.isArray(item.validationErrors) &&
+            item.validationErrors.length === 1 &&
+            item.validationErrors[0] ===
+              "The canonical first-party verifier rejected this protocol event."
+          )
+        ) &&
+        /^[0-9a-f]{64}$/u.test(String(item?.listingId ?? "")),
     );
-    if (aligned && pinned && generic && specific && generic !== specific) {
+    if (
+      aligned &&
+      canonicalIdentity &&
+      generic &&
+      specific &&
+      generic !== specific
+    ) {
       collapsed.push(specific);
     } else {
       collapsed.push(...group);

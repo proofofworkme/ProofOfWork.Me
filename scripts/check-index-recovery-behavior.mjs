@@ -22570,7 +22570,7 @@ check("pending WORK confirmed V8 listings materialize frozen terms for readiness
   );
 });
 
-check("pending WORK confirmed base collapses only its exact legacy invalid sibling", () => {
+check("pending WORK confirmed base collapses exact generic listing invalid siblings", () => {
   const collapse = isolatedFunction(
     API_PATH,
     "pendingWorkVerifierStageCollapseExactLegacyInvalidSibling",
@@ -22625,9 +22625,34 @@ check("pending WORK confirmed base collapses only its exact legacy invalid sibli
   assert.equal(
     exactCollapse.length,
     1,
-    "the exact chain-pinned generic sibling yields to its specific audit row",
+    "the exact generic sibling yields to its specific listing audit row",
   );
   assert.equal(exactCollapse[0], specific);
+  const sealTxid =
+    "c834351ad3d389904bf26f08d3ca9a97ffa2c86898f9b1d59d7095959bc12217";
+  const sealGeneric = {
+    ...generic,
+    blockHash:
+      "00000000000000000001bac0181b16d5ba5e69a1399d98b94b15452c8b619e14",
+    blockHeight: 957_115,
+    blockIndex: 1_535,
+    txid: sealTxid,
+    validationErrors: undefined,
+  };
+  const sealSpecific = {
+    ...sealGeneric,
+    kind: "token-listing-sealed-invalid",
+    listingId: "ba81ab1e12a15a9d889a5d99ba23d0d89d2c5230719abfa8395c30cc2792915d",
+    reason: "The canonical first-party verifier rejected this protocol event.",
+    saleAuthorization: { version: "pwt-sale-v1" },
+  };
+  const exactSealCollapse = collapse([sealGeneric, sealSpecific]);
+  assert.equal(
+    exactSealCollapse.length,
+    1,
+    "the exact generic seal sibling yields to its specific sealed-listing audit row",
+  );
+  assert.equal(exactSealCollapse[0], sealSpecific);
   const coarseKey = (item) =>
     `${item.txid}:${item.protocolVout}:${item.recordOrdinal}`;
   const rejects = (items, label) => {
@@ -22643,13 +22668,6 @@ check("pending WORK confirmed base collapses only its exact legacy invalid sibli
     );
   };
   rejects(
-    [
-      { ...generic, blockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT },
-      { ...specific, blockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT },
-    ],
-    "a post-V5 pair is not collapsed",
-  );
-  rejects(
     [generic, specific, { ...specific }],
     "non-singleton sibling cardinality is not collapsed",
   );
@@ -22658,12 +22676,16 @@ check("pending WORK confirmed base collapses only its exact legacy invalid sibli
     "canonical identity mismatch is not collapsed",
   );
   rejects(
-    [generic, { ...specific, saleAuthorization: { version: "pwt-sale-v3" } }],
-    "a near-match authorization version is not collapsed",
-  );
-  rejects(
     [{ ...generic, listingId: txid }, specific],
     "a generic row carrying listing identity is not collapsed",
+  );
+  rejects(
+    [generic, { ...specific, kind: "token-event-invalid" }],
+    "a non-specific invalid row is not collapsed",
+  );
+  rejects(
+    [{ ...generic, reason: "different" }, specific],
+    "a generic row with a different reason is not collapsed",
   );
   assert.match(
     topLevelFunctionSource(API_PATH, "pendingWorkVerifierStageConfirmedBase"),
