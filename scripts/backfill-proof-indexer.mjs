@@ -24601,11 +24601,13 @@ async function persistExactWorkQ16PendingWitness(
           FROM proof_indexer.transactions transaction
           WHERE transaction.network = $1
             AND transaction.status = 'pending'
-            AND jsonb_typeof(
-              transaction.raw_tx->'pendingWorkMintAttemptCount'
-            ) = 'number'
-            AND transaction.raw_tx->>'pendingWorkMintAttemptCount' ~
-              '^[1-9][0-9]*$'
+            AND (
+              transaction.raw_tx ? 'pendingWorkMintAttemptCount'
+              OR transaction.raw_tx ? 'pendingWorkMintInspectionVersion'
+              OR transaction.raw_tx ? 'pendingWorkMintRecoveryNeeded'
+              OR transaction.raw_tx ? 'pendingWorkMintResolvedInvalid'
+              OR transaction.raw_tx ? 'pendingProtocolResolvedInvalid'
+            )
         )
         SELECT txid
         FROM pending_members

@@ -16391,6 +16391,11 @@ check("Q16 empty-parent bootstrap is exact, locked, and fail-closed", async () =
   );
   assert.match(
     publicationSource,
+    /pending_members[\s\S]*pendingWorkMintAttemptCount[\s\S]*pendingWorkMintInspectionVersion[\s\S]*pendingWorkMintRecoveryNeeded[\s\S]*pendingWorkMintResolvedInvalid[\s\S]*pendingProtocolResolvedInvalid[\s\S]*Persisted pending WORK membership diverged/u,
+    "publication membership must count the same pending recovery-marker rows as the parent witness",
+  );
+  assert.match(
+    publicationSource,
     /requestedPublicationAttempt\.status === "running"[\s\S]*WORK_Q16_PENDING_RUNNING_ATTEMPT_META_KEY[\s\S]*WORK_Q16_PENDING_ATTEMPT_META_KEY/u,
     "publication must lock the exact running or published attempt lane",
   );
