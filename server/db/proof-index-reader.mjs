@@ -7591,6 +7591,11 @@ async function proofIndexWorkPrecisionV2MigrationReadinessFullAudit(
         WHERE listing.network = $1
           AND listing.token_id = $2
           AND listing.status IN ('active', 'sealing')
+          AND COALESCE(
+            listing.payload->'saleAuthorization'->>'version',
+            listing.payload->'listingAuthorization'->>'version',
+            ''
+          ) = $3
         ORDER BY listing.listing_id ASC
     `,
     [
@@ -11410,6 +11415,11 @@ export async function proofIndexWorkAmoV8RelationalTokenStateEvidence(
         WHERE listing.network = $1
           AND lower(listing.token_id) = $2
           AND listing.status IN ('active', 'sealing')
+          AND COALESCE(
+            listing.payload->'saleAuthorization'->>'version',
+            listing.payload->'listingAuthorization'->>'version',
+            ''
+          ) = $3
         ORDER BY listing.listing_id
       `,
       [network, WORK_TOKEN_ID, WORK_AMO_V8_AUTH_VERSION],

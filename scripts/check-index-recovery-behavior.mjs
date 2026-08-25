@@ -22833,6 +22833,11 @@ check("exact canonical summaries require current conserved token balances", asyn
     /WHEN listing\.status = 'sealing'[\s\S]*seal_event\.payload->'saleAuthorization'[\s\S]*LEFT JOIN proof_indexer\.events seal_event[\s\S]*seal_event\.kind = 'token-listing-sealed'[\s\S]*EXISTS \([\s\S]*proof_indexer\.transactions seal_tx[\s\S]*seal_block\.canonical = true/u,
     "reader readiness must use the canonical seal event authorization for sealing V8 listings",
   );
+  assert.match(
+    migrationReadinessSource,
+    /AND listing\.status IN \('active', 'sealing'\)[\s\S]*AND COALESCE\([\s\S]*listing\.payload->'saleAuthorization'->>'version'[\s\S]*listing\.payload->'listingAuthorization'->>'version'[\s\S]*\) = \$3/u,
+    "reader readiness must compare only V8-authorized listings against the V8 transition token state",
+  );
   const v8RelationalEvidenceSource = topLevelFunctionSource(
     READER_PATH,
     "proofIndexWorkAmoV8RelationalTokenStateEvidence",
@@ -22856,6 +22861,11 @@ check("exact canonical summaries require current conserved token balances", asyn
     v8RelationalEvidenceSource,
     /WHEN listing\.status = 'sealing'[\s\S]*seal_event\.payload->'saleAuthorization'[\s\S]*LEFT JOIN proof_indexer\.events seal_event[\s\S]*seal_event\.kind = 'token-listing-sealed'[\s\S]*EXISTS \([\s\S]*proof_indexer\.transactions seal_tx[\s\S]*seal_block\.canonical = true/u,
     "V8 relational token-state evidence must use the canonical seal event authorization for sealing rows",
+  );
+  assert.match(
+    v8RelationalEvidenceSource,
+    /AND listing\.status IN \('active', 'sealing'\)[\s\S]*AND COALESCE\([\s\S]*listing\.payload->'saleAuthorization'->>'version'[\s\S]*listing\.payload->'listingAuthorization'->>'version'[\s\S]*\) = \$3/u,
+    "V8 relational token-state evidence must ignore legacy sale-ticket rows when proving V8 state",
   );
   const workerReplaySource = topLevelFunctionSource(
     WORKER_PATH,
