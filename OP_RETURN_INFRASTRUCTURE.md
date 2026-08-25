@@ -2607,6 +2607,17 @@ publish a fresh marked exact-tip summary and run
 `indexer:verify-work-atoms-post-bootstrap` before any public read or AMO write
 gate reopens.
 
+Production application releases must be locally proven before they touch the
+live path. From this point forward, every upgrade starts from the exact
+candidate commit running locally or in a production-equivalent staging lane:
+exercise the affected standalone surface, the matching Computer shell path when
+one exists, the API/indexer routes it depends on, and the regression gates that
+cover its protocol math. Production changes are allowed only after those checks
+are green, the result has been reviewed, and rollback evidence exists. A
+release that can break public availability, confirmed reads, wallet
+preparation, broadcast admission, Log/Growth/WORK/AMO agreement, or protocol
+accounting stays closed until fixed.
+
 Production application releases must be staged from one exact commit, install
 dependencies before the swap, preserve one rollback outside the live path, and
 leave `/opt/proofofwork-api` detached at the recorded commit. The release
@@ -2763,6 +2774,17 @@ first-party full-node or confirmed tx truth before deploy. Proof-index
 PostgreSQL tables are derived read models for speed; stale rows, stale zeros,
 and unclosed sale-ticket projections must be repaired or bypassed when they
 disagree with confirmed chain state.
+
+For math-touching releases, the local and production gates must prove exact
+arithmetic before deployment and again after deployment. Protocol math is a
+hard on-chain function, not presentation logic: balances, supply, floors,
+issuance, listing terms, fees, canonical ordering, and network value must be
+derived from explicit integer scales and replayable Core/indexer evidence.
+No binary floating point, rounded display value, stale summary, inferred unit,
+or unavailable oracle may publish a canonical result or mutate state. If another
+operator cannot reproduce the result by running the Computer, its indexer, and
+a full node, the release is not ready and the affected write/read path must
+fail closed.
 
 Production audits should follow the public app dependency order. Verify the
 standalone surfaces first: Home, IDs, Desktop, Browser, AMO, Credit,

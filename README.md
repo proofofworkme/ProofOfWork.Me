@@ -92,6 +92,31 @@ An audit should move in this order:
    deploy, and push, provide tweet-ready public copy immediately unless the
    user explicitly says not to.
 
+### Upgrade SOP
+
+From this point forward, every application upgrade must be tested locally
+before production changes. Local proof means running the app or affected
+service from the exact candidate commit, exercising the touched standalone
+surface and the matching Computer shell path when one exists, running the
+relevant regression and math gates, and comparing protocol outputs against
+first-party full-node/indexer truth.
+
+Production deploys are allowed only after that local result is green and
+reviewed. A release should be staged from one exact commit, have rollback
+evidence, preserve the public app's availability, and avoid any known breakage
+to confirmed reads, wallet preparation, broadcasts, Log/Growth/WORK/AMO
+surfaces, or protocol accounting. If the local app, indexer, full-node checks,
+or regression gates disagree, production stays closed until the cause is fixed.
+
+Protocol math is not optional implementation detail. Balances, supply, floors,
+issuance, listing terms, fees, ordering, and network value are hard functions
+declared on chain or in the canonical protocol docs. They must use exact
+integers, explicit scales, canonical ordering, and replayable evidence. Binary
+floating point, rounded display values, stale snapshots, or guessed units must
+never become arithmetic authority. Any math path that cannot be independently
+verified by someone running the ProofOfWork Computer, its indexer, and a full
+node must fail closed instead of publishing or mutating state.
+
 ### Commit Hygiene
 
 Every approved repository update ends with a hygiene pass, whether or not it is
