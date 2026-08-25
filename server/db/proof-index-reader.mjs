@@ -10870,10 +10870,15 @@ export function workAmoV5LegacyBootstrapCarryEvidenceFromRows(rows) {
   };
   const text = (value) => String(value ?? "").trim();
   const lower = (value) => text(value).toLowerCase();
-  const exactReasons = (value) =>
+  const compatibilityReasonCode =
+    "work-market-v2-canonical-oracle-unavailable";
+  const exactReasons = (
+    value,
+    reasonCode = WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_REASON_CODE,
+  ) =>
     Array.isArray(value) &&
     value.length === 1 &&
-    text(value[0]) === WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_REASON_CODE;
+    text(value[0]) === reasonCode;
   const listingStatuses = Array.isArray(row?.listing_statuses)
     ? row.listing_statuses.map(lower)
     : [];
@@ -10882,14 +10887,34 @@ export function workAmoV5LegacyBootstrapCarryEvidenceFromRows(rows) {
     lower(payload?.listingAuthorization?.version),
   ].filter(Boolean);
   const eventId = integer(row?.event_id, 1);
-  const mutationSats = integer(row?.amount_sats);
+  const eventAmountSats = integer(row?.amount_sats);
   const minerFeeSats = integer(row?.fee_sats);
-  const payloadMutationSats = integer(payload?.amountSats);
+  const payloadAmountSats = integer(payload?.amountSats);
   const payloadMinerFeeSats = integer(payload?.minerFeeSats);
+  const payloadAuditMinerFeeSats = integer(payload?.auditMinerFeeSats);
+  const payloadAuditRegistryPaymentSats = integer(
+    payload?.auditRegistryPaymentSats,
+  );
+  const payloadAuditTotalCostSats = integer(
+    payload?.auditTotalCostSats,
+  );
+  const payloadSaleTicketValueSats = integer(
+    payload?.saleTicketValueSats,
+  );
+  const payloadSaleTicketVout = integer(payload?.saleTicketVout);
+  const payloadAnchorValueSats = integer(
+    payload?.saleAuthorization?.anchorValueSats,
+  );
+  const payloadAnchorVout = integer(
+    payload?.saleAuthorization?.anchorVout,
+  );
   const blockHeight = integer(row?.block_height, 1);
   const blockIndex = integer(row?.block_index);
   const protocolVout = integer(row?.protocol_vout);
   const recordOrdinal = integer(row?.record_ordinal);
+  const payloadRecordOrdinal = integer(
+    payload?._powEventIndex ?? payload?.recordOrdinal,
+  );
   const transactionBlockHeight = integer(
     row?.transaction_block_height,
     1,
@@ -10897,14 +10922,32 @@ export function workAmoV5LegacyBootstrapCarryEvidenceFromRows(rows) {
   const transactionBlockIndex = integer(row?.transaction_block_index);
   const listingCount = integer(row?.listing_count);
   const activeListingCount = integer(row?.active_listing_count);
+  const registryPaymentOutputCount = integer(
+    row?.registry_payment_output_count,
+  );
+  const saleTicketOutputCount = integer(
+    row?.sale_ticket_output_count,
+  );
   const txid = lower(row?.txid);
   const blockHash = lower(row?.block_hash);
-  if (
+  const eventKind = lower(row?.kind);
+  const payloadKind = lower(payload?.kind);
+  const registryAddress = text(payload?.registryAddress);
+  const registryRecipient =
+    Array.isArray(payload?.recipients) && payload.recipients.length === 1
+      ? payload.recipients[0]
+      : null;
+  const registryRecipientMatches =
+    Boolean(registryAddress) &&
+    integer(registryRecipient?.vout) === 0 &&
+    lower(registryRecipient?.address) === lower(registryAddress) &&
+    integer(registryRecipient?.amountSats) ===
+      WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MUTATION_SATS;
+  const commonEvidenceMismatch =
     lower(row?.network) !== "livenet" ||
     txid !== WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_TXID ||
     blockHash !== WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_BLOCK_HASH ||
     lower(row?.protocol) !== "pwt1" ||
-    lower(row?.kind) !== "token-listing" ||
     lower(row?.event_status ?? row?.status) !== "confirmed" ||
     lower(row?.transaction_status) !== "confirmed" ||
     row?.valid !== false ||
@@ -10916,25 +10959,13 @@ export function workAmoV5LegacyBootstrapCarryEvidenceFromRows(rows) {
     recordOrdinal !== WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_RECORD_ORDINAL ||
     transactionBlockHeight !== blockHeight ||
     transactionBlockIndex !== blockIndex ||
-    mutationSats !== WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MUTATION_SATS ||
     minerFeeSats !== WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MINER_FEE_SATS ||
-    !exactReasons(row?.validation_errors) ||
-    listingCount !== 1 ||
-    activeListingCount !== 0 ||
-    listingStatuses.length !== 1 ||
-    listingStatuses[0] !== "dropped" ||
     lower(payload?.txid) !== txid ||
     lower(payload?.protocol) !== "pwt1" ||
-    lower(payload?.kind) !== "token-listing" ||
     lower(payload?.network) !== "livenet" ||
     lower(payload?.status) !== "confirmed" ||
     payload?.confirmed !== true ||
     payload?.valid !== false ||
-    payload?.relic !== false ||
-    payload?.refundEligible !== false ||
-    text(payload?.reasonCode) !==
-      WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_REASON_CODE ||
-    !exactReasons(payload?.validationErrors) ||
     lower(payload?.tokenId) !== WORK_TOKEN_ID ||
     lower(payload?.listingId) !== txid ||
     lower(payload?.saleTicketTxid) !== txid ||
@@ -10942,14 +10973,67 @@ export function workAmoV5LegacyBootstrapCarryEvidenceFromRows(rows) {
     integer(payload?.blockHeight, 1) !== blockHeight ||
     integer(payload?.blockIndex) !== blockIndex ||
     integer(payload?.protocolVout) !== protocolVout ||
-    integer(payload?._powEventIndex) !== recordOrdinal ||
-    payloadMutationSats !== mutationSats ||
-    payloadMinerFeeSats !== minerFeeSats ||
+    payloadRecordOrdinal !== recordOrdinal ||
     authorizationVersions.length !== 1 ||
-    authorizationVersions[0] !== "pwt-sale-v3"
+    authorizationVersions[0] !== "pwt-sale-v3";
+  const droppedListingEvidence =
+    eventKind === "token-listing" &&
+    payloadKind === "token-listing" &&
+    eventAmountSats ===
+      WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MUTATION_SATS &&
+    payloadAmountSats === eventAmountSats &&
+    payloadMinerFeeSats === minerFeeSats &&
+    exactReasons(row?.validation_errors) &&
+    text(payload?.reasonCode) ===
+      WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_REASON_CODE &&
+    exactReasons(payload?.validationErrors) &&
+    payload?.relic === false &&
+    payload?.refundEligible === false &&
+    listingCount === 1 &&
+    activeListingCount === 0 &&
+    listingStatuses.length === 1 &&
+    listingStatuses[0] === "dropped";
+  const invalidOnlyReplayEvidence =
+    eventKind === "token-event-invalid" &&
+    payloadKind === "token-event-invalid" &&
+    eventAmountSats === 0 &&
+    payloadAmountSats === 0 &&
+    exactReasons(row?.validation_errors, compatibilityReasonCode) &&
+    text(payload?.reasonCode) === compatibilityReasonCode &&
+    text(payload?.reason) === compatibilityReasonCode &&
+    text(payload?.workMarketPricing?.reasonCode) ===
+      compatibilityReasonCode &&
+    payload?.workMarketPricing?.valid === false &&
+    lower(payload?.attemptedKind) === "list" &&
+    lower(payload?.indexedFrom) === "token-invalid-events" &&
+    lower(payload?.validationMode) === "canonical-first-party-state" &&
+    payload?.workAmoV5RawDecodeValid === true &&
+    payloadAuditMinerFeeSats === minerFeeSats &&
+    payloadAuditRegistryPaymentSats ===
+      WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MUTATION_SATS &&
+    payloadAuditTotalCostSats ===
+      WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MUTATION_SATS +
+        WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MINER_FEE_SATS &&
+    payloadSaleTicketValueSats ===
+      WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MUTATION_SATS &&
+    payloadSaleTicketVout === 2 &&
+    payloadAnchorValueSats ===
+      WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MUTATION_SATS &&
+    payloadAnchorVout === 2 &&
+    registryRecipientMatches &&
+    registryPaymentOutputCount === 1 &&
+    saleTicketOutputCount === 1 &&
+    listingCount === 0 &&
+    activeListingCount === 0 &&
+    listingStatuses.length === 0;
+  if (
+    commonEvidenceMismatch ||
+    (!droppedListingEvidence && !invalidOnlyReplayEvidence)
   ) {
     return incomplete("legacy-bootstrap-evidence-mismatch");
   }
+  const mutationSats =
+    WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MUTATION_SATS;
   const creditFixedSats = mutationSats + minerFeeSats;
   const growthValueSats = mutationSats * 5;
   return {
@@ -10963,13 +11047,27 @@ export function workAmoV5LegacyBootstrapCarryEvidenceFromRows(rows) {
     eventId,
     growthValueQ8: (BigInt(growthValueSats) * 100_000_000n).toString(),
     growthValueSats,
-    listingCount,
+    listingCount: 1,
     marketplaceMutationFeeSats: mutationSats,
     minerFeeSats,
     model: WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MODEL,
     protocolVout,
     reasonCode: WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_REASON_CODE,
     recordOrdinal,
+    ...(invalidOnlyReplayEvidence
+      ? {
+          compatibilityMode:
+            "legacy-bootstrap-invalid-only-replay-evidence-v1",
+          sourceActiveListingCount: activeListingCount,
+          sourceAmountSats: eventAmountSats,
+          sourceKind: eventKind,
+          sourceListingCount: listingCount,
+          sourceReasonCode: compatibilityReasonCode,
+          sourceRegistryPaymentOutputCount:
+            registryPaymentOutputCount,
+          sourceSaleTicketOutputCount: saleTicketOutputCount,
+        }
+      : {}),
     txid,
   };
 }
@@ -11029,7 +11127,25 @@ export async function proofIndexWorkAmoLegacyBootstrapCarryEvidence(
           FROM proof_indexer.credit_listings listing
           WHERE listing.network = event_row.network
             AND listing.listing_id = event_row.txid
-        ) AS listing_statuses
+        ) AS listing_statuses,
+        (
+          SELECT count(*)::integer
+          FROM proof_indexer.tx_outputs registry_output
+          WHERE registry_output.network = event_row.network
+            AND registry_output.txid = event_row.txid
+            AND registry_output.vout = 0
+            AND registry_output.value_sats = $3
+            AND lower(COALESCE(registry_output.address, '')) =
+              lower(COALESCE(event_row.payload->>'registryAddress', ''))
+        ) AS registry_payment_output_count,
+        (
+          SELECT count(*)::integer
+          FROM proof_indexer.tx_outputs sale_ticket_output
+          WHERE sale_ticket_output.network = event_row.network
+            AND sale_ticket_output.txid = event_row.txid
+            AND sale_ticket_output.vout = 2
+            AND sale_ticket_output.value_sats = $3
+        ) AS sale_ticket_output_count
       FROM proof_indexer.events event_row
       JOIN proof_indexer.transactions event_tx
         ON event_tx.network = event_row.network
@@ -11042,7 +11158,11 @@ export async function proofIndexWorkAmoLegacyBootstrapCarryEvidence(
         AND event_row.txid = $2
       ORDER BY event_row.event_id
     `,
-    [network, WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_TXID],
+    [
+      network,
+      WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_TXID,
+      WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MUTATION_SATS,
+    ],
   );
   return workAmoV5LegacyBootstrapCarryEvidenceFromRows(result.rows);
 }

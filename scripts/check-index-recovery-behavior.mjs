@@ -289,6 +289,8 @@ const WORK_NETWORK_VALUE_ACCOUNTING_MODEL =
 const GROWTH_ID_DENSITY_NUMERATOR = 26_868_933_906_745_133n;
 const GROWTH_ID_DENSITY_DENOMINATOR = 100_000_000_000_000n;
 const GROWTH_VALUE_MULTIPLE = 5n;
+const WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_COMPAT_REASON_CODE =
+  "work-market-v2-canonical-oracle-unavailable";
 const DEFAULT_REPLAY_WITNESS_SET_HASH = "8".repeat(64);
 const WORK_AMO_V5_H_MINUS_ONE_CANONICAL_SUMMARY_SNAPSHOT_ID =
   "cb13bc6edd20d72f6ae3919e";
@@ -352,6 +354,74 @@ function workAmoV5LegacyBootstrapCarryRowFixture(overrides = {}) {
     validation_errors: [reasonCode],
     ...overrides,
   };
+}
+
+function workAmoV5LegacyBootstrapCarryCompatRowFixture(overrides = {}) {
+  const row = workAmoV5LegacyBootstrapCarryRowFixture({
+    active_listing_count: 0,
+    amount_sats: "0",
+    kind: "token-event-invalid",
+    listing_count: 0,
+    listing_statuses: [],
+    registry_payment_output_count: 1,
+    sale_ticket_output_count: 1,
+    validation_errors: [
+      WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_COMPAT_REASON_CODE,
+    ],
+    ...overrides,
+  });
+  row.payload = {
+    ...row.payload,
+    amountSats: 0,
+    attemptedKind: "list",
+    auditMinerFeeSats:
+      WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MINER_FEE_SATS,
+    auditRegistryPaymentSats:
+      WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MUTATION_SATS,
+    auditTotalCostSats:
+      WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MUTATION_SATS +
+      WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MINER_FEE_SATS,
+    indexedFrom: "token-invalid-events",
+    kind: "token-event-invalid",
+    reason: WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_COMPAT_REASON_CODE,
+    reasonCode:
+      WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_COMPAT_REASON_CODE,
+    recipients: [
+      {
+        address: "1638Vn6KtmK8p5r4oGvAXq9nmZb1emU1DV",
+        amountSats: String(
+          WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MUTATION_SATS,
+        ),
+        vout: 0,
+      },
+    ],
+    registryAddress: "1638Vn6KtmK8p5r4oGvAXq9nmZb1emU1DV",
+    saleAuthorization: {
+      ...row.payload.saleAuthorization,
+      anchorValueSats:
+        WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MUTATION_SATS,
+      anchorVout: 2,
+    },
+    saleTicketValueSats: String(
+      WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MUTATION_SATS,
+    ),
+    saleTicketVout: 2,
+    sellerAddress: "1Pg9E4EHHMxQ6WgEWEVzbWhaKf3UdZKXD9",
+    validationErrors: [
+      WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_COMPAT_REASON_CODE,
+    ],
+    validationMode: "canonical-first-party-state",
+    workAmoV5RawDecodeValid: true,
+    workMarketPricing: {
+      reasonCode:
+        WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_COMPAT_REASON_CODE,
+      valid: false,
+    },
+  };
+  delete row.payload.minerFeeSats;
+  delete row.payload.refundEligible;
+  delete row.payload.relic;
+  return row;
 }
 
 function workAmoV5LegacyBootstrapCarryEvidenceFixture(overrides = {}) {
@@ -46398,6 +46468,24 @@ check("AMO V5 legacy bootstrap carry requires one exact canonical evidence row",
     JSON.parse(JSON.stringify(evidence)),
     workAmoV5LegacyBootstrapCarryEvidenceFixture(),
   );
+  const compatRow = workAmoV5LegacyBootstrapCarryCompatRowFixture();
+  const compatEvidence = normalizeEvidence([compatRow]);
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(compatEvidence)),
+    workAmoV5LegacyBootstrapCarryEvidenceFixture({
+      compatibilityMode:
+        "legacy-bootstrap-invalid-only-replay-evidence-v1",
+      sourceActiveListingCount: 0,
+      sourceAmountSats: 0,
+      sourceKind: "token-event-invalid",
+      sourceListingCount: 0,
+      sourceReasonCode:
+        WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_COMPAT_REASON_CODE,
+      sourceRegistryPaymentOutputCount: 1,
+      sourceSaleTicketOutputCount: 1,
+    }),
+    "production replayed invalid-only evidence must normalize to the pinned carry",
+  );
 
   const mutation = (apply) => {
     const row = structuredClone(exactRow);
@@ -46465,6 +46553,43 @@ check("AMO V5 legacy bootstrap carry requires one exact canonical evidence row",
     false,
     "duplicate evidence rows must fail closed",
   );
+  const compatMutation = (apply) => {
+    const row = structuredClone(compatRow);
+    apply(row);
+    return row;
+  };
+  const compatCases = [
+    [
+      "compat reason",
+      compatMutation((row) => {
+        row.validation_errors = ["different-reason"];
+        row.payload.reason = "different-reason";
+        row.payload.reasonCode = "different-reason";
+        row.payload.workMarketPricing.reasonCode = "different-reason";
+      }),
+    ],
+    [
+      "compat registry output",
+      compatMutation((row) => {
+        row.registry_payment_output_count = 0;
+      }),
+    ],
+    [
+      "compat active listing",
+      compatMutation((row) => {
+        row.active_listing_count = 1;
+        row.listing_count = 1;
+        row.listing_statuses = ["active"];
+      }),
+    ],
+  ];
+  for (const [label, row] of compatCases) {
+    assert.equal(
+      normalizeEvidence([row]).complete,
+      false,
+      `${label} mismatch must fail closed`,
+    );
+  }
 });
 
 check("grouped proof-index deltas use one verified marketplace payment per transaction", () => {
