@@ -22570,7 +22570,7 @@ check("pending WORK confirmed V8 listings materialize frozen terms for readiness
   );
 });
 
-check("pending WORK confirmed base collapses exact generic listing invalid siblings", () => {
+check("pending WORK confirmed base collapses exact generic token invalid siblings", () => {
   const collapse = isolatedFunction(
     API_PATH,
     "pendingWorkVerifierStageCollapseExactLegacyInvalidSibling",
@@ -22628,6 +22628,31 @@ check("pending WORK confirmed base collapses exact generic listing invalid sibli
     "the exact generic sibling yields to its specific listing audit row",
   );
   assert.equal(exactCollapse[0], specific);
+  const mintTxid =
+    "16442fcff29115c1d3ba26230e70d5fa2d0db62eccddf829e72e1402c03a2846";
+  const mintGeneric = {
+    ...generic,
+    blockHash:
+      "0000000000000000000176432a4c0eb83b88f1db2a1b2f6f64ff6de0ee7f6e306",
+    blockHeight: 949_912,
+    blockIndex: 3_966,
+    txid: mintTxid,
+  };
+  const mintSpecific = {
+    ...mintGeneric,
+    kind: "token-mint-invalid",
+    reason: "The canonical first-party verifier rejected this protocol event.",
+    validationErrors: [
+      "The canonical first-party verifier rejected this protocol event.",
+    ],
+  };
+  const exactMintCollapse = collapse([mintSpecific, mintGeneric]);
+  assert.equal(
+    exactMintCollapse.length,
+    1,
+    "the exact generic mint sibling yields to its specific invalid mint audit row",
+  );
+  assert.equal(exactMintCollapse[0], mintSpecific);
   const sealTxid =
     "c834351ad3d389904bf26f08d3ca9a97ffa2c86898f9b1d59d7095959bc12217";
   const sealGeneric = {
@@ -22682,6 +22707,10 @@ check("pending WORK confirmed base collapses exact generic listing invalid sibli
   rejects(
     [generic, { ...specific, kind: "token-event-invalid" }],
     "a non-specific invalid row is not collapsed",
+  );
+  rejects(
+    [mintGeneric, { ...mintSpecific, listingId: mintTxid }],
+    "a mint invalid row carrying listing identity is not collapsed",
   );
   rejects(
     [{ ...generic, reason: "different" }, specific],

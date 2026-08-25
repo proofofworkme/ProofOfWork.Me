@@ -61090,9 +61090,8 @@ function pendingWorkVerifierStageSortUniqueItems(items, keyForItem) {
 }
 
 // Confirmed public audit history can retain both generic and specific invalid
-// projections for one raw listing record. Pending replay is one decision per
-// raw record, so exact generic siblings yield to their more specific listing
-// audit row.
+// projections for one raw token record. Pending replay is one decision per raw
+// record, so exact generic siblings yield to their more specific audit row.
 function pendingWorkVerifierStageCollapseExactLegacyInvalidSibling(items) {
   const groups = new Map();
   for (const [index, item] of items.entries()) {
@@ -61141,35 +61140,37 @@ function pendingWorkVerifierStageCollapseExactLegacyInvalidSibling(items) {
         item?.confirmed === true &&
         item?.valid === false,
     );
+    const canonicalRejectionReason =
+      "The canonical first-party verifier rejected this protocol event.";
+    const hasSingleValidationError = (item, reason) =>
+      item?.validationErrors === undefined ||
+      (
+        Array.isArray(item.validationErrors) &&
+        item.validationErrors.length === 1 &&
+        item.validationErrors[0] === reason
+      );
     const generic = group.find(
       (item) =>
         item?.kind === "token-event-invalid" &&
         item?.reason === "no-valid-token-event" &&
-        (
-          item?.validationErrors === undefined ||
-          (
-            Array.isArray(item.validationErrors) &&
-            item.validationErrors.length === 1 &&
-            item.validationErrors[0] === "no-valid-token-event"
-          )
-        ) &&
+        hasSingleValidationError(item, "no-valid-token-event") &&
         !Object.prototype.hasOwnProperty.call(item, "listingId"),
     );
     const specific = group.find(
-      (item) =>
-        /^token-listing-[a-z-]*invalid$/u.test(String(item?.kind ?? "")) &&
-        item?.reason ===
-          "The canonical first-party verifier rejected this protocol event." &&
-        (
-          item?.validationErrors === undefined ||
-          (
-            Array.isArray(item.validationErrors) &&
-            item.validationErrors.length === 1 &&
-            item.validationErrors[0] ===
-              "The canonical first-party verifier rejected this protocol event."
-          )
-        ) &&
-        /^[0-9a-f]{64}$/u.test(String(item?.listingId ?? "")),
+      (item) => {
+        const kind = String(item?.kind ?? "");
+        const specificListing =
+          /^token-listing-[a-z-]*invalid$/u.test(kind) &&
+          /^[0-9a-f]{64}$/u.test(String(item?.listingId ?? ""));
+        const specificMint =
+          kind === "token-mint-invalid" &&
+          !Object.prototype.hasOwnProperty.call(item, "listingId");
+        return (
+          (specificListing || specificMint) &&
+          item?.reason === canonicalRejectionReason &&
+          hasSingleValidationError(item, canonicalRejectionReason)
+        );
+      },
     );
     if (
       aligned &&
