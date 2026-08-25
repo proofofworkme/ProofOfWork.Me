@@ -1101,6 +1101,9 @@ async function assertWorkAtomicProjectionReady(
       tipHeight: state.tipHeight,
     };
   }
+  const definitionPrecisionMigrationModel = String(
+    metadata.precisionMigrationModel ?? "",
+  ).trim();
   if (
     declarationConfig.configured !== true ||
     String(state.definition.max_supply ?? "") !== WORK_Q16_MAX_SUPPLY ||
@@ -1109,8 +1112,9 @@ async function assertWorkAtomicProjectionReady(
     Number(metadata.decimals) !== WORK_SUBATOM_DECIMALS ||
     String(metadata.unitScale ?? "") !== WORK_SUBATOM_UNIT_SCALE_TEXT ||
     metadata.precisionModel !== WORK_PRECISION_V2_MODEL ||
-    metadata.precisionMigrationModel !==
-      WORK_PRECISION_V2_MIGRATION_MODEL ||
+    (definitionPrecisionMigrationModel &&
+      definitionPrecisionMigrationModel !==
+        WORK_PRECISION_V2_MIGRATION_MODEL) ||
     !workerWorkAmoV8ActivationLatchReady(
       state.activationLatch,
       declarationConfig,
