@@ -2036,10 +2036,10 @@ expect(
     /model === WORK_SUBATOM_PROJECTION_MODEL[\s\S]*atomAliases\.length > 0 \|\| subatomAliases\.length !== 1[\s\S]*exactly one subatom alias and no legacy atom alias/u.test(
       workUnits,
     ) &&
-    /uniqueAtomAliases\.length > 1 \|\| uniqueSubatomAliases\.length > 1[\s\S]*Legacy WORK amount aliases are ambiguous/u.test(
+    /atomAliases\.length > 1 \|\| subatomAliases\.length > 1[\s\S]*Legacy WORK amount aliases are ambiguous/u.test(
       workUnits,
     ) &&
-    /uniqueSubatomAliases\[0\] !== normalized[\s\S]*aliases conflict/u.test(
+    /normalizeWorkSubatoms\(subatomAliases\[0\],[\s\S]*!==\s*normalized[\s\S]*aliases conflict/u.test(
       workUnits,
     ),
 );

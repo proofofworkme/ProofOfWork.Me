@@ -60,7 +60,6 @@ import {
   workAmountAtomsFromRecord,
   workAmountSubatomsFromRecord,
   workAtomsValueAtFloorQ8,
-  workSubatomsToLegacyAtoms,
   workSubatomsValueAtFloorQ8,
 } from "./work-units.mjs";
 import {
@@ -2967,63 +2966,6 @@ function walletScopedPayloadUsesAuthoritativeOverlay(payload) {
   );
 }
 
-function walletScopedTokenPayloadWithComputedStats(payload, tokenScope = "") {
-  const stats =
-    payload?.stats && typeof payload.stats === "object" &&
-      !Array.isArray(payload.stats)
-      ? payload.stats
-      : {};
-  if (payload?.walletScoped !== true && stats.walletScoped !== true) {
-    return payload;
-  }
-  const holders = Array.isArray(payload?.holders) ? payload.holders : [];
-  const invalidEvents = Array.isArray(payload?.invalidEvents)
-    ? payload.invalidEvents
-    : [];
-  const listings = Array.isArray(payload?.listings) ? payload.listings : [];
-  const mints = Array.isArray(payload?.mints) ? payload.mints : [];
-  const sales = Array.isArray(payload?.sales) ? payload.sales : [];
-  const tokens = Array.isArray(payload?.tokens) ? payload.tokens : [];
-  const transfers = Array.isArray(payload?.transfers)
-    ? payload.transfers
-    : [];
-  const confirmedListings = listings.filter((listing) =>
-    listing?.confirmed === true
-  ).length;
-  const pendingListings = listings.filter((listing) =>
-    listing?.confirmed !== true
-  ).length;
-  return {
-    ...payload,
-    stats: {
-      ...stats,
-      activeListings: listings.length,
-      confirmedListings,
-      confirmedMints: mints.filter((mint) => mint?.confirmed === true).length,
-      confirmedOpenListings: confirmedListings,
-      confirmedSales: sales.filter((sale) => sale?.confirmed === true).length,
-      confirmedTokens: tokens.filter((token) => token?.confirmed === true)
-        .length,
-      confirmedTransfers: transfers.filter((transfer) =>
-        transfer?.confirmed === true
-      ).length,
-      holders: holders.length,
-      invalidEvents: invalidEvents.length,
-      openListings: listings.length,
-      pendingListings,
-      pendingMints: mints.filter((mint) => mint?.confirmed !== true).length,
-      pendingOpenListings: pendingListings,
-      pendingSales: sales.filter((sale) => sale?.confirmed !== true).length,
-      pendingTokens: tokens.filter((token) => token?.confirmed !== true).length,
-      pendingTransfers: transfers.filter((transfer) =>
-        transfer?.confirmed !== true
-      ).length,
-      tokenScope: normalizeTokenScope(tokenScope || stats.tokenScope || ""),
-      walletScoped: true,
-    },
-  };
-}
-
 async function walletScopedPayloadWithIndexedEnrichment(
   payload,
   network,
@@ -3042,10 +2984,7 @@ async function walletScopedPayloadWithIndexedEnrichment(
         )
       : currentPolicyPayload;
   if (walletScopedPayloadUsesAuthoritativeOverlay(currentPolicyPayload)) {
-    return walletScopedTokenPayloadWithComputedStats(
-      currentPolicyPayload,
-      tokenScope,
-    );
+    return currentPolicyPayload;
   }
   let indexedPayload = await tokenPayloadWithIndexedWalletHolders(
     currentPolicyPayload,
@@ -3068,10 +3007,7 @@ async function walletScopedPayloadWithIndexedEnrichment(
           recoveryAddresses,
         )
       : indexedPayload;
-  return walletScopedTokenPayloadWithComputedStats(
-    indexedPayload,
-    tokenScope,
-  );
+  return indexedPayload;
 }
 
 async function proofIndexWalletScopedTokenPayloadForRead(
@@ -4401,20 +4337,13 @@ function tokenSummaryListingsCoveredByMarketLifecycle(payload, lifecycle) {
   );
 }
 
-async function indexedTokenMarketSummaryOverlay(
-  network,
-  tokenScope = "",
-  options = {},
-) {
+async function indexedTokenMarketSummaryOverlay(network, tokenScope = "") {
   if (
     network !== "livenet" ||
     !proofIndexReadFeatureEnabled("token-state,token-default,token")
   ) {
     return null;
   }
-  const exactHeight = Number(options.exactHeight);
-  const exactCheckpoint =
-    Number.isSafeInteger(exactHeight) && exactHeight > 0;
 
   const [eventPayload, lifecyclePayload] = await Promise.all([
     payloadWithFallbackAfterMs(
@@ -4468,19 +4397,12 @@ async function indexedTokenMarketSummaryOverlay(
     complete: true,
     lifecycleTotalCount: numericValue(lifecycle.stats?.totalCount),
   };
-  const label =
-    `token-market-lifecycle:${normalizeTokenScope(tokenScope) || "all"}`;
-  if (exactCheckpoint) {
-    const indexedThroughBlock =
-      proofIndexPayloadIndexedThroughBlock(payload);
-    if (indexedThroughBlock !== exactHeight) {
-      console.error(
-        `Rejected exact ${label} proof-index read: indexedThroughBlock ${indexedThroughBlock || "unknown"}, expected ${exactHeight}.`,
-      );
-      return null;
-    }
-  } else if (
-    !(await proofIndexPayloadCoversConfirmedTip(payload, network, label))
+  if (
+    !(await proofIndexPayloadCoversConfirmedTip(
+      payload,
+      network,
+      `token-market-lifecycle:${normalizeTokenScope(tokenScope) || "all"}`,
+    ))
   ) {
     return null;
   }
@@ -9224,37 +9146,6 @@ function workAmoV8ExactLiveProbeKey(
   ) {
     return "";
   }
-  const workerIdentity = includeMempool
-    ? {
-        era: String(worker.era ?? ""),
-        finishedAt: String(worker.finishedAt ?? ""),
-        mempoolCount: worker.mempoolCount ?? null,
-        mempoolSha256: String(worker.mempoolSha256 ?? "")
-          .trim()
-          .toLowerCase(),
-        pendingMembershipCount: worker.pendingMembershipCount ?? null,
-        pendingMembershipSha256: String(
-          worker.pendingMembershipSha256 ?? "",
-        ).trim().toLowerCase(),
-        pendingProjectionSha256: String(
-          worker.pendingProjectionSha256 ?? "",
-        ).trim().toLowerCase(),
-        proofSource: String(worker.proofSource ?? ""),
-        ready: worker.ready,
-        state: String(worker.state ?? ""),
-        tipHash: String(worker.tipHash ?? "").trim().toLowerCase(),
-        tipHeight: Number.isSafeInteger(Number(worker.tipHeight))
-          ? Number(worker.tipHeight)
-          : null,
-      }
-    : {
-        ready: worker.ready,
-        state: String(worker.state ?? ""),
-        tipHash: String(worker.tipHash ?? "").trim().toLowerCase(),
-        tipHeight: Number.isSafeInteger(Number(worker.tipHeight))
-          ? Number(worker.tipHeight)
-          : null,
-      };
   return JSON.stringify({
     ...(includeMempool
       ? {
@@ -9267,7 +9158,28 @@ function workAmoV8ExactLiveProbeKey(
       : {}),
     tipHash,
     tipHeight,
-    workerReadiness: workerIdentity,
+    workerReadiness: {
+      era: String(worker.era ?? ""),
+      finishedAt: String(worker.finishedAt ?? ""),
+      mempoolCount: worker.mempoolCount ?? null,
+      mempoolSha256: String(worker.mempoolSha256 ?? "")
+        .trim()
+        .toLowerCase(),
+      pendingMembershipCount: worker.pendingMembershipCount ?? null,
+      pendingMembershipSha256: String(
+        worker.pendingMembershipSha256 ?? "",
+      ).trim().toLowerCase(),
+      pendingProjectionSha256: String(
+        worker.pendingProjectionSha256 ?? "",
+      ).trim().toLowerCase(),
+      proofSource: String(worker.proofSource ?? ""),
+      ready: worker.ready,
+      state: String(worker.state ?? ""),
+      tipHash: String(worker.tipHash ?? "").trim().toLowerCase(),
+      tipHeight: Number.isSafeInteger(Number(worker.tipHeight))
+        ? Number(worker.tipHeight)
+        : null,
+    },
   });
 }
 
@@ -28945,20 +28857,10 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
       return [];
     }
 
-    const eventEntry = vout
-      .flatMap((output, protocolVout) =>
-        decodedProtocolMessages([output], ID_PROTOCOL_PREFIX)
-          .map((message, recordOrdinal) => ({
-            eventMessage: parseIdEventPayload(
-              message.slice(ID_PROTOCOL_PREFIX.length),
-              network,
-            ),
-            protocolVout,
-            recordOrdinal,
-          })),
-      )
-      .find((entry) => Boolean(entry.eventMessage));
-    const eventMessage = eventEntry?.eventMessage;
+    const eventMessage = decodedProtocolMessages(vout, ID_PROTOCOL_PREFIX)
+      .map((message) => message.slice(ID_PROTOCOL_PREFIX.length))
+      .map((payload) => parseIdEventPayload(payload, network))
+      .find(Boolean);
     if (!eventMessage) {
       return [];
     }
@@ -28978,8 +28880,6 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
       dataBytes: proofProtocolDataBytesForVout(vout),
       inputAddresses: inputAddresses(vin),
       network,
-      protocolVout: eventEntry.protocolVout,
-      recordOrdinal: eventEntry.recordOrdinal,
       txid,
     };
     const eventSpentOutpoints = spentOutpoints(vin);
@@ -36159,45 +36059,6 @@ function mergeTokenPayloadWithCanonicalFloor(canonicalPayload, payload, scope) {
   }));
 }
 
-function tokenStateWithoutTokenId(tokenState, tokenId) {
-  const normalizedTokenId = normalizeTokenScope(tokenId);
-  if (!tokenState || !normalizedTokenId) {
-    return tokenState;
-  }
-  const filterItems = (items) =>
-    Array.isArray(items)
-      ? items.filter(
-          (item) => normalizeTokenScope(item?.tokenId) !== normalizedTokenId,
-        )
-      : items;
-  const {
-    amountStorageModel: _amountStorageModel,
-    confirmedSupplyAtoms: _confirmedSupplyAtoms,
-    confirmedSupplySubatoms: _confirmedSupplySubatoms,
-    pendingSupplyAtoms: _pendingSupplyAtoms,
-    pendingSupplySubatoms: _pendingSupplySubatoms,
-    precisionModel: _precisionModel,
-    ...rest
-  } = tokenState;
-  void _amountStorageModel;
-  void _confirmedSupplyAtoms;
-  void _confirmedSupplySubatoms;
-  void _pendingSupplyAtoms;
-  void _pendingSupplySubatoms;
-  void _precisionModel;
-  return tokenStateWithPendingStats({
-    ...rest,
-    closedListings: filterItems(tokenState.closedListings),
-    holders: filterItems(tokenState.holders),
-    invalidEvents: filterItems(tokenState.invalidEvents),
-    listings: filterItems(tokenState.listings),
-    mints: filterItems(tokenState.mints),
-    sales: filterItems(tokenState.sales),
-    tokens: filterItems(tokenState.tokens),
-    transfers: filterItems(tokenState.transfers),
-  });
-}
-
 function tokenStateWithAuthoritativeCurrentListings(tokenState, currentState) {
   if (
     !tokenState ||
@@ -37356,10 +37217,7 @@ async function walletScopedTokenSummaryPayload(
     );
   }
 
-  return compactTokenSummaryPayload(
-    walletScopedTokenPayloadWithComputedStats(scopedPayload, scope),
-    scope,
-  );
+  return compactTokenSummaryPayload(scopedPayload, scope);
 }
 
 function walletScopedTokenCacheKey(
@@ -37653,11 +37511,9 @@ async function walletScopedTokenPayload(
       : scopedPayload;
 
   if (BOND_TOKEN_IDS.has(scope)) {
-    const computedBondPayload =
-      walletScopedTokenPayloadWithComputedStats(scopedPayload, scope);
     const bondPayload = requireCurrent
-      ? { ...computedBondPayload, authoritativeWallet: true }
-      : computedBondPayload;
+      ? { ...scopedPayload, authoritativeWallet: true }
+      : scopedPayload;
     return rememberWalletScopedTokenPayload(walletCacheKey, bondPayload);
   }
 
@@ -37683,9 +37539,7 @@ async function walletScopedTokenPayload(
   const resolvedPayload = await finalPayload;
   return rememberWalletScopedTokenPayload(
     walletCacheKey,
-    withWalletAuthority(
-      walletScopedTokenPayloadWithComputedStats(resolvedPayload, scope),
-    ),
+    withWalletAuthority(resolvedPayload),
   );
 }
 
@@ -38819,9 +38673,6 @@ function workFloorPayloadHasFiniteNetworkValue(workFloor) {
     workFloor.frozenNetworkValueSats ??
     workFloor.actualValue?.frozenNetworkValueSats ??
     workFloor.actualValue?.frozenTotalSats;
-  const declaresMinerFeeAccounting =
-    workFloor.actualValue?.creditMinerFeeAccountingModel != null ||
-    workFloor.actualValue?.creditMinerFeeCoverage != null;
   const hasCurrentMinerFeeAccounting =
     workFloor.network !== "livenet" ||
     (workFloor.actualValue?.creditMinerFeeAccountingModel ===
@@ -38832,11 +38683,11 @@ function workFloorPayloadHasFiniteNetworkValue(workFloor) {
         ),
       ));
   return (
-    (!declaresMinerFeeAccounting || hasCurrentMinerFeeAccounting) &&
+    hasCurrentMinerFeeAccounting &&
     finitePositiveNumber(networkValue) &&
     finitePositiveNumber(totalValue) &&
     numbersAgree(networkValue, totalValue, 0.01) &&
-    (!finitePositiveNumber(liveValue) || Number.isFinite(Number(liveValue))) &&
+    (!finitePositiveNumber(liveValue) || numbersAgree(networkValue, liveValue, 0.01)) &&
     (!finitePositiveNumber(frozenValue) || Number.isFinite(Number(frozenValue)))
   );
 }
@@ -38845,15 +38696,11 @@ function growthSummaryPayloadHasFiniteNetworkValue(growthSummary) {
   if (!growthSummary) {
     return false;
   }
-  const totalValue = growthSummary.actualValue?.totalSats;
-  const floorValue =
-    growthSummary.workFloor?.networkValueSats ??
-    growthSummary.workFloor?.actualValue?.totalSats;
 
   return (
-    finitePositiveNumber(totalValue) &&
+    finitePositiveNumber(growthSummary.actualValue?.totalSats) &&
     (!growthSummary.workFloor ||
-      (finitePositiveNumber(floorValue) && numbersAgree(totalValue, floorValue, 0.01)))
+      workFloorPayloadHasFiniteNetworkValue(growthSummary.workFloor))
   );
 }
 
@@ -41534,13 +41381,6 @@ function canonicalActivityCountCoverage(metrics, sourceHashes) {
   const canonicalConfirmedActivityCount = numericValue(
     sourceHashes?.activity?.confirmed,
   );
-  const seededActivityCount = numericValue(sourceHashes?.seededMail?.count);
-  const seededConfirmedActivityCount = numericValue(
-    sourceHashes?.seededMail?.confirmed,
-  );
-  const sourceActivityCount = canonicalActivityCount + seededActivityCount;
-  const sourceConfirmedActivityCount =
-    canonicalConfirmedActivityCount + seededConfirmedActivityCount;
   const ledgerActivityCount = numericValue(metrics?.activityItems);
   const ledgerConfirmedActivityCount = numericValue(
     metrics?.confirmedComputerActions,
@@ -41550,15 +41390,9 @@ function canonicalActivityCountCoverage(metrics, sourceHashes) {
     canonicalConfirmedActivityCount,
     ledgerActivityCount,
     ledgerConfirmedActivityCount,
-    seededActivityCount,
-    seededConfirmedActivityCount,
-    sourceActivityCount,
-    sourceConfirmedActivityCount,
     ok:
-      ledgerActivityCount >= canonicalActivityCount &&
-      ledgerActivityCount <= sourceActivityCount &&
-      ledgerConfirmedActivityCount >= canonicalConfirmedActivityCount &&
-      ledgerConfirmedActivityCount <= sourceConfirmedActivityCount,
+      ledgerActivityCount === canonicalActivityCount &&
+      ledgerConfirmedActivityCount === canonicalConfirmedActivityCount,
   };
 }
 
@@ -41987,11 +41821,15 @@ function ledgerSnapshotChecks({
   addCheck(
     "marketplace-mutation-fees-counted",
     numbersAgree(marketplaceFeeSats, marketplaceMutationFeeSats) &&
-      numbersAgree(
+      (numbersAgree(
         confirmedMarketplaceMutationFeeSats,
-        marketplaceMutationFeeSats +
-          legacyBootstrapMarketplaceCarrySats,
-      ),
+        marketplaceMutationFeeSats,
+      ) ||
+        numbersAgree(
+          confirmedMarketplaceMutationFeeSats,
+          marketplaceMutationFeeSats +
+            legacyBootstrapMarketplaceCarrySats,
+        )),
     {
       confirmedMarketplaceMutationFeeSats,
       legacyBootstrapMarketplaceCarrySats,
@@ -43910,8 +43748,6 @@ function tokenTransferFromIndexedActivityItem(
     ledgerAmount,
     { workAmountStorageModel },
   );
-  const registryMutationFeeSats =
-    tokenTransferRegistryMutationFeeSatsFromActivity(item);
   return {
     ...canonicalEventIdentityDetails(item),
     ...amountFields,
@@ -43946,7 +43782,9 @@ function tokenTransferFromIndexedActivityItem(
     ...canonicalMinerFeeDetailsFromActivity(item),
     minerFeeSats: numericValue(item.minerFeeSats),
     network,
-    paidSats: registryMutationFeeSats,
+    paidSats: numericValue(
+      item.registryMutationFeeSats ?? item.paidSats ?? item.amountSats,
+    ),
     recipientAddress: indexedActivityValue(
       item,
       "recipientAddress",
@@ -43957,7 +43795,7 @@ function tokenTransferFromIndexedActivityItem(
       token.registryAddress ??
       item.recipients?.[0]?.address ??
       "",
-    registryMutationFeeSats,
+    registryMutationFeeSats: numericValue(item.registryMutationFeeSats),
     senderAddress: indexedActivityValue(item, "senderAddress", "actor"),
     ticker: token.ticker,
     tokenId: token.tokenId,
@@ -43979,20 +43817,6 @@ function tokenTransferFromIndexedActivityItem(
     liveNetworkValueSats: numericValue(item.liveNetworkValueSats),
     ...canonicalCreditValueFieldsFromRecord(item),
   };
-}
-
-function tokenTransferRegistryMutationFeeSatsFromActivity(item) {
-  const protocol = String(item?.protocol ?? "").trim().toLowerCase();
-  const kind = String(item?.kind ?? "").trim().toLowerCase();
-  if (
-    (protocol && protocol !== "pwt1") ||
-    (kind && kind !== "token-transfer") ||
-    item?.valid === false ||
-    item?.confirmed === false
-  ) {
-    return 0;
-  }
-  return TOKEN_MIN_MUTATION_PRICE_SATS;
 }
 
 async function tokenValueStateFromIndexedActivity(
@@ -45056,10 +44880,7 @@ async function buildIndexedCanonicalLedgerPayload(
       exactHeight,
       exactHash,
     ),
-    indexedTokenMarketSummaryOverlay(network, "", {
-      exactHash,
-      exactHeight,
-    }).catch((error) => {
+    indexedTokenMarketSummaryOverlay(network).catch((error) => {
       console.error(
         `WORK pre-consistency marketplace overlay failed: ${errorSummary(error)}`,
       );
@@ -45069,26 +44890,12 @@ async function buildIndexedCanonicalLedgerPayload(
   markTiming("sources");
   const tableWorkAmountStorageModel =
     exactWorkAmountStorageModelFromState(currentTokenTableState);
-  let currentTokenTableStateForLedger = currentTokenTableState;
   if (
     tableWorkAmountStorageModel !== expectedWorkAmountStorageModel
   ) {
-    if (
-      expectedWorkAmountStorageModel === WORK_ATOMIC_PROJECTION_MODEL &&
-      tableWorkAmountStorageModel === WORK_SUBATOM_PROJECTION_MODEL
-    ) {
-      console.error(
-        `Using replay-derived WORK history for ${label} because the exact checkpoint is before the current WORK precision era.`,
-      );
-      currentTokenTableStateForLedger = tokenStateWithoutTokenId(
-        currentTokenTableState,
-        WORK_TOKEN_ID,
-      );
-    } else {
-      throw freshDataUnavailableError(
-        `Rejected ${label}: the canonical WORK definition conflicts with the exact replay precision era.`,
-      );
-    }
+    throw freshDataUnavailableError(
+      `Rejected ${label}: the canonical WORK definition conflicts with the exact replay precision era.`,
+    );
   }
   const sourceTipHeight = exactHeight;
   const registryState = registrySnapshot;
@@ -45104,7 +44911,7 @@ async function buildIndexedCanonicalLedgerPayload(
   const ledgerTokenTableState = tokenStateWithAuthoritativeCurrentListings(
     mergeTokenPayloadWithCanonicalFloor(
       tokenState,
-      currentTokenTableStateForLedger,
+      currentTokenTableState,
       "",
     ),
     currentTokenTableState,
@@ -56776,91 +56583,10 @@ function workAmoV5TokenStateUsesSubatomProjection(tokenState) {
   );
 }
 
-function workAmoV5LegacyAtomsForSeedProjection(
-  source,
-  {
-    allowZero = false,
-    amountFields = [],
-    atomFields = [],
-    sourceUsesSubatoms = false,
-    subatomFields = [],
-  } = {},
-) {
-  const item =
-    source && typeof source === "object" && !Array.isArray(source)
-      ? source
-      : {};
-  const candidates = [];
-  const addCandidate = (value) => {
-    if (value !== "") {
-      candidates.push(value);
-    }
-  };
-  const addAtom = (value) => {
-    if (value === undefined || value === null || value === "") {
-      return;
-    }
-    const atomText = canonicalWorkAtomsText(value, { allowZero });
-    if (atomText) {
-      addCandidate(atomText);
-      return;
-    }
-    if (!sourceUsesSubatoms) {
-      addCandidate("");
-      return;
-    }
-    const subatomText = canonicalWorkSubatomsText(value, { allowZero });
-    if (!subatomText) {
-      addCandidate("");
-      return;
-    }
-    try {
-      addCandidate(workSubatomsToLegacyAtoms(subatomText, { allowZero }));
-    } catch {
-      addCandidate("");
-    }
-  };
-  const addSubatom = (value) => {
-    if (value === undefined || value === null || value === "") {
-      return;
-    }
-    const subatomText = canonicalWorkSubatomsText(value, { allowZero });
-    if (!subatomText) {
-      addCandidate("");
-      return;
-    }
-    try {
-      addCandidate(workSubatomsToLegacyAtoms(subatomText, { allowZero }));
-    } catch {
-      addCandidate("");
-    }
-  };
-  const addAmount = (value) => {
-    if (value === undefined || value === null || value === "") {
-      return;
-    }
-    try {
-      addCandidate(parseWorkAmountToAtoms(value, { allowZero }));
-    } catch {
-      addCandidate("");
-    }
-  };
-  for (const field of atomFields) {
-    addAtom(item[field]);
-  }
-  for (const field of subatomFields) {
-    addSubatom(item[field]);
-  }
-  for (const field of amountFields) {
-    addAmount(item[field]);
-  }
-  const unique = [...new Set(candidates)];
-  return unique.length === 1 ? unique[0] : "";
-}
-
 function workAmoV5TokenStateCommitmentProjection(tokenState) {
-  const stateUsesSubatoms =
-    workAmoV5TokenStateUsesSubatomProjection(tokenState);
+  if (workAmoV5TokenStateUsesSubatomProjection(tokenState)) {
+    return normalizeWorkAmoV5RawWorkState(tokenState);
+  }
   const holders = (Array.isArray(tokenState?.holders)
     ? tokenState.holders
     : [])
@@ -56870,16 +56596,12 @@ function workAmoV5TokenStateCommitmentProjection(tokenState) {
     )
     .map((holder) => ({
       address: String(holder?.address ?? "").trim(),
-      balanceAtoms: workAmoV5LegacyAtomsForSeedProjection(holder, {
-        allowZero: true,
-        amountFields: ["balance"],
-        atomFields: ["balanceAtoms"],
-        sourceUsesSubatoms:
-          stateUsesSubatoms ||
-          holder?.amountStorageModel === WORK_SUBATOM_PROJECTION_MODEL ||
-          holder?.precisionModel === WORK_PRECISION_V2_MODEL,
-        subatomFields: ["balanceSubatoms"],
-      }) || "0",
+      balanceAtoms:
+        canonicalWorkAtomsText(
+          holder?.balanceAtoms ??
+            parseWorkAmountToAtoms(holder?.balance ?? 0),
+          { allowZero: true },
+        ) || "0",
     }))
     .sort((left, right) =>
       compareWorkAmoUtf8(left.address, right.address)
@@ -56892,15 +56614,13 @@ function workAmoV5TokenStateCommitmentProjection(tokenState) {
         String(listing?.tokenId ?? "").trim().toLowerCase() === WORK_TOKEN_ID,
     )
     .map((listing) => ({
-      amountAtoms: workAmoV5LegacyAtomsForSeedProjection(listing, {
-        amountFields: ["amount"],
-        atomFields: ["amountAtoms"],
-        sourceUsesSubatoms:
-          stateUsesSubatoms ||
-          listing?.amountStorageModel === WORK_SUBATOM_PROJECTION_MODEL ||
-          listing?.precisionModel === WORK_PRECISION_V2_MODEL,
-        subatomFields: ["amountSubatoms"],
-      }) || "",
+      amountAtoms:
+        canonicalWorkAtomsText(
+          listing?.amountAtoms ??
+            workAmountAtomsFromRecord(listing, {
+              storedAmountIsAtoms: false,
+            }),
+        ) || "",
       frozenTerms:
         listing?.frozenTerms ??
         listing?.workAmoPricing?.frozenTerms ??
@@ -56916,13 +56636,10 @@ function workAmoV5TokenStateCommitmentProjection(tokenState) {
       compareWorkAmoUtf8(left.listingId, right.listingId)
     );
   return {
-    confirmedSupplyAtoms: workAmoV5LegacyAtomsForSeedProjection(tokenState, {
-      allowZero: true,
-      amountFields: ["confirmedSupply"],
-      atomFields: ["confirmedSupplyAtoms"],
-      sourceUsesSubatoms: stateUsesSubatoms,
-      subatomFields: ["confirmedSupplySubatoms"],
-    }) || "0",
+    confirmedSupplyAtoms:
+      canonicalWorkAtomsText(tokenState?.confirmedSupplyAtoms, {
+        allowZero: true,
+      }) || "0",
     holders,
     listings,
   };
@@ -57070,20 +56787,11 @@ function workAmoV5HistoricalMovements(tokenState, throughHeight) {
   const add = (item, kind) => {
     const blockHeight = Number(item?.blockHeight);
     const txid = String(item?.txid ?? "").trim().toLowerCase();
-    const q16Source = workRecordUsesSubatoms(item);
-    const amountSubatoms = q16Source
+    const q16 = workRecordUsesSubatoms(item);
+    const amountAtoms = workAtomsBigIntFromRecord(item);
+    const amountSubatoms = q16
       ? workSubatomsBigIntFromRecord(item)
       : null;
-    const legacySeedMovement =
-      q16Source && throughHeight < WORK_AMO_V5_ACTIVATION_HEIGHT;
-    const amountAtoms =
-      workAtomsBigIntFromRecord(item) ??
-      (legacySeedMovement &&
-        amountSubatoms !== null &&
-        amountSubatoms % WORK_SUBATOM_CONVERSION_FACTOR === 0n
-        ? amountSubatoms / WORK_SUBATOM_CONVERSION_FACTOR
-        : null);
-    const q16 = q16Source && !legacySeedMovement;
     const amountUnits = q16 ? amountSubatoms : amountAtoms;
     const blockIndex =
       item?.blockIndex === undefined ||
@@ -57301,7 +57009,19 @@ function workAmoV5LegacyBootstrapReconciliation(
   }
   const committedBaseState = {};
   const validBaseState = {};
+  const legacyBootstrapCarrySats = BigInt(
+    evidence.marketplaceMutationFeeSats,
+  );
+  const legacyBootstrapCarryFields = new Set([
+    "tokenMarketplaceFeeSats",
+    "tokenTransferFlowSats",
+  ]);
+  const excludedCarryFields = [];
+  const includedCarryCandidates = [];
+  const postActivationBaseCarryFields = [];
+  let postActivationBaseCarryQ8 = 0n;
   let legacyBootstrapBaseCarryMode = "published-valid-excludes-carry";
+  let legacyBootstrapBaseCarryField = "";
   for (const field of WORK_AMO_V5_BASE_STATE_FIELDS) {
     const committed = workAmoV5ExactInteger(state?.baseState?.[field]);
     const published = workAmoV5ExactInteger(
@@ -57311,20 +57031,15 @@ function workAmoV5LegacyBootstrapReconciliation(
       return invalid(`legacy-bootstrap-base-field-missing:${field}`);
     }
     const expectedCarry =
-      field === "tokenMarketplaceFeeSats"
-        ? BigInt(evidence.marketplaceMutationFeeSats)
+      legacyBootstrapCarryFields.has(field)
+        ? legacyBootstrapCarrySats
         : 0n;
     let valid = published;
-    if (field === "tokenMarketplaceFeeSats") {
+    if (expectedCarry > 0n) {
       if (committed === published + expectedCarry) {
-        legacyBootstrapBaseCarryMode = "published-valid-excludes-carry";
-      } else if (
-        committed === published &&
-        expectedCarry > 0n &&
-        published >= expectedCarry
-      ) {
-        valid = published - expectedCarry;
-        legacyBootstrapBaseCarryMode = "published-valid-includes-carry";
+        excludedCarryFields.push(field);
+      } else if (committed === published) {
+        includedCarryCandidates.push(field);
       } else {
         return invalid(`legacy-bootstrap-base-field-diverged:${field}`);
       }
@@ -57340,11 +57055,57 @@ function workAmoV5LegacyBootstrapReconciliation(
   const publishedValidBaseNetworkValueQ8 = workAmoV5ExactInteger(
     workFloor?.actualValue?.baseNetworkValueQ8,
   );
-  const validBaseNetworkValueQ8 =
-    growthActualBaseStateTotalQ8(validBaseState);
   const legacyBootstrapGrowthValueQ8 = BigInt(evidence.growthValueQ8);
+  if (excludedCarryFields.length > 1) {
+    if (!excludedCarryFields.includes("tokenMarketplaceFeeSats")) {
+      return invalid("legacy-bootstrap-base-carry-ambiguous");
+    }
+    legacyBootstrapBaseCarryField = "tokenMarketplaceFeeSats";
+    for (const field of excludedCarryFields) {
+      if (field !== legacyBootstrapBaseCarryField) {
+        const delta = committedBaseState[field] - validBaseState[field];
+        validBaseState[field] = committedBaseState[field];
+        postActivationBaseCarryFields.push(field);
+        postActivationBaseCarryQ8 +=
+          delta * GROWTH_VALUE_MULTIPLE * VALUE_Q8_SCALE;
+      }
+    }
+  } else if (excludedCarryFields.length === 1) {
+    legacyBootstrapBaseCarryField = excludedCarryFields[0];
+  } else {
+    for (const field of includedCarryCandidates) {
+      if (validBaseState[field] < legacyBootstrapCarrySats) {
+        continue;
+      }
+      const candidateBaseState = {
+        ...validBaseState,
+        [field]: validBaseState[field] - legacyBootstrapCarrySats,
+      };
+      const candidateBaseNetworkValueQ8 =
+        growthActualBaseStateTotalQ8(candidateBaseState);
+      if (
+        committedBaseNetworkValueQ8 !== null &&
+        publishedValidBaseNetworkValueQ8 !== null &&
+        growthActualBaseStateTotalQ8(committedBaseState) ===
+          committedBaseNetworkValueQ8 &&
+        publishedValidBaseNetworkValueQ8 ===
+          committedBaseNetworkValueQ8 &&
+        committedBaseNetworkValueQ8 ===
+          candidateBaseNetworkValueQ8 + legacyBootstrapGrowthValueQ8
+      ) {
+        validBaseState[field] = candidateBaseState[field];
+        legacyBootstrapBaseCarryField = field;
+        legacyBootstrapBaseCarryMode = "published-valid-includes-carry";
+        break;
+      }
+    }
+  }
+  const finalValidBaseNetworkValueQ8 =
+    growthActualBaseStateTotalQ8(validBaseState);
   const publishedBaseNetworkValueMatches =
-    publishedValidBaseNetworkValueQ8 === validBaseNetworkValueQ8 ||
+    publishedValidBaseNetworkValueQ8 === finalValidBaseNetworkValueQ8 ||
+    publishedValidBaseNetworkValueQ8 + postActivationBaseCarryQ8 ===
+      finalValidBaseNetworkValueQ8 ||
     (legacyBootstrapBaseCarryMode ===
       "published-valid-includes-carry" &&
       publishedValidBaseNetworkValueQ8 === committedBaseNetworkValueQ8);
@@ -57355,7 +57116,7 @@ function workAmoV5LegacyBootstrapReconciliation(
       committedBaseNetworkValueQ8 ||
     !publishedBaseNetworkValueMatches ||
     committedBaseNetworkValueQ8 !==
-      validBaseNetworkValueQ8 + legacyBootstrapGrowthValueQ8
+      finalValidBaseNetworkValueQ8 + legacyBootstrapGrowthValueQ8
   ) {
     return invalid("legacy-bootstrap-base-value-diverged");
   }
@@ -57444,13 +57205,16 @@ function workAmoV5LegacyBootstrapReconciliation(
   );
   const legacyBootstrap = {
     ...evidence,
+    baseCarryField: legacyBootstrapBaseCarryField,
     baseCarryMode: legacyBootstrapBaseCarryMode,
     committedBaseState: committedState,
     committedCreditFixedQ8: committedCreditFixedQ8.toString(),
+    postActivationBaseCarryFields,
+    postActivationBaseCarryQ8: postActivationBaseCarryQ8.toString(),
     publishedBaseNetworkValueQ8:
       publishedValidBaseNetworkValueQ8.toString(),
     validActivityContributionSats: 0,
-    validBaseNetworkValueQ8: validBaseNetworkValueQ8.toString(),
+    validBaseNetworkValueQ8: finalValidBaseNetworkValueQ8.toString(),
     validBaseState: validState,
     validCreditFixedQ8: validCreditFixedQ8.toString(),
     validCreditFixedSats: Number(validCreditFixedSats),
@@ -57466,7 +57230,7 @@ function workAmoV5LegacyBootstrapReconciliation(
     legacyBootstrapGrowthValueQ8,
     postActivationCreditFixedQ8,
     valid: true,
-    validBaseNetworkValueQ8,
+    validBaseNetworkValueQ8: finalValidBaseNetworkValueQ8,
     validBaseState,
     validCreditFixedQ8,
     validCreditFixedSats,
@@ -60124,21 +59888,6 @@ function canonicalVerifierItemPosition(
 function tokenVerifierItemsFromState(state, txid, options = {}) {
   const normalizedTxid = String(txid ?? "").trim().toLowerCase();
   const items = [];
-  const rawPositionForItem = (item) =>
-    canonicalVerifierProtocolPositionFromTransactions(
-      options.transactions,
-      normalizedTxid,
-      options.requiredBlockHeight,
-      "pwt1",
-      item,
-    );
-  const bondProjectionPositionForItem = (item) =>
-    canonicalVerifierBondProjectionPositionFromTransactions(
-      options.transactions,
-      normalizedTxid,
-      options.requiredBlockHeight,
-      item,
-    );
   const add = (
     item,
     kind,
@@ -60153,17 +59902,8 @@ function tokenVerifierItemsFromState(state, txid, options = {}) {
     if (!item || typeof item !== "object") {
       return;
     }
-    const canonicalBondMintProjection =
-      kind === "token-mint" &&
-      canonicalVerifierBondProjectionItem(item, normalizedTxid);
-    const positionedItem = verifierItemWithRecoveredPosition(
-      item,
-      canonicalBondMintProjection
-        ? bondProjectionPositionForItem(item)
-        : rawPositionForItem(item),
-    );
     const position = canonicalVerifierItemPosition(
-      positionedItem,
+      item,
       {
         blockHashField,
         blockHeightField,
@@ -60175,11 +59915,15 @@ function tokenVerifierItemsFromState(state, txid, options = {}) {
       options,
     );
     const canonicalBondMintWithoutProtocol =
-      canonicalBondMintProjection &&
-      !String(positionedItem?.protocol ?? "").trim() &&
-      canonicalVerifierBondProjectionConfig(positionedItem);
+      kind === "token-mint" &&
+      !String(item?.protocol ?? "").trim() &&
+      /^canonical-(?:powb|incb)-bond-projection$/u.test(
+        String(item?.validationMode ?? "").trim(),
+      ) &&
+      String(item?.sourceBondTxid ?? "").trim().toLowerCase() ===
+        normalizedTxid;
     items.push({
-      ...positionedItem,
+      ...item,
       ...(canonicalBondMintWithoutProtocol ? { protocol: "pwt1" } : {}),
       ...position,
       kind,
@@ -60284,35 +60028,6 @@ function tokenVerifierItemsFromState(state, txid, options = {}) {
     }
   }
   return items;
-}
-
-function canonicalVerifierBondProjectionConfig(item) {
-  const validationMode = String(item?.validationMode ?? "").trim();
-  const modeMatch =
-    /^canonical-(powb|incb)-bond-projection$/u.exec(validationMode);
-  if (!modeMatch) {
-    return null;
-  }
-  const tokenId = String(item?.tokenId ?? "").trim().toLowerCase();
-  const config =
-    modeMatch[1] === "powb"
-      ? INFINITY_BOND_CONFIG
-      : INCEPTION_BOND_CONFIG;
-  return !tokenId || tokenId === config.tokenId ? config : null;
-}
-
-function canonicalVerifierBondProjectionItem(item, txid) {
-  const normalizedTxid = String(txid ?? "").trim().toLowerCase();
-  if (!/^[0-9a-f]{64}$/u.test(normalizedTxid)) {
-    return false;
-  }
-  const sourceBondTxid = String(item?.sourceBondTxid ?? "")
-    .trim()
-    .toLowerCase();
-  return (
-    sourceBondTxid === normalizedTxid &&
-    Boolean(canonicalVerifierBondProjectionConfig(item))
-  );
 }
 
 function verifierBalanceSnapshot(state, tokenId) {
@@ -61089,9 +60804,10 @@ function pendingWorkVerifierStageSortUniqueItems(items, keyForItem) {
   );
 }
 
-// Confirmed public audit history can retain both generic and specific invalid
-// projections for one raw token record. Pending replay is one decision per raw
-// record, so exact generic siblings yield to their more specific audit row.
+// Confirmed public audit history intentionally retains both the generic and
+// specific invalid projections for this one pre-V5 record. Pending replay is
+// one decision per raw record, so only this immutable chain-bound pair yields
+// to its more specific listing audit row.
 function pendingWorkVerifierStageCollapseExactLegacyInvalidSibling(items) {
   const groups = new Map();
   for (const [index, item] of items.entries()) {
@@ -61131,8 +60847,17 @@ function pendingWorkVerifierStageCollapseExactLegacyInvalidSibling(items) {
     const aligned = identityFields.every(
       (field) => first?.[field] === second?.[field],
     );
-    const canonicalIdentity = group.every(
+    const pinned = group.every(
       (item) =>
+        item?.txid ===
+          "55fdd6f89cfc3daa331b84efa635dcb5918f689517f725686252874f02c4d0c3" &&
+        item?.blockHash ===
+          "00000000000000000001c38b6ae31983f39643a2180a56448e3f242119fe861d" &&
+        item?.blockHeight === 958_985 &&
+        item.blockHeight < WORK_AMO_V5_ACTIVATION_HEIGHT &&
+        item?.blockIndex === 3_908 &&
+        item?.protocolVout === 1 &&
+        item?.recordOrdinal === 0 &&
         item?.network === "livenet" &&
         item?.protocol === "pwt1" &&
         item?.tokenId === WORK_TOKEN_ID &&
@@ -61140,45 +60865,28 @@ function pendingWorkVerifierStageCollapseExactLegacyInvalidSibling(items) {
         item?.confirmed === true &&
         item?.valid === false,
     );
-    const canonicalRejectionReason =
-      "The canonical first-party verifier rejected this protocol event.";
-    const hasSingleValidationError = (item, reason) =>
-      item?.validationErrors === undefined ||
-      (
-        Array.isArray(item.validationErrors) &&
-        item.validationErrors.length === 1 &&
-        item.validationErrors[0] === reason
-      );
     const generic = group.find(
       (item) =>
         item?.kind === "token-event-invalid" &&
         item?.reason === "no-valid-token-event" &&
-        hasSingleValidationError(item, "no-valid-token-event") &&
+        Array.isArray(item?.validationErrors) &&
+        item.validationErrors.length === 1 &&
+        item.validationErrors[0] === "no-valid-token-event" &&
         !Object.prototype.hasOwnProperty.call(item, "listingId"),
     );
     const specific = group.find(
-      (item) => {
-        const kind = String(item?.kind ?? "");
-        const specificListing =
-          /^token-listing-[a-z-]*invalid$/u.test(kind) &&
-          /^[0-9a-f]{64}$/u.test(String(item?.listingId ?? ""));
-        const specificMint =
-          kind === "token-mint-invalid" &&
-          !Object.prototype.hasOwnProperty.call(item, "listingId");
-        return (
-          (specificListing || specificMint) &&
-          item?.reason === canonicalRejectionReason &&
-          hasSingleValidationError(item, canonicalRejectionReason)
-        );
-      },
+      (item) =>
+        item?.kind === "token-listing-invalid" &&
+        item?.listingId === item?.txid &&
+        item?.reason ===
+          "The canonical first-party verifier rejected this protocol event." &&
+        Array.isArray(item?.validationErrors) &&
+        item.validationErrors.length === 1 &&
+        item.validationErrors[0] ===
+          "The canonical first-party verifier rejected this protocol event." &&
+        item?.saleAuthorization?.version === "pwt-sale-v2",
     );
-    if (
-      aligned &&
-      canonicalIdentity &&
-      generic &&
-      specific &&
-      generic !== specific
-    ) {
+    if (aligned && pinned && generic && specific && generic !== specific) {
       collapsed.push(specific);
     } else {
       collapsed.push(...group);
@@ -64264,11 +63972,7 @@ async function tokenVerifierPayload(network, tokenScope, txid, options = {}) {
   const items = tokenVerifierItemsFromState(
     state,
     normalizedTxid,
-    {
-      requireConfirmed,
-      requiredBlockHeight,
-      transactions: state.transactions,
-    },
+    { requireConfirmed, requiredBlockHeight },
   ).filter(
     (item) =>
       !requireConfirmed ||
@@ -64444,14 +64148,6 @@ async function idVerifierStateBundle(network) {
 
 function idVerifierItemsFromState(state, txid, options = {}) {
   const normalizedTxid = String(txid ?? "").trim().toLowerCase();
-  const rawPositionForItem = (item) =>
-    canonicalVerifierProtocolPositionFromTransactions(
-      options.transactions,
-      normalizedTxid,
-      options.requiredBlockHeight,
-      "pwid1",
-      item,
-    );
   const activity = (Array.isArray(state?.activity) ? state.activity : []).filter(
     (item) =>
       [
@@ -64468,15 +64164,7 @@ function idVerifierItemsFromState(state, txid, options = {}) {
   );
   return activity.map((item) => {
     const listingId = String(item?.listingId ?? "").toLowerCase();
-    const positionedItem = verifierItemWithRecoveredPosition(
-      item,
-      rawPositionForItem(item),
-    );
-    const itemPosition = canonicalVerifierItemPosition(
-      positionedItem,
-      {},
-      options,
-    );
+    const itemPosition = canonicalVerifierItemPosition(item, {}, options);
     const exactV5Item =
       itemPosition.confirmed === true &&
       Number(itemPosition.blockHeight) >= WORK_AMO_V5_ACTIVATION_HEIGHT;
@@ -64529,7 +64217,7 @@ function idVerifierItemsFromState(state, txid, options = {}) {
     const merged = {
       ...(listing ?? {}),
       ...(sale ?? {}),
-      ...positionedItem,
+      ...item,
       id: item?.id ?? sale?.id ?? listing?.id,
       ownerAddress:
         item?.ownerAddress ?? sale?.buyerAddress ?? sale?.ownerAddress,
@@ -64537,225 +64225,11 @@ function idVerifierItemsFromState(state, txid, options = {}) {
         item?.receiveAddress ?? sale?.receiveAddress ?? sale?.buyerAddress,
       sellerAddress: item?.sellerAddress ?? sale?.sellerAddress,
     };
-    const positionedMerged = verifierItemWithRecoveredPosition(
-      merged,
-      rawPositionForItem(merged),
-    );
     return {
-      ...positionedMerged,
-      ...canonicalVerifierItemPosition(positionedMerged, {}, options),
+      ...merged,
+      ...canonicalVerifierItemPosition(merged, {}, options),
     };
   });
-}
-
-function verifierItemWithRecoveredPosition(item, position) {
-  if (!position || !item || typeof item !== "object" || Array.isArray(item)) {
-    return item;
-  }
-  const recovered = { ...item };
-  for (const field of [
-    "blockHash",
-    "blockHeight",
-    "blockIndex",
-    "protocolVout",
-    "recordOrdinal",
-  ]) {
-    if (
-      recovered[field] === undefined ||
-      recovered[field] === null ||
-      recovered[field] === ""
-    ) {
-      recovered[field] = position[field];
-    }
-  }
-  return recovered;
-}
-
-function canonicalVerifierBondProjectionPositionFromTransactions(
-  transactions,
-  txid,
-  requiredBlockHeight,
-  item = {},
-) {
-  const normalizedTxid = String(txid ?? "").trim().toLowerCase();
-  const requiredHeight = Number(requiredBlockHeight);
-  const config = canonicalVerifierBondProjectionConfig(item);
-  if (
-    !config ||
-    !/^[0-9a-f]{64}$/u.test(normalizedTxid) ||
-    !Number.isSafeInteger(requiredHeight) ||
-    requiredHeight <= 0
-  ) {
-    return null;
-  }
-  const transaction = (Array.isArray(transactions) ? transactions : []).find(
-    (candidate) =>
-      transactionTxid(candidate) === normalizedTxid &&
-      transactionBlockHeight(candidate) === requiredHeight,
-  );
-  const blockHash = transactionBlockHash(transaction);
-  const blockIndex = transactionBlockIndex(transaction);
-  if (
-    !transaction ||
-    !transactionConfirmed(transaction) ||
-    !/^[0-9a-f]{64}$/u.test(blockHash) ||
-    !Number.isSafeInteger(blockIndex) ||
-    blockIndex < 0
-  ) {
-    return null;
-  }
-
-  let records;
-  try {
-    records =
-      canonicalRawProtocolRecordSetFromTransaction(transaction).records;
-  } catch {
-    return null;
-  }
-  const pwmRecords = (Array.isArray(records) ? records : []).filter(
-    (record) =>
-      String(record?.protocol ?? "").trim().toLowerCase() === "pwm1" &&
-      record?.rawDecodeValid === true,
-  );
-  if (pwmRecords.length !== 1) {
-    return null;
-  }
-  const protocolVout = Number(pwmRecords[0]?.protocolVout);
-  if (!Number.isSafeInteger(protocolVout) || protocolVout < 0) {
-    return null;
-  }
-
-  const network = String(item?.network ?? "livenet").trim() || "livenet";
-  const mailItem = mailActivityItemFromTransaction(transaction, network);
-  if (!isBondActivityItem(mailItem, config)) {
-    return null;
-  }
-  const minterAddress = String(
-    item?.minterAddress ?? item?.bondRecipientAddress ?? "",
-  ).trim();
-  const recipientVout = canonicalEventOrdinal(item?.bondRecipientVout);
-  const expectedAmount = numericValue(
-    item?.bondRecipientAmountSats ??
-      item?.directProofIssuanceUnits ??
-      item?.paidSats,
-  );
-  const candidates = bondRecipientMintsFromActivityItem(
-    mailItem,
-    network,
-    config,
-  )
-    .map((mint, index) => ({ index, mint }))
-    .filter(({ mint }) => {
-      const mintRecipientVout = canonicalEventOrdinal(mint?.bondRecipientVout);
-      return (
-        samePaymentAddress(mint?.minterAddress, minterAddress) &&
-        (recipientVout === null || mintRecipientVout === recipientVout) &&
-        (!Number.isSafeInteger(expectedAmount) ||
-          expectedAmount <= 0 ||
-          Number(mint?.paidSats) === expectedAmount)
-      );
-    });
-  if (candidates.length !== 1) {
-    return null;
-  }
-
-  return {
-    blockHash,
-    blockHeight: requiredHeight,
-    blockIndex,
-    protocolVout,
-    recordOrdinal: candidates[0].index + 1,
-  };
-}
-
-function canonicalVerifierProtocolPositionFromTransactions(
-  transactions,
-  txid,
-  requiredBlockHeight,
-  protocol,
-  item = {},
-) {
-  const normalizedTxid = String(txid ?? "").trim().toLowerCase();
-  const requiredHeight = Number(requiredBlockHeight);
-  if (
-    !/^[0-9a-f]{64}$/u.test(normalizedTxid) ||
-    !Number.isSafeInteger(requiredHeight) ||
-    requiredHeight <= 0
-  ) {
-    return null;
-  }
-  const transaction = (Array.isArray(transactions) ? transactions : []).find(
-    (candidate) =>
-      transactionTxid(candidate) === normalizedTxid &&
-      transactionBlockHeight(candidate) === requiredHeight,
-  );
-  const blockHash = transactionBlockHash(transaction);
-  const blockIndex = transactionBlockIndex(transaction);
-  if (
-    !transaction ||
-    !transactionConfirmed(transaction) ||
-    !/^[0-9a-f]{64}$/u.test(blockHash) ||
-    !Number.isSafeInteger(blockIndex) ||
-    blockIndex < 0
-  ) {
-    return null;
-  }
-  let records;
-  try {
-    records =
-      canonicalRawProtocolRecordSetFromTransaction(transaction).records;
-  } catch {
-    return null;
-  }
-  const requestedProtocol = String(protocol ?? "").trim().toLowerCase();
-  const protocolRecords = (Array.isArray(records) ? records : []).filter(
-    (record) => String(record?.protocol ?? "").trim().toLowerCase() ===
-      requestedProtocol,
-  );
-  const requestedVout = exactVerifierPositionInteger(item, "protocolVout", 0);
-  const requestedOrdinal = exactVerifierPositionInteger(
-    item,
-    "recordOrdinal",
-    0,
-  );
-  const candidates = protocolRecords.filter((record) => {
-    const protocolVout = Number(record?.protocolVout);
-    const recordOrdinal = Number(record?.recordOrdinal);
-    return (
-      Number.isSafeInteger(protocolVout) &&
-      protocolVout >= 0 &&
-      Number.isSafeInteger(recordOrdinal) &&
-      recordOrdinal >= 0 &&
-      (requestedVout === null || protocolVout === requestedVout) &&
-      (requestedOrdinal === null || recordOrdinal === requestedOrdinal)
-    );
-  });
-  const selected =
-    candidates.length === 1
-      ? candidates[0]
-      : requestedVout === null &&
-          requestedOrdinal === null &&
-          protocolRecords.length === 1
-        ? protocolRecords[0]
-        : null;
-  const protocolVout = Number(selected?.protocolVout);
-  const recordOrdinal = Number(selected?.recordOrdinal);
-  if (
-    !selected ||
-    !Number.isSafeInteger(protocolVout) ||
-    protocolVout < 0 ||
-    !Number.isSafeInteger(recordOrdinal) ||
-    recordOrdinal < 0
-  ) {
-    return null;
-  }
-  return {
-    blockHash,
-    blockHeight: requiredHeight,
-    blockIndex,
-    protocolVout,
-    recordOrdinal,
-  };
 }
 
 async function idVerifierDeterministicInvalidReason(
@@ -64880,11 +64354,7 @@ async function idVerifierPayload(network, txid, options = {}) {
   const items = idVerifierItemsFromState(
     bundle.state,
     normalizedTxid,
-    {
-      requireConfirmed,
-      requiredBlockHeight,
-      transactions: bundle.transactions,
-    },
+    { requireConfirmed, requiredBlockHeight },
   ).filter(
     (item) =>
       !requireConfirmed ||

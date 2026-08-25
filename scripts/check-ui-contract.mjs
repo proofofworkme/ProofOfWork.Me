@@ -970,13 +970,9 @@ expect(
     /normalizedTokenListAmountUnits !== null[\s\S]*normalizedTokenListAmountUnits <= walletSpendableTokenAtoms/.test(
       canListTokenSource,
     ) &&
-    /reportWorkAmoListingWriteBlock\(\)[\s\S]*setTokenAction\("list"\)/.test(
-      listTokenSource,
-    ) &&
-    /const workAmoV8ListingTermsSelected =[\s\S]*workV8DeclarationBoundaryObserved\(workFloorQuote\)[\s\S]*const workAmoListingWritesReadyNow =[\s\S]*workAmoListingWritesReady\(workFloorQuote\)[\s\S]*const workAmoListInputReady = Boolean\([\s\S]*workAmoV8ListingTermsSelected[\s\S]*workAmoV8FaceProofsAllowed\(tokenListFaceProofs\)[\s\S]*workAmoV6FaceProofsAllowed\(tokenListFaceProofs\)[\s\S]*workAmoListingWritesReadyNow[\s\S]*Boolean\(workAmoEstimateForFace\(workFloorQuote, tokenListFaceProofs\)\)[\s\S]*walletSpendableTokenAtoms > 0n/.test(
+    /const workAmoV8ListingTermsSelected =[\s\S]*workV8DeclarationBoundaryObserved\(workFloorQuote\)[\s\S]*const workAmoListingFreshPreflightReady =[\s\S]*workAmoListingCanAttemptFreshPreflight\(workFloorQuote\)[\s\S]*const workAmoListInputReady = Boolean\([\s\S]*workAmoV8ListingTermsSelected[\s\S]*workAmoV8FaceProofsAllowed\(tokenListFaceProofs\)[\s\S]*workAmoV6FaceProofsAllowed\(tokenListFaceProofs\)[\s\S]*workAmoListingFreshPreflightReady[\s\S]*workAmoEstimateForFace\(workFloorQuote, tokenListFaceProofs\)[\s\S]*workV8CanAttemptFreshPreflight\(workFloorQuote\)[\s\S]*walletSpendableTokenAtoms > 0n/.test(
       canListTokenSource,
     ) &&
-    /const canListToken =[\s\S]*tokenWalletWritesReady/.test(canListTokenSource) &&
     !/max=\{Math\.max\(1, listSpendableBalance\)\}/.test(app) &&
     !/fetchTokenState|tokenWalletBalancesFor|walletMode|activeFolder/.test(
       listTokenSource,
@@ -2531,36 +2527,6 @@ expect(
   (app.match(/walletBalances=\{accountWalletBalances\}/g) || []).length >= 2 &&
     /selectedWalletBalance\?\.confirmedBalance/.test(app) &&
     /detailWalletBalance\?\.confirmedBalance/.test(app),
-);
-expect(
-  "wallet writes use selected asset lane readiness before fresh preflight",
-  /function accountTokenLaneForDefinition\(\s*token: Pick<PowTokenDefinition, "ticker" \| "tokenId">/.test(
-    app,
-  ) &&
-    /function accountTokenLaneHasCleanAuthority\(\s*token: Pick<PowTokenDefinition, "ticker" \| "tokenId">,[\s\S]*statuses\.all\.loaded[\s\S]*statuses\[lane\]\.loaded/.test(
-      app,
-    ) &&
-    /const walletWritePreflightBlockReasonForToken = \([\s\S]*const lane = token \? accountTokenLaneForDefinition\(token\) : null[\s\S]*token &&[\s\S]*accountTokenLaneHasCleanAuthority\(token, accountTokenLaneStatuses\)[\s\S]*return "";/.test(
-      app,
-    ) &&
-    /const tokenWalletWritePreflightBlockReason =[\s\S]*walletWritePreflightBlockReasonForToken\(walletTransferToken\)/.test(
-      app,
-    ) &&
-    /const canListToken =[\s\S]*tokenWalletWritesReady[\s\S]*workAmoListInputReady/.test(
-      app,
-    ) &&
-    /async function listToken[\s\S]*reportWalletWritePreflightBlock\(token\)[\s\S]*fetchFreshWalletTokenPreflightState/.test(
-      app,
-    ) &&
-    /async function sealTokenListing[\s\S]*reportWalletWritePreflightBlock\(listing\)/.test(
-      app,
-    ) &&
-    /async function delistTokenListing[\s\S]*reportWalletWritePreflightBlock\(listing\)/.test(
-      app,
-    ) &&
-    /async function buyTokenListing[\s\S]*reportWalletWritePreflightBlock\(listing\)/.test(
-      app,
-    ),
 );
 expect(
   "WORK mint progress cannot round an incomplete supply to 100 percent",

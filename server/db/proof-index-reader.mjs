@@ -264,7 +264,6 @@ const BOND_TAGS = [
 ];
 const ID_REGISTRATION_PRICE_SATS = 1_000;
 const ID_MUTATION_PRICE_SATS = 546;
-const TOKEN_MIN_MUTATION_PRICE_SATS = 546;
 const ID_REGISTRY_ADDRESSES = {
   livenet: "bc1qfwytlzyr3ym3enz2eutwtjsf9kkf6uqkjydk3e",
 };
@@ -2733,12 +2732,13 @@ async function payloadWithCurrentWorkPrecisionReadPolicy(
       payload.stats?.indexedThroughBlock ??
       0,
   );
-  const snapshotHeightKnown =
-    Number.isSafeInteger(snapshotHeight) && snapshotHeight > 0;
   const boundaryApplies =
-    snapshotHeightKnown
-      ? snapshotHeight >= pins.activationHeight
-      : latch?.reached === true || snapshotHeight === 0;
+    latch?.reached === true ||
+    snapshotHeight === 0 ||
+    (
+      Number.isSafeInteger(snapshotHeight) &&
+      snapshotHeight >= pins.activationHeight
+    );
   if (!boundaryApplies) {
     return payload;
   }
@@ -7591,11 +7591,6 @@ async function proofIndexWorkPrecisionV2MigrationReadinessFullAudit(
         WHERE listing.network = $1
           AND listing.token_id = $2
           AND listing.status IN ('active', 'sealing')
-          AND COALESCE(
-            listing.payload->'saleAuthorization'->>'version',
-            listing.payload->'listingAuthorization'->>'version',
-            ''
-          ) = $3
         ORDER BY listing.listing_id ASC
     `,
     [
@@ -11535,11 +11530,6 @@ export async function proofIndexWorkAmoV8RelationalTokenStateEvidence(
         WHERE listing.network = $1
           AND lower(listing.token_id) = $2
           AND listing.status IN ('active', 'sealing')
-          AND COALESCE(
-            listing.payload->'saleAuthorization'->>'version',
-            listing.payload->'listingAuthorization'->>'version',
-            ''
-          ) = $3
         ORDER BY listing.listing_id
       `,
       [network, WORK_TOKEN_ID, WORK_AMO_V8_AUTH_VERSION],
@@ -15190,10 +15180,6 @@ function tokenTransferFromEventPayload(payload, row = {}) {
       rowNumber(payload, "tokenAmount") ||
       tokenTransferAmountFromTags(payload, ticker);
   const position = canonicalMovementPositionFromEventRow(payload, row);
-  const registryMutationFeeSats = tokenTransferRegistryMutationFeeSats(
-    payload,
-    row,
-  );
   return {
     ...canonicalEventIdentityDetails({
       ...payload,
@@ -15224,29 +15210,15 @@ function tokenTransferFromEventPayload(payload, row = {}) {
     liveNetworkValueSats: rowNumber(payload, "liveNetworkValueSats"),
     minerFeeSats: rowNumber(payload, "minerFeeSats"),
     network: payload?.network ?? row.network,
-    paidSats: registryMutationFeeSats,
+    paidSats: rowNumber(payload, "paidSats") || rowNumber(payload, "amountSats"),
     recipientAddress,
-    registryMutationFeeSats,
+    registryMutationFeeSats: rowNumber(payload, "registryMutationFeeSats"),
     registryAddress,
     senderAddress,
     ticker,
     tokenId,
     txid: String(payload?.txid ?? row.txid ?? "").trim().toLowerCase(),
   };
-}
-
-function tokenTransferRegistryMutationFeeSats(payload, row = {}) {
-  const protocol = normalizedLowerText(row?.protocol ?? payload?.protocol);
-  const kind = normalizedLowerText(row?.kind ?? payload?.kind);
-  if (
-    (protocol && protocol !== "pwt1") ||
-    (kind && kind !== "token-transfer") ||
-    row?.valid === false ||
-    payload?.valid === false
-  ) {
-    return 0;
-  }
-  return TOKEN_MIN_MUTATION_PRICE_SATS;
 }
 
 function exactSafeInteger(value, { positive = false } = {}) {
@@ -19315,41 +19287,7 @@ function workListingAmountProjection(
     authorizationVersion &&
     authorizationVersion !== WORK_AMO_V8_AUTH_VERSION
   ) {
-    const legacySaleAuthorization = recordWithoutWorkAmountAliases(
-      saleAuthorization,
-    );
-    const legacyProjection = workAmountProjection({
-      ...recordWithoutWorkAmountAliases(item),
-      amount: item.legacyAmount ?? saleAuthorization.amount ?? item.amount,
-      amountAtoms:
-        item.legacyAmountAtoms ??
-        saleAuthorization.legacyAmountAtoms ??
-        saleAuthorization.amountAtoms ??
-        item.amountAtoms,
-      amountStorageModel:
-        item.legacyAmountStorageModel ??
-        saleAuthorization.legacyAmountStorageModel ??
-        WORK_ATOMIC_PROJECTION_MODEL,
-      decimals: WORK_DECIMALS,
-      saleAuthorization: {
-        ...legacySaleAuthorization,
-        amount:
-          legacySaleAuthorization.legacyAmount ??
-          saleAuthorization.amount,
-        amountAtoms:
-          legacySaleAuthorization.legacyAmountAtoms ??
-          saleAuthorization.amountAtoms ??
-          item.legacyAmountAtoms ??
-          item.amountAtoms,
-        amountStorageModel:
-          legacySaleAuthorization.legacyAmountStorageModel ??
-          item.legacyAmountStorageModel ??
-          WORK_ATOMIC_PROJECTION_MODEL,
-        decimals: WORK_DECIMALS,
-        unitScale: WORK_UNIT_SCALE_TEXT,
-      },
-      unitScale: WORK_UNIT_SCALE_TEXT,
-    });
+    const legacyProjection = workAmountProjection(item);
     if (
       legacyProjection.amountStorageModel !==
         WORK_ATOMIC_PROJECTION_MODEL ||
@@ -29144,9 +29082,6 @@ function assertCanonicalIncbCurrentProjection(tokens, mints, holders, context) {
     }
     return total + balance;
   }, 0n);
-  if (confirmedMints.length === 0 && confirmedBalanceSupply === 0n) {
-    return;
-  }
   if (
     confirmedMints.length === 0 ||
     confirmedMintSupply <= 0n ||
@@ -33762,18 +33697,6 @@ function eventRowPayload(row, network) {
           // override the fee committed by the valid lifecycle kind.
           amountSats: idRegistryFeeSats,
         };
-  const tokenTransferFeeSats = tokenTransferRegistryMutationFeeSats(
-    payload,
-    { ...row, kind, protocol: rowProtocol },
-  );
-  const canonicalTokenTransferFeePatch =
-    tokenTransferFeeSats > 0
-      ? {
-          amountSats: tokenTransferFeeSats,
-          paidSats: tokenTransferFeeSats,
-          registryMutationFeeSats: tokenTransferFeeSats,
-        }
-      : {};
   const auditCosts = invalidTokenEvent
     ? tokenInvalidAuditCosts(payload, row, registryAddress)
     : {};
@@ -33814,7 +33737,6 @@ function eventRowPayload(row, network) {
     }),
     ...canonicalMinerFeePatch,
     ...canonicalIdRegistryFeePatch,
-    ...canonicalTokenTransferFeePatch,
     ...(invalidTokenEvent
       ? {
           amountSats: 0,
@@ -35988,8 +35910,6 @@ export async function proofIndexValueSummaryPayload(network) {
                   'id-buy'
                 )
                   THEN ${ID_MUTATION_PRICE_SATS}
-                WHEN protocol = 'pwt1' AND kind = 'token-transfer'
-                  THEN ${TOKEN_MIN_MUTATION_PRICE_SATS}
                 ELSE amount_sats
               END
             ),
@@ -36237,8 +36157,6 @@ export async function proofIndexConfirmedValueEventsAfterBlock(
               'id-buy'
             )
               THEN ${ID_MUTATION_PRICE_SATS}
-            WHEN e.protocol = 'pwt1' AND e.kind = 'token-transfer'
-              THEN ${TOKEN_MIN_MUTATION_PRICE_SATS}
             ELSE e.amount_sats
           END AS amount_sats,
           e.block_height,

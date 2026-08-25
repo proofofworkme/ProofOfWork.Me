@@ -155,7 +155,7 @@ const verifiedWorkAmoV5ClosingStateSource = sourceSliceBetween(
 );
 const marketplaceMutationEqualitySource = sourceSliceBetween(
   ledgerSnapshotChecksSource,
-  /const confirmedMarketplaceMutationFeeSats = confirmedActivityFlowSats/,
+  /addCheck\(\s*"marketplace-mutation-fees-counted"/,
   /addCheck\(\s*"work-amo-v5-legacy-bootstrap-carry-proven"/,
 );
 const q16MempoolBackfillSource = sourceSliceBetween(
@@ -744,7 +744,7 @@ expectAll("stateful block discoveries require the first-party ordered verifier",
   /validationMode:[\s\S]*canonical-first-party-state/,
 ]);
 expectAll("ordered credit verifier distinguishes deterministic invalidity from unresolved state", tokenVerifierPayloadSource, [
-  /tokenVerifierItemsFromState\(\s*state,\s*normalizedTxid,\s*\{\s*requireConfirmed,\s*requiredBlockHeight,[\s\S]*transactions: state\.transactions/,
+  /tokenVerifierItemsFromState\(\s*state,\s*normalizedTxid,\s*\{\s*requireConfirmed,\s*requiredBlockHeight\s*\}/,
   /tokenVerifierDeterministicInvalidReason\(/,
   /if \(invalidReason\) \{[\s\S]*valid: false/,
   /if \(items\.length === 0\) \{[\s\S]*error\.statusCode = 503[\s\S]*code: "TOKEN_VERIFIER_UNRESOLVED"/,
@@ -781,7 +781,7 @@ expect(
   !/nodeTip|tipHeight|ledgerTipHeight/.test(tokenVerifierPayloadSource),
 );
 expectAll("ordered ID verifier fails closed when registry replay has no verdict", idVerifierPayloadSource, [
-  /idVerifierItemsFromState\(\s*bundle\.state,\s*normalizedTxid,\s*\{\s*requireConfirmed,\s*requiredBlockHeight,[\s\S]*transactions: bundle\.transactions/,
+  /idVerifierItemsFromState\(\s*bundle\.state,\s*normalizedTxid,\s*\{\s*requireConfirmed,\s*requiredBlockHeight\s*\}/,
   /idVerifierDeterministicInvalidReason\(/,
   /if \(invalidReason\) \{[\s\S]*valid: false/,
   /if \(items\.length === 0\) \{[\s\S]*error\.statusCode = 503[\s\S]*code: "ID_VERIFIER_UNRESOLVED"/,
@@ -926,10 +926,6 @@ expectAll("supervised canonical rebuild resets mixed-era state behind a hashed b
   /POW_INDEX_BACKFILL_CANONICAL_REBUILD/,
   /--prepare-canonical-rebuild/,
   /requires NETWORK=livenet and an explicit positive POW_INDEX_BACKFILL_BLOCK_SCAN_FROM_HEIGHT/,
-  /DELETE FROM proof_indexer\.work_amo_v8_listing_terms WHERE network = \$1/,
-  /DELETE FROM proof_indexer\.work_amo_v7_listing_terms WHERE network = \$1/,
-  /DELETE FROM proof_indexer\.work_amo_v6_listing_terms WHERE network = \$1/,
-  /DELETE FROM proof_indexer\.work_amo_listing_terms WHERE network = \$1/,
   /DELETE FROM proof_indexer\.events[\s\S]*\["pwid1", "pwt1", "pwm1", "pwa1"\]/,
   /DELETE FROM proof_indexer\.id_records/,
   /DELETE FROM proof_indexer\.credit_balances/,
@@ -1021,9 +1017,6 @@ expectAll("PWM block parsing aggregates value once and projects bond credits wit
   /validationMode: `canonical-\$\{bondTag\.ticker\.toLowerCase\(\)\}-bond-projection`/,
   /amountSats: 0/,
   /eventKeyVout: ordinal/,
-  /const projectionReason =[\s\S]*canonicalBondMintProjectionInvalidReason\(normalizedItem\)/,
-  /canonical-incb-bond-projection-invalid/,
-  /reservedBondCreditViolationReason\(projectionCheckedItem\)/,
   /Malformed or unknown aggregated PWM protocol payload/,
 ]);
 expectAll("reader exposes exact canonical raw chain state", canonicalTransactionsReaderSource, [
@@ -1592,10 +1585,9 @@ expectAll("marketplace summary and tabs keep confirmed sealed inventory canonica
   /const MARKETPLACE_SUMMARY_FRESH_WAIT_MS_UNCAPPED = Number\([\s\S]*const MARKETPLACE_SUMMARY_FRESH_WAIT_MS =[\s\S]*MARKETPLACE_SUMMARY_FRESH_HARD_CAP_MS > 0[\s\S]*MARKETPLACE_SUMMARY_FRESH_WAIT_MS_UNCAPPED/,
   /async function marketplaceSummaryFastFallbackPayload\(network\)[\s\S]*payloadWithFallbackAfterMs\([\s\S]*cachedMarketplaceSummaryPayloadNoRefresh/,
   /async function marketplaceSummaryPayloadWithIndexedMarketOverlay\([\s\S]*indexedTokenMarketSummaryOverlay\([\s\S]*compactTokenSummaryPayload\(tokenState\)/,
-  /async function indexedTokenMarketSummaryOverlay\([\s\S]*const exactCheckpoint =[\s\S]*proofIndexPayloadIndexedThroughBlock\(payload\)[\s\S]*proofIndexPayloadCoversConfirmedTip\(payload, network, label\)/,
+  /async function indexedTokenMarketSummaryOverlay\([\s\S]*tokenMarketLifecycleOverlayFromCreditListings\([\s\S]*proofIndexPayloadCoversConfirmedTip\(/,
   /function tokenMarketLifecycleOverlayFromCreditListings\([\s\S]*closedListings\.push\([\s\S]*sales\.push\(/,
   /async function indexedTokenMarketSummaryOverlay\([\s\S]*proofIndexCreditListingsPayload\(network,\s*tokenScope,\s*\{ limit: 5000 \}\)/,
-  /buildIndexedCanonicalLedgerPayload\([\s\S]*indexedTokenMarketSummaryOverlay\(network,\s*"",\s*\{[\s\S]*exactHash,[\s\S]*exactHeight,/,
   /const fast = options\.fast === true;[\s\S]*if \(fast\) \{[\s\S]*indexedTokenMarketSummaryOverlay\(network\)[\s\S]*return null;[\s\S]*tokenStateWithIndexedMarketSummaryOverlay\(/,
   /async function marketplaceSummaryWithCurrentBtcUsd\([\s\S]*workFloorWithCurrentBtcUsd\(/,
   /function tokenStateWithIndexedMarketSummaryOverlay\([\s\S]*overlay\.listings[\s\S]*tokenListingItemKey/,
@@ -2547,25 +2539,12 @@ expectAll(
     /BOND_HARD_PRICE_DECLARATION_EVIDENCE_MODEL =\s*"canonical-bond-hard-price-declaration-evidence-v1"/,
     /buildBondHardPriceDeclarationText/,
     /bondHardPriceDeclarationCommitment/,
-    /bondHardPriceDeclarationConfirmedPins/,
     /bondHardPriceDeclarationOnChainDraft/,
     /bondHardPriceDeclarationCarrierEvidence/,
     /bondHardPriceDeclarationTransactionEvidence/,
     /canonicalProtocolCandidateFromOutput/,
     /firstInputPrevoutScriptPubKey/,
-    /BOND_HARD_PRICE_DECLARATION_TXID =\s*"ae7baca8bddc950af2d19e515e4df551cbb33e2ad61aa072f862700135164284"/,
-    /BOND_HARD_PRICE_DECLARATION_HEIGHT = 963_758/,
-    /BOND_HARD_PRICE_DECLARATION_BLOCK_HASH =\s*"00000000000000000001ed0dd60f851c94458bfa5b6dea18271ca3c7c0700a64"/,
-    /BOND_HARD_PRICE_DECLARATION_BLOCK_INDEX = 1_050/,
-    /BOND_HARD_PRICE_DECLARATION_MEMO_SHA256 =\s*"71f0fa5a89947ff1a23c213501dc45451e6f0a4d59f5ec233915893315071bac"/,
-    /BOND_HARD_PRICE_DECLARATION_MEMO_BYTES = 3_586/,
-    /BOND_HARD_PRICE_DECLARATION_PROTOCOL_VOUT = 2/,
-    /BOND_HARD_PRICE_DECLARATION_RECORD_ORDINAL = 0/,
-    /BOND_HARD_PRICE_ACTIVATION_HEIGHT = 963_759/,
-    /BOND_HARD_PRICE_WRITES_ENABLED = true/,
-    /confirmedPins: bondHardPriceDeclarationConfirmedPins\(\)/,
-    /pinsComplete =[\s\S]*txid === BOND_HARD_PRICE_DECLARATION_TXID[\s\S]*confirmed[\s\S]*blockHeight === BOND_HARD_PRICE_DECLARATION_HEIGHT[\s\S]*blockHash === BOND_HARD_PRICE_DECLARATION_BLOCK_HASH/,
-    /evidenceComplete =[\s\S]*carrier !== null[\s\S]*authorityScriptPubKey ===[\s\S]*pinsComplete/,
+    /evidenceComplete =[\s\S]*carrier !== null[\s\S]*authorityScriptPubKey ===/,
     /"ProofOfWork\.Me POWB and INCB Hard-Price Bond AMO Declaration"/,
     /BOND_HARD_PRICE_DECLARATION_AUTHORITY_ADDRESS =\s*"1F1p9UEHuH5KTFR7Zsx93Khdrqhj6t5nFv"/,
     /BOND_HARD_PRICE_DECLARATION_AUTHORITY_SCRIPT_PUBKEY =\s*"76a91499b91dd27a616a71c0a1e9db6a86ceb8cff284c588ac"/,
@@ -2739,24 +2718,13 @@ expectAll("AMO V5 legacy bootstrap carry is proved from one exact relational row
   /blockIndex !== WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_BLOCK_INDEX/,
   /protocolVout !== WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_PROTOCOL_VOUT/,
   /recordOrdinal !== WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_RECORD_ORDINAL/,
-  /eventAmountSats ===[\s\S]*WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MUTATION_SATS/,
+  /mutationSats !== WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MUTATION_SATS/,
   /minerFeeSats !== WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MINER_FEE_SATS/,
-  /eventAmountSats === 0/,
-  /payloadAuditRegistryPaymentSats ===[\s\S]*WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MUTATION_SATS/,
-  /registryPaymentOutputCount === 1/,
-  /saleTicketOutputCount === 1/,
-  /listingCount === 1/,
-  /listingCount === 0/,
-  /activeListingCount === 0/,
-  /listingStatuses\[0\] === "dropped"/,
-  /listingStatuses\.length === 0/,
-  /!droppedListingEvidence && !invalidOnlyReplayEvidence/,
-  /compatibilityMode:\s*"legacy-bootstrap-invalid-only-replay-evidence-v1"/,
-  /sourceListingCount: listingCount/,
+  /listingCount !== 1/,
+  /activeListingCount !== 0/,
+  /listingStatuses\[0\] !== "dropped"/,
   /JOIN proof_indexer\.transactions event_tx/,
   /JOIN proof_indexer\.blocks event_block/,
-  /proof_indexer\.tx_outputs registry_output/,
-  /proof_indexer\.tx_outputs sale_ticket_output/,
   /WHERE event_row\.network = \$1[\s\S]*AND event_row\.txid = \$2/,
   /ORDER BY event_row\.event_id/,
 ]);
@@ -2765,10 +2733,7 @@ expectAll("AMO V5 legacy bootstrap carry is exact and separately reconciled", le
   /WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_TXID/,
   /WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_REASON_CODE/,
   /field === "tokenMarketplaceFeeSats"/,
-  /published-valid-excludes-carry/,
-  /published-valid-includes-carry/,
   /committed !== valid \+ expectedCarry/,
-  /publishedValidBaseNetworkValueQ8 === committedBaseNetworkValueQ8/,
   /committedBaseNetworkValueQ8 !==\s*validBaseNetworkValueQ8 \+ legacyBootstrapGrowthValueQ8/,
   /legacyBaselineCreditFixedQ8 =\s*validCreditFixedQ8 \+ legacyBootstrapCreditFixedQ8/,
   /postActivationCreditFixedQ8 =[\s\S]*committedCreditFixedQ8 >= legacyBaselineCreditFixedQ8[\s\S]*committedCreditFixedQ8 - legacyBaselineCreditFixedQ8/,
@@ -2792,12 +2757,16 @@ expectAll("credit frozen value proves valid flows plus the explicit legacy carry
   /flows\.reduce\([\s\S]*BigInt\(legacyCreditFixedQ8\)/,
   /BigInt\(legacyCreditFixedQ8\) \+[\s\S]*BigInt\(postActivationCreditFixedQ8\)/,
 ]);
-expectAll("marketplace consistency keeps valid-only fees plus explicit legacy carry", marketplaceMutationEqualitySource, [
-  /const legacyBootstrapMarketplaceCarrySats = numericValue/,
-  /numbersAgree\(marketplaceFeeSats, marketplaceMutationFeeSats\)/,
-  /confirmedMarketplaceMutationFeeSats,[\s\S]*marketplaceMutationFeeSats \+[\s\S]*legacyBootstrapMarketplaceCarrySats/,
-  /legacyBootstrapMarketplaceCarrySats/,
+expectAll("marketplace consistency keeps strict valid-only equality", marketplaceMutationEqualitySource, [
+  /numbersAgree\(confirmedMarketplaceMutationFeeSats, marketplaceFeeSats\)/,
+  /numbersAgree\(confirmedMarketplaceMutationFeeSats, marketplaceMutationFeeSats\)/,
 ]);
+expect(
+  "marketplace fee equality is not relaxed by the legacy bootstrap carry",
+  !/\|\||legacyBootstrap|WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY/u.test(
+    marketplaceMutationEqualitySource,
+  ),
+);
 
 expectAll("confirmed token protocol failures stay diagnosable", server, [
   /invalidEvents:\s*\[\]/,

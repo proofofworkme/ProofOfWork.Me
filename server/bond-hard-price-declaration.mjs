@@ -16,19 +16,6 @@ export const BOND_HARD_PRICE_DECLARATION_AUTHORITY_ADDRESS =
   "1F1p9UEHuH5KTFR7Zsx93Khdrqhj6t5nFv";
 export const BOND_HARD_PRICE_DECLARATION_AUTHORITY_SCRIPT_PUBKEY =
   "76a91499b91dd27a616a71c0a1e9db6a86ceb8cff284c588ac";
-export const BOND_HARD_PRICE_DECLARATION_TXID =
-  "ae7baca8bddc950af2d19e515e4df551cbb33e2ad61aa072f862700135164284";
-export const BOND_HARD_PRICE_DECLARATION_HEIGHT = 963_758;
-export const BOND_HARD_PRICE_DECLARATION_BLOCK_HASH =
-  "00000000000000000001ed0dd60f851c94458bfa5b6dea18271ca3c7c0700a64";
-export const BOND_HARD_PRICE_DECLARATION_BLOCK_INDEX = 1_050;
-export const BOND_HARD_PRICE_DECLARATION_MEMO_SHA256 =
-  "71f0fa5a89947ff1a23c213501dc45451e6f0a4d59f5ec233915893315071bac";
-export const BOND_HARD_PRICE_DECLARATION_MEMO_BYTES = 3_586;
-export const BOND_HARD_PRICE_DECLARATION_PROTOCOL_VOUT = 2;
-export const BOND_HARD_PRICE_DECLARATION_RECORD_ORDINAL = 0;
-export const BOND_HARD_PRICE_ACTIVATION_HEIGHT = 963_759;
-export const BOND_HARD_PRICE_WRITES_ENABLED = true;
 export const BOND_HARD_PRICE_DECLARATION_TOKENS = Object.freeze([
   Object.freeze({
     displayName: "Infinity Bond",
@@ -106,21 +93,6 @@ export function bondHardPriceDeclarationSubjectRecord() {
   ).toString("base64")}`;
 }
 
-export function bondHardPriceDeclarationConfirmedPins() {
-  return Object.freeze({
-    activationHeight: BOND_HARD_PRICE_ACTIVATION_HEIGHT,
-    declarationBlockHash: BOND_HARD_PRICE_DECLARATION_BLOCK_HASH,
-    declarationBlockIndex: BOND_HARD_PRICE_DECLARATION_BLOCK_INDEX,
-    declarationHeight: BOND_HARD_PRICE_DECLARATION_HEIGHT,
-    declarationMemoBytes: BOND_HARD_PRICE_DECLARATION_MEMO_BYTES,
-    declarationMemoSha256: BOND_HARD_PRICE_DECLARATION_MEMO_SHA256,
-    declarationProtocolVout: BOND_HARD_PRICE_DECLARATION_PROTOCOL_VOUT,
-    declarationRecordOrdinal: BOND_HARD_PRICE_DECLARATION_RECORD_ORDINAL,
-    declarationTxid: BOND_HARD_PRICE_DECLARATION_TXID,
-    writesEnabled: BOND_HARD_PRICE_WRITES_ENABLED,
-  });
-}
-
 export function bondHardPriceDeclarationOnChainDraft() {
   const commitment = bondHardPriceDeclarationCommitment();
   return Object.freeze({
@@ -130,9 +102,17 @@ export function bondHardPriceDeclarationOnChainDraft() {
         BOND_HARD_PRICE_DECLARATION_AUTHORITY_SCRIPT_PUBKEY,
     }),
     evidenceModel: BOND_HARD_PRICE_DECLARATION_EVIDENCE_MODEL,
-    confirmedPins: bondHardPriceDeclarationConfirmedPins(),
-    expectedProtocolRecordBytes: commitment.protocolRecordBytes,
-    expectedProtocolRecordSha256: commitment.protocolRecordSha256,
+    expectedPinsAfterConfirmation: Object.freeze({
+      activationHeight: "<declarationHeight + 1>",
+      declarationBlockHash: "<confirmed block hash>",
+      declarationBlockIndex: "<transaction index in block>",
+      declarationHeight: "<confirmed block height>",
+      declarationMemoBytes: commitment.protocolRecordBytes,
+      declarationMemoSha256: commitment.protocolRecordSha256,
+      declarationProtocolVout: "<vout containing exact pwm1:m record>",
+      declarationRecordOrdinal: 0,
+      declarationTxid: "<confirmed declaration txid>",
+    }),
     network: BOND_HARD_PRICE_DECLARATION_NETWORK,
     optionalValueSignals: Object.freeze([
       "mail recipients",
@@ -222,10 +202,9 @@ function firstInputPrevoutScriptPubKey(transaction) {
 export function bondHardPriceDeclarationTransactionEvidence(
   transaction,
   {
-    blockIndex,
     commitment = bondHardPriceDeclarationCommitment(),
-    protocolVout = BOND_HARD_PRICE_DECLARATION_PROTOCOL_VOUT,
-    recordOrdinal = BOND_HARD_PRICE_DECLARATION_RECORD_ORDINAL,
+    protocolVout,
+    recordOrdinal,
   } = {},
 ) {
   const carrier = bondHardPriceDeclarationCarrierEvidence(transaction, {
@@ -235,59 +214,19 @@ export function bondHardPriceDeclarationTransactionEvidence(
   });
   const authorityScriptPubKey = firstInputPrevoutScriptPubKey(transaction);
   const txid = String(transaction?.txid ?? "").trim().toLowerCase();
-  const confirmed = transaction?.status?.confirmed === true;
-  const blockHeight = Number(
-    transaction?.status?.block_height ?? transaction?.blockHeight,
-  );
-  const blockHash = String(
-    transaction?.status?.block_hash ?? transaction?.blockHash ?? "",
-  )
-    .trim()
-    .toLowerCase();
-  const normalizedBlockIndex = Number(blockIndex);
-  const commitmentMatchesPins =
-    commitment.protocolRecordBytes === BOND_HARD_PRICE_DECLARATION_MEMO_BYTES &&
-    commitment.protocolRecordSha256 ===
-      BOND_HARD_PRICE_DECLARATION_MEMO_SHA256;
-  const pinsComplete =
-    txid === BOND_HARD_PRICE_DECLARATION_TXID &&
-    confirmed &&
-    blockHeight === BOND_HARD_PRICE_DECLARATION_HEIGHT &&
-    blockHash === BOND_HARD_PRICE_DECLARATION_BLOCK_HASH &&
-    Number.isSafeInteger(normalizedBlockIndex) &&
-    normalizedBlockIndex === BOND_HARD_PRICE_DECLARATION_BLOCK_INDEX &&
-    commitmentMatchesPins;
   const evidenceComplete =
     carrier !== null &&
     authorityScriptPubKey ===
-      BOND_HARD_PRICE_DECLARATION_AUTHORITY_SCRIPT_PUBKEY &&
-    pinsComplete;
+      BOND_HARD_PRICE_DECLARATION_AUTHORITY_SCRIPT_PUBKEY;
   return Object.freeze({
-    activationHeight: BOND_HARD_PRICE_ACTIVATION_HEIGHT,
     authorityScriptPubKey,
-    blockHash,
-    blockHeight,
-    blockIndex: Number.isSafeInteger(normalizedBlockIndex)
-      ? normalizedBlockIndex
-      : null,
     carrier,
-    commitmentMatchesPins,
-    confirmed,
-    confirmedPins: bondHardPriceDeclarationConfirmedPins(),
     evidenceComplete,
     expectedAuthorityScriptPubKey:
       BOND_HARD_PRICE_DECLARATION_AUTHORITY_SCRIPT_PUBKEY,
-    expectedBlockHash: BOND_HARD_PRICE_DECLARATION_BLOCK_HASH,
-    expectedBlockHeight: BOND_HARD_PRICE_DECLARATION_HEIGHT,
-    expectedBlockIndex: BOND_HARD_PRICE_DECLARATION_BLOCK_INDEX,
     expectedProtocolRecordBytes: commitment.protocolRecordBytes,
     expectedProtocolRecordSha256: commitment.protocolRecordSha256,
-    expectedProtocolVout: BOND_HARD_PRICE_DECLARATION_PROTOCOL_VOUT,
-    expectedRecordOrdinal: BOND_HARD_PRICE_DECLARATION_RECORD_ORDINAL,
-    expectedTxid: BOND_HARD_PRICE_DECLARATION_TXID,
     model: BOND_HARD_PRICE_DECLARATION_EVIDENCE_MODEL,
-    pinsComplete,
     txid,
-    writesEnabled: BOND_HARD_PRICE_WRITES_ENABLED,
   });
 }

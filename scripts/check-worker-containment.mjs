@@ -400,11 +400,6 @@ async function runChecks() {
   );
   assert.match(
     workerSource,
-    /const definitionPrecisionMigrationModel = String\([\s\S]*metadata\.precisionMigrationModel \?\? ""[\s\S]*\.trim\(\);[\s\S]*\(definitionPrecisionMigrationModel &&[\s\S]*definitionPrecisionMigrationModel !==[\s\S]*WORK_PRECISION_V2_MIGRATION_MODEL\)[\s\S]*workerWorkPrecisionV2MarkerReady\(/u,
-    "Q16 worker readiness must treat the immutable marker as authoritative while still rejecting conflicting duplicate definition metadata",
-  );
-  assert.match(
-    workerSource,
     /const currentSuccess = \{[\s\S]*workPrecision: runtime\.workPrecision[\s\S]*lastSuccess: currentSuccess/u,
     "a completed worker cycle must persist its full Q16 proof under lastSuccess",
   );

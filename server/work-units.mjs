@@ -512,22 +512,17 @@ export function workAmountSubatomsFromRecord(
     return normalizeWorkSubatoms(subatomAliases[0], { allowZero });
   }
 
-  const normalizedAtomAliases = atomAliases.map((alias) =>
-    legacyWorkAtomsToSubatoms(alias, { allowZero })
-  );
-  const normalizedSubatomAliases = subatomAliases.map((alias) =>
-    normalizeWorkSubatoms(alias, { allowZero })
-  );
-  const uniqueAtomAliases = [...new Set(normalizedAtomAliases)];
-  const uniqueSubatomAliases = [...new Set(normalizedSubatomAliases)];
-  if (uniqueAtomAliases.length > 1 || uniqueSubatomAliases.length > 1) {
+  if (atomAliases.length > 1 || subatomAliases.length > 1) {
     throw new TypeError("Legacy WORK amount aliases are ambiguous.");
   }
-  if (uniqueAtomAliases.length === 1) {
-    const normalized = uniqueAtomAliases[0];
+  if (atomAliases.length === 1) {
+    const normalized = legacyWorkAtomsToSubatoms(atomAliases[0], {
+      allowZero,
+    });
     if (
-      uniqueSubatomAliases.length === 1 &&
-      uniqueSubatomAliases[0] !== normalized
+      subatomAliases.length === 1 &&
+      normalizeWorkSubatoms(subatomAliases[0], { allowZero }) !==
+        normalized
     ) {
       throw new TypeError(
         "Legacy WORK atom and normalized subatom aliases conflict.",

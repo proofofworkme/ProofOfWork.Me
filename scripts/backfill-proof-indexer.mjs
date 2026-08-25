@@ -397,7 +397,6 @@ const PUBLIC_LOG_EVENT_KINDS = new Set([
   "token-transfer",
   "work-usd-quote",
 ]);
-const TOKEN_MIN_MUTATION_PRICE_SATS = 546;
 const PAGE_LIMIT = Number(process.env.POW_INDEX_BACKFILL_LIMIT ?? 200);
 const MAX_PAGES = Number(process.env.POW_INDEX_BACKFILL_MAX_PAGES ?? 2000);
 const REQUEST_TIMEOUT_MS = Number(process.env.POW_INDEX_FETCH_TIMEOUT_MS ?? 60_000);
@@ -553,16 +552,6 @@ const PENDING_VERIFIER_TIMEOUT_MS = Math.min(
   ),
 );
 const PENDING_LEGACY_VERIFIER_TIMEOUT_MS = 30_000;
-const CONFIRMED_VERIFIER_TIMEOUT_MS = Math.min(
-  120_000,
-  Math.max(
-    PENDING_LEGACY_VERIFIER_TIMEOUT_MS,
-    Math.floor(
-      Number(process.env.POW_INDEX_CONFIRMED_VERIFIER_TIMEOUT_MS ?? 60_000) ||
-        60_000,
-    ),
-  ),
-);
 const PENDING_ONLY_CHILD_TIMEOUT_MS = Math.min(
   10 * 60_000,
   Math.max(
@@ -1872,16 +1861,6 @@ function canonicalPwtRangeReplayVerifierBinding(rebuild) {
 
 function activePwtRangeReplay(rebuild) {
   return assertCanonicalPwtRangeReplayState(rebuild) === "active";
-}
-
-function activeCanonicalRebuild(rebuild) {
-  return Boolean(
-    rebuild &&
-      typeof rebuild === "object" &&
-      rebuild.network === NETWORK &&
-      rebuild.status === "active" &&
-      rebuild.active !== false,
-  );
 }
 
 function newPwtRangeReplayVerifierBinding(rangeReplayFromHeight, createdAt) {
@@ -5770,7 +5749,7 @@ async function canonicalRecoveryItemsForTx(tx, messages, options = {}) {
     try {
       const verifierTimeoutMs = pendingTransaction
         ? pendingVerifierRequestTimeoutMs(options)
-        : CONFIRMED_VERIFIER_TIMEOUT_MS;
+        : 30_000;
       if (verifierTimeoutMs === 0) {
         throw new Error(
           `Pending verifier headroom is exhausted before ${spec.label} for ${txid}.`,
@@ -5917,11 +5896,6 @@ async function canonicalRecoveryItemsForTx(tx, messages, options = {}) {
         // The sale row carries only seller price; the 546 anchor refund is
         // intentionally excluded from both rows.
         normalizedAmountSats = 546;
-      } else if (normalizedKind === "token-transfer") {
-        normalizedAmountSats =
-          canonicalItem?.valid === false || rawItem?.valid === false
-            ? 0
-            : TOKEN_MIN_MUTATION_PRICE_SATS;
       } else {
         normalizedAmountSats =
           canonicalItem?.amountSats ??
@@ -5961,30 +5935,14 @@ async function canonicalRecoveryItemsForTx(tx, messages, options = {}) {
       normalizedItem.validationMode =
         "canonical-incb-bond-projection";
     }
-    const normalizedTokenId = String(normalizedItem?.tokenId ?? "")
-      .trim()
-      .toLowerCase();
-    const projectionReason =
-      normalizedKind === "token-mint" &&
-      normalizedTokenId === INCB_TOKEN_ID
-        ? canonicalBondMintProjectionInvalidReason(normalizedItem)
-        : "";
-    const projectionCheckedItem = projectionReason
-      ? tokenProtocolIntegrityInvalidItem(
-          normalizedItem,
-          `Canonical INCB bond projection rejected: ${projectionReason}.`,
-          "canonical-incb-bond-projection-invalid",
-        )
-      : normalizedItem;
-    const reservedReason =
-      reservedBondCreditViolationReason(projectionCheckedItem);
+    const reservedReason = reservedBondCreditViolationReason(normalizedItem);
     const integrityItem = reservedReason
       ? tokenProtocolIntegrityInvalidItem(
-          projectionCheckedItem,
+          normalizedItem,
           reservedReason,
           "reserved-bond-credit-namespace",
         )
-      : projectionCheckedItem;
+      : normalizedItem;
     normalizedRecovered.push({
       ...recoveredItem,
       item: integrityItem,
@@ -10962,7 +10920,7 @@ async function persistCanonicalListingOutpointSpendsFromBlock(
       : null;
   let inputCount = 0;
   for (const { blockIndex, inputs, tx, txid } of spenders) {
-    const canonicalRawTx = await transactionWithInputPrevouts({
+    const canonicalRawTx = {
       ...tx,
       _powBlockIndex: blockIndex,
       canonicalBlockScan: {
@@ -10971,7 +10929,7 @@ async function persistCanonicalListingOutpointSpendsFromBlock(
         height,
         network: NETWORK,
       },
-    });
+    };
     const details = canonicalTransactionDetailRows(canonicalRawTx);
     const inputValueSats = details.inputs.reduce((total, input) => {
       if (!Number.isSafeInteger(input.value_sats)) {
@@ -11025,9 +10983,8 @@ async function persistCanonicalListingOutpointSpendsFromBlock(
           $8,
           $9,
           $10,
-          $11,
           'canonical-listing-outpoint-scan',
-          $12::jsonb
+          $11::jsonb
         )
         ON CONFLICT (network, txid)
         DO UPDATE SET
@@ -15120,10 +15077,6 @@ function canonicalSummaryAccountingModelsCurrent(summaryPayloads = {}) {
     summaryPayloads?.inceptionSummary?.stats?.confirmedSupply,
     { positive: true },
   );
-  const inceptionConfirmedSupplyOrZero = exactInteger(
-    summaryPayloads?.inceptionSummary?.stats?.confirmedSupply,
-    { allowZero: true },
-  );
   const inceptionBondSaleVolumeSats = exactInteger(
     inceptionActual?.bondSaleVolumeSats,
   );
@@ -15326,49 +15279,28 @@ function canonicalSummaryAccountingModelsCurrent(summaryPayloads = {}) {
     inceptionFloorQ8 === expectedInceptionFloorQ8 &&
     inceptionLiveFloorQ8 === expectedInceptionFloorQ8 &&
     inceptionFrozenFloorQ8 === expectedInceptionFloorQ8;
-  const preInceptionIssuanceCurrent =
-    Number.isSafeInteger(confirmedInceptionMints) &&
-    confirmedInceptionMints === 0 &&
-    inceptionConfirmedSupplyOrZero === 0n &&
-    [
-      inceptionNetworkValueQ8,
-      inceptionLiveNetworkValueQ8,
-      inceptionFrozenNetworkValueQ8,
-      topLevelInceptionNetworkValueQ8,
-      inceptionFloorQ8,
-      inceptionLiveFloorQ8,
-      inceptionFrozenFloorQ8,
-    ].every((value) => value === null || value === 0n);
-  const declaresMinerFeeAccounting =
-    summaryPayloads?.workFloor?.actualValue
-      ?.creditMinerFeeAccountingModel != null ||
-    coverage != null;
-  const minerFeeAccountingCurrent =
-    !declaresMinerFeeAccounting
-      ? summaryCoverage < WORK_AMO_V8_CONFIGURED_ACTIVATION_HEIGHT
-      : String(
-          summaryPayloads?.workFloor?.actualValue
-            ?.creditMinerFeeAccountingModel ?? "",
-        ) === "canonical-unique-tx-input-output-v1" &&
-        coverage?.complete === true &&
-        coverage?.source ===
-          "proof-indexer-normalized-input-output-totals" &&
-        Number.isSafeInteger(confirmedEvents) &&
-        confirmedEvents > 0 &&
-        coveredConfirmedEvents === confirmedEvents &&
-        Number(coverage?.missingConfirmedEvents) === 0 &&
-        Number.isSafeInteger(confirmedTransactions) &&
-        confirmedTransactions > 0 &&
-        coveredConfirmedTransactions === confirmedTransactions &&
-        Number(coverage?.missingConfirmedTransactions) === 0 &&
-        Array.isArray(coverage?.missingConfirmedTxids) &&
-        coverage.missingConfirmedTxids.length === 0;
   return (
     exactWorkNetworkValue !== null &&
-    minerFeeAccountingCurrent &&
+    String(
+      summaryPayloads?.workFloor?.actualValue
+        ?.creditMinerFeeAccountingModel ?? "",
+    ) === "canonical-unique-tx-input-output-v1" &&
     workTransferProjectionCurrent &&
-    (preInceptionIssuanceCurrent || inceptionIssuanceCurrent) &&
-    (preInceptionIssuanceCurrent || inceptionNetworkValueCurrent)
+    inceptionIssuanceCurrent &&
+    inceptionNetworkValueCurrent &&
+    coverage?.complete === true &&
+    coverage?.source ===
+      "proof-indexer-normalized-input-output-totals" &&
+    Number.isSafeInteger(confirmedEvents) &&
+    confirmedEvents > 0 &&
+    coveredConfirmedEvents === confirmedEvents &&
+    Number(coverage?.missingConfirmedEvents) === 0 &&
+    Number.isSafeInteger(confirmedTransactions) &&
+    confirmedTransactions > 0 &&
+    coveredConfirmedTransactions === confirmedTransactions &&
+    Number(coverage?.missingConfirmedTransactions) === 0 &&
+    Array.isArray(coverage?.missingConfirmedTxids) &&
+    coverage.missingConfirmedTxids.length === 0
   );
 }
 
@@ -16046,25 +15978,14 @@ async function storeCanonicalSummarySnapshot(client, options = {}) {
     logSummary?.totalCount ?? logSummary?.stats?.total ?? -1,
   );
   const logSummaryPending = Number(logSummary?.stats?.pending ?? -1);
-  const ledgerActivityTotal = Number(
-    ledger?.metrics?.activityItems ??
-      ledger?.activityPayload?.stats?.total ??
-      -1,
-  );
-  const ledgerActivityPending = Number(
-    ledger?.activityPayload?.stats?.pending ??
-      ledger?.metrics?.pending ??
-      finalPublicLogFingerprint.pending ??
-      -1,
-  );
   if (
     indexedThroughBlock !== latestIndexedHeight ||
     !publicLogFingerprintsMatch(
       currentPublicLogFingerprint,
       finalPublicLogFingerprint,
     ) ||
-    logSummaryTotal !== ledgerActivityTotal ||
-    logSummaryPending !== ledgerActivityPending ||
+    logSummaryTotal !== finalPublicLogFingerprint.count ||
+    logSummaryPending !== finalPublicLogFingerprint.pending ||
     !canonicalSummaryAccountingModelsCurrent(summaryPayloads) ||
     !snapshotId ||
     String(ledger.snapshotId ?? "").trim() !== snapshotId ||
@@ -16073,29 +15994,6 @@ async function storeCanonicalSummarySnapshot(client, options = {}) {
       (value) => value !== latestIndexedThroughBlockHash,
     )
   ) {
-    console.error(
-      JSON.stringify({
-        accountingModelsCurrent:
-          canonicalSummaryAccountingModelsCurrent(summaryPayloads),
-        finalPublicLogFingerprint,
-        indexedThroughBlock,
-        latestIndexedHeight,
-        latestIndexedThroughBlockHash,
-        ledgerActivityPending,
-        ledgerActivityTotal,
-        ledgerSnapshotId: String(ledger.snapshotId ?? "").trim(),
-        logSummaryPending,
-        logSummaryTotal,
-        phase: "canonical-summary-exact-snapshot-check",
-        publicLogFingerprintStable: publicLogFingerprintsMatch(
-          currentPublicLogFingerprint,
-          finalPublicLogFingerprint,
-        ),
-        snapshotId,
-        summaryCheckpointHashes: [...new Set(summaryCheckpointHashes)],
-        summarySnapshotIds: [...new Set(summarySnapshotIds)],
-      }),
-    );
     throw new Error(
       `Canonical summary refresh is not one exact snapshot through block ${latestIndexedHeight}`,
     );
@@ -17963,14 +17861,6 @@ async function prepareCanonicalRebuild(client) {
       [NETWORK],
     );
     await client.query(
-      `DELETE FROM proof_indexer.work_amo_v8_listing_terms WHERE network = $1`,
-      [NETWORK],
-    );
-    await client.query(
-      `DELETE FROM proof_indexer.work_amo_v7_listing_terms WHERE network = $1`,
-      [NETWORK],
-    );
-    await client.query(
       `DELETE FROM proof_indexer.work_amo_v6_listing_terms WHERE network = $1`,
       [NETWORK],
     );
@@ -19710,6 +19600,13 @@ async function assertWorkAmoV5HMinusOneCaptureCheckpoint(
         ) AS later_block_count,
         (
           SELECT count(*)::integer
+          FROM proof_indexer.transactions
+          WHERE network = $1
+            AND status = 'confirmed'
+            AND block_height > $2
+        ) AS later_transaction_count,
+        (
+          SELECT count(*)::integer
           FROM proof_indexer.events
           WHERE network = $1
             AND status = 'confirmed'
@@ -19729,23 +19626,20 @@ async function assertWorkAmoV5HMinusOneCaptureCheckpoint(
   const rebuildApplies =
     rebuild?.network === NETWORK &&
     ["active", "complete"].includes(rebuild?.status);
-  const storedCheckpointMatches =
-    checkpoint.height === blockHeight &&
-    checkpoint.blockHash === blockHash;
-  const rebuildCheckpointMatches =
-    rebuildApplies &&
-    Number(rebuild.indexedThroughBlock) === blockHeight &&
-    String(rebuild.indexedThroughBlockHash ?? "")
-      .trim()
-      .toLowerCase() === blockHash;
   if (
-    (!storedCheckpointMatches && !rebuildCheckpointMatches) ||
+    checkpoint.height !== blockHeight ||
+    checkpoint.blockHash !== blockHash ||
     Number(row.exact_block_count) !== 1 ||
     Number(row.maximum_block_height) !== blockHeight ||
     Number(row.later_block_count) !== 0 ||
+    Number(row.later_transaction_count) !== 0 ||
     Number(row.later_event_count) !== 0 ||
     Number(row.transition_count) !== 0 ||
-    (rebuildApplies && !rebuildCheckpointMatches)
+    (rebuildApplies &&
+      (Number(rebuild.indexedThroughBlock) !== blockHeight ||
+        String(rebuild.indexedThroughBlockHash ?? "")
+          .trim()
+          .toLowerCase() !== blockHash))
   ) {
     throw new Error(
       `Canonical AMO V5 H-1 seed capture requires the exact unadvanced checkpoint ${blockHeight}:${blockHash}.`,
@@ -21301,7 +21195,6 @@ async function backfillBlockScanSource(client, source) {
     if (
       ((typeof STORE_CANONICAL_SUMMARY_SNAPSHOT !== "undefined" &&
         STORE_CANONICAL_SUMMARY_SNAPSHOT) ||
-        activeCanonicalRebuild(canonicalRebuild) ||
         activePwtRangeReplay(canonicalRebuild)) &&
       protocolCandidates.some(({ messages }) =>
         protocolMessagesContainInceptionBond(messages)
@@ -24601,46 +24494,18 @@ async function persistExactWorkQ16PendingWitness(
           FROM proof_indexer.transactions transaction
           WHERE transaction.network = $1
             AND transaction.status = 'pending'
-            AND (
-              (
-                jsonb_typeof(
-                  transaction.raw_tx->'pendingWorkMintAttemptCount'
-                ) = 'number'
-                AND transaction.raw_tx->>'pendingWorkMintAttemptCount' ~
-                  '^[1-9][0-9]*$'
-              )
-              OR (
-                transaction.txid = ANY($3::text[])
-                AND jsonb_typeof(
-                  transaction.raw_tx->'pendingWorkMintAttemptCount'
-                ) = 'number'
-                AND jsonb_typeof(
-                  transaction.raw_tx->'pendingWorkMintInspectionVersion'
-                ) = 'number'
-                AND jsonb_typeof(
-                  transaction.raw_tx->'pendingWorkMintRecoveryNeeded'
-                ) = 'boolean'
-                AND jsonb_typeof(
-                  transaction.raw_tx->'pendingWorkMintResolvedInvalid'
-                ) = 'boolean'
-                AND jsonb_typeof(
-                  transaction.raw_tx->'pendingProtocolResolvedInvalid'
-                ) = 'boolean'
-                AND transaction.raw_tx->>'pendingWorkMintAttemptCount' = '0'
-                AND transaction.raw_tx->>'pendingWorkMintInspectionVersion' = '1'
-                AND transaction.raw_tx->>'pendingWorkMintRecoveryNeeded' = 'false'
-                AND transaction.raw_tx->>'pendingWorkMintResolvedInvalid' = 'false'
-                AND transaction.raw_tx->>'pendingProtocolResolvedInvalid'
-                  IN ('false', 'true')
-              )
-            )
+            AND jsonb_typeof(
+              transaction.raw_tx->'pendingWorkMintAttemptCount'
+            ) = 'number'
+            AND transaction.raw_tx->>'pendingWorkMintAttemptCount' ~
+              '^[1-9][0-9]*$'
         )
         SELECT txid
         FROM pending_members
         WHERE txid ~ '^[0-9a-f]{64}$'
         ORDER BY txid ASC
       `,
-      [NETWORK, WORK_TOKEN_ID, lockedParent.membershipTxids],
+      [NETWORK, WORK_TOKEN_ID],
     );
     const expectedPersistedMembership = lockedParent.membershipTxids.filter(
       (txid) => !confirmedTransitionTxids.includes(txid),
@@ -28545,119 +28410,6 @@ async function repairConfirmedListingSealMetadata(client) {
   };
 }
 
-async function reconcileWorkQ16ConfirmedListingsFromLatestTransition(client) {
-  const workProjectionModel = await currentWorkProjectionModel(client, {
-    refresh: true,
-  });
-  if (workProjectionModel !== WORK_SUBATOM_PROJECTION_MODEL) {
-    return {
-      indexed: 0,
-      skipped: 0,
-      source: "repair-work-q16-confirmed-listing-state",
-      status: "not-q16",
-    };
-  }
-  const result = await client.query(
-    `
-      WITH latest_transition AS MATERIALIZED (
-        SELECT
-          transition.block_height,
-          transition.block_hash,
-          transition.payload->'closingTokenState' AS closing_token_state
-        FROM proof_indexer.work_amo_block_transitions transition
-        JOIN proof_indexer.blocks block
-          ON block.network = transition.network
-         AND block.block_hash = transition.block_hash
-         AND block.height = transition.block_height
-         AND block.canonical = true
-        WHERE transition.network = $1
-          AND transition.complete = true
-          AND transition.model = $3
-          AND transition.work_token_state_model = $4
-        ORDER BY transition.block_height DESC
-        LIMIT 1
-      ),
-      state_listing AS MATERIALIZED (
-        SELECT DISTINCT lower(item->>'listingId') AS listing_id
-        FROM latest_transition,
-          jsonb_array_elements(
-            CASE
-              WHEN jsonb_typeof(
-                closing_token_state->'listings'
-              ) = 'array'
-                THEN closing_token_state->'listings'
-              ELSE '[]'::jsonb
-            END
-          ) item
-        WHERE item->>'listingId' ~ '^[0-9a-fA-F]{64}$'
-      ),
-      stale_listing AS MATERIALIZED (
-        SELECT
-          listing.listing_id,
-          listing.status AS previous_status,
-          latest_transition.block_height,
-          latest_transition.block_hash
-        FROM proof_indexer.credit_listings listing
-        CROSS JOIN latest_transition
-        WHERE listing.network = $1
-          AND listing.token_id = $2
-          AND listing.status IN ('active', 'sealing')
-          AND NOT EXISTS (
-            SELECT 1
-            FROM state_listing
-            WHERE state_listing.listing_id = listing.listing_id
-          )
-      )
-      UPDATE proof_indexer.credit_listings listing
-      SET
-        status = 'delisted',
-        buyer_address = NULL,
-        close_txid = NULL,
-        payload =
-          (
-            COALESCE(listing.payload, '{}'::jsonb)
-            - 'buyerAddress'
-            - 'closeTxid'
-            - 'closedTxid'
-            - 'saleTxid'
-          )
-          || jsonb_build_object(
-            'canonicalQ16ListingState',
-              jsonb_build_object(
-                'absentFromClosingTokenState', true,
-                'blockHash', stale_listing.block_hash,
-                'blockHeight', stale_listing.block_height,
-                'model', $5::text,
-                'previousStatus', stale_listing.previous_status
-              ),
-            'closedConfirmed', true,
-            'disabledReason', 'work-q16-canonical-state-absence',
-            'sealPending', false,
-            'status', 'delisted'
-          ),
-        updated_at = now()
-      FROM stale_listing
-      WHERE listing.network = $1
-        AND listing.listing_id = stale_listing.listing_id
-        AND listing.token_id = $2
-        AND listing.status IN ('active', 'sealing')
-      RETURNING listing.listing_id
-    `,
-    [
-      NETWORK,
-      WORK_TOKEN_ID,
-      WORK_AMO_V8_BLOCK_SEQUENCER_MODEL,
-      WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL,
-      "canonical-work-q16-confirmed-listing-state-repair-v1",
-    ],
-  );
-  return {
-    indexed: result.rows.length,
-    skipped: 0,
-    source: "repair-work-q16-confirmed-listing-state",
-  };
-}
-
 async function repairWorkMintMinterAttribution(client) {
   if (!REPAIR_MINT_MINTERS) {
     return { indexed: 0, skipped: 0, source: "repair-mint-minters" };
@@ -30872,11 +30624,6 @@ try {
           }
           results.push(await repairMailParticipants(client));
           results.push(await repairConfirmedListingSealMetadata(client));
-          results.push(
-            await reconcileWorkQ16ConfirmedListingsFromLatestTransition(
-              client,
-            ),
-          );
         }
         results.push(await repairConfirmedWorkTransferParticipants(client));
         if (REPAIR_WORK_PARTICIPANTS_ONLY) {

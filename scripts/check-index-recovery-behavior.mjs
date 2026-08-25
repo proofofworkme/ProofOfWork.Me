@@ -289,8 +289,6 @@ const WORK_NETWORK_VALUE_ACCOUNTING_MODEL =
 const GROWTH_ID_DENSITY_NUMERATOR = 26_868_933_906_745_133n;
 const GROWTH_ID_DENSITY_DENOMINATOR = 100_000_000_000_000n;
 const GROWTH_VALUE_MULTIPLE = 5n;
-const WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_COMPAT_REASON_CODE =
-  "work-market-v2-canonical-oracle-unavailable";
 const DEFAULT_REPLAY_WITNESS_SET_HASH = "8".repeat(64);
 const WORK_AMO_V5_H_MINUS_ONE_CANONICAL_SUMMARY_SNAPSHOT_ID =
   "cb13bc6edd20d72f6ae3919e";
@@ -354,74 +352,6 @@ function workAmoV5LegacyBootstrapCarryRowFixture(overrides = {}) {
     validation_errors: [reasonCode],
     ...overrides,
   };
-}
-
-function workAmoV5LegacyBootstrapCarryCompatRowFixture(overrides = {}) {
-  const row = workAmoV5LegacyBootstrapCarryRowFixture({
-    active_listing_count: 0,
-    amount_sats: "0",
-    kind: "token-event-invalid",
-    listing_count: 0,
-    listing_statuses: [],
-    registry_payment_output_count: 1,
-    sale_ticket_output_count: 1,
-    validation_errors: [
-      WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_COMPAT_REASON_CODE,
-    ],
-    ...overrides,
-  });
-  row.payload = {
-    ...row.payload,
-    amountSats: 0,
-    attemptedKind: "list",
-    auditMinerFeeSats:
-      WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MINER_FEE_SATS,
-    auditRegistryPaymentSats:
-      WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MUTATION_SATS,
-    auditTotalCostSats:
-      WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MUTATION_SATS +
-      WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MINER_FEE_SATS,
-    indexedFrom: "token-invalid-events",
-    kind: "token-event-invalid",
-    reason: WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_COMPAT_REASON_CODE,
-    reasonCode:
-      WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_COMPAT_REASON_CODE,
-    recipients: [
-      {
-        address: "1638Vn6KtmK8p5r4oGvAXq9nmZb1emU1DV",
-        amountSats: String(
-          WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MUTATION_SATS,
-        ),
-        vout: 0,
-      },
-    ],
-    registryAddress: "1638Vn6KtmK8p5r4oGvAXq9nmZb1emU1DV",
-    saleAuthorization: {
-      ...row.payload.saleAuthorization,
-      anchorValueSats:
-        WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MUTATION_SATS,
-      anchorVout: 2,
-    },
-    saleTicketValueSats: String(
-      WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MUTATION_SATS,
-    ),
-    saleTicketVout: 2,
-    sellerAddress: "1Pg9E4EHHMxQ6WgEWEVzbWhaKf3UdZKXD9",
-    validationErrors: [
-      WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_COMPAT_REASON_CODE,
-    ],
-    validationMode: "canonical-first-party-state",
-    workAmoV5RawDecodeValid: true,
-    workMarketPricing: {
-      reasonCode:
-        WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_COMPAT_REASON_CODE,
-      valid: false,
-    },
-  };
-  delete row.payload.minerFeeSats;
-  delete row.payload.refundEligible;
-  delete row.payload.relic;
-  return row;
 }
 
 function workAmoV5LegacyBootstrapCarryEvidenceFixture(overrides = {}) {
@@ -1317,7 +1247,6 @@ function isolatedFunction(path, name, globals = {}) {
     WORK_TOKEN_MINT_PRICE_SATS: 1_000,
     WORK_TOKEN_TICKER: "WORK",
     tokenIndexAddressForNetwork: () => "",
-    TOKEN_MIN_MUTATION_PRICE_SATS: 546,
     WORK_AMO_V5_ACTIVATION_HEIGHT,
     WORK_AMO_V5_AUTH_VERSION,
     WORK_AMO_V6_AUTH_VERSION,
@@ -1619,7 +1548,6 @@ function isolatedFunction(path, name, globals = {}) {
         ],
         tokenTransferFromIndexedActivityItem: [
           "canonicalCreditValueFieldsFromRecord",
-          "tokenTransferRegistryMutationFeeSatsFromActivity",
           "tokenCreditAmountMovedFields",
         ],
         tokenStateWithCreditNetworkValueDetails: [
@@ -1666,7 +1594,6 @@ function isolatedFunction(path, name, globals = {}) {
           eventRowPayload: [
             "canonicalMovementPositionFromEventRow",
             "idRegistryProtocolFeeSats",
-            "tokenTransferRegistryMutationFeeSats",
           ],
           proofIndexCreditListingsPayload: [
             "canonicalTokenListingEventJoinSql",
@@ -1759,11 +1686,7 @@ function isolatedFunction(path, name, globals = {}) {
           ],
           tokenTransferFromEventPayload: [
             "canonicalMovementPositionFromEventRow",
-            "tokenTransferRegistryMutationFeeSats",
             "workAmountProjectionMetadataForAmount",
-          ],
-          tokenTransferRegistryMutationFeeSats: [
-            "normalizedLowerText",
           ],
           workAmountProjection: [
             "formatWorkAmountByProjectionMeta",
@@ -1789,22 +1712,8 @@ function isolatedFunction(path, name, globals = {}) {
           canonicalMempoolTxidSnapshot: [
             "canonicalJsonText",
           ],
-          canonicalRecoveryItemsForTx: [
-            "canonicalBondMintProjectionInvalidReason",
-          ],
           canonicalIncbIssuanceQ8Projection: [
             "canonicalIncbAttachedWorkQuantity",
-          ],
-          canonicalIncbIssuanceMintProjection: [
-            "incbIssuanceMetadataInvalidReason",
-          ],
-          canonicalBondMintProjection: [
-            "canonicalBondMintProjectionStructure",
-            "canonicalIncbIssuanceMintProjection",
-          ],
-          canonicalBondMintProjectionInvalidReason: [
-            "canonicalBondMintProjectionStructure",
-            "incbIssuanceMetadataInvalidReason",
           ],
           incbIssuanceMetadataInvalidReason: [
             "canonicalIncbAttachedWorkQuantity",
@@ -1824,8 +1733,6 @@ function isolatedFunction(path, name, globals = {}) {
           ],
           rebuildConfirmedCreditBalancesFromCanonicalEvents: [
             "assertCanonicalWorkProjection",
-            "canonicalBondMintProjection",
-            "canonicalBondMintProjectionInvalidReason",
           ],
           seedCanonicalWorkDefinition: [
             "currentWorkProjectionModel",
@@ -2023,52 +1930,6 @@ const WORK_MARKET_GOVERNED_AUTH_VERSIONS_FIXTURE = new Set([
   WORK_AMO_V6_AUTH_VERSION,
   WORK_AMO_V8_AUTH_VERSION,
 ]);
-
-check("Q16 maintenance delists only stale confirmed WORK listings", () => {
-  const repairSource = topLevelFunctionSource(
-    BACKFILL_PATH,
-    "reconcileWorkQ16ConfirmedListingsFromLatestTransition",
-  );
-  assert.match(
-    repairSource,
-    /currentWorkProjectionModel\([\s\S]*WORK_SUBATOM_PROJECTION_MODEL/u,
-  );
-  assert.match(
-    repairSource,
-    /transition\.model = \$3[\s\S]*WORK_AMO_V8_BLOCK_SEQUENCER_MODEL/u,
-  );
-  assert.match(
-    repairSource,
-    /transition\.work_token_state_model = \$4[\s\S]*WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL/u,
-  );
-  assert.match(
-    repairSource,
-    /jsonb_array_elements\([\s\S]*closing_token_state->'listings'/u,
-  );
-  assert.match(
-    repairSource,
-    /listing\.token_id = \$2[\s\S]*WORK_TOKEN_ID/u,
-  );
-  assert.match(
-    repairSource,
-    /listing\.status IN \('active', 'sealing'\)/u,
-  );
-  assert.match(
-    repairSource,
-    /NOT EXISTS \([\s\S]*FROM state_listing[\s\S]*state_listing\.listing_id = listing\.listing_id/u,
-  );
-  assert.match(
-    repairSource,
-    /status = 'delisted'[\s\S]*'work-q16-canonical-state-absence'/u,
-  );
-
-  const backfillSource = fileSource(BACKFILL_PATH);
-  assert.match(
-    backfillSource,
-    /repairConfirmedListingSealMetadata\(client\)[\s\S]*reconcileWorkQ16ConfirmedListingsFromLatestTransition\(\s*client,\s*\)/u,
-    "Q16 confirmed listing reconciliation must run after seal metadata repair",
-  );
-});
 
 check("historical WORK listing scope is exact, singleton, and fail closed", async () => {
   const historicalWorkListingScopeObject = isolatedFunction(
@@ -5186,8 +5047,6 @@ check("market lifecycle remains live when event enrichment is slow", async () =>
         stats: { complete: true, totalCount: 1 },
       }),
       proofIndexPayloadCoversConfirmedTip: async () => true,
-      proofIndexPayloadIndexedThroughBlock: (payload) =>
-        Number(payload?.indexedThroughBlock ?? 0),
       proofIndexReadFeatureEnabled: () => true,
       proofIndexTokenMarketSummaryOverlayPayload: () =>
         new Promise(() => {}),
@@ -5206,58 +5065,6 @@ check("market lifecycle remains live when event enrichment is slow", async () =>
   const result = await indexedTokenMarketSummaryOverlay("livenet", "");
   assert.equal(result.listings[0].listingId, listingId);
   assert.equal(result.indexedThroughBlock, 957712);
-});
-
-check("market lifecycle accepts exact checkpoint coverage during rebuild", async () => {
-  const listingId =
-    "15aa831e339a17dd3d0a8a256268cb5e652b965ecf79a6af1423375619ad88fa";
-  let currentTipChecks = 0;
-  const indexedTokenMarketSummaryOverlay = isolatedFunction(
-    API_PATH,
-    "indexedTokenMarketSummaryOverlay",
-    {
-      SUMMARY_PROOF_INDEX_READ_WAIT_MS: 10,
-      errorSummary: (error) => String(error?.message ?? error),
-      normalizeTokenScope: (value) => String(value ?? "").toLowerCase(),
-      numericValue: (value) => Number(value) || 0,
-      payloadWithFallbackAfterMs: async (promise) => promise,
-      proofIndexCreditListingsPayload: async () => ({
-        indexedAt: "2026-07-12T14:28:54.000Z",
-        indexedThroughBlock: 957712,
-        items: [{ listingId }],
-        stats: { complete: true, totalCount: 1 },
-      }),
-      proofIndexPayloadCoversConfirmedTip: async () => {
-        currentTipChecks += 1;
-        return false;
-      },
-      proofIndexPayloadIndexedThroughBlock: (payload) =>
-        Number(payload?.indexedThroughBlock ?? 0),
-      proofIndexReadFeatureEnabled: () => true,
-      proofIndexTokenMarketSummaryOverlayPayload: async () => null,
-      tokenMarketLifecycleOverlayFromCreditListings: (payload) => ({
-        closedListings: [],
-        indexedAt: payload.indexedAt,
-        indexedThroughBlock: payload.indexedThroughBlock,
-        listings: payload.items,
-        sales: [],
-        source: "proof-indexer-credit-listing-lifecycle",
-        stats: payload.stats,
-      }),
-    },
-  );
-  const exact = await indexedTokenMarketSummaryOverlay("livenet", "", {
-    exactHeight: 957712,
-  });
-  assert.equal(exact.listings[0].listingId, listingId);
-  assert.equal(currentTipChecks, 0);
-  const mismatched = await indexedTokenMarketSummaryOverlay("livenet", "", {
-    exactHeight: 957713,
-  });
-  assert.equal(mismatched, null);
-  const live = await indexedTokenMarketSummaryOverlay("livenet", "");
-  assert.equal(live, null);
-  assert.equal(currentTipChecks, 1);
 });
 
 check("market lifecycle overrides stale event closures", async () => {
@@ -5279,8 +5086,6 @@ check("market lifecycle overrides stale event closures", async () => {
         stats: { complete: true, totalCount: 1 },
       }),
       proofIndexPayloadCoversConfirmedTip: async () => true,
-      proofIndexPayloadIndexedThroughBlock: (payload) =>
-        Number(payload?.indexedThroughBlock ?? 0),
       proofIndexReadFeatureEnabled: () => true,
       proofIndexTokenMarketSummaryOverlayPayload: async () => ({
         closedListings: [
@@ -6857,7 +6662,7 @@ check("post-AMO-V5 ID registrations require and expose one exact canonical posit
   );
 });
 
-check("valid PWID and token lifecycle rows project their fixed protocol fee", () => {
+check("valid PWID lifecycle rows project their fixed protocol fee", () => {
   const eventRowPayload = isolatedFunction(READER_PATH, "eventRowPayload", {
     ID_MUTATION_PRICE_SATS: 546,
     ID_REGISTRATION_PRICE_SATS: 1_000,
@@ -6985,53 +6790,6 @@ check("valid PWID and token lifecycle rows project their fixed protocol fee", ()
     0,
     "unsupported PWID kinds must not receive a canonical protocol fee",
   );
-  const tokenTransfer = eventRowPayload(
-    {
-      ...rowFor("token-transfer", {
-        amount_sats: "0",
-        protocol: "pwt1",
-        payload: {
-          amountSats: 0,
-          kind: "token-transfer",
-          protocol: "pwt1",
-          tokenId: POWB_TOKEN_ID,
-          txid,
-        },
-      }),
-    },
-    "livenet",
-  );
-  assert.equal(
-    tokenTransfer.amountSats,
-    546,
-    "valid pwt1 token transfers must project the fixed registry fee",
-  );
-  assert.equal(tokenTransfer.paidSats, 546);
-  assert.equal(tokenTransfer.registryMutationFeeSats, 546);
-  assert.equal(
-    eventRowPayload(
-      rowFor("token-transfer", {
-        amount_sats: "0",
-        protocol: "pwt1",
-        valid: false,
-        payload: {
-          amountSats: 0,
-          kind: "token-transfer",
-          protocol: "pwt1",
-          tokenId: POWB_TOKEN_ID,
-          txid,
-        },
-      }),
-      "livenet",
-    ).amountSats,
-    0,
-    "invalid pwt1 token transfers must not receive a canonical protocol fee",
-  );
-  assert.match(
-    topLevelFunctionSource(BACKFILL_PATH, "canonicalRecoveryItemsForTx"),
-    /normalizedKind === "token-transfer"[\s\S]*TOKEN_MIN_MUTATION_PRICE_SATS[\s\S]*canonicalItem\?\.amountSats/u,
-    "indexer recovery normalization must persist valid token transfers with the fixed mutation fee",
-  );
 
   const confirmedValueDeltaSource = topLevelFunctionSource(
     READER_PATH,
@@ -7039,13 +6797,13 @@ check("valid PWID and token lifecycle rows project their fixed protocol fee", ()
   );
   assert.match(
     confirmedValueDeltaSource,
-    /e\.protocol = 'pwid1' AND e\.kind = 'id-register'[\s\S]*THEN \$\{ID_REGISTRATION_PRICE_SATS\}[\s\S]*e\.protocol = 'pwid1' AND e\.kind IN \([\s\S]*'id-update'[\s\S]*'id-transfer'[\s\S]*'id-list'[\s\S]*'id-seal'[\s\S]*'id-delist'[\s\S]*'id-buy'[\s\S]*THEN \$\{ID_MUTATION_PRICE_SATS\}[\s\S]*e\.protocol = 'pwt1' AND e\.kind = 'token-transfer'[\s\S]*THEN \$\{TOKEN_MIN_MUTATION_PRICE_SATS\}[\s\S]*ELSE e\.amount_sats/u,
-    "incremental value-event recovery must derive the same fixed protocol fees",
+    /e\.protocol = 'pwid1' AND e\.kind = 'id-register'[\s\S]*THEN \$\{ID_REGISTRATION_PRICE_SATS\}[\s\S]*e\.protocol = 'pwid1' AND e\.kind IN \([\s\S]*'id-update'[\s\S]*'id-transfer'[\s\S]*'id-list'[\s\S]*'id-seal'[\s\S]*'id-delist'[\s\S]*'id-buy'[\s\S]*THEN \$\{ID_MUTATION_PRICE_SATS\}[\s\S]*ELSE e\.amount_sats/u,
+    "incremental value-event recovery must derive the same fixed PWID fees",
   );
   assert.match(
     topLevelFunctionSource(READER_PATH, "proofIndexValueSummaryPayload"),
-    /protocol = 'pwid1' AND kind = 'id-register'[\s\S]*THEN \$\{ID_REGISTRATION_PRICE_SATS\}[\s\S]*protocol = 'pwid1' AND kind IN \([\s\S]*'id-update'[\s\S]*'id-transfer'[\s\S]*'id-list'[\s\S]*'id-seal'[\s\S]*'id-delist'[\s\S]*'id-buy'[\s\S]*THEN \$\{ID_MUTATION_PRICE_SATS\}[\s\S]*protocol = 'pwt1' AND kind = 'token-transfer'[\s\S]*THEN \$\{TOKEN_MIN_MUTATION_PRICE_SATS\}[\s\S]*ELSE amount_sats/u,
-    "value-summary fallback must derive the same fixed protocol fees",
+    /protocol = 'pwid1' AND kind = 'id-register'[\s\S]*THEN \$\{ID_REGISTRATION_PRICE_SATS\}[\s\S]*protocol = 'pwid1' AND kind IN \([\s\S]*'id-update'[\s\S]*'id-transfer'[\s\S]*'id-list'[\s\S]*'id-seal'[\s\S]*'id-delist'[\s\S]*'id-buy'[\s\S]*THEN \$\{ID_MUTATION_PRICE_SATS\}[\s\S]*ELSE amount_sats/u,
+    "value-summary fallback must derive the same fixed PWID fees",
   );
 });
 
@@ -7427,7 +7185,6 @@ check("fresh wallet token reads use exact or bounded canonical coverage", async 
   const walletScopedTokenCacheStubs = {
     cachedWalletScopedTokenPayload: () => null,
     rememberWalletScopedTokenPayload: (_cacheKey, payload) => payload,
-    walletScopedTokenPayloadWithComputedStats: (payload) => payload,
     walletScopedTokenCacheKey: () => "",
   };
   const walletScopedTokenPayload = isolatedFunction(
@@ -7712,7 +7469,6 @@ check("fresh wallet token reads use exact or bounded canonical coverage", async 
         activeListingReads += 1;
         return { ...payload, activeListingsEnriched: true };
       },
-      walletScopedTokenPayloadWithComputedStats: (payload) => payload,
       walletScopedPayloadUsesAuthoritativeOverlay,
     },
   );
@@ -13289,15 +13045,6 @@ check("Inception fixes attachment value at issuance and adds only later INCB mar
     const number = Number(row?.[key]);
     return Number.isFinite(number) ? number : 0;
   };
-  const tokenTransferRegistryMutationFeeSats = isolatedFunction(
-    READER_PATH,
-    "tokenTransferRegistryMutationFeeSats",
-    {
-      TOKEN_MIN_MUTATION_PRICE_SATS: 546,
-      normalizedLowerText: (value) =>
-        String(value ?? "").trim().toLowerCase(),
-    },
-  );
   const tokenTransferFromEventPayload = isolatedFunction(
     READER_PATH,
     "tokenTransferFromEventPayload",
@@ -13306,7 +13053,6 @@ check("Inception fixes attachment value at issuance and adds only later INCB mar
       dateIso: (value) => value,
       isWorkTokenId: (value) => value === WORK_TOKEN_ID,
       rowNumber,
-      tokenTransferRegistryMutationFeeSats,
       tokenRegistryAddressFromPayload: () => "bc1workregistry",
       tokenTransferAmountFromTags: () => 0,
     },
@@ -13314,11 +13060,6 @@ check("Inception fixes attachment value at issuance and adds only later INCB mar
   const apiIdentityDetails = isolatedFunction(
     API_PATH,
     "canonicalEventIdentityDetails",
-  );
-  const tokenTransferRegistryMutationFeeSatsFromActivity = isolatedFunction(
-    API_PATH,
-    "tokenTransferRegistryMutationFeeSatsFromActivity",
-    { TOKEN_MIN_MUTATION_PRICE_SATS: 546 },
   );
   const tokenTransferFromIndexedActivityItem = isolatedFunction(
     API_PATH,
@@ -13332,12 +13073,9 @@ check("Inception fixes attachment value at issuance and adds only later INCB mar
         keys.map((key) => item?.[key]).find(Boolean) ?? "",
       isWorkTokenId: (value) => value === WORK_TOKEN_ID,
       numericValue,
-      tokenTransferRegistryMutationFeeSatsFromActivity,
       tokenLedgerAmountFields: testTokenLedgerAmountFields,
-      tokenLedgerAmountFromRecord: (tokenId, record) =>
-        tokenId === WORK_TOKEN_ID
-          ? workAtomsBigIntFromRecord(record)
-          : numericValue(record?.amount),
+      tokenLedgerAmountFromRecord: (_tokenId, record) =>
+        workAtomsBigIntFromRecord(record),
     },
   );
   const mailAttachedCreditsFromRecord = isolatedFunction(
@@ -13395,50 +13133,6 @@ check("Inception fixes attachment value at issuance and adds only later INCB mar
       "livenet",
     );
   });
-  const powbTransfer = tokenTransferFromEventPayload(
-    {
-      amount: "27420000",
-      amountSats: 0,
-      confirmed: true,
-      kind: "token-transfer",
-      protocol: "pwt1",
-      recipientAddress,
-      senderAddress: "bc1sender",
-      ticker: "POWB",
-      tokenId: POWB_TOKEN_ID,
-      txid: "7a2436c755719eb2bd53e355b340617896453d075f97aa964767813e5670393d",
-      valid: true,
-    },
-    {
-      amount_sats: "0",
-      block_height: blockHeight,
-      event_id: 402,
-      kind: "token-transfer",
-      network: "livenet",
-      protocol: "pwt1",
-      status: "confirmed",
-      valid: true,
-    },
-  );
-  assert.equal(powbTransfer.amount, "27420000");
-  assert.equal(
-    powbTransfer.paidSats,
-    546,
-    "valid generic credit transfers must attribute the fixed registry fee even when amount_sats is zero",
-  );
-  assert.equal(powbTransfer.registryMutationFeeSats, 546);
-  const indexedPowbTransfer = tokenTransferFromIndexedActivityItem(
-    powbTransfer,
-    {
-      registryAddress: "1H1arP2xpam6MZmHt6k1tB83stqVdH6ANK",
-      ticker: "POWB",
-      tokenId: POWB_TOKEN_ID,
-    },
-    "livenet",
-  );
-  assert.equal(indexedPowbTransfer?.amount, 27420000);
-  assert.equal(indexedPowbTransfer?.paidSats, 546);
-  assert.equal(indexedPowbTransfer?.registryMutationFeeSats, 546);
   const pipelineAttachedCredits = mailAttachedCreditsFromRecord(
     {
       attachedCredits: [2, 3].map((protocolVout, index) => ({
@@ -16434,11 +16128,6 @@ check("Q16 empty-parent bootstrap is exact, locked, and fail-closed", async () =
   assert.match(
     publicationSource,
     /BEGIN ISOLATION LEVEL SERIALIZABLE[\s\S]*LOCK TABLE[\s\S]*lockedWorkQ16PendingParent[\s\S]*Persisted pending WORK membership diverged/u,
-  );
-  assert.match(
-    publicationSource,
-    /pending_members[\s\S]*pendingWorkMintAttemptCount[\s\S]*transaction\.txid = ANY\(\$3::text\[\]\)[\s\S]*pendingWorkMintInspectionVersion[\s\S]*pendingWorkMintRecoveryNeeded[\s\S]*pendingWorkMintResolvedInvalid[\s\S]*pendingProtocolResolvedInvalid[\s\S]*lockedParent\.membershipTxids[\s\S]*Persisted pending WORK membership diverged/u,
-    "publication membership must count parent-bound terminal recovery-marker rows without admitting unrelated terminal markers",
   );
   assert.match(
     publicationSource,
@@ -22621,7 +22310,7 @@ check("pending WORK confirmed V8 listings materialize frozen terms for readiness
   );
 });
 
-check("pending WORK confirmed base collapses exact generic token invalid siblings", () => {
+check("pending WORK confirmed base collapses only its exact legacy invalid sibling", () => {
   const collapse = isolatedFunction(
     API_PATH,
     "pendingWorkVerifierStageCollapseExactLegacyInvalidSibling",
@@ -22676,59 +22365,9 @@ check("pending WORK confirmed base collapses exact generic token invalid sibling
   assert.equal(
     exactCollapse.length,
     1,
-    "the exact generic sibling yields to its specific listing audit row",
+    "the exact chain-pinned generic sibling yields to its specific audit row",
   );
   assert.equal(exactCollapse[0], specific);
-  const mintTxid =
-    "16442fcff29115c1d3ba26230e70d5fa2d0db62eccddf829e72e1402c03a2846";
-  const mintGeneric = {
-    ...generic,
-    blockHash:
-      "0000000000000000000176432a4c0eb83b88f1db2a1b2f6f64ff6de0ee7f6e306",
-    blockHeight: 949_912,
-    blockIndex: 3_966,
-    txid: mintTxid,
-  };
-  const mintSpecific = {
-    ...mintGeneric,
-    kind: "token-mint-invalid",
-    reason: "The canonical first-party verifier rejected this protocol event.",
-    validationErrors: [
-      "The canonical first-party verifier rejected this protocol event.",
-    ],
-  };
-  const exactMintCollapse = collapse([mintSpecific, mintGeneric]);
-  assert.equal(
-    exactMintCollapse.length,
-    1,
-    "the exact generic mint sibling yields to its specific invalid mint audit row",
-  );
-  assert.equal(exactMintCollapse[0], mintSpecific);
-  const sealTxid =
-    "c834351ad3d389904bf26f08d3ca9a97ffa2c86898f9b1d59d7095959bc12217";
-  const sealGeneric = {
-    ...generic,
-    blockHash:
-      "00000000000000000001bac0181b16d5ba5e69a1399d98b94b15452c8b619e14",
-    blockHeight: 957_115,
-    blockIndex: 1_535,
-    txid: sealTxid,
-    validationErrors: undefined,
-  };
-  const sealSpecific = {
-    ...sealGeneric,
-    kind: "token-listing-sealed-invalid",
-    listingId: "ba81ab1e12a15a9d889a5d99ba23d0d89d2c5230719abfa8395c30cc2792915d",
-    reason: "The canonical first-party verifier rejected this protocol event.",
-    saleAuthorization: { version: "pwt-sale-v1" },
-  };
-  const exactSealCollapse = collapse([sealGeneric, sealSpecific]);
-  assert.equal(
-    exactSealCollapse.length,
-    1,
-    "the exact generic seal sibling yields to its specific sealed-listing audit row",
-  );
-  assert.equal(exactSealCollapse[0], sealSpecific);
   const coarseKey = (item) =>
     `${item.txid}:${item.protocolVout}:${item.recordOrdinal}`;
   const rejects = (items, label) => {
@@ -22744,6 +22383,13 @@ check("pending WORK confirmed base collapses exact generic token invalid sibling
     );
   };
   rejects(
+    [
+      { ...generic, blockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT },
+      { ...specific, blockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT },
+    ],
+    "a post-V5 pair is not collapsed",
+  );
+  rejects(
     [generic, specific, { ...specific }],
     "non-singleton sibling cardinality is not collapsed",
   );
@@ -22752,20 +22398,12 @@ check("pending WORK confirmed base collapses exact generic token invalid sibling
     "canonical identity mismatch is not collapsed",
   );
   rejects(
+    [generic, { ...specific, saleAuthorization: { version: "pwt-sale-v3" } }],
+    "a near-match authorization version is not collapsed",
+  );
+  rejects(
     [{ ...generic, listingId: txid }, specific],
     "a generic row carrying listing identity is not collapsed",
-  );
-  rejects(
-    [generic, { ...specific, kind: "token-event-invalid" }],
-    "a non-specific invalid row is not collapsed",
-  );
-  rejects(
-    [mintGeneric, { ...mintSpecific, listingId: mintTxid }],
-    "a mint invalid row carrying listing identity is not collapsed",
-  );
-  rejects(
-    [{ ...generic, reason: "different" }, specific],
-    "a generic row with a different reason is not collapsed",
   );
   assert.match(
     topLevelFunctionSource(API_PATH, "pendingWorkVerifierStageConfirmedBase"),
@@ -23005,11 +22643,6 @@ check("exact canonical summaries require current conserved token balances", asyn
     /WHEN listing\.status = 'sealing'[\s\S]*seal_event\.payload->'saleAuthorization'[\s\S]*LEFT JOIN proof_indexer\.events seal_event[\s\S]*seal_event\.kind = 'token-listing-sealed'[\s\S]*EXISTS \([\s\S]*proof_indexer\.transactions seal_tx[\s\S]*seal_block\.canonical = true/u,
     "reader readiness must use the canonical seal event authorization for sealing V8 listings",
   );
-  assert.match(
-    migrationReadinessSource,
-    /AND listing\.status IN \('active', 'sealing'\)[\s\S]*AND COALESCE\([\s\S]*listing\.payload->'saleAuthorization'->>'version'[\s\S]*listing\.payload->'listingAuthorization'->>'version'[\s\S]*\) = \$3/u,
-    "reader readiness must compare only V8-authorized listings against the V8 transition token state",
-  );
   const v8RelationalEvidenceSource = topLevelFunctionSource(
     READER_PATH,
     "proofIndexWorkAmoV8RelationalTokenStateEvidence",
@@ -23033,11 +22666,6 @@ check("exact canonical summaries require current conserved token balances", asyn
     v8RelationalEvidenceSource,
     /WHEN listing\.status = 'sealing'[\s\S]*seal_event\.payload->'saleAuthorization'[\s\S]*LEFT JOIN proof_indexer\.events seal_event[\s\S]*seal_event\.kind = 'token-listing-sealed'[\s\S]*EXISTS \([\s\S]*proof_indexer\.transactions seal_tx[\s\S]*seal_block\.canonical = true/u,
     "V8 relational token-state evidence must use the canonical seal event authorization for sealing rows",
-  );
-  assert.match(
-    v8RelationalEvidenceSource,
-    /AND listing\.status IN \('active', 'sealing'\)[\s\S]*AND COALESCE\([\s\S]*listing\.payload->'saleAuthorization'->>'version'[\s\S]*listing\.payload->'listingAuthorization'->>'version'[\s\S]*\) = \$3/u,
-    "V8 relational token-state evidence must ignore legacy sale-ticket rows when proving V8 state",
   );
   const workerReplaySource = topLevelFunctionSource(
     WORKER_PATH,
@@ -30557,7 +30185,7 @@ check("reserved bond credits reject generic create and mint supply", () => {
 
   assert.match(
     topLevelFunctionSource(BACKFILL_PATH, "canonicalRecoveryItemsForTx"),
-    /canonicalBondMintProjectionInvalidReason\(normalizedItem\)[\s\S]*reservedBondCreditViolationReason\(projectionCheckedItem\)/u,
+    /reservedBondCreditViolationReason\(normalizedItem\)/u,
   );
   assert.match(
     topLevelFunctionSource(BACKFILL_PATH, "persistPreparedProtocolItems"),
@@ -32874,156 +32502,6 @@ check("complete canonical token replay publishes conserved balances", async () =
   );
 });
 
-check("canonical credit replay quarantines stale malformed INCB projection rows", async () => {
-  const accountingModel = "canonical-pre-bond-live-network-value-v2";
-  const txid =
-    "b00b9451bded7d2b7d339556ad2dc5d375e5b52ad877a1d3e2b29149dfc72ccf";
-  const genericTxid =
-    "c00c9451bded7d2b7d339556ad2dc5d375e5b52ad877a1d3e2b29149dfc72ccf";
-  const writes = [];
-  const rebuildConfirmedCreditBalancesFromCanonicalEvents = isolatedFunction(
-    BACKFILL_PATH,
-    "rebuildConfirmedCreditBalancesFromCanonicalEvents",
-    {
-      BOND_TAGS: [{ ticker: "INCB", tokenId: INCB_TOKEN_ID }],
-      INCB_ISSUANCE_ACCOUNTING_MODEL: accountingModel,
-      INCB_TOKEN_ID,
-      NETWORK: "livenet",
-      assertCanonicalWorkProjection: async () => ({
-        model: WORK_ATOMIC_PROJECTION_MODEL,
-        state: "q8",
-      }),
-    },
-  );
-  const result = await rebuildConfirmedCreditBalancesFromCanonicalEvents({
-    async query(sql, params = []) {
-      const text = String(sql);
-      if (text.includes("FROM proof_indexer.credit_definitions")) {
-        return {
-          rows: [{
-            confirmed: true,
-            created_height: 958_000,
-            max_supply: "0",
-            metadata: {
-              blockIndex: 0,
-              canonicalSynthetic: true,
-              issuanceAccountingModel: accountingModel,
-              issuanceUnitSats: 1,
-              issuanceValuationFixedAtSend: true,
-              uncapped: true,
-            },
-            mint_amount: "0",
-            ticker: "INCB",
-            token_id: INCB_TOKEN_ID,
-          }],
-        };
-      }
-      if (text.includes("FROM proof_indexer.events")) {
-        return {
-          rows: [
-            {
-              canonical_block_height: 963_788,
-              canonical_block_index: 1,
-              canonical_protocol_vout: 3,
-              canonical_record_ordinal: 0,
-              event_id: 9001,
-              event_key: `token-mint:${txid}`,
-              kind: "token-mint",
-              payload: {
-                amount: "116657103344743",
-                amountSats: 0,
-                confirmed: true,
-                minterAddress: "bc1pincbprojectionrecipient",
-                sourceBondTxid: txid,
-                ticker: "INCB",
-                tokenId: INCB_TOKEN_ID,
-                txid,
-                validationMode: "canonical-incb-bond-projection",
-              },
-              txid,
-            },
-            {
-              canonical_block_height: 963_788,
-              canonical_block_index: 2,
-              canonical_protocol_vout: 3,
-              canonical_record_ordinal: 0,
-              event_id: 9002,
-              event_key: `token-mint:${genericTxid}`,
-              kind: "token-mint",
-              payload: {
-                amount: "1000",
-                confirmed: true,
-                minterAddress: "bc1pincbgenericrecipient",
-                ticker: "INCB",
-                tokenId: INCB_TOKEN_ID,
-                txid: genericTxid,
-              },
-              txid: genericTxid,
-            },
-          ],
-        };
-      }
-      if (text.includes("sum(confirmed_balance)")) {
-        return { rows: [] };
-      }
-      writes.push({ params: Array.from(params), sql: text });
-      return { rows: [] };
-    },
-  });
-  assert.equal(result.holders, 0);
-  assert.equal(result.tokens, 0);
-  assert.equal(writes.length, 3);
-  assert.match(writes[0].sql, /UPDATE proof_indexer\.events e/u);
-  assert.match(writes[0].sql, /sourceBondTxid/u);
-  assert.match(writes[0].sql, /sourceKind/u);
-  assert.match(writes[0].sql, /reserved-bond-credit-namespace/u);
-  assert.deepEqual(writes[0].params, [
-    "livenet",
-    INCB_TOKEN_ID,
-    "inception-bond",
-    "INCB",
-    "",
-    "infinity-bond",
-    "POWB",
-  ]);
-  assert.match(writes[1].sql, /UPDATE proof_indexer\.events/u);
-  assert.match(writes[1].sql, /token-event-invalid/u);
-  assert.match(writes[1].sql, /\$3::text/u);
-  assert.match(writes[1].sql, /\$4::text/u);
-  assert.match(writes[1].sql, /sourceBondTxid/u);
-  assert.match(writes[1].sql, /sourceKind/u);
-  assert.equal(writes[1].params[1], 9001);
-  assert.match(
-    writes[1].params[2],
-    /Canonical INCB bond projection rejected/u,
-  );
-  assert.equal(
-    writes[1].params[3],
-    "canonical-incb-bond-projection-invalid",
-  );
-  assert.equal(writes[1].params[4], txid);
-  assert.equal(writes[1].params[5], "inception-bond");
-  assert.equal(writes[1].params[6], "INCB");
-  assert.equal(writes[1].params[7], INCB_TOKEN_ID);
-  assert.equal(writes[2].params[1], 9002);
-  assert.match(writes[2].sql, /\$3::text/u);
-  assert.match(writes[2].sql, /\$4::text/u);
-  assert.match(writes[2].sql, /sourceBondTxid/u);
-  assert.match(writes[2].sql, /sourceKind/u);
-  assert.match(
-    writes[2].params[2],
-    /attempts a generic mint in the reserved INCB namespace/u,
-  );
-  assert.equal(
-    writes[2].params[3],
-    "reserved-bond-credit-namespace",
-  );
-  assert.equal(writes[2].params[4], genericTxid);
-  assert.equal(writes[2].params[5], "inception-bond");
-  assert.equal(writes[2].params[6], "INCB");
-  assert.equal(writes[2].params[7], INCB_TOKEN_ID);
-});
-
 check("stored supply can decrease only in the explicit scoped INCB repair", async () => {
   const tokenId =
     "3cb25745f937f2b4e5508e5400189fe8fe679cd8e84bfa1e9176d70c9761f15d";
@@ -34547,10 +34025,6 @@ check("canonical rebuild reset and hashed bootstrap are one transaction", async 
     "proof_indexer.mail_items",
     "proof_indexer.file_attachments",
     "proof_indexer.ledger_snapshots",
-    "proof_indexer.work_amo_listing_terms",
-    "proof_indexer.work_amo_v6_listing_terms",
-    "proof_indexer.work_amo_v7_listing_terms",
-    "proof_indexer.work_amo_v8_listing_terms",
   ]) {
     assert.match(sql, new RegExp(table.replace(".", "\\."), "u"));
   }
@@ -46570,24 +46044,6 @@ check("AMO V5 legacy bootstrap carry requires one exact canonical evidence row",
     JSON.parse(JSON.stringify(evidence)),
     workAmoV5LegacyBootstrapCarryEvidenceFixture(),
   );
-  const compatRow = workAmoV5LegacyBootstrapCarryCompatRowFixture();
-  const compatEvidence = normalizeEvidence([compatRow]);
-  assert.deepEqual(
-    JSON.parse(JSON.stringify(compatEvidence)),
-    workAmoV5LegacyBootstrapCarryEvidenceFixture({
-      compatibilityMode:
-        "legacy-bootstrap-invalid-only-replay-evidence-v1",
-      sourceActiveListingCount: 0,
-      sourceAmountSats: 0,
-      sourceKind: "token-event-invalid",
-      sourceListingCount: 0,
-      sourceReasonCode:
-        WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_COMPAT_REASON_CODE,
-      sourceRegistryPaymentOutputCount: 1,
-      sourceSaleTicketOutputCount: 1,
-    }),
-    "production replayed invalid-only evidence must normalize to the pinned carry",
-  );
 
   const mutation = (apply) => {
     const row = structuredClone(exactRow);
@@ -46655,43 +46111,6 @@ check("AMO V5 legacy bootstrap carry requires one exact canonical evidence row",
     false,
     "duplicate evidence rows must fail closed",
   );
-  const compatMutation = (apply) => {
-    const row = structuredClone(compatRow);
-    apply(row);
-    return row;
-  };
-  const compatCases = [
-    [
-      "compat reason",
-      compatMutation((row) => {
-        row.validation_errors = ["different-reason"];
-        row.payload.reason = "different-reason";
-        row.payload.reasonCode = "different-reason";
-        row.payload.workMarketPricing.reasonCode = "different-reason";
-      }),
-    ],
-    [
-      "compat registry output",
-      compatMutation((row) => {
-        row.registry_payment_output_count = 0;
-      }),
-    ],
-    [
-      "compat active listing",
-      compatMutation((row) => {
-        row.active_listing_count = 1;
-        row.listing_count = 1;
-        row.listing_statuses = ["active"];
-      }),
-    ],
-  ];
-  for (const [label, row] of compatCases) {
-    assert.equal(
-      normalizeEvidence([row]).complete,
-      false,
-      `${label} mismatch must fail closed`,
-    );
-  }
 });
 
 check("grouped proof-index deltas use one verified marketplace payment per transaction", () => {
@@ -51792,10 +51211,6 @@ check("AMO V5 seed capture precedes replay and immutable evidence cannot be clea
     BACKFILL_PATH,
     "captureWorkAmoV5HMinusOneSeedEvidence",
   );
-  const captureGuard = topLevelFunctionSource(
-    BACKFILL_PATH,
-    "assertWorkAmoV5HMinusOneCaptureCheckpoint",
-  );
   const internalSeedPayload =
     isolatedFunction(
       BACKFILL_PATH,
@@ -51820,15 +51235,6 @@ check("AMO V5 seed capture precedes replay and immutable evidence cannot be clea
     capture,
     /LOCK TABLE[\s\S]*proof_indexer\.ledger_snapshots[\s\S]*IN SHARE ROW EXCLUSIVE MODE/u,
   );
-  assert.match(
-    captureGuard,
-    /storedCheckpointMatches[\s\S]*rebuildCheckpointMatches[\s\S]*!storedCheckpointMatches && !rebuildCheckpointMatches/u,
-  );
-  assert.match(
-    captureGuard,
-    /rebuildApplies && !rebuildCheckpointMatches/u,
-  );
-  assert.doesNotMatch(captureGuard, /later_transaction_count/u);
   for (const relation of [
     "proof_indexer.event_participants",
     "proof_indexer.event_refs",
@@ -56686,12 +56092,8 @@ check("AMO V8 relational closing evidence reads canonical Q16 units", async () =
   );
   assert.match(
     openingWorkProjectionSource,
-    /const stateUsesSubatoms =[\s\S]*workAmoV5LegacyAtomsForSeedProjection\(tokenState,[\s\S]*confirmedSupplySubatoms/u,
-    "post-V8 opening WORK state must project exact Q16 subatoms back to legacy atoms for AMO V5 seed evidence",
-  );
-  assert.doesNotMatch(
-    openingWorkProjectionSource,
-    /workAmoV5TokenStateUsesSubatomProjection\(tokenState\)[\s\S]*return normalizeWorkAmoV5RawWorkState\(tokenState\)/u,
+    /workAmoV5TokenStateUsesSubatomProjection\(tokenState\)[\s\S]*normalizeWorkAmoV5RawWorkState\(tokenState\)/u,
+    "post-V8 opening WORK state must enter raw replay through the Q16 normalizer instead of the legacy atom projection",
   );
   const historicalMovementSource = topLevelFunctionSource(
     API_PATH,
@@ -56699,13 +56101,8 @@ check("AMO V8 relational closing evidence reads canonical Q16 units", async () =
   );
   assert.match(
     historicalMovementSource,
-    /legacySeedMovement[\s\S]*throughHeight < WORK_AMO_V5_ACTIVATION_HEIGHT[\s\S]*amountSubatoms % WORK_SUBATOM_CONVERSION_FACTOR === 0n[\s\S]*amountSubatoms \/ WORK_SUBATOM_CONVERSION_FACTOR/u,
-    "pre-V5 seed movements must project exact Q16 subatoms back to legacy atoms",
-  );
-  assert.match(
-    historicalMovementSource,
-    /const q16 = q16Source && !legacySeedMovement[\s\S]*amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL[\s\S]*amountSubatoms: amountSubatoms\.toString\(\)/u,
-    "post-activation WORK movements must keep Q16 subatom units in the AMO accumulator",
+    /const q16 = workRecordUsesSubatoms\(item\)[\s\S]*workSubatomsBigIntFromRecord\(item\)[\s\S]*amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL[\s\S]*amountSubatoms: amountSubatoms\.toString\(\)/u,
+    "post-V8 opening WORK movements must keep Q16 subatom units in the AMO accumulator",
   );
   const rawProjectionSource = topLevelFunctionSource(
     WORK_AMO_V5_RAW_PATH,
@@ -59734,50 +59131,6 @@ check("AMO V5 legacy carry preserves committed N while publishing valid-only mar
     published.workAmoV5Transition.closingStateCommitment.sha256,
     commitment.sha256,
   );
-  const carryIncludedWorkFloor = {
-    ...workFloor,
-    actualValue: {
-      ...workFloor.actualValue,
-      baseNetworkValueQ8: committedBaseNetworkValueQ8.toString(),
-      tokenMarketplaceFeeSats:
-        committedBaseState.tokenMarketplaceFeeSats,
-    },
-  };
-  const carryIncludedReconciliation = reconcile(
-    state,
-    value,
-    carryIncludedWorkFloor,
-    evidence,
-  );
-  assert.equal(carryIncludedReconciliation.valid, true);
-  assert.equal(
-    carryIncludedReconciliation.legacyBootstrap.baseCarryMode,
-    "published-valid-includes-carry",
-  );
-  assert.equal(
-    carryIncludedReconciliation.validBaseState.tokenMarketplaceFeeSats,
-    200n,
-  );
-  assert.equal(
-    carryIncludedReconciliation.legacyBootstrap.publishedBaseNetworkValueQ8,
-    committedBaseNetworkValueQ8.toString(),
-  );
-  const carryIncludedProjected = closingProjection(
-    state,
-    value,
-    carryIncludedWorkFloor,
-    carryIncludedReconciliation,
-  );
-  assert.equal(carryIncludedProjected.flowFields.tokenMarketplaceFeeSats, 200);
-  assert.equal(carryIncludedProjected.flowFields.marketplaceFeeSats, 300);
-  assert.equal(
-    carryIncludedProjected.flowFields.legacyBootstrapMarketplaceCarrySats,
-    546,
-  );
-  assert.equal(
-    carryIncludedProjected.exactAliases.networkValueQ8,
-    state.networkValueQ8,
-  );
 
   const mismatchedEvidence = {
     ...evidence,
@@ -60532,29 +59885,6 @@ check("AMO V8 request coalescing binds exact reader identity and live inputs", (
     liveProbeKey(liveProbe, { includeMempool: false }),
     liveProbeKey(changedMempoolProbe, { includeMempool: false }),
   );
-  const changedWorkerTimestampProbe = {
-    ...liveProbe,
-    workerReadiness: {
-      ...workerReadiness,
-      finishedAt: "2026-08-02T20:00:01.000Z",
-      pendingProjectionSha256: "6".repeat(64),
-    },
-  };
-  assert.equal(
-    liveProbeKey(liveProbe, { includeMempool: false }),
-    liveProbeKey(changedWorkerTimestampProbe, { includeMempool: false }),
-  );
-  const notReadyWorkerProbe = {
-    ...liveProbe,
-    workerReadiness: {
-      ...workerReadiness,
-      ready: false,
-    },
-  };
-  assert.notEqual(
-    liveProbeKey(liveProbe, { includeMempool: false }),
-    liveProbeKey(notReadyWorkerProbe, { includeMempool: false }),
-  );
   const readinessKey = statusCacheKey(inputs);
   assert.notEqual(readinessKey, "");
   for (const changedInputs of [
@@ -60763,57 +60093,6 @@ check("AMO V8 metadata coalesces identical exact live probes", async () => {
     metadataSource,
     /exactReadinessProbe: immutableProbe[\s\S]*singleFlightBypass: true/u,
   );
-});
-
-check("wallet-scoped token stats include pending overlay listings", () => {
-  const recomputeStats = isolatedFunction(
-    API_PATH,
-    "walletScopedTokenPayloadWithComputedStats",
-    {
-      normalizeTokenScope: (value) =>
-        String(value ?? "").trim().toLowerCase(),
-    },
-  );
-  const payload = {
-    holders: [{ address: "17W7" }],
-    invalidEvents: [{ txid: "invalid" }],
-    listings: [
-      { confirmed: true, listingId: "confirmed" },
-      { confirmed: false, listingId: "pending" },
-    ],
-    mints: [{ confirmed: true }, { confirmed: false }],
-    sales: [{ confirmed: true }, { confirmed: false }],
-    stats: {
-      activeListings: 0,
-      confirmedListings: 0,
-      pendingListings: 0,
-      tokenScope: "stale",
-      walletScoped: true,
-    },
-    tokens: [{ confirmed: true }, { confirmed: false }],
-    transfers: [{ confirmed: true }, { confirmed: false }],
-    walletScoped: true,
-  };
-  const withStats = recomputeStats(payload, "WORK");
-  assert.equal(withStats.stats.activeListings, 2);
-  assert.equal(withStats.stats.openListings, 2);
-  assert.equal(withStats.stats.confirmedListings, 1);
-  assert.equal(withStats.stats.confirmedOpenListings, 1);
-  assert.equal(withStats.stats.pendingListings, 1);
-  assert.equal(withStats.stats.pendingOpenListings, 1);
-  assert.equal(withStats.stats.confirmedMints, 1);
-  assert.equal(withStats.stats.pendingMints, 1);
-  assert.equal(withStats.stats.confirmedSales, 1);
-  assert.equal(withStats.stats.pendingSales, 1);
-  assert.equal(withStats.stats.confirmedTokens, 1);
-  assert.equal(withStats.stats.pendingTokens, 1);
-  assert.equal(withStats.stats.confirmedTransfers, 1);
-  assert.equal(withStats.stats.pendingTransfers, 1);
-  assert.equal(withStats.stats.holders, 1);
-  assert.equal(withStats.stats.invalidEvents, 1);
-  assert.equal(withStats.stats.tokenScope, "work");
-  const unscoped = { listings: [{ confirmed: false }], stats: {} };
-  assert.strictEqual(recomputeStats(unscoped), unscoped);
 });
 
 check("WORK precision V2 readiness cache is exact, positive-only, and coalesced", async () => {
