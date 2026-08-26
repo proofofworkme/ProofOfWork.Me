@@ -36772,28 +36772,38 @@ check("canonical event parent metadata final proof uses parallel lightweight Cor
   );
 });
 
-check("canonical event parent metadata repair defaults to rollback and applies all six atomically", async () => {
+check("canonical event parent metadata repair defaults to rollback and applies all seven atomically", async () => {
   const blockTime = "2026-08-17T23:10:20.000Z";
-  const targets = Array.from({ length: 6 }, (_, index) => ({
+  const targetEventIds = [
+    3612878,
+    3612887,
+    3612889,
+    3631537,
+    3708179,
+    3753313,
+    3801928,
+  ];
+  const targets = targetEventIds.map((eventId, index) => ({
     blockHash: (index + 1).toString(16).repeat(64),
     blockHeight: 962957 + index,
     blockIndex: 900 + index,
     blockTime,
     blockTimeEpoch: 1_787_008_220,
-    eventId: 3612878 + index,
+    eventId,
     protocolVout: 2,
     recordOrdinal: 1,
     txid: (index + 7).toString(16).repeat(64),
   }));
-  const harness = (apply, failure = "") => {
+  const harness = (apply, failure = "", initialCanonicalEventIds = []) => {
     let coreProofs = 0;
     let updateCount = 0;
     const statements = [];
+    const initialCanonical = new Set(initialCanonicalEventIds);
     const committedRows = new Map(
       targets.map((target) => [
         target.eventId,
         {
-          canonical: false,
+          canonical: initialCanonical.has(target.eventId),
           event_id: target.eventId,
           invariant: "stable",
         },
@@ -36858,7 +36868,10 @@ check("canonical event parent metadata repair defaults to rollback and applies a
           }
           const row = transactionRows.get(Number(params[1]));
           row.canonical = true;
-          if (failure === "invariant-fingerprint" && updateCount === 6) {
+          if (
+            failure === "invariant-fingerprint" &&
+            updateCount === targets.length
+          ) {
             row.invariant = "drifted";
           }
           return { rows: [{ event_id: params[1] }] };
@@ -36884,6 +36897,7 @@ check("canonical event parent metadata repair defaults to rollback and applies a
         [...committedRows.values()].filter((row) => row.canonical).length,
       execute: () => repair(client),
       statements,
+      updateCount: () => updateCount,
     };
   };
 
@@ -36891,9 +36905,9 @@ check("canonical event parent metadata repair defaults to rollback and applies a
   const dryRunResult = await dryRun.execute();
   assert.equal(dryRunResult.dryRun, true);
   assert.equal(dryRunResult.applied, false);
-  assert.equal(dryRunResult.wouldRepair, 6);
+  assert.equal(dryRunResult.wouldRepair, 7);
   assert.equal(dryRunResult.repaired, 0);
-  assert.equal(dryRun.coreProofs(), 12);
+  assert.equal(dryRun.coreProofs(), 14);
   assert.equal(dryRun.committedCanonical(), 0);
   assert.equal(dryRun.statements.at(-1), "ROLLBACK");
   assert.equal(
@@ -36924,15 +36938,15 @@ check("canonical event parent metadata repair defaults to rollback and applies a
   const appliedResult = await applied.execute();
   assert.equal(appliedResult.dryRun, false);
   assert.equal(appliedResult.applied, true);
-  assert.equal(appliedResult.repaired, 6);
-  assert.equal(applied.coreProofs(), 12);
-  assert.equal(applied.committedCanonical(), 6);
+  assert.equal(appliedResult.repaired, 7);
+  assert.equal(applied.coreProofs(), 14);
+  assert.equal(applied.committedCanonical(), 7);
   assert.equal(applied.statements.at(-1), "COMMIT");
   assert.equal(
     applied.statements.filter((statement) =>
       /^UPDATE proof_indexer\.events/u.test(statement)
     ).length,
-    6,
+    7,
   );
 
   for (const [failure, pattern] of [
@@ -36949,6 +36963,35 @@ check("canonical event parent metadata repair defaults to rollback and applies a
     assert.equal(failed.statements.at(-1), "ROLLBACK");
     assert.equal(failed.statements.includes("COMMIT"), false);
     assert.equal(failed.committedCanonical(), 0);
+  }
+
+  const alreadyCanonical = harness(true, "", targetEventIds);
+  const alreadyCanonicalResult = await alreadyCanonical.execute();
+  assert.equal(alreadyCanonicalResult.alreadyApplied, true);
+  assert.equal(alreadyCanonicalResult.applied, false);
+  assert.equal(alreadyCanonicalResult.repaired, 0);
+  assert.equal(alreadyCanonical.coreProofs(), 14);
+  assert.equal(alreadyCanonical.committedCanonical(), 7);
+  assert.equal(alreadyCanonical.updateCount(), 0);
+  assert.equal(alreadyCanonical.statements.at(-1), "COMMIT");
+
+  for (const initialCanonicalEventIds of [
+    targetEventIds.slice(0, -1),
+    [targetEventIds.at(-1)],
+  ]) {
+    const mixed = harness(true, "", initialCanonicalEventIds);
+    await rejection(
+      mixed.execute(),
+      (error) => /refuses a mixed pre-repair row set/u.test(error.message),
+      "mixed canonical and repairable target rows must roll back",
+    );
+    assert.equal(mixed.updateCount(), 0);
+    assert.equal(mixed.statements.at(-1), "ROLLBACK");
+    assert.equal(mixed.statements.includes("COMMIT"), false);
+    assert.equal(
+      mixed.committedCanonical(),
+      initialCanonicalEventIds.length,
+    );
   }
 
   const source = fileSource(BACKFILL_PATH);
@@ -36971,15 +37014,51 @@ check("canonical event parent metadata repair defaults to rollback and applies a
     [3631537, "d097aaba4990b6b98574765349891dd19828df4e12182ec9db68ecb8da0d10c9"],
     [3708179, "5b2cf523d4e67c9f3427aca951a13daa3da94595051be4e10fc767537effc8d2"],
     [3753313, "3ce256fa95758a6ed58e00aa8f90644601f1c5f50d50c5a285aa23d479256284"],
+    [3801928, "3e5a03537fded7d110cf8a589f916630bf6ff1766d720c72af645aea4324fb5d"],
   ];
   const manifestSource = source.match(
     /const CANONICAL_EVENT_PARENT_METADATA_REPAIR_TARGETS = Object\.freeze\(\[([\s\S]*?)\]\);/u,
   )?.[1] ?? "";
-  assert.equal((manifestSource.match(/Object\.freeze\(\{/gu) ?? []).length, 6);
+  const manifestEntries = [
+    ...manifestSource.matchAll(/Object\.freeze\(\{([\s\S]*?)\}\),?/gu),
+  ].map((match) => match[1]);
+  assert.equal(manifestEntries.length, 7);
+  assert.deepEqual(
+    manifestEntries.map((entry) =>
+      Number(entry.match(/eventId: (\d+)/u)?.[1] ?? Number.NaN)
+    ),
+    exactManifest.map(([eventId]) => eventId),
+  );
+  assert.deepEqual(
+    manifestEntries.map((entry) => entry.match(/txid: "([0-9a-f]{64})"/u)?.[1]),
+    exactManifest.map(([, txid]) => txid),
+  );
+  assert.equal(
+    new Set(
+      manifestEntries.map((entry) =>
+        ["blockHeight", "blockIndex", "protocolVout", "recordOrdinal"]
+          .map((field) => entry.match(new RegExp(`${field}: (\\d+)`, "u"))?.[1])
+          .join(":"),
+      ),
+    ).size,
+    7,
+  );
   for (const [eventId, txid] of exactManifest) {
     assert.match(manifestSource, new RegExp(`eventId: ${eventId}`, "u"));
     assert.match(manifestSource, new RegExp(`txid: "${txid}"`, "u"));
   }
+  const newestTargetSource = manifestEntries.at(-1);
+  assert.match(
+    newestTargetSource,
+    /blockHash:\s*"00000000000000000000792748b4a5a5e201af73714bde21943edf38f7d1863f"/u,
+  );
+  assert.match(newestTargetSource, /blockHeight: 964092/u);
+  assert.match(newestTargetSource, /blockIndex: 573/u);
+  assert.match(newestTargetSource, /blockTime: "2026-08-26T04:29:40\.000Z"/u);
+  assert.match(newestTargetSource, /blockTimeEpoch: 1787718580/u);
+  assert.match(newestTargetSource, /eventId: 3801928/u);
+  assert.match(newestTargetSource, /protocolVout: 2/u);
+  assert.match(newestTargetSource, /recordOrdinal: 1/u);
   assert.match(
     source,
     /--repair-canonical-event-parent-metadata[\s\S]*POW_INDEX_REPAIR_CANONICAL_EVENT_PARENT_METADATA_APPLY[\s\S]*repairCanonicalEventParentMetadata\(client\)/u,

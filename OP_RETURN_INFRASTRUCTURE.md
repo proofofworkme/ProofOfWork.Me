@@ -1391,7 +1391,7 @@ checks recurse through every array/object value and every object key, including
 an escaped `\u0000` that appears only after `JSON.parse`; rejection never
 rewrites the retained raw carrier bytes or payload witness.
 
-One supervised repair mode exists only for the six historically confirmed
+One supervised repair mode exists only for the seven historically confirmed
 `pwt1` listing-close children whose relational and payload timestamps were
 omitted before parent-time inheritance was enforced. The mode is audit-only by
 default. Both audit and apply are offline maintenance operations: stop the API,
@@ -1403,12 +1403,12 @@ performing its final bounded Core proof:
 npm run indexer:backfill -- --repair-canonical-event-parent-metadata
 ```
 
-It accepts only its embedded six-event manifest. Before returning it proves
+It accepts only its embedded seven-event manifest. Before returning it proves
 each event, transaction, canonical block, exact transaction/vout/ordinal
 position, `pwt1:buy5` carrier, and timestamp twice against Bitcoin Core. The
 detailed verbosity-2 proof runs before the database transaction; the final
 proof uses the raw transaction plus a verbosity-1 ordered block and runs all
-six targets in parallel under bounded RPC timeouts. The transaction takes its
+seven targets in parallel under bounded RPC timeouts. The transaction takes its
 fixed-order block, transaction, event, participant, and reference table locks
 before its advisory query or first row read, then rolls back. After a fresh
 verified database backup, the same stopped-writer audit may be applied
@@ -1420,7 +1420,7 @@ POW_INDEX_REPAIR_CANONICAL_EVENT_PARENT_METADATA_APPLY=1 \
 ```
 
 Apply updates only `events.block_time`, `events.event_time`, and the four
-inherited payload time keys for all six rows as one transaction. It preserves
+inherited payload time keys for all seven rows as one transaction. It preserves
 event ids, creation/update timestamps, raw evidence, participants, references,
 transaction rows, block rows, and every non-time payload field. Any missing,
 extra, partially repaired, noncanonical, repositioned, concurrently writable,

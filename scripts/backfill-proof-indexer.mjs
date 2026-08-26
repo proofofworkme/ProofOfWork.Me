@@ -557,6 +557,18 @@ const CANONICAL_EVENT_PARENT_METADATA_REPAIR_TARGETS = Object.freeze([
     recordOrdinal: 1,
     txid: "3ce256fa95758a6ed58e00aa8f90644601f1c5f50d50c5a285aa23d479256284",
   }),
+  Object.freeze({
+    blockHash:
+      "00000000000000000000792748b4a5a5e201af73714bde21943edf38f7d1863f",
+    blockHeight: 964092,
+    blockIndex: 573,
+    blockTime: "2026-08-26T04:29:40.000Z",
+    blockTimeEpoch: 1787718580,
+    eventId: 3801928,
+    protocolVout: 2,
+    recordOrdinal: 1,
+    txid: "3e5a03537fded7d110cf8a589f916630bf6ff1766d720c72af645aea4324fb5d",
+  }),
 ]);
 const REPAIR_CANONICAL_ID_AMOUNT_PROJECTION_ONLY = process.argv.includes(
   "--repair-canonical-id-amount-projection",
@@ -30743,12 +30755,12 @@ async function repairCanonicalEventParentMetadata(client) {
   const manifestEventIds = new Set(manifest.map((target) => target.eventId));
   const manifestTxids = new Set(manifest.map((target) => target.txid));
   if (
-    manifest.length !== 6 ||
-    manifestEventIds.size !== 6 ||
-    manifestTxids.size !== 6
+    manifest.length !== 7 ||
+    manifestEventIds.size !== 7 ||
+    manifestTxids.size !== 7
   ) {
     throw new Error(
-      "Canonical event parent-metadata repair requires the exact six-row manifest.",
+      "Canonical event parent-metadata repair requires the exact seven-row manifest.",
     );
   }
 
@@ -30918,12 +30930,12 @@ async function repairCanonicalEventParentMetadata(client) {
       afterStates.some((state) => state.alreadyApplied !== true)
     ) {
       throw new Error(
-        "Canonical event parent-metadata repair did not produce six exact rows.",
+        "Canonical event parent-metadata repair did not produce seven exact rows.",
       );
     }
 
     // Re-prove every Core hash, member index, parent OP_RETURN and timestamp
-    // while the writer-exclusion locks are still held. The six targets and
+    // while the writer-exclusion locks are still held. The seven targets and
     // each target's three bounded RPCs run in parallel; the detailed
     // verbosity-2 proof already completed before the transaction began.
     await Promise.all(

@@ -800,3 +800,33 @@ Production follow-up:
   `sourceBondTxid`, `sourceKind`, `ticker`, `tokenId`, `txid`, `confirmed`, and
   invalid status fields so exact bond summaries can exclude rejected bond
   attempts without weakening the validator.
+
+## Phase 3B Canonical Parent-Metadata Addendum - 2026-08-26
+
+The six-target finding above remains the exact evidence observed at audit tip
+963764 on 2026-08-23. It is not retroactively rewritten. A later confirmed
+derived listing-close event expanded the supervised repair set to seven:
+
+- Event id: `3801928`.
+- Transaction id:
+  `3e5a03537fded7d110cf8a589f916630bf6ff1766d720c72af645aea4324fb5d`.
+- Canonical block height/hash: `964092` /
+  `00000000000000000000792748b4a5a5e201af73714bde21943edf38f7d1863f`.
+- Zero-based transaction index: `573`.
+- Canonical parent time: `2026-08-26T04:29:40.000Z` (`1787718580`).
+- Protocol vout/derived record ordinal: `2` / `1`.
+
+Independent read-only PostgreSQL and Bitcoin Core checks proved that the event
+is a confirmed, valid `pwt1` `token-listing-closed` child at one exact canonical
+position. Its transaction and stored raw/canonical-scan evidence match Core,
+and vout 2 contains the one exact decoded `pwt1:buy5` carrier. Parent carrier
+event `3801927` already has the canonical time. Event `3801928` alone has all
+six inherited time fields absent together: the two event columns plus payload
+`blockTime`, `closedAt`, `createdAt`, and `timestamp`. No partial or divergent
+time value was observed.
+
+The repair manifest and its atomic rollback/idempotency contracts are therefore
+expanded to exactly seven pinned rows. Apply remains an offline, stopped-writer
+operation after a fresh verified logical backup; mixed six-plus-one state,
+position drift, Core drift, or any non-time mutation must roll the complete
+transaction back.
