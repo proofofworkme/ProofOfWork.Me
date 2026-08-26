@@ -171,6 +171,8 @@ function relationParity(expectedRows, observedRows, keyForRow, label) {
 
 export function proofIndexEventParticipantsForItem(item, context = {}) {
   const source = objectRecord(item);
+  const authorization = objectRecord(source.saleAuthorization);
+  const inceptionAttachment = objectRecord(source.inceptionAttachment);
   const participants = [];
   const add = (address, role, powid = "") => {
     const value = canonicalText(address);
@@ -192,6 +194,12 @@ export function proofIndexEventParticipantsForItem(item, context = {}) {
     : []) {
     add(recipient?.address ?? recipient?.display, "recipient");
   }
+  for (const credit of Array.isArray(source.attachedCredits)
+    ? source.attachedCredits
+    : []) {
+    add(credit?.recipientAddress, "recipient");
+    add(credit?.registryAddress, "registry");
+  }
   add(source.address, "address");
   add(source.actor, "actor");
   add(source.counterparty, "counterparty");
@@ -202,6 +210,16 @@ export function proofIndexEventParticipantsForItem(item, context = {}) {
   add(source.sellerAddress, "seller");
   add(source.buyerAddress, "buyer");
   add(source.registryAddress, "registry");
+  add(authorization.sellerAddress, "seller");
+  add(authorization.buyerAddress, "buyer");
+  add(authorization.registryAddress, "registry");
+  add(
+    authorization.receiveAddress,
+    "receiver",
+    firstCanonicalText(authorization.id, source.id),
+  );
+  add(inceptionAttachment.recipientAddress, "recipient");
+  add(inceptionAttachment.registryAddress, "registry");
   add(source.creatorAddress, "creator");
   add(source.minterAddress, "minter");
   participants.push(
@@ -218,6 +236,8 @@ export function proofIndexEventParticipantsForItem(item, context = {}) {
 
 export function proofIndexEventRefsForItem(item) {
   const source = objectRecord(item);
+  const authorization = objectRecord(source.saleAuthorization);
+  const inceptionAttachment = objectRecord(source.inceptionAttachment);
   const refs = [];
   const add = (refType, refValue) => {
     const value = canonicalText(refValue);
@@ -225,19 +245,37 @@ export function proofIndexEventRefsForItem(item) {
       refs.push({ refType, refValue: value });
     }
   };
+  const addSaleTicketOutpoint = (txid, vout) => {
+    const canonicalTxid = canonicalText(txid);
+    const canonicalVout = canonicalText(vout);
+    if (canonicalTxid && canonicalVout) {
+      add("sale-ticket-outpoint", `${canonicalTxid}:${canonicalVout}`);
+    }
+  };
   add("powid", source.id);
+  add("powid", authorization.id);
   add("token-id", source.tokenId);
+  add("token-id", authorization.tokenId);
   add("ticker", source.ticker);
+  add("ticker", authorization.ticker);
   add("listing-id", source.listingId);
   add("parent-txid", source.parentTxid);
   add("closed-txid", source.closedTxid);
   add("seal-txid", source.sealTxid);
-  if (source.saleTicketTxid && source.saleTicketVout !== undefined) {
-    add(
-      "sale-ticket-outpoint",
-      `${source.saleTicketTxid}:${source.saleTicketVout}`,
-    );
+  for (const credit of Array.isArray(source.attachedCredits)
+    ? source.attachedCredits
+    : []) {
+    add("token-id", credit?.tokenId);
+    add("ticker", credit?.ticker);
   }
+  add("token-id", inceptionAttachment.tokenId);
+  add("ticker", inceptionAttachment.ticker);
+  addSaleTicketOutpoint(source.saleTicketTxid, source.saleTicketVout);
+  addSaleTicketOutpoint(
+    authorization.saleTicketTxid,
+    authorization.saleTicketVout,
+  );
+  addSaleTicketOutpoint(authorization.anchorTxid, authorization.anchorVout);
   return canonicalRows(refs, (ref) =>
     JSON.stringify([ref.refType, ref.refValue])
   );

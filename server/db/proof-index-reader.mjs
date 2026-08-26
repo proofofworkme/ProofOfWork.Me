@@ -1,5 +1,17 @@
 import { createHash } from "node:crypto";
 import { compareCanonicalUtf8 } from "../canonical-order.mjs";
+import {
+  ID_REGISTRY_AUDIT_ROW_PAGE_SIZE,
+  ID_REGISTRY_AUDIT_TRANSITION_PAGE_SIZE,
+  PWID_RAW_REPLAY_ACTIVATION_HEIGHT,
+  advanceIdRegistryAuditRollingHash,
+  advanceIdRegistryAuditTransitionChain,
+  assertIdRegistryAuditFinalFence,
+  createIdRegistryAuditRollingHash,
+  createIdRegistryAuditTransitionChain,
+  finalizeIdRegistryAuditTransitionChain,
+  idRegistryAuditRollingHashFingerprint,
+} from "../id-registry-audit-contract.mjs";
 
 import {
   createProofIndexPool,
@@ -264,6 +276,8 @@ const BOND_TAGS = [
 ];
 const ID_REGISTRATION_PRICE_SATS = 1_000;
 const ID_MUTATION_PRICE_SATS = 546;
+const ID_REGISTRY_AUDIT_MAX_PAGE_SIZE = 1_024;
+const ID_REGISTRY_AUDIT_MAX_SINGLE_RAW_PAYLOAD_BYTES = 4 * 1024 * 1024;
 const ID_REGISTRY_ADDRESSES = {
   livenet: "bc1qfwytlzyr3ym3enz2eutwtjsf9kkf6uqkjydk3e",
 };
@@ -32863,6 +32877,846 @@ async function currentProofIndexRegistryPayload(pool, network, options = {}) {
         uniqueTxidCount(activity) || uniqueTxidCount(registryItems),
     },
   };
+}
+
+function idRegistryAuditExactInteger(value, minimum = 0) {
+  if (
+    value === undefined ||
+    value === null ||
+    typeof value === "boolean" ||
+    (typeof value === "string" && value.trim() === "")
+  ) {
+    return null;
+  }
+  const normalized = typeof value === "string" ? value.trim() : value;
+  if (
+    typeof normalized === "string" &&
+    !/^(?:0|[1-9][0-9]*)$/u.test(normalized)
+  ) {
+    return null;
+  }
+  const parsed = Number(normalized);
+  return Number.isSafeInteger(parsed) && parsed >= minimum ? parsed : null;
+}
+
+function idRegistryAuditDatabaseRow(row) {
+  const eventId = idRegistryAuditExactInteger(row.event_id, 1);
+  const blockHeight = idRegistryAuditExactInteger(row.block_height, 1);
+  const blockIndex = idRegistryAuditExactInteger(row.block_index);
+  const protocolVout = idRegistryAuditExactInteger(row.protocol_vout);
+  const recordOrdinal = idRegistryAuditExactInteger(row.record_ordinal);
+  const dataBytes = idRegistryAuditExactInteger(row.data_bytes, 1);
+  const carrierDataBytes = idRegistryAuditExactInteger(row.carrier_data_bytes);
+  const positionRowCount = idRegistryAuditExactInteger(
+    row.position_row_count,
+    1,
+  );
+  const txid = normalizedTxid(row.txid);
+  const blockHash = normalizedLowerText(row.block_hash);
+  const kind = normalizedLowerText(row.kind);
+  const carrierPayload = String(row.carrier_payload ?? "");
+  const carrierPayloadHex = normalizedLowerText(row.carrier_payload_hex);
+  const carrierProtocol = normalizedLowerText(row.carrier_protocol);
+  const storedRawPayload = String(row.stored_raw_payload ?? "");
+  const payloadRawPayload = String(row.payload_raw_payload ?? "");
+  const transactionBlockTimeValue = plausibleBitcoinEventTime(
+    row.transaction_block_time,
+  );
+  const blockTimeValue = plausibleBitcoinEventTime(row.block_time);
+  const eventTimeValue = plausibleBitcoinEventTime(row.event_time);
+  const transactionBlockTimeMs = transactionBlockTimeValue
+    ? new Date(transactionBlockTimeValue).getTime()
+    : Number.NaN;
+  const blockTimeMs = blockTimeValue
+    ? new Date(blockTimeValue).getTime()
+    : Number.NaN;
+  const eventTimeMs = eventTimeValue
+    ? new Date(eventTimeValue).getTime()
+    : Number.NaN;
+  if (
+    eventId === null ||
+    !txid ||
+    !/^[0-9a-f]{64}$/u.test(blockHash) ||
+    !kind ||
+    blockHeight === null ||
+    blockIndex === null ||
+    protocolVout === null ||
+    recordOrdinal === null ||
+    dataBytes === null ||
+    dataBytes > ID_REGISTRY_AUDIT_MAX_SINGLE_RAW_PAYLOAD_BYTES ||
+    (carrierDataBytes !== null &&
+      (carrierDataBytes > ID_REGISTRY_AUDIT_MAX_SINGLE_RAW_PAYLOAD_BYTES ||
+        !/^(?:[0-9a-f]{2})+$/u.test(carrierPayloadHex) ||
+        carrierPayloadHex.length / 2 !== carrierDataBytes ||
+        (carrierPayload &&
+          Buffer.from(carrierPayload, "utf8").toString("hex") !==
+            carrierPayloadHex))) ||
+    positionRowCount === null ||
+    !blockTimeValue ||
+    !eventTimeValue ||
+    !transactionBlockTimeValue ||
+    blockTimeMs !== transactionBlockTimeMs ||
+    eventTimeMs !== transactionBlockTimeMs
+  ) {
+    const error = new Error(
+      "A confirmed relational PWID audit row lost its exact physical evidence.",
+    );
+    error.code = "ID_REGISTRY_AUDIT_ROW_EVIDENCE_INVALID";
+    throw error;
+  }
+  const valid = row.valid === true;
+  const positionHasValid = row.position_has_valid === true;
+  const positionHasInvalid = row.position_has_invalid === true;
+  const positionOutcomeClass =
+    positionHasValid && positionHasInvalid
+      ? "mixed-valid-and-invalid"
+      : positionHasValid
+        ? "valid-only"
+        : "invalid-only";
+  const rowClassification = valid
+    ? "accepted-candidate"
+    : positionHasValid
+      ? "mixed-outcome-invalid-candidate"
+      : "rejected-candidate";
+  const rawBinding = storedRawPayload
+    ? "event-raw-payload"
+    : payloadRawPayload
+      ? "event-payload-field"
+      : carrierDataBytes !== null
+        ? "persisted-carrier"
+        : "position-only";
+  const validationErrors = (Array.isArray(row.validation_errors)
+    ? row.validation_errors
+    : [])
+    .map((value) => String(value ?? "").trim())
+    .filter(Boolean);
+  return {
+    amountSats: String(row.amount_sats ?? "0"),
+    attemptedKind: normalizedLowerText(row.attempted_kind),
+    blockHash,
+    blockHeight,
+    blockIndex,
+    blockTime: dateIso(blockTimeValue),
+    carrierPayload,
+    carrierPayloadHex,
+    carrierProtocol,
+    dataBytes,
+    eventId,
+    eventKey: String(row.event_key ?? ""),
+    eventTime: dateIso(eventTimeValue),
+    kind,
+    payloadSource: String(row.payload_source ?? "").trim(),
+    positionHasInvalid,
+    positionHasValid,
+    positionOutcomeClass,
+    positionRowCount,
+    protocol: "pwid1",
+    protocolVout,
+    rawBinding,
+    rawDecodeReasonCode: String(row.raw_decode_reason_code ?? "").trim(),
+    rawDecodeValid:
+      row.raw_decode_valid === "true"
+        ? true
+        : row.raw_decode_valid === "false"
+          ? false
+          : null,
+    rawScriptDecodeDetail: String(row.raw_script_decode_detail ?? ""),
+    rawScriptDecodeValid:
+      row.raw_script_decode_valid === "true"
+        ? true
+        : row.raw_script_decode_valid === "false"
+          ? false
+          : null,
+    rawScriptPayloadHex: normalizedLowerText(row.raw_script_payload_hex),
+    rawScriptPubKeyHex: normalizedLowerText(row.raw_script_pubkey_hex),
+    rawScriptReasonCode: String(row.raw_script_reason_code ?? "").trim(),
+    rawScriptWitnessPresent: row.raw_script_witness_present === true,
+    payloadRawPayload,
+    payloadRawPayloadPresent: row.payload_raw_payload_present === true,
+    payloadRawPayloadSha256: row.payload_raw_payload_present === true
+      ? createHash("sha256")
+          .update(Buffer.from(payloadRawPayload, "utf8"))
+          .digest("hex")
+      : "",
+    payloadReason: String(row.payload_reason ?? "").trim(),
+    payloadReasonCode: String(row.payload_reason_code ?? "").trim(),
+    persistedCarrierPayloadSha256: carrierPayloadHex
+      ? createHash("sha256")
+          .update(Buffer.from(carrierPayloadHex, "hex"))
+          .digest("hex")
+      : "",
+    reasonCode: String(row.reason_code ?? "").trim(),
+    recordOrdinal,
+    replayBound: row.replay_bound === "true",
+    replayMetadataPresent: row.replay_metadata_present === true,
+    replayOutcomeKind: normalizedLowerText(row.replay_outcome_kind),
+    replayOutcomeReasonCode: String(
+      row.replay_outcome_reason_code ?? "",
+    ).trim(),
+    replayOutcomeValid:
+      row.replay_outcome_valid === "true"
+        ? true
+        : row.replay_outcome_valid === "false"
+          ? false
+          : null,
+    replayRawCandidate:
+      row.replay_raw_candidate === "true"
+        ? true
+        : row.replay_raw_candidate === "false"
+          ? false
+          : null,
+    rowClassification,
+    status: "confirmed",
+    storedRawPayload,
+    storedRawPayloadPresent: row.stored_raw_payload_present === true,
+    storedRawPayloadSha256: row.stored_raw_payload_present === true
+      ? createHash("sha256")
+          .update(Buffer.from(storedRawPayload, "utf8"))
+          .digest("hex")
+      : "",
+    txid,
+    valid,
+    validationErrors,
+    validationMode: String(row.validation_mode ?? "").trim(),
+  };
+}
+
+function idRegistryAuditTransitionFromDatabase(row) {
+  const payload = objectRecord(row.payload);
+  return {
+    blockAtomic: row.block_atomic === true,
+    blockHash: normalizedLowerText(row.block_hash),
+    blockHeight: idRegistryAuditExactInteger(row.block_height, 1),
+    canonicalPreviousBlockHash: normalizedLowerText(
+      row.canonical_previous_block_hash,
+    ),
+    closingNetworkValueQ8: String(row.closing_network_value_q8 ?? ""),
+    closingStatePayloadBytes: idRegistryAuditExactInteger(
+      row.closing_state_payload_bytes,
+      1,
+    ),
+    closingStateSha256: normalizedLowerText(row.closing_state_sha256),
+    complete: row.complete === true,
+    eventCount: idRegistryAuditExactInteger(row.event_count),
+    eventSetModel: String(row.event_set_model ?? ""),
+    eventSetPayloadBytes: idRegistryAuditExactInteger(
+      row.event_set_payload_bytes,
+      1,
+    ),
+    eventSetSha256: normalizedLowerText(row.event_set_sha256),
+    feeOnce: row.fee_once === true,
+    invalidZero: row.invalid_zero === true,
+    model: String(row.model ?? ""),
+    openingNetworkValueQ8: String(row.opening_network_value_q8 ?? ""),
+    openingStatePayloadBytes: idRegistryAuditExactInteger(
+      row.opening_state_payload_bytes,
+      1,
+    ),
+    openingStateSha256: normalizedLowerText(row.opening_state_sha256),
+    payload,
+    previousBlockHash: normalizedLowerText(row.previous_block_hash),
+    protocolRecordCount: idRegistryAuditExactInteger(
+      row.protocol_record_count,
+    ),
+    rawProtocolCandidateCount: idRegistryAuditExactInteger(
+      row.raw_protocol_candidate_count,
+    ),
+    stateCommitmentModel: String(row.state_commitment_model ?? ""),
+    transactionCount: idRegistryAuditExactInteger(row.transaction_count),
+    workTokenStateModel: row.work_token_state_model ?? null,
+  };
+}
+
+const ID_REGISTRY_AUDIT_ROW_PAGE_SQL = `
+  WITH audit_rows AS (
+    SELECT
+      event_row.event_id,
+      event_row.event_key,
+      event_row.txid,
+      event_row.kind,
+      event_row.valid,
+      event_row.status,
+      event_row.validation_errors,
+      event_row.amount_sats::text AS amount_sats,
+      event_row.data_bytes,
+      event_row.block_height,
+      event_row.block_index,
+      event_row.op_return_vout AS protocol_vout,
+      event_row.record_ordinal,
+      event_row.block_time,
+      event_row.event_time,
+      event_tx.block_hash,
+      event_tx.block_time AS transaction_block_time,
+      event_row.raw_payload AS stored_raw_payload,
+      event_row.raw_payload IS NOT NULL AS stored_raw_payload_present,
+      event_row.payload->>'payload' AS payload_raw_payload,
+      event_row.payload ? 'payload' AS payload_raw_payload_present,
+      carrier.protocol AS carrier_protocol,
+      carrier.payload_text AS carrier_payload,
+      carrier.payload_hex AS carrier_payload_hex,
+      carrier.data_bytes AS carrier_data_bytes,
+      COALESCE(
+        NULLIF(event_row.payload->>'attemptedKind', ''),
+        NULLIF(event_row.payload->>'rawAction', ''),
+        ''
+      ) AS attempted_kind,
+      COALESCE(
+        NULLIF(event_row.payload #>>
+          '{workAmoV5ReplayOutcome,reasonCode}', ''),
+        NULLIF(event_row.payload->>'reasonCode', ''),
+        NULLIF(event_row.payload->>'reason', ''),
+        NULLIF(event_row.validation_errors[1], ''),
+        ''
+      ) AS reason_code,
+      COALESCE(
+        event_row.payload #>> '{workAmoV5ReplayOutcome,reasonCode}',
+        ''
+      ) AS replay_outcome_reason_code,
+      COALESCE(event_row.payload->>'reasonCode', '') AS payload_reason_code,
+      COALESCE(event_row.payload->>'reason', '') AS payload_reason,
+      COALESCE(event_row.payload->>'validationMode', '') AS validation_mode,
+      COALESCE(event_row.payload->>'source', '') AS payload_source,
+      event_row.payload->>'_workAmoV5ReplayBound' AS replay_bound,
+      event_row.payload->>'workAmoV5RawCandidate' AS replay_raw_candidate,
+      COALESCE(
+        event_row.payload #>> '{workAmoV5ReplayOutcome,kind}',
+        event_row.payload->>'workAmoV5OutcomeKind'
+      ) AS replay_outcome_kind,
+      COALESCE(
+        event_row.payload #>> '{workAmoV5ReplayOutcome,valid}',
+        event_row.payload->>'workAmoV5OutcomeValid'
+      ) AS replay_outcome_valid,
+      (
+        event_row.payload ? '_workAmoV5ReplayBound'
+        OR event_row.payload ? 'workAmoV5RawCandidate'
+        OR event_row.payload ? 'workAmoV5ReplayOutcome'
+        OR event_row.payload ? 'workAmoV5OutcomeKind'
+        OR event_row.payload ? 'workAmoV5OutcomeValid'
+      ) AS replay_metadata_present,
+      event_row.payload->>'workAmoV5RawDecodeValid' AS raw_decode_valid,
+      COALESCE(
+        event_row.payload->>'workAmoV5RawDecodeReasonCode',
+        ''
+      ) AS raw_decode_reason_code,
+      jsonb_typeof(event_row.payload->'workAmoV5RawScriptWitness') =
+        'object' AS raw_script_witness_present,
+      event_row.payload #>>
+        '{workAmoV5RawScriptWitness,decodeDetail}' AS raw_script_decode_detail,
+      event_row.payload #>>
+        '{workAmoV5RawScriptWitness,decodeValid}' AS raw_script_decode_valid,
+      event_row.payload #>>
+        '{workAmoV5RawScriptWitness,payloadHex}' AS raw_script_payload_hex,
+      event_row.payload #>>
+        '{workAmoV5RawScriptWitness,reasonCode}' AS raw_script_reason_code,
+      event_row.payload #>>
+        '{workAmoV5RawScriptWitness,scriptPubKeyHex}' AS raw_script_pubkey_hex,
+      bool_or(event_row.valid) OVER position_window AS position_has_valid,
+      bool_or(NOT event_row.valid) OVER position_window AS position_has_invalid,
+      count(*) OVER position_window AS position_row_count
+    FROM proof_indexer.events event_row
+    JOIN proof_indexer.transactions event_tx
+      ON event_tx.network = event_row.network
+     AND event_tx.txid = event_row.txid
+     AND event_tx.status = 'confirmed'
+     AND event_tx.block_height = event_row.block_height
+     AND event_tx.block_index = event_row.block_index
+     AND event_tx.block_time = event_row.block_time
+    JOIN proof_indexer.blocks canonical_block
+      ON canonical_block.network = event_tx.network
+     AND canonical_block.block_hash = event_tx.block_hash
+     AND canonical_block.height = event_tx.block_height
+     AND canonical_block.canonical = true
+    LEFT JOIN proof_indexer.op_returns carrier
+      ON carrier.network = event_row.network
+     AND carrier.txid = event_row.txid
+     AND carrier.vout = event_row.op_return_vout
+     AND carrier.output_index = event_row.record_ordinal
+    WHERE event_row.network = $1
+      AND event_row.protocol = 'pwid1'
+      AND event_row.status = 'confirmed'
+      AND event_row.block_height BETWEEN $2 AND $3
+      AND event_row.block_height > 0
+      AND event_row.block_index >= 0
+      AND event_row.op_return_vout >= 0
+      AND event_row.record_ordinal >= 0
+      AND event_row.data_bytes > 0
+      AND event_row.event_time = event_tx.block_time
+    WINDOW position_window AS (
+      PARTITION BY
+        event_row.txid,
+        event_row.block_height,
+        event_row.block_index,
+        event_row.op_return_vout,
+        event_row.record_ordinal
+    )
+  )
+  SELECT *
+  FROM audit_rows
+  WHERE (
+    block_height,
+    block_index,
+    protocol_vout,
+    record_ordinal,
+    event_id
+  ) > ($4, $5, $6, $7, $8)
+  ORDER BY
+    block_height,
+    block_index,
+    protocol_vout,
+    record_ordinal,
+    event_id
+  LIMIT $9
+`;
+
+function compareIdRegistryAuditRowCursor(left, right) {
+  for (const key of [
+    "blockHeight",
+    "blockIndex",
+    "protocolVout",
+    "recordOrdinal",
+    "eventId",
+  ]) {
+    const difference = Number(left?.[key]) - Number(right?.[key]);
+    if (difference !== 0) {
+      return difference;
+    }
+  }
+  return 0;
+}
+
+function idRegistryAuditRowCursor(row) {
+  return {
+    blockHeight: row.blockHeight,
+    blockIndex: row.blockIndex,
+    eventId: row.eventId,
+    protocolVout: row.protocolVout,
+    recordOrdinal: row.recordOrdinal,
+  };
+}
+
+async function idRegistryAuditSnapshotPass(
+  pool,
+  network,
+  {
+    expectedHash,
+    expectedHeight,
+    onPage,
+    rowPageSize,
+    transitionPageSize,
+  },
+) {
+  const client = await pool.connect();
+  let transactionOpen = false;
+  try {
+    await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+    transactionOpen = true;
+    await client.query("SET LOCAL statement_timeout = '30s'");
+    await client.query("SET LOCAL lock_timeout = '5s'");
+    const scan = await latestProofIndexScanMetadata(client, network);
+    const scanPayload = objectRecord(scan?.payload);
+    const scanConsistency = objectRecord(scan?.consistency);
+    const scanSnapshotId = String(scan?.snapshot_id ?? "").trim();
+    const scanHeight = idRegistryAuditExactInteger(
+      scan?.indexed_through_block,
+      1,
+    );
+    const scanHash = normalizedLowerText(
+      scanPayload.indexedThroughBlockHash ??
+        scanPayload.blockHash ??
+        scan?.source_hashes?.blockScan,
+    );
+    const checkpointResult = await client.query(
+      `
+        SELECT block_hash
+        FROM proof_indexer.blocks
+        WHERE network = $1
+          AND height = $2
+          AND canonical = true
+        ORDER BY block_hash
+        LIMIT 2
+      `,
+      [network, expectedHeight],
+    );
+    if (
+      scanPayload.complete !== true ||
+      !scanSnapshotId ||
+      idRegistryAuditExactInteger(scanPayload.tipHeight, 1) !== expectedHeight ||
+      scanConsistency.ok !== true ||
+      scanConsistency.status !== "block-scan-current" ||
+      scanHeight !== expectedHeight ||
+      scanHash !== expectedHash ||
+      checkpointResult.rowCount !== 1 ||
+      normalizedLowerText(checkpointResult.rows[0]?.block_hash) !== expectedHash
+    ) {
+      throw new Error(
+        "The ID audit index scan is not pinned to the exact current checkpoint.",
+      );
+    }
+    const outsideResult = await client.query(
+      `
+        SELECT count(*)::text AS outside_count
+        FROM proof_indexer.events
+        WHERE network = $1
+          AND protocol = 'pwid1'
+          AND status = 'confirmed'
+          AND (block_height < 1 OR block_height > $2)
+      `,
+      [network, expectedHeight],
+    );
+    if (idRegistryAuditExactInteger(outsideResult.rows[0]?.outside_count) !== 0) {
+      throw new Error("Confirmed PWID rows escape the pinned index checkpoint.");
+    }
+    const bindingResult = await client.query(
+      `
+        SELECT
+          count(*)::text AS row_count,
+          count(*) FILTER (
+            WHERE event_row.block_index >= 0
+              AND event_row.op_return_vout >= 0
+              AND event_row.record_ordinal >= 0
+              AND event_row.data_bytes > 0
+              AND EXISTS (
+              SELECT 1
+              FROM proof_indexer.transactions event_tx
+              JOIN proof_indexer.blocks canonical_block
+                ON canonical_block.network = event_tx.network
+               AND canonical_block.block_hash = event_tx.block_hash
+               AND canonical_block.height = event_tx.block_height
+               AND canonical_block.canonical = true
+              WHERE event_tx.network = event_row.network
+                AND event_tx.txid = event_row.txid
+                AND event_tx.status = 'confirmed'
+                AND event_tx.block_height = event_row.block_height
+                AND event_tx.block_index = event_row.block_index
+                AND event_tx.block_time = event_row.block_time
+                AND event_row.event_time = event_tx.block_time
+            )
+          )::text AS exact_row_count
+        FROM proof_indexer.events event_row
+        WHERE event_row.network = $1
+          AND event_row.protocol = 'pwid1'
+          AND event_row.status = 'confirmed'
+          AND event_row.block_height BETWEEN 1 AND $2
+      `,
+      [network, expectedHeight],
+    );
+    const expectedRowCount = idRegistryAuditExactInteger(
+      bindingResult.rows[0]?.row_count,
+    );
+    const exactRowCount = idRegistryAuditExactInteger(
+      bindingResult.rows[0]?.exact_row_count,
+    );
+    if (expectedRowCount === null || exactRowCount !== expectedRowCount) {
+      throw new Error(
+        "Confirmed PWID rows are not completely bound to canonical transactions.",
+      );
+    }
+
+    let rowRolling = createIdRegistryAuditRollingHash(
+      "proof-indexer-confirmed-pwid-audit-rows",
+    );
+    let validCount = 0;
+    let invalidCount = 0;
+    let mixedOutcomePositionCount = 0;
+    let positionCount = 0;
+    let maxCarrierPayloadBytes = 0;
+    let priorPositionKey = "";
+    const streamRows = async (rangeKind, rangeStart, rangeEnd) => {
+      let cursor = {
+        blockHeight: rangeStart,
+        blockIndex: -1,
+        eventId: 0,
+        protocolVout: -1,
+        recordOrdinal: -1,
+      };
+      for (;;) {
+        const result = await client.query(ID_REGISTRY_AUDIT_ROW_PAGE_SQL, [
+          network,
+          rangeStart,
+          rangeEnd,
+          cursor.blockHeight,
+          cursor.blockIndex,
+          cursor.protocolVout,
+          cursor.recordOrdinal,
+          cursor.eventId,
+          rowPageSize + 1,
+        ]);
+        const hasMore = result.rows.length > rowPageSize;
+        const databaseRows = hasMore
+          ? result.rows.slice(0, rowPageSize)
+          : result.rows;
+        if (databaseRows.length === 0) {
+          if (hasMore) {
+            throw new Error("ID audit relational cursor produced an empty page.");
+          }
+          break;
+        }
+        const rows = databaseRows.map(idRegistryAuditDatabaseRow);
+        let priorCursor = cursor;
+        for (const row of rows) {
+          const nextCursor = idRegistryAuditRowCursor(row);
+          if (
+            compareIdRegistryAuditRowCursor(priorCursor, nextCursor) >= 0 ||
+            row.blockHeight < rangeStart ||
+            row.blockHeight > rangeEnd
+          ) {
+            throw new Error("ID audit relational keyset cursor stalled or drifted.");
+          }
+          priorCursor = nextCursor;
+          const positionKey = [
+            row.txid,
+            row.blockHeight,
+            row.blockIndex,
+            row.protocolVout,
+            row.recordOrdinal,
+          ].join(":");
+          if (positionKey !== priorPositionKey) {
+            positionCount += 1;
+            if (row.positionOutcomeClass === "mixed-valid-and-invalid") {
+              mixedOutcomePositionCount += 1;
+            }
+            priorPositionKey = positionKey;
+          }
+          validCount += row.valid ? 1 : 0;
+          invalidCount += row.valid ? 0 : 1;
+          maxCarrierPayloadBytes = Math.max(
+            maxCarrierPayloadBytes,
+            row.carrierPayloadHex.length / 2,
+          );
+        }
+        rowRolling = advanceIdRegistryAuditRollingHash(rowRolling, rows);
+        cursor = idRegistryAuditRowCursor(rows.at(-1));
+        if (typeof onPage === "function") {
+          await onPage({
+            cursor,
+            kind: "rows",
+            rangeEnd,
+            rangeKind,
+            rangeStart,
+            rows,
+          });
+        }
+        if (!hasMore) {
+          break;
+        }
+      }
+    };
+
+    await streamRows(
+      "pre-activation",
+      1,
+      PWID_RAW_REPLAY_ACTIVATION_HEIGHT - 1,
+    );
+    if (typeof onPage === "function") {
+      await onPage({
+        kind: "range-complete",
+        rangeEnd: PWID_RAW_REPLAY_ACTIVATION_HEIGHT - 1,
+        rangeKind: "pre-activation",
+        rangeStart: 1,
+      });
+    }
+
+    let transitionChain = createIdRegistryAuditTransitionChain({
+      activationHeight: PWID_RAW_REPLAY_ACTIVATION_HEIGHT,
+      checkpointHash: expectedHash,
+      checkpointHeight: expectedHeight,
+    });
+    let transitionCursor = PWID_RAW_REPLAY_ACTIVATION_HEIGHT - 1;
+    while (transitionCursor < expectedHeight) {
+      const result = await client.query(
+        `
+          SELECT
+            transition.network,
+            transition.block_height,
+            lower(transition.block_hash) AS block_hash,
+            lower(transition.previous_block_hash) AS previous_block_hash,
+            lower(previous_block.block_hash) AS canonical_previous_block_hash,
+            transition.model,
+            transition.state_commitment_model,
+            transition.work_token_state_model,
+            transition.opening_network_value_q8::text,
+            transition.closing_network_value_q8::text,
+            transition.opening_state_sha256,
+            transition.closing_state_sha256,
+            transition.opening_state_payload_bytes,
+            transition.closing_state_payload_bytes,
+            transition.protocol_record_count,
+            transition.raw_protocol_candidate_count,
+            transition.transaction_count,
+            transition.event_count,
+            transition.event_set_model,
+            transition.event_set_sha256,
+            transition.event_set_payload_bytes,
+            transition.block_atomic,
+            transition.fee_once,
+            transition.invalid_zero,
+            transition.complete,
+            transition.payload
+          FROM proof_indexer.work_amo_block_transitions transition
+          JOIN proof_indexer.blocks transition_block
+            ON transition_block.network = transition.network
+           AND transition_block.height = transition.block_height
+           AND transition_block.block_hash = transition.block_hash
+           AND transition_block.previous_block_hash =
+             transition.previous_block_hash
+           AND transition_block.canonical = true
+          JOIN proof_indexer.blocks previous_block
+            ON previous_block.network = transition.network
+           AND previous_block.height = transition.block_height - 1
+           AND previous_block.block_hash = transition.previous_block_hash
+           AND previous_block.canonical = true
+          WHERE transition.network = $1
+            AND transition.block_height > $2
+            AND transition.block_height <= $3
+          ORDER BY transition.block_height
+          LIMIT $4
+        `,
+        [network, transitionCursor, expectedHeight, transitionPageSize + 1],
+      );
+      const hasMore = result.rows.length > transitionPageSize;
+      const databaseRows = hasMore
+        ? result.rows.slice(0, transitionPageSize)
+        : result.rows;
+      if (databaseRows.length === 0) {
+        throw new Error(
+          `ID audit transition chain has a gap after height ${transitionCursor}.`,
+        );
+      }
+      const transitions = databaseRows.map(
+        idRegistryAuditTransitionFromDatabase,
+      );
+      transitionChain = advanceIdRegistryAuditTransitionChain(
+        transitionChain,
+        transitions,
+      );
+      const rangeStart = transitions[0].blockHeight;
+      const rangeEnd = transitions.at(-1).blockHeight;
+      if (rangeStart !== transitionCursor + 1) {
+        throw new Error("ID audit transition keyset cursor drifted.");
+      }
+      transitionCursor = rangeEnd;
+      if (typeof onPage === "function") {
+        await onPage({
+          cursor: transitionCursor,
+          kind: "transitions",
+          rangeEnd,
+          rangeKind: "post-activation",
+          rangeStart,
+          transitions,
+        });
+      }
+      await streamRows("post-activation", rangeStart, rangeEnd);
+      if (typeof onPage === "function") {
+        await onPage({
+          kind: "range-complete",
+          rangeEnd,
+          rangeKind: "post-activation",
+          rangeStart,
+        });
+      }
+      if (!hasMore && transitionCursor < expectedHeight) {
+        throw new Error(
+          `ID audit transition chain ended before height ${expectedHeight}.`,
+        );
+      }
+    }
+    const transitionFence = finalizeIdRegistryAuditTransitionChain(
+      transitionChain,
+    );
+    if (rowRolling.count !== expectedRowCount) {
+      throw new Error("ID audit relational keyset hydration was incomplete.");
+    }
+    const rowFence = idRegistryAuditRollingHashFingerprint(rowRolling);
+    const fence = {
+      checkpointHash: expectedHash,
+      checkpointHeight: expectedHeight,
+      indexScanSnapshotId: scanSnapshotId,
+      indexScanStatus: scanConsistency.status,
+      relationalRows: rowFence,
+      transitions: transitionFence,
+    };
+    const summary = {
+      checkpoint: { blockHash: expectedHash, height: expectedHeight },
+      fence,
+      indexScanComplete: true,
+      network,
+      source: "proof-indexer-paged-pwid-transition-audit",
+      stats: {
+        invalidCount,
+        maxCarrierPayloadBytes,
+        mixedOutcomePositionCount,
+        positionCount,
+        rowCount: rowRolling.count,
+        validCount,
+      },
+    };
+    await client.query("COMMIT");
+    transactionOpen = false;
+    return summary;
+  } catch (error) {
+    if (transactionOpen) {
+      await client.query("ROLLBACK").catch(() => {});
+    }
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Stream the complete PWID relational history and every AMO transition from
+ * activation through an exact scan checkpoint. Resource bounds apply only to
+ * individual pages; there is deliberately no total-history ceiling.
+ */
+export async function proofIndexIdRegistryAuditStream(
+  network,
+  options = {},
+) {
+  const pool = proofIndexPool();
+  const expectedHeight = idRegistryAuditExactInteger(options.expectedHeight, 1);
+  const expectedHash = normalizedLowerText(options.expectedHash);
+  if (
+    !pool ||
+    network !== "livenet" ||
+    expectedHeight === null ||
+    expectedHeight < PWID_RAW_REPLAY_ACTIVATION_HEIGHT ||
+    !/^[0-9a-f]{64}$/u.test(expectedHash)
+  ) {
+    return null;
+  }
+  const transitionPageSize = boundedInteger(
+    options.transitionPageSize,
+    ID_REGISTRY_AUDIT_TRANSITION_PAGE_SIZE,
+    1,
+    ID_REGISTRY_AUDIT_MAX_PAGE_SIZE,
+  );
+  const rowPageSize = boundedInteger(
+    options.rowPageSize,
+    ID_REGISTRY_AUDIT_ROW_PAGE_SIZE,
+    1,
+    ID_REGISTRY_AUDIT_MAX_PAGE_SIZE,
+  );
+  const passOptions = {
+    expectedHash,
+    expectedHeight,
+    onPage: options.onPage,
+    rowPageSize,
+    transitionPageSize,
+  };
+  const initial = await idRegistryAuditSnapshotPass(
+    pool,
+    network,
+    passOptions,
+  );
+  if (options.verifyFinalFence === false) {
+    return initial;
+  }
+  const final = await idRegistryAuditSnapshotPass(pool, network, {
+    ...passOptions,
+    onPage: null,
+  });
+  assertIdRegistryAuditFinalFence(initial.fence, final.fence);
+  return initial;
 }
 
 export async function proofIndexRegistryPayload(network, options = {}) {

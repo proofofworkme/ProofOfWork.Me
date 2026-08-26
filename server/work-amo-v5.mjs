@@ -1271,8 +1271,39 @@ function workAmoV5HasOnlyPairedSurrogates(value) {
   return true;
 }
 
-function decodedWorkAmoV5Base64UrlJson(value) {
-  const encoded = String(value ?? "").trim();
+export function workAmoV5HasNoTextStorageNul(
+  value,
+  ancestors = new Set(),
+) {
+  if (typeof value === "string") {
+    return !value.includes("\u0000");
+  }
+  if (!value || typeof value !== "object") {
+    return true;
+  }
+  if (ancestors.has(value)) {
+    return false;
+  }
+  ancestors.add(value);
+  let valid = false;
+  try {
+    valid = (Array.isArray(value)
+      ? value.map((item, index) => [String(index), item])
+      : Object.entries(value)
+    ).every(
+      ([key, item]) =>
+        !key.includes("\u0000") &&
+        workAmoV5HasNoTextStorageNul(item, ancestors),
+    );
+  } catch {
+    valid = false;
+  }
+  ancestors.delete(value);
+  return valid;
+}
+
+export function decodeWorkAmoV5CanonicalBase64UrlJsonObject(value) {
+  const encoded = String(value ?? "");
   if (!/^[A-Za-z0-9_-]+$/u.test(encoded)) {
     return null;
   }
@@ -1295,13 +1326,17 @@ function decodedWorkAmoV5Base64UrlJson(value) {
     return parsed &&
       typeof parsed === "object" &&
       !Array.isArray(parsed) &&
-      workAmoV5HasOnlyPairedSurrogates(parsed)
+      workAmoV5HasOnlyPairedSurrogates(parsed) &&
+      workAmoV5HasNoTextStorageNul(parsed)
       ? parsed
       : null;
   } catch {
     return null;
   }
 }
+
+const decodedWorkAmoV5Base64UrlJson =
+  decodeWorkAmoV5CanonicalBase64UrlJsonObject;
 
 export function isWorkAmoV5LivenetAddress(value) {
   try {
@@ -1317,12 +1352,15 @@ export function isWorkAmoV5LivenetAddress(value) {
 
 function workAmoV5NormalizedPowId(value) {
   assertCanonicalUnicodeCaseMappingVersion();
-  return String(value ?? "")
+  const normalized = String(value ?? "")
     .trim()
     .toLowerCase()
     .replace(/^@/u, "")
     .replace(/@proofofwork\.me$/u, "")
     .trim();
+  return workAmoV5HasNoTextStorageNul(normalized)
+    ? normalized
+    : "";
 }
 
 function workAmoV5CanonicalBase64UrlText(value) {
@@ -1339,7 +1377,10 @@ function workAmoV5CanonicalBase64UrlText(value) {
       return "";
     }
     const text = WORK_AMO_V5_FATAL_UTF8_DECODER.decode(bytes);
-    return Buffer.from(text, "utf8").equals(bytes) ? text : "";
+    return Buffer.from(text, "utf8").equals(bytes) &&
+      workAmoV5HasNoTextStorageNul(text)
+      ? text
+      : "";
   } catch {
     return "";
   }
@@ -1370,7 +1411,7 @@ export function parseWorkAmoV5GenericSaleAuthorization(
     value && typeof value === "object" && !Array.isArray(value)
       ? value
       : null;
-  if (!source) {
+  if (!source || !workAmoV5HasNoTextStorageNul(source)) {
     return null;
   }
   const version = String(
@@ -1500,7 +1541,11 @@ export function parseWorkAmoV5IdSaleAuthorization(
     value && typeof value === "object" && !Array.isArray(value)
       ? value
       : null;
-  if (!source || network !== "livenet") {
+  if (
+    !source ||
+    network !== "livenet" ||
+    !workAmoV5HasNoTextStorageNul(source)
+  ) {
     return null;
   }
   const id = workAmoV5NormalizedPowId(
@@ -1633,7 +1678,10 @@ export function workAmoV5IdSaleAuthorizationsMatch(left, right) {
 
 export function parseWorkAmoV5RawPwidRecord(payload) {
   const text = String(payload ?? "");
-  if (!text.startsWith("pwid1:")) {
+  if (
+    !text.startsWith("pwid1:") ||
+    !workAmoV5HasNoTextStorageNul(text)
+  ) {
     return null;
   }
   const parts = text.slice("pwid1:".length).split(":");
@@ -1778,7 +1826,10 @@ function workAmoV5Base64UrlBytes(value) {
 function workAmoV5Base64UrlUtf8Text(value) {
   const bytes = workAmoV5Base64UrlBytes(value);
   const text = WORK_AMO_V5_FATAL_UTF8_DECODER.decode(bytes);
-  if (!Buffer.from(text, "utf8").equals(bytes)) {
+  if (
+    !Buffer.from(text, "utf8").equals(bytes) ||
+    !workAmoV5HasNoTextStorageNul(text)
+  ) {
     throw new Error("Non-canonical UTF-8 data.");
   }
   return text;

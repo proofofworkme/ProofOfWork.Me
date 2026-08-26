@@ -1,5 +1,17 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 const caddy = readFileSync("deploy/Caddyfile", "utf8");
 const caddyService = readFileSync("deploy/caddy-hardening.conf", "utf8");
@@ -211,6 +223,240 @@ assert.match(postgresBackup, /pg_dumpall[\s\S]*--globals-only/u);
 assert.match(postgresBackup, /pg_restore --list/u);
 assert.match(postgresBackup, /sha256sum/u);
 assert.match(postgresBackup, /\.dumpset/u);
+assert.match(
+  postgresBackup,
+  /if ! \/usr\/bin\/find[\s\S]*\|[\s\S]*\/usr\/bin\/sort -z -nr >"\$\{retention_listing\}"; then/u,
+);
+assert.match(postgresBackup, /mapfile -d '' -t backups <"\$\{retention_listing\}"/u);
+assert.doesNotMatch(postgresBackup, /mapfile[^\n]*< <\(/u);
+assert.match(postgresBackup, /flock --exclusive --nonblock/u);
+assert.match(postgresBackup, /temporary_set_identity/u);
+
+const backupTestRoot = mkdtempSync(join(tmpdir(), "pow-logical-backup-contract-"));
+try {
+  const backupRoot = join(backupTestRoot, "logical");
+  const fixturePath = join(backupTestRoot, "logical-backup-fixture.sh");
+  const dumpHelper = join(backupTestRoot, "pg-dump-helper");
+  const globalsHelper = join(backupTestRoot, "pg-dumpall-helper");
+  const restoreHelper = join(backupTestRoot, "pg-restore-helper");
+  const failingFindHelper = join(backupTestRoot, "find-helper");
+  mkdirSync(backupRoot, { mode: 0o700 });
+  const seededNames = Array.from(
+    { length: 15 },
+    (_, index) =>
+      `proof_indexer-202607${String(index + 1).padStart(2, "0")}T031500Z.dumpset`,
+  );
+  for (const name of seededNames) {
+    mkdirSync(join(backupRoot, name), { mode: 0o700 });
+  }
+  const fileWriter = `#!/usr/bin/env bash
+set -Eeuo pipefail
+output=""
+for argument in "$@"; do
+  case "\${argument}" in
+    --file=*) output="\${argument#--file=}" ;;
+  esac
+done
+[[ -n "\${output}" ]]
+printf 'fault-injection backup bytes\\n' >"\${output}"
+`;
+  writeFileSync(dumpHelper, fileWriter);
+  writeFileSync(globalsHelper, fileWriter);
+  writeFileSync(restoreHelper, "#!/usr/bin/env bash\nexit 0\n");
+  writeFileSync(
+    failingFindHelper,
+    `#!/usr/bin/env bash
+printf '9999999999.0 proof_indexer-20260701T031500Z.dumpset\\0'
+exit 41
+`,
+  );
+  for (const helper of [
+    dumpHelper,
+    globalsHelper,
+    restoreHelper,
+    failingFindHelper,
+  ]) {
+    chmodSync(helper, 0o700);
+  }
+  const fixture = postgresBackup
+    .replace(
+      'backup_root="/data/proofofwork-postgres-backups/logical"',
+      `backup_root="${backupRoot}"`,
+    )
+    .replaceAll("/usr/bin/pg_dumpall", globalsHelper)
+    .replaceAll("/usr/bin/pg_dump", dumpHelper)
+    .replaceAll("/usr/bin/pg_restore", restoreHelper)
+    .replaceAll("/usr/bin/find", failingFindHelper);
+  writeFileSync(fixturePath, fixture);
+  chmodSync(fixturePath, 0o700);
+
+  const result = spawnSync("/usr/bin/bash", [fixturePath], {
+    encoding: "utf8",
+  });
+  assert.notEqual(result.status, 0, "failed retention discovery must abort");
+  assert.match(
+    result.stderr,
+    /Unable to enumerate logical backup retention safely/u,
+  );
+  for (const name of seededNames) {
+    assert.equal(
+      existsSync(join(backupRoot, name)),
+      true,
+      `retention discovery failure removed ${name}`,
+    );
+  }
+  const completedNames = readdirSync(backupRoot).filter((name) =>
+    /^proof_indexer-[0-9]{8}T[0-9]{6}Z\.dumpset$/u.test(name),
+  );
+  assert.equal(
+    completedNames.length,
+    seededNames.length + 1,
+    "the freshly completed backup must survive retention discovery failure",
+  );
+  const newName = completedNames.find((name) => !seededNames.includes(name));
+  assert.ok(newName, "fault injection did not leave one new completed dump set");
+  for (const file of ["proof_indexer.dump", "globals.sql", "SHA256SUMS"]) {
+    assert.equal(existsSync(join(backupRoot, newName, file)), true);
+  }
+} finally {
+  rmSync(backupTestRoot, { recursive: true, force: true });
+}
+
+const overlapTestRoot = mkdtempSync(
+  join(tmpdir(), "pow-logical-backup-overlap-contract-"),
+);
+let overlapFirstCompletion;
+try {
+  const backupRoot = join(overlapTestRoot, "logical");
+  const fixturePath = join(overlapTestRoot, "logical-backup-overlap-fixture.sh");
+  const dumpHelper = join(overlapTestRoot, "blocking-pg-dump-helper");
+  const globalsHelper = join(overlapTestRoot, "pg-dumpall-helper");
+  const restoreHelper = join(overlapTestRoot, "pg-restore-helper");
+  const startedPath = join(overlapTestRoot, "dump-started");
+  const releasePath = join(overlapTestRoot, "release-dump");
+  const fixedTimestamp = "20260826T031500Z";
+  const temporarySet = join(
+    backupRoot,
+    `.proof_indexer-${fixedTimestamp}.dumpset.tmp`,
+  );
+  const finalSet = join(
+    backupRoot,
+    `proof_indexer-${fixedTimestamp}.dumpset`,
+  );
+  mkdirSync(backupRoot, { mode: 0o700 });
+  writeFileSync(
+    dumpHelper,
+    `#!/usr/bin/env bash
+set -Eeuo pipefail
+output=""
+for argument in "$@"; do
+  case "\${argument}" in
+    --file=*) output="\${argument#--file=}" ;;
+  esac
+done
+[[ -n "\${output}" ]]
+printf 'overlap backup bytes\\n' >"\${output}"
+printf 'started\\n' >"${startedPath}"
+for _attempt in {1..500}; do
+  if [[ -e "${releasePath}" ]]; then
+    exit 0
+  fi
+  /usr/bin/sleep 0.01
+done
+exit 71
+`,
+  );
+  writeFileSync(
+    globalsHelper,
+    `#!/usr/bin/env bash
+set -Eeuo pipefail
+output=""
+for argument in "$@"; do
+  case "\${argument}" in
+    --file=*) output="\${argument#--file=}" ;;
+  esac
+done
+[[ -n "\${output}" ]]
+printf 'overlap globals bytes\\n' >"\${output}"
+`,
+  );
+  writeFileSync(restoreHelper, "#!/usr/bin/env bash\nexit 0\n");
+  for (const helper of [dumpHelper, globalsHelper, restoreHelper]) {
+    chmodSync(helper, 0o700);
+  }
+  const fixture = postgresBackup
+    .replace(
+      'backup_root="/data/proofofwork-postgres-backups/logical"',
+      `backup_root="${backupRoot}"`,
+    )
+    .replace(
+      'timestamp="$(date -u +%Y%m%dT%H%M%SZ)"',
+      `timestamp="${fixedTimestamp}"`,
+    )
+    .replaceAll("/usr/bin/pg_dumpall", globalsHelper)
+    .replaceAll("/usr/bin/pg_dump", dumpHelper)
+    .replaceAll("/usr/bin/pg_restore", restoreHelper);
+  writeFileSync(fixturePath, fixture);
+  chmodSync(fixturePath, 0o700);
+
+  const first = spawn("/usr/bin/bash", [fixturePath], {
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  let firstStdout = "";
+  let firstStderr = "";
+  first.stdout.setEncoding("utf8");
+  first.stderr.setEncoding("utf8");
+  first.stdout.on("data", (chunk) => {
+    firstStdout += chunk;
+  });
+  first.stderr.on("data", (chunk) => {
+    firstStderr += chunk;
+  });
+  overlapFirstCompletion = new Promise((resolve, reject) => {
+    first.once("error", reject);
+    first.once("close", (status, signal) => {
+      resolve({ signal, status, stderr: firstStderr, stdout: firstStdout });
+    });
+  });
+  for (let attempt = 0; attempt < 500 && !existsSync(startedPath); attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  assert.equal(existsSync(startedPath), true, "first backup did not reach pg_dump");
+  assert.equal(existsSync(temporarySet), true, "first backup owns no temporary set");
+
+  const overlap = spawnSync("/usr/bin/bash", [fixturePath], {
+    encoding: "utf8",
+  });
+  assert.notEqual(overlap.status, 0, "overlapping backup unexpectedly ran");
+  assert.match(overlap.stderr, /Another logical backup operation holds/u);
+  assert.equal(
+    existsSync(temporarySet),
+    true,
+    "overlapping cleanup removed the first invocation's temporary set",
+  );
+  assert.equal(
+    existsSync(join(temporarySet, "proof_indexer.dump")),
+    true,
+    "overlapping cleanup removed the active dump",
+  );
+
+  writeFileSync(releasePath, "release\n");
+  const firstResult = await overlapFirstCompletion;
+  assert.equal(firstResult.status, 0, firstResult.stderr);
+  assert.equal(firstResult.signal, null);
+  assert.equal(existsSync(temporarySet), false);
+  assert.equal(existsSync(finalSet), true);
+} finally {
+  const releasePath = join(overlapTestRoot, "release-dump");
+  if (!existsSync(releasePath)) {
+    writeFileSync(releasePath, "release\n");
+  }
+  if (overlapFirstCompletion) {
+    await overlapFirstCompletion;
+  }
+  rmSync(overlapTestRoot, { recursive: true, force: true });
+}
+
 assert.match(postgresBackupService, /ProtectSystem=strict/u);
 assert.match(
   postgresBackupService,

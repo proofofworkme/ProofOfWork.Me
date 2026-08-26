@@ -13,6 +13,9 @@ import * as bitcoin from "bitcoinjs-lib";
 import * as ecc from "@bitcoinerlab/secp256k1";
 import { verifyBitcoinMessageSignature } from "./bitcoin-message-verifier.mjs";
 import {
+  CANONICAL_OP_RETURN_SCRIPT_MALFORMED,
+  CANONICAL_OP_RETURN_TEXT_STORAGE_INVALID,
+  CANONICAL_OP_RETURN_UTF8_INVALID,
   canonicalRawProtocolRecordSetFromTransaction,
   canonicalProtocolCandidateFromOutput,
 } from "./canonical-op-return.mjs";
@@ -21,6 +24,20 @@ import {
   compareCanonicalUtf8,
 } from "./canonical-order.mjs";
 import { createElectrumClient } from "./electrum-client.mjs";
+import {
+  electrumAddressHistoryCoverage,
+  firstPartyAddressTransactionsPage,
+} from "./address-chain-pagination.mjs";
+import {
+  PWID_RAW_REPLAY_ACTIVATION_HEIGHT,
+  advanceIdRegistryAuditRollingHash,
+  assertIdRegistryAuditAttemptPositionCoverage,
+  assertIdRegistryAuditFinalFence,
+  createIdRegistryAuditRollingHash,
+  idRegistryAuditRollingHashFingerprint,
+  qualifiedLegacyPwidOutcome,
+  qualifiedPostActivationPwidOutcome,
+} from "./id-registry-audit-contract.mjs";
 import {
   BOND_VALUE_Q8_SCALE,
   addIntegerTexts,
@@ -132,6 +149,7 @@ import {
   WORK_AMO_V5_V1_DECLARATION_TXID,
   assignWorkAmoV5EconomicOutputs,
   compareWorkAmoUtf8,
+  decodeWorkAmoV5CanonicalBase64UrlJsonObject,
   deriveWorkAmoV5FrozenTerms,
   parseWorkAmoV5RawPwtRecord,
   parseWorkAmoV5PwmMessages,
@@ -157,6 +175,7 @@ import {
   workAmoV5NetworkValueQ8FromSufficientState,
   workAmoV5StatusFromEvidence,
   workAmoV5UnitTerms,
+  workAmoV5HasNoTextStorageNul,
   workAmoV5WorkStateWithoutLegacyListingReservations,
 } from "./work-amo-v5.mjs";
 import {
@@ -251,6 +270,7 @@ import {
   proofIndexConfirmedValueEventsAfterBlock,
   proofIndexCreditListingsPayload,
   proofIndexEventHistoryPayload,
+  proofIndexIdRegistryAuditStream,
   proofIndexLogHistoryReadEligibility,
   proofIndexLogHistoryPayload,
   proofIndexOperationalStatusPayload,
@@ -599,6 +619,14 @@ const ADDRESS_PAGE_FETCH_TIMEOUT_MS = Number(
 );
 const ADDRESS_ELECTRUM_HISTORY_TIMEOUT_MS = Number(
   process.env.ADDRESS_ELECTRUM_HISTORY_TIMEOUT_MS ?? 30_000,
+);
+const ADDRESS_CHAIN_PAGE_SIZE = 25;
+const ID_REGISTRY_AUDIT_MAX_PENDING_TXS = Math.min(
+  250,
+  Math.max(
+    1,
+    Number(process.env.POW_ID_AUDIT_MAX_PENDING_TXS ?? 100) || 100,
+  ),
 );
 const ADDRESS_UTXO_FETCH_TIMEOUT_MS = Number(
   process.env.ADDRESS_UTXO_FETCH_TIMEOUT_MS ?? 15_000,
@@ -9840,16 +9868,7 @@ function rawTokenSaleAuthorization(message) {
   if (!encoded) {
     return null;
   }
-  try {
-    const authorization = JSON.parse(decodeTextBase64Url(encoded));
-    return authorization &&
-      typeof authorization === "object" &&
-      !Array.isArray(authorization)
-      ? authorization
-      : null;
-  } catch {
-    return null;
-  }
+  return decodeWorkAmoV5CanonicalBase64UrlJsonObject(encoded);
 }
 
 function signedTransactionInputOutpoints(txHex) {
@@ -11814,12 +11833,126 @@ async function fetchCoreCanonicalBlockOrder(blockHash) {
   };
 }
 
-async function fetchAddressTransactionsPage(address, network, path) {
-  return fetchAddressTransactionsPageFromBase(
-    mempoolBase(network),
-    address,
+async function fetchAddressTransactionsPage(
+  address,
+  network,
+  path,
+  options = {},
+) {
+  return firstPartyAddressTransactionsPage({
+    fallbackAllowed:
+      options.allowCanonicalFallback === true &&
+      address === registryAddressForNetwork(network),
+    fetchCanonicalBlock: (height) =>
+      fetchCanonicalAddressHistoryBlock(height, network),
+    fetchElectrumHistory: () =>
+      fetchExactAddressHistoryFromElectrum(address, network),
+    fetchLocalPage: (requestedPath) =>
+      fetchAddressTransactionsPageFromBase(
+        mempoolBase(network),
+        address,
+        requestedPath,
+      ),
+    forceCanonicalFallback:
+      options.forceCanonicalFallback === true &&
+      options.allowCanonicalFallback === true &&
+      address === registryAddressForNetwork(network),
+    hydratePage: (entries) =>
+      mapWithConcurrency(
+        entries,
+        Math.min(2, Math.max(1, TX_FETCH_CONCURRENCY)),
+        (entry) => hydrateCanonicalAddressHistoryTransaction(entry, network),
+      ),
+    pageSize: ADDRESS_CHAIN_PAGE_SIZE,
     path,
+  });
+}
+
+async function fetchExactAddressHistoryFromElectrum(address, network) {
+  if (network !== "livenet" || !ELECTRUM_HOST || !ELECTRUM_PORT) {
+    throw new Error("The first-party Electrum address reader is unavailable.");
+  }
+  const history = await electrumRequest(
+    "blockchain.scripthash.get_history",
+    [scriptHashForAddress(address, network)],
+    ADDRESS_ELECTRUM_HISTORY_TIMEOUT_MS,
   );
+  if (!Array.isArray(history)) {
+    throw new Error("Electrum returned an invalid address history response.");
+  }
+  return history;
+}
+
+async function fetchCanonicalAddressHistoryBlock(height, network) {
+  if (
+    network !== "livenet" ||
+    !Number.isSafeInteger(Number(height)) ||
+    Number(height) < 1
+  ) {
+    throw new Error("Canonical address history requires a valid block height.");
+  }
+
+  const blockHeight = Number(height);
+  const firstHashResponse = await bitcoinRpc("getblockhash", [blockHeight]);
+  const blockHash = String(
+    firstHashResponse?.ok ? firstHashResponse.result : "",
+  )
+    .trim()
+    .toLowerCase();
+  if (!/^[0-9a-f]{64}$/u.test(blockHash)) {
+    throw new Error(
+      `Bitcoin Core could not bind address history height ${blockHeight}.`,
+    );
+  }
+
+  const txidIndex = await fetchCoreBlockTxidIndex(blockHash);
+  const headerResponse = await bitcoinRpc("getblockheader", [blockHash, true]);
+  const header = headerResponse?.ok ? headerResponse.result : null;
+  const previousBlockHash = String(header?.previousblockhash ?? "")
+    .trim()
+    .toLowerCase();
+  const blockTime = Number(header?.time);
+  const secondHashResponse = await bitcoinRpc("getblockhash", [blockHeight]);
+  const secondHash = String(
+    secondHashResponse?.ok ? secondHashResponse.result : "",
+  )
+    .trim()
+    .toLowerCase();
+  if (
+    !txidIndex ||
+    secondHash !== blockHash ||
+    Number(header?.height) !== blockHeight ||
+    !/^[0-9a-f]{64}$/u.test(previousBlockHash) ||
+    !Number.isSafeInteger(blockTime) ||
+    blockTime < 1
+  ) {
+    throw new Error(
+      `Bitcoin Core address history block ${blockHeight} changed during pagination.`,
+    );
+  }
+
+  return {
+    blockHash,
+    blockTime,
+    previousBlockHash,
+    txids: [...txidIndex.keys()],
+  };
+}
+
+async function hydrateCanonicalAddressHistoryTransaction(entry, network) {
+  const txid = String(entry?.txid ?? "").trim().toLowerCase();
+  const transaction = await fetchTransactionFromBitcoinRpc(txid, network, {
+    requireCanonicalPrevouts: true,
+  });
+  if (
+    !transaction ||
+    !transactionHasCompleteCanonicalPrevouts(transaction)
+  ) {
+    throw new Error(
+      `Bitcoin Core address history hydration was incomplete for ${txid}.`,
+    );
+  }
+  return transaction;
 }
 
 async function fetchAddressTransactionsPageFromBase(baseUrl, address, path) {
@@ -13982,6 +14115,15 @@ function decodeTextBase64Url(value) {
   return base64UrlDecodeBytes(value).toString("utf8");
 }
 
+function canonicalSaleAuthorizationJsonFromBase64Url(value) {
+  const authorization =
+    decodeWorkAmoV5CanonicalBase64UrlJsonObject(value);
+  if (!authorization) {
+    throw new Error("Sale authorization is not canonical base64url JSON.");
+  }
+  return JSON.stringify(authorization);
+}
+
 function normalizeSubject(value) {
   return String(value).trim().replace(/\s+/gu, " ").slice(0, 180);
 }
@@ -15140,7 +15282,12 @@ function parseTokenSaleAuthorizationJson(
   { allowHistoricalWorkAmoReference = false } = {},
 ) {
   const parsed = JSON.parse(value);
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+  if (
+    !parsed ||
+    typeof parsed !== "object" ||
+    Array.isArray(parsed) ||
+    !workAmoV5HasNoTextStorageNul(parsed)
+  ) {
     throw new Error("Credit sale authorization is not an object.");
   }
 
@@ -18061,7 +18208,7 @@ function parseTokenPayload(message, network) {
       return {
         kind: "list",
         saleAuthorization: parseTokenSaleAuthorizationJson(
-          decodeTextBase64Url(parts[1]),
+          canonicalSaleAuthorizationJsonFromBase64Url(parts[1]),
           network,
         ),
       };
@@ -18080,7 +18227,7 @@ function parseTokenPayload(message, network) {
         kind: "seal",
         listingId: parts[1].toLowerCase(),
         saleAuthorization: parseTokenSaleAuthorizationJson(
-          decodeTextBase64Url(parts[2]),
+          canonicalSaleAuthorizationJsonFromBase64Url(parts[2]),
           network,
           { allowHistoricalWorkAmoReference: true },
         ),
@@ -18116,7 +18263,7 @@ function parseTokenPayload(message, network) {
         ...(parts.length === 4
           ? {
               saleAuthorization: parseTokenSaleAuthorizationJson(
-                decodeTextBase64Url(parts[3]),
+                canonicalSaleAuthorizationJsonFromBase64Url(parts[3]),
                 network,
                 { allowHistoricalWorkAmoReference: true },
               ),
@@ -21673,8 +21820,7 @@ function idEventMinimumPaymentSats(kind) {
     : ID_MUTATION_PRICE_SATS;
 }
 
-function paymentOutputsBeforeIdProtocol(vout) {
-  const protocolIndex = firstIdProtocolOutputIndex(vout);
+function paymentOutputsBeforeVout(vout, protocolIndex) {
   return vout.flatMap((output, index) => {
     if (
       typeof output.scriptpubkey_address !== "string" ||
@@ -21685,8 +21831,19 @@ function paymentOutputsBeforeIdProtocol(vout) {
       return [];
     }
 
-    return [{ address: output.scriptpubkey_address, amountSats: output.value }];
+    return [{
+      address: output.scriptpubkey_address,
+      amountSats: output.value,
+      vout: index,
+    }];
   });
+}
+
+function paymentOutputsBeforeIdProtocol(vout) {
+  return paymentOutputsBeforeVout(
+    vout,
+    firstIdProtocolOutputIndex(vout),
+  ).map(({ address, amountSats }) => ({ address, amountSats }));
 }
 
 function paymentAmountFromSnapshots(outputs, address) {
@@ -22463,7 +22620,7 @@ function parseIdMarketplaceTransferPayload(payload, network) {
   let authorization;
   try {
     authorization = parseSaleAuthorizationJson(
-      decodeTextBase64Url(authorizationEncoded),
+      canonicalSaleAuthorizationJsonFromBase64Url(authorizationEncoded),
       network,
     );
   } catch {
@@ -22523,7 +22680,7 @@ function parseIdListingPayload(payload, network) {
   let authorization;
   try {
     authorization = parseSaleAuthorizationJson(
-      decodeTextBase64Url(authorizationEncoded),
+      canonicalSaleAuthorizationJsonFromBase64Url(authorizationEncoded),
       network,
     );
   } catch {
@@ -22553,7 +22710,7 @@ function parseIdSaleSealPayload(payload, network) {
   let authorization;
   try {
     authorization = parseSaleAuthorizationJson(
-      decodeTextBase64Url(authorizationEncoded),
+      canonicalSaleAuthorizationJsonFromBase64Url(authorizationEncoded),
       network,
     );
   } catch {
@@ -22594,26 +22751,29 @@ function parseIdDelistingPayload(payload) {
 function parseIdEventPayload(payload, network) {
   const registration = parseIdRegistrationPayload(payload, network);
   if (registration) {
-    return {
+    const event = {
       kind: "register",
       ...registration,
     };
+    return workAmoV5HasNoTextStorageNul(event) ? event : null;
   }
 
   const update = parseIdReceiverUpdatePayload(payload, network);
   if (update) {
-    return {
+    const event = {
       kind: "update",
       ...update,
     };
+    return workAmoV5HasNoTextStorageNul(event) ? event : null;
   }
 
   const transfer = parseIdTransferPayload(payload, network);
   if (transfer) {
-    return {
+    const event = {
       kind: "transfer",
       ...transfer,
     };
+    return workAmoV5HasNoTextStorageNul(event) ? event : null;
   }
 
   const marketplaceTransfer = parseIdMarketplaceTransferPayload(
@@ -22621,34 +22781,38 @@ function parseIdEventPayload(payload, network) {
     network,
   );
   if (marketplaceTransfer) {
-    return {
+    const event = {
       kind: "marketTransfer",
       ...marketplaceTransfer,
     };
+    return workAmoV5HasNoTextStorageNul(event) ? event : null;
   }
 
   const listing = parseIdListingPayload(payload, network);
   if (listing) {
-    return {
+    const event = {
       kind: "list",
       ...listing,
     };
+    return workAmoV5HasNoTextStorageNul(event) ? event : null;
   }
 
   const seal = parseIdSaleSealPayload(payload, network);
   if (seal) {
-    return {
+    const event = {
       kind: "seal",
       ...seal,
     };
+    return workAmoV5HasNoTextStorageNul(event) ? event : null;
   }
 
   const delisting = parseIdDelistingPayload(payload);
   if (delisting) {
-    return {
+    const event = {
       kind: "delist",
       ...delisting,
     };
+    return workAmoV5HasNoTextStorageNul(event) ? event : null;
   }
 
   return null;
@@ -28846,7 +29010,15 @@ async function globalActivityPayload(network, fresh = false) {
   return payload;
 }
 
-function idRegistryStateFromTransactions(txs, registryAddress, network) {
+function idRegistryStateFromTransactions(
+  txs,
+  registryAddress,
+  network,
+  options = {},
+) {
+  const initialConfirmedState = options.initialConfirmedState
+    ? normalizeWorkAmoV5RawIdState(options.initialConfirmedState)
+    : { listings: [], records: [] };
   const events = txs.flatMap((tx) => {
     const vin = Array.isArray(tx.vin) ? tx.vin : [];
     const vout = Array.isArray(tx.vout) ? tx.vout : [];
@@ -28857,21 +29029,40 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
       return [];
     }
 
-    const eventMessage = decodedProtocolMessages(vout, ID_PROTOCOL_PREFIX)
-      .map((message) => message.slice(ID_PROTOCOL_PREFIX.length))
-      .map((payload) => parseIdEventPayload(payload, network))
-      .find(Boolean);
-    if (!eventMessage) {
+    const eventRecord = vout
+      .flatMap((output, protocolVout) =>
+        decodedProtocolMessages([output], ID_PROTOCOL_PREFIX).map((message) => ({
+          eventMessage: parseIdEventPayload(
+            message.slice(ID_PROTOCOL_PREFIX.length),
+            network,
+          ),
+          protocolMessage: message,
+          protocolVout,
+        })),
+      )
+      .find((candidate) => candidate.eventMessage);
+    if (!eventRecord?.eventMessage) {
       return [];
     }
+    const { eventMessage, protocolMessage, protocolVout } = eventRecord;
 
     if (amount < idEventMinimumPaymentSats(eventMessage.kind)) {
       return [];
     }
 
     const blockTime = tokenTransactionTime(tx);
+    const eventSpentOutpoints = spentOutpoints(vin);
+    // Preserve the historical resolver cutoff at the first PWID carrier,
+    // including a malformed earlier carrier. The actual accepted record vout
+    // remains recorded separately below.
+    const eventPaymentOutputs = paymentOutputsBeforeIdProtocol(vout);
+    const auditPaymentOutputs = paymentOutputsBeforeVout(
+      vout,
+      firstIdProtocolOutputIndex(vout),
+    );
     const baseEvent = {
       amountSats: amount,
+      auditPaymentOutputs,
       blockHash: transactionBlockHash(tx),
       blockHeight: transactionBlockHeight(tx),
       blockIndex: transactionBlockIndex(tx),
@@ -28880,10 +29071,14 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
       dataBytes: proofProtocolDataBytesForVout(vout),
       inputAddresses: inputAddresses(vin),
       network,
+      paymentOutputs: eventPaymentOutputs,
+      protocolPayload: protocolMessage,
+      protocolVout,
+      protocolDataBytes: Buffer.byteLength(protocolMessage, "utf8"),
+      recordOrdinal: 0,
+      spentOutpoints: eventSpentOutpoints,
       txid,
     };
-    const eventSpentOutpoints = spentOutpoints(vin);
-    const eventPaymentOutputs = paymentOutputsBeforeIdProtocol(vout);
 
     if (eventMessage.kind === "register") {
       return [
@@ -28991,8 +29186,45 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
         Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
         compareCanonicalUtf8(left.txid, right.txid),
     );
-  const records = new Map();
-  const listings = new Map();
+  const records = new Map(
+    initialConfirmedState.records.map((record) => [
+      record.id,
+      {
+        ...structuredClone(record),
+        confirmed: true,
+        network,
+      },
+    ]),
+  );
+  const listings = new Map(
+    initialConfirmedState.listings.map((listing) => {
+      const listingId = String(listing.listingId ?? "").trim().toLowerCase();
+      const saleAuthorization = structuredClone(listing.saleAuthorization);
+      const listingVersion = registryAuditListingVersion(saleAuthorization);
+      const priceSats = registryAuditExactSafeSats(
+        listing.priceSats,
+        `Initial confirmed ID listing ${listingId} price`,
+      );
+      if (!listingVersion) {
+        throw new Error(
+          `Initial confirmed ID listing ${listingId} has no exact version.`,
+        );
+      }
+      return [
+        listingId,
+        {
+          ...structuredClone(listing),
+          confirmed: true,
+          listingId,
+          listingVersion,
+          network,
+          priceSats,
+          saleAuthorization,
+          txid: listingId,
+        },
+      ];
+    }),
+  );
   const confirmedSales = [];
   const acceptedActivityEvents = [];
 
@@ -29043,7 +29275,20 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
         anchorOk
       ) {
         listings.delete(event.listingId);
-        acceptedActivityEvents.push(event);
+        acceptedActivityEvents.push(
+          options.includeAuditEvents === true
+            ? {
+                ...event,
+                currentOwnerAddress: current.ownerAddress,
+                currentReceiveAddress: current.receiveAddress,
+                id: listing.id,
+                listingVersion: listing.listingVersion,
+                priceSats: listing.priceSats,
+                saleAuthorization: listing.saleAuthorization,
+                sellerAddress: listing.sellerAddress,
+              }
+            : event,
+        );
       }
       continue;
     }
@@ -29067,7 +29312,7 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
         continue;
       }
 
-      listings.set(event.listingId, {
+      const sealedListing = {
         ...listing,
         anchorSigHashType: event.saleAuthorization.anchorSigHashType,
         anchorSignature: event.saleAuthorization.anchorSignature,
@@ -29077,8 +29322,22 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
           anchorTxid: listing.listingId,
         },
         sealTxid: event.txid,
-      });
-      acceptedActivityEvents.push(event);
+      };
+      listings.set(event.listingId, sealedListing);
+      acceptedActivityEvents.push(
+        options.includeAuditEvents === true
+          ? {
+              ...event,
+              currentOwnerAddress: current.ownerAddress,
+              currentReceiveAddress: current.receiveAddress,
+              id: listing.id,
+              listingVersion: listing.listingVersion,
+              priceSats: listing.priceSats,
+              saleAuthorization: sealedListing.saleAuthorization,
+              sellerAddress: listing.sellerAddress,
+            }
+          : event,
+      );
       continue;
     }
 
@@ -29144,13 +29403,32 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
           id: listing.id,
           listingId: listing.listingId,
           network: event.network,
+          ...(options.includeAuditEvents === true
+            ? { protocolVout: event.protocolVout }
+            : {}),
           priceSats: listing.priceSats,
           receiveAddress: event.receiveAddress,
           sellerAddress: listing.sellerAddress,
+          ...(options.includeAuditEvents === true
+            ? { recordOrdinal: event.recordOrdinal }
+            : {}),
           transferVersion: event.transferVersion,
           txid: event.txid,
         });
-        acceptedActivityEvents.push(event);
+        acceptedActivityEvents.push(
+          options.includeAuditEvents === true
+            ? {
+                ...event,
+                currentOwnerAddress: current.ownerAddress,
+                currentReceiveAddress: current.receiveAddress,
+                id: listing.id,
+                listingVersion: listing.listingVersion,
+                priceSats: listing.priceSats,
+                saleAuthorization: listing.saleAuthorization,
+                sellerAddress: listing.sellerAddress,
+              }
+            : event,
+        );
         invalidateListingsForId(listing.id);
         continue;
       }
@@ -29206,13 +29484,31 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
           id: event.id,
           listingId: matchingListing?.listingId,
           network: event.network,
+          ...(options.includeAuditEvents === true
+            ? { protocolVout: event.protocolVout }
+            : {}),
           priceSats: event.priceSats,
           receiveAddress: event.receiveAddress,
           sellerAddress: event.sellerAddress,
+          ...(options.includeAuditEvents === true
+            ? { recordOrdinal: event.recordOrdinal }
+            : {}),
           transferVersion: event.transferVersion,
           txid: event.txid,
         });
-        acceptedActivityEvents.push(event);
+        acceptedActivityEvents.push(
+          options.includeAuditEvents === true
+            ? {
+                ...event,
+                currentOwnerAddress: current.ownerAddress,
+                currentReceiveAddress: current.receiveAddress,
+                listingId: matchingListing?.listingId,
+                listingVersion: matchingListing?.listingVersion,
+                saleAuthorization:
+                  matchingListing?.saleAuthorization ?? event.saleAuthorization,
+              }
+            : event,
+        );
         invalidateListingsForId(event.id);
       }
       continue;
@@ -29250,6 +29546,13 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
         anchorValueSats: event.saleAuthorization.anchorValueSats,
         anchorVout: event.saleAuthorization.anchorVout,
         buyerAddress: event.saleAuthorization.buyerAddress,
+        ...(options.includeAuditEvents === true
+          ? {
+              blockHash: event.blockHash,
+              blockHeight: event.blockHeight,
+              blockIndex: event.blockIndex,
+            }
+          : {}),
         confirmed: true,
         createdAt: event.createdAt,
         expiresAt: event.saleAuthorization.expiresAt,
@@ -29258,13 +29561,27 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
         listingVersion: event.listingVersion,
         network: event.network,
         priceSats: event.priceSats,
+        ...(options.includeAuditEvents === true
+          ? { protocolVout: event.protocolVout }
+          : {}),
         receiveAddress: event.saleAuthorization.receiveAddress,
         saleAuthorization: event.saleAuthorization,
         sellerAddress: event.sellerAddress,
         sellerPublicKey: event.saleAuthorization.sellerPublicKey,
+        ...(options.includeAuditEvents === true
+          ? { recordOrdinal: event.recordOrdinal }
+          : {}),
         txid: event.txid,
       });
-      acceptedActivityEvents.push(event);
+      acceptedActivityEvents.push(
+        options.includeAuditEvents === true
+          ? {
+              ...event,
+              currentOwnerAddress: current.ownerAddress,
+              currentReceiveAddress: current.receiveAddress,
+            }
+          : event,
+      );
       continue;
     }
 
@@ -29283,7 +29600,16 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
         receiveAddress: event.receiveAddress,
         txid: event.txid,
       });
-      acceptedActivityEvents.push(event);
+      acceptedActivityEvents.push(
+        options.includeAuditEvents === true
+          ? {
+              ...event,
+              currentOwnerAddress: current.ownerAddress,
+              currentReceiveAddress: current.receiveAddress,
+              ownerAddress: current.ownerAddress,
+            }
+          : event,
+      );
       continue;
     }
 
@@ -29298,7 +29624,15 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
       receiveAddress: event.receiveAddress,
       txid: event.txid,
     });
-    acceptedActivityEvents.push(event);
+    acceptedActivityEvents.push(
+      options.includeAuditEvents === true
+        ? {
+            ...event,
+            currentOwnerAddress: current.ownerAddress,
+            currentReceiveAddress: current.receiveAddress,
+          }
+        : event,
+    );
     invalidateListingsForId(event.id);
   }
 
@@ -29635,6 +29969,16 @@ function idRegistryStateFromTransactions(txs, registryAddress, network) {
   ];
 
   return {
+    ...(options.includeAuditEvents === true
+      ? {
+          // This is accepted lifecycle evidence, not the raw parseable set.
+          // Rejected attempts remain absent from the valid relational
+          // projection and must never be fingerprinted as canonical events.
+          _powAuditEvents: activityEvents.filter(
+            (event) => event.confirmed === true,
+          ),
+        }
+      : {}),
     activity:
       idActivityItemsFromEvents(activityEvents).sort(compareActivityItems),
     listings: [...listings.values()].sort(
@@ -61832,14 +62176,7 @@ function pendingWorkVerifierStageRawTransaction(tx, txid, network) {
 }
 
 function pendingWorkVerifierStageDecodedObject(value) {
-  try {
-    const decoded = JSON.parse(decodeTextBase64Url(String(value ?? "")));
-    return decoded && typeof decoded === "object" && !Array.isArray(decoded)
-      ? decoded
-      : null;
-  } catch {
-    return null;
-  }
+  return decodeWorkAmoV5CanonicalBase64UrlJsonObject(value);
 }
 
 function pendingWorkVerifierStageParsedMessage(message, network) {
@@ -64894,6 +65231,3079 @@ function internalVerifierRequestAllowed(request) {
   );
 }
 
+function txidSetSha256(txids) {
+  return createHash("sha256")
+    .update(
+      [...txids]
+        .map((txid) => String(txid).toLowerCase())
+        .sort(compareCanonicalUtf8)
+        .join("\n"),
+      "utf8",
+    )
+    .digest("hex");
+}
+
+function registryAuditTransactionTouchesAddress(transaction, address) {
+  return (
+    (Array.isArray(transaction?.vout) ? transaction.vout : []).some(
+      (output) => output?.scriptpubkey_address === address,
+    ) ||
+    (Array.isArray(transaction?.vin) ? transaction.vin : []).some(
+      (input) => input?.prevout?.scriptpubkey_address === address,
+    )
+  );
+}
+
+function registryAuditCanonicalJson(value) {
+  if (value === null || typeof value === "string" || typeof value === "boolean") {
+    return JSON.stringify(value);
+  }
+  if (typeof value === "number") {
+    if (!Number.isSafeInteger(value)) {
+      throw new Error("ID registry audit projection contains an inexact number.");
+    }
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map(registryAuditCanonicalJson).join(",")}]`;
+  }
+  if (value && typeof value === "object") {
+    return `{${Object.keys(value)
+      .filter((key) => value[key] !== undefined)
+      .sort(compareCanonicalUtf8)
+      .map(
+        (key) =>
+          `${JSON.stringify(key)}:${registryAuditCanonicalJson(value[key])}`,
+      )
+      .join(",")}}`;
+  }
+  throw new Error("ID registry audit projection contains an unsupported value.");
+}
+
+function registryAuditProjectionSha256(value) {
+  return createHash("sha256")
+    .update(registryAuditCanonicalJson(value), "utf8")
+    .digest("hex");
+}
+
+function registryAuditTxid(value, label) {
+  const txid = String(value ?? "").trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/u.test(txid)) {
+    throw new Error(`${label} has no exact transaction identity.`);
+  }
+  return txid;
+}
+
+function registryAuditId(value, label) {
+  const id = String(value ?? "").trim().toLowerCase();
+  if (!id) {
+    throw new Error(`${label} has no exact ProofOfWork ID identity.`);
+  }
+  return id;
+}
+
+function registryAuditAddress(value, label) {
+  const address = String(value ?? "").trim();
+  if (!address || !isValidBitcoinAddress(address, "livenet")) {
+    throw new Error(`${label} has no exact address identity.`);
+  }
+  return address;
+}
+
+function registryAuditPendingEventEntry(event) {
+  const txid = registryAuditTxid(event?.txid, "Pending ID mutation");
+  const kind = String(event?.kind ?? "").trim();
+  const id = String(event?.id ?? "").trim().toLowerCase();
+  const listingId = String(event?.listingId ?? "").trim().toLowerCase();
+  const allowedKinds = new Set([
+    "delist",
+    "list",
+    "marketTransfer",
+    "seal",
+    "transfer",
+    "update",
+  ]);
+  if (!allowedKinds.has(kind) || !id) {
+    throw new Error(`Pending ID mutation ${txid} has no exact semantic identity.`);
+  }
+  if (listingId && !/^[0-9a-f]{64}$/u.test(listingId)) {
+    throw new Error(`Pending ID mutation ${txid} has an invalid listing identity.`);
+  }
+  const priceSats = event?.priceSats;
+  if (
+    priceSats !== undefined &&
+    (!Number.isSafeInteger(Number(priceSats)) || Number(priceSats) < 0)
+  ) {
+    throw new Error(`Pending ID mutation ${txid} has an inexact price.`);
+  }
+  const addresses = {
+    buyerAddress: String(event?.buyerAddress ?? ""),
+    currentOwnerAddress: String(event?.currentOwnerAddress ?? ""),
+    currentReceiveAddress: String(event?.currentReceiveAddress ?? ""),
+    ownerAddress: String(event?.ownerAddress ?? ""),
+    receiveAddress: String(event?.receiveAddress ?? ""),
+    sellerAddress: String(event?.sellerAddress ?? ""),
+  };
+  if (
+    Object.values(addresses).some(
+      (address) => address && !isValidBitcoinAddress(address, "livenet"),
+    )
+  ) {
+    throw new Error(`Pending ID mutation ${txid} has an invalid address identity.`);
+  }
+  return {
+    ...addresses,
+    id,
+    kind,
+    listingId,
+    priceSats: priceSats === undefined ? null : Number(priceSats),
+    transferVersion: String(event?.transferVersion ?? ""),
+    txid,
+  };
+}
+
+function registryAuditCanonicalClone(value) {
+  return JSON.parse(registryAuditCanonicalJson(value));
+}
+
+function registryAuditInteger(value, label, minimum = 0) {
+  const integer = Number(value);
+  if (!Number.isSafeInteger(integer) || integer < minimum) {
+    throw new Error(`${label} is not an exact integer.`);
+  }
+  return integer;
+}
+
+function registryAuditOptionalAddress(value, label) {
+  const address = String(value ?? "").trim();
+  if (address && !isValidBitcoinAddress(address, "livenet")) {
+    throw new Error(`${label} has an invalid address.`);
+  }
+  return address;
+}
+
+function registryAuditEventKind(value) {
+  const kind = String(value ?? "").trim();
+  const aliases = {
+    delist: "id-delist",
+    list: "id-list",
+    marketTransfer: "id-buy",
+    register: "id-register",
+    seal: "id-seal",
+    transfer: "id-transfer",
+    update: "id-update",
+  };
+  const normalized = aliases[kind] ?? kind.toLowerCase();
+  if (
+    ![
+      "id-buy",
+      "id-delist",
+      "id-list",
+      "id-register",
+      "id-seal",
+      "id-transfer",
+      "id-update",
+    ].includes(normalized)
+  ) {
+    throw new Error(`Unsupported ID registry event kind ${kind || "(empty)"}.`);
+  }
+  return normalized;
+}
+
+function registryAuditPaymentOutputs(item, label) {
+  const values = Array.isArray(item?.auditPaymentOutputs)
+    ? item.auditPaymentOutputs
+    : Array.isArray(item?.paymentOutputs)
+      ? item.paymentOutputs
+      : Array.isArray(item?.recipients)
+        ? item.recipients
+        : [];
+  return values
+    .map((output, index) => ({
+      address: registryAuditOptionalAddress(
+        output?.address,
+        `${label} payment output`,
+      ),
+      amountSats: registryAuditInteger(
+        output?.amountSats,
+        `${label} payment amount`,
+        1,
+      ),
+      vout: registryAuditInteger(
+        output?.vout ?? index,
+        `${label} payment vout`,
+      ),
+    }))
+    .sort(
+      (left, right) =>
+        left.vout - right.vout ||
+        compareCanonicalUtf8(left.address, right.address),
+    );
+}
+
+function registryAuditLifecycleEventEntry(item, checkpoint, source) {
+  const kind = registryAuditEventKind(item?.kind);
+  const txid = registryAuditTxid(item?.txid, `${source} ${kind}`);
+  const confirmed = item?.confirmed === true;
+  const expectedFee = kind === "id-register" ? 1_000 : 546;
+  const blockHash = confirmed
+    ? registryAuditTxid(item?.blockHash, `${source} ${kind} block`)
+    : "";
+  const blockHeight = confirmed
+    ? registryAuditInteger(
+        item?.blockHeight,
+        `${source} ${kind} block height`,
+        1,
+      )
+    : 0;
+  const blockIndex = confirmed
+    ? registryAuditInteger(item?.blockIndex, `${source} ${kind} block index`)
+    : 0;
+  if (blockHeight > checkpoint.height) {
+    throw new Error(`${source} ${kind} is above the exact Core checkpoint.`);
+  }
+  const protocolVout = registryAuditInteger(
+    item?.protocolVout,
+    `${source} ${kind} protocol vout`,
+  );
+  const recordOrdinal = registryAuditInteger(
+    item?.recordOrdinal ?? 0,
+    `${source} ${kind} record ordinal`,
+  );
+  const createdAt = new Date(item?.createdAt ?? item?.blockTime ?? item?.timestamp)
+    .toISOString();
+  if (!Number.isFinite(Date.parse(createdAt))) {
+    throw new Error(`${source} ${kind} has no exact event time.`);
+  }
+  const payments = registryAuditPaymentOutputs(item, `${source} ${kind}`);
+  const registryPaymentSats = payments.reduce(
+    (total, output) =>
+      total + (output.address === registryAddressForNetwork("livenet")
+        ? output.amountSats
+        : 0),
+    0,
+  );
+  if (registryPaymentSats < expectedFee) {
+    throw new Error(`${source} ${kind} has insufficient registry payment.`);
+  }
+  const recordedAmountSats = registryAuditInteger(
+    item?.amountSats,
+    `${source} ${kind} attributed registry fee`,
+    1,
+  );
+  if (
+    (source === "relational" && recordedAmountSats !== expectedFee) ||
+    (source !== "relational" && recordedAmountSats < expectedFee)
+  ) {
+    throw new Error(`${source} ${kind} has an inexact attributed registry fee.`);
+  }
+  const protocolPayload = String(
+    item?.protocolPayload ?? item?.payload ?? "",
+  );
+  if (!protocolPayload.startsWith(ID_PROTOCOL_PREFIX)) {
+    throw new Error(`${source} ${kind} has no exact raw protocol payload.`);
+  }
+  const saleAuthorization = item?.saleAuthorization
+    ? registryAuditCanonicalClone(item.saleAuthorization)
+    : null;
+  const addresses = {
+    buyerAddress: registryAuditOptionalAddress(
+      item?.buyerAddress ?? saleAuthorization?.buyerAddress,
+      `${source} ${kind} buyer`,
+    ),
+    ownerAddress: registryAuditOptionalAddress(
+      item?.ownerAddress,
+      `${source} ${kind} owner`,
+    ),
+    receiveAddress: registryAuditOptionalAddress(
+      item?.receiveAddress ?? saleAuthorization?.receiveAddress,
+      `${source} ${kind} receiver`,
+    ),
+    sellerAddress: registryAuditOptionalAddress(
+      item?.sellerAddress ?? saleAuthorization?.sellerAddress,
+      `${source} ${kind} seller`,
+    ),
+    senderAddress: registryAuditOptionalAddress(
+      item?.senderAddress ?? item?.actor ?? item?.inputAddresses?.[0],
+      `${source} ${kind} sender`,
+    ),
+  };
+  const participants = [...new Set([
+    ...(Array.isArray(item?.inputAddresses) ? item.inputAddresses : []),
+    ...(Array.isArray(item?.participants) ? item.participants : []),
+    ...payments.map((output) => output.address),
+    ...Object.values(addresses),
+    saleAuthorization?.buyerAddress,
+    saleAuthorization?.receiveAddress,
+    saleAuthorization?.sellerAddress,
+  ].filter(Boolean))]
+    .map((address) =>
+      registryAuditOptionalAddress(address, `${source} ${kind} participant`),
+    )
+    .sort(compareCanonicalUtf8);
+  const listingIdCandidate = String(
+    item?.listingId ?? (kind === "id-list" ? txid : ""),
+  )
+    .trim()
+    .toLowerCase();
+  const listingId = listingIdCandidate
+    ? registryAuditTxid(listingIdCandidate, `${source} ${kind} listing`)
+    : "";
+  const id = String(item?.id ?? "").trim().toLowerCase();
+  if (
+    ["id-buy", "id-list", "id-register", "id-transfer", "id-update"].includes(kind) &&
+    !id
+  ) {
+    throw new Error(`${source} ${kind} has no exact ID.`);
+  }
+  const dataBytes = registryAuditInteger(
+    item?.protocolDataBytes ?? item?.dataBytes,
+    `${source} ${kind} protocol bytes`,
+    1,
+  );
+  if (Buffer.byteLength(protocolPayload, "utf8") !== dataBytes) {
+    throw new Error(`${source} ${kind} raw protocol byte count diverges.`);
+  }
+  const priceSats = item?.priceSats === undefined
+    ? null
+    : registryAuditInteger(item.priceSats, `${source} ${kind} price`);
+  return {
+    ...addresses,
+    amountSats: expectedFee,
+    blockHash,
+    blockHeight,
+    blockIndex,
+    confirmed,
+    createdAt,
+    dataBytes,
+    id,
+    kind,
+    listingId,
+    listingVersion: String(item?.listingVersion ?? ""),
+    participants,
+    paymentOutputs: payments,
+    pgpKey: String(item?.pgpKey ?? item?.pgpPublicKey ?? ""),
+    priceSats,
+    protocolVout,
+    protocolPayloadSha256: createHash("sha256")
+      .update(protocolPayload, "utf8")
+      .digest("hex"),
+    recordOrdinal,
+    registryPaymentSats,
+    saleAuthorization,
+    transferVersion: String(item?.transferVersion ?? ""),
+    txid,
+  };
+}
+
+const REGISTRY_AUDIT_LISTING_FIELDS = [
+  "anchorSigHashType",
+  "anchorSignature",
+  "anchorScriptPubKey",
+  "anchorTxid",
+  "anchorType",
+  "anchorValueSats",
+  "anchorVout",
+  "blockHash",
+  "blockHeight",
+  "blockIndex",
+  "buyerAddress",
+  "confirmed",
+  "createdAt",
+  "expiresAt",
+  "id",
+  "listingId",
+  "listingVersion",
+  "priceSats",
+  "protocolVout",
+  "receiveAddress",
+  "recordOrdinal",
+  "saleAuthorization",
+  "sealTxid",
+  "sellerAddress",
+  "sellerPublicKey",
+  "txid",
+];
+
+const REGISTRY_AUDIT_SALE_FIELDS = [
+  "blockHash",
+  "blockHeight",
+  "blockIndex",
+  "buyerAddress",
+  "confirmed",
+  "createdAt",
+  "id",
+  "listingId",
+  "priceSats",
+  "protocolVout",
+  "receiveAddress",
+  "recordOrdinal",
+  "sellerAddress",
+  "transferVersion",
+  "txid",
+];
+
+function registryAuditStateItemEntry(item, fields, label) {
+  const result = {};
+  for (const field of fields) {
+    let value = item?.[field];
+    if (value === undefined && field === "listingId") {
+      value = item?.txid;
+    }
+    if (value === undefined) {
+      value = null;
+    }
+    result[field] = registryAuditCanonicalClone(value);
+  }
+  const txid = registryAuditTxid(result.txid, `${label} txid`);
+  result.txid = txid;
+  if (result.listingId) {
+    result.listingId = registryAuditTxid(result.listingId, `${label} listing`);
+  }
+  for (const addressField of [
+    "buyerAddress",
+    "receiveAddress",
+    "sellerAddress",
+  ]) {
+    if (result[addressField]) {
+      result[addressField] = registryAuditOptionalAddress(
+        result[addressField],
+        `${label} ${addressField}`,
+      );
+    }
+  }
+  return result;
+}
+
+function registryAuditProjection(payload, checkpoint) {
+  if (
+    !payload ||
+    payload.network !== "livenet" ||
+    Number(payload.indexedThroughBlock) !== checkpoint.height ||
+    String(payload.indexedThroughBlockHash ?? "").trim().toLowerCase() !==
+      checkpoint.blockHash
+  ) {
+    throw new Error(
+      "The relational ID registry projection is not bound to the exact Core tip.",
+    );
+  }
+
+  const records = Array.isArray(payload.records) ? payload.records : [];
+  const confirmedRecords = records
+    .filter((record) => record?.confirmed === true)
+    .map((record) => {
+      const id = registryAuditId(record.id, "Confirmed ID record");
+      const blockHeight = Number(record.blockHeight);
+      const blockIndex = Number(record.blockIndex);
+      if (
+        !Number.isSafeInteger(blockHeight) ||
+        blockHeight < 1 ||
+        !Number.isSafeInteger(blockIndex) ||
+        blockIndex < 0
+      ) {
+        throw new Error(`Confirmed ID record ${id} has no exact block position.`);
+      }
+      const updatedHeight = Number(record.updatedHeight);
+      if (
+        !Number.isSafeInteger(updatedHeight) ||
+        updatedHeight < blockHeight ||
+        updatedHeight > checkpoint.height
+      ) {
+        throw new Error(`Confirmed ID record ${id} has no exact update height.`);
+      }
+      return {
+        blockHeight,
+        blockIndex,
+        id,
+        lastEventTxid: registryAuditTxid(
+          record.lastEventTxid,
+          `Confirmed ID record ${id} last event`,
+        ),
+        ownerAddress: registryAuditAddress(
+          record.ownerAddress,
+          `Confirmed ID record ${id}`,
+        ),
+        pgpKey: String(record.pgpKey ?? ""),
+        receiveAddress: registryAuditAddress(
+          record.receiveAddress,
+          `Confirmed ID record ${id}`,
+        ),
+        txid: registryAuditTxid(record.txid, `Confirmed ID record ${id}`),
+        updatedHeight,
+      };
+    })
+    .sort(
+      (left, right) =>
+        compareCanonicalUtf8(left.id, right.id) ||
+        compareCanonicalUtf8(left.txid, right.txid),
+    );
+  const pendingRecords = records
+    .filter((record) => record?.confirmed !== true)
+    .map((record) => {
+      const id = registryAuditId(record.id, "Pending ID record");
+      return {
+        id,
+        ownerAddress: registryAuditAddress(
+          record.ownerAddress,
+          `Pending ID record ${id}`,
+        ),
+        pgpKey: String(record.pgpKey ?? ""),
+        receiveAddress: registryAuditAddress(
+          record.receiveAddress,
+          `Pending ID record ${id}`,
+        ),
+        txid: registryAuditTxid(record.txid, `Pending ID record ${id}`),
+      };
+    })
+    .sort(
+      (left, right) =>
+        compareCanonicalUtf8(left.id, right.id) ||
+        compareCanonicalUtf8(left.txid, right.txid),
+    );
+  const pendingEvents = (Array.isArray(payload.pendingEvents)
+    ? payload.pendingEvents
+    : []
+  )
+    .map(registryAuditPendingEventEntry)
+    .sort(
+      (left, right) =>
+        compareCanonicalUtf8(left.txid, right.txid) ||
+        compareCanonicalUtf8(left.kind, right.kind) ||
+        compareCanonicalUtf8(left.id, right.id) ||
+        compareCanonicalUtf8(left.listingId, right.listingId),
+    );
+  const events = (Array.isArray(payload.activity) ? payload.activity : [])
+    .filter((item) => item?.confirmed === true)
+    .map((item) =>
+      registryAuditLifecycleEventEntry(item, checkpoint, "relational"),
+    )
+    .sort(
+      (left, right) =>
+        left.blockHeight - right.blockHeight ||
+        left.blockIndex - right.blockIndex ||
+        left.protocolVout - right.protocolVout ||
+        left.recordOrdinal - right.recordOrdinal ||
+        compareCanonicalUtf8(left.txid, right.txid) ||
+        compareCanonicalUtf8(left.kind, right.kind),
+    );
+  const listings = (Array.isArray(payload.listings) ? payload.listings : [])
+    .map((item) =>
+      registryAuditStateItemEntry(
+        item,
+        REGISTRY_AUDIT_LISTING_FIELDS,
+        "Relational ID listing",
+      ),
+    )
+    .sort(
+      (left, right) =>
+        compareCanonicalUtf8(left.listingId, right.listingId) ||
+        compareCanonicalUtf8(left.txid, right.txid),
+    );
+  const sales = (Array.isArray(payload.sales) ? payload.sales : [])
+    .map((item) =>
+      registryAuditStateItemEntry(
+        item,
+        REGISTRY_AUDIT_SALE_FIELDS,
+        "Relational ID sale",
+      ),
+    )
+    .sort(
+      (left, right) =>
+        compareCanonicalUtf8(left.txid, right.txid) ||
+        compareCanonicalUtf8(String(left.listingId ?? ""), String(right.listingId ?? "")),
+    );
+
+  for (const [label, entries] of [
+    ["confirmed record", confirmedRecords],
+    ["pending record", pendingRecords],
+  ]) {
+    const ids = entries.map((entry) => entry.id);
+    if (new Set(ids).size !== ids.length) {
+      throw new Error(`The relational registry repeats a ${label} identity.`);
+    }
+  }
+
+  const confirmed = Number(payload?.stats?.confirmed);
+  const pendingRecordCount = Number(payload?.stats?.pendingRecords);
+  const pendingChangeCount = Number(payload?.stats?.pendingChanges);
+  if (
+    !Number.isSafeInteger(confirmed) ||
+    confirmed < 1 ||
+    confirmed !== confirmedRecords.length ||
+    !Number.isSafeInteger(pendingRecordCount) ||
+    pendingRecordCount !== pendingRecords.length ||
+    !Number.isSafeInteger(pendingChangeCount) ||
+    pendingChangeCount !== pendingEvents.length
+  ) {
+    throw new Error(
+      "The exact relational ID registry projection has inconsistent statistics.",
+    );
+  }
+
+  const projection = {
+    checkpoint: {
+      blockHash: checkpoint.blockHash,
+      height: checkpoint.height,
+    },
+    confirmedRecords,
+    events,
+    listings,
+    pendingEvents,
+    pendingRecords,
+    sales,
+  };
+  return {
+    ...projection,
+    projectionSha256: registryAuditProjectionSha256(projection),
+  };
+}
+
+async function hydrateExactPendingRegistryTransaction(txid, network) {
+  const transaction = await fetchTransactionFromBitcoinRpc(txid, network, {
+    bypassCache: true,
+    cacheResult: false,
+    requireCanonicalPrevouts: true,
+  });
+  const mempoolEntry = await bitcoinRpc("getmempoolentry", [txid]);
+  const mempoolTime = Number(mempoolEntry?.result?.time);
+  if (
+    !transaction ||
+    transactionTxid(transaction) !== txid ||
+    transactionConfirmed(transaction) ||
+    !transactionHasCompleteCanonicalPrevouts(transaction) ||
+    !mempoolEntry?.ok ||
+    !mempoolEntry.result ||
+    typeof mempoolEntry.result !== "object" ||
+    !Number.isSafeInteger(mempoolTime) ||
+    mempoolTime < 1 ||
+    !registryAuditTransactionTouchesAddress(transaction, registryAddressForNetwork(network))
+  ) {
+    throw new Error(
+      `Bitcoin Core did not prove pending registry transaction ${txid}.`,
+    );
+  }
+
+  return {
+    ...transaction,
+    status: {
+      ...(transaction.status ?? {}),
+      confirmed: false,
+      mempool_time: mempoolTime,
+    },
+  };
+}
+
+async function hydrateExactConfirmedRegistryHistory(entries, network) {
+  const confirmedEntries = (Array.isArray(entries) ? entries : []).filter(
+    (entry) =>
+      Number(entry?.height) > 0 &&
+      Number(entry?.height) < PWID_RAW_REPLAY_ACTIVATION_HEIGHT,
+  );
+  const byHeight = new Map();
+  for (const entry of confirmedEntries) {
+    const group = byHeight.get(entry.height) ?? [];
+    group.push(entry);
+    byHeight.set(entry.height, group);
+  }
+  const groups = [...byHeight.entries()].sort(
+    (left, right) => left[0] - right[0],
+  );
+  const hydratedGroups = await mapWithConcurrency(
+    groups,
+    2,
+    async ([height, group]) => {
+      const block = await fetchCanonicalAddressHistoryBlock(height, network);
+      const indexByTxid = new Map(
+        block.txids.map((txid, blockIndex) => [txid, blockIndex]),
+      );
+      return mapWithConcurrency(
+        group,
+        Math.min(4, Math.max(1, TX_FETCH_CONCURRENCY)),
+        async (entry) => {
+          const blockIndex = indexByTxid.get(entry.txid);
+          const transaction = await hydrateCanonicalAddressHistoryTransaction(
+            {
+              blockHash: block.blockHash,
+              blockHeight: height,
+              blockIndex,
+              txid: entry.txid,
+            },
+            network,
+          );
+          if (
+            !Number.isSafeInteger(blockIndex) ||
+            transaction?._powCanonicalRpcHydration !== true ||
+            transactionTxid(transaction) !== entry.txid ||
+            !transactionConfirmed(transaction) ||
+            transactionBlockHash(transaction) !== block.blockHash ||
+            !Number.isSafeInteger(Number(transaction.status?.block_time)) ||
+            Number(transaction.status.block_time) < 1 ||
+            !registryAuditTransactionTouchesAddress(
+              transaction,
+              registryAddressForNetwork(network),
+            )
+          ) {
+            throw new Error(
+              `Bitcoin Core did not prove confirmed registry transaction ${entry.txid}.`,
+            );
+          }
+          return {
+            ...transaction,
+            _powBlockIndex: blockIndex,
+            _powPreviousBlockHash: block.previousBlockHash,
+            status: {
+              ...transaction.status,
+              block_hash: block.blockHash,
+              block_height: height,
+              block_index: blockIndex,
+              confirmed: true,
+            },
+          };
+        },
+      );
+    },
+  );
+  return hydratedGroups.flat();
+}
+
+function registryAuditListingVersion(authorization) {
+  return {
+    "pwid-sale-v1": "list2",
+    "pwid-sale-v2": "list3",
+    "pwid-sale-v3": "list4",
+    "pwid-sale-v4": "list5",
+  }[String(authorization?.version ?? "").trim().toLowerCase()] ?? "";
+}
+
+function registryAuditExactSafeSats(value, label) {
+  const text = String(value ?? "").trim();
+  if (!/^(?:0|[1-9][0-9]*)$/u.test(text)) {
+    throw new Error(`${label} is not an exact proof amount.`);
+  }
+  const amount = BigInt(text);
+  if (amount > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new Error(`${label} exceeds the exact JSON proof range.`);
+  }
+  return Number(amount);
+}
+
+function registryAuditRawReplayAcceptedEvent(record, transaction, checkpoint) {
+  const position = record?.position ?? {};
+  const projection = record?.output?.projection ?? {};
+  const parsed = projection?.parsed ?? {};
+  const listing = projection?.listing ?? projection?.closedListing ?? null;
+  const kind = registryAuditEventKind(
+    projection?.kind ?? record?.outcome?.semanticKind,
+  );
+  const txid = registryAuditTxid(record?.txid, "Canonical raw ID replay");
+  const blockHash = registryAuditTxid(
+    position?.blockHash,
+    `Canonical raw ID replay ${txid} block`,
+  );
+  const blockHeight = registryAuditInteger(
+    position?.blockHeight,
+    `Canonical raw ID replay ${txid} height`,
+    1,
+  );
+  const blockIndex = registryAuditInteger(
+    position?.blockTransactionIndex,
+    `Canonical raw ID replay ${txid} block index`,
+  );
+  const protocolVout = registryAuditInteger(
+    position?.protocolVout,
+    `Canonical raw ID replay ${txid} protocol vout`,
+  );
+  const recordOrdinal = registryAuditInteger(
+    position?.recordOrdinal,
+    `Canonical raw ID replay ${txid} record ordinal`,
+  );
+  const transactionVout = Array.isArray(transaction?.vout)
+    ? transaction.vout
+    : [];
+  const protocolPayload = decodedOpReturnAt(transactionVout, protocolVout);
+  const blockTime = Number(transaction?.status?.block_time);
+  if (
+    record?.rawCandidate !== true ||
+    record?.outcome?.valid !== true ||
+    transactionTxid(transaction) !== txid ||
+    transactionBlockHash(transaction) !== blockHash ||
+    transactionBlockHeight(transaction) !== blockHeight ||
+    transactionBlockIndex(transaction) !== blockIndex ||
+    blockHeight > checkpoint.height ||
+    !protocolPayload.startsWith(ID_PROTOCOL_PREFIX) ||
+    !Number.isSafeInteger(blockTime) ||
+    blockTime < 1
+  ) {
+    throw new Error(
+      `Canonical raw ID replay ${txid}:${protocolVout}:${recordOrdinal} is not bound to exact Core evidence.`,
+    );
+  }
+
+  const expectedFee = kind === "id-register" ? 1_000 : 546;
+  const economicOutputs = Array.isArray(record?.stateDelta?.economicOutputs)
+    ? record.stateDelta.economicOutputs
+    : [];
+  const registryClaims = economicOutputs
+    .filter((output) => output?.role === "pwid-registry")
+    .map((output) => {
+      const vout = registryAuditInteger(
+        output?.vout,
+        `Canonical raw ID replay ${txid} registry claim`,
+      );
+      const physical = transactionVout[vout];
+      const outputSats = registryAuditExactSafeSats(
+        output?.outputSats,
+        `Canonical raw ID replay ${txid} registry output`,
+      );
+      const attributedSats = registryAuditExactSafeSats(
+        output?.attributedSats,
+        `Canonical raw ID replay ${txid} registry attribution`,
+      );
+      if (
+        physical?.scriptpubkey_address !==
+          registryAddressForNetwork("livenet") ||
+        Number(physical?.value) !== outputSats ||
+        vout >= protocolVout
+      ) {
+        throw new Error(
+          `Canonical raw ID replay ${txid} registry claim diverges from Core.`,
+        );
+      }
+      return { attributedSats, outputSats, vout };
+    });
+  if (
+    registryClaims.length < 1 ||
+    registryClaims.reduce(
+      (total, output) => total + output.attributedSats,
+      0,
+    ) !== expectedFee
+  ) {
+    throw new Error(
+      `Canonical raw ID replay ${txid} has an inexact registry attribution.`,
+    );
+  }
+
+  const saleAuthorization =
+    projection?.saleAuthorization ??
+    listing?.saleAuthorization ??
+    parsed?.saleAuthorization ??
+    null;
+  const listingId = String(
+    listing?.listingId ??
+      parsed?.listingId ??
+      (kind === "id-list" ? txid : ""),
+  )
+    .trim()
+    .toLowerCase();
+  const priceSats = listing?.priceSats === undefined
+    ? undefined
+    : registryAuditExactSafeSats(
+        listing.priceSats,
+        `Canonical raw ID replay ${txid} listing price`,
+      );
+  const registryPhysicalSats = paymentOutputsBeforeVout(
+    transactionVout,
+    protocolVout,
+  ).reduce(
+    (total, output) =>
+      total +
+      (output.address === registryAddressForNetwork("livenet")
+        ? output.amountSats
+        : 0),
+    0,
+  );
+  return {
+    amountSats: registryPhysicalSats,
+    blockHash,
+    blockHeight,
+    blockIndex,
+    confirmed: true,
+    createdAt: new Date(blockTime * 1_000).toISOString(),
+    id: String(parsed?.id ?? listing?.id ?? "").trim().toLowerCase(),
+    inputAddresses: inputAddresses(transaction?.vin ?? []),
+    kind,
+    listingId,
+    listingVersion: registryAuditListingVersion(saleAuthorization),
+    ownerAddress: String(
+      projection?.ownerAddress ?? parsed?.ownerAddress ?? "",
+    ).trim(),
+    auditPaymentOutputs: paymentOutputsBeforeVout(
+      transactionVout,
+      protocolVout,
+    ),
+    pgpKey: String(parsed?.pgpKey ?? ""),
+    priceSats,
+    protocolDataBytes: Buffer.byteLength(protocolPayload, "utf8"),
+    protocolPayload,
+    protocolVout,
+    rawRegistryClaims: registryClaims,
+    receiveAddress: String(
+      projection?.receiveAddress ?? parsed?.receiveAddress ?? "",
+    ).trim(),
+    recordOrdinal,
+    saleAuthorization,
+    sellerAddress: String(
+      listing?.sellerAddress ?? saleAuthorization?.sellerAddress ?? "",
+    ).trim(),
+    spentOutpoints: spentOutpoints(transaction?.vin ?? []),
+    transferVersion: kind === "id-buy" ? "buy5" : "",
+    txid,
+  };
+}
+
+function registryAuditRawReplayOutcome(record, checkpoint) {
+  const position = record?.position ?? {};
+  const txid = registryAuditTxid(record?.txid, "Canonical raw PWID outcome");
+  const blockHash = registryAuditTxid(
+    position?.blockHash,
+    `Canonical raw PWID outcome ${txid} block`,
+  );
+  const blockHeight = registryAuditInteger(
+    position?.blockHeight,
+    `Canonical raw PWID outcome ${txid} height`,
+    PWID_RAW_REPLAY_ACTIVATION_HEIGHT,
+  );
+  const blockIndex = registryAuditInteger(
+    position?.blockTransactionIndex,
+    `Canonical raw PWID outcome ${txid} block index`,
+  );
+  const protocolVout = registryAuditInteger(
+    position?.protocolVout,
+    `Canonical raw PWID outcome ${txid} vout`,
+  );
+  const recordOrdinal = registryAuditInteger(
+    position?.recordOrdinal,
+    `Canonical raw PWID outcome ${txid} ordinal`,
+  );
+  const rawPart = Array.isArray(record?.rawWitness?.rawRecordParts)
+    ? record.rawWitness.rawRecordParts[0]
+    : null;
+  const evidence = registryAuditCanonicalPwidRecordEvidence(
+    {
+      message: rawPart?.text,
+      protocol: record?.protocol,
+      protocolVout,
+      rawDecodeReasonCode: rawPart?.reasonCode,
+      rawDecodeValid: rawPart?.decodeValid === true,
+      rawRecordParts: record?.rawWitness?.rawRecordParts,
+      recordOrdinal,
+    },
+    `Canonical raw PWID outcome ${txid}:${protocolVout}:${recordOrdinal}`,
+  );
+  const valid = record?.outcome?.valid;
+  const consensusKind = String(record?.outcome?.kind ?? "").trim();
+  const reasonCode = String(record?.outcome?.reasonCode ?? "").trim();
+  const attributedRegistrySats = (Array.isArray(
+    record?.stateDelta?.economicOutputs,
+  ) ? record.stateDelta.economicOutputs : [])
+    .filter((output) => output?.role === "pwid-registry")
+    .reduce(
+      (total, output) =>
+        total + registryAuditExactSafeSats(
+          output?.attributedSats,
+          `Canonical raw PWID outcome ${txid} registry attribution`,
+        ),
+      0,
+    );
+  const rawSemanticKind = String(
+    record?.outcome?.semanticKind ?? "",
+  ).trim().toLowerCase();
+  const rawProjectionKind = String(
+    record?.output?.projection?.kind ?? "",
+  ).trim().toLowerCase();
+  const semanticKind = valid === true
+    ? registryAuditEventKind(rawSemanticKind)
+    : rawSemanticKind;
+  const projectionKind = valid === true
+    ? registryAuditEventKind(rawProjectionKind)
+    : rawProjectionKind;
+  if (
+    record?.rawCandidate !== true ||
+    typeof valid !== "boolean" ||
+    consensusKind !== workAmoV5ConsensusEventKind("pwid1", valid) ||
+    !semanticKind ||
+    projectionKind !== semanticKind ||
+    (valid ? reasonCode !== "" : !reasonCode) ||
+    blockHeight > checkpoint.height ||
+    (evidence.rawDecodeValid === false &&
+      reasonCode !== evidence.rawDecodeReasonCode)
+  ) {
+    throw new Error(
+      `Canonical raw PWID outcome ${txid}:${protocolVout}:${recordOrdinal} is incomplete.`,
+    );
+  }
+  return {
+    ...evidence,
+    blockHash,
+    blockHeight,
+    blockIndex,
+    attributedRegistrySats,
+    consensusKind,
+    projectionKind,
+    rawCandidate: true,
+    reasonCode,
+    semanticKind,
+    txid,
+    valid,
+  };
+}
+
+function registryAuditRelationalPagePayload(rows, checkpoint) {
+  const values = Array.isArray(rows) ? rows : [];
+  const positions = new Set(values.map(registryAuditPhysicalPositionKey));
+  const mixedPositions = new Set(
+    values
+      .filter(
+        (row) => row.positionOutcomeClass === "mixed-valid-and-invalid",
+      )
+      .map(registryAuditPhysicalPositionKey),
+  );
+  return {
+    checkpoint: {
+      blockHash: checkpoint.blockHash,
+      height: checkpoint.height,
+    },
+    indexScanComplete: true,
+    network: "livenet",
+    rows: values,
+    source: "proof-indexer-paged-pwid-transition-audit",
+    stats: {
+      invalidCount: values.filter((row) => row.valid !== true).length,
+      maxCarrierPayloadBytes: values.reduce(
+        (maximum, row) =>
+          Math.max(maximum, String(row?.carrierPayloadHex ?? "").length / 2),
+        0,
+      ),
+      mixedOutcomePositionCount: mixedPositions.size,
+      positionCount: positions.size,
+      rowCount: values.length,
+      validCount: values.filter((row) => row.valid === true).length,
+    },
+  };
+}
+
+function createRegistryAuditParityAccumulator() {
+  return {
+    acceptedPositionCount: 0,
+    canonicalOutcome: createIdRegistryAuditRollingHash(
+      "canonical-pwid-outcome-pages",
+    ),
+    canonicalReplayOutcome: createIdRegistryAuditRollingHash(
+      "canonical-pwid-replay-outcome-pages",
+    ),
+    coreBoundRelationalRows: createIdRegistryAuditRollingHash(
+      "core-bound-relational-pwid-row-pages",
+    ),
+    diagnostic: createIdRegistryAuditRollingHash(
+      "qualified-legacy-pwid-diagnostic-pages",
+    ),
+    diagnosticRowCount: 0,
+    invalidCount: 0,
+    legacyPositionCount: 0,
+    maxCarrierPayloadBytes: 0,
+    mixedOutcomePositionCount: 0,
+    positionCount: 0,
+    postActivationPositionCount: 0,
+    rowCount: 0,
+    segmentCount: 0,
+    transactionCount: 0,
+    transactionTxids: createIdRegistryAuditRollingHash(
+      "canonical-pwid-transaction-pages",
+    ),
+    validCount: 0,
+  };
+}
+
+function appendRegistryAuditParity(accumulator, parity, range) {
+  const next = accumulator;
+  const descriptor = {
+    rangeEnd: range.rangeEnd,
+    rangeKind: range.rangeKind,
+    rangeStart: range.rangeStart,
+  };
+  next.acceptedPositionCount += parity.acceptedPositionCount;
+  next.canonicalOutcome = advanceIdRegistryAuditRollingHash(
+    next.canonicalOutcome,
+    { ...descriptor, sha256: parity.canonicalOutcomeSha256 },
+  );
+  next.canonicalReplayOutcome = advanceIdRegistryAuditRollingHash(
+    next.canonicalReplayOutcome,
+    {
+      ...descriptor,
+      count: parity.canonicalReplayOutcomeCount,
+      sha256: parity.canonicalReplayOutcomeSha256,
+    },
+  );
+  next.coreBoundRelationalRows = advanceIdRegistryAuditRollingHash(
+    next.coreBoundRelationalRows,
+    { ...descriptor, sha256: parity.coreBoundRelationalRowsSha256 },
+  );
+  next.diagnostic = advanceIdRegistryAuditRollingHash(next.diagnostic, {
+    ...descriptor,
+    count: parity.diagnosticRowCount,
+    sha256: parity.diagnosticSha256,
+  });
+  next.transactionTxids = advanceIdRegistryAuditRollingHash(
+    next.transactionTxids,
+    {
+      ...descriptor,
+      count: parity.transactionCount,
+      sha256: parity.transactionTxidsSha256,
+    },
+  );
+  for (const key of [
+    "diagnosticRowCount",
+    "invalidCount",
+    "legacyPositionCount",
+    "mixedOutcomePositionCount",
+    "positionCount",
+    "postActivationPositionCount",
+    "rowCount",
+    "transactionCount",
+    "validCount",
+  ]) {
+    next[key] += Number(parity[key] ?? 0);
+  }
+  next.maxCarrierPayloadBytes = Math.max(
+    next.maxCarrierPayloadBytes,
+    Number(parity.maxCarrierPayloadBytes ?? 0),
+  );
+  next.segmentCount += 1;
+  return next;
+}
+
+function finalizedRegistryAuditParity(accumulator, relationalRowsFence) {
+  return {
+    acceptedPositionCount: accumulator.acceptedPositionCount,
+    canonicalOutcomeHashModel: accumulator.canonicalOutcome.model,
+    canonicalOutcomeSha256: accumulator.canonicalOutcome.sha256,
+    canonicalReplayOutcomeCount: accumulator.postActivationPositionCount,
+    canonicalReplayOutcomeHashModel:
+      accumulator.canonicalReplayOutcome.model,
+    canonicalReplayOutcomeSha256:
+      accumulator.canonicalReplayOutcome.sha256,
+    coreBoundRelationalRowsHashModel:
+      accumulator.coreBoundRelationalRows.model,
+    coreBoundRelationalRowsSha256:
+      accumulator.coreBoundRelationalRows.sha256,
+    diagnosticRowCount: accumulator.diagnosticRowCount,
+    diagnosticSha256: accumulator.diagnostic.sha256,
+    invalidCount: accumulator.invalidCount,
+    legacyPositionCount: accumulator.legacyPositionCount,
+    maxCarrierPayloadBytes: accumulator.maxCarrierPayloadBytes,
+    mixedOutcomePositionCount: accumulator.mixedOutcomePositionCount,
+    physicalCarrierComplete: true,
+    positionCount: accumulator.positionCount,
+    postActivationPositionCount: accumulator.postActivationPositionCount,
+    relationalRowsHashModel: relationalRowsFence.model,
+    relationalRowsSha256: relationalRowsFence.sha256,
+    rowCount: accumulator.rowCount,
+    segmentCount: accumulator.segmentCount,
+    transactionCount: accumulator.transactionCount,
+    transactionTxidsHashModel: accumulator.transactionTxids.model,
+    transactionTxidsSha256: accumulator.transactionTxids.sha256,
+    validCount: accumulator.validCount,
+  };
+}
+
+async function registryAuditCanonicalRawReplay(network, checkpoint) {
+  const acceptedEvents = [];
+  const legacyRows = [];
+  const parity = createRegistryAuditParityAccumulator();
+  let descriptorRolling = createIdRegistryAuditRollingHash(
+    "canonical-pwid-replay-block-descriptors",
+  );
+  let replayBlockCount = 0;
+  let currentRange = null;
+  let tipTransition = null;
+
+  const indexAudit = await proofIndexIdRegistryAuditStream(network, {
+    expectedHash: checkpoint.blockHash,
+    expectedHeight: checkpoint.height,
+    verifyFinalFence: false,
+    onPage: async (page) => {
+      if (page.kind === "rows" && page.rangeKind === "pre-activation") {
+        legacyRows.push(...page.rows);
+        return;
+      }
+      if (page.kind === "transitions") {
+        if (currentRange) {
+          throw new Error("ID audit transition ranges overlapped.");
+        }
+        currentRange = {
+          acceptedEvents: [],
+          outcomes: [],
+          rangeEnd: page.rangeEnd,
+          rangeKind: page.rangeKind,
+          rangeStart: page.rangeStart,
+          rows: [],
+          transactions: [],
+        };
+        tipTransition = page.transitions.at(-1) ?? tipTransition;
+        const pwidTransitions = page.transitions.filter((stored) =>
+          (Array.isArray(stored?.payload?.replayRecords)
+            ? stored.payload.replayRecords
+            : []
+          ).some(
+            (record) =>
+              record?.protocol === "pwid1" && record?.rawCandidate === true,
+          ),
+        );
+        const verified = await mapWithConcurrency(
+          pwidTransitions,
+          2,
+          async (stored) => {
+            const bundle = await completeIdVerifierStateBundle(
+              network,
+              stored.blockHeight,
+              stored.blockHash,
+              stored.previousBlockHash,
+            );
+            const transition = bundle?.workAmoV5BlockTransition;
+            if (
+              bundle?.canonicalCoverage !== true ||
+              bundle?.coverageHeight !== stored.blockHeight ||
+              bundle?.blockHash !== stored.blockHash ||
+              bundle?.previousBlockHash !== stored.previousBlockHash ||
+              transition?.complete !== true ||
+              registryAuditProjectionSha256(stored.payload) !==
+                registryAuditProjectionSha256(transition)
+            ) {
+              throw new Error(
+                `Stored ID transition ${stored.blockHeight}:${stored.blockHash} disagrees with fresh Core replay.`,
+              );
+            }
+            const pwidRecords = transition.replayRecords.filter(
+              (record) =>
+                record?.protocol === "pwid1" &&
+                record?.rawCandidate === true,
+            );
+            const txids = new Set(
+              pwidRecords.map((record) =>
+                registryAuditTxid(record?.txid, "Canonical raw PWID record"),
+              ),
+            );
+            const transactions = (Array.isArray(bundle.transactions)
+              ? bundle.transactions
+              : []
+            ).filter((transaction) => txids.has(transactionTxid(transaction)));
+            if (
+              new Set(transactions.map(transactionTxid)).size !== txids.size
+            ) {
+              throw new Error(
+                `Fresh Core replay at ${stored.blockHeight} omitted a PWID transaction.`,
+              );
+            }
+            const transactionByTxid = new Map(
+              transactions.map((transaction) => [
+                transactionTxid(transaction),
+                transaction,
+              ]),
+            );
+            const outcomes = [];
+            const accepted = [];
+            for (const record of pwidRecords) {
+              outcomes.push(registryAuditRawReplayOutcome(record, checkpoint));
+              if (record?.outcome?.valid !== true) {
+                continue;
+              }
+              const transaction = transactionByTxid.get(
+                String(record?.txid ?? "").trim().toLowerCase(),
+              );
+              if (!transaction) {
+                throw new Error(
+                  `Fresh Core replay omitted accepted ID transaction ${record?.txid ?? "(unknown)"}.`,
+                );
+              }
+              accepted.push(
+                registryAuditRawReplayAcceptedEvent(
+                  record,
+                  transaction,
+                  checkpoint,
+                ),
+              );
+            }
+            return {
+              accepted,
+              descriptor: {
+                blockHash: stored.blockHash,
+                blockHeight: stored.blockHeight,
+                eventSetCommitment: transition.eventSetCommitment,
+                replayDescriptorCommitment:
+                  transition.replayDescriptorCommitment,
+                transitionChainCommitment:
+                  transition.transitionChainCommitment,
+              },
+              outcomes,
+              transactions,
+            };
+          },
+        );
+        verified.sort(
+          (left, right) =>
+            left.descriptor.blockHeight - right.descriptor.blockHeight,
+        );
+        for (const item of verified) {
+          currentRange.acceptedEvents.push(...item.accepted);
+          currentRange.outcomes.push(...item.outcomes);
+          currentRange.transactions.push(...item.transactions);
+          acceptedEvents.push(...item.accepted);
+          descriptorRolling = advanceIdRegistryAuditRollingHash(
+            descriptorRolling,
+            item.descriptor,
+          );
+          replayBlockCount += 1;
+        }
+        return;
+      }
+      if (page.kind === "rows" && page.rangeKind === "post-activation") {
+        if (
+          !currentRange ||
+          currentRange.rangeStart !== page.rangeStart ||
+          currentRange.rangeEnd !== page.rangeEnd
+        ) {
+          throw new Error("ID audit relational page escaped its transition range.");
+        }
+        currentRange.rows.push(...page.rows);
+        return;
+      }
+      if (page.kind === "range-complete" && page.rangeKind === "post-activation") {
+        if (
+          !currentRange ||
+          currentRange.rangeStart !== page.rangeStart ||
+          currentRange.rangeEnd !== page.rangeEnd
+        ) {
+          throw new Error("ID audit transition range completion drifted.");
+        }
+        assertIdRegistryAuditAttemptPositionCoverage(
+          currentRange.outcomes,
+          currentRange.rows,
+        );
+        const relational = registryAuditRelationalAttemptRows(
+          registryAuditRelationalPagePayload(currentRange.rows, checkpoint),
+          checkpoint,
+        );
+        const rangeParity = registryAuditAttemptParity(
+          relational,
+          currentRange.transactions,
+          currentRange.acceptedEvents,
+          currentRange.outcomes,
+          checkpoint,
+        );
+        appendRegistryAuditParity(parity, rangeParity, currentRange);
+        currentRange = null;
+      }
+    },
+  });
+  if (!indexAudit || currentRange || !tipTransition) {
+    throw new Error("The paged ID transition audit did not reach its checkpoint.");
+  }
+  const tipBundle = await completeIdVerifierStateBundle(
+    network,
+    checkpoint.height,
+    checkpoint.blockHash,
+    tipTransition.previousBlockHash,
+  );
+  if (
+    tipBundle?.canonicalCoverage !== true ||
+    tipBundle?.coverageHeight !== checkpoint.height ||
+    tipBundle?.blockHash !== checkpoint.blockHash
+  ) {
+    throw new Error("Canonical ID replay tip changed before closing-state proof.");
+  }
+  const closingRecords = (Array.isArray(tipBundle?.state?.records)
+    ? tipBundle.state.records
+    : [])
+    .map((record) => ({
+      id: registryAuditId(record?.id, "Canonical raw closing ID record"),
+      ownerAddress: registryAuditAddress(
+        record?.ownerAddress,
+        "Canonical raw closing ID record",
+      ),
+      pgpKey: String(record?.pgpKey ?? ""),
+      receiveAddress: registryAuditAddress(
+        record?.receiveAddress,
+        "Canonical raw closing ID record",
+      ),
+    }))
+    .sort((left, right) => compareCanonicalUtf8(left.id, right.id));
+  const closingListings = (Array.isArray(tipBundle?.state?.listings)
+    ? tipBundle.state.listings
+    : [])
+    .map((listing) => ({
+      id: registryAuditId(listing?.id, "Canonical raw closing ID listing"),
+      listingId: registryAuditTxid(
+        listing?.listingId,
+        "Canonical raw closing ID listing",
+      ),
+      priceSats: registryAuditExactSafeSats(
+        listing?.priceSats,
+        "Canonical raw closing ID listing price",
+      ),
+      saleAuthorization: registryAuditCanonicalClone(
+        listing?.saleAuthorization,
+      ),
+      sellerAddress: registryAuditAddress(
+        listing?.sellerAddress,
+        "Canonical raw closing ID listing",
+      ),
+    }))
+    .sort((left, right) =>
+      compareCanonicalUtf8(left.listingId, right.listingId),
+    );
+  const closingState = { listings: closingListings, records: closingRecords };
+  return {
+    acceptedEvents,
+    closingState,
+    closingStateSha256: registryAuditProjectionSha256(closingState),
+    descriptorFingerprint:
+      idRegistryAuditRollingHashFingerprint(descriptorRolling),
+    indexAudit,
+    legacyRows,
+    parity,
+    replayBlockCount,
+    replayDescriptorSha256: descriptorRolling.sha256,
+  };
+}
+
+function registryAuditProjectionFromCanonicalState(
+  state,
+  checkpoint,
+  rawReplay = null,
+) {
+  const legacyEvents = (Array.isArray(state?._powAuditEvents)
+    ? state._powAuditEvents
+    : []
+  ).filter(
+    (item) =>
+      item?.confirmed === true &&
+      Number(item?.blockHeight) < WORK_AMO_V5_ACTIVATION_HEIGHT,
+  );
+  const events = [
+    ...legacyEvents.map((item) =>
+      registryAuditLifecycleEventEntry(item, checkpoint, "chain"),
+    ),
+    ...(Array.isArray(rawReplay?.acceptedEvents)
+      ? rawReplay.acceptedEvents.map((item) =>
+          registryAuditLifecycleEventEntry(
+            item,
+            checkpoint,
+            "canonical-raw",
+          ),
+        )
+      : []),
+  ]
+    .sort(
+      (left, right) =>
+        left.blockHeight - right.blockHeight ||
+        left.blockIndex - right.blockIndex ||
+        left.protocolVout - right.protocolVout ||
+        left.recordOrdinal - right.recordOrdinal ||
+        compareCanonicalUtf8(left.txid, right.txid) ||
+        compareCanonicalUtf8(left.kind, right.kind),
+    );
+  const registrationById = new Map();
+  const lastMutationById = new Map();
+  for (const item of events) {
+    if (item.kind === "id-register") {
+      if (registrationById.has(item.id)) {
+        throw new Error(`Chain-derived ID registration repeats ${item.id}.`);
+      }
+      registrationById.set(item.id, item);
+    }
+    if (
+      !["id-register", "id-update", "id-transfer", "id-buy"].includes(
+        item.kind,
+      ) ||
+      !item.id
+    ) {
+      continue;
+    }
+    lastMutationById.set(item.id, item);
+  }
+
+  const rawClosingRecords = Array.isArray(rawReplay?.closingState?.records)
+    ? rawReplay.closingState.records
+    : null;
+  const records = rawClosingRecords ??
+    (Array.isArray(state?.records) ? state.records : []);
+  const confirmedRecords = records
+    .filter((record) => rawClosingRecords || record?.confirmed === true)
+    .map((record) => {
+      const id = registryAuditId(record.id, "Chain-derived ID record");
+      const registration = registrationById.get(id);
+      const lastMutation = lastMutationById.get(id);
+      const blockHeight = Number(registration?.blockHeight);
+      const blockIndex = Number(registration?.blockIndex);
+      const updatedHeight = Number(
+        rawClosingRecords ? lastMutation?.blockHeight : record?.blockHeight,
+      );
+      if (
+        !registration ||
+        !Number.isSafeInteger(blockHeight) ||
+        blockHeight < 1 ||
+        !Number.isSafeInteger(blockIndex) ||
+        blockIndex < 0 ||
+        !Number.isSafeInteger(updatedHeight) ||
+        updatedHeight < blockHeight ||
+        updatedHeight > checkpoint.height
+      ) {
+        throw new Error(`Chain-derived ID record ${id} has no exact lifecycle position.`);
+      }
+      return {
+        blockHeight,
+        blockIndex,
+        id,
+        lastEventTxid: registryAuditTxid(
+          rawClosingRecords ? lastMutation?.txid : record.txid,
+          `Chain-derived ID record ${id} last event`,
+        ),
+        ownerAddress: registryAuditAddress(
+          record.ownerAddress,
+          `Chain-derived ID record ${id}`,
+        ),
+        pgpKey: String(record.pgpKey ?? ""),
+        receiveAddress: registryAuditAddress(
+          record.receiveAddress,
+          `Chain-derived ID record ${id}`,
+        ),
+        txid: registryAuditTxid(
+          registration.txid,
+          `Chain-derived ID registration ${id}`,
+        ),
+        updatedHeight,
+      };
+    })
+    .sort(
+      (left, right) =>
+        compareCanonicalUtf8(left.id, right.id) ||
+        compareCanonicalUtf8(left.txid, right.txid),
+    );
+  const pendingRecords = (Array.isArray(state?.records) ? state.records : [])
+    .filter((record) => record?.confirmed !== true)
+    .map((record) => {
+      const id = registryAuditId(record.id, "Chain-derived pending ID record");
+      return {
+        id,
+        ownerAddress: registryAuditAddress(
+          record.ownerAddress,
+          `Chain-derived pending ID record ${id}`,
+        ),
+        pgpKey: String(record.pgpKey ?? ""),
+        receiveAddress: registryAuditAddress(
+          record.receiveAddress,
+          `Chain-derived pending ID record ${id}`,
+        ),
+        txid: registryAuditTxid(
+          record.txid,
+          `Chain-derived pending ID record ${id}`,
+        ),
+      };
+    })
+    .sort(
+      (left, right) =>
+        compareCanonicalUtf8(left.id, right.id) ||
+        compareCanonicalUtf8(left.txid, right.txid),
+    );
+  const pendingEvents = (Array.isArray(state?.pendingEvents)
+    ? state.pendingEvents
+    : []
+  )
+    .map(registryAuditPendingEventEntry)
+    .sort(
+      (left, right) =>
+        compareCanonicalUtf8(left.txid, right.txid) ||
+        compareCanonicalUtf8(left.kind, right.kind) ||
+        compareCanonicalUtf8(left.id, right.id) ||
+        compareCanonicalUtf8(left.listingId, right.listingId),
+    );
+  const rawClosingListings = Array.isArray(rawReplay?.closingState?.listings)
+    ? rawReplay.closingState.listings
+    : null;
+  const listingSource = rawClosingListings
+    ? rawClosingListings.map((listing) => {
+        const listingId = registryAuditTxid(
+          listing?.listingId,
+          "Canonical raw closing ID listing",
+        );
+        const listEvent = events.find(
+          (event) =>
+            event.kind === "id-list" &&
+            event.txid === listingId &&
+            event.listingId === listingId,
+        );
+        const sealEvents = events.filter(
+          (event) =>
+            event.kind === "id-seal" && event.listingId === listingId,
+        );
+        const sealEvent = sealEvents.at(-1) ?? null;
+        const saleAuthorization = registryAuditCanonicalClone(
+          listing?.saleAuthorization,
+        );
+        const listingVersion = registryAuditListingVersion(saleAuthorization);
+        const id = registryAuditId(
+          listing?.id,
+          `Canonical raw closing ID listing ${listingId}`,
+        );
+        const priceSats = registryAuditExactSafeSats(
+          listing?.priceSats,
+          `Canonical raw closing ID listing ${listingId} price`,
+        );
+        const sellerAddress = registryAuditAddress(
+          listing?.sellerAddress,
+          `Canonical raw closing ID listing ${listingId} seller`,
+        );
+        if (
+          !listEvent ||
+          !listingVersion ||
+          listEvent.id !== id ||
+          listEvent.priceSats !== priceSats ||
+          listEvent.sellerAddress !== sellerAddress ||
+          listEvent.listingVersion !== listingVersion ||
+          !saleAuthorizationTermsMatchIgnoringSeal(
+            listEvent.saleAuthorization,
+            saleAuthorization,
+          ) ||
+          (sealEvent &&
+            !saleAuthorizationTermsMatchIgnoringSeal(
+              sealEvent.saleAuthorization,
+              saleAuthorization,
+            ))
+        ) {
+          throw new Error(
+            `Canonical raw closing ID listing ${listingId} has no exact accepted lifecycle.`,
+          );
+        }
+        return {
+          anchorSigHashType: saleAuthorization.anchorSigHashType,
+          anchorSignature: saleAuthorization.anchorSignature,
+          anchorScriptPubKey: saleAuthorization.anchorScriptPubKey,
+          anchorTxid: saleAuthorization.anchorTxid,
+          anchorType: saleAuthorization.anchorType,
+          anchorValueSats: saleAuthorization.anchorValueSats,
+          anchorVout: saleAuthorization.anchorVout,
+          blockHash: listEvent.blockHash,
+          blockHeight: listEvent.blockHeight,
+          blockIndex: listEvent.blockIndex,
+          buyerAddress: saleAuthorization.buyerAddress,
+          confirmed: true,
+          createdAt: listEvent.createdAt,
+          expiresAt: saleAuthorization.expiresAt,
+          id,
+          listingId,
+          listingVersion,
+          priceSats,
+          protocolVout: listEvent.protocolVout,
+          receiveAddress: saleAuthorization.receiveAddress,
+          recordOrdinal: listEvent.recordOrdinal,
+          saleAuthorization,
+          sealTxid: sealEvent?.txid ?? null,
+          sellerAddress,
+          sellerPublicKey: saleAuthorization.sellerPublicKey,
+          txid: listingId,
+        };
+      })
+    : (Array.isArray(state?.listings) ? state.listings : []);
+  const listings = listingSource
+    .map((item) =>
+      registryAuditStateItemEntry(
+        item,
+        REGISTRY_AUDIT_LISTING_FIELDS,
+        "Chain-derived ID listing",
+      ),
+    )
+    .sort(
+      (left, right) =>
+        compareCanonicalUtf8(left.listingId, right.listingId) ||
+        compareCanonicalUtf8(left.txid, right.txid),
+    );
+  const legacySales = rawReplay
+    ? (Array.isArray(state?.sales) ? state.sales : []).filter(
+        (sale) =>
+          sale?.confirmed !== true ||
+          (Number.isSafeInteger(Number(sale?.blockHeight)) &&
+            Number(sale.blockHeight) < PWID_RAW_REPLAY_ACTIVATION_HEIGHT),
+      )
+    : (Array.isArray(state?.sales) ? state.sales : []);
+  const rawSales = rawReplay
+    ? events
+        .filter(
+          (event) =>
+            event.kind === "id-buy" &&
+            event.blockHeight >= PWID_RAW_REPLAY_ACTIVATION_HEIGHT,
+        )
+        .map((event) => {
+          const id = registryAuditId(
+            event.id,
+            `Canonical raw ID sale ${event.txid}`,
+          );
+          const buyerAddress = registryAuditAddress(
+            event.ownerAddress,
+            `Canonical raw ID sale ${event.txid} buyer`,
+          );
+          const receiveAddress = registryAuditAddress(
+            event.receiveAddress,
+            `Canonical raw ID sale ${event.txid} receiver`,
+          );
+          const sellerAddress = registryAuditAddress(
+            event.sellerAddress,
+            `Canonical raw ID sale ${event.txid} seller`,
+          );
+          const priceSats = registryAuditExactSafeSats(
+            event.priceSats,
+            `Canonical raw ID sale ${event.txid} price`,
+          );
+          if (event.transferVersion !== "buy5") {
+            throw new Error(
+              `Canonical raw ID sale ${event.txid} has no exact transfer version.`,
+            );
+          }
+          return {
+            blockHash: event.blockHash,
+            blockHeight: event.blockHeight,
+            blockIndex: event.blockIndex,
+            buyerAddress,
+            confirmed: true,
+            createdAt: event.createdAt,
+            id,
+            listingId: event.listingId || null,
+            priceSats,
+            protocolVout: event.protocolVout,
+            receiveAddress,
+            recordOrdinal: event.recordOrdinal,
+            sellerAddress,
+            transferVersion: event.transferVersion,
+            txid: event.txid,
+          };
+        })
+    : [];
+  const sales = [...legacySales, ...rawSales]
+    .map((item) =>
+      registryAuditStateItemEntry(
+        item,
+        REGISTRY_AUDIT_SALE_FIELDS,
+        "Chain-derived ID sale",
+      ),
+    )
+    .sort(
+      (left, right) =>
+        compareCanonicalUtf8(left.txid, right.txid) ||
+        compareCanonicalUtf8(String(left.listingId ?? ""), String(right.listingId ?? "")),
+    );
+  const projection = {
+    checkpoint: {
+      blockHash: checkpoint.blockHash,
+      height: checkpoint.height,
+    },
+    confirmedRecords,
+    events,
+    listings,
+    pendingEvents,
+    pendingRecords,
+    sales,
+  };
+  return {
+    ...projection,
+    projectionSha256: registryAuditProjectionSha256(projection),
+  };
+}
+
+function registryAuditRelationalRawClosingState(projection) {
+  const records = (Array.isArray(projection?.confirmedRecords)
+    ? projection.confirmedRecords
+    : [])
+    .map((record) => ({
+      id: record.id,
+      ownerAddress: record.ownerAddress,
+      pgpKey: String(record.pgpKey ?? ""),
+      receiveAddress: record.receiveAddress,
+    }))
+    .sort((left, right) => compareCanonicalUtf8(left.id, right.id));
+  const listings = (Array.isArray(projection?.listings)
+    ? projection.listings
+    : [])
+    .filter((listing) => listing?.confirmed === true)
+    .map((listing) => ({
+      id: registryAuditId(listing?.id, "Relational closing ID listing"),
+      listingId: registryAuditTxid(
+        listing?.listingId,
+        "Relational closing ID listing",
+      ),
+      priceSats: registryAuditExactSafeSats(
+        listing?.priceSats,
+        "Relational closing ID listing price",
+      ),
+      saleAuthorization: registryAuditCanonicalClone(
+        listing?.saleAuthorization,
+      ),
+      sellerAddress: registryAuditAddress(
+        listing?.sellerAddress,
+        "Relational closing ID listing",
+      ),
+    }))
+    .sort((left, right) =>
+      compareCanonicalUtf8(left.listingId, right.listingId),
+    );
+  return { listings, records };
+}
+
+function assertUnambiguousRegistryAuditEvents(transactions) {
+  for (const transaction of Array.isArray(transactions) ? transactions : []) {
+    if (transactionConfirmed(transaction)) {
+      // Confirmed post-activation transactions are resolved by the canonical
+      // raw-block sequencer at every protocol vout/ordinal below.
+      continue;
+    }
+    const txid = transactionTxid(transaction);
+    const messages = decodedProtocolMessages(
+      transaction?.vout ?? [],
+      ID_PROTOCOL_PREFIX,
+    );
+    if (messages.length > 1) {
+      throw new Error(
+        `Registry transaction ${txid || "(unknown)"} contains multiple ID protocol records; exact lifecycle parity is ambiguous.`,
+      );
+    }
+  }
+}
+
+function registryAuditPhysicalPositionKey(value) {
+  return [
+    value.txid,
+    value.blockHeight,
+    value.blockIndex,
+    value.protocolVout,
+    value.recordOrdinal,
+  ].join(":");
+}
+
+function compareRegistryAuditPhysicalPositions(left, right) {
+  return (
+    left.blockHeight - right.blockHeight ||
+    left.blockIndex - right.blockIndex ||
+    left.protocolVout - right.protocolVout ||
+    left.recordOrdinal - right.recordOrdinal ||
+    compareCanonicalUtf8(left.txid, right.txid)
+  );
+}
+
+function registryAuditCanonicalPwidRecordEvidence(record, label) {
+  const protocolVout = registryAuditInteger(
+    record?.protocolVout,
+    `${label} vout`,
+  );
+  const recordOrdinal = registryAuditInteger(
+    record?.recordOrdinal,
+    `${label} ordinal`,
+  );
+  const parts = Array.isArray(record?.rawRecordParts)
+    ? record.rawRecordParts
+    : [];
+  const part = parts[0];
+  const rawPayloadHex = String(part?.payloadHex ?? "")
+    .trim()
+    .toLowerCase();
+  const scriptPubKeyHex = String(part?.scriptPubKeyHex ?? "")
+    .trim()
+    .toLowerCase();
+  const rawPayloadBytes = /^(?:[0-9a-f]{2})+$/u.test(rawPayloadHex)
+    ? Buffer.from(rawPayloadHex, "hex")
+    : null;
+  const prefixBytes = Buffer.from(ID_PROTOCOL_PREFIX, "ascii");
+  const rawDecodeValid = part?.decodeValid === true;
+  const rawDecodeDetail = String(part?.decodeDetail ?? "");
+  const rawDecodeReasonCode = String(part?.reasonCode ?? "").trim();
+  if (
+    record?.protocol !== "pwid1" ||
+    recordOrdinal !== 0 ||
+    parts.length !== 1 ||
+    Number(part?.protocolVout) !== protocolVout ||
+    part?.prefix !== ID_PROTOCOL_PREFIX ||
+    record?.rawDecodeValid !== rawDecodeValid ||
+    String(record?.rawDecodeReasonCode ?? "") !== rawDecodeReasonCode ||
+    !rawPayloadBytes ||
+    rawPayloadBytes.length < prefixBytes.length ||
+    !rawPayloadBytes.subarray(0, prefixBytes.length).equals(prefixBytes) ||
+    !/^(?:[0-9a-f]{2})+$/u.test(scriptPubKeyHex)
+  ) {
+    throw new Error(`${label} has incomplete byte-first PWID evidence.`);
+  }
+
+  let rawPayload = "";
+  if (rawDecodeValid) {
+    try {
+      rawPayload = new TextDecoder("utf-8", { fatal: true }).decode(
+        rawPayloadBytes,
+      );
+    } catch {
+      rawPayload = "";
+    }
+    if (
+      rawDecodeReasonCode ||
+      !rawPayload.startsWith(ID_PROTOCOL_PREFIX) ||
+      rawPayload !== String(record?.message ?? "") ||
+      !Buffer.from(rawPayload, "utf8").equals(rawPayloadBytes)
+    ) {
+      throw new Error(`${label} lost its fatal UTF-8 round trip.`);
+    }
+  } else if (
+    ![
+      CANONICAL_OP_RETURN_SCRIPT_MALFORMED,
+      CANONICAL_OP_RETURN_TEXT_STORAGE_INVALID,
+      CANONICAL_OP_RETURN_UTF8_INVALID,
+    ].includes(rawDecodeReasonCode) ||
+    String(record?.message ?? "") !== ID_PROTOCOL_PREFIX
+  ) {
+    throw new Error(`${label} has an unsupported raw decode rejection.`);
+  }
+
+  return {
+    dataBytes: rawPayloadBytes.length,
+    protocolVout,
+    rawDecodeDetail,
+    rawDecodeReasonCode,
+    rawDecodeValid,
+    rawPayload,
+    rawPayloadHex,
+    rawPayloadSha256: createHash("sha256")
+      .update(rawPayloadBytes)
+      .digest("hex"),
+    recordOrdinal,
+    scriptPubKeyHex,
+    scriptPubKeySha256: createHash("sha256")
+      .update(Buffer.from(scriptPubKeyHex, "hex"))
+      .digest("hex"),
+  };
+}
+
+function registryAuditCanonicalPwidCarriers(transactions, checkpoint) {
+  const carriers = [];
+  const seen = new Set();
+  for (const transaction of Array.isArray(transactions) ? transactions : []) {
+    if (!transactionConfirmed(transaction)) {
+      continue;
+    }
+    const txid = registryAuditTxid(
+      transactionTxid(transaction),
+      "Canonical PWID carrier transaction",
+    );
+    const blockHash = registryAuditTxid(
+      transactionBlockHash(transaction),
+      `Canonical PWID carrier ${txid} block`,
+    );
+    const blockHeight = registryAuditInteger(
+      transactionBlockHeight(transaction),
+      `Canonical PWID carrier ${txid} height`,
+      1,
+    );
+    const blockIndex = registryAuditInteger(
+      transactionBlockIndex(transaction),
+      `Canonical PWID carrier ${txid} block index`,
+    );
+    const blockTimeSeconds = registryAuditInteger(
+      transaction?.status?.block_time,
+      `Canonical PWID carrier ${txid} block time`,
+      1,
+    );
+    if (blockHeight > checkpoint.height) {
+      throw new Error(`Canonical PWID carrier ${txid} is above the checkpoint.`);
+    }
+    let records;
+    try {
+      records = canonicalRawProtocolRecordSetFromTransaction(transaction).records;
+    } catch (error) {
+      throw new Error(
+        `Canonical PWID carrier decoding failed for ${txid}: ${errorSummary(error)}`,
+      );
+    }
+    const pwidRecords = records.filter((record) => record?.protocol === "pwid1");
+    if (
+      blockHeight < PWID_RAW_REPLAY_ACTIVATION_HEIGHT &&
+      pwidRecords.length > 1
+    ) {
+      throw new Error(
+        `Pre-activation PWID transaction ${txid} has multiple records and cannot be replay-qualified.`,
+      );
+    }
+    for (const record of pwidRecords) {
+      const evidence = registryAuditCanonicalPwidRecordEvidence(
+        record,
+        `Canonical PWID carrier ${txid}`,
+      );
+      const carrier = {
+        blockHash,
+        blockHeight,
+        blockIndex,
+        blockTime: new Date(blockTimeSeconds * 1_000).toISOString(),
+        ...evidence,
+        txid,
+      };
+      const key = registryAuditPhysicalPositionKey(carrier);
+      if (seen.has(key)) {
+        throw new Error(`Canonical PWID carrier position ${key} is duplicated.`);
+      }
+      seen.add(key);
+      carriers.push(carrier);
+    }
+  }
+  return carriers.sort(compareRegistryAuditPhysicalPositions);
+}
+
+function registryAuditRelationalAttemptRows(payload, checkpoint) {
+  if (
+    !payload ||
+    payload.network !== "livenet" ||
+    ![
+      "proof-indexer-confirmed-pwid-audit-rows",
+      "proof-indexer-paged-pwid-transition-audit",
+    ].includes(payload.source) ||
+    payload.indexScanComplete !== true ||
+    payload.checkpoint?.height !== checkpoint.height ||
+    payload.checkpoint?.blockHash !== checkpoint.blockHash ||
+    !Array.isArray(payload.rows)
+  ) {
+    throw new Error("The relational PWID audit-row projection is incomplete.");
+  }
+  const seenEventIds = new Set();
+  const rows = payload.rows.map((row) => {
+    const eventId = registryAuditInteger(
+      row?.eventId,
+      "Relational PWID audit event ID",
+      1,
+    );
+    if (seenEventIds.has(eventId)) {
+      throw new Error(`Relational PWID audit event ${eventId} is duplicated.`);
+    }
+    seenEventIds.add(eventId);
+    const txid = registryAuditTxid(row?.txid, `Relational PWID event ${eventId}`);
+    const blockHash = registryAuditTxid(
+      row?.blockHash,
+      `Relational PWID event ${eventId} block`,
+    );
+    const blockHeight = registryAuditInteger(
+      row?.blockHeight,
+      `Relational PWID event ${eventId} height`,
+      1,
+    );
+    const blockIndex = registryAuditInteger(
+      row?.blockIndex,
+      `Relational PWID event ${eventId} block index`,
+    );
+    const protocolVout = registryAuditInteger(
+      row?.protocolVout,
+      `Relational PWID event ${eventId} vout`,
+    );
+    const recordOrdinal = registryAuditInteger(
+      row?.recordOrdinal,
+      `Relational PWID event ${eventId} ordinal`,
+    );
+    const dataBytes = registryAuditInteger(
+      row?.dataBytes,
+      `Relational PWID event ${eventId} byte count`,
+      1,
+    );
+    const amountSats = registryAuditExactSafeSats(
+      row?.amountSats,
+      `Relational PWID event ${eventId} attributed amount`,
+    );
+    const carrierPayload = String(row?.carrierPayload ?? "");
+    const carrierPayloadHex = String(row?.carrierPayloadHex ?? "")
+      .trim()
+      .toLowerCase();
+    const blockTime = new Date(row?.blockTime).toISOString();
+    if (
+      blockHeight > checkpoint.height ||
+      row?.protocol !== "pwid1" ||
+      row?.status !== "confirmed" ||
+      !Number.isFinite(Date.parse(blockTime)) ||
+      typeof row?.valid !== "boolean" ||
+      typeof row?.replayMetadataPresent !== "boolean" ||
+      typeof row?.rawScriptWitnessPresent !== "boolean" ||
+      typeof row?.storedRawPayloadPresent !== "boolean" ||
+      typeof row?.payloadRawPayloadPresent !== "boolean"
+    ) {
+      throw new Error(
+        `Relational PWID event ${eventId} has incomplete physical evidence.`,
+      );
+    }
+    const valid = row.valid;
+    const storedRawPayload = String(row?.storedRawPayload ?? "");
+    const payloadRawPayload = String(row?.payloadRawPayload ?? "");
+    const rawKind = String(row?.kind ?? "").trim().toLowerCase();
+    if (!rawKind || rawKind.length > 128) {
+      throw new Error(`Relational PWID event ${eventId} has no bounded kind.`);
+    }
+    return {
+      amountSats,
+      attemptedKind: String(row?.attemptedKind ?? ""),
+      blockHash,
+      blockHeight,
+      blockIndex,
+      blockTime,
+      carrierPayload,
+      carrierPayloadHex,
+      carrierProtocol: String(row?.carrierProtocol ?? "")
+        .trim()
+        .toLowerCase(),
+      dataBytes,
+      eventId,
+      eventKey: String(row?.eventKey ?? ""),
+      kind: valid ? registryAuditEventKind(rawKind) : rawKind,
+      payloadSource: String(row?.payloadSource ?? ""),
+      payloadRawPayload,
+      payloadRawPayloadPresent: row?.payloadRawPayloadPresent === true,
+      payloadRawPayloadSha256: row?.payloadRawPayloadPresent === true
+        ? createHash("sha256").update(payloadRawPayload, "utf8").digest("hex")
+        : "",
+      payloadReason: String(row?.payloadReason ?? ""),
+      payloadReasonCode: String(row?.payloadReasonCode ?? ""),
+      positionOutcomeClass: String(row?.positionOutcomeClass ?? ""),
+      protocolVout,
+      rawDecodeReasonCode: String(row?.rawDecodeReasonCode ?? ""),
+      rawDecodeValid: row?.rawDecodeValid,
+      rawScriptDecodeDetail: String(row?.rawScriptDecodeDetail ?? ""),
+      rawScriptDecodeValid: row?.rawScriptDecodeValid,
+      rawScriptPayloadHex: String(row?.rawScriptPayloadHex ?? "")
+        .trim()
+        .toLowerCase(),
+      rawScriptPubKeyHex: String(row?.rawScriptPubKeyHex ?? "")
+        .trim()
+        .toLowerCase(),
+      rawScriptReasonCode: String(row?.rawScriptReasonCode ?? ""),
+      rawScriptWitnessPresent: row?.rawScriptWitnessPresent === true,
+      reasonCode: String(row?.reasonCode ?? ""),
+      recordOrdinal,
+      replayBound: row?.replayBound === true,
+      replayMetadataPresent: row?.replayMetadataPresent === true,
+      replayOutcomeKind: String(row?.replayOutcomeKind ?? ""),
+      replayOutcomeReasonCode: String(
+        row?.replayOutcomeReasonCode ?? "",
+      ),
+      replayOutcomeValid: row?.replayOutcomeValid,
+      replayRawCandidate: row?.replayRawCandidate,
+      rowClassification: String(row?.rowClassification ?? ""),
+      storedRawPayload,
+      storedRawPayloadPresent: row?.storedRawPayloadPresent === true,
+      storedRawPayloadSha256: row?.storedRawPayloadPresent === true
+        ? createHash("sha256").update(storedRawPayload, "utf8").digest("hex")
+        : "",
+      txid,
+      valid,
+      validationMode: String(row?.validationMode ?? ""),
+      validationErrors: Array.isArray(row?.validationErrors)
+        ? row.validationErrors.map((value) => String(value ?? ""))
+        : [],
+    };
+  });
+  const stats = payload.stats ?? {};
+  const validCount = rows.filter((row) => row.valid).length;
+  const invalidCount = rows.length - validCount;
+  const positionCount = new Set(
+    rows.map(registryAuditPhysicalPositionKey),
+  ).size;
+  const mixedOutcomePositionCount = new Set(
+    rows
+      .filter((row) => row.positionOutcomeClass === "mixed-valid-and-invalid")
+      .map(registryAuditPhysicalPositionKey),
+  ).size;
+  if (
+    stats.rowCount !== rows.length ||
+    stats.validCount !== validCount ||
+    stats.invalidCount !== invalidCount ||
+    stats.positionCount !== positionCount ||
+    stats.mixedOutcomePositionCount !== mixedOutcomePositionCount ||
+    !Number.isSafeInteger(stats.maxCarrierPayloadBytes) ||
+    stats.maxCarrierPayloadBytes < 0 ||
+    stats.maxCarrierPayloadBytes > 4 * 1024 * 1024
+  ) {
+    throw new Error("The relational PWID audit-row bounds are inconsistent.");
+  }
+  return { rows, stats: { ...stats } };
+}
+
+function registryAuditAttemptParity(
+  relational,
+  confirmedTransactions,
+  acceptedEvents,
+  replayOutcomes,
+  checkpoint,
+) {
+  const carriers = registryAuditCanonicalPwidCarriers(
+    confirmedTransactions,
+    checkpoint,
+  );
+  const carrierByKey = new Map(
+    carriers.map((carrier) => [registryAuditPhysicalPositionKey(carrier), carrier]),
+  );
+  const rowsByKey = new Map();
+  for (const row of relational.rows) {
+    const key = registryAuditPhysicalPositionKey(row);
+    const values = rowsByKey.get(key) ?? [];
+    values.push(row);
+    rowsByKey.set(key, values);
+  }
+  const outcomeByKey = new Map();
+  const normalizedReplayOutcomes = (
+    Array.isArray(replayOutcomes) ? replayOutcomes : []
+  ).sort(compareRegistryAuditPhysicalPositions);
+  for (const outcome of normalizedReplayOutcomes) {
+    const key = registryAuditPhysicalPositionKey(outcome);
+    if (
+      outcome.blockHeight < PWID_RAW_REPLAY_ACTIVATION_HEIGHT ||
+      outcomeByKey.has(key)
+    ) {
+      throw new Error(`Canonical PWID replay outcome ${key} is duplicated or pre-activation.`);
+    }
+    outcomeByKey.set(key, outcome);
+  }
+  if (
+    carrierByKey.size !== rowsByKey.size ||
+    [...carrierByKey.keys()].some((key) => !rowsByKey.has(key)) ||
+    [...rowsByKey.keys()].some((key) => !carrierByKey.has(key))
+  ) {
+    throw new Error(
+      "Canonical Core PWID carrier positions disagree with relational PWID positions.",
+    );
+  }
+  const acceptedByKey = new Map();
+  for (const event of Array.isArray(acceptedEvents) ? acceptedEvents : []) {
+    const key = registryAuditPhysicalPositionKey(event);
+    if (acceptedByKey.has(key)) {
+      throw new Error(`Accepted ID lifecycle position ${key} is duplicated.`);
+    }
+    acceptedByKey.set(key, event);
+  }
+  const canonicalOutcomes = [];
+  const diagnosticRows = [];
+  const canonicalRelationalRows = [];
+  for (const carrier of carriers) {
+    const key = registryAuditPhysicalPositionKey(carrier);
+    const rows = rowsByKey.get(key);
+    const validRows = rows.filter((row) => row.valid);
+    const invalidRows = rows.filter((row) => !row.valid);
+    const postActivation =
+      carrier.blockHeight >= PWID_RAW_REPLAY_ACTIVATION_HEIGHT;
+    if (
+      validRows.length > 1 ||
+      invalidRows.length > 1 ||
+      (validRows.length === 0 && invalidRows.length !== 1) ||
+      (postActivation && rows.length !== 1)
+    ) {
+      throw new Error(`Relational PWID position ${key} has ambiguous outcomes.`);
+    }
+    if (
+      validRows.some(
+        (row) =>
+          row.rowClassification !== "accepted-candidate" ||
+          !["valid-only", "mixed-valid-and-invalid"].includes(
+            row.positionOutcomeClass,
+          ),
+      ) ||
+      invalidRows.some((row) =>
+        validRows.length === 1
+          ? row.rowClassification !== "mixed-outcome-invalid-candidate" ||
+            row.positionOutcomeClass !== "mixed-valid-and-invalid"
+          : row.rowClassification !== "rejected-candidate" ||
+            row.positionOutcomeClass !== "invalid-only",
+      )
+    ) {
+      throw new Error(`Relational PWID position ${key} has unqualified row outcomes.`);
+    }
+    for (const row of rows) {
+      if (
+        row.blockHash !== carrier.blockHash ||
+        row.blockTime !== carrier.blockTime ||
+        row.dataBytes !== carrier.dataBytes ||
+        (row.carrierPayloadHex &&
+          row.carrierPayloadHex !== carrier.rawPayloadHex) ||
+        (row.carrierProtocol && row.carrierProtocol !== "pwid1") ||
+        (row.carrierPayload &&
+          (!carrier.rawDecodeValid || row.carrierPayload !== carrier.rawPayload))
+      ) {
+        throw new Error(`Relational PWID position ${key} diverges from Core bytes.`);
+      }
+      canonicalRelationalRows.push({
+        ...row,
+        coreRawPayloadHex: carrier.rawPayloadHex,
+        coreRawPayloadSha256: carrier.rawPayloadSha256,
+        coreScriptPubKeyHex: carrier.scriptPubKeyHex,
+        coreScriptPubKeySha256: carrier.scriptPubKeySha256,
+      });
+    }
+    const accepted = acceptedByKey.get(key);
+    if (postActivation) {
+      const outcome = outcomeByKey.get(key);
+      const row = rows[0];
+      if (!outcome) {
+        throw new Error(`Post-activation PWID carrier ${key} has no replay outcome.`);
+      }
+      if (
+        outcome.blockHash !== carrier.blockHash ||
+        outcome.blockIndex !== carrier.blockIndex ||
+        outcome.dataBytes !== carrier.dataBytes
+      ) {
+        throw new Error(`Post-activation PWID replay outcome ${key} diverges from Core.`);
+      }
+      if (outcome.valid) {
+        if (
+          !accepted ||
+          accepted.blockHash !== carrier.blockHash ||
+          accepted.createdAt !== carrier.blockTime ||
+          accepted.dataBytes !== carrier.dataBytes ||
+          accepted.protocolPayloadSha256 !== carrier.rawPayloadSha256
+        ) {
+          throw new Error(
+            `Accepted post-activation ID lifecycle event at ${key} diverges from Core.`,
+          );
+        }
+      }
+      qualifiedPostActivationPwidOutcome({
+        acceptedEvent: accepted,
+        carrier,
+        outcome,
+        row,
+      });
+      canonicalOutcomes.push({
+        ...carrier,
+        accepted: outcome.valid,
+        consensusKind: outcome.consensusKind,
+        eventId: row.eventId,
+        kind: row.kind,
+        reasonCode: outcome.reasonCode,
+        semanticKind: outcome.semanticKind,
+      });
+      continue;
+    }
+
+    if (outcomeByKey.has(key)) {
+      throw new Error(`Pre-activation PWID carrier ${key} unexpectedly has a raw replay outcome.`);
+    }
+    if (validRows.length === 1) {
+      const validRow = validRows[0];
+      if (
+        !accepted ||
+        validRow.kind !== accepted.kind ||
+        accepted.blockHash !== carrier.blockHash ||
+        accepted.createdAt !== carrier.blockTime ||
+        accepted.dataBytes !== carrier.dataBytes ||
+        accepted.protocolPayloadSha256 !== carrier.rawPayloadSha256
+      ) {
+        throw new Error(
+          `Accepted ID lifecycle event at ${key} disagrees with its Core carrier or relational outcome.`,
+        );
+      }
+      for (const row of invalidRows) {
+        qualifiedLegacyPwidOutcome({
+          accepted: true,
+          blockHeight: carrier.blockHeight,
+          invalidRow: row,
+          parsedAttempt: null,
+        });
+        diagnosticRows.push(row);
+      }
+    } else {
+      const rejectedRow = invalidRows[0];
+      const parsedAttempt = parseIdEventPayload(
+        carrier.rawPayload.slice(ID_PROTOCOL_PREFIX.length),
+        "livenet",
+      );
+      if (accepted) {
+        throw new Error(`Rejected PWID position ${key} appears as accepted lifecycle state.`);
+      }
+      qualifiedLegacyPwidOutcome({
+        accepted: false,
+        blockHeight: carrier.blockHeight,
+        invalidRow: rejectedRow,
+        parsedAttempt,
+      });
+    }
+    canonicalOutcomes.push({
+      ...carrier,
+      accepted: validRows.length === 1,
+      eventId: validRows[0]?.eventId ?? invalidRows[0].eventId,
+      kind: validRows[0]?.kind ?? invalidRows[0].kind,
+      reasonCode: validRows.length === 0 ? invalidRows[0].reasonCode : "",
+    });
+  }
+  if (
+    outcomeByKey.size !== normalizedReplayOutcomes.length ||
+    [...outcomeByKey.keys()].some(
+      (key) => !carrierByKey.has(key) || !rowsByKey.has(key),
+    )
+  ) {
+    throw new Error(
+      "Canonical post-activation PWID replay outcomes lack exact Core or relational coverage.",
+    );
+  }
+  if (
+    acceptedByKey.size !== canonicalOutcomes.filter((item) => item.accepted).length ||
+    [...acceptedByKey.keys()].some((key) => !carrierByKey.has(key))
+  ) {
+    throw new Error("Accepted ID lifecycle event coverage is incomplete.");
+  }
+  const projection = {
+    canonicalOutcomes,
+    diagnosticRows: diagnosticRows
+      .map((row) => ({
+        eventId: row.eventId,
+        kind: row.kind,
+        payloadSource: row.payloadSource,
+        reasonCode: row.reasonCode,
+        replayBound: row.replayBound,
+        replayOutcomeKind: row.replayOutcomeKind,
+        replayOutcomeValid: row.replayOutcomeValid,
+        rowClassification: row.rowClassification,
+        txid: row.txid,
+        validationErrors: row.validationErrors,
+      }))
+      .sort((left, right) => left.eventId - right.eventId),
+  };
+  return {
+    ...relational.stats,
+    acceptedPositionCount: canonicalOutcomes.filter((item) => item.accepted).length,
+    canonicalReplayOutcomeCount: normalizedReplayOutcomes.length,
+    canonicalReplayOutcomeSha256:
+      registryAuditProjectionSha256(normalizedReplayOutcomes),
+    canonicalOutcomeSha256: registryAuditProjectionSha256(canonicalOutcomes),
+    coreBoundRelationalRowsSha256: registryAuditProjectionSha256(
+      canonicalRelationalRows.sort((left, right) => left.eventId - right.eventId),
+    ),
+    diagnosticRowCount: diagnosticRows.length,
+    diagnosticSha256: registryAuditProjectionSha256(projection.diagnosticRows),
+    legacyPositionCount: carriers.filter(
+      (carrier) => carrier.blockHeight < PWID_RAW_REPLAY_ACTIVATION_HEIGHT,
+    ).length,
+    physicalCarrierComplete: true,
+    postActivationPositionCount: carriers.filter(
+      (carrier) => carrier.blockHeight >= PWID_RAW_REPLAY_ACTIVATION_HEIGHT,
+    ).length,
+    relationalRowsSha256: registryAuditProjectionSha256(relational.rows),
+    transactionCount: new Set(carriers.map((carrier) => carrier.txid)).size,
+    transactionTxidsSha256: txidSetSha256(
+      [...new Set(carriers.map((carrier) => carrier.txid))],
+    ),
+  };
+}
+
+async function registryAuditElectrumCheckpoint(checkpoint) {
+  const height = registryAuditInteger(
+    checkpoint?.height,
+    "ID registry audit Electrum checkpoint height",
+    1,
+  );
+  const blockHash = registryAuditTxid(
+    checkpoint?.blockHash,
+    "ID registry audit Electrum checkpoint hash",
+  );
+  const headerHex = String(
+    await electrumRequest(
+      "blockchain.block.header",
+      [height],
+      ADDRESS_ELECTRUM_HISTORY_TIMEOUT_MS,
+    ),
+  )
+    .trim()
+    .toLowerCase();
+  const electrumBlockHash = /^[0-9a-f]{160}$/u.test(headerHex)
+    ? Buffer.from(bitcoin.crypto.hash256(Buffer.from(headerHex, "hex")))
+        .reverse()
+        .toString("hex")
+    : "";
+  if (electrumBlockHash !== blockHash) {
+    throw new Error(
+      `Electrum is not bound to Bitcoin Core checkpoint ${height}:${blockHash}.`,
+    );
+  }
+  return {
+    blockHash,
+    headerSha256: createHash("sha256")
+      .update(headerHex, "hex")
+      .digest("hex"),
+    height,
+  };
+}
+
+function registryAuditReadFence({
+  checkpoint,
+  coverage,
+  electrumCheckpoint,
+  indexAuditFence,
+  pendingMempoolTimeSha256,
+  registryProjectionSha256,
+  relationalRowsSha256,
+}) {
+  const indexScanSnapshotId = String(
+    indexAuditFence?.indexScanSnapshotId ?? "",
+  ).trim();
+  const indexScanStatus = String(
+    indexAuditFence?.indexScanStatus ?? "",
+  ).trim();
+  if (!indexScanSnapshotId || indexScanStatus !== "block-scan-current") {
+    throw new Error("The ID registry audit index scan fence is incomplete.");
+  }
+  const readFence = {
+    checkpointHash: registryAuditTxid(
+      checkpoint?.blockHash,
+      "ID registry audit read fence checkpoint",
+    ),
+    checkpointHeight: registryAuditInteger(
+      checkpoint?.height,
+      "ID registry audit read fence height",
+      1,
+    ),
+    confirmedTxidCount: coverage.confirmedTxids.length,
+    confirmedTxidsSha256: txidSetSha256(coverage.confirmedTxids),
+    electrumCheckpointHash: registryAuditTxid(
+      electrumCheckpoint?.blockHash,
+      "ID registry audit Electrum checkpoint fence",
+    ),
+    electrumCheckpointHeight: registryAuditInteger(
+      electrumCheckpoint?.height,
+      "ID registry audit Electrum checkpoint fence height",
+      1,
+    ),
+    electrumHeaderSha256: registryAuditTxid(
+      electrumCheckpoint?.headerSha256,
+      "ID registry audit Electrum header fingerprint",
+    ),
+    pendingMempoolTimeSha256: registryAuditTxid(
+      pendingMempoolTimeSha256,
+      "ID registry audit pending-time fence",
+    ),
+    pendingTxidCount: coverage.pendingTxids.length,
+    pendingTxidsSha256: txidSetSha256(coverage.pendingTxids),
+    registryProjectionSha256: registryAuditTxid(
+      registryProjectionSha256,
+      "ID registry audit relational projection fence",
+    ),
+    relationalRowsSha256: registryAuditTxid(
+      relationalRowsSha256,
+      "ID registry audit relational row fence",
+    ),
+    transitionCount: registryAuditInteger(
+      indexAuditFence?.transitions?.transitionCount,
+      "ID registry audit transition fence count",
+      1,
+    ),
+    transitionSha256: registryAuditTxid(
+      indexAuditFence?.transitions?.transitionSha256,
+      "ID registry audit transition fence",
+    ),
+    indexScanSnapshotId,
+    indexScanStatus,
+    snapshotSha256: registryAuditTxid(
+      coverage.snapshotSha256,
+      "ID registry audit Electrum snapshot fence",
+    ),
+  };
+  return {
+    ...readFence,
+    fenceSha256: registryAuditProjectionSha256(readFence),
+  };
+}
+
+async function buildInternalIdRegistryAuditPayload(network) {
+  const registryAddress = registryAddressForNetwork(network);
+  if (network !== "livenet" || !registryAddress) {
+    const error = new Error(
+      "Exact ID registry audit coverage is available only for livenet.",
+    );
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const initialTip = exactCoreTipFromBlockchainInfo(
+    await bitcoinRpc("getblockchaininfo", []),
+  );
+  if (!initialTip) {
+    throw new Error("Bitcoin Core exact tip is unavailable for the ID audit.");
+  }
+  const initialElectrumCheckpoint = await registryAuditElectrumCheckpoint(
+    initialTip,
+  );
+  const before = electrumAddressHistoryCoverage(
+    await fetchExactAddressHistoryFromElectrum(registryAddress, network),
+  );
+  if (before.pendingTxids.length > ID_REGISTRY_AUDIT_MAX_PENDING_TXS) {
+    const error = new Error(
+      `Exact ID registry audit pending coverage exceeds the configured limit of ${ID_REGISTRY_AUDIT_MAX_PENDING_TXS}.`,
+    );
+    error.statusCode = 503;
+    throw error;
+  }
+
+  const [
+    legacyConfirmedTransactions,
+    pendingTransactions,
+    registryPayload,
+  ] = await Promise.all([
+    hydrateExactConfirmedRegistryHistory(before.entries, network),
+    mapWithConcurrency(
+      before.pendingTxids,
+      Math.min(2, Math.max(1, TX_FETCH_CONCURRENCY)),
+      (txid) => hydrateExactPendingRegistryTransaction(txid, network),
+    ),
+    proofIndexRegistryPayload(network, {
+      expectedHash: initialTip.blockHash,
+      expectedHeight: initialTip.height,
+      registryAddress,
+    }),
+  ]);
+  const registryProjection = registryAuditProjection(
+    registryPayload,
+    initialTip,
+  );
+  const exactTransactions = dedupeTransactions([
+    ...legacyConfirmedTransactions,
+    ...pendingTransactions,
+  ]);
+  assertUnambiguousRegistryAuditEvents(exactTransactions);
+  const rawReplay = await registryAuditCanonicalRawReplay(
+    network,
+    initialTip,
+  );
+  const legacyState = idRegistryStateFromTransactions(
+    legacyConfirmedTransactions,
+    registryAddress,
+    network,
+    { includeAuditEvents: true },
+  );
+  const pendingState = idRegistryStateFromTransactions(
+    pendingTransactions,
+    registryAddress,
+    network,
+    {
+      includeAuditEvents: true,
+      initialConfirmedState: rawReplay.closingState,
+    },
+  );
+  const chainProjection = registryAuditProjectionFromCanonicalState(
+    {
+      ...pendingState,
+      _powAuditEvents: legacyState._powAuditEvents,
+      sales: [
+        ...(Array.isArray(legacyState.sales) ? legacyState.sales : []),
+        ...(Array.isArray(pendingState.sales) ? pendingState.sales : []),
+      ],
+    },
+    initialTip,
+    rawReplay,
+  );
+  if (
+    chainProjection.projectionSha256 !==
+    registryProjection.projectionSha256
+  ) {
+    const error = new Error(
+      "The chain-derived ID lifecycle projection disagrees with the exact relational projection.",
+    );
+    error.statusCode = 503;
+    throw error;
+  }
+  const legacyRelational = registryAuditRelationalAttemptRows(
+    registryAuditRelationalPagePayload(rawReplay.legacyRows, initialTip),
+    initialTip,
+  );
+  const legacyParity = registryAuditAttemptParity(
+    legacyRelational,
+    legacyConfirmedTransactions,
+    chainProjection.events.filter(
+      (event) =>
+        event.blockHeight < PWID_RAW_REPLAY_ACTIVATION_HEIGHT,
+    ),
+    [],
+    initialTip,
+  );
+  appendRegistryAuditParity(rawReplay.parity, legacyParity, {
+    rangeEnd: PWID_RAW_REPLAY_ACTIVATION_HEIGHT - 1,
+    rangeKind: "pre-activation",
+    rangeStart: 1,
+  });
+  const attemptParity = finalizedRegistryAuditParity(
+    rawReplay.parity,
+    rawReplay.indexAudit.fence.relationalRows,
+  );
+  for (const key of [
+    "invalidCount",
+    "mixedOutcomePositionCount",
+    "positionCount",
+    "rowCount",
+    "validCount",
+  ]) {
+    if (attemptParity[key] !== rawReplay.indexAudit.stats[key]) {
+      throw new Error(
+        `Paged ID attempt parity disagrees with the index ${key} fence.`,
+      );
+    }
+  }
+  const relationalClosingState =
+    registryAuditRelationalRawClosingState(registryProjection);
+  const relationalClosingStateSha256 = registryAuditProjectionSha256(
+    relationalClosingState,
+  );
+  if (
+    rawReplay.closingStateSha256 &&
+    rawReplay.closingStateSha256 !== relationalClosingStateSha256
+  ) {
+    const error = new Error(
+      "The canonical raw replay closing ID state disagrees with the exact relational projection.",
+    );
+    error.statusCode = 503;
+    throw error;
+  }
+  const pendingMempoolTimes = pendingTransactions
+    .map((transaction) => ({
+      mempoolTime: registryAuditInteger(
+        transaction?.status?.mempool_time,
+        `Observed pending transaction ${transactionTxid(transaction)} mempool time`,
+        1,
+      ),
+      txid: registryAuditTxid(
+        transactionTxid(transaction),
+        "Observed pending transaction",
+      ),
+    }))
+    .sort((left, right) => compareCanonicalUtf8(left.txid, right.txid));
+  const pendingMempoolTimeSha256 = registryAuditProjectionSha256(
+    pendingMempoolTimes,
+  );
+  const finalPendingMembership = await mapWithConcurrency(
+    before.pendingTxids,
+    Math.min(2, Math.max(1, TX_FETCH_CONCURRENCY)),
+    async (txid) => {
+      const entry = await bitcoinRpc("getmempoolentry", [txid]);
+      if (!entry?.ok || !entry.result || typeof entry.result !== "object") {
+        throw new Error(
+          `Bitcoin Core no longer contains observed pending registry transaction ${txid}.`,
+        );
+      }
+      return {
+        mempoolTime: registryAuditInteger(
+          entry.result.time,
+          `Final pending transaction ${txid} mempool time`,
+          1,
+        ),
+        txid,
+      };
+    },
+  );
+  finalPendingMembership.sort((left, right) =>
+    compareCanonicalUtf8(left.txid, right.txid),
+  );
+  if (
+    registryAuditProjectionSha256(finalPendingMembership) !==
+      pendingMempoolTimeSha256
+  ) {
+    throw new Error(
+      "Final Core pending registry membership or mempool-time proof changed.",
+    );
+  }
+  const finalIndexAudit = await proofIndexIdRegistryAuditStream(network, {
+    expectedHash: initialTip.blockHash,
+    expectedHeight: initialTip.height,
+    verifyFinalFence: false,
+  });
+  if (!finalIndexAudit) {
+    throw new Error("The final ID relational fence is unavailable.");
+  }
+  assertIdRegistryAuditFinalFence(
+    rawReplay.indexAudit.fence,
+    finalIndexAudit.fence,
+  );
+  // The final Electrum/Core fence is deliberately sampled after every block,
+  // transaction, lifecycle, pending-membership, and relational proof above.
+  const after = electrumAddressHistoryCoverage(
+    await fetchExactAddressHistoryFromElectrum(registryAddress, network),
+  );
+  const finalTip = exactCoreTipFromBlockchainInfo(
+    await bitcoinRpc("getblockchaininfo", []),
+  );
+  const finalElectrumCheckpoint = await registryAuditElectrumCheckpoint(
+    initialTip,
+  );
+  if (
+    before.snapshotSha256 !== after.snapshotSha256 ||
+    !finalTip ||
+    finalTip.height !== initialTip.height ||
+    finalTip.blockHash !== initialTip.blockHash ||
+    registryAuditProjectionSha256(finalElectrumCheckpoint) !==
+      registryAuditProjectionSha256(initialElectrumCheckpoint)
+  ) {
+    const error = new Error(
+      "The Core checkpoint or Electrum registry history changed while audit coverage was being built.",
+    );
+    error.statusCode = 503;
+    throw error;
+  }
+
+  const hydratedPendingTxids = pendingTransactions
+    .map(transactionTxid)
+    .filter(Boolean)
+    .sort();
+  if (
+    hydratedPendingTxids.length !== before.pendingTxids.length ||
+    txidSetSha256(hydratedPendingTxids) !==
+      txidSetSha256(before.pendingTxids)
+  ) {
+    const error = new Error(
+      "Exact ID registry pending transaction hydration was partial.",
+    );
+    error.statusCode = 503;
+    throw error;
+  }
+
+  const confirmedHistory = new Set(before.confirmedTxids);
+  const observedPending = new Set(before.pendingTxids);
+  if (
+    registryProjection.confirmedRecords.some(
+      (record) =>
+        !confirmedHistory.has(record.txid) ||
+        !confirmedHistory.has(record.lastEventTxid),
+    ) ||
+    chainProjection.events.some(
+      (event) => !confirmedHistory.has(event.txid),
+    ) ||
+    [...registryProjection.pendingRecords, ...registryProjection.pendingEvents]
+      .some((item) => !observedPending.has(item.txid))
+  ) {
+    const error = new Error(
+      "The exact relational ID projection is not a subset of the stable Electrum registry observation.",
+    );
+    error.statusCode = 503;
+    throw error;
+  }
+  const readFence = registryAuditReadFence({
+    checkpoint: initialTip,
+    coverage: before,
+    electrumCheckpoint: initialElectrumCheckpoint,
+    indexAuditFence: rawReplay.indexAudit.fence,
+    pendingMempoolTimeSha256,
+    registryProjectionSha256: registryProjection.projectionSha256,
+    relationalRowsSha256: attemptParity.relationalRowsSha256,
+  });
+
+  return {
+    auditedAt: new Date().toISOString(),
+    coverage: {
+      confirmedComplete: true,
+      confirmedTxidCount: before.confirmedTxids.length,
+      confirmedTxids: before.confirmedTxids,
+      confirmedTxidsSha256: txidSetSha256(before.confirmedTxids),
+      electrumHistoryEntryCount: before.entries.length,
+      lifecycleParity: {
+        canonicalRawClosingStateSha256:
+          rawReplay.closingStateSha256 || null,
+        canonicalRawReplayBlockCount: rawReplay.replayBlockCount,
+        canonicalRawReplayBlockPaging:
+          "all-transition-discovered-pwid-blocks;bounded-page-recompute",
+        canonicalRawReplayDescriptorSha256:
+          rawReplay.replayDescriptorSha256 || null,
+        canonicalSemantics:
+          "legacy-idRegistryStateFromTransactions+post-activation-raw-block-sequencer",
+        chainReplayVerified: true,
+        projectionSha256: chainProjection.projectionSha256,
+        relationalClosingStateSha256:
+          rawReplay.closingStateSha256
+            ? relationalClosingStateSha256
+            : null,
+      },
+      pwidAttemptParity: {
+        ...attemptParity,
+        invalidOutcomeSemantics:
+          "post-activation-canonical-raw-replay-rejection;pre-activation-qualified-legacy",
+        mixedOutcomeRowsQualifiedAs:
+          "pre-activation-same-carrier-contradictory-diagnostic-rows-only",
+      },
+      readFence,
+      pendingObservation: {
+        completeWithinScope: true,
+        coreMembershipProven: true,
+        coreMempoolTimeCount: pendingMempoolTimes.length,
+        coreMempoolTimeSha256: pendingMempoolTimeSha256,
+        fenced: true,
+        scope: "registry-address-touching-electrum-observation",
+        source: "electrum-address-history+bitcoin-core-membership",
+        wholeMempoolComplete: false,
+      },
+      pendingTxidCount: before.pendingTxids.length,
+      pendingTxids: before.pendingTxids,
+      pendingTxidsSha256: txidSetSha256(before.pendingTxids),
+      snapshotSha256: before.snapshotSha256,
+    },
+    network,
+    pendingTransactions,
+    registryAddress,
+    registryProjection,
+    source: `electrum://${ELECTRUM_HOST}:${ELECTRUM_PORT}+bitcoin-core`,
+  };
+}
+
+async function registryAuditCorePendingTimeProjection(txids, label) {
+  const values = await mapWithConcurrency(
+    txids,
+    Math.min(2, Math.max(1, TX_FETCH_CONCURRENCY)),
+    async (txid) => {
+      const entry = await bitcoinRpc("getmempoolentry", [txid]);
+      if (!entry?.ok || !entry.result || typeof entry.result !== "object") {
+        throw new Error(`${label} lost pending registry transaction ${txid}.`);
+      }
+      return {
+        mempoolTime: registryAuditInteger(
+          entry.result.time,
+          `${label} transaction ${txid} mempool time`,
+          1,
+        ),
+        txid: registryAuditTxid(txid, `${label} pending transaction`),
+      };
+    },
+  );
+  return values.sort((left, right) =>
+    compareCanonicalUtf8(left.txid, right.txid),
+  );
+}
+
+async function buildInternalIdRegistryAuditFencePayload(network) {
+  const registryAddress = registryAddressForNetwork(network);
+  if (network !== "livenet" || !registryAddress) {
+    const error = new Error(
+      "Exact ID registry audit fencing is available only for livenet.",
+    );
+    error.statusCode = 400;
+    throw error;
+  }
+  const initialTip = exactCoreTipFromBlockchainInfo(
+    await bitcoinRpc("getblockchaininfo", []),
+  );
+  if (!initialTip) {
+    throw new Error("Bitcoin Core exact tip is unavailable for the ID audit fence.");
+  }
+  const initialElectrumCheckpoint = await registryAuditElectrumCheckpoint(
+    initialTip,
+  );
+  const before = electrumAddressHistoryCoverage(
+    await fetchExactAddressHistoryFromElectrum(registryAddress, network),
+  );
+  if (before.pendingTxids.length > ID_REGISTRY_AUDIT_MAX_PENDING_TXS) {
+    throw new Error("ID registry audit pending fence exceeds its live bound.");
+  }
+  const initialPendingTimes = await registryAuditCorePendingTimeProjection(
+    before.pendingTxids,
+    "Initial ID audit fence",
+  );
+  const [registryPayload, indexAudit] = await Promise.all([
+    proofIndexRegistryPayload(network, {
+      expectedHash: initialTip.blockHash,
+      expectedHeight: initialTip.height,
+      registryAddress,
+    }),
+    proofIndexIdRegistryAuditStream(network, {
+      expectedHash: initialTip.blockHash,
+      expectedHeight: initialTip.height,
+      verifyFinalFence: false,
+    }),
+  ]);
+  const registryProjection = registryAuditProjection(
+    registryPayload,
+    initialTip,
+  );
+  if (!indexAudit) {
+    throw new Error("The lightweight ID relational fence is unavailable.");
+  }
+  const finalIndexAudit = await proofIndexIdRegistryAuditStream(network, {
+    expectedHash: initialTip.blockHash,
+    expectedHeight: initialTip.height,
+    verifyFinalFence: false,
+  });
+  if (!finalIndexAudit) {
+    throw new Error("The final lightweight ID relational fence is unavailable.");
+  }
+  assertIdRegistryAuditFinalFence(indexAudit.fence, finalIndexAudit.fence);
+  const finalPendingTimes = await registryAuditCorePendingTimeProjection(
+    before.pendingTxids,
+    "Final ID audit fence",
+  );
+  const after = electrumAddressHistoryCoverage(
+    await fetchExactAddressHistoryFromElectrum(registryAddress, network),
+  );
+  const finalTip = exactCoreTipFromBlockchainInfo(
+    await bitcoinRpc("getblockchaininfo", []),
+  );
+  const finalElectrumCheckpoint = await registryAuditElectrumCheckpoint(
+    initialTip,
+  );
+  const pendingMempoolTimeSha256 = registryAuditProjectionSha256(
+    initialPendingTimes,
+  );
+  if (
+    registryAuditProjectionSha256(finalPendingTimes) !==
+      pendingMempoolTimeSha256 ||
+    before.snapshotSha256 !== after.snapshotSha256 ||
+    !finalTip ||
+    finalTip.height !== initialTip.height ||
+    finalTip.blockHash !== initialTip.blockHash ||
+    registryAuditProjectionSha256(finalElectrumCheckpoint) !==
+      registryAuditProjectionSha256(initialElectrumCheckpoint)
+  ) {
+    const error = new Error(
+      "The Core/Electrum state changed while the lightweight ID audit fence was sampled.",
+    );
+    error.statusCode = 503;
+    throw error;
+  }
+  return {
+    network,
+    readFence: registryAuditReadFence({
+      checkpoint: initialTip,
+      coverage: before,
+      electrumCheckpoint: initialElectrumCheckpoint,
+      indexAuditFence: indexAudit.fence,
+      pendingMempoolTimeSha256,
+      registryProjectionSha256: registryProjection.projectionSha256,
+      relationalRowsSha256: indexAudit.fence.relationalRows.sha256,
+    }),
+    source:
+      "electrum+bitcoin-core+proof-indexer-lightweight-id-registry-fence",
+  };
+}
+
+const ID_REGISTRY_AUDIT_INFLIGHT = new Map();
+const ID_REGISTRY_AUDIT_FENCE_INFLIGHT = new Map();
+
+async function internalIdRegistryAuditPayload(network) {
+  if (ID_REGISTRY_AUDIT_INFLIGHT.has(network)) {
+    return ID_REGISTRY_AUDIT_INFLIGHT.get(network);
+  }
+  const promise = buildInternalIdRegistryAuditPayload(network)
+    .catch((error) => {
+      if (!Number.isSafeInteger(error?.statusCode)) {
+        error.statusCode = 503;
+      }
+      throw error;
+    })
+    .finally(() => {
+      ID_REGISTRY_AUDIT_INFLIGHT.delete(network);
+    });
+  ID_REGISTRY_AUDIT_INFLIGHT.set(network, promise);
+  return promise;
+}
+
+async function internalIdRegistryAuditFencePayload(network) {
+  if (ID_REGISTRY_AUDIT_FENCE_INFLIGHT.has(network)) {
+    return ID_REGISTRY_AUDIT_FENCE_INFLIGHT.get(network);
+  }
+  const promise = buildInternalIdRegistryAuditFencePayload(network)
+    .catch((error) => {
+      if (!Number.isSafeInteger(error?.statusCode)) {
+        error.statusCode = 503;
+      }
+      throw error;
+    })
+    .finally(() => {
+      ID_REGISTRY_AUDIT_FENCE_INFLIGHT.delete(network);
+    });
+  ID_REGISTRY_AUDIT_FENCE_INFLIGHT.set(network, promise);
+  return promise;
+}
+
 async function electrumPendingScripthashEntries(scriptHash) {
   try {
     const entries = await electrumRequest(
@@ -66360,6 +69770,34 @@ async function handleRequest(request, response) {
       return;
     }
 
+    if (url.pathname === "/api/v1/internal/id-registry-audit-fence") {
+      if (!internalVerifierRequestAllowed(request)) {
+        errorResponse(response, 404, "Not found.");
+        return;
+      }
+      jsonResponse(
+        response,
+        200,
+        await internalIdRegistryAuditFencePayload(network),
+        "no-store",
+      );
+      return;
+    }
+
+    if (url.pathname === "/api/v1/internal/id-registry-audit") {
+      if (!internalVerifierRequestAllowed(request)) {
+        errorResponse(response, 404, "Not found.");
+        return;
+      }
+      jsonResponse(
+        response,
+        200,
+        await internalIdRegistryAuditPayload(network),
+        "no-store",
+      );
+      return;
+    }
+
     if (url.pathname === "/api/v1/internal/id-verifier") {
       if (!internalVerifierRequestAllowed(request)) {
         errorResponse(response, 404, "Not found.");
@@ -67664,7 +71102,10 @@ async function handleRequest(request, response) {
         200,
         addressPath === "txs/mempool"
           ? await fetchAddressMempoolTransactions(address, network)
-          : await fetchAddressTransactionsPage(address, network, addressPath),
+          : await fetchAddressTransactionsPage(address, network, addressPath, {
+              allowCanonicalFallback: authenticatedLoopbackRead,
+              forceCanonicalFallback: authenticatedLoopbackRead,
+            }),
         "no-store",
       );
       return;

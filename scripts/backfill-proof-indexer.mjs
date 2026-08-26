@@ -9,6 +9,8 @@ import {
   q8TextFromDecimal,
 } from "../server/bond-units.mjs";
 import {
+  CANONICAL_OP_RETURN_TEXT_STORAGE_INVALID,
+  canonicalPostgresSafeJsonValue,
   canonicalRawProtocolRecordSetFromTransaction,
   canonicalProtocolCandidateFromOutput,
 } from "../server/canonical-op-return.mjs";
@@ -102,6 +104,7 @@ import {
   WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS as WORK_AMO_USD_QUOTE_REGISTRY_ADDRESS,
   WORK_AMO_V5_DECLARATION_TXID,
   WORK_AMO_V5_EVENT_SET_COMMITMENT_MODEL,
+  WORK_AMO_V5_ID_REGISTRY_ADDRESS,
   WORK_AMO_V5_PAYLOAD_COMMITMENT_MODEL,
   WORK_AMO_V5_STATE_COMMITMENT_MODEL,
   WORK_AMO_V5_V1_ACTIVATION_HEIGHT as WORK_AMO_V1_ACTIVATION_HEIGHT,
@@ -473,6 +476,242 @@ const REPAIR_EVENT_RELATIONS = /^(?:1|true|yes)$/iu.test(
 const REPAIR_EVENT_RELATIONS_ONLY = process.argv.includes(
   "--repair-event-relations",
 );
+const REPAIR_CANONICAL_EVENT_PARENT_METADATA_ONLY = process.argv.includes(
+  "--repair-canonical-event-parent-metadata",
+);
+const APPLY_CANONICAL_EVENT_PARENT_METADATA_REPAIR = /^(?:1|true|yes)$/iu.test(
+  String(
+    process.env.POW_INDEX_REPAIR_CANONICAL_EVENT_PARENT_METADATA_APPLY ?? "",
+  ),
+);
+const CANONICAL_EVENT_PARENT_METADATA_REPAIR_TARGETS = Object.freeze([
+  Object.freeze({
+    blockHash:
+      "0000000000000000000217a2e759c9143db1946b6a49ddf6a07c2c59b7e9341c",
+    blockHeight: 962957,
+    blockIndex: 933,
+    blockTime: "2026-08-17T23:10:20.000Z",
+    blockTimeEpoch: 1787008220,
+    eventId: 3612878,
+    protocolVout: 2,
+    recordOrdinal: 1,
+    txid: "b587b787ad7a621e6096ba6b77c162793c37a61cb5b2a981c6ff6dd875a8203a",
+  }),
+  Object.freeze({
+    blockHash:
+      "00000000000000000001144bf4b8564e5989fcb39edaaef234c14a8c1b02f98a",
+    blockHeight: 962978,
+    blockIndex: 872,
+    blockTime: "2026-08-18T03:16:13.000Z",
+    blockTimeEpoch: 1787022973,
+    eventId: 3612887,
+    protocolVout: 2,
+    recordOrdinal: 1,
+    txid: "431cea7dc3c6f9136ebc5cd259a7e436580fe1234c265e0e43e7c55b1e260a07",
+  }),
+  Object.freeze({
+    blockHash:
+      "00000000000000000001528373fb72e26a77f97b5935fbfc62f180fd05ff784a",
+    blockHeight: 962983,
+    blockIndex: 1783,
+    blockTime: "2026-08-18T03:50:02.000Z",
+    blockTimeEpoch: 1787025002,
+    eventId: 3612889,
+    protocolVout: 2,
+    recordOrdinal: 1,
+    txid: "d735596cf0281f617905a386c1d0a1a4363684593a83e9a54d1496c3192bdbf5",
+  }),
+  Object.freeze({
+    blockHash:
+      "0000000000000000000007ffdb84d26345df97f1fa2d5dc6c6c7fd8200da4760",
+    blockHeight: 963074,
+    blockIndex: 3423,
+    blockTime: "2026-08-18T16:55:14.000Z",
+    blockTimeEpoch: 1787072114,
+    eventId: 3631537,
+    protocolVout: 2,
+    recordOrdinal: 1,
+    txid: "d097aaba4990b6b98574765349891dd19828df4e12182ec9db68ecb8da0d10c9",
+  }),
+  Object.freeze({
+    blockHash:
+      "0000000000000000000180d7b207828ee450fb6384fa44279da19e51f0719b7e",
+    blockHeight: 963361,
+    blockIndex: 2288,
+    blockTime: "2026-08-20T23:38:20.000Z",
+    blockTimeEpoch: 1787269100,
+    eventId: 3708179,
+    protocolVout: 2,
+    recordOrdinal: 1,
+    txid: "5b2cf523d4e67c9f3427aca951a13daa3da94595051be4e10fc767537effc8d2",
+  }),
+  Object.freeze({
+    blockHash:
+      "00000000000000000001501abea1ab7f4bf9298e611aaf03ba9c146dbdd4aebb",
+    blockHeight: 963628,
+    blockIndex: 4126,
+    blockTime: "2026-08-22T19:42:12.000Z",
+    blockTimeEpoch: 1787427732,
+    eventId: 3753313,
+    protocolVout: 2,
+    recordOrdinal: 1,
+    txid: "3ce256fa95758a6ed58e00aa8f90644601f1c5f50d50c5a285aa23d479256284",
+  }),
+]);
+const REPAIR_CANONICAL_ID_AMOUNT_PROJECTION_ONLY = process.argv.includes(
+  "--repair-canonical-id-amount-projection",
+);
+const APPLY_CANONICAL_ID_AMOUNT_PROJECTION_REPAIR = /^(?:1|true|yes)$/iu.test(
+  String(
+    process.env.POW_INDEX_REPAIR_CANONICAL_ID_AMOUNT_PROJECTION_APPLY ?? "",
+  ),
+);
+export const CANONICAL_ID_AMOUNT_PROJECTION_REPAIR_TARGETS = Object.freeze([
+  Object.freeze({
+    amountSats: "1000",
+    blockHash:
+      "000000000000000000011609b5476622bc279ca9fedea8852cb62bcb65776df2",
+    blockHeight: 960117,
+    blockIndex: 2174,
+    blockTime: "2026-07-29T14:28:24.000Z",
+    blockTimeEpoch: 1785335304,
+    eventId: 3125758,
+    paymentVout: 0,
+    protocolVout: 1,
+    rawPayloadSha256:
+      "f1ec6473552d40b67678db3e31fdb1ca31710c9b9a60c8c14cd889464c74b700",
+    recordOrdinal: 0,
+    txid: "a1a58faef3a6ece598a5efb34545ee098cc09a2739cd68d458eafc6bc1e1f9dc",
+  }),
+  Object.freeze({
+    amountSats: "1000",
+    blockHash:
+      "000000000000000000003f090dc1780d3d4b0330214a49ff629d26cff3e93b9d",
+    blockHeight: 961797,
+    blockIndex: 5646,
+    blockTime: "2026-08-10T00:02:36.000Z",
+    blockTimeEpoch: 1786320156,
+    eventId: 3356127,
+    paymentVout: 0,
+    protocolVout: 1,
+    rawPayloadSha256:
+      "84d01d4a09d4bd94bf297d2f849d6d6ffcf8c698801df4b393e380055e9a338c",
+    recordOrdinal: 0,
+    txid: "2c25ff77097bea520f18d7edf5f1264855255ab2be5e4cd2b9ae3a2ca8cef8ea",
+  }),
+  Object.freeze({
+    amountSats: "1000",
+    blockHash:
+      "000000000000000000003f090dc1780d3d4b0330214a49ff629d26cff3e93b9d",
+    blockHeight: 961797,
+    blockIndex: 5675,
+    blockTime: "2026-08-10T00:02:36.000Z",
+    blockTimeEpoch: 1786320156,
+    eventId: 3356128,
+    paymentVout: 0,
+    protocolVout: 1,
+    rawPayloadSha256:
+      "add4955fef28258060acaa1a0649a530436e9a29166a4fdf1170f2d920353ae3",
+    recordOrdinal: 0,
+    txid: "5a8f6d262e47432808866ea372ed855b7c3800f7242a42115b605ee463565cd8",
+  }),
+  Object.freeze({
+    amountSats: "1000",
+    blockHash:
+      "000000000000000000003f090dc1780d3d4b0330214a49ff629d26cff3e93b9d",
+    blockHeight: 961797,
+    blockIndex: 5676,
+    blockTime: "2026-08-10T00:02:36.000Z",
+    blockTimeEpoch: 1786320156,
+    eventId: 3356129,
+    paymentVout: 0,
+    protocolVout: 1,
+    rawPayloadSha256:
+      "0e357bce849a27f165171faf09c2e44c426601907574f22025288ab018ca9cb8",
+    recordOrdinal: 0,
+    txid: "d1c293e6fb37a8030cfd1fcab57d21792526a08bd83c4e68d454c7b8a787d53c",
+  }),
+  Object.freeze({
+    amountSats: "1000",
+    blockHash:
+      "000000000000000000003f090dc1780d3d4b0330214a49ff629d26cff3e93b9d",
+    blockHeight: 961797,
+    blockIndex: 5677,
+    blockTime: "2026-08-10T00:02:36.000Z",
+    blockTimeEpoch: 1786320156,
+    eventId: 3356130,
+    paymentVout: 0,
+    protocolVout: 1,
+    rawPayloadSha256:
+      "2d2f242cc47ecf4a373408599c25100f7c735a35652819969b56fd9b8da3074f",
+    recordOrdinal: 0,
+    txid: "2960ef1fd731fe2db615fee45c17190a6ff73c39e90b36558e3ab26c9f3d3141",
+  }),
+  Object.freeze({
+    amountSats: "1000",
+    blockHash:
+      "000000000000000000003f090dc1780d3d4b0330214a49ff629d26cff3e93b9d",
+    blockHeight: 961797,
+    blockIndex: 5678,
+    blockTime: "2026-08-10T00:02:36.000Z",
+    blockTimeEpoch: 1786320156,
+    eventId: 3356131,
+    paymentVout: 0,
+    protocolVout: 1,
+    rawPayloadSha256:
+      "28d018465c2a5fcd0251de8f826cf81381378b82e88e77a13c43df31b4fe50d8",
+    recordOrdinal: 0,
+    txid: "7bb8b148a98668b72197f43f90e9335fec239a423888106cd581f238e7459c68",
+  }),
+  Object.freeze({
+    amountSats: "1000",
+    blockHash:
+      "000000000000000000003f090dc1780d3d4b0330214a49ff629d26cff3e93b9d",
+    blockHeight: 961797,
+    blockIndex: 5679,
+    blockTime: "2026-08-10T00:02:36.000Z",
+    blockTimeEpoch: 1786320156,
+    eventId: 3356132,
+    paymentVout: 0,
+    protocolVout: 1,
+    rawPayloadSha256:
+      "0a41c8154eb48941dc6474f15111da07b266755485161ddd196828b1272c9664",
+    recordOrdinal: 0,
+    txid: "8396a858f5509dbf8a42eeaf01a22e589024e3e96ecda4a9c5ae75de1d866efd",
+  }),
+  Object.freeze({
+    amountSats: "1000",
+    blockHash:
+      "000000000000000000003f090dc1780d3d4b0330214a49ff629d26cff3e93b9d",
+    blockHeight: 961797,
+    blockIndex: 5700,
+    blockTime: "2026-08-10T00:02:36.000Z",
+    blockTimeEpoch: 1786320156,
+    eventId: 3356133,
+    paymentVout: 0,
+    protocolVout: 1,
+    rawPayloadSha256:
+      "4ce39cc0e79f0c091e41efbcd165e8387c6ad75669b6ad4de8e29e42fcfbb3ac",
+    recordOrdinal: 0,
+    txid: "cdf467c83c0c71b094513e329b474010294fd2fb83b197b3208acc55540c9c3d",
+  }),
+  Object.freeze({
+    amountSats: "1000",
+    blockHash:
+      "000000000000000000021ee1b7ac31fc894abb6b51d67a565cfe2e47b33b16fa",
+    blockHeight: 963446,
+    blockIndex: 866,
+    blockTime: "2026-08-21T13:24:02.000Z",
+    blockTimeEpoch: 1787318642,
+    eventId: 3729078,
+    paymentVout: 0,
+    protocolVout: 1,
+    rawPayloadSha256:
+      "2f11f601c217586aab62af6387ab031819a67b60063f8ba0c88be2487f918912",
+    recordOrdinal: 0,
+    txid: "5afa0de40ddfb8a83b0ed0f653094371deae6f41f6828fb49f316e32f1549a0a",
+  }),
+]);
 const REPAIR_ID_TXIDS = [
   ...new Set(
     String(process.env.POW_INDEX_REPAIR_ID_TXIDS ?? "")
@@ -692,6 +931,21 @@ function assertCanonicalRebuildConfiguration() {
   const repairEventRelationsOnly =
     typeof REPAIR_EVENT_RELATIONS_ONLY !== "undefined" &&
     REPAIR_EVENT_RELATIONS_ONLY;
+  const repairCanonicalEventParentMetadataOnly =
+    typeof REPAIR_CANONICAL_EVENT_PARENT_METADATA_ONLY !== "undefined" &&
+    REPAIR_CANONICAL_EVENT_PARENT_METADATA_ONLY;
+  const applyCanonicalEventParentMetadataRepair =
+    typeof APPLY_CANONICAL_EVENT_PARENT_METADATA_REPAIR !== "undefined" &&
+    APPLY_CANONICAL_EVENT_PARENT_METADATA_REPAIR;
+  const repairCanonicalIdAmountProjectionOnly =
+    typeof REPAIR_CANONICAL_ID_AMOUNT_PROJECTION_ONLY !== "undefined" &&
+    REPAIR_CANONICAL_ID_AMOUNT_PROJECTION_ONLY;
+  const applyCanonicalIdAmountProjectionRepair =
+    typeof APPLY_CANONICAL_ID_AMOUNT_PROJECTION_REPAIR !== "undefined" &&
+    APPLY_CANONICAL_ID_AMOUNT_PROJECTION_REPAIR;
+  const rebuildCreditBalancesOnly =
+    typeof REBUILD_CREDIT_BALANCES_ONLY !== "undefined" &&
+    REBUILD_CREDIT_BALANCES_ONLY;
   const exclusiveMaintenanceModes = [
     HYDRATE_TRANSACTION_DETAILS_ONLY,
     PREPARE_CANONICAL_REBUILD_ONLY,
@@ -700,8 +954,11 @@ function assertCanonicalRebuildConfiguration() {
     REPAIR_ID_TXIDS_ONLY,
     REPAIR_INCB_ISSUANCE_ONLY,
     repairEventRelationsOnly,
+    repairCanonicalEventParentMetadataOnly,
+    repairCanonicalIdAmountProjectionOnly,
     repairCanonicalMailProjectionOnly,
     REPAIR_WORK_PARTICIPANTS_ONLY,
+    rebuildCreditBalancesOnly,
     AUDIT_WORK_ATOMS_ONLY,
     MIGRATE_WORK_ATOMS_ONLY,
     repairWorkAtomicEventsOnly,
@@ -722,6 +979,38 @@ function assertCanonicalRebuildConfiguration() {
   if (repairEventRelationsOnly !== REPAIR_EVENT_RELATIONS) {
     throw new Error(
       "--repair-event-relations requires POW_INDEX_REPAIR_EVENT_RELATIONS=1, and the apply flag is invalid without that exclusive mode.",
+    );
+  }
+  if (
+    applyCanonicalEventParentMetadataRepair &&
+    !repairCanonicalEventParentMetadataOnly
+  ) {
+    throw new Error(
+      "POW_INDEX_REPAIR_CANONICAL_EVENT_PARENT_METADATA_APPLY is invalid without --repair-canonical-event-parent-metadata.",
+    );
+  }
+  if (
+    repairCanonicalEventParentMetadataOnly &&
+    (CANONICAL_REBUILD || NETWORK !== "livenet" || !BITCOIN_RPC_URL)
+  ) {
+    throw new Error(
+      "--repair-canonical-event-parent-metadata requires NETWORK=livenet, canonical rebuild mode off, and BITCOIN_RPC_URL.",
+    );
+  }
+  if (
+    applyCanonicalIdAmountProjectionRepair &&
+    !repairCanonicalIdAmountProjectionOnly
+  ) {
+    throw new Error(
+      "POW_INDEX_REPAIR_CANONICAL_ID_AMOUNT_PROJECTION_APPLY is invalid without --repair-canonical-id-amount-projection.",
+    );
+  }
+  if (
+    repairCanonicalIdAmountProjectionOnly &&
+    (CANONICAL_REBUILD || NETWORK !== "livenet" || !BITCOIN_RPC_URL)
+  ) {
+    throw new Error(
+      "--repair-canonical-id-amount-projection requires NETWORK=livenet, canonical rebuild mode off, and BITCOIN_RPC_URL.",
     );
   }
   if (MIGRATE_WORK_ATOMS_ONLY && !APPLY_WORK_ATOMIC_MIGRATION) {
@@ -756,6 +1045,8 @@ function assertCanonicalRebuildConfiguration() {
       REPAIR_ID_TXIDS_ONLY ||
       REPAIR_INCB_ISSUANCE_ONLY ||
       repairEventRelationsOnly ||
+      repairCanonicalEventParentMetadataOnly ||
+      repairCanonicalIdAmountProjectionOnly ||
       REPAIR_WORK_PARTICIPANTS_ONLY ||
       AUDIT_WORK_ATOMS_ONLY ||
       MIGRATE_WORK_ATOMS_ONLY ||
@@ -813,6 +1104,8 @@ function assertCanonicalRebuildConfiguration() {
       REPAIR_ID_TXIDS_ONLY ||
       REPAIR_INCB_ISSUANCE_ONLY ||
       REPAIR_EVENT_RELATIONS_ONLY ||
+      repairCanonicalEventParentMetadataOnly ||
+      repairCanonicalIdAmountProjectionOnly ||
       REPAIR_WORK_PARTICIPANTS_ONLY ||
       CANONICAL_REBUILD)
   ) {
@@ -843,7 +1136,9 @@ function assertCanonicalRebuildConfiguration() {
       PREPARE_CANONICAL_PWT_RANGE_REPLAY_ONLY ||
       REPAIR_CANONICAL_TXIDS_ONLY ||
       REPAIR_INCB_ISSUANCE_ONLY ||
-      REPAIR_EVENT_RELATIONS_ONLY)
+      REPAIR_EVENT_RELATIONS_ONLY ||
+      repairCanonicalEventParentMetadataOnly ||
+      repairCanonicalIdAmountProjectionOnly)
   ) {
     throw new Error("Canonical ID repair and replay preparation are exclusive.");
   }
@@ -859,6 +1154,8 @@ function assertCanonicalRebuildConfiguration() {
       REPAIR_CANONICAL_TXIDS_ONLY ||
       REPAIR_ID_TXIDS_ONLY ||
       REPAIR_EVENT_RELATIONS_ONLY ||
+      repairCanonicalEventParentMetadataOnly ||
+      repairCanonicalIdAmountProjectionOnly ||
       REPAIR_WORK_PARTICIPANTS_ONLY ||
       CANONICAL_REBUILD)
   ) {
@@ -1064,6 +1361,12 @@ function pendingOnlyBackfillMaintenanceMode() {
   const repairEventRelationsOnly =
     typeof REPAIR_EVENT_RELATIONS_ONLY !== "undefined" &&
     REPAIR_EVENT_RELATIONS_ONLY;
+  const repairCanonicalEventParentMetadataOnly =
+    typeof REPAIR_CANONICAL_EVENT_PARENT_METADATA_ONLY !== "undefined" &&
+    REPAIR_CANONICAL_EVENT_PARENT_METADATA_ONLY;
+  const repairCanonicalIdAmountProjectionOnly =
+    typeof REPAIR_CANONICAL_ID_AMOUNT_PROJECTION_ONLY !== "undefined" &&
+    REPAIR_CANONICAL_ID_AMOUNT_PROJECTION_ONLY;
   return (
     HYDRATE_TRANSACTION_DETAILS_ONLY ||
     PREPARE_CANONICAL_REBUILD_ONLY ||
@@ -1072,6 +1375,8 @@ function pendingOnlyBackfillMaintenanceMode() {
     REPAIR_CANONICAL_TXIDS_ONLY ||
     REPAIR_INCB_ISSUANCE_ONLY ||
     repairEventRelationsOnly ||
+    repairCanonicalEventParentMetadataOnly ||
+    repairCanonicalIdAmountProjectionOnly ||
     repairCanonicalMailProjectionOnly ||
     REPAIR_WORK_PARTICIPANTS ||
     REPAIR_MINT_MINTERS ||
@@ -1365,6 +1670,12 @@ async function canonicalPwtRangeReplayRuntime(client) {
   const repairEventRelationsOnly =
     typeof REPAIR_EVENT_RELATIONS_ONLY !== "undefined" &&
     REPAIR_EVENT_RELATIONS_ONLY;
+  const repairCanonicalEventParentMetadataOnly =
+    typeof REPAIR_CANONICAL_EVENT_PARENT_METADATA_ONLY !== "undefined" &&
+    REPAIR_CANONICAL_EVENT_PARENT_METADATA_ONLY;
+  const repairCanonicalIdAmountProjectionOnly =
+    typeof REPAIR_CANONICAL_ID_AMOUNT_PROJECTION_ONLY !== "undefined" &&
+    REPAIR_CANONICAL_ID_AMOUNT_PROJECTION_ONLY;
   const rebuild = await proofIndexerMetaValue(
     client,
     CANONICAL_REBUILD_META_KEY,
@@ -1405,6 +1716,8 @@ async function canonicalPwtRangeReplayRuntime(client) {
     REPAIR_ID_TXIDS_ONLY ||
     REPAIR_INCB_ISSUANCE_ONLY ||
     repairEventRelationsOnly ||
+    repairCanonicalEventParentMetadataOnly ||
+    repairCanonicalIdAmountProjectionOnly ||
     repairCanonicalMailProjectionOnly ||
     REPAIR_WORK_PARTICIPANTS_ONLY ||
     DB_SUMMARY_REPAIR ||
@@ -3151,6 +3464,41 @@ function blockEventTime(tx) {
     : new Date().toISOString();
 }
 
+export function canonicalReplayParentTime(prepared, position, txid) {
+  const rawTx = prepared?.rawTx;
+  const canonicalTxid = String(txid ?? "").trim().toLowerCase();
+  const rawTxid = String(rawTx?.txid ?? "").trim().toLowerCase();
+  const rawBlockHash = String(rawTx?._powBlockHash ?? "")
+    .trim()
+    .toLowerCase();
+  const positionBlockHash = String(position?.blockHash ?? "")
+    .trim()
+    .toLowerCase();
+  const blockTimeEpoch = Number(rawTx?.blocktime);
+  if (
+    !/^[0-9a-f]{64}$/u.test(canonicalTxid) ||
+    rawTxid !== canonicalTxid ||
+    !/^[0-9a-f]{64}$/u.test(rawBlockHash) ||
+    rawBlockHash !== positionBlockHash ||
+    Number(rawTx?.height) !== Number(position?.blockHeight) ||
+    Number(rawTx?._powBlockIndex) !==
+      Number(position?.blockTransactionIndex) ||
+    !Number.isSafeInteger(blockTimeEpoch) ||
+    blockTimeEpoch * 1000 < Date.UTC(2009, 0, 3, 18, 15, 5)
+  ) {
+    throw new Error(
+      `Canonical AMO derived replay item ${canonicalTxid || "unknown"} has no exact Core parent time and position.`,
+    );
+  }
+  const blockTime = new Date(blockTimeEpoch * 1000).toISOString();
+  if (Date.parse(blockTime) !== blockTimeEpoch * 1000) {
+    throw new Error(
+      `Canonical AMO derived replay item ${canonicalTxid} has an invalid Core parent time.`,
+    );
+  }
+  return blockTime;
+}
+
 function decodeBase64UrlText(value) {
   try {
     const normalized = String(value ?? "").replace(/-/gu, "+").replace(/_/gu, "/");
@@ -3158,10 +3506,27 @@ function decodeBase64UrlText(value) {
       Math.ceil(normalized.length / 4) * 4,
       "=",
     );
-    return Buffer.from(padded, "base64").toString("utf8");
+    const decoded = Buffer.from(padded, "base64").toString("utf8");
+    return decoded.includes("\u0000") ? "" : decoded;
   } catch {
     return "";
   }
+}
+
+function canonicalJsonValueContainsU0000(value) {
+  if (typeof value === "string") {
+    return value.includes("\u0000");
+  }
+  if (Array.isArray(value)) {
+    return value.some(canonicalJsonValueContainsU0000);
+  }
+  if (value && typeof value === "object") {
+    return Object.entries(value).some(
+      ([key, entry]) =>
+        key.includes("\u0000") || canonicalJsonValueContainsU0000(entry),
+    );
+  }
+  return false;
 }
 
 function decodeBase64UrlJson(value) {
@@ -3171,7 +3536,8 @@ function decodeBase64UrlJson(value) {
       Math.ceil(normalized.length / 4) * 4,
       "=",
     );
-    return JSON.parse(Buffer.from(padded, "base64").toString("utf8"));
+    const decoded = JSON.parse(Buffer.from(padded, "base64").toString("utf8"));
+    return canonicalJsonValueContainsU0000(decoded) ? null : decoded;
   } catch {
     return null;
   }
@@ -3205,7 +3571,10 @@ function decodeCanonicalBase64UrlJsonObject(value) {
       return null;
     }
     const decoded = JSON.parse(decodedText);
-    return decoded && typeof decoded === "object" && !Array.isArray(decoded)
+    return decoded &&
+      typeof decoded === "object" &&
+      !Array.isArray(decoded) &&
+      !canonicalJsonValueContainsU0000(decoded)
       ? decoded
       : null;
   } catch {
@@ -4039,6 +4408,44 @@ function invalidProtocolItem(item, reason) {
     reason,
     valid: false,
   };
+}
+
+function canonicalTextStorageInvalidItem(item) {
+  const rawParts = [
+    ...(Array.isArray(item?.workAmoV5ReplayRawWitness?.rawRecordParts)
+      ? item.workAmoV5ReplayRawWitness.rawRecordParts
+      : []),
+    ...(Array.isArray(item?.workAmoV5RawScriptWitness?.rawRecordParts)
+      ? item.workAmoV5RawScriptWitness.rawRecordParts
+      : []),
+  ];
+  return [
+    item?.reasonCode,
+    item?.workAmoV5RawDecodeReasonCode,
+    item?.workAmoV5RawScriptWitness?.reasonCode,
+    item?.workAmoV5ReplayOutcome?.reasonCode,
+    ...rawParts.flatMap((part) => [
+      part?.rawDecodeReasonCode,
+      part?.reasonCode,
+    ]),
+  ].some(
+    (reasonCode) =>
+      String(reasonCode ?? "").trim() ===
+      CANONICAL_OP_RETURN_TEXT_STORAGE_INVALID,
+  );
+}
+
+function canonicalProtocolItemForPostgres(item) {
+  if (!canonicalTextStorageInvalidItem(item)) {
+    return item;
+  }
+  const safe = canonicalPostgresSafeJsonValue(item);
+  if (!safe || typeof safe !== "object" || Array.isArray(safe)) {
+    throw new Error(
+      "Canonical storage-invalid protocol item has no persistable projection.",
+    );
+  }
+  return safe;
 }
 
 function canonicalIntegerText(value, { positive = false } = {}) {
@@ -11684,6 +12091,7 @@ async function reconcileLegacyPendingEventPosition(
 }
 
 async function upsertEvent(client, sourceLabel, item) {
+  item = canonicalProtocolItemForPostgres(item);
   const txid = itemTxid(item);
   const status = itemStatus(item);
   if (!txid) {
@@ -19859,6 +20267,180 @@ function workAmoV5ReplayProjectionFromOutput(output) {
   return projection;
 }
 
+export function workAmoV5PwidRegistryAttribution({
+  item,
+  rawTx,
+  replay,
+  valid,
+}) {
+  if (
+    normalizedLowerText(replay?.protocol) !== "pwid1" ||
+    replay?.rawCandidate !== true
+  ) {
+    return null;
+  }
+  const economicOutputs = replay?.stateDelta?.economicOutputs;
+  if (!Array.isArray(economicOutputs)) {
+    throw new Error(
+      "Canonical raw PWID replay has no immutable economic-output delta.",
+    );
+  }
+  const canonicalSemanticKind = (value) =>
+    normalizedLowerText(value).replace(/-invalid$/u, "");
+  const projection = workAmoV5ReplayProjectionFromOutput(replay?.output);
+  const semanticCandidates = [
+    projection?.kind,
+    replay?.outcome?.semanticKind,
+    item?.attemptedKind,
+    item?.kind,
+  ]
+    .map(canonicalSemanticKind)
+    .filter(Boolean);
+  const expectedByKind = new Map([
+    ["id-register", 1_000n],
+    ["id-update", 546n],
+    ["id-transfer", 546n],
+    ["id-list", 546n],
+    ["id-seal", 546n],
+    ["id-delist", 546n],
+    ["id-buy", 546n],
+  ]);
+  const semanticKind = semanticCandidates.find((kind) =>
+    expectedByKind.has(kind),
+  ) ?? semanticCandidates[0] ?? "";
+  const expectedAmountSats = expectedByKind.get(semanticKind) ?? null;
+  if (
+    valid === true &&
+    (
+      !expectedAmountSats ||
+      semanticCandidates.some((kind) =>
+        expectedByKind.has(kind) && kind !== semanticKind
+      )
+    )
+  ) {
+    throw new Error(
+      `Canonical raw PWID replay has a divergent semantic kind ${semanticKind || "unknown"}.`,
+    );
+  }
+
+  const exactPositiveSats = (value, label) => {
+    const text = String(value ?? "").trim();
+    if (!/^[1-9][0-9]*$/u.test(text)) {
+      throw new Error(`Canonical raw PWID ${label} is not an exact amount.`);
+    }
+    return BigInt(text);
+  };
+  const registryClaims = economicOutputs
+    .filter((output) => normalizedLowerText(output?.role) === "pwid-registry")
+    .map((output) => {
+      const vout = Number(output?.vout);
+      const protocolVout = Number(
+        replay?.position?.protocolVout ?? item?.protocolVout,
+      );
+      const attributedSats = exactPositiveSats(
+        output?.attributedSats,
+        "registry attribution",
+      );
+      const outputSats = exactPositiveSats(
+        output?.outputSats,
+        "registry output",
+      );
+      const physical = Array.isArray(rawTx?.vout) ? rawTx.vout[vout] : null;
+      if (
+        !Number.isSafeInteger(vout) ||
+        vout < 0 ||
+        !Number.isSafeInteger(protocolVout) ||
+        protocolVout < 0 ||
+        vout >= protocolVout ||
+        output?.address !== WORK_AMO_V5_ID_REGISTRY_ADDRESS ||
+        attributedSats > outputSats ||
+        !physical ||
+        addressFromVout(physical) !== WORK_AMO_V5_ID_REGISTRY_ADDRESS ||
+        satsFromVout(physical) !== outputSats ||
+        Number(physical?.n ?? vout) !== vout
+      ) {
+        throw new Error(
+          `Canonical raw PWID replay registry claim diverged at vout ${String(output?.vout ?? "unknown")}.`,
+        );
+      }
+      return {
+        address: WORK_AMO_V5_ID_REGISTRY_ADDRESS,
+        attributedSats: attributedSats.toString(),
+        outputSats: outputSats.toString(),
+        role: "pwid-registry",
+        vout,
+      };
+    });
+  if (
+    new Set(registryClaims.map((claim) => claim.vout)).size !==
+    registryClaims.length
+  ) {
+    throw new Error("Canonical raw PWID replay claims one registry vout twice.");
+  }
+  const attributedSats = registryClaims.reduce(
+    (total, claim) => total + BigInt(claim.attributedSats),
+    0n,
+  );
+  if (
+    (valid === true && attributedSats !== expectedAmountSats) ||
+    (
+      valid !== true &&
+      attributedSats > 0n &&
+      (!expectedAmountSats || attributedSats !== expectedAmountSats)
+    )
+  ) {
+    throw new Error(
+      `Canonical raw PWID replay registry attribution is ${attributedSats.toString()} instead of ${expectedAmountSats?.toString() ?? "zero"}.`,
+    );
+  }
+
+  if (valid === true) {
+    const contributionTotals = new Map();
+    for (const contribution of Array.isArray(
+      replay?.stateDelta?.baseContributions,
+    ) ? replay.stateDelta.baseContributions : []) {
+      const field = String(contribution?.field ?? "").trim();
+      const value = String(contribution?.value ?? "").trim();
+      if (!field || !/^(?:0|[1-9][0-9]*)$/u.test(value)) {
+        throw new Error(
+          "Canonical raw PWID replay has an invalid base contribution.",
+        );
+      }
+      contributionTotals.set(
+        field,
+        (contributionTotals.get(field) ?? 0n) + BigInt(value),
+      );
+    }
+    const expectedFlowField = [
+      "id-list",
+      "id-seal",
+      "id-delist",
+      "id-buy",
+    ].includes(semanticKind)
+      ? "idMarketplaceFeeSats"
+      : "computerEventFlowSats";
+    if (
+      contributionTotals.get(expectedFlowField) !== expectedAmountSats ||
+      (
+        semanticKind === "id-register" &&
+        contributionTotals.get("powids") !== 1n
+      )
+    ) {
+      throw new Error(
+        `Canonical raw PWID replay base contribution diverged for ${semanticKind}.`,
+      );
+    }
+  }
+
+  return {
+    amountSats: attributedSats.toString(),
+    registryAddress: WORK_AMO_V5_ID_REGISTRY_ADDRESS,
+    registryClaims,
+    semanticKind,
+    source: "canonical-work-amo-v5-state-delta",
+  };
+}
+
 function workAmoV5ReplayFrozenTerms(output) {
   for (const value of [
     output?.frozenTerms,
@@ -20276,6 +20858,13 @@ export function bindPreparedTransactionsToWorkAmoV5Replay(
       const replaySemanticKind = normalizedLowerText(
         projection.kind ?? item?.kind,
       ).replace(/-invalid$/u, "");
+      const replayParentTime = replay.rawCandidate === false
+        ? canonicalReplayParentTime(
+            prepared,
+            position.position,
+            txid,
+          )
+        : "";
       const replayListingField =
         replaySemanticKind === "token-listing-closed"
           ? "closedListing"
@@ -20346,6 +20935,16 @@ export function bindPreparedTransactionsToWorkAmoV5Replay(
               workAmoFrozenTerms: frozenTerms,
             }
           : {}),
+        ...(replayParentTime
+          ? {
+              blockTime: replayParentTime,
+              createdAt: replayParentTime,
+              timestamp: replayParentTime,
+              ...(replaySemanticKind.endsWith("-listing-closed")
+                ? { closedAt: replayParentTime }
+                : {}),
+            }
+          : {}),
       };
       if (valid) {
         const canonicalKind = String(
@@ -20378,6 +20977,24 @@ export function bindPreparedTransactionsToWorkAmoV5Replay(
           replay.rawCandidate === true;
         nextItem._workAmoV5ReplayBound = true;
       }
+      // Storage-invalid raw text must be neutralized before adding any
+      // deterministic enrichment. This keeps the byte witness intact while
+      // ensuring a later projection object cannot mask the invalid marker.
+      nextItem = canonicalProtocolItemForPostgres(nextItem);
+      const pwidRegistryAttribution = workAmoV5PwidRegistryAttribution({
+        item: nextItem,
+        rawTx: prepared?.rawTx,
+        replay,
+        valid,
+      });
+      if (pwidRegistryAttribution) {
+        nextItem = {
+          ...nextItem,
+          amountSats: pwidRegistryAttribution.amountSats,
+          workAmoV5PwidRegistryAttribution: pwidRegistryAttribution,
+        };
+      }
+      nextItem = canonicalProtocolItemForPostgres(nextItem);
       preparedPositions.add(position.key);
       replayByPosition.delete(position.key);
       return entry?.item
@@ -22398,6 +23015,30 @@ function canonicalWorkQ16ReadinessEpochCheckpoint(value) {
   return checkpoint.sha256 === sha256 ? { ...core, sha256 } : null;
 }
 
+function workQ16ReadinessEpochCheckpointCovers(published, current) {
+  const left = canonicalWorkQ16ReadinessEpochCheckpoint(published);
+  const right = canonicalWorkQ16ReadinessEpochCheckpoint(current);
+  if (!left || !right) {
+    return false;
+  }
+  return (
+    left.model === right.model &&
+    left.network === right.network &&
+    left.maxPreparedTransactions === right.maxPreparedTransactions &&
+    left.queueCount === right.queueCount &&
+    left.searchPath === right.searchPath &&
+    left.postmasterStartedAt === right.postmasterStartedAt &&
+    left.readinessEpochs.length === right.readinessEpochs.length &&
+    left.readinessEpochs.every(([shard, epoch], index) => {
+      const currentEpoch = right.readinessEpochs[index];
+      return (
+        currentEpoch?.[0] === shard &&
+        BigInt(currentEpoch[1]) >= BigInt(epoch)
+      );
+    })
+  );
+}
+
 async function readWorkQ16ReadinessEpochCheckpoint(client) {
   const result = await client.query(
     `
@@ -23665,6 +24306,8 @@ async function buildWorkQ16PendingStagePlan(
   { discoveredTxids, initialMempoolSnapshot },
 ) {
   const context = await workQ16PendingStageContext(client);
+  const currentReadinessEpoch =
+    await readWorkQ16ReadinessEpochCheckpointSnapshot(client);
   const mempoolMembership = new Set(initialMempoolSnapshot.txids);
   const priorMembershipTxids = context.parent.membershipTxids;
   const replayTxids = canonicalWorkQ16PendingTxids(
@@ -23790,6 +24433,13 @@ async function buildWorkQ16PendingStagePlan(
       context.attempt.witnessGeneratedAt ===
         context.parent.witness.generatedAt,
   );
+  const publishedAttemptCoversCurrentReadiness = Boolean(
+    context.attempt?.status === "published" &&
+      workQ16ReadinessEpochCheckpointCovers(
+        context.attempt.publicationReadinessEpochCheckpoint,
+        currentReadinessEpoch,
+      ),
+  );
   const parentConfirmedBaseMatchesCurrent = Boolean(
     parentStage.confirmedBaseCommitment?.tokenStateCommitment?.sha256 ===
       context.currentConfirmedBase.tokenStateCommitment.sha256 &&
@@ -23808,6 +24458,7 @@ async function buildWorkQ16PendingStagePlan(
   );
   const reusablePublishedWitness = Boolean(
     publishedAttemptBindsParent &&
+      publishedAttemptCoversCurrentReadiness &&
       parentConfirmedBaseMatchesCurrent &&
       !membershipChanged &&
       Number.isFinite(parentGeneratedAtMs) &&
@@ -29715,6 +30366,1346 @@ async function repairCanonicalIncbIssuance(client) {
   }
 }
 
+async function canonicalEventParentMetadataRepairCoreTarget(expected) {
+  const expectedBlockTime = new Date(
+    Number(expected?.blockTimeEpoch) * 1000,
+  ).toISOString();
+  if (
+    !Number.isSafeInteger(Number(expected?.eventId)) ||
+    !isHexTxid(expected?.txid) ||
+    !isHexTxid(expected?.blockHash) ||
+    !Number.isSafeInteger(Number(expected?.blockHeight)) ||
+    !Number.isSafeInteger(Number(expected?.blockIndex)) ||
+    !Number.isSafeInteger(Number(expected?.protocolVout)) ||
+    !Number.isSafeInteger(Number(expected?.recordOrdinal)) ||
+    !Number.isSafeInteger(Number(expected?.blockTimeEpoch)) ||
+    expectedBlockTime !== expected?.blockTime
+  ) {
+    throw new Error("Canonical event parent-metadata repair manifest is invalid.");
+  }
+
+  const raw = await bitcoinRpc("getrawtransaction", [expected.txid, true]);
+  const blockHash = String(raw?.blockhash ?? "").trim().toLowerCase();
+  if (
+    String(raw?.txid ?? "").trim().toLowerCase() !== expected.txid ||
+    Number(raw?.confirmations) <= 0 ||
+    blockHash !== expected.blockHash ||
+    Number(raw?.blocktime) !== expected.blockTimeEpoch
+  ) {
+    throw new Error(
+      `Canonical event parent-metadata repair target ${expected.eventId} is not confirmed at its pinned Core block and time.`,
+    );
+  }
+
+  const block = await bitcoinRpc("getblock", [blockHash, 2]);
+  assertCanonicalBlockEnvelope(block, expected.blockHeight, blockHash);
+  const canonicalBlockHash = String(
+    await bitcoinRpc("getblockhash", [expected.blockHeight]),
+  )
+    .trim()
+    .toLowerCase();
+  const matchingIndexes = block.tx.flatMap((candidate, index) =>
+    String(candidate?.txid ?? "").trim().toLowerCase() === expected.txid
+      ? [index]
+      : [],
+  );
+  if (
+    canonicalBlockHash !== expected.blockHash ||
+    Number(block?.time) !== expected.blockTimeEpoch ||
+    matchingIndexes.length !== 1 ||
+    matchingIndexes[0] !== expected.blockIndex
+  ) {
+    throw new Error(
+      `Canonical event parent-metadata repair target ${expected.eventId} changed exact Core position or time.`,
+    );
+  }
+  const blockTransaction = block.tx[expected.blockIndex];
+  const rawHash = String(raw?.hash ?? "").trim().toLowerCase();
+  const memberHash = String(blockTransaction?.hash ?? "")
+    .trim()
+    .toLowerCase();
+  if (
+    (rawHash && memberHash && rawHash !== memberHash) ||
+    (raw?.hex && blockTransaction?.hex && raw.hex !== blockTransaction.hex)
+  ) {
+    throw new Error(
+      `Canonical event parent-metadata repair target ${expected.eventId} differs from its exact Core block member.`,
+    );
+  }
+  const protocolMessages = protocolMessagesFromTx(blockTransaction).filter(
+    (message) => Number(message?.voutIndex) === expected.protocolVout,
+  );
+  if (
+    protocolMessages.length !== 1 ||
+    protocolMessages[0]?.decodeValid !== true ||
+    protocolMessages[0]?.prefix !== "pwt1:" ||
+    !String(protocolMessages[0]?.text ?? "").startsWith("pwt1:buy5:")
+  ) {
+    throw new Error(
+      `Canonical event parent-metadata repair target ${expected.eventId} has no exact pwt1:buy5 parent at vout ${expected.protocolVout}.`,
+    );
+  }
+  return {
+    ...expected,
+    blockTransactionCount: block.tx.length,
+    parentPayload: protocolMessages[0].text,
+  };
+}
+
+async function canonicalEventParentMetadataRepairFinalCoreProof(expected) {
+  const [canonicalBlockHashValue, block, raw] = await Promise.all([
+    bitcoinRpc("getblockhash", [expected.blockHeight]),
+    bitcoinRpc("getblock", [expected.blockHash, 1]),
+    bitcoinRpc("getrawtransaction", [expected.txid, true]),
+  ]);
+  const canonicalBlockHash = String(canonicalBlockHashValue ?? "")
+    .trim()
+    .toLowerCase();
+  const blockTxids = (Array.isArray(block?.tx) ? block.tx : []).map(
+    (candidate) => String(candidate?.txid ?? candidate ?? "").trim().toLowerCase(),
+  );
+  const exactProtocolVouts = (Array.isArray(raw?.vout) ? raw.vout : []).filter(
+    (vout) => Number(vout?.n) === expected.protocolVout,
+  );
+  const protocolMessages = protocolMessagesFromTx(raw).filter(
+    (message) => Number(message?.voutIndex) === expected.protocolVout,
+  );
+  if (
+    canonicalBlockHash !== expected.blockHash ||
+    String(block?.hash ?? "").trim().toLowerCase() !== expected.blockHash ||
+    Number(block?.height) !== expected.blockHeight ||
+    Number(block?.time) !== expected.blockTimeEpoch ||
+    Number(block?.nTx) !== blockTxids.length ||
+    blockTxids.filter((txid) => txid === expected.txid).length !== 1 ||
+    blockTxids[expected.blockIndex] !== expected.txid ||
+    String(raw?.txid ?? "").trim().toLowerCase() !== expected.txid ||
+    String(raw?.blockhash ?? "").trim().toLowerCase() !== expected.blockHash ||
+    Number(raw?.blocktime) !== expected.blockTimeEpoch ||
+    Number(raw?.confirmations) <= 0 ||
+    exactProtocolVouts.length !== 1 ||
+    Number(raw?.vout?.[expected.protocolVout]?.n) !== expected.protocolVout ||
+    protocolMessages.length !== 1 ||
+    protocolMessages[0]?.decodeValid !== true ||
+    protocolMessages[0]?.prefix !== "pwt1:" ||
+    !String(protocolMessages[0]?.text ?? "").startsWith("pwt1:buy5:") ||
+    String(protocolMessages[0]?.text ?? "") !== expected.parentPayload
+  ) {
+    throw new Error(
+      `Canonical event parent-metadata repair target ${expected.eventId} changed final Core hash, time, position, or pwt1:buy5 carrier.`,
+    );
+  }
+  return true;
+}
+
+export function canonicalEventParentMetadataRepairRowState(row, expected) {
+  const expectedTime = String(expected?.blockTime ?? "");
+  const expectedEpoch = Number(expected?.blockTimeEpoch);
+  const isoOrNull = (value) => {
+    if (value === null || value === undefined || value === "") {
+      return null;
+    }
+    const parsed = Date.parse(value);
+    return Number.isFinite(parsed) ? new Date(parsed).toISOString() : "invalid";
+  };
+  const payload =
+    row?.payload && typeof row.payload === "object" && !Array.isArray(row.payload)
+      ? row.payload
+      : {};
+  const rawTx =
+    row?.raw_tx && typeof row.raw_tx === "object" && !Array.isArray(row.raw_tx)
+      ? row.raw_tx
+      : {};
+  const canonicalBlockScan =
+    rawTx?.canonicalBlockScan &&
+    typeof rawTx.canonicalBlockScan === "object" &&
+    !Array.isArray(rawTx.canonicalBlockScan)
+      ? rawTx.canonicalBlockScan
+      : {};
+  const payloadPosition =
+    payload?.position &&
+    typeof payload.position === "object" &&
+    !Array.isArray(payload.position)
+      ? payload.position
+      : payload;
+  const targetIdentityValid =
+    Number(row?.event_id) === Number(expected?.eventId) &&
+    row?.network === "livenet" &&
+    String(row?.event_txid ?? "").trim().toLowerCase() === expected?.txid &&
+    row?.protocol === "pwt1" &&
+    row?.kind === "token-listing-closed" &&
+    row?.event_status === "confirmed" &&
+    row?.event_valid === true &&
+    Number(row?.event_block_height) === expected?.blockHeight &&
+    Number(row?.event_block_index) === expected?.blockIndex &&
+    Number(row?.protocol_vout) === expected?.protocolVout &&
+    Number(row?.record_ordinal) === expected?.recordOrdinal &&
+    String(row?.raw_payload ?? "") === "" &&
+    row?.transaction_status === "confirmed" &&
+    row?.transaction_source === "canonical-block-scan" &&
+    String(row?.transaction_block_hash ?? "").trim().toLowerCase() ===
+      expected?.blockHash &&
+    Number(row?.transaction_block_height) === expected?.blockHeight &&
+    Number(row?.transaction_block_index) === expected?.blockIndex &&
+    isoOrNull(row?.transaction_block_time) === expectedTime &&
+    String(row?.canonical_block_hash ?? "").trim().toLowerCase() ===
+      expected?.blockHash &&
+    Number(row?.canonical_block_height) === expected?.blockHeight &&
+    row?.block_canonical === true &&
+    isoOrNull(row?.canonical_block_time) === expectedTime &&
+    Number(row?.canonical_block_count) === 1 &&
+    Number(row?.canonical_position_count) === 1 &&
+    String(rawTx?.txid ?? "").trim().toLowerCase() === expected?.txid &&
+    String(rawTx?._powBlockHash ?? "").trim().toLowerCase() ===
+      expected?.blockHash &&
+    Number(rawTx?._powBlockIndex) === expected?.blockIndex &&
+    Number(rawTx?.height) === expected?.blockHeight &&
+    Number(rawTx?.blocktime) === expectedEpoch &&
+    canonicalBlockScan?.network === "livenet" &&
+    String(canonicalBlockScan?.blockHash ?? "").trim().toLowerCase() ===
+      expected?.blockHash &&
+    Number(canonicalBlockScan?.height) === expected?.blockHeight &&
+    Number(canonicalBlockScan?.blockIndex) === expected?.blockIndex &&
+    payload?._workAmoV5ReplayBound === true &&
+    payload?.workAmoV5RawCandidate === false &&
+    payload?.derived === true &&
+    payload?.rawCandidate === false &&
+    payload?.chargesTransactionFee === false &&
+    payload?.claimsEconomicOutputs === false &&
+    payload?.economicDelta === false &&
+    String(payload?.txid ?? "").trim().toLowerCase() === expected?.txid &&
+    String(payload?.protocol ?? "").trim().toLowerCase() === "pwt1" &&
+    String(payload?.kind ?? "").trim().toLowerCase() ===
+      "token-listing-closed" &&
+    String(payloadPosition?.blockHash ?? "").trim().toLowerCase() ===
+      expected?.blockHash &&
+    Number(payloadPosition?.blockHeight) === expected?.blockHeight &&
+    Number(
+      payloadPosition?.blockTransactionIndex ?? payloadPosition?.blockIndex,
+    ) === expected?.blockIndex &&
+    Number(payloadPosition?.protocolVout) === expected?.protocolVout &&
+    Number(payloadPosition?.recordOrdinal) === expected?.recordOrdinal &&
+    isoOrNull(expectedTime) === expectedTime &&
+    Date.parse(expectedTime) === expectedEpoch * 1000;
+  if (!targetIdentityValid) {
+    throw new Error(
+      `Canonical event parent-metadata repair row ${expected?.eventId ?? "unknown"} diverged from its pinned identity or parent evidence.`,
+    );
+  }
+
+  const observed = {
+    blockTime: isoOrNull(row?.event_block_time),
+    eventTime: isoOrNull(row?.event_time),
+    payloadBlockTime: isoOrNull(payload?.blockTime),
+    payloadClosedAt: isoOrNull(payload?.closedAt),
+    payloadCreatedAt: isoOrNull(payload?.createdAt),
+    payloadTimestamp: isoOrNull(payload?.timestamp),
+  };
+  const values = Object.entries(observed);
+  const divergent = values.find(
+    ([, value]) => value !== null && value !== expectedTime,
+  );
+  if (divergent) {
+    throw new Error(
+      `Canonical event parent-metadata repair row ${expected.eventId} has divergent ${divergent[0]}.`,
+    );
+  }
+  const missing = values.filter(([, value]) => value === null).length;
+  if (missing !== 0 && missing !== values.length) {
+    throw new Error(
+      `Canonical event parent-metadata repair row ${expected.eventId} is partially repaired.`,
+    );
+  }
+  return {
+    alreadyApplied: missing === 0,
+    eventId: expected.eventId,
+    observed,
+    repairable: missing === values.length,
+    txid: expected.txid,
+  };
+}
+
+function canonicalEventParentMetadataRepairInvariantFingerprint(row) {
+  const payload = structuredClone(row?.payload ?? {});
+  for (const key of ["blockTime", "closedAt", "createdAt", "timestamp"]) {
+    delete payload[key];
+  }
+  return createHash("sha256")
+    .update(
+      JSON.stringify({
+        ...row,
+        event_block_time: null,
+        event_time: null,
+        payload,
+      }),
+    )
+    .digest("hex");
+}
+
+async function canonicalEventParentMetadataRepairRows(client) {
+  const eventIds = CANONICAL_EVENT_PARENT_METADATA_REPAIR_TARGETS.map(
+    (target) => target.eventId,
+  );
+  const result = await client.query(
+    `
+      SELECT
+        event_row.event_id,
+        event_row.network,
+        event_row.event_key,
+        event_row.txid AS event_txid,
+        event_row.protocol,
+        event_row.kind,
+        event_row.status AS event_status,
+        event_row.valid AS event_valid,
+        event_row.validation_errors,
+        event_row.amount_sats::text,
+        event_row.data_bytes,
+        event_row.block_height AS event_block_height,
+        event_row.block_index AS event_block_index,
+        event_row.op_return_vout AS protocol_vout,
+        event_row.record_ordinal,
+        event_row.block_time AS event_block_time,
+        event_row.event_time,
+        event_row.raw_payload,
+        event_row.payload,
+        event_row.created_at AS event_created_at,
+        event_row.updated_at AS event_updated_at,
+        transaction_row.status AS transaction_status,
+        transaction_row.source AS transaction_source,
+        transaction_row.block_hash AS transaction_block_hash,
+        transaction_row.block_height AS transaction_block_height,
+        transaction_row.block_index AS transaction_block_index,
+        transaction_row.block_time AS transaction_block_time,
+        transaction_row.raw_tx,
+        canonical_block.block_hash AS canonical_block_hash,
+        canonical_block.height AS canonical_block_height,
+        canonical_block.block_time AS canonical_block_time,
+        canonical_block.canonical AS block_canonical,
+        (
+          SELECT count(*)
+          FROM proof_indexer.blocks competing_block
+          WHERE competing_block.network = event_row.network
+            AND competing_block.height = event_row.block_height
+            AND competing_block.canonical = true
+        ) AS canonical_block_count,
+        (
+          SELECT count(*)
+          FROM proof_indexer.events position_event
+          WHERE position_event.network = event_row.network
+            AND position_event.status = 'confirmed'
+            AND position_event.block_height = event_row.block_height
+            AND position_event.block_index = event_row.block_index
+            AND position_event.op_return_vout = event_row.op_return_vout
+            AND position_event.record_ordinal = event_row.record_ordinal
+        ) AS canonical_position_count,
+        COALESCE((
+          SELECT jsonb_agg(
+            jsonb_build_object(
+              'address', participant.address,
+              'powid', participant.powid,
+              'role', participant.role
+            )
+            ORDER BY participant.address, participant.role, participant.powid
+          )
+          FROM proof_indexer.event_participants participant
+          WHERE participant.event_id = event_row.event_id
+        ), '[]'::jsonb) AS participant_rows,
+        COALESCE((
+          SELECT jsonb_agg(
+            jsonb_build_object(
+              'refType', event_ref.ref_type,
+              'refValue', event_ref.ref_value
+            )
+            ORDER BY event_ref.ref_type, event_ref.ref_value
+          )
+          FROM proof_indexer.event_refs event_ref
+          WHERE event_ref.event_id = event_row.event_id
+        ), '[]'::jsonb) AS ref_rows
+      FROM proof_indexer.events event_row
+      JOIN proof_indexer.transactions transaction_row
+        ON transaction_row.network = event_row.network
+       AND transaction_row.txid = event_row.txid
+      JOIN proof_indexer.blocks canonical_block
+        ON canonical_block.network = transaction_row.network
+       AND canonical_block.block_hash = transaction_row.block_hash
+       AND canonical_block.height = transaction_row.block_height
+      WHERE event_row.network = $1
+        AND event_row.event_id = ANY($2::bigint[])
+      ORDER BY event_row.event_id
+      FOR UPDATE OF event_row, transaction_row
+    `,
+    [NETWORK, eventIds],
+  );
+  return result.rows;
+}
+
+async function repairCanonicalEventParentMetadata(client) {
+  const manifest = CANONICAL_EVENT_PARENT_METADATA_REPAIR_TARGETS;
+  const manifestEventIds = new Set(manifest.map((target) => target.eventId));
+  const manifestTxids = new Set(manifest.map((target) => target.txid));
+  if (
+    manifest.length !== 6 ||
+    manifestEventIds.size !== 6 ||
+    manifestTxids.size !== 6
+  ) {
+    throw new Error(
+      "Canonical event parent-metadata repair requires the exact six-row manifest.",
+    );
+  }
+
+  const coreTargets = [];
+  for (const expected of manifest) {
+    coreTargets.push(
+      await canonicalEventParentMetadataRepairCoreTarget(expected),
+    );
+  }
+  const apply = APPLY_CANONICAL_EVENT_PARENT_METADATA_REPAIR && !DRY_RUN;
+  let transactionClosed = false;
+  await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
+  try {
+    await client.query("SET LOCAL lock_timeout = '10s'");
+    // Acquire the table locks in this fixed order before the advisory SELECT
+    // or any row read. If LOCK waits for a writer, the serializable snapshot
+    // is therefore established only after that writer has finished.
+    await client.query(`
+      LOCK TABLE
+        proof_indexer.blocks,
+        proof_indexer.transactions,
+        proof_indexer.events,
+        proof_indexer.event_participants,
+        proof_indexer.event_refs
+      IN SHARE ROW EXCLUSIVE MODE
+    `);
+    await client.query(
+      "SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))",
+      ["proof-indexer-event-parent-metadata-repair-v1", NETWORK],
+    );
+
+    const beforeRows = await canonicalEventParentMetadataRepairRows(client);
+    if (
+      beforeRows.length !== manifest.length ||
+      new Set(beforeRows.map((row) => Number(row?.event_id))).size !==
+        manifest.length
+    ) {
+      throw new Error(
+        `Canonical event parent-metadata repair requires exactly ${manifest.length} locked event rows.`,
+      );
+    }
+    const beforeByEventId = new Map(
+      beforeRows.map((row) => [Number(row.event_id), row]),
+    );
+    const beforeStates = manifest.map((expected) => {
+      const row = beforeByEventId.get(expected.eventId);
+      if (!row) {
+        throw new Error(
+          `Canonical event parent-metadata repair target ${expected.eventId} is missing.`,
+        );
+      }
+      return canonicalEventParentMetadataRepairRowState(row, expected);
+    });
+    const repairableCount = beforeStates.filter(
+      (state) => state.repairable,
+    ).length;
+    if (repairableCount !== 0 && repairableCount !== manifest.length) {
+      throw new Error(
+        "Canonical event parent-metadata repair refuses a mixed pre-repair row set.",
+      );
+    }
+    const invariantFingerprints = new Map(
+      beforeRows.map((row) => [
+        Number(row.event_id),
+        canonicalEventParentMetadataRepairInvariantFingerprint(row),
+      ]),
+    );
+
+    if (apply && repairableCount === manifest.length) {
+      for (const expected of manifest) {
+        const updated = await client.query(
+          `
+            UPDATE proof_indexer.events
+            SET
+              block_time = $9::timestamptz,
+              event_time = $9::timestamptz,
+              payload = payload || jsonb_build_object(
+                'blockTime', $9::text,
+                'closedAt', $9::text,
+                'createdAt', $9::text,
+                'timestamp', $9::text
+              )
+            WHERE network = $1
+              AND event_id = $2
+              AND txid = $3
+              AND protocol = 'pwt1'
+              AND kind = 'token-listing-closed'
+              AND status = 'confirmed'
+              AND valid = true
+              AND block_height = $4
+              AND block_index = $5
+              AND op_return_vout = $6
+              AND record_ordinal = $7
+              AND block_time IS NULL
+              AND event_time IS NULL
+              AND NULLIF(payload->>'blockTime', '') IS NULL
+              AND NULLIF(payload->>'closedAt', '') IS NULL
+              AND NULLIF(payload->>'createdAt', '') IS NULL
+              AND NULLIF(payload->>'timestamp', '') IS NULL
+              AND EXISTS (
+                SELECT 1
+                FROM proof_indexer.transactions parent_transaction
+                JOIN proof_indexer.blocks parent_block
+                  ON parent_block.network = parent_transaction.network
+                 AND parent_block.block_hash = parent_transaction.block_hash
+                 AND parent_block.height = parent_transaction.block_height
+                 AND parent_block.canonical = true
+                WHERE parent_transaction.network = proof_indexer.events.network
+                  AND parent_transaction.txid = proof_indexer.events.txid
+                  AND parent_transaction.status = 'confirmed'
+                  AND parent_transaction.block_hash = $8
+                  AND parent_transaction.block_height = $4
+                  AND parent_transaction.block_index = $5
+                  AND parent_transaction.block_time = $9::timestamptz
+              )
+            RETURNING event_id
+          `,
+          [
+            NETWORK,
+            expected.eventId,
+            expected.txid,
+            expected.blockHeight,
+            expected.blockIndex,
+            expected.protocolVout,
+            expected.recordOrdinal,
+            expected.blockHash,
+            expected.blockTime,
+          ],
+        );
+        if (
+          updated.rows.length !== 1 ||
+          Number(updated.rows[0]?.event_id) !== expected.eventId
+        ) {
+          throw new Error(
+            `Canonical event parent-metadata repair update guard failed for ${expected.eventId}.`,
+          );
+        }
+      }
+    }
+
+    const afterRows = await canonicalEventParentMetadataRepairRows(client);
+    if (afterRows.length !== manifest.length) {
+      throw new Error(
+        "Canonical event parent-metadata repair changed its exact row count.",
+      );
+    }
+    const afterByEventId = new Map(
+      afterRows.map((row) => [Number(row.event_id), row]),
+    );
+    const afterStates = manifest.map((expected) => {
+      const row = afterByEventId.get(expected.eventId);
+      if (!row) {
+        throw new Error(
+          `Canonical event parent-metadata repair target ${expected.eventId} disappeared.`,
+        );
+      }
+      const invariant = canonicalEventParentMetadataRepairInvariantFingerprint(row);
+      if (invariant !== invariantFingerprints.get(expected.eventId)) {
+        throw new Error(
+          `Canonical event parent-metadata repair changed non-time state for ${expected.eventId}.`,
+        );
+      }
+      return canonicalEventParentMetadataRepairRowState(row, expected);
+    });
+    if (
+      apply &&
+      afterStates.some((state) => state.alreadyApplied !== true)
+    ) {
+      throw new Error(
+        "Canonical event parent-metadata repair did not produce six exact rows.",
+      );
+    }
+
+    // Re-prove every Core hash, member index, parent OP_RETURN and timestamp
+    // while the writer-exclusion locks are still held. The six targets and
+    // each target's three bounded RPCs run in parallel; the detailed
+    // verbosity-2 proof already completed before the transaction began.
+    await Promise.all(
+      coreTargets.map((target) =>
+        canonicalEventParentMetadataRepairFinalCoreProof(target)
+      ),
+    );
+    await client.query(apply ? "COMMIT" : "ROLLBACK");
+    transactionClosed = true;
+    return {
+      alreadyApplied: repairableCount === 0,
+      applied: apply && repairableCount === manifest.length,
+      coreVerificationPasses: 2,
+      dryRun: !apply,
+      repaired: apply ? repairableCount : 0,
+      source: "canonical-core-parent-block-time",
+      targets: manifest.map((expected, index) => ({
+        expected: {
+          blockHash: expected.blockHash,
+          blockHeight: expected.blockHeight,
+          blockIndex: expected.blockIndex,
+          blockTime: expected.blockTime,
+          eventId: expected.eventId,
+          protocolVout: expected.protocolVout,
+          recordOrdinal: expected.recordOrdinal,
+          txid: expected.txid,
+        },
+        observedBefore: beforeStates[index].observed,
+        stateAfter: afterStates[index].alreadyApplied
+          ? "canonical"
+          : "repairable",
+      })),
+      wouldRepair: repairableCount,
+      writerExclusion:
+        "serializable advisory lock plus SHARE ROW EXCLUSIVE table locks",
+    };
+  } catch (error) {
+    if (!transactionClosed) {
+      await client.query("ROLLBACK");
+    }
+    throw error;
+  }
+}
+
+function canonicalIdAmountProjectionRepairManifest() {
+  const manifest = CANONICAL_ID_AMOUNT_PROJECTION_REPAIR_TARGETS;
+  const eventIds = new Set(manifest.map((target) => target.eventId));
+  const txids = new Set(manifest.map((target) => target.txid));
+  const positions = new Set(
+    manifest.map((target) => [
+      target.blockHeight,
+      target.blockIndex,
+      target.protocolVout,
+      target.recordOrdinal,
+    ].join(":")),
+  );
+  if (
+    manifest.length !== 9 ||
+    eventIds.size !== 9 ||
+    txids.size !== 9 ||
+    positions.size !== 9 ||
+    manifest.some((target) =>
+      target.amountSats !== "1000" ||
+      !Number.isSafeInteger(target.eventId) ||
+      !isHexTxid(target.txid) ||
+      !isHexTxid(target.blockHash) ||
+      !isHexTxid(target.rawPayloadSha256) ||
+      !Number.isSafeInteger(target.blockHeight) ||
+      target.blockHeight < WORK_AMO_V5_ACTIVATION_HEIGHT ||
+      !Number.isSafeInteger(target.blockIndex) ||
+      target.blockIndex < 0 ||
+      target.paymentVout !== 0 ||
+      target.protocolVout !== 1 ||
+      target.recordOrdinal !== 0 ||
+      new Date(target.blockTimeEpoch * 1000).toISOString() !== target.blockTime
+    )
+  ) {
+    throw new Error(
+      "Canonical ID amount projection repair requires its exact nine-row manifest.",
+    );
+  }
+  return manifest;
+}
+
+async function canonicalIdAmountProjectionRepairCoreProof(manifest) {
+  const blocks = new Map();
+  for (const target of manifest) {
+    const key = `${target.blockHeight}:${target.blockHash}`;
+    if (blocks.has(key)) {
+      continue;
+    }
+    const canonicalBlockHash = String(
+      await bitcoinRpc("getblockhash", [target.blockHeight]),
+    ).trim().toLowerCase();
+    const block = await bitcoinRpc("getblock", [target.blockHash, 1]);
+    const txids = (Array.isArray(block?.tx) ? block.tx : []).map(
+      (candidate) =>
+        String(candidate?.txid ?? candidate ?? "").trim().toLowerCase(),
+    );
+    if (
+      canonicalBlockHash !== target.blockHash ||
+      String(block?.hash ?? "").trim().toLowerCase() !== target.blockHash ||
+      Number(block?.height) !== target.blockHeight ||
+      Number(block?.time) !== target.blockTimeEpoch ||
+      Number(block?.nTx) !== txids.length ||
+      !isHexTxid(block?.previousblockhash)
+    ) {
+      throw new Error(
+        `Canonical ID amount projection repair block ${target.blockHeight} diverged from its pinned Core envelope.`,
+      );
+    }
+    blocks.set(key, {
+      block,
+      previousBlockHash: String(block.previousblockhash).trim().toLowerCase(),
+      txids,
+    });
+  }
+
+  const proofs = await boundedMapWithConcurrency(
+    manifest,
+    PREVOUT_HYDRATION_CONCURRENCY,
+    async (target) => {
+      const block = blocks.get(`${target.blockHeight}:${target.blockHash}`);
+      const matchingIndexes = block.txids.flatMap((txid, index) =>
+        txid === target.txid ? [index] : [],
+      );
+      const raw = await bitcoinRpc("getrawtransaction", [target.txid, true]);
+      const messages = protocolMessagesFromTx(raw).filter(
+        (message) => Number(message?.voutIndex) === target.protocolVout,
+      );
+      const rawPayload = String(messages[0]?.text ?? "");
+      const rawPayloadSha256 = createHash("sha256")
+        .update(rawPayload, "utf8")
+        .digest("hex");
+      const payment = Array.isArray(raw?.vout)
+        ? raw.vout[target.paymentVout]
+        : null;
+      if (
+        matchingIndexes.length !== 1 ||
+        matchingIndexes[0] !== target.blockIndex ||
+        String(raw?.txid ?? "").trim().toLowerCase() !== target.txid ||
+        String(raw?.blockhash ?? "").trim().toLowerCase() !==
+          target.blockHash ||
+        Number(raw?.blocktime) !== target.blockTimeEpoch ||
+        Number(raw?.confirmations) <= 0 ||
+        messages.length !== 1 ||
+        messages[0]?.decodeValid !== true ||
+        messages[0]?.prefix !== "pwid1:" ||
+        rawPayloadSha256 !== target.rawPayloadSha256 ||
+        Number(payment?.n ?? target.paymentVout) !== target.paymentVout ||
+        addressFromVout(payment) !== WORK_AMO_V5_ID_REGISTRY_ADDRESS ||
+        satsFromVout(payment).toString() !== target.amountSats
+      ) {
+        throw new Error(
+          `Canonical ID amount projection repair target ${target.eventId} diverged from its exact Core transaction, position, carrier, or registry payment.`,
+        );
+      }
+      return {
+        ...target,
+        previousBlockHash: block.previousBlockHash,
+        rawPayload,
+        rawTx: raw,
+      };
+    },
+  );
+  return new Map(proofs.map((proof) => [proof.eventId, proof]));
+}
+
+export function canonicalIdAmountProjectionRepairRowState(row, expected) {
+  const payload =
+    row?.payload && typeof row.payload === "object" && !Array.isArray(row.payload)
+      ? row.payload
+      : {};
+  const rawTx =
+    row?.raw_tx && typeof row.raw_tx === "object" && !Array.isArray(row.raw_tx)
+      ? row.raw_tx
+      : {};
+  const scan =
+    rawTx?.canonicalBlockScan &&
+    typeof rawTx.canonicalBlockScan === "object" &&
+    !Array.isArray(rawTx.canonicalBlockScan)
+      ? rawTx.canonicalBlockScan
+      : {};
+  const iso = (value) => {
+    const epoch = value instanceof Date ? value.getTime() : Date.parse(value);
+    return Number.isFinite(epoch) ? new Date(epoch).toISOString() : "invalid";
+  };
+  const rawPayloadSha256 = createHash("sha256")
+    .update(String(row?.raw_payload ?? ""), "utf8")
+    .digest("hex");
+  const identityValid =
+    Number(row?.event_id) === expected?.eventId &&
+    row?.network === "livenet" &&
+    String(row?.event_txid ?? "").trim().toLowerCase() === expected?.txid &&
+    row?.protocol === "pwid1" &&
+    row?.kind === "id-register" &&
+    row?.event_status === "confirmed" &&
+    row?.event_valid === true &&
+    Array.isArray(row?.validation_errors) &&
+    row.validation_errors.length === 0 &&
+    Number(row?.event_block_height) === expected?.blockHeight &&
+    Number(row?.event_block_index) === expected?.blockIndex &&
+    Number(row?.protocol_vout) === expected?.protocolVout &&
+    Number(row?.record_ordinal) === expected?.recordOrdinal &&
+    iso(row?.event_block_time) === expected?.blockTime &&
+    iso(row?.event_time) === expected?.blockTime &&
+    rawPayloadSha256 === expected?.rawPayloadSha256 &&
+    row?.transaction_status === "confirmed" &&
+    row?.transaction_source === "canonical-block-scan" &&
+    String(row?.transaction_block_hash ?? "").trim().toLowerCase() ===
+      expected?.blockHash &&
+    Number(row?.transaction_block_height) === expected?.blockHeight &&
+    Number(row?.transaction_block_index) === expected?.blockIndex &&
+    iso(row?.transaction_block_time) === expected?.blockTime &&
+    String(row?.canonical_block_hash ?? "").trim().toLowerCase() ===
+      expected?.blockHash &&
+    Number(row?.canonical_block_height) === expected?.blockHeight &&
+    row?.block_canonical === true &&
+    iso(row?.canonical_block_time) === expected?.blockTime &&
+    Number(row?.canonical_block_count) === 1 &&
+    Number(row?.canonical_position_count) === 1 &&
+    String(rawTx?.txid ?? "").trim().toLowerCase() === expected?.txid &&
+    String(rawTx?._powBlockHash ?? "").trim().toLowerCase() ===
+      expected?.blockHash &&
+    Number(rawTx?._powBlockIndex) === expected?.blockIndex &&
+    Number(rawTx?.height) === expected?.blockHeight &&
+    Number(rawTx?.blocktime) === expected?.blockTimeEpoch &&
+    scan?.network === "livenet" &&
+    String(scan?.blockHash ?? "").trim().toLowerCase() ===
+      expected?.blockHash &&
+    Number(scan?.height) === expected?.blockHeight &&
+    Number(scan?.blockIndex) === expected?.blockIndex &&
+    String(payload?.txid ?? "").trim().toLowerCase() === expected?.txid &&
+    String(payload?.protocol ?? "").trim().toLowerCase() === "pwid1" &&
+    String(payload?.kind ?? "").trim().toLowerCase() === "id-register";
+  if (!identityValid) {
+    throw new Error(
+      `Canonical ID amount projection repair row ${expected?.eventId ?? "unknown"} diverged from its pinned event, transaction, block, or raw carrier.`,
+    );
+  }
+
+  const amountColumn = String(row?.amount_sats ?? "").trim();
+  const hasAmount = Object.hasOwn(payload, "amountSats");
+  const hasPaid = Object.hasOwn(payload, "paidSats");
+  const stale = amountColumn === "0" && !hasAmount && !hasPaid;
+  const canonical =
+    amountColumn === expected.amountSats &&
+    hasAmount &&
+    payload.amountSats === expected.amountSats &&
+    !hasPaid;
+  if (!stale && !canonical) {
+    throw new Error(
+      `Canonical ID amount projection repair row ${expected.eventId} has a partial or divergent amount projection.`,
+    );
+  }
+  return {
+    alreadyApplied: canonical,
+    eventId: expected.eventId,
+    repairable: stale,
+    state: canonical ? "canonical" : "repairable",
+    txid: expected.txid,
+  };
+}
+
+function canonicalIdAmountProjectionRepairInvariantFingerprint(row) {
+  const payload = structuredClone(row?.payload ?? {});
+  delete payload.amountSats;
+  const invariant = {
+    ...row,
+    amount_sats: null,
+    payload,
+  };
+  return workAmoV5CanonicalPayloadCommitment(
+    JSON.parse(JSON.stringify(invariant)),
+  ).sha256;
+}
+
+async function canonicalIdAmountProjectionRepairRows(client) {
+  const eventIds = CANONICAL_ID_AMOUNT_PROJECTION_REPAIR_TARGETS.map(
+    (target) => target.eventId,
+  );
+  return (await client.query(
+    `
+      SELECT
+        event_row.event_id,
+        event_row.network,
+        event_row.event_key,
+        event_row.txid AS event_txid,
+        event_row.protocol,
+        event_row.kind,
+        event_row.status AS event_status,
+        event_row.valid AS event_valid,
+        event_row.validation_errors,
+        event_row.amount_sats::text,
+        event_row.data_bytes,
+        event_row.block_height AS event_block_height,
+        event_row.block_index AS event_block_index,
+        event_row.op_return_vout AS protocol_vout,
+        event_row.record_ordinal,
+        event_row.block_time AS event_block_time,
+        event_row.event_time,
+        event_row.raw_payload,
+        event_row.payload,
+        event_row.created_at AS event_created_at,
+        event_row.updated_at AS event_updated_at,
+        transaction_row.status AS transaction_status,
+        transaction_row.source AS transaction_source,
+        transaction_row.block_hash AS transaction_block_hash,
+        transaction_row.block_height AS transaction_block_height,
+        transaction_row.block_index AS transaction_block_index,
+        transaction_row.block_time AS transaction_block_time,
+        transaction_row.raw_tx,
+        canonical_block.block_hash AS canonical_block_hash,
+        canonical_block.height AS canonical_block_height,
+        canonical_block.block_time AS canonical_block_time,
+        canonical_block.canonical AS block_canonical,
+        (
+          SELECT count(*)
+          FROM proof_indexer.blocks competing_block
+          WHERE competing_block.network = event_row.network
+            AND competing_block.height = event_row.block_height
+            AND competing_block.canonical = true
+        ) AS canonical_block_count,
+        (
+          SELECT count(*)
+          FROM proof_indexer.events position_event
+          WHERE position_event.network = event_row.network
+            AND position_event.status = 'confirmed'
+            AND position_event.block_height = event_row.block_height
+            AND position_event.block_index = event_row.block_index
+            AND position_event.op_return_vout = event_row.op_return_vout
+            AND position_event.record_ordinal = event_row.record_ordinal
+        ) AS canonical_position_count,
+        COALESCE((
+          SELECT jsonb_agg(
+            jsonb_build_object(
+              'address', participant.address,
+              'powid', participant.powid,
+              'role', participant.role
+            )
+            ORDER BY participant.address, participant.role, participant.powid
+          )
+          FROM proof_indexer.event_participants participant
+          WHERE participant.event_id = event_row.event_id
+        ), '[]'::jsonb) AS participant_rows,
+        COALESCE((
+          SELECT jsonb_agg(
+            jsonb_build_object(
+              'refType', event_ref.ref_type,
+              'refValue', event_ref.ref_value
+            )
+            ORDER BY event_ref.ref_type, event_ref.ref_value
+          )
+          FROM proof_indexer.event_refs event_ref
+          WHERE event_ref.event_id = event_row.event_id
+        ), '[]'::jsonb) AS ref_rows
+      FROM proof_indexer.events event_row
+      JOIN proof_indexer.transactions transaction_row
+        ON transaction_row.network = event_row.network
+       AND transaction_row.txid = event_row.txid
+      JOIN proof_indexer.blocks canonical_block
+        ON canonical_block.network = transaction_row.network
+       AND canonical_block.block_hash = transaction_row.block_hash
+       AND canonical_block.height = transaction_row.block_height
+      WHERE event_row.network = $1
+        AND event_row.event_id = ANY($2::bigint[])
+      ORDER BY event_row.event_id
+      FOR UPDATE OF event_row, transaction_row
+    `,
+    [NETWORK, eventIds],
+  )).rows;
+}
+
+async function canonicalIdAmountProjectionTransitionProofs(
+  client,
+  coreByEventId,
+) {
+  const manifest = CANONICAL_ID_AMOUNT_PROJECTION_REPAIR_TARGETS;
+  const heights = [...new Set(manifest.map((target) => target.blockHeight))];
+  const result = await client.query(
+    `
+      SELECT transition.*
+      FROM proof_indexer.work_amo_block_transitions transition
+      JOIN proof_indexer.blocks canonical_block
+        ON canonical_block.network = transition.network
+       AND canonical_block.block_hash = transition.block_hash
+       AND canonical_block.height = transition.block_height
+       AND canonical_block.canonical = true
+      WHERE transition.network = $1
+        AND transition.block_height = ANY($2::integer[])
+      ORDER BY transition.block_height
+      FOR UPDATE OF transition
+    `,
+    [NETWORK, heights],
+  );
+  if (result.rows.length !== heights.length) {
+    throw new Error(
+      `Canonical ID amount projection repair requires exactly ${heights.length} immutable block transitions.`,
+    );
+  }
+  const transitionByHeight = new Map(
+    result.rows.map((row) => [Number(row.block_height), row]),
+  );
+  const proofs = new Map();
+  for (const target of manifest) {
+    const core = coreByEventId.get(target.eventId);
+    const row = transitionByHeight.get(target.blockHeight);
+    if (
+      !core ||
+      !row ||
+      String(row.block_hash ?? "").trim().toLowerCase() !== target.blockHash ||
+      String(row.previous_block_hash ?? "").trim().toLowerCase() !==
+        core.previousBlockHash
+    ) {
+      throw new Error(
+        `Canonical ID amount projection repair transition is missing for event ${target.eventId}.`,
+      );
+    }
+    const transition = normalizedWorkAmoV5BlockTransition(row.payload, {
+      blockHash: target.blockHash,
+      blockHeight: target.blockHeight,
+      previousBlockHash: core.previousBlockHash,
+    });
+    if (
+      row.model !== transition.model ||
+      row.state_commitment_model !== WORK_AMO_V5_STATE_COMMITMENT_MODEL ||
+      row.work_token_state_model !== transition.workTokenStateModel ||
+      String(row.opening_network_value_q8 ?? "") !==
+        transition.openingNetworkValueQ8 ||
+      String(row.closing_network_value_q8 ?? "") !==
+        transition.closingNetworkValueQ8 ||
+      row.opening_state_sha256 !== transition.openingCommitment.sha256 ||
+      row.closing_state_sha256 !== transition.closingCommitment.sha256 ||
+      Number(row.opening_state_payload_bytes) !==
+        transition.openingCommitment.payloadBytes ||
+      Number(row.closing_state_payload_bytes) !==
+        transition.closingCommitment.payloadBytes ||
+      Number(row.protocol_record_count) !== transition.protocolRecordCount ||
+      Number(row.raw_protocol_candidate_count) !==
+        transition.rawProtocolCandidateCount ||
+      Number(row.transaction_count) !== transition.transactionCount ||
+      Number(row.event_count) !== transition.eventCount ||
+      row.event_set_model !== transition.eventSetCommitment.model ||
+      row.event_set_sha256 !== transition.eventSetCommitment.sha256 ||
+      Number(row.event_set_payload_bytes) !==
+        transition.eventSetCommitment.payloadBytes ||
+      row.block_atomic !== true ||
+      row.fee_once !== true ||
+      row.invalid_zero !== true ||
+      row.complete !== true
+    ) {
+      throw new Error(
+        `Canonical ID amount projection repair relational transition diverged at block ${target.blockHeight}.`,
+      );
+    }
+    const matching = transition.replayRecords.filter((record) => {
+      const position = workAmoV5ReplayPositionKey(record)?.position;
+      return (
+        String(record?.txid ?? "").trim().toLowerCase() === target.txid &&
+        record?.protocol === "pwid1" &&
+        position?.blockHeight === target.blockHeight &&
+        position?.blockTransactionIndex === target.blockIndex &&
+        position?.protocolVout === target.protocolVout &&
+        position?.recordOrdinal === target.recordOrdinal
+      );
+    });
+    const replay = matching[0];
+    const witnessPayloads = [
+      replay?.rawWitness?.message,
+      replay?.rawWitness?.text,
+      ...(Array.isArray(replay?.rawWitness?.rawRecordParts)
+        ? replay.rawWitness.rawRecordParts.flatMap((part) => [
+            part?.message,
+            part?.text,
+          ])
+        : []),
+    ].filter((value) => String(value ?? "").startsWith("pwid1:"));
+    const attribution = workAmoV5PwidRegistryAttribution({
+      item: replay?.output?.projection ?? {
+        kind: replay?.outcome?.semanticKind,
+        protocolVout: target.protocolVout,
+      },
+      rawTx: core.rawTx,
+      replay,
+      valid: replay?.outcome?.valid === true,
+    });
+    if (
+      matching.length !== 1 ||
+      replay?.rawCandidate !== true ||
+      replay?.outcome?.valid !== true ||
+      replay?.outcome?.kind !== workAmoV5ConsensusEventKind("pwid1", true) ||
+      replay?.outcome?.semanticKind !== "id-register" ||
+      String(replay?.outcome?.reasonCode ?? "") !== "" ||
+      attribution?.amountSats !== target.amountSats ||
+      new Set(witnessPayloads.map(String)).size !== 1 ||
+      String(witnessPayloads[0] ?? "") !== core.rawPayload
+    ) {
+      throw new Error(
+        `Canonical ID amount projection repair replay proof diverged for event ${target.eventId}.`,
+      );
+    }
+    proofs.set(target.eventId, {
+      amountSats: attribution.amountSats,
+      eventId: target.eventId,
+      replayRecordSha256:
+        workAmoV5CanonicalPayloadCommitment(replay).sha256,
+      transitionSha256:
+        workAmoV5CanonicalPayloadCommitment(row.payload).sha256,
+      txid: target.txid,
+    });
+  }
+  return proofs;
+}
+
+export function canonicalIdAmountProjectionRepairBootstrapRequirement({
+  apply,
+  manifestLength,
+  repairableCount,
+}) {
+  if (
+    typeof apply !== "boolean" ||
+    !Number.isSafeInteger(manifestLength) ||
+    manifestLength < 1 ||
+    !Number.isSafeInteger(repairableCount) ||
+    ![0, manifestLength].includes(repairableCount)
+  ) {
+    throw new Error(
+      "Canonical ID amount projection repair bootstrap state is invalid.",
+    );
+  }
+  const canonicalRetry = repairableCount === 0;
+  const repairApplied = apply && repairableCount === manifestLength;
+  const cacheBootstrapRequired = canonicalRetry || repairApplied;
+  return {
+    cacheBootstrapReason: canonicalRetry
+      ? "canonical-retry-without-durable-bootstrap-completion-proof"
+      : repairApplied
+        ? "repair-applied-without-durable-bootstrap-completion-proof"
+        : "repair-not-applied",
+    cacheBootstrapRequired,
+    cacheInvalidationRequired: cacheBootstrapRequired
+      ? [
+          "clear proof-api process and disk response caches before restart",
+          "run the worker once and publish a fresh exact-tip canonical summary",
+          "complete ID audit and Log/Growth parity before public exposure",
+        ]
+      : [],
+    durableBootstrapCompletionProven: false,
+  };
+}
+
+async function repairCanonicalIdAmountProjection(client) {
+  const manifest = canonicalIdAmountProjectionRepairManifest();
+  const coreBefore = await canonicalIdAmountProjectionRepairCoreProof(manifest);
+  const apply = APPLY_CANONICAL_ID_AMOUNT_PROJECTION_REPAIR && !DRY_RUN;
+  let transactionClosed = false;
+  await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
+  try {
+    await client.query("SET LOCAL lock_timeout = '10s'");
+    await client.query(`
+      LOCK TABLE
+        proof_indexer.blocks,
+        proof_indexer.transactions,
+        proof_indexer.events,
+        proof_indexer.event_participants,
+        proof_indexer.event_refs,
+        proof_indexer.ledger_snapshots,
+        proof_indexer.meta,
+        proof_indexer.work_amo_block_transitions
+      IN SHARE ROW EXCLUSIVE MODE
+    `);
+    await client.query(
+      "SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))",
+      ["proof-indexer-id-amount-projection-repair-v1", NETWORK],
+    );
+
+    const beforeRows = await canonicalIdAmountProjectionRepairRows(client);
+    if (
+      beforeRows.length !== manifest.length ||
+      new Set(beforeRows.map((row) => Number(row?.event_id))).size !==
+        manifest.length
+    ) {
+      throw new Error(
+        "Canonical ID amount projection repair requires exactly nine locked event rows.",
+      );
+    }
+    const beforeByEventId = new Map(
+      beforeRows.map((row) => [Number(row.event_id), row]),
+    );
+    const beforeStates = manifest.map((target) =>
+      canonicalIdAmountProjectionRepairRowState(
+        beforeByEventId.get(target.eventId),
+        target,
+      )
+    );
+    const repairableCount = beforeStates.filter(
+      (state) => state.repairable,
+    ).length;
+    if (repairableCount !== 0 && repairableCount !== manifest.length) {
+      throw new Error(
+        "Canonical ID amount projection repair refuses a mixed pre-repair row set.",
+      );
+    }
+    const invariantFingerprints = new Map(
+      beforeRows.map((row) => [
+        Number(row.event_id),
+        canonicalIdAmountProjectionRepairInvariantFingerprint(row),
+      ]),
+    );
+    const transitionProofsBefore =
+      await canonicalIdAmountProjectionTransitionProofs(client, coreBefore);
+
+    let invalidatedSnapshotIds = [];
+    if (apply && repairableCount === manifest.length) {
+      for (const target of manifest) {
+        const updated = await client.query(
+          `
+            UPDATE proof_indexer.events
+            SET
+              amount_sats = $9::bigint,
+              payload = jsonb_set(
+                payload,
+                '{amountSats}',
+                to_jsonb($9::text),
+                true
+              )
+            WHERE network = $1
+              AND event_id = $2
+              AND txid = $3
+              AND protocol = 'pwid1'
+              AND kind = 'id-register'
+              AND status = 'confirmed'
+              AND valid = true
+              AND block_height = $4
+              AND block_index = $5
+              AND op_return_vout = $6
+              AND record_ordinal = $7
+              AND amount_sats = 0
+              AND NOT payload ? 'amountSats'
+              AND NOT payload ? 'paidSats'
+              AND EXISTS (
+                SELECT 1
+                FROM proof_indexer.transactions canonical_transaction
+                JOIN proof_indexer.blocks canonical_block
+                  ON canonical_block.network = canonical_transaction.network
+                 AND canonical_block.block_hash = canonical_transaction.block_hash
+                 AND canonical_block.height = canonical_transaction.block_height
+                 AND canonical_block.canonical = true
+                WHERE canonical_transaction.network = proof_indexer.events.network
+                  AND canonical_transaction.txid = proof_indexer.events.txid
+                  AND canonical_transaction.status = 'confirmed'
+                  AND canonical_transaction.block_hash = $8
+                  AND canonical_transaction.block_height = $4
+                  AND canonical_transaction.block_index = $5
+              )
+            RETURNING event_id
+          `,
+          [
+            NETWORK,
+            target.eventId,
+            target.txid,
+            target.blockHeight,
+            target.blockIndex,
+            target.protocolVout,
+            target.recordOrdinal,
+            target.blockHash,
+            target.amountSats,
+          ],
+        );
+        if (
+          updated.rows.length !== 1 ||
+          Number(updated.rows[0]?.event_id) !== target.eventId
+        ) {
+          throw new Error(
+            `Canonical ID amount projection repair update guard failed for ${target.eventId}.`,
+          );
+        }
+      }
+      invalidatedSnapshotIds = (
+        await invalidateWorkAtomicDerivedSnapshots(client, {
+          includeMarked: true,
+        })
+      ).sort(compareCanonicalUtf8);
+    }
+
+    const afterRows = await canonicalIdAmountProjectionRepairRows(client);
+    const afterByEventId = new Map(
+      afterRows.map((row) => [Number(row.event_id), row]),
+    );
+    const afterStates = manifest.map((target) => {
+      const row = afterByEventId.get(target.eventId);
+      if (
+        !row ||
+        canonicalIdAmountProjectionRepairInvariantFingerprint(row) !==
+          invariantFingerprints.get(target.eventId)
+      ) {
+        throw new Error(
+          `Canonical ID amount projection repair changed non-amount state for ${target.eventId}.`,
+        );
+      }
+      return canonicalIdAmountProjectionRepairRowState(row, target);
+    });
+    if (
+      afterRows.length !== manifest.length ||
+      (apply && afterStates.some((state) => !state.alreadyApplied)) ||
+      (!apply && afterStates.some(
+        (state, index) => state.state !== beforeStates[index].state,
+      ))
+    ) {
+      throw new Error(
+        "Canonical ID amount projection repair did not preserve its exact all-or-none state.",
+      );
+    }
+    const transitionProofsAfter =
+      await canonicalIdAmountProjectionTransitionProofs(client, coreBefore);
+    for (const target of manifest) {
+      if (
+        workAmoV5CanonicalPayloadCommitment(
+          transitionProofsAfter.get(target.eventId),
+        ).sha256 !==
+        workAmoV5CanonicalPayloadCommitment(
+          transitionProofsBefore.get(target.eventId),
+        ).sha256
+      ) {
+        throw new Error(
+          `Canonical ID amount projection repair changed replay evidence for ${target.eventId}.`,
+        );
+      }
+    }
+
+    // This is deliberately the final proof before COMMIT/ROLLBACK. Re-read
+    // every pinned block membership, raw carrier, and registry payment from
+    // Core while the database writer-exclusion locks are still held.
+    await canonicalIdAmountProjectionRepairCoreProof(manifest);
+    await client.query(apply ? "COMMIT" : "ROLLBACK");
+    transactionClosed = true;
+    const bootstrapRequirement =
+      canonicalIdAmountProjectionRepairBootstrapRequirement({
+        apply,
+        manifestLength: manifest.length,
+        repairableCount,
+      });
+    return {
+      alreadyApplied: repairableCount === 0,
+      applied: apply && repairableCount === manifest.length,
+      ...bootstrapRequirement,
+      coreVerificationPasses: 2,
+      dryRun: !apply,
+      invalidatedSnapshotCount: invalidatedSnapshotIds.length,
+      invalidatedSnapshotIds,
+      repaired: apply ? repairableCount : 0,
+      source: "canonical-work-amo-v5-pwid-registry-attribution",
+      targets: manifest.map((target) => ({
+        amountSats: target.amountSats,
+        blockHash: target.blockHash,
+        blockHeight: target.blockHeight,
+        blockIndex: target.blockIndex,
+        blockTime: target.blockTime,
+        eventId: target.eventId,
+        paymentVout: target.paymentVout,
+        protocolVout: target.protocolVout,
+        rawPayloadSha256: target.rawPayloadSha256,
+        recordOrdinal: target.recordOrdinal,
+        registryAddress: WORK_AMO_V5_ID_REGISTRY_ADDRESS,
+        replayRecordSha256:
+          transitionProofsBefore.get(target.eventId)?.replayRecordSha256,
+        transitionSha256:
+          transitionProofsBefore.get(target.eventId)?.transitionSha256,
+        txid: target.txid,
+      })),
+      wouldRepair: repairableCount,
+      writerExclusion:
+        "serializable advisory lock plus SHARE ROW EXCLUSIVE table locks",
+    };
+  } catch (error) {
+    if (!transactionClosed) {
+      await client.query("ROLLBACK");
+    }
+    throw error;
+  }
+}
+
 async function canonicalTransactionRepairTarget(txid) {
   const raw = await bitcoinRpc("getrawtransaction", [txid, true]);
   const blockHash = String(raw?.blockhash ?? "").trim().toLowerCase();
@@ -30313,6 +32304,14 @@ if (DRY_RUN) {
           REPAIR_CANONICAL_MAIL_PROJECTION,
         repairCanonicalMailProjectionOnly:
           REPAIR_CANONICAL_MAIL_PROJECTION_ONLY,
+        repairCanonicalEventParentMetadataApply:
+          APPLY_CANONICAL_EVENT_PARENT_METADATA_REPAIR,
+        repairCanonicalEventParentMetadataOnly:
+          REPAIR_CANONICAL_EVENT_PARENT_METADATA_ONLY,
+        repairCanonicalIdAmountProjectionApply:
+          APPLY_CANONICAL_ID_AMOUNT_PROJECTION_REPAIR,
+        repairCanonicalIdAmountProjectionOnly:
+          REPAIR_CANONICAL_ID_AMOUNT_PROJECTION_ONLY,
         repairCanonicalTxids: REPAIR_CANONICAL_TXIDS,
         repairCanonicalTxidsOnly: REPAIR_CANONICAL_TXIDS_ONLY,
         repairEventRelationsApply: REPAIR_EVENT_RELATIONS,
@@ -30499,6 +32498,34 @@ try {
           {
             apiBase: API_BASE,
             canonicalMailProjectionRepair: true,
+            network: NETWORK,
+            ok: true,
+            repair,
+          },
+          null,
+          2,
+        ),
+      );
+    } else if (REPAIR_CANONICAL_EVENT_PARENT_METADATA_ONLY) {
+      const repair = await repairCanonicalEventParentMetadata(client);
+      console.log(
+        JSON.stringify(
+          {
+            canonicalEventParentMetadataRepair: true,
+            network: NETWORK,
+            ok: true,
+            repair,
+          },
+          null,
+          2,
+        ),
+      );
+    } else if (REPAIR_CANONICAL_ID_AMOUNT_PROJECTION_ONLY) {
+      const repair = await repairCanonicalIdAmountProjection(client);
+      console.log(
+        JSON.stringify(
+          {
+            canonicalIdAmountProjectionRepair: true,
             network: NETWORK,
             ok: true,
             repair,

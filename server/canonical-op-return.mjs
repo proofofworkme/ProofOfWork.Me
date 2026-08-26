@@ -11,6 +11,8 @@ export const CANONICAL_OP_RETURN_SCRIPT_MALFORMED =
   "work-amo-v5-raw-op-return-script-malformed";
 export const CANONICAL_OP_RETURN_UTF8_INVALID =
   "work-amo-v5-raw-op-return-utf8-invalid";
+export const CANONICAL_OP_RETURN_TEXT_STORAGE_INVALID =
+  "work-amo-v5-raw-op-return-text-storage-invalid";
 export const CANONICAL_PWM_ENVELOPE_NONCONTIGUOUS =
   "work-amo-v5-raw-pwm-envelope-noncontiguous";
 
@@ -18,6 +20,41 @@ const PREFIX_BYTES = CANONICAL_PROTOCOL_PREFIXES.map((prefix) => ({
   bytes: Buffer.from(prefix, "ascii"),
   prefix,
 }));
+
+/**
+ * Remove PostgreSQL-unrepresentable U+0000 strings from a JSON projection.
+ *
+ * This is only a persistence adapter; canonical byte evidence must live in
+ * payloadHex/scriptPubKeyHex before this is used. Invalid string values become
+ * null and invalid object keys are omitted deterministically. Valid values are
+ * preserved byte-for-byte.
+ */
+export function canonicalPostgresSafeJsonValue(value) {
+  if (typeof value === "string") {
+    return value.includes("\u0000") ? null : value;
+  }
+  if (Array.isArray(value)) {
+    return value.map((entry) => canonicalPostgresSafeJsonValue(entry));
+  }
+  if (
+    !value ||
+    typeof value !== "object" ||
+    (
+      Object.getPrototypeOf(value) !== Object.prototype &&
+      Object.getPrototypeOf(value) !== null
+    )
+  ) {
+    return value;
+  }
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([key]) => !key.includes("\u0000"))
+      .map(([key, entry]) => [
+        key,
+        canonicalPostgresSafeJsonValue(entry),
+      ]),
+  );
+}
 
 function exactScriptPubKeyHex(output) {
   const source = String(
@@ -64,9 +101,11 @@ function malformedCandidate(scriptPubKeyHex, chunks, detail) {
  *
  * The script bytes are the only authority. ASM and script type are ignored.
  * Every byte after OP_RETURN must be consumed by OP_0 or PUSHDATA 1/2/4.
- * Successful chunks are concatenated and decoded as fatal UTF-8. On failure,
- * already available pushed bytes are retained only as immutable evidence and
- * for byte-level governed-prefix classification; partial text is never parsed.
+ * Successful chunks are concatenated and decoded as fatal UTF-8. Decoded text
+ * containing U+0000 is storage-invalid because PostgreSQL text/jsonb cannot
+ * represent it. On either failure, already available pushed bytes are retained
+ * only as immutable evidence and for byte-level governed-prefix classification;
+ * partial or storage-invalid text is never parsed or returned.
  */
 export function decodeCanonicalOpReturnOutput(output) {
   const scriptPubKeyHex = exactScriptPubKeyHex(output);
@@ -168,6 +207,18 @@ export function decodeCanonicalOpReturnOutput(output) {
       payloadHex: payload.toString("hex"),
       prefix,
       reasonCode: CANONICAL_OP_RETURN_UTF8_INVALID,
+      scriptPubKeyHex,
+      text: prefix,
+    };
+  }
+  if (text.includes("\u0000")) {
+    return {
+      candidate: Boolean(prefix),
+      decodeValid: false,
+      detail: "payload-text-storage-invalid-u0000",
+      payloadHex: payload.toString("hex"),
+      prefix,
+      reasonCode: CANONICAL_OP_RETURN_TEXT_STORAGE_INVALID,
       scriptPubKeyHex,
       text: prefix,
     };

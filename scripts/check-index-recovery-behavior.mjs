@@ -21,8 +21,10 @@ import {
 } from "../server/bond-units.mjs";
 import {
   CANONICAL_OP_RETURN_SCRIPT_MALFORMED,
+  CANONICAL_OP_RETURN_TEXT_STORAGE_INVALID,
   CANONICAL_OP_RETURN_UTF8_INVALID,
   CANONICAL_PWM_ENVELOPE_NONCONTIGUOUS,
+  canonicalPostgresSafeJsonValue,
   canonicalRawProtocolRecordSetFromTransaction,
   canonicalProtocolCandidateFromOutput,
   decodeCanonicalOpReturnOutput,
@@ -141,6 +143,7 @@ import {
   applyWorkAmoV5CutoverToTokenState,
   assignWorkAmoV5EconomicOutputs,
   compareWorkAmoUtf8,
+  decodeWorkAmoV5CanonicalBase64UrlJsonObject,
   deriveWorkAmoV5FrozenTerms,
   normalizeWorkAmoCanonicalPosition,
   parseWorkAmoV5GenericSaleAuthorization,
@@ -162,6 +165,7 @@ import {
   workAmoV5CanonicalTokenStateCommitment,
   workAmoV5ConsensusEventKind,
   workAmoV5EventSetCommitment,
+  workAmoV5HasNoTextStorageNul,
   workAmoCanonicalPositionPrecedes,
   workAmoV5WorkStateWithoutLegacyListingReservations,
 } from "../server/work-amo-v5.mjs";
@@ -1203,6 +1207,7 @@ function isolatedFunction(path, name, globals = {}) {
     APPLY_WORK_ATOMIC_MIGRATION: false,
     AUDIT_WORK_ATOMS_ONLY: false,
     CANONICAL_REBUILD_META_KEY: "canonical:rebuild",
+    CANONICAL_OP_RETURN_TEXT_STORAGE_INVALID,
     REQUIRED_CURRENT_SUMMARY_KEYS: [
       "growthSummary",
       "inceptionSummary",
@@ -1220,6 +1225,7 @@ function isolatedFunction(path, name, globals = {}) {
       log() {},
       warn() {},
     },
+    canonicalPostgresSafeJsonValue,
     WORK_ATOMIC_PROJECTION_MODEL,
     WORK_DECIMALS,
     WORK_LEGACY_ATOMIC_PROJECTION_MODEL,
@@ -1249,6 +1255,7 @@ function isolatedFunction(path, name, globals = {}) {
     tokenIndexAddressForNetwork: () => "",
     WORK_AMO_V5_ACTIVATION_HEIGHT,
     WORK_AMO_V5_AUTH_VERSION,
+    WORK_AMO_V5_ID_REGISTRY_ADDRESS,
     WORK_AMO_V6_AUTH_VERSION,
     WORK_AMO_V8_AUTH_VERSION,
     WORK_AMO_V8_GLOBAL_PRECISION_MODEL,
@@ -1299,6 +1306,7 @@ function isolatedFunction(path, name, globals = {}) {
     canonicalIncbReplaySha256,
     buildIncbRangeReplayWitnessManifest,
     canonicalIntegerText,
+    decodeWorkAmoV5CanonicalBase64UrlJsonObject,
     canonicalPwtReplayVerifierBindingCacheKey:
       scopedCanonicalPwtReplayVerifierBindingCacheKey,
     canonicalPwtReplayVerifierBindingDescriptor:
@@ -1468,12 +1476,14 @@ function isolatedFunction(path, name, globals = {}) {
     discoverIndexedWorkAmoV8DeclarationPins: async () => null,
     pendingCoreWorkMarketplaceVerifierContext: async () => null,
     withWorkPrecisionMetadata,
+    workAmoV5HasNoTextStorageNul,
     uniqueMarketplaceMutationActivity,
     validTxid,
     ...globals,
   });
   const dependencyGraph = path.href === API_PATH.href
     ? {
+        canonicalSaleAuthorizationJsonFromBase64Url: [],
         canonicalTokenReplayPosition: ["canonicalTokenReplayOrdinal"],
         canonicalVerifierItemPosition: ["exactVerifierPositionInteger"],
         canonicalCreditValueFieldsFromRecord: [
@@ -1546,6 +1556,7 @@ function isolatedFunction(path, name, globals = {}) {
         tokenMarketLifecycleOverlayFromCreditListings: [
           "canonicalEventIdentityDetails",
         ],
+        parseTokenPayload: ["canonicalSaleAuthorizationJsonFromBase64Url"],
         tokenTransferFromIndexedActivityItem: [
           "canonicalCreditValueFieldsFromRecord",
           "tokenCreditAmountMovedFields",
@@ -1709,6 +1720,26 @@ function isolatedFunction(path, name, globals = {}) {
           backfillMempoolScanSource: [
             "canonicalMempoolTxidSnapshot",
           ],
+          bindPreparedTransactionsToWorkAmoV5Replay: [
+            "canonicalReplayParentTime",
+            "canonicalProtocolItemForPostgres",
+            "workAmoV5PwidRegistryAttribution",
+          ],
+          workAmoV5PwidRegistryAttribution: [
+            "addressFromVout",
+            "satsFromVout",
+            "workAmoV5ReplayProjectionFromOutput",
+          ],
+          satsFromVout: ["satsFromVoutValue"],
+          canonicalProtocolItemForPostgres: [
+            "canonicalTextStorageInvalidItem",
+          ],
+          decodeBase64UrlJson: [
+            "canonicalJsonValueContainsU0000",
+          ],
+          decodeCanonicalBase64UrlJsonObject: [
+            "canonicalJsonValueContainsU0000",
+          ],
           canonicalMempoolTxidSnapshot: [
             "canonicalJsonText",
           ],
@@ -1741,6 +1772,7 @@ function isolatedFunction(path, name, globals = {}) {
             "currentWorkProjectionState",
           ],
           workAmoV5CanonicalBlockEventSet: ["canonicalProtocolPosition"],
+          upsertEvent: ["canonicalProtocolItemForPostgres"],
         }
       : {};
   const dependencyNames = [];
@@ -2719,6 +2751,55 @@ check("WORK AMO V8 seal shape accepts P2PKH sale-ticket signatures", async () =>
     parseTokenPayload(sealMessage, "livenet")?.saleAuthorization
       ?.anchorTxid,
         listingId,
+  );
+  const encodedAuthorization = (authorization) =>
+    Buffer.from(JSON.stringify(authorization), "utf8").toString("base64url");
+  const authorizationMessages = (encoded) => [
+    `pwt1:list5:${encoded}`,
+    `pwt1:seal5:${listingId}:${encoded}`,
+    `pwt1:buy5:${listingId}:${registryAddress}:${encoded}`,
+  ];
+  for (const authorization of [
+    { ...sealAuthorization, nonce: "unsafe\u0000nonce" },
+    {
+      ...sealAuthorization,
+      ignored: { nested: ["safe", "unsafe\u0000value"] },
+    },
+    { ...sealAuthorization, ["unsafe\u0000key"]: "value" },
+  ]) {
+    for (const message of authorizationMessages(
+      encodedAuthorization(authorization),
+    )) {
+      assert.equal(
+        parseTokenPayload(message, "livenet"),
+        null,
+        "every token sale-authorization path rejects decoded storage NUL",
+      );
+    }
+  }
+  const malformedUtf8Authorization = Buffer.concat([
+    Buffer.from('{"nonce":"', "utf8"),
+    Buffer.from([0x80]),
+    Buffer.from('"}', "utf8"),
+  ]).toString("base64url");
+  for (const message of authorizationMessages(malformedUtf8Authorization)) {
+    assert.equal(
+      parseTokenPayload(message, "livenet"),
+      null,
+      "every token sale-authorization path rejects malformed UTF-8",
+    );
+  }
+  assert.equal(
+    parseTokenPayload(
+      `pwt1:seal5:${listingId}:${encodedAuthorization({
+        ...sealAuthorization,
+        ignored: { label: "東京 🚀" },
+        nonce: "雪-🚀-café",
+      })}`,
+      "livenet",
+    )?.saleAuthorization?.nonce,
+    "雪-🚀-café",
+    "valid Unicode survives the canonical token authorization boundary",
   );
   const tokenSaleAuthorizationTermsMatch = isolatedFunction(
     API_PATH,
@@ -17544,6 +17625,53 @@ check("Core-present dropped protocol transactions revive through verifier and up
   databaseCanonical = false;
 });
 
+check("backfill Base64URL decoders reject U+0000 in text, JSON keys, and nested values", () => {
+  const decodeText = isolatedFunction(BACKFILL_PATH, "decodeBase64UrlText");
+  const decodeJson = isolatedFunction(BACKFILL_PATH, "decodeBase64UrlJson");
+  const decodeCanonicalObject = isolatedFunction(
+    BACKFILL_PATH,
+    "decodeCanonicalBase64UrlJsonObject",
+  );
+  const encoded = (value) =>
+    Buffer.from(
+      typeof value === "string" ? value : JSON.stringify(value),
+      "utf8",
+    ).toString("base64url");
+  const safeText = encoded("safe wire text");
+  assert.equal(decodeText(safeText), "safe wire text");
+  const nulText = encoded("safe\u0000hidden");
+  assert.equal(decodeText(nulText), "");
+  assert.equal(nulText, encoded("safe\u0000hidden"));
+
+  const safeJson = { nested: ["safe", { value: "still safe" }] };
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(decodeJson(encoded(safeJson)))),
+    safeJson,
+  );
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(decodeCanonicalObject(encoded(safeJson)))),
+    safeJson,
+  );
+  for (const value of [
+    { "bad\u0000key": "value" },
+    { nested: [{ value: "bad\u0000value" }] },
+    ["safe", { nested: "bad\u0000value" }],
+  ]) {
+    const wire = encoded(value);
+    assert.equal(decodeJson(wire), null);
+    if (!Array.isArray(value)) {
+      assert.equal(decodeCanonicalObject(wire), null);
+    }
+    assert.equal(wire, encoded(value), "rejection cannot rewrite wire evidence");
+  }
+  const escapedNulObjectWire = Buffer.from(
+    '{"nested":{"value":"bad\\u0000value"}}',
+    "utf8",
+  ).toString("base64url");
+  assert.equal(decodeJson(escapedNulObjectWire), null);
+  assert.equal(decodeCanonicalObject(escapedNulObjectWire), null);
+});
+
 check("Q16 staging fails closed for unknown or ambiguous marketplace scope", async () => {
   const workTokenId =
     "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8";
@@ -17876,6 +18004,38 @@ check("Q16 staging fails closed for unknown or ambiguous marketplace scope", asy
     BACKFILL_PATH,
     "buildWorkQ16PendingStagePlan",
   );
+  const readinessEpochCovers = isolatedFunction(
+    BACKFILL_PATH,
+    "workQ16ReadinessEpochCheckpointCovers",
+    {
+      canonicalWorkQ16ReadinessEpochCheckpoint: (value) => value,
+    },
+  );
+  const publishedReadiness = {
+    maxPreparedTransactions: "0",
+    model: "proof-index-worker-readiness-epoch-checkpoint-v1",
+    network: "livenet",
+    postmasterStartedAt: "2026-08-26T06:24:33.349Z",
+    queueCount: 0,
+    readinessEpochs: [[0, "41"], [1, "52"]],
+    searchPath: "pg_catalog, pg_temp",
+  };
+  assert.equal(
+    readinessEpochCovers(publishedReadiness, {
+      ...publishedReadiness,
+      readinessEpochs: [[0, "41"], [1, "53"]],
+    }),
+    true,
+    "monotonic readiness epochs from the same PostgreSQL instance remain reusable",
+  );
+  assert.equal(
+    readinessEpochCovers(publishedReadiness, {
+      ...publishedReadiness,
+      postmasterStartedAt: "2026-08-26T07:00:00.000Z",
+    }),
+    false,
+    "a PostgreSQL restart invalidates the prior pending witness publication",
+  );
   const pendingConfirmedBaseSource = topLevelFunctionSource(
     BACKFILL_PATH,
     "currentWorkQ16PendingConfirmedBase",
@@ -17897,13 +18057,13 @@ check("Q16 staging fails closed for unknown or ambiguous marketplace scope", asy
   );
   assert.match(
     pendingStagePlanSource,
-    /const reusablePublishedWitness = Boolean\([\s\S]*publishedAttemptBindsParent &&[\s\S]*parentConfirmedBaseMatchesCurrent &&[\s\S]*!membershipChanged/u,
-    "a stale confirmed replay base must force Q16 pending witness republication",
+    /const publishedAttemptCoversCurrentReadiness = Boolean\([\s\S]*publicationReadinessEpochCheckpoint[\s\S]*currentReadinessEpoch[\s\S]*const reusablePublishedWitness = Boolean\([\s\S]*publishedAttemptBindsParent &&[\s\S]*publishedAttemptCoversCurrentReadiness &&[\s\S]*parentConfirmedBaseMatchesCurrent &&[\s\S]*!membershipChanged/u,
+    "a PostgreSQL restart or stale confirmed replay base must force Q16 pending witness republication",
   );
-  assert.doesNotMatch(
+  assert.match(
     pendingStagePlanSource,
-    /readWorkQ16ReadinessEpochCheckpointSnapshot|currentReadinessEpoch|publicationReadinessEpochCheckpoint[\s\S]*currentReadinessEpoch/u,
-    "a fresh confirmed-phase readiness epoch must not force needless pending witness republication when membership and scan health are unchanged",
+    /readWorkQ16ReadinessEpochCheckpointSnapshot\(client\)/u,
+    "pending witness reuse must bind the current PostgreSQL postmaster while allowing monotonic epochs",
   );
   const workMintMessage = {
     decodeValid: true,
@@ -29172,6 +29332,305 @@ check("canonical event relations exactly cover every rendered participant and re
   assert.equal(whitespaceCorrupt.refs.extraCount, 1);
 });
 
+check("canonical event relations include nested sale-authorization participants and references", () => {
+  const id = "nested-id";
+  const sellerAddress = "bc1nested-seller";
+  const buyerAddress = "bc1nested-buyer";
+  const receiveAddress = "bc1nested-receiver";
+  const registryAddress = "1638Vn6KtmK8p5r4oGvAXq9nmZb1emU1DV";
+  const tokenId = "a".repeat(64);
+  const anchorTxid = "b".repeat(64);
+  const nestedOnly = {
+    saleAuthorization: {
+      anchorTxid,
+      anchorVout: 1,
+      buyerAddress,
+      id,
+      receiveAddress,
+      registryAddress,
+      sellerAddress,
+      ticker: "WORK",
+      tokenId,
+    },
+  };
+  assert.deepEqual(proofIndexEventParticipantsForItem(nestedOnly), [
+    { address: registryAddress, powid: "", role: "registry" },
+    { address: buyerAddress, powid: "", role: "buyer" },
+    { address: receiveAddress, powid: id, role: "receiver" },
+    { address: sellerAddress, powid: "", role: "seller" },
+  ]);
+  assert.deepEqual(proofIndexEventRefsForItem(nestedOnly), [
+    { refType: "powid", refValue: id },
+    {
+      refType: "sale-ticket-outpoint",
+      refValue: `${anchorTxid}:1`,
+    },
+    { refType: "ticker", refValue: "WORK" },
+    { refType: "token-id", refValue: tokenId },
+  ]);
+  assert.equal(
+    proofIndexEventRefsForItem({
+      saleAuthorization: { anchorTxid, anchorVout: null },
+    }).some((ref) => ref.refType === "sale-ticket-outpoint"),
+    false,
+    "an incomplete nested anchor must not manufacture a null outpoint",
+  );
+  for (const payload of [
+    { saleTicketTxid: anchorTxid, saleTicketVout: 0 },
+    {
+      saleAuthorization: {
+        saleTicketTxid: anchorTxid,
+        saleTicketVout: 0,
+      },
+    },
+    { saleAuthorization: { anchorTxid, anchorVout: 0 } },
+  ]) {
+    assert.deepEqual(
+      proofIndexEventRefsForItem(payload),
+      [{
+        refType: "sale-ticket-outpoint",
+        refValue: `${anchorTxid}:0`,
+      }],
+      "every canonical ticket source must retain numeric vout zero",
+    );
+  }
+  for (const payload of [
+    { saleTicketTxid: anchorTxid, saleTicketVout: null },
+    {
+      saleAuthorization: {
+        saleTicketTxid: anchorTxid,
+        saleTicketVout: null,
+      },
+    },
+  ]) {
+    assert.equal(
+      proofIndexEventRefsForItem(payload).some(
+        (ref) => ref.refType === "sale-ticket-outpoint",
+      ),
+      false,
+      "an incomplete sale ticket must not manufacture a null outpoint",
+    );
+  }
+  const mirrored = {
+    ...nestedOnly,
+    id,
+    receiveAddress,
+    registryAddress,
+    saleTicketTxid: anchorTxid,
+    saleTicketVout: 1,
+    ticker: "WORK",
+    tokenId,
+  };
+  assert.equal(
+    proofIndexEventParticipantsForItem(mirrored).filter(
+      (participant) =>
+        participant.address === registryAddress &&
+        participant.role === "registry",
+    ).length,
+    1,
+    "a top-level mirror and its signed authorization must deduplicate",
+  );
+  assert.equal(
+    proofIndexEventParticipantsForItem(mirrored).filter(
+      (participant) =>
+        participant.address === receiveAddress &&
+        participant.role === "receiver" &&
+        participant.powid === id,
+    ).length,
+    1,
+  );
+  for (const expectedRef of proofIndexEventRefsForItem(nestedOnly)) {
+    assert.equal(
+      proofIndexEventRefsForItem(mirrored).filter(
+        (ref) =>
+          ref.refType === expectedRef.refType &&
+          ref.refValue === expectedRef.refValue,
+      ).length,
+      1,
+      `mirrored ${expectedRef.refType} must deduplicate`,
+    );
+  }
+  const nestedEvent = {
+    event_id: "99",
+    payload: nestedOnly,
+    status: "confirmed",
+  };
+  const nestedMissing = proofIndexCanonicalEventRelationParity({
+    eventRows: [nestedEvent],
+    participantRows: [],
+    refRows: [],
+  });
+  assert.equal(nestedMissing.ready, false);
+  assert.equal(nestedMissing.participants.missingCount, 4);
+  assert.equal(nestedMissing.refs.missingCount, 4);
+  const nestedExact = proofIndexCanonicalEventRelationParity({
+    eventRows: [nestedEvent],
+    participantRows: proofIndexEventParticipantsForItem(nestedOnly).map(
+      (participant) => ({ ...participant, event_id: nestedEvent.event_id }),
+    ),
+    refRows: proofIndexEventRefsForItem(nestedOnly).map((ref) => ({
+      event_id: nestedEvent.event_id,
+      ref_type: ref.refType,
+      ref_value: ref.refValue,
+    })),
+  });
+  assert.equal(nestedExact.ready, true);
+
+  const productionNestedRegistryEventIds = [
+    3514117,
+    3514830,
+    3612878,
+    3612887,
+    3612889,
+    3631537,
+    3708179,
+    3753313,
+    3794141,
+    3794194,
+    3794222,
+    3794262,
+    3801928,
+    3806557,
+    3806598,
+    3806670,
+    3806690,
+    3806696,
+  ];
+  const eventRows = productionNestedRegistryEventIds.map((eventId) => ({
+    event_id: String(eventId),
+    payload: {
+      saleAuthorization: { registryAddress },
+    },
+    status: "confirmed",
+  }));
+  const missing = proofIndexCanonicalEventRelationParity({
+    eventRows,
+    participantRows: [],
+    refRows: [],
+  });
+  assert.equal(missing.ready, false);
+  assert.equal(missing.participants.expectedCount, 18);
+  assert.equal(missing.participants.missingCount, 18);
+
+  const participantRows = eventRows.flatMap((event) =>
+    proofIndexEventParticipantsForItem(event.payload).map((participant) => ({
+      ...participant,
+      event_id: event.event_id,
+    }))
+  );
+  const exact = proofIndexCanonicalEventRelationParity({
+    eventRows,
+    participantRows,
+    refRows: [],
+  });
+  assert.equal(exact.ready, true);
+  assert.equal(exact.participants.expectedCount, 18);
+  assert.equal(exact.participants.observedCount, 18);
+});
+
+check("canonical event relations include rendered credit and Inception attachments", () => {
+  const workTokenId = "c".repeat(64);
+  const incbTokenId = "d".repeat(64);
+  const recipientAddress = "bc1attachment-recipient";
+  const bondRecipientAddress = "1attachmentrecipient";
+  const registryAddress = "bc1attachment-registry";
+  const payload = {
+    attachedCredits: [{
+      recipientAddress,
+      registryAddress,
+      ticker: "WORK",
+      tokenId: workTokenId,
+    }],
+    inceptionAttachment: {
+      recipientAddress: bondRecipientAddress,
+      tokenId: incbTokenId,
+    },
+  };
+  const participants = proofIndexEventParticipantsForItem(payload);
+  assert.ok(
+    participants.some(
+      (participant) =>
+        participant.address === recipientAddress &&
+        participant.role === "recipient",
+    ),
+  );
+  assert.ok(
+    participants.some(
+      (participant) =>
+        participant.address === bondRecipientAddress &&
+        participant.role === "recipient",
+    ),
+  );
+  assert.ok(
+    participants.some(
+      (participant) =>
+        participant.address === registryAddress &&
+        participant.role === "registry",
+    ),
+  );
+  const refs = proofIndexEventRefsForItem(payload);
+  assert.ok(
+    refs.some(
+      (ref) => ref.refType === "token-id" && ref.refValue === workTokenId,
+    ),
+  );
+  assert.ok(
+    refs.some(
+      (ref) => ref.refType === "token-id" && ref.refValue === incbTokenId,
+    ),
+  );
+  assert.ok(
+    refs.some(
+      (ref) => ref.refType === "ticker" && ref.refValue === "WORK",
+    ),
+  );
+
+  const event = { event_id: "100", payload, status: "confirmed" };
+  const missing = proofIndexCanonicalEventRelationParity({
+    eventRows: [event],
+    participantRows: [],
+    refRows: [],
+  });
+  assert.equal(missing.ready, false);
+  assert.equal(missing.participants.missingCount, 3);
+  assert.equal(missing.refs.missingCount, 3);
+  const exact = proofIndexCanonicalEventRelationParity({
+    eventRows: [event],
+    participantRows: participants.map((participant) => ({
+      ...participant,
+      event_id: event.event_id,
+    })),
+    refRows: refs.map((ref) => ({
+      event_id: event.event_id,
+      ref_type: ref.refType,
+      ref_value: ref.refValue,
+    })),
+  });
+  assert.equal(exact.ready, true);
+
+  const mirrored = {
+    ...payload,
+    recipientAddress,
+    registryAddress,
+    ticker: "WORK",
+    tokenId: workTokenId,
+  };
+  assert.equal(
+    proofIndexEventParticipantsForItem(mirrored).filter(
+      (participant) =>
+        participant.address === recipientAddress &&
+        participant.role === "recipient",
+    ).length,
+    1,
+  );
+  assert.equal(
+    proofIndexEventRefsForItem(mirrored).filter(
+      (ref) => ref.refType === "token-id" && ref.refValue === workTokenId,
+    ).length,
+    1,
+  );
+});
+
 check("canonical event relation repair is explicit, transactional, and parity-proven", () => {
   const backfillSource = fileSource(BACKFILL_PATH);
   const repairSource = topLevelFunctionSource(
@@ -36061,6 +36520,861 @@ check("canonical transaction-row repair is atomic and preserves event rows", asy
   );
   assert.equal(rollbackEvents.at(-1), "ROLLBACK");
   assert.equal(rollbackEvents.includes("COMMIT"), false);
+});
+
+check("canonical event parent metadata repair accepts only the pinned missing or exact row shapes", () => {
+  const expected = {
+    blockHash: "b".repeat(64),
+    blockHeight: 962957,
+    blockIndex: 933,
+    blockTime: "2026-08-17T23:10:20.000Z",
+    blockTimeEpoch: 1_787_008_220,
+    eventId: 3612878,
+    protocolVout: 2,
+    recordOrdinal: 1,
+    txid: "a".repeat(64),
+  };
+  const rowState = isolatedFunction(
+    BACKFILL_PATH,
+    "canonicalEventParentMetadataRepairRowState",
+  );
+  const missing = {
+    block_canonical: true,
+    canonical_block_count: "1",
+    canonical_block_hash: expected.blockHash,
+    canonical_block_height: expected.blockHeight,
+    canonical_block_time: expected.blockTime,
+    canonical_position_count: "1",
+    event_block_height: expected.blockHeight,
+    event_block_index: expected.blockIndex,
+    event_block_time: null,
+    event_id: expected.eventId,
+    event_status: "confirmed",
+    event_time: null,
+    event_txid: expected.txid,
+    event_valid: true,
+    kind: "token-listing-closed",
+    network: "livenet",
+    payload: {
+      _workAmoV5ReplayBound: true,
+      blockHash: expected.blockHash,
+      blockHeight: expected.blockHeight,
+      blockIndex: expected.blockIndex,
+      chargesTransactionFee: false,
+      claimsEconomicOutputs: false,
+      derived: true,
+      economicDelta: false,
+      kind: "token-listing-closed",
+      protocol: "pwt1",
+      protocolVout: expected.protocolVout,
+      rawCandidate: false,
+      recordOrdinal: expected.recordOrdinal,
+      txid: expected.txid,
+      workAmoV5RawCandidate: false,
+    },
+    protocol: "pwt1",
+    protocol_vout: expected.protocolVout,
+    raw_payload: "",
+    raw_tx: {
+      _powBlockHash: expected.blockHash,
+      _powBlockIndex: expected.blockIndex,
+      blocktime: expected.blockTimeEpoch,
+      canonicalBlockScan: {
+        blockHash: expected.blockHash,
+        blockIndex: expected.blockIndex,
+        height: expected.blockHeight,
+        network: "livenet",
+      },
+      height: expected.blockHeight,
+      txid: expected.txid,
+    },
+    record_ordinal: expected.recordOrdinal,
+    transaction_block_hash: expected.blockHash,
+    transaction_block_height: expected.blockHeight,
+    transaction_block_index: expected.blockIndex,
+    transaction_block_time: expected.blockTime,
+    transaction_source: "canonical-block-scan",
+    transaction_status: "confirmed",
+  };
+  const missingState = rowState(missing, expected);
+  assert.equal(missingState.repairable, true);
+  assert.equal(missingState.alreadyApplied, false);
+
+  const exact = structuredClone(missing);
+  exact.event_block_time = expected.blockTime;
+  exact.event_time = expected.blockTime;
+  Object.assign(exact.payload, {
+    blockTime: expected.blockTime,
+    closedAt: expected.blockTime,
+    createdAt: expected.blockTime,
+    timestamp: expected.blockTime,
+  });
+  const exactState = rowState(exact, expected);
+  assert.equal(exactState.repairable, false);
+  assert.equal(exactState.alreadyApplied, true);
+
+  assert.throws(
+    () => rowState({ ...missing, event_time: "2026-08-17T23:10:21.000Z" }, expected),
+    /divergent eventTime/u,
+  );
+  assert.throws(
+    () => rowState({ ...missing, event_block_time: expected.blockTime }, expected),
+    /partially repaired/u,
+  );
+  assert.throws(
+    () => rowState({ ...missing, event_block_index: 934 }, expected),
+    /diverged from its pinned identity or parent evidence/u,
+  );
+});
+
+check("canonical event parent metadata repair re-proves Core time, position, and buy5 carrier", async () => {
+  const expected = {
+    blockHash: "b".repeat(64),
+    blockHeight: 962957,
+    blockIndex: 1,
+    blockTime: "2026-08-17T23:10:20.000Z",
+    blockTimeEpoch: 1_787_008_220,
+    eventId: 3612878,
+    protocolVout: 2,
+    recordOrdinal: 1,
+    txid: "a".repeat(64),
+  };
+  const calls = [];
+  let carrierValid = true;
+  const coreTarget = isolatedFunction(
+    BACKFILL_PATH,
+    "canonicalEventParentMetadataRepairCoreTarget",
+    {
+      assertCanonicalBlockEnvelope: () => {},
+      bitcoinRpc: async (method, params) => {
+        calls.push([method, params]);
+        if (method === "getrawtransaction") {
+          return {
+            blockhash: expected.blockHash,
+            blocktime: expected.blockTimeEpoch,
+            confirmations: 10,
+            hash: expected.txid,
+            hex: "deadbeef",
+            txid: expected.txid,
+          };
+        }
+        if (method === "getblock") {
+          return {
+            hash: expected.blockHash,
+            height: expected.blockHeight,
+            nTx: 2,
+            time: expected.blockTimeEpoch,
+            tx: [
+              { txid: "c".repeat(64) },
+              { hash: expected.txid, hex: "deadbeef", txid: expected.txid },
+            ],
+          };
+        }
+        if (method === "getblockhash") return expected.blockHash;
+        throw new Error(`unexpected RPC ${method}`);
+      },
+      isHexTxid: (value) => /^[0-9a-f]{64}$/u.test(String(value)),
+      protocolMessagesFromTx: () => carrierValid
+        ? [{
+            decodeValid: true,
+            prefix: "pwt1:",
+            text: `pwt1:buy5:${"d".repeat(64)}`,
+            voutIndex: 2,
+          }]
+        : [],
+    },
+  );
+  const target = await coreTarget(expected);
+  assert.equal(target.blockIndex, 1);
+  assert.equal(target.blockTransactionCount, 2);
+  assert.deepEqual(
+    calls.map(([method]) => method),
+    ["getrawtransaction", "getblock", "getblockhash"],
+  );
+  carrierValid = false;
+  await rejection(
+    coreTarget(expected),
+    (error) => /no exact pwt1:buy5 parent/u.test(error.message),
+  );
+});
+
+check("canonical event parent metadata final proof uses parallel lightweight Core reads", async () => {
+  const expected = {
+    blockHash: "b".repeat(64),
+    blockHeight: 962957,
+    blockIndex: 1,
+    blockTime: "2026-08-17T23:10:20.000Z",
+    blockTimeEpoch: 1_787_008_220,
+    eventId: 3612878,
+    parentPayload: `pwt1:buy5:${"d".repeat(64)}`,
+    protocolVout: 2,
+    recordOrdinal: 1,
+    txid: "a".repeat(64),
+  };
+  let active = 0;
+  let exactVout = true;
+  let maxActive = 0;
+  const calls = [];
+  const finalProof = isolatedFunction(
+    BACKFILL_PATH,
+    "canonicalEventParentMetadataRepairFinalCoreProof",
+    {
+      bitcoinRpc: async (method, params) => {
+        calls.push([method, params]);
+        active += 1;
+        maxActive = Math.max(maxActive, active);
+        await Promise.resolve();
+        active -= 1;
+        if (method === "getblockhash") return expected.blockHash;
+        if (method === "getblock") {
+          assert.deepEqual(Array.from(params), [expected.blockHash, 1]);
+          return {
+            hash: expected.blockHash,
+            height: expected.blockHeight,
+            nTx: 2,
+            time: expected.blockTimeEpoch,
+            tx: ["c".repeat(64), expected.txid],
+          };
+        }
+        if (method === "getrawtransaction") {
+          return {
+            blockhash: expected.blockHash,
+            blocktime: expected.blockTimeEpoch,
+            confirmations: 10,
+            txid: expected.txid,
+            vout: [{ n: 0 }, { n: 1 }, { n: exactVout ? 2 : 3 }],
+          };
+        }
+        throw new Error(`unexpected RPC ${method}`);
+      },
+      protocolMessagesFromTx: (raw) => raw.vout[2]?.n === 2
+        ? [{
+            decodeValid: true,
+            prefix: "pwt1:",
+            text: expected.parentPayload,
+            voutIndex: 2,
+          }]
+        : [],
+    },
+  );
+  assert.equal(await finalProof(expected), true);
+  assert.equal(maxActive, 3);
+  assert.deepEqual(
+    calls.map(([method]) => method),
+    ["getblockhash", "getblock", "getrawtransaction"],
+  );
+  exactVout = false;
+  await rejection(
+    finalProof(expected),
+    (error) => /changed final Core hash, time, position, or pwt1:buy5 carrier/u.test(
+      error.message,
+    ),
+  );
+});
+
+check("canonical event parent metadata repair defaults to rollback and applies all six atomically", async () => {
+  const blockTime = "2026-08-17T23:10:20.000Z";
+  const targets = Array.from({ length: 6 }, (_, index) => ({
+    blockHash: (index + 1).toString(16).repeat(64),
+    blockHeight: 962957 + index,
+    blockIndex: 900 + index,
+    blockTime,
+    blockTimeEpoch: 1_787_008_220,
+    eventId: 3612878 + index,
+    protocolVout: 2,
+    recordOrdinal: 1,
+    txid: (index + 7).toString(16).repeat(64),
+  }));
+  const harness = (apply, failure = "") => {
+    let coreProofs = 0;
+    let updateCount = 0;
+    const statements = [];
+    const committedRows = new Map(
+      targets.map((target) => [
+        target.eventId,
+        {
+          canonical: false,
+          event_id: target.eventId,
+          invariant: "stable",
+        },
+      ]),
+    );
+    let transactionRows = null;
+    const visibleRows = () =>
+      [...(transactionRows ?? committedRows).values()].map((row) => ({
+        ...row,
+      }));
+    const repair = isolatedFunction(
+      BACKFILL_PATH,
+      "repairCanonicalEventParentMetadata",
+      {
+        APPLY_CANONICAL_EVENT_PARENT_METADATA_REPAIR: apply,
+        CANONICAL_EVENT_PARENT_METADATA_REPAIR_TARGETS: targets,
+        DRY_RUN: false,
+        NETWORK: "livenet",
+        canonicalEventParentMetadataRepairCoreTarget: async (target) => {
+          coreProofs += 1;
+          return {
+            ...target,
+            parentPayload: `pwt1:buy5:${target.txid}`,
+          };
+        },
+        canonicalEventParentMetadataRepairFinalCoreProof: async () => {
+          coreProofs += 1;
+          if (failure === "second-core-proof") {
+            throw new Error("final Core proof failed");
+          }
+          return true;
+        },
+        canonicalEventParentMetadataRepairInvariantFingerprint: (row) =>
+          `event:${row.event_id}:${row.invariant}`,
+        canonicalEventParentMetadataRepairRowState: (row, expected) => ({
+          alreadyApplied: row.canonical === true,
+          eventId: expected.eventId,
+          observed: { blockTime: row.canonical ? blockTime : null },
+          repairable: row.canonical !== true,
+          txid: expected.txid,
+        }),
+        canonicalEventParentMetadataRepairRows: async () => visibleRows(),
+      },
+    );
+    const client = {
+      async query(sql, params = []) {
+        const text = String(sql).trim();
+        statements.push(text);
+        if (text === "BEGIN ISOLATION LEVEL SERIALIZABLE") {
+          transactionRows = new Map(
+            [...committedRows].map(([eventId, row]) => [
+              eventId,
+              { ...row },
+            ]),
+          );
+          return { rows: [] };
+        }
+        if (/^UPDATE proof_indexer\.events/u.test(text)) {
+          updateCount += 1;
+          if (failure === "update-guard" && updateCount === 3) {
+            return { rows: [] };
+          }
+          const row = transactionRows.get(Number(params[1]));
+          row.canonical = true;
+          if (failure === "invariant-fingerprint" && updateCount === 6) {
+            row.invariant = "drifted";
+          }
+          return { rows: [{ event_id: params[1] }] };
+        }
+        if (text === "COMMIT") {
+          committedRows.clear();
+          for (const [eventId, row] of transactionRows) {
+            committedRows.set(eventId, { ...row });
+          }
+          transactionRows = null;
+          return { rows: [] };
+        }
+        if (text === "ROLLBACK") {
+          transactionRows = null;
+          return { rows: [] };
+        }
+        return { rows: [] };
+      },
+    };
+    return {
+      coreProofs: () => coreProofs,
+      committedCanonical: () =>
+        [...committedRows.values()].filter((row) => row.canonical).length,
+      execute: () => repair(client),
+      statements,
+    };
+  };
+
+  const dryRun = harness(false);
+  const dryRunResult = await dryRun.execute();
+  assert.equal(dryRunResult.dryRun, true);
+  assert.equal(dryRunResult.applied, false);
+  assert.equal(dryRunResult.wouldRepair, 6);
+  assert.equal(dryRunResult.repaired, 0);
+  assert.equal(dryRun.coreProofs(), 12);
+  assert.equal(dryRun.committedCanonical(), 0);
+  assert.equal(dryRun.statements.at(-1), "ROLLBACK");
+  assert.equal(
+    dryRun.statements.some((statement) =>
+      /^UPDATE proof_indexer\.events/u.test(statement)
+    ),
+    false,
+  );
+  assert.ok(
+    dryRun.statements.some((statement) =>
+      /pg_advisory_xact_lock/u.test(statement)
+    ),
+  );
+  assert.ok(
+    dryRun.statements.some((statement) =>
+      /LOCK TABLE[\s\S]*SHARE ROW EXCLUSIVE/u.test(statement)
+    ),
+  );
+  assert.ok(
+    dryRun.statements.findIndex((statement) =>
+      /LOCK TABLE[\s\S]*SHARE ROW EXCLUSIVE/u.test(statement)
+    ) < dryRun.statements.findIndex((statement) =>
+      /pg_advisory_xact_lock/u.test(statement)
+    ),
+  );
+
+  const applied = harness(true);
+  const appliedResult = await applied.execute();
+  assert.equal(appliedResult.dryRun, false);
+  assert.equal(appliedResult.applied, true);
+  assert.equal(appliedResult.repaired, 6);
+  assert.equal(applied.coreProofs(), 12);
+  assert.equal(applied.committedCanonical(), 6);
+  assert.equal(applied.statements.at(-1), "COMMIT");
+  assert.equal(
+    applied.statements.filter((statement) =>
+      /^UPDATE proof_indexer\.events/u.test(statement)
+    ).length,
+    6,
+  );
+
+  for (const [failure, pattern] of [
+    ["update-guard", /update guard failed/u],
+    ["invariant-fingerprint", /changed non-time state/u],
+    ["second-core-proof", /final Core proof failed/u],
+  ]) {
+    const failed = harness(true, failure);
+    await rejection(
+      failed.execute(),
+      (error) => pattern.test(error.message),
+      `${failure} must roll the complete repair back`,
+    );
+    assert.equal(failed.statements.at(-1), "ROLLBACK");
+    assert.equal(failed.statements.includes("COMMIT"), false);
+    assert.equal(failed.committedCanonical(), 0);
+  }
+
+  const source = fileSource(BACKFILL_PATH);
+  const repairSource = topLevelFunctionSource(
+    BACKFILL_PATH,
+    "repairCanonicalEventParentMetadata",
+  );
+  assert.match(
+    repairSource,
+    /LOCK TABLE[\s\S]*pg_advisory_xact_lock[\s\S]*Promise\.all\([\s\S]*canonicalEventParentMetadataRepairFinalCoreProof/u,
+  );
+  assert.match(
+    repairSource,
+    /UPDATE proof_indexer\.events[\s\S]*event_id = \$2[\s\S]*txid = \$3[\s\S]*block_height = \$4[\s\S]*block_index = \$5[\s\S]*op_return_vout = \$6[\s\S]*record_ordinal = \$7[\s\S]*parent_transaction\.block_hash = \$8[\s\S]*parent_transaction\.block_time = \$9::timestamptz/u,
+  );
+  const exactManifest = [
+    [3612878, "b587b787ad7a621e6096ba6b77c162793c37a61cb5b2a981c6ff6dd875a8203a"],
+    [3612887, "431cea7dc3c6f9136ebc5cd259a7e436580fe1234c265e0e43e7c55b1e260a07"],
+    [3612889, "d735596cf0281f617905a386c1d0a1a4363684593a83e9a54d1496c3192bdbf5"],
+    [3631537, "d097aaba4990b6b98574765349891dd19828df4e12182ec9db68ecb8da0d10c9"],
+    [3708179, "5b2cf523d4e67c9f3427aca951a13daa3da94595051be4e10fc767537effc8d2"],
+    [3753313, "3ce256fa95758a6ed58e00aa8f90644601f1c5f50d50c5a285aa23d479256284"],
+  ];
+  const manifestSource = source.match(
+    /const CANONICAL_EVENT_PARENT_METADATA_REPAIR_TARGETS = Object\.freeze\(\[([\s\S]*?)\]\);/u,
+  )?.[1] ?? "";
+  assert.equal((manifestSource.match(/Object\.freeze\(\{/gu) ?? []).length, 6);
+  for (const [eventId, txid] of exactManifest) {
+    assert.match(manifestSource, new RegExp(`eventId: ${eventId}`, "u"));
+    assert.match(manifestSource, new RegExp(`txid: "${txid}"`, "u"));
+  }
+  assert.match(
+    source,
+    /--repair-canonical-event-parent-metadata[\s\S]*POW_INDEX_REPAIR_CANONICAL_EVENT_PARENT_METADATA_APPLY[\s\S]*repairCanonicalEventParentMetadata\(client\)/u,
+  );
+  const configurationGlobals = {
+    APPLY_CANONICAL_EVENT_PARENT_METADATA_REPAIR: false,
+    AUDIT_WORK_ATOMS_ONLY: false,
+    BITCOIN_RPC_URL: "http://127.0.0.1:8332",
+    BLOCK_SCAN_FROM_HEIGHT: 0,
+    CANONICAL_REBUILD: false,
+    HYDRATE_TRANSACTION_DETAILS_ONLY: false,
+    MIGRATE_WORK_ATOMS_ONLY: false,
+    NETWORK: "livenet",
+    PREPARE_CANONICAL_PWT_RANGE_REPLAY_ONLY: false,
+    PREPARE_CANONICAL_REBUILD_ONLY: false,
+    REBUILD_CREDIT_BALANCES_ONLY: false,
+    REPAIR_CANONICAL_EVENT_PARENT_METADATA_ONLY: false,
+    REPAIR_CANONICAL_TXIDS_ONLY: false,
+    REPAIR_EVENT_RELATIONS: false,
+    REPAIR_EVENT_RELATIONS_ONLY: false,
+    REPAIR_ID_TXIDS_ONLY: false,
+    REPAIR_INCB_ISSUANCE_ONLY: false,
+    REPAIR_WORK_PARTICIPANTS_ONLY: false,
+  };
+  const rebuildConflict = isolatedFunction(
+    BACKFILL_PATH,
+    "assertCanonicalRebuildConfiguration",
+    {
+      ...configurationGlobals,
+      REBUILD_CREDIT_BALANCES_ONLY: true,
+      REPAIR_CANONICAL_EVENT_PARENT_METADATA_ONLY: true,
+    },
+  );
+  assert.throws(rebuildConflict, /mutually exclusive/u);
+  const applyWithoutMode = isolatedFunction(
+    BACKFILL_PATH,
+    "assertCanonicalRebuildConfiguration",
+    {
+      ...configurationGlobals,
+      APPLY_CANONICAL_EVENT_PARENT_METADATA_REPAIR: true,
+    },
+  );
+  assert.throws(applyWithoutMode, /invalid without/u);
+});
+
+check("raw PWID replay materializes exact registry attribution without changing replay evidence", () => {
+  const attribution = isolatedFunction(
+    BACKFILL_PATH,
+    "workAmoV5PwidRegistryAttribution",
+  );
+  const rawTx = {
+    vout: [
+      {
+        n: 0,
+        scriptpubkey_address: WORK_AMO_V5_ID_REGISTRY_ADDRESS,
+        value: 1_000,
+      },
+      { n: 1, scriptpubkey: "6a", value: 0 },
+    ],
+  };
+  const replay = {
+    outcome: {
+      kind: workAmoV5ConsensusEventKind("pwid1", true),
+      reasonCode: "",
+      semanticKind: "id-register",
+      valid: true,
+    },
+    output: { projection: { kind: "id-register" } },
+    position: { protocolVout: 1 },
+    protocol: "pwid1",
+    rawCandidate: true,
+    stateDelta: {
+      baseContributions: [
+        { field: "powids", value: "1" },
+        { field: "computerEventFlowSats", value: "1000" },
+      ],
+      creditFixedQ8: "0",
+      creditFixedSats: "0",
+      economicOutputs: [{
+        address: WORK_AMO_V5_ID_REGISTRY_ADDRESS,
+        attributedSats: "1000",
+        outputSats: "1000",
+        role: "pwid-registry",
+        vout: 0,
+      }],
+    },
+  };
+  const replayBefore = isolatedCanonicalPayloadCommitment(replay);
+  const projected = attribution({
+    item: { kind: "id-register", protocolVout: 1 },
+    rawTx,
+    replay,
+    valid: true,
+  });
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(projected)),
+    {
+      amountSats: "1000",
+      registryAddress: WORK_AMO_V5_ID_REGISTRY_ADDRESS,
+      registryClaims: [{
+        address: WORK_AMO_V5_ID_REGISTRY_ADDRESS,
+        attributedSats: "1000",
+        outputSats: "1000",
+        role: "pwid-registry",
+        vout: 0,
+      }],
+      semanticKind: "id-register",
+      source: "canonical-work-amo-v5-state-delta",
+    },
+  );
+  assert.deepEqual(
+    isolatedCanonicalPayloadCommitment(replay),
+    replayBefore,
+    "projection materialization must not mutate the immutable replay record",
+  );
+
+  const invalid = attribution({
+    item: { kind: "id-event-invalid", protocolVout: 1 },
+    rawTx: { vout: [] },
+    replay: {
+      ...replay,
+      outcome: {
+        kind: workAmoV5ConsensusEventKind("pwid1", false),
+        reasonCode: "work-amo-v5-raw-pwid-payment-invalid",
+        semanticKind: "id-register",
+        valid: false,
+      },
+      stateDelta: {
+        baseContributions: [],
+        creditFixedQ8: "0",
+        creditFixedSats: "0",
+        economicOutputs: [],
+      },
+    },
+    valid: false,
+  });
+  assert.equal(invalid.amountSats, "0");
+
+  for (const [label, mutate] of [
+    ["attribution", (candidate) => {
+      candidate.stateDelta.economicOutputs[0].attributedSats = "999";
+    }],
+    ["physical output", (_candidate, transaction) => {
+      transaction.vout[0].value = 999;
+    }],
+    ["registry address", (_candidate, transaction) => {
+      transaction.vout[0].scriptpubkey_address = "wrong-registry";
+    }],
+    ["semantic kind", (candidate) => {
+      candidate.output.projection.kind = "id-update";
+      candidate.outcome.semanticKind = "id-update";
+    }],
+  ]) {
+    const candidate = structuredClone(replay);
+    const transaction = structuredClone(rawTx);
+    mutate(candidate, transaction);
+    assert.throws(
+      () => attribution({
+        item: { kind: candidate.outcome.semanticKind, protocolVout: 1 },
+        rawTx: transaction,
+        replay: candidate,
+        valid: true,
+      }),
+      /Canonical raw PWID/u,
+      `${label} drift must fail closed`,
+    );
+  }
+});
+
+check("canonical ID amount repair retry keeps post-COMMIT bootstrap gates fail closed", () => {
+  const bootstrapRequirement = isolatedFunction(
+    BACKFILL_PATH,
+    "canonicalIdAmountProjectionRepairBootstrapRequirement",
+  );
+  const expectedGates = [
+    "clear proof-api process and disk response caches before restart",
+    "run the worker once and publish a fresh exact-tip canonical summary",
+    "complete ID audit and Log/Growth parity before public exposure",
+  ];
+  const staleAudit = bootstrapRequirement({
+    apply: false,
+    manifestLength: 9,
+    repairableCount: 9,
+  });
+  assert.equal(staleAudit.cacheBootstrapRequired, false);
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(staleAudit.cacheInvalidationRequired)),
+    [],
+  );
+
+  // Model a successful COMMIT whose caller lost the response, followed by
+  // both supported retry shapes observing the exact all-canonical row set.
+  const ambiguousCommit = bootstrapRequirement({
+    apply: true,
+    manifestLength: 9,
+    repairableCount: 9,
+  });
+  const auditRetry = bootstrapRequirement({
+    apply: false,
+    manifestLength: 9,
+    repairableCount: 0,
+  });
+  const applyRetry = bootstrapRequirement({
+    apply: true,
+    manifestLength: 9,
+    repairableCount: 0,
+  });
+  for (const result of [ambiguousCommit, auditRetry, applyRetry]) {
+    assert.equal(result.cacheBootstrapRequired, true);
+    assert.equal(result.durableBootstrapCompletionProven, false);
+    assert.deepEqual(
+      JSON.parse(JSON.stringify(result.cacheInvalidationRequired)),
+      expectedGates,
+    );
+  }
+  assert.equal(
+    auditRetry.cacheBootstrapReason,
+    "canonical-retry-without-durable-bootstrap-completion-proof",
+  );
+  assert.equal(
+    applyRetry.cacheBootstrapReason,
+    auditRetry.cacheBootstrapReason,
+  );
+  assert.throws(
+    () => bootstrapRequirement({
+      apply: true,
+      manifestLength: 9,
+      repairableCount: 1,
+    }),
+    /bootstrap state is invalid/u,
+  );
+});
+
+check("canonical ID amount repair is exact, all-or-none, idempotent, and evidence preserving", () => {
+  const expected = {
+    amountSats: "1000",
+    blockHash:
+      "000000000000000000011609b5476622bc279ca9fedea8852cb62bcb65776df2",
+    blockHeight: 960117,
+    blockIndex: 2174,
+    blockTime: "2026-07-29T14:28:24.000Z",
+    blockTimeEpoch: 1785335304,
+    eventId: 3125758,
+    paymentVout: 0,
+    protocolVout: 1,
+    rawPayloadSha256:
+      "f1ec6473552d40b67678db3e31fdb1ca31710c9b9a60c8c14cd889464c74b700",
+    recordOrdinal: 0,
+    txid: "a1a58faef3a6ece598a5efb34545ee098cc09a2739cd68d458eafc6bc1e1f9dc",
+  };
+  const rawPayload = "pwid1:r2:fixture";
+  expected.rawPayloadSha256 = createHash("sha256")
+    .update(rawPayload, "utf8")
+    .digest("hex");
+  const rowState = isolatedFunction(
+    BACKFILL_PATH,
+    "canonicalIdAmountProjectionRepairRowState",
+  );
+  const row = {
+    amount_sats: "0",
+    block_canonical: true,
+    canonical_block_count: "1",
+    canonical_block_hash: expected.blockHash,
+    canonical_block_height: expected.blockHeight,
+    canonical_block_time: expected.blockTime,
+    canonical_position_count: "1",
+    event_block_height: expected.blockHeight,
+    event_block_index: expected.blockIndex,
+    event_block_time: expected.blockTime,
+    event_id: expected.eventId,
+    event_status: "confirmed",
+    event_time: expected.blockTime,
+    event_txid: expected.txid,
+    event_valid: true,
+    kind: "id-register",
+    network: "livenet",
+    payload: {
+      kind: "id-register",
+      protocol: "pwid1",
+      txid: expected.txid,
+    },
+    protocol: "pwid1",
+    protocol_vout: expected.protocolVout,
+    raw_payload: rawPayload,
+    raw_tx: {
+      _powBlockHash: expected.blockHash,
+      _powBlockIndex: expected.blockIndex,
+      blocktime: expected.blockTimeEpoch,
+      canonicalBlockScan: {
+        blockHash: expected.blockHash,
+        blockIndex: expected.blockIndex,
+        height: expected.blockHeight,
+        network: "livenet",
+      },
+      height: expected.blockHeight,
+      txid: expected.txid,
+    },
+    record_ordinal: expected.recordOrdinal,
+    transaction_block_hash: expected.blockHash,
+    transaction_block_height: expected.blockHeight,
+    transaction_block_index: expected.blockIndex,
+    transaction_block_time: expected.blockTime,
+    transaction_source: "canonical-block-scan",
+    transaction_status: "confirmed",
+    validation_errors: [],
+  };
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(rowState(row, expected))),
+    {
+      alreadyApplied: false,
+      eventId: expected.eventId,
+      repairable: true,
+      state: "repairable",
+      txid: expected.txid,
+    },
+  );
+  const canonical = structuredClone(row);
+  canonical.amount_sats = "1000";
+  canonical.payload.amountSats = "1000";
+  assert.equal(rowState(canonical, expected).alreadyApplied, true);
+  assert.throws(
+    () => rowState({ ...row, amount_sats: "1000" }, expected),
+    /partial or divergent/u,
+  );
+  assert.throws(
+    () => rowState({
+      ...row,
+      payload: { ...row.payload, paidSats: "1000" },
+    }, expected),
+    /partial or divergent/u,
+  );
+
+  const source = fileSource(BACKFILL_PATH);
+  const manifestSource = source.match(
+    /CANONICAL_ID_AMOUNT_PROJECTION_REPAIR_TARGETS = Object\.freeze\(\[([\s\S]*?)\]\);/u,
+  )?.[1] ?? "";
+  const exactManifest = [
+    [3125758, "a1a58faef3a6ece598a5efb34545ee098cc09a2739cd68d458eafc6bc1e1f9dc"],
+    [3356127, "2c25ff77097bea520f18d7edf5f1264855255ab2be5e4cd2b9ae3a2ca8cef8ea"],
+    [3356128, "5a8f6d262e47432808866ea372ed855b7c3800f7242a42115b605ee463565cd8"],
+    [3356129, "d1c293e6fb37a8030cfd1fcab57d21792526a08bd83c4e68d454c7b8a787d53c"],
+    [3356130, "2960ef1fd731fe2db615fee45c17190a6ff73c39e90b36558e3ab26c9f3d3141"],
+    [3356131, "7bb8b148a98668b72197f43f90e9335fec239a423888106cd581f238e7459c68"],
+    [3356132, "8396a858f5509dbf8a42eeaf01a22e589024e3e96ecda4a9c5ae75de1d866efd"],
+    [3356133, "cdf467c83c0c71b094513e329b474010294fd2fb83b197b3208acc55540c9c3d"],
+    [3729078, "5afa0de40ddfb8a83b0ed0f653094371deae6f41f6828fb49f316e32f1549a0a"],
+  ];
+  assert.equal((manifestSource.match(/Object\.freeze\(\{/gu) ?? []).length, 9);
+  for (const [eventId, txid] of exactManifest) {
+    assert.match(manifestSource, new RegExp(`eventId: ${eventId}`, "u"));
+    assert.match(manifestSource, new RegExp(`txid: "${txid}"`, "u"));
+  }
+
+  const repairSource = topLevelFunctionSource(
+    BACKFILL_PATH,
+    "repairCanonicalIdAmountProjection",
+  );
+  assert.match(
+    repairSource,
+    /BEGIN ISOLATION LEVEL SERIALIZABLE[\s\S]*LOCK TABLE[\s\S]*pg_advisory_xact_lock/u,
+  );
+  assert.match(
+    repairSource,
+    /repairableCount !== 0 && repairableCount !== manifest\.length/u,
+  );
+  assert.match(
+    repairSource,
+    /canonicalIdAmountProjectionTransitionProofs[\s\S]*UPDATE proof_indexer\.events[\s\S]*amount_sats = \$9::bigint[\s\S]*jsonb_set\([\s\S]*'\{amountSats\}'[\s\S]*NOT payload \? 'paidSats'/u,
+  );
+  const updateSet = repairSource.match(
+    /UPDATE proof_indexer\.events\s+SET([\s\S]*?)\s+WHERE network/u,
+  )?.[1] ?? "";
+  assert.match(updateSet, /amount_sats/u);
+  assert.match(updateSet, /payload = jsonb_set/u);
+  assert.doesNotMatch(updateSet, /updated_at|block_time|event_time|raw_payload/u);
+  assert.match(
+    repairSource,
+    /invalidateWorkAtomicDerivedSnapshots[\s\S]*canonicalIdAmountProjectionTransitionProofs[\s\S]*canonicalIdAmountProjectionRepairCoreProof\(manifest\)[\s\S]*COMMIT" : "ROLLBACK[\s\S]*invalidatedSnapshotCount: invalidatedSnapshotIds\.length/u,
+  );
+  assert.match(
+    repairSource,
+    /COMMIT" : "ROLLBACK[\s\S]*canonicalIdAmountProjectionRepairBootstrapRequirement/u,
+  );
+  assert.match(
+    source,
+    /--repair-canonical-id-amount-projection[\s\S]*POW_INDEX_REPAIR_CANONICAL_ID_AMOUNT_PROJECTION_APPLY[\s\S]*repairCanonicalIdAmountProjection\(client\)/u,
+  );
+  const snapshotInvalidator = topLevelFunctionSource(
+    BACKFILL_PATH,
+    "invalidateWorkAtomicDerivedSnapshots",
+  );
+  assert.match(
+    snapshotInvalidator,
+    /issuance_locked[\s\S]*canonical-work-amo-v5-h-minus-one-seed-evidence-v1[\s\S]*workAmoV5Migration:[\s\S]*source_hashes \? 'canonicalSummary'/u,
+  );
 });
 
 check("canonical raw tx replaces legacy wrappers without entering event payloads", async () => {
@@ -50580,6 +51894,65 @@ check("AMO canonical OP_RETURN decoding is byte-exact, fatal, and shared", () =>
     invalidUtf8Payload.toString("hex"),
   );
 
+  const storageInvalidPayload = Buffer.concat([
+    Buffer.from("pwid1:r2:fixture", "utf8"),
+    Buffer.from([0x00]),
+    Buffer.from(":owner:receiver", "utf8"),
+  ]);
+  const storageInvalid = decodeCanonicalOpReturnOutput({
+    scriptpubkey: script(directPush(storageInvalidPayload)),
+  });
+  assert.equal(storageInvalid.candidate, true);
+  assert.equal(storageInvalid.decodeValid, false);
+  assert.equal(
+    storageInvalid.detail,
+    "payload-text-storage-invalid-u0000",
+  );
+  assert.equal(
+    storageInvalid.reasonCode,
+    CANONICAL_OP_RETURN_TEXT_STORAGE_INVALID,
+  );
+  assert.equal(storageInvalid.text, "pwid1:");
+  assert.equal(
+    storageInvalid.payloadHex,
+    storageInvalidPayload.toString("hex"),
+  );
+  assert.equal(
+    storageInvalid.scriptPubKeyHex,
+    script(directPush(storageInvalidPayload)),
+  );
+  const storageInvalidRecordSet =
+    canonicalRawProtocolRecordSetFromTransaction({
+      vout: [{ scriptpubkey: storageInvalid.scriptPubKeyHex }],
+    });
+  assert.equal(storageInvalidRecordSet.rawProtocolCandidateCount, 1);
+  assert.equal(storageInvalidRecordSet.records.length, 1);
+  assert.equal(
+    storageInvalidRecordSet.records[0].rawDecodeReasonCode,
+    CANONICAL_OP_RETURN_TEXT_STORAGE_INVALID,
+  );
+  assert.equal(storageInvalidRecordSet.records[0].message, "pwid1:");
+  const storageInvalidJson = JSON.stringify(storageInvalidRecordSet);
+  assert.equal(storageInvalidJson.includes("\u0000"), false);
+  assert.equal(storageInvalidJson.includes("\\u0000"), false);
+  assert.match(
+    storageInvalidJson,
+    new RegExp(storageInvalidPayload.toString("hex"), "u"),
+  );
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(canonicalPostgresSafeJsonValue({
+      clean: "pwid1:",
+      ["invalid\u0000key"]: "omitted",
+      nested: ["before\u0000after", "safe"],
+      text: "raw\u0000payload",
+    }))),
+    {
+      clean: "pwid1:",
+      nested: [null, "safe"],
+      text: null,
+    },
+  );
+
   const first = Buffer.from("pwa1:usd1:", "utf8");
   const second = Buffer.from("fixture", "utf8");
   const validMultiPush = decodeCanonicalOpReturnOutput({
@@ -52138,8 +53511,7 @@ check("AMO malformed raw candidates remain ordered, zero-value, and fee-once", (
   const blockHeight = WORK_AMO_V5_ACTIVATION_HEIGHT + 20;
   const blockHash = "a".repeat(64);
   const previousBlockHash = "9".repeat(64);
-  const directPushScript = (text) => {
-    const payload = Buffer.from(text, "utf8");
+  const directPushBytesScript = (payload) => {
     return Buffer.concat([
       Buffer.from(
         payload.length <= 0x4b
@@ -52149,6 +53521,8 @@ check("AMO malformed raw candidates remain ordered, zero-value, and fee-once", (
       payload,
     ]).toString("hex");
   };
+  const directPushScript = (text) =>
+    directPushBytesScript(Buffer.from(text, "utf8"));
   const malformedSuffixScript = (text) => {
     const payload = Buffer.from(text, "utf8");
     return Buffer.concat([
@@ -52172,6 +53546,7 @@ check("AMO malformed raw candidates remain ordered, zero-value, and fee-once", (
   });
   const mixedTxid = "b".repeat(64);
   const malformedOnlyTxid = "c".repeat(64);
+  const storageInvalidTxid = "8".repeat(64);
   const mixedTx = {
     _blockHash: blockHash,
     _blockIndex: 1,
@@ -52213,11 +53588,44 @@ check("AMO malformed raw candidates remain ordered, zero-value, and fee-once", (
       protocolOutput(malformedFirstPushScript("pwt1:send2:")),
     ],
   };
+  const storageInvalidPayload = Buffer.concat([
+    Buffer.from("pwid1:r2:fixture", "utf8"),
+    Buffer.from([0x00]),
+    Buffer.from(":owner:receiver", "utf8"),
+  ]);
+  const storageInvalidScript = directPushBytesScript(
+    storageInvalidPayload,
+  );
+  const storageInvalidTx = {
+    _blockHash: blockHash,
+    _blockIndex: 3,
+    _blockHeight: blockHeight,
+    feeSats: 79,
+    txid: storageInvalidTxid,
+    vin: [{
+      prevout: { scriptpubkey_address: senderAddress },
+      txid: "7".repeat(64),
+      vout: 0,
+    }],
+    vout: [
+      {
+        scriptpubkey_address:
+          WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS,
+        value: 1_000,
+      },
+      protocolOutput(storageInvalidScript),
+    ],
+  };
   prepareRawAmoFixtureTransaction(mixedTx, mixedTxid, 91);
   prepareRawAmoFixtureTransaction(
     malformedOnlyTx,
     malformedOnlyTxid,
     73,
+  );
+  prepareRawAmoFixtureTransaction(
+    storageInvalidTx,
+    storageInvalidTxid,
+    79,
   );
   const extractRecords = isolatedFunction(
     API_PATH,
@@ -52281,12 +53689,12 @@ check("AMO malformed raw candidates remain ordered, zero-value, and fee-once", (
   assert.equal(interveningPwa?.protocolVout, 1);
 
   const envelope = extractRecords(
-    [mixedTx, malformedOnlyTx],
+    [mixedTx, malformedOnlyTx, storageInvalidTx],
     blockHeight,
     blockHash,
   );
-  assert.equal(envelope.rawProtocolCandidateCount, 4);
-  assert.equal(envelope.records.length, 3);
+  assert.equal(envelope.rawProtocolCandidateCount, 5);
+  assert.equal(envelope.records.length, 4);
   const pwmRecord = envelope.records.find(
     (record) => record.protocol === "pwm1",
   );
@@ -52297,6 +53705,28 @@ check("AMO malformed raw candidates remain ordered, zero-value, and fee-once", (
     pwmRecord.rawDecodeReasonCode,
     CANONICAL_OP_RETURN_SCRIPT_MALFORMED,
   );
+  const storageInvalidRecord = envelope.records.find(
+    (record) =>
+      record.rawDecodeReasonCode ===
+        CANONICAL_OP_RETURN_TEXT_STORAGE_INVALID,
+  );
+  assert.ok(storageInvalidRecord);
+  assert.equal(storageInvalidRecord.protocol, "pwid1");
+  assert.equal(storageInvalidRecord.message, "pwid1:");
+  assert.equal(storageInvalidRecord.rawDecodeValid, false);
+  assert.equal(
+    storageInvalidRecord.rawRecordParts[0].payloadHex,
+    storageInvalidPayload.toString("hex"),
+  );
+  assert.equal(
+    storageInvalidRecord.rawRecordParts[0].scriptPubKeyHex,
+    storageInvalidScript,
+  );
+  const storageInvalidRecordJson = JSON.stringify(
+    storageInvalidRecord,
+  );
+  assert.equal(storageInvalidRecordJson.includes("\u0000"), false);
+  assert.equal(storageInvalidRecordJson.includes("\\u0000"), false);
 
   const openingGenericState =
     normalizeWorkAmoV5RawGenericState({
@@ -52332,9 +53762,9 @@ check("AMO malformed raw candidates remain ordered, zero-value, and fee-once", (
     openingWorkState,
     records: envelope.records,
   });
-  assert.equal(replay.rawProtocolCandidateCount, 4);
-  assert.equal(replay.protocolRecordCount, 3);
-  assert.equal(replay.transactionCount, 2);
+  assert.equal(replay.rawProtocolCandidateCount, 5);
+  assert.equal(replay.protocolRecordCount, 4);
+  assert.equal(replay.transactionCount, 3);
   assert.equal(
     replay.outcomes.get(`${mixedTxid}:1:0`)?.reasonCode,
     CANONICAL_OP_RETURN_SCRIPT_MALFORMED,
@@ -52346,6 +53776,10 @@ check("AMO malformed raw candidates remain ordered, zero-value, and fee-once", (
   assert.equal(
     replay.outcomes.get(`${malformedOnlyTxid}:0:0`)?.reasonCode,
     CANONICAL_OP_RETURN_SCRIPT_MALFORMED,
+  );
+  assert.equal(
+    replay.outcomes.get(`${storageInvalidTxid}:1:0`)?.reasonCode,
+    CANONICAL_OP_RETURN_TEXT_STORAGE_INVALID,
   );
   assert.equal(
     replay.workState.holders.find(
@@ -52369,6 +53803,11 @@ check("AMO malformed raw candidates remain ordered, zero-value, and fee-once", (
       transition.txid ===
         replay.fixtureTxidAliases.get(malformedOnlyTxid),
   );
+  const storageInvalidFee = replay.feeTransitions.find(
+    (transition) =>
+      transition.txid ===
+        replay.fixtureTxidAliases.get(storageInvalidTxid),
+  );
   assert.equal(mixedFee?.valid, true);
   assert.equal(
     mixedFee?.creditFixedQ8Added,
@@ -52376,6 +53815,142 @@ check("AMO malformed raw candidates remain ordered, zero-value, and fee-once", (
   );
   assert.equal(malformedOnlyFee?.valid, false);
   assert.equal(malformedOnlyFee?.creditFixedQ8Added, "0");
+  assert.equal(storageInvalidFee?.valid, false);
+  assert.equal(storageInvalidFee?.creditFixedQ8Added, "0");
+  assert.equal(replay.economicState.throughBlockHeight, blockHeight);
+  assert.equal(
+    replay.economicState.throughBlockHash,
+    replay.fixtureBlockHash,
+  );
+
+  const storageInvalidEvent = replay.events.find(
+    (event) =>
+      event.reasonCode ===
+        CANONICAL_OP_RETURN_TEXT_STORAGE_INVALID,
+  );
+  assert.ok(storageInvalidEvent);
+  const normalizedPosition = (value) => {
+    const source = value?.position ?? value ?? {};
+    return {
+      blockHash: String(source.blockHash ?? ""),
+      blockHeight: Number(source.blockHeight),
+      blockTransactionIndex: Number(
+        source.blockTransactionIndex ?? source.blockIndex,
+      ),
+      protocolVout: Number(source.protocolVout),
+      recordOrdinal: Number(source.recordOrdinal),
+    };
+  };
+  const replayPositionKey = (value) => {
+    const position = normalizedPosition(value);
+    return {
+      key: [
+        position.blockHeight,
+        position.blockTransactionIndex,
+        position.protocolVout,
+        position.recordOrdinal,
+      ].join(":"),
+      position,
+    };
+  };
+  const canonicalTextStorageInvalidItem = isolatedFunction(
+    BACKFILL_PATH,
+    "canonicalTextStorageInvalidItem",
+  );
+  const canonicalProtocolItemForPostgres = isolatedFunction(
+    BACKFILL_PATH,
+    "canonicalProtocolItemForPostgres",
+    { canonicalTextStorageInvalidItem },
+  );
+  const bind = isolatedFunction(
+    BACKFILL_PATH,
+    "bindPreparedTransactionsToWorkAmoV5Replay",
+    {
+      canonicalProtocolItemForPostgres,
+      invalidProtocolItem: (item, reason) => {
+        const kind = String(item?.kind ?? "event").toLowerCase();
+        return {
+          ...item,
+          kind: kind.endsWith("-invalid")
+            ? kind
+            : `${kind}-invalid`,
+          reason,
+          valid: false,
+        };
+      },
+      isHexTxid: (value) => /^[0-9a-f]{64}$/u.test(value),
+      normalizedLowerText: (value) =>
+        String(value ?? "").trim().toLowerCase(),
+      sourceLabelForProtocolItem: () => "log",
+      workAmoV5ConsensusEventKind,
+      workAmoV5ReplayFrozenTerms: () => null,
+      workAmoV5ReplayPositionKey: replayPositionKey,
+      workAmoV5ReplayProjectionFromOutput: (output) =>
+        output?.projection ?? {},
+    },
+  );
+  const replayRecord = {
+    outcome: {
+      kind: workAmoV5ConsensusEventKind("pwid1", false),
+      reasonCode: CANONICAL_OP_RETURN_TEXT_STORAGE_INVALID,
+      semanticKind: storageInvalidEvent.semanticKind,
+      valid: false,
+    },
+    output: storageInvalidEvent.output,
+    position: storageInvalidEvent.position,
+    protocol: "pwid1",
+    rawCandidate: true,
+    rawWitness: storageInvalidRecord.payload,
+    stateDelta: storageInvalidEvent.stateDelta,
+    txid: storageInvalidEvent.txid,
+  };
+  const contaminatedVerifierItem = {
+    blockHash: storageInvalidEvent.position.blockHash,
+    blockHeight: storageInvalidEvent.position.blockHeight,
+    blockIndex:
+      storageInvalidEvent.position.blockTransactionIndex,
+    confirmed: true,
+    kind: "id-event-invalid",
+    nested: ["verifier\u0000text", "safe"],
+    payload: storageInvalidRecord.message,
+    protocol: "pwid1",
+    protocolPayload: "pwid1:verifier\u0000text",
+    protocolVout: storageInvalidEvent.position.protocolVout,
+    reasonCode: CANONICAL_OP_RETURN_TEXT_STORAGE_INVALID,
+    recordOrdinal: storageInvalidEvent.position.recordOrdinal,
+    txid: storageInvalidEvent.txid,
+    valid: false,
+    workAmoV5RawDecodeReasonCode:
+      CANONICAL_OP_RETURN_TEXT_STORAGE_INVALID,
+  };
+  const boundItem = bind(
+    [{ items: [contaminatedVerifierItem], txid: storageInvalidEvent.txid }],
+    { replayRecords: [replayRecord] },
+  )[0].items[0];
+  assert.equal(boundItem._workAmoV5ReplayBound, true);
+  assert.equal(boundItem.valid, false);
+  assert.equal(
+    boundItem.reasonCode,
+    CANONICAL_OP_RETURN_TEXT_STORAGE_INVALID,
+  );
+  assert.equal(boundItem.protocolPayload, null);
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(boundItem.nested)),
+    [null, "safe"],
+  );
+  assert.equal(
+    boundItem.workAmoV5ReplayRawWitness.rawRecordParts[0]
+      .payloadHex,
+    storageInvalidPayload.toString("hex"),
+  );
+  assert.equal(
+    boundItem.workAmoV5ReplayRawWitness.rawRecordParts[0]
+      .scriptPubKeyHex,
+    storageInvalidScript,
+  );
+  const boundJson = JSON.stringify(boundItem);
+  assert.equal(boundJson.includes("\u0000"), false);
+  assert.equal(boundJson.includes("\\u0000"), false);
 
   const eventSetFor = (records) =>
     workAmoV5EventSetCommitment(
@@ -54185,7 +55760,25 @@ check("AMO V5 raw replay executes ID, generic-token, and WORK buys atomically", 
       txid: workBuyTxid,
     },
   ];
+  const parentBlockTimeEpoch = 1_787_008_220;
   for (const preparedTx of prepared) {
+    const parentRecord = transition.replayRecords.find(
+      (record) =>
+        record.txid === preparedTx.txid && record.rawCandidate === true,
+    );
+    const sourceRecord = records.find(
+      (record) => record.txid === preparedTx.txid,
+    );
+    assert.ok(parentRecord);
+    assert.ok(sourceRecord);
+    preparedTx.rawTx = {
+      ...sourceRecord.tx,
+      _powBlockHash: parentRecord.position.blockHash,
+      _powBlockIndex: parentRecord.position.blockTransactionIndex,
+      blocktime: parentBlockTimeEpoch,
+      height: parentRecord.position.blockHeight,
+      txid: preparedTx.txid,
+    };
     assert.equal(preparedTx.items.length, 2);
     assert.deepEqual(
       JSON.parse(JSON.stringify(
@@ -54237,6 +55830,21 @@ check("AMO V5 raw replay executes ID, generic-token, and WORK buys atomically", 
   const bound = bind(prepared, transition);
   const boundItems = bound.flatMap((preparedTx) => preparedTx.items);
   assert.equal(boundItems.length, 6);
+  const boundIdBuy = boundItems.find(
+    (candidate) =>
+      candidate.txid === idBuyTxid &&
+      candidate.workAmoV5RawCandidate === true,
+  );
+  assert.equal(boundIdBuy?.amountSats, "546");
+  assert.equal(
+    boundIdBuy?.workAmoV5PwidRegistryAttribution?.source,
+    "canonical-work-amo-v5-state-delta",
+  );
+  assert.equal(
+    boundIdBuy?.workAmoV5PwidRegistryAttribution?.registryClaims?.[0]
+      ?.attributedSats,
+    "546",
+  );
   for (const item of boundItems) {
     assert.equal(item._workAmoV5ReplayBound, true);
     assert.ok(item.workAmoV5ReplayRawWitness);
@@ -54249,7 +55857,19 @@ check("AMO V5 raw replay executes ID, generic-token, and WORK buys atomically", 
     assert.equal(item.chargesTransactionFee, false);
     assert.equal(item.claimsEconomicOutputs, false);
     assert.equal(item.economicDelta, false);
+    assert.equal(item.blockTime, "2026-08-17T23:10:20.000Z");
+    assert.equal(item.createdAt, item.blockTime);
+    assert.equal(item.timestamp, item.blockTime);
+    assert.equal(item.closedAt, item.blockTime);
   }
+  const missingParentTime = structuredClone(prepared);
+  for (const preparedTx of missingParentTime) {
+    delete preparedTx.rawTx.blocktime;
+  }
+  assert.throws(
+    () => bind(missingParentTime, transition),
+    /no exact Core parent time and position/u,
+  );
 
   const recordByPosition = new Map(
     transition.replayRecords.map((record) => [
@@ -54730,6 +56350,13 @@ check("AMO V5 backfill binds and persists raw PWM plus derived bond children wit
       protocol: record.protocol,
       txid,
     })),
+    rawTx: {
+      _powBlockHash: rawReplayRecord.position.blockHash,
+      _powBlockIndex: rawReplayRecord.position.blockTransactionIndex,
+      blocktime: 1_787_009_999,
+      height: rawReplayRecord.position.blockHeight,
+      txid,
+    },
     txid,
   }];
   const bound = bind(prepared, transition);
@@ -54747,6 +56374,9 @@ check("AMO V5 backfill binds and persists raw PWM plus derived bond children wit
     assert.equal(item.chargesTransactionFee, false);
     assert.equal(item.claimsEconomicOutputs, false);
     assert.equal(item.economicDelta, false);
+    assert.equal(item.blockTime, "2026-08-17T23:39:59.000Z");
+    assert.equal(item.createdAt, item.blockTime);
+    assert.equal(item.timestamp, item.blockTime);
     assert.deepEqual(
       item.workAmoV5ReplayOutput.projection.position,
       descriptor.projectionPosition,
@@ -54757,6 +56387,7 @@ check("AMO V5 backfill binds and persists raw PWM plus derived bond children wit
       bind(
         [{
           items: prepared[0].items.slice(0, 2),
+          rawTx: prepared[0].rawTx,
           txid,
         }],
         transition,

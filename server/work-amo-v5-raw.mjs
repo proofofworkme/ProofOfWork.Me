@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import * as bitcoin from "bitcoinjs-lib";
 import {
   CANONICAL_OP_RETURN_SCRIPT_MALFORMED,
+  CANONICAL_OP_RETURN_TEXT_STORAGE_INVALID,
   CANONICAL_OP_RETURN_UTF8_INVALID,
   CANONICAL_PWM_ENVELOPE_NONCONTIGUOUS,
   canonicalRawProtocolRecordSetFromTransaction,
@@ -3942,6 +3943,7 @@ function canonicalRecord(record) {
       !rawDecodeValid &&
       ![
         CANONICAL_OP_RETURN_SCRIPT_MALFORMED,
+        CANONICAL_OP_RETURN_TEXT_STORAGE_INVALID,
         CANONICAL_OP_RETURN_UTF8_INVALID,
         CANONICAL_PWM_ENVELOPE_NONCONTIGUOUS,
       ].includes(rawDecodeReasonCode)

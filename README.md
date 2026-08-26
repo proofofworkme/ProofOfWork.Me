@@ -764,7 +764,45 @@ To find duplicate or failed ProofOfWork ID registrations for refund review:
 npm run audit:ids
 ```
 
-The audit scans the full canonical registry history, merges mempool transactions, applies first-confirmed-wins, and writes JSON/CSV reports to `/tmp`. Confirmed duplicates are listed as refund candidates. Pending duplicates are listed separately as a watchlist until they confirm or drop.
+Production audit runs require the protected `POW_INTERNAL_VERIFIER_TOKEN` used
+by the loopback API. In production, set both audit bases to the same numeric
+`http://127.0.0.1:<port>` origin; do not use `localhost`, because verifier-token
+transport must not depend on DNS. The audit proves the complete confirmed registry txid set
+against Electrum, first binds Electrum's exact checkpoint header to the same
+Bitcoin Core tip hash, and hydrates that confirmed history from Bitcoin Core. Pending
+coverage is deliberately narrower: Electrum supplies a fenced best-effort
+observation and Core proves that every observed member is still in its mempool.
+The fenced observation also commits each observed txid to Core's integer-second
+mempool admission time and rejects membership changes or eviction/reaccept
+races whose sampled admission second changes. Same-txid churn that is evicted
+and reaccepted within the same Core second is indistinguishable from stability.
+Database first-seen or UI observation timestamps are not part of this parity
+claim; pending audit ordering uses the committed Core time.
+This does not prove that Electrum observed every Core mempool transaction. The
+audit applies first-confirmed-wins and checks the exact same-tip registry
+projection; any missing page, partial hydration, changed snapshot, zero
+confirmed history, or projection mismatch fails closed. It never falls back to
+a public explorer. The canonical raw replay is driven by the contiguous,
+exact-checkpoint `work_amo_block_transitions` chain from activation through tip.
+Transition and confirmed PWID relational histories are keyset-paged with
+per-page resource bounds and no whole-history correctness ceiling; every
+transition-discovered PWID-bearing block is freshly recomputed from Bitcoin
+Core in bounded batches. After confirmed-address pagination, the protected
+fence re-streams the database rolling fingerprints and resamples Core/Electrum
+without repeating the PWID block replay. Post-activation transactions with
+multiple physical `pwid1` carriers are audited in exact `(blockHeight,
+blockIndex, protocolVout, recordOrdinal)` order; ambiguous pre-activation
+envelopes remain fail-closed.
+Every confirmed relational PWID row is rebound to its exact Core carrier and
+accepted lifecycle outcome. Legacy invalid reason labels are retained and
+fingerprinted as relational diagnostics; the audit does not overstate those
+human-readable reason strings as an independent chain replay.
+
+The default run is read-only and writes no report files. To create reports,
+set `POW_ID_AUDIT_WRITE_REPORTS=1` and an explicit
+`POW_ID_AUDIT_OUTPUT_DIR`, or pass both `--write-reports` and
+`--output-dir PATH`. Confirmed duplicates are refund candidates. Pending
+duplicates remain a watchlist until they confirm or drop.
 
 Before issuing refunds, check `ID_REFUNDS.md` so old confirmed duplicates that were already refunded are not paid twice.
 

@@ -3,7 +3,7 @@ Description=Verify active ProofOfWork UI release provenance
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/sbin/proofofwork-ui-release-provenance verify
+ExecStart=/usr/local/sbin/proofofwork-ui-release-provenance verify-rollback
 TimeoutStartSec=30m
 NoNewPrivileges=true
 PrivateTmp=true

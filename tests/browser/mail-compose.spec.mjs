@@ -855,7 +855,7 @@ test("failed initial WORK admission becomes an explicit unavailable state", asyn
     .toBeGreaterThan(0);
 });
 
-test("proofs-only mail falls back from fresh WORK wallet catch-up", async ({
+test("proofs-only mail fails closed when fresh WORK anchor proof is unavailable", async ({
   page,
 }) => {
   await installWallet(page);
@@ -868,9 +868,16 @@ test("proofs-only mail falls back from fresh WORK wallet catch-up", async ({
   const send = page.locator(".mail-send-button");
   await expect(send).toHaveAttribute("data-state", "ready");
   await send.click();
-  const psbtHex = await capturedPsbt(page);
-
-  expect(opReturnPayloads(psbtHex)).toContain("pwm1:m:Mail admission browser contract");
+  await expect(page.getByRole("alert")).toContainText(
+    "No transaction was created",
+    { timeout: 30_000 },
+  );
+  await expect
+    .poll(
+      () =>
+        page.evaluate(() => window.__mailComposeFixture?.signCalls ?? 0),
+    )
+    .toBe(0);
   expect(
     fixture.requests.some((requestUrl) => {
       const url = new URL(requestUrl);
@@ -980,15 +987,14 @@ test("AMO order book counts remote unsealed V8 listings", async ({ page }) => {
   await expect(
     amoUnits.getByRole("button", { name: "Unsealed 2" }),
   ).toContainText("2");
-  await expect(amoUnits.getByText("Waiting for seal")).toHaveCount(2);
+  const amoRows = amoUnits.locator(".token-market-grid .token-market-row");
+  await expect(amoRows.filter({ hasText: "Waiting for seal" })).toHaveCount(2);
   await expect(
-    amoUnits.getByText("0.0000000752009741 WORK"),
-  ).toHaveCount(3);
+    amoRows.filter({ hasText: "0.0000000752009741 WORK" }),
+  ).toHaveCount(2);
   await expect(amoUnits.getByText("Pending confirmation")).toHaveCount(0);
   await expect(amoUnits.getByText("Pre-V8 relic")).toHaveCount(0);
-  await expect(
-    amoUnits.locator(".token-market-grid .token-market-row"),
-  ).toHaveCount(2);
+  await expect(amoRows).toHaveCount(2);
 
   await page.getByRole("button", { name: "Refresh" }).first().click();
   await expect(

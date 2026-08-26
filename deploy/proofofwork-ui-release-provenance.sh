@@ -7,10 +7,22 @@ if (($# > 0)); then
 fi
 ui_root="${POW_UI_WWW_ROOT:-/var/www}"
 archive_root="${POW_UI_RELEASE_ARCHIVE_ROOT:-/var/backups/proofofwork-ui/releases}"
+if [[ "${POW_UI_ALLOW_TEST_ROOTS:-}" != "1" ]] && {
+  [[ -n "${POW_UI_TEST_FAIL_IGNORED_DISCOVERY_AFTER_OUTPUT:-}" ]] ||
+    [[ -n "${POW_UI_TEST_FAIL_SURFACE_DISCOVERY_AFTER_OUTPUT:-}" ]] ||
+    [[ -n "${POW_UI_TEST_FAIL_ARCHIVE_TOP_LEVEL_DISCOVERY_AFTER_OUTPUT:-}" ]];
+}; then
+  echo "UI provenance failure injection requires POW_UI_ALLOW_TEST_ROOTS=1." >&2
+  exit 64
+fi
 if [[ "${ui_root}" != "/var/www" || "${archive_root}" != "/var/backups/proofofwork-ui/releases" ]] &&
   [[ "${POW_UI_ALLOW_TEST_ROOTS:-}" != "1" ]]; then
-  echo "Non-production UI/archive roots require POW_UI_ALLOW_TEST_ROOTS=1." >&2
-  exit 64
+  if [[ "${POW_UI_STAGED_ROOT:-}" != "1" ||
+    "${archive_root}" != "/var/backups/proofofwork-ui/releases" ||
+    ! "${ui_root}" =~ ^/var/tmp/proofofwork-deploy/proofofwork-www-stage-[A-Za-z0-9][A-Za-z0-9._-]{0,127}$ ]]; then
+    echo "Non-production UI/archive roots require an allowlisted staged root or POW_UI_ALLOW_TEST_ROOTS=1." >&2
+    exit 64
+  fi
 fi
 for root in "${ui_root}" "${archive_root}"; do
   if [[ ! -d "${root}" || -L "${root}" || "$(realpath -e "${root}")" != "${root}" ]]; then
@@ -22,6 +34,12 @@ ui_root_mode="$(stat --format=%a -- "${ui_root}")"
 ui_root_owner="$(stat --format=%u -- "${ui_root}")"
 if ((8#${ui_root_mode} & 07022)) || [[ "${ui_root_owner}" != "${EUID}" ]]; then
   echo "UI root must be owner-controlled and not group/world writable: ${ui_root}" >&2
+  exit 64
+fi
+archive_root_mode="$(stat --format=%a -- "${archive_root}")"
+archive_root_owner="$(stat --format=%u -- "${archive_root}")"
+if ((8#${archive_root_mode} & 07022)) || [[ "${archive_root_owner}" != "${EUID}" ]]; then
+  echo "UI archive root must be owner-controlled and not group/world writable: ${archive_root}" >&2
   exit 64
 fi
 
@@ -88,6 +106,19 @@ surfaces=(
   wallet
   work
 )
+if ((${#surfaces[@]} != 14)); then
+  echo "UI provenance surface set must contain exactly 14 entries." >&2
+  exit 70
+fi
+declare -A surface_seen=()
+for surface in "${surfaces[@]}"; do
+  if [[ -n "${surface_seen[${surface}]:-}" ]]; then
+    echo "UI provenance surface set contains a duplicate: ${surface}" >&2
+    exit 70
+  fi
+  surface_seen["${surface}"]=1
+done
+unset surface_seen surface
 surface_pattern='activity|browser|computer|desktop|growth|id|inception|infinity|landing|marketplace|nft|token|wallet|work'
 
 surface_directory() {
@@ -269,6 +300,7 @@ attest_source_checkout() {
   local source_checkout="$1"
   local expected_commit="$2"
   local source_commit source_tree untracked ignored_path dependency_attestation
+  local untracked_inventory ignored_inventory tree_inventory inventory_error=""
   local tree_record metadata tracked_path
   local tracked_mode tracked_type tracked_object source_path actual_object file_mode link_target
   local tracked_count=0
@@ -304,26 +336,56 @@ attest_source_checkout() {
     echo "UI source checkout does not match the requested full commit." >&2
     return 1
   fi
-  untracked="$(
-    /usr/bin/git -c safe.directory="${source_checkout}" -C "${source_checkout}" \
-      ls-files --others --exclude-standard --directory | /usr/bin/sed -n '1p'
-  )"
+  untracked_inventory="$(mktemp "${lock_parent}/.proofofwork-ui-source-untracked.XXXXXXXXXX")"
+  if ! /usr/bin/git -c safe.directory="${source_checkout}" -C "${source_checkout}" \
+    ls-files --others --exclude-standard --directory -z >"${untracked_inventory}"; then
+    rm -f -- "${untracked_inventory}"
+    echo "UI source untracked-path discovery failed." >&2
+    return 1
+  fi
+  untracked=""
+  IFS= read -r -d '' untracked <"${untracked_inventory}" || true
+  rm -f -- "${untracked_inventory}"
   if [[ -n "${untracked}" ]]; then
     echo "UI source checkout contains an untracked, non-ignored path: ${untracked}" >&2
+    return 1
+  fi
+  ignored_inventory="$(mktemp "${lock_parent}/.proofofwork-ui-source-ignored.XXXXXXXXXX")"
+  if ! {
+    if [[ -n "${POW_UI_TEST_FAIL_IGNORED_DISCOVERY_AFTER_OUTPUT:-}" ]]; then
+      printf 'node_modules/partial-output\0'
+      false
+    else
+      /usr/bin/git -c safe.directory="${source_checkout}" -C "${source_checkout}" \
+        ls-files --others --ignored --exclude-standard -z
+    fi
+  } >"${ignored_inventory}"; then
+    rm -f -- "${ignored_inventory}"
+    echo "UI source ignored-path discovery failed." >&2
     return 1
   fi
   while IFS= read -r -d '' ignored_path; do
     if [[ "${ignored_path}" != node_modules/* || "${ignored_path}" =~ [[:cntrl:]] ||
       "${ignored_path}" == *\\* || "/${ignored_path}/" == *"/../"* ]]; then
-      echo "UI source checkout contains a non-dependency ignored path: ${ignored_path}" >&2
-      return 1
+      inventory_error="UI source checkout contains a non-dependency ignored path: ${ignored_path}"
+      break
     fi
-  done < <(
-    /usr/bin/git -c safe.directory="${source_checkout}" -C "${source_checkout}" \
-      ls-files --others --ignored --exclude-standard -z
-  )
+  done <"${ignored_inventory}"
+  rm -f -- "${ignored_inventory}"
+  if [[ -n "${inventory_error}" ]]; then
+    echo "${inventory_error}" >&2
+    return 1
+  fi
 
-  while IFS= read -r -d '' tree_record; do
+  tree_inventory="$(mktemp "${lock_parent}/.proofofwork-ui-source-tree.XXXXXXXXXX")"
+  if ! /usr/bin/git -c safe.directory="${source_checkout}" -C "${source_checkout}" \
+    ls-tree -r -z --full-tree "${source_commit}" >"${tree_inventory}"; then
+    rm -f -- "${tree_inventory}"
+    echo "UI source tracked-tree discovery failed." >&2
+    return 1
+  fi
+  verify_tracked_tree_inventory() {
+    while IFS= read -r -d '' tree_record; do
     metadata="${tree_record%%$'\t'*}"
     tracked_path="${tree_record#*$'\t'}"
     read -r tracked_mode tracked_type tracked_object <<<"${metadata}"
@@ -347,10 +409,13 @@ attest_source_checkout() {
           echo "UI source checkout has an unsafe or incorrect tracked mode: ${tracked_path}" >&2
           return 1
         fi
-        actual_object="$(
+        if ! actual_object="$(
           /usr/bin/git -c safe.directory="${source_checkout}" -C "${source_checkout}" \
             hash-object --no-filters -- "${source_path}"
-        )"
+        )"; then
+          echo "UI source checkout could not hash tracked file: ${tracked_path}" >&2
+          return 1
+        fi
         ;;
       120000)
         if [[ ! -L "${source_path}" ]]; then
@@ -363,10 +428,13 @@ attest_source_checkout() {
           echo "UI source checkout contains an escaping tracked symlink: ${tracked_path}" >&2
           return 1
         fi
-        actual_object="$(
+        if ! actual_object="$(
           printf '%s' "${link_target}" |
             /usr/bin/git -c safe.directory="${source_checkout}" -C "${source_checkout}" hash-object --stdin
-        )"
+        )"; then
+          echo "UI source checkout could not hash tracked symlink: ${tracked_path}" >&2
+          return 1
+        fi
         ;;
       *)
         echo "UI source tree contains unsupported tracked mode ${tracked_mode}: ${tracked_path}" >&2
@@ -378,10 +446,13 @@ attest_source_checkout() {
       return 1
     fi
     ((tracked_count += 1))
-  done < <(
-    /usr/bin/git -c safe.directory="${source_checkout}" -C "${source_checkout}" \
-      ls-tree -r -z --full-tree "${source_commit}"
-  )
+    done <"${tree_inventory}"
+  }
+  if ! verify_tracked_tree_inventory; then
+    rm -f -- "${tree_inventory}"
+    return 1
+  fi
+  rm -f -- "${tree_inventory}"
   if ((tracked_count < 1)); then
     echo "UI source checkout contains no tracked files." >&2
     return 1
@@ -401,8 +472,6 @@ attest_source_checkout() {
 validate_surface_directory() {
   local surface="$1"
   local directory="$2"
-  local unexpected unreadable unsafe_mode foreign_owner asset_reference
-  local -a asset_references=()
   if [[ ! -d "${directory}" || -L "${directory}" || "$(realpath -e "${directory}")" != "${directory}" ]]; then
     echo "Release surface must be a real canonical directory: ${directory}" >&2
     return 1
@@ -411,61 +480,178 @@ validate_surface_directory() {
     echo "Release surface is missing a regular index.html: ${directory}" >&2
     return 1
   fi
-  reject_nested_mounts "${directory}"
-  unexpected="$(find "${directory}" -xdev -mindepth 1 \( -type l -o \( ! -type d ! -type f \) \) -print -quit)"
-  if [[ -n "${unexpected}" ]]; then
-    echo "Release surface contains an unsupported file type: ${unexpected}" >&2
+  if ! reject_nested_mounts "${directory}"; then
     return 1
   fi
-  unreadable="$(find "${directory}" -xdev \( \( -type d ! -perm -0005 \) -o \( -type f ! -perm -0004 \) \) -print -quit)"
-  if [[ -n "${unreadable}" ]]; then
-    echo "Release surface is not publicly readable by Caddy: ${unreadable}" >&2
+  if ! /usr/bin/python3 -I - "${directory}" "${EUID}" <<'PY'
+import os
+import re
+import stat
+import sys
+
+root = os.path.realpath(sys.argv[1])
+expected_owner = int(sys.argv[2])
+root_device = os.lstat(root).st_dev
+
+def check(path, details):
+    if details.st_dev != root_device:
+        raise SystemExit(f"Release surface crosses a filesystem boundary: {path}")
+    if details.st_uid != expected_owner:
+        raise SystemExit(f"Release surface contains foreign-owned content: {path}")
+    if stat.S_ISDIR(details.st_mode):
+        if details.st_mode & 0o7022:
+            raise SystemExit(
+                "Release surface contains an unsafe writable or special mode "
+                f"{stat.S_IMODE(details.st_mode):04o}: {path}"
+            )
+        if stat.S_IMODE(details.st_mode) & 0o005 != 0o005:
+            raise SystemExit(f"Release surface is not publicly readable by Caddy: {path}")
+    elif stat.S_ISREG(details.st_mode):
+        if details.st_mode & 0o7022:
+            raise SystemExit(
+                "Release surface contains an unsafe writable or special mode "
+                f"{stat.S_IMODE(details.st_mode):04o}: {path}"
+            )
+        if stat.S_IMODE(details.st_mode) & 0o004 != 0o004:
+            raise SystemExit(f"Release surface is not publicly readable by Caddy: {path}")
+    else:
+        raise SystemExit(f"Release surface contains an unsupported file type: {path}")
+
+def walk(directory):
+    check(directory, os.lstat(directory))
+    try:
+        entries = sorted(os.scandir(directory), key=lambda entry: os.fsencode(entry.name))
+    except OSError as error:
+        raise SystemExit(f"Unable to enumerate release surface: {error}") from error
+    for entry in entries:
+        details = entry.stat(follow_symlinks=False)
+        check(entry.path, details)
+        if stat.S_ISDIR(details.st_mode):
+            walk(entry.path)
+
+walk(root)
+index = os.path.join(root, "index.html")
+try:
+    with open(index, "rb") as source:
+        index_bytes = source.read(2 * 1024 * 1024 + 1)
+except OSError as error:
+    raise SystemExit(f"Unable to read release surface index: {error}") from error
+if len(index_bytes) > 2 * 1024 * 1024:
+    raise SystemExit(f"Release surface index exceeds validation bound: {index}")
+asset_references = sorted(set(re.findall(rb"/assets/[A-Za-z0-9._/-]+", index_bytes)))
+if not asset_references:
+    raise SystemExit(f"Release surface index has no local asset references: {root}")
+for raw_reference in asset_references:
+    reference = raw_reference.decode("ascii")
+    if ".." in reference:
+        raise SystemExit(f"Release surface index references a missing asset: {root}{reference}")
+    path = os.path.join(root, *reference.removeprefix("/").split("/"))
+    try:
+        details = os.lstat(path)
+    except FileNotFoundError as error:
+        raise SystemExit(f"Release surface index references a missing asset: {root}{reference}") from error
+    if not stat.S_ISREG(details.st_mode) or stat.S_ISLNK(details.st_mode):
+        raise SystemExit(f"Release surface index references a missing asset: {root}{reference}")
+PY
+  then
     return 1
   fi
-  unsafe_mode="$(find "${directory}" -xdev \( -type d -o -type f \) -perm /7022 -print -quit)"
-  if [[ -n "${unsafe_mode}" ]]; then
-    echo "Release surface contains an unsafe writable or special mode: ${unsafe_mode}" >&2
+}
+
+surface_file_inventory_directory() {
+  local directory="$1"
+  local inventory="$2"
+  if [[ -n "${POW_UI_TEST_FAIL_SURFACE_DISCOVERY_AFTER_OUTPUT:-}" ]]; then
+    printf 'index.html\0' >"${inventory}"
     return 1
   fi
-  foreign_owner="$(find "${directory}" -xdev ! -uid "${EUID}" -print -quit)"
-  if [[ -n "${foreign_owner}" ]]; then
-    echo "Release surface contains foreign-owned content: ${foreign_owner}" >&2
-    return 1
-  fi
-  mapfile -t asset_references < <(
-    grep --only-matching --extended-regexp '/assets/[A-Za-z0-9._/-]+' "${directory}/index.html" |
-      sort --unique || true
-  )
-  if ((${#asset_references[@]} == 0)); then
-    echo "Release surface index has no local asset references: ${directory}" >&2
-    return 1
-  fi
-  for asset_reference in "${asset_references[@]}"; do
-    if [[ "${asset_reference}" == *".."* ]] ||
-      [[ ! -f "${directory}${asset_reference}" || -L "${directory}${asset_reference}" ]]; then
-      echo "Release surface index references a missing asset: ${directory}${asset_reference}" >&2
-      return 1
-    fi
-  done
+  find "${directory}" -xdev -type f -printf '%P\0' >"${inventory}"
 }
 
 surface_file_count_directory() {
   local directory="$1"
-  find "${directory}" -xdev -type f -printf . | wc --chars | tr --delete '[:space:]'
+  local inventory
+  local -a files=()
+  if ! inventory="$(mktemp "${lock_parent}/.proofofwork-ui-surface-inventory.XXXXXXXXXX")"; then
+    echo "Release surface inventory could not be created: ${directory}" >&2
+    return 1
+  fi
+  if ! surface_file_inventory_directory "${directory}" "${inventory}"; then
+    rm -f -- "${inventory}"
+    echo "Release surface file discovery failed: ${directory}" >&2
+    return 1
+  fi
+  if ! mapfile -d '' -t files <"${inventory}"; then
+    rm -f -- "${inventory}"
+    echo "Release surface inventory could not be read: ${directory}" >&2
+    return 1
+  fi
+  if ! rm -f -- "${inventory}"; then
+    echo "Release surface inventory could not be removed: ${directory}" >&2
+    return 1
+  fi
+  printf '%s\n' "${#files[@]}"
 }
 
 surface_tree_sha256_directory() {
   local directory="$1"
-  local result relative digest file_mode
-  result="$({
-    cd "${directory}"
-    while IFS= read -r -d '' relative; do
-      digest="$(sha256sum --binary -- "${relative}")"
-      digest="${digest%% *}"
-      file_mode="$(stat --format=%a -- "${relative}")"
-      printf '%s\0%s\0%s\n' "${relative}" "${file_mode}" "${digest}"
-    done < <(find . -xdev -type f -printf '%P\0' | LC_ALL=C sort --zero-terminated)
-  } | sha256sum --binary)"
+  local inventory records relative digest file_mode result fingerprint_status=0
+  if ! inventory="$(mktemp "${lock_parent}/.proofofwork-ui-surface-inventory.XXXXXXXXXX")"; then
+    echo "Release surface inventory could not be created: ${directory}" >&2
+    return 1
+  fi
+  if ! records="$(mktemp "${lock_parent}/.proofofwork-ui-surface-records.XXXXXXXXXX")"; then
+    rm -f -- "${inventory}"
+    echo "Release surface fingerprint records could not be created: ${directory}" >&2
+    return 1
+  fi
+  if ! surface_file_inventory_directory "${directory}" "${inventory}"; then
+    rm -f -- "${inventory}" "${records}"
+    echo "Release surface file discovery failed: ${directory}" >&2
+    return 1
+  fi
+  if ! LC_ALL=C sort --zero-terminated --output="${inventory}" -- "${inventory}"; then
+    rm -f -- "${inventory}" "${records}"
+    echo "Release surface file ordering failed: ${directory}" >&2
+    return 1
+  fi
+  while IFS= read -r -d '' relative; do
+    if [[ -z "${relative}" || "${relative}" == /* || "${relative}" == *\\* ||
+      "/${relative}/" == *"/../"* || "/${relative}/" == *"/./"* ]]; then
+      echo "Release surface file inventory contains an unsafe path: ${relative}" >&2
+      fingerprint_status=1
+      break
+    fi
+    if ! digest="$(sha256sum --binary -- "${directory}/${relative}")" ||
+      ! file_mode="$(stat --format=%a -- "${directory}/${relative}")"; then
+      echo "Release surface file changed during fingerprinting: ${relative}" >&2
+      fingerprint_status=1
+      break
+    fi
+    digest="${digest%% *}"
+    if ! printf '%s\0%s\0%s\n' "${relative}" "${file_mode}" "${digest}" >>"${records}"; then
+      echo "Release surface fingerprint record could not be written: ${relative}" >&2
+      fingerprint_status=1
+      break
+    fi
+  done <"${inventory}"
+  if ! rm -f -- "${inventory}"; then
+    echo "Release surface inventory could not be removed: ${directory}" >&2
+    fingerprint_status=1
+  fi
+  if ((fingerprint_status != 0)); then
+    rm -f -- "${records}"
+    return 1
+  fi
+  if ! result="$(sha256sum --binary -- "${records}")"; then
+    rm -f -- "${records}"
+    echo "Release surface fingerprint could not be hashed: ${directory}" >&2
+    return 1
+  fi
+  if ! rm -f -- "${records}"; then
+    echo "Release surface fingerprint records could not be removed: ${directory}" >&2
+    return 1
+  fi
   printf '%s\n' "${result%% *}"
 }
 
@@ -547,18 +733,34 @@ verify_archive_payload() {
   local -n expected_counts="${counts_name}"
   local -n expected_digests="${digests_name}"
 
-  extraction_root="$(mktemp --directory "${TMPDIR:-/tmp}/proofofwork-ui-archive.XXXXXX")"
-  chmod 0700 "${extraction_root}"
+  if ! extraction_root="$(mktemp --directory "${TMPDIR:-/tmp}/proofofwork-ui-archive.XXXXXX")"; then
+    echo "Release archive extraction root could not be created." >&2
+    return 1
+  fi
+  if ! chmod 0700 "${extraction_root}"; then
+    /usr/bin/rm --recursive --force --one-file-system -- "${extraction_root}"
+    echo "Release archive extraction root could not be secured." >&2
+    return 1
+  fi
   verification_status=0
   (
-    names_text="$(
+    if ! names_text="$(
       LC_ALL=C tar --list --absolute-names --quoting-style=escape --file "${archive}"
-    )"
-    verbose_text="$(
+    )"; then
+      echo "Release archive path listing failed." >&2
+      exit 1
+    fi
+    if ! verbose_text="$(
       LC_ALL=C tar --list --verbose --absolute-names --quoting-style=escape --file "${archive}"
-    )"
-    mapfile -t archive_names <<<"${names_text}"
-    mapfile -t verbose_entries <<<"${verbose_text}"
+    )"; then
+      echo "Release archive metadata listing failed." >&2
+      exit 1
+    fi
+    if ! mapfile -t archive_names <<<"${names_text}" ||
+      ! mapfile -t verbose_entries <<<"${verbose_text}"; then
+      echo "Release archive listing could not be read." >&2
+      exit 1
+    fi
     if ((${#archive_names[@]} == 0 || ${#archive_names[@]} != ${#verbose_entries[@]})); then
       echo "Release archive listing is empty or inconsistent." >&2
       exit 1
@@ -605,16 +807,42 @@ verify_archive_payload() {
       seen_archive_entries["${normalized_name}"]=1
     done
 
-    LC_ALL=C tar \
+    if ! LC_ALL=C tar \
       --extract \
       --file "${archive}" \
       --directory "${extraction_root}" \
       --no-same-owner \
+      --same-permissions \
       --delay-directory-restore \
-      --no-overwrite-dir
-    mapfile -d '' -t top_level_entries < <(
-      find "${extraction_root}" -mindepth 1 -maxdepth 1 -print0
-    )
+      --no-overwrite-dir; then
+      echo "Release archive extraction failed." >&2
+      exit 1
+    fi
+    top_level_inventory="${extraction_root}/.proofofwork-top-level-inventory"
+    if ! : >"${top_level_inventory}"; then
+      echo "Release archive top-level inventory could not be created." >&2
+      exit 1
+    fi
+    if ! {
+      if [[ -n "${POW_UI_TEST_FAIL_ARCHIVE_TOP_LEVEL_DISCOVERY_AFTER_OUTPUT:-}" ]]; then
+        printf '%s\0' "${extraction_root}/surfaces"
+        false
+      else
+        find "${extraction_root}" -mindepth 1 -maxdepth 1 \
+          ! -path "${top_level_inventory}" -print0
+      fi
+    } >"${top_level_inventory}"; then
+      echo "Release archive top-level discovery failed." >&2
+      exit 1
+    fi
+    if ! mapfile -d '' -t top_level_entries <"${top_level_inventory}"; then
+      echo "Release archive top-level inventory could not be read." >&2
+      exit 1
+    fi
+    if ! rm -f -- "${top_level_inventory}"; then
+      echo "Release archive top-level inventory could not be removed." >&2
+      exit 1
+    fi
     if ((${#top_level_entries[@]} != 1)) ||
       [[ "${top_level_entries[0]}" != "${extraction_root}/surfaces" ]]; then
       echo "Release archive must contain only the surfaces root." >&2
@@ -622,9 +850,17 @@ verify_archive_payload() {
     fi
     for surface in "${surfaces[@]}"; do
       archive_surface="${extraction_root}/surfaces/${surface}"
-      validate_surface_directory "${surface}" "${archive_surface}"
-      archive_count="$(surface_file_count_directory "${archive_surface}")"
-      archive_digest="$(surface_tree_sha256_directory "${archive_surface}")"
+      if ! validate_surface_directory "${surface}" "${archive_surface}"; then
+        exit 1
+      fi
+      if ! archive_count="$(surface_file_count_directory "${archive_surface}")"; then
+        echo "Release archive surface count failed: ${surface}" >&2
+        exit 1
+      fi
+      if ! archive_digest="$(surface_tree_sha256_directory "${archive_surface}")"; then
+        echo "Release archive surface digest failed: ${surface}" >&2
+        exit 1
+      fi
       if [[ "${archive_count}" != "${expected_counts[${surface}]}" ||
         "${archive_digest}" != "${expected_digests[${surface}]}" ]]; then
         echo "Release archive surface does not match active UI bytes: ${surface}" >&2
@@ -638,7 +874,127 @@ verify_archive_payload() {
   return "${verification_status}"
 }
 
-record_manifest() {
+record_rollback_evidence() {
+  local archive=""
+  local archive_real archive_name archive_sha256 archive_provenance recorded_at
+  local temporary provenance_temporary surface count digest second_count second_digest
+  local second_archive_sha256
+  declare -A counts=()
+  declare -A digests=()
+
+  while (($# > 0)); do
+    case "$1" in
+      --archive)
+        archive="${2:-}"
+        shift 2
+        ;;
+      *)
+        echo "Unknown rollback-evidence argument: $1" >&2
+        exit 64
+        ;;
+    esac
+  done
+  if [[ -e "${manifest}" || -L "${manifest}" ]]; then
+    echo "Refusing to replace an existing UI release or rollback manifest." >&2
+    exit 1
+  fi
+  if [[ -z "${archive}" ]]; then
+    echo "A surfaces-only rollback archive is required." >&2
+    exit 64
+  fi
+  archive_real="$(realpath -e -- "${archive}" 2>/dev/null || true)"
+  if [[ "${archive_real}" != "${archive}" || "$(dirname -- "${archive}")" != "${archive_root}" ]]; then
+    echo "Rollback archive path must be canonical: ${archive}" >&2
+    exit 64
+  fi
+  archive_name="$(basename -- "${archive}")"
+  if [[ ! "${archive_name}" =~ ^proofofwork-ui-release-[A-Za-z0-9][A-Za-z0-9._-]{0,159}\.tgz$ ]]; then
+    echo "Rollback archive name is not allowlisted: ${archive_name}" >&2
+    exit 64
+  fi
+  archive_sha256="$(verified_archive_sha256 "${archive}")"
+  archive_provenance="${archive}.provenance"
+  if [[ -e "${archive_provenance}" || -L "${archive_provenance}" ]]; then
+    echo "Refusing to replace existing rollback archive evidence: ${archive_provenance}" >&2
+    exit 1
+  fi
+
+  for surface in "${surfaces[@]}"; do
+    validate_surface "${surface}"
+    count="$(surface_file_count "${surface}")"
+    digest="$(surface_tree_sha256 "${surface}")"
+    if [[ ! "${count}" =~ ^[1-9][0-9]*$ || ! "${digest}" =~ ^[0-9a-f]{64}$ ]]; then
+      echo "Unable to fingerprint rollback surface: ${surface}" >&2
+      exit 1
+    fi
+    counts["${surface}"]="${count}"
+    digests["${surface}"]="${digest}"
+  done
+  if [[ "${counts[nft]}" != "${counts[computer]}" ||
+    "${digests[nft]}" != "${digests[computer]}" ]]; then
+    echo "NFT compatibility alias must exactly match Computer paths, bytes, and modes." >&2
+    exit 1
+  fi
+  verify_archive_payload "${archive}" counts digests
+
+  recorded_at="$(date --utc +%Y-%m-%dT%H:%M:%SZ)"
+  temporary="$(mktemp "${ui_root}/.proofofwork-ui-release.tmp.XXXXXX")"
+  provenance_temporary="$(mktemp "${archive_root}/.${archive_name}.provenance.tmp.XXXXXX")"
+  trap 'rm -f -- "${temporary:-}" "${provenance_temporary:-}"' EXIT
+  {
+    printf 'format=proofofwork-ui-rollback-evidence-v1\n'
+    printf 'scope=ui-surfaces-only\n'
+    printf 'model=exact-surface-files-bytes-and-modes-v1\n'
+    printf 'recorded_at=%s\n' "${recorded_at}"
+    printf 'archive_name=%s\n' "${archive_name}"
+    printf 'archive_sha256=%s\n' "${archive_sha256}"
+    printf 'archive_payload_model=surfaces-v1\n'
+    for surface in "${surfaces[@]}"; do
+      printf 'surface.%s.file_count=%s\n' "${surface}" "${counts[${surface}]}"
+      printf 'surface.%s.sha256=%s\n' "${surface}" "${digests[${surface}]}"
+    done
+  } >"${temporary}"
+  chmod 0644 "${temporary}"
+  cp -- "${temporary}" "${provenance_temporary}"
+  chmod 0644 "${provenance_temporary}"
+
+  second_archive_sha256="$(verified_archive_sha256 "${archive}" "${archive_sha256}")"
+  if [[ "${second_archive_sha256}" != "${archive_sha256}" ]]; then
+    echo "Rollback archive changed while evidence was recorded." >&2
+    exit 1
+  fi
+  for surface in "${surfaces[@]}"; do
+    validate_surface "${surface}"
+    second_count="$(surface_file_count "${surface}")"
+    second_digest="$(surface_tree_sha256 "${surface}")"
+    if [[ "${second_count}" != "${counts[${surface}]}" ||
+      "${second_digest}" != "${digests[${surface}]}" ]]; then
+      echo "Rollback surface changed while evidence was recorded: ${surface}" >&2
+      exit 1
+    fi
+  done
+  verify_archive_payload "${archive}" counts digests
+  sync --file-system "${temporary}"
+  sync --file-system "${provenance_temporary}"
+  if ! ln -- "${provenance_temporary}" "${archive_provenance}"; then
+    echo "Refusing to overwrite rollback archive evidence created concurrently." >&2
+    exit 1
+  fi
+  rm -f -- "${provenance_temporary}"
+  sync --file-system "${archive_root}"
+  if ! ln -- "${temporary}" "${manifest}"; then
+    echo "Refusing to overwrite a UI manifest created concurrently." >&2
+    exit 1
+  fi
+  rm -f -- "${temporary}"
+  sync --file-system "${ui_root}"
+  trap - EXIT
+  printf 'ui_rollback_evidence status=recorded archive_sha256=%s\n' "${archive_sha256}"
+}
+
+process_release_manifest() {
+  local operation="$1"
+  shift
   local release_id=""
   local commit=""
   local source_checkout=""
@@ -650,6 +1006,16 @@ record_manifest() {
   local original_dependency_entry_count original_dependency_bytes original_dependency_sha256
   declare -A counts=()
   declare -A digests=()
+
+  if [[ "${operation}" != "record" && "${operation}" != "verify-candidate" ]]; then
+    echo "Unknown release provenance operation: ${operation}" >&2
+    exit 64
+  fi
+  if [[ "${operation}" == "record" &&
+    "${POW_UI_STAGED_ROOT:-}" == "1" ]]; then
+    echo "Active UI release provenance cannot be recorded against a staged root." >&2
+    exit 64
+  fi
 
   while (($# > 0)); do
     case "$1" in
@@ -726,6 +1092,41 @@ record_manifest() {
     exit 1
   fi
   verify_archive_payload "${archive}" counts digests
+
+  if [[ "${operation}" == "verify-candidate" ]]; then
+    second_archive_sha256="$(verified_archive_sha256 "${archive}" "${archive_sha256}")"
+    if [[ "${second_archive_sha256}" != "${archive_sha256}" ]]; then
+      echo "Release archive changed while the candidate was verified." >&2
+      exit 1
+    fi
+    original_source_commit="${attested_source_commit}"
+    original_source_tree="${attested_source_tree}"
+    original_dependency_entry_count="${attested_dependency_entry_count}"
+    original_dependency_bytes="${attested_dependency_bytes}"
+    original_dependency_sha256="${attested_dependency_sha256}"
+    attest_source_checkout "${source_checkout}" "${commit}"
+    if [[ "${attested_source_commit}" != "${original_source_commit}" ||
+      "${attested_source_tree}" != "${original_source_tree}" ||
+      "${attested_dependency_entry_count}" != "${original_dependency_entry_count}" ||
+      "${attested_dependency_bytes}" != "${original_dependency_bytes}" ||
+      "${attested_dependency_sha256}" != "${original_dependency_sha256}" ]]; then
+      echo "UI source checkout changed while the candidate was verified." >&2
+      exit 1
+    fi
+    for surface in "${surfaces[@]}"; do
+      validate_surface "${surface}"
+      second_count="$(surface_file_count "${surface}")"
+      second_digest="$(surface_tree_sha256 "${surface}")"
+      if [[ "${second_count}" != "${counts[${surface}]}" ||
+        "${second_digest}" != "${digests[${surface}]}" ]]; then
+        echo "Release surface changed while the candidate was verified: ${surface}" >&2
+        exit 1
+      fi
+    done
+    printf 'ui_release_candidate status=verified release_id=%s commit=%s archive_sha256=%s\n' \
+      "${release_id}" "${commit}" "${archive_sha256}"
+    return
+  fi
 
   deployed_at="$(date --utc +%Y-%m-%dT%H:%M:%SZ)"
   temporary="$(mktemp "${ui_root}/.proofofwork-ui-release.tmp.XXXXXX")"
@@ -916,11 +1317,168 @@ verify_manifest() {
     "${values[release_id]}" "${values[commit]}" "${values[archive_sha256]}"
 }
 
+verify_rollback_evidence() {
+  local line key value surface expected_count expected_digest actual_count actual_digest mode
+  local archive archive_provenance actual_archive_sha256 manifest_owner provenance_mode provenance_owner
+  declare -A values=()
+  declare -A seen=()
+  declare -A counts=()
+  declare -A digests=()
+  if (($# != 0)); then
+    echo "verify-rollback accepts no additional arguments." >&2
+    exit 64
+  fi
+  if [[ ! -f "${manifest}" || -L "${manifest}" ||
+    "$(realpath -e -- "${manifest}" 2>/dev/null || true)" != "${manifest}" ]]; then
+    echo "UI rollback evidence manifest is missing or noncanonical: ${manifest}" >&2
+    exit 1
+  fi
+  mode="$(stat --format=%a -- "${manifest}")"
+  manifest_owner="$(stat --format=%u -- "${manifest}")"
+  if ((8#${mode} & 07022)) || [[ "${manifest_owner}" != "${EUID}" ]]; then
+    echo "UI rollback evidence manifest has unsafe mode or ownership." >&2
+    exit 1
+  fi
+  while IFS= read -r line || [[ -n "${line}" ]]; do
+    if [[ "${line}" != *=* ]]; then
+      echo "Malformed UI rollback evidence manifest line." >&2
+      exit 1
+    fi
+    key="${line%%=*}"
+    value="${line#*=}"
+    if [[ -n "${seen[${key}]:-}" ]]; then
+      echo "Duplicate UI rollback evidence manifest key: ${key}" >&2
+      exit 1
+    fi
+    case "${key}" in
+      format | scope | model | recorded_at | archive_name | archive_sha256 | archive_payload_model) ;;
+      *)
+        allowed_key=false
+        for surface in "${surfaces[@]}"; do
+          if [[ "${key}" == "surface.${surface}.file_count" ||
+            "${key}" == "surface.${surface}.sha256" ]]; then
+            allowed_key=true
+            break
+          fi
+        done
+        if [[ "${allowed_key}" != "true" ]]; then
+          echo "Unknown UI rollback evidence manifest key: ${key}" >&2
+          exit 1
+        fi
+        ;;
+    esac
+    seen["${key}"]=1
+    values["${key}"]="${value}"
+  done <"${manifest}"
+
+  if [[ "${values[format]:-}" != "proofofwork-ui-rollback-evidence-v1" ]] ||
+    [[ "${values[scope]:-}" != "ui-surfaces-only" ]] ||
+    [[ "${values[model]:-}" != "exact-surface-files-bytes-and-modes-v1" ]] ||
+    [[ ! "${values[recorded_at]:-}" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] ||
+    [[ ! "${values[archive_name]:-}" =~ ^proofofwork-ui-release-[A-Za-z0-9][A-Za-z0-9._-]{0,159}\.tgz$ ]] ||
+    [[ ! "${values[archive_sha256]:-}" =~ ^[0-9a-f]{64}$ ]] ||
+    [[ "${values[archive_payload_model]:-}" != "surfaces-v1" ]]; then
+    echo "UI rollback evidence manifest metadata is invalid." >&2
+    exit 1
+  fi
+  if [[ "${values[surface.nft.file_count]:-}" != "${values[surface.computer.file_count]:-}" ||
+    "${values[surface.nft.sha256]:-}" != "${values[surface.computer.sha256]:-}" ]]; then
+    echo "UI rollback evidence does not preserve the NFT compatibility alias." >&2
+    exit 1
+  fi
+
+  archive="${archive_root}/${values[archive_name]}"
+  actual_archive_sha256="$(verified_archive_sha256 "${archive}" "${values[archive_sha256]}")"
+  archive_provenance="${archive}.provenance"
+  if [[ -f "${archive_provenance}" && ! -L "${archive_provenance}" ]]; then
+    provenance_mode="$(stat --format=%a -- "${archive_provenance}")"
+    provenance_owner="$(stat --format=%u -- "${archive_provenance}")"
+  else
+    provenance_mode=""
+    provenance_owner=""
+  fi
+  if [[ "${actual_archive_sha256}" != "${values[archive_sha256]}" ]] ||
+    [[ ! -f "${archive_provenance}" || -L "${archive_provenance}" ]] ||
+    [[ "${provenance_owner}" != "${EUID}" ]] ||
+    [[ ! "${provenance_mode}" =~ ^[0-7]+$ ]] ||
+    ((8#${provenance_mode} & 07022)) ||
+    ! cmp --silent -- "${manifest}" "${archive_provenance}"; then
+    echo "UI rollback evidence is not bound to matching retained archive provenance." >&2
+    exit 1
+  fi
+
+  for surface in "${surfaces[@]}"; do
+    expected_count="${values[surface.${surface}.file_count]:-}"
+    expected_digest="${values[surface.${surface}.sha256]:-}"
+    if [[ ! "${expected_count}" =~ ^[1-9][0-9]*$ ||
+      ! "${expected_digest}" =~ ^[0-9a-f]{64}$ ]]; then
+      echo "UI rollback evidence is missing surface evidence: ${surface}" >&2
+      exit 1
+    fi
+    validate_surface "${surface}"
+    actual_count="$(surface_file_count "${surface}")"
+    actual_digest="$(surface_tree_sha256 "${surface}")"
+    if [[ "${actual_count}" != "${expected_count}" ||
+      "${actual_digest}" != "${expected_digest}" ]]; then
+      echo "UI rollback evidence mismatch: ${surface}" >&2
+      exit 1
+    fi
+    counts["${surface}"]="${expected_count}"
+    digests["${surface}"]="${expected_digest}"
+  done
+  verify_archive_payload "${archive}" counts digests
+  printf 'ui_rollback_evidence status=verified archive_sha256=%s\n' \
+    "${values[archive_sha256]}"
+}
+
+verify_rollback_capability() {
+  local line key format_value="" format_count=0
+  if (($# != 0)); then
+    echo "verify-rollback accepts no additional arguments." >&2
+    exit 64
+  fi
+  if [[ ! -f "${manifest}" || -L "${manifest}" ||
+    "$(realpath -e -- "${manifest}" 2>/dev/null || true)" != "${manifest}" ]]; then
+    echo "UI rollback capability is unattributed: ${manifest}" >&2
+    exit 1
+  fi
+  while IFS= read -r line || [[ -n "${line}" ]]; do
+    if [[ "${line}" != *=* ]]; then
+      echo "UI rollback capability manifest is malformed." >&2
+      exit 1
+    fi
+    key="${line%%=*}"
+    if [[ "${key}" == "format" ]]; then
+      format_value="${line#*=}"
+      ((format_count += 1))
+    fi
+  done <"${manifest}"
+  if ((format_count != 1)); then
+    echo "UI rollback capability manifest has no unique format." >&2
+    exit 1
+  fi
+  case "${format_value}" in
+    proofofwork-ui-release-v3)
+      verify_manifest
+      ;;
+    proofofwork-ui-rollback-evidence-v1)
+      verify_rollback_evidence
+      ;;
+    *)
+      echo "UI rollback capability manifest has an unknown format: ${format_value}" >&2
+      exit 1
+      ;;
+  esac
+}
+
 case "${command}" in
-  record) record_manifest "$@" ;;
+  record-rollback-evidence) record_rollback_evidence "$@" ;;
+  record) process_release_manifest "record" "$@" ;;
+  verify-candidate) process_release_manifest "verify-candidate" "$@" ;;
   verify) verify_manifest "$@" ;;
+  verify-rollback) verify_rollback_capability "$@" ;;
   *)
-    echo "Usage: $0 record --release-id ID --commit HEX --source-checkout /canonical/checkout --archive /canonical/release.tgz | verify" >&2
+    echo "Usage: $0 verify-candidate --release-id ID --commit HEX --source-checkout /canonical/checkout --archive /canonical/release.tgz | record --release-id ID --commit HEX --source-checkout /canonical/checkout --archive /canonical/release.tgz | record-rollback-evidence --archive /canonical/release.tgz | verify | verify-rollback" >&2
     exit 64
     ;;
 esac

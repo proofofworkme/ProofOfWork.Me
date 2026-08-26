@@ -76,6 +76,8 @@
     "audit:ledger": "node scripts/audit-ledger-consistency.mjs",
     "audit:computer-events": "node scripts/audit-computer-events.mjs",
     "audit:ids": "node scripts/audit-id-registry.mjs",
+    "check:id-address-route": "node scripts/check-id-address-route.mjs",
+    "check:id-audit": "node scripts/check-id-registry-audit.mjs",
     "deck:general": "node scripts/build-general-deck.mjs",
     "rank:powids": "node scripts/rank-powid-transactions.mjs",
     "proof-api": "node server/proof-api.mjs"

@@ -91,6 +91,8 @@ import {
   compareWorkAmoCanonicalPositions,
   deriveWorkAmoV5FrozenTerms,
   normalizeWorkAmoCanonicalPosition,
+  parseWorkAmoV5GenericSaleAuthorization,
+  parseWorkAmoV5IdSaleAuthorization,
   parseWorkAmoV5PwmMessages,
   parseWorkAmoV5RawPwtRecord,
   parseWorkAmoV5RawPwidRecord,
@@ -2501,6 +2503,32 @@ const rawIdSaleAuthorization = {
   signature: "",
   version: WORK_AMO_V5_ID_SALE_AUTH_VERSION,
 };
+assert.equal(
+  parseWorkAmoV5GenericSaleAuthorization({
+    ...rawGenericSaleAuthorization,
+    metadata: { label: "東京 🚀" },
+    nonce: "雪-🚀-café",
+  })?.nonce,
+  "雪-🚀-café",
+  "Direct generic sale-authorization parsing must preserve valid Unicode.",
+);
+for (const authorization of [
+  { ...rawGenericSaleAuthorization, nonce: "nonce\u0000storage" },
+  {
+    ...rawGenericSaleAuthorization,
+    ignored: { nested: ["safe", "value\u0000storage"] },
+  },
+  {
+    ...rawGenericSaleAuthorization,
+    ["ignored\u0000key"]: "value",
+  },
+]) {
+  assert.equal(
+    parseWorkAmoV5GenericSaleAuthorization(authorization),
+    null,
+    "Direct generic sale-authorization objects must recursively reject U+0000.",
+  );
+}
 const rawListingId = hash("a");
 const rawBuyerAddress =
   "1F1p9UEHuH5KTFR7Zsx93Khdrqhj6t5nFv";
@@ -2522,6 +2550,61 @@ assert.equal(
   )?.saleAuthorization?.version,
   WORK_AMO_V5_ID_SALE_AUTH_VERSION,
 );
+const semanticNulText = "alice\u0000storage";
+const semanticNulTextEncoded = Buffer.from(
+  semanticNulText,
+  "utf8",
+).toString("base64url");
+const semanticNulPgpEncoded = Buffer.from(
+  "-----BEGIN PGP KEY-----\u0000-----END PGP KEY-----",
+  "utf8",
+).toString("base64url");
+for (const message of [
+  `pwid1:r:alice\u0000storage:${rawBuyerAddress}:${rawBuyerAddress}`,
+  `pwid1:r2:${semanticNulTextEncoded}:${rawBuyerAddress}:${rawBuyerAddress}`,
+  `pwid1:r2:${Buffer.from("alice", "utf8").toString("base64url")}:${rawBuyerAddress}:${rawBuyerAddress}:${semanticNulPgpEncoded}`,
+  `pwid1:u:${semanticNulTextEncoded}:${rawBuyerAddress}`,
+  `pwid1:t:${semanticNulTextEncoded}:${rawBuyerAddress}:${rawBuyerAddress}`,
+]) {
+  assert.equal(
+    parseWorkAmoV5RawPwidRecord(message),
+    null,
+    "PWID semantic U+0000 must be rejected before raw state mutation.",
+  );
+}
+const semanticNulIdAuthorizations = [
+  { ...rawIdSaleAuthorization, id: semanticNulText },
+  { ...rawIdSaleAuthorization, nonce: "nonce\u0000storage" },
+  {
+    ...rawIdSaleAuthorization,
+    ignored: { nested: ["safe", "value\u0000storage"] },
+  },
+  {
+    ...rawIdSaleAuthorization,
+    ["ignored\u0000key"]: "value",
+  },
+];
+for (const authorization of semanticNulIdAuthorizations) {
+  assert.equal(
+    parseWorkAmoV5IdSaleAuthorization(authorization),
+    null,
+    "ID sale authorization objects must recursively reject U+0000.",
+  );
+  const encoded = Buffer.from(
+    JSON.stringify(authorization),
+    "utf8",
+  ).toString("base64url");
+  for (const message of [
+    `pwid1:list5:${encoded}`,
+    `pwid1:seal5:${rawListingId}:${encoded}`,
+  ]) {
+    assert.equal(
+      parseWorkAmoV5RawPwidRecord(message),
+      null,
+      "Wire-safe ID authorization JSON must not reintroduce U+0000.",
+    );
+  }
+}
 for (const authorization of [
   staticAuthorization,
   rawGenericSaleAuthorization,
@@ -2554,6 +2637,9 @@ function structurallyInvalidAuthorizationEncodings(source) {
     `${prefix},"ignored":"\\udc00"}`,
     `${prefix},"\\ud800":"ignored"}`,
     `${prefix},"\\udc00":"ignored"}`,
+    `${prefix},"ignored":"storage\\u0000nul"}`,
+    `${prefix},"nested":{"items":["safe","storage\\u0000nul"]}}`,
+    `${prefix},"ignored\\u0000key":"value"}`,
   ].map((json) =>
     Buffer.from(json, "utf8").toString("base64url"),
   );
@@ -2621,6 +2707,21 @@ assert.deepEqual(
     memo: "noncanonical metadata ignored",
   },
 );
+const semanticNulBase64Url = Buffer.from(
+  "metadata\u0000storage",
+  "utf8",
+).toString("base64url");
+assert.deepEqual(
+  parseWorkAmoV5PwmMessages([
+    `pwm1:s:${semanticNulBase64Url}`,
+    "pwm1:m:storage-safe metadata survives",
+  ]),
+  {
+    contributionField: "mailFlowSats",
+    kind: "mail",
+    memo: "storage-safe metadata survives",
+  },
+);
 const rawPwmAttachmentSha256 =
   "2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881";
 const rawPwmAttachmentMime =
@@ -2646,6 +2747,14 @@ for (const malformedAttachment of [
   rawPwmAttachment(
     rawPwmAttachmentMime,
     invalidUtf8Base64Url,
+  ),
+  rawPwmAttachment(
+    semanticNulBase64Url,
+    rawPwmAttachmentName,
+  ),
+  rawPwmAttachment(
+    rawPwmAttachmentMime,
+    semanticNulBase64Url,
   ),
   rawPwmAttachment(
     rawPwmAttachmentMime,
@@ -4951,6 +5060,19 @@ const rawValidIdOutcome = rawAdversarialOutcome(
   rawAdversarialIdTxid,
   2,
 );
+assert.deepEqual(
+  rawAdversarialReplay.events
+    .filter(({ txid }) => txid === rawAdversarialIdTxid)
+    .map((event) => ({
+      protocolVout: event.position.protocolVout,
+      valid: event.valid,
+    })),
+  [
+    { protocolVout: 1, valid: false },
+    { protocolVout: 2, valid: true },
+  ],
+  "one PWID transaction must retain its invalid and valid outcomes in physical order",
+);
 assert.equal(rawInvalidIdOutcome?.valid, false);
 assert.equal(
   rawInvalidIdOutcome?.reasonCode,
@@ -4974,6 +5096,73 @@ assert.equal(
     ({ id }) => id === "alice",
   )?.receiveAddress,
   rawAdversarialRecipient,
+);
+
+const rawBothInvalidIdMessages = [
+  rawAdversarialInvalidIdMessage,
+  `pwid1:u:${Buffer.from("unknown-id", "utf8").toString("base64url")}:` +
+    rawAdversarialRecipient,
+];
+const rawBothInvalidIdTx = {
+  vin: [
+    {
+      prevout: { scriptpubkey_address: rawAdversarialActor },
+      txid: hash("6"),
+      vout: 0,
+    },
+  ],
+  vout: [
+    {
+      scriptpubkey_address: WORK_AMO_V5_ID_REGISTRY_ADDRESS,
+      value: 546,
+    },
+    ...rawBothInvalidIdMessages.map((message) => ({
+      scriptpubkey: rawAdversarialOpReturnScript(message),
+      value: 0,
+    })),
+  ],
+};
+const rawBothInvalidIdHydrated = rawAdversarialHydratedTransaction({
+  feeSats: 31,
+  tx: rawBothInvalidIdTx,
+});
+const rawBothInvalidIdRecords = rawBothInvalidIdMessages.map(
+  (message, messageIndex) =>
+    rawAdversarialRecord({
+      blockHash: rawAdversarialBlockHash,
+      blockHeight: rawAdversarialBlockHeight,
+      blockTransactionIndex: 1,
+      feeSats: 31,
+      message,
+      protocol: "pwid1",
+      protocolVout: messageIndex + 1,
+      transactionProtocolRecordCount: 2,
+      tx: rawBothInvalidIdHydrated,
+      txid: rawBothInvalidIdHydrated.txid,
+    }),
+);
+const rawBothInvalidIdReplay = replayRawAdversarialRecords(
+  rawBothInvalidIdRecords,
+);
+assert.deepEqual(
+  rawBothInvalidIdReplay.events.map((event) => ({
+    protocolVout: event.position.protocolVout,
+    reasonCode: event.reasonCode,
+    valid: event.valid,
+  })),
+  [
+    {
+      protocolVout: 1,
+      reasonCode: "work-amo-v5-id-update-owner-invalid",
+      valid: false,
+    },
+    {
+      protocolVout: 2,
+      reasonCode: "work-amo-v5-id-update-owner-invalid",
+      valid: false,
+    },
+  ],
+  "two invalid PWID records in one transaction must both remain replay outcomes",
 );
 
 const rawAdversarialDerivedEvent =
@@ -5733,6 +5922,67 @@ assert.throws(
       rawMalformedDispositionTamper,
     ]),
   /work-amo-v5-raw-record-transaction-witness-mismatch/u,
+);
+
+let rawSemanticNulPwidTxid = "";
+const rawSemanticNulPwidMessage =
+  `pwid1:r2:${Buffer.from("semantic\u0000nul", "utf8").toString("base64url")}` +
+  `:${rawAdversarialActor}:${rawAdversarialActor}`;
+const rawSemanticNulPwidTx = {
+  vin: [{
+    prevout: {
+      scriptpubkey_address: rawAdversarialActor,
+    },
+    txid: hash("1"),
+    vout: 0,
+  }],
+  vout: [
+    {
+      scriptpubkey_address: WORK_AMO_V5_ID_REGISTRY_ADDRESS,
+      value: 1_000,
+    },
+    {
+      scriptpubkey: rawAdversarialOpReturnScript(
+        rawSemanticNulPwidMessage,
+      ),
+      value: 0,
+    },
+  ],
+};
+rawSemanticNulPwidTxid = rawAdversarialHydratedTransaction({
+  feeSats: 37,
+  tx: rawSemanticNulPwidTx,
+}).txid;
+const rawSemanticNulPwidRecord = rawAdversarialRecord({
+  blockHash: rawAdversarialBlockHash,
+  blockHeight: rawAdversarialBlockHeight,
+  blockTransactionIndex: 8,
+  feeSats: 37,
+  message: rawSemanticNulPwidMessage,
+  protocol: "pwid1",
+  protocolVout: 1,
+  tx: rawSemanticNulPwidTx,
+  txid: rawSemanticNulPwidTxid,
+});
+assert.equal(rawSemanticNulPwidRecord.rawDecodeValid, true);
+assert.equal(rawSemanticNulPwidRecord.rawDecodeReasonCode, "");
+const rawSemanticNulPwidReplay = replayRawAdversarialRecords([
+  rawSemanticNulPwidRecord,
+]);
+const rawSemanticNulPwidOutcome =
+  rawSemanticNulPwidReplay.outcomes.get(
+    `${rawSemanticNulPwidTxid}:1:0`,
+  );
+assert.equal(rawSemanticNulPwidOutcome?.valid, false);
+assert.equal(
+  rawSemanticNulPwidOutcome?.reasonCode,
+  "work-amo-v5-raw-pwid-invalid",
+);
+assert.equal(rawSemanticNulPwidOutcome?.parsed, null);
+assert.equal(
+  JSON.stringify(rawSemanticNulPwidReplay).includes("\u0000"),
+  false,
+  "A wire-safe decoded U+0000 must not enter replay state or evidence JSON.",
 );
 
 let rawPwmAggregateTxid = "";

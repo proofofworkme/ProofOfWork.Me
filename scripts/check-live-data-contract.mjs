@@ -2718,11 +2718,16 @@ expectAll("AMO V5 legacy bootstrap carry is proved from one exact relational row
   /blockIndex !== WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_BLOCK_INDEX/,
   /protocolVout !== WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_PROTOCOL_VOUT/,
   /recordOrdinal !== WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_RECORD_ORDINAL/,
-  /mutationSats !== WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MUTATION_SATS/,
   /minerFeeSats !== WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MINER_FEE_SATS/,
-  /listingCount !== 1/,
-  /activeListingCount !== 0/,
-  /listingStatuses\[0\] !== "dropped"/,
+  /const droppedListingEvidence =/,
+  /eventKind === "token-listing"[\s\S]*eventAmountSats ===\s*WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MUTATION_SATS[\s\S]*listingCount === 1[\s\S]*activeListingCount === 0[\s\S]*listingStatuses\[0\] === "dropped"/,
+  /const invalidOnlyReplayEvidence =/,
+  /eventKind === "token-event-invalid"[\s\S]*eventAmountSats === 0[\s\S]*payloadAmountSats === 0[\s\S]*payloadAuditRegistryPaymentSats ===\s*WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MUTATION_SATS[\s\S]*registryPaymentOutputCount === 1[\s\S]*saleTicketOutputCount === 1[\s\S]*listingCount === 0[\s\S]*activeListingCount === 0[\s\S]*listingStatuses\.length === 0/,
+  /\(!droppedListingEvidence && !invalidOnlyReplayEvidence\)/,
+  /const mutationSats =\s*WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MUTATION_SATS/,
+  /creditFixedSats = mutationSats \+ minerFeeSats/,
+  /growthValueSats = mutationSats \* 5/,
+  /listingCount: 1/,
   /JOIN proof_indexer\.transactions event_tx/,
   /JOIN proof_indexer\.blocks event_block/,
   /WHERE event_row\.network = \$1[\s\S]*AND event_row\.txid = \$2/,
@@ -2732,9 +2737,9 @@ expectAll("AMO V5 legacy bootstrap carry is exact and separately reconciled", le
   /WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MODEL/,
   /WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_TXID/,
   /WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_REASON_CODE/,
-  /field === "tokenMarketplaceFeeSats"/,
+  /const legacyBootstrapCarryFields = new Set\(\[[\s\S]*"tokenMarketplaceFeeSats"[\s\S]*"tokenTransferFlowSats"[\s\S]*\]\)/,
   /committed !== valid \+ expectedCarry/,
-  /committedBaseNetworkValueQ8 !==\s*validBaseNetworkValueQ8 \+ legacyBootstrapGrowthValueQ8/,
+  /committedBaseNetworkValueQ8 !==\s*finalValidBaseNetworkValueQ8 \+ legacyBootstrapGrowthValueQ8/,
   /legacyBaselineCreditFixedQ8 =\s*validCreditFixedQ8 \+ legacyBootstrapCreditFixedQ8/,
   /postActivationCreditFixedQ8 =[\s\S]*committedCreditFixedQ8 >= legacyBaselineCreditFixedQ8[\s\S]*committedCreditFixedQ8 - legacyBaselineCreditFixedQ8/,
   /publishedCreditFixedQ8Matches[\s\S]*publishedValidCreditFixedQ8 === validCreditFixedQ8[\s\S]*publishedValidCreditFixedQ8 === legacyBaselineCreditFixedQ8[\s\S]*publishedValidCreditFixedQ8 === committedCreditFixedQ8/,
@@ -2758,14 +2763,17 @@ expectAll("credit frozen value proves valid flows plus the explicit legacy carry
   /BigInt\(legacyCreditFixedQ8\) \+[\s\S]*BigInt\(postActivationCreditFixedQ8\)/,
 ]);
 expectAll("marketplace consistency keeps strict valid-only equality", marketplaceMutationEqualitySource, [
-  /numbersAgree\(confirmedMarketplaceMutationFeeSats, marketplaceFeeSats\)/,
-  /numbersAgree\(confirmedMarketplaceMutationFeeSats, marketplaceMutationFeeSats\)/,
+  /numbersAgree\(marketplaceFeeSats, marketplaceMutationFeeSats\)/,
+  /numbersAgree\(\s*confirmedMarketplaceMutationFeeSats,\s*marketplaceMutationFeeSats,?\s*\)/,
+  /numbersAgree\([\s\S]*confirmedMarketplaceMutationFeeSats,[\s\S]*marketplaceMutationFeeSats \+[\s\S]*legacyBootstrapMarketplaceCarrySats/,
 ]);
 expect(
-  "marketplace fee equality is not relaxed by the legacy bootstrap carry",
-  !/\|\||legacyBootstrap|WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY/u.test(
-    marketplaceMutationEqualitySource,
-  ),
+  "marketplace fee equality permits only the exact proven legacy bootstrap carry",
+  (marketplaceMutationEqualitySource.match(/legacyBootstrapMarketplaceCarrySats/gu) ?? [])
+    .length === 2 &&
+    !/WORK_AMO_V5_LEGACY_BOOTSTRAP_CARRY_MUTATION_SATS/u.test(
+      marketplaceMutationEqualitySource,
+    ),
 );
 
 expectAll("confirmed token protocol failures stay diagnosable", server, [

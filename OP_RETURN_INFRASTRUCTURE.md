@@ -726,6 +726,7 @@ deploy/proofofwork-ui-release-prune.service
 deploy/proofofwork-ui-release-prune.timer
 deploy/proofofwork-node-release-prune.service
 deploy/proofofwork-node-release-prune.timer
+deploy/proofofwork-node-release-exchange.py
 deploy/proofofwork-node-release-publish.sh
 deploy/proofofwork-node-release-health.sh
 deploy/proofofwork-node-release-health.service
@@ -733,6 +734,8 @@ deploy/proofofwork-node-release-health.timer
 deploy/proofofwork-node-storage-health.sh
 deploy/proofofwork-node-storage-health.service
 deploy/proofofwork-node-storage-health.timer
+deploy/proofofwork-ui-release-publish.sh
+deploy/proofofwork-ui-release-stage.py
 deploy/proofofwork-ui-release-provenance.sh
 deploy/proofofwork-ui-release-provenance.service
 deploy/proofofwork-ui-release-provenance.timer
@@ -1010,7 +1013,11 @@ free-space checks remain mandatory. Install `pg-basebackup-timer-override.conf` 
 weekly run is started after the host returns. The tracked daily logical service publishes one atomic `dumpset`
 directory containing the custom-format `proof_indexer` dump, a
 `pg_dumpall --globals-only` role archive, and verified SHA-256 manifest. It
-keeps 14 sets under `/data/proofofwork-postgres-backups/logical`; globals may
+serializes timer and manual invocations through an owner-controlled lock in the
+canonical logical-backup root. Cleanup is bound to the device/inode of the
+temporary set created by that invocation, so an overlapping or same-second
+invocation can never remove another dump in progress. It keeps 14 sets under
+`/data/proofofwork-postgres-backups/logical`; globals may
 contain password hashes and must remain `postgres`-only and encrypted before
 any off-host copy. Take the first physical and logical backups, restore the
 latest logical dump into a disposable scratch database, validate representative
@@ -1367,7 +1374,11 @@ height, transaction index, protocol vout, and ordinal, plus matching txid and
 protocol. Raw replay records occupy their Core-derived ordinal. Deterministic
 children occupy later collision-free projection ordinals and bind their
 `derivedId`, container/materialization position, zero delta, and no-claim/no-fee
-flags. Any string tie-breaker used to canonicalize a committed set compares
+flags. Every deterministic child also inherits the exact integer Core
+`blocktime` of its prepared parent transaction as `blockTime`, `createdAt`, and
+`timestamp`; a listing-close child additionally receives that value as
+`closedAt`. A missing or position-divergent parent timestamp aborts the block
+instead of falling back to process time. Any string tie-breaker used to canonicalize a committed set compares
 normalized unsigned UTF-8 bytes. Locale-sensitive comparison is forbidden and
 cannot replace the four-integer confirmed position. The replay record
 overwrites validity, exact reason, canonical output,
@@ -1375,6 +1386,109 @@ and frozen terms before persistence. Every raw or derived replay record and
 every prepared item must be consumed exactly once. Invalid raw outcomes are
 stored as audit rows but emit no derived children and skip every derived
 projection mutation; any mismatch aborts the whole block.
+Backfill Base64URL text and JSON decoders also fail closed on U+0000. JSON
+checks recurse through every array/object value and every object key, including
+an escaped `\u0000` that appears only after `JSON.parse`; rejection never
+rewrites the retained raw carrier bytes or payload witness.
+
+One supervised repair mode exists only for the six historically confirmed
+`pwt1` listing-close children whose relational and payload timestamps were
+omitted before parent-time inheritance was enforced. The mode is audit-only by
+default. Both audit and apply are offline maintenance operations: stop the API,
+worker, and every other index writer before running either command. The audit
+does not mutate rows, but it deliberately holds writer-exclusion locks while
+performing its final bounded Core proof:
+
+```bash
+npm run indexer:backfill -- --repair-canonical-event-parent-metadata
+```
+
+It accepts only its embedded six-event manifest. Before returning it proves
+each event, transaction, canonical block, exact transaction/vout/ordinal
+position, `pwt1:buy5` carrier, and timestamp twice against Bitcoin Core. The
+detailed verbosity-2 proof runs before the database transaction; the final
+proof uses the raw transaction plus a verbosity-1 ordered block and runs all
+six targets in parallel under bounded RPC timeouts. The transaction takes its
+fixed-order block, transaction, event, participant, and reference table locks
+before its advisory query or first row read, then rolls back. After a fresh
+verified database backup, the same stopped-writer audit may be applied
+explicitly:
+
+```bash
+POW_INDEX_REPAIR_CANONICAL_EVENT_PARENT_METADATA_APPLY=1 \
+  npm run indexer:backfill -- --repair-canonical-event-parent-metadata
+```
+
+Apply updates only `events.block_time`, `events.event_time`, and the four
+inherited payload time keys for all six rows as one transaction. It preserves
+event ids, creation/update timestamps, raw evidence, participants, references,
+transaction rows, block rows, and every non-time payload field. Any missing,
+extra, partially repaired, noncanonical, repositioned, concurrently writable,
+or otherwise divergent target rolls the whole operation back. Retain the
+pre-repair logical backup until parity and public-read regression gates pass.
+This narrowly scoped transaction does not invalidate stored snapshots or
+process/disk response caches; any production apply must separately prove the
+live relational readers and then perform the ordinary supervised cache/snapshot
+refresh before reopening traffic if those derived surfaces retained old event
+payloads.
+
+Post-activation raw `pwid1` materialization derives its event `amountSats`
+from the immutable replay transition, never from a verifier display default.
+For every valid raw PWID record, the backfill binds the exact
+`stateDelta.economicOutputs` entries whose role is `pwid-registry`, proves each
+claimed vout against the prepared Core transaction and canonical registry
+address, checks the attributed total against the semantic action, and persists
+`1000` for a registration or `546` for another valid lifecycle action. The
+corresponding base contribution must agree. A modern invalid raw outcome stays
+zero unless its immutable transition explicitly contains an exact, physically
+proven registry attribution. This is projection enrichment only: it does not
+change `server/work-amo-v5-raw.mjs`, a replay record, transition-chain
+commitment, event-set commitment, or any historical protocol bytes.
+
+One separate repair mode is pinned to the nine valid post-activation
+registration rows that were historically materialized with relational
+`amount_sats = 0` and no payload `amountSats`. It is audit-only by default and
+must be run with the API, worker, candidate, and every other index writer
+stopped. The audit takes serializable writer-exclusion locks, accepts either
+all nine exact stale rows or all nine exact repaired rows, verifies every
+event/transaction/canonical-block tuple, proves the raw PWID carrier and
+1,000-proof registry payment twice with Core, and validates the immutable AMO
+block transition plus exact replay outcome/state delta:
+
+```bash
+npm run indexer:backfill -- --repair-canonical-id-amount-projection
+```
+
+After a fresh verified logical backup, apply is explicit:
+
+```bash
+POW_INDEX_REPAIR_CANONICAL_ID_AMOUNT_PROJECTION_APPLY=1 \
+  npm run indexer:backfill -- --repair-canonical-id-amount-projection
+```
+
+On the nine target event rows, apply changes only `events.amount_sats` and
+`events.payload.amountSats`, as the canonical decimal string `"1000"`, for all
+nine rows in one transaction. A
+missing, extra, mixed, partial, repositioned, noncanonical, replay-divergent,
+or Core-divergent target rolls everything back. Event identities, raw
+payloads, participants, references, transaction/block rows, transition rows,
+and immutable H-1/replay evidence are fingerprinted or protected and remain
+unchanged. Because amount feeds Log, Growth, and summary economics, a real
+apply removes only replaceable derived summary snapshots while retaining pure
+block-scan checkpoints, issuance oracles, migration witnesses, and immutable
+AMO seed evidence. A real apply returns the sorted invalidated snapshot ids,
+their exact count, and `cacheBootstrapRequired:true`; clear the API process/disk
+response caches, restart the API, run one exact-tip worker summary bootstrap,
+and prove ID audit plus Log/Growth parity before reopening public traffic.
+There is intentionally no durable completion marker for those external gates.
+Therefore any later audit or apply that finds all nine rows already canonical
+also returns `cacheBootstrapRequired:true`, the same three mandatory gates, and
+`durableBootstrapCompletionProven:false`. This covers an ambiguous successful
+`COMMIT` followed by process death: a retry must never infer that cache clear,
+exact-tip summary publication, or ID/Log/Growth parity completed merely from
+the repaired event rows. Only a rollback-only audit of the exact nine still-
+stale rows can report `cacheBootstrapRequired:false`, because that invocation
+has neither repaired nor observed a possibly repaired projection.
 
 PowID normalization preserves the confirmed H-1 registry identity and uses
 ECMAScript Unicode Default Case Conversion with Unicode 17.0 tables. The
@@ -2079,17 +2193,63 @@ same confirmed base, every pending WORK membership row, every committed
 projection relation, and the same stage hash. This prevents harmless
 backfill-owned attempt/witness bookkeeping from browning out AMO while still
 failing closed on any actual relation, projection, or Core membership drift.
+Before reusing that witness, the pending backfill also samples the current
+readiness checkpoint and requires the published attempt to cover the same
+PostgreSQL postmaster identity with monotonic per-shard epochs. A PostgreSQL
+restart therefore forces a fresh staged atomic publication on the next pending
+cycle instead of reusing the pre-restart witness until its age ceiling expires.
 
 The heavyweight `indexer:parity` deployment gate separately audits the exact
 semantic contents of `event_participants` and `event_refs` for every event
 status that public Log and Mail reads can render: `pending`, `confirmed`,
 `dropped`, and `orphaned`. Expected rows are canonically derived from each
 persisted event payload alone; a stale `mail_items` row cannot certify a stale
-participant. Observed relation values are compared byte-for-byte, so
+participant. Signed sale-authorization participants are part of that persisted
+authority: nested `saleAuthorization.sellerAddress`, `buyerAddress`, and
+`registryAddress` produce the exact `seller`, `buyer`, and `registry` roles,
+while its `receiveAddress` produces the `receiver` role bound to its PowID.
+Nested PowID, token id, ticker, and anchor outpoint fields likewise produce the
+same `powid`, `token-id`, `ticker`, and `sale-ticket-outpoint` reference types
+as their top-level forms. Identical top-level mirrors are deduplicated.
+Canonical rendered `attachedCredits` also contribute their recipient and
+registry participant roles plus token-id and ticker references; a rendered
+`inceptionAttachment` contributes its recipient/registry roles and token/ticker
+references. Replay-only parsed, transition-output, and derived-child evidence
+does not become an independent parent-event relation authority. Observed
+relation values are compared byte-for-byte, so
 whitespace-corrupt or otherwise stale addresses, roles, PowIDs, reference
 types, and reference values fail the gate. Mail backfill reconciles its
 sender/recipient rows as an exact set, deleting stale extras as well as
 inserting missing rows.
+
+The supervised all-event relation repair is an offline apply operation:
+
+```bash
+POW_INDEX_REPAIR_EVENT_RELATIONS=1 \
+  npm run indexer:backfill -- --repair-event-relations
+```
+
+Stop the API, worker, and every other index writer and verify a fresh logical
+backup first. Before apply, retain the complete updated `indexer:parity` report,
+including sorted relation counts, missing/extra hashes, and samples. Every
+missing or extra tuple must be explained from its persisted event payload; an
+unclassified legacy relation is evidence to investigate, not permission to
+delete it. For the Phase 3B incident, that preflight must independently
+reconfirm exactly 500 missing participant tuples: 452 from nested
+sale-authorizations (4 buyer, 4 receiver, 423 registry, and 21 seller) plus 48
+rendered attached-credit registry roles. It must also reconfirm no participant
+extras and exactly 229 missing references: 27 nested-authorization tickers, 94
+nested anchor outpoints, 53 rendered attached-credit tickers, 53 rendered
+attached-credit token ids, one rendered Inception-attachment token id, plus
+`(event_id=3783672, ref_type=ticker, ref_value=INCB)` for transaction
+`b00b9451bded7d2b7d339556ad2dc5d375e5b52ad877a1d3e2b29149dfc72ccf`.
+Any different cardinality or hash aborts the operation. The serializable repair
+holds writer-exclusion locks, replaces both relation sets from canonical event
+payloads, and commits only after exact post-write parity. After apply, rerun the
+same parity gate, require zero missing and zero extra rows, prove the INCB tuple
+exists exactly once, refresh affected caches/snapshots, and only then reopen
+traffic. Keep the backup until public Log, address, Mail, ID, and credit reads
+pass.
 
 The same repeatable-read parity snapshot separately derives the one exact
 `mail_items` row for every valid rendered PWM event and compares every
@@ -2637,10 +2797,18 @@ historical absolute form only when its target is exactly the canonical
 retention root plus that allowlisted basename; it warns but does not rewrite
 historical evidence. Arbitrary paths, symlinks, unsafe ownership/modes, extra
 tokens or lines, and checksum failures are never accepted. The prune script
-fails closed unless the active UI manifest exactly matches its archive-adjacent
-provenance or at least one strict node provenance-v2 archive matches the live
-commit and tree. That active archive remains protected even when it falls
-outside the ordinary keep window.
+requires the retention root itself to be canonical, owner-controlled, and not
+group/world writable. It fails closed unless the active UI manifest is either
+a complete `proofofwork-ui-release-v3` record or a complete
+`proofofwork-ui-rollback-evidence-v1` record and exactly matches its
+archive-adjacent provenance, or at least one strict node provenance-v2 archive
+matches the live commit and tree. The active archive and any archive bound by
+the single complete-root UI rollback remain protected even when they fall
+outside the ordinary keep window. Unknown, duplicate, incomplete, or malformed
+v3/legacy evidence stops retention before deletion. Node-provenance, rollback-
+root, release-archive, archive-ordering, and stale-temporary discovery are each
+fully materialized and checked before a deletion set is applied; partial or
+failed discovery deletes nothing.
 
 One unverified archive must not block retention of every independent verified
 pair. The prune script retains and skips unverifiable archives, counts only
@@ -2653,9 +2821,67 @@ Both host-specific retention services are bounded to 30 minutes and run at
 nice 10 with idle I/O and low CPU/I/O weights so recursive checksums cannot
 compete with the serving path indefinitely.
 
-For node releases, install `proofofwork-node-release-publish.sh` as executable
-`/usr/local/sbin/proofofwork-node-release-publish`. After the exact checkout is
-live and detached, pass the publisher a root-owned, non-writable regular request
+For node releases, install the atomic checkout exchange and release publisher
+as root-owned executables:
+
+```bash
+install -o root -g root -m 0755 deploy/proofofwork-node-release-exchange.py \
+  /usr/local/sbin/proofofwork-node-release-exchange
+install -o root -g root -m 0755 deploy/proofofwork-node-release-publish.sh \
+  /usr/local/sbin/proofofwork-node-release-publish
+```
+
+The node cutover has one allowed naming and exchange contract. Choose a safe,
+unique release id, construct the fully installed candidate at exactly
+`/opt/proofofwork-api-stage-${release_id}`, and leave the current checkout at
+exactly `/opt/proofofwork-api`. Both must be detached, recursively attested,
+free of nested mounts, owned by the same runtime uid/gid, use the same root
+mode, and reside as direct children of the same canonical `/opt` filesystem.
+Stop the public WireGuard listener, API, candidate API, index worker, and every
+other process or database session that can use either checkout. Prove that no
+API listener or application writer remains. Then flush both complete checkout
+filesystems and invoke only the tracked helper:
+
+```bash
+release_id='<exact-commit-and-release-time>'
+live_checkout=/opt/proofofwork-api
+stage_checkout="/opt/proofofwork-api-stage-${release_id}"
+
+test -d "${live_checkout}" && test ! -L "${live_checkout}"
+test -d "${stage_checkout}" && test ! -L "${stage_checkout}"
+sync --file-system "${live_checkout}"
+sync --file-system "${stage_checkout}"
+/usr/local/sbin/proofofwork-node-release-exchange \
+  --release-id "${release_id}"
+```
+
+The helper does not accept caller-selected checkout paths. It opens canonical
+`/opt` without following a link, resolves both exact basenames relative to that
+directory descriptor, rejects symlinks, path aliases, unsafe root metadata,
+nested mounts, distinct devices, or changed directory identities, and calls
+Linux `renameat2(RENAME_EXCHANGE)`. It then proves that the two original inode
+identities exchanged places and fsyncs the `/opt` directory before reporting
+`status=exchanged`. There is no `mv`/copy/symlink fallback: an unsupported
+filesystem or unavailable syscall aborts before publication. A successful call
+places the candidate at `/opt/proofofwork-api` and the complete prior live
+checkout at `/opt/proofofwork-api-stage-${release_id}` as the rollback root.
+
+Before restarting anything, prove that live now has the exact candidate commit,
+tree, runtime owner/mode, and dependency attestation, and that the release-bound
+stage path has the original live directory identity. If the helper exits `70`,
+the rename syscall occurred but post-exchange identity or durability proof did
+not complete: keep every service stopped, do not rerun the helper, and inspect
+both directory identities to establish which checkout is live. A killed helper,
+lost SSH session, or any invocation lacking the complete `status=exchanged`
+line is equally untrusted because the process could have stopped immediately
+after the syscall; keep services stopped and establish both identities instead
+of blindly retrying. During the approved soak, rollback uses the same stopped-
+service command and same release id, which atomically exchanges the preserved
+prior checkout back into the live path. Never replace this exchange with two
+sequential renames.
+
+After the exact checkout is live and detached, pass the publisher a root-owned,
+non-writable regular request
 file under `/var/tmp/proofofwork-deploy` whose allowlisted name contains the live
 seven-character commit prefix. Its bytes are never trusted, extracted, or copied.
 The publisher directly proves the live Git tree and complete runtime, enforces
@@ -2694,9 +2920,11 @@ contain exactly `format=proofofwork-rebuildable-ui-stage-v1`, the path-derived
 the tree. Candidates with unsafe ownership/modes, special files, or any root or
 nested mount fail closed. UI provenance, cleanup, and deployment share the
 nonblocking `/run/proofofwork-ui/deploy.lock` below an owner-only,
-tmpfiles-managed runtime directory. The two scheduled jobs explicitly grant
-that directory as their only runtime lock write path under
-`ProtectSystem=strict`. A transactional deploy may pass its already-held
+tmpfiles-managed runtime directory. The storage-prune, provenance-verifier, and
+UI release-prune services explicitly grant that directory as their only runtime
+lock write path under `ProtectSystem=strict`; the generic release-prune script
+acquires this lock only for its UI retention target, so node retention does not
+depend on a UI runtime path. A transactional deploy may pass its already-held
 descriptor through `POW_UI_DEPLOY_LOCK_FD`; each helper proves that descriptor
 resolves to the exact configured lock before using it. The live `/var/www`
 parent and every active surface must be owner-controlled and not group/world
@@ -2706,7 +2934,509 @@ before enabling the applying service. Both the applying cleanup and recursive
 provenance verifier are bounded to 30 minutes; the recursive jobs run at nice
 10 with idle I/O and low CPU/I/O weights.
 
-The UI provenance recorder requires `--source-checkout` at one canonical,
+Install `proofofwork-ui-release-stage.py` and
+`proofofwork-ui-release-publish.sh` as root-owned executables, then create the
+publisher's exact rollback-parent prerequisite before the first publish:
+
+```bash
+systemctl stop proofofwork-ui-release-provenance.timer \
+  proofofwork-ui-release-provenance.service \
+  proofofwork-ui-release-prune.timer \
+  proofofwork-ui-release-prune.service
+install -o root -g root -m 0755 deploy/proofofwork-ui-release-provenance.sh \
+  /usr/local/sbin/proofofwork-ui-release-provenance
+install -o root -g root -m 0755 deploy/proofofwork-ui-release-stage.py \
+  /usr/local/sbin/proofofwork-ui-release-stage
+install -o root -g root -m 0755 deploy/proofofwork-ui-release-publish.sh \
+  /usr/local/sbin/proofofwork-ui-release-publish
+install -o root -g root -m 0755 deploy/proofofwork-release-prune.sh \
+  /usr/local/sbin/proofofwork-release-prune
+install -o root -g root -m 0644 deploy/proofofwork-ui-runtime-tmpfiles.conf \
+  /etc/tmpfiles.d/proofofwork-ui-runtime.conf
+install -o root -g root -m 0644 \
+  deploy/proofofwork-ui-release-provenance.service \
+  deploy/proofofwork-ui-release-provenance.timer \
+  deploy/proofofwork-ui-release-prune.service \
+  deploy/proofofwork-ui-release-prune.timer \
+  /etc/systemd/system/
+systemd-tmpfiles --create /etc/tmpfiles.d/proofofwork-ui-runtime.conf
+install -d -o root -g root -m 0755 /var/backups/proofofwork-ui/releases
+install -d -o root -g root -m 0700 /var/backups/proofofwork-ui/rollback-roots
+install -d -o root -g root -m 0700 /var/tmp/proofofwork-deploy
+systemctl daemon-reload
+```
+
+Build the 13 primary surfaces from one detached source checkout and copy
+Computer byte-for-byte as the `nft` compatibility alias. Prepare one complete
+staged clone of `/var/www` at the publisher's release-bound path, remove the
+copied `.proofofwork-ui-release` manifest (the publisher recreates it from the
+new archive and source attestation), and replace only the 14 managed roots in
+that clone. A fresh managed output must also copy
+the immediate prior asset dependency closure under the original relative paths.
+The closure begins with same-surface root-relative references (including
+`/assets/...`, `/favicon.svg`, and `/apple-touch-icon.png`), `assets/...`, and
+bare same-surface relative references such as `icons/favicon.svg` in each prior
+live `index.html`, then follows
+same-surface absolute and relative quoted references and CSS `url(...)`
+references through JavaScript and CSS.
+This retains an old entry chunk, its imported Rolldown chunks, and their CSS or
+image resources, while assets retained for the preceding release but no longer
+reachable from the immediate prior HTML are not carried again. A pre-existing
+path is accepted only when its bytes equal the immediate prior dependency. The
+publisher bounds this one-release compatibility set to 256 dependencies, 64
+MiB per file, and 512 MiB total, and refuses a missing or byte-divergent
+collision. Quoted text, escaped/backslash strings, non-ASCII literals, traversal
+candidates, and other strings that do not resolve to an existing regular file
+inside that surface are soft-ignored. Only resolved file edges count against
+the 4,096-edge graph limit; a separate generous candidate-scan ceiling still
+bounds hostile input. Thus a client that fetched the prior HTML immediately before
+exchange can still fetch its complete old asset graph afterward.
+
+The root-only stager is the canonical constructor for that full candidate. It
+takes the canonical live `/var/www`, an exact release-bound `surfaces` payload,
+and the exact release-bound stage path. It copies every non-managed passthrough
+path with its type, mode, uid, gid, and bytes; removes the copied active
+manifest; replaces exactly the 14 managed roots; and copies only the bounded
+immediate-prior dependency closure above. It rejects links, special files,
+nested mounts, unsafe modes or ownership, differing path collisions, a
+Computer/NFT mismatch, concurrent live/payload changes, and any pre-existing
+stage target. Before copying, it counts the common `surfaces/` archive root,
+all 14 surface roots, and every descendant directory or regular file and
+requires no more than 10,000 total entries and 1 GiB of regular-file bytes. It
+repeats the same provenance-equivalent aggregate proof after adding the prior
+compatibility closure, so neither the incoming payload nor the final archive
+payload can exceed extraction bounds. Non-managed passthrough is deliberately
+outside that managed-archive ceiling: those live bytes must be preserved
+exactly, remain subject to the storage-health/free-space gate, and are never
+placed in the surfaces-only archive. The rollback-critical publisher
+deliberately retains its own self-contained compatibility verifier rather than
+importing a mutable runtime module. `npm run check:ui-ops` contract-tests the
+two implementations by passing
+a stager-built candidate through every publisher pre-exchange proof, as well as
+testing stale-asset omission, collision rejection, and link rejection.
+
+The following is the exact no-Node-on-UI-host release procedure. Run the first
+block on the trusted build host only after the approved release is committed.
+It creates a fresh detached checkout, installs the lockfile without lifecycle
+scripts, keeps every build output outside that checkout, builds all 13 primary
+surfaces, and copies Computer as NFT. Do not build from the working tree or
+reuse a prior `dist` directory.
+
+```bash
+set -Eeuo pipefail
+umask 077
+
+repository=/home/sixer/ProofOfWork.Me
+release_commit="$(git -C "${repository}" rev-parse HEAD)"
+git -C "${repository}" cat-file -e "${release_commit}^{commit}"
+release_id="${release_commit:0:12}-$(date -u +%Y%m%dT%H%M%SZ)"
+build_root="$(mktemp -d /tmp/proofofwork-ui-release.XXXXXXXXXX)"
+source_name="proofofwork-ui-source-${release_id}"
+payload_name="proofofwork-ui-surfaces-${release_id}"
+source_checkout="${build_root}/${source_name}"
+surfaces_root="${build_root}/${payload_name}/surfaces"
+build_home="${build_root}/build-home"
+
+git clone --quiet --no-hardlinks --no-local "${repository}" "${source_checkout}"
+git -C "${source_checkout}" checkout --quiet --detach "${release_commit}"
+test "$(git -C "${source_checkout}" rev-parse HEAD)" = "${release_commit}"
+install -d -m 0700 "${build_home}"
+install -d -m 0755 "${surfaces_root}"
+
+(
+  cd "${source_checkout}"
+  /usr/bin/env -i HOME="${build_home}" PATH=/usr/bin:/bin LANG=C.UTF-8 \
+    /usr/bin/npm ci --ignore-scripts --no-audit --no-fund
+)
+test -z "$(git -C "${source_checkout}" status --porcelain --untracked-files=all)"
+
+build_surface() {
+  local surface="$1"
+  local api_origin="$2"
+  local route_switch="${3:-}"
+  if [[ -n "${route_switch}" ]]; then
+    (
+      cd "${source_checkout}"
+      /usr/bin/env -i HOME="${build_home}" PATH=/usr/bin:/bin LANG=C.UTF-8 \
+        VITE_POW_API_BASE="${api_origin}" "${route_switch}=1" \
+        /usr/bin/npm run build -- \
+          --outDir "${surfaces_root}/${surface}" --emptyOutDir
+    )
+  else
+    (
+      cd "${source_checkout}"
+      /usr/bin/env -i HOME="${build_home}" PATH=/usr/bin:/bin LANG=C.UTF-8 \
+        VITE_POW_API_BASE="${api_origin}" \
+        /usr/bin/npm run build -- \
+          --outDir "${surfaces_root}/${surface}" --emptyOutDir
+    )
+  fi
+}
+
+build_surface landing https://www.proofofwork.me VITE_LANDING_ONLY
+build_surface id https://id.proofofwork.me VITE_ID_LAUNCH_ONLY
+build_surface computer https://computer.proofofwork.me
+build_surface desktop https://desktop.proofofwork.me VITE_DESKTOP_ONLY
+build_surface browser https://browser.proofofwork.me VITE_BROWSER_ONLY
+build_surface marketplace https://amo.proofofwork.me VITE_MARKETPLACE_ONLY
+build_surface token https://credit.proofofwork.me VITE_TOKEN_ONLY
+build_surface wallet https://wallet.proofofwork.me VITE_WALLET_ONLY
+build_surface work https://work.proofofwork.me VITE_WORK_TOKEN_ONLY
+build_surface infinity https://infinity.proofofwork.me VITE_INFINITY_ONLY
+build_surface inception https://inception.proofofwork.me VITE_INCEPTION_ONLY
+build_surface activity https://log.proofofwork.me VITE_LOG_ONLY
+build_surface growth https://growth.proofofwork.me VITE_GROWTH_ONLY
+cp --archive -- "${surfaces_root}/computer" "${surfaces_root}/nft"
+
+find "${build_root}/${payload_name}" -type d -exec chmod 0755 {} +
+find "${build_root}/${payload_name}" -type f -exec chmod 0644 {} +
+chmod --recursive go-w "${source_checkout}"
+test -z "$(git -C "${source_checkout}" status --porcelain --untracked-files=all)"
+
+source_bundle="/tmp/${source_name}.tgz"
+payload_bundle="/tmp/${payload_name}.tgz"
+tar --create --gzip --file "${source_bundle}" \
+  --directory "${build_root}" "${source_name}"
+tar --create --gzip --file "${payload_bundle}" \
+  --directory "${build_root}" "${payload_name}"
+source_sha256="$(sha256sum --binary -- "${source_bundle}")"
+source_sha256="${source_sha256%% *}"
+payload_sha256="$(sha256sum --binary -- "${payload_bundle}")"
+payload_sha256="${payload_sha256%% *}"
+printf '%s  %s\n' "${source_sha256}" "$(basename -- "${source_bundle}")" \
+  >"${source_bundle}.sha256"
+printf '%s  %s\n' "${payload_sha256}" "$(basename -- "${payload_bundle}")" \
+  >"${payload_bundle}.sha256"
+printf 'release_id=%s\nrelease_commit=%s\n' "${release_id}" "${release_commit}"
+```
+
+Transfer those two bundles and their checksum sidecars to the UI VPS. Preserve
+links in the source archive: `node_modules` may legitimately contain package
+links, while the surfaces payload must contain no links. On the UI VPS, set the
+two printed values literally and install the bundles into their exact paths.
+Extraction with `--no-same-owner` is intentional: every staged source and
+surface byte becomes root-owned on the UI host.
+
+```bash
+ui_vps=root@77.42.91.106
+ssh "${ui_vps}" \
+  'install -d -o root -g root -m 0700 /var/tmp/proofofwork-deploy'
+scp "${source_bundle}" "${source_bundle}.sha256" \
+  "${payload_bundle}" "${payload_bundle}.sha256" \
+  "${ui_vps}:/var/tmp/proofofwork-deploy/"
+```
+
+```bash
+set -Eeuo pipefail
+umask 077
+
+release_id=PASTE_THE_PRINTED_RELEASE_ID
+release_commit=PASTE_THE_FULL_PRINTED_COMMIT
+deploy_root=/var/tmp/proofofwork-deploy
+source_name="proofofwork-ui-source-${release_id}"
+payload_name="proofofwork-ui-surfaces-${release_id}"
+source_bundle="${deploy_root}/${source_name}.tgz"
+payload_bundle="${deploy_root}/${payload_name}.tgz"
+source_checkout="${deploy_root}/${source_name}"
+surfaces_root="${deploy_root}/${payload_name}/surfaces"
+stage_root="${deploy_root}/proofofwork-www-stage-${release_id}"
+
+install -d -o root -g root -m 0700 "${deploy_root}"
+cd "${deploy_root}"
+sha256sum --check "${source_bundle}.sha256"
+sha256sum --check "${payload_bundle}.sha256"
+for destination in "${source_checkout}" "${deploy_root}/${payload_name}" "${stage_root}"; do
+  if [[ -e "${destination}" || -L "${destination}" ]]; then
+    echo "Refusing to reuse release path: ${destination}" >&2
+    exit 1
+  fi
+done
+
+source_extract="$(mktemp -d "${deploy_root}/.source-${release_id}.XXXXXXXXXX")"
+payload_extract="$(mktemp -d "${deploy_root}/.surfaces-${release_id}.XXXXXXXXXX")"
+tar --extract --gzip --no-same-owner --same-permissions \
+  --file "${source_bundle}" --directory "${source_extract}"
+tar --extract --gzip --no-same-owner --same-permissions \
+  --file "${payload_bundle}" --directory "${payload_extract}"
+test "$(find "${source_extract}" -mindepth 1 -maxdepth 1 -printf '%f\n')" = \
+  "${source_name}"
+test "$(find "${payload_extract}" -mindepth 1 -maxdepth 1 -printf '%f\n')" = \
+  "${payload_name}"
+test -d "${source_extract}/${source_name}" &&
+  test ! -L "${source_extract}/${source_name}"
+test -d "${payload_extract}/${payload_name}" &&
+  test ! -L "${payload_extract}/${payload_name}"
+chown --recursive --no-dereference root:root "${source_extract}/${source_name}"
+chown --recursive --no-dereference root:root "${payload_extract}/${payload_name}"
+chmod --recursive go-w "${source_extract}/${source_name}"
+chmod --recursive go-w "${payload_extract}/${payload_name}"
+mv --no-target-directory "${source_extract}/${source_name}" "${source_checkout}"
+mv --no-target-directory "${payload_extract}/${payload_name}" \
+  "${deploy_root}/${payload_name}"
+rmdir "${source_extract}" "${payload_extract}"
+test "$(git -C "${source_checkout}" rev-parse HEAD)" = "${release_commit}"
+test -z "$(git -C "${source_checkout}" status --porcelain --untracked-files=all)"
+```
+
+Before staging, `/usr/local/sbin/proofofwork-ui-release-provenance
+verify-rollback` must pass and the rollback-parent directory must be empty. If
+the historical root has no valid v3 or legacy evidence, stop here. Preserve an
+invalid existing manifest with an exact checksum using the incident procedure
+below, then execute the one-time legacy bytes-only bootstrap block; do not
+invent a commit claim for mixed historical bytes. After `verify-rollback`
+passes, construct the candidate and archive the candidate's exact 14 managed
+roots, not the clean input payload:
+
+```bash
+set -Eeuo pipefail
+umask 077
+
+/usr/local/sbin/proofofwork-ui-storage-health
+/usr/local/sbin/proofofwork-ui-release-provenance verify-rollback
+if find /var/backups/proofofwork-ui/rollback-roots -mindepth 1 -maxdepth 1 \
+  -name 'proofofwork-www-pre-*' -print -quit | grep -q .; then
+  echo "Classify the retained rollback root before another publish." >&2
+  exit 1
+fi
+
+/usr/local/sbin/proofofwork-ui-release-stage \
+  --release-id "${release_id}" \
+  --surfaces-root "${surfaces_root}" \
+  --stage-root "${stage_root}"
+
+archive_root=/var/backups/proofofwork-ui/releases
+archive_name="proofofwork-ui-release-${release_id}.tgz"
+archive_path="${archive_root}/${archive_name}"
+checksum_path="${archive_path}.sha256"
+provenance_path="${archive_path}.provenance"
+if [[ ! -d "${archive_root}" || -L "${archive_root}" ||
+  "$(realpath -e -- "${archive_root}")" != "${archive_root}" ||
+  "$(stat --format=%u -- "${archive_root}")" != "${EUID}" ]] ||
+  ((8#$(stat --format=%a -- "${archive_root}") & 07022)); then
+  echo "The UI archive root must be canonical and owner-controlled." >&2
+  exit 1
+fi
+archive_payload="$(mktemp -d "${deploy_root}/.archive-${release_id}.XXXXXXXXXX")"
+install -d -o root -g root -m 0700 "${archive_payload}/surfaces"
+for surface in activity browser computer desktop growth id inception infinity landing marketplace nft token wallet work; do
+  cp --archive -- "${stage_root}/proofofwork-${surface}" \
+    "${archive_payload}/surfaces/${surface}"
+done
+
+for evidence_path in "${archive_path}" "${checksum_path}" "${provenance_path}"; do
+  if [[ -e "${evidence_path}" || -L "${evidence_path}" ]]; then
+    echo "Refusing to overwrite release evidence: ${evidence_path}" >&2
+    exit 1
+  fi
+done
+archive_temporary="$(mktemp "${archive_root}/.${archive_name}.archive.XXXXXXXXXX")"
+checksum_temporary="$(mktemp "${archive_root}/.${archive_name}.checksum.XXXXXXXXXX")"
+published_archive=0
+published_checksum=0
+cleanup_unpublished_release() {
+  if ((published_checksum == 1)) && [[ -e "${checksum_path}" ]] &&
+    [[ "${checksum_path}" -ef "${checksum_temporary}" ]]; then
+    rm -f -- "${checksum_path}"
+  fi
+  if ((published_archive == 1)) && [[ -e "${archive_path}" ]] &&
+    [[ "${archive_path}" -ef "${archive_temporary}" ]]; then
+    rm -f -- "${archive_path}"
+  fi
+  rm -f -- "${archive_temporary}" "${checksum_temporary}"
+}
+trap cleanup_unpublished_release EXIT
+
+tar --sort=name --create --gzip --file "${archive_temporary}" \
+  --directory "${archive_payload}" surfaces
+chmod 0644 "${archive_temporary}"
+archive_sha256="$(sha256sum --binary -- "${archive_temporary}")"
+archive_sha256="${archive_sha256%% *}"
+printf '%s  %s\n' "${archive_sha256}" "${archive_name}" \
+  >"${checksum_temporary}"
+chmod 0644 "${checksum_temporary}"
+ln -- "${archive_temporary}" "${archive_path}"
+published_archive=1
+ln -- "${checksum_temporary}" "${checksum_path}"
+published_checksum=1
+published_archive=0
+published_checksum=0
+trap - EXIT
+rm -f -- "${archive_temporary}" "${checksum_temporary}"
+rm -rf -- "${archive_payload}"
+
+/usr/local/sbin/proofofwork-ui-release-publish \
+  --release-id "${release_id}" \
+  --commit "${release_commit}" \
+  --source-checkout "${source_checkout}" \
+  --archive "${archive_path}"
+/usr/local/sbin/proofofwork-ui-release-provenance verify
+systemctl enable --now proofofwork-ui-release-provenance.timer \
+  proofofwork-ui-release-prune.timer
+```
+
+The archive must be a gzip-compressed tar with exactly one top-level
+`surfaces/` directory and exactly the 14 named surface directories beneath it;
+it must not contain `/var/www` passthrough data or the active manifest. The v3
+root manifest and archive-adjacent `.provenance` must be byte-equal and bind the
+release id, full commit and tree, detached-source model, recursive
+`node_modules` entry count/bytes/digest, archive name/digest/payload model, all
+14 surface counts and mode-sensitive digests, Computer/NFT identity, and the
+post-exchange deployment time. It is exact source-and-served-byte evidence, not
+a claim that the build itself was reproducible.
+
+Immediately after publication, run the following from a host outside the UI
+VPS. It checksum-verifies the retained archive, requires the active and adjacent
+provenance to be byte-equal, and byte-compares every archived regular file --
+including the retained prior dependency closure -- with its HTTPS response on
+all 14 canonical surface hostnames. It separately checks each hostname root and
+the apex-to-`www` redirect. Do not classify the rollback root or release scratch
+as removable until this is green.
+
+```bash
+set -Eeuo pipefail
+umask 077
+
+ui_vps=root@77.42.91.106
+release_id=PASTE_THE_PUBLISHED_RELEASE_ID
+archive_name="proofofwork-ui-release-${release_id}.tgz"
+archive_path="/var/backups/proofofwork-ui/releases/${archive_name}"
+smoke_root="$(mktemp -d /tmp/proofofwork-ui-smoke.XXXXXXXXXX)"
+scp "${ui_vps}:${archive_path}" \
+  "${ui_vps}:${archive_path}.sha256" \
+  "${ui_vps}:${archive_path}.provenance" \
+  "${ui_vps}:/var/www/.proofofwork-ui-release" \
+  "${smoke_root}/"
+(
+  cd "${smoke_root}"
+  sha256sum --check "${archive_name}.sha256"
+)
+cmp --silent -- "${smoke_root}/.proofofwork-ui-release" \
+  "${smoke_root}/${archive_name}.provenance"
+
+/usr/bin/python3 - "${smoke_root}/${archive_name}" <<'PY'
+import sys
+import tarfile
+import urllib.parse
+import urllib.request
+
+archive = sys.argv[1]
+hosts = {
+    "activity": "log.proofofwork.me",
+    "browser": "browser.proofofwork.me",
+    "computer": "computer.proofofwork.me",
+    "desktop": "desktop.proofofwork.me",
+    "growth": "growth.proofofwork.me",
+    "id": "id.proofofwork.me",
+    "inception": "inception.proofofwork.me",
+    "infinity": "infinity.proofofwork.me",
+    "landing": "www.proofofwork.me",
+    "marketplace": "amo.proofofwork.me",
+    "nft": "nft.proofofwork.me",
+    "token": "credit.proofofwork.me",
+    "wallet": "wallet.proofofwork.me",
+    "work": "work.proofofwork.me",
+}
+indices = {}
+checked = 0
+with tarfile.open(archive, "r:gz") as release:
+    for member in release.getmembers():
+        parts = member.name.split("/")
+        if member.isdir():
+            continue
+        if not member.isfile() or len(parts) < 3 or parts[0] != "surfaces":
+            raise SystemExit(f"unexpected archive member: {member.name}")
+        surface = parts[1]
+        if surface not in hosts:
+            raise SystemExit(f"unexpected archive surface: {surface}")
+        relative = "/".join(parts[2:])
+        expected = release.extractfile(member).read()
+        url = "https://{}/{}".format(
+            hosts[surface], urllib.parse.quote(relative, safe="/"),
+        )
+        with urllib.request.urlopen(url, timeout=30) as response:
+            actual = response.read()
+        if actual != expected:
+            raise SystemExit(f"served bytes differ: {url}")
+        if relative == "index.html":
+            indices[surface] = expected
+        checked += 1
+
+if set(indices) != set(hosts):
+    raise SystemExit("one or more surface indices are missing")
+for surface, host in hosts.items():
+    with urllib.request.urlopen(f"https://{host}/", timeout=30) as response:
+        if response.read() != indices[surface]:
+            raise SystemExit(f"hostname root differs from index: {host}")
+with urllib.request.urlopen("https://proofofwork.me/", timeout=30) as response:
+    if response.geturl() != "https://www.proofofwork.me/":
+        raise SystemExit("apex redirect target is incorrect")
+    if response.read() != indices["landing"]:
+        raise SystemExit("apex redirect did not serve the landing index")
+print(f"ui_https_archive_smoke status=verified surfaces=14 files={checked}")
+PY
+```
+
+Keep the source checkout, clean payload, transfer bundles, and their sidecars
+through this external smoke and the agreed post-deploy soak. They are
+release-bound scratch, not retained provenance. After the soak, either copy the
+source bundle and checksum to approved off-host evidence or explicitly classify
+that source snapshot as reconstructible; then remove only these exact
+release-id paths. The release archive, checksum, adjacent provenance, active
+manifest, incident evidence, and complete-root rollback are not scratch. The
+rollback root needs the separate checksum/archive/classification/move workflow
+described below before the next release.
+
+Archive that exact compatibility-complete `surfaces/<surface>/...` payload
+before publication. The retained assets are consequently part of the exact
+archive and v3 surface digests; archive verification remains exact. Every
+non-release path is preserved as evidence: the publisher compares path, type,
+mode, uid, gid, and regular-file bytes between the staged and live roots before
+it proceeds. It holds the shared deploy lock, runs the no-write
+`verify-candidate` proof against the staged root, proves that the live root,
+staged root, and rollback parent are on one filesystem with no nested mounts,
+and fails closed unless the filesystem supports
+`renameat2(RENAME_EXCHANGE)`. Before candidate verification and again
+immediately before exchange, it also requires
+the current live root to pass `verify-rollback` under that lock: either fully
+verified v3 provenance or fully verified legacy bytes-only rollback evidence.
+An unattributed, unknown, malformed, archive-drifted, provenance-drifted, or
+surface-drifted current root is rejected without exchanging `/var/www`.
+Publication is one atomic exchange of the complete `/var/www` directory;
+Caddy configuration and service state do not change. Only after that exchange
+does the publisher record `deployed_at` and active v3 provenance against the
+now-live root, then verify it. Candidate verification never creates a root
+manifest or archive-adjacent deployment claim, so any pre-exchange failure
+leaves the same staged candidate retryable. Any post-exchange provenance,
+verification, or durability failure derives rollback need from the pre-recorded
+root inode identities and exchanges the complete prior root back. If that
+failure happens after rollback preservation, cleanup returns the rejected
+candidate to its release-bound stage path even when rollback verification or
+parent durability fails, so the rollback name never labels the wrong bytes.
+
+On success, the prior root is renamed to the exact release-bound path below
+`/var/backups/proofofwork-ui/rollback-roots`. The publisher refuses every new
+release while any `proofofwork-www-pre-*` root remains there. After the
+post-deploy soak, an operator must checksum, archive, classify, and move that
+single complete-root rollback outside the active rollback parent under separate
+approval before another publish; no automatic cleanup or timer may delete it.
+Managed release retention reads that rollback root's archive-bound v3 or legacy
+manifest under the shared deploy lock and protects its exact archive and
+sidecars in addition to the active release archive. A first controlled publish
+from a legacy record leaves new v3 provenance live and the honest legacy
+manifest with the complete prior root. Retention fails closed on a missing,
+ambiguous, unsafe, unknown, malformed, or unverified rollback manifest.
+The publisher's transactional verification ends when it reports
+`status=published`. Immediately afterward, smoke every Caddy hostname, its
+expected index, and both the new and retained prior asset graphs. A failure
+first discovered by that external HTTP smoke is outside the publisher's active
+trap and cannot be rolled back automatically. While holding the same deploy
+lock, an operator must explicitly exchange the complete `/var/www` root with
+the exact retained rollback root, verify prior provenance and HTTP service,
+fsync both parents, and return the rejected root to its truthful release-bound
+stage path. Never repair such a failure surface by surface.
+
+The UI provenance `verify-candidate` command requires `--source-checkout` at
+one canonical,
 detached, recursively verified Git checkout staged below
 `/var/tmp/proofofwork-deploy`; the supplied full 40- or 64-hex commit must equal
 its HEAD. Ignored source paths are forbidden except below `node_modules/`; that
@@ -2716,14 +3446,252 @@ other build inputs fail closed. The recorder also requires one checksum-verified
 managed archive containing only `surfaces/<surface>/...`. It rejects traversal,
 links, special files, duplicates, unexpected paths, extraction-size excess,
 mounted surface/source subtrees, and unsafe evidence or surface modes. It
-compares every active surface's relative paths, bytes, modes, and file count to
-the privately extracted archive before atomically recording
-`proofofwork-ui-release-v3` with the exact source commit, tree, and dependency
-proof. The 15-minute verifier rehashes every active root and retained archive
-evidence. The `nft` hostname is a compatibility alias, not an independent build:
+compares every active surface's regular-file relative paths, bytes, modes, and
+file count to the privately extracted archive without writing active evidence.
+After the complete-root exchange, `record` repeats that proof against
+`/var/www` and only then atomically records `proofofwork-ui-release-v3` with
+a truthful deployment time. Production `record` refuses a staged root. This
+separately co-attests the source commit, tree,
+and dependency snapshot with the exact archive and served bytes; it does not by
+itself prove deterministic build derivation from that source. Directory modes
+are independently safety-validated; they are not part of the archive-to-live
+surface digest comparison. The 15-minute verifier runs `verify-rollback` and
+rehashes every active root and retained archive evidence, accepting strict v3
+or the one-time strict legacy record. The `nft`
+hostname is a compatibility alias, not an independent build:
 its file count and mode-sensitive tree SHA-256 must exactly equal generic
 Computer during both record and verify. Do not label a legacy, mixed-commit, or
 partially served UI as commit-bound; redeploy or deliberately retire divergence.
+
+If a pre-existing active manifest is invalid or describes bytes other than the
+current live surfaces, preserve it before the legacy bootstrap. This is an
+explicit incident-evidence action, not ordinary scratch cleanup. Stop the
+provenance timer while classifying it, use the shared lock, publish an exact
+copy and checksum without replacement, and only then unlink the live claim.
+The following block refuses links, foreign ownership, unsafe modes, path
+collisions, copy drift, and checksum drift:
+
+```bash
+set -Eeuo pipefail
+umask 077
+
+manifest_path=/var/www/.proofofwork-ui-release
+incident_root=/var/backups/proofofwork-ui/incidents
+deploy_lock=/run/proofofwork-ui/deploy.lock
+incident_stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+incident_name="ui-manifest-invalid-${incident_stamp}"
+incident_manifest="${incident_root}/${incident_name}"
+incident_checksum="${incident_manifest}.sha256"
+
+systemctl stop proofofwork-ui-release-provenance.timer \
+  proofofwork-ui-release-provenance.service
+if [[ -e "${incident_root}" || -L "${incident_root}" ]]; then
+  if [[ ! -d "${incident_root}" || -L "${incident_root}" ||
+    "$(realpath -e -- "${incident_root}")" != "${incident_root}" ||
+    "$(stat --format=%u -- "${incident_root}")" != "${EUID}" ||
+    "$(stat --format=%a -- "${incident_root}")" != "700" ]]; then
+    echo "The UI incident root must be canonical and owner-controlled." >&2
+    exit 1
+  fi
+else
+  install -d -o root -g root -m 0700 "${incident_root}"
+fi
+if [[ ! -f "${deploy_lock}" || -L "${deploy_lock}" ||
+  "$(realpath -e -- "${deploy_lock}")" != "${deploy_lock}" ||
+  "$(stat --format=%u -- "${deploy_lock}")" != "${EUID}" ]] ||
+  ((8#$(stat --format=%a -- "${deploy_lock}") & 07022)); then
+  echo "The canonical UI deploy lock must already be installed." >&2
+  exit 1
+fi
+for target in "${incident_manifest}" "${incident_checksum}"; do
+  if [[ -e "${target}" || -L "${target}" ]]; then
+    echo "Refusing to overwrite incident evidence: ${target}" >&2
+    exit 1
+  fi
+done
+
+validate_invalid_manifest() {
+  if [[ ! -f "${manifest_path}" || -L "${manifest_path}" ||
+    "$(realpath -e -- "${manifest_path}")" != "${manifest_path}" ||
+    "$(stat --format=%u -- "${manifest_path}")" != "${EUID}" ]] ||
+    ((8#$(stat --format=%a -- "${manifest_path}") & 07022)); then
+    echo "The invalid manifest requires manual special-file classification." >&2
+    return 1
+  fi
+}
+validate_invalid_manifest
+exec {deploy_lock_fd}<>"${deploy_lock}"
+chmod 0600 "${deploy_lock}"
+flock --exclusive "${deploy_lock_fd}"
+validate_invalid_manifest
+manifest_temporary="$(mktemp "${incident_root}/.${incident_name}.manifest.XXXXXXXXXX")"
+checksum_temporary="$(mktemp "${incident_root}/.${incident_name}.checksum.XXXXXXXXXX")"
+trap 'rm -f -- "${manifest_temporary}" "${checksum_temporary}"' EXIT
+cp --archive --no-dereference -- "${manifest_path}" "${manifest_temporary}"
+cmp --silent -- "${manifest_path}" "${manifest_temporary}"
+manifest_sha256="$(sha256sum --binary -- "${manifest_temporary}")"
+manifest_sha256="${manifest_sha256%% *}"
+printf '%s  %s\n' "${manifest_sha256}" "${incident_name}" \
+  >"${checksum_temporary}"
+chmod 0600 "${checksum_temporary}"
+ln -- "${manifest_temporary}" "${incident_manifest}"
+ln -- "${checksum_temporary}" "${incident_checksum}"
+cmp --silent -- "${manifest_path}" "${incident_manifest}"
+(
+  cd "${incident_root}"
+  sha256sum --check "$(basename -- "${incident_checksum}")"
+)
+sync --file-system "${incident_manifest}"
+unlink -- "${manifest_path}"
+sync --file-system /var/www
+trap - EXIT
+rm -f -- "${manifest_temporary}" "${checksum_temporary}"
+flock --unlock "${deploy_lock_fd}"
+exec {deploy_lock_fd}>&-
+```
+
+Keep both release timers stopped until the strict legacy recorder,
+`verify-rollback`, and the controlled v3 publish have succeeded; the publish
+runbook enables them afterward. Never restore the invalid claim to the active
+root; retain its incident copy and checksum.
+
+A one-time mixed/historical live UI may be made rollback-capable without
+inventing source provenance. `proofofwork-ui-rollback-evidence-v1` is explicitly
+bytes-only: it claims only `scope=ui-surfaces-only`, the exact surface-file
+bytes/modes model, recording time, one checksum-bound surfaces-only archive,
+and each of the 14 exact file counts and mode-sensitive tree digests. It has no
+release id, source commit, source tree, build, dependency, or deployment-time
+claim. Its archive-adjacent `.provenance` must be byte-for-byte equal to the
+root `.proofofwork-ui-release` manifest. Prepare it once, before the first
+controlled v3 publish, using a unique allowlisted archive name:
+
+```bash
+set -Eeuo pipefail
+umask 077
+
+archive_root=/var/backups/proofofwork-ui/releases
+archive_name=proofofwork-ui-release-legacy-bootstrap-YYYYMMDDTHHMMSSZ.tgz
+archive_path="${archive_root}/${archive_name}"
+checksum_path="${archive_path}.sha256"
+provenance_path="${archive_path}.provenance"
+manifest_path=/var/www/.proofofwork-ui-release
+deploy_lock=/run/proofofwork-ui/deploy.lock
+
+if [[ ! -d "${archive_root}" || -L "${archive_root}" ||
+  "$(realpath -e -- "${archive_root}")" != "${archive_root}" ||
+  "$(stat --format=%u -- "${archive_root}")" != "${EUID}" ]] ||
+  ((8#$(stat --format=%a -- "${archive_root}") & 07022)); then
+  echo "The UI archive root must be canonical and owner-controlled." >&2
+  exit 1
+fi
+if [[ ! -f "${deploy_lock}" || -L "${deploy_lock}" ||
+  "$(realpath -e -- "${deploy_lock}")" != "${deploy_lock}" ||
+  "$(stat --format=%u -- "${deploy_lock}")" != "${EUID}" ]]; then
+  echo "The canonical UI deploy lock must already be installed." >&2
+  exit 1
+fi
+exec {deploy_lock_fd}<>"${deploy_lock}"
+chmod 0600 "${deploy_lock}"
+flock --exclusive "${deploy_lock_fd}"
+export POW_UI_DEPLOY_LOCK_FD="${deploy_lock_fd}"
+
+if [[ -e "${manifest_path}" || -L "${manifest_path}" ]]; then
+  echo "Classify and protect the existing UI manifest before bootstrap." >&2
+  exit 1
+fi
+for evidence_path in "${archive_path}" "${checksum_path}" "${provenance_path}"; do
+  if [[ -e "${evidence_path}" || -L "${evidence_path}" ]]; then
+    echo "Refusing to overwrite existing rollback evidence: ${evidence_path}" >&2
+    exit 1
+  fi
+done
+
+payload_root="$(mktemp --directory /var/tmp/proofofwork-ui-rollback-evidence.XXXXXXXXXX)"
+payload_identity="$(stat --format='%d:%i' -- "${payload_root}")"
+install -d -o root -g root -m 0700 "${payload_root}/surfaces"
+for surface in activity browser computer desktop growth id inception infinity landing marketplace nft token wallet work; do
+  cp --archive -- "/var/www/proofofwork-${surface}" "${payload_root}/surfaces/${surface}"
+done
+
+archive_temporary="$(mktemp "${archive_root}/.${archive_name}.archive.XXXXXXXXXX")"
+checksum_temporary="$(mktemp "${archive_root}/.${archive_name}.checksum.XXXXXXXXXX")"
+published_archive=0
+published_checksum=0
+cleanup_unpublished_bootstrap() {
+  if ((published_checksum == 1)) && [[ -e "${checksum_path}" ]] &&
+    [[ "${checksum_path}" -ef "${checksum_temporary}" ]]; then
+    rm -f -- "${checksum_path}"
+  fi
+  if ((published_archive == 1)) && [[ -e "${archive_path}" ]] &&
+    [[ "${archive_path}" -ef "${archive_temporary}" ]]; then
+    rm -f -- "${archive_path}"
+  fi
+  rm -f -- "${archive_temporary}" "${checksum_temporary}"
+}
+trap cleanup_unpublished_bootstrap EXIT
+
+tar --create --gzip --file "${archive_temporary}" \
+  --directory "${payload_root}" surfaces
+chmod 0644 "${archive_temporary}"
+archive_sha256="$(sha256sum --binary -- "${archive_temporary}")"
+archive_sha256="${archive_sha256%% *}"
+printf '%s  %s\n' "${archive_sha256}" "${archive_name}" \
+  >"${checksum_temporary}"
+chmod 0644 "${checksum_temporary}"
+
+ln -- "${archive_temporary}" "${archive_path}"
+published_archive=1
+ln -- "${checksum_temporary}" "${checksum_path}"
+published_checksum=1
+# From this point forward, the recorder may commit manifest/provenance evidence.
+# Preserve the published archive/checksum on every later failure; the trap now
+# removes only their private temporary hard-link names.
+published_archive=0
+published_checksum=0
+
+/usr/local/sbin/proofofwork-ui-release-provenance \
+  record-rollback-evidence --archive "${archive_path}"
+/usr/local/sbin/proofofwork-ui-release-provenance verify-rollback
+trap - EXIT
+rm -f -- "${archive_temporary}" "${checksum_temporary}"
+if [[ "${payload_root}" != /var/tmp/proofofwork-ui-rollback-evidence.* ||
+  ! -d "${payload_root}" || -L "${payload_root}" ||
+  "$(realpath -e -- "${payload_root}")" != "${payload_root}" ||
+  "$(stat --format='%d:%i' -- "${payload_root}")" != "${payload_identity}" ||
+  "$(stat --format=%u -- "${payload_root}")" != "${EUID}" ||
+  "$(stat --format=%a -- "${payload_root}")" != "700" ]]; then
+  echo "Retaining unclassified legacy-bootstrap payload root: ${payload_root}" >&2
+  exit 1
+fi
+/usr/bin/rm --recursive --force --one-file-system -- "${payload_root}"
+if [[ -e "${payload_root}" || -L "${payload_root}" ]]; then
+  echo "Legacy-bootstrap payload root cleanup was incomplete: ${payload_root}" >&2
+  exit 1
+fi
+sync --file-system /var/tmp
+printf 'ui_legacy_bootstrap_scratch status=removed path=%s\n' "${payload_root}"
+```
+
+The recorder acquires the shared UI deployment lock, requires the UI and
+archive roots to be canonical and owner-controlled, validates and privately
+extracts the exact surfaces-only archive, checks the checksum, file counts,
+digests, NFT alias, and live bytes twice, and refuses to overwrite either an
+existing root manifest or archive evidence. The preparation example also
+preflights the archive, checksum, and adjacent provenance names before running
+tar, builds into private temporary files, and publishes the archive/checksum
+with no-replace hard links; a collision cannot truncate prior evidence. Once
+both final names are published, every later recorder or verification failure
+preserves them and any committed manifest/provenance for explicit operator
+classification; only the private temporary hard-link names are cleaned. After
+the recorded manifest, adjacent provenance, archive, and checksum all verify,
+the example proves the exact private payload-root device/inode, canonical path,
+ownership, and mode, removes only that one filesystem, and proves the scratch
+path is absent. A divergent root is retained for explicit classification rather
+than deleted. If `.proofofwork-ui-release` already exists but is invalid,
+noncanonical, or does not describe the current bytes, first checksum it and
+move it into approved protected incident/release evidence under explicit
+operator approval. Never silently delete or overwrite that historical record
+to make bootstrap recording pass.
 
 Production Ubuntu uses Apport, not `systemd-coredump`. Install
 `coredump-disable-sysctl.conf` as
@@ -2966,11 +3934,54 @@ GET /api/v1/ledger-consistency?network=livenet
 GET /api/v1/prices/btc-usd?network=livenet
 GET /api/v1/address/:address/mail?network=livenet
 GET /api/v1/address/:address/utxo?network=livenet
+GET /api/v1/address/:address/txs/chain?network=livenet
+GET /api/v1/address/:address/txs/chain/:cursor?network=livenet
 GET /api/v1/tx/:txid?network=livenet
 GET /api/v1/tx/:txid/status?network=livenet
 GET /api/v1/tx/:txid/hex?network=livenet
 GET /api/v1/tx/:txid/outspend/:vout?network=livenet
 ```
+
+Unauthenticated confirmed-address requests use only the private local
+mempool/electrs HTTP reader. They cannot trigger a full-history fallback. For
+the canonical ID registry address, an authenticated loopback verifier request
+can instead force the local Electrum/Bitcoin Core reader: it selects exactly
+one 25-transaction page, resolves same-block order from canonical Core block
+txids, strictly hydrates that page with complete canonical prevouts, and fails
+closed on an unknown cursor, reorg, missing block member, or partial
+transaction hydration. Arbitrary addresses cannot trigger this bounded
+fallback. Pending entries are never promoted into the confirmed route, and no
+public explorer is consulted.
+
+`GET /api/v1/internal/id-registry-audit?network=livenet` is a separate
+loopback-only, `x-pow-internal-verifier`-authenticated operations endpoint. It
+must be called in production through the exact same numeric
+`http://127.0.0.1:<port>` origin configured for both audit bases; do not use
+`localhost`, because verifier-token transport must not depend on DNS. It
+binds Electrum's header at the audited height to the exact Bitcoin Core tip,
+fences two full Electrum registry-history samples, completely hydrates the
+confirmed history, and proves Core-mempool membership for every pending member
+Electrum observed. The pending fence also commits every observed txid to its
+integer-second Core mempool admission time, so sampled membership changes and
+same-txid eviction/reaccept churn with a changed admission second cannot
+silently change pending audit order. Eviction and reacceptance of the same txid
+within one Core second is indistinguishable from stability. Relational first-seen and UI observation
+timestamps remain outside that parity claim. Pending visibility remains best
+effort: this endpoint does not claim proof that Electrum observed the complete
+Core mempool. It returns
+exact confirmed coverage and the fenced pending observation together with the
+same-tip registry projection.
+The CLI performs the heavyweight transition-discovered Core replay once. Its
+final protected fence keyset-streams the complete transition/relational history
+into rolling fingerprints, rechecks the exact index scan snapshot, and then
+resamples Core/Electrum history and pending-time commitments; it does not repeat
+PWID block replay. The post-activation audit covers every physical `pwid1`
+carrier and replay outcome in canonical position order, including multiple
+carriers in one transaction and zero-payment invalid attempts. Pre-activation
+ambiguity remains fail-closed.
+It is intentionally unavailable through Caddy. `npm run audit:ids` combines
+that coverage proof with all confirmed address pages and fails on any coverage
+or registry-stat mismatch; report writing remains explicit opt-in.
 
 The registry endpoint:
 

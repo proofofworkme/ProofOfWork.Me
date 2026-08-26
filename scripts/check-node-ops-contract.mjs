@@ -8,8 +8,10 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  renameSync,
   rmSync,
   statSync,
+  symlinkSync,
   utimesSync,
   writeFileSync,
 } from "node:fs";
@@ -22,8 +24,38 @@ const releasePrune = read("deploy/proofofwork-release-prune.sh");
 const releasePruneService = read(
   "deploy/proofofwork-node-release-prune.service",
 );
+const releaseExchange = read("deploy/proofofwork-node-release-exchange.py");
 const releasePublish = read("deploy/proofofwork-node-release-publish.sh");
 const releaseHealth = read("deploy/proofofwork-node-release-health.sh");
+
+const runtimeDigestFields = (source, label) => {
+  const recordFunction = source.match(
+    /def record_runtime\(relative, kind, mode, uid, gid, evidence=b""\):(?<body>[\s\S]*?)\n    runtime_count \+= 1/u,
+  );
+  assert.ok(recordFunction?.groups?.body, `${label} lacks record_runtime`);
+  return [...recordFunction.groups.body.matchAll(/^\s+add_field\((.+)\)$/gmu)].map(
+    (match) => match[1].trim(),
+  );
+};
+
+const canonicalRuntimeDigestFields = [
+  "os.fsencode(relative)",
+  "kind",
+  'f"{stat.S_IMODE(mode):04o}".encode("ascii")',
+  'str(uid).encode("ascii")',
+  'str(gid).encode("ascii")',
+  "evidence",
+];
+assert.deepEqual(
+  runtimeDigestFields(releasePublish, "node release publisher"),
+  canonicalRuntimeDigestFields,
+  "Node release publisher runtime digest fields drifted from provenance v2.",
+);
+assert.deepEqual(
+  runtimeDigestFields(releaseHealth, "node release health verifier"),
+  canonicalRuntimeDigestFields,
+  "Node release health runtime digest fields drifted from provenance v2.",
+);
 const releaseHealthService = read(
   "deploy/proofofwork-node-release-health.service",
 );
@@ -52,6 +84,7 @@ const postgresQueryHealthTimer = read(
 const infrastructure = read("OP_RETURN_INFRASTRUCTURE.md");
 
 for (const executable of [
+  "deploy/proofofwork-node-release-exchange.py",
   "deploy/proofofwork-node-release-publish.sh",
   "deploy/proofofwork-node-release-health.sh",
   "deploy/proofofwork-node-storage-health.sh",
@@ -76,14 +109,47 @@ assert.match(releasePrune, /verified retention completed/u);
 assert.match(releasePrune, /if \(\(unverified_count > 0\)\); then\s+exit 2/su);
 assert.match(releasePrune, /\.provenance/u);
 assert.match(releasePrune, /protected_archives/u);
-assert.match(releasePrune, /archive-bound active UI provenance/u);
+assert.match(releasePrune, /archive-bound \$\{label\} UI provenance/u);
+assert.match(releasePrune, /protect_ui_manifest_archive/u);
+assert.match(releasePrune, /proofofwork-ui-rollback-evidence-v1/u);
+assert.match(releasePrune, /Release-retention root must be owner-controlled/u);
+assert.match(
+  releasePrune,
+  /if ! \/usr\/bin\/find "\$\{ui_rollback_root\}"[\s\S]*rollback discovery failed/u,
+);
+assert.doesNotMatch(
+  releasePrune,
+  /mapfile[^\n]*< <\(\s*\/usr\/bin\/find "\$\{ui_rollback_root\}"/u,
+);
+assert.doesNotMatch(releasePrune, /done < <\([\s\S]*?\/usr\/bin\/find/u);
+assert.match(releasePrune, /release archive discovery failed/u);
+assert.match(releasePrune, /release archive ordering failed/u);
+assert.match(releasePrune, /node provenance discovery failed/u);
 assert.match(releasePrune, /proof-of-work-node-release-provenance-v2/u);
+assert.match(
+  releasePrune,
+  /if \[\[ "\$\{release_kind\}" == "ui" \]\]; then[\s\S]*POW_UI_DEPLOY_LOCK:-\/run\/proofofwork-ui\/deploy\.lock/u,
+);
+assert.match(releasePrune, /flock --exclusive --nonblock/u);
 assert.match(releasePruneService, /^TimeoutStartSec=30m$/mu);
 assert.match(releasePruneService, /^Nice=10$/mu);
 assert.match(releasePruneService, /^IOSchedulingClass=idle$/mu);
 assert.match(releasePruneService, /^CPUWeight=10$/mu);
 assert.match(releasePruneService, /^IOWeight=10$/mu);
 assert.match(releasePruneService, /ProtectSystem=strict/u);
+assert.doesNotMatch(releasePruneService, /\/run\/proofofwork-ui/u);
+
+assert.match(releaseExchange, /STAGE_PREFIX = "proofofwork-api-stage-"/u);
+assert.match(releaseExchange, /RENAME_EXCHANGE = 2/u);
+assert.match(releaseExchange, /renameat2\(RENAME_EXCHANGE\)/u);
+assert.match(releaseExchange, /dir_fd=parent_descriptor/u);
+assert.match(releaseExchange, /follow_symlinks=False/u);
+assert.match(releaseExchange, /O_NOFOLLOW/u);
+assert.match(releaseExchange, /share one filesystem/u);
+assert.match(releaseExchange, /reject_nested_mounts/u);
+assert.match(releaseExchange, /os\.fsync\(parent_descriptor\)/u);
+assert.match(releaseExchange, /exit_code=70/u);
+assert.doesNotMatch(releaseExchange, /os\.rename\(/u);
 
 assert.match(releasePublish, /\/var\/tmp\/proofofwork-deploy\//u);
 assert.doesNotMatch(releasePublish, /status --porcelain/u);
@@ -231,6 +297,7 @@ for (const requiredPath of [
   "deploy/postgresql-proof-index-tablespace.conf",
   "deploy/proofofwork-node-storage-health.sh",
   "deploy/proofofwork-postgres-query-health.sh",
+  "deploy/proofofwork-node-release-exchange.py",
   "deploy/proofofwork-node-release-publish.sh",
   "deploy/proofofwork-node-release-health.sh",
 ]) {
@@ -241,6 +308,8 @@ for (const requiredPath of [
 }
 assert.match(infrastructure, /proof-of-work-node-release-provenance-v2/u);
 assert.match(infrastructure, /Its bytes are never trusted, extracted, or copied/u);
+assert.match(infrastructure, /renameat2\(RENAME_EXCHANGE\)/u);
+assert.match(infrastructure, /proofofwork-api-stage-\$\{release_id\}/u);
 assert.match(
   infrastructure,
   /chmod --recursive go-w \/opt\/proofofwork-api/u,
@@ -260,12 +329,119 @@ const runChecked = (command, args, options = {}) => {
 
 const testRoot = mkdtempSync(join(tmpdir(), "pow-release-prune-contract-"));
 try {
+  const exchangeOptRoot = join(testRoot, "exchange-opt");
+  const exchangeReleaseId = "fixture-20260826T000000Z";
+  const exchangeLive = join(exchangeOptRoot, "proofofwork-api");
+  const exchangeStage = join(
+    exchangeOptRoot,
+    `proofofwork-api-stage-${exchangeReleaseId}`,
+  );
+  mkdirSync(exchangeLive, { recursive: true });
+  mkdirSync(exchangeStage);
+  chmodSync(exchangeOptRoot, 0o755);
+  chmodSync(exchangeLive, 0o755);
+  chmodSync(exchangeStage, 0o755);
+  writeFileSync(join(exchangeLive, "identity"), "prior-live\n");
+  writeFileSync(join(exchangeStage, "identity"), "candidate\n");
+  const exchangeEnvironment = {
+    ...process.env,
+    POW_NODE_EXCHANGE_ALLOW_TEST_ROOTS: "1",
+    POW_NODE_EXCHANGE_OPT_ROOT: exchangeOptRoot,
+  };
+  const runExchange = (releaseId = exchangeReleaseId, environment = {}) =>
+    spawnSync(
+      "/usr/bin/python3",
+      [
+        "-I",
+        "deploy/proofofwork-node-release-exchange.py",
+        "--release-id",
+        releaseId,
+      ],
+      {
+        encoding: "utf8",
+        env: { ...exchangeEnvironment, ...environment },
+      },
+    );
+
+  const priorLiveIdentity = statSync(exchangeLive).ino;
+  const candidateIdentity = statSync(exchangeStage).ino;
+  const exchangeResult = runExchange();
+  assert.equal(exchangeResult.status, 0, exchangeResult.stderr);
+  assert.match(exchangeResult.stdout, /status=exchanged/u);
+  assert.equal(statSync(exchangeLive).ino, candidateIdentity);
+  assert.equal(statSync(exchangeStage).ino, priorLiveIdentity);
+  assert.equal(readFileSync(join(exchangeLive, "identity"), "utf8"), "candidate\n");
+  assert.equal(
+    readFileSync(join(exchangeStage, "identity"), "utf8"),
+    "prior-live\n",
+  );
+
+  const rollbackResult = runExchange();
+  assert.equal(rollbackResult.status, 0, rollbackResult.stderr);
+  assert.equal(statSync(exchangeLive).ino, priorLiveIdentity);
+  assert.equal(statSync(exchangeStage).ino, candidateIdentity);
+  assert.equal(
+    readFileSync(join(exchangeLive, "identity"), "utf8"),
+    "prior-live\n",
+  );
+
+  const liveBeforeUnsafeMode = statSync(exchangeLive).ino;
+  chmodSync(exchangeStage, 0o775);
+  const unsafeStageModeResult = runExchange();
+  assert.equal(unsafeStageModeResult.status, 1, unsafeStageModeResult.stderr);
+  assert.match(unsafeStageModeResult.stderr, /unsafe mode/u);
+  assert.equal(statSync(exchangeLive).ino, liveBeforeUnsafeMode);
+  chmodSync(exchangeStage, 0o755);
+
+  const realStage = `${exchangeStage}-real`;
+  renameSync(exchangeStage, realStage);
+  symlinkSync(realStage, exchangeStage, "dir");
+  const symlinkStageResult = runExchange();
+  assert.equal(symlinkStageResult.status, 1, symlinkStageResult.stderr);
+  assert.match(symlinkStageResult.stderr, /real non-symlink directory/u);
+  assert.equal(statSync(exchangeLive).ino, liveBeforeUnsafeMode);
+  rmSync(exchangeStage);
+  renameSync(realStage, exchangeStage);
+
+  const mountinfoFixture = join(testRoot, "exchange-mountinfo");
+  writeFileSync(
+    mountinfoFixture,
+    `1 0 0:1 / ${exchangeStage} rw - tmpfs tmpfs rw\n`,
+  );
+  const nestedMountResult = runExchange(exchangeReleaseId, {
+    POW_NODE_EXCHANGE_MOUNTINFO_PATH: mountinfoFixture,
+  });
+  assert.equal(nestedMountResult.status, 1, nestedMountResult.stderr);
+  assert.match(nestedMountResult.stderr, /contains mounted content/u);
+  assert.equal(statSync(exchangeLive).ino, liveBeforeUnsafeMode);
+
+  const invalidReleaseResult = runExchange("../not-a-release");
+  assert.equal(invalidReleaseResult.status, 64, invalidReleaseResult.stderr);
+  assert.match(invalidReleaseResult.stderr, /safe filename characters/u);
+  assert.equal(statSync(exchangeLive).ino, liveBeforeUnsafeMode);
+
+  const missingStageResult = runExchange("missing-stage");
+  assert.equal(missingStageResult.status, 1, missingStageResult.stderr);
+  assert.match(missingStageResult.stderr, /Unable to inspect Staged node checkout/u);
+  assert.equal(statSync(exchangeLive).ino, liveBeforeUnsafeMode);
+
   const nodeRoot = join(testRoot, "node");
   const uiRoot = join(testRoot, "ui");
+  const uiDeployLock = join(testRoot, "ui-deploy.lock");
   const pruneNodeCheckout = join(testRoot, "prune-node-checkout");
   const uiManifest = join(testRoot, "active-ui-manifest");
+  const uiRollbackRoot = join(testRoot, "ui-rollback-roots");
+  const uiRollbackCheckout = join(
+    uiRollbackRoot,
+    "proofofwork-www-pre-retention-fixture",
+  );
   mkdirSync(nodeRoot);
   mkdirSync(uiRoot);
+  chmodSync(nodeRoot, 0o755);
+  chmodSync(uiRoot, 0o755);
+  mkdirSync(uiRollbackCheckout, { recursive: true });
+  chmodSync(uiRollbackRoot, 0o700);
+  chmodSync(uiRollbackCheckout, 0o700);
   mkdirSync(pruneNodeCheckout);
   runChecked("/usr/bin/git", ["-C", pruneNodeCheckout, "init", "--quiet"]);
   runChecked("/usr/bin/git", [
@@ -324,6 +500,90 @@ try {
     );
   writeFileSync(fixturePath, fixture, { mode: 0o700 });
   chmodSync(fixturePath, 0o700);
+  const failedRollbackDiscoveryFixturePath = join(
+    testRoot,
+    "proofofwork-release-prune-failed-rollback-discovery",
+  );
+  const failedRollbackDiscoveryFixture = fixture.replace(
+    '/usr/bin/find "${ui_rollback_root}"',
+    "/usr/bin/false",
+  );
+  assert.notEqual(
+    failedRollbackDiscoveryFixture,
+    fixture,
+    "Failed rollback discovery fixture did not replace the UI rollback find.",
+  );
+  writeFileSync(
+    failedRollbackDiscoveryFixturePath,
+    failedRollbackDiscoveryFixture,
+    { mode: 0o700 },
+  );
+  chmodSync(failedRollbackDiscoveryFixturePath, 0o700);
+  const failedNodeProvenanceDiscoveryFixturePath = join(
+    testRoot,
+    "proofofwork-release-prune-failed-node-provenance-discovery",
+  );
+  const nodeProvenanceDiscoveryCommand = [
+    '/usr/bin/find "${root}" -maxdepth 1 -type f \\',
+    "    -name 'proofofwork-node-release-*.tgz.provenance' \\",
+    "    -print0",
+  ].join("\n");
+  const failedNodeProvenanceDiscoveryFixture = fixture.replace(
+    nodeProvenanceDiscoveryCommand,
+    "/usr/bin/false",
+  );
+  assert.notEqual(
+    failedNodeProvenanceDiscoveryFixture,
+    fixture,
+    "Failed node provenance discovery fixture did not replace the node find.",
+  );
+  writeFileSync(
+    failedNodeProvenanceDiscoveryFixturePath,
+    failedNodeProvenanceDiscoveryFixture,
+    { mode: 0o700 },
+  );
+  chmodSync(failedNodeProvenanceDiscoveryFixturePath, 0o700);
+  const partialArchiveDiscoveryFixturePath = join(
+    testRoot,
+    "proofofwork-release-prune-partial-archive-discovery",
+  );
+  const archiveDiscoveryCommand = [
+    '/usr/bin/find "${root}" -maxdepth 1 -type f \\',
+    '  -name "proofofwork-${release_kind}-release-*.tgz" \\',
+    "  -printf '%T@ %f\\n'",
+  ].join("\n");
+  const partialArchiveDiscoveryFixture = fixture.replace(
+    archiveDiscoveryCommand,
+    "/usr/bin/bash -c 'printf \\\"9999999999 proofofwork-node-release-partial.tgz\\\\n\\\"; exit 1'",
+  );
+  assert.notEqual(
+    partialArchiveDiscoveryFixture,
+    fixture,
+    "Partial archive discovery fixture did not replace the release find.",
+  );
+  writeFileSync(
+    partialArchiveDiscoveryFixturePath,
+    partialArchiveDiscoveryFixture,
+    { mode: 0o700 },
+  );
+  chmodSync(partialArchiveDiscoveryFixturePath, 0o700);
+  const failedArchiveSortFixturePath = join(
+    testRoot,
+    "proofofwork-release-prune-failed-archive-sort",
+  );
+  const failedArchiveSortFixture = fixture.replace(
+    "LC_ALL=C /usr/bin/sort -nr",
+    "/usr/bin/false",
+  );
+  assert.notEqual(
+    failedArchiveSortFixture,
+    fixture,
+    "Failed archive sort fixture did not replace the checked sort.",
+  );
+  writeFileSync(failedArchiveSortFixturePath, failedArchiveSortFixture, {
+    mode: 0o700,
+  });
+  chmodSync(failedArchiveSortFixturePath, 0o700);
 
   const createArchive = ({
     root,
@@ -351,6 +611,58 @@ try {
       chmodSync(`${archive}.provenance`, 0o644);
     }
     return archive;
+  };
+  const uiEvidenceManifest = (archive, { legacy = false, label = "fixture" } = {}) => {
+    const archiveDigest = createHash("sha256")
+      .update(readFileSync(archive))
+      .digest("hex");
+    const surfaceDigest = "b".repeat(64);
+    const lines = legacy
+      ? [
+          "format=proofofwork-ui-rollback-evidence-v1",
+          "scope=ui-surfaces-only",
+          "model=exact-surface-files-bytes-and-modes-v1",
+          "recorded_at=2026-08-26T00:00:00Z",
+        ]
+      : [
+          "format=proofofwork-ui-release-v3",
+          `release_id=${label}`,
+          `commit=${pruneCommit}`,
+          `source_tree=${pruneTree}`,
+          "source_attestation=detached-recursive-git-tree-v1",
+          "source_dependency_model=node-modules-recursive-v1",
+          "source_dependency_entry_count=1",
+          "source_dependency_bytes=1",
+          `source_dependency_sha256=${"a".repeat(64)}`,
+          "deployed_at=2026-08-26T00:00:00Z",
+        ];
+    lines.push(
+      `archive_name=${basename(archive)}`,
+      `archive_sha256=${archiveDigest}`,
+      "archive_payload_model=surfaces-v1",
+    );
+    for (const surface of [
+      "activity",
+      "browser",
+      "computer",
+      "desktop",
+      "growth",
+      "id",
+      "inception",
+      "infinity",
+      "landing",
+      "marketplace",
+      "nft",
+      "token",
+      "wallet",
+      "work",
+    ]) {
+      lines.push(
+        `surface.${surface}.file_count=1`,
+        `surface.${surface}.sha256=${surfaceDigest}`,
+      );
+    }
+    return `${lines.join("\n")}\n`;
   };
 
   const verifiedNodeArchives = Array.from({ length: 5 }, (_, index) =>
@@ -400,16 +712,82 @@ try {
     age: 7,
     sidecarTarget: (name) => `/tmp/not-the-retention-root/${name}`,
   });
+  const nodePruneEnvironment = {
+    ...process.env,
+    POW_RELEASE_ALLOW_TEST_ROOTS: "1",
+    POW_RELEASE_NODE_CHECKOUT: pruneNodeCheckout,
+    POW_UI_DEPLOY_LOCK: join(
+      testRoot,
+      "node-prune-must-ignore-ui-lock",
+      "deploy.lock",
+    ),
+  };
+  const assertAllNodeEvidenceRetained = () => {
+    for (const archive of verifiedNodeArchives) {
+      assert.equal(existsSync(archive), true);
+      assert.equal(existsSync(`${archive}.sha256`), true);
+    }
+    assert.equal(existsSync(`${verifiedNodeArchives[0]}.provenance`), true);
+    assert.equal(existsSync(`${verifiedNodeArchives[1]}.provenance`), true);
+    assert.equal(existsSync(missingNodeArchive), true);
+    assert.equal(existsSync(badNodeArchive), true);
+  };
+
+  chmodSync(nodeRoot, 0o775);
+  const unsafeNodeRootResult = spawnSync(
+    "/usr/bin/bash",
+    [fixturePath, nodeRoot, "3"],
+    { encoding: "utf8", env: nodePruneEnvironment },
+  );
+  assert.equal(unsafeNodeRootResult.status, 1, unsafeNodeRootResult.stderr);
+  assert.match(unsafeNodeRootResult.stderr, /root must be owner-controlled/u);
+  assertAllNodeEvidenceRetained();
+  chmodSync(nodeRoot, 0o755);
+
+  const failedNodeProvenanceDiscoveryResult = spawnSync(
+    "/usr/bin/bash",
+    [failedNodeProvenanceDiscoveryFixturePath, nodeRoot, "3"],
+    { encoding: "utf8", env: nodePruneEnvironment },
+  );
+  assert.equal(
+    failedNodeProvenanceDiscoveryResult.status,
+    2,
+    failedNodeProvenanceDiscoveryResult.stderr,
+  );
+  assert.match(
+    failedNodeProvenanceDiscoveryResult.stderr,
+    /node provenance discovery failed/u,
+  );
+  assertAllNodeEvidenceRetained();
+
+  const partialArchiveDiscoveryResult = spawnSync(
+    "/usr/bin/bash",
+    [partialArchiveDiscoveryFixturePath, nodeRoot, "3"],
+    { encoding: "utf8", env: nodePruneEnvironment },
+  );
+  assert.equal(
+    partialArchiveDiscoveryResult.status,
+    2,
+    partialArchiveDiscoveryResult.stderr,
+  );
+  assert.match(partialArchiveDiscoveryResult.stderr, /archive discovery failed/u);
+  assertAllNodeEvidenceRetained();
+
+  const failedArchiveSortResult = spawnSync(
+    "/usr/bin/bash",
+    [failedArchiveSortFixturePath, nodeRoot, "3"],
+    { encoding: "utf8", env: nodePruneEnvironment },
+  );
+  assert.equal(failedArchiveSortResult.status, 2, failedArchiveSortResult.stderr);
+  assert.match(failedArchiveSortResult.stderr, /archive ordering failed/u);
+  assertAllNodeEvidenceRetained();
+
   const nodeResult = spawnSync(
     "/usr/bin/bash",
     [fixturePath, nodeRoot, "3"],
     {
       encoding: "utf8",
-      env: {
-        ...process.env,
-        POW_RELEASE_ALLOW_TEST_ROOTS: "1",
-        POW_RELEASE_NODE_CHECKOUT: pruneNodeCheckout,
-      },
+      env: nodePruneEnvironment,
     },
   );
   assert.equal(nodeResult.status, 2, nodeResult.stderr);
@@ -425,25 +803,172 @@ try {
   assert.equal(existsSync(badNodeArchive), true);
   assert.match(nodeResult.stderr, /verified retention completed/u);
 
-  const verifiedUiArchives = Array.from({ length: 7 }, (_, index) =>
+  const verifiedUiArchives = Array.from({ length: 8 }, (_, index) =>
     createArchive({
       root: uiRoot,
       kind: "ui",
       label: `verified-${index}`,
       age: index,
       sidecarTarget:
-        index === 6 ? (name) => `${uiRoot}/${name}` : "basename",
+        index === 7 ? (name) => `${uiRoot}/${name}` : "basename",
     }),
   );
-  const activeUiManifest = [
-    "format=proofofwork-ui-release-v3",
-    `archive_name=${basename(verifiedUiArchives[0])}`,
-    "",
-  ].join("\n");
+  const activeUiManifest = uiEvidenceManifest(verifiedUiArchives[0], {
+    label: "active-fixture",
+  });
   writeFileSync(uiManifest, activeUiManifest);
   writeFileSync(`${verifiedUiArchives[0]}.provenance`, activeUiManifest);
+  const rollbackUiManifest = uiEvidenceManifest(verifiedUiArchives[1], {
+    legacy: true,
+  });
+  writeFileSync(
+    join(uiRollbackCheckout, ".proofofwork-ui-release"),
+    rollbackUiManifest,
+  );
+  writeFileSync(`${verifiedUiArchives[1]}.provenance`, rollbackUiManifest);
   chmodSync(uiManifest, 0o644);
   chmodSync(`${verifiedUiArchives[0]}.provenance`, 0o644);
+  chmodSync(join(uiRollbackCheckout, ".proofofwork-ui-release"), 0o644);
+  chmodSync(`${verifiedUiArchives[1]}.provenance`, 0o644);
+  const failedRollbackDiscoveryResult = spawnSync(
+    "/usr/bin/bash",
+    [failedRollbackDiscoveryFixturePath, uiRoot, "5"],
+    {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        POW_RELEASE_ALLOW_TEST_ROOTS: "1",
+        POW_RELEASE_UI_MANIFEST: uiManifest,
+        POW_RELEASE_UI_ROLLBACK_ROOT: uiRollbackRoot,
+        POW_UI_DEPLOY_LOCK: uiDeployLock,
+      },
+    },
+  );
+  assert.equal(
+    failedRollbackDiscoveryResult.status,
+    2,
+    failedRollbackDiscoveryResult.stderr,
+  );
+  assert.match(
+    failedRollbackDiscoveryResult.stderr,
+    /complete-root UI rollback discovery failed/u,
+  );
+  for (const archive of verifiedUiArchives) {
+    assert.equal(existsSync(archive), true);
+    assert.equal(existsSync(`${archive}.sha256`), true);
+  }
+  assert.equal(existsSync(`${verifiedUiArchives[0]}.provenance`), true);
+  assert.equal(existsSync(`${verifiedUiArchives[1]}.provenance`), true);
+
+  chmodSync(uiRoot, 0o775);
+  const unsafeUiRootResult = spawnSync(
+    "/usr/bin/bash",
+    [fixturePath, uiRoot, "5"],
+    {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        POW_RELEASE_ALLOW_TEST_ROOTS: "1",
+        POW_RELEASE_UI_MANIFEST: uiManifest,
+        POW_RELEASE_UI_ROLLBACK_ROOT: uiRollbackRoot,
+        POW_UI_DEPLOY_LOCK: uiDeployLock,
+      },
+    },
+  );
+  assert.equal(unsafeUiRootResult.status, 1, unsafeUiRootResult.stderr);
+  assert.match(unsafeUiRootResult.stderr, /root must be owner-controlled/u);
+  for (const archive of verifiedUiArchives) {
+    assert.equal(existsSync(archive), true);
+    assert.equal(existsSync(`${archive}.sha256`), true);
+  }
+  chmodSync(uiRoot, 0o755);
+
+  writeFileSync(
+    join(uiRollbackCheckout, ".proofofwork-ui-release"),
+    `${rollbackUiManifest}unknown_claim=forbidden\n`,
+  );
+  const malformedRollbackResult = spawnSync(
+    "/usr/bin/bash",
+    [fixturePath, uiRoot, "5"],
+    {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        POW_RELEASE_ALLOW_TEST_ROOTS: "1",
+        POW_RELEASE_UI_MANIFEST: uiManifest,
+        POW_RELEASE_UI_ROLLBACK_ROOT: uiRollbackRoot,
+        POW_UI_DEPLOY_LOCK: uiDeployLock,
+      },
+    },
+  );
+  assert.equal(malformedRollbackResult.status, 2, malformedRollbackResult.stderr);
+  assert.match(malformedRollbackResult.stderr, /unknown .* provenance key/u);
+  for (const archive of verifiedUiArchives) {
+    assert.equal(existsSync(archive), true);
+    assert.equal(existsSync(`${archive}.sha256`), true);
+  }
+  writeFileSync(
+    join(uiRollbackCheckout, ".proofofwork-ui-release"),
+    rollbackUiManifest.replace(
+      "format=proofofwork-ui-rollback-evidence-v1",
+      "format=proofofwork-ui-rollback-evidence-v99",
+    ),
+  );
+  const unknownRollbackResult = spawnSync(
+    "/usr/bin/bash",
+    [fixturePath, uiRoot, "5"],
+    {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        POW_RELEASE_ALLOW_TEST_ROOTS: "1",
+        POW_RELEASE_UI_MANIFEST: uiManifest,
+        POW_RELEASE_UI_ROLLBACK_ROOT: uiRollbackRoot,
+        POW_UI_DEPLOY_LOCK: uiDeployLock,
+      },
+    },
+  );
+  assert.equal(unknownRollbackResult.status, 2, unknownRollbackResult.stderr);
+  assert.match(unknownRollbackResult.stderr, /unknown .* provenance format/u);
+  for (const archive of verifiedUiArchives) {
+    assert.equal(existsSync(archive), true);
+    assert.equal(existsSync(`${archive}.sha256`), true);
+  }
+  writeFileSync(
+    join(uiRollbackCheckout, ".proofofwork-ui-release"),
+    rollbackUiManifest,
+  );
+  chmodSync(join(uiRollbackCheckout, ".proofofwork-ui-release"), 0o644);
+
+  const lockedUiResult = spawnSync(
+    "/usr/bin/bash",
+    [
+      "-c",
+      'set -Eeuo pipefail; lock="$1"; shift; exec 9>"${lock}"; chmod 0600 "${lock}"; flock --exclusive 9; "$@"',
+      "ui-prune-lock-holder",
+      uiDeployLock,
+      "/usr/bin/bash",
+      fixturePath,
+      uiRoot,
+      "5",
+    ],
+    {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        POW_RELEASE_ALLOW_TEST_ROOTS: "1",
+        POW_RELEASE_UI_MANIFEST: uiManifest,
+        POW_RELEASE_UI_ROLLBACK_ROOT: uiRollbackRoot,
+        POW_UI_DEPLOY_LOCK: uiDeployLock,
+      },
+    },
+  );
+  assert.equal(lockedUiResult.status, 1, lockedUiResult.stderr);
+  assert.match(lockedUiResult.stderr, /Another UI deployment or cleanup/u);
+  for (const archive of verifiedUiArchives) {
+    assert.equal(existsSync(archive), true);
+    assert.equal(existsSync(`${archive}.sha256`), true);
+  }
   const uiResult = spawnSync(
     "/usr/bin/bash",
     [fixturePath, uiRoot, "5"],
@@ -453,19 +978,27 @@ try {
         ...process.env,
         POW_RELEASE_ALLOW_TEST_ROOTS: "1",
         POW_RELEASE_UI_MANIFEST: uiManifest,
+        POW_RELEASE_UI_ROLLBACK_ROOT: uiRollbackRoot,
+        POW_UI_DEPLOY_LOCK: uiDeployLock,
       },
     },
   );
   assert.equal(uiResult.status, 0, uiResult.stderr);
   assert.equal(existsSync(verifiedUiArchives[0]), true);
-  assert.equal(existsSync(verifiedUiArchives[1]), false);
-  for (const archive of verifiedUiArchives.slice(2)) {
+  assert.equal(existsSync(verifiedUiArchives[1]), true);
+  assert.equal(existsSync(verifiedUiArchives[2]), false);
+  for (const archive of verifiedUiArchives.slice(3)) {
     assert.equal(existsSync(archive), true);
   }
+  assert.match(uiResult.stderr, /active or rollback release archive/u);
   assert.match(uiResult.stderr, /Verified legacy absolute checksum target/u);
 
   rmSync(uiRoot, { recursive: true });
   mkdirSync(uiRoot);
+  chmodSync(uiRoot, 0o755);
+  rmSync(uiRollbackRoot, { recursive: true });
+  mkdirSync(uiRollbackRoot);
+  chmodSync(uiRollbackRoot, 0o700);
   const canonicalUiArchives = [];
   for (let index = 0; index < 5; index += 1) {
     canonicalUiArchives.push(createArchive({
@@ -476,11 +1009,9 @@ try {
       sidecarTarget: "basename",
     }));
   }
-  const canonicalActiveManifest = [
-    "format=proofofwork-ui-release-v3",
-    `archive_name=${basename(canonicalUiArchives[0])}`,
-    "",
-  ].join("\n");
+  const canonicalActiveManifest = uiEvidenceManifest(canonicalUiArchives[0], {
+    label: "canonical-active",
+  });
   writeFileSync(uiManifest, canonicalActiveManifest);
   writeFileSync(`${canonicalUiArchives[0]}.provenance`, canonicalActiveManifest);
   chmodSync(uiManifest, 0o644);
@@ -501,6 +1032,8 @@ try {
         ...process.env,
         POW_RELEASE_ALLOW_TEST_ROOTS: "1",
         POW_RELEASE_UI_MANIFEST: uiManifest,
+        POW_RELEASE_UI_ROLLBACK_ROOT: uiRollbackRoot,
+        POW_UI_DEPLOY_LOCK: uiDeployLock,
       },
     },
   );

@@ -9,9 +9,19 @@ timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
 basename="proof_indexer-${timestamp}.dumpset"
 temporary_set="${backup_root}/.${basename}.tmp"
 final_set="${backup_root}/${basename}"
+retention_listing=""
+temporary_set_identity=""
+backup_lock="${backup_root}/.proofofwork-postgres-logical-backup.lock"
 
 cleanup() {
-  rm -rf -- "${temporary_set}"
+  if [[ -n "${temporary_set_identity}" &&
+    -d "${temporary_set}" && ! -L "${temporary_set}" &&
+    "$(stat --format='%d:%i' -- "${temporary_set}" 2>/dev/null || true)" == "${temporary_set_identity}" ]]; then
+    rm --recursive --force --one-file-system -- "${temporary_set}"
+  fi
+  if [[ -n "${retention_listing}" ]]; then
+    rm -f -- "${retention_listing}"
+  fi
 }
 trap cleanup EXIT
 
@@ -23,12 +33,35 @@ if [[ "$(realpath -e "${backup_root}")" != "${backup_root}" ]]; then
   echo "Backup root resolved outside its canonical path." >&2
   exit 1
 fi
+backup_root_mode="$(stat --format=%a -- "${backup_root}")"
+backup_root_owner="$(stat --format=%u -- "${backup_root}")"
+if [[ "${backup_root_owner}" != "${EUID}" ]] ||
+  ((8#${backup_root_mode} & 07022)); then
+  echo "Backup root must be owner-controlled and not group/world writable." >&2
+  exit 1
+fi
+if [[ -e "${backup_lock}" || -L "${backup_lock}" ]]; then
+  if [[ ! -f "${backup_lock}" || -L "${backup_lock}" ||
+    "$(realpath -e -- "${backup_lock}" 2>/dev/null || true)" != "${backup_lock}" ||
+    "$(stat --format=%u -- "${backup_lock}")" != "${EUID}" ]] ||
+    ((8#$(stat --format=%a -- "${backup_lock}") & 07022)); then
+    echo "Logical-backup lock must be a canonical owner-controlled regular file." >&2
+    exit 1
+  fi
+fi
+exec {backup_lock_fd}>"${backup_lock}"
+chmod 0600 "${backup_lock}"
+if ! /usr/bin/flock --exclusive --nonblock "${backup_lock_fd}"; then
+  echo "Another logical backup operation holds ${backup_lock}." >&2
+  exit 1
+fi
 if [[ -e "${temporary_set}" || -e "${final_set}" ]]; then
   echo "Backup set already exists: ${basename}" >&2
   exit 1
 fi
 
 /usr/bin/mkdir --mode=0700 "${temporary_set}"
+temporary_set_identity="$(stat --format='%d:%i' -- "${temporary_set}")"
 /usr/bin/pg_dump \
   --dbname=proof_indexer \
   --format=custom \
@@ -50,12 +83,23 @@ fi
 /usr/bin/sync -f "${temporary_set}/SHA256SUMS"
 /usr/bin/sync -f "${temporary_set}"
 /usr/bin/mv -- "${temporary_set}" "${final_set}"
+temporary_set_identity=""
 /usr/bin/sync -f "${backup_root}"
 
-mapfile -t backups < <(
-  /usr/bin/find "${backup_root}" -maxdepth 1 -mindepth 1 -type d \
-    -name 'proof_indexer-*.dumpset' -printf '%T@ %f\n' | /usr/bin/sort -nr
-)
+retention_listing="$(
+  /usr/bin/mktemp \
+    --tmpdir="${backup_root}" \
+    ".${basename}.retention.XXXXXX"
+)"
+if ! /usr/bin/find "${backup_root}" -maxdepth 1 -mindepth 1 -type d \
+  -name 'proof_indexer-*.dumpset' -printf '%T@ %f\0' |
+  /usr/bin/sort -z -nr >"${retention_listing}"; then
+  echo "Unable to enumerate logical backup retention safely." >&2
+  exit 1
+fi
+mapfile -d '' -t backups <"${retention_listing}"
+/usr/bin/rm -f -- "${retention_listing}"
+retention_listing=""
 for ((index = keep; index < ${#backups[@]}; index += 1)); do
   name="${backups[index]#* }"
   if [[ "${name}" =~ ^proof_indexer-[0-9]{8}T[0-9]{6}Z\.dumpset$ ]]; then
