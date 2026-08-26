@@ -31208,9 +31208,9 @@ function canonicalIdAmountProjectionRepairInvariantFingerprint(row) {
     amount_sats: null,
     payload,
   };
-  return workAmoV5CanonicalPayloadCommitment(
-    JSON.parse(JSON.stringify(invariant)),
-  ).sha256;
+  return createHash("sha256")
+    .update(JSON.stringify(invariant))
+    .digest("hex");
 }
 
 async function canonicalIdAmountProjectionRepairRows(client) {

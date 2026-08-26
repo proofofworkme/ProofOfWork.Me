@@ -37391,6 +37391,35 @@ check("canonical ID amount repair is exact, all-or-none, idempotent, and evidenc
     /partial or divergent/u,
   );
 
+  const invariantFingerprint = isolatedFunction(
+    BACKFILL_PATH,
+    "canonicalIdAmountProjectionRepairInvariantFingerprint",
+    { createHash, structuredClone },
+  );
+  const fractionalMetadata = structuredClone(row);
+  fractionalMetadata.raw_tx.fee = 0.00000345;
+  fractionalMetadata.raw_tx.vin = [{ prevout: { value: 0.000157 } }];
+  fractionalMetadata.raw_tx.vout = [
+    { value: 0.00001 },
+    { value: 0 },
+    { value: 0.00014355 },
+  ];
+  const fractionalCanonical = structuredClone(fractionalMetadata);
+  fractionalCanonical.amount_sats = "1000";
+  fractionalCanonical.payload.amountSats = "1000";
+  assert.equal(
+    invariantFingerprint(fractionalMetadata),
+    invariantFingerprint(fractionalCanonical),
+    "amount-only repair must preserve an invariant containing fractional raw transaction metadata",
+  );
+  const fractionalDrift = structuredClone(fractionalCanonical);
+  fractionalDrift.raw_tx.vout[2].value = 0.00014356;
+  assert.notEqual(
+    invariantFingerprint(fractionalMetadata),
+    invariantFingerprint(fractionalDrift),
+    "fractional raw transaction metadata drift must still change the repair invariant",
+  );
+
   const source = fileSource(BACKFILL_PATH);
   const manifestSource = source.match(
     /CANONICAL_ID_AMOUNT_PROJECTION_REPAIR_TARGETS = Object\.freeze\(\[([\s\S]*?)\]\);/u,
