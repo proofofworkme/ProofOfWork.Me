@@ -2354,19 +2354,49 @@ function workProjectionItem(item, options = {}) {
         source.tokenAmountSubatoms,
         saleAuthorization.amountSubatoms,
       ].filter(present);
+      const allowZero =
+        options.allowZero === true ||
+        (source.valid === false && options.allowZero === undefined);
+      const invalidNativeZeroWithoutUnitAliases = Boolean(
+        source.valid === false &&
+        options.allowZero !== false &&
+        source.protocol === "pwt1" &&
+        source.kind === "token-listing-sealed-invalid" &&
+        source.attemptedKind === "seal" &&
+        source.reason === "work-amo-v6-listing-already-sealed" &&
+        source.reasonCode === "work-amo-v6-listing-already-sealed" &&
+        saleAuthorization.version === WORK_AMO_V8_AUTH_VERSION &&
+        String(source.amount ?? "") === "0" &&
+        String(source.amountSats ?? "") === "0" &&
+        [
+          source.tokenAmount,
+          source.amountAtoms,
+          source.tokenAmountAtoms,
+          source.attemptedAmountAtoms,
+          source.attemptedAmountSubatoms,
+          saleAuthorization.amount,
+          saleAuthorization.amountAtoms,
+        ].every((value) => !present(value)) &&
+        aliases.length === 0
+      );
       const sourceAmountAtomsAlias = present(source.amountAtoms)
         ? normalizeWorkSubatoms(source.amountAtoms, {
-            allowZero: options.allowZero === true,
+            allowZero,
           })
         : "";
       const amountSubatoms =
         aliases.length === 1
           ? normalizeWorkSubatoms(aliases[0], {
-              allowZero: options.allowZero === true,
+              allowZero,
             })
-          : "";
+          : invalidNativeZeroWithoutUnitAliases
+            ? "0"
+            : "";
       if (
-        aliases.length !== 1 ||
+        (
+          aliases.length !== 1 &&
+          !invalidNativeZeroWithoutUnitAliases
+        ) ||
         (
           present(source.amountAtoms) &&
           (
@@ -8182,9 +8212,17 @@ async function auditWorkAtomicProjection(
           WITH amount_rows AS MATERIALIZED (
             SELECT
               e.kind,
+              e.protocol,
               e.status,
               e.valid,
+              e.amount_sats,
+              e.block_height AS event_block_height,
+              e.block_index AS event_block_index,
               t.status AS transaction_status,
+              t.block_height AS transaction_block_height,
+              t.block_index AS transaction_block_index,
+              canonical_block.block_hash IS NOT NULL
+                AS canonical_transaction_block,
               e.payload,
               COALESCE(e.payload->>'amountAtoms', '') <>
                 '' AS has_atoms,
@@ -8203,6 +8241,11 @@ async function auditWorkAtomicProjection(
             FROM proof_indexer.events e
             LEFT JOIN proof_indexer.transactions t
               ON t.network = e.network AND t.txid = e.txid
+            LEFT JOIN proof_indexer.blocks canonical_block
+              ON canonical_block.network = t.network
+             AND canonical_block.block_hash = t.block_hash
+             AND canonical_block.height = t.block_height
+             AND canonical_block.canonical = true
             WHERE e.network = $1
               AND lower(COALESCE(e.payload->>'tokenId', '')) = $2
               AND (
@@ -8244,7 +8287,50 @@ async function auditWorkAtomicProjection(
                 THEN (payload->>'amountSubatoms')::numeric =
                   ((payload->>'amount')::numeric * $6::numeric)
                 ELSE false
-              END AS exact_q16
+              END AS exact_q16,
+              CASE
+                WHEN
+                  valid = false
+                  AND protocol = 'pwt1'
+                  AND kind = 'token-listing-sealed-invalid'
+                  AND status = 'confirmed'
+                  AND transaction_status = 'confirmed'
+                  AND canonical_transaction_block
+                  AND event_block_height = transaction_block_height
+                  AND event_block_index = transaction_block_index
+                  AND event_block_height >= $10::integer
+                  AND amount_sats = 0
+                  AND payload->>'amountSats' = '0'
+                  AND payload->>'amount' = '0'
+                  AND payload->>'attemptedKind' = 'seal'
+                  AND payload->>'reason' = $12
+                  AND payload->>'reasonCode' = $12
+                  AND payload#>>'{saleAuthorization,version}' = $11
+                  AND NOT has_atoms
+                  AND NOT has_subatoms
+                  AND NOT (payload ? 'amountAtoms')
+                  AND NOT (payload ? 'amountSubatoms')
+                  AND NOT (payload ? 'tokenAmount')
+                  AND NOT (payload ? 'tokenAmountAtoms')
+                  AND NOT (payload ? 'tokenAmountSubatoms')
+                  AND NOT (payload ? 'attemptedAmountAtoms')
+                  AND NOT (payload ? 'attemptedAmountSubatoms')
+                  AND NOT (
+                    payload->'saleAuthorization' ? 'amount'
+                  )
+                  AND NOT (
+                    payload->'saleAuthorization' ? 'amountAtoms'
+                  )
+                  AND NOT (
+                    payload->'saleAuthorization' ? 'amountSubatoms'
+                  )
+                  AND NOT (payload ? 'amountStorageModel')
+                  AND NOT (payload ? 'decimals')
+                  AND NOT (payload ? 'unitScale')
+                  AND NOT (payload ? 'precisionModel')
+                THEN true
+                ELSE false
+              END AS repairable_q16_invalid_zero
             FROM amount_rows
           )
           SELECT
@@ -8258,6 +8344,18 @@ async function auditWorkAtomicProjection(
             count(*) FILTER (
               WHERE exact_q8 OR exact_q16
             )::integer AS precision_events,
+            count(*) FILTER (
+              WHERE NOT has_atoms AND NOT has_subatoms
+            )::integer AS missing_amount_unit_events,
+            count(*) FILTER (
+              WHERE repairable_q16_invalid_zero
+            )::integer AS repairable_q16_invalid_zero_events,
+            count(*) FILTER (
+              WHERE
+                NOT has_atoms
+                AND NOT has_subatoms
+                AND NOT repairable_q16_invalid_zero
+            )::integer AS unrepairable_missing_amount_unit_events,
             count(*) FILTER (
               WHERE has_atoms AND NOT valid_atoms
             )::integer AS invalid_atom_events,
@@ -8326,6 +8424,9 @@ async function auditWorkAtomicProjection(
           WORK_SUBATOM_DECIMALS,
           WORK_SUBATOM_PROJECTION_MODEL,
           WORK_AMO_V8_GLOBAL_PRECISION_MODEL,
+          activationHeight,
+          WORK_AMO_V8_AUTH_VERSION,
+          "work-amo-v6-listing-already-sealed",
         ],
       ),
     () => client.query(
@@ -8461,6 +8562,40 @@ async function auditWorkAtomicProjection(
   const events = eventsResult.rows[0] ?? {};
   const reservations = reservationsResult.rows[0] ?? {};
   const snapshots = snapshotsResult.rows[0] ?? {};
+  const amountEvents = Number(events.amount_events ?? 0);
+  const representedEvents =
+    Number(events.atom_events ?? 0) +
+    Number(events.subatom_events ?? 0);
+  const precisionEvents = Number(events.precision_events ?? 0);
+  const missingAmountUnitEvents = Number(
+    events.missing_amount_unit_events ?? 0,
+  );
+  const repairableQ16InvalidZeroEvents = Number(
+    events.repairable_q16_invalid_zero_events ?? 0,
+  );
+  const unrepairableMissingAmountUnitEvents = Number(
+    events.unrepairable_missing_amount_unit_events ?? 0,
+  );
+  const repairableQ16PrecisionWindow = Boolean(
+    allowRepairableEventPrecision &&
+    [
+      amountEvents,
+      representedEvents,
+      precisionEvents,
+      missingAmountUnitEvents,
+      repairableQ16InvalidZeroEvents,
+      unrepairableMissingAmountUnitEvents,
+    ].every(
+      (value) => Number.isSafeInteger(value) && value >= 0,
+    ) &&
+    repairableQ16InvalidZeroEvents > 0 &&
+    missingAmountUnitEvents === repairableQ16InvalidZeroEvents &&
+    unrepairableMissingAmountUnitEvents === 0 &&
+    amountEvents - representedEvents ===
+      repairableQ16InvalidZeroEvents &&
+    amountEvents - precisionEvents ===
+      repairableQ16InvalidZeroEvents
+  );
   if (
     Number(balances.negative_balances ?? 0) !== 0 ||
     Number(listings.invalid_amounts ?? 0) !== 0 ||
@@ -8495,13 +8630,10 @@ async function auditWorkAtomicProjection(
   if (
     subatomic &&
     (
-      Number(events.precision_events ?? 0) !==
-        Number(events.amount_events ?? 0) ||
-      (
-        Number(events.atom_events ?? 0) +
-        Number(events.subatom_events ?? 0)
-      ) !== Number(events.amount_events ?? 0)
-    )
+      precisionEvents !== amountEvents ||
+      representedEvents !== amountEvents
+    ) &&
+    !repairableQ16PrecisionWindow
   ) {
     throw new Error(
       "Q16 WORK projection contains an amount-bearing event without one exact Q8-history or Q16-current amount.",
@@ -8545,7 +8677,146 @@ async function auditWorkAtomicProjection(
   };
 }
 
-async function repairInvalidWorkAtomicEventPrecisionRows(client) {
+async function repairInvalidWorkAtomicEventPrecisionRows(
+  client,
+  {
+    activationHeight = 0,
+    projectionModel = WORK_ATOMIC_PROJECTION_MODEL,
+  } = {},
+) {
+  if (projectionModel === WORK_SUBATOM_PROJECTION_MODEL) {
+    if (!Number.isSafeInteger(activationHeight) || activationHeight < 1) {
+      throw new Error(
+        "Native Q16 invalid-event repair requires its exact activation height.",
+      );
+    }
+    const result = await client.query(
+      `
+        WITH repairable AS MATERIALIZED (
+          SELECT event.event_id
+          FROM proof_indexer.events event
+          JOIN proof_indexer.transactions indexed_transaction
+            ON indexed_transaction.network = event.network
+           AND indexed_transaction.txid = event.txid
+          JOIN proof_indexer.blocks canonical_block
+            ON canonical_block.network = indexed_transaction.network
+           AND canonical_block.block_hash = indexed_transaction.block_hash
+           AND canonical_block.height = indexed_transaction.block_height
+           AND canonical_block.canonical = true
+          WHERE event.network = $1
+            AND lower(COALESCE(event.payload->>'tokenId', '')) = $2
+            AND event.protocol = 'pwt1'
+            AND event.kind = 'token-listing-sealed-invalid'
+            AND event.status = 'confirmed'
+            AND indexed_transaction.status = 'confirmed'
+            AND event.valid = false
+            AND event.block_height = indexed_transaction.block_height
+            AND event.block_index = indexed_transaction.block_index
+            AND event.block_height >= $7::integer
+            AND event.amount_sats = 0
+            AND event.payload->>'amountSats' = '0'
+            AND event.payload->>'amount' = '0'
+            AND event.payload->>'attemptedKind' = 'seal'
+            AND event.payload->>'reason' = $9
+            AND event.payload->>'reasonCode' = $9
+            AND event.payload#>>'{saleAuthorization,version}' = $8
+            AND NOT (event.payload ? 'amountAtoms')
+            AND NOT (event.payload ? 'amountSubatoms')
+            AND NOT (event.payload ? 'tokenAmount')
+            AND NOT (event.payload ? 'tokenAmountAtoms')
+            AND NOT (event.payload ? 'tokenAmountSubatoms')
+            AND NOT (event.payload ? 'attemptedAmountAtoms')
+            AND NOT (event.payload ? 'attemptedAmountSubatoms')
+            AND NOT (
+              event.payload->'saleAuthorization' ? 'amount'
+            )
+            AND NOT (
+              event.payload->'saleAuthorization' ? 'amountAtoms'
+            )
+            AND NOT (
+              event.payload->'saleAuthorization' ? 'amountSubatoms'
+            )
+            AND NOT (event.payload ? 'amountStorageModel')
+            AND NOT (event.payload ? 'decimals')
+            AND NOT (event.payload ? 'unitScale')
+            AND NOT (event.payload ? 'precisionModel')
+        ),
+        repaired AS (
+          UPDATE proof_indexer.events target_event
+          SET
+            payload = target_event.payload || jsonb_build_object(
+              'amountSubatoms', '0',
+              'amountStorageModel', $5::text,
+              'decimals', $4::integer,
+              'unitScale', $3::text,
+              'precisionModel', $6::text
+            ),
+            updated_at = now()
+          FROM repairable
+          WHERE target_event.event_id = repairable.event_id
+          RETURNING
+            target_event.event_id,
+            target_event.event_key,
+            target_event.protocol,
+            target_event.kind,
+            target_event.status,
+            target_event.txid,
+            target_event.valid,
+            target_event.block_height,
+            target_event.payload->>'amount' AS amount,
+            target_event.payload->>'amountAtoms' AS amount_atoms,
+            target_event.payload->>'amountSubatoms' AS amount_subatoms,
+            target_event.payload->>'amountStorageModel'
+              AS amount_storage_model,
+            target_event.payload->>'decimals' AS decimals,
+            target_event.payload->>'unitScale' AS unit_scale,
+            target_event.payload->>'precisionModel' AS precision_model,
+            target_event.payload#>>'{saleAuthorization,version}'
+              AS authorization_version,
+            target_event.payload->>'reasonCode' AS reason_code
+        )
+        SELECT *
+        FROM repaired
+        ORDER BY event_id ASC
+      `,
+      [
+        NETWORK,
+        WORK_TOKEN_ID,
+        WORK_SUBATOM_UNIT_SCALE_TEXT,
+        WORK_SUBATOM_DECIMALS,
+        WORK_SUBATOM_PROJECTION_MODEL,
+        WORK_AMO_V8_GLOBAL_PRECISION_MODEL,
+        activationHeight,
+        WORK_AMO_V8_AUTH_VERSION,
+        "work-amo-v6-listing-already-sealed",
+      ],
+    );
+    return result.rows.map((row) => ({
+      amount: String(row.amount ?? ""),
+      amountAtoms: String(row.amount_atoms ?? ""),
+      amountStorageModel: String(row.amount_storage_model ?? ""),
+      amountSubatoms: String(row.amount_subatoms ?? ""),
+      authorizationVersion: String(row.authorization_version ?? ""),
+      blockHeight: Number(row.block_height),
+      decimals: Number(row.decimals),
+      eventId: String(row.event_id ?? ""),
+      eventKey: String(row.event_key ?? ""),
+      kind: String(row.kind ?? ""),
+      precisionModel: String(row.precision_model ?? ""),
+      projectionModel,
+      protocol: String(row.protocol ?? ""),
+      reasonCode: String(row.reason_code ?? ""),
+      status: String(row.status ?? ""),
+      txid: String(row.txid ?? ""),
+      unitScale: String(row.unit_scale ?? ""),
+      valid: row.valid === true,
+    }));
+  }
+  if (projectionModel !== WORK_ATOMIC_PROJECTION_MODEL) {
+    throw new Error(
+      "Invalid-event precision repair requires an explicit Q8 or Q16 projection model.",
+    );
+  }
   const result = await client.query(
     `
       WITH repairable AS MATERIALIZED (
@@ -8554,6 +8825,12 @@ async function repairInvalidWorkAtomicEventPrecisionRows(client) {
         WHERE network = $1
           AND lower(COALESCE(payload->>'tokenId', '')) = $2
           AND valid = false
+          AND COALESCE(payload->>'amountStorageModel', '') <> $5
+          AND COALESCE(payload->>'transferVersion', '') <> $6
+          AND COALESCE(
+            payload#>>'{saleAuthorization,version}',
+            ''
+          ) <> $7
           AND (payload ? 'amount' OR payload ? 'amountAtoms')
           AND (
             (
@@ -8612,15 +8889,23 @@ async function repairInvalidWorkAtomicEventPrecisionRows(client) {
       WORK_TOKEN_ID,
       WORK_UNIT_SCALE_TEXT,
       WORK_DECIMALS,
+      WORK_SUBATOM_PROJECTION_MODEL,
+      WORK_AMO_V8_TRANSFER_VERSION,
+      WORK_AMO_V8_AUTH_VERSION,
     ],
   );
   return result.rows.map((row) => ({
     amount: String(row.amount ?? ""),
     amountAtoms: String(row.amount_atoms ?? ""),
+    amountStorageModel: WORK_ATOMIC_PROJECTION_MODEL,
+    amountSubatoms: "",
     decimals: Number(row.decimals),
     eventId: String(row.event_id ?? ""),
     eventKey: String(row.event_key ?? ""),
     kind: String(row.kind ?? ""),
+    precisionModel: "",
+    projectionModel,
+    protocol: "",
     status: String(row.status ?? ""),
     txid: String(row.txid ?? ""),
     unitScale: String(row.unit_scale ?? ""),
@@ -8638,12 +8923,14 @@ async function repairWorkAtomicEventPrecisionMetadata(client) {
     await client.query(
       `
         LOCK TABLE
-          proof_indexer.credit_definitions,
-          proof_indexer.credit_balances,
-          proof_indexer.credit_listings,
+          proof_indexer.blocks,
+          proof_indexer.transactions,
           proof_indexer.events,
+          proof_indexer.credit_balances,
+          proof_indexer.credit_definitions,
+          proof_indexer.credit_listings,
           proof_indexer.ledger_snapshots,
-          proof_indexer.transactions
+          proof_indexer.meta
         IN SHARE ROW EXCLUSIVE MODE
       `,
     );
@@ -8651,44 +8938,108 @@ async function repairWorkAtomicEventPrecisionMetadata(client) {
       allowRepairableEventPrecision: true,
       lock: true,
     });
-    if (!before.atomic || before.legacy) {
+    if ((!before.atomic && !before.subatomic) || before.legacy) {
       throw new Error(
-        "WORK atomic event precision repair requires work-atoms-v1.",
+        "WORK event precision repair requires canonical Q8 or Q16 storage.",
       );
     }
-    const expectedRepairs =
+    const precisionDeficit =
       Number(before.events.amount_events ?? 0) -
       Number(before.events.precision_events ?? 0);
-    if (!Number.isSafeInteger(expectedRepairs) || expectedRepairs < 0) {
+    const expectedRepairs = before.subatomic
+      ? Number(
+          before.events.repairable_q16_invalid_zero_events ?? 0,
+        )
+      : precisionDeficit;
+    const representationDeficit =
+      Number(before.events.amount_events ?? 0) -
+      (
+        Number(before.events.atom_events ?? 0) +
+        Number(before.events.subatom_events ?? 0)
+      );
+    if (
+      !Number.isSafeInteger(expectedRepairs) ||
+      expectedRepairs < 0 ||
+      !Number.isSafeInteger(precisionDeficit) ||
+      precisionDeficit < 0 ||
+      (
+        before.subatomic &&
+        (
+          precisionDeficit !== expectedRepairs ||
+          representationDeficit !== expectedRepairs ||
+          Number(before.events.missing_amount_unit_events ?? 0) !==
+            expectedRepairs ||
+          Number(
+            before.events.unrepairable_missing_amount_unit_events ?? 0,
+          ) !== 0
+        )
+      )
+    ) {
       throw new Error(
-        "WORK atomic event precision repair found invalid audit counters.",
+        "WORK event precision repair found invalid or unrepairable audit counters.",
       );
     }
 
-    const repairs = await repairInvalidWorkAtomicEventPrecisionRows(client);
+    const repairs = await repairInvalidWorkAtomicEventPrecisionRows(
+      client,
+      {
+        activationHeight: before.activationHeight,
+        projectionModel: before.projectionModel,
+      },
+    );
     if (repairs.length !== expectedRepairs) {
       throw new Error(
         "WORK atomic event precision repair is limited to invalid audit rows; another amount-bearing event requires canonical replay.",
       );
     }
     for (const repair of repairs) {
-      if (
-        repair.valid !== false ||
-        repair.decimals !== WORK_DECIMALS ||
-        repair.unitScale !== WORK_UNIT_SCALE_TEXT ||
-        !/^(0|[1-9][0-9]*)$/u.test(repair.amountAtoms) ||
+      const exactQ16Repair = Boolean(
+        before.subatomic &&
+        repair.projectionModel === WORK_SUBATOM_PROJECTION_MODEL &&
+        repair.valid === false &&
+        repair.protocol === "pwt1" &&
+        repair.kind === "token-listing-sealed-invalid" &&
+        repair.status === "confirmed" &&
+        repair.authorizationVersion === WORK_AMO_V8_AUTH_VERSION &&
+        repair.reasonCode === "work-amo-v6-listing-already-sealed" &&
+        repair.amount === "0" &&
+        repair.amountAtoms === "" &&
+        repair.amountSubatoms === "0" &&
+        repair.amountStorageModel === WORK_SUBATOM_PROJECTION_MODEL &&
+        repair.decimals === WORK_SUBATOM_DECIMALS &&
+        repair.unitScale === WORK_SUBATOM_UNIT_SCALE_TEXT &&
+        repair.precisionModel === WORK_AMO_V8_GLOBAL_PRECISION_MODEL &&
+        Number.isSafeInteger(repair.blockHeight) &&
+        repair.blockHeight >= before.activationHeight &&
+        parseWorkAmountToSubatoms(repair.amount, {
+          allowZero: true,
+        }) === repair.amountSubatoms
+      );
+      const exactQ8Repair = Boolean(
+        before.atomic &&
+        repair.projectionModel === WORK_ATOMIC_PROJECTION_MODEL &&
+        repair.valid === false &&
+        repair.decimals === WORK_DECIMALS &&
+        repair.unitScale === WORK_UNIT_SCALE_TEXT &&
+        /^(0|[1-9][0-9]*)$/u.test(repair.amountAtoms) &&
         (
-          repair.amount &&
-          parseWorkAmountToAtoms(repair.amount, { allowZero: true }) !==
+          !repair.amount ||
+          parseWorkAmountToAtoms(repair.amount, { allowZero: true }) ===
             repair.amountAtoms
         )
-      ) {
+      );
+      if (!exactQ16Repair && !exactQ8Repair) {
         throw new Error(
           `WORK atomic event precision repair produced an invalid row for ${repair.txid || repair.eventId}.`,
         );
       }
     }
 
+    const issuanceOraclesBefore =
+      repairs.length > 0
+        ? await workAtomicIssuanceOracleSnapshotState(client)
+        : [];
+    assertWorkAtomicIssuanceOracleSnapshots(issuanceOraclesBefore);
     const invalidatedSnapshotIds =
       repairs.length > 0
         ? await invalidateWorkAtomicDerivedSnapshots(client, {
@@ -8697,7 +9048,10 @@ async function repairWorkAtomicEventPrecisionMetadata(client) {
         : [];
     const preRepairCanonicalSummary =
       repairs.length > 0
-        ? await markedExactTipWorkAtomicSummary(client)
+        ? await markedExactTipWorkAtomicSummary(client, {
+            activationHeight: before.activationHeight,
+            projectionModel: before.projectionModel,
+          })
         : null;
     if (preRepairCanonicalSummary) {
       throw new Error(
@@ -8707,6 +9061,36 @@ async function repairWorkAtomicEventPrecisionMetadata(client) {
 
     const after = await auditWorkAtomicProjection(client);
     assertWorkAtomicEventMigration(before.events, after.events);
+    if (
+      before.subatomic &&
+      (
+        Number(after.events.atom_events ?? 0) !==
+          Number(before.events.atom_events ?? 0) ||
+        Number(after.events.subatom_events ?? 0) !==
+          Number(before.events.subatom_events ?? 0) + repairs.length ||
+        Number(after.events.precision_events ?? 0) !==
+          Number(before.events.precision_events ?? 0) + repairs.length ||
+        Number(after.events.missing_amount_unit_events ?? 0) !== 0 ||
+        Number(
+          after.events.repairable_q16_invalid_zero_events ?? 0,
+        ) !== 0 ||
+        Number(
+          after.events.unrepairable_missing_amount_unit_events ?? 0,
+        ) !== 0
+      )
+    ) {
+      throw new Error(
+        "Native Q16 invalid-event repair changed an unrelated precision counter.",
+      );
+    }
+    const issuanceOraclesAfter =
+      repairs.length > 0
+        ? await workAtomicIssuanceOracleSnapshotState(client)
+        : [];
+    assertWorkAtomicIssuanceOracleSnapshots(
+      issuanceOraclesBefore,
+      issuanceOraclesAfter,
+    );
     assertWorkAtomicSnapshotMigrationState(after);
     await client.query("COMMIT");
     return {

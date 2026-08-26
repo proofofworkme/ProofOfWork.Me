@@ -19828,6 +19828,56 @@ check("WORK atomic post-bootstrap verification requires a marked green exact-tip
     verifyWorkAtomicPostBootstrap({}),
     /marked green exact-tip canonical summary/u,
   );
+
+  let q16Boundary = null;
+  const q16ExactTipSummary = {
+    indexedThroughBlock: 960_700,
+    indexedThroughBlockHash: "b".repeat(64),
+    snapshotId: "marked-q16-exact-tip",
+  };
+  const verifyWorkSubatomicPostBootstrap = isolatedFunction(
+    BACKFILL_PATH,
+    "verifyWorkAtomicPostBootstrap",
+    {
+      assertWorkAtomicIssuanceOracleSnapshots,
+      assertWorkAtomicSnapshotMigrationState,
+      auditWorkAtomicProjection: async () => ({
+        activationHeight: 960_601,
+        atomic: false,
+        precision: "q16",
+        projectionModel: WORK_SUBATOM_PROJECTION_MODEL,
+        snapshots: {
+          unmarked_derived: 1,
+          unmarked_derived_referenced: 1,
+          unmarked_non_oracle_derived: 0,
+        },
+        subatomic: true,
+      }),
+      markedExactTipWorkAtomicSummary: async (_client, options) => {
+        q16Boundary = {
+          activationHeight: options.activationHeight,
+          projectionModel: options.projectionModel,
+        };
+        return q16ExactTipSummary;
+      },
+      workAtomicIssuanceOracleSnapshotState: async () =>
+        issuanceOracles,
+    },
+  );
+  const q16Verified = await verifyWorkSubatomicPostBootstrap({});
+  assert.equal(q16Verified.precision, "q16");
+  assert.equal(
+    q16Verified.projectionModel,
+    WORK_SUBATOM_PROJECTION_MODEL,
+  );
+  assert.equal(
+    q16Verified.exactTipSummary.indexedThroughBlock >= 960_601,
+    true,
+  );
+  assert.deepEqual(q16Boundary, {
+    activationHeight: 960_601,
+    projectionModel: WORK_SUBATOM_PROJECTION_MODEL,
+  });
 });
 
 check("WORK precision audit accepts marker-bound Q16 with preserved exact Q8 history", async () => {
@@ -19874,8 +19924,11 @@ check("WORK precision audit accepts marker-bound Q16 with preserved exact Q8 his
       invalid_precision_events: 0,
       invalid_subatom_events: 0,
       mismatched_atom_events: 0,
+      missing_amount_unit_events: 0,
       precision_events: 3,
+      repairable_q16_invalid_zero_events: 0,
       subatom_events: 1,
+      unrepairable_missing_amount_unit_events: 0,
       valid_events: 3,
     },
     { oversubscribed_sellers: 0 },
@@ -19895,6 +19948,7 @@ check("WORK precision audit accepts marker-bound Q16 with preserved exact Q8 his
     {
       INCB_RANGE_REPLAY_WITNESS_MANIFEST_MODEL,
       NETWORK: "livenet",
+      WORK_AMO_V8_AUTH_VERSION,
       WORK_AMO_V8_GLOBAL_PRECISION_MODEL:
         WORK_PRECISION_V2_MODEL,
       WORK_ATOMIC_PROJECTION_MODEL,
@@ -19945,6 +19999,143 @@ check("WORK precision audit accepts marker-bound Q16 with preserved exact Q8 his
   assert.match(
     queries[5].sql,
     /indexed_through_block >= \$5::integer/u,
+  );
+});
+
+check("WORK Q16 repair audit permits only exact confirmed invalid-zero deficits", async () => {
+  const activationHeight = 960_601;
+  const auditWorkAtomicProjection = isolatedFunction(
+    BACKFILL_PATH,
+    "auditWorkAtomicProjection",
+    {
+      INCB_RANGE_REPLAY_WITNESS_MANIFEST_MODEL,
+      NETWORK: "livenet",
+      WORK_AMO_V8_AUTH_VERSION,
+      WORK_AMO_V8_GLOBAL_PRECISION_MODEL:
+        WORK_PRECISION_V2_MODEL,
+      WORK_ATOMIC_PROJECTION_MODEL,
+      WORK_DECIMALS,
+      WORK_SUBATOM_DECIMALS,
+      WORK_SUBATOM_PROJECTION_MODEL,
+      WORK_SUBATOM_UNIT_SCALE_TEXT,
+      WORK_TOKEN_ID,
+      WORK_TOKEN_MAX_SUPPLY: 21_000_000,
+      WORK_TOKEN_MINT_AMOUNT: 1_000,
+      WORK_UNIT_SCALE_TEXT,
+      currentWorkPrecisionV2Marker: async () => ({
+        activationHeight,
+      }),
+      objectValue,
+      workAtomicDefinitionReady: () => false,
+      workSubatomicDefinitionReady: () => true,
+    },
+  );
+  const definition = {
+    max_supply: WORK_TOKEN_MAX_SUPPLY_SUBATOMS.toString(),
+    metadata: {
+      amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+      decimals: WORK_SUBATOM_DECIMALS,
+      precisionModel: WORK_PRECISION_V2_MODEL,
+      unitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,
+    },
+    mint_amount: WORK_TOKEN_MINT_AMOUNT_SUBATOMS.toString(),
+    token_id: WORK_TOKEN_ID,
+  };
+  const malformedEvents = {
+    ambiguous_exact_events: 0,
+    amount_events: 6,
+    atom_events: 2,
+    confirmed_mints: 1,
+    confirmed_sales: 1,
+    confirmed_transfers: 1,
+    invalid_atom_events: 0,
+    invalid_events: 3,
+    invalid_legacy_events: 0,
+    invalid_precision_events: 0,
+    invalid_subatom_events: 0,
+    mismatched_atom_events: 0,
+    missing_amount_unit_events: 3,
+    precision_events: 3,
+    repairable_q16_invalid_zero_events: 3,
+    subatom_events: 1,
+    unrepairable_missing_amount_unit_events: 0,
+    valid_events: 3,
+  };
+  const runAudit = async (events, options = {}) => {
+    const queries = [];
+    const rows = [
+      definition,
+      {
+        confirmed_supply: "210000000000000000000000",
+        holders: 2,
+        max_balance: "200000000000000000000000",
+        min_balance: "10000000000000000000000",
+        negative_balances: 0,
+        pending_delta: "0",
+        rows: 2,
+      },
+      {
+        invalid_amounts: 0,
+        max_amount: "1000000000000000000000",
+        min_amount: "200000000000000000000",
+        rows: 2,
+        statuses: { active: 2 },
+      },
+      events,
+      { oversubscribed_sellers: 0 },
+      {
+        derived: 2,
+        issuance_locked: 0,
+        marked: 2,
+        total: 2,
+        unmarked_derived: 0,
+        unmarked_derived_referenced: 0,
+        unmarked_non_oracle_derived: 0,
+      },
+    ];
+    const audit = await auditWorkAtomicProjection(
+      {
+        async query(sql, params) {
+          queries.push({ params: Array.from(params), sql: String(sql) });
+          return { rows: [rows.shift()] };
+        },
+      },
+      options,
+    );
+    return { audit, queries };
+  };
+  await assert.rejects(
+    runAudit(malformedEvents),
+    /Q16 WORK projection contains/u,
+  );
+  const repairAudit = await runAudit(malformedEvents, {
+    allowRepairableEventPrecision: true,
+  });
+  assert.equal(
+    repairAudit.audit.events.repairable_q16_invalid_zero_events,
+    3,
+  );
+  const eventSql = repairAudit.queries[3].sql;
+  assert.match(eventSql, /canonical_transaction_block/u);
+  assert.match(eventSql, /event_block_height >= \$10::integer/u);
+  assert.match(eventSql, /kind = 'token-listing-sealed-invalid'/u);
+  assert.match(eventSql, /payload->>'attemptedKind' = 'seal'/u);
+  assert.match(eventSql, /repairable_q16_invalid_zero_events/u);
+  assert.deepEqual(repairAudit.queries[3].params.slice(9), [
+    activationHeight,
+    WORK_AMO_V8_AUTH_VERSION,
+    "work-amo-v6-listing-already-sealed",
+  ]);
+  await assert.rejects(
+    runAudit(
+      {
+        ...malformedEvents,
+        repairable_q16_invalid_zero_events: 2,
+        unrepairable_missing_amount_unit_events: 1,
+      },
+      { allowRepairableEventPrecision: true },
+    ),
+    /Q16 WORK projection contains/u,
   );
 });
 
@@ -20080,6 +20271,8 @@ check("WORK atomic migration is exact per row and idempotently preserves H-1 ora
     confirmed_mints: 20_999,
     confirmed_sales: 7,
     confirmed_transfers: 311,
+    invalid_events: 19,
+    valid_events: 21_831,
   };
   assert.doesNotThrow(() =>
     assertWorkAtomicEventMigration(
@@ -20087,14 +20280,23 @@ check("WORK atomic migration is exact per row and idempotently preserves H-1 ora
       structuredClone(eventCounters),
     ),
   );
-  assert.throws(
-    () =>
-      assertWorkAtomicEventMigration(eventCounters, {
-        ...eventCounters,
-        confirmed_transfers: eventCounters.confirmed_transfers - 1,
-      }),
-    /confirmed_transfers event counter/u,
-  );
+  for (const counter of [
+    "amount_events",
+    "confirmed_mints",
+    "confirmed_transfers",
+    "confirmed_sales",
+    "invalid_events",
+    "valid_events",
+  ]) {
+    assert.throws(
+      () =>
+        assertWorkAtomicEventMigration(eventCounters, {
+          ...eventCounters,
+          [counter]: eventCounters[counter] - 1,
+        }),
+      new RegExp(`${counter} event counter`, "u"),
+    );
+  }
   let invalidationSql = "";
   let invalidationParams = [];
   const invalidateStoredWorkAtomicDerivedSnapshots = isolatedFunction(

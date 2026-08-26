@@ -19,6 +19,7 @@ import {
   normalizeWorkSubatoms,
   parseSignedWorkAmountToAtoms,
   parseWorkAmountToAtoms,
+  parseWorkAmountToSubatoms,
   q8ToCanonicalDecimal,
   q8ToNumber,
   withWorkPrecisionMetadata,
@@ -653,6 +654,88 @@ assert.throws(() =>
   ),
 );
 
+const nativeInvalidZeroListing = {
+  amount: "0",
+  amountSats: 0,
+  attemptedKind: "seal",
+  kind: "token-listing-sealed-invalid",
+  protocol: "pwt1",
+  reason: "work-amo-v6-listing-already-sealed",
+  reasonCode: "work-amo-v6-listing-already-sealed",
+  saleAuthorization: { version: WORK_AMO_V8_AUTH_VERSION },
+  tokenId: WORK_TOKEN_ID,
+  txid: "6ac53aca33541d60d6d58af03d4c27d09bbeaab3e3c016ee10d270aad578957c",
+  valid: false,
+};
+const projectedNativeInvalidZero = backfillWorkProjectionItem(
+  nativeInvalidZeroListing,
+  { strict: false },
+);
+assert.equal(projectedNativeInvalidZero.amount, "0");
+assert.equal(projectedNativeInvalidZero.amountSubatoms, "0");
+assert.equal(
+  projectedNativeInvalidZero.amountStorageModel,
+  WORK_SUBATOM_PROJECTION_MODEL,
+);
+assert.equal(projectedNativeInvalidZero.decimals, 16);
+assert.equal(projectedNativeInvalidZero.unitScale, "10000000000000000");
+assert.equal(
+  projectedNativeInvalidZero.precisionModel,
+  WORK_PRECISION_V2_MODEL,
+);
+assert.equal("amountAtoms" in projectedNativeInvalidZero, false);
+assert.deepEqual(
+  projectedNativeInvalidZero.saleAuthorization,
+  nativeInvalidZeroListing.saleAuthorization,
+);
+assert.throws(
+  () =>
+    backfillWorkProjectionItem(
+      { ...nativeInvalidZeroListing, valid: true },
+      { strict: true },
+    ),
+  /one unambiguous subatom amount/u,
+);
+const unprojectedNativeInvalidNonzero = backfillWorkProjectionItem(
+  { ...nativeInvalidZeroListing, amount: "1" },
+  { strict: false },
+);
+assert.equal("amountSubatoms" in unprojectedNativeInvalidNonzero, false);
+assert.equal(
+  "amountStorageModel" in unprojectedNativeInvalidNonzero,
+  false,
+);
+const unprojectedNativeInvalidAmbiguousZero = backfillWorkProjectionItem(
+  { ...nativeInvalidZeroListing, attemptedAmountSubatoms: "1" },
+  { strict: false },
+);
+assert.equal(
+  "amountSubatoms" in unprojectedNativeInvalidAmbiguousZero,
+  false,
+);
+const unprojectedInvalidSend3Zero = backfillWorkProjectionItem(
+  {
+    amount: "0",
+    amountSats: 0,
+    kind: "token-transfer-invalid",
+    protocol: "pwt1",
+    tokenId: WORK_TOKEN_ID,
+    transferVersion: WORK_AMO_V8_TRANSFER_VERSION,
+    valid: false,
+  },
+  { strict: false },
+);
+assert.equal("amountSubatoms" in unprojectedInvalidSend3Zero, false);
+const unprojectedUnrelatedV8Zero = backfillWorkProjectionItem(
+  {
+    ...nativeInvalidZeroListing,
+    reason: "unrelated-invalid-reason",
+    reasonCode: "unrelated-invalid-reason",
+  },
+  { strict: false },
+);
+assert.equal("amountSubatoms" in unprojectedUnrelatedV8Zero, false);
+
 const invalidateWorkAtomicDerivedSnapshots =
   isolatedTypeScriptFunction(
     backfill,
@@ -700,15 +783,393 @@ assert.match(
 assert.match(invalidationQueries[1].sql, /issuance_locked/u);
 assert.match(invalidationQueries[1].sql, /NOT EXISTS/u);
 
+const assertWorkAtomicEventMigrationForRepair =
+  isolatedTypeScriptFunction(
+    backfill,
+    "assertWorkAtomicEventMigration",
+    { objectValue: (value) => value ?? {} },
+  );
+const assertWorkAtomicIssuanceOracleSnapshotsForRepair =
+  isolatedTypeScriptFunction(
+    backfill,
+    "assertWorkAtomicIssuanceOracleSnapshots",
+  );
+const repairIssuanceOracles = [
+  {
+    fingerprint: "unchanged-h-minus-one",
+    resolved: true,
+    snapshotId: "issuance-oracle",
+  },
+];
+
+const repairInvalidWorkAtomicEventPrecisionRows =
+  isolatedTypeScriptFunction(
+    backfill,
+    "repairInvalidWorkAtomicEventPrecisionRows",
+    {
+      NETWORK: "livenet",
+      WORK_AMO_V8_AUTH_VERSION,
+      WORK_AMO_V8_GLOBAL_PRECISION_MODEL:
+        WORK_PRECISION_V2_MODEL,
+      WORK_AMO_V8_TRANSFER_VERSION,
+      WORK_ATOMIC_PROJECTION_MODEL,
+      WORK_DECIMALS,
+      WORK_SUBATOM_DECIMALS: 16,
+      WORK_SUBATOM_PROJECTION_MODEL,
+      WORK_SUBATOM_UNIT_SCALE_TEXT: "10000000000000000",
+      WORK_TOKEN_ID,
+      WORK_UNIT_SCALE_TEXT,
+    },
+  );
+const nativeRepairFixtures = [
+  {
+    blockHeight: 962946,
+    eventId: "3607561",
+    txid: "6ac53aca33541d60d6d58af03d4c27d09bbeaab3e3c016ee10d270aad578957c",
+  },
+  {
+    blockHeight: 963019,
+    eventId: "3621078",
+    txid: "8eaa4098c631bded37ce40d88778cce53a6d00b2d4f3eb783d2b9713fc9951cc",
+  },
+  {
+    blockHeight: 963517,
+    eventId: "3747805",
+    txid: "9e202c0fae0f3ab500325fc7a5326dda1d68c8500c85fe51cb18385e7d8aeab0",
+  },
+];
+let nativeRepairSql = "";
+let nativeRepairParams = [];
+const nativeQ16Repairs =
+  await repairInvalidWorkAtomicEventPrecisionRows(
+    {
+      async query(sql, params) {
+        nativeRepairSql = String(sql);
+        nativeRepairParams = Array.from(params);
+        return {
+          rows: nativeRepairFixtures.map((fixture) => ({
+            amount: "0",
+            amount_atoms: null,
+            amount_storage_model: WORK_SUBATOM_PROJECTION_MODEL,
+            amount_subatoms: "0",
+            authorization_version: WORK_AMO_V8_AUTH_VERSION,
+            block_height: fixture.blockHeight,
+            decimals: 16,
+            event_id: fixture.eventId,
+            event_key: `${fixture.txid}:1:0`,
+            kind: "token-listing-sealed-invalid",
+            precision_model: WORK_PRECISION_V2_MODEL,
+            protocol: "pwt1",
+            reason_code: "work-amo-v6-listing-already-sealed",
+            status: "confirmed",
+            txid: fixture.txid,
+            unit_scale: "10000000000000000",
+            valid: false,
+          })),
+        };
+      },
+    },
+    {
+      activationHeight: 960601,
+      projectionModel: WORK_SUBATOM_PROJECTION_MODEL,
+    },
+  );
+assert.equal(nativeQ16Repairs.length, 3);
+assert.deepEqual(
+  nativeQ16Repairs.map((repair) => repair.eventId),
+  nativeRepairFixtures.map((fixture) => fixture.eventId),
+);
+assert.ok(
+  nativeQ16Repairs.every(
+    (repair) =>
+      repair.amount === "0" &&
+      repair.amountAtoms === "" &&
+      repair.amountSubatoms === "0" &&
+      repair.amountStorageModel === WORK_SUBATOM_PROJECTION_MODEL &&
+      repair.precisionModel === WORK_PRECISION_V2_MODEL,
+  ),
+);
+assert.match(nativeRepairSql, /JOIN proof_indexer\.blocks canonical_block/u);
+assert.match(nativeRepairSql, /canonical_block\.canonical = true/u);
+assert.match(nativeRepairSql, /event\.valid = false/u);
+assert.match(nativeRepairSql, /event\.status = 'confirmed'/u);
+assert.match(nativeRepairSql, /event\.amount_sats = 0/u);
+assert.match(nativeRepairSql, /event\.payload->>'amount' = '0'/u);
+assert.match(nativeRepairSql, /event\.block_height >= \$7::integer/u);
+assert.match(nativeRepairSql, /saleAuthorization,version/u);
+assert.match(nativeRepairSql, /NOT \(event\.payload \? 'amountAtoms'\)/u);
+assert.match(nativeRepairSql, /NOT \(event\.payload \? 'amountSubatoms'\)/u);
+assert.match(nativeRepairSql, /'amountSubatoms', '0'/u);
+assert.deepEqual(nativeRepairParams, [
+  "livenet",
+  WORK_TOKEN_ID,
+  "10000000000000000",
+  16,
+  WORK_SUBATOM_PROJECTION_MODEL,
+  WORK_PRECISION_V2_MODEL,
+  960601,
+  WORK_AMO_V8_AUTH_VERSION,
+  "work-amo-v6-listing-already-sealed",
+]);
+
+const q16BeforeRepairAudit = {
+  activationHeight: 960601,
+  atomic: false,
+  events: {
+    amount_events: 6,
+    atom_events: 2,
+    confirmed_mints: 1,
+    confirmed_sales: 1,
+    confirmed_transfers: 1,
+    invalid_events: 3,
+    missing_amount_unit_events: 3,
+    precision_events: 3,
+    repairable_q16_invalid_zero_events: 3,
+    subatom_events: 1,
+    unrepairable_missing_amount_unit_events: 0,
+    valid_events: 3,
+  },
+  legacy: false,
+  projectionModel: WORK_SUBATOM_PROJECTION_MODEL,
+  snapshots: {
+    unmarked_derived: 0,
+    unmarked_derived_referenced: 0,
+    unmarked_non_oracle_derived: 0,
+  },
+  subatomic: true,
+};
+const q16AfterRepairAudit = {
+  ...q16BeforeRepairAudit,
+  events: {
+    ...q16BeforeRepairAudit.events,
+    missing_amount_unit_events: 0,
+    precision_events: 6,
+    repairable_q16_invalid_zero_events: 0,
+    subatom_events: 4,
+  },
+};
+const q16AuditSequence = () => {
+  let calls = 0;
+  return async (_client, options = {}) => {
+    calls += 1;
+    if (calls === 1) {
+      assert.equal(options.allowRepairableEventPrecision, true);
+      assert.equal(options.lock, true);
+      return structuredClone(q16BeforeRepairAudit);
+    }
+    assert.equal(Object.keys(options).length, 0);
+    return structuredClone(q16AfterRepairAudit);
+  };
+};
+let q16InvalidationCalls = 0;
+let q16OracleReads = 0;
+const q16RepairWorkAtomicEventPrecisionMetadata =
+  isolatedTypeScriptFunction(
+    backfill,
+    "repairWorkAtomicEventPrecisionMetadata",
+    {
+      NETWORK: "livenet",
+      WORK_AMO_V8_AUTH_VERSION,
+      WORK_AMO_V8_GLOBAL_PRECISION_MODEL:
+        WORK_PRECISION_V2_MODEL,
+      WORK_ATOMIC_PROJECTION_MODEL,
+      WORK_DECIMALS,
+      WORK_SUBATOM_DECIMALS: 16,
+      WORK_SUBATOM_PROJECTION_MODEL,
+      WORK_SUBATOM_UNIT_SCALE_TEXT: "10000000000000000",
+      WORK_UNIT_SCALE_TEXT,
+      assertWorkAtomicEventMigration:
+        assertWorkAtomicEventMigrationForRepair,
+      assertWorkAtomicIssuanceOracleSnapshots:
+        assertWorkAtomicIssuanceOracleSnapshotsForRepair,
+      assertWorkAtomicSnapshotMigrationState: () => {},
+      auditWorkAtomicProjection: q16AuditSequence(),
+      invalidateWorkAtomicDerivedSnapshots: async (_client, options) => {
+        q16InvalidationCalls += 1;
+        assert.equal(options.includeMarked, true);
+        return ["q16-summary-1", "q16-summary-2"];
+      },
+      markedExactTipWorkAtomicSummary: async (_client, options) => {
+        assert.equal(options.activationHeight, 960601);
+        assert.equal(
+          options.projectionModel,
+          WORK_SUBATOM_PROJECTION_MODEL,
+        );
+        return null;
+      },
+      parseWorkAmountToAtoms,
+      parseWorkAmountToSubatoms,
+      repairInvalidWorkAtomicEventPrecisionRows: async (
+        _client,
+        options,
+      ) => {
+        assert.equal(options.activationHeight, 960601);
+        assert.equal(
+          options.projectionModel,
+          WORK_SUBATOM_PROJECTION_MODEL,
+        );
+        return structuredClone(nativeQ16Repairs);
+      },
+      workAtomicIssuanceOracleSnapshotState: async () => {
+        q16OracleReads += 1;
+        return structuredClone(repairIssuanceOracles);
+      },
+    },
+  );
+const q16RepairQueries = [];
+const q16RepairResult =
+  await q16RepairWorkAtomicEventPrecisionMetadata({
+    async query(sql, params = []) {
+      q16RepairQueries.push({
+        params: Array.from(params),
+        sql: String(sql),
+      });
+      return { rows: [] };
+    },
+  });
+assert.equal(q16RepairResult.repairedEvents, 3);
+assert.equal(q16RepairResult.alreadyApplied, false);
+assert.equal(q16RepairResult.cacheBootstrapRequired, true);
+assert.equal(q16InvalidationCalls, 1);
+assert.equal(q16OracleReads, 2);
+assert.deepEqual(Array.from(q16RepairResult.invalidatedSnapshotIds), [
+  "q16-summary-1",
+  "q16-summary-2",
+]);
+assert.match(
+  q16RepairQueries.find((query) => query.sql.includes("LOCK TABLE"))?.sql ?? "",
+  /proof_indexer\.meta/u,
+);
+assert.equal(q16RepairQueries.at(-1).sql, "COMMIT");
+
+const idempotentQ16Repair = isolatedTypeScriptFunction(
+  backfill,
+  "repairWorkAtomicEventPrecisionMetadata",
+  {
+    NETWORK: "livenet",
+    WORK_AMO_V8_AUTH_VERSION,
+    WORK_AMO_V8_GLOBAL_PRECISION_MODEL:
+      WORK_PRECISION_V2_MODEL,
+    WORK_ATOMIC_PROJECTION_MODEL,
+    WORK_DECIMALS,
+    WORK_SUBATOM_DECIMALS: 16,
+    WORK_SUBATOM_PROJECTION_MODEL,
+    WORK_SUBATOM_UNIT_SCALE_TEXT: "10000000000000000",
+    WORK_UNIT_SCALE_TEXT,
+    assertWorkAtomicEventMigration:
+      assertWorkAtomicEventMigrationForRepair,
+    assertWorkAtomicIssuanceOracleSnapshots:
+      assertWorkAtomicIssuanceOracleSnapshotsForRepair,
+    assertWorkAtomicSnapshotMigrationState: () => {},
+    auditWorkAtomicProjection: async () =>
+      structuredClone(q16AfterRepairAudit),
+    invalidateWorkAtomicDerivedSnapshots: async () => {
+      throw new Error("Idempotent Q16 repair must not invalidate snapshots.");
+    },
+    markedExactTipWorkAtomicSummary: async () => {
+      throw new Error("Idempotent Q16 repair must not inspect summaries.");
+    },
+    parseWorkAmountToAtoms,
+    parseWorkAmountToSubatoms,
+    repairInvalidWorkAtomicEventPrecisionRows: async (
+      _client,
+      options,
+    ) => {
+      assert.equal(options.activationHeight, 960601);
+      assert.equal(
+        options.projectionModel,
+        WORK_SUBATOM_PROJECTION_MODEL,
+      );
+      return [];
+    },
+    workAtomicIssuanceOracleSnapshotState: async () => {
+      throw new Error("Idempotent Q16 repair must not inspect oracles.");
+    },
+  },
+);
+const idempotentQ16Queries = [];
+const idempotentQ16Result = await idempotentQ16Repair({
+  async query(sql, params = []) {
+    idempotentQ16Queries.push({
+      params: Array.from(params),
+      sql: String(sql),
+    });
+    return { rows: [] };
+  },
+});
+assert.equal(idempotentQ16Result.repairedEvents, 0);
+assert.equal(idempotentQ16Result.alreadyApplied, true);
+assert.equal(idempotentQ16Result.cacheBootstrapRequired, false);
+assert.deepEqual(Array.from(idempotentQ16Result.invalidatedSnapshotIds), []);
+assert.equal(idempotentQ16Queries.at(-1).sql, "COMMIT");
+
+let invalidQ16SnapshotMutation = false;
+const rejectingQ16Repair = isolatedTypeScriptFunction(
+  backfill,
+  "repairWorkAtomicEventPrecisionMetadata",
+  {
+    NETWORK: "livenet",
+    WORK_AMO_V8_AUTH_VERSION,
+    WORK_AMO_V8_GLOBAL_PRECISION_MODEL:
+      WORK_PRECISION_V2_MODEL,
+    WORK_ATOMIC_PROJECTION_MODEL,
+    WORK_DECIMALS,
+    WORK_SUBATOM_DECIMALS: 16,
+    WORK_SUBATOM_PROJECTION_MODEL,
+    WORK_SUBATOM_UNIT_SCALE_TEXT: "10000000000000000",
+    WORK_UNIT_SCALE_TEXT,
+    assertWorkAtomicEventMigration:
+      assertWorkAtomicEventMigrationForRepair,
+    assertWorkAtomicIssuanceOracleSnapshots:
+      assertWorkAtomicIssuanceOracleSnapshotsForRepair,
+    assertWorkAtomicSnapshotMigrationState: () => {},
+    auditWorkAtomicProjection: async () =>
+      structuredClone(q16BeforeRepairAudit),
+    invalidateWorkAtomicDerivedSnapshots: async () => {
+      invalidQ16SnapshotMutation = true;
+      return [];
+    },
+    markedExactTipWorkAtomicSummary: async () => null,
+    parseWorkAmountToAtoms,
+    parseWorkAmountToSubatoms,
+    repairInvalidWorkAtomicEventPrecisionRows: async () => [
+      { ...nativeQ16Repairs[0], valid: true },
+      nativeQ16Repairs[1],
+      nativeQ16Repairs[2],
+    ],
+    workAtomicIssuanceOracleSnapshotState: async () =>
+      structuredClone(repairIssuanceOracles),
+  },
+);
+const rejectingQ16Queries = [];
+await assert.rejects(
+  rejectingQ16Repair({
+    async query(sql, params = []) {
+      rejectingQ16Queries.push({
+        params: Array.from(params),
+        sql: String(sql),
+      });
+      return { rows: [] };
+    },
+  }),
+  /produced an invalid row/u,
+);
+assert.equal(invalidQ16SnapshotMutation, false);
+assert.equal(rejectingQ16Queries.at(-1).sql, "ROLLBACK");
+
 const repairWorkAtomicEventPrecisionMetadata =
   isolatedTypeScriptFunction(
     backfill,
     "repairWorkAtomicEventPrecisionMetadata",
     {
       NETWORK: "livenet",
+      WORK_ATOMIC_PROJECTION_MODEL,
       WORK_DECIMALS,
       WORK_UNIT_SCALE_TEXT,
-      assertWorkAtomicEventMigration: () => {},
+      assertWorkAtomicEventMigration:
+        assertWorkAtomicEventMigrationForRepair,
+      assertWorkAtomicIssuanceOracleSnapshots:
+        assertWorkAtomicIssuanceOracleSnapshotsForRepair,
       assertWorkAtomicSnapshotMigrationState: () => {},
       auditWorkAtomicProjection: (() => {
         let calls = 0;
@@ -718,21 +1179,31 @@ const repairWorkAtomicEventPrecisionMetadata =
             assert.equal(options.allowRepairableEventPrecision, true);
             assert.equal(options.lock, true);
             return {
+              activationHeight: 0,
               atomic: true,
               events: {
                 amount_events: 1,
+                invalid_events: 1,
                 precision_events: 0,
+                valid_events: 0,
               },
               legacy: false,
+              projectionModel: WORK_ATOMIC_PROJECTION_MODEL,
+              subatomic: false,
             };
           }
           return {
+            activationHeight: 0,
             atomic: true,
             events: {
               amount_events: 1,
+              invalid_events: 1,
               precision_events: 1,
+              valid_events: 0,
             },
             legacy: false,
+            projectionModel: WORK_ATOMIC_PROJECTION_MODEL,
+            subatomic: false,
           };
         };
       })(),
@@ -740,22 +1211,40 @@ const repairWorkAtomicEventPrecisionMetadata =
         assert.equal(options.includeMarked, true);
         return ["pre-repair-summary"];
       },
-      markedExactTipWorkAtomicSummary: async () => null,
+      markedExactTipWorkAtomicSummary: async (_client, options) => {
+        assert.equal(options.activationHeight, 0);
+        assert.equal(
+          options.projectionModel,
+          WORK_ATOMIC_PROJECTION_MODEL,
+        );
+        return null;
+      },
       parseWorkAmountToAtoms,
-      repairInvalidWorkAtomicEventPrecisionRows: async () => [
-        {
+      repairInvalidWorkAtomicEventPrecisionRows: async (
+        _client,
+        options,
+      ) => {
+        assert.equal(options.activationHeight, 0);
+        assert.equal(
+          options.projectionModel,
+          WORK_ATOMIC_PROJECTION_MODEL,
+        );
+        return [{
           amount: "0",
           amountAtoms: "0",
           decimals: 8,
           eventId: "1",
           eventKey: `${invalidZeroListingTxid}:token-listing:0`,
           kind: "token-listing",
+          projectionModel: WORK_ATOMIC_PROJECTION_MODEL,
           status: "confirmed",
           txid: invalidZeroListingTxid,
           unitScale: "100000000",
           valid: false,
-        },
-      ],
+        }];
+      },
+      workAtomicIssuanceOracleSnapshotState: async () =>
+        structuredClone(repairIssuanceOracles),
     },
   );
 const repairQueries = [];
@@ -784,17 +1273,26 @@ const idempotentWorkAtomicEventPrecisionRepair =
     "repairWorkAtomicEventPrecisionMetadata",
     {
       NETWORK: "livenet",
+      WORK_ATOMIC_PROJECTION_MODEL,
       WORK_DECIMALS,
       WORK_UNIT_SCALE_TEXT,
-      assertWorkAtomicEventMigration: () => {},
+      assertWorkAtomicEventMigration:
+        assertWorkAtomicEventMigrationForRepair,
+      assertWorkAtomicIssuanceOracleSnapshots:
+        assertWorkAtomicIssuanceOracleSnapshotsForRepair,
       assertWorkAtomicSnapshotMigrationState: () => {},
       auditWorkAtomicProjection: async () => ({
+        activationHeight: 0,
         atomic: true,
         events: {
           amount_events: 1,
+          invalid_events: 1,
           precision_events: 1,
+          valid_events: 0,
         },
         legacy: false,
+        projectionModel: WORK_ATOMIC_PROJECTION_MODEL,
+        subatomic: false,
       }),
       invalidateWorkAtomicDerivedSnapshots: async () => {
         throw new Error("Idempotent repair must not invalidate snapshots.");
@@ -804,6 +1302,9 @@ const idempotentWorkAtomicEventPrecisionRepair =
       },
       parseWorkAmountToAtoms,
       repairInvalidWorkAtomicEventPrecisionRows: async () => [],
+      workAtomicIssuanceOracleSnapshotState: async () => {
+        throw new Error("Idempotent repair must not inspect oracles.");
+      },
     },
   );
 const idempotentRepairQueries = [];

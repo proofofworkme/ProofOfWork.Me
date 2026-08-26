@@ -2670,9 +2670,9 @@ stopped, preserve the affected chain/mempool txids, and fix forward with a
 V2-capable atomic release; never reopen the old release and never attempt an
 in-place divide-by-scale rollback.
 
-A post-cutover amount-metadata defect on an invalid WORK audit event has one
-guarded, idempotent repair path. Stop index writers, stage the exact release,
-load the production database environment, and run:
+A historical amount-metadata defect on a confirmed invalid WORK audit event
+has one guarded, idempotent repair path. Stop index writers, stage the exact
+release, load the production database environment, and run:
 
 ```bash
 NETWORK=livenet POW_INDEX_WORK_ATOMIC_EVENT_REPAIR_APPLY=1 \
@@ -2680,17 +2680,46 @@ NETWORK=livenet POW_INDEX_WORK_ATOMIC_EVENT_REPAIR_APPLY=1 \
 ```
 
 The command runs under the atomic migration's serializable advisory/table
-locks and may add only exact `amountAtoms`, `decimals`, and `unitScale` fields
-to `valid = false` WORK audit rows. It aborts if a valid event needs repair,
-if an amount cannot be converted exactly, or if event and validity counters
-change. A real repair invalidates every replaceable derived summary, including
-previously marked current summaries, while preserving immutable INCB H-1
-oracle evidence. Treat its `invalidatedSnapshotIds`,
-`cacheBootstrapRequired`, and `cacheInvalidationRequired` as deployment
-gates: clear response caches, publish a new marked exact-tip canonical summary,
-then run `indexer:verify-work-atoms-post-bootstrap` before reopening public
-reads or writes. A second run reports `alreadyApplied: true`, changes no row,
-and does not invalidate snapshots.
+locks and locks the durable precision marker with the event projection. In a
+Q16 database, its repair set is the exact incident class: a confirmed
+canonical `pwt1` `token-listing-sealed-invalid` row with attempted kind
+`seal`, both reason fields equal to
+`work-amo-v6-listing-already-sealed`, `pwt-sale-v8` authorization, database
+and payload economics equal to zero, no amount-unit alias, and none of the
+five precision fields already present. Every one of those guards is repeated
+inside the writer. The additive projection is only
+`amountSubatoms = "0"`, `decimals = 16`,
+`unitScale = "10000000000000000"`,
+`amountStorageModel = "work-subatoms-v2"`, and
+`precisionModel = "canonical-work-subatoms-v2"`.
+
+The older Q8 branch remains available only when the canonical definition is
+still `work-atoms-v1`. It is invalid-event-only, explicitly excludes V8,
+`send3`, and `work-subatoms-v2` grammar, and is bounded by the full preflight
+precision deficit and strict post-write audit; it cannot run against the Q16
+incident state. Grammar, not height alone, selects the scale, because legacy
+attempts can remain Q8 after the Q16 activation height. The repaired Q16 zero
+records no canonical state movement; the writer must never copy a referenced
+listing amount or alter the event's validity, status, kind, reason,
+transaction identity, canonical position, raw witness, or any balance,
+listing, reservation, issuance, or supply state.
+
+The Q16 transaction aborts if a valid, nonzero, malformed, mixed-alias,
+mismatched-scale, noncanonical, or grammatically ambiguous event would need
+repair; either branch aborts if its exact repair cardinality differs from the
+strict preflight or if any event, validity, conservation, or
+immutable-snapshot invariant changes.
+A real repair invalidates every replaceable derived summary, including a
+previously marked current summary in the active Q8 or Q16 model, while
+preserving immutable INCB H-1 and AMO seed evidence byte-for-byte. Treat its
+`invalidatedSnapshotIds`, `cacheBootstrapRequired`, and
+`cacheInvalidationRequired` as deployment gates: clear only derived response
+caches, run the worker to publish a new marked green exact-tip canonical
+summary bound to the active projection model and Q16 activation height when
+applicable, then run `indexer:verify-work-atoms-post-bootstrap` and the strict
+ledger/parity gates before reopening public reads or writes. A second run must
+report `alreadyApplied: true`, change no row, skip snapshot invalidation, and
+leave the current marked summary intact.
 
 The July 19, 2026 bounded PWT replay exposed a separate historical retention
 fault: pre-range INCB mint events remained canonical while 18 of their
