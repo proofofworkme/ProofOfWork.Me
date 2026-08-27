@@ -1357,6 +1357,10 @@ const FULL_ACTIVITY_HISTORY_ADDRESSES = {
   ),
 };
 const GROWTH_MODEL_START_MS = Date.parse("2026-05-11T00:00:00.000Z");
+// Confirmed canonical records are ordered by their block position. A miner's
+// block timestamp may legitimately be ahead of local wall time, so exact-tip
+// summaries must never defer those records behind Date.now().
+const CANONICAL_CONFIRMED_TIP_CUTOFF_MS = Number.MAX_SAFE_INTEGER;
 const MS_PER_MODEL_YEAR = 365 * 24 * 60 * 60 * 1000;
 const MAX_GROWTH_ACTUAL_CHART_EVENTS = 240;
 const GROWTH_MODEL_INPUTS = {
@@ -47613,7 +47617,7 @@ async function buildIndexedCanonicalLedgerPayload(
     ),
     canonicalMinerFeeCoverage: activityState?.canonicalMinerFeeCoverage,
     confirmedActivity: activity,
-    cutoffMs: Date.now(),
+    cutoffMs: CANONICAL_CONFIRMED_TIP_CUTOFF_MS,
     includeEvents: true,
     tokenDefinitions: ledgerTokenState.tokens ?? [],
     tokenMints: ledgerTokenState.mints ?? [],
@@ -47667,7 +47671,11 @@ async function buildIndexedCanonicalLedgerPayload(
     activityPayload,
     valuedTokenState,
     valuedWorkTokenState,
-    { btcUsdQuote, canonicalBaseLookupDiagnostics },
+    {
+      btcUsdQuote,
+      canonicalBaseLookupDiagnostics,
+      valueCutoffMs: CANONICAL_CONFIRMED_TIP_CUTOFF_MS,
+    },
   );
   markTiming("valued-state");
   if (currentMarketOverlay) {
@@ -56435,6 +56443,14 @@ async function workFloorPayload(network, fresh = false) {
   );
 }
 
+function workFloorValueCutoffMs(options = {}) {
+  const requestedValueCutoffMs = Number(options.valueCutoffMs);
+  return Number.isSafeInteger(requestedValueCutoffMs) &&
+      requestedValueCutoffMs >= GROWTH_MODEL_START_MS
+    ? requestedValueCutoffMs
+    : Date.now();
+}
+
 function workFloorPayloadFromState(
   network,
   registryState,
@@ -56471,6 +56487,7 @@ function workFloorPayloadFromState(
       : activityForGrowth.filter(
           (item) => item?.confirmed && item?.valid !== false,
         ).length;
+  const valueCutoffMs = workFloorValueCutoffMs(options);
   const actualValue = growthActualNetworkValue(
     registryState.records ?? [],
     activityForGrowth,
@@ -56479,7 +56496,7 @@ function workFloorPayloadFromState(
     valueTokenState.mints ?? [],
     valueTokenState.transfers ?? [],
     tokenSalesForValue,
-    Date.now(),
+    valueCutoffMs,
     {
       canonicalMinerFeeCoverage:
         computerActivity?.canonicalMinerFeeCoverage ??
@@ -59992,7 +60009,11 @@ function workAmoV5LegacyBootstrapReconciliation(
   workFloor,
   evidence,
 ) {
-  const invalid = (reason) => ({ reason, valid: false });
+  const invalid = (reason, details) => ({
+    ...(details ? { details } : {}),
+    reason,
+    valid: false,
+  });
   if (!workAmoV5LegacyBootstrapEvidenceMatches(evidence)) {
     return invalid("legacy-bootstrap-evidence-mismatch");
   }
@@ -60030,10 +60051,20 @@ function workAmoV5LegacyBootstrapReconciliation(
       } else if (committed === published) {
         includedCarryCandidates.push(field);
       } else {
-        return invalid(`legacy-bootstrap-base-field-diverged:${field}`);
+        return invalid(`legacy-bootstrap-base-field-diverged:${field}`, {
+          committed: committed.toString(),
+          expectedCarry: expectedCarry.toString(),
+          field,
+          published: published.toString(),
+        });
       }
     } else if (committed !== valid + expectedCarry) {
-      return invalid(`legacy-bootstrap-base-field-diverged:${field}`);
+      return invalid(`legacy-bootstrap-base-field-diverged:${field}`, {
+        committed: committed.toString(),
+        expectedCarry: expectedCarry.toString(),
+        field,
+        published: published.toString(),
+      });
     }
     committedBaseState[field] = committed;
     validBaseState[field] = valid;

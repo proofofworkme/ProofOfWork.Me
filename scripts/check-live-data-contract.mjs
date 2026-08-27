@@ -108,6 +108,18 @@ const canonicalLedgerBuilderSource = sourceSliceBetween(
   /async function buildIndexedCanonicalLedgerPayload/,
   /function internalCanonicalWorkSummaryPayload/,
 );
+expectAll(
+  "exact canonical value publication is block-ordered rather than wall-clock gated",
+  server + canonicalLedgerBuilderSource,
+  [
+    /const CANONICAL_CONFIRMED_TIP_CUTOFF_MS = Number\.MAX_SAFE_INTEGER/,
+    /cutoffMs: CANONICAL_CONFIRMED_TIP_CUTOFF_MS/,
+    /valueCutoffMs: CANONICAL_CONFIRMED_TIP_CUTOFF_MS/,
+    /function workFloorValueCutoffMs\(options = \{\}\) \{[\s\S]*Number\.isSafeInteger\(requestedValueCutoffMs\)[\s\S]*: Date\.now\(\)/,
+    /const valueCutoffMs = workFloorValueCutoffMs\(options\)/,
+    /growthActualNetworkValue\([\s\S]*tokenSalesForValue,[\s\S]*valueCutoffMs/,
+  ],
+);
 const ledgerSnapshotChecksSource = sourceSliceBetween(
   server,
   /function ledgerSnapshotChecks\(/,

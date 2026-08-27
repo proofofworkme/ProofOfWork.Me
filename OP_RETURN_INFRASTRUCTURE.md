@@ -87,6 +87,12 @@ off, and disables broad ledger snapshots. After confirmed catch-up it publishes
 one authenticated canonical-summary bundle built from the completed relational
 read models at the exact hashed Core tip. Broad source, token, registry, and
 ledger snapshot refreshes are explicit supervised jobs, not 30-second work.
+Exact-tip value publication orders confirmed records by their canonical block
+position and includes every confirmed position through the requested checkpoint.
+A miner-supplied block timestamp may be ahead of the API host's wall clock; it
+must not delay a confirmed marketplace fee, credit movement, WORK floor, Growth
+value, or summary checkpoint. Wall-clock cutoffs remain appropriate for display
+timelines and noncanonical pending visibility, never for confirmed-tip math.
 Before a confirmed Inception Bond block is verified, the scanner also enforces
 an authenticated H-1 summary barrier. If the immediately preceding hashed scan
 checkpoint is behind Core, the internal summary route may publish that one

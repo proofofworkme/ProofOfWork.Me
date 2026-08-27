@@ -17031,6 +17031,54 @@ check("pre-bond live value uses canonical position without timestamp override", 
     2,
     "a later canonical event with an earlier block time implies its full chain prefix",
   );
+  const apiSource = fileSource(API_PATH);
+  const canonicalLedgerBuilderSource = topLevelFunctionSource(
+    API_PATH,
+    "buildIndexedCanonicalLedgerPayload",
+  );
+  const workFloorPayloadFromStateSource = topLevelFunctionSource(
+    API_PATH,
+    "workFloorPayloadFromState",
+  );
+  assert.match(
+    apiSource,
+    /const CANONICAL_CONFIRMED_TIP_CUTOFF_MS = Number\.MAX_SAFE_INTEGER;/u,
+    "the exact-tip value cutoff must include every confirmed canonical position even when its block timestamp is ahead of wall time",
+  );
+  const workFloorValueCutoffMs = isolatedFunction(
+    API_PATH,
+    "workFloorValueCutoffMs",
+    { GROWTH_MODEL_START_MS: 0 },
+  );
+  assert.equal(
+    workFloorValueCutoffMs({
+      valueCutoffMs: Number.MAX_SAFE_INTEGER,
+    }),
+    Number.MAX_SAFE_INTEGER,
+    "the exact confirmed-tip cutoff must survive without wall-clock clamping",
+  );
+  const wallClockBefore = Date.now();
+  const ordinaryCutoffMs = workFloorValueCutoffMs();
+  const wallClockAfter = Date.now();
+  assert.ok(
+    ordinaryCutoffMs >= wallClockBefore && ordinaryCutoffMs <= wallClockAfter,
+    "ordinary noncanonical work-floor reads must retain their wall-clock cutoff",
+  );
+  assert.match(
+    canonicalLedgerBuilderSource,
+    /cutoffMs: CANONICAL_CONFIRMED_TIP_CUTOFF_MS/u,
+    "exact-tip credit replay must not wait for a confirmed block timestamp",
+  );
+  assert.match(
+    canonicalLedgerBuilderSource,
+    /valueCutoffMs: CANONICAL_CONFIRMED_TIP_CUTOFF_MS/u,
+    "exact-tip base-value replay must not wait for a confirmed block timestamp",
+  );
+  assert.match(
+    workFloorPayloadFromStateSource,
+    /const valueCutoffMs = workFloorValueCutoffMs\(options\);[\s\S]*growthActualNetworkValue\([\s\S]*tokenSalesForValue,\s*valueCutoffMs,/u,
+    "the exact canonical cutoff must reach the base and credit value calculation",
+  );
 });
 
 check("livenet Inception issuance uses the published H-1 snapshot and excludes its whole block", () => {
