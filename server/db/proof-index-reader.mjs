@@ -39948,7 +39948,20 @@ export async function proofIndexCreditListingsPayload(
       ) {
         return null;
       }
-      const saleAuthorization = objectRecord(payload.saleAuthorization);
+      const rowSaleAuthorization = objectRecord(payload.saleAuthorization);
+      const rowListingAuthorization = objectRecord(
+        payload.listingAuthorization,
+      );
+      const canonicalListingAuthorization =
+        Object.keys(rowListingAuthorization).length > 0
+          ? rowListingAuthorization
+          : rowSaleAuthorization;
+      const sealEventPayload = objectRecord(row.seal_event_payload);
+      const sealEventSaleAuthorization = objectRecord(
+        sealEventPayload.saleAuthorization,
+      );
+      let saleAuthorization = rowSaleAuthorization;
+      let listingAuthorizationPatch = {};
       const tokenId = normalizedLowerText(
         row.token_id ??
           payload.tokenId ??
@@ -40017,6 +40030,27 @@ export async function proofIndexCreditListingsPayload(
         sealTransactionConfirmed &&
         canonicalSealEventRequired &&
         !sealConfirmed;
+      const canonicalSealAuthorizationVersion = normalizedLowerText(
+        sealEventSaleAuthorization.version,
+      );
+      if (
+        sealConfirmed &&
+        governedWorkSeal &&
+        !invalidConfirmedSealEvidence &&
+        normalizedLowerText(sealEventSaleAuthorization.tokenId) === tokenId &&
+        canonicalSealAuthorizationVersion ===
+          normalizedLowerText(rowSaleAuthorization.version) &&
+        Object.keys(sealEventSaleAuthorization).length > 0 &&
+        canonicalTokenSealAuthorizationMatchesListing(
+          sealEventSaleAuthorization,
+          canonicalListingAuthorization,
+        )
+      ) {
+        saleAuthorization = sealEventSaleAuthorization;
+        listingAuthorizationPatch = {
+          listingAuthorization: canonicalListingAuthorization,
+        };
+      }
       const projectedSealAt = invalidConfirmedSealEvidence
         ? undefined
         : dateIso(
@@ -40416,6 +40450,7 @@ export async function proofIndexCreditListingsPayload(
         network,
         priceSats: Number(row.price_sats ?? 0),
         saleAuthorization,
+        ...listingAuthorizationPatch,
         saleTicketTxid: tokenListingEffectiveSaleTicketTxid(
           row,
           payload,

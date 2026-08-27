@@ -1613,6 +1613,9 @@ function isolatedFunction(path, name, globals = {}) {
           canonicalTokenListingEventJoinSql: [
             "canonicalCreditListingAlias",
           ],
+          canonicalTokenSealAuthorizationMatchesListing: [
+            "canonicalWorkAmoJson",
+          ],
           canonicalTokenListingSealEventJoinSql: [
             "canonicalCreditListingAlias",
           ],
@@ -1634,6 +1637,7 @@ function isolatedFunction(path, name, globals = {}) {
           idLifecycleStateFromItems: ["idRegistryActivityDisplayItem"],
           proofIndexCreditListingsPayload: [
             "canonicalTokenListingEventJoinSql",
+            "canonicalTokenSealAuthorizationMatchesListing",
             "recordWithoutWorkAmountAliases",
             "workAmountProjectionMetadataForAmount",
             "workListingAmountProjection",
@@ -73786,6 +73790,114 @@ check("post-V5 seal positions come only from canonical relational seal rows", as
       status: "sealing",
       token_id: WORK_TOKEN_ID,
     };
+
+  let completeListingRow = canonicalSealedWorkRow;
+  const completeListingPool = {
+    async query(sql) {
+      const text = String(sql);
+      if (/count\(\*\) AS total_count/iu.test(text)) {
+        return { rows: [{ total_count: 1 }] };
+      }
+      if (/SELECT DISTINCT ON \(lower\(e\.payload->>'listingId'\)\)/iu.test(text)) {
+        return { rows: [] };
+      }
+      return { rows: [completeListingRow] };
+    },
+  };
+  const proofIndexCompleteCreditListingsPayload = isolatedFunction(
+    READER_PATH,
+    "proofIndexCreditListingsPayload",
+    {
+      activeOrSealingListingStatus: (status) =>
+        ["active", "pending", "sealing"].includes(
+          normalizedLowerText(status),
+        ),
+      boundedInteger: (value, fallback, min, max) =>
+        Math.min(max, Math.max(min, Number(value ?? fallback))),
+      canonicalTokenListingEventJoinSql: () => "",
+      canonicalTokenListingSealEventJoinSql: () => "",
+      canonicalTokenSealAuthorizationMatchesListing,
+      canonicalWorkMarketV3ListingProjectionSql: () => "TRUE",
+      currentWorkMarketAuthorizationVersionsAtSnapshot: async () => [
+        WORK_AMO_V8_AUTH_VERSION,
+      ],
+      dateIso: (value) =>
+        value ? new Date(value).toISOString() : undefined,
+      latestProofIndexScanMetadata: async () => ({
+        generated_at: "2026-07-28T00:02:00.000Z",
+        indexed_through_block: WORK_AMO_V5_ACTIVATION_HEIGHT + 2,
+      }),
+      normalizedLowerText,
+      objectRecord,
+      proofIndexPool: () => completeListingPool,
+      rowNumber: (value, key) => Number(value?.[key] ?? 0),
+      tokenListingEffectiveCloseTxid: () => "",
+      tokenListingEffectiveSaleTicketTxid: (
+        _row,
+        _payload,
+        _authorization,
+        fallback,
+      ) => fallback,
+      tokenListingSealConfirmedFromTransaction,
+      tokenScopeKey: (value) =>
+        String(value ?? "").trim().toLowerCase() || "all",
+      validTxid,
+      verifiedWorkMarketV4Activation: async () => null,
+      workAmountProjectionMetadataForAmount: (amount) => ({
+        amount: amount.amount,
+        amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+        amountSubatoms: amount.amountSubatoms,
+      }),
+      workListingAmountProjection: () => ({
+        amount: "0.0000000000000001",
+        amountSubatoms: "1",
+      }),
+    },
+  );
+  const canonicalCompleteLifecycle =
+    await proofIndexCompleteCreditListingsPayload(
+      "livenet",
+      WORK_TOKEN_ID,
+    );
+  assert.deepEqual(
+    canonicalCompleteLifecycle.items[0].saleAuthorization,
+    canonicalSealAuthorization,
+    "the complete credit-listing mapper must expose the canonical signed seal action",
+  );
+  assert.deepEqual(
+    canonicalCompleteLifecycle.items[0].listingAuthorization,
+    staleV8Authorization,
+    "the complete credit-listing mapper must preserve immutable listing terms separately",
+  );
+
+  for (const [field, mismatch] of [
+    ["tokenId", "f".repeat(64)],
+    ["version", "pwt-sale-v6"],
+    ["nonce", "mismatched-complete-seal-terms"],
+  ]) {
+    completeListingRow = {
+      ...canonicalSealedWorkRow,
+      seal_event_payload: {
+        ...canonicalSealedWorkRow.seal_event_payload,
+        saleAuthorization: {
+          ...canonicalSealAuthorization,
+          [field]: mismatch,
+        },
+      },
+    };
+    const mismatchedCompleteLifecycle =
+      await proofIndexCompleteCreditListingsPayload(
+        "livenet",
+        WORK_TOKEN_ID,
+      );
+    assert.deepEqual(
+      mismatchedCompleteLifecycle.items[0].saleAuthorization,
+      staleV8Authorization,
+      `the complete credit-listing mapper must fail closed for a mismatched seal ${field}`,
+    );
+  }
+  completeListingRow = canonicalSealedWorkRow;
+
   const canonicalSealedWork = tokenListingFromCreditListingRow(
     canonicalSealedWorkRow,
     "livenet",
