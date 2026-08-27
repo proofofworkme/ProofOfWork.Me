@@ -1692,6 +1692,7 @@ expectAll("marketplace summary and tabs keep confirmed sealed inventory canonica
   /function marketplaceSummaryHasIndexedMarketOverlay\([\s\S]*proof-indexer-token-market-summary-overlay/,
   /function compactTokenSummaryPayload\([\s\S]*sealedActiveListingsByKey[\s\S]*closedTxid[\s\S]*activeListing\.sealTxid/,
   /function tokenSummaryListings\(items,\s*limit = SUMMARY_MARKET_LIMIT\)[\s\S]*tokenListingHasConfirmedSaleTicketSeal\(listing\)/,
+  /const TOKEN_SUMMARY_MARKET_PREVIEW_KEYS = \[[\s\S]*"recordOrdinal",\s*"refundEligible",\s*"relic",/,
   /const compactMarketRecords = options\.compactMarketRecords === true[\s\S]*tokenSummaryPreviewRecord\(record,\s*TOKEN_SUMMARY_MARKET_PREVIEW_KEYS\)/,
   /const compactInvalidEvents = compactMarketRecords[\s\S]*TOKEN_SUMMARY_INVALID_EVENT_PREVIEW_KEYS/,
   /const compactListings = tokenSummaryListings\(listings,\s*listingLimit\)[\s\S]*listings:\s*compactListings/,

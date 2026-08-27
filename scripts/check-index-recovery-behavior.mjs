@@ -73992,6 +73992,7 @@ check("canonical summary persistence is compact and storage-budgeted", async () 
     "listingId",
     "paidSats",
     "priceSats",
+    "refundEligible",
     "salePaymentSats",
     "sellerAddress",
     "ticker",
@@ -74015,6 +74016,7 @@ check("canonical summary persistence is compact and storage-budgeted", async () 
       paidSats: 5_000,
       priceSats: 1_000,
       rawPayload: "x".repeat(2 * 1024 * 1024),
+      refundEligible: true,
       salePaymentSats: 5_000,
       sellerAddress: "bc1pseller",
       ticker: "WORK",
@@ -74026,6 +74028,7 @@ check("canonical summary persistence is compact and storage-budgeted", async () 
   );
   assert.equal(salePreview.buyerAddress, "bc1pbuyer");
   assert.equal(salePreview.paidSats, 5_000);
+  assert.equal(salePreview.refundEligible, true);
   assert.equal(salePreview.salePaymentSats, 5_000);
   assert.equal(salePreview.attributedMinerFeeSats, 321);
   assert.equal("rawPayload" in salePreview, false);

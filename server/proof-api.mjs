@@ -32573,6 +32573,7 @@ const TOKEN_SUMMARY_MARKET_PREVIEW_KEYS = [
   "reasonCode",
   "recipients",
   "recordOrdinal",
+  "refundEligible",
   "relic",
   "registryAddress",
   "registryMutationFeeSats",
