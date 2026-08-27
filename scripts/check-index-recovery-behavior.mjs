@@ -17064,6 +17064,201 @@ check("pre-bond live value uses canonical position without timestamp override", 
     ordinaryCutoffMs >= wallClockBefore && ordinaryCutoffMs <= wallClockAfter,
     "ordinary noncanonical work-floor reads must retain their wall-clock cutoff",
   );
+  const fixedNowMs = Date.parse("2026-08-27T16:40:00.000Z");
+  const modelStartMs = fixedNowMs - 60_000;
+  class FixedTimelineDate extends Date {
+    static now() {
+      return fixedNowMs;
+    }
+  }
+  const growthActualBaseNetworkValueEventsForCutoff = isolatedFunction(
+    API_PATH,
+    "growthActualBaseNetworkValueEvents",
+    {
+      BOND_TOKEN_IDS: new Set(),
+      Date: FixedTimelineDate,
+      ID_MARKETPLACE_MUTATION_KINDS: new Set(),
+      MARKETPLACE_MUTATION_KINDS: new Set(["token-listing"]),
+      TOKEN_MARKETPLACE_MUTATION_KINDS: new Set(["token-listing"]),
+      activityAmountSatsBigInt: (item) => BigInt(item?.amountSats ?? 0),
+      activityKindHasDedicatedGrowthBucket: () => true,
+      isBondActivityItem: () => false,
+      isBrowserActivityItem: () => false,
+      isInceptionBondActivityItem: () => false,
+      isInfinityBondActivityItem: () => false,
+      marketplaceMutationPaymentSatsBigInt: (item) =>
+        BigInt(item?.amountSats ?? 0),
+      publicMarketplaceSales: () => [],
+      uniqueMarketplaceMutationActivity: (items, kinds) =>
+        items.filter(
+          (item) =>
+            item?.confirmed &&
+            item?.valid !== false &&
+            kinds.has(item?.kind),
+        ),
+    },
+  );
+  const emptyGrowthActualBaseStateForCutoff = isolatedFunction(
+    API_PATH,
+    "emptyGrowthActualBaseState",
+  );
+  const growthActualBaseStateApplyContributionForCutoff = isolatedFunction(
+    API_PATH,
+    "growthActualBaseStateApplyContribution",
+  );
+  const growthActualBaseStateTotalQ8ForCutoff = isolatedFunction(
+    API_PATH,
+    "growthActualBaseStateTotalQ8",
+  );
+  const growthActualBaseNetworkValueForCutoff = isolatedFunction(
+    API_PATH,
+    "growthActualBaseNetworkValue",
+    {
+      Date: FixedTimelineDate,
+      GROWTH_MODEL_START_MS: modelStartMs,
+      MS_PER_MODEL_YEAR: 365 * 24 * 60 * 60 * 1_000,
+      emptyGrowthActualBaseState: emptyGrowthActualBaseStateForCutoff,
+      growthActualBaseNetworkValueEvents:
+        growthActualBaseNetworkValueEventsForCutoff,
+      growthActualBaseStateApplyContribution:
+        growthActualBaseStateApplyContributionForCutoff,
+      growthActualBaseStateTotalQ8:
+        growthActualBaseStateTotalQ8ForCutoff,
+      growthSatsToUsdAtYears: () => 0,
+    },
+  );
+  const confirmedFutureMarketplaceEvent = {
+    amountSats: 546,
+    blockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT,
+    blockIndex: 1,
+    confirmed: true,
+    createdAt: new Date(fixedNowMs + 30_000).toISOString(),
+    kind: "token-listing",
+    protocolVout: 0,
+    recordOrdinal: 0,
+    title: "FUTURE",
+    tokenId: "future-confirmed",
+    txid: "f".repeat(64),
+    valid: true,
+  };
+  const excludedMarketplaceEvents = [
+    {
+      ...confirmedFutureMarketplaceEvent,
+      confirmed: false,
+      createdAt: new Date(fixedNowMs - 20_000).toISOString(),
+      title: "PENDING",
+      tokenId: "pending",
+      txid: "e".repeat(64),
+    },
+    {
+      ...confirmedFutureMarketplaceEvent,
+      createdAt: new Date(fixedNowMs - 10_000).toISOString(),
+      title: "INVALID",
+      tokenId: "invalid",
+      txid: "d".repeat(64),
+      valid: false,
+    },
+  ];
+  const canonicalFutureValue = growthActualBaseNetworkValueForCutoff(
+    [],
+    [confirmedFutureMarketplaceEvent, ...excludedMarketplaceEvents],
+    [],
+    [],
+    [],
+    [],
+    [],
+    Number.MAX_SAFE_INTEGER,
+  );
+  const wallClockFutureValue = growthActualBaseNetworkValueForCutoff(
+    [],
+    [confirmedFutureMarketplaceEvent, ...excludedMarketplaceEvents],
+    [],
+    [],
+    [],
+    [],
+    [],
+    fixedNowMs,
+  );
+  assert.equal(
+    canonicalFutureValue.tokenMarketplaceFeeSats,
+    546,
+    "the canonical cutoff must include a confirmed future-timestamp marketplace fee",
+  );
+  assert.equal(
+    wallClockFutureValue.tokenMarketplaceFeeSats,
+    0,
+    "the display cutoff must retain wall-clock gating",
+  );
+  const chartLookupTimes = [];
+  const growthActualValuePointsForCutoff = isolatedFunction(
+    API_PATH,
+    "growthActualValuePoints",
+    {
+      Date: FixedTimelineDate,
+      GROWTH_MODEL_START_MS: modelStartMs,
+      MS_PER_MODEL_YEAR: 365 * 24 * 60 * 60 * 1_000,
+      compactGrowthEventTimes: (eventTimes) =>
+        [...eventTimes].sort(
+          (left, right) => left.createdMs - right.createdMs,
+        ),
+      growthActualLiveTotalSatsAtProvider: () => (atMs) => {
+        chartLookupTimes.push(atMs);
+        return 42;
+      },
+      growthSatsToUsdAtYears: () => 0,
+      publicMarketplaceSales: () => [],
+    },
+  );
+  const chartPoints = growthActualValuePointsForCutoff(
+    [],
+    [
+      {
+        ...confirmedFutureMarketplaceEvent,
+        createdAt: new Date(fixedNowMs - 5_000).toISOString(),
+        title: "PAST",
+      },
+      confirmedFutureMarketplaceEvent,
+      ...excludedMarketplaceEvents,
+    ],
+    [],
+    [],
+    [],
+    [],
+    [],
+    { startMs: modelStartMs },
+  );
+  assert.deepEqual(
+    Array.from(chartPoints, (point) => point.label),
+    ["Model start", "PAST", "Real now"],
+    "display points must omit future, pending, and invalid events",
+  );
+  assert.ok(
+    chartLookupTimes.every((atMs) => atMs <= fixedNowMs),
+    "display valuation must never query beyond wall time",
+  );
+  assert.equal(
+    chartLookupTimes.at(-1),
+    fixedNowMs,
+    "the final display valuation must use the captured wall time",
+  );
+  const elapsedYears =
+    (fixedNowMs - modelStartMs) / (365 * 24 * 60 * 60 * 1_000);
+  assert.ok(
+    chartPoints.every(
+      (point, index) =>
+        point.years <= elapsedYears &&
+        (index === 0 || point.years >= chartPoints[index - 1].years),
+    ),
+    "display years must remain monotonic and no later than wall time",
+  );
+  const broadCanonicalLedgerBuilderSource = topLevelFunctionSource(
+    API_PATH,
+    "buildCanonicalLedgerPayload",
+  );
+  const replayedCanonicalLedgerSource = topLevelFunctionSource(
+    API_PATH,
+    "ledgerWithReplayedCreditNetworkValues",
+  );
   assert.match(
     canonicalLedgerBuilderSource,
     /cutoffMs: CANONICAL_CONFIRMED_TIP_CUTOFF_MS/u,
@@ -17075,9 +17270,34 @@ check("pre-bond live value uses canonical position without timestamp override", 
     "exact-tip base-value replay must not wait for a confirmed block timestamp",
   );
   assert.match(
+    broadCanonicalLedgerBuilderSource,
+    /cutoffMs: CANONICAL_CONFIRMED_TIP_CUTOFF_MS/u,
+    "broad canonical credit recovery must include the confirmed chain prefix",
+  );
+  assert.match(
+    broadCanonicalLedgerBuilderSource,
+    /valueCutoffMs: CANONICAL_CONFIRMED_TIP_CUTOFF_MS/u,
+    "broad canonical base-value recovery must include the confirmed chain prefix",
+  );
+  assert.match(
+    replayedCanonicalLedgerSource,
+    /cutoffMs: CANONICAL_CONFIRMED_TIP_CUTOFF_MS/u,
+    "cached canonical credit recovery must include the confirmed chain prefix",
+  );
+  assert.match(
+    replayedCanonicalLedgerSource,
+    /valueCutoffMs: CANONICAL_CONFIRMED_TIP_CUTOFF_MS/u,
+    "cached canonical base-value recovery must include the confirmed chain prefix",
+  );
+  assert.match(
     workFloorPayloadFromStateSource,
     /const valueCutoffMs = workFloorValueCutoffMs\(options\);[\s\S]*growthActualNetworkValue\([\s\S]*tokenSalesForValue,\s*valueCutoffMs,/u,
     "the exact canonical cutoff must reach the base and credit value calculation",
+  );
+  assert.match(
+    workFloorPayloadFromStateSource,
+    /const correctedNowPoint = \{[\s\S]*networkValueSats: correctedNetworkValueSats,[\s\S]*years: growthElapsedYears\(\),[\s\S]*chartPoints\[chartPoints\.length - 1\] = correctedNowPoint;/u,
+    "the wall-clock chart must end at the exact canonical aggregate",
   );
 });
 

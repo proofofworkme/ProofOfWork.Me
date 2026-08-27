@@ -43426,7 +43426,7 @@ async function ledgerWithReplayedCreditNetworkValues(
     ),
     canonicalMinerFeeCoverage,
     confirmedActivity: baseActivity,
-    cutoffMs: Date.now(),
+    cutoffMs: CANONICAL_CONFIRMED_TIP_CUTOFF_MS,
     includeEvents: true,
     tokenDefinitions: initialTokenState.tokens ?? [],
     tokenMints: initialTokenState.mints ?? [],
@@ -43466,7 +43466,10 @@ async function ledgerWithReplayedCreditNetworkValues(
     activityPayload,
     tokenState,
     workTokenState,
-    { btcUsdQuote: ledger.btcUsdQuote },
+    {
+      btcUsdQuote: ledger.btcUsdQuote,
+      valueCutoffMs: CANONICAL_CONFIRMED_TIP_CUTOFF_MS,
+    },
   );
   workFloor = await workFloorWithPreConsistencyMarketOverlay(
     workFloor,
@@ -48210,7 +48213,10 @@ async function buildCanonicalLedgerPayload(network, fresh = false) {
     activityPayload,
     ledgerTokenState,
     workTokenState,
-    { btcUsdQuote },
+    {
+      btcUsdQuote,
+      valueCutoffMs: CANONICAL_CONFIRMED_TIP_CUTOFF_MS,
+    },
   );
   const creditValueDetails = creditNetworkValueMetrics({
     baseValueAt: growthActualBaseNetworkValueAtProvider(
@@ -48224,7 +48230,7 @@ async function buildCanonicalLedgerPayload(network, fresh = false) {
     ),
     canonicalMinerFeeCoverage: activityState?.canonicalMinerFeeCoverage,
     confirmedActivity: activity,
-    cutoffMs: Date.now(),
+    cutoffMs: CANONICAL_CONFIRMED_TIP_CUTOFF_MS,
     includeEvents: true,
     tokenDefinitions: ledgerTokenState.tokens ?? [],
     tokenMints: ledgerTokenState.mints ?? [],
@@ -48267,7 +48273,10 @@ async function buildCanonicalLedgerPayload(network, fresh = false) {
     activityPayload,
     ledgerTokenState,
     valuedWorkTokenState,
-    { btcUsdQuote },
+    {
+      btcUsdQuote,
+      valueCutoffMs: CANONICAL_CONFIRMED_TIP_CUTOFF_MS,
+    },
   );
   workFloor = await workFloorWithPreConsistencyMarketOverlay(
     workFloor,
@@ -55944,6 +55953,10 @@ function growthActualValuePoints(
   tokenSales = [],
   options = {},
 ) {
+  // Display time remains wall-clock ordered even when a confirmed block's
+  // miner timestamp is slightly ahead of the API host. Exact confirmed-tip
+  // aggregate math is reconciled separately by workFloorPayloadFromState.
+  const timelineCutoffMs = Date.now();
   const startMs = Math.max(
     options.startMs ?? GROWTH_MODEL_START_MS,
     GROWTH_MODEL_START_MS,
@@ -55955,7 +55968,11 @@ function growthActualValuePoints(
   const eventTimes = [];
   const addEventTime = (createdAt, label) => {
     const createdMs = Date.parse(createdAt);
-    if (Number.isFinite(createdMs) && createdMs >= startMs) {
+    if (
+      Number.isFinite(createdMs) &&
+      createdMs >= startMs &&
+      createdMs <= timelineCutoffMs
+    ) {
       eventTimes.push({ createdMs, label });
     }
   };
@@ -56040,8 +56057,11 @@ function growthActualValuePoints(
     });
   }
 
-  const elapsed = growthElapsedYears();
-  const nowValueSats = totalSatsAt(Date.now());
+  const elapsed = Math.max(
+    0,
+    (timelineCutoffMs - GROWTH_MODEL_START_MS) / MS_PER_MODEL_YEAR,
+  );
+  const nowValueSats = totalSatsAt(timelineCutoffMs);
   const lastPoint = points[points.length - 1];
   if (
     !lastPoint ||
