@@ -39045,7 +39045,10 @@ async function currentCanonicalTokenSummaryPayloadForFreshRead(
   canonicalGate,
 ) {
   const scope = normalizeTokenScope(tokenScope);
-  if (network !== "livenet") {
+  if (
+    network !== "livenet" ||
+    (scope !== WORK_TOKEN_ID && canonicalGate?.ready === true)
+  ) {
     return null;
   }
   const payload = await storedCanonicalTokenSummaryPayload(network, scope).catch(

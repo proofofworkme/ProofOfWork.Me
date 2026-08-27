@@ -10362,14 +10362,27 @@ check("fresh token reads prefer exact canonical summaries over unavailable pendi
     "unverified-last-observed",
   );
   assert.equal(summaryReads, 1);
+  assert.equal(
+    await canonicalSummaryFreshRead(
+      "livenet",
+      "other-token-id",
+      { ...canonicalGate, atTip: true, ready: true, workerOk: true },
+    ),
+    null,
+    "healthy non-WORK reads must retain their full relational payload",
+  );
+  assert.equal(summaryReads, 1);
   const otherResult = await canonicalSummaryFreshRead(
     "livenet",
     "other-token-id",
-    { ...canonicalGate, atTip: true, ready: true, workerOk: true },
+    { ...canonicalGate, atTip: true, ready: false, workerOk: false },
   );
   assert.equal(otherResult.snapshotId, canonicalSummary.snapshotId);
-  assert.equal(otherResult.pendingProjection.ready, true);
-  assert.equal(otherResult.pendingProjection.status, "current");
+  assert.equal(otherResult.pendingProjection.ready, false);
+  assert.equal(
+    otherResult.pendingProjection.status,
+    "unverified-last-observed",
+  );
   assert.equal(summaryReads, 2);
   const staleHeartbeatResult = await canonicalSummaryFreshRead(
     "livenet",
