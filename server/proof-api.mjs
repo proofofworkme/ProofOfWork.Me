@@ -72038,16 +72038,13 @@ function canonicalFreshReadCanUseLastGood(url, gate) {
   const walletScopedRead =
     walletReadRequested &&
     (params.has("address") || params.has("addresses"));
+  const unaddressedPublicRead =
+    !walletReadRequested &&
+    !params.has("address") &&
+    !params.has("addresses");
   return (
-    tokenScope === WORK_TOKEN_ID &&
-    (
-      walletScopedRead ||
-      (
-        !walletReadRequested &&
-        !params.has("address") &&
-        !params.has("addresses")
-      )
-    )
+    unaddressedPublicRead ||
+    (tokenScope === WORK_TOKEN_ID && walletScopedRead)
   );
 }
 

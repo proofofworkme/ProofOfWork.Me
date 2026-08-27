@@ -10441,6 +10441,22 @@ check("fresh public reads can use bounded canonical last-good summaries", async 
   );
   assert.equal(
     helper(
+      new URL("https://wallet.proofofwork.me/api/v1/token?asset=POWB"),
+      gate,
+    ),
+    true,
+    "non-wallet bond reads may use the exact bounded summary checkpoint",
+  );
+  assert.equal(
+    helper(
+      new URL("https://wallet.proofofwork.me/api/v1/token"),
+      gate,
+    ),
+    true,
+    "the non-wallet credit directory may use the exact bounded summary checkpoint",
+  );
+  assert.equal(
+    helper(
       new URL("https://wallet.proofofwork.me/api/v1/token?asset=WORK&wallet=1&address=sender"),
       gate,
     ),
@@ -10454,6 +10470,14 @@ check("fresh public reads can use bounded canonical last-good summaries", async 
     ),
     false,
     "non-WORK wallet reads stay exact-current",
+  );
+  assert.equal(
+    helper(
+      new URL("https://wallet.proofofwork.me/api/v1/token?asset=POWB&address=sender"),
+      gate,
+    ),
+    false,
+    "address-hinted reads do not become bounded public summaries",
   );
   assert.equal(
     helper(
