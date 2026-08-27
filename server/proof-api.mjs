@@ -17765,31 +17765,6 @@ async function strictCoreTokenListingReconciliation(
     };
   }
 
-  const suppliedCheckpoint = options.checkpoint;
-  let initialTip = suppliedCheckpoint;
-  if (!initialTip) {
-    let chainResponse;
-    try {
-      chainResponse = await bitcoinRpc("getblockchaininfo", []);
-    } catch (error) {
-      throw tokenListingAuthorityUnavailable(
-        "Bitcoin Core tip lookup failed for token listing reconciliation.",
-        { reason: errorSummary(error) },
-      );
-    }
-    initialTip = exactCoreTipFromBlockchainInfo(chainResponse);
-  }
-  if (
-    !initialTip ||
-    !Number.isSafeInteger(initialTip.height) ||
-    initialTip.height < 1 ||
-    !/^[0-9a-f]{64}$/u.test(String(initialTip.blockHash ?? ""))
-  ) {
-    throw tokenListingAuthorityUnavailable(
-      "Bitcoin Core exact tip is unavailable for token listing reconciliation.",
-    );
-  }
-
   const duplicateAnchors = new Set();
   const anchorKeys = new Set();
   const anchored = candidates.map((listing) => {
@@ -17819,102 +17794,204 @@ async function strictCoreTokenListingReconciliation(
     );
   }
 
-  const checked = await mapWithConcurrency(
-    anchored,
-    Math.min(4, Math.max(1, TX_FETCH_CONCURRENCY)),
-    async ({ anchor, authorization, key, listing }) => {
-      let response;
+  const suppliedCheckpoint = options.checkpoint;
+  const maximumTipAttempts = suppliedCheckpoint ? 1 : 3;
+  let checked = null;
+  let initialTip = suppliedCheckpoint ?? null;
+  for (
+    let tipAttempt = 1;
+    tipAttempt <= maximumTipAttempts;
+    tipAttempt += 1
+  ) {
+    if (!suppliedCheckpoint) {
+      let chainResponse;
       try {
-        response = await bitcoinRpc("gettxout", [
-          anchor.txid,
-          anchor.vout,
-          true,
-        ]);
+        chainResponse = await bitcoinRpc("getblockchaininfo", []);
       } catch (error) {
         throw tokenListingAuthorityUnavailable(
-          `Bitcoin Core gettxout failed for token listing anchor ${key}.`,
+          "Bitcoin Core tip lookup failed for token listing reconciliation.",
           { reason: errorSummary(error) },
         );
       }
-      if (
-        !response ||
-        response.ok !== true ||
-        !Object.prototype.hasOwnProperty.call(response, "result")
-      ) {
-        throw tokenListingAuthorityUnavailable(
-          `Bitcoin Core did not answer gettxout for token listing anchor ${key}.`,
-          { reason: errorSummary(response?.error) },
-        );
-      }
-      if (response.result === null) {
-        return { key, listing, status: "spent" };
-      }
-
-      const output = response.result;
-      const bestBlock = String(output?.bestblock ?? "")
-        .trim()
-        .toLowerCase();
-      const confirmations = Number(output?.confirmations);
-      const minimumConfirmations =
-        listing?.confirmed === true ||
-        tokenListingRequiresCoreBuyabilityProof(listing)
-          ? 1
-          : 0;
-      const scriptPubKey = String(output?.scriptPubKey?.hex ?? "")
-        .trim()
-        .toLowerCase();
-      const valueSats = exactBitcoinRpcOutputSats(output?.value);
-      if (
-        !output ||
-        typeof output !== "object" ||
-        Array.isArray(output) ||
-        bestBlock !== initialTip.blockHash ||
-        !Number.isSafeInteger(confirmations) ||
-        confirmations < minimumConfirmations ||
-        typeof output.coinbase !== "boolean" ||
-        scriptPubKey !==
-          String(authorization.anchorScriptPubKey ?? "")
-            .trim()
-            .toLowerCase() ||
-        valueSats !== authorization.anchorValueSats
-      ) {
-        throw tokenListingAuthorityUnavailable(
-          `Bitcoin Core returned conflicting token listing anchor evidence for ${key}.`,
-          {
-            bestBlock: bestBlock || null,
-            confirmations: Number.isSafeInteger(confirmations)
-              ? confirmations
-              : null,
-            scriptPubKey: scriptPubKey || null,
-            valueSats,
-          },
-        );
-      }
-      return { key, listing, status: "unspent" };
-    },
-  );
-
-  if (options.verifyFinalTip !== false) {
-    let finalTip;
-    try {
-      finalTip = exactCoreTipFromBlockchainInfo(
-        await bitcoinRpc("getblockchaininfo", []),
-      );
-    } catch (error) {
-      throw tokenListingAuthorityUnavailable(
-        "Bitcoin Core final tip lookup failed for token listing reconciliation.",
-        { reason: errorSummary(error) },
-      );
+      initialTip = exactCoreTipFromBlockchainInfo(chainResponse);
     }
     if (
-      !finalTip ||
-      finalTip.height !== initialTip.height ||
-      finalTip.blockHash !== initialTip.blockHash
+      !initialTip ||
+      !Number.isSafeInteger(initialTip.height) ||
+      initialTip.height < 1 ||
+      !/^[0-9a-f]{64}$/u.test(String(initialTip.blockHash ?? ""))
     ) {
       throw tokenListingAuthorityUnavailable(
-        "Bitcoin Core changed while token listing anchors were reconciled.",
+        "Bitcoin Core exact tip is unavailable for token listing reconciliation.",
       );
     }
+
+    const attempted = await mapWithConcurrency(
+      anchored,
+      Math.min(4, Math.max(1, TX_FETCH_CONCURRENCY)),
+      async ({ anchor, authorization, key, listing }) => {
+        let response;
+        try {
+          response = await bitcoinRpc("gettxout", [
+            anchor.txid,
+            anchor.vout,
+            true,
+          ]);
+        } catch (error) {
+          throw tokenListingAuthorityUnavailable(
+            `Bitcoin Core gettxout failed for token listing anchor ${key}.`,
+            { reason: errorSummary(error) },
+          );
+        }
+        if (
+          !response ||
+          response.ok !== true ||
+          !Object.prototype.hasOwnProperty.call(response, "result")
+        ) {
+          throw tokenListingAuthorityUnavailable(
+            `Bitcoin Core did not answer gettxout for token listing anchor ${key}.`,
+            { reason: errorSummary(response?.error) },
+          );
+        }
+        if (response.result === null) {
+          return { key, listing, status: "spent" };
+        }
+
+        const output = response.result;
+        const bestBlock = String(output?.bestblock ?? "")
+          .trim()
+          .toLowerCase();
+        const confirmations = Number(output?.confirmations);
+        const minimumConfirmations =
+          listing?.confirmed === true ||
+          tokenListingRequiresCoreBuyabilityProof(listing)
+            ? 1
+            : 0;
+        const scriptPubKey = String(output?.scriptPubKey?.hex ?? "")
+          .trim()
+          .toLowerCase();
+        const valueSats = exactBitcoinRpcOutputSats(output?.value);
+        if (
+          !output ||
+          typeof output !== "object" ||
+          Array.isArray(output) ||
+          !/^[0-9a-f]{64}$/u.test(bestBlock)
+        ) {
+          throw tokenListingAuthorityUnavailable(
+            `Bitcoin Core returned malformed token listing anchor evidence for ${key}.`,
+            { bestBlock: bestBlock || null },
+          );
+        }
+        if (
+          !Number.isSafeInteger(confirmations) ||
+          confirmations < minimumConfirmations ||
+          typeof output.coinbase !== "boolean" ||
+          scriptPubKey !==
+            String(authorization.anchorScriptPubKey ?? "")
+              .trim()
+              .toLowerCase() ||
+          valueSats !== authorization.anchorValueSats
+        ) {
+          throw tokenListingAuthorityUnavailable(
+            `Bitcoin Core returned conflicting token listing anchor evidence for ${key}.`,
+            {
+              bestBlock,
+              confirmations: Number.isSafeInteger(confirmations)
+                ? confirmations
+                : null,
+              scriptPubKey: scriptPubKey || null,
+              valueSats,
+            },
+          );
+        }
+        if (bestBlock !== initialTip.blockHash) {
+          return {
+            bestBlock,
+            key,
+            listing,
+            status: "tip-changed",
+          };
+        }
+        return { key, listing, status: "unspent" };
+      },
+    );
+
+    const tipChangedEntries = attempted.filter(
+      (entry) => entry.status === "tip-changed",
+    );
+    const finalTipRequired =
+      options.verifyFinalTip !== false || tipChangedEntries.length > 0;
+    let finalTip = initialTip;
+    if (finalTipRequired) {
+      try {
+        finalTip = exactCoreTipFromBlockchainInfo(
+          await bitcoinRpc("getblockchaininfo", []),
+        );
+      } catch (error) {
+        throw tokenListingAuthorityUnavailable(
+          "Bitcoin Core final tip lookup failed for token listing reconciliation.",
+          { reason: errorSummary(error) },
+        );
+      }
+    }
+    if (finalTipRequired && !finalTip) {
+      throw tokenListingAuthorityUnavailable(
+        "Bitcoin Core final exact tip is unavailable for token listing reconciliation.",
+      );
+    }
+    const exactTipChanged =
+      finalTip.height !== initialTip.height ||
+      finalTip.blockHash !== initialTip.blockHash;
+    if (tipChangedEntries.length > 0) {
+      const transitionMatchesFinalTip =
+        exactTipChanged &&
+        tipChangedEntries.every(
+          (entry) => entry.bestBlock === finalTip.blockHash,
+        );
+      if (
+        transitionMatchesFinalTip &&
+        !suppliedCheckpoint &&
+        tipAttempt < maximumTipAttempts
+      ) {
+        continue;
+      }
+      if (transitionMatchesFinalTip) {
+        throw tokenListingAuthorityUnavailable(
+          "Bitcoin Core changed while token listing anchors were reconciled.",
+          { attempts: tipAttempt },
+        );
+      }
+      const conflict = tipChangedEntries[0];
+      throw tokenListingAuthorityUnavailable(
+        `Bitcoin Core returned conflicting token listing anchor evidence for ${conflict.key}.`,
+        {
+          bestBlock: conflict.bestBlock,
+          expectedBestBlock: initialTip.blockHash,
+          finalBestBlock: finalTip.blockHash,
+        },
+      );
+    }
+    if (options.verifyFinalTip !== false && exactTipChanged) {
+      if (
+        !suppliedCheckpoint &&
+        tipAttempt < maximumTipAttempts
+      ) {
+        continue;
+      }
+      throw tokenListingAuthorityUnavailable(
+        "Bitcoin Core changed while token listing anchors were reconciled.",
+        { attempts: tipAttempt },
+      );
+    }
+    checked = attempted;
+    break;
+  }
+
+  if (!checked) {
+    throw tokenListingAuthorityUnavailable(
+      "Bitcoin Core did not provide stable token listing anchor evidence.",
+      { attempts: maximumTipAttempts },
+    );
   }
 
   const statusByKey = new Map(checked.map((entry) => [entry.key, entry.status]));
@@ -23701,9 +23778,19 @@ async function strictCoreRegistryListingReconciliation(
   }
 
   const suppliedCheckpoint = options.checkpoint;
-  const initialTip = suppliedCheckpoint ?? exactCoreTipFromBlockchainInfo(
-    await bitcoinRpc("getblockchaininfo", []),
-  );
+  let initialTip = suppliedCheckpoint;
+  if (!initialTip) {
+    try {
+      initialTip = exactCoreTipFromBlockchainInfo(
+        await bitcoinRpc("getblockchaininfo", []),
+      );
+    } catch (error) {
+      throw registryAuthorityUnavailable(
+        "Bitcoin Core tip lookup failed for registry listing reconciliation.",
+        { reason: errorSummary(error) },
+      );
+    }
+  }
   if (
     !initialTip ||
     !Number.isSafeInteger(initialTip.height) ||
@@ -23731,6 +23818,7 @@ async function strictCoreRegistryListingReconciliation(
         indexedHeight: Number.isSafeInteger(payloadHeight)
           ? payloadHeight
           : null,
+        reason: "core-checkpoint-mismatch",
       },
     );
   }
@@ -23802,7 +23890,14 @@ async function strictCoreRegistryListingReconciliation(
         !output ||
         typeof output !== "object" ||
         Array.isArray(output) ||
-        bestBlock !== initialTip.blockHash ||
+        !/^[0-9a-f]{64}$/u.test(bestBlock)
+      ) {
+        throw registryAuthorityUnavailable(
+          `Bitcoin Core returned malformed registry anchor evidence for ${key}.`,
+          { bestBlock: bestBlock || null },
+        );
+      }
+      if (
         !Number.isSafeInteger(confirmations) ||
         confirmations < 0 ||
         typeof output.coinbase !== "boolean" ||
@@ -23822,23 +23917,77 @@ async function strictCoreRegistryListingReconciliation(
           },
         );
       }
+      if (bestBlock !== initialTip.blockHash) {
+        return {
+          bestBlock,
+          key,
+          listing,
+          status: "tip-changed",
+        };
+      }
       return { key, listing, status: "unspent" };
     },
   );
 
-  if (options.verifyFinalTip !== false) {
-    const finalTip = exactCoreTipFromBlockchainInfo(
-      await bitcoinRpc("getblockchaininfo", []),
-    );
-    if (
-      !finalTip ||
-      finalTip.height !== initialTip.height ||
-      finalTip.blockHash !== initialTip.blockHash
-    ) {
+  const tipChangedEntries = checked.filter(
+    (entry) => entry.status === "tip-changed",
+  );
+  const finalTipRequired =
+    options.verifyFinalTip !== false || tipChangedEntries.length > 0;
+  let finalTip = initialTip;
+  if (finalTipRequired) {
+    try {
+      finalTip = exactCoreTipFromBlockchainInfo(
+        await bitcoinRpc("getblockchaininfo", []),
+      );
+    } catch (error) {
       throw registryAuthorityUnavailable(
-        "Bitcoin Core changed while registry listing anchors were reconciled.",
+        "Bitcoin Core final tip lookup failed for registry listing reconciliation.",
+        { reason: errorSummary(error) },
       );
     }
+  }
+  if (finalTipRequired && !finalTip) {
+    throw registryAuthorityUnavailable(
+      "Bitcoin Core final exact tip is unavailable for registry listing reconciliation.",
+    );
+  }
+  const exactTipChanged =
+    finalTip.height !== initialTip.height ||
+    finalTip.blockHash !== initialTip.blockHash;
+  if (tipChangedEntries.length > 0) {
+    const transitionMatchesFinalTip =
+      exactTipChanged &&
+      tipChangedEntries.every(
+        (entry) => entry.bestBlock === finalTip.blockHash,
+      );
+    if (transitionMatchesFinalTip) {
+      throw registryAuthorityUnavailable(
+        "Bitcoin Core changed while registry listing anchors were reconciled.",
+        {
+          expectedBestBlock: initialTip.blockHash,
+          observedBestBlocks: [
+            ...new Set(tipChangedEntries.map((entry) => entry.bestBlock)),
+          ].sort(compareCanonicalUtf8),
+          reason: "core-tip-changed",
+        },
+      );
+    }
+    const conflict = tipChangedEntries[0];
+    throw registryAuthorityUnavailable(
+      `Bitcoin Core returned conflicting registry anchor evidence for ${conflict.key}.`,
+      {
+        bestBlock: conflict.bestBlock,
+        expectedBestBlock: initialTip.blockHash,
+        finalBestBlock: finalTip.blockHash,
+      },
+    );
+  }
+  if (options.verifyFinalTip !== false && exactTipChanged) {
+    throw registryAuthorityUnavailable(
+      "Bitcoin Core changed while registry listing anchors were reconciled.",
+      { reason: "core-tip-changed" },
+    );
   }
 
   const statusByKey = new Map(checked.map((entry) => [entry.key, entry.status]));
@@ -23922,15 +24071,33 @@ async function strictPublicRegistryPayload(network, options = {}) {
     );
   }
 
-  const indexedPayload = await indexedRegistryPayload(network);
-  if (!indexedPayload) {
-    return registryPayloadWithoutPrivateAuthority(
-      await internalRegistryParityPayload(network),
-    );
+  let priorTipTransition = false;
+  let lastError = null;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    const indexedPayload = await indexedRegistryPayload(network);
+    if (!indexedPayload) {
+      return registryPayloadWithoutPrivateAuthority(
+        await internalRegistryParityPayload(network),
+      );
+    }
+    try {
+      return (
+        await strictCoreRegistryListingReconciliation(indexedPayload, network)
+      ).payload;
+    } catch (error) {
+      lastError = error;
+      const reason = String(error?.details?.reason ?? "");
+      const retryable =
+        reason === "core-tip-changed" ||
+        (priorTipTransition && reason === "core-checkpoint-mismatch");
+      if (!retryable || attempt >= 3) {
+        throw error;
+      }
+      priorTipTransition = true;
+      await new Promise((resolve) => setTimeout(resolve, 250 * attempt));
+    }
   }
-  return (
-    await strictCoreRegistryListingReconciliation(indexedPayload, network)
-  ).payload;
+  throw lastError;
 }
 
 function saleAuthorizationExpired(authorization, eventCreatedAt) {

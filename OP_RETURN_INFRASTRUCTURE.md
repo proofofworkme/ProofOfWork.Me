@@ -210,7 +210,14 @@ whose scan height/hash are explicit. `summaryOnly`, truncated, incomplete, or
 count-mismatched inputs fail with `503`; they cannot be presented as a complete
 book. The full materialization is reconciled through Core `gettxout` with
 `requireAll: true` before any filtering or pagination, so a spent sale-ticket
-anchor is absent from both the items and the total.
+anchor is absent from both the items and the total. An unpinned reconciliation
+may repeat the complete Core sweep at most three times only when a final
+`getblockchaininfo` sample proves that Core advanced during the sweep. The
+successful result must bind every differing `gettxout.bestblock` exactly to the
+final sample and then bind the repeated sweep to that one new checkpoint. A
+caller-supplied checkpoint is never advanced. Malformed output, script, value,
+confirmation, or coinbase evidence fails on
+the first attempt rather than entering the tip-transition retry lane.
 
 Listing continuation uses the opaque `token-listings-v2` cursor. It binds the
 network, credit scope, normalized query/address filter, relational scan
@@ -740,7 +747,12 @@ falls back to legacy history materialization.
 Pending status checks use their own smaller timeout
 (`POW_INDEX_STATUS_FETCH_TIMEOUT_MS`) and batch limit
 (`POW_INDEX_PENDING_STATUS_LIMIT`) so a single cold tx lookup cannot block a
-full worker cycle. Production service configuration is tracked in:
+full worker cycle. Production admits 64 candidates per sweep with five
+concurrent reads and a 15-second wall-clock budget. The limit is more than twice
+the ordinary observed stale set and covers the post-block bursts observed after
+the Q16 readiness index was installed, while the limit-plus-one query and
+deadline still expose any larger or slower backlog as deferred instead of
+claiming green. Production service configuration is tracked in:
 
 ```text
 deploy/electrs-open-files-override.conf
@@ -1075,7 +1087,7 @@ blocking writers, outside a transaction, only after proving that no same-name
 valid or invalid relation exists:
 
 ```sql
-SET lock_timeout = '5s';
+SET lock_timeout = '90s';
 SET statement_timeout = '15min';
 CREATE INDEX CONCURRENTLY ledger_snapshots_work_q16_summary_latest_idx
   ON proof_indexer.ledger_snapshots (
@@ -1587,7 +1599,15 @@ The default indexed livenet `/api/v1/registry` and `/api/v1/ids` response also
 reconciles every active `list3`/`list4`/`list5` anchor through Core
 `gettxout(..., true)` before rendering. A null result removes the spent listing;
 an RPC error, malformed result, mismatched script/value, duplicate physical
-anchor, index/Core checkpoint disagreement, or tip change returns 503. The
+anchor, or index/Core checkpoint disagreement returns 503. A valid but
+different `gettxout.bestblock` is classified as a Core transition only when
+every differing bestblock equals the final exact tip; the public indexed reader
+may then reload both the current indexed payload and every anchor at most three
+times.
+Only the checkpoint catch-up immediately following that proven transition may
+continue the bounded retry. A stable-tip bestblock mismatch or any intrinsic
+anchor mismatch fails immediately, and an unproven or still-unstable transition
+returns 503. The
 filtered listing array and all listing-count statistics are updated together,
 and the response is `no-store` so a pending or external spend cannot remain
 active through a stale client cache. Historical unanchored `list2` state remains
@@ -2462,8 +2482,9 @@ generic protocol event forces an atomic republication, even when WORK
 membership itself is unchanged. The completed cycle's `pendingStatus` comes
 from the same durable `lastSuccess` envelope as `pendingEventHealth`; any
 nonzero status error count, unavailable status sweep, or malformed status
-shape keeps whole-index health red. A bounded deferred count remains
-diagnostic rather than fatal.
+shape keeps whole-index health red. Any nonzero deferred count likewise keeps
+whole-index readiness red; the bound limits work rather than weakening the
+completeness claim.
 
 `/health` also requires one exact Bitcoin Core authority before it can be
 ready: main chain, headers equal to blocks, initial block download disabled,

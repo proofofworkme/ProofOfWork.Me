@@ -3,6 +3,11 @@
 import { readFileSync } from "node:fs";
 import "./check-work-amo-v8-gates.mjs";
 import {
+  auditSnapshotSentinel,
+  marketplaceSummaryMatchesAuditSentinel,
+  snapshotSentinelsMatch,
+} from "./ledger-audit-snapshot.mjs";
+import {
   workAmountUnitsForStorageModel,
   workBalanceProjection,
   workSupplyFieldsForStorageModel,
@@ -511,6 +516,53 @@ const stableCrossLedgerAudit = (() => {
   const end = ledgerAudit.indexOf("function isGullishBuyerTokenSale", start);
   return start < 0 ? "" : ledgerAudit.slice(start, end < 0 ? undefined : end);
 })();
+const auditSnapshotParentId = "a".repeat(24);
+const auditSnapshotDerivedId = "b".repeat(24);
+const auditSnapshotBlockHash = "c".repeat(64);
+const auditSnapshotCheckpoint = {
+  indexedThroughBlock: 964_308,
+  indexedThroughBlockHash: auditSnapshotBlockHash,
+};
+const auditSnapshotSentinelFixture = auditSnapshotSentinel({
+  ...auditSnapshotCheckpoint,
+  snapshotId: auditSnapshotParentId,
+});
+const marketplaceAuditFixture = ({
+  derived = true,
+  snapshotId = derived ? auditSnapshotDerivedId : auditSnapshotParentId,
+} = {}) => {
+  const component = () => ({
+    ...auditSnapshotCheckpoint,
+    snapshotId,
+  });
+  return {
+    ...component(),
+    ...(derived ? { derivedFromSnapshotId: auditSnapshotParentId } : {}),
+    provenance: {
+      ...auditSnapshotCheckpoint,
+      catchingUp: false,
+      coherent: true,
+      componentSnapshotIds: {
+        registry: snapshotId,
+        root: snapshotId,
+        token: snapshotId,
+        workFloor: snapshotId,
+      },
+      contract: "proof-of-work-canonical-summary-v1",
+      lagBlocks: 0,
+      ready: true,
+      requested: "fresh",
+      served: "exact-tip",
+      snapshotId,
+      surface: "marketplace-summary",
+      tipHash: auditSnapshotBlockHash,
+      tipHeight: auditSnapshotCheckpoint.indexedThroughBlock,
+    },
+    registry: component(),
+    token: component(),
+    workFloor: component(),
+  };
+};
 
 expect(
   "fresh canonical summaries require an exact-tip ledger",
@@ -1077,12 +1129,78 @@ expect(
     /payloadMatchesAuditSentinel\(payload, after, false\)/u.test(
       stableCrossLedgerAudit,
     ) &&
+    /marketplaceSummaryMatchesAuditSentinel\(marketplaceSummary, after\)/u.test(
+      stableCrossLedgerAudit,
+    ) &&
+    /from "\.\/ledger-audit-snapshot\.mjs"/u.test(ledgerAudit) &&
     /cross-ledger payloads diverged inside one stable canonical snapshot/u.test(
       stableCrossLedgerAudit,
     ) &&
     (stableCrossLedgerAudit.match(/\bcontinue;/gu) ?? []).length === 1 &&
     /if \(attempt < CROSS_LEDGER_AUDIT_MAX_ATTEMPTS\)[\s\S]*continue;/u.test(
       stableCrossLedgerAudit,
+    ),
+);
+const directMarketplaceAuditPayload = marketplaceAuditFixture({ derived: false });
+const derivedMarketplaceAuditPayload = marketplaceAuditFixture();
+const directMixedMarketplaceAuditPayload = structuredClone(
+  directMarketplaceAuditPayload,
+);
+directMixedMarketplaceAuditPayload.token.snapshotId = auditSnapshotDerivedId;
+const derivedMixedMarketplaceAuditPayload = structuredClone(
+  derivedMarketplaceAuditPayload,
+);
+derivedMixedMarketplaceAuditPayload.token.snapshotId = auditSnapshotParentId;
+const derivedMissingTopHashAuditPayload = structuredClone(
+  derivedMarketplaceAuditPayload,
+);
+delete derivedMissingTopHashAuditPayload.indexedThroughBlockHash;
+const derivedWrongProvenanceHashAuditPayload = structuredClone(
+  derivedMarketplaceAuditPayload,
+);
+derivedWrongProvenanceHashAuditPayload.provenance.indexedThroughBlockHash =
+  "d".repeat(64);
+const derivedExtraComponentAuditPayload = structuredClone(
+  derivedMarketplaceAuditPayload,
+);
+derivedExtraComponentAuditPayload.provenance.componentSnapshotIds.extra =
+  auditSnapshotDerivedId;
+expect(
+  "ledger audit accepts only exact direct or one-generation Marketplace snapshot bindings",
+  snapshotSentinelsMatch(
+    auditSnapshotSentinelFixture,
+    auditSnapshotSentinel({
+      ...auditSnapshotCheckpoint,
+      snapshotId: auditSnapshotParentId,
+    }),
+  ) &&
+    marketplaceSummaryMatchesAuditSentinel(
+      directMarketplaceAuditPayload,
+      auditSnapshotSentinelFixture,
+    ) &&
+    marketplaceSummaryMatchesAuditSentinel(
+      derivedMarketplaceAuditPayload,
+      auditSnapshotSentinelFixture,
+    ) &&
+    !marketplaceSummaryMatchesAuditSentinel(
+      directMixedMarketplaceAuditPayload,
+      auditSnapshotSentinelFixture,
+    ) &&
+    !marketplaceSummaryMatchesAuditSentinel(
+      derivedMixedMarketplaceAuditPayload,
+      auditSnapshotSentinelFixture,
+    ) &&
+    !marketplaceSummaryMatchesAuditSentinel(
+      derivedMissingTopHashAuditPayload,
+      auditSnapshotSentinelFixture,
+    ) &&
+    !marketplaceSummaryMatchesAuditSentinel(
+      derivedWrongProvenanceHashAuditPayload,
+      auditSnapshotSentinelFixture,
+    ) &&
+    !marketplaceSummaryMatchesAuditSentinel(
+      derivedExtraComponentAuditPayload,
+      auditSnapshotSentinelFixture,
     ),
 );
 expect(

@@ -8877,15 +8877,147 @@ check("indexed registry anchors fail closed against exact Core gettxout", async 
     /conflicting registry anchor evidence/u,
   );
 
+  const nextTip = {
+    blockHash: "b".repeat(64),
+    height: tip.height + 1,
+  };
   let tipReadCount = 0;
   rpcImplementation = async (method) => {
     if (method === "getblockchaininfo") {
       tipReadCount += 1;
+      return { tip: tipReadCount === 1 ? tip : nextTip };
+    }
+    return {
+      ok: true,
+      result: {
+        bestblock: nextTip.blockHash,
+        coinbase: false,
+        confirmations: 1,
+        scriptPubKey: { hex: scriptPubKey },
+        value: 0.00000546,
+      },
+    };
+  };
+  await assert.rejects(
+    strictCoreRegistryListingReconciliation(
+      { ...payload, listings: [live] },
+      "livenet",
+    ),
+    (error) =>
+      /Bitcoin Core changed/u.test(String(error?.message ?? "")) &&
+      error?.details?.reason === "core-tip-changed",
+    "a gettxout answer from the newly proven Core tip is a retryable transition, not conflicting anchor content",
+  );
+  assert.equal(tipReadCount, 2);
+
+  tipReadCount = 0;
+  let outpointReadCount = 0;
+  rpcImplementation = async (method) => {
+    if (method === "getblockchaininfo") {
+      tipReadCount += 1;
+      return { tip: tipReadCount === 1 ? tip : nextTip };
+    }
+    outpointReadCount += 1;
+    return {
+      ok: true,
+      result: {
+        bestblock: nextTip.blockHash,
+        coinbase: false,
+        confirmations: 1,
+        scriptPubKey: { hex: "52" },
+        value: 0.00000546,
+      },
+    };
+  };
+  await assert.rejects(
+    strictCoreRegistryListingReconciliation(
+      { ...payload, listings: [live] },
+      "livenet",
+    ),
+    (error) =>
+      /conflicting registry anchor evidence/u.test(
+        String(error?.message ?? ""),
+      ) && error?.details?.reason !== "core-tip-changed",
+    "a real tip transition cannot mask an intrinsic registry anchor conflict",
+  );
+  assert.equal(tipReadCount, 1);
+  assert.equal(outpointReadCount, 1);
+
+  const unrelatedTip = {
+    blockHash: "c".repeat(64),
+    height: nextTip.height + 1,
+  };
+  tipReadCount = 0;
+  outpointReadCount = 0;
+  rpcImplementation = async (method) => {
+    if (method === "getblockchaininfo") {
+      tipReadCount += 1;
+      return { tip: tipReadCount === 1 ? tip : nextTip };
+    }
+    outpointReadCount += 1;
+    return {
+      ok: true,
+      result: {
+        bestblock: unrelatedTip.blockHash,
+        coinbase: false,
+        confirmations: 1,
+        scriptPubKey: { hex: scriptPubKey },
+        value: 0.00000546,
+      },
+    };
+  };
+  await assert.rejects(
+    strictCoreRegistryListingReconciliation(
+      { ...payload, listings: [live] },
+      "livenet",
+    ),
+    (error) =>
+      /conflicting registry anchor evidence/u.test(
+        String(error?.message ?? ""),
+      ) &&
+      error?.details?.reason !== "core-tip-changed" &&
+      error?.details?.finalBestBlock === nextTip.blockHash,
+    "a mismatched bestblock must equal the final proven tip before it is retryable",
+  );
+  assert.equal(tipReadCount, 2);
+  assert.equal(outpointReadCount, 1);
+
+  tipReadCount = 0;
+  rpcImplementation = async (method) => {
+    if (method === "getblockchaininfo") {
+      tipReadCount += 1;
+      return { tip };
+    }
+    return {
+      ok: true,
+      result: {
+        bestblock: nextTip.blockHash,
+        coinbase: false,
+        confirmations: 1,
+        scriptPubKey: { hex: scriptPubKey },
+        value: 0.00000546,
+      },
+    };
+  };
+  await assert.rejects(
+    strictCoreRegistryListingReconciliation(
+      { ...payload, listings: [live] },
+      "livenet",
+    ),
+    (error) =>
+      /conflicting registry anchor evidence/u.test(
+        String(error?.message ?? ""),
+      ) && error?.details?.reason !== "core-tip-changed",
+    "a bestblock mismatch without a proven Core transition stays a hard conflict",
+  );
+  assert.equal(tipReadCount, 2);
+
+  tipReadCount = 0;
+  rpcImplementation = async (method) => {
+    if (method === "getblockchaininfo") {
+      tipReadCount += 1;
       return {
-        tip:
-          tipReadCount === 1
-            ? tip
-            : { blockHash: "b".repeat(64), height: tip.height + 1 },
+        tip: tipReadCount === 1 ? tip : nextTip,
       };
     }
     return {
@@ -8904,8 +9036,72 @@ check("indexed registry anchors fail closed against exact Core gettxout", async 
       { ...payload, listings: [live] },
       "livenet",
     ),
-    /Bitcoin Core changed/u,
+    (error) =>
+      /Bitcoin Core changed/u.test(String(error?.message ?? "")) &&
+      error?.details?.reason === "core-tip-changed",
   );
+});
+
+check("public indexed registry retries only proven Core tip transitions", async () => {
+  let indexedReads = 0;
+  let reconciliationReads = 0;
+  const delays = [];
+  let reconciliationImplementation = async (payload) => {
+    reconciliationReads += 1;
+    if (reconciliationReads === 1) {
+      throw Object.assign(new Error("Core changed"), {
+        details: { reason: "core-tip-changed" },
+        statusCode: 503,
+      });
+    }
+    if (reconciliationReads === 2) {
+      throw Object.assign(new Error("Index catching up"), {
+        details: { reason: "core-checkpoint-mismatch" },
+        statusCode: 503,
+      });
+    }
+    return { payload: { ...payload, stable: true } };
+  };
+  const strictPublicRegistryPayload = isolatedFunction(
+    API_PATH,
+    "strictPublicRegistryPayload",
+    {
+      indexedRegistryPayload: async () => ({ generation: ++indexedReads }),
+      internalRegistryParityPayload: async () => ({ direct: true }),
+      registryPayloadWithoutPrivateAuthority: (payload) => payload,
+      setTimeout: (callback, delay) => {
+        delays.push(delay);
+        callback();
+        return 0;
+      },
+      strictCoreRegistryListingReconciliation: (...args) =>
+        reconciliationImplementation(...args),
+    },
+  );
+
+  const retried = await strictPublicRegistryPayload("livenet");
+  assert.deepEqual(retried, { generation: 3, stable: true });
+  assert.equal(indexedReads, 3);
+  assert.equal(reconciliationReads, 3);
+  assert.deepEqual(delays, [250, 500]);
+
+  indexedReads = 0;
+  reconciliationReads = 0;
+  delays.length = 0;
+  reconciliationImplementation = async () => {
+    reconciliationReads += 1;
+    throw Object.assign(new Error("Anchor bytes conflict"), {
+      details: { reason: "anchor-script-mismatch" },
+      statusCode: 503,
+    });
+  };
+  await assert.rejects(
+    strictPublicRegistryPayload("livenet"),
+    /Anchor bytes conflict/u,
+  );
+  assert.equal(indexedReads, 1);
+  assert.equal(reconciliationReads, 1);
+  assert.deepEqual(delays, []);
 });
 
 check("token listing buyability is fenced by exact stable-tip Core evidence", async () => {
@@ -9004,23 +9200,48 @@ check("token listing buyability is fenced by exact stable-tip Core evidence", as
   assert.equal(emptyOutpointReads, 0);
 
   emptyTipReads = 0;
+  const nextTip = {
+    blockHash: "b".repeat(64),
+    height: tip.height + 1,
+  };
   rpcImplementation = async (method) => {
     assert.equal(method, "getblockchaininfo");
     emptyTipReads += 1;
     return {
-      tip:
-        emptyTipReads === 1
-          ? tip
-          : { blockHash: "b".repeat(64), height: tip.height + 1 },
+      tip: emptyTipReads === 1 ? tip : nextTip,
     };
+  };
+  const emptyAfterTransition = await strictCoreTokenListingReconciliation(
+    [],
+    "livenet",
+    { requireAll: true },
+  );
+  assert.equal(emptyAfterTransition.evidence.checkpoint.height, nextTip.height);
+  assert.equal(
+    emptyAfterTransition.evidence.checkpoint.blockHash,
+    nextTip.blockHash,
+  );
+  assert.equal(
+    emptyTipReads,
+    4,
+    "an unpinned empty book retries and proves a fully stable new checkpoint",
+  );
+
+  emptyTipReads = 0;
+  rpcImplementation = async (method) => {
+    assert.equal(method, "getblockchaininfo");
+    emptyTipReads += 1;
+    return { tip: nextTip };
   };
   await assert.rejects(
     strictCoreTokenListingReconciliation([], "livenet", {
+      checkpoint: tip,
       requireAll: true,
     }),
     /Bitcoin Core changed/u,
-    "an empty listing book must still reject an unstable Core checkpoint",
+    "a caller-supplied checkpoint must never be silently advanced",
   );
+  assert.equal(emptyTipReads, 1);
 
   rpcImplementation = liveRpcImplementation;
   const retained = await strictCoreTokenListingReconciliation(
@@ -9054,19 +9275,25 @@ check("token listing buyability is fenced by exact stable-tip Core evidence", as
   assert.equal(spent.evidence.spentListingCount, 1);
   assert.equal(spent.evidence.unspentListingCount, 0);
 
-  rpcImplementation = async (method) =>
-    method === "getblockchaininfo"
-      ? { tip }
-      : {
-          ok: true,
-          result: {
-            bestblock: tip.blockHash,
-            coinbase: false,
-            confirmations: 0,
-            scriptPubKey: { hex: "52" },
-            value: 0.00000546,
-          },
-        };
+  let intrinsicTipReads = 0;
+  let intrinsicOutpointReads = 0;
+  rpcImplementation = async (method) => {
+    if (method === "getblockchaininfo") {
+      intrinsicTipReads += 1;
+      return { tip };
+    }
+    intrinsicOutpointReads += 1;
+    return {
+      ok: true,
+      result: {
+        bestblock: tip.blockHash,
+        coinbase: false,
+        confirmations: 0,
+        scriptPubKey: { hex: "52" },
+        value: 0.00000546,
+      },
+    };
+  };
   await assert.rejects(
     strictCoreTokenListingReconciliation([live], "livenet", {
       requireAll: true,
@@ -9075,6 +9302,37 @@ check("token listing buyability is fenced by exact stable-tip Core evidence", as
       error?.statusCode === 503 &&
       error?.details?.code === "TOKEN_LISTING_AUTHORITY_UNAVAILABLE",
   );
+  assert.equal(intrinsicTipReads, 1);
+  assert.equal(intrinsicOutpointReads, 1);
+
+  intrinsicTipReads = 0;
+  intrinsicOutpointReads = 0;
+  rpcImplementation = async (method) => {
+    if (method === "getblockchaininfo") {
+      intrinsicTipReads += 1;
+      return { tip: intrinsicTipReads === 1 ? tip : nextTip };
+    }
+    intrinsicOutpointReads += 1;
+    return {
+      ok: true,
+      result: {
+        bestblock: nextTip.blockHash,
+        coinbase: false,
+        confirmations: 1,
+        scriptPubKey: { hex: "52" },
+        value: 0.00000546,
+      },
+    };
+  };
+  await assert.rejects(
+    strictCoreTokenListingReconciliation([live], "livenet", {
+      requireAll: true,
+    }),
+    /conflicting token listing anchor evidence/u,
+    "a real tip transition cannot mask an intrinsic token anchor conflict",
+  );
+  assert.equal(intrinsicTipReads, 1);
+  assert.equal(intrinsicOutpointReads, 1);
 
   rpcImplementation = async (method) =>
     method === "getblockchaininfo"
@@ -9097,20 +9355,53 @@ check("token listing buyability is fenced by exact stable-tip Core evidence", as
   );
 
   let tipReadCount = 0;
+  let outpointReadCount = 0;
   rpcImplementation = async (method) => {
     if (method === "getblockchaininfo") {
       tipReadCount += 1;
-      return {
-        tip:
-          tipReadCount === 1
-            ? tip
-            : { blockHash: "b".repeat(64), height: tip.height + 1 },
-      };
+      return { tip: tipReadCount === 1 ? tip : nextTip };
     }
+    outpointReadCount += 1;
     return {
       ok: true,
       result: {
-        bestblock: tip.blockHash,
+        bestblock: nextTip.blockHash,
+        coinbase: false,
+        confirmations: 1,
+        scriptPubKey: { hex: scriptPubKey },
+        value: 0.00000546,
+      },
+    };
+  };
+  const retainedAfterTransition =
+    await strictCoreTokenListingReconciliation([live], "livenet", {
+      requireAll: true,
+    });
+  assert.equal(retainedAfterTransition.listings.length, 1);
+  assert.equal(retainedAfterTransition.evidence.checkpoint.height, nextTip.height);
+  assert.equal(
+    retainedAfterTransition.evidence.checkpoint.blockHash,
+    nextTip.blockHash,
+  );
+  assert.equal(tipReadCount, 4);
+  assert.equal(outpointReadCount, 2);
+
+  const unrelatedTip = {
+    blockHash: "c".repeat(64),
+    height: nextTip.height + 1,
+  };
+  tipReadCount = 0;
+  outpointReadCount = 0;
+  rpcImplementation = async (method) => {
+    if (method === "getblockchaininfo") {
+      tipReadCount += 1;
+      return { tip: tipReadCount === 1 ? tip : nextTip };
+    }
+    outpointReadCount += 1;
+    return {
+      ok: true,
+      result: {
+        bestblock: unrelatedTip.blockHash,
         coinbase: false,
         confirmations: 1,
         scriptPubKey: { hex: scriptPubKey },
@@ -9122,8 +9413,43 @@ check("token listing buyability is fenced by exact stable-tip Core evidence", as
     strictCoreTokenListingReconciliation([live], "livenet", {
       requireAll: true,
     }),
-    /Bitcoin Core changed/u,
+    (error) =>
+      /conflicting token listing anchor evidence/u.test(
+        String(error?.message ?? ""),
+      ) && error?.details?.finalBestBlock === nextTip.blockHash,
+    "a mismatched bestblock must equal the final proven tip before it is retryable",
   );
+  assert.equal(tipReadCount, 2);
+  assert.equal(outpointReadCount, 1);
+
+  tipReadCount = 0;
+  outpointReadCount = 0;
+  rpcImplementation = async (method) => {
+    if (method === "getblockchaininfo") {
+      tipReadCount += 1;
+      return { tip };
+    }
+    outpointReadCount += 1;
+    return {
+      ok: true,
+      result: {
+        bestblock: nextTip.blockHash,
+        coinbase: false,
+        confirmations: 1,
+        scriptPubKey: { hex: scriptPubKey },
+        value: 0.00000546,
+      },
+    };
+  };
+  await assert.rejects(
+    strictCoreTokenListingReconciliation([live], "livenet", {
+      requireAll: true,
+    }),
+    /conflicting token listing anchor evidence/u,
+    "a bestblock mismatch without a proven Core transition stays a hard conflict",
+  );
+  assert.equal(tipReadCount, 2);
+  assert.equal(outpointReadCount, 1);
 });
 
 check("strict registry authority proves complete first-party hydration", () => {
@@ -17703,10 +18029,10 @@ check("pending drops enforce a five-minute floor and exact Core proof", () => {
   );
 });
 
-check("pending status cleanup is concurrent but capped", async () => {
+check("pending status cleanup is concurrent and exposes a 64-row cap", async () => {
   let activeReads = 0;
   let maxActiveReads = 0;
-  const rows = Array.from({ length: 12 }, (_value, index) => ({
+  let rows = Array.from({ length: 12 }, (_value, index) => ({
     txid: String(index).padStart(64, "0"),
   }));
   const refreshPendingStatuses = isolatedFunction(
@@ -17717,7 +18043,7 @@ check("pending status cleanup is concurrent but capped", async () => {
       PENDING_MIN_AGE_MS: 60_000,
       PENDING_STATUS_BUDGET_MS: 15_000,
       PENDING_STATUS_CONCURRENCY: 5,
-      PENDING_STATUS_LIMIT: 25,
+      PENDING_STATUS_LIMIT: 64,
       STATUS_REQUEST_TIMEOUT_MS: 5_000,
       endpoint: (pathname) => new URL(pathname, "http://127.0.0.1:8081"),
       readJson: async () => {
@@ -17746,6 +18072,15 @@ check("pending status cleanup is concurrent but capped", async () => {
   assert.equal(summary.pending, rows.length);
   assert.equal(summary.deferred, 0);
   assert.equal(maxActiveReads, 5);
+
+  rows = Array.from({ length: 65 }, (_value, index) => ({
+    txid: String(index).padStart(64, "0"),
+  }));
+  const cappedSummary = await refreshPendingStatuses(pool);
+  assert.equal(cappedSummary.staleCandidates, 65);
+  assert.equal(cappedSummary.checked, 64);
+  assert.equal(cappedSummary.pending, 64);
+  assert.equal(cappedSummary.deferred, 1);
 });
 
 check("worker status transitions are proven, race-safe, and projection-safe", async () => {

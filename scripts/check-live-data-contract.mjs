@@ -626,6 +626,7 @@ expectAll("production worker pins confirmed-first and liveness budgets", proofIn
   /POW_INDEX_MEMPOOL_SCAN_BUDGET_MS=30000/,
   /POW_INDEX_PENDING_VERIFIER_TIMEOUT_MS=30000/,
   /POW_INDEX_STATUS_FETCH_TIMEOUT_MS=5000/,
+  /POW_INDEX_PENDING_STATUS_LIMIT=64/,
   /POW_INDEX_PENDING_STATUS_BUDGET_MS=15000/,
   /POW_INDEX_PENDING_STATUS_CONCURRENCY=5/,
   /POW_INDEX_WORKER_PENDING_WITNESS_MAX_AGE_MS=600000/,
@@ -1749,7 +1750,7 @@ expectAll(
   [
     /const candidates = inputListings\.filter\(requiresProof\)[\s\S]*if \(network !== "livenet"\)/,
     /getblockchaininfo[\s\S]*exactCoreTipFromBlockchainInfo/,
-    /if \(options\.verifyFinalTip !== false\)[\s\S]*finalTip\.height !== initialTip\.height[\s\S]*finalTip\.blockHash !== initialTip\.blockHash/,
+    /const maximumTipAttempts = suppliedCheckpoint \? 1 : 3[\s\S]*const finalTipRequired =[\s\S]*options\.verifyFinalTip !== false \|\| tipChangedEntries\.length > 0[\s\S]*finalTip\.height !== initialTip\.height[\s\S]*finalTip\.blockHash !== initialTip\.blockHash[\s\S]*options\.verifyFinalTip !== false && exactTipChanged/,
     /checkedOutpointsSha256: registryAuditProjectionSha256\(evidenceRows\)[\s\S]*checkpoint: \{ \.\.\.initialTip \}/,
   ],
 );

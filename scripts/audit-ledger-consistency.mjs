@@ -22,6 +22,12 @@ import {
   exactCreditFrozenValueState,
 } from "./ledger-audit-exact.mjs";
 import {
+  auditSnapshotSentinel,
+  marketplaceSummaryMatchesAuditSentinel,
+  payloadMatchesAuditSentinel,
+  snapshotSentinelsMatch,
+} from "./ledger-audit-snapshot.mjs";
+import {
   createCanonicalConvergenceBudget,
   MarketplaceRegressionHttpError,
   waitForCanonicalConvergenceWithinBudget,
@@ -338,39 +344,6 @@ function checkNames(payload) {
   return new Set((payload?.checks ?? []).map((check) => check?.name));
 }
 
-function auditSnapshotSentinel(payload) {
-  const snapshotId = String(payload?.snapshotId ?? "").trim();
-  const indexedThroughBlock = numberValue(
-    payload?.indexedThroughBlock ?? payload?.metrics?.indexedThroughBlock,
-  );
-  if (!snapshotId || indexedThroughBlock <= 0) {
-    throw new Error(
-      "audit snapshot sentinel is missing snapshotId or indexedThroughBlock",
-    );
-  }
-  return { indexedThroughBlock, snapshotId };
-}
-
-function snapshotSentinelsMatch(left, right) {
-  return (
-    left.snapshotId === right.snapshotId &&
-    left.indexedThroughBlock === right.indexedThroughBlock
-  );
-}
-
-function payloadMatchesAuditSentinel(payload, sentinel, requireSnapshot = true) {
-  const indexedThroughBlock = numberValue(
-    payload?.indexedThroughBlock ?? payload?.provenance?.indexedThroughBlock,
-  );
-  const snapshotId = String(
-    payload?.snapshotId ?? payload?.provenance?.snapshotId ?? "",
-  ).trim();
-  return (
-    indexedThroughBlock === sentinel.indexedThroughBlock &&
-    (!requireSnapshot || snapshotId === sentinel.snapshotId)
-  );
-}
-
 async function readStableCrossLedgerBatch() {
   for (
     let attempt = 1;
@@ -406,7 +379,6 @@ async function readStableCrossLedgerBatch() {
     if (snapshotSentinelsMatch(before, after)) {
       const summaryPayloads = [
         consistency,
-        marketplaceSummary,
         infinitySummary,
         inceptionSummary,
         growthSummary,
@@ -416,6 +388,7 @@ async function readStableCrossLedgerBatch() {
         !summaryPayloads.every((payload) =>
           payloadMatchesAuditSentinel(payload, after)
         ) ||
+        !marketplaceSummaryMatchesAuditSentinel(marketplaceSummary, after) ||
         !tokenPayloads.every((payload) =>
           payloadMatchesAuditSentinel(payload, after, false)
         )

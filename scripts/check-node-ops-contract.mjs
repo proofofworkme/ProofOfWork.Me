@@ -346,6 +346,7 @@ assert.match(
   infrastructure,
   /CREATE INDEX CONCURRENTLY ledger_snapshots_work_q16_summary_latest_idx[\s\S]*TABLESPACE proof_indexer_large_state_v1[\s\S]*WHERE payload \? 'workSufficientState'[\s\S]*AND NOT \(payload \? 'tokenStatePayloads'\)/u,
 );
+assert.match(infrastructure, /SET lock_timeout = '90s';/u);
 assert.match(infrastructure, /proofofwork-ui-release-v3/u);
 assert.match(infrastructure, /nft.*compatibility alias/su);
 
