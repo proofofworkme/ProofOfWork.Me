@@ -2334,25 +2334,20 @@ async function currentWorkMarketAuthorizationVersionsAtSnapshot(
       )
     );
   if (precisionBoundaryReached) {
-    if (!precisionPins) {
-      return [];
-    }
-    const precisionReadiness =
-      await proofIndexWorkPrecisionV2MigrationReadiness(
-        network,
-        precisionPins,
-      ).catch(() => null);
     if (
-      precisionReadiness?.ready === true &&
-      precisionReadiness?.active === true &&
-      precisionReadiness?.parityReady === true &&
-      precisionReadiness?.replayReady === true
+      precisionPins &&
+      precisionLatch?.reached === true &&
+      precisionLatch?.markerReady === true &&
+      stableWorkPrecisionJson(precisionLatch.pins) ===
+        stableWorkPrecisionJson(precisionPins)
     ) {
       return [WORK_AMO_V8_AUTH_VERSION];
     }
-    // Once the V8 declaration boundary or its persistent latch applies,
-    // current balances and reservations must never fall back to Q8.
-    // Historical records remain available through raw/history paths.
+    // V8 activation is an immutable read cutover. Full replay and pending
+    // readiness continue to gate precision payloads and writes, but ordinary
+    // worker publication churn must not hide already-confirmed V8 listings.
+    // If the persistent latch, marker, definition, or configured pins are not
+    // exact, fail closed without falling back to a prior authorization era.
     return [];
   }
   const pins = configuredWorkAmoV6ReaderPins();

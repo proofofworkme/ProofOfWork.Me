@@ -73180,6 +73180,13 @@ check("exact active listing reads preserve WORK atomic amount metadata", () => {
 check("AMO V6 readiness selects exact listing-version SQL arrays", async () => {
   const activationHeight = 960_219;
   const pins = { activationHeight };
+  const precisionPins = {
+    activationHeight: 960_601,
+    declarationTxid: "a".repeat(64),
+  };
+  let configuredPrecisionPins = null;
+  let precisionLatch = null;
+  let precisionReadinessCalls = 0;
   let readiness = {
     activationHeight,
     active: true,
@@ -73200,10 +73207,19 @@ check("AMO V6 readiness selects exact listing-version SQL arrays", async () => {
         WORK_AMO_V5_ACTIVATION_HEIGHT,
         WORK_AMO_V5_AUTH_VERSION,
         WORK_AMO_V6_AUTH_VERSION,
+        WORK_AMO_V8_AUTH_VERSION,
         WORK_MARKET_V2_AUTH_VERSION,
         WORK_MARKET_V4_AUTH_VERSION: WORK_AMO_V4_AUTH_VERSION,
         configuredWorkAmoV6ReaderPins: () => pins,
+        configuredWorkPrecisionV2ReaderPins: () =>
+          configuredPrecisionPins,
+        proofIndexWorkAmoV8ActivationLatch: async () => precisionLatch,
         proofIndexWorkAmoV6MigrationReadiness: async () => readiness,
+        proofIndexWorkPrecisionV2MigrationReadiness: async () => {
+          precisionReadinessCalls += 1;
+          return null;
+        },
+        stableWorkPrecisionJson: JSON.stringify,
         workAmoV6ReadinessIsCurrentAtSnapshot,
       },
     );
@@ -73264,6 +73280,47 @@ check("AMO V6 readiness selects exact listing-version SQL arrays", async () => {
     await versionsAt("testnet", 960_258),
     [WORK_MARKET_V2_AUTH_VERSION],
   );
+
+  configuredPrecisionPins = precisionPins;
+  precisionLatch = {
+    markerReady: true,
+    pins: structuredClone(precisionPins),
+    reached: true,
+  };
+  assert.deepEqual(
+    await versionsAt("livenet", precisionPins.activationHeight),
+    [WORK_AMO_V8_AUTH_VERSION],
+    "the immutable V8 latch and migration marker own confirmed listing visibility",
+  );
+  assert.equal(
+    precisionReadinessCalls,
+    0,
+    "pending and write readiness must not participate in immutable read-era selection",
+  );
+  precisionLatch = { ...precisionLatch, markerReady: false };
+  assert.deepEqual(
+    await versionsAt("livenet", precisionPins.activationHeight),
+    [],
+    "a V8 latch without its exact migration marker must fail closed",
+  );
+  precisionLatch = null;
+  assert.deepEqual(
+    await versionsAt("livenet", precisionPins.activationHeight),
+    [],
+    "configured V8 pins without the persistent activation latch must fail closed",
+  );
+  precisionLatch = {
+    markerReady: true,
+    pins: { ...precisionPins, declarationTxid: "b".repeat(64) },
+    reached: true,
+  };
+  assert.deepEqual(
+    await versionsAt("livenet", precisionPins.activationHeight),
+    [],
+    "a persistent latch that differs from configured pins must fail closed",
+  );
+  configuredPrecisionPins = null;
+  precisionLatch = null;
 
   const listingTxid =
     "b259fa601676287eca2ea94c9142cd13b45fde7031ec98967f15306df6ef7936";
