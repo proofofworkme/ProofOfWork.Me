@@ -44916,12 +44916,17 @@ check("exact dropped market misses are terminal without loading broad history", 
   let disposition = "terminal-nonmarket";
   let needles = [txid];
   let safeKind = "market-log";
+  let authorizationVersionReads = 0;
   const sqlReads = [];
   const proofIndexTokenMarketHistoryOverlayPayload = isolatedFunction(
     READER_PATH,
     "proofIndexTokenMarketHistoryOverlayPayload",
     {
       compareTokenHistoryMarketItems: () => 0,
+      currentWorkMarketAuthorizationVersionsAtSnapshot: async () => {
+        authorizationVersionReads += 1;
+        return ["pwt-sale-v3"];
+      },
       historyCursor: (_snapshotId, offset) => String(offset),
       historyPaginationFromSearch: () => pagination,
       ledgerSnapshotMetadata: async () => snapshot,
@@ -44976,6 +44981,11 @@ check("exact dropped market misses are terminal without loading broad history", 
   assert.equal(terminalPage.queryDisposition, "terminal-nonmarket");
   assert.equal(terminalPage.indexedThroughBlock, undefined);
   assert.equal(sqlReads.length, 1);
+  assert.equal(
+    authorizationVersionReads,
+    0,
+    "terminal market-log reads must not run active-listing readiness",
+  );
   assert.match(sqlReads[0].sql, /count\(\*\) = cardinality\(\$\d+::text\[\]\)/u);
   assert.match(
     sqlReads[0].sql,
@@ -45004,6 +45014,7 @@ check("exact dropped market misses are terminal without loading broad history", 
     null,
   );
   assert.equal(sqlReads.length, 1);
+  assert.equal(authorizationVersionReads, 0);
 
   disposition = null;
   needles = [txid, "seller-name"];
@@ -45019,6 +45030,27 @@ check("exact dropped market misses are terminal without loading broad history", 
     null,
   );
   assert.doesNotMatch(sqlReads[0].sql, /bool_and\(/u);
+  assert.equal(authorizationVersionReads, 0);
+
+  safeKind = "closedListings";
+  needles = [txid];
+  disposition = "terminal-nonmarket";
+  sqlReads.length = 0;
+  const terminalClosedPage =
+    await proofIndexTokenMarketHistoryOverlayPayload(
+      "livenet",
+      "work",
+      "closed-listings",
+      new URLSearchParams({ q: txid }),
+      { pagination },
+    );
+  assert.equal(terminalClosedPage.queryDisposition, "terminal-nonmarket");
+  assert.deepEqual(terminalClosedPage.items, []);
+  assert.equal(
+    authorizationVersionReads,
+    0,
+    "terminal closed-listing reads must not run active-listing readiness",
+  );
 
   // A current relational listing set is authoritative even when it is empty;
   // it must never fall back to a stale embedded pre-cutover V1 payload.
@@ -45043,6 +45075,11 @@ check("exact dropped market misses are terminal without loading broad history", 
   );
   assert.equal(authoritativeEmptyListings.totalCount, 0);
   assert.deepEqual(authoritativeEmptyListings.items, []);
+  assert.equal(
+    authorizationVersionReads,
+    1,
+    "active listing reads must retain exact authorization readiness",
+  );
   assert.match(
     sqlReads[0].sql,
     /saleAuthorization'->>'version'[\s\S]*= ANY\(\$5::text\[\]\)/u,

@@ -21610,11 +21610,13 @@ export async function proofIndexTokenMarketHistoryOverlayPayload(
     workAmoV5PreUnitRelicEvidenceIsExact(amoV5RelicEvidence) &&
     amoV5RelicEvidence.disposition === "relic";
   const currentWorkMarketAuthorizationVersions =
-    await currentWorkMarketAuthorizationVersionsAtSnapshot(
-      network,
-      snapshotHeight,
-      workMarketV4Activation,
-    );
+    safeKind === "listings"
+      ? await currentWorkMarketAuthorizationVersionsAtSnapshot(
+          network,
+          snapshotHeight,
+          workMarketV4Activation,
+        )
+      : [];
   const params = [network, eventKinds];
   let amoV5RelicPredicateSql = "false";
   let amoV5RelicClosedTxidSql = "''";
