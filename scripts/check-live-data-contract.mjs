@@ -1367,7 +1367,7 @@ expectAll("frontend holder searches use remote holder history", app, [
 expectAll("scoped token holder identity survives summary compaction and paging", server + proofIndexReader, [
   /function tokenPayloadWithScopedHolderIdentity\([\s\S]*tokens\.length !== 1[\s\S]*ticker: token\.ticker[\s\S]*tokenId: token\.tokenId/,
   /function scopedTokenPayloadFromState\([\s\S]*return tokenPayloadWithScopedHolderIdentity\([\s\S]*normalizedScope\)/,
-  /function compactTokenSummaryPayload\([\s\S]*return tokenPayloadWithScopedHolderIdentity\([\s\S]*scope\)/,
+  /function compactTokenSummaryPayload\([\s\S]*return tokenPayloadWithScopedHolderCountFloor\(\s*tokenPayloadWithScopedHolderIdentity\([\s\S]*scope\),\s*scope,?\s*\)/,
   /async function workSummaryWithCurrentBtcUsd\([\s\S]*tokenPayloadWithScopedHolderIdentity\([\s\S]*WORK_TOKEN_ID/,
   /async function scopedHoldersFromBalances\([\s\S]*JOIN proof_indexer\.credit_definitions[\s\S]*ticker: row\.ticker[\s\S]*tokenId:/,
   /async function proofIndexScopedHolderHistoryPayload\([\s\S]*ticker: token\.ticker[\s\S]*tokenId: token\.token_id/,

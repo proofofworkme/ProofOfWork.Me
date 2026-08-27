@@ -19251,6 +19251,7 @@ async function exactActiveTokenListingHistoryPage(
               canonical_listing_event.listing_event_match_count,
               seal_tx.status AS seal_tx_status,
               seal_tx.block_height AS seal_transaction_block_height,
+              canonical_seal_event.seal_event_payload,
               canonical_seal_event.seal_event_status,
               canonical_seal_event.seal_event_block_hash,
               canonical_seal_event.seal_event_block_height,
@@ -26949,6 +26950,29 @@ function canonicalTokenSaleEvidenceForListing(
   };
 }
 
+function canonicalTokenSealAuthorizationMatchesListing(
+  sealAuthorization,
+  listingAuthorization,
+) {
+  const unsignedTerms = (authorization) => {
+    const {
+      anchorSignature: ignoredAnchorSignature,
+      anchorTxid: ignoredAnchorTxid,
+      ...terms
+    } = objectRecord(authorization);
+    void ignoredAnchorSignature;
+    void ignoredAnchorTxid;
+    return terms;
+  };
+  const sealTerms = unsignedTerms(sealAuthorization);
+  const listingTerms = unsignedTerms(listingAuthorization);
+  return (
+    Object.keys(sealTerms).length > 0 &&
+    Object.keys(listingTerms).length > 0 &&
+    canonicalWorkAmoJson(sealTerms) === canonicalWorkAmoJson(listingTerms)
+  );
+}
+
 function tokenListingFromCreditListingRow(row, network) {
   const payload = objectRecord(row?.payload);
   const {
@@ -27010,6 +27034,11 @@ function tokenListingFromCreditListingRow(row, network) {
   void ignoredPayloadSealTransactionBlockHeight;
   void ignoredPayloadSealTxid;
   const rowSaleAuthorization = objectRecord(payload.saleAuthorization);
+  const rowListingAuthorization = objectRecord(payload.listingAuthorization);
+  const canonicalListingAuthorization =
+    Object.keys(rowListingAuthorization).length > 0
+      ? rowListingAuthorization
+      : rowSaleAuthorization;
   const sealEventPayload = objectRecord(row?.seal_event_payload);
   const sealEventSaleAuthorization = objectRecord(
     sealEventPayload.saleAuthorization,
@@ -27210,11 +27239,15 @@ function tokenListingFromCreditListingRow(row, network) {
     normalizedLowerText(sealEventSaleAuthorization.tokenId) === tokenId &&
     canonicalSealAuthorizationVersion ===
       normalizedLowerText(rowSaleAuthorization.version) &&
-    Object.keys(sealEventSaleAuthorization).length > 0
+    Object.keys(sealEventSaleAuthorization).length > 0 &&
+    canonicalTokenSealAuthorizationMatchesListing(
+      sealEventSaleAuthorization,
+      canonicalListingAuthorization,
+    )
   ) {
     saleAuthorization = sealEventSaleAuthorization;
     listingAuthorizationPatch = {
-      listingAuthorization: sealEventSaleAuthorization,
+      listingAuthorization: canonicalListingAuthorization,
     };
   }
   const sealBlockHeight = invalidConfirmedSealEvidence
@@ -28084,6 +28117,7 @@ async function proofIndexTokenListingsFromTables(pool, network, scope) {
         close_tx.block_index AS close_transaction_block_index,
         seal_tx.status AS seal_tx_status,
         seal_tx.block_height AS seal_transaction_block_height,
+        canonical_seal_event.seal_event_payload,
         canonical_seal_event.seal_event_status,
         canonical_seal_event.seal_event_block_hash,
         canonical_seal_event.seal_event_block_height,
@@ -31177,6 +31211,7 @@ export async function proofIndexWalletTokenOverlayPayload(
         canonical_listing_event.listing_event_match_count,
         seal_tx.status AS seal_tx_status,
         seal_tx.block_height AS seal_transaction_block_height,
+        canonical_seal_event.seal_event_payload,
         canonical_seal_event.seal_event_status,
         canonical_seal_event.seal_event_block_hash,
         canonical_seal_event.seal_event_block_height,
@@ -31260,6 +31295,7 @@ export async function proofIndexWalletTokenOverlayPayload(
         canonical_listing_event.listing_event_match_count,
         seal_tx.status AS seal_tx_status,
         seal_tx.block_height AS seal_transaction_block_height,
+        canonical_seal_event.seal_event_payload,
         canonical_seal_event.seal_event_status,
         canonical_seal_event.seal_event_block_hash,
         canonical_seal_event.seal_event_block_height,
@@ -39352,6 +39388,7 @@ export async function proofIndexCreditListingsPayload(
         canonical_listing_event.listing_event_match_count,
         seal_tx.status AS seal_tx_status,
         seal_tx.block_height AS seal_transaction_block_height,
+        canonical_seal_event.seal_event_payload,
         canonical_seal_event.seal_event_status,
         canonical_seal_event.seal_event_block_hash,
         canonical_seal_event.seal_event_block_height,

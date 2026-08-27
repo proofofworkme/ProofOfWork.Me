@@ -3598,6 +3598,90 @@ function mergeWalletHolders(baseHolders, overlayHolders) {
     });
 }
 
+function tokenPayloadWithScopedHolderCountFloor(payload, tokenScope) {
+  if (!payload) {
+    return payload;
+  }
+
+  const scope = normalizeTokenScope(tokenScope);
+  const tokens = Array.isArray(payload.tokens) ? payload.tokens : [];
+  const matchingTokens = tokens.filter((token) =>
+    tokenMatchesScope(token, scope),
+  );
+  if (!scope || matchingTokens.length !== 1) {
+    return payload;
+  }
+
+  const token = matchingTokens[0];
+  const tokenIdScope = normalizeTokenScope(token?.tokenId);
+  const tokenTickerScope = normalizeTokenScope(token?.ticker);
+  const workAmountStorageModel = isWorkTokenId(token?.tokenId)
+    ? tokenSummaryWorkAmountStorageModel(payload)
+    : "";
+  const positiveHolderAddresses = new Set();
+  for (const holder of Array.isArray(payload.holders) ? payload.holders : []) {
+    const holderTokenIdScope = normalizeTokenScope(holder?.tokenId);
+    const holderTickerScope = normalizeTokenScope(holder?.ticker);
+    if (
+      (holderTokenIdScope && holderTokenIdScope !== tokenIdScope) ||
+      (holderTickerScope && holderTickerScope !== tokenTickerScope) ||
+      (!holderTokenIdScope && !holderTickerScope && tokens.length !== 1)
+    ) {
+      continue;
+    }
+
+    const address = String(holder?.address ?? "").trim().toLowerCase();
+    if (!address) {
+      continue;
+    }
+    const balance = tokenLedgerAmountFromRecord(
+      token.tokenId,
+      {
+        amount: holder?.balance ?? holder?.confirmedBalance,
+        amountAtoms:
+          holder?.balanceAtoms ?? holder?.confirmedBalanceAtoms,
+        amountStorageModel: holder?.amountStorageModel,
+        amountSubatoms:
+          holder?.balanceSubatoms ?? holder?.confirmedBalanceSubatoms,
+        precisionModel: holder?.precisionModel,
+      },
+      { allowZero: true, workAmountStorageModel },
+    );
+    if (balance !== null && balance > tokenLedgerZero(token.tokenId)) {
+      positiveHolderAddresses.add(address);
+    }
+  }
+
+  const holderCountFloor = positiveHolderAddresses.size;
+  if (holderCountFloor === 0) {
+    return payload;
+  }
+  let changed = false;
+  const nextTokens = tokens.map((candidate) => {
+    if (candidate !== token) {
+      return candidate;
+    }
+    const currentHolderCount = Number(candidate?.holderCount);
+    if (
+      Number.isSafeInteger(currentHolderCount) &&
+      currentHolderCount >= holderCountFloor
+    ) {
+      return candidate;
+    }
+    changed = true;
+    return {
+      ...candidate,
+      holderCount: Math.max(
+        Number.isSafeInteger(currentHolderCount) && currentHolderCount >= 0
+          ? currentHolderCount
+          : 0,
+        holderCountFloor,
+      ),
+    };
+  });
+  return changed ? { ...payload, tokens: nextTokens } : payload;
+}
+
 function newerIso(left, right) {
   const leftMs = Date.parse(left ?? "");
   const rightMs = Date.parse(right ?? "");
@@ -3840,7 +3924,7 @@ async function tokenPayloadWithIndexedWalletHolders(
   }
 
   const holders = mergeWalletHolders(payload?.holders, holderRows);
-  return walletTokenPayloadWithCanonicalDefinitions(
+  const mergedPayload = walletTokenPayloadWithCanonicalDefinitions(
     {
       ...payload,
       holders,
@@ -3867,6 +3951,7 @@ async function tokenPayloadWithIndexedWalletHolders(
     },
     network,
   );
+  return tokenPayloadWithScopedHolderCountFloor(mergedPayload, scope);
 }
 
 function transferBalanceDeltaForAddress(
@@ -4158,34 +4243,37 @@ async function tokenPayloadWithRecoveredWalletWorkTransfers(
     )
     .map(({ holder }) => holder);
 
-  return {
-    ...payload,
-    amountStorageModel: workAmountStorageModel,
-    decimals:
-      workAmountStorageModel === WORK_SUBATOM_PROJECTION_MODEL
-        ? WORK_SUBATOM_DECIMALS
-        : WORK_DECIMALS,
-    holders,
-    indexedAt: newerIso(payload?.indexedAt, new Date().toISOString()),
-    source: mergedSourceLabel(payload?.source, "work-transfer-recovery"),
-    stats: {
-      ...(payload?.stats ?? {}),
-      confirmedTransfers: transfers.filter((transfer) => transfer.confirmed)
-        .length,
-      holders: holders.length,
-      pendingTransfers: transfers.filter((transfer) => !transfer.confirmed)
-        .length,
+  return tokenPayloadWithScopedHolderCountFloor(
+    {
+      ...payload,
+      amountStorageModel: workAmountStorageModel,
+      decimals:
+        workAmountStorageModel === WORK_SUBATOM_PROJECTION_MODEL
+          ? WORK_SUBATOM_DECIMALS
+          : WORK_DECIMALS,
+      holders,
+      indexedAt: newerIso(payload?.indexedAt, new Date().toISOString()),
+      source: mergedSourceLabel(payload?.source, "work-transfer-recovery"),
+      stats: {
+        ...(payload?.stats ?? {}),
+        confirmedTransfers: transfers.filter((transfer) => transfer.confirmed)
+          .length,
+        holders: holders.length,
+        pendingTransfers: transfers.filter((transfer) => !transfer.confirmed)
+          .length,
+        walletScoped: true,
+      },
+      transfers,
+      ...(workAmountStorageModel === WORK_SUBATOM_PROJECTION_MODEL
+        ? {
+            precisionModel: WORK_PRECISION_V2_MODEL,
+            unitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,
+          }
+        : { unitScale: WORK_UNIT_SCALE_TEXT }),
       walletScoped: true,
     },
-    transfers,
-    ...(workAmountStorageModel === WORK_SUBATOM_PROJECTION_MODEL
-      ? {
-          precisionModel: WORK_PRECISION_V2_MODEL,
-          unitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,
-        }
-      : { unitScale: WORK_UNIT_SCALE_TEXT }),
-    walletScoped: true,
-  };
+    scope,
+  );
 }
 
 function tokenSaleItemKey(item) {
@@ -6605,6 +6693,40 @@ function tokenListingWithCanonicalWorkAmoV8Witness(listing, witness) {
   if (!canonicalFrozenTerms || !canonicalAuthorization) {
     return listing;
   }
+  const existingSaleAuthorization =
+    listing?.saleAuthorization &&
+    typeof listing.saleAuthorization === "object" &&
+    !Array.isArray(listing.saleAuthorization)
+      ? listing.saleAuthorization
+      : null;
+  const listingId = String(listing?.listingId ?? "")
+    .trim()
+    .toLowerCase();
+  const sealTxid = String(listing?.sealTxid ?? "")
+    .trim()
+    .toLowerCase();
+  let signedSealTermsMatch = false;
+  if (existingSaleAuthorization) {
+    try {
+      signedSealTermsMatch = tokenSaleAuthorizationTermsMatch(
+        existingSaleAuthorization,
+        canonicalAuthorization,
+      );
+    } catch {
+      signedSealTermsMatch = false;
+    }
+  }
+  const publicSaleAuthorization =
+    listing?.sealConfirmed === true &&
+    /^[0-9a-f]{64}$/u.test(listingId) &&
+    /^[0-9a-f]{64}$/u.test(sealTxid) &&
+    String(existingSaleAuthorization?.anchorTxid ?? "")
+      .trim()
+      .toLowerCase() === listingId &&
+    tokenSaleAuthorizationUsesSaleTicketAnchor(existingSaleAuthorization) &&
+    signedSealTermsMatch
+      ? existingSaleAuthorization
+      : canonicalAuthorization;
   const existingFrozenTerms =
     listing?.workAmoFrozenTerms &&
     typeof listing.workAmoFrozenTerms === "object" &&
@@ -6670,7 +6792,7 @@ function tokenListingWithCanonicalWorkAmoV8Witness(listing, witness) {
     ...(witness.valid !== undefined ? { valid: witness.valid } : {}),
     frozenTerms: canonicalFrozenTerms,
     listingAuthorization: canonicalAuthorization,
-    saleAuthorization: canonicalAuthorization,
+    saleAuthorization: publicSaleAuthorization,
     workAmoFrozenTerms: canonicalFrozenTerms,
   };
 }
@@ -34750,79 +34872,82 @@ function compactTokenSummaryPayload(payload, tokenScope = "", options = {}) {
     transfers: collectionHasMoreValue("transfers", totalCounts.transfers, 0),
   };
 
-  return tokenPayloadWithScopedHolderIdentity({
-    ...payload,
-    closedListings: compactClosedListings,
-    collectionHasMore,
-    hasMore: Object.values(collectionHasMore).some(Boolean),
-    holders: compactHolders,
-    invalidEvents: compactInvalidEvents,
-    listings: compactListings,
-    mints: [],
-    sales: compactSales,
-    summaryOnly: true,
-    totalCount:
-      explicitCount(payload.totalCount) ??
-      explicitCount(stats.transactions) ??
-      (Object.values(totalCounts).every(Number.isFinite)
-        ? totalCounts.tokens +
-          totalCounts.mints +
-          totalCounts.transfers +
-          totalCounts.listings +
-          totalCounts.sales
-        : null),
-    totalCounts,
-    tokens,
-    transfers: [],
-    stats: {
-      ...stats,
-      confirmedMints: authoritativeStat(
-        "confirmedMints",
-        mints.filter((mint) => mint?.confirmed).length,
-      ),
-      confirmedSales: authoritativeStat(
-        "confirmedSales",
-        sales.filter((sale) => sale?.confirmed).length,
-      ),
-      confirmedSalesVolumeSats: authoritativeStat(
-        "confirmedSalesVolumeSats",
-        sales
-          .filter((sale) => sale?.confirmed)
-          .reduce((total, sale) => total + numericValue(sale.priceSats), 0),
-      ),
-      confirmedTransfers: authoritativeStat(
-        "confirmedTransfers",
-        transfers.filter((transfer) => transfer?.confirmed).length,
-      ),
-      confirmedTokens: authoritativeStat(
-        "confirmedTokens",
-        tokenDefinitions.filter((token) => token?.confirmed).length,
-      ),
-      holders: authoritativeStat("holders", holders.length),
-      pendingMints: authoritativeStat(
-        "pendingMints",
-        mints.filter((mint) => !mint?.confirmed).length,
-      ),
-      pendingSales: authoritativeStat(
-        "pendingSales",
-        sales.filter((sale) => !sale?.confirmed).length,
-      ),
-      pendingSalesVolumeSats: authoritativeStat(
-        "pendingSalesVolumeSats",
-        sales
-          .filter((sale) => !sale?.confirmed)
-          .reduce((total, sale) => total + numericValue(sale.priceSats), 0),
-      ),
-      pendingTransfers: authoritativeStat(
-        "pendingTransfers",
-        transfers.filter((transfer) => !transfer?.confirmed).length,
-      ),
-      pendingTokens: authoritativeStat(
-        "pendingTokens",
-        tokenDefinitions.filter((token) => !token?.confirmed).length,
-      ),
-    },
-  }, scope);
+  return tokenPayloadWithScopedHolderCountFloor(
+    tokenPayloadWithScopedHolderIdentity({
+      ...payload,
+      closedListings: compactClosedListings,
+      collectionHasMore,
+      hasMore: Object.values(collectionHasMore).some(Boolean),
+      holders: compactHolders,
+      invalidEvents: compactInvalidEvents,
+      listings: compactListings,
+      mints: [],
+      sales: compactSales,
+      summaryOnly: true,
+      totalCount:
+        explicitCount(payload.totalCount) ??
+        explicitCount(stats.transactions) ??
+        (Object.values(totalCounts).every(Number.isFinite)
+          ? totalCounts.tokens +
+            totalCounts.mints +
+            totalCounts.transfers +
+            totalCounts.listings +
+            totalCounts.sales
+          : null),
+      totalCounts,
+      tokens,
+      transfers: [],
+      stats: {
+        ...stats,
+        confirmedMints: authoritativeStat(
+          "confirmedMints",
+          mints.filter((mint) => mint?.confirmed).length,
+        ),
+        confirmedSales: authoritativeStat(
+          "confirmedSales",
+          sales.filter((sale) => sale?.confirmed).length,
+        ),
+        confirmedSalesVolumeSats: authoritativeStat(
+          "confirmedSalesVolumeSats",
+          sales
+            .filter((sale) => sale?.confirmed)
+            .reduce((total, sale) => total + numericValue(sale.priceSats), 0),
+        ),
+        confirmedTransfers: authoritativeStat(
+          "confirmedTransfers",
+          transfers.filter((transfer) => transfer?.confirmed).length,
+        ),
+        confirmedTokens: authoritativeStat(
+          "confirmedTokens",
+          tokenDefinitions.filter((token) => token?.confirmed).length,
+        ),
+        holders: authoritativeStat("holders", holders.length),
+        pendingMints: authoritativeStat(
+          "pendingMints",
+          mints.filter((mint) => !mint?.confirmed).length,
+        ),
+        pendingSales: authoritativeStat(
+          "pendingSales",
+          sales.filter((sale) => !sale?.confirmed).length,
+        ),
+        pendingSalesVolumeSats: authoritativeStat(
+          "pendingSalesVolumeSats",
+          sales
+            .filter((sale) => !sale?.confirmed)
+            .reduce((total, sale) => total + numericValue(sale.priceSats), 0),
+        ),
+        pendingTransfers: authoritativeStat(
+          "pendingTransfers",
+          transfers.filter((transfer) => !transfer?.confirmed).length,
+        ),
+        pendingTokens: authoritativeStat(
+          "pendingTokens",
+          tokenDefinitions.filter((token) => !token?.confirmed).length,
+        ),
+      },
+    }, scope),
+    scope,
+  );
 }
 
 function workTokenLiveSeenTxids(network) {

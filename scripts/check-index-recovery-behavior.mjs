@@ -1535,6 +1535,7 @@ function isolatedFunction(path, name, globals = {}) {
         ],
         compactTokenSummaryPayload: [
           "canonicalWorkQ16SummaryUnitPriceDescriptor",
+          "tokenPayloadWithScopedHolderCountFloor",
           "tokenSummaryWorkAmountStorageModel",
         ],
         mergedTokenSummaryMetric: [
@@ -1547,6 +1548,9 @@ function isolatedFunction(path, name, globals = {}) {
         ],
         tokenSummaryWorkAmountStorageModel: [
           "exactWorkAmountStorageModelFromState",
+        ],
+        tokenPayloadWithScopedHolderCountFloor: [
+          "tokenSummaryWorkAmountStorageModel",
         ],
         tokenMintHistoryItemKey: ["canonicalTokenReplayPosition"],
         tokenReplayEntriesForRegistry: ["canonicalTokenReplayPosition"],
@@ -11988,6 +11992,256 @@ check("wallet token scope preserves holder definitions and indexed invalids", as
   assert.equal(merged.indexedThroughBlock, 957_935);
   assert.equal(merged.indexedThroughBlockHash, blockHash);
   assert.equal(merged.snapshotId, "wallet-overlay-checkpoint");
+});
+
+check("wallet holder recovery floors scoped token metadata at positive merged holders", async () => {
+  const normalizeTokenScope = (value) => {
+    const normalized = String(value ?? "").trim().toLowerCase();
+    return normalized === "work" ? WORK_TOKEN_ID : normalized;
+  };
+  const tokenMatchesScope = (token, scope) =>
+    normalizeTokenScope(token?.tokenId) === scope ||
+    normalizeTokenScope(token?.ticker) === scope;
+  const tokenPayloadWithScopedHolderCountFloor = isolatedFunction(
+    API_PATH,
+    "tokenPayloadWithScopedHolderCountFloor",
+    {
+      normalizeTokenScope,
+      tokenMatchesScope,
+      tokenSummaryWorkAmountStorageModel: () =>
+        WORK_SUBATOM_PROJECTION_MODEL,
+    },
+  );
+  const q16Token = {
+    amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+    holderCount: 348,
+    precisionModel: WORK_PRECISION_V2_MODEL,
+    ticker: "WORK",
+    tokenId: WORK_TOKEN_ID,
+  };
+  const recoveredHolders = Array.from({ length: 349 }, (_, index) => ({
+    address: `holder-${index}`,
+    amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+    balance: "0.0000000000000001",
+    balanceSubatoms: "1",
+    precisionModel: WORK_PRECISION_V2_MODEL,
+    ticker: "WORK",
+    tokenId: WORK_TOKEN_ID,
+  }));
+  const recovered = tokenPayloadWithScopedHolderCountFloor(
+    {
+      amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+      holders: recoveredHolders,
+      precisionModel: WORK_PRECISION_V2_MODEL,
+      stats: { holders: 349 },
+      tokens: [q16Token],
+    },
+    WORK_TOKEN_ID,
+  );
+  assert.equal(recovered.holders.length, 349);
+  assert.equal(recovered.stats.holders, 349);
+  assert.equal(recovered.tokens[0].holderCount, 349);
+  assert.equal(q16Token.holderCount, 348, "the recovery floor must not mutate its input");
+
+  const truncated = {
+    amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+    collectionHasMore: { holders: true },
+    holders: recoveredHolders.slice(0, 40),
+    precisionModel: WORK_PRECISION_V2_MODEL,
+    summaryOnly: true,
+    tokens: [{ ...q16Token, holderCount: 500 }],
+  };
+  assert.equal(
+    tokenPayloadWithScopedHolderCountFloor(
+      truncated,
+      WORK_TOKEN_ID,
+    ).tokens[0].holderCount,
+    500,
+    "a bounded holder preview must not lower its authoritative total",
+  );
+
+  const mergeWalletHolders = isolatedFunction(
+    API_PATH,
+    "mergeWalletHolders",
+  );
+  const tokenPayloadWithIndexedWalletHolders = isolatedFunction(
+    API_PATH,
+    "tokenPayloadWithIndexedWalletHolders",
+    {
+      errorSummary: (error) => String(error?.message ?? error),
+      mergeWalletHolders,
+      mergedSourceLabel: (left, right) => `${left}+${right}`,
+      newerIso: (_left, right) => right,
+      normalizeTokenScope,
+      numericValue: (value) => Number(value) || 0,
+      proofIndexReadFeatureEnabled: () => true,
+      proofIndexTokenHistoryPayload: async (
+        _network,
+        _scope,
+        _kind,
+        params,
+      ) => {
+        const address = params.get("q");
+        return {
+          indexedAt: "2026-08-27T17:30:00.000Z",
+          indexedThroughBlock: 964_327,
+          items: [{
+            address,
+            amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+            balance: address === "zero-holder" ? "0" : "0.0000000000000001",
+            balanceSubatoms: address === "zero-holder" ? "0" : "1",
+            precisionModel: WORK_PRECISION_V2_MODEL,
+            ticker: "WORK",
+            tokenId: WORK_TOKEN_ID,
+          }],
+        };
+      },
+      tokenPayloadWithScopedHolderCountFloor,
+      walletTokenPayloadWithCanonicalDefinitions: (payload) => payload,
+    },
+  );
+  const merged = await tokenPayloadWithIndexedWalletHolders(
+    {
+      amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+      holders: [recoveredHolders[0]],
+      indexedAt: "2026-08-27T17:00:00.000Z",
+      indexedThroughBlock: 964_326,
+      precisionModel: WORK_PRECISION_V2_MODEL,
+      source: "canonical",
+      stats: { holders: 1 },
+      tokens: [{ ...q16Token, holderCount: 1 }],
+    },
+    "livenet",
+    WORK_TOKEN_ID,
+    ["recovered-holder", "zero-holder"],
+  );
+  assert.equal(merged.holders.length, 3, "zero balances stay visible to wallet state");
+  assert.equal(merged.stats.holders, 3, "existing wallet collection semantics stay intact");
+  assert.equal(
+    merged.tokens[0].holderCount,
+    2,
+    "only unique positive balances may raise token holder metadata",
+  );
+  assert.match(
+    topLevelFunctionSource(API_PATH, "tokenPayloadWithIndexedWalletHolders"),
+    /tokenPayloadWithScopedHolderCountFloor/u,
+  );
+
+  const transferBalanceDeltaForAddress = isolatedFunction(
+    API_PATH,
+    "transferBalanceDeltaForAddress",
+  );
+  const tokenPayloadWithRecoveredWalletWorkTransfers = isolatedFunction(
+    API_PATH,
+    "tokenPayloadWithRecoveredWalletWorkTransfers",
+    {
+      compareTokenHistoryPageItems: (left, right) =>
+        String(left?.txid ?? "").localeCompare(String(right?.txid ?? "")),
+      isValidBitcoinAddress: () => true,
+      mergeTokenTransferRecord: (_current, incoming) => incoming,
+      mergedSourceLabel: (left, right) => `${left}+${right}`,
+      newerIso: (_left, right) => right,
+      normalizeTokenScope,
+      recoveredWorkTransfersForAddresses: async () => [{
+        amount: "0.0000000000000001",
+        amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+        amountSubatoms: "1",
+        confirmed: true,
+        createdAt: "2026-08-27T18:00:00.000Z",
+        precisionModel: WORK_PRECISION_V2_MODEL,
+        recipientAddress: "late-holder",
+        senderAddress: "source-holder",
+        tokenId: WORK_TOKEN_ID,
+        txid: "f".repeat(64),
+      }],
+      tokenPayloadWithScopedHolderCountFloor,
+      tokenTransferHistoryItemKey: (transfer) => transfer?.txid ?? "",
+      transferBalanceDeltaForAddress,
+      workAmoV8ReachedLatch: false,
+      workBalanceFieldsFromAtoms: (balance) => ({
+        amountStorageModel: WORK_ATOMIC_PROJECTION_MODEL,
+        balance: formatWorkAtoms(balance),
+        balanceAtoms: String(balance),
+      }),
+      workBalanceFieldsFromSubatoms: (balance) => ({
+        amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+        balance: formatWorkSubatoms(balance),
+        balanceSubatoms: String(balance),
+        precisionModel: WORK_PRECISION_V2_MODEL,
+      }),
+    },
+  );
+  const lateRecovered = await tokenPayloadWithRecoveredWalletWorkTransfers(
+    {
+      amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+      holders: [recoveredHolders[0]],
+      precisionModel: WORK_PRECISION_V2_MODEL,
+      source: "canonical",
+      stats: { holders: 1 },
+      tokens: [{ ...q16Token, holderCount: 1 }],
+      transfers: [],
+    },
+    "livenet",
+    WORK_TOKEN_ID,
+    ["late-holder"],
+  );
+  assert.equal(lateRecovered.holders.length, 2);
+  assert.equal(
+    lateRecovered.tokens[0].holderCount,
+    2,
+    "a holder recovered after indexed balances must still floor metadata",
+  );
+
+  const genericTokenId = "a".repeat(64);
+  const compactTokenSummaryPayload = isolatedFunction(
+    API_PATH,
+    "compactTokenSummaryPayload",
+    {
+      SUMMARY_MARKET_LIMIT: 40,
+      mergedTokenSummaryMetric: (token, summary, key, preserveExisting) =>
+        preserveExisting && token?.[key] !== undefined
+          ? token[key]
+          : summary?.[key] ?? token?.[key],
+      normalizeTokenScope,
+      numericValue: (value) => Number(value) || 0,
+      recentByCreatedAt: (items, limit) =>
+        (Array.isArray(items) ? items : []).slice(0, limit),
+      recentClosedTokenListings: (items, limit) =>
+        (Array.isArray(items) ? items : []).slice(0, limit),
+      tokenAggregateSummaries: () =>
+        new Map([[genericTokenId, { holderCount: 1 }]]),
+      tokenListingHasConfirmedSaleTicketSeal: () => false,
+      tokenMatchesScope,
+      tokenPayloadWithScopedHolderCountFloor,
+      tokenPayloadWithScopedHolderIdentity: (payload) => payload,
+      tokenSummaryListings: (items, limit) =>
+        (Array.isArray(items) ? items : []).slice(0, limit),
+      tokenSummaryMetricValue: (value) =>
+        Number.isFinite(Number(value)) ? Number(value) : undefined,
+      tokenSummaryWorkAmountStorageModel: () => "",
+    },
+  );
+  const compacted = compactTokenSummaryPayload(
+    {
+      closedListings: [],
+      holders: [
+        { address: "first", balance: 1, tokenId: genericTokenId },
+        { address: "second", balance: 1, tokenId: genericTokenId },
+      ],
+      listings: [],
+      mints: [],
+      sales: [],
+      stats: {},
+      tokens: [{ holderCount: 2, ticker: "TEST", tokenId: genericTokenId }],
+      transfers: [],
+    },
+    genericTokenId,
+  );
+  assert.equal(
+    compacted.tokens[0].holderCount,
+    2,
+    "post-compact holder metadata must retain the positive-holder floor",
+  );
 });
 
 check("wallet legacy seal recovery enriches only its confirmed V1/V2 base listing", () => {
@@ -49798,6 +50052,41 @@ check("token listing history rejects previews and fences relational and Core evi
       normalizeTokenScope: (value) => String(value ?? "").trim().toLowerCase(),
     },
   );
+  const tokenListingWithCanonicalWorkAmoV8Witness = isolatedFunction(
+    API_PATH,
+    "tokenListingWithCanonicalWorkAmoV8Witness",
+    {
+      tokenSaleAuthorizationTermsMatch: (left, right) => {
+        const canonicalUnsignedTerms = (authorization) =>
+          JSON.stringify(
+            Object.fromEntries(
+              Object.entries(authorization ?? {})
+                .filter(([key]) =>
+                  !["anchorSignature", "anchorTxid"].includes(key),
+                )
+                .sort(([leftKey], [rightKey]) =>
+                  compareCanonicalUtf8(leftKey, rightKey),
+                ),
+            ),
+          );
+        return (
+          canonicalUnsignedTerms(left) === canonicalUnsignedTerms(right)
+        );
+      },
+      tokenSaleAuthorizationUsesSaleTicketAnchor: (authorization) =>
+        /^[0-9a-f]{64}$/u.test(
+          String(authorization?.anchorTxid ?? "").toLowerCase(),
+        ) &&
+        /^[0-9a-f]{18,146}$/u.test(
+          String(authorization?.anchorSignature ?? "").toLowerCase(),
+        ),
+      workAmoV5CanonicalPayloadCommitment: (value) => ({
+        sha256: createHash("sha256")
+          .update(JSON.stringify(value), "utf8")
+          .digest("hex"),
+      }),
+    },
+  );
   let relational;
   let coreDigest = "c".repeat(64);
   let coreHash = "a".repeat(64);
@@ -49873,9 +50162,7 @@ check("token listing history rejects previews and fences relational and Core evi
       tokenListingHistoryStableKey,
       tokenListingHistoryUnavailable,
       tokenListingWithCanonicalWorkAmoV8Witness: (listing, witness) => ({
-        ...listing,
-        listingAuthorization: witness.listingAuthorization,
-        listingFrozenTerms: witness.listingFrozenTerms,
+        ...tokenListingWithCanonicalWorkAmoV8Witness(listing, witness),
         witnessed: true,
       }),
       TX_FETCH_CONCURRENCY: 4,
@@ -50139,18 +50426,31 @@ check("token listing history rejects previews and fences relational and Core evi
     "Core outpoint evidence mutation must invalidate page two",
   );
   coreDigest = "c".repeat(64);
+  const activeV8ListingId = "4".repeat(64);
+  const activeV8ListingAuthorization = {
+    anchorSignature: "",
+    anchorTxid: "",
+    nonce: "canonical-v8-listing",
+    tokenId: WORK_TOKEN_ID,
+    version: WORK_AMO_V8_AUTH_VERSION,
+  };
+  const activeV8SignedSealAuthorization = {
+    ...activeV8ListingAuthorization,
+    anchorSignature: "30".repeat(9),
+    anchorTxid: activeV8ListingId,
+  };
   const activeV8 = {
     blockHeight: 964_103,
     confirmed: true,
-    listingId: "4".repeat(64),
-    saleAuthorization: {
-      tokenId: WORK_TOKEN_ID,
-      version: WORK_AMO_V8_AUTH_VERSION,
-    },
+    listingAuthorization: activeV8ListingAuthorization,
+    listingId: activeV8ListingId,
+    saleAuthorization: activeV8SignedSealAuthorization,
+    sealConfirmed: true,
+    sealTxid: "5".repeat(64),
     spent: false,
     status: "active",
     tokenId: WORK_TOKEN_ID,
-    txid: "4".repeat(64),
+    txid: activeV8ListingId,
   };
   relational = {
     ...relational,
@@ -50168,7 +50468,7 @@ check("token listing history rejects previews and fences relational and Core evi
   assert.deepEqual(witnessCalls, [listings[1].listingId, activeV8.listingId]);
   const activeWitness = {
     confirmed: true,
-    listingAuthorization: { anchorVout: 2 },
+    listingAuthorization: activeV8ListingAuthorization,
     listingFrozenTerms: { unitPriceSats: "1000" },
     unspent: true,
     valid: true,
@@ -50181,12 +50481,54 @@ check("token listing history rejects previews and fences relational and Core evi
   assert.equal(exactActiveV8.totalCount, 1);
   assert.equal(exactActiveV8.items[0].listingId, activeV8.listingId);
   assert.equal(exactActiveV8.items[0].witnessed, true);
+  assert.deepEqual(
+    exactActiveV8.items[0].saleAuthorization,
+    activeV8SignedSealAuthorization,
+    "the complete-listings pipeline must preserve a canonical signed seal action",
+  );
+  assert.deepEqual(
+    exactActiveV8.items[0].listingAuthorization,
+    activeV8ListingAuthorization,
+    "the immutable listing witness must remain separate from the signed seal action",
+  );
   assert.equal(
     coreCheckedListings.find((item) => item.listingId === activeV8.listingId)
       ?.witnessed,
     true,
     "Core must validate the canonical witness-enriched active V8 authorization",
   );
+  const canonicalActiveRelational = relational;
+  for (const [label, unsafeCandidate] of [
+    [
+      "term-divergent",
+      {
+        ...activeV8,
+        saleAuthorization: {
+          ...activeV8SignedSealAuthorization,
+          nonce: "divergent-v8-seal",
+        },
+      },
+    ],
+    ["missing-seal-txid", { ...activeV8, sealTxid: "" }],
+  ]) {
+    relational = {
+      ...canonicalActiveRelational,
+      items: canonicalActiveRelational.items.map((item) =>
+        item.listingId === activeV8.listingId ? unsafeCandidate : item,
+      ),
+    };
+    const rejectedSignedProjection = await completeTokenListingHistoryPayload(
+      "livenet",
+      "work",
+      new URLSearchParams({ q: activeV8.listingId }),
+    );
+    assert.deepEqual(
+      rejectedSignedProjection.items[0].saleAuthorization,
+      activeV8ListingAuthorization,
+      `${label} signed seal evidence must fail closed to canonical unsigned listing terms`,
+    );
+  }
+  relational = canonicalActiveRelational;
   witnesses.set(activeV8.listingId, {
     ...activeWitness,
     version: "pwt-sale-v7",
@@ -73234,9 +73576,11 @@ check("post-V5 seal positions come only from canonical relational seal rows", as
     token_id: tokenId,
     updated_at: "2026-07-28T00:00:00.000Z",
   };
+  const creditListingQueries = [];
   const pool = {
     async query(sql) {
       const text = String(sql);
+      creditListingQueries.push(text);
       if (/count\(\*\) AS total_count/iu.test(text)) {
         return { rows: [{ total_count: 1 }] };
       }
@@ -73287,6 +73631,13 @@ check("post-V5 seal positions come only from canonical relational seal rows", as
     "livenet",
     tokenId,
   );
+  assert.equal(
+    creditListingQueries.some((query) =>
+      /canonical_seal_event\.seal_event_payload/u.test(query),
+    ),
+    true,
+    "the relational listing query must project the canonical seal event payload",
+  );
   const [creditListing] = lifecycle.items;
   assert.equal(creditListing.blockHash, listingRow.listing_event_block_hash);
   assert.equal(creditListing.blockIndex, listingRow.listing_event_block_index);
@@ -73310,10 +73661,26 @@ check("post-V5 seal positions come only from canonical relational seal rows", as
     );
   }
 
+  const canonicalTokenSealAuthorizationMatchesListing = isolatedFunction(
+    READER_PATH,
+    "canonicalTokenSealAuthorizationMatchesListing",
+    {
+      canonicalWorkAmoJson: (value) =>
+        JSON.stringify(
+          Object.fromEntries(
+            Object.entries(value ?? {}).sort(([left], [right]) =>
+              compareCanonicalUtf8(left, right),
+            ),
+          ),
+        ),
+      objectRecord,
+    },
+  );
   const tokenListingFromCreditListingRow = isolatedFunction(
     READER_PATH,
     "tokenListingFromCreditListingRow",
     {
+      canonicalTokenSealAuthorizationMatchesListing,
       normalizeTokenHistoryListingItem: (item) => item,
       normalizedLowerText,
       objectRecord,
@@ -73344,18 +73711,28 @@ check("post-V5 seal positions come only from canonical relational seal rows", as
     },
   );
   const staleV8Authorization = {
+    anchorScriptPubKey:
+      "76a914547e1b8e5303c69a1fd07e87305b5b71fbaac0ee88ac",
+    anchorSigHashType: 0x83,
+    anchorSignature: "",
+    anchorTxid: "",
+    anchorType: "sale-ticket-v1",
+    anchorValueSats: 546,
+    anchorVout: 2,
     nonce: "stale-listing-row",
     sellerAddress: "seller",
+    sellerPublicKey:
+      "03322f3132310abe49fd21dbb4987c7a5f327afc0224bc74851e06b0f5cf4bf945",
     ticker: "WORK",
     tokenId: WORK_TOKEN_ID,
     version: WORK_AMO_V8_AUTH_VERSION,
   };
   const canonicalSealAuthorization = {
     ...staleV8Authorization,
-    nonce: "canonical-seal-event",
+    anchorSignature: "30".repeat(9),
+    anchorTxid: listingId,
   };
-  const canonicalSealedWork = tokenListingFromCreditListingRow(
-    {
+  const canonicalSealedWorkRow = {
       amount: "1",
       listing_block_hash: "d".repeat(64),
       listing_block_height: WORK_AMO_V5_ACTIVATION_HEIGHT,
@@ -73371,6 +73748,7 @@ check("post-V5 seal positions come only from canonical relational seal rows", as
       listing_transaction_block_index: 6,
       listing_tx_status: "confirmed",
       payload: {
+        actionAuthorization: canonicalSealAuthorization,
         blockHash: "d".repeat(64),
         blockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT,
         blockIndex: 6,
@@ -73389,6 +73767,7 @@ check("post-V5 seal positions come only from canonical relational seal rows", as
       sale_ticket_vout: 1,
       seal_event_payload: {
         listingId,
+        listingAuthorization: staleV8Authorization,
         saleAuthorization: canonicalSealAuthorization,
         tokenId: WORK_TOKEN_ID,
       },
@@ -73406,7 +73785,9 @@ check("post-V5 seal positions come only from canonical relational seal rows", as
       seller_address: "seller",
       status: "sealing",
       token_id: WORK_TOKEN_ID,
-    },
+    };
+  const canonicalSealedWork = tokenListingFromCreditListingRow(
+    canonicalSealedWorkRow,
     "livenet",
   );
   assert.deepEqual(
@@ -73415,10 +73796,57 @@ check("post-V5 seal positions come only from canonical relational seal rows", as
   );
   assert.deepEqual(
     canonicalSealedWork.listingAuthorization,
-    canonicalSealAuthorization,
+    staleV8Authorization,
+    "the immutable listing terms must remain separate from the signed seal action",
   );
   assert.equal(canonicalSealedWork.sealConfirmed, true);
   assert.equal(canonicalSealedWork.sealTxid, sealTxid);
+
+  const historicalSealAuthorization = {
+    ...canonicalSealAuthorization,
+  };
+  const historicalSealedWork = tokenListingFromCreditListingRow(
+    {
+      ...canonicalSealedWorkRow,
+      seal_event_payload: {
+        listingId,
+        saleAuthorization: historicalSealAuthorization,
+        tokenId: WORK_TOKEN_ID,
+      },
+    },
+    "livenet",
+  );
+  assert.deepEqual(
+    historicalSealedWork.saleAuthorization,
+    historicalSealAuthorization,
+    "historical seal rows without actionAuthorization retain their signed saleAuthorization fallback",
+  );
+
+  for (const [field, mismatch] of [
+    ["tokenId", "f".repeat(64)],
+    ["version", "pwt-sale-v6"],
+    ["nonce", "mismatched-seal-terms"],
+  ]) {
+    const mismatchedSealWork = tokenListingFromCreditListingRow(
+      {
+        ...canonicalSealedWorkRow,
+        seal_event_payload: {
+          listingId,
+          saleAuthorization: {
+            ...canonicalSealAuthorization,
+            [field]: mismatch,
+          },
+          tokenId: WORK_TOKEN_ID,
+        },
+      },
+      "livenet",
+    );
+    assert.deepEqual(
+      mismatchedSealWork.saleAuthorization,
+      staleV8Authorization,
+      `a mismatched canonical seal ${field} must fail closed`,
+    );
+  }
 
   const preV5Height = WORK_AMO_V5_ACTIVATION_HEIGHT - 1;
   const legacySealRow = {
