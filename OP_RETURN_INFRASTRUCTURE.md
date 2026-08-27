@@ -3139,9 +3139,11 @@ MiB per file, and 512 MiB total, and refuses a missing or byte-divergent
 collision. Quoted text, escaped/backslash strings, non-ASCII literals, traversal
 candidates, and other strings that do not resolve to an existing regular file
 inside that surface are soft-ignored. Only resolved file edges count against
-the 4,096-edge graph limit; a separate generous candidate-scan ceiling still
-bounds hostile input. Thus a client that fetched the prior HTML immediately before
-exchange can still fetch its complete old asset graph afterward.
+the 4,096-edge graph limit; a separate 524,288-candidate scan ceiling admits
+the measured 421,994-candidate compatibility-complete pre-v3 monolith while
+still bounding hostile input. Thus a client that fetched the prior HTML
+immediately before exchange can still fetch its complete old asset graph
+afterward.
 
 The root-only stager is the canonical constructor for that full candidate. It
 takes the canonical live `/var/www`, an exact release-bound `surfaces` payload,

@@ -219,7 +219,7 @@ assert.match(publisher, /verify_current_rollback_capability/u);
 assert.match(publisher, /"\$\{provenance_script\}" verify-rollback/u);
 assert.match(publisher, /maximum_dependencies = 256/u);
 assert.match(publisher, /maximum_reference_edges = 4096/u);
-assert.match(publisher, /maximum_reference_candidates = 262144/u);
+assert.match(publisher, /maximum_reference_candidates = 524288/u);
 assert.match(publisher, /maximum_asset_bytes = 64 \* 1024 \* 1024/u);
 assert.match(publisher, /maximum_total_bytes = 512 \* 1024 \* 1024/u);
 assert.match(publisher, /details\.st_uid/u);
@@ -253,7 +253,7 @@ assert.match(
 );
 assert.match(stager, /MAXIMUM_DEPENDENCIES = 256/u);
 assert.match(stager, /MAXIMUM_REFERENCE_EDGES = 4096/u);
-assert.match(stager, /MAXIMUM_REFERENCE_CANDIDATES = 262144/u);
+assert.match(stager, /MAXIMUM_REFERENCE_CANDIDATES = 524288/u);
 assert.match(stager, /MAXIMUM_ASSET_BYTES = 64 \* 1024 \* 1024/u);
 assert.match(stager, /MAXIMUM_TOTAL_BYTES = 512 \* 1024 \* 1024/u);
 assert.match(stager, /MAXIMUM_PAYLOAD_ENTRIES = 10000/u);

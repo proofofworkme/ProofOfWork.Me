@@ -268,7 +268,10 @@ maximum_asset_bytes = 64 * 1024 * 1024
 maximum_total_bytes = 512 * 1024 * 1024
 maximum_dependencies = 256
 maximum_reference_edges = 4096
-maximum_reference_candidates = 262144
+# The compatibility-complete pre-v3 monolith produces 421,994 candidates
+# across the 14 canonical surfaces. Keep this verifier aligned with the
+# stager's bounded migration ceiling.
+maximum_reference_candidates = 524288
 dependency_count = 0
 reference_edge_count = 0
 reference_candidate_count = 0

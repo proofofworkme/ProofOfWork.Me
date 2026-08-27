@@ -42,7 +42,11 @@ MAXIMUM_ASSET_BYTES = 64 * 1024 * 1024
 MAXIMUM_TOTAL_BYTES = 512 * 1024 * 1024
 MAXIMUM_DEPENDENCIES = 256
 MAXIMUM_REFERENCE_EDGES = 4096
-MAXIMUM_REFERENCE_CANDIDATES = 262144
+# The compatibility-complete pre-v3 monolith produces 421,994 candidates
+# across the 14 canonical surfaces. Keep a bounded power-of-two ceiling above
+# that measured migration input while the tighter edge/dependency/byte bounds
+# continue to constrain files that can actually enter the release.
+MAXIMUM_REFERENCE_CANDIDATES = 524288
 MAXIMUM_PAYLOAD_ENTRIES = 10000
 MAXIMUM_PAYLOAD_BYTES = 1024 * 1024 * 1024
 MANIFEST_NAME = ".proofofwork-ui-release"
