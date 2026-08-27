@@ -52085,6 +52085,29 @@ async function completeTokenListingHistoryPayload(network, tokenScope, searchPar
   const declaredTotal = Number(relational?.totalCount);
   const relationalHeight = Number(relational?.indexedThroughBlock);
   const relationalHash = String(relational?.indexedThroughBlockHash ?? "").trim().toLowerCase();
+  const relationalWorkMarketAuthorizationVersions = [
+    ...new Set(
+      (Array.isArray(relational?.stats?.workMarketAuthorizationVersions)
+        ? relational.stats.workMarketAuthorizationVersions
+        : [])
+        .map((version) => String(version ?? "").trim().toLowerCase())
+        .filter(Boolean),
+    ),
+  ];
+  const relationalScopeIncludesWork =
+    network === "livenet" &&
+    (!scope ||
+      String(scope).toLowerCase() === "all" ||
+      scope === "work" ||
+      scope === WORK_TOKEN_ID);
+  const workAmoV8BoundaryConfigured =
+    Number.isSafeInteger(WORK_AMO_V8_ACTIVATION_HEIGHT) &&
+    WORK_AMO_V8_ACTIVATION_HEIGHT > 0;
+  const relationalRequiresWorkAmoV8 =
+    relationalScopeIncludesWork &&
+    workAmoV8BoundaryConfigured &&
+    Number.isSafeInteger(relationalHeight) &&
+    relationalHeight >= WORK_AMO_V8_ACTIVATION_HEIGHT;
   if (
     !relational || relational.summaryOnly === true || relationalItems === null ||
     relational?.stats?.complete !== true || relational?.collectionHasMore?.listings === true ||
@@ -52092,12 +52115,22 @@ async function completeTokenListingHistoryPayload(network, tokenScope, searchPar
     declaredTotal > TOKEN_LISTING_LIFECYCLE_MATERIALIZATION_LIMIT ||
     declaredTotal !== relationalItems.length ||
     !Number.isSafeInteger(relationalHeight) || relationalHeight < 1 ||
-    !/^[0-9a-f]{64}$/u.test(relationalHash)
+    !/^[0-9a-f]{64}$/u.test(relationalHash) ||
+    (relationalScopeIncludesWork && !workAmoV8BoundaryConfigured) ||
+    (relationalRequiresWorkAmoV8 &&
+      (relational?.stats?.workMarketAuthorizationReady !== true ||
+        !relationalWorkMarketAuthorizationVersions.includes(
+          TOKEN_SALE_AUTH_WORK_AMO_V8_VERSION,
+        )))
   ) {
     throw tokenListingHistoryUnavailable(
       "Complete checkpoint-bound relational token listings are unavailable.",
       { declaredTotal: Number.isSafeInteger(declaredTotal) ? declaredTotal : null,
         materializedCount: relationalItems?.length ?? null,
+        workMarketAuthorizationReady:
+          relational?.stats?.workMarketAuthorizationReady === true,
+        workMarketAuthorizationVersions:
+          relationalWorkMarketAuthorizationVersions,
         ...lifecycleCapacity },
     );
   }

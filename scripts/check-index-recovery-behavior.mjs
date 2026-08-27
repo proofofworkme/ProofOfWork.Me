@@ -5249,6 +5249,7 @@ check("market lifecycle overrides stale event closures", async () => {
 
 check("unscoped credit lifecycle reads query every token", async () => {
   const scopes = [];
+  let authorizationVersions = [WORK_AMO_V8_AUTH_VERSION];
   const proofIndexCreditListingsPayload = isolatedFunction(
     READER_PATH,
     "proofIndexCreditListingsPayload",
@@ -5257,6 +5258,8 @@ check("unscoped credit lifecycle reads query every token", async () => {
         Math.min(max, Math.max(min, Number(value ?? fallback))),
       canonicalTokenListingSealEventJoinSql: () => "",
       canonicalWorkMarketV3ListingProjectionSql: () => "TRUE",
+      currentWorkMarketAuthorizationVersionsAtSnapshot: async () =>
+        authorizationVersions,
       dateIso: (value) => new Date(value).toISOString(),
       latestProofIndexScanMetadata: async () => ({
         generated_at: "2026-07-12T14:28:54.000Z",
@@ -5278,10 +5281,43 @@ check("unscoped credit lifecycle reads query every token", async () => {
       tokenScopeKey: (value) =>
         String(value ?? "").trim().toLowerCase() || "all",
       verifiedWorkMarketV4Activation: async () => null,
+      workAmoV6PublicListingReadSql: () => "TRUE",
+      WORK_TOKEN_ID,
     },
   );
-  await proofIndexCreditListingsPayload("livenet", "");
-  assert.deepEqual(scopes, ["", ""]);
+  const complete = await proofIndexCreditListingsPayload("livenet", "");
+  assert.equal(complete.stats.complete, true);
+  assert.equal(complete.stats.workMarketAuthorizationReady, true);
+  assert.deepEqual(
+    Array.from(complete.stats.workMarketAuthorizationVersions),
+    [WORK_AMO_V8_AUTH_VERSION],
+  );
+
+  authorizationVersions = [];
+  const withheldAll = await proofIndexCreditListingsPayload("livenet", "");
+  const withheldWork = await proofIndexCreditListingsPayload(
+    "livenet",
+    WORK_TOKEN_ID,
+  );
+  const completeNonWork = await proofIndexCreditListingsPayload(
+    "livenet",
+    "a".repeat(64),
+  );
+  assert.equal(withheldAll.stats.complete, false);
+  assert.equal(withheldWork.stats.complete, false);
+  assert.equal(withheldWork.stats.workMarketAuthorizationReady, false);
+  assert.deepEqual(
+    Array.from(withheldWork.stats.workMarketAuthorizationVersions),
+    [],
+  );
+  assert.equal(completeNonWork.stats.complete, true);
+  assert.equal(completeNonWork.stats.workMarketAuthorizationReady, true);
+  assert.deepEqual(scopes, [
+    "", "",
+    "", "",
+    WORK_TOKEN_ID, WORK_TOKEN_ID,
+    "a".repeat(64), "a".repeat(64),
+  ]);
 });
 
 check(
@@ -48916,6 +48952,7 @@ check("token listing history rejects previews and fences relational and Core evi
   let relational;
   let coreDigest = "c".repeat(64);
   let coreHash = "a".repeat(64);
+  let coreCalls = 0;
   let coreCheckedListings = [];
   let coreCheckedListingIds = [];
   let coreCheckedCountDelta = 0;
@@ -48926,6 +48963,8 @@ check("token listing history rejects previews and fences relational and Core evi
     API_PATH, "completeTokenListingHistoryPayload",
     {
       TOKEN_LISTING_HISTORY_CURSOR_PREFIX: "token-listings-v2",
+      WORK_AMO_V8_ACTIVATION_HEIGHT: 960_601,
+      WORK_TOKEN_ID,
       applyWorkMarketV2CutoverToTokenState,
       checkpointCursorCanonicalJson,
       checkpointHistoryRequest,
@@ -48950,6 +48989,7 @@ check("token listing history rejects previews and fences relational and Core evi
       },
       recoveryAddressesFromSearchParams: () => [],
       strictCoreTokenListingReconciliation: async (items) => {
+        coreCalls += 1;
         coreCheckedListings = items;
         coreCheckedListingIds = items.map((item) => item.listingId);
         const activeItems = items.filter((item) => item.spent !== true);
@@ -49019,7 +49059,11 @@ check("token listing history rejects previews and fences relational and Core evi
     indexedThroughBlock: 964_200,
     indexedThroughBlockHash: "a".repeat(64),
     items: lifecycleListings.slice(0, 3),
-    stats: { complete: false },
+    stats: {
+      complete: false,
+      workMarketAuthorizationReady: true,
+      workMarketAuthorizationVersions: [WORK_AMO_V8_AUTH_VERSION],
+    },
     summaryOnly: true,
     totalCount: 4,
   };
@@ -49033,7 +49077,11 @@ check("token listing history rejects previews and fences relational and Core evi
   relational = {
     ...relational,
     items: lifecycleListings,
-    stats: { complete: true },
+    stats: {
+      complete: true,
+      workMarketAuthorizationReady: true,
+      workMarketAuthorizationVersions: [WORK_AMO_V8_AUTH_VERSION],
+    },
     summaryOnly: false,
   };
   coreHash = "b".repeat(64);
@@ -49045,6 +49093,46 @@ check("token listing history rejects previews and fences relational and Core evi
     "a Core checkpoint different from the relational checkpoint must fail closed",
   );
   coreHash = "a".repeat(64);
+  const coreCallsBeforeWithheld = coreCalls;
+  relational = {
+    ...relational,
+    stats: {
+      ...relational.stats,
+      workMarketAuthorizationReady: false,
+      workMarketAuthorizationVersions: [],
+    },
+  };
+  await assert.rejects(
+    () => completeTokenListingHistoryPayload(
+      "livenet", "work", new URLSearchParams("limit=1"),
+    ),
+    (error) =>
+      error?.statusCode === 503 &&
+      error?.details?.workMarketAuthorizationReady === false,
+    "a readiness-withheld legacy-only WORK lifecycle must fail closed",
+  );
+  await assert.rejects(
+    () => completeTokenListingHistoryPayload(
+      "livenet", "all", new URLSearchParams("limit=1"),
+    ),
+    (error) =>
+      error?.statusCode === 503 &&
+      error?.details?.workMarketAuthorizationReady === false,
+    "an explicit all-token scope must keep the WORK V8 readiness fence",
+  );
+  assert.equal(
+    coreCalls,
+    coreCallsBeforeWithheld,
+    "readiness-withheld lifecycle rows must be rejected before Core reconciliation",
+  );
+  relational = {
+    ...relational,
+    stats: {
+      ...relational.stats,
+      workMarketAuthorizationReady: true,
+      workMarketAuthorizationVersions: [WORK_AMO_V8_AUTH_VERSION],
+    },
+  };
   witnessCalls = [];
   const exactRelic = await completeTokenListingHistoryPayload(
     "livenet", "work",

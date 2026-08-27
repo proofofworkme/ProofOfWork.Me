@@ -39300,6 +39300,11 @@ export async function proofIndexCreditListingsPayload(
       rowNumber(scan, "indexed_through_block"),
       workMarketV4Activation,
     );
+  const workScopeIncludesWork =
+    network === "livenet" &&
+    (!scope || scope === "work" || scope === WORK_TOKEN_ID);
+  const workMarketAuthorizationReady =
+    !workScopeIncludesWork || workMarketAuthorizationVersions.length > 0;
   const workAmoV6ReadSql = workAmoV6PublicListingReadSql(
     "cl",
     workMarketAuthorizationVersions,
@@ -40447,6 +40452,8 @@ export async function proofIndexCreditListingsPayload(
     stats: {
       complete: false,
       totalCount,
+      workMarketAuthorizationReady,
+      workMarketAuthorizationVersions: [...workMarketAuthorizationVersions],
     },
     totalCount,
   };
@@ -40455,6 +40462,7 @@ export async function proofIndexCreditListingsPayload(
   lifecyclePayload.stats = {
     ...lifecyclePayload.stats,
     complete:
+      workMarketAuthorizationReady &&
       rejectedCount === 0 &&
       result.rows.length >= totalCount,
     projectedCount,
