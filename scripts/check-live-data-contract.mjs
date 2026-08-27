@@ -1623,6 +1623,11 @@ expectAll("wallet scoped token reads keep confirmed lifecycle history", server, 
   /url\.pathname === "\/api\/v1\/token"[\s\S]*walletScopedTokenPayload\([\s\S]*allowLastGood: freshRead && serveFreshLastGood[\s\S]*requireCurrent: freshRead/,
   /url\.pathname === "\/api\/v1\/token-summary"[\s\S]*const walletScoped =[\s\S]*walletScopedTokenSummaryPayload/,
 ]);
+expectAll("wallet scoped WORK reads do not publish orphan Q16 price aliases", server, [
+  /function tokenPayloadWithReconciledActiveListingCounts\([\s\S]*if \(isWorkTokenId\(tokenId\)\) \{[\s\S]*canonicalWorkQ16SummaryUnitPriceDescriptor\([\s\S]*summary\.lowestAskPricePerTokenExact[\s\S]*token\?\.lowestAskPricePerTokenExact[\s\S]*delete next\.lowestAskPricePerToken/,
+  /function compactTokenSummaryPayload\([\s\S]*if \(tokenWorkQ16\) \{[\s\S]*if \(lastSalePricePerTokenExact\)[\s\S]*delete next\.lastSalePricePerToken[\s\S]*if \(lowestAskPricePerTokenExact\)[\s\S]*delete next\.lowestAskPricePerToken/,
+  /async function walletScopedTokenPayload\([\s\S]*const authoritativeOverlay =[\s\S]*walletScopedPayloadUsesAuthoritativeOverlay\(payload\)[\s\S]*if \(!requireCurrent && !authoritativeOverlay\)[\s\S]*authoritativeWallet: true/,
+]);
 expectAll("proof index wallet token overlay reads balances and events", proofIndexReader, [
   /export async function proofIndexWalletTokenOverlayPayload\(/,
   /proof_indexer\.credit_balances cb/,

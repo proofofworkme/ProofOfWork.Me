@@ -1210,6 +1210,24 @@ expect(
     /The index caught a new block\. Rechecking WORK/.test(app),
 );
 expect(
+  "WORK wallet normalization does not reject orphan market price aliases",
+  /const workPriceAliasDisagrees = \([\s\S]*alias === undefined \|\| alias === null \|\| alias === ""[\s\S]*if \(!exact\) \{[\s\S]*return false;[\s\S]*workPriceAliasDisagrees\([\s\S]*token\.lowestAskPricePerToken/.test(
+    app,
+  ),
+);
+expect(
+  "pending credit listing seals are retained in accepted token state",
+  /function tokenListingWithPendingSeal\([\s\S]*sealConfirmed: false[\s\S]*function tokenListingsWithPendingSeal/.test(
+    app,
+  ) &&
+    /function rememberPendingTokenListingSeal\([\s\S]*acceptedTokenStatesRef\.current[\s\S]*tokenListingsWithPendingSeal[\s\S]*acceptedTokenStatesRef\.current\.set/.test(
+      app,
+    ) &&
+    /savePendingTokenListingSeal\(listing,\s*sealedAuthorization,\s*txid,\s*sealAt\)[\s\S]*rememberPendingTokenListingSeal\([\s\S]*setTokenListings\(\(current\) =>[\s\S]*tokenListingsWithPendingSeal/.test(
+      app,
+    ),
+);
+expect(
   "direct credit sends fail closed on canonical wallet spendability before PSBT creation",
   /async function transferToken[\s\S]*fetchFreshWalletTokenPreflightState\([\s\S]*tokenSpendabilityForWallet\([\s\S]*No transaction was created\.[\s\S]*buildPaymentPsbt\(/.test(
     app,

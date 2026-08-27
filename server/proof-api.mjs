@@ -19321,10 +19321,22 @@ function tokenPayloadWithReconciledActiveListingCounts(
           explicitCount(summary.pendingOpenListings) ?? 0,
         ),
       };
-      if (summary.lowestAskPricePerTokenExact) {
-        next.lowestAskPricePerToken = summary.lowestAskPricePerToken;
-        next.lowestAskPricePerTokenExact =
-          summary.lowestAskPricePerTokenExact;
+      if (isWorkTokenId(tokenId)) {
+        const exactAsk =
+          canonicalWorkQ16SummaryUnitPriceDescriptor(
+            summary.lowestAskPricePerTokenExact,
+          ) ??
+          canonicalWorkQ16SummaryUnitPriceDescriptor(
+            token?.lowestAskPricePerTokenExact,
+          );
+        if (exactAsk) {
+          next.lowestAskPricePerToken =
+            exactAsk.decimal ?? summary.lowestAskPricePerToken;
+          next.lowestAskPricePerTokenExact = exactAsk;
+        } else {
+          delete next.lowestAskPricePerToken;
+          delete next.lowestAskPricePerTokenExact;
+        }
       } else if (
         Number.isFinite(Number(summary.lowestAskPricePerToken)) &&
         Number(summary.lowestAskPricePerToken) > 0
@@ -34701,12 +34713,14 @@ function compactTokenSummaryPayload(payload, tokenScope = "", options = {}) {
         next.lastSalePricePerToken = lastSalePricePerTokenExact.decimal;
         next.lastSalePricePerTokenExact = lastSalePricePerTokenExact;
       } else {
+        delete next.lastSalePricePerToken;
         delete next.lastSalePricePerTokenExact;
       }
       if (lowestAskPricePerTokenExact) {
         next.lowestAskPricePerToken = lowestAskPricePerTokenExact.decimal;
         next.lowestAskPricePerTokenExact = lowestAskPricePerTokenExact;
       } else {
+        delete next.lowestAskPricePerToken;
         delete next.lowestAskPricePerTokenExact;
       }
     }
@@ -40016,7 +40030,9 @@ async function walletScopedTokenPayload(
     return cachedWalletPayload;
   }
   const withWalletAuthority = (payload) => {
-    if (!requireCurrent) {
+    const authoritativeOverlay =
+      walletScopedPayloadUsesAuthoritativeOverlay(payload);
+    if (!requireCurrent && !authoritativeOverlay) {
       return payload;
     }
     const checkpointLastGood =

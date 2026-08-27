@@ -9619,6 +9619,48 @@ function mergeTokenListingRecord(
   return incoming;
 }
 
+function tokenListingWithPendingSeal(
+  listing: PowTokenListing,
+  saleAuthorization: PowTokenSaleAuthorization,
+  sealTxid: string,
+  sealAt: string,
+): PowTokenListing {
+  return {
+    ...listing,
+    saleAuthorization,
+    sealAt,
+    sealConfirmed: false,
+    sealTxid,
+  };
+}
+
+function tokenListingsWithPendingSeal(
+  listings: PowTokenListing[],
+  listing: PowTokenListing,
+  saleAuthorization: PowTokenSaleAuthorization,
+  sealTxid: string,
+  sealAt: string,
+) {
+  let changed = false;
+  const next = listings.map((item) => {
+    if (
+      item.network !== listing.network ||
+      item.listingId !== listing.listingId ||
+      item.tokenId !== listing.tokenId
+    ) {
+      return item;
+    }
+    changed = true;
+    return tokenListingWithPendingSeal(
+      item,
+      saleAuthorization,
+      sealTxid,
+      sealAt,
+    );
+  });
+  return changed ? next : listings;
+}
+
 function tokenSaleAuthorizationTermsMatch(
   left: PowTokenSaleAuthorization,
   right: PowTokenSaleAuthorization,
@@ -12210,12 +12252,13 @@ function savePendingTokenListingSeal(
   listing: PowTokenListing,
   saleAuthorization: PowTokenSaleAuthorization,
   sealTxid: string,
+  sealAt = new Date().toISOString(),
 ) {
   const seal = normalizePendingTokenListingSeal({
     listingId: listing.listingId,
     network: listing.network,
     saleAuthorization,
-    sealAt: new Date().toISOString(),
+    sealAt,
     sealTxid,
     sellerAddress: listing.sellerAddress,
     tokenId: listing.tokenId,
@@ -15251,23 +15294,37 @@ function normalizeTokenDefinitionRecord(
   ) {
     throw new Error("WORK lowest-ask price descriptor is noncanonical.");
   }
+  const workPriceAliasDisagrees = (
+    alias: unknown,
+    exact: WorkQ16UnitPriceDescriptor | undefined,
+  ) => {
+    if (alias === undefined || alias === null || alias === "") {
+      return false;
+    }
+    const decimal = exactDecimalText(alias);
+    if (!decimal) {
+      return true;
+    }
+    if (!exact) {
+      return false;
+    }
+    return decimal !== exact.decimal;
+  };
   if (
     q16Work &&
-    token.lastSalePricePerToken !== undefined &&
-    token.lastSalePricePerToken !== "" &&
-    (!lastSalePricePerTokenExact ||
-      exactDecimalText(token.lastSalePricePerToken) !==
-        lastSalePricePerTokenExact.decimal)
+    workPriceAliasDisagrees(
+      token.lastSalePricePerToken,
+      lastSalePricePerTokenExact,
+    )
   ) {
     throw new Error("WORK last-sale price aliases disagree.");
   }
   if (
     q16Work &&
-    token.lowestAskPricePerToken !== undefined &&
-    token.lowestAskPricePerToken !== "" &&
-    (!lowestAskPricePerTokenExact ||
-      exactDecimalText(token.lowestAskPricePerToken) !==
-        lowestAskPricePerTokenExact.decimal)
+    workPriceAliasDisagrees(
+      token.lowestAskPricePerToken,
+      lowestAskPricePerTokenExact,
+    )
   ) {
     throw new Error("WORK lowest-ask price aliases disagree.");
   }
@@ -20992,6 +21049,29 @@ export default function App() {
       renderTokenState(accepted, scopeKey);
     }
     return accepted;
+  }
+
+  function rememberPendingTokenListingSeal(
+    listing: PowTokenListing,
+    saleAuthorization: PowTokenSaleAuthorization,
+    sealTxid: string,
+    sealAt: string,
+  ) {
+    for (const [scopeKey, state] of acceptedTokenStatesRef.current) {
+      const listings = tokenListingsWithPendingSeal(
+        state.listings,
+        listing,
+        saleAuthorization,
+        sealTxid,
+        sealAt,
+      );
+      if (listings !== state.listings) {
+        acceptedTokenStatesRef.current.set(scopeKey, {
+          ...state,
+          listings,
+        });
+      }
+    }
   }
 
   async function currentCompleteGlobalTokenListings(
@@ -30934,18 +31014,21 @@ export default function App() {
         signingAddress: address,
         wallet: window.unisat,
       });
-      savePendingTokenListingSeal(listing, sealedAuthorization, txid);
+      const sealAt = new Date().toISOString();
+      savePendingTokenListingSeal(listing, sealedAuthorization, txid, sealAt);
+      rememberPendingTokenListingSeal(
+        listing,
+        sealedAuthorization,
+        txid,
+        sealAt,
+      );
       setTokenListings((current) =>
-        current.map((item) =>
-          item.listingId === listing.listingId
-            ? {
-                ...item,
-                saleAuthorization: sealedAuthorization,
-                sealAt: new Date().toISOString(),
-                sealConfirmed: false,
-                sealTxid: txid,
-              }
-            : item,
+        tokenListingsWithPendingSeal(
+          current,
+          listing,
+          sealedAuthorization,
+          txid,
+          sealAt,
         ),
       );
       setStatus(
