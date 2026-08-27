@@ -285,6 +285,18 @@ age of the worker heartbeat. A stale worker heartbeat keeps `/health` readiness
 red for operators, but it must not relabel a hash-matched zero-lag wallet read
 as catch-up or block a current signing preflight. Summary-backed routes still
 require their coherent summary snapshot to match that exact tip.
+During a Q16 pending-witness transition, WORK pending readiness remains strict:
+`/health`, authoritative wallet signing preflight, and every write admission
+stay closed until the pending projection is proven. This WORK-only pending gate
+must not make a scoped POWB, INCB, or other non-WORK confirmed projection
+unavailable. A non-wallet fresh token read may use the exact hash-bound
+canonical summary at the verified checkpoint; that response identifies its
+confirmed lane with `confirmedRead.ready: true` and identifies whether pending
+state is current with `pendingProjection.ready`. When pending readiness is
+false, `pendingProjection.status` is `unverified-last-observed`; consumers must
+not present those pending rows as currently verified. `/health/live` remains
+the application-availability probe while strict `/health` remains the
+correctness/readiness probe.
 `event-history`
 serves DB-backed protocol/event search for indexed registry, credit,
 marketplace, mail/file, seeded, and broader Computer events. Each page is read

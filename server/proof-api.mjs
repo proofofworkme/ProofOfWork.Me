@@ -39039,19 +39039,19 @@ function tokenPayloadMatchesCanonicalFreshGate(
   );
 }
 
-async function currentCanonicalWorkTokenSummaryPayloadForFreshRead(
+async function currentCanonicalTokenSummaryPayloadForFreshRead(
   network,
   tokenScope,
   canonicalGate,
 ) {
   const scope = normalizeTokenScope(tokenScope);
-  if (network !== "livenet" || scope !== WORK_TOKEN_ID) {
+  if (network !== "livenet") {
     return null;
   }
   const payload = await storedCanonicalTokenSummaryPayload(network, scope).catch(
     (error) => {
       console.error(
-        `Canonical WORK token summary fresh read failed: ${errorSummary(error)}`,
+        `Canonical token summary fresh read failed for ${scope || "all"}: ${errorSummary(error)}`,
       );
       return null;
     },
@@ -39063,12 +39063,29 @@ async function currentCanonicalWorkTokenSummaryPayloadForFreshRead(
       network,
       payload,
       scope,
-      "canonical-work-token-summary-fresh",
+      "canonical-token-summary-fresh",
     )
   ) {
     return null;
   }
-  return payload;
+  const checkpointHash = String(canonicalGate?.canonicalHash ?? "")
+    .trim()
+    .toLowerCase();
+  const checkpointHeight = Number(canonicalGate?.indexedThroughBlock);
+  const pendingReady = canonicalGate?.ready === true;
+  return {
+    ...payload,
+    confirmedRead: {
+      checkpointHash,
+      checkpointHeight,
+      mode: canonicalGate?.atTip === true ? "exact-tip" : "bounded-last-good",
+      ready: true,
+    },
+    pendingProjection: {
+      ready: pendingReady,
+      status: pendingReady ? "current" : "unverified-last-observed",
+    },
+  };
 }
 
 async function cachedTokenPayloadFallbackForRead(
@@ -39944,7 +39961,7 @@ async function walletScopedTokenPayload(
     );
     if (!payload && scope === WORK_TOKEN_ID) {
       payload = exactWalletCandidate(
-        await currentCanonicalWorkTokenSummaryPayloadForFreshRead(
+        await currentCanonicalTokenSummaryPayloadForFreshRead(
           network,
           scope,
           canonicalGate,
@@ -40797,7 +40814,7 @@ async function tokenPayloadWithWalletActiveListings(
   const indexedPayload =
     indexedListings.length > 0
       ? {
-          ...tokenStateWithRecoveredActiveListingRecords(payload, {
+          ...tokenStateWithPreservedListingRecords(payload, {
             listings: indexedListings,
           }),
           indexedAt: newerIso(
@@ -40826,7 +40843,7 @@ async function tokenPayloadWithWalletActiveListings(
   );
 
   let scopedPayload = listings.length > 0
-    ? tokenStateWithRecoveredActiveListingRecords(currentIndexedPayload, { listings })
+    ? tokenStateWithPreservedListingRecords(currentIndexedPayload, { listings })
     : currentIndexedPayload;
   if (listings.length > 0) {
     scopedPayload = await tokenPayloadWithSpendableListings({
@@ -73130,7 +73147,7 @@ async function handleRequest(request, response) {
       }
       if (!walletScoped && recoveryAddresses.length === 0 && freshRead) {
         const canonicalSummaryPayload =
-          await currentCanonicalWorkTokenSummaryPayloadForFreshRead(
+          await currentCanonicalTokenSummaryPayloadForFreshRead(
             network,
             tokenScope,
             canonicalReadGate,

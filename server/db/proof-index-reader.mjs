@@ -2795,6 +2795,9 @@ async function payloadWithCurrentWorkPrecisionReadPolicy(
   }
   const currentPayload =
     workPrecisionV2ProjectCurrentPayload(payload);
+  if (!payloadCarriesQ16Work) {
+    return currentPayload;
+  }
   const readiness =
     await proofIndexWorkPrecisionV2MigrationReadiness(
       network,

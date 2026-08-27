@@ -9996,7 +9996,7 @@ check("fresh wallet token reads use exact or bounded canonical coverage", async 
         exactReads += 1;
         return null;
       },
-      currentCanonicalWorkTokenSummaryPayloadForFreshRead: async () => {
+      currentCanonicalTokenSummaryPayloadForFreshRead: async () => {
         summaryReads += 1;
         return null;
       },
@@ -10136,7 +10136,7 @@ check("fresh wallet token reads use exact or bounded canonical coverage", async 
         throw new Error("canonical summary should satisfy the read");
       },
       currentExactTipTokenPayloadForRead: async () => null,
-      currentCanonicalWorkTokenSummaryPayloadForFreshRead: async () => ({
+      currentCanonicalTokenSummaryPayloadForFreshRead: async () => ({
         holders: [{ address: "sender", balance: 1, tokenId: "work-token-id" }],
         indexedThroughBlock: 200,
         indexedThroughBlockHash: "8".repeat(64),
@@ -10304,7 +10304,7 @@ check("fresh wallet token reads use exact or bounded canonical coverage", async 
   assert.equal(activeListingReads, 1);
 });
 
-check("fresh WORK token reads prefer canonical summary over lagging token-state", async () => {
+check("fresh token reads prefer exact canonical summaries over unavailable pending projections", async () => {
   const workTokenId = "work-token-id";
   const blockHash = "8".repeat(64);
   const canonicalGate = {
@@ -10326,7 +10326,7 @@ check("fresh WORK token reads prefer canonical summary over lagging token-state"
   let summaryReads = 0;
   const canonicalSummaryFreshRead = isolatedFunction(
     API_PATH,
-    "currentCanonicalWorkTokenSummaryPayloadForFreshRead",
+    "currentCanonicalTokenSummaryPayloadForFreshRead",
     {
       WORK_TOKEN_ID: workTokenId,
       normalizeTokenScope: (value) =>
@@ -10345,16 +10345,31 @@ check("fresh WORK token reads prefer canonical summary over lagging token-state"
     },
   );
 
+  const workResult = await canonicalSummaryFreshRead(
+    "livenet",
+    "WORK",
+    canonicalGate,
+  );
+  assert.equal(workResult.snapshotId, canonicalSummary.snapshotId);
+  assert.equal(workResult.confirmedRead.checkpointHash, blockHash);
+  assert.equal(workResult.confirmedRead.checkpointHeight, 200);
+  assert.equal(workResult.confirmedRead.mode, "bounded-last-good");
+  assert.equal(workResult.confirmedRead.ready, true);
+  assert.equal(workResult.pendingProjection.ready, false);
   assert.equal(
-    await canonicalSummaryFreshRead("livenet", "WORK", canonicalGate),
-    canonicalSummary,
+    workResult.pendingProjection.status,
+    "unverified-last-observed",
   );
   assert.equal(summaryReads, 1);
-  assert.equal(
-    await canonicalSummaryFreshRead("livenet", "other-token-id", canonicalGate),
-    null,
+  const otherResult = await canonicalSummaryFreshRead(
+    "livenet",
+    "other-token-id",
+    { ...canonicalGate, atTip: true, ready: true },
   );
-  assert.equal(summaryReads, 1);
+  assert.equal(otherResult.snapshotId, canonicalSummary.snapshotId);
+  assert.equal(otherResult.pendingProjection.ready, true);
+  assert.equal(otherResult.pendingProjection.status, "current");
+  assert.equal(summaryReads, 2);
   assert.equal(
     await canonicalSummaryFreshRead(
       "livenet",
@@ -10363,10 +10378,11 @@ check("fresh WORK token reads prefer canonical summary over lagging token-state"
     ),
     null,
   );
+  assert.equal(summaryReads, 3);
 
   const requestSource = topLevelFunctionSource(API_PATH, "handleRequest");
   const summaryReadIndex = requestSource.indexOf(
-    "currentCanonicalWorkTokenSummaryPayloadForFreshRead",
+    "currentCanonicalTokenSummaryPayloadForFreshRead",
   );
   const tokenStateReadIndex = requestSource.indexOf(
     "currentProofIndexTokenPayloadForRead",
@@ -10614,6 +10630,8 @@ check("wallet WORK overlay recovers active canonical V8 listings and drops match
 
   const legacyListingId = "f371ee499b94f929069fb4677446006b1bb67d6793724f2b8d6effb26499c090";
   const v6ListingId = "b259fa601676287eca2ea94c9142cd13b45fde7031ec98967f15306df6ef7936";
+  const spentListingId = "fc57450c502e054ecf23469d88f5249a578799da59d111fe234e50ca593c20e5";
+  const closeTxid = "4c079144b315ca08a846e7e7af3d37f5c96419a94f06af8384dc73e1ca307359";
   const normalizeTestWorkScope = (value) =>
     String(value ?? "").toUpperCase() === "WORK"
       ? workTokenId
@@ -10688,6 +10706,16 @@ check("wallet WORK overlay recovers active canonical V8 listings and drops match
           sellerAddress,
           tokenId: workTokenId,
         },
+        {
+          confirmed: true,
+          listingId: spentListingId,
+          saleAuthorization: {
+            tokenId: workTokenId,
+            version: "pwt-sale-v8",
+          },
+          sellerAddress,
+          tokenId: workTokenId,
+        },
       ],
       mergedSourceLabel: (left, right) => [left, right].filter(Boolean).join("+"),
       newerIso: (left, right) => right ?? left,
@@ -10709,19 +10737,51 @@ check("wallet WORK overlay recovers active canonical V8 listings and drops match
           ),
         };
       },
-      tokenPayloadWithSpendableListings: async (payload) => payload,
+      tokenPayloadWithSpendableListings: async (payload) => ({
+        ...payload,
+        listings: (Array.isArray(payload?.listings) ? payload.listings : [])
+          .filter((listing) => listing.listingId !== spentListingId),
+      }),
       tokenPayloadWithCurrentWalletWorkRecoveryListingPolicy,
       tokenSalesWithCanonicalOutspendClosures: (sales) => sales ?? [],
       tokenStateWithRecoveredActiveListingRecords: activeRecoveryState,
-      tokenStateWithPreservedListingRecords: (state, sourceState) => ({
-        ...state,
-        listings: sourceState.listings,
-      }),
+      tokenStateWithPreservedListingRecords: (state, sourceState) => {
+        const closedListings = [
+          ...(Array.isArray(sourceState?.closedListings)
+            ? sourceState.closedListings
+            : []),
+          ...(Array.isArray(state?.closedListings) ? state.closedListings : []),
+        ];
+        const closedIds = new Set(
+          closedListings.map((listing) => listing.listingId),
+        );
+        const listingsById = new Map();
+        for (const listing of [
+          ...(Array.isArray(sourceState?.listings) ? sourceState.listings : []),
+          ...(Array.isArray(state?.listings) ? state.listings : []),
+        ]) {
+          if (!closedIds.has(listing.listingId)) {
+            listingsById.set(listing.listingId, listing);
+          }
+        }
+        return {
+          ...state,
+          closedListings,
+          listings: [...listingsById.values()],
+        };
+      },
     },
   );
   const recoveredPayload = await tokenPayloadWithWalletActiveListings(
     {
-      closedListings: [],
+      closedListings: [{
+        closedByCanonicalOutpointSpend: true,
+        closedConfirmed: true,
+        closedTxid: closeTxid,
+        listingId: spentListingId,
+        sellerAddress,
+        tokenId: workTokenId,
+      }],
       indexedThroughBlock: 962_374,
       invalidEvents: [{
         reasonCode: "work-market-v2-version-required",
@@ -10747,6 +10807,22 @@ check("wallet WORK overlay recovers active canonical V8 listings and drops match
   );
   assert.equal(
     recoveredPayload.invalidEvents.some((event) => event.txid === legacyListingId),
+    true,
+  );
+  assert.equal(
+    recoveredPayload.listings.some(
+      (listing) => listing.listingId === spentListingId,
+    ),
+    false,
+  );
+  assert.equal(
+    recoveredPayload.closedListings.some(
+      (listing) =>
+        listing.listingId === spentListingId &&
+        listing.closedTxid === closeTxid &&
+        listing.closedConfirmed === true &&
+        listing.closedByCanonicalOutpointSpend === true,
+    ),
     true,
   );
 
@@ -26367,6 +26443,18 @@ check("exact canonical summaries require current conserved token balances", asyn
       },
     ],
   };
+  const scopedBondPayload = {
+    holders: [{ tokenId: "powb-token-id" }],
+    indexedThroughBlock: 102,
+    indexedThroughBlockHash: bootstrapHash,
+    source: "proof-indexer-token-state-tables",
+    tokens: [{ tokenId: "powb-token-id" }],
+  };
+  assert.equal(
+    await currentPrecisionPolicy("livenet", scopedBondPayload),
+    scopedBondPayload,
+    "a scoped non-WORK payload must not inherit WORK pending-readiness failure",
+  );
   assert.equal(
     await currentPrecisionPolicy(
       "livenet",
