@@ -287,6 +287,9 @@ assert.match(
 assert.match(postgresQueryHealth, /indisvalid[\s\S]*indisready/u);
 assert.match(postgresQueryHealth, /owned_sequences/u);
 assert.match(postgresQueryHealth, /unrelated_count/u);
+assert.match(postgresQueryHealth, /closure_count != 18/u);
+assert.match(postgresQueryHealth, /placed_count != 18/u);
+assert.match(postgresQueryHealth, /index_count != 14/u);
 assert.match(
   postgresQueryHealth,
   /CRITICAL PostgreSQL large-state tablespace placement differs/u,
@@ -338,6 +341,10 @@ assert.match(infrastructure, /proofofwork-api-stage-\$\{release_id\}/u);
 assert.match(
   infrastructure,
   /chmod --recursive go-w \/opt\/proofofwork-api/u,
+);
+assert.match(
+  infrastructure,
+  /CREATE INDEX CONCURRENTLY ledger_snapshots_work_q16_summary_latest_idx[\s\S]*TABLESPACE proof_indexer_large_state_v1[\s\S]*WHERE payload \? 'workSufficientState'[\s\S]*AND NOT \(payload \? 'tokenStatePayloads'\)/u,
 );
 assert.match(infrastructure, /proofofwork-ui-release-v3/u);
 assert.match(infrastructure, /nft.*compatibility alias/su);

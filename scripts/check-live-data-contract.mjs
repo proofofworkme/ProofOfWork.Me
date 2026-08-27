@@ -294,6 +294,23 @@ const storedEligibleCanonicalSummarySnapshotPayloadSource =
     /async function storedEligibleCanonicalSummarySnapshotPayload/,
     /async function storedExactEligibleCanonicalSummarySnapshotPayload/,
   );
+const canonicalQ16SummarySnapshotSqlEligibilitySource =
+  sourceSliceBetween(
+    proofIndexReader,
+    /function canonicalQ16SummarySnapshotSqlEligibility/,
+    /function workPrecisionStateCommitment/,
+  );
+const workPrecisionV2MigrationReadinessFullAuditSource =
+  sourceSliceBetween(
+    proofIndexReader,
+    /async function proofIndexWorkPrecisionV2MigrationReadinessFullAudit/,
+    /export async function proofIndexWorkAmoV8ActivationLatch/,
+  );
+const workerWorkPrecisionReplayReadySource = sourceSliceBetween(
+  proofIndexerWorker,
+  /async function assertWorkPrecisionReplayReady/,
+  /async function assertWorkPrecisionPendingReady/,
+);
 const pendingWorkStageRequestSource = sourceSliceBetween(
   proofIndexerBackfill,
   /async function requestWorkQ16PendingStage/,
@@ -1759,6 +1776,46 @@ expectAll(
   proofIndexerSchema,
   [
     /CREATE INDEX IF NOT EXISTS ledger_snapshots_summary_latest_idx[\s\S]*ON proof_indexer\.ledger_snapshots \([\s\S]*network,[\s\S]*indexed_through_block DESC NULLS LAST,[\s\S]*generated_at DESC[\s\S]*\)[\s\S]*WHERE payload \? 'summaryPayloads'/,
+  ],
+);
+expectAll(
+  "canonical token-state candidate reads retain their order-matched partial index contract",
+  proofIndexerSchema,
+  [
+    /CREATE INDEX IF NOT EXISTS ledger_snapshots_token_state_latest_idx[\s\S]*ON proof_indexer\.ledger_snapshots \([\s\S]*network,[\s\S]*indexed_through_block DESC NULLS LAST,[\s\S]*generated_at DESC[\s\S]*\)[\s\S]*WHERE payload \? 'tokenStatePayloads'/,
+  ],
+);
+expectAll(
+  "Q16 readiness summary reads use the order-matched compact-state partial index contract",
+  proofIndexerSchema,
+  [
+    /CREATE INDEX IF NOT EXISTS ledger_snapshots_work_q16_summary_latest_idx[\s\S]*ON proof_indexer\.ledger_snapshots \([\s\S]*network,[\s\S]*indexed_through_block DESC NULLS LAST,[\s\S]*generated_at DESC[\s\S]*\)[\s\S]*WHERE payload \? 'workSufficientState'[\s\S]*AND NOT \(payload \? 'tokenStatePayloads'\)/,
+  ],
+);
+expectAll(
+  "Q16 readiness reader predicate implies its partial index",
+  canonicalQ16SummarySnapshotSqlEligibilitySource,
+  [
+    /AND \$\{alias\}\.payload \? 'workSufficientState'/,
+    /AND NOT \(\$\{alias\}\.payload \? 'tokenStatePayloads'\)/,
+  ],
+);
+expectAll(
+  "Q16 migration audit applies the shared predicate in index order",
+  workPrecisionV2MigrationReadinessFullAuditSource,
+  [
+    /canonicalQ16SummarySnapshotSqlEligibility\("snapshot"\)/,
+    /AND \$\{q16SummaryEligibility\}/,
+    /ORDER BY snapshot\.indexed_through_block DESC NULLS LAST,\s*snapshot\.generated_at DESC[\s\S]*LIMIT 1/,
+  ],
+);
+expectAll(
+  "worker Q16 replay audit implies the same partial index in index order",
+  workerWorkPrecisionReplayReadySource,
+  [
+    /snapshot\.payload \? 'workSufficientState'/,
+    /NOT \(snapshot\.payload \? 'tokenStatePayloads'\)/,
+    /ORDER BY snapshot\.indexed_through_block DESC NULLS LAST,\s*snapshot\.generated_at DESC[\s\S]*LIMIT 1/,
   ],
 );
 expectAll(

@@ -1049,24 +1049,50 @@ The one-time placement move is an approved-maintenance operation. Take and
 verify fresh physical and logical backups, stop every API/worker writer and
 backup timer except the continuous WAL receiver, reject any remaining
 application session, then use one PostgreSQL transaction with `ACCESS
-EXCLUSIVE` locks. Move only the two named parent tables and their ten exact
-user indexes. PostgreSQL moves each parent's TOAST relation and TOAST index
-with the parent; normal user indexes require explicit `ALTER INDEX ... SET
-TABLESPACE`. Compare deterministic ordered pre/post row counts and SHA-256 row
-fingerprints before commit. Any mismatch rolls the entire move back. Never use
-`ALTER ... ALL IN TABLESPACE`, filesystem moves, manual `pg_tblspc` links, or
-payload deletion/compaction for this operation.
+EXCLUSIVE` locks. Move only the two named parent tables and their exact
+attached user indexes. PostgreSQL moves each parent's TOAST relation and TOAST
+index with the parent; normal user indexes require explicit
+`ALTER INDEX ... SET TABLESPACE`. Compare deterministic ordered pre/post row
+counts and SHA-256 row fingerprints before commit. Any mismatch rolls the
+entire move back. Never use `ALTER ... ALL IN TABLESPACE`, filesystem moves,
+manual `pg_tblspc` links, or payload deletion/compaction for this operation.
 
 The five-minute PostgreSQL query-health check also verifies this permanent
 placement using catalogs only. Its exact dynamic closure is the two parents,
 their two TOAST relations, and all indexes attached to those four relations;
-the deployed closure is 16 relations. Every closure member must use the exact
-tablespace, every index must be valid and ready, no unrelated object may use
-it, neither parent may own a sequence, and the tablespace name, path, owner,
-and application-role privileges must remain exact. This check never detoasts
-or hashes historical JSON payloads. The node storage timer independently
-checks that `/data` remains a separate mount with adequate block, inode, and
-free-space runway.
+the current deployed closure is 18 relations, including 14 indexes. Every
+closure member must use the exact tablespace, every index must be valid and
+ready, no unrelated object may use it, neither parent may own a sequence, and
+the tablespace name, path, owner, and application-role privileges must remain
+exact. This check never detoasts or hashes historical JSON payloads. The node
+storage timer independently checks that `/data` remains a separate mount with
+adequate block, inode, and free-space runway.
+
+Additive production indexes on either large-state parent are operator-owned
+placement changes because the application role intentionally cannot create in
+the dedicated tablespace. Create the compact Q16 readiness access path without
+blocking writers, outside a transaction, only after proving that no same-name
+valid or invalid relation exists:
+
+```sql
+SET lock_timeout = '5s';
+SET statement_timeout = '15min';
+CREATE INDEX CONCURRENTLY ledger_snapshots_work_q16_summary_latest_idx
+  ON proof_indexer.ledger_snapshots (
+    network,
+    indexed_through_block DESC NULLS LAST,
+    generated_at DESC
+  )
+  TABLESPACE proof_indexer_large_state_v1
+  WHERE payload ? 'workSufficientState'
+    AND NOT (payload ? 'tokenStatePayloads');
+```
+
+After creation, require `indisvalid` and `indisready`, exact predicate and key
+definition, exact tablespace placement, an order-satisfied index-scan plan,
+and the updated 18-member query-health closure before treating the migration
+as installed. A same-name invalid remnant is incident evidence and must be
+investigated and handled explicitly; `IF NOT EXISTS` must not hide it.
 
 The live PostgreSQL WAL cap does not cap the received WAL archive on `/data`;
 successful base backups, `pg_archivecleanup`, backup-age checks, and `/data`
@@ -2196,6 +2222,16 @@ embedded state against the transition, bypasses same-tip and exact-checkpoint
 reuse when it is missing or mismatched, and repairs it in the replacement
 summary. Readiness never infers Q16 token state from an outer summary height or
 from a stale pre-migration payload.
+
+The migration-readiness audit locates its newest compact Q16 summary-state
+witness through the order-matched
+`ledger_snapshots_work_q16_summary_latest_idx` partial index. The indexed
+candidate set requires `workSufficientState` and excludes legacy snapshots
+carrying `tokenStatePayloads`; the reader still performs every payload-size,
+closed-key-set, commitment, canonical-block, transition, exact-tip, and
+pending-witness check. This is an access-path bound only: it prevents unrelated
+large snapshot payloads from stretching one repeatable-read audit across
+ordinary worker or mempool churn, without making any failed proof eligible.
 
 The first replacement summary cannot depend on its own readiness witness. Its
 authenticated loopback builder has one internal-only bootstrap lane that reads

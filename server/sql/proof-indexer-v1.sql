@@ -2146,6 +2146,27 @@ CREATE INDEX IF NOT EXISTS ledger_snapshots_summary_latest_idx
   )
   WHERE payload ? 'summaryPayloads';
 
+CREATE INDEX IF NOT EXISTS ledger_snapshots_token_state_latest_idx
+  ON proof_indexer.ledger_snapshots (
+    network,
+    indexed_through_block DESC NULLS LAST,
+    generated_at DESC
+  )
+  WHERE payload ? 'tokenStatePayloads';
+
+-- The active Q16 readiness audit reads the newest compact summary-state
+-- witness, not a legacy snapshot carrying full tokenStatePayloads. Keep that
+-- candidate set ordered so the fail-closed payload and transition checks do
+-- not race continuous worker publication while scanning unrelated snapshots.
+CREATE INDEX IF NOT EXISTS ledger_snapshots_work_q16_summary_latest_idx
+  ON proof_indexer.ledger_snapshots (
+    network,
+    indexed_through_block DESC NULLS LAST,
+    generated_at DESC
+  )
+  WHERE payload ? 'workSufficientState'
+    AND NOT (payload ? 'tokenStatePayloads');
+
 CREATE INDEX IF NOT EXISTS ledger_snapshots_scan_health_idx
   ON proof_indexer.ledger_snapshots (
     network,
