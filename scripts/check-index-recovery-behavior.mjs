@@ -48926,6 +48926,7 @@ check("token listing history rejects previews and fences relational and Core evi
     API_PATH, "completeTokenListingHistoryPayload",
     {
       TOKEN_LISTING_HISTORY_CURSOR_PREFIX: "token-listings-v2",
+      applyWorkMarketV2CutoverToTokenState,
       checkpointCursorCanonicalJson,
       checkpointHistoryRequest,
       compareCanonicalUtf8,
@@ -48996,14 +48997,31 @@ check("token listing history rejects previews and fences relational and Core evi
     status: "delisted",
     tokenId: WORK_TOKEN_ID,
   };
+  const legacyRefundListing = {
+    blockHeight: 953_577,
+    confirmed: true,
+    listingId:
+      "351f6305ae5d193469e7966553e749ea0b31debd758503a5381cba844dfd240c",
+    network: "livenet",
+    saleAuthorization: {
+      tokenId: WORK_TOKEN_ID,
+      version: "pwt-sale-v1",
+    },
+    spent: false,
+    status: "dropped",
+    tokenId: WORK_TOKEN_ID,
+    txid:
+      "351f6305ae5d193469e7966553e749ea0b31debd758503a5381cba844dfd240c",
+  };
+  const lifecycleListings = [legacyRefundListing, ...listings];
   relational = {
     indexedAt: "2026-08-26T12:00:00.000Z",
     indexedThroughBlock: 964_200,
     indexedThroughBlockHash: "a".repeat(64),
-    items: listings.slice(0, 2),
+    items: lifecycleListings.slice(0, 3),
     stats: { complete: false },
     summaryOnly: true,
-    totalCount: 3,
+    totalCount: 4,
   };
   await assert.rejects(
     () => completeTokenListingHistoryPayload(
@@ -49014,7 +49032,7 @@ check("token listing history rejects previews and fences relational and Core evi
   );
   relational = {
     ...relational,
-    items: listings,
+    items: lifecycleListings,
     stats: { complete: true },
     summaryOnly: false,
   };
@@ -49030,11 +49048,16 @@ check("token listing history rejects previews and fences relational and Core evi
   witnessCalls = [];
   const exactRelic = await completeTokenListingHistoryPayload(
     "livenet", "work",
-    new URLSearchParams({ limit: "1", q: listings[0].listingId }),
+    new URLSearchParams({ limit: "1", q: legacyRefundListing.listingId }),
   );
-  assert.equal(exactRelic.totalCount, 1);
-  assert.equal(exactRelic.items[0].listingId, listings[0].listingId);
-  assert.deepEqual(coreCheckedListingIds, listings.map((item) => item.listingId));
+  assert.equal(exactRelic.totalCount, 0);
+  assert.deepEqual(exactRelic.items, []);
+  assert.equal(exactRelic.listingProjection.excludedByProtocolCount, 1);
+  assert.deepEqual(
+    coreCheckedListingIds,
+    lifecycleListings.map((item) => item.listingId),
+    "the cutover relic must remain covered by the complete Core evidence pass",
+  );
   assert.deepEqual(
     witnessCalls,
     [listings[1].listingId],
@@ -49054,17 +49077,17 @@ check("token listing history rejects previews and fences relational and Core evi
   assert.equal(second.items.length, 1);
   assert.notEqual(second.items[0].listingId, first.items[0].listingId);
   assert.equal(second.hasMore, false);
-  relational = { ...relational, items: listings.map((item, index) =>
-    index === 1 ? { ...item, sellerAddress: "mutated-closed-row" } : item) };
+  relational = { ...relational, items: lifecycleListings.map((item, index) =>
+    index === 0 ? { ...item, sellerAddress: "mutated-cutover-relic" } : item) };
   await assert.rejects(
     () => completeTokenListingHistoryPayload(
       "livenet", "work",
       new URLSearchParams({ cursor: first.nextCursor, limit: "1" }),
     ),
     (error) => error?.statusCode === 409,
-    "a spent relational source-row mutation must invalidate page two",
+    "an excluded cutover relic mutation must invalidate page two",
   );
-  relational = { ...relational, items: listings };
+  relational = { ...relational, items: lifecycleListings };
   coreCheckedCountDelta = -1;
   await assert.rejects(
     () => completeTokenListingHistoryPayload(
@@ -49108,8 +49131,8 @@ check("token listing history rejects previews and fences relational and Core evi
   };
   relational = {
     ...relational,
-    items: [...listings, activeV8],
-    totalCount: 4,
+    items: [...lifecycleListings, activeV8],
+    totalCount: 5,
   };
   witnessCalls = [];
   await assert.rejects(

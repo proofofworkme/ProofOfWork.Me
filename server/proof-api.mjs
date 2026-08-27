@@ -52167,9 +52167,41 @@ async function completeTokenListingHistoryPayload(network, tokenScope, searchPar
       `Canonical AMO V8 listing evidence is unavailable for ${unavailableActiveWorkAmoV8.listingId}.`,
     );
   }
+  const protocolAuthority = applyWorkMarketV2CutoverToTokenState({
+    closedListings: [],
+    indexedThroughBlock: relationalHeight,
+    invalidEvents: [],
+    listings: authorityListings,
+    network,
+    ...(relational.workMarketV4Activation
+      ? { workMarketV4Activation: relational.workMarketV4Activation }
+      : {}),
+  });
+  const protocolAuthorityListings = Array.isArray(protocolAuthority?.listings)
+    ? protocolAuthority.listings
+    : null;
+  const authorityStableKeys = new Set(
+    authorityListings.map((listing) =>
+      checkpointCursorCanonicalJson(tokenListingHistoryStableKey(listing))),
+  );
+  const protocolAuthorityStableKeys = new Set(
+    (protocolAuthorityListings ?? []).map((listing) =>
+      checkpointCursorCanonicalJson(tokenListingHistoryStableKey(listing))),
+  );
+  if (
+    protocolAuthorityListings === null ||
+    authorityStableKeys.size !== authorityListings.length ||
+    protocolAuthorityStableKeys.size !== protocolAuthorityListings.length ||
+    protocolAuthorityListings.length > authorityListings.length ||
+    [...protocolAuthorityStableKeys].some((key) => !authorityStableKeys.has(key))
+  ) {
+    throw tokenListingHistoryUnavailable(
+      "Canonical protocol-active token-listing projection is unavailable.",
+    );
+  }
   const addresses = recoveryAddressesFromSearchParams(searchParams, network);
   const filtered = historyItemsMatchingQuery(
-    historyItemsMatchingAddresses(authorityListings, addresses), request.query,
+    historyItemsMatchingAddresses(protocolAuthorityListings, addresses), request.query,
   ).map((item) => ({ item, key: tokenListingHistoryStableKey(item) }))
     .sort((left, right) => compareCanonicalUtf8(
       checkpointCursorCanonicalJson(left.key), checkpointCursorCanonicalJson(right.key),
@@ -52191,6 +52223,15 @@ async function completeTokenListingHistoryPayload(network, tokenScope, searchPar
     checkpointCursorCanonicalJson(left.key), checkpointCursorCanonicalJson(right.key),
   ));
   const sourceSha256 = digest(relationalEntries);
+  const protocolMembershipSha256 = digest(
+    protocolAuthorityListings.map((item) => ({
+      item,
+      key: tokenListingHistoryStableKey(item),
+    })).sort((left, right) => compareCanonicalUtf8(
+      checkpointCursorCanonicalJson(left.key),
+      checkpointCursorCanonicalJson(right.key),
+    )),
+  );
   const cursor = request.cursor;
   const emitted = cursor ? Number(cursor.emitted) : 0;
   if (cursor && !(
@@ -52199,6 +52240,7 @@ async function completeTokenListingHistoryPayload(network, tokenScope, searchPar
     cursor.relationalHeight === relationalHeight && cursor.relationalHash === relationalHash &&
     cursor.relationalSourceSha256 === sourceSha256 && cursor.coreHeight === coreHeight &&
     cursor.coreHash === coreHash && cursor.coreEvidenceSha256 === coreDigest &&
+    cursor.protocolMembershipSha256 === protocolMembershipSha256 &&
     cursor.membershipSha256 === membershipSha256 && cursor.total === filtered.length &&
     Number.isSafeInteger(emitted) && emitted > 0 && emitted <= filtered.length &&
     checkpointCursorCanonicalJson(cursor.last) ===
@@ -52215,6 +52257,7 @@ async function completeTokenListingHistoryPayload(network, tokenScope, searchPar
   const nextCursor = hasMore ? encodedCheckpointCursor(TOKEN_LISTING_HISTORY_CURSOR_PREFIX, {
     coreEvidenceSha256: coreDigest, coreHash, coreHeight, emitted: end,
     filterFingerprint, last: pageEntries.at(-1).key, membershipSha256, network,
+    protocolMembershipSha256,
     relationalHash, relationalHeight, relationalSourceSha256: sourceSha256,
     scope: scope || "all", total: filtered.length, v: 2,
   }) : "";
@@ -52223,10 +52266,25 @@ async function completeTokenListingHistoryPayload(network, tokenScope, searchPar
     indexedThroughBlock: relationalHeight, indexedThroughBlockHash: relationalHash,
     items: pageEntries.map((entry) => entry.item), kind: "listings", limit: request.limit,
     listingAuthority: authority.evidence, network, nextCursor,
+    listingProjection: {
+      activeListingCount: protocolAuthorityListings.length,
+      coreUnspentListingCount: authorityListings.length,
+      excludedByProtocolCount:
+        authorityListings.length - protocolAuthorityListings.length,
+      membershipSha256: protocolMembershipSha256,
+      model: "proof-token-market-cutover-after-core-v1",
+    },
     page: Math.floor(emitted / request.limit),
     pageCount: Math.max(1, Math.ceil(filtered.length / request.limit)),
     pageSize: request.limit, query: request.query,
-    snapshotId: digest({ coreDigest, coreHash, membershipSha256, relationalHash, sourceSha256 }),
+    snapshotId: digest({
+      coreDigest,
+      coreHash,
+      membershipSha256,
+      protocolMembershipSha256,
+      relationalHash,
+      sourceSha256,
+    }),
     source: "proof-indexer-complete-core-reconciled-token-listings",
     start: emitted, totalCount: filtered.length,
   };
