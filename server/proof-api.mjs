@@ -32495,6 +32495,7 @@ function tokenSummaryListings(items, limit = SUMMARY_MARKET_LIMIT) {
 
 const TOKEN_SUMMARY_MARKET_PREVIEW_KEYS = [
   "_powEventIndex",
+  "actionable",
   "amount",
   "amountAtoms",
   "amountSats",
@@ -32508,17 +32509,32 @@ const TOKEN_SUMMARY_MARKET_PREVIEW_KEYS = [
   "blockTime",
   "buyerAddress",
   "canonicalVerifier",
+  "canonicalMinerFeeCovered",
   "canonicalMinerFeeSats",
+  "canonicalSaleEvidence",
+  "chargesTransactionFee",
+  "claimsEconomicOutputs",
+  "closeTransactionBlockHeight",
   "closeTxid",
   "closedAt",
   "closedBlockHash",
+  "closedBlockHeight",
+  "closedBlockIndex",
+  "closedByCanonicalOutpointSpend",
+  "closedBySpendableOutspend",
   "closedConfirmed",
+  "closedDataBytes",
   "closedFrozenNetworkValueSats",
   "closedLiveNetworkValueSats",
+  "closedMinerFeeCanonical",
   "closedMinerFeeSats",
+  "closedMinerFeeSource",
+  "closedProtocolVout",
+  "closedRecordOrdinal",
   "closedTxid",
   "closedVin",
   "confirmed",
+  "containerPosition",
   "createdAt",
   "creditAmountMoved",
   "creditAmountMovedDecimals",
@@ -32540,10 +32556,12 @@ const TOKEN_SUMMARY_MARKET_PREVIEW_KEYS = [
   "decimals",
   "derived",
   "derivedId",
+  "derivedIndex",
   "disabledAtBlockHeight",
   "disabledByTxid",
   "disabledReason",
   "dropped",
+  "economicDelta",
   "estimate",
   "firstInputPrevoutScriptpubkey",
   "fixedEventFlowSats",
@@ -32552,36 +32570,50 @@ const TOKEN_SUMMARY_MARKET_PREVIEW_KEYS = [
   "frozenTerms",
   "indexedFrom",
   "kind",
+  "legacyAmountAtoms",
+  "legacyAmountStorageModel",
+  "lifecycleStatus",
   "listingId",
   "liveNetworkValueBeforeEventQ8",
   "liveNetworkValueBeforeEventSats",
   "liveNetworkValueQ8",
   "liveNetworkValueSats",
   "marketplaceMutationFeeSats",
+  "materializationPosition",
+  "minimumPriceSats",
   "minerFeeSats",
+  "minerFeeSource",
   "network",
   "networkValueBeforeEventQ8",
   "networkValueBeforeEventSats",
+  "originalStatus",
   "paidSats",
+  "parentTransitionChainCommitmentAfter",
   "participants",
   "position",
+  "precisionMigrationModel",
   "precisionModel",
   "priceSats",
   "proofPaymentSats",
   "protocol",
   "protocolVout",
+  "projectionPosition",
+  "rawCandidate",
   "reasonCode",
   "recipients",
   "recordOrdinal",
   "refundEligible",
   "relic",
+  "relicCutoverModel",
   "registryAddress",
   "registryMutationFeeSats",
   "saleAt",
   "saleAuthorization",
+  "saleBuyerAddress",
   "saleBlockHash",
   "saleBlockHeight",
   "saleBlockIndex",
+  "saleConfirmed",
   "saleDataBytes",
   "saleMinerFeeCanonical",
   "saleMinerFeeSats",
@@ -32593,6 +32625,7 @@ const TOKEN_SUMMARY_MARKET_PREVIEW_KEYS = [
   "saleTicketValueSats",
   "saleTicketVout",
   "saleTransactionBlockHeight",
+  "saleTxid",
   "sealAt",
   "sealBlockHash",
   "sealBlockHeight",
@@ -32609,6 +32642,7 @@ const TOKEN_SUMMARY_MARKET_PREVIEW_KEYS = [
   "sealTxid",
   "sellerAddress",
   "senderAddress",
+  "sourceAmountEvidence",
   "status",
   "ticker",
   "timestamp",
@@ -32622,6 +32656,28 @@ const TOKEN_SUMMARY_MARKET_PREVIEW_KEYS = [
   "validationMode",
   "workAmoFrozenTerms",
   "workAmoEstimate",
+  "workAmoV6FrozenTerms",
+  "workAmoV8FrozenTerms",
+];
+
+const TOKEN_SUMMARY_NESTED_LISTING_PREVIEW_KEYS = [
+  "amount",
+  "amountAtoms",
+  "amountStorageModel",
+  "amountSubatoms",
+  "decimals",
+  "frozenTerms",
+  "listingId",
+  "minimumPriceSats",
+  "precisionModel",
+  "priceSats",
+  "saleAuthorization",
+  "sellerAddress",
+  "ticker",
+  "tokenId",
+  "unitScale",
+  "workAmoFrozenTerms",
+  "workAmoV6FrozenTerms",
   "workAmoV8FrozenTerms",
 ];
 
@@ -32690,6 +32746,28 @@ function tokenSummaryPreviewRecord(record, keys) {
   for (const key of keys) {
     if (Object.prototype.hasOwnProperty.call(record, key)) {
       preview[key] = record[key];
+    }
+  }
+  return preview;
+}
+
+function tokenSummaryMarketPreviewRecord(
+  record,
+  { includeNestedListings = false } = {},
+) {
+  const preview = tokenSummaryPreviewRecord(
+    record,
+    TOKEN_SUMMARY_MARKET_PREVIEW_KEYS,
+  );
+  if (!includeNestedListings || !preview || typeof preview !== "object") {
+    return preview;
+  }
+  for (const key of ["closedListing", "listing"]) {
+    if (Object.prototype.hasOwnProperty.call(record, key)) {
+      preview[key] = tokenSummaryPreviewRecord(
+        record[key],
+        TOKEN_SUMMARY_NESTED_LISTING_PREVIEW_KEYS,
+      );
     }
   }
   return preview;
@@ -34084,12 +34162,18 @@ function compactTokenSummaryPayload(payload, tokenScope = "", options = {}) {
 
   const compactMarketRecord = (record) =>
     compactMarketRecords
-      ? tokenSummaryPreviewRecord(record, TOKEN_SUMMARY_MARKET_PREVIEW_KEYS)
+      ? tokenSummaryMarketPreviewRecord(record)
+      : record;
+  const compactClosedMarketRecord = (record) =>
+    compactMarketRecords
+      ? tokenSummaryMarketPreviewRecord(record, {
+          includeNestedListings: true,
+        })
       : record;
   const compactClosedListings = recentClosedTokenListings(
     closedListings,
     closedListingLimit,
-  ).map(compactMarketRecord);
+  ).map(compactClosedMarketRecord);
   const compactHolders = holders.slice(0, holderLimit);
   const compactListings = tokenSummaryListings(listings, listingLimit).map(
     compactMarketRecord,

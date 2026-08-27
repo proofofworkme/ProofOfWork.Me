@@ -73981,20 +73981,51 @@ check("canonical summary persistence is compact and storage-budgeted", async () 
   )?.[1] ?? "";
   const previewKeys = [...previewKeysSource.matchAll(/"([A-Za-z0-9_]+)"/gu)]
     .map((match) => match[1]);
+  const nestedPreviewKeysSource = fileSource(API_PATH).match(
+    /const TOKEN_SUMMARY_NESTED_LISTING_PREVIEW_KEYS = \[([\s\S]*?)\n\];/u,
+  )?.[1] ?? "";
+  const nestedPreviewKeys = [
+    ...nestedPreviewKeysSource.matchAll(/"([A-Za-z0-9_]+)"/gu),
+  ].map((match) => match[1]);
+  const tokenSummaryMarketPreviewRecord = isolatedFunction(
+    API_PATH,
+    "tokenSummaryMarketPreviewRecord",
+    {
+      Object,
+      TOKEN_SUMMARY_MARKET_PREVIEW_KEYS: previewKeys,
+      TOKEN_SUMMARY_NESTED_LISTING_PREVIEW_KEYS: nestedPreviewKeys,
+      tokenSummaryPreviewRecord,
+    },
+  );
   for (const requiredSaleField of [
+    "actionable",
     "amount",
     "attributedMinerFeeSats",
     "buyerAddress",
+    "canonicalSaleEvidence",
+    "closeTransactionBlockHeight",
+    "closedBlockHeight",
+    "closedBlockIndex",
+    "closedByCanonicalOutpointSpend",
+    "closedBySpendableOutspend",
+    "closedProtocolVout",
+    "closedRecordOrdinal",
     "creditLiveValueSats",
     "creditValueAtConfirmSats",
     "disabledReason",
     "estimate",
+    "legacyAmountAtoms",
+    "legacyAmountStorageModel",
     "listingId",
+    "minimumPriceSats",
     "paidSats",
+    "precisionMigrationModel",
     "priceSats",
     "refundEligible",
+    "relicCutoverModel",
     "salePaymentSats",
     "sellerAddress",
+    "sourceAmountEvidence",
     "ticker",
     "tokenId",
     "txid",
@@ -74033,6 +74064,41 @@ check("canonical summary persistence is compact and storage-budgeted", async () 
   assert.equal(salePreview.attributedMinerFeeSats, 321);
   assert.equal("rawPayload" in salePreview, false);
   assert.equal("workAmoV5ReplayRawWitness" in salePreview, false);
+  const nestedListing = {
+    amountAtoms: "10",
+    frozenTerms: { unitAmountAtoms: "10", version: "pwt-sale-v6" },
+    listingId: "d".repeat(64),
+    priceSats: "20000",
+    rawPayload: "x".repeat(2 * 1024 * 1024),
+    saleAuthorization: { version: "pwt-sale-v6" },
+    sellerAddress: "bc1poriginalseller",
+  };
+  const closedPreview = tokenSummaryMarketPreviewRecord(
+    {
+      closedBlockHeight: 960_302,
+      closedBlockIndex: 3_818,
+      closedByCanonicalOutpointSpend: true,
+      closedConfirmed: true,
+      closedListing: nestedListing,
+      closedProtocolVout: 2,
+      closedRecordOrdinal: 0,
+      closedTxid: "e".repeat(64),
+      listing: nestedListing,
+      listingId: nestedListing.listingId,
+      saleTicketTxid: nestedListing.listingId,
+      saleTicketVout: 2,
+    },
+    { includeNestedListings: true },
+  );
+  assert.equal(closedPreview.closedBlockHeight, 960_302);
+  assert.equal(closedPreview.closedBlockIndex, 3_818);
+  assert.equal(closedPreview.closedByCanonicalOutpointSpend, true);
+  assert.equal(closedPreview.closedProtocolVout, 2);
+  assert.equal(closedPreview.closedRecordOrdinal, 0);
+  assert.equal(closedPreview.listing.amountAtoms, "10");
+  assert.equal(closedPreview.listing.saleAuthorization.version, "pwt-sale-v6");
+  assert.equal(closedPreview.closedListing.frozenTerms.unitAmountAtoms, "10");
+  assert.equal("rawPayload" in closedPreview.listing, false);
   const syntheticBundleBytes = Buffer.byteLength(
     JSON.stringify({
       summaryPayloads: Object.fromEntries(
