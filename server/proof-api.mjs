@@ -52101,6 +52101,7 @@ async function completeTokenListingHistoryPayload(network, tokenScope, searchPar
         ...lifecycleCapacity },
     );
   }
+  const canonicalWorkAmoV8ListingIds = new Set();
   const canonicalItems = await mapWithConcurrency(
     relationalItems,
     Math.min(4, Math.max(1, TX_FETCH_CONCURRENCY)),
@@ -52121,10 +52122,9 @@ async function completeTokenListingHistoryPayload(network, tokenScope, searchPar
         !witness?.listingFrozenTerms ||
         !witness?.listingAuthorization
       ) {
-        throw tokenListingHistoryUnavailable(
-          `Canonical AMO V8 listing evidence is unavailable for ${record.listingId}.`,
-        );
+        return listing;
       }
+      canonicalWorkAmoV8ListingIds.add(record.listingId);
       return tokenListingWithCanonicalWorkAmoV8Witness(listing, witness);
     },
   );
@@ -52134,17 +52134,42 @@ async function completeTokenListingHistoryPayload(network, tokenScope, searchPar
   const coreHeight = Number(authority?.evidence?.checkpoint?.height);
   const coreHash = String(authority?.evidence?.checkpoint?.blockHash ?? "").trim().toLowerCase();
   const coreDigest = String(authority?.evidence?.checkedOutpointsSha256 ?? "").trim().toLowerCase();
+  const authorityListings = Array.isArray(authority?.listings)
+    ? authority.listings
+    : null;
+  const coreInputCount = authority?.evidence?.inputListingCount;
+  const coreOutputCount = authority?.evidence?.outputListingCount;
+  const coreSpentCount = authority?.evidence?.spentListingCount;
+  const coreUnspentCount = authority?.evidence?.unspentListingCount;
   if (
     !Number.isSafeInteger(coreHeight) || coreHeight < 1 ||
     !/^[0-9a-f]{64}$/u.test(coreHash) || !/^[0-9a-f]{64}$/u.test(coreDigest) ||
+    authority?.evidence?.model !== "proof-token-market-core-gettxout-v1" ||
+    authority?.evidence?.includeMempool !== true ||
     authority?.evidence?.checkedListingCount !== canonicalItems.length ||
+    coreInputCount !== canonicalItems.length || authorityListings === null ||
+    !Number.isSafeInteger(coreOutputCount) || coreOutputCount < 0 ||
+    coreOutputCount !== authorityListings.length ||
+    !Number.isSafeInteger(coreSpentCount) || coreSpentCount < 0 ||
+    !Number.isSafeInteger(coreUnspentCount) || coreUnspentCount < 0 ||
+    coreSpentCount + coreUnspentCount !== canonicalItems.length ||
+    coreUnspentCount !== authorityListings.length ||
     coreHeight !== relationalHeight || coreHash !== relationalHash
   ) {
     throw tokenListingHistoryUnavailable("Complete Core token-listing evidence is unavailable.");
   }
+  const unavailableActiveWorkAmoV8 = authorityListings
+    .map((listing) => workAmoV8ListingHistoryRecord(listing))
+    .find((record) =>
+      record && !canonicalWorkAmoV8ListingIds.has(record.listingId));
+  if (unavailableActiveWorkAmoV8) {
+    throw tokenListingHistoryUnavailable(
+      `Canonical AMO V8 listing evidence is unavailable for ${unavailableActiveWorkAmoV8.listingId}.`,
+    );
+  }
   const addresses = recoveryAddressesFromSearchParams(searchParams, network);
   const filtered = historyItemsMatchingQuery(
-    historyItemsMatchingAddresses(authority.listings, addresses), request.query,
+    historyItemsMatchingAddresses(authorityListings, addresses), request.query,
   ).map((item) => ({ item, key: tokenListingHistoryStableKey(item) }))
     .sort((left, right) => compareCanonicalUtf8(
       checkpointCursorCanonicalJson(left.key), checkpointCursorCanonicalJson(right.key),

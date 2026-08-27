@@ -48867,9 +48867,24 @@ check("token listing history rejects previews and fences relational and Core evi
   const tokenListingHistoryStableKey = isolatedFunction(
     API_PATH, "tokenListingHistoryStableKey",
   );
+  const workAmoV8ListingHistoryRecord = isolatedFunction(
+    API_PATH,
+    "workAmoV8ListingHistoryRecord",
+    {
+      TOKEN_SALE_AUTH_WORK_AMO_V8_VERSION: WORK_AMO_V8_AUTH_VERSION,
+      WORK_TOKEN_ID,
+      normalizeTokenScope: (value) => String(value ?? "").trim().toLowerCase(),
+    },
+  );
   let relational;
   let coreDigest = "c".repeat(64);
   let coreHash = "a".repeat(64);
+  let coreCheckedListings = [];
+  let coreCheckedListingIds = [];
+  let coreCheckedCountDelta = 0;
+  let coreOutputCountDelta = 0;
+  let witnessCalls = [];
+  const witnesses = new Map();
   const completeTokenListingHistoryPayload = isolatedFunction(
     API_PATH, "completeTokenListingHistoryPayload",
     {
@@ -48881,26 +48896,51 @@ check("token listing history rejects previews and fences relational and Core evi
       encodedCheckpointCursor,
       historyCursorConflict,
       historyItemsMatchingAddresses: (items) => items,
-      historyItemsMatchingQuery: (items) => items,
+      historyItemsMatchingQuery: (items, query) => {
+        const normalized = String(query ?? "").trim().toLowerCase();
+        return normalized
+          ? items.filter((item) => [item?.listingId, item?.txid]
+            .some((value) => String(value ?? "").toLowerCase().includes(normalized)))
+          : items;
+      },
       mapWithConcurrency: async (items, _limit, mapper) => Promise.all(items.map(mapper)),
       normalizeTokenScope: (value) => String(value ?? "").toLowerCase(),
       proofIndexCreditListingsPayload: async () => relational,
-      proofIndexCanonicalWorkListingById: async () => null,
+      proofIndexCanonicalWorkListingById: async (_network, listingId) => {
+        witnessCalls.push(listingId);
+        return witnesses.get(listingId) ?? null;
+      },
       recoveryAddressesFromSearchParams: () => [],
-      strictCoreTokenListingReconciliation: async (items) => ({
-        evidence: {
-          checkedListingCount: items.length,
-          checkedOutpointsSha256: coreDigest,
-          checkpoint: { blockHash: coreHash, height: 964_200 },
-        },
-        listings: items.filter((item) => item.spent !== true),
-      }),
+      strictCoreTokenListingReconciliation: async (items) => {
+        coreCheckedListings = items;
+        coreCheckedListingIds = items.map((item) => item.listingId);
+        const activeItems = items.filter((item) => item.spent !== true);
+        return {
+          evidence: {
+            checkedListingCount: items.length + coreCheckedCountDelta,
+            checkedOutpointsSha256: coreDigest,
+            checkpoint: { blockHash: coreHash, height: 964_200 },
+            includeMempool: true,
+            inputListingCount: items.length,
+            model: "proof-token-market-core-gettxout-v1",
+            outputListingCount: activeItems.length + coreOutputCountDelta,
+            spentListingCount: items.length - activeItems.length,
+            unspentListingCount: activeItems.length,
+          },
+          listings: activeItems,
+        };
+      },
       tokenListingHistoryStableKey,
       tokenListingHistoryUnavailable,
-      tokenListingWithCanonicalWorkAmoV8Witness: (listing) => listing,
+      tokenListingWithCanonicalWorkAmoV8Witness: (listing, witness) => ({
+        ...listing,
+        listingAuthorization: witness.listingAuthorization,
+        listingFrozenTerms: witness.listingFrozenTerms,
+        witnessed: true,
+      }),
       TX_FETCH_CONCURRENCY: 4,
-      TOKEN_SALE_AUTH_WORK_AMO_V8_VERSION: "pwt-sale-v8",
-      workAmoV8ListingHistoryRecord: () => null,
+      TOKEN_SALE_AUTH_WORK_AMO_V8_VERSION: WORK_AMO_V8_AUTH_VERSION,
+      workAmoV8ListingHistoryRecord,
     },
   );
   const listings = ["1", "2", "3"].map((digit, index) => ({
@@ -48909,6 +48949,16 @@ check("token listing history rejects previews and fences relational and Core evi
     spent: index === 1,
     txid: digit.repeat(64),
   }));
+  listings[1] = {
+    ...listings[1],
+    confirmed: true,
+    saleAuthorization: {
+      tokenId: WORK_TOKEN_ID,
+      version: WORK_AMO_V8_AUTH_VERSION,
+    },
+    status: "delisted",
+    tokenId: WORK_TOKEN_ID,
+  };
   relational = {
     indexedAt: "2026-08-26T12:00:00.000Z",
     indexedThroughBlock: 964_200,
@@ -48940,6 +48990,19 @@ check("token listing history rejects previews and fences relational and Core evi
     "a Core checkpoint different from the relational checkpoint must fail closed",
   );
   coreHash = "a".repeat(64);
+  witnessCalls = [];
+  const exactRelic = await completeTokenListingHistoryPayload(
+    "livenet", "work",
+    new URLSearchParams({ limit: "1", q: listings[0].listingId }),
+  );
+  assert.equal(exactRelic.totalCount, 1);
+  assert.equal(exactRelic.items[0].listingId, listings[0].listingId);
+  assert.deepEqual(coreCheckedListingIds, listings.map((item) => item.listingId));
+  assert.deepEqual(
+    witnessCalls,
+    [listings[1].listingId],
+    "a missing spent V8 witness must not poison the Core-filtered active result",
+  );
   const first = await completeTokenListingHistoryPayload(
     "livenet", "work", new URLSearchParams("limit=1"),
   );
@@ -48955,16 +49018,34 @@ check("token listing history rejects previews and fences relational and Core evi
   assert.notEqual(second.items[0].listingId, first.items[0].listingId);
   assert.equal(second.hasMore, false);
   relational = { ...relational, items: listings.map((item, index) =>
-    index === 2 ? { ...item, sellerAddress: "mutated" } : item) };
+    index === 1 ? { ...item, sellerAddress: "mutated-closed-row" } : item) };
   await assert.rejects(
     () => completeTokenListingHistoryPayload(
       "livenet", "work",
       new URLSearchParams({ cursor: first.nextCursor, limit: "1" }),
     ),
     (error) => error?.statusCode === 409,
-    "relational membership mutation must invalidate page two",
+    "a spent relational source-row mutation must invalidate page two",
   );
   relational = { ...relational, items: listings };
+  coreCheckedCountDelta = -1;
+  await assert.rejects(
+    () => completeTokenListingHistoryPayload(
+      "livenet", "work", new URLSearchParams("limit=1"),
+    ),
+    (error) => error?.statusCode === 503,
+    "an incomplete Core check count must fail closed",
+  );
+  coreCheckedCountDelta = 0;
+  coreOutputCountDelta = 1;
+  await assert.rejects(
+    () => completeTokenListingHistoryPayload(
+      "livenet", "work", new URLSearchParams("limit=1"),
+    ),
+    (error) => error?.statusCode === 503,
+    "inconsistent Core output cardinality must fail closed",
+  );
+  coreOutputCountDelta = 0;
   coreDigest = "d".repeat(64);
   await assert.rejects(
     () => completeTokenListingHistoryPayload(
@@ -48973,6 +49054,82 @@ check("token listing history rejects previews and fences relational and Core evi
     ),
     (error) => error?.statusCode === 409,
     "Core outpoint evidence mutation must invalidate page two",
+  );
+  coreDigest = "c".repeat(64);
+  const activeV8 = {
+    blockHeight: 964_103,
+    confirmed: true,
+    listingId: "4".repeat(64),
+    saleAuthorization: {
+      tokenId: WORK_TOKEN_ID,
+      version: WORK_AMO_V8_AUTH_VERSION,
+    },
+    spent: false,
+    status: "active",
+    tokenId: WORK_TOKEN_ID,
+    txid: "4".repeat(64),
+  };
+  relational = {
+    ...relational,
+    items: [...listings, activeV8],
+    totalCount: 4,
+  };
+  witnessCalls = [];
+  await assert.rejects(
+    () => completeTokenListingHistoryPayload(
+      "livenet", "work", new URLSearchParams({ q: activeV8.listingId }),
+    ),
+    (error) => error?.statusCode === 503,
+    "an unspent V8 listing without its canonical witness must fail closed",
+  );
+  assert.deepEqual(witnessCalls, [listings[1].listingId, activeV8.listingId]);
+  const activeWitness = {
+    confirmed: true,
+    listingAuthorization: { anchorVout: 2 },
+    listingFrozenTerms: { unitPriceSats: "1000" },
+    unspent: true,
+    valid: true,
+    version: WORK_AMO_V8_AUTH_VERSION,
+  };
+  witnesses.set(activeV8.listingId, activeWitness);
+  const exactActiveV8 = await completeTokenListingHistoryPayload(
+    "livenet", "work", new URLSearchParams({ q: activeV8.listingId }),
+  );
+  assert.equal(exactActiveV8.totalCount, 1);
+  assert.equal(exactActiveV8.items[0].listingId, activeV8.listingId);
+  assert.equal(exactActiveV8.items[0].witnessed, true);
+  assert.equal(
+    coreCheckedListings.find((item) => item.listingId === activeV8.listingId)
+      ?.witnessed,
+    true,
+    "Core must validate the canonical witness-enriched active V8 authorization",
+  );
+  witnesses.set(activeV8.listingId, {
+    ...activeWitness,
+    version: "pwt-sale-v7",
+  });
+  await assert.rejects(
+    () => completeTokenListingHistoryPayload(
+      "livenet", "work", new URLSearchParams({ q: activeV8.listingId }),
+    ),
+    (error) => error?.statusCode === 503,
+    "a conflicting active V8 witness must fail closed",
+  );
+  witnesses.set(activeV8.listingId, activeWitness);
+  const witnessedFirst = await completeTokenListingHistoryPayload(
+    "livenet", "work", new URLSearchParams("limit=1"),
+  );
+  witnesses.set(activeV8.listingId, {
+    ...activeWitness,
+    listingFrozenTerms: { unitPriceSats: "2000" },
+  });
+  await assert.rejects(
+    () => completeTokenListingHistoryPayload(
+      "livenet", "work",
+      new URLSearchParams({ cursor: witnessedFirst.nextCursor, limit: "1" }),
+    ),
+    (error) => error?.statusCode === 409,
+    "an active V8 witness mutation must invalidate page two",
   );
   const routeSource = topLevelFunctionSource(API_PATH, "handleRequest");
   assert.match(
