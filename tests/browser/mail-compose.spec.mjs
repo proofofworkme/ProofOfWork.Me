@@ -7,6 +7,10 @@ const SENDER = "1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x";
 const RECIPIENT = "1F1p9UEHuH5KTFR7Zsx93Khdrqhj6t5nFv";
 const WORK_TOKEN_ID =
   "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8";
+const POWB_TOKEN_ID =
+  "a3d0bc8528f91dfc52400a885bed7e49235396aa82aa9f95db41be629f1d5562";
+const INCB_TOKEN_ID =
+  "3cb25745f937f2b4e5508e5400189fe8fe679cd8e84bfa1e9176d70c9761f15d";
 const WORK_REGISTRY = "1638Vn6KtmK8p5r4oGvAXq9nmZb1emU1DV";
 const WORK_PRECISION_MODEL = "canonical-work-subatoms-v2";
 const WORK_STORAGE_MODEL = "work-subatoms-v2";
@@ -22,6 +26,12 @@ const SECOND_V8_LISTING_TXID =
   "e299613d222222222222222222222222222222222222222222222222114691e0";
 const V8_SEAL_TXID = "9".repeat(64);
 const V8_ANCHOR_SIGNATURE = "aa".repeat(64);
+const LISTING_CHECKPOINT_HEIGHT = 960_220;
+const LISTING_SNAPSHOT_ID = "2".repeat(64);
+const LISTING_AUTHORITY_DIGEST = "3".repeat(64);
+const LISTING_PROJECTION_DIGEST = "4".repeat(64);
+const LISTING_PAGE_CURSOR = "opaque-complete-listings-page-2";
+const TOKEN_HISTORY_PAGE_SIZE = 200;
 
 const fundingTransaction = new bitcoin.Transaction();
 fundingTransaction.version = 2;
@@ -169,6 +179,96 @@ function v8AmoListing({
           },
         }
       : {}),
+  };
+}
+
+function remoteV8Listings() {
+  return [
+    v8AmoListing({
+      createdAt: "2026-08-12T06:37:00.000Z",
+      listingId: V8_LISTING_TXID,
+      nonce: "browser-v8-listing-one",
+      sealed: true,
+    }),
+    v8AmoListing({
+      createdAt: "2026-08-12T15:38:00.000Z",
+      includeFrozenTerms: false,
+      listingId: SECOND_V8_LISTING_TXID,
+      nonce: "browser-v8-listing-two",
+      sellerAddress: RECIPIENT,
+    }),
+  ];
+}
+
+function completeListingHistoryPage({
+  allListings = remoteV8Listings(),
+  cursor = "",
+}) {
+  const start = cursor ? 1 : 0;
+  const items = allListings.slice(start, start + 1);
+  const end = start + items.length;
+  const totalCount = allListings.length;
+  const hasMore = end < totalCount;
+  return {
+    cursor,
+    end,
+    hasMore,
+    indexedAt: NOW,
+    indexedThroughBlock: LISTING_CHECKPOINT_HEIGHT,
+    indexedThroughBlockHash: HASH,
+    items,
+    kind: "listings",
+    limit: TOKEN_HISTORY_PAGE_SIZE,
+    listingAuthority: {
+      checkedListingCount: totalCount,
+      checkedOutpointsSha256: LISTING_AUTHORITY_DIGEST,
+      checkpoint: {
+        blockHash: HASH,
+        height: LISTING_CHECKPOINT_HEIGHT,
+      },
+      includeMempool: true,
+      inputListingCount: totalCount,
+      model: "proof-token-market-core-gettxout-v1",
+      outputListingCount: totalCount,
+      spentListingCount: 0,
+      unspentListingCount: totalCount,
+    },
+    listingProjection: {
+      activeListingCount: totalCount,
+      coreUnspentListingCount: totalCount,
+      excludedByProtocolCount: 0,
+      membershipSha256: LISTING_PROJECTION_DIGEST,
+      model: "proof-token-market-cutover-after-core-v1",
+    },
+    network: "livenet",
+    nextCursor: hasMore ? LISTING_PAGE_CURSOR : "",
+    page: 0,
+    pageCount: 1,
+    snapshotId: LISTING_SNAPSHOT_ID,
+    source: "proof-indexer-complete-core-reconciled-token-listings",
+    start,
+    totalCount,
+  };
+}
+
+function bondTokenState({ listingSummaryMismatch = false } = {}) {
+  return {
+    ...authoritativeWorkState(),
+    authoritativeWallet: false,
+    collectionHasMore: { listings: false },
+    hasMore: false,
+    holders: [],
+    indexedAt: NOW,
+    indexedThroughBlock: listingSummaryMismatch
+      ? LISTING_CHECKPOINT_HEIGHT - 1
+      : LISTING_CHECKPOINT_HEIGHT,
+    indexedThroughBlockHash: HASH,
+    listings: [],
+    snapshotId: LISTING_SNAPSHOT_ID,
+    source: "proof-indexer-bond-summary-browser-fixture",
+    tokens: [],
+    totalCounts: { listings: listingSummaryMismatch ? 1 : 0 },
+    walletScoped: false,
   };
 }
 
@@ -412,11 +512,14 @@ async function installWallet(page) {
 async function installApiFixtures(
   page,
   {
+    compactZeroListingSummary = false,
+    completeListingHistoryFailure = false,
     floorFailure = false,
     freshMarketLogFailure = false,
     freshWorkWalletFailure = false,
     holdInitialFloor = false,
     inboxMessage = false,
+    listingSummaryMismatch = false,
     mode = "post-v8",
     repairedV8Listing = false,
     remoteV8MarketListings = false,
@@ -486,17 +589,75 @@ async function installApiFixtures(
         status: "confirmed",
       };
     } else if (pathname === "/api/v1/marketplace-summary") {
+      const token = authoritativeWorkState();
+      if (remoteV8MarketListings) {
+        Object.assign(token, {
+          collectionHasMore: {
+            listings: compactZeroListingSummary ? false : true,
+          },
+          hasMore: false,
+          indexedAt: NOW,
+          indexedThroughBlock: listingSummaryMismatch
+            ? LISTING_CHECKPOINT_HEIGHT - 1
+            : LISTING_CHECKPOINT_HEIGHT,
+          indexedThroughBlockHash: HASH,
+          listings: compactZeroListingSummary
+            ? []
+            : remoteV8Listings().slice(0, 1),
+          snapshotId: LISTING_SNAPSHOT_ID,
+          totalCounts: {
+            listings: compactZeroListingSummary
+              ? 0
+              : listingSummaryMismatch
+                ? remoteV8Listings().length + 1
+                : remoteV8Listings().length,
+          },
+        });
+      }
       json = {
         indexedAt: NOW,
         network: "livenet",
         registry: registryState(),
         summaryOnly: true,
-        token: authoritativeWorkState(),
+        token,
         workFloor: workFloor(mode),
+      };
+    } else if (
+      pathname === "/api/v1/infinity-summary" ||
+      pathname === "/api/v1/inception-summary"
+    ) {
+      const inception = pathname === "/api/v1/inception-summary";
+      json = {
+        actualValue: {},
+        indexedAt: NOW,
+        network: "livenet",
+        stats: {},
+        ticker: inception ? "INCB" : "POWB",
+        token: bondTokenState({ listingSummaryMismatch }),
+        tokenId: inception ? INCB_TOKEN_ID : POWB_TOKEN_ID,
       };
     } else if (pathname === "/api/v1/token-history") {
       const kind = searchParams.get("kind");
-      if (remoteV8MarketListings && kind === "market-log") {
+      if (remoteV8MarketListings && kind === "listings") {
+        if (completeListingHistoryFailure) {
+          json = {
+            error: "The complete Core-reconciled listing book is unavailable.",
+            network: "livenet",
+            ok: false,
+          };
+          status = 503;
+        } else {
+          const cursor = searchParams.get("cursor") ?? "";
+          const tokenScope = searchParams.get("asset") ?? "";
+          json = completeListingHistoryPage({
+            allListings:
+              tokenScope === POWB_TOKEN_ID || tokenScope === INCB_TOKEN_ID
+                ? []
+                : remoteV8Listings(),
+            cursor,
+          });
+        }
+      } else if (remoteV8MarketListings && kind === "market-log") {
         if (freshMarketLogFailure && searchParams.get("fresh") === "1") {
           json = {
             error: "The canonical ProofOfWork index is catching up.",
@@ -509,21 +670,7 @@ async function installApiFixtures(
             status,
           });
         }
-        const listings = [
-          v8AmoListing({
-            createdAt: "2026-08-12T06:37:00.000Z",
-            listingId: V8_LISTING_TXID,
-            nonce: "browser-v8-listing-one",
-            sealed: true,
-          }),
-          v8AmoListing({
-            createdAt: "2026-08-12T15:38:00.000Z",
-            includeFrozenTerms: false,
-            listingId: SECOND_V8_LISTING_TXID,
-            nonce: "browser-v8-listing-two",
-            sellerAddress: RECIPIENT,
-          }),
-        ];
+        const listings = remoteV8Listings();
         json = {
           indexedAt: NOW,
           items: listings.map((listing) => ({
@@ -983,7 +1130,7 @@ test("AMO order book counts sealed and unsealed V8 listings with exact buyer arb
   page,
 }) => {
   await installWallet(page);
-  await installApiFixtures(page, {
+  const fixture = await installApiFixtures(page, {
     freshMarketLogFailure: true,
     mode: "precision-paused",
     remoteV8MarketListings: true,
@@ -1021,6 +1168,19 @@ test("AMO order book counts sealed and unsealed V8 listings with exact buyer arb
   await expect(amoUnits.getByText("Pending confirmation")).toHaveCount(0);
   await expect(amoUnits.getByText("Pre-V8 relic")).toHaveCount(0);
   await expect(amoRows).toHaveCount(2);
+  await expect
+    .poll(() =>
+      fixture.requests.some((request) => {
+        const url = new URL(request);
+        return (
+          url.pathname === "/api/v1/token-history" &&
+          url.searchParams.get("kind") === "listings" &&
+          url.searchParams.get("cursor") === LISTING_PAGE_CURSOR &&
+          !url.searchParams.has("page")
+        );
+      }),
+    )
+    .toBe(true);
 
   await page.getByRole("button", { name: "Refresh" }).first().click();
   await expect(
@@ -1036,6 +1196,178 @@ test("AMO order book counts sealed and unsealed V8 listings with exact buyer arb
     "-24,999.9999999247990259 proofs",
   );
   await expect(amoUnits.getByText("Pre-V8 relic")).toHaveCount(0);
+});
+
+test("AMO keeps a labeled preview when complete listing evidence disagrees with its summary", async ({
+  page,
+}) => {
+  await installWallet(page);
+  await installApiFixtures(page, {
+    listingSummaryMismatch: true,
+    mode: "precision-paused",
+    remoteV8MarketListings: true,
+  });
+
+  await page.goto(`/?marketplace=1&asset=${WORK_TOKEN_ID}`, {
+    waitUntil: "domcontentloaded",
+  });
+  const amoUnits = page
+    .locator(".token-market-card")
+    .filter({ has: page.getByRole("heading", { name: "AMO Units" }) })
+    .first();
+  await expect(amoUnits).toBeVisible();
+  await expect(
+    amoUnits.getByText(
+      /Showing a verified AMO preview while the complete Core-reconciled sale-ticket book loads/u,
+    ),
+  ).toBeVisible();
+  await expect(
+    amoUnits.getByText(
+      /1 credit tickets visible; 3 total credit and bond tickets declared/u,
+    ),
+  ).toBeVisible();
+  await expect(amoUnits.getByText("No credit listings yet")).toHaveCount(0);
+  await expect(amoUnits.getByRole("button", { name: "All 1" })).toContainText(
+    "1",
+  );
+  await expect(
+    amoUnits.locator(".token-market-grid .token-market-row"),
+  ).toHaveCount(1);
+
+  await page
+    .getByRole("button", { name: /Bonds 0/u })
+    .click();
+  await expect(page.locator(".app-status-row.status.idle")).toBeVisible();
+  await expect(page.locator(".app-status-row.status.good")).toHaveCount(0);
+  const incbBook = page
+    .locator(".token-market-card")
+    .filter({ has: page.getByRole("heading", { name: "INCB Sale Tickets" }) })
+    .first();
+  await expect(incbBook).toBeVisible();
+  await expect(
+    incbBook.getByText(
+      /0 INCB tickets visible; 3 total credit and bond tickets declared/u,
+    ),
+  ).toBeVisible();
+  await expect(
+    incbBook.getByRole("heading", {
+      name: "Loading complete INCB sale tickets",
+    }),
+  ).toBeVisible();
+  await expect(incbBook.getByText("No INCB sale tickets yet")).toHaveCount(0);
+});
+
+test("AMO treats a zero compact listing array as an incomplete preview when exact hydration fails", async ({
+  page,
+}) => {
+  const fixture = await installApiFixtures(page, {
+    compactZeroListingSummary: true,
+    completeListingHistoryFailure: true,
+    remoteV8MarketListings: true,
+  });
+
+  await page.goto(`/?marketplace=1&asset=${WORK_TOKEN_ID}`, {
+    waitUntil: "domcontentloaded",
+  });
+  const amoUnits = page
+    .locator(".token-market-card")
+    .filter({ has: page.getByRole("heading", { name: "AMO Units" }) })
+    .first();
+  await expect(amoUnits).toBeVisible();
+  await expect
+    .poll(() =>
+      fixture.requests.some((request) => {
+        const url = new URL(request);
+        return (
+          url.pathname === "/api/v1/token-history" &&
+          url.searchParams.get("kind") === "listings"
+        );
+      }),
+    )
+    .toBe(true);
+  await expect(
+    amoUnits.getByText(
+      /0 credit tickets visible; 0 total credit and bond tickets declared/u,
+    ),
+  ).toBeVisible();
+  await expect(
+    amoUnits.getByRole("heading", {
+      name: "Loading complete credit sale tickets",
+    }),
+  ).toBeVisible();
+  await expect(amoUnits.getByText("No credit listings yet")).toHaveCount(0);
+  await expect(page.locator(".app-status-row.status.idle")).toBeVisible();
+  await expect(page.locator(".app-status-row.status.good")).toHaveCount(0);
+});
+
+test("standalone INCB clears its compact preview after filtering the exact global listing book", async ({
+  page,
+}) => {
+  const fixture = await installApiFixtures(page, {
+    remoteV8MarketListings: true,
+  });
+
+  await page.goto("/?inception=1", { waitUntil: "domcontentloaded" });
+  const incbBook = page
+    .locator(".token-market-card")
+    .filter({ has: page.getByRole("heading", { name: "INCB Sale Tickets" }) })
+    .first();
+  await expect(incbBook).toBeVisible();
+  await expect
+    .poll(() =>
+      fixture.requests.some((request) => {
+        const url = new URL(request);
+        return (
+          url.pathname === "/api/v1/token-history" &&
+          url.searchParams.get("kind") === "listings" &&
+          !url.searchParams.has("asset")
+        );
+      }),
+    )
+    .toBe(true);
+  await expect(
+    incbBook.getByText(/Showing a verified AMO preview/u),
+  ).toHaveCount(0);
+  await expect(
+    incbBook.getByRole("heading", { name: "No INCB sale tickets yet" }),
+  ).toBeVisible();
+
+  await page.getByRole("button", { name: "Refresh" }).first().click();
+  await expect(page.locator(".desktop-route-status.status.good")).toContainText(
+    "Inception Bond loaded.",
+  );
+});
+
+test("standalone INCB stays idle with a labeled preview on scoped checkpoint and count mismatch", async ({
+  page,
+}) => {
+  await installApiFixtures(page, {
+    listingSummaryMismatch: true,
+    remoteV8MarketListings: true,
+  });
+
+  await page.goto("/?inception=1", { waitUntil: "domcontentloaded" });
+  const incbBook = page
+    .locator(".token-market-card")
+    .filter({ has: page.getByRole("heading", { name: "INCB Sale Tickets" }) })
+    .first();
+  await expect(incbBook).toBeVisible();
+  await expect(
+    incbBook.getByText(
+      /0 INCB tickets visible; 1 total credit and bond tickets declared/u,
+    ),
+  ).toBeVisible();
+  await expect(
+    incbBook.getByRole("heading", {
+      name: "Loading complete INCB sale tickets",
+    }),
+  ).toBeVisible();
+
+  await page.getByRole("button", { name: "Refresh" }).first().click();
+  await expect(page.locator(".desktop-route-status.status.idle")).toContainText(
+    "Inception Bond summary loaded. Verifying the complete Core-reconciled INCB sale-ticket book before reporting bond inventory as complete.",
+  );
+  await expect(page.locator(".desktop-route-status.status.good")).toHaveCount(0);
 });
 
 test("pre-V8 mail prepares send2 once and exposes the busy state", async ({

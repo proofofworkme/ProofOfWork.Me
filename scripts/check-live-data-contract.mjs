@@ -283,12 +283,22 @@ const proofIndexSnapshotPayloadSource = sourceSliceBetween(
   /export async function proofIndexSnapshotPayload/,
   /export async function proofIndexValueSummaryPayload/,
 );
+const strictCoreTokenListingReconciliationSource = sourceSliceBetween(
+  server,
+  /async function strictCoreTokenListingReconciliation/,
+  /function tokenListingWithoutCloseMetadata/,
+);
 const storedEligibleCanonicalSummarySnapshotPayloadSource =
   sourceSliceBetween(
     proofIndexerBackfill,
     /async function storedEligibleCanonicalSummarySnapshotPayload/,
     /async function storedExactEligibleCanonicalSummarySnapshotPayload/,
   );
+const pendingWorkStageRequestSource = sourceSliceBetween(
+  proofIndexerBackfill,
+  /async function requestWorkQ16PendingStage/,
+  /function canonicalWorkQ16PendingParentWitness/,
+);
 const workerBackfillPhasePlanSource = sourceSliceBetween(
   proofIndexerWorker,
   /export function workerBackfillPhasePlan/,
@@ -1716,6 +1726,22 @@ expectAll("credit-listing lifecycle capacity is named, observable, and fail-clos
   /async function indexedTokenMarketSummaryOverlay\([\s\S]*payload\.stats = \{[\s\S]*\.\.\.lifecycleCapacity,[\s\S]*lifecycleTotalCount:/,
   /async function completeTokenListingHistoryPayload\([\s\S]*limit: TOKEN_LISTING_LIFECYCLE_MATERIALIZATION_LIMIT[\s\S]*declaredTotal > TOKEN_LISTING_LIFECYCLE_MATERIALIZATION_LIMIT[\s\S]*tokenListingHistoryUnavailable\(/,
 ]);
+expectAll(
+  "empty livenet token-listing books retain exact stable Core evidence",
+  strictCoreTokenListingReconciliationSource,
+  [
+    /const candidates = inputListings\.filter\(requiresProof\)[\s\S]*if \(network !== "livenet"\)/,
+    /getblockchaininfo[\s\S]*exactCoreTipFromBlockchainInfo/,
+    /if \(options\.verifyFinalTip !== false\)[\s\S]*finalTip\.height !== initialTip\.height[\s\S]*finalTip\.blockHash !== initialTip\.blockHash/,
+    /checkedOutpointsSha256: registryAuditProjectionSha256\(evidenceRows\)[\s\S]*checkpoint: \{ \.\.\.initialTip \}/,
+  ],
+);
+expect(
+  "empty livenet token-listing books must not bypass the Core checkpoint fence",
+  !/network !== "livenet"\s*\|\|\s*candidates\.length === 0/u.test(
+    strictCoreTokenListingReconciliationSource,
+  ),
+);
 expect(
   "complete credit-listing lifecycle reads do not use a magic 5000-row limit",
   !/proofIndexCreditListingsPayload\([\s\S]{0,180}limit:\s*5000/.test(server),
@@ -1769,6 +1795,15 @@ expectAll("summary proof-index snapshots prefer latest summary scan rows before 
   /FROM proof_indexer\.ledger_snapshots[\s\S]*WHERE network = \$1[\s\S]*payload \? 'summaryPayloads'[\s\S]*payload->'summaryPayloads' \? \$2[\s\S]*ORDER BY indexed_through_block DESC NULLS LAST,\s*generated_at DESC[\s\S]*LIMIT 1/,
   /if \(!snapshot\) \{[\s\S]*WITH recent AS \([\s\S]*FROM proof_indexer\.ledger_snapshots[\s\S]*WHERE network = \$1[\s\S]*AND payload \? 'summaryPayloads'[\s\S]*ORDER BY generated_at DESC[\s\S]*LIMIT \$\{SUMMARY_SNAPSHOT_LOOKBACK_LIMIT\}[\s\S]*FROM recent[\s\S]*WHERE payload \? 'summaryPayloads'[\s\S]*AND payload->'summaryPayloads' \? \$2[\s\S]*ORDER BY generated_at DESC[\s\S]*LIMIT 1/,
 ]);
+expectAll(
+  "pending Q16 tip races return control to the outer canonical retry",
+  pendingWorkStageRequestSource + workerRunCycleSource,
+  [
+    /readJson\([\s\S]*retries:\s*PENDING_ONLY_BACKFILL\s*\?\s*0\s*:\s*REQUEST_RETRIES/,
+    /assertWorkerPendingCheckpointCoversCoreTip\([\s\S]*runBackfillPhase\(backfillPhases\[1\]\)/,
+    /const coreTipAdvance = workerCoreTipAdvanceFromError\(error\)[\s\S]*state: "canonical-tip-deferred"[\s\S]*workerSleep\(runtime, retryDelayMs\)/,
+  ],
+);
 expectAll(
   "hot worker publishes confirmed canonical summaries before bounded best-effort pending work",
   workerBackfillPhasePlanSource +

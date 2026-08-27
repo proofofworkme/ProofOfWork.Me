@@ -17746,7 +17746,7 @@ async function strictCoreTokenListingReconciliation(
     options.requireAll === true ||
     tokenListingRequiresCoreBuyabilityProof(listing);
   const candidates = inputListings.filter(requiresProof);
-  if (network !== "livenet" || candidates.length === 0) {
+  if (network !== "livenet") {
     return {
       evidence: {
         buyableCandidateCount: candidates.filter(

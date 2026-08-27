@@ -2562,6 +2562,93 @@ async function runChecks() {
     0,
     "an exhausted pending pass must skip the extended verifier and preserve shutdown headroom",
   );
+  {
+    const stageRequest = { model: "fixture-pending-stage-request" };
+    const exactTipError = Object.assign(
+      new Error(
+        "/api/v1/internal/pending-work-verifier-stage returned HTTP 503",
+      ),
+      {
+        details: { code: "PENDING_WORK_STAGE_EXACT_TIP_UNAVAILABLE" },
+        statusCode: 503,
+      },
+    );
+    const pendingOnlyCalls = [];
+    const requestPendingOnlyWorkStage = isolatedBackfillFunction(
+      "requestWorkQ16PendingStage",
+      {
+        BACKFILL_PROCESS_STARTED_AT_MS: 1_000,
+        Date: { now: () => 11_000 },
+        PENDING_LEGACY_VERIFIER_TIMEOUT_MS: 30_000,
+        PENDING_ONLY_BACKFILL: true,
+        PENDING_ONLY_CHILD_TIMEOUT_MS: 90_000,
+        PENDING_ONLY_PERSISTENCE_HEADROOM_MS: 9_000,
+        REQUEST_RETRIES: 8,
+        REQUEST_TIMEOUT_MS: 180_000,
+        WORK_Q16_PENDING_STAGE_PATH:
+          "/api/v1/internal/pending-work-verifier-stage",
+        canonicalWorkQ16PendingStageResponse: () => {
+          throw new Error("a failed stage request must not be canonicalized");
+        },
+        explicitLoopbackApiBaseConfigured: () => true,
+        readJson: async (url, options) => {
+          pendingOnlyCalls.push({ options, url });
+          throw exactTipError;
+        },
+        unpagedEndpoint: (path) =>
+          new URL(`http://127.0.0.1:8099${path}`),
+      },
+    );
+    await assert.rejects(
+      () => requestPendingOnlyWorkStage(stageRequest),
+      (error) => error === exactTipError,
+    );
+    assert.equal(pendingOnlyCalls.length, 1);
+    assert.equal(
+      pendingOnlyCalls[0].options.retries,
+      0,
+      "the outer canonical cycle, not one stale stage request, must own tip-race retries",
+    );
+    assert.equal(pendingOnlyCalls[0].options.timeoutMs, 71_000);
+    assert.equal(pendingOnlyCalls[0].options.body, stageRequest);
+    assert.equal(pendingOnlyCalls[0].options.method, "POST");
+
+    let supervisedOptions = null;
+    const stagePayload = { model: "fixture-pending-stage" };
+    const requestSupervisedWorkStage = isolatedBackfillFunction(
+      "requestWorkQ16PendingStage",
+      {
+        BACKFILL_PROCESS_STARTED_AT_MS: 1_000,
+        Date: { now: () => 11_000 },
+        PENDING_LEGACY_VERIFIER_TIMEOUT_MS: 30_000,
+        PENDING_ONLY_BACKFILL: false,
+        PENDING_ONLY_CHILD_TIMEOUT_MS: 90_000,
+        PENDING_ONLY_PERSISTENCE_HEADROOM_MS: 9_000,
+        REQUEST_RETRIES: 8,
+        REQUEST_TIMEOUT_MS: 180_000,
+        WORK_Q16_PENDING_STAGE_PATH:
+          "/api/v1/internal/pending-work-verifier-stage",
+        canonicalWorkQ16PendingStageResponse: (payload) => payload,
+        explicitLoopbackApiBaseConfigured: () => true,
+        readJson: async (_url, options) => {
+          supervisedOptions = options;
+          return stagePayload;
+        },
+        unpagedEndpoint: (path) =>
+          new URL(`http://127.0.0.1:8099${path}`),
+      },
+    );
+    assert.equal(
+      await requestSupervisedWorkStage(stageRequest),
+      stagePayload,
+    );
+    assert.equal(
+      supervisedOptions.retries,
+      8,
+      "the liveness correction must stay scoped to the pending-only worker child",
+    );
+    assert.equal(supervisedOptions.timeoutMs, 180_000);
+  }
   assert.equal(pendingBackfillChildTimeoutMs(null), 10_000);
   assert.equal(pendingBackfillChildTimeoutMs("invalid"), 10_000);
   assert.equal(pendingBackfillChildTimeoutMs("1000"), 5_000);

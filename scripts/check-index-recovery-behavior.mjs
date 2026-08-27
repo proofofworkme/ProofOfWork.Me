@@ -8915,7 +8915,7 @@ check("token listing buyability is fenced by exact stable-tip Core evidence", as
     API_PATH,
     "exactBitcoinRpcOutputSats",
   );
-  let rpcImplementation = async (method, params) => {
+  const liveRpcImplementation = async (method, params) => {
     if (method === "getblockchaininfo") {
       return { tip };
     }
@@ -8932,6 +8932,7 @@ check("token listing buyability is fenced by exact stable-tip Core evidence", as
       },
     };
   };
+  let rpcImplementation = liveRpcImplementation;
   const tokenListingAuthorityUnavailable = isolatedFunction(
     API_PATH,
     "tokenListingAuthorityUnavailable",
@@ -8972,6 +8973,56 @@ check("token listing buyability is fenced by exact stable-tip Core evidence", as
     ...overrides,
   });
   const live = listing("live", "1".repeat(64));
+  let emptyTipReads = 0;
+  let emptyOutpointReads = 0;
+  rpcImplementation = async (method) => {
+    if (method === "getblockchaininfo") {
+      emptyTipReads += 1;
+      return { tip };
+    }
+    emptyOutpointReads += 1;
+    throw new Error("an empty listing book must not query an outpoint");
+  };
+  const empty = await strictCoreTokenListingReconciliation(
+    [],
+    "livenet",
+    { requireAll: true },
+  );
+  const emptyDigest = createHash("sha256")
+    .update(JSON.stringify([]), "utf8")
+    .digest("hex");
+  assert.deepEqual(empty.listings, []);
+  assert.equal(empty.evidence.checkedListingCount, 0);
+  assert.equal(empty.evidence.inputListingCount, 0);
+  assert.equal(empty.evidence.outputListingCount, 0);
+  assert.equal(empty.evidence.spentListingCount, 0);
+  assert.equal(empty.evidence.unspentListingCount, 0);
+  assert.equal(empty.evidence.checkedOutpointsSha256, emptyDigest);
+  assert.equal(empty.evidence.checkpoint.height, tip.height);
+  assert.equal(empty.evidence.checkpoint.blockHash, tip.blockHash);
+  assert.equal(emptyTipReads, 2);
+  assert.equal(emptyOutpointReads, 0);
+
+  emptyTipReads = 0;
+  rpcImplementation = async (method) => {
+    assert.equal(method, "getblockchaininfo");
+    emptyTipReads += 1;
+    return {
+      tip:
+        emptyTipReads === 1
+          ? tip
+          : { blockHash: "b".repeat(64), height: tip.height + 1 },
+    };
+  };
+  await assert.rejects(
+    strictCoreTokenListingReconciliation([], "livenet", {
+      requireAll: true,
+    }),
+    /Bitcoin Core changed/u,
+    "an empty listing book must still reject an unstable Core checkpoint",
+  );
+
+  rpcImplementation = liveRpcImplementation;
   const retained = await strictCoreTokenListingReconciliation(
     [live],
     "livenet",
@@ -24644,6 +24695,61 @@ check("only the loopback canonical summary read bypasses Undici", async () => {
       `${path} must traverse the ordinary canonical public-read gate`,
     );
   }
+});
+
+check("an exact-tip pending stage failure can bypass generic backfill retries", async () => {
+  let fetchCalls = 0;
+  let retryLogs = 0;
+  const readJson = isolatedFunction(BACKFILL_PATH, "readJson", {
+    AbortController,
+    CANONICAL_SUMMARY_RESPONSE_MAX_BYTES: 64 * 1024 * 1024,
+    INTERNAL_VERIFIER_TOKEN: "x".repeat(64),
+    REQUEST_RETRIES: 8,
+    REQUEST_TIMEOUT_MS: 180_000,
+    clearTimeout,
+    console: {
+      error() {
+        retryLogs += 1;
+      },
+    },
+    fetch: async () => {
+      fetchCalls += 1;
+      return {
+        ok: false,
+        status: 503,
+        text: async () =>
+          JSON.stringify({
+            details: {
+              code: "PENDING_WORK_STAGE_EXACT_TIP_UNAVAILABLE",
+            },
+          }),
+      };
+    },
+    setTimeout,
+  });
+  const error = await rejection(
+    readJson(
+      new URL(
+        "http://127.0.0.1:8099/api/v1/internal/pending-work-verifier-stage?network=livenet",
+      ),
+      {
+        body: { model: "fixture-pending-stage-request" },
+        method: "POST",
+        retries: 0,
+        timeoutMs: 1_000,
+      },
+    ),
+    (value) =>
+      value?.details?.code ===
+      "PENDING_WORK_STAGE_EXACT_TIP_UNAVAILABLE",
+  );
+  assert.equal(error.statusCode, 503);
+  assert.equal(fetchCalls, 1);
+  assert.equal(
+    retryLogs,
+    0,
+    "the stale stage request must return control to the outer canonical cycle without sleeping",
+  );
 });
 
 check("canonical summary node:http waits for headers under the caller abort budget", async () => {
@@ -48972,7 +49078,17 @@ check("token listing history rejects previews and fences relational and Core evi
       createHash,
       encodedCheckpointCursor,
       historyCursorConflict,
-      historyItemsMatchingAddresses: (items) => items,
+      historyItemsMatchingAddresses: (items, addresses) => {
+        if (!Array.isArray(addresses) || addresses.length === 0) {
+          return items;
+        }
+        const needles = addresses.map((address) =>
+          String(address ?? "").trim().toLowerCase());
+        return items.filter((item) => {
+          const text = JSON.stringify(item).toLowerCase();
+          return needles.some((address) => text.includes(address));
+        });
+      },
       historyItemsMatchingQuery: (items, query) => {
         const normalized = String(query ?? "").trim().toLowerCase();
         return normalized
@@ -48987,7 +49103,10 @@ check("token listing history rejects previews and fences relational and Core evi
         witnessCalls.push(listingId);
         return witnesses.get(listingId) ?? null;
       },
-      recoveryAddressesFromSearchParams: () => [],
+      recoveryAddressesFromSearchParams: (searchParams) =>
+        searchParams.getAll("address")
+          .map((address) => String(address ?? "").trim())
+          .filter(Boolean),
       strictCoreTokenListingReconciliation: async (items) => {
         coreCalls += 1;
         coreCheckedListings = items;
@@ -49054,6 +49173,41 @@ check("token listing history rejects previews and fences relational and Core evi
       "351f6305ae5d193469e7966553e749ea0b31debd758503a5381cba844dfd240c",
   };
   const lifecycleListings = [legacyRefundListing, ...listings];
+  relational = {
+    indexedAt: "2026-08-26T12:00:00.000Z",
+    indexedThroughBlock: 964_200,
+    indexedThroughBlockHash: "a".repeat(64),
+    items: [],
+    stats: {
+      complete: true,
+      workMarketAuthorizationReady: false,
+      workMarketAuthorizationVersions: [],
+    },
+    summaryOnly: false,
+    totalCount: 0,
+  };
+  const emptyIncb = await completeTokenListingHistoryPayload(
+    "livenet",
+    INCB_TOKEN_ID,
+    new URLSearchParams("limit=200&page=0"),
+  );
+  assert.equal(emptyIncb.totalCount, 0);
+  assert.deepEqual(emptyIncb.items, []);
+  assert.equal(emptyIncb.hasMore, false);
+  assert.equal(emptyIncb.nextCursor, "");
+  assert.equal(emptyIncb.page, 0);
+  assert.equal(emptyIncb.pageCount, 1);
+  assert.equal(emptyIncb.listingAuthority.checkedListingCount, 0);
+  assert.equal(emptyIncb.listingAuthority.inputListingCount, 0);
+  assert.equal(emptyIncb.listingAuthority.outputListingCount, 0);
+  assert.equal(emptyIncb.listingAuthority.checkedOutpointsSha256, coreDigest);
+  assert.equal(emptyIncb.listingAuthority.checkpoint.height, 964_200);
+  assert.equal(emptyIncb.listingAuthority.checkpoint.blockHash, coreHash);
+  assert.equal(emptyIncb.listingProjection.activeListingCount, 0);
+  assert.equal(emptyIncb.listingProjection.coreUnspentListingCount, 0);
+  assert.match(emptyIncb.snapshotId, /^[0-9a-f]{64}$/u);
+  assert.deepEqual(coreCheckedListings, []);
+
   relational = {
     indexedAt: "2026-08-26T12:00:00.000Z",
     indexedThroughBlock: 964_200,
@@ -49133,6 +49287,38 @@ check("token listing history rejects previews and fences relational and Core evi
       workMarketAuthorizationVersions: [WORK_AMO_V8_AUTH_VERSION],
     },
   };
+  for (const [label, searchParams] of [
+    ["address", new URLSearchParams({ address: "bc1punmatchedfixture" })],
+    ["query", new URLSearchParams({ q: "unmatched-listing-fixture" })],
+  ]) {
+    const emptyFiltered = await completeTokenListingHistoryPayload(
+      "livenet",
+      "work",
+      searchParams,
+    );
+    assert.equal(emptyFiltered.totalCount, 0, `${label} filter count`);
+    assert.deepEqual(emptyFiltered.items, [], `${label} filter items`);
+    assert.equal(
+      emptyFiltered.listingAuthority.checkedListingCount,
+      lifecycleListings.length,
+      `${label} filter Core coverage`,
+    );
+    assert.equal(
+      emptyFiltered.listingAuthority.checkedOutpointsSha256,
+      coreDigest,
+      `${label} filter Core digest`,
+    );
+    assert.equal(
+      emptyFiltered.listingAuthority.checkpoint.height,
+      964_200,
+      `${label} filter Core height`,
+    );
+    assert.equal(
+      emptyFiltered.listingAuthority.checkpoint.blockHash,
+      coreHash,
+      `${label} filter Core hash`,
+    );
+  }
   witnessCalls = [];
   const exactRelic = await completeTokenListingHistoryPayload(
     "livenet", "work",
@@ -49141,6 +49327,12 @@ check("token listing history rejects previews and fences relational and Core evi
   assert.equal(exactRelic.totalCount, 0);
   assert.deepEqual(exactRelic.items, []);
   assert.equal(exactRelic.listingProjection.excludedByProtocolCount, 1);
+  assert.equal(
+    exactRelic.listingAuthority.checkedOutpointsSha256,
+    coreDigest,
+  );
+  assert.equal(exactRelic.listingAuthority.checkpoint.height, 964_200);
+  assert.equal(exactRelic.listingAuthority.checkpoint.blockHash, coreHash);
   assert.deepEqual(
     coreCheckedListingIds,
     lifecycleListings.map((item) => item.listingId),

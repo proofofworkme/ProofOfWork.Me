@@ -220,6 +220,16 @@ and total. Each continuation rebuilds both relational and Core evidence;
 mutation, reorg, spentness change, source truncation, filter mismatch, or a
 malformed cursor returns `409` and requires a restart. Numeric `page>0` or
 `offset>0` without the returned cursor is rejected.
+
+Public AMO inventory must hydrate this complete listing route before treating a
+compact marketplace-summary listing array as the whole book. The client binds
+every page to one `indexedAt`, height/hash, snapshot id, declared total, Core
+outpoint digest, and protocol-membership digest, follows only the returned
+opaque cursor, and accepts the result only when its checkpoint and total match
+the summary. While that proof is unavailable, the compact rows are a labeled
+preview: search and empty-book claims remain incomplete. Market-log rows are
+history and must never be merged into active inventory. Wallet-owned listing
+pagination follows the same cursor and evidence rules.
 `POW_INDEX_READS=token-state` enables default `/api/v1/token`
 reads from stored token-state snapshots for global and scoped credit views,
 including AMO active/sealed books and sale-ticket lifecycle arrays.
@@ -387,6 +397,12 @@ pass. Routine pending ordered-verifier requests are capped at 30 seconds.
 Every verifier spec also shares one absolute child deadline; its individual
 timeout shrinks against that deadline and no new request starts after the
 nine-second persistence reserve begins.
+The pending-only Q16 stage request makes one exact-checkpoint attempt and
+disables the generic HTTP retry/backoff layer. A typed exact-tip `503` returns
+control immediately to the outer worker, which rechecks Core and retries the
+whole canonical cycle after its bounded delay; it must not keep retrying one
+stale stage request while the chain advances. Explicitly supervised,
+non-pending backfills retain their configured request retries.
 The versioned legacy WORK inspection described below remains subordinate to
 the hard child watchdog. Its historical 30-second allowance remains available
 outside this pending-only worker mode. Inside the pending-only child it is

@@ -24962,6 +24962,7 @@ async function requestWorkQ16PendingStage(request) {
     {
       body: request,
       method: "POST",
+      retries: PENDING_ONLY_BACKFILL ? 0 : REQUEST_RETRIES,
       timeoutMs,
     },
   );

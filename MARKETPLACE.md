@@ -1321,6 +1321,18 @@ pending sealing, and confirmed executable asks:
   in the full token payload is also present in marketplace summary, and that
   wallet-scoped listing reads preserve confirmed seal txids.
 
+## August 27 Complete Book Rendering
+
+Compact token and marketplace summaries are bounded previews, not an authority
+for active-book cardinality. AMO now hydrates every active credit and bond sale
+ticket from the complete Core-reconciled listing route, follows its opaque
+cursor, and accepts the book only when checkpoint height/hash, snapshot,
+authority/projection evidence, and declared count stay stable across all pages
+and match the summary checkpoint. Until then, the preview is labeled incomplete
+and the UI withholds definitive search and empty-book claims. Market-log rows
+remain lifecycle history and cannot manufacture active inventory. Wallet-owned
+listing hydration uses the same complete cursor contract.
+
 ## June 27 Sealed Summary Hardening
 
 The final audit follow-up tightened one more sale-ticket edge case: a valid
