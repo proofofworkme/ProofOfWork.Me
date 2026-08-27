@@ -10314,6 +10314,7 @@ check("fresh token reads prefer exact canonical summaries over unavailable pendi
     lagBlocks: 1,
     ok: true,
     tipHeight: 201,
+    workerOk: false,
   };
   const canonicalSummary = {
     indexedThroughBlock: 200,
@@ -10364,12 +10365,26 @@ check("fresh token reads prefer exact canonical summaries over unavailable pendi
   const otherResult = await canonicalSummaryFreshRead(
     "livenet",
     "other-token-id",
-    { ...canonicalGate, atTip: true, ready: true },
+    { ...canonicalGate, atTip: true, ready: true, workerOk: true },
   );
   assert.equal(otherResult.snapshotId, canonicalSummary.snapshotId);
   assert.equal(otherResult.pendingProjection.ready, true);
   assert.equal(otherResult.pendingProjection.status, "current");
   assert.equal(summaryReads, 2);
+  const staleHeartbeatResult = await canonicalSummaryFreshRead(
+    "livenet",
+    "WORK",
+    {
+      ...canonicalGate,
+      atTip: true,
+      ready: false,
+      workerFresh: false,
+      workerOk: true,
+    },
+  );
+  assert.equal(staleHeartbeatResult.pendingProjection.ready, true);
+  assert.equal(staleHeartbeatResult.pendingProjection.status, "current");
+  assert.equal(summaryReads, 3);
   assert.equal(
     await canonicalSummaryFreshRead(
       "livenet",
@@ -10378,7 +10393,7 @@ check("fresh token reads prefer exact canonical summaries over unavailable pendi
     ),
     null,
   );
-  assert.equal(summaryReads, 3);
+  assert.equal(summaryReads, 4);
 
   const requestSource = topLevelFunctionSource(API_PATH, "handleRequest");
   const summaryReadIndex = requestSource.indexOf(

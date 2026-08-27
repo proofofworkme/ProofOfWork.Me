@@ -39072,7 +39072,8 @@ async function currentCanonicalTokenSummaryPayloadForFreshRead(
     .trim()
     .toLowerCase();
   const checkpointHeight = Number(canonicalGate?.indexedThroughBlock);
-  const pendingReady = canonicalGate?.ready === true;
+  const pendingReady =
+    canonicalGate?.atTip === true && canonicalGate?.workerOk === true;
   return {
     ...payload,
     confirmedRead: {
