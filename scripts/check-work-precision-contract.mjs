@@ -129,6 +129,8 @@ const frontendExactIntegerBigInt = (value) => {
   const text = typeof value === "string" ? value.trim() : "";
   return /^(?:0|[1-9]\d*)$/u.test(text) ? BigInt(text) : null;
 };
+const frontendExactIntegerText = (value) =>
+  frontendExactIntegerBigInt(value)?.toString() ?? "";
 const frontendCompareExactIntegers = (left, right) => {
   const leftExact = frontendExactIntegerBigInt(left);
   const rightExact = frontendExactIntegerBigInt(right);
@@ -271,6 +273,112 @@ const growthActualValueHasCanonicalWorkQ8 = isolatedTypeScriptFunction(
     exactWorkQ8AliasMatches,
   },
 );
+const canonicalWorkSupplyAliases = isolatedTypeScriptFunction(
+  appSource,
+  "canonicalWorkSupplyAliases",
+  {
+    WORK_TOKEN_MAX_SUPPLY_SUBATOMS: "210000000000000000000000",
+    workAtomsFromDecimal: workAmountModule.workAtomsFromDecimal,
+    workDecimalFromAtoms: workAmountModule.workDecimalFromAtoms,
+    workSubatomsFromCanonicalString:
+      workAmountModule.workSubatomsFromCanonicalString,
+  },
+);
+const roundedUnsignedRatioDecimalText = isolatedTypeScriptFunction(
+  appSource,
+  "roundedUnsignedRatioDecimalText",
+);
+const canonicalPositiveIntegerText = isolatedTypeScriptFunction(
+  appSource,
+  "canonicalPositiveIntegerText",
+  { exactIntegerText: frontendExactIntegerText },
+);
+const workQ16UnitPriceDescriptor = isolatedTypeScriptFunction(
+  appSource,
+  "workQ16UnitPriceDescriptor",
+  {
+    WORK_AMO_UNIT_SCALE_BIGINT: 10_000_000_000_000_000n,
+    WORK_Q16_SUMMARY_UNIT_PRICE_MODEL:
+      "exact-work-q16-sats-per-unit-ratio-v1",
+    WORK_TOKEN_DECIMALS: 16,
+    WORK_TOKEN_MAX_SUPPLY_SUBATOMS: "210000000000000000000000",
+    WORK_TOKEN_UNIT_SCALE: "10000000000000000",
+    canonicalPositiveIntegerText,
+    roundedUnsignedRatioDecimalText,
+  },
+);
+const hasExactRecordKeys = (value, expectedKeys) => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  const actual = Object.keys(value).sort();
+  const expected = [...expectedKeys].sort();
+  return (
+    actual.length === expected.length &&
+    actual.every((key, index) => key === expected[index])
+  );
+};
+const workQ16PriceDescriptorKeys = [
+  "amountSubatoms",
+  "decimal",
+  "denominator",
+  "model",
+  "numerator",
+  "priceSats",
+  "unitScale",
+];
+const canonicalWorkQ16UnitPriceDescriptor = isolatedTypeScriptFunction(
+  appSource,
+  "canonicalWorkQ16UnitPriceDescriptor",
+  {
+    WORK_Q16_UNIT_PRICE_DESCRIPTOR_KEYS: workQ16PriceDescriptorKeys,
+    hasExactRecordKeys,
+    workQ16UnitPriceDescriptor,
+  },
+);
+const compareWorkQ16UnitPriceDescriptors = isolatedTypeScriptFunction(
+  appSource,
+  "compareWorkQ16UnitPriceDescriptors",
+  { canonicalWorkQ16UnitPriceDescriptor },
+);
+const workQ16UnitPriceDisplay = isolatedTypeScriptFunction(
+  appSource,
+  "workQ16UnitPriceDisplay",
+  {
+    WORK_TOKEN_DECIMALS: 16,
+    canonicalWorkQ16UnitPriceDescriptor,
+    formatExactDecimal: (value) => value,
+  },
+);
+const tokenMintSupplyState = isolatedTypeScriptFunction(
+  appSource,
+  "tokenMintSupplyState",
+  {
+    isBondTokenDefinition: () => false,
+    tokenDefinitionIsUncapped: () => false,
+    tokenMaximumSupplyUnits: () => 210000000000000000000000n,
+    tokenMintAmountUnits: () => 10000000000000000000n,
+    tokenSupplyUnits: (_token, value) =>
+      workAmountModule.workAtomsFromDecimal(value),
+    tokenSupplyValueFromUnits: (_token, value) =>
+      workAmountModule.workDecimalFromAtoms(value),
+  },
+);
+const growthQ8Field = isolatedTypeScriptFunction(
+  appSource,
+  "growthQ8Field",
+  { exactIntegerText: frontendExactIntegerText },
+);
+const normalizeGrowthActualValue = isolatedTypeScriptFunction(
+  appSource,
+  "normalizeGrowthActualValue",
+  {
+    growthExactDecimalField: () => undefined,
+    growthNumberField: (payload, key) => Number(payload?.[key] ?? 0),
+    growthQ8Field,
+    normalizeCanonicalMinerFeeCoverage: () => undefined,
+  },
+);
 
 assert.equal(WORK_DECIMALS, 8);
 assert.equal(WORK_UNIT_SCALE_TEXT, "100000000");
@@ -293,6 +401,109 @@ assert.equal(
 assert.equal(normalizeWorkAtoms("123456789"), "123456789");
 assert.equal(isCanonicalWorkAtoms("123456789"), true);
 assert.equal(isCanonicalWorkAtoms("0123456789"), false);
+
+const exactFrontendSupply = canonicalWorkSupplyAliases(
+  "30000000000000001",
+  "3.0000000000000001",
+);
+assert.equal(exactFrontendSupply.amount, "3.0000000000000001");
+assert.equal(exactFrontendSupply.amountSubatoms, "30000000000000001");
+assert.throws(() =>
+  canonicalWorkSupplyAliases(
+    "30000000000000001",
+    "3.0000000000000002",
+  ),
+);
+assert.throws(() =>
+  canonicalWorkSupplyAliases(undefined, "3.0000000000000001"),
+);
+
+const exactLastSaleUnitPrice = workQ16UnitPriceDescriptor(
+  "25000",
+  "10000000000000001",
+);
+const exactLowestAskUnitPrice = workQ16UnitPriceDescriptor(
+  "25000",
+  "20000000000000001",
+);
+assert.equal(
+  exactLastSaleUnitPrice.decimal,
+  "24999.9999999999975",
+);
+assert.equal(
+  exactLowestAskUnitPrice.decimal,
+  "12499.999999999999375",
+);
+assert.equal(
+  compareWorkQ16UnitPriceDescriptors(
+    exactLowestAskUnitPrice,
+    exactLastSaleUnitPrice,
+  ),
+  -1,
+);
+assert.equal(
+  workQ16UnitPriceDisplay(exactLastSaleUnitPrice),
+  "24999.9999999999975",
+);
+
+const oneSubatomRemaining = tokenMintSupplyState(
+  { tokenId: WORK_TOKEN_ID },
+  "20999999.9999999999999999",
+  "0",
+);
+assert.equal(
+  oneSubatomRemaining.confirmedRemainingSupply,
+  "0.0000000000000001",
+);
+assert.equal(oneSubatomRemaining.mintedOut, false);
+assert.equal(oneSubatomRemaining.wouldOverfill, true);
+assert.equal(
+  tokenMintSupplyState(
+    { tokenId: WORK_TOKEN_ID },
+    "21000000",
+    "0",
+  ).mintedOut,
+  true,
+);
+
+const unsafeCreditValueQ8 = "900719925474099312345678";
+const normalizedExactCreditValue = normalizeGrowthActualValue({
+  creditEventFrozenValueQ8: unsafeCreditValueQ8,
+  creditEventLiveValueQ8: unsafeCreditValueQ8,
+  creditFrozenNetworkValueQ8: unsafeCreditValueQ8,
+  creditLiveNetworkValueQ8: unsafeCreditValueQ8,
+  creditMovementFrozenValueQ8: "123456789",
+  creditMovementLiveValueQ8: "987654321",
+  creditNetworkValueQ8: unsafeCreditValueQ8,
+});
+assert.equal(
+  normalizedExactCreditValue.creditEventFrozenValueQ8,
+  unsafeCreditValueQ8,
+);
+assert.equal(
+  normalizedExactCreditValue.creditEventLiveValueQ8,
+  unsafeCreditValueQ8,
+);
+assert.equal(
+  normalizedExactCreditValue.creditFrozenNetworkValueQ8,
+  unsafeCreditValueQ8,
+);
+assert.equal(
+  normalizedExactCreditValue.creditLiveNetworkValueQ8,
+  unsafeCreditValueQ8,
+);
+assert.equal(
+  normalizedExactCreditValue.creditMovementFrozenValueQ8,
+  "123456789",
+);
+assert.equal(
+  normalizedExactCreditValue.creditMovementLiveValueQ8,
+  "987654321",
+);
+assert.equal(
+  normalizedExactCreditValue.creditNetworkValueQ8,
+  unsafeCreditValueQ8,
+);
 
 const walletAddress = "1WorkAtomicWallet111111111111111111";
 const workToken = {
@@ -495,6 +706,13 @@ const exactWorkActualValue = (() => {
     baseNetworkValueSatsExact: decimalFromQ8(baseQ8),
     baseTotalQ8: baseQ8.toString(),
     baseTotalSatsExact: decimalFromQ8(baseQ8),
+    creditEventFrozenValueQ8: "900719925474099312345678",
+    creditEventLiveValueQ8: "900719925474099312345679",
+    creditFrozenNetworkValueQ8: "900719925474099312345678",
+    creditLiveNetworkValueQ8: "900719925474099312345679",
+    creditMovementFrozenValueQ8: "123456789",
+    creditMovementLiveValueQ8: "987654321",
+    creditNetworkValueQ8: "900719925474099312345679",
     floorQ8: floorQ8.toString(),
     floorSatsExact: decimalFromQ8(floorQ8),
     frozenFloorQ8: frozenFloorQ8.toString(),
@@ -518,6 +736,14 @@ const exactWorkActualValue = (() => {
   };
 })();
 assert.equal(growthActualValueHasCanonicalWorkQ8(exactWorkActualValue), true);
+assert.equal(
+  growthActualValueHasCanonicalWorkQ8({
+    ...exactWorkActualValue,
+    creditNetworkValueQ8: "900719925474099312345680",
+  }),
+  false,
+  "credit live-network Q8 aliases must agree above Number precision",
+);
 assert.equal(
   growthActualValueHasCanonicalWorkQ8({
     ...exactWorkActualValue,

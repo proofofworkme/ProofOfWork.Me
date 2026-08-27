@@ -1944,6 +1944,26 @@ assert.match(
   "the frontend canonical WORK definition must expose Q16 max-supply and mint units",
 );
 assert.match(
+  app,
+  /function canonicalWorkSupplyAliases[\s\S]*workSubatomsFromCanonicalString\(amountSubatoms\)[\s\S]*workAtomsFromDecimal\(amount\)[\s\S]*aliasSubatoms !== subatoms/u,
+  "frontend WORK supply aliases must be authorized by canonical Q16 subatoms and cross-checked without Number",
+);
+assert.match(
+  app,
+  /function compareWorkQ16UnitPriceDescriptors[\s\S]*BigInt\(leftCanonical\.numerator\) \* BigInt\(rightCanonical\.denominator\)[\s\S]*BigInt\(rightCanonical\.numerator\) \* BigInt\(leftCanonical\.denominator\)/u,
+  "frontend WORK unit-price ordering must use exact rational cross-products",
+);
+assert.match(
+  app,
+  /function normalizeGrowthActualValue[\s\S]*creditEventFrozenValueQ8: growthQ8Field[\s\S]*creditEventLiveValueQ8: growthQ8Field[\s\S]*creditMovementFrozenValueQ8: growthQ8Field[\s\S]*creditMovementLiveValueQ8: growthQ8Field[\s\S]*creditNetworkValueQ8: growthQ8Field/u,
+  "frontend growth normalization must preserve every exact credit Q8 component",
+);
+assert.match(
+  app,
+  /bondProofAmountDisplay\(\s*workCreditNetworkValueSats,\s*workCreditNetworkValueQ8[\s\S]*bondProofAmountDisplay\(\s*workCreditEventFrozenValueSats,\s*workCreditEventFrozenValueQ8[\s\S]*bondProofAmountDisplay\(\s*workCreditMovementLiveValueSats,\s*workCreditMovementLiveValueQ8[\s\S]*bondProofAmountDisplay\(\s*workCreditMovementFrozenValueSats,\s*workCreditMovementFrozenValueQ8/u,
+  "frontend WORK value cards must render credit components from exact Q8 aliases",
+);
+assert.match(
   reader,
   /const relicListing = relicProjectionContext[\s\S]*closedListings\.push\(relicListing\);[\s\S]*continue;[\s\S]*row\.listing_tx_status === "confirmed"/u,
   "a marker-bound V8 relic must close before any later raw ticket spend is classified",

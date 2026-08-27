@@ -49,6 +49,11 @@ const workAmoV8MetadataSource = sourceSliceBetween(
   /async function workAmoV8Metadata/,
   /async function withWorkMarketplaceV4Metadata/,
 );
+const ledgerSnapshotRetentionSource = sourceSliceBetween(
+  proofIndexerBackfill,
+  /async function pruneLedgerSnapshots/,
+  /async function storeCanonicalSummarySnapshot/,
+);
 const bondHardPriceDeclaration = readFileSync(
   "server/bond-hard-price-declaration.mjs",
   "utf8",
@@ -690,11 +695,11 @@ expectAll("hot worker summary publication is canonical, conservative, and health
   /indexedRegistryStateForCanonicalLedger\([\s\S]*options\.exactHeight[\s\S]*proofIndexPayloadIndexedThroughBlock\(payload\) !== exactHeight/,
   /summarySnapshotIds[\s\S]*value !== snapshotId/,
   /summaryRefresh: _canonicalSummaryRefresh[\s\S]*legacyBasePayload/,
-  /storedLedgerSnapshotPayload\([\s\S]*snapshotId[\s\S]*sameSnapshotPayload/,
+  /const workSufficientState = exactWorkState\.required[\s\S]*canonicalSummarySnapshotPayload\(\{[\s\S]*workSufficientState/,
   /mode: "canonical-summary-refresh"/,
   /payload->'summaryRefresh'->>'mode' = 'canonical-summary-refresh'/,
   /previousCoverage === latestIndexedHeight[\s\S]*previousIndexedThroughBlockHash === latestIndexedThroughBlockHash/,
-  /indexedThroughBlockHash: latestIndexedThroughBlockHash[\s\S]*blockScan: latestIndexedThroughBlockHash/,
+  /blockScan: latestIndexedThroughBlockHash[\s\S]*indexedThroughBlockHash: latestIndexedThroughBlockHash/,
   /"inceptionSummary"/,
   /"infinitySummary"/,
   /function summaryPayloadConservativeCoverage\([\s\S]*Math\.min\(parentCoverage, nestedCoverage\)/,
@@ -706,11 +711,98 @@ expectAll("hot worker summary publication is canonical, conservative, and health
   /confirmed_events AS \([\s\S]*confirmed_event_max_block/,
   /readModelsOk &&[\s\S]*summarySnapshotOk/,
 ]);
-expectAll("ledger snapshot retention is bounded and preserves issuance oracles", proofIndexerBackfill, [
+expectAll("ordinary ledger snapshot retention is height-deduplicated and bounded by rows and logical bytes", ledgerSnapshotRetentionSource, [
+  /canonicalSummaryLogicalByteBudget =/,
+  /LEDGER_CANONICAL_SUMMARY_LOGICAL_BYTE_BUDGET/,
+  /canonical_block_authority AS MATERIALIZED/,
+  /proof_indexer\.blocks canonical_block/,
+  /canonical_block\.canonical = true/,
+  /canonical_height_safety AS MATERIALIZED/,
+  /candidate\.payload->>'snapshotId' = candidate\.snapshot_id/,
+  /candidate\.source_hashes->>'blockScan'/,
+  /candidate\.payload->>'indexedThroughBlockHash'/,
+  /candidate\.payload->'summaryRefresh'[\s\S]*->>'indexedThroughBlockHash'/,
+  /unsafe_canonical_heights AS MATERIALIZED/,
+  /canonical_block_count <> 1/,
+  /canonical_snapshot_matches < 1/,
+  /retention_guard AS MATERIALIZED/,
+  /retention_guard\.safe_to_prune/,
+  /canonical_versions AS MATERIALIZED/,
+  /PARTITION BY indexed_through_block/,
+  /canonical_summary_shape/,
+  /unprotected\.canonical_summary_shape/,
+  /canonical_now DESC NULLS LAST/,
+  /canonical_newest_by_height AS MATERIALIZED/,
+  /height_version = 1/,
+  /canonical_budgeted AS MATERIALIZED/,
+  /indexed_through_block DESC NULLS LAST/,
+  /sum\(logical_bytes\) OVER/,
+  /ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW/,
+  /canonical_versions\.height_version <> 1/,
+  /NOT canonical_versions\.canonical_now/,
+  /detached-block-version/,
+  /canonical_budgeted\.retention_rank > \$2::integer/,
+  /canonical_budgeted\.cumulative_logical_bytes > \$9::bigint/,
+  /octet_length\([\s\S]*COALESCE\(snapshot\.payload, 'null'::jsonb\)::text[\s\S]*\)::bigint/,
+  /canonical_summary_logical_byte_headroom/,
+  /canonical_summary_max_versions_per_height/,
+  /canonical_summary_protected_rows/,
+  /beforeMaxVersionsPerHeight:/,
+  /detachedVersionsRemoved:/,
+  /duplicateVersionsRemoved:/,
+  /logicalByteBudget:/,
+  /logicalByteHeadroom:/,
+  /maxVersionsPerHeight:/,
+  /protectedRows:/,
+  /unsafeHeights,/,
+]);
+expect(
+  "both canonical and scan snapshot deletion lanes fail closed behind the exact-canonical retention guard",
+  (ledgerSnapshotRetentionSource.match(/CROSS JOIN retention_guard/gu) ?? [])
+    .length === 2 &&
+    (ledgerSnapshotRetentionSource.match(/retention_guard\.safe_to_prune/gu) ?? [])
+      .length === 2,
+);
+expect(
+  "ordinary canonical snapshot retention never preserves all same-height versions through dense ranking",
+  !/dense_rank\(\)/u.test(ledgerSnapshotRetentionSource),
+);
+expectAll("ledger snapshot retention excludes every declared oracle and replay reference before budgeting and rechecks protection at delete", ledgerSnapshotRetentionSource, [
+  /referenced AS MATERIALIZED/,
+  /payload->>'issuanceValueSnapshotId'/,
+  /entry->'snapshot'->>'snapshotId'/,
+  /entry->>'disposition' = 'preserve'/,
+  /JOIN proof_indexer\.ledger_snapshots oracle_snapshot/,
+  /oracle_snapshot\.indexed_through_block/,
+  /source_hashes->>'blockScan'/,
+  /payload->>'indexedThroughBlockHash'/,
+  /payload->'summaryRefresh'->>'mode'/,
+  /canonical-summary-refresh/,
+  /work_amo_v5_protected AS MATERIALIZED/,
+  /replayEvidence'->'seed'/,
+  /replayEvidence'->'closing'/,
+  /replayEvidence'->>'complete' = 'true'/,
+  /canonical-work-amo-v5-h-minus-one-seed-evidence-v1/,
+  /unprotected AS MATERIALIZED/,
+  /DELETE FROM proof_indexer\.ledger_snapshots snapshot/,
+  /USING deletion_candidates candidate/,
+]);
+expect(
+  "oracle and replay protection is applied before canonical retention ranking",
+  ledgerSnapshotRetentionSource.indexOf("referenced AS MATERIALIZED") <
+    ledgerSnapshotRetentionSource.indexOf("unprotected AS MATERIALIZED") &&
+    ledgerSnapshotRetentionSource.indexOf("work_amo_v5_protected AS MATERIALIZED") <
+      ledgerSnapshotRetentionSource.indexOf("unprotected AS MATERIALIZED") &&
+    ledgerSnapshotRetentionSource.indexOf("unprotected AS MATERIALIZED") <
+      ledgerSnapshotRetentionSource.indexOf("canonical_versions AS MATERIALIZED") &&
+    (ledgerSnapshotRetentionSource.match(/FROM referenced/gu) ?? []).length >= 2 &&
+    (ledgerSnapshotRetentionSource.match(/FROM work_amo_v5_protected/gu) ?? [])
+      .length >= 2,
+);
+expectAll("ledger snapshot retention has deterministic finite defaults and publishes capacity telemetry", proofIndexerBackfill, [
   /POW_INDEX_LEDGER_CANONICAL_SUMMARY_RETENTION[\s\S]*4_096/,
+  /POW_INDEX_LEDGER_CANONICAL_SUMMARY_LOGICAL_BYTE_BUDGET[\s\S]*2 \* 1024 \* 1024 \* 1024/,
   /POW_INDEX_LEDGER_SCAN_SNAPSHOT_RETENTION[\s\S]*20_000/,
-  /async function pruneLedgerSnapshots\([\s\S]*row_number\(\) OVER[\s\S]*source_hashes \? 'canonicalSummary'[\s\S]*DELETE FROM proof_indexer\.ledger_snapshots/,
-  /payload->>'issuanceValueSnapshotId'[\s\S]*NOT EXISTS/,
   /const snapshotRetention = await pruneLedgerSnapshots\(client\)/,
 ]);
 expectAll("the production database role has finite temp-file safeguards", proofIndexDbRoleLimits, [
@@ -794,7 +886,7 @@ expectAll("internal ordered verifier routes are loopback-only and uncached", int
 ]);
 expectAll("authenticated loopback snapshot bootstrap bypasses only the rebuilding public gate", server + proofIndexerBackfill, [
   /const loopbackApi = \["127\.0\.0\.1", "::1", "\[::1\]", "localhost"\]/,
-  /const headers = \{[\s\S]*loopbackApi && INTERNAL_VERIFIER_TOKEN\.length >= 32[\s\S]*"X-PoW-Internal-Verifier"/,
+  /const headers = \{[\s\S]*internalVerifier &&[\s\S]*loopbackApi &&[\s\S]*INTERNAL_VERIFIER_TOKEN\.length >= 32[\s\S]*"X-PoW-Internal-Verifier"/,
   /const authenticatedLoopbackRead = internalVerifierRequestAllowed\(request\)/,
   /canonicalPublicReadGateApplies\(url\.pathname\) &&[\s\S]*!authenticatedLoopbackRead/,
 ]);
@@ -1143,7 +1235,7 @@ expectAll("pending ordered-verifier work has bounded normal and one-time legacy 
 expectAll("Log summary preserves full activity stats before compaction", compactActivitySummarySource, [
   /const activity = Array\.isArray\(payload\?\.activity\) \? payload\.activity : \[\]/,
   /activityStatsFromItems\(activity,\s*payload\?\.stats \?\? \{\}\)/,
-  /const compactActivity = recentByCreatedAt\(activity,\s*SUMMARY_ACTIVITY_LIMIT\)[\s\S]*activity:\s*compactActivity/,
+  /const compactActivity = recentByCreatedAt\([\s\S]*activity,[\s\S]*SUMMARY_ACTIVITY_LIMIT,[\s\S]*\)\.map\(canonicalSummaryItemPreview\)[\s\S]*activity:\s*compactActivity/,
   /stats,/,
 ]);
 
@@ -1246,9 +1338,9 @@ expectAll("frontend scoped credit mint supply ignores global summary totals", ap
   /function tokenSupplyValue\([\s\S]*key:\s*"confirmedSupply" \| "pendingSupply"/,
   /function scopedTopLevelSupplyValue\([\s\S]*supply > maxSupply[\s\S]*return undefined/,
   /const tokenRowConfirmedSupply = tokenSupplyValue\([\s\S]*"confirmedSupply"/,
-  /const scopedTopLevelConfirmedSupply = summaryOnly[\s\S]*scopedTopLevelSupplyValue\(state\.confirmedSupply,\s*tokens\[0\]\)/,
-  /confirmedSupply:\s*mixedTokenScope[\s\S]*\?\s*null[\s\S]*:\s*scopedConfirmedSupply \?\?[\s\S]*scopedTopLevelConfirmedSupply \?\?[\s\S]*topLevelConfirmedSupply \?\?/,
-  /pendingSupply:\s*mixedTokenScope[\s\S]*\?\s*null[\s\S]*:\s*scopedPendingSupply \?\?[\s\S]*scopedTopLevelPendingSupply \?\?[\s\S]*topLevelPendingSupply \?\?/,
+  /const scopedTopLevelConfirmedSupply = summaryOnly[\s\S]*scopedTopLevelSupplyValue\(\s*state\.confirmedSupply,\s*tokens\[0\],\s*state\.confirmedSupplySubatoms,?\s*\)/,
+  /confirmedSupply:\s*mixedTokenScope[\s\S]*\?\s*null[\s\S]*:\s*confirmedWorkSupply\?\.amount \?\?[\s\S]*scopedConfirmedSupply \?\?[\s\S]*scopedTopLevelConfirmedSupply \?\?[\s\S]*topLevelConfirmedSupply \?\?/,
+  /pendingSupply:\s*mixedTokenScope[\s\S]*\?\s*null[\s\S]*:\s*pendingWorkSupply\?\.amount \?\?[\s\S]*scopedPendingSupply \?\?[\s\S]*scopedTopLevelPendingSupply \?\?[\s\S]*topLevelPendingSupply \?\?/,
 ]);
 
 expectAll("server scoped credit fresh reads use direct scoped refresh before ledger", server, [
@@ -1498,7 +1590,7 @@ expectAll("proof index wallet token overlay reads balances and events", proofInd
   /e\.kind IN \([\s\S]*'token-transfer'[\s\S]*'token-sale'[\s\S]*'token-listing'[\s\S]*'token-listing-closed'[\s\S]*\)/,
   /export async function proofIndexTokenMarketSummaryOverlayPayload\(/,
   /proofIndexTokenMarketSummaryOverlayPayload\([\s\S]*latestProofIndexScanMetadata\(pool,\s*network\)[\s\S]*scanIndexedThroughBlock[\s\S]*stats:[\s\S]*complete:/,
-  /export async function proofIndexCreditListingsPayload\([\s\S]*latestProofIndexScanMetadata\(pool,\s*network\)[\s\S]*proof_indexer\.credit_listings[\s\S]*stats:[\s\S]*complete:/,
+  /export async function proofIndexCreditListingsPayload\([\s\S]*options\.requireComplete === true[\s\S]*BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY[\s\S]*const queryable = options\.transactionClient \?\? pool[\s\S]*latestProofIndexScanMetadata\(queryable,\s*network\)[\s\S]*const countResult = await queryable\.query\([\s\S]*const result = await queryable\.query\([\s\S]*proof_indexer\.credit_listings[\s\S]*stats:[\s\S]*complete:/,
   /e\.kind = ANY\(\$2::text\[\]\)/,
   /"proof-indexer-token-market-summary-overlay"/,
 ]);
@@ -1587,7 +1679,7 @@ expectAll("marketplace summary and tabs keep confirmed sealed inventory canonica
   /async function marketplaceSummaryPayloadWithIndexedMarketOverlay\([\s\S]*indexedTokenMarketSummaryOverlay\([\s\S]*compactTokenSummaryPayload\(tokenState\)/,
   /async function indexedTokenMarketSummaryOverlay\([\s\S]*tokenMarketLifecycleOverlayFromCreditListings\([\s\S]*proofIndexPayloadCoversConfirmedTip\(/,
   /function tokenMarketLifecycleOverlayFromCreditListings\([\s\S]*closedListings\.push\([\s\S]*sales\.push\(/,
-  /async function indexedTokenMarketSummaryOverlay\([\s\S]*proofIndexCreditListingsPayload\(network,\s*tokenScope,\s*\{ limit: 5000 \}\)/,
+  /async function indexedTokenMarketSummaryOverlay\([\s\S]*proofIndexCreditListingsPayload\(network,\s*tokenScope,\s*\{[\s\S]*limit: TOKEN_LISTING_LIFECYCLE_MATERIALIZATION_LIMIT/,
   /const fast = options\.fast === true;[\s\S]*if \(fast\) \{[\s\S]*indexedTokenMarketSummaryOverlay\(network\)[\s\S]*return null;[\s\S]*tokenStateWithIndexedMarketSummaryOverlay\(/,
   /async function marketplaceSummaryWithCurrentBtcUsd\([\s\S]*workFloorWithCurrentBtcUsd\(/,
   /function tokenStateWithIndexedMarketSummaryOverlay\([\s\S]*overlay\.listings[\s\S]*tokenListingItemKey/,
@@ -1612,6 +1704,19 @@ expectAll("marketplace summary and tabs keep confirmed sealed inventory canonica
   /const unsealedListings = marketListings\.filter\(\s*\(listing\) => !tokenListingHasConfirmedSaleTicketSeal\(listing\),\s*\)/,
   /tokenMarketHistoryRefreshNonce[\s\S]*fresh:\s*tokenMarketHistoryRefreshNonce > 0/,
 ]);
+expectAll("credit-listing lifecycle capacity is named, observable, and fail-closed", server, [
+  /const TOKEN_LISTING_LIFECYCLE_MATERIALIZATION_LIMIT = 5_000/,
+  /const TOKEN_LISTING_LIFECYCLE_WARNING_THRESHOLD = Math\.ceil\([\s\S]*TOKEN_LISTING_LIFECYCLE_MATERIALIZATION_LIMIT \* 0\.8/,
+  /function tokenListingLifecycleCapacityStats\([\s\S]*lifecycleCapacityCount:[\s\S]*lifecycleCapacityHeadroom:[\s\S]*lifecycleCapacityLimit:[\s\S]*lifecycleCapacityStatus:[\s\S]*lifecycleCapacityWarningThreshold:/,
+  /function logTokenListingLifecycleCapacity\([\s\S]*lifecycleCapacityStatus === "exhausted"[\s\S]*console\.error\([\s\S]*lifecycleCapacityStatus === "warning"[\s\S]*console\.warn\(/,
+  /function tokenMarketLifecycleOverlayFromCreditListings\([\s\S]*lifecycleCapacityCount > capacity\.lifecycleCapacityLimit[\s\S]*stats: \{[\s\S]*\.\.\.capacity/,
+  /async function indexedTokenMarketSummaryOverlay\([\s\S]*payload\.stats = \{[\s\S]*\.\.\.lifecycleCapacity,[\s\S]*lifecycleTotalCount:/,
+  /async function completeTokenListingHistoryPayload\([\s\S]*limit: TOKEN_LISTING_LIFECYCLE_MATERIALIZATION_LIMIT[\s\S]*declaredTotal > TOKEN_LISTING_LIFECYCLE_MATERIALIZATION_LIMIT[\s\S]*tokenListingHistoryUnavailable\(/,
+]);
+expect(
+  "complete credit-listing lifecycle reads do not use a magic 5000-row limit",
+  !/proofIndexCreditListingsPayload\([\s\S]{0,180}limit:\s*5000/.test(server),
+);
 expect(
   "marketplace summary must not serve stale proof-index summary snapshots before reconciliation",
   !/proofIndexSnapshotPayload\(\s*network,\s*"marketplaceSummary"/.test(server),
@@ -1810,7 +1915,8 @@ expectAll("unpinned ID history reads current records and event projections", pro
   /COALESCE\(t\.status, e\.status\) IN \('confirmed', 'pending'\)/,
   /FROM proof_indexer\.event_participants epq[\s\S]*lower\(epq\.address\) LIKE/,
   /async function currentRegistryRecordsHistoryPage\([\s\S]*confirmedIdRecordsFromCurrentTables\(/,
-  /if \(!eligibility\.pagination\.snapshotId\)[\s\S]*currentRegistryRecordsHistoryPage\([\s\S]*currentRegistryEventHistoryPage\(/,
+  /async function currentRegistryLifecycleHistoryPage\([\s\S]*currentProofIndexRegistryPayload\([\s\S]*historyPageFromStoredPayload\(/,
+  /if \(!eligibility\.pagination\.snapshotId\)[\s\S]*currentRegistryLifecycleHistoryPage\(/,
 ]);
 expectAll("wallet token listing refresh preserves bounded spendable local pending marketplace rows", app, [
   /const TOKEN_LOCAL_PENDING_LISTING_TTL_MS = 30 \* 60_000/,
@@ -2260,7 +2366,7 @@ expectAll("registry default reads use proof index with canonical fallback", serv
   /async function indexedRegistryPayload\(network,\s*options\s*=\s*\{\}\)[\s\S]*records:[\s\S]*sort\(compareRegistryRecordDisplayOrder\)[\s\S]*registryIndexedPayloadRejectReason\(orderedPayload\)[\s\S]*exactCheckpointMatches[\s\S]*Rejected proof-index registry payload/,
   /async function safeRegistryPayload\(network\)[\s\S]*registryConfirmedCount\(nextPayload\) <= 0[\s\S]*Current livenet registry is unavailable/,
   /async function registrySummaryPayload\(network,\s*fresh\s*=\s*false\)[\s\S]*await indexedRegistryPayload\(network\)[\s\S]*fastJsonBackedPayload/,
-  /url\.pathname === "\/api\/v1\/registry" \|\| url\.pathname === "\/api\/v1\/ids"[\s\S]*const indexedPayload = await indexedRegistryPayload\(network\)[\s\S]*if \(indexedPayload\)/,
+  /url\.pathname === "\/api\/v1\/registry" \|\| url\.pathname === "\/api\/v1\/ids"[\s\S]*strictPublicRegistryPayload\(network, \{ fresh: freshRead \}\)/,
 ]);
 expectAll("current ID tables must agree with canonical registration events", proofIndexReader, [
   /const registeredEventIds = new Set\([\s\S]*item\?\.confirmed === true[\s\S]*"id-register"/,

@@ -11,6 +11,7 @@ import {
 import {
   closeProofIndexReadPool,
   compareProofIndexHistoryPayloads,
+  compareProofIndexRegistryPayloads,
   proofIndexActivityPayload,
   proofIndexAddressMailPayload,
   proofIndexEventHistoryPayload,
@@ -38,6 +39,9 @@ const API_BASE = String(process.env.POW_API_BASE ?? DEFAULT_API_BASE).replace(
 const NETWORK = process.env.NETWORK ?? "livenet";
 const REQUEST_TIMEOUT_MS = Number(process.env.POW_INDEX_FETCH_TIMEOUT_MS ?? 60_000);
 const REQUEST_RETRIES = Number(process.env.POW_INDEX_FETCH_RETRIES ?? 4);
+const INTERNAL_VERIFIER_TOKEN = String(
+  process.env.POW_INTERNAL_VERIFIER_TOKEN ?? "",
+);
 const STRICT = /^(?:1|true|yes)$/iu.test(
   String(process.env.POW_INDEX_PARITY_STRICT ?? ""),
 );
@@ -69,6 +73,41 @@ const WORK_DELIST_REGRESSION_LISTING_TXID =
   "50cd4dff315842c999a06c3ed0be3616f61c33f1a2f0fce6f645e3f48e9b023c";
 const WORK_TOKEN_ID =
   "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8";
+const CANONICAL_SUMMARY_SNAPSHOT_MAX_BYTES = 8 * 1024 * 1024;
+const CANONICAL_SUMMARY_SNAPSHOT_ROOT_KEYS = Object.freeze([
+  "checks",
+  "generatedAt",
+  "indexedThroughBlock",
+  "indexedThroughBlockHash",
+  "metrics",
+  "missingLogEvents",
+  "network",
+  "ok",
+  "snapshotId",
+  "sourceHashes",
+  "status",
+  "summaryPayloads",
+  "summaryPayloadsIndexedAt",
+  "summaryRefresh",
+  "totals",
+  "workAmountStorageModel",
+  "workSufficientState",
+]);
+const WORK_Q16_SUMMARY_TRANSITION_CHECKPOINT_MODEL =
+  "canonical-work-q16-transition-checkpoint-v1";
+const WORK_Q16_SUMMARY_TRANSITION_CHECKPOINT_KEYS = Object.freeze([
+  "amountStorageModel",
+  "closingStateCommitment",
+  "decimals",
+  "indexedThroughBlock",
+  "indexedThroughBlockHash",
+  "model",
+  "precisionModel",
+  "tokenStateCommitment",
+  "transitionModel",
+  "unitScale",
+  "workTokenStateModel",
+]);
 const CANONICAL_SUMMARY_KEYS = [
   "growthSummary",
   "inceptionSummary",
@@ -118,7 +157,7 @@ function snapshotParityParams(params = {}) {
   return CHECK_FRESH_SNAPSHOTS ? { ...params, fresh: "1" } : params;
 }
 
-async function readJson(url) {
+async function readJson(url, options = {}) {
   let lastError = null;
   const retries = Number.isFinite(REQUEST_RETRIES)
     ? Math.max(0, Math.floor(REQUEST_RETRIES))
@@ -128,7 +167,30 @@ async function readJson(url) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     try {
-      const response = await fetch(url, { signal: controller.signal });
+      const internalVerifier = options.internalVerifier === true;
+      if (internalVerifier) {
+        if (
+          !["127.0.0.1", "::1", "[::1]"].includes(
+            url.hostname.toLowerCase(),
+          ) ||
+          url.protocol !== "http:" ||
+          INTERNAL_VERIFIER_TOKEN.length < 32
+        ) {
+          throw new Error(
+            "Registry parity authority requires an authenticated numeric loopback API origin.",
+          );
+        }
+      }
+      const response = await fetch(url, {
+        ...(internalVerifier
+          ? {
+              headers: {
+                "X-PoW-Internal-Verifier": INTERNAL_VERIFIER_TOKEN,
+              },
+            }
+          : {}),
+        signal: controller.signal,
+      });
       if (!response.ok) {
         throw new Error(`${url.pathname} returned HTTP ${response.status}`);
       }
@@ -246,6 +308,66 @@ function pageUsesCurrentCursorContract(page, currentSnapshotId) {
   );
 }
 
+function tokenHistoryPageHasExactCoverage(page, currentSnapshotId) {
+  if (
+    !pageUsesCurrentCursorContract(page, currentSnapshotId) ||
+    String(page?.snapshotId ?? "")
+  ) {
+    return false;
+  }
+  const exactInteger = (value, minimum = 0) => {
+    if (
+      value === undefined ||
+      value === null ||
+      typeof value === "boolean" ||
+      (typeof value === "string" && value.trim() === "")
+    ) {
+      return null;
+    }
+    const normalized = typeof value === "string" ? value.trim() : value;
+    if (
+      typeof normalized === "string" &&
+      !/^(?:0|[1-9][0-9]*)$/u.test(normalized)
+    ) {
+      return null;
+    }
+    const number = Number(normalized);
+    return Number.isSafeInteger(number) && number >= minimum ? number : null;
+  };
+  const indexedThroughBlock = exactInteger(page?.indexedThroughBlock, 1);
+  const start = exactInteger(page?.start);
+  const end = exactInteger(page?.end);
+  const limit = exactInteger(page?.limit, 1);
+  const totalCount = exactInteger(page?.totalCount);
+  if (
+    indexedThroughBlock === null ||
+    !/^[0-9a-f]{64}$/u.test(
+      String(page?.indexedThroughBlockHash ?? "").trim().toLowerCase(),
+    ) ||
+    start === null ||
+    end === null ||
+    limit === null ||
+    totalCount === null ||
+    start > totalCount
+  ) {
+    return false;
+  }
+  const expectedEnd = Math.min(totalCount, start + limit);
+  const expectedHasMore = expectedEnd < totalCount;
+  const expectedNextCursor = expectedHasMore ? String(expectedEnd) : "";
+  return (
+    end === expectedEnd &&
+    String(page?.cursor ?? "") === String(start) &&
+    String(page?.nextCursor ?? "") === expectedNextCursor &&
+    page?.hasMore === expectedHasMore &&
+    page.items.length === end - start &&
+    exactInteger(page?.page) === Math.floor(start / limit) &&
+    exactInteger(page?.pageCount, 1) ===
+      Math.max(1, Math.ceil(totalCount / limit)) &&
+    exactInteger(page?.pageSize, 1) === limit
+  );
+}
+
 function uniqueActivityTxids(items) {
   return new Set(
     (Array.isArray(items) ? items : [])
@@ -267,6 +389,179 @@ function activityItemStatus(item) {
 
 function arrayLength(value) {
   return Array.isArray(value) ? value.length : 0;
+}
+
+function registryParityAuthorityIsComplete(payload, network) {
+  const authority = objectValue(payload?._powRegistryParityAuthority);
+  const coreBefore = objectValue(authority.core?.before);
+  const coreAfter = objectValue(authority.core?.after);
+  const electrumBefore = objectValue(authority.electrum?.before);
+  const electrumAfter = objectValue(authority.electrum?.after);
+  const confirmed = objectValue(authority.hydration?.confirmed);
+  const pending = objectValue(authority.hydration?.pending);
+  const listings = objectValue(authority.listingReconciliation);
+  const pendingTime = objectValue(authority.pendingMempoolTime);
+  const hash = (value) =>
+    String(value ?? "").trim().toLowerCase();
+  const exactCount = (value) => {
+    const number = Number(value);
+    return Number.isSafeInteger(number) && number >= 0 ? number : null;
+  };
+  const exactHeight = (value) => {
+    const number = Number(value);
+    return Number.isSafeInteger(number) && number > 0 ? number : null;
+  };
+  const validHash = (value) => /^[0-9a-f]{64}$/u.test(hash(value));
+  const source = String(payload?.source ?? "").trim();
+  const coreHeight = exactHeight(coreBefore.height);
+  const confirmedCount = exactCount(confirmed.observedCount);
+  const pendingCount = exactCount(pending.observedCount);
+  const anchoredCount = exactCount(listings.anchoredListingCount);
+  const inputListingCount = exactCount(listings.inputListingCount);
+  const legacyListingCount = exactCount(
+    listings.legacyUnanchoredListingCount,
+  );
+  const outputListingCount = exactCount(listings.outputListingCount);
+  const spentListingCount = exactCount(listings.spentListingCount);
+  const unspentListingCount = exactCount(listings.unspentListingCount);
+  return (
+    authority.model === "proof-registry-first-party-fenced-v1" &&
+    authority.network === network &&
+    authority.source === source &&
+    source.startsWith("electrum://") &&
+    source.endsWith("+bitcoin-core") &&
+    !source.includes("proof-indexer") &&
+    Number.isFinite(Date.parse(authority.generatedAt)) &&
+    coreHeight !== null &&
+    coreHeight === exactHeight(coreAfter.height) &&
+    validHash(coreBefore.blockHash) &&
+    hash(coreBefore.blockHash) === hash(coreAfter.blockHash) &&
+    Number(payload?.indexedThroughBlock) === coreHeight &&
+    hash(payload?.indexedThroughBlockHash) === hash(coreBefore.blockHash) &&
+    exactHeight(electrumBefore.height) === coreHeight &&
+    exactHeight(electrumAfter.height) === coreHeight &&
+    hash(electrumBefore.blockHash) === hash(coreBefore.blockHash) &&
+    hash(electrumAfter.blockHash) === hash(coreBefore.blockHash) &&
+    validHash(electrumBefore.headerSha256) &&
+    hash(electrumBefore.headerSha256) ===
+      hash(electrumAfter.headerSha256) &&
+    validHash(electrumBefore.snapshotSha256) &&
+    hash(electrumBefore.snapshotSha256) ===
+      hash(electrumAfter.snapshotSha256) &&
+    confirmedCount !== null &&
+    confirmedCount > 0 &&
+    pendingCount !== null &&
+    arrayLength(payload?.records) > 0 &&
+    confirmedCount === exactCount(confirmed.hydratedCount) &&
+    pendingCount === exactCount(pending.hydratedCount) &&
+    validHash(confirmed.observedSha256) &&
+    hash(confirmed.observedSha256) === hash(confirmed.hydratedSha256) &&
+    hash(confirmed.observedSha256) ===
+      hash(electrumBefore.confirmedTxidsSha256) &&
+    hash(electrumBefore.confirmedTxidsSha256) ===
+      hash(electrumAfter.confirmedTxidsSha256) &&
+    validHash(pending.observedSha256) &&
+    hash(pending.observedSha256) === hash(pending.hydratedSha256) &&
+    hash(pending.observedSha256) ===
+      hash(electrumBefore.pendingTxidsSha256) &&
+    hash(electrumBefore.pendingTxidsSha256) ===
+      hash(electrumAfter.pendingTxidsSha256) &&
+    confirmedCount === exactCount(electrumBefore.confirmedTxidCount) &&
+    confirmedCount === exactCount(electrumAfter.confirmedTxidCount) &&
+    pendingCount === exactCount(electrumBefore.pendingTxidCount) &&
+    pendingCount === exactCount(electrumAfter.pendingTxidCount) &&
+    confirmedCount + pendingCount ===
+      exactCount(electrumBefore.historyEntryCount) &&
+    confirmedCount + pendingCount ===
+      exactCount(electrumAfter.historyEntryCount) &&
+    confirmedCount + pendingCount ===
+      exactCount(authority.hydration?.totalObserved) &&
+    confirmedCount + pendingCount ===
+      exactCount(authority.hydration?.totalHydrated) &&
+    pendingCount === exactCount(pendingTime.count) &&
+    validHash(pendingTime.beforeSha256) &&
+    hash(pendingTime.beforeSha256) === hash(pendingTime.afterSha256) &&
+    listings.model === "proof-registry-core-gettxout-v1" &&
+    listings.includeMempool === true &&
+    anchoredCount !== null &&
+    inputListingCount !== null &&
+    legacyListingCount !== null &&
+    outputListingCount !== null &&
+    spentListingCount !== null &&
+    unspentListingCount !== null &&
+    anchoredCount === unspentListingCount + spentListingCount &&
+    inputListingCount === legacyListingCount + anchoredCount &&
+    outputListingCount === legacyListingCount + unspentListingCount &&
+    outputListingCount === arrayLength(payload?.listings) &&
+    Number(payload?.stats?.activeListings) === outputListingCount &&
+    Number(payload?.stats?.listingCount) === outputListingCount &&
+    Number(payload?.stats?.listings) === outputListingCount &&
+    validHash(listings.checkedOutpointsSha256) &&
+    exactHeight(listings.checkpoint?.height) === coreHeight &&
+    hash(listings.checkpoint?.blockHash) === hash(coreBefore.blockHash)
+  );
+}
+
+function registryParityValueSearchText(value) {
+  if (value === null || value === undefined) {
+    return "";
+  }
+  if (Array.isArray(value)) {
+    return value.map(registryParityValueSearchText).join(" ");
+  }
+  if (typeof value === "object") {
+    return Object.values(value).map(registryParityValueSearchText).join(" ");
+  }
+  return String(value);
+}
+
+function registryParityHistoryPage(payload, params) {
+  const kind = String(params?.kind ?? "records").trim().toLowerCase();
+  const sourceItems = Array.isArray(payload?.[kind]) ? payload[kind] : [];
+  const query = String(params?.q ?? params?.search ?? "")
+    .trim()
+    .toLowerCase();
+  const filtered = query
+    ? sourceItems.filter((item) =>
+        registryParityValueSearchText(item).toLowerCase().includes(query),
+      )
+    : sourceItems;
+  const limit = Math.min(500, Math.max(1, Number(params?.limit) || 200));
+  const requestedPage = Math.min(
+    1_000_000,
+    Math.max(0, Number(params?.page) || 0),
+  );
+  const requestedOffset = Number(params?.offset);
+  const offset = Number.isSafeInteger(requestedOffset) && requestedOffset >= 0
+    ? requestedOffset
+    : requestedPage * limit;
+  const totalCount = filtered.length;
+  const start = Math.min(offset, totalCount);
+  const end = Math.min(totalCount, start + limit);
+  const heights = filtered
+    .flatMap((item) => [item?.blockHeight, item?.updatedHeight])
+    .map(Number)
+    .filter((height) => Number.isSafeInteger(height) && height > 0);
+  return {
+    cursor: String(start),
+    end,
+    hasMore: end < totalCount,
+    indexedAt: payload?.indexedAt,
+    indexedThroughBlock:
+      heights.length > 0 ? Math.max(...heights) : undefined,
+    items: filtered.slice(start, end),
+    kind,
+    limit,
+    network: payload?.network,
+    nextCursor: end < totalCount ? String(end) : "",
+    page: Math.floor(start / limit),
+    pageCount: Math.max(1, Math.ceil(totalCount / limit)),
+    pageSize: limit,
+    query,
+    source: payload?.source,
+    start,
+    totalCount,
+  };
 }
 
 async function readRenderedProjectionParity(pool, network) {
@@ -593,6 +888,129 @@ try {
       FROM proof_indexer.ledger_snapshots
       WHERE network = $1
         AND payload ? 'summaryPayloads'
+        AND octet_length(payload::text) <= $2
+        AND NOT EXISTS (
+          SELECT 1
+          FROM jsonb_object_keys(
+            CASE
+              WHEN jsonb_typeof(payload) = 'object' THEN payload
+              ELSE '{}'::jsonb
+            END
+          ) AS root_keys(root_key)
+          WHERE root_key <> ALL($3::text[])
+        )
+        AND payload ? 'workSufficientState'
+        AND NOT (payload ? 'tokenStatePayloads')
+        AND jsonb_typeof(payload->'workSufficientState') = 'object'
+        AND NOT EXISTS (
+          SELECT 1
+          FROM jsonb_object_keys(
+            CASE
+              WHEN jsonb_typeof(payload->'workSufficientState') =
+                'object'
+                THEN payload->'workSufficientState'
+              ELSE '{}'::jsonb
+            END
+          ) AS state_keys(state_key)
+          WHERE state_key <> ALL($5::text[])
+        )
+        AND (
+          SELECT count(*)
+          FROM jsonb_object_keys(
+            CASE
+              WHEN jsonb_typeof(payload->'workSufficientState') =
+                'object'
+                THEN payload->'workSufficientState'
+              ELSE '{}'::jsonb
+            END
+          ) AS state_keys(state_key)
+        ) = 11
+        AND payload->'workSufficientState'->>'model' = $4
+        AND payload->'workSufficientState'->>'amountStorageModel' =
+          'work-subatoms-v2'
+        AND payload->'workSufficientState'->'decimals' = to_jsonb(16)
+        AND payload->'workSufficientState'->>'precisionModel' =
+          'canonical-work-subatoms-v2'
+        AND payload->'workSufficientState'->'unitScale' =
+          to_jsonb('10000000000000000'::text)
+        AND payload->'workSufficientState'->>'transitionModel' =
+          'canonical-work-amo-full-position-block-sequencer-v4'
+        AND payload->'workSufficientState'->>'workTokenStateModel' =
+          'canonical-work-token-state-subatoms-v3'
+        AND jsonb_typeof(payload->'workSufficientState'
+          ->'tokenStateCommitment') = 'object'
+        AND payload->'workSufficientState'->'tokenStateCommitment' =
+          jsonb_build_object(
+            'model', 'canonical-work-amo-payload-sha256-v1',
+            'payloadBytes', payload->'workSufficientState'
+              ->'tokenStateCommitment'->'payloadBytes',
+            'sha256', payload->'workSufficientState'
+              ->'tokenStateCommitment'->>'sha256'
+          )
+        AND jsonb_typeof(payload->'workSufficientState'
+          ->'tokenStateCommitment'->'payloadBytes') = 'number'
+        AND payload->'workSufficientState'->'tokenStateCommitment'
+          ->>'payloadBytes' ~ '^[1-9][0-9]*$'
+        AND jsonb_typeof(payload->'workSufficientState'
+          ->'tokenStateCommitment'->'sha256') = 'string'
+        AND payload->'workSufficientState'->'tokenStateCommitment'
+          ->>'sha256' ~ '^[0-9a-f]{64}$'
+        AND jsonb_typeof(payload->'workSufficientState'
+          ->'closingStateCommitment') = 'object'
+        AND payload->'workSufficientState'->'closingStateCommitment' =
+          jsonb_build_object(
+            'model', 'canonical-work-amo-sufficient-state-sha256-v1',
+            'payloadBytes', payload->'workSufficientState'
+              ->'closingStateCommitment'->'payloadBytes',
+            'sha256', payload->'workSufficientState'
+              ->'closingStateCommitment'->>'sha256'
+          )
+        AND jsonb_typeof(payload->'workSufficientState'
+          ->'closingStateCommitment'->'payloadBytes') = 'number'
+        AND payload->'workSufficientState'->'closingStateCommitment'
+          ->>'payloadBytes' ~ '^[1-9][0-9]*$'
+        AND jsonb_typeof(payload->'workSufficientState'
+          ->'closingStateCommitment'->'sha256') = 'string'
+        AND payload->'workSufficientState'->'closingStateCommitment'
+          ->>'sha256' ~ '^[0-9a-f]{64}$'
+        AND payload->'workSufficientState'->'indexedThroughBlock' =
+          to_jsonb(indexed_through_block)
+        AND payload->'workSufficientState'
+          ->>'indexedThroughBlockHash' ~ '^[0-9a-f]{64}$'
+        AND source_hashes->>'blockScan' ~ '^[0-9a-f]{64}$'
+        AND payload->'workSufficientState'
+          ->>'indexedThroughBlockHash' =
+          source_hashes->>'blockScan'
+        AND EXISTS (
+          SELECT 1
+          FROM proof_indexer.work_amo_block_transitions transition
+          JOIN proof_indexer.blocks transition_block
+            ON transition_block.network = transition.network
+           AND transition_block.height = transition.block_height
+           AND transition_block.block_hash = transition.block_hash
+           AND transition_block.canonical = true
+          WHERE transition.network = ledger_snapshots.network
+            AND transition.block_height =
+              ledger_snapshots.indexed_through_block
+            AND lower(transition.block_hash) =
+              lower(ledger_snapshots.source_hashes->>'blockScan')
+            AND transition.model =
+              'canonical-work-amo-full-position-block-sequencer-v4'
+            AND transition.state_commitment_model =
+              'canonical-work-amo-sufficient-state-sha256-v1'
+            AND transition.work_token_state_model =
+              'canonical-work-token-state-subatoms-v3'
+            AND transition.complete = true
+            AND payload->'workSufficientState'
+              ->'closingStateCommitment' = jsonb_build_object(
+                'model', transition.state_commitment_model,
+                'payloadBytes', transition.closing_state_payload_bytes,
+                'sha256', transition.closing_state_sha256
+              )
+            AND payload->'workSufficientState'
+              ->'tokenStateCommitment' = transition.payload
+                ->'closingSufficientState'->'tokenStateCommitment'
+        )
         AND payload ? 'snapshotId'
         AND payload->>'snapshotId' = snapshot_id
         AND COALESCE(consistency->>'ok', payload->>'ok', 'false') = 'true'
@@ -627,7 +1045,13 @@ try {
       ORDER BY indexed_through_block DESC NULLS LAST, generated_at DESC
       LIMIT 1
     `,
-    [NETWORK],
+    [
+      NETWORK,
+      CANONICAL_SUMMARY_SNAPSHOT_MAX_BYTES,
+      [...CANONICAL_SUMMARY_SNAPSHOT_ROOT_KEYS],
+      WORK_Q16_SUMMARY_TRANSITION_CHECKPOINT_MODEL,
+      [...WORK_Q16_SUMMARY_TRANSITION_CHECKPOINT_KEYS],
+    ],
   );
 
   const counts = countsResult.rows[0] ?? {};
@@ -828,7 +1252,7 @@ try {
       pendingTransactions: rowNumber(counts, "transactions_pending"),
       totalTransactions: rowNumber(counts, "transactions_total"),
     },
-    STRICT ? "error" : "warning",
+    "error",
   );
   check(
     checks,
@@ -1173,7 +1597,7 @@ try {
       {
         mismatches: logMismatches.slice(0, 5),
       },
-      STRICT ? "error" : "warning",
+      "error",
     );
   }
 
@@ -1238,7 +1662,7 @@ try {
         indexedActivityItems: indexedActivityPayload?.activity?.length ?? null,
         indexedSnapshotId: indexedActivityPayload?.snapshotId ?? null,
       },
-      STRICT ? "error" : "warning",
+      "error",
     );
   }
 
@@ -1248,6 +1672,50 @@ try {
     { label: "sales", params: { kind: "sales", limit: 10 } },
     { label: "activity", params: { kind: "activity", limit: 10 } },
   ];
+  const [indexedRegistryPayload, canonicalRegistryPayload] = await Promise.all([
+    proofIndexRegistryPayload(NETWORK),
+    readJson(endpoint("/api/v1/internal/registry-parity"), {
+      internalVerifier: true,
+    }),
+  ]);
+  const canonicalRegistrySource = String(
+    canonicalRegistryPayload?.source ?? "",
+  ).trim();
+  const canonicalRegistryFreshAuthority = Boolean(
+    canonicalRegistryPayload?.network === NETWORK &&
+      registryParityAuthorityIsComplete(canonicalRegistryPayload, NETWORK),
+  );
+  check(
+    checks,
+    "registry-canonical-fresh-authority",
+    canonicalRegistryFreshAuthority,
+    {
+      indexedAt: canonicalRegistryPayload?.indexedAt ?? null,
+      model:
+        canonicalRegistryPayload?._powRegistryParityAuthority?.model ?? null,
+      source: canonicalRegistrySource || null,
+    },
+    "error",
+  );
+  const registrySemanticParity = compareProofIndexRegistryPayloads(
+    canonicalRegistryFreshAuthority ? canonicalRegistryPayload : null,
+    indexedRegistryPayload,
+  );
+  const registryQueryId = String(
+    canonicalRegistryPayload?.records?.[0]?.id ?? "",
+  ).trim();
+  if (registryQueryId) {
+    registryHistoryCases.push({
+      label: "records-search",
+      params: { kind: "records", limit: 2, q: registryQueryId },
+    });
+  }
+  if (arrayLength(canonicalRegistryPayload?.records) > 2) {
+    registryHistoryCases.push({
+      label: "records-page-2",
+      params: { kind: "records", limit: 2, page: 1 },
+    });
+  }
   for (const registryCase of registryHistoryCases) {
     const searchParams = new URLSearchParams();
     for (const [key, value] of Object.entries(registryCase.params)) {
@@ -1258,16 +1726,54 @@ try {
       String(registryCase.params.kind ?? ""),
       searchParams,
     );
-    const canonicalRegistryPage = await readJson(
-      endpoint(
-        "/api/v1/registry-history",
-        snapshotParityParams(registryCase.params),
-      ),
+    const canonicalRegistryPage = registryParityHistoryPage(
+      canonicalRegistryPayload,
+      registryCase.params,
     );
     const registryMismatches = compareProofIndexHistoryPayloads(
       canonicalRegistryPage,
       indexedRegistryPage,
     );
+    for (const field of [
+      "cursor",
+      "end",
+      "hasMore",
+      "indexedThroughBlock",
+      "kind",
+      "limit",
+      "network",
+      "nextCursor",
+      "page",
+      "pageCount",
+      "pageSize",
+      "query",
+      "start",
+      "totalCount",
+    ]) {
+      if (
+        JSON.stringify(canonicalRegistryPage?.[field] ?? null) !==
+        JSON.stringify(indexedRegistryPage?.[field] ?? null)
+      ) {
+        registryMismatches.push(
+          `${field}:${JSON.stringify(canonicalRegistryPage?.[field] ?? null)}!=${JSON.stringify(indexedRegistryPage?.[field] ?? null)}`,
+        );
+      }
+    }
+    const pageKind = String(registryCase.params.kind ?? "records");
+    const pagePayload = (page) => ({
+      activity: [],
+      listings: [],
+      network: NETWORK,
+      records: [],
+      sales: [],
+      [pageKind]: Array.isArray(page?.items) ? page.items : [],
+    });
+    const pageSemanticMismatches =
+      compareProofIndexRegistryPayloads(
+        pagePayload(canonicalRegistryPage),
+        pagePayload(indexedRegistryPage),
+      ).confirmed?.[pageKind] ?? ["missing-page-semantic-comparison"];
+    registryMismatches.push(...pageSemanticMismatches);
     check(
       checks,
       `registry-history-${registryCase.label}-parity`,
@@ -1276,7 +1782,7 @@ try {
         mismatches: registryMismatches.slice(0, 5),
         snapshotId: indexedRegistryPage?.snapshotId ?? null,
       },
-      STRICT ? "error" : "warning",
+      "error",
     );
     check(
       checks,
@@ -1300,7 +1806,117 @@ try {
     );
   }
 
-  const indexedRegistryPayload = await proofIndexRegistryPayload(NETWORK);
+  for (const [kind, mismatches] of Object.entries(
+    registrySemanticParity.confirmed ?? {},
+  )) {
+    check(
+      checks,
+      `registry-confirmed-${kind}-semantic-parity`,
+      Array.isArray(mismatches) && mismatches.length === 0,
+      { mismatches: Array.isArray(mismatches) ? mismatches : ["missing"] },
+      "error",
+    );
+  }
+
+  const pendingRegistryMismatches = Object.entries(
+    registrySemanticParity.pending ?? {},
+  ).flatMap(([kind, mismatches]) =>
+    (Array.isArray(mismatches) ? mismatches : []).map(
+      (mismatch) => `${kind}:${mismatch}`,
+    ),
+  );
+  check(
+    checks,
+    "registry-pending-visibility-parity",
+    pendingRegistryMismatches.length === 0,
+    {
+      canonicalActivity: arrayLength(canonicalRegistryPayload?.activity),
+      canonicalRecords: arrayLength(canonicalRegistryPayload?.records),
+      indexedActivity: arrayLength(indexedRegistryPayload?.activity),
+      indexedRecords: arrayLength(indexedRegistryPayload?.records),
+      mismatches: pendingRegistryMismatches.slice(0, 8),
+    },
+    "error",
+  );
+
+  const registryEvidenceFaults = (
+    Array.isArray(indexedRegistryPayload?.activity)
+      ? indexedRegistryPayload.activity
+      : []
+  ).flatMap((item) => {
+    if (item?.confirmed !== true) {
+      return [];
+    }
+    const payload = String(item?.protocolPayload ?? "");
+    const protocolDataBytes = Number(item?.protocolDataBytes);
+    const dataBytes = Number(item?.dataBytes);
+    const payments = Array.isArray(item?.auditPaymentOutputs)
+      ? item.auditPaymentOutputs
+      : [];
+    const inputs = Array.isArray(item?.inputAddresses)
+      ? item.inputAddresses
+      : [];
+    const outpoints = Array.isArray(item?.spentOutpoints)
+      ? item.spentOutpoints
+      : [];
+    const rawWitness = item?.workAmoV5RawScriptWitness;
+    const expectedRegistryFee = item?.kind === "id-register" ? 1_000 : 546;
+    const witnessPayloadHex = String(rawWitness?.payloadHex ?? "")
+      .trim()
+      .toLowerCase();
+    return payload.startsWith("pwid1:") &&
+      String(item?.payload ?? "") === payload &&
+      String(item?.rawPayload ?? "") === payload &&
+      item?.valid === true &&
+      item?.dropped === false &&
+      String(item?.reasonCode ?? "") === "" &&
+      Number(item?.amountSats) === expectedRegistryFee &&
+      /^[0-9a-f]{64}$/u.test(String(item?.blockHash ?? "")) &&
+      Number.isSafeInteger(Number(item?.blockHeight)) &&
+      Number(item.blockHeight) > 0 &&
+      Number.isSafeInteger(Number(item?.blockIndex)) &&
+      Number(item.blockIndex) >= 0 &&
+      Number.isSafeInteger(Number(item?.protocolVout)) &&
+      Number(item.protocolVout) >= 0 &&
+      Number(item?.recordOrdinal) === 0 &&
+      Number.isSafeInteger(protocolDataBytes) &&
+      protocolDataBytes === Buffer.byteLength(payload, "utf8") &&
+      Number.isSafeInteger(dataBytes) &&
+      dataBytes >= protocolDataBytes &&
+      payments.length > 0 &&
+      payments.every(
+        (output) =>
+          String(output?.address ?? "").trim() &&
+          Number.isSafeInteger(Number(output?.amountSats)) &&
+          Number(output.amountSats) > 0 &&
+          Number.isSafeInteger(Number(output?.vout)) &&
+          Number(output.vout) >= 0,
+      ) &&
+      inputs.length > 0 &&
+      inputs.length === outpoints.length &&
+      outpoints.every(
+        (outpoint) =>
+          /^[0-9a-f]{64}$/u.test(String(outpoint?.txid ?? "")) &&
+          Number.isSafeInteger(Number(outpoint?.vout)) &&
+          Number(outpoint.vout) >= 0,
+      ) &&
+      rawWitness?.decodeValid === true &&
+      String(rawWitness?.decodeDetail ?? "") === "" &&
+      String(rawWitness?.reasonCode ?? "") === "" &&
+      /^[0-9a-f]+$/u.test(witnessPayloadHex) &&
+      witnessPayloadHex === Buffer.from(payload, "utf8").toString("hex") &&
+      /^[0-9a-f]+$/u.test(String(rawWitness?.scriptPubKeyHex ?? ""))
+      ? []
+      : [String(item?.txid ?? "unknown")];
+  });
+  check(
+    checks,
+    "registry-confirmed-raw-evidence-complete",
+    registryEvidenceFaults.length === 0,
+    { faults: registryEvidenceFaults.slice(0, 8) },
+    "error",
+  );
+
   check(
     checks,
     "registry-payload-current-relational",
@@ -1540,6 +2156,13 @@ try {
       tokenScope: WORK_TOKEN_ID,
     },
     {
+      allowEmpty: true,
+      expectedSources: ["proof-indexer-token-invalid-events"],
+      label: "all-invalid-events",
+      params: { kind: "invalid-events", limit: 10 },
+      tokenScope: "",
+    },
+    {
       expectedSources: ["proof-indexer-credit-balances"],
       label: "work-holders",
       params: { asset: WORK_TOKEN_ID, kind: "holders", limit: 10 },
@@ -1554,6 +2177,7 @@ try {
     {
       expectedSources: ["proof-indexer-token-events"],
       label: "work-delist-closed-query",
+      requiresScanCoverage: false,
       expectedNeedle: WORK_DELIST_REGRESSION_TXID,
       params: {
         asset: WORK_TOKEN_ID,
@@ -1634,15 +2258,24 @@ try {
     check(
       checks,
       `token-history-${tokenCase.label}-current-relational`,
-      pageUsesCurrentCursorContract(indexedTokenPage, currentSnapshotId) &&
+      (tokenCase.requiresScanCoverage === false
+        ? pageUsesCurrentCursorContract(indexedTokenPage, currentSnapshotId)
+        : tokenHistoryPageHasExactCoverage(
+            indexedTokenPage,
+            currentSnapshotId,
+          )) &&
         tokenCase.expectedSources.includes(
           String(indexedTokenPage?.source ?? ""),
         ) &&
         Number(indexedTokenPage?.indexedThroughBlock) > 0 &&
-        arrayLength(indexedTokenPage?.items) > 0,
+        (tokenCase.allowEmpty === true ||
+          arrayLength(indexedTokenPage?.items) > 0),
       {
         cursor: indexedTokenPage?.cursor ?? null,
+        hasMore: indexedTokenPage?.hasMore ?? null,
         indexedThroughBlock: indexedTokenPage?.indexedThroughBlock ?? null,
+        indexedThroughBlockHash:
+          indexedTokenPage?.indexedThroughBlockHash ?? null,
         items: arrayLength(indexedTokenPage?.items),
         nextCursor: indexedTokenPage?.nextCursor ?? null,
         snapshotId: indexedTokenPage?.snapshotId ?? null,
@@ -1701,27 +2334,29 @@ try {
         },
         STRICT ? "error" : "warning",
       );
-    } else {
-      check(
-        checks,
-        "token-history-non-work-holders-current-relational",
-        pageUsesCurrentCursorContract(
-          indexedScopedHolders,
-          currentSnapshotId,
-        ) &&
-          indexedScopedHolders?.source === "proof-indexer-credit-balances" &&
-          Number(indexedScopedHolders?.indexedThroughBlock) > 0 &&
-          arrayLength(indexedScopedHolders?.items) > 0,
-        {
-          indexedThroughBlock:
-            indexedScopedHolders?.indexedThroughBlock ?? null,
-          items: indexedScopedHolders?.items?.length ?? null,
-          snapshotId: indexedScopedHolders?.snapshotId ?? null,
-          source: indexedScopedHolders?.source ?? null,
-          tokenId: nonWorkHolderTokenId,
-        },
-      );
     }
+    check(
+      checks,
+      "token-history-non-work-holders-current-relational",
+      tokenHistoryPageHasExactCoverage(
+        indexedScopedHolders,
+        currentSnapshotId,
+      ) &&
+        indexedScopedHolders?.source === "proof-indexer-credit-balances" &&
+        Number(indexedScopedHolders?.indexedThroughBlock) > 0 &&
+        arrayLength(indexedScopedHolders?.items) > 0,
+      {
+        indexedThroughBlock:
+          indexedScopedHolders?.indexedThroughBlock ?? null,
+        indexedThroughBlockHash:
+          indexedScopedHolders?.indexedThroughBlockHash ?? null,
+        hasMore: indexedScopedHolders?.hasMore ?? null,
+        items: indexedScopedHolders?.items?.length ?? null,
+        snapshotId: indexedScopedHolders?.snapshotId ?? null,
+        source: indexedScopedHolders?.source ?? null,
+        tokenId: nonWorkHolderTokenId,
+      },
+    );
   }
 
   const sampleTxids = await proofIndexRecentTransactionIds(NETWORK, {

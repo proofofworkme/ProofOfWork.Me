@@ -61,6 +61,12 @@ import {
   WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL,
   workAmoV8CanonicalTokenStateCommitment,
 } from "../server/work-amo-v8.mjs";
+import {
+  WORK_PRECISION_V2_MODEL,
+  WORK_SUBATOM_DECIMALS,
+  WORK_SUBATOM_PROJECTION_MODEL,
+  WORK_SUBATOM_UNIT_SCALE_TEXT,
+} from "../server/work-units.mjs";
 
 const TXID = "b".repeat(64);
 const CHECKPOINT_HASH = "a".repeat(64);
@@ -68,6 +74,7 @@ const NEXT_CHECKPOINT_HASH = "c".repeat(64);
 const START_MS = Date.parse("2026-07-18T12:00:00.000Z");
 const DOMAIN_ERROR =
   `Canonical protocol transaction ${TXID} input 0 has an invalid outpoint`;
+
 const BACKFILL_PATH = new URL("./backfill-proof-indexer.mjs", import.meta.url);
 const API_PROOF_INDEX_CONFIG_PATH = new URL(
   "../deploy/proofofwork-api-proof-index.conf",
@@ -277,6 +284,35 @@ if (fixtureMode === "poison-exit") {
 async function runChecks() {
   const workerSource = readFileSync(WORKER_PATH, "utf8");
   const paritySource = readFileSync(PARITY_PATH, "utf8");
+  const registryHistorySnapshotsSource = topLevelFunctionSource(
+    "registryHistorySnapshots",
+  );
+  assert.match(
+    registryHistorySnapshotsSource,
+    /unpagedEndpoint\("\/api\/v1\/registry"/u,
+  );
+  assert.doesNotMatch(
+    registryHistorySnapshotsSource,
+    /\/api\/v1\/registry-history/u,
+    "one scan-bound registry state must produce every stored history family",
+  );
+  const historySnapshotSource = topLevelFunctionSource("readHistorySnapshot");
+  assert.match(historySnapshotSource, /payloadStart !== items\.length/u);
+  assert.match(historySnapshotSource, /totalCount !== items\.length/u);
+  const tokenHistorySnapshotSource = topLevelFunctionSource(
+    "tokenHistorySnapshotFromState",
+  );
+  assert.match(
+    tokenHistorySnapshotSource,
+    /indexedThroughBlockHash: state\?\.indexedThroughBlockHash/u,
+  );
+  const scopedTokenSnapshotsSource = topLevelFunctionSource(
+    "tokenHistorySnapshotsForScope",
+  );
+  assert.match(
+    scopedTokenSnapshotsSource,
+    /Number\(marketLog\.indexedThroughBlock\)[\s\S]*Number\(state\.indexedThroughBlock\)[\s\S]*marketLog\.indexedThroughBlockHash[\s\S]*state\.indexedThroughBlockHash[\s\S]*startsWith\("proof-indexer-"\)/u,
+  );
   const updateTransactionStatusSource = topLevelFunctionSource(
     "updateTransactionStatus",
     WORKER_PATH,
@@ -339,6 +375,30 @@ async function runChecks() {
     refreshPendingStatusesSource,
     /workQ16PendingLegacyStatusMembership\(pool\)[\s\S]*NOT \(txid = ANY\(\$4::text\[\]\)\)/u,
     "legacy status selection must exclude every Q16 parent-witness member",
+  );
+  assert.match(
+    refreshPendingStatusesSource,
+    /LIMIT \(\$3::integer \+ 1\)[\s\S]*pendingRows = pendingResult\.rows\.slice\(0, PENDING_STATUS_LIMIT\)[\s\S]*summary\.deferred \+= Math\.max\(0, summary\.staleCandidates - summary\.checked\)/u,
+    "a capped or timed-out pending status sweep must retain an explicit deferred backlog witness",
+  );
+  const workPrecisionReplayReadySource = topLevelFunctionSource(
+    "assertWorkPrecisionReplayReady",
+    WORKER_PATH,
+  );
+  assert.match(
+    workPrecisionReplayReadySource,
+    /'workSufficientState',[\s\S]*snapshot\.payload->'workSufficientState'/u,
+    "Q16 worker readiness must read the compact sufficient-state witness",
+  );
+  assert.match(
+    workPrecisionReplayReadySource,
+    /snapshot\.payload \? 'workSufficientState'[\s\S]*NOT \(snapshot\.payload \? 'tokenStatePayloads'\)/u,
+    "Q16 worker readiness must select compact snapshots and reject the obsolete full-state root",
+  );
+  assert.match(
+    workPrecisionReplayReadySource,
+    /octet_length\(snapshot\.payload::text\) <=[\s\S]*CANONICAL_SUMMARY_SNAPSHOT_MAX_BYTES[\s\S]*jsonb_object_keys[\s\S]*canonicalSummarySnapshotRootKeysSql/u,
+    "Q16 worker readiness must enforce the canonical reader's payload-size and root-key envelope",
   );
   assert.match(
     updateTransactionStatusSource,
@@ -1074,19 +1134,39 @@ async function runChecks() {
     blockHeight: 102,
     previousBlockHash: replayActivationHash,
   });
+  const replayWorkSufficientState = {
+    amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+    closingStateCommitment:
+      replayLatestTransition.payload.closingStateCommitment,
+    decimals: WORK_SUBATOM_DECIMALS,
+    indexedThroughBlock: 102,
+    indexedThroughBlockHash: replayTipHash,
+    model: "canonical-work-q16-transition-checkpoint-v1",
+    precisionModel: WORK_PRECISION_V2_MODEL,
+    tokenStateCommitment:
+      replayLatestTransition.payload.closingSufficientState
+        .tokenStateCommitment,
+    transitionModel: WORK_AMO_V8_BLOCK_SEQUENCER_MODEL,
+    unitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,
+    workTokenStateModel: WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL,
+  };
   const replaySnapshot = {
     consistencyOk: true,
     consistencyStatus: "green",
     indexedThroughBlock: 102,
+    payloadBytes: 1_024,
     payloadBlockHash: replayTipHash,
+    payloadRootKeys: [
+      "indexedThroughBlockHash",
+      "summaryRefresh",
+      "workAmountStorageModel",
+      "workSufficientState",
+    ],
     sourceBlockHash: replayTipHash,
     summaryBlockHash: replayTipHash,
     summaryMode: "canonical-summary-refresh",
-    tokenStatePayloads: {
-      d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8:
-        { model: "fixture" },
-    },
-    workAmountStorageModel: "work-subatoms-v2",
+    workAmountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+    workSufficientState: replayWorkSufficientState,
   };
   const replayCoreTip = {
     blockHash: replayTipHash,
@@ -1116,10 +1196,94 @@ async function runChecks() {
   );
   assert.equal(
     workerWorkPrecisionSnapshotReady(replaySnapshot, {
+      latestTransition: replayLatestTransition,
       tipHash: replayTipHash,
       tipHeight: 102,
     }),
     true,
+  );
+  const snapshotReady = (snapshot, latestTransition = replayLatestTransition) =>
+    workerWorkPrecisionSnapshotReady(snapshot, {
+      latestTransition,
+      tipHash: replayTipHash,
+      tipHeight: 102,
+    });
+  const {
+    workSufficientState: _missingWorkSufficientState,
+    ...snapshotWithoutWorkSufficientState
+  } = replaySnapshot;
+  for (const [label, snapshot] of [
+    ["missing compact state", snapshotWithoutWorkSufficientState],
+    [
+      "oversized canonical snapshot",
+      {
+        ...replaySnapshot,
+        payloadBytes: 8 * 1024 * 1024 + 1,
+      },
+    ],
+    [
+      "unexpected canonical snapshot root",
+      {
+        ...replaySnapshot,
+        payloadRootKeys: [
+          ...replaySnapshot.payloadRootKeys,
+          "unexpectedRoot",
+        ],
+      },
+    ],
+    [
+      "stale compact state height",
+      {
+        ...replaySnapshot,
+        workSufficientState: {
+          ...replayWorkSufficientState,
+          indexedThroughBlock: 101,
+        },
+      },
+    ],
+    [
+      "mismatched compact state hash",
+      {
+        ...replaySnapshot,
+        workSufficientState: {
+          ...replayWorkSufficientState,
+          indexedThroughBlockHash: "6".repeat(64),
+        },
+      },
+    ],
+    [
+      "mismatched token-state commitment",
+      {
+        ...replaySnapshot,
+        workSufficientState: {
+          ...replayWorkSufficientState,
+          tokenStateCommitment: {
+            ...replayWorkSufficientState.tokenStateCommitment,
+            sha256: "5".repeat(64),
+          },
+        },
+      },
+    ],
+    [
+      "mismatched closing-state commitment",
+      {
+        ...replaySnapshot,
+        workSufficientState: {
+          ...replayWorkSufficientState,
+          closingStateCommitment: {
+            ...replayWorkSufficientState.closingStateCommitment,
+            sha256: "4".repeat(64),
+          },
+        },
+      },
+    ],
+  ]) {
+    assert.equal(snapshotReady(snapshot), false, `${label} must fail closed`);
+  }
+  assert.equal(
+    snapshotReady(replaySnapshot, null),
+    false,
+    "compact state without its exact transition must fail closed",
   );
   assert.equal(
     workerWorkPrecisionConfirmedReplayEnvelopeReady(replayEnvelope),
@@ -2231,6 +2395,32 @@ async function runChecks() {
     /assertWorkPrecisionReplayReady\([\s\S]*requireCurrentSnapshot: false,[\s\S]*requireRelationalParity: false,[\s\S]*runCanonicalBeforePending\([\s\S]*runBackfillPhase\(backfillPhases\[0\]\)[\s\S]*publishCanonicalSummaryAtConfirmedCheckpoint\(\)[\s\S]*pendingStatus = await refreshPendingStatusesSafely\(\);[\s\S]*runBackfillPhase\(backfillPhases\[1\]\)[\s\S]*assertWorkPrecisionReplayReady\(\s*pool,\s*workPrecision,\s*\)[\s\S]*assertWorkPrecisionPendingReady/u,
     "Q16 canonical replay must relax snapshot/parity, publish the confirmed summary, then run the pending witness and recheck strictly",
   );
+  assert.doesNotMatch(
+    workerSource,
+    /POW_INDEX_BACKFILL_ACTIVITY_SNAPSHOT:[\s\S]*POW_INDEX_BACKFILL_STORE_LEDGER_SNAPSHOT: "1"/u,
+    "the worker must not duplicate complete rendered histories into every canonical summary row",
+  );
+  assert.match(
+    workerSource,
+    /if \(pendingEventHealth\.ok !== true\) \{[\s\S]*throw new Error/u,
+    "unresolved observed pending protocol events must prevent a green worker cycle",
+  );
+  assert.match(
+    workerSource,
+    /runScript\("check-proof-indexer-parity\.mjs"[\s\S]*POW_INDEX_PARITY_STRICT: "1"[\s\S]*Worker parity check failed[\s\S]*throw error/u,
+    "a scheduled parity run must be strict and must fail the worker cycle",
+  );
+  for (const variable of [
+    "POW_INDEX_PARITY_LOG_FRESH",
+    "POW_INDEX_PARITY_SNAPSHOT_FRESH",
+    "POW_INDEX_PARITY_TOKEN_FRESH",
+  ]) {
+    assert.match(
+      workerSource,
+      new RegExp(`${variable}: "1"`, "u"),
+      `${variable} must be enabled for every scheduled worker parity run`,
+    );
+  }
   const blockedOrder = [];
   await assert.rejects(
     runCanonicalBeforePending(

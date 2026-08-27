@@ -1,5 +1,6 @@
 import { Buffer } from "node:buffer";
 import { existsSync, readFileSync } from "node:fs";
+import vm from "node:vm";
 import ts from "typescript";
 
 const files = [
@@ -77,6 +78,40 @@ function expect(name, condition) {
   if (!condition) {
     failures.push(name);
   }
+}
+
+function topLevelFunctionSource(source, name) {
+  const startPattern = new RegExp(
+    `^(?:export\\s+)?(?:async\\s+)?function\\s+${name}(?:<[^>]+>)?\\s*\\(`,
+    "mu",
+  );
+  const startMatch = startPattern.exec(source);
+  if (!startMatch) {
+    throw new Error(`Could not find ${name}.`);
+  }
+  const rest = source.slice(startMatch.index + startMatch[0].length);
+  const nextMatch = /\n(?:export\s+)?(?:async\s+)?function\s+[A-Za-z_$][\w$]*\s*\(/mu.exec(
+    rest,
+  );
+  const end = nextMatch
+    ? startMatch.index + startMatch[0].length + nextMatch.index
+    : source.length;
+  return source.slice(startMatch.index, end).trim().replace(/^export\s+/u, "");
+}
+
+function isolatedTypeScriptFunction(source, name, globals = {}) {
+  const context = vm.createContext({ console, ...globals });
+  const definition = topLevelFunctionSource(source, name);
+  const transpiled = ts.transpileModule(definition, {
+    compilerOptions: {
+      module: ts.ModuleKind.None,
+      target: ts.ScriptTarget.ES2022,
+    },
+  }).outputText;
+  new vm.Script(`${transpiled}\nthis.__checkedFunction = ${name};`).runInContext(
+    context,
+  );
+  return context.__checkedFunction;
 }
 
 expect(
@@ -518,6 +553,159 @@ const canListTokenSource = app.slice(
   app.indexOf("const tokenListInput"),
   app.indexOf("const selectedTokenSupplyState"),
 );
+const tokenListingBuyerArbExactSource = app.slice(
+  app.indexOf("function tokenListingBuyerArbExact"),
+  app.indexOf("function compareExactRational"),
+);
+const compareExactRationalSource = app.slice(
+  app.indexOf("function compareExactRational"),
+  app.indexOf("function compareOptionalExactRational"),
+);
+const compareOptionalExactRationalSource = app.slice(
+  app.indexOf("function compareOptionalExactRational"),
+  app.indexOf("function formatExactRational"),
+);
+const formatExactRationalSource = app.slice(
+  app.indexOf("function formatExactRational"),
+  app.indexOf("function sortTokenDirectoryRows"),
+);
+const sortTokenListingsSource = app.slice(
+  app.indexOf("function sortTokenListings"),
+  app.indexOf("function tokenMarketLogItemConfirmed"),
+);
+const workBuyerArbRenderSource = app.slice(
+  app.indexOf("const workBuyerArb ="),
+  app.indexOf("const listingUnitSats =", app.indexOf("const workBuyerArb =")),
+);
+const checkedTokenListingBuyerArbExact = isolatedTypeScriptFunction(
+  app,
+  "tokenListingBuyerArbExact",
+  {
+    WORK_AMO_UNIT_SCALE: WORK_UNIT_SCALE,
+    exactIntegerBigInt: (value) => {
+      if (typeof value === "bigint") {
+        return value >= 0n ? value : null;
+      }
+      if (typeof value === "number") {
+        return Number.isSafeInteger(value) && value >= 0
+          ? BigInt(value)
+          : null;
+      }
+      const text = typeof value === "string" ? value.trim() : "";
+      return /^(?:0|[1-9]\d*)$/u.test(text) ? BigInt(text) : null;
+    },
+    isWorkToken: (listing) => listing.ticker === "WORK",
+    tokenListingHasConfirmedSaleTicketSeal: (listing) =>
+      listing.sealConfirmed === true && listing.hasValidSaleTicket === true,
+    tokenRecordAmountAtoms: () => null,
+    tokenReferencePriceRational: () => null,
+    workAmoFrozenTerms: (listing) =>
+      listing.confirmed === true ? listing.validatedFrozenTerms ?? null : null,
+    workSubatomsFromCanonicalString,
+  },
+);
+const checkedCompareExactRational = isolatedTypeScriptFunction(
+  app,
+  "compareExactRational",
+);
+const checkedCompareOptionalExactRational = isolatedTypeScriptFunction(
+  app,
+  "compareOptionalExactRational",
+  { compareExactRational: checkedCompareExactRational },
+);
+const checkedFormatExactRational = isolatedTypeScriptFunction(
+  app,
+  "formatExactRational",
+);
+const buyerArbListingFixture = {
+  amountSubatoms: "752009741",
+  confirmed: true,
+  hasValidSaleTicket: true,
+  priceSats: 25_000,
+  sealConfirmed: true,
+  ticker: "WORK",
+  validatedFrozenTerms: {
+    amountSubatoms: "752009741",
+    priceSats: 25_000,
+  },
+};
+const exactBuyerArb = checkedTokenListingBuyerArbExact(
+  buyerArbListingFixture,
+  new Map(),
+  "100000000",
+);
+const exactBuyerArbDenominator = 100_000_000n * WORK_UNIT_SCALE;
+const exactBuyerArbNumerator =
+  100_000_000n * 752_009_741n - 25_000n * exactBuyerArbDenominator;
+const exactOrderingMagnitude = 10n ** 60n;
+const exactOrderingHigh = {
+  denominator: 3n,
+  numerator: exactOrderingMagnitude * 3n + 1n,
+};
+const exactOrderingLow = {
+  denominator: 7n,
+  numerator: exactOrderingMagnitude * 7n + 2n,
+};
+const exactPositiveBuyerArb = checkedTokenListingBuyerArbExact(
+  {
+    ...buyerArbListingFixture,
+    amountSubatoms: "10000000000000001",
+    validatedFrozenTerms: {
+      amountSubatoms: "10000000000000001",
+      priceSats: 25_000,
+    },
+  },
+  new Map(),
+  "2500123456789",
+);
+const exactZeroBuyerArb = checkedTokenListingBuyerArbExact(
+  {
+    ...buyerArbListingFixture,
+    amountSubatoms: "10000000000000000",
+    validatedFrozenTerms: {
+      amountSubatoms: "10000000000000000",
+      priceSats: 25_000,
+    },
+  },
+  new Map(),
+  "2500000000000",
+);
+const invalidFrozenBuyerArb = checkedTokenListingBuyerArbExact(
+  {
+    ...buyerArbListingFixture,
+    validatedFrozenTerms: null,
+  },
+  new Map(),
+  "2500000000000",
+);
+const buyerArbSortVector = [
+  { label: "missing", value: invalidFrozenBuyerArb },
+  { label: "negative", value: exactBuyerArb },
+  { label: "positive", value: exactPositiveBuyerArb },
+  { label: "zero", value: exactZeroBuyerArb },
+];
+const buyerArbHighOrder = [...buyerArbSortVector]
+  .sort((left, right) =>
+    checkedCompareOptionalExactRational(
+      left.value,
+      right.value,
+      true,
+      () => 0,
+    ),
+  )
+  .map(({ label }) => label)
+  .join(",");
+const buyerArbLowOrder = [...buyerArbSortVector]
+  .sort((left, right) =>
+    checkedCompareOptionalExactRational(
+      left.value,
+      right.value,
+      false,
+      () => 0,
+    ),
+  )
+  .map(({ label }) => label)
+  .join(",");
 const tokenWalletWorkspaceSource = app.slice(
   app.indexOf("function TokenWalletWorkspace"),
   app.indexOf("type TokenAppProps"),
@@ -527,6 +715,90 @@ const proofApiReadState = contents.get("src/shared/api/proofApiReadState.ts");
 const logHistoryCache = contents.get("src/shared/activity/logHistoryCache.ts");
 const routeRegistry = contents.get("src/app/routeRegistry.ts");
 const caddyfile = contents.get("deploy/Caddyfile");
+expect(
+  "WORK buyer arb is eligible only after a confirmed seal with validated frozen terms in the current read era",
+  /if\s*\(\s*!tokenListingHasConfirmedSaleTicketSeal\(listing\)\s*\)\s*\{\s*return null;\s*\}/.test(
+    tokenListingBuyerArbExactSource,
+  ) &&
+    /const workTerms = work \? workAmoFrozenTerms\(listing\) : null/.test(
+      tokenListingBuyerArbExactSource,
+    ) &&
+    /if\s*\(work && !workTerms\)\s*\{\s*return null;\s*\}/.test(
+      tokenListingBuyerArbExactSource,
+    ) &&
+    /listingIsWork && sealConfirmed && workReadEraReady/.test(
+      workBuyerArbRenderSource,
+    ) &&
+    checkedTokenListingBuyerArbExact(
+      { ...buyerArbListingFixture, sealConfirmed: false },
+      new Map(),
+      "100000000",
+    ) === null &&
+    invalidFrozenBuyerArb === null,
+);
+expect(
+  "WORK buyer arb keeps the floor, Q16 amount, and proof price in one exact BigInt rational",
+  /const amountScale = work \? WORK_AMO_UNIT_SCALE : 1n/.test(
+    tokenListingBuyerArbExactSource,
+  ) &&
+    /const denominator = reference\.denominator \* amountScale/.test(
+      tokenListingBuyerArbExactSource,
+    ) &&
+    /reference\.numerator \* amount - BigInt\(price\) \* denominator/.test(
+      tokenListingBuyerArbExactSource,
+    ) &&
+    exactBuyerArb?.denominator === exactBuyerArbDenominator &&
+    exactBuyerArb?.numerator === exactBuyerArbNumerator,
+);
+expect(
+  "WORK buyer arb ordering cross-multiplies exact rational values at high precision",
+  /left\.numerator \* right\.denominator/.test(compareExactRationalSource) &&
+    /right\.numerator \* left\.denominator/.test(compareExactRationalSource) &&
+    /const comparison = compareExactRational\(left, right\)/.test(
+      compareOptionalExactRationalSource,
+    ) &&
+    /sortMode === "arb-desc"/.test(sortTokenListingsSource) &&
+    checkedCompareExactRational(exactOrderingHigh, exactOrderingLow) === 1 &&
+    checkedCompareExactRational(exactOrderingLow, exactOrderingHigh) === -1 &&
+    checkedCompareExactRational(
+      { denominator: 2n, numerator: exactOrderingMagnitude * 2n },
+      { denominator: 3n, numerator: exactOrderingMagnitude * 3n },
+    ) === 0 &&
+    checkedCompareOptionalExactRational(
+      exactOrderingHigh,
+      exactOrderingLow,
+      true,
+      () => 0,
+    ) === -1 &&
+    checkedCompareOptionalExactRational(
+      exactOrderingHigh,
+      exactOrderingLow,
+      false,
+      () => 0,
+    ) === 1 &&
+    buyerArbHighOrder === "positive,zero,negative,missing" &&
+    buyerArbLowOrder === "negative,zero,positive,missing",
+);
+expect(
+  "WORK buyer arb renders an explicit exact sign for gains and losses",
+  /const negative = value\.numerator < 0n/.test(formatExactRationalSource) &&
+    /value\.numerator > 0n[\s\S]*`\+\$\{formatted\}`/.test(
+      formatExactRationalSource,
+    ) &&
+    /<dt>Buyer arb<\/dt>[\s\S]*data-testid="work-buyer-arb"[\s\S]*formatExactRational\(workBuyerArb\)/.test(
+      app,
+    ) &&
+    exactBuyerArb !== null &&
+    checkedFormatExactRational(exactBuyerArb) ===
+      "-24,999.9999999247990259" &&
+    exactPositiveBuyerArb !== null &&
+    checkedFormatExactRational(exactPositiveBuyerArb) ===
+      "+1.234567890002500123456789" &&
+    exactZeroBuyerArb !== null &&
+    checkedFormatExactRational(exactZeroBuyerArb) === "0" &&
+    checkedFormatExactRational({ denominator: 2n, numerator: 1n }) === "+0.5" &&
+    checkedFormatExactRational({ denominator: 7n, numerator: 0n }) === "0",
+);
 expect(
   "AMO is canonical while legacy Marketplace routes remain compatible",
   /VITE_AMO_ONLY/.test(routeRegistry) &&
@@ -579,17 +851,17 @@ expect(
     /export function formatExactQ8/.test(exactAmount) &&
     /confirmedSupply\?: ExactIntegerValue/.test(app) &&
     /amount: ExactIntegerValue/.test(app) &&
-    /compareExactIntegers\(right\.confirmedSupply, left\.confirmedSupply\)/.test(
+    /compareTokenSupplyValues\(\s*right\.confirmedSupply,\s*left\.confirmedSupply,?\s*\)/.test(
       app,
     ) &&
     /bondProofAmountDisplay\([\s\S]*floorQ8/.test(app),
 );
 expect(
   "bond supply regression guards compare exact bigint ranks",
-  /function tokenDefinitionConfirmedSupply[\s\S]*exactIntegerBigInt\(token\.confirmedSupply\) \?\? 0n/.test(
+  /function tokenDefinitionConfirmedSupply[\s\S]*tokenSupplyUnits\(token, token\.confirmedSupply\) \?\? 0n/.test(
     app,
   ) &&
-    /function tokenStateConfirmedSupplyRank[\s\S]*reduce<bigint>[\s\S]*exactIntegerBigInt\(mint\.amount\)[\s\S]*0n/.test(
+    /function tokenStateConfirmedSupplyRank[\s\S]*reduce<bigint>[\s\S]*tokenRecordAmountAtoms\([\s\S]*mint\.amountSubatoms[\s\S]*0n/.test(
       app,
     ) &&
     /currentSupply > 0n && nextSupply < currentSupply/.test(app) &&
@@ -2475,7 +2747,7 @@ expect(
   "Computer WORK workspace shows loading state before ledger data arrives",
   /ledgerLoading/.test(app) &&
     /Loading \{detailToken\?\.ticker \?\? "credit"\} ledger/.test(app) &&
-    /tokenLedgerLoading &&[\s\S]*compareExactIntegers\(workTokenLedger\.confirmedSupply, 0\) === 0[\s\S]*\?\s*"\.\.\."/.test(
+    /tokenLedgerLoading &&[\s\S]*tokenSupplyUnits\([\s\S]*workTokenLedger\.confirmedSupply[\s\S]*\?\? 0n\) === 0n[\s\S]*\?\s*"\.\.\."/.test(
       app,
     ),
 );
@@ -2561,7 +2833,7 @@ expect(
   /maxSupply: number \| null;[\s\S]*maxSupplyModel\?: string;[\s\S]*uncapped\?: boolean;/.test(
     app,
   ) &&
-    /function normalizeTokenDefinitionRecord[\s\S]*const uncapped =[\s\S]*maxSupply: uncapped \? null[\s\S]*maxSupplyModel: uncapped \? "uncapped"[\s\S]*uncapped,/.test(
+    /function normalizeTokenDefinitionRecord[\s\S]*const uncapped =[\s\S]*maxSupply: uncapped\s*\? null\s*:\s*work\s*\? WORK_TOKEN_MAX_SUPPLY[\s\S]*maxSupplyModel: uncapped \? "uncapped"[\s\S]*uncapped,/.test(
       app,
     ) &&
     /function tokenMaxSupplyLabel[\s\S]*\? "Uncapped"/.test(app) &&

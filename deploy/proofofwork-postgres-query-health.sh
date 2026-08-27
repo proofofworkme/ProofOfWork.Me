@@ -10,6 +10,8 @@ warn_connections="${POW_POSTGRES_WARN_CONNECTIONS:-70}"
 critical_connections="${POW_POSTGRES_CRITICAL_CONNECTIONS:-90}"
 warn_lock_wait_seconds="${POW_POSTGRES_WARN_LOCK_WAIT_SECONDS:-5}"
 critical_lock_wait_seconds="${POW_POSTGRES_CRITICAL_LOCK_WAIT_SECONDS:-20}"
+warn_idle_transaction_seconds="${POW_POSTGRES_WARN_IDLE_TRANSACTION_SECONDS:-5}"
+critical_idle_transaction_seconds="${POW_POSTGRES_CRITICAL_IDLE_TRANSACTION_SECONDS:-20}"
 tablespace_name="proof_indexer_large_state_v1"
 tablespace_path="/data/proofofwork-postgres-tablespaces/proof_indexer_large_state_v1"
 
@@ -25,7 +27,9 @@ for value in \
   "${warn_connections}" \
   "${critical_connections}" \
   "${warn_lock_wait_seconds}" \
-  "${critical_lock_wait_seconds}"; do
+  "${critical_lock_wait_seconds}" \
+  "${warn_idle_transaction_seconds}" \
+  "${critical_idle_transaction_seconds}"; do
   if [[ ! "${value}" =~ ^[0-9]+$ ]] || ((value < 1)); then
     echo "PostgreSQL query-health thresholds must be positive integers." >&2
     exit 64
@@ -34,7 +38,8 @@ done
 if ((warn_fanout >= critical_fanout)) ||
   ((warn_age_seconds >= critical_age_seconds)) ||
   ((warn_connections >= critical_connections)) ||
-  ((warn_lock_wait_seconds >= critical_lock_wait_seconds)); then
+  ((warn_lock_wait_seconds >= critical_lock_wait_seconds)) ||
+  ((warn_idle_transaction_seconds >= critical_idle_transaction_seconds)); then
   echo "PostgreSQL warning thresholds must be lower than critical thresholds." >&2
   exit 64
 fi
@@ -54,6 +59,7 @@ metrics="$(/usr/bin/psql \
         datname,
         state,
         query_start,
+        xact_start,
         wait_event_type,
         COALESCE(query_id::text, md5(COALESCE(query, ''))) AS fingerprint
       FROM pg_stat_activity
@@ -89,11 +95,18 @@ metrics="$(/usr/bin/psql \
       ),
       COUNT(*) FILTER (
         WHERE state LIKE 'idle in transaction%'
+      )::bigint,
+      COALESCE(
+        EXTRACT(EPOCH FROM (
+          clock_timestamp() - MIN(xact_start)
+            FILTER (WHERE state LIKE 'idle in transaction%')
+        ))::bigint,
+        0
       )::bigint
     FROM scoped_sessions;
   ")"
 
-IFS='|' read -r total_connections active_queries oldest_query_seconds max_same_query lock_waiters oldest_lock_wait_seconds idle_in_transaction <<<"${metrics}"
+IFS='|' read -r total_connections active_queries oldest_query_seconds max_same_query lock_waiters oldest_lock_wait_seconds idle_in_transaction oldest_idle_transaction_seconds <<<"${metrics}"
 for value in \
   "${total_connections}" \
   "${active_queries}" \
@@ -101,7 +114,8 @@ for value in \
   "${max_same_query}" \
   "${lock_waiters}" \
   "${oldest_lock_wait_seconds}" \
-  "${idle_in_transaction}"; do
+  "${idle_in_transaction}" \
+  "${oldest_idle_transaction_seconds}"; do
   if [[ ! "${value}" =~ ^[0-9]+$ ]]; then
     echo "PostgreSQL query-health metrics were not parseable." >&2
     exit 65
@@ -258,7 +272,7 @@ for value in \
   fi
 done
 
-printf 'postgres database=%s cluster_client_connections=%s active=%s oldest_active_seconds=%s max_same_query_fanout=%s lock_waiters=%s oldest_lock_wait_seconds=%s idle_in_transaction=%s\n' \
+printf 'postgres database=%s cluster_client_connections=%s active=%s oldest_active_seconds=%s max_same_query_fanout=%s lock_waiters=%s oldest_lock_wait_seconds=%s idle_in_transaction=%s oldest_idle_transaction_seconds=%s\n' \
   "${database}" \
   "${total_connections}" \
   "${active_queries}" \
@@ -266,7 +280,8 @@ printf 'postgres database=%s cluster_client_connections=%s active=%s oldest_acti
   "${max_same_query}" \
   "${lock_waiters}" \
   "${oldest_lock_wait_seconds}" \
-  "${idle_in_transaction}"
+  "${idle_in_transaction}" \
+  "${oldest_idle_transaction_seconds}"
 
 printf 'postgres_storage database=%s tablespace=%s location=%s parents=%s toasts=%s indexes=%s closure=%s placed=%s bytes=%s invalid_indexes=%s unrelated=%s owned_sequences=%s\n' \
   "${database}" \
@@ -301,7 +316,8 @@ fi
 if ((max_same_query >= critical_fanout)) ||
   ((oldest_query_seconds >= critical_age_seconds)) ||
   ((total_connections >= critical_connections)) ||
-  ((oldest_lock_wait_seconds >= critical_lock_wait_seconds)); then
+  ((oldest_lock_wait_seconds >= critical_lock_wait_seconds)) ||
+  ((oldest_idle_transaction_seconds >= critical_idle_transaction_seconds)); then
   echo "CRITICAL PostgreSQL query contention threshold breached." >&2
   exit 2
 fi
@@ -309,7 +325,7 @@ if ((max_same_query >= warn_fanout)) ||
   ((oldest_query_seconds >= warn_age_seconds)) ||
   ((total_connections >= warn_connections)) ||
   ((oldest_lock_wait_seconds >= warn_lock_wait_seconds)) ||
-  ((idle_in_transaction > 0)); then
+  ((oldest_idle_transaction_seconds >= warn_idle_transaction_seconds)); then
   echo "WARNING PostgreSQL query contention is elevated." >&2
   exit 1
 fi

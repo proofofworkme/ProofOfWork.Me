@@ -200,18 +200,52 @@ snapshot cursors. Unscoped `/api/v1/token-history?kind=tokens` directory reads u
 an exact current proof-index page or paginate the stored hash-bound Token summary;
 `fresh=1` verifies that checkpoint against the Core tip instead of materializing
 the full credit ledger. Token history and token state snapshots use a 24-hour
-stable confirmed-data guard by default. `POW_INDEX_READS=token-state` enables default `/api/v1/token`
+stable confirmed-data guard by default.
+
+`/api/v1/token-history?kind=listings&network=livenet` is stricter than the
+other historical credit collections. Every broad, exact-query, and
+address-scoped request starts from one complete relational current-listing
+materialization whose declared count exactly equals its returned rows and
+whose scan height/hash are explicit. `summaryOnly`, truncated, incomplete, or
+count-mismatched inputs fail with `503`; they cannot be presented as a complete
+book. The full materialization is reconciled through Core `gettxout` with
+`requireAll: true` before any filtering or pagination, so a spent sale-ticket
+anchor is absent from both the items and the total.
+
+Listing continuation uses the opaque `token-listings-v2` cursor. It binds the
+network, credit scope, normalized query/address filter, relational scan
+height/hash and complete-source digest, Core height/hash and checked-outpoint
+digest, filtered membership digest, last stable listing key, emitted count,
+and total. Each continuation rebuilds both relational and Core evidence;
+mutation, reorg, spentness change, source truncation, filter mismatch, or a
+malformed cursor returns `409` and requires a restart. Numeric `page>0` or
+`offset>0` without the returned cursor is rejected.
+`POW_INDEX_READS=token-state` enables default `/api/v1/token`
 reads from stored token-state snapshots for global and scoped credit views,
 including AMO active/sealed books and sale-ticket lifecycle arrays.
 Missing, stale, incomplete, wallet-scoped, or address-scoped state reads fall
 back to the canonical node/API path. `POW_INDEX_SHADOW_READS=token-history`
 compares eligible DB output against canonical Token History without changing the
 public response.
-Additional snapshot-backed read flags are available for the broader default-read
-posture: `registry-history` serves stable registry records, activity, listings,
-and sales pages from stored canonical history snapshots while pending registry
-views stay canonical; `work-floor`, `work-summary`, and `growth-summary` serve
-stored canonical summary snapshots with age guards and canonical fallback.
+Additional read flags are available for the broader default-read posture.
+`registry-history` and `ids-history` first build the strict public registry at
+one exact hashed scan checkpoint. On livenet this includes Core
+`gettxout(..., true)` reconciliation of every anchored listing before any page
+is sliced, so a mempool-spent sale ticket cannot appear in either default or
+fresh history. Their `registry-v2` continuation cursor binds network, kind,
+normalized search, exact height/hash, the SHA-256 of the complete filtered
+membership, the last deterministic item key, emitted count, and total count.
+The next request recomputes all of those values; a malformed cursor, changed
+filter, mutation, reorg, or missing prior boundary returns 409 and requires a
+restart from page one. Numeric `page>0` and `offset>0` continuation is rejected.
+Current records and activity contain the accepted pending view as best-effort
+visibility, active listings reflect the current accepted lifecycle, and sales
+contain current `buy5` sales only. A
+first-confirmed-wins losing registration and other rejected pending attempts
+remain available to the global Log/audit surfaces but do not enter registry
+state. Historical `buy2` remains replayable registry activity, not a current AMO
+sale. `work-floor`, `work-summary`, and `growth-summary` serve stored canonical
+summary snapshots with age guards and canonical fallback.
 `marketplace-summary` must pass through the reconciled marketplace lifecycle
 builder before returning so confirmed, unspent, buyable sealed listings cannot
 be dropped by an older compacted proof-index summary snapshot. A valid sale
@@ -236,7 +270,17 @@ as catch-up or block a current signing preflight. Summary-backed routes still
 require their coherent summary snapshot to match that exact tip.
 `event-history`
 serves DB-backed protocol/event search for indexed registry, credit,
-marketplace, mail/file, seeded, and broader Computer events; `address-mail`
+marketplace, mail/file, seeded, and broader Computer events. Each page is read
+inside one repeatable-read, read-only transaction. Its `events-v2` keyset cursor
+binds the ledger snapshot id, exact checkpoint height/hash, snapshot generation
+time, maximum filtered event id and update time, normalized filter fingerprint,
+total/emitted counts, and the last `(effectiveTime, txid, eventId)` tuple. The
+reader uses `LIMIT + 1` and tuple keyset comparison, never mutable `OFFSET`.
+Continuation rechecks the fence and the exact rank of the prior boundary;
+insertion, deletion, status/update mutation, reorg, filter mismatch, or malformed
+cursor returns 409. Pageable event history is database-authoritative and never
+merges the mutable recovery overlay or silently falls back after a cursor error.
+`address-mail`
 serves connected-wallet mailbox reads from the indexed mail projection,
 including confirmed Inbox/Sent and indexed pending Incoming/Outbox visibility.
 `pwm1:m:powb` is normalized as `infinity-bond` and `pwm1:m:incb` as
@@ -952,11 +996,13 @@ Install `proofofwork-postgres-query-health.sh` as executable
 service and timer. Its five-minute `pg_stat_activity` sample is aggregate-only:
 it logs cluster-wide client connections plus database-scoped active sessions,
 oldest active age, identical-query fanout, lock waiters and oldest lock-wait
-age, and idle or aborted-in-transaction sessions without logging query text or
-parameters. Fanout of 4, an active query aged 20 seconds, 70 cluster client
-connections, a lock wait aged 5 seconds, or an idle transaction is warning
-state. Fanout of 8, an active query aged 60 seconds, 90 cluster client
-connections, or a lock wait aged 20 seconds is critical. The service has a
+age, and idle or aborted-in-transaction sessions plus the oldest transaction
+age without logging query text or parameters. Fanout of 4, an active query aged
+20 seconds, 70 cluster client connections, a lock wait aged 5 seconds, or an
+idle transaction aged 5 seconds is warning state. Fanout of 8, an active query
+aged 60 seconds, 90 cluster client connections, a lock wait aged 20 seconds, or
+an idle transaction aged 20 seconds is critical. Shorter read-only transaction
+gaps are still counted and reported but do not fail the unit. The service has a
 `Requisite` dependency on the PostgreSQL cluster, so a health sample can never
 start a deliberately stopped database during maintenance. These thresholds
 expose request stampedes and pool exhaustion while the retained
@@ -1444,6 +1490,66 @@ zero unless its immutable transition explicitly contains an exact, physically
 proven registry attribution. This is projection enrichment only: it does not
 change `server/work-amo-v5-raw.mjs`, a replay record, transition-chain
 commitment, event-set commitment, or any historical protocol bytes.
+
+Current confirmed registry rendering independently rebinds every accepted PWID
+lifecycle row to its canonical transaction and physical
+`(blockHeight, blockIndex, protocolVout, recordOrdinal)` carrier. The reader
+checks the canonical block hash and time, strict payload text/hex/script witness,
+per-carrier `protocolDataBytes`, ordered input addresses and spent outpoints,
+and every payment output before the first physical `pwid1:` candidate. A
+malformed first candidate still closes that payment-display window. Public
+`dataBytes` is the recognized PWM/PWID/PWT byte total for the whole transaction;
+the stored event byte count and `protocolDataBytes` remain the selected PWID
+carrier's bytes. The fixed attributed lifecycle fee remains a separate 1,000- or
+546-proof protocol value and is never inferred from an arbitrary transaction
+output total. Multiple valid PWID carriers in one transaction remain distinct:
+each row binds its own exact vout/ordinal and each valid action must claim its own
+canonical physical registry output without double-claiming a sibling's output.
+Mutable stored display aliases, replay projections, and marketplace terms cannot
+override that raw evidence; a mismatch fails closed.
+
+An ID `records` entry remains registration-rooted after later valid mutations:
+`amountSats`, `txid`, creation time, block hash/height/index, protocol vout, and
+record ordinal identify the original 1,000-proof registration. The current
+owner and receiver evolve, while `lastEventTxid` and `updatedHeight` identify
+the latest accepted receiver update, direct transfer, or purchase. A 546-proof
+mutation must never relabel itself as the registration. Stored
+`workAmoV5PwidRegistryAttribution` is not copied into public confirmed activity;
+the raw replay transition remains the authority for its exact physical-output
+claims, so an unverified or stale attribution object cannot leak into rendered
+math.
+
+The strict registry parity gate obtains one canonical state through the
+authenticated numeric-loopback `/api/v1/internal/registry-parity` route. That
+route samples a synced Bitcoin Core tip, binds the Electrum header at that
+height, reads the complete Electrum registry-address history, and hydrates the
+exact confirmed and pending txid sets through Bitcoin Core with complete
+canonical prevouts. Partial hydration, an explorer response, a cache or indexed
+fallback, a changed history or pending-admission-time fingerprint, or any
+before/after Core or Electrum checkpoint change fails closed. Active anchored
+listings are then checked with Core `gettxout(txid, vout, true)` against their
+exact signed script and value. The returned authority metadata carries the
+observed and hydrated counts and fingerprints, both checkpoints, and the actual
+listing reconciliation instead of relying on a hardcoded fresh-source claim.
+Canonical history pages are derived from that same fenced state, so page checks
+do not resample a changing mempool or use a public fallback as their oracle. The
+gate compares confirmed lifecycle semantics and public display/evidence fields,
+and verifies page ordering, search, cursors, counts, and current relational
+provenance.
+Accepted pending state is compared separately with the reduced semantics that
+can be known without persisted pending raw transactions. A mismatch in accepted
+pending membership is still an error, but pending visibility itself remains
+best-effort and noncanonical.
+
+The default indexed livenet `/api/v1/registry` and `/api/v1/ids` response also
+reconciles every active `list3`/`list4`/`list5` anchor through Core
+`gettxout(..., true)` before rendering. A null result removes the spent listing;
+an RPC error, malformed result, mismatched script/value, duplicate physical
+anchor, index/Core checkpoint disagreement, or tip change returns 503. The
+filtered listing array and all listing-count statistics are updated together,
+and the response is `no-store` so a pending or external spend cannot remain
+active through a stale client cache. Historical unanchored `list2` state remains
+qualified legacy history rather than being assigned a synthetic Core anchor.
 
 One separate repair mode is pinned to the nine valid post-activation
 registration rows that were historically materialized with relational
@@ -3875,7 +3981,7 @@ Production raw transaction broadcasts use `MEMPOOL_BASE` through the first-party
 
 Production transaction preparation also uses the first-party API for wallet UTXO reads, previous transaction hex, and listing-anchor outspend checks. These reads are public chain/indexer data needed to build PSBTs locally in the browser before UniSat signs. The API still never receives private keys, seed phrases, or unsigned wallet authority.
 
-`BITCOIN_RPC_URL`, `BITCOIN_RPC_USER`, and `BITCOIN_RPC_PASSWORD` are optional server-only Bitcoin Core RPC settings. When configured, the API can attach the node's exact `testmempoolaccept` reject reason to failed broadcasts, use `getrawtransaction` as a livenet transaction source, and use `gettxout` as the fast sale-ticket spend-state oracle for active listing reconciliation. Bitcoin Core RPC must remain private and must not be exposed to browsers or public networks.
+`BITCOIN_RPC_URL`, `BITCOIN_RPC_USER`, and `BITCOIN_RPC_PASSWORD` are server-only Bitcoin Core RPC settings. They are required for canonical livenet operation: the API uses them for exact transaction hydration, broadcast diagnostics, strict internal registry parity, and fail-closed `gettxout(..., true)` reconciliation of indexed ID listing anchors. A missing or uncertain RPC response must not preserve a possibly spent active listing. Bitcoin Core RPC must remain private and must not be exposed to browsers or public networks.
 
 `SLIPSTREAM_CLIENT_CODE` is optional legacy server-only configuration for MARA Slipstream submissions. `MARA_SLIPSTREAM_CLIENT_CODE` is accepted as an equivalent fallback environment variable, while ordinary production broadcasts prefer the ProofOfWork node broadcast path.
 

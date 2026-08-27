@@ -1545,7 +1545,11 @@ assert.match(
 );
 assert.match(
   backfillSource,
-  /dense_rank\(\) OVER \([\s\S]*ORDER BY indexed_through_block DESC NULLS LAST/u,
+  /canonical_versions AS MATERIALIZED \([\s\S]*row_number\(\) OVER \([\s\S]*PARTITION BY indexed_through_block[\s\S]*canonical_now DESC NULLS LAST/u,
+);
+assert.match(
+  backfillSource,
+  /canonical_budgeted AS MATERIALIZED \([\s\S]*row_number\(\) OVER \([\s\S]*indexed_through_block DESC NULLS LAST[\s\S]*sum\(logical_bytes\) OVER \([\s\S]*ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW/u,
 );
 assert.match(
   backfillSource,

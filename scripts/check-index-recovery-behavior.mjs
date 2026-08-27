@@ -44,6 +44,7 @@ import {
   proofIndexCanonicalMailProjectionRows,
 } from "../server/proof-index-mail-projection.mjs";
 import {
+  compareProofIndexRegistryPayloads,
   workPrecisionV2CurrentPayloadIsExact,
   workPrecisionV2ProjectCurrentPayload,
 } from "../server/db/proof-index-reader.mjs";
@@ -128,6 +129,7 @@ import {
   WORK_AMO_V5_NETWORK_ACCUMULATOR_MODEL,
   WORK_AMO_V5_PAYLOAD_COMMITMENT_MODEL,
   WORK_AMO_V5_POWB_TOKEN_ID,
+  WORK_AMO_V5_STATE_COMMITMENT_MODEL,
   WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_HEIGHT,
   WORK_AMO_V5_PRE_UNIT_RELIC_BLOCK_INDEX,
   WORK_AMO_V5_PRE_UNIT_RELIC_DISABLED_REASON,
@@ -191,6 +193,7 @@ import {
 } from "../server/work-amo-v6.mjs";
 import {
   WORK_AMO_V8_AUTH_VERSION,
+  WORK_AMO_V8_BLOCK_SEQUENCER_MODEL,
   WORK_AMO_V8_GLOBAL_PRECISION_MODEL,
   WORK_AMO_V8_MODELS,
   WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL,
@@ -198,6 +201,7 @@ import {
   deriveWorkAmoV8FrozenTerms,
   validateWorkAmoV8FrozenTerms,
   validateWorkAmoV8StaticAuthorization,
+  workAmoV8CanonicalTokenStatePreimage,
   workAmoV8CanonicalTokenStateCommitment,
   workAmoV8FrozenTermsMatch,
 } from "../server/work-amo-v8.mjs";
@@ -1244,6 +1248,8 @@ function isolatedFunction(path, name, globals = {}) {
     WORK_TOKEN_MAX_SUPPLY_SUBATOMS,
     WORK_TOKEN_MINT_AMOUNT_ATOMS,
     WORK_TOKEN_MINT_AMOUNT_SUBATOMS,
+    TOKEN_LISTING_LIFECYCLE_MATERIALIZATION_LIMIT: 5_000,
+    TOKEN_LISTING_LIFECYCLE_WARNING_THRESHOLD: 4_000,
     TOKEN_CREATION_PRICE_SATS: 546,
     WORK_TOKEN_CREATED_AT: "2026-05-15T02:57:28.000Z",
     WORK_TOKEN_CREATE_DATA_BYTES: 70,
@@ -1544,6 +1550,10 @@ function isolatedFunction(path, name, globals = {}) {
         ],
         tokenMintHistoryItemKey: ["canonicalTokenReplayPosition"],
         tokenReplayEntriesForRegistry: ["canonicalTokenReplayPosition"],
+        tokenPayloadCanPopulateFullStateCache: [
+          "payloadIndexedThroughBlockHash",
+          "proofIndexPayloadIndexedThroughBlock",
+        ],
         tokenStateFromTransactions: [
           "canonicalWorkTokenDefinition",
           "tokenMintHistoryItemKey",
@@ -1555,7 +1565,18 @@ function isolatedFunction(path, name, globals = {}) {
         ],
         tokenMarketLifecycleOverlayFromCreditListings: [
           "canonicalEventIdentityDetails",
+          "tokenListingLifecycleCapacityStats",
         ],
+        completeTokenListingHistoryPayload: [
+          "logTokenListingLifecycleCapacity",
+          "tokenListingLifecycleCapacityStats",
+        ],
+        indexedTokenMarketSummaryOverlay: [
+          "logTokenListingLifecycleCapacity",
+          "tokenListingLifecycleCapacityStats",
+        ],
+        logTokenListingLifecycleCapacity: [],
+        tokenListingLifecycleCapacityStats: [],
         parseTokenPayload: ["canonicalSaleAuthorizationJsonFromBase64Url"],
         tokenTransferFromIndexedActivityItem: [
           "canonicalCreditValueFieldsFromRecord",
@@ -1606,6 +1627,7 @@ function isolatedFunction(path, name, globals = {}) {
             "canonicalMovementPositionFromEventRow",
             "idRegistryProtocolFeeSats",
           ],
+          idLifecycleStateFromItems: ["idRegistryActivityDisplayItem"],
           proofIndexCreditListingsPayload: [
             "canonicalTokenListingEventJoinSql",
             "recordWithoutWorkAmountAliases",
@@ -2405,6 +2427,10 @@ check("WORK broadcast admission matches raw single-output and first-actor rules"
       TX_FETCH_CONCURRENCY: 4,
       WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS: registryAddress,
       WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS: registryAddress,
+      bitcoinRpc: async () => ({
+        blocks: 964_200,
+        bestblockhash: "f".repeat(64),
+      }),
       canonicalProtocolCandidateFromOutput,
       canonicalWorkMarketplaceListingAnchor: async () => ({
         anchorVout: 2,
@@ -2416,6 +2442,10 @@ check("WORK broadcast admission matches raw single-output and first-actor rules"
         outputs.some((output) => output.protocol === true)
           ? [buyMessage]
           : [],
+      exactCoreTipFromBlockchainInfo: (value) => ({
+        blockHash: value.bestblockhash,
+        height: value.blocks,
+      }),
       mapWithConcurrency: async (items, _limit, mapper) =>
         Promise.all(items.map(mapper)),
       parseTokenPayload: () => ({
@@ -2440,6 +2470,12 @@ check("WORK broadcast admission matches raw single-output and first-actor rules"
       validateWorkAmoV5SaleTicketSignature: () => ({
         valid: saleTicketSignatureValidFixture,
       }),
+      workMarketplaceListingResolutionUnavailableError: (txid, cause) => {
+        const error = new Error(String(cause?.message ?? cause));
+        error.statusCode = 503;
+        error.details = { listingId: txid };
+        return error;
+      },
       workMarketplaceWriteActionIsGoverned: (_action, context) =>
         context.paysWorkRegistry === true,
     },
@@ -2862,11 +2898,19 @@ check("WORK AMO V8 seal shape accepts P2PKH sale-ticket signatures", async () =>
       TX_FETCH_CONCURRENCY: 4,
       WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS: registryAddress,
       WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS: registryAddress,
+      bitcoinRpc: async () => ({
+        blocks: 964_200,
+        bestblockhash: "f".repeat(64),
+      }),
       canonicalProtocolCandidateFromOutput,
       canonicalWorkMarketplaceListingAnchor: async () =>
         listingAnchorFixture,
       mapWithConcurrency: async (items, _limit, mapper) =>
         Promise.all(items.map(mapper)),
+      exactCoreTipFromBlockchainInfo: (value) => ({
+        blockHash: value.bestblockhash,
+        height: value.blocks,
+      }),
       parseTokenPayload,
       rawTokenSaleAuthorization: () => sealAuthorization,
       selectWorkAmoV5DistinctRegistryPayment,
@@ -2897,6 +2941,12 @@ check("WORK AMO V8 seal shape accepts P2PKH sale-ticket signatures", async () =>
             authorization?.anchorTxid,
         ),
       validateWorkAmoV5SaleTicketSignature,
+      workMarketplaceListingResolutionUnavailableError: (txid, cause) => {
+        const error = new Error(String(cause?.message ?? cause));
+        error.statusCode = 503;
+        error.details = { listingId: txid };
+        return error;
+      },
       workMarketplaceWriteActionIsGoverned: (_action, context) =>
         context.paysWorkRegistry === true,
     },
@@ -3071,6 +3121,10 @@ check("WORK AMO V8 seal listing resolver derives Core block height before matchi
       parseTokenPayload: () => ({ saleAuthorization }),
       proofIndexCanonicalWorkListingById: async () => indexedListing,
       rawTokenSaleAuthorization: () => saleAuthorization,
+      strictCoreTokenListingReconciliation: async (listings) => ({
+        evidence: {},
+        listings,
+      }),
       tokenListingAnchorIsPresent: () => true,
       tokenSaleAuthorizationTermsMatch: () => true,
       transactionBlockHash: (tx) => tx.status?.block_hash ?? "",
@@ -6757,8 +6811,10 @@ check("valid PWID lifecycle rows project their fixed protocol fee", () => {
       protocolVout: 1,
       recordOrdinal: 0,
     }),
+    confirmedPwidRawEvidenceFromRow: () => ({}),
     dateIso: (value) => String(value ?? ""),
-    eventPayloadParticipants: () => [],
+    eventPayloadParticipants: (payload) =>
+      Array.isArray(payload?.inputAddresses) ? payload.inputAddresses : [],
     normalizeEventPayload: (payload, row) => ({
       ...(payload ?? {}),
       kind: payload?.kind ?? row?.kind,
@@ -6871,6 +6927,42 @@ check("valid PWID lifecycle rows project their fixed protocol fee", () => {
     0,
     "unsupported PWID kinds must not receive a canonical protocol fee",
   );
+  const pendingWitness = {
+    decodeDetail: "",
+    decodeValid: true,
+    payloadHex: "00",
+    reasonCode: "",
+    scriptPubKeyHex: "6a00",
+  };
+  const pending = eventRowPayload(
+    rowFor("id-register", {
+      canonical_position_required: false,
+      confirmed_pwid_raw_evidence_required: true,
+      payload: {
+        id: "pending-id",
+        inputAddresses: ["pending-owner"],
+        kind: "id-register",
+        ownerAddress: "pending-owner",
+        protocol: "pwid1",
+        receiveAddress: "pending-owner",
+        senderAddress: "pending-owner",
+        valid: true,
+        workAmoV5RawScriptWitness: pendingWitness,
+      },
+      status: "pending",
+      transaction_status: "pending",
+    }),
+    "livenet",
+  );
+  assert.equal(pending.valid, true);
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(pending.workAmoV5RawScriptWitness)),
+    pendingWitness,
+  );
+  assert.deepEqual(Array.from(pending.participants), ["pending-owner"]);
+  assert.equal(pending.ownerAddress, "pending-owner");
+  assert.equal(pending.receiveAddress, "pending-owner");
+  assert.equal(pending.senderAddress, "pending-owner");
 
   const confirmedValueDeltaSource = topLevelFunctionSource(
     READER_PATH,
@@ -6885,6 +6977,2206 @@ check("valid PWID lifecycle rows project their fixed protocol fee", () => {
     topLevelFunctionSource(READER_PATH, "proofIndexValueSummaryPayload"),
     /protocol = 'pwid1' AND kind = 'id-register'[\s\S]*THEN \$\{ID_REGISTRATION_PRICE_SATS\}[\s\S]*protocol = 'pwid1' AND kind IN \([\s\S]*'id-update'[\s\S]*'id-transfer'[\s\S]*'id-list'[\s\S]*'id-seal'[\s\S]*'id-delist'[\s\S]*'id-buy'[\s\S]*THEN \$\{ID_MUTATION_PRICE_SATS\}[\s\S]*ELSE amount_sats/u,
     "value-summary fallback must derive the same fixed PWID fees",
+  );
+});
+
+check("confirmed PWID rendering hydrates exact chain-bound raw evidence", () => {
+  const normalizedLowerText = (value) =>
+    String(value ?? "").trim().toLowerCase();
+  const normalizedText = (value) => String(value ?? "").trim();
+  const normalizedTxid = (value) => {
+    const txid = normalizedLowerText(value);
+    return /^[0-9a-f]{64}$/u.test(txid) ? txid : "";
+  };
+  const objectRecord = (value) =>
+    value && typeof value === "object" && !Array.isArray(value)
+      ? value
+      : {};
+  const canonicalCoreValueSats = isolatedFunction(
+    READER_PATH,
+    "canonicalCoreValueSats",
+  );
+  const canonicalCoreScriptType = isolatedFunction(
+    READER_PATH,
+    "canonicalCoreScriptType",
+  );
+  const canonicalCoreOutput = isolatedFunction(
+    READER_PATH,
+    "canonicalCoreOutput",
+    {
+      canonicalCoreScriptType,
+      canonicalCoreValueSats,
+      objectRecord,
+    },
+  );
+  const canonicalRawTransactionFromRow = isolatedFunction(
+    READER_PATH,
+    "canonicalRawTransactionFromRow",
+    {
+      canonicalCoreOutput,
+      canonicalCoreValueSats,
+      objectRecord,
+      rowNumber: (row, key) => Number(row?.[key]) || 0,
+    },
+  );
+  const canonicalPwidBase64UrlJsonObject = isolatedFunction(
+    READER_PATH,
+    "canonicalPwidBase64UrlJsonObject",
+    { decodeWorkAmoV5CanonicalBase64UrlJsonObject },
+  );
+  const pwidRawObjectIsContainedInStored = isolatedFunction(
+    READER_PATH,
+    "pwidRawObjectIsContainedInStored",
+  );
+  const confirmedPwidStoredDisplayBase = isolatedFunction(
+    READER_PATH,
+    "confirmedPwidStoredDisplayBase",
+    { objectRecord },
+  );
+  const sanitizedDisplay = confirmedPwidStoredDisplayBase({
+    anchorVout: 99,
+    canonicalVerifier: { forged: true },
+    currentOwnerAddress: "forged",
+    firstInputPrevoutScriptpubkey: "forged",
+    ownerAddress: "forged",
+    receiveAddress: "forged",
+    registryAddress: "forged",
+    safeDisplayField: "retained",
+    sellerAddress: "forged",
+    validationMode: "forged",
+    workAmoV5PwidRegistryAttribution: { forged: true },
+  });
+  assert.deepEqual(
+    Object.keys(sanitizedDisplay),
+    ["safeDisplayField"],
+    "unproven stored PWID aliases cannot survive confirmed rendering",
+  );
+  const parseSupportedPwidRawRecord = isolatedFunction(
+    READER_PATH,
+    "parseSupportedPwidRawRecord",
+    {
+      canonicalPwidBase64UrlJsonObject,
+      normalizedLowerText,
+      normalizedText,
+      normalizedTxid,
+      parseWorkAmoV5RawPwidRecord,
+    },
+  );
+  const confirmedPwidRawSemanticPatch = isolatedFunction(
+    READER_PATH,
+    "confirmedPwidRawSemanticPatch",
+    {
+      canonicalPwidBase64UrlJsonObject,
+      normalizedLowerText,
+      normalizedText,
+      normalizedTxid,
+      objectRecord,
+      parseSupportedPwidRawRecord,
+      parseWorkAmoV5RawPwidRecord,
+      pwidRawObjectIsContainedInStored,
+    },
+  );
+  const confirmedPwidReplayMetadataPatch = isolatedFunction(
+    READER_PATH,
+    "confirmedPwidReplayMetadataPatch",
+    {
+      PWID_RAW_REPLAY_ACTIVATION_HEIGHT: 959_621,
+      normalizedLowerText,
+      normalizedTxid,
+      objectRecord,
+      pwidRawObjectIsContainedInStored,
+    },
+  );
+  const confirmedPwidStoredRegistryAttribution = Symbol(
+    "confirmed-pwid-stored-registry-attribution",
+  );
+  const confirmedPwidRawEvidenceFromRow = isolatedFunction(
+    READER_PATH,
+    "confirmedPwidRawEvidenceFromRow",
+    {
+      ID_REGISTRY_ADDRESSES: {
+        livenet: "bc1qfwytlzyr3ym3enz2eutwtjsf9kkf6uqkjydk3e",
+      },
+      CONFIRMED_PWID_STORED_REGISTRY_ATTRIBUTION:
+        confirmedPwidStoredRegistryAttribution,
+      canonicalEventPayload: (payload) => payload ?? {},
+      canonicalRawTransactionFromRow,
+      confirmedPwidReplayMetadataPatch,
+      confirmedPwidRawSemanticPatch,
+      decodeCanonicalOpReturnOutput,
+      idRegistryProtocolFeeSats: (protocol, kind, valid) =>
+        protocol === "pwid1" && valid === true
+          ? kind === "id-register"
+            ? 1_000
+            : 546
+          : null,
+      normalizedLowerText,
+      normalizedText,
+      normalizedTxid,
+      objectRecord,
+      parseSupportedPwidRawRecord,
+    },
+  );
+  const legacySellerAddress = "1F1p9UEHuH5KTFR7Zsx93Khdrqhj6t5nFv";
+  const legacyBuyerAddress = "1447TsdXtFSnVrWawSamyyQKPDNW4ALtBT";
+  for (const [action, version, txid] of [
+    [
+      "list2",
+      "pwid-sale-v1",
+      "11b9ee32b7b9ff43da09706ff3f520cda8d3cb8848a7d8dfcf1b6daa89fcacf1",
+    ],
+    [
+      "list3",
+      "pwid-sale-v2",
+      "eebab2afddef444b0c4345bddde4a771f833e0c1f6bffa0009369576eadfb71c",
+    ],
+  ]) {
+    const authorization = {
+      id: "legacy-fixture",
+      priceSats: 1_000,
+      sellerAddress: legacySellerAddress,
+      version,
+    };
+    const encoded = Buffer.from(JSON.stringify(authorization)).toString(
+      "base64url",
+    );
+    const parsed = parseSupportedPwidRawRecord(`pwid1:${action}:${encoded}`);
+    assert.equal(parsed.kind, "id-list", txid);
+    assert.equal(parsed.listingVersion, action, txid);
+    assert.equal(parsed.priceSats, 1_000, txid);
+    assert.equal(parsed.sellerAddress, legacySellerAddress, txid);
+  }
+  const buy2Authorization = {
+    id: "legacy-fixture",
+    priceSats: 1_000,
+    sellerAddress: legacySellerAddress,
+    version: "pwid-sale-v1",
+  };
+  const buy2Payload = `pwid1:buy2:${Buffer.from(
+    JSON.stringify(buy2Authorization),
+  ).toString("base64url")}:${legacyBuyerAddress}`;
+  const buy2Patch = confirmedPwidRawSemanticPatch(
+    buy2Payload,
+    {
+      kind: "id-buy",
+      txid:
+        "da77c38e8df8dd8242464ff384394882d57471a19961655da4cda240286007b1",
+    },
+    {
+      id: "legacy-fixture",
+      ownerAddress: legacyBuyerAddress,
+      priceSats: 1_000,
+      receiveAddress: legacyBuyerAddress,
+      sellerAddress: legacySellerAddress,
+      transferVersion: "buy2",
+    },
+  );
+  assert.equal(buy2Patch.kind, "id-buy");
+  assert.equal(buy2Patch.ownerAddress, legacyBuyerAddress);
+  assert.equal(buy2Patch.receiveAddress, legacyBuyerAddress);
+  assert.equal(buy2Patch.sellerAddress, legacySellerAddress);
+  assert.equal(buy2Patch.transferVersion, "buy2");
+  assert.equal(
+    parseSupportedPwidRawRecord("pwid1:list2:not-canonical-json"),
+    null,
+    "a malformed legacy carrier cannot throw or suppress a later carrier",
+  );
+  const metadataAbsentIncident = {
+    blockHash:
+      "000000000000000000011609b5476622bc279ca9fedea8852cb62bcb65776df2",
+    blockHeight: 960_117,
+    blockIndex: 2_174,
+    protocolVout: 1,
+    recordOrdinal: 0,
+    txid:
+      "a1a58faef3a6ece598a5efb34545ee098cc09a2739cd68d458eafc6bc1e1f9dc",
+  };
+  assert.deepEqual(
+    Object.keys(
+      confirmedPwidReplayMetadataPatch({}, metadataAbsentIncident),
+    ),
+    [],
+    "the one transition-bound metadata-absent incident remains qualified",
+  );
+  assert.throws(
+    () =>
+      confirmedPwidReplayMetadataPatch({}, {
+        ...metadataAbsentIncident,
+        txid: "f".repeat(64),
+      }),
+    /replay metadata is absent/u,
+    "no other post-activation row may omit replay metadata",
+  );
+
+  const txid = "a".repeat(64);
+  const blockHash = "b".repeat(64);
+  const firstInputTxid = "c".repeat(64);
+  const secondInputTxid = "d".repeat(64);
+  const ownerAddress = "1AcH1HwHCg4ggiBj4NJSqZ9SPGwSyRBSKs";
+  const registryAddress = "bc1qfwytlzyr3ym3enz2eutwtjsf9kkf6uqkjydk3e";
+  const id = "fixture-id";
+  const protocolPayload = [
+    "pwid1:r2",
+    Buffer.from(id, "utf8").toString("base64url"),
+    ownerAddress,
+    ownerAddress,
+  ].join(":");
+  const protocolBytes = Buffer.from(protocolPayload, "utf8");
+  const protocolScript =
+    protocolBytes.length <= 75
+      ? `6a${protocolBytes.length.toString(16).padStart(2, "0")}${protocolBytes.toString("hex")}`
+      : `6a4c${protocolBytes.length.toString(16).padStart(2, "0")}${protocolBytes.toString("hex")}`;
+  const rawParsed = parseSupportedPwidRawRecord(protocolPayload);
+  const secondaryProtocolPayload = "pwm1:m:registry-fixture";
+  const secondaryProtocolBytes = Buffer.from(
+    secondaryProtocolPayload,
+    "utf8",
+  );
+  const secondaryProtocolScript =
+    `6a${secondaryProtocolBytes.length.toString(16).padStart(2, "0")}${secondaryProtocolBytes.toString("hex")}`;
+  const totalProofDataBytes =
+    protocolBytes.length + secondaryProtocolBytes.length;
+  const blockTime = 1_785_000_000;
+  const blockTimeIso = new Date(blockTime * 1_000).toISOString();
+  const inputPrevout = {
+    scriptPubKey: {
+      address: ownerAddress,
+      asm: "",
+      hex: "76a914111111111111111111111111111111111111111188ac",
+      type: "pubkeyhash",
+    },
+    value: 0.001,
+  };
+  const transactionRawTx = {
+    _powBlockIndex: 12,
+    blockhash: blockHash,
+    blocktime: blockTime,
+    canonicalBlockScan: {
+      blockHash,
+      height: 960_500,
+      network: "livenet",
+    },
+    locktime: 0,
+    txid,
+    version: 2,
+    vin: [
+      { prevout: inputPrevout, sequence: 1, txid: firstInputTxid, vout: 0 },
+      { prevout: inputPrevout, sequence: 2, txid: secondInputTxid, vout: 1 },
+    ],
+    vout: [
+      {
+        n: 0,
+        scriptPubKey: {
+          address: registryAddress,
+          asm: "",
+          hex: "00141111111111111111111111111111111111111111",
+          type: "witness_v0_keyhash",
+        },
+        value: 0.00001,
+      },
+      {
+        n: 1,
+        scriptPubKey: {
+          address: ownerAddress,
+          asm: "",
+          hex: "76a914222222222222222222222222222222222222222288ac",
+          type: "pubkeyhash",
+        },
+        value: 0.00002,
+      },
+      {
+        n: 2,
+        scriptPubKey: {
+          asm: "OP_RETURN",
+          hex: `6a0a${Buffer.from("pwid1:", "utf8").toString("hex")}`,
+          type: "nulldata",
+        },
+        value: 0,
+      },
+      {
+        n: 3,
+        scriptPubKey: {
+          address: registryAddress,
+          asm: "",
+          hex: "00143333333333333333333333333333333333333333",
+          type: "witness_v0_keyhash",
+        },
+        value: 0.00000546,
+      },
+      {
+        n: 4,
+        scriptPubKey: {
+          asm: `OP_RETURN ${protocolBytes.toString("hex")}`,
+          hex: protocolScript,
+          type: "nulldata",
+        },
+        value: 0,
+      },
+      {
+        n: 5,
+        scriptPubKey: {
+          asm: `OP_RETURN ${secondaryProtocolBytes.toString("hex")}`,
+          hex: secondaryProtocolScript,
+          type: "nulldata",
+        },
+        value: 0,
+      },
+    ],
+  };
+  const baseRow = {
+    block_hash: blockHash,
+    block_height: 960_500,
+    block_index: 12,
+    block_time: blockTimeIso,
+    canonical_block_hash: blockHash,
+    carrier_data_bytes: protocolBytes.length,
+    carrier_match_count: 1,
+    carrier_output_index: 0,
+    carrier_payload: protocolPayload,
+    carrier_payload_hex: protocolBytes.toString("hex"),
+    confirmed_pwid_raw_evidence_required: true,
+    event_data_bytes: protocolBytes.length,
+    event_raw_payload: "",
+    event_time: blockTimeIso,
+    kind: "id-register",
+    op_return_vout: 4,
+    payload: {
+      _workAmoV5ReplayBound: true,
+      dataBytes: protocolBytes.length,
+      id,
+      kind: "id-register",
+      ownerAddress,
+      payload: protocolPayload,
+      protocolDataBytes: protocolBytes.length,
+      receiveAddress: ownerAddress,
+      workAmoV5RawCandidate: true,
+      workAmoV5ReplayOutcome: {
+        kind: "pwid1-valid",
+        reasonCode: "",
+        valid: true,
+      },
+      workAmoV5ReplayOutput: {
+        projection: {
+          derived: [],
+          kind: "id-register",
+          parsed: rawParsed,
+          position: {
+            blockHash,
+            blockHeight: 960_500,
+            blockTransactionIndex: 12,
+            protocolVout: 4,
+            recordOrdinal: 0,
+          },
+          protocol: "pwid1",
+          reasonCode: "",
+          txid,
+          valid: true,
+        },
+      },
+      workAmoV5ReplayRawWitness: {
+        model: "canonical-raw-protocol-record-v1",
+        rawRecordParts: [
+          {
+            decodeDetail: "",
+            decodeValid: true,
+            payloadHex: protocolBytes.toString("hex"),
+            prefix: "pwid1:",
+            protocolVout: 4,
+            reasonCode: "",
+            scriptPubKeyHex: protocolScript,
+            text: protocolPayload,
+          },
+        ],
+      },
+    },
+    protocol: "pwid1",
+    record_ordinal: 0,
+    status: "confirmed",
+    transaction_block_height: 960_500,
+    transaction_block_index: 12,
+    transaction_block_time: blockTimeIso,
+    transaction_fee_sats: 1_000,
+    transaction_raw_tx: transactionRawTx,
+    transaction_status: "confirmed",
+    txid,
+    valid: true,
+  };
+
+  const evidence = confirmedPwidRawEvidenceFromRow(baseRow, "livenet");
+  assert.equal(evidence.protocolPayload, protocolPayload);
+  assert.equal(evidence.protocolDataBytes, protocolBytes.length);
+  assert.equal(evidence.dataBytes, totalProofDataBytes);
+  assert.equal(evidence.createdAt, blockTimeIso);
+  assert.equal(evidence.id, id);
+  assert.deepEqual(
+    Array.from(evidence.auditPaymentOutputs, (output) => output.vout),
+    [0, 1],
+    "a malformed earlier PWID candidate must close the payment window",
+  );
+  assert.deepEqual(
+    Array.from(evidence.paymentOutputs, (output) => Object.keys(output).sort()),
+    [["address", "amountSats"], ["address", "amountSats"]],
+  );
+  assert.deepEqual(Array.from(evidence.inputAddresses), [ownerAddress, ownerAddress]);
+  assert.deepEqual(
+    Array.from(evidence.spentOutpoints, ({ txid: inputTxid, vout }) => ({
+      txid: inputTxid,
+      vout,
+    })),
+    [
+      { txid: firstInputTxid, vout: 0 },
+      { txid: secondInputTxid, vout: 1 },
+    ],
+  );
+
+  const secondId = "second-fixture-id";
+  const secondPwidPayload = [
+    "pwid1:r2",
+    Buffer.from(secondId, "utf8").toString("base64url"),
+    ownerAddress,
+    ownerAddress,
+  ].join(":");
+  const secondPwidBytes = Buffer.from(secondPwidPayload, "utf8");
+  const secondRawParsed = parseSupportedPwidRawRecord(secondPwidPayload);
+  const secondPwidScript =
+    secondPwidBytes.length <= 75
+      ? `6a${secondPwidBytes.length.toString(16).padStart(2, "0")}${secondPwidBytes.toString("hex")}`
+      : `6a4c${secondPwidBytes.length.toString(16).padStart(2, "0")}${secondPwidBytes.toString("hex")}`;
+  const multiPwidDataBytes = totalProofDataBytes + secondPwidBytes.length;
+  const multiPwidRawTx = {
+    ...transactionRawTx,
+    vout: [
+      ...transactionRawTx.vout,
+      {
+        n: 6,
+        scriptPubKey: {
+          asm: `OP_RETURN ${secondPwidBytes.toString("hex")}`,
+          hex: secondPwidScript,
+          type: "nulldata",
+        },
+        value: 0,
+      },
+    ],
+  };
+  const firstCarrierEvidence = confirmedPwidRawEvidenceFromRow(
+    {
+      ...baseRow,
+      transaction_raw_tx: multiPwidRawTx,
+    },
+    "livenet",
+  );
+  const secondCarrierRow = {
+    ...baseRow,
+    carrier_data_bytes: secondPwidBytes.length,
+    carrier_payload: secondPwidPayload,
+    carrier_payload_hex: secondPwidBytes.toString("hex"),
+    event_data_bytes: secondPwidBytes.length,
+    op_return_vout: 6,
+    payload: {
+      ...baseRow.payload,
+      dataBytes: secondPwidBytes.length,
+      id: secondId,
+      payload: secondPwidPayload,
+      protocolDataBytes: secondPwidBytes.length,
+      workAmoV5ReplayOutput: {
+        projection: {
+          derived: [],
+          kind: "id-register",
+          parsed: secondRawParsed,
+          position: {
+            blockHash,
+            blockHeight: 960_500,
+            blockTransactionIndex: 12,
+            protocolVout: 6,
+            recordOrdinal: 0,
+          },
+          protocol: "pwid1",
+          reasonCode: "",
+          txid,
+          valid: true,
+        },
+      },
+      workAmoV5ReplayRawWitness: {
+        model: "canonical-raw-protocol-record-v1",
+        rawRecordParts: [
+          {
+            decodeDetail: "",
+            decodeValid: true,
+            payloadHex: secondPwidBytes.toString("hex"),
+            prefix: "pwid1:",
+            protocolVout: 6,
+            reasonCode: "",
+            scriptPubKeyHex: secondPwidScript,
+            text: secondPwidPayload,
+          },
+        ],
+      },
+    },
+    transaction_raw_tx: multiPwidRawTx,
+  };
+  const secondCarrierEvidence = confirmedPwidRawEvidenceFromRow(
+    secondCarrierRow,
+    "livenet",
+  );
+  assert.equal(firstCarrierEvidence.id, id);
+  assert.equal(secondCarrierEvidence.id, secondId);
+  assert.equal(firstCarrierEvidence.dataBytes, multiPwidDataBytes);
+  assert.equal(secondCarrierEvidence.dataBytes, multiPwidDataBytes);
+  const assertConfirmedPwidRegistryClaimAllocation = isolatedFunction(
+    READER_PATH,
+    "assertConfirmedPwidRegistryClaimAllocation",
+    {
+      CONFIRMED_PWID_STORED_REGISTRY_ATTRIBUTION:
+        confirmedPwidStoredRegistryAttribution,
+      ID_REGISTRY_ADDRESSES: { livenet: registryAddress },
+      assignWorkAmoV5EconomicOutputs,
+      idRegistryProtocolFeeSats: (protocol, kind, valid) =>
+        protocol === "pwid1" && valid === true
+          ? kind === "id-register"
+            ? 1_000
+            : 546
+          : null,
+      normalizedLowerText,
+      normalizedText,
+      normalizedTxid,
+    },
+  );
+  const claimItem = (evidence, eventId, protocolVout) => ({
+    ...evidence,
+    blockHeight: 960_500,
+    blockIndex: 12,
+    confirmed: true,
+    eventId,
+    kind: "id-register",
+    protocol: "pwid1",
+    protocolVout,
+    recordOrdinal: 0,
+    txid,
+    valid: true,
+  });
+  assert.throws(
+    () =>
+      assertConfirmedPwidRegistryClaimAllocation(
+        [
+          claimItem(firstCarrierEvidence, 1, 4),
+          claimItem(secondCarrierEvidence, 2, 6),
+        ],
+        "livenet",
+      ),
+    /cannot bind a distinct physical output/u,
+    "one physical 1,000-proof output cannot fund two confirmed carriers",
+  );
+  const fundedMultiPwidRawTx = structuredClone(multiPwidRawTx);
+  fundedMultiPwidRawTx.vout[1] = {
+    ...fundedMultiPwidRawTx.vout[0],
+    n: 1,
+  };
+  const fundedFirstCarrierEvidence = confirmedPwidRawEvidenceFromRow(
+    { ...baseRow, transaction_raw_tx: fundedMultiPwidRawTx },
+    "livenet",
+  );
+  const fundedSecondCarrierEvidence = confirmedPwidRawEvidenceFromRow(
+    { ...secondCarrierRow, transaction_raw_tx: fundedMultiPwidRawTx },
+    "livenet",
+  );
+  assert.equal(
+    assertConfirmedPwidRegistryClaimAllocation(
+      [
+        claimItem(fundedFirstCarrierEvidence, 1, 4),
+        claimItem(fundedSecondCarrierEvidence, 2, 6),
+      ],
+      "livenet",
+    ).length,
+    2,
+    "two distinct physical 1,000-proof outputs fund two confirmed carriers",
+  );
+  const exactStoredAttribution = {
+    amountSats: "1000",
+    registryAddress,
+    registryClaims: [{
+      address: registryAddress,
+      attributedSats: "1000",
+      outputSats: "1000",
+      role: "pwid-registry",
+      vout: 0,
+    }],
+    semanticKind: "id-register",
+    source: "canonical-work-amo-v5-state-delta",
+  };
+  const storedAttributionEvidence = confirmedPwidRawEvidenceFromRow(
+    {
+      ...baseRow,
+      payload: {
+        ...baseRow.payload,
+        workAmoV5PwidRegistryAttribution: exactStoredAttribution,
+      },
+    },
+    "livenet",
+  );
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(
+      storedAttributionEvidence,
+      "workAmoV5PwidRegistryAttribution",
+    ),
+    false,
+    "validated replay attribution remains internal rather than public display authority",
+  );
+  assert.equal(
+    assertConfirmedPwidRegistryClaimAllocation(
+      [claimItem(storedAttributionEvidence, 3, 4)],
+      "livenet",
+    ).length,
+    1,
+  );
+  const noncanonicalStoredAttributionEvidence =
+    confirmedPwidRawEvidenceFromRow(
+      {
+        ...baseRow,
+        payload: {
+          ...baseRow.payload,
+          workAmoV5PwidRegistryAttribution: {
+            ...exactStoredAttribution,
+            registryClaims: [{
+              ...exactStoredAttribution.registryClaims[0],
+              vout: 1,
+            }],
+          },
+        },
+        transaction_raw_tx: fundedMultiPwidRawTx,
+      },
+      "livenet",
+    );
+  assert.throws(
+    () =>
+      assertConfirmedPwidRegistryClaimAllocation(
+        [claimItem(noncanonicalStoredAttributionEvidence, 4, 4)],
+        "livenet",
+      ),
+    /diverges from its canonical allocation/u,
+    "a physically real stored claim must still match the canonical allocator's selected vout",
+  );
+  assert.throws(
+    () =>
+      confirmedPwidRawEvidenceFromRow(
+        {
+          ...baseRow,
+          payload: {
+            ...baseRow.payload,
+            workAmoV5PwidRegistryAttribution: {
+              ...exactStoredAttribution,
+              registryClaims: [{
+                ...exactStoredAttribution.registryClaims[0],
+                vout: 1,
+              }],
+            },
+          },
+        },
+        "livenet",
+      ),
+    /divergent stored registry attribution/u,
+    "a stored attribution cannot claim an unrelated physical output",
+  );
+  assert.throws(
+    () =>
+      confirmedPwidRawEvidenceFromRow(
+        {
+          ...baseRow,
+          payload: {
+            ...baseRow.payload,
+            workAmoV5ReplayRawWitness: {
+              ...baseRow.payload.workAmoV5ReplayRawWitness,
+              rawRecordParts: [
+                ...baseRow.payload.workAmoV5ReplayRawWitness.rawRecordParts,
+                ...baseRow.payload.workAmoV5ReplayRawWitness.rawRecordParts,
+              ],
+            },
+          },
+        },
+        "livenet",
+      ),
+    /replay projection/u,
+    "a non-PWM replay witness must bind exactly one physical carrier",
+  );
+  assert.throws(
+    () =>
+      confirmedPwidRawEvidenceFromRow(
+        {
+          ...baseRow,
+          carrier_match_count: 2,
+        },
+        "livenet",
+      ),
+    /raw carrier/u,
+    "a duplicated relational record at one physical position must fail closed",
+  );
+
+  assert.deepEqual(
+    Object.keys(
+      confirmedPwidRawEvidenceFromRow(
+        {
+          confirmed_pwid_raw_evidence_required: true,
+          status: "pending",
+          transaction_status: "pending",
+        },
+        "livenet",
+      ),
+    ),
+    [],
+    "pending raw persistence is outside this correction",
+  );
+  for (const [label, mutation, pattern] of [
+    [
+      "transaction block index",
+      { transaction_block_index: 13 },
+      /canonical position/u,
+    ],
+    ["record ordinal", { record_ordinal: 1 }, /canonical position/u],
+    ["carrier text", { carrier_payload: "pwid1:r2:wrong" }, /raw carrier/u],
+    [
+      "event time",
+      { event_time: new Date((blockTime + 1) * 1_000).toISOString() },
+      /bound transaction/u,
+    ],
+    [
+      "raw semantic id",
+      { payload: { ...baseRow.payload, id: "wrong-id" } },
+      /raw id diverges/u,
+    ],
+    [
+      "replay projection position",
+      {
+        payload: {
+          ...baseRow.payload,
+          workAmoV5ReplayOutput: {
+            projection: {
+              ...baseRow.payload.workAmoV5ReplayOutput.projection,
+              position: {
+                ...baseRow.payload.workAmoV5ReplayOutput.projection.position,
+                protocolVout: 5,
+              },
+            },
+          },
+        },
+      },
+      /replay projection diverges/u,
+    ],
+  ]) {
+    assert.throws(
+      () =>
+        confirmedPwidRawEvidenceFromRow(
+          { ...baseRow, ...mutation },
+          "livenet",
+        ),
+      pattern,
+      `${label} drift must fail closed`,
+    );
+  }
+
+  for (const functionName of [
+    "confirmedIdLifecycleFromCurrentEvents",
+    "currentIdRegistryEventState",
+  ]) {
+    const source = topLevelFunctionSource(READER_PATH, functionName);
+    for (const required of [
+      /t\.raw_tx AS transaction_raw_tx/u,
+      /t\.block_time AS transaction_block_time/u,
+      /carrier_row\.payload_text/u,
+      /carrier_row\.payload_hex/u,
+      /carrier_row\.data_bytes/u,
+      /true AS confirmed_pwid_raw_evidence_required/u,
+    ]) {
+      assert.match(source, required, `${functionName} lacks raw PWID evidence`);
+    }
+  }
+});
+
+check("fresh registry enumerates every PWID carrier with distinct physical fees", () => {
+  const registryAddress = "registry-address";
+  const ownerAddress = "owner-address";
+  const paymentOutputsBeforeVout = (outputs, cutoff) =>
+    outputs.flatMap((output, vout) =>
+      vout < cutoff &&
+      typeof output?.scriptpubkey_address === "string" &&
+      Number.isSafeInteger(output?.value) &&
+      output.value > 0
+        ? [{
+            address: output.scriptpubkey_address,
+            amountSats: output.value,
+            vout,
+          }]
+        : [],
+    );
+  const firstIdProtocolOutputIndex = (outputs) =>
+    outputs.findIndex(
+      (output) => output?.candidate?.prefix === "pwid1:",
+    );
+  const idRegistryStateFromTransactions = isolatedFunction(
+    API_PATH,
+    "idRegistryStateFromTransactions",
+    {
+      Buffer,
+      ID_PROTOCOL_PREFIX: "pwid1:",
+      ID_SALE_AUTH_VERSION: "pwid-sale-v3",
+      ID_SALE_AUTH_VERSION_LEGACY: "pwid-sale-v1",
+      ID_SALE_AUTH_VERSION_TICKET: "pwid-sale-v4",
+      assignWorkAmoV5EconomicOutputs,
+      canonicalProtocolCandidateFromOutput: (output) =>
+        output?.candidate ?? null,
+      compareActivityItems: () => 0,
+      compareMarketplaceSales: () => 0,
+      compareRegistryEventOrder: (left, right) =>
+        left.blockHeight - right.blockHeight ||
+        left.blockIndex - right.blockIndex ||
+        left.protocolVout - right.protocolVout ||
+        left.recordOrdinal - right.recordOrdinal,
+      compareRegistryRecordDisplayOrder: () => 0,
+      firstIdProtocolOutputIndex,
+      idActivityItemsFromEvents: (events) => events,
+      idEventMinimumPaymentSats: (kind) =>
+        kind === "register" ? 1_000 : 546,
+      inputAddresses: () => [ownerAddress],
+      listingAnchorIsPresent: () => true,
+      normalizeWorkAmoV5RawIdState: (state) => state,
+      parseIdEventPayload: (payload) => {
+        const [action, id, receiveAddress] = String(payload).split(":");
+        if (action === "r2" && id) {
+          return {
+            id,
+            kind: "register",
+            ownerAddress,
+            pgpKey: "",
+            receiveAddress: ownerAddress,
+          };
+        }
+        if (action === "u" && id && receiveAddress) {
+          return { id, kind: "update", receiveAddress };
+        }
+        if (action === "list5" && id) {
+          return {
+            id,
+            kind: "list",
+            listingVersion: "list5",
+            priceSats: 12_345,
+            saleAuthorization: {
+              anchorVout: 2,
+              id,
+              priceSats: 12_345,
+              sellerAddress: ownerAddress,
+              version: "pwid-sale-v4",
+            },
+            sellerAddress: ownerAddress,
+          };
+        }
+        throw new Error("malformed fixture PWID");
+      },
+      paymentOutputsBeforeIdProtocol: (outputs) =>
+        paymentOutputsBeforeVout(
+          outputs,
+          firstIdProtocolOutputIndex(outputs),
+        ).map(({ address, amountSats }) => ({ address, amountSats })),
+      paymentOutputsBeforeVout,
+      proofProtocolDataBytesForVout: () => 32,
+      publicMarketplaceSales: (sales) => sales,
+      saleAuthorizationExpired: () => false,
+      spentOutpoints: () => [],
+      structuredClone,
+      tokenTransactionTime: (value) =>
+        Number(value?.blockTime ?? Date.parse("2026-08-26T12:00:00.000Z")),
+      transactionBlockHash: (value) =>
+        String(value?.blockHash ?? "b".repeat(64)),
+      transactionBlockHeight: (value) => Number(value?.blockHeight ?? 960_500),
+      transactionBlockIndex: (value) => Number(value?.blockIndex ?? 1),
+      transactionConfirmed: (value) => value?.confirmed !== false,
+      transactionTxid: (value) => String(value?.txid ?? ""),
+    },
+  );
+  const payment = (value) => ({
+    scriptpubkey_address: registryAddress,
+    value,
+  });
+  const carrier = (text) => ({
+    candidate: {
+      decodeValid: true,
+      payloadHex: Buffer.from(text).toString("hex"),
+      prefix: "pwid1:",
+      scriptPubKeyHex: `6a${Buffer.from(text).toString("hex")}`,
+      text,
+    },
+  });
+  const transaction = (payments) => ({
+    blockHeight: 960_500,
+    txid: "a".repeat(64),
+    vin: [],
+    vout: [
+      ...payments,
+      carrier("pwid1:list2:not-canonical-json"),
+      payment(1_000),
+      carrier("pwid1:r2:first-id"),
+      carrier("pwid1:r2:second-id"),
+    ],
+  });
+
+  const distinct = idRegistryStateFromTransactions(
+    [transaction([payment(1_000), payment(1_000)])],
+    registryAddress,
+    "livenet",
+  );
+  assert.deepEqual(
+    Array.from(distinct.records, (record) => record.id).sort(),
+    ["first-id", "second-id"],
+    "two distinct pre-carrier outputs fund two distinct carriers",
+  );
+  assert.deepEqual(
+    Array.from(distinct.activity, (event) => event.protocolVout).sort(),
+    [4, 5],
+    "malformed earlier carriers are skipped without suppressing later carriers",
+  );
+  const firstActivity = distinct.activity.find(
+    (event) => event.id === "first-id",
+  );
+  assert.equal(firstActivity.protocol, "pwid1");
+  assert.equal(firstActivity.status, "confirmed");
+  assert.equal(firstActivity.valid, true);
+  assert.equal(firstActivity.dropped, false);
+  assert.equal(firstActivity.reasonCode, "");
+  assert.equal(firstActivity.payload, firstActivity.protocolPayload);
+  assert.equal(firstActivity.rawPayload, firstActivity.protocolPayload);
+  assert.equal(firstActivity.workAmoV5RawScriptWitness.decodeValid, true);
+  assert.equal(
+    firstActivity.workAmoV5RawScriptWitness.payloadHex,
+    Buffer.from(firstActivity.protocolPayload).toString("hex"),
+  );
+
+  for (const [label, payments] of [
+    ["one 2,000-proof output", [payment(2_000)]],
+    ["1,500 plus 500 outputs", [payment(1_500), payment(500)]],
+    ["only one pre-cutoff output", [payment(1_000)]],
+  ]) {
+    const state = idRegistryStateFromTransactions(
+      [transaction(payments)],
+      registryAddress,
+      "livenet",
+    );
+    assert.deepEqual(
+      Array.from(state.records, (record) => record.id),
+      ["first-id"],
+      `${label} cannot be double-claimed across sibling carriers`,
+    );
+  }
+
+  const conflictDoesNotClaim = idRegistryStateFromTransactions(
+    [transaction([payment(1_000)])],
+    registryAddress,
+    "livenet",
+    {
+      initialConfirmedState: {
+        listings: [],
+        records: [{
+          confirmed: true,
+          id: "first-id",
+          ownerAddress,
+          receiveAddress: ownerAddress,
+        }],
+      },
+    },
+  );
+  assert.deepEqual(
+    Array.from(conflictDoesNotClaim.records, (record) => record.id).sort(),
+    ["first-id", "second-id"],
+    "a state-invalid carrier cannot consume the next valid carrier's output",
+  );
+
+  const pendingInitialConfirmedState = {
+    listings: [],
+    records: [{
+      confirmed: true,
+      id: "existing-id",
+      ownerAddress,
+      receiveAddress: ownerAddress,
+    }],
+  };
+  const pendingMixedTransaction = (txid, payments, carriers) => ({
+    blockTime: Date.parse("2026-08-26T12:05:00.000Z"),
+    confirmed: false,
+    txid,
+    vin: [],
+    vout: [...payments, ...carriers],
+  });
+
+  const pendingRegistrationFirst = idRegistryStateFromTransactions(
+    [
+      pendingMixedTransaction(
+        "6".repeat(64),
+        [payment(1_000)],
+        [
+          carrier("pwid1:r2:new-pending-id"),
+          carrier("pwid1:u:existing-id:stolen-receiver"),
+        ],
+      ),
+    ],
+    registryAddress,
+    "livenet",
+    { initialConfirmedState: pendingInitialConfirmedState },
+  );
+  assert.equal(
+    pendingRegistrationFirst.records.find(
+      (record) => record.id === "new-pending-id",
+    )?.confirmed,
+    false,
+    "a lower-vout pending registration must claim the shared physical output first",
+  );
+  assert.equal(
+    pendingRegistrationFirst.pendingEvents.some(
+      (event) => event.id === "existing-id" && event.kind === "update",
+    ),
+    false,
+    "a higher-vout pending mutation cannot steal the registration's physical output",
+  );
+  assert.deepEqual(
+    Array.from(
+      pendingRegistrationFirst.activity,
+      (event) => event.protocolVout,
+    ),
+    [1],
+    "only the funded lower-vout pending registration enters activity",
+  );
+
+  const pendingMutationFirst = idRegistryStateFromTransactions(
+    [
+      pendingMixedTransaction(
+        "7".repeat(64),
+        [payment(1_000)],
+        [
+          carrier("pwid1:u:existing-id:first-receiver"),
+          carrier("pwid1:r2:unfunded-pending-id"),
+        ],
+      ),
+    ],
+    registryAddress,
+    "livenet",
+    { initialConfirmedState: pendingInitialConfirmedState },
+  );
+  assert.equal(
+    pendingMutationFirst.pendingEvents.some(
+      (event) =>
+        event.id === "existing-id" &&
+        event.kind === "update" &&
+        event.protocolVout === 1,
+    ),
+    true,
+    "a lower-vout pending mutation keeps first claim on the shared physical output",
+  );
+  assert.equal(
+    pendingMutationFirst.records.some(
+      (record) => record.id === "unfunded-pending-id",
+    ),
+    false,
+    "a higher-vout pending registration cannot reuse the mutation's physical output",
+  );
+
+  const pendingDistinctOutputs = idRegistryStateFromTransactions(
+    [
+      pendingMixedTransaction(
+        "8".repeat(64),
+        [payment(1_000), payment(546)],
+        [
+          carrier("pwid1:r2:funded-pending-id"),
+          carrier("pwid1:u:funded-pending-id:funded-receiver"),
+        ],
+      ),
+    ],
+    registryAddress,
+    "livenet",
+    { initialConfirmedState: pendingInitialConfirmedState },
+  );
+  assert.equal(
+    pendingDistinctOutputs.records.find(
+      (record) => record.id === "funded-pending-id",
+    )?.confirmed,
+    false,
+    "the pending registration remains visible when it owns a distinct output",
+  );
+  assert.equal(
+    pendingDistinctOutputs.records.find(
+      (record) => record.id === "funded-pending-id",
+    )?.receiveAddress,
+    "funded-receiver",
+    "the pending display record reflects its accepted later same-tx update",
+  );
+  assert.equal(
+    pendingDistinctOutputs.pendingEvents.some(
+      (event) =>
+        event.id === "funded-pending-id" &&
+        event.kind === "update" &&
+        event.protocolVout === 3,
+    ),
+    true,
+    "the later pending mutation remains visible when it owns a distinct output",
+  );
+  assert.deepEqual(
+    Array.from(pendingDistinctOutputs.activity, (event) => ({
+      kind: event.kind,
+      protocolVout: event.protocolVout,
+    })),
+    [
+      { kind: "register", protocolVout: 2 },
+      { kind: "update", protocolVout: 3 },
+    ],
+    "distinct outputs admit and expose both pending carriers in exact sibling order",
+  );
+  assert.equal(
+    pendingDistinctOutputs.records.find(
+      (record) => record.id === "existing-id",
+    )?.receiveAddress,
+    ownerAddress,
+    "same-tx pending working state does not alter the confirmed display record",
+  );
+
+  const registrationTxid = "c".repeat(64);
+  const mutationTxid = "d".repeat(64);
+  const registrationTime = Date.parse("2026-08-26T12:10:00.000Z");
+  const mutationTime = Date.parse("2026-08-26T12:11:00.000Z");
+  const registrationHash = "e".repeat(64);
+  const mutationHash = "f".repeat(64);
+  const rooted = idRegistryStateFromTransactions(
+    [
+      {
+        blockHash: registrationHash,
+        blockHeight: 960_510,
+        blockIndex: 7,
+        blockTime: registrationTime,
+        txid: registrationTxid,
+        vin: [],
+        vout: [payment(1_000), carrier("pwid1:r2:rooted-id")],
+      },
+      {
+        blockHash: mutationHash,
+        blockHeight: 960_511,
+        blockIndex: 8,
+        blockTime: mutationTime,
+        txid: mutationTxid,
+        vin: [],
+        vout: [payment(546), carrier("pwid1:u:rooted-id:new-receiver")],
+      },
+    ],
+    registryAddress,
+    "livenet",
+  );
+  const rootedRecord = rooted.records.find((record) => record.id === "rooted-id");
+  assert.equal(rootedRecord.amountSats, 1_000);
+  assert.equal(rootedRecord.blockHash, registrationHash);
+  assert.equal(rootedRecord.blockHeight, 960_510);
+  assert.equal(rootedRecord.blockIndex, 7);
+  assert.equal(
+    rootedRecord.createdAt,
+    new Date(registrationTime).toISOString(),
+  );
+  assert.equal(rootedRecord.protocolVout, 1);
+  assert.equal(rootedRecord.recordOrdinal, 0);
+  assert.equal(rootedRecord.txid, registrationTxid);
+  assert.equal(rootedRecord.receiveAddress, "new-receiver");
+  assert.equal(rootedRecord.lastEventTxid, mutationTxid);
+  assert.equal(rootedRecord.updatedHeight, 960_511);
+  assert.notEqual(rootedRecord.blockHash, mutationHash);
+  assert.notEqual(rootedRecord.createdAt, new Date(mutationTime).toISOString());
+
+  const duplicateListingTxid = "9".repeat(64);
+  const duplicateListing = idRegistryStateFromTransactions(
+    [{
+      blockHash: "8".repeat(64),
+      blockHeight: 960_512,
+      blockIndex: 9,
+      blockTime: Date.parse("2026-08-26T12:12:00.000Z"),
+      txid: duplicateListingTxid,
+      vin: [],
+      vout: [
+        payment(546),
+        payment(546),
+        carrier("pwid1:list5:fixture-id"),
+        carrier("pwid1:list5:fixture-id"),
+        carrier("pwid1:u:fixture-id:updated-receiver"),
+      ],
+    }],
+    registryAddress,
+    "livenet",
+    {
+      initialConfirmedState: {
+        listings: [],
+        records: [{
+          confirmed: true,
+          id: "fixture-id",
+          ownerAddress,
+          receiveAddress: ownerAddress,
+        }],
+      },
+    },
+  );
+  assert.equal(duplicateListing.listings.length, 1);
+  assert.equal(duplicateListing.listings[0].listingId, duplicateListingTxid);
+  assert.deepEqual(
+    Array.from(duplicateListing.activity, (event) => event.kind),
+    ["list", "update"],
+    "a duplicate same-tx listing is state-invalid and cannot consume the update's physical fee",
+  );
+  assert.equal(
+    duplicateListing.records.find((record) => record.id === "fixture-id")
+      ?.receiveAddress,
+    "updated-receiver",
+  );
+});
+
+check("registry semantic parity rejects critical ID and raw-evidence drift", () => {
+  const txid = "a".repeat(64);
+  const listingId = "b".repeat(64);
+  const blockHash = "c".repeat(64);
+  const protocolPayload = "pwid1:r2:fixture";
+  const activity = {
+    actor: "owner",
+    amountSats: 1_000,
+    auditPaymentOutputs: [{ address: "registry", amountSats: 1_000, vout: 0 }],
+    blockHash,
+    blockHeight: 960_500,
+    blockIndex: 2,
+    confirmed: true,
+    counterparty: "owner",
+    createdAt: "2026-08-26T12:00:00.000Z",
+    dataBytes: Buffer.byteLength(protocolPayload),
+    description: "fixture-id@proofofwork.me claimed by owner and routed to owner.",
+    detail: "No PGP key",
+    dropped: false,
+    id: "fixture-id",
+    inputAddresses: ["owner", "owner"],
+    kind: "id-register",
+    ownerAddress: "owner",
+    participants: ["owner", "owner", "owner"],
+    paymentOutputs: [{ address: "registry", amountSats: 1_000 }],
+    protocolDataBytes: Buffer.byteLength(protocolPayload),
+    protocolPayload,
+    protocolVout: 4,
+    reasonCode: "",
+    receiveAddress: "owner",
+    recordOrdinal: 0,
+    senderAddress: "owner",
+    spentOutpoints: [{ txid: "d".repeat(64), vout: 1 }],
+    tags: ["Confirmed", "Mainnet", "1,000 proofs", "Registration"],
+    title: "ID registered",
+    txid,
+    valid: true,
+    workAmoV5RawScriptWitness: {
+      decodeDetail: "",
+      decodeValid: true,
+      payloadHex: Buffer.from(protocolPayload).toString("hex"),
+      reasonCode: "",
+      scriptPubKeyHex: "6a01",
+    },
+  };
+  const listing = {
+    amountSats: 546,
+    blockHash,
+    blockHeight: 960_501,
+    blockIndex: 1,
+    confirmed: true,
+    createdAt: "2026-08-26T12:01:00.000Z",
+    id: "fixture-id",
+    listingId,
+    listingVersion: "list5",
+    priceSats: 12_345,
+    protocolVout: 3,
+    recordOrdinal: 0,
+    saleAuthorization: {
+      id: "fixture-id",
+      priceSats: 12_345,
+      sellerAddress: "owner",
+      version: "pwid-sale-v4",
+    },
+    sellerAddress: "owner",
+    txid: listingId,
+  };
+  const sale = {
+    amountSats: 546,
+    blockHash,
+    blockHeight: 960_502,
+    blockIndex: 1,
+    buyerAddress: "buyer",
+    confirmed: true,
+    createdAt: "2026-08-26T12:02:00.000Z",
+    id: "fixture-id",
+    listingId,
+    priceSats: 12_345,
+    protocolVout: 5,
+    receiveAddress: "buyer",
+    recordOrdinal: 0,
+    sellerAddress: "owner",
+    transferVersion: "buy5",
+    txid: "e".repeat(64),
+  };
+  const record = {
+    amountSats: 1_000,
+    blockHash,
+    blockHeight: 960_499,
+    blockIndex: 1,
+    confirmed: true,
+    createdAt: "2026-08-26T11:59:00.000Z",
+    id: "fixture-id",
+    lastEventTxid: sale.txid,
+    ownerAddress: "buyer",
+    pgpKey: "",
+    protocolVout: 4,
+    receiveAddress: "buyer",
+    recordOrdinal: 0,
+    txid,
+    updatedHeight: sale.blockHeight,
+  };
+  const payload = {
+    activity: [activity],
+    listings: [listing],
+    network: "livenet",
+    records: [record],
+    sales: [sale],
+  };
+  const exact = compareProofIndexRegistryPayloads(payload, structuredClone(payload));
+  assert.deepEqual(exact.confirmed, {
+    activity: [],
+    listings: [],
+    records: [],
+    sales: [],
+  });
+  for (const [collection, field, value] of [
+    ["activity", "protocolVout", 9],
+    ["activity", "receiveAddress", "forged"],
+    ["activity", "protocolPayload", "pwid1:r2:forged"],
+    ["activity", "auditPaymentOutputs", []],
+    ["listings", "priceSats", 99],
+    ["listings", "protocolVout", 9],
+    ["sales", "buyerAddress", "forged"],
+    ["sales", "recordOrdinal", 2],
+    ["records", "amountSats", 546],
+    ["records", "blockHash", "f".repeat(64)],
+    ["records", "blockHeight", 960_500],
+    ["records", "blockIndex", 2],
+    ["records", "createdAt", "2026-08-26T12:00:00.000Z"],
+    ["records", "lastEventTxid", "f".repeat(64)],
+    ["records", "protocolVout", 5],
+    ["records", "recordOrdinal", 1],
+    ["records", "txid", "f".repeat(64)],
+    ["records", "updatedHeight", 960_501],
+  ]) {
+    const drifted = structuredClone(payload);
+    drifted[collection][0][field] = value;
+    assert.notDeepEqual(
+      compareProofIndexRegistryPayloads(payload, drifted).confirmed[collection],
+      [],
+      `${collection}.${field} drift must fail semantic parity`,
+    );
+  }
+
+  const pendingCanonical = {
+    activity: [{ ...activity, confirmed: false, id: "pending-id" }],
+    listings: [],
+    network: "livenet",
+    records: [],
+    sales: [],
+  };
+  const pendingWithoutRaw = structuredClone(pendingCanonical);
+  for (const field of [
+    "auditPaymentOutputs",
+    "blockHash",
+    "blockHeight",
+    "blockIndex",
+    "inputAddresses",
+    "paymentOutputs",
+    "protocolDataBytes",
+    "protocolPayload",
+    "protocolVout",
+    "recordOrdinal",
+    "spentOutpoints",
+    "workAmoV5RawScriptWitness",
+  ]) {
+    delete pendingWithoutRaw.activity[0][field];
+  }
+  assert.deepEqual(
+    compareProofIndexRegistryPayloads(
+      pendingCanonical,
+      pendingWithoutRaw,
+    ).pending.activity,
+    [],
+    "pending parity compares accepted semantics without claiming raw persistence",
+  );
+  pendingWithoutRaw.activity[0].id = "forged-pending-id";
+  assert.notDeepEqual(
+    compareProofIndexRegistryPayloads(
+      pendingCanonical,
+      pendingWithoutRaw,
+    ).pending.activity,
+    [],
+    "accepted pending registry semantic drift must fail parity",
+  );
+
+  const acceptedCurrentIdRegistryActivity = isolatedFunction(
+    READER_PATH,
+    "acceptedCurrentIdRegistryActivity",
+    {
+      compareHistoryItems: () => 0,
+      historyActivityKey: (item) =>
+        `${item.kind}:${item.txid}:${item.protocolVout ?? ""}:${item.recordOrdinal ?? ""}`,
+      idRegistryActivityDisplayItem: (item) => item,
+      normalizedLowerText: (value) => String(value ?? "").trim().toLowerCase(),
+      normalizedTxid: (value) => {
+        const normalized = String(value ?? "").trim().toLowerCase();
+        return /^[0-9a-f]{64}$/u.test(normalized) ? normalized : "";
+      },
+    },
+  );
+  const winner = { ...activity, id: "ai", txid: "8".repeat(64) };
+  const losingPending = {
+    ...activity,
+    confirmed: false,
+    id: "ai",
+    txid: "2".repeat(64),
+  };
+  const acceptedPending = {
+    ...activity,
+    confirmed: false,
+    id: "other",
+    txid: "3".repeat(64),
+  };
+  const accepted = acceptedCurrentIdRegistryActivity(
+    { activity: [winner, losingPending, acceptedPending] },
+    [{ id: "other", txid: acceptedPending.txid }],
+    [],
+  );
+  assert.deepEqual(
+    Array.from(accepted, (item) => item.txid).sort(),
+    [winner.txid, acceptedPending.txid].sort(),
+    "a pending duplicate registration loses only registry-state visibility",
+  );
+});
+
+check("fresh registry activity exposes one exact enriched ID display contract", () => {
+  const idActivityItemsFromEvents = isolatedFunction(
+    API_PATH,
+    "idActivityItemsFromEvents",
+    {
+      ID_LISTING_ANCHOR_VOUT: 2,
+      activityStatusTag: (confirmed) => confirmed ? "Confirmed" : "Pending",
+      networkLabel: () => "Mainnet",
+      shortAddress: (value) => value || "Unknown",
+    },
+  );
+  const txid = "a".repeat(64);
+  const listingId = "b".repeat(64);
+  const sellerAddress = "seller";
+  const ownerAddress = "owner";
+  const buyerAddress = "buyer";
+  const base = {
+    amountSats: 546,
+    auditPaymentOutputs: [{ address: "registry", amountSats: 546, vout: 0 }],
+    blockHash: "c".repeat(64),
+    blockHeight: 960_500,
+    blockIndex: 3,
+    confirmed: true,
+    createdAt: "2026-08-26T12:00:00.000Z",
+    dataBytes: 80,
+    dropped: false,
+    inputAddresses: [sellerAddress, sellerAddress],
+    network: "livenet",
+    paymentOutputs: [{ address: "registry", amountSats: 546 }],
+    payload: "pwid1:fixture",
+    protocol: "pwid1",
+    protocolDataBytes: 60,
+    protocolPayload: "pwid1:fixture",
+    protocolVout: 4,
+    reasonCode: "",
+    rawPayload: "pwid1:fixture",
+    recordOrdinal: 0,
+    spentOutpoints: [{ txid: "d".repeat(64), vout: 1 }],
+    status: "confirmed",
+    txid,
+    valid: true,
+    workAmoV5RawScriptWitness: {
+      decodeDetail: "",
+      decodeValid: true,
+      payloadHex: "00",
+      reasonCode: "",
+      scriptPubKeyHex: "6a00",
+    },
+  };
+  const saleAuthorization = {
+    anchorVout: 2,
+    id: "fixture-id",
+    priceSats: 12_345,
+    sellerAddress,
+    version: "pwid-sale-v4",
+  };
+  const rendered = idActivityItemsFromEvents([
+    {
+      ...base,
+      amountSats: 1_000,
+      id: "fixture-id",
+      kind: "register",
+      ownerAddress,
+      pgpKey: "",
+      receiveAddress: ownerAddress,
+    },
+    {
+      ...base,
+      id: "fixture-id",
+      kind: "list",
+      listingVersion: "list5",
+      priceSats: 12_345,
+      saleAuthorization,
+      sellerAddress,
+      txid: listingId,
+    },
+    {
+      ...base,
+      id: "fixture-id",
+      kind: "seal",
+      listingId,
+      listingVersion: "list5",
+      priceSats: 12_345,
+      saleAuthorization,
+      sellerAddress,
+    },
+    {
+      ...base,
+      id: "fixture-id",
+      kind: "marketTransfer",
+      listingId,
+      listingVersion: "list5",
+      ownerAddress: buyerAddress,
+      priceSats: 12_345,
+      receiveAddress: buyerAddress,
+      saleAuthorization,
+      sellerAddress,
+      transferVersion: "buy5",
+    },
+  ]);
+  const byKind = new Map(rendered.map((item) => [item.kind, item]));
+  for (const kind of ["id-register", "id-list", "id-seal", "id-buy"]) {
+    const item = byKind.get(kind);
+    assert.ok(item, `${kind} must render`);
+    for (const field of [
+      "actor",
+      "amountSats",
+      "blockHash",
+      "blockHeight",
+      "blockIndex",
+      "dataBytes",
+      "description",
+      "inputAddresses",
+      "participants",
+      "paymentOutputs",
+      "payload",
+      "protocol",
+      "protocolDataBytes",
+      "protocolPayload",
+      "protocolVout",
+      "rawPayload",
+      "recordOrdinal",
+      "senderAddress",
+      "spentOutpoints",
+      "status",
+      "tags",
+      "title",
+      "txid",
+      "valid",
+      "workAmoV5RawScriptWitness",
+    ]) {
+      assert.ok(
+        Object.prototype.hasOwnProperty.call(item, field),
+        `${kind}.${field} must be explicit`,
+      );
+    }
+    assert.equal(item.protocolVout, 4);
+    assert.equal(item.recordOrdinal, 0);
+    assert.equal(item.senderAddress, sellerAddress);
+  }
+  assert.equal(byKind.get("id-register").ownerAddress, ownerAddress);
+  assert.equal(byKind.get("id-register").receiveAddress, ownerAddress);
+  assert.equal(byKind.get("id-register").counterparty, ownerAddress);
+  assert.equal(byKind.get("id-list").sellerAddress, sellerAddress);
+  assert.equal(byKind.get("id-list").listingVersion, "list5");
+  assert.equal(byKind.get("id-list").utxo, `${listingId}:2`);
+  assert.equal(byKind.get("id-seal").id, "fixture-id");
+  assert.equal(byKind.get("id-seal").sellerAddress, sellerAddress);
+  assert.equal(byKind.get("id-buy").ownerAddress, buyerAddress);
+  assert.equal(byKind.get("id-buy").receiveAddress, buyerAddress);
+  assert.equal(byKind.get("id-buy").sellerAddress, sellerAddress);
+  assert.match(
+    topLevelFunctionSource(API_PATH, "registryPayload"),
+    /includeAuditEvents:\s*true/u,
+  );
+  const apiSource = fileSource(API_PATH);
+  const registryParityRouteStart = apiSource.indexOf(
+    'if (url.pathname === "/api/v1/internal/registry-parity")',
+  );
+  assert.notEqual(registryParityRouteStart, -1);
+  const registryParityRoute = apiSource.slice(
+    registryParityRouteStart,
+    registryParityRouteStart + 1_500,
+  );
+  assert.match(
+    registryParityRoute,
+    /internalVerifierRequestAllowed\(request\)[\s\S]*await internalRegistryParityPayload\(network\)/u,
+    "the registry parity oracle must use the authenticated first-party fence",
+  );
+  assert.doesNotMatch(
+    registryParityRoute,
+    /registryPayload\(|freshRegistryPayloadWithFallback|safeRegistryPayload|indexedRegistryPayload/u,
+    "the strict parity route cannot substitute cache, fallback, or indexed state",
+  );
+  const strictRegistryBuilder = topLevelFunctionSource(
+    API_PATH,
+    "buildInternalRegistryParityPayload",
+  );
+  assert.match(
+    strictRegistryBuilder,
+    /fetchExactAddressHistoryFromElectrum[\s\S]*hydrateExactConfirmedRegistryHistory[\s\S]*allHeights:\s*true[\s\S]*bypassCache:\s*true[\s\S]*cacheResult:\s*false/u,
+  );
+  assert.match(
+    strictRegistryBuilder,
+    /assertExactRegistryHydration[\s\S]*strictCoreRegistryListingReconciliation/u,
+  );
+  assert.match(
+    strictRegistryBuilder,
+    /finalTip[\s\S]*finalElectrumCheckpoint[\s\S]*before\.snapshotSha256\s*!==\s*after\.snapshotSha256/u,
+  );
+  assert.match(
+    strictRegistryBuilder,
+    /model:\s*"proof-registry-first-party-fenced-v1"/u,
+  );
+  assert.doesNotMatch(
+    strictRegistryBuilder,
+    /fetchRegistryTransactions|fetchAddressTransactionsViaExplorerFallback|registryPayload\(|safeRegistryPayload|proofIndexRegistryPayload/u,
+    "the strict parity builder cannot use explorer, cache, or relational state",
+  );
+  const registryRouteStart = apiSource.indexOf(
+    'if (url.pathname === "/api/v1/registry" || url.pathname === "/api/v1/ids")',
+  );
+  assert.notEqual(registryRouteStart, -1);
+  const registryRoute = apiSource.slice(registryRouteStart, registryRouteStart + 1_600);
+  assert.match(
+    registryRoute,
+    /strictPublicRegistryPayload\(network, \{ fresh: freshRead \}\)[\s\S]*FRESH_READ_CACHE_CONTROL/u,
+    "every public registry branch must use the strict authority helper and disable stale livenet caching",
+  );
+  const strictPublicRegistrySource = topLevelFunctionSource(
+    API_PATH,
+    "strictPublicRegistryPayload",
+  );
+  assert.match(
+    strictPublicRegistrySource,
+    /options\.fresh === true[\s\S]*internalRegistryParityPayload\(network\)[\s\S]*indexedRegistryPayload\(network\)[\s\S]*if \(!indexedPayload\)[\s\S]*internalRegistryParityPayload\(network\)[\s\S]*strictCoreRegistryListingReconciliation\(indexedPayload, network\)/u,
+    "fresh and indexed-null livenet paths must use the fenced direct crawl while indexed state uses strict Core anchors",
+  );
+  assert.doesNotMatch(
+    strictPublicRegistrySource,
+    /safeRegistryPayload\(network\)[\s\S]*network === "livenet"/u,
+    "no livenet branch may fall back to stale registry cache",
+  );
+  assert.match(
+    topLevelFunctionSource(API_PATH, "registrySummaryPayload"),
+    /strictPublicRegistryPayload\(network, \{ fresh \}\)/u,
+    "registry-summary must share the same strict authority",
+  );
+  assert.match(
+    topLevelFunctionSource(
+      API_PATH,
+      "marketplaceSummaryWithSpendableIdListings",
+    ),
+    /strictCoreRegistryListingReconciliation\([\s\S]*payload\.registry[\s\S]*ownedListings/u,
+    "marketplace summaries must fail closed through the Core listing oracle",
+  );
+  const paritySource = fileSource(INDEXER_PARITY_PATH);
+  assert.match(
+    paritySource,
+    /\/api\/v1\/internal\/registry-parity[\s\S]*internalVerifier:\s*true/u,
+  );
+  assert.match(
+    paritySource,
+    /registryParityAuthorityIsComplete\(canonicalRegistryPayload,\s*NETWORK\)/u,
+  );
+  assert.doesNotMatch(
+    paritySource,
+    /readJson\(endpoint\("\/api\/v1\/registry",\s*\{\s*fresh:\s*"1"/u,
+    "strict registry parity must not use the fallback-capable public route",
+  );
+});
+
+check("indexed registry anchors fail closed against exact Core gettxout", async () => {
+  const tip = { blockHash: "a".repeat(64), height: 960_800 };
+  const unspentTxid = "1".repeat(64);
+  const spentTxid = "2".repeat(64);
+  const scriptPubKey = "51";
+  const registryListingUsesCoreAnchor = isolatedFunction(
+    API_PATH,
+    "registryListingUsesCoreAnchor",
+    {
+      saleAuthorizationHasAnchor: (authorization) =>
+        Boolean(
+          authorization?.anchorScriptPubKey &&
+          Number.isSafeInteger(authorization?.anchorValueSats),
+        ),
+    },
+  );
+  const exactBitcoinRpcOutputSats = isolatedFunction(
+    API_PATH,
+    "exactBitcoinRpcOutputSats",
+  );
+  let rpcImplementation = async (method, params) => {
+    if (method === "getblockchaininfo") {
+      return { tip };
+    }
+    assert.equal(method, "gettxout");
+    assert.equal(params[2], true, "gettxout must include mempool spends");
+    if (params[0] === spentTxid) {
+      return { ok: true, result: null };
+    }
+    return {
+      ok: true,
+      result: {
+        bestblock: tip.blockHash,
+        coinbase: false,
+        confirmations: 1,
+        scriptPubKey: { hex: scriptPubKey },
+        value: 0.00000546,
+      },
+    };
+  };
+  const strictCoreRegistryListingReconciliation = isolatedFunction(
+    API_PATH,
+    "strictCoreRegistryListingReconciliation",
+    {
+      TX_FETCH_CONCURRENCY: 4,
+      bitcoinRpc: (...args) => rpcImplementation(...args),
+      compareCanonicalUtf8,
+      errorSummary: (value) => String(value?.message ?? value ?? ""),
+      exactBitcoinRpcOutputSats,
+      exactCoreTipFromBlockchainInfo: (response) => response?.tip ?? null,
+      listingAnchorOutpoint: (listing) => listing.anchor ?? null,
+      mapWithConcurrency: async (items, _limit, mapper) =>
+        Promise.all(items.map(mapper)),
+      registryAuditProjectionSha256: (value) =>
+        createHash("sha256")
+          .update(JSON.stringify(value), "utf8")
+          .digest("hex"),
+      registryAuthorityUnavailable: (message, details = {}) =>
+        Object.assign(new Error(message), { details, statusCode: 503 }),
+      registryListingUsesCoreAnchor,
+      saleAuthorizationHasAnchor: (authorization) =>
+        Boolean(
+          authorization?.anchorScriptPubKey &&
+          Number.isSafeInteger(authorization?.anchorValueSats),
+        ),
+    },
+  );
+  const listing = (listingId, txid, listingVersion = "list5") => ({
+    anchor: { txid, vout: 2 },
+    listingId,
+    listingVersion,
+    saleAuthorization:
+      listingVersion === "list2"
+        ? { version: "pwid-sale-v1" }
+        : {
+            anchorScriptPubKey: scriptPubKey,
+            anchorValueSats: 546,
+          },
+  });
+  const live = listing("live", unspentTxid);
+  const spent = listing("spent", spentTxid);
+  const legacy = listing("legacy", "3".repeat(64), "list2");
+  const payload = {
+    indexedThroughBlock: tip.height,
+    indexedThroughBlockHash: tip.blockHash,
+    listings: [live, spent, legacy],
+    stats: { confirmed: 1 },
+  };
+  const reconciled = await strictCoreRegistryListingReconciliation(
+    payload,
+    "livenet",
+  );
+  assert.deepEqual(
+    reconciled.payload.listings.map((item) => item.listingId),
+    ["live", "legacy"],
+  );
+  assert.equal(reconciled.payload.stats.activeListings, 2);
+  assert.equal(reconciled.payload.stats.listingCount, 2);
+  assert.equal(reconciled.payload.stats.listings, 2);
+  assert.equal(reconciled.evidence.anchoredListingCount, 2);
+  assert.equal(reconciled.evidence.spentListingCount, 1);
+  assert.equal(reconciled.evidence.unspentListingCount, 1);
+  assert.equal(reconciled.evidence.legacyUnanchoredListingCount, 1);
+
+  rpcImplementation = async (method) =>
+    method === "getblockchaininfo"
+      ? { tip }
+      : { error: "rpc unavailable", ok: false };
+  await assert.rejects(
+    strictCoreRegistryListingReconciliation(
+      { ...payload, listings: [live] },
+      "livenet",
+    ),
+    /did not answer gettxout/u,
+  );
+
+  rpcImplementation = async (method) =>
+    method === "getblockchaininfo"
+      ? { tip }
+      : {
+          ok: true,
+          result: {
+            bestblock: tip.blockHash,
+            coinbase: false,
+            confirmations: 0,
+            scriptPubKey: { hex: "52" },
+            value: 0.00000546,
+          },
+        };
+  await assert.rejects(
+    strictCoreRegistryListingReconciliation(
+      { ...payload, listings: [live] },
+      "livenet",
+    ),
+    /conflicting registry anchor evidence/u,
+  );
+
+  let tipReadCount = 0;
+  rpcImplementation = async (method) => {
+    if (method === "getblockchaininfo") {
+      tipReadCount += 1;
+      return {
+        tip:
+          tipReadCount === 1
+            ? tip
+            : { blockHash: "b".repeat(64), height: tip.height + 1 },
+      };
+    }
+    return {
+      ok: true,
+      result: {
+        bestblock: tip.blockHash,
+        coinbase: false,
+        confirmations: 1,
+        scriptPubKey: { hex: scriptPubKey },
+        value: 0.00000546,
+      },
+    };
+  };
+  await assert.rejects(
+    strictCoreRegistryListingReconciliation(
+      { ...payload, listings: [live] },
+      "livenet",
+    ),
+    /Bitcoin Core changed/u,
+  );
+});
+
+check("token listing buyability is fenced by exact stable-tip Core evidence", async () => {
+  const tip = { blockHash: "a".repeat(64), height: 960_801 };
+  const scriptPubKey = "51";
+  const exactBitcoinRpcOutputSats = isolatedFunction(
+    API_PATH,
+    "exactBitcoinRpcOutputSats",
+  );
+  let rpcImplementation = async (method, params) => {
+    if (method === "getblockchaininfo") {
+      return { tip };
+    }
+    assert.equal(method, "gettxout");
+    assert.equal(params[2], true, "gettxout must include mempool spends");
+    return {
+      ok: true,
+      result: {
+        bestblock: tip.blockHash,
+        coinbase: false,
+        confirmations: 1,
+        scriptPubKey: { hex: scriptPubKey },
+        value: 0.00000546,
+      },
+    };
+  };
+  const tokenListingAuthorityUnavailable = isolatedFunction(
+    API_PATH,
+    "tokenListingAuthorityUnavailable",
+  );
+  const strictCoreTokenListingReconciliation = isolatedFunction(
+    API_PATH,
+    "strictCoreTokenListingReconciliation",
+    {
+      TX_FETCH_CONCURRENCY: 4,
+      bitcoinRpc: (...args) => rpcImplementation(...args),
+      compareCanonicalUtf8,
+      errorSummary: (value) => String(value?.message ?? value ?? ""),
+      exactBitcoinRpcOutputSats,
+      exactCoreTipFromBlockchainInfo: (response) => response?.tip ?? null,
+      mapWithConcurrency: async (items, _limit, mapper) =>
+        Promise.all(items.map(mapper)),
+      registryAuditProjectionSha256: (value) =>
+        createHash("sha256")
+          .update(JSON.stringify(value), "utf8")
+          .digest("hex"),
+      tokenListingAnchorOutpoint: (listing) => listing.anchor ?? null,
+      tokenListingAuthorityUnavailable,
+      tokenListingHasConfirmedSaleTicketSeal: () => true,
+      tokenListingRequiresCoreBuyabilityProof: () => true,
+      tokenSaleAuthorizationUsesSaleTicketAnchor: () => true,
+      tokenSaleAuthorizationUsesSpendableSaleTicketAnchor: () => true,
+    },
+  );
+  const listing = (listingId, txid, overrides = {}) => ({
+    anchor: { txid, vout: 2 },
+    confirmed: true,
+    listingId,
+    saleAuthorization: {
+      anchorScriptPubKey: scriptPubKey,
+      anchorValueSats: 546,
+    },
+    sealConfirmed: true,
+    ...overrides,
+  });
+  const live = listing("live", "1".repeat(64));
+  const retained = await strictCoreTokenListingReconciliation(
+    [live],
+    "livenet",
+    { requireAll: true },
+  );
+  assert.equal(retained.listings.length, 1);
+  assert.equal(
+    retained.listings[0],
+    live,
+    "Core reconciliation preserves the exact proven listing object",
+  );
+  assert.equal(retained.evidence.checkedListingCount, 1);
+  assert.equal(retained.evidence.outputListingCount, 1);
+  assert.equal(retained.evidence.spentListingCount, 0);
+  assert.equal(retained.evidence.unspentListingCount, 1);
+  assert.equal(retained.evidence.checkpoint.height, tip.height);
+  assert.equal(retained.evidence.checkpoint.blockHash, tip.blockHash);
+
+  rpcImplementation = async (method) =>
+    method === "getblockchaininfo"
+      ? { tip }
+      : { ok: true, result: null };
+  const spent = await strictCoreTokenListingReconciliation(
+    [live],
+    "livenet",
+    { requireAll: true },
+  );
+  assert.equal(spent.listings.length, 0);
+  assert.equal(spent.evidence.spentListingCount, 1);
+  assert.equal(spent.evidence.unspentListingCount, 0);
+
+  rpcImplementation = async (method) =>
+    method === "getblockchaininfo"
+      ? { tip }
+      : {
+          ok: true,
+          result: {
+            bestblock: tip.blockHash,
+            coinbase: false,
+            confirmations: 0,
+            scriptPubKey: { hex: "52" },
+            value: 0.00000546,
+          },
+        };
+  await assert.rejects(
+    strictCoreTokenListingReconciliation([live], "livenet", {
+      requireAll: true,
+    }),
+    (error) =>
+      error?.statusCode === 503 &&
+      error?.details?.code === "TOKEN_LISTING_AUTHORITY_UNAVAILABLE",
+  );
+
+  rpcImplementation = async (method) =>
+    method === "getblockchaininfo"
+      ? { tip }
+      : { error: "rpc unavailable", ok: false };
+  await assert.rejects(
+    strictCoreTokenListingReconciliation([live], "livenet", {
+      requireAll: true,
+    }),
+    /did not answer gettxout/u,
+  );
+
+  await assert.rejects(
+    strictCoreTokenListingReconciliation(
+      [live, listing("duplicate", "1".repeat(64))],
+      "livenet",
+      { requireAll: true },
+    ),
+    /repeats a physical sale-ticket anchor/u,
+  );
+
+  let tipReadCount = 0;
+  rpcImplementation = async (method) => {
+    if (method === "getblockchaininfo") {
+      tipReadCount += 1;
+      return {
+        tip:
+          tipReadCount === 1
+            ? tip
+            : { blockHash: "b".repeat(64), height: tip.height + 1 },
+      };
+    }
+    return {
+      ok: true,
+      result: {
+        bestblock: tip.blockHash,
+        coinbase: false,
+        confirmations: 1,
+        scriptPubKey: { hex: scriptPubKey },
+        value: 0.00000546,
+      },
+    };
+  };
+  await assert.rejects(
+    strictCoreTokenListingReconciliation([live], "livenet", {
+      requireAll: true,
+    }),
+    /Bitcoin Core changed/u,
+  );
+});
+
+check("strict registry authority proves complete first-party hydration", () => {
+  const txidSetSha256 = (txids) =>
+    createHash("sha256")
+      .update([...txids].sort(compareCanonicalUtf8).join("\n"), "utf8")
+      .digest("hex");
+  const assertExactRegistryHydration = isolatedFunction(
+    API_PATH,
+    "assertExactRegistryHydration",
+    {
+      compareCanonicalUtf8,
+      registryAuthorityUnavailable: (message, details = {}) =>
+        Object.assign(new Error(message), { details, statusCode: 503 }),
+      transactionTxid: (transaction) => transaction?.txid ?? "",
+      txidSetSha256,
+    },
+  );
+  const observed = ["1".repeat(64), "2".repeat(64)];
+  const complete = assertExactRegistryHydration(
+    observed,
+    observed.map((txid) => ({ txid })),
+    "confirmed",
+  );
+  assert.equal(complete.observedCount, 2);
+  assert.equal(complete.hydratedCount, 2);
+  assert.equal(complete.observedSha256, complete.hydratedSha256);
+  assert.throws(
+    () =>
+      assertExactRegistryHydration(
+        observed,
+        [{ txid: observed[0] }],
+        "confirmed",
+      ),
+    /hydration was partial/u,
+  );
+
+  const registryParityAuthorityIsComplete = isolatedFunction(
+    INDEXER_PARITY_PATH,
+    "registryParityAuthorityIsComplete",
+    {
+      arrayLength: (value) => (Array.isArray(value) ? value.length : 0),
+      objectValue: (value) =>
+        value && typeof value === "object" && !Array.isArray(value)
+          ? value
+          : {},
+    },
+  );
+  const hash = (character) => character.repeat(64);
+  const authorityPayload = {
+    _powRegistryParityAuthority: {
+      core: {
+        after: { blockHash: hash("a"), height: 960_800 },
+        before: { blockHash: hash("a"), height: 960_800 },
+      },
+      electrum: {
+        after: {
+          blockHash: hash("a"),
+          confirmedTxidCount: 2,
+          confirmedTxidsSha256: hash("d"),
+          headerSha256: hash("b"),
+          height: 960_800,
+          historyEntryCount: 3,
+          pendingTxidCount: 1,
+          pendingTxidsSha256: hash("e"),
+          snapshotSha256: hash("c"),
+        },
+        before: {
+          blockHash: hash("a"),
+          confirmedTxidCount: 2,
+          confirmedTxidsSha256: hash("d"),
+          headerSha256: hash("b"),
+          height: 960_800,
+          historyEntryCount: 3,
+          pendingTxidCount: 1,
+          pendingTxidsSha256: hash("e"),
+          snapshotSha256: hash("c"),
+        },
+      },
+      generatedAt: "2026-08-26T12:44:34.000Z",
+      hydration: {
+        confirmed: {
+          hydratedCount: 2,
+          hydratedSha256: hash("d"),
+          observedCount: 2,
+          observedSha256: hash("d"),
+        },
+        pending: {
+          hydratedCount: 1,
+          hydratedSha256: hash("e"),
+          observedCount: 1,
+          observedSha256: hash("e"),
+        },
+        totalHydrated: 3,
+        totalObserved: 3,
+      },
+      listingReconciliation: {
+        anchoredListingCount: 2,
+        checkedOutpointsSha256: hash("f"),
+        checkpoint: { blockHash: hash("a"), height: 960_800 },
+        includeMempool: true,
+        inputListingCount: 2,
+        legacyUnanchoredListingCount: 0,
+        model: "proof-registry-core-gettxout-v1",
+        outputListingCount: 1,
+        spentListingCount: 1,
+        unspentListingCount: 1,
+      },
+      model: "proof-registry-first-party-fenced-v1",
+      network: "livenet",
+      pendingMempoolTime: {
+        afterSha256: hash("1"),
+        beforeSha256: hash("1"),
+        count: 1,
+      },
+      source: "electrum://127.0.0.1:50001+bitcoin-core",
+    },
+    indexedThroughBlock: 960_800,
+    indexedThroughBlockHash: hash("a"),
+    listings: [{}],
+    network: "livenet",
+    records: [{}],
+    source: "electrum://127.0.0.1:50001+bitcoin-core",
+    stats: { activeListings: 1, listingCount: 1, listings: 1 },
+  };
+  assert.equal(
+    registryParityAuthorityIsComplete(authorityPayload, "livenet"),
+    true,
+  );
+  const partial = JSON.parse(JSON.stringify(authorityPayload));
+  partial._powRegistryParityAuthority.hydration.confirmed.hydratedCount = 1;
+  assert.equal(registryParityAuthorityIsComplete(partial, "livenet"), false);
+  const staleTip = JSON.parse(JSON.stringify(authorityPayload));
+  staleTip._powRegistryParityAuthority.core.after.blockHash = hash("9");
+  assert.equal(registryParityAuthorityIsComplete(staleTip, "livenet"), false);
+  const staleListing = JSON.parse(JSON.stringify(authorityPayload));
+  staleListing._powRegistryParityAuthority.listingReconciliation.outputListingCount = 2;
+  assert.equal(
+    registryParityAuthorityIsComplete(staleListing, "livenet"),
+    false,
   );
 });
 
@@ -7160,6 +9452,11 @@ check("WORK mint progress stays below 100 until max supply confirms", () => {
   const tokenProgressPercent = isolatedTypeScriptFunction(
     APP_PATH,
     "tokenProgressPercent",
+    {
+      exactIntegerBigInt: (value) => BigInt(value),
+      tokenMaximumSupplyUnits: (_token) => null,
+      tokenSupplyUnits: (_token, value) => BigInt(value),
+    },
   );
   const tokenProgressLabel = isolatedTypeScriptFunction(
     APP_PATH,
@@ -7169,6 +9466,7 @@ check("WORK mint progress stays below 100 until max supply confirms", () => {
   assert.equal(tokenProgressLabel(20_999_000, 21_000_000), "99.995%");
   assert.equal(tokenProgressLabel(21_000_000, 21_000_000), "100%");
 });
+
 
 check("token send preflight retries transient canonical reads only", async () => {
   let attempts = 0;
@@ -7998,6 +10296,7 @@ check("wallet WORK overlay recovers active canonical V8 listings and drops match
           ),
         };
       },
+      tokenPayloadWithSpendableListings: async (payload) => payload,
       tokenPayloadWithCurrentWalletWorkRecoveryListingPolicy,
       tokenSalesWithCanonicalOutspendClosures: (sales) => sales ?? [],
       tokenStateWithRecoveredActiveListingRecords: activeRecoveryState,
@@ -10377,16 +12676,33 @@ check("confirmed invalid credit events remain visible without becoming valid", a
   const historyCursor = isolatedFunction(READER_PATH, "historyCursor", {
     normalizedSnapshotId,
   });
+  const currentRelationalHistoryPageWithScanCoverage = isolatedFunction(
+    READER_PATH,
+    "currentRelationalHistoryPageWithScanCoverage",
+    {
+      dateIso: (value) => new Date(value).toISOString(),
+      newestDateIso: (values) => values.filter(Boolean).sort().at(-1),
+      normalizedLowerText: (value) =>
+        String(value ?? "").trim().toLowerCase(),
+      objectRecord: (value) =>
+        value && typeof value === "object" && !Array.isArray(value)
+          ? value
+          : {},
+      rowNumber,
+    },
+  );
   const historyQueries = [];
   const currentTokenInvalidEventHistoryPage = isolatedFunction(
     READER_PATH,
     "currentTokenInvalidEventHistoryPage",
     {
+      currentRelationalHistoryPageWithScanCoverage,
       dateIso: (value) => new Date(value).toISOString(),
       historyCursor,
       latestProofIndexScanMetadata: async () => ({
         generated_at: "2026-07-11T12:00:00.000Z",
         indexed_through_block: 957_598,
+        payload: { indexedThroughBlockHash: "ab".repeat(32) },
       }),
       newestDateIso: (values) =>
         values.filter(Boolean).sort().at(-1) ?? "2026-07-11T12:00:00.000Z",
@@ -10423,6 +12739,8 @@ check("confirmed invalid credit events remain visible without becoming valid", a
   assert.equal(historyPage.totalCount, 1);
   assert.equal(historyPage.items[0].valid, false);
   assert.equal(historyPage.indexedThroughBlock, 957_598);
+  assert.equal(historyPage.indexedThroughBlockHash, "ab".repeat(32));
+  assert.equal(historyPage.hasMore, false);
   assert.deepEqual(historyQueries[0].params, [
     "livenet",
     "work",
@@ -10467,6 +12785,25 @@ check("confirmed invalid credit events remain visible without becoming valid", a
     ),
     sentinelPage,
   );
+  assert.equal(
+    await proofIndexTokenHistoryPayload(
+      "livenet",
+      "work",
+      "invalidevents",
+      new URLSearchParams({ address: senderAddress }),
+    ),
+    sentinelPage,
+  );
+  const tokenHistorySafeKind = isolatedFunction(
+    READER_PATH,
+    "tokenHistorySafeKind",
+  );
+  const normalizedTokenHistoryKind = isolatedFunction(
+    API_PATH,
+    "normalizedTokenHistoryKind",
+  );
+  assert.equal(tokenHistorySafeKind("invalidevents"), "invalidEvents");
+  assert.equal(normalizedTokenHistoryKind("invalidevents"), "invalidEvents");
 });
 
 check("unpinned mint and market history use current relational pages", async () => {
@@ -10481,22 +12818,46 @@ check("unpinned mint and market history use current relational pages", async () 
     {
       dateIso: (value) => new Date(value).toISOString(),
       newestDateIso: (values) => values.filter(Boolean).sort().at(-1),
+      normalizedLowerText: (value) =>
+        String(value ?? "").trim().toLowerCase(),
+      objectRecord: (value) =>
+        value && typeof value === "object" && !Array.isArray(value)
+          ? value
+          : {},
       rowNumber: (row, key) => Number(row?.[key] ?? 0),
     },
   );
   const mintPage = {
     cursor: "0",
+    end: 1,
     indexedAt: "2026-07-10T12:00:00.000Z",
     indexedThroughBlock: 957_417,
     items: [{ txid: "1".repeat(64) }],
+    limit: 10,
+    nextCursor: "",
+    page: 0,
+    pageCount: 1,
+    pageSize: 10,
+    query: "",
     source: "proof-indexer-token-mint-events",
+    start: 0,
+    totalCount: 1,
   };
   const marketPage = {
     cursor: "0",
+    end: 1,
     indexedAt: "2026-07-10T13:00:00.000Z",
     indexedThroughBlock: 957_408,
     items: [{ txid: "2".repeat(64) }],
+    limit: 10,
+    nextCursor: "",
+    page: 0,
+    pageCount: 1,
+    pageSize: 10,
+    query: "",
     source: "proof-indexer-token-events",
+    start: 0,
+    totalCount: 1,
   };
   let embeddedSnapshotReads = 0;
   let mintReads = 0;
@@ -10558,7 +12919,13 @@ check("unpinned mint and market history use current relational pages", async () 
           "ab".repeat(32),
         );
         return _kind === "listings"
-          ? { ...marketPage, items: [], kind: "listings", totalCount: 0 }
+          ? {
+              ...marketPage,
+              end: 0,
+              items: [],
+              kind: "listings",
+              totalCount: 0,
+            }
           : marketPage;
       },
       tokenHistoryFilterNeedles: () => [],
@@ -10598,9 +12965,100 @@ check("unpinned mint and market history use current relational pages", async () 
   assert.equal(mintResult.indexedThroughBlock, 959_062);
   assert.equal(marketResult.indexedThroughBlock, 959_062);
   assert.equal(listingsResult.indexedThroughBlock, 959_062);
+  assert.equal(mintResult.indexedThroughBlockHash, "ab".repeat(32));
+  assert.equal(marketResult.indexedThroughBlockHash, "ab".repeat(32));
+  assert.equal(listingsResult.indexedThroughBlockHash, "ab".repeat(32));
   assert.equal(mintResult.indexedAt, scan.generated_at);
   assert.equal(marketResult.indexedAt, scan.generated_at);
   assert.equal(listingsResult.indexedAt, scan.generated_at);
+  assert.equal(mintResult.hasMore, false);
+  assert.equal(marketResult.hasMore, false);
+  assert.equal(listingsResult.hasMore, false);
+  assert.equal(
+    currentRelationalHistoryPageWithScanCoverage(marketPage, {
+      ...scan,
+      payload: {},
+    }),
+    null,
+    "a hashless scan cannot certify an unpinned relational history page",
+  );
+  assert.equal(
+    currentRelationalHistoryPageWithScanCoverage(marketPage, {
+      ...scan,
+      source_hashes: { blockScan: "cd".repeat(32) },
+    }),
+    null,
+    "divergent scan hash declarations must fail closed",
+  );
+  assert.equal(
+    currentRelationalHistoryPageWithScanCoverage(
+      { ...marketPage, indexedThroughBlock: 959_063 },
+      scan,
+    ),
+    null,
+    "a relational page cannot outrun the scan hash it exposes",
+  );
+  assert.equal(
+    currentRelationalHistoryPageWithScanCoverage(
+      { ...marketPage, end: 0 },
+      scan,
+    ),
+    null,
+    "a relational page cannot expose inconsistent pagination",
+  );
+  assert.equal(
+    currentRelationalHistoryPageWithScanCoverage(
+      { ...marketPage, hasMore: true },
+      scan,
+    ),
+    null,
+    "a relational page cannot expose a divergent hasMore flag",
+  );
+
+  for (const functionName of [
+    "currentTokenTransferHistoryPage",
+    "currentTokenInvalidEventHistoryPage",
+  ]) {
+    assert.match(
+      topLevelFunctionSource(READER_PATH, functionName),
+      /currentRelationalHistoryPageWithScanCoverage/u,
+      `${functionName} must expose scan-bound history coverage`,
+    );
+  }
+  assert.match(
+    topLevelFunctionSource(READER_PATH, "proofIndexTokenHistoryPayload"),
+    /eligibility\.kind === "holders"[\s\S]*currentRelationalHistoryPageWithScanCoverage\(page, scan\)/u,
+    "scoped holder history must expose scan-bound coverage",
+  );
+
+  const pageUsesCurrentCursorContract = isolatedFunction(
+    INDEXER_PARITY_PATH,
+    "pageUsesCurrentCursorContract",
+    { numberValue: (value) => Number(value) || 0 },
+  );
+  const tokenHistoryPageHasExactCoverage = isolatedFunction(
+    INDEXER_PARITY_PATH,
+    "tokenHistoryPageHasExactCoverage",
+    { pageUsesCurrentCursorContract },
+  );
+  assert.equal(
+    tokenHistoryPageHasExactCoverage(marketResult, ""),
+    true,
+  );
+  assert.equal(
+    tokenHistoryPageHasExactCoverage(
+      { ...marketResult, indexedThroughBlockHash: "" },
+      "",
+    ),
+    false,
+  );
+  assert.equal(
+    tokenHistoryPageHasExactCoverage(
+      { ...marketResult, hasMore: true },
+      "",
+    ),
+    false,
+  );
 });
 
 check("invalid listing attempts inherit their canonical credit scope", () => {
@@ -11364,6 +13822,7 @@ check("stored canonical summaries require component and public Log count checks"
     "eligibleCanonicalSummarySnapshotPayload",
     {
       canonicalSummaryAccountingModelsCurrent: () => true,
+      canonicalSummarySnapshotStorageEligible: () => true,
       canonicalSummaryCoverage: () => 957_641,
       exactSummarySnapshotTotalsCurrent: () => true,
       objectPayload: (value) =>
@@ -18857,6 +21316,16 @@ check("same-height pending membership versions the canonical Log snapshot", asyn
 check("an outer ledger height cannot promote embedded history coverage", () => {
   const indexedThroughBlockFromItems = (items) =>
     Math.max(0, ...items.map((item) => Number(item.blockHeight ?? 0))) || null;
+  const registryHistoryIndexedThroughBlockFromItems = isolatedFunction(
+    READER_PATH,
+    "registryHistoryIndexedThroughBlockFromItems",
+  );
+  assert.equal(
+    registryHistoryIndexedThroughBlockFromItems([
+      { blockHeight: 100, updatedHeight: 150 },
+    ]),
+    150,
+  );
   const embeddedHistoryIndexedThroughBlock = isolatedFunction(
     READER_PATH,
     "embeddedHistoryIndexedThroughBlock",
@@ -18874,6 +21343,7 @@ check("an outer ledger height cannot promote embedded history coverage", () => {
       historyCursor: (snapshotId, offset) => `${snapshotId}:${offset}`,
       historyItemsMatchingQuery: (items) => items,
       indexedThroughBlockFromItems,
+      registryHistoryIndexedThroughBlockFromItems,
     },
   );
   const page = historyPageFromStoredPayload(
@@ -18893,6 +21363,25 @@ check("an outer ledger height cannot promote embedded history coverage", () => {
     { limit: 25, offset: 0, query: "" },
   );
   assert.equal(page.indexedThroughBlock, 120);
+  assert.equal(page.hasMore, false);
+  const registryPage = historyPageFromStoredPayload(
+    {
+      coverageScope: "registry-filtered-items",
+      indexedAt: "2026-07-03T00:00:00.000Z",
+      indexedThroughBlock: 999,
+      items: [{
+        blockHeight: 100,
+        txid: "4".repeat(64),
+        updatedHeight: 150,
+      }],
+      source: "fixture",
+    },
+    null,
+    "livenet",
+    "records",
+    { limit: 25, offset: 0, query: "" },
+  );
+  assert.equal(registryPage.indexedThroughBlock, 150);
 });
 
 check("an outer ledger height cannot promote embedded token state", () => {
@@ -18922,37 +21411,80 @@ check("an outer ledger height cannot promote embedded token state", () => {
 });
 
 check("Q16 canonical summary reuse binds the real token-state commitment and checkpoint model", async () => {
-  const objectValue = (value) =>
+  const objectPayload = (value) =>
     value && typeof value === "object" && !Array.isArray(value)
       ? value
-      : {};
+      : null;
   const canonicalJsonText = isolatedFunction(
     BACKFILL_PATH,
     "canonicalJsonText",
+  );
+  const stateModel = "canonical-work-q16-transition-checkpoint-v1";
+  const stateKeys = Object.freeze([
+    "amountStorageModel",
+    "closingStateCommitment",
+    "decimals",
+    "indexedThroughBlock",
+    "indexedThroughBlockHash",
+    "model",
+    "precisionModel",
+    "tokenStateCommitment",
+    "transitionModel",
+    "unitScale",
+    "workTokenStateModel",
+  ]);
+  const stateWitness = isolatedFunction(
+    BACKFILL_PATH,
+    "canonicalWorkQ16LedgerSnapshotStateWitness",
+    {
+      WORK_AMO_V5_PAYLOAD_COMMITMENT_MODEL,
+      WORK_AMO_V5_STATE_COMMITMENT_MODEL,
+      WORK_AMO_V8_BLOCK_SEQUENCER_MODEL,
+      WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL,
+      WORK_PRECISION_V2_MODEL,
+      WORK_Q16_LEDGER_SNAPSHOT_STATE_KEYS: stateKeys,
+      WORK_Q16_LEDGER_SNAPSHOT_STATE_MODEL: stateModel,
+      WORK_SUBATOM_DECIMALS,
+      WORK_SUBATOM_PROJECTION_MODEL,
+      WORK_SUBATOM_UNIT_SCALE_TEXT,
+      objectPayload,
+    },
   );
   const stateMatches = isolatedFunction(
     BACKFILL_PATH,
     "exactWorkQ16LedgerSnapshotStateMatches",
     {
-      WORK_PRECISION_V2_MODEL,
-      WORK_SUBATOM_DECIMALS,
-      WORK_SUBATOM_PROJECTION_MODEL,
-      WORK_SUBATOM_UNIT_SCALE_TEXT,
       canonicalJsonText,
-      objectValue,
-      workAmoV8CanonicalTokenStateCommitment,
+      canonicalWorkQ16LedgerSnapshotStateWitness: stateWitness,
     },
   );
+  const closingState = workAmoV8CanonicalTokenStatePreimage({
+    confirmedSupplySubatoms: "1",
+    holders: [{ address: "holder", balanceSubatoms: "1" }],
+    listings: [],
+  });
+  const commitment = workAmoV8CanonicalTokenStateCommitment(closingState);
+  const closingSufficientState = {
+    marker: "exact-closing-state",
+    tokenStateCommitment: commitment,
+  };
+  const closingStateCommitment = {
+    model: WORK_AMO_V5_STATE_COMMITMENT_MODEL,
+    payloadBytes: 777,
+    sha256: "c".repeat(64),
+  };
   const expected = {
     amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
-    confirmedSupplySubatoms: "1",
+    closingStateCommitment,
     decimals: WORK_SUBATOM_DECIMALS,
-    holders: [{ address: "holder", balanceSubatoms: "1" }],
     indexedThroughBlock: 960_601,
     indexedThroughBlockHash: "a".repeat(64),
-    listings: [],
+    model: stateModel,
     precisionModel: WORK_PRECISION_V2_MODEL,
+    tokenStateCommitment: commitment,
+    transitionModel: WORK_AMO_V8_BLOCK_SEQUENCER_MODEL,
     unitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,
+    workTokenStateModel: WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL,
   };
   assert.equal(stateMatches({ ...expected }, expected), true);
   assert.equal(
@@ -18961,10 +21493,21 @@ check("Q16 canonical summary reuse binds the real token-state commitment and che
   );
   assert.equal(
     stateMatches(
+      { ...expected, unitScale: Number(WORK_SUBATOM_UNIT_SCALE_TEXT) },
+      expected,
+    ),
+    false,
+    "the exact unit scale is a JSON string, not a coercible number",
+  );
+  assert.equal(stateWitness("scalar"), null);
+  assert.equal(
+    stateMatches(
       {
         ...expected,
-        confirmedSupplySubatoms: "2",
-        holders: [{ address: "holder", balanceSubatoms: "2" }],
+        tokenStateCommitment: {
+          ...commitment,
+          sha256: "b".repeat(64),
+        },
       },
       expected,
     ),
@@ -18976,6 +21519,109 @@ check("Q16 canonical summary reuse binds the real token-state commitment and che
       expected,
     ),
     false,
+  );
+  assert.equal(
+    stateMatches({ ...expected, transfers: ["stale"] }, expected),
+    false,
+  );
+  assert.equal(
+    stateMatches(
+      {
+        ...expected,
+        tokenStateCommitment: {
+          ...commitment,
+          historical: ["stale"],
+        },
+      },
+      expected,
+    ),
+    false,
+  );
+
+  let transitionQuery = null;
+  const exactState = isolatedFunction(
+    BACKFILL_PATH,
+    "exactWorkQ16LedgerSnapshotState",
+    {
+      NETWORK: "livenet",
+      WORK_AMO_V5_PAYLOAD_COMMITMENT_MODEL,
+      WORK_AMO_V5_STATE_COMMITMENT_MODEL,
+      WORK_AMO_V8_BLOCK_SEQUENCER_MODEL,
+      WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL,
+      WORK_PRECISION_V2_MODEL,
+      WORK_Q16_LEDGER_SNAPSHOT_STATE_MODEL: stateModel,
+      WORK_SUBATOM_DECIMALS,
+      WORK_SUBATOM_PROJECTION_MODEL,
+      WORK_SUBATOM_UNIT_SCALE_TEXT,
+      canonicalJsonText,
+      canonicalWorkQ16LedgerSnapshotStateWitness: stateWitness,
+      currentWorkPrecisionV2Marker: async () => ({
+        activationHeight: 960_601,
+      }),
+      workAmoV5CanonicalStateCommitment: (candidate) => {
+        assert.deepEqual(candidate, closingSufficientState);
+        return closingStateCommitment;
+      },
+      workAmoV8CanonicalTokenStateCommitment,
+      workAmoV8CanonicalTokenStatePreimage,
+    },
+  );
+  const staleMarker = "stale-history-must-not-survive";
+  const staleApiState = {
+    holders: [{ address: staleMarker, balanceSubatoms: "1" }],
+    listings: [{ payload: "x".repeat(2 * 1024 * 1024) }],
+    transfers: [{ payload: "y".repeat(2 * 1024 * 1024) }],
+  };
+  const built = await exactState(
+    {
+      async query(sql, params) {
+        transitionQuery = { params: Array.from(params), sql: String(sql) };
+        return {
+          rows: [{
+            block_hash: "a".repeat(64),
+            closing_state_payload_bytes:
+              closingStateCommitment.payloadBytes,
+            closing_state_sha256: closingStateCommitment.sha256,
+            closing_token_state: closingState,
+            closing_sufficient_state: closingSufficientState,
+            model: WORK_AMO_V8_BLOCK_SEQUENCER_MODEL,
+            state_commitment_model:
+              WORK_AMO_V5_STATE_COMMITMENT_MODEL,
+            work_token_state_model:
+              WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL,
+          }],
+        };
+      },
+    },
+    staleApiState,
+    960_601,
+  );
+  assert.deepEqual(JSON.parse(JSON.stringify(built)), expected);
+  assert.deepEqual(Object.keys(built).sort(), [...stateKeys].sort());
+  assert.ok(Buffer.byteLength(JSON.stringify(built), "utf8") < 1_024);
+  assert.equal(JSON.stringify(built).includes(staleMarker), false);
+  for (const historicalKey of [
+    "activity",
+    "closedListings",
+    "holders",
+    "invalidEvents",
+    "listings",
+    "mints",
+    "sales",
+    "tokens",
+    "transfers",
+  ]) {
+    assert.equal(Object.hasOwn(built, historicalKey), false);
+  }
+  assert.deepEqual(transitionQuery.params, [
+    "livenet",
+    960_601,
+    WORK_AMO_V8_BLOCK_SEQUENCER_MODEL,
+    WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL,
+  ]);
+  assert.match(
+    transitionQuery.sql,
+    /closingTokenState[\s\S]*closingSufficientState/u,
   );
 
   const projectionModelAtHeight = isolatedFunction(
@@ -19000,65 +21646,6 @@ check("Q16 canonical summary reuse binds the real token-state commitment and che
     WORK_SUBATOM_PROJECTION_MODEL,
   );
   assert.equal(await projectionModelAtHeight({}, 0), "");
-
-  const tokenStatePayloads = isolatedFunction(
-    BACKFILL_PATH,
-    "canonicalSummaryTokenStatePayloads",
-    {
-      WORK_ATOMIC_PROJECTION_MODEL,
-      WORK_SUBATOM_PROJECTION_MODEL,
-      objectValue,
-    },
-  );
-  assert.equal(
-    JSON.stringify(tokenStatePayloads(
-      WORK_SUBATOM_PROJECTION_MODEL,
-      [
-        {
-          tokenStatePayloads: { legacy: true },
-          workAmountStorageModel: WORK_ATOMIC_PROJECTION_MODEL,
-        },
-        {
-          tokenStatePayloads: { current: true },
-          workAmountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
-        },
-      ],
-    )),
-    JSON.stringify({ current: true }),
-  );
-  const mergedSameModelStates = tokenStatePayloads(
-    WORK_SUBATOM_PROJECTION_MODEL,
-    [
-      {
-        tokenStatePayloads: {
-          priorOnly: true,
-          shared: "previous",
-        },
-        workAmountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
-      },
-      {
-        tokenStatePayloads: {
-          latestOnly: true,
-          shared: "ledger",
-        },
-        workAmountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
-      },
-    ],
-  );
-  assert.equal(mergedSameModelStates.priorOnly, true);
-  assert.equal(mergedSameModelStates.latestOnly, true);
-  assert.equal(mergedSameModelStates.shared, "ledger");
-  assert.equal(
-    JSON.stringify(tokenStatePayloads(
-      WORK_SUBATOM_PROJECTION_MODEL,
-      [{
-        tokenStatePayloads: { current: true },
-        workAmountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
-      }],
-      { historicalCheckpoint: true },
-    )),
-    JSON.stringify({}),
-  );
 });
 
 check("the hot worker publishes a fresh canonical summary with conservative coverage", async () => {
@@ -19097,22 +21684,33 @@ check("the hot worker publishes a fresh canonical summary with conservative cove
   };
   const workTokenId =
     "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8";
+  const checkpointHash = "a".repeat(64);
   const exactWorkState = {
     amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
-    confirmedSupplySubatoms: "1000000000000000000",
+    closingStateCommitment: {
+      model: WORK_AMO_V5_STATE_COMMITMENT_MODEL,
+      payloadBytes: 999,
+      sha256: "c".repeat(64),
+    },
     decimals: WORK_SUBATOM_DECIMALS,
-    holders: [],
     indexedThroughBlock: 101,
-    indexedThroughBlockHash: "",
-    listings: [],
-    marker: "exact-transition-q16",
+    indexedThroughBlockHash: checkpointHash,
+    model: "canonical-work-q16-transition-checkpoint-v1",
     precisionModel: WORK_PRECISION_V2_MODEL,
+    tokenStateCommitment: {
+      model: WORK_AMO_V5_PAYLOAD_COMMITMENT_MODEL,
+      payloadBytes: 573,
+      sha256: "b".repeat(64),
+    },
+    transitionModel: WORK_AMO_V8_BLOCK_SEQUENCER_MODEL,
     unitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,
+    workTokenStateModel: WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL,
   };
   const exactWorkQ16CanonicalSummaryState = async (_client, payload) => {
-    const candidate = objectValue(payload?.tokenStatePayloads)[workTokenId];
+    const candidate = objectValue(payload?.workSufficientState);
     return {
-      ready: candidate?.marker === exactWorkState.marker,
+      ready:
+        JSON.stringify(candidate) === JSON.stringify(exactWorkState),
       required: true,
       state: exactWorkState,
     };
@@ -19225,6 +21823,7 @@ check("the hot worker publishes a fresh canonical summary with conservative cove
   );
   const summaryFor = (key, height, snapshotId = `full-${height}`) => ({
     indexedThroughBlock: height,
+    indexedThroughBlockHash: checkpointHash,
     snapshotId,
     ...(key === "workSummary"
       ? { floor: { indexedThroughBlock: height } }
@@ -19279,6 +21878,14 @@ check("the hot worker publishes a fresh canonical summary with conservative cove
     ),
   };
   const inserted = [];
+  const canonicalSummarySnapshotPayload = isolatedFunction(
+    BACKFILL_PATH,
+    "canonicalSummarySnapshotPayload",
+    {
+      NETWORK: "livenet",
+      objectPayload,
+    },
+  );
   const storeCanonicalSummarySnapshot = isolatedFunction(
     BACKFILL_PATH,
     "storeCanonicalSummarySnapshot",
@@ -19292,30 +21899,20 @@ check("the hot worker publishes a fresh canonical summary with conservative cove
       WORK_MARKET_V2_AUTH_VERSION: "pwt-sale-v3",
       WORK_MARKET_V4_AUTH_VERSION: "pwt-sale-v4",
       WORK_TOKEN_ID: workTokenId,
-      canonicalSummaryTokenStatePayloads: (
-        workAmountStorageModel,
-        sources,
-        { historicalCheckpoint = false } = {},
-      ) => {
-        if (historicalCheckpoint) {
-          return {};
-        }
-        return sources.reduce((merged, source) =>
-          source?.workAmountStorageModel === workAmountStorageModel
-            ? {
-                ...merged,
-                ...objectValue(source?.tokenStatePayloads),
-              }
-            : merged,
-        {});
-      },
       canonicalSummaryAccountingModelsCurrent,
       canonicalSummaryCoverage,
+      canonicalSummarySnapshotPayload,
+      canonicalSummarySnapshotStorageEligible: () => true,
       createHash,
+      assertCanonicalSummarySnapshotStorageBudget: (payload) =>
+        Buffer.byteLength(JSON.stringify(payload), "utf8"),
       workProjectionModelAtHeight: async () =>
         WORK_SUBATOM_PROJECTION_MODEL,
       exactWorkQ16CanonicalSummaryState,
-      latestBlockScanCheckpoint: async () => ({ height: 101 }),
+      latestBlockScanCheckpoint: async () => ({
+        blockHash: checkpointHash,
+        height: 101,
+      }),
       numberOrNull,
       objectPayload,
       objectValue,
@@ -19335,9 +21932,11 @@ check("the hot worker publishes a fresh canonical summary with conservative cove
         assert.equal(options.timeoutMs, 600_000);
         return {
           indexedThroughBlock: 101,
+          indexedThroughBlockHash: checkpointHash,
           ledger: {
             checks: [{ name: "ledger-covers-node-tip", ok: true }],
             indexedThroughBlock: 101,
+            indexedThroughBlockHash: checkpointHash,
             metrics: { indexedThroughBlock: 101 },
             ok: true,
             snapshotId: "full-101",
@@ -19381,19 +21980,43 @@ check("the hot worker publishes a fresh canonical summary with conservative cove
   assert.equal(inserted[0].params[3], 101);
   const stored = JSON.parse(inserted[0].params[7]);
   assert.equal(stored.indexedThroughBlock, 101);
-  assert.equal(stored.tokenState.marker, "canonical");
   assert.equal(
-    stored.tokenStatePayloads[workTokenId].marker,
-    "exact-transition-q16",
+    Object.hasOwn(stored, "tokenState"),
+    false,
+    "a canonical summary must not inherit the ledger token-state payload",
   );
-  assert.equal(
-    stored.tokenStatePayloads[workTokenId].amountStorageModel,
-    WORK_SUBATOM_PROJECTION_MODEL,
+  assert.deepEqual(stored.workSufficientState, exactWorkState);
+  const readerStateWitness = isolatedFunction(
+    READER_PATH,
+    "canonicalWorkQ16LedgerSnapshotStateWitness",
+    {
+      WORK_AMO_V5_PAYLOAD_COMMITMENT_MODEL,
+      WORK_AMO_V5_STATE_COMMITMENT_MODEL,
+      WORK_AMO_V8_BLOCK_SEQUENCER_MODEL,
+      WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL,
+      WORK_PRECISION_V2_MODEL,
+      WORK_Q16_LEDGER_SNAPSHOT_STATE_KEYS: Object.freeze(
+        Object.keys(exactWorkState),
+      ),
+      WORK_Q16_LEDGER_SNAPSHOT_STATE_MODEL:
+        "canonical-work-q16-transition-checkpoint-v1",
+      WORK_SUBATOM_DECIMALS,
+      WORK_SUBATOM_PROJECTION_MODEL,
+      WORK_SUBATOM_UNIT_SCALE_TEXT,
+      objectRecord: (value) =>
+        value && typeof value === "object" && !Array.isArray(value)
+          ? value
+          : {},
+    },
   );
-  assert.equal(
-    stored.tokenStatePayloads[workTokenId].decimals,
-    WORK_SUBATOM_DECIMALS,
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(
+      readerStateWitness(stored.workSufficientState),
+    )),
+    exactWorkState,
+    "a freshly written transition checkpoint must validate under the reader contract",
   );
+  assert.equal(Object.hasOwn(stored, "tokenStatePayloads"), false);
   assert.equal(
     stored.workAmountStorageModel,
     WORK_SUBATOM_PROJECTION_MODEL,
@@ -19404,7 +22027,11 @@ check("the hot worker publishes a fresh canonical summary with conservative cove
     stored.summaryRefresh.publicLogFingerprint,
     publicLogFingerprint,
   );
-  assert.equal(stored.activityPayload.marker, "derived-full-101");
+  assert.equal(
+    Object.hasOwn(stored, "activityPayload"),
+    false,
+    "same-snapshot rendered histories must not be copied into the canonical summary",
+  );
   assert.ok(stored.sourceHashes.canonicalSummary);
   assert.match(
     inserted[0].sql,
@@ -19469,9 +22096,13 @@ check("the hot worker publishes a fresh canonical summary with conservative cove
   assert.equal(repairedMissingStateResult.skipped, false);
   assert.equal(inserted.length, 2);
   const repairedMissingState = JSON.parse(inserted[1].params[7]);
+  assert.deepEqual(
+    repairedMissingState.workSufficientState,
+    exactWorkState,
+  );
   assert.equal(
-    repairedMissingState.tokenStatePayloads[workTokenId].marker,
-    "exact-transition-q16",
+    Object.hasOwn(repairedMissingState, "tokenStatePayloads"),
+    false,
   );
   await rejection(
     storeCanonicalSummarySnapshot({
@@ -19487,7 +22118,8 @@ check("the hot worker publishes a fresh canonical summary with conservative cove
 
   previousPayload = {
     ...previousPayload,
-    tokenStatePayloads: { [workTokenId]: exactWorkState },
+    indexedThroughBlockHash: checkpointHash,
+    workSufficientState: exactWorkState,
   };
   const currentResult = await storeCanonicalSummarySnapshot({
     async query() {
@@ -19507,7 +22139,9 @@ check("ledger snapshot retention preserves pinned issuance oracles", async () =>
     BACKFILL_PATH,
     "pruneLedgerSnapshots",
     {
+      CANONICAL_SUMMARY_SNAPSHOT_MAX_BYTES: 8 * 1024 * 1024,
       LEDGER_CANONICAL_SUMMARY_RETENTION: 4_096,
+      LEDGER_CANONICAL_SUMMARY_LOGICAL_BYTE_BUDGET: 512 * 1024 * 1024,
       LEDGER_SCAN_SNAPSHOT_RETENTION: 20_000,
       NETWORK: "livenet",
       WORK_MARKET_V2_AUTH_VERSION: "pwt-sale-v3",
@@ -19523,8 +22157,24 @@ check("ledger snapshot retention preserves pinned issuance oracles", async () =>
         queryParams = Array.from(params);
         return {
           rows: [
-            { canonical_summary: true, snapshot_id: "old-summary" },
-            { canonical_summary: false, snapshot_id: "old-scan" },
+            {
+              canonical_summary_before_max_versions_per_height: 3,
+              canonical_summary_detached_versions_removed: 1,
+              canonical_summary_duplicate_versions_removed: 0,
+              canonical_summary_heights: 2,
+              canonical_summary_logical_byte_budget_removed: 0,
+              canonical_summary_logical_byte_headroom: 512 * 1024 * 1024 - 96,
+              canonical_summary_logical_bytes: 96,
+              canonical_summary_max_versions_per_height: 1,
+              canonical_summary_protected_rows: 2,
+              canonical_summary_row_budget_removed: 0,
+              canonical_summary_row_headroom: 4_094,
+              canonical_summary_rows: 2,
+              canonical_summary_unsafe_heights: 0,
+              deleted_canonical_summaries: 1,
+              deleted_scan_or_derived: 1,
+              deleted_total: 2,
+            },
           ],
         };
       },
@@ -19542,10 +22192,53 @@ check("ledger snapshot retention preserves pinned issuance oracles", async () =>
       ["pwt-sale-v3", "pwt-sale-v4", "pwt-sale-v5"],
       "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8",
       "pwt-sale-v4",
+      512 * 1024 * 1024,
     ],
   );
-  assert.match(queryText, /dense_rank\(\) OVER/u);
-  assert.match(queryText, /row_number\(\) OVER/u);
+  assert.doesNotMatch(queryText, /dense_rank\(\) OVER/u);
+  assert.match(
+    queryText,
+    /row_number\(\) OVER \(\s*PARTITION BY indexed_through_block/u,
+  );
+  assert.match(
+    queryText,
+    /PARTITION BY indexed_through_block\s*ORDER BY\s*canonical_now DESC NULLS LAST,\s*generated_at DESC,\s*snapshot_id DESC/u,
+    "same-height retention must prefer the exact current canonical block before recency",
+  );
+  assert.match(
+    queryText,
+    /canonical_block_authority AS MATERIALIZED[\s\S]*proof_indexer\.blocks canonical_block[\s\S]*canonical_block\.height =[\s\S]*indexed_through_block[\s\S]*canonical_block\.canonical = true/u,
+  );
+  assert.match(
+    queryText,
+    /canonical_height_safety AS MATERIALIZED[\s\S]*candidate\.payload->>'snapshotId' = candidate\.snapshot_id[\s\S]*candidate\.source_hashes->>'blockScan'[\s\S]*candidate\.payload->>'indexedThroughBlockHash'[\s\S]*candidate\.payload->'summaryRefresh'[\s\S]*->>'indexedThroughBlockHash'/u,
+  );
+  assert.match(
+    queryText,
+    /canonical_summary_shape[\s\S]*unprotected\.canonical_summary_shape[\s\S]*AS canonical_now/u,
+    "same-hash malformed rows must not outrank one strict canonical summary",
+  );
+  assert.match(
+    queryText,
+    /unsafe_canonical_heights AS MATERIALIZED[\s\S]*canonical_block_count <> 1[\s\S]*canonical_snapshot_matches < 1/u,
+  );
+  assert.ok(
+    (queryText.match(/CROSS JOIN retention_guard/gu) ?? []).length === 2,
+    "canonical and scan deletion candidates must both be disabled by the canonical safety guard",
+  );
+  assert.ok(
+    (queryText.match(/retention_guard\.safe_to_prune/gu) ?? []).length === 2,
+    "no snapshot deletion lane may bypass the canonical safety guard",
+  );
+  assert.match(
+    queryText,
+    /sum\(logical_bytes\) OVER[\s\S]*cumulative_logical_bytes/u,
+  );
+  assert.match(queryText, /cumulative_logical_bytes > \$9::bigint/u);
+  assert.match(
+    queryText,
+    /octet_length\([\s\S]*COALESCE\(snapshot\.payload, 'null'::jsonb\)::text/u,
+  );
   assert.match(queryText, /payload->>'issuanceValueSnapshotId'/u);
   assert.match(queryText, /proof_indexer\.events action_event/u);
   assert.match(queryText, /proof_indexer\.transactions action_transaction/u);
@@ -19554,12 +22247,61 @@ check("ledger snapshot retention preserves pinned issuance oracles", async () =>
   assert.match(queryText, /saleAuthorization'->>'oracleBlockHash'/u);
   assert.match(queryText, /source_hashes \? 'canonicalSummary'/u);
   assert.match(queryText, /NOT EXISTS/u);
+  assert.match(
+    queryText,
+    /unprotected AS MATERIALIZED \([\s\S]*NOT EXISTS \([\s\S]*FROM referenced[\s\S]*NOT EXISTS \([\s\S]*FROM work_amo_v5_protected/u,
+  );
   assert.match(queryText, /DELETE FROM proof_indexer\.ledger_snapshots/u);
   assert.deepEqual(JSON.parse(JSON.stringify(result)), {
     canonicalSummaries: 1,
     scanOrDerived: 1,
     total: 2,
+    telemetry: {
+      canonicalSummary: {
+        beforeMaxVersionsPerHeight: 3,
+        detachedVersionsRemoved: 1,
+        duplicateVersionsRemoved: 0,
+        heights: 2,
+        logicalByteBudget: 512 * 1024 * 1024,
+        logicalByteBudgetRemoved: 0,
+        logicalByteHeadroom: 512 * 1024 * 1024 - 96,
+        logicalBytes: 96,
+        maxVersionsPerHeight: 1,
+        protectedRows: 2,
+        rowBudgetRemoved: 0,
+        rowHeadroom: 4_094,
+        rowLimit: 4_096,
+        rows: 2,
+        unsafeHeights: 0,
+      },
+    },
   });
+
+  const unsafeError = await rejection(
+    pruneLedgerSnapshots(
+      {
+        async query(sql) {
+          const text = String(sql);
+          assert.match(text, /retention_guard\.safe_to_prune/u);
+          return {
+            rows: [{
+              canonical_summary_unsafe_heights: 1,
+              deleted_canonical_summaries: 0,
+              deleted_scan_or_derived: 0,
+              deleted_total: 0,
+            }],
+          };
+        },
+      },
+      { canonicalSummaryLimit: 4_096, scanSnapshotLimit: 20_000 },
+    ),
+    (error) =>
+      error?.statusCode === 503 &&
+      error?.details?.unsafeHeights === 1 &&
+      error?.details?.deletedTotal === 0,
+    "retention must fail closed without deleting when a canonical-summary height has no unique exact canonical match",
+  );
+  assert.match(unsafeError.message, /retention refused 1 canonical-summary height/u);
 });
 
 check("every ledger snapshot deletion preserves immutable AMO V5 seed dependencies", () => {
@@ -19637,6 +22379,7 @@ check("derived ledger snapshots require one exact current WORK projection", asyn
         WORK_TOKEN_ID:
           "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8",
         activitySnapshot: async () => null,
+        assertLedgerSnapshotStorageBudget: () => 0,
         fallbackLedgerSnapshotPayload: async () => {
           throw new Error("fixture must not use fallback");
         },
@@ -19677,7 +22420,9 @@ check("derived ledger snapshots require one exact current WORK projection", asyn
     const client = {
       async query(sql, params) {
         writes.push({ params: Array.from(params), sql: String(sql) });
-        return { rows: [] };
+        return ready
+          ? { rows: [{ snapshot_id: "ledger-100" }] }
+          : { rows: [] };
       },
     };
     if (!ready) {
@@ -19698,6 +22443,7 @@ check("derived ledger snapshots require one exact current WORK projection", asyn
       writes[0].sql,
       /issuanceValueSnapshotId[\s\S]*EXCLUDED\.snapshot_id/u,
     );
+    assert.match(writes[0].sql, /RETURNING snapshot_id/u);
     return payload;
   };
 
@@ -21607,6 +24353,8 @@ check("canonical summary timeouts fail closed unless an eligible prior snapshot 
       canonicalSummaryAccountingModelsCurrent: () => true,
       canonicalSummaryCoverage: () => 100,
       canonicalSummaryRefreshCanDefer,
+      canonicalSummarySnapshotStorageEligible: () => true,
+      assertCanonicalSummarySnapshotStorageBudget: () => 0,
       workProjectionModelAtHeight: async () =>
         WORK_SUBATOM_PROJECTION_MODEL,
       exactWorkQ16CanonicalSummaryState: async () => ({
@@ -21682,6 +24430,8 @@ check("an Inception summary barrier is exact and cannot defer", async () => {
       canonicalSummaryAccountingModelsCurrent: () => true,
       canonicalSummaryCoverage: () => 101,
       canonicalSummaryRefreshCanDefer: () => true,
+      canonicalSummarySnapshotStorageEligible: () => true,
+      assertCanonicalSummarySnapshotStorageBudget: () => 0,
       workProjectionModelAtHeight: async () =>
         WORK_SUBATOM_PROJECTION_MODEL,
       exactWorkQ16CanonicalSummaryState: async () => ({
@@ -21840,6 +24590,24 @@ check("only the loopback canonical summary read bypasses Undici", async () => {
     fetchCalls[0].options.headers["X-PoW-Internal-Verifier"],
     internalToken,
   );
+
+  for (const path of [
+    "/api/v1/token?asset=WORK&fresh=1",
+    "/api/v1/registry?network=livenet",
+    "/api/v1/registry-summary?network=livenet",
+  ]) {
+    const publicRead = await readJson(
+      new URL(`http://127.0.0.1:8081${path}`),
+      { retries: 0, timeoutMs: 1_000 },
+    );
+    assert.equal(publicRead.source, "fetch");
+    const call = fetchCalls.at(-1);
+    assert.equal(
+      call.options.headers?.["X-PoW-Internal-Verifier"],
+      undefined,
+      `${path} must traverse the ordinary canonical public-read gate`,
+    );
+  }
 });
 
 check("canonical summary node:http waits for headers under the caller abort budget", async () => {
@@ -22070,6 +24838,8 @@ check("the canonical summary publisher rejects mixed snapshot identities", async
       REQUIRED_CURRENT_SUMMARY_KEYS: requiredKeys,
       canonicalSummaryAccountingModelsCurrent,
       canonicalSummaryCoverage,
+      canonicalSummarySnapshotStorageEligible: () => true,
+      assertCanonicalSummarySnapshotStorageBudget: () => 0,
       createHash,
       workProjectionModelAtHeight: async () =>
         WORK_SUBATOM_PROJECTION_MODEL,
@@ -24944,6 +27714,7 @@ check("Log coverage separates the latest event from the verified checkpoint", as
   const compact = isolatedFunction(API_PATH, "compactActivitySummaryPayload", {
     SUMMARY_ACTIVITY_LIMIT: 10,
     activityStatsFromItems: (_items, stats) => stats,
+    canonicalSummaryItemPreview: (record) => record,
     indexedThroughBlockFromItems: () => 100,
     recentByCreatedAt: (items) => items,
   });
@@ -31330,7 +34101,7 @@ check("ordered credit verifier seeds both bond families without generic minting"
   );
 });
 
-check("legacy generic token replay accepts only exact canonical DB order", async () => {
+check("confirmed token replay hydrates exact Core/DB order and stays fail closed", async () => {
   const tokenId =
     "eab50dfec222b4d30769b9e3eb51d16a9c58c262703275bcd5d374ca964a7ba9";
   const pendingTxid =
@@ -31459,13 +34230,60 @@ check("legacy generic token replay accepts only exact canonical DB order", async
     tx._powBlockIndex ?? tx.status?.block_index;
   const transactionConfirmed = (tx) => tx.status?.confirmed === true;
   const transactionTxid = (tx) => String(tx?.txid ?? "").toLowerCase();
+  const testMapWithConcurrency = async (items, _limit, mapper) =>
+    Promise.all(items.map(mapper));
+  const stableReplayCheckpoint = {
+    blockHash: "e".repeat(64),
+    height: 960_800,
+    proofIndexReady: true,
+    readinessEpochSha256: "f".repeat(64),
+  };
+  const hydrationRuntime = {
+    BLOCK_TXID_FETCH_CONCURRENCY: 2,
+    TOKEN_REPLAY_CORE_FALLBACK_MAX_BLOCKS: 32,
+    TOKEN_REPLAY_POSITION_LOOKUP_BATCH_SIZE: 4_096,
+    TOKEN_REPLAY_POSITION_LOOKUP_CONCURRENCY: 2,
+    exactTokenReplayCanonicalCheckpoint: async () => ({
+      ...stableReplayCheckpoint,
+    }),
+    mapWithConcurrency: testMapWithConcurrency,
+    transactionBlockHash,
+    transactionBlockHeight,
+    transactionBlockIndex,
+    transactionConfirmed,
+    transactionHasRawTokenProtocol,
+    transactionTxid,
+  };
+  const postV5Txid = "6".repeat(64);
+  const postV5BlockHash = "d".repeat(64);
+  const postV5Transaction = confirmedFixtureTransaction(
+    postV5Txid,
+    validUnparseableTokenOutput,
+    {
+      status: {
+        block_hash: postV5BlockHash,
+        block_height: 960_700,
+        confirmed: true,
+      },
+    },
+  );
 
   let requestedTxids = [];
+  const coreRequestedBlockHashes = [];
   const hydrate = isolatedFunction(
     API_PATH,
-    "hydrateLegacyGenericTokenBlockOrderFromProofIndex",
+    "hydrateExactConfirmedTokenProtocolBlockOrder",
     {
-      WORK_AMO_V5_ACTIVATION_HEIGHT: 959_621,
+      ...hydrationRuntime,
+      fetchCoreCanonicalBlockOrder: async (requestedBlockHash) => {
+        coreRequestedBlockHashes.push(requestedBlockHash);
+        assert.equal(requestedBlockHash, postV5BlockHash);
+        return {
+          blockHash: postV5BlockHash,
+          blockHeight: 960_700,
+          txidIndex: new Map([[postV5Txid, 2_117]]),
+        };
+      },
       proofIndexCanonicalTransactionPositionsPayload: async (
         network,
         txids,
@@ -31479,17 +34297,12 @@ check("legacy generic token replay accepts only exact canonical DB order", async
           txid: tokenId,
         }];
       },
-      transactionBlockHash,
-      transactionBlockHeight,
-      transactionBlockIndex,
-      transactionConfirmed,
-      transactionHasRawTokenProtocol,
-      transactionTxid,
     },
   );
   const hydrated = await hydrate(
     [
       sourceTransaction,
+      postV5Transaction,
       pendingTransaction,
       ordinaryPaymentTransaction,
       idProtocolTransaction,
@@ -31497,31 +34310,31 @@ check("legacy generic token replay accepts only exact canonical DB order", async
     ],
     "livenet",
   );
-  assert.deepEqual(Array.from(requestedTxids), [tokenId]);
+  assert.deepEqual(Array.from(requestedTxids), [tokenId, postV5Txid]);
+  assert.deepEqual(coreRequestedBlockHashes, [postV5BlockHash]);
   assert.equal(hydrated[0]._powBlockIndex, 818);
-  assert.equal(hydrated[1]._powBlockIndex, undefined);
+  assert.equal(hydrated[1]._powBlockIndex, 2_117);
   assert.equal(hydrated[2]._powBlockIndex, undefined);
   assert.equal(hydrated[3]._powBlockIndex, undefined);
   assert.equal(hydrated[4]._powBlockIndex, undefined);
+  assert.equal(hydrated[5]._powBlockIndex, undefined);
   assert.equal(sourceTransaction._powBlockIndex, undefined);
+  assert.equal(postV5Transaction._powBlockIndex, undefined);
 
   const conflictingHydrator = isolatedFunction(
     API_PATH,
-    "hydrateLegacyGenericTokenBlockOrderFromProofIndex",
+    "hydrateExactConfirmedTokenProtocolBlockOrder",
     {
-      WORK_AMO_V5_ACTIVATION_HEIGHT: 959_621,
+      ...hydrationRuntime,
+      fetchCoreCanonicalBlockOrder: async () => {
+        assert.fail("Proof-index mismatches must not fall back to Core.");
+      },
       proofIndexCanonicalTransactionPositionsPayload: async () => [{
         blockHash: "f".repeat(64),
         blockHeight: 949_463,
         blockIndex: 818,
         txid: tokenId,
       }],
-      transactionBlockHash,
-      transactionBlockHeight,
-      transactionBlockIndex,
-      transactionConfirmed,
-      transactionHasRawTokenProtocol,
-      transactionTxid,
     },
   );
   await assert.rejects(
@@ -31529,23 +34342,60 @@ check("legacy generic token replay accepts only exact canonical DB order", async
     /Canonical proof-index position conflicts/u,
   );
 
+  const mismatchedPrefilledIndexHydrator = isolatedFunction(
+    API_PATH,
+    "hydrateExactConfirmedTokenProtocolBlockOrder",
+    {
+      ...hydrationRuntime,
+      fetchCoreCanonicalBlockOrder: async () => {
+        assert.fail("A proof-index-backed mismatch must not query Core.");
+      },
+      proofIndexCanonicalTransactionPositionsPayload: async () => [{
+        blockHash,
+        blockHeight: 949_463,
+        blockIndex: 818,
+        txid: tokenId,
+      }],
+    },
+  );
+  await assert.rejects(
+    mismatchedPrefilledIndexHydrator(
+      [{ ...sourceTransaction, _powBlockIndex: 819 }],
+      "livenet",
+    ),
+    /conflicts with its exact canonical block index/u,
+  );
+
   const missingHydrator = isolatedFunction(
     API_PATH,
-    "hydrateLegacyGenericTokenBlockOrderFromProofIndex",
+    "hydrateExactConfirmedTokenProtocolBlockOrder",
     {
-      WORK_AMO_V5_ACTIVATION_HEIGHT: 959_621,
+      ...hydrationRuntime,
+      fetchCoreCanonicalBlockOrder: async () => ({
+        blockHash,
+        blockHeight: 949_463,
+        txidIndex: new Map(),
+      }),
       proofIndexCanonicalTransactionPositionsPayload: async () => [],
-      transactionBlockHash,
-      transactionBlockHeight,
-      transactionBlockIndex,
-      transactionConfirmed,
-      transactionHasRawTokenProtocol,
-      transactionTxid,
     },
   );
   await assert.rejects(
     missingHydrator([truncatedTransaction], "livenet"),
-    /Canonical proof-index position is unavailable/u,
+    /Bitcoin Core canonical position conflicts/u,
+  );
+  const strictTokenSort = isolatedFunction(
+    API_PATH,
+    "tokenProtocolSortedTransactions",
+    {
+      transactionBlockHeight,
+      transactionBlockIndex,
+      transactionConfirmed,
+      transactionTxid,
+    },
+  );
+  assert.throws(
+    () => strictTokenSort([sourceTransaction, truncatedTransaction]),
+    /Confirmed protocol transaction order is incomplete/u,
   );
 
   const secondTxid = "7".repeat(64);
@@ -31600,9 +34450,12 @@ check("legacy generic token replay accepts only exact canonical DB order", async
   };
   const batchHydrator = isolatedFunction(
     API_PATH,
-    "hydrateLegacyGenericTokenBlockOrderFromProofIndex",
+    "hydrateExactConfirmedTokenProtocolBlockOrder",
     {
-      WORK_AMO_V5_ACTIVATION_HEIGHT: 959_621,
+      ...hydrationRuntime,
+      fetchCoreCanonicalBlockOrder: async () => {
+        assert.fail("Complete proof-index hydration must not query Core.");
+      },
       proofIndexCanonicalTransactionPositionsPayload: async (
         network,
         txids,
@@ -31615,12 +34468,6 @@ check("legacy generic token replay accepts only exact canonical DB order", async
           txid,
         }));
       },
-      transactionBlockHash,
-      transactionBlockHeight,
-      transactionBlockIndex,
-      transactionConfirmed,
-      transactionHasRawTokenProtocol,
-      transactionTxid,
     },
   );
   const registryHistories = new Map([
@@ -31648,7 +34495,7 @@ check("legacy generic token replay accepts only exact canonical DB order", async
         assert.equal(network, "livenet");
         return registryHistories.get(registryAddress);
       },
-      hydrateLegacyGenericTokenBlockOrderFromProofIndex: batchHydrator,
+      hydrateExactConfirmedTokenProtocolBlockOrder: batchHydrator,
       transactionHasRawTokenProtocol,
     },
   );
@@ -31701,7 +34548,7 @@ check("legacy generic token replay accepts only exact canonical DB order", async
           asmSpoofTransaction,
         ];
       },
-      hydrateLegacyGenericTokenBlockOrderFromProofIndex: async (
+      hydrateExactConfirmedTokenProtocolBlockOrder: async (
         transactions,
         network,
       ) => {
@@ -31732,7 +34579,7 @@ check("legacy generic token replay accepts only exact canonical DB order", async
             : {}),
         },
       }],
-      hydrateLegacyGenericTokenBlockOrderFromProofIndex: batchHydrator,
+      hydrateExactConfirmedTokenProtocolBlockOrder: batchHydrator,
       transactionHasRawTokenProtocol,
     },
   );
@@ -31756,7 +34603,7 @@ check("legacy generic token replay accepts only exact canonical DB order", async
           : {}),
         status: { ...sourceTransaction.status },
       }],
-      hydrateLegacyGenericTokenBlockOrderFromProofIndex: batchHydrator,
+      hydrateExactConfirmedTokenProtocolBlockOrder: batchHydrator,
       transactionHasRawTokenProtocol,
     },
   );
@@ -31765,9 +34612,302 @@ check("legacy generic token replay accepts only exact canonical DB order", async
       ["registry-missing", "registry-index-conflict"],
       "livenet",
     ),
-    /conflicts with its canonical proof-index block index/u,
+    /conflicts with its exact canonical block index/u,
   );
   assert.equal(canonicalPositionQueries, 2);
+
+  const boundedBatchMapWithConcurrency = async (
+    items,
+    concurrency,
+    mapper,
+  ) => {
+    assert.ok(
+      Number.isSafeInteger(concurrency) && concurrency >= 1 && concurrency <= 2,
+      `replay hydration concurrency must remain bounded, received ${concurrency}`,
+    );
+    const results = Array.from({ length: items.length });
+    let nextIndex = 0;
+    const worker = async () => {
+      while (nextIndex < items.length) {
+        const index = nextIndex;
+        nextIndex += 1;
+        results[index] = await mapper(items[index], index);
+      }
+    };
+    await Promise.all(
+      Array.from({ length: Math.min(concurrency, items.length) }, worker),
+    );
+    return results;
+  };
+  const largeReplayMetadataByTxid = new Map();
+  const largeReplayTransactions = Array.from({ length: 4_097 }, (_, index) => {
+    const txid = (index + 1).toString(16).padStart(64, "0");
+    const metadata = {
+      blockHash: (index + 65_536).toString(16).padStart(64, "0"),
+      blockHeight: 950_000 + index,
+      blockIndex: (index * 17) % 2_500,
+    };
+    largeReplayMetadataByTxid.set(txid, metadata);
+    return confirmedFixtureTransaction(
+      txid,
+      validUnparseableTokenOutput,
+      {
+        status: {
+          block_hash: metadata.blockHash,
+          block_height: metadata.blockHeight,
+          confirmed: true,
+        },
+      },
+    );
+  });
+  const largeReplayPosition = (txid) => ({
+    ...largeReplayMetadataByTxid.get(txid),
+    txid,
+  });
+  const largeBatchSizes = [];
+  let activeLargeBatchQueries = 0;
+  let maxActiveLargeBatchQueries = 0;
+  const largeBatchHydrator = isolatedFunction(
+    API_PATH,
+    "hydrateExactConfirmedTokenProtocolBlockOrder",
+    {
+      ...hydrationRuntime,
+      fetchCoreCanonicalBlockOrder: async () => {
+        assert.fail(
+          "A complete >4096 proof-index hydration must not amplify into Core lookups.",
+        );
+      },
+      mapWithConcurrency: boundedBatchMapWithConcurrency,
+      proofIndexCanonicalTransactionPositionsPayload: async (
+        network,
+        txids,
+      ) => {
+        assert.equal(network, "livenet");
+        largeBatchSizes.push(txids.length);
+        activeLargeBatchQueries += 1;
+        maxActiveLargeBatchQueries = Math.max(
+          maxActiveLargeBatchQueries,
+          activeLargeBatchQueries,
+        );
+        try {
+          await Promise.resolve();
+          return txids.map(largeReplayPosition);
+        } finally {
+          activeLargeBatchQueries -= 1;
+        }
+      },
+    },
+  );
+  const largeHydrated = await largeBatchHydrator(
+    largeReplayTransactions,
+    "livenet",
+  );
+  assert.deepEqual(
+    [...largeBatchSizes].sort((left, right) => left - right),
+    [1, 4_096],
+  );
+  assert.equal(
+    largeBatchSizes.every((size) => size <= 4_096),
+    true,
+  );
+  assert.equal(maxActiveLargeBatchQueries, 2);
+  assert.equal(
+    largeHydrated[0]._powBlockIndex,
+    largeReplayMetadataByTxid.get(largeReplayTransactions[0].txid).blockIndex,
+  );
+  assert.equal(
+    largeHydrated.at(-1)._powBlockIndex,
+    largeReplayMetadataByTxid.get(largeReplayTransactions.at(-1).txid)
+      .blockIndex,
+  );
+
+  const crossBatchConflictHydrator = isolatedFunction(
+    API_PATH,
+    "hydrateExactConfirmedTokenProtocolBlockOrder",
+    {
+      ...hydrationRuntime,
+      fetchCoreCanonicalBlockOrder: async () => {
+        assert.fail("Cross-batch proof-index conflicts must fail before Core.");
+      },
+      mapWithConcurrency: boundedBatchMapWithConcurrency,
+      proofIndexCanonicalTransactionPositionsPayload: async (
+        _network,
+        txids,
+      ) => txids.length === 1
+        ? [largeReplayPosition(largeReplayTransactions[0].txid)]
+        : txids.map(largeReplayPosition),
+    },
+  );
+  await assert.rejects(
+    crossBatchConflictHydrator(largeReplayTransactions, "livenet"),
+    /Canonical proof-index position conflicts/u,
+  );
+
+  const unresolvedLargeBatchSizes = [];
+  const unresolvedCoreBlockHashes = [];
+  const lastLargeTransaction = largeReplayTransactions.at(-1);
+  const lastLargeMetadata = largeReplayMetadataByTxid.get(
+    lastLargeTransaction.txid,
+  );
+  const partiallyIndexedLargeHydrator = isolatedFunction(
+    API_PATH,
+    "hydrateExactConfirmedTokenProtocolBlockOrder",
+    {
+      ...hydrationRuntime,
+      fetchCoreCanonicalBlockOrder: async (requestedBlockHash) => {
+        unresolvedCoreBlockHashes.push(requestedBlockHash);
+        assert.equal(requestedBlockHash, lastLargeMetadata.blockHash);
+        return {
+          blockHash: lastLargeMetadata.blockHash,
+          blockHeight: lastLargeMetadata.blockHeight,
+          txidIndex: new Map([
+            [lastLargeTransaction.txid, lastLargeMetadata.blockIndex],
+          ]),
+        };
+      },
+      mapWithConcurrency: boundedBatchMapWithConcurrency,
+      proofIndexCanonicalTransactionPositionsPayload: async (
+        _network,
+        txids,
+      ) => {
+        unresolvedLargeBatchSizes.push(txids.length);
+        return txids.length === 1 ? [] : txids.map(largeReplayPosition);
+      },
+    },
+  );
+  const partiallyIndexedLargeHydrated = await partiallyIndexedLargeHydrator(
+    largeReplayTransactions,
+    "livenet",
+  );
+  assert.deepEqual(
+    [...unresolvedLargeBatchSizes].sort((left, right) => left - right),
+    [1, 4_096],
+  );
+  assert.deepEqual(unresolvedCoreBlockHashes, [lastLargeMetadata.blockHash]);
+  assert.equal(
+    partiallyIndexedLargeHydrated.at(-1)._powBlockIndex,
+    lastLargeMetadata.blockIndex,
+  );
+
+  const failedBatchHydrator = isolatedFunction(
+    API_PATH,
+    "hydrateExactConfirmedTokenProtocolBlockOrder",
+    {
+      ...hydrationRuntime,
+      fetchCoreCanonicalBlockOrder: async () => {
+        assert.fail(
+          "A failed proof-index batch must fail closed without Core amplification.",
+        );
+      },
+      mapWithConcurrency: boundedBatchMapWithConcurrency,
+      proofIndexCanonicalTransactionPositionsPayload: async (
+        _network,
+        txids,
+      ) => {
+        if (txids.length === 1) {
+          throw new Error("forced second batch failure");
+        }
+        return txids.map(largeReplayPosition);
+      },
+    },
+  );
+  await assert.rejects(
+    failedBatchHydrator(largeReplayTransactions, "livenet"),
+    /Canonical proof-index token replay position lookup failed/u,
+  );
+
+  let indexUnreadyCoreCalls = 0;
+  let indexUnreadyPositionCalls = 0;
+  const indexUnreadyLargeHydrator = isolatedFunction(
+    API_PATH,
+    "hydrateExactConfirmedTokenProtocolBlockOrder",
+    {
+      ...hydrationRuntime,
+      exactTokenReplayCanonicalCheckpoint: async () => ({
+        ...stableReplayCheckpoint,
+        proofIndexReady: false,
+        readinessEpochSha256: "",
+      }),
+      fetchCoreCanonicalBlockOrder: async () => {
+        indexUnreadyCoreCalls += 1;
+        assert.fail(
+          "An index-unready replay above the fallback bound must make zero Core calls.",
+        );
+      },
+      mapWithConcurrency: boundedBatchMapWithConcurrency,
+      proofIndexCanonicalTransactionPositionsPayload: async () => {
+        indexUnreadyPositionCalls += 1;
+        assert.fail("An index-unready replay must not query proof-index positions.");
+      },
+    },
+  );
+  await assert.rejects(
+    indexUnreadyLargeHydrator(largeReplayTransactions, "livenet"),
+    /Core fallback exceeds its 32-block safety bound/u,
+  );
+  assert.equal(indexUnreadyCoreCalls, 0);
+  assert.equal(indexUnreadyPositionCalls, 0);
+
+  let reorgCheckpointReads = 0;
+  const reorgFencedHydrator = isolatedFunction(
+    API_PATH,
+    "hydrateExactConfirmedTokenProtocolBlockOrder",
+    {
+      ...hydrationRuntime,
+      exactTokenReplayCanonicalCheckpoint: async () => {
+        reorgCheckpointReads += 1;
+        return reorgCheckpointReads === 1
+          ? { ...stableReplayCheckpoint }
+          : { ...stableReplayCheckpoint, blockHash: "1".repeat(64) };
+      },
+      fetchCoreCanonicalBlockOrder: async () => {
+        assert.fail("DB/source agreement should reach the final Core fence.");
+      },
+      proofIndexCanonicalTransactionPositionsPayload: async () => [{
+        blockHash,
+        blockHeight: 949_463,
+        blockIndex: 818,
+        txid: tokenId,
+      }],
+    },
+  );
+  await assert.rejects(
+    reorgFencedHydrator([sourceTransaction], "livenet"),
+    /Bitcoin Core changed during confirmed token replay order hydration/u,
+  );
+  assert.equal(reorgCheckpointReads, 2);
+
+  let epochCheckpointReads = 0;
+  const readinessEpochFencedHydrator = isolatedFunction(
+    API_PATH,
+    "hydrateExactConfirmedTokenProtocolBlockOrder",
+    {
+      ...hydrationRuntime,
+      exactTokenReplayCanonicalCheckpoint: async () => {
+        epochCheckpointReads += 1;
+        return epochCheckpointReads === 1
+          ? { ...stableReplayCheckpoint }
+          : {
+              ...stableReplayCheckpoint,
+              readinessEpochSha256: "2".repeat(64),
+            };
+      },
+      fetchCoreCanonicalBlockOrder: async () => {
+        assert.fail("DB/source agreement should reach the final epoch fence.");
+      },
+      proofIndexCanonicalTransactionPositionsPayload: async () => [{
+        blockHash,
+        blockHeight: 949_463,
+        blockIndex: 818,
+        txid: tokenId,
+      }],
+    },
+  );
+  await assert.rejects(
+    readinessEpochFencedHydrator([sourceTransaction], "livenet"),
+    /canonical proof-index readiness epoch changed/u,
+  );
+  assert.equal(epochCheckpointReads, 2);
 
   let queryText = "";
   let queryParams = [];
@@ -43994,6 +47134,9 @@ check("canonical read gating exempts node primitives only", () => {
   }
   for (const path of [
     "/api/v1/address/bc1fixture/mail",
+    "/api/v1/token",
+    "/api/v1/registry",
+    "/api/v1/registry-summary",
     "/api/v1/registry-history",
     "/api/v1/token-history",
     "/api/v1/ids/inception",
@@ -44680,15 +47823,21 @@ check("exact ID lifecycle keeps sealed listings active until a canonical close",
     },
   );
   const authorization = {
+    anchorScriptPubKey: "0014canonical",
     anchorSignature: "",
+    anchorSigHashType: 1,
     anchorTxid: "",
     anchorType: "sale-ticket-v1",
     anchorValueSats: 546,
     anchorVout: 2,
+    buyerAddress: "bc1canonicalbuyer",
+    expiresAt: "2026-08-30T00:00:00.000Z",
     id: "fixture-id",
     nonce: "fixture",
     priceSats: 12_345,
+    receiveAddress: "bc1canonicalreceive",
     sellerAddress,
+    sellerPublicKey: "02canonical",
     version: "pwid-sale-v4",
   };
   const list = {
@@ -44738,6 +47887,43 @@ check("exact ID lifecycle keeps sealed listings active until a canonical close",
   );
   assert.equal(sealed.activity[0].kind, "id-seal");
 
+  const aliasBound = idLifecycleStateFromItems(
+    [
+      {
+        ...list,
+        anchorScriptPubKey: "forged",
+        anchorSigHashType: 99,
+        anchorVout: 9,
+        buyerAddress: "bc1forgedbuyer",
+        expiresAt: "2099-01-01T00:00:00.000Z",
+        receiveAddress: "bc1forgedreceive",
+        sellerPublicKey: "03forged",
+        utxo: `${"f".repeat(64)}:9`,
+      },
+      {
+        ...seal,
+        anchorSignature: "forged-signature",
+        anchorVout: 10,
+        buyerAddress: "bc1forgedsealbuyer",
+        utxo: `${"e".repeat(64)}:10`,
+      },
+    ],
+    "livenet",
+    "fixture-id",
+  );
+  assert.equal(aliasBound.listings[0].anchorSigHashType, 1);
+  assert.equal(aliasBound.listings[0].anchorSignature, "3044fixture");
+  assert.equal(aliasBound.listings[0].anchorScriptPubKey, "0014canonical");
+  assert.equal(aliasBound.listings[0].anchorVout, 2);
+  assert.equal(aliasBound.listings[0].buyerAddress, "bc1canonicalbuyer");
+  assert.equal(
+    aliasBound.listings[0].expiresAt,
+    "2026-08-30T00:00:00.000Z",
+  );
+  assert.equal(aliasBound.listings[0].receiveAddress, "bc1canonicalreceive");
+  assert.equal(aliasBound.listings[0].sellerPublicKey, "02canonical");
+  assert.equal(aliasBound.listings[0].utxo, `${listingId}:2`);
+
   for (const [version, listingVersion] of [
     ["pwid-sale-v2", "list3"],
     ["pwid-sale-v3", "list4"],
@@ -44768,6 +47954,7 @@ check("exact ID lifecycle keeps sealed listings active until a canonical close",
         blockIndex: 1,
         confirmed: true,
         createdAt: "2026-07-11T00:20:00.000Z",
+        delistingVersion: "delist5",
         kind: "id-delist",
         listingId,
         txid: delistTxid,
@@ -44795,7 +47982,7 @@ check("exact ID lifecycle keeps sealed listings active until a canonical close",
         amountSats: 546,
         blockHeight: 102,
         blockIndex: 1,
-        buyerAddress,
+        buyerAddress: "bc1forgedbuyer",
         confirmed: true,
         createdAt: "2026-07-11T00:20:00.000Z",
         id: "fixture-id",
@@ -45126,24 +48313,678 @@ check("exact ID lifecycle keeps sealed listings active until a canonical close",
   }
   const registryHistorySource = topLevelFunctionSource(
     READER_PATH,
-    "currentRegistryEventHistoryPage",
+    "proofIndexRegistryHistoryPayload",
   );
   assert.match(
     registryHistorySource,
-    /transfer_event\.protocol = 'pwid1'/u,
+    /currentRegistryLifecycleHistoryPage/u,
+  );
+  assert.doesNotMatch(
+    registryHistorySource,
+    /currentRegistryEventHistoryPage/u,
+    "unpinned registry history must not page raw parseable events",
+  );
+  const lifecycleHistorySource = topLevelFunctionSource(
+    READER_PATH,
+    "currentRegistryLifecycleHistoryPage",
   );
   assert.match(
-    registryHistorySource,
-    /\(\s*close_event\.block_height,\s*close_event\.block_index,\s*close_event\.op_return_vout,\s*close_event\.record_ordinal\s*\) > \(\s*e\.block_height,\s*e\.block_index,\s*e\.op_return_vout,\s*e\.record_ordinal\s*\)/u,
+    lifecycleHistorySource,
+    /currentProofIndexRegistryPayload/u,
   );
   assert.match(
-    registryHistorySource,
-    /\(\s*transfer_event\.block_height,\s*transfer_event\.block_index,\s*transfer_event\.op_return_vout,\s*transfer_event\.record_ordinal\s*\) > \(\s*e\.block_height,\s*e\.block_index,\s*e\.op_return_vout,\s*e\.record_ordinal\s*\)/u,
+    lifecycleHistorySource,
+    /historyPageFromStoredPayload/u,
+  );
+  assert.doesNotMatch(
+    lifecycleHistorySource,
+    /snapshotId\s*:/u,
+    "current scan ids must not become ledger-snapshot cursors",
+  );
+  assert.doesNotMatch(
+    lifecycleHistorySource,
+    /indexedThroughBlock:\s*payload\.indexedThroughBlock/u,
+    "filtered registry history coverage must match its returned lifecycle collection",
   );
   assert.match(
-    registryHistorySource,
-    /audit_event\.protocol = 'pwid1'[\s\S]*GROUP BY[\s\S]*audit_event\.record_ordinal[\s\S]*HAVING count\(\*\) > 1/u,
+    lifecycleHistorySource,
+    /coverageScope:\s*"registry-filtered-items"/u,
   );
+});
+
+check("event history is fenced by one strict canonical checkpoint", async () => {
+  const normalizedSnapshotId = isolatedFunction(
+    READER_PATH,
+    "normalizedSnapshotId",
+  );
+  const snapshotQueries = [];
+  const strictEventHistoryLedgerSnapshot = isolatedFunction(
+    READER_PATH,
+    "strictEventHistoryLedgerSnapshot",
+    {
+      WORK_SUBATOM_PROJECTION_MODEL,
+      canonicalQ16SummarySnapshotSqlEligibility: () =>
+        "STRICT_Q16_CANONICAL_SUMMARY_ELIGIBILITY",
+      currentWorkAmountStorageModel: async () =>
+        WORK_SUBATOM_PROJECTION_MODEL,
+      normalizedSnapshotId,
+    },
+  );
+  const snapshotRow = {
+    indexed_through_block: 964_200,
+    snapshot_id: "strict-summary",
+  };
+  const snapshotPool = {
+    async query(sql, params) {
+      snapshotQueries.push({ params: Array.from(params), sql: String(sql) });
+      return { rows: [snapshotRow] };
+    },
+  };
+  assert.equal(
+    await strictEventHistoryLedgerSnapshot(snapshotPool, "livenet"),
+    snapshotRow,
+  );
+  assert.equal(
+    await strictEventHistoryLedgerSnapshot(
+      snapshotPool,
+      "livenet",
+      "strict-summary",
+    ),
+    snapshotRow,
+  );
+  assert.deepEqual(snapshotQueries.map((query) => query.params), [
+    ["livenet", WORK_SUBATOM_PROJECTION_MODEL, null],
+    ["livenet", WORK_SUBATOM_PROJECTION_MODEL, "strict-summary"],
+  ]);
+  for (const { sql } of snapshotQueries) {
+    assert.match(sql, /STRICT_Q16_CANONICAL_SUMMARY_ELIGIBILITY/u);
+    assert.match(sql, /payload->>'snapshotId' = snapshot\.snapshot_id/u);
+    assert.match(sql, /source_hashes \? 'canonicalSummary'/u);
+    assert.match(sql, /canonical-summary-refresh/u);
+    assert.match(sql, /consistency->>'status'[\s\S]*= 'green'/u);
+    assert.match(sql, /token-components-cover-confirmed-activity/u);
+    assert.match(sql, /canonical-activity-count-matches-public-log/u);
+    for (const inheritedKey of [
+      "activityPayload",
+      "registryHistoryPayloads",
+      "tokenHistoryPayloads",
+      "tokenStatePayloads",
+    ]) {
+      assert.match(sql, new RegExp(inheritedKey, "u"));
+    }
+  }
+
+  const exactHistoryEventItemsFromRows = isolatedFunction(
+    READER_PATH,
+    "exactHistoryEventItemsFromRows",
+    {
+      eventRowPayload: (row, network) => ({
+        blockHeight: row.block_height,
+        confirmed: row.status === "confirmed",
+        createdAt: row.event_time,
+        eventId: Number(row.event_id),
+        kind: row.kind,
+        network,
+        txid: row.txid,
+      }),
+      normalizeHistoryEventItem: (item) => item,
+    },
+  );
+  const preV5Txid = "9".repeat(64);
+  const preV5Rows = [1, 2].map((eventId) => ({
+    block_height: WORK_AMO_V5_ACTIVATION_HEIGHT - 1,
+    event_id: eventId,
+    event_time: "2026-08-26T11:59:00.000Z",
+    kind: "mail",
+    status: "confirmed",
+    txid: preV5Txid,
+  }));
+  const preV5Items = exactHistoryEventItemsFromRows(preV5Rows, "livenet");
+  assert.equal(preV5Items.length, 2);
+  assert.deepEqual(
+    Array.from(preV5Items, (item) => item.eventId),
+    [1, 2],
+    "two pre-V5 same-tx same-kind rows must remain two rendered events",
+  );
+  assert.throws(
+    () => exactHistoryEventItemsFromRows(
+      [preV5Rows[0], { ...preV5Rows[1], event_id: 1 }],
+      "livenet",
+    ),
+    (error) => error?.statusCode === 503,
+    "duplicate relational event ids must fail closed",
+  );
+
+  const checkpointHash = "a".repeat(64);
+  const queries = [];
+  const client = {
+    async query(sql) {
+      const text = String(sql);
+      queries.push(text);
+      if (/SELECT block_hash[\s\S]*FROM proof_indexer\.blocks/u.test(text)) {
+        return { rows: [{ block_hash: checkpointHash }] };
+      }
+      if (/count\(\*\) AS total_count/u.test(text)) {
+        return {
+          rows: [{
+            indexed_through_block: WORK_AMO_V5_ACTIVATION_HEIGHT - 1,
+            max_event_id: 2,
+            max_updated_at: "2026-08-26T12:00:00.000000Z",
+            total_count: 2,
+          }],
+        };
+      }
+      if (/SELECT[\s\S]*e\.payload,[\s\S]*LIMIT/u.test(text)) {
+        return {
+          rows: preV5Rows.toReversed().map((row) => ({
+            ...row,
+            effective_time_cursor: "2026-08-26T11:59:00.000000Z",
+          })),
+        };
+      }
+      return { rows: [] };
+    },
+    release() {},
+  };
+  const proofIndexEventHistoryPayload = isolatedFunction(
+    READER_PATH,
+    "proofIndexEventHistoryPayload",
+    {
+      EVENT_HISTORY_CURSOR_MODEL: "proof-event-history-cursor-v2",
+      WORK_AMO_V5_ACTIVATION_HEIGHT,
+      dateIso: (value) => String(value),
+      encodedEventHistoryCursor: () => "unused",
+      eventHistoryCursorMatchesFence: () => true,
+      eventHistoryFilterFingerprint: () => "c".repeat(64),
+      eventHistoryFilters: (_params, _request, values) => ({
+        filters: [],
+        values,
+      }),
+      eventHistoryV2Request: () => ({
+        cursor: null,
+        cursorRaw: "",
+        limit: 10,
+        query: "",
+      }),
+      historyV2CursorConflict: (message) => new Error(message),
+      exactHistoryEventItemsFromRows,
+      normalizedLowerText: (value) => String(value ?? "").trim().toLowerCase(),
+      normalizedSnapshotId,
+      normalizedTxid: (value) => String(value ?? "").trim().toLowerCase(),
+      proofIndexPool: () => ({ connect: async () => client }),
+      rowNumber: (row, key) => Number(row?.[key] ?? 0) || 0,
+      strictEventHistoryLedgerSnapshot: async () => ({
+        consistency: { ok: true, status: "green" },
+        generated_at: "2026-08-26T12:01:00.000Z",
+        indexed_through_block: 964_200,
+        payload: { indexedThroughBlockHash: checkpointHash },
+        snapshot_id: "strict-summary",
+      }),
+    },
+  );
+  const payload = await proofIndexEventHistoryPayload(
+    "livenet",
+    new URLSearchParams(),
+  );
+  assert.equal(payload.indexedThroughBlock, 964_200);
+  assert.equal(payload.indexedThroughBlockHash, checkpointHash);
+  assert.equal(
+    payload.latestEventBlock,
+    WORK_AMO_V5_ACTIVATION_HEIGHT - 1,
+  );
+  assert.equal(payload.totalCount, 2);
+  assert.equal(payload.emitted, 2);
+  assert.equal(payload.end, 2);
+  assert.equal(payload.hasMore, false);
+  assert.equal(payload.nextCursor, "");
+  assert.deepEqual(
+    Array.from(payload.items, (item) => item.eventId),
+    [2, 1],
+    "event cursor accounting must emit both pre-V5 same-tx same-kind rows",
+  );
+  const relationalSql = queries.join("\n");
+  assert.match(
+    relationalSql,
+    /e\.status = 'confirmed'[\s\S]*t\.status = 'confirmed'[\s\S]*e\.block_height = t\.block_height[\s\S]*canonical_transaction_block\.block_hash IS NOT NULL/u,
+  );
+  assert.match(
+    relationalSql,
+    /e\.status <> 'confirmed'[\s\S]*t\.status = e\.status/u,
+  );
+  assert.ok(
+    (relationalSql.match(/canonical_transaction_block\.canonical = true/gu) ?? [])
+      .length >= 2,
+    "the fence and item reads must both require a canonical transaction block",
+  );
+
+  const eventHistorySource = topLevelFunctionSource(
+    READER_PATH,
+    "proofIndexEventHistoryPayload",
+  );
+  assert.match(eventHistorySource, /strictEventHistoryLedgerSnapshot/u);
+  assert.match(eventHistorySource, /exactHistoryEventItemsFromRows/u);
+  assert.match(
+    eventHistorySource,
+    /items\.length !== pageRows\.length[\s\S]*end > totalCount[\s\S]*hasMore \? end >= totalCount : end !== totalCount/u,
+  );
+  assert.doesNotMatch(
+    eventHistorySource,
+    /const snapshot = await ledgerSnapshot\(/u,
+  );
+  assert.match(eventHistorySource, /indexedThroughBlock:\s*checkpointHeight/u);
+  assert.match(
+    eventHistorySource,
+    /latestEventBlock:\s*observedIndexedThroughBlock \|\| undefined/u,
+  );
+});
+
+check("checkpoint cursors reject registry and event mutations between pages", () => {
+  const historyCursorConflict = isolatedFunction(
+    API_PATH,
+    "historyCursorConflict",
+  );
+  const checkpointCursorCanonicalJson = isolatedFunction(
+    API_PATH,
+    "checkpointCursorCanonicalJson",
+    { compareCanonicalUtf8 },
+  );
+  const encodedCheckpointCursor = isolatedFunction(
+    API_PATH,
+    "encodedCheckpointCursor",
+    { Buffer, checkpointCursorCanonicalJson },
+  );
+  const decodedCheckpointCursor = isolatedFunction(
+    API_PATH,
+    "decodedCheckpointCursor",
+    {
+      Buffer,
+      encodedCheckpointCursor,
+      historyCursorConflict,
+    },
+  );
+  const checkpointHistoryRequest = isolatedFunction(
+    API_PATH,
+    "checkpointHistoryRequest",
+    {
+      HISTORY_PAGE_DEFAULT_LIMIT: 100,
+      HISTORY_PAGE_MAX_LIMIT: 500,
+      boundedInteger: (value, fallback, min, max) => {
+        const parsed = Number.parseInt(String(value ?? ""), 10);
+        return Number.isFinite(parsed)
+          ? Math.min(max, Math.max(min, parsed))
+          : fallback;
+      },
+      decodedCheckpointCursor,
+      historyCursorConflict,
+    },
+  );
+  for (const query of ["page=1", "offset=1", "cursor=1"]) {
+    assert.throws(
+      () => checkpointHistoryRequest(new URLSearchParams(query), "registry-v2"),
+      (error) => error?.statusCode === 409,
+      query,
+    );
+  }
+  const sha256Hex = (value) =>
+    createHash("sha256").update(Buffer.from(value)).digest("hex");
+  const registryHistoryStableKey = isolatedFunction(
+    API_PATH,
+    "registryHistoryStableKey",
+    { Buffer, checkpointCursorCanonicalJson, sha256Hex },
+  );
+  const compareRegistryHistoryStableKeys = isolatedFunction(
+    API_PATH,
+    "compareRegistryHistoryStableKeys",
+    { compareCanonicalUtf8 },
+  );
+  const registryAuthorityUnavailable = isolatedFunction(
+    API_PATH,
+    "registryAuthorityUnavailable",
+  );
+  const registryHistoryCursorPage = isolatedFunction(
+    API_PATH,
+    "registryHistoryCursorPage",
+    {
+      Buffer,
+      REGISTRY_HISTORY_CURSOR_MODEL: "proof-registry-history-cursor-v2",
+      REGISTRY_HISTORY_CURSOR_PREFIX: "registry-v2",
+      checkpointCursorCanonicalJson,
+      compareRegistryHistoryStableKeys,
+      encodedCheckpointCursor,
+      historyCursorConflict,
+      historyItemsMatchingQuery: (items) => items,
+      registryAuthorityUnavailable,
+      registryHistoryStableKey,
+      sha256Hex,
+    },
+  );
+  const checkpointHash = "a".repeat(64);
+  const items = [
+    {
+      createdAt: "2026-08-26T12:01:00.000Z",
+      id: "newer",
+      ownerAddress: "owner-a",
+      txid: "2".repeat(64),
+    },
+    {
+      createdAt: "2026-08-26T12:00:00.000Z",
+      id: "older",
+      ownerAddress: "owner-b",
+      txid: "1".repeat(64),
+    },
+  ];
+  const first = registryHistoryCursorPage({
+    indexedAt: "2026-08-26T12:02:00.000Z",
+    indexedThroughBlock: 964_100,
+    indexedThroughBlockHash: checkpointHash,
+    items,
+    kind: "records",
+    network: "livenet",
+    request: { cursor: null, cursorRaw: "", limit: 1, query: "" },
+    source: "fixture",
+  });
+  assert.equal(first.items[0].id, "newer");
+  assert.match(first.nextCursor, /^registry-v2\./u);
+  const cursor = decodedCheckpointCursor("registry-v2", first.nextCursor);
+  const second = registryHistoryCursorPage({
+    indexedAt: "2026-08-26T12:02:00.000Z",
+    indexedThroughBlock: 964_100,
+    indexedThroughBlockHash: checkpointHash,
+    items,
+    kind: "records",
+    network: "livenet",
+    request: {
+      cursor,
+      cursorRaw: first.nextCursor,
+      limit: 1,
+      query: "",
+    },
+    source: "fixture",
+  });
+  assert.equal(second.items[0].id, "older");
+  for (const [label, changed] of [
+    [
+      "membership mutation",
+      { items: [items[0], { ...items[1], ownerAddress: "mutated" }] },
+    ],
+    ["reorg", { indexedThroughBlockHash: "b".repeat(64) }],
+    ["filter mismatch", { kind: "sales" }],
+  ]) {
+    assert.throws(
+      () =>
+        registryHistoryCursorPage({
+          indexedAt: "2026-08-26T12:02:00.000Z",
+          indexedThroughBlock: 964_100,
+          indexedThroughBlockHash: checkpointHash,
+          items,
+          kind: "records",
+          network: "livenet",
+          request: {
+            cursor,
+            cursorRaw: first.nextCursor,
+            limit: 1,
+            query: "",
+          },
+          source: "fixture",
+          ...changed,
+        }),
+      (error) => error?.statusCode === 409,
+      label,
+    );
+  }
+
+  const eventHistoryCursorMatchesFence = isolatedFunction(
+    READER_PATH,
+    "eventHistoryCursorMatchesFence",
+    {
+      EVENT_HISTORY_CURSOR_MODEL: "proof-event-history-cursor-v2",
+      normalizedTxid: (value) =>
+        /^[0-9a-f]{64}$/u.test(String(value ?? "")) ? String(value) : "",
+    },
+  );
+  const historyV2CursorConflict = isolatedFunction(
+    READER_PATH,
+    "historyV2CursorConflict",
+  );
+  const eventHistoryV2Request = isolatedFunction(
+    READER_PATH,
+    "eventHistoryV2Request",
+    {
+      boundedInteger: (value, fallback, min, max) => {
+        const parsed = Number.parseInt(String(value ?? ""), 10);
+        return Number.isFinite(parsed)
+          ? Math.min(max, Math.max(min, parsed))
+          : fallback;
+      },
+      decodedEventHistoryCursor: () => {
+        throw historyV2CursorConflict("malformed");
+      },
+      historyV2CursorConflict,
+    },
+  );
+  for (const query of ["page=1", "offset=1", "cursor=1"]) {
+    assert.throws(
+      () => eventHistoryV2Request(new URLSearchParams(query)),
+      (error) => error?.statusCode === 409,
+      `event ${query}`,
+    );
+  }
+  const fence = {
+    checkpointHash,
+    checkpointHeight: 964_100,
+    filterFingerprint: "c".repeat(64),
+    generatedAt: "2026-08-26T12:02:00.000Z",
+    maxEventId: 20,
+    maxUpdatedAt: "2026-08-26T12:01:30.000Z",
+    network: "livenet",
+    snapshotId: "snapshot-fixture",
+    total: 20,
+  };
+  const eventCursor = {
+    ...fence,
+    emitted: 10,
+    last: {
+      effectiveTime: "2026-08-26T12:01:00.000Z",
+      eventId: 11,
+      txid: "d".repeat(64),
+    },
+    model: "proof-event-history-cursor-v2",
+  };
+  assert.equal(eventHistoryCursorMatchesFence(eventCursor, fence), true);
+  for (const changedFence of [
+    { ...fence, maxEventId: 21, total: 21 },
+    { ...fence, maxUpdatedAt: "2026-08-26T12:02:30.000Z" },
+    { ...fence, checkpointHash: "e".repeat(64) },
+    { ...fence, filterFingerprint: "f".repeat(64) },
+  ]) {
+    assert.equal(
+      eventHistoryCursorMatchesFence(eventCursor, changedFence),
+      false,
+    );
+  }
+
+  const eventHistorySource = topLevelFunctionSource(
+    READER_PATH,
+    "proofIndexEventHistoryPayload",
+  );
+  assert.match(eventHistorySource, /REPEATABLE READ READ ONLY/u);
+  assert.match(eventHistorySource, /max_event_id/u);
+  assert.match(eventHistorySource, /max_updated_at/u);
+  assert.match(eventHistorySource, /request\.limit \+ 1/u);
+  assert.match(
+    eventHistorySource,
+    /COALESCE\(e\.event_time, e\.block_time, e\.created_at\)[\s\S]*e\.txid[\s\S]*e\.event_id[\s\S]*</u,
+  );
+  assert.doesNotMatch(eventHistorySource, /OFFSET/u);
+
+  const handleRequestSource = topLevelFunctionSource(API_PATH, "handleRequest");
+  assert.doesNotMatch(
+    handleRequestSource,
+    /mergeEventHistoryRecoveryPayload\(/u,
+    "cursored event history must never merge a mutable recovery overlay",
+  );
+  assert.doesNotMatch(
+    handleRequestSource,
+    /proofIndexRegistryHistoryPayload\(/u,
+    "registry history must pass through strict Core reconciliation before pagination",
+  );
+  const marketplaceSource = topLevelFunctionSource(
+    API_PATH,
+    "reconciledLivenetMarketplaceSummaryPayload",
+  );
+  assert.match(marketplaceSource, /strictCoreRegistryListingReconciliation/u);
+  assert.doesNotMatch(marketplaceSource, /filterSpendableListings/u);
+});
+
+check("token listing history rejects previews and fences relational and Core evidence", async () => {
+  const historyCursorConflict = isolatedFunction(API_PATH, "historyCursorConflict");
+  const checkpointCursorCanonicalJson = isolatedFunction(
+    API_PATH, "checkpointCursorCanonicalJson", { compareCanonicalUtf8 },
+  );
+  const encodedCheckpointCursor = isolatedFunction(
+    API_PATH, "encodedCheckpointCursor", { Buffer, checkpointCursorCanonicalJson },
+  );
+  const decodedCheckpointCursor = isolatedFunction(
+    API_PATH, "decodedCheckpointCursor",
+    { Buffer, encodedCheckpointCursor, historyCursorConflict },
+  );
+  const checkpointHistoryRequest = isolatedFunction(
+    API_PATH, "checkpointHistoryRequest",
+    {
+      HISTORY_PAGE_DEFAULT_LIMIT: 100,
+      HISTORY_PAGE_MAX_LIMIT: 500,
+      boundedInteger: (value, fallback, min, max) => {
+        const parsed = Number.parseInt(String(value ?? ""), 10);
+        return Number.isFinite(parsed) ? Math.min(max, Math.max(min, parsed)) : fallback;
+      },
+      decodedCheckpointCursor,
+      historyCursorConflict,
+    },
+  );
+  const tokenListingHistoryUnavailable = isolatedFunction(
+    API_PATH, "tokenListingHistoryUnavailable",
+  );
+  const tokenListingHistoryStableKey = isolatedFunction(
+    API_PATH, "tokenListingHistoryStableKey",
+  );
+  let relational;
+  let coreDigest = "c".repeat(64);
+  let coreHash = "a".repeat(64);
+  const completeTokenListingHistoryPayload = isolatedFunction(
+    API_PATH, "completeTokenListingHistoryPayload",
+    {
+      TOKEN_LISTING_HISTORY_CURSOR_PREFIX: "token-listings-v2",
+      checkpointCursorCanonicalJson,
+      checkpointHistoryRequest,
+      compareCanonicalUtf8,
+      createHash,
+      encodedCheckpointCursor,
+      historyCursorConflict,
+      historyItemsMatchingAddresses: (items) => items,
+      historyItemsMatchingQuery: (items) => items,
+      mapWithConcurrency: async (items, _limit, mapper) => Promise.all(items.map(mapper)),
+      normalizeTokenScope: (value) => String(value ?? "").toLowerCase(),
+      proofIndexCreditListingsPayload: async () => relational,
+      proofIndexCanonicalWorkListingById: async () => null,
+      recoveryAddressesFromSearchParams: () => [],
+      strictCoreTokenListingReconciliation: async (items) => ({
+        evidence: {
+          checkedListingCount: items.length,
+          checkedOutpointsSha256: coreDigest,
+          checkpoint: { blockHash: coreHash, height: 964_200 },
+        },
+        listings: items.filter((item) => item.spent !== true),
+      }),
+      tokenListingHistoryStableKey,
+      tokenListingHistoryUnavailable,
+      tokenListingWithCanonicalWorkAmoV8Witness: (listing) => listing,
+      TX_FETCH_CONCURRENCY: 4,
+      TOKEN_SALE_AUTH_WORK_AMO_V8_VERSION: "pwt-sale-v8",
+      workAmoV8ListingHistoryRecord: () => null,
+    },
+  );
+  const listings = ["1", "2", "3"].map((digit, index) => ({
+    blockHeight: 964_100 + index,
+    listingId: digit.repeat(64),
+    spent: index === 1,
+    txid: digit.repeat(64),
+  }));
+  relational = {
+    indexedAt: "2026-08-26T12:00:00.000Z",
+    indexedThroughBlock: 964_200,
+    indexedThroughBlockHash: "a".repeat(64),
+    items: listings.slice(0, 2),
+    stats: { complete: false },
+    summaryOnly: true,
+    totalCount: 3,
+  };
+  await assert.rejects(
+    () => completeTokenListingHistoryPayload(
+      "livenet", "work", new URLSearchParams("limit=1"),
+    ),
+    (error) => error?.statusCode === 503,
+    "a compact 2-of-3 preview must fail closed",
+  );
+  relational = {
+    ...relational,
+    items: listings,
+    stats: { complete: true },
+    summaryOnly: false,
+  };
+  coreHash = "b".repeat(64);
+  await assert.rejects(
+    () => completeTokenListingHistoryPayload(
+      "livenet", "work", new URLSearchParams("limit=1"),
+    ),
+    (error) => error?.statusCode === 503,
+    "a Core checkpoint different from the relational checkpoint must fail closed",
+  );
+  coreHash = "a".repeat(64);
+  const first = await completeTokenListingHistoryPayload(
+    "livenet", "work", new URLSearchParams("limit=1"),
+  );
+  assert.equal(first.totalCount, 2);
+  assert.equal(first.items.length, 1);
+  assert.equal(first.hasMore, true);
+  const second = await completeTokenListingHistoryPayload(
+    "livenet", "work",
+    new URLSearchParams({ cursor: first.nextCursor, limit: "1" }),
+  );
+  assert.equal(second.totalCount, 2);
+  assert.equal(second.items.length, 1);
+  assert.notEqual(second.items[0].listingId, first.items[0].listingId);
+  assert.equal(second.hasMore, false);
+  relational = { ...relational, items: listings.map((item, index) =>
+    index === 2 ? { ...item, sellerAddress: "mutated" } : item) };
+  await assert.rejects(
+    () => completeTokenListingHistoryPayload(
+      "livenet", "work",
+      new URLSearchParams({ cursor: first.nextCursor, limit: "1" }),
+    ),
+    (error) => error?.statusCode === 409,
+    "relational membership mutation must invalidate page two",
+  );
+  relational = { ...relational, items: listings };
+  coreDigest = "d".repeat(64);
+  await assert.rejects(
+    () => completeTokenListingHistoryPayload(
+      "livenet", "work",
+      new URLSearchParams({ cursor: first.nextCursor, limit: "1" }),
+    ),
+    (error) => error?.statusCode === 409,
+    "Core outpoint evidence mutation must invalidate page two",
+  );
+  const routeSource = topLevelFunctionSource(API_PATH, "handleRequest");
+  assert.match(
+    routeSource,
+    /network === "livenet" && historyKind === "listings"[\s\S]*completeTokenListingHistoryPayload/iu,
+  );
+  const listingReaderSource = topLevelFunctionSource(
+    READER_PATH,
+    "proofIndexCreditListingsPayload",
+  );
+  assert.match(listingReaderSource, /REPEATABLE READ READ ONLY/u);
+  assert.match(listingReaderSource, /options\.requireComplete === true/u);
 });
 
 check("exact ID API lifecycle feeds every ID marketplace preflight", async () => {
@@ -45361,6 +49202,8 @@ check("unpinned broad ID registry uses current relational event state", async ()
     READER_PATH,
     "currentProofIndexRegistryPayload",
     {
+      acceptedCurrentIdRegistryActivity: (eventState) =>
+        Array.isArray(eventState?.activity) ? eventState.activity : [],
       compareHistoryItems: (left, right) =>
         Date.parse(right.createdAt) - Date.parse(left.createdAt),
       confirmedIdRecordsFromCurrentTables: async () => [confirmedRecord],
@@ -45688,6 +49531,7 @@ check("operational status preserves compact canonical health coverage", async ()
     generatedAt: "2026-07-13T14:29:00.000Z",
     indexedAt: "2026-07-13T14:29:01.000Z",
     indexedThroughBlock: 114,
+    payloadBytes: 0,
     snapshotId: "summary-snapshot",
   });
   assert.deepEqual(status.worker, {
@@ -46644,6 +50488,7 @@ check("recompacting summary-only payloads never turns truncated arrays into tota
     {
       SUMMARY_ACTIVITY_LIMIT: 10,
       SUMMARY_MARKET_LIMIT: 10,
+      canonicalSummaryItemPreview: (record) => record,
       recentByCreatedAt: (items, limit) =>
         (Array.isArray(items) ? items : []).slice(0, limit),
     },
@@ -46707,6 +50552,270 @@ check("recompacting summary-only payloads never turns truncated arrays into tota
   assert.equal(registryTwice.totalCounts.pendingEvents, 8);
   assert.equal(registryTwice.totalCounts.sales, null);
   assert.equal(registryTwice.collectionHasMore.listings, true);
+});
+
+check("compact token summaries cannot poison complete token-state caches", async () => {
+  const tokenPayloadCanPopulateFullStateCache = isolatedFunction(
+    API_PATH,
+    "tokenPayloadCanPopulateFullStateCache",
+  );
+  const completePayload = {
+    closedListings: [],
+    holders: [],
+    indexedThroughBlock: 960_800,
+    indexedThroughBlockHash: "b".repeat(64),
+    invalidEvents: [],
+    listings: [],
+    mints: [],
+    sales: [],
+    tokens: [{ tokenId: "a".repeat(64) }],
+    transfers: [],
+  };
+  assert.equal(tokenPayloadCanPopulateFullStateCache(completePayload), true);
+  assert.equal(
+    tokenPayloadCanPopulateFullStateCache({
+      ...completePayload,
+      indexedThroughBlock: 0,
+    }),
+    false,
+    "livenet full-state admission requires a positive canonical height",
+  );
+  assert.equal(
+    tokenPayloadCanPopulateFullStateCache({
+      ...completePayload,
+      indexedThroughBlockHash: "",
+    }),
+    false,
+    "livenet full-state admission requires a canonical block hash",
+  );
+  assert.equal(
+    tokenPayloadCanPopulateFullStateCache({
+      ...completePayload,
+      indexedThroughBlockHash: "not-a-canonical-hash",
+    }),
+    false,
+  );
+  assert.equal(
+    tokenPayloadCanPopulateFullStateCache(
+      {
+        ...completePayload,
+        indexedThroughBlock: undefined,
+        indexedThroughBlockHash: undefined,
+      },
+      "testnet",
+    ),
+    true,
+    "non-livenet cache admission remains collection-completeness based",
+  );
+  assert.equal(
+    tokenPayloadCanPopulateFullStateCache({
+      ...completePayload,
+      summaryOnly: true,
+    }),
+    false,
+  );
+  assert.equal(
+    tokenPayloadCanPopulateFullStateCache({
+      ...completePayload,
+      collectionHasMore: { listings: true },
+    }),
+    false,
+  );
+  assert.equal(
+    tokenPayloadCanPopulateFullStateCache({
+      ...completePayload,
+      totalCounts: { listings: 1 },
+    }),
+    false,
+  );
+  assert.equal(
+    tokenPayloadCanPopulateFullStateCache({
+      ...completePayload,
+      transfers: undefined,
+    }),
+    false,
+  );
+
+  const responseCache = new Map();
+  const exactTipTokenCache = new Map();
+  const cacheTokenPayload = isolatedFunction(API_PATH, "cacheTokenPayload", {
+    EXACT_TIP_TOKEN_CACHE: exactTipTokenCache,
+    PROOF_INDEX_HEALTH_MAX_AGE_MS: 60_000,
+    RESPONSE_CACHE: responseCache,
+    TOKEN_CACHE_STALE_MS: 60_000,
+    TOKEN_CACHE_TTL_MS: 10_000,
+    cacheJsonBody: (key, body) => responseCache.set(key, { body }),
+    invalidateDerivedCachesForBaseCache: () => {},
+    normalizeTokenScope: (value) => String(value ?? "").toLowerCase(),
+    payloadIndexedThroughBlockHash: () => "b".repeat(64),
+    shouldPersistJsonCache: () => false,
+    tokenPayloadCanPopulateFullStateCache,
+    writePersistedJsonCache: async () => {},
+  });
+  assert.equal(
+    cacheTokenPayload("livenet", "A", completePayload, {
+      exactTipValidated: true,
+    }),
+    true,
+  );
+  const retained = responseCache.get("payload:token:livenet:a")?.payload;
+  assert.equal(retained, completePayload);
+  const checkpointlessPayload = {
+    ...completePayload,
+    indexedThroughBlock: undefined,
+    indexedThroughBlockHash: undefined,
+  };
+  assert.equal(
+    cacheTokenPayload("livenet", "A", checkpointlessPayload, {
+      exactTipValidated: true,
+    }),
+    false,
+    "checkpointless livenet state must not enter the full-state cache",
+  );
+  assert.equal(
+    responseCache.get("payload:token:livenet:a")?.payload,
+    completePayload,
+  );
+  assert.equal(
+    exactTipTokenCache.get("token:livenet:a")?.payload,
+    completePayload,
+    "checkpointless state must not replace exact-tip cache authority",
+  );
+  assert.equal(
+    cacheTokenPayload("livenet", "A", {
+      ...completePayload,
+      summaryOnly: true,
+    }),
+    false,
+  );
+  assert.equal(
+    responseCache.get("payload:token:livenet:a")?.payload,
+    completePayload,
+    "a refused compact summary must not replace an existing complete cache",
+  );
+  assert.equal(
+    exactTipTokenCache.get("token:livenet:a")?.payload,
+    completePayload,
+  );
+
+  const quarantineTokenJsonFullStateCache = isolatedFunction(
+    API_PATH,
+    "quarantineTokenJsonFullStateCache",
+    { RESPONSE_CACHE: responseCache },
+  );
+  let persistedPayload = null;
+  const existingTokenPayload = isolatedFunction(
+    API_PATH,
+    "existingTokenPayload",
+    {
+      EXACT_TIP_TOKEN_CACHE: exactTipTokenCache,
+      RESPONSE_CACHE: responseCache,
+      TOKEN_CACHE_STALE_MS: 60_000,
+      normalizeTokenScope: (value) => String(value ?? "").toLowerCase(),
+      persistedPayloadForCache: async () => persistedPayload,
+      quarantineTokenJsonFullStateCache,
+      tokenPayloadCanPopulateFullStateCache,
+    },
+  );
+  const compactPayload = { ...completePayload, summaryOnly: true };
+  responseCache.set("payload:token:livenet:a", { payload: compactPayload });
+  exactTipTokenCache.set("token:livenet:a", { payload: compactPayload });
+  assert.equal(await existingTokenPayload("livenet", "A"), null);
+  assert.equal(responseCache.has("payload:token:livenet:a"), false);
+  assert.equal(exactTipTokenCache.has("token:livenet:a"), false);
+  assert.equal(
+    responseCache.get("json:token:livenet:a")?.tokenFullStateRejected,
+    true,
+    "an in-memory compact payload must quarantine its persisted full-state key",
+  );
+
+  responseCache.delete("json:token:livenet:a");
+  persistedPayload = compactPayload;
+  assert.equal(await existingTokenPayload("livenet", "A"), null);
+  assert.equal(
+    responseCache.get("json:token:livenet:a")?.tokenFullStateRejected,
+    true,
+    "a persisted compact payload must be quarantined before fallback use",
+  );
+  responseCache.delete("json:token:livenet:a");
+  persistedPayload = checkpointlessPayload;
+  assert.equal(await existingTokenPayload("livenet", "A"), null);
+  assert.equal(
+    responseCache.get("json:token:livenet:a")?.tokenFullStateRejected,
+    true,
+    "a checkpointless persisted livenet payload must be quarantined",
+  );
+  responseCache.delete("json:token:livenet:a");
+  persistedPayload = completePayload;
+  assert.equal(
+    await existingTokenPayload("livenet", "A"),
+    completePayload,
+  );
+
+  const safeTokenPayload = isolatedFunction(API_PATH, "safeTokenPayload", {
+    WORK_TOKEN_ID,
+    existingTokenPayload: async () => completePayload,
+    liveWorkTokenState: async (_network, payload) => payload,
+    normalizeTokenScope: (value) => String(value ?? "").toLowerCase(),
+    tokenPayload: async () => compactPayload,
+    tokenPayloadCanPopulateFullStateCache,
+    tokenPayloadLooksWorse: () => false,
+    tokenStateWithoutDroppedPendingTransactions: (payload) => payload,
+    workTokenPayload: async () => compactPayload,
+  });
+  assert.equal(
+    await safeTokenPayload("livenet", "A"),
+    completePayload,
+    "an incomplete refresh may fall back only to a previously complete payload",
+  );
+  const unsafeTokenPayload = isolatedFunction(API_PATH, "safeTokenPayload", {
+    WORK_TOKEN_ID,
+    existingTokenPayload: async () => null,
+    liveWorkTokenState: async (_network, payload) => payload,
+    normalizeTokenScope: (value) => String(value ?? "").toLowerCase(),
+    tokenPayload: async () => compactPayload,
+    tokenPayloadCanPopulateFullStateCache,
+    tokenPayloadLooksWorse: () => false,
+    tokenStateWithoutDroppedPendingTransactions: (payload) => payload,
+    workTokenPayload: async () => compactPayload,
+  });
+  await assert.rejects(
+    unsafeTokenPayload("livenet", "A"),
+    /complete full-state payload/u,
+  );
+
+  const refreshTokenPayload = isolatedFunction(
+    API_PATH,
+    "refreshTokenPayload",
+    {
+      cacheTokenPayload: () => false,
+      normalizeTokenScope: (value) => String(value ?? "").toLowerCase(),
+      safeTokenPayload: async () => compactPayload,
+      tokenPayloadCanPopulateFullStateCache,
+    },
+  );
+  await assert.rejects(
+    refreshTokenPayload("livenet", "A"),
+    /refused to publish an incomplete full-state payload/u,
+  );
+
+  for (const functionName of [
+    "existingTokenPayload",
+    "safeTokenPayload",
+    "refreshTokenPayload",
+    "cachedTokenPayloadSnapshotNoRefresh",
+    "fastCachedTokenPayload",
+    "fastTokenPayloadSnapshot",
+    "currentMemoryTokenPayloadForRead",
+    "currentExactTipTokenPayloadForRead",
+    "tokenPayloadForRead",
+  ]) {
+    assert.match(
+      topLevelFunctionSource(API_PATH, functionName),
+      /tokenPayloadCanPopulateFullStateCache/,
+      `${functionName} must reject compact payloads before a full-state read`,
+    );
+  }
 });
 
 check("compact token definitions preserve per-token market totals beyond previews", () => {
@@ -47003,6 +51112,30 @@ check("Q16 WORK summaries preserve exact supply and rational market prices", () 
     );
     assert.doesNotThrow(() => JSON.stringify(compact));
   }
+
+  const scopedOverride = compactTokenSummaryPayload(
+    {
+      ...compactPayload,
+      confirmedSupply: "4.0000000000000002",
+      pendingSupply: "0.0000000000000003",
+      tokens: [{
+        ...q16Definition,
+        confirmedSupply: "3.0000000000000001",
+        confirmedSupplySubatoms: "30000000000000001",
+        pendingSupply: "0.0000000000000001",
+        pendingSupplySubatoms: "1",
+      }],
+    },
+    WORK_TOKEN_ID,
+  ).tokens[0];
+  assert.equal(scopedOverride.confirmedSupply, "4.0000000000000002");
+  assert.equal(
+    scopedOverride.confirmedSupplySubatoms,
+    "40000000000000002",
+    "a scoped Q16 display override and its exact subatom alias must share one integer",
+  );
+  assert.equal(scopedOverride.pendingSupply, "0.0000000000000003");
+  assert.equal(scopedOverride.pendingSupplySubatoms, "3");
 
   const q8 = tokenAggregateSummaries({
     listings: [{
@@ -62583,6 +66716,7 @@ check("WORK precision V2 readiness cache is exact, positive-only, and coalesced"
     snapshot_hash: tipHash,
     snapshot_height: tipHeight,
     snapshot_id: "test-snapshot",
+    snapshot_payload_bytes: 1_024,
     snapshot_source_hashes: { blockScan: tipHash },
     snapshot_work_amount_storage_model: storageModel,
     tip_hash: tipHash,
@@ -62632,6 +66766,7 @@ check("WORK precision V2 readiness cache is exact, positive-only, and coalesced"
       workPrecisionV2ReadinessFingerprintIso: readinessFingerprintIso,
       workPrecisionV2ReadinessValueSha256: readinessValueSha256,
       stableWorkPrecisionJson: stableReadinessJson,
+      CANONICAL_SUMMARY_SNAPSHOT_MAX_BYTES: 8 * 1024 * 1024,
       WORK_AMO_V8_BLOCK_SEQUENCER_MODEL: transitionModel,
       WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL: tokenStateModel,
       WORK_PRECISION_V2_READINESS_CACHE_TTL_MS: 30_000,
@@ -63292,7 +67427,8 @@ check("WORK precision V2 readiness cache is exact, positive-only, and coalesced"
   );
   assert.match(
     fullAuditSource,
-    /snapshot\.payload \? 'tokenStatePayloads'[\s\S]*ORDER BY snapshot\.indexed_through_block DESC NULLS LAST,\s*snapshot\.generated_at DESC/u,
+    /canonicalQ16SummarySnapshotSqlEligibility\("snapshot"\)[\s\S]*\$\{q16SummaryEligibility\}[\s\S]*ORDER BY snapshot\.indexed_through_block DESC NULLS LAST,\s*snapshot\.generated_at DESC/u,
+    "the full audit must select only compact transition-witness Q16 summaries",
   );
   assert.doesNotMatch(
     readinessSource,
@@ -66455,6 +70591,32 @@ check("WORK transfer recovery proves missing explorer order through Core", async
     [preV5BlockHash],
     "unrelated address transactions must not amplify Core hydration",
   );
+
+  fetchedBlockHashes.length = 0;
+  const heightlessCoreCachedWorkSend = {
+    ...explorerWorkSend,
+    status: {
+      block_hash: preV5BlockHash,
+      confirmed: true,
+    },
+  };
+  const [hydratedHeightless] =
+    await workTransferRecoveryTransactionsWithCanonicalOrder(
+      [heightlessCoreCachedWorkSend],
+      "livenet",
+    );
+  assert.equal(
+    transactionBlockHeight(hydratedHeightless),
+    preV5BlockHeight,
+    "Core must hydrate an absent cached transaction height after proving active membership",
+  );
+  assert.equal(transactionBlockIndex(hydratedHeightless), 3_013);
+  assert.equal(
+    transactionBlockHeight(heightlessCoreCachedWorkSend),
+    undefined,
+    "canonical recovery must not mutate the cached source transaction",
+  );
+  assert.deepEqual(fetchedBlockHashes, [preV5BlockHash]);
 
   fetchedBlockHashes.length = 0;
   const [verifiedExact] =
@@ -69667,6 +73829,410 @@ check("Q16 mixed companions replace Mail exactly and suppress stale transaction 
       `${label} must close the projection shape over the exact Mail commitment`,
     );
   }
+});
+
+check("canonical summary persistence is compact and storage-budgeted", async () => {
+  const budgetBytes = 128;
+  const canonicalRootKeys = Object.freeze([
+    "checks",
+    "generatedAt",
+    "indexedThroughBlock",
+    "indexedThroughBlockHash",
+    "metrics",
+    "missingLogEvents",
+    "network",
+    "ok",
+    "snapshotId",
+    "sourceHashes",
+    "status",
+    "summaryPayloads",
+    "summaryPayloadsIndexedAt",
+    "summaryRefresh",
+    "totals",
+    "workAmountStorageModel",
+    "workSufficientState",
+  ]);
+  const objectPayload = (value) =>
+    value && typeof value === "object" && !Array.isArray(value) ? value : null;
+  const storageViolation = isolatedFunction(
+    BACKFILL_PATH,
+    "canonicalSummarySnapshotStorageViolation",
+    {
+      CANONICAL_SUMMARY_SNAPSHOT_ROOT_KEYS: canonicalRootKeys,
+      WORK_SUBATOM_PROJECTION_MODEL,
+      canonicalWorkQ16LedgerSnapshotStateWitness: () => null,
+      objectPayload,
+    },
+  );
+  const assertStorageBudget = isolatedFunction(
+    BACKFILL_PATH,
+    "assertCanonicalSummarySnapshotStorageBudget",
+    {
+      Buffer,
+      CANONICAL_SUMMARY_SNAPSHOT_MAX_BYTES: budgetBytes,
+      canonicalSummarySnapshotStorageViolation: storageViolation,
+    },
+  );
+  const small = { checks: [] };
+  assert.equal(
+    assertStorageBudget(small),
+    Buffer.byteLength(JSON.stringify(small), "utf8"),
+  );
+  assert.throws(
+    () => assertStorageBudget({ checks: ["x".repeat(budgetBytes)] }),
+    (error) =>
+      error?.code === "POW_CANONICAL_SUMMARY_STORAGE_BUDGET_EXCEEDED" &&
+      Number(error?.payloadBytes) > budgetBytes,
+  );
+  assert.throws(
+    () => assertStorageBudget({ activityPayload: { activity: [] } }),
+    (error) =>
+      error?.code === "POW_CANONICAL_SUMMARY_STORAGE_CONTRACT_VIOLATION" &&
+      error?.violation === "forbidden-root-key:activityPayload",
+  );
+  assert.throws(
+    () =>
+      assertStorageBudget({
+        tokenStatePayloads: { all: { tokens: [] } },
+      }),
+    (error) =>
+      error?.code === "POW_CANONICAL_SUMMARY_STORAGE_CONTRACT_VIOLATION" &&
+      error?.violation === "forbidden-root-key:tokenStatePayloads",
+  );
+  assert.throws(
+    () => assertStorageBudget({ arbitraryInheritedRoot: [] }),
+    (error) =>
+      error?.code === "POW_CANONICAL_SUMMARY_STORAGE_CONTRACT_VIOLATION" &&
+      error?.violation === "unexpected-root-key:arbitraryInheritedRoot",
+  );
+  assert.throws(
+    () =>
+      assertStorageBudget({
+        workAmountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+        workSufficientState: "scalar",
+      }),
+    (error) =>
+      error?.code === "POW_CANONICAL_SUMMARY_STORAGE_CONTRACT_VIOLATION" &&
+      error?.violation === "invalid-work-sufficient-state",
+  );
+  const assertLogicalStorageCap = isolatedFunction(
+    BACKFILL_PATH,
+    "assertCanonicalSummarySnapshotStorageBudget",
+    {
+      Buffer,
+      CANONICAL_SUMMARY_SNAPSHOT_MAX_BYTES: 8 * 1024 * 1024,
+      canonicalSummarySnapshotStorageViolation: () => "",
+    },
+  );
+  assert.throws(
+    () =>
+      assertLogicalStorageCap({
+        checks: ["x".repeat(8 * 1024 * 1024)],
+      }),
+    (error) =>
+      error?.code === "POW_CANONICAL_SUMMARY_STORAGE_BUDGET_EXCEEDED" &&
+      Number(error?.payloadBytes) > 8 * 1024 * 1024,
+    "highly compressible JSON must still fail the logical eight-MiB cap",
+  );
+
+  const assertLedgerBudget = isolatedFunction(
+    BACKFILL_PATH,
+    "assertLedgerSnapshotStorageBudget",
+    { Buffer, LEDGER_SNAPSHOT_MAX_BYTES: budgetBytes },
+  );
+  assert.throws(
+    () => assertLedgerBudget({ history: "x".repeat(budgetBytes) }),
+    (error) =>
+      error?.code === "POW_LEDGER_SNAPSHOT_STORAGE_BUDGET_EXCEEDED",
+  );
+
+  const preview = isolatedFunction(API_PATH, "canonicalSummaryItemPreview", {
+    CANONICAL_SUMMARY_ITEM_OMITTED_KEYS: new Set([
+      "actionAuthorization",
+      "listing",
+      "listingAuthorization",
+      "parsed",
+      "payload",
+      "rawPayload",
+      "replayMetadata",
+      "workAmoV5RawScriptWitness",
+      "workAmoV5ReplayOutput",
+      "workAmoV5ReplayRawWitness",
+    ]),
+    Object,
+  });
+  const compact = preview({
+    id: "proof",
+    protocolPayload: "pwid1:r2:proof:owner:receiver",
+    saleAuthorization: { priceSats: 1_000 },
+    workAmoV5ReplayRawWitness: { rawRecordParts: ["large"] },
+  });
+  assert.equal(compact.id, "proof");
+  assert.equal(compact.protocolPayload, "pwid1:r2:proof:owner:receiver");
+  assert.equal(compact.saleAuthorization.priceSats, 1_000);
+  assert.equal("workAmoV5ReplayRawWitness" in compact, false);
+
+  const tokenSummaryPreviewRecord = isolatedFunction(
+    API_PATH,
+    "tokenSummaryPreviewRecord",
+  );
+  const previewKeysSource = fileSource(API_PATH).match(
+    /const TOKEN_SUMMARY_MARKET_PREVIEW_KEYS = \[([\s\S]*?)\n\];/u,
+  )?.[1] ?? "";
+  const previewKeys = [...previewKeysSource.matchAll(/"([A-Za-z0-9_]+)"/gu)]
+    .map((match) => match[1]);
+  for (const requiredSaleField of [
+    "amount",
+    "attributedMinerFeeSats",
+    "buyerAddress",
+    "creditLiveValueSats",
+    "creditValueAtConfirmSats",
+    "disabledReason",
+    "estimate",
+    "listingId",
+    "paidSats",
+    "priceSats",
+    "salePaymentSats",
+    "sellerAddress",
+    "ticker",
+    "tokenId",
+    "txid",
+    "workAmoEstimate",
+  ]) {
+    assert.ok(
+      previewKeys.includes(requiredSaleField),
+      `the compact sale response must preserve ${requiredSaleField}`,
+    );
+  }
+  const salePreview = tokenSummaryPreviewRecord(
+    {
+      amount: 7,
+      attributedMinerFeeSats: 321,
+      buyerAddress: "bc1pbuyer",
+      creditLiveValueSats: 8_000,
+      creditValueAtConfirmSats: 7_000,
+      listingId: "b".repeat(64),
+      paidSats: 5_000,
+      priceSats: 1_000,
+      rawPayload: "x".repeat(2 * 1024 * 1024),
+      salePaymentSats: 5_000,
+      sellerAddress: "bc1pseller",
+      ticker: "WORK",
+      tokenId: "c".repeat(64),
+      txid: "a".repeat(64),
+      workAmoV5ReplayRawWitness: { rawRecordParts: ["large"] },
+    },
+    previewKeys,
+  );
+  assert.equal(salePreview.buyerAddress, "bc1pbuyer");
+  assert.equal(salePreview.paidSats, 5_000);
+  assert.equal(salePreview.salePaymentSats, 5_000);
+  assert.equal(salePreview.attributedMinerFeeSats, 321);
+  assert.equal("rawPayload" in salePreview, false);
+  assert.equal("workAmoV5ReplayRawWitness" in salePreview, false);
+  const syntheticBundleBytes = Buffer.byteLength(
+    JSON.stringify({
+      summaryPayloads: Object.fromEntries(
+        Array.from({ length: 8 }, (_unused, index) => [
+          `summary-${index}`,
+          { token: { sales: Array.from({ length: 40 }, () => salePreview) } },
+        ]),
+      ),
+    }),
+    "utf8",
+  );
+  assert.ok(syntheticBundleBytes < 8 * 1024 * 1024);
+  assert.match(
+    topLevelFunctionSource(API_PATH, "compactTokenSummaryPayload"),
+    /const compactSales = recentByCreatedAt\(payload\.sales, saleLimit\)\.map\(\s*compactMarketRecord/u,
+    "summary sales must use the same bounded market preview as listings",
+  );
+
+  const workerSource = readFileSync(WORKER_PATH, "utf8");
+  assert.doesNotMatch(
+    workerSource,
+    /POW_INDEX_BACKFILL_STORE_LEDGER_SNAPSHOT: "1"/u,
+    "the hot worker must not publish full derived array snapshots",
+  );
+  const canonicalSummarySource = topLevelFunctionSource(
+    API_PATH,
+    "internalCanonicalSummaryPayload",
+  );
+  assert.match(
+    canonicalSummarySource,
+    /tokenSummary: attachLedgerMetadata\([\s\S]*compactTokenDirectorySummaryPayload/u,
+  );
+  const tokenDirectorySource = topLevelFunctionSource(
+    API_PATH,
+    "compactTokenDirectorySummaryPayload",
+  );
+  assert.match(
+    tokenDirectorySource,
+    /return compactTokenSummaryPayload\([\s\S]*compactMarketRecords: true[\s\S]*includeAllScopedListings: false/u,
+  );
+  assert.doesNotMatch(
+    tokenDirectorySource,
+    /(?:closedListings|holders|invalidEvents|listings|sales): \[\]/u,
+    "the default token-summary contract must retain its bounded v1 previews",
+  );
+  const tokenSummaryListingsSource = topLevelFunctionSource(
+    API_PATH,
+    "tokenSummaryListings",
+  );
+  assert.match(
+    tokenSummaryListingsSource,
+    /recentByCreatedAt\(listings, limit\)/u,
+  );
+  assert.match(
+    tokenSummaryListingsSource,
+    /if \(!tokenListingHasConfirmedSaleTicketSeal\(listing\)\) \{[\s\S]*continue/u,
+    "only confirmed buyable sale-ticket listings may escape the ordinary preview limit",
+  );
+  const storeSource = topLevelFunctionSource(
+    BACKFILL_PATH,
+    "storeCanonicalSummarySnapshot",
+  );
+  assert.match(
+    storeSource,
+    /assertCanonicalSummarySnapshotStorageBudget\(snapshotPayload\)/u,
+  );
+  assert.match(
+    storeSource,
+    /canonicalSummarySnapshotPayload\(\{/u,
+    "a new summary checkpoint must pass through the named-root constructor",
+  );
+  assert.doesNotMatch(
+    storeSource,
+    /\.\.\.(?:previousPayload|sameSnapshotPayload|ledger)[,}]/u,
+    "a summary write must not spread inherited snapshot or ledger roots",
+  );
+  assert.match(
+    storeSource,
+    /previousStorageEligible[\s\S]*canonical-summary-refresh/u,
+    "an oversized prior snapshot must not qualify as an already-current or deferred success",
+  );
+  assert.match(
+    topLevelFunctionSource(BACKFILL_PATH, "storeLedgerSnapshot"),
+    /assertLedgerSnapshotStorageBudget\(snapshotPayload\)/u,
+    "full derived snapshot writes must enforce the hard byte budget before SQL",
+  );
+
+  const canonicalSummarySnapshotPayload = isolatedFunction(
+    BACKFILL_PATH,
+    "canonicalSummarySnapshotPayload",
+    {
+      NETWORK: "livenet",
+      objectPayload,
+    },
+  );
+  const constructed = canonicalSummarySnapshotPayload({
+    generatedAt: "2026-08-26T00:00:00.000Z",
+    indexedThroughBlock: 960_601,
+    indexedThroughBlockHash: "a".repeat(64),
+    ledger: {
+      activityPayload: { stale: true },
+      arbitraryInheritedRoot: { stale: true },
+      checks: [],
+      holders: [{ address: "must-not-survive" }],
+      metrics: { indexedThroughBlock: 960_601 },
+      network: "livenet",
+      ok: true,
+      status: "green",
+      tokenState: { stale: true },
+    },
+    previousCoverage: 960_600,
+    publicLogFingerprint: { hash: "b".repeat(64) },
+    snapshotId: "fresh-q16",
+    sourceHashes: { blockScan: "a".repeat(64) },
+    summaryPayloads: {},
+    totals: {},
+    workAmountStorageModel: WORK_ATOMIC_PROJECTION_MODEL,
+    workSufficientState: null,
+  });
+  assert.equal(
+    Object.keys(constructed).every((key) => canonicalRootKeys.includes(key)),
+    true,
+  );
+  for (const inheritedKey of [
+    "activityPayload",
+    "arbitraryInheritedRoot",
+    "holders",
+    "tokenState",
+  ]) {
+    assert.equal(Object.hasOwn(constructed, inheritedKey), false);
+  }
+
+  let selectorSql = "";
+  const selectFreshCanonicalSummary = isolatedFunction(
+    BACKFILL_PATH,
+    "storedEligibleCanonicalSummarySnapshotPayload",
+    {
+      NETWORK: "livenet",
+      WORK_SUBATOM_PROJECTION_MODEL,
+      canonicalQ16SummarySnapshotSqlEligibility: () =>
+        "STRICT_Q16_LOGICAL_BYTE_ROOT_AND_WITNESS_ELIGIBILITY",
+      currentWorkProjectionModel: async () =>
+        WORK_SUBATOM_PROJECTION_MODEL,
+      eligibleCanonicalSummarySnapshotPayload: (payload) => payload,
+    },
+  );
+  const selected = await selectFreshCanonicalSummary({
+    async query(sql, params) {
+      selectorSql = String(sql);
+      assert.deepEqual(
+        Array.from(params),
+        ["livenet", WORK_SUBATOM_PROJECTION_MODEL],
+      );
+      return { rows: [{ payload: constructed }] };
+    },
+  });
+  assert.equal(selected, constructed);
+  assert.match(
+    selectorSql,
+    /STRICT_Q16_LOGICAL_BYTE_ROOT_AND_WITNESS_ELIGIBILITY/u,
+  );
+
+  const eligibilitySource = topLevelFunctionSource(
+    READER_PATH,
+    "canonicalQ16SummarySnapshotSqlEligibility",
+  );
+  assert.match(eligibilitySource, /octet_length\([^)]*payload::text\)/u);
+  assert.doesNotMatch(eligibilitySource, /pg_column_size/u);
+  assert.match(
+    eligibilitySource,
+    /jsonb_typeof\([\s\S]*workSufficientState[\s\S]*CASE[\s\S]*jsonb_object_keys/u,
+    "scalar stale witnesses must be rejected without throwing the selector",
+  );
+  assert.match(
+    eligibilitySource,
+    /unitScale'[\s\S]*to_jsonb\('[^']+'::text\)/u,
+    "SQL must require the unit scale to be the exact JSON string",
+  );
+  assert.match(
+    eligibilitySource,
+    /work_amo_block_transitions[\s\S]*closingStateCommitment[\s\S]*tokenStateCommitment/u,
+  );
+  assert.doesNotMatch(
+    topLevelFunctionSource(
+      READER_PATH,
+      "latestProofIndexOperationalMetadata",
+    ),
+    /pg_column_size\([^)]*payload/u,
+    "operational headroom must report logical JSON bytes",
+  );
+  const canonicalReadSource = topLevelFunctionSource(
+    READER_PATH,
+    "proofIndexCanonicalSummaryLedgerPayload",
+  );
+  assert.match(
+    canonicalReadSource,
+    /requiredWorkAmountStorageModel === WORK_SUBATOM_PROJECTION_MODEL[\s\S]*canonicalQ16SummarySnapshotSqlEligibility/u,
+  );
+  assert.doesNotMatch(
+    canonicalReadSource,
+    /!exactCheckpointRequested\s*&&\s*requiredWorkAmountStorageModel/u,
+    "exact Q16 checkpoint reads must reject legacy, oversized, or malformed rows",
+  );
 });
 
 let failures = 0;

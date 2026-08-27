@@ -254,6 +254,41 @@ const WORK_PRECISION_V2_DERIVED_PROJECTION_POLICY =
   "invalidate-and-replay-from-activation";
 const WORK_PRECISION_Q8_ERA = "q8";
 const WORK_PRECISION_Q16_ERA = "q16";
+const WORK_Q16_LEDGER_SNAPSHOT_STATE_MODEL =
+  "canonical-work-q16-transition-checkpoint-v1";
+const WORK_Q16_LEDGER_SNAPSHOT_STATE_KEYS = Object.freeze([
+  "amountStorageModel",
+  "closingStateCommitment",
+  "decimals",
+  "indexedThroughBlock",
+  "indexedThroughBlockHash",
+  "model",
+  "precisionModel",
+  "tokenStateCommitment",
+  "transitionModel",
+  "unitScale",
+  "workTokenStateModel",
+]);
+const CANONICAL_SUMMARY_SNAPSHOT_MAX_BYTES = 8 * 1024 * 1024;
+const CANONICAL_SUMMARY_SNAPSHOT_ROOT_KEYS = Object.freeze([
+  "checks",
+  "generatedAt",
+  "indexedThroughBlock",
+  "indexedThroughBlockHash",
+  "metrics",
+  "missingLogEvents",
+  "network",
+  "ok",
+  "snapshotId",
+  "sourceHashes",
+  "status",
+  "summaryPayloads",
+  "summaryPayloadsIndexedAt",
+  "summaryRefresh",
+  "totals",
+  "workAmountStorageModel",
+  "workSufficientState",
+]);
 const WORK_AMO_V8_PENDING_REBUILD_META_KEY =
   "workQ16PendingRebuild:livenet";
 const WORK_Q16_PENDING_ATTEMPT_META_KEY =
@@ -1825,18 +1860,50 @@ function sameWorkPrecisionCommitment(leftValue, rightValue, model = "") {
 
 export function workerWorkPrecisionSnapshotReady(
   snapshotValue,
-  { tipHash, tipHeight } = {},
+  { latestTransition, tipHash, tipHeight } = {},
 ) {
   const snapshot = objectRecord(snapshotValue);
+  const payloadRootKeys = Array.isArray(snapshot.payloadRootKeys)
+    ? snapshot.payloadRootKeys.map((key) => String(key))
+    : [];
+  const latestBoundary = validateWorkAmoV8BoundaryTransitionPayload(
+    objectRecord(latestTransition),
+  );
+  const latestPayload = objectRecord(latestTransition?.payload);
+  const workSufficientState = objectRecord(
+    snapshot.workSufficientState,
+  );
+  const tokenStateCommitment = objectRecord(
+    workSufficientState.tokenStateCommitment,
+  );
+  const closingStateCommitment = objectRecord(
+    workSufficientState.closingStateCommitment,
+  );
+  const expectedTokenStateCommitment = objectRecord(
+    latestBoundary.closingState?.tokenStateCommitment,
+  );
+  const expectedClosingStateCommitment = objectRecord(
+    latestPayload.closingStateCommitment,
+  );
   const normalizedTipHash = normalizedLowerText(tipHash);
-  const tokenStatePayloads = objectRecord(
-    snapshot.tokenStatePayloads,
+  const indexedThroughBlockHash = normalizedLowerText(
+    workSufficientState.indexedThroughBlockHash,
   );
   return Boolean(
-    Number.isSafeInteger(Number(tipHeight)) &&
+    exactJsonInteger(snapshot.payloadBytes, { minimum: 1 }) &&
+      snapshot.payloadBytes <= CANONICAL_SUMMARY_SNAPSHOT_MAX_BYTES &&
+      payloadRootKeys.length > 0 &&
+      payloadRootKeys.length === new Set(payloadRootKeys).size &&
+      payloadRootKeys.every((key) =>
+        CANONICAL_SUMMARY_SNAPSHOT_ROOT_KEYS.includes(key)
+      ) &&
+      payloadRootKeys.includes("workSufficientState") &&
+      !payloadRootKeys.includes("tokenStatePayloads") &&
+      Number.isSafeInteger(Number(tipHeight)) &&
       Number(tipHeight) > 0 &&
       /^[0-9a-f]{64}$/u.test(normalizedTipHash) &&
-      Number(snapshot.indexedThroughBlock) === Number(tipHeight) &&
+      exactJsonInteger(snapshot.indexedThroughBlock, { minimum: 1 }) &&
+      snapshot.indexedThroughBlock === Number(tipHeight) &&
       normalizedLowerText(snapshot.sourceBlockHash) ===
         normalizedTipHash &&
       normalizedLowerText(snapshot.payloadBlockHash) ===
@@ -1848,10 +1915,43 @@ export function workerWorkPrecisionSnapshotReady(
       snapshot.summaryMode === "canonical-summary-refresh" &&
       snapshot.consistencyOk === true &&
       snapshot.consistencyStatus === "green" &&
-      Object.keys(tokenStatePayloads).length > 0 &&
-      Object.keys(
-        objectRecord(tokenStatePayloads[WORK_TOKEN_ID]),
-      ).length > 0
+      latestBoundary.valid === true &&
+      Number(latestTransition.blockHeight) === Number(tipHeight) &&
+      normalizedLowerText(latestTransition.blockHash) ===
+        normalizedTipHash &&
+      exactObjectKeys(
+        workSufficientState,
+        WORK_Q16_LEDGER_SNAPSHOT_STATE_KEYS,
+      ) &&
+      workSufficientState.model ===
+        WORK_Q16_LEDGER_SNAPSHOT_STATE_MODEL &&
+      workSufficientState.amountStorageModel ===
+        WORK_SUBATOM_PROJECTION_MODEL &&
+      workSufficientState.decimals === WORK_SUBATOM_DECIMALS &&
+      workSufficientState.precisionModel === WORK_PRECISION_V2_MODEL &&
+      workSufficientState.transitionModel ===
+        WORK_AMO_V8_BLOCK_SEQUENCER_MODEL &&
+      workSufficientState.unitScale === WORK_SUBATOM_UNIT_SCALE_TEXT &&
+      workSufficientState.workTokenStateModel ===
+        WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL &&
+      exactJsonInteger(workSufficientState.indexedThroughBlock, {
+        minimum: 1,
+      }) &&
+      workSufficientState.indexedThroughBlock === Number(tipHeight) &&
+      typeof workSufficientState.indexedThroughBlockHash === "string" &&
+      workSufficientState.indexedThroughBlockHash ===
+        indexedThroughBlockHash &&
+      indexedThroughBlockHash === normalizedTipHash &&
+      sameWorkPrecisionCommitment(
+        tokenStateCommitment,
+        expectedTokenStateCommitment,
+        WORK_AMO_V5_PAYLOAD_COMMITMENT_MODEL,
+      ) &&
+      sameWorkPrecisionCommitment(
+        closingStateCommitment,
+        expectedClosingStateCommitment,
+        WORK_AMO_V5_STATE_COMMITMENT_MODEL,
+      )
   );
 }
 
@@ -1958,6 +2058,7 @@ export function workerWorkPrecisionConfirmedReplayEnvelopeReady({
       (
         requireSnapshot !== true ||
         workerWorkPrecisionSnapshotReady(snapshot, {
+          latestTransition: latest,
           tipHash: normalizedTipHash,
           tipHeight,
         })
@@ -3581,6 +3682,10 @@ async function assertWorkPrecisionReplayReady(
   const declarationBlockHash = normalizedLowerText(
     precision.declarationBlockHash,
   );
+  const canonicalSummarySnapshotRootKeysSql =
+    CANONICAL_SUMMARY_SNAPSHOT_ROOT_KEYS.map(
+      (key) => `'${key}'`,
+    ).join(", ");
   if (
     Number(precision.declarationHeight) !== activationHeight - 1 ||
     !/^[0-9a-f]{64}$/u.test(declarationBlockHash)
@@ -3759,6 +3864,8 @@ async function assertWorkPrecisionReplayReady(
                 snapshot.consistency->>'status',
               'indexedThroughBlock',
                 snapshot.indexed_through_block,
+              'payloadBytes',
+                octet_length(snapshot.payload::text),
               'payloadBlockHash',
                 lower(COALESCE(
                   snapshot.payload->>'indexedThroughBlockHash',
@@ -3769,6 +3876,12 @@ async function assertWorkPrecisionReplayReady(
                   snapshot.source_hashes->>'blockScan',
                   ''
                 )),
+              'payloadRootKeys',
+                (
+                  SELECT jsonb_agg(root_keys.root_key ORDER BY root_keys.root_key)
+                  FROM jsonb_object_keys(snapshot.payload)
+                    AS root_keys(root_key)
+                ),
               'summaryBlockHash',
                 lower(COALESCE(
                   snapshot.payload->'summaryRefresh'
@@ -3777,16 +3890,44 @@ async function assertWorkPrecisionReplayReady(
                 )),
               'summaryMode',
                 snapshot.payload->'summaryRefresh'->>'mode',
-              'tokenStatePayloads',
-                snapshot.payload->'tokenStatePayloads',
+              'workSufficientState',
+                snapshot.payload->'workSufficientState',
               'workAmountStorageModel',
                 snapshot.payload->>'workAmountStorageModel'
             )
             FROM proof_indexer.ledger_snapshots snapshot
             WHERE snapshot.network = $1
               AND snapshot.generated_at >= $6::timestamptz
-              AND snapshot.payload ? 'tokenStatePayloads'
-              AND snapshot.payload->'tokenStatePayloads' ? $7
+              AND octet_length(snapshot.payload::text) <=
+                ${CANONICAL_SUMMARY_SNAPSHOT_MAX_BYTES}
+              AND NOT EXISTS (
+                SELECT 1
+                FROM jsonb_object_keys(
+                  CASE
+                    WHEN jsonb_typeof(snapshot.payload) = 'object'
+                      THEN snapshot.payload
+                    ELSE '{}'::jsonb
+                  END
+                ) AS root_keys(root_key)
+                WHERE root_key <> ALL(
+                  ARRAY[${canonicalSummarySnapshotRootKeysSql}]::text[]
+                )
+              )
+              AND snapshot.payload ? 'workSufficientState'
+              AND NOT (snapshot.payload ? 'tokenStatePayloads')
+              AND jsonb_typeof(
+                snapshot.payload->'workSufficientState'
+              ) = 'object'
+              AND snapshot.payload->'workSufficientState'->>'model' =
+                '${WORK_Q16_LEDGER_SNAPSHOT_STATE_MODEL}'
+              AND snapshot.payload->'workSufficientState'
+                ->'indexedThroughBlock' =
+                  to_jsonb(snapshot.indexed_through_block)
+              AND lower(snapshot.payload->'workSufficientState'
+                ->>'indexedThroughBlockHash') = lower(COALESCE(
+                  snapshot.source_hashes->>'blockScan',
+                  ''
+                ))
               AND snapshot.payload->>'workAmountStorageModel' = $9
             ORDER BY snapshot.indexed_through_block DESC NULLS LAST,
               snapshot.generated_at DESC
@@ -6032,7 +6173,7 @@ async function refreshPendingStatuses(
         AND last_seen_at <= now() - ($2::double precision * interval '1 millisecond')
         AND NOT (txid = ANY($4::text[]))
       ORDER BY last_seen_at ASC, txid ASC
-      LIMIT $3
+      LIMIT ($3::integer + 1)
     `,
     [
       NETWORK,
@@ -6041,6 +6182,7 @@ async function refreshPendingStatuses(
       q16ParentMembershipTxids,
     ],
   );
+  const pendingRows = pendingResult.rows.slice(0, PENDING_STATUS_LIMIT);
 
   const summary = {
     checked: 0,
@@ -6055,12 +6197,12 @@ async function refreshPendingStatuses(
   const deadlineMs = Date.now() + PENDING_STATUS_BUDGET_MS;
   let nextIndex = 0;
   const worker = async () => {
-    while (nextIndex < pendingResult.rows.length) {
+    while (nextIndex < pendingRows.length) {
       const remainingMs = deadlineMs - Date.now();
       if (remainingMs <= 0) {
         return;
       }
-      const row = pendingResult.rows[nextIndex];
+      const row = pendingRows[nextIndex];
       nextIndex += 1;
       const txid = String(row.txid);
       summary.checked += 1;
@@ -6115,13 +6257,16 @@ async function refreshPendingStatuses(
       {
         length: Math.min(
           PENDING_STATUS_CONCURRENCY,
-          pendingResult.rows.length,
+          pendingRows.length,
         ),
       },
       () => worker(),
     ),
   );
-  summary.deferred += Math.max(0, pendingResult.rows.length - summary.checked);
+  // The LIMIT + 1 witness makes a capped backlog visible without scanning the
+  // entire pending table. Any unprocessed or semantically deferred candidate
+  // keeps readiness non-green until a later sweep resolves it.
+  summary.deferred += Math.max(0, summary.staleCandidates - summary.checked);
 
   return summary;
 }
@@ -6505,6 +6650,11 @@ async function runCycle(pool, lastSuccess, runtime) {
   if (runtime.stopping) {
     throw workerStoppingError();
   }
+  if (pendingEventHealth.ok !== true) {
+    throw new Error(
+      `Pending protocol-event readiness is unhealthy: ${JSON.stringify(pendingEventHealth)}`,
+    );
+  }
 
   const nowMs = Date.now();
   const runParityNow =
@@ -6520,6 +6670,10 @@ async function runCycle(pool, lastSuccess, runtime) {
         NETWORK,
         POW_API_BASE: API_BASE,
         POW_INDEX_DB_APP_NAME: "proof-indexer-worker-parity",
+        POW_INDEX_PARITY_LOG_FRESH: "1",
+        POW_INDEX_PARITY_SNAPSHOT_FRESH: "1",
+        POW_INDEX_PARITY_STRICT: "1",
+        POW_INDEX_PARITY_TOKEN_FRESH: "1",
       }, {
         runtime,
         timeoutMs: PARITY_CHILD_TIMEOUT_MS,
@@ -6530,6 +6684,7 @@ async function runCycle(pool, lastSuccess, runtime) {
         throw workerStoppingError();
       }
       console.error(`Worker parity check failed: ${error?.message ?? error}`);
+      throw error;
     }
   }
 

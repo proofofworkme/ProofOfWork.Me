@@ -6,6 +6,9 @@ const POWB_TOKEN_ID =
   "a3d0bc8528f91dfc52400a885bed7e49235396aa82aa9f95db41be629f1d5562";
 const INCB_TOKEN_ID =
   "3cb25745f937f2b4e5508e5400189fe8fe679cd8e84bfa1e9176d70c9761f15d";
+const WORK_PRECISION_MODEL = "canonical-work-subatoms-v2";
+const WORK_STORAGE_MODEL = "work-subatoms-v2";
+const WORK_UNIT_SCALE = "10000000000000000";
 const VIEWPORT_WIDTHS = [
   768,
   860,
@@ -39,21 +42,32 @@ function surfaceUrl(baseUrl, path) {
 }
 
 function tokenDefinition({ ticker, tokenId, registryAddress, uncapped = false }) {
+  const work = ticker === "WORK";
   return {
+    ...(work
+      ? {
+          amountStorageModel: WORK_STORAGE_MODEL,
+          confirmedSupplySubatoms: "210000000000000000000000",
+          maxSupplySubatoms: "210000000000000000000000",
+          mintAmountSubatoms: "10000000000000000000",
+          pendingSupplySubatoms: "0",
+          precisionModel: WORK_PRECISION_MODEL,
+        }
+      : {}),
     confirmed: true,
-    confirmedMints: ticker === "WORK" ? 21_000 : 1,
+    confirmedMints: work ? 21_000 : 1,
     confirmedOpenListings: 0,
     confirmedSales: 0,
     confirmedSalesVolumeSats: 0,
-    confirmedSupply: ticker === "WORK" ? 21_000_000 : "1000",
+    confirmedSupply: work ? "21000000" : "1000",
     createdAt: NOW,
     creatorAddress: "1L4xrDurN9VghknrbsSju2vQb6oXZe1Pbn",
     creationFeeSats: 1_000,
-    decimals: ticker === "WORK" ? 8 : 0,
+    decimals: work ? 16 : 0,
     holderCount: 1,
     maxSupply: uncapped ? null : 21_000_000,
     maxSupplyModel: uncapped ? "uncapped" : "fixed",
-    mintAmount: ticker === "WORK" ? 1_000 : 1,
+    mintAmount: work ? 1_000 : 1,
     mintPriceSats: 1_000,
     network: "livenet",
     openListings: 0,
@@ -61,14 +75,14 @@ function tokenDefinition({ ticker, tokenId, registryAddress, uncapped = false })
     pendingOpenListings: 0,
     pendingSales: 0,
     pendingSalesVolumeSats: 0,
-    pendingSupply: 0,
+    pendingSupply: work ? "0" : 0,
     registryAddress,
     ticker,
     tokenId,
     transferCount: 0,
     txid: tokenId,
     uncapped,
-    unitScale: ticker === "WORK" ? "100000000" : "1",
+    unitScale: work ? WORK_UNIT_SCALE : "1",
   };
 }
 
@@ -93,6 +107,7 @@ const TOKENS = [
 ];
 
 const TOKEN_STATE = {
+  amountStorageModel: WORK_STORAGE_MODEL,
   authoritativeWallet: false,
   closedListings: [],
   creationSats: 3_000,
@@ -101,11 +116,14 @@ const TOKEN_STATE = {
   listings: [],
   mints: [],
   pendingSupply: 0,
+  pendingSupplySubatoms: "0",
+  precisionModel: WORK_PRECISION_MODEL,
   sales: [],
   source: "responsive-layout-fixture",
   summaryOnly: false,
   tokens: TOKENS,
   transfers: [],
+  unitScale: WORK_UNIT_SCALE,
 };
 
 const REGISTRY_STATE = {
@@ -129,6 +147,29 @@ const WORK_AMO_V5_DECLARATION_TXID =
   "54d7a367a3998ce1327ee89d983a25c80ce34b96d9811807df215a8694aead36";
 const WORK_AMO_V5_DECLARATION_BLOCK_HASH =
   "0000000000000000000094195957f498f894c92f5d5f75ff5b9c9afc749a6811";
+const WORK_AMO_V8 = {
+  activation: {
+    activationHeight: 960_219,
+    active: true,
+    confirmed: true,
+    declarationConfirmed: true,
+    declarationHeight: 960_218,
+    evidenceComplete: true,
+    reached: true,
+    tipVerified: true,
+  },
+  legacyWriteEmbargo: true,
+  listingWritesEnabled: true,
+  pinsConfigured: true,
+  pinsRequested: true,
+  protocolReady: true,
+  protocolWritesEnabled: true,
+  ready: true,
+  reasonCode: "",
+  settlementWritesEnabled: true,
+  version: "pwt-sale-v8",
+  writeAdmission: true,
+};
 
 const WORK_ACTUAL_VALUE = {
   baseNetworkValueQ8: NETWORK_VALUE_Q8,
@@ -149,6 +190,13 @@ const WORK_ACTUAL_VALUE = {
     missingConfirmedTxids: [],
     source: "proof-indexer-normalized-input-output-totals",
   },
+  creditEventFrozenValueQ8: "0",
+  creditEventLiveValueQ8: "0",
+  creditFrozenNetworkValueQ8: "0",
+  creditLiveNetworkValueQ8: "0",
+  creditMovementFrozenValueQ8: "0",
+  creditMovementLiveValueQ8: "0",
+  creditNetworkValueQ8: "0",
   floorQ8: FLOOR_VALUE_Q8,
   floorSats: FLOOR_VALUE,
   floorSatsExact: FLOOR_VALUE_EXACT,
@@ -176,6 +224,7 @@ const WORK_ACTUAL_VALUE = {
   totalQ8: NETWORK_VALUE_Q8,
   totalSats: NETWORK_VALUE,
   totalSatsExact: NETWORK_VALUE_EXACT,
+  workAmoV8: WORK_AMO_V8,
   workNetworkValueAccountingModel: WORK_ACCOUNTING_MODEL,
 };
 
@@ -201,7 +250,7 @@ const WORK_FLOOR = {
   frozenNetworkValueSats: NETWORK_VALUE,
   frozenNetworkValueSatsExact: NETWORK_VALUE_EXACT,
   indexedAt: NOW,
-  indexedThroughBlock: 959_100,
+  indexedThroughBlock: 960_220,
   indexedThroughBlockHash: HASH,
   liveFloorQ8: FLOOR_VALUE_Q8,
   liveFloorSats: FLOOR_VALUE,
@@ -215,7 +264,7 @@ const WORK_FLOOR = {
   networkValueSatsExact: NETWORK_VALUE_EXACT,
   powids: 1,
   snapshotId: "responsive-layout-fixture",
-  stats: { indexedThroughBlock: 959_100 },
+  stats: { indexedThroughBlock: 960_220 },
   tokenFlowSats: 0,
   totalQ8: NETWORK_VALUE_Q8,
   workAmoV5: {
@@ -322,6 +371,7 @@ const WORK_FLOOR = {
     version: "pwt-sale-v6",
     writesConfigured: true,
   },
+  workAmoV8: WORK_AMO_V8,
   workNetworkValueAccountingModel: WORK_ACCOUNTING_MODEL,
 };
 
@@ -685,14 +735,14 @@ async function assertMarketplaceGeometry(page, mode, width) {
   if (mode === "V1") {
     await tabs.getByRole("button", { name: /V1 Relic/ }).click();
   } else if (mode === "V4") {
-    await tabs.getByRole("button", { name: /V4 Relic/ }).click();
+    await tabs.getByRole("button", { name: /Pre-V8 Relics/ }).click();
   }
 
   const panelHeading =
     mode === "V1"
       ? "Marketplace V1 Relic"
       : mode === "V4"
-        ? "V4 Relic Sale Tickets"
+        ? "Pre-V8 AMO Relics"
         : "AMO Units";
   const panel = page
     .getByRole("heading", { exact: true, name: panelHeading })

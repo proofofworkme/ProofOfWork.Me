@@ -597,6 +597,16 @@ type PowIdExactStateItem = {
 
 type ExactDecimalValue = number | string;
 
+type WorkQ16UnitPriceDescriptor = {
+  amountSubatoms: string;
+  decimal: string;
+  denominator: string;
+  model: "exact-work-q16-sats-per-unit-ratio-v1";
+  numerator: string;
+  priceSats: string;
+  unitScale: string;
+};
+
 type PowTokenDefinition = {
   amountStorageModel?: string;
   confirmed: boolean;
@@ -613,8 +623,10 @@ type PowTokenDefinition = {
   dataBytes?: number;
   decimals?: number;
   holderCount?: number;
-  lastSalePricePerToken?: number;
-  lowestAskPricePerToken?: number;
+  lastSalePricePerToken?: ExactDecimalValue;
+  lastSalePricePerTokenExact?: WorkQ16UnitPriceDescriptor;
+  lowestAskPricePerToken?: ExactDecimalValue;
+  lowestAskPricePerTokenExact?: WorkQ16UnitPriceDescriptor;
   maxSupply: number | null;
   maxSupplyAtoms?: string;
   maxSupplyModel?: string;
@@ -1666,6 +1678,8 @@ const WORK_TOKEN_MINT_PRICE_SATS = 1000;
 const WORK_TOKEN_DECIMALS = WORK_DECIMALS;
 const WORK_TOKEN_UNIT_SCALE = WORK_UNIT_SCALE_STRING;
 const WORK_AMO_UNIT_SCALE_BIGINT = WORK_AMO_UNIT_SCALE;
+const WORK_Q16_SUMMARY_UNIT_PRICE_MODEL =
+  "exact-work-q16-sats-per-unit-ratio-v1";
 const WORK_TOKEN_MAX_SUPPLY_SUBATOMS = (
   BigInt(WORK_TOKEN_MAX_SUPPLY) * WORK_AMO_UNIT_SCALE_BIGINT
 ).toString();
@@ -1843,16 +1857,23 @@ type GrowthActualNetworkValue = {
   browserSats: number;
   computerEventFlowSats: number;
   computerEventSats: number;
+  creditEventFrozenValueQ8?: string;
   creditEventFrozenValueSats?: number;
+  creditEventLiveValueQ8?: string;
   creditEventLiveValueSats?: number;
+  creditFrozenNetworkValueQ8?: string;
   creditFrozenNetworkValueSats?: number;
+  creditLiveNetworkValueQ8?: string;
   creditLiveNetworkValueSats?: number;
   creditMinerFeeAccountingModel?: string;
   creditMinerFeeCoverage?: CanonicalMinerFeeCoverage;
   creditMinerFeeFlowSats?: number;
   creditMarketplaceMutationFlowSats?: number;
+  creditMovementFrozenValueQ8?: string;
   creditMovementFrozenValueSats?: number;
+  creditMovementLiveValueQ8?: string;
   creditMovementLiveValueSats?: number;
+  creditNetworkValueQ8?: string;
   creditNetworkValueSats?: number;
   creditProofPaymentFlowSats?: number;
   creditRegistryMutationFlowSats?: number;
@@ -6886,7 +6907,7 @@ function assertGenericTokenMintTarget(
 
 function genericTokenMaxSupply(token: PowTokenDefinition) {
   assertGenericTokenMintTarget(token);
-  const maxSupply = exactIntegerBigInt(token.maxSupply);
+  const maxSupply = tokenMaximumSupplyUnits(token);
   if (
     tokenDefinitionIsUncapped(token) ||
     maxSupply === null ||
@@ -6930,6 +6951,144 @@ function workRecordAtoms(
     return null;
   }
   return workAtomsFromRecord(amountAtoms, amount, amountSubatoms);
+}
+
+function canonicalWorkSupplyAliases(
+  amountSubatoms: unknown,
+  amount: unknown,
+  label = "WORK supply",
+) {
+  const hasSubatoms =
+    amountSubatoms !== undefined &&
+    amountSubatoms !== null &&
+    String(amountSubatoms) !== "";
+  const hasAmount =
+    amount !== undefined && amount !== null && String(amount) !== "";
+  if (!hasSubatoms && !hasAmount) {
+    return undefined;
+  }
+  if (!hasSubatoms) {
+    throw new Error(`${label} is missing its canonical Q16 subatom value.`);
+  }
+
+  const subatoms = workSubatomsFromCanonicalString(amountSubatoms);
+  if (
+    subatoms === null ||
+    subatoms < 0n ||
+    subatoms > BigInt(WORK_TOKEN_MAX_SUPPLY_SUBATOMS)
+  ) {
+    throw new Error(`${label} has a noncanonical Q16 subatom value.`);
+  }
+  if (hasAmount) {
+    const aliasSubatoms = workAtomsFromDecimal(amount);
+    if (aliasSubatoms === null || aliasSubatoms !== subatoms) {
+      throw new Error(`${label} decimal and Q16 subatom values disagree.`);
+    }
+  }
+
+  return {
+    amount: workDecimalFromAtoms(subatoms),
+    amountSubatoms: subatoms.toString(),
+  };
+}
+
+function matchingWorkSupplyAliases(
+  candidates: Array<{
+    amount?: unknown;
+    amountSubatoms?: unknown;
+  }>,
+  label: string,
+) {
+  let accepted:
+    | {
+        amount: string;
+        amountSubatoms: string;
+      }
+    | undefined;
+  for (const candidate of candidates) {
+    const normalized = canonicalWorkSupplyAliases(
+      candidate.amountSubatoms,
+      candidate.amount,
+      label,
+    );
+    if (!normalized) {
+      continue;
+    }
+    if (
+      accepted &&
+      accepted.amountSubatoms !== normalized.amountSubatoms
+    ) {
+      throw new Error(`${label} aliases disagree across summary scopes.`);
+    }
+    accepted = normalized;
+  }
+  return accepted;
+}
+
+function tokenSupplyUnits(
+  token: PowTokenDefinition | undefined,
+  value: unknown,
+) {
+  return token && isWorkToken(token)
+    ? workAtomsFromDecimal(value)
+    : exactIntegerBigInt(value);
+}
+
+function tokenMaximumSupplyUnits(token: PowTokenDefinition | undefined) {
+  if (!token) {
+    return null;
+  }
+  if (isWorkToken(token)) {
+    return workSubatomsFromCanonicalString(token.maxSupplySubatoms);
+  }
+  return exactIntegerBigInt(token.maxSupply);
+}
+
+function tokenMintAmountUnits(token: PowTokenDefinition | undefined) {
+  if (!token) {
+    return null;
+  }
+  if (isWorkToken(token)) {
+    return workSubatomsFromCanonicalString(token.mintAmountSubatoms);
+  }
+  return exactIntegerBigInt(token.mintAmount);
+}
+
+function tokenSupplyValueFromUnits(
+  token: PowTokenDefinition | undefined,
+  units: bigint,
+): ExactIntegerValue {
+  if (token && isWorkToken(token)) {
+    return workDecimalFromAtoms(units);
+  }
+  return token && isBondTokenDefinition(token)
+    ? units.toString()
+    : Number(units);
+}
+
+function tokenSupplyDisplay(
+  token: PowTokenDefinition | undefined,
+  value: unknown,
+) {
+  if (token && isWorkToken(token)) {
+    const subatoms = workAtomsFromDecimal(value);
+    return subatoms === null
+      ? "Unavailable"
+      : formatWorkAmountAmo(subatoms, true);
+  }
+  return formatExactInteger(value);
+}
+
+function compareTokenSupplyValues(
+  left: unknown,
+  right: unknown,
+) {
+  const leftUnits = workAtomsFromDecimal(left);
+  const rightUnits = workAtomsFromDecimal(right);
+  if (leftUnits === null || rightUnits === null) {
+    return 0;
+  }
+  return leftUnits < rightUnits ? -1 : leftUnits > rightUnits ? 1 : 0;
 }
 
 function tokenRecordAmountAtoms(
@@ -7248,6 +7407,177 @@ function canonicalPositiveIntegerText(value: unknown) {
   }
   const canonical = exactIntegerText(value);
   return canonical === value && canonical !== "0" ? canonical : "";
+}
+
+const WORK_Q16_UNIT_PRICE_DESCRIPTOR_KEYS = [
+  "amountSubatoms",
+  "decimal",
+  "denominator",
+  "model",
+  "numerator",
+  "priceSats",
+  "unitScale",
+] as const;
+
+function roundedUnsignedRatioDecimalText(
+  numerator: bigint,
+  denominator: bigint,
+  maximumFractionDigits: number,
+) {
+  if (
+    numerator < 0n ||
+    denominator <= 0n ||
+    !Number.isSafeInteger(maximumFractionDigits) ||
+    maximumFractionDigits < 0
+  ) {
+    return "";
+  }
+  const decimalScale = 10n ** BigInt(maximumFractionDigits);
+  const rounded =
+    (numerator * decimalScale + denominator / 2n) / denominator;
+  const whole = rounded / decimalScale;
+  const fraction = String(rounded % decimalScale)
+    .padStart(maximumFractionDigits, "0")
+    .replace(/0+$/u, "");
+  return `${whole}${fraction ? `.${fraction}` : ""}`;
+}
+
+function workQ16UnitPriceDescriptor(
+  priceSatsValue: unknown,
+  amountSubatomsValue: unknown,
+): WorkQ16UnitPriceDescriptor | undefined {
+  const priceSats = canonicalPositiveIntegerText(
+    typeof priceSatsValue === "number" &&
+      Number.isSafeInteger(priceSatsValue) &&
+      priceSatsValue > 0
+      ? String(priceSatsValue)
+      : priceSatsValue,
+  );
+  const amountSubatoms = canonicalPositiveIntegerText(amountSubatomsValue);
+  if (!priceSats || !amountSubatoms) {
+    return undefined;
+  }
+  const amount = BigInt(amountSubatoms);
+  if (amount > BigInt(WORK_TOKEN_MAX_SUPPLY_SUBATOMS)) {
+    return undefined;
+  }
+  const numerator = BigInt(priceSats) * WORK_AMO_UNIT_SCALE_BIGINT;
+  const decimal = roundedUnsignedRatioDecimalText(
+    numerator,
+    amount,
+    WORK_TOKEN_DECIMALS,
+  );
+  if (!decimal) {
+    return undefined;
+  }
+  return {
+    amountSubatoms,
+    decimal,
+    denominator: amountSubatoms,
+    model: WORK_Q16_SUMMARY_UNIT_PRICE_MODEL,
+    numerator: numerator.toString(),
+    priceSats,
+    unitScale: WORK_TOKEN_UNIT_SCALE,
+  };
+}
+
+function canonicalWorkQ16UnitPriceDescriptor(
+  value: unknown,
+): WorkQ16UnitPriceDescriptor | undefined {
+  if (
+    !hasExactRecordKeys(value, WORK_Q16_UNIT_PRICE_DESCRIPTOR_KEYS)
+  ) {
+    return undefined;
+  }
+  const descriptor = value as Partial<WorkQ16UnitPriceDescriptor>;
+  const canonical = workQ16UnitPriceDescriptor(
+    descriptor.priceSats,
+    descriptor.amountSubatoms,
+  );
+  return canonical &&
+    descriptor.decimal === canonical.decimal &&
+    descriptor.denominator === canonical.denominator &&
+    descriptor.model === canonical.model &&
+    descriptor.numerator === canonical.numerator &&
+    descriptor.unitScale === canonical.unitScale
+    ? canonical
+    : undefined;
+}
+
+function compareWorkQ16UnitPriceDescriptors(
+  left: WorkQ16UnitPriceDescriptor,
+  right: WorkQ16UnitPriceDescriptor,
+) {
+  const leftCanonical = canonicalWorkQ16UnitPriceDescriptor(left);
+  const rightCanonical = canonicalWorkQ16UnitPriceDescriptor(right);
+  if (!leftCanonical || !rightCanonical) {
+    throw new Error("WORK Q16 unit-price descriptor is noncanonical.");
+  }
+  const leftCross =
+    BigInt(leftCanonical.numerator) * BigInt(rightCanonical.denominator);
+  const rightCross =
+    BigInt(rightCanonical.numerator) * BigInt(leftCanonical.denominator);
+  return leftCross < rightCross ? -1 : leftCross > rightCross ? 1 : 0;
+}
+
+function workQ16UnitPriceDescriptorForRecord(
+  token: {
+    amountSubatoms?: unknown;
+    ticker?: string;
+    tokenId?: string;
+  },
+  amount: unknown,
+  amountAtoms: unknown,
+  priceSats: unknown,
+) {
+  if (!isWorkToken(token)) {
+    return undefined;
+  }
+  const amountSubatoms = tokenRecordAmountAtoms(
+    token,
+    amount,
+    amountAtoms,
+    token.amountSubatoms,
+  );
+  return amountSubatoms === null || amountSubatoms <= 0n
+    ? undefined
+    : workQ16UnitPriceDescriptor(priceSats, amountSubatoms.toString());
+}
+
+function workQ16UnitPriceDisplay(
+  descriptor: WorkQ16UnitPriceDescriptor | undefined,
+) {
+  const canonical = canonicalWorkQ16UnitPriceDescriptor(descriptor);
+  return canonical
+    ? formatExactDecimal(canonical.decimal, {
+        maximumFractionDigits: WORK_TOKEN_DECIMALS,
+      })
+    : "Unavailable";
+}
+
+function tokenUnitPriceDisplay(
+  token: {
+    amountSubatoms?: unknown;
+    ticker?: string;
+    tokenId?: string;
+  },
+  amount: unknown,
+  amountAtoms: unknown,
+  priceSats: number,
+) {
+  if (isWorkToken(token)) {
+    return workQ16UnitPriceDisplay(
+      workQ16UnitPriceDescriptorForRecord(
+        token,
+        amount,
+        amountAtoms,
+        priceSats,
+      ),
+    );
+  }
+  return tokenSatsPerUnit(
+    tokenUnitPriceSats(token, amount, amountAtoms, priceSats),
+  );
 }
 
 const WORK_AMO_V6_STATIC_AUTHORIZATION_KEYS = [
@@ -10346,24 +10676,21 @@ function tokenLedgerFor(
     : [];
 
   tokenMints.forEach((mint) => {
-    const amount = exactIntegerBigInt(mint.amount);
+    const amount = tokenRecordAmountAtoms(
+      mint,
+      mint.amount,
+      mint.amountAtoms,
+      mint.amountSubatoms,
+    );
     if (amount === null) {
       return;
     }
     if (mint.confirmed) {
       confirmedSupply += amount;
-      const amountAtoms = tokenRecordAmountAtoms(
-        mint,
-        mint.amount,
-        mint.amountAtoms,
-        mint.amountSubatoms,
+      balances.set(
+        mint.minterAddress,
+        (balances.get(mint.minterAddress) ?? 0n) + amount,
       );
-      if (amountAtoms !== null) {
-        balances.set(
-          mint.minterAddress,
-          (balances.get(mint.minterAddress) ?? 0n) + amountAtoms,
-        );
-      }
     } else {
       pendingSupply += amount;
     }
@@ -10420,14 +10747,13 @@ function tokenLedgerFor(
     });
 
   const summaryConfirmedSupply =
-    exactIntegerBigInt(token?.confirmedSupply) ?? 0n;
-  const summaryPendingSupply = exactIntegerBigInt(token?.pendingSupply) ?? 0n;
-  const bond = Boolean(token && isBondTokenDefinition(token));
-  const supplyValue = (value: bigint): ExactIntegerValue =>
-    bond ? value.toString() : Number(value);
+    tokenSupplyUnits(token, token?.confirmedSupply) ?? 0n;
+  const summaryPendingSupply =
+    tokenSupplyUnits(token, token?.pendingSupply) ?? 0n;
 
   return {
-    confirmedSupply: supplyValue(
+    confirmedSupply: tokenSupplyValueFromUnits(
+      token,
       confirmedSupply > summaryConfirmedSupply
         ? confirmedSupply
         : summaryConfirmedSupply,
@@ -10436,11 +10762,7 @@ function tokenLedgerFor(
       .filter(([, balance]) => balance > 0n)
       .map(([holderAddress, balance]) => ({
         address: holderAddress,
-        balance: token && isWorkToken(token)
-          ? workNumberFromAtoms(balance)
-          : bond
-            ? balance.toString()
-            : Number(balance),
+        balance: tokenSupplyValueFromUnits(token, balance),
         balanceSubatoms:
           token && isWorkToken(token) ? balance.toString() : undefined,
         ticker: token?.ticker,
@@ -10452,7 +10774,8 @@ function tokenLedgerFor(
           left.address.localeCompare(right.address),
       ),
     mints: tokenMints,
-    pendingSupply: supplyValue(
+    pendingSupply: tokenSupplyValueFromUnits(
+      token,
       pendingSupply > summaryPendingSupply
         ? pendingSupply
         : summaryPendingSupply,
@@ -10469,6 +10792,13 @@ function tokenSupplyValue(
   token: PowTokenDefinition | undefined,
   key: "confirmedSupply" | "pendingSupply",
 ) {
+  if (token && isWorkToken(token)) {
+    return canonicalWorkSupplyAliases(
+      token[`${key}Subatoms`],
+      token[key],
+      `WORK ${key === "confirmedSupply" ? "confirmed" : "pending"} supply`,
+    )?.amount;
+  }
   const supply = exactIntegerBigInt(token?.[key]);
   if (supply === null) {
     return undefined;
@@ -10481,7 +10811,23 @@ function tokenSupplyValue(
 function scopedTopLevelSupplyValue(
   value: unknown,
   token: PowTokenDefinition | undefined,
+  valueSubatoms?: unknown,
 ) {
+  if (token && isWorkToken(token)) {
+    const supply = canonicalWorkSupplyAliases(
+      valueSubatoms,
+      value,
+      "WORK top-level supply",
+    );
+    if (!supply) {
+      return undefined;
+    }
+    const maximum = tokenMaximumSupplyUnits(token);
+    const units = BigInt(supply.amountSubatoms);
+    return maximum !== null && maximum > 0n && units > maximum
+      ? undefined
+      : supply.amount;
+  }
   const supply = exactIntegerBigInt(value);
   if (supply === null) {
     return undefined;
@@ -10500,12 +10846,10 @@ function maximumTokenSupply(
   ...values: Array<ExactIntegerValue | undefined>
 ): ExactIntegerValue {
   const maximum = values.reduce<bigint>((current, value) => {
-    const candidate = exactIntegerBigInt(value);
+    const candidate = tokenSupplyUnits(token, value);
     return candidate !== null && candidate > current ? candidate : current;
   }, 0n);
-  return token && isBondTokenDefinition(token)
-    ? maximum.toString()
-    : Number(maximum);
+  return tokenSupplyValueFromUnits(token, maximum);
 }
 
 function tokenListingStateKey(
@@ -10694,10 +11038,18 @@ function sanitizedTokenState(state: PowTokenState): PowTokenState {
     );
     const tokenRowPendingSupply = tokenSupplyValue(tokens[0], "pendingSupply");
     const scopedTopLevelConfirmedSupply = summaryOnly
-      ? scopedTopLevelSupplyValue(state.confirmedSupply, tokens[0])
+      ? scopedTopLevelSupplyValue(
+          state.confirmedSupply,
+          tokens[0],
+          state.confirmedSupplySubatoms,
+        )
       : undefined;
     const scopedTopLevelPendingSupply = summaryOnly
-      ? scopedTopLevelSupplyValue(state.pendingSupply, tokens[0])
+      ? scopedTopLevelSupplyValue(
+          state.pendingSupply,
+          tokens[0],
+          state.pendingSupplySubatoms,
+        )
       : undefined;
     const confirmedSupply = maximumTokenSupply(
       tokens[0],
@@ -10709,13 +11061,21 @@ function sanitizedTokenState(state: PowTokenState): PowTokenState {
       ledger.pendingSupply,
       tokenRowPendingSupply ?? scopedTopLevelPendingSupply ?? 0,
     );
+    const confirmedSupplySubatoms = isWorkToken(tokens[0])
+      ? tokenSupplyUnits(tokens[0], confirmedSupply)?.toString()
+      : summaryMetadata.confirmedSupplySubatoms;
+    const pendingSupplySubatoms = isWorkToken(tokens[0])
+      ? tokenSupplyUnits(tokens[0], pendingSupply)?.toString()
+      : summaryMetadata.pendingSupplySubatoms;
     const tokenConfirmedSupply = confirmedSupply;
     const tokenPendingSupply = pendingSupply;
     const scopedTokens = [
       {
         ...tokens[0],
         confirmedSupply: tokenConfirmedSupply,
+        confirmedSupplySubatoms,
         pendingSupply: tokenPendingSupply,
+        pendingSupplySubatoms,
       },
     ];
     return {
@@ -10723,11 +11083,13 @@ function sanitizedTokenState(state: PowTokenState): PowTokenState {
       closedListings,
       creationSats: scopedTokens[0].creationFeeSats,
       confirmedSupply,
+      confirmedSupplySubatoms,
       holders: summaryOnly && state.holders.length > 0 ? state.holders : ledger.holders,
       invalidEvents,
       listings,
       mints,
       pendingSupply,
+      pendingSupplySubatoms,
       sales,
       summaryOnly,
       tokens: scopedTokens,
@@ -11951,13 +12313,15 @@ function tokenDetailHref(token: PowTokenDefinition) {
 function tokenProgressPercent(
   confirmedSupply: ExactIntegerValue,
   maxSupply: number | null | undefined,
+  token?: PowTokenDefinition,
 ) {
-  if (!Number.isFinite(maxSupply) || Number(maxSupply) <= 0) {
+  const confirmed = tokenSupplyUnits(token, confirmedSupply) ?? 0n;
+  const maximum = token
+    ? tokenMaximumSupplyUnits(token)
+    : exactIntegerBigInt(maxSupply);
+  if (maximum === null || maximum <= 0n) {
     return 0;
   }
-
-  const confirmed = exactIntegerBigInt(confirmedSupply) ?? 0n;
-  const maximum = BigInt(Math.floor(Number(maxSupply)));
   const thousandthsOfPercent = [
     (confirmed * 100_000n) / maximum,
     100_000n,
@@ -11968,11 +12332,12 @@ function tokenProgressPercent(
 function tokenProgressLabel(
   confirmedSupply: ExactIntegerValue,
   maxSupply: number | null | undefined,
+  token?: PowTokenDefinition,
 ) {
   if (maxSupply === null) {
     return "Uncapped";
   }
-  const progress = tokenProgressPercent(confirmedSupply, maxSupply);
+  const progress = tokenProgressPercent(confirmedSupply, maxSupply, token);
   if (progress >= 100) {
     return "100%";
   }
@@ -11996,8 +12361,7 @@ function tokenMintSupplyState(
   confirmedSupply: ExactIntegerValue,
   pendingSupply: ExactIntegerValue,
 ) {
-  const maxSupply = token?.maxSupply;
-  const maximum = exactIntegerBigInt(maxSupply);
+  const maximum = tokenMaximumSupplyUnits(token);
   if (
     !token ||
     tokenDefinitionIsUncapped(token) ||
@@ -12012,16 +12376,19 @@ function tokenMintSupplyState(
       wouldOverfill: Boolean(token && !isBondTokenDefinition(token)),
     };
   }
-  const confirmed = exactIntegerBigInt(confirmedSupply) ?? 0n;
-  const pending = exactIntegerBigInt(pendingSupply) ?? 0n;
+  const confirmed = tokenSupplyUnits(token, confirmedSupply) ?? 0n;
+  const pending = tokenSupplyUnits(token, pendingSupply) ?? 0n;
   const confirmedRemainingUnits = [maximum - confirmed, 0n].reduce(
     (maximumValue, value) => (value > maximumValue ? value : maximumValue),
   );
   const availableUnits = [confirmedRemainingUnits - pending, 0n].reduce(
     (maximumValue, value) => (value > maximumValue ? value : maximumValue),
   );
-  const confirmedRemainingSupply = Number(confirmedRemainingUnits);
-  const availableSupply = Number(availableUnits);
+  const confirmedRemainingSupply = tokenSupplyValueFromUnits(
+    token,
+    confirmedRemainingUnits,
+  );
+  const availableSupply = tokenSupplyValueFromUnits(token, availableUnits);
   const mintedOut = confirmedRemainingUnits <= 0n;
   const pendingMintOut = Boolean(
     token &&
@@ -12033,7 +12400,7 @@ function tokenMintSupplyState(
     token &&
       !mintedOut &&
       !pendingMintOut &&
-      BigInt(token.mintAmount) > availableUnits,
+      (tokenMintAmountUnits(token) ?? 0n) > availableUnits,
   );
 
   return {
@@ -13148,6 +13515,13 @@ function compactMarketplaceStatValue(value: unknown) {
     return Number(exactValue);
   }
 
+  const exactDecimal = exactDecimalText(value);
+  if (exactDecimal) {
+    return formatExactDecimal(exactDecimal, {
+      maximumFractionDigits: WORK_TOKEN_DECIMALS,
+    });
+  }
+
   const safeValue = Math.max(0, Math.floor(Number(value) || 0));
   return safeValue;
 }
@@ -13203,7 +13577,9 @@ function tokenHasConfirmedMarketplaceSales(token: PowTokenDefinition) {
   return (
     (optionalMarketplaceCount(token.confirmedSales) ?? 0) > 0 ||
     (optionalMarketplaceCount(token.confirmedSalesVolumeSats) ?? 0) > 0 ||
-    (optionalMarketplaceMetric(token.lastSalePricePerToken) ?? 0) > 0
+    (isWorkToken(token)
+      ? Boolean(token.lastSalePricePerTokenExact)
+      : (optionalMarketplaceMetric(token.lastSalePricePerToken) ?? 0) > 0)
   );
 }
 
@@ -14741,11 +15117,6 @@ function normalizeRegistryApiState(
   };
 }
 
-function canonicalWorkSubatomsText(value: unknown) {
-  const subatoms = workSubatomsFromCanonicalString(value);
-  return subatoms === null ? undefined : subatoms.toString();
-}
-
 function normalizeTokenDefinitionRecord(
   token: PowTokenDefinition,
 ): PowTokenDefinition {
@@ -14761,14 +15132,93 @@ function normalizeTokenDefinitionRecord(
     bond ||
     token.uncapped === true ||
     String(token.maxSupplyModel ?? "").trim().toLowerCase() === "uncapped";
-  const confirmedSupply = exactIntegerText(token.confirmedSupply);
-  const pendingSupply = exactIntegerText(token.pendingSupply);
-  const confirmedSupplySubatoms = work
-    ? canonicalWorkSubatomsText(token.confirmedSupplySubatoms)
+  const q16Work = work;
+  const confirmedWorkSupply = q16Work
+    ? canonicalWorkSupplyAliases(
+        token.confirmedSupplySubatoms,
+        token.confirmedSupply,
+        "WORK confirmed supply",
+      )
     : undefined;
-  const pendingSupplySubatoms = work
-    ? canonicalWorkSubatomsText(token.pendingSupplySubatoms)
+  const pendingWorkSupply = q16Work
+    ? canonicalWorkSupplyAliases(
+        token.pendingSupplySubatoms,
+        token.pendingSupply,
+        "WORK pending supply",
+      )
     : undefined;
+  const confirmedSupply = q16Work
+    ? confirmedWorkSupply?.amount ?? ""
+    : exactIntegerText(token.confirmedSupply);
+  const pendingSupply = q16Work
+    ? pendingWorkSupply?.amount ?? ""
+    : exactIntegerText(token.pendingSupply);
+  const maximumWorkSupply = work
+    ? canonicalWorkSupplyAliases(
+        token.maxSupplySubatoms ?? WORK_TOKEN_MAX_SUPPLY_SUBATOMS,
+        token.maxSupply ?? WORK_TOKEN_MAX_SUPPLY,
+        "WORK maximum supply",
+      )
+    : undefined;
+  const workMintAmount = work
+    ? canonicalWorkSupplyAliases(
+        token.mintAmountSubatoms ?? WORK_TOKEN_MINT_AMOUNT_SUBATOMS,
+        token.mintAmount ?? WORK_TOKEN_MINT_AMOUNT,
+        "WORK mint amount",
+      )
+    : undefined;
+  if (
+    work &&
+    (maximumWorkSupply?.amountSubatoms !==
+      WORK_TOKEN_MAX_SUPPLY_SUBATOMS ||
+      workMintAmount?.amountSubatoms !== WORK_TOKEN_MINT_AMOUNT_SUBATOMS)
+  ) {
+    throw new Error("WORK hard supply terms disagree with the protocol.");
+  }
+  const lastSalePricePerTokenExact = q16Work
+    ? canonicalWorkQ16UnitPriceDescriptor(
+        token.lastSalePricePerTokenExact,
+      )
+    : undefined;
+  const lowestAskPricePerTokenExact = q16Work
+    ? canonicalWorkQ16UnitPriceDescriptor(
+        token.lowestAskPricePerTokenExact,
+      )
+    : undefined;
+  if (
+    q16Work &&
+    token.lastSalePricePerTokenExact !== undefined &&
+    !lastSalePricePerTokenExact
+  ) {
+    throw new Error("WORK last-sale price descriptor is noncanonical.");
+  }
+  if (
+    q16Work &&
+    token.lowestAskPricePerTokenExact !== undefined &&
+    !lowestAskPricePerTokenExact
+  ) {
+    throw new Error("WORK lowest-ask price descriptor is noncanonical.");
+  }
+  if (
+    q16Work &&
+    token.lastSalePricePerToken !== undefined &&
+    token.lastSalePricePerToken !== "" &&
+    (!lastSalePricePerTokenExact ||
+      exactDecimalText(token.lastSalePricePerToken) !==
+        lastSalePricePerTokenExact.decimal)
+  ) {
+    throw new Error("WORK last-sale price aliases disagree.");
+  }
+  if (
+    q16Work &&
+    token.lowestAskPricePerToken !== undefined &&
+    token.lowestAskPricePerToken !== "" &&
+    (!lowestAskPricePerTokenExact ||
+      exactDecimalText(token.lowestAskPricePerToken) !==
+        lowestAskPricePerTokenExact.decimal)
+  ) {
+    throw new Error("WORK lowest-ask price aliases disagree.");
+  }
   return {
     ...token,
     confirmedSupply: confirmedSupply
@@ -14777,28 +15227,40 @@ function normalizeTokenDefinitionRecord(
         : Number(confirmedSupply)
       : undefined,
     confirmedSupplyAtoms: work ? undefined : token.confirmedSupplyAtoms,
-    confirmedSupplySubatoms,
+    confirmedSupplySubatoms: confirmedWorkSupply?.amountSubatoms,
     decimals: work ? WORK_TOKEN_DECIMALS : 0,
-    maxSupply: uncapped ? null : Math.max(0, Number(token.maxSupply) || 0),
+    maxSupply: uncapped
+      ? null
+      : work
+        ? WORK_TOKEN_MAX_SUPPLY
+        : Math.max(0, Number(token.maxSupply) || 0),
     maxSupplyAtoms: work ? undefined : token.maxSupplyAtoms,
     maxSupplyModel: uncapped ? "uncapped" : token.maxSupplyModel,
     maxSupplySubatoms: work
-      ? canonicalWorkSubatomsText(token.maxSupplySubatoms) ??
-        WORK_TOKEN_MAX_SUPPLY_SUBATOMS
+      ? maximumWorkSupply?.amountSubatoms
       : token.maxSupplySubatoms,
-    mintAmount: Math.max(0, Number(token.mintAmount) || 0),
+    mintAmount: work
+      ? WORK_TOKEN_MINT_AMOUNT
+      : Math.max(0, Number(token.mintAmount) || 0),
     mintAmountAtoms: work ? undefined : token.mintAmountAtoms,
     mintAmountSubatoms: work
-      ? canonicalWorkSubatomsText(token.mintAmountSubatoms) ??
-        WORK_TOKEN_MINT_AMOUNT_SUBATOMS
+      ? workMintAmount?.amountSubatoms
       : token.mintAmountSubatoms,
+    lastSalePricePerToken: q16Work
+      ? lastSalePricePerTokenExact?.decimal
+      : token.lastSalePricePerToken,
+    lastSalePricePerTokenExact,
+    lowestAskPricePerToken: q16Work
+      ? lowestAskPricePerTokenExact?.decimal
+      : token.lowestAskPricePerToken,
+    lowestAskPricePerTokenExact,
     pendingSupply: pendingSupply
       ? bond || work
         ? pendingSupply
         : Number(pendingSupply)
       : undefined,
     pendingSupplyAtoms: work ? undefined : token.pendingSupplyAtoms,
-    pendingSupplySubatoms,
+    pendingSupplySubatoms: pendingWorkSupply?.amountSubatoms,
     precisionModel: work
       ? WORK_TOKEN_PRECISION_MODEL
       : token.precisionModel,
@@ -14935,18 +15397,46 @@ function normalizeTokenApiState(
   const tokens = Array.isArray(payload?.tokens)
     ? payload.tokens.map(normalizeTokenDefinitionRecord)
     : [];
-  const confirmedSupplySubatoms = canonicalWorkSubatomsText(
-    payload?.confirmedSupplySubatoms,
-  );
-  const pendingSupplySubatoms = canonicalWorkSubatomsText(
-    payload?.pendingSupplySubatoms,
-  );
+  const scopedWorkToken =
+    tokens.length === 1 && isWorkToken(tokens[0]) ? tokens[0] : undefined;
   const q16WorkState = Boolean(
     payload?.amountStorageModel === WORK_TOKEN_AMOUNT_STORAGE_MODEL ||
       payload?.precisionModel === WORK_TOKEN_PRECISION_MODEL ||
-      confirmedSupplySubatoms !== undefined ||
-      pendingSupplySubatoms !== undefined,
+      payload?.confirmedSupplySubatoms !== undefined ||
+      payload?.pendingSupplySubatoms !== undefined ||
+      scopedWorkToken?.amountStorageModel === WORK_TOKEN_AMOUNT_STORAGE_MODEL ||
+      scopedWorkToken?.precisionModel === WORK_TOKEN_PRECISION_MODEL,
   );
+  const confirmedWorkSupply = q16WorkState
+    ? matchingWorkSupplyAliases(
+        [
+          {
+            amount: payload?.confirmedSupply,
+            amountSubatoms: payload?.confirmedSupplySubatoms,
+          },
+          {
+            amount: scopedWorkToken?.confirmedSupply,
+            amountSubatoms: scopedWorkToken?.confirmedSupplySubatoms,
+          },
+        ],
+        "WORK confirmed supply",
+      )
+    : undefined;
+  const pendingWorkSupply = q16WorkState
+    ? matchingWorkSupplyAliases(
+        [
+          {
+            amount: payload?.pendingSupply,
+            amountSubatoms: payload?.pendingSupplySubatoms,
+          },
+          {
+            amount: scopedWorkToken?.pendingSupply,
+            amountSubatoms: scopedWorkToken?.pendingSupplySubatoms,
+          },
+        ],
+        "WORK pending supply",
+      )
+    : undefined;
   return sanitizedTokenState({
     amountStorageModel: q16WorkState
       ? WORK_TOKEN_AMOUNT_STORAGE_MODEL
@@ -14961,14 +15451,15 @@ function normalizeTokenApiState(
     creationSats: Number.isSafeInteger(payload?.creationSats)
       ? Number(payload?.creationSats)
       : 0,
-    confirmedSupply:
-      payload?.confirmedSupply === null
+    confirmedSupply: q16WorkState
+      ? confirmedWorkSupply?.amount
+      : payload?.confirmedSupply === null
         ? null
         : exactIntegerText(payload?.confirmedSupply) || undefined,
     confirmedSupplyAtoms: q16WorkState
       ? undefined
       : exactIntegerText(payload?.confirmedSupplyAtoms) || undefined,
-    confirmedSupplySubatoms,
+    confirmedSupplySubatoms: confirmedWorkSupply?.amountSubatoms,
     decimals: q16WorkState
       ? WORK_TOKEN_DECIMALS
       : Number.isSafeInteger(payload?.decimals)
@@ -15071,14 +15562,15 @@ function normalizeTokenApiState(
     mints: Array.isArray(payload?.mints)
       ? payload.mints.map(normalizeTokenAmountRecord)
       : [],
-    pendingSupply:
-      payload?.pendingSupply === null
+    pendingSupply: q16WorkState
+      ? pendingWorkSupply?.amount
+      : payload?.pendingSupply === null
         ? null
         : exactIntegerText(payload?.pendingSupply) || undefined,
     pendingSupplyAtoms: q16WorkState
       ? undefined
       : exactIntegerText(payload?.pendingSupplyAtoms) || undefined,
-    pendingSupplySubatoms,
+    pendingSupplySubatoms: pendingWorkSupply?.amountSubatoms,
     precisionModel: q16WorkState
       ? WORK_TOKEN_PRECISION_MODEL
       : payload?.precisionModel,
@@ -15426,10 +15918,18 @@ async function fetchTokenSupplyState(
   const topLevelPendingSupply = exactIntegerText(payload.pendingSupply) ||
     undefined;
   const scopedTopLevelConfirmedSupply = normalizedTokenScope
-    ? scopedTopLevelSupplyValue(payload.confirmedSupply, scopedToken)
+    ? scopedTopLevelSupplyValue(
+        payload.confirmedSupply,
+        scopedToken,
+        payload.confirmedSupplySubatoms,
+      )
     : undefined;
   const scopedTopLevelPendingSupply = normalizedTokenScope
-    ? scopedTopLevelSupplyValue(payload.pendingSupply, scopedToken)
+    ? scopedTopLevelSupplyValue(
+        payload.pendingSupply,
+        scopedToken,
+        payload.pendingSupplySubatoms,
+      )
     : undefined;
   const mixedTokenScope = !normalizedTokenScope && tokens.length > 1;
   const supplyToken = scopedToken ?? (tokens.length === 1 ? tokens[0] : undefined);
@@ -15442,13 +15942,35 @@ async function fetchTokenSupplyState(
         payload.amountStorageModel === WORK_TOKEN_AMOUNT_STORAGE_MODEL ||
         payload.precisionModel === WORK_TOKEN_PRECISION_MODEL),
   );
-  const confirmedSupplySubatoms = q16WorkSupply
-    ? canonicalWorkSubatomsText(supplyToken?.confirmedSupplySubatoms) ??
-      canonicalWorkSubatomsText(payload.confirmedSupplySubatoms)
+  const confirmedWorkSupply = q16WorkSupply
+    ? matchingWorkSupplyAliases(
+        [
+          {
+            amount: payload.confirmedSupply,
+            amountSubatoms: payload.confirmedSupplySubatoms,
+          },
+          {
+            amount: supplyToken?.confirmedSupply,
+            amountSubatoms: supplyToken?.confirmedSupplySubatoms,
+          },
+        ],
+        "WORK confirmed supply",
+      )
     : undefined;
-  const pendingSupplySubatoms = q16WorkSupply
-    ? canonicalWorkSubatomsText(supplyToken?.pendingSupplySubatoms) ??
-      canonicalWorkSubatomsText(payload.pendingSupplySubatoms)
+  const pendingWorkSupply = q16WorkSupply
+    ? matchingWorkSupplyAliases(
+        [
+          {
+            amount: payload.pendingSupply,
+            amountSubatoms: payload.pendingSupplySubatoms,
+          },
+          {
+            amount: supplyToken?.pendingSupply,
+            amountSubatoms: supplyToken?.pendingSupplySubatoms,
+          },
+        ],
+        "WORK pending supply",
+      )
     : undefined;
   return {
     amountStorageModel: q16WorkSupply
@@ -15459,14 +15981,15 @@ async function fetchTokenSupplyState(
       : 0,
     confirmedSupply: mixedTokenScope
       ? null
-      : scopedConfirmedSupply ??
+      : confirmedWorkSupply?.amount ??
+        scopedConfirmedSupply ??
         scopedTopLevelConfirmedSupply ??
         topLevelConfirmedSupply ??
         0,
     confirmedSupplyAtoms: q16WorkSupply
       ? undefined
       : exactIntegerText(payload.confirmedSupplyAtoms) || undefined,
-    confirmedSupplySubatoms,
+    confirmedSupplySubatoms: confirmedWorkSupply?.amountSubatoms,
     decimals: q16WorkSupply
       ? WORK_TOKEN_DECIMALS
       : Number.isSafeInteger(payload.decimals)
@@ -15474,14 +15997,15 @@ async function fetchTokenSupplyState(
         : undefined,
     pendingSupply: mixedTokenScope
       ? null
-      : scopedPendingSupply ??
+      : pendingWorkSupply?.amount ??
+        scopedPendingSupply ??
         scopedTopLevelPendingSupply ??
         topLevelPendingSupply ??
         0,
     pendingSupplyAtoms: q16WorkSupply
       ? undefined
       : exactIntegerText(payload.pendingSupplyAtoms) || undefined,
-    pendingSupplySubatoms,
+    pendingSupplySubatoms: pendingWorkSupply?.amountSubatoms,
     precisionModel: q16WorkSupply
       ? WORK_TOKEN_PRECISION_MODEL
       : payload.precisionModel,
@@ -15683,6 +16207,27 @@ function growthActualValueHasCanonicalWorkQ8(
   const liveTotalQ8 = exactIntegerBigInt(value.liveTotalQ8);
   const networkValueQ8 = exactIntegerBigInt(value.networkValueQ8);
   const totalQ8 = exactIntegerBigInt(value.totalQ8);
+  const creditEventFrozenValueQ8 = exactIntegerBigInt(
+    value.creditEventFrozenValueQ8,
+  );
+  const creditEventLiveValueQ8 = exactIntegerBigInt(
+    value.creditEventLiveValueQ8,
+  );
+  const creditFrozenNetworkValueQ8 = exactIntegerBigInt(
+    value.creditFrozenNetworkValueQ8,
+  );
+  const creditLiveNetworkValueQ8 = exactIntegerBigInt(
+    value.creditLiveNetworkValueQ8,
+  );
+  const creditMovementFrozenValueQ8 = exactIntegerBigInt(
+    value.creditMovementFrozenValueQ8,
+  );
+  const creditMovementLiveValueQ8 = exactIntegerBigInt(
+    value.creditMovementLiveValueQ8,
+  );
+  const creditNetworkValueQ8 = exactIntegerBigInt(
+    value.creditNetworkValueQ8,
+  );
   return (
     baseNetworkValueQ8 !== null &&
     baseNetworkValueQ8 === baseTotalQ8 &&
@@ -15691,7 +16236,14 @@ function growthActualValueHasCanonicalWorkQ8(
     liveNetworkValueQ8 !== null &&
     liveNetworkValueQ8 === liveTotalQ8 &&
     liveNetworkValueQ8 === networkValueQ8 &&
-    networkValueQ8 === totalQ8
+    networkValueQ8 === totalQ8 &&
+    creditEventFrozenValueQ8 !== null &&
+    creditEventFrozenValueQ8 === creditFrozenNetworkValueQ8 &&
+    creditEventLiveValueQ8 !== null &&
+    creditEventLiveValueQ8 === creditLiveNetworkValueQ8 &&
+    creditEventLiveValueQ8 === creditNetworkValueQ8 &&
+    creditMovementFrozenValueQ8 !== null &&
+    creditMovementLiveValueQ8 !== null
   );
 }
 
@@ -15832,17 +16384,33 @@ function normalizeGrowthActualValue(
       "computerEventFlowSats",
     ),
     computerEventSats: growthNumberField(payload, "computerEventSats"),
+    creditEventFrozenValueQ8: growthQ8Field(
+      payload,
+      "creditEventFrozenValueQ8",
+    ),
     creditEventFrozenValueSats: growthNumberField(
       payload,
       "creditEventFrozenValueSats",
+    ),
+    creditEventLiveValueQ8: growthQ8Field(
+      payload,
+      "creditEventLiveValueQ8",
     ),
     creditEventLiveValueSats: growthNumberField(
       payload,
       "creditEventLiveValueSats",
     ),
+    creditFrozenNetworkValueQ8: growthQ8Field(
+      payload,
+      "creditFrozenNetworkValueQ8",
+    ),
     creditFrozenNetworkValueSats: growthNumberField(
       payload,
       "creditFrozenNetworkValueSats",
+    ),
+    creditLiveNetworkValueQ8: growthQ8Field(
+      payload,
+      "creditLiveNetworkValueQ8",
     ),
     creditLiveNetworkValueSats: growthNumberField(
       payload,
@@ -15861,14 +16429,23 @@ function normalizeGrowthActualValue(
       payload,
       "creditMarketplaceMutationFlowSats",
     ),
+    creditMovementFrozenValueQ8: growthQ8Field(
+      payload,
+      "creditMovementFrozenValueQ8",
+    ),
     creditMovementFrozenValueSats: growthNumberField(
       payload,
       "creditMovementFrozenValueSats",
+    ),
+    creditMovementLiveValueQ8: growthQ8Field(
+      payload,
+      "creditMovementLiveValueQ8",
     ),
     creditMovementLiveValueSats: growthNumberField(
       payload,
       "creditMovementLiveValueSats",
     ),
+    creditNetworkValueQ8: growthQ8Field(payload, "creditNetworkValueQ8"),
     creditNetworkValueSats: growthNumberField(
       payload,
       "creditNetworkValueSats",
@@ -16424,7 +17001,7 @@ function workFloorQuoteRegresses(
 }
 
 function tokenDefinitionConfirmedSupply(token: PowTokenDefinition) {
-  return exactIntegerBigInt(token.confirmedSupply) ?? 0n;
+  return tokenSupplyUnits(token, token.confirmedSupply) ?? 0n;
 }
 
 function tokenStateConfirmedSupplyRank(state: PowTokenState | undefined) {
@@ -16432,8 +17009,12 @@ function tokenStateConfirmedSupplyRank(state: PowTokenState | undefined) {
     return 0n;
   }
 
+  const soleToken = state.tokens.length === 1 ? state.tokens[0] : undefined;
+  const tokenById = new Map(
+    state.tokens.map((token) => [token.tokenId, token]),
+  );
   const candidates = [
-    exactIntegerBigInt(state.confirmedSupply) ?? 0n,
+    tokenSupplyUnits(soleToken, state.confirmedSupply) ?? 0n,
     state.tokens.reduce<bigint>(
       (total, token) => total + tokenDefinitionConfirmedSupply(token),
       0n,
@@ -16441,7 +17022,14 @@ function tokenStateConfirmedSupplyRank(state: PowTokenState | undefined) {
     state.mints
       .filter((mint) => mint.confirmed)
       .reduce<bigint>(
-        (total, mint) => total + (exactIntegerBigInt(mint.amount) ?? 0n),
+        (total, mint) =>
+          total +
+          (tokenRecordAmountAtoms(
+            tokenById.get(mint.tokenId) ?? mint,
+            mint.amount,
+            mint.amountAtoms,
+            mint.amountSubatoms,
+          ) ?? 0n),
         0n,
       ),
   ];
@@ -25198,8 +25786,9 @@ export default function App() {
             item.tokenId === WORK_TOKEN_ID || item.ticker === WORK_TOKEN_TICKER,
         );
         const holderCount = tokenHolderTotalCount(work, state.holders);
-        return `WORK summary loaded. ${formatExactInteger(
-          exactIntegerBigInt(work?.confirmedSupply) ?? state.confirmedSupply,
+        return `WORK summary loaded. ${tokenSupplyDisplay(
+          work ?? WORK_TOKEN_DEFINITION,
+          work?.confirmedSupply ?? state.confirmedSupply,
         )} confirmed WORK, ${holderCount.toLocaleString()} holder${holderCount === 1 ? "" : "s"}.`;
       }
       return `Credit index loaded. ${state.tokens.length.toLocaleString()} credit${state.tokens.length === 1 ? "" : "s"}, ${state.mints.length.toLocaleString()} mint${state.mints.length === 1 ? "" : "s"}, ${state.transfers.length.toLocaleString()} transfer${state.transfers.length === 1 ? "" : "s"}.`;
@@ -29055,16 +29644,20 @@ export default function App() {
         latestSupply?.tokens.find((token) => token.tokenId === mintTarget.tokenId) ??
         mintTarget;
       let latestMaxSupply = genericTokenMaxSupply(latestToken);
+      let latestMintAmount = tokenMintAmountUnits(latestToken);
+      if (latestMintAmount === null || latestMintAmount <= 0n) {
+        throw new Error(
+          "Exact credit mint amount is unavailable. No mint transaction was created.",
+        );
+      }
       if (latestSupply) {
         const remainingAfterCachedCheck = [
           latestMaxSupply -
-            (exactIntegerBigInt(latestSupply.confirmedSupply) ?? 0n) -
-            (exactIntegerBigInt(latestSupply.pendingSupply) ?? 0n),
+            (tokenSupplyUnits(latestToken, latestSupply.confirmedSupply) ?? 0n) -
+            (tokenSupplyUnits(latestToken, latestSupply.pendingSupply) ?? 0n),
           0n,
         ].reduce((maximum, value) => (value > maximum ? value : maximum));
-        if (
-          remainingAfterCachedCheck <= BigInt(latestToken.mintAmount * 10)
-        ) {
+        if (remainingAfterCachedCheck <= latestMintAmount * 10n) {
           setStatus({
             tone: "idle",
             text: `Checking final ${latestToken.ticker} supply...`,
@@ -29085,6 +29678,12 @@ export default function App() {
             latestSupply.tokens.find((token) => token.tokenId === mintTarget.tokenId) ??
             latestToken;
           latestMaxSupply = genericTokenMaxSupply(latestToken);
+          latestMintAmount = tokenMintAmountUnits(latestToken);
+          if (latestMintAmount === null || latestMintAmount <= 0n) {
+            throw new Error(
+              "Exact credit mint amount is unavailable. No mint transaction was created.",
+            );
+          }
         }
       }
       if (latestSupply && latestSupply.tokens.length > 0) {
@@ -29105,9 +29704,9 @@ export default function App() {
         : tokenLedgerFor(latestToken, tokenMints, tokenTransfers, tokenSales);
 
       const latestConfirmedSupply =
-        exactIntegerBigInt(latestLedger.confirmedSupply) ?? 0n;
+        tokenSupplyUnits(latestToken, latestLedger.confirmedSupply) ?? 0n;
       const latestPendingSupply =
-        exactIntegerBigInt(latestLedger.pendingSupply) ?? 0n;
+        tokenSupplyUnits(latestToken, latestLedger.pendingSupply) ?? 0n;
       if (latestConfirmedSupply >= latestMaxSupply) {
         setStatus({
           tone: "bad",
@@ -29119,7 +29718,7 @@ export default function App() {
       if (
         latestConfirmedSupply +
           latestPendingSupply +
-          BigInt(latestToken.mintAmount) >
+          latestMintAmount >
         latestMaxSupply
       ) {
         setStatus({
@@ -30361,15 +30960,21 @@ export default function App() {
         latestState.tokens.find((token) => token.tokenId === targetToken.tokenId) ??
         targetToken;
       let latestMaxSupply = genericTokenMaxSupply(latestToken);
+      let latestMintAmount = tokenMintAmountUnits(latestToken);
+      if (latestMintAmount === null || latestMintAmount <= 0n) {
+        throw new Error(
+          "Exact credit mint amount is unavailable. No mint transaction was created.",
+        );
+      }
       const remainingAfterCachedCheck = [
         latestMaxSupply -
-          (exactIntegerBigInt(latestState.confirmedSupply) ?? 0n) -
-          (exactIntegerBigInt(latestState.pendingSupply) ?? 0n),
+          (tokenSupplyUnits(latestToken, latestState.confirmedSupply) ?? 0n) -
+          (tokenSupplyUnits(latestToken, latestState.pendingSupply) ?? 0n),
         0n,
       ].reduce((maximum, value) => (value > maximum ? value : maximum));
       if (
         remainingAfterCachedCheck <=
-        BigInt(latestToken.mintAmount * (requestedTarget + 5))
+        latestMintAmount * BigInt(requestedTarget + 5)
       ) {
         setStatus({
           tone: "idle",
@@ -30391,6 +30996,12 @@ export default function App() {
           latestState.tokens.find((token) => token.tokenId === targetToken.tokenId) ??
           latestToken;
         latestMaxSupply = genericTokenMaxSupply(latestToken);
+        latestMintAmount = tokenMintAmountUnits(latestToken);
+        if (latestMintAmount === null || latestMintAmount <= 0n) {
+          throw new Error(
+            "Exact credit mint amount is unavailable. No mint transaction was created.",
+          );
+        }
       }
       if (latestState.tokens.length > 0) {
         setTokenDefinitions((current) =>
@@ -30402,17 +31013,27 @@ export default function App() {
           Math.max(current, latestState.creationSats),
         );
       }
-      const exactConfirmedSupply = exactIntegerText(
+      const exactConfirmedSupply = tokenSupplyUnits(
+        latestToken,
         latestState.confirmedSupply,
       );
-      const exactPendingSupply = exactIntegerText(latestState.pendingSupply);
-      if (!exactConfirmedSupply || !exactPendingSupply) {
+      const exactPendingSupply = tokenSupplyUnits(
+        latestToken,
+        latestState.pendingSupply,
+      );
+      if (exactConfirmedSupply === null || exactPendingSupply === null) {
         throw new Error(
           "Exact scoped credit supply is unavailable. No mint transaction was created.",
         );
       }
-      latestConfirmedSupply = exactConfirmedSupply;
-      latestPendingSupply = exactPendingSupply;
+      latestConfirmedSupply = tokenSupplyValueFromUnits(
+        latestToken,
+        exactConfirmedSupply,
+      );
+      latestPendingSupply = tokenSupplyValueFromUnits(
+        latestToken,
+        exactPendingSupply,
+      );
     } catch (error) {
       setStatus({
         tone: "bad",
@@ -30429,16 +31050,28 @@ export default function App() {
       pendingSupply: latestPendingSupply,
     };
     const targetConfirmedSupply =
-      exactIntegerBigInt(targetLedger.confirmedSupply) ?? 0n;
-    const targetPendingSupply = exactIntegerBigInt(targetLedger.pendingSupply) ?? 0n;
+      tokenSupplyUnits(latestToken, targetLedger.confirmedSupply) ?? 0n;
+    const targetPendingSupply =
+      tokenSupplyUnits(latestToken, targetLedger.pendingSupply) ?? 0n;
     const targetMaxSupply = genericTokenMaxSupply(latestToken);
+    const targetMintAmount = tokenMintAmountUnits(latestToken);
+    if (targetMintAmount === null || targetMintAmount <= 0n) {
+      setStatus({
+        tone: "bad",
+        text: "Exact credit mint amount is unavailable. No mint transaction was created.",
+      });
+      return;
+    }
     const targetRemainingSupplyUnits = [
       targetMaxSupply -
         targetConfirmedSupply -
         targetPendingSupply,
       0n,
     ].reduce((maximum, value) => (value > maximum ? value : maximum));
-    const targetRemainingSupply = Number(targetRemainingSupplyUnits);
+    const targetRemainingSupply = tokenSupplyValueFromUnits(
+      latestToken,
+      targetRemainingSupplyUnits,
+    );
     if (targetConfirmedSupply >= targetMaxSupply) {
       setStatus({
         tone: "bad",
@@ -30446,17 +31079,16 @@ export default function App() {
       });
       return;
     }
-    if (latestToken.mintAmount > targetRemainingSupply) {
+    if (targetMintAmount > targetRemainingSupplyUnits) {
       setStatus({
         tone: "bad",
-        text: `Next mint needs ${latestToken.mintAmount.toLocaleString()} ${latestToken.ticker}, but only ${targetRemainingSupply.toLocaleString()} remain after pending mints.`,
+        text: `Next mint needs ${latestToken.mintAmount.toLocaleString()} ${latestToken.ticker}, but only ${tokenSupplyDisplay(latestToken, targetRemainingSupply)} remain after pending mints.`,
       });
       return;
     }
 
-    const supplyLimitedTarget = Math.max(
-      1,
-      Math.floor(targetRemainingSupply / latestToken.mintAmount),
+    const supplyLimitedTarget = Number(
+      targetRemainingSupplyUnits / targetMintAmount,
     );
     const target = Math.min(requestedTarget, supplyLimitedTarget);
 
@@ -31688,9 +32320,15 @@ export default function App() {
               <strong>
                 {!activeTokenStateLoaded ||
                 (tokenLedgerLoading &&
-                  compareExactIntegers(workTokenLedger.confirmedSupply, 0) === 0)
+                  (tokenSupplyUnits(
+                    workTokenDefinition,
+                    workTokenLedger.confirmedSupply,
+                  ) ?? 0n) === 0n)
                   ? "..."
-                  : formatExactInteger(workTokenLedger.confirmedSupply)}
+                  : tokenSupplyDisplay(
+                      workTokenDefinition,
+                      workTokenLedger.confirmedSupply,
+                    )}
               </strong>
             </button>
             <button
@@ -35661,15 +36299,16 @@ function TokenWalletWorkspace({
   const walletTokenById = new Map<string, TokenReferenceSnapshot>(
     balances.map((balance) => [balance.token.tokenId, balance.token]),
   );
-  const walletWorkFloorSats =
-    workFloorQuote
-      ? workFloorQuote.networkValueSats / WORK_TOKEN_MAX_SUPPLY
-      : 0;
+  const walletWorkFloorQ8 =
+    workFloorQuote?.liveFloorQ8 ??
+    workFloorQuote?.actualValue?.liveFloorQ8 ??
+    workFloorQuote?.floorQ8 ??
+    workFloorQuote?.actualValue?.floorQ8;
   const sortedWalletListings = sortTokenListings(
     walletListings,
     walletListingSortMode,
     walletTokenById,
-    walletWorkFloorSats,
+    walletWorkFloorQ8,
   );
   const walletListingPage = pagedItems(
     sortedWalletListings,
@@ -37477,13 +38116,14 @@ function TokenWorkspace({
     : detailPendingMintOut
       ? `Pending mints currently fill the remaining ${detailToken?.ticker ?? "credit"} supply. Refresh after confirmations.`
       : detailMintWouldOverfill
-        ? compareExactIntegers(detailPendingSupply, 0) > 0
-          ? `Next mint needs ${detailToken?.mintAmount.toLocaleString()} ${detailToken?.ticker}, but only ${detailAvailableSupply.toLocaleString()} are available after pending mints.`
-          : `Next mint needs ${detailToken?.mintAmount.toLocaleString()} ${detailToken?.ticker}, but only ${detailConfirmedRemainingSupply.toLocaleString()} confirmed supply remains.`
+        ? (tokenSupplyUnits(detailToken, detailPendingSupply) ?? 0n) > 0n
+          ? `Next mint needs ${detailToken?.mintAmount.toLocaleString()} ${detailToken?.ticker}, but only ${tokenSupplyDisplay(detailToken, detailAvailableSupply)} are available after pending mints.`
+          : `Next mint needs ${detailToken?.mintAmount.toLocaleString()} ${detailToken?.ticker}, but only ${tokenSupplyDisplay(detailToken, detailConfirmedRemainingSupply)} confirmed supply remains.`
       : "";
   const detailProgress = tokenProgressPercent(
     detailConfirmedSupply,
     detailToken?.maxSupply ?? 0,
+    detailToken,
   );
   const detailMintUsd = satsToUsd(detailToken?.mintPriceSats ?? 0, btcUsd);
   const detailUnitUsd = satsToUsd(detailPricePerToken, btcUsd);
@@ -37538,14 +38178,24 @@ function TokenWorkspace({
     workFloorQuote?.actualValue?.creditNetworkValueSats ??
     workFloorQuote?.actualValue?.creditLiveNetworkValueSats ??
     0;
+  const workCreditNetworkValueQ8 =
+    workFloorQuote?.actualValue?.creditNetworkValueQ8 ??
+    workFloorQuote?.actualValue?.creditLiveNetworkValueQ8;
   const workCreditEventFrozenValueSats =
     workFloorQuote?.actualValue?.creditEventFrozenValueSats ??
     workFloorQuote?.actualValue?.creditFrozenNetworkValueSats ??
     0;
+  const workCreditEventFrozenValueQ8 =
+    workFloorQuote?.actualValue?.creditEventFrozenValueQ8 ??
+    workFloorQuote?.actualValue?.creditFrozenNetworkValueQ8;
   const workCreditMovementFrozenValueSats =
     workFloorQuote?.actualValue?.creditMovementFrozenValueSats ?? 0;
+  const workCreditMovementFrozenValueQ8 =
+    workFloorQuote?.actualValue?.creditMovementFrozenValueQ8;
   const workCreditMovementLiveValueSats =
     workFloorQuote?.actualValue?.creditMovementLiveValueSats ?? 0;
+  const workCreditMovementLiveValueQ8 =
+    workFloorQuote?.actualValue?.creditMovementLiveValueQ8;
   const workCreditSalePaymentFlowSats =
     workFloorQuote?.actualValue?.creditSalePaymentFlowSats ?? 0;
   const workCreditMinerFeeFlowSats =
@@ -37705,6 +38355,7 @@ function TokenWorkspace({
   const selectedProgress = tokenProgressPercent(
     confirmedSupply,
     selectedToken?.maxSupply ?? 0,
+    selectedToken,
   );
   const selectedSupplyState = tokenMintSupplyState(
     selectedToken,
@@ -37731,9 +38382,9 @@ function TokenWorkspace({
     : selectedPendingMintOut
       ? `Pending mints currently fill the remaining ${selectedToken?.ticker ?? "credit"} supply. Refresh after confirmations.`
       : selectedMintWouldOverfill
-        ? compareExactIntegers(pendingSupply, 0) > 0
-          ? `Next mint needs ${selectedToken?.mintAmount.toLocaleString()} ${selectedToken?.ticker}, but only ${selectedAvailableSupply.toLocaleString()} are available after pending mints.`
-          : `Next mint needs ${selectedToken?.mintAmount.toLocaleString()} ${selectedToken?.ticker}, but only ${selectedConfirmedRemainingSupply.toLocaleString()} confirmed supply remains.`
+        ? (tokenSupplyUnits(selectedToken, pendingSupply) ?? 0n) > 0n
+          ? `Next mint needs ${selectedToken?.mintAmount.toLocaleString()} ${selectedToken?.ticker}, but only ${tokenSupplyDisplay(selectedToken, selectedAvailableSupply)} are available after pending mints.`
+          : `Next mint needs ${selectedToken?.mintAmount.toLocaleString()} ${selectedToken?.ticker}, but only ${tokenSupplyDisplay(selectedToken, selectedConfirmedRemainingSupply)} confirmed supply remains.`
       : "";
   const selectedRegistryLabel =
     selectedToken?.registryAddress === WORK_TOKEN_REGISTRY_ADDRESS
@@ -37751,6 +38402,7 @@ function TokenWorkspace({
         pendingSupply: bigint;
       }
     >();
+    const tokenById = new Map(tokens.map((token) => [token.tokenId, token]));
 
     for (const token of tokens) {
       stats.set(token.tokenId, {
@@ -37772,10 +38424,22 @@ function TokenWorkspace({
         };
       if (mint.confirmed) {
         current.confirmedMints += 1;
-        current.confirmedSupply += exactIntegerBigInt(mint.amount) ?? 0n;
+        current.confirmedSupply +=
+          tokenRecordAmountAtoms(
+            tokenById.get(mint.tokenId) ?? mint,
+            mint.amount,
+            mint.amountAtoms,
+            mint.amountSubatoms,
+          ) ?? 0n;
       } else {
         current.pendingMints += 1;
-        current.pendingSupply += exactIntegerBigInt(mint.amount) ?? 0n;
+        current.pendingSupply +=
+          tokenRecordAmountAtoms(
+            tokenById.get(mint.tokenId) ?? mint,
+            mint.amount,
+            mint.amountAtoms,
+            mint.amountSubatoms,
+          ) ?? 0n;
       }
       stats.set(mint.tokenId, current);
     }
@@ -38279,7 +38943,7 @@ function TokenWorkspace({
   const detailLedgerLoading =
     ledgerLoading &&
     Boolean(detailToken) &&
-    detailConfirmedSupply === 0 &&
+    (tokenSupplyUnits(detailToken, detailConfirmedSupply) ?? 0n) === 0n &&
     detailHolders.length === 0 &&
     detailMints.length === 0;
 
@@ -38447,6 +39111,7 @@ function TokenWorkspace({
                       {tokenProgressLabel(
                         detailConfirmedSupply,
                         detailToken.maxSupply,
+                        detailToken,
                       )}
                     </strong>
                   </div>
@@ -38455,10 +39120,16 @@ function TokenWorkspace({
                     progress={detailProgress}
                   />
                   <p className="field-note">
-                    {formatExactInteger(detailConfirmedSupply)} /{" "}
+                    {tokenSupplyDisplay(detailToken, detailConfirmedSupply)} /{" "}
                     {tokenMaxSupplyLabel(detailToken)} {detailToken.ticker}{" "}
-                    confirmed. {detailConfirmedRemainingSupply.toLocaleString()}{" "}
-                    confirmed remaining; {detailAvailableSupply.toLocaleString()}{" "}
+                    confirmed. {tokenSupplyDisplay(
+                      detailToken,
+                      detailConfirmedRemainingSupply,
+                    )}{" "}
+                    confirmed remaining; {tokenSupplyDisplay(
+                      detailToken,
+                      detailAvailableSupply,
+                    )}{" "}
                     available after pending mints.
                   </p>
                 </div>
@@ -38471,7 +39142,9 @@ function TokenWorkspace({
                 <span>{detailUncapped ? "Supply model" : "Max supply"}</span>
               </div>
               <div>
-                <strong>{detailConfirmedSupply.toLocaleString()}</strong>
+                <strong>
+                  {tokenSupplyDisplay(detailToken, detailConfirmedSupply)}
+                </strong>
                 <span>Confirmed minted</span>
               </div>
               <div>
@@ -38560,42 +39233,43 @@ function TokenWorkspace({
                           </div>
                         </>
                       ) : null}
-                      {workCreditNetworkValueSats > 0 ? (
+                      {(exactIntegerBigInt(workCreditNetworkValueQ8) ?? 0n) >
+                      0n ? (
                         <>
                           <div>
                             <span>Live WORK event value</span>
                             <strong>
-                              {Math.round(
+                              {bondProofAmountDisplay(
                                 workCreditNetworkValueSats,
-                              ).toLocaleString()}{" "}
-                              proofs
+                                workCreditNetworkValueQ8,
+                              )} proofs
                             </strong>
                           </div>
                           <div>
                             <span>Frozen WORK event value</span>
                             <strong>
-                              {Math.round(
+                              {bondProofAmountDisplay(
                                 workCreditEventFrozenValueSats,
-                              ).toLocaleString()}{" "}
-                              proofs
+                                workCreditEventFrozenValueQ8,
+                              )} proofs
                             </strong>
                           </div>
                           <div>
                             <span>Live WORK mark</span>
                             <strong>
-                              {Math.round(
+                              {bondProofAmountDisplay(
                                 workCreditMovementLiveValueSats,
-                              ).toLocaleString()}{" "}
-                              proofs
+                                workCreditMovementLiveValueQ8,
+                              )} proofs
                             </strong>
                           </div>
                           <div>
                             <span>Frozen WORK mark</span>
                             <strong>
-                              {Math.round(
+                              {bondProofAmountDisplay(
                                 workCreditMovementFrozenValueSats,
-                              ).toLocaleString()}{" "}
-                              proofs
+                                workCreditMovementFrozenValueQ8,
+                              )} proofs
                             </strong>
                           </div>
                           <div>
@@ -38687,8 +39361,8 @@ function TokenWorkspace({
                         workFloorQuote.stats?.confirmedComputerActions ?? 0,
                       ).toLocaleString()}{" "}
                       confirmed actions
-                      {workCreditNetworkValueSats > 0
-                        ? `, including ${Math.round(workCreditNetworkValueSats).toLocaleString()} live WORK-event proofs and ${Math.round(workCreditEventFrozenValueSats).toLocaleString()} frozen WORK-event proofs.`
+                      {(exactIntegerBigInt(workCreditNetworkValueQ8) ?? 0n) > 0n
+                        ? `, including ${bondProofAmountDisplay(workCreditNetworkValueSats, workCreditNetworkValueQ8)} live WORK-event proofs and ${bondProofAmountDisplay(workCreditEventFrozenValueSats, workCreditEventFrozenValueQ8)} frozen WORK-event proofs.`
                         : "."}
                     </p>
                   </>
@@ -38879,7 +39553,10 @@ function TokenWorkspace({
                     <div>
                       <span>Available now</span>
                       <strong>
-                        {detailAvailableSupply.toLocaleString()}{" "}
+                        {tokenSupplyDisplay(
+                          detailToken,
+                          detailAvailableSupply,
+                        )}{" "}
                         {detailToken.ticker}
                       </strong>
                     </div>
@@ -39279,7 +39956,11 @@ function TokenWorkspace({
                 <div>
                   <span>Selected progress</span>
                   <strong>
-                    {tokenProgressLabel(confirmedSupply, selectedToken.maxSupply)}
+                    {tokenProgressLabel(
+                      confirmedSupply,
+                      selectedToken.maxSupply,
+                      selectedToken,
+                    )}
                   </strong>
                 </div>
                 <ProgressBar
@@ -39287,10 +39968,15 @@ function TokenWorkspace({
                   progress={selectedProgress}
                 />
                 <p className="field-note">
-                  {formatExactInteger(confirmedSupply)} confirmed,{" "}
-                  {formatExactInteger(pendingSupply)} pending.{" "}
-                  {selectedConfirmedRemainingSupply.toLocaleString()} confirmed
-                  remaining; {selectedAvailableSupply.toLocaleString()} available
+                  {tokenSupplyDisplay(selectedToken, confirmedSupply)} confirmed,{" "}
+                  {tokenSupplyDisplay(selectedToken, pendingSupply)} pending.{" "}
+                  {tokenSupplyDisplay(
+                    selectedToken,
+                    selectedConfirmedRemainingSupply,
+                  )} confirmed remaining; {tokenSupplyDisplay(
+                    selectedToken,
+                    selectedAvailableSupply,
+                  )} available
                   after pending.
                 </p>
               </div>
@@ -39522,8 +40208,9 @@ function TokenWorkspace({
                   pendingSupply: 0n,
                 };
                 const rowProgress = tokenProgressPercent(
-                  stats.confirmedSupply,
+                  tokenSupplyValueFromUnits(token, stats.confirmedSupply),
                   token.maxSupply,
+                  token,
                 );
                 const rowPrice =
                   token.mintAmount > 0
@@ -39553,7 +40240,13 @@ function TokenWorkspace({
                         />
                       </div>
                       <p className="field-note">
-                        {formatExactInteger(stats.confirmedSupply)} /{" "}
+                        {tokenSupplyDisplay(
+                          token,
+                          tokenSupplyValueFromUnits(
+                            token,
+                            stats.confirmedSupply,
+                          ),
+                        )} /{" "}
                         {tokenMaxSupplyLabel(token)} minted - registry{" "}
                         {shortAddress(token.registryAddress)} -{" "}
                         {formatDate(token.createdAt)}
@@ -41454,6 +42147,9 @@ function tokenMarketPricePointsFor(
   listings: PowTokenListing[],
   sales: PowTokenSale[],
 ) {
+  if (isWorkToken(token)) {
+    return [];
+  }
   const points: TokenMarketPricePoint[] = [];
   const mintPrice =
     token.mintAmount > 0 ? token.mintPriceSats / token.mintAmount : 0;
@@ -41978,19 +42674,32 @@ function GrowthWorkspace({
     actualValue.creditNetworkValueSats ??
     actualValue.creditLiveNetworkValueSats ??
     0;
+  const creditNetworkValueQ8 =
+    actualValue.creditNetworkValueQ8 ??
+    actualValue.creditLiveNetworkValueQ8;
   const creditEventFrozenValueSats =
     actualValue.creditEventFrozenValueSats ??
     actualValue.creditFrozenNetworkValueSats ??
     0;
+  const creditEventFrozenValueQ8 =
+    actualValue.creditEventFrozenValueQ8 ??
+    actualValue.creditFrozenNetworkValueQ8;
   const creditEventLiveValueSats =
     actualValue.creditEventLiveValueSats ??
     actualValue.creditLiveNetworkValueSats ??
     creditNetworkValueSats ??
     0;
+  const creditEventLiveValueQ8 =
+    actualValue.creditEventLiveValueQ8 ??
+    actualValue.creditLiveNetworkValueQ8 ??
+    creditNetworkValueQ8;
   const creditMovementFrozenValueSats =
     actualValue.creditMovementFrozenValueSats ?? 0;
+  const creditMovementFrozenValueQ8 =
+    actualValue.creditMovementFrozenValueQ8;
   const creditMovementLiveValueSats =
     actualValue.creditMovementLiveValueSats ?? 0;
+  const creditMovementLiveValueQ8 = actualValue.creditMovementLiveValueQ8;
   const creditMinerFeeFlowSats = actualValue.creditMinerFeeFlowSats ?? 0;
   const creditProofPaymentFlowSats = actualValue.creditProofPaymentFlowSats ?? 0;
   const creditSalePaymentFlowSats = actualValue.creditSalePaymentFlowSats ?? 0;
@@ -42126,10 +42835,20 @@ function GrowthWorkspace({
           </span>
         </div>
         <div>
-          <strong>{growthSats(creditNetworkValueSats)}</strong>
+          <strong>
+            {bondProofAmountDisplay(
+              creditNetworkValueSats,
+              creditNetworkValueQ8,
+            )} proofs
+          </strong>
           <span>
-            WORK live event value · {creditMovementLiveValueSats.toLocaleString()} live
-            mark · {creditEventFrozenValueSats.toLocaleString()} frozen event ·{" "}
+            WORK live event value · {bondProofAmountDisplay(
+              creditMovementLiveValueSats,
+              creditMovementLiveValueQ8,
+            )} live mark · {bondProofAmountDisplay(
+              creditEventFrozenValueSats,
+              creditEventFrozenValueQ8,
+            )} frozen event ·{" "}
             {creditSalePaymentFlowSats.toLocaleString()} sale proofs ·{" "}
             {creditMutationFlowSats.toLocaleString()} mutation proofs
           </span>
@@ -42425,8 +43144,11 @@ function GrowthWorkspace({
             note="Credit balances and pwt1:send transfers become their own ownership product in the ProofOfWork Computer model."
           />
           <GrowthProductCard
-            actual={growthSats(creditNetworkValueSats)}
-            actualLabel={`${growthUsdForSats(creditNetworkValueSats)} · ${creditEventLiveValueSats.toLocaleString()} live WORK event · ${creditEventFrozenValueSats.toLocaleString()} frozen WORK event · ${creditMovementLiveValueSats.toLocaleString()} live WORK mark · ${creditMovementFrozenValueSats.toLocaleString()} frozen WORK mark · ${creditSalePaymentFlowSats.toLocaleString()} sale proofs · ${creditProofPaymentFlowSats.toLocaleString()} mint/create proofs · ${creditMinerFeeFlowSats.toLocaleString()} miner proofs`}
+            actual={`${bondProofAmountDisplay(
+              creditNetworkValueSats,
+              creditNetworkValueQ8,
+            )} proofs`}
+            actualLabel={`${growthUsdForSats(creditNetworkValueSats)} · ${bondProofAmountDisplay(creditEventLiveValueSats, creditEventLiveValueQ8)} live WORK event · ${bondProofAmountDisplay(creditEventFrozenValueSats, creditEventFrozenValueQ8)} frozen WORK event · ${bondProofAmountDisplay(creditMovementLiveValueSats, creditMovementLiveValueQ8)} live WORK mark · ${bondProofAmountDisplay(creditMovementFrozenValueSats, creditMovementFrozenValueQ8)} frozen WORK mark · ${creditSalePaymentFlowSats.toLocaleString()} sale proofs · ${creditProofPaymentFlowSats.toLocaleString()} mint/create proofs · ${creditMinerFeeFlowSats.toLocaleString()} miner proofs`}
             icon={<TrendingUp size={24} />}
             modelFiveYear="Tracked"
             modelFiveYearLabel="WORK movement lane"
@@ -42828,8 +43550,8 @@ type TokenMarketplaceRow = PowTokenDefinition & {
   confirmedMints: number;
   confirmedSupply: ExactIntegerValue;
   holderCount: number;
-  lastSalePricePerToken: number;
-  lowestAskPricePerToken: number;
+  lastSalePricePerToken: ExactDecimalValue;
+  lowestAskPricePerToken: ExactDecimalValue;
   openListings: number;
   pendingMints: number;
   pendingSupply: ExactIntegerValue;
@@ -43015,8 +43737,8 @@ function tokenReferencePriceSats(
     return null;
   }
 
-  if (token.tokenId === WORK_TOKEN_ID && workFloorSats > 0) {
-    return workFloorSats;
+  if (isWorkToken(token)) {
+    return workFloorSats > 0 ? workFloorSats : null;
   }
 
   return (
@@ -43031,8 +43753,8 @@ function tokenMarketDisplayPriceSats(
   token: TokenMarketplaceRow,
   workFloorSats: number,
 ) {
-  if (token.tokenId === WORK_TOKEN_ID && workFloorSats > 0) {
-    return workFloorSats;
+  if (isWorkToken(token)) {
+    return workFloorSats > 0 ? workFloorSats : null;
   }
 
   return (
@@ -43044,24 +43766,15 @@ function tokenMarketDisplayPriceSats(
   );
 }
 
-function tokenMarketArbSats(token: TokenMarketplaceRow, workFloorSats: number) {
-  const reference = tokenReferencePriceSats(token, workFloorSats);
-  const ask =
-    finitePositiveNumber(token.lowestAskPricePerToken) ||
-    finitePositiveNumber(token.lastSalePricePerToken) ||
-    finitePositiveNumber(token.pricePerToken) ||
-    tokenMintPricePerUnit(token) ||
-    null;
-
-  return reference !== null && ask !== null ? reference - ask : null;
-}
-
 function tokenUnitPriceSats(
   token: { amountSubatoms?: unknown; ticker?: string; tokenId?: string },
   amount: unknown,
   amountAtoms: unknown,
   priceSats: number,
 ) {
+  if (isWorkToken(token)) {
+    return 0;
+  }
   const parsedAmountAtoms = tokenRecordAmountAtoms(
     token,
     amount,
@@ -43122,27 +43835,139 @@ function compareTokenListingUnitPrice(
   return leftCross < rightCross ? -1 : leftCross > rightCross ? 1 : 0;
 }
 
-function tokenListingReferencePriceSats(
-  listing: PowTokenListing,
-  tokenById: Map<string, TokenReferenceSnapshot>,
-  workFloorSats: number,
-) {
-  return tokenReferencePriceSats(tokenById.get(listing.tokenId), workFloorSats);
+type ExactRational = {
+  denominator: bigint;
+  numerator: bigint;
+};
+
+function positiveExactDecimalRational(value: unknown): ExactRational | null {
+  const decimal = exactDecimalText(value);
+  if (!decimal) {
+    return null;
+  }
+  const [whole, fraction = ""] = decimal.split(".");
+  const denominator = 10n ** BigInt(fraction.length);
+  const numerator =
+    BigInt(whole) * denominator + BigInt(fraction || "0");
+  return numerator > 0n ? { denominator, numerator } : null;
 }
 
-function tokenListingArbSats(
+function tokenReferencePriceRational(
+  token: TokenReferenceSnapshot | undefined,
+): ExactRational | null {
+  if (!token) {
+    return null;
+  }
+  const marketReference =
+    positiveExactDecimalRational(token.lastSalePricePerToken) ??
+    positiveExactDecimalRational(token.pricePerToken);
+  if (marketReference) {
+    return marketReference;
+  }
+  const mintPrice = exactIntegerBigInt(token.mintPriceSats);
+  const mintAmount = exactIntegerBigInt(token.mintAmount);
+  return mintPrice !== null && mintPrice > 0n &&
+      mintAmount !== null && mintAmount > 0n
+    ? { denominator: mintAmount, numerator: mintPrice }
+    : null;
+}
+
+function tokenListingBuyerArbExact(
   listing: PowTokenListing,
   tokenById: Map<string, TokenReferenceSnapshot>,
-  workFloorSats: number,
-) {
-  const reference = tokenListingReferencePriceSats(
-    listing,
-    tokenById,
-    workFloorSats,
-  );
-  const unit = tokenListingUnitPriceSats(listing);
+  workFloorQ8?: unknown,
+): ExactRational | null {
+  if (!tokenListingHasConfirmedSaleTicketSeal(listing)) {
+    return null;
+  }
+  const work = isWorkToken(listing);
+  const workTerms = work ? workAmoFrozenTerms(listing) : null;
+  if (work && !workTerms) {
+    return null;
+  }
+  const reference = work
+    ? (() => {
+        const q8 = exactIntegerBigInt(workFloorQ8);
+        return q8 !== null && q8 > 0n
+          ? { denominator: 100_000_000n, numerator: q8 }
+          : null;
+      })()
+    : tokenReferencePriceRational(tokenById.get(listing.tokenId));
+  const amount = work
+    ? workSubatomsFromCanonicalString(workTerms?.amountSubatoms)
+    : tokenRecordAmountAtoms(listing, listing.amount, listing.amountAtoms);
+  const amountScale = work ? WORK_AMO_UNIT_SCALE : 1n;
+  const price = work
+    ? workTerms &&
+      Number.isSafeInteger(workTerms.priceSats) &&
+      workTerms.priceSats > 0
+      ? workTerms.priceSats
+      : null
+    : Number.isSafeInteger(listing.priceSats) && listing.priceSats > 0
+      ? listing.priceSats
+      : null;
+  if (!reference || amount === null || amount <= 0n || price === null) {
+    return null;
+  }
+  const denominator = reference.denominator * amountScale;
+  return {
+    denominator,
+    numerator:
+      reference.numerator * amount - BigInt(price) * denominator,
+  };
+}
 
-  return reference !== null && unit > 0 ? reference - unit : null;
+function compareExactRational(left: ExactRational, right: ExactRational) {
+  const leftCross = left.numerator * right.denominator;
+  const rightCross = right.numerator * left.denominator;
+  return leftCross < rightCross ? -1 : leftCross > rightCross ? 1 : 0;
+}
+
+function compareOptionalExactRational(
+  left: ExactRational | null,
+  right: ExactRational | null,
+  descending: boolean,
+  fallback: () => number,
+) {
+  if (left && !right) {
+    return -1;
+  }
+  if (!left && right) {
+    return 1;
+  }
+  if (left && right) {
+    const comparison = compareExactRational(left, right);
+    if (comparison !== 0) {
+      return descending ? -comparison : comparison;
+    }
+  }
+  return fallback();
+}
+
+function formatExactRational(
+  value: ExactRational,
+  maximumFractionDigits = 24,
+) {
+  const negative = value.numerator < 0n;
+  const absolute = negative ? -value.numerator : value.numerator;
+  const whole = absolute / value.denominator;
+  let remainder = absolute % value.denominator;
+  let fraction = "";
+  const digits = Math.max(0, Math.floor(maximumFractionDigits));
+  for (let index = 0; index < digits && remainder > 0n; index += 1) {
+    remainder *= 10n;
+    fraction += (remainder / value.denominator).toString();
+    remainder %= value.denominator;
+  }
+  const visibleFraction = fraction.replace(/0+$/u, "");
+  const formatted = `${whole.toLocaleString("en-US")}${
+    visibleFraction ? `.${visibleFraction}` : ""
+  }`;
+  return negative
+    ? `-${formatted}`
+    : value.numerator > 0n
+      ? `+${formatted}`
+      : formatted;
 }
 
 function sortTokenDirectoryRows(
@@ -43158,14 +43983,20 @@ function sortTokenDirectoryRows(
 
     if (sortMode === "confirmed-supply") {
       return (
-        compareExactIntegers(right.confirmedSupply, left.confirmedSupply) ||
+        compareTokenSupplyValues(
+          right.confirmedSupply,
+          left.confirmedSupply,
+        ) ||
         fallback()
       );
     }
 
     return (
       right.progress - left.progress ||
-      compareExactIntegers(right.confirmedSupply, left.confirmedSupply) ||
+      compareTokenSupplyValues(
+        right.confirmedSupply,
+        left.confirmedSupply,
+      ) ||
       fallback()
     );
   });
@@ -43175,7 +44006,7 @@ function sortTokenListings(
   listings: PowTokenListing[],
   sortMode: MarketplaceSortMode,
   tokenById: Map<string, TokenReferenceSnapshot>,
-  workFloorSats: number,
+  workFloorQ8?: unknown,
 ) {
   return [...listings].sort((left, right) => {
     const fallback = () =>
@@ -43191,9 +44022,9 @@ function sortTokenListings(
       );
     }
 
-    return compareOptionalMetric(
-      tokenListingArbSats(left, tokenById, workFloorSats),
-      tokenListingArbSats(right, tokenById, workFloorSats),
+    return compareOptionalExactRational(
+      tokenListingBuyerArbExact(left, tokenById, workFloorQ8),
+      tokenListingBuyerArbExact(right, tokenById, workFloorQ8),
       sortMode === "arb-desc",
       fallback,
     );
@@ -43399,7 +44230,9 @@ function tokenMarketplaceRowsFor({
       confirmedMints: number;
       confirmedSupply: bigint;
       lastSalePricePerToken: number;
+      lastSalePricePerTokenExact?: WorkQ16UnitPriceDescriptor;
       lowestAskPricePerToken: number;
+      lowestAskPricePerTokenExact?: WorkQ16UnitPriceDescriptor;
       openListings: number;
       pendingMints: number;
       pendingSupply: bigint;
@@ -43435,7 +44268,6 @@ function tokenMarketplaceRowsFor({
 
     if (mint.confirmed) {
       current.confirmedMints += 1;
-      current.confirmedSupply += exactIntegerBigInt(mint.amount) ?? 0n;
       const amountAtoms = tokenRecordAmountAtoms(
         mint,
         mint.amount,
@@ -43443,6 +44275,7 @@ function tokenMarketplaceRowsFor({
         mint.amountSubatoms,
       );
       if (amountAtoms !== null) {
+        current.confirmedSupply += amountAtoms;
         current.balances.set(
           mint.minterAddress,
           (current.balances.get(mint.minterAddress) ?? 0n) + amountAtoms,
@@ -43450,7 +44283,13 @@ function tokenMarketplaceRowsFor({
       }
     } else {
       current.pendingMints += 1;
-      current.pendingSupply += exactIntegerBigInt(mint.amount) ?? 0n;
+      current.pendingSupply +=
+        tokenRecordAmountAtoms(
+          mint,
+          mint.amount,
+          mint.amountAtoms,
+          mint.amountSubatoms,
+        ) ?? 0n;
     }
   }
 
@@ -43516,15 +44355,26 @@ function tokenMarketplaceRowsFor({
       }
       if (
         current.lastSalePricePerToken === 0 &&
+        !current.lastSalePricePerTokenExact &&
         amountAtoms !== null &&
         amountAtoms > 0n
       ) {
-        current.lastSalePricePerToken = tokenUnitPriceSats(
+        const exactPrice = workQ16UnitPriceDescriptorForRecord(
           sale,
           sale.amount,
           sale.amountAtoms,
           sale.priceSats,
         );
+        if (exactPrice) {
+          current.lastSalePricePerTokenExact = exactPrice;
+        } else {
+          current.lastSalePricePerToken = tokenUnitPriceSats(
+            sale,
+            sale.amount,
+            sale.amountAtoms,
+            sale.priceSats,
+          );
+        }
       }
     }
   }
@@ -43544,15 +44394,31 @@ function tokenMarketplaceRowsFor({
       continue;
     }
 
-    const ask = tokenListingUnitPriceSats(listing);
-    if (ask <= 0) {
-      continue;
+    const exactAsk = workQ16UnitPriceDescriptorForRecord(
+      listing,
+      listing.amount,
+      listing.amountAtoms,
+      listing.priceSats,
+    );
+    if (exactAsk) {
+      current.lowestAskPricePerTokenExact =
+        current.lowestAskPricePerTokenExact &&
+        compareWorkQ16UnitPriceDescriptors(
+          current.lowestAskPricePerTokenExact,
+          exactAsk,
+        ) <= 0
+          ? current.lowestAskPricePerTokenExact
+          : exactAsk;
+    } else {
+      const ask = tokenListingUnitPriceSats(listing);
+      if (ask <= 0) {
+        continue;
+      }
+      current.lowestAskPricePerToken =
+        current.lowestAskPricePerToken > 0
+          ? Math.min(current.lowestAskPricePerToken, ask)
+          : ask;
     }
-
-    current.lowestAskPricePerToken =
-      current.lowestAskPricePerToken > 0
-        ? Math.min(current.lowestAskPricePerToken, ask)
-        : ask;
   }
 
   return networkTokens
@@ -43565,21 +44431,39 @@ function tokenMarketplaceRowsFor({
       );
       const confirmedSupply = maximumTokenSupply(
         token,
-        current?.confirmedSupply,
+        current
+          ? tokenSupplyValueFromUnits(token, current.confirmedSupply)
+          : undefined,
         token.confirmedSupply,
       );
       const holderCount = Math.max(
         [...balances.values()].filter((balance) => balance > 0n).length,
         Number.isFinite(token.holderCount) ? Number(token.holderCount) : 0,
       );
-      const lastSalePricePerToken = Math.max(
-        current?.lastSalePricePerToken ?? 0,
-        Number.isFinite(token.lastSalePricePerToken)
-          ? Number(token.lastSalePricePerToken)
-          : 0,
-      );
-      const computedLowestAsk = current?.lowestAskPricePerToken ?? 0;
-      const lowestAskPricePerToken = computedLowestAsk;
+      const lastSalePricePerTokenExact = isWorkToken(token)
+        ? token.lastSalePricePerTokenExact ??
+          current?.lastSalePricePerTokenExact
+        : undefined;
+      const lastSalePricePerToken = lastSalePricePerTokenExact?.decimal ??
+        Math.max(
+          current?.lastSalePricePerToken ?? 0,
+          finitePositiveNumber(token.lastSalePricePerToken),
+        );
+      const computedLowestAskExact = current?.lowestAskPricePerTokenExact;
+      const summaryLowestAskExact = token.lowestAskPricePerTokenExact;
+      const lowestAskPricePerTokenExact =
+        computedLowestAskExact && summaryLowestAskExact
+          ? compareWorkQ16UnitPriceDescriptors(
+                computedLowestAskExact,
+                summaryLowestAskExact,
+              ) <= 0
+            ? computedLowestAskExact
+            : summaryLowestAskExact
+          : computedLowestAskExact ?? summaryLowestAskExact;
+      const lowestAskPricePerToken =
+        lowestAskPricePerTokenExact?.decimal ??
+        (current?.lowestAskPricePerToken ||
+          finitePositiveNumber(token.lowestAskPricePerToken));
       const openListings = Math.max(
         current?.openListings ?? 0,
         Number.isFinite(token.openListings) ? Number(token.openListings) : 0,
@@ -43590,7 +44474,9 @@ function tokenMarketplaceRowsFor({
       );
       const pendingSupply = maximumTokenSupply(
         token,
-        current?.pendingSupply,
+        current
+          ? tokenSupplyValueFromUnits(token, current.pendingSupply)
+          : undefined,
         token.pendingSupply,
       );
       const transferCount = Math.max(
@@ -43609,7 +44495,9 @@ function tokenMarketplaceRowsFor({
         confirmedSupply,
         holderCount,
         lastSalePricePerToken,
+        lastSalePricePerTokenExact,
         lowestAskPricePerToken,
+        lowestAskPricePerTokenExact,
         openListings,
         pendingMints,
         pendingSupply,
@@ -43618,6 +44506,7 @@ function tokenMarketplaceRowsFor({
         progress: tokenProgressPercent(
           confirmedSupply,
           token.maxSupply,
+          token,
         ),
         transferCount,
         walletBalance: isWorkToken(token)
@@ -43633,7 +44522,10 @@ function tokenMarketplaceRowsFor({
     })
     .sort(
       (left, right) =>
-        compareExactIntegers(right.confirmedSupply, left.confirmedSupply) ||
+        compareTokenSupplyValues(
+          right.confirmedSupply,
+          left.confirmedSupply,
+        ) ||
         compareTokensByConfirmation(left, right),
     );
 }
@@ -43819,7 +44711,6 @@ function InfinityBondMarketPanel({
     visibleMarketListings,
     tokenListingSortMode,
     tokenReferenceById,
-    0,
   );
   const tokenMarketLogItems = sortTokenMarketLogItems([
     ...marketListings.map((listing) => ({
@@ -44866,7 +45757,7 @@ function TokenMarketplacePanel({
     filteredMarketListings,
     tokenListingSortMode,
     tokenReferenceById,
-    workMarketFloorSats,
+    workMarketFloorQ8,
   );
   const walletMarketListings = address
     ? sortTokenListings(
@@ -44878,7 +45769,7 @@ function TokenMarketplacePanel({
         ),
         tokenListingSortMode,
         tokenReferenceById,
-        workMarketFloorSats,
+        workMarketFloorQ8,
       )
     : [];
   const visibleRows = selectedMarketToken ? [selectedMarketToken] : rows;
@@ -44922,14 +45813,24 @@ function TokenMarketplacePanel({
     workFloorQuote?.actualValue?.creditNetworkValueSats ??
     workFloorQuote?.actualValue?.creditLiveNetworkValueSats ??
     0;
+  const workCreditNetworkValueQ8 =
+    workFloorQuote?.actualValue?.creditNetworkValueQ8 ??
+    workFloorQuote?.actualValue?.creditLiveNetworkValueQ8;
   const workCreditEventFrozenValueSats =
     workFloorQuote?.actualValue?.creditEventFrozenValueSats ??
     workFloorQuote?.actualValue?.creditFrozenNetworkValueSats ??
     0;
+  const workCreditEventFrozenValueQ8 =
+    workFloorQuote?.actualValue?.creditEventFrozenValueQ8 ??
+    workFloorQuote?.actualValue?.creditFrozenNetworkValueQ8;
   const workCreditMovementFrozenValueSats =
     workFloorQuote?.actualValue?.creditMovementFrozenValueSats ?? 0;
+  const workCreditMovementFrozenValueQ8 =
+    workFloorQuote?.actualValue?.creditMovementFrozenValueQ8;
   const workCreditMovementLiveValueSats =
     workFloorQuote?.actualValue?.creditMovementLiveValueSats ?? 0;
+  const workCreditMovementLiveValueQ8 =
+    workFloorQuote?.actualValue?.creditMovementLiveValueQ8;
   const workCreditSalePaymentFlowSats =
     workFloorQuote?.actualValue?.creditSalePaymentFlowSats ?? 0;
   const workCreditMinerFeeFlowSats =
@@ -45099,47 +46000,49 @@ function TokenMarketplacePanel({
                   <div>
                     <span>Best ask</span>
                     <strong>
-                      {workRow?.lowestAskPricePerToken
-                        ? `${tokenSatsPerUnit(workRow.lowestAskPricePerToken)} proofs / WORK`
+                      {workRow?.lowestAskPricePerTokenExact
+                        ? `${workQ16UnitPriceDisplay(
+                            workRow.lowestAskPricePerTokenExact,
+                          )} proofs / WORK`
                         : "No asks"}
                     </strong>
                   </div>
-                  {workCreditNetworkValueSats > 0 ? (
+                  {(exactIntegerBigInt(workCreditNetworkValueQ8) ?? 0n) > 0n ? (
                     <>
                       <div>
                         <span>Live WORK event value</span>
                         <strong>
-                          {Math.round(
+                          {bondProofAmountDisplay(
                             workCreditNetworkValueSats,
-                          ).toLocaleString()}{" "}
-                          proofs
+                            workCreditNetworkValueQ8,
+                          )} proofs
                         </strong>
                       </div>
                       <div>
                         <span>Frozen WORK event value</span>
                         <strong>
-                          {Math.round(
+                          {bondProofAmountDisplay(
                             workCreditEventFrozenValueSats,
-                          ).toLocaleString()}{" "}
-                          proofs
+                            workCreditEventFrozenValueQ8,
+                          )} proofs
                         </strong>
                       </div>
                       <div>
                         <span>Live WORK mark</span>
                         <strong>
-                          {Math.round(
+                          {bondProofAmountDisplay(
                             workCreditMovementLiveValueSats,
-                          ).toLocaleString()}{" "}
-                          proofs
+                            workCreditMovementLiveValueQ8,
+                          )} proofs
                         </strong>
                       </div>
                       <div>
                         <span>Frozen WORK mark</span>
                         <strong>
-                          {Math.round(
+                          {bondProofAmountDisplay(
                             workCreditMovementFrozenValueSats,
-                          ).toLocaleString()}{" "}
-                          proofs
+                            workCreditMovementFrozenValueQ8,
+                          )} proofs
                         </strong>
                       </div>
                       <div>
@@ -45248,8 +46151,8 @@ function TokenMarketplacePanel({
                     workFloorQuote.stats?.confirmedComputerActions ?? 0,
                   ).toLocaleString()}{" "}
                   confirmed actions
-                  {workCreditNetworkValueSats > 0
-                    ? `, including ${Math.round(workCreditNetworkValueSats).toLocaleString()} live WORK-event proofs and ${Math.round(workCreditEventFrozenValueSats).toLocaleString()} frozen WORK-event proofs.`
+                  {(exactIntegerBigInt(workCreditNetworkValueQ8) ?? 0n) > 0n
+                    ? `, including ${bondProofAmountDisplay(workCreditNetworkValueSats, workCreditNetworkValueQ8)} live WORK-event proofs and ${bondProofAmountDisplay(workCreditEventFrozenValueSats, workCreditEventFrozenValueQ8)} frozen WORK-event proofs.`
                     : "."}
                 </p>
               </>
@@ -45291,16 +46194,20 @@ function TokenMarketplacePanel({
               <div>
                 <span>Lowest ask</span>
                 <strong>
-                  {selectedMarketToken.lowestAskPricePerToken > 0
-                    ? `${tokenSatsPerUnit(selectedMarketToken.lowestAskPricePerToken)} proofs / ${selectedMarketToken.ticker}`
+                  {finitePositiveNumber(
+                    selectedMarketToken.lowestAskPricePerToken,
+                  ) > 0
+                    ? `${tokenSatsPerUnit(finitePositiveNumber(selectedMarketToken.lowestAskPricePerToken))} proofs / ${selectedMarketToken.ticker}`
                     : "No asks"}
                 </strong>
               </div>
               <div>
                 <span>Last sale</span>
                 <strong>
-                  {selectedMarketToken.lastSalePricePerToken > 0
-                    ? `${tokenSatsPerUnit(selectedMarketToken.lastSalePricePerToken)} proofs / ${selectedMarketToken.ticker}`
+                  {finitePositiveNumber(
+                    selectedMarketToken.lastSalePricePerToken,
+                  ) > 0
+                    ? `${tokenSatsPerUnit(finitePositiveNumber(selectedMarketToken.lastSalePricePerToken))} proofs / ${selectedMarketToken.ticker}`
                     : "No sales"}
                 </strong>
               </div>
@@ -45439,7 +46346,7 @@ function TokenMarketplacePanel({
                     <div>
                       <dt>Supply</dt>
                       <dd>
-                        {formatExactInteger(token.confirmedSupply)} /{" "}
+                        {tokenSupplyDisplay(token, token.confirmedSupply)} /{" "}
                         {tokenMaxSupplyLabel(token)}
                       </dd>
                     </div>
@@ -45458,6 +46365,7 @@ function TokenMarketplacePanel({
                           {tokenProgressLabel(
                             token.confirmedSupply ?? 0,
                             token.maxSupply,
+                            token,
                           )}
                         </dd>
                       </div>
@@ -46042,15 +46950,27 @@ function TokenMarketplacePanel({
                     listing,
                     workFloorQuote,
                   );
+                const workBuyerArb =
+                  listingIsWork && sealConfirmed && workReadEraReady
+                  ? tokenListingBuyerArbExact(
+                      listing,
+                      tokenReferenceById,
+                      workMarketFloorQ8,
+                    )
+                  : null;
                 const listingUnitSats =
                   tokenListingUnitPriceSats(listing);
                 const listingToken = rows.find(
                   (token) => token.tokenId === listing.tokenId,
                 );
                 const listingReferenceSats =
-                  listing.tokenId === WORK_TOKEN_ID && workMarketFloorSats > 0
-                    ? workMarketFloorSats
-                    : listingToken?.lastSalePricePerToken ||
+                  listingIsWork
+                    ? workMarketFloorSats > 0
+                      ? workMarketFloorSats
+                      : 0
+                    : finitePositiveNumber(
+                        listingToken?.lastSalePricePerToken,
+                      ) ||
                       listingToken?.pricePerToken ||
                       0;
                 const listingReferenceLabel =
@@ -46180,17 +47100,27 @@ function TokenMarketplacePanel({
                         </dd>
                       </div>
                       {listingIsWork ? (
-                        <div>
-                          <dt>Terms</dt>
-                          <dd>
-                            {workFrozen
-                              ? "Frozen at confirmation"
-                              : workConfirmedSubatoms !== null &&
-                                  workConfirmedPriceSats !== null
-                                ? "Confirmed unsealed"
-                              : "Estimate only"}
-                          </dd>
-                        </div>
+                        <>
+                          <div>
+                            <dt>Terms</dt>
+                            <dd>
+                              {workFrozen
+                                ? "Frozen at confirmation"
+                                : workConfirmedSubatoms !== null &&
+                                    workConfirmedPriceSats !== null
+                                  ? "Confirmed unsealed"
+                                : "Estimate only"}
+                            </dd>
+                          </div>
+                          {workBuyerArb ? (
+                            <div>
+                              <dt>Buyer arb</dt>
+                              <dd data-testid="work-buyer-arb">
+                                {formatExactRational(workBuyerArb)} proofs
+                              </dd>
+                            </div>
+                          ) : null}
+                        </>
                       ) : (
                         <>
                           <div>
@@ -46310,7 +47240,6 @@ function TokenMarketplacePanel({
               {tokenMarketLogPage.items.map((item) => {
                 if (item.kind === "closed-listing") {
                   const closedListing = item.closedListing;
-                  const unitSats = tokenListingUnitPriceSats(closedListing);
                   const closedTxid =
                     closedListing.closedTxid || closedListing.listingId;
                   const closedAt =
@@ -46343,7 +47272,12 @@ function TokenMarketplacePanel({
                         <div>
                           <dt>Unit</dt>
                           <dd>
-                            {tokenSatsPerUnit(unitSats)} proof /{" "}
+                            {tokenUnitPriceDisplay(
+                              closedListing,
+                              closedListing.amount,
+                              closedListing.amountAtoms,
+                              closedListing.priceSats,
+                            )} proof /{" "}
                             {closedListing.ticker}
                           </dd>
                         </div>
@@ -46403,12 +47337,6 @@ function TokenMarketplacePanel({
                 }
 
                 if (item.kind === "sale") {
-                  const unitSats = tokenUnitPriceSats(
-                    item.sale,
-                    item.sale.amount,
-                    item.sale.amountAtoms,
-                    item.sale.priceSats,
-                  );
                   return (
                     <article
                       className="id-record token-market-row"
@@ -46437,7 +47365,12 @@ function TokenMarketplacePanel({
                         <div>
                           <dt>Unit</dt>
                           <dd>
-                            {tokenSatsPerUnit(unitSats)} proof /{" "}
+                            {tokenUnitPriceDisplay(
+                              item.sale,
+                              item.sale.amount,
+                              item.sale.amountAtoms,
+                              item.sale.priceSats,
+                            )} proof /{" "}
                             {item.sale.ticker}
                           </dd>
                         </div>
@@ -46491,7 +47424,6 @@ function TokenMarketplacePanel({
 
                 const sealConfirmed =
                   tokenListingHasConfirmedSaleTicketSeal(item.listing);
-                const unitSats = tokenListingUnitPriceSats(item.listing);
                 const buyerLock =
                   item.listing.saleAuthorization.buyerAddress || "";
                 return (
@@ -46518,7 +47450,12 @@ function TokenMarketplacePanel({
                       <div>
                         <dt>Unit</dt>
                         <dd>
-                          {tokenSatsPerUnit(unitSats)} proof /{" "}
+                          {tokenUnitPriceDisplay(
+                            item.listing,
+                            item.listing.amount,
+                            item.listing.amountAtoms,
+                            item.listing.priceSats,
+                          )} proof /{" "}
                           {item.listing.ticker}
                         </dd>
                       </div>

@@ -254,6 +254,21 @@ const WORK_Q16_PENDING_RUNNING_ATTEMPT_META_KEY =
   "workQ16PendingRunningAttempt:livenet";
 const WORK_Q16_PENDING_ATTEMPT_MODEL =
   "canonical-work-q16-pending-publication-attempt-v1";
+const WORK_Q16_LEDGER_SNAPSHOT_STATE_MODEL =
+  "canonical-work-q16-transition-checkpoint-v1";
+const WORK_Q16_LEDGER_SNAPSHOT_STATE_KEYS = Object.freeze([
+  "amountStorageModel",
+  "closingStateCommitment",
+  "decimals",
+  "indexedThroughBlock",
+  "indexedThroughBlockHash",
+  "model",
+  "precisionModel",
+  "tokenStateCommitment",
+  "transitionModel",
+  "unitScale",
+  "workTokenStateModel",
+]);
 const WORK_PRECISION_READINESS_EPOCH_CHECKPOINT_MODEL =
   "proof-index-worker-readiness-epoch-checkpoint-v1";
 const WORK_PRECISION_READINESS_EPOCH_CHECKPOINT_DOMAIN =
@@ -405,6 +420,27 @@ const MAX_PAGES = Number(process.env.POW_INDEX_BACKFILL_MAX_PAGES ?? 2000);
 const REQUEST_TIMEOUT_MS = Number(process.env.POW_INDEX_FETCH_TIMEOUT_MS ?? 60_000);
 const REQUEST_RETRIES = Number(process.env.POW_INDEX_FETCH_RETRIES ?? 4);
 const CANONICAL_SUMMARY_RESPONSE_MAX_BYTES = 64 * 1024 * 1024;
+const LEDGER_SNAPSHOT_MAX_BYTES = 8 * 1024 * 1024;
+const CANONICAL_SUMMARY_SNAPSHOT_MAX_BYTES = 8 * 1024 * 1024;
+const CANONICAL_SUMMARY_SNAPSHOT_ROOT_KEYS = Object.freeze([
+  "checks",
+  "generatedAt",
+  "indexedThroughBlock",
+  "indexedThroughBlockHash",
+  "metrics",
+  "missingLogEvents",
+  "network",
+  "ok",
+  "snapshotId",
+  "sourceHashes",
+  "status",
+  "summaryPayloads",
+  "summaryPayloadsIndexedAt",
+  "summaryRefresh",
+  "totals",
+  "workAmountStorageModel",
+  "workSufficientState",
+]);
 // A deliberate derived-snapshot invalidation leaves the first canonical
 // summary refresh with no warm read model. Keep the ordinary default bounded,
 // but allow a supervised cold rebuild enough time to finish and publish one
@@ -1419,6 +1455,19 @@ const LEDGER_CANONICAL_SUMMARY_RETENTION = Math.max(
       Number(
         process.env.POW_INDEX_LEDGER_CANONICAL_SUMMARY_RETENTION ?? 4_096,
       ) || 4_096,
+    ),
+  ),
+);
+const LEDGER_CANONICAL_SUMMARY_LOGICAL_BYTE_BUDGET = Math.max(
+  CANONICAL_SUMMARY_SNAPSHOT_MAX_BYTES,
+  Math.min(
+    8 * 1024 * 1024 * 1024,
+    Math.floor(
+      Number(
+        process.env
+          .POW_INDEX_LEDGER_CANONICAL_SUMMARY_LOGICAL_BYTE_BUDGET ??
+          2 * 1024 * 1024 * 1024,
+      ) || 2 * 1024 * 1024 * 1024,
     ),
   ),
 );
@@ -2912,7 +2961,9 @@ async function readJson(url, options = {}) {
         );
       }
       const headers = {
-        ...(loopbackApi && INTERNAL_VERIFIER_TOKEN.length >= 32
+        ...(internalVerifier &&
+        loopbackApi &&
+        INTERNAL_VERIFIER_TOKEN.length >= 32
           ? { "X-PoW-Internal-Verifier": INTERNAL_VERIFIER_TOKEN }
           : {}),
         ...(options.body === undefined
@@ -9854,44 +9905,88 @@ async function readHistorySnapshot(
   params = {},
   sourceParams = snapshotSourceParams,
 ) {
-  let cursor = "";
-  let firstPayload = null;
-  let page = 0;
-  const items = [];
+  const readOnce = async () => {
+    let cursor = "";
+    let firstPayload = null;
+    let fence = null;
+    let page = 0;
+    const items = [];
 
-  while (page < MAX_PAGES) {
-    const payload = await readJson(
-      endpoint(pathname, sourceParams({ ...params, cursor })),
-    );
-    if (!firstPayload) {
-      firstPayload = payload;
+    while (page < MAX_PAGES) {
+      const payload = await readJson(
+        endpoint(pathname, sourceParams({ ...params, cursor })),
+      );
+      const payloadItems = Array.isArray(payload?.items) ? payload.items : null;
+      const payloadTotalCount = Number(payload?.totalCount);
+      const payloadStart = Number(payload?.start);
+      const descriptor = {
+        indexedThroughBlock: Number(payload?.indexedThroughBlock),
+        indexedThroughBlockHash: String(
+          payload?.indexedThroughBlockHash ?? "",
+        ).toLowerCase(),
+        network: String(payload?.network ?? ""),
+        snapshotId: String(payload?.snapshotId ?? ""),
+        source: String(payload?.source ?? ""),
+        totalCount: payloadTotalCount,
+      };
+      if (
+        !payloadItems ||
+        !Number.isSafeInteger(payloadTotalCount) ||
+        payloadTotalCount < 0 ||
+        !Number.isSafeInteger(payloadStart) ||
+        payloadStart !== items.length ||
+        (fence && JSON.stringify(descriptor) !== JSON.stringify(fence))
+      ) {
+        throw new Error(`${pathname} changed while its snapshot was paged.`);
+      }
+      if (!firstPayload) {
+        firstPayload = payload;
+        fence = descriptor;
+      }
+      items.push(...payloadItems);
+      cursor = String(payload.nextCursor ?? "");
+      page += 1;
+      if (!cursor) {
+        break;
+      }
     }
-    items.push(...(Array.isArray(payload.items) ? payload.items : []));
-    cursor = String(payload.nextCursor ?? "");
-    page += 1;
-    if (!cursor) {
-      break;
-    }
-  }
 
-  const payloadTotalCount = Number(firstPayload?.totalCount);
-  const totalCount = Math.max(
-    Number.isFinite(payloadTotalCount) ? payloadTotalCount : 0,
-    items.length,
-  );
-  return {
-    ...(firstPayload ?? {}),
-    complete: !cursor,
-    cursor: "0",
-    end: items.length,
-    items,
-    limit: items.length,
-    nextCursor: "",
-    page: 0,
-    pageCount: 1,
-    pageSize: items.length,
-    totalCount,
+    const totalCount = Number(firstPayload?.totalCount);
+    if (cursor || totalCount !== items.length) {
+      throw new Error(`${pathname} did not return one complete fenced history.`);
+    }
+    return {
+      descriptor: fence,
+      membershipSha256: createHash("sha256")
+        .update(JSON.stringify(items), "utf8")
+        .digest("hex"),
+      payload: {
+        ...(firstPayload ?? {}),
+        complete: true,
+        cursor: "0",
+        end: items.length,
+        items,
+        limit: items.length,
+        nextCursor: "",
+        page: 0,
+        pageCount: 1,
+        pageSize: items.length,
+        totalCount,
+      },
+    };
   };
+
+  // Numeric live cursors are not immutable. Two identical full passes prove
+  // that pending membership and ordering stayed stable across the capture.
+  const first = await readOnce();
+  const second = await readOnce();
+  if (
+    JSON.stringify(first.descriptor) !== JSON.stringify(second.descriptor) ||
+    first.membershipSha256 !== second.membershipSha256
+  ) {
+    throw new Error(`${pathname} membership changed across its snapshot fence.`);
+  }
+  return second.payload;
 }
 
 function isHexTxid(value) {
@@ -10153,6 +10248,7 @@ function tokenHistorySnapshotFromState(state, kind) {
     end: items.length,
     indexedAt: state?.indexedAt ?? new Date().toISOString(),
     indexedThroughBlock: state?.indexedThroughBlock,
+    indexedThroughBlockHash: state?.indexedThroughBlockHash,
     items,
     kind,
     ledgerGeneratedAt: state?.ledgerGeneratedAt,
@@ -10170,13 +10266,24 @@ function tokenHistorySnapshotFromState(state, kind) {
   };
 }
 
-async function tokenHistorySnapshotsForScope(scope) {
-  const state = await readJson(
+async function tokenHistorySnapshotsForScope(scope, ledgerSnapshotId) {
+  const rawState = await readJson(
     endpoint(
       "/api/v1/token",
       scopedTokenSnapshotSourceParams(scope, scope.params),
     ),
   );
+  const expectedSnapshotId = String(ledgerSnapshotId ?? "").trim();
+  const sourceSnapshotId = String(rawState?.snapshotId ?? "").trim();
+  if (
+    !expectedSnapshotId ||
+    (sourceSnapshotId && sourceSnapshotId !== expectedSnapshotId)
+  ) {
+    throw new Error(
+      `Token state ${scope.key} is not bound to the ledger snapshot.`,
+    );
+  }
+  const state = { ...rawState, snapshotId: expectedSnapshotId };
   const snapshots = Object.fromEntries(
     TOKEN_HISTORY_SNAPSHOT_KINDS.map((kind) => [
       kind,
@@ -10185,7 +10292,7 @@ async function tokenHistorySnapshotsForScope(scope) {
   );
   if (REFRESH_SNAPSHOT_SOURCES || REFRESH_TOKEN_SNAPSHOT_SOURCES) {
     try {
-      snapshots["market-log"] = await readHistorySnapshot(
+      const marketLog = await readHistorySnapshot(
         "/api/v1/token-history",
         {
           ...scope.params,
@@ -10193,6 +10300,22 @@ async function tokenHistorySnapshotsForScope(scope) {
         },
         (params) => scopedTokenSnapshotSourceParams(scope, params),
       );
+      if (
+        Number(marketLog.indexedThroughBlock) !==
+          Number(state.indexedThroughBlock) ||
+        String(marketLog.indexedThroughBlockHash ?? "").toLowerCase() !==
+          String(state.indexedThroughBlockHash ?? "").toLowerCase() ||
+        marketLog.network !== state.network ||
+        !String(marketLog.source ?? "").startsWith("proof-indexer-")
+      ) {
+        throw new Error(
+          `Token market-log ${scope.key} is not bound to its state checkpoint.`,
+        );
+      }
+      snapshots["market-log"] = {
+        ...marketLog,
+        snapshotId: state.snapshotId,
+      };
     } catch (error) {
       console.error(
         JSON.stringify({
@@ -10271,24 +10394,63 @@ async function currentSummarySnapshots() {
 }
 
 async function registryHistorySnapshots() {
-  const entries = [];
-  for (const kind of REGISTRY_HISTORY_SNAPSHOT_KINDS) {
-    try {
-      entries.push([
-        kind,
-        await readHistorySnapshot("/api/v1/registry-history", { kind }),
-      ]);
-    } catch (error) {
-      console.error(
-        JSON.stringify({
-          error: error?.message ?? String(error),
-          kind,
-          phase: "registry-history-snapshot",
-        }),
+  try {
+    // Read one scan-bound current registry projection, then derive every
+    // history family from that immutable response. Paging four independent
+    // live crawler reads can cross a block or mempool boundary and silently
+    // stitch duplicates or omissions into an allegedly complete snapshot.
+    const state = await readJson(
+      unpagedEndpoint("/api/v1/registry", snapshotSourceParams()),
+    );
+    if (
+      REGISTRY_HISTORY_SNAPSHOT_KINDS.some(
+        (kind) => !Array.isArray(state?.[kind]),
+      ) ||
+      (NETWORK === "livenet" &&
+        (state.records.length === 0 || state.activity.length === 0))
+    ) {
+      throw new Error(
+        "The current registry projection is not one complete history source.",
       );
     }
+    return Object.fromEntries(
+      REGISTRY_HISTORY_SNAPSHOT_KINDS.map((kind) => {
+        const items = state[kind];
+        return [
+          kind,
+          {
+            complete: true,
+            cursor: "0",
+            end: items.length,
+            indexedAt: state?.indexedAt ?? new Date().toISOString(),
+            indexedThroughBlock: state?.indexedThroughBlock,
+            indexedThroughBlockHash: state?.indexedThroughBlockHash,
+            items,
+            kind,
+            limit: items.length,
+            network: state?.network ?? NETWORK,
+            nextCursor: "",
+            page: 0,
+            pageCount: 1,
+            pageSize: items.length,
+            query: "",
+            snapshotId: state?.snapshotId,
+            source: state?.source ?? API_BASE,
+            start: 0,
+            totalCount: items.length,
+          },
+        ];
+      }),
+    );
+  } catch (error) {
+    console.error(
+      JSON.stringify({
+        error: error?.message ?? String(error),
+        phase: "registry-history-snapshot",
+      }),
+    );
+    return {};
   }
-  return Object.fromEntries(entries);
 }
 
 async function storedLedgerSnapshotPayload(client, snapshotId = "", options = {}) {
@@ -10314,7 +10476,7 @@ async function storedLedgerSnapshotPayload(client, snapshotId = "", options = {}
   const result = await client.query(
     `
       SELECT payload
-      FROM proof_indexer.ledger_snapshots
+      FROM proof_indexer.ledger_snapshots snapshot
       WHERE network = $1
       ${snapshotFilter}
       ${options.requireSummaryPayloads ? "AND payload ? 'summaryPayloads'" : ""}
@@ -14649,6 +14811,359 @@ function summaryPayloadSnapshotId(payload) {
   return id || null;
 }
 
+function assertLedgerSnapshotStorageBudget(
+  payload,
+  maximumBytes = LEDGER_SNAPSHOT_MAX_BYTES,
+) {
+  const payloadBytes = Buffer.byteLength(JSON.stringify(payload), "utf8");
+  if (payloadBytes > maximumBytes) {
+    const error = new Error(
+      `Ledger snapshot is ${payloadBytes} bytes; the storage budget is ${maximumBytes} bytes.`,
+    );
+    error.code = "POW_LEDGER_SNAPSHOT_STORAGE_BUDGET_EXCEEDED";
+    error.payloadBytes = payloadBytes;
+    throw error;
+  }
+  return payloadBytes;
+}
+
+function canonicalWorkQ16LedgerSnapshotStateWitness(value) {
+  const state = objectPayload(value);
+  const commitment = objectPayload(state?.tokenStateCommitment);
+  const closingStateCommitment = objectPayload(
+    state?.closingStateCommitment,
+  );
+  if (
+    !state ||
+    Object.keys(state).sort().join(",") !==
+      [...WORK_Q16_LEDGER_SNAPSHOT_STATE_KEYS].sort().join(",") ||
+    state.model !== WORK_Q16_LEDGER_SNAPSHOT_STATE_MODEL ||
+    state.amountStorageModel !== WORK_SUBATOM_PROJECTION_MODEL ||
+    state.decimals !== WORK_SUBATOM_DECIMALS ||
+    state.precisionModel !== WORK_PRECISION_V2_MODEL ||
+    state.transitionModel !== WORK_AMO_V8_BLOCK_SEQUENCER_MODEL ||
+    state.workTokenStateModel !==
+      WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL ||
+    state.unitScale !== WORK_SUBATOM_UNIT_SCALE_TEXT ||
+    !Number.isSafeInteger(state.indexedThroughBlock) ||
+    state.indexedThroughBlock < 1 ||
+    typeof state.indexedThroughBlockHash !== "string" ||
+    !/^[0-9a-f]{64}$/u.test(state.indexedThroughBlockHash) ||
+    !commitment ||
+    Object.keys(commitment).sort().join(",") !==
+      "model,payloadBytes,sha256" ||
+    commitment.model !== WORK_AMO_V5_PAYLOAD_COMMITMENT_MODEL ||
+    !Number.isSafeInteger(commitment.payloadBytes) ||
+    commitment.payloadBytes < 1 ||
+    typeof commitment.sha256 !== "string" ||
+    !/^[0-9a-f]{64}$/u.test(commitment.sha256) ||
+    !closingStateCommitment ||
+    Object.keys(closingStateCommitment).sort().join(",") !==
+      "model,payloadBytes,sha256" ||
+    closingStateCommitment.model !== WORK_AMO_V5_STATE_COMMITMENT_MODEL ||
+    !Number.isSafeInteger(closingStateCommitment.payloadBytes) ||
+    closingStateCommitment.payloadBytes < 1 ||
+    typeof closingStateCommitment.sha256 !== "string" ||
+    !/^[0-9a-f]{64}$/u.test(closingStateCommitment.sha256)
+  ) {
+    return null;
+  }
+  return {
+    amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+    closingStateCommitment: {
+      model: WORK_AMO_V5_STATE_COMMITMENT_MODEL,
+      payloadBytes: closingStateCommitment.payloadBytes,
+      sha256: closingStateCommitment.sha256,
+    },
+    decimals: WORK_SUBATOM_DECIMALS,
+    indexedThroughBlock: state.indexedThroughBlock,
+    indexedThroughBlockHash: state.indexedThroughBlockHash,
+    model: WORK_Q16_LEDGER_SNAPSHOT_STATE_MODEL,
+    precisionModel: WORK_PRECISION_V2_MODEL,
+    tokenStateCommitment: {
+      model: WORK_AMO_V5_PAYLOAD_COMMITMENT_MODEL,
+      payloadBytes: commitment.payloadBytes,
+      sha256: commitment.sha256,
+    },
+    transitionModel: WORK_AMO_V8_BLOCK_SEQUENCER_MODEL,
+    unitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,
+    workTokenStateModel: WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL,
+  };
+}
+
+function canonicalSummarySnapshotStorageViolation(payload) {
+  const root = objectPayload(payload);
+  if (!root) {
+    return "payload-not-object";
+  }
+  const forbiddenRootKeys = [
+    "activityIndexedAt",
+    "activityPayload",
+    "registryHistoryIndexedAt",
+    "registryHistoryPayloads",
+    "tokenHistoryIndexedAt",
+    "tokenHistoryPayloads",
+    "tokenStatePayloads",
+    "tokenStatePayloadsIndexedAt",
+  ];
+  const forbiddenKey = forbiddenRootKeys.find((key) =>
+    Object.prototype.hasOwnProperty.call(root, key),
+  );
+  if (forbiddenKey) {
+    return `forbidden-root-key:${forbiddenKey}`;
+  }
+  const unexpectedRootKey = Object.keys(root).find(
+    (key) => !CANONICAL_SUMMARY_SNAPSHOT_ROOT_KEYS.includes(key),
+  );
+  if (unexpectedRootKey) {
+    return `unexpected-root-key:${unexpectedRootKey}`;
+  }
+  if (root.workAmountStorageModel === WORK_SUBATOM_PROJECTION_MODEL) {
+    if (!Object.prototype.hasOwnProperty.call(root, "workSufficientState")) {
+      return "missing-work-sufficient-state";
+    }
+    if (!canonicalWorkQ16LedgerSnapshotStateWitness(
+      root.workSufficientState,
+    )) {
+      return "invalid-work-sufficient-state";
+    }
+  } else if (Object.prototype.hasOwnProperty.call(root, "workSufficientState")) {
+    return "unexpected-work-sufficient-state";
+  }
+  return "";
+}
+
+function canonicalSummarySnapshotPayload({
+  generatedAt,
+  indexedThroughBlock,
+  indexedThroughBlockHash,
+  ledger,
+  publicLogFingerprint,
+  previousCoverage,
+  snapshotId,
+  sourceHashes,
+  summaryPayloads,
+  totals,
+  workAmountStorageModel,
+  workSufficientState,
+}) {
+  const source = objectPayload(ledger) ?? {};
+  return {
+    checks: Array.isArray(source.checks) ? source.checks : [],
+    generatedAt,
+    indexedThroughBlock,
+    indexedThroughBlockHash,
+    metrics: objectPayload(source.metrics) ?? {},
+    missingLogEvents: Array.isArray(source.missingLogEvents)
+      ? source.missingLogEvents
+      : [],
+    network: String(source.network ?? NETWORK),
+    ok: source.ok === true,
+    snapshotId,
+    sourceHashes,
+    status: String(source.status ?? ""),
+    summaryPayloads,
+    summaryPayloadsIndexedAt: generatedAt,
+    summaryRefresh: {
+      indexedThroughBlock,
+      indexedThroughBlockHash,
+      mode: "canonical-summary-refresh",
+      previousCoverage,
+      publicLogFingerprint,
+    },
+    totals,
+    workAmountStorageModel,
+    ...(workSufficientState ? { workSufficientState } : {}),
+  };
+}
+
+function canonicalQ16SummarySnapshotSqlEligibility(snapshotAlias) {
+  const alias = String(snapshotAlias ?? "");
+  if (!/^[a-z_][a-z0-9_]*$/u.test(alias)) {
+    throw new Error("Invalid canonical summary snapshot SQL alias.");
+  }
+  const rootKeys = CANONICAL_SUMMARY_SNAPSHOT_ROOT_KEYS.map(
+    (key) => `'${key}'`,
+  ).join(", ");
+  const stateKeys = WORK_Q16_LEDGER_SNAPSHOT_STATE_KEYS.map(
+    (key) => `'${key}'`,
+  ).join(", ");
+  return `
+    octet_length(${alias}.payload::text) <= ${CANONICAL_SUMMARY_SNAPSHOT_MAX_BYTES}
+    AND NOT EXISTS (
+      SELECT 1
+      FROM jsonb_object_keys(
+        CASE
+          WHEN jsonb_typeof(${alias}.payload) = 'object'
+            THEN ${alias}.payload
+          ELSE '{}'::jsonb
+        END
+      ) AS root_keys(root_key)
+      WHERE root_key <> ALL(ARRAY[${rootKeys}]::text[])
+    )
+    AND ${alias}.payload ? 'workSufficientState'
+    AND NOT (${alias}.payload ? 'tokenStatePayloads')
+    AND jsonb_typeof(
+      ${alias}.payload->'workSufficientState'
+    ) = 'object'
+    AND NOT EXISTS (
+      SELECT 1
+      FROM jsonb_object_keys(
+        CASE
+          WHEN jsonb_typeof(
+            ${alias}.payload->'workSufficientState'
+          ) = 'object'
+            THEN ${alias}.payload->'workSufficientState'
+          ELSE '{}'::jsonb
+        END
+      ) AS state_keys(state_key)
+      WHERE state_key <> ALL(ARRAY[${stateKeys}]::text[])
+    )
+    AND (
+      SELECT count(*)
+      FROM jsonb_object_keys(
+        CASE
+          WHEN jsonb_typeof(
+            ${alias}.payload->'workSufficientState'
+          ) = 'object'
+            THEN ${alias}.payload->'workSufficientState'
+          ELSE '{}'::jsonb
+        END
+      ) AS state_keys(state_key)
+    ) = ${WORK_Q16_LEDGER_SNAPSHOT_STATE_KEYS.length}
+    AND jsonb_typeof(
+      ${alias}.payload->'workSufficientState'->'tokenStateCommitment'
+    ) = 'object'
+    AND ${alias}.payload->'workSufficientState'
+      ->'tokenStateCommitment' = jsonb_build_object(
+        'model', '${WORK_AMO_V5_PAYLOAD_COMMITMENT_MODEL}',
+        'payloadBytes', ${alias}.payload->'workSufficientState'
+          ->'tokenStateCommitment'->'payloadBytes',
+        'sha256', ${alias}.payload->'workSufficientState'
+          ->'tokenStateCommitment'->>'sha256'
+      )
+    AND jsonb_typeof(
+      ${alias}.payload->'workSufficientState'
+        ->'tokenStateCommitment'->'payloadBytes'
+    ) = 'number'
+    AND ${alias}.payload->'workSufficientState'
+      ->'tokenStateCommitment'->>'payloadBytes' ~ '^[1-9][0-9]*$'
+    AND jsonb_typeof(
+      ${alias}.payload->'workSufficientState'
+        ->'tokenStateCommitment'->'sha256'
+    ) = 'string'
+    AND ${alias}.payload->'workSufficientState'
+      ->'tokenStateCommitment'->>'sha256' ~ '^[0-9a-f]{64}$'
+    AND jsonb_typeof(
+      ${alias}.payload->'workSufficientState'->'closingStateCommitment'
+    ) = 'object'
+    AND ${alias}.payload->'workSufficientState'
+      ->'closingStateCommitment' = jsonb_build_object(
+        'model', '${WORK_AMO_V5_STATE_COMMITMENT_MODEL}',
+        'payloadBytes', ${alias}.payload->'workSufficientState'
+          ->'closingStateCommitment'->'payloadBytes',
+        'sha256', ${alias}.payload->'workSufficientState'
+          ->'closingStateCommitment'->>'sha256'
+      )
+    AND jsonb_typeof(
+      ${alias}.payload->'workSufficientState'
+        ->'closingStateCommitment'->'payloadBytes'
+    ) = 'number'
+    AND ${alias}.payload->'workSufficientState'
+      ->'closingStateCommitment'->>'payloadBytes' ~ '^[1-9][0-9]*$'
+    AND jsonb_typeof(
+      ${alias}.payload->'workSufficientState'
+        ->'closingStateCommitment'->'sha256'
+    ) = 'string'
+    AND ${alias}.payload->'workSufficientState'
+      ->'closingStateCommitment'->>'sha256' ~ '^[0-9a-f]{64}$'
+    AND ${alias}.payload->'workSufficientState'->>'model' =
+      '${WORK_Q16_LEDGER_SNAPSHOT_STATE_MODEL}'
+    AND ${alias}.payload->'workSufficientState'->>'amountStorageModel' =
+      '${WORK_SUBATOM_PROJECTION_MODEL}'
+    AND ${alias}.payload->'workSufficientState'->'decimals' =
+      to_jsonb(${WORK_SUBATOM_DECIMALS})
+    AND ${alias}.payload->'workSufficientState'->>'precisionModel' =
+      '${WORK_PRECISION_V2_MODEL}'
+    AND ${alias}.payload->'workSufficientState'->'unitScale' =
+      to_jsonb('${WORK_SUBATOM_UNIT_SCALE_TEXT}'::text)
+    AND ${alias}.payload->'workSufficientState'->>'transitionModel' =
+      '${WORK_AMO_V8_BLOCK_SEQUENCER_MODEL}'
+    AND ${alias}.payload->'workSufficientState'->>'workTokenStateModel' =
+      '${WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL}'
+    AND ${alias}.payload->'workSufficientState'->'indexedThroughBlock' =
+      to_jsonb(${alias}.indexed_through_block)
+    AND ${alias}.payload->'workSufficientState'
+      ->>'indexedThroughBlockHash' ~ '^[0-9a-f]{64}$'
+    AND ${alias}.source_hashes->>'blockScan' ~ '^[0-9a-f]{64}$'
+    AND ${alias}.payload->'workSufficientState'
+      ->>'indexedThroughBlockHash' =
+        ${alias}.source_hashes->>'blockScan'
+    AND EXISTS (
+      SELECT 1
+      FROM proof_indexer.work_amo_block_transitions witness_transition
+      JOIN proof_indexer.blocks witness_block
+        ON witness_block.network = witness_transition.network
+       AND witness_block.height = witness_transition.block_height
+       AND witness_block.block_hash = witness_transition.block_hash
+       AND witness_block.canonical = true
+      WHERE witness_transition.network = ${alias}.network
+        AND witness_transition.block_height =
+          ${alias}.indexed_through_block
+        AND lower(witness_transition.block_hash) = lower(
+          ${alias}.source_hashes->>'blockScan'
+        )
+        AND witness_transition.model =
+          '${WORK_AMO_V8_BLOCK_SEQUENCER_MODEL}'
+        AND witness_transition.state_commitment_model =
+          '${WORK_AMO_V5_STATE_COMMITMENT_MODEL}'
+        AND witness_transition.work_token_state_model =
+          '${WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL}'
+        AND witness_transition.complete = true
+        AND ${alias}.payload->'workSufficientState'
+          ->'closingStateCommitment' = jsonb_build_object(
+            'model', witness_transition.state_commitment_model,
+            'payloadBytes', witness_transition.closing_state_payload_bytes,
+            'sha256', witness_transition.closing_state_sha256
+          )
+        AND ${alias}.payload->'workSufficientState'
+          ->'tokenStateCommitment' = witness_transition.payload
+            ->'closingSufficientState'->'tokenStateCommitment'
+    )
+  `;
+}
+
+function assertCanonicalSummarySnapshotStorageBudget(payload) {
+  const violation = canonicalSummarySnapshotStorageViolation(payload);
+  if (violation) {
+    const error = new Error(
+      `Canonical summary snapshot violates the compact storage contract: ${violation}.`,
+    );
+    error.code = "POW_CANONICAL_SUMMARY_STORAGE_CONTRACT_VIOLATION";
+    error.violation = violation;
+    throw error;
+  }
+  const payloadBytes = Buffer.byteLength(JSON.stringify(payload), "utf8");
+  if (payloadBytes > CANONICAL_SUMMARY_SNAPSHOT_MAX_BYTES) {
+    const error = new Error(
+      `Canonical summary snapshot is ${payloadBytes} bytes; the storage budget is ${CANONICAL_SUMMARY_SNAPSHOT_MAX_BYTES} bytes.`,
+    );
+    error.code = "POW_CANONICAL_SUMMARY_STORAGE_BUDGET_EXCEEDED";
+    error.payloadBytes = payloadBytes;
+    throw error;
+  }
+  return payloadBytes;
+}
+
+function canonicalSummarySnapshotStorageEligible(payload) {
+  try {
+    assertCanonicalSummarySnapshotStorageBudget(payload);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function summaryPayloadValue(payload) {
   return finiteSummaryNumber(
     payload?.actualValue?.totalSats ??
@@ -14908,7 +15423,7 @@ async function fallbackLedgerSnapshotPayload(
 
 async function exactWorkQ16LedgerSnapshotState(
   client,
-  apiState,
+  _apiState,
   indexedThroughBlock,
 ) {
   const precisionMarker = await currentWorkPrecisionV2Marker(client);
@@ -14927,9 +15442,14 @@ async function exactWorkQ16LedgerSnapshotState(
     `
       SELECT
         transition.block_hash,
+        transition.closing_state_payload_bytes,
+        transition.closing_state_sha256,
+        transition.model,
+        transition.state_commitment_model,
+        transition.work_token_state_model,
         transition.payload->'closingTokenState' AS closing_token_state,
         transition.payload->'closingSufficientState'
-          ->'tokenStateCommitment' AS closing_token_state_commitment
+          AS closing_sufficient_state
       FROM proof_indexer.work_amo_block_transitions transition
       JOIN proof_indexer.blocks block
         ON block.network = transition.network
@@ -14961,61 +15481,57 @@ async function exactWorkQ16LedgerSnapshotState(
   );
   const commitment =
     workAmoV8CanonicalTokenStateCommitment(canonicalState);
+  const closingSufficientState = objectPayload(
+    row.closing_sufficient_state,
+  );
+  const closingStateCommitment = closingSufficientState
+    ? workAmoV5CanonicalStateCommitment(closingSufficientState)
+    : null;
   if (
     canonicalJsonText(commitment) !==
-      canonicalJsonText(row.closing_token_state_commitment)
+      canonicalJsonText(closingSufficientState?.tokenStateCommitment) ||
+    row.model !== WORK_AMO_V8_BLOCK_SEQUENCER_MODEL ||
+    row.work_token_state_model !==
+      WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL ||
+    row.state_commitment_model !== WORK_AMO_V5_STATE_COMMITMENT_MODEL ||
+    !closingStateCommitment ||
+    closingStateCommitment.sha256 !== row.closing_state_sha256 ||
+    closingStateCommitment.payloadBytes !==
+      Number(row.closing_state_payload_bytes)
   ) {
     throw new Error(
-      "Q16 ledger snapshot closing token-state commitment does not match its sufficient-state commitment.",
+      "Q16 ledger snapshot transition commitment does not match its exact canonical closing state.",
     );
   }
-  const {
-    confirmedSupplyAtoms: _confirmedSupplyAtoms,
-    maxSupplyAtoms: _maxSupplyAtoms,
-    mintAmountAtoms: _mintAmountAtoms,
-    totalSupplyAtoms: _totalSupplyAtoms,
-    ...nonLegacyApiState
-  } = objectValue(apiState);
-  return {
-    ...nonLegacyApiState,
-    ...canonicalState,
+  const state = canonicalWorkQ16LedgerSnapshotStateWitness({
     amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+    closingStateCommitment,
     decimals: WORK_SUBATOM_DECIMALS,
     indexedThroughBlock,
     indexedThroughBlockHash: String(row.block_hash ?? "")
       .trim()
       .toLowerCase(),
+    model: WORK_Q16_LEDGER_SNAPSHOT_STATE_MODEL,
     precisionModel: WORK_PRECISION_V2_MODEL,
+    tokenStateCommitment: commitment,
+    transitionModel: WORK_AMO_V8_BLOCK_SEQUENCER_MODEL,
     unitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,
-  };
+    workTokenStateModel: WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL,
+  });
+  if (!state) {
+    throw new Error(
+      "Q16 ledger snapshot could not build one exact bounded sufficient-state witness.",
+    );
+  }
+  return state;
 }
 
 function exactWorkQ16LedgerSnapshotStateMatches(candidate, expected) {
-  const state = objectValue(candidate);
-  const exact = objectValue(expected);
-  try {
-    return (
-      state.amountStorageModel === WORK_SUBATOM_PROJECTION_MODEL &&
-      state.decimals === WORK_SUBATOM_DECIMALS &&
-      state.precisionModel === WORK_PRECISION_V2_MODEL &&
-      String(state.unitScale ?? "") === WORK_SUBATOM_UNIT_SCALE_TEXT &&
-      Number.isSafeInteger(state.indexedThroughBlock) &&
-      state.indexedThroughBlock === exact.indexedThroughBlock &&
-      String(state.indexedThroughBlockHash ?? "")
-        .trim()
-        .toLowerCase() ===
-        String(exact.indexedThroughBlockHash ?? "")
-          .trim()
-          .toLowerCase() &&
-      canonicalJsonText(
-        workAmoV8CanonicalTokenStateCommitment(state),
-      ) === canonicalJsonText(
-        workAmoV8CanonicalTokenStateCommitment(exact),
-      )
-    );
-  } catch {
-    return false;
-  }
+  const state = canonicalWorkQ16LedgerSnapshotStateWitness(candidate);
+  const exact = canonicalWorkQ16LedgerSnapshotStateWitness(expected);
+  return Boolean(
+    state && exact && canonicalJsonText(state) === canonicalJsonText(exact),
+  );
 }
 
 async function exactWorkQ16CanonicalSummaryState(
@@ -15043,10 +15559,7 @@ async function exactWorkQ16CanonicalSummaryState(
   if (indexedThroughBlock < activationHeight) {
     return { ready: true, required: false, state: null };
   }
-  const tokenStatePayloads = objectValue(
-    objectValue(payload).tokenStatePayloads,
-  );
-  const candidate = objectValue(tokenStatePayloads[WORK_TOKEN_ID]);
+  const candidate = objectValue(payload).workSufficientState;
   const state = await exactWorkQ16LedgerSnapshotState(
     client,
     candidate,
@@ -15057,35 +15570,6 @@ async function exactWorkQ16CanonicalSummaryState(
     required: true,
     state,
   };
-}
-
-function canonicalSummaryTokenStatePayloads(
-  workAmountStorageModel,
-  sources,
-  { historicalCheckpoint = false } = {},
-) {
-  if (
-    historicalCheckpoint ||
-    ![
-      WORK_ATOMIC_PROJECTION_MODEL,
-      WORK_SUBATOM_PROJECTION_MODEL,
-    ].includes(workAmountStorageModel)
-  ) {
-    return {};
-  }
-  return (Array.isArray(sources) ? sources : []).reduce(
-    (merged, sourceValue) => {
-      const source = objectValue(sourceValue);
-      if (source.workAmountStorageModel !== workAmountStorageModel) {
-        return merged;
-      }
-      return {
-        ...merged,
-        ...objectValue(source.tokenStatePayloads),
-      };
-    },
-    {},
-  );
 }
 
 async function storeLedgerSnapshot(client, options = {}) {
@@ -15100,6 +15584,7 @@ async function storeLedgerSnapshot(client, options = {}) {
   }
   const tokenHistoryPayloads = {};
   const tokenStatePayloads = {};
+  let workSufficientState = null;
   let payload = null;
   let ledgerSnapshotError = null;
   try {
@@ -15176,7 +15661,10 @@ async function storeLedgerSnapshot(client, options = {}) {
   if (includeDerivedSnapshots) {
     for (const scope of TOKEN_HISTORY_SNAPSHOT_SCOPES) {
       try {
-        const tokenSnapshot = await tokenHistorySnapshotsForScope(scope);
+        const tokenSnapshot = await tokenHistorySnapshotsForScope(
+          scope,
+          payload.snapshotId,
+        );
         tokenHistoryPayloads[scope.key] = tokenSnapshot.historyPayloads;
         tokenStatePayloads[scope.key] = tokenSnapshot.statePayload;
       } catch (error) {
@@ -15199,12 +15687,11 @@ async function storeLedgerSnapshot(client, options = {}) {
         objectValue(previousPayload?.tokenStatePayloads),
       );
     }
-    tokenStatePayloads[WORK_TOKEN_ID] =
-      await exactWorkQ16LedgerSnapshotState(
-        client,
-        tokenStatePayloads[WORK_TOKEN_ID],
-        numberOrNull(payload.indexedThroughBlock),
-      );
+    workSufficientState = await exactWorkQ16LedgerSnapshotState(
+      client,
+      tokenStatePayloads[WORK_TOKEN_ID],
+      numberOrNull(payload.indexedThroughBlock),
+    );
   }
   const indexedAt = new Date().toISOString();
   const basePayload =
@@ -15214,6 +15701,7 @@ async function storeLedgerSnapshot(client, options = {}) {
   const {
     summaryRefresh: _canonicalSummaryRefresh,
     workAmountStorageModel: _workAmountStorageModel,
+    workSufficientState: _workSufficientState,
     ...legacyBasePayload
   } = basePayload;
   const {
@@ -15224,6 +15712,7 @@ async function storeLedgerSnapshot(client, options = {}) {
     ...legacyBasePayload,
     ...currentLedgerPayload,
     workAmountStorageModel,
+    ...(workSufficientState ? { workSufficientState } : {}),
     ...(activityPayload
       ? {
           activityIndexedAt:
@@ -15251,7 +15740,8 @@ async function storeLedgerSnapshot(client, options = {}) {
         }
       : {}),
   };
-  await client.query(
+  assertLedgerSnapshotStorageBudget(snapshotPayload);
+  const storedSnapshot = await client.query(
     `
       INSERT INTO proof_indexer.ledger_snapshots (
         network,
@@ -15363,6 +15853,7 @@ async function storeLedgerSnapshot(client, options = {}) {
               )
             )
         )
+      RETURNING snapshot_id
     `,
     [
       NETWORK,
@@ -15389,6 +15880,14 @@ async function storeLedgerSnapshot(client, options = {}) {
       WORK_MARKET_V4_AUTH_VERSION,
     ],
   );
+  if (
+    storedSnapshot.rows.length !== 1 ||
+    storedSnapshot.rows[0]?.snapshot_id !== (payload.snapshotId ?? "unknown")
+  ) {
+    throw new Error(
+      `Ledger snapshot ${payload.snapshotId ?? "unknown"} is immutable and cannot be repaired in place.`,
+    );
+  }
   return snapshotPayload;
 }
 
@@ -16126,6 +16625,7 @@ function eligibleCanonicalSummarySnapshotPayload(payload) {
   ).find((check) => check?.name === "inception-fixed-value-reconciles");
   return Boolean(
     item &&
+      canonicalSummarySnapshotStorageEligible(item) &&
       item.ok === true &&
       item.status !== "summary-snapshot-fallback" &&
       tokenComponentCheck?.ok === true &&
@@ -16217,11 +16717,16 @@ async function storedEligibleCanonicalSummarySnapshotPayload(client) {
   if (!workAmountStorageModel) {
     return null;
   }
+  const currentSummaryEligibility =
+    workAmountStorageModel === WORK_SUBATOM_PROJECTION_MODEL
+      ? canonicalQ16SummarySnapshotSqlEligibility("snapshot")
+      : "true";
   const result = await client.query(
     `
-      SELECT payload
-      FROM proof_indexer.ledger_snapshots
+      SELECT snapshot.payload
+      FROM proof_indexer.ledger_snapshots snapshot
       WHERE network = $1
+        AND ${currentSummaryEligibility}
         AND payload ? 'summaryPayloads'
         AND payload->>'workAmountStorageModel' = $2
         AND COALESCE(consistency->>'ok', payload->>'ok', 'false') = 'true'
@@ -16354,6 +16859,8 @@ async function pruneLedgerSnapshots(
   client,
   {
     canonicalSummaryLimit = LEDGER_CANONICAL_SUMMARY_RETENTION,
+    canonicalSummaryLogicalByteBudget =
+      LEDGER_CANONICAL_SUMMARY_LOGICAL_BYTE_BUDGET,
     scanSnapshotLimit = LEDGER_SCAN_SNAPSHOT_RETENTION,
   } = {},
 ) {
@@ -16365,27 +16872,16 @@ async function pruneLedgerSnapshots(
     1,
     Math.floor(Number(scanSnapshotLimit) || 0),
   );
+  const boundedCanonicalSummaryLogicalByteBudget = Math.max(
+    CANONICAL_SUMMARY_SNAPSHOT_MAX_BYTES,
+    Math.min(
+      8 * 1024 * 1024 * 1024,
+      Math.floor(Number(canonicalSummaryLogicalByteBudget) || 0),
+    ),
+  );
   const result = await client.query(
     `
-      WITH ranked AS MATERIALIZED (
-        SELECT
-          snapshot_id,
-          source_hashes ? 'canonicalSummary' AS canonical_summary,
-          CASE
-            WHEN source_hashes ? 'canonicalSummary'
-            THEN dense_rank() OVER (
-              PARTITION BY (source_hashes ? 'canonicalSummary')
-              ORDER BY indexed_through_block DESC NULLS LAST
-            )
-            ELSE row_number() OVER (
-              PARTITION BY (source_hashes ? 'canonicalSummary')
-              ORDER BY generated_at DESC, snapshot_id DESC
-            )
-          END AS retention_rank
-        FROM proof_indexer.ledger_snapshots
-        WHERE network = $1
-      ),
-      referenced AS MATERIALIZED (
+      WITH referenced AS MATERIALIZED (
         SELECT DISTINCT payload->>'issuanceValueSnapshotId' AS snapshot_id
         FROM proof_indexer.events
         WHERE network = $1
@@ -16480,75 +16976,424 @@ async function pruneLedgerSnapshots(
           AND lower(action_event.payload->'saleAuthorization'->>'tokenId') = $7
           AND oracle_reference.block_height ~ '^[1-9][0-9]*$'
           AND oracle_reference.block_hash ~ '^[0-9a-fA-F]{64}$'
-      )
-      DELETE FROM proof_indexer.ledger_snapshots snapshot
-      USING ranked
-      WHERE snapshot.network = $1
-        AND snapshot.snapshot_id = ranked.snapshot_id
-        AND COALESCE(snapshot.payload->>'model', '') <>
-          'canonical-work-amo-v5-h-minus-one-seed-evidence-v1'
-        AND (
+      ),
+      work_amo_v5_protected AS MATERIALIZED (
+        SELECT protected_snapshot.snapshot_id
+        FROM proof_indexer.meta migration
+        CROSS JOIN LATERAL (
+          VALUES
+            (
+              migration.value->'replayEvidence'->'seed'
+                ->'snapshotIds'
+            ),
+            (
+              migration.value->'replayEvidence'->'closing'
+                ->'snapshotIds'
+            )
+        ) snapshot_group(snapshot_ids)
+        CROSS JOIN LATERAL jsonb_array_elements_text(
+          CASE
+            WHEN jsonb_typeof(snapshot_group.snapshot_ids) = 'array'
+            THEN snapshot_group.snapshot_ids
+            ELSE '[]'::jsonb
+          END
+        ) protected_snapshot(snapshot_id)
+        WHERE migration.key = 'workAmoV5Migration:' || $1
+          AND migration.value->>'network' = $1
+          AND migration.value->>'model' =
+            'canonical-work-amo-v5-migration-v2'
+          AND migration.value->>'status' = 'complete'
+          AND migration.value->'replayEvidence'->>'complete' = 'true'
+          AND COALESCE(protected_snapshot.snapshot_id, '') <> ''
+        UNION
+        SELECT
+          seed_evidence.payload->'canonicalSummary'->>'snapshotId'
+        FROM proof_indexer.ledger_snapshots seed_evidence
+        WHERE seed_evidence.network = $1
+          AND seed_evidence.payload->>'model' =
+            'canonical-work-amo-v5-h-minus-one-seed-evidence-v1'
+          AND COALESCE(
+            seed_evidence.payload->'canonicalSummary'->>'snapshotId',
+            ''
+          ) <> ''
+      ),
+      unprotected AS MATERIALIZED (
+        SELECT
+          snapshot.snapshot_id,
+          snapshot.indexed_through_block,
+          snapshot.generated_at,
+          snapshot.source_hashes ? 'canonicalSummary' AS canonical_summary,
+          COALESCE((
+            snapshot.payload->>'snapshotId' = snapshot.snapshot_id
+            AND snapshot.payload ? 'summaryPayloads'
+            AND jsonb_typeof(snapshot.payload->'summaryPayloads') = 'object'
+            AND snapshot.payload->'summaryRefresh'->>'mode' =
+              'canonical-summary-refresh'
+            AND snapshot.source_hashes->>'canonicalSummary' ~
+              '^[0-9a-f]{64}$'
+            AND COALESCE(
+              snapshot.consistency->>'ok',
+              snapshot.payload->>'ok',
+              'false'
+            ) = 'true'
+            AND COALESCE(
+              snapshot.consistency->>'status',
+              snapshot.payload->>'status',
+              ''
+            ) = 'green'
+          ), false) AS canonical_summary_shape,
+          lower(COALESCE(
+            snapshot.source_hashes->>'blockScan',
+            ''
+          )) AS source_block_hash,
+          lower(COALESCE(
+            snapshot.payload->>'indexedThroughBlockHash',
+            ''
+          )) AS payload_block_hash,
+          lower(COALESCE(
+            snapshot.payload->'summaryRefresh'->>'indexedThroughBlockHash',
+            ''
+          )) AS refresh_block_hash,
+          CASE
+            WHEN snapshot.source_hashes ? 'canonicalSummary'
+            THEN octet_length(
+              COALESCE(snapshot.payload, 'null'::jsonb)::text
+            )::bigint
+            ELSE 0::bigint
+          END AS logical_bytes
+        FROM proof_indexer.ledger_snapshots snapshot
+        WHERE snapshot.network = $1
+          AND COALESCE(snapshot.payload->>'model', '') <>
+            'canonical-work-amo-v5-h-minus-one-seed-evidence-v1'
+          AND NOT EXISTS (
+            SELECT 1
+            FROM referenced
+            WHERE referenced.snapshot_id = snapshot.snapshot_id
+          )
+          AND NOT EXISTS (
+            SELECT 1
+            FROM work_amo_v5_protected
+            WHERE work_amo_v5_protected.snapshot_id = snapshot.snapshot_id
+          )
+      ),
+      canonical_summary_heights AS MATERIALIZED (
+        SELECT DISTINCT indexed_through_block
+        FROM unprotected
+        WHERE canonical_summary
+      ),
+      canonical_block_authority AS MATERIALIZED (
+        SELECT
+          canonical_summary_heights.indexed_through_block,
+          count(canonical_block.block_hash)::bigint AS canonical_block_count,
+          min(lower(canonical_block.block_hash)) AS canonical_block_hash
+        FROM canonical_summary_heights
+        LEFT JOIN proof_indexer.blocks canonical_block
+          ON canonical_block.network = $1
+         AND canonical_block.height =
+           canonical_summary_heights.indexed_through_block
+         AND canonical_block.canonical = true
+        GROUP BY canonical_summary_heights.indexed_through_block
+      ),
+      canonical_height_safety AS MATERIALIZED (
+        SELECT
+          canonical_block_authority.*,
           (
-            ranked.canonical_summary
-            AND ranked.retention_rank > $2::integer
-          )
-          OR (
-            NOT ranked.canonical_summary
-            AND ranked.retention_rank > $3::integer
-          )
-        )
-        AND NOT EXISTS (
-          SELECT 1
-          FROM referenced
-          WHERE referenced.snapshot_id = snapshot.snapshot_id
-        )
-        AND NOT EXISTS (
-          SELECT 1
-          FROM (
-            SELECT protected_snapshot.snapshot_id
-            FROM proof_indexer.meta migration
-            CROSS JOIN LATERAL (
-              VALUES
-                (
-                  migration.value->'replayEvidence'->'seed'
-                    ->'snapshotIds'
-                ),
-                (
-                  migration.value->'replayEvidence'->'closing'
-                    ->'snapshotIds'
-                )
-            ) snapshot_group(snapshot_ids)
-            CROSS JOIN LATERAL jsonb_array_elements_text(
-              CASE
-                WHEN jsonb_typeof(snapshot_group.snapshot_ids) = 'array'
-                THEN snapshot_group.snapshot_ids
-                ELSE '[]'::jsonb
-              END
-            ) protected_snapshot(snapshot_id)
-            WHERE migration.key = 'workAmoV5Migration:' || $1
-              AND migration.value->>'network' = $1
-              AND migration.value->>'model' =
-                'canonical-work-amo-v5-migration-v2'
-              AND migration.value->>'status' = 'complete'
-              AND migration.value->'replayEvidence'->>'complete' = 'true'
-              AND COALESCE(protected_snapshot.snapshot_id, '') <> ''
-            UNION
-            SELECT
-              seed_evidence.payload->'canonicalSummary'->>'snapshotId'
-            FROM proof_indexer.ledger_snapshots seed_evidence
-            WHERE seed_evidence.network = $1
-              AND seed_evidence.payload->>'model' =
-                'canonical-work-amo-v5-h-minus-one-seed-evidence-v1'
+            SELECT count(*)::bigint
+            FROM proof_indexer.ledger_snapshots candidate
+            WHERE candidate.network = $1
+              AND candidate.indexed_through_block IS NOT DISTINCT FROM
+                canonical_block_authority.indexed_through_block
+              AND candidate.source_hashes ? 'canonicalSummary'
+              AND candidate.payload->>'snapshotId' = candidate.snapshot_id
+              AND candidate.payload ? 'summaryPayloads'
+              AND jsonb_typeof(candidate.payload->'summaryPayloads') =
+                'object'
+              AND candidate.payload->'summaryRefresh'->>'mode' =
+                'canonical-summary-refresh'
+              AND candidate.source_hashes->>'canonicalSummary' ~
+                '^[0-9a-f]{64}$'
               AND COALESCE(
-                seed_evidence.payload->'canonicalSummary'->>'snapshotId',
+                candidate.consistency->>'ok',
+                candidate.payload->>'ok',
+                'false'
+              ) = 'true'
+              AND COALESCE(
+                candidate.consistency->>'status',
+                candidate.payload->>'status',
                 ''
-              ) <> ''
-          ) work_amo_v5_protected
-          WHERE work_amo_v5_protected.snapshot_id = snapshot.snapshot_id
-        )
-      RETURNING
-        snapshot.snapshot_id,
-        snapshot.source_hashes ? 'canonicalSummary' AS canonical_summary
+              ) = 'green'
+              AND lower(COALESCE(
+                candidate.source_hashes->>'blockScan',
+                ''
+              )) = canonical_block_authority.canonical_block_hash
+              AND lower(COALESCE(
+                candidate.payload->>'indexedThroughBlockHash',
+                ''
+              )) = canonical_block_authority.canonical_block_hash
+              AND lower(COALESCE(
+                candidate.payload->'summaryRefresh'
+                  ->>'indexedThroughBlockHash',
+                ''
+              )) = canonical_block_authority.canonical_block_hash
+          ) AS canonical_snapshot_matches
+        FROM canonical_block_authority
+      ),
+      unsafe_canonical_heights AS MATERIALIZED (
+        SELECT *
+        FROM canonical_height_safety
+        WHERE canonical_block_count <> 1
+          OR COALESCE(canonical_block_hash, '') !~ '^[0-9a-f]{64}$'
+          OR canonical_snapshot_matches < 1
+      ),
+      safe_canonical_heights AS MATERIALIZED (
+        SELECT *
+        FROM canonical_height_safety
+        WHERE canonical_block_count = 1
+          AND canonical_block_hash ~ '^[0-9a-f]{64}$'
+          AND canonical_snapshot_matches >= 1
+      ),
+      retention_guard AS MATERIALIZED (
+        SELECT NOT EXISTS (
+          SELECT 1
+          FROM unsafe_canonical_heights
+        ) AS safe_to_prune
+      ),
+      canonical_version_candidates AS MATERIALIZED (
+        SELECT
+          unprotected.*,
+          (
+            unprotected.canonical_summary_shape
+            AND unprotected.source_block_hash =
+              safe_canonical_heights.canonical_block_hash
+            AND unprotected.payload_block_hash =
+              safe_canonical_heights.canonical_block_hash
+            AND unprotected.refresh_block_hash =
+              safe_canonical_heights.canonical_block_hash
+          ) AS canonical_now
+        FROM unprotected
+        JOIN safe_canonical_heights
+          ON safe_canonical_heights.indexed_through_block IS NOT DISTINCT FROM
+            unprotected.indexed_through_block
+        WHERE unprotected.canonical_summary
+      ),
+      canonical_versions AS MATERIALIZED (
+        SELECT
+          canonical_version_candidates.*,
+          row_number() OVER (
+            PARTITION BY indexed_through_block
+            ORDER BY
+              canonical_now DESC NULLS LAST,
+              generated_at DESC,
+              snapshot_id DESC
+          ) AS height_version
+        FROM canonical_version_candidates
+      ),
+      canonical_newest_by_height AS MATERIALIZED (
+        SELECT *
+        FROM canonical_versions
+        WHERE height_version = 1
+          AND canonical_now
+      ),
+      canonical_budgeted AS MATERIALIZED (
+        SELECT
+          canonical_newest_by_height.*,
+          row_number() OVER (
+            ORDER BY
+              indexed_through_block DESC NULLS LAST,
+              generated_at DESC,
+              snapshot_id DESC
+          ) AS retention_rank,
+          sum(logical_bytes) OVER (
+            ORDER BY
+              indexed_through_block DESC NULLS LAST,
+              generated_at DESC,
+              snapshot_id DESC
+            ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+          ) AS cumulative_logical_bytes
+        FROM canonical_newest_by_height
+      ),
+      canonical_decisions AS MATERIALIZED (
+        SELECT
+          canonical_versions.*,
+          canonical_budgeted.retention_rank,
+          canonical_budgeted.cumulative_logical_bytes,
+          CASE
+            WHEN NOT canonical_versions.canonical_now THEN false
+            WHEN canonical_versions.height_version <> 1 THEN false
+            WHEN canonical_budgeted.retention_rank > $2::integer THEN false
+            WHEN canonical_budgeted.cumulative_logical_bytes > $9::bigint
+              THEN false
+            ELSE true
+          END AS retain,
+          CASE
+            WHEN NOT canonical_versions.canonical_now
+              THEN 'detached-block-version'
+            WHEN canonical_versions.height_version <> 1
+              THEN 'same-height-version'
+            WHEN canonical_budgeted.retention_rank > $2::integer
+              THEN 'row-budget'
+            WHEN canonical_budgeted.cumulative_logical_bytes > $9::bigint
+              THEN 'logical-byte-budget'
+            ELSE 'retained'
+          END AS retention_reason
+        FROM canonical_versions
+        LEFT JOIN canonical_budgeted
+          ON canonical_budgeted.snapshot_id = canonical_versions.snapshot_id
+      ),
+      scan_ranked AS MATERIALIZED (
+        SELECT
+          unprotected.*,
+          row_number() OVER (
+            ORDER BY generated_at DESC, snapshot_id DESC
+          ) AS retention_rank
+        FROM unprotected
+        WHERE NOT canonical_summary
+      ),
+      deletion_candidates AS MATERIALIZED (
+        SELECT
+          canonical_decisions.snapshot_id,
+          canonical_decisions.canonical_summary,
+          canonical_decisions.logical_bytes,
+          canonical_decisions.retention_reason
+        FROM canonical_decisions
+        CROSS JOIN retention_guard
+        WHERE retention_guard.safe_to_prune
+          AND NOT canonical_decisions.retain
+        UNION ALL
+        SELECT
+          scan_ranked.snapshot_id,
+          scan_ranked.canonical_summary,
+          scan_ranked.logical_bytes,
+          'row-budget' AS retention_reason
+        FROM scan_ranked
+        CROSS JOIN retention_guard
+        WHERE retention_guard.safe_to_prune
+          AND scan_ranked.retention_rank > $3::integer
+      ),
+      canonical_before_height_versions AS MATERIALIZED (
+        SELECT indexed_through_block, count(*)::bigint AS version_count
+        FROM canonical_versions
+        GROUP BY indexed_through_block
+      ),
+      canonical_survivors AS MATERIALIZED (
+        SELECT *
+        FROM canonical_decisions
+        WHERE retain
+      ),
+      canonical_survivor_height_versions AS MATERIALIZED (
+        SELECT indexed_through_block, count(*)::bigint AS version_count
+        FROM canonical_survivors
+        GROUP BY indexed_through_block
+      ),
+      deleted AS (
+        DELETE FROM proof_indexer.ledger_snapshots snapshot
+        USING deletion_candidates candidate
+        WHERE snapshot.network = $1
+          AND snapshot.snapshot_id = candidate.snapshot_id
+          AND COALESCE(snapshot.payload->>'model', '') <>
+            'canonical-work-amo-v5-h-minus-one-seed-evidence-v1'
+          AND NOT EXISTS (
+            SELECT 1
+            FROM referenced
+            WHERE referenced.snapshot_id = snapshot.snapshot_id
+          )
+          AND NOT EXISTS (
+            SELECT 1
+            FROM work_amo_v5_protected
+            WHERE work_amo_v5_protected.snapshot_id = snapshot.snapshot_id
+          )
+        RETURNING
+          candidate.canonical_summary,
+          candidate.logical_bytes,
+          candidate.retention_reason
+      )
+      SELECT
+        (
+          SELECT count(*)::bigint
+          FROM deleted
+          WHERE canonical_summary
+        ) AS deleted_canonical_summaries,
+        (
+          SELECT count(*)::bigint
+          FROM deleted
+          WHERE NOT canonical_summary
+        ) AS deleted_scan_or_derived,
+        (SELECT count(*)::bigint FROM deleted) AS deleted_total,
+        (SELECT count(*)::bigint FROM canonical_survivors)
+          AS canonical_summary_rows,
+        (SELECT count(*)::bigint FROM canonical_survivor_height_versions)
+          AS canonical_summary_heights,
+        COALESCE((
+          SELECT sum(logical_bytes)::bigint
+          FROM canonical_survivors
+        ), 0::bigint) AS canonical_summary_logical_bytes,
+        GREATEST(
+          $2::bigint - (SELECT count(*)::bigint FROM canonical_survivors),
+          0::bigint
+        ) AS canonical_summary_row_headroom,
+        GREATEST(
+          $9::bigint - COALESCE((
+            SELECT sum(logical_bytes)::bigint
+            FROM canonical_survivors
+          ), 0::bigint),
+          0::bigint
+        ) AS canonical_summary_logical_byte_headroom,
+        COALESCE((
+          SELECT max(version_count)::bigint
+          FROM canonical_survivor_height_versions
+        ), 0::bigint) AS canonical_summary_max_versions_per_height,
+        COALESCE((
+          SELECT max(version_count)::bigint
+          FROM canonical_before_height_versions
+        ), 0::bigint) AS canonical_summary_before_max_versions_per_height,
+        (
+          SELECT count(*)::bigint
+          FROM deleted
+          WHERE canonical_summary
+            AND retention_reason = 'detached-block-version'
+        ) AS canonical_summary_detached_versions_removed,
+        (
+          SELECT count(*)::bigint
+          FROM deleted
+          WHERE canonical_summary
+            AND retention_reason = 'same-height-version'
+        ) AS canonical_summary_duplicate_versions_removed,
+        (
+          SELECT count(*)::bigint
+          FROM deleted
+          WHERE canonical_summary
+            AND retention_reason = 'row-budget'
+        ) AS canonical_summary_row_budget_removed,
+        (
+          SELECT count(*)::bigint
+          FROM deleted
+          WHERE canonical_summary
+            AND retention_reason = 'logical-byte-budget'
+        ) AS canonical_summary_logical_byte_budget_removed,
+        (
+          SELECT count(*)::bigint
+          FROM proof_indexer.ledger_snapshots protected
+          WHERE protected.network = $1
+            AND protected.source_hashes ? 'canonicalSummary'
+            AND (
+              protected.payload->>'model' =
+                'canonical-work-amo-v5-h-minus-one-seed-evidence-v1'
+              OR EXISTS (
+                SELECT 1
+                FROM referenced
+                WHERE referenced.snapshot_id = protected.snapshot_id
+              )
+              OR EXISTS (
+                SELECT 1
+                FROM work_amo_v5_protected
+                WHERE work_amo_v5_protected.snapshot_id = protected.snapshot_id
+              )
+            )
+        ) AS canonical_summary_protected_rows,
+        (
+          SELECT count(*)::bigint
+          FROM unsafe_canonical_heights
+        ) AS canonical_summary_unsafe_heights
     `,
     [
       NETWORK,
@@ -16563,16 +17408,58 @@ async function pruneLedgerSnapshots(
       ],
       WORK_TOKEN_ID,
       WORK_MARKET_V4_AUTH_VERSION,
+      boundedCanonicalSummaryLogicalByteBudget,
     ],
   );
+  const row = result.rows[0] ?? {};
+  const count = (key) => Math.max(0, Number(row[key] ?? 0) || 0);
+  const deletedTotal = count("deleted_total");
+  const unsafeHeights = count("canonical_summary_unsafe_heights");
+  if (unsafeHeights > 0) {
+    const error = new Error(
+      deletedTotal > 0
+        ? "Ledger snapshot retention deleted rows despite an unsafe canonical-summary height."
+        : `Ledger snapshot retention refused ${unsafeHeights} canonical-summary height(s) without one exact canonical block-bound snapshot.`,
+    );
+    error.statusCode = 503;
+    error.details = { deletedTotal, unsafeHeights };
+    throw error;
+  }
   return {
-    canonicalSummaries: result.rows.filter(
-      (row) => row?.canonical_summary === true,
-    ).length,
-    scanOrDerived: result.rows.filter(
-      (row) => row?.canonical_summary !== true,
-    ).length,
-    total: result.rows.length,
+    canonicalSummaries: count("deleted_canonical_summaries"),
+    scanOrDerived: count("deleted_scan_or_derived"),
+    total: deletedTotal,
+    telemetry: {
+      canonicalSummary: {
+        beforeMaxVersionsPerHeight: count(
+          "canonical_summary_before_max_versions_per_height",
+        ),
+        duplicateVersionsRemoved: count(
+          "canonical_summary_duplicate_versions_removed",
+        ),
+        detachedVersionsRemoved: count(
+          "canonical_summary_detached_versions_removed",
+        ),
+        heights: count("canonical_summary_heights"),
+        logicalByteBudget: boundedCanonicalSummaryLogicalByteBudget,
+        logicalByteBudgetRemoved: count(
+          "canonical_summary_logical_byte_budget_removed",
+        ),
+        logicalByteHeadroom: count(
+          "canonical_summary_logical_byte_headroom",
+        ),
+        logicalBytes: count("canonical_summary_logical_bytes"),
+        maxVersionsPerHeight: count(
+          "canonical_summary_max_versions_per_height",
+        ),
+        protectedRows: count("canonical_summary_protected_rows"),
+        rowBudgetRemoved: count("canonical_summary_row_budget_removed"),
+        rowHeadroom: count("canonical_summary_row_headroom"),
+        rowLimit: boundedCanonicalSummaryLimit,
+        rows: count("canonical_summary_rows"),
+        unsafeHeights,
+      },
+    },
   };
 }
 
@@ -16631,7 +17518,10 @@ async function storeCanonicalSummarySnapshot(client, options = {}) {
       requiredCheckpointHeight,
       workAmountStorageModel,
     );
-    if (storedExactWorkState.ready) {
+    if (
+      storedExactWorkState.ready &&
+      canonicalSummarySnapshotStorageEligible(storedExactPayload)
+    ) {
       return {
         indexedThroughBlock: requiredCheckpointHeight,
         indexedThroughBlockHash: requiredCheckpointHash,
@@ -16646,6 +17536,9 @@ async function storeCanonicalSummarySnapshot(client, options = {}) {
   const previousPayload = await storedEligibleCanonicalSummarySnapshotPayload(
     client,
   );
+  const previousStorageEligible =
+    previousPayload !== null &&
+    canonicalSummarySnapshotStorageEligible(previousPayload);
   const previousCoverage = previousPayload
     ? canonicalSummaryCoverage(previousPayload.summaryPayloads)
     : 0;
@@ -16672,6 +17565,7 @@ async function storeCanonicalSummarySnapshot(client, options = {}) {
     !checkpointRequired &&
     previousCoverage === latestIndexedHeight &&
     previousIndexedThroughBlockHash === latestIndexedThroughBlockHash &&
+    previousStorageEligible &&
     previousWorkState.ready &&
     canonicalSummaryAccountingModelsCurrent(previousPayload?.summaryPayloads) &&
     publicLogFingerprintsMatch(
@@ -16714,6 +17608,7 @@ async function storeCanonicalSummarySnapshot(client, options = {}) {
     if (
       checkpointRequired ||
       !previousPayload ||
+      !previousStorageEligible ||
       !previousWorkState.ready ||
       !canonicalSummaryRefreshCanDefer(error)
     ) {
@@ -16802,79 +17697,44 @@ async function storeCanonicalSummarySnapshot(client, options = {}) {
       `Canonical summary refresh is not one exact snapshot through block ${latestIndexedHeight}`,
     );
   }
-  const sameSnapshotPayload = await storedLedgerSnapshotPayload(
-    client,
-    snapshotId,
-  );
-  const tokenStatePayloads = canonicalSummaryTokenStatePayloads(
-    workAmountStorageModel,
-    [previousPayload, sameSnapshotPayload, ledger],
-    { historicalCheckpoint: checkpointRequired },
-  );
-  const {
-    workAmountStorageModel: _previousWorkAmountStorageModel,
-    tokenStatePayloads: _previousTokenStatePayloads,
-    tokenStatePayloadsIndexedAt: _previousTokenStatePayloadsIndexedAt,
-    ...previousSnapshotPayload
-  } = objectPayload(previousPayload) ?? {};
-  const {
-    workAmountStorageModel: _sameSnapshotWorkAmountStorageModel,
-    tokenStatePayloads: _sameSnapshotTokenStatePayloads,
-    tokenStatePayloadsIndexedAt: _sameSnapshotTokenStatePayloadsIndexedAt,
-    ...sameStoredSnapshotPayload
-  } = objectPayload(sameSnapshotPayload) ?? {};
-  const {
-    workAmountStorageModel: _ledgerWorkAmountStorageModel,
-    tokenStatePayloads: _ledgerTokenStatePayloads,
-    tokenStatePayloadsIndexedAt: _ledgerTokenStatePayloadsIndexedAt,
-    ...canonicalLedgerPayload
-  } = objectPayload(ledger) ?? {};
-
   const exactWorkState = await exactWorkQ16CanonicalSummaryState(
     client,
-    { tokenStatePayloads },
+    {},
     ledgerCoverage,
     workAmountStorageModel,
   );
-  if (exactWorkState.required) {
-    tokenStatePayloads[WORK_TOKEN_ID] = exactWorkState.state;
-  }
+  const workSufficientState = exactWorkState.required
+    ? exactWorkState.state
+    : null;
 
   const generatedAt = new Date().toISOString();
   const summaryHash = createHash("sha256")
     .update(JSON.stringify(summaryPayloads))
     .digest("hex");
+  const sourceHashes = {
+    ...(objectPayload(ledger.sourceHashes) ?? {}),
+    blockScan: latestIndexedThroughBlockHash,
+    canonicalSummary: summaryHash,
+    publicLogRelational: finalPublicLogFingerprint.hash,
+  };
   const snapshotPayload = {
-    ...previousSnapshotPayload,
-    ...sameStoredSnapshotPayload,
-    ...canonicalLedgerPayload,
-    workAmountStorageModel,
-    generatedAt,
-    indexedThroughBlockHash: latestIndexedThroughBlockHash,
-    snapshotId,
-    sourceHashes: {
-      ...(ledger.sourceHashes ?? {}),
-      blockScan: latestIndexedThroughBlockHash,
-      canonicalSummary: summaryHash,
-      publicLogRelational: finalPublicLogFingerprint.hash,
-    },
-    ...(Object.keys(tokenStatePayloads).length > 0
-      ? {
-          tokenStatePayloads,
-          tokenStatePayloadsIndexedAt: generatedAt,
-        }
-      : {}),
-    summaryPayloads,
-    summaryPayloadsIndexedAt: generatedAt,
-    summaryRefresh: {
+    ...canonicalSummarySnapshotPayload({
+      generatedAt,
       indexedThroughBlock,
       indexedThroughBlockHash: latestIndexedThroughBlockHash,
-      mode: "canonical-summary-refresh",
-      previousCoverage,
+      ledger,
       publicLogFingerprint: finalPublicLogFingerprint,
-    },
-    totals: summarySnapshotTotals(summaryPayloads),
+      previousCoverage,
+      snapshotId,
+      sourceHashes,
+      summaryPayloads,
+      totals: summarySnapshotTotals(summaryPayloads),
+      workAmountStorageModel,
+      workSufficientState,
+    }),
   };
+  const snapshotPayloadBytes =
+    assertCanonicalSummarySnapshotStorageBudget(snapshotPayload);
   const snapshotWriteResult = await client.query(
     `
       INSERT INTO proof_indexer.ledger_snapshots (
@@ -17029,6 +17889,7 @@ async function storeCanonicalSummarySnapshot(client, options = {}) {
     previousCoverage,
     skipped: false,
     snapshotId,
+    snapshotPayloadBytes,
     snapshotRetention,
   };
 }

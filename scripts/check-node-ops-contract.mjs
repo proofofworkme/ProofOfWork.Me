@@ -254,6 +254,23 @@ assert.match(postgresQueryHealth, /POW_POSTGRES_WARN_QUERY_FANOUT:-4/u);
 assert.match(postgresQueryHealth, /POW_POSTGRES_CRITICAL_QUERY_FANOUT:-8/u);
 assert.match(postgresQueryHealth, /POW_POSTGRES_WARN_LOCK_WAIT_SECONDS:-5/u);
 assert.match(postgresQueryHealth, /POW_POSTGRES_CRITICAL_LOCK_WAIT_SECONDS:-20/u);
+assert.match(
+  postgresQueryHealth,
+  /POW_POSTGRES_WARN_IDLE_TRANSACTION_SECONDS:-5/u,
+);
+assert.match(
+  postgresQueryHealth,
+  /POW_POSTGRES_CRITICAL_IDLE_TRANSACTION_SECONDS:-20/u,
+);
+assert.match(
+  postgresQueryHealth,
+  /oldest_idle_transaction_seconds >= critical_idle_transaction_seconds/u,
+);
+assert.match(
+  postgresQueryHealth,
+  /oldest_idle_transaction_seconds >= warn_idle_transaction_seconds/u,
+);
+assert.doesNotMatch(postgresQueryHealth, /idle_in_transaction > 0/u);
 assert.match(postgresQueryHealth, /proof_indexer_large_state_v1/u);
 assert.match(
   postgresQueryHealth,
@@ -280,11 +297,19 @@ assert.doesNotMatch(
 );
 assert.match(
   postgresQueryHealth,
-  /printf 'postgres database=%s cluster_client_connections=%s active=%s oldest_active_seconds=%s max_same_query_fanout=%s lock_waiters=%s oldest_lock_wait_seconds=%s idle_in_transaction=%s/u,
+  /printf 'postgres database=%s cluster_client_connections=%s active=%s oldest_active_seconds=%s max_same_query_fanout=%s lock_waiters=%s oldest_lock_wait_seconds=%s idle_in_transaction=%s oldest_idle_transaction_seconds=%s/u,
 );
 assert.match(postgresQueryHealthService, /User=postgres/u);
 assert.match(postgresQueryHealthService, /^Requisite=postgresql@16-main\.service$/mu);
 assert.match(postgresQueryHealthService, /^TimeoutStartSec=20s$/mu);
+assert.match(
+  postgresQueryHealthService,
+  /^Environment=POW_POSTGRES_WARN_IDLE_TRANSACTION_SECONDS=5$/mu,
+);
+assert.match(
+  postgresQueryHealthService,
+  /^Environment=POW_POSTGRES_CRITICAL_IDLE_TRANSACTION_SECONDS=20$/mu,
+);
 assert.match(postgresQueryHealthService, /ProtectSystem=strict/u);
 assert.match(postgresQueryHealthTimer, /OnCalendar=\*:0\/5/u);
 assert.match(

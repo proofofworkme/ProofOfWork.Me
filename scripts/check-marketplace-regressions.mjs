@@ -858,6 +858,37 @@ function tokenListingHasConfirmedSeal(item) {
   );
 }
 
+function assertCoreTokenListingAuthority(payload, label) {
+  const listings = Array.isArray(payload?.listings) ? payload.listings : [];
+  const sealedCount = listings.filter(tokenListingHasConfirmedSeal).length;
+  const authority = payload?.listingAuthority;
+  assert(
+    authority?.model === "proof-token-market-core-gettxout-v1" &&
+      authority.includeMempool === true &&
+      Number.isSafeInteger(authority.buyableCandidateCount) &&
+      Number.isSafeInteger(authority.checkedListingCount) &&
+      Number.isSafeInteger(authority.inputListingCount) &&
+      Number.isSafeInteger(authority.outputListingCount) &&
+      Number.isSafeInteger(authority.spentListingCount) &&
+      Number.isSafeInteger(authority.unspentListingCount) &&
+      authority.spentListingCount + authority.unspentListingCount ===
+        authority.checkedListingCount &&
+      authority.checkedListingCount >= authority.buyableCandidateCount &&
+      authority.inputListingCount >= authority.outputListingCount &&
+      authority.unspentListingCount >= sealedCount &&
+      /^[0-9a-f]{64}$/u.test(
+        String(authority.checkedOutpointsSha256 ?? ""),
+      ) &&
+      (authority.checkedListingCount === 0 ||
+        (Number.isSafeInteger(authority.checkpoint?.height) &&
+          authority.checkpoint.height > 0 &&
+          /^[0-9a-f]{64}$/u.test(
+            String(authority.checkpoint?.blockHash ?? ""),
+          ))),
+    `${label} lacks a complete stable-tip Core sale-ticket authority proof`,
+  );
+}
+
 function listingById(items, listingId) {
   const needle = String(listingId ?? "").toLowerCase();
   return (items ?? []).find(
@@ -3047,6 +3078,7 @@ assertActiveWorkListingsUseCanonicalVersion(
   marketplaceSummary,
 );
 assertReportedPowbSealedListing(marketplaceSummary.token, "Marketplace summary");
+assertCoreTokenListingAuthority(marketplaceSummary.token, "Marketplace summary");
 for (const txid of REPORTED_OTC_UNSEALED_LISTING_TXS) {
   const item = listingById(marketplaceSummary.token?.listings, txid);
   assert(
@@ -3114,6 +3146,10 @@ assertReportedPowbSealedListing(
   marketplaceFreshSummary.token,
   "Fresh Marketplace summary",
 );
+assertCoreTokenListingAuthority(
+  marketplaceFreshSummary.token,
+  "Fresh Marketplace summary",
+);
 for (const txid of REPORTED_OTC_UNSEALED_LISTING_TXS) {
   const item = listingById(marketplaceFreshSummary.token?.listings, txid);
   assert(
@@ -3126,9 +3162,18 @@ const workToken = await getJson("/api/v1/token", {
   asset: WORK_TOKEN_ID,
   fresh: 1,
 });
+assertCoreTokenListingAuthority(workToken, "Fresh WORK token payload");
 assertActiveWorkListingsUseCanonicalVersion(
   workToken,
   "Fresh WORK token payload",
+);
+const workListingHistory = await tokenHistory("listings", { fresh: 1 });
+assertCoreTokenListingAuthority(
+  {
+    listingAuthority: workListingHistory.listingAuthority,
+    listings: workListingHistory.items,
+  },
+  "Fresh WORK listing history",
 );
 const alignedFreshSummaries = await convergedFreshCanonicalSummarySet();
 const workSummary = alignedFreshSummaries.work;
@@ -3136,20 +3181,45 @@ const workTokenSummary = alignedFreshSummaries.token;
 const growthSummary = alignedFreshSummaries.growth;
 const alignedMarketplaceFreshSummary = alignedFreshSummaries.marketplace;
 const activeWorkListingCount = (workToken.listings ?? []).length;
+const confirmedSealedListings = (workToken.listings ?? []).filter(
+  tokenListingHasConfirmedSeal,
+);
 const workSummaryToken = (workSummary.token?.tokens ?? []).find(
   (item) => item?.tokenId === WORK_TOKEN_ID,
 );
 const scopedSummaryToken = (workTokenSummary.tokens ?? []).find(
   (item) => item?.tokenId === WORK_TOKEN_ID,
 );
-assert(
-  (workSummary.token?.listings ?? []).length === activeWorkListingCount,
-  `/api/v1/work-summary?fresh=1 returned ${(workSummary.token?.listings ?? []).length} active WORK listings, expected ${activeWorkListingCount}`,
-);
-assert(
-  (workTokenSummary.listings ?? []).length === activeWorkListingCount,
-  `/api/v1/token-summary?asset=WORK&fresh=1 returned ${(workTokenSummary.listings ?? []).length} active WORK listings, expected ${activeWorkListingCount}`,
-);
+for (const [label, summary] of [
+  ["/api/v1/work-summary?fresh=1", workSummary.token],
+  ["/api/v1/token-summary?asset=WORK&fresh=1", workTokenSummary],
+]) {
+  const visibleListings = summary?.listings ?? [];
+  const visibleById = new Set(
+    visibleListings.map((listing) =>
+      String(listing?.listingId ?? "").trim().toLowerCase(),
+    ),
+  );
+  for (const listing of confirmedSealedListings) {
+    assert(
+      visibleById.has(String(listing.listingId).toLowerCase()),
+      `${label} dropped confirmed sealed listing ${listing.listingId}`,
+    );
+  }
+  assert(
+    Number(summary?.totalCounts?.listings) === activeWorkListingCount,
+    `${label} reports ${summary?.totalCounts?.listings} total listings, expected ${activeWorkListingCount}`,
+  );
+  assert(
+    summary?.collectionHasMore?.listings ===
+      (visibleListings.length < activeWorkListingCount),
+    `${label} has an inaccurate listing continuation flag`,
+  );
+  assert(
+    visibleListings.length <= 40 + confirmedSealedListings.length,
+    `${label} exceeded the bounded ordinary preview plus confirmed sealed inventory`,
+  );
+}
 assert(
   workSummaryToken?.openListings === activeWorkListingCount,
   `/api/v1/work-summary?fresh=1 reports ${workSummaryToken?.openListings} open WORK listings, expected ${activeWorkListingCount}`,
@@ -3189,9 +3259,6 @@ assert(
       growthSummary.workFloor?.floorSats,
     ),
   `WORK floor mismatch: work=${workSummary.floor?.floorSats} marketplace=${alignedMarketplaceFreshSummary.workFloor?.floorSats} growth=${growthSummary.workFloor?.floorSats}`,
-);
-const confirmedSealedListings = (workToken.listings ?? []).filter(
-  tokenListingHasConfirmedSeal,
 );
 const summaryListingsByKey = new Map(
   (marketplaceFreshSummary.token?.listings ?? []).map((item) => [

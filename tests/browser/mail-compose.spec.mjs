@@ -20,6 +20,8 @@ const V8_LISTING_TXID =
   "07c9ca719adf7a7e94ff17c917e599e872ae1c0348f282219907c060a72b8043";
 const SECOND_V8_LISTING_TXID =
   "e299613d222222222222222222222222222222222222222222222222114691e0";
+const V8_SEAL_TXID = "9".repeat(64);
+const V8_ANCHOR_SIGNATURE = "aa".repeat(64);
 
 const fundingTransaction = new bitcoin.Transaction();
 fundingTransaction.version = 2;
@@ -59,6 +61,7 @@ function v8AmoListing({
   includeFrozenTerms = true,
   listingId = V8_LISTING_TXID,
   nonce = "browser-v8-listing",
+  sealed = false,
   sellerAddress = SENDER,
 } = {}) {
   return {
@@ -104,8 +107,10 @@ function v8AmoListing({
     registryAddress: WORK_REGISTRY,
     saleAuthorization: {
       amountModel: "canonical-work-amo-proof-unit-amount-v3",
+      anchorSignature: sealed ? V8_ANCHOR_SIGNATURE : "",
       anchorScriptPubKey: "76a9144752142b83faf13d526a59212f3f228012890dbe88ac",
       anchorSigHashType: 131,
+      anchorTxid: sealed ? listingId : "",
       anchorType: "sale-ticket-v1",
       anchorValueSats: 546,
       anchorVout: 2,
@@ -127,6 +132,12 @@ function v8AmoListing({
       unitWorkOracleModel: "canonical-work-prefix-before-action-v1",
       version: "pwt-sale-v8",
     },
+    ...(sealed
+      ? {
+          sealConfirmed: true,
+          sealTxid: V8_SEAL_TXID,
+        }
+      : {}),
     sellerAddress,
     ticker: "WORK",
     tokenId: WORK_TOKEN_ID,
@@ -238,6 +249,13 @@ function canonicalActualValue() {
       missingConfirmedTxids: [],
       source: "proof-indexer-normalized-input-output-totals",
     },
+    creditEventFrozenValueQ8: "0",
+    creditEventLiveValueQ8: "0",
+    creditFrozenNetworkValueQ8: "0",
+    creditLiveNetworkValueQ8: "0",
+    creditMovementFrozenValueQ8: "0",
+    creditMovementLiveValueQ8: "0",
+    creditNetworkValueQ8: "0",
     floorQ8: FLOOR_Q8,
     floorSats: Number(FLOOR),
     floorSatsExact: FLOOR,
@@ -494,9 +512,9 @@ async function installApiFixtures(
         const listings = [
           v8AmoListing({
             createdAt: "2026-08-12T06:37:00.000Z",
-            includeFrozenTerms: false,
             listingId: V8_LISTING_TXID,
             nonce: "browser-v8-listing-one",
+            sealed: true,
           }),
           v8AmoListing({
             createdAt: "2026-08-12T15:38:00.000Z",
@@ -961,7 +979,9 @@ test("wallet V8 AMO seal can retry during exact-tip catch-up", async ({
     .toBe(0);
 });
 
-test("AMO order book counts remote unsealed V8 listings", async ({ page }) => {
+test("AMO order book counts sealed and unsealed V8 listings with exact buyer arb", async ({
+  page,
+}) => {
   await installWallet(page);
   await installApiFixtures(page, {
     freshMarketLogFailure: true,
@@ -982,16 +1002,22 @@ test("AMO order book counts remote unsealed V8 listings", async ({ page }) => {
     amoUnits.getByRole("button", { name: "All 2" }),
   ).toContainText("2");
   await expect(
-    amoUnits.getByRole("button", { name: "Sealed 0" }),
-  ).toContainText("0");
+    amoUnits.getByRole("button", { exact: true, name: "Sealed 1" }),
+  ).toContainText("1");
   await expect(
-    amoUnits.getByRole("button", { name: "Unsealed 2" }),
-  ).toContainText("2");
+    amoUnits.getByRole("button", { exact: true, name: "Unsealed 1" }),
+  ).toContainText("1");
   const amoRows = amoUnits.locator(".token-market-grid .token-market-row");
-  await expect(amoRows.filter({ hasText: "Waiting for seal" })).toHaveCount(2);
+  await expect(amoRows.getByText("Sealed", { exact: true })).toHaveCount(1);
+  await expect(
+    amoRows.getByText("Waiting for seal", { exact: true }),
+  ).toHaveCount(1);
   await expect(
     amoRows.filter({ hasText: "0.0000000752009741 WORK" }),
   ).toHaveCount(2);
+  await expect(amoRows.getByTestId("work-buyer-arb")).toHaveText(
+    "-24,999.9999999247990259 proofs",
+  );
   await expect(amoUnits.getByText("Pending confirmation")).toHaveCount(0);
   await expect(amoUnits.getByText("Pre-V8 relic")).toHaveCount(0);
   await expect(amoRows).toHaveCount(2);
@@ -1001,8 +1027,14 @@ test("AMO order book counts remote unsealed V8 listings", async ({ page }) => {
     amoUnits.getByRole("button", { name: "All 2" }),
   ).toContainText("2");
   await expect(
-    amoUnits.getByRole("button", { name: "Unsealed 2" }),
-  ).toContainText("2");
+    amoUnits.getByRole("button", { exact: true, name: "Sealed 1" }),
+  ).toContainText("1");
+  await expect(
+    amoUnits.getByRole("button", { exact: true, name: "Unsealed 1" }),
+  ).toContainText("1");
+  await expect(amoRows.getByTestId("work-buyer-arb")).toHaveText(
+    "-24,999.9999999247990259 proofs",
+  );
   await expect(amoUnits.getByText("Pre-V8 relic")).toHaveCount(0);
 });
 

@@ -283,14 +283,45 @@ const workerFixtureSnapshot = {
   consistencyOk: true,
   consistencyStatus: "green",
   indexedThroughBlock: 102,
+  payloadBytes: 4_096,
   payloadBlockHash: workerFixtureTipHash,
+  payloadRootKeys: [
+    "checks",
+    "generatedAt",
+    "indexedThroughBlock",
+    "indexedThroughBlockHash",
+    "metrics",
+    "missingLogEvents",
+    "network",
+    "ok",
+    "snapshotId",
+    "sourceHashes",
+    "status",
+    "summaryPayloads",
+    "summaryPayloadsIndexedAt",
+    "summaryRefresh",
+    "totals",
+    "workAmountStorageModel",
+    "workSufficientState",
+  ],
   sourceBlockHash: workerFixtureTipHash,
   summaryBlockHash: workerFixtureTipHash,
   summaryMode: "canonical-summary-refresh",
-  tokenStatePayloads: {
-    [WORK_TOKEN_ID]: {
-      amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
-    },
+  workSufficientState: {
+    amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+    closingStateCommitment:
+      workerFixtureLatestTransition.payload.closingStateCommitment,
+    decimals: WORK_SUBATOM_DECIMALS,
+    indexedThroughBlock: 102,
+    indexedThroughBlockHash: workerFixtureTipHash,
+    model: "canonical-work-q16-transition-checkpoint-v1",
+    precisionModel: WORK_PRECISION_V2_MODEL,
+    tokenStateCommitment:
+      workerFixtureLatestTransition.payload.closingSufficientState
+        .tokenStateCommitment,
+    transitionModel: WORK_AMO_V8_BLOCK_SEQUENCER_MODEL,
+    unitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,
+    workTokenStateModel: WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL,
   },
   workAmountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
 };
@@ -621,7 +652,7 @@ expect(
     /const pendingEventHealthRequired = workerReadiness\.q16Required/u.test(
       healthPayload,
     ) &&
-    /const pendingStatusOk =[\s\S]*Number\.isSafeInteger\(pendingStatusErrors\)[\s\S]*pendingStatusErrors === 0[\s\S]*pendingStatusUnavailableValid/u.test(
+    /const pendingStatusOk =[\s\S]*Number\.isSafeInteger\(pendingStatusChecked\)[\s\S]*pendingStatusDeferred === 0[\s\S]*Number\.isSafeInteger\(pendingStatusStaleCandidates\)[\s\S]*pendingStatusChecked === pendingStatusStaleCandidates[\s\S]*pendingStatusErrors === 0[\s\S]*pendingStatusUnavailableValid/u.test(
       healthPayload,
     ) &&
     /const pendingAccuracyOk = pendingEventHealthOk && pendingStatusOk/u.test(
@@ -636,7 +667,7 @@ expect(
         healthPayload.indexOf("const diskOk ="),
       ),
     ) &&
-    /pendingEvents: \{[\s\S]*globalUnresolved:[\s\S]*q16PendingUnresolved:[\s\S]*required: pendingEventHealthRequired[\s\S]*status: \{[\s\S]*errors:[\s\S]*unavailable:/u.test(
+    /pendingEvents: \{[\s\S]*globalUnresolved:[\s\S]*q16PendingUnresolved:[\s\S]*required: pendingEventHealthRequired[\s\S]*status: \{[\s\S]*errors:[\s\S]*staleCandidates:[\s\S]*unavailable:/u.test(
       healthPayload,
     ),
 );
@@ -1366,8 +1397,9 @@ expect(
     }),
 );
 expect(
-  "worker Q16 snapshots bind the exact tip hash, explicit subatom model, green canonical summary, and WORK token state",
+  "worker Q16 snapshots bind the exact tip hash, explicit subatom model, green canonical summary, and compact WORK state",
   workerWorkPrecisionSnapshotReady(workerFixtureSnapshot, {
+    latestTransition: workerFixtureLatestTransition,
     tipHash: workerFixtureTipHash,
     tipHeight: 102,
   }) === true &&
@@ -1375,6 +1407,7 @@ expect(
       ...workerFixtureSnapshot,
       consistencyStatus: "red",
     }, {
+      latestTransition: workerFixtureLatestTransition,
       tipHash: workerFixtureTipHash,
       tipHeight: 102,
     }) === false &&
@@ -1382,6 +1415,7 @@ expect(
       ...workerFixtureSnapshot,
       payloadBlockHash: "0".repeat(64),
     }, {
+      latestTransition: workerFixtureLatestTransition,
       tipHash: workerFixtureTipHash,
       tipHeight: 102,
     }) === false &&
@@ -1389,6 +1423,53 @@ expect(
       ...workerFixtureSnapshot,
       workAmountStorageModel: "work-atoms-v1",
     }, {
+      latestTransition: workerFixtureLatestTransition,
+      tipHash: workerFixtureTipHash,
+      tipHeight: 102,
+    }) === false &&
+    workerWorkPrecisionSnapshotReady({
+      ...workerFixtureSnapshot,
+      payloadBytes: 0,
+    }, {
+      latestTransition: workerFixtureLatestTransition,
+      tipHash: workerFixtureTipHash,
+      tipHeight: 102,
+    }) === false &&
+    workerWorkPrecisionSnapshotReady({
+      ...workerFixtureSnapshot,
+      payloadBytes: 8 * 1024 * 1024 + 1,
+    }, {
+      latestTransition: workerFixtureLatestTransition,
+      tipHash: workerFixtureTipHash,
+      tipHeight: 102,
+    }) === false &&
+    workerWorkPrecisionSnapshotReady({
+      ...workerFixtureSnapshot,
+      payloadRootKeys: [],
+    }, {
+      latestTransition: workerFixtureLatestTransition,
+      tipHash: workerFixtureTipHash,
+      tipHeight: 102,
+    }) === false &&
+    workerWorkPrecisionSnapshotReady({
+      ...workerFixtureSnapshot,
+      payloadRootKeys: [
+        ...workerFixtureSnapshot.payloadRootKeys,
+        "tokenStatePayloads",
+      ],
+    }, {
+      latestTransition: workerFixtureLatestTransition,
+      tipHash: workerFixtureTipHash,
+      tipHeight: 102,
+    }) === false &&
+    workerWorkPrecisionSnapshotReady({
+      ...workerFixtureSnapshot,
+      payloadRootKeys: [
+        ...workerFixtureSnapshot.payloadRootKeys,
+        "unexpectedRoot",
+      ],
+    }, {
+      latestTransition: workerFixtureLatestTransition,
       tipHash: workerFixtureTipHash,
       tipHeight: 102,
     }) === false,
@@ -1429,6 +1510,20 @@ expect(
     workerWorkPrecisionConfirmedReplayEnvelopeReady({
       ...workerFixtureReplayEnvelope,
       transitionCount: 1,
+    }) === false &&
+    workerWorkPrecisionConfirmedReplayEnvelopeReady({
+      ...workerFixtureReplayEnvelope,
+      snapshot: {
+        ...workerFixtureReplayEnvelope.snapshot,
+        payloadBytes: 0,
+      },
+    }) === false &&
+    workerWorkPrecisionConfirmedReplayEnvelopeReady({
+      ...workerFixtureReplayEnvelope,
+      snapshot: {
+        ...workerFixtureReplayEnvelope.snapshot,
+        payloadRootKeys: [],
+      },
     }) === false,
 );
 expect(
