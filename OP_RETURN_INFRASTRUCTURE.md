@@ -3983,6 +3983,20 @@ Production transaction preparation also uses the first-party API for wallet UTXO
 
 `BITCOIN_RPC_URL`, `BITCOIN_RPC_USER`, and `BITCOIN_RPC_PASSWORD` are server-only Bitcoin Core RPC settings. They are required for canonical livenet operation: the API uses them for exact transaction hydration, broadcast diagnostics, strict internal registry parity, and fail-closed `gettxout(..., true)` reconciliation of indexed ID listing anchors. A missing or uncertain RPC response must not preserve a possibly spent active listing. Bitcoin Core RPC must remain private and must not be exposed to browsers or public networks.
 
+The API admits at most four concurrent `getrawtransaction` calls and queues at
+most 64 more for five seconds. Queue overflow or expiry is a typed fail-closed
+read failure. Only the explicit read-only RPC allowlist retries Bitcoin Core's
+exact `Work queue depth exceeded` response, with three bounded attempts from
+100 ms through one second; deterministic absence, broadcast diagnostics,
+unknown methods, transport failures, and all other errors are never retried.
+Raw transaction calls are not coalesced, so before/after canonical and mempool
+samples remain distinct wire observations. These production bounds are pinned
+as `BITCOIN_RPC_GETRAWTRANSACTION_MAX_IN_FLIGHT`,
+`BITCOIN_RPC_GETRAWTRANSACTION_MAX_QUEUE`,
+`BITCOIN_RPC_GETRAWTRANSACTION_QUEUE_WAIT_MS`,
+`BITCOIN_RPC_BUSY_RETRIES`, `BITCOIN_RPC_BUSY_RETRY_BASE_MS`, and
+`BITCOIN_RPC_BUSY_RETRY_MAX_MS` in the API drop-in.
+
 `SLIPSTREAM_CLIENT_CODE` is optional legacy server-only configuration for MARA Slipstream submissions. `MARA_SLIPSTREAM_CLIENT_CODE` is accepted as an equivalent fallback environment variable, while ordinary production broadcasts prefer the ProofOfWork node broadcast path.
 
 ## Frontend API

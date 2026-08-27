@@ -65834,6 +65834,448 @@ check("AMO V5 readiness coalesces only identical exact checkpoints", async () =>
   assert.equal(negativeLoads, 2);
 });
 
+check("Bitcoin RPC raw admission is bounded and busy retries stay read-only", async () => {
+  const rawAdmissionRelease = isolatedFunction(
+    API_PATH,
+    "bitcoinRpcRawAdmissionRelease",
+    { clearTimeout },
+  );
+  const acquireRawSlot = isolatedFunction(
+    API_PATH,
+    "bitcoinRpcAcquireRawSlot",
+    {
+      BITCOIN_RPC_GETRAWTRANSACTION_MAX_IN_FLIGHT: 4,
+      BITCOIN_RPC_GETRAWTRANSACTION_MAX_QUEUE: 64,
+      BITCOIN_RPC_GETRAWTRANSACTION_QUEUE_WAIT_MS: 5_000,
+      bitcoinRpcRawAdmissionRelease: rawAdmissionRelease,
+      setTimeout,
+    },
+  );
+  const admissionFailureResponse = isolatedFunction(
+    API_PATH,
+    "bitcoinRpcRawAdmissionFailureResponse",
+  );
+  const summarizeError = isolatedFunction(API_PATH, "errorSummary");
+  const workQueueBusy = isolatedFunction(
+    API_PATH,
+    "bitcoinRpcWorkQueueBusy",
+  );
+  const retryReadMethods = new Set([
+    "getblockcount",
+    "getrawtransaction",
+  ]);
+  const busyRetry = isolatedFunction(
+    API_PATH,
+    "bitcoinRpcWithBusyRetry",
+    {
+      BITCOIN_RPC_BUSY_RETRIES: 3,
+      BITCOIN_RPC_BUSY_RETRY_BASE_MS: 100,
+      BITCOIN_RPC_BUSY_RETRY_MAX_MS: 1_000,
+      BITCOIN_RPC_BUSY_RETRY_READ_METHODS: retryReadMethods,
+      bitcoinRpcOnce: async () => null,
+      bitcoinRpcWorkQueueBusy: workQueueBusy,
+      setTimeout,
+    },
+  );
+  const rawAdmission = isolatedFunction(
+    API_PATH,
+    "bitcoinRpcWithRawAdmission",
+    {
+      BITCOIN_RPC_GETRAWTRANSACTION_MAX_IN_FLIGHT: 4,
+      BITCOIN_RPC_GETRAWTRANSACTION_MAX_QUEUE: 64,
+      BITCOIN_RPC_GETRAWTRANSACTION_QUEUE_WAIT_MS: 5_000,
+      bitcoinRpcAcquireRawSlot: acquireRawSlot,
+      bitcoinRpcGetRawTransactionAdmission: { active: 0, queue: [] },
+      bitcoinRpcRawAdmissionFailureResponse: admissionFailureResponse,
+      bitcoinRpcWithBusyRetry: async () => null,
+    },
+  );
+  const rpcDispatch = isolatedFunction(
+    API_PATH,
+    "bitcoinRpcDispatch",
+    {
+      BITCOIN_RPC_GETRAWTRANSACTION_MAX_IN_FLIGHT: 4,
+      BITCOIN_RPC_GETRAWTRANSACTION_MAX_QUEUE: 64,
+      BITCOIN_RPC_GETRAWTRANSACTION_QUEUE_WAIT_MS: 5_000,
+      bitcoinRpcGetRawTransactionAdmission: { active: 0, queue: [] },
+      bitcoinRpcWithBusyRetry: async () => null,
+      bitcoinRpcWithRawAdmission: rawAdmission,
+    },
+  );
+  const delay = (delayMs) =>
+    new Promise((resolve) => setTimeout(resolve, delayMs));
+  const waitUntil = async (predicate, label) => {
+    for (let attempt = 0; attempt < 200; attempt += 1) {
+      if (predicate()) {
+        return;
+      }
+      await delay(1);
+    }
+    throw new Error(`Timed out waiting for ${label}.`);
+  };
+  const rawCall = (
+    params,
+    {
+      maxInFlight = 2,
+      maxQueue = 16,
+      queueWaitMs = 1_000,
+      request,
+      state,
+    },
+  ) =>
+    rawAdmission("getrawtransaction", params, {
+      admissionState: state,
+      maxInFlight,
+      maxQueue,
+      queueWaitMs,
+      request,
+    });
+
+  const busyResponse = {
+    error: { code: -1, message: "Work queue depth exceeded" },
+    ok: false,
+  };
+  const successfulResponse = { ok: true, result: 964_228 };
+  let retryCalls = 0;
+  const retryDelays = [];
+  const recovered = await busyRetry("getblockcount", [], {
+    baseDelayMs: 5,
+    maxDelayMs: 10,
+    request: async () => {
+      retryCalls += 1;
+      return retryCalls < 3 ? busyResponse : successfulResponse;
+    },
+    retries: 3,
+    retryMethods: retryReadMethods,
+    sleep: async (delayMs) => {
+      retryDelays.push(delayMs);
+    },
+  });
+  assert.equal(recovered, successfulResponse);
+  assert.equal(retryCalls, 3);
+  assert.deepEqual(retryDelays, [5, 10]);
+  assert.equal(
+    workQueueBusy({
+      error: "Bitcoin Core: Work queue depth exceeded while dispatching",
+      ok: false,
+    }),
+    true,
+  );
+
+  let exhaustedCalls = 0;
+  const exhaustedDelays = [];
+  assert.equal(
+    await busyRetry("getrawtransaction", ["a".repeat(64), true], {
+      baseDelayMs: 3,
+      maxDelayMs: 5,
+      request: async () => {
+        exhaustedCalls += 1;
+        return busyResponse;
+      },
+      retries: 2,
+      retryMethods: retryReadMethods,
+      sleep: async (delayMs) => {
+        exhaustedDelays.push(delayMs);
+      },
+    }),
+    busyResponse,
+  );
+  assert.equal(exhaustedCalls, 3);
+  assert.deepEqual(exhaustedDelays, [3, 5]);
+
+  for (const [label, method, response] of [
+    [
+      "deterministic absence",
+      "getrawtransaction",
+      {
+        error: {
+          code: -5,
+          message: "Work queue depth exceeded: transaction is absent",
+        },
+        ok: false,
+      },
+    ],
+    [
+      "other Core error",
+      "getblockcount",
+      { error: { code: -1, message: "Database error" }, ok: false },
+    ],
+    ["testmempoolaccept", "testmempoolaccept", busyResponse],
+    ["unknown method", "futuremutatingmethod", busyResponse],
+  ]) {
+    let calls = 0;
+    const delays = [];
+    const result = await busyRetry(method, [], {
+      baseDelayMs: 1,
+      maxDelayMs: 1,
+      request: async () => {
+        calls += 1;
+        return response;
+      },
+      retries: 3,
+      retryMethods: retryReadMethods,
+      sleep: async (delayMs) => {
+        delays.push(delayMs);
+      },
+    });
+    assert.equal(result, response, `${label} must preserve the first result`);
+    assert.equal(calls, 1, `${label} must not be retried`);
+    assert.deepEqual(delays, []);
+  }
+  const transportFailure = new Error("socket closed");
+  let transportCalls = 0;
+  await assert.rejects(
+    busyRetry("getblockcount", [], {
+      baseDelayMs: 1,
+      maxDelayMs: 1,
+      request: async () => {
+        transportCalls += 1;
+        throw transportFailure;
+      },
+      retries: 3,
+      retryMethods: retryReadMethods,
+      sleep: async () => {},
+    }),
+    (error) => error === transportFailure,
+  );
+  assert.equal(transportCalls, 1);
+
+  const boundedState = { active: 0, queue: [] };
+  let activeRaw = 0;
+  let maximumActiveRaw = 0;
+  const boundedResults = await Promise.all(
+    Array.from({ length: 8 }, (_unused, index) =>
+      rawCall([String(index).padStart(64, "0"), true], {
+        maxInFlight: 2,
+        maxQueue: 8,
+        queueWaitMs: 1_000,
+        request: async (_method, params) => {
+          activeRaw += 1;
+          maximumActiveRaw = Math.max(maximumActiveRaw, activeRaw);
+          await delay(5);
+          activeRaw -= 1;
+          return { ok: true, result: params[0] };
+        },
+        state: boundedState,
+      })
+    ),
+  );
+  assert.equal(boundedResults.every((result) => result.ok === true), true);
+  assert.equal(maximumActiveRaw, 2);
+  assert.equal(boundedState.active, 0);
+  assert.equal(boundedState.queue.length, 0);
+
+  const duplicateState = { active: 0, queue: [] };
+  let duplicateCalls = 0;
+  const duplicateParams = ["b".repeat(64), true];
+  await Promise.all([
+    rawCall(duplicateParams, {
+      request: async () => {
+        duplicateCalls += 1;
+        await delay(2);
+        return { ok: true, result: "first" };
+      },
+      state: duplicateState,
+    }),
+    rawCall(duplicateParams, {
+      request: async () => {
+        duplicateCalls += 1;
+        await delay(2);
+        return { ok: true, result: "second" };
+      },
+      state: duplicateState,
+    }),
+  ]);
+  assert.equal(
+    duplicateCalls,
+    2,
+    "temporally distinct raw samples must remain distinct wire calls",
+  );
+  assert.equal(duplicateState.active, 0);
+
+  const capacityState = { active: 0, queue: [] };
+  let capacityCalls = 0;
+  let releaseBlockedRaw;
+  const blockedRaw = new Promise((resolve) => {
+    releaseBlockedRaw = resolve;
+  });
+  const capacityRequest = async () => {
+    capacityCalls += 1;
+    return blockedRaw;
+  };
+  const firstCapacityCall = rawCall(["c".repeat(64), true], {
+    maxInFlight: 1,
+    maxQueue: 1,
+    queueWaitMs: 25,
+    request: capacityRequest,
+    state: capacityState,
+  });
+  await waitUntil(() => capacityCalls === 1, "the first raw RPC slot");
+  const expiringCall = rawCall(["d".repeat(64), true], {
+    maxInFlight: 1,
+    maxQueue: 1,
+    queueWaitMs: 25,
+    request: capacityRequest,
+    state: capacityState,
+  });
+  await waitUntil(
+    () => capacityState.queue.length === 1,
+    "the bounded raw RPC queue",
+  );
+  const overflow = await rawCall(["e".repeat(64), true], {
+    maxInFlight: 1,
+    maxQueue: 1,
+    queueWaitMs: 25,
+    request: capacityRequest,
+    state: capacityState,
+  });
+  assert.equal(overflow.ok, false);
+  assert.equal(overflow.error.code, "POW_BITCOIN_RPC_RAW_QUEUE_FULL");
+  assert.equal(
+    summarizeError(overflow.error),
+    "POW_BITCOIN_RPC_RAW_QUEUE_FULL: Bitcoin RPC getrawtransaction admission queue is full.",
+  );
+  const expired = await expiringCall;
+  assert.equal(expired.ok, false);
+  assert.equal(expired.error.code, "POW_BITCOIN_RPC_RAW_QUEUE_TIMEOUT");
+  assert.equal(
+    summarizeError(expired.error),
+    "POW_BITCOIN_RPC_RAW_QUEUE_TIMEOUT: Bitcoin RPC getrawtransaction admission waited more than 25ms.",
+  );
+  assert.equal(capacityCalls, 1, "an expired queued RPC must never dispatch");
+  assert.equal(capacityState.active, 1);
+  assert.equal(capacityState.queue.length, 0);
+  releaseBlockedRaw({ ok: true, result: "released" });
+  assert.equal((await firstCapacityCall).ok, true);
+  assert.equal(capacityState.active, 0);
+  const recoveredCapacity = await rawCall(["f".repeat(64), true], {
+    maxInFlight: 1,
+    maxQueue: 1,
+    queueWaitMs: 25,
+    request: async () => ({ ok: true, result: "recovered" }),
+    state: capacityState,
+  });
+  assert.equal(recoveredCapacity.ok, true);
+  assert.equal(capacityState.active, 0);
+
+  const rejectedState = { active: 0, queue: [] };
+  const wireFailure = new Error("wire failure");
+  await assert.rejects(
+    rawCall(["1".repeat(64), true], {
+      request: async () => {
+        throw wireFailure;
+      },
+      state: rejectedState,
+    }),
+    (error) => error === wireFailure,
+  );
+  assert.equal(rejectedState.active, 0);
+  assert.equal(rejectedState.queue.length, 0);
+  assert.equal(
+    (
+      await rawCall(["2".repeat(64), true], {
+        request: async () => ({ ok: true, result: "after-rejection" }),
+        state: rejectedState,
+      })
+    ).ok,
+    true,
+  );
+
+  const controlState = { active: 0, queue: [] };
+  let controlRawStarted = false;
+  let controlRawSettled = false;
+  let releaseControlRaw;
+  const controlRawGate = new Promise((resolve) => {
+    releaseControlRaw = resolve;
+  });
+  const controlRequest = async (method) => {
+    if (method === "getrawtransaction") {
+      controlRawStarted = true;
+      return controlRawGate;
+    }
+    return { ok: true, result: `control:${method}` };
+  };
+  const saturatedRaw = rpcDispatch(
+    "getrawtransaction",
+    ["3".repeat(64), true],
+    {
+      admissionState: controlState,
+      maxInFlight: 1,
+      maxQueue: 1,
+      queueWaitMs: 1_000,
+      rawRequest: rawAdmission,
+      request: controlRequest,
+    },
+  ).finally(() => {
+    controlRawSettled = true;
+  });
+  await waitUntil(() => controlRawStarted, "the saturated raw RPC lane");
+  const controlResult = await rpcDispatch("getblockcount", [], {
+    admissionState: controlState,
+    maxInFlight: 1,
+    maxQueue: 1,
+    queueWaitMs: 1_000,
+    rawRequest: rawAdmission,
+    request: controlRequest,
+  });
+  assert.equal(controlResult.result, "control:getblockcount");
+  assert.equal(controlRawSettled, false);
+  assert.equal(controlState.active, 1);
+  releaseControlRaw({ ok: true, result: "raw-released" });
+  assert.equal((await saturatedRaw).ok, true);
+  assert.equal(controlState.active, 0);
+
+  const rpcSource = fileSource(API_PATH);
+  const retryAllowlistMatch =
+    /const BITCOIN_RPC_BUSY_RETRY_READ_METHODS = new Set\(\[([\s\S]*?)\]\);/u.exec(
+      rpcSource,
+    );
+  assert.ok(retryAllowlistMatch, "the production busy-retry allowlist must exist");
+  const productionRetryAllowlist = Array.from(
+    retryAllowlistMatch[1].matchAll(/"([^"]+)"/gu),
+    (match) => match[1],
+  );
+  assert.deepEqual(productionRetryAllowlist, [
+    "getbestblockhash",
+    "getblock",
+    "getblockchaininfo",
+    "getblockcount",
+    "getblockhash",
+    "getblockheader",
+    "getindexinfo",
+    "getmempoolentry",
+    "getrawmempool",
+    "getrawtransaction",
+    "gettxout",
+  ]);
+  for (const excludedMethod of [
+    "sendrawtransaction",
+    "testmempoolaccept",
+    "futuremutatingmethod",
+  ]) {
+    assert.equal(productionRetryAllowlist.includes(excludedMethod), false);
+  }
+  assert.match(
+    rpcSource,
+    /BITCOIN_RPC_GETRAWTRANSACTION_MAX_IN_FLIGHT[\s\S]*process\.env\.BITCOIN_RPC_GETRAWTRANSACTION_MAX_IN_FLIGHT \?\? 4/u,
+  );
+  assert.match(
+    topLevelFunctionSource(API_PATH, "bitcoinRpcDispatch"),
+    /method !== "getrawtransaction"[\s\S]*return request\(method, params\)[\s\S]*return rawRequest/u,
+    "control methods must never enter the raw transaction admission lane",
+  );
+  assert.doesNotMatch(
+    topLevelFunctionSource(API_PATH, "bitcoinRpcWithRawAdmission"),
+    /coalesc|inFlight|new Map/u,
+    "raw RPC temporal samples must not be implicitly coalesced",
+  );
+  assert.match(
+    topLevelFunctionSource(API_PATH, "fetchTransactionFromBitcoinRpc"),
+    /!response\.ok[\s\S]*errorSummary\(response\.error\)[\s\S]*options\.requireCanonicalPrevouts[\s\S]*throw new Error/u,
+    "raw admission failures must remain fail-closed for canonical hydration",
+  );
+});
+
 check("AMO V8 request coalescing binds exact reader identity and live inputs", () => {
   const statusCacheKey = isolatedFunction(
     API_PATH,
@@ -65953,11 +66395,35 @@ check("AMO V8 request coalescing binds exact reader identity and live inputs", (
       count: 8,
       sha256: "3".repeat(64),
     },
+    workerReadiness: {
+      ...workerReadiness,
+      mempoolCount: 8,
+      mempoolSha256: "3".repeat(64),
+    },
+  };
+  const changedWorkerPublicationProbe = {
+    ...liveProbe,
+    workerReadiness: {
+      ...workerReadiness,
+      finishedAt: "2026-08-02T20:00:01.000Z",
+      proofSource: "current-confirmed-replay",
+      state: "running",
+    },
   };
   assert.notEqual(liveProbeKey(liveProbe), liveProbeKey(changedMempoolProbe));
   assert.equal(
     liveProbeKey(liveProbe, { includeMempool: false }),
     liveProbeKey(changedMempoolProbe, { includeMempool: false }),
+  );
+  assert.notEqual(
+    liveProbeKey(liveProbe),
+    liveProbeKey(changedWorkerPublicationProbe),
+  );
+  assert.equal(
+    liveProbeKey(liveProbe, { includeWorkerPublication: false }),
+    liveProbeKey(changedWorkerPublicationProbe, {
+      includeWorkerPublication: false,
+    }),
   );
   const readinessKey = statusCacheKey(inputs);
   assert.notEqual(readinessKey, "");
@@ -66089,6 +66555,11 @@ check("AMO V8 request coalescing binds exact reader identity and live inputs", (
     sweepSource,
     /workAmoV8ExactLiveProbe\(network\)[\s\S]*proofIndexWorkPrecisionV2MigrationReadiness[\s\S]*workAmoV8ExactLiveProbe\(network\)/u,
   );
+  assert.match(
+    sweepSource,
+    /const sweepKeyOptions = \{[\s\S]*includeMempool:\s*false[\s\S]*includeWorkerPublication:\s*false[\s\S]*workAmoV8ExactLiveProbeKey\(before,\s*sweepKeyOptions\)[\s\S]*proofIndexWorkPrecisionV2MigrationReadiness[\s\S]*workAmoV8ExactLiveProbeKey\(after,\s*sweepKeyOptions\)/u,
+    "the exact sweep must ignore only full-mempool and worker-publication churn",
+  );
   assert.doesNotMatch(
     sweepSource,
     /pendingValidThrough[\s\S]*Date\.now/u,
@@ -66105,6 +66576,167 @@ check("AMO V8 request coalescing binds exact reader identity and live inputs", (
     exactProbeSource,
     /proofIndexOperationalStatusPayload/u,
   );
+});
+
+check("AMO V8 exact readiness sweep ignores harmless publication churn only", async () => {
+  const liveProbeKey = isolatedFunction(
+    API_PATH,
+    "workAmoV8ExactLiveProbeKey",
+  );
+  const tipHash = "a".repeat(64);
+  const tipHeight = 960_768;
+  const before = {
+    liveMempoolSnapshot: {
+      count: 7,
+      model: "canonical-core-mempool-txid-set-v1",
+      sha256: "b".repeat(64),
+    },
+    liveMempoolTxids: ["c".repeat(64)],
+    tipHash,
+    tipHeight,
+    workerReadiness: {
+      era: "q16",
+      finishedAt: "2026-08-02T20:00:00.000Z",
+      mempoolCount: 7,
+      mempoolSha256: "b".repeat(64),
+      pendingMembershipCount: 2,
+      pendingMembershipSha256: "d".repeat(64),
+      pendingProjectionSha256: "e".repeat(64),
+      proofSource: "idle-confirmed-replay",
+      ready: true,
+      state: "idle",
+      tipHash,
+      tipHeight,
+    },
+  };
+  const harmlessAfter = {
+    ...before,
+    liveMempoolSnapshot: {
+      count: 8,
+      model: "canonical-core-mempool-txid-set-v1",
+      sha256: "f".repeat(64),
+    },
+    liveMempoolTxids: ["c".repeat(64), "1".repeat(64)],
+    workerReadiness: {
+      ...before.workerReadiness,
+      finishedAt: "2026-08-02T20:00:01.000Z",
+      mempoolCount: 8,
+      mempoolSha256: "f".repeat(64),
+      proofSource: "current-confirmed-replay",
+      state: "running",
+    },
+  };
+  const migrationReadiness = {
+    canonical: true,
+    exactTipReady: true,
+    tipHash,
+    tipHeight,
+  };
+  let probes = [];
+  let migrationReads = 0;
+  const sweep = isolatedFunction(
+    API_PATH,
+    "workAmoV8ExactReadinessSweep",
+    {
+      proofIndexWorkPrecisionV2MigrationReadiness: async () => {
+        migrationReads += 1;
+        return migrationReadiness;
+      },
+      workAmoV8ExactLiveProbe: async () => probes.shift() ?? null,
+      workAmoV8ExactLiveProbeKey: liveProbeKey,
+    },
+  );
+  const runSweep = async (after) => {
+    probes = [before, after];
+    const result = await sweep(
+      "livenet",
+      { txid: "2".repeat(64) },
+      { force: true },
+    );
+    assert.equal(probes.length, 0);
+    return result;
+  };
+
+  assert.notEqual(liveProbeKey(before), liveProbeKey(harmlessAfter));
+  assert.equal(
+    liveProbeKey(before, {
+      includeMempool: false,
+      includeWorkerPublication: false,
+    }),
+    liveProbeKey(harmlessAfter, {
+      includeMempool: false,
+      includeWorkerPublication: false,
+    }),
+  );
+  const stableSweep = await runSweep(harmlessAfter);
+  assert.equal(stableSweep?.migrationReadiness, migrationReadiness);
+  assert.equal(stableSweep?.probe, harmlessAfter);
+
+  const failClosedChanges = [
+    [
+      "Core tip",
+      { ...harmlessAfter, tipHash: "3".repeat(64) },
+    ],
+    [
+      "worker readiness",
+      {
+        ...harmlessAfter,
+        workerReadiness: {
+          ...harmlessAfter.workerReadiness,
+          ready: false,
+        },
+      },
+    ],
+    [
+      "worker era",
+      {
+        ...harmlessAfter,
+        workerReadiness: {
+          ...harmlessAfter.workerReadiness,
+          era: "q8",
+        },
+      },
+    ],
+    [
+      "worker tip",
+      {
+        ...harmlessAfter,
+        workerReadiness: {
+          ...harmlessAfter.workerReadiness,
+          tipHash: "4".repeat(64),
+        },
+      },
+    ],
+    [
+      "pending membership",
+      {
+        ...harmlessAfter,
+        workerReadiness: {
+          ...harmlessAfter.workerReadiness,
+          pendingMembershipCount: 3,
+          pendingMembershipSha256: "5".repeat(64),
+        },
+      },
+    ],
+    [
+      "pending projection",
+      {
+        ...harmlessAfter,
+        workerReadiness: {
+          ...harmlessAfter.workerReadiness,
+          pendingProjectionSha256: "6".repeat(64),
+        },
+      },
+    ],
+  ];
+  for (const [label, after] of failClosedChanges) {
+    assert.equal(
+      await runSweep(after),
+      null,
+      `${label} changes must invalidate the exact readiness sweep`,
+    );
+  }
+  assert.equal(migrationReads, failClosedChanges.length + 1);
 });
 
 check("AMO V8 metadata coalesces identical exact live probes", async () => {

@@ -553,6 +553,19 @@ for (const electrumLimit of [
     `API hardening is missing ${electrumLimit}.`,
   );
 }
+for (const bitcoinRpcLimit of [
+  "BITCOIN_RPC_GETRAWTRANSACTION_MAX_IN_FLIGHT=4",
+  "BITCOIN_RPC_GETRAWTRANSACTION_MAX_QUEUE=64",
+  "BITCOIN_RPC_GETRAWTRANSACTION_QUEUE_WAIT_MS=5000",
+  "BITCOIN_RPC_BUSY_RETRIES=3",
+  "BITCOIN_RPC_BUSY_RETRY_BASE_MS=100",
+  "BITCOIN_RPC_BUSY_RETRY_MAX_MS=1000",
+]) {
+  assert.ok(
+    apiService.includes(bitcoinRpcLimit),
+    `API hardening is missing ${bitcoinRpcLimit}.`,
+  );
+}
 assert.match(apiService, /WALLET_SCOPED_INDEX_WAIT_MS=10000/u);
 assert.match(workerService, /ELECTRUM_HOST=172\.27\.0\.1/u);
 assert.match(workerService, /ELECTRUM_PORT=50001/u);

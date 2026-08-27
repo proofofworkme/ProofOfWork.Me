@@ -329,6 +329,58 @@ const BITCOIN_RPC_USER = String(process.env.BITCOIN_RPC_USER ?? "").trim();
 const BITCOIN_RPC_PASSWORD = String(
   process.env.BITCOIN_RPC_PASSWORD ?? "",
 ).trim();
+const BITCOIN_RPC_GETRAWTRANSACTION_MAX_IN_FLIGHT = Math.min(
+  16,
+  Math.max(
+    1,
+    Math.floor(
+      Number(
+        process.env.BITCOIN_RPC_GETRAWTRANSACTION_MAX_IN_FLIGHT ?? 4,
+      ) || 4,
+    ),
+  ),
+);
+const BITCOIN_RPC_GETRAWTRANSACTION_MAX_QUEUE = Math.min(
+  1_024,
+  Math.max(
+    1,
+    Math.floor(
+      Number(process.env.BITCOIN_RPC_GETRAWTRANSACTION_MAX_QUEUE ?? 64) || 64,
+    ),
+  ),
+);
+const BITCOIN_RPC_GETRAWTRANSACTION_QUEUE_WAIT_MS = Math.min(
+  30_000,
+  Math.max(
+    100,
+    Math.floor(
+      Number(
+        process.env.BITCOIN_RPC_GETRAWTRANSACTION_QUEUE_WAIT_MS ?? 5_000,
+      ) || 5_000,
+    ),
+  ),
+);
+const BITCOIN_RPC_BUSY_RETRIES = Math.min(
+  5,
+  Math.max(
+    0,
+    Math.floor(Number(process.env.BITCOIN_RPC_BUSY_RETRIES ?? 3) || 0),
+  ),
+);
+const BITCOIN_RPC_BUSY_RETRY_BASE_MS = Math.min(
+  2_000,
+  Math.max(
+    10,
+    Math.floor(Number(process.env.BITCOIN_RPC_BUSY_RETRY_BASE_MS ?? 100) || 100),
+  ),
+);
+const BITCOIN_RPC_BUSY_RETRY_MAX_MS = Math.min(
+  5_000,
+  Math.max(
+    BITCOIN_RPC_BUSY_RETRY_BASE_MS,
+    Math.floor(Number(process.env.BITCOIN_RPC_BUSY_RETRY_MAX_MS ?? 1_000) || 1_000),
+  ),
+);
 const ELECTRUM_HOST = process.env.ELECTRUM_HOST ?? "127.0.0.1";
 const ELECTRUM_PORT = Number(process.env.ELECTRUM_PORT ?? 50001);
 const ELECTRUM_MAX_IN_FLIGHT = Number(
@@ -1868,9 +1920,23 @@ function confirmedItemCount(items) {
 }
 
 function errorSummary(error) {
-  return error instanceof Error && error.message
-    ? error.message
-    : String(error);
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+  if (error && typeof error === "object" && !Array.isArray(error)) {
+    const code = String(error.code ?? "").trim();
+    const message = String(error.message ?? "").trim();
+    if (code && message) {
+      return `${code}: ${message}`;
+    }
+    if (message) {
+      return message;
+    }
+    if (code) {
+      return code;
+    }
+  }
+  return String(error);
 }
 
 function cachedJsonPayload(jsonKey) {
@@ -7201,11 +7267,246 @@ class BroadcastRejectError extends Error {
   }
 }
 
-async function bitcoinRpc(method, params) {
-  if (!BITCOIN_RPC_URL || !BITCOIN_RPC_USER || !BITCOIN_RPC_PASSWORD) {
+const bitcoinRpcGetRawTransactionAdmission = {
+  active: 0,
+  queue: [],
+};
+const BITCOIN_RPC_BUSY_RETRY_READ_METHODS = new Set([
+  "getbestblockhash",
+  "getblock",
+  "getblockchaininfo",
+  "getblockcount",
+  "getblockhash",
+  "getblockheader",
+  "getindexinfo",
+  "getmempoolentry",
+  "getrawmempool",
+  "getrawtransaction",
+  "gettxout",
+]);
+
+function bitcoinRpcRawAdmissionRelease(state) {
+  let released = false;
+  return () => {
+    if (released) {
+      return;
+    }
+    released = true;
+    while (state.queue.length > 0) {
+      const next = state.queue.shift();
+      if (!next || next.settled) {
+        continue;
+      }
+      next.settled = true;
+      clearTimeout(next.timer);
+      next.resolve(bitcoinRpcRawAdmissionRelease(state));
+      return;
+    }
+    state.active = Math.max(0, (Number(state.active) || 0) - 1);
+  };
+}
+
+async function bitcoinRpcAcquireRawSlot(
+  state,
+  {
+    maxInFlight = BITCOIN_RPC_GETRAWTRANSACTION_MAX_IN_FLIGHT,
+    maxQueue = BITCOIN_RPC_GETRAWTRANSACTION_MAX_QUEUE,
+    queueWaitMs = BITCOIN_RPC_GETRAWTRANSACTION_QUEUE_WAIT_MS,
+  } = {},
+) {
+  const inFlightLimit = Math.max(1, Math.floor(Number(maxInFlight) || 1));
+  const queueLimit = Math.max(0, Math.floor(Number(maxQueue) || 0));
+  const waitMs = Math.max(1, Math.floor(Number(queueWaitMs) || 1));
+  if (!state || typeof state !== "object" || !Array.isArray(state.queue)) {
+    const error = new Error(
+      "Bitcoin RPC getrawtransaction admission state is unavailable.",
+    );
+    error.code = "POW_BITCOIN_RPC_RAW_ADMISSION_UNAVAILABLE";
+    throw error;
+  }
+  state.active = Math.max(0, Math.floor(Number(state.active) || 0));
+  if (state.active < inFlightLimit) {
+    state.active += 1;
+    return bitcoinRpcRawAdmissionRelease(state);
+  }
+  if (state.queue.length >= queueLimit) {
+    const error = new Error(
+      "Bitcoin RPC getrawtransaction admission queue is full.",
+    );
+    error.code = "POW_BITCOIN_RPC_RAW_QUEUE_FULL";
+    throw error;
+  }
+  return new Promise((resolve, reject) => {
+    const entry = {
+      resolve,
+      settled: false,
+      timer: null,
+    };
+    entry.timer = setTimeout(() => {
+      if (entry.settled) {
+        return;
+      }
+      entry.settled = true;
+      const index = state.queue.indexOf(entry);
+      if (index >= 0) {
+        state.queue.splice(index, 1);
+      }
+      const error = new Error(
+        `Bitcoin RPC getrawtransaction admission waited more than ${waitMs}ms.`,
+      );
+      error.code = "POW_BITCOIN_RPC_RAW_QUEUE_TIMEOUT";
+      reject(error);
+    }, waitMs);
+    state.queue.push(entry);
+  });
+}
+
+function bitcoinRpcRawAdmissionFailureResponse(error) {
+  const code = String(error?.code ?? "");
+  if (
+    ![
+      "POW_BITCOIN_RPC_RAW_ADMISSION_UNAVAILABLE",
+      "POW_BITCOIN_RPC_RAW_QUEUE_FULL",
+      "POW_BITCOIN_RPC_RAW_QUEUE_TIMEOUT",
+    ].includes(code)
+  ) {
     return null;
   }
+  return {
+    error: {
+      code,
+      message: String(error?.message ?? "Bitcoin RPC admission failed."),
+    },
+    ok: false,
+  };
+}
 
+function bitcoinRpcWorkQueueBusy(response) {
+  if (!response || response.ok !== false) {
+    return false;
+  }
+  const error = response.error;
+  if (
+    error &&
+    typeof error === "object" &&
+    !Array.isArray(error) &&
+    Number(error.code) === -5
+  ) {
+    return false;
+  }
+  const message = typeof error === "string"
+    ? error
+    : error && typeof error === "object" && !Array.isArray(error)
+      ? String(error.message ?? "")
+      : "";
+  return message.includes("Work queue depth exceeded");
+}
+
+async function bitcoinRpcWithBusyRetry(
+  method,
+  params,
+  {
+    baseDelayMs = BITCOIN_RPC_BUSY_RETRY_BASE_MS,
+    maxDelayMs = BITCOIN_RPC_BUSY_RETRY_MAX_MS,
+    request = bitcoinRpcOnce,
+    retryMethods = BITCOIN_RPC_BUSY_RETRY_READ_METHODS,
+    retries = BITCOIN_RPC_BUSY_RETRIES,
+    sleep = (delayMs) =>
+      new Promise((resolve) => setTimeout(resolve, delayMs)),
+  } = {},
+) {
+  if (
+    !retryMethods ||
+    typeof retryMethods.has !== "function" ||
+    !retryMethods.has(method)
+  ) {
+    return request(method, params);
+  }
+  const retryLimit = Math.max(0, Math.floor(Number(retries) || 0));
+  const retryBaseMs = Math.max(0, Math.floor(Number(baseDelayMs) || 0));
+  const retryMaxMs = Math.max(
+    retryBaseMs,
+    Math.floor(Number(maxDelayMs) || retryBaseMs),
+  );
+  let response = null;
+  for (let attempt = 0; attempt <= retryLimit; attempt += 1) {
+    response = await request(method, params);
+    if (
+      !bitcoinRpcWorkQueueBusy(response) ||
+      attempt >= retryLimit
+    ) {
+      return response;
+    }
+    const delayMs = Math.min(
+      retryMaxMs,
+      retryBaseMs * 2 ** attempt,
+    );
+    await sleep(delayMs);
+  }
+  return response;
+}
+
+async function bitcoinRpcWithRawAdmission(
+  method,
+  params,
+  {
+    admissionState = bitcoinRpcGetRawTransactionAdmission,
+    maxInFlight = BITCOIN_RPC_GETRAWTRANSACTION_MAX_IN_FLIGHT,
+    maxQueue = BITCOIN_RPC_GETRAWTRANSACTION_MAX_QUEUE,
+    queueWaitMs = BITCOIN_RPC_GETRAWTRANSACTION_QUEUE_WAIT_MS,
+    request = bitcoinRpcWithBusyRetry,
+  } = {},
+) {
+  let requestParams = params;
+  try {
+    requestParams = JSON.parse(JSON.stringify(params));
+  } catch {
+    requestParams = params;
+  }
+  let release = null;
+  try {
+    release = await bitcoinRpcAcquireRawSlot(admissionState, {
+      maxInFlight,
+      maxQueue,
+      queueWaitMs,
+    });
+    return await request(method, requestParams);
+  } catch (error) {
+    const failure = bitcoinRpcRawAdmissionFailureResponse(error);
+    if (failure) {
+      return failure;
+    }
+    throw error;
+  } finally {
+    release?.();
+  }
+}
+
+async function bitcoinRpcDispatch(
+  method,
+  params,
+  {
+    admissionState = bitcoinRpcGetRawTransactionAdmission,
+    maxInFlight = BITCOIN_RPC_GETRAWTRANSACTION_MAX_IN_FLIGHT,
+    maxQueue = BITCOIN_RPC_GETRAWTRANSACTION_MAX_QUEUE,
+    queueWaitMs = BITCOIN_RPC_GETRAWTRANSACTION_QUEUE_WAIT_MS,
+    rawRequest = bitcoinRpcWithRawAdmission,
+    request = bitcoinRpcWithBusyRetry,
+  } = {},
+) {
+  if (method !== "getrawtransaction") {
+    return request(method, params);
+  }
+  return rawRequest(method, params, {
+    admissionState,
+    maxInFlight,
+    maxQueue,
+    queueWaitMs,
+    request,
+  });
+}
+
+async function bitcoinRpcOnce(method, params) {
   const authorization = Buffer.from(
     `${BITCOIN_RPC_USER}:${BITCOIN_RPC_PASSWORD}`,
   ).toString("base64");
@@ -7236,6 +7537,13 @@ async function bitcoinRpc(method, params) {
     ok: true,
     result: payload?.result,
   };
+}
+
+async function bitcoinRpc(method, params) {
+  if (!BITCOIN_RPC_URL || !BITCOIN_RPC_USER || !BITCOIN_RPC_PASSWORD) {
+    return null;
+  }
+  return bitcoinRpcDispatch(method, params);
 }
 
 async function bitcoinRpcOutspendPayload(txid, vout, network) {
@@ -9354,7 +9662,10 @@ function workQ16PendingMembershipSnapshotReady(
 
 function workAmoV8ExactLiveProbeKey(
   probe,
-  { includeMempool = true } = {},
+  {
+    includeMempool = true,
+    includeWorkerPublication = true,
+  } = {},
 ) {
   const candidate = probe && typeof probe === "object" &&
       !Array.isArray(probe)
@@ -9394,11 +9705,17 @@ function workAmoV8ExactLiveProbeKey(
     tipHeight,
     workerReadiness: {
       era: String(worker.era ?? ""),
-      finishedAt: String(worker.finishedAt ?? ""),
-      mempoolCount: worker.mempoolCount ?? null,
-      mempoolSha256: String(worker.mempoolSha256 ?? "")
-        .trim()
-        .toLowerCase(),
+      ...(includeWorkerPublication
+        ? { finishedAt: String(worker.finishedAt ?? "") }
+        : {}),
+      ...(includeMempool
+        ? {
+            mempoolCount: worker.mempoolCount ?? null,
+            mempoolSha256: String(worker.mempoolSha256 ?? "")
+              .trim()
+              .toLowerCase(),
+          }
+        : {}),
       pendingMembershipCount: worker.pendingMembershipCount ?? null,
       pendingMembershipSha256: String(
         worker.pendingMembershipSha256 ?? "",
@@ -9406,9 +9723,13 @@ function workAmoV8ExactLiveProbeKey(
       pendingProjectionSha256: String(
         worker.pendingProjectionSha256 ?? "",
       ).trim().toLowerCase(),
-      proofSource: String(worker.proofSource ?? ""),
+      ...(includeWorkerPublication
+        ? { proofSource: String(worker.proofSource ?? "") }
+        : {}),
       ready: worker.ready,
-      state: String(worker.state ?? ""),
+      ...(includeWorkerPublication
+        ? { state: String(worker.state ?? "") }
+        : {}),
       tipHash: String(worker.tipHash ?? "").trim().toLowerCase(),
       tipHeight: Number.isSafeInteger(Number(worker.tipHeight))
         ? Number(worker.tipHeight)
@@ -9469,10 +9790,14 @@ async function workAmoV8ExactReadinessSweep(
   expectedDeclaration,
   { force = false } = {},
 ) {
-  const before = await workAmoV8ExactLiveProbe(network);
-  const beforeKey = workAmoV8ExactLiveProbeKey(before, {
+  // Exclude unrelated full-mempool and publication churn while keeping Core/
+  // worker tips, readiness/era, and pending membership/projection bound.
+  const sweepKeyOptions = {
     includeMempool: false,
-  });
+    includeWorkerPublication: false,
+  };
+  const before = await workAmoV8ExactLiveProbe(network);
+  const beforeKey = workAmoV8ExactLiveProbeKey(before, sweepKeyOptions);
   if (!beforeKey) {
     return null;
   }
@@ -9484,9 +9809,7 @@ async function workAmoV8ExactReadinessSweep(
     ).catch(() => null);
   const after = await workAmoV8ExactLiveProbe(network);
   if (
-    workAmoV8ExactLiveProbeKey(after, {
-      includeMempool: false,
-    }) !== beforeKey
+    workAmoV8ExactLiveProbeKey(after, sweepKeyOptions) !== beforeKey
   ) {
     return null;
   }
