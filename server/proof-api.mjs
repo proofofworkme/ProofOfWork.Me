@@ -2971,6 +2971,112 @@ function walletTokenPayloadMissingDefinitions(payload) {
   );
 }
 
+function walletScopedWorkSupplySubatoms(record, subatomKey, displayKey) {
+  const exact = canonicalWorkSubatomsText(record?.[subatomKey], {
+    allowZero: true,
+  });
+  if (exact) {
+    return exact;
+  }
+  if (
+    record?.[displayKey] !== undefined &&
+    record?.[displayKey] !== null &&
+    record?.[displayKey] !== ""
+  ) {
+    try {
+      return parseWorkAmountToSubatoms(record[displayKey], {
+        allowZero: true,
+        maxSubatoms: WORK_TOKEN_MAX_SUPPLY_SUBATOMS,
+      }).toString();
+    } catch {
+      return "";
+    }
+  }
+  return "0";
+}
+
+function walletScopedWorkTokenWithQ16Supply(token, network) {
+  const confirmedSupplySubatoms = walletScopedWorkSupplySubatoms(
+    token,
+    "confirmedSupplySubatoms",
+    "confirmedSupply",
+  );
+  const pendingSupplySubatoms = walletScopedWorkSupplySubatoms(
+    token,
+    "pendingSupplySubatoms",
+    "pendingSupply",
+  );
+  const {
+    confirmedSupplyAtoms: _confirmedSupplyAtoms,
+    maxSupplyAtoms: _maxSupplyAtoms,
+    mintAmountAtoms: _mintAmountAtoms,
+    pendingSupplyAtoms: _pendingSupplyAtoms,
+    ...definition
+  } = token ?? {};
+  return {
+    ...canonicalWorkTokenDefinition(network, WORK_SUBATOM_PROJECTION_MODEL),
+    ...definition,
+    amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+    confirmedSupply: formatWorkSubatoms(confirmedSupplySubatoms),
+    confirmedSupplySubatoms,
+    decimals: WORK_SUBATOM_DECIMALS,
+    maxSupply: WORK_TOKEN_MAX_SUPPLY,
+    maxSupplySubatoms: WORK_TOKEN_MAX_SUPPLY_SUBATOMS.toString(),
+    mintAmount: WORK_TOKEN_MINT_AMOUNT,
+    mintAmountSubatoms: WORK_TOKEN_MINT_AMOUNT_SUBATOMS.toString(),
+    pendingSupply: formatWorkSubatoms(pendingSupplySubatoms),
+    pendingSupplySubatoms,
+    precisionModel: WORK_PRECISION_V2_MODEL,
+    unitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,
+  };
+}
+
+function walletScopedWorkPayloadWithQ16Supply(payload, network, tokenScope = "") {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return payload;
+  }
+  const tokens = Array.isArray(payload.tokens) ? payload.tokens : [];
+  let workToken = null;
+  let changed = false;
+  const normalizedTokens = tokens.map((token) => {
+    if (!isWorkTokenId(token?.tokenId)) {
+      return token;
+    }
+    const normalized = walletScopedWorkTokenWithQ16Supply(token, network);
+    workToken = normalized;
+    changed = true;
+    return normalized;
+  });
+  if (!workToken) {
+    return payload;
+  }
+  const scope = normalizeTokenScope(tokenScope);
+  const singleWorkEnvelope =
+    scope === WORK_TOKEN_ID ||
+    (normalizedTokens.length === 1 &&
+      isWorkTokenId(normalizedTokens[0]?.tokenId));
+  if (!singleWorkEnvelope) {
+    return changed ? { ...payload, tokens: normalizedTokens } : payload;
+  }
+  const {
+    confirmedSupplyAtoms: _confirmedSupplyAtoms,
+    pendingSupplyAtoms: _pendingSupplyAtoms,
+    ...q16Payload
+  } = payload;
+  return {
+    ...q16Payload,
+    amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+    confirmedSupply: workToken.confirmedSupply,
+    confirmedSupplySubatoms: workToken.confirmedSupplySubatoms,
+    decimals: WORK_SUBATOM_DECIMALS,
+    pendingSupply: workToken.pendingSupply,
+    pendingSupplySubatoms: workToken.pendingSupplySubatoms,
+    precisionModel: WORK_PRECISION_V2_MODEL,
+    tokens: normalizedTokens,
+    unitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,
+  };
+}
+
 function walletScopedTokenPayloadFromOverlay(overlay, network, tokenScope) {
   const canonicalOverlay = walletTokenPayloadWithCanonicalDefinitions(
     overlay,
@@ -3042,7 +3148,7 @@ function walletScopedTokenPayloadFromOverlay(overlay, network, tokenScope) {
       );
     },
   );
-  return {
+  return walletScopedWorkPayloadWithQ16Supply({
     ...canonicalOverlay,
     closedListings,
     confirmedSupply: 0,
@@ -3082,7 +3188,7 @@ function walletScopedTokenPayloadFromOverlay(overlay, network, tokenScope) {
     tokens,
     transfers,
     walletScoped: true,
-  };
+  }, network, tokenScope);
 }
 
 function walletTokenOverlayHasExactCheckpoint(overlay) {
@@ -40112,10 +40218,15 @@ async function walletScopedTokenPayload(
     return cachedWalletPayload;
   }
   const withWalletAuthority = (payload) => {
+    const normalizedPayload = walletScopedWorkPayloadWithQ16Supply(
+      payload,
+      network,
+      scope,
+    );
     const walletPayload =
       scope === WORK_TOKEN_ID
-        ? workQ16PayloadWithoutOrphanPriceAliases(payload, scope)
-        : payload;
+        ? workQ16PayloadWithoutOrphanPriceAliases(normalizedPayload, scope)
+        : normalizedPayload;
     const authoritativeOverlay =
       walletScopedPayloadUsesAuthoritativeOverlay(walletPayload);
     if (!requireCurrent && !authoritativeOverlay) {
