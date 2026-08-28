@@ -14546,7 +14546,7 @@ function tokenListingFromEventPayload(payload, row = {}) {
   const sealBlockIndex = exactPositionInteger(payload?.sealBlockIndex);
   const sealProtocolVout = exactPositionInteger(payload?.sealProtocolVout);
   const sealRecordOrdinal = exactPositionInteger(payload?.sealRecordOrdinal);
-  return {
+  const listing = {
     amount: workAmount
       ? workAmount.amount
       : isBondTokenId(tokenId)
@@ -14624,6 +14624,7 @@ function tokenListingFromEventPayload(payload, row = {}) {
     ticker: normalizedTicker,
     tokenId,
   };
+  return tokenListingWithSaleTicketStatus(listing);
 }
 
 function validPublicKeyHex(value) {
@@ -17316,9 +17317,30 @@ function tokenListingSealRank(listing) {
   return listing?.sealMinerFeeCanonical === true ? 3 : 2;
 }
 
+function tokenListingSaleTicketStatus(listing) {
+  const sealRank = tokenListingSealRank(listing);
+  if (sealRank >= 2) {
+    return "sealed";
+  }
+  if (sealRank === 1) {
+    return "seal-pending";
+  }
+  return "unsealed";
+}
+
+function tokenListingWithSaleTicketStatus(listing) {
+  if (!listing || typeof listing !== "object" || Array.isArray(listing)) {
+    return listing;
+  }
+  return {
+    ...listing,
+    saleTicketStatus: tokenListingSaleTicketStatus(listing),
+  };
+}
+
 function tokenListingWithSealFrom(listing, sealSource) {
   if (!listing || tokenListingSealRank(sealSource) === 0) {
-    return listing;
+    return tokenListingWithSaleTicketStatus(listing);
   }
   const selectedSealTxid = String(sealSource.sealTxid ?? "")
     .trim()
@@ -17332,7 +17354,7 @@ function tokenListingWithSealFrom(listing, sealSource) {
     selectedSealTxid === currentSealTxid;
   const sealFallback = sameSealTransaction ? listing : {};
 
-  return {
+  return tokenListingWithSaleTicketStatus({
     ...listing,
     saleAuthorization:
       sealSource.saleAuthorization ?? sealFallback.saleAuthorization,
@@ -17367,7 +17389,7 @@ function tokenListingWithSealFrom(listing, sealSource) {
       sealSource.sealTransactionBlockHeight ??
       sealFallback.sealTransactionBlockHeight,
     sealTxid: selectedSealTxid,
-  };
+  });
 }
 
 function tokenListingSealTimeMs(listing) {
@@ -17524,10 +17546,10 @@ function tokenListingWithCloseFrom(listing, closeSource) {
 
 function mergeTokenListingRecord(current, incoming) {
   if (!current) {
-    return incoming;
+    return tokenListingWithSaleTicketStatus(incoming);
   }
   if (!incoming) {
-    return current;
+    return tokenListingWithSaleTicketStatus(current);
   }
 
   const sealSource = preferredTokenListingSealSource(current, incoming);
@@ -17687,9 +17709,10 @@ function mergeTokenListingRecord(current, incoming) {
           : sealed.recordOrdinal ?? current.recordOrdinal
       ),
   };
-  return tokenListingCloseRank(current) > tokenListingCloseRank(incoming)
+  const closed = tokenListingCloseRank(current) > tokenListingCloseRank(incoming)
     ? tokenListingWithCloseFrom(merged, current)
     : tokenListingWithCloseFrom(merged, incoming);
+  return tokenListingWithSaleTicketStatus(closed);
 }
 
 function walletTokenListingsWithLegacySealEvents(listings, legacySealEvents) {
@@ -36891,7 +36914,12 @@ function tokenMarketEventRowPayload(row, network) {
     ticker: payload.ticker ?? listingPayload.ticker ?? row?.ticker,
     tokenId: payload.tokenId ?? listingPayload.tokenId ?? row?.token_id,
   };
-  return normalizeEventPayload(merged, row);
+  const normalized = normalizeEventPayload(merged, row);
+  return ["token-listing", "token-listings", "token-listing-sealed"].includes(
+    normalized?.kind,
+  )
+    ? tokenListingWithSaleTicketStatus(normalized)
+    : normalized;
 }
 
 const ADDRESS_MAIL_EVENT_KINDS = [

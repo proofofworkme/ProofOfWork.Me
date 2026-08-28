@@ -5677,7 +5677,9 @@ async function marketplaceSummaryPayloadWithIndexedMarketOverlay(
   // A persisted ledger snapshot is immutable. A newer lifecycle overlay may
   // be useful to build the next canonical snapshot, but merging it into an
   // older response while retaining that snapshot id creates mixed-era truth.
-  if (payloadSnapshotId(payload) && options.allowSnapshotMutation !== true) {
+  const immutableSnapshot =
+    payloadSnapshotId(payload) && options.allowSnapshotMutation !== true;
+  if (immutableSnapshot && options.fast !== true) {
     return payload;
   }
 
@@ -5693,9 +5695,13 @@ async function marketplaceSummaryPayloadWithIndexedMarketOverlay(
       );
       return null;
     }
-    const tokenState = tokenStateWithIndexedMarketSummaryOverlay(
+    const overlaidTokenState = tokenStateWithIndexedMarketSummaryOverlay(
       payload.token,
       overlay,
+    );
+    const tokenState = await tokenPayloadWithSpendableActiveListings(
+      overlaidTokenState,
+      network,
     );
     const token = compactTokenSummaryPayload(tokenState);
     const workFloor = workFloorWithIndexedMarketSummaryOverlay(
@@ -5703,7 +5709,7 @@ async function marketplaceSummaryPayloadWithIndexedMarketOverlay(
       overlay,
       tokenState,
     );
-    return marketplaceSummaryWithCurrentBtcUsd(
+    const nextPayload = marketplaceSummaryWithCurrentBtcUsd(
       {
         ...payload,
         indexedAt: newerIso(payload.indexedAt, overlay.indexedAt),
@@ -5713,6 +5719,13 @@ async function marketplaceSummaryPayloadWithIndexedMarketOverlay(
       network,
       false,
     );
+    return immutableSnapshot
+      ? summaryWithDerivedSnapshot(
+          nextPayload,
+          "marketplace-token-listing-authority",
+          token.listingAuthority ?? null,
+        )
+      : nextPayload;
   }
 
   const baseWorkTokenState = scopedTokenPayloadFromState(
@@ -16456,6 +16469,27 @@ function tokenListingHasPendingSaleTicketSeal(listing) {
   );
 }
 
+function tokenListingSaleTicketStatus(listing) {
+  const sealRank = tokenListingSealRank(listing);
+  if (sealRank >= 2) {
+    return "sealed";
+  }
+  if (sealRank === 1) {
+    return "seal-pending";
+  }
+  return "unsealed";
+}
+
+function tokenListingWithSaleTicketStatus(listing) {
+  if (!listing || typeof listing !== "object" || Array.isArray(listing)) {
+    return listing;
+  }
+  return {
+    ...listing,
+    saleTicketStatus: tokenListingSaleTicketStatus(listing),
+  };
+}
+
 function tokenListingSealRank(listing) {
   const sealTxid = String(listing?.sealTxid ?? "").toLowerCase();
   if (
@@ -16473,7 +16507,7 @@ function tokenListingSealRank(listing) {
 
 function tokenListingWithSealFrom(listing, sealSource) {
   if (!listing || tokenListingSealRank(sealSource) === 0) {
-    return listing;
+    return tokenListingWithSaleTicketStatus(listing);
   }
 
   const selectedSealTxid = String(sealSource.sealTxid ?? "")
@@ -16488,7 +16522,7 @@ function tokenListingWithSealFrom(listing, sealSource) {
     selectedSealTxid === currentSealTxid;
   const sealFallback = sameSealTransaction ? listing : {};
 
-  return {
+  return tokenListingWithSaleTicketStatus({
     ...listing,
     saleAuthorization:
       sealSource.saleAuthorization ?? sealFallback.saleAuthorization,
@@ -16523,7 +16557,7 @@ function tokenListingWithSealFrom(listing, sealSource) {
       sealSource.sealTransactionBlockHeight ??
       sealFallback.sealTransactionBlockHeight,
     sealTxid: selectedSealTxid,
-  };
+  });
 }
 
 function tokenListingSealTimeMs(listing) {
@@ -16682,10 +16716,10 @@ function tokenListingWithCloseFrom(listing, closeSource) {
 
 function mergeTokenListingRecord(current, incoming) {
   if (!current) {
-    return incoming;
+    return tokenListingWithSaleTicketStatus(incoming);
   }
   if (!incoming) {
-    return current;
+    return tokenListingWithSaleTicketStatus(current);
   }
 
   const sealSource = preferredTokenListingSealSource(current, incoming);
@@ -16859,9 +16893,10 @@ function mergeTokenListingRecord(current, incoming) {
           : sealed.recordOrdinal ?? current.recordOrdinal
       ),
   };
-  return tokenListingCloseRank(current) > tokenListingCloseRank(incoming)
+  const closed = tokenListingCloseRank(current) > tokenListingCloseRank(incoming)
     ? tokenListingWithCloseFrom(merged, current)
     : tokenListingWithCloseFrom(merged, incoming);
+  return tokenListingWithSaleTicketStatus(closed);
 }
 
 function tokenPayloadConfirmedListingSeals(payload) {
@@ -33358,6 +33393,7 @@ const TOKEN_SUMMARY_MARKET_PREVIEW_KEYS = [
   "saleTicketTxid",
   "saleTicketValueSats",
   "saleTicketVout",
+  "saleTicketStatus",
   "saleTransactionBlockHeight",
   "saleTxid",
   "sealAt",
@@ -35069,6 +35105,11 @@ function compactTokenSummaryPayload(payload, tokenScope = "", options = {}) {
       hasMore: Object.values(collectionHasMore).some(Boolean),
       holders: compactHolders,
       invalidEvents: compactInvalidEvents,
+      ...(payload.listingAuthority &&
+      typeof payload.listingAuthority === "object" &&
+      !Array.isArray(payload.listingAuthority)
+        ? { listingAuthority: payload.listingAuthority }
+        : {}),
       listings: compactListings,
       mints: [],
       sales: compactSales,
@@ -39870,11 +39911,6 @@ async function tokenSummaryPayload(
     if (storedSummary) {
       return storedSummary;
     }
-    throw freshDataUnavailableError(
-      fresh
-        ? `Fresh hash-bound credit summary is still catching up for ${scope || "all"}.`
-        : `Current hash-bound credit summary is unavailable for ${scope || "all"}.`,
-    );
   }
 
   if (
@@ -69162,6 +69198,7 @@ function registryAuditRawReplayAcceptedEvent(record, transaction, checkpoint) {
     blockIndex,
     confirmed: true,
     createdAt: new Date(blockTime * 1_000).toISOString(),
+    dataBytes: Buffer.byteLength(protocolPayload, "utf8"),
     id: String(parsed?.id ?? listing?.id ?? "").trim().toLowerCase(),
     inputAddresses: inputAddresses(transaction?.vin ?? []),
     kind,
@@ -69178,6 +69215,9 @@ function registryAuditRawReplayAcceptedEvent(record, transaction, checkpoint) {
     priceSats,
     protocolDataBytes: Buffer.byteLength(protocolPayload, "utf8"),
     protocolPayload,
+    protocolPayloadSha256: createHash("sha256")
+      .update(protocolPayload, "utf8")
+      .digest("hex"),
     protocolVout,
     rawRegistryClaims: registryClaims,
     receiveAddress: String(

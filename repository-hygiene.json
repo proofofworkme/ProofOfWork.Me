@@ -35,6 +35,7 @@
     ],
     "ledger-and-audit-evidence": [
       "audits/2026-08-23-read-only-health-data-event-ui-audit.md",
+      "audits/2026-08-28-production-health-data-event-audit.md",
       "BUG_BOUNTY_LEDGER.md",
       "ID_REFUNDS.md",
       "PRODUCTION_REPAIR_SCOPE_2026-08-14.md",

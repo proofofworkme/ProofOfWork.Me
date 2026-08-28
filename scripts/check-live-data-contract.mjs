@@ -1442,7 +1442,7 @@ expectAll("server token reads always expose the AMO activation envelope", tokenR
 
 expectAll("server canonical summaries require hash-bound database snapshots", server, [
   /async function storedCanonicalTokenSummaryPayload\([\s\S]*proofIndexSnapshotPayload\([\s\S]*payloadIndexedThroughBlockHash/,
-  /async function tokenSummaryPayload\([\s\S]*storedCanonicalTokenSummaryPayload\([\s\S]*Fresh hash-bound credit summary is still catching up/,
+  /async function tokenSummaryPayload\([\s\S]*storedCanonicalTokenSummaryPayload\([\s\S]*if \(storedSummary\) \{[\s\S]*return storedSummary;[\s\S]*currentProofIndexTokenPayloadForRead/,
   /async function activitySummaryPayload\([\s\S]*"logSummary"[\s\S]*payloadIndexedThroughBlockHash\(storedSummary\)/,
 ]);
 
@@ -1730,6 +1730,7 @@ expectAll("marketplace summary and tabs keep confirmed sealed inventory canonica
   /const MARKETPLACE_SUMMARY_FRESH_WAIT_MS_UNCAPPED = Number\([\s\S]*const MARKETPLACE_SUMMARY_FRESH_WAIT_MS =[\s\S]*MARKETPLACE_SUMMARY_FRESH_HARD_CAP_MS > 0[\s\S]*MARKETPLACE_SUMMARY_FRESH_WAIT_MS_UNCAPPED/,
   /async function marketplaceSummaryFastFallbackPayload\(network\)[\s\S]*payloadWithFallbackAfterMs\([\s\S]*cachedMarketplaceSummaryPayloadNoRefresh/,
   /async function marketplaceSummaryPayloadWithIndexedMarketOverlay\([\s\S]*indexedTokenMarketSummaryOverlay\([\s\S]*compactTokenSummaryPayload\(tokenState\)/,
+  /async function marketplaceSummaryPayloadWithIndexedMarketOverlay\([\s\S]*const immutableSnapshot =[\s\S]*options\.fast !== true[\s\S]*tokenPayloadWithSpendableActiveListings\([\s\S]*summaryWithDerivedSnapshot\([\s\S]*"marketplace-token-listing-authority"/,
   /async function indexedTokenMarketSummaryOverlay\([\s\S]*tokenMarketLifecycleOverlayFromCreditListings\([\s\S]*proofIndexPayloadCoversConfirmedTip\(/,
   /function tokenMarketLifecycleOverlayFromCreditListings\([\s\S]*closedListings\.push\([\s\S]*sales\.push\(/,
   /async function indexedTokenMarketSummaryOverlay\([\s\S]*proofIndexCreditListingsPayload\(network,\s*tokenScope,\s*\{[\s\S]*limit: TOKEN_LISTING_LIFECYCLE_MATERIALIZATION_LIMIT/,
@@ -1744,6 +1745,7 @@ expectAll("marketplace summary and tabs keep confirmed sealed inventory canonica
   /function workFloorWithIndexedMarketSummaryOverlay\([\s\S]*tokenSaleVolumeSats[\s\S]*marketplaceSaleVolumeSats/,
   /function marketplaceSummaryHasIndexedMarketOverlay\([\s\S]*proof-indexer-token-market-summary-overlay/,
   /function compactTokenSummaryPayload\([\s\S]*sealedActiveListingsByKey[\s\S]*closedTxid[\s\S]*activeListing\.sealTxid/,
+  /function compactTokenSummaryPayload\([\s\S]*payload\.listingAuthority[\s\S]*listingAuthority:\s*payload\.listingAuthority/,
   /function tokenSummaryListings\(items,\s*limit = SUMMARY_MARKET_LIMIT\)[\s\S]*tokenListingHasConfirmedSaleTicketSeal\(listing\)/,
   /const TOKEN_SUMMARY_MARKET_PREVIEW_KEYS = \[[\s\S]*"recordOrdinal",\s*"refundEligible",\s*"relic",/,
   /const TOKEN_SUMMARY_MARKET_PREVIEW_KEYS = \[[\s\S]*"closeTransactionBlockHeight"[\s\S]*"closedBlockHeight"[\s\S]*"closedBlockIndex"[\s\S]*"closedByCanonicalOutpointSpend"[\s\S]*"closedProtocolVout"[\s\S]*"closedRecordOrdinal"/,

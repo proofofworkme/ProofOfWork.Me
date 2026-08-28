@@ -1552,6 +1552,12 @@ function isolatedFunction(path, name, globals = {}) {
         tokenPayloadWithScopedHolderCountFloor: [
           "tokenSummaryWorkAmountStorageModel",
         ],
+        walletScopedTokenPayload: [
+          "walletScopedPayloadUsesAuthoritativeOverlay",
+        ],
+        walletScopedPayloadUsesAuthoritativeOverlay: [
+          "walletTokenOverlayHasExactCheckpoint",
+        ],
         tokenMintHistoryItemKey: ["canonicalTokenReplayPosition"],
         tokenReplayEntriesForRegistry: ["canonicalTokenReplayPosition"],
         tokenPayloadCanPopulateFullStateCache: [
@@ -1570,6 +1576,16 @@ function isolatedFunction(path, name, globals = {}) {
         tokenMarketLifecycleOverlayFromCreditListings: [
           "canonicalEventIdentityDetails",
           "tokenListingLifecycleCapacityStats",
+        ],
+        tokenListingSaleTicketStatus: ["tokenListingSealRank"],
+        tokenListingWithSaleTicketStatus: [
+          "tokenListingSaleTicketStatus",
+        ],
+        tokenListingWithSealFrom: [
+          "tokenListingWithSaleTicketStatus",
+        ],
+        mergeTokenListingRecord: [
+          "tokenListingWithSaleTicketStatus",
         ],
         completeTokenListingHistoryPayload: [
           "logTokenListingLifecycleCapacity",
@@ -1716,8 +1732,22 @@ function isolatedFunction(path, name, globals = {}) {
           tokenClosedListingFromSalePayload: [
             "normalizedLowerText",
           ],
+          tokenListingSaleTicketStatus: ["tokenListingSealRank"],
+          tokenListingWithSaleTicketStatus: [
+            "tokenListingSaleTicketStatus",
+          ],
+          tokenListingWithSealFrom: [
+            "tokenListingWithSaleTicketStatus",
+          ],
+          mergeTokenListingRecord: [
+            "tokenListingWithSaleTicketStatus",
+          ],
           tokenListingFromEventPayload: [
             "canonicalMovementPositionFromEventRow",
+            "tokenListingWithSaleTicketStatus",
+          ],
+          tokenMarketEventRowPayload: [
+            "tokenListingWithSaleTicketStatus",
           ],
           tokenMintFromEventPayload: [
             "canonicalMovementPositionFromEventRow",
@@ -10030,6 +10060,8 @@ check("fresh wallet token reads use exact or bounded canonical coverage", async 
       tokenPayloadMatchesCanonicalIndexedGate: () => false,
       tokenPayloadWithIndexedWalletHolders: async (payload) => payload,
       tokenPayloadWithWalletActiveListings: async (payload) => payload,
+      walletScopedWorkPayloadWithQ16Supply: (payload) => payload,
+      workQ16PayloadWithoutOrphanPriceAliases: (payload) => payload,
       tokenPayloadForRead: async () => {
         broadFallbackReads += 1;
         return {};
@@ -10108,6 +10140,8 @@ check("fresh wallet token reads use exact or bounded canonical coverage", async 
       tokenPayloadWithRecoveredWalletWorkTransfers: async (payload) => payload,
       payloadWithFallbackAfterMs: async (promise) => await promise,
       explicitWorkTokenCloseRecoveryTxs: () => [],
+      walletScopedWorkPayloadWithQ16Supply: (payload) => payload,
+      workQ16PayloadWithoutOrphanPriceAliases: (payload) => payload,
     },
   );
   const fallbackCurrent = await exactFallbackWalletScopedTokenPayload(
@@ -10187,6 +10221,8 @@ check("fresh wallet token reads use exact or bounded canonical coverage", async 
       tokenPayloadWithRecoveredWalletWorkTransfers: async (payload) => payload,
       payloadWithFallbackAfterMs: async (promise) => await promise,
       explicitWorkTokenCloseRecoveryTxs: () => [],
+      walletScopedWorkPayloadWithQ16Supply: (payload) => payload,
+      workQ16PayloadWithoutOrphanPriceAliases: (payload) => payload,
     },
   );
   const lastGoodCurrent = await lastGoodWalletScopedTokenPayload(
@@ -10231,6 +10267,8 @@ check("fresh wallet token reads use exact or bounded canonical coverage", async 
       walletScopedPayloadWithIndexedEnrichment: async (payload) => payload,
       tokenPayloadWithIndexedWalletHolders: async (payload) => payload,
       tokenPayloadWithWalletActiveListings: async (payload) => payload,
+      walletScopedWorkPayloadWithQ16Supply: (payload) => payload,
+      workQ16PayloadWithoutOrphanPriceAliases: (payload) => payload,
     },
   );
   const current = await currentWalletScopedTokenPayload(
@@ -10426,6 +10464,50 @@ check("fresh token reads prefer exact canonical summaries over unavailable pendi
   );
   assert.ok(summaryReadIndex >= 0);
   assert.ok(tokenStateReadIndex > summaryReadIndex);
+});
+
+check("scoped token summaries fall through when stored hash-bound summaries miss", async () => {
+  const tokenSummaryPayload = isolatedFunction(
+    API_PATH,
+    "tokenSummaryPayload",
+    {
+      BOND_TOKEN_IDS: new Set(),
+      SUMMARY_PROOF_INDEX_READ_WAIT_MS: 1,
+      WORK_TOKEN_ID: "work-token-id",
+      compactTokenSummaryPayload: (payload, scope) => ({
+        compact: true,
+        scope,
+        source: payload?.source,
+      }),
+      currentCachedTokenPayloadForRead: async () => null,
+      currentProofIndexTokenPayloadForRead: async () => ({
+        source: "proof-index-current",
+      }),
+      existingCurrentCanonicalLedgerPayloadWithinMs: async () => null,
+      freshDataUnavailableError: (message) => new Error(message),
+      normalizeTokenScope: (value) => String(value ?? "").trim().toLowerCase(),
+      proofIndexReadFeatureEnabled: () => true,
+      proofIndexTokenReadEligibility: () => ({ eligible: true }),
+      storedCanonicalTokenSummaryPayload: async () => null,
+      tokenIndexAddressForNetwork: () => "bc1tokenindex",
+      tokenPayloadForRead: async (_network, scope, fresh) => ({
+        fresh,
+        source: "token-payload-for-read",
+        tokenScope: scope,
+      }),
+    },
+  );
+
+  assert.deepEqual(await tokenSummaryPayload("livenet", "POW", false), {
+    compact: true,
+    scope: "pow",
+    source: "proof-index-current",
+  });
+  assert.deepEqual(await tokenSummaryPayload("livenet", "POW", true), {
+    compact: true,
+    scope: "pow",
+    source: "token-payload-for-read",
+  });
 });
 
 check("fresh public reads can use bounded canonical last-good summaries", async () => {
@@ -12972,6 +13054,7 @@ check("wallet scoped token payload deduplicates lifecycle rows before reserving 
       tokenListingItemKey: (item) => `${item.network}:${item.listingId}`,
       tokenSaleItemKey: (item) => item.txid,
       walletTokenPayloadWithCanonicalDefinitions: (payload) => payload,
+      walletScopedWorkPayloadWithQ16Supply: (payload) => payload,
     },
   );
   const payload = walletScopedTokenPayloadFromOverlay(
@@ -47386,6 +47469,7 @@ check("canonical market listings retain original time with current seal metadata
   assert.equal(item.listing.sealMinerFeeCanonical, true);
   assert.equal(item.listing.sealMinerFeeSats, 777);
   assert.equal(item.listing.status, "sealing");
+  assert.equal(item.listing.saleTicketStatus, "sealed");
   assert.deepEqual(item.listing.saleAuthorization, saleAuthorization);
 });
 
@@ -47485,6 +47569,7 @@ check("WORK V3 market history ignores an unproven listing-table seal", () => {
   assert.equal(canonical.sealTxid, sealTxid);
   assert.equal(canonical.sealConfirmed, true);
   assert.equal(canonical.status, "sealing");
+  assert.equal(canonical.saleTicketStatus, "sealed");
   assert.deepEqual(canonical.saleAuthorization, staleAuthorization);
 });
 
@@ -71996,6 +72081,18 @@ check("reader listing lifecycle merges preserve seal and close positions", () =>
     validTxid(listing?.sealTxid) ? 3 : 0;
   const tokenListingCloseRank = (listing) =>
     validTxid(listing?.closedTxid) ? 3 : 0;
+  const listingWithSaleTicketStatus = (listing) =>
+    listing && typeof listing === "object" && !Array.isArray(listing)
+      ? {
+          ...listing,
+          saleTicketStatus:
+            tokenListingSealRank(listing) >= 2
+              ? "sealed"
+              : tokenListingSealRank(listing) === 1
+                ? "seal-pending"
+                : "unsealed",
+        }
+      : listing;
   const tokenListingWithSealFrom = isolatedFunction(
     READER_PATH,
     "tokenListingWithSealFrom",
@@ -72015,6 +72112,7 @@ check("reader listing lifecycle merges preserve seal and close positions", () =>
     "tokenListingWithSealFrom",
     {
       tokenListingSealRank,
+      tokenListingWithSaleTicketStatus: listingWithSaleTicketStatus,
     },
   );
   const apiTokenListingWithCloseFrom = isolatedFunction(
@@ -72034,6 +72132,7 @@ check("reader listing lifecycle merges preserve seal and close positions", () =>
         String(value ?? "").trim().toLowerCase(),
       preferredTokenListingSealSource,
       tokenListingCloseRank,
+      tokenListingWithSaleTicketStatus: listingWithSaleTicketStatus,
       tokenListingWithCloseFrom,
       tokenListingWithSealFrom,
     },
@@ -72044,6 +72143,7 @@ check("reader listing lifecycle merges preserve seal and close positions", () =>
     {
       preferredTokenListingSealSource,
       tokenListingCloseRank,
+      tokenListingWithSaleTicketStatus: listingWithSaleTicketStatus,
       tokenListingWithCloseFrom: apiTokenListingWithCloseFrom,
       tokenListingWithSealFrom: apiTokenListingWithSealFrom,
     },

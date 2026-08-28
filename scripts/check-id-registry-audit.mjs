@@ -55,6 +55,10 @@ assert.match(
   serverSource,
   /!confirmedHistory\.has\(record\.lastEventTxid\)/u,
 );
+assert.match(
+  serverSource,
+  /function registryAuditRawReplayAcceptedEvent[\s\S]*dataBytes:\s*Buffer\.byteLength\(protocolPayload,\s*"utf8"\)[\s\S]*protocolPayloadSha256:\s*createHash\("sha256"\)[\s\S]*\.update\(protocolPayload,\s*"utf8"\)[\s\S]*\.digest\("hex"\)/u,
+);
 assert.doesNotMatch(
   `${serverSource}\n${readerSource}\n${source}`,
   /ID_REGISTRY_AUDIT_MAX_CONFIRMED_TXS|ID_REGISTRY_AUDIT_MAX_RAW_REPLAY_BLOCKS|ID_REGISTRY_AUDIT_MAX_ROWS|POW_ID_AUDIT_MAX_PAGES|value\.length > 10_000/u,

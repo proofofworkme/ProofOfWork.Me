@@ -806,6 +806,7 @@ type PowTokenListing = {
   priceSats: number;
   registryAddress: string;
   saleAuthorization: PowTokenSaleAuthorization;
+  saleTicketStatus?: "sealed" | "seal-pending" | "unsealed";
   sealAt?: string;
   sealConfirmed?: boolean;
   sealDataBytes?: number;
