@@ -33540,6 +33540,75 @@ function canonicalWorkQ16SummaryUnitPriceDescriptor(value) {
     : null;
 }
 
+function workQ16PayloadWithoutOrphanPriceAliases(payload, tokenScope = "") {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return payload;
+  }
+  const payloadWorkQ16 =
+    normalizeTokenScope(tokenScope) === WORK_TOKEN_ID &&
+    (payload.amountStorageModel === WORK_SUBATOM_PROJECTION_MODEL ||
+      payload.precisionModel === WORK_PRECISION_V2_MODEL ||
+      payload.workDefaults?.amountStorageModel === WORK_SUBATOM_PROJECTION_MODEL);
+  const tokens = Array.isArray(payload.tokens) ? payload.tokens : [];
+  if (tokens.length === 0) {
+    return payload;
+  }
+  let changed = false;
+  const normalizedTokens = tokens.map((token) => {
+    if (!isWorkTokenId(token?.tokenId)) {
+      return token;
+    }
+    const tokenWorkQ16 =
+      payloadWorkQ16 ||
+      token?.amountStorageModel === WORK_SUBATOM_PROJECTION_MODEL ||
+      token?.precisionModel === WORK_PRECISION_V2_MODEL ||
+      String(token?.unitScale ?? "") === WORK_SUBATOM_UNIT_SCALE_TEXT;
+    if (!tokenWorkQ16) {
+      return token;
+    }
+    let next = token;
+    const normalizePriceAlias = (aliasKey, exactKey) => {
+      const exact = canonicalWorkQ16SummaryUnitPriceDescriptor(
+        token?.[exactKey],
+      );
+      if (exact) {
+        if (
+          token?.[aliasKey] === exact.decimal &&
+          token?.[exactKey] === exact
+        ) {
+          return;
+        }
+        if (next === token) {
+          next = { ...token };
+        }
+        next[aliasKey] = exact.decimal;
+        next[exactKey] = exact;
+        return;
+      }
+      if (
+        Object.prototype.hasOwnProperty.call(token, aliasKey) ||
+        Object.prototype.hasOwnProperty.call(token, exactKey)
+      ) {
+        if (next === token) {
+          next = { ...token };
+        }
+        delete next[aliasKey];
+        delete next[exactKey];
+      }
+    };
+    normalizePriceAlias("lastSalePricePerToken", "lastSalePricePerTokenExact");
+    normalizePriceAlias(
+      "lowestAskPricePerToken",
+      "lowestAskPricePerTokenExact",
+    );
+    if (next !== token) {
+      changed = true;
+    }
+    return next;
+  });
+  return changed ? { ...payload, tokens: normalizedTokens } : payload;
+}
+
 function compareWorkQ16SummaryUnitPrices(left, right) {
   const leftCanonical = canonicalWorkQ16SummaryUnitPriceDescriptor(left);
   const rightCanonical = canonicalWorkQ16SummaryUnitPriceDescriptor(right);
@@ -40043,17 +40112,21 @@ async function walletScopedTokenPayload(
     return cachedWalletPayload;
   }
   const withWalletAuthority = (payload) => {
+    const walletPayload =
+      scope === WORK_TOKEN_ID
+        ? workQ16PayloadWithoutOrphanPriceAliases(payload, scope)
+        : payload;
     const authoritativeOverlay =
-      walletScopedPayloadUsesAuthoritativeOverlay(payload);
+      walletScopedPayloadUsesAuthoritativeOverlay(walletPayload);
     if (!requireCurrent && !authoritativeOverlay) {
-      return payload;
+      return walletPayload;
     }
     const checkpointLastGood =
       allowLastGood &&
-      tokenPayloadMatchesCanonicalIndexedGate(payload, canonicalGate) &&
-      !tokenPayloadMatchesCanonicalGate(payload, canonicalGate);
+      tokenPayloadMatchesCanonicalIndexedGate(walletPayload, canonicalGate) &&
+      !tokenPayloadMatchesCanonicalGate(walletPayload, canonicalGate);
     return {
-      ...payload,
+      ...walletPayload,
       authoritativeWallet: true,
       ...(checkpointLastGood
         ? {
