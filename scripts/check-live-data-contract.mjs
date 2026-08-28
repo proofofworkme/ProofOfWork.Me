@@ -1627,6 +1627,8 @@ expectAll("wallet scoped WORK reads do not publish orphan Q16 price aliases", se
   /function tokenPayloadWithReconciledActiveListingCounts\([\s\S]*if \(isWorkTokenId\(tokenId\)\) \{[\s\S]*canonicalWorkQ16SummaryUnitPriceDescriptor\([\s\S]*summary\.lowestAskPricePerTokenExact[\s\S]*token\?\.lowestAskPricePerTokenExact[\s\S]*delete next\.lowestAskPricePerToken/,
   /function compactTokenSummaryPayload\([\s\S]*if \(tokenWorkQ16\) \{[\s\S]*if \(lastSalePricePerTokenExact\)[\s\S]*delete next\.lastSalePricePerToken[\s\S]*if \(lowestAskPricePerTokenExact\)[\s\S]*delete next\.lowestAskPricePerToken/,
   /async function walletScopedTokenPayload\([\s\S]*const authoritativeOverlay =[\s\S]*walletScopedPayloadUsesAuthoritativeOverlay\(payload\)[\s\S]*if \(!requireCurrent && !authoritativeOverlay\)[\s\S]*authoritativeWallet: true/,
+  /async function walletScopedTokenSummaryPayload\([\s\S]*if \(scope === WORK_TOKEN_ID \|\| requireCurrent\) \{[\s\S]*walletScopedTokenPayload\([\s\S]*allowLastGood: options\.allowLastGood === true[\s\S]*requireCurrent[\s\S]*compactTokenSummaryPayload/,
+  /url\.pathname === "\/api\/v1\/token-summary"[\s\S]*walletScopedTokenSummaryPayload\([\s\S]*allowLastGood: freshRead && serveFreshLastGood[\s\S]*requireCurrent: freshRead/,
 ]);
 expectAll("proof index wallet token overlay reads balances and events", proofIndexReader, [
   /export async function proofIndexWalletTokenOverlayPayload\(/,

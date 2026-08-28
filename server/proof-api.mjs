@@ -39823,8 +39823,21 @@ async function walletScopedTokenSummaryPayload(
   network,
   tokenScope = "",
   recoveryAddresses = [],
+  options = {},
 ) {
   const scope = normalizeTokenScope(tokenScope);
+  const requireCurrent =
+    options.requireCurrent === true && network === "livenet";
+  if (scope === WORK_TOKEN_ID || requireCurrent) {
+    return compactTokenSummaryPayload(
+      await walletScopedTokenPayload(network, scope, recoveryAddresses, {
+        allowLastGood: options.allowLastGood === true,
+        canonicalReadGate: options.canonicalReadGate,
+        requireCurrent,
+      }),
+      scope,
+    );
+  }
   const addressScopedPayload = await proofIndexWalletScopedTokenPayloadForRead(
     network,
     scope,
@@ -73511,6 +73524,11 @@ async function handleRequest(request, response) {
             network,
             tokenScope,
             recoveryAddresses,
+            {
+              allowLastGood: freshRead && serveFreshLastGood,
+              canonicalReadGate,
+              requireCurrent: freshRead,
+            },
           )
         : await tokenSummaryPayload(network, tokenScope, freshRead, {
             recoveryAddresses,
