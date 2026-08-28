@@ -1413,3 +1413,85 @@ Not yet prepared for execution. After Step 6, classify each candidate as one of
 backup`, `release provenance`, or `rebuildable scratch`. Only after that
 classification should deletion or `systemctl reset-failed` commands be drafted
 with literal paths and service names.
+
+## Node/API Deploy Execution Addendum
+
+Timestamp: 2026-08-28T18:21:27Z.
+
+Approved execution:
+
+- Step 2 staged commit `2002b1c82af83ab4d9c0d9efad13bfad5e500b7d` on the
+  node VPS under `/opt/proofofwork-api-stage-2002b1c82af8-20260828T180823Z`.
+- Step 3 atomically published that candidate to `/opt/proofofwork-api` and
+  restarted `proofofwork-api.service`,
+  `proofofwork-indexer-worker.service`, and
+  `proofofwork-api-wg.socket`.
+- Git/local/node live checkout were confirmed at
+  `2002b1c82af83ab4d9c0d9efad13bfad5e500b7d`.
+- Release evidence was published under
+  `/data/proofofwork-release-backups/managed/` as
+  `proofofwork-node-release-2002b1c-2002b1c82af8-20260828T180823Z.tgz`
+  with `.sha256` and `.provenance` companions.
+
+Post-deploy health result:
+
+- `proofofwork-api.service`, `proofofwork-indexer-worker.service`,
+  `proofofwork-api-wg.socket`, `bitcoind.service`, `electrs.service`, and
+  PostgreSQL were active.
+- `/health/live` returned `ok: false` because the worker failed the AMO V8 Q16
+  confirmed replay readiness gate with
+  `envelope=false, commitment=true, relational=true, invalidTransitions=0`.
+- `/api/v1/consistency?network=livenet&fresh=1` returned HTTP 503 while the
+  worker was fail-closed.
+
+Read-only root-cause evidence:
+
+- Latest canonical summary snapshots were current, green, and block-hash
+  aligned, but their PostgreSQL `jsonb::text` byte count exceeded the old
+  `8 * 1024 * 1024` SQL eligibility predicate.
+- The same snapshots remained inside the compact JSON writer budget:
+
+| Snapshot | Block | Compact JSON bytes | PostgreSQL jsonb text bytes | Status |
+| --- | ---: | ---: | ---: | --- |
+| `f7b41fdc022c5b5b9d559f18` | 964470 | 8022390 | 8440362 | green |
+| `78f361cee1d1914a3a628027` | 964469 | 8022394 | 8440366 | green |
+| `8cad832a0b3d9f76115ae15e` | 964468 | 8001582 | 8418106 | green |
+| `f194ef515ce7c086b96f4e86` | 964465 | 7967216 | 8381988 | green |
+
+Conclusion:
+
+- This was a byte-measurement mismatch between compact canonical JSON and
+  PostgreSQL `jsonb::text`, not a ledger math, event replay, relational parity,
+  Core tip, or commitment failure.
+- Rollback alone would probably not restore green health because the previous
+  code used the same SQL-text `8 MiB` predicate and the live canonical summary
+  had already crossed it at block 964466.
+
+Prepared local-only hotfix:
+
+- Keep the writer's compact canonical summary budget at `8 MiB`.
+- Add a separate `9 MiB` SQL/jsonb text eligibility ceiling for worker,
+  reader, backfill, and parity selectors.
+- Preserve fail-closed shape, root-key, hash, consistency, Q16 model, and
+  transition-commitment checks.
+- Read-only production dry run confirmed the latest green summaries would be
+  eligible under the new SQL text ceiling.
+
+Local hotfix checks completed:
+
+- `node --check scripts/run-proof-indexer-worker.mjs`
+- `node --check server/db/proof-index-reader.mjs`
+- `node --check scripts/backfill-proof-indexer.mjs`
+- `node --check scripts/check-proof-indexer-parity.mjs`
+- `npm run check:worker-containment`
+- `npm run check:api-truth`
+- `npm run check:live-data`
+- `npm run check:index-recovery-behavior`
+- `npm run check:node-ops`
+- `npm run check:hardening`
+- `npm run build`
+- `npm run hygiene:fix`
+- `npm run hygiene:check`
+- `git diff --check`
+
+The hotfix is not committed, pushed, staged, published, or restarted yet.

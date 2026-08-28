@@ -422,6 +422,9 @@ const REQUEST_RETRIES = Number(process.env.POW_INDEX_FETCH_RETRIES ?? 4);
 const CANONICAL_SUMMARY_RESPONSE_MAX_BYTES = 64 * 1024 * 1024;
 const LEDGER_SNAPSHOT_MAX_BYTES = 8 * 1024 * 1024;
 const CANONICAL_SUMMARY_SNAPSHOT_MAX_BYTES = 8 * 1024 * 1024;
+// PostgreSQL jsonb::text is larger than compact JSON because it inserts
+// separator spaces; compact JSON remains the canonical storage budget.
+const CANONICAL_SUMMARY_SNAPSHOT_SQL_TEXT_MAX_BYTES = 9 * 1024 * 1024;
 const CANONICAL_SUMMARY_SNAPSHOT_ROOT_KEYS = Object.freeze([
   "checks",
   "generatedAt",
@@ -14989,7 +14992,7 @@ function canonicalQ16SummarySnapshotSqlEligibility(snapshotAlias) {
     (key) => `'${key}'`,
   ).join(", ");
   return `
-    octet_length(${alias}.payload::text) <= ${CANONICAL_SUMMARY_SNAPSHOT_MAX_BYTES}
+    octet_length(${alias}.payload::text) <= ${CANONICAL_SUMMARY_SNAPSHOT_SQL_TEXT_MAX_BYTES}
     AND NOT EXISTS (
       SELECT 1
       FROM jsonb_object_keys(

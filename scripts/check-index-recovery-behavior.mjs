@@ -69070,6 +69070,7 @@ check("WORK precision V2 readiness cache is exact, positive-only, and coalesced"
       workPrecisionV2ReadinessValueSha256: readinessValueSha256,
       stableWorkPrecisionJson: stableReadinessJson,
       CANONICAL_SUMMARY_SNAPSHOT_MAX_BYTES: 8 * 1024 * 1024,
+      CANONICAL_SUMMARY_SNAPSHOT_SQL_TEXT_MAX_BYTES: 9 * 1024 * 1024,
       WORK_AMO_V8_BLOCK_SEQUENCER_MODEL: transitionModel,
       WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL: tokenStateModel,
       WORK_PRECISION_V2_READINESS_CACHE_TTL_MS: 30_000,
@@ -76835,6 +76836,11 @@ check("canonical summary persistence is compact and storage-budgeted", async () 
     "canonicalQ16SummarySnapshotSqlEligibility",
   );
   assert.match(eligibilitySource, /octet_length\([^)]*payload::text\)/u);
+  assert.match(
+    eligibilitySource,
+    /CANONICAL_SUMMARY_SNAPSHOT_SQL_TEXT_MAX_BYTES/u,
+    "SQL jsonb text eligibility must use its own overhead-aware byte ceiling",
+  );
   assert.doesNotMatch(eligibilitySource, /pg_column_size/u);
   assert.match(
     eligibilitySource,

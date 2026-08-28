@@ -1555,7 +1555,7 @@ expect(
     }) === false &&
     workerWorkPrecisionSnapshotReady({
       ...workerFixtureSnapshot,
-      payloadBytes: 8 * 1024 * 1024 + 1,
+      payloadBytes: 9 * 1024 * 1024 + 1,
     }, {
       latestTransition: workerFixtureLatestTransition,
       tipHash: workerFixtureTipHash,

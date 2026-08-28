@@ -270,6 +270,9 @@ const WORK_Q16_LEDGER_SNAPSHOT_STATE_KEYS = Object.freeze([
   "workTokenStateModel",
 ]);
 const CANONICAL_SUMMARY_SNAPSHOT_MAX_BYTES = 8 * 1024 * 1024;
+// The writer enforces the compact JSON budget above. PostgreSQL jsonb::text
+// inserts separator spaces, so SQL eligibility needs a distinct text ceiling.
+const CANONICAL_SUMMARY_SNAPSHOT_SQL_TEXT_MAX_BYTES = 9 * 1024 * 1024;
 const CANONICAL_SUMMARY_SNAPSHOT_ROOT_KEYS = Object.freeze([
   "checks",
   "generatedAt",
@@ -1891,7 +1894,8 @@ export function workerWorkPrecisionSnapshotReady(
   );
   return Boolean(
     exactJsonInteger(snapshot.payloadBytes, { minimum: 1 }) &&
-      snapshot.payloadBytes <= CANONICAL_SUMMARY_SNAPSHOT_MAX_BYTES &&
+      snapshot.payloadBytes <=
+        CANONICAL_SUMMARY_SNAPSHOT_SQL_TEXT_MAX_BYTES &&
       payloadRootKeys.length > 0 &&
       payloadRootKeys.length === new Set(payloadRootKeys).size &&
       payloadRootKeys.every((key) =>
@@ -3899,7 +3903,7 @@ async function assertWorkPrecisionReplayReady(
             WHERE snapshot.network = $1
               AND snapshot.generated_at >= $6::timestamptz
               AND octet_length(snapshot.payload::text) <=
-                ${CANONICAL_SUMMARY_SNAPSHOT_MAX_BYTES}
+                ${CANONICAL_SUMMARY_SNAPSHOT_SQL_TEXT_MAX_BYTES}
               AND NOT EXISTS (
                 SELECT 1
                 FROM jsonb_object_keys(

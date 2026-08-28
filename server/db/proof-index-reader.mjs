@@ -375,6 +375,9 @@ const WORK_Q16_LEDGER_SNAPSHOT_STATE_KEYS = Object.freeze([
   "workTokenStateModel",
 ]);
 const CANONICAL_SUMMARY_SNAPSHOT_MAX_BYTES = 8 * 1024 * 1024;
+// The writer enforces compact JSON bytes. SQL selectors measure jsonb::text,
+// which includes PostgreSQL separator spaces, so keep that envelope separate.
+const CANONICAL_SUMMARY_SNAPSHOT_SQL_TEXT_MAX_BYTES = 9 * 1024 * 1024;
 const CANONICAL_SUMMARY_SNAPSHOT_ROOT_KEYS = Object.freeze([
   "checks",
   "generatedAt",
@@ -3352,7 +3355,7 @@ function canonicalQ16SummarySnapshotSqlEligibility(snapshotAlias) {
     (key) => `'${key}'`,
   ).join(", ");
   return `
-    octet_length(${alias}.payload::text) <= ${CANONICAL_SUMMARY_SNAPSHOT_MAX_BYTES}
+    octet_length(${alias}.payload::text) <= ${CANONICAL_SUMMARY_SNAPSHOT_SQL_TEXT_MAX_BYTES}
     AND NOT EXISTS (
       SELECT 1
       FROM jsonb_object_keys(
@@ -6021,7 +6024,8 @@ function workPrecisionV2ReadinessFingerprintFromRows(
     !snapshotGeneratedAt ||
     !Number.isSafeInteger(snapshotPayloadBytes) ||
     snapshotPayloadBytes < 1 ||
-    snapshotPayloadBytes > CANONICAL_SUMMARY_SNAPSHOT_MAX_BYTES ||
+    snapshotPayloadBytes >
+      CANONICAL_SUMMARY_SNAPSHOT_SQL_TEXT_MAX_BYTES ||
     row.snapshot_work_amount_storage_model !==
       WORK_SUBATOM_PROJECTION_MODEL ||
     normalizedLowerText(snapshotSourceHashes.blockScan) !== tipHash ||
@@ -8717,7 +8721,8 @@ async function proofIndexWorkPrecisionV2MigrationReadinessFullAudit(
     snapshotHash === tipHash &&
     Number.isSafeInteger(snapshotPayloadBytes) &&
     snapshotPayloadBytes > 0 &&
-    snapshotPayloadBytes <= CANONICAL_SUMMARY_SNAPSHOT_MAX_BYTES &&
+    snapshotPayloadBytes <=
+      CANONICAL_SUMMARY_SNAPSHOT_SQL_TEXT_MAX_BYTES &&
     row.snapshot_work_amount_storage_model ===
       WORK_SUBATOM_PROJECTION_MODEL &&
     snapshotTokenStateReady;

@@ -397,7 +397,7 @@ async function runChecks() {
   );
   assert.match(
     workPrecisionReplayReadySource,
-    /octet_length\(snapshot\.payload::text\) <=[\s\S]*CANONICAL_SUMMARY_SNAPSHOT_MAX_BYTES[\s\S]*jsonb_object_keys[\s\S]*canonicalSummarySnapshotRootKeysSql/u,
+    /octet_length\(snapshot\.payload::text\) <=[\s\S]*CANONICAL_SUMMARY_SNAPSHOT_SQL_TEXT_MAX_BYTES[\s\S]*jsonb_object_keys[\s\S]*canonicalSummarySnapshotRootKeysSql/u,
     "Q16 worker readiness must enforce the canonical reader's payload-size and root-key envelope",
   );
   assert.match(
@@ -1218,7 +1218,7 @@ async function runChecks() {
       "oversized canonical snapshot",
       {
         ...replaySnapshot,
-        payloadBytes: 8 * 1024 * 1024 + 1,
+        payloadBytes: 9 * 1024 * 1024 + 1,
       },
     ],
     [
