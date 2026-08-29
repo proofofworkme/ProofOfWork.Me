@@ -3192,11 +3192,11 @@ install -d -o root -g root -m 0700 /var/tmp/proofofwork-deploy
 systemctl daemon-reload
 ```
 
-Build the 13 primary surfaces from one detached source checkout and copy
+Build the 14 primary surfaces from one detached source checkout and copy
 Computer byte-for-byte as the `nft` compatibility alias. Prepare one complete
 staged clone of `/var/www` at the publisher's release-bound path, remove the
 copied `.proofofwork-ui-release` manifest (the publisher recreates it from the
-new archive and source attestation), and replace only the 14 managed roots in
+new archive and source attestation), and replace only the 15 managed roots in
 that clone. A fresh managed output must also copy
 the immediate prior asset dependency closure under the original relative paths.
 The closure begins with same-surface root-relative references (including
@@ -3224,12 +3224,12 @@ The root-only stager is the canonical constructor for that full candidate. It
 takes the canonical live `/var/www`, an exact release-bound `surfaces` payload,
 and the exact release-bound stage path. It copies every non-managed passthrough
 path with its type, mode, uid, gid, and bytes; removes the copied active
-manifest; replaces exactly the 14 managed roots; and copies only the bounded
+manifest; replaces exactly the 15 managed roots; and copies only the bounded
 immediate-prior dependency closure above. It rejects links, special files,
 nested mounts, unsafe modes or ownership, differing path collisions, a
 Computer/NFT mismatch, concurrent live/payload changes, and any pre-existing
 stage target. Before copying, it counts the common `surfaces/` archive root,
-all 14 surface roots, and every descendant directory or regular file and
+all 15 surface roots, and every descendant directory or regular file and
 requires no more than 10,000 total entries and 1 GiB of regular-file bytes. It
 repeats the same provenance-equivalent aggregate proof after adding the prior
 compatibility closure, so neither the incoming payload nor the final archive
@@ -3246,7 +3246,7 @@ testing stale-asset omission, collision rejection, and link rejection.
 The following is the exact no-Node-on-UI-host release procedure. Run the first
 block on the trusted build host only after the approved release is committed.
 It creates a fresh detached checkout, installs the lockfile without lifecycle
-scripts, keeps every build output outside that checkout, builds all 13 primary
+scripts, keeps every build output outside that checkout, builds all 14 primary
 surfaces, and copies Computer as NFT. Do not build from the working tree or
 reuse a prior `dist` directory.
 
@@ -3413,7 +3413,7 @@ the historical root has no valid v3 or legacy evidence, stop here. Preserve an
 invalid existing manifest with an exact checksum using the incident procedure
 below, then execute the one-time legacy bytes-only bootstrap block; do not
 invent a commit claim for mixed historical bytes. After `verify-rollback`
-passes, construct the candidate and archive the candidate's exact 14 managed
+passes, construct the candidate and archive the candidate's exact 15 managed
 roots, not the clean input payload:
 
 ```bash
@@ -3447,7 +3447,7 @@ if [[ ! -d "${archive_root}" || -L "${archive_root}" ||
 fi
 archive_payload="$(mktemp -d "${deploy_root}/.archive-${release_id}.XXXXXXXXXX")"
 install -d -o root -g root -m 0700 "${archive_payload}/surfaces"
-for surface in activity browser computer desktop growth id inception infinity landing marketplace nft token wallet work; do
+for surface in activity browser boost computer desktop growth id inception infinity landing marketplace nft token wallet work; do
   cp --archive -- "${stage_root}/proofofwork-${surface}" \
     "${archive_payload}/surfaces/${surface}"
 done
@@ -3504,12 +3504,12 @@ systemctl enable --now proofofwork-ui-release-provenance.timer \
 ```
 
 The archive must be a gzip-compressed tar with exactly one top-level
-`surfaces/` directory and exactly the 14 named surface directories beneath it;
+`surfaces/` directory and exactly the 15 named surface directories beneath it;
 it must not contain `/var/www` passthrough data or the active manifest. The v3
 root manifest and archive-adjacent `.provenance` must be byte-equal and bind the
 release id, full commit and tree, detached-source model, recursive
 `node_modules` entry count/bytes/digest, archive name/digest/payload model, all
-14 surface counts and mode-sensitive digests, Computer/NFT identity, and the
+15 surface counts and mode-sensitive digests, Computer/NFT identity, and the
 post-exchange deployment time. It is exact source-and-served-byte evidence, not
 a claim that the build itself was reproducible.
 
@@ -3517,7 +3517,7 @@ Immediately after publication, run the following from a host outside the UI
 VPS. It checksum-verifies the retained archive, requires the active and adjacent
 provenance to be byte-equal, and byte-compares every archived regular file --
 including the retained prior dependency closure -- with its HTTPS response on
-all 14 canonical surface hostnames. It separately checks each hostname root and
+all 15 canonical surface hostnames. It separately checks each hostname root and
 the apex-to-`www` redirect. Do not classify the rollback root or release scratch
 as removable until this is green.
 
@@ -3839,7 +3839,7 @@ done
 payload_root="$(mktemp --directory /var/tmp/proofofwork-ui-rollback-evidence.XXXXXXXXXX)"
 payload_identity="$(stat --format='%d:%i' -- "${payload_root}")"
 install -d -o root -g root -m 0700 "${payload_root}/surfaces"
-for surface in activity browser computer desktop growth id inception infinity landing marketplace nft token wallet work; do
+for surface in activity browser boost computer desktop growth id inception infinity landing marketplace nft token wallet work; do
   cp --archive -- "/var/www/proofofwork-${surface}" "${payload_root}/surfaces/${surface}"
 done
 
