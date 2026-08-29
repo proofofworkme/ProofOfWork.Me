@@ -89,6 +89,23 @@ declare -A protected_archives=()
 ui_surfaces=(
   activity
   browser
+  boost
+  computer
+  desktop
+  growth
+  id
+  inception
+  infinity
+  landing
+  marketplace
+  nft
+  token
+  wallet
+  work
+)
+legacy_ui_surfaces=(
+  activity
+  browser
   computer
   desktop
   growth
@@ -108,6 +125,7 @@ protect_ui_manifest_archive() {
   local manifest_line key value manifest_format manifest_archive manifest_digest
   local checksum_file checksum_digest="" checksum_name="" allowed_key surface
   local -a checksum_lines=()
+  local -a manifest_surfaces=("${ui_surfaces[@]}")
   declare -A manifest_values=()
   declare -A manifest_seen=()
   if ! evidence_file_is_safe "${manifest}"; then
@@ -200,7 +218,11 @@ protect_ui_manifest_archive() {
     echo "Refusing retention without archive-bound ${label} UI provenance." >&2
     exit 2
   fi
-  for surface in "${ui_surfaces[@]}"; do
+  if [[ -z "${manifest_values[surface.boost.file_count]:-}" &&
+    -z "${manifest_values[surface.boost.sha256]:-}" ]]; then
+    manifest_surfaces=("${legacy_ui_surfaces[@]}")
+  fi
+  for surface in "${manifest_surfaces[@]}"; do
     if [[ ! "${manifest_values[surface.${surface}.file_count]:-}" =~ ^[1-9][0-9]*$ ||
       ! "${manifest_values[surface.${surface}.sha256]:-}" =~ ^[0-9a-f]{64}$ ]]; then
       echo "Refusing retention with incomplete ${label} UI surface evidence: ${surface}" >&2
