@@ -37,6 +37,7 @@ SURFACES = (
     "wallet",
     "work",
 )
+LEGACY_SURFACES = tuple(surface for surface in SURFACES if surface != "boost")
 COMPATIBILITY_MODEL = "proofofwork-ui-prior-asset-closure-v1"
 MAXIMUM_INDEX_BYTES = 2 * 1024 * 1024
 MAXIMUM_ASSET_BYTES = 64 * 1024 * 1024
@@ -344,10 +345,21 @@ def payload_surface_fingerprint(
     )
 
 
-def managed_fingerprint(root: Path, expected_owner: int) -> tuple[tuple[str, tuple[int, int, str]], ...]:
+def live_surface_names(root: Path) -> tuple[str, ...]:
+    boost = root / "proofofwork-boost"
+    if not os.path.lexists(boost):
+        return LEGACY_SURFACES
+    return SURFACES
+
+
+def managed_fingerprint(
+    root: Path,
+    expected_owner: int,
+    surfaces: tuple[str, ...] = SURFACES,
+) -> tuple[tuple[str, tuple[int, int, str]], ...]:
     return tuple(
         (surface, surface_fingerprint(root, surface, expected_owner))
-        for surface in SURFACES
+        for surface in surfaces
     )
 
 
@@ -618,14 +630,18 @@ def copy_prior_file(
     )
 
 
-def copy_prior_asset_compatibility(live_root: Path, stage_root: Path) -> tuple[int, int]:
+def copy_prior_asset_compatibility(
+    live_root: Path,
+    stage_root: Path,
+    surfaces: tuple[str, ...] = SURFACES,
+) -> tuple[int, int]:
     counters = {
         "dependencies": 0,
         "reference_edges": 0,
         "reference_candidates": 0,
         "total_bytes": 0,
     }
-    for surface in SURFACES:
+    for surface in surfaces:
         surface_relative = f"proofofwork-{surface}"
         live_surface = live_root / surface_relative
         stage_surface = stage_root / surface_relative
@@ -869,7 +885,12 @@ def main() -> int:
             www_details.st_uid,
             www_details.st_gid,
         )
-        live_managed_before = managed_fingerprint(www_root, expected_owner)
+        live_surfaces = live_surface_names(www_root)
+        live_managed_before = managed_fingerprint(
+            www_root,
+            expected_owner,
+            live_surfaces,
+        )
         live_passthrough_before = passthrough_fingerprint(www_root)
         (
             payload_before,
@@ -908,9 +929,12 @@ def main() -> int:
 
         for surface in SURFACES:
             destination = candidate / f"proofofwork-{surface}"
-            if not path_is_canonical_directory(destination):
+            if surface in live_surfaces and not path_is_canonical_directory(destination):
                 fail(f"Copied managed UI root is not a canonical directory: {destination}")
-            shutil.rmtree(destination)
+            if surface in live_surfaces:
+                shutil.rmtree(destination)
+            elif os.path.lexists(destination):
+                fail(f"Copied new managed UI root unexpectedly exists: {destination}")
             run_checked(
                 [
                     "/usr/bin/cp",
@@ -943,6 +967,7 @@ def main() -> int:
         dependency_count, dependency_bytes = copy_prior_asset_compatibility(
             www_root,
             candidate,
+            live_surfaces,
         )
 
         candidate_details = canonical_safe_directory(candidate, "Staged UI root", expected_owner)
@@ -990,7 +1015,12 @@ def main() -> int:
             current_www.st_gid,
         ) != root_metadata:
             fail("Live /var/www metadata changed while staging.")
-        if managed_fingerprint(www_root, expected_owner) != live_managed_before:
+        if live_surface_names(www_root) != live_surfaces:
+            fail("Live managed UI surface set changed while staging.")
+        if (
+            managed_fingerprint(www_root, expected_owner, live_surfaces)
+            != live_managed_before
+        ):
             fail("Live managed UI surfaces changed while staging.")
         if passthrough_fingerprint(www_root) != live_passthrough_before:
             fail("Live non-release /var/www content changed while staging.")

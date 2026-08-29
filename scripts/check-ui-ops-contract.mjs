@@ -1485,12 +1485,13 @@ try {
     POW_UI_DEPLOY_LOCK: provenanceEnvironment.POW_UI_DEPLOY_LOCK,
   };
   const runStager = (releaseId, environment = stagerEnvironment) => {
+    const stagingRoot = environment.POW_UI_STAGE_STAGING_ROOT ?? fixture;
     const surfacesRoot = join(
-      fixture,
+      stagingRoot,
       `proofofwork-ui-surfaces-${releaseId}`,
       "surfaces",
     );
-    const stagedRoot = join(fixture, `proofofwork-www-stage-${releaseId}`);
+    const stagedRoot = join(stagingRoot, `proofofwork-www-stage-${releaseId}`);
     const result = spawnSync(
       "/usr/bin/python3",
       [
@@ -1510,9 +1511,9 @@ try {
     );
     return { result, stagedRoot, surfacesRoot };
   };
-  const prepareCleanSurfaces = (releaseId) => {
+  const prepareCleanSurfaces = (releaseId, stagingRoot = fixture) => {
     const payloadRoot = join(
-      fixture,
+      stagingRoot,
       `proofofwork-ui-surfaces-${releaseId}`,
     );
     const surfacesRoot = join(payloadRoot, "surfaces");
@@ -1847,6 +1848,62 @@ try {
   rmSync(stagerArchive.payloadRoot, { recursive: true });
   unlinkSync(stagerArchive.archivePath);
   unlinkSync(`${stagerArchive.archivePath}.sha256`);
+
+  const preBoostFixture = mkdtempSync(join(tmpdir(), "pow-ui-preboost-"));
+  try {
+    const preBoostWww = join(preBoostFixture, "www");
+    mkdirSync(preBoostWww, { recursive: true, mode: 0o755 });
+    chmodSync(preBoostWww, 0o755);
+    for (const surface of surfaces.filter((value) => value !== "boost")) {
+      const directory = join(preBoostWww, `proofofwork-${surface}`);
+      mkdirSync(join(directory, "assets"), { recursive: true, mode: 0o755 });
+      chmodSync(directory, 0o755);
+      chmodSync(join(directory, "assets"), 0o755);
+      writeFileSync(
+        join(directory, "index.html"),
+        `<p>pre-boost-${surface}</p><script src="/assets/pre-boost-${surface}.js"></script>`,
+        { mode: 0o644 },
+      );
+      writeFileSync(
+        join(directory, "assets", `pre-boost-${surface}.js`),
+        `export const prior = ${JSON.stringify(surface)};\n`,
+        { mode: 0o644 },
+      );
+      chmodSync(join(directory, "index.html"), 0o644);
+      chmodSync(join(directory, "assets", `pre-boost-${surface}.js`), 0o644);
+    }
+    rmSync(join(preBoostWww, "proofofwork-nft"), { recursive: true });
+    cpSync(
+      join(preBoostWww, "proofofwork-computer"),
+      join(preBoostWww, "proofofwork-nft"),
+      { recursive: true, preserveTimestamps: true },
+    );
+    runChecked("/usr/bin/chmod", [
+      "--recursive",
+      "go-w",
+      join(preBoostWww, "proofofwork-nft"),
+    ]);
+    const preBoostReleaseId = "stager-pre-boost-contract";
+    prepareCleanSurfaces(preBoostReleaseId, preBoostFixture);
+    const preBoostStaged = runStager(preBoostReleaseId, {
+      POW_UI_STAGE_WWW_ROOT: preBoostWww,
+      POW_UI_STAGE_STAGING_ROOT: preBoostFixture,
+      POW_UI_ALLOW_TEST_ROOTS: "1",
+      POW_UI_DEPLOY_LOCK: join(preBoostFixture, "deploy.lock"),
+    });
+    assert.equal(preBoostStaged.result.status, 0, preBoostStaged.result.stderr);
+    assert.match(preBoostStaged.result.stdout, /ui_release_stage status=staged/u);
+    assert.ok(
+      existsSync(join(preBoostStaged.stagedRoot, "proofofwork-boost", "index.html")),
+      "A pre-Boost live root must stage the new Boost surface from the release payload.",
+    );
+    assert.ok(
+      !existsSync(join(preBoostWww, "proofofwork-boost")),
+      "The pre-Boost live root fixture should remain a true 14-surface root.",
+    );
+  } finally {
+    rmSync(preBoostFixture, { recursive: true, force: true });
+  }
 
   const boundaryReleaseId = "stager-payload-boundary";
   const boundaryPayload = prepareCleanSurfaces(boundaryReleaseId);
