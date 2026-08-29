@@ -3902,6 +3902,18 @@ function evaluatePwt(record, context) {
     : evaluateWorkPwt(record, context, parsed);
 }
 
+function evaluatePwb() {
+  return {
+    derived: [],
+    output: null,
+    parsed: null,
+    reasonCode: "",
+    semanticKind: "boost-event",
+    stateDelta: emptyStateDelta(),
+    valid: true,
+  };
+}
+
 function evaluateRecord(record, context) {
   if (record.protocol === "pwa1") {
     return evaluatePwa(record, context);
@@ -3914,6 +3926,9 @@ function evaluateRecord(record, context) {
   }
   if (record.protocol === "pwt1") {
     return evaluatePwt(record, context);
+  }
+  if (record.protocol === "pwb1") {
+    return evaluatePwb();
   }
   return invalidOutcome(
     "work-amo-v5-raw-protocol-unsupported",
@@ -3936,7 +3951,7 @@ function canonicalRecord(record) {
   if (
     !txid ||
     !position ||
-    !["pwa1", "pwm1", "pwid1", "pwt1"].includes(protocol) ||
+    !["pwa1", "pwm1", "pwid1", "pwb1", "pwt1"].includes(protocol) ||
     !record?.tx ||
     !transactionMinerFeeSats ||
     (
@@ -5182,7 +5197,9 @@ export function replayWorkAmoV5RawBlock({
         });
         workSendsByTxid.set(record.txid, sends);
       }
-      validTxids.add(record.txid);
+      if (record.protocol !== "pwb1") {
+        validTxids.add(record.txid);
+      }
       normalized.networkValueBeforeQ8 =
         applied.networkValueBeforeQ8;
       normalized.networkValueAfterQ8 =

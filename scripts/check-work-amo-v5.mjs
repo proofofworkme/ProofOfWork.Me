@@ -3231,7 +3231,7 @@ assert.equal(
   ]).sha256,
 );
 
-const mixedProtocols = ["pwm1", "pwa1", "pwid1", "pwt1"];
+const mixedProtocols = ["pwm1", "pwa1", "pwid1", "pwb1", "pwt1"];
 const mixedProtocolEvents = mixedProtocols.map((protocol, index) => ({
   feeSats: String(index + 1),
   kind: `display-label-${index}`,
@@ -3253,9 +3253,9 @@ const mixedProtocolEvents = mixedProtocols.map((protocol, index) => ({
     hash("c"),
   ),
   protocol,
-  reasonCode: index === 3 ? "fixture-invalid" : "",
+  reasonCode: protocol === "pwt1" ? "fixture-invalid" : "",
   stateDelta:
-    index === 3
+    protocol === "pwt1"
       ? {
           baseContributions: [],
           creditFixedQ8: "0",
@@ -3275,12 +3275,13 @@ const mixedCommitment =
   workAmoV5EventSetCommitment(mixedProtocolEvents);
 assert.deepEqual(
   mixedProtocols.map((protocol, index) =>
-    workAmoV5ConsensusEventKind(protocol, index !== 3),
+    workAmoV5ConsensusEventKind(protocol, protocol !== "pwt1"),
   ),
   [
     "pwm1-valid",
     "pwa1-valid",
     "pwid1-valid",
+    "pwb1-valid",
     "pwt1-invalid",
   ],
 );
@@ -5258,6 +5259,101 @@ assert.equal(rawZeroCandidateReplay.feeTransitions.length, 0);
 assert.match(
   rawZeroCandidateReplay.blockDescriptorCommitment.sha256,
   /^[0-9a-f]{64}$/u,
+);
+
+const rawBoostOnlyMessage =
+  `pwb1:post:${Buffer.from(
+    JSON.stringify({
+      text: "raw boost replay",
+      v: 1,
+    }),
+    "utf8",
+  ).toString("base64url")}`;
+const rawBoostOnlyTx = {
+  vin: [
+    {
+      prevout: {
+        scriptpubkey_address: rawAdversarialActor,
+      },
+      txid: hash("6"),
+      vout: 0,
+    },
+  ],
+  vout: [
+    {
+      scriptpubkey_address: rawAdversarialActor,
+      value: 546,
+    },
+    {
+      scriptpubkey:
+        rawAdversarialOpReturnScript(rawBoostOnlyMessage),
+      value: 0,
+    },
+  ],
+};
+const rawBoostOnlyTxid =
+  rawAdversarialHydratedTransaction({
+    feeSats: 31,
+    tx: rawBoostOnlyTx,
+  }).txid;
+const rawBoostOnlyRecord = rawAdversarialRecord({
+  blockHash: rawAdversarialBlockHash,
+  blockHeight: rawAdversarialBlockHeight,
+  blockTransactionIndex: 1,
+  feeSats: 31,
+  message: rawBoostOnlyMessage,
+  protocol: "pwb1",
+  protocolVout: 1,
+  tx: rawBoostOnlyTx,
+  txid: rawBoostOnlyTxid,
+});
+const rawBoostOnlyReplay =
+  replayRawAdversarialRecords([rawBoostOnlyRecord]);
+assert.equal(rawBoostOnlyReplay.protocolRecordCount, 1);
+assert.equal(rawBoostOnlyReplay.rawProtocolCandidateCount, 1);
+assert.equal(rawBoostOnlyReplay.transactionCount, 1);
+assert.equal(rawBoostOnlyReplay.events.length, 1);
+assert.equal(rawBoostOnlyReplay.events[0].protocol, "pwb1");
+assert.equal(rawBoostOnlyReplay.events[0].valid, true);
+assert.equal(
+  rawBoostOnlyReplay.events[0].semanticKind,
+  "boost-event",
+);
+assert.deepEqual(
+  rawBoostOnlyReplay.events[0].stateDelta,
+  {
+    baseContributions: [],
+    creditFixedQ8: "0",
+    creditFixedSats: "0",
+    economicOutputs: [],
+  },
+);
+assert.equal(rawBoostOnlyReplay.feeTransitions.length, 1);
+assert.equal(rawBoostOnlyReplay.feeTransitions[0].valid, false);
+assert.equal(
+  rawBoostOnlyReplay.feeTransitions[0].creditFixedQ8Added,
+  "0",
+);
+assert.deepEqual(
+  rawBoostOnlyReplay.genericTokenStateCommitment,
+  rawAdversarialOpeningEconomicState.genericTokenStateCommitment,
+);
+assert.deepEqual(
+  rawBoostOnlyReplay.idStateCommitment,
+  rawAdversarialOpeningEconomicState.idStateCommitment,
+);
+assert.deepEqual(
+  rawBoostOnlyReplay.tokenStateCommitment,
+  rawAdversarialOpeningEconomicState.tokenStateCommitment,
+);
+assert.deepEqual(
+  {
+    ...rawBoostOnlyReplay.economicState,
+    throughBlockHash: rawAdversarialOpeningEconomicState.throughBlockHash,
+    throughBlockHeight:
+      rawAdversarialOpeningEconomicState.throughBlockHeight,
+  },
+  rawAdversarialOpeningEconomicState,
 );
 
 const rawSegwitWitnessReservedValue = "11".repeat(32);

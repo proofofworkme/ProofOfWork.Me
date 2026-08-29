@@ -3759,7 +3759,7 @@ export function workAmoV5CanonicalPayloadCommitment(value) {
 
 export function workAmoV5ConsensusEventKind(protocol, valid) {
   const normalizedProtocol = normalizedLowerText(protocol);
-  return ["pwm1", "pwa1", "pwid1", "pwt1"].includes(
+  return ["pwm1", "pwa1", "pwid1", "pwb1", "pwt1"].includes(
     normalizedProtocol,
   ) && typeof valid === "boolean"
     ? `${normalizedProtocol}-${valid ? "valid" : "invalid"}`
@@ -4151,7 +4151,7 @@ export function workAmoV5EventSetCommitment(events) {
     if (
       !position ||
       !txid ||
-      !["pwm1", "pwa1", "pwid1", "pwt1"].includes(protocol) ||
+      !["pwm1", "pwa1", "pwid1", "pwb1", "pwt1"].includes(protocol) ||
       !kind ||
       typeof event?.valid !== "boolean" ||
       !transactionMinerFeeSats ||
