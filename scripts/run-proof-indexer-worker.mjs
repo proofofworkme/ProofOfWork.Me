@@ -3,6 +3,10 @@ import { createHash } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import {
+  canonicalSummarySnapshotMaxBytes,
+  canonicalSummarySnapshotSqlTextMaxBytes,
+} from "../server/canonical-summary-budget.mjs";
 import { createProofIndexPool } from "../server/db/postgres.mjs";
 import {
   WORK_ATOMIC_PROJECTION_MODEL,
@@ -269,10 +273,12 @@ const WORK_Q16_LEDGER_SNAPSHOT_STATE_KEYS = Object.freeze([
   "unitScale",
   "workTokenStateModel",
 ]);
-const CANONICAL_SUMMARY_SNAPSHOT_MAX_BYTES = 8 * 1024 * 1024;
+const CANONICAL_SUMMARY_SNAPSHOT_MAX_BYTES =
+  canonicalSummarySnapshotMaxBytes();
 // The writer enforces the compact JSON budget above. PostgreSQL jsonb::text
 // inserts separator spaces, so SQL eligibility needs a distinct text ceiling.
-const CANONICAL_SUMMARY_SNAPSHOT_SQL_TEXT_MAX_BYTES = 9 * 1024 * 1024;
+const CANONICAL_SUMMARY_SNAPSHOT_SQL_TEXT_MAX_BYTES =
+  canonicalSummarySnapshotSqlTextMaxBytes();
 const CANONICAL_SUMMARY_SNAPSHOT_ROOT_KEYS = Object.freeze([
   "checks",
   "generatedAt",

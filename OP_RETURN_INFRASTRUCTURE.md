@@ -113,6 +113,16 @@ oracle. Operators can raise the two caps with
 `POW_INDEX_LEDGER_CANONICAL_SUMMARY_RETENTION` and
 `POW_INDEX_LEDGER_SCAN_SNAPSHOT_RETENTION`; do not lower them below the built-in
 safety floors or delete referenced H-1 valuation snapshots.
+The full ledger snapshot budget remains hard-capped separately at 8 MiB. The
+compact canonical-summary bundle uses
+`POW_INDEX_CANONICAL_SUMMARY_SNAPSHOT_MAX_BYTES`, defaulting to the historical
+8 MiB floor and bounded to 64 MiB, plus
+`POW_INDEX_CANONICAL_SUMMARY_SNAPSHOT_SQL_TEXT_MAX_BYTES` for PostgreSQL
+`jsonb::text` reader eligibility. Production pins those at 16 MiB compact and
+18 MiB SQL text. Raising this envelope must keep the compact root-key and Q16
+sufficient-state witness checks intact; it must not admit full activity
+payloads, token-state payloads, or broad ledger history into the canonical
+summary row.
 Retention, canonical rebuild, PWT range replay, WORK atomic invalidation, and
 repair deletion paths also preserve the immutable V5 H-1 seed-evidence row
 and every completed-migration seed or closing dependency. The schema's

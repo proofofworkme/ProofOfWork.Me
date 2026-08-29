@@ -29,6 +29,10 @@ import {
   canonicalProtocolCandidateFromOutput,
   decodeCanonicalOpReturnOutput,
 } from "../server/canonical-op-return.mjs";
+import {
+  canonicalSummarySnapshotMaxBytes,
+  canonicalSummarySnapshotSqlTextMaxBytes,
+} from "../server/canonical-summary-budget.mjs";
 import { compareCanonicalUtf8 } from "../server/canonical-order.mjs";
 import {
   PROOF_INDEX_EVENT_RELATION_PARITY_MODEL,
@@ -76679,6 +76683,65 @@ check("Q16 mixed companions replace Mail exactly and suppress stale transaction 
 });
 
 check("canonical summary persistence is compact and storage-budgeted", async () => {
+  const defaultCompactMaxBytes = 8 * 1024 * 1024;
+  const defaultSqlTextMaxBytes = 9 * 1024 * 1024;
+  const productionCompactMaxBytes = 16 * 1024 * 1024;
+  const productionSqlTextMaxBytes = 18 * 1024 * 1024;
+  assert.equal(canonicalSummarySnapshotMaxBytes({}), defaultCompactMaxBytes);
+  assert.equal(
+    canonicalSummarySnapshotSqlTextMaxBytes({}),
+    defaultSqlTextMaxBytes,
+  );
+  assert.equal(
+    canonicalSummarySnapshotMaxBytes({
+      POW_INDEX_CANONICAL_SUMMARY_SNAPSHOT_MAX_BYTES: "1",
+    }),
+    defaultCompactMaxBytes,
+  );
+  assert.equal(
+    canonicalSummarySnapshotMaxBytes({
+      POW_INDEX_CANONICAL_SUMMARY_SNAPSHOT_MAX_BYTES: String(
+        128 * 1024 * 1024,
+      ),
+    }),
+    64 * 1024 * 1024,
+  );
+  assert.equal(
+    canonicalSummarySnapshotMaxBytes({
+      POW_INDEX_CANONICAL_SUMMARY_SNAPSHOT_MAX_BYTES: String(
+        productionCompactMaxBytes,
+      ),
+    }),
+    productionCompactMaxBytes,
+  );
+  assert.equal(
+    canonicalSummarySnapshotSqlTextMaxBytes({
+      POW_INDEX_CANONICAL_SUMMARY_SNAPSHOT_MAX_BYTES: String(
+        productionCompactMaxBytes,
+      ),
+    }),
+    productionSqlTextMaxBytes,
+  );
+  assert.equal(
+    canonicalSummarySnapshotSqlTextMaxBytes({
+      POW_INDEX_CANONICAL_SUMMARY_SNAPSHOT_MAX_BYTES: String(
+        productionCompactMaxBytes,
+      ),
+      POW_INDEX_CANONICAL_SUMMARY_SNAPSHOT_SQL_TEXT_MAX_BYTES: "12000000",
+    }),
+    productionCompactMaxBytes,
+  );
+  assert.equal(
+    canonicalSummarySnapshotSqlTextMaxBytes({
+      POW_INDEX_CANONICAL_SUMMARY_SNAPSHOT_MAX_BYTES: String(
+        productionCompactMaxBytes,
+      ),
+      POW_INDEX_CANONICAL_SUMMARY_SNAPSHOT_SQL_TEXT_MAX_BYTES: String(
+        productionSqlTextMaxBytes,
+      ),
+    }),
+    productionSqlTextMaxBytes,
+  );
   const budgetBytes = 128;
   const canonicalRootKeys = Object.freeze([
     "checks",

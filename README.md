@@ -751,6 +751,8 @@ POW_API_BROADCAST_RATE_PER_CLIENT=12
 POW_API_BROADCAST_RATE_GLOBAL=120
 POW_API_BROADCAST_CONCURRENCY_MAX=4
 WALLET_SCOPED_INDEX_WAIT_MS=10000
+POW_INDEX_CANONICAL_SUMMARY_SNAPSHOT_MAX_BYTES=16777216
+POW_INDEX_CANONICAL_SUMMARY_SNAPSHOT_SQL_TEXT_MAX_BYTES=18874368
 ```
 
 `MEMPOOL_BASE` should point at the local private mempool/electrs HTTP API. `PENDING_MEMPOOL_BASE` is optional and exists because unconfirmed tx gossip can differ between nodes; production should keep it on ProofOfWork-controlled node infrastructure.
@@ -758,6 +760,12 @@ WALLET_SCOPED_INDEX_WAIT_MS=10000
 Fresh wallet credit reads stay on the exact relational proof index and use the
 bounded `WALLET_SCOPED_INDEX_WAIT_MS` window; they fail closed instead of
 falling back to a broad history replay.
+Canonical-summary publication keeps full ledger snapshots capped separately at
+8 MiB, while the compact exact-tip summary bundle has its own bounded storage
+envelope. Production pins that compact budget at 16 MiB plus an 18 MiB
+PostgreSQL `jsonb::text` reader ceiling so growing verified AMO/WORK summaries
+can publish without allowing full activity or token-state roots into the
+canonical summary row.
 `BITCOIN_RPC_URL`, `BITCOIN_RPC_USER`, and `BITCOIN_RPC_PASSWORD` are optional server-only Bitcoin Core RPC settings. When configured, the API can attach the node's exact `testmempoolaccept` reject reason to failed broadcasts, hydrate transactions with `getrawtransaction`, and verify sale-ticket spend state with `gettxout` so confirmed delistings and buys clear active books without waiting on slower address-history scans. Listing sweeps bind every non-null `gettxout.bestblock` to one exact Core checkpoint. Public readers retry only when every differing bestblock equals the final proven tip, with a three-attempt bound and a full anchor sweep; the registry reader also reloads its indexed payload. Stable-tip script, value, confirmation, coinbase, or bestblock conflicts still fail closed immediately. Do not expose Bitcoin Core RPC publicly.
 Production keeps Core RPC and the API listener private. Caddy reaches the API through the host-to-host WireGuard address, while the Node API process itself remains bound to loopback behind a hardened socket proxy.
 

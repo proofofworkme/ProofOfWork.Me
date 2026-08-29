@@ -9,6 +9,9 @@ import {
   proofIndexCanonicalMailProjectionParity,
 } from "../server/proof-index-mail-projection.mjs";
 import {
+  canonicalSummarySnapshotSqlTextMaxBytes,
+} from "../server/canonical-summary-budget.mjs";
+import {
   closeProofIndexReadPool,
   compareProofIndexHistoryPayloads,
   compareProofIndexRegistryPayloads,
@@ -73,7 +76,8 @@ const WORK_DELIST_REGRESSION_LISTING_TXID =
   "50cd4dff315842c999a06c3ed0be3616f61c33f1a2f0fce6f645e3f48e9b023c";
 const WORK_TOKEN_ID =
   "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8";
-const CANONICAL_SUMMARY_SNAPSHOT_SQL_TEXT_MAX_BYTES = 9 * 1024 * 1024;
+const CANONICAL_SUMMARY_SNAPSHOT_SQL_TEXT_MAX_BYTES =
+  canonicalSummarySnapshotSqlTextMaxBytes();
 const CANONICAL_SUMMARY_SNAPSHOT_ROOT_KEYS = Object.freeze([
   "checks",
   "generatedAt",

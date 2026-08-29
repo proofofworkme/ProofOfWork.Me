@@ -2,6 +2,9 @@ import { createHash } from "node:crypto";
 import { compareCanonicalUtf8 } from "../canonical-order.mjs";
 import { decodeCanonicalOpReturnOutput } from "../canonical-op-return.mjs";
 import {
+  canonicalSummarySnapshotSqlTextMaxBytes,
+} from "../canonical-summary-budget.mjs";
+import {
   ID_REGISTRY_AUDIT_ROW_PAGE_SIZE,
   ID_REGISTRY_AUDIT_TRANSITION_PAGE_SIZE,
   PWID_RAW_REPLAY_ACTIVATION_HEIGHT,
@@ -374,10 +377,10 @@ const WORK_Q16_LEDGER_SNAPSHOT_STATE_KEYS = Object.freeze([
   "unitScale",
   "workTokenStateModel",
 ]);
-const CANONICAL_SUMMARY_SNAPSHOT_MAX_BYTES = 8 * 1024 * 1024;
 // The writer enforces compact JSON bytes. SQL selectors measure jsonb::text,
 // which includes PostgreSQL separator spaces, so keep that envelope separate.
-const CANONICAL_SUMMARY_SNAPSHOT_SQL_TEXT_MAX_BYTES = 9 * 1024 * 1024;
+const CANONICAL_SUMMARY_SNAPSHOT_SQL_TEXT_MAX_BYTES =
+  canonicalSummarySnapshotSqlTextMaxBytes();
 const CANONICAL_SUMMARY_SNAPSHOT_ROOT_KEYS = Object.freeze([
   "checks",
   "generatedAt",

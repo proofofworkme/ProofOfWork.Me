@@ -661,8 +661,23 @@ const workerPendingScanBudgetMs = serviceEnvironmentNumber(
 const workerPendingVerifierTimeoutMs = serviceEnvironmentNumber(
   "POW_INDEX_PENDING_VERIFIER_TIMEOUT_MS",
 );
+const workerCanonicalSummarySnapshotMaxBytes = serviceEnvironmentNumber(
+  "POW_INDEX_CANONICAL_SUMMARY_SNAPSHOT_MAX_BYTES",
+);
+const workerCanonicalSummarySnapshotSqlTextMaxBytes =
+  serviceEnvironmentNumber(
+    "POW_INDEX_CANONICAL_SUMMARY_SNAPSHOT_SQL_TEXT_MAX_BYTES",
+  );
 const apiHealthMaxAgeMs = serviceEnvironmentNumber(
   "POW_INDEX_HEALTH_MAX_AGE_MS",
+  proofIndexDeploy,
+);
+const apiCanonicalSummarySnapshotMaxBytes = serviceEnvironmentNumber(
+  "POW_INDEX_CANONICAL_SUMMARY_SNAPSHOT_MAX_BYTES",
+  proofIndexDeploy,
+);
+const apiCanonicalSummarySnapshotSqlTextMaxBytes = serviceEnvironmentNumber(
+  "POW_INDEX_CANONICAL_SUMMARY_SNAPSHOT_SQL_TEXT_MAX_BYTES",
   proofIndexDeploy,
 );
 const apiPendingWitnessMaxAgeMs = serviceEnvironmentNumber(
@@ -687,6 +702,16 @@ expect(
     workerPendingScanBudgetMs === 30_000 &&
     workerPendingBackfillTimeoutMs === 600_000 &&
     workerPendingBackfillTimeoutMs >= 9 * 60_000,
+);
+expect(
+  "production API and worker share the bounded canonical-summary storage envelope",
+  workerCanonicalSummarySnapshotMaxBytes === 16 * 1024 * 1024 &&
+    apiCanonicalSummarySnapshotMaxBytes ===
+      workerCanonicalSummarySnapshotMaxBytes &&
+    workerCanonicalSummarySnapshotSqlTextMaxBytes ===
+      18 * 1024 * 1024 &&
+    apiCanonicalSummarySnapshotSqlTextMaxBytes ===
+      workerCanonicalSummarySnapshotSqlTextMaxBytes,
 );
 expect(
   "production API worker-health freshness is pinned to the ten-minute ceiling",
