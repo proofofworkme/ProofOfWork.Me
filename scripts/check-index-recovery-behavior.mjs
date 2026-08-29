@@ -62596,6 +62596,146 @@ check("AMO V5 backfill binds and persists raw PWM plus derived bond children wit
   );
 });
 
+check("AMO V5 backfill preserves Boost post kind when pwb1 raw replay is generic", () => {
+  const txid = "e".repeat(64);
+  const blockHeight = WORK_AMO_V5_ACTIVATION_HEIGHT + 7;
+  const blockHash = "1".repeat(64);
+  const text = "hello world, testing boost.";
+  const authorAddress = "1F1p9UEHuH5KTFR7Zsx93Khdrqhj6t5nFv";
+  const position = {
+    blockHash,
+    blockHeight,
+    blockTransactionIndex: 400,
+    protocolVout: 1,
+    recordOrdinal: 0,
+  };
+  const payload =
+    "pwb1:post:eyJ2IjoxLCJ0ZXh0IjoiaGVsbG8gd29ybGQsIHRlc3RpbmcgYm9vc3QuIiwicHJvb2ZTaWduYWxTYXRzIjo1NDZ9";
+  const replayRecord = {
+    outcome: {
+      kind: workAmoV5ConsensusEventKind("pwb1", true),
+      reasonCode: "",
+      semanticKind: "boost-event",
+      valid: true,
+    },
+    output: {
+      projection: {
+        derived: [],
+        kind: "boost-event",
+        parsed: null,
+        position,
+        protocol: "pwb1",
+        reasonCode: "",
+        txid,
+        valid: true,
+      },
+    },
+    position,
+    protocol: "pwb1",
+    rawCandidate: true,
+    rawWitness: {
+      model: "canonical-raw-protocol-record-v1",
+      rawRecordParts: [{
+        decodeValid: true,
+        prefix: "pwb1:",
+        protocolVout: 1,
+        text: payload,
+      }],
+    },
+    stateDelta: {
+      baseContributions: [],
+      creditFixedQ8: "0",
+      creditFixedSats: "0",
+      economicOutputs: [],
+    },
+    transactionMinerFeeSats: "0",
+    transactionProtocolRecordCount: 1,
+    txid,
+  };
+  const transition = {
+    blockHash,
+    blockHeight,
+    replayRecords: [replayRecord],
+  };
+  const normalizedPosition = (value) => {
+    const source = value?.position ?? value ?? {};
+    return {
+      blockHash: String(source.blockHash ?? ""),
+      blockHeight: Number(source.blockHeight),
+      blockTransactionIndex: Number(
+        source.blockTransactionIndex ?? source.blockIndex,
+      ),
+      protocolVout: Number(source.protocolVout),
+      recordOrdinal: Number(source.recordOrdinal),
+    };
+  };
+  const replayPositionKey = (value) => {
+    const itemPosition = normalizedPosition(value);
+    return {
+      key: [
+        itemPosition.blockHeight,
+        itemPosition.blockTransactionIndex,
+        itemPosition.protocolVout,
+        itemPosition.recordOrdinal,
+      ].join(":"),
+      position: itemPosition,
+    };
+  };
+  const bind = isolatedFunction(
+    BACKFILL_PATH,
+    "bindPreparedTransactionsToWorkAmoV5Replay",
+    {
+      isHexTxid: (value) => /^[0-9a-f]{64}$/u.test(value),
+      normalizedLowerText: (value) =>
+        String(value ?? "").trim().toLowerCase(),
+      workAmoV5ConsensusEventKind,
+      workAmoV5ReplayFrozenTerms: () => null,
+      workAmoV5ReplayPositionKey: replayPositionKey,
+      workAmoV5ReplayProjectionFromOutput: (output) =>
+        output?.projection ?? {},
+    },
+  );
+  const bound = bind(
+    [{
+      items: [{
+        action: "post",
+        authorAddress,
+        boostTxid: txid,
+        currentOwnerAddress: authorAddress,
+        detail: text,
+        kind: "boost-post",
+        position,
+        proofSignalSats: 546,
+        protocol: "pwb1",
+        registryFeeSats: 0,
+        signalSats: 546,
+        tags: ["Boost", "Post"],
+        text,
+        title: text,
+        txid,
+        valid: true,
+      }],
+      rawTx: {
+        _powBlockHash: blockHash,
+        _powBlockIndex: position.blockTransactionIndex,
+        blocktime: 1_787_969_740,
+        height: blockHeight,
+        txid,
+      },
+      txid,
+    }],
+    transition,
+  );
+  const [boundItem] = bound[0].items;
+  assert.equal(boundItem._workAmoV5ReplayBound, true);
+  assert.equal(boundItem.workAmoV5RawCandidate, true);
+  assert.equal(boundItem.workAmoV5ReplayOutcome.kind, "pwb1-valid");
+  assert.equal(boundItem.workAmoV5ReplayOutput.projection.kind, "boost-event");
+  assert.equal(boundItem.kind, "boost-post");
+  assert.equal(boundItem.text, text);
+  assert.equal(boundItem.signalSats, 546);
+});
+
 check("AMO V5 raw replay never exposes an invalid ID registration to a later update", async () => {
   const blockHeight = WORK_AMO_V5_ACTIVATION_HEIGHT + 3;
   const blockHash = "1".repeat(64);

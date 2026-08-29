@@ -22431,6 +22431,15 @@ export function bindPreparedTransactionsToWorkAmoV5Replay(
           `Canonical AMO replay projection identity diverged at ${position.key}.`,
         );
       }
+      const projectionKind = normalizedLowerText(projection?.kind);
+      const preparedKind = normalizedLowerText(item?.kind);
+      const semanticProjection =
+        protocol === "pwb1" &&
+        projectionKind === "boost-event" &&
+        preparedKind.startsWith("boost-") &&
+        preparedKind !== "boost-event"
+          ? { ...projection, kind: item.kind }
+          : projection;
       const frozenTerms = workAmoV5ReplayFrozenTerms(output);
       const existingFrozenTerms = frozenTerms
         ? workAmoFrozenTermsFromItem(item)
@@ -22446,7 +22455,7 @@ export function bindPreparedTransactionsToWorkAmoV5Replay(
         );
       }
       const replaySemanticKind = normalizedLowerText(
-        projection.kind ?? item?.kind,
+        semanticProjection.kind ?? item?.kind,
       ).replace(/-invalid$/u, "");
       const replayParentTime = replay.rawCandidate === false
         ? canonicalReplayParentTime(
@@ -22469,7 +22478,7 @@ export function bindPreparedTransactionsToWorkAmoV5Replay(
         replayListingField
           ? (
               output?.[replayListingField] ??
-              projection?.[replayListingField]
+              semanticProjection?.[replayListingField]
             )?.saleAuthorization
           : null,
       );
@@ -22489,14 +22498,14 @@ export function bindPreparedTransactionsToWorkAmoV5Replay(
             item,
             output,
             position: position.position,
-            projection,
+            projection: semanticProjection,
             txid,
             valid,
           })
         : null;
       let nextItem = {
         ...item,
-        ...projection,
+        ...semanticProjection,
         ...(governedListingMaterialization ?? {}),
         _workAmoV5ReplayBound: true,
         blockHash: position.position.blockHash,
@@ -22538,7 +22547,7 @@ export function bindPreparedTransactionsToWorkAmoV5Replay(
       };
       if (valid) {
         const canonicalKind = String(
-          projection.kind ??
+          semanticProjection.kind ??
             nextItem.attemptedKind ??
             nextItem.kind ??
             "",
