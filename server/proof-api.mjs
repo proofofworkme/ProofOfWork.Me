@@ -1390,6 +1390,19 @@ const MARKETPLACE_MUTATION_KINDS = new Set([
   ...ID_MARKETPLACE_MUTATION_KINDS,
   ...TOKEN_MARKETPLACE_MUTATION_KINDS,
 ]);
+const BOOST_EVENT_KINDS = new Set([
+  "boost-buy",
+  "boost-delist",
+  "boost-hide",
+  "boost-like",
+  "boost-list",
+  "boost-post",
+  "boost-profile",
+  "boost-reboost",
+  "boost-reply",
+  "boost-seal",
+  "boost-transfer",
+]);
 const BTC_USD_PRICE = Number(
   process.env.BTC_USD_PRICE ?? GROWTH_MODEL_INPUTS.currentBtcUsd,
 );
@@ -42630,6 +42643,9 @@ function growthDeltaForProofIndexEvents(events) {
 
   for (const event of Array.isArray(events) ? events : []) {
     const kind = String(event?.kind ?? "");
+    if (BOOST_EVENT_KINDS.has(kind)) {
+      continue;
+    }
     if (
       MARKETPLACE_MUTATION_KINDS.has(kind) &&
       !countedMarketplaceMutationEvents.has(event)
@@ -49672,19 +49688,7 @@ const BOOST_VISIBLE_EVENT_KINDS = new Set([
   "boost-reboost",
 ]);
 
-const BOOST_INDEX_EVENT_KINDS = new Set([
-  "boost-buy",
-  "boost-delist",
-  "boost-hide",
-  "boost-like",
-  "boost-list",
-  "boost-post",
-  "boost-profile",
-  "boost-reboost",
-  "boost-reply",
-  "boost-seal",
-  "boost-transfer",
-]);
+const BOOST_INDEX_EVENT_KINDS = new Set(BOOST_EVENT_KINDS);
 
 const BOOST_VALUE_WINDOWS = new Set(["hour", "day", "week", "all"]);
 const BOOST_SORT_MODES = new Set(["value", "newest", "oldest"]);
@@ -54249,6 +54253,7 @@ function activityKindHasDedicatedGrowthBucket(item) {
   }
 
   return (
+    BOOST_EVENT_KINDS.has(item.kind) ||
     MARKETPLACE_MUTATION_KINDS.has(item.kind) ||
     item.kind === "mail" ||
     item.kind === "reply" ||

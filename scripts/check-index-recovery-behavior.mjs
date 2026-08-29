@@ -473,6 +473,19 @@ const MARKETPLACE_MUTATION_KINDS = new Set([
   ...ID_MARKETPLACE_MUTATION_KINDS,
   ...TOKEN_MARKETPLACE_MUTATION_KINDS,
 ]);
+const BOOST_EVENT_KINDS = new Set([
+  "boost-buy",
+  "boost-delist",
+  "boost-hide",
+  "boost-like",
+  "boost-list",
+  "boost-post",
+  "boost-profile",
+  "boost-reboost",
+  "boost-reply",
+  "boost-seal",
+  "boost-transfer",
+]);
 const numericValue = (value, fallback = 0) => {
   const number = Number(value);
   return Number.isFinite(number) ? number : fallback;
@@ -1304,6 +1317,7 @@ function isolatedFunction(path, name, globals = {}) {
     assertCanonicalPwtRangeReplayState: () => null,
     assertInternalReplayVerifierResponseBinding: (payload) => payload,
     assertCurrentAmoV5CanonicalPositionUniqueness: async () => {},
+    BOOST_EVENT_KINDS,
     ID_MARKETPLACE_MUTATION_KINDS,
     MARKETPLACE_MUTATION_KINDS,
     TOKEN_MARKETPLACE_MUTATION_KINDS,
@@ -53670,6 +53684,120 @@ check("grouped proof-index deltas use one verified marketplace payment per trans
     null,
     "a blank registry cannot inherit an ambiguous marketplace payment",
   );
+});
+
+check("Boost events do not enter AMO growth computer buckets", () => {
+  const activityAmountSats = isolatedFunction(
+    API_PATH,
+    "activityAmountSats",
+  );
+  const activityAmountSatsBigInt = isolatedFunction(
+    API_PATH,
+    "activityAmountSatsBigInt",
+  );
+  const activityKindHasDedicatedGrowthBucket = isolatedFunction(
+    API_PATH,
+    "activityKindHasDedicatedGrowthBucket",
+    {
+      BOOST_EVENT_KINDS,
+      MARKETPLACE_MUTATION_KINDS: new Set(),
+      isBondActivityItem: () => false,
+      isBrowserActivityItem: () => false,
+    },
+  );
+  const unbucketedConfirmedComputerLogFlowSats = isolatedFunction(
+    API_PATH,
+    "unbucketedConfirmedComputerLogFlowSats",
+    {
+      activityAmountSats,
+      activityKindHasDedicatedGrowthBucket,
+    },
+  );
+  const growthActualBaseNetworkValueEvents = isolatedFunction(
+    API_PATH,
+    "growthActualBaseNetworkValueEvents",
+    {
+      BOND_TOKEN_IDS: new Set(),
+      ID_MARKETPLACE_MUTATION_KINDS: new Set(),
+      MARKETPLACE_MUTATION_KINDS: new Set(),
+      TOKEN_MARKETPLACE_MUTATION_KINDS: new Set(),
+      activityAmountSatsBigInt,
+      activityKindHasDedicatedGrowthBucket,
+      isBondActivityItem: () => false,
+      isBrowserActivityItem: () => false,
+      isInceptionBondActivityItem: () => false,
+      isInfinityBondActivityItem: () => false,
+      marketplaceMutationPaymentSatsBigInt: () => 0n,
+      publicMarketplaceSales: () => [],
+      uniqueMarketplaceMutationActivity: () => [],
+    },
+  );
+  const growthDeltaForProofIndexEvents = isolatedFunction(
+    API_PATH,
+    "growthDeltaForProofIndexEvents",
+    {
+      BOOST_EVENT_KINDS,
+      GROWTH_MODEL_INPUTS: { valueMultiple: 5 },
+      ID_MARKETPLACE_MUTATION_KINDS: new Set(),
+      INCEPTION_BOND_KIND: "inception-bond",
+      INFINITY_BOND_KIND: "infinity-bond",
+      MARKETPLACE_MUTATION_KINDS: new Set(),
+      TOKEN_MARKETPLACE_MUTATION_KINDS: new Set(),
+      marketplaceMutationPaymentSats: () => 0,
+      numericValue,
+      uniqueMarketplaceMutationActivity: () => [],
+    },
+  );
+  const boost = {
+    amountSats: 546,
+    blockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT + 7,
+    blockIndex: 400,
+    confirmed: true,
+    createdAt: "2026-08-29T02:15:40.000Z",
+    kind: "boost-post",
+    protocolVout: 1,
+    recordOrdinal: 0,
+    totalSats: 546,
+    txid: "e".repeat(64),
+    valid: true,
+  };
+  const computer = {
+    ...boost,
+    amountSats: 7,
+    kind: "computer-custom",
+    protocolVout: 2,
+    totalSats: 7,
+    txid: "f".repeat(64),
+  };
+
+  assert.equal(activityKindHasDedicatedGrowthBucket(boost), true);
+  assert.equal(activityKindHasDedicatedGrowthBucket(computer), false);
+  assert.equal(unbucketedConfirmedComputerLogFlowSats([boost, computer]), 7);
+  const replayContributions = growthActualBaseNetworkValueEvents(
+    [],
+    [boost, computer],
+    [],
+    [],
+    [],
+    [],
+    [],
+  ).map((event) => ({
+    field: event.contribution.field,
+    txid: event.txid,
+    value: event.contribution.value.toString(),
+  }));
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(replayContributions)),
+    [{
+      field: "computerEventFlowSats",
+      txid: computer.txid,
+      value: "7",
+    }],
+  );
+  const delta = growthDeltaForProofIndexEvents([boost, computer]);
+  assert.equal(delta.computerEventFlowSats, 7);
+  assert.equal(delta.computerEventSats, 35);
+  assert.equal(delta.totalSats, 35);
 });
 
 check("WORK replay counts one canonical miner fee without collapsing same-tx movements", () => {
