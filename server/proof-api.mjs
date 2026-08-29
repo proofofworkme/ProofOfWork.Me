@@ -49666,6 +49666,468 @@ async function freshProofIndexLogPayload(network) {
   };
 }
 
+const BOOST_VISIBLE_EVENT_KINDS = new Set([
+  "boost-post",
+  "boost-reply",
+  "boost-reboost",
+]);
+
+const BOOST_INDEX_EVENT_KINDS = new Set([
+  "boost-buy",
+  "boost-delist",
+  "boost-hide",
+  "boost-like",
+  "boost-list",
+  "boost-post",
+  "boost-profile",
+  "boost-reboost",
+  "boost-reply",
+  "boost-seal",
+  "boost-transfer",
+]);
+
+const BOOST_VALUE_WINDOWS = new Set(["hour", "day", "week", "all"]);
+const BOOST_SORT_MODES = new Set(["value", "newest", "oldest"]);
+
+function boostHexTxid(value) {
+  const txid = String(value ?? "").trim().toLowerCase();
+  return /^[0-9a-f]{64}$/u.test(txid) ? txid : "";
+}
+
+function boostAddress(value) {
+  return String(value ?? "").trim();
+}
+
+function boostSignalSats(item) {
+  return Math.max(
+    0,
+    numericValue(
+      item?.proofSignalSats ??
+        item?.signalSats ??
+        item?.amountSats ??
+        item?.proofs ??
+        0,
+    ),
+  );
+}
+
+function boostWorkSignalSubatoms(item) {
+  const value = String(
+    item?.workSignalSubatoms ?? item?.workSignalAtoms ?? item?.workSignal ?? "",
+  ).trim();
+  if (!/^(?:0|[1-9]\d*)$/u.test(value) || value === "0") {
+    return "";
+  }
+  return value;
+}
+
+function boostWorkSignalDisplay(item) {
+  const subatoms = boostWorkSignalSubatoms(item);
+  if (!subatoms) {
+    return "";
+  }
+  try {
+    return formatWorkSubatoms(BigInt(subatoms));
+  } catch {
+    return "";
+  }
+}
+
+function boostSortMode(searchParams) {
+  const mode = String(searchParams.get("sort") ?? "value")
+    .trim()
+    .toLowerCase();
+  return BOOST_SORT_MODES.has(mode) ? mode : "value";
+}
+
+function boostValueWindow(searchParams) {
+  const valueWindow = String(searchParams.get("window") ?? "all")
+    .trim()
+    .toLowerCase();
+  return BOOST_VALUE_WINDOWS.has(valueWindow) ? valueWindow : "all";
+}
+
+function boostWindowStartMs(valueWindow, nowMs = Date.now()) {
+  if (valueWindow === "hour") {
+    return nowMs - 60 * 60_000;
+  }
+  if (valueWindow === "day") {
+    return nowMs - 24 * 60 * 60_000;
+  }
+  if (valueWindow === "week") {
+    return nowMs - 7 * 24 * 60 * 60_000;
+  }
+  return 0;
+}
+
+function boostEventTimeMs(item) {
+  const date = new Date(
+    item?.createdAt ??
+      item?.confirmedAt ??
+      item?.timestamp ??
+      item?.indexedAt ??
+      Date.now(),
+  );
+  return Number.isFinite(date.getTime()) ? date.getTime() : 0;
+}
+
+function boostEventSearchText(item, state) {
+  return [
+    item?.text,
+    item?.memo,
+    item?.detail,
+    item?.title,
+    item?.authorAddress,
+    item?.actor,
+    item?.profileId,
+    state?.ownerAddress,
+  ]
+    .map((value) => String(value ?? "").trim().toLowerCase())
+    .filter(Boolean)
+    .join(" ");
+}
+
+function boostDisplayName(...values) {
+  return values.map((value) => String(value ?? "").trim()).find(Boolean) ?? "";
+}
+
+function boostPostTxid(item) {
+  return boostHexTxid(
+    item?.boostTxid ??
+      item?.targetTxid ??
+      item?.parentTxid ??
+      item?.replyToTxid ??
+      item?.txid,
+  );
+}
+
+function boostTargetTxid(item) {
+  return boostHexTxid(
+    item?.targetTxid ??
+      item?.boostTxid ??
+      item?.parentTxid ??
+      item?.replyToTxid ??
+      "",
+  );
+}
+
+function boostPriceSats(item) {
+  return Math.max(
+    0,
+    numericValue(
+      item?.priceSats ??
+        item?.salePriceSats ??
+        item?.listingPriceSats ??
+        item?.priceProofs ??
+        0,
+    ),
+  );
+}
+
+function boostOwnershipState(items) {
+  const states = new Map();
+  const counts = new Map();
+  const ordered = [...items].sort(
+    (left, right) => boostEventTimeMs(left) - boostEventTimeMs(right),
+  );
+
+  const ensureState = (txid) => {
+    if (!txid) {
+      return null;
+    }
+    const existing = states.get(txid);
+    if (existing) {
+      return existing;
+    }
+    const next = {
+      listing: null,
+      ownerAddress: "",
+    };
+    states.set(txid, next);
+    return next;
+  };
+
+  const ensureCounts = (txid) => {
+    if (!txid) {
+      return null;
+    }
+    const existing = counts.get(txid);
+    if (existing) {
+      return existing;
+    }
+    const next = {
+      likes: 0,
+      reboosts: 0,
+      replies: 0,
+    };
+    counts.set(txid, next);
+    return next;
+  };
+
+  for (const item of ordered) {
+    const kind = String(item?.kind ?? "").trim().toLowerCase();
+    if (!BOOST_INDEX_EVENT_KINDS.has(kind)) {
+      continue;
+    }
+
+    if (kind === "boost-like") {
+      const counter = ensureCounts(boostTargetTxid(item));
+      if (counter) {
+        counter.likes += 1;
+      }
+      continue;
+    }
+
+    if (kind === "boost-reply") {
+      const counter = ensureCounts(boostTargetTxid(item));
+      if (counter) {
+        counter.replies += 1;
+      }
+    }
+
+    if (kind === "boost-reboost") {
+      const counter = ensureCounts(boostTargetTxid(item));
+      if (counter) {
+        counter.reboosts += 1;
+      }
+    }
+
+    const boostTxid = boostPostTxid(item);
+    const state = ensureState(boostTxid);
+    if (!state) {
+      continue;
+    }
+
+    if (BOOST_VISIBLE_EVENT_KINDS.has(kind)) {
+      state.ownerAddress ||= boostAddress(
+        item?.currentOwnerAddress ?? item?.authorAddress ?? item?.actor,
+      );
+      continue;
+    }
+
+    if (kind === "boost-list" || kind === "boost-seal") {
+      const priceSats = boostPriceSats(item);
+      state.listing = priceSats > 0
+        ? {
+            listingTxid: boostHexTxid(item?.listingTxid ?? item?.txid),
+            priceSats,
+            sellerAddress: boostAddress(
+              item?.sellerAddress ?? item?.currentOwnerAddress ?? item?.actor,
+            ),
+          }
+        : state.listing;
+      continue;
+    }
+
+    if (kind === "boost-delist") {
+      state.listing = null;
+      continue;
+    }
+
+    if (kind === "boost-transfer" || kind === "boost-buy") {
+      state.listing = null;
+      state.ownerAddress = boostAddress(
+        item?.newOwnerAddress ??
+          item?.buyerAddress ??
+          item?.recipientAddress ??
+          item?.to ??
+          item?.currentOwnerAddress,
+      ) || state.ownerAddress;
+    }
+  }
+
+  return { counts, states };
+}
+
+function boostFeedItemFromEvent(item, state, counts, network, btcUsd) {
+  const kind = String(item?.kind ?? "").trim().toLowerCase();
+  const txid = boostHexTxid(item?.txid);
+  if (!txid || !BOOST_VISIBLE_EVENT_KINDS.has(kind)) {
+    return null;
+  }
+
+  const boostTxid = boostPostTxid(item) || txid;
+  const targetTxid = boostTargetTxid(item);
+  const createdAt = dateIso(
+    item?.createdAt ?? item?.confirmedAt ?? item?.indexedAt,
+    new Date(),
+  );
+  const signalSats = boostSignalSats(item);
+  const counter = counts.get(boostTxid) ?? {};
+  const ownerAddress = boostAddress(
+    state?.ownerAddress ?? item?.currentOwnerAddress ?? item?.authorAddress,
+  );
+  const authorAddress = boostAddress(item?.authorAddress ?? item?.actor);
+  const text = String(item?.text ?? item?.memo ?? item?.detail ?? "").trim();
+  const media = Array.isArray(item?.media)
+    ? item.media[0]
+    : typeof item?.media === "object" && item.media
+      ? item.media
+      : null;
+  const profileId = String(item?.profileId ?? item?.authorId ?? "").trim();
+  const actionType = kind.replace(/^boost-/u, "");
+  const workSignal = boostWorkSignalDisplay(item);
+  const workSignalSubatoms = boostWorkSignalSubatoms(item);
+
+  return {
+    actionType,
+    actionCount:
+      Number(counter.likes ?? 0) +
+      Number(counter.reboosts ?? 0) +
+      Number(counter.replies ?? 0),
+    authorId: profileId,
+    authorAddress,
+    authorDisplay: boostDisplayName(profileId, authorAddress, item?.actor),
+    boostTxid,
+    confirmed: item?.confirmed !== false,
+    createdAt,
+    currentOwnerAddress: ownerAddress,
+    kind,
+    likeCount: Number(counter.likes ?? 0),
+    listing: state?.listing ?? null,
+    listingPriceSats: state?.listing?.priceSats ?? 0,
+    media: media
+      ? {
+          mime: String(media.mime ?? media.type ?? "").trim(),
+          name: String(media.name ?? media.filename ?? "").trim(),
+          sha256: String(media.sha256 ?? media.hash ?? "").trim(),
+          size: numericValue(media.size),
+        }
+      : null,
+    network,
+    ownerDisplay: boostDisplayName(ownerAddress),
+    profileId,
+    proofSignalSats: signalSats,
+    reboostCount: Number(counter.reboosts ?? 0),
+    replyCount: Number(counter.replies ?? 0),
+    signalSats,
+    signalUsd:
+      btcUsd > 0 ? Number(satsToUsdAtBtcUsd(signalSats, btcUsd).toFixed(2)) : 0,
+    targetTxid,
+    text,
+    txid,
+    valueRank: signalSats,
+    workSignal,
+    workSignalSubatoms,
+  };
+}
+
+function compareBoostFeedItems(sortMode) {
+  return (left, right) => {
+    if (sortMode === "oldest") {
+      return boostEventTimeMs(left) - boostEventTimeMs(right);
+    }
+    if (sortMode === "newest") {
+      return boostEventTimeMs(right) - boostEventTimeMs(left);
+    }
+    return (
+      numericValue(right?.valueRank) - numericValue(left?.valueRank) ||
+      boostEventTimeMs(right) - boostEventTimeMs(left)
+    );
+  };
+}
+
+function boostProfileMatches(item, profile, state) {
+  if (!profile) {
+    return true;
+  }
+  return boostEventSearchText(item, state).includes(profile.toLowerCase());
+}
+
+async function boostFeedPayload(network, searchParams, fresh = false) {
+  const sort = boostSortMode(searchParams);
+  const valueWindow = boostValueWindow(searchParams);
+  const limit = boundedInteger(searchParams.get("limit"), 50, 1, 100);
+  const includePending = /^(?:1|true|yes)$/iu.test(
+    String(searchParams.get("pending") ?? ""),
+  );
+  const profile = String(searchParams.get("profile") ?? "").trim();
+  const query = String(
+    searchParams.get("q") ?? searchParams.get("search") ?? "",
+  )
+    .trim()
+    .toLowerCase();
+
+  let indexedPayload = null;
+  if (proofIndexReadFeatureEnabled("event-history,events")) {
+    const eventParams = new URLSearchParams({
+      limit: "200",
+      protocol: "pwb1",
+      status: includePending ? "all" : "confirmed",
+    });
+    indexedPayload = await proofIndexEventHistoryPayload(
+      network,
+      eventParams,
+    ).catch((error) => {
+      console.error(`Boost event history read failed: ${errorSummary(error)}`);
+      return null;
+    });
+  }
+
+  const quote = network === "livenet"
+    ? await btcUsdPricePayload(network, { fresh }).catch((error) => {
+        console.error(`Boost BTC/USD overlay failed: ${errorSummary(error)}`);
+        return null;
+      })
+    : null;
+  const btcUsd = btcUsdFromQuote(quote);
+  const sourceItems = Array.isArray(indexedPayload?.items)
+    ? indexedPayload.items
+    : [];
+  const { counts, states } = boostOwnershipState(sourceItems);
+  const windowStartMs = boostWindowStartMs(valueWindow);
+  const filtered = sourceItems
+    .filter((item) => {
+      const kind = String(item?.kind ?? "").trim().toLowerCase();
+      if (!BOOST_VISIBLE_EVENT_KINDS.has(kind)) {
+        return false;
+      }
+      if (!includePending && item?.confirmed === false) {
+        return false;
+      }
+      if (windowStartMs > 0 && boostEventTimeMs(item) < windowStartMs) {
+        return false;
+      }
+      const state = states.get(boostPostTxid(item));
+      if (!boostProfileMatches(item, profile, state)) {
+        return false;
+      }
+      return !query || boostEventSearchText(item, state).includes(query);
+    })
+    .map((item) =>
+      boostFeedItemFromEvent(
+        item,
+        states.get(boostPostTxid(item)),
+        counts,
+        network,
+        btcUsd,
+      ),
+    )
+    .filter(Boolean)
+    .sort(compareBoostFeedItems(sort));
+
+  const items = filtered.slice(0, limit);
+  return {
+    btcUsd,
+    btcUsdIndexedAt: quote?.priceIndexedAt,
+    indexedAt: indexedPayload?.indexedAt ?? new Date().toISOString(),
+    indexedThroughBlock: indexedPayload?.indexedThroughBlock,
+    items,
+    limit,
+    network,
+    profile: profile || undefined,
+    sort,
+    source: indexedPayload?.source ?? "proof-indexer-boost-events-unavailable",
+    stats: {
+      confirmed: items.filter((item) => item.confirmed !== false).length,
+      pending: items.filter((item) => item.confirmed === false).length,
+      total: filtered.length,
+    },
+    totalCount: filtered.length,
+    valueWindow,
+  };
+}
+
 async function registrySummaryPayload(network, fresh = false) {
   return compactRegistrySummaryPayload(
     await strictPublicRegistryPayload(network, { fresh }),
@@ -73312,6 +73774,16 @@ async function handleRequest(request, response) {
         }
       }
       errorResponse(response, 404, "Database event history is not available.");
+      return;
+    }
+
+    if (url.pathname === "/api/v1/boost") {
+      jsonResponse(
+        response,
+        200,
+        await boostFeedPayload(network, url.searchParams, freshRead),
+        freshRead ? FRESH_READ_CACHE_CONTROL : EXPENSIVE_READ_CACHE_CONTROL,
+      );
       return;
     }
 

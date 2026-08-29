@@ -33178,7 +33178,7 @@ check("only true same-kind duplicates receive stable ordinals", () => {
   assert.equal(new Set(keys).size, 3);
 });
 
-check("pwm1 outputs aggregate once while staged protocols stay unscanned", () => {
+check("pwm1 outputs aggregate once while governed protocols are scanned", () => {
   let baseCalls = 0;
   const decodedBase64UrlBytes = isolatedFunction(
     BACKFILL_PATH,
@@ -33228,19 +33228,26 @@ check("pwm1 outputs aggregate once while staged protocols stay unscanned", () =>
     {
       aggregatePwmProtocolItem,
       canonicalBondMintItemsFromMailItem: () => [],
-      protocolItemsFromTx: () =>
-        assert.fail("unexpected protocol reached the raw block-scan parser"),
+      protocolItemsFromTx: (_tx, message) => [
+        {
+          amountSats: "546",
+          kind: message.prefix === "pwb1:" ? "boost-profile" : "protocol-event",
+          protocol: message.prefix.replace(/:$/u, ""),
+          txid: "1".repeat(64),
+        },
+      ],
     },
   );
   const aggregated = rawProtocolItemsForTx(
     { txid: "1".repeat(64) },
     [
       ...messages,
-      { prefix: "pwb1:", text: "pwb1:profile:staged", voutIndex: 6 },
+      { prefix: "pwb1:", text: "pwb1:profile:live", voutIndex: 6 },
     ],
   );
-  assert.equal(aggregated.length, 1);
+  assert.equal(aggregated.length, 2);
   assert.equal(aggregated[0].amountSats, "1000");
+  assert.equal(aggregated[1].kind, "boost-profile");
 
   const protocolMessagesFromTx = isolatedFunction(
     BACKFILL_PATH,
@@ -33260,11 +33267,12 @@ check("pwm1 outputs aggregate once while staged protocols stay unscanned", () =>
   };
   const scanned = protocolMessagesFromTx({
     vout: [
-      opReturn("pwb1:profile:staged"),
+      opReturn("pwb1:profile:live"),
       opReturn("pwm1:m:hello"),
     ],
   });
   assert.deepEqual(Array.from(scanned, (message) => message.prefix), [
+    "pwb1:",
     "pwm1:",
   ]);
 });
@@ -39068,6 +39076,7 @@ check("canonical rebuild reset and hashed bootstrap are one transaction", async 
     "pwt1",
     "pwm1",
     "pwa1",
+    "pwb1",
   ]);
   assert.ok(calls.includes("seed-work"));
   assert.ok(calls.includes("migrate-credit-units"));
@@ -57301,7 +57310,7 @@ check("AMO V5 current readers reject a globally duplicated canonical position", 
   assert.match(auditSql, /event_block\.canonical = true/u);
   assert.match(
     auditSql,
-    /ARRAY\['pwm1','pwa1','pwid1','pwt1'\]/u,
+    /ARRAY\['pwm1','pwa1','pwid1','pwb1','pwt1'\]/u,
   );
   assert.match(auditSql, /event_row\.status = 'confirmed'/u);
   assert.match(auditSql, /event_row\.block_height >= \$2/u);
@@ -70609,7 +70618,7 @@ check("AMO V5 canonical positions and immutable projections are schema-bound", (
   );
   for (const required of [
     /event_row\.record_ordinal IS NULL/u,
-    /duplicate_event\.protocol = ANY\(\s*ARRAY\['pwm1','pwa1','pwid1','pwt1'\]::text\[\]\s*\)/u,
+    /duplicate_event\.protocol = ANY\(\s*ARRAY\['pwm1','pwa1','pwid1','pwb1','pwt1'\]::text\[\]\s*\)/u,
     /duplicate_tx\.block_height = duplicate_event\.block_height/u,
     /duplicate_tx\.block_index = duplicate_event\.block_index/u,
     /duplicate_block\.canonical = true/u,

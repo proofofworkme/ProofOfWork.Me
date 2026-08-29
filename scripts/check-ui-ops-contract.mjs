@@ -705,6 +705,7 @@ try {
   const surfaces = [
     "activity",
     "browser",
+    "boost",
     "computer",
     "desktop",
     "growth",
@@ -718,10 +719,10 @@ try {
     "wallet",
     "work",
   ];
-  assert.equal(surfaces.length, 14);
-  assert.equal(new Set(surfaces).size, 14);
-  assert.match(publisher, /surface set must contain exactly 14 entries/u);
-  assert.match(provenance, /surface set must contain exactly 14 entries/u);
+  assert.equal(surfaces.length, 15);
+  assert.equal(new Set(surfaces).size, 15);
+  assert.match(publisher, /surface set must contain exactly 15 entries/u);
+  assert.match(provenance, /surface set must contain exactly 15 entries/u);
   const priorAppAssetName = "App-cafebabefeed.js";
   const priorCssAssetName = "theme-decafbad.css";
   const priorImageAssetName = "pixel-a1b2c3d4.png";

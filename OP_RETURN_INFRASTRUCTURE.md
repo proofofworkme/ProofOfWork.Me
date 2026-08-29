@@ -3306,6 +3306,7 @@ build_surface id https://id.proofofwork.me VITE_ID_LAUNCH_ONLY
 build_surface computer https://computer.proofofwork.me
 build_surface desktop https://desktop.proofofwork.me VITE_DESKTOP_ONLY
 build_surface browser https://browser.proofofwork.me VITE_BROWSER_ONLY
+build_surface boost https://boost.proofofwork.me VITE_BOOST_ONLY
 build_surface marketplace https://amo.proofofwork.me VITE_MARKETPLACE_ONLY
 build_surface token https://credit.proofofwork.me VITE_TOKEN_ONLY
 build_surface wallet https://wallet.proofofwork.me VITE_WALLET_ONLY
@@ -3551,6 +3552,7 @@ archive = sys.argv[1]
 hosts = {
     "activity": "log.proofofwork.me",
     "browser": "browser.proofofwork.me",
+    "boost": "boost.proofofwork.me",
     "computer": "computer.proofofwork.me",
     "desktop": "desktop.proofofwork.me",
     "growth": "growth.proofofwork.me",
@@ -4015,6 +4017,7 @@ id.proofofwork.me           -> ID registry app
 computer.proofofwork.me     -> full mail/computer app
 desktop.proofofwork.me      -> public read-only file desktop
 browser.proofofwork.me      -> public HTML browser by txid
+boost.proofofwork.me        -> public Proof-ranked social feed
 amo.proofofwork.me          -> canonical Autonomous Money Organization
 marketplace.proofofwork.me  -> URI-preserving compatibility redirect to AMO
 credit.proofofwork.me       -> standalone credit creation and mint app
@@ -4132,6 +4135,7 @@ VITE_ID_LAUNCH_ONLY=1 VITE_POW_API_BASE=https://id.proofofwork.me npm run build
 VITE_POW_API_BASE=https://computer.proofofwork.me npm run build
 VITE_DESKTOP_ONLY=1 VITE_POW_API_BASE=https://desktop.proofofwork.me npm run build
 VITE_BROWSER_ONLY=1 VITE_POW_API_BASE=https://browser.proofofwork.me npm run build
+VITE_BOOST_ONLY=1 VITE_POW_API_BASE=https://boost.proofofwork.me npm run build
 VITE_MARKETPLACE_ONLY=1 VITE_POW_API_BASE=https://amo.proofofwork.me npm run build
 VITE_TOKEN_ONLY=1 VITE_POW_API_BASE=https://credit.proofofwork.me npm run build
 VITE_WALLET_ONLY=1 VITE_POW_API_BASE=https://wallet.proofofwork.me npm run build
@@ -4521,20 +4525,23 @@ tokens@proofofwork.me
 1L4xrDurN9VghknrbsSju2vQb6oXZe1Pbn
 ```
 
-Staged Boost:
+Boost:
 
 ```text
 pwb1:profile:<profile-json-base64url>
 pwb1:post:<post-json-base64url>
 pwb1:reply:<parent-txid>:<post-json-base64url>
 pwb1:like:<target-txid>
-pwb1:repost:<target-txid>
-pwb1:follow:<target-id-base64url>
-pwb1:tip:<target-id-base64url>:<amount-proofs>
+pwb1:reboost:<target-txid>
 pwb1:hide:<target-txid>
+pwb1:t:<boost-txid>:<new-owner-address>
+pwb1:list5:<sale-ticket-json-base64url>
+pwb1:seal5:<listing-txid>:<sealed-sale-ticket-json-base64url>
+pwb1:delist5:<listing-txid>
+pwb1:buy5:<listing-txid>:<new-owner-address>
 ```
 
-Boost is staged/local-only behind `/?boost=1` and `VITE_BOOST_ONLY=1`. It is not a public production surface until separately approved. The live indexer/writer is not enabled yet. Planned validation keeps posts and replies capped at 140 user-visible characters, lets post JSON include links and one Files-backed image reference under 100 KB before encoding, resolves accounts through confirmed ProofOfWork IDs, and requires 546 proofs to the immediate social target's confirmed ID receiver for likes, reposts, follows, and paid replies. The staged UI derives profile shells and payment receivers from confirmed `pwid1` registry records only; preview-only social accounts must not masquerade as real PowIDs. Image bytes should be created through the ProofOfWork Files attachment layer, while Boost records store the file txid/proof/hash/size pointer and render the image inline from Files. Every confirmed PowID has a blank Boost profile by default with location defaulting to `ProofOfWork`; `pwb1:profile:<profile-json-base64url>` updates name, bio, location, website, optional birthday, and optional Files-backed banner reference by paying 546 proofs to the owner's own confirmed PowID receiver. Name is capped at 50 characters, bio at 160, location at 30, website at 100, and banner image references point to Files-backed images capped at 100 KB. Likes, reposts, and replies are disabled until the target record is confirmed. Follows create a confirmed follow graph and power a Following timeline ordered by post time. Tips pay any user-chosen amount to the target profile receiver. Profiles should expose followers, following, Posts/Replies/Likes/Media tabs, inline reposts in Posts, confirmed social proofs earned by source, pending social proofs separately, and WORK balance when available. A confirmed `pwb1:hide` event from the author pays 546 proofs and hides the target record from default app/profile indexes without deleting it from ProofOfWork. Replies to replies pay the parent reply author, not automatically the original post author.
+Boost is public behind `boost.proofofwork.me`, `/?boost=1`, and `VITE_BOOST_ONLY=1`. The Mail original-post writer and indexer treat `pwb1:` as a canonical governed protocol alongside Mail, IDs, AMO, and credits. Validation keeps posts and replies capped at 140 user-visible characters. Original posts are self-sends to the author's own address and do not pay the Boost registry fee; they only require miner fee plus any optional proof or WORK signal chosen by the author. Likes, replies, and reboosts are paid product actions: each pays 546 proofs to `boost@proofofwork.me` before the `pwb1:` OP_RETURN, and any extra proof or WORK signal goes to the current Boost owner or to the original poster when ownership has not moved. Paid action writers must resolve the confirmed `boost@proofofwork.me` receiver before they are enabled. Boost media and profile images should be created through the ProofOfWork Files attachment layer; Boost records store file txid/proof/hash/size metadata and render from Files. Addresses are canonical profile actors, confirmed ProofOfWork IDs are preferred display identities, and pending IDs are visible but not routable social identities. Boost records are assets keyed by original post txid; `pwb1:t`, `pwb1:list5`, `pwb1:seal5`, `pwb1:delist5`, and `pwb1:buy5` reuse the AMO sale-ticket model and each pay the 546-proof Boost registry fee. A confirmed `pwb1:hide` event hides the target record from default app/profile indexes without deleting it from ProofOfWork. Confirmed ProofOfWork history is canonical; pending Boost records are visibility only.
 
 ## Launch Rule
 
@@ -4558,6 +4565,9 @@ After changing the API or production build, verify:
 - Sent, inbox, incoming, files, outbox, and dropped status all work through the API.
 - Public Desktop can search a raw address or confirmed ProofOfWork ID and returns only confirmed attachments.
 - Browser can load a txid with HTML in the message body or a verified `text/html` attachment, render it in a sandbox, and reject non-HTML message/attachment data.
+- Boost can load `/api/v1/boost`, rank confirmed `pwb1:` posts by value or time, show proof/USD signal, expose profile-filtered views, and provide Twitter/X share links with mempool.space tx URLs.
+- Mail compose can toggle Boost originals, enforce self-send routing, cap text at 140 characters, attach Files-backed media, attach optional WORK signal, and open the Twitter/X share intent after broadcast.
+- Once `boost@proofofwork.me` has a confirmed receiver, Boost paid action writers and marketplace events route their compulsory 546-proof registry fee there, while extra signal routes to the current Boost owner or original poster.
 - Standalone AMO can list, seal, delist, and buy confirmed IDs through the same registry API.
 - Credit, Wallet, and AMO transaction buttons can load UTXOs, previous transaction hex, and listing-anchor outspends through the first-party API before opening UniSat.
 - Generic funding selection excludes every active ProofOfWork ID and credit listing anchor owned by the connected wallet, even when that listing belongs to a different app or asset scope.

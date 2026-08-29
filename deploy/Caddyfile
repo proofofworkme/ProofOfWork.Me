@@ -134,6 +134,15 @@
 	}
 }
 
+(common_boost_app) {
+	import common_static_policy
+	handle {
+		root * /var/www/proofofwork-boost
+		try_files {path} /index.html
+		file_server
+	}
+}
+
 (common_marketplace_app) {
 	import common_static_policy
 	handle {
@@ -172,6 +181,7 @@ http://id.proofofwork.me,
 http://computer.proofofwork.me,
 http://desktop.proofofwork.me,
 http://browser.proofofwork.me,
+http://boost.proofofwork.me,
 http://amo.proofofwork.me,
 http://marketplace.proofofwork.me,
 http://growth.proofofwork.me,
@@ -211,6 +221,10 @@ desktop.proofofwork.me {
 
 browser.proofofwork.me {
 	import common_browser_app
+}
+
+boost.proofofwork.me {
+	import common_boost_app
 }
 
 amo.proofofwork.me {

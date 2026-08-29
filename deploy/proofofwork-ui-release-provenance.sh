@@ -93,6 +93,7 @@ manifest="${ui_root}/.proofofwork-ui-release"
 surfaces=(
   activity
   browser
+  boost
   computer
   desktop
   growth
@@ -106,8 +107,8 @@ surfaces=(
   wallet
   work
 )
-if ((${#surfaces[@]} != 14)); then
-  echo "UI provenance surface set must contain exactly 14 entries." >&2
+if ((${#surfaces[@]} != 15)); then
+  echo "UI provenance surface set must contain exactly 15 entries." >&2
   exit 70
 fi
 declare -A surface_seen=()
@@ -119,7 +120,7 @@ for surface in "${surfaces[@]}"; do
   surface_seen["${surface}"]=1
 done
 unset surface_seen surface
-surface_pattern='activity|browser|computer|desktop|growth|id|inception|infinity|landing|marketplace|nft|token|wallet|work'
+surface_pattern='activity|browser|boost|computer|desktop|growth|id|inception|infinity|landing|marketplace|nft|token|wallet|work'
 
 surface_directory() {
   printf '%s/proofofwork-%s\n' "${ui_root}" "$1"

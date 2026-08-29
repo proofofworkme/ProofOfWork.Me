@@ -4,6 +4,7 @@ export type AppSurface =
   | "computer"
   | "desktop"
   | "browser"
+  | "boost"
   | "marketplace"
   | "token"
   | "wallet"
@@ -70,6 +71,14 @@ export function isBrowserRoute() {
   }
 
   return hostname() === "browser.proofofwork.me" || searchFlag("browser");
+}
+
+export function isBoostRoute() {
+  if (import.meta.env.VITE_BOOST_ONLY === "1") {
+    return true;
+  }
+
+  return hostname() === "boost.proofofwork.me" || searchFlag("boost");
 }
 
 export function isMarketplaceRoute() {
@@ -171,6 +180,7 @@ export function detectAppSurface(): AppSurface {
   if (isIdLaunchRoute()) return "id-launch";
   if (isDesktopRoute()) return "desktop";
   if (isBrowserRoute()) return "browser";
+  if (isBoostRoute()) return "boost";
   if (isMarketplaceRoute()) return "marketplace";
   if (isTokenRoute()) return "token";
   if (isWalletRoute()) return "wallet";

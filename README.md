@@ -33,6 +33,7 @@ id.proofofwork.me
 computer.proofofwork.me
 desktop.proofofwork.me
 browser.proofofwork.me
+boost.proofofwork.me
 amo.proofofwork.me
 marketplace.proofofwork.me -> https://amo.proofofwork.me/
 credit.proofofwork.me
@@ -54,6 +55,7 @@ Production app roles:
 - `computer.proofofwork.me` is the full ProofOfWork.Me mail/computer app.
 - `desktop.proofofwork.me` is the standalone public read-only file search engine for addresses or confirmed ProofOfWork IDs.
 - `browser.proofofwork.me` is the standalone public HTML renderer for ProofOfWork message bodies or verified file attachments by txid.
+- `boost.proofofwork.me` is the public Proof-ranked social feed for confirmed Boost posts and profiles.
 - `amo.proofofwork.me` is the canonical Autonomous Money Organization surface. Governed WORK units plus ID, credit, POWB, and INCB sale-ticket markets share this app.
 - `marketplace.proofofwork.me` is a retained URI-preserving compatibility route to AMO.
 - `credit.proofofwork.me` is the standalone mainnet credit creation and mint app.
@@ -67,7 +69,7 @@ Production app roles:
 - The root landing page can feature public on-chain social proof, with testimonial links pointing directly to their ProofOfWork transactions.
 - The landing page links to the current public YouTube overview video.
 
-Every public app header and footer should expose the current public surfaces: Home, IDs, Computer, Desktop, Browser, AMO, Credit, Wallet, WORK, Infinity, Inception, Log, and Growth. Public social links should include X, YouTube, and GitHub.
+Every public app header and footer should expose the current public surfaces: Home, IDs, Computer, Desktop, Browser, Boost, AMO, Credit, Wallet, WORK, Infinity, Inception, Log, and Growth. Public social links should include X, YouTube, and GitHub.
 
 ### Audit Workflow
 
@@ -214,7 +216,7 @@ Launch invariants for future developers/agents:
 - Adds a standalone public Browser app that loads a txid, renders HTML from a message body or verified `text/html` attachment in a sandbox, and exposes a Computer-native HTML template.
 - Keeps wallet signing outside Browser-rendered HTML pages.
 - Exposes Browser as a first-class Computer sidebar workspace, so HTML pages are part of the ProofOfWork Computer and not only a standalone subdomain.
-- Stages Boost as a 140-character social app for ProofOfWork IDs. Links, Files-backed small image attachments, editable social profiles, replies, likes, reposts, follows, tips, profile earnings, and the Following timeline are planned as a separate `pwb1:` meta protocol, not as ID registry mutations.
+- Launches Boost as a 140-character ProofOfWork social protocol from Mail compose. Original posts self-send to the sender address, while likes, replies, and reboosts are paid `pwb1:` product actions that fund the Boost registry and optional extra signal.
 - Recognizes the canonical `Welcome to ProofOfWork.Me.html` transaction by txid only after its body or attachment has been returned and verified from chain-backed API data; the client does not synthesize replacement file contents.
 - Projects Browser-readable HTML message bodies into Files/Desktop as virtual `.html` files, so users can send HTML as a message body without needing an attachment.
 - Supports fractional miner fee rates, including sub-1 sat/vB values like `0.1`.
@@ -272,6 +274,7 @@ https://id.proofofwork.me/api/*
 https://computer.proofofwork.me/api/*
 https://desktop.proofofwork.me/api/*
 https://browser.proofofwork.me/api/*
+https://boost.proofofwork.me/api/*
 https://amo.proofofwork.me/api/*
 https://credit.proofofwork.me/api/*
 https://wallet.proofofwork.me/api/*
@@ -474,43 +477,41 @@ The UI may accept confirmed ProofOfWork IDs in owner/receive fields, but `pwid1:
 `pwid1:delist5` cancels a listing by spending the sale ticket and paying the mutation fee. Historical `list2`/`buy2`/`delist2`, `list3`/`buy3`/`delist3`, and `list4`/`buy4`/`delist4` events remain readable for replay, but new marketplace writes use `list5`/`seal5`/`buy5`/`delist5`.
 Pending `pwid1:u`, `pwid1:t`, `pwid1:list5`, `pwid1:seal5`, `pwid1:delist5`, and `pwid1:buy5` events are exposed as in-flight changes for touched wallets. They do not change canonical owner/receiver routing until confirmed.
 
-## Staged Boost Protocol
+## Boost Protocol
 
-Boost is staged as a separate ProofOfWork ID social meta protocol, not as a change to the canonical `pwid1:` registry. It is not a public production surface until separately approved.
+Boost is a separate ProofOfWork social meta protocol, not a change to the canonical `pwid1:` registry. The public Boost surface at `boost.proofofwork.me` reads confirmed `pwb1:` records, ranks visible posts by attached proof/WORK signal or time, and exposes profile pages for addresses and ProofOfWork IDs.
 
-Planned event shape:
+Event shape:
 
 ```text
 pwb1:profile:<profile-json-base64url>
 pwb1:post:<post-json-base64url>
 pwb1:reply:<parent-txid>:<post-json-base64url>
 pwb1:like:<target-txid>
-pwb1:repost:<target-txid>
-pwb1:follow:<target-id-base64url>
-pwb1:tip:<target-id-base64url>:<amount-proofs>
+pwb1:reboost:<target-txid>
 pwb1:hide:<target-txid>
+pwb1:t:<boost-txid>:<new-owner-address>
+pwb1:list5:<sale-ticket-json-base64url>
+pwb1:seal5:<listing-txid>:<sealed-sale-ticket-json-base64url>
+pwb1:delist5:<listing-txid>
+pwb1:buy5:<listing-txid>:<new-owner-address>
 ```
 
-Rules to preserve while implementing the live writer/indexer:
+Rules to preserve:
 
 - Boost and reply text are capped at 140 user-visible characters.
-- Every confirmed PowID has a blank Boost profile by default. The default location is `ProofOfWork`.
-- Profile metadata uses `pwb1:profile:<profile-json-base64url>` and requires 546 proofs to the profile owner's own confirmed PowID receiver. Newer confirmed profile proofs replace older profile fields.
-- Profile fields are capped at 50 characters for name, 160 for bio, 30 for location, and 100 for website. Birthday is optional. Profile banner images are Files-backed references capped at 100 KB and ride the same 546-proof `pwb1:profile` proof to the owner's own PowID receiver.
-- Post JSON may include links and one image attachment reference under 100 KB before encoding. The image bytes should be created through the ProofOfWork Files attachment layer, and Boost should store only the file txid/proof/hash/size pointer. The final transaction must still fit the aggregate OP_RETURN carrier limit.
-- Images should render inline in feeds and profiles from Files, while still exposing size/hash proof metadata in detailed views.
-- Confirmed ProofOfWork IDs are the account namespace.
-- The staged Boost UI derives profile shells and payment receivers from confirmed `pwid1` registry records only; preview-only social accounts must not stand in for real PowIDs.
-- Pending IDs are visible but not routable social identities.
-- Likes, reposts, follows, and paid replies require at least 546 proofs to the immediate target's confirmed ProofOfWork ID receiver before the `pwb1:` OP_RETURN.
-- Following someone pays 546 proofs to that user's confirmed PowID receiver and creates the confirmed follow graph.
-- Tips pay a user-chosen amount to the target profile's confirmed PowID receiver.
-- Profiles should show confirmed followers, following, confirmed social proofs earned by source, pending social proofs separately, and the user's WORK balance when available.
-- Profiles should expose tabs for Posts, Replies, Likes, and Media. Reposts are inline profile timeline items in Posts, not a separate tab. Proofs/earnings stay in the profile summary.
-- Authors can archive/hide their own Boost from default app/profile indexing with a 546-proof `pwb1:hide` event. The original record remains on-chain and can still appear in raw chain/log views.
-- The Following timeline shows posts from followed PowIDs ordered by post time.
-- Likes, reposts, and replies are disabled until the target post or reply is confirmed.
-- A reply to a reply pays the immediate parent author, not automatically the original thread author.
+- Original posts are self-sends to the author's own ProofOfWork address. They do not require the 546-proof Boost registry fee; the required cost is the miner fee, plus any proof or WORK signal the author chooses to attach.
+- Mail compose owns original posting through the Boost ticker. Proof signal is the self-send amount. WORK signal uses the normal local wallet WORK transfer machinery in the same transaction.
+- Post media uses the existing Mail/Files attachment path. Boost JSON stores file proof metadata and pointers, not duplicate media bytes. Profile pictures and banners are chosen from confirmed Files on the profile owner's address.
+- `pwb1:like`, `pwb1:reply`, and `pwb1:reboost` are the paid Boost product actions. Each pays a compulsory 546-proof registry fee to `boost@proofofwork.me` before the `pwb1:` OP_RETURN, plus any extra proof or WORK signal selected by the user.
+- Production paid-action writers must resolve a confirmed `boost@proofofwork.me` receiver before enabling likes, replies, reboosts, transfers, listings, seals, delistings, or buys. Until that PowID is registered, the public feed and Mail original-post writer can run, but paid Boost mutations remain protocol/indexer-ready only.
+- Extra signal on likes, replies, and reboosts goes to the current Boost owner, or to the original poster when ownership has not moved.
+- Boost records are assets keyed by the original post txid. They can be transferred or sold; purchased boosts appear on the buyer/current-owner profile while the original author remains visible as creator.
+- Boost marketplace actions reuse the AMO sale-ticket pattern. `pwb1:list5`, `pwb1:seal5`, `pwb1:delist5`, `pwb1:buy5`, and direct `pwb1:t` transfers each pay the 546-proof Boost registry fee. Listing and sale registry revenue accrues to `boost@proofofwork.me`.
+- A post-time sale price entered by the author can only queue a later `list5`/`seal5` flow after the post txid exists. JSON price metadata alone is not buyable.
+- The Boost UI ranks confirmed posts by attached value, newest, or oldest and can scope value by hour, day, week, or all time. Proof signal displays USD value from the current proof/USD overlay; WORK signal is displayed separately.
+- Every original post broadcast opens a Twitter/X share intent with the post text and mempool.space tx link. Every Boost feed row also exposes a share link.
+- Authors can hide their own Boost from default app/profile indexing with `pwb1:hide`. This is a visibility tombstone, not deletion from ProofOfWork.
 - Confirmed ProofOfWork history is canonical. Pending Boost records are visibility only.
 - Wallet signing stays local; the API reads, indexes, verifies, and broadcasts already-signed transactions only.
 
@@ -545,13 +546,11 @@ To preview the public Browser locally:
 http://localhost:5173/?browser=1
 ```
 
-To preview the staged Boost app locally:
+To preview the public Boost app locally:
 
 ```text
 http://localhost:5173/?boost=1
-http://localhost:5173/?boost=1&view=home
-http://localhost:5173/?boost=1&view=following
-http://localhost:5173/?boost=1&view=profile&profile=proofofwork
+http://localhost:5173/?boost=1&profile=proofofwork
 ```
 
 To preview the standalone AMO app locally:
@@ -650,7 +649,11 @@ To build the public Browser app for production:
 VITE_BROWSER_ONLY=1 VITE_POW_API_BASE=https://browser.proofofwork.me npm run build
 ```
 
-The staged Boost app is local-only until separately approved. Do not add it to public navigation or production builds.
+To build the public Boost app for production:
+
+```bash
+VITE_BOOST_ONLY=1 VITE_POW_API_BASE=https://boost.proofofwork.me npm run build
+```
 
 To build the standalone AMO app for production:
 
@@ -891,7 +894,7 @@ Important implementation points:
 - Root landing route switch: `isLandingRoute()` in `src/app/routeRegistry.ts`.
 - Public Desktop route switch: `isDesktopRoute()` in `src/app/routeRegistry.ts`.
 - Public Browser route switch: `isBrowserRoute()` in `src/app/routeRegistry.ts`.
-- Staged Boost route switch: `isBoostRoute()` in `src/app/routeRegistry.ts`; it returns true only on local preview hosts unless launch scope changes.
+- Public Boost route switch: `isBoostRoute()` in `src/app/routeRegistry.ts`.
 - Standalone AMO route switch: `isMarketplaceRoute()` in `src/app/routeRegistry.ts` (retained internal compatibility name).
 - Standalone Credit route switch: `isTokenRoute()` in `src/app/routeRegistry.ts`.
 - Standalone Wallet route switch: `isWalletRoute()` in `src/app/routeRegistry.ts`.
@@ -906,7 +909,7 @@ Important implementation points:
 - ID-only deploy switch: `VITE_ID_LAUNCH_ONLY=1`.
 - Desktop-only deploy switch: `VITE_DESKTOP_ONLY=1`.
 - Browser-only deploy switch: `VITE_BROWSER_ONLY=1`.
-- Boost-only deploy switch: `VITE_BOOST_ONLY=1` for local/staged builds only.
+- Boost-only deploy switch: `VITE_BOOST_ONLY=1`.
 - AMO-only deploy switch: `VITE_MARKETPLACE_ONLY=1` (retained internal compatibility name).
 - Credit-only deploy switch: `VITE_TOKEN_ONLY=1`.
 - Wallet-only deploy switch: `VITE_WALLET_ONLY=1`.
@@ -919,7 +922,7 @@ Important implementation points:
 - Local contacts storage: `CONTACTS_KEY`, `loadContacts()`, `saveContacts()`, and `ContactsWorkspace` in `src/App.tsx`.
 - Public Desktop UI: `DesktopApp`, `DesktopWorkspace`, `publicDesktopMail()`, and `fetchAddressMail()` in `src/App.tsx`.
 - Public Browser UI: `BrowserApp`, `fetchBrowserPage()`, `browserPageFromTransaction()`, and `browserTemplateHtml()` in `src/App.tsx`.
-- Staged Boost UI: `BoostApp` in `src/features/boost/BoostApp.tsx`.
+- Public Boost UI: `BoostRoot` in `src/features/boost/BoostRoot.tsx`.
 - In-app file preview UI: `AttachmentViewer`, `FileInspector`, `attachmentPreviewKind()`, and `attachmentText()` in `src/App.tsx`.
 - ID write format: `buildIdRegistrationPayload()`.
 - ID mutation formats: `buildIdReceiverUpdatePayload()` and `buildIdTransferPayload()`.

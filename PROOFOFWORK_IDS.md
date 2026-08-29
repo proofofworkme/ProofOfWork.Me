@@ -105,6 +105,7 @@ id.proofofwork.me           focused ID registry app
 computer.proofofwork.me     full mail/computer app
 desktop.proofofwork.me      public read-only file desktop
 browser.proofofwork.me      public HTML browser by txid
+boost.proofofwork.me        public Proof-ranked social feed
 amo.proofofwork.me          canonical Autonomous Money Organization
 marketplace.proofofwork.me  compatibility route to AMO
 credit.proofofwork.me       standalone credit creation and mint app
@@ -120,7 +121,7 @@ growth.proofofwork.me       public growth model dashboard
 
 The ID subdomain is the first onboarding experience and should stay focused on claiming/resolving IDs, not reading mail.
 The Desktop subdomain can resolve confirmed IDs for public file browsing, but it must not treat pending IDs as searchable/routable identities.
-Boost is staged/local-only for a Twitter-like 140-character social meta protocol over confirmed ProofOfWork IDs. It must not mutate the canonical `pwid1:` registry for follows, likes, reposts, or replies and must not be added to public production navigation until separately approved.
+Boost is the public 140-character social meta protocol over ProofOfWork addresses and confirmed ProofOfWork IDs. It must not mutate the canonical `pwid1:` registry for posts, likes, replies, reboosts, profile display, transfers, or marketplace activity.
 The AMO subdomain can connect UniSat, publish sale-ticket on-chain listings for owned confirmed IDs, seal or delist active listings, and execute buyer-funded `pwid1:buy5` transfers. It is tabbed by asset class: the ID tab is live, the Credits tab uses the same sale-ticket shape for non-bond credit `list5`, `seal5`, `delist5`, and `buy5` records, and the Bonds tab exposes POWB/INCB hard-price sale-ticket books with Inception and Infinity sub-tabs. The POWB/INCB hard-price declaration source is `server/bond-hard-price-declaration.mjs`; it is buildable with `npm run build:bond-hard-price-declaration` and prepared as an authority-input declaration with `npm run prepare:bond-hard-price-declaration`. The former Marketplace hostname resolves to this same surface.
 The Log subdomain is read-only. It exposes a unified ProofOfWork Computer log for registrations, receiver updates, direct transfers, listings, seals, delistings, purchases, messages, replies, files, attachments, credit creations, credit mints, credit transfers, credit listings, credit sales, and seeded Computer mail events. Log search is server-backed by the canonical livenet ledger, so address, confirmed ID, txid, participant, and token searches should agree with global Log.
 The Credit subdomain creates and mints mint-first `pwt1:` credits. The `tokens` subdomain redirects to Credit. The Wallet subdomain tracks credit balances and broadcasts generic-credit `pwt1:send` transfers plus the era-valid canonical WORK atomic transfer: historical Q8 `pwt1:send2`, then Q16 `pwt1:send3` only after the staged precision declaration activates. Every transfer pays the relevant credit registry, and legacy bytes retain their original scale. The WORK subdomain is the dedicated WORK credit dashboard. The Infinity subdomain tracks POWB supply/floor data and creates `pwm1:m:powb` bond messages. The Inception subdomain tracks INCB supply/floor data and creates `pwm1:m:incb` bond messages. Its canonical registry identity is `inception@proofofwork.me`, and its reserved synthetic credit id is `3cb25745f937f2b4e5508e5400189fe8fe679cd8e84bfa1e9176d70c9761f15d`. Both bond families reuse the credit sale-ticket lifecycle for transfers and trades, while only canonical WORK can be attached as a separate era-valid `send2`/`send3` credit transfer to a bond message.
@@ -268,47 +269,42 @@ The chain remains canonical:
 - The ID is owned by the first confirmed valid registry transaction.
 - The X post only proves the registrant chose to publicly associate an account with that transaction.
 - The app can generate a prefilled post with the ID and mempool transaction link only from the owner's/routed wallet view.
-- Future ID-level verification metadata can store an X proof URL on-chain with a `pwid1:meta` event. Boost social profile metadata is separate staged `pwb1:profile` state and must not mutate the canonical ID registry.
+- Future ID-level verification metadata can store an X proof URL on-chain with a `pwid1:meta` event. Boost social profile metadata is separate `pwb1:profile` state and must not mutate the canonical ID registry.
 
-## Staged Boost Social
+## Boost Social
 
-Boost is a future/staged ProofOfWork ID social meta protocol. It uses confirmed PowIDs for accounts and their current receiver addresses as payment lanes, but it does not change the canonical `pwid1:` registry rules.
+Boost is a ProofOfWork social meta protocol. It uses addresses as canonical actors and confirmed PowIDs as display/profile names, but it does not change the canonical `pwid1:` registry rules.
 
-Public app/domain launch is not approved. Keep the UI local/staged until launch scope changes.
-
-Planned OP_RETURN events:
+OP_RETURN events:
 
 ```text
 pwb1:profile:<profile-json-base64url>
 pwb1:post:<post-json-base64url>
 pwb1:reply:<parent-txid>:<post-json-base64url>
 pwb1:like:<target-txid>
-pwb1:repost:<target-txid>
-pwb1:follow:<target-id-base64url>
-pwb1:tip:<target-id-base64url>:<amount-proofs>
+pwb1:reboost:<target-txid>
 pwb1:hide:<target-txid>
+pwb1:t:<boost-txid>:<new-owner-address>
+pwb1:list5:<sale-ticket-json-base64url>
+pwb1:seal5:<listing-txid>:<sealed-sale-ticket-json-base64url>
+pwb1:delist5:<listing-txid>
+pwb1:buy5:<listing-txid>:<new-owner-address>
 ```
 
 Rules to preserve:
 
 - Boost and replies are capped at 140 user-visible characters.
-- Every confirmed PowID has a blank Boost profile by default. The default location is `ProofOfWork`.
-- Profile metadata uses `pwb1:profile:<profile-json-base64url>` and requires 546 proofs to the owner's own confirmed PowID receiver. Newer confirmed profile proofs replace older profile fields.
-- Profile fields are capped at 50 characters for name, 160 for bio, 30 for location, and 100 for website. Birthday is optional. Profile banner images are Files-backed references capped at 100 KB and ride the same 546-proof `pwb1:profile` proof to the owner's own PowID receiver.
-- Post JSON may include links and one image attachment reference under 100 KB before encoding, while the final transaction must still fit the aggregate OP_RETURN limit. The image bytes should be stored through the ProofOfWork Files attachment layer; Boost records should point to the file txid/proof/hash/size instead of carrying raw image bytes.
-- Images should render inline in feeds and profiles from Files, while detailed views can expose their size and hash proof.
-- Social accounts resolve only through confirmed ProofOfWork IDs.
-- The staged Boost UI should derive profile shells and payment receivers from confirmed `pwid1` registry records only; preview-only social accounts must not masquerade as real PowIDs.
-- Pending IDs can be displayed but are not valid account targets.
-- Likes, reposts, follows, and paid replies require at least 546 proofs to the immediate target's confirmed PowID receiver before the `pwb1:` OP_RETURN.
-- Following someone pays 546 proofs to that user's confirmed PowID receiver and creates the confirmed follow graph.
-- Tips pay any user-chosen amount to the target profile's confirmed PowID receiver.
-- Profiles should show who follows the user, who the user follows, confirmed social proofs earned by source, pending incoming social proofs separately, and WORK balance when available.
-- Profiles should expose Posts, Replies, Likes, and Media tabs. Reposts appear inline in the Posts timeline, not as a separate tab. Proofs/earnings remain in the profile summary.
-- Authors can archive/hide their own Boost from default app/profile indexing with a 546-proof `pwb1:hide` event. This is a visibility tombstone, not deletion from ProofOfWork.
-- The Following timeline shows only followed PowID posts, ordered by post time.
-- Likes, reposts, and replies are disabled until the target post or reply is confirmed.
-- A reply to a reply pays the author of the parent reply, not automatically the original post author.
+- Original posts are self-sends to the author's own ProofOfWork address. They require miner fee only unless the author chooses to attach proof or WORK signal.
+- Mail compose owns original posting through the Boost ticker. Attachments/media use the existing Files path; Boost records store proof metadata and pointers, not duplicate bytes.
+- Every address can have a Boost profile shell. Confirmed PowIDs provide the preferred display identity, and profile picture/banner choices come from confirmed Files on that address.
+- `pwb1:like`, `pwb1:reply`, and `pwb1:reboost` are paid product actions. Each pays 546 proofs to `boost@proofofwork.me` plus any extra proof or WORK signal.
+- Paid Boost action writers must stay disabled until `boost@proofofwork.me` has a confirmed receiver. The public Boost feed and Mail original-post writer do not depend on that registration.
+- Extra signal on likes, replies, and reboosts goes to the current Boost owner, or to the original poster when ownership has not moved.
+- Likes, reboosts, and replies are disabled until the target Boost record is confirmed.
+- Boost records are assets keyed by the original post txid. Direct transfers and AMO sale-ticket events move ownership without changing the original author.
+- `pwb1:list5`, `pwb1:seal5`, `pwb1:delist5`, `pwb1:buy5`, and `pwb1:t` each pay the 546-proof Boost registry fee to `boost@proofofwork.me`.
+- A post-time sale price can only queue a later listing/seal after the post txid exists. JSON price metadata alone is not buyable.
+- Authors can hide their own Boost from default app/profile indexing with `pwb1:hide`. This is a visibility tombstone, not deletion from ProofOfWork.
 - Confirmed ProofOfWork history is canonical. Pending Boost records are only visibility.
 - Wallet signing stays local.
 
@@ -434,6 +430,7 @@ https://id.proofofwork.me/api/*
 https://computer.proofofwork.me/api/*
 https://desktop.proofofwork.me/api/*
 https://browser.proofofwork.me/api/*
+https://boost.proofofwork.me/api/*
 https://amo.proofofwork.me/api/*
 https://credit.proofofwork.me/api/*
 https://wallet.proofofwork.me/api/*

@@ -40,6 +40,7 @@ import {
   Reply,
   Search,
   Send,
+  Share2,
   Star,
   Tag,
   Trash2,
@@ -249,6 +250,21 @@ function goodBroadcastStatus(
     tone: "good",
   };
 }
+
+function boostTwitterShareUrl({
+  memo,
+  network,
+  txid,
+}: {
+  memo: string;
+  network: BitcoinNetwork;
+  txid: string;
+}) {
+  const text = [boostPostText(memo), explorerTxUrl(txid, network), "$WORK $POWB $INCB"]
+    .filter(Boolean)
+    .join("\n");
+  return `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`;
+}
 type Folder =
   | "inbox"
   | "incoming"
@@ -385,6 +401,7 @@ type DraftMessage = {
   memo: string;
   attachment?: MailAttachment;
   parentTxid?: string;
+  socialMode?: boolean;
   updatedAt: string;
 };
 
@@ -506,6 +523,7 @@ type SentMessage = {
   droppedAt?: string;
   replyTo: string;
   parentTxid?: string;
+  socialMode?: boolean;
   createdAt: string;
 };
 
@@ -538,6 +556,7 @@ type InboxMessage = {
   attachedCredits?: MailAttachedCredit[];
   replyTo: string;
   parentTxid?: string;
+  socialMode?: boolean;
   confirmed: boolean;
   createdAt: string;
 };
@@ -1407,6 +1426,7 @@ type ProtocolMessage = {
   attachment?: MailAttachment;
   parentTxid?: string;
   replyTo?: string;
+  socialMode?: boolean;
 };
 
 type AttachmentAccumulator = {
@@ -1597,6 +1617,8 @@ const WALLET_UTXO_FETCH_RETRY_DELAYS_MS = [0, 1000];
 const BLOCK_TXID_INDEX_CACHE = new Map<string, Promise<Map<string, number>>>();
 const BTC_USD_BROWSER_INFLIGHT = new Map<string, Promise<number>>();
 const PROTOCOL_PREFIX = "pwm1:";
+const BOOST_PROTOCOL_PREFIX = "pwb1:";
+const BOOST_POST_MAX_CHARS = 140;
 let btcUsdBrowserCache:
   | {
       fetchedAtMs: number;
@@ -4659,16 +4681,78 @@ function buildAttachmentPayloads(attachment: MailAttachment) {
   );
 }
 
+function boostPostText(message: string) {
+  return message.trim().slice(0, BOOST_POST_MAX_CHARS);
+}
+
+function buildBoostPostPayload({
+  attachment,
+  message,
+  proofSignalSats,
+  subject,
+  workSignalSubatoms,
+}: {
+  attachment?: MailAttachment;
+  message: string;
+  proofSignalSats: number;
+  subject: string;
+  workSignalSubatoms: string;
+}) {
+  const post = {
+    v: 1,
+    text: boostPostText(message),
+    ...(normalizeSubject(subject)
+      ? { subject: normalizeSubject(subject) }
+      : {}),
+    ...(attachment
+      ? {
+          media: {
+            mime: attachment.mime,
+            name: attachment.name,
+            sha256: attachment.sha256,
+            size: attachment.size,
+            source: "same-tx-pwm1-attachment",
+          },
+        }
+      : {}),
+    ...(Math.floor(proofSignalSats) > 0
+      ? { proofSignalSats: Math.floor(proofSignalSats) }
+      : {}),
+    ...(BigInt(workSignalSubatoms || "0") > 0n
+      ? { workSignalSubatoms }
+      : {}),
+  };
+
+  return `${BOOST_PROTOCOL_PREFIX}post:${encodeTextBase64Url(JSON.stringify(post))}`;
+}
+
 function buildProtocolPayloads(
   subject: string,
   message: string,
   parentTxid?: string,
   attachment?: MailAttachment,
+  options: {
+    proofSignalSats?: number;
+    socialMode?: boolean;
+    workSignalSubatoms?: string;
+  } = {},
 ) {
   const bodyPrefix = `${PROTOCOL_PREFIX}m:`;
   const bodyChunkBytes = maxPayloadDataBytes(bodyPrefix);
   const payloads: string[] = [];
   const trimmedSubject = normalizeSubject(subject);
+
+  if (options.socialMode) {
+    payloads.push(
+      buildBoostPostPayload({
+        attachment,
+        message,
+        proofSignalSats: options.proofSignalSats ?? 0,
+        subject,
+        workSignalSubatoms: options.workSignalSubatoms ?? "0",
+      }),
+    );
+  }
 
   if (trimmedSubject) {
     payloads.push(`${PROTOCOL_PREFIX}s:${encodeTextBase64Url(trimmedSubject)}`);
@@ -5778,6 +5862,7 @@ function loadSentMessages(): SentMessage[] {
           network,
           parentTxid:
             typeof sent.parentTxid === "string" ? sent.parentTxid : undefined,
+          socialMode: sent.socialMode === true,
           recipients: recipients.length > 0 ? recipients : undefined,
           subject:
             typeof sent.subject === "string"
@@ -6263,6 +6348,7 @@ function loadDraft(
       memo: typeof draft.memo === "string" ? draft.memo : DEFAULT_MEMO,
       network,
       parentTxid,
+      socialMode: draft.socialMode === true,
       recipient: typeof draft.recipient === "string" ? draft.recipient : "",
       subject:
         typeof draft.subject === "string" ? draft.subject.slice(0, 180) : "",
@@ -6293,6 +6379,7 @@ function isDraftContentful(draft: DraftMessage) {
     draft.memo.trim() ||
     draft.attachment ||
     draft.parentTxid ||
+    draft.socialMode ||
     draft.amountSats !== DEFAULT_AMOUNT_SATS ||
     (positiveWorkAtoms(draft.workAmount) ?? 0n) > 0n ||
     draft.feeRate !== DEFAULT_FEE_RATE,
@@ -6341,6 +6428,7 @@ function proofProtocolDataBytesForVout(vout: Array<Record<string, unknown>>) {
     .filter(
       (message) =>
         message.startsWith(PROTOCOL_PREFIX) ||
+        message.startsWith(BOOST_PROTOCOL_PREFIX) ||
         message.startsWith(ID_PROTOCOL_PREFIX) ||
         message.startsWith(TOKEN_PROTOCOL_PREFIX),
     )
@@ -6357,7 +6445,8 @@ function firstProtocolOutputIndex(vout: Array<Record<string, unknown>>) {
     }
 
     return decodedOpReturnMessages([output]).some((message) =>
-      message.startsWith(PROTOCOL_PREFIX),
+      message.startsWith(PROTOCOL_PREFIX) ||
+      message.startsWith(BOOST_PROTOCOL_PREFIX),
     );
   });
 }
@@ -6470,6 +6559,9 @@ function attachmentFromAccumulator(
 
 function extractProtocolMemo(vout: Array<Record<string, unknown>>) {
   const decodedMessages = decodedOpReturnMessages(vout);
+  const socialMode = decodedMessages.some((message) =>
+    message.startsWith(`${BOOST_PROTOCOL_PREFIX}post:`),
+  );
   let replyTo = "";
   let parentTxid: string | undefined;
   let subject = "";
@@ -6522,6 +6614,7 @@ function extractProtocolMemo(vout: Array<Record<string, unknown>>) {
 
   const protocolMessage: ProtocolMessage = {
     memo: chunks.join(""),
+    socialMode,
   };
 
   if (subject) {
@@ -13249,6 +13342,7 @@ function inboxMessagesFromTransactions(
       replyTo:
         sender === "Unknown" ? (protocolMessage.replyTo ?? "Unknown") : sender,
       recipients: recipients.length > 0 ? recipients : undefined,
+      socialMode: protocolMessage.socialMode === true,
       confirmed: Boolean(status?.confirmed),
       createdAt: new Date(blockTime).toISOString(),
     };
@@ -13317,6 +13411,7 @@ function sentMessagesFromTransactions(
         parentTxid: protocolMessage.parentTxid,
         recipients,
         subject: protocolMessage.subject,
+        socialMode: protocolMessage.socialMode === true,
         replyTo: targetAddress,
         status: confirmed ? "confirmed" : "pending",
         to: recipientSummary(recipients, payment.address),
@@ -20416,6 +20511,7 @@ export default function App() {
   const [subject, setSubject] = useState("");
   const [memo, setMemo] = useState(DEFAULT_MEMO);
   const [attachment, setAttachment] = useState<MailAttachment | undefined>();
+  const [socialMode, setSocialMode] = useState(false);
   const [allSent, setAllSent] = useState<SentMessage[]>(() =>
     loadSentMessages(),
   );
@@ -21254,9 +21350,23 @@ export default function App() {
     return snapshot;
   }
 
+  const protocolWorkSignalAtoms = workAtomsFromDecimal(messageWorkAmount) ?? 0n;
   const protocolPayloads = useMemo(
-    () => buildProtocolPayloads(subject, memo, replyParentTxid, attachment),
-    [attachment, memo, replyParentTxid, subject],
+    () =>
+      buildProtocolPayloads(subject, memo, replyParentTxid, attachment, {
+        proofSignalSats: amountSats,
+        socialMode,
+        workSignalSubatoms: protocolWorkSignalAtoms.toString(),
+      }),
+    [
+      amountSats,
+      attachment,
+      memo,
+      protocolWorkSignalAtoms,
+      replyParentTxid,
+      socialMode,
+      subject,
+    ],
   );
 
   useEffect(() => {
@@ -21789,11 +21899,22 @@ export default function App() {
               ? `WORK transfers are paused${mailWorkPauseReason ? ` (${mailWorkPauseReason})` : ""}. Send will unlock when verified write admission is ready.`
               : mailWorkPayloadUnavailable
                 ? mailWorkAdmissionMode === "legacy-q8"
-                  ? "Before V8 activates, WORK attachments must resolve exactly to eight decimal places."
-                  : "The WORK attachment could not be encoded under the current verified transfer protocol."
-                : mailWorkBalanceInsufficient
-                  ? `WORK attachment total ${formatWorkAmount(workAttachmentTotalAtoms)} exceeds ${formatWorkAmount(workAttachmentSpendableAtoms)} spendable WORK.`
-                  : "";
+                ? "Before V8 activates, WORK attachments must resolve exactly to eight decimal places."
+                : "The WORK attachment could not be encoded under the current verified transfer protocol."
+              : mailWorkBalanceInsufficient
+                ? `WORK attachment total ${formatWorkAmount(workAttachmentTotalAtoms)} exceeds ${formatWorkAmount(workAttachmentSpendableAtoms)} spendable WORK.`
+                : "";
+  const boostPostTooLong =
+    socialMode && memo.trim().length > BOOST_POST_MAX_CHARS;
+  const boostComposeReason = !socialMode
+    ? ""
+    : replyParentTxid
+      ? "Boost replies are paid product actions from the Boost surface."
+      : boostPostTooLong
+        ? `Boost text is capped at ${BOOST_POST_MAX_CHARS.toLocaleString()} characters.`
+        : address && recipient && !samePaymentAddress(recipient, address)
+          ? "Boost originals self-send to the connected address."
+          : "";
   const composeDataCarrierBytes = useMemo(
     () =>
       dataCarrierBytesForPayloads([
@@ -21821,6 +21942,7 @@ export default function App() {
     !recipientResolution.error &&
     !ccRecipientResolution.error &&
     !messageWorkAmountInvalid &&
+    !boostComposeReason &&
     workAttachmentBalanceOk &&
     composeDataCarrierBytes <= MAX_DATA_CARRIER_BYTES &&
     !mailSendBusy;
@@ -24027,6 +24149,22 @@ export default function App() {
   }, [address, network]);
 
   useEffect(() => {
+    if (!socialMode) {
+      return;
+    }
+
+    if (address && !samePaymentAddress(recipient, address)) {
+      setRecipient(address);
+    }
+    if (ccRecipient) {
+      setCcRecipient("");
+    }
+    if (replyParentTxid) {
+      setReplyParentTxid(undefined);
+    }
+  }, [address, ccRecipient, recipient, replyParentTxid, socialMode]);
+
+  useEffect(() => {
     setIdReceiveAddress(address);
     setIdPurchaseOwnerAddress(address);
   }, [address, network]);
@@ -24085,6 +24223,7 @@ export default function App() {
       network,
       parentTxid: replyParentTxid,
       recipient,
+      socialMode,
       subject,
       updatedAt: new Date().toISOString(),
       workAmount: workDecimalFromAtoms(messageWorkAmountAtoms),
@@ -24108,6 +24247,7 @@ export default function App() {
     network,
     recipient,
     replyParentTxid,
+    socialMode,
     subject,
   ]);
 
@@ -24891,6 +25031,7 @@ export default function App() {
     setMemo(draft.memo);
     setAttachment(draft.attachment);
     setReplyParentTxid(draft.parentTxid);
+    setSocialMode(draft.socialMode === true);
     setActiveFolder("drafts");
     setComposeOpen(true);
     setSelectedKey("draft");
@@ -25125,6 +25266,7 @@ export default function App() {
         message.toRecipients ?? message.recipients,
         message.to,
       ),
+      socialMode: message.socialMode === true,
       subject: message.subject,
       updatedAt: new Date().toISOString(),
       workAmount: attachedCreditDraftAmount(message.attachedCredits),
@@ -25308,6 +25450,7 @@ export default function App() {
     setMemo(DEFAULT_MEMO);
     setAttachment(undefined);
     setReplyParentTxid(undefined);
+    setSocialMode(false);
     setActiveFolder("inbox");
     setComposeOpen(true);
   }
@@ -25327,6 +25470,7 @@ export default function App() {
     setMemo(DEFAULT_MEMO);
     setAttachment(undefined);
     setReplyParentTxid(undefined);
+    setSocialMode(false);
     setComposeOpen(false);
     setSelectedKey("");
     setStatus({ tone: "good", text: "Draft discarded." });
@@ -25450,6 +25594,7 @@ export default function App() {
     setMemo(DEFAULT_MEMO);
     setAttachment(undefined);
     setReplyParentTxid(undefined);
+    setSocialMode(false);
     setActiveFolder("inbox");
     setComposeOpen(true);
   }
@@ -26903,6 +27048,7 @@ export default function App() {
     setMemo("");
     setAttachment(undefined);
     setReplyParentTxid(rootTxid(message));
+    setSocialMode(false);
     setComposeOpen(true);
   }
 
@@ -26941,6 +27087,7 @@ export default function App() {
     setMemo("");
     setAttachment(undefined);
     setReplyParentTxid(rootTxid(message));
+    setSocialMode(false);
     setComposeOpen(true);
   }
 
@@ -26958,6 +27105,7 @@ export default function App() {
     setMessageWorkAmount("0");
     setAttachment(undefined);
     setReplyParentTxid(undefined);
+    setSocialMode(false);
   }
 
   async function attachFile(file: File) {
@@ -28911,13 +29059,37 @@ export default function App() {
       return;
     }
 
-    let resolvedRecipients = recipientResolution;
-    let resolvedCcRecipients = ccRecipientResolution;
-    const recipientInput = recipient.trim();
-    const ccRecipientInput = ccRecipient.trim();
+    if (boostComposeReason) {
+      setStatus({ tone: "bad", text: boostComposeReason });
+      return;
+    }
+
+    const recipientInput = socialMode ? address : recipient.trim();
+    const ccRecipientInput = socialMode ? "" : ccRecipient.trim();
+    let resolvedRecipients: MultiRecipientResolution = socialMode
+      ? {
+          duplicateCount: 0,
+          idCount: 0,
+          recipients: [
+            {
+              displayRecipient: address,
+              isId: false,
+              paymentAddress: address,
+            },
+          ],
+        }
+      : recipientResolution;
+    let resolvedCcRecipients: MultiRecipientResolution = socialMode
+      ? {
+          duplicateCount: 0,
+          idCount: 0,
+          recipients: [],
+        }
+      : ccRecipientResolution;
     const shouldResolveId =
-      needsRegistryResolution(recipientInput, network) ||
-      needsRegistryResolution(ccRecipientInput, network);
+      !socialMode &&
+      (needsRegistryResolution(recipientInput, network) ||
+        needsRegistryResolution(ccRecipientInput, network));
 
     mailSendInFlightRef.current = true;
     setMailSendBusy(true);
@@ -29242,6 +29414,7 @@ export default function App() {
         createdAt,
         attachedCredits:
           attachedWorkCredits.length > 0 ? attachedWorkCredits : undefined,
+        socialMode,
       };
       const selfRecipient = mailRecipients.find((mailRecipient) =>
         samePaymentAddress(mailRecipient.address, address),
@@ -29263,6 +29436,7 @@ export default function App() {
             txid,
             attachedCredits:
               attachedWorkCredits.length > 0 ? attachedWorkCredits : undefined,
+            socialMode,
           }
         : undefined;
       const finalizedPendingWorkTransfers = pendingWorkTransfers.map(
@@ -29305,15 +29479,34 @@ export default function App() {
       setCcRecipient("");
       setMessageWorkAmount("0");
       setSubject("");
+      setSocialMode(false);
       setReplyParentTxid(undefined);
       setSelectedKey(`sent-${network}-${txid}`);
-      setStatus(
-        goodBroadcastStatus(
-          `Transaction broadcast to ${mailRecipients.length} recipient${mailRecipients.length === 1 ? "" : "s"}${attachedWorkCredits.length > 0 ? ` with ${attachedCreditLabel(attachedWorkCredits)}` : ""}: ${shortAddress(txid)}. ${paymentPsbt.inputCount} input${paymentPsbt.inputCount === 1 ? "" : "s"}, ${paymentPsbt.outputCount} output${paymentPsbt.outputCount === 1 ? "" : "s"}.`,
-          txid,
-          network,
-        ),
-      );
+      if (socialMode) {
+        const shareUrl = boostTwitterShareUrl({ memo, network, txid });
+        window.open(shareUrl, "_blank", "noopener,noreferrer");
+        setStatus({
+          links: [
+            txStatusLink(txid, network),
+            {
+              ariaLabel: "Share this Boost post to Twitter",
+              href: shareUrl,
+              text: "Share to Twitter",
+              title: "Share to Twitter",
+            },
+          ],
+          text: `Boost post broadcast: ${shortAddress(txid)}. Share to Twitter.`,
+          tone: "good",
+        });
+      } else {
+        setStatus(
+          goodBroadcastStatus(
+            `Transaction broadcast to ${mailRecipients.length} recipient${mailRecipients.length === 1 ? "" : "s"}${attachedWorkCredits.length > 0 ? ` with ${attachedCreditLabel(attachedWorkCredits)}` : ""}: ${shortAddress(txid)}. ${paymentPsbt.inputCount} input${paymentPsbt.inputCount === 1 ? "" : "s"}, ${paymentPsbt.outputCount} output${paymentPsbt.outputCount === 1 ? "" : "s"}.`,
+            txid,
+            network,
+          ),
+        );
+      }
       if (attachedWorkCredits.length > 0) {
         void refreshToken(true);
       }
@@ -33563,7 +33756,9 @@ export default function App() {
                   recipientError={Boolean(recipientResolution.error)}
                   recipientNote={recipientNote}
                   sendState={composeSendState}
-                  sendStatus={mailWorkAdmissionReason}
+                  sendStatus={[boostComposeReason, mailWorkAdmissionReason]
+                    .filter(Boolean)
+                    .join(" ")}
                   sender={address}
                   setAttachment={setAttachment}
                   setAttachmentFile={(file) => void attachFile(file)}
@@ -33573,8 +33768,10 @@ export default function App() {
                   setFeeRate={setFeeRate}
                   setMemo={setMemo}
                   setRecipient={setRecipient}
+                  setSocialMode={setSocialMode}
                   setSubject={setSubject}
                   setWorkAmount={setMessageWorkAmount}
+                  socialMode={socialMode}
                   subject={subject}
                   submit={sendOpReturn}
                   workAmount={messageWorkAmount}
@@ -33617,7 +33814,9 @@ export default function App() {
                   recipientError={Boolean(recipientResolution.error)}
                   recipientNote={recipientNote}
                   sendState={composeSendState}
-                  sendStatus={mailWorkAdmissionReason}
+                  sendStatus={[boostComposeReason, mailWorkAdmissionReason]
+                    .filter(Boolean)
+                    .join(" ")}
                   sender={address}
                   setAttachment={setAttachment}
                   setAttachmentFile={(file) => void attachFile(file)}
@@ -33627,8 +33826,10 @@ export default function App() {
                   setFeeRate={setFeeRate}
                   setMemo={setMemo}
                   setRecipient={setRecipient}
+                  setSocialMode={setSocialMode}
                   setSubject={setSubject}
                   setWorkAmount={setMessageWorkAmount}
+                  socialMode={socialMode}
                   subject={subject}
                   submit={sendOpReturn}
                   workAmount={messageWorkAmount}
@@ -51670,9 +51871,11 @@ function ComposePane({
   setMemo,
   setParentTxid,
   setRecipient,
+  setSocialMode,
   setSubject,
   subject,
   submit,
+  socialMode,
   workAmount,
   workAttachmentTotalAtoms,
   workSpendableAtoms,
@@ -51707,8 +51910,10 @@ function ComposePane({
   setMemo: (value: string) => void;
   setParentTxid: (value: string | undefined) => void;
   setRecipient: (value: string) => void;
+  setSocialMode: (value: boolean) => void;
   setSubject: (value: string) => void;
   setWorkAmount: (value: string) => void;
+  socialMode: boolean;
   subject: string;
   submit: (event: FormEvent<HTMLFormElement>) => void;
   workAmount: string;
@@ -51716,7 +51921,7 @@ function ComposePane({
   workSpendableAtoms: string;
   workVisible: boolean;
 }) {
-  const recipientTokens = splitRecipientInputs(recipient);
+  const recipientTokens = splitRecipientInputs(socialMode ? sender : recipient);
   const ccRecipientTokens = splitRecipientInputs(ccRecipient);
   const removeRecipient = (target: string) => {
     setRecipient(recipientTokens.filter((item) => item !== target).join(", "));
@@ -51762,7 +51967,15 @@ function ComposePane({
               ) : (
                 <Send size={16} />
               )}
-              <span>{sendState === "busy" ? "Sending…" : "Send"}</span>
+              <span>
+                {sendState === "busy"
+                  ? socialMode
+                    ? "Posting…"
+                    : "Sending…"
+                  : socialMode
+                    ? "Post"
+                    : "Send"}
+              </span>
             </span>
           </button>
         </div>
@@ -51800,6 +52013,26 @@ function ComposePane({
         <input readOnly value={sender || "Not connected"} />
       </label>
 
+      <label className="compose-social-toggle">
+        <input
+          checked={socialMode}
+          onChange={(event) => {
+            const checked = event.target.checked;
+            setSocialMode(checked);
+            if (checked) {
+              setRecipient(sender);
+              setCcRecipient("");
+              setParentTxid(undefined);
+            }
+          }}
+          type="checkbox"
+        />
+        <span className="button-content">
+          <Tag size={16} />
+          <span>Boost</span>
+        </span>
+      </label>
+
       <label>
         To
         <input
@@ -51807,10 +52040,15 @@ function ComposePane({
           list="proof-contact-options"
           onChange={(event) => setRecipient(event.target.value)}
           placeholder={
-            network === "livenet" ? "bc1... or user@proofofwork.me" : "tb1..."
+            socialMode
+              ? "Self"
+              : network === "livenet"
+                ? "bc1... or user@proofofwork.me"
+                : "tb1..."
           }
+          readOnly={socialMode}
           spellCheck={false}
-          value={recipient}
+          value={socialMode ? sender : recipient}
         />
         <datalist id="proof-contact-options">
           {contacts.map((contact) => (
@@ -51822,7 +52060,7 @@ function ComposePane({
           ))}
         </datalist>
       </label>
-      {recipientTokens.length > 0 ? (
+      {!socialMode && recipientTokens.length > 0 ? (
         <div className="recipient-chip-list" aria-label="Recipients">
           {recipientTokens.map((token, index) => (
             <button
@@ -51844,37 +52082,41 @@ function ComposePane({
         </p>
       ) : null}
 
-      <label>
-        CC
-        <input
-          autoComplete="off"
-          list="proof-contact-options"
-          onChange={(event) => setCcRecipient(event.target.value)}
-          placeholder="Optional visible copies"
-          spellCheck={false}
-          value={ccRecipient}
-        />
-      </label>
-      {ccRecipientTokens.length > 0 ? (
-        <div className="recipient-chip-list" aria-label="CC recipients">
-          {ccRecipientTokens.map((token, index) => (
-            <button
-              className="recipient-chip"
-              key={`${token}-${index}`}
-              onClick={() => removeCcRecipient(token)}
-              title="Remove CC recipient"
-              type="button"
-            >
-              <span>{shortAddress(token)}</span>
-              <X size={13} />
-            </button>
-          ))}
-        </div>
-      ) : null}
-      {ccRecipientNote ? (
-        <p className={ccRecipientError ? "field-note bad" : "field-note"}>
-          {ccRecipientNote}
-        </p>
+      {!socialMode ? (
+        <>
+          <label>
+            CC
+            <input
+              autoComplete="off"
+              list="proof-contact-options"
+              onChange={(event) => setCcRecipient(event.target.value)}
+              placeholder="Optional visible copies"
+              spellCheck={false}
+              value={ccRecipient}
+            />
+          </label>
+          {ccRecipientTokens.length > 0 ? (
+            <div className="recipient-chip-list" aria-label="CC recipients">
+              {ccRecipientTokens.map((token, index) => (
+                <button
+                  className="recipient-chip"
+                  key={`${token}-${index}`}
+                  onClick={() => removeCcRecipient(token)}
+                  title="Remove CC recipient"
+                  type="button"
+                >
+                  <span>{shortAddress(token)}</span>
+                  <X size={13} />
+                </button>
+              ))}
+            </div>
+          ) : null}
+          {ccRecipientNote ? (
+            <p className={ccRecipientError ? "field-note bad" : "field-note"}>
+              {ccRecipientNote}
+            </p>
+          ) : null}
+        </>
       ) : null}
 
       <label>
@@ -51890,7 +52132,7 @@ function ComposePane({
 
       <div className="compose-grid">
         <label>
-          Proofs each
+          {socialMode ? "Proof signal" : "Proofs each"}
           <input
             min={1}
             onChange={(event) => setAmountSats(Number(event.target.value))}
@@ -51904,7 +52146,7 @@ function ComposePane({
       {workVisible ? (
         <div className="compose-grid">
           <label>
-            WORK each
+            {socialMode ? "WORK signal" : "WORK each"}
             <input
               inputMode="decimal"
               min="0"
@@ -51931,10 +52173,22 @@ function ComposePane({
       <label className="memo-field">
         Message
         <textarea
+          maxLength={socialMode ? BOOST_POST_MAX_CHARS : undefined}
           onChange={(event) => setMemo(event.target.value)}
           value={memo}
         />
       </label>
+
+      {socialMode ? (
+        <div
+          className={
+            memo.trim().length > BOOST_POST_MAX_CHARS ? "counter bad" : "counter"
+          }
+        >
+          {memo.trim().length.toLocaleString()} /{" "}
+          {BOOST_POST_MAX_CHARS.toLocaleString()} Boost characters
+        </div>
+      ) : null}
 
       <div className="attachment-control">
         <label className="attachment-picker">
@@ -52210,6 +52464,23 @@ function Reader({
                 <span>Reply All</span>
               </span>
             </button>
+          ) : null}
+          {message.socialMode ? (
+            <a
+              className="secondary small link-button"
+              href={boostTwitterShareUrl({
+                memo: message.memo,
+                network: explorerNetwork,
+                txid: message.txid,
+              })}
+              rel="noreferrer"
+              target="_blank"
+            >
+              <span className="button-content">
+                <Share2 size={15} />
+                <span>Share</span>
+              </span>
+            </a>
           ) : null}
           <a
             className="secondary small link-button"

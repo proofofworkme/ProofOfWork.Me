@@ -48,6 +48,7 @@ export const APP_LINKS: AppLink[] = [
   },
   { href: DESKTOP_APP_URL, label: "Desktop", localHref: LOCAL_DESKTOP_APP_URL },
   { href: BROWSER_APP_URL, label: "Browser", localHref: LOCAL_BROWSER_APP_URL },
+  { href: BOOST_APP_URL, label: "Boost", localHref: LOCAL_BOOST_APP_URL },
   {
     href: MARKETPLACE_APP_URL,
     label: "AMO",

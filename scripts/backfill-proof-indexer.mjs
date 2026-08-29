@@ -393,6 +393,17 @@ const WORK_AMO_V8_DECLARATION_PINS_CONFIGURED =
     WORK_AMO_V8_EXPECTED_ACTIVATION_HEIGHT;
 const PUBLIC_LOG_EVENT_KINDS = new Set([
   "attachment",
+  "boost-buy",
+  "boost-delist",
+  "boost-hide",
+  "boost-like",
+  "boost-list",
+  "boost-post",
+  "boost-profile",
+  "boost-reboost",
+  "boost-reply",
+  "boost-seal",
+  "boost-transfer",
   "browser",
   "file",
   "id-buy",
@@ -859,8 +870,7 @@ const MEMPOOL_SCAN_SEEN_LIMIT = Number(
   process.env.POW_INDEX_MEMPOOL_SCAN_SEEN_LIMIT ?? 10_000,
 );
 // Only protocols with a canonical block-scan parser/verifier belong here.
-// pwb1 remains staged until the Boost indexer/writer is enabled.
-const PROTOCOL_PREFIXES = ["pwm1:", "pwa1:", "pwid1:", "pwt1:"];
+const PROTOCOL_PREFIXES = ["pwm1:", "pwa1:", "pwid1:", "pwb1:", "pwt1:"];
 const MAIL_ATTACHMENT_MAX_BYTES = 60_000;
 const INCLUDE_SCOPED_HOLDERS = !/^(?:0|false|no)$/iu.test(
   String(process.env.POW_INDEX_BACKFILL_HOLDERS ?? "1"),
@@ -4066,11 +4076,316 @@ function workUsdQuoteItemFromMessage(tx, message) {
   return { ...item, valid: true };
 }
 
+const BOOST_POST_MAX_CHARS = 140;
+const BOOST_ACTION_REGISTRY_FEE_SATS = 546;
+
+function boostJsonPayload(value) {
+  return decodeCanonicalBase64UrlJsonObject(value) ?? decodeBase64UrlJson(value);
+}
+
+function boostTxidText(value) {
+  const txid = normalizedLowerText(value);
+  return /^[0-9a-f]{64}$/u.test(txid) ? txid : "";
+}
+
+function boostMediaPointer(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  const mime = normalizedText(value.mime);
+  const name = normalizedText(value.name);
+  const sha256 = normalizedLowerText(value.sha256);
+  const txid = boostTxidText(value.txid);
+  const size = Number(value.size);
+  const media = {
+    ...(mime ? { mime } : {}),
+    ...(name ? { name } : {}),
+    ...(sha256 && /^[0-9a-f]{64}$/u.test(sha256) ? { sha256 } : {}),
+    ...(txid ? { txid } : {}),
+    ...(Number.isSafeInteger(size) && size > 0 ? { size } : {}),
+    ...(normalizedText(value.source) ? { source: normalizedText(value.source) } : {}),
+  };
+  return Object.keys(media).length > 0 ? media : null;
+}
+
+function boostText(value) {
+  return String(value ?? "").trim();
+}
+
+function boostSignalSats(item, registryFeeRequired) {
+  const amount = Number(item?.amountSats ?? 0);
+  if (!Number.isSafeInteger(amount) || amount <= 0) {
+    return 0;
+  }
+  return Math.max(0, amount - (registryFeeRequired ? BOOST_ACTION_REGISTRY_FEE_SATS : 0));
+}
+
+function boostRegistryFeePaid(item) {
+  const amountText = String(item?.amountSats ?? "").trim();
+  if (!/^(?:0|[1-9][0-9]*)$/u.test(amountText)) {
+    return false;
+  }
+  return BigInt(amountText) >= BigInt(BOOST_ACTION_REGISTRY_FEE_SATS);
+}
+
+function validBoostRegistryItem(item) {
+  return boostRegistryFeePaid(item)
+    ? { ...item, valid: true }
+    : invalidProtocolItem(
+        item,
+        "Boost paid actions require the 546-proof registry fee.",
+      );
+}
+
+function boostSelfSend(base, senderAddress) {
+  const sender = normalizedLowerText(senderAddress);
+  return Boolean(
+    sender &&
+      (Array.isArray(base?.recipients) ? base.recipients : []).some(
+        (recipient) => normalizedLowerText(recipient?.address) === sender,
+      ),
+  );
+}
+
+function boostPostItemFromJson(tx, message, action, post) {
+  const base = baseProtocolItem(
+    tx,
+    message,
+    action === "reply" ? "boost-reply" : "boost-post",
+  );
+  const sender = senderAddressFromTx(tx);
+  const text = boostText(post?.text ?? post?.body ?? post?.message);
+  const media = boostMediaPointer(post?.media ?? post?.attachment);
+  const parentTxid =
+    action === "reply" ? boostTxidText(String(message.text).split(":")[2]) : "";
+  const item = {
+    ...base,
+    action,
+    authorAddress: sender,
+    boostTxid: tx.txid,
+    currentOwnerAddress: sender,
+    detail: text,
+    media: media ?? undefined,
+    parentTxid: parentTxid || undefined,
+    proofSignalSats: boostSignalSats(base, action === "reply"),
+    registryFeeSats: action === "reply" ? BOOST_ACTION_REGISTRY_FEE_SATS : 0,
+    signalSats: boostSignalSats(base, action === "reply"),
+    tags: ["Boost", action === "reply" ? "Reply" : "Post"],
+    targetTxid: parentTxid || undefined,
+    text,
+    title: text ? text.slice(0, 90) : action === "reply" ? "Boost reply" : "Boost post",
+    workSignalSubatoms: canonicalIntegerText(post?.workSignalSubatoms, {
+      positive: true,
+    }) || undefined,
+  };
+  if (!text && !media) {
+    return invalidProtocolItem(item, "Boost posts require text or media.");
+  }
+  if (text.length > BOOST_POST_MAX_CHARS) {
+    return invalidProtocolItem(
+      item,
+      `Boost text exceeds ${BOOST_POST_MAX_CHARS} characters.`,
+    );
+  }
+  if (action === "post" && !boostSelfSend(base, sender)) {
+    return invalidProtocolItem(item, "Boost original posts must self-send.");
+  }
+  if (action === "reply" && !parentTxid) {
+    return invalidProtocolItem(item, "Boost replies require a target txid.");
+  }
+  return action === "reply"
+    ? validBoostRegistryItem(item)
+    : { ...item, valid: true };
+}
+
+function boostItemFromMessage(tx, message) {
+  const parts = String(message?.text ?? "").split(":");
+  const action = normalizedLowerText(parts[1]);
+  const base = baseProtocolItem(
+    tx,
+    message,
+    action ? `boost-${action === "repost" ? "reboost" : action}` : "boost-event",
+  );
+  const sender = senderAddressFromTx(tx);
+  const targetTxid = boostTxidText(parts[2]);
+  const registryAction = [
+    "buy5",
+    "delist5",
+    "like",
+    "list5",
+    "reboost",
+    "reply",
+    "repost",
+    "seal5",
+    "t",
+  ].includes(action);
+
+  if (action === "profile" && parts.length === 3) {
+    const profile = boostJsonPayload(parts[2]);
+    const image = boostMediaPointer(
+      profile?.image ?? profile?.avatar ?? profile?.profilePicture,
+    );
+    const item = {
+      ...base,
+      action,
+      authorAddress: sender,
+      currentOwnerAddress: sender,
+      detail: boostText(profile?.bio),
+      displayName: boostText(profile?.name).slice(0, 50),
+      location: boostText(profile?.location).slice(0, 30) || "ProofOfWork",
+      profile: {
+        ...(image ? { image } : {}),
+        bio: boostText(profile?.bio).slice(0, 160),
+        location: boostText(profile?.location).slice(0, 30) || "ProofOfWork",
+        name: boostText(profile?.name).slice(0, 50),
+        website: boostText(profile?.website).slice(0, 100),
+      },
+      proofSignalSats: boostSignalSats(base, false),
+      registryFeeSats: 0,
+      signalSats: boostSignalSats(base, false),
+      tags: ["Boost", "Profile"],
+      title: "Boost profile",
+    };
+    return profile && typeof profile === "object" && !Array.isArray(profile)
+      ? [{ ...item, valid: true }]
+      : [invalidProtocolItem(item, "Boost profile metadata is malformed.")];
+  }
+
+  if (action === "post" && parts.length === 3) {
+    const post = boostJsonPayload(parts[2]);
+    const item = boostPostItemFromJson(tx, message, action, post);
+    return [post ? item : invalidProtocolItem(item, "Boost post metadata is malformed.")];
+  }
+
+  if (action === "reply" && parts.length === 4) {
+    const post = boostJsonPayload(parts[3]);
+    const item = boostPostItemFromJson(tx, message, action, post);
+    return [post ? item : invalidProtocolItem(item, "Boost reply metadata is malformed.")];
+  }
+
+  if (["like", "reboost", "repost", "hide"].includes(action) && parts.length === 3) {
+    const normalizedAction = action === "repost" ? "reboost" : action;
+    const paidAction = normalizedAction !== "hide";
+    const item = {
+      ...base,
+      action: normalizedAction,
+      authorAddress: sender,
+      boostTxid: targetTxid,
+      currentOwnerAddress: sender,
+      detail: `${normalizedAction} ${targetTxid}`,
+      proofSignalSats: boostSignalSats(base, paidAction),
+      registryFeeSats: paidAction ? BOOST_ACTION_REGISTRY_FEE_SATS : 0,
+      signalSats: boostSignalSats(base, paidAction),
+      tags: ["Boost", normalizedAction],
+      targetTxid,
+      title: `Boost ${normalizedAction}`,
+    };
+    return targetTxid
+      ? [paidAction ? validBoostRegistryItem(item) : { ...item, valid: true }]
+      : [invalidProtocolItem(item, "Boost action target txid is malformed.")];
+  }
+
+  if (action === "t" && parts.length === 4) {
+    const newOwnerAddress = normalizedText(parts[3]);
+    const item = {
+      ...base,
+      action: "transfer",
+      boostTxid: targetTxid,
+      currentOwnerAddress: newOwnerAddress,
+      kind: "boost-transfer",
+      ownerAddress: newOwnerAddress,
+      proofSignalSats: boostSignalSats(base, true),
+      registryFeeSats: BOOST_ACTION_REGISTRY_FEE_SATS,
+      signalSats: boostSignalSats(base, true),
+      tags: ["Boost", "Transfer"],
+      targetTxid,
+      title: "Boost transfer",
+    };
+    return targetTxid && newOwnerAddress
+      ? [validBoostRegistryItem(item)]
+      : [invalidProtocolItem(item, "Boost transfer is malformed.")];
+  }
+
+  if (["list5", "seal5", "delist5", "buy5"].includes(action)) {
+    const saleAuthorization = ["list5", "seal5"].includes(action)
+      ? boostJsonPayload(action === "list5" ? parts[2] : parts[3])
+      : null;
+    const listingId = action === "list5" ? tx.txid : targetTxid;
+    const boostTxid = boostTxidText(
+      saleAuthorization?.boostTxid ??
+        saleAuthorization?.assetTxid ??
+        saleAuthorization?.targetTxid,
+    );
+    const priceSats = canonicalIntegerText(
+      saleAuthorization?.priceSats ??
+        saleAuthorization?.price ??
+        saleAuthorization?.totalPriceSats ??
+        saleAuthorization?.totalSats,
+      { positive: true },
+    );
+    const newOwnerAddress = normalizedText(parts[3]);
+    const marketplaceInvalidReason =
+      action === "list5" && (!saleAuthorization || !boostTxid || !priceSats)
+        ? "Boost listing requires sale-ticket terms with boost txid and price."
+        : action === "seal5" &&
+            (!listingId || !saleAuthorization || !boostTxid || !priceSats)
+          ? "Boost seal requires listing txid and sealed sale-ticket terms."
+          : action === "delist5" && !listingId
+            ? "Boost delist requires a listing txid."
+            : action === "buy5" && (!listingId || !newOwnerAddress)
+              ? "Boost buy requires listing txid and new owner address."
+              : "";
+    const item = {
+      ...base,
+      action,
+      boostTxid: boostTxid || undefined,
+      buyerAddress: action === "buy5" ? newOwnerAddress : undefined,
+      kind:
+        action === "list5"
+          ? "boost-list"
+          : action === "seal5"
+            ? "boost-seal"
+            : action === "delist5"
+              ? "boost-delist"
+              : "boost-buy",
+      listingId,
+      priceSats: priceSats || undefined,
+      proofSignalSats: boostSignalSats(base, true),
+      registryFeeSats: BOOST_ACTION_REGISTRY_FEE_SATS,
+      saleAuthorization: saleAuthorization ?? undefined,
+      sellerAddress: normalizedText(saleAuthorization?.sellerAddress),
+      signalSats: boostSignalSats(base, true),
+      tags: ["Boost", action],
+      targetTxid: boostTxid || targetTxid || undefined,
+      title: `Boost ${action}`,
+    };
+    return marketplaceInvalidReason
+      ? [invalidProtocolItem(item, marketplaceInvalidReason)]
+      : [validBoostRegistryItem(item)];
+  }
+
+  return [
+    invalidProtocolItem(
+      {
+        ...base,
+        action: action || "event",
+        authorAddress: sender,
+        proofSignalSats: boostSignalSats(base, registryAction),
+        registryFeeSats: registryAction ? BOOST_ACTION_REGISTRY_FEE_SATS : 0,
+        signalSats: boostSignalSats(base, registryAction),
+        targetTxid: targetTxid || undefined,
+      },
+      "Unsupported Boost protocol event.",
+    ),
+  ];
+}
+
 function protocolItemsFromTx(tx, message) {
   if (message?.decodeValid === false) {
     const invalidKind = {
       "pwa1:": "work-usd-quote",
       "pwid1:": "id-event",
+      "pwb1:": "boost-event",
       "pwt1:": "token-event",
     }[message?.prefix] ?? "protocol-event";
     return [
@@ -4179,6 +4494,10 @@ function protocolItemsFromTx(tx, message) {
 
   if (message.prefix === "pwa1:") {
     return [workUsdQuoteItemFromMessage(tx, message)];
+  }
+
+  if (message.prefix === "pwb1:") {
+    return boostItemFromMessage(tx, message);
   }
 
   if (message.prefix !== "pwt1:") {
@@ -4331,7 +4650,7 @@ function rawProtocolItemsForTx(tx, messages) {
     ...canonicalBondMintItemsFromMailItem(mailItem),
     ...messages
       .filter((message) =>
-        ["pwa1:", "pwid1:", "pwt1:"].includes(message?.prefix),
+        ["pwa1:", "pwid1:", "pwb1:", "pwt1:"].includes(message?.prefix),
       )
       .flatMap((message) => protocolItemsFromTx(tx, message)),
   ];
@@ -10538,6 +10857,14 @@ function protocolForItem(item, kind) {
     return "pwid1";
   }
   if (
+    kind.startsWith("boost") ||
+    item?.boostTxid ||
+    item?.targetTxid ||
+    item?.proofSignalSats
+  ) {
+    return "pwb1";
+  }
+  if (
     ["mail", "reply", "file", "attachment", "browser"].includes(kind) ||
     Boolean(bondTagForKind(kind))
   ) {
@@ -10752,6 +11079,8 @@ function stableEventKey({ item, kind, protocol, sourceLabel, txid }) {
     kind,
     txid,
     item?.listingId,
+    item?.boostTxid,
+    item?.targetTxid,
     item?.tokenId,
     item?.id,
     item?.parentTxid,
@@ -12693,6 +13022,7 @@ async function upsertEvent(client, sourceLabel, item) {
     "pwm1",
     "pwa1",
     "pwid1",
+    "pwb1",
     "pwt1",
   ].includes(protocol);
   const eventKey = stableEventKey({
@@ -19546,7 +19876,7 @@ async function prepareCanonicalRebuild(client) {
         WHERE network = $1
           AND protocol = ANY($2::text[])
       `,
-      [NETWORK, ["pwid1", "pwt1", "pwm1", "pwa1"]],
+      [NETWORK, ["pwid1", "pwt1", "pwm1", "pwa1", "pwb1"]],
     );
     await client.query(`DELETE FROM proof_indexer.id_records WHERE network = $1`, [
       NETWORK,
@@ -22011,7 +22341,7 @@ export function bindPreparedTransactionsToWorkAmoV5Replay(
   preparedTransactions,
   transition,
 ) {
-  const protocols = new Set(["pwa1", "pwid1", "pwm1", "pwt1"]);
+  const protocols = new Set(["pwa1", "pwid1", "pwm1", "pwb1", "pwt1"]);
   const replayByPosition = new Map();
   for (const record of Array.isArray(transition?.replayRecords)
     ? transition.replayRecords
@@ -22303,7 +22633,7 @@ async function workAmoV5CanonicalBlockEventSet(client, transition) {
         AND event_row.status = 'confirmed'
         AND event_row.block_height = $2
         AND event_row.protocol = ANY(
-          ARRAY['pwm1','pwa1','pwid1','pwt1']::text[]
+          ARRAY['pwm1','pwa1','pwid1','pwb1','pwt1']::text[]
         )
       ORDER BY
         event_row.block_index,
@@ -26516,7 +26846,7 @@ async function persistExactWorkQ16PendingWitness(
       [
         NETWORK,
         stage.replayTxids,
-        ["pwa1", "pwid1", "pwm1", "pwt1"],
+        ["pwa1", "pwid1", "pwm1", "pwb1", "pwt1"],
       ],
     );
     const expectedStagedEventOutcomes =
@@ -26777,7 +27107,7 @@ async function persistExactWorkQ16PendingWitness(
         "WORK Q16 pending membership contains a malformed or unresolved persisted WORK row.",
       );
     }
-    const governedProtocols = ["pwa1", "pwid1", "pwm1", "pwt1"];
+    const governedProtocols = ["pwa1", "pwid1", "pwm1", "pwb1", "pwt1"];
     const projectionEventResult = await client.query(
       `
         SELECT
@@ -28124,7 +28454,7 @@ function assertWorkQ16PendingCompanionCoverage(
   companionPrepared,
   txid,
 ) {
-  const governedProtocols = new Set(["pwa1", "pwid1", "pwm1"]);
+  const governedProtocols = new Set(["pwa1", "pwid1", "pwm1", "pwb1"]);
   const records = (Array.isArray(rawRecords) ? rawRecords : []).filter(
     (record) => governedProtocols.has(normalizedLowerText(record?.protocol)),
   );
@@ -28360,7 +28690,7 @@ async function clearWorkQ16PendingStageDecision(client, txid) {
         AND event.protocol = ANY($3::text[])
         AND event.status IN ('pending', 'dropped', 'orphaned')
     `,
-    [NETWORK, txid, ["pwa1", "pwid1", "pwm1", "pwt1"]],
+    [NETWORK, txid, ["pwa1", "pwid1", "pwm1", "pwb1", "pwt1"]],
   );
   await client.query(
     `

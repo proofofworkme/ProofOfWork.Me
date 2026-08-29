@@ -204,8 +204,11 @@ export function proofIndexEventParticipantsForItem(item, context = {}) {
   add(source.actor, "actor");
   add(source.counterparty, "counterparty");
   add(source.senderAddress, "sender");
+  add(source.authorAddress, "author", source.authorId);
   add(source.recipientAddress, "recipient");
   add(source.ownerAddress, "owner", source.id);
+  add(source.currentOwnerAddress, "owner", source.currentOwnerId);
+  add(source.targetOwnerAddress, "target-owner", source.targetOwnerId);
   add(source.receiveAddress, "receiver", source.id);
   add(source.sellerAddress, "seller");
   add(source.buyerAddress, "buyer");
@@ -259,6 +262,8 @@ export function proofIndexEventRefsForItem(item) {
   add("ticker", source.ticker);
   add("ticker", authorization.ticker);
   add("listing-id", source.listingId);
+  add("boost-txid", source.boostTxid);
+  add("target-txid", source.targetTxid);
   add("parent-txid", source.parentTxid);
   add("closed-txid", source.closedTxid);
   add("seal-txid", source.sealTxid);

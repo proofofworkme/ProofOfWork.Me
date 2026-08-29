@@ -4,6 +4,7 @@ export const CANONICAL_PROTOCOL_PREFIXES = Object.freeze([
   "pwm1:",
   "pwa1:",
   "pwid1:",
+  "pwb1:",
   "pwt1:",
 ]);
 

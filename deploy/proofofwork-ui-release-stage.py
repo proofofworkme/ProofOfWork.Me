@@ -23,6 +23,7 @@ from typing import TypedDict
 SURFACES = (
     "activity",
     "browser",
+    "boost",
     "computer",
     "desktop",
     "growth",
@@ -449,7 +450,7 @@ def validate_exact_surfaces_root(
     if actual != expected:
         missing = sorted(expected - actual)
         extra = sorted(actual - expected)
-        fail(f"New-build surfaces root must contain exactly 14 surfaces; missing={missing} extra={extra}")
+        fail(f"New-build surfaces root must contain exactly 15 surfaces; missing={missing} extra={extra}")
     fingerprints, entry_count, regular_bytes = bounded_payload_fingerprint(
         surfaces_root,
         expected_owner,

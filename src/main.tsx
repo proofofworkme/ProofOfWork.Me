@@ -4,10 +4,13 @@ import { detectAppSurface } from "./app/routeRegistry";
 import { AppErrorBoundary } from "./shared/components/AppErrorBoundary";
 import "./styles.css";
 
+const appSurface = detectAppSurface();
 const RootApp =
   detectAppSurface() === "landing"
     ? lazy(() => import("./features/landing/LandingRoot"))
-    : lazy(() => import("./App"));
+    : appSurface === "boost"
+      ? lazy(() => import("./features/boost/BoostRoot"))
+      : lazy(() => import("./App"));
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
