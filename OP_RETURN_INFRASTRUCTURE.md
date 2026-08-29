@@ -3242,6 +3242,11 @@ importing a mutable runtime module. `npm run check:ui-ops` contract-tests the
 two implementations by passing
 a stager-built candidate through every publisher pre-exchange proof, as well as
 testing stale-asset omission, collision rejection, and link rejection.
+The first Boost cutover preserves rollback safety across the surface-count
+boundary: active or rollback manifests created before Boost may verify with the
+legacy 14-surface set only when `/var/www/proofofwork-boost` is absent. New
+candidates, active releases after publication, and any manifest with Boost
+evidence remain 15-surface strict.
 
 The following is the exact no-Node-on-UI-host release procedure. Run the first
 block on the trusted build host only after the approved release is committed.

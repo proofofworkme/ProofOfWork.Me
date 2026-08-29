@@ -111,6 +111,26 @@ if ((${#surfaces[@]} != 15)); then
   echo "UI provenance surface set must contain exactly 15 entries." >&2
   exit 70
 fi
+legacy_surfaces=(
+  activity
+  browser
+  computer
+  desktop
+  growth
+  id
+  inception
+  infinity
+  landing
+  marketplace
+  nft
+  token
+  wallet
+  work
+)
+if ((${#legacy_surfaces[@]} != 14)); then
+  echo "UI provenance legacy surface set must contain exactly 14 entries." >&2
+  exit 70
+fi
 declare -A surface_seen=()
 for surface in "${surfaces[@]}"; do
   if [[ -n "${surface_seen[${surface}]:-}" ]]; then
@@ -733,6 +753,11 @@ verify_archive_payload() {
   local extraction_root verification_status
   local -n expected_counts="${counts_name}"
   local -n expected_digests="${digests_name}"
+  local -a archive_surfaces=("${surfaces[@]}")
+
+  if [[ -z "${expected_counts[boost]:-}" && -z "${expected_digests[boost]:-}" ]]; then
+    archive_surfaces=("${legacy_surfaces[@]}")
+  fi
 
   if ! extraction_root="$(mktemp --directory "${TMPDIR:-/tmp}/proofofwork-ui-archive.XXXXXX")"; then
     echo "Release archive extraction root could not be created." >&2
@@ -849,7 +874,11 @@ verify_archive_payload() {
       echo "Release archive must contain only the surfaces root." >&2
       exit 1
     fi
-    for surface in "${surfaces[@]}"; do
+    if [[ -z "${expected_counts[boost]:-}" && -e "${extraction_root}/surfaces/boost" ]]; then
+      echo "Legacy release archive contains unexpected Boost surface evidence." >&2
+      exit 1
+    fi
+    for surface in "${archive_surfaces[@]}"; do
       archive_surface="${extraction_root}/surfaces/${surface}"
       if ! validate_surface_directory "${surface}" "${archive_surface}"; then
         exit 1
@@ -880,6 +909,7 @@ record_rollback_evidence() {
   local archive_real archive_name archive_sha256 archive_provenance recorded_at
   local temporary provenance_temporary surface count digest second_count second_digest
   local second_archive_sha256
+  local -a record_surfaces=("${surfaces[@]}")
   declare -A counts=()
   declare -A digests=()
 
@@ -919,8 +949,11 @@ record_rollback_evidence() {
     echo "Refusing to replace existing rollback archive evidence: ${archive_provenance}" >&2
     exit 1
   fi
+  if [[ ! -e "$(surface_directory boost)" && ! -L "$(surface_directory boost)" ]]; then
+    record_surfaces=("${legacy_surfaces[@]}")
+  fi
 
-  for surface in "${surfaces[@]}"; do
+  for surface in "${record_surfaces[@]}"; do
     validate_surface "${surface}"
     count="$(surface_file_count "${surface}")"
     digest="$(surface_tree_sha256 "${surface}")"
@@ -950,7 +983,7 @@ record_rollback_evidence() {
     printf 'archive_name=%s\n' "${archive_name}"
     printf 'archive_sha256=%s\n' "${archive_sha256}"
     printf 'archive_payload_model=surfaces-v1\n'
-    for surface in "${surfaces[@]}"; do
+    for surface in "${record_surfaces[@]}"; do
       printf 'surface.%s.file_count=%s\n' "${surface}" "${counts[${surface}]}"
       printf 'surface.%s.sha256=%s\n' "${surface}" "${digests[${surface}]}"
     done
@@ -964,7 +997,7 @@ record_rollback_evidence() {
     echo "Rollback archive changed while evidence was recorded." >&2
     exit 1
   fi
-  for surface in "${surfaces[@]}"; do
+  for surface in "${record_surfaces[@]}"; do
     validate_surface "${surface}"
     second_count="$(surface_file_count "${surface}")"
     second_digest="$(surface_tree_sha256 "${surface}")"
@@ -1209,6 +1242,7 @@ process_release_manifest() {
 verify_manifest() {
   local line key value surface expected_count expected_digest actual_count actual_digest mode
   local archive archive_provenance actual_archive_sha256 manifest_owner provenance_mode provenance_owner
+  local -a manifest_surfaces=("${surfaces[@]}")
   declare -A values=()
   declare -A seen=()
   if (($# != 0)); then
@@ -1278,6 +1312,13 @@ verify_manifest() {
     echo "Active UI release manifest does not preserve the NFT compatibility alias." >&2
     exit 1
   fi
+  if [[ -z "${values[surface.boost.file_count]:-}" && -z "${values[surface.boost.sha256]:-}" ]]; then
+    if [[ -e "$(surface_directory boost)" || -L "$(surface_directory boost)" ]]; then
+      echo "Active UI release manifest is missing surface evidence: boost" >&2
+      exit 1
+    fi
+    manifest_surfaces=("${legacy_surfaces[@]}")
+  fi
 
   archive="${archive_root}/${values[archive_name]}"
   actual_archive_sha256="$(verified_archive_sha256 "${archive}" "${values[archive_sha256]}")"
@@ -1299,7 +1340,7 @@ verify_manifest() {
     exit 1
   fi
 
-  for surface in "${surfaces[@]}"; do
+  for surface in "${manifest_surfaces[@]}"; do
     expected_count="${values[surface.${surface}.file_count]:-}"
     expected_digest="${values[surface.${surface}.sha256]:-}"
     if [[ ! "${expected_count}" =~ ^[1-9][0-9]*$ || ! "${expected_digest}" =~ ^[0-9a-f]{64}$ ]]; then
@@ -1321,6 +1362,7 @@ verify_manifest() {
 verify_rollback_evidence() {
   local line key value surface expected_count expected_digest actual_count actual_digest mode
   local archive archive_provenance actual_archive_sha256 manifest_owner provenance_mode provenance_owner
+  local -a evidence_surfaces=("${surfaces[@]}")
   declare -A values=()
   declare -A seen=()
   declare -A counts=()
@@ -1387,6 +1429,13 @@ verify_rollback_evidence() {
     echo "UI rollback evidence does not preserve the NFT compatibility alias." >&2
     exit 1
   fi
+  if [[ -z "${values[surface.boost.file_count]:-}" && -z "${values[surface.boost.sha256]:-}" ]]; then
+    if [[ -e "$(surface_directory boost)" || -L "$(surface_directory boost)" ]]; then
+      echo "UI rollback evidence is missing surface evidence: boost" >&2
+      exit 1
+    fi
+    evidence_surfaces=("${legacy_surfaces[@]}")
+  fi
 
   archive="${archive_root}/${values[archive_name]}"
   actual_archive_sha256="$(verified_archive_sha256 "${archive}" "${values[archive_sha256]}")"
@@ -1408,7 +1457,7 @@ verify_rollback_evidence() {
     exit 1
   fi
 
-  for surface in "${surfaces[@]}"; do
+  for surface in "${evidence_surfaces[@]}"; do
     expected_count="${values[surface.${surface}.file_count]:-}"
     expected_digest="${values[surface.${surface}.sha256]:-}"
     if [[ ! "${expected_count}" =~ ^[1-9][0-9]*$ ||

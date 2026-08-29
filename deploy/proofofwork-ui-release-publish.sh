@@ -232,6 +232,26 @@ if ((${#surfaces[@]} != 15)); then
   echo "UI publisher surface set must contain exactly 15 entries." >&2
   exit 70
 fi
+legacy_surfaces=(
+  activity
+  browser
+  computer
+  desktop
+  growth
+  id
+  inception
+  infinity
+  landing
+  marketplace
+  nft
+  token
+  wallet
+  work
+)
+if ((${#legacy_surfaces[@]} != 14)); then
+  echo "UI publisher legacy surface set must contain exactly 14 entries." >&2
+  exit 70
+fi
 declare -A surface_seen=()
 for surface in "${surfaces[@]}"; do
   if [[ -n "${surface_seen[${surface}]:-}" ]]; then
@@ -243,7 +263,11 @@ done
 unset surface_seen surface
 
 verify_prior_asset_compatibility() {
-  /usr/bin/python3 -I - "${www_root}" "${stage_root}" "${surfaces[@]}" <<'PY'
+  local -a prior_surfaces=("${surfaces[@]}")
+  if [[ ! -e "${www_root}/proofofwork-boost" && ! -L "${www_root}/proofofwork-boost" ]]; then
+    prior_surfaces=("${legacy_surfaces[@]}")
+  fi
+  /usr/bin/python3 -I - "${www_root}" "${stage_root}" "${prior_surfaces[@]}" <<'PY'
 import hashlib
 import os
 import re
