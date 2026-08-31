@@ -1882,3 +1882,32 @@ Remaining storage decision:
   separate retention-policy approval is still needed before changing logical
   backup depth, physical base backup depth, WAL retention, or off-box recovery
   archive handling.
+
+## 2026-08-31 Storage Retention Remediation Phase 2E
+
+Approved PostgreSQL retention remediation phase 2E was completed with a narrow
+scope:
+change logical PostgreSQL backup retention from `14` sets to `7` in the tracked
+repo script and production script, delete only the six approved old standard
+logical backup directories, and run
+`pg_backupcluster 16 main expirebasebackups 1` to retain only the newest
+physical base backup and expire obsolete WAL before that remaining backup.
+
+Evidence file:
+`audits/2026-08-31-postgresql-retention-remediation-2e.md`.
+
+Post-cleanup checkpoint:
+
+- Node `/data` improved from `79%` used and `334G` available to `71%` used and
+  `453G` available.
+- Production logical PostgreSQL backup retention is now `keep=7`.
+- Logical backup inventory now contains the latest `7` standard timestamped
+  `proof_indexer` dump sets.
+- Physical backup inventory now contains the newest base backup
+  `2026-08-31T000345Z.backup`; the old `2026-08-25T203643Z.backup` was expired.
+- WAL archive was reduced from `4002` files and `32982937770` bytes to `173`
+  files and `1255873777` bytes.
+- Public `/api/v1/health` remained HTTP `200`, `ok=true`, `ready=true`, tip
+  `964905`, indexed through `964905`, lag `0`, snapshot
+  `56041beba915298d5860892b`.
+- Current direct storage-health probe passed for `/` and `/data`.

@@ -4,7 +4,7 @@ set -Eeuo pipefail
 umask 077
 
 backup_root="/data/proofofwork-postgres-backups/logical"
-keep=14
+keep=7
 timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
 basename="proof_indexer-${timestamp}.dumpset"
 temporary_set="${backup_root}/.${basename}.tmp"

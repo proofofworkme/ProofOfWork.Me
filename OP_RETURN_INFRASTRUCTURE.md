@@ -1144,7 +1144,7 @@ directory containing the custom-format `proof_indexer` dump, a
 serializes timer and manual invocations through an owner-controlled lock in the
 canonical logical-backup root. Cleanup is bound to the device/inode of the
 temporary set created by that invocation, so an overlapping or same-second
-invocation can never remove another dump in progress. It keeps 14 sets under
+invocation can never remove another dump in progress. It keeps 7 sets under
 `/data/proofofwork-postgres-backups/logical`; globals may
 contain password hashes and must remain `postgres`-only and encrypted before
 any off-host copy. Take the first physical and logical backups, restore the
