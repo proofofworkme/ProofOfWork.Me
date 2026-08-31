@@ -1777,6 +1777,10 @@ function isolatedFunction(path, name, globals = {}) {
             "canonicalMovementPositionFromEventRow",
             "workAmountProjectionMetadataForAmount",
           ],
+          legacyWorkListingAmountProjection: [
+            "workAmountProjection",
+            "workAmountProjectionMetadata",
+          ],
           workAmountProjection: [
             "formatWorkAmountByProjectionMeta",
             "workAmountProjectionMetadata",
@@ -1785,6 +1789,7 @@ function isolatedFunction(path, name, globals = {}) {
             "currentWorkAmountStorageModel",
           ],
           workListingAmountProjection: [
+            "legacyWorkListingAmountProjection",
             "workAmountProjection",
             "workAmountProjectionMetadata",
           ],
@@ -27540,6 +27545,69 @@ check("exact canonical summaries require current conserved token balances", asyn
     precisionModel: WORK_PRECISION_V2_MODEL,
     unitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,
   };
+  const workListingAmountProjection = isolatedFunction(
+    READER_PATH,
+    "workListingAmountProjection",
+  );
+  const migratedLegacyListingPayload = {
+    ...q16FixtureMetadata,
+    amount: "0.000016",
+    amountAtoms: "1600",
+    amountSubatoms: "160000000000",
+    legacyAmountAtoms: "1600",
+    legacyAmountStorageModel: WORK_ATOMIC_PROJECTION_MODEL,
+    precisionMigrationModel: WORK_PRECISION_V2_MIGRATION_MODEL,
+    saleAuthorization: {
+      amount: "0.000016",
+      amountAtoms: "1600",
+      tokenId: WORK_TOKEN_ID,
+      version: "pwt-sale-v3",
+    },
+    sourceAmountEvidence: {
+      amount: "0.000016",
+      amountAtoms: "1600",
+      amountStorageModel: WORK_ATOMIC_PROJECTION_MODEL,
+      decimals: WORK_DECIMALS,
+      unitScale: WORK_UNIT_SCALE_TEXT,
+    },
+    tokenId: WORK_TOKEN_ID,
+  };
+  const migratedProjection = workListingAmountProjection(
+    migratedLegacyListingPayload,
+    {
+      metadata: q16FixtureMetadata,
+      storedAmount: "160000000000",
+    },
+  );
+  assert.equal(
+    migratedProjection.amountStorageModel,
+    WORK_SUBATOM_PROJECTION_MODEL,
+  );
+  assert.equal(migratedProjection.amountSubatoms, "160000000000");
+  assert.equal(migratedProjection.amountAtoms, undefined);
+  assert.equal(migratedProjection.amount, "0.000016");
+  assert.throws(
+    () =>
+      workListingAmountProjection(
+        {
+          ...migratedLegacyListingPayload,
+          legacyAmountAtoms: "1601",
+        },
+        {
+          metadata: q16FixtureMetadata,
+          storedAmount: "160000000000",
+        },
+      ),
+    /amount evidence conflicts/u,
+  );
+  assert.throws(
+    () =>
+      workListingAmountProjection(migratedLegacyListingPayload, {
+        metadata: q16FixtureMetadata,
+        storedAmount: "160100000000",
+      }),
+    /does not conserve its immutable Q8 amount/u,
+  );
   const legacyRelicListingId = "4".repeat(64);
   const legacyRelic = {
     amount: "0.000016",

@@ -19845,7 +19845,7 @@ function workListingAmountProjection(
     authorizationVersion &&
     authorizationVersion !== WORK_AMO_V8_AUTH_VERSION
   ) {
-    const legacyProjection = workAmountProjection(item);
+    const legacyProjection = legacyWorkListingAmountProjection(item);
     if (
       legacyProjection.amountStorageModel !==
         WORK_ATOMIC_PROJECTION_MODEL ||
@@ -19956,6 +19956,95 @@ export function workAmountUnitsForStorageModel(
   }
   throw new TypeError(
     "Native Q16 WORK cannot be projected back into historical Q8 atoms.",
+  );
+}
+
+function legacyWorkListingAmountProjection(record) {
+  const item = objectRecord(record);
+  const sourceAmountEvidence = objectRecord(item.sourceAmountEvidence);
+  const saleAuthorization = objectRecord(item.saleAuthorization);
+  const listingAuthorization = objectRecord(item.listingAuthorization);
+  const candidates = [];
+  const addAtoms = (value) => {
+    if (value === undefined || value === null || value === "") {
+      return;
+    }
+    candidates.push(normalizeWorkAtoms(value));
+  };
+  const addAmount = (value) => {
+    if (value === undefined || value === null || value === "") {
+      return;
+    }
+    candidates.push(parseWorkAmountToAtoms(value));
+  };
+  const addAtomicRecord = (value) => {
+    const amountRecord = objectRecord(value);
+    if (Object.keys(amountRecord).length === 0) {
+      return;
+    }
+    const amountPresent = [
+      amountRecord.amount,
+      amountRecord.amountAtoms,
+      amountRecord.tokenAmount,
+      amountRecord.tokenAmountAtoms,
+    ].some(
+      (candidate) =>
+        candidate !== undefined &&
+        candidate !== null &&
+        candidate !== "",
+    );
+    if (!amountPresent) {
+      return;
+    }
+    const metadata = workAmountProjectionMetadata(amountRecord);
+    if (metadata.amountStorageModel !== WORK_ATOMIC_PROJECTION_MODEL) {
+      throw new TypeError(
+        "Migrated legacy WORK listing amount evidence must be Q8.",
+      );
+    }
+    addAtoms(amountRecord.amountAtoms);
+    addAtoms(amountRecord.tokenAmountAtoms);
+    addAmount(amountRecord.amount);
+    addAmount(amountRecord.tokenAmount);
+  };
+
+  addAtomicRecord(sourceAmountEvidence);
+  if (
+    item.legacyAmountStorageModel !== undefined &&
+    item.legacyAmountStorageModel !== null &&
+    item.legacyAmountStorageModel !== "" &&
+    item.legacyAmountStorageModel !== WORK_ATOMIC_PROJECTION_MODEL
+  ) {
+    throw new TypeError(
+      "Migrated legacy WORK listing amount evidence must be Q8.",
+    );
+  }
+  addAtoms(item.legacyAmountAtoms);
+  addAtoms(item.amountAtoms);
+  addAtoms(item.tokenAmountAtoms);
+  addAtomicRecord(saleAuthorization);
+  addAtomicRecord(listingAuthorization);
+  const uniqueCandidates = [...new Set(candidates)];
+  if (uniqueCandidates.length === 0) {
+    throw new TypeError(
+      "Migrated legacy WORK listing requires immutable Q8 amount evidence.",
+    );
+  }
+  if (uniqueCandidates.length > 1) {
+    throw new TypeError(
+      "Migrated legacy WORK listing amount evidence conflicts.",
+    );
+  }
+
+  return workAmountProjection(
+    {
+      amountAtoms: uniqueCandidates[0],
+      amountStorageModel: WORK_ATOMIC_PROJECTION_MODEL,
+      decimals: WORK_DECIMALS,
+      tokenId: WORK_TOKEN_ID,
+      unitScale: WORK_UNIT_SCALE_TEXT,
+    },
+    { allowZero: false },
   );
 }
 
