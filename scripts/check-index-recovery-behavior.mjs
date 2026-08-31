@@ -40752,6 +40752,53 @@ check("completed PWT replay certificates stay complete during later catch-up", (
   }
 });
 
+check("completed PWT replay certificates do not move backward during historical repair", () => {
+  const canonicalRebuildCheckpointValue = isolatedFunction(
+    BACKFILL_PATH,
+    "canonicalRebuildCheckpointValue",
+    { canonicalPwtRangeReplayState: () => "complete" },
+  );
+  const certificate = {
+    accountingModel: "incb-pre-bond-live-work-network-value-v1",
+    targets: [{ txid: "1".repeat(64) }],
+    verified: true,
+  };
+  const verifierBinding = {
+    bindingId: "2".repeat(64),
+    model: "proof-indexer-pwt-range-replay-verifier-binding-v1",
+  };
+  const completedReplay = {
+    active: false,
+    complete: true,
+    completedAt: "2026-07-18T20:00:00.000Z",
+    incbRangeReplayVerification: certificate,
+    indexedThroughBlock: 112,
+    indexedThroughBlockHash: "c".repeat(64),
+    mode: "pwt-range-replay",
+    network: "livenet",
+    status: "complete",
+    verifierBinding,
+  };
+
+  const repairedHistoricalBlock = canonicalRebuildCheckpointValue(
+    completedReplay,
+    {
+      blockHash: "b".repeat(64),
+      complete: false,
+      height: 111,
+    },
+  );
+
+  assert.equal(repairedHistoricalBlock.status, "complete");
+  assert.equal(repairedHistoricalBlock.active, false);
+  assert.equal(repairedHistoricalBlock.complete, true);
+  assert.equal(repairedHistoricalBlock.completedAt, completedReplay.completedAt);
+  assert.equal(repairedHistoricalBlock.indexedThroughBlock, 112);
+  assert.equal(repairedHistoricalBlock.indexedThroughBlockHash, "c".repeat(64));
+  assert.deepEqual(repairedHistoricalBlock.incbRangeReplayVerification, certificate);
+  assert.deepEqual(repairedHistoricalBlock.verifierBinding, verifierBinding);
+});
+
 check("ordinary catch-up refreshes balances without reopening a completed PWT replay", async () => {
   const hashes = {
     110: "a".repeat(64),

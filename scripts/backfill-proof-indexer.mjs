@@ -21070,6 +21070,15 @@ function canonicalRebuildCheckpointValue(
     rebuild.mode === "pwt-range-replay" &&
     canonicalPwtRangeReplayState(rebuild) === "complete"
   ) {
+    const currentIndexedThroughBlock = Number(rebuild.indexedThroughBlock);
+    const nextIndexedThroughBlock = Number(height);
+    if (
+      Number.isSafeInteger(currentIndexedThroughBlock) &&
+      Number.isSafeInteger(nextIndexedThroughBlock) &&
+      nextIndexedThroughBlock < currentIndexedThroughBlock
+    ) {
+      return rebuild;
+    }
     return {
       ...rebuild,
       indexedThroughBlock: height,
