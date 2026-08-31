@@ -1222,3 +1222,283 @@ No stale production storage was deleted in this pass. Cleanup candidates remain:
    it still disagrees with the public exact summary health surface.
 5. Approve an explicit storage-retention pass before deleting old release,
    recovery, backup, or rollback artifacts.
+
+## Final Q16 Containment Deployment Verification - 2026-08-31
+
+The follow-up containment correction was committed as:
+
+- Commit:
+  `5de1b0c590152e27aaba0d6ad1496f7b966bdb4a`.
+- Tree:
+  `1c5cfe2b10410d9c625832df5fa2ba86d1324a7f`.
+- Change:
+  the worker's final throw gate now uses the shared `escalating` decision, so
+  a classified Q16 pending-witness retry cannot be marked non-escalating and
+  then still exit through a raw consecutive-failure threshold.
+
+Candidate verification passed on the node stage before exchange:
+
+- `node --check scripts/run-proof-indexer-worker.mjs`.
+- `node --check scripts/check-worker-containment.mjs`.
+- `npm run check:worker-containment`.
+- `npm run check:api-truth`.
+- `npm run check:index-recovery-behavior` (`480/480`).
+
+Production release evidence:
+
+- Release id:
+  `5de1b0c59015-20260831T074908Z`.
+- Published archive:
+  `proofofwork-node-release-5de1b0c-5de1b0c59015-20260831T074908Z.tgz`.
+- Runtime sha256:
+  `620297d2ca93e1f9df916ce61371fdbf7d9530a5425caefe25fcccc819fd8684`.
+- Archive sha256:
+  `7e3f8954017b3d34b3ac03b3a0841ee868fc8d9a331ce6df154efdf10f1a7772`.
+- Archive size: `88129528` bytes.
+- Post-exchange units were active:
+  `proofofwork-api`, `proofofwork-api-wg.socket`,
+  `proofofwork-api-wg.service`, and `proofofwork-indexer-worker`.
+
+Release-health recognized the live release and all archive provenance:
+
+- `live_commit=5de1b0c590152e27aaba0d6ad1496f7b966bdb4a`.
+- `live_tree=1c5cfe2b10410d9c625832df5fa2ba86d1324a7f`.
+- `runtime_sha256=620297d2ca93e1f9df916ce61371fdbf7d9530a5425caefe25fcccc819fd8684`.
+- `archives=27`.
+- `verified=27`.
+- `unverified=0`.
+- `current_provenance=1`.
+- `opt_checkouts=44`.
+
+Release-health still exits warning because `/opt` has more node release
+checkouts than the configured bounded inventory (`9`). This is a retention
+finding, not a live release-integrity failure.
+
+### Exact-Tip Health After Deployment
+
+The user-reported warning was:
+
+- Last-good summary block: `964818`.
+- Full-node tip: `964821`.
+- Lag: `3` blocks.
+- Exact-tip actions unavailable.
+
+The expected fail-closed behavior was correct while the index was behind. After
+the containment fix and catch-up, production recovered exact-tip readiness.
+
+Post-deploy public health sample after the audit load:
+
+- `ok=true`, `ready=true`.
+- Full-node tip: `964850`.
+- Indexed block: `964850`.
+- Lag: `0`.
+- Node: mainnet, unpruned, `txindexHeight=964850`, `txindexSynced=true`.
+- Electrum: at the same tip and block hash.
+- Summary snapshot:
+  `cc065c1db48775c414f57fe4`.
+- Summary coverage:
+  `growthSummary`, `inceptionSummary`, `infinitySummary`, `logSummary`,
+  `marketplaceSummary`, `tokenSummary`, `workFloor`, and `workSummary` all
+  covered block `964850`.
+- Worker:
+  `ok=true`, phase `canonical-phase-complete`, last success
+  `2026-08-31T08:14:08.489Z`, consecutive failures `0`.
+- Pending event status:
+  checked `0`, deferred `0`, errors `0`, Q16 parent deferred `0`,
+  stale candidates `0`, `ok=true`.
+
+Earlier post-deploy health at block `964846` also returned green on both
+loopback and public HTTPS, with snapshot
+`5a85fa90a12d998b08f45907`.
+
+### Production Audit Results After Deployment
+
+Marketplace regression:
+
+- `POW_API_BASE=https://computer.proofofwork.me npm run check:marketplace-regressions`
+  passed.
+- Covered fast deploy checks for ID lookup, V2 cutover/relic state, listing
+  lifecycle, wallet scopes, and targeted WORK transfers.
+- One fresh wallet query took about `14.5s`; it returned correctly but remains a
+  speed/data-handling optimization signal.
+
+Ledger consistency:
+
+- `POW_API_BASE=https://computer.proofofwork.me npm run audit:ledger` passed.
+- Snapshot:
+  `5a85fa90a12d998b08f45907`.
+- Value:
+  `7466952437976861638.45246409` proofs.
+
+Computer event audit:
+
+- Ran on the node with production proof-index database credentials and loopback
+  API.
+- Result: `ok=true`, no failures, no warnings.
+- Ledger status: green at snapshot
+  `5a85fa90a12d998b08f45907`, indexed block `964846`, tip lag `0`.
+- Database coverage:
+  `24494` transactions total, `24240` confirmed, `15` pending, `239` dropped.
+- Confirmed transaction integrity:
+  missing raw `0`, missing block metadata `0`, recent missing block metadata
+  `0`.
+- Event coverage:
+  `25112` events total, `24571` confirmed valid canonical events, `276`
+  confirmed invalid PWT audit events, `0` confirmed events missing a
+  transaction row, `0` confirmed events without a confirmed transaction row,
+  `0` confirmed events missing raw transaction evidence.
+- Search/index coverage:
+  `51296` event refs and `123051` event participants.
+- Product data counts:
+  `504` ID records, `238` confirmed credit definitions, `398` credit
+  balances, `525` credit listings, `610` confirmed mail items, `24362`
+  OP_RETURN rows.
+- Endpoint timings during the audit:
+  health `841ms`, ledger consistency `3090ms`, marketplace summary `3945ms`,
+  work floor `2384ms`, growth summary `2269ms`, inception summary `2266ms`,
+  infinity summary `2234ms`.
+
+ID registry audit:
+
+- The full `npm run audit:ids` production audit did not produce a final result
+  within an operator-safe window and was stopped.
+- A bounded rerun with `POW_ID_AUDIT_COVERAGE_TIMEOUT_MS=60000` and
+  `POW_ID_AUDIT_TIMEOUT_MS=30000` also produced no final result before it was
+  stopped.
+- The authoritative internal coverage endpoint
+  `/api/v1/internal/id-registry-audit?network=livenet`, queried with the
+  internal verifier token, timed out after `120s` with zero bytes returned.
+- Finding: ID registry rendering can remain live, but whole-registry
+  auditability is not operationally healthy until this verifier path is made
+  bounded, incremental, or progress-reporting.
+
+Proof-index parity:
+
+- Reran with the production Node runtime
+  `/opt/node-v24.18.0-linux-x64/bin/node`; the default SSH Node `v18.19.1`
+  cannot parse the current JSON import-attribute syntax.
+- Result: `ok=false`, `102` checks total, `10` non-green checks.
+- Warnings:
+  `work-amo-v5-migration` and `work-amo-v5-usd-quote-head`, both with reasons
+  `canonical-tip-not-current` and `migration-not-complete`.
+- Errors:
+  `database-has-canonical-summary-snapshot`,
+  `canonical-summary-snapshot-current`,
+  `registry-history-listings-parity`,
+  `registry-history-sales-parity`,
+  `registry-confirmed-activity-semantic-parity`,
+  `registry-payload-current-relational`,
+  `token-state-current-relational`, and
+  `work-token-state-current-relational`.
+- The canonical-summary parity errors reported `9867` snapshots but no selected
+  database snapshot id, while the live public health surface had exact-tip
+  summary coverage.
+- Registry history mismatches are semantic-shape mismatches around ID
+  listings/sales. Example samples show the API-side history includes `id-list`
+  or `id-buy` semantics where the relational comparison shape omits one repeated
+  owner/seller field.
+- Current relational registry/token checks are still flagged because the
+  relational current payloads do not carry the snapshot identity the strict
+  parity checker expects.
+
+These parity failures were not allowed to mask live exact-tip readiness: public
+health, ledger consistency, Computer event coverage, and marketplace regression
+checks were green after the parity run.
+
+### Final Ops Snapshot
+
+Node VPS:
+
+- Active services:
+  `proofofwork-api`, `proofofwork-api-wg.socket`,
+  `proofofwork-api-wg.service`, and `proofofwork-indexer-worker`.
+- `/`: `98G` total, `37G` used, `57G` available, `40%` used.
+- `/data`: `1.7T` total, `1.3T` used, `273G` available, `83%` used.
+- `/` inode usage: `9%`.
+- `/data` inode usage: `1%`.
+- PostgreSQL `proof_indexer` database size: `17 GB`.
+- Current PostgreSQL query-health rerun as `postgres` passed:
+  `3` client connections, `0` active queries, `0` lock waiters, `0` idle in
+  transaction, tablespace closure `18`, placed `18`, invalid indexes `0`.
+- Recent API/indexer warning logs: no warning-or-higher entries in the last
+  `30` minutes.
+
+Node storage-health still exits warning because `/data` is above the warning
+runway threshold:
+
+- `/data` available bytes: about `292.6 GB`.
+- `/data` used percent: `83%`.
+
+Largest `/data` directories:
+
+- `/data/bitcoin`: `904G`.
+- `/data/proofofwork-postgres-backups`: `240G`.
+- `/data/proofofwork-postgres-tablespaces`: `70G`.
+- `/data/electrs`: `60G`.
+- `/data/proofofwork-release-backups`: `8.9G`.
+- `/data/proofofwork-recovery`: `3.6G`.
+- `/data/mempool`: `1.1G`.
+- `/data/proofofwork-api-cache`: `171M`.
+
+Latched failed node systemd units remain visible:
+
+- `proofofwork-node-storage-health.service` from the real `/data` runway
+  warning.
+- `proofofwork-node-release-health.service` from the `/opt` checkout-count
+  warning.
+- `proofofwork-postgres-query-health.service` from transient audit-time query
+  contention; manual rerun is now clean.
+- Historical failed recovery/candidate services:
+  `proofofwork-api-candidate-93f085b.service`,
+  `proofofwork-recovery-parity.service`,
+  `proofofwork-recovery-snapshot.service`, and
+  `proofofwork-reorg-restore-20260826.service`.
+
+These failed states were not reset in this pass so the audit evidence remains
+visible.
+
+UI VPS:
+
+- `/`: `38G` total, `14G` used, `23G` available, `37%` used.
+- `/` inode usage: `5%`.
+- `systemctl --failed --no-legend`: no failed-unit rows.
+- `/var/www`: `386M`.
+- `/var/log`: `589M`.
+- systemd journals: `258.9M`.
+- Coredumps: `4.0K`.
+- Recent warning logs are firewall block entries, not app/service failures.
+
+### Cleanup Candidates Preserved
+
+No production storage was deleted and no failed systemd state was reset in this
+pass.
+
+Explicit cleanup candidates for a separately approved retention pass:
+
+- Old node release checkouts under `/opt`; release-health counted `44`, while
+  the configured bound is `9`.
+- Failed/unused stages created during this pass, including:
+  `/opt/proofofwork-api-stage-92b758269d7d-20260831T073319Z` and
+  `/opt/proofofwork-api-stage-5de1b0c59015-20260831T074838Z`.
+- Current and recent rollback roots should be retained through soak before any
+  deletion.
+- Node release archives under `/data/proofofwork-release-backups` and
+  `/var/tmp/proofofwork-deploy`.
+- PostgreSQL backup retention under `/data/proofofwork-postgres-backups`.
+- Recovery evidence under `/data/proofofwork-recovery`.
+- Old UI rollback directories under `/var/www`.
+
+### Updated Remaining Priority
+
+1. Make ID registry whole-audit coverage bounded/progress-reporting so
+   `/api/v1/internal/id-registry-audit` can prove the registry within a
+   production-safe window.
+2. Fix strict proof-index parity for canonical summary snapshot currentness and
+   current relational snapshot ids.
+3. Normalize or version the strict parity comparator for ID listing/sale
+   semantic shapes without changing canonical history.
+4. Complete a separately approved storage-retention pass for old `/opt` release
+   checkouts, archives, backups, and rollback roots.
+5. Consider query and endpoint speed upgrades for heavy fresh wallet and
+   registry-proof paths; correctness passed where the live routes returned, but
+   operator/audit latency remains too high.
