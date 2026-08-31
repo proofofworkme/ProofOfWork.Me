@@ -12265,7 +12265,10 @@ async function persistCanonicalListingOutpointSpendsFromBlock(
         network: NETWORK,
       },
     };
-    const details = canonicalTransactionDetailRows(canonicalRawTx);
+    // Core block verbosity can omit prevout details for non-protocol spenders.
+    const hydratedCanonicalRawTx =
+      await transactionWithInputPrevouts(canonicalRawTx);
+    const details = canonicalTransactionDetailRows(hydratedCanonicalRawTx);
     const inputValueSats = details.inputs.reduce((total, input) => {
       if (!Number.isSafeInteger(input.value_sats)) {
         throw new Error(
@@ -12376,10 +12379,10 @@ async function persistCanonicalListingOutpointSpendsFromBlock(
         numberOrNull(tx?.weight),
         numberOrNull(tx?.version),
         numberOrNull(tx?.locktime),
-        JSON.stringify(canonicalRawTx),
+        JSON.stringify(hydratedCanonicalRawTx),
       ],
     );
-    await persistCanonicalTransactionDetails(client, canonicalRawTx, {
+    await persistCanonicalTransactionDetails(client, hydratedCanonicalRawTx, {
       details,
       spentAt: eventTime,
     });
