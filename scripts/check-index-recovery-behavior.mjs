@@ -27206,6 +27206,11 @@ check("exact canonical summaries require current conserved token balances", asyn
   );
   assert.match(
     migrationReadinessSource,
+    /listing\.status IN \('active', 'sealing'\)[\s\S]*listing\.payload->'saleAuthorization'->>'version'[\s\S]*listing\.payload->'listingAuthorization'->>'version'[\s\S]*= \$3/u,
+    "reader readiness parity must compare only current V8 active listing preimages",
+  );
+  assert.match(
+    migrationReadinessSource,
     /lower\(COALESCE\([\s\S]*listing_event\.payload->>'tokenId'[\s\S]*listing_event\.payload->'saleAuthorization'->>'tokenId'[\s\S]*listing_event\.payload->'listingAuthorization'->>'tokenId'[\s\S]*\)\) = v7_terms\.token_id/u,
     "reader readiness must bind V8 listing events by root or authorization token id",
   );
