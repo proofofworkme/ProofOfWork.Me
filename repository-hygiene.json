@@ -37,6 +37,7 @@
       "audits/2026-08-23-read-only-health-data-event-ui-audit.md",
       "audits/2026-08-28-production-health-data-event-audit.md",
       "audits/2026-08-30-production-health-data-event-storage-audit.md",
+      "audits/2026-08-31-production-health-data-event-storage-audit-2.md",
       "audits/2026-08-31-postgresql-retention-remediation-2c.md",
       "audits/2026-08-31-postgresql-retention-remediation-2e.md",
       "audits/2026-08-31-storage-retention-node-manifest.md",

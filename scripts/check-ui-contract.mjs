@@ -577,6 +577,10 @@ const workBuyerArbRenderSource = app.slice(
   app.indexOf("const workBuyerArb ="),
   app.indexOf("const listingUnitSats =", app.indexOf("const workBuyerArb =")),
 );
+const workAmoStateStatsSource = app.slice(
+  app.indexOf("<h3>WORK AMO State</h3>"),
+  app.indexOf("{(exactIntegerBigInt(workCreditNetworkValueQ8)", app.indexOf("<h3>WORK AMO State</h3>")),
+);
 const checkedTokenListingBuyerArbExact = isolatedTypeScriptFunction(
   app,
   "tokenListingBuyerArbExact",
@@ -798,6 +802,19 @@ expect(
     checkedFormatExactRational(exactZeroBuyerArb) === "0" &&
     checkedFormatExactRational({ denominator: 2n, numerator: 1n }) === "+0.5" &&
     checkedFormatExactRational({ denominator: 7n, numerator: 0n }) === "0",
+);
+expect(
+  "WORK AMO headline best ask renders the highest exact buyer arb, not token lowest unit ask",
+  /const workAmoBestAskListings = networkListings\.filter\([\s\S]*isWorkToken\(listing\)[\s\S]*workAmoListingMatchesReadEra\(listing, workFloorQuote\)/u.test(
+    app,
+  ) &&
+    /const bestWorkAmoBuyerArb = workAmoBestAskListings[\s\S]*\.filter\(tokenListingHasConfirmedSaleTicketSeal\)[\s\S]*\.reduce<ExactRational \| null>[\s\S]*tokenListingBuyerArbExact\([\s\S]*compareExactRational\(arb, best\) > 0/u.test(
+    app,
+  ) &&
+    /<span>Best ask<\/span>[\s\S]*bestWorkAmoBuyerArb[\s\S]*formatExactRational\([\s\S]*bestWorkAmoBuyerArb[\s\S]*proofs arb/u.test(
+      workAmoStateStatsSource,
+    ) &&
+    !/workRow\?\.lowestAskPricePerTokenExact/u.test(workAmoStateStatsSource),
 );
 expect(
   "AMO is canonical while legacy Marketplace routes remain compatible",

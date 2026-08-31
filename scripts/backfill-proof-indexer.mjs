@@ -931,6 +931,11 @@ const HYDRATE_TRANSACTION_DETAILS_ONLY = process.argv.includes(
   "--hydrate-transaction-details",
 );
 const AUDIT_WORK_ATOMS_ONLY = process.argv.includes("--audit-work-atoms");
+const ALLOW_REPAIRABLE_WORK_EVENT_PRECISION_AUDIT =
+  process.argv.includes("--allow-repairable-work-event-precision") ||
+  /^(?:1|true|yes)$/iu.test(
+    String(process.env.POW_INDEX_WORK_EVENT_PRECISION_REPAIRABLE_OK ?? ""),
+  );
 const MIGRATE_WORK_ATOMS_ONLY = process.argv.includes("--migrate-work-atoms");
 const REPAIR_WORK_ATOMIC_EVENTS_ONLY = process.argv.includes(
   "--repair-work-atomic-events",
@@ -33934,6 +33939,8 @@ if (DRY_RUN) {
     JSON.stringify(
       {
         apiBase: API_BASE,
+        allowRepairableWorkEventPrecisionAudit:
+          ALLOW_REPAIRABLE_WORK_EVENT_PRECISION_AUDIT,
         auditWorkAtomsOnly: AUDIT_WORK_ATOMS_ONLY,
         dryRun: true,
         hydrateTransactionDetailsOnly: HYDRATE_TRANSACTION_DETAILS_ONLY,
@@ -34028,10 +34035,15 @@ try {
         ),
       );
     } else if (AUDIT_WORK_ATOMS_ONLY) {
-      const audit = await auditWorkAtomicProjection(client);
+      const audit = await auditWorkAtomicProjection(client, {
+        allowRepairableEventPrecision:
+          ALLOW_REPAIRABLE_WORK_EVENT_PRECISION_AUDIT,
+      });
       console.log(
         JSON.stringify(
           {
+            allowRepairableWorkEventPrecisionAudit:
+              ALLOW_REPAIRABLE_WORK_EVENT_PRECISION_AUDIT,
             audit,
             network: NETWORK,
             ok: true,

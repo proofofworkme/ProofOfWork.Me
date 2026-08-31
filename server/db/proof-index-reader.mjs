@@ -2945,9 +2945,6 @@ function workAmoV6PublicListingReadSql(
   authorizationVersions,
 ) {
   const alias = canonicalCreditListingAlias(listingAlias);
-  const governedVersions = [
-    ...WORK_MARKET_GOVERNED_AUTH_VERSIONS,
-  ].sort(compareCanonicalUtf8);
   const allowedVersions = [
     ...new Set(
       (Array.isArray(authorizationVersions)
@@ -2973,20 +2970,15 @@ function workAmoV6PublicListingReadSql(
       .join(", ");
   const allowedSql =
     allowedVersions.length > 0
-      ? `OR lower(COALESCE(
+      ? `lower(COALESCE(
         ${alias}.payload->'saleAuthorization'->>'version',
         ${alias}.payload->'listingAuthorization'->>'version',
         ''
       )) IN (${sqlLiteralList(allowedVersions)})`
-      : "";
+      : "FALSE";
   return `(
     lower(COALESCE(${alias}.token_id, '')) <> '${WORK_TOKEN_ID}'
-    OR lower(COALESCE(
-      ${alias}.payload->'saleAuthorization'->>'version',
-      ${alias}.payload->'listingAuthorization'->>'version',
-      ''
-    )) NOT IN (${sqlLiteralList(governedVersions)})
-    ${allowedSql}
+    OR ${allowedSql}
   )`;
 }
 

@@ -46347,6 +46347,11 @@ function TokenMarketplacePanel({
       : selectedTokenIsWork && workMarketplaceVersion === "v4-relic"
         ? workV4RelicListings
         : allMarketListings;
+  const workAmoBestAskListings = networkListings.filter(
+    (listing) =>
+      isWorkToken(listing) &&
+      workAmoListingMatchesReadEra(listing, workFloorQuote),
+  );
   const listingBookPreviewIncomplete = summary.listingBookComplete !== true;
   const declaredListingCount = Number(summary.totalCounts?.listings);
   const networkClosedListings = closedListings.filter(
@@ -46512,6 +46517,21 @@ function TokenMarketplacePanel({
   const sealedListings = orderBookListings.filter(
     tokenListingHasConfirmedSaleTicketSeal,
   );
+  const bestWorkAmoBuyerArb = workAmoBestAskListings
+    .filter(tokenListingHasConfirmedSaleTicketSeal)
+    .reduce<ExactRational | null>((best, listing) => {
+        if (!workAmoListingMatchesReadEra(listing, workFloorQuote)) {
+          return best;
+        }
+        const arb = tokenListingBuyerArbExact(
+          listing,
+          tokenReferenceById,
+          workMarketFloorQ8,
+        );
+        return arb && (!best || compareExactRational(arb, best) > 0)
+          ? arb
+          : best;
+      }, null);
   const unsealedListings = orderBookListings.filter(
     (listing) => !tokenListingHasConfirmedSaleTicketSeal(listing),
   );
@@ -46608,10 +46628,6 @@ function TokenMarketplacePanel({
     workFloorQuote?.actualValue?.creditSalePaymentFlowSats ?? 0;
   const workCreditMinerFeeFlowSats =
     workFloorQuote?.actualValue?.creditMinerFeeFlowSats ?? 0;
-  const workRow = rows.find(
-    (token) =>
-      token.tokenId === WORK_TOKEN_ID || token.ticker === WORK_TOKEN_TICKER,
-  );
   const selectedMarketTokenIsWork = Boolean(selectedTokenIsWork);
   const workAmoV8Enabled = workV8ActivationReached(workFloorQuote);
   const workAmoV8TermsVisible = workV8BoundaryObserved;
@@ -46773,11 +46789,11 @@ function TokenMarketplacePanel({
                   <div>
                     <span>Best ask</span>
                     <strong>
-                      {workRow?.lowestAskPricePerTokenExact
-                        ? `${workQ16UnitPriceDisplay(
-                            workRow.lowestAskPricePerTokenExact,
-                          )} proofs / WORK`
-                        : "No asks"}
+                      {bestWorkAmoBuyerArb
+                        ? `${formatExactRational(
+                            bestWorkAmoBuyerArb,
+                          )} proofs arb`
+                        : "No sealed asks"}
                     </strong>
                   </div>
                   {(exactIntegerBigInt(workCreditNetworkValueQ8) ?? 0n) > 0n ? (

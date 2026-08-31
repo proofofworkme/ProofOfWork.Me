@@ -67,6 +67,7 @@
     "indexer:backfill": "node scripts/backfill-proof-indexer.mjs",
     "indexer:prepare-pwt-range-replay": "node scripts/backfill-proof-indexer.mjs --prepare-canonical-pwt-range-replay",
     "indexer:audit-work-atoms": "node scripts/backfill-proof-indexer.mjs --audit-work-atoms",
+    "indexer:audit-work-atoms:repairable": "node scripts/backfill-proof-indexer.mjs --audit-work-atoms --allow-repairable-work-event-precision",
     "indexer:migrate-work-atoms": "node scripts/backfill-proof-indexer.mjs --migrate-work-atoms",
     "indexer:repair-work-atomic-events": "node scripts/backfill-proof-indexer.mjs --repair-work-atomic-events",
     "indexer:restore-incb-oracle-snapshots": "node scripts/restore-incb-oracle-snapshots.mjs",

@@ -54,6 +54,7 @@ const server = readFileSync("server/proof-api.mjs", "utf8");
 const reader = readFileSync("server/db/proof-index-reader.mjs", "utf8");
 const backfill = readFileSync("scripts/backfill-proof-indexer.mjs", "utf8");
 const worker = readFileSync("scripts/run-proof-indexer-worker.mjs", "utf8");
+const packageJson = readFileSync("package.json", "utf8");
 const marketplaceRegressions = readFileSync(
   "scripts/check-marketplace-regressions.mjs",
   "utf8",
@@ -415,6 +416,14 @@ const logRoute = sliceBetween(
   /url\.pathname === "\/api\/v1\/activity" \|\| url\.pathname === "\/api\/v1\/log"/,
   /url\.pathname === "\/api\/v1\/activity-history"/,
 );
+const tokenRoute = sliceBetween(
+  /if \(url\.pathname === "\/api\/v1\/token"\)/,
+  /if \(url\.pathname === "\/api\/v1\/token-summary"\)/,
+);
+const walletScopedTokenRead = sliceBetween(
+  /async function walletScopedTokenPayload/,
+  /async function indexedWalletClosedListings/,
+);
 const broadcastAdmission = sliceBetween(
   /function broadcastOriginAllowed/,
   /async function broadcastSlipstreamPayload/,
@@ -755,6 +764,30 @@ expect(
     /CANONICAL_INDEX_CATCHING_UP/u.test(requestGate),
 );
 expect(
+  "fresh wallet token reads require an authoritative wallet overlay before global token fallbacks",
+  /if \(walletScoped\)[\s\S]*walletScopedTokenPayload\([\s\S]*requireCurrent: freshRead/u.test(
+    tokenRoute,
+  ) &&
+    /const freshWalletIndexUnavailable = \(\) => \{[\s\S]*CANONICAL_WALLET_INDEX_UNAVAILABLE[\s\S]*requiredSource: "proof-indexer-wallet-token-overlay"/u.test(
+      walletScopedTokenRead,
+    ) &&
+    /const authoritativeOverlay =[\s\S]*walletScopedPayloadUsesAuthoritativeOverlay\(walletPayload\)[\s\S]*if \(requireCurrent && !authoritativeOverlay\) \{[\s\S]*throw freshWalletIndexUnavailable\(\)/u.test(
+      walletScopedTokenRead,
+    ) &&
+    /const addressScopedPayload = await proofIndexWalletScopedTokenPayloadForRead\([\s\S]*withWalletAuthority\(recoveredPayload\)[\s\S]*if \(requireCurrent\) \{[\s\S]*throw freshWalletIndexUnavailable\(\)[\s\S]*let payload = null/u.test(
+      walletScopedTokenRead,
+    ) &&
+    !/if \(requireCurrent\)[\s\S]*currentExactTipTokenPayloadForRead\(/u.test(
+      walletScopedTokenRead,
+    ) &&
+    !/if \(requireCurrent\)[\s\S]*currentCanonicalTokenSummaryPayloadForFreshRead\(/u.test(
+      walletScopedTokenRead,
+    ) &&
+    !/if \(requireCurrent\)[\s\S]*cachedTokenPayloadFallbackForRead\(/u.test(
+      walletScopedTokenRead,
+    ),
+);
+expect(
   "fresh paginated Log reads use relational state bound to the exact summary",
   /"limit"/u.test(logRoute) &&
     /"offset"/u.test(logRoute) &&
@@ -770,7 +803,10 @@ expect(
     /boundSearchParams\.set\("snapshot", summarySnapshotId\)/u.test(
       server,
     ) &&
-    /e\.status = 'confirmed'[\s\S]*e\.updated_at <= \$\{snapshotTimeParam\}::timestamptz[\s\S]*e\.status = 'pending'[\s\S]*COALESCE\(e\.event_time, e\.created_at\) <= \$\{snapshotTimeParam\}::timestamptz/u.test(
+    /function pendingLogSnapshotTimeSql\(snapshotTimeParam\)[\s\S]*COALESCE\(e\.event_time, e\.created_at\) <= \$\{snapshotTimeParam\}::timestamptz[\s\S]*pending_tx\.first_seen_at/u.test(
+      reader,
+    ) &&
+    /e\.status = 'confirmed'[\s\S]*e\.updated_at <= \$\{snapshotTimeParam\}::timestamptz[\s\S]*e\.status = 'pending'[\s\S]*pendingLogSnapshotTimeSql\(snapshotTimeParam\)/u.test(
       reader,
     ) &&
     /snapshotTotalCount/u.test(reader) &&
@@ -791,7 +827,10 @@ expect(
       server,
     ) &&
     /await freshProofIndexLogPayload\(network\)/u.test(logRoute) &&
-    /e\.status = 'confirmed'[\s\S]*e\.updated_at <= \$4::timestamptz[\s\S]*e\.status = 'pending'[\s\S]*COALESCE\(e\.event_time, e\.created_at\) <= \$4::timestamptz/u.test(
+    /function pendingLogSnapshotTimeSql\(snapshotTimeParam\)[\s\S]*COALESCE\(e\.event_time, e\.created_at\) <= \$\{snapshotTimeParam\}::timestamptz[\s\S]*pending_tx\.first_seen_at/u.test(
+      reader,
+    ) &&
+    /const snapshotTimeParam = requestedSnapshotId[\s\S]*snapshotWhere = requestedSnapshotId[\s\S]*e\.status = 'confirmed'[\s\S]*e\.updated_at <= \$\{snapshotTimeParam\}::timestamptz[\s\S]*e\.status = 'pending'[\s\S]*pendingLogSnapshotTimeSql\(snapshotTimeParam\)/u.test(
       reader,
     ) &&
     /snapshotTotalCount: requestedSnapshotId \? items\.length/u.test(reader),
@@ -2570,6 +2609,25 @@ expect(
     ) &&
     /function workBalanceForProjection[\s\S]*Q8 WORK balance storage cannot accept native subatom aliases[\s\S]*Native Q16 WORK balance storage cannot accept legacy atom aliases[\s\S]*Native Q16 WORK balance aliases are ambiguous/u.test(
       backfill,
+    ),
+);
+expect(
+  "WORK atom audit keeps strict precision by default and exposes explicit read-only repairable invalid-zero evidence",
+  /const AUDIT_WORK_ATOMS_ONLY = process\.argv\.includes\("--audit-work-atoms"\)/u.test(
+    backfill,
+  ) &&
+    /const ALLOW_REPAIRABLE_WORK_EVENT_PRECISION_AUDIT =[\s\S]*--allow-repairable-work-event-precision[\s\S]*POW_INDEX_WORK_EVENT_PRECISION_REPAIRABLE_OK/u.test(
+      backfill,
+    ) &&
+    /auditWorkAtomicProjection\(client, \{[\s\S]*allowRepairableEventPrecision:[\s\S]*ALLOW_REPAIRABLE_WORK_EVENT_PRECISION_AUDIT/u.test(
+      backfill,
+    ) &&
+    /repairable_q16_invalid_zero_events/u.test(backfill) &&
+    /Q16 WORK projection contains an amount-bearing event without one exact Q8-history or Q16-current amount/u.test(
+      backfill,
+    ) &&
+    /"indexer:audit-work-atoms:repairable": "node scripts\/backfill-proof-indexer\.mjs --audit-work-atoms --allow-repairable-work-event-precision"/u.test(
+      packageJson,
     ),
 );
 expect(

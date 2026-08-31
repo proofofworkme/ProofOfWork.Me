@@ -4580,6 +4580,7 @@ check("post-V8 compact summaries suppress legacy WORK active listings", () => {
       WORK_AMO_V8_AUTH_VERSION: "pwt-sale-v8",
       WORK_TOKEN_ID: workTokenId,
       applyWorkMarketV2CutoverToTokenState: (state) => state,
+      canonicalWorkQ16SummaryUnitPriceDescriptor: () => null,
       isWorkTokenId: (tokenId) => tokenId === workTokenId,
       normalizeTokenScope: normalizeTestScope,
       tokenAggregateSummaries: (payload) => {
@@ -4685,6 +4686,108 @@ check("post-V8 compact summaries suppress legacy WORK active listings", () => {
   assert.equal(next.stats.activeListings, 2);
   assert.equal(next.totalCounts.listings, 2);
   assert.equal(next.collectionHasMore.listings, false);
+
+  const staleAskExact = {
+    amountSubatoms: "500000000000000000000",
+    decimal: "6.8",
+    denominator: "500000000000000000000",
+    model: "exact-work-q16-sats-per-unit-ratio-v1",
+    numerator: "3400000000000000000000",
+    priceSats: "340000",
+    unitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,
+  };
+  const unchangedVisibleListings = policy(
+    {
+      ...base,
+      collectionHasMore: { listings: true },
+      listings: [base.listings[0], base.listings[3]],
+      stats: {
+        activeListings: 367,
+        confirmedOpenListings: 367,
+        openListings: 367,
+        pendingOpenListings: 0,
+      },
+      tokens: [
+        {
+          confirmedOpenListings: 365,
+          lowestAskPricePerToken: "6.8",
+          lowestAskPricePerTokenExact: staleAskExact,
+          openListings: 365,
+          pendingOpenListings: 0,
+          ticker: "WORK",
+          tokenId: workTokenId,
+        },
+        {
+          confirmedOpenListings: 2,
+          openListings: 2,
+          pendingOpenListings: 0,
+          ticker: "OTHER",
+          tokenId: otherTokenId,
+        },
+      ],
+      totalCounts: { listings: 367 },
+    },
+    "livenet",
+  );
+  assert.equal(
+    unchangedVisibleListings.currentWorkActiveListingPolicy.removedListings,
+    0,
+  );
+  assert.equal(unchangedVisibleListings.tokens[0].openListings, 365);
+  assert.equal(
+    unchangedVisibleListings.tokens[0].lowestAskPricePerToken,
+    25_000,
+    "a stale token-level WORK ask alias must be replaced from current V8 listings even when no visible row is removed",
+  );
+  assert.equal(
+    Object.hasOwn(
+      unchangedVisibleListings.tokens[0],
+      "lowestAskPricePerTokenExact",
+    ),
+    false,
+  );
+  assert.equal(unchangedVisibleListings.stats.openListings, 367);
+  assert.equal(unchangedVisibleListings.totalCounts.listings, 367);
+  assert.equal(unchangedVisibleListings.collectionHasMore.listings, true);
+});
+
+check("current public WORK listing SQL admits only the exact live authorization set", () => {
+  const workAmoV6PublicListingReadSql = isolatedFunction(
+    READER_PATH,
+    "workAmoV6PublicListingReadSql",
+    {
+      WORK_MARKET_GOVERNED_AUTH_VERSIONS:
+        WORK_MARKET_GOVERNED_AUTH_VERSIONS_FIXTURE,
+      WORK_TOKEN_ID,
+      canonicalCreditListingAlias: (alias) => String(alias),
+      compareCanonicalUtf8,
+      normalizedLowerText: (value) =>
+        String(value ?? "").trim().toLowerCase(),
+    },
+  );
+  const v8Sql = workAmoV6PublicListingReadSql(
+    "cl",
+    [WORK_AMO_V8_AUTH_VERSION],
+  );
+  assert.match(
+    v8Sql,
+    new RegExp(`lower\\(COALESCE\\(cl\\.token_id, ''\\)\\) <> '${WORK_TOKEN_ID}'`, "u"),
+  );
+  assert.match(v8Sql, /OR lower\(COALESCE\(/u);
+  assert.match(v8Sql, new RegExp(`IN \\('${WORK_AMO_V8_AUTH_VERSION}'\\)`, "u"));
+  assert.doesNotMatch(
+    v8Sql,
+    /NOT IN/u,
+    "legacy ungoverned WORK sale-ticket versions must not enter current live reads",
+  );
+  assert.doesNotMatch(v8Sql, /pwt-sale-v1/u);
+
+  const failClosedSql = workAmoV6PublicListingReadSql("cl", []);
+  assert.match(
+    failClosedSql,
+    /OR FALSE/u,
+    "WORK listing reads must fail closed when no exact current authorization set is available",
+  );
 });
 
 check("marketplace fast fallback fails closed without lifecycle coverage", async () => {
@@ -10262,7 +10365,7 @@ check("token send preflight retries transient canonical reads only", async () =>
   );
 });
 
-check("fresh wallet token reads use exact or bounded canonical coverage", async () => {
+check("fresh wallet token reads require authoritative wallet overlay coverage", async () => {
   const blockHash = "7".repeat(64);
   const exactGate = {
     atTip: true,
@@ -10340,10 +10443,10 @@ check("fresh wallet token reads use exact or bounded canonical coverage", async 
     (error) => /temporarily unavailable/u.test(String(error?.message)),
   );
   assert.equal(broadFallbackReads, 0);
-  assert.equal(cacheFallbackReads, 1);
-  assert.equal(exactReads, 1);
-  assert.equal(indexedReads, 1);
-  assert.equal(summaryReads, 1);
+  assert.equal(cacheFallbackReads, 0);
+  assert.equal(exactReads, 0);
+  assert.equal(indexedReads, 0);
+  assert.equal(summaryReads, 0);
 
   let scopedReads = 0;
   const exactFallbackWalletScopedTokenPayload = isolatedFunction(
@@ -10356,21 +10459,32 @@ check("fresh wallet token reads use exact or bounded canonical coverage", async 
       WALLET_SCOPED_RECOVERY_WAIT_MS: 1,
       WORK_TOKEN_ID: "work-token-id",
       cachedTokenPayloadFallbackForRead: async () => {
-        throw new Error("exact cache should satisfy the fresh wallet read");
+        throw new Error("fresh wallet reads must not use broad cache fallback");
       },
-      currentExactTipTokenPayloadForRead: async () => ({
+      currentExactTipTokenPayloadForRead: async () => {
+        throw new Error("fresh wallet reads must not use global exact memory");
+      },
+      currentCanonicalTokenSummaryPayloadForFreshRead: async () => {
+        throw new Error("fresh wallet reads must not use token summaries");
+      },
+      currentMemoryTokenPayloadForRead: async () => null,
+      currentProofIndexTokenPayloadForRead: async () => {
+        throw new Error("fresh wallet reads must not use global token state");
+      },
+      freshDataUnavailableError: (message) => new Error(message),
+      normalizeTokenScope: (value) => value,
+      proofIndexReadFeatureEnabled: () => true,
+      proofIndexWalletScopedTokenPayloadForRead: async () => ({
+        checkpointComplete: true,
         holders: [{ address: "sender", balance: 1, tokenId: "work-token-id" }],
         indexedThroughBlock: 100,
         indexedThroughBlockHash: blockHash,
+        snapshotId: "wallet-snapshot-100",
+        source: "proof-indexer-wallet-token-overlay+proof-indexer-wallet-address-state",
+        sourceHashes: { blockScan: blockHash },
         tokens: [{ tokenId: "work-token-id" }],
+        walletScoped: true,
       }),
-      currentMemoryTokenPayloadForRead: async () => null,
-      currentProofIndexTokenPayloadForRead: async () => {
-        throw new Error("exact memory should short-circuit slower reads");
-      },
-      normalizeTokenScope: (value) => value,
-      proofIndexReadFeatureEnabled: () => true,
-      proofIndexWalletScopedTokenPayloadForRead: async () => null,
       tokenPayloadMatchesCanonicalGate: (payload, gate) =>
         Number(payload?.indexedThroughBlock) === gate.indexedThroughBlock &&
         payload?.indexedThroughBlockHash === gate.canonicalHash,
@@ -10393,6 +10507,14 @@ check("fresh wallet token reads use exact or bounded canonical coverage", async 
       tokenPayloadWithIndexedWalletOverlay: async (payload) => payload,
       tokenPayloadWithIndexedWalletHolders: async (payload) => payload,
       tokenPayloadWithWalletActiveListings: async (payload) => payload,
+      walletScopedPayloadWithIndexedEnrichment: async (payload) => payload,
+      walletScopedPayloadUsesAuthoritativeOverlay: (payload) =>
+        payload?.checkpointComplete === true &&
+        payload?.indexedThroughBlockHash === payload?.sourceHashes?.blockScan &&
+        Boolean(payload?.snapshotId) &&
+        String(payload?.source ?? "").includes(
+          "proof-indexer-wallet-token-overlay",
+        ),
       tokenPayloadForRead: async () => {
         throw new Error("fresh wallet reads must not use broad fallback reads");
       },
@@ -10414,7 +10536,7 @@ check("fresh wallet token reads use exact or bounded canonical coverage", async 
   );
   assert.equal(fallbackCurrent.authoritativeWallet, true);
   assert.equal(fallbackCurrent.walletScoped, true);
-  assert.equal(scopedReads, 1);
+  assert.equal(scopedReads, 0);
 
   let lastGoodScopedReads = 0;
   const lastGoodGate = {
@@ -10437,22 +10559,32 @@ check("fresh wallet token reads use exact or bounded canonical coverage", async 
       WALLET_SCOPED_RECOVERY_WAIT_MS: 1,
       WORK_TOKEN_ID: "work-token-id",
       cachedTokenPayloadFallbackForRead: async () => {
-        throw new Error("canonical summary should satisfy the read");
+        throw new Error("fresh wallet reads must not use broad cache fallback");
       },
-      currentExactTipTokenPayloadForRead: async () => null,
-      currentCanonicalTokenSummaryPayloadForFreshRead: async () => ({
+      currentExactTipTokenPayloadForRead: async () => {
+        throw new Error("fresh wallet reads must not use global exact memory");
+      },
+      currentCanonicalTokenSummaryPayloadForFreshRead: async () => {
+        throw new Error("fresh wallet reads must not use token summaries");
+      },
+      currentMemoryTokenPayloadForRead: async () => null,
+      currentProofIndexTokenPayloadForRead: async () => {
+        throw new Error("fresh wallet reads must not use global token state");
+      },
+      freshDataUnavailableError: (message) => new Error(message),
+      normalizeTokenScope: (value) => value,
+      proofIndexReadFeatureEnabled: () => true,
+      proofIndexWalletScopedTokenPayloadForRead: async () => ({
+        checkpointComplete: true,
         holders: [{ address: "sender", balance: 1, tokenId: "work-token-id" }],
         indexedThroughBlock: 200,
         indexedThroughBlockHash: "8".repeat(64),
+        snapshotId: "wallet-snapshot-200",
+        source: "proof-indexer-wallet-token-overlay+proof-indexer-wallet-address-state",
+        sourceHashes: { blockScan: "8".repeat(64) },
         tokens: [{ tokenId: "work-token-id" }],
+        walletScoped: true,
       }),
-      currentMemoryTokenPayloadForRead: async () => null,
-      currentProofIndexTokenPayloadForRead: async () => {
-        throw new Error("canonical summary should short-circuit slower reads");
-      },
-      normalizeTokenScope: (value) => value,
-      proofIndexReadFeatureEnabled: () => true,
-      proofIndexWalletScopedTokenPayloadForRead: async () => null,
       tokenPayloadMatchesCanonicalGate: () => false,
       tokenPayloadMatchesCanonicalFreshGate: (payload, gate, options = {}) =>
         options.allowLastGood === true &&
@@ -10474,6 +10606,14 @@ check("fresh wallet token reads use exact or bounded canonical coverage", async 
       tokenPayloadWithIndexedWalletOverlay: async (payload) => payload,
       tokenPayloadWithIndexedWalletHolders: async (payload) => payload,
       tokenPayloadWithWalletActiveListings: async (payload) => payload,
+      walletScopedPayloadWithIndexedEnrichment: async (payload) => payload,
+      walletScopedPayloadUsesAuthoritativeOverlay: (payload) =>
+        payload?.checkpointComplete === true &&
+        payload?.indexedThroughBlockHash === payload?.sourceHashes?.blockScan &&
+        Boolean(payload?.snapshotId) &&
+        String(payload?.source ?? "").includes(
+          "proof-indexer-wallet-token-overlay",
+        ),
       tokenPayloadForRead: async () => {
         throw new Error("fresh wallet reads must not use broad fallback reads");
       },
@@ -10505,7 +10645,7 @@ check("fresh wallet token reads use exact or bounded canonical coverage", async 
     200,
   );
   assert.equal(lastGoodCurrent.authoritativeWalletCheckpoint.lagBlocks, 1);
-  assert.equal(lastGoodScopedReads, 1);
+  assert.equal(lastGoodScopedReads, 0);
 
   const currentWalletScopedTokenPayload = isolatedFunction(
     API_PATH,
@@ -10518,6 +10658,7 @@ check("fresh wallet token reads use exact or bounded canonical coverage", async 
       currentProofIndexTokenPayloadForRead: async () => {
         throw new Error("fresh reads must not use an unbound global payload");
       },
+      freshDataUnavailableError: (message) => new Error(message),
       normalizeTokenScope: (value) => value,
       proofIndexReadFeatureEnabled: () => true,
       proofIndexWalletScopedTokenPayloadForRead: async () => ({
@@ -10527,19 +10668,26 @@ check("fresh wallet token reads use exact or bounded canonical coverage", async 
       tokenPayloadMatchesCanonicalGate: () => false,
       tokenPayloadMatchesCanonicalIndexedGate: () => false,
       walletScopedPayloadWithIndexedEnrichment: async (payload) => payload,
+      walletScopedPayloadUsesAuthoritativeOverlay: () => false,
       tokenPayloadWithIndexedWalletHolders: async (payload) => payload,
       tokenPayloadWithWalletActiveListings: async (payload) => payload,
       walletScopedWorkPayloadWithQ16Supply: (payload) => payload,
       workQ16PayloadWithoutOrphanPriceAliases: (payload) => payload,
     },
   );
-  const current = await currentWalletScopedTokenPayload(
-    "livenet",
-    "other-token-id",
-    ["sender"],
-    { requireCurrent: true },
+  await rejection(
+    currentWalletScopedTokenPayload(
+      "livenet",
+      "other-token-id",
+      ["sender"],
+      { requireCurrent: true },
+    ),
+    (error) =>
+      /temporarily unavailable/u.test(String(error?.message)) &&
+      error?.details?.code === "CANONICAL_WALLET_INDEX_UNAVAILABLE" &&
+      error?.details?.requiredSource ===
+        "proof-indexer-wallet-token-overlay",
   );
-  assert.equal(current.authoritativeWallet, true);
 
   const walletScopedPayloadUsesAuthoritativeOverlay = isolatedFunction(
     API_PATH,
@@ -11049,6 +11197,7 @@ check("wallet WORK overlay recovers active canonical V8 listings and drops match
         WORK_AMO_V8_AUTH_VERSION: "pwt-sale-v8",
         WORK_TOKEN_ID: workTokenId,
         applyWorkMarketV2CutoverToTokenState,
+        canonicalWorkQ16SummaryUnitPriceDescriptor: () => null,
         isWorkTokenId: (tokenId) => tokenId === workTokenId,
         normalizeTokenScope: normalizeTestWorkScope,
         tokenAggregateSummaries: () => new Map(),

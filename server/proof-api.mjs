@@ -19484,13 +19484,17 @@ function tokenPayloadWithReconciledActiveListingCounts(
         ),
       };
       if (isWorkTokenId(tokenId)) {
-        const exactAsk =
+        const computedExactAsk =
           canonicalWorkQ16SummaryUnitPriceDescriptor(
             summary.lowestAskPricePerTokenExact,
-          ) ??
-          canonicalWorkQ16SummaryUnitPriceDescriptor(
-            token?.lowestAskPricePerTokenExact,
           );
+        const existingExactAsk =
+          removedCounts.total > 0 || completeListingSet
+            ? null
+            : canonicalWorkQ16SummaryUnitPriceDescriptor(
+                token?.lowestAskPricePerTokenExact,
+              );
+        const exactAsk = computedExactAsk ?? existingExactAsk;
         if (exactAsk) {
           next.lowestAskPricePerToken =
             exactAsk.decimal ?? summary.lowestAskPricePerToken;
@@ -40270,6 +40274,16 @@ async function walletScopedTokenPayload(
     recoveryAddresses,
     { allowLastGood, canonicalReadGate: canonicalGate, requireCurrent },
   );
+  const freshWalletIndexUnavailable = () => {
+    const unavailable = freshDataUnavailableError(
+      `Fresh wallet credit state is temporarily unavailable for ${scope || "all"}.`,
+    );
+    unavailable.details = {
+      code: "CANONICAL_WALLET_INDEX_UNAVAILABLE",
+      requiredSource: "proof-indexer-wallet-token-overlay",
+    };
+    return unavailable;
+  };
   const cachedWalletPayload = cachedWalletScopedTokenPayload(walletCacheKey);
   if (cachedWalletPayload) {
     return cachedWalletPayload;
@@ -40286,6 +40300,9 @@ async function walletScopedTokenPayload(
         : normalizedPayload;
     const authoritativeOverlay =
       walletScopedPayloadUsesAuthoritativeOverlay(walletPayload);
+    if (requireCurrent && !authoritativeOverlay) {
+      throw freshWalletIndexUnavailable();
+    }
     if (!requireCurrent && !authoritativeOverlay) {
       return walletPayload;
     }
@@ -40345,71 +40362,11 @@ async function walletScopedTokenPayload(
       withWalletAuthority(recoveredPayload),
     );
   }
-  let payload = null;
   if (requireCurrent) {
-    const exactWalletCandidate = (candidate) =>
-      candidate &&
-        tokenPayloadMatchesCanonicalFreshGate(candidate, canonicalGate, {
-          allowLastGood,
-        })
-        ? candidate
-        : null;
-    payload = exactWalletCandidate(
-      await currentExactTipTokenPayloadForRead(
-        network,
-        scope,
-        "wallet-scoped-token-fresh-exact-tip-memory",
-        canonicalGate,
-      ),
-    );
-    if (!payload && scope === WORK_TOKEN_ID) {
-      payload = exactWalletCandidate(
-        await currentCanonicalTokenSummaryPayloadForFreshRead(
-          network,
-          scope,
-          canonicalGate,
-        ),
-      );
-    }
-    if (
-      !payload &&
-      proofIndexReadFeatureEnabled("token-state,token-default,token")
-    ) {
-      payload = exactWalletCandidate(
-        await currentProofIndexTokenPayloadForRead(
-          network,
-          scope,
-          "wallet-scoped-token-fresh",
-          WALLET_SCOPED_INDEX_WAIT_MS,
-        ),
-      );
-    }
-    if (!payload) {
-      payload = exactWalletCandidate(
-        await currentMemoryTokenPayloadForRead(
-          network,
-          scope,
-          "wallet-scoped-token-fresh-memory",
-        ),
-      );
-    }
-    if (!payload) {
-      payload = exactWalletCandidate(
-        await cachedTokenPayloadFallbackForRead(
-          network,
-          scope,
-          "wallet-scoped-token-fresh-cache",
-        ),
-      );
-    }
-    if (!payload) {
-      const unavailable = freshDataUnavailableError(
-        `Fresh wallet credit state is temporarily unavailable for ${scope || "all"}.`,
-      );
-      unavailable.details = { code: "CANONICAL_WALLET_INDEX_UNAVAILABLE" };
-      throw unavailable;
-    }
-  } else if (
+    throw freshWalletIndexUnavailable();
+  }
+  let payload = null;
+  if (
     network === "livenet" &&
     proofIndexReadFeatureEnabled("token-state,token-default,token")
   ) {
@@ -41192,10 +41149,55 @@ function tokenPayloadWithCurrentWorkActiveListingPolicy(
     );
   });
 
-  if (currentListings.length === listings.length) {
+  const payloadTokens = Array.isArray(cutoverPayload?.tokens)
+    ? cutoverPayload.tokens
+    : [];
+  const removedWorkListings = listings.filter(
+    (listing) =>
+      normalizeTokenScope(
+        listing?.tokenId ??
+          listing?.saleAuthorization?.tokenId ??
+          listing?.ticker ??
+          listing?.saleAuthorization?.ticker ??
+          "",
+      ) === WORK_TOKEN_ID &&
+      !currentListings.includes(listing),
+  );
+  const workTokenHasLowestAskAlias = payloadTokens.some(
+    (token) =>
+      isWorkTokenId(token?.tokenId) &&
+      (
+        Object.prototype.hasOwnProperty.call(
+          token,
+          "lowestAskPricePerToken",
+        ) ||
+        Object.prototype.hasOwnProperty.call(
+          token,
+          "lowestAskPricePerTokenExact",
+        )
+      ),
+  );
+  if (
+    removedWorkListings.length === 0 &&
+    !workTokenHasLowestAskAlias
+  ) {
     return cutoverPayload;
   }
 
+  const explicitCount = (value) => {
+    const count = Number(value);
+    return Number.isSafeInteger(count) && count >= 0 ? count : null;
+  };
+  const declaredListingCount = explicitCount(
+    cutoverPayload?.totalCounts?.listings,
+  );
+  const completeListingSet =
+    cutoverPayload?.summaryOnly !== true &&
+    cutoverPayload?.collectionHasMore?.listings !== true &&
+    (
+      declaredListingCount === null ||
+      declaredListingCount === listings.length
+    );
   const workMarketSummary = (() => {
     try {
       return tokenAggregateSummaries({
@@ -41206,52 +41208,106 @@ function tokenPayloadWithCurrentWorkActiveListingPolicy(
       return null;
     }
   })();
+  const existingWorkToken = payloadTokens.find((token) =>
+    isWorkTokenId(token?.tokenId)
+  );
+  const removedConfirmedWorkListings = removedWorkListings.filter(
+    (listing) => listing?.confirmed === true,
+  ).length;
+  const removedPendingWorkListings =
+    removedWorkListings.length - removedConfirmedWorkListings;
+  const reconciledWorkCount = (key, removedCount, computed) => {
+    if (completeListingSet) {
+      return computed;
+    }
+    const existing = tokenSummaryMetricValue(existingWorkToken?.[key]);
+    return existing === undefined
+      ? computed
+      : Math.max(0, existing - removedCount);
+  };
+  const computedConfirmedOpenWorkListings =
+    tokenSummaryMetricValue(workMarketSummary?.confirmedOpenListings) ??
+    currentListings.filter(
+      (listing) =>
+        normalizeTokenScope(
+          listing?.tokenId ?? listing?.saleAuthorization?.tokenId ?? "",
+        ) === WORK_TOKEN_ID && listing?.confirmed === true,
+    ).length;
+  const computedOpenWorkListings =
+    tokenSummaryMetricValue(workMarketSummary?.openListings) ??
+    currentListings.filter(
+      (listing) =>
+        normalizeTokenScope(
+          listing?.tokenId ?? listing?.saleAuthorization?.tokenId ?? "",
+        ) === WORK_TOKEN_ID,
+    ).length;
+  const computedPendingOpenWorkListings =
+    tokenSummaryMetricValue(workMarketSummary?.pendingOpenListings) ??
+    currentListings.filter(
+      (listing) =>
+        normalizeTokenScope(
+          listing?.tokenId ?? listing?.saleAuthorization?.tokenId ?? "",
+        ) === WORK_TOKEN_ID && listing?.confirmed !== true,
+    ).length;
+  const workLowestAskExact = canonicalWorkQ16SummaryUnitPriceDescriptor(
+    workMarketSummary?.lowestAskPricePerTokenExact,
+  );
+  const workLowestAsk = workLowestAskExact
+    ? workLowestAskExact.decimal
+    : tokenSummaryMetricValue(workMarketSummary?.lowestAskPricePerToken);
   const workMetrics = {
     confirmedOpenListings:
-      tokenSummaryMetricValue(workMarketSummary?.confirmedOpenListings) ??
-      currentListings.filter(
-        (listing) =>
-          normalizeTokenScope(
-            listing?.tokenId ?? listing?.saleAuthorization?.tokenId ?? "",
-          ) === WORK_TOKEN_ID && listing?.confirmed === true,
-      ).length,
+      reconciledWorkCount(
+        "confirmedOpenListings",
+        removedConfirmedWorkListings,
+        computedConfirmedOpenWorkListings,
+      ),
     openListings:
-      tokenSummaryMetricValue(workMarketSummary?.openListings) ??
-      currentListings.filter(
-        (listing) =>
-          normalizeTokenScope(
-            listing?.tokenId ?? listing?.saleAuthorization?.tokenId ?? "",
-          ) === WORK_TOKEN_ID,
-      ).length,
+      reconciledWorkCount(
+        "openListings",
+        removedWorkListings.length,
+        computedOpenWorkListings,
+      ),
     pendingOpenListings:
-      tokenSummaryMetricValue(workMarketSummary?.pendingOpenListings) ??
-      currentListings.filter(
-        (listing) =>
-          normalizeTokenScope(
-            listing?.tokenId ?? listing?.saleAuthorization?.tokenId ?? "",
-          ) === WORK_TOKEN_ID && listing?.confirmed !== true,
-      ).length,
-    ...(workMarketSummary?.lowestAskPricePerToken !== undefined
-      ? { lowestAskPricePerToken: workMarketSummary.lowestAskPricePerToken }
-      : {}),
-    ...(workMarketSummary?.lowestAskPricePerTokenExact
+      reconciledWorkCount(
+        "pendingOpenListings",
+        removedPendingWorkListings,
+        computedPendingOpenWorkListings,
+      ),
+    ...(workLowestAskExact || (workLowestAsk !== undefined && workLowestAsk > 0)
       ? {
-          lowestAskPricePerTokenExact:
-            workMarketSummary.lowestAskPricePerTokenExact,
+          lowestAskPricePerToken:
+            workLowestAskExact?.decimal ?? workLowestAsk,
         }
       : {}),
+    ...(workLowestAskExact
+      ? { lowestAskPricePerTokenExact: workLowestAskExact }
+      : {}),
   };
+  const workMetricsHasAsk =
+    Object.prototype.hasOwnProperty.call(
+      workMetrics,
+      "lowestAskPricePerToken",
+    ) ||
+    Object.prototype.hasOwnProperty.call(
+      workMetrics,
+      "lowestAskPricePerTokenExact",
+    );
   const tokens = Array.isArray(cutoverPayload?.tokens)
-    ? cutoverPayload.tokens.map((token) =>
-        isWorkTokenId(token?.tokenId)
-          ? { ...token, ...workMetrics }
-          : token,
-      )
+    ? cutoverPayload.tokens.map((token) => {
+        if (!isWorkTokenId(token?.tokenId)) {
+          return token;
+        }
+        const next = { ...token, ...workMetrics };
+        if (!workMetricsHasAsk) {
+          delete next.lowestAskPricePerToken;
+          delete next.lowestAskPricePerTokenExact;
+        } else if (!workLowestAskExact) {
+          delete next.lowestAskPricePerTokenExact;
+        }
+        return next;
+      })
     : cutoverPayload?.tokens;
-  const explicitCount = (value) => {
-    const count = Number(value);
-    return Number.isSafeInteger(count) && count >= 0 ? count : null;
-  };
   const openListingCounts = Array.isArray(tokens)
     ? tokens.map((token) =>
         isWorkTokenId(token?.tokenId)
@@ -41334,7 +41390,7 @@ function tokenPayloadWithCurrentWorkActiveListingPolicy(
     currentWorkActiveListingPolicy: {
       activationHeight: WORK_AMO_V8_ACTIVATION_HEIGHT,
       authVersion: WORK_AMO_V8_AUTH_VERSION,
-      removedListings: listings.length - currentListings.length,
+      removedListings: removedWorkListings.length,
     },
   };
 }
