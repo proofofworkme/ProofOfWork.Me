@@ -69279,13 +69279,27 @@ function registryAuditLifecycleEventEntry(item, checkpoint, source) {
   const saleAuthorization = item?.saleAuthorization
     ? registryAuditCanonicalClone(item.saleAuthorization)
     : null;
+  const firstAddressCandidate = (...values) =>
+    values
+      .map((value) => String(value ?? "").trim())
+      .find(Boolean) ?? "";
+  const transferVersion = String(item?.transferVersion ?? "");
+  const legacyUnanchoredBuy =
+    kind === "id-buy" && transferVersion.toLowerCase() === "buy2";
   const addresses = {
     buyerAddress: registryAuditOptionalAddress(
-      item?.buyerAddress ?? saleAuthorization?.buyerAddress,
+      kind === "id-buy"
+        ? firstAddressCandidate(
+            item?.buyerAddress,
+            item?.ownerAddress,
+            item?.actor,
+            saleAuthorization?.buyerAddress,
+          )
+        : (item?.buyerAddress ?? saleAuthorization?.buyerAddress),
       `${source} ${kind} buyer`,
     ),
     ownerAddress: registryAuditOptionalAddress(
-      item?.ownerAddress,
+      kind === "id-update" ? "" : item?.ownerAddress,
       `${source} ${kind} owner`,
     ),
     receiveAddress: registryAuditOptionalAddress(
@@ -69315,7 +69329,9 @@ function registryAuditLifecycleEventEntry(item, checkpoint, source) {
     )
     .sort(compareCanonicalUtf8);
   const listingIdCandidate = String(
-    item?.listingId ?? (kind === "id-list" ? txid : ""),
+    legacyUnanchoredBuy
+      ? ""
+      : (item?.listingId ?? (kind === "id-list" ? txid : "")),
   )
     .trim()
     .toLowerCase();
@@ -69352,7 +69368,9 @@ function registryAuditLifecycleEventEntry(item, checkpoint, source) {
     id,
     kind,
     listingId,
-    listingVersion: String(item?.listingVersion ?? ""),
+    listingVersion: legacyUnanchoredBuy
+      ? ""
+      : String(item?.listingVersion ?? ""),
     participants,
     paymentOutputs: payments,
     pgpKey: String(item?.pgpKey ?? item?.pgpPublicKey ?? ""),

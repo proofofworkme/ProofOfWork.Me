@@ -607,6 +607,28 @@ const canonicalProjectionSource = serverSource.slice(
     serverSource.indexOf("function registryAuditProjectionFromCanonicalState"),
   ),
 );
+const lifecycleEventEntrySource = serverSource.slice(
+  serverSource.indexOf("function registryAuditLifecycleEventEntry"),
+  serverSource.indexOf(
+    "const REGISTRY_AUDIT_LISTING_FIELDS",
+    serverSource.indexOf("function registryAuditLifecycleEventEntry"),
+  ),
+);
+assert.match(
+  lifecycleEventEntrySource,
+  /kind === "id-buy"[\s\S]*item\?\.buyerAddress[\s\S]*item\?\.ownerAddress[\s\S]*item\?\.actor[\s\S]*saleAuthorization\?\.buyerAddress/u,
+  "ID audit lifecycle entries must derive an open-buyer purchase address from the buyer/owner actor.",
+);
+assert.match(
+  lifecycleEventEntrySource,
+  /kind === "id-update"\s*\?\s*""\s*:\s*item\?\.ownerAddress/u,
+  "ID audit lifecycle entries must not duplicate sender/current owner into the update owner field.",
+);
+assert.match(
+  lifecycleEventEntrySource,
+  /legacyUnanchoredBuy[\s\S]*transferVersion\.toLowerCase\(\) === "buy2"[\s\S]*legacyUnanchoredBuy[\s\S]*\?\s*""[\s\S]*listingIdCandidate[\s\S]*listingVersion:\s*legacyUnanchoredBuy[\s\S]*\?\s*""/u,
+  "Legacy buy2 audit history must remain replayable without inferred listing metadata.",
+);
 assert.match(
   canonicalProjectionSource,
   /rawReplay\?\.closingState\?\.records[\s\S]*rawReplay\?\.closingState\?\.listings/u,
