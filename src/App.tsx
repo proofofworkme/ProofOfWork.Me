@@ -223,6 +223,17 @@ type UniSatChain = "BITCOIN_MAINNET" | "BITCOIN_TESTNET" | "BITCOIN_TESTNET4";
 type UniSatEvent = "accountsChanged" | "networkChanged" | "chainChanged";
 type StatusTone = AppStatusTone;
 type WorkspaceStatus = AppStatusState;
+type TokenAction =
+  | ""
+  | "buy"
+  | "create"
+  | "delist"
+  | "list"
+  | "mint"
+  | "seal"
+  | "split"
+  | "split-transfer"
+  | "transfer";
 const INITIAL_COMPUTER_STATUS: WorkspaceStatus = {
   tone: "idle",
   text: "ProofOfWork Computer ready. Connect UniSat to load account data.",
@@ -17733,6 +17744,17 @@ function tokenStateScopeKey({
   ].join(":");
 }
 
+function walletActionScopeKey(network: BitcoinNetwork, address: string) {
+  return `${network}:${address.trim().toLowerCase()}`;
+}
+
+function staleWalletTransactionStatus(status: WorkspaceStatus | undefined) {
+  return (
+    status?.tone === "bad" &&
+    /\bNo transaction was created\./u.test(status.text)
+  );
+}
+
 function registryStateRegresses(
   next: PowRegistryState,
   current: PowRegistryState | undefined,
@@ -20659,9 +20681,7 @@ export default function App() {
     useState(0);
   const [tokenMintAssistantRunning, setTokenMintAssistantRunning] =
     useState(false);
-  const [tokenAction, setTokenAction] = useState<
-    "" | "buy" | "create" | "delist" | "list" | "mint" | "seal" | "split" | "split-transfer" | "transfer"
-  >("");
+  const [tokenAction, setTokenAction] = useState<TokenAction>("");
   const [tokenListingActionNotes, setTokenListingActionNotes] = useState<
     Record<string, string>
   >({});
@@ -20895,6 +20915,77 @@ export default function App() {
     },
     [],
   );
+  const activeWalletActionScopeKey = walletActionScopeKey(network, address);
+  const activeWalletActionScopeRef = useRef(activeWalletActionScopeKey);
+  activeWalletActionScopeRef.current = activeWalletActionScopeKey;
+  const walletActionGenerationRef = useRef(0);
+  const walletActionActiveRef = useRef(false);
+
+  function beginWalletScopedTokenAction(
+    action: Exclude<TokenAction, "">,
+    initialStatus: WorkspaceStatus,
+  ) {
+    const requestWorkspaceKey = activeWorkspaceStatusKeyRef.current;
+    const requestWalletScopeKey = activeWalletActionScopeRef.current;
+    const generation = ++walletActionGenerationRef.current;
+    const walletActionStillActive = () =>
+      walletActionGenerationRef.current === generation &&
+      activeWalletActionScopeRef.current === requestWalletScopeKey;
+    const setActionStatus = (nextStatus: WorkspaceStatus) => {
+      if (walletActionStillActive()) {
+        setStatusForWorkspace(requestWorkspaceKey, nextStatus);
+      }
+    };
+
+    setTokenAction(action);
+    walletActionActiveRef.current = true;
+    setBusyForWorkspace(requestWorkspaceKey, true);
+    setActionStatus(initialStatus);
+
+    return {
+      finish: () => {
+        if (walletActionStillActive()) {
+          walletActionActiveRef.current = false;
+          setTokenAction("");
+          setBusyForWorkspace(requestWorkspaceKey, false);
+        }
+      },
+      isCurrent: walletActionStillActive,
+      setStatus: setActionStatus,
+    };
+  }
+
+  useEffect(() => {
+    walletActionGenerationRef.current += 1;
+    setTokenAction("");
+    setTokenTransferTokenId("");
+    if (walletActionActiveRef.current) {
+      walletActionActiveRef.current = false;
+      setBusy(false);
+    }
+    const replacementStatus: WorkspaceStatus = {
+      tone: "idle",
+      text: address
+        ? "Wallet changed. Refresh verified credit state before creating a transaction."
+        : "Wallet account disconnected.",
+    };
+    for (const workspaceKey of [
+      "wallet",
+      "token",
+      "work",
+      "infinity",
+      "inception",
+      "computer:wallet",
+      "computer:token",
+      "computer:work",
+      "computer:infinity",
+      "computer:inception",
+    ]) {
+      if (staleWalletTransactionStatus(workspaceStatusesRef.current.get(workspaceKey))) {
+        setStatusForWorkspace(workspaceKey, replacementStatus);
+      }
+    }
+  }, [activeWalletActionScopeKey, address, setStatusForWorkspace]);
   const [accountUtxos, setAccountUtxos] = useState<MempoolUtxo[]>([]);
   const [accountUtxosLoaded, setAccountUtxosLoaded] = useState(false);
   const [accountUtxosError, setAccountUtxosError] = useState("");
@@ -30562,32 +30653,37 @@ export default function App() {
       return;
     }
 
-    setTokenAction("transfer");
-    setBusy(true);
-    setStatus({
+    const actionAddress = address;
+    const walletAction = beginWalletScopedTokenAction("transfer", {
       tone: "idle",
       text: `Transferring ${parsedAmount.display} ${token.ticker}...`,
     });
 
     try {
-      await ensureWalletNetwork(window.unisat, "livenet", address);
+      await ensureWalletNetwork(window.unisat, "livenet", actionAddress);
+      if (!walletAction.isCurrent()) {
+        return;
+      }
 
-      setStatus({
+      walletAction.setStatus({
         tone: "idle",
         text: `Checking spendable ${token.ticker}...`,
       });
       const freshState = await fetchFreshWalletTokenPreflightState(
-        address,
+        actionAddress,
         token.tokenId,
         (attempt, totalAttempts) => {
-          setStatus({
+          walletAction.setStatus({
             tone: "idle",
             text: `Rechecking spendable ${token.ticker} (${attempt}/${totalAttempts})...`,
           });
         },
       );
+      if (!walletAction.isCurrent()) {
+        return;
+      }
       const spendability = tokenSpendabilityForWallet(
-        address,
+        actionAddress,
         token,
         freshState,
         tokenListings,
@@ -30611,7 +30707,7 @@ export default function App() {
         spendableAmountUnits === null ||
         attemptedAmountUnits > spendableAmountUnits
       ) {
-        setStatus({
+        walletAction.setStatus({
           tone: "bad",
           text: `${tokenAmountDisplay(
             token,
@@ -30622,11 +30718,17 @@ export default function App() {
         });
         return;
       }
-      await assertActiveWalletAddress(window.unisat, address);
+      await assertActiveWalletAddress(window.unisat, actionAddress);
+      if (!walletAction.isCurrent()) {
+        return;
+      }
 
       if (isWorkToken(token)) {
         const freshAdmission = await freshWorkWriteMode();
         preparedWorkMode = freshAdmission.mode;
+        if (!walletAction.isCurrent()) {
+          return;
+        }
         payload = buildTokenSendPayload(
           token.tokenId,
           workDecimalFromAtoms(parsedAmount.amountSubatoms ?? "0"),
@@ -30642,17 +30744,20 @@ export default function App() {
         amountSats: TOKEN_MIN_MUTATION_PRICE_SATS,
         excludeOutpoints: activeTokenListingAnchorOutpointsForAddress(
           spendability.activeListings,
-          address,
+          actionAddress,
           { network: "livenet" },
         ),
         feeRate,
-        fromAddress: address,
+        fromAddress: actionAddress,
         network: "livenet",
         protocolPayloads: [payload],
         requireConfirmedUtxos: true,
         toAddress: token.registryAddress,
         utxoSelectionStrategy: "smallest-single-confirmed",
       });
+      if (!walletAction.isCurrent()) {
+        return;
+      }
       if (
         !confirmDustFeeAbsorption({
           dustFeeSats: paymentPsbt.dustFeeSats,
@@ -30660,10 +30765,16 @@ export default function App() {
           feeSats: paymentPsbt.feeSats,
         })
       ) {
-        setStatus({ tone: "idle", text: dustFeeAbsorptionCanceledText() });
+        walletAction.setStatus({
+          tone: "idle",
+          text: dustFeeAbsorptionCanceledText(),
+        });
         return;
       }
-      await assertActiveWalletAddress(window.unisat, address);
+      await assertActiveWalletAddress(window.unisat, actionAddress);
+      if (!walletAction.isCurrent()) {
+        return;
+      }
 
       const txid = await signAndBroadcastPsbt({
         beforeBroadcast:
@@ -30675,9 +30786,12 @@ export default function App() {
         inputCount: paymentPsbt.inputCount,
         network: "livenet",
         psbtHex: paymentPsbt.psbtHex,
-        signingAddress: address,
+        signingAddress: actionAddress,
         wallet: window.unisat,
       });
+      if (!walletAction.isCurrent()) {
+        return;
+      }
       const transfer: PowTokenTransfer = {
         amount: parsedAmount.amount,
         amountAtoms: parsedAmount.amountAtoms,
@@ -30689,7 +30803,7 @@ export default function App() {
         paidSats: TOKEN_MIN_MUTATION_PRICE_SATS,
         recipientAddress,
         registryAddress: token.registryAddress,
-        senderAddress: address,
+        senderAddress: actionAddress,
         ticker: token.ticker,
         tokenId: token.tokenId,
         txid,
@@ -30701,7 +30815,7 @@ export default function App() {
           : [transfer, ...current],
       );
       setTokenTransferRecipient("");
-      setStatus(
+      walletAction.setStatus(
         goodBroadcastStatus(
           `${token.ticker} transfer broadcast: ${shortAddress(txid)}.`,
           txid,
@@ -30711,13 +30825,12 @@ export default function App() {
       void refreshToken(true);
       void refreshTokenTransferFundingReadiness().catch(() => undefined);
     } catch (error) {
-      setStatus({
+      walletAction.setStatus({
         tone: "bad",
         text: errorMessage(error, "Credit transfer failed."),
       });
     } finally {
-      setTokenAction("");
-      setBusy(false);
+      walletAction.finish();
     }
   }
 
@@ -30800,9 +30913,8 @@ export default function App() {
       return;
     }
 
-    setTokenAction("list");
-    setBusy(true);
-    setStatus({
+    const actionAddress = address;
+    const walletAction = beginWalletScopedTokenAction("list", {
       tone: "idle",
       text: workListing
         ? `Preparing ${workAmoProofFaceLabel(tokenListFaceProofs)} AMO ${workV8TermsSelected ? "V8" : "V6"} unit...`
@@ -30810,7 +30922,10 @@ export default function App() {
     });
 
     try {
-      await ensureWalletNetwork(window.unisat, "livenet", address);
+      await ensureWalletNetwork(window.unisat, "livenet", actionAddress);
+      if (!walletAction.isCurrent()) {
+        return;
+      }
 
       let workEstimate: WorkAmoV6Estimate | undefined;
       let workV8Listing = false;
@@ -30821,6 +30936,9 @@ export default function App() {
         const freshAdmission = await freshWorkWriteMode();
         const freshFloor = freshAdmission.quote;
         preparedWorkListingMode = freshAdmission.mode;
+        if (!walletAction.isCurrent()) {
+          return;
+        }
         assertWorkAmoListingEnabled(freshFloor);
         workV8Listing = preparedWorkListingMode === "native-q16";
         if (
@@ -30843,22 +30961,25 @@ export default function App() {
         }
       }
 
-      setStatus({
+      walletAction.setStatus({
         tone: "idle",
         text: `Checking spendable ${token.ticker}...`,
       });
       const freshState = await fetchFreshWalletTokenPreflightState(
-        address,
+        actionAddress,
         token.tokenId,
         (attempt, totalAttempts) => {
-          setStatus({
+          walletAction.setStatus({
             tone: "idle",
             text: `Rechecking spendable ${token.ticker} (${attempt}/${totalAttempts})...`,
           });
         },
       );
+      if (!walletAction.isCurrent()) {
+        return;
+      }
       const spendability = tokenSpendabilityForWallet(
-        address,
+        actionAddress,
         token,
         freshState,
         tokenListings,
@@ -30888,7 +31009,7 @@ export default function App() {
         spendableAmountUnits === null ||
         attemptedAmountUnits > spendableAmountUnits
       ) {
-        setStatus({
+        walletAction.setStatus({
           tone: "bad",
           text: `${tokenAmountDisplay(
             token,
@@ -30899,11 +31020,17 @@ export default function App() {
         });
         return;
       }
-      await assertActiveWalletAddress(window.unisat, address);
+      await assertActiveWalletAddress(window.unisat, actionAddress);
+      if (!walletAction.isCurrent()) {
+        return;
+      }
       const latestToken = token;
 
       const sellerPublicKey =
         (await window.unisat.getPublicKey?.())?.trim().toLowerCase() ?? "";
+      if (!walletAction.isCurrent()) {
+        return;
+      }
       if (!validPublicKeyHex(sellerPublicKey)) {
         throw new Error("UniSat did not return a valid seller public key.");
       }
@@ -30920,7 +31047,7 @@ export default function App() {
               : WORK_AMO_AMOUNT_MODEL
             : undefined,
           anchorScriptPubKey: bytesToHex(
-            scriptForAddress(address, "livenet", "Sale-ticket address"),
+            scriptForAddress(actionAddress, "livenet", "Sale-ticket address"),
           ),
           anchorSigHashType: TOKEN_LISTING_ANCHOR_SIGHASH_TYPE,
           anchorType: TOKEN_LISTING_ANCHOR_TYPE,
@@ -30940,7 +31067,7 @@ export default function App() {
             .slice(2, 10)}`,
           priceSats: workListing ? 0 : priceSats,
           registryAddress: latestToken.registryAddress,
-          sellerAddress: address,
+          sellerAddress: actionAddress,
           sellerPublicKey,
           stateOrderModel: workListing
             ? WORK_AMO_STATE_ORDER_MODEL
@@ -30975,11 +31102,11 @@ export default function App() {
       const paymentPsbt = await buildPaymentPsbt({
         excludeOutpoints: activeTokenListingAnchorOutpointsForAddress(
           spendability.activeListings,
-          address,
+          actionAddress,
           { network: "livenet" },
         ),
         feeRate,
-        fromAddress: address,
+        fromAddress: actionAddress,
         network: "livenet",
         payments: [
           {
@@ -30989,13 +31116,16 @@ export default function App() {
         ],
         postProtocolPayments: [
           {
-            address,
+            address: actionAddress,
             amountSats: TOKEN_LISTING_ANCHOR_VALUE_SATS,
           },
         ],
         protocolPayloads: [payload],
         requireConfirmedUtxos: true,
       });
+      if (!walletAction.isCurrent()) {
+        return;
+      }
       if (
         !confirmDustFeeAbsorption({
           dustFeeSats: paymentPsbt.dustFeeSats,
@@ -31003,7 +31133,10 @@ export default function App() {
           feeSats: paymentPsbt.feeSats,
         })
       ) {
-        setStatus({ tone: "idle", text: dustFeeAbsorptionCanceledText() });
+        walletAction.setStatus({
+          tone: "idle",
+          text: dustFeeAbsorptionCanceledText(),
+        });
         return;
       }
 
@@ -31015,14 +31148,17 @@ export default function App() {
           workEstimate,
         )
       ) {
-        setStatus({
+        walletAction.setStatus({
           tone: "idle",
           text: "WORK listing canceled before signing.",
         });
         return;
       }
 
-      await assertActiveWalletAddress(window.unisat, address);
+      await assertActiveWalletAddress(window.unisat, actionAddress);
+      if (!walletAction.isCurrent()) {
+        return;
+      }
       const txid = await signAndBroadcastPsbt({
         beforeBroadcast:
           workListing && preparedWorkListingMode
@@ -31033,9 +31169,12 @@ export default function App() {
         inputCount: paymentPsbt.inputCount,
         network: "livenet",
         psbtHex: paymentPsbt.psbtHex,
-        signingAddress: address,
+        signingAddress: actionAddress,
         wallet: window.unisat,
       });
+      if (!walletAction.isCurrent()) {
+        return;
+      }
       const listing: PowTokenListing = {
         amount: workListing ? 0 : parsedAmount!.amount,
         amountAtoms: workListing ? undefined : parsedAmount!.amountAtoms,
@@ -31050,7 +31189,7 @@ export default function App() {
         priceSats: workListing ? 0 : priceSats,
         registryAddress: latestToken.registryAddress,
         saleAuthorization,
-        sellerAddress: address,
+        sellerAddress: actionAddress,
         ticker: latestToken.ticker,
         tokenId: latestToken.tokenId,
         unitFaceProofs: workListing
@@ -31063,7 +31202,7 @@ export default function App() {
           ? current
           : [listing, ...current],
       );
-      setStatus(
+      walletAction.setStatus(
         goodBroadcastStatus(
           workListing
             ? `${workAmoProofFaceLabel(tokenListFaceProofs)} AMO ${workV8Listing ? "V8" : "V6"} intent broadcast. Its exact ${workV8Listing ? "Q16 " : ""}WORK amount remains an estimate until canonical confirmation freezes the terms: ${shortAddress(txid)}.`
@@ -31074,13 +31213,12 @@ export default function App() {
       );
       void refreshToken(true, true);
     } catch (error) {
-      setStatus({
+      walletAction.setStatus({
         tone: "bad",
         text: errorMessage(error, "Credit listing failed."),
       });
     } finally {
-      setTokenAction("");
-      setBusy(false);
+      walletAction.finish();
     }
   }
 

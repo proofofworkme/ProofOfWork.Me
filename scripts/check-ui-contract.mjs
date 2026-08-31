@@ -1257,11 +1257,46 @@ expect(
     ),
 );
 expect(
+  "wallet credit actions cannot paint stale preflight status across wallet changes",
+  /function walletActionScopeKey\(network: BitcoinNetwork, address: string\)/.test(
+    app,
+  ) &&
+    /function staleWalletTransactionStatus[\s\S]*No transaction was created/.test(
+      app,
+    ) &&
+    /const activeWalletActionScopeRef = useRef\(activeWalletActionScopeKey\)/.test(
+      app,
+    ) &&
+    /const walletActionGenerationRef = useRef\(0\)/.test(app) &&
+    /const walletActionActiveRef = useRef\(false\)/.test(app) &&
+    /function beginWalletScopedTokenAction[\s\S]*requestWalletScopeKey[\s\S]*walletActionStillActive[\s\S]*activeWalletActionScopeRef\.current === requestWalletScopeKey[\s\S]*setStatusForWorkspace\(requestWorkspaceKey/.test(
+      app,
+    ) &&
+    /function beginWalletScopedTokenAction[\s\S]*walletActionActiveRef\.current = true[\s\S]*finish:[\s\S]*walletActionActiveRef\.current = false/.test(
+      app,
+    ) &&
+    /useEffect\(\(\) => \{[\s\S]*walletActionGenerationRef\.current \+= 1[\s\S]*setTokenAction\(""\)[\s\S]*setTokenTransferTokenId\(""\)[\s\S]*walletActionActiveRef\.current[\s\S]*setBusy\(false\)[\s\S]*staleWalletTransactionStatus/.test(
+      app,
+    ) &&
+    /async function transferToken[\s\S]*const actionAddress = address[\s\S]*beginWalletScopedTokenAction\("transfer"[\s\S]*fetchFreshWalletTokenPreflightState\(\s*actionAddress/.test(
+      transferTokenSource,
+    ) &&
+    /async function listToken[\s\S]*const actionAddress = address[\s\S]*beginWalletScopedTokenAction\("list"[\s\S]*fetchFreshWalletTokenPreflightState\(\s*actionAddress/.test(
+      listTokenSource,
+    ) &&
+    !/fetchFreshWalletTokenPreflightState\(\s*address,\s*token\.tokenId/.test(
+      transferTokenSource,
+    ) &&
+    !/fetchFreshWalletTokenPreflightState\(\s*address,\s*token\.tokenId/.test(
+      listTokenSource,
+    ),
+);
+expect(
   "credit listings use canonical holder spendability and the active AMO protocol before PSBT creation",
-  /fetchFreshWalletTokenPreflightState\(\s*address,\s*token\.tokenId/.test(
+  /fetchFreshWalletTokenPreflightState\(\s*actionAddress,\s*token\.tokenId/.test(
     listTokenSource,
   ) &&
-    /tokenSpendabilityForWallet\(\s*address,\s*token,\s*freshState,\s*tokenListings,\s*tokenClosedListings,\s*tokenTransfers,\s*tokenSales/.test(
+    /tokenSpendabilityForWallet\(\s*actionAddress,\s*token,\s*freshState,\s*tokenListings,\s*tokenClosedListings,\s*tokenTransfers,\s*tokenSales/.test(
       listTokenSource,
     ) &&
     /tokenAmountDisplay\([\s\S]*spendability\.spendableBalance,[\s\S]*spendability\.spendableBalanceSubatoms[\s\S]*available; \$\{attemptedAmountDisplay\} attempted\. No transaction was created\./.test(
