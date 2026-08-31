@@ -100,6 +100,8 @@ const NO_PROGRESS_ALERT_INTERVAL_MS = Math.max(
   ) ||
     15 * 60_000,
 );
+export const WORK_Q16_PENDING_WITNESS_RETRY_ERROR =
+  "Proof index worker is fail-closed until the backfill-owned Q16 pending witness matches every persisted pending WORK transaction and the exact pending projection.";
 const BACKFILL_MAX_PAGES = Number(
   process.env.POW_INDEX_WORKER_BACKFILL_MAX_PAGES ??
     process.env.POW_INDEX_BACKFILL_MAX_PAGES ??
@@ -4770,9 +4772,7 @@ async function assertWorkPrecisionPendingReady(
         readinessEpochCheckpoint,
       });
     if (!ready) {
-      throw new Error(
-        "Proof index worker is fail-closed until the backfill-owned Q16 pending witness matches every persisted pending WORK transaction and the exact pending projection.",
-      );
+      throw new Error(WORK_Q16_PENDING_WITNESS_RETRY_ERROR);
     }
     return {
       activationHeight: precision.activationHeight,
@@ -4883,6 +4883,19 @@ function cappedChildError(value) {
   return text.length <= CHILD_ERROR_MAX_CHARS
     ? text
     : `${text.slice(0, CHILD_ERROR_MAX_CHARS - 1)}…`;
+}
+
+export function workerPendingQ16WitnessRetryFailure(error, workPrecision) {
+  const state = objectRecord(workPrecision);
+  const replay = objectRecord(state.replay);
+  const pendingError = String(replay.pendingError ?? "");
+  const message = String(error?.message ?? error ?? "");
+  return (
+    state.era === WORK_PRECISION_Q16_ERA &&
+    pendingError === WORK_Q16_PENDING_WITNESS_RETRY_ERROR &&
+    (message === WORK_Q16_PENDING_WITNESS_RETRY_ERROR ||
+      message.startsWith("Pending protocol-event readiness is unhealthy:"))
+  );
 }
 
 function normalizedCheckpoint(value) {
@@ -5143,9 +5156,11 @@ export function shouldEscalateWorkerFailure(
   canonicalFailure,
   consecutiveFailures,
   threshold = MAX_CONSECUTIVE_FAILURES,
+  { nonEscalating = false } = {},
 ) {
   return (
     !canonicalFailure &&
+    nonEscalating !== true &&
     Number(consecutiveFailures) >= finitePositiveInteger(threshold, 3)
   );
 }
@@ -6986,6 +7001,8 @@ export async function runWorkerMain() {
         consecutiveFailures += 1;
         const nowMs = Date.now();
         const canonicalFailure = canonicalWorkerFailureFromError(error);
+        const pendingQ16WitnessRetryFailure =
+          workerPendingQ16WitnessRetryFailure(error, runtime.workPrecision);
         const canonicalProgress = await readCanonicalWorkerProgress(
           pool,
           runtime.network,
@@ -7035,6 +7052,8 @@ export async function runWorkerMain() {
         const escalating = shouldEscalateWorkerFailure(
           containedCanonicalFailure,
           consecutiveFailures,
+          MAX_CONSECUTIVE_FAILURES,
+          { nonEscalating: pendingQ16WitnessRetryFailure },
         );
         const retrying = !ONCE && !runtime.stopping && !escalating;
         const failedAt = new Date(nowMs).toISOString();

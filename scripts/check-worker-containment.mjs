@@ -9,6 +9,7 @@ import {
   CANONICAL_TX_CONTENT_FAILURE_CLASS,
   CANONICAL_TX_CONTENT_FAILURE_CODE,
   WORKER_CORE_TIP_ADVANCED_CODE,
+  WORK_Q16_PENDING_WITNESS_RETRY_ERROR,
   canonicalWorkerFailureFromError,
   canonicalWorkerFailureFromLine,
   containableCanonicalFailure,
@@ -27,6 +28,7 @@ import {
   workerIdleTipPollMs,
   workerNoProgressFromMeta,
   workerPendingEventHealth,
+  workerPendingQ16WitnessRetryFailure,
   workerSleepUntilIntervalOrTipAdvance,
   workerWorkAmoV8ActivationLatchReady,
   workerWorkAmoV8DeclarationConfig,
@@ -2869,9 +2871,42 @@ async function runChecks() {
   assert.equal(shouldEscalateWorkerFailure(null, 2, 3), false);
   assert.equal(shouldEscalateWorkerFailure(null, 3, 3), true);
   assert.equal(
+    shouldEscalateWorkerFailure(null, 100, 3, { nonEscalating: true }),
+    false,
+    "known fail-closed retry classes must not escalate",
+  );
+  assert.equal(
     shouldEscalateWorkerFailure(failure, 100, 3),
     false,
     "recognized canonical poison must remain contained",
+  );
+  const q16PendingRetryState = {
+    era: "q16",
+    replay: {
+      pendingError: WORK_Q16_PENDING_WITNESS_RETRY_ERROR,
+    },
+  };
+  assert.equal(
+    workerPendingQ16WitnessRetryFailure(
+      new Error(WORK_Q16_PENDING_WITNESS_RETRY_ERROR),
+      q16PendingRetryState,
+    ),
+    true,
+  );
+  assert.equal(
+    workerPendingQ16WitnessRetryFailure(
+      new Error("Pending protocol-event readiness is unhealthy: {}"),
+      q16PendingRetryState,
+    ),
+    true,
+  );
+  assert.equal(
+    workerPendingQ16WitnessRetryFailure(
+      new Error("Pending protocol-event readiness is unhealthy: {}"),
+      { ...q16PendingRetryState, replay: {} },
+    ),
+    false,
+    "pending health failures only get the non-escalating path when replay binds the exact Q16 witness retry reason",
   );
   assert.equal(
     containableCanonicalFailure(failure, {

@@ -1001,3 +1001,155 @@ Most important concrete mismatches:
 5. Make storage-retention decisions for old databases, backup directories,
    release archives, recovery directories, and UI deployment staging folders
    before `/data` approaches the 90% health threshold.
+
+## 2026-08-31 Exact-Tip Refresh Follow-Up
+
+### Trigger
+
+The UI reported:
+
+- WORK exact-tip refresh was catching up.
+- Verified last-good summary block: `964818`.
+- Full-node tip: `964821`.
+- Exact-tip actions were disabled because the view was not current.
+
+This was the correct fail-closed behavior: exact-tip actions stayed unavailable
+while the indexer and exact summaries were not proven at the full-node tip.
+
+### Production Node State
+
+Read-only production samples showed the original block-lag condition cleared:
+
+- At `2026-08-31T07:25:25Z`, the index and full node both reported block
+  `964840`, with `lagBlocks: 0`.
+- At `2026-08-31T07:30:04Z`, the index and full node both reported block
+  `964842`, with `lagBlocks: 0`.
+- Exact summary coverage was present at block `964842` for `growthSummary`,
+  `inceptionSummary`, `infinitySummary`, `logSummary`,
+  `marketplaceSummary`, `tokenSummary`, `workFloor`, and `workSummary`.
+- Summary snapshot at block `964842`: `5ba3d3db7f1573d874923dc4`.
+- Snapshot payload size: `9485109` bytes.
+- Full node reported mainnet, not pruned, initial block download false, and
+  synced txindex at the same block height.
+
+The remaining red health signal was pending-status and pending-Q16 readiness,
+not a confirmed chain-index math mismatch:
+
+- `pendingEventHealth.globalUnresolved: 0`.
+- `pendingEventHealth.q16PendingUnresolved: 0`.
+- Two stale pending ID-registration rows were full-node-proven absent but were
+  still inside the repeated-absence guard window:
+  `6a6562db40668eee7c12b1603878978c3443b632c5741a13736c3fdc98759dba`
+  and
+  `7e7c4aab27eb7544f218d5f84a4265238212ced09e3a8fc50375b86a6efea2ba`.
+- Both carried authoritative Core absence evidence from
+  `bitcoin-core:getrawtransaction`, `bitcoin-core:getmempoolentry`,
+  `bitcoin-core:getblockchaininfo`, and `bitcoin-core:getindexinfo:txindex`.
+- Their absence window started at about `2026-08-31T07:24:29Z`.
+
+During the catch-up, the Q16 pending witness recovered naturally without manual
+database mutation:
+
+- Pending witness generated at `2026-08-31T07:18:57.219Z`.
+- Pending membership count: `16`.
+- Pending membership sha256:
+  `f1ef1ad08f45b80add695cfc0906a998b65d02366667dcfddc66274ab59d74ac`.
+- Pending projection sha256:
+  `d9ba2fab560044744311204c1521f86db81177dde9b02ed70dbde0b4b6745473`.
+- Confirmed replay transition count at block `964840`: `4240`.
+
+### Local Fix Pass
+
+A local worker fix was prepared after the production metadata showed this
+specific state could cause generic three-strike escalation even though the
+system was correctly fail-closed:
+
+- Added one exported Q16 pending-witness retry error constant.
+- Added `workerPendingQ16WitnessRetryFailure(...)` so the worker can recognize
+  the exact fail-closed Q16 pending-witness retry class from persisted
+  `workPrecision.replay.pendingError`.
+- Updated `shouldEscalateWorkerFailure(...)` to accept a non-escalating retry
+  option.
+- Wired the worker catch path so this exact Q16 pending-witness retry does not
+  escalate the process after three loops.
+- The fix does not make stale, missing, or unproven pending data healthy. It
+  only prevents unnecessary worker process churn while the exact witness and
+  Core absence proofs mature.
+
+Local verification passed:
+
+- `node --check scripts/run-proof-indexer-worker.mjs`.
+- `node --check scripts/check-worker-containment.mjs`.
+- `npm run check:worker-containment`.
+- `npm run check:api-truth`.
+- `npm run check:index-recovery-behavior` (`480/480`).
+
+### Public Route Audit
+
+The requested public pages returned HTTP 200 in order:
+
+- `proofofwork.me` redirected to `https://www.proofofwork.me/` and returned
+  HTTP 200 in about `1.30s`.
+- `id.proofofwork.me` returned HTTP 200 in about `0.60s`.
+- `desktop.proofofwork.me` returned HTTP 200 in about `0.50s`.
+- `browser.proofofwork.me` returned HTTP 200 in about `0.61s`.
+- `amo.proofofwork.me` returned HTTP 200 in about `0.61s`.
+- `credit.proofofwork.me` returned HTTP 200 in about `0.61s`.
+- `wallet.proofofwork.me` returned HTTP 200 in about `0.61s`.
+- `work.proofofwork.me` returned HTTP 200 in about `0.44s`.
+- `infinity.proofofwork.me` returned HTTP 200 in about `0.57s`.
+- `inception.proofofwork.me` returned HTTP 200 in about `0.60s`.
+- `log.proofofwork.me` returned HTTP 200 in about `0.60s`.
+- `growth.proofofwork.me` returned HTTP 200 in about `0.62s`.
+- `computer.proofofwork.me` returned HTTP 200 in about `0.61s`.
+
+### Storage Snapshot
+
+Node VPS at `2026-08-31T07:30:00Z`:
+
+- `/`: `98G` total, `36G` used, `58G` available, `39%` used.
+- `/data`: `1.7T` total, `1.3T` used, `273G` available, `83%` used.
+- `/` inode usage: `8%`.
+- `/data` inode usage: `1%`.
+- PostgreSQL `proof_indexer` database size: `17 GB`.
+- Largest `/data` directories observed:
+  `/data/bitcoin` `904G`,
+  `/data/proofofwork-postgres-backups` `240G`,
+  `/data/proofofwork-postgres-tablespaces` `70G`,
+  `/data/electrs` `60G`,
+  `/data/proofofwork-release-backups` `8.7G`,
+  `/data/proofofwork-recovery` `3.6G`,
+  `/data/mempool` `1.1G`,
+  `/data/proofofwork-api-cache` `171M`.
+
+UI VPS at `2026-08-31T07:29:59Z`:
+
+- `/`: `38G` total, `14G` used, `23G` available, `37%` used.
+- `/` inode usage: `5%`.
+- Journals: `258.9M`.
+- `/var/www`: `386M`.
+- `/var/log`: `589M`.
+- `systemctl --failed --no-legend` produced no failed-unit rows.
+
+No stale production storage was deleted in this pass. Cleanup candidates remain:
+
+- Old node release checkouts under `/opt/proofofwork-api*`.
+- Old node release archives and one rejected publish-request file under
+  `/var/tmp/proofofwork-deploy`.
+- Node backup and recovery retention under `/data/proofofwork-postgres-backups`,
+  `/data/proofofwork-release-backups`, and `/data/proofofwork-recovery`.
+- Old UI deployment rollback directories under `/var/www`.
+
+### Remaining Priority
+
+1. Deploy the Q16 pending-witness retry containment fix, then verify production
+   worker health after a full catch-up cycle.
+2. Re-run production ID audit and proof-indexer parity once pending status is
+   green.
+3. Complete the already-identified supervised recovery/backfill for stale
+   registry/listing relational history, including the known external
+   sale-ticket anchor spend.
+4. Fix canonical summary snapshot currentness for the strict parity checker if
+   it still disagrees with the public exact summary health surface.
+5. Approve an explicit storage-retention pass before deleting old release,
+   recovery, backup, or rollback artifacts.
