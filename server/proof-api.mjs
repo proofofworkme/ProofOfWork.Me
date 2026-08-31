@@ -70966,34 +70966,75 @@ async function registryAuditRawReplayWithSpendableListings(
     !Array.isArray(rawReplay.closingState)
       ? rawReplay.closingState
       : { listings: [], records: [] };
-  const listingReconciliation = await strictCoreRegistryListingReconciliation(
-    {
-      indexedThroughBlock: checkpoint.height,
-      indexedThroughBlockHash: checkpoint.blockHash,
-      listings: Array.isArray(closingState.listings)
-        ? closingState.listings
-        : [],
-      network,
-      stats: {
-        activeListings: Array.isArray(closingState.listings)
-          ? closingState.listings.length
-          : 0,
-        listingCount: Array.isArray(closingState.listings)
-          ? closingState.listings.length
-          : 0,
-        listings: Array.isArray(closingState.listings)
-          ? closingState.listings.length
-          : 0,
-      },
+  const sourceListings = Array.isArray(closingState.listings)
+    ? closingState.listings
+    : [];
+  const checked = await mapWithConcurrency(
+    sourceListings,
+    Math.min(4, Math.max(1, TX_FETCH_CONCURRENCY)),
+    async (listing) => {
+      if (!registryListingUsesCoreAnchor(listing)) {
+        return { listing, status: "legacy-unanchored" };
+      }
+      const anchor = listingAnchorOutpoint(listing);
+      if (!anchor) {
+        throw registryAuthorityUnavailable(
+          `Raw replay ID listing ${String(listing?.listingId ?? "unknown")} has no exact Core anchor.`,
+        );
+      }
+      const outpoint = `${anchor.txid}:${anchor.vout}`;
+      let outspend;
+      try {
+        outspend = await txOutspendPayload(anchor.txid, anchor.vout, network);
+      } catch (error) {
+        throw registryAuthorityUnavailable(
+          `Outspend lookup failed for raw replay ID listing ${outpoint}.`,
+          { reason: errorSummary(error) },
+        );
+      }
+      if (outspend?.spent === true) {
+        if (outspendHasConfirmedSpender(outspend)) {
+          const spenderHeight = registryAuditInteger(
+            outspend.status.block_height,
+            `Raw replay ID listing ${outpoint} spender height`,
+            1,
+          );
+          const spenderTxid = registryAuditTxid(
+            outspend.txid,
+            `Raw replay ID listing ${outpoint} spender`,
+          );
+          return {
+            listing,
+            outpoint,
+            spenderHeight,
+            spenderTxid,
+            status:
+              spenderHeight <= checkpoint.height
+                ? "spent-confirmed"
+                : "spent-after-checkpoint",
+          };
+        }
+        return { listing, outpoint, status: "spent-unconfirmed" };
+      }
+      if (outspend?.spent === false) {
+        return {
+          listing,
+          outpoint,
+          status: outspend.unknown === true ? "unspent-unknown" : "unspent",
+        };
+      }
+      throw registryAuthorityUnavailable(
+        `Outspend lookup returned no exact status for raw replay ID listing ${outpoint}.`,
+      );
     },
-    network,
-    { checkpoint, verifyFinalTip: false },
   );
-  const spendableClosingListings = (Array.isArray(
-    listingReconciliation.payload?.listings,
-  )
-    ? listingReconciliation.payload.listings
-    : [])
+  const spendableClosingListings = checked
+    .filter(
+      (entry) =>
+        entry.status !== "spent-confirmed" &&
+        entry.status !== "spent-unconfirmed",
+    )
+    .map((entry) => entry.listing)
     .map((listing) => ({
       id: registryAuditId(listing?.id, "Spendable raw closing ID listing"),
       listingId: registryAuditTxid(
@@ -71025,7 +71066,39 @@ async function registryAuditRawReplayWithSpendableListings(
     ...rawReplay,
     closingState: spendableClosingState,
     closingStateSha256: registryAuditProjectionSha256(spendableClosingState),
-    listingReconciliation: listingReconciliation.evidence,
+    listingReconciliation: {
+      anchoredListingCount: checked.filter((entry) => entry.outpoint).length,
+      checkedOutpointsSha256: registryAuditProjectionSha256(
+        checked
+          .filter((entry) => entry.outpoint)
+          .map((entry) => ({
+            outpoint: entry.outpoint,
+            spenderHeight: entry.spenderHeight ?? null,
+            spenderTxid: entry.spenderTxid ?? "",
+            status: entry.status,
+          }))
+          .sort((left, right) =>
+            compareCanonicalUtf8(left.outpoint, right.outpoint),
+          ),
+      ),
+      checkpoint: { ...checkpoint },
+      inputListingCount: sourceListings.length,
+      legacyUnanchoredListingCount: checked.filter((entry) => !entry.outpoint)
+        .length,
+      model: "proof-registry-audit-historical-outspend-v1",
+      outputListingCount: spendableClosingListings.length,
+      spentListingCount: checked.filter(
+        (entry) =>
+          entry.status === "spent-confirmed" ||
+          entry.status === "spent-unconfirmed",
+      ).length,
+      unspentListingCount: checked.filter(
+        (entry) =>
+          entry.status === "unspent" ||
+          entry.status === "unspent-unknown" ||
+          entry.status === "spent-after-checkpoint",
+      ).length,
+    },
   };
 }
 

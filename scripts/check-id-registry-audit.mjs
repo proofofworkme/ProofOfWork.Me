@@ -852,8 +852,8 @@ assert.match(
 );
 assert.match(
   serverSource,
-  /registryAuditRawReplayWithSpendableListings[\s\S]*strictCoreRegistryListingReconciliation[\s\S]*await registryAuditRawReplayWithSpendableListings\([\s\S]*await registryAuditCanonicalRawReplay\(network,\s*initialTip\)[\s\S]*initialConfirmedState: rawReplay\.closingState/u,
-  "ID audit raw replay listings must be reconciled against exact Core anchors before pending replay and parity hashing.",
+  /registryAuditRawReplayWithSpendableListings[\s\S]*txOutspendPayload\(anchor\.txid,\s*anchor\.vout,\s*network\)[\s\S]*spenderHeight <= checkpoint\.height[\s\S]*await registryAuditRawReplayWithSpendableListings\([\s\S]*initialConfirmedState: rawReplay\.closingState/u,
+  "ID audit raw replay listings must be reconciled against checkpoint-bounded outspends before pending replay and parity hashing.",
 );
 assert.match(
   registryResolverSource,
