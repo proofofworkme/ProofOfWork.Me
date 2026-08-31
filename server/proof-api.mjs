@@ -69059,6 +69059,110 @@ function registryAuditProjectionSha256(value) {
     .digest("hex");
 }
 
+function registryAuditProjectionPreview(value) {
+  const text = registryAuditCanonicalJson(value);
+  return text.length > 240 ? `${text.slice(0, 240)}...` : text;
+}
+
+function registryAuditProjectionSectionSummary(projection) {
+  const source =
+    projection && typeof projection === "object" && !Array.isArray(projection)
+      ? projection
+      : {};
+  return [
+    "confirmedRecords",
+    "events",
+    "listings",
+    "pendingEvents",
+    "pendingRecords",
+    "sales",
+  ].reduce((summary, key) => {
+    const value = Array.isArray(source[key]) ? source[key] : [];
+    summary[key] = {
+      count: value.length,
+      sha256: registryAuditProjectionSha256(value),
+    };
+    return summary;
+  }, {});
+}
+
+function registryAuditFirstProjectionDiff(left, right, path = "$") {
+  const leftArray = Array.isArray(left);
+  const rightArray = Array.isArray(right);
+  if (leftArray || rightArray) {
+    if (!leftArray || !rightArray) {
+      return {
+        path,
+        chain: registryAuditProjectionPreview(left),
+        relational: registryAuditProjectionPreview(right),
+      };
+    }
+    const length = Math.min(left.length, right.length);
+    for (let index = 0; index < length; index += 1) {
+      const diff = registryAuditFirstProjectionDiff(
+        left[index],
+        right[index],
+        `${path}[${index}]`,
+      );
+      if (diff) {
+        return diff;
+      }
+    }
+    if (left.length !== right.length) {
+      return {
+        path: `${path}.length`,
+        chain: String(left.length),
+        relational: String(right.length),
+      };
+    }
+    return null;
+  }
+  const leftObject = left && typeof left === "object";
+  const rightObject = right && typeof right === "object";
+  if (leftObject || rightObject) {
+    if (!leftObject || !rightObject) {
+      return {
+        path,
+        chain: registryAuditProjectionPreview(left),
+        relational: registryAuditProjectionPreview(right),
+      };
+    }
+    const keys = [...new Set([
+      ...Object.keys(left).filter((key) => left[key] !== undefined),
+      ...Object.keys(right).filter((key) => right[key] !== undefined),
+    ])].sort(compareCanonicalUtf8);
+    for (const key of keys) {
+      if (
+        (left[key] === undefined) !==
+        (right[key] === undefined)
+      ) {
+        return {
+          path: `${path}.${key}`,
+          chain: registryAuditProjectionPreview(left[key]),
+          relational: registryAuditProjectionPreview(right[key]),
+        };
+      }
+      const diff = registryAuditFirstProjectionDiff(
+        left[key],
+        right[key],
+        `${path}.${key}`,
+      );
+      if (diff) {
+        return diff;
+      }
+    }
+    return null;
+  }
+  if (Object.is(left, right)) {
+    return null;
+  }
+  return {
+    path,
+    chain: registryAuditProjectionPreview(left),
+    relational: registryAuditProjectionPreview(right),
+  };
+}
+
 function registryAuditTxid(value, label) {
   const txid = String(value ?? "").trim().toLowerCase();
   if (!/^[0-9a-f]{64}$/u.test(txid)) {
@@ -71701,6 +71805,23 @@ async function buildInternalIdRegistryAuditPayload(network) {
       "The chain-derived ID lifecycle projection disagrees with the exact relational projection.",
     );
     error.statusCode = 503;
+    error.details = {
+      chainProjectionSha256: chainProjection.projectionSha256,
+      checkpoint: {
+        blockHash: initialTip.blockHash,
+        height: initialTip.height,
+      },
+      code: "ID_REGISTRY_LIFECYCLE_PROJECTION_MISMATCH",
+      firstDiff: registryAuditFirstProjectionDiff(
+        chainProjection,
+        registryProjection,
+      ),
+      registryProjectionSha256: registryProjection.projectionSha256,
+      sections: {
+        chain: registryAuditProjectionSectionSummary(chainProjection),
+        relational: registryAuditProjectionSectionSummary(registryProjection),
+      },
+    };
     throw error;
   }
   const legacyRelational = registryAuditRelationalAttemptRows(
