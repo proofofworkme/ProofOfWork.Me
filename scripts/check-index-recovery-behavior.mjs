@@ -27307,6 +27307,11 @@ check("exact canonical summaries require current conserved token balances", asyn
     /WHEN listing\.status = 'sealing'[\s\S]*seal_event\.payload->'saleAuthorization'[\s\S]*LEFT JOIN proof_indexer\.events seal_event[\s\S]*seal_event\.kind = 'token-listing-sealed'[\s\S]*EXISTS \([\s\S]*proof_indexer\.transactions seal_tx[\s\S]*seal_block\.canonical = true/u,
     "worker Q16 relational parity must use canonical seal event authorization for sealing rows",
   );
+  assert.match(
+    workerReplaySource,
+    /listing\.status IN \('active', 'sealing'\)[\s\S]*listing\.payload->'saleAuthorization'->>'version'[\s\S]*listing\.payload->'listingAuthorization'->>'version'[\s\S]*= \$3/u,
+    "worker Q16 relational parity must compare only current V8 active listing preimages",
+  );
   assert.equal(
     canonicalSummaryBootstrapReady(
       bootstrapReadiness,

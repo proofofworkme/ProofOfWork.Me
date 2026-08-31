@@ -4122,6 +4122,11 @@ async function assertWorkPrecisionReplayReady(
         WHERE listing.network = $1
           AND listing.token_id = $2
           AND listing.status IN ('active', 'sealing')
+          AND lower(COALESCE(
+            listing.payload->'saleAuthorization'->>'version',
+            listing.payload->'listingAuthorization'->>'version',
+            ''
+          )) = $3
         ORDER BY listing.listing_id ASC
       `,
       [NETWORK, WORK_TOKEN_ID, WORK_AMO_V8_AUTH_VERSION],
