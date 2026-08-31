@@ -378,7 +378,7 @@ async function runChecks() {
   );
   assert.match(
     refreshPendingStatusesSource,
-    /LIMIT \(\$3::integer \+ 1\)[\s\S]*pendingRows = pendingResult\.rows\.slice\(0, PENDING_STATUS_LIMIT\)[\s\S]*summary\.deferred \+= Math\.max\(0, summary\.staleCandidates - summary\.checked\)/u,
+    /q16ParentDeferred: 0[\s\S]*outcome\?\.reason === "q16-parent-witness-owned"[\s\S]*summary\.q16ParentDeferred \+= 1[\s\S]*summary\.deferred \+= Math\.max\(0, summary\.staleCandidates - summary\.checked\)/u,
     "a capped or timed-out pending status sweep must retain an explicit deferred backlog witness",
   );
   const workPrecisionReplayReadySource = topLevelFunctionSource(

@@ -6271,6 +6271,7 @@ async function refreshPendingStatuses(
     dropped: 0,
     errors: 0,
     pending: 0,
+    q16ParentDeferred: 0,
     q16ParentMembershipCount: q16ParentMembershipTxids.length,
     staleCandidates: pendingResult.rowCount,
   };
@@ -6311,6 +6312,8 @@ async function refreshPendingStatuses(
           await client.query("COMMIT");
           if (outcome?.applied) {
             summary[status] += 1;
+          } else if (outcome?.reason === "q16-parent-witness-owned") {
+            summary.q16ParentDeferred += 1;
           } else {
             summary.deferred += 1;
           }

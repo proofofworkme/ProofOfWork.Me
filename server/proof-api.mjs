@@ -73118,11 +73118,16 @@ async function loadHealthPayload() {
   const pendingStatusErrors = pendingStatus?.errors;
   const pendingStatusChecked = pendingStatus?.checked;
   const pendingStatusDeferred = pendingStatus?.deferred;
+  const pendingStatusQ16ParentDeferred = pendingStatus?.q16ParentDeferred;
   const pendingStatusStaleCandidates = pendingStatus?.staleCandidates;
   const pendingStatusUnavailable = pendingStatus?.unavailable === true;
   const pendingStatusUnavailableValid =
     pendingStatus?.unavailable === undefined ||
     pendingStatus?.unavailable === false;
+  const pendingStatusQ16ParentDeferredOk =
+    pendingStatusQ16ParentDeferred === undefined ||
+    (Number.isSafeInteger(pendingStatusQ16ParentDeferred) &&
+      pendingStatusQ16ParentDeferred >= 0);
   const pendingStatusOk =
     !pendingEventHealthRequired ||
     (Number.isSafeInteger(pendingStatusChecked) &&
@@ -73134,6 +73139,7 @@ async function loadHealthPayload() {
       pendingStatusChecked === pendingStatusStaleCandidates &&
       Number.isSafeInteger(pendingStatusErrors) &&
       pendingStatusErrors === 0 &&
+      pendingStatusQ16ParentDeferredOk &&
       pendingStatusUnavailableValid);
   const pendingAccuracyOk = pendingEventHealthOk && pendingStatusOk;
   const canonicalFault = canonical?.fault ?? {};
@@ -73313,6 +73319,11 @@ async function loadHealthPayload() {
               ? pendingStatusErrors
               : null,
             ok: pendingStatusOk,
+            q16ParentDeferred: Number.isSafeInteger(
+              pendingStatusQ16ParentDeferred,
+            )
+              ? pendingStatusQ16ParentDeferred
+              : null,
             staleCandidates: Number.isSafeInteger(
               pendingStatusStaleCandidates,
             )

@@ -18947,6 +18947,7 @@ check("pending status cleanup is concurrent and exposes a 64-row cap", async () 
   let rows = Array.from({ length: 12 }, (_value, index) => ({
     txid: String(index).padStart(64, "0"),
   }));
+  let updateTransactionStatusOutcome = async () => ({ applied: true });
   const refreshPendingStatuses = isolatedFunction(
     WORKER_PATH,
     "refreshPendingStatuses",
@@ -18965,7 +18966,9 @@ check("pending status cleanup is concurrent and exposes a 64-row cap", async () 
         activeReads -= 1;
         return { status: "pending" };
       },
-      updateTransactionStatus: async () => ({ applied: true }),
+      updateTransactionStatus: async (...args) =>
+        updateTransactionStatusOutcome(...args),
+      workQ16PendingLegacyStatusMembership: async () => [],
     },
   );
   const pool = {
@@ -18983,6 +18986,7 @@ check("pending status cleanup is concurrent and exposes a 64-row cap", async () 
   assert.equal(summary.checked, rows.length);
   assert.equal(summary.pending, rows.length);
   assert.equal(summary.deferred, 0);
+  assert.equal(summary.q16ParentDeferred, 0);
   assert.equal(maxActiveReads, 5);
 
   rows = Array.from({ length: 65 }, (_value, index) => ({
@@ -18993,6 +18997,20 @@ check("pending status cleanup is concurrent and exposes a 64-row cap", async () 
   assert.equal(cappedSummary.checked, 64);
   assert.equal(cappedSummary.pending, 64);
   assert.equal(cappedSummary.deferred, 1);
+  assert.equal(cappedSummary.q16ParentDeferred, 0);
+
+  rows = [{ txid: "a".repeat(64) }];
+  updateTransactionStatusOutcome = async () => ({
+    applied: false,
+    reason: "q16-parent-witness-owned",
+  });
+  const q16ParentSummary = await refreshPendingStatuses(pool, {
+    q16Active: true,
+  });
+  assert.equal(q16ParentSummary.checked, 1);
+  assert.equal(q16ParentSummary.pending, 0);
+  assert.equal(q16ParentSummary.deferred, 0);
+  assert.equal(q16ParentSummary.q16ParentDeferred, 1);
 });
 
 check("worker status transitions are proven, race-safe, and projection-safe", async () => {

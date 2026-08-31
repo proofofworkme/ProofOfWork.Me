@@ -704,7 +704,10 @@ expect(
     /const pendingEventHealthRequired = workerReadiness\.q16Required/u.test(
       healthPayload,
     ) &&
-    /const pendingStatusOk =[\s\S]*Number\.isSafeInteger\(pendingStatusChecked\)[\s\S]*pendingStatusDeferred === 0[\s\S]*Number\.isSafeInteger\(pendingStatusStaleCandidates\)[\s\S]*pendingStatusChecked === pendingStatusStaleCandidates[\s\S]*pendingStatusErrors === 0[\s\S]*pendingStatusUnavailableValid/u.test(
+    /const pendingStatusQ16ParentDeferredOk =[\s\S]*pendingStatusQ16ParentDeferred >= 0/u.test(
+      healthPayload,
+    ) &&
+    /const pendingStatusOk =[\s\S]*Number\.isSafeInteger\(pendingStatusChecked\)[\s\S]*pendingStatusDeferred === 0[\s\S]*Number\.isSafeInteger\(pendingStatusStaleCandidates\)[\s\S]*pendingStatusChecked === pendingStatusStaleCandidates[\s\S]*pendingStatusErrors === 0[\s\S]*pendingStatusQ16ParentDeferredOk[\s\S]*pendingStatusUnavailableValid/u.test(
       healthPayload,
     ) &&
     /const pendingAccuracyOk = pendingEventHealthOk && pendingStatusOk/u.test(
@@ -719,7 +722,7 @@ expect(
         healthPayload.indexOf("const diskOk ="),
       ),
     ) &&
-    /pendingEvents: \{[\s\S]*globalUnresolved:[\s\S]*q16PendingUnresolved:[\s\S]*required: pendingEventHealthRequired[\s\S]*status: \{[\s\S]*errors:[\s\S]*staleCandidates:[\s\S]*unavailable:/u.test(
+    /pendingEvents: \{[\s\S]*globalUnresolved:[\s\S]*q16PendingUnresolved:[\s\S]*required: pendingEventHealthRequired[\s\S]*status: \{[\s\S]*errors:[\s\S]*q16ParentDeferred:[\s\S]*staleCandidates:[\s\S]*unavailable:/u.test(
       healthPayload,
     ),
 );
