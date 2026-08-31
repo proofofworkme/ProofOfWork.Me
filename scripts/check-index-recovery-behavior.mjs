@@ -49920,6 +49920,11 @@ check("exact ID lifecycle keeps sealed listings active until a canonical close",
   assert.match(listingSpendScanSource, /id_listing\.kind = 'id-list'/u);
   assert.match(listingSpendScanSource, /'pwid-sale-v4'/u);
   assert.match(listingSpendScanSource, /'sale-ticket-v1'/u);
+  assert.match(
+    topLevelFunctionSource(READER_PATH, "idRegistryAuditTransitionFromDatabase"),
+    /network:\s*normalizedLowerText\(row\.network\)/u,
+    "ID audit transition mapping must preserve network for V8 boundary validation",
+  );
 });
 
 check("event history is fenced by one strict canonical checkpoint", async () => {

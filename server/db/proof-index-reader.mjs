@@ -34299,6 +34299,7 @@ function idRegistryAuditTransitionFromDatabase(row) {
     feeOnce: row.fee_once === true,
     invalidZero: row.invalid_zero === true,
     model: String(row.model ?? ""),
+    network: normalizedLowerText(row.network),
     openingNetworkValueQ8: String(row.opening_network_value_q8 ?? ""),
     openingStatePayloadBytes: idRegistryAuditExactInteger(
       row.opening_state_payload_bytes,
