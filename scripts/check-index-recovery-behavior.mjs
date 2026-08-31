@@ -64493,6 +64493,11 @@ check("AMO V8 relational closing evidence reads canonical Q16 units", async () =
     listingQuery,
     /listing\.payload->'workAmoV8FrozenTerms' =\s*v8_terms\.frozen_terms/u,
   );
+  assert.match(
+    listingQuery,
+    /listing\.status IN \('active', 'sealing'\)[\s\S]*listing\.payload->'saleAuthorization'->>'version'[\s\S]*listing\.payload->'listingAuthorization'->>'version'[\s\S]*= \$3/u,
+    "Q16 relational evidence must exclude legacy active listing rows from the V8 token-state preimage",
+  );
 
   const mismatch = await evidenceReader("livenet", {
     ...expected,
