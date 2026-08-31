@@ -7089,10 +7089,7 @@ export async function runWorkerMain() {
         if (ONCE) {
           throw error;
         }
-        if (
-          !containedCanonicalFailure &&
-          consecutiveFailures >= MAX_CONSECUTIVE_FAILURES
-        ) {
+        if (escalating) {
           throw error;
         }
         await workerSleep(runtime, retryDelayMs);

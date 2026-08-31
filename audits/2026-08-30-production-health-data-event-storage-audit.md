@@ -1084,6 +1084,75 @@ Local verification passed:
 - `npm run check:api-truth`.
 - `npm run check:index-recovery-behavior` (`480/480`).
 
+### Production Deployment
+
+The local fix and audit log were committed and pushed as:
+
+- Commit: `92b758269d7db93d8a69863d016a2ddbadd06e72`.
+- Tree: `43d52e191b7b910e42d96d3dd843e40589a01c4c`.
+- Commit subject: `Contain Q16 pending witness retries`.
+
+Node release:
+
+- Release id: `92b758269d7d-20260831T073502Z`.
+- Candidate path:
+  `/opt/proofofwork-api-stage-92b758269d7d-20260831T073502Z`.
+- The first staged candidate
+  `/opt/proofofwork-api-stage-92b758269d7d-20260831T073319Z` was not used
+  because it was a linked Git worktree. It remains a cleanup candidate and was
+  not exchanged into production.
+- Candidate checks passed on the node VPS:
+  `node --check scripts/run-proof-indexer-worker.mjs`,
+  `node --check scripts/check-worker-containment.mjs`,
+  `npm run check:worker-containment`,
+  `npm run check:api-truth`, and
+  `npm run check:index-recovery-behavior` (`480/480`).
+- Atomic exchange completed with
+  `node_release_exchange status=exchanged`.
+- Published archive:
+  `proofofwork-node-release-92b7582-92b758269d7d-20260831T073502Z.tgz`.
+- Runtime sha256:
+  `5211826e147bf3438eaa838cbd72d3be5f0f4811905dc78e7ae3765eaf287414`.
+- Archive sha256:
+  `51ca60419440db76309a949c6cec0ad18f6dcb1af291dbc31e3c77f4df902e85`.
+- Archive size: `87950209` bytes.
+- After exchange and archive publication, these units were active:
+  `proofofwork-api`, `proofofwork-api-wg.socket`,
+  `proofofwork-api-wg.service`, and `proofofwork-indexer-worker`.
+- Live checkout verified commit
+  `92b758269d7db93d8a69863d016a2ddbadd06e72` and tree
+  `43d52e191b7b910e42d96d3dd843e40589a01c4c`.
+
+Release health recognized the new live commit, tree, runtime hash, and current
+archive provenance:
+
+- `archives: 26`.
+- `verified: 26`.
+- `unverified: 0`.
+- `current_provenance: 1`.
+- `opt_checkouts: 42`.
+
+Release health still exited warning because `/opt` contains more node release
+checkouts than the bounded inventory allows. No checkout or archive was deleted
+in this pass.
+
+Post-deploy verification found one remaining worker-liveness bug in the first
+containment release:
+
+- At `2026-08-31T07:45:27Z`, the worker wrote `state: failed-retrying` for
+  the known Q16 pending-witness retry, but then still exited because the final
+  throw gate used the raw `consecutiveFailures >= MAX_CONSECUTIVE_FAILURES`
+  threshold instead of the shared `escalating` decision.
+- A follow-up local correction changed the final throw gate to `if (escalating)`
+  and added a containment regression so non-escalating Q16 retry classes cannot
+  be bypassed by a second threshold check.
+- Local verification for the correction passed:
+  `node --check scripts/run-proof-indexer-worker.mjs`,
+  `node --check scripts/check-worker-containment.mjs`,
+  `npm run check:worker-containment`,
+  `npm run check:api-truth`, and
+  `npm run check:index-recovery-behavior` (`480/480`).
+
 ### Public Route Audit
 
 The requested public pages returned HTTP 200 in order:

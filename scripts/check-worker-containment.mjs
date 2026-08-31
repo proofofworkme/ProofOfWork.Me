@@ -323,6 +323,10 @@ async function runChecks() {
     "refreshPendingStatuses",
     WORKER_PATH,
   );
+  const runWorkerMainSource = topLevelFunctionSource(
+    "runWorkerMain",
+    WORKER_PATH,
+  );
   const dropWorkQ16PendingStageMemberSource = topLevelFunctionSource(
     "dropWorkQ16PendingStageMember",
   );
@@ -2879,6 +2883,16 @@ async function runChecks() {
     shouldEscalateWorkerFailure(failure, 100, 3),
     false,
     "recognized canonical poison must remain contained",
+  );
+  assert.match(
+    runWorkerMainSource,
+    /const escalating = shouldEscalateWorkerFailure\([\s\S]*\{ nonEscalating: pendingQ16WitnessRetryFailure \},\s*\);[\s\S]*if \(escalating\) \{\s*throw error;\s*\}/u,
+    "the terminal worker throw gate must use the shared escalation decision",
+  );
+  assert.doesNotMatch(
+    runWorkerMainSource,
+    /if \(\s*!\s*containedCanonicalFailure\s*&&\s*consecutiveFailures\s*>=\s*MAX_CONSECUTIVE_FAILURES\s*\)\s*\{\s*throw error;\s*\}/u,
+    "a second raw threshold throw must not bypass known non-escalating retry classes",
   );
   const q16PendingRetryState = {
     era: "q16",
