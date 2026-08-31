@@ -49926,6 +49926,11 @@ check("exact ID lifecycle keeps sealed listings active until a canonical close",
     "sale-ticket spender scans must hydrate Core prevouts before fee/detail projection",
   );
   assert.match(
+    listingSpendScanSource,
+    /version,\s*locktime,\s*source,\s*raw_tx[\s\S]*\$10,\s*\$11,\s*'canonical-listing-outpoint-scan',\s*\$12::jsonb/u,
+    "sale-ticket spender transaction inserts must bind locktime before raw_tx",
+  );
+  assert.match(
     topLevelFunctionSource(READER_PATH, "idRegistryAuditTransitionFromDatabase"),
     /network:\s*normalizedLowerText\(row\.network\)/u,
     "ID audit transition mapping must preserve network for V8 boundary validation",
