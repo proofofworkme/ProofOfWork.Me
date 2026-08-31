@@ -71668,6 +71668,9 @@ function registryAuditAttemptParity(
       qualifiedLegacyPwidOutcome({
         accepted: false,
         blockHeight: carrier.blockHeight,
+        expectedRegistrySats: parsedAttempt
+          ? idEventMinimumPaymentSats(parsedAttempt.kind)
+          : null,
         invalidRow: rejectedRow,
         parsedAttempt,
       });

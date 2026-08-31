@@ -210,6 +210,7 @@ export function qualifiedPostActivationPwidOutcome({
 export function qualifiedLegacyPwidOutcome({
   accepted,
   blockHeight,
+  expectedRegistrySats,
   invalidRow,
   parsedAttempt,
 }) {
@@ -235,17 +236,35 @@ export function qualifiedLegacyPwidOutcome({
     }
     return "same-carrier-contradictory-diagnostic-row";
   }
-  if (
-    parsedAttempt ||
-    invalidRow.kind !== "id-event-invalid" ||
-    invalidRow.reasonCode !== LEGACY_MALFORMED_REASON ||
-    invalidRow.validationMode !== "canonical-first-party-state"
-  ) {
+  const exactMalformedStateRow =
+    invalidRow.kind === "id-event-invalid" &&
+    invalidRow.reasonCode === LEGACY_MALFORMED_REASON &&
+    invalidRow.validationMode === "canonical-first-party-state" &&
+    Array.isArray(invalidRow.validationErrors) &&
+    invalidRow.validationErrors.length === 1 &&
+    invalidRow.validationErrors[0] === LEGACY_MALFORMED_REASON;
+  if (!exactMalformedStateRow) {
     throw new Error(
       "Rejected PWID outcome is not independently qualified by the legacy parser.",
     );
   }
-  return "legacy-malformed-parser-rejection";
+  if (!parsedAttempt) {
+    return "legacy-malformed-parser-rejection";
+  }
+  const amountSats = Number(invalidRow.amountSats);
+  const requiredSats = Number(expectedRegistrySats);
+  if (
+    Number.isSafeInteger(amountSats) &&
+    amountSats >= 0 &&
+    Number.isSafeInteger(requiredSats) &&
+    requiredSats > 0 &&
+    amountSats < requiredSats
+  ) {
+    return "legacy-underfunded-parser-modernization-rejection";
+  }
+  throw new Error(
+    "Rejected PWID outcome is not independently qualified by the legacy parser.",
+  );
 }
 
 function auditCanonicalJson(value) {

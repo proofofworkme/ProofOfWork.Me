@@ -66,6 +66,11 @@ assert.match(
 );
 assert.match(
   serverSource,
+  /expectedRegistrySats:\s*parsedAttempt[\s\S]*idEventMinimumPaymentSats\(parsedAttempt\.kind\)/u,
+  "Legacy parseable PWID audit rejects must remain bound to the hard registry fee.",
+);
+assert.match(
+  serverSource,
   /!confirmedHistory\.has\(record\.lastEventTxid\)/u,
 );
 assert.match(
@@ -915,23 +920,45 @@ assert.equal(
     blockHeight: 948_418,
     invalidRow: {
       ...emptyLegacyReplayMetadata,
+      amountSats: 0,
       kind: "id-event-invalid",
       reasonCode: "Malformed ProofOfWork ID protocol payload.",
+      validationErrors: ["Malformed ProofOfWork ID protocol payload."],
       validationMode: "canonical-first-party-state",
     },
     parsedAttempt: null,
   }),
   "legacy-malformed-parser-rejection",
 );
+assert.equal(
+  qualifiedLegacyPwidOutcome({
+    accepted: false,
+    blockHeight: 948_418,
+    expectedRegistrySats: 1000,
+    invalidRow: {
+      ...emptyLegacyReplayMetadata,
+      amountSats: 0,
+      kind: "id-event-invalid",
+      reasonCode: "Malformed ProofOfWork ID protocol payload.",
+      validationErrors: ["Malformed ProofOfWork ID protocol payload."],
+      validationMode: "canonical-first-party-state",
+    },
+    parsedAttempt: { kind: "register" },
+  }),
+  "legacy-underfunded-parser-modernization-rejection",
+);
 assert.throws(
   () =>
     qualifiedLegacyPwidOutcome({
       accepted: false,
       blockHeight: 948_418,
+      expectedRegistrySats: 1000,
       invalidRow: {
         ...emptyLegacyReplayMetadata,
+        amountSats: 1000,
         kind: "id-event-invalid",
         reasonCode: "Malformed ProofOfWork ID protocol payload.",
+        validationErrors: ["Malformed ProofOfWork ID protocol payload."],
         validationMode: "canonical-first-party-state",
       },
       parsedAttempt: { kind: "register" },
