@@ -8561,6 +8561,95 @@ check("registry semantic parity rejects critical ID and raw-evidence drift", () 
     records: [],
     sales: [],
   });
+  const renderedVariant = structuredClone(payload);
+  renderedVariant.activity[0].description = "Rendered copy can differ.";
+  renderedVariant.activity[0].detail = "Rendered detail can differ.";
+  renderedVariant.activity[0].participants = ["owner"];
+  renderedVariant.activity[0].tags = ["Rendered", "Tags"];
+  renderedVariant.activity[0].title = "Rendered title";
+  assert.deepEqual(
+    compareProofIndexRegistryPayloads(payload, renderedVariant)
+      .confirmed.activity,
+    [],
+    "confirmed registry semantic parity ignores presentation copy and participant duplicates",
+  );
+  const participantDrift = structuredClone(payload);
+  participantDrift.activity[0].participants = ["owner", "forged-address"];
+  assert.notDeepEqual(
+    compareProofIndexRegistryPayloads(payload, participantDrift)
+      .confirmed.activity,
+    [],
+    "confirmed registry semantic parity still rejects participant address drift",
+  );
+  const legacyTransfer = {
+    ...activity,
+    amountSats: 546,
+    actor: "seller",
+    blockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT - 1,
+    counterparty: "receiver",
+    dataBytes: Buffer.byteLength("pwid1:t2:fixture"),
+    id: "legacy-id",
+    kind: "id-transfer",
+    ownerAddress: "receiver",
+    participants: ["seller", "receiver"],
+    paymentOutputs: [{ address: "registry", amountSats: 546 }],
+    protocolDataBytes: Buffer.byteLength("pwid1:t2:fixture"),
+    protocolPayload: "pwid1:t2:fixture",
+    receiveAddress: "receiver",
+    senderAddress: "seller",
+  };
+  const legacyTransferIndexed = structuredClone(legacyTransfer);
+  legacyTransferIndexed.participants = ["seller", "receiver", "historical-owner"];
+  assert.deepEqual(
+    compareProofIndexRegistryPayloads(
+      {
+        activity: [legacyTransfer],
+        listings: [],
+        records: [],
+        sales: [],
+      },
+      {
+        activity: [legacyTransferIndexed],
+        listings: [],
+        records: [],
+        sales: [],
+      },
+    ).confirmed.activity,
+    [],
+    "pre-V5 registry activity parity ignores legacy display-only participant enrichment",
+  );
+  const legacyBuy = {
+    ...legacyTransfer,
+    actor: "buyer",
+    buyerAddress: "buyer",
+    counterparty: "seller",
+    kind: "id-buy",
+    listingId,
+    priceSats: 1_000,
+    receiveAddress: "buyer",
+    sellerAddress: "seller",
+    transferVersion: "buy2",
+  };
+  const legacyBuyIndexed = structuredClone(legacyBuy);
+  delete legacyBuyIndexed.listingId;
+  assert.deepEqual(
+    compareProofIndexRegistryPayloads(
+      {
+        activity: [legacyBuy],
+        listings: [],
+        records: [],
+        sales: [],
+      },
+      {
+        activity: [legacyBuyIndexed],
+        listings: [],
+        records: [],
+        sales: [],
+      },
+    ).confirmed.activity,
+    [],
+    "pre-V5 buy activity parity keeps listing identity strict in sales instead of raw activity display",
+  );
   for (const [collection, field, value] of [
     ["activity", "protocolVout", 9],
     ["activity", "receiveAddress", "forged"],
@@ -8669,6 +8758,33 @@ check("registry semantic parity rejects critical ID and raw-evidence drift", () 
     Array.from(accepted, (item) => item.txid).sort(),
     [winner.txid, acceptedPending.txid].sort(),
     "a pending duplicate registration loses only registry-state visibility",
+  );
+});
+
+check("ID audit transition stream keeps non-PWID transition pages compact", () => {
+  const source = topLevelFunctionSource(
+    READER_PATH,
+    "idRegistryAuditSnapshotPass",
+  );
+  assert.match(
+    source,
+    /CASE\s+WHEN transition\.block_height = \$5[\s\S]*OR transition\.raw_protocol_candidate_count > 0[\s\S]*THEN transition\.payload[\s\S]*ELSE jsonb_build_object\(/u,
+    "the precision boundary and raw-protocol-candidate transition heights keep full payloads, ordinary transition pages stay compact",
+  );
+  assert.match(
+    source,
+    /ELSE jsonb_build_object\([\s\S]*'idRegistryAuditEnvelopeModel'[\s\S]*ID_REGISTRY_AUDIT_TRANSITION_ENVELOPE_MODEL[\s\S]*'replayRecords', '\[\]'::jsonb/u,
+    "compact transition pages use an explicit column-bound envelope with an empty replay record array",
+  );
+  assert.doesNotMatch(
+    source,
+    /ELSE jsonb_build_object\([\s\S]*transition\.payload->/u,
+    "compact transition envelopes must not detoast non-candidate payloads",
+  );
+  assert.doesNotMatch(
+    source,
+    /transition\.complete,\s*transition\.payload\s+FROM proof_indexer\.work_amo_block_transitions/u,
+    "the audit stream must not detoast and return every transition payload wholesale",
   );
 });
 
@@ -14227,6 +14343,9 @@ check("canonical Log membership is event-bounded and snapshot fenced", async () 
         })),
       normalizedTxid: (value) => String(value ?? "").trim().toLowerCase(),
       PUBLIC_LOG_EVENT_KINDS: new Set(["token-transfer"]),
+      pendingLogSnapshotTimeSql: (snapshotTimeParam) => `
+          AND COALESCE(e.event_time, e.created_at) <= ${snapshotTimeParam}::timestamptz
+      `,
       proofIndexPool: () => ({
         async query(sql, params) {
           reads.push({ params, sql: String(sql) });
@@ -14290,12 +14409,16 @@ check("canonical Log membership is event-bounded and snapshot fenced", async () 
   );
   const parameterizedStatusSplitFences =
     logHistorySource.match(
-      /e\.status = 'confirmed'\s+AND e\.updated_at <= \$\{snapshotTimeParam\}::timestamptz[\s\S]*?e\.block_height <= \$\{snapshotHeightParam\}[\s\S]*?OR \([\s\S]*?e\.status = 'pending'\s+AND COALESCE\(e\.event_time, e\.created_at\) <= \$\{snapshotTimeParam\}::timestamptz/gu,
+      /e\.status = 'confirmed'\s+AND e\.updated_at <= \$\{snapshotTimeParam\}::timestamptz[\s\S]*?e\.block_height <= \$\{snapshotHeightParam\}[\s\S]*?OR \([\s\S]*?e\.status = 'pending'\s+\$\{pendingLogSnapshotTimeSql\(/gu,
     ) ?? [];
   assert.equal(parameterizedStatusSplitFences.length, 2);
   assert.match(
     logHistorySource,
-    /e\.status = 'confirmed'\s+AND e\.updated_at <= \$4::timestamptz[\s\S]*?e\.block_height <= \$3[\s\S]*?OR \([\s\S]*?e\.status = 'pending'\s+AND COALESCE\(e\.event_time, e\.created_at\) <= \$4::timestamptz/u,
+    /e\.status = 'confirmed'\s+AND e\.updated_at <= \$4::timestamptz[\s\S]*?e\.block_height <= \$3[\s\S]*?OR \([\s\S]*?e\.status = 'pending'\s+\$\{pendingLogSnapshotTimeSql\(/u,
+  );
+  assert.match(
+    fileSource(READER_PATH),
+    /function pendingLogSnapshotTimeSql\([\s\S]*pending_tx\.first_seen_at[\s\S]*pending_tx\.network = e\.network[\s\S]*pending_tx\.txid = e\.txid[\s\S]*e\.created_at[\s\S]*e\.event_time/u,
   );
   assert.doesNotMatch(
     logHistorySource,
@@ -28434,6 +28557,9 @@ check("exact Log txid reads use indexed refs and trust an exact empty page", asy
           snapshotId: "",
         },
       }),
+      pendingLogSnapshotTimeSql: (snapshotTimeParam) => `
+          AND COALESCE(e.event_time, e.created_at) <= ${snapshotTimeParam}::timestamptz
+      `,
       proofIndexPool: () => ({
         async query(sql, params) {
           queryReads.push({ params, sql });
@@ -57210,6 +57336,9 @@ check("AMO V5 public Log pages require authoritative canonical positions", async
             snapshotId: "",
           },
         }),
+        pendingLogSnapshotTimeSql: (snapshotTimeParam) => `
+          AND COALESCE(e.event_time, e.created_at) <= ${snapshotTimeParam}::timestamptz
+        `,
         proofIndexPool: () => ({
           async query(sql) {
             if (/count\(\*\) AS total_count/iu.test(sql)) {

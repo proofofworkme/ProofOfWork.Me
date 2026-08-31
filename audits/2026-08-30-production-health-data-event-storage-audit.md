@@ -1502,3 +1502,255 @@ Explicit cleanup candidates for a separately approved retention pass:
 5. Consider query and endpoint speed upgrades for heavy fresh wallet and
    registry-proof paths; correctness passed where the live routes returned, but
    operator/audit latency remains too high.
+
+## 2026-08-31 AMO Checkpoint And ID Registry Parity Follow-Up
+
+Time: `2026-08-31T11:01:12Z` / `2026-08-31T07:01:12-0400`.
+
+Scope approved by the user:
+
+- Edit repository files, add/update tests, run local checks, run read-only
+  production verification, and deploy the verified fix to production.
+- Do not delete production storage, clear failed systemd states, commit, push,
+  or deploy storage changes without separate approval.
+
+### User-Visible Error
+
+`amo.proofofwork.me` reported:
+
+`The indexed registry checkpoint does not match Bitcoin Core.`
+
+The AMO checkpoint error coincided with API restart/exact-tip catch-up and
+heavy read pressure. After the code-only deploys below, public AMO fresh compact
+reads returned a current exact-tip checkpoint with `error: null`.
+
+### Fixes Deployed
+
+Code-only production files installed into `/opt/proofofwork-api` and
+`proofofwork-api` restarted:
+
+- `server/db/proof-index-reader.mjs`
+- `server/id-registry-audit-contract.mjs`
+- `scripts/check-proof-indexer-parity.mjs`
+- `scripts/check-index-recovery-behavior.mjs`
+- `scripts/check-live-data-contract.mjs`
+- `scripts/check-id-registry-audit.mjs`
+
+Behavior hardened:
+
+- ID registry audit transition reads now use compact column-bound envelopes for
+  ordinary transition pages instead of returning every large transition payload.
+  The full payload is retained for the precision migration boundary and raw
+  protocol candidate pages.
+- Registry semantic parity now ignores display-only rendering fields while
+  keeping protocol-critical ID, address, txid, amount, listing, sale, and raw
+  evidence fields strict.
+- Proof-index parity now treats current token table checkpoints as valid when
+  they have advanced past the sampled summary checkpoint.
+- Fresh Log snapshot reads now bind pending membership to the embedded Log
+  summary timestamp and require the pending transaction's `first_seen_at` to be
+  at or before that same snapshot timestamp. This prevents later-arriving
+  pending txs with older protocol event times from making the relational page
+  disagree with the canonical summary.
+- The parity verifier now uses the same public Log kind set and first-seen
+  pending snapshot fence, so the audit gate checks the same contract as the API.
+
+### Local Verification
+
+Local checks before production deployment:
+
+- `npm run check:live-data`: passed.
+- `npm run check:index-recovery-behavior`: `481/481` behavior checks passed.
+- `npm run check:id-audit`: passed.
+- `npm run indexer:parity -- --dry-run`: passed.
+- `git diff --check`: clean.
+- `npm run hygiene:fix`: no allowlisted rebuildable state found.
+- `npm run hygiene:check`: passed.
+
+### Production Verification
+
+Production deploy status:
+
+- `proofofwork-api`: active.
+- Final deployed PID: `1636093`.
+- `NRestarts=0`.
+
+Production API/node health:
+
+- `/health/live`: `ok: true`, `ready: true`.
+- Indexed checkpoint: block `964867`.
+- Node tip: block `964867`.
+- Lag: `0` blocks.
+- Summary snapshot: `766f09833b1356168fb0bc8d`.
+- Worker: `idle`, `workerOk: true`, `proofReady: true`.
+
+Fresh Log after fix:
+
+- `error: null`.
+- `totalCount: 24634`.
+- `indexedThroughBlock: 964867`.
+- `snapshotId: 766f09833b1356168fb0bc8d`.
+- Pending Log items: `6`.
+- Canonical miner-fee coverage: `true`.
+
+Public AMO fresh compact summary after fix:
+
+- `error: null`.
+- `indexedThroughBlock: 964867`.
+- `indexedThroughBlockHash`:
+  `000000000000000000000b6ffe9c3bdb07928233b5290786d9fea39d4b5ade32`.
+- `snapshotId: 766f09833b1356168fb0bc8d`.
+- Token active listings: `322`.
+- Token confirmed sales: `1`.
+- Token pending sales: `0`.
+- Registry confirmed IDs: `504`.
+- Registry pending IDs: `2`.
+- Registry active listings: `5`.
+- Registry sales: `4`.
+- WORK AMO V8: `ready: true`, `indexReady: true`, worker `idle`.
+
+Fresh registry routes after fix:
+
+- `/api/v1/registry-history?kind=records&fresh=1`: `error: null`,
+  `totalCount: 506`, block `964867`, hash
+  `000000000000000000000b6ffe9c3bdb07928233b5290786d9fea39d4b5ade32`,
+  snapshot `registry:964867:0000000000000000:3a5d06c2170c0753`.
+- `/api/v1/registry?fresh=1`: `error: null`, block `964867`, confirmed `504`,
+  pending `2`, active listings `5`, sales `4`.
+
+Full production ID registry audit:
+
+- Fetched transactions: `561`.
+- Covered confirmed registry transactions: `559`.
+- Covered pending registry transactions: `2`.
+- Canonical lifecycle parity: verified against exact Core-ordered chain replay.
+- Lifecycle events: `533`.
+- Active listings: `5`.
+- Canonical sales: `4`.
+- Registration attempts: `523`.
+- Confirmed winners: `504`.
+- Pending candidates: `2`.
+- Refund candidates: `17`.
+- Pending watchlist: `0`.
+- No report files written.
+
+Production proof-index parity:
+
+- Standard parity: `ok: true`, `102` checks.
+- Optional fresh-Log parity: `ok: true`, `103` checks.
+- `events-cover-canonical-activity`: `ok: true`.
+- Fresh-Log parity details: `24628` confirmed activity items, `6` pending
+  activity items, `15` total live pending event rows, and `6` snapshot-valid
+  pending events at `2026-08-31T10:34:09.180Z`.
+- `log-payload-snapshot-parity`: `ok: true`; compact summary did not store an
+  activity payload, so the optional identity check reported
+  `indexedSnapshotAvailable: false`.
+
+Final quick health read after all parity checks:
+
+- `/health/live`: `ok: true`, `ready: true`, block `964868`, node tip
+  `964868`, lag `0`, snapshot `3f186693c680e78c78e119e3`, worker
+  `canonical-phase-complete`.
+- Public AMO fresh compact summary: `error: null`, block `964868`, snapshot
+  `3f186693c680e78c78e119e3`, registry confirmed `504`, pending `2`, active
+  listings `5`, sales `4`, WORK AMO V8 ready and index-ready.
+
+Expected remaining parity warnings:
+
+- `work-amo-v5-migration`: `migration-not-complete`.
+- `work-amo-v5-usd-quote-head`: `migration-not-complete`.
+
+These are retained warnings for the historical V5 path. They did not block AMO
+V8 readiness, Log correctness, registry checkpoint correctness, or the standard
+and optional fresh-Log parity gates.
+
+### Infrastructure Health
+
+Node VPS `pow-bitcoin-01`:
+
+- `/`: `98G` total, `37G` used, `57G` available, `40%` used.
+- `/var`: same root filesystem, `40%` used.
+- `/opt`: same root filesystem, `40%` used.
+- `/data`: `1.7T` total, `1.3T` used, `273G` available, `83%` used,
+  inode usage `1%`.
+- `/var/log`: `1.2G`.
+- `/opt/proofofwork-api`: `225M`.
+- API memory sample: `RSS 1934872 KB`, `%MEM 1.4`, elapsed `06:24`.
+
+Proof-index database:
+
+- Database size: `18495429655` bytes, `17 GB`.
+- Largest tables:
+  - `proof_indexer.work_amo_block_transitions`: `16 GB`.
+  - `proof_indexer.ledger_snapshots`: `808 MB`.
+  - `proof_indexer.events`: `96 MB`.
+  - `proof_indexer.transactions`: `71 MB`.
+  - `proof_indexer.event_participants`: `47 MB`.
+  - `proof_indexer.tx_outputs`: `42 MB`.
+  - `proof_indexer.meta`: `38 MB`.
+  - `proof_indexer.event_refs`: `27 MB`.
+
+Full node:
+
+- Chain: `main`.
+- Blocks/headers: `964867` / `964867`.
+- Initial block download: `false`.
+- Pruned: `false`.
+- Verification progress: `1`.
+- Warnings: none.
+- `txindex`: synced, best block height `964867`.
+- Mempool: loaded, `28519` transactions, `19893438` bytes,
+  `2000000000` max mempool, full RBF enabled.
+
+UI VPS `ubuntu-4gb-hel1-1`:
+
+- `/`: `38G` total, `14G` used, `23G` available, `37%` used.
+- `/var`: same root filesystem, `37%` used.
+- `/opt`: same root filesystem, `37%` used.
+- `/var/log`: `571M`.
+- `/var/www`: `386M`.
+- `caddy`: active.
+- `nginx`: inactive.
+
+Recent warning/error logs:
+
+- `proofofwork-api`: no warning-or-higher entries in the last `45` minutes.
+- `bitcoind`: no warning-or-higher entries in the last `45` minutes.
+- UI `caddy`: no warning-or-higher entries in the last `45` minutes.
+
+### Storage And Cleanup Notes
+
+No production storage was deleted. No failed systemd states were cleared. No
+production configuration was changed. No commit or push was performed.
+
+The largest live storage item in the database is
+`proof_indexer.work_amo_block_transitions` at `16 GB`. This is audit/replay
+evidence and was preserved. Any compaction, partitioning, retention policy, or
+tablespace/storage change needs a separate approval because it can affect
+historical replay and production storage.
+
+Remaining separately approved cleanup candidates from the prior audit still
+stand:
+
+- Old node release checkouts under `/opt`.
+- Old stage directories from prior deployments.
+- Release archives under `/data/proofofwork-release-backups` and
+  `/var/tmp/proofofwork-deploy`.
+- PostgreSQL backup retention under `/data/proofofwork-postgres-backups`.
+- Recovery evidence under `/data/proofofwork-recovery`.
+- Old UI rollback directories under `/var/www`.
+
+### Remaining Priority
+
+1. Complete a separate storage-retention pass for old releases, archives,
+   rollback roots, and database backups, with explicit retention rules and
+   deletion approval.
+2. Reduce read pressure from stacked heavy fresh checks by adding stronger
+   request coalescing, rate/backoff behavior, and operator-facing queue
+   visibility around exact-tip canonical reads.
+3. Plan a storage strategy for `work_amo_block_transitions` that preserves
+   replay commitments while reducing live database weight, for example
+   partitioning, cold evidence archival, or materialized compact witnesses
+   after an approved retention spec.
+4. Keep the V5 migration/quote-head warnings visible until that historical path
+   is either completed or explicitly retired by a documented protocol decision.

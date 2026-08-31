@@ -7,6 +7,7 @@ import {
 import {
   ID_REGISTRY_AUDIT_ROW_PAGE_SIZE,
   ID_REGISTRY_AUDIT_TRANSITION_PAGE_SIZE,
+  ID_REGISTRY_AUDIT_TRANSITION_ENVELOPE_MODEL,
   PWID_RAW_REPLAY_ACTIVATION_HEIGHT,
   advanceIdRegistryAuditRollingHash,
   advanceIdRegistryAuditTransitionChain,
@@ -432,7 +433,7 @@ const TOKEN_LISTING_ANCHOR_TYPE = "sale-ticket-v1";
 const TOKEN_LISTING_ANCHOR_VALUE_SATS = 546;
 const TOKEN_LISTING_ANCHOR_VOUT = 2;
 const TOKEN_LISTING_ANCHOR_SIGHASH_TYPE = 0x83;
-const PUBLIC_LOG_EVENT_KINDS = new Set([
+export const PUBLIC_LOG_EVENT_KINDS = new Set([
   "attachment",
   "browser",
   "boost-buy",
@@ -21023,7 +21024,9 @@ async function ledgerSnapshotMetadata(pool, network, snapshotId = "") {
           snapshot_id,
           generated_at,
           indexed_through_block,
-          consistency
+          consistency,
+          payload->'summaryPayloads'->'logSummary'->>'indexedAt'
+            AS log_summary_indexed_at
         FROM proof_indexer.ledger_snapshots
         WHERE network = $1 AND snapshot_id = $2
           AND payload ? 'snapshotId'
@@ -21054,7 +21057,9 @@ async function ledgerSnapshotMetadata(pool, network, snapshotId = "") {
         snapshot_id,
         generated_at,
         indexed_through_block,
-        consistency
+        consistency,
+        payload->'summaryPayloads'->'logSummary'->>'indexedAt'
+          AS log_summary_indexed_at
       FROM proof_indexer.ledger_snapshots
       WHERE network = $1
         AND payload->>'workAmountStorageModel' = $2
@@ -21064,6 +21069,23 @@ async function ledgerSnapshotMetadata(pool, network, snapshotId = "") {
     [network, workAmountStorageModel],
   );
   return snapshotResult.rows[0] ?? null;
+}
+
+function pendingLogSnapshotTimeSql(snapshotTimeParam) {
+  return `
+          AND COALESCE(e.event_time, e.created_at) <= ${snapshotTimeParam}::timestamptz
+          AND COALESCE(
+            (
+              SELECT pending_tx.first_seen_at
+              FROM proof_indexer.transactions pending_tx
+              WHERE pending_tx.network = e.network
+                AND pending_tx.txid = e.txid
+              LIMIT 1
+            ),
+            e.created_at,
+            e.event_time
+          ) <= ${snapshotTimeParam}::timestamptz
+  `;
 }
 
 async function ledgerSnapshotWithPayload(pool, network, snapshotId, payloadKey) {
@@ -22533,7 +22555,10 @@ export async function proofIndexLogHistoryPayload(
       return null;
     }
     const snapshotHeight = rowNumber(snapshot, "indexed_through_block");
-    const snapshotGeneratedAt = snapshot.generated_at ?? null;
+    const snapshotLogIndexedAt = snapshot.log_summary_indexed_at ?? null;
+    const snapshotGeneratedAt = Number.isFinite(Date.parse(snapshotLogIndexedAt))
+      ? snapshotLogIndexedAt
+      : snapshot.generated_at ?? null;
     if (
       snapshotHeight <= 0 ||
       !Number.isFinite(Date.parse(snapshotGeneratedAt))
@@ -22552,7 +22577,7 @@ export async function proofIndexLogHistoryPayload(
         )
         OR (
           e.status = 'pending'
-          AND COALESCE(e.event_time, e.created_at) <= ${snapshotTimeParam}::timestamptz
+          ${pendingLogSnapshotTimeSql(snapshotTimeParam)}
         )
       )
     `);
@@ -22743,8 +22768,8 @@ export async function proofIndexLogHistoryPayload(
       }
     }
     const page = logHistoryPageFromItems({
-      indexedAt: snapshot.generated_at
-        ? dateIso(snapshot.generated_at)
+      indexedAt: snapshotGeneratedAt
+        ? dateIso(snapshotGeneratedAt)
         : new Date().toISOString(),
       indexedThroughBlock:
         indexedThroughBlockFromItems(rowsResult.rows) ??
@@ -22772,7 +22797,10 @@ export async function proofIndexLogHistoryPayload(
   let snapshotGeneratedAt = null;
   if (currentRelational) {
     snapshotHeight = rowNumber(snapshot, "indexed_through_block");
-    snapshotGeneratedAt = snapshot.generated_at ?? null;
+    const snapshotLogIndexedAt = snapshot.log_summary_indexed_at ?? null;
+    snapshotGeneratedAt = Number.isFinite(Date.parse(snapshotLogIndexedAt))
+      ? snapshotLogIndexedAt
+      : snapshot.generated_at ?? null;
     if (snapshotHeight <= 0 || !snapshotGeneratedAt) {
       return null;
     }
@@ -22788,7 +22816,7 @@ export async function proofIndexLogHistoryPayload(
         )
         OR (
           e.status = 'pending'
-          AND COALESCE(e.event_time, e.created_at) <= ${snapshotTimeParam}::timestamptz
+          ${pendingLogSnapshotTimeSql(snapshotTimeParam)}
         )
       )
     `);
@@ -22877,7 +22905,7 @@ export async function proofIndexLogHistoryPayload(
                   )
                   OR (
                     e.status = 'pending'
-                    AND COALESCE(e.event_time, e.created_at) <= $4::timestamptz
+                    ${pendingLogSnapshotTimeSql("$4")}
                   )
                 )
             `,
@@ -34808,20 +34836,21 @@ async function idRegistryAuditSnapshotPass(
       });
     }
 
+    const precisionMigrationActivationHeight = (() => {
+      const height = Number(
+        configuredWorkPrecisionV2ReaderPins()?.activationHeight,
+      );
+      return Number.isSafeInteger(height) &&
+        height >= PWID_RAW_REPLAY_ACTIVATION_HEIGHT &&
+        height <= expectedHeight
+        ? height
+        : null;
+    })();
     let transitionChain = createIdRegistryAuditTransitionChain({
       activationHeight: PWID_RAW_REPLAY_ACTIVATION_HEIGHT,
       checkpointHash: expectedHash,
       checkpointHeight: expectedHeight,
-      precisionMigrationActivationHeight: (() => {
-        const height = Number(
-          configuredWorkPrecisionV2ReaderPins()?.activationHeight,
-        );
-        return Number.isSafeInteger(height) &&
-          height >= PWID_RAW_REPLAY_ACTIVATION_HEIGHT &&
-          height <= expectedHeight
-          ? height
-          : null;
-      })(),
+      precisionMigrationActivationHeight,
     });
     let transitionCursor = PWID_RAW_REPLAY_ACTIVATION_HEIGHT - 1;
     while (transitionCursor < expectedHeight) {
@@ -34853,7 +34882,18 @@ async function idRegistryAuditSnapshotPass(
             transition.fee_once,
             transition.invalid_zero,
             transition.complete,
-            transition.payload
+            CASE
+              WHEN transition.block_height = $5
+                OR transition.raw_protocol_candidate_count > 0
+              THEN transition.payload
+              ELSE jsonb_build_object(
+                'idRegistryAuditEnvelopeModel',
+                  '${ID_REGISTRY_AUDIT_TRANSITION_ENVELOPE_MODEL}',
+                'replayRecords', '[]'::jsonb,
+                'rawProtocolCandidateCount',
+                  transition.raw_protocol_candidate_count
+              )
+            END AS payload
           FROM proof_indexer.work_amo_block_transitions transition
           JOIN proof_indexer.blocks transition_block
             ON transition_block.network = transition.network
@@ -34873,7 +34913,13 @@ async function idRegistryAuditSnapshotPass(
           ORDER BY transition.block_height
           LIMIT $4
         `,
-        [network, transitionCursor, expectedHeight, transitionPageSize + 1],
+        [
+          network,
+          transitionCursor,
+          expectedHeight,
+          transitionPageSize + 1,
+          precisionMigrationActivationHeight ?? 0,
+        ],
       );
       const hasMore = result.rows.length > transitionPageSize;
       const databaseRows = hasMore
@@ -35177,7 +35223,10 @@ export async function proofIndexCanonicalActivityPayload(
     return null;
   }
   const snapshotHeight = rowNumber(boundSnapshot, "indexed_through_block");
-  const snapshotGeneratedAt = boundSnapshot?.generated_at ?? null;
+  const snapshotLogIndexedAt = boundSnapshot?.log_summary_indexed_at ?? null;
+  const snapshotGeneratedAt = Number.isFinite(Date.parse(snapshotLogIndexedAt))
+    ? snapshotLogIndexedAt
+    : boundSnapshot?.generated_at ?? null;
   if (
     requestedSnapshotId &&
     (snapshotHeight <= 0 || !Number.isFinite(Date.parse(snapshotGeneratedAt)))
@@ -35209,7 +35258,7 @@ export async function proofIndexCanonicalActivityPayload(
             )
             OR (
               e.status = 'pending'
-              AND COALESCE(e.event_time, e.created_at) <= ${snapshotTimeParam}::timestamptz
+              ${pendingLogSnapshotTimeSql(snapshotTimeParam)}
             )
           )
       `
@@ -40854,17 +40903,43 @@ function registryParityKind(value) {
   }[kind] ?? kind;
 }
 
+function registryParityAddressSet(values) {
+  return [
+    ...new Set((Array.isArray(values) ? values : [])
+      .map(normalizedText)
+      .filter(Boolean)),
+  ].sort(compareCanonicalUtf8);
+}
+
+function registryParityPreWorkAmoV5Confirmed(item, confirmed) {
+  const blockHeight = registryParityInteger(item?.blockHeight);
+  return (
+    confirmed === true &&
+    blockHeight !== null &&
+    blockHeight > 0 &&
+    blockHeight < WORK_AMO_V5_ACTIVATION_HEIGHT
+  );
+}
+
 function registryParitySemanticItem(kind, item, { confirmed = true } = {}) {
   const txid = normalizedTxid(item?.txid);
   const has = (field) => Object.prototype.hasOwnProperty.call(item ?? {}, field);
   const paymentOutputs = (value, includeVout) =>
-    (Array.isArray(value) ? value : []).map((output) => ({
-      address: normalizedText(output?.address),
-      amountSats: registryParityInteger(output?.amountSats),
-      ...(includeVout
-        ? { vout: registryParityInteger(output?.vout) }
-        : {}),
-    }));
+    (Array.isArray(value) ? value : [])
+      .map((output) => ({
+        address: normalizedText(output?.address),
+        amountSats: registryParityInteger(output?.amountSats),
+        ...(includeVout
+          ? { vout: registryParityInteger(output?.vout) }
+          : {}),
+      }))
+      .sort(
+        (left, right) =>
+          (left.vout ?? Number.MAX_SAFE_INTEGER) -
+            (right.vout ?? Number.MAX_SAFE_INTEGER) ||
+          compareCanonicalUtf8(left.address, right.address) ||
+          (left.amountSats ?? -1) - (right.amountSats ?? -1),
+      );
   if (kind === "records") {
     return {
       amountSats: registryParityInteger(item?.amountSats),
@@ -40959,17 +41034,13 @@ function registryParitySemanticItem(kind, item, { confirmed = true } = {}) {
     dropped: item?.dropped === true,
     counterparty,
     createdAt: normalizedText(item?.createdAt),
-    description: normalizedText(item?.description),
-    detail: normalizedText(item?.detail),
     id: normalizedLowerText(item?.id),
     inputAddresses: (Array.isArray(item?.inputAddresses)
       ? item.inputAddresses
       : []).map(normalizedText),
     kind: eventKind,
     listingId: normalizedTxid(item?.listingId),
-    participants: (Array.isArray(item?.participants) ? item.participants : [])
-      .map(normalizedText)
-      .filter(Boolean),
+    participants: registryParityAddressSet(item?.participants),
     payload: normalizedText(item?.payload),
     paymentOutputs: paymentOutputs(item?.paymentOutputs, false),
     priceSats: registryParityInteger(item?.priceSats ?? tagNumbers.priceSats),
@@ -40989,10 +41060,6 @@ function registryParitySemanticItem(kind, item, { confirmed = true } = {}) {
         vout: registryParityInteger(outpoint?.vout),
       })),
     status: normalizedLowerText(item?.status),
-    tags: (Array.isArray(item?.tags) ? item.tags : [])
-      .map(normalizedText)
-      .filter(Boolean),
-    title: normalizedText(item?.title),
     txid,
     valid: item?.valid === true,
     workAmoV5RawScriptWitness: {
@@ -41051,6 +41118,12 @@ function registryParitySemanticItem(kind, item, { confirmed = true } = {}) {
       item?.sellerAddress ?? counterparty,
     );
     semantic.transferVersion = normalizedLowerText(item?.transferVersion);
+  }
+  if (registryParityPreWorkAmoV5Confirmed(item, confirmed)) {
+    delete semantic.participants;
+    if (eventKind === "id-buy") {
+      delete semantic.listingId;
+    }
   }
   if (!confirmed) {
     for (const field of [

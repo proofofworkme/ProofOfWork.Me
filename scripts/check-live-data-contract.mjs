@@ -9,6 +9,7 @@ const proofIndexMailProjection = readFileSync(
 );
 const proofIndexerBackfill = readFileSync("scripts/backfill-proof-indexer.mjs", "utf8");
 const proofIndexerWorker = readFileSync("scripts/run-proof-indexer-worker.mjs", "utf8");
+const proofIndexerParity = readFileSync("scripts/check-proof-indexer-parity.mjs", "utf8");
 const marketplaceRegressions = readFileSync(
   "scripts/check-marketplace-regressions.mjs",
   "utf8",
@@ -103,6 +104,64 @@ expectAll("canonical summary work is linear and latency-overlapped", server, [
   /currentTokenTableState,[\s\S]*currentMarketOverlay,[\s\S]*= await Promise\.all/,
   /workFloorWithIndexedMarketSummaryOverlay\([\s\S]*currentMarketOverlay/,
 ]);
+expect(
+  "proof-index parity snapshot selector binds transition checks to the outer ledger snapshot payload",
+  /ledger_snapshots\.payload->'workSufficientState'[\s\S]*->'closingStateCommitment'[\s\S]*transition\.closing_state_payload_bytes/u.test(
+    proofIndexerParity,
+  ) &&
+    /ledger_snapshots\.payload->'workSufficientState'[\s\S]*->'tokenStateCommitment'\s*=\s*transition\.payload/u.test(
+      proofIndexerParity,
+    ),
+);
+expect(
+  "proof-index parity treats summary pending activity as a floor when no fresh log snapshot is loaded",
+  /const pendingActivityCoverageExact = canonicalActivityRows\.length > 0/u.test(
+    proofIndexerParity,
+  ) &&
+    /pendingCoverageMode:[\s\S]*fresh-log-exact[\s\S]*summary-floor/u.test(
+      proofIndexerParity,
+    ) &&
+    /pendingActivityEventsForCoverage >=\s+expectedPendingActivityItems/u.test(
+      proofIndexerParity,
+    ),
+);
+expect(
+  "proof-index parity counts fresh Log pending events with the snapshot first-seen fence",
+  /PUBLIC_LOG_EVENT_KINDS/u.test(proofIndexerParity) &&
+    /async function countSnapshotPendingPublicActivityEvents\([\s\S]*COALESCE\(e\.event_time, e\.created_at\) <= \$3::timestamptz[\s\S]*pending_tx\.first_seen_at[\s\S]*pending_tx\.network = e\.network[\s\S]*pending_tx\.txid = e\.txid[\s\S]*e\.created_at[\s\S]*e\.event_time[\s\S]*<= \$3::timestamptz/u.test(
+      proofIndexerParity,
+    ) &&
+    /pendingActivityEventsForCoverage[\s\S]*snapshotPendingPublicActivityEvents[\s\S]*pendingAllEvents/u.test(
+      proofIndexerParity,
+    ),
+);
+expect(
+  "proof-index parity accepts current token tables that advance past the sampled summary checkpoint",
+  /"token-state-current-relational"[\s\S]*Number\(indexedTokenState\?\.indexedThroughBlock\) >=\s+canonicalSummaryIndexedThroughBlock/u.test(
+    proofIndexerParity,
+  ) &&
+    /"work-token-state-current-relational"[\s\S]*Number\(indexedWorkTokenState\?\.indexedThroughBlock\) >=\s+canonicalSummaryIndexedThroughBlock/u.test(
+      proofIndexerParity,
+    ),
+);
+expect(
+  "proof-index parity skips optional activity snapshot identity when compact summaries do not store it",
+  /const indexedActivitySnapshotAvailable =[\s\S]*Boolean\(indexedActivityPayload\?\.snapshotId\)[\s\S]*Array\.isArray\(indexedActivityPayload\?\.activity\)/u.test(
+    proofIndexerParity,
+  ) &&
+    /"log-payload-snapshot-parity"[\s\S]*!indexedActivitySnapshotAvailable \|\|[\s\S]*indexedActivityPayload\.snapshotId ===[\s\S]*indexedSnapshotAvailable/u.test(
+      proofIndexerParity,
+    ),
+);
+expect(
+  "registry semantic parity keeps pre-V5 display enrichment out of activity fingerprints",
+  /function registryParityPreWorkAmoV5Confirmed\([\s\S]*WORK_AMO_V5_ACTIVATION_HEIGHT/u.test(
+    proofIndexReader,
+  ) &&
+    /delete semantic\.participants;[\s\S]*eventKind === "id-buy"[\s\S]*delete semantic\.listingId/u.test(
+      proofIndexReader,
+    ),
+);
 const canonicalLedgerBuilderSource = sourceSliceBetween(
   server,
   /async function buildIndexedCanonicalLedgerPayload/,
@@ -598,7 +657,7 @@ expectAll("live index worker confirms blocks before best-effort mempool visibili
   /POW_INDEX_BACKFILL_STORE_CANONICAL_SUMMARY_SNAPSHOT:[\s\S]*BACKFILL_STORE_CANONICAL_SUMMARY_SNAPSHOT/,
   /POW_INDEX_BACKFILL_STORE_LEDGER_SNAPSHOT: BACKFILL_STORE_LEDGER_SNAPSHOT/,
   /const MAX_CONSECUTIVE_FAILURES = Math\.max\([\s\S]*3/,
-  /consecutiveFailures >= MAX_CONSECUTIVE_FAILURES[\s\S]*throw error/,
+  /const escalating = shouldEscalateWorkerFailure\([\s\S]*MAX_CONSECUTIVE_FAILURES[\s\S]*if \(escalating\) \{\s*throw error;\s*\}/,
 ]);
 expectAll("worker child processes and pending cleanup have strict wall-clock budgets", proofIndexerWorker, [
   /const STATUS_REQUEST_TIMEOUT_MS = Number\([\s\S]*Math\.min\([\s\S]*5_000/,
@@ -1831,6 +1890,13 @@ expectAll(
     /CREATE INDEX IF NOT EXISTS ledger_snapshots_summary_latest_idx[\s\S]*ON proof_indexer\.ledger_snapshots \([\s\S]*network,[\s\S]*indexed_through_block DESC NULLS LAST,[\s\S]*generated_at DESC[\s\S]*\)[\s\S]*WHERE payload \? 'summaryPayloads'/,
   ],
 );
+expectAll("snapshot-bound Log reads use the embedded Log summary timestamp", proofIndexReader, [
+  /async function ledgerSnapshotMetadata[\s\S]*payload->'summaryPayloads'->'logSummary'->>'indexedAt'[\s\S]*AS log_summary_indexed_at/,
+  /function pendingLogSnapshotTimeSql\([\s\S]*COALESCE\(e\.event_time, e\.created_at\) <= \$\{snapshotTimeParam\}::timestamptz[\s\S]*pending_tx\.first_seen_at[\s\S]*pending_tx\.network = e\.network[\s\S]*pending_tx\.txid = e\.txid[\s\S]*e\.created_at[\s\S]*e\.event_time[\s\S]*<= \$\{snapshotTimeParam\}::timestamptz/,
+  /async function proofIndexCanonicalActivityPayload[\s\S]*const snapshotLogIndexedAt = boundSnapshot\?\.log_summary_indexed_at[\s\S]*Date\.parse\(snapshotLogIndexedAt\)[\s\S]*boundSnapshot\?\.generated_at/,
+  /async function proofIndexLogHistoryPayload[\s\S]*const snapshotLogIndexedAt = snapshot\.log_summary_indexed_at[\s\S]*Date\.parse\(snapshotLogIndexedAt\)[\s\S]*snapshot\.generated_at/,
+  /async function proofIndexCanonicalActivityPayload[\s\S]*pendingLogSnapshotTimeSql\(snapshotTimeParam\)/,
+]);
 expectAll(
   "canonical token-state candidate reads retain their order-matched partial index contract",
   proofIndexerSchema,
@@ -2726,7 +2792,7 @@ expect(
 expectAll("public Log SQL counts valid confirmed or pending actions only", proofIndexReader, [
   /const conditions = \[[\s\S]*"e\.valid = true"[\s\S]*"e\.status IN \('confirmed', 'pending'\)"[\s\S]*"e\.kind = ANY\(\$2::text\[\]\)"/,
   /export async function proofIndexCanonicalActivityPayload\(\s*network,\s*options = \{\},?\s*\)[\s\S]*AND e\.valid = true[\s\S]*AND e\.status IN \('confirmed', 'pending'\)[\s\S]*AND e\.kind = ANY\(\$2::text\[\]\)/,
-  /e\.status = 'confirmed'[\s\S]*e\.updated_at <= \$\{snapshotTimeParam\}::timestamptz[\s\S]*e\.status = 'pending'[\s\S]*COALESCE\(e\.event_time, e\.created_at\) <= \$\{snapshotTimeParam\}::timestamptz/,
+  /e\.status = 'confirmed'[\s\S]*e\.updated_at <= \$\{snapshotTimeParam\}::timestamptz[\s\S]*e\.status = 'pending'[\s\S]*pendingLogSnapshotTimeSql\(/,
 ]);
 expectAll("canonical ledger can read direct proof-index event rows", proofIndexReader, [
   /export async function proofIndexCanonicalActivityPayload\(\s*network,\s*options = \{\},?\s*\)/,

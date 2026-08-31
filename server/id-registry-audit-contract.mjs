@@ -14,6 +14,14 @@ import {
 export const PWID_RAW_REPLAY_ACTIVATION_HEIGHT = 959_621;
 export const ID_REGISTRY_AUDIT_TRANSITION_PAGE_SIZE = 64;
 export const ID_REGISTRY_AUDIT_ROW_PAGE_SIZE = 256;
+export const ID_REGISTRY_AUDIT_TRANSITION_ENVELOPE_MODEL =
+  "proof-indexer-id-registry-column-transition-envelope-v1";
+const ID_REGISTRY_AUDIT_BLOCK_DESCRIPTOR_ENVELOPE_MODEL =
+  "proof-indexer-id-registry-block-envelope-sha256-v1";
+const ID_REGISTRY_AUDIT_REPLAY_DESCRIPTOR_ENVELOPE_MODEL =
+  "proof-indexer-id-registry-replay-envelope-sha256-v1";
+const ID_REGISTRY_AUDIT_TRANSITION_CHAIN_ENVELOPE_MODEL =
+  "proof-indexer-id-registry-transition-envelope-sha256-v1";
 const ID_REGISTRY_AUDIT_ROLLING_HASH_MODEL =
   "proof-id-audit-rolling-sha256-v1";
 const LEGACY_MIXED_DIAGNOSTIC_REASON =
@@ -336,6 +344,15 @@ function exactCommitment(value, expectedModel = "") {
   return { model, payloadBytes, sha256 };
 }
 
+function auditEnvelopeCommitment(model, evidence) {
+  const canonical = auditCanonicalJson({ evidence, model });
+  return {
+    model,
+    payloadBytes: Buffer.byteLength(canonical, "utf8"),
+    sha256: auditHash(`${model}\n${canonical}`),
+  };
+}
+
 /**
  * A resumable, domain-separated rolling hash. Each item is length framed and
  * chained to the prior digest, so callers can process an arbitrary number of
@@ -419,6 +436,121 @@ function transitionPayloadEvidence(transition) {
     transition.stateCommitmentModel ?? "",
   ).trim();
   const eventSetModel = String(transition.eventSetModel ?? "").trim();
+  const openingNetworkValueQ8 = exactIntegerText(
+    transition.openingNetworkValueQ8,
+  );
+  const closingNetworkValueQ8 = exactIntegerText(
+    transition.closingNetworkValueQ8,
+  );
+  const counts = {
+    eventCount: exactInteger(transition.eventCount),
+    protocolRecordCount: exactInteger(transition.protocolRecordCount),
+    rawProtocolCandidateCount: exactInteger(
+      transition.rawProtocolCandidateCount,
+    ),
+    transactionCount: exactInteger(transition.transactionCount),
+  };
+  const auditEnvelopeModel = String(
+    payload.idRegistryAuditEnvelopeModel ?? "",
+  ).trim();
+  if (auditEnvelopeModel === ID_REGISTRY_AUDIT_TRANSITION_ENVELOPE_MODEL) {
+    const openingStateCommitment = exactCommitment(
+      {
+        model: stateCommitmentModel,
+        payloadBytes: transition.openingStatePayloadBytes,
+        sha256: transition.openingStateSha256,
+      },
+      stateCommitmentModel,
+    );
+    const closingStateCommitment = exactCommitment(
+      {
+        model: stateCommitmentModel,
+        payloadBytes: transition.closingStatePayloadBytes,
+        sha256: transition.closingStateSha256,
+      },
+      stateCommitmentModel,
+    );
+    const eventSetCommitment = exactCommitment(
+      {
+        model: eventSetModel,
+        payloadBytes: transition.eventSetPayloadBytes,
+        sha256: transition.eventSetSha256,
+      },
+      eventSetModel,
+    );
+    if (
+      blockHeight === null ||
+      !blockHash ||
+      !previousBlockHash ||
+      !canonicalPreviousBlockHash ||
+      previousBlockHash !== canonicalPreviousBlockHash ||
+      !model ||
+      !stateCommitmentModel ||
+      !eventSetModel ||
+      !openingNetworkValueQ8 ||
+      !closingNetworkValueQ8 ||
+      Object.values(counts).some((value) => value === null) ||
+      counts.rawProtocolCandidateCount !== 0 ||
+      transition.blockAtomic !== true ||
+      transition.feeOnce !== true ||
+      transition.invalidZero !== true ||
+      transition.complete !== true ||
+      !Array.isArray(payload.replayRecords) ||
+      payload.replayRecords.length !== 0
+    ) {
+      throw new Error(
+        `ID audit transition ${blockHeight ?? "(unknown)"} disagrees with its column envelope.`,
+      );
+    }
+    const envelopeEvidence = {
+      auditEnvelopeModel,
+      blockAtomic: true,
+      blockHash,
+      blockHeight,
+      closingNetworkValueQ8,
+      closingStateCommitment,
+      complete: true,
+      eventCount: counts.eventCount,
+      eventSetCommitment,
+      feeOnce: true,
+      invalidZero: true,
+      model,
+      openingNetworkValueQ8,
+      openingStateCommitment,
+      previousBlockHash,
+      protocolRecordCount: counts.protocolRecordCount,
+      rawProtocolCandidateCount: counts.rawProtocolCandidateCount,
+      stateCommitmentModel,
+      transactionCount: counts.transactionCount,
+      workTokenStateModel: transition.workTokenStateModel ?? null,
+    };
+    return {
+      blockDescriptorCommitment: auditEnvelopeCommitment(
+        ID_REGISTRY_AUDIT_BLOCK_DESCRIPTOR_ENVELOPE_MODEL,
+        envelopeEvidence,
+      ),
+      blockHash,
+      blockHeight,
+      closingNetworkValueQ8,
+      closingStateCommitment,
+      counts,
+      eventSetCommitment,
+      openingNetworkValueQ8,
+      openingStateCommitment,
+      previousBlockHash,
+      replayDescriptorCommitment: auditEnvelopeCommitment(
+        ID_REGISTRY_AUDIT_REPLAY_DESCRIPTOR_ENVELOPE_MODEL,
+        {
+          ...envelopeEvidence,
+          replayRecords: [],
+        },
+      ),
+      transitionChainCommitment: auditEnvelopeCommitment(
+        ID_REGISTRY_AUDIT_TRANSITION_CHAIN_ENVELOPE_MODEL,
+        envelopeEvidence,
+      ),
+    };
+  }
   const openingStateCommitment = exactCommitment(
     payload.openingStateCommitment,
     stateCommitmentModel,
@@ -441,20 +573,6 @@ function transitionPayloadEvidence(transition) {
   const blockDescriptorCommitment = exactCommitment(
     payload.blockDescriptorCommitment,
   );
-  const openingNetworkValueQ8 = exactIntegerText(
-    transition.openingNetworkValueQ8,
-  );
-  const closingNetworkValueQ8 = exactIntegerText(
-    transition.closingNetworkValueQ8,
-  );
-  const counts = {
-    eventCount: exactInteger(transition.eventCount),
-    protocolRecordCount: exactInteger(transition.protocolRecordCount),
-    rawProtocolCandidateCount: exactInteger(
-      transition.rawProtocolCandidateCount,
-    ),
-    transactionCount: exactInteger(transition.transactionCount),
-  };
   if (
     blockHeight === null ||
     !blockHash ||

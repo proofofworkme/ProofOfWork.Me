@@ -16,6 +16,7 @@ import {
   runAudit,
 } from "./audit-id-registry.mjs";
 import {
+  ID_REGISTRY_AUDIT_TRANSITION_ENVELOPE_MODEL,
   PWID_RAW_REPLAY_ACTIVATION_HEIGHT,
   advanceIdRegistryAuditRollingHash,
   advanceIdRegistryAuditTransitionChain,
@@ -510,6 +511,61 @@ const oneTransitionState = () =>
     checkpointHash: firstTransition.blockHash,
     checkpointHeight: firstTransition.blockHeight,
   });
+const envelopeTransition = transitionFixture({
+  closingStateSha256: auditHash(950_002),
+  hash: auditHash(950_001),
+  height: transitionStart,
+  openingStateSha256: auditHash(950_000),
+  previousHash: auditHash(949_999),
+  replayRecords: [],
+});
+envelopeTransition.payload = {
+  idRegistryAuditEnvelopeModel:
+    ID_REGISTRY_AUDIT_TRANSITION_ENVELOPE_MODEL,
+  rawProtocolCandidateCount: 0,
+  replayRecords: [],
+};
+const envelopeTransitionState = advanceIdRegistryAuditTransitionChain(
+  createIdRegistryAuditTransitionChain({
+    checkpointHash: envelopeTransition.blockHash,
+    checkpointHeight: envelopeTransition.blockHeight,
+  }),
+  [envelopeTransition],
+);
+assert.equal(
+  finalizeIdRegistryAuditTransitionChain(envelopeTransitionState)
+    .transitionCount,
+  1,
+  "A non-candidate ID audit transition envelope remains chainable from column-bound commitments.",
+);
+assert.throws(
+  () =>
+    advanceIdRegistryAuditTransitionChain(
+      createIdRegistryAuditTransitionChain({
+        checkpointHash: auditHash(950_011),
+        checkpointHeight: transitionStart,
+      }),
+      [
+      {
+        ...transitionFixture({
+          closingStateSha256: auditHash(950_012),
+          hash: auditHash(950_011),
+          height: transitionStart,
+          openingStateSha256: auditHash(950_010),
+          previousHash: auditHash(950_009),
+          replayRecords: [{ rawCandidate: true }],
+        }),
+        payload: {
+          idRegistryAuditEnvelopeModel:
+            ID_REGISTRY_AUDIT_TRANSITION_ENVELOPE_MODEL,
+          replayRecords: [],
+        },
+      },
+      ],
+    ),
+  /column envelope/u,
+  "A transition envelope must not hide raw protocol candidates.",
+);
 assert.throws(
   () =>
     advanceIdRegistryAuditTransitionChain(oneTransitionState(), [

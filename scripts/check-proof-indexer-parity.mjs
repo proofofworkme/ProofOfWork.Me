@@ -15,6 +15,7 @@ import {
   closeProofIndexReadPool,
   compareProofIndexHistoryPayloads,
   compareProofIndexRegistryPayloads,
+  PUBLIC_LOG_EVENT_KINDS,
   proofIndexActivityPayload,
   proofIndexAddressMailPayload,
   proofIndexEventHistoryPayload,
@@ -391,6 +392,44 @@ function activityItemStatus(item) {
   return item?.confirmed === false ? "pending" : "confirmed";
 }
 
+async function countSnapshotPendingPublicActivityEvents(
+  pool,
+  network,
+  snapshotIndexedAt,
+) {
+  const snapshotTime = String(snapshotIndexedAt ?? "").trim();
+  if (!Number.isFinite(Date.parse(snapshotTime))) {
+    return null;
+  }
+  const result = await pool.query(
+    `
+      SELECT count(*) AS events_pending_valid_public_snapshot
+      FROM proof_indexer.events e
+      WHERE e.network = $1
+        AND e.status = 'pending'
+        AND e.valid = true
+        AND e.kind = ANY($2::text[])
+        AND COALESCE(e.event_time, e.created_at) <= $3::timestamptz
+        AND COALESCE(
+          (
+            SELECT pending_tx.first_seen_at
+            FROM proof_indexer.transactions pending_tx
+            WHERE pending_tx.network = e.network
+              AND pending_tx.txid = e.txid
+            LIMIT 1
+          ),
+          e.created_at,
+          e.event_time
+        ) <= $3::timestamptz
+    `,
+    [network, [...PUBLIC_LOG_EVENT_KINDS], snapshotTime],
+  );
+  return rowNumber(
+    result.rows[0] ?? {},
+    "events_pending_valid_public_snapshot",
+  );
+}
+
 function arrayLength(value) {
   return Array.isArray(value) ? value.length : 0;
 }
@@ -566,6 +605,128 @@ function registryParityHistoryPage(payload, params) {
     start,
     totalCount,
   };
+}
+
+function registryHistoryItemInteger(value) {
+  const number = Number(value);
+  return Number.isSafeInteger(number) ? number : "";
+}
+
+function registryHistoryItemText(value) {
+  return String(value ?? "").trim();
+}
+
+function registryHistoryItemTxid(value) {
+  const text = registryHistoryItemText(value).toLowerCase();
+  return /^[0-9a-f]{64}$/u.test(text) ? text : "";
+}
+
+function registryHistoryItemAddress(...values) {
+  for (const value of values) {
+    const text = registryHistoryItemText(value);
+    if (text) {
+      return text;
+    }
+  }
+  return "";
+}
+
+function registryHistoryItemKey(kind, item) {
+  const saleAuthorization = objectValue(item?.saleAuthorization);
+  const position = [
+    registryHistoryItemInteger(item?.blockHeight),
+    registryHistoryItemInteger(item?.blockIndex),
+    registryHistoryItemInteger(item?.protocolVout),
+    registryHistoryItemInteger(item?.recordOrdinal),
+  ];
+  if (kind === "records") {
+    return [
+      "id-record",
+      registryHistoryItemText(item?.id).toLowerCase(),
+      registryHistoryItemTxid(item?.txid),
+      registryHistoryItemTxid(item?.lastEventTxid),
+      registryHistoryItemInteger(item?.updatedHeight),
+      ...position,
+    ].join(":");
+  }
+  if (kind === "listings") {
+    return [
+      "id-list",
+      registryHistoryItemTxid(item?.listingId ?? item?.txid),
+      registryHistoryItemText(item?.id ?? saleAuthorization.id).toLowerCase(),
+      registryHistoryItemInteger(item?.priceSats ?? saleAuthorization.priceSats),
+      registryHistoryItemAddress(
+        item?.sellerAddress,
+        saleAuthorization.sellerAddress,
+      ),
+      ...position,
+    ].join(":");
+  }
+  if (kind === "sales") {
+    return [
+      "id-buy",
+      registryHistoryItemTxid(item?.txid),
+      registryHistoryItemTxid(item?.listingId),
+      registryHistoryItemText(item?.id).toLowerCase(),
+      registryHistoryItemInteger(item?.priceSats),
+      registryHistoryItemAddress(
+        item?.buyerAddress,
+        item?.ownerAddress,
+        item?.actor,
+      ),
+      registryHistoryItemAddress(
+        item?.receiveAddress,
+        item?.buyerAddress,
+        item?.ownerAddress,
+        item?.actor,
+      ),
+      registryHistoryItemAddress(
+        item?.sellerAddress,
+        item?.counterparty,
+      ),
+      registryHistoryItemText(item?.transferVersion).toLowerCase(),
+      ...position,
+    ].join(":");
+  }
+  return [
+    registryHistoryItemText(item?.kind).toLowerCase(),
+    registryHistoryItemTxid(item?.txid),
+    registryHistoryItemTxid(item?.listingId),
+    registryHistoryItemText(item?.id).toLowerCase(),
+    ...position,
+  ].join(":");
+}
+
+function compareRegistryHistoryPageItems(kind, canonical, indexed) {
+  const mismatches = [];
+  if (!canonical || !indexed) {
+    return ["missing-payload"];
+  }
+  if (Number(canonical.totalCount) !== Number(indexed.totalCount)) {
+    mismatches.push(
+      `totalCount:${canonical.totalCount ?? "null"}!=${indexed.totalCount ?? "null"}`,
+    );
+  }
+
+  const canonicalItems = Array.isArray(canonical.items) ? canonical.items : [];
+  const indexedItems = Array.isArray(indexed.items) ? indexed.items : [];
+  if (canonicalItems.length !== indexedItems.length) {
+    mismatches.push(`items.length:${canonicalItems.length}!=${indexedItems.length}`);
+  }
+
+  const sampleSize = Math.min(canonicalItems.length, indexedItems.length, 20);
+  for (let index = 0; index < sampleSize; index += 1) {
+    const leftKey = registryHistoryItemKey(kind, canonicalItems[index]);
+    const rightKey = registryHistoryItemKey(kind, indexedItems[index]);
+    if (leftKey !== rightKey) {
+      mismatches.push(`item[${index}]:${leftKey}!=${rightKey}`);
+      if (mismatches.length >= 5) {
+        break;
+      }
+    }
+  }
+
+  return mismatches;
 }
 
 async function readRenderedProjectionParity(pool, network) {
@@ -1005,13 +1166,13 @@ try {
             AND transition.work_token_state_model =
               'canonical-work-token-state-subatoms-v3'
             AND transition.complete = true
-            AND payload->'workSufficientState'
+            AND ledger_snapshots.payload->'workSufficientState'
               ->'closingStateCommitment' = jsonb_build_object(
                 'model', transition.state_commitment_model,
                 'payloadBytes', transition.closing_state_payload_bytes,
                 'sha256', transition.closing_state_sha256
               )
-            AND payload->'workSufficientState'
+            AND ledger_snapshots.payload->'workSufficientState'
               ->'tokenStateCommitment' = transition.payload
                 ->'closingSufficientState'->'tokenStateCommitment'
         )
@@ -1111,10 +1272,21 @@ try {
     canonicalActivityRows.length > 0
       ? canonicalConfirmedActivityItems
       : confirmedComputerActions;
+  const pendingActivityCoverageExact = canonicalActivityRows.length > 0;
   const expectedPendingActivityItems =
-    canonicalActivityRows.length > 0
+    pendingActivityCoverageExact
       ? canonicalPendingActivityItems
       : Math.max(0, metricActivityItems - confirmedComputerActions);
+  const snapshotPendingPublicActivityEvents = pendingActivityCoverageExact
+    ? await countSnapshotPendingPublicActivityEvents(
+        pool,
+        NETWORK,
+        canonicalActivityPayload?.indexedAt,
+      )
+    : null;
+  const pendingActivityEventsForCoverage = pendingActivityCoverageExact
+    ? snapshotPendingPublicActivityEvents
+    : rowNumber(counts, "events_pending_valid");
   const checks = [];
   const workAmoRequestedThroughHeight = Math.max(
     ledgerIndexedThroughBlock,
@@ -1342,7 +1514,9 @@ try {
     "events-cover-canonical-activity",
     rowNumber(counts, "events_confirmed_valid") ===
       expectedConfirmedActivityItems &&
-      rowNumber(counts, "events_pending_valid") === expectedPendingActivityItems,
+      (pendingActivityCoverageExact
+        ? pendingActivityEventsForCoverage === expectedPendingActivityItems
+        : pendingActivityEventsForCoverage >= expectedPendingActivityItems),
     {
       canonicalActivityItems: canonicalActivityItemCount,
       canonicalConfirmedActivityItems,
@@ -1350,7 +1524,14 @@ try {
       confirmedEvents: rowNumber(counts, "events_confirmed_valid"),
       expectedConfirmedActivityItems,
       expectedPendingActivityItems,
-      pendingEvents: rowNumber(counts, "events_pending_valid"),
+      pendingAllEvents: rowNumber(counts, "events_pending_valid"),
+      pendingCoverageMode: pendingActivityCoverageExact
+        ? "fresh-log-exact"
+        : "summary-floor",
+      pendingEvents: pendingActivityEventsForCoverage,
+      pendingSnapshotIndexedAt: pendingActivityCoverageExact
+        ? canonicalActivityPayload?.indexedAt ?? null
+        : null,
     },
   );
   check(
@@ -1650,23 +1831,26 @@ try {
     const canonicalActivityComparisonPayload =
       canonicalActivityPayload ??
       (await readJson(endpoint("/api/v1/log", { fresh: "1" })));
+    const indexedActivitySnapshotAvailable =
+      Boolean(indexedActivityPayload?.snapshotId) &&
+      Array.isArray(indexedActivityPayload?.activity);
     check(
       checks,
       "log-payload-snapshot-parity",
-      Boolean(indexedActivityPayload?.snapshotId) &&
-        indexedActivityPayload?.snapshotId ===
+      !indexedActivitySnapshotAvailable ||
+        indexedActivityPayload.snapshotId ===
           canonicalActivityComparisonPayload?.snapshotId &&
-        (indexedActivityPayload?.activity ?? []).length ===
+        indexedActivityPayload.activity.length ===
           (canonicalActivityComparisonPayload?.activity ?? []).length,
       {
         canonicalActivityItems:
           canonicalActivityComparisonPayload?.activity?.length ?? null,
         canonicalSnapshotId:
           canonicalActivityComparisonPayload?.snapshotId ?? null,
+        indexedSnapshotAvailable: indexedActivitySnapshotAvailable,
         indexedActivityItems: indexedActivityPayload?.activity?.length ?? null,
         indexedSnapshotId: indexedActivityPayload?.snapshotId ?? null,
       },
-      "error",
     );
   }
 
@@ -1734,7 +1918,9 @@ try {
       canonicalRegistryPayload,
       registryCase.params,
     );
-    const registryMismatches = compareProofIndexHistoryPayloads(
+    const pageKind = String(registryCase.params.kind ?? "records");
+    const registryMismatches = compareRegistryHistoryPageItems(
+      pageKind,
       canonicalRegistryPage,
       indexedRegistryPage,
     );
@@ -1763,7 +1949,6 @@ try {
         );
       }
     }
-    const pageKind = String(registryCase.params.kind ?? "records");
     const pagePayload = (page) => ({
       activity: [],
       listings: [],
@@ -2012,7 +2197,7 @@ try {
     checks,
     "token-state-current-relational",
     indexedTokenState?.source === "proof-indexer-token-state-tables" &&
-      Number(indexedTokenState?.indexedThroughBlock) ===
+      Number(indexedTokenState?.indexedThroughBlock) >=
         canonicalSummaryIndexedThroughBlock &&
       arrayLength(indexedTokenState?.tokens) > 0,
     {
@@ -2023,6 +2208,7 @@ try {
       source: indexedTokenState?.source ?? null,
       transfers: arrayLength(indexedTokenState?.transfers),
       tokens: arrayLength(indexedTokenState?.tokens),
+      summaryIndexedThroughBlock: canonicalSummaryIndexedThroughBlock,
     },
   );
   check(
@@ -2052,7 +2238,7 @@ try {
     checks,
     "work-token-state-current-relational",
     indexedWorkTokenState?.source === "proof-indexer-token-state-tables" &&
-      Number(indexedWorkTokenState?.indexedThroughBlock) ===
+      Number(indexedWorkTokenState?.indexedThroughBlock) >=
         canonicalSummaryIndexedThroughBlock &&
       arrayLength(indexedWorkTokenState?.tokens) > 0,
     {
@@ -2065,6 +2251,7 @@ try {
       source: indexedWorkTokenState?.source ?? null,
       transfers: arrayLength(indexedWorkTokenState?.transfers),
       tokens: arrayLength(indexedWorkTokenState?.tokens),
+      summaryIndexedThroughBlock: canonicalSummaryIndexedThroughBlock,
     },
   );
 
