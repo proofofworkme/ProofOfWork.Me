@@ -70955,6 +70955,80 @@ function registryAuditRelationalRawClosingState(projection) {
   return { listings, records };
 }
 
+async function registryAuditRawReplayWithSpendableListings(
+  rawReplay,
+  network,
+  checkpoint,
+) {
+  const closingState =
+    rawReplay?.closingState &&
+    typeof rawReplay.closingState === "object" &&
+    !Array.isArray(rawReplay.closingState)
+      ? rawReplay.closingState
+      : { listings: [], records: [] };
+  const listingReconciliation = await strictCoreRegistryListingReconciliation(
+    {
+      indexedThroughBlock: checkpoint.height,
+      indexedThroughBlockHash: checkpoint.blockHash,
+      listings: Array.isArray(closingState.listings)
+        ? closingState.listings
+        : [],
+      network,
+      stats: {
+        activeListings: Array.isArray(closingState.listings)
+          ? closingState.listings.length
+          : 0,
+        listingCount: Array.isArray(closingState.listings)
+          ? closingState.listings.length
+          : 0,
+        listings: Array.isArray(closingState.listings)
+          ? closingState.listings.length
+          : 0,
+      },
+    },
+    network,
+    { checkpoint, verifyFinalTip: false },
+  );
+  const spendableClosingListings = (Array.isArray(
+    listingReconciliation.payload?.listings,
+  )
+    ? listingReconciliation.payload.listings
+    : [])
+    .map((listing) => ({
+      id: registryAuditId(listing?.id, "Spendable raw closing ID listing"),
+      listingId: registryAuditTxid(
+        listing?.listingId,
+        "Spendable raw closing ID listing",
+      ),
+      priceSats: registryAuditExactSafeSats(
+        listing?.priceSats,
+        "Spendable raw closing ID listing price",
+      ),
+      saleAuthorization: registryAuditCanonicalClone(
+        listing?.saleAuthorization,
+      ),
+      sellerAddress: registryAuditAddress(
+        listing?.sellerAddress,
+        "Spendable raw closing ID listing",
+      ),
+    }))
+    .sort((left, right) =>
+      compareCanonicalUtf8(left.listingId, right.listingId),
+    );
+  const spendableClosingState = {
+    listings: spendableClosingListings,
+    records: Array.isArray(closingState.records)
+      ? closingState.records
+      : [],
+  };
+  return {
+    ...rawReplay,
+    closingState: spendableClosingState,
+    closingStateSha256: registryAuditProjectionSha256(spendableClosingState),
+    listingReconciliation: listingReconciliation.evidence,
+  };
+}
+
 function assertUnambiguousRegistryAuditEvents(transactions) {
   for (const transaction of Array.isArray(transactions) ? transactions : []) {
     if (transactionConfirmed(transaction)) {
@@ -71766,7 +71840,8 @@ async function buildInternalIdRegistryAuditPayload(network) {
     ...pendingTransactions,
   ]);
   assertUnambiguousRegistryAuditEvents(exactTransactions);
-  const rawReplay = await registryAuditCanonicalRawReplay(
+  const rawReplay = await registryAuditRawReplayWithSpendableListings(
+    await registryAuditCanonicalRawReplay(network, initialTip),
     network,
     initialTip,
   );
@@ -72022,6 +72097,8 @@ async function buildInternalIdRegistryAuditPayload(network) {
           "all-transition-discovered-pwid-blocks;bounded-page-recompute",
         canonicalRawReplayDescriptorSha256:
           rawReplay.replayDescriptorSha256 || null,
+        canonicalRawListingReconciliation:
+          rawReplay.listingReconciliation ?? null,
         canonicalSemantics:
           "legacy-idRegistryStateFromTransactions+post-activation-raw-block-sequencer",
         chainReplayVerified: true,

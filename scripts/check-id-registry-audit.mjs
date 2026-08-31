@@ -851,6 +851,11 @@ assert.match(
   "Pending ID actions must be evaluated on the canonical raw closing state while legacy audit events stay separately replayed.",
 );
 assert.match(
+  serverSource,
+  /registryAuditRawReplayWithSpendableListings[\s\S]*strictCoreRegistryListingReconciliation[\s\S]*await registryAuditRawReplayWithSpendableListings\([\s\S]*await registryAuditCanonicalRawReplay\(network,\s*initialTip\)[\s\S]*initialConfirmedState: rawReplay\.closingState/u,
+  "ID audit raw replay listings must be reconciled against exact Core anchors before pending replay and parity hashing.",
+);
+assert.match(
   registryResolverSource,
   /const eventPaymentOutputs = paymentOutputsBeforeIdProtocol\(vout\)/u,
 );
