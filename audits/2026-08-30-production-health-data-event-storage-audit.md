@@ -1754,3 +1754,131 @@ stand:
    after an approved retention spec.
 4. Keep the V5 migration/quote-head warnings visible until that historical path
    is either completed or explicitly retired by a documented protocol decision.
+
+## 2026-08-31 Storage-Retention Remediation Phase 1
+
+Approval:
+
+> Approved: start storage-retention remediation phase 1. You may create/update
+> the audit log, build exact cleanup manifests for both VPSs, inspect production
+> read-only, and prepare proposed commands for storage cleanup and API
+> read-pressure fixes. Do not delete files, drop databases, change production
+> config, restart services, commit, push, or deploy without separate approval.
+
+Actions taken:
+
+- Created exact read-only cleanup manifests:
+  - `audits/2026-08-31-storage-retention-node-manifest.md`
+  - `audits/2026-08-31-storage-retention-ui-manifest.md`
+- Inspected both VPSs, production logs, database/table sizes, release
+  directories, backups, and API read-pressure behavior.
+- Prepared proposed phase 2 cleanup and performance command forms.
+- Did not delete files, drop databases, change production config, restart
+  services, commit, push, or deploy.
+
+Current node/API health:
+
+- Bitcoin Core: `main`, blocks `964901`, headers `964901`, IBD `false`,
+  pruned `false`, warnings `[]`.
+- API/index: `ok=true`, `ready=true`, indexed through `964901`, lag `0`.
+- Summary snapshot: `a591c24e802aec50bc37f5ce`.
+- Summary coverage: Growth, Inception, Infinity, Log, Marketplace, Token, WORK
+  floor, and WORK summary all cover block `964901`.
+- Pending event health: `ok=true`, unresolved global `0`, unresolved Q16 `0`.
+- DB: `17 GB`, no waiting locks, readiness queue rows `0`.
+- Event rows: confirmed valid `24681`, confirmed invalid audit rows `328`,
+  pending valid `18`, pending invalid audit rows `13`, dropped valid `30`,
+  dropped invalid `168`.
+
+Current storage pressure:
+
+- Node `/data`: `1.7T` total, `1.3T` used, `272G` free, `83%` used.
+- Node storage-health remains failed because the configured warning threshold is
+  `75%` and `/data` is above it. Critical threshold is `85%`.
+- Node largest storage groups:
+  - `/data/bitcoin`: `904G`.
+  - `/data/proofofwork-postgres-backups`: `240G`.
+  - `/data/proofofwork-postgres-tablespaces`: `70G`.
+  - `/data/electrs`: `60G`.
+  - `/data/proofofwork-recovery`: about `20G` by exact top-level evidence
+    inventory.
+  - `/opt` release/stage/rollback/quarantine candidates: about `11G`.
+  - `/data/proofofwork-release-backups/managed`: `8.5G`.
+
+Current UI health:
+
+- UI `/`: `38G` total, `14G` used, `23G` available, `37%` used.
+- UI inodes: `5%` used.
+- Caddy: active.
+- UI storage-health: passing.
+- UI release provenance: verified active release
+  `33c12c5a2a42-20260829T010316Z`.
+- Public page checks returned `200` for every standalone page and Computer,
+  except `proofofwork.me`, which returned the expected redirect `301`.
+
+Phase 1 conclusions:
+
+1. The live app is healthy at exact tip, but node `/data` is close enough to the
+   critical threshold that storage remediation should happen before more heavy
+   audit/deploy work.
+2. The biggest reclaim candidates are old PostgreSQL recovery/fault databases,
+   PostgreSQL backup retention, and reorg/recovery pinned dumps. These are
+   protected-by-default until a phase 2 approval names what can be archived or
+   removed.
+3. Node release retention needs repair: the configured release-prune service
+   keeps `3` managed archives, but the timer had no next run scheduled and
+   managed archives have grown to `40` `.tgz` files.
+4. UI storage is not in danger, but `/var/tmp/proofofwork-deploy` has `4.1G` of
+   old deployment source/surface bundles that the current storage-prune job does
+   not remove because they are unmarked.
+5. API read pressure is functional but heavy. Fresh probes returned `200`, but
+   several routes are multi-second and large. Public compressed transfer sizes
+   are much better, yet raw JSON models remain large enough to warrant
+   first-paint compaction/pagination and fresh-read singleflight.
+
+Recommended phase 2 approval should explicitly choose:
+
+- Which non-live PostgreSQL databases may be archived or dropped.
+- Logical backup retention depth, including how to handle incident/pre-rollback
+  dump sets.
+- Physical backup/WAL retention policy.
+- Whether reorg/Q16 recovery evidence should stay on-box, be archived off-box,
+  or be compacted.
+- Whether node release-prune may be re-enabled and run.
+- Which `/opt` stage/rollback/quarantine directories may be deleted.
+- Whether UI `/var/tmp/proofofwork-deploy` may be cleaned by exact path, or
+  whether the prune script should be updated first.
+- Whether to start a code fix pass for API payload slimming, read coalescing,
+  and operator pressure metrics.
+
+## 2026-08-31 Storage Retention Remediation Phase 2C
+
+Approved PostgreSQL retention remediation phase 2C was completed without
+changing production config, restarting services, committing, pushing, or
+deploying. The phase dropped only the twelve approved non-live PostgreSQL
+recovery/fault/rehearsal databases and deleted only the three approved
+duplicate/nonstandard logical backup directories. The live `proof_indexer`
+database, standard logical backup sets, physical base backups, WAL archives,
+and other recovery evidence were preserved.
+
+Evidence file:
+`audits/2026-08-31-postgresql-retention-remediation-2c.md`.
+
+Post-cleanup checkpoint:
+
+- Node `/data` improved from `83%` used and `274G` available to `79%` used and
+  `334G` available.
+- PostgreSQL catalog showed only live `proof_indexer`, `17 GB`.
+- Public `/api/v1/health` remained HTTP `200`, `ok=true`, `ready=true`, tip
+  `964904`, indexed through `964904`, lag `0`, snapshot
+  `a02784a38e83164c0d4b3b77`.
+- Core services remained active: `postgresql@16-main`, `proofofwork-api`,
+  `proofofwork-indexer-worker`, `bitcoind`, `electrs`, and
+  `pg_receivewal@16-main.service`.
+
+Remaining storage decision:
+
+- `/data` is healthier but still above the documented `75%` warning line. A
+  separate retention-policy approval is still needed before changing logical
+  backup depth, physical base backup depth, WAL retention, or off-box recovery
+  archive handling.
