@@ -843,3 +843,161 @@ Captured at about `2026-08-31T02:11:00Z`:
    externally spent ID sale-ticket anchor, then rerun registry parity.
 5. Make explicit retention decisions before deleting old databases, backups,
    release archives, recovery directories, or deployment staging folders.
+
+## Production Fix Deployment - 2026-08-31
+
+Mode: user-approved production deployment of the local fix set, required node
+service restart/reload for the deploy path, and read-only production
+verification. No UI deploy, production config change, storage deletion,
+backfill/recovery mutation, commit push side effect beyond the approved code
+release path, or data cleanup was performed during the VPS deployment.
+
+### Released Commits
+
+- `67daacdc3ca0eb2710f76dcd9030e7578485c852`
+  (`Harden production audit data paths`) was staged and candidate-checked on
+  the node VPS.
+- `d17b6c7f458476542de12bac406c3f033a9fa0d2`
+  (`Preserve audit transition network`) followed after production proved the
+  Q16 transition mapper needed to preserve the `network` field for the strict
+  ID audit.
+- The live node checkout at `/opt/proofofwork-api` reports
+  `d17b6c7f458476542de12bac406c3f033a9fa0d2`.
+- No UI VPS release was published because the fix set did not change frontend
+  source or built UI assets.
+
+### Deployment Evidence
+
+First node release:
+
+- Release id: `67daacdc3ca0-20260831T022328Z`.
+- Published archive:
+  `proofofwork-node-release-67daacd-67daacdc3ca0-20260831T022328Z.tgz`.
+- Runtime sha256:
+  `5ab6ed8f82395e3305c46c230bd1e1930f0aca3bdfa4f1816a49ca82cba94524`.
+- Archive sha256:
+  `b45597296304dd097572b6060f9aecef41350e1b7bbddb0dc0c299b41bfda7e8`.
+- Archive size: `83894984` bytes.
+- Candidate checks passed:
+  `npm run check:work-precision` and
+  `npm run check:index-recovery-behavior` (`479/479`).
+
+Second node release:
+
+- Release id: `d17b6c7f4584-20260831T024217Z`.
+- Published archive:
+  `proofofwork-node-release-d17b6c7-d17b6c7f4584-20260831T024217Z.tgz`.
+- Runtime sha256:
+  `95d5e5b839b1e4feab58f65d14d1cb6d93e854cf7895dd25e3e751c7b6c7666a`.
+- Archive sha256:
+  `ecc1cea00874fa071ec4f9b22dc3d2ff8d08138f68bca371ca36c7bcd7ba2736`.
+- Archive size: `83894427` bytes.
+- Candidate checks passed:
+  `npm run check:id-audit` and
+  `npm run check:index-recovery-behavior` (`479/479`).
+
+The deploy required restarting the node public API, WireGuard API proxy/socket,
+and indexer worker units. After the second release, all four were active:
+`proofofwork-api`, `proofofwork-indexer-worker`,
+`proofofwork-api-wg.socket`, and `proofofwork-api-wg.service`.
+
+### Production Verification
+
+Captured after the second release:
+
+- `https://computer.proofofwork.me/api/v1/health` returned HTTP 200 in about
+  `1.26s`.
+- Health reported `ok: true`, `ready: true`, `available: true`,
+  `indexedThroughBlock: 964815`, `tipHeight: 964815`, and `lagBlocks: 0`.
+- Node, Electrum, index, worker, database, and pending-event health were all
+  green. Node txindex was synced at block `964815`.
+- Canonical summary health coverage was present for `growthSummary`,
+  `inceptionSummary`, `infinitySummary`, `logSummary`, `marketplaceSummary`,
+  `tokenSummary`, `workFloor`, and `workSummary` at block `964815`.
+- Health snapshot id:
+  `e418f27e5a2c31f901b589a6`, payload size `10092075` bytes.
+- Node disk health remained green but still watchlisted:
+  `/data/proofofwork-api-cache` was `83.41534456018474%` used with about
+  `292680704000` bytes available, and `/` was `38.18389824543105%` used with
+  about `64962084864` bytes available.
+- `https://computer.proofofwork.me/api/v1/marketplace-summary` returned HTTP
+  200, but took about `25.23s`.
+- Marketplace summary was current at block `964815`, snapshot
+  `78eae5a61dd85e9103394ddf`, derived from canonical summary snapshot
+  `e418f27e5a2c31f901b589a6`.
+- Current public marketplace active-book evidence after the release:
+  `tokenListingCount: 279`, `activeWorkLegacyListings: 0`,
+  `activeWorkV8Listings: 278`, `registryListingCount: 5`, and
+  `registryPending: 0`.
+- WORK AMO V8 state reported `ready: true`, `protocolReady: true`,
+  `writeAdmission: true`, `listingWritesEnabled: true`,
+  `settlementWritesEnabled: true`, and `legacyWriteEmbargo: true` at block
+  `964815`.
+- Production marketplace regressions passed after the first release against
+  `https://computer.proofofwork.me`, including ID lookup, V2 cutover/relic
+  state, listing lifecycle, wallet scopes, and targeted WORK transfers.
+
+### Remaining Red Checks
+
+The strict Q16 transition-chain boundary failure at height `960601` is fixed:
+the old `ID audit transition chain is not contiguous at height 960601` error no
+longer appears after `d17b6c7`.
+
+The production ID audit is not all-green yet. It now fails later with:
+`The chain-derived ID lifecycle projection disagrees with the exact relational
+projection.` This matches the remaining stale/partial relational-history issue
+and should be handled by an approved backfill/recovery pass, not by masking
+chain truth.
+
+The post-release production proof-indexer parity run against
+`http://127.0.0.1:8081` completed with `102` checks, `90` passing checks,
+`12` failing checks, `9` errors, and `3` warnings.
+
+Failing checks:
+
+- Warnings: `work-amo-v5-migration`, `work-amo-v5-usd-quote-head`, and
+  `marketplace-summary-snapshot-parity`.
+- Errors: `database-has-canonical-summary-snapshot`,
+  `canonical-summary-snapshot-current`, `registry-history-listings-parity`,
+  `registry-history-sales-parity`,
+  `registry-confirmed-listings-semantic-parity`,
+  `registry-confirmed-activity-semantic-parity`,
+  `registry-payload-current-relational`, `token-state-current-relational`, and
+  `work-token-state-current-relational`.
+
+Most important concrete mismatches:
+
+- Registry confirmed listing semantic parity is `5 != 6`; relational/current
+  state still has the extra stale sale-ticket listing
+  `5f601de743a36893e11f1fbd2305406274e7e294e25ed1dc7014f1f0a835770a:1`.
+- The known outspend remains
+  `e446f50d497176bc4309217c9dbebb61938ff28ed2c1151a66d9c36797b29ee8`
+  at block `954803`, but that external spend is not yet persisted by the
+  production relational index.
+- Registry activity/history parity still shows missing historical sale/listing
+  rows from the current relational page projection.
+- Current relational token-state parity reports `listings: 288`,
+  `tokens: 238`, `mints: 21874`, and `transfers: 191`.
+- Current relational WORK token-state parity reports `listings: 286`,
+  `tokens: 1`, `mints: 21000`, `transfers: 185`, and `holders: 349`.
+- Canonical summary snapshot parity still reports no current database snapshot
+  for the parity checker even though public health summary coverage is current
+  at block `964815`; this needs a focused persistence/currentness fix.
+
+### Current Priority After Deployment
+
+1. Approve a supervised backfill/recovery pass to persist external sale-ticket
+   anchor spends, starting with
+   `5f601de743a36893e11f1fbd2305406274e7e294e25ed1dc7014f1f0a835770a:1`,
+   then rerun `npm run audit:ids` and full proof-indexer parity.
+2. Fix canonical summary snapshot database persistence/currentness so the full
+   parity checker and the public health snapshot agree without relying on a
+   memory/fresh overlay.
+3. Reconcile registry history/activity projections so exact chain lifecycle,
+   historical pages, current registry listing state, and marketplace rendering
+   agree from the same source of truth.
+4. Reduce marketplace and wallet read latency. Public marketplace summary is
+   functionally correct but still too slow at about `25.23s`.
+5. Make storage-retention decisions for old databases, backup directories,
+   release archives, recovery directories, and UI deployment staging folders
+   before `/data` approaches the 90% health threshold.
