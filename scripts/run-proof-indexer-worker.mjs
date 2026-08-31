@@ -333,6 +333,25 @@ const WORK_Q16_PENDING_ABSENCE_SOURCES = Object.freeze([
   "bitcoin-core:getblockchaininfo",
   "bitcoin-core:getindexinfo:txindex",
 ]);
+const WORK_Q16_PENDING_READINESS_RETRIES = Math.min(
+  5,
+  Math.max(
+    0,
+    Math.floor(
+      Number(process.env.POW_INDEX_WORKER_PENDING_READINESS_RETRIES ?? 2) ||
+        0,
+    ),
+  ),
+);
+const WORK_Q16_PENDING_READINESS_RETRY_DELAY_MS = Math.min(
+  30_000,
+  Math.max(
+    250,
+    Number(
+      process.env.POW_INDEX_WORKER_PENDING_READINESS_RETRY_DELAY_MS ?? 1_000,
+    ) || 1_000,
+  ),
+);
 const WORK_PRECISION_READINESS_EPOCH_CHECKPOINT_MODEL =
   "proof-index-worker-readiness-epoch-checkpoint-v1";
 const WORK_PRECISION_READINESS_EPOCH_CHECKPOINT_DOMAIN =
@@ -4778,6 +4797,52 @@ async function assertWorkPrecisionPendingReady(
   }
 }
 
+async function assertWorkPrecisionPendingReadyWithRetries(
+  pool,
+  precision,
+  confirmedReplay,
+  runtime,
+) {
+  let lastError = null;
+  const attempts = WORK_Q16_PENDING_READINESS_RETRIES + 1;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    if (runtime?.stopping) {
+      throw workerStoppingError();
+    }
+    try {
+      return await assertWorkPrecisionPendingReady(
+        pool,
+        precision,
+        confirmedReplay,
+      );
+    } catch (error) {
+      lastError = error;
+      if (runtime?.stopping || error?.code === "POW_INDEX_WORKER_STOPPING") {
+        throw workerStoppingError();
+      }
+      if (attempt + 1 >= attempts) {
+        break;
+      }
+      const delayMs = Math.min(
+        30_000,
+        WORK_Q16_PENDING_READINESS_RETRY_DELAY_MS * 2 ** attempt,
+      );
+      console.error(
+        JSON.stringify({
+          attempt: attempt + 1,
+          attempts,
+          delayMs,
+          error: cappedChildError(error?.message ?? error),
+          phase: "worker-pending-readiness-retry",
+          retrying: true,
+        }),
+      );
+      await workerSleep(runtime, delayMs);
+    }
+  }
+  throw lastError;
+}
+
 function endpoint(pathname, params = {}) {
   const url = new URL(`${API_BASE}${pathname}`);
   url.searchParams.set("network", NETWORK);
@@ -6605,10 +6670,11 @@ async function runCycle(pool, lastSuccess, runtime) {
   let pendingReadinessError = null;
   if (workPrecision.era === WORK_PRECISION_Q16_ERA) {
     try {
-      workPrecisionReplay = await assertWorkPrecisionPendingReady(
+      workPrecisionReplay = await assertWorkPrecisionPendingReadyWithRetries(
         pool,
         workPrecision,
         workPrecisionConfirmedReplay,
+        runtime,
       );
     } catch (error) {
       pendingReadinessError = cappedChildError(error?.message ?? error);

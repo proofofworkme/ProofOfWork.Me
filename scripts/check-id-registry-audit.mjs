@@ -29,8 +29,21 @@ import {
 } from "../server/id-registry-audit-contract.mjs";
 import {
   decodeWorkAmoV5CanonicalBase64UrlJsonObject,
+  WORK_AMO_V5_BASE_STATE_FIELDS,
+  WORK_AMO_V5_NETWORK_ACCUMULATOR_MODEL,
+  WORK_AMO_V5_PAYLOAD_COMMITMENT_MODEL,
+  WORK_AMO_V5_STATE_COMMITMENT_MODEL,
+  workAmoV5CanonicalStateCommitment,
   workAmoV5HasNoTextStorageNul,
 } from "../server/work-amo-v5.mjs";
+import {
+  WORK_AMO_V8_BLOCK_SEQUENCER_MODEL,
+  WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL,
+  workAmoV8CanonicalTokenStateCommitment,
+} from "../server/work-amo-v8.mjs";
+import {
+  WORK_PRECISION_V2_MIGRATION_META_KEY,
+} from "../server/work-units.mjs";
 
 const source = readFileSync("scripts/audit-id-registry.mjs", "utf8");
 const serverSource = readFileSync("server/proof-api.mjs", "utf8");
@@ -262,6 +275,228 @@ for (let start = 0; start < transitions.length; start += 64) {
 assert.equal(
   finalizeIdRegistryAuditTransitionChain(transitionState).transitionCount,
   transitionCount,
+);
+
+const precisionBoundaryHeight = transitionStart + 10;
+const precisionBoundaryPreviousHeight = precisionBoundaryHeight - 1;
+const precisionBoundaryPreviousHash = auditHash(940_000);
+const precisionBoundaryHash = auditHash(940_001);
+const precisionBoundaryParentHash = auditHash(939_999);
+const fixturePayloadCommitment = (salt) => ({
+  model: WORK_AMO_V5_PAYLOAD_COMMITMENT_MODEL,
+  payloadBytes: 1,
+  sha256: auditHash(salt),
+});
+const minimalSufficientState = ({
+  blockHash,
+  blockHeight,
+  tokenStateCommitment,
+}) => ({
+  baseState: Object.fromEntries(
+    WORK_AMO_V5_BASE_STATE_FIELDS.map((field) => [
+      field,
+      field === "computerEventFlowSats" ? "1" : "0",
+    ]),
+  ),
+  creditFixedQ8: "0",
+  creditMovementFrozenValueQ8: "0",
+  genericTokenStateCommitment: fixturePayloadCommitment(940_030),
+  idStateCommitment: fixturePayloadCommitment(940_031),
+  model: WORK_AMO_V5_NETWORK_ACCUMULATOR_MODEL,
+  movements: [],
+  network: "livenet",
+  networkValueQ8: "500000000",
+  quoteHead: null,
+  throughBlockHash: blockHash,
+  throughBlockHeight: blockHeight,
+  tokenStateCommitment,
+});
+const precisionOpeningTokenState = {
+  confirmedSupplySubatoms: "1",
+  holders: [{ address: "holder", balanceSubatoms: "1" }],
+  listings: [],
+};
+const precisionOpeningTokenStateCommitment =
+  workAmoV8CanonicalTokenStateCommitment(precisionOpeningTokenState);
+const precisionOpeningState = minimalSufficientState({
+  blockHash: precisionBoundaryPreviousHash,
+  blockHeight: precisionBoundaryPreviousHeight,
+  tokenStateCommitment: precisionOpeningTokenStateCommitment,
+});
+const precisionOpeningStateCommitment =
+  workAmoV5CanonicalStateCommitment(precisionOpeningState);
+const precisionClosingState = minimalSufficientState({
+  blockHash: precisionBoundaryHash,
+  blockHeight: precisionBoundaryHeight,
+  tokenStateCommitment: precisionOpeningTokenStateCommitment,
+});
+const precisionClosingStateCommitment =
+  workAmoV5CanonicalStateCommitment(precisionClosingState);
+const legacyClosingStateSha256 = auditHash(940_010);
+const precisionBoundaryPreviousTransition = transitionFixture({
+  closingStateSha256: legacyClosingStateSha256,
+  hash: precisionBoundaryPreviousHash,
+  height: precisionBoundaryPreviousHeight,
+  openingStateSha256: auditHash(940_009),
+  previousHash: precisionBoundaryParentHash,
+});
+precisionBoundaryPreviousTransition.closingNetworkValueQ8 =
+  precisionOpeningState.networkValueQ8;
+precisionBoundaryPreviousTransition.closingStatePayloadBytes =
+  precisionOpeningStateCommitment.payloadBytes;
+precisionBoundaryPreviousTransition.closingStateSha256 =
+  legacyClosingStateSha256;
+precisionBoundaryPreviousTransition.payload.closingNetworkValueQ8 =
+  precisionOpeningState.networkValueQ8;
+precisionBoundaryPreviousTransition.payload.closingStateCommitment = {
+  ...precisionBoundaryPreviousTransition.payload.closingStateCommitment,
+  payloadBytes: precisionOpeningStateCommitment.payloadBytes,
+  sha256: legacyClosingStateSha256,
+};
+const precisionBoundaryEventSetCommitment = {
+  model: "fixture-event-set-v1",
+  payloadBytes: 2,
+  sha256: auditHash(940_020),
+};
+const precisionBoundaryTransitionChainCommitment = {
+  model: "fixture-transition-chain-v1",
+  payloadBytes: 2,
+  sha256: auditHash(940_021),
+};
+const precisionBoundaryTransition = {
+  blockAtomic: true,
+  blockHash: precisionBoundaryHash,
+  blockHeight: precisionBoundaryHeight,
+  canonicalPreviousBlockHash: precisionBoundaryPreviousHash,
+  closingNetworkValueQ8: precisionClosingState.networkValueQ8,
+  closingStatePayloadBytes: precisionClosingStateCommitment.payloadBytes,
+  closingStateSha256: precisionClosingStateCommitment.sha256,
+  complete: true,
+  eventCount: 0,
+  eventSetModel: precisionBoundaryEventSetCommitment.model,
+  eventSetPayloadBytes: precisionBoundaryEventSetCommitment.payloadBytes,
+  eventSetSha256: precisionBoundaryEventSetCommitment.sha256,
+  feeOnce: true,
+  invalidZero: true,
+  model: WORK_AMO_V8_BLOCK_SEQUENCER_MODEL,
+  network: "livenet",
+  openingNetworkValueQ8: precisionOpeningState.networkValueQ8,
+  openingStatePayloadBytes: precisionOpeningStateCommitment.payloadBytes,
+  openingStateSha256: precisionOpeningStateCommitment.sha256,
+  payload: {
+    activationHeight: precisionBoundaryHeight,
+    blockAtomic: true,
+    blockDescriptorCommitment: {
+      model: "fixture-block-descriptor-v1",
+      payloadBytes: 2,
+      sha256: auditHash(940_022),
+    },
+    blockHash: precisionBoundaryHash,
+    blockHeight: precisionBoundaryHeight,
+    closingNetworkValueQ8: precisionClosingState.networkValueQ8,
+    closingStateCommitment: precisionClosingStateCommitment,
+    closingSufficientState: precisionClosingState,
+    closingTokenState: precisionOpeningTokenState,
+    complete: true,
+    eventCount: 0,
+    eventSetCommitment: precisionBoundaryEventSetCommitment,
+    feeOnce: true,
+    invalidZero: true,
+    model: WORK_AMO_V8_BLOCK_SEQUENCER_MODEL,
+    network: "livenet",
+    openingNetworkValueQ8: precisionOpeningState.networkValueQ8,
+    openingStateCommitment: precisionOpeningStateCommitment,
+    openingSufficientState: precisionOpeningState,
+    precisionMigrationMarkerKey: WORK_PRECISION_V2_MIGRATION_META_KEY,
+    precisionOpeningTokenStateCommitment:
+      precisionOpeningTokenStateCommitment,
+    previousBlockHash: precisionBoundaryPreviousHash,
+    protocolRecordCount: 0,
+    rawProtocolCandidateCount: 0,
+    replayDescriptorCommitment: {
+      model: "fixture-replay-descriptor-v1",
+      payloadBytes: 2,
+      sha256: auditHash(940_023),
+    },
+    replayRecords: [],
+    transactionCount: 0,
+    transitionChainCommitment:
+      precisionBoundaryTransitionChainCommitment,
+    transitionChainModel:
+      precisionBoundaryTransitionChainCommitment.model,
+    workAmoV8: { activationHeight: precisionBoundaryHeight },
+    workTokenStateModel: WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL,
+  },
+  previousBlockHash: precisionBoundaryPreviousHash,
+  protocolRecordCount: 0,
+  rawProtocolCandidateCount: 0,
+  stateCommitmentModel: WORK_AMO_V5_STATE_COMMITMENT_MODEL,
+  transactionCount: 0,
+  transitionChainModel: precisionBoundaryTransitionChainCommitment.model,
+  workTokenStateModel: WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL,
+};
+const precisionBoundaryState = createIdRegistryAuditTransitionChain({
+  activationHeight: precisionBoundaryPreviousHeight,
+  checkpointHash: precisionBoundaryHash,
+  checkpointHeight: precisionBoundaryHeight,
+  precisionMigrationActivationHeight: precisionBoundaryHeight,
+});
+const advancedPrecisionBoundaryState = advanceIdRegistryAuditTransitionChain(
+  precisionBoundaryState,
+  [precisionBoundaryPreviousTransition, precisionBoundaryTransition],
+);
+assert.equal(
+  advancedPrecisionBoundaryState.precisionMigrationRebindingConsumed,
+  true,
+);
+assert.equal(
+  finalizeIdRegistryAuditTransitionChain(
+    advancedPrecisionBoundaryState,
+  ).transitionCount,
+  2,
+);
+assert.throws(
+  () =>
+    advanceIdRegistryAuditTransitionChain(
+      createIdRegistryAuditTransitionChain({
+        activationHeight: precisionBoundaryPreviousHeight,
+        checkpointHash: precisionBoundaryHash,
+        checkpointHeight: precisionBoundaryHeight,
+      }),
+      [precisionBoundaryPreviousTransition, precisionBoundaryTransition],
+    ),
+  /contiguous/u,
+  "A precision-boundary state hash rebinding must be explicitly configured.",
+);
+assert.throws(
+  () =>
+    advanceIdRegistryAuditTransitionChain(
+      createIdRegistryAuditTransitionChain({
+        activationHeight: precisionBoundaryPreviousHeight,
+        checkpointHash: precisionBoundaryHash,
+        checkpointHeight: precisionBoundaryHeight,
+        precisionMigrationActivationHeight:
+          precisionBoundaryPreviousHeight,
+      }),
+      [precisionBoundaryPreviousTransition, precisionBoundaryTransition],
+    ),
+  /contiguous/u,
+  "Only the exact configured precision-boundary height may rebind state hashes.",
+);
+assert.throws(
+  () =>
+    advanceIdRegistryAuditTransitionChain(precisionBoundaryState, [
+      precisionBoundaryPreviousTransition,
+      {
+        ...precisionBoundaryTransition,
+        payload: {
+          ...precisionBoundaryTransition.payload,
+          precisionMigrationMarkerKey: "wrong-marker",
+        },
+      },
+    ]),
+  /contiguous/u,
+  "A precision-boundary rebinding still requires the migration marker proof.",
 );
 
 const firstTransition = transitions[0];

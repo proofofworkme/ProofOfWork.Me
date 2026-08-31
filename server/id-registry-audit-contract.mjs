@@ -1,4 +1,15 @@
 import { createHash } from "node:crypto";
+import {
+  WORK_PRECISION_V2_MIGRATION_META_KEY,
+} from "./work-units.mjs";
+import {
+  WORK_AMO_V5_PAYLOAD_COMMITMENT_MODEL,
+} from "./work-amo-v5.mjs";
+import {
+  WORK_AMO_V8_BLOCK_SEQUENCER_MODEL,
+  WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL,
+  validateWorkAmoV8BoundaryTransitionPayload,
+} from "./work-amo-v8.mjs";
 
 export const PWID_RAW_REPLAY_ACTIVATION_HEIGHT = 959_621;
 export const ID_REGISTRY_AUDIT_TRANSITION_PAGE_SIZE = 64;
@@ -493,16 +504,96 @@ function transitionPayloadEvidence(transition) {
   };
 }
 
+function commitmentsEqual(left, right) {
+  return Boolean(
+    left &&
+      right &&
+      left.model === right.model &&
+      left.payloadBytes === right.payloadBytes &&
+      left.sha256 === right.sha256
+  );
+}
+
+function idRegistryAuditPrecisionRebindingAllowed(state, transition, evidence) {
+  const precisionHeight = exactInteger(
+    state?.precisionMigrationActivationHeight,
+    1,
+  );
+  if (
+    precisionHeight === null ||
+    state?.precisionMigrationRebindingConsumed === true ||
+    evidence.blockHeight !== precisionHeight ||
+    transition?.model !== WORK_AMO_V8_BLOCK_SEQUENCER_MODEL ||
+    transition?.workTokenStateModel !== WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL
+  ) {
+    return false;
+  }
+  const payload =
+    transition?.payload &&
+    typeof transition.payload === "object" &&
+    !Array.isArray(transition.payload)
+      ? transition.payload
+      : null;
+  if (
+    !payload ||
+    payload.precisionMigrationMarkerKey !==
+      WORK_PRECISION_V2_MIGRATION_META_KEY ||
+    exactInteger(payload.activationHeight, 1) !== precisionHeight ||
+    exactInteger(payload.workAmoV8?.activationHeight, 1) !== precisionHeight
+  ) {
+    return false;
+  }
+  const boundaryValidation =
+    validateWorkAmoV8BoundaryTransitionPayload(transition);
+  if (boundaryValidation.valid !== true) {
+    return false;
+  }
+  try {
+    const precisionOpeningCommitment = exactCommitment(
+      payload.precisionOpeningTokenStateCommitment,
+      WORK_AMO_V5_PAYLOAD_COMMITMENT_MODEL,
+    );
+    const openingTokenCommitment = exactCommitment(
+      payload.openingSufficientState?.tokenStateCommitment,
+      WORK_AMO_V5_PAYLOAD_COMMITMENT_MODEL,
+    );
+    return commitmentsEqual(
+      precisionOpeningCommitment,
+      openingTokenCommitment,
+    );
+  } catch {
+    return false;
+  }
+}
+
 export function createIdRegistryAuditTransitionChain({
   activationHeight = PWID_RAW_REPLAY_ACTIVATION_HEIGHT,
   checkpointHash,
   checkpointHeight,
+  precisionMigrationActivationHeight,
 } = {}) {
   const height = exactInteger(activationHeight, 1);
   const tipHeight = exactInteger(checkpointHeight, 1);
   const tipHash = exactHash(checkpointHash);
+  const precisionHeightSpecified =
+    precisionMigrationActivationHeight !== undefined &&
+    precisionMigrationActivationHeight !== null &&
+    String(precisionMigrationActivationHeight).trim() !== "";
+  const precisionHeight = precisionHeightSpecified
+    ? exactInteger(precisionMigrationActivationHeight, 1)
+    : null;
   if (height === null || tipHeight === null || tipHeight < height || !tipHash) {
     throw new Error("ID audit transition-chain checkpoint is invalid.");
+  }
+  if (
+    precisionHeightSpecified &&
+    (
+      precisionHeight === null ||
+      precisionHeight < height ||
+      precisionHeight > tipHeight
+    )
+  ) {
+    throw new Error("ID audit precision transition boundary is invalid.");
   }
   return {
     activationHeight: height,
@@ -513,6 +604,8 @@ export function createIdRegistryAuditTransitionChain({
     lastClosingStatePayloadBytes: null,
     lastClosingStateSha256: "",
     nextHeight: height,
+    precisionMigrationActivationHeight: precisionHeight,
+    precisionMigrationRebindingConsumed: false,
     rolling: createIdRegistryAuditRollingHash(
       "proof-indexer-work-amo-block-transitions",
     ),
@@ -526,22 +619,41 @@ export function advanceIdRegistryAuditTransitionChain(state, transitions) {
   let next = { ...state, rolling: { ...state.rolling } };
   for (const transition of transitions) {
     const evidence = transitionPayloadEvidence(transition);
+    const heightContiguous = evidence.blockHeight === next.nextHeight;
+    const previousHashContiguous =
+      !next.lastBlockHash ||
+      evidence.previousBlockHash === next.lastBlockHash;
+    const networkValueContiguous =
+      !next.lastClosingNetworkValueQ8 ||
+      evidence.openingNetworkValueQ8 === next.lastClosingNetworkValueQ8;
+    const payloadBytesContiguous =
+      next.lastClosingStatePayloadBytes === null ||
+      evidence.openingStateCommitment.payloadBytes ===
+        next.lastClosingStatePayloadBytes;
+    const stateHashContiguous =
+      !next.lastClosingStateSha256 ||
+      evidence.openingStateCommitment.sha256 ===
+        next.lastClosingStateSha256;
+    const precisionRebinding =
+      !stateHashContiguous &&
+      heightContiguous &&
+      previousHashContiguous &&
+      networkValueContiguous &&
+      payloadBytesContiguous &&
+      idRegistryAuditPrecisionRebindingAllowed(next, transition, evidence);
     if (
-      evidence.blockHeight !== next.nextHeight ||
-      (next.lastBlockHash && evidence.previousBlockHash !== next.lastBlockHash) ||
-      (next.lastClosingNetworkValueQ8 &&
-        evidence.openingNetworkValueQ8 !== next.lastClosingNetworkValueQ8) ||
-      (next.lastClosingStateSha256 &&
-        evidence.openingStateCommitment.sha256 !==
-          next.lastClosingStateSha256) ||
-      (next.lastClosingStatePayloadBytes !== null &&
-        evidence.openingStateCommitment.payloadBytes !==
-          next.lastClosingStatePayloadBytes)
+      !heightContiguous ||
+      !previousHashContiguous ||
+      !networkValueContiguous ||
+      !payloadBytesContiguous ||
+      (!stateHashContiguous && !precisionRebinding)
     ) {
       throw new Error(
         `ID audit transition chain is not contiguous at height ${evidence.blockHeight}.`,
       );
     }
+    next.precisionMigrationRebindingConsumed =
+      next.precisionMigrationRebindingConsumed || precisionRebinding;
     next.rolling = advanceIdRegistryAuditRollingHash(next.rolling, {
       blockDescriptorCommitment: evidence.blockDescriptorCommitment,
       blockHash: evidence.blockHash,

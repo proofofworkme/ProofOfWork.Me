@@ -1218,7 +1218,7 @@ async function runChecks() {
       "oversized canonical snapshot",
       {
         ...replaySnapshot,
-        payloadBytes: 9 * 1024 * 1024 + 1,
+        payloadBytes: 18 * 1024 * 1024 + 1,
       },
     ],
     [

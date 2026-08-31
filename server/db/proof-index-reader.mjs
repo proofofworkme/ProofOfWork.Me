@@ -23586,41 +23586,52 @@ export async function proofIndexTokenHistoryPayload(
   )
     .map(normalizedTxid)
     .filter(Boolean);
+  const marketEventKinds = tokenHistoryMarketEventKinds(eligibility.kind);
+  const unpinnedExactMarketSearch =
+    !eligibility.pagination.snapshotId &&
+    exactMarketTxidNeedles.length > 0 &&
+    marketEventKinds.length > 0;
+  const unpinnedExactMarketScan = unpinnedExactMarketSearch
+    ? await latestProofIndexScanMetadata(pool, network)
+    : null;
+  const unpinnedExactMarketSnapshot = unpinnedExactMarketScan
+    ? {
+        generated_at: unpinnedExactMarketScan.generated_at,
+        indexed_through_block:
+          unpinnedExactMarketScan.indexed_through_block,
+        indexed_through_block_hash:
+          unpinnedExactMarketScan?.payload?.indexedThroughBlockHash ??
+          unpinnedExactMarketScan?.payload?.blockHash ??
+          unpinnedExactMarketScan?.source_hashes?.blockScan,
+        snapshot_id: "",
+      }
+    : null;
   if (
     !eligibility.pagination.snapshotId &&
     eligibility.kind === "listings" &&
     exactMarketTxidNeedles.length > 0
   ) {
-    const snapshotMetadata = await ledgerSnapshotMetadata(
-      pool,
-      network,
-      eligibility.pagination.snapshotId,
-    );
-    if (snapshotMetadata) {
+    if (unpinnedExactMarketSnapshot) {
       const exactListingPage = await exactActiveTokenListingHistoryPage(
         pool,
         network,
         tokenScope,
         searchParams,
         eligibility.pagination,
-        snapshotMetadata,
+        unpinnedExactMarketSnapshot,
       );
       if (exactListingPage) {
-        return exactListingPage;
+        return currentRelationalHistoryPageWithScanCoverage(
+          exactListingPage,
+          unpinnedExactMarketScan,
+        );
       }
     }
   }
   if (
-    !eligibility.pagination.snapshotId &&
-    exactMarketTxidNeedles.length > 0 &&
-    tokenHistoryMarketEventKinds(eligibility.kind).length > 0
+    unpinnedExactMarketSearch
   ) {
-    const snapshotMetadata = await ledgerSnapshotMetadata(
-      pool,
-      network,
-      eligibility.pagination.snapshotId,
-    );
-    if (snapshotMetadata) {
+    if (unpinnedExactMarketSnapshot) {
       const exactMarketPage = await proofIndexTokenMarketHistoryOverlayPayload(
         network,
         tokenScope,
@@ -23628,11 +23639,14 @@ export async function proofIndexTokenHistoryPayload(
         searchParams,
         {
           pagination: eligibility.pagination,
-          snapshot: snapshotMetadata,
+          snapshot: unpinnedExactMarketSnapshot,
         },
       );
       if (exactMarketPage) {
-        return tokenHistoryPageWithScanCoverage(exactMarketPage, null);
+        return currentRelationalHistoryPageWithScanCoverage(
+          exactMarketPage,
+          unpinnedExactMarketScan,
+        );
       }
     }
   }
@@ -23714,7 +23728,7 @@ export async function proofIndexTokenHistoryPayload(
   }
 
   // Broad unpinned market history is likewise relational. Exact txid market
-  // searches already take the summary-pinned branch above; the default page
+  // searches already take the current scan-bound branch above; the default page
   // must not disappear merely because embedded history blobs are retired.
   if (
     ["listings", "closedListings", "market-log"].includes(eligibility.kind) &&
@@ -33217,6 +33231,71 @@ async function currentIdRegistryEventState(pool, network) {
   };
 }
 
+function idRegistryListingAnchorOutpoint(listing) {
+  const saleAuthorization = objectRecord(listing?.saleAuthorization);
+  const txid = normalizedTxid(
+    saleAuthorization.anchorTxid ??
+      listing?.anchorTxid ??
+      listing?.listingId ??
+      listing?.txid,
+  );
+  const vout = Number(saleAuthorization.anchorVout ?? listing?.anchorVout);
+  return txid && Number.isSafeInteger(vout) && vout >= 0
+    ? { txid, vout }
+    : null;
+}
+
+async function indexedUnspentIdRegistryListings(pool, network, listings) {
+  const sourceListings = Array.isArray(listings) ? listings : [];
+  const anchors = sourceListings.flatMap((listing) => {
+    const anchor = idRegistryListingAnchorOutpoint(listing);
+    return anchor ? [{ anchor_txid: anchor.txid, anchor_vout: anchor.vout }] : [];
+  });
+  if (anchors.length === 0) {
+    return sourceListings;
+  }
+
+  const result = await pool.query(
+    `
+      WITH requested(anchor_txid, anchor_vout) AS (
+        SELECT
+          lower(anchor_row.anchor_txid),
+          anchor_row.anchor_vout
+        FROM jsonb_to_recordset($2::jsonb) AS anchor_row (
+          anchor_txid text,
+          anchor_vout integer
+        )
+        WHERE anchor_row.anchor_txid ~ '^[0-9a-fA-F]{64}$'
+          AND anchor_row.anchor_vout IS NOT NULL
+          AND anchor_row.anchor_vout >= 0
+      )
+      SELECT DISTINCT
+        lower(output.txid) AS anchor_txid,
+        output.vout AS anchor_vout
+      FROM proof_indexer.tx_outputs output
+      JOIN requested
+        ON requested.anchor_txid = lower(output.txid)
+       AND requested.anchor_vout = output.vout
+      WHERE output.network = $1
+        AND output.spent_by_txid IS NOT NULL
+    `,
+    [network, JSON.stringify(anchors)],
+  );
+  const spentAnchors = new Set(
+    result.rows.flatMap((row) => {
+      const txid = normalizedTxid(row?.anchor_txid);
+      const vout = Number(row?.anchor_vout);
+      return txid && Number.isSafeInteger(vout) && vout >= 0
+        ? [`${txid}:${vout}`]
+        : [];
+    }),
+  );
+  return sourceListings.filter((listing) => {
+    const anchor = idRegistryListingAnchorOutpoint(listing);
+    return !anchor || !spentAnchors.has(`${anchor.txid}:${anchor.vout}`);
+  });
+}
+
 function registryHistoryEventKinds(safeKind) {
   if (safeKind === "listings") {
     return ["id-list"];
@@ -33913,6 +33992,11 @@ async function currentProofIndexRegistryPayload(pool, network, options = {}) {
   const listings = Array.isArray(eventState?.listings)
     ? eventState.listings
     : [];
+  const unspentListings = await indexedUnspentIdRegistryListings(
+    pool,
+    network,
+    listings,
+  );
   const pendingEvents = Array.isArray(eventState?.pendingEvents)
     ? eventState.pendingEvents
     : [];
@@ -33935,7 +34019,7 @@ async function currentProofIndexRegistryPayload(pool, network, options = {}) {
   const marketplaceStats = salesStats(sales);
   const registryItems = [
     ...records,
-    ...listings,
+    ...unspentListings,
     ...sales,
     ...activity,
     ...pendingEvents,
@@ -33957,7 +34041,7 @@ async function currentProofIndexRegistryPayload(pool, network, options = {}) {
     indexedAt,
     indexedThroughBlock,
     indexedThroughBlockHash: scanBlockHash,
-    listings,
+    listings: unspentListings,
     network,
     pendingEvents,
     records,
@@ -33970,6 +34054,9 @@ async function currentProofIndexRegistryPayload(pool, network, options = {}) {
       confirmed,
       confirmedSales: marketplaceStats.confirmedSales,
       confirmedSalesVolumeSats: marketplaceStats.confirmedSalesVolumeSats,
+      activeListings: unspentListings.length,
+      listingCount: unspentListings.length,
+      listings: unspentListings.length,
       pending: pendingRecords.length + pendingEvents.length,
       pendingChanges: pendingEvents.length,
       pendingRecords: pendingRecords.length,
@@ -34625,6 +34712,16 @@ async function idRegistryAuditSnapshotPass(
       activationHeight: PWID_RAW_REPLAY_ACTIVATION_HEIGHT,
       checkpointHash: expectedHash,
       checkpointHeight: expectedHeight,
+      precisionMigrationActivationHeight: (() => {
+        const height = Number(
+          configuredWorkPrecisionV2ReaderPins()?.activationHeight,
+        );
+        return Number.isSafeInteger(height) &&
+          height >= PWID_RAW_REPLAY_ACTIVATION_HEIGHT &&
+          height <= expectedHeight
+          ? height
+          : null;
+      })(),
     });
     let transitionCursor = PWID_RAW_REPLAY_ACTIVATION_HEIGHT - 1;
     while (transitionCursor < expectedHeight) {

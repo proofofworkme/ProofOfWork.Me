@@ -12173,6 +12173,38 @@ async function persistCanonicalListingOutpointSpendsFromBlock(
         AND cl.status = ANY(ARRAY['active','sealing']::text[])
         AND cl.sale_ticket_vout IS NOT NULL
         AND cl.sale_ticket_vout >= 0
+      UNION
+      SELECT
+        lower(
+          COALESCE(
+            NULLIF(id_listing.payload->'saleAuthorization'->>'anchorTxid', ''),
+            id_listing.txid
+          )
+        ) AS anchor_txid,
+        CASE
+          WHEN id_listing.payload->'saleAuthorization'->>'anchorVout' ~
+            '^[0-9]+$'
+            THEN (
+              id_listing.payload->'saleAuthorization'->>'anchorVout'
+            )::integer
+          ELSE NULL
+        END AS anchor_vout
+      FROM proof_indexer.events id_listing
+      WHERE id_listing.network = $1
+        AND id_listing.protocol = 'pwid1'
+        AND id_listing.kind = 'id-list'
+        AND id_listing.status = 'confirmed'
+        AND id_listing.valid = true
+        AND id_listing.payload->'saleAuthorization'->>'version' =
+          'pwid-sale-v4'
+        AND id_listing.payload->'saleAuthorization'->>'anchorType' =
+          'sale-ticket-v1'
+        AND COALESCE(
+          NULLIF(id_listing.payload->'saleAuthorization'->>'anchorTxid', ''),
+          id_listing.txid
+        ) ~ '^[0-9a-fA-F]{64}$'
+        AND id_listing.payload->'saleAuthorization'->>'anchorVout' ~
+          '^[0-9]+$'
     `,
     [NETWORK],
   );

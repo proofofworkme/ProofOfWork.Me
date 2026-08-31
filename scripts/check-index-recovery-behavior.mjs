@@ -4560,6 +4560,128 @@ check("a current market lifecycle overlay owns sold and active state", () => {
   );
 });
 
+check("post-V8 compact summaries suppress legacy WORK active listings", () => {
+  const workTokenId = WORK_TOKEN_ID;
+  const otherTokenId = "f".repeat(64);
+  const normalizeTestScope = (value) =>
+    String(value ?? "").trim().toUpperCase() === "WORK"
+      ? workTokenId
+      : String(value ?? "").trim().toLowerCase();
+  const policy = isolatedFunction(
+    API_PATH,
+    "tokenPayloadWithCurrentWorkActiveListingPolicy",
+    {
+      WORK_AMO_V8_ACTIVATION_HEIGHT: 960_601,
+      WORK_AMO_V8_AUTH_VERSION: "pwt-sale-v8",
+      WORK_TOKEN_ID: workTokenId,
+      applyWorkMarketV2CutoverToTokenState: (state) => state,
+      isWorkTokenId: (tokenId) => tokenId === workTokenId,
+      normalizeTokenScope: normalizeTestScope,
+      tokenAggregateSummaries: (payload) => {
+        const workListings = (Array.isArray(payload?.listings)
+          ? payload.listings
+          : []
+        ).filter((listing) => normalizeTestScope(listing?.tokenId) === workTokenId);
+        return new Map([[
+          workTokenId,
+          {
+            confirmedOpenListings: workListings.filter(
+              (listing) => listing?.confirmed === true,
+            ).length,
+            lowestAskPricePerToken: 25_000,
+            openListings: workListings.length,
+            pendingOpenListings: workListings.filter(
+              (listing) => listing?.confirmed !== true,
+            ).length,
+          },
+        ]]);
+      },
+      tokenSummaryMetricValue: (value) =>
+        Number.isFinite(Number(value)) && Number(value) >= 0
+          ? Number(value)
+          : undefined,
+    },
+  );
+  const v8ListingId = "1".repeat(64);
+  const legacyListingId = "2".repeat(64);
+  const v6ListingId = "3".repeat(64);
+  const otherListingId = "4".repeat(64);
+  const base = {
+    collectionHasMore: { listings: true },
+    indexedThroughBlock: 960_601,
+    listings: [
+      {
+        confirmed: true,
+        listingId: v8ListingId,
+        saleAuthorization: { tokenId: workTokenId, version: "pwt-sale-v8" },
+        tokenId: workTokenId,
+      },
+      {
+        confirmed: true,
+        listingId: legacyListingId,
+        saleAuthorization: { tokenId: workTokenId, version: "pwt-sale-v1" },
+        tokenId: workTokenId,
+      },
+      {
+        confirmed: true,
+        listingId: v6ListingId,
+        saleAuthorization: { tokenId: workTokenId, version: "pwt-sale-v6" },
+        tokenId: workTokenId,
+      },
+      {
+        confirmed: true,
+        listingId: otherListingId,
+        saleAuthorization: { tokenId: otherTokenId, version: "pwt-sale-v1" },
+        tokenId: otherTokenId,
+      },
+    ],
+    network: "livenet",
+    stats: {
+      activeListings: 4,
+      confirmedOpenListings: 4,
+      openListings: 4,
+      pendingOpenListings: 0,
+    },
+    tokens: [
+      {
+        confirmedOpenListings: 3,
+        openListings: 3,
+        pendingOpenListings: 0,
+        ticker: "WORK",
+        tokenId: workTokenId,
+      },
+      {
+        confirmedOpenListings: 1,
+        openListings: 1,
+        pendingOpenListings: 0,
+        ticker: "OTHER",
+        tokenId: otherTokenId,
+      },
+    ],
+    totalCounts: { listings: 4 },
+  };
+
+  const preActivation = policy(
+    { ...base, indexedThroughBlock: 960_600 },
+    "livenet",
+  );
+  assert.equal(preActivation.listings.length, 4);
+
+  const next = policy(base, "livenet");
+  assert.deepEqual(
+    next.listings.map((listing) => listing.listingId),
+    [v8ListingId, otherListingId],
+  );
+  assert.equal(next.currentWorkActiveListingPolicy.removedListings, 2);
+  assert.equal(next.tokens[0].openListings, 1);
+  assert.equal(next.tokens[0].confirmedOpenListings, 1);
+  assert.equal(next.tokens[0].lowestAskPricePerToken, 25_000);
+  assert.equal(next.stats.openListings, 2);
+  assert.equal(next.stats.activeListings, 2);
+  assert.equal(next.totalCounts.listings, 2);
+  assert.equal(next.collectionHasMore.listings, false);
+});
+
 check("marketplace fast fallback fails closed without lifecycle coverage", async () => {
   const fastMarketplaceOverlay = isolatedFunction(
     API_PATH,
@@ -4571,6 +4693,7 @@ check("marketplace fast fallback fails closed without lifecycle coverage", async
       marketplaceSummaryWithCurrentBtcUsd: (payload) => payload,
       newerIso: (_left, right) => right,
       payloadSnapshotId: () => "",
+      tokenPayloadWithCurrentWorkActiveListingPolicy: (payload) => payload,
       tokenStateWithIndexedMarketSummaryOverlay: (payload) => payload,
       workFloorWithIndexedMarketSummaryOverlay: (payload) => payload,
     },
@@ -10799,13 +10922,19 @@ check("wallet WORK overlay recovers active canonical V8 listings and drops match
   const tokenPayloadWithCurrentWalletWorkRecoveryListingPolicy =
     isolatedFunction(
       API_PATH,
-      "tokenPayloadWithCurrentWalletWorkRecoveryListingPolicy",
+      "tokenPayloadWithCurrentWorkActiveListingPolicy",
       {
         WORK_AMO_V8_ACTIVATION_HEIGHT: 960_601,
         WORK_AMO_V8_AUTH_VERSION: "pwt-sale-v8",
         WORK_TOKEN_ID: workTokenId,
         applyWorkMarketV2CutoverToTokenState,
+        isWorkTokenId: (tokenId) => tokenId === workTokenId,
         normalizeTokenScope: normalizeTestWorkScope,
+        tokenAggregateSummaries: () => new Map(),
+        tokenSummaryMetricValue: (value) =>
+          Number.isFinite(Number(value)) && Number(value) >= 0
+            ? Number(value)
+            : undefined,
       },
     );
   const activeRecoveryState = (state, sourceState) => {
@@ -13790,14 +13919,14 @@ check("unpinned mint and market history use current relational pages", async () 
           ? String(value).toLowerCase()
           : "",
       proofIndexPool: () => ({}),
-      proofIndexTokenHistoryReadEligibility: (_scope, kind) => ({
+      proofIndexTokenHistoryReadEligibility: (_scope, kind, params) => ({
         eligible: true,
-        kind,
+        kind: kind === "closed-listings" ? "closedListings" : kind,
         pagination: {
           limit: 10,
           offset: 0,
           page: 0,
-          query: "",
+          query: String(params?.get("q") ?? ""),
           snapshotId: "",
         },
         scope: "all",
@@ -13811,7 +13940,10 @@ check("unpinned mint and market history use current relational pages", async () 
       ) => {
         marketReads += 1;
         marketKinds.push(_kind);
-        assert.equal(options.authoritativeEmpty, true);
+        assert.equal(
+          options.authoritativeEmpty,
+          options.pagination.query ? undefined : true,
+        );
         assert.equal(options.snapshot.snapshot_id, "");
         assert.equal(options.snapshot.indexed_through_block, 959_062);
         assert.equal(
@@ -13826,11 +13958,20 @@ check("unpinned mint and market history use current relational pages", async () 
               kind: "listings",
               totalCount: 0,
             }
-          : marketPage;
+          : _kind === "closedListings"
+            ? {
+                ...marketPage,
+                items: [{ txid: "3".repeat(64) }],
+                kind: "closedListings",
+              }
+            : marketPage;
       },
-      tokenHistoryFilterNeedles: () => [],
+      tokenHistoryFilterNeedles: (_searchParams, pagination) =>
+        pagination.query ? [pagination.query] : [],
       tokenHistoryMarketEventKinds: (kind) =>
-        kind === "market-log" ? ["token-listing"] : [],
+        kind === "market-log" || kind === "closedListings"
+          ? ["token-listing-closed"]
+          : [],
     },
   );
 
@@ -13852,28 +13993,39 @@ check("unpinned mint and market history use current relational pages", async () 
     "listings",
     new URLSearchParams({ limit: "10" }),
   );
+  const closedQueryResult = await proofIndexTokenHistoryPayload(
+    "livenet",
+    "work",
+    "closed-listings",
+    new URLSearchParams({ limit: "10", q: "3".repeat(64) }),
+  );
 
   assert.equal(mintReads, 1);
-  assert.equal(marketReads, 2);
-  assert.deepEqual(marketKinds, ["market-log", "listings"]);
+  assert.equal(marketReads, 3);
+  assert.deepEqual(marketKinds, ["market-log", "listings", "closedListings"]);
   assert.equal(embeddedSnapshotReads, 0);
   assert.equal(mintResult.source, "proof-indexer-token-mint-events");
   assert.equal(marketResult.source, "proof-indexer-token-events");
   assert.equal(listingsResult.source, "proof-indexer-token-events");
+  assert.equal(closedQueryResult.source, "proof-indexer-token-events");
   assert.equal(listingsResult.totalCount, 0);
   assert.deepEqual(listingsResult.items, []);
   assert.equal(mintResult.indexedThroughBlock, 959_062);
   assert.equal(marketResult.indexedThroughBlock, 959_062);
   assert.equal(listingsResult.indexedThroughBlock, 959_062);
+  assert.equal(closedQueryResult.indexedThroughBlock, 959_062);
   assert.equal(mintResult.indexedThroughBlockHash, "ab".repeat(32));
   assert.equal(marketResult.indexedThroughBlockHash, "ab".repeat(32));
   assert.equal(listingsResult.indexedThroughBlockHash, "ab".repeat(32));
+  assert.equal(closedQueryResult.indexedThroughBlockHash, "ab".repeat(32));
   assert.equal(mintResult.indexedAt, scan.generated_at);
   assert.equal(marketResult.indexedAt, scan.generated_at);
   assert.equal(listingsResult.indexedAt, scan.generated_at);
+  assert.equal(closedQueryResult.indexedAt, scan.generated_at);
   assert.equal(mintResult.hasMore, false);
   assert.equal(marketResult.hasMore, false);
   assert.equal(listingsResult.hasMore, false);
+  assert.equal(closedQueryResult.hasMore, false);
   assert.equal(
     currentRelationalHistoryPageWithScanCoverage(marketPage, {
       ...scan,
@@ -19458,7 +19610,7 @@ check("Q16 pending attempt absence is rejected before commitment", () => {
   assert.equal(commitmentCalls, 1);
 });
 
-check("Q16 pending readiness audits persisted WORK rows without requiring a full raw mempool sweep", () => {
+check("Q16 pending readiness audits persisted WORK rows without requiring a full raw mempool sweep", async () => {
   const membershipStable = isolatedFunction(
     BACKFILL_PATH,
     "workQ16PendingMembershipStableAcrossSnapshots",
@@ -19643,6 +19795,56 @@ check("Q16 pending readiness audits persisted WORK rows without requiring a full
     WORKER_PATH,
     "assertWorkPrecisionPendingReady",
   );
+  const workerReadinessRetrySource = topLevelFunctionSource(
+    WORKER_PATH,
+    "assertWorkPrecisionPendingReadyWithRetries",
+  );
+  const runCycleSource = topLevelFunctionSource(WORKER_PATH, "runCycle");
+  assert.match(
+    runCycleSource,
+    /assertWorkPrecisionPendingReadyWithRetries\([\s\S]*workPrecisionConfirmedReplay[\s\S]*runtime/u,
+    "the worker cycle must retry only the exact pending readiness audit",
+  );
+  assert.match(
+    workerReadinessRetrySource,
+    /assertWorkPrecisionPendingReady\([\s\S]*pool[\s\S]*precision[\s\S]*confirmedReplay/u,
+  );
+  assert.match(
+    workerReadinessRetrySource,
+    /WORK_Q16_PENDING_READINESS_RETRIES \+ 1/u,
+  );
+  assert.match(workerReadinessRetrySource, /workerSleep\(runtime, delayMs\)/u);
+  let attempts = 0;
+  const sleeps = [];
+  const readinessWithRetries = isolatedFunction(
+    WORKER_PATH,
+    "assertWorkPrecisionPendingReadyWithRetries",
+    {
+      WORK_Q16_PENDING_READINESS_RETRIES: 2,
+      WORK_Q16_PENDING_READINESS_RETRY_DELAY_MS: 5,
+      assertWorkPrecisionPendingReady: async () => {
+        attempts += 1;
+        if (attempts < 3) {
+          throw new Error(`transient-readiness-${attempts}`);
+        }
+        return { pendingReady: true, ready: true };
+      },
+      cappedChildError: (error) => String(error),
+      workerSleep: async (_runtime, delayMs) => {
+        sleeps.push(delayMs);
+      },
+      workerStoppingError: () =>
+        Object.assign(new Error("worker stopping"), {
+          code: "POW_INDEX_WORKER_STOPPING",
+        }),
+    },
+  );
+  assert.deepEqual(
+    await readinessWithRetries({}, { era: "q16" }, {}, {}),
+    { pendingReady: true, ready: true },
+  );
+  assert.equal(attempts, 3);
+  assert.deepEqual(sleeps, [5, 10]);
   assert.match(
     workerReadinessSource,
     /pool\.connect\(\)[\s\S]*BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY/u,
@@ -49087,7 +49289,7 @@ check("exact current ID reads preserve the confirmed database record", () => {
   assert.equal(records[0].ownerAddress, "bc1currentowner");
 });
 
-check("exact ID lifecycle keeps sealed listings active until a canonical close", () => {
+check("exact ID lifecycle keeps sealed listings active until a canonical close", async () => {
   const listingId = "a".repeat(64);
   const sealTxid = "b".repeat(64);
   const delistTxid = "c".repeat(64);
@@ -49642,6 +49844,82 @@ check("exact ID lifecycle keeps sealed listings active until a canonical close",
     lifecycleHistorySource,
     /coverageScope:\s*"registry-filtered-items"/u,
   );
+  const indexedUnspentIdRegistryListings = isolatedFunction(
+    READER_PATH,
+    "indexedUnspentIdRegistryListings",
+    {
+      idRegistryListingAnchorOutpoint: isolatedFunction(
+        READER_PATH,
+        "idRegistryListingAnchorOutpoint",
+        {
+          objectRecord: (value) =>
+            value && typeof value === "object" && !Array.isArray(value)
+              ? value
+              : {},
+          normalizedTxid: (value) => {
+            const text = String(value ?? "").trim().toLowerCase();
+            return /^[0-9a-f]{64}$/u.test(text) ? text : "";
+          },
+        },
+      ),
+      objectRecord: (value) =>
+        value && typeof value === "object" && !Array.isArray(value)
+          ? value
+          : {},
+      normalizedTxid: (value) => {
+        const text = String(value ?? "").trim().toLowerCase();
+        return /^[0-9a-f]{64}$/u.test(text) ? text : "";
+      },
+    },
+  );
+  const spentListingId = "a".repeat(64);
+  const openListingId = "b".repeat(64);
+  const filteredListings = await indexedUnspentIdRegistryListings(
+    {
+      async query(sql, params) {
+        assert.match(String(sql), /proof_indexer\.tx_outputs/u);
+        assert.match(String(sql), /spent_by_txid IS NOT NULL/u);
+        assert.equal(
+          JSON.stringify(params),
+          JSON.stringify([
+            "livenet",
+            JSON.stringify([
+              { anchor_txid: spentListingId, anchor_vout: 2 },
+              { anchor_txid: openListingId, anchor_vout: 2 },
+            ]),
+          ]),
+        );
+        return {
+          rows: [{ anchor_txid: spentListingId, anchor_vout: 2 }],
+        };
+      },
+    },
+    "livenet",
+    [
+      {
+        listingId: spentListingId,
+        saleAuthorization: { anchorVout: 2 },
+      },
+      {
+        listingId: openListingId,
+        saleAuthorization: { anchorVout: 2 },
+      },
+    ],
+  );
+  assert.deepEqual(
+    filteredListings.map((listing) => listing.listingId),
+    [openListingId],
+    "current ID registry listings must drop indexed spent sale-ticket anchors",
+  );
+  const listingSpendScanSource = topLevelFunctionSource(
+    BACKFILL_PATH,
+    "persistCanonicalListingOutpointSpendsFromBlock",
+  );
+  assert.match(listingSpendScanSource, /proof_indexer\.events id_listing/u);
+  assert.match(listingSpendScanSource, /id_listing\.protocol = 'pwid1'/u);
+  assert.match(listingSpendScanSource, /id_listing\.kind = 'id-list'/u);
+  assert.match(listingSpendScanSource, /'pwid-sale-v4'/u);
+  assert.match(listingSpendScanSource, /'sale-ticket-v1'/u);
 });
 
 check("event history is fenced by one strict canonical checkpoint", async () => {
@@ -50915,6 +51193,8 @@ check("unpinned broad ID registry uses current relational event state", async ()
       }),
       dateIso: (value) => new Date(value).toISOString(),
       indexedThroughBlockFromItems: () => 100,
+      indexedUnspentIdRegistryListings: async (_pool, _network, listings) =>
+        listings,
       latestProofIndexScanMetadata: async () => ({
         generated_at: "2026-07-11T00:13:00.000Z",
         indexed_through_block: scanHeight,
@@ -76683,8 +76963,8 @@ check("Q16 mixed companions replace Mail exactly and suppress stale transaction 
 });
 
 check("canonical summary persistence is compact and storage-budgeted", async () => {
-  const defaultCompactMaxBytes = 8 * 1024 * 1024;
-  const defaultSqlTextMaxBytes = 9 * 1024 * 1024;
+  const defaultCompactMaxBytes = 16 * 1024 * 1024;
+  const defaultSqlTextMaxBytes = 18 * 1024 * 1024;
   const productionCompactMaxBytes = 16 * 1024 * 1024;
   const productionSqlTextMaxBytes = 18 * 1024 * 1024;
   assert.equal(canonicalSummarySnapshotMaxBytes({}), defaultCompactMaxBytes);

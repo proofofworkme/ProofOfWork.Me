@@ -1555,7 +1555,7 @@ expect(
     }) === false &&
     workerWorkPrecisionSnapshotReady({
       ...workerFixtureSnapshot,
-      payloadBytes: 9 * 1024 * 1024 + 1,
+      payloadBytes: 18 * 1024 * 1024 + 1,
     }, {
       latestTransition: workerFixtureLatestTransition,
       tipHash: workerFixtureTipHash,
@@ -1882,13 +1882,13 @@ expect(
   /workPrecision\.era === WORK_PRECISION_Q16_ERA[\s\S]*pendingRequired: true,[\s\S]*ready: false,[\s\S]*state: "canonical-phase-complete"/u.test(
     worker,
   ) &&
-    /workPrecision\.era === WORK_PRECISION_Q16_ERA[\s\S]*await assertWorkPrecisionPendingReady\([\s\S]*catch \(error\)[\s\S]*pendingReady: false[\s\S]*pendingRebuild:[\s\S]*WORK_AMO_V8_PENDING_REBUILD_MODEL[\s\S]*workPrecisionReplay\.pendingReady !== false/u.test(
+    /workPrecision\.era === WORK_PRECISION_Q16_ERA[\s\S]*await assertWorkPrecisionPendingReadyWithRetries\([\s\S]*catch \(error\)[\s\S]*pendingReady: false[\s\S]*pendingRebuild:[\s\S]*WORK_AMO_V8_PENDING_REBUILD_MODEL[\s\S]*workPrecisionReplay\.pendingReady !== false/u.test(
       worker,
     ),
 );
 expect(
   "worker status maintenance precedes the final backfill-owned Q16 pending witness",
-  /runCanonicalBeforePending\([\s\S]*runBackfillPhase\(backfillPhases\[0\]\)[\s\S]*pendingStatus = await refreshPendingStatusesSafely\(\);[\s\S]*runBackfillPhase\(backfillPhases\[1\]\)[\s\S]*assertWorkPrecisionPendingReady/u.test(
+  /runCanonicalBeforePending\([\s\S]*runBackfillPhase\(backfillPhases\[0\]\)[\s\S]*pendingStatus = await refreshPendingStatusesSafely\(\);[\s\S]*runBackfillPhase\(backfillPhases\[1\]\)[\s\S]*assertWorkPrecisionPendingReadyWithRetries/u.test(
     worker,
   ),
 );
