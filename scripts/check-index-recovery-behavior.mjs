@@ -26939,6 +26939,51 @@ check("pending WORK confirmed base collapses only its exact legacy invalid sibli
     "the exact chain-pinned generic sibling yields to its specific audit row",
   );
   assert.equal(exactCollapse[0], specific);
+  const sealTxid =
+    "c834351ad3d389904bf26f08d3ca9a97ffa2c86898f9b1d59d7095959bc12217";
+  const legacySealBase = {
+    ...base,
+    blockHash:
+      "00000000000000000001bac0181b16d5ba5e69a1399d98b94b15452c8b619e14",
+    blockHeight: 957_115,
+    blockIndex: 1_535,
+    txid: sealTxid,
+  };
+  const legacySealSpecific = {
+    ...legacySealBase,
+    kind: "token-listing-sealed-invalid",
+    listingId:
+      "ba81ab1e12a15a9d889a5d99ba23d0d89d2c5230719abfa8395c30cc2792915d",
+    reason: "The canonical first-party verifier rejected this protocol event.",
+    saleAuthorization: { version: "pwt-sale-v1" },
+    validationErrors: [
+      "The canonical first-party verifier rejected this protocol event.",
+    ],
+  };
+  const legacySealGeneric = {
+    ...legacySealBase,
+    attemptedKind: "seal",
+    kind: "token-event-invalid",
+    reason: "no-valid-token-event",
+    validationErrors: ["no-valid-token-event"],
+  };
+  const legacySealGenericWithListing = {
+    ...legacySealGeneric,
+    attemptedKind: undefined,
+    listingId: legacySealSpecific.listingId,
+    saleAuthorization: { version: "pwt-sale-v1" },
+  };
+  const legacySealCollapse = collapse([
+    legacySealGeneric,
+    legacySealSpecific,
+    legacySealGenericWithListing,
+  ]);
+  assert.equal(
+    legacySealCollapse.length,
+    1,
+    "pre-V5 exact-position generic seal siblings yield to the specific audit row",
+  );
+  assert.equal(legacySealCollapse[0], legacySealSpecific);
   const coarseKey = (item) =>
     `${item.txid}:${item.protocolVout}:${item.recordOrdinal}`;
   const rejects = (items, label) => {
@@ -26973,8 +27018,8 @@ check("pending WORK confirmed base collapses only its exact legacy invalid sibli
     "a near-match authorization version is not collapsed",
   );
   rejects(
-    [{ ...generic, listingId: txid }, specific],
-    "a generic row carrying listing identity is not collapsed",
+    [{ ...generic, listingId: "f".repeat(64) }, specific],
+    "a generic row carrying divergent listing identity is not collapsed",
   );
   assert.match(
     topLevelFunctionSource(API_PATH, "pendingWorkVerifierStageConfirmedBase"),
