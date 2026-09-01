@@ -604,3 +604,38 @@ Production deployment and verification:
   HTTPS archive smoke for those roots passed, and sampled HTML shells showed
   common React bootstrap HTML; this is a remaining synthetic-monitor assertion
   issue to fix in a separately approved pass.
+
+## Synthetic Surface Monitor Closeout
+
+Date: 2026-09-01
+Mode: local repository change only, user-approved for the synthetic surface
+monitor fix. No deployment, production config change, service restart, data
+deletion, backup deletion, or production cleanup was performed.
+
+The previous `npm run audit:surfaces` failure was a monitor assertion issue,
+not evidence that the public UI roots were serving the wrong bytes. The script
+expected client-rendered copy to appear in static Vite `index.html` files. It
+now verifies the actual static app delivery contract instead: successful HTML
+response, HTML content type, document title, React root mount, at least one
+Vite module entry, and every same-origin script/modulepreload/stylesheet asset
+referenced by the shell. Each asset must return a successful non-empty response
+with the expected JavaScript or CSS content type.
+
+The AMO API probe was also corrected to validate the nested marketplace summary
+shape. It now accepts the current `token`/`registry` AMO sections while still
+requiring indexed checkpoint evidence, listing counts, and the
+`proof-token-market-core-gettxout-v1` sale-ticket authority model.
+
+Local and read-only production verification completed:
+
+- `node --check scripts/audit-production-surfaces.mjs`
+- `node --check scripts/check-node-ops-contract.mjs`
+- `node scripts/audit-production-surfaces.mjs --help`
+- `npm run check:node-ops`
+- `npm run audit:surfaces`
+
+The final production surface audit passed in the requested order with
+`failed: []`, `ok: true`, and `surfaces: 13`. Every public root loaded its
+React/Vite shell and `4` referenced assets, and every configured API probe
+passed, including `/health` and `/api/v1/consistency` on
+`computer.proofofwork.me`.

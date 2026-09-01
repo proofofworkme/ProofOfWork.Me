@@ -127,6 +127,14 @@ assert.match(surfaceAudit, /Read-only production surface audit/u);
 assert.match(surfaceAudit, /PAGE_ONLY/u);
 assert.match(surfaceAudit, /validateConsistency/u);
 assert.match(surfaceAudit, /proof-token-market-core-gettxout-v1/u);
+assert.match(surfaceAudit, /collectShellAssets/u);
+assert.match(surfaceAudit, /missing React root mount/u);
+assert.match(surfaceAudit, /missing Vite module entry asset/u);
+assert.match(surfaceAudit, /modulepreload/u);
+assert.match(surfaceAudit, /token\?\.listingAuthority/u);
+assert.match(surfaceAudit, /missing AMO listing count/u);
+assert.doesNotMatch(surfaceAudit, /htmlMatch/u);
+assert.doesNotMatch(surfaceAudit, /required page text was not found/u);
 assert.doesNotMatch(
   surfaceAudit,
   /child_process|writeFile|rmSync|systemctl|ssh|scp|DELETE FROM|UPDATE proof_indexer|INSERT INTO|DROP TABLE/u,

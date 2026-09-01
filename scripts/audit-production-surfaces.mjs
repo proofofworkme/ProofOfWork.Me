@@ -5,6 +5,10 @@ const API_BASE = String(
   process.env.POW_API_BASE || "https://computer.proofofwork.me",
 ).replace(/\/+$/u, "");
 const FRESH = process.env.POW_SURFACE_AUDIT_FRESH !== "0";
+const HTML_CONTENT_TYPE_PATTERN = /\btext\/html\b/iu;
+const MODULE_CONTENT_TYPE_PATTERN =
+  /\b(?:application|text)\/(?:javascript|ecmascript)\b/iu;
+const STYLESHEET_CONTENT_TYPE_PATTERN = /\btext\/css\b/iu;
 const JSON_OUTPUT =
   process.argv.includes("--json") || process.env.POW_SURFACE_AUDIT_JSON === "1";
 const PAGE_ONLY =
@@ -50,7 +54,6 @@ const SURFACES = [
     key: "home",
     title: "proofofwork.me",
     url: "https://proofofwork.me/",
-    htmlMatch: [/ProofOfWork/iu],
     probes: [
       {
         label: "registry summary",
@@ -63,7 +66,6 @@ const SURFACES = [
     key: "id",
     title: "id.proofofwork.me",
     url: "https://id.proofofwork.me/",
-    htmlMatch: [/ProofOfWork IDs|Connect UniSat|Register/iu],
     probes: [
       {
         label: "ids summary",
@@ -76,7 +78,6 @@ const SURFACES = [
     key: "desktop",
     title: "desktop.proofofwork.me",
     url: "https://desktop.proofofwork.me/",
-    htmlMatch: [/ProofOfWork Desktop|Desktop|Inbox/iu],
     probes: [
       {
         label: "log summary",
@@ -89,7 +90,6 @@ const SURFACES = [
     key: "browser",
     title: "browser.proofofwork.me",
     url: "https://browser.proofofwork.me/",
-    htmlMatch: [/ProofOfWork|txid|verified HTML/iu],
     probes: [
       {
         label: "activity summary",
@@ -102,7 +102,6 @@ const SURFACES = [
     key: "amo",
     title: "amo.proofofwork.me",
     url: "https://amo.proofofwork.me/",
-    htmlMatch: [/ProofOfWork AMO|WORK AMO|Credit Markets/iu],
     probes: [
       {
         label: "marketplace summary",
@@ -115,7 +114,6 @@ const SURFACES = [
     key: "credit",
     title: "credit.proofofwork.me",
     url: "https://credit.proofofwork.me/",
-    htmlMatch: [/Credits|Create credit|Credit index/iu],
     probes: [
       {
         label: "token summary",
@@ -128,7 +126,6 @@ const SURFACES = [
     key: "wallet",
     title: "wallet.proofofwork.me",
     url: "https://wallet.proofofwork.me/",
-    htmlMatch: [/Wallet|Connect UniSat|Balances/iu],
     probes: [
       {
         label: "WORK token",
@@ -141,7 +138,6 @@ const SURFACES = [
     key: "work",
     title: "work.proofofwork.me",
     url: "https://work.proofofwork.me/",
-    htmlMatch: [/WORK|Live WORK floor|Mint WORK/iu],
     probes: [
       {
         label: "work summary",
@@ -159,7 +155,6 @@ const SURFACES = [
     key: "infinity",
     title: "infinity.proofofwork.me",
     url: "https://infinity.proofofwork.me/",
-    htmlMatch: [/Infinity Bonds|POWB|Bond Market/iu],
     probes: [
       {
         label: "infinity summary",
@@ -172,7 +167,6 @@ const SURFACES = [
     key: "inception",
     title: "inception.proofofwork.me",
     url: "https://inception.proofofwork.me/",
-    htmlMatch: [/Inception Bonds|INCB|Bond Market/iu],
     probes: [
       {
         label: "inception summary",
@@ -185,7 +179,6 @@ const SURFACES = [
     key: "log",
     title: "log.proofofwork.me",
     url: "https://log.proofofwork.me/",
-    htmlMatch: [/Log|computer actions|ProofOfWork/iu],
     probes: [
       {
         label: "log summary",
@@ -198,7 +191,6 @@ const SURFACES = [
     key: "growth",
     title: "growth.proofofwork.me",
     url: "https://growth.proofofwork.me/",
-    htmlMatch: [/Growth|network value|ProofOfWork/iu],
     probes: [
       {
         label: "growth summary",
@@ -211,7 +203,6 @@ const SURFACES = [
     key: "computer",
     title: "computer.proofofwork.me",
     url: "https://computer.proofofwork.me/",
-    htmlMatch: [/ProofOfWork|Computer|Install UniSat|Connect UniSat/iu],
     probes: [
       {
         label: "health",
@@ -286,9 +277,28 @@ function validateTokenSummary(json) {
 }
 
 function validateMarketplaceSummary(json) {
-  validateTokenSummary(json);
+  validateIndexedJson(json);
+  const tokenCount = firstNonNegativeInteger(json, [
+    "token.stats.confirmedTokens",
+    "token.totalCounts.tokens",
+    "token.tokens.length",
+    "registry.stats.records",
+    "registry.totalCount",
+  ]);
+  assertCondition(tokenCount !== null, "missing AMO token or registry count");
+  const listingCount = firstNonNegativeInteger(json, [
+    "token.stats.openListings",
+    "token.totalCounts.listings",
+    "token.listings.length",
+    "registry.stats.activeListings",
+    "registry.totalCounts.listings",
+    "registry.listings.length",
+  ]);
+  assertCondition(listingCount !== null, "missing AMO listing count");
   assertCondition(
-    json?.listingAuthority?.model === "proof-token-market-core-gettxout-v1",
+    json?.listingAuthority?.model === "proof-token-market-core-gettxout-v1" ||
+      json?.token?.listingAuthority?.model ===
+        "proof-token-market-core-gettxout-v1",
     "missing Core token listing authority",
   );
 }
@@ -350,6 +360,7 @@ async function fetchText(url, signal) {
   const body = await response.text();
   return {
     body,
+    contentType: response.headers.get("content-type") ?? "",
     elapsedMs: Math.round(performance.now() - startedAt),
     status: response.status,
     url: response.url,
@@ -366,15 +377,148 @@ async function withTimeout(task) {
   }
 }
 
-function htmlResult(surface, fetched) {
-  const title = /<title[^>]*>([^<]*)<\/title>/iu.exec(fetched.body)?.[1]?.trim() ?? "";
-  const matched = surface.htmlMatch.some((pattern) => pattern.test(fetched.body));
+function decodeHtmlAttribute(value) {
+  return value
+    .replaceAll("&amp;", "&")
+    .replaceAll("&quot;", '"')
+    .replaceAll("&#39;", "'")
+    .replaceAll("&lt;", "<")
+    .replaceAll("&gt;", ">");
+}
+
+function parseTagAttributes(text) {
+  const attributes = new Map();
+  const pattern = /([^\s"'<>/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/gu;
+  for (const match of text.matchAll(pattern)) {
+    const key = String(match[1] ?? "").toLowerCase();
+    if (!key) {
+      continue;
+    }
+    attributes.set(
+      key,
+      decodeHtmlAttribute(String(match[2] ?? match[3] ?? match[4] ?? "")),
+    );
+  }
+  return attributes;
+}
+
+function sameOriginUrl(raw, pageUrl) {
+  if (!raw || /^(?:data|blob|mailto|tel|javascript):/iu.test(raw)) {
+    return null;
+  }
+  const resolved = new URL(raw, pageUrl);
+  const page = new URL(pageUrl);
+  assertCondition(
+    resolved.origin === page.origin,
+    `cross-origin shell asset ${resolved.href}`,
+  );
+  return resolved.href;
+}
+
+function collectShellAssets(body, pageUrl) {
+  const assets = [];
+  for (const match of body.matchAll(/<script\b([^>]*)>/giu)) {
+    const attributes = parseTagAttributes(match[1] ?? "");
+    const type = attributes.get("type")?.toLowerCase() ?? "";
+    const src = sameOriginUrl(attributes.get("src"), pageUrl);
+    if (src && type === "module") {
+      assets.push({ kind: "module", url: src });
+    }
+  }
+  for (const match of body.matchAll(/<link\b([^>]*)>/giu)) {
+    const attributes = parseTagAttributes(match[1] ?? "");
+    const rel = (attributes.get("rel") ?? "")
+      .toLowerCase()
+      .split(/\s+/u)
+      .filter(Boolean);
+    const href = sameOriginUrl(attributes.get("href"), pageUrl);
+    if (!href) {
+      continue;
+    }
+    if (rel.includes("stylesheet")) {
+      assets.push({ kind: "stylesheet", url: href });
+    } else if (rel.includes("modulepreload")) {
+      assets.push({ kind: "modulepreload", url: href });
+    }
+  }
+  const deduped = new Map();
+  for (const asset of assets) {
+    deduped.set(`${asset.kind}:${asset.url}`, asset);
+  }
+  return [...deduped.values()];
+}
+
+function validateAssetResponse(asset, fetched) {
   assertCondition(
     fetched.status >= 200 && fetched.status < 400,
     `HTTP ${fetched.status}`,
   );
-  assertCondition(matched, "required page text was not found");
+  assertCondition(fetched.body.length > 0, "empty asset response");
+  if (asset.kind === "stylesheet") {
+    assertCondition(
+      STYLESHEET_CONTENT_TYPE_PATTERN.test(fetched.contentType),
+      `unexpected stylesheet content-type ${fetched.contentType || "<empty>"}`,
+    );
+  } else {
+    assertCondition(
+      MODULE_CONTENT_TYPE_PATTERN.test(fetched.contentType),
+      `unexpected module content-type ${fetched.contentType || "<empty>"}`,
+    );
+  }
+}
+
+async function checkShellAsset(asset) {
+  const fetched = await withTimeout((signal) => fetchText(asset.url, signal));
+  try {
+    validateAssetResponse(asset, fetched);
+    return {
+      elapsedMs: fetched.elapsedMs,
+      kind: asset.kind,
+      ok: true,
+      status: fetched.status,
+      url: fetched.url,
+    };
+  } catch (error) {
+    throw new Error(
+      `${asset.kind} asset ${asset.url}: ${String(error?.message ?? error)}`,
+    );
+  }
+}
+
+async function htmlResult(surface, fetched) {
+  const title =
+    /<title[^>]*>([^<]*)<\/title>/iu.exec(fetched.body)?.[1]?.trim() ?? "";
+  assertCondition(
+    fetched.status >= 200 && fetched.status < 400,
+    `HTTP ${fetched.status}`,
+  );
+  assertCondition(
+    HTML_CONTENT_TYPE_PATTERN.test(fetched.contentType),
+    `unexpected HTML content-type ${fetched.contentType || "<empty>"}`,
+  );
+  assertCondition(title.length > 0, "missing document title");
+  assertCondition(
+    /<div\b[^>]*\bid=(?:"root"|'root')[^>]*>/iu.test(fetched.body),
+    "missing React root mount",
+  );
+  const assets = collectShellAssets(fetched.body, fetched.url);
+  const moduleCount = assets.filter((asset) => asset.kind === "module").length;
+  const modulepreloadCount = assets.filter(
+    (asset) => asset.kind === "modulepreload",
+  ).length;
+  const stylesheetCount = assets.filter(
+    (asset) => asset.kind === "stylesheet",
+  ).length;
+  assertCondition(moduleCount > 0, "missing Vite module entry asset");
+  const assetResults = await Promise.all(assets.map(checkShellAsset));
   return {
+    assets: {
+      checked: assetResults.length,
+      modules: moduleCount,
+      modulepreloads: modulepreloadCount,
+      stylesheets: stylesheetCount,
+    },
+    contentType: fetched.contentType,
     elapsedMs: fetched.elapsedMs,
     ok: true,
     status: fetched.status,
@@ -413,7 +557,7 @@ async function runSurface(surface) {
     title: surface.title,
   };
   try {
-    result.html = htmlResult(
+    result.html = await htmlResult(
       surface,
       await withTimeout((signal) => fetchText(surface.url, signal)),
     );
@@ -453,11 +597,14 @@ if (JSON_OUTPUT) {
 } else {
   for (const result of results) {
     const htmlMs = result.html ? `${result.html.elapsedMs}ms` : "failed";
+    const assets = result.html?.assets
+      ? ` assets=${result.html.assets.checked}`
+      : "";
     const probes = result.probes
       .map((probe) => `${probe.label} ${probe.elapsedMs}ms`)
       .join(", ");
     console.log(
-      `${result.ok ? "ok" : "fail"} ${result.title} html=${htmlMs}${
+      `${result.ok ? "ok" : "fail"} ${result.title} html=${htmlMs}${assets}${
         probes ? ` api=[${probes}]` : ""
       }${result.error ? ` error=${result.error}` : ""}`,
     );
