@@ -530,6 +530,13 @@ Remaining active WORK listing projection remediation:
 - The policy now recognizes authorization versions from nested authorization
   objects and the top-level `authorizationVersion` field, so valid V8 rows are
   preserved while legacy WORK rows are removed from current active views.
+- After the first API deployment, the full marketplace verifier found one
+  remaining scoped summary mismatch:
+  `/api/v1/token-summary?asset=WORK&fresh=1` returned `382` visible current
+  listings but stale aggregate listing totals of `394`.
+- The stored canonical WORK token-summary path now forces scoped WORK listing
+  totals to be recomputed from the filtered current active book. Bounded
+  all-token directory previews keep their existing truncation behavior.
 - This does not delete historical `pwt-sale-v1` rows, change confirmed event
   history, or alter non-WORK sale-ticket behavior.
 
@@ -543,5 +550,5 @@ Local verification for the WORK projection patch:
 - `npm run check:api-truth`
 - `git diff --check`
 
-Production API deployment and post-deploy verification are pending at the time
-of this local addendum.
+Production API deployment of the scoped-summary correction and post-deploy
+verification are pending at the time of this addendum revision.

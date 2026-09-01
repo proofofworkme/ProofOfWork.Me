@@ -4853,6 +4853,144 @@ check("token reads suppress legacy WORK listings before spendability", async () 
   assert.equal(payload.totalCounts.listings, 1);
 });
 
+check("scoped WORK token summaries rebase stale active listing totals", () => {
+  const workTokenId = WORK_TOKEN_ID;
+  const normalizeTestScope = (value) =>
+    String(value ?? "").trim().toUpperCase() === "WORK"
+      ? workTokenId
+      : String(value ?? "").trim().toLowerCase();
+  const policy = isolatedFunction(
+    API_PATH,
+    "tokenPayloadWithCurrentWorkActiveListingPolicy",
+    {
+      WORK_AMO_V8_ACTIVATION_HEIGHT: 960_601,
+      WORK_AMO_V8_AUTH_VERSION: "pwt-sale-v8",
+      WORK_TOKEN_ID: workTokenId,
+      applyWorkMarketV2CutoverToTokenState: (state) => state,
+      canonicalWorkQ16SummaryUnitPriceDescriptor: () => null,
+      isWorkTokenId: (tokenId) => tokenId === workTokenId,
+      normalizeTokenScope: normalizeTestScope,
+      tokenAggregateSummaries: (payload) => {
+        const workListings = (Array.isArray(payload?.listings)
+          ? payload.listings
+          : []
+        ).filter((listing) => normalizeTestScope(listing?.tokenId) === workTokenId);
+        return new Map([[
+          workTokenId,
+          {
+            confirmedOpenListings: workListings.filter(
+              (listing) => listing?.confirmed === true,
+            ).length,
+            openListings: workListings.length,
+            pendingOpenListings: workListings.filter(
+              (listing) => listing?.confirmed !== true,
+            ).length,
+          },
+        ]]);
+      },
+      tokenSummaryMetricValue: (value) =>
+        Number.isFinite(Number(value)) && Number(value) >= 0
+          ? Number(value)
+          : undefined,
+    },
+  );
+  const v8ListingId = "b".repeat(64);
+  const summaryPayload = {
+    collectionHasMore: { listings: true },
+    indexedThroughBlock: 960_601,
+    listings: [
+      {
+        authorizationVersion: "pwt-sale-v8",
+        confirmed: true,
+        listingId: v8ListingId,
+        saleAuthorization: { tokenId: workTokenId },
+        tokenId: workTokenId,
+      },
+    ],
+    network: "livenet",
+    stats: {
+      activeListings: 2,
+      confirmedOpenListings: 2,
+      openListings: 2,
+      pendingOpenListings: 0,
+    },
+    summaryOnly: true,
+    tokens: [{
+      confirmedOpenListings: 2,
+      openListings: 2,
+      pendingOpenListings: 0,
+      tokenId: workTokenId,
+    }],
+    totalCounts: { listings: 2 },
+  };
+
+  const boundedPreview = policy(summaryPayload, "livenet");
+  assert.equal(boundedPreview.totalCounts.listings, 2);
+  assert.equal(boundedPreview.tokens[0].openListings, 2);
+  assert.equal(boundedPreview.collectionHasMore.listings, true);
+
+  const scopedSummary = policy(summaryPayload, "livenet", {
+    forceScopedWorkListingCounts: true,
+  });
+  assert.deepEqual(
+    scopedSummary.listings.map((listing) => listing.listingId),
+    [v8ListingId],
+  );
+  assert.equal(scopedSummary.currentWorkActiveListingPolicy.removedListings, 0);
+  assert.equal(scopedSummary.totalCounts.listings, 1);
+  assert.equal(scopedSummary.stats.activeListings, 1);
+  assert.equal(scopedSummary.stats.confirmedOpenListings, 1);
+  assert.equal(scopedSummary.stats.openListings, 1);
+  assert.equal(scopedSummary.stats.pendingOpenListings, 0);
+  assert.equal(scopedSummary.tokens[0].confirmedOpenListings, 1);
+  assert.equal(scopedSummary.tokens[0].openListings, 1);
+  assert.equal(scopedSummary.tokens[0].pendingOpenListings, 0);
+  assert.equal(scopedSummary.collectionHasMore.listings, false);
+});
+
+check("stored canonical WORK token summaries force current listing totals", async () => {
+  const workTokenId = WORK_TOKEN_ID;
+  let forced = false;
+  const storedCanonicalTokenSummaryPayload = isolatedFunction(
+    API_PATH,
+    "storedCanonicalTokenSummaryPayload",
+    {
+      INCB_TOKEN_ID: "incb",
+      POWB_TOKEN_ID: "powb",
+      WORK_TOKEN_ID: workTokenId,
+      canonicalWorkMarketV2TokenSummary: (payload) => payload,
+      normalizeTokenScope: (value) =>
+        String(value ?? "").trim().toUpperCase() === "WORK"
+          ? workTokenId
+          : String(value ?? "").trim().toLowerCase(),
+      payloadIndexedThroughBlockHash: () => "0".repeat(64),
+      payloadSnapshotId: () => "snapshot",
+      proofIndexReadFeatureEnabled: () => false,
+      proofIndexSnapshotPayload: async () => ({
+        consistency: { ok: true },
+        token: {
+          indexedThroughBlock: 960_601,
+          network: "livenet",
+          tokens: [{ tokenId: workTokenId }],
+        },
+      }),
+      tokenPayloadWithCurrentWorkActiveListingPolicy: (payload, network, options) => {
+        assert.equal(network, "livenet");
+        forced = options?.forceScopedWorkListingCounts === true;
+        return {
+          ...payload,
+          forcedScopedWorkListingCounts: forced,
+        };
+      },
+    },
+  );
+
+  const payload = await storedCanonicalTokenSummaryPayload("livenet", "WORK");
+  assert.equal(forced, true);
+  assert.equal(payload.forcedScopedWorkListingCounts, true);
+  assert.deepEqual(payload.consistency, { ok: true });
+});
+
 check("token response wrapper applies current WORK listing policy", async () => {
   const workTokenId = WORK_TOKEN_ID;
   const normalizeTestScope = (value) =>

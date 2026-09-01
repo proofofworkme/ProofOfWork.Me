@@ -39930,8 +39930,13 @@ async function storedCanonicalTokenSummaryPayload(network, tokenScope = "") {
       payloadSnapshotId(payload) &&
       payloadIndexedThroughBlockHash(payload)
     ) {
+      const summaryPayload = scope === WORK_TOKEN_ID
+        ? tokenPayloadWithCurrentWorkActiveListingPolicy(payload, network, {
+            forceScopedWorkListingCounts: true,
+          })
+        : payload;
       return {
-        ...payload,
+        ...summaryPayload,
         ...(stored?.consistency ? { consistency: stored.consistency } : {}),
       };
     }
@@ -41207,6 +41212,7 @@ function tokenPayloadWithCurrentWalletWorkRecoveryListingPolicy(
 function tokenPayloadWithCurrentWorkActiveListingPolicy(
   payload,
   network = payload?.network,
+  options = {},
 ) {
   const cutoverPayload = applyWorkMarketV2CutoverToTokenState(payload);
   const indexedThroughBlock = Number(
@@ -41257,6 +41263,13 @@ function tokenPayloadWithCurrentWorkActiveListingPolicy(
   const payloadTokens = Array.isArray(cutoverPayload?.tokens)
     ? cutoverPayload.tokens
     : [];
+  const scopedWorkOnlyPayload =
+    payloadTokens.length === 1 &&
+    isWorkTokenId(payloadTokens[0]?.tokenId) &&
+    listings.every((listing) => listingTokenId(listing) === WORK_TOKEN_ID);
+  const forceScopedWorkListingCounts =
+    options.forceScopedWorkListingCounts === true &&
+    scopedWorkOnlyPayload;
   const removedWorkListings = listings.filter(
     (listing) =>
       listingTokenId(listing) === WORK_TOKEN_ID &&
@@ -41278,7 +41291,8 @@ function tokenPayloadWithCurrentWorkActiveListingPolicy(
   );
   if (
     removedWorkListings.length === 0 &&
-    !workTokenHasLowestAskAlias
+    !workTokenHasLowestAskAlias &&
+    !forceScopedWorkListingCounts
   ) {
     return cutoverPayload;
   }
@@ -41316,7 +41330,7 @@ function tokenPayloadWithCurrentWorkActiveListingPolicy(
   const removedPendingWorkListings =
     removedWorkListings.length - removedConfirmedWorkListings;
   const reconciledWorkCount = (key, removedCount, computed) => {
-    if (completeListingSet) {
+    if (completeListingSet || forceScopedWorkListingCounts) {
       return computed;
     }
     const existing = tokenSummaryMetricValue(existingWorkToken?.[key]);
@@ -41444,7 +41458,9 @@ function tokenPayloadWithCurrentWorkActiveListingPolicy(
     !Array.isArray(cutoverPayload.collectionHasMore)
       ? {
           ...cutoverPayload.collectionHasMore,
-          listings: totalOpenListings > currentListings.length,
+          listings: forceScopedWorkListingCounts
+            ? false
+            : totalOpenListings > currentListings.length,
         }
       : cutoverPayload?.collectionHasMore;
 
