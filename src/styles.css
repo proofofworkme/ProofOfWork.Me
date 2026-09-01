@@ -2632,6 +2632,43 @@ select {
   justify-content: center;
 }
 
+.boost-action-panel {
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+}
+
+.boost-action-panel-head {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.boost-action-panel-head span {
+  color: var(--accent-strong);
+  font-size: 0.8rem;
+  font-weight: 760;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+.boost-action-panel textarea {
+  min-height: 96px;
+  resize: vertical;
+}
+
+.boost-action-buttons {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .boost-search {
   align-items: center;
   background: var(--surface-soft);
@@ -2837,6 +2874,22 @@ select {
   color: var(--text);
   font-size: 1.3rem;
   margin: 0;
+}
+
+.boost-market-content {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.boost-market-controls {
+  align-items: end;
+}
+
+.boost-market-controls .sort-control input {
+  min-width: min(320px, 100%);
+}
+
+.boost-market-row > div:first-child strong {
+  overflow-wrap: anywhere;
 }
 
 .activity-workspace {

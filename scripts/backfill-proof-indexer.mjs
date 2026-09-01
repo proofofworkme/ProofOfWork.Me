@@ -4236,6 +4236,9 @@ function boostItemFromMessage(tx, message) {
     const image = boostMediaPointer(
       profile?.image ?? profile?.avatar ?? profile?.profilePicture,
     );
+    const profileId = normalizedPowId(
+      String(profile?.id ?? profile?.profileId ?? profile?.handle ?? ""),
+    );
     const item = {
       ...base,
       action,
@@ -4247,10 +4250,17 @@ function boostItemFromMessage(tx, message) {
       profile: {
         ...(image ? { image } : {}),
         bio: boostText(profile?.bio).slice(0, 160),
+        id: profileId || undefined,
+        intent:
+          profile?.intent && typeof profile.intent === "object"
+            ? profile.intent
+            : undefined,
         location: boostText(profile?.location).slice(0, 30) || "ProofOfWork",
         name: boostText(profile?.name).slice(0, 50),
+        profileId: profileId || undefined,
         website: boostText(profile?.website).slice(0, 100),
       },
+      profileId: profileId || undefined,
       proofSignalSats: boostSignalSats(base, false),
       registryFeeSats: 0,
       signalSats: boostSignalSats(base, false),

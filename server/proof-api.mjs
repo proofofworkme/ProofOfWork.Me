@@ -50117,7 +50117,7 @@ function boostEventTimeMs(item) {
   return Number.isFinite(date.getTime()) ? date.getTime() : 0;
 }
 
-function boostEventSearchText(item, state) {
+function boostEventSearchText(item, state, profileState) {
   return [
     item?.text,
     item?.memo,
@@ -50126,6 +50126,8 @@ function boostEventSearchText(item, state) {
     item?.authorAddress,
     item?.actor,
     item?.profileId,
+    profileState?.id,
+    profileState?.name,
     state?.ownerAddress,
   ]
     .map((value) => String(value ?? "").trim().toLowerCase())
@@ -50173,6 +50175,7 @@ function boostPriceSats(item) {
 function boostOwnershipState(items) {
   const states = new Map();
   const counts = new Map();
+  const profiles = new Map();
   const ordered = [...items].sort(
     (left, right) => boostEventTimeMs(left) - boostEventTimeMs(right),
   );
@@ -50213,6 +50216,45 @@ function boostOwnershipState(items) {
   for (const item of ordered) {
     const kind = String(item?.kind ?? "").trim().toLowerCase();
     if (!BOOST_INDEX_EVENT_KINDS.has(kind)) {
+      continue;
+    }
+
+    if (kind === "boost-profile") {
+      const address = boostAddress(
+        item?.authorAddress ?? item?.actor ?? item?.currentOwnerAddress,
+      );
+      const profile =
+        item?.profile && typeof item.profile === "object" && !Array.isArray(item.profile)
+          ? item.profile
+          : {};
+      const profileId = normalizePowId(
+        String(
+          item?.profileId ??
+            item?.authorId ??
+            profile?.profileId ??
+            profile?.id ??
+            profile?.handle ??
+            "",
+        ),
+      );
+      if (address && profileId) {
+        profiles.set(address.toLowerCase(), {
+          address,
+          id: profileId,
+          image:
+            profile?.image &&
+            typeof profile.image === "object" &&
+            !Array.isArray(profile.image)
+              ? profile.image
+              : undefined,
+          name: boostDisplayName(
+            item?.displayName,
+            profile?.name,
+            `${profileId}@proofofwork.me`,
+          ),
+          profileId,
+        });
+      }
       continue;
     }
 
@@ -50282,10 +50324,10 @@ function boostOwnershipState(items) {
     }
   }
 
-  return { counts, states };
+  return { counts, profiles, states };
 }
 
-function boostFeedItemFromEvent(item, state, counts, network, btcUsd) {
+function boostFeedItemFromEvent(item, state, profileState, counts, network, btcUsd) {
   const kind = String(item?.kind ?? "").trim().toLowerCase();
   const txid = boostHexTxid(item?.txid);
   if (!txid || !BOOST_VISIBLE_EVENT_KINDS.has(kind)) {
@@ -50310,7 +50352,17 @@ function boostFeedItemFromEvent(item, state, counts, network, btcUsd) {
     : typeof item?.media === "object" && item.media
       ? item.media
       : null;
-  const profileId = String(item?.profileId ?? item?.authorId ?? "").trim();
+  const profileId = String(
+    item?.profileId ??
+      item?.authorId ??
+      profileState?.id ??
+      profileState?.profileId ??
+      "",
+  ).trim();
+  const profileName = boostDisplayName(
+    profileState?.name,
+    profileId ? `${profileId}@proofofwork.me` : "",
+  );
   const actionType = kind.replace(/^boost-/u, "");
   const workSignal = boostWorkSignalDisplay(item);
   const workSignalSubatoms = boostWorkSignalSubatoms(item);
@@ -50323,7 +50375,7 @@ function boostFeedItemFromEvent(item, state, counts, network, btcUsd) {
       Number(counter.replies ?? 0),
     authorId: profileId,
     authorAddress,
-    authorDisplay: boostDisplayName(profileId, authorAddress, item?.actor),
+    authorDisplay: boostDisplayName(profileName, profileId, authorAddress, item?.actor),
     boostTxid,
     confirmed: item?.confirmed !== false,
     createdAt,
@@ -50342,6 +50394,15 @@ function boostFeedItemFromEvent(item, state, counts, network, btcUsd) {
       : null,
     network,
     ownerDisplay: boostDisplayName(ownerAddress),
+    profile:
+      profileState || profileId
+        ? {
+            address: authorAddress,
+            ...(profileState?.image ? { image: profileState.image } : {}),
+            ...(profileId ? { id: profileId, profileId } : {}),
+            ...(profileName ? { name: profileName } : {}),
+          }
+        : undefined,
     profileId,
     proofSignalSats: signalSats,
     reboostCount: Number(counter.reboosts ?? 0),
@@ -50373,11 +50434,13 @@ function compareBoostFeedItems(sortMode) {
   };
 }
 
-function boostProfileMatches(item, profile, state) {
+function boostProfileMatches(item, profile, state, profileState) {
   if (!profile) {
     return true;
   }
-  return boostEventSearchText(item, state).includes(profile.toLowerCase());
+  return boostEventSearchText(item, state, profileState).includes(
+    profile.toLowerCase(),
+  );
 }
 
 async function boostFeedPayload(network, searchParams, fresh = false) {
@@ -50420,7 +50483,7 @@ async function boostFeedPayload(network, searchParams, fresh = false) {
   const sourceItems = Array.isArray(indexedPayload?.items)
     ? indexedPayload.items
     : [];
-  const { counts, states } = boostOwnershipState(sourceItems);
+  const { counts, profiles, states } = boostOwnershipState(sourceItems);
   const windowStartMs = boostWindowStartMs(valueWindow);
   const filtered = sourceItems
     .filter((item) => {
@@ -50435,15 +50498,21 @@ async function boostFeedPayload(network, searchParams, fresh = false) {
         return false;
       }
       const state = states.get(boostPostTxid(item));
-      if (!boostProfileMatches(item, profile, state)) {
+      const profileState = profiles.get(
+        boostAddress(item?.authorAddress ?? item?.actor).toLowerCase(),
+      );
+      if (!boostProfileMatches(item, profile, state, profileState)) {
         return false;
       }
-      return !query || boostEventSearchText(item, state).includes(query);
+      return (
+        !query || boostEventSearchText(item, state, profileState).includes(query)
+      );
     })
     .map((item) =>
       boostFeedItemFromEvent(
         item,
         states.get(boostPostTxid(item)),
+        profiles.get(boostAddress(item?.authorAddress ?? item?.actor).toLowerCase()),
         counts,
         network,
         btcUsd,

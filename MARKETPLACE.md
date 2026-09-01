@@ -11,10 +11,12 @@ Autonomous Money Organization.
 - `amo.proofofwork.me` is the canonical standalone AMO app.
 - `marketplace.proofofwork.me` is a compatibility hostname for the same app.
 
-AMO is organized by asset tabs. IDs, Credits, POWB, and INCB are live trading
-classes. These asset classes use sale-ticket settlement so the buyer path spends
-a scarce UTXO, pays the seller, pays the registry mutation fee, and writes a
-chain-readable transfer/purchase event.
+AMO is organized by asset tabs. IDs, Credits, POWB, INCB, and Boost are live
+asset classes. IDs, credits, and bonds use sale-ticket settlement so the buyer
+path spends a scarce UTXO, pays the seller, pays the registry mutation fee, and
+writes a chain-readable transfer/purchase event. Boost exposes active
+`pwb1:list5` sale tickets in the same AMO surface after owners list from Boost
+or from the original Boost Mail item.
 - `log.proofofwork.me` is the public read-only ProofOfWork Computer log for tx-backed app actions.
 - The IDs workspace is for registration, receiver updates, and direct owner transfers only.
 - AMO is for on-chain listings, seals, delistings, buyer-funded purchases, credit sales, and future asset trades.

@@ -41,6 +41,7 @@ import {
   Search,
   Send,
   Share2,
+  ShoppingBag,
   Star,
   Tag,
   Trash2,
@@ -61,7 +62,9 @@ import {
   ID_APP_URL,
   INCEPTION_APP_URL,
   INFINITY_APP_URL,
+  BOOST_APP_URL,
   LOCAL_BROWSER_APP_URL,
+  LOCAL_BOOST_APP_URL,
   LOCAL_COMPUTER_APP_URL,
   LOCAL_DESKTOP_APP_URL,
   LOCAL_GROWTH_APP_URL,
@@ -207,6 +210,12 @@ import {
   tokenRouteTarget,
   tokenUsd,
 } from "./functions";
+import {
+  boostMarketplaceListingsFromItems,
+  boostRouteHref,
+  type BoostFeedPayload,
+  type BoostMarketplaceListing,
+} from "./features/boost/boostProtocol";
 
 bitcoin.initEccLib(ecc);
 
@@ -275,6 +284,28 @@ function boostTwitterShareUrl({
     .filter(Boolean)
     .join("\n");
   return `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`;
+}
+
+function boostAppListHref(txid: string) {
+  return boostRouteHref(appHref(BOOST_APP_URL, LOCAL_BOOST_APP_URL), {
+    list: txid,
+  });
+}
+
+function boostAppViewHref(profile: string) {
+  return boostRouteHref(appHref(BOOST_APP_URL, LOCAL_BOOST_APP_URL), {
+    profile,
+  });
+}
+
+function boostAmoHref(txid?: string) {
+  return boostRouteHref(
+    appHref(MARKETPLACE_APP_URL, LOCAL_MARKETPLACE_APP_URL),
+    {
+      boost: txid,
+      tab: "boosts",
+    },
+  );
 }
 type Folder =
   | "inbox"
@@ -44468,8 +44499,9 @@ function IdLaunchApp({
   );
 }
 
-type MarketplaceTab = "ids" | "tokens" | "bonds";
+type MarketplaceTab = "ids" | "tokens" | "bonds" | "boosts";
 type BondMarketplaceTab = "inception" | "infinity";
+type BoostMarketplaceSortMode = "newest" | "price-asc" | "price-desc";
 
 type TokenMarketplaceRow = PowTokenDefinition & {
   confirmedMints: number;
@@ -45451,19 +45483,361 @@ function tokenMarketplaceRowsFor({
           right.confirmedSupply,
           left.confirmedSupply,
         ) ||
-        compareTokensByConfirmation(left, right),
+      compareTokensByConfirmation(left, right),
     );
+}
+
+function initialMarketplaceTabFromRoute(defaultTab: MarketplaceTab) {
+  if (typeof window === "undefined") {
+    return defaultTab;
+  }
+  const params = new URLSearchParams(window.location.search);
+  const tab = String(params.get("tab") ?? "").trim().toLowerCase();
+  const boostTarget = String(params.get("boost") ?? "").trim();
+  if (tab === "boost" || tab === "boosts" || (boostTarget && boostTarget !== "1")) {
+    return "boosts";
+  }
+  return defaultTab;
+}
+
+function initialBoostMarketplaceTarget() {
+  if (typeof window === "undefined") {
+    return "";
+  }
+  const boostTarget = String(
+    new URLSearchParams(window.location.search).get("boost") ?? "",
+  ).trim();
+  return boostTarget && boostTarget !== "1" ? boostTarget : "";
+}
+
+function compareBoostMarketplaceListings(
+  left: BoostMarketplaceListing,
+  right: BoostMarketplaceListing,
+  sortMode: BoostMarketplaceSortMode,
+) {
+  const fallback = () => {
+    const leftTime = Date.parse(left.createdAt);
+    const rightTime = Date.parse(right.createdAt);
+    return (
+      (Number.isFinite(rightTime) ? rightTime : 0) -
+        (Number.isFinite(leftTime) ? leftTime : 0) ||
+      right.listingId.localeCompare(left.listingId)
+    );
+  };
+
+  if (sortMode === "price-asc" || sortMode === "price-desc") {
+    return (
+      (sortMode === "price-desc" ? -1 : 1) *
+        (left.priceSats - right.priceSats) ||
+      fallback()
+    );
+  }
+
+  return fallback();
+}
+
+function boostMarketplaceListingMatchesSearch(
+  listing: BoostMarketplaceListing,
+  query: string,
+) {
+  const normalizedQuery = normalizeSearchQuery(query);
+  if (!normalizedQuery) {
+    return true;
+  }
+  return [
+    listing.text,
+    listing.sellerAddress,
+    listing.boostTxid,
+    listing.listingId,
+    listing.txid,
+  ]
+    .join(" ")
+    .toLowerCase()
+    .includes(normalizedQuery);
+}
+
+function useBoostMarketplaceData(network: BitcoinNetwork) {
+  const [payload, setPayload] = useState<BoostFeedPayload>();
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const refresh = useCallback(
+    async (fresh = false) => {
+      if (network !== "livenet") {
+        setPayload(undefined);
+        setError("");
+        return;
+      }
+      const params = new URLSearchParams({
+        limit: "100",
+        sort: "newest",
+        window: "all",
+      });
+      if (fresh) {
+        params.set("fresh", "1");
+      }
+      setLoading(true);
+      setError("");
+      try {
+        const nextPayload = await fetchProofApiJson<BoostFeedPayload>(
+          `/api/v1/boost?${params.toString()}`,
+          network,
+          { timeoutMs: 60_000 },
+        );
+        setPayload(nextPayload);
+      } catch (loadError) {
+        setError(errorMessage(loadError, "Boost listings could not be loaded."));
+      } finally {
+        setLoading(false);
+      }
+    },
+    [network],
+  );
+  useEffect(() => {
+    void refresh(false);
+  }, [refresh]);
+  const listings = useMemo(
+    () =>
+      boostMarketplaceListingsFromItems(payload?.items ?? []).filter(
+        (listing) => listing.network === network,
+      ),
+    [network, payload?.items],
+  );
+  return { error, listings, loading, payload, refresh };
+}
+
+function BoostMarketplacePanel({
+  btcUsd,
+  error,
+  listings,
+  loading,
+  network,
+  onRefresh,
+}: {
+  btcUsd: number;
+  error: string;
+  listings: BoostMarketplaceListing[];
+  loading: boolean;
+  network: BitcoinNetwork;
+  onRefresh: () => void;
+}) {
+  const [searchQuery, setSearchQuery] = useState(() =>
+    initialBoostMarketplaceTarget(),
+  );
+  const [sortMode, setSortMode] =
+    useState<BoostMarketplaceSortMode>("newest");
+  const [pageIndex, setPageIndex] = useState(0);
+  const networkListings = listings.filter((listing) => listing.network === network);
+  const filteredListings = networkListings.filter((listing) =>
+    boostMarketplaceListingMatchesSearch(listing, searchQuery),
+  );
+  const sortedListings = [...filteredListings].sort((left, right) =>
+    compareBoostMarketplaceListings(left, right, sortMode),
+  );
+  const listingPage = pagedItems(
+    sortedListings,
+    pageIndex,
+    TOKEN_LIST_PREVIEW_COUNT,
+  );
+  const lowestAsk = networkListings.reduce(
+    (lowest, listing) =>
+      lowest > 0 ? Math.min(lowest, listing.priceSats) : listing.priceSats,
+    0,
+  );
+  const sellerCount = new Set(
+    networkListings.map((listing) => listing.sellerAddress).filter(Boolean),
+  ).size;
+
+  useEffect(() => {
+    setPageIndex(0);
+  }, [listings.length, searchQuery, sortMode]);
+
+  return (
+    <div className="ids-content marketplace-content token-market-content boost-market-content">
+      <section className="id-card token-market-card boost-market-card">
+        <div className="id-card-head">
+          <div className="empty-icon" aria-hidden="true">
+            <ShoppingBag size={24} />
+          </div>
+          <div>
+            <h3>Boost Listings</h3>
+            <p>
+              Boost sale tickets created from Boost or Mail appear alongside
+              IDs, credits, and bonds in AMO.
+            </p>
+          </div>
+        </div>
+
+        {error ? (
+          <p className="field-note bad" role="status">
+            {error}
+          </p>
+        ) : null}
+
+        <div
+          className="id-launch-stats token-floor-stats"
+          aria-label="Boost AMO stats"
+        >
+          <div>
+            <span>Open listings</span>
+            <strong>{networkListings.length.toLocaleString()}</strong>
+          </div>
+          <div>
+            <span>Visible sellers</span>
+            <strong>{sellerCount.toLocaleString()}</strong>
+          </div>
+          <div>
+            <span>Lowest ask</span>
+            <strong>
+              {lowestAsk > 0 ? lowestAsk.toLocaleString() : "0"} proofs
+            </strong>
+          </div>
+          <div>
+            <span>Lowest USD</span>
+            <strong>{lowestAsk > 0 ? tokenUsd(satsToUsd(lowestAsk, btcUsd)) : "$0.00"}</strong>
+          </div>
+        </div>
+
+        <div className="marketplace-sort-row boost-market-controls">
+          <label className="sort-control">
+            Search
+            <input
+              autoComplete="off"
+              onChange={(event) => setSearchQuery(event.target.value)}
+              placeholder="Boost txid, seller, text"
+              value={searchQuery}
+            />
+          </label>
+          <label className="sort-control">
+            Sort
+            <select
+              onChange={(event) =>
+                setSortMode(event.target.value as BoostMarketplaceSortMode)
+              }
+              value={sortMode}
+            >
+              <option value="newest">Newest</option>
+              <option value="price-asc">Lowest ask</option>
+              <option value="price-desc">Highest ask</option>
+            </select>
+          </label>
+          <button
+            className="secondary small"
+            disabled={loading}
+            onClick={onRefresh}
+            type="button"
+          >
+            <span className="button-content">
+              <RefreshCw className={loading ? "refresh-spin" : ""} size={15} />
+              <span>{loading ? "Refreshing" : "Refresh"}</span>
+            </span>
+          </button>
+        </div>
+
+        {listingPage.items.length ? (
+          <div className="token-market-grid">
+            {listingPage.items.map((listing) => (
+              <article
+                className="id-record token-market-row boost-market-row"
+                key={listing.listingId}
+              >
+                <div>
+                  <strong>{listing.text || shortAddress(listing.boostTxid)}</strong>
+                  <span>
+                    {listing.confirmed ? "Confirmed listing" : "Pending listing"} ·{" "}
+                    {formatDate(listing.createdAt)}
+                  </span>
+                </div>
+                <dl>
+                  <div>
+                    <dt>Price</dt>
+                    <dd>{listing.priceSats.toLocaleString()} proofs</dd>
+                  </div>
+                  <div>
+                    <dt>USD</dt>
+                    <dd>{tokenUsd(satsToUsd(listing.priceSats, btcUsd))}</dd>
+                  </div>
+                  <div>
+                    <dt>Seller</dt>
+                    <dd>{shortAddress(listing.sellerAddress)}</dd>
+                  </div>
+                  <div>
+                    <dt>Boost</dt>
+                    <dd>{shortAddress(listing.boostTxid)}</dd>
+                  </div>
+                  <div>
+                    <dt>Listing</dt>
+                    <dd>{shortAddress(listing.listingId)}</dd>
+                  </div>
+                </dl>
+                <div className="id-record-actions">
+                  <a
+                    className="primary small link-button"
+                    href={boostAppViewHref(listing.sellerAddress)}
+                  >
+                    <span className="button-content">
+                      <ShoppingBag size={15} />
+                      <span>Open Boost</span>
+                    </span>
+                  </a>
+                  <a
+                    className="secondary small link-button"
+                    href={explorerTxUrl(listing.listingId, listing.network)}
+                    rel="noreferrer"
+                    target="_blank"
+                  >
+                    <span className="button-content">
+                      <ArrowUpRight size={15} />
+                      <span>Listing TX</span>
+                    </span>
+                  </a>
+                  <a
+                    className="secondary small link-button"
+                    href={explorerTxUrl(listing.boostTxid, listing.network)}
+                    rel="noreferrer"
+                    target="_blank"
+                  >
+                    <span className="button-content">
+                      <ArrowUpRight size={15} />
+                      <span>Boost TX</span>
+                    </span>
+                  </a>
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <div className="empty-state">
+            <ShoppingBag size={28} />
+            <h3>{loading ? "Loading Boost listings" : "No Boost listings"}</h3>
+            <p>
+              {network === "livenet"
+                ? "Create a Boost listing from Boost or from the original Mail item."
+                : "Boost AMO listings are shown on Mainnet."}
+            </p>
+          </div>
+        )}
+
+        <PaginationControls
+          label="Boost listings"
+          onPageChange={setPageIndex}
+          page={listingPage}
+        />
+      </section>
+    </div>
+  );
 }
 
 function MarketplaceTabs({
   active,
   bondCount,
+  boostCount,
   idCount,
   onChange,
   tokenCount,
 }: {
   active: MarketplaceTab;
   bondCount: number;
+  boostCount: number;
   idCount: number;
   onChange: (tab: MarketplaceTab) => void;
   tokenCount: number;
@@ -45475,6 +45849,7 @@ function MarketplaceTabs({
           ["ids", "IDs", idCount],
           ["tokens", "Credits", tokenCount],
           ["bonds", "Bonds", bondCount],
+          ["boosts", "Boosts", boostCount],
         ] as const
       ).map(([tab, label, count]) => (
         <button
@@ -45503,15 +45878,21 @@ function marketplaceStatusIsBondScoped(text: string) {
   return /(?:bond|POWB|INCB|Infinity|Inception)/iu.test(text);
 }
 
+function marketplaceStatusIsBoostScoped(text: string) {
+  return /(?:Boost|boost)/u.test(text);
+}
+
 function marketplaceStatusForTab({
   active,
   bondSummary,
+  boostSummary,
   idSummary,
   status,
   tokenSummary,
 }: {
   active: MarketplaceTab;
   bondSummary: { tone: StatusTone; text: string };
+  boostSummary: { tone: StatusTone; text: string };
   idSummary: { tone: StatusTone; text: string };
   status: { tone: StatusTone; text: string };
   tokenSummary: { tone: StatusTone; text: string };
@@ -45523,14 +45904,25 @@ function marketplaceStatusForTab({
   if (
     active === "bonds" &&
     (marketplaceStatusIsIdScoped(status.text) ||
+      marketplaceStatusIsBoostScoped(status.text) ||
       marketplaceStatusIsTokenScoped(status.text))
   ) {
     return bondSummary;
   }
 
   if (
+    active === "boosts" &&
+    (marketplaceStatusIsIdScoped(status.text) ||
+      marketplaceStatusIsBondScoped(status.text) ||
+      marketplaceStatusIsTokenScoped(status.text))
+  ) {
+    return boostSummary;
+  }
+
+  if (
     active === "tokens" &&
     (marketplaceStatusIsIdScoped(status.text) ||
+      marketplaceStatusIsBoostScoped(status.text) ||
       marketplaceStatusIsBondScoped(status.text))
   ) {
     return tokenSummary;
@@ -45539,6 +45931,7 @@ function marketplaceStatusForTab({
   if (
     active === "ids" &&
     (marketplaceStatusIsTokenScoped(status.text) ||
+      marketplaceStatusIsBoostScoped(status.text) ||
       marketplaceStatusIsBondScoped(status.text))
   ) {
     return idSummary;
@@ -48643,14 +49036,23 @@ function MarketplaceApp({
 }) {
   const initialTokenMarketTarget = tokenRouteTarget();
   const initialTokenMarketTicker = normalizeTokenTicker(initialTokenMarketTarget);
-  const initialMarketplaceTab: MarketplaceTab =
+  const defaultMarketplaceTab: MarketplaceTab =
     BOND_TOKEN_IDS.has(initialTokenMarketTarget) ||
     initialTokenMarketTicker === POWB_TOKEN_TICKER ||
     initialTokenMarketTicker === INCB_TOKEN_TICKER
       ? "bonds"
       : "tokens";
   const [marketplaceTab, setMarketplaceTab] =
-    useState<MarketplaceTab>(initialMarketplaceTab);
+    useState<MarketplaceTab>(() =>
+      initialMarketplaceTabFromRoute(defaultMarketplaceTab),
+    );
+  const {
+    error: boostMarketError,
+    listings: boostListings,
+    loading: boostMarketLoading,
+    payload: boostPayload,
+    refresh: refreshBoostMarketplace,
+  } = useBoostMarketplaceData("livenet");
   const [selectedTokenMarketId, setSelectedTokenMarketId] = useState(
     initialTokenMarketTarget,
   );
@@ -48725,6 +49127,14 @@ function MarketplaceApp({
         ? `Bond listings loaded in AMO. ${bondListings.length.toLocaleString()} open ticket${bondListings.length === 1 ? "" : "s"}, ${sealedBondListings.length.toLocaleString()} sealed or sealing, ${bondSales.length.toLocaleString()} sale${bondSales.length === 1 ? "" : "s"}.`
         : "Bond market preview loaded. Verifying the complete Core-reconciled sale-ticket book before reporting bond inventory as complete.",
     },
+    boostSummary: {
+      tone: boostMarketError ? "bad" : boostMarketLoading ? "idle" : "good",
+      text: boostMarketError
+        ? boostMarketError
+        : boostMarketLoading
+          ? "Boost AMO listings loading."
+          : `Boost AMO loaded. ${boostListings.length.toLocaleString()} open listing${boostListings.length === 1 ? "" : "s"}.`,
+    },
     idSummary: {
       tone: "good",
       text: `ID sale tickets loaded in AMO. ${confirmedRecords.length.toLocaleString()} confirmed, ${registryListings.length.toLocaleString()} active listing${registryListings.length === 1 ? "" : "s"}, ${pendingRecords.length.toLocaleString()} pending.`,
@@ -48738,6 +49148,11 @@ function MarketplaceApp({
     },
   });
   const refreshMarketplaceTab = () => {
+    if (marketplaceTab === "boosts") {
+      void refreshBoostMarketplace(true);
+      return;
+    }
+
     if (marketplaceTab === "bonds") {
       onRefreshBonds();
       return;
@@ -48846,6 +49261,37 @@ function MarketplaceApp({
                 <span>Bond Books</span>
               </div>
             </div>
+          ) : marketplaceTab === "boosts" ? (
+            <div className="id-launch-stats" aria-label="Boost AMO stats">
+              <div>
+                <strong>{boostListings.length.toLocaleString()}</strong>
+                <span>Open Listings</span>
+              </div>
+              <div>
+                <strong>
+                  {(boostPayload?.totalCount ?? boostPayload?.items?.length ?? 0).toLocaleString()}
+                </strong>
+                <span>Boost Records</span>
+              </div>
+              <div>
+                <strong>
+                  {boostListings
+                    .reduce((total, listing) => total + listing.priceSats, 0)
+                    .toLocaleString()}
+                </strong>
+                <span>Ask proofs</span>
+              </div>
+              <div>
+                <strong>
+                  {new Set(
+                    boostListings
+                      .map((listing) => listing.sellerAddress)
+                      .filter(Boolean),
+                  ).size.toLocaleString()}
+                </strong>
+                <span>Sellers</span>
+              </div>
+            </div>
           ) : (
             <TokenMarketplaceStatsGrid stats={tokenSummaryStats} />
           )}
@@ -48854,6 +49300,7 @@ function MarketplaceApp({
         <MarketplaceTabs
           active={marketplaceTab}
           bondCount={bondListings.length}
+          boostCount={boostListings.length}
           idCount={registryListings.length}
           onChange={setMarketplaceTab}
           tokenCount={creditTokens.length}
@@ -49005,6 +49452,15 @@ function MarketplaceApp({
             />
           </section>
         </div>
+        ) : marketplaceTab === "boosts" ? (
+          <BoostMarketplacePanel
+            btcUsd={btcUsd}
+            error={boostMarketError}
+            listings={boostListings}
+            loading={boostMarketLoading}
+            network="livenet"
+            onRefresh={() => void refreshBoostMarketplace(true)}
+          />
         ) : marketplaceTab === "bonds" ? (
           <BondMarketplacePanel
             address={address}
@@ -49166,14 +49622,22 @@ function MarketplaceWorkspace({
 }) {
   const initialTokenMarketTarget = tokenRouteTarget();
   const initialTokenMarketTicker = normalizeTokenTicker(initialTokenMarketTarget);
-  const initialMarketplaceTab: MarketplaceTab =
+  const defaultMarketplaceTab: MarketplaceTab =
     BOND_TOKEN_IDS.has(initialTokenMarketTarget) ||
     initialTokenMarketTicker === POWB_TOKEN_TICKER ||
     initialTokenMarketTicker === INCB_TOKEN_TICKER
       ? "bonds"
       : "tokens";
   const [marketplaceTab, setMarketplaceTab] =
-    useState<MarketplaceTab>(initialMarketplaceTab);
+    useState<MarketplaceTab>(() =>
+      initialMarketplaceTabFromRoute(defaultMarketplaceTab),
+    );
+  const {
+    error: boostMarketError,
+    listings: boostListings,
+    loading: boostMarketLoading,
+    refresh: refreshBoostMarketplace,
+  } = useBoostMarketplaceData(network);
   const [selectedTokenMarketId, setSelectedTokenMarketId] = useState(
     initialTokenMarketTarget,
   );
@@ -49248,6 +49712,11 @@ function MarketplaceWorkspace({
     tokens: creditTokens,
   });
   const refreshMarketplaceTab = () => {
+    if (marketplaceTab === "boosts") {
+      void refreshBoostMarketplace(true);
+      return;
+    }
+
     if (marketplaceTab === "bonds") {
       onRefreshBonds();
       return;
@@ -49268,7 +49737,7 @@ function MarketplaceWorkspace({
           <h2>AMO</h2>
           <span>
             {registryAddress
-              ? `${networkListings.length.toLocaleString()} ID listings · ${networkTokenCount.toLocaleString()} credits · ${bondListings.length.toLocaleString()} bond tickets`
+              ? `${networkListings.length.toLocaleString()} ID listings · ${networkTokenCount.toLocaleString()} credits · ${bondListings.length.toLocaleString()} bond tickets · ${boostListings.length.toLocaleString()} Boost listings`
               : `No AMO registry configured for ${networkLabel(network)}`}
           </span>
         </div>
@@ -49288,6 +49757,7 @@ function MarketplaceWorkspace({
       <MarketplaceTabs
         active={marketplaceTab}
         bondCount={bondListings.length}
+        boostCount={boostListings.length}
         idCount={networkListings.length}
         onChange={setMarketplaceTab}
         tokenCount={networkTokenCount}
@@ -49469,6 +49939,15 @@ function MarketplaceWorkspace({
         </section>
       </div>
         </>
+      ) : marketplaceTab === "boosts" ? (
+        <BoostMarketplacePanel
+          btcUsd={btcUsd}
+          error={boostMarketError}
+          listings={boostListings}
+          loading={boostMarketLoading}
+          network={network}
+          onRefresh={() => void refreshBoostMarketplace(true)}
+        />
       ) : marketplaceTab === "bonds" ? (
         <>
           <div
@@ -52653,21 +53132,41 @@ function Reader({
             </button>
           ) : null}
           {message.socialMode ? (
-            <a
-              className="secondary small link-button"
-              href={boostTwitterShareUrl({
-                memo: message.memo,
-                network: explorerNetwork,
-                txid: message.txid,
-              })}
-              rel="noreferrer"
-              target="_blank"
-            >
-              <span className="button-content">
-                <Share2 size={15} />
-                <span>Share</span>
-              </span>
-            </a>
+            <>
+              <a
+                className="secondary small link-button"
+                href={boostAppListHref(message.txid)}
+              >
+                <span className="button-content">
+                  <Tag size={15} />
+                  <span>List</span>
+                </span>
+              </a>
+              <a
+                className="secondary small link-button"
+                href={boostAmoHref(message.txid)}
+              >
+                <span className="button-content">
+                  <ShoppingBag size={15} />
+                  <span>AMO</span>
+                </span>
+              </a>
+              <a
+                className="secondary small link-button"
+                href={boostTwitterShareUrl({
+                  memo: message.memo,
+                  network: explorerNetwork,
+                  txid: message.txid,
+                })}
+                rel="noreferrer"
+                target="_blank"
+              >
+                <span className="button-content">
+                  <Share2 size={15} />
+                  <span>Share</span>
+                </span>
+              </a>
+            </>
           ) : null}
           <a
             className="secondary small link-button"
