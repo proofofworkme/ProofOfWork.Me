@@ -470,3 +470,78 @@ Local verification completed before hygiene:
 - `npm run check:ui`
 - `npm run build`
 - `git diff --check`
+
+## Approved UI Release And WORK Projection Follow-Up
+
+Date: 2026-09-01
+Mode: user-approved production UI publish plus local/API remediation for the
+remaining active WORK listing projection bug.
+
+This addendum extends the previous findings without duplicating them. No data,
+backups, release archives, rollback evidence, database rows, or production
+configuration were deleted or cleaned up.
+
+UI rollback-root classification and release publication:
+
+- Classified the retained rollback root
+  `/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-32f39776afb2-20260831T235646Z`
+  as legacy rollback evidence and moved it, without deletion, to
+  `/var/backups/proofofwork-ui/rollbacks/proofofwork-www-pre-32f39776afb2-20260831T235646Z`.
+- Preservation evidence was recorded under
+  `/var/backups/proofofwork-ui/rollback-classifications/proofofwork-www-pre-32f39776afb2-20260831T235646Z-20260901T032907Z`.
+- Complete-root evidence archive:
+  `/var/backups/proofofwork-ui/rollback-classifications/proofofwork-www-pre-32f39776afb2-20260831T235646Z-20260901T032907Z/proofofwork-www-pre-32f39776afb2-20260831T235646Z.complete-root-20260901T032907Z.tgz`
+  with SHA256
+  `020c3546b7f135068d8c2e54945c9c0193c1362394c57ddc182947555d1e29f8`.
+- The first classification verifier compared the legacy rollback evidence
+  manifest to the newer active release provenance format and exited non-zero
+  after the move. The follow-up classification note records this as a format
+  mismatch, not data loss. Active rollback verification passed afterward.
+- Published the already-built UI release
+  `ec97e1817dd8-20260901T022632Z` for commit
+  `ec97e1817dd87793f506cf4eba5035052dc3fc33`.
+- Published release archive:
+  `/var/backups/proofofwork-ui/releases/proofofwork-ui-release-ec97e1817dd8-20260901T022632Z.tgz`
+  with SHA256
+  `dd7af29f510787a5d32c3123a7f72bd66091af53098e9f33eee6afb060a8e362`.
+- The publisher created the current rollback root
+  `/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-ec97e1817dd8-20260901T022632Z`;
+  it remains preserved as release evidence.
+- External HTTPS archive smoke passed for the requested 13 roots in order:
+  `proofofwork.me`, `id.proofofwork.me`, `desktop.proofofwork.me`,
+  `browser.proofofwork.me`, `amo.proofofwork.me`, `credit.proofofwork.me`,
+  `wallet.proofofwork.me`, `work.proofofwork.me`,
+  `infinity.proofofwork.me`, `inception.proofofwork.me`,
+  `log.proofofwork.me`, `growth.proofofwork.me`, and
+  `computer.proofofwork.me`. The smoke verified the active provenance sidecar
+  and byte-compared live HTTPS HTML against the release archive.
+
+Remaining active WORK listing projection remediation:
+
+- Production pre-fix sampling showed `36` legacy `pwt-sale-v1` rows still
+  rendering as active on the standalone fresh WORK token payload, even though
+  current post-V8 WORK active inventory must be `pwt-sale-v8` only.
+- The cause was a projection gap where token read/response wrappers and indexed
+  active-listing recovery could preserve or reintroduce legacy WORK listings
+  after the V8 current-listing policy had already run elsewhere.
+- `server/proof-api.mjs` now applies the current WORK active-listing policy
+  before spendable-listing reconciliation, after spendable reconciliation, in
+  the response wrapper, and after indexed active-listing recovery.
+- The policy now recognizes authorization versions from nested authorization
+  objects and the top-level `authorizationVersion` field, so valid V8 rows are
+  preserved while legacy WORK rows are removed from current active views.
+- This does not delete historical `pwt-sale-v1` rows, change confirmed event
+  history, or alter non-WORK sale-ticket behavior.
+
+Local verification for the WORK projection patch:
+
+- `node --check server/proof-api.mjs`
+- `node --check scripts/check-index-recovery-behavior.mjs`
+- `npm run check:index-recovery-behavior`
+- `npm run check:work-amo-v8`
+- `npm run check:work-precision`
+- `npm run check:api-truth`
+- `git diff --check`
+
+Production API deployment and post-deploy verification are pending at the time
+of this local addendum.

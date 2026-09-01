@@ -10674,7 +10674,10 @@ async function tokenReadResponsePayload(payload, network, tokenScope, options = 
   const scope = normalizeTokenScope(tokenScope);
   let responsePayload =
     scope === WORK_TOKEN_ID
-      ? await withWorkMarketplaceV4Metadata(payload, network)
+      ? tokenPayloadWithCurrentWorkActiveListingPolicy(
+          await withWorkMarketplaceV4Metadata(payload, network),
+          network,
+        )
       : payload;
   if (
     options.requireWorkListingAuthority === true &&
@@ -10684,8 +10687,11 @@ async function tokenReadResponsePayload(payload, network, tokenScope, options = 
       responsePayload?.listingAuthority,
     )
   ) {
-    responsePayload = await tokenPayloadWithSpendableActiveListings(
-      responsePayload,
+    responsePayload = tokenPayloadWithCurrentWorkActiveListingPolicy(
+      await tokenPayloadWithSpendableActiveListings(
+        responsePayload,
+        network,
+      ),
       network,
     );
     if (
@@ -10703,7 +10709,9 @@ async function tokenReadResponsePayload(payload, network, tokenScope, options = 
       throw unavailable;
     }
   }
-  return responsePayload;
+  return scope === WORK_TOKEN_ID
+    ? tokenPayloadWithCurrentWorkActiveListingPolicy(responsePayload, network)
+    : responsePayload;
 }
 
 function bytesToHex(bytes) {
@@ -38534,10 +38542,14 @@ async function tokenPayloadReadResult(payload, network, fresh, options = {}) {
         listingReconciledPayload,
         network,
       );
+  const currentListingPayload = tokenPayloadWithCurrentWorkActiveListingPolicy(
+    reconciledPayload,
+    network,
+  );
   const spendablePayload = options.reconcileSpendable === false
-    ? reconciledPayload
-    : await tokenPayloadWithSpendableListings(reconciledPayload, network);
-  return applyWorkMarketV2CutoverToTokenState(spendablePayload);
+    ? currentListingPayload
+    : await tokenPayloadWithSpendableListings(currentListingPayload, network);
+  return tokenPayloadWithCurrentWorkActiveListingPolicy(spendablePayload, network);
 }
 
 function tokenPayloadFreshnessRank(payload) {
@@ -41164,14 +41176,22 @@ async function workTokenStateWithIndexedActiveListings(
   const recoveredPayload = tokenStateWithPreservedListingRecords(payload, {
     listings: recoveredListings,
   });
-  const spendablePayload = await tokenPayloadWithSpendableListings(
+  const currentRecoveredPayload = tokenPayloadWithCurrentWorkActiveListingPolicy(
     recoveredPayload,
     network,
   );
+  const spendablePayload = await tokenPayloadWithSpendableListings(
+    currentRecoveredPayload,
+    network,
+  );
+  const currentSpendablePayload = tokenPayloadWithCurrentWorkActiveListingPolicy(
+    spendablePayload,
+    network,
+  );
   return {
-    ...spendablePayload,
+    ...currentSpendablePayload,
     source: mergedSourceLabel(
-      spendablePayload?.source,
+      currentSpendablePayload?.source,
       "proof-indexer-token-listing-tx-recovery",
     ),
   };
@@ -41204,24 +41224,34 @@ function tokenPayloadWithCurrentWorkActiveListingPolicy(
   const listings = Array.isArray(cutoverPayload?.listings)
     ? cutoverPayload.listings
     : [];
-  const currentListings = listings.filter((listing) => {
-    const tokenId = normalizeTokenScope(
+  const listingTokenId = (listing) =>
+    normalizeTokenScope(
       listing?.tokenId ??
         listing?.saleAuthorization?.tokenId ??
+        listing?.listingAuthorization?.tokenId ??
+        listing?.authorization?.tokenId ??
         listing?.ticker ??
         listing?.saleAuthorization?.ticker ??
+        listing?.listingAuthorization?.ticker ??
+        listing?.authorization?.ticker ??
         "",
     );
-    if (tokenId !== WORK_TOKEN_ID) {
+  const listingAuthorizationVersion = (listing) =>
+    String(
+      listing?.saleAuthorization?.version ??
+        listing?.listingAuthorization?.version ??
+        listing?.authorization?.version ??
+        listing?.authorizationVersion ??
+        listing?.version ??
+        "",
+    )
+      .trim()
+      .toLowerCase();
+  const currentListings = listings.filter((listing) => {
+    if (listingTokenId(listing) !== WORK_TOKEN_ID) {
       return true;
     }
-    return (
-      String(
-        listing?.saleAuthorization?.version ?? listing?.version ?? "",
-      )
-        .trim()
-        .toLowerCase() === WORK_AMO_V8_AUTH_VERSION
-    );
+    return listingAuthorizationVersion(listing) === WORK_AMO_V8_AUTH_VERSION;
   });
 
   const payloadTokens = Array.isArray(cutoverPayload?.tokens)
@@ -41229,13 +41259,7 @@ function tokenPayloadWithCurrentWorkActiveListingPolicy(
     : [];
   const removedWorkListings = listings.filter(
     (listing) =>
-      normalizeTokenScope(
-        listing?.tokenId ??
-          listing?.saleAuthorization?.tokenId ??
-          listing?.ticker ??
-          listing?.saleAuthorization?.ticker ??
-          "",
-      ) === WORK_TOKEN_ID &&
+      listingTokenId(listing) === WORK_TOKEN_ID &&
       !currentListings.includes(listing),
   );
   const workTokenHasLowestAskAlias = payloadTokens.some(
@@ -41304,25 +41328,20 @@ function tokenPayloadWithCurrentWorkActiveListingPolicy(
     tokenSummaryMetricValue(workMarketSummary?.confirmedOpenListings) ??
     currentListings.filter(
       (listing) =>
-        normalizeTokenScope(
-          listing?.tokenId ?? listing?.saleAuthorization?.tokenId ?? "",
-        ) === WORK_TOKEN_ID && listing?.confirmed === true,
+        listingTokenId(listing) === WORK_TOKEN_ID &&
+        listing?.confirmed === true,
     ).length;
   const computedOpenWorkListings =
     tokenSummaryMetricValue(workMarketSummary?.openListings) ??
     currentListings.filter(
-      (listing) =>
-        normalizeTokenScope(
-          listing?.tokenId ?? listing?.saleAuthorization?.tokenId ?? "",
-        ) === WORK_TOKEN_ID,
+      (listing) => listingTokenId(listing) === WORK_TOKEN_ID,
     ).length;
   const computedPendingOpenWorkListings =
     tokenSummaryMetricValue(workMarketSummary?.pendingOpenListings) ??
     currentListings.filter(
       (listing) =>
-        normalizeTokenScope(
-          listing?.tokenId ?? listing?.saleAuthorization?.tokenId ?? "",
-        ) === WORK_TOKEN_ID && listing?.confirmed !== true,
+        listingTokenId(listing) === WORK_TOKEN_ID &&
+        listing?.confirmed !== true,
     ).length;
   const workLowestAskExact = canonicalWorkQ16SummaryUnitPriceDescriptor(
     workMarketSummary?.lowestAskPricePerTokenExact,
