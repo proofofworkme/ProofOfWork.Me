@@ -550,5 +550,57 @@ Local verification for the WORK projection patch:
 - `npm run check:api-truth`
 - `git diff --check`
 
-Production API deployment of the scoped-summary correction and post-deploy
-verification are pending at the time of this addendum revision.
+Production deployment and verification:
+
+- First API deployment:
+  `da4bef0a3380e606c8e67a503f518fcbb83a7aed`, release id
+  `da4bef0a3380-20260901T035509Z`.
+- Final API deployment:
+  `0f3efbd6909c80a33965fc5691a2916107ffbd41`, release id
+  `0f3efbd6909c-20260901T041016Z`.
+- Final node release archive:
+  `proofofwork-node-release-0f3efbd-0f3efbd6909c-20260901T041016Z.tgz`,
+  SHA256 `872033cfa041e1de48d5025433561bf38a57dc9facf07396955d8a1178547ca8`,
+  runtime SHA256
+  `a7f019a61d47b13e927875716103daf2a9e4528ebc4b96e024e71b8a69f17dae`.
+- Restarted only `proofofwork-api.service`,
+  `proofofwork-indexer-worker.service`, and
+  `proofofwork-api-wg.socket` for each API deployment.
+- Public `/health?network=livenet` after final deploy:
+  `ok: true`, `ready: true`, tip/indexed block `964978`, lag `0`,
+  summary snapshot `d108512c830ff874fe1150ea`, Core mainnet unpruned and
+  txindex-synced, worker proof-ready, pending event health OK.
+- Fresh WORK token after final deploy:
+  `382` active listings, all `pwt-sale-v8`; legacy active count `0`;
+  relic listings preserved as `36`; Core sale-ticket authority model
+  `proof-token-market-core-gettxout-v1` checked `418` listing outpoints at
+  block `964978`.
+- Fresh scoped WORK token summary after final deploy:
+  `382` visible listings, `totalCounts.listings: 382`,
+  `stats.openListings: 382`, token `openListings: 382`, and
+  `collectionHasMore.listings: false`.
+- Production checks passed after the final deploy:
+  `npm run check:marketplace-regressions:full`,
+  `npm run audit:ledger`, `npm run check:mail-regressions`, and
+  `/api/v1/consistency?network=livenet&fresh=1`.
+- Ledger consistency value at snapshot
+  `d108512c830ff874fe1150ea`:
+  `7466960276821398226.39131514` proofs.
+- Node VPS final health: `/` `21%` used, `/data` `72%` used, DB `18 GB`,
+  largest table `proof_indexer.work_amo_block_transitions` at `16 GB`,
+  lock waiters `0`, idle-in-transaction sessions `0`, and no
+  warning-or-higher API/indexer journal entries in the sampled 20-minute
+  window.
+- Node release health command passed with `6` archives verified, `0`
+  unverified, and `current_provenance: 1`. Previously failed systemd unit
+  history remains recorded until an explicitly approved reset/cleanup pass.
+- UI VPS final health: `/` `34%` used, Caddy and UI timers active, release
+  provenance verified for `ec97e1817dd8-20260901T022632Z`, and the current
+  rollback root
+  `/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-ec97e1817dd8-20260901T022632Z`
+  remains preserved.
+- `npm run audit:surfaces` still failed on static HTML text expectations for
+  `id`, `desktop`, `amo`, `wallet`, `infinity`, and `inception`. The byte-level
+  HTTPS archive smoke for those roots passed, and sampled HTML shells showed
+  common React bootstrap HTML; this is a remaining synthetic-monitor assertion
+  issue to fix in a separately approved pass.
