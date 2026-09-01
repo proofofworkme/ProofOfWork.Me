@@ -1163,6 +1163,7 @@ assert.ok(
   relicListings.every(
     (listing) =>
       listing.refundEligible === true &&
+      listing.closedConfirmed === true &&
       listing.disabledAtBlockHeight === WORK_MARKET_V2_ACTIVATION_HEIGHT &&
       listing.disabledByTxid === WORK_MARKET_V2_DECLARATION_TXID,
   ),
@@ -1171,6 +1172,7 @@ const snapshotExcludedClosed = cutoverState.closedListings.find(
   (listing) => listing.listingId === snapshotExcludedLegacy.listingId,
 );
 assert.equal(snapshotExcludedClosed?.status, "closed");
+assert.equal(snapshotExcludedClosed?.closedConfirmed, true);
 assert.equal(snapshotExcludedClosed?.relic, false);
 assert.equal(snapshotExcludedClosed?.refundEligible, false);
 assert.equal(
@@ -1193,6 +1195,7 @@ const sanitizedResurfacedRelic = applyWorkMarketV2CutoverToTokenState({
   network: "livenet",
 }).closedListings[0];
 assert.equal(sanitizedResurfacedRelic.status, "closed");
+assert.equal(sanitizedResurfacedRelic.closedConfirmed, true);
 assert.equal(sanitizedResurfacedRelic.relic, false);
 assert.equal(sanitizedResurfacedRelic.refundEligible, false);
 assert.equal(
@@ -1254,6 +1257,7 @@ const recoveredSnapshotRelic = applyWorkMarketV2CutoverToTokenState({
   network: "livenet",
 }).closedListings[0];
 assert.equal(recoveredSnapshotRelic.status, "disabled");
+assert.equal(recoveredSnapshotRelic.closedConfirmed, true);
 assert.equal(recoveredSnapshotRelic.relic, true);
 assert.equal(recoveredSnapshotRelic.refundEligible, true);
 assert.equal(recoveredSnapshotRelic.closeTxid, "a4".repeat(32));

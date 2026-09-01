@@ -12072,6 +12072,15 @@ check("token spendability deducts reservations and pending sends once", () => {
     "mergeTokenTransfersForSpendability",
     { tokenTransferSpendabilityKey },
   );
+  const tokenListingIsCanonicalCutoverRelic = isolatedTypeScriptFunction(
+    APP_PATH,
+    "tokenListingIsCanonicalCutoverRelic",
+  );
+  const tokenClosedListingConfirmedForSpendability = isolatedTypeScriptFunction(
+    APP_PATH,
+    "tokenClosedListingConfirmedForSpendability",
+    { tokenListingIsCanonicalCutoverRelic },
+  );
   const tokenSpendabilityForWallet = isolatedTypeScriptFunction(
     APP_PATH,
     "tokenSpendabilityForWallet",
@@ -12084,6 +12093,7 @@ check("token spendability deducts reservations and pending sends once", () => {
       tokenRecordAmountAtoms: testWorkRecordAmountAtoms,
       tokenListingStateKey: (listing) => listing.listingId,
       tokenListingsWithPreservedLocalPending: (_local, indexed) => indexed,
+      tokenClosedListingConfirmedForSpendability,
       tokenReservedBalanceFor: (listings) =>
         listings.reduce((total, listing) => total + listing.amount, 0),
       tokenReservedBalanceAtomsFor: (listings) =>
@@ -12201,6 +12211,41 @@ check("token spendability deducts reservations and pending sends once", () => {
   );
   assert.equal(pendingCloseResult.reservedBalance, 8_000);
   assert.equal(pendingCloseResult.spendableBalance, 2_000);
+
+  const cutoverRelicResult = tokenSpendabilityForWallet(
+    "sender",
+    token,
+    {
+      closedListings: [
+        {
+          amount: 8_000,
+          closedConfirmed: false,
+          confirmed: true,
+          disabledAtBlockHeight: 959062,
+          disabledByTxid:
+            "4c53252c6e9279726e1456f4d846274bfa33f778b633d32a68ed36906b38083f",
+          disabledReason: "work-market-v2-cutover",
+          listingId: "confirmed-cutover-relic",
+          network: "livenet",
+          refundEligible: true,
+          relic: true,
+          sellerAddress: "sender",
+          status: "disabled",
+          tokenId: token.tokenId,
+        },
+      ],
+      holders: [{ address: "sender", balance: 10_000, tokenId: token.tokenId }],
+      listings: [],
+      sales: [],
+      transfers: [],
+    },
+    [],
+    [],
+    [],
+    [],
+  );
+  assert.equal(cutoverRelicResult.reservedBalance, 0);
+  assert.equal(cutoverRelicResult.spendableBalance, 10_000);
 });
 
 check("clean scoped account lanes suppress stale WORK and bond positives", () => {
@@ -27739,6 +27784,13 @@ check("canonical WORK lifecycle state rebinds unique relational event positions"
   );
   assert.equal(
     pendingWorkVerifierStageCanonicalCutoverRelic(payload.closedListings[1]),
+    true,
+  );
+  assert.equal(
+    pendingWorkVerifierStageCanonicalCutoverRelic({
+      ...payload.closedListings[1],
+      closedConfirmed: false,
+    }),
     true,
   );
   assert.equal(

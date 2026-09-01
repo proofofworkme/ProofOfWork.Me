@@ -615,6 +615,7 @@ function cutoverRelicListing(listing, { discardSeal = false } = {}) {
   const id = listingId(listing);
   const relic = {
     ...listing,
+    closedConfirmed: true,
     confirmed: true,
     disabledAtBlockHeight: WORK_MARKET_V2_ACTIVATION_HEIGHT,
     disabledByTxid: WORK_MARKET_V2_DECLARATION_TXID,
@@ -654,6 +655,7 @@ function cutoverSnapshotExcludedListing(listing) {
   const id = listingId(listing);
   return {
     ...listing,
+    closedConfirmed: true,
     confirmed: true,
     disabledAtBlockHeight: WORK_MARKET_V2_ACTIVATION_HEIGHT,
     disabledByTxid: WORK_MARKET_V2_DECLARATION_TXID,
@@ -670,6 +672,7 @@ function v4RelicListing(listing, activation) {
   const id = listingId(listing);
   return {
     ...listing,
+    closedConfirmed: true,
     confirmed: true,
     disabledAtBlockHeight: activation.activationHeight,
     disabledByTxid: activation.declarationTxid,
@@ -732,7 +735,10 @@ export function applyWorkMarketV2CutoverToTokenState(state) {
               (listing?.sealConfirmed !== true &&
                 !String(listing?.sealTxid ?? "").trim()));
           if (alreadyCanonicalRelic) {
-            return listing;
+            return {
+              ...listing,
+              closedConfirmed: true,
+            };
           }
           return cutoverRelicListing(listing, {
             discardSeal: refundSnapshotListing.sealed !== true,

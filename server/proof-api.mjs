@@ -65246,7 +65246,6 @@ function pendingWorkVerifierStageCanonicalCutoverRelic(listing) {
   if (
     listing?.relic !== true ||
     listing?.confirmed !== true ||
-    listing?.closedConfirmed !== true ||
     listing?.status !== "disabled"
   ) {
     return false;

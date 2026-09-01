@@ -11057,6 +11057,40 @@ function tokenListingStateKey(
   return `${listing.network}:${listing.listingId}`;
 }
 
+function tokenListingIsCanonicalCutoverRelic(
+  listing: PowTokenClosedListing,
+) {
+  const item = listing as PowTokenClosedListing & { status?: unknown };
+  const disabledReason = String(item.disabledReason ?? "")
+    .trim()
+    .toLowerCase();
+  return (
+    item.relic === true &&
+    item.confirmed === true &&
+    String(item.status ?? "").trim().toLowerCase() === "disabled" &&
+    [
+      "work-market-v2-cutover",
+      "work-market-v4-cutover",
+      "work-amo-v5-pre-unit-relic",
+      "work-amo-v8-preactivation-relic",
+    ].includes(disabledReason) &&
+    Number.isSafeInteger(Number(item.disabledAtBlockHeight)) &&
+    Number(item.disabledAtBlockHeight) > 0 &&
+    /^[0-9a-f]{64}$/u.test(
+      String(item.disabledByTxid ?? "").trim().toLowerCase(),
+    )
+  );
+}
+
+function tokenClosedListingConfirmedForSpendability(
+  listing: PowTokenClosedListing,
+) {
+  return (
+    Boolean(listing.closedConfirmed ?? listing.confirmed) ||
+    tokenListingIsCanonicalCutoverRelic(listing)
+  );
+}
+
 function workMarketV1RelicRows(
   serverListings: PowTokenClosedListing[],
   snapshotListings: readonly WorkMarketV1RefundListing[] =
@@ -11999,21 +12033,20 @@ function tokenSpendabilityForWallet(
     const key = tokenListingStateKey(listing);
     const current = closedListingsByKey.get(key);
     const currentConfirmed = Boolean(
-      current && (current.closedConfirmed ?? current.confirmed),
+      current && tokenClosedListingConfirmedForSpendability(current),
     );
-    const incomingConfirmed = Boolean(
-      listing.closedConfirmed ?? listing.confirmed,
-    );
+    const incomingConfirmed =
+      tokenClosedListingConfirmedForSpendability(listing);
     if (!current || incomingConfirmed || !currentConfirmed) {
       closedListingsByKey.set(key, listing);
     }
   }
   const closedListings = [...closedListingsByKey.values()];
   const confirmedClosedListings = closedListings.filter((listing) =>
-    Boolean(listing.closedConfirmed ?? listing.confirmed),
+    tokenClosedListingConfirmedForSpendability(listing),
   );
   const pendingClosedListings = closedListings.filter(
-    (listing) => !Boolean(listing.closedConfirmed ?? listing.confirmed),
+    (listing) => !tokenClosedListingConfirmedForSpendability(listing),
   );
   const activeListings = mergeTokenListingsById(
     tokenListingsWithPreservedLocalPending(

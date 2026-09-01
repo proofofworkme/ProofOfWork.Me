@@ -4,6 +4,7 @@ import fs from "node:fs";
 import {
   parseWorkAmountToAtoms,
   parseWorkAmountToSubatoms,
+  WORK_SUBATOM_CONVERSION_FACTOR,
 } from "../server/work-units.mjs";
 import {
   MarketplaceRegressionHttpError,
@@ -143,6 +144,12 @@ const REPORTED_BUY_BUYER = "1BPVvi1GK4QkfqFMU4jHGjsQjyGwjJJJ7x";
 const REPORTED_BUY_SELLER = "1KhLgiejzFDxzM3AsmXXHCisH3VA7zcSUW";
 const CARBONZ_ADDRESS =
   "bc1p0uxp0axptr8rg9dndgtlwxn00j4hq8m88kg80tqd0t6045putwhq5ca7ed";
+const REPORTED_CUTOVER_RELIC_WALLET_ADDRESSES = [
+  CARBONZ_ADDRESS,
+  REPORTED_BUY_SELLER,
+  "19JE7LS6TtQ4uSxu6ivJVZRiJyXXe8qEG3",
+  "15eBH5vPH48BwXR6aTy29XJjivKuBcAc9D",
+];
 const CARBONZ_TAPROOT_LISTING_ADDRESS =
   "bc1parjksvz4hetpmqwtka9wuzl9skhq8y3weusenf8e3qrguqhypweqtpmz2g";
 const CARBONZ_LISTING_TX =
@@ -943,6 +950,144 @@ function isLegacyWorkListing(listing) {
     ["pwt-sale-v1", "pwt-sale-v2"].includes(
       workListingAuthorizationVersion(listing),
     )
+  );
+}
+
+const NON_RESERVING_WORK_CUTOVER_RELIC_REASONS = new Set([
+  "work-market-v2-cutover",
+  "work-market-v4-cutover",
+  "work-amo-v5-pre-unit-relic",
+  "work-amo-v8-preactivation-relic",
+]);
+
+function canonicalNonNegativeInteger(value) {
+  const text = String(value ?? "").trim();
+  return /^(?:0|[1-9]\d*)$/u.test(text) ? BigInt(text) : null;
+}
+
+function workAmountRecordSubatoms(record) {
+  const amountSubatoms = canonicalNonNegativeInteger(record?.amountSubatoms);
+  if (amountSubatoms !== null) {
+    return amountSubatoms;
+  }
+  const amountAtoms = canonicalNonNegativeInteger(record?.amountAtoms);
+  if (amountAtoms !== null) {
+    return amountAtoms * WORK_SUBATOM_CONVERSION_FACTOR;
+  }
+  try {
+    return BigInt(
+      parseWorkAmountToSubatoms(String(record?.amount ?? "0"), {
+        allowZero: true,
+      }),
+    );
+  } catch {
+    return null;
+  }
+}
+
+function workHolderBalanceSubatoms(holder) {
+  const balanceSubatoms = canonicalNonNegativeInteger(holder?.balanceSubatoms);
+  if (balanceSubatoms !== null) {
+    return balanceSubatoms;
+  }
+  const balanceAtoms = canonicalNonNegativeInteger(holder?.balanceAtoms);
+  if (balanceAtoms !== null) {
+    return balanceAtoms * WORK_SUBATOM_CONVERSION_FACTOR;
+  }
+  try {
+    return BigInt(
+      parseWorkAmountToSubatoms(String(holder?.balance ?? "0"), {
+        allowZero: true,
+      }),
+    );
+  } catch {
+    return null;
+  }
+}
+
+function workCutoverRelicConfirmedForReservation(listing) {
+  return (
+    listing?.relic === true &&
+    listing?.confirmed === true &&
+    listing?.closedConfirmed === true &&
+    String(listing?.status ?? "").trim().toLowerCase() === "disabled" &&
+    NON_RESERVING_WORK_CUTOVER_RELIC_REASONS.has(
+      String(listing?.disabledReason ?? "").trim().toLowerCase(),
+    ) &&
+    Number.isSafeInteger(Number(listing?.disabledAtBlockHeight)) &&
+    Number(listing?.disabledAtBlockHeight) > 0 &&
+    /^[0-9a-f]{64}$/u.test(
+      String(listing?.disabledByTxid ?? "").trim().toLowerCase(),
+    )
+  );
+}
+
+function assertWalletCutoverRelicsDoNotReserve(payload, address, label) {
+  assert(
+    payload?.walletScoped === true && payload?.authoritativeWallet === true,
+    `${label} did not return authoritative wallet-scoped WORK state`,
+  );
+  const ownedListings = (payload?.listings ?? []).filter(
+    (listing) =>
+      String(listing?.sellerAddress ?? "").toLowerCase() ===
+      String(address).toLowerCase(),
+  );
+  const ownedClosedListings = (payload?.closedListings ?? []).filter(
+    (listing) =>
+      String(listing?.sellerAddress ?? "").toLowerCase() ===
+      String(address).toLowerCase(),
+  );
+  const cutoverRelics = ownedClosedListings.filter(
+    (listing) =>
+      listing?.relic === true &&
+      String(listing?.status ?? "").trim().toLowerCase() === "disabled" &&
+      NON_RESERVING_WORK_CUTOVER_RELIC_REASONS.has(
+        String(listing?.disabledReason ?? "").trim().toLowerCase(),
+      ) &&
+      Number.isSafeInteger(Number(listing?.disabledAtBlockHeight)) &&
+      Number(listing?.disabledAtBlockHeight) > 0 &&
+      /^[0-9a-f]{64}$/u.test(
+        String(listing?.disabledByTxid ?? "").trim().toLowerCase(),
+      ),
+  );
+  assert(
+    cutoverRelics.length > 0,
+    `${label} no longer includes the reported cutover relic fixture`,
+  );
+  const reservingRelics = cutoverRelics.filter(
+    (listing) => !workCutoverRelicConfirmedForReservation(listing),
+  );
+  assert(
+    reservingRelics.length === 0,
+    `${label} exposes reserving cutover relics: ${reservingRelics
+      .map((listing) => String(listing?.listingId ?? listing?.txid ?? ""))
+      .filter(Boolean)
+      .join(", ")}`,
+  );
+  for (const relic of cutoverRelics) {
+    assert(
+      !listingById(ownedListings, relic?.listingId),
+      `${label} exposes retired cutover relic ${relic?.listingId} as active`,
+    );
+  }
+
+  const holder = holderByAddress(payload?.holders, address);
+  const confirmedSubatoms = workHolderBalanceSubatoms(holder);
+  assert(
+    confirmedSubatoms !== null,
+    `${label} lacks an exact WORK holder balance`,
+  );
+  const activeReservedSubatoms = ownedListings.reduce((total, listing) => {
+    const amountSubatoms = workAmountRecordSubatoms(listing);
+    assert(
+      amountSubatoms !== null,
+      `${label} active listing ${listing?.listingId} lacks exact WORK amount`,
+    );
+    return total + amountSubatoms;
+  }, 0n);
+  assert(
+    confirmedSubatoms >= activeReservedSubatoms,
+    `${label} active reservations exceed the confirmed holder balance`,
   );
 }
 
@@ -2202,6 +2347,22 @@ async function runFastMarketplaceRegressionGate() {
       ),
       `${REPORTED_RECENT_WAITING_FOR_SEAL_LISTING_TX} remained active after the Marketplace V2 cutover`,
     );
+  });
+
+  await step("reported cutover relic wallets do not reserve WORK", async () => {
+    for (const address of REPORTED_CUTOVER_RELIC_WALLET_ADDRESSES) {
+      const walletToken = await getJson("/api/v1/token", {
+        network: "livenet",
+        asset: WORK_TOKEN_ID,
+        address,
+        wallet: 1,
+      });
+      assertWalletCutoverRelicsDoNotReserve(
+        walletToken,
+        address,
+        `wallet ${address}`,
+      );
+    }
   });
 
   await step("Carbonz delayed WORK transfer wallet recovery", async () => {
