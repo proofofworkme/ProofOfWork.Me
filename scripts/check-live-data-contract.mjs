@@ -1508,20 +1508,23 @@ expectAll("server fresh token state reads fall back to valid cached snapshots", 
   /function tokenPayloadMatchesCanonicalIndexedGate\([\s\S]*payloadIndexedThroughBlockHash\(payload\)[\s\S]*canonicalGate\.indexedThroughBlock[\s\S]*canonicalHash === indexedThroughBlockHash/,
   /function readOnlyRetainedWorkAmoV8Metadata\([\s\S]*indexReady: false[\s\S]*listingWritesEnabled: false[\s\S]*migrationReady: false[\s\S]*protocolWritesEnabled: false[\s\S]*settlementWritesEnabled: false[\s\S]*writeAdmission: false[\s\S]*pendingReady: false/,
   /function retainedExactTipTokenPayloadForRead\([\s\S]*canonicalGate\?\.ready === true[\s\S]*cached\?\.greenUntil[\s\S]*readOnlyRetainedWorkAmoV8Metadata/,
-  /if \(cachedPayload\) \{[\s\S]*tokenScope === WORK_TOKEN_ID[\s\S]*withWorkMarketplaceV4Metadata\(cachedPayload, network\)[\s\S]*jsonResponse\([\s\S]*responsePayload/,
-  /indexedPayload && \(!freshRead \|\| indexedPayloadExact\)[\s\S]*const responsePayload = await withWorkMarketplaceV4Metadata\([\s\S]*indexedPayload,[\s\S]*network,[\s\S]*\);[\s\S]*cacheTokenPayload\(network,\s*tokenScope,\s*responsePayload,\s*\{[\s\S]*exactTipValidated:\s*indexedPayloadExact[\s\S]*\}\)[\s\S]*jsonResponse\([\s\S]*responsePayload/,
+  /function stableTipCoreTokenListingAuthorityComplete\([\s\S]*proof-token-market-core-gettxout-v1[\s\S]*checkedOutpointsSha256[\s\S]*spentListingCount \+ unspentListingCount === checkedListingCount/,
+  /async function tokenReadResponsePayload\([\s\S]*requireWorkListingAuthority[\s\S]*tokenPayloadWithSpendableActiveListings\([\s\S]*CANONICAL_WORK_LISTING_AUTHORITY_UNAVAILABLE/,
+  /if \(cachedPayload\) \{[\s\S]*const responsePayload = await tokenReadResponsePayload\([\s\S]*cachedPayload,[\s\S]*network,[\s\S]*tokenScope,[\s\S]*requireWorkListingAuthority: freshRead[\s\S]*jsonResponse\([\s\S]*responsePayload/,
+  /indexedPayload && \(!freshRead \|\| indexedPayloadExact\)[\s\S]*const responsePayload = await tokenReadResponsePayload\([\s\S]*indexedPayload,[\s\S]*network,[\s\S]*tokenScope,[\s\S]*requireWorkListingAuthority: freshRead[\s\S]*cacheTokenPayload\(network,\s*tokenScope,\s*responsePayload,\s*\{[\s\S]*exactTipValidated:\s*indexedPayloadExact[\s\S]*\}\)[\s\S]*jsonResponse\([\s\S]*responsePayload/,
   /async function cachedTokenPayloadFallbackForRead\([\s\S]*cachedTokenPayloadSnapshotNoRefresh\(network,\s*scope\)[\s\S]*rejectEmptyMainnetTokenPayload\(network,\s*payload,\s*scope,\s*label\)[\s\S]*existingCurrentCanonicalLedgerPayloadWithinMs\([\s\S]*existingCanonicalLedgerPayload\(network\)[\s\S]*ledgerPayloadForFreshnessCompare\(ledger,\s*scope\)[\s\S]*refreshTokenPayloadCacheInBackground\(network,\s*scope\)/,
   /url\.pathname === "\/api\/v1\/token"[\s\S]*currentExactTipTokenPayloadForRead\([\s\S]*"token-state-fresh-exact-tip-memory"[\s\S]*"token-state-exact-tip-memory"[\s\S]*canonicalReadGate[\s\S]*currentProofIndexTokenPayloadForRead\([\s\S]*currentMemoryTokenPayloadForRead\([\s\S]*"token-state-fresh-memory"[\s\S]*cachedTokenPayloadFallbackForRead\([\s\S]*"token-state-fresh-cache"[\s\S]*Fresh credit state is still catching up/,
   /const indexedPayloadExact = tokenPayloadMatchesCanonicalGate\([\s\S]*indexedPayload,[\s\S]*canonicalReadGate[\s\S]*indexedPayload && \(!freshRead \|\| indexedPayloadExact\)[\s\S]*exactTipValidated: indexedPayloadExact/,
   /currentMemoryTokenPayloadForRead\([\s\S]*tokenPayloadMatchesCanonicalGate\(cachedPayload, canonicalReadGate\)[\s\S]*cachedTokenPayloadFallbackForRead\([\s\S]*tokenPayloadMatchesCanonicalGate\(fallbackPayload, canonicalReadGate\)/,
 ]);
 
-expectAll("server token reads always expose the AMO activation envelope", tokenRouteSource, [
-  /const responsePayload = await withWorkMarketplaceV4Metadata\([\s\S]*indexedPayload,[\s\S]*network/,
-  /if \(cachedPayload\) \{[\s\S]*withWorkMarketplaceV4Metadata\(cachedPayload,\s*network\)[\s\S]*jsonResponse\([\s\S]*responsePayload/,
-  /withWorkMarketplaceV4Metadata\(fallbackPayload,\s*network\)/,
-  /withWorkMarketplaceV4Metadata\([\s\S]*walletScopedTokenPayload\(/,
-  /withWorkMarketplaceV4Metadata\(payload,\s*network\)/,
+expectAll("server token reads always expose the AMO activation envelope", server + tokenRouteSource, [
+  /async function tokenReadResponsePayload\([\s\S]*withWorkMarketplaceV4Metadata\(payload, network\)/,
+  /const responsePayload = await tokenReadResponsePayload\([\s\S]*indexedPayload,[\s\S]*network,[\s\S]*tokenScope/,
+  /if \(cachedPayload\) \{[\s\S]*tokenReadResponsePayload\([\s\S]*cachedPayload,[\s\S]*network,[\s\S]*tokenScope[\s\S]*jsonResponse\([\s\S]*responsePayload/,
+  /tokenReadResponsePayload\([\s\S]*fallbackPayload,[\s\S]*network,[\s\S]*tokenScope/,
+  /tokenReadResponsePayload\([\s\S]*walletPayload,[\s\S]*network,[\s\S]*tokenScope/,
+  /tokenReadResponsePayload\(payload,\s*network,\s*tokenScope/,
 ]);
 
 expectAll("server canonical summaries require hash-bound database snapshots", server, [
@@ -1698,8 +1701,8 @@ expectAll("wallet scoped token reads keep confirmed lifecycle history", server, 
   /async function tokenPayloadWithIndexedWalletOverlay\([\s\S]*const invalidEvents = mergeTokenStateItemsByKey\([\s\S]*overlay\.invalidEvents[\s\S]*invalidEvents: invalidEvents\.length/,
   /async function tokenPayloadWithIndexedWalletOverlay\([\s\S]*sourceTokens = \[\][\s\S]*walletTokenIds[\s\S]*const tokens = mergeTokenStateItemsByKey/,
   /async function walletScopedTokenPayload\([\s\S]*currentProofIndexTokenPayloadForRead\([\s\S]*tokenPayloadScopedToAddresses[\s\S]*tokenPayloadWithIndexedWalletOverlay[\s\S]*tokenPayloadWithIndexedWalletHolders[\s\S]*tokenPayloadWithWalletActiveListings/,
-  /async function walletScopedTokenPayload\([\s\S]*currentCanonicalTokenSummaryPayloadForFreshRead\([\s\S]*currentProofIndexTokenPayloadForRead\([\s\S]*Fresh wallet credit state is temporarily unavailable/,
-  /async function walletScopedTokenPayload\([\s\S]*requireCurrent[\s\S]*authoritativeWallet: true[\s\S]*Fresh wallet credit state is temporarily unavailable/,
+  /async function walletScopedTokenPayload\([\s\S]*proofIndexWalletScopedTokenPayloadForRead\([\s\S]*if \(requireCurrent\) \{[\s\S]*throw freshWalletIndexUnavailable\(\)[\s\S]*currentProofIndexTokenPayloadForRead/,
+  /async function walletScopedTokenPayload\([\s\S]*Fresh wallet credit state is temporarily unavailable[\s\S]*requireCurrent[\s\S]*authoritativeWallet: true/,
   /async function walletScopedTokenSummaryPayload\([\s\S]*currentProofIndexTokenPayloadForRead\([\s\S]*tokenPayloadScopedToAddresses[\s\S]*tokenPayloadWithIndexedWalletOverlay[\s\S]*tokenPayloadWithIndexedWalletHolders/,
   /async function indexedWalletClosedListings\([\s\S]*kind: "token-closed-listings"[\s\S]*proofIndexEventHistoryPayload/,
   /async function tokenPayloadWithIndexedWalletClosedListings\([\s\S]*tokenStateWithPreservedListingRecords/,
@@ -1798,7 +1801,7 @@ expectAll("wallet balance reads require an exact hashed checkpoint or bounded ca
   /function walletTokenOverlayMatchesCanonicalFreshGate\([\s\S]*walletTokenOverlayMatchesCanonicalGate\(overlay, gate\)[\s\S]*allowLastGood === true[\s\S]*canonicalGateCanUseBoundedLastGood\(gate\)[\s\S]*walletTokenOverlayMatchesCanonicalIndexedGate\(overlay, gate\)/,
   /async function proofIndexWalletScopedTokenPayloadForRead\([\s\S]*if \(!walletTokenOverlayHasExactCheckpoint\(overlay\)\)[\s\S]*return null/,
   /async function walletScopedTokenPayload\([\s\S]*authoritativeWallet:\s*true[\s\S]*proofIndexWalletScopedTokenPayloadForRead\([\s\S]*\{ allowLastGood, requireCurrent \}/,
-  /if \(requireCurrent\) \{[\s\S]*CANONICAL_WALLET_INDEX_UNAVAILABLE[\s\S]*throw unavailable/,
+  /const freshWalletIndexUnavailable = \(\) => \{[\s\S]*CANONICAL_WALLET_INDEX_UNAVAILABLE[\s\S]*if \(requireCurrent\) \{[\s\S]*throw freshWalletIndexUnavailable\(\)/,
   /function walletScopedTokenPayloadFromOverlay\(overlay,\s*network,\s*tokenScope\)[\s\S]*walletTokenPayloadWithCanonicalDefinitions\([\s\S]*confirmedTokens:\s*tokens\.filter/,
 ]);
 expectAll("fresh wallet overlays preserve their exact checkpoint proof", walletTokenOverlayMergeSource, [

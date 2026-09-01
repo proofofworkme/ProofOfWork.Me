@@ -24,6 +24,7 @@ const { activityHistoryCacheKey } = await importTypeScriptModule(
 const {
   clearProofApiReadWarning,
   currentProofApiReadWarning,
+  isTransientProofApiReadError,
   ProofApiRequestError,
   proofApiLastGoodReadStatus,
   setProofApiReadWarning,
@@ -112,6 +113,28 @@ assert.doesNotMatch(
   proofApiLastGoodReadStatus(unavailableWithLag),
   /is catching up/iu,
 );
+
+const walletUnavailable = new ProofApiRequestError("wallet proof unavailable", {
+  code: "CANONICAL_WALLET_INDEX_UNAVAILABLE",
+  details: {
+    indexedThroughBlock: 958_490,
+    tipHeight: 958_490,
+  },
+  status: 503,
+});
+assert.equal(isTransientProofApiReadError(walletUnavailable), true);
+const walletUnavailableText = proofApiLastGoodReadStatus(walletUnavailable, {
+  label: "Wallet",
+});
+assert.match(
+  walletUnavailableText,
+  /exact-tip wallet balance proof is temporarily unavailable/iu,
+);
+assert.match(
+  walletUnavailableText,
+  /Wallet actions remain unavailable until the wallet proof catches up/iu,
+);
+assert.doesNotMatch(walletUnavailableText, /is catching up/iu);
 
 const warnings = new Map();
 assert.equal(
@@ -223,7 +246,7 @@ assert.equal(
 
 console.log(
   JSON.stringify({
-    checks: 40,
+    checks: 43,
     logCacheDimensions: ["query", "kind", "page", "cursor", "snapshot"],
     ok: true,
   }),

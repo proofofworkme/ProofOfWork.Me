@@ -11023,6 +11023,131 @@ check("fresh public reads can use bounded canonical last-good summaries", async 
   );
 });
 
+check("fresh WORK token responses require stable Core listing authority", async () => {
+  const workTokenId = WORK_TOKEN_ID;
+  const authority = {
+    checkedListingCount: 3,
+    checkedOutpointsSha256: "b".repeat(64),
+    checkpoint: {
+      blockHash: "a".repeat(64),
+      height: 964_965,
+    },
+    includeMempool: true,
+    inputListingCount: 3,
+    model: "proof-token-market-core-gettxout-v1",
+    outputListingCount: 2,
+    spentListingCount: 1,
+    unspentListingCount: 2,
+  };
+  const stableTipCoreTokenListingAuthorityComplete = isolatedFunction(
+    API_PATH,
+    "stableTipCoreTokenListingAuthorityComplete",
+  );
+  assert.equal(stableTipCoreTokenListingAuthorityComplete(authority), true);
+  assert.equal(
+    stableTipCoreTokenListingAuthorityComplete({
+      ...authority,
+      checkedOutpointsSha256: "not-a-hash",
+    }),
+    false,
+  );
+  assert.equal(
+    stableTipCoreTokenListingAuthorityComplete({
+      ...authority,
+      spentListingCount: 2,
+    }),
+    false,
+  );
+
+  let metadataReads = 0;
+  let spendableReads = 0;
+  const tokenReadResponsePayload = isolatedFunction(
+    API_PATH,
+    "tokenReadResponsePayload",
+    {
+      WORK_TOKEN_ID: workTokenId,
+      freshDataUnavailableError: (message) => Object.assign(
+        new Error(message),
+        { statusCode: 503 },
+      ),
+      normalizeTokenScope: (value) =>
+        String(value ?? "").trim().toUpperCase() === "WORK"
+          ? workTokenId
+          : String(value ?? "").trim().toLowerCase(),
+      stableTipCoreTokenListingAuthorityComplete,
+      tokenPayloadWithSpendableActiveListings: async (payload) => {
+        spendableReads += 1;
+        return { ...payload, listingAuthority: authority };
+      },
+      withWorkMarketplaceV4Metadata: async (payload) => {
+        metadataReads += 1;
+        return { ...payload, workAmoV8: { checked: true } };
+      },
+    },
+  );
+  const freshPayload = await tokenReadResponsePayload(
+    { listings: [{ listingId: "1".repeat(64) }] },
+    "livenet",
+    "WORK",
+    { requireWorkListingAuthority: true },
+  );
+  assert.equal(freshPayload.listingAuthority, authority);
+  assert.equal(freshPayload.workAmoV8.checked, true);
+  assert.equal(metadataReads, 1);
+  assert.equal(spendableReads, 1);
+
+  await tokenReadResponsePayload(
+    { listingAuthority: authority, listings: [] },
+    "livenet",
+    "WORK",
+    { requireWorkListingAuthority: true },
+  );
+  assert.equal(spendableReads, 1);
+
+  const nonFreshPayload = await tokenReadResponsePayload(
+    { listings: [] },
+    "livenet",
+    "WORK",
+    { requireWorkListingAuthority: false },
+  );
+  assert.equal(nonFreshPayload.listingAuthority, undefined);
+  assert.equal(spendableReads, 1);
+
+  const failingTokenReadResponsePayload = isolatedFunction(
+    API_PATH,
+    "tokenReadResponsePayload",
+    {
+      WORK_TOKEN_ID: workTokenId,
+      freshDataUnavailableError: (message) => Object.assign(
+        new Error(message),
+        { statusCode: 503 },
+      ),
+      normalizeTokenScope: (value) =>
+        String(value ?? "").trim().toUpperCase() === "WORK"
+          ? workTokenId
+          : String(value ?? "").trim().toLowerCase(),
+      stableTipCoreTokenListingAuthorityComplete,
+      tokenPayloadWithSpendableActiveListings: async (payload) => payload,
+      withWorkMarketplaceV4Metadata: async (payload) => payload,
+    },
+  );
+  await assert.rejects(
+    failingTokenReadResponsePayload(
+      { listings: [{ listingId: "2".repeat(64) }] },
+      "livenet",
+      "WORK",
+      { requireWorkListingAuthority: true },
+    ),
+    (error) =>
+      /Fresh WORK listing authority is still catching up/u.test(
+        String(error?.message ?? ""),
+      ) &&
+      error?.details?.code ===
+        "CANONICAL_WORK_LISTING_AUTHORITY_UNAVAILABLE" &&
+      error?.details?.requiredSource === "proof-token-market-core-gettxout-v1",
+  );
+});
+
 check("wallet WORK overlay recovers active canonical V8 listings and drops matching invalid attempts", async () => {
   const listingId = "07c9ca719adf7a7e94ff17c917e599e872ae1c0348f282219907c060a72b8043";
   const sealTxid = "4c902cf25186ff6619288141a51af533be110db40c8d57ed5cebee9c316a1ce0";
@@ -24419,6 +24544,132 @@ check("WORK precision audit accepts marker-bound Q16 with preserved exact Q8 his
   assert.match(
     queries[5].sql,
     /indexed_through_block >= \$5::integer/u,
+  );
+});
+
+check("WORK atom reservation audit separates historical sealing inventory", async () => {
+  const activationHeight = 958_200;
+  const auditWorkAtomicProjection = isolatedFunction(
+    BACKFILL_PATH,
+    "auditWorkAtomicProjection",
+    {
+      INCB_RANGE_REPLAY_WITNESS_MANIFEST_MODEL,
+      NETWORK: "livenet",
+      WORK_AMO_V8_AUTH_VERSION,
+      WORK_AMO_V8_GLOBAL_PRECISION_MODEL:
+        WORK_PRECISION_V2_MODEL,
+      WORK_ATOMIC_PROJECTION_MODEL,
+      WORK_DECIMALS,
+      WORK_SUBATOM_DECIMALS,
+      WORK_SUBATOM_PROJECTION_MODEL,
+      WORK_SUBATOM_UNIT_SCALE_TEXT,
+      WORK_TOKEN_ID,
+      WORK_TOKEN_MAX_SUPPLY: 21_000_000,
+      WORK_TOKEN_MINT_AMOUNT: 1_000,
+      WORK_UNIT_SCALE_TEXT,
+      currentWorkPrecisionV2Marker: async () => ({
+        activationHeight,
+      }),
+      objectValue,
+      workAtomicDefinitionReady: () => false,
+      workSubatomicDefinitionReady: () => true,
+    },
+  );
+  const baseRows = (reservations) => [
+    {
+      max_supply: WORK_TOKEN_MAX_SUPPLY_SUBATOMS.toString(),
+      metadata: {
+        amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+        decimals: WORK_SUBATOM_DECIMALS,
+        precisionModel: WORK_PRECISION_V2_MODEL,
+        unitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,
+      },
+      mint_amount: WORK_TOKEN_MINT_AMOUNT_SUBATOMS.toString(),
+      token_id: WORK_TOKEN_ID,
+    },
+    {
+      confirmed_supply: "210000000000000000000000",
+      holders: 2,
+      max_balance: "200000000000000000000000",
+      min_balance: "10000000000000000000000",
+      negative_balances: 0,
+      pending_delta: "0",
+      rows: 2,
+    },
+    {
+      invalid_amounts: 0,
+      max_amount: "1000000000000000000000",
+      min_amount: "200000000000000000000",
+      rows: 2,
+      statuses: { active: 2 },
+    },
+    {
+      ambiguous_exact_events: 0,
+      amount_events: 3,
+      atom_events: 2,
+      confirmed_mints: 1,
+      confirmed_sales: 1,
+      confirmed_transfers: 1,
+      invalid_atom_events: 0,
+      invalid_events: 0,
+      invalid_legacy_events: 0,
+      invalid_precision_events: 0,
+      invalid_subatom_events: 0,
+      mismatched_atom_events: 0,
+      missing_amount_unit_events: 0,
+      precision_events: 3,
+      repairable_q16_invalid_zero_events: 0,
+      subatom_events: 1,
+      unrepairable_missing_amount_unit_events: 0,
+      valid_events: 3,
+    },
+    reservations,
+    {
+      derived: 2,
+      issuance_locked: 0,
+      marked: 2,
+      total: 2,
+      unmarked_derived: 0,
+      unmarked_derived_referenced: 0,
+      unmarked_non_oracle_derived: 0,
+    },
+  ];
+  const runAudit = async (reservations) => {
+    const queries = [];
+    const rows = baseRows(reservations);
+    const audit = await auditWorkAtomicProjection({
+      async query(sql, params) {
+        queries.push({ params: Array.from(params), sql: String(sql) });
+        return { rows: [rows.shift()] };
+      },
+    });
+    return { audit, queries };
+  };
+
+  const sealingOnly = await runAudit({
+    oversubscribed_sellers: 0,
+    sealing_oversubscribed_sellers: 4,
+  });
+  assert.equal(sealingOnly.audit.reservations.oversubscribed_sellers, 0);
+  assert.equal(
+    sealingOnly.audit.reservations.sealing_oversubscribed_sellers,
+    4,
+  );
+  assert.match(
+    sealingOnly.queries[4].sql,
+    /status IN \('active', 'pending', 'sealing'\)[\s\S]*live_amount[\s\S]*sealing_amount/u,
+  );
+  assert.match(
+    sealingOnly.queries[4].sql,
+    /AS oversubscribed_sellers[\s\S]*AS sealing_oversubscribed_sellers/u,
+  );
+
+  await assert.rejects(
+    runAudit({
+      oversubscribed_sellers: 1,
+      sealing_oversubscribed_sellers: 4,
+    }),
+    /WORK atomic migration preflight found oversubscribed listing reservations/u,
   );
 });
 

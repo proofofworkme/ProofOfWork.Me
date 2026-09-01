@@ -62,6 +62,7 @@ export function isTransientProofApiReadError(error: unknown) {
       error.code === "CANONICAL_INDEX_UNAVAILABLE" ||
       error.code === "CANONICAL_INDEX_CATCHING_UP" ||
       error.code === "CANONICAL_SUMMARY_UNAVAILABLE" ||
+      error.code === "CANONICAL_WALLET_INDEX_UNAVAILABLE" ||
       error.status === 502 ||
       error.status === 503 ||
       error.status === 504
@@ -123,9 +124,12 @@ export function proofApiLastGoodReadStatus(
 
   const label = options.label?.trim() || "ProofOfWork";
   const code = error instanceof ProofApiRequestError ? error.code : "";
+  const walletIndexUnavailable =
+    code === "CANONICAL_WALLET_INDEX_UNAVAILABLE";
   const explicitlyUnavailable =
     code === "CANONICAL_INDEX_UNAVAILABLE" ||
-    code === "CANONICAL_SUMMARY_UNAVAILABLE";
+    code === "CANONICAL_SUMMARY_UNAVAILABLE" ||
+    walletIndexUnavailable;
   const explicitlyAtTip =
     lagBlocks === 0 ||
     (scanIndexedThroughBlock !== undefined &&
@@ -154,11 +158,15 @@ export function proofApiLastGoodReadStatus(
       : "";
   const availabilityText = isCatchingUp
     ? `exact-tip refresh is catching up${lagText}`
+    : walletIndexUnavailable
+      ? "exact-tip wallet balance proof is temporarily unavailable"
     : code === "CANONICAL_SUMMARY_UNAVAILABLE" || explicitlyAtTip
       ? "exact-tip summary publication is temporarily unavailable"
       : "exact-tip refresh is temporarily unavailable";
   const actionText =
-    explicitlyAtTip
+    walletIndexUnavailable
+      ? " Wallet actions remain unavailable until the wallet proof catches up."
+    : explicitlyAtTip
       ? " Canonical scan is at the full-node tip; actions recheck live admission before signing."
       : " This view is not current. Exact-tip actions remain unavailable.";
 

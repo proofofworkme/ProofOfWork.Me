@@ -8815,23 +8815,39 @@ async function auditWorkAtomicProjection(
       ),
     () => client.query(
         `
-          WITH reserved AS (
-            SELECT seller_address, sum(amount) AS amount
+          WITH reserved AS MATERIALIZED (
+            SELECT seller_address, status, sum(amount) AS amount
             FROM proof_indexer.credit_listings
             WHERE network = $1
               AND token_id = $2
               AND status IN ('active', 'pending', 'sealing')
+            GROUP BY seller_address, status
+          ),
+          seller_reserved AS MATERIALIZED (
+            SELECT
+              seller_address,
+              sum(amount) FILTER (WHERE status IN ('active', 'pending')) AS live_amount,
+              sum(amount) FILTER (WHERE status = 'sealing') AS sealing_amount
+            FROM reserved
             GROUP BY seller_address
           )
-          SELECT count(*)::integer AS oversubscribed_sellers
-          FROM reserved
+          SELECT
+            count(*) FILTER (
+              WHERE COALESCE(live_amount, 0) >
+                GREATEST(0, COALESCE(balance.confirmed_balance, 0) +
+                  LEAST(0, COALESCE(balance.pending_delta, 0)))
+            )::integer AS oversubscribed_sellers,
+            count(*) FILTER (
+              WHERE COALESCE(sealing_amount, 0) > 0
+                AND COALESCE(sealing_amount, 0) + COALESCE(live_amount, 0) >
+                  GREATEST(0, COALESCE(balance.confirmed_balance, 0) +
+                    LEAST(0, COALESCE(balance.pending_delta, 0)))
+            )::integer AS sealing_oversubscribed_sellers
+          FROM seller_reserved
           LEFT JOIN proof_indexer.credit_balances balance
             ON balance.network = $1
            AND balance.token_id = $2
-           AND balance.address = reserved.seller_address
-          WHERE reserved.amount >
-            GREATEST(0, COALESCE(balance.confirmed_balance, 0) +
-              LEAST(0, COALESCE(balance.pending_delta, 0)))
+           AND balance.address = seller_reserved.seller_address
         `,
         [NETWORK, WORK_TOKEN_ID],
       ),

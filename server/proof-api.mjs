@@ -10631,6 +10631,81 @@ async function withWorkMarketplaceV4Metadata(payload, network) {
   };
 }
 
+function stableTipCoreTokenListingAuthorityComplete(authority) {
+  if (!authority || typeof authority !== "object" || Array.isArray(authority)) {
+    return false;
+  }
+  const nonNegativeInteger = (value) => {
+    const number = Number(value);
+    return Number.isSafeInteger(number) && number >= 0 ? number : null;
+  };
+  const checkpoint = authority.checkpoint;
+  const checkpointHeight = nonNegativeInteger(checkpoint?.height);
+  const checkpointHash = String(checkpoint?.blockHash ?? "")
+    .trim()
+    .toLowerCase();
+  const checkedOutpointsSha256 = String(authority.checkedOutpointsSha256 ?? "")
+    .trim()
+    .toLowerCase();
+  const checkedListingCount = nonNegativeInteger(authority.checkedListingCount);
+  const inputListingCount = nonNegativeInteger(authority.inputListingCount);
+  const outputListingCount = nonNegativeInteger(authority.outputListingCount);
+  const spentListingCount = nonNegativeInteger(authority.spentListingCount);
+  const unspentListingCount = nonNegativeInteger(authority.unspentListingCount);
+  return (
+    authority.model === "proof-token-market-core-gettxout-v1" &&
+    authority.includeMempool === true &&
+    checkpointHeight !== null &&
+    checkpointHeight > 0 &&
+    /^[0-9a-f]{64}$/u.test(checkpointHash) &&
+    /^[0-9a-f]{64}$/u.test(checkedOutpointsSha256) &&
+    checkedListingCount !== null &&
+    inputListingCount !== null &&
+    outputListingCount !== null &&
+    spentListingCount !== null &&
+    unspentListingCount !== null &&
+    checkedListingCount === inputListingCount &&
+    outputListingCount === unspentListingCount &&
+    spentListingCount + unspentListingCount === checkedListingCount
+  );
+}
+
+async function tokenReadResponsePayload(payload, network, tokenScope, options = {}) {
+  const scope = normalizeTokenScope(tokenScope);
+  let responsePayload =
+    scope === WORK_TOKEN_ID
+      ? await withWorkMarketplaceV4Metadata(payload, network)
+      : payload;
+  if (
+    options.requireWorkListingAuthority === true &&
+    network === "livenet" &&
+    scope === WORK_TOKEN_ID &&
+    !stableTipCoreTokenListingAuthorityComplete(
+      responsePayload?.listingAuthority,
+    )
+  ) {
+    responsePayload = await tokenPayloadWithSpendableActiveListings(
+      responsePayload,
+      network,
+    );
+    if (
+      !stableTipCoreTokenListingAuthorityComplete(
+        responsePayload?.listingAuthority,
+      )
+    ) {
+      const unavailable = freshDataUnavailableError(
+        "Fresh WORK listing authority is still catching up to Bitcoin Core.",
+      );
+      unavailable.details = {
+        code: "CANONICAL_WORK_LISTING_AUTHORITY_UNAVAILABLE",
+        requiredSource: "proof-token-market-core-gettxout-v1",
+      };
+      throw unavailable;
+    }
+  }
+  return responsePayload;
+}
+
 function bytesToHex(bytes) {
   return Buffer.from(bytes).toString("hex");
 }
@@ -24114,7 +24189,7 @@ async function strictCoreRegistryListingReconciliation(
     (payloadHeight !== initialTip.height || payloadHash !== initialTip.blockHash)
   ) {
     throw registryAuthorityUnavailable(
-      "The indexed registry checkpoint does not match Bitcoin Core.",
+      "The indexed registry checkpoint is catching up to Bitcoin Core.",
       {
         coreBlockHash: initialTip.blockHash,
         coreHeight: initialTip.height,
@@ -74635,9 +74710,12 @@ async function handleRequest(request, response) {
           canonicalReadGate,
         );
         if (cachedPayload) {
-          const responsePayload = tokenScope === WORK_TOKEN_ID
-            ? await withWorkMarketplaceV4Metadata(cachedPayload, network)
-            : cachedPayload;
+          const responsePayload = await tokenReadResponsePayload(
+            cachedPayload,
+            network,
+            tokenScope,
+            { requireWorkListingAuthority: freshRead },
+          );
           jsonResponse(
             response,
             200,
@@ -74655,9 +74733,11 @@ async function handleRequest(request, response) {
             canonicalReadGate,
           );
         if (canonicalSummaryPayload) {
-          const responsePayload = await withWorkMarketplaceV4Metadata(
+          const responsePayload = await tokenReadResponsePayload(
             canonicalSummaryPayload,
             network,
+            tokenScope,
+            { requireWorkListingAuthority: true },
           );
           jsonResponse(
             response,
@@ -74685,9 +74765,11 @@ async function handleRequest(request, response) {
           canonicalReadGate,
         );
         if (indexedPayload && (!freshRead || indexedPayloadExact)) {
-          const responsePayload = await withWorkMarketplaceV4Metadata(
+          const responsePayload = await tokenReadResponsePayload(
             indexedPayload,
             network,
+            tokenScope,
+            { requireWorkListingAuthority: freshRead },
           );
           cacheTokenPayload(network, tokenScope, responsePayload, {
             exactTipValidated: indexedPayloadExact,
@@ -74711,10 +74793,16 @@ async function handleRequest(request, response) {
           cachedPayload &&
           tokenPayloadMatchesCanonicalGate(cachedPayload, canonicalReadGate)
         ) {
+          const responsePayload = await tokenReadResponsePayload(
+            cachedPayload,
+            network,
+            tokenScope,
+            { requireWorkListingAuthority: true },
+          );
           jsonResponse(
             response,
             200,
-            await withWorkMarketplaceV4Metadata(cachedPayload, network),
+            responsePayload,
             TOKEN_READ_CACHE_CONTROL,
           );
           return;
@@ -74730,10 +74818,16 @@ async function handleRequest(request, response) {
           fallbackPayload &&
           tokenPayloadMatchesCanonicalGate(fallbackPayload, canonicalReadGate)
         ) {
+          const responsePayload = await tokenReadResponsePayload(
+            fallbackPayload,
+            network,
+            tokenScope,
+            { requireWorkListingAuthority: true },
+          );
           jsonResponse(
             response,
             200,
-            await withWorkMarketplaceV4Metadata(fallbackPayload, network),
+            responsePayload,
             TOKEN_READ_CACHE_CONTROL,
           );
           return;
@@ -74743,21 +74837,23 @@ async function handleRequest(request, response) {
         );
       }
       if (walletScoped) {
+        const walletPayload = await walletScopedTokenPayload(
+          network,
+          tokenScope,
+          recoveryAddresses,
+          {
+            allowLastGood: freshRead && serveFreshLastGood,
+            canonicalReadGate,
+            requireCurrent: freshRead,
+          },
+        );
         jsonResponse(
           response,
           200,
-          await withWorkMarketplaceV4Metadata(
-            await walletScopedTokenPayload(
-              network,
-              tokenScope,
-              recoveryAddresses,
-              {
-                allowLastGood: freshRead && serveFreshLastGood,
-                canonicalReadGate,
-                requireCurrent: freshRead,
-              },
-            ),
+          await tokenReadResponsePayload(
+            walletPayload,
             network,
+            tokenScope,
           ),
           freshRead ? FRESH_READ_CACHE_CONTROL : TOKEN_READ_CACHE_CONTROL,
         );
@@ -74780,7 +74876,9 @@ async function handleRequest(request, response) {
       jsonResponse(
         response,
         200,
-        await withWorkMarketplaceV4Metadata(payload, network),
+        await tokenReadResponsePayload(payload, network, tokenScope, {
+          requireWorkListingAuthority: tokenFreshRead,
+        }),
         tokenFreshRead ? FRESH_READ_CACHE_CONTROL : TOKEN_READ_CACHE_CONTROL,
       );
       return;

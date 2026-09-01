@@ -82,6 +82,8 @@ const postgresQueryHealthTimer = read(
   "deploy/proofofwork-postgres-query-health.timer",
 );
 const infrastructure = read("OP_RETURN_INFRASTRUCTURE.md");
+const packageJson = read("package.json");
+const surfaceAudit = read("scripts/audit-production-surfaces.mjs");
 
 for (const executable of [
   "deploy/proofofwork-node-release-exchange.py",
@@ -96,6 +98,39 @@ for (const executable of [
     `${executable} must be tracked executable.`,
   );
 }
+
+assert.match(
+  packageJson,
+  /"audit:surfaces": "node scripts\/audit-production-surfaces\.mjs"/u,
+);
+let priorSurfaceIndex = -1;
+for (const host of [
+  "proofofwork.me",
+  "id.proofofwork.me",
+  "desktop.proofofwork.me",
+  "browser.proofofwork.me",
+  "amo.proofofwork.me",
+  "credit.proofofwork.me",
+  "wallet.proofofwork.me",
+  "work.proofofwork.me",
+  "infinity.proofofwork.me",
+  "inception.proofofwork.me",
+  "log.proofofwork.me",
+  "growth.proofofwork.me",
+  "computer.proofofwork.me",
+]) {
+  const index = surfaceAudit.indexOf(`title: "${host}"`);
+  assert.ok(index > priorSurfaceIndex, `${host} must keep canonical audit order.`);
+  priorSurfaceIndex = index;
+}
+assert.match(surfaceAudit, /Read-only production surface audit/u);
+assert.match(surfaceAudit, /PAGE_ONLY/u);
+assert.match(surfaceAudit, /validateConsistency/u);
+assert.match(surfaceAudit, /proof-token-market-core-gettxout-v1/u);
+assert.doesNotMatch(
+  surfaceAudit,
+  /child_process|writeFile|rmSync|systemctl|ssh|scp|DELETE FROM|UPDATE proof_indexer|INSERT INTO|DROP TABLE/u,
+);
 
 assert.match(releasePrune, /verified_archives/u);
 assert.match(releasePrune, /unverified_count/u);

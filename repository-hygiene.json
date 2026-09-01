@@ -42,6 +42,7 @@
       "audits/2026-08-31-postgresql-retention-remediation-2e.md",
       "audits/2026-08-31-storage-retention-node-manifest.md",
       "audits/2026-08-31-storage-retention-ui-manifest.md",
+      "audits/2026-09-01-production-health-data-event-storage-audit-3.md",
       "BUG_BOUNTY_LEDGER.md",
       "ID_REFUNDS.md",
       "PRODUCTION_REPAIR_SCOPE_2026-08-14.md",

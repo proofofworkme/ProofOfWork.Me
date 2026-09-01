@@ -74,6 +74,7 @@
     "indexer:verify-work-atoms-post-bootstrap": "node scripts/backfill-proof-indexer.mjs --verify-work-atoms-post-bootstrap",
     "indexer:parity": "node scripts/check-proof-indexer-parity.mjs",
     "indexer:worker": "node scripts/run-proof-indexer-worker.mjs",
+    "audit:surfaces": "node scripts/audit-production-surfaces.mjs",
     "audit:ledger": "node scripts/audit-ledger-consistency.mjs",
     "audit:computer-events": "node scripts/audit-computer-events.mjs",
     "audit:ids": "node scripts/audit-id-registry.mjs",
