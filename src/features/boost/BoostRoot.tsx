@@ -112,9 +112,17 @@ function initialSearchParam(name: string) {
   return new URLSearchParams(window.location.search).get(name)?.trim() ?? "";
 }
 
-function formatProofs(value: number | undefined) {
-  const proofs = Math.max(0, Math.floor(Number(value ?? 0)));
-  return `${proofs.toLocaleString()} proofs`;
+function formatProofs(value: number | string | undefined) {
+  const proofs = Number(value ?? 0);
+  if (!Number.isFinite(proofs) || proofs <= 0) {
+    return "0 proofs";
+  }
+  const wholeProofs = Math.trunc(proofs);
+  const whole = Math.abs(proofs - wholeProofs) < Number.EPSILON;
+  return `${proofs.toLocaleString(undefined, {
+    maximumFractionDigits: whole ? 0 : 8,
+    minimumFractionDigits: 0,
+  })} proofs`;
 }
 
 function formatUsd(value: number | undefined) {
@@ -132,6 +140,21 @@ function formatUsd(value: number | undefined) {
 
 function boostOwnerAddress(item: BoostFeedItem) {
   return (item.currentOwnerAddress || item.authorAddress || "").trim();
+}
+
+function boostTotalSignalSats(item: BoostFeedItem) {
+  const total = Number(item.totalSignalSats ?? item.signalSats);
+  return Number.isFinite(total) ? Math.max(0, total) : item.proofSignalSats;
+}
+
+function boostTotalSignalUsd(item: BoostFeedItem) {
+  const total = Number(item.totalSignalUsd ?? item.signalUsd);
+  return Number.isFinite(total) ? Math.max(0, total) : 0;
+}
+
+function boostWorkSignalValueSats(item: BoostFeedItem) {
+  const value = Number(item.workSignalValueSats);
+  return Number.isFinite(value) ? Math.max(0, value) : 0;
 }
 
 function authorLabel(
@@ -258,6 +281,8 @@ function BoostPost({
   const boostTxid = boostItemTxid(item);
   const listing = boostListingForItem(item);
   const ownerAddress = boostOwnerAddress(item);
+  const totalSignalSats = boostTotalSignalSats(item);
+  const workSignalValueSats = boostWorkSignalValueSats(item);
   const connectedOwner =
     activeAddress &&
     ownerAddress &&
@@ -281,7 +306,7 @@ function BoostPost({
             )}
             <span>{formatDate(item.createdAt)}</span>
           </div>
-          <strong>{formatProofs(item.proofSignalSats)}</strong>
+          <strong>{formatProofs(totalSignalSats)}</strong>
         </div>
 
         {item.text ? <p className="boost-post-text">{item.text}</p> : null}
@@ -294,8 +319,13 @@ function BoostPost({
         ) : null}
 
         <div className="boost-signal-row">
-          <span>{formatUsd(item.signalUsd)}</span>
-          {item.workSignal ? <span>{item.workSignal} WORK</span> : null}
+          <span>Total USD {formatUsd(boostTotalSignalUsd(item))}</span>
+          <span>Proof {formatProofs(item.proofSignalSats)}</span>
+          {item.workSignal ? (
+            <span>
+              WORK {item.workSignal} ({formatProofs(workSignalValueSats)})
+            </span>
+          ) : null}
           <span>{actionLabel(item.kind)}</span>
           <span>Owner {ownerLabel(item)}</span>
         </div>
@@ -962,7 +992,10 @@ export default function BoostRoot() {
     {
       label: "Signal",
       value: formatProofs(
-        visibleItems.reduce((total, item) => total + item.proofSignalSats, 0),
+        visibleItems.reduce(
+          (total, item) => total + boostTotalSignalSats(item),
+          0,
+        ),
       ),
       tone: "strong" as const,
     },
@@ -970,7 +1003,7 @@ export default function BoostRoot() {
       label: "USD",
       value: formatUsd(
         visibleItems.reduce(
-          (total, item) => total + Number(item.signalUsd ?? 0),
+          (total, item) => total + boostTotalSignalUsd(item),
           0,
         ),
       ),

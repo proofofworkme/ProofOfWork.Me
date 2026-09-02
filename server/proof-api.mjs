@@ -50089,6 +50089,65 @@ function boostWorkSignalDisplay(item) {
   }
 }
 
+function boostWorkNetworkValue(workFloor) {
+  const actual = workFloor?.actualValue ?? {};
+  const networkValueQ8 = canonicalNonNegativeIntegerText(
+    workFloor?.liveNetworkValueQ8 ??
+      actual.liveNetworkValueQ8 ??
+      workFloor?.networkValueQ8 ??
+      actual.networkValueQ8 ??
+      workFloor?.totalQ8 ??
+      actual.totalQ8 ??
+      "",
+  );
+  const networkValueSats = String(
+    workFloor?.liveNetworkValueSats ??
+      actual.liveNetworkValueSats ??
+      workFloor?.networkValueSats ??
+      actual.networkValueSats ??
+      workFloor?.totalSats ??
+      actual.totalSats ??
+      "",
+  ).trim();
+  return { networkValueQ8, networkValueSats };
+}
+
+function emptyBoostWorkSignalValue() {
+  return {
+    workSignalValueQ8: "0",
+    workSignalValueSats: 0,
+    workSignalValueSatsExact: "0",
+  };
+}
+
+function boostWorkSignalValue(workSignalSubatoms, workFloor) {
+  const subatoms = canonicalNonNegativeIntegerText(workSignalSubatoms, {
+    allowZero: false,
+  });
+  if (!subatoms) {
+    return emptyBoostWorkSignalValue();
+  }
+  const { networkValueQ8, networkValueSats } =
+    boostWorkNetworkValue(workFloor);
+  try {
+    const valueQ8 = workSubatomsValueAtNetworkQ8(
+      BigInt(subatoms),
+      networkValueSats,
+      networkValueQ8,
+    );
+    if (valueQ8 === null || valueQ8 < 0n) {
+      return emptyBoostWorkSignalValue();
+    }
+    return {
+      workSignalValueQ8: valueQ8.toString(),
+      workSignalValueSats: q8ToNumber(valueQ8),
+      workSignalValueSatsExact: q8ToCanonicalDecimal(valueQ8),
+    };
+  } catch {
+    return emptyBoostWorkSignalValue();
+  }
+}
+
 function boostSortMode(searchParams) {
   const mode = String(searchParams.get("sort") ?? "value")
     .trim()
@@ -50337,7 +50396,15 @@ function boostOwnershipState(items) {
   return { counts, profiles, states };
 }
 
-function boostFeedItemFromEvent(item, state, profileState, counts, network, btcUsd) {
+function boostFeedItemFromEvent(
+  item,
+  state,
+  profileState,
+  counts,
+  network,
+  btcUsd,
+  workFloor,
+) {
   const kind = String(item?.kind ?? "").trim().toLowerCase();
   const txid = boostHexTxid(item?.txid);
   if (!txid || !BOOST_VISIBLE_EVENT_KINDS.has(kind)) {
@@ -50350,7 +50417,7 @@ function boostFeedItemFromEvent(item, state, profileState, counts, network, btcU
     item?.createdAt ?? item?.confirmedAt ?? item?.indexedAt,
     new Date(),
   );
-  const signalSats = boostSignalSats(item);
+  const proofSignalSats = boostSignalSats(item);
   const counter = counts.get(boostTxid) ?? {};
   const ownerAddress = boostAddress(
     state?.ownerAddress ?? item?.currentOwnerAddress ?? item?.authorAddress,
@@ -50376,6 +50443,15 @@ function boostFeedItemFromEvent(item, state, profileState, counts, network, btcU
   const actionType = kind.replace(/^boost-/u, "");
   const workSignal = boostWorkSignalDisplay(item);
   const workSignalSubatoms = boostWorkSignalSubatoms(item);
+  const workSignalValue = boostWorkSignalValue(workSignalSubatoms, workFloor);
+  const proofSignalQ8 = BigInt(Math.floor(proofSignalSats)) * VALUE_Q8_SCALE;
+  const totalSignalQ8 =
+    proofSignalQ8 + BigInt(workSignalValue.workSignalValueQ8);
+  const totalSignalSats = q8ToNumber(totalSignalQ8);
+  const totalSignalUsd =
+    btcUsd > 0
+      ? Number(satsToUsdAtBtcUsd(totalSignalSats, btcUsd).toFixed(6))
+      : 0;
 
   return {
     actionType,
@@ -50414,18 +50490,35 @@ function boostFeedItemFromEvent(item, state, profileState, counts, network, btcU
           }
         : undefined,
     profileId,
-    proofSignalSats: signalSats,
+    proofSignalSats,
+    proofSignalUsd:
+      btcUsd > 0
+        ? Number(satsToUsdAtBtcUsd(proofSignalSats, btcUsd).toFixed(6))
+        : 0,
     reboostCount: Number(counter.reboosts ?? 0),
     replyCount: Number(counter.replies ?? 0),
-    signalSats,
-    signalUsd:
-      btcUsd > 0 ? Number(satsToUsdAtBtcUsd(signalSats, btcUsd).toFixed(2)) : 0,
+    signalSats: totalSignalSats,
+    signalUsd: totalSignalUsd,
     targetTxid,
     text,
+    totalSignalQ8: totalSignalQ8.toString(),
+    totalSignalSats,
+    totalSignalSatsExact: q8ToCanonicalDecimal(totalSignalQ8),
+    totalSignalUsd,
     txid,
-    valueRank: signalSats,
+    valueRank: totalSignalSats,
     workSignal,
     workSignalSubatoms,
+    workSignalUsd:
+      btcUsd > 0
+        ? Number(
+            satsToUsdAtBtcUsd(
+              workSignalValue.workSignalValueSats,
+              btcUsd,
+            ).toFixed(6),
+          )
+        : 0,
+    ...workSignalValue,
   };
 }
 
@@ -50483,13 +50576,21 @@ async function boostFeedPayload(network, searchParams, fresh = false) {
     });
   }
 
-  const quote = network === "livenet"
-    ? await btcUsdPricePayload(network, { fresh }).catch((error) => {
-        console.error(`Boost BTC/USD overlay failed: ${errorSummary(error)}`);
-        return null;
-      })
-    : null;
-  const btcUsd = btcUsdFromQuote(quote);
+  const [quote, workFloor] = network === "livenet"
+    ? await Promise.all([
+        btcUsdPricePayload(network, { fresh }).catch((error) => {
+          console.error(`Boost BTC/USD overlay failed: ${errorSummary(error)}`);
+          return null;
+        }),
+        cachedWorkFloorPayload(network, fresh).catch((error) => {
+          console.error(
+            `Boost WORK floor overlay failed: ${errorSummary(error)}`,
+          );
+          return null;
+        }),
+      ])
+    : [null, null];
+  const btcUsd = btcUsdFromQuote(quote) || numericValue(workFloor?.btcUsd);
   const sourceItems = Array.isArray(indexedPayload?.items)
     ? indexedPayload.items
     : [];
@@ -50526,6 +50627,7 @@ async function boostFeedPayload(network, searchParams, fresh = false) {
         counts,
         network,
         btcUsd,
+        workFloor,
       ),
     )
     .filter(Boolean)

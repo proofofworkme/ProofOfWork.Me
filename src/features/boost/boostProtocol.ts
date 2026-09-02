@@ -49,15 +49,26 @@ export type BoostFeedItem = {
     size?: number;
   };
   proofSignalSats: number;
+  proofSignalUsd?: number;
   replyCount?: number;
   reboostCount?: number;
   likeCount?: number;
   network?: BitcoinNetwork;
+  signalSats?: number;
   signalUsd?: number;
   targetTxid?: string;
   text: string;
+  totalSignalQ8?: string;
+  totalSignalSats?: number;
+  totalSignalSatsExact?: string;
+  totalSignalUsd?: number;
   txid: string;
   workSignal?: string;
+  workSignalSubatoms?: string;
+  workSignalUsd?: number;
+  workSignalValueQ8?: string;
+  workSignalValueSats?: number;
+  workSignalValueSatsExact?: string;
   profile?: BoostProfile;
 };
 

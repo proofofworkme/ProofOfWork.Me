@@ -400,6 +400,14 @@ const compaction = sliceBetween(
   /function compactTokenSummaryPayload/,
   /function workTokenLiveSeenTxids/,
 );
+const boostFeedItem = sliceBetween(
+  /function boostFeedItemFromEvent/,
+  /function compareBoostFeedItems/,
+);
+const boostFeedPayloadSource = sliceBetween(
+  /async function boostFeedPayload/,
+  /async function registrySummaryPayload/,
+);
 const publicGate = sliceBetween(
   /async function loadCanonicalPublicReadGate/,
   /async function canonicalPublicReadGate/,
@@ -658,6 +666,23 @@ expect(
     /function uniqueMarketplaceMutationActivity/u.test(server) &&
     /function marketplaceMutationPaymentFlowSats/u.test(server) &&
     /marketplaceMutationPaymentFlowSats\(selected, kinds\)/u.test(server),
+);
+expect(
+  "Boost feed signal ranks proof signal plus attached WORK valued at current floor",
+  /function boostWorkSignalValue/u.test(server) &&
+    /const workSignalValue = boostWorkSignalValue\(workSignalSubatoms, workFloor\)/u.test(
+      boostFeedItem,
+    ) &&
+    /const proofSignalQ8 = BigInt\(Math\.floor\(proofSignalSats\)\) \* VALUE_Q8_SCALE/u.test(
+      boostFeedItem,
+    ) &&
+    /proofSignalQ8 \+ BigInt\(workSignalValue\.workSignalValueQ8\)/u.test(
+      boostFeedItem,
+    ) &&
+    /signalSats: totalSignalSats/u.test(boostFeedItem) &&
+    /valueRank: totalSignalSats/u.test(boostFeedItem) &&
+    /cachedWorkFloorPayload\(network, fresh\)/u.test(boostFeedPayloadSource) &&
+    /workFloor,\s*\)\s*,/u.test(boostFeedPayloadSource),
 );
 expect(
   "proof-index value deltas verify and consolidate marketplace registry payments",

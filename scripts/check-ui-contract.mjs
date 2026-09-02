@@ -17,6 +17,8 @@ const files = [
   "src/app/routeRegistry.ts",
   "src/features/landing/LandingApp.tsx",
   "src/features/landing/LandingRoot.tsx",
+  "src/features/boost/BoostRoot.tsx",
+  "src/features/boost/boostProtocol.ts",
   "src/main.tsx",
   "src/shared/activity/logHistoryCache.ts",
   "src/shared/api/proofApiClient.ts",
@@ -523,8 +525,30 @@ const sendOpReturnBlock = app.slice(
   app.indexOf("async function createInfinityBond"),
 );
 const proofApi = read("server/proof-api.mjs");
+const boostRoot = contents.get("src/features/boost/BoostRoot.tsx");
+const boostProtocol = contents.get("src/features/boost/boostProtocol.ts");
 const exactAmount = contents.get("src/exactAmount.ts");
 const walletUtxoPolicy = contents.get("src/walletUtxos.ts");
+expect(
+  "Boost feed renders total signal while preserving proof and WORK lanes",
+  /function boostTotalSignalSats/u.test(boostRoot) &&
+    /function boostWorkSignalValueSats/u.test(boostRoot) &&
+    /<strong>\{formatProofs\(totalSignalSats\)\}<\/strong>/u.test(
+      boostRoot,
+    ) &&
+    /Total USD \{formatUsd\(boostTotalSignalUsd\(item\)\)\}/u.test(
+      boostRoot,
+    ) &&
+    /Proof \{formatProofs\(item\.proofSignalSats\)\}/u.test(boostRoot) &&
+    /WORK \{item\.workSignal\} \(\{formatProofs\(workSignalValueSats\)\}\)/u.test(
+      boostRoot,
+    ) &&
+    /visibleItems\.reduce\([\s\S]*boostTotalSignalSats\(item\)/u.test(
+      boostRoot,
+    ) &&
+    /totalSignalSats\?: number/u.test(boostProtocol) &&
+    /workSignalValueSats\?: number/u.test(boostProtocol),
+);
 const transferTokenSource = app.slice(
   app.indexOf("async function transferToken"),
   app.indexOf("async function listToken"),
