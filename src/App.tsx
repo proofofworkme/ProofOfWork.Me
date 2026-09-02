@@ -13980,6 +13980,7 @@ function tokenMarketplaceSummaryStats({
     previewMarketStats,
     authoritativeMarketStats,
   );
+  const listingBookComplete = summary?.listingBookComplete === true;
   const previewConfirmedListings = networkListings.filter(
     (listing) => listing.confirmed,
   ).length;
@@ -13988,11 +13989,19 @@ function tokenMarketplaceSummaryStats({
   const previewBuyableListings = networkListings.filter(
     tokenListingHasConfirmedSaleTicketSeal,
   ).length;
-  const totalOpenListings = scopedToken
-    ? optionalMarketplaceCount(scopedToken.openListings)
-    : summaryAppliesToNetwork
-      ? optionalMarketplaceCount(summary?.totalCounts?.listings)
-      : undefined;
+  const completeBookConfirmedListings = listingBookComplete
+    ? previewConfirmedListings
+    : undefined;
+  const completeBookPendingListings = listingBookComplete
+    ? previewPendingListings
+    : undefined;
+  const totalOpenListings = listingBookComplete
+    ? networkListings.length
+    : scopedToken
+      ? optionalMarketplaceCount(scopedToken.openListings)
+      : summaryAppliesToNetwork
+        ? optionalMarketplaceCount(summary?.totalCounts?.listings)
+        : undefined;
   const networkConfirmedListings = scopedToken
     ? undefined
     : summedTokenMarketplaceMetric(networkTokens, "confirmedOpenListings");
@@ -14000,10 +14009,12 @@ function tokenMarketplaceSummaryStats({
     ? undefined
     : summedTokenMarketplaceMetric(networkTokens, "pendingOpenListings");
   const confirmedListings =
+    completeBookConfirmedListings ??
     optionalMarketplaceCount(scopedToken?.confirmedOpenListings) ??
     networkConfirmedListings ??
     previewConfirmedListings;
   const pendingListings =
+    completeBookPendingListings ??
     optionalMarketplaceCount(scopedToken?.pendingOpenListings) ??
     networkPendingListings ??
     (totalOpenListings === undefined

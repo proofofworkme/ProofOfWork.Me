@@ -3336,6 +3336,18 @@ expect(
       tokenMarketplaceSummaryStatsBlock,
     ) &&
     /scopedToken\?\.pendingOpenListings/.test(tokenMarketplaceSummaryStatsBlock) &&
+    /const listingBookComplete = summary\?\.listingBookComplete === true;/.test(
+      tokenMarketplaceSummaryStatsBlock,
+    ) &&
+    /const completeBookConfirmedListings = listingBookComplete[\s\S]*\? previewConfirmedListings[\s\S]*: undefined;/.test(
+      tokenMarketplaceSummaryStatsBlock,
+    ) &&
+    /const completeBookPendingListings = listingBookComplete[\s\S]*\? previewPendingListings[\s\S]*: undefined;/.test(
+      tokenMarketplaceSummaryStatsBlock,
+    ) &&
+    /const totalOpenListings = listingBookComplete[\s\S]*\? networkListings\.length[\s\S]*: scopedToken[\s\S]*summary\?\.totalCounts\?\.listings/.test(
+      tokenMarketplaceSummaryStatsBlock,
+    ) &&
     /function summedTokenMarketplaceMetric[\s\S]*counts\.every\(\(count\) => count !== undefined\)/.test(
       app,
     ) &&
@@ -3345,10 +3357,10 @@ expect(
     /summedTokenMarketplaceMetric\(networkTokens, "pendingOpenListings"\)/.test(
       tokenMarketplaceSummaryStatsBlock,
     ) &&
-    /networkConfirmedListings \?\?[\s\S]*previewConfirmedListings/.test(
+    /const confirmedListings =[\s\S]*completeBookConfirmedListings \?\?[\s\S]*scopedToken\?\.confirmedOpenListings[\s\S]*networkConfirmedListings \?\?[\s\S]*previewConfirmedListings/.test(
       tokenMarketplaceSummaryStatsBlock,
     ) &&
-    /networkPendingListings \?\?[\s\S]*totalOpenListings/.test(
+    /const pendingListings =[\s\S]*completeBookPendingListings \?\?[\s\S]*scopedToken\?\.pendingOpenListings[\s\S]*networkPendingListings \?\?[\s\S]*totalOpenListings/.test(
       tokenMarketplaceSummaryStatsBlock,
     ) &&
     /totalOpenListings - confirmedListings/.test(
