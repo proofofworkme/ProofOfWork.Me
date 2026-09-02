@@ -3351,6 +3351,20 @@ const workSummaryToken = (workSummary.token?.tokens ?? []).find(
 const scopedSummaryToken = (workTokenSummary.tokens ?? []).find(
   (item) => item?.tokenId === WORK_TOKEN_ID,
 );
+const marketplaceSummaryWorkToken = (
+  alignedMarketplaceFreshSummary.token?.tokens ?? []
+).find((item) => item?.tokenId === WORK_TOKEN_ID);
+const marketplaceSummaryWorkListings = (
+  alignedMarketplaceFreshSummary.token?.listings ?? []
+).filter((item) => item?.tokenId === WORK_TOKEN_ID);
+const activeWorkListingKeys = new Set(
+  (workToken.listings ?? []).map((listing) => listingKey(listing)),
+);
+const confirmedWorkListingCount = (workToken.listings ?? []).filter(
+  (listing) => listing?.confirmed === true,
+).length;
+const pendingWorkListingCount =
+  activeWorkListingCount - confirmedWorkListingCount;
 for (const [label, summary] of [
   ["/api/v1/work-summary?fresh=1", workSummary.token],
   ["/api/v1/token-summary?asset=WORK&fresh=1", workTokenSummary],
@@ -3388,6 +3402,29 @@ assert(
 assert(
   scopedSummaryToken?.openListings === activeWorkListingCount,
   `/api/v1/token-summary?asset=WORK&fresh=1 reports ${scopedSummaryToken?.openListings} open WORK listings, expected ${activeWorkListingCount}`,
+);
+assert(
+  marketplaceSummaryWorkToken?.openListings === activeWorkListingCount,
+  `/api/v1/marketplace-summary?fresh=1 reports ${marketplaceSummaryWorkToken?.openListings} open WORK listings, expected canonical scoped count ${activeWorkListingCount}`,
+);
+assert(
+  marketplaceSummaryWorkToken?.confirmedOpenListings ===
+    confirmedWorkListingCount,
+  `/api/v1/marketplace-summary?fresh=1 reports ${marketplaceSummaryWorkToken?.confirmedOpenListings} confirmed open WORK listings, expected canonical scoped count ${confirmedWorkListingCount}`,
+);
+assert(
+  marketplaceSummaryWorkToken?.pendingOpenListings === pendingWorkListingCount,
+  `/api/v1/marketplace-summary?fresh=1 reports ${marketplaceSummaryWorkToken?.pendingOpenListings} pending open WORK listings, expected canonical scoped count ${pendingWorkListingCount}`,
+);
+assert(
+  marketplaceSummaryWorkListings.every((listing) =>
+    activeWorkListingKeys.has(listingKey(listing)),
+  ),
+  "/api/v1/marketplace-summary?fresh=1 returned a WORK listing outside the canonical scoped active book",
+);
+assert(
+  activeWorkListingCount - marketplaceSummaryWorkListings.length <= 40,
+  `/api/v1/marketplace-summary?fresh=1 is missing too many canonical WORK listings from its active preview (${marketplaceSummaryWorkListings.length} visible, ${activeWorkListingCount} canonical)`,
 );
 assert(
   workSummary.snapshotId === alignedMarketplaceFreshSummary.snapshotId &&

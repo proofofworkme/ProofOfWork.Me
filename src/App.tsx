@@ -13985,6 +13985,9 @@ function tokenMarketplaceSummaryStats({
   ).length;
   const previewPendingListings =
     networkListings.length - previewConfirmedListings;
+  const previewBuyableListings = networkListings.filter(
+    tokenListingHasConfirmedSaleTicketSeal,
+  ).length;
   const totalOpenListings = scopedToken
     ? optionalMarketplaceCount(scopedToken.openListings)
     : summaryAppliesToNetwork
@@ -14008,38 +14011,47 @@ function tokenMarketplaceSummaryStats({
       : Math.max(previewPendingListings, totalOpenListings - confirmedListings));
 
   if (scopedToken) {
+    const scopedStats: TokenMarketplaceSummaryStats["items"] = [
+      {
+        label: "Confirmed Supply",
+        value: compactMarketplaceStatValue(scopedToken.confirmedSupply ?? 0),
+      },
+      {
+        label: "Holders",
+        value: Math.max(0, Math.floor(scopedToken.holderCount ?? 0)),
+      },
+      {
+        label: "Open Records",
+        value: confirmedListings,
+      },
+    ];
+    if (isWorkToken(scopedToken)) {
+      scopedStats.push({
+        label: "Buyable Listings",
+        value: previewBuyableListings,
+      });
+    }
+    scopedStats.push(
+      {
+        label: "Pending Listings",
+        value: pendingListings,
+      },
+      {
+        label: "Confirmed Sales",
+        value: marketStats.confirmedSales,
+      },
+      {
+        label: "Volume proofs",
+        value: compactMarketplaceStatValue(marketStats.confirmedVolumeSats),
+      },
+      {
+        label: "Pending Sales",
+        value: marketStats.pendingSales,
+      },
+    );
     return {
       ariaLabel: `${scopedToken.ticker} credit AMO stats`,
-      items: [
-        {
-          label: "Confirmed Supply",
-          value: compactMarketplaceStatValue(scopedToken.confirmedSupply ?? 0),
-        },
-        {
-          label: "Holders",
-          value: Math.max(0, Math.floor(scopedToken.holderCount ?? 0)),
-        },
-        {
-          label: "Confirmed Listings",
-          value: confirmedListings,
-        },
-        {
-          label: "Pending Listings",
-          value: pendingListings,
-        },
-        {
-          label: "Confirmed Sales",
-          value: marketStats.confirmedSales,
-        },
-        {
-          label: "Volume proofs",
-          value: compactMarketplaceStatValue(marketStats.confirmedVolumeSats),
-        },
-        {
-          label: "Pending Sales",
-          value: marketStats.pendingSales,
-        },
-      ],
+      items: scopedStats,
     };
   }
 
@@ -45185,6 +45197,7 @@ function tokenMarketplaceRowsFor({
     {
       balances: Map<string, bigint>;
       confirmedMints: number;
+      confirmedOpenListings: number;
       confirmedSupply: bigint;
       lastSalePricePerToken: number;
       lastSalePricePerTokenExact?: WorkQ16UnitPriceDescriptor;
@@ -45192,6 +45205,7 @@ function tokenMarketplaceRowsFor({
       lowestAskPricePerTokenExact?: WorkQ16UnitPriceDescriptor;
       openListings: number;
       pendingMints: number;
+      pendingOpenListings: number;
       pendingSupply: bigint;
       transferCount: number;
     }
@@ -45203,11 +45217,13 @@ function tokenMarketplaceRowsFor({
     stats.set(token.tokenId, {
       balances: new Map(),
       confirmedMints: 0,
+      confirmedOpenListings: 0,
       confirmedSupply: 0n,
       lastSalePricePerToken: 0,
       lowestAskPricePerToken: 0,
       openListings: 0,
       pendingMints: 0,
+      pendingOpenListings: 0,
       pendingSupply: 0n,
       transferCount: 0,
     });
@@ -45347,6 +45363,11 @@ function tokenMarketplaceRowsFor({
     }
 
     current.openListings += 1;
+    if (listing.confirmed) {
+      current.confirmedOpenListings += 1;
+    } else {
+      current.pendingOpenListings += 1;
+    }
     if (!tokenListingHasConfirmedSaleTicketSeal(listing)) {
       continue;
     }
@@ -45421,10 +45442,16 @@ function tokenMarketplaceRowsFor({
         lowestAskPricePerTokenExact?.decimal ??
         (current?.lowestAskPricePerToken ||
           finitePositiveNumber(token.lowestAskPricePerToken));
-      const openListings = Math.max(
-        current?.openListings ?? 0,
-        Number.isFinite(token.openListings) ? Number(token.openListings) : 0,
-      );
+      const openListings = Number.isFinite(token.openListings)
+        ? Number(token.openListings)
+        : current?.openListings ?? 0;
+      const confirmedOpenListings = Number.isFinite(token.confirmedOpenListings)
+        ? Number(token.confirmedOpenListings)
+        : current?.confirmedOpenListings ?? 0;
+      const pendingOpenListings = Number.isFinite(token.pendingOpenListings)
+        ? Number(token.pendingOpenListings)
+        : current?.pendingOpenListings ??
+          Math.max(0, openListings - confirmedOpenListings);
       const pendingMints = Math.max(
         current?.pendingMints ?? 0,
         Number.isFinite(token.pendingMints) ? Number(token.pendingMints) : 0,
@@ -45449,6 +45476,7 @@ function tokenMarketplaceRowsFor({
       return {
         ...token,
         confirmedMints,
+        confirmedOpenListings,
         confirmedSupply,
         holderCount,
         lastSalePricePerToken,
@@ -45457,6 +45485,7 @@ function tokenMarketplaceRowsFor({
         lowestAskPricePerTokenExact,
         openListings,
         pendingMints,
+        pendingOpenListings,
         pendingSupply,
         pricePerToken:
           token.mintAmount > 0 ? token.mintPriceSats / token.mintAmount : 0,

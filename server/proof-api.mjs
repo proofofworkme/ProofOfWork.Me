@@ -5720,11 +5720,16 @@ async function marketplaceSummaryPayloadWithIndexedMarketOverlay(
       tokenState,
       network,
     );
-    const token = compactTokenSummaryPayload(currentTokenState);
+    const canonicalTokenState =
+      await tokenStateWithCanonicalWorkListingBookForMarketplaceSummary(
+        currentTokenState,
+        network,
+      );
+    const token = compactTokenSummaryPayload(canonicalTokenState);
     const workFloor = workFloorWithIndexedMarketSummaryOverlay(
       payload.workFloor,
       overlay,
-      currentTokenState,
+      canonicalTokenState,
     );
     const nextPayload = marketplaceSummaryWithCurrentBtcUsd(
       {
@@ -5790,11 +5795,16 @@ async function marketplaceSummaryPayloadWithIndexedMarketOverlay(
     tokenState,
     network,
   );
-  const token = compactTokenSummaryPayload(currentTokenState);
+  const canonicalTokenState =
+    await tokenStateWithCanonicalWorkListingBookForMarketplaceSummary(
+      currentTokenState,
+      network,
+    );
+  const token = compactTokenSummaryPayload(canonicalTokenState);
   const overlaidWorkFloor = workFloorWithIndexedMarketSummaryOverlay(
     payload.workFloor,
     overlay,
-    currentTokenState,
+    canonicalTokenState,
   );
   const workFloor = await currentProofIndexWorkFloorIfNewer(
     overlaidWorkFloor,
@@ -51701,11 +51711,16 @@ async function reconciledLivenetMarketplaceSummaryPayload(
             tokenState,
             network,
           );
+        const canonicalTokenState =
+          await tokenStateWithCanonicalWorkListingBookForMarketplaceSummary(
+            currentTokenState,
+            network,
+          );
         const ledgerWorkFloor = await workFloorWithSummaryMarketOverlay(
           ledger.workFloor,
           network,
           true,
-          currentTokenState,
+          canonicalTokenState,
           marketOverlay,
         );
         const workFloor = await currentProofIndexWorkFloorIfNewer(
@@ -51726,7 +51741,7 @@ async function reconciledLivenetMarketplaceSummaryPayload(
         };
         const indexedAt = newerIso(
           ledger.generatedAt,
-          currentTokenState?.indexedAt,
+          canonicalTokenState?.indexedAt,
         );
         return attachLedgerMetadata(
           {
@@ -51738,7 +51753,7 @@ async function reconciledLivenetMarketplaceSummaryPayload(
             ),
             summaryOnly: true,
             token: attachLedgerMetadata(
-              compactTokenSummaryPayload(currentTokenState),
+              compactTokenSummaryPayload(canonicalTokenState),
               ledger,
             ),
             workFloor: attachLedgerMetadata(workFloor, ledger),
@@ -51828,11 +51843,16 @@ async function reconciledLivenetMarketplaceSummaryPayload(
           tokenState,
           network,
         );
+      const canonicalTokenState =
+        await tokenStateWithCanonicalWorkListingBookForMarketplaceSummary(
+          currentTokenState,
+          network,
+        );
       const ledgerWorkFloor = await workFloorWithCurrentBtcUsd(
         workFloorWithIndexedMarketSummaryOverlay(
           ledger.workFloor,
           marketOverlay,
-          currentTokenState,
+          canonicalTokenState,
         ),
         network,
         fresh,
@@ -51845,7 +51865,7 @@ async function reconciledLivenetMarketplaceSummaryPayload(
       );
       const indexedAt = newerIso(
         ledger.generatedAt,
-        currentTokenState?.indexedAt,
+        canonicalTokenState?.indexedAt,
       );
       return attachLedgerMetadata(
         {
@@ -51857,7 +51877,7 @@ async function reconciledLivenetMarketplaceSummaryPayload(
           ),
           summaryOnly: true,
           token: attachLedgerMetadata(
-            compactTokenSummaryPayload(currentTokenState),
+            compactTokenSummaryPayload(canonicalTokenState),
             ledger,
           ),
           workFloor: attachLedgerMetadata(workFloor, ledger),
@@ -56250,6 +56270,196 @@ function tokenStateWithScopedTokenOverride(tokenState, scopedState, tokenId) {
     ),
   };
   return tokenStateWithPendingStats(merged);
+}
+
+function tokenMarketRecordTokenId(item) {
+  return normalizeTokenScope(
+    item?.tokenId ??
+      item?.saleAuthorization?.tokenId ??
+      item?.listingAuthorization?.tokenId ??
+      item?.authorization?.tokenId ??
+      item?.sale?.tokenId ??
+      item?.listing?.tokenId ??
+      item?.closedListing?.tokenId ??
+      item?.ticker ??
+      item?.saleAuthorization?.ticker ??
+      item?.listingAuthorization?.ticker ??
+      item?.authorization?.ticker ??
+      item?.sale?.ticker ??
+      item?.listing?.ticker ??
+      item?.closedListing?.ticker ??
+      "",
+  );
+}
+
+function tokenSummaryNonNegativeInteger(value) {
+  const number = Number(value);
+  return Number.isSafeInteger(number) && number >= 0 ? number : null;
+}
+
+function tokenStateWithCanonicalWorkListingBook(tokenState, scopedWorkState) {
+  if (!tokenState || !scopedWorkState) {
+    return tokenState;
+  }
+
+  const scopedWorkToken = (Array.isArray(scopedWorkState.tokens)
+    ? scopedWorkState.tokens
+    : []
+  ).find((token) => isWorkTokenId(token?.tokenId));
+  if (!scopedWorkToken) {
+    return tokenState;
+  }
+
+  const isWorkMarketRecord = (item) =>
+    isWorkTokenId(tokenMarketRecordTokenId(item));
+  const withoutWorkRecords = (items) =>
+    (Array.isArray(items) ? items : []).filter(
+      (item) => !isWorkMarketRecord(item),
+    );
+  const scopedWorkRecords = (items) =>
+    (Array.isArray(items) ? items : []).filter(isWorkMarketRecord);
+  const scopedWorkListings = scopedWorkRecords(scopedWorkState.listings);
+  const scopedWorkClosedListings = scopedWorkRecords(
+    scopedWorkState.closedListings,
+  );
+  const scopedWorkSales = scopedWorkRecords(scopedWorkState.sales);
+  const scopedWorkInvalidEvents = scopedWorkRecords(
+    scopedWorkState.invalidEvents,
+  );
+
+  const tokens = (() => {
+    const existingTokens = Array.isArray(tokenState.tokens)
+      ? tokenState.tokens
+      : [];
+    if (existingTokens.length === 0) {
+      return [scopedWorkToken];
+    }
+    let replaced = false;
+    const next = existingTokens.map((token) => {
+      if (!isWorkTokenId(token?.tokenId)) {
+        return token;
+      }
+      replaced = true;
+      return scopedWorkToken;
+    });
+    return replaced ? next : [...next, scopedWorkToken];
+  })();
+
+  const countFromTokens = (key) => {
+    const counts = tokens.map((token) =>
+      tokenSummaryNonNegativeInteger(token?.[key]),
+    );
+    return counts.length > 0 && counts.every((count) => count !== null)
+      ? counts.reduce((total, count) => total + count, 0)
+      : null;
+  };
+  const listings = [
+    ...withoutWorkRecords(tokenState.listings),
+    ...scopedWorkListings,
+  ].sort(compareTokenHistoryPageItems);
+  const closedListings = sortClosedTokenListings([
+    ...withoutWorkRecords(tokenState.closedListings),
+    ...scopedWorkClosedListings,
+  ]);
+  const sales = [
+    ...withoutWorkRecords(tokenState.sales),
+    ...scopedWorkSales,
+  ].sort(compareTokenHistoryPageItems);
+  const invalidEvents = [
+    ...withoutWorkRecords(tokenState.invalidEvents),
+    ...scopedWorkInvalidEvents,
+  ].sort(compareTokenHistoryPageItems);
+  const openListings = countFromTokens("openListings") ?? listings.length;
+  const confirmedOpenListings =
+    countFromTokens("confirmedOpenListings") ??
+    listings.filter((listing) => listing?.confirmed === true).length;
+  const pendingOpenListings =
+    countFromTokens("pendingOpenListings") ??
+    Math.max(0, openListings - confirmedOpenListings);
+  const collectionHasMore =
+    tokenState.collectionHasMore &&
+    typeof tokenState.collectionHasMore === "object" &&
+    !Array.isArray(tokenState.collectionHasMore)
+      ? {
+          ...tokenState.collectionHasMore,
+          listings: openListings > listings.length,
+        }
+      : tokenState.collectionHasMore;
+
+  return tokenStateWithPendingStats({
+    ...tokenState,
+    closedListings,
+    invalidEvents,
+    listings,
+    sales,
+    ...(collectionHasMore
+      ? {
+          collectionHasMore,
+          hasMore: Object.values(collectionHasMore).some(Boolean),
+        }
+      : {}),
+    ...(tokenState.stats &&
+    typeof tokenState.stats === "object" &&
+    !Array.isArray(tokenState.stats)
+      ? {
+          stats: {
+            ...tokenState.stats,
+            activeListings: openListings,
+            confirmedOpenListings,
+            openListings,
+            pendingOpenListings,
+          },
+        }
+      : {}),
+    ...(tokenState.totalCounts &&
+    typeof tokenState.totalCounts === "object" &&
+    !Array.isArray(tokenState.totalCounts)
+      ? {
+          totalCounts: {
+            ...tokenState.totalCounts,
+            listings: openListings,
+          },
+        }
+      : {}),
+    tokens,
+  });
+}
+
+async function tokenStateWithCanonicalWorkListingBookForMarketplaceSummary(
+  tokenState,
+  network,
+) {
+  if (network !== "livenet" || !tokenState) {
+    return tokenState;
+  }
+
+  const scopedWorkState = await storedCanonicalTokenSummaryPayload(
+    network,
+    WORK_TOKEN_ID,
+  ).catch((error) => {
+    console.error(
+      `WORK canonical listing book unavailable for marketplace summary: ${errorSummary(error)}`,
+    );
+    return null;
+  });
+  if (!scopedWorkState) {
+    return tokenState;
+  }
+
+  const tokenStateHeight = proofIndexPayloadIndexedThroughBlock(tokenState);
+  const scopedWorkHeight = proofIndexPayloadIndexedThroughBlock(scopedWorkState);
+  if (
+    tokenStateHeight > 0 &&
+    scopedWorkHeight > 0 &&
+    scopedWorkHeight < tokenStateHeight
+  ) {
+    console.error(
+      `Rejected stale WORK canonical listing book for marketplace summary: scoped ${scopedWorkHeight}, summary ${tokenStateHeight}.`,
+    );
+    return tokenState;
+  }
+
+  return tokenStateWithCanonicalWorkListingBook(tokenState, scopedWorkState);
 }
 
 function growthActualBaseNetworkValue(

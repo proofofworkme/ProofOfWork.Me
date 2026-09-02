@@ -3307,9 +3307,26 @@ expect(
     /totalOpenListings - confirmedListings/.test(
       tokenMarketplaceSummaryStatsBlock,
     ) &&
-    /label: "Confirmed Listings"/.test(tokenMarketplaceSummaryStatsBlock) &&
+    /previewBuyableListings/.test(tokenMarketplaceSummaryStatsBlock) &&
+    /label: "Open Records"/.test(tokenMarketplaceSummaryStatsBlock) &&
+    /label: "Buyable Listings"/.test(tokenMarketplaceSummaryStatsBlock) &&
     /label: "Pending Listings"/.test(tokenMarketplaceSummaryStatsBlock) &&
     !/label: "Active Listings"/.test(tokenMarketplaceSummaryStatsBlock),
+);
+expect(
+  "Marketplace token rows prefer authoritative listing counts",
+  /confirmedOpenListings: number/.test(app) &&
+    /pendingOpenListings: number/.test(app) &&
+    /const openListings = Number\.isFinite\(token\.openListings\)[\s\S]*: current\?\.openListings \?\? 0/.test(
+      app,
+    ) &&
+    /const confirmedOpenListings = Number\.isFinite\(token\.confirmedOpenListings\)/.test(
+      app,
+    ) &&
+    /const pendingOpenListings = Number\.isFinite\(token\.pendingOpenListings\)/.test(
+      app,
+    ) &&
+    !/const openListings = Math\.max\(\s*current\?\.openListings/.test(app),
 );
 expect(
   "Marketplace token cache tracks the current summary metadata",
