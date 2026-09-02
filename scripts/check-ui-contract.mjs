@@ -3082,7 +3082,7 @@ expect(
     ),
 );
 expect(
-  "Marketplace complete listing reads fail closed on checkpoint or count drift",
+  "Marketplace complete listing reads fail closed on checkpoint or page-count drift",
   /page\.indexedAt/.test(fetchCompleteTokenListingsBlock) &&
     /page\.indexedThroughBlock/.test(fetchCompleteTokenListingsBlock) &&
     /page\.indexedThroughBlockHash/.test(fetchCompleteTokenListingsBlock) &&
@@ -3113,8 +3113,14 @@ expect(
     /state\.indexedThroughBlockHash === history\.indexedThroughBlockHash/.test(
       completeTokenListingHistoryMatchesStateBlock,
     ) &&
-    /declaredListingCount === history\.totalCount/.test(
+    /return completeTokenListingHistoryMatchesCheckpoint\(history, state\);/.test(
       completeTokenListingHistoryMatchesStateBlock,
+    ) &&
+    !/declaredListingCount === history\.totalCount/.test(
+      completeTokenListingHistoryMatchesStateBlock,
+    ) &&
+    /listings: history\.totalCount/.test(
+      tokenStateWithCompleteTokenListingsBlock,
     ),
 );
 expect(

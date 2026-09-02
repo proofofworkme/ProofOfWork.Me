@@ -16665,12 +16665,7 @@ function completeTokenListingHistoryMatchesState(
   history: CompleteTokenListingHistory,
   state: PowTokenState,
 ) {
-  const declaredListingCount = Number(state.totalCounts?.listings);
-  return (
-    completeTokenListingHistoryMatchesCheckpoint(history, state) &&
-    Number.isSafeInteger(declaredListingCount) &&
-    declaredListingCount === history.totalCount
-  );
+  return completeTokenListingHistoryMatchesCheckpoint(history, state);
 }
 
 function completeTokenListingHistoryMatchesCheckpoint(
@@ -21378,7 +21373,7 @@ export default function App() {
     const history = await currentCompleteGlobalTokenListings(state, fresh);
     if (!completeTokenListingHistoryMatchesState(history, state)) {
       throw new Error(
-        "The complete credit listing book does not match the AMO summary count.",
+        "The complete credit listing book does not match the AMO summary checkpoint.",
       );
     }
     return tokenStateWithCompleteTokenListings(state, history);
@@ -21404,7 +21399,7 @@ export default function App() {
     };
     if (!completeTokenListingHistoryMatchesState(history, state)) {
       throw new Error(
-        "The complete bond listing book does not match its summary count.",
+        "The complete bond listing book does not match its summary checkpoint.",
       );
     }
     return tokenStateWithCompleteTokenListings(state, history);
