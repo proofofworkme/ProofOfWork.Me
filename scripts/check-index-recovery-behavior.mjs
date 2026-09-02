@@ -44210,6 +44210,7 @@ check("unknown aggregated PWM emits one invalid audit event", () => {
 check("bond companions mint each family recipient without double-counting value", () => {
   const powbTokenId = "a".repeat(64);
   const incbTokenId = "b".repeat(64);
+  const blockHash = "9".repeat(64);
   const canonicalBondMintItemsFromMailItem = isolatedFunction(
     BACKFILL_PATH,
     "canonicalBondMintItemsFromMailItem",
@@ -44229,6 +44230,7 @@ check("bond companions mint each family recipient without double-counting value"
   const mints = disambiguateDuplicateProtocolItems(
     canonicalBondMintItemsFromMailItem({
       amountSats: "1000",
+      blockHash,
       blockHeight: 101,
       blockIndex: 3,
       confirmed: true,
@@ -44251,6 +44253,11 @@ check("bond companions mint each family recipient without double-counting value"
   assert.equal(mints[0].eventKeyVout, undefined);
   assert.equal(mints[1].eventKeyVout, 1);
   assert.deepEqual(mints.map((mint) => mint._powEventIndex), [0, 1]);
+  assert.deepEqual(
+    mints.map((mint) => mint.blockHash),
+    [blockHash, blockHash],
+    "bond companion mints must keep the parent block hash for canonical AMO replay binding",
+  );
   const tokenMintHistoryItemKey = isolatedFunction(
     API_PATH,
     "tokenMintHistoryItemKey",
@@ -44280,6 +44287,260 @@ check("bond companions mint each family recipient without double-counting value"
   assert.equal(incbMint.ticker, "INCB");
   assert.equal(incbMint.tokenId, incbTokenId);
   assert.equal(incbMint.amountSats, 0);
+});
+
+check("AMO V5 backfill binds derived bond companions before a same-block credit seal", () => {
+  const blockHash =
+    "000000000000000000021e869bfa55b78969eecca432e0069b05452920d500a7";
+  const blockHeight = 965_205;
+  const powbTxid =
+    "4603bb613cb9107ee96819cf437759c4f2e95dc24731ae70b7da88a91f27d654";
+  const sealTxid =
+    "4ec043504034d196cfdade097a0607d4c73e56c2e76993142c5f7d623ba325b4";
+  const listingId =
+    "ddf960a7ff845cb6802ec9887773a45f2d2c39baa459b229c3c241291a618ede";
+  const powbPosition = {
+    blockHash,
+    blockHeight,
+    blockTransactionIndex: 1_237,
+    protocolVout: 1,
+    recordOrdinal: 0,
+  };
+  const powbMintPosition = {
+    ...powbPosition,
+    recordOrdinal: 1,
+  };
+  const sealPosition = {
+    blockHash,
+    blockHeight,
+    blockTransactionIndex: 1_334,
+    protocolVout: 1,
+    recordOrdinal: 0,
+  };
+  const canonicalBondMintItemsFromMailItem = isolatedFunction(
+    BACKFILL_PATH,
+    "canonicalBondMintItemsFromMailItem",
+    {
+      bondTagForKind: (kind) =>
+        kind === "infinity-bond"
+          ? { ticker: "POWB", tokenId: POWB_TOKEN_ID }
+          : null,
+    },
+  );
+  const parentBondItem = {
+    amountSats: "150000",
+    blockHash,
+    blockHeight,
+    blockIndex: powbPosition.blockTransactionIndex,
+    blockTime: "2026-09-02T19:59:54.000Z",
+    confirmed: true,
+    kind: "infinity-bond",
+    network: "livenet",
+    protocol: "pwm1",
+    protocolVout: powbPosition.protocolVout,
+    recipients: [{
+      address:
+        "bc1p842ssjzrs4qgrpeqeykjz7s5xr3jeakfc8nguc2kn8lplf8gdyeqtey3lk",
+      amountSats: "150000",
+      vout: 0,
+    }],
+    recordOrdinal: 0,
+    timestamp: "2026-09-02T19:59:54.000Z",
+    txid: powbTxid,
+    valid: true,
+  };
+  const [powbMintItem] =
+    canonicalBondMintItemsFromMailItem(parentBondItem);
+  assert.equal(powbMintItem.blockHash, blockHash);
+
+  const normalizePosition = (value) => {
+    const source = value?.position ?? value ?? {};
+    const normalizedBlockHash = String(source.blockHash ?? "")
+      .trim()
+      .toLowerCase();
+    if (!/^[0-9a-f]{64}$/u.test(normalizedBlockHash)) {
+      return null;
+    }
+    const blockHeightValue = Number(source.blockHeight);
+    const blockTransactionIndex = Number(
+      source.blockTransactionIndex ?? source.blockIndex,
+    );
+    const protocolVout = Number(source.protocolVout);
+    const recordOrdinal = Number(source.recordOrdinal);
+    return Number.isSafeInteger(blockHeightValue) &&
+      blockHeightValue > 0 &&
+      Number.isSafeInteger(blockTransactionIndex) &&
+      blockTransactionIndex >= 0 &&
+      Number.isSafeInteger(protocolVout) &&
+      protocolVout >= 0 &&
+      Number.isSafeInteger(recordOrdinal) &&
+      recordOrdinal >= 0
+      ? {
+          blockHash: normalizedBlockHash,
+          blockHeight: blockHeightValue,
+          blockTransactionIndex,
+          protocolVout,
+          recordOrdinal,
+        }
+      : null;
+  };
+  const replayPositionKey = (value) => {
+    const position = normalizePosition(value);
+    return position
+      ? {
+          key: [
+            position.blockHeight,
+            position.blockTransactionIndex,
+            position.protocolVout,
+            position.recordOrdinal,
+          ].join(":"),
+          position,
+        }
+      : null;
+  };
+  const bind = isolatedFunction(
+    BACKFILL_PATH,
+    "bindPreparedTransactionsToWorkAmoV5Replay",
+    {
+      canonicalProtocolItemForPostgres: (item) => item,
+      canonicalReplayParentTime: () => "2026-09-02T19:59:54.000Z",
+      invalidProtocolItem: (item, reason) => ({
+        ...item,
+        kind: `${String(item?.kind ?? "event").replace(/-invalid$/u, "")}-invalid`,
+        reason,
+        valid: false,
+      }),
+      isHexTxid: (value) => /^[0-9a-f]{64}$/u.test(value),
+      normalizedLowerText: (value) =>
+        String(value ?? "").trim().toLowerCase(),
+      objectValue: (value) =>
+        value && typeof value === "object" && !Array.isArray(value)
+          ? value
+          : {},
+      sourceLabelForProtocolItem: () => "log",
+      workAmoFrozenTermsFromItem: () => null,
+      workAmoV5ConsensusEventKind,
+      workAmoV5ReplayFrozenTerms: () => null,
+      workAmoV5ReplayPositionKey: replayPositionKey,
+      workAmoV5ReplayProjectionFromOutput: (output) =>
+        output?.projection ?? {},
+    },
+  );
+  const [powbPrepared, sealPrepared] = bind(
+    [
+      {
+        items: [parentBondItem, powbMintItem],
+        rawTx: {
+          blocktime: 1_788_374_394,
+          height: blockHeight,
+          txid: powbTxid,
+        },
+        txid: powbTxid,
+      },
+      {
+        items: [{
+          amount: "0",
+          blockHash,
+          blockHeight,
+          blockIndex: sealPosition.blockTransactionIndex,
+          confirmed: true,
+          kind: "token-listing-sealed",
+          listingId,
+          priceSats: "0",
+          protocol: "pwt1",
+          protocolVout: sealPosition.protocolVout,
+          recordOrdinal: sealPosition.recordOrdinal,
+          sealConfirmed: true,
+          sealTxid,
+          tokenId: WORK_TOKEN_ID,
+          txid: sealTxid,
+          valid: true,
+        }],
+        rawTx: {
+          blocktime: 1_788_374_394,
+          height: blockHeight,
+          txid: sealTxid,
+        },
+        txid: sealTxid,
+      },
+    ],
+    {
+      replayRecords: [
+        {
+          outcome: {
+            kind: workAmoV5ConsensusEventKind("pwm1", true),
+            reasonCode: "",
+            semanticKind: "infinity-bond",
+            valid: true,
+          },
+          output: {
+            projection: {
+              kind: "infinity-bond",
+              position: powbPosition,
+              protocol: "pwm1",
+              txid: powbTxid,
+              valid: true,
+            },
+          },
+          position: powbPosition,
+          protocol: "pwm1",
+          rawCandidate: true,
+          rawWitness: { fixture: "block-965205-powb" },
+          txid: powbTxid,
+        },
+        {
+          outcome: {
+            kind: workAmoV5ConsensusEventKind("pwt1", true),
+            reasonCode: "",
+            semanticKind: "token-mint",
+            valid: true,
+          },
+          output: {
+            projection: {
+              kind: "token-mint",
+              position: powbMintPosition,
+              protocol: "pwt1",
+              txid: powbTxid,
+              valid: true,
+            },
+          },
+          position: powbMintPosition,
+          protocol: "pwt1",
+          rawCandidate: false,
+          rawWitness: { fixture: "block-965205-powb-derived" },
+          txid: powbTxid,
+        },
+        {
+          outcome: {
+            kind: workAmoV5ConsensusEventKind("pwt1", true),
+            reasonCode: "",
+            semanticKind: "token-listing-sealed",
+            valid: true,
+          },
+          output: {
+            projection: {
+              kind: "token-listing-sealed",
+              listing: { listingId },
+              position: sealPosition,
+              protocol: "pwt1",
+              txid: sealTxid,
+              valid: true,
+            },
+          },
+          position: sealPosition,
+          protocol: "pwt1",
+          rawCandidate: true,
+          rawWitness: { fixture: "block-965205-seal5" },
+          txid: sealTxid,
+        },
+      ],
+    },
+  );
+  assert.equal(powbPrepared.items[0]._workAmoV5ReplayBound, true);
+  assert.equal(powbPrepared.items[1]._workAmoV5ReplayBound, true);
+  assert.equal(powbPrepared.items[1].blockHash, blockHash);
+  assert.equal(powbPrepared.items[1].recordOrdinal, 1);
+  assert.equal(sealPrepared.items[0]._workAmoV5ReplayBound, true);
 });
 
 check("bond definitions bind to their canonical ID receivers", async () => {

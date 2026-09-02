@@ -3933,6 +3933,7 @@ function canonicalBondMintItemsFromMailItem(item) {
           // The PWM event carries the bond proofs. The companion only projects
           // bond credit units and must never count the same proofs a second time.
           amountSats: 0,
+          blockHash: item.blockHash,
           blockHeight: item.blockHeight,
           blockIndex: item.blockIndex,
           blockTime: item.blockTime,
