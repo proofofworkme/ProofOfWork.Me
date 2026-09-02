@@ -44523,12 +44523,14 @@ type BoostMarketplaceSortMode = "newest" | "price-asc" | "price-desc";
 
 type TokenMarketplaceRow = PowTokenDefinition & {
   confirmedMints: number;
+  confirmedOpenListings: number;
   confirmedSupply: ExactIntegerValue;
   holderCount: number;
   lastSalePricePerToken: ExactDecimalValue;
   lowestAskPricePerToken: ExactDecimalValue;
   openListings: number;
   pendingMints: number;
+  pendingOpenListings: number;
   pendingSupply: ExactIntegerValue;
   pricePerToken: number;
   progress: number;
@@ -45183,6 +45185,7 @@ function MarketplaceListingBookTabs({
 
 function tokenMarketplaceRowsFor({
   address,
+  listingBookComplete = false,
   listings,
   mints,
   network,
@@ -45191,6 +45194,7 @@ function tokenMarketplaceRowsFor({
   transfers,
 }: {
   address: string;
+  listingBookComplete?: boolean;
   listings: PowTokenListing[];
   mints: PowTokenMint[];
   network: BitcoinNetwork;
@@ -45448,16 +45452,32 @@ function tokenMarketplaceRowsFor({
         lowestAskPricePerTokenExact?.decimal ??
         (current?.lowestAskPricePerToken ||
           finitePositiveNumber(token.lowestAskPricePerToken));
-      const openListings = Number.isFinite(token.openListings)
-        ? Number(token.openListings)
-        : current?.openListings ?? 0;
-      const confirmedOpenListings = Number.isFinite(token.confirmedOpenListings)
-        ? Number(token.confirmedOpenListings)
-        : current?.confirmedOpenListings ?? 0;
-      const pendingOpenListings = Number.isFinite(token.pendingOpenListings)
-        ? Number(token.pendingOpenListings)
-        : current?.pendingOpenListings ??
-          Math.max(0, openListings - confirmedOpenListings);
+      const completeOpenListings = listingBookComplete
+        ? current?.openListings ?? 0
+        : undefined;
+      const completeConfirmedOpenListings = listingBookComplete
+        ? current?.confirmedOpenListings ?? 0
+        : undefined;
+      const openListings =
+        completeOpenListings ??
+        (Number.isFinite(token.openListings)
+          ? Number(token.openListings)
+          : current?.openListings ?? 0);
+      const confirmedOpenListings =
+        completeConfirmedOpenListings ??
+        (Number.isFinite(token.confirmedOpenListings)
+          ? Number(token.confirmedOpenListings)
+          : current?.confirmedOpenListings ?? 0);
+      const completePendingOpenListings = listingBookComplete
+        ? current?.pendingOpenListings ??
+          Math.max(0, openListings - confirmedOpenListings)
+        : undefined;
+      const pendingOpenListings =
+        completePendingOpenListings ??
+        (Number.isFinite(token.pendingOpenListings)
+          ? Number(token.pendingOpenListings)
+          : current?.pendingOpenListings ??
+            Math.max(0, openListings - confirmedOpenListings));
       const pendingMints = Math.max(
         current?.pendingMints ?? 0,
         Number.isFinite(token.pendingMints) ? Number(token.pendingMints) : 0,
@@ -46818,6 +46838,7 @@ function TokenMarketplacePanel({
     useState<WorkFloorChartUnit>("sats");
   const rows = tokenMarketplaceRowsFor({
     address,
+    listingBookComplete: summary.listingBookComplete === true,
     listings,
     mints,
     network,
@@ -47164,7 +47185,22 @@ function TokenMarketplacePanel({
         workMarketFloorQ8,
       )
     : [];
-  const visibleRows = selectedMarketToken ? [selectedMarketToken] : rows;
+  const selectedMarketTokenWithCompleteListingCounts =
+    selectedMarketToken && summary.listingBookComplete === true
+      ? {
+          ...selectedMarketToken,
+          confirmedOpenListings: marketListings.filter(
+            (listing) => listing.confirmed,
+          ).length,
+          openListings: marketListings.length,
+          pendingOpenListings: marketListings.filter(
+            (listing) => !listing.confirmed,
+          ).length,
+        }
+      : selectedMarketToken;
+  const visibleRows = selectedMarketTokenWithCompleteListingCounts
+    ? [selectedMarketTokenWithCompleteListingCounts]
+    : rows;
   const sortedVisibleRows = sortTokenDirectoryRows(
     visibleRows,
     tokenDirectorySortMode,
@@ -49128,6 +49164,7 @@ function MarketplaceApp({
   const sealedBondListings = bondListings.filter(tokenListingHasSaleTicketSeal);
   const tokenMarketRows = tokenMarketplaceRowsFor({
     address,
+    listingBookComplete: tokenSummary.listingBookComplete === true,
     listings: creditTokenListings,
     mints: creditTokenMints,
     network: "livenet",
@@ -49725,6 +49762,7 @@ function MarketplaceWorkspace({
   ).length;
   const tokenMarketRows = tokenMarketplaceRowsFor({
     address,
+    listingBookComplete: tokenSummary.listingBookComplete === true,
     listings: creditTokenListings,
     mints: creditTokenMints,
     network,

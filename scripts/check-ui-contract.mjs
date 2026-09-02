@@ -3025,6 +3025,10 @@ const tokenMarketplacePanelBlock =
   app.match(
     /function TokenMarketplacePanel\([\s\S]*?function MarketplaceListingList\(/,
   )?.[0] ?? "";
+const tokenMarketplaceRowsForBlock = topLevelFunctionSource(
+  app,
+  "tokenMarketplaceRowsFor",
+);
 const infinityBondMarketPanelBlock =
   app.match(
     /function InfinityBondMarketPanel\([\s\S]*?function BondMarketplacePanel\(/,
@@ -3176,6 +3180,12 @@ expect(
     !/const orderBookListings\s*=\s*\[[\s\S]*tokenMarketLogPage/.test(
       tokenMarketplacePanelBlock,
     ),
+);
+expect(
+  "Marketplace selected token cards use the complete active listing book count",
+  /const selectedMarketTokenWithCompleteListingCounts =[\s\S]*selectedMarketToken && summary\.listingBookComplete === true[\s\S]*confirmedOpenListings: marketListings\.filter\([\s\S]*listing\.confirmed[\s\S]*openListings: marketListings\.length[\s\S]*pendingOpenListings: marketListings\.filter\([\s\S]*!listing\.confirmed[\s\S]*const visibleRows = selectedMarketTokenWithCompleteListingCounts[\s\S]*\? \[selectedMarketTokenWithCompleteListingCounts\][\s\S]*: rows/.test(
+    tokenMarketplacePanelBlock,
+  ),
 );
 expect(
   "Marketplace labels incomplete listing previews and suppresses definitive empty claims",
@@ -3374,18 +3384,27 @@ expect(
 );
 expect(
   "Marketplace token rows prefer authoritative listing counts",
-  /confirmedOpenListings: number/.test(app) &&
-    /pendingOpenListings: number/.test(app) &&
-    /const openListings = Number\.isFinite\(token\.openListings\)[\s\S]*: current\?\.openListings \?\? 0/.test(
-      app,
+  /confirmedOpenListings: number/.test(tokenMarketplaceRowsForBlock) &&
+    /pendingOpenListings: number/.test(tokenMarketplaceRowsForBlock) &&
+    /listingBookComplete = false/.test(tokenMarketplaceRowsForBlock) &&
+    /listingBookComplete\?: boolean;/.test(tokenMarketplaceRowsForBlock) &&
+    /const completeOpenListings = listingBookComplete[\s\S]*current\?\.openListings \?\? 0[\s\S]*const openListings =[\s\S]*completeOpenListings \?\?[\s\S]*Number\.isFinite\(token\.openListings\)/.test(
+      tokenMarketplaceRowsForBlock,
     ) &&
-    /const confirmedOpenListings = Number\.isFinite\(token\.confirmedOpenListings\)/.test(
-      app,
+    /const completeConfirmedOpenListings = listingBookComplete[\s\S]*current\?\.confirmedOpenListings \?\? 0[\s\S]*const confirmedOpenListings =[\s\S]*completeConfirmedOpenListings \?\?[\s\S]*Number\.isFinite\(token\.confirmedOpenListings\)/.test(
+      tokenMarketplaceRowsForBlock,
     ) &&
-    /const pendingOpenListings = Number\.isFinite\(token\.pendingOpenListings\)/.test(
-      app,
+    /const completePendingOpenListings = listingBookComplete[\s\S]*current\?\.pendingOpenListings[\s\S]*const pendingOpenListings =[\s\S]*completePendingOpenListings \?\?[\s\S]*Number\.isFinite\(token\.pendingOpenListings\)/.test(
+      tokenMarketplaceRowsForBlock,
     ) &&
-    !/const openListings = Math\.max\(\s*current\?\.openListings/.test(app),
+    /listingBookComplete: summary\.listingBookComplete === true/.test(
+      tokenMarketplacePanelBlock,
+    ) &&
+    (app.match(/listingBookComplete: tokenSummary\.listingBookComplete === true/g)
+      ?.length ?? 0) >= 2 &&
+    !/const openListings = Math\.max\(\s*current\?\.openListings/.test(
+      tokenMarketplaceRowsForBlock,
+    ),
 );
 expect(
   "Marketplace token cache tracks the current summary metadata",
