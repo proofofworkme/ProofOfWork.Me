@@ -35,6 +35,11 @@ import {
 import { SocialFooter } from "../../shared/components/SocialFooter";
 import { formatDate, shortAddress } from "../../functions";
 import {
+  formatWorkAmount,
+  workAtomsFromDecimal,
+  workSubatomsFromCanonicalString,
+} from "../../workAmount";
+import {
   BOOST_ACTION_REGISTRY_FEE_SATS,
   BOOST_LISTING_ANCHOR_VALUE_SATS,
   boostIdentityIntentMessage,
@@ -147,6 +152,11 @@ function boostTotalSignalSats(item: BoostFeedItem) {
   return Number.isFinite(total) ? Math.max(0, total) : item.proofSignalSats;
 }
 
+function boostProofSignalSats(item: BoostFeedItem) {
+  const signal = Number(item.proofSignalSats);
+  return Number.isFinite(signal) ? Math.max(0, signal) : 0;
+}
+
 function boostTotalSignalUsd(item: BoostFeedItem) {
   const total = Number(item.totalSignalUsd ?? item.signalUsd);
   return Number.isFinite(total) ? Math.max(0, total) : 0;
@@ -155,6 +165,18 @@ function boostTotalSignalUsd(item: BoostFeedItem) {
 function boostWorkSignalValueSats(item: BoostFeedItem) {
   const value = Number(item.workSignalValueSats);
   return Number.isFinite(value) ? Math.max(0, value) : 0;
+}
+
+function boostWorkSignalSubatoms(item: BoostFeedItem) {
+  const subatoms = workSubatomsFromCanonicalString(item.workSignalSubatoms);
+  if (subatoms !== null) {
+    return subatoms;
+  }
+  return workAtomsFromDecimal(item.workSignal ?? "") ?? 0n;
+}
+
+function formatWorkSignal(subatoms: bigint) {
+  return subatoms > 0n ? `${formatWorkAmount(subatoms, true)} WORK` : "0 WORK";
 }
 
 function authorLabel(
@@ -283,6 +305,7 @@ function BoostPost({
   const ownerAddress = boostOwnerAddress(item);
   const totalSignalSats = boostTotalSignalSats(item);
   const workSignalValueSats = boostWorkSignalValueSats(item);
+  const workSignalSubatoms = boostWorkSignalSubatoms(item);
   const connectedOwner =
     activeAddress &&
     ownerAddress &&
@@ -320,10 +343,11 @@ function BoostPost({
 
         <div className="boost-signal-row">
           <span>Total USD {formatUsd(boostTotalSignalUsd(item))}</span>
-          <span>Proof {formatProofs(item.proofSignalSats)}</span>
-          {item.workSignal ? (
+          <span>Proof {formatProofs(boostProofSignalSats(item))}</span>
+          {workSignalSubatoms > 0n ? (
             <span>
-              WORK {item.workSignal} ({formatProofs(workSignalValueSats)})
+              WORK {formatWorkAmount(workSignalSubatoms, true)}{" "}
+              {`(${formatProofs(workSignalValueSats)})`}
             </span>
           ) : null}
           <span>{actionLabel(item.kind)}</span>
@@ -979,6 +1003,24 @@ export default function BoostRoot() {
     }
   }, [items, listQuery, listingTarget]);
 
+  const headerSignalStats = useMemo(() => {
+    return visibleItems.reduce(
+      (totals, item) => ({
+        proofSignalSats: totals.proofSignalSats + boostProofSignalSats(item),
+        totalSignalSats: totals.totalSignalSats + boostTotalSignalSats(item),
+        totalSignalUsd: totals.totalSignalUsd + boostTotalSignalUsd(item),
+        workSignalSubatoms:
+          totals.workSignalSubatoms + boostWorkSignalSubatoms(item),
+      }),
+      {
+        proofSignalSats: 0,
+        totalSignalSats: 0,
+        totalSignalUsd: 0,
+        workSignalSubatoms: 0n,
+      },
+    );
+  }, [visibleItems]);
+
   const accountStats = [
     ...(address
       ? [
@@ -990,23 +1032,25 @@ export default function BoostRoot() {
         ]
       : []),
     {
-      label: "Signal",
-      value: formatProofs(
-        visibleItems.reduce(
-          (total, item) => total + boostTotalSignalSats(item),
-          0,
-        ),
-      ),
+      detail: "Proof-equivalent signal from proofs plus attached WORK value.",
+      label: "Total Signal",
+      value: formatProofs(headerSignalStats.totalSignalSats),
       tone: "strong" as const,
     },
     {
-      label: "USD",
-      value: formatUsd(
-        visibleItems.reduce(
-          (total, item) => total + boostTotalSignalUsd(item),
-          0,
-        ),
-      ),
+      detail: "Direct proof signal only.",
+      label: "Proof Signal",
+      value: formatProofs(headerSignalStats.proofSignalSats),
+    },
+    {
+      detail: "Attached WORK signal only.",
+      label: "WORK Signal",
+      value: formatWorkSignal(headerSignalStats.workSignalSubatoms),
+    },
+    {
+      detail: "Total USD value from proof signal plus attached WORK.",
+      label: "Total USD",
+      value: formatUsd(headerSignalStats.totalSignalUsd),
     },
     {
       label: "Posts",

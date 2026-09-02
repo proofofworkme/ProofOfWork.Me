@@ -4580,7 +4580,7 @@ After changing the API or production build, verify:
 - Sent, inbox, incoming, files, outbox, and dropped status all work through the API.
 - Public Desktop can search a raw address or confirmed ProofOfWork ID and returns only confirmed attachments.
 - Browser can load a txid with HTML in the message body or a verified `text/html` attachment, render it in a sandbox, and reject non-HTML message/attachment data.
-- Boost can load `/api/v1/boost`, rank confirmed `pwb1:` posts by value or time, show proof/USD signal, expose profile-filtered views, connect UniSat for paid actions/listing/profile intent, and provide Twitter/X share links with mempool.space tx URLs.
+- Boost can load `/api/v1/boost`, rank confirmed `pwb1:` posts by value or time, show total proof-equivalent signal, direct proof signal, attached WORK signal, and total USD value, expose profile-filtered views, connect UniSat for paid actions/listing/profile intent, and provide Twitter/X share links with mempool.space tx URLs.
 - Mail compose can toggle Boost originals, enforce self-send routing, cap text at 140 characters, attach Files-backed media, attach optional WORK signal, and open the Twitter/X share intent after broadcast.
 - Once `boost@proofofwork.me` has a confirmed receiver, Boost paid action writers and marketplace events route their compulsory 546-proof registry fee there, while extra signal routes to the current Boost owner or original poster. AMO reads active Boost sale tickets from the replayed Boost feed state and displays them with the other asset books.
 - Standalone AMO can list, seal, delist, and buy confirmed IDs through the same registry API.

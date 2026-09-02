@@ -511,7 +511,7 @@ Rules to preserve:
 - A post-time sale price entered by the author can only queue a later `list5`/`seal5` flow after the post txid exists. JSON price metadata alone is not buyable.
 - Boost listings can be started from the public Boost feed after connecting the current owner wallet, or from the original Boost Mail item in Inbox/Sent. Active Boost listings appear in AMO's Boost tab with the other asset books.
 - A wallet that owns multiple confirmed IDs can sign a local Boost display intent for the ID it wants to present. Publishing `pwb1:profile` makes that display choice chain-readable without mutating the canonical ID registry.
-- The Boost UI ranks confirmed posts by attached value, newest, or oldest and can scope value by hour, day, week, or all time. Proof signal displays USD value from the current proof/USD overlay; WORK signal is displayed separately.
+- The Boost UI ranks confirmed posts by attached value, newest, or oldest and can scope value by hour, day, week, or all time. Total signal is the proof-equivalent value of direct proof signal plus attached WORK at the current floor; proof signal, WORK signal, and total USD value remain visible as separate lanes.
 - Every original post broadcast opens a Twitter/X share intent with the post text and mempool.space tx link. Every Boost feed row also exposes a share link.
 - Authors can hide their own Boost from default app/profile indexing with `pwb1:hide`. This is a visibility tombstone, not deletion from ProofOfWork.
 - Confirmed ProofOfWork history is canonical. Pending Boost records are visibility only.

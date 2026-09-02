@@ -532,18 +532,35 @@ const walletUtxoPolicy = contents.get("src/walletUtxos.ts");
 expect(
   "Boost feed renders total signal while preserving proof and WORK lanes",
   /function boostTotalSignalSats/u.test(boostRoot) &&
+    /function boostProofSignalSats/u.test(boostRoot) &&
     /function boostWorkSignalValueSats/u.test(boostRoot) &&
+    /function boostWorkSignalSubatoms/u.test(boostRoot) &&
+    /function formatWorkSignal/u.test(boostRoot) &&
     /<strong>\{formatProofs\(totalSignalSats\)\}<\/strong>/u.test(
       boostRoot,
     ) &&
     /Total USD \{formatUsd\(boostTotalSignalUsd\(item\)\)\}/u.test(
       boostRoot,
     ) &&
-    /Proof \{formatProofs\(item\.proofSignalSats\)\}/u.test(boostRoot) &&
-    /WORK \{item\.workSignal\} \(\{formatProofs\(workSignalValueSats\)\}\)/u.test(
+    /Proof \{formatProofs\(boostProofSignalSats\(item\)\)\}/u.test(
       boostRoot,
     ) &&
-    /visibleItems\.reduce\([\s\S]*boostTotalSignalSats\(item\)/u.test(
+    /WORK \{formatWorkAmount\(workSignalSubatoms, true\)\}\{" "\}[\s\S]*formatProofs\(workSignalValueSats\)/u.test(
+      boostRoot,
+    ) &&
+    /const headerSignalStats = useMemo\([\s\S]*boostProofSignalSats\(item\)[\s\S]*boostTotalSignalSats\(item\)[\s\S]*boostTotalSignalUsd\(item\)[\s\S]*boostWorkSignalSubatoms\(item\)/u.test(
+      boostRoot,
+    ) &&
+    /label:\s*"Total Signal"[\s\S]*formatProofs\(headerSignalStats\.totalSignalSats\)/u.test(
+      boostRoot,
+    ) &&
+    /label:\s*"Proof Signal"[\s\S]*formatProofs\(headerSignalStats\.proofSignalSats\)/u.test(
+      boostRoot,
+    ) &&
+    /label:\s*"WORK Signal"[\s\S]*formatWorkSignal\(headerSignalStats\.workSignalSubatoms\)/u.test(
+      boostRoot,
+    ) &&
+    /label:\s*"Total USD"[\s\S]*formatUsd\(headerSignalStats\.totalSignalUsd\)/u.test(
       boostRoot,
     ) &&
     /totalSignalSats\?: number/u.test(boostProtocol) &&
