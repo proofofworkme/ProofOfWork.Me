@@ -685,6 +685,21 @@ expect(
     /workFloor,\s*\)\s*,/u.test(boostFeedPayloadSource),
 );
 expect(
+  "Boost profile routes project person activity instead of filtering timeline tabs",
+  /const BOOST_PROFILE_TABS = new Set\(\[[\s\S]*"boosts"[\s\S]*"replies"[\s\S]*"purchased"[\s\S]*"likes"[\s\S]*"replies-to"/u.test(
+    server,
+  ) &&
+    /function boostProfileSubjectForQuery/u.test(server) &&
+    /function boostProfileEntriesByTab/u.test(server) &&
+    /profileSubject \? "profile" : "timeline"/u.test(boostFeedPayloadSource) &&
+    /profileTabs \? profileTabs\[profileTab\] : entries/u.test(
+      boostFeedPayloadSource,
+    ) &&
+    /!profileSubject &&[\s\S]*view === "following"/u.test(
+      boostFeedPayloadSource,
+    ),
+);
+expect(
   "proof-index value deltas verify and consolidate marketplace registry payments",
   /function proofIndexConfirmedValueEventDeltaFromRows/u.test(reader) &&
     /registryCandidatesByPayment/u.test(reader) &&

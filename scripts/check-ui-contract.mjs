@@ -566,6 +566,22 @@ expect(
     /totalSignalSats\?: number/u.test(boostProtocol) &&
     /workSignalValueSats\?: number/u.test(boostProtocol),
 );
+expect(
+  "Boost profile view is a person page with profile-specific tabs",
+  /const PROFILE_TABS[\s\S]*Boosts[\s\S]*Replies[\s\S]*Purchased[\s\S]*Likes[\s\S]*Replies To/u.test(
+    boostRoot,
+  ) &&
+    /const \[profileRouteValue\]/u.test(boostRoot) &&
+    /const \[profileLookup, setProfileLookup\]/u.test(boostRoot) &&
+    /const isProfileView = Boolean\(profileRouteValue\.trim\(\)\)/u.test(
+      boostRoot,
+    ) &&
+    /className="boost-profile-head"/u.test(boostRoot) &&
+    /aria-label="Boost profile tabs"/u.test(boostRoot) &&
+    /params\.set\("profileTab", profileTab\)/u.test(boostRoot) &&
+    /params\.set\("view", timelineMode\)/u.test(boostRoot) &&
+    /profileTabs\?: Record<BoostProfileTab, number>/u.test(boostProtocol),
+);
 const transferTokenSource = app.slice(
   app.indexOf("async function transferToken"),
   app.indexOf("async function listToken"),

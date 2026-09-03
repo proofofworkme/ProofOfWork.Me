@@ -12,6 +12,13 @@ export const BOOST_SALE_AUTH_VERSION = "pwb-sale-v1";
 
 export type BoostPaidAction = "like" | "reboost";
 export type BoostFollowAction = "follow" | "unfollow";
+export type BoostFeedMode = "timeline" | "profile";
+export type BoostProfileTab =
+  | "boosts"
+  | "replies"
+  | "purchased"
+  | "likes"
+  | "replies-to";
 export type BoostTimelineMode = "all" | "following";
 
 export type BoostProfile = {
@@ -86,7 +93,30 @@ export type BoostFeedPayload = {
   };
   indexedAt?: string;
   items?: BoostFeedItem[];
+  mode?: BoostFeedMode;
   network?: BitcoinNetwork;
+  profile?: string;
+  profileSubject?: {
+    address?: string;
+    displayName?: string;
+    followerCount?: number;
+    followingCount?: number;
+    id?: string;
+    profile?: BoostProfile;
+    proofSignalSats?: number;
+    purchasedCount?: number;
+    query: string;
+    replyCount?: number;
+    repliesToCount?: number;
+    boostCount?: number;
+    likeCount?: number;
+    totalSignalSats?: number;
+    totalSignalUsd?: number;
+    viewerFollowsProfile?: boolean;
+    workSignalSubatoms?: string;
+  };
+  profileTab?: BoostProfileTab;
+  profileTabs?: Record<BoostProfileTab, number>;
   source?: string;
   stats?: {
     confirmed?: number;

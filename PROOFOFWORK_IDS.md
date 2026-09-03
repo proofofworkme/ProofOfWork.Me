@@ -308,6 +308,7 @@ Rules to preserve:
 - `pwb1:list5`, `pwb1:seal5`, `pwb1:delist5`, `pwb1:buy5`, and `pwb1:t` each pay the 546-proof Boost registry fee to `boost@proofofwork.me`.
 - A post-time sale price can only queue a later listing/seal after the post txid exists. JSON price metadata alone is not buyable.
 - Boost timeline tabs are social views over confirmed `pwb1:` records: For You shows all visible confirmed Boosts; Following shows visible confirmed Boosts from addresses actively followed by the connected wallet.
+- Boost profile routes are person views, not timeline filters. A `profile=` route resolves one address or confirmed ID and then shows profile-specific tabs for authored boosts/reboosts, authored replies, currently owned or purchased boosts, liked boosts, and expanded replies to that person's original boosts.
 - Authors can hide their own Boost from default app/profile indexing with `pwb1:hide`. This is a visibility tombstone, not deletion from ProofOfWork.
 - Confirmed ProofOfWork history is canonical. Pending Boost records are only visibility.
 - Wallet signing stays local.

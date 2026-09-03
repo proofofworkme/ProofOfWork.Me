@@ -67,6 +67,7 @@ import {
   type BoostFollowAction,
   type BoostIdentityIntent,
   type BoostPaidAction,
+  type BoostProfileTab,
   type BoostTimelineMode,
   type PowIdRecordLike,
 } from "./boostProtocol";
@@ -126,6 +127,14 @@ const TIMELINE_MODES: Array<{ label: string; value: BoostTimelineMode }> = [
   { label: "Following", value: "following" },
 ];
 
+const PROFILE_TABS: Array<{ label: string; value: BoostProfileTab }> = [
+  { label: "Boosts", value: "boosts" },
+  { label: "Replies", value: "replies" },
+  { label: "Purchased", value: "purchased" },
+  { label: "Likes", value: "likes" },
+  { label: "Replies To", value: "replies-to" },
+];
+
 const DEFAULT_FEE_RATE = 1;
 const DEFAULT_LIST_PRICE_SATS = 1_000;
 
@@ -134,6 +143,13 @@ function initialSearchParam(name: string) {
     return "";
   }
   return new URLSearchParams(window.location.search).get(name)?.trim() ?? "";
+}
+
+function initialProfileTab(): BoostProfileTab {
+  const tab = initialSearchParam("profileTab").toLowerCase();
+  return PROFILE_TABS.some((option) => option.value === tab)
+    ? (tab as BoostProfileTab)
+    : "boosts";
 }
 
 function formatProofs(value: number | string | undefined) {
@@ -243,6 +259,47 @@ function followerLabel(count: number | undefined) {
   return `${Number.isFinite(total) ? Math.max(0, total).toLocaleString() : "0"} follower${
     total === 1 ? "" : "s"
   }`;
+}
+
+function followingLabel(count: number | undefined) {
+  const total = Number(count ?? 0);
+  return `${Number.isFinite(total) ? Math.max(0, total).toLocaleString() : "0"} following`;
+}
+
+function profileSubjectDisplay(payload: BoostFeedPayload | undefined) {
+  return (
+    payload?.profileSubject?.displayName ||
+    payload?.profileSubject?.id ||
+    payload?.profileSubject?.address ||
+    payload?.profile ||
+    "Boost profile"
+  );
+}
+
+function profileSubjectHandle(payload: BoostFeedPayload | undefined) {
+  const subject = payload?.profileSubject;
+  if (!subject) {
+    return "";
+  }
+  return subject.id
+    ? `@${subject.id}`
+    : subject.address
+      ? `@${shortAddress(subject.address)}`
+      : "";
+}
+
+function profileSubjectAvatarText(payload: BoostFeedPayload | undefined) {
+  return profileSubjectDisplay(payload).slice(0, 2).toUpperCase();
+}
+
+function profileEmptyTitle(tab: BoostProfileTab) {
+  return {
+    boosts: "No profile boosts yet",
+    likes: "No liked boosts yet",
+    purchased: "No purchased boosts yet",
+    replies: "No profile replies yet",
+    "replies-to": "No replies to this profile yet",
+  }[tab];
 }
 
 function boostProfileHref(value: string) {
@@ -536,9 +593,10 @@ export default function BoostRoot({
   const [valueWindow, setValueWindow] = useState<BoostValueWindow>("all");
   const [timelineMode, setTimelineMode] =
     useState<BoostTimelineMode>("all");
-  const [profileQuery, setProfileQuery] = useState(() =>
-    initialSearchParam("profile"),
-  );
+  const [profileRouteValue] = useState(() => initialSearchParam("profile"));
+  const [profileLookup, setProfileLookup] = useState(profileRouteValue);
+  const [profileTab, setProfileTab] =
+    useState<BoostProfileTab>(initialProfileTab);
   const [listQuery] = useState(() => initialSearchParam("list"));
   const [searchQuery, setSearchQuery] = useState("");
   const [payload, setPayload] = useState<BoostFeedPayload | undefined>();
@@ -613,6 +671,21 @@ export default function BoostRoot({
     return [...byAddress.values()].slice(0, 4);
   }, [address, items]);
   const topSignalItems = useMemo(() => visibleItems.slice(0, 3), [visibleItems]);
+  const isProfileView = Boolean(profileRouteValue.trim());
+  const profileSubject = payload?.profileSubject;
+  const profileSubjectAddress = profileSubject?.address ?? "";
+  const profileSubjectId = normalizeBoostId(profileSubject?.id ?? "");
+  const profileSelfView = Boolean(
+    address.trim() &&
+    profileSubjectAddress.trim() &&
+      address.trim().toLowerCase() ===
+        profileSubjectAddress.trim().toLowerCase(),
+  );
+  const profileFollowAction: BoostFollowAction = profileSubject?.viewerFollowsProfile
+    ? "unfollow"
+    : "follow";
+  const profileWorkSignalSubatoms =
+    workSubatomsFromCanonicalString(profileSubject?.workSignalSubatoms) ?? 0n;
 
   async function loadBoostRegistryAndIds(walletAddress: string) {
     const [boostPayload, registryPayload] = await Promise.all([
@@ -834,12 +907,11 @@ export default function BoostRoot({
     }
   }
 
-  async function publishFollowAction(
+  async function publishFollowTarget(
     action: BoostFollowAction,
-    item: BoostFeedItem,
+    targetAddress: string,
+    targetId?: string,
   ) {
-    const targetAddress = boostAuthorAddress(item);
-    const targetId = boostAuthorId(item);
     const label = action === "follow" ? "Boost follow" : "Boost unfollow";
     if (!targetAddress || !isValidBitcoinAddress(targetAddress, "livenet")) {
       setStatus({ tone: "bad", text: "Boost follow target is invalid." });
@@ -883,6 +955,34 @@ export default function BoostRoot({
         text: error instanceof Error ? error.message : `${label} failed.`,
       });
     }
+  }
+
+  async function publishFollowAction(
+    action: BoostFollowAction,
+    item: BoostFeedItem,
+  ) {
+    await publishFollowTarget(action, boostAuthorAddress(item), boostAuthorId(item));
+  }
+
+  function openProfileRoute(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const nextProfile = profileLookup.trim();
+    if (!nextProfile) {
+      return;
+    }
+    window.location.href = boostProfileHref(nextProfile);
+  }
+
+  function selectProfileTab(nextTab: BoostProfileTab) {
+    setProfileTab(nextTab);
+    if (!profileRouteValue.trim()) {
+      return;
+    }
+    const url = new URL(window.location.href);
+    url.searchParams.set("boost", "1");
+    url.searchParams.set("profile", profileRouteValue.trim());
+    url.searchParams.set("profileTab", nextTab);
+    window.history.replaceState(null, "", `${url.pathname}?${url.searchParams.toString()}${url.hash}`);
   }
 
   async function publishReply(event: FormEvent<HTMLFormElement>) {
@@ -1078,14 +1178,16 @@ export default function BoostRoot({
       const params = new URLSearchParams({
         limit: "50",
         sort: sortMode,
-        view: timelineMode,
         window: valueWindow,
       });
       if (address.trim()) {
         params.set("viewer", address.trim());
       }
-      if (profileQuery.trim()) {
-        params.set("profile", profileQuery.trim());
+      if (profileRouteValue.trim()) {
+        params.set("profile", profileRouteValue.trim());
+        params.set("profileTab", profileTab);
+      } else {
+        params.set("view", timelineMode);
       }
       const nextPayload = await fetchProofApiJson<BoostFeedPayload>(
         `/api/v1/boost?${params.toString()}`,
@@ -1112,7 +1214,15 @@ export default function BoostRoot({
 
   useEffect(() => {
     void refresh();
-  }, [address, network, profileQuery, sortMode, timelineMode, valueWindow]);
+  }, [
+    address,
+    network,
+    profileRouteValue,
+    profileTab,
+    sortMode,
+    timelineMode,
+    valueWindow,
+  ]);
 
   useEffect(() => {
     setNetwork(initialNetwork);
@@ -1474,15 +1584,27 @@ export default function BoostRoot({
             />
           </label>
 
-          <label className="boost-profile-filter">
-            Profile
-            <input
-              autoComplete="off"
-              onChange={(event) => setProfileQuery(event.target.value)}
-              placeholder="address or id"
-              value={profileQuery}
-            />
-          </label>
+          <form className="boost-profile-filter" onSubmit={openProfileRoute}>
+            <label>
+              Profile
+              <input
+                autoComplete="off"
+                onChange={(event) => setProfileLookup(event.target.value)}
+                placeholder="address or id"
+                value={profileLookup}
+              />
+            </label>
+            <button
+              className="secondary small"
+              disabled={!profileLookup.trim()}
+              type="submit"
+            >
+              <span className="button-content">
+                <Search size={15} />
+                <span>View</span>
+              </span>
+            </button>
+          </form>
 
           <a className="secondary link-button" href={boostAmoHref()}>
             <span className="button-content">
@@ -1493,41 +1615,125 @@ export default function BoostRoot({
         </aside>
 
         <section className="boost-feed-panel">
-          <div className="boost-timeline-head">
-            <div className="boost-timeline-tabs" aria-label="Boost timeline">
-              {TIMELINE_MODES.map((option) => (
-                <button
-                  aria-pressed={timelineMode === option.value}
-                  key={option.value}
-                  onClick={() => setTimelineMode(option.value)}
-                  type="button"
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-            <div className="boost-composer-strip">
-              <div className="boost-avatar boost-avatar-fallback" aria-hidden="true">
-                {address ? shortAddress(address).slice(0, 2).toUpperCase() : "Po"}
+          {isProfileView ? (
+            <div className="boost-profile-head">
+              <div className="boost-profile-cover" />
+              <div className="boost-profile-main">
+                {profileSubject?.profile?.image?.url ? (
+                  <img
+                    alt=""
+                    className="boost-profile-avatar"
+                    loading="lazy"
+                    src={profileSubject.profile.image.url}
+                  />
+                ) : (
+                  <div
+                    className="boost-profile-avatar boost-avatar-fallback"
+                    aria-hidden="true"
+                  >
+                    {profileSubjectAvatarText(payload)}
+                  </div>
+                )}
+                <div className="boost-profile-copy">
+                  <a
+                    className="secondary small link-button"
+                    href={boostRouteHref("/", { boost: "1" })}
+                  >
+                    Timeline
+                  </a>
+                  <h2>{profileSubjectDisplay(payload)}</h2>
+                  <p>{profileSubjectHandle(payload) || profileRouteValue}</p>
+                  <div className="boost-profile-stats">
+                    <span>{followerLabel(profileSubject?.followerCount)}</span>
+                    <span>{followingLabel(profileSubject?.followingCount)}</span>
+                    <span>{formatProofs(profileSubject?.totalSignalSats)} signal</span>
+                    {profileWorkSignalSubatoms > 0n ? (
+                      <span>{formatWorkSignal(profileWorkSignalSubatoms)}</span>
+                    ) : null}
+                  </div>
+                </div>
+                {!profileSelfView && profileSubjectAddress ? (
+                  <button
+                    className="secondary small boost-follow-button"
+                    disabled={Boolean(actionBusy)}
+                    onClick={() =>
+                      void publishFollowTarget(
+                        profileFollowAction,
+                        profileSubjectAddress,
+                        profileSubjectId,
+                      )
+                    }
+                    type="button"
+                  >
+                    <span className="button-content">
+                      {profileFollowAction === "follow" ? (
+                        <UserPlus size={15} />
+                      ) : (
+                        <UserMinus size={15} />
+                      )}
+                      <span>
+                        {profileFollowAction === "follow"
+                          ? "Follow"
+                          : "Unfollow"}
+                      </span>
+                    </span>
+                  </button>
+                ) : null}
               </div>
-              {onComposeBoost ? (
-                <button
-                  className="boost-composer-prompt"
-                  onClick={onComposeBoost}
-                  type="button"
-                >
-                  What's happening?
-                </button>
-              ) : (
-                <a
-                  className="boost-composer-prompt"
-                  href={appHref(COMPUTER_APP_URL, LOCAL_COMPUTER_APP_URL)}
-                >
-                  What's happening?
-                </a>
-              )}
+              <div className="boost-profile-tabs" aria-label="Boost profile tabs">
+                {PROFILE_TABS.map((option) => (
+                  <button
+                    aria-pressed={profileTab === option.value}
+                    key={option.value}
+                    onClick={() => selectProfileTab(option.value)}
+                    type="button"
+                  >
+                    <span>{option.label}</span>
+                    <strong>{payload?.profileTabs?.[option.value] ?? 0}</strong>
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          ) : (
+            <div className="boost-timeline-head">
+              <div className="boost-timeline-tabs" aria-label="Boost timeline">
+                {TIMELINE_MODES.map((option) => (
+                  <button
+                    aria-pressed={timelineMode === option.value}
+                    key={option.value}
+                    onClick={() => setTimelineMode(option.value)}
+                    type="button"
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+              <div className="boost-composer-strip">
+                <div
+                  className="boost-avatar boost-avatar-fallback"
+                  aria-hidden="true"
+                >
+                  {address ? shortAddress(address).slice(0, 2).toUpperCase() : "Po"}
+                </div>
+                {onComposeBoost ? (
+                  <button
+                    className="boost-composer-prompt"
+                    onClick={onComposeBoost}
+                    type="button"
+                  >
+                    What's happening?
+                  </button>
+                ) : (
+                  <a
+                    className="boost-composer-prompt"
+                    href={appHref(COMPUTER_APP_URL, LOCAL_COMPUTER_APP_URL)}
+                  >
+                    What's happening?
+                  </a>
+                )}
+              </div>
+            </div>
+          )}
           <div className="boost-feed-toolbar">
             <div className="network-tabs" aria-label="Boost value window">
               {VALUE_WINDOWS.map((option) => (
@@ -1596,7 +1802,9 @@ export default function BoostRoot({
               <div className="boost-empty">
                 <Zap size={28} />
                 <h2>
-                  {timelineMode === "following"
+                  {isProfileView
+                    ? profileEmptyTitle(profileTab)
+                    : timelineMode === "following"
                     ? address
                       ? "No followed Boosts yet"
                       : "Connect to load Following"
@@ -1610,21 +1818,37 @@ export default function BoostRoot({
         <aside className="boost-right-rail" aria-label="Boost discovery">
           <section className="boost-rail-panel">
             <div className="boost-rail-head">
-              <strong>Signal Now</strong>
+              <strong>{isProfileView ? "Profile Signal" : "Signal Now"}</strong>
               <span>{formatDate(payload?.indexedAt ?? new Date().toISOString())}</span>
             </div>
             <div className="boost-rail-stats">
               <span>
-                <strong>{formatProofs(headerSignalStats.totalSignalSats)}</strong>
+                <strong>
+                  {formatProofs(
+                    isProfileView
+                      ? profileSubject?.totalSignalSats
+                      : headerSignalStats.totalSignalSats,
+                  )}
+                </strong>
                 Total
               </span>
               <span>
-                <strong>{formatProofs(headerSignalStats.proofSignalSats)}</strong>
+                <strong>
+                  {formatProofs(
+                    isProfileView
+                      ? profileSubject?.proofSignalSats
+                      : headerSignalStats.proofSignalSats,
+                  )}
+                </strong>
                 Proof
               </span>
               <span>
-                <strong>{payload?.graph?.followingCount ?? 0}</strong>
-                Following
+                <strong>
+                  {isProfileView
+                    ? (profileSubject?.followerCount ?? 0)
+                    : (payload?.graph?.followingCount ?? 0)}
+                </strong>
+                {isProfileView ? "Followers" : "Following"}
               </span>
             </div>
           </section>

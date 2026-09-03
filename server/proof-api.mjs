@@ -50047,6 +50047,13 @@ const BOOST_INDEX_EVENT_KINDS = new Set(BOOST_EVENT_KINDS);
 const BOOST_VALUE_WINDOWS = new Set(["hour", "day", "week", "all"]);
 const BOOST_SORT_MODES = new Set(["value", "newest", "oldest"]);
 const BOOST_TIMELINE_VIEWS = new Set(["all", "following"]);
+const BOOST_PROFILE_TABS = new Set([
+  "boosts",
+  "replies",
+  "purchased",
+  "likes",
+  "replies-to",
+]);
 
 function boostHexTxid(value) {
   const txid = String(value ?? "").trim().toLowerCase();
@@ -50170,6 +50177,15 @@ function boostTimelineView(searchParams) {
     .trim()
     .toLowerCase();
   return BOOST_TIMELINE_VIEWS.has(view) ? view : "all";
+}
+
+function boostProfileTab(searchParams) {
+  const tab = String(
+    searchParams.get("profileTab") ?? searchParams.get("profileView") ?? "boosts",
+  )
+    .trim()
+    .toLowerCase();
+  return BOOST_PROFILE_TABS.has(tab) ? tab : "boosts";
 }
 
 function boostWindowStartMs(valueWindow, nowMs = Date.now()) {
@@ -50646,18 +50662,280 @@ function boostFeedItemWithGraph(
   };
 }
 
-function boostProfileMatches(item, profile, state, profileState) {
-  if (!profile) {
+function boostProfileSourceAuthorKey(item) {
+  return boostAddress(item?.authorAddress ?? item?.actor).toLowerCase();
+}
+
+function boostProfileSourceOwnerKey(item, state, feedItem) {
+  return boostAddress(
+    state?.ownerAddress ??
+      feedItem?.currentOwnerAddress ??
+      item?.currentOwnerAddress ??
+      item?.ownerAddress ??
+      item?.newOwnerAddress ??
+      item?.buyerAddress ??
+      item?.recipientAddress,
+  ).toLowerCase();
+}
+
+function boostProfileSourceIds(item, profileState) {
+  return [
+    item?.profileId,
+    item?.authorId,
+    item?.currentOwnerId,
+    profileState?.id,
+    profileState?.profileId,
+  ]
+    .map((value) => normalizePowId(String(value ?? "")))
+    .filter(Boolean);
+}
+
+function boostLooksLikeAddress(value) {
+  return /^(?:bc1|[13])[a-z0-9]{20,}$/iu.test(String(value ?? "").trim());
+}
+
+function boostProfileSubjectForQuery(
+  profile,
+  sourceItems,
+  profiles,
+  followersByTarget,
+  followingByFollower,
+  viewerFollowing,
+) {
+  const query = String(profile ?? "").trim();
+  if (!query) {
+    return null;
+  }
+  const queryKey = query.toLowerCase();
+  const queryId = boostLooksLikeAddress(query) ? "" : normalizePowId(query);
+  let address = "";
+  let profileState = null;
+
+  for (const [profileKey, candidate] of profiles) {
+    const candidateIds = [
+      candidate?.id,
+      candidate?.profileId,
+      candidate?.name,
+    ].map((value) => normalizePowId(String(value ?? "")));
+    if (
+      profileKey === queryKey ||
+      (queryId && candidateIds.includes(queryId))
+    ) {
+      address = boostAddress(candidate?.address) || profileKey;
+      profileState = candidate;
+      break;
+    }
+  }
+
+  const adoptAddress = (value) => {
+    if (!address && boostAddress(value).toLowerCase() === queryKey) {
+      address = boostAddress(value);
+    }
+  };
+
+  for (const item of sourceItems) {
+    if (address) {
+      break;
+    }
+    adoptAddress(item?.authorAddress);
+    adoptAddress(item?.actor);
+    adoptAddress(item?.currentOwnerAddress);
+    adoptAddress(item?.ownerAddress);
+    adoptAddress(item?.newOwnerAddress);
+    adoptAddress(item?.buyerAddress);
+    adoptAddress(item?.recipientAddress);
+    adoptAddress(item?.followerAddress);
+    adoptAddress(item?.targetAddress);
+    adoptAddress(item?.sellerAddress);
+  }
+
+  if (!address && queryId) {
+    for (const item of sourceItems) {
+      const authorKey = boostProfileSourceAuthorKey(item);
+      const itemProfileState = profiles.get(authorKey);
+      const ids = [
+        ...boostProfileSourceIds(item, itemProfileState),
+        item?.targetId,
+        item?.followedId,
+      ].map((value) => normalizePowId(String(value ?? "")));
+      if (ids.includes(queryId)) {
+        address =
+          boostAddress(item?.authorAddress ?? item?.actor) ||
+          boostAddress(item?.targetAddress) ||
+          boostAddress(item?.currentOwnerAddress);
+        profileState = itemProfileState ?? null;
+        break;
+      }
+    }
+  }
+
+  if (!address && queryKey) {
+    address = query;
+  }
+
+  const addressKey = address.toLowerCase();
+  profileState = profileState ?? profiles.get(addressKey) ?? null;
+  const id = boostDisplayName(profileState?.id, profileState?.profileId, queryId);
+  return {
+    address,
+    addressKey,
+    displayName: boostDisplayName(
+      profileState?.name,
+      id ? `${id}@proofofwork.me` : "",
+      address,
+      query,
+    ),
+    followerCount: addressKey ? (followersByTarget.get(addressKey)?.size ?? 0) : 0,
+    followingCount: addressKey ? (followingByFollower.get(addressKey)?.size ?? 0) : 0,
+    id,
+    profile: profileState || undefined,
+    query,
+    viewerFollowsProfile: addressKey ? viewerFollowing.has(addressKey) : false,
+  };
+}
+
+function boostProfileSubjectMatchesAuthor(item, profileState, subject) {
+  if (!subject) {
+    return false;
+  }
+  const authorKey = boostProfileSourceAuthorKey(item);
+  if (subject.addressKey && authorKey === subject.addressKey) {
     return true;
   }
-  return boostEventSearchText(item, state, profileState).includes(
-    profile.toLowerCase(),
-  );
+  if (!subject.id) {
+    return false;
+  }
+  return boostProfileSourceIds(item, profileState).includes(subject.id);
+}
+
+function boostUniqueProfileEntries(entries) {
+  const seen = new Set();
+  const unique = [];
+  for (const entry of entries) {
+    const key = `${entry.feedItem?.kind ?? ""}:${entry.feedItem?.txid ?? ""}`;
+    if (!key || seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    unique.push(entry);
+  }
+  return unique;
+}
+
+function boostProfileEntriesByTab(entries, sourceItems, subject, states, profiles) {
+  if (!subject) {
+    return {
+      boosts: entries,
+      likes: [],
+      purchased: [],
+      replies: [],
+      "replies-to": [],
+    };
+  }
+
+  const authoredBoosts = [];
+  const authoredReplies = [];
+  const purchased = [];
+  const subjectBoostTxids = new Set();
+
+  for (const entry of entries) {
+    const { feedItem, sourceItem } = entry;
+    const kind = String(sourceItem?.kind ?? "").trim().toLowerCase();
+    const authorKey = boostProfileSourceAuthorKey(sourceItem);
+    const profileState = profiles.get(authorKey);
+    const authored = boostProfileSubjectMatchesAuthor(
+      sourceItem,
+      profileState,
+      subject,
+    );
+    const state = states.get(boostPostTxid(sourceItem));
+    const ownerKey = boostProfileSourceOwnerKey(sourceItem, state, feedItem);
+
+    if (authored && (kind === "boost-post" || kind === "boost-reboost")) {
+      authoredBoosts.push(entry);
+      if (kind === "boost-post") {
+        const txid = boostPostTxid(sourceItem) || boostHexTxid(feedItem?.txid);
+        if (txid) {
+          subjectBoostTxids.add(txid);
+        }
+      }
+    }
+    if (authored && kind === "boost-reply") {
+      authoredReplies.push(entry);
+    }
+    if (subject.addressKey && ownerKey === subject.addressKey && !authored) {
+      purchased.push(entry);
+    }
+  }
+
+  const likedTargetTxids = new Set();
+  for (const item of sourceItems) {
+    const kind = String(item?.kind ?? "").trim().toLowerCase();
+    if (kind !== "boost-like" || item?.valid === false) {
+      continue;
+    }
+    const authorKey = boostProfileSourceAuthorKey(item);
+    const profileState = profiles.get(authorKey);
+    if (boostProfileSubjectMatchesAuthor(item, profileState, subject)) {
+      const targetTxid = boostTargetTxid(item);
+      if (targetTxid) {
+        likedTargetTxids.add(targetTxid);
+      }
+    }
+  }
+
+  const likes = entries.filter((entry) => {
+    const kind = String(entry.sourceItem?.kind ?? "").trim().toLowerCase();
+    if (kind === "boost-reboost") {
+      return false;
+    }
+    return likedTargetTxids.has(
+      boostHexTxid(entry.feedItem?.txid) || boostPostTxid(entry.sourceItem),
+    );
+  });
+  const repliesTo = entries.filter((entry) => {
+    const kind = String(entry.sourceItem?.kind ?? "").trim().toLowerCase();
+    return kind === "boost-reply" && subjectBoostTxids.has(boostTargetTxid(entry.sourceItem));
+  });
+
+  return {
+    boosts: boostUniqueProfileEntries(authoredBoosts),
+    likes: boostUniqueProfileEntries(likes),
+    purchased: boostUniqueProfileEntries(purchased),
+    replies: boostUniqueProfileEntries(authoredReplies),
+    "replies-to": boostUniqueProfileEntries(repliesTo),
+  };
+}
+
+function boostProfileSignalStats(entries) {
+  let totalSignalSats = 0;
+  let totalSignalUsd = 0;
+  let proofSignalSats = 0;
+  let workSignalSubatoms = 0n;
+  for (const entry of boostUniqueProfileEntries(entries)) {
+    const item = entry.feedItem;
+    totalSignalSats += numericValue(item?.totalSignalSats ?? item?.signalSats);
+    totalSignalUsd += numericValue(item?.totalSignalUsd ?? item?.signalUsd);
+    proofSignalSats += numericValue(item?.proofSignalSats);
+    const subatoms = canonicalNonNegativeIntegerText(item?.workSignalSubatoms, {
+      allowZero: false,
+    });
+    if (subatoms) {
+      workSignalSubatoms += BigInt(subatoms);
+    }
+  }
+  return {
+    proofSignalSats,
+    totalSignalSats,
+    totalSignalUsd,
+    workSignalSubatoms: workSignalSubatoms.toString(),
+  };
 }
 
 async function boostFeedPayload(network, searchParams, fresh = false) {
   const sort = boostSortMode(searchParams);
   const view = boostTimelineView(searchParams);
+  const profileTab = boostProfileTab(searchParams);
   const valueWindow = boostValueWindow(searchParams);
   const limit = boundedInteger(searchParams.get("limit"), 50, 1, 100);
   const includePending = /^(?:1|true|yes)$/iu.test(
@@ -50723,7 +51001,15 @@ async function boostFeedPayload(network, searchParams, fresh = false) {
       ? followingByFollower.get(viewerKey)
       : new Set();
   const windowStartMs = boostWindowStartMs(valueWindow);
-  const filtered = sourceItems
+  const profileSubject = boostProfileSubjectForQuery(
+    profile,
+    sourceItems,
+    profiles,
+    followersByTarget,
+    followingByFollower,
+    viewerFollowing,
+  );
+  const entries = sourceItems
     .filter((item) => {
       const kind = String(item?.kind ?? "").trim().toLowerCase();
       if (!BOOST_VISIBLE_EVENT_KINDS.has(kind)) {
@@ -50742,20 +51028,16 @@ async function boostFeedPayload(network, searchParams, fresh = false) {
       const authorKey = boostAddress(item?.authorAddress ?? item?.actor)
         .toLowerCase();
       if (
+        !profileSubject &&
         view === "following" &&
         (!viewerKey || !authorKey || !viewerFollowing.has(authorKey))
       ) {
         return false;
       }
-      if (!boostProfileMatches(item, profile, state, profileState)) {
-        return false;
-      }
-      return (
-        !query || boostEventSearchText(item, state, profileState).includes(query)
-      );
+      return !query || boostEventSearchText(item, state, profileState).includes(query);
     })
-    .map((item) =>
-      boostFeedItemWithGraph(
+    .map((item) => {
+      const feedItem = boostFeedItemWithGraph(
         boostFeedItemFromEvent(
           item,
           states.get(boostPostTxid(item)),
@@ -50771,12 +51053,29 @@ async function boostFeedPayload(network, searchParams, fresh = false) {
         followersByTarget,
         followingByFollower,
         viewerFollowing,
-      ),
-    )
-    .filter(Boolean)
-    .sort(compareBoostFeedItems(sort));
+      );
+      return feedItem ? { feedItem, sourceItem: item } : null;
+    })
+    .filter(Boolean);
 
-  const items = filtered.slice(0, limit);
+  const profileTabs = profileSubject
+    ? boostProfileEntriesByTab(entries, sourceItems, profileSubject, states, profiles)
+    : null;
+  const filteredEntries = (
+    profileTabs ? profileTabs[profileTab] : entries
+  ).sort((left, right) => compareBoostFeedItems(sort)(left.feedItem, right.feedItem));
+
+  const items = filteredEntries.slice(0, limit).map((entry) => entry.feedItem);
+  const profileStatEntries = profileTabs
+    ? boostUniqueProfileEntries([
+        ...profileTabs.boosts,
+        ...profileTabs.replies,
+        ...profileTabs.purchased,
+      ])
+    : [];
+  const profileSignalStats = profileTabs
+    ? boostProfileSignalStats(profileStatEntries)
+    : null;
   return {
     btcUsd,
     btcUsdIndexedAt: quote?.priceIndexedAt,
@@ -50784,8 +51083,40 @@ async function boostFeedPayload(network, searchParams, fresh = false) {
     indexedThroughBlock: indexedPayload?.indexedThroughBlock,
     items,
     limit,
+    mode: profileSubject ? "profile" : "timeline",
     network,
     profile: profile || undefined,
+    profileSubject: profileSubject
+      ? {
+          address: profileSubject.address || undefined,
+          displayName: profileSubject.displayName,
+          followerCount: profileSubject.followerCount,
+          followingCount: profileSubject.followingCount,
+          id: profileSubject.id || undefined,
+          profile: profileSubject.profile,
+          proofSignalSats: profileSignalStats?.proofSignalSats ?? 0,
+          purchasedCount: profileTabs.purchased.length,
+          query: profileSubject.query,
+          replyCount: profileTabs.replies.length,
+          repliesToCount: profileTabs["replies-to"].length,
+          boostCount: profileTabs.boosts.length,
+          likeCount: profileTabs.likes.length,
+          totalSignalSats: profileSignalStats?.totalSignalSats ?? 0,
+          totalSignalUsd: profileSignalStats?.totalSignalUsd ?? 0,
+          viewerFollowsProfile: profileSubject.viewerFollowsProfile,
+          workSignalSubatoms: profileSignalStats?.workSignalSubatoms ?? "0",
+        }
+      : undefined,
+    profileTab: profileSubject ? profileTab : undefined,
+    profileTabs: profileTabs
+      ? {
+          boosts: profileTabs.boosts.length,
+          likes: profileTabs.likes.length,
+          purchased: profileTabs.purchased.length,
+          replies: profileTabs.replies.length,
+          "replies-to": profileTabs["replies-to"].length,
+        }
+      : undefined,
     graph: {
       followingCount: viewerFollowing.size,
       viewerAddress: viewerAddress || undefined,
@@ -50795,9 +51126,9 @@ async function boostFeedPayload(network, searchParams, fresh = false) {
     stats: {
       confirmed: items.filter((item) => item.confirmed !== false).length,
       pending: items.filter((item) => item.confirmed === false).length,
-      total: filtered.length,
+      total: filteredEntries.length,
     },
-    totalCount: filtered.length,
+    totalCount: filteredEntries.length,
     valueWindow,
     view,
   };
