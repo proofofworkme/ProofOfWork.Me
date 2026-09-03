@@ -121,7 +121,7 @@ growth.proofofwork.me       public growth model dashboard
 
 The ID subdomain is the first onboarding experience and should stay focused on claiming/resolving IDs, not reading mail.
 The Desktop subdomain can resolve confirmed IDs for public file browsing, but it must not treat pending IDs as searchable/routable identities.
-Boost is the public 140-character social meta protocol over ProofOfWork addresses and confirmed ProofOfWork IDs. It must not mutate the canonical `pwid1:` registry for posts, likes, replies, reboosts, profile display, transfers, or marketplace activity.
+Boost is the public 140-character social meta protocol over ProofOfWork addresses and confirmed ProofOfWork IDs. It must not mutate the canonical `pwid1:` registry for posts, likes, replies, reboosts, follows, unfollows, profile display, transfers, or marketplace activity.
 The AMO subdomain can connect UniSat, publish sale-ticket on-chain listings for owned confirmed IDs, seal or delist active listings, and execute buyer-funded `pwid1:buy5` transfers. It is tabbed by asset class: the ID tab is live, the Credits tab uses the same sale-ticket shape for non-bond credit `list5`, `seal5`, `delist5`, and `buy5` records, and the Bonds tab exposes POWB/INCB hard-price sale-ticket books with Inception and Infinity sub-tabs. The POWB/INCB hard-price declaration source is `server/bond-hard-price-declaration.mjs`; it is buildable with `npm run build:bond-hard-price-declaration` and prepared as an authority-input declaration with `npm run prepare:bond-hard-price-declaration`. The former Marketplace hostname resolves to this same surface.
 The Log subdomain is read-only. It exposes a unified ProofOfWork Computer log for registrations, receiver updates, direct transfers, listings, seals, delistings, purchases, messages, replies, files, attachments, credit creations, credit mints, credit transfers, credit listings, credit sales, and seeded Computer mail events. Log search is server-backed by the canonical livenet ledger, so address, confirmed ID, txid, participant, and token searches should agree with global Log.
 The Credit subdomain creates and mints mint-first `pwt1:` credits. The `tokens` subdomain redirects to Credit. The Wallet subdomain tracks credit balances and broadcasts generic-credit `pwt1:send` transfers plus the era-valid canonical WORK atomic transfer: historical Q8 `pwt1:send2`, then Q16 `pwt1:send3` only after the staged precision declaration activates. Every transfer pays the relevant credit registry, and legacy bytes retain their original scale. The WORK subdomain is the dedicated WORK credit dashboard. The Infinity subdomain tracks POWB supply/floor data and creates `pwm1:m:powb` bond messages. The Inception subdomain tracks INCB supply/floor data and creates `pwm1:m:incb` bond messages. Its canonical registry identity is `inception@proofofwork.me`, and its reserved synthetic credit id is `3cb25745f937f2b4e5508e5400189fe8fe679cd8e84bfa1e9176d70c9761f15d`. Both bond families reuse the credit sale-ticket lifecycle for transfers and trades, while only canonical WORK can be attached as a separate era-valid `send2`/`send3` credit transfer to a bond message.
@@ -283,6 +283,8 @@ pwb1:post:<post-json-base64url>
 pwb1:reply:<parent-txid>:<post-json-base64url>
 pwb1:like:<target-txid>
 pwb1:reboost:<target-txid>
+pwb1:follow:<follow-json-base64url>
+pwb1:unfollow:<follow-json-base64url>
 pwb1:hide:<target-txid>
 pwb1:t:<boost-txid>:<new-owner-address>
 pwb1:list5:<sale-ticket-json-base64url>
@@ -298,12 +300,14 @@ Rules to preserve:
 - Mail compose owns original posting through the Boost ticker. Attachments/media use the existing Files path; Boost records store proof metadata and pointers, not duplicate bytes.
 - Every address can have a Boost profile shell. Confirmed PowIDs provide the preferred display identity, and profile picture/banner choices come from confirmed Files on that address.
 - `pwb1:like`, `pwb1:reply`, and `pwb1:reboost` are paid product actions. Each pays 546 proofs to `boost@proofofwork.me` plus any extra proof or WORK signal.
+- `pwb1:follow` and `pwb1:unfollow` are paid social-graph actions. A follow pays 546 proofs to `boost@proofofwork.me` and at least 546 proofs to the followed profile address. An unfollow pays only the 546-proof Boost registry fee. The latest confirmed follow/unfollow event for a follower-address plus target-address pair determines the active edge.
 - Paid Boost action writers must stay disabled until `boost@proofofwork.me` has a confirmed receiver. The public Boost feed and Mail original-post writer do not depend on that registration.
 - Extra signal on likes, replies, and reboosts goes to the current Boost owner, or to the original poster when ownership has not moved.
 - Likes, reboosts, and replies are disabled until the target Boost record is confirmed.
 - Boost records are assets keyed by the original post txid. Direct transfers and AMO sale-ticket events move ownership without changing the original author.
 - `pwb1:list5`, `pwb1:seal5`, `pwb1:delist5`, `pwb1:buy5`, and `pwb1:t` each pay the 546-proof Boost registry fee to `boost@proofofwork.me`.
 - A post-time sale price can only queue a later listing/seal after the post txid exists. JSON price metadata alone is not buyable.
+- Boost timeline tabs are social views over confirmed `pwb1:` records: For You shows all visible confirmed Boosts; Following shows visible confirmed Boosts from addresses actively followed by the connected wallet.
 - Authors can hide their own Boost from default app/profile indexing with `pwb1:hide`. This is a visibility tombstone, not deletion from ProofOfWork.
 - Confirmed ProofOfWork history is canonical. Pending Boost records are only visibility.
 - Wallet signing stays local.

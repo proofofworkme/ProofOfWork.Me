@@ -210,6 +210,7 @@ import {
   tokenRouteTarget,
   tokenUsd,
 } from "./functions";
+import BoostRoot from "./features/boost/BoostRoot";
 import {
   boostMarketplaceListingsFromItems,
   boostRouteHref,
@@ -318,6 +319,7 @@ type Folder =
   | "files"
   | "desktop"
   | "browser"
+  | "boost"
   | "ids"
   | "marketplace"
   | "token"
@@ -340,6 +342,7 @@ const COMPUTER_ROUTE_FOLDERS: Folder[] = [
   "files",
   "desktop",
   "browser",
+  "boost",
   "ids",
   "marketplace",
   "token",
@@ -4241,6 +4244,10 @@ function folderLabel(folder: Folder) {
     return "Browser";
   }
 
+  if (folder === "boost") {
+    return "Boost";
+  }
+
   if (folder === "contacts") {
     return "Contacts";
   }
@@ -4311,6 +4318,10 @@ function folderSubtitle(folder: Folder) {
 
   if (folder === "browser") {
     return "Verified HTML pages";
+  }
+
+  if (folder === "boost") {
+    return "Proof-ranked social timeline";
   }
 
   if (folder === "contacts") {
@@ -25628,6 +25639,15 @@ export default function App() {
     setComposeOpen(true);
   }
 
+  function composeBoostPost() {
+    composeNew();
+    setSocialMode(true);
+    setRecipient(address);
+    setCcRecipient("");
+    setReplyParentTxid(undefined);
+    setActiveFolder("inbox");
+  }
+
   function discardDraft() {
     if (address) {
       clearDraft(address, network);
@@ -32953,6 +32973,7 @@ export default function App() {
       : "",
     activeFolder === "marketplace" ? "is-marketplace-workspace" : "",
     activeFolder === "browser" ? "is-browser-workspace" : "",
+    activeFolder === "boost" ? "is-boost-workspace" : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -33005,6 +33026,10 @@ export default function App() {
                     includeWorkFloor: true,
                     label: "AMO data",
                   });
+                  return;
+                }
+
+                if (activeFolder === "boost") {
                   return;
                 }
 
@@ -33216,6 +33241,16 @@ export default function App() {
               <span className="folder-label">
                 <FileText size={17} />
                 <span>Browser</span>
+              </span>
+            </button>
+            <button
+              aria-current={activeFolder === "boost"}
+              onClick={() => openFolder("boost")}
+              type="button"
+            >
+              <span className="folder-label">
+                <MessageSquareQuote size={17} />
+                <span>Boost</span>
               </span>
             </button>
             <button
@@ -33791,6 +33826,13 @@ export default function App() {
           />
         ) : activeFolder === "browser" ? (
           <BrowserWorkspace activeNetwork={network} />
+        ) : activeFolder === "boost" ? (
+          <BoostRoot
+            embedded
+            initialAddress={address}
+            initialNetwork={network}
+            onComposeBoost={composeBoostPost}
+          />
         ) : activeFolder === "log" ? (
           <ActivityWorkspace
             activeNetwork={network}

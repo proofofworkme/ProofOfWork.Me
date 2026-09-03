@@ -216,7 +216,7 @@ Launch invariants for future developers/agents:
 - Adds a standalone public Browser app that loads a txid, renders HTML from a message body or verified `text/html` attachment in a sandbox, and exposes a Computer-native HTML template.
 - Keeps wallet signing outside Browser-rendered HTML pages.
 - Exposes Browser as a first-class Computer sidebar workspace, so HTML pages are part of the ProofOfWork Computer and not only a standalone subdomain.
-- Launches Boost as a 140-character ProofOfWork social protocol from Mail compose. Original posts self-send to the sender address, while likes, replies, and reboosts are paid `pwb1:` product actions that fund the Boost registry and optional extra signal. The public Boost app can connect UniSat for paid actions, signed display-ID intent, and owner listing actions after the original Boost tx confirms.
+- Launches Boost as a 140-character ProofOfWork social protocol from Mail compose. Original posts self-send to the sender address, while likes, replies, reboosts, follows, and unfollows are paid `pwb1:` product actions that fund the Boost registry and optional extra signal. The public Boost app can connect UniSat for paid actions, signed display-ID intent, follower/following timelines, and owner listing actions after the original Boost tx confirms.
 - Recognizes the canonical `Welcome to ProofOfWork.Me.html` transaction by txid only after its body or attachment has been returned and verified from chain-backed API data; the client does not synthesize replacement file contents.
 - Projects Browser-readable HTML message bodies into Files/Desktop as virtual `.html` files, so users can send HTML as a message body without needing an attachment.
 - Supports fractional miner fee rates, including sub-1 sat/vB values like `0.1`.
@@ -489,6 +489,8 @@ pwb1:post:<post-json-base64url>
 pwb1:reply:<parent-txid>:<post-json-base64url>
 pwb1:like:<target-txid>
 pwb1:reboost:<target-txid>
+pwb1:follow:<follow-json-base64url>
+pwb1:unfollow:<follow-json-base64url>
 pwb1:hide:<target-txid>
 pwb1:t:<boost-txid>:<new-owner-address>
 pwb1:list5:<sale-ticket-json-base64url>
@@ -504,14 +506,16 @@ Rules to preserve:
 - Mail compose owns original posting through the Boost ticker. Proof signal is the self-send amount. WORK signal uses the normal local wallet WORK transfer machinery in the same transaction.
 - Post media uses the existing Mail/Files attachment path. Boost JSON stores file proof metadata and pointers, not duplicate media bytes. Profile pictures and banners are chosen from confirmed Files on the profile owner's address.
 - `pwb1:like`, `pwb1:reply`, and `pwb1:reboost` are the paid Boost product actions. Each pays a compulsory 546-proof registry fee to `boost@proofofwork.me` before the `pwb1:` OP_RETURN, plus any extra proof or WORK signal selected by the user.
-- Production paid-action writers must resolve a confirmed `boost@proofofwork.me` receiver before enabling likes, replies, reboosts, transfers, listings, seals, delistings, or buys. Until that PowID is registered, the public feed and Mail original-post writer can run, but paid Boost mutations remain protocol/indexer-ready only.
+- `pwb1:follow` and `pwb1:unfollow` are paid Boost social-graph actions. A follow pays the 546-proof Boost registry fee plus at least 546 proofs to the followed profile address. An unfollow pays only the 546-proof Boost registry fee. The latest confirmed follow/unfollow event for a follower-address plus target-address pair determines the active graph edge.
+- Production paid-action writers must resolve a confirmed `boost@proofofwork.me` receiver before enabling likes, replies, reboosts, follows, unfollows, transfers, listings, seals, delistings, or buys. Until that PowID is registered, the public feed and Mail original-post writer can run, but paid Boost mutations remain protocol/indexer-ready only.
 - Extra signal on likes, replies, and reboosts goes to the current Boost owner, or to the original poster when ownership has not moved.
 - Boost records are assets keyed by the original post txid. They can be transferred or sold; purchased boosts appear on the buyer/current-owner profile while the original author remains visible as creator.
 - Boost marketplace actions reuse the AMO sale-ticket pattern. `pwb1:list5`, `pwb1:seal5`, `pwb1:delist5`, `pwb1:buy5`, and direct `pwb1:t` transfers each pay the 546-proof Boost registry fee. Listing and sale registry revenue accrues to `boost@proofofwork.me`.
 - A post-time sale price entered by the author can only queue a later `list5`/`seal5` flow after the post txid exists. JSON price metadata alone is not buyable.
 - Boost listings can be started from the public Boost feed after connecting the current owner wallet, or from the original Boost Mail item in Inbox/Sent. Active Boost listings appear in AMO's Boost tab with the other asset books.
 - A wallet that owns multiple confirmed IDs can sign a local Boost display intent for the ID it wants to present. Publishing `pwb1:profile` makes that display choice chain-readable without mutating the canonical ID registry.
-- The Boost UI ranks confirmed posts by attached value, newest, or oldest and can scope value by hour, day, week, or all time. Total signal is the proof-equivalent value of direct proof signal plus attached WORK at the current floor; proof signal, WORK signal, and total USD value remain visible as separate lanes.
+- The Boost UI has two top-level timeline tabs: For You shows all visible confirmed Boosts, while Following shows visible confirmed Boosts from addresses the connected wallet actively follows. Both tabs can rank confirmed posts by attached value, newest, or oldest and can scope value by hour, day, week, or all time. Total signal is the proof-equivalent value of direct proof signal plus attached WORK at the current floor; proof signal, WORK signal, and total USD value remain visible as separate lanes.
+- Boost uses ProofFrame cards instead of mutable social-preview frames. A ProofFrame renders from indexed `pwb1:` state, Files metadata, AMO listing state, profile/owner addresses, proof/WORK signal, and txids.
 - Every original post broadcast opens a Twitter/X share intent with the post text and mempool.space tx link. Every Boost feed row also exposes a share link.
 - Authors can hide their own Boost from default app/profile indexing with `pwb1:hide`. This is a visibility tombstone, not deletion from ProofOfWork.
 - Confirmed ProofOfWork history is canonical. Pending Boost records are visibility only.

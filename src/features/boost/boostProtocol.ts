@@ -11,6 +11,8 @@ export const BOOST_PROFILE_INTENT_STORAGE_KEY =
 export const BOOST_SALE_AUTH_VERSION = "pwb-sale-v1";
 
 export type BoostPaidAction = "like" | "reboost";
+export type BoostFollowAction = "follow" | "unfollow";
+export type BoostTimelineMode = "all" | "following";
 
 export type BoostProfile = {
   address: string;
@@ -29,12 +31,15 @@ export type BoostProfile = {
 export type BoostFeedItem = {
   actionCount?: number;
   authorAddress: string;
+  authorDisplay?: string;
   authorId?: string;
   boostTxid?: string;
   confirmed: boolean;
   createdAt: string;
   currentOwnerAddress?: string;
   currentOwnerId?: string;
+  followerCount?: number;
+  followingCount?: number;
   kind: string;
   listing?: {
     listingTxid?: string;
@@ -63,6 +68,7 @@ export type BoostFeedItem = {
   totalSignalSatsExact?: string;
   totalSignalUsd?: number;
   txid: string;
+  viewerFollowsAuthor?: boolean;
   workSignal?: string;
   workSignalSubatoms?: string;
   workSignalUsd?: number;
@@ -74,6 +80,10 @@ export type BoostFeedItem = {
 
 export type BoostFeedPayload = {
   btcUsd?: number;
+  graph?: {
+    followingCount?: number;
+    viewerAddress?: string;
+  };
   indexedAt?: string;
   items?: BoostFeedItem[];
   network?: BitcoinNetwork;
@@ -84,6 +94,12 @@ export type BoostFeedPayload = {
     total?: number;
   };
   totalCount?: number;
+  view?: BoostTimelineMode;
+};
+
+export type BoostFollowTarget = {
+  targetAddress: string;
+  targetId?: string;
 };
 
 export type BoostIdentityIntent = {
@@ -156,6 +172,22 @@ export function buildBoostActionPayload(action: BoostPaidAction, targetTxid: str
     throw new Error("Boost action target txid is invalid.");
   }
   return `${BOOST_PROTOCOL_PREFIX}${action}:${txid}`;
+}
+
+export function buildBoostFollowPayload(
+  action: BoostFollowAction,
+  { targetAddress, targetId }: BoostFollowTarget,
+) {
+  const address = targetAddress.trim();
+  if (!address) {
+    throw new Error("Choose a Boost profile to follow.");
+  }
+  const target = {
+    v: 1,
+    targetAddress: address,
+    ...(normalizeBoostId(targetId) ? { targetId: normalizeBoostId(targetId) } : {}),
+  };
+  return `${BOOST_PROTOCOL_PREFIX}${action}:${encodeTextBase64Url(JSON.stringify(target))}`;
 }
 
 export function buildBoostReplyPayload({

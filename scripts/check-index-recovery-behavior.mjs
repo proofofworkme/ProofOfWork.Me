@@ -480,6 +480,7 @@ const MARKETPLACE_MUTATION_KINDS = new Set([
 const BOOST_EVENT_KINDS = new Set([
   "boost-buy",
   "boost-delist",
+  "boost-follow",
   "boost-hide",
   "boost-like",
   "boost-list",
@@ -489,6 +490,7 @@ const BOOST_EVENT_KINDS = new Set([
   "boost-reply",
   "boost-seal",
   "boost-transfer",
+  "boost-unfollow",
 ]);
 const numericValue = (value, fallback = 0) => {
   const number = Number(value);

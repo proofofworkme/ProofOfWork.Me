@@ -11,6 +11,8 @@ import {
   Share2,
   ShoppingBag,
   Tag,
+  UserMinus,
+  UserPlus,
   UserCircle,
   X,
   Zap,
@@ -52,6 +54,7 @@ import {
   boostRouteHref,
   boostSaleAuthorizationDraft,
   buildBoostActionPayload,
+  buildBoostFollowPayload,
   buildBoostListingPayload,
   buildBoostProfilePayload,
   buildBoostReplyPayload,
@@ -61,8 +64,10 @@ import {
   saveBoostIdentityIntent,
   type BoostFeedItem,
   type BoostFeedPayload,
+  type BoostFollowAction,
   type BoostIdentityIntent,
   type BoostPaidAction,
+  type BoostTimelineMode,
   type PowIdRecordLike,
 } from "./boostProtocol";
 import {
@@ -82,16 +87,25 @@ type BoostValueWindow = "hour" | "day" | "week" | "all";
 type BoostActionBusy =
   | ""
   | "connect"
+  | "follow"
   | "identity"
   | "like"
   | "list"
   | "profile"
   | "reboost"
-  | "reply";
+  | "reply"
+  | "unfollow";
 
 type RegistryApiPayload = {
   record?: PowIdRecordLike | null;
   records?: PowIdRecordLike[];
+};
+
+type BoostRootProps = {
+  embedded?: boolean;
+  initialAddress?: string;
+  initialNetwork?: BitcoinNetwork;
+  onComposeBoost?: () => void;
 };
 
 const VALUE_WINDOWS: Array<{ label: string; value: BoostValueWindow }> = [
@@ -105,6 +119,11 @@ const SORT_MODES: Array<{ label: string; value: BoostSortMode }> = [
   { label: "Value", value: "value" },
   { label: "Newest", value: "newest" },
   { label: "Oldest", value: "oldest" },
+];
+
+const TIMELINE_MODES: Array<{ label: string; value: BoostTimelineMode }> = [
+  { label: "For You", value: "all" },
+  { label: "Following", value: "following" },
 ];
 
 const DEFAULT_FEE_RATE = 1;
@@ -145,6 +164,18 @@ function formatUsd(value: number | undefined) {
 
 function boostOwnerAddress(item: BoostFeedItem) {
   return (item.currentOwnerAddress || item.authorAddress || "").trim();
+}
+
+function boostAuthorAddress(item: BoostFeedItem) {
+  return item.authorAddress.trim();
+}
+
+function boostAuthorId(item: BoostFeedItem) {
+  return normalizeBoostId(item.authorId || item.profile?.id || "");
+}
+
+function boostAuthorAddressKey(item: BoostFeedItem) {
+  return boostAuthorAddress(item).toLowerCase();
 }
 
 function boostTotalSignalSats(item: BoostFeedItem) {
@@ -205,6 +236,13 @@ function ownerLabel(item: BoostFeedItem) {
       : item.authorId || item.profile?.id
         ? `${item.authorId ?? item.profile?.id}@proofofwork.me`
         : shortAddress(item.authorAddress);
+}
+
+function followerLabel(count: number | undefined) {
+  const total = Number(count ?? 0);
+  return `${Number.isFinite(total) ? Math.max(0, total).toLocaleString() : "0"} follower${
+    total === 1 ? "" : "s"
+  }`;
 }
 
 function boostProfileHref(value: string) {
@@ -282,6 +320,7 @@ function BoostPost({
   activeIdentity,
   item,
   network,
+  onFollow,
   onLike,
   onList,
   onReboost,
@@ -292,6 +331,7 @@ function BoostPost({
   activeIdentity?: BoostIdentityIntent;
   item: BoostFeedItem;
   network: BitcoinNetwork;
+  onFollow: (action: BoostFollowAction, item: BoostFeedItem) => void;
   onLike: (item: BoostFeedItem) => void;
   onList: (item: BoostFeedItem) => void;
   onReboost: (item: BoostFeedItem) => void;
@@ -303,21 +343,31 @@ function BoostPost({
   const boostTxid = boostItemTxid(item);
   const listing = boostListingForItem(item);
   const ownerAddress = boostOwnerAddress(item);
+  const authorAddress = boostAuthorAddress(item);
+  const authorId = boostAuthorId(item);
   const totalSignalSats = boostTotalSignalSats(item);
   const workSignalValueSats = boostWorkSignalValueSats(item);
   const workSignalSubatoms = boostWorkSignalSubatoms(item);
   const connectedOwner =
     activeAddress &&
     ownerAddress &&
-    activeAddress.trim().toLowerCase() === ownerAddress.trim().toLowerCase();
+      activeAddress.trim().toLowerCase() === ownerAddress.trim().toLowerCase();
+  const connectedAuthor =
+    activeAddress &&
+    authorAddress &&
+    activeAddress.trim().toLowerCase() === authorAddress.toLowerCase();
   const actionsLocked = Boolean(actionBusy);
+  const followAction: BoostFollowAction = item.viewerFollowsAuthor
+    ? "unfollow"
+    : "follow";
+  const FollowIcon = followAction === "follow" ? UserPlus : UserMinus;
 
   return (
     <article className="boost-post">
       <BoostAvatar item={item} />
       <div className="boost-post-body">
         <div className="boost-post-head">
-          <div>
+          <div className="boost-author-line">
             {profileValue ? (
               <a className="boost-author" href={boostProfileHref(profileValue)}>
                 {authorLabel(item, activeIdentity, activeAddress)}
@@ -327,19 +377,50 @@ function BoostPost({
                 {authorLabel(item, activeIdentity, activeAddress)}
               </span>
             )}
+            <span>@{authorId || shortAddress(authorAddress)}</span>
             <span>{formatDate(item.createdAt)}</span>
           </div>
-          <strong>{formatProofs(totalSignalSats)}</strong>
+          <div className="boost-post-head-actions">
+            <strong>{formatProofs(totalSignalSats)}</strong>
+            {!connectedAuthor && authorAddress ? (
+              <button
+                className="secondary small boost-follow-button"
+                disabled={actionsLocked}
+                onClick={() => onFollow(followAction, item)}
+                title={
+                  followAction === "follow"
+                    ? "Follow with proof signal"
+                    : "Unfollow with Boost registry fee"
+                }
+                type="button"
+              >
+                <span className="button-content">
+                  <FollowIcon size={15} />
+                  <span>{followAction === "follow" ? "Follow" : "Unfollow"}</span>
+                </span>
+              </button>
+            ) : null}
+          </div>
         </div>
 
         {item.text ? <p className="boost-post-text">{item.text}</p> : null}
 
-        {item.media ? (
-          <div className="boost-media-pill">
-            <Zap size={14} />
-            <span>{item.media.name ?? item.media.mime ?? "media"}</span>
+        <a
+          className="boost-proof-frame"
+          href={txHref}
+          rel="noreferrer"
+          target="_blank"
+        >
+          <div>
+            <span>ProofFrame</span>
+            <strong>{item.media?.name ?? "Boost proof record"}</strong>
           </div>
-        ) : null}
+          <p>
+            {item.media?.mime
+              ? `${item.media.mime} · ${shortAddress(item.media.sha256 ?? boostTxid)}`
+              : `pwb1 · ${shortAddress(boostTxid || item.txid)} · Owner ${ownerLabel(item)}`}
+          </p>
+        </a>
 
         <div className="boost-signal-row">
           <span>Total USD {formatUsd(boostTotalSignalUsd(item))}</span>
@@ -352,6 +433,7 @@ function BoostPost({
           ) : null}
           <span>{actionLabel(item.kind)}</span>
           <span>Owner {ownerLabel(item)}</span>
+          <span>{followerLabel(item.followerCount)}</span>
         </div>
 
         <div className="boost-actions">
@@ -443,10 +525,17 @@ function BoostPost({
   );
 }
 
-export default function BoostRoot() {
-  const [network, setNetwork] = useState<BitcoinNetwork>("livenet");
+export default function BoostRoot({
+  embedded = false,
+  initialAddress = "",
+  initialNetwork = "livenet",
+  onComposeBoost,
+}: BoostRootProps = {}) {
+  const [network, setNetwork] = useState<BitcoinNetwork>(initialNetwork);
   const [sortMode, setSortMode] = useState<BoostSortMode>("value");
   const [valueWindow, setValueWindow] = useState<BoostValueWindow>("all");
+  const [timelineMode, setTimelineMode] =
+    useState<BoostTimelineMode>("all");
   const [profileQuery, setProfileQuery] = useState(() =>
     initialSearchParam("profile"),
   );
@@ -456,7 +545,7 @@ export default function BoostRoot() {
   const [busy, setBusy] = useState(false);
   const [actionBusy, setActionBusy] = useState<BoostActionBusy>("");
   const [hasUnisat, setHasUnisat] = useState(() => Boolean(window.unisat));
-  const [address, setAddress] = useState("");
+  const [address, setAddress] = useState(initialAddress);
   const [boostRegistryAddress, setBoostRegistryAddress] = useState("");
   const [ownedIds, setOwnedIds] = useState<PowIdRecordLike[]>([]);
   const [selectedIdentityId, setSelectedIdentityId] = useState("");
@@ -504,6 +593,26 @@ export default function BoostRoot() {
         .includes(query),
     );
   }, [items, searchQuery]);
+  const suggestedProfiles = useMemo(() => {
+    const activeAddress = address.trim().toLowerCase();
+    const byAddress = new Map<string, BoostFeedItem>();
+    for (const item of items) {
+      const authorAddress = boostAuthorAddress(item);
+      const key = authorAddress.toLowerCase();
+      if (!key || key === activeAddress || item.viewerFollowsAuthor) {
+        continue;
+      }
+      const current = byAddress.get(key);
+      if (
+        !current ||
+        Number(item.followerCount ?? 0) > Number(current.followerCount ?? 0)
+      ) {
+        byAddress.set(key, item);
+      }
+    }
+    return [...byAddress.values()].slice(0, 4);
+  }, [address, items]);
+  const topSignalItems = useMemo(() => visibleItems.slice(0, 3), [visibleItems]);
 
   async function loadBoostRegistryAndIds(walletAddress: string) {
     const [boostPayload, registryPayload] = await Promise.all([
@@ -725,6 +834,57 @@ export default function BoostRoot() {
     }
   }
 
+  async function publishFollowAction(
+    action: BoostFollowAction,
+    item: BoostFeedItem,
+  ) {
+    const targetAddress = boostAuthorAddress(item);
+    const targetId = boostAuthorId(item);
+    const label = action === "follow" ? "Boost follow" : "Boost unfollow";
+    if (!targetAddress || !isValidBitcoinAddress(targetAddress, "livenet")) {
+      setStatus({ tone: "bad", text: "Boost follow target is invalid." });
+      return;
+    }
+    if (
+      address &&
+      targetAddress.trim().toLowerCase() === address.trim().toLowerCase()
+    ) {
+      setStatus({ tone: "bad", text: "Choose another Boost profile to follow." });
+      return;
+    }
+    try {
+      const ready = await ensureBoostWriterReady();
+      await broadcastBoostPayload({
+        action,
+        paymentLabel: label,
+        payments: [
+          {
+            address: ready.registryAddress,
+            amountSats: BOOST_ACTION_REGISTRY_FEE_SATS,
+          },
+          ...(action === "follow"
+            ? [
+                {
+                  address: targetAddress,
+                  amountSats: BOOST_ACTION_REGISTRY_FEE_SATS,
+                },
+              ]
+            : []),
+        ],
+        protocolPayload: buildBoostFollowPayload(action, {
+          targetAddress,
+          targetId,
+        }),
+        walletAddress: ready.walletAddress,
+      });
+    } catch (error) {
+      setStatus({
+        tone: "bad",
+        text: error instanceof Error ? error.message : `${label} failed.`,
+      });
+    }
+  }
+
   async function publishReply(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!replyTarget) {
@@ -918,8 +1078,12 @@ export default function BoostRoot() {
       const params = new URLSearchParams({
         limit: "50",
         sort: sortMode,
+        view: timelineMode,
         window: valueWindow,
       });
+      if (address.trim()) {
+        params.set("viewer", address.trim());
+      }
       if (profileQuery.trim()) {
         params.set("profile", profileQuery.trim());
       }
@@ -948,7 +1112,28 @@ export default function BoostRoot() {
 
   useEffect(() => {
     void refresh();
-  }, [network, profileQuery, sortMode, valueWindow]);
+  }, [address, network, profileQuery, sortMode, timelineMode, valueWindow]);
+
+  useEffect(() => {
+    setNetwork(initialNetwork);
+  }, [initialNetwork]);
+
+  useEffect(() => {
+    const nextAddress = initialAddress.trim();
+    if (!nextAddress || nextAddress === address) {
+      return;
+    }
+    setAddress(nextAddress);
+    void loadBoostRegistryAndIds(nextAddress).catch((error) =>
+      setStatus({
+        tone: "bad",
+        text:
+          error instanceof Error
+            ? error.message
+            : "Boost identity state could not be loaded.",
+      }),
+    );
+  }, [initialAddress]);
 
   useEffect(() => {
     const detectWallet = () => setHasUnisat(Boolean(window.unisat));
@@ -1063,34 +1248,53 @@ export default function BoostRoot() {
   ];
 
   return (
-    <div className="mail-app boost-public-app">
-      <AppHeader
-        accountStats={accountStats}
-        address={address}
-        busy={busy || Boolean(actionBusy)}
-        connectWallet={() => void connectWallet()}
-        disconnectWallet={disconnectWallet}
-        hasUnisat={hasUnisat}
-        network={network}
-        onNetworkChange={setNetwork}
-        onRefresh={() => void refresh()}
-        subtitle="Proof-ranked social signal"
-        title="Boost"
-      />
+    <div
+      className={
+        embedded ? "boost-public-app boost-embedded-app" : "mail-app boost-public-app"
+      }
+    >
+      {embedded ? null : (
+        <AppHeader
+          accountStats={accountStats}
+          address={address}
+          busy={busy || Boolean(actionBusy)}
+          connectWallet={() => void connectWallet()}
+          disconnectWallet={disconnectWallet}
+          hasUnisat={hasUnisat}
+          network={network}
+          onNetworkChange={setNetwork}
+          onRefresh={() => void refresh()}
+          subtitle="Proof-ranked social signal"
+          title="Boost"
+        />
+      )}
       <AppStatusRow persistent status={status} />
 
-      <main className="boost-shell">
+      <div className={embedded ? "boost-shell is-embedded" : "boost-shell"}>
         <aside className="boost-sidebar">
           <div className="boost-compose-panel">
-            <a
-              className="primary link-button"
-              href={appHref(COMPUTER_APP_URL, LOCAL_COMPUTER_APP_URL)}
-            >
-              <span className="button-content">
-                <Zap size={16} />
-                <span>Post From Mail</span>
-              </span>
-            </a>
+            {onComposeBoost ? (
+              <button
+                className="primary"
+                onClick={onComposeBoost}
+                type="button"
+              >
+                <span className="button-content">
+                  <Zap size={16} />
+                  <span>Post From Mail</span>
+                </span>
+              </button>
+            ) : (
+              <a
+                className="primary link-button"
+                href={appHref(COMPUTER_APP_URL, LOCAL_COMPUTER_APP_URL)}
+              >
+                <span className="button-content">
+                  <Zap size={16} />
+                  <span>Post From Mail</span>
+                </span>
+              </a>
+            )}
             <a
               className="secondary link-button"
               href={appHref(ID_APP_URL, LOCAL_ID_APP_URL)}
@@ -1289,6 +1493,41 @@ export default function BoostRoot() {
         </aside>
 
         <section className="boost-feed-panel">
+          <div className="boost-timeline-head">
+            <div className="boost-timeline-tabs" aria-label="Boost timeline">
+              {TIMELINE_MODES.map((option) => (
+                <button
+                  aria-pressed={timelineMode === option.value}
+                  key={option.value}
+                  onClick={() => setTimelineMode(option.value)}
+                  type="button"
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+            <div className="boost-composer-strip">
+              <div className="boost-avatar boost-avatar-fallback" aria-hidden="true">
+                {address ? shortAddress(address).slice(0, 2).toUpperCase() : "Po"}
+              </div>
+              {onComposeBoost ? (
+                <button
+                  className="boost-composer-prompt"
+                  onClick={onComposeBoost}
+                  type="button"
+                >
+                  What's happening?
+                </button>
+              ) : (
+                <a
+                  className="boost-composer-prompt"
+                  href={appHref(COMPUTER_APP_URL, LOCAL_COMPUTER_APP_URL)}
+                >
+                  What's happening?
+                </a>
+              )}
+            </div>
+          </div>
           <div className="boost-feed-toolbar">
             <div className="network-tabs" aria-label="Boost value window">
               {VALUE_WINDOWS.map((option) => (
@@ -1337,6 +1576,9 @@ export default function BoostRoot() {
                   item={item}
                   key={`${item.kind}-${item.txid}`}
                   network={network}
+                  onFollow={(followAction, boostItem) =>
+                    void publishFollowAction(followAction, boostItem)
+                  }
                   onLike={(boostItem) =>
                     void publishPaidAction("like", boostItem)
                   }
@@ -1353,14 +1595,114 @@ export default function BoostRoot() {
             ) : (
               <div className="boost-empty">
                 <Zap size={28} />
-                <h2>No confirmed Boost posts indexed yet</h2>
+                <h2>
+                  {timelineMode === "following"
+                    ? address
+                      ? "No followed Boosts yet"
+                      : "Connect to load Following"
+                    : "No confirmed Boost posts indexed yet"}
+                </h2>
               </div>
             )}
           </div>
         </section>
-      </main>
 
-      <SocialFooter compact />
+        <aside className="boost-right-rail" aria-label="Boost discovery">
+          <section className="boost-rail-panel">
+            <div className="boost-rail-head">
+              <strong>Signal Now</strong>
+              <span>{formatDate(payload?.indexedAt ?? new Date().toISOString())}</span>
+            </div>
+            <div className="boost-rail-stats">
+              <span>
+                <strong>{formatProofs(headerSignalStats.totalSignalSats)}</strong>
+                Total
+              </span>
+              <span>
+                <strong>{formatProofs(headerSignalStats.proofSignalSats)}</strong>
+                Proof
+              </span>
+              <span>
+                <strong>{payload?.graph?.followingCount ?? 0}</strong>
+                Following
+              </span>
+            </div>
+          </section>
+
+          <section className="boost-rail-panel">
+            <div className="boost-rail-head">
+              <strong>Top Boosts</strong>
+              <a href={boostAmoHref()}>AMO</a>
+            </div>
+            <div className="boost-rail-list">
+              {topSignalItems.length > 0 ? (
+                topSignalItems.map((item) => (
+                  <a
+                    href={explorerTxUrl(item.txid, network)}
+                    key={`top-${item.txid}`}
+                    rel="noreferrer"
+                    target="_blank"
+                  >
+                    <strong>{authorLabel(item, activeIdentity, address)}</strong>
+                    <span>{formatProofs(boostTotalSignalSats(item))}</span>
+                  </a>
+                ))
+              ) : (
+                <span>No Boost signal yet.</span>
+              )}
+            </div>
+          </section>
+
+          <section className="boost-rail-panel">
+            <div className="boost-rail-head">
+              <strong>Who To Follow</strong>
+              <span>{suggestedProfiles.length}</span>
+            </div>
+            <div className="boost-rail-list">
+              {suggestedProfiles.length > 0 ? (
+                suggestedProfiles.map((item) => (
+                  <button
+                    disabled={Boolean(actionBusy)}
+                    key={`follow-${boostAuthorAddressKey(item)}`}
+                    onClick={() => void publishFollowAction("follow", item)}
+                    type="button"
+                  >
+                    <span>
+                      <strong>{authorLabel(item, activeIdentity, address)}</strong>
+                      {followerLabel(item.followerCount)}
+                    </span>
+                    <UserPlus size={15} />
+                  </button>
+                ))
+              ) : (
+                <span>Connect and refresh to find active Boost profiles.</span>
+              )}
+            </div>
+          </section>
+
+          {activeMarketListings.length > 0 ? (
+            <section className="boost-rail-panel">
+              <div className="boost-rail-head">
+                <strong>Listed Boosts</strong>
+                <span>{activeMarketListings.length}</span>
+              </div>
+              <div className="boost-rail-list">
+                {activeMarketListings.slice(0, 3).map((listing) => (
+                  <a
+                    href={boostAmoHref(listing.boostTxid)}
+                    key={`listing-${listing.listingId}`}
+                  >
+                    <strong>{shortAddress(listing.boostTxid)}</strong>
+                    <span>{formatProofs(listing.priceSats)}</span>
+                  </a>
+                ))}
+              </div>
+            </section>
+          ) : null}
+        </aside>
+      </div>
+
+      {embedded ? null : <SocialFooter compact />}
     </div>
   );
 }

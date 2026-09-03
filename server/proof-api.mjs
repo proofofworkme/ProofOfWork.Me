@@ -1393,6 +1393,7 @@ const MARKETPLACE_MUTATION_KINDS = new Set([
 const BOOST_EVENT_KINDS = new Set([
   "boost-buy",
   "boost-delist",
+  "boost-follow",
   "boost-hide",
   "boost-like",
   "boost-list",
@@ -1402,6 +1403,7 @@ const BOOST_EVENT_KINDS = new Set([
   "boost-reply",
   "boost-seal",
   "boost-transfer",
+  "boost-unfollow",
 ]);
 const BTC_USD_PRICE = Number(
   process.env.BTC_USD_PRICE ?? GROWTH_MODEL_INPUTS.currentBtcUsd,
@@ -50044,6 +50046,7 @@ const BOOST_INDEX_EVENT_KINDS = new Set(BOOST_EVENT_KINDS);
 
 const BOOST_VALUE_WINDOWS = new Set(["hour", "day", "week", "all"]);
 const BOOST_SORT_MODES = new Set(["value", "newest", "oldest"]);
+const BOOST_TIMELINE_VIEWS = new Set(["all", "following"]);
 
 function boostHexTxid(value) {
   const txid = String(value ?? "").trim().toLowerCase();
@@ -50162,6 +50165,13 @@ function boostValueWindow(searchParams) {
   return BOOST_VALUE_WINDOWS.has(valueWindow) ? valueWindow : "all";
 }
 
+function boostTimelineView(searchParams) {
+  const view = String(searchParams.get("view") ?? searchParams.get("tab") ?? "all")
+    .trim()
+    .toLowerCase();
+  return BOOST_TIMELINE_VIEWS.has(view) ? view : "all";
+}
+
 function boostWindowStartMs(valueWindow, nowMs = Date.now()) {
   if (valueWindow === "hour") {
     return nowMs - 60 * 60_000;
@@ -50228,6 +50238,28 @@ function boostTargetTxid(item) {
   );
 }
 
+function boostFollowTargetAddress(item) {
+  return boostAddress(
+    item?.targetAddress ??
+      item?.followedAddress ??
+      item?.recipientAddress ??
+      item?.to ??
+      item?.currentOwnerAddress,
+  );
+}
+
+function boostFollowTargetId(item) {
+  return normalizePowId(
+    String(
+      item?.targetId ??
+        item?.followedId ??
+        item?.profileId ??
+        item?.authorId ??
+        "",
+    ),
+  );
+}
+
 function boostPriceSats(item) {
   return Math.max(
     0,
@@ -50244,6 +50276,7 @@ function boostPriceSats(item) {
 function boostOwnershipState(items) {
   const states = new Map();
   const counts = new Map();
+  const followStates = new Map();
   const profiles = new Map();
   const ordered = [...items].sort(
     (left, right) => boostEventTimeMs(left) - boostEventTimeMs(right),
@@ -50282,9 +50315,43 @@ function boostOwnershipState(items) {
     return next;
   };
 
+  const ensureFollowState = (followerAddress) => {
+    const followerKey = boostAddress(followerAddress).toLowerCase();
+    if (!followerKey) {
+      return null;
+    }
+    const existing = followStates.get(followerKey);
+    if (existing) {
+      return existing;
+    }
+    const next = new Map();
+    followStates.set(followerKey, next);
+    return next;
+  };
+
   for (const item of ordered) {
     const kind = String(item?.kind ?? "").trim().toLowerCase();
-    if (!BOOST_INDEX_EVENT_KINDS.has(kind)) {
+    if (!BOOST_INDEX_EVENT_KINDS.has(kind) || item?.valid === false) {
+      continue;
+    }
+
+    if (kind === "boost-follow" || kind === "boost-unfollow") {
+      const followerAddress = boostAddress(item?.authorAddress ?? item?.actor);
+      const targetAddress = boostFollowTargetAddress(item);
+      const followerState = ensureFollowState(followerAddress);
+      const targetKey = targetAddress.toLowerCase();
+      if (followerState && targetKey) {
+        followerState.set(targetKey, {
+          following: kind === "boost-follow",
+          targetAddress,
+          targetId: boostFollowTargetId(item) || undefined,
+          txid: boostHexTxid(item?.txid),
+          updatedAt: dateIso(
+            item?.createdAt ?? item?.confirmedAt ?? item?.indexedAt,
+            new Date(),
+          ),
+        });
+      }
       continue;
     }
 
@@ -50393,7 +50460,29 @@ function boostOwnershipState(items) {
     }
   }
 
-  return { counts, profiles, states };
+  const followingByFollower = new Map();
+  const followersByTarget = new Map();
+  for (const [followerKey, targets] of followStates) {
+    const activeTargets = new Set();
+    for (const [targetKey, state] of targets) {
+      if (!state?.following) {
+        continue;
+      }
+      activeTargets.add(targetKey);
+      const targetFollowers = followersByTarget.get(targetKey) ?? new Set();
+      targetFollowers.add(followerKey);
+      followersByTarget.set(targetKey, targetFollowers);
+    }
+    followingByFollower.set(followerKey, activeTargets);
+  }
+
+  return {
+    counts,
+    followersByTarget,
+    followingByFollower,
+    profiles,
+    states,
+  };
 }
 
 function boostFeedItemFromEvent(
@@ -50537,6 +50626,26 @@ function compareBoostFeedItems(sortMode) {
   };
 }
 
+function boostFeedItemWithGraph(
+  feedItem,
+  sourceItem,
+  followersByTarget,
+  followingByFollower,
+  viewerFollowing,
+) {
+  if (!feedItem) {
+    return null;
+  }
+  const authorKey = boostAddress(sourceItem?.authorAddress ?? sourceItem?.actor)
+    .toLowerCase();
+  return {
+    ...feedItem,
+    followerCount: followersByTarget.get(authorKey)?.size ?? 0,
+    followingCount: followingByFollower.get(authorKey)?.size ?? 0,
+    viewerFollowsAuthor: viewerFollowing.has(authorKey),
+  };
+}
+
 function boostProfileMatches(item, profile, state, profileState) {
   if (!profile) {
     return true;
@@ -50548,12 +50657,20 @@ function boostProfileMatches(item, profile, state, profileState) {
 
 async function boostFeedPayload(network, searchParams, fresh = false) {
   const sort = boostSortMode(searchParams);
+  const view = boostTimelineView(searchParams);
   const valueWindow = boostValueWindow(searchParams);
   const limit = boundedInteger(searchParams.get("limit"), 50, 1, 100);
   const includePending = /^(?:1|true|yes)$/iu.test(
     String(searchParams.get("pending") ?? ""),
   );
   const profile = String(searchParams.get("profile") ?? "").trim();
+  const viewerAddress = boostAddress(
+    searchParams.get("viewer") ??
+      searchParams.get("viewerAddress") ??
+      searchParams.get("address") ??
+      "",
+  );
+  const viewerKey = viewerAddress.toLowerCase();
   const query = String(
     searchParams.get("q") ?? searchParams.get("search") ?? "",
   )
@@ -50594,7 +50711,17 @@ async function boostFeedPayload(network, searchParams, fresh = false) {
   const sourceItems = Array.isArray(indexedPayload?.items)
     ? indexedPayload.items
     : [];
-  const { counts, profiles, states } = boostOwnershipState(sourceItems);
+  const {
+    counts,
+    followersByTarget,
+    followingByFollower,
+    profiles,
+    states,
+  } = boostOwnershipState(sourceItems);
+  const viewerFollowing =
+    viewerKey && followingByFollower.get(viewerKey)
+      ? followingByFollower.get(viewerKey)
+      : new Set();
   const windowStartMs = boostWindowStartMs(valueWindow);
   const filtered = sourceItems
     .filter((item) => {
@@ -50612,6 +50739,14 @@ async function boostFeedPayload(network, searchParams, fresh = false) {
       const profileState = profiles.get(
         boostAddress(item?.authorAddress ?? item?.actor).toLowerCase(),
       );
+      const authorKey = boostAddress(item?.authorAddress ?? item?.actor)
+        .toLowerCase();
+      if (
+        view === "following" &&
+        (!viewerKey || !authorKey || !viewerFollowing.has(authorKey))
+      ) {
+        return false;
+      }
       if (!boostProfileMatches(item, profile, state, profileState)) {
         return false;
       }
@@ -50620,14 +50755,22 @@ async function boostFeedPayload(network, searchParams, fresh = false) {
       );
     })
     .map((item) =>
-      boostFeedItemFromEvent(
+      boostFeedItemWithGraph(
+        boostFeedItemFromEvent(
+          item,
+          states.get(boostPostTxid(item)),
+          profiles.get(
+            boostAddress(item?.authorAddress ?? item?.actor).toLowerCase(),
+          ),
+          counts,
+          network,
+          btcUsd,
+          workFloor,
+        ),
         item,
-        states.get(boostPostTxid(item)),
-        profiles.get(boostAddress(item?.authorAddress ?? item?.actor).toLowerCase()),
-        counts,
-        network,
-        btcUsd,
-        workFloor,
+        followersByTarget,
+        followingByFollower,
+        viewerFollowing,
       ),
     )
     .filter(Boolean)
@@ -50643,6 +50786,10 @@ async function boostFeedPayload(network, searchParams, fresh = false) {
     limit,
     network,
     profile: profile || undefined,
+    graph: {
+      followingCount: viewerFollowing.size,
+      viewerAddress: viewerAddress || undefined,
+    },
     sort,
     source: indexedPayload?.source ?? "proof-indexer-boost-events-unavailable",
     stats: {
@@ -50652,6 +50799,7 @@ async function boostFeedPayload(network, searchParams, fresh = false) {
     },
     totalCount: filtered.length,
     valueWindow,
+    view,
   };
 }
 

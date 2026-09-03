@@ -399,6 +399,7 @@ const PUBLIC_LOG_EVENT_KINDS = new Set([
   "attachment",
   "boost-buy",
   "boost-delist",
+  "boost-follow",
   "boost-hide",
   "boost-like",
   "boost-list",
@@ -408,6 +409,7 @@ const PUBLIC_LOG_EVENT_KINDS = new Set([
   "boost-reply",
   "boost-seal",
   "boost-transfer",
+  "boost-unfollow",
   "browser",
   "file",
   "id-buy",
@@ -4140,6 +4142,23 @@ function boostRegistryFeePaid(item) {
   return BigInt(amountText) >= BigInt(BOOST_ACTION_REGISTRY_FEE_SATS);
 }
 
+function boostPaymentToAddressSats(item, address) {
+  const targetAddress = normalizedLowerText(address);
+  if (!targetAddress) {
+    return 0n;
+  }
+  return (Array.isArray(item?.recipients) ? item.recipients : []).reduce(
+    (sum, recipient) => {
+      if (normalizedLowerText(recipient?.address) !== targetAddress) {
+        return sum;
+      }
+      const amount = String(recipient?.amountSats ?? "").trim();
+      return /^(?:0|[1-9][0-9]*)$/u.test(amount) ? sum + BigInt(amount) : sum;
+    },
+    0n,
+  );
+}
+
 function validBoostRegistryItem(item) {
   return boostRegistryFeePaid(item)
     ? { ...item, valid: true }
@@ -4147,6 +4166,25 @@ function validBoostRegistryItem(item) {
         item,
         "Boost paid actions require the 546-proof registry fee.",
       );
+}
+
+function validBoostFollowItem(item, targetAddress) {
+  if (!boostRegistryFeePaid(item)) {
+    return invalidProtocolItem(
+      item,
+      "Boost follow actions require the 546-proof registry fee.",
+    );
+  }
+  if (
+    item.action === "follow" &&
+    boostPaymentToAddressSats(item, targetAddress) < 546n
+  ) {
+    return invalidProtocolItem(
+      item,
+      "Boost follows require at least 546 proofs to the followed profile.",
+    );
+  }
+  return { ...item, valid: true };
 }
 
 function boostSelfSend(base, senderAddress) {
@@ -4223,6 +4261,7 @@ function boostItemFromMessage(tx, message) {
   const registryAction = [
     "buy5",
     "delist5",
+    "follow",
     "like",
     "list5",
     "reboost",
@@ -4230,6 +4269,7 @@ function boostItemFromMessage(tx, message) {
     "repost",
     "seal5",
     "t",
+    "unfollow",
   ].includes(action);
 
   if (action === "profile" && parts.length === 3) {
@@ -4271,6 +4311,47 @@ function boostItemFromMessage(tx, message) {
     return profile && typeof profile === "object" && !Array.isArray(profile)
       ? [{ ...item, valid: true }]
       : [invalidProtocolItem(item, "Boost profile metadata is malformed.")];
+  }
+
+  if (["follow", "unfollow"].includes(action) && parts.length === 3) {
+    const follow = boostJsonPayload(parts[2]);
+    const targetAddress = normalizedText(
+      follow?.targetAddress ??
+        follow?.followedAddress ??
+        follow?.address ??
+        follow?.target,
+    );
+    const targetId = normalizedPowId(
+      String(
+        follow?.targetId ??
+          follow?.followedId ??
+          follow?.profileId ??
+          follow?.id ??
+          "",
+      ),
+    );
+    const item = {
+      ...base,
+      action,
+      authorAddress: sender,
+      currentOwnerAddress: sender,
+      detail: `${action} ${targetId ? `${targetId}@proofofwork.me` : targetAddress}`,
+      followerAddress: sender,
+      proofSignalSats: boostSignalSats(base, true),
+      registryFeeSats: BOOST_ACTION_REGISTRY_FEE_SATS,
+      signalSats: boostSignalSats(base, true),
+      tags: ["Boost", action === "follow" ? "Follow" : "Unfollow"],
+      targetAddress,
+      targetId: targetId || undefined,
+      title: `Boost ${action}`,
+    };
+    if (!follow || typeof follow !== "object" || Array.isArray(follow)) {
+      return [invalidProtocolItem(item, "Boost follow metadata is malformed.")];
+    }
+    if (!targetAddress) {
+      return [invalidProtocolItem(item, "Boost follow target is missing.")];
+    }
+    return [validBoostFollowItem(item, targetAddress)];
   }
 
   if (action === "post" && parts.length === 3) {
