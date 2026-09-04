@@ -4589,7 +4589,11 @@ function protocolItemsFromTx(tx, message) {
             : action === "seal5"
               ? "id-seal"
               : "id-delist",
-        listingId: String(parts[2] ?? tx.txid ?? "").trim().toLowerCase(),
+        listingId: String(
+          action === "list5"
+            ? tx.txid ?? ""
+            : parts[2] ?? "",
+        ).trim().toLowerCase(),
       }];
     }
     return [{ ...base, id }];
