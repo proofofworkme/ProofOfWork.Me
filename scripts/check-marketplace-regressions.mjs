@@ -3341,7 +3341,22 @@ const workSummary = alignedFreshSummaries.work;
 const workTokenSummary = alignedFreshSummaries.token;
 const growthSummary = alignedFreshSummaries.growth;
 const alignedMarketplaceFreshSummary = alignedFreshSummaries.marketplace;
-const activeWorkListingCount = (workToken.listings ?? []).length;
+const canonicalWorkSummaryToken = (workToken.tokens ?? []).find(
+  (item) => item?.tokenId === WORK_TOKEN_ID,
+);
+const confirmedWorkListingCount = Number(workListingHistory.totalCount);
+assert(
+  Number.isSafeInteger(confirmedWorkListingCount) &&
+    confirmedWorkListingCount >= 0,
+  `/api/v1/token-history?kind=listings returned invalid total count ${workListingHistory.totalCount}`,
+);
+assert(
+  Number(workListingHistory.listingAuthority?.unspentListingCount) ===
+    confirmedWorkListingCount &&
+    Number(workListingHistory.listingAuthority?.outputListingCount) ===
+      confirmedWorkListingCount,
+  `/api/v1/token-history?kind=listings authority reports ${workListingHistory.listingAuthority?.unspentListingCount} unspent and ${workListingHistory.listingAuthority?.outputListingCount} output listings, expected ${confirmedWorkListingCount}`,
+);
 const confirmedSealedListings = (workToken.listings ?? []).filter(
   tokenListingHasConfirmedSeal,
 );
@@ -3357,14 +3372,35 @@ const marketplaceSummaryWorkToken = (
 const marketplaceSummaryWorkListings = (
   alignedMarketplaceFreshSummary.token?.listings ?? []
 ).filter((item) => item?.tokenId === WORK_TOKEN_ID);
+const marketplaceSummaryListings =
+  alignedMarketplaceFreshSummary.token?.listings ?? [];
+const marketplaceSummaryListingCount = Number(
+  alignedMarketplaceFreshSummary.token?.totalCounts?.listings,
+);
+assert(
+  Number.isSafeInteger(marketplaceSummaryListingCount) &&
+    marketplaceSummaryListingCount >= 0,
+  `/api/v1/marketplace-summary?fresh=1 returned invalid global listing count ${alignedMarketplaceFreshSummary.token?.totalCounts?.listings}`,
+);
 const activeWorkListingKeys = new Set(
   (workToken.listings ?? []).map((listing) => listingKey(listing)),
 );
-const confirmedWorkListingCount = (workToken.listings ?? []).filter(
-  (listing) => listing?.confirmed === true,
-).length;
-const pendingWorkListingCount =
-  activeWorkListingCount - confirmedWorkListingCount;
+const pendingWorkListingCount = Number(
+  canonicalWorkSummaryToken?.pendingOpenListings,
+);
+assert(
+  Number.isSafeInteger(pendingWorkListingCount) &&
+    pendingWorkListingCount >= 0,
+  `/api/v1/token?fresh=1 returned invalid pending WORK listing count ${canonicalWorkSummaryToken?.pendingOpenListings}`,
+);
+const activeWorkListingCount =
+  confirmedWorkListingCount + pendingWorkListingCount;
+assert(
+  canonicalWorkSummaryToken?.confirmedOpenListings ===
+    confirmedWorkListingCount &&
+    canonicalWorkSummaryToken?.openListings === activeWorkListingCount,
+  `/api/v1/token?fresh=1 reports ${canonicalWorkSummaryToken?.confirmedOpenListings} confirmed and ${canonicalWorkSummaryToken?.openListings} total WORK listings, expected ${confirmedWorkListingCount} confirmed and ${activeWorkListingCount} total`,
+);
 for (const [label, summary] of [
   ["/api/v1/work-summary?fresh=1", workSummary.token],
   ["/api/v1/token-summary?asset=WORK&fresh=1", workTokenSummary],
@@ -3423,8 +3459,17 @@ assert(
   "/api/v1/marketplace-summary?fresh=1 returned a WORK listing outside the canonical scoped active book",
 );
 assert(
-  activeWorkListingCount - marketplaceSummaryWorkListings.length <= 40,
-  `/api/v1/marketplace-summary?fresh=1 is missing too many canonical WORK listings from its active preview (${marketplaceSummaryWorkListings.length} visible, ${activeWorkListingCount} canonical)`,
+  marketplaceSummaryWorkListings.length <=
+    Math.min(
+      activeWorkListingCount,
+      confirmedSealedListings.length + 40,
+    ),
+  `/api/v1/marketplace-summary?fresh=1 exceeded its sealed inventory plus 40-row ordinary preview (${marketplaceSummaryWorkListings.length} visible, ${confirmedSealedListings.length} sealed, ${activeWorkListingCount} canonical)`,
+);
+assert(
+  alignedMarketplaceFreshSummary.token?.collectionHasMore?.listings ===
+    (marketplaceSummaryListings.length < marketplaceSummaryListingCount),
+  `/api/v1/marketplace-summary?fresh=1 has an inaccurate global listing continuation flag (${marketplaceSummaryListings.length} visible, ${marketplaceSummaryListingCount} total)`,
 );
 assert(
   workSummary.snapshotId === alignedMarketplaceFreshSummary.snapshotId &&

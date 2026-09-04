@@ -131,8 +131,61 @@ At the initial local remediation checkpoint:
   above; checkpoint `965473` remained unchanged; and
 - follow-up production-shaped index-recovery suite: passed (493 checks).
 
-Production results, exact release commits, checkpoint catch-up evidence, and
-whether a rebuild was required will be appended after deployment verification.
+### Production recovery verification
+
+The two representation fixes shipped through pull requests `#47` and `#48`.
+The exact merged recovery release was commit
+`339ba3a71ba5f36cb64f4f7c52e01c4a0385fe90`, tree
+`4369a862d59420ba084b988059f5070c72a592c7`, with release archive SHA-256
+`4bc18861f6a7463621106ba22a8f48d66b5083f749ec34eac5d4edd99c7e1742`.
+
+After restart, the unchanged canonical checkpoint resumed, crossed block
+`965474`, and reached the Core tip. At the recorded verification checkpoint:
+
+- public health reported `ok=true`, `ready=true`, and `available=true`;
+- block scan and every required summary root were at height `965496`;
+- lag was zero blocks and the checkpoint was canonical;
+- snapshot ID was `2c44ce3f23fe3824f4001bfc` at block hash
+  `000000000000000000002d40ebedd188a84a4f4218743269477f36df02beb883`;
+- the worker reported a successful cycle at
+  `2026-09-04T15:56:30.912Z`;
+- the fresh marketplace summary returned HTTP 200 with canonical data;
+- the production ID audit passed with 563 records fetched, 561 confirmed,
+  two pending, six active listings, four sales, and exact lifecycle parity;
+- the production credit-mint regression passed with confirmed POW supply
+  `1,525,100 / 10,101,010` and confirmed WORK supply
+  `21,000,000 / 21,000,000`, with no pending supply; and
+- the production indexer parity audit completed successfully.
+
+No checkpoint rewind, row deletion, or data rebuild was required.
+
+### Bounded WORK summary count hardening
+
+The post-recovery full marketplace regression exposed a separate read-model
+error: the marketplace summary reported 582 open WORK listings while the
+scoped WORK summary reported 550. Read-only PostgreSQL and Core-authority
+checks proved that 582 is the canonical count:
+
+- 608 unique V8 lifecycle rows were present: 40 `active`, 547 `sealing`, and
+  21 `delisted`;
+- Core reconciliation proved 26 spent anchors and 582 unique unspent anchors;
+- the active inventory was 543 sealed listings plus 39 unsealed listings; and
+- the canonical stored summary correctly declared 582 open and confirmed
+  listings with zero pending listings.
+
+The stored summary intentionally materialized only 550 rows: all 543 sealed
+listings plus the latest 40 ordinary rows, where 33 of those recent rows were
+already sealed and seven were unsealed. The remaining 32 older unsealed rows
+remain available through paginated history. A read-time
+`forceScopedWorkListingCounts` option incorrectly replaced the declared total
+with that bounded preview length and falsely cleared the continuation flag.
+
+The hardening removes that unsafe read-time rewrite. Stored aggregate counts
+and `collectionHasMore.listings` now survive summary reads, while the existing
+same-checkpoint anti-shrink guard remains unchanged. The production regression
+oracle now uses the Core-reconciled listing history total and authority counts,
+not a bounded materialized array length. This changes representation only; it
+does not add, remove, open, close, seal, or settle any listing.
 
 ## Change Log
 
@@ -157,3 +210,16 @@ whether a rebuild was required will be appended after deployment verification.
 - Added an end-to-end preparation, recovery, and replay-binding regression for
   the observed production position.
 - Rebuild required: no. The canonical checkpoint remains safe and resumable.
+
+### 2026-09-04 — Production recovery and summary count hardening
+
+- Deployed the exact merged recovery commit and preserved its rollback release.
+- Verified canonical catch-up through the formerly failing block and to the
+  current Core tip with all required summary roots aligned.
+- Confirmed the 582-versus-550 discrepancy was a bounded-preview count rewrite,
+  not duplicate inventory or a protocol-state inconsistency.
+- Preserved the canonical 582 total and the true continuation flag without
+  changing any marketplace lifecycle record.
+- Added a production-shaped 582-declared / 550-materialized regression and
+  corrected the production marketplace oracle to use authoritative totals.
+- Rebuild required: no.
