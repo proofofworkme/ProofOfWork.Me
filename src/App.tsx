@@ -2417,7 +2417,7 @@ type MarketplaceSummarySnapshot = {
   indexedAt: string;
   registry: PowRegistryState;
   token: PowTokenState;
-  workFloor?: WorkFloorQuote;
+  workFloor: WorkFloorQuote;
 };
 
 type MarketplaceSummaryApiResponse = {
@@ -17771,6 +17771,35 @@ function workFloorQuoteRegresses(
   return currentPoints > 2 && nextPoints > 0 && nextPoints < currentPoints;
 }
 
+function planWorkFloorQuoteTransition(
+  incoming: WorkFloorQuote,
+  current: WorkFloorQuote | undefined,
+  boundaryWasLatched: boolean,
+) {
+  const incomingBoundaryObserved =
+    workV8DeclarationBoundaryObserved(incoming);
+  const boundaryEvidenceRegressed =
+    boundaryWasLatched && !incomingBoundaryObserved;
+  const safetyBoundQuote = boundaryEvidenceRegressed
+    ? {
+        ...incoming,
+        workAmoV8: failClosedWorkAmoV8Status(
+          current?.workAmoV8,
+          incoming.workAmoV8,
+        ),
+      }
+    : incoming;
+
+  return {
+    boundaryEvidenceRegressed,
+    incomingBoundaryObserved,
+    safetyBoundQuote,
+    valueRegressed: workFloorQuoteRegresses(safetyBoundQuote, current),
+    v8BoundaryNeedsFailClosedRetention:
+      boundaryWasLatched || incomingBoundaryObserved,
+  };
+}
+
 function tokenDefinitionConfirmedSupply(token: PowTokenDefinition) {
   return tokenSupplyUnits(token, token.confirmedSupply) ?? 0n;
 }
@@ -21680,35 +21709,26 @@ export default function App() {
     }
 
     const current = acceptedWorkFloorQuoteRef.current;
-    const incomingBoundaryObserved =
-      workV8DeclarationBoundaryObserved(quote);
     const boundaryWasLatched =
       workV8DeclarationBoundaryLatchRef.current;
-    const v8BoundaryNeedsFailClosedRetention =
-      boundaryWasLatched || incomingBoundaryObserved;
-    if (incomingBoundaryObserved) {
+    const transition = planWorkFloorQuoteTransition(
+      quote,
+      current,
+      boundaryWasLatched,
+    );
+    if (transition.incomingBoundaryObserved) {
       workV8DeclarationBoundaryLatchRef.current = true;
     }
-    const safetyBoundQuote =
-      boundaryWasLatched && !incomingBoundaryObserved
-        ? {
-            ...quote,
-            workAmoV8: failClosedWorkAmoV8Status(
-              current?.workAmoV8,
-              quote.workAmoV8,
-            ),
-          }
-        : quote;
-    if (workFloorQuoteRegresses(safetyBoundQuote, current)) {
+    if (transition.valueRegressed) {
       if (!current) {
         return undefined;
       }
-      const retained = v8BoundaryNeedsFailClosedRetention
+      const retained = transition.v8BoundaryNeedsFailClosedRetention
         ? {
             ...current,
             workAmoV8: failClosedWorkAmoV8Status(
               current.workAmoV8,
-              safetyBoundQuote.workAmoV8,
+              transition.safetyBoundQuote.workAmoV8,
               "work-amo-v8-exact-tip-regressed",
             ),
           }
@@ -21718,10 +21738,12 @@ export default function App() {
       return retained;
     }
 
-    acceptedWorkFloorQuoteRef.current = safetyBoundQuote;
-    setWorkFloorQuote(safetyBoundQuote);
-    clearResolvedWorkAmoV8DeclarationPauseStatus(safetyBoundQuote);
-    return safetyBoundQuote;
+    acceptedWorkFloorQuoteRef.current = transition.safetyBoundQuote;
+    setWorkFloorQuote(transition.safetyBoundQuote);
+    clearResolvedWorkAmoV8DeclarationPauseStatus(
+      transition.safetyBoundQuote,
+    );
+    return transition.safetyBoundQuote;
   }
 
   async function freshWorkWriteMode(
@@ -26665,6 +26687,12 @@ export default function App() {
         const previousRegistryState = acceptedRegistryStateRef.current;
         const previousTokenState =
           acceptedTokenStatesRef.current.get(marketplaceTokenScopeKey);
+        const previousWorkFloor = acceptedWorkFloorQuoteRef.current;
+        const workFloorTransition = planWorkFloorQuoteTransition(
+          snapshot.workFloor,
+          previousWorkFloor,
+          workV8DeclarationBoundaryLatchRef.current,
+        );
         const registryStateRetained = registryStateRegresses(
           snapshot.registry,
           previousRegistryState,
@@ -26674,43 +26702,34 @@ export default function App() {
           previousTokenState,
           true,
         );
-        const acceptedRegistryState =
-          applyRegistryState(snapshot.registry) ?? snapshot.registry;
-        const acceptedTokenState = applyTokenState(completeTokenState, {
-          scopeKey: marketplaceTokenScopeKey,
-        });
-        setTokenMarketHistoryRefreshNonce((current) => current + 1);
-        if (btcUsdQuote) {
-          setTokenBtcUsd(btcUsdQuote);
-        }
-        const acceptedWorkFloor = snapshot.workFloor
-          ? applyWorkFloorQuote(snapshot.workFloor)
-          : undefined;
         const retainedEarlierWorkFloor =
-          Boolean(snapshot.workFloor) && acceptedWorkFloor !== snapshot.workFloor;
+          workFloorTransition.boundaryEvidenceRegressed ||
+          workFloorTransition.valueRegressed;
         const retainedEarlierSummaryLane =
           registryStateRetained ||
           tokenStateRetained ||
           retainedEarlierWorkFloor;
-        if (fresh && requestIsActive() && snapshot.workFloor) {
-          setWorkFloorLastGoodStatus(
-            retainedEarlierWorkFloor && acceptedWorkFloor
-              ? workFloorLastGoodStatusText(acceptedWorkFloor)
-              : "",
-          );
+        if (
+          retainedEarlierSummaryLane &&
+          workFloorTransition.incomingBoundaryObserved
+        ) {
+          workV8DeclarationBoundaryLatchRef.current = true;
         }
-        const acceptedSnapshot = {
-          ...snapshot,
-          registry: acceptedRegistryState,
-          token: acceptedTokenState,
-          workFloor: acceptedWorkFloor,
-        };
-        if (!retainedEarlierSummaryLane) {
-          acceptedMarketplaceSnapshotRef.current = acceptedSnapshot;
+        if (btcUsdQuote) {
+          setTokenBtcUsd(btcUsdQuote);
         }
-        setMarketplaceSummaryReadState((current) => {
-          if (retainedEarlierSummaryLane) {
-            return previousMarketplaceSnapshot
+        if (retainedEarlierSummaryLane) {
+          const retainedWorkFloor =
+            previousMarketplaceSnapshot?.workFloor ?? previousWorkFloor;
+          if (fresh && requestIsActive()) {
+            setWorkFloorLastGoodStatus(
+              retainedWorkFloor
+                ? workFloorLastGoodStatusText(retainedWorkFloor)
+                : "",
+            );
+          }
+          setMarketplaceSummaryReadState(
+            previousMarketplaceSnapshot
               ? {
                   indexedAt: previousMarketplaceSnapshot.indexedAt,
                   message: fresh
@@ -26723,8 +26742,38 @@ export default function App() {
                     ? "The exact-tip AMO response regressed one or more canonical lanes, so no coherent market snapshot was accepted. Totals and empty-book claims are withheld."
                     : "The AMO response regressed one or more canonical lanes, so no coherent market snapshot was accepted. Totals and empty-book claims are withheld.",
                   status: "unavailable",
-                };
+                },
+          );
+          if (!silent) {
+            setStatusForWorkspace(requestWorkspaceKey, {
+              tone: previousMarketplaceSnapshot ? "idle" : "bad",
+              text: previousMarketplaceSnapshot
+                ? "AMO refresh retained verified data because one or more current lanes regressed; the summary remains Last Verified."
+                : "AMO refresh could not accept a coherent market snapshot because one or more canonical lanes regressed.",
+            });
           }
+          return undefined;
+        }
+
+        const acceptedRegistryState =
+          applyRegistryState(snapshot.registry) ?? snapshot.registry;
+        const acceptedTokenState = applyTokenState(completeTokenState, {
+          scopeKey: marketplaceTokenScopeKey,
+        });
+        const acceptedWorkFloor =
+          applyWorkFloorQuote(snapshot.workFloor) ?? snapshot.workFloor;
+        setTokenMarketHistoryRefreshNonce((current) => current + 1);
+        if (fresh && requestIsActive()) {
+          setWorkFloorLastGoodStatus("");
+        }
+        const acceptedSnapshot = {
+          ...snapshot,
+          registry: acceptedRegistryState,
+          token: acceptedTokenState,
+          workFloor: acceptedWorkFloor,
+        };
+        acceptedMarketplaceSnapshotRef.current = acceptedSnapshot;
+        setMarketplaceSummaryReadState((current) => {
           const retainsIndexedSnapshot =
             !fresh &&
             (current.status === "last-verified" ||
@@ -26737,7 +26786,7 @@ export default function App() {
             status: retainsIndexedSnapshot ? "last-verified" : "ready",
           };
         });
-        if (fresh && !retainedEarlierSummaryLane) {
+        if (fresh) {
           clearLastGoodReadWarning(
             requestWorkspaceKey,
             readSource,
@@ -26745,27 +26794,16 @@ export default function App() {
           );
         }
         if (!silent) {
-          if (retainedEarlierSummaryLane) {
-            setStatusForWorkspace(requestWorkspaceKey, {
-              tone: previousMarketplaceSnapshot ? "idle" : "bad",
-              text: previousMarketplaceSnapshot
-                ? "AMO refresh retained verified data because one or more current lanes regressed; the summary remains Last Verified."
-                : "AMO refresh could not accept a coherent market snapshot because one or more canonical lanes regressed.",
-            });
-          } else {
-            const floorText = acceptedWorkFloor
-              ? ` WORK floor ${bondProofAmountDisplay(
-                  workFloorQuoteLiveValue(acceptedWorkFloor),
-                  workFloorQuoteLiveValueQ8(acceptedWorkFloor),
-                )} proofs.`
-              : "";
-            setStatusForWorkspace(requestWorkspaceKey, {
-              tone: "good",
-              text: `AMO loaded. ${acceptedTokenState.tokens.length.toLocaleString()} credit${acceptedTokenState.tokens.length === 1 ? "" : "s"}, ${acceptedTokenState.listings.length.toLocaleString()} listing${acceptedTokenState.listings.length === 1 ? "" : "s"}.${floorText}`,
-            });
-          }
+          const floorText = ` WORK floor ${bondProofAmountDisplay(
+            workFloorQuoteLiveValue(acceptedWorkFloor),
+            workFloorQuoteLiveValueQ8(acceptedWorkFloor),
+          )} proofs.`;
+          setStatusForWorkspace(requestWorkspaceKey, {
+            tone: "good",
+            text: `AMO loaded. ${acceptedTokenState.tokens.length.toLocaleString()} credit${acceptedTokenState.tokens.length === 1 ? "" : "s"}, ${acceptedTokenState.listings.length.toLocaleString()} listing${acceptedTokenState.listings.length === 1 ? "" : "s"}.${floorText}`,
+          });
         }
-        return retainedEarlierSummaryLane ? undefined : acceptedSnapshot;
+        return acceptedSnapshot;
       } catch (error) {
         const lastGoodSnapshot = acceptedMarketplaceSnapshotRef.current;
         const lastGoodWorkFloor = lastGoodSnapshot?.workFloor;

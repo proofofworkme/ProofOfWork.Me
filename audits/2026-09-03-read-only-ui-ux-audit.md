@@ -6,8 +6,8 @@ implementation follow-up
 Status: original audit complete. The Proof Instrument candidate and subsequent
 AMO availability hardening are implemented on the dedicated UI branch. The
 candidate is approved for commit, push, merge, and production deployment;
-integrated pre-production QA and the UI release remain in progress. Exhaustive
-physical-device verification remains pending.
+integrated pre-production QA is complete and the UI release remains in
+progress. Exhaustive physical-device verification remains pending.
 
 ## Scope And Approval
 
@@ -961,3 +961,50 @@ final merge with the production-verified backend authority release.
 - Protocol rules, math, precision, fee splits, signing, canonical IDs, and
   marketplace settlement behavior changed: none.
 - Production changes applied: none.
+
+### 2026-09-04 — Atomic Summary Acceptance And Integrated QA
+
+Status at this documentation checkpoint: the UI branch contains the exact
+production-verified backend authority release, the Proof Instrument candidate,
+and the final AMO read-state hardening. Pre-production acceptance is complete;
+the UI merge and production static release remain pending.
+
+- Merged backend main commit
+  `432c01581e5e2987e26a3190be2817c7bddc6470` into the UI branch without
+  conflicts, preserving the complete-authority AMO count and history model.
+- During integrated review, found that a mixed-lane response could apply an
+  advancing registry or WORK lane before a regressing credit lane caused the
+  overall response to be labeled Last Verified.
+- Reworked summary acceptance into a two-phase operation: registry, credit,
+  WORK value, and latched V8-boundary evidence are preflighted before any
+  canonical lane, activity-history nonce, or accepted-snapshot reference is
+  changed.
+- A rejected response now retains the whole prior marketplace snapshot and its
+  verification timestamp. Newly observed V8 boundary evidence is still
+  latched independently so every subsequent WORK write preflight remains
+  fail-closed.
+- Added a browser regression in which the registry lane advances while the
+  credit lane regresses. The UI remains Last Verified at the earlier timestamp
+  and retains the earlier ID count instead of presenting a cross-checkpoint
+  mixture.
+- Strengthened the static UI contract to reject any registry, credit, WORK,
+  history-refresh, or accepted-snapshot mutation before the all-lane retention
+  gate.
+- Current-tree verification passed: static UI contract; client read
+  containment (43 checks); TypeScript and production build; focused atomic
+  retention; and the complete two-worker browser suite (36/36 in 16.4 minutes).
+  That suite covers 320-1800px responsive matrices, deterministic mobile
+  snapshots, Loading / Ready / Unavailable / Last Verified states, 503
+  recovery, Listings / Seals / Sales authority, keyboard behavior, 44px touch
+  targets, WCAG contrast, reduced motion, and 200% text.
+- The previously completed integrated backend gates remain green, including
+  index recovery, WORK marketplace/precision and AMO V5-V8, API truth,
+  canonical ordering, server globals, exact bond arithmetic, Mail, Credit mint,
+  ledger, and production marketplace convergence.
+- Repository hygiene passed after the integrated test run. Remaining release
+  work: UI branch commit/push and pull request, merge, exact-release API/static
+  deployment, live production smoke, and the separately tracked
+  physical-device pass.
+- Protocol rules, math, precision, fee splits, signing, canonical IDs, and
+  marketplace settlement behavior changed: none.
+- Production UI changes applied: none at this checkpoint.

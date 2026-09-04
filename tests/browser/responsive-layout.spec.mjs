@@ -565,6 +565,7 @@ async function installApiFixtures(
     countedAmo = false,
     marketplaceSummaryGate,
     marketplaceSummaryMode = "ready",
+    marketplaceSummaryTransform,
   } = {},
 ) {
   const fixtureTokenState = countedAmo
@@ -619,7 +620,7 @@ async function installApiFixtures(
         });
         return;
       }
-      json = {
+      const marketplaceSummary = {
         indexedAt: NOW,
         network: "livenet",
         registry: REGISTRY_STATE,
@@ -627,6 +628,9 @@ async function installApiFixtures(
         token: fixtureTokenState,
         workFloor: WORK_FLOOR,
       };
+      json = marketplaceSummaryTransform
+        ? marketplaceSummaryTransform(marketplaceSummary, url)
+        : marketplaceSummary;
     } else if (pathname === "/api/v1/work-summary") {
       json = {
         floor: WORK_FLOOR,
@@ -2427,6 +2431,95 @@ test("AMO retains labeled last-verified totals when an exact-tip refresh returns
       );
     });
   }
+});
+
+test("AMO retains one atomic last-verified snapshot when a canonical lane regresses", async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  const firstRecord = {
+    amountSats: 1_000,
+    confirmed: true,
+    createdAt: NOW,
+    id: "atomic-one",
+    network: "livenet",
+    ownerAddress: AMO_SELLER,
+    receiveAddress: AMO_SELLER,
+    txid: fixtureTxid(40_000),
+  };
+  const secondRecord = {
+    ...firstRecord,
+    id: "atomic-two",
+    txid: fixtureTxid(40_001),
+  };
+  let serveMixedLaneRegression = false;
+  await installApiFixtures(page, {
+    marketplaceSummaryTransform: (summary, url) => {
+      const verifiedSummary = {
+        ...summary,
+        registry: {
+          ...summary.registry,
+          records: [firstRecord],
+        },
+      };
+      if (
+        !serveMixedLaneRegression ||
+        url.searchParams.get("fresh") !== "1"
+      ) {
+        return verifiedSummary;
+      }
+      return {
+        ...verifiedSummary,
+        indexedAt: "2026-07-22T13:00:00.000Z",
+        registry: {
+          ...verifiedSummary.registry,
+          records: [firstRecord, secondRecord],
+        },
+        token: {
+          ...verifiedSummary.token,
+          tokens: verifiedSummary.token.tokens.slice(0, 2),
+        },
+      };
+    },
+  });
+  await page.setViewportSize({ height: VIEWPORT_HEIGHT, width: 390 });
+  await openFixtureRoute(
+    page,
+    surfaceUrl(
+      MARKETPLACE_BASE_URL,
+      `/?marketplace=1&asset=${WORK_TOKEN_ID}`,
+    ),
+    "atomic AMO summary retention",
+  );
+
+  const verification = page.locator(".marketplace-summary-read-state").first();
+  await expect(verification).toHaveAttribute("data-state", "ready", {
+    timeout: 60_000,
+  });
+  const verifiedText = await verification.locator("div span").innerText();
+  const verifiedAt = verifiedText.match(/Verified .+\.$/u)?.[0];
+  expect(verifiedAt).toBeTruthy();
+
+  await page
+    .getByLabel("AMO asset tabs")
+    .getByRole("button", { name: /^IDs\s+0$/u })
+    .click();
+  const totalIds = page.locator('[aria-label="ID AMO stats"] strong').first();
+  await expect(totalIds).toHaveText("1");
+
+  serveMixedLaneRegression = true;
+  await page.getByRole("button", { name: "Refresh" }).first().click();
+  await expect(verification).toHaveAttribute("data-state", "last-verified", {
+    timeout: 60_000,
+  });
+  await expect(verification).toContainText("Last Verified");
+  await expect(verification).toContainText(
+    "could not replace every verified lane without regression",
+  );
+  await expect(verification).toContainText(verifiedAt);
+  await expect(totalIds).toHaveText("1");
+  await expect(page.locator(".marketplace-summary-gate")).toHaveCount(0);
+  await assertNoDocumentOverflow(page, "atomic AMO summary retention");
 });
 
 test("Computer mobile More opens a viewport-bound modal and restores focus", async ({

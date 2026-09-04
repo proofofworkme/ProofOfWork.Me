@@ -570,6 +570,10 @@ expect(
     /not governed WORK units/.test(app) &&
     /hard-price listing/.test(app),
 );
+const workFloorQuoteTransitionBlock = topLevelFunctionSource(
+  app,
+  "planWorkFloorQuoteTransition",
+);
 const applyWorkFloorQuoteBlock = app.slice(
   app.indexOf("function applyWorkFloorQuote"),
   app.indexOf("async function freshWorkWriteMode"),
@@ -1523,12 +1527,10 @@ expect(
 );
 expect(
   "pre-boundary floor regressions cannot manufacture a V8 write embargo",
-  /const v8BoundaryNeedsFailClosedRetention\s*=\s*boundaryWasLatched\s*\|\|\s*incomingBoundaryObserved/.test(
-    applyWorkFloorQuoteBlock,
+  /v8BoundaryNeedsFailClosedRetention:\s*boundaryWasLatched\s*\|\|\s*incomingBoundaryObserved/.test(
+    workFloorQuoteTransitionBlock,
   ) &&
-    (applyWorkFloorQuoteBlock.match(/v8BoundaryNeedsFailClosedRetention/g)
-      ?.length ?? 0) >= 2 &&
-    /(?:if\s*\(v8BoundaryNeedsFailClosedRetention\)|v8BoundaryNeedsFailClosedRetention\s*\?)[\s\S]*failClosedWorkAmoV8Status/.test(
+    /transition\.v8BoundaryNeedsFailClosedRetention[\s\S]*\?[\s\S]*failClosedWorkAmoV8Status/.test(
       applyWorkFloorQuoteBlock,
     ),
 );
@@ -2066,13 +2068,16 @@ expect(
       workAmoV6ProofUnitSource,
     ) &&
     /const workV8DeclarationBoundaryLatchRef = useRef\(false\)/.test(app) &&
-    /function applyWorkFloorQuote[\s\S]*boundaryWasLatched[\s\S]*failClosedWorkAmoV8Status[\s\S]*work-amo-v8-exact-tip-regressed/.test(
+    /function planWorkFloorQuoteTransition[\s\S]*boundaryWasLatched[\s\S]*failClosedWorkAmoV8Status/.test(
+      app,
+    ) &&
+    /function applyWorkFloorQuote[\s\S]*transition\.v8BoundaryNeedsFailClosedRetention[\s\S]*work-amo-v8-exact-tip-regressed/.test(
       app,
     ) &&
     /function clearResolvedWorkAmoV8DeclarationPauseStatus[\s\S]*workV8WriteAdmissionReady\(quote\)[\s\S]*status\?\.listingWritesEnabled !== true[\s\S]*status\?\.settlementWritesEnabled !== true[\s\S]*work-amo-v8-declaration-evidence-\(\?:mismatch\|unavailable\)[\s\S]*WORK AMO V8 write admission is ready/.test(
       app,
     ) &&
-    /function applyWorkFloorQuote[\s\S]*setWorkFloorQuote\(safetyBoundQuote\);[\s\S]*clearResolvedWorkAmoV8DeclarationPauseStatus\(safetyBoundQuote\)/.test(
+    /function applyWorkFloorQuote[\s\S]*setWorkFloorQuote\(transition\.safetyBoundQuote\);[\s\S]*clearResolvedWorkAmoV8DeclarationPauseStatus\([\s\S]*transition\.safetyBoundQuote/.test(
       app,
     ) &&
     /async function freshWorkWriteMode[\s\S]*boundaryWasLatched && !boundaryObserved[\s\S]*"paused"[\s\S]*expectedMode && mode !== expectedMode/.test(
@@ -3155,6 +3160,40 @@ const refreshMarketplaceSummaryBlock =
   app.match(
     /async function refreshMarketplaceSummary[\s\S]*?async function refreshInfinity/,
   )?.[0] ?? "";
+const marketplaceSummaryRetentionGateIndex =
+  refreshMarketplaceSummaryBlock.indexOf("if (retainedEarlierSummaryLane)");
+const marketplaceSummaryRegistryCommitIndex =
+  refreshMarketplaceSummaryBlock.indexOf(
+    "const acceptedRegistryState =",
+    marketplaceSummaryRetentionGateIndex,
+  );
+const marketplaceSummaryTokenCommitIndex =
+  refreshMarketplaceSummaryBlock.indexOf(
+    "const acceptedTokenState = applyTokenState",
+    marketplaceSummaryRetentionGateIndex,
+  );
+const marketplaceSummaryWorkCommitIndex =
+  refreshMarketplaceSummaryBlock.indexOf(
+    "const acceptedWorkFloor =",
+    marketplaceSummaryRetentionGateIndex,
+  );
+const marketplaceSummaryHistoryCommitIndex =
+  refreshMarketplaceSummaryBlock.indexOf(
+    "setTokenMarketHistoryRefreshNonce",
+    marketplaceSummaryRetentionGateIndex,
+  );
+const marketplaceSummarySnapshotCommitIndex =
+  refreshMarketplaceSummaryBlock.indexOf(
+    "acceptedMarketplaceSnapshotRef.current = acceptedSnapshot",
+    marketplaceSummaryRetentionGateIndex,
+  );
+const marketplaceSummaryPreRetentionBlock =
+  marketplaceSummaryRetentionGateIndex >= 0
+    ? refreshMarketplaceSummaryBlock.slice(
+        0,
+        marketplaceSummaryRetentionGateIndex,
+      )
+    : refreshMarketplaceSummaryBlock;
 const tokenMarketplacePanelBlock =
   app.match(
     /function TokenMarketplacePanel\([\s\S]*?function MarketplaceListingList\(/,
@@ -3303,6 +3342,42 @@ expect(
     ) &&
     /const acceptedTokenState = applyTokenState\(completeTokenState/.test(
       refreshMarketplaceSummaryBlock,
+    ),
+);
+expect(
+  "Marketplace preflights every canonical summary lane before one atomic display commit",
+  /boundaryEvidenceRegressed[\s\S]*valueRegressed:\s*workFloorQuoteRegresses/.test(
+    workFloorQuoteTransitionBlock,
+  ) &&
+    /const workFloorTransition = planWorkFloorQuoteTransition\([\s\S]*const retainedEarlierSummaryLane =/.test(
+      refreshMarketplaceSummaryBlock,
+    ) &&
+    /const retainedEarlierWorkFloor =\s*workFloorTransition\.boundaryEvidenceRegressed \|\|\s*workFloorTransition\.valueRegressed/.test(
+      refreshMarketplaceSummaryBlock,
+    ) &&
+    /const retainedEarlierSummaryLane =\s*registryStateRetained \|\|\s*tokenStateRetained \|\|\s*retainedEarlierWorkFloor/.test(
+      refreshMarketplaceSummaryBlock,
+    ) &&
+    /retainedEarlierSummaryLane &&[\s\S]*workFloorTransition\.incomingBoundaryObserved[\s\S]*workV8DeclarationBoundaryLatchRef\.current = true/.test(
+      refreshMarketplaceSummaryBlock,
+    ) &&
+    /if \(retainedEarlierSummaryLane\) \{[\s\S]*previousMarketplaceSnapshot\?\.workFloor \?\? previousWorkFloor[\s\S]*return undefined;[\s\S]*const acceptedRegistryState =/.test(
+      refreshMarketplaceSummaryBlock,
+    ) &&
+    marketplaceSummaryRetentionGateIndex >= 0 &&
+    marketplaceSummaryRegistryCommitIndex >
+      marketplaceSummaryRetentionGateIndex &&
+    marketplaceSummaryTokenCommitIndex > marketplaceSummaryRetentionGateIndex &&
+    marketplaceSummaryWorkCommitIndex > marketplaceSummaryRetentionGateIndex &&
+    marketplaceSummaryHistoryCommitIndex >
+      marketplaceSummaryRetentionGateIndex &&
+    marketplaceSummarySnapshotCommitIndex >
+      marketplaceSummaryRetentionGateIndex &&
+    !/(?:applyRegistryState|applyTokenState|applyWorkFloorQuote|setTokenMarketHistoryRefreshNonce)\(/.test(
+      marketplaceSummaryPreRetentionBlock,
+    ) &&
+    !/acceptedMarketplaceSnapshotRef\.current\s*=/.test(
+      marketplaceSummaryPreRetentionBlock,
     ),
 );
 expect(

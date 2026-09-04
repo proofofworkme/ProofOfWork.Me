@@ -4582,6 +4582,7 @@ check("post-V8 compact summaries suppress legacy WORK active listings", () => {
       WORK_AMO_V8_AUTH_VERSION: "pwt-sale-v8",
       WORK_TOKEN_ID: workTokenId,
       applyWorkMarketV2CutoverToTokenState: (state) => state,
+      canonicalWorkMarketV2TokenSummary: () => null,
       canonicalWorkQ16SummaryUnitPriceDescriptor: () => null,
       isWorkTokenId: (tokenId) => tokenId === workTokenId,
       normalizeTokenScope: normalizeTestScope,
@@ -4768,6 +4769,7 @@ check("token reads suppress legacy WORK listings before spendability", async () 
       WORK_AMO_V8_AUTH_VERSION: "pwt-sale-v8",
       WORK_TOKEN_ID: workTokenId,
       applyWorkMarketV2CutoverToTokenState: (state) => state,
+      canonicalWorkMarketV2TokenSummary: () => null,
       canonicalWorkQ16SummaryUnitPriceDescriptor: () => null,
       isWorkTokenId: (tokenId) => tokenId === workTokenId,
       normalizeTokenScope: normalizeTestScope,
@@ -4855,12 +4857,28 @@ check("token reads suppress legacy WORK listings before spendability", async () 
   assert.equal(payload.totalCounts.listings, 1);
 });
 
-check("scoped WORK token summaries rebase stale active listing totals", () => {
+check("canonical bounded WORK summaries are not recut to the preview size", () => {
   const workTokenId = WORK_TOKEN_ID;
   const normalizeTestScope = (value) =>
     String(value ?? "").trim().toUpperCase() === "WORK"
       ? workTokenId
       : String(value ?? "").trim().toLowerCase();
+  const canonicalSummary = isolatedFunction(
+    API_PATH,
+    "canonicalWorkMarketV2TokenSummary",
+    {
+      WORK_AMO_V8_ACTIVATION_HEIGHT: 960_601,
+      WORK_AMO_V8_AUTH_VERSION: "pwt-sale-v8",
+      WORK_MARKET_V2_ACTIVATION_HEIGHT,
+      WORK_MARKET_V2_DECLARATION_HEIGHT: 959_061,
+      WORK_MARKET_V2_DECLARATION_TXID,
+      isWorkTokenId: (tokenId) => tokenId === workTokenId,
+      proofIndexPayloadIndexedThroughBlock: (payload) =>
+        Number(payload?.indexedThroughBlock),
+      tokenMarketRecordTokenId: (listing) =>
+        normalizeTestScope(listing?.tokenId),
+    },
+  );
   const policy = isolatedFunction(
     API_PATH,
     "tokenPayloadWithCurrentWorkActiveListingPolicy",
@@ -4868,7 +4886,8 @@ check("scoped WORK token summaries rebase stale active listing totals", () => {
       WORK_AMO_V8_ACTIVATION_HEIGHT: 960_601,
       WORK_AMO_V8_AUTH_VERSION: "pwt-sale-v8",
       WORK_TOKEN_ID: workTokenId,
-      applyWorkMarketV2CutoverToTokenState: (state) => state,
+      applyWorkMarketV2CutoverToTokenState,
+      canonicalWorkMarketV2TokenSummary: canonicalSummary,
       canonicalWorkQ16SummaryUnitPriceDescriptor: () => null,
       isWorkTokenId: (tokenId) => tokenId === workTokenId,
       normalizeTokenScope: normalizeTestScope,
@@ -4896,63 +4915,124 @@ check("scoped WORK token summaries rebase stale active listing totals", () => {
           : undefined,
     },
   );
-  const v8ListingId = "b".repeat(64);
+  const previewListings = Array.from({ length: 550 }, (_value, index) => ({
+    authorizationVersion: "pwt-sale-v8",
+    blockHeight: 960_601 + index,
+    confirmed: true,
+    listingId: (index + 1).toString(16).padStart(64, "0"),
+    network: "livenet",
+    saleAuthorization: {
+      tokenId: workTokenId,
+      version: "pwt-sale-v8",
+    },
+    tokenId: workTokenId,
+  }));
   const summaryPayload = {
     collectionHasMore: { listings: true },
-    indexedThroughBlock: 960_601,
-    listings: [
-      {
-        authorizationVersion: "pwt-sale-v8",
-        confirmed: true,
-        listingId: v8ListingId,
-        saleAuthorization: { tokenId: workTokenId },
-        tokenId: workTokenId,
-      },
-    ],
+    indexedThroughBlock: 965_502,
+    listings: previewListings,
     network: "livenet",
     stats: {
-      activeListings: 2,
-      confirmedOpenListings: 2,
-      openListings: 2,
+      activeListings: 582,
+      confirmedOpenListings: 582,
+      openListings: 582,
       pendingOpenListings: 0,
     },
     summaryOnly: true,
     tokens: [{
-      confirmedOpenListings: 2,
-      openListings: 2,
+      confirmedOpenListings: 582,
+      openListings: 582,
       pendingOpenListings: 0,
       tokenId: workTokenId,
     }],
-    totalCounts: { listings: 2 },
+    totalCounts: { listings: 582 },
+    workMarketV2Activation: {
+      activationHeight: WORK_MARKET_V2_ACTIVATION_HEIGHT,
+      declarationHeight: 959_061,
+      declarationTxid: WORK_MARKET_V2_DECLARATION_TXID,
+    },
   };
 
   const boundedPreview = policy(summaryPayload, "livenet");
-  assert.equal(boundedPreview.totalCounts.listings, 2);
-  assert.equal(boundedPreview.tokens[0].openListings, 2);
+  assert.equal(boundedPreview.totalCounts.listings, 582);
+  assert.equal(boundedPreview.tokens[0].openListings, 582);
   assert.equal(boundedPreview.collectionHasMore.listings, true);
+  assert.equal(boundedPreview.listings.length, 550);
+  assert.equal(boundedPreview.stats.activeListings, 582);
+  assert.equal(boundedPreview.stats.confirmedOpenListings, 582);
+  assert.equal(boundedPreview.stats.openListings, 582);
+  assert.equal(boundedPreview.stats.pendingOpenListings, 0);
+  assert.equal(boundedPreview.tokens[0].confirmedOpenListings, 582);
+  assert.equal(boundedPreview.tokens[0].pendingOpenListings, 0);
 
-  const scopedSummary = policy(summaryPayload, "livenet", {
-    forceScopedWorkListingCounts: true,
-  });
-  assert.deepEqual(
-    scopedSummary.listings.map((listing) => listing.listingId),
-    [v8ListingId],
+  const markedLegacyPreview = policy(
+    {
+      ...summaryPayload,
+      listings: summaryPayload.listings.map((listing, index) =>
+        index === 0
+          ? {
+              ...listing,
+              authorizationVersion: "pwt-sale-v7",
+              saleAuthorization: {
+                ...listing.saleAuthorization,
+                version: "pwt-sale-v7",
+              },
+            }
+          : listing,
+      ),
+    },
+    "livenet",
   );
-  assert.equal(scopedSummary.currentWorkActiveListingPolicy.removedListings, 0);
-  assert.equal(scopedSummary.totalCounts.listings, 1);
-  assert.equal(scopedSummary.stats.activeListings, 1);
-  assert.equal(scopedSummary.stats.confirmedOpenListings, 1);
-  assert.equal(scopedSummary.stats.openListings, 1);
-  assert.equal(scopedSummary.stats.pendingOpenListings, 0);
-  assert.equal(scopedSummary.tokens[0].confirmedOpenListings, 1);
-  assert.equal(scopedSummary.tokens[0].openListings, 1);
-  assert.equal(scopedSummary.tokens[0].pendingOpenListings, 0);
-  assert.equal(scopedSummary.collectionHasMore.listings, false);
+  assert.equal(markedLegacyPreview.listings.length, 549);
+  assert.equal(markedLegacyPreview.totalCounts.listings, 549);
+  assert.equal(
+    markedLegacyPreview.listings.some(
+      (listing) => listing?.saleAuthorization?.version === "pwt-sale-v7",
+    ),
+    false,
+    "an exact V2 marker must not bypass the post-V8 listing policy",
+  );
+
+  const unmarkedPreview = policy(
+    { ...summaryPayload, workMarketV2Activation: undefined },
+    "livenet",
+  );
+  assert.equal(unmarkedPreview.totalCounts.listings, 550);
+  assert.equal(unmarkedPreview.tokens[0].openListings, 550);
+  assert.equal(unmarkedPreview.collectionHasMore.listings, false);
 });
 
-check("stored canonical WORK token summaries force current listing totals", async () => {
+check("stored canonical WORK summaries retain bounded-book totals", async () => {
   const workTokenId = WORK_TOKEN_ID;
-  let forced = false;
+  let policyCalls = 0;
+  const storedToken = {
+    collectionHasMore: { listings: true },
+    indexedThroughBlock: 965_498,
+    listings: Array.from({ length: 550 }, (_value, index) => ({
+      confirmed: true,
+      listingId: (index + 1).toString(16).padStart(64, "0"),
+      saleAuthorization: {
+        tokenId: workTokenId,
+        version: "pwt-sale-v8",
+      },
+      tokenId: workTokenId,
+    })),
+    network: "livenet",
+    stats: {
+      activeListings: 582,
+      confirmedOpenListings: 582,
+      openListings: 582,
+      pendingOpenListings: 0,
+    },
+    summaryOnly: true,
+    tokens: [{
+      confirmedOpenListings: 582,
+      openListings: 582,
+      pendingOpenListings: 0,
+      tokenId: workTokenId,
+    }],
+    totalCounts: { listings: 582 },
+  };
   const storedCanonicalTokenSummaryPayload = isolatedFunction(
     API_PATH,
     "storedCanonicalTokenSummaryPayload",
@@ -4970,27 +5050,104 @@ check("stored canonical WORK token summaries force current listing totals", asyn
       proofIndexReadFeatureEnabled: () => false,
       proofIndexSnapshotPayload: async () => ({
         consistency: { ok: true },
-        token: {
-          indexedThroughBlock: 960_601,
-          network: "livenet",
-          tokens: [{ tokenId: workTokenId }],
-        },
+        token: storedToken,
       }),
-      tokenPayloadWithCurrentWorkActiveListingPolicy: (payload, network, options) => {
+      tokenPayloadWithCurrentWorkActiveListingPolicy: (
+        payload,
+        network,
+        options,
+      ) => {
         assert.equal(network, "livenet");
-        forced = options?.forceScopedWorkListingCounts === true;
-        return {
-          ...payload,
-          forcedScopedWorkListingCounts: forced,
-        };
+        assert.equal(
+          options,
+          undefined,
+          "stored bounded WORK summaries must not force preview-sized totals",
+        );
+        policyCalls += 1;
+        return payload;
       },
     },
   );
 
   const payload = await storedCanonicalTokenSummaryPayload("livenet", "WORK");
-  assert.equal(forced, true);
-  assert.equal(payload.forcedScopedWorkListingCounts, true);
+  assert.equal(policyCalls, 1);
+  assert.equal(payload.listings.length, 550);
+  assert.equal(payload.totalCounts.listings, 582);
+  assert.equal(payload.tokens[0].openListings, 582);
+  assert.equal(payload.collectionHasMore.listings, true);
   assert.deepEqual(payload.consistency, { ok: true });
+});
+
+check("WORK summary previews retain every seal without erasing ordinary totals", () => {
+  const recentByCreatedAtForTest = isolatedFunction(
+    API_PATH,
+    "recentByCreatedAt",
+    { compareCanonicalUtf8 },
+  );
+  const tokenSummaryListingKeyForTest = isolatedFunction(
+    API_PATH,
+    "tokenSummaryListingKey",
+  );
+  const tokenSummaryListingActivityMsForTest = isolatedFunction(
+    API_PATH,
+    "tokenSummaryListingActivityMs",
+  );
+  const tokenSummaryListingsForTest = isolatedFunction(
+    API_PATH,
+    "tokenSummaryListings",
+    {
+      SUMMARY_MARKET_LIMIT: 40,
+      compareCanonicalUtf8,
+      recentByCreatedAt: recentByCreatedAtForTest,
+      tokenListingHasConfirmedSaleTicketSeal: (listing) =>
+        listing?.sealed === true,
+      tokenSummaryListingActivityMs: tokenSummaryListingActivityMsForTest,
+      tokenSummaryListingKey: tokenSummaryListingKeyForTest,
+    },
+  );
+  let listingOrdinal = 0;
+  const listing = (sealed, createdMs) => {
+    listingOrdinal += 1;
+    return {
+      confirmed: true,
+      createdAt: new Date(createdMs).toISOString(),
+      listingId: listingOrdinal.toString(16).padStart(64, "0"),
+      network: "livenet",
+      sealed,
+    };
+  };
+  const oldSealed = Array.from({ length: 510 }, (_value, index) =>
+    listing(true, 1_000 + index),
+  );
+  const oldUnsealed = Array.from({ length: 32 }, (_value, index) =>
+    listing(false, 2_000 + index),
+  );
+  const recentSealed = Array.from({ length: 33 }, (_value, index) =>
+    listing(true, 100_000 + index),
+  );
+  const recentUnsealed = Array.from({ length: 7 }, (_value, index) =>
+    listing(false, 200_000 + index),
+  );
+  const completeBook = [
+    ...oldSealed,
+    ...oldUnsealed,
+    ...recentSealed,
+    ...recentUnsealed,
+  ];
+
+  const preview = tokenSummaryListingsForTest(completeBook, 40);
+  assert.equal(completeBook.length, 582);
+  assert.equal(preview.length, 550);
+  assert.equal(preview.filter((item) => item.sealed).length, 543);
+  assert.equal(preview.filter((item) => !item.sealed).length, 7);
+  assert.ok(
+    [...oldSealed, ...recentSealed].every((item) => preview.includes(item)),
+    "every confirmed sealed listing must escape the ordinary preview limit",
+  );
+  assert.ok(
+    oldUnsealed.every((item) => !preview.includes(item)),
+    "older ordinary listings remain available through paginated history",
+  );
 });
 
 check("token response wrapper applies current WORK listing policy", async () => {
@@ -5007,6 +5164,7 @@ check("token response wrapper applies current WORK listing policy", async () => 
       WORK_AMO_V8_AUTH_VERSION: "pwt-sale-v8",
       WORK_TOKEN_ID: workTokenId,
       applyWorkMarketV2CutoverToTokenState: (state) => state,
+      canonicalWorkMarketV2TokenSummary: () => null,
       canonicalWorkQ16SummaryUnitPriceDescriptor: () => null,
       isWorkTokenId: (tokenId) => tokenId === workTokenId,
       normalizeTokenScope: normalizeTestScope,
@@ -5036,7 +5194,7 @@ check("token response wrapper applies current WORK listing policy", async () => 
   );
   const v8ListingId = "7".repeat(64);
   const legacyListingId = "8".repeat(64);
-  let spendableSawLegacy = false;
+  let authoritySawLegacy = false;
   const tokenReadResponsePayload = isolatedFunction(
     API_PATH,
     "tokenReadResponsePayload",
@@ -5047,19 +5205,18 @@ check("token response wrapper applies current WORK listing policy", async () => 
         return error;
       },
       normalizeTokenScope: normalizeTestScope,
-      stableTipCoreTokenListingAuthorityComplete: (authority) =>
-        authority?.complete === true,
-      tokenPayloadWithCurrentWorkActiveListingPolicy: policy,
-      tokenPayloadWithSpendableActiveListings: async (payload) => {
-        spendableSawLegacy = (Array.isArray(payload?.listings)
+      completeWorkListingAuthorityForTokenRead: async (payload) => {
+        authoritySawLegacy = (Array.isArray(payload?.listings)
           ? payload.listings
           : []
         ).some((listing) => listing.listingId === legacyListingId);
-        return {
-          ...payload,
-          listingAuthority: { complete: true },
-        };
+        return { complete: true };
       },
+      tokenPayloadWithCompleteWorkListingAuthority: (payload, authority) =>
+        authority?.complete === true
+          ? { ...payload, listingAuthority: authority }
+          : null,
+      tokenPayloadWithCurrentWorkActiveListingPolicy: policy,
       withWorkMarketplaceV4Metadata: async (payload) => payload,
       WORK_TOKEN_ID: workTokenId,
     },
@@ -5093,7 +5250,7 @@ check("token response wrapper applies current WORK listing policy", async () => 
     { requireWorkListingAuthority: true },
   );
 
-  assert.equal(spendableSawLegacy, false);
+  assert.equal(authoritySawLegacy, false);
   assert.deepEqual(
     payload.listings.map((listing) => listing.listingId),
     [v8ListingId],
@@ -5115,6 +5272,7 @@ check("indexed WORK active listing recovery applies V8 policy before spendabilit
       WORK_AMO_V8_AUTH_VERSION: "pwt-sale-v8",
       WORK_TOKEN_ID: workTokenId,
       applyWorkMarketV2CutoverToTokenState: (state) => state,
+      canonicalWorkMarketV2TokenSummary: () => null,
       canonicalWorkQ16SummaryUnitPriceDescriptor: () => null,
       isWorkTokenId: (tokenId) => tokenId === workTokenId,
       normalizeTokenScope: normalizeTestScope,
@@ -5429,17 +5587,22 @@ check("marketplace WORK listing override cannot shrink an equal checkpoint book"
   );
 });
 
-check("WORK V2 stored summaries require the exact cutover marker", () => {
+check("WORK stored summaries require exact V2 and current V8 markers", () => {
   const canonicalSummary = isolatedFunction(
     API_PATH,
     "canonicalWorkMarketV2TokenSummary",
     {
+      WORK_AMO_V8_ACTIVATION_HEIGHT: 960_601,
+      WORK_AMO_V8_AUTH_VERSION: WORK_AMO_V8_AUTH_VERSION,
+      WORK_TOKEN_ID,
       WORK_MARKET_V2_ACTIVATION_HEIGHT: 959_062,
       WORK_MARKET_V2_DECLARATION_HEIGHT: 959_061,
       WORK_MARKET_V2_DECLARATION_TXID:
         "4c53252c6e9279726e1456f4d846274bfa33f778b633d32a68ed36906b38083f",
       proofIndexPayloadIndexedThroughBlock: (payload) =>
         Number(payload?.indexedThroughBlock),
+      isWorkTokenId,
+      tokenMarketRecordTokenId: (listing) => listing?.tokenId,
     },
   );
   const preactivation = { indexedThroughBlock: 959_061 };
@@ -5470,6 +5633,31 @@ check("WORK V2 stored summaries require the exact cutover marker", () => {
   assert.equal(
     canonicalSummary({ indexedThroughBlock: 959_062 }, "livenet"),
     null,
+  );
+  const currentV8 = {
+    ...exact,
+    indexedThroughBlock: 965_502,
+    listings: [{
+      listingId: "1".repeat(64),
+      saleAuthorization: { version: WORK_AMO_V8_AUTH_VERSION },
+      tokenId: WORK_TOKEN_ID,
+    }],
+    summaryOnly: true,
+  };
+  assert.equal(canonicalSummary(currentV8, "livenet"), currentV8);
+  assert.equal(
+    canonicalSummary(
+      {
+        ...currentV8,
+        listings: [{
+          ...currentV8.listings[0],
+          saleAuthorization: { version: "pwt-sale-v7" },
+        }],
+      },
+      "livenet",
+    ),
+    null,
+    "an exact V2 marker cannot revive a post-V8 legacy listing preview",
   );
 });
 
@@ -11895,21 +12083,32 @@ check("fresh public reads can use bounded canonical last-good summaries", async 
   );
 });
 
-check("fresh WORK token responses require stable Core listing authority", async () => {
+check("fresh WORK token responses bind the complete book to Core authority", async () => {
   const workTokenId = WORK_TOKEN_ID;
+  const checkpointHash = "a".repeat(64);
+  const checkpointHeight = 965_502;
+  const authorityListingIds = Array.from(
+    { length: 582 },
+    (_value, index) => (index + 1).toString(16).padStart(64, "0"),
+  );
+  const authorityInputListingIds = Array.from(
+    { length: 608 },
+    (_value, index) => (index + 1).toString(16).padStart(64, "0"),
+  );
   const authority = {
-    checkedListingCount: 3,
+    buyableCandidateCount: 568,
+    checkedListingCount: 608,
     checkedOutpointsSha256: "b".repeat(64),
     checkpoint: {
-      blockHash: "a".repeat(64),
-      height: 964_965,
+      blockHash: checkpointHash,
+      height: checkpointHeight,
     },
     includeMempool: true,
-    inputListingCount: 3,
+    inputListingCount: 608,
     model: "proof-token-market-core-gettxout-v1",
-    outputListingCount: 2,
-    spentListingCount: 1,
-    unspentListingCount: 2,
+    outputListingCount: 582,
+    spentListingCount: 26,
+    unspentListingCount: 582,
   };
   const stableTipCoreTokenListingAuthorityComplete = isolatedFunction(
     API_PATH,
@@ -11926,13 +12125,376 @@ check("fresh WORK token responses require stable Core listing authority", async 
   assert.equal(
     stableTipCoreTokenListingAuthorityComplete({
       ...authority,
-      spentListingCount: 2,
+      spentListingCount: 27,
     }),
     false,
   );
 
+  const authorityPayload = {
+    authorityCoreUnspentListingIds: authorityListingIds,
+    authorityInputListingIds,
+    authorityListingIds,
+    authorityTokenId: workTokenId,
+    indexedThroughBlock: checkpointHeight,
+    indexedThroughBlockHash: checkpointHash,
+    listingAuthority: authority,
+    listingProjection: {
+      activeListingCount: 582,
+      coreUnspentListingCount: 582,
+      excludedByProtocolCount: 0,
+      membershipSha256: "c".repeat(64),
+      model: "proof-token-market-cutover-after-core-v1",
+    },
+    network: "livenet",
+    source: "proof-indexer-complete-core-reconciled-token-listings",
+    totalCount: 582,
+  };
+  const summaryPayload = {
+    collectionHasMore: { listings: true },
+    indexedThroughBlock: checkpointHeight,
+    indexedThroughBlockHash: checkpointHash,
+    listings: authorityListingIds.slice(0, 550).map((listingId) => ({
+      confirmed: true,
+      listingId,
+      tokenId: workTokenId,
+    })),
+    network: "livenet",
+    stats: {
+      activeListings: 582,
+      confirmedOpenListings: 582,
+      openListings: 582,
+      pendingOpenListings: 0,
+    },
+    summaryOnly: true,
+    tokens: [{
+      confirmedOpenListings: 582,
+      lowestAskPricePerToken: "0.00000001",
+      lowestAskPricePerTokenExact: {
+        decimal: "0.00000001",
+        denominator: "100000000",
+        numerator: "1",
+      },
+      openListings: 582,
+      pendingOpenListings: 0,
+      tokenId: workTokenId,
+    }],
+    totalCounts: { listings: 582 },
+  };
+  const completeWorkListingAuthorityMatchesPayload = isolatedFunction(
+    API_PATH,
+    "completeWorkListingAuthorityMatchesPayload",
+    {
+      WORK_TOKEN_ID: workTokenId,
+      isWorkTokenId: (tokenId) => tokenId === workTokenId,
+      payloadIndexedThroughBlockHash: (payload) =>
+        String(payload?.indexedThroughBlockHash ?? ""),
+      proofIndexPayloadIndexedThroughBlock: (payload) =>
+        Number(payload?.indexedThroughBlock),
+      stableTipCoreTokenListingAuthorityComplete,
+      tokenSummaryNonNegativeInteger: (value) => {
+        const number = Number(value);
+        return Number.isSafeInteger(number) && number >= 0 ? number : null;
+      },
+    },
+  );
+  const tokenPayloadWithCompleteWorkListingAuthority = isolatedFunction(
+    API_PATH,
+    "tokenPayloadWithCompleteWorkListingAuthority",
+    {
+      completeWorkListingAuthorityMatchesPayload,
+      isWorkTokenId: (tokenId) => tokenId === workTokenId,
+      tokenMarketRecordTokenId: (listing) => listing?.tokenId,
+    },
+  );
+
+  assert.equal(
+    completeWorkListingAuthorityMatchesPayload(
+      authorityPayload,
+      summaryPayload,
+    ),
+    true,
+  );
+  assert.equal(
+    completeWorkListingAuthorityMatchesPayload(
+      authorityPayload,
+      { ...summaryPayload, listings: undefined },
+    ),
+    false,
+  );
+  assert.equal(
+    completeWorkListingAuthorityMatchesPayload(
+      authorityPayload,
+      {
+        ...summaryPayload,
+        listings: [
+          ...summaryPayload.listings,
+          ...summaryPayload.listings.slice(0, 33),
+        ],
+      },
+    ),
+    false,
+    "a visible preview cannot exceed its declared open count",
+  );
+  const underdeclaredConfirmedPayload = {
+    ...summaryPayload,
+    stats: {
+      ...summaryPayload.stats,
+      confirmedOpenListings: 549,
+      pendingOpenListings: 33,
+    },
+    tokens: [{
+      ...summaryPayload.tokens[0],
+      confirmedOpenListings: 549,
+      pendingOpenListings: 33,
+    }],
+  };
+  assert.equal(
+    completeWorkListingAuthorityMatchesPayload(
+      authorityPayload,
+      underdeclaredConfirmedPayload,
+    ),
+    false,
+    "visible confirmed rows cannot exceed the declared confirmed count",
+  );
+  const bound = tokenPayloadWithCompleteWorkListingAuthority(
+    summaryPayload,
+    authorityPayload,
+  );
+  assert.equal(bound.listings.length, 550);
+  assert.equal(bound.totalCounts.listings, 582);
+  assert.equal(bound.tokens[0].openListings, 582);
+  assert.equal(bound.tokens[0].confirmedOpenListings, 582);
+  assert.equal(bound.tokens[0].pendingOpenListings, 0);
+  assert.equal(bound.tokens[0].lowestAskPricePerToken, undefined);
+  assert.equal(bound.tokens[0].lowestAskPricePerTokenExact, undefined);
+  assert.equal(bound.stats.activeListings, 582);
+  assert.equal(bound.collectionHasMore.listings, true);
+  assert.equal(bound.listingAuthority.inputListingCount, 608);
+  assert.equal(bound.listingAuthority.outputListingCount, 582);
+
+  const sameCountMembershipSwapIds = [
+    ...authorityListingIds.slice(0, -1),
+    authorityInputListingIds[582],
+  ];
+  const sameCountMembershipSwapAuthority = {
+    ...authorityPayload,
+    authorityCoreUnspentListingIds: sameCountMembershipSwapIds,
+    authorityListingIds: sameCountMembershipSwapIds,
+    listingProjection: {
+      ...authorityPayload.listingProjection,
+      membershipSha256: "d".repeat(64),
+    },
+  };
+  const sameCountMembershipSwap = tokenPayloadWithCompleteWorkListingAuthority(
+    summaryPayload,
+    sameCountMembershipSwapAuthority,
+  );
+  assert.equal(sameCountMembershipSwap.listings.length, 550);
+  assert.equal(sameCountMembershipSwap.totalCounts.listings, 582);
+  assert.equal(
+    sameCountMembershipSwap.tokens[0].lowestAskPricePerToken,
+    undefined,
+  );
+  assert.equal(
+    sameCountMembershipSwap.tokens[0].lowestAskPricePerTokenExact,
+    undefined,
+    "a same-count authority membership swap must not retain an unbound ask",
+  );
+
+  const previewOnlyAuthority = {
+    ...authorityPayload,
+    authorityCoreUnspentListingIds: authorityListingIds.slice(0, 550),
+    authorityInputListingIds: authorityListingIds.slice(0, 550),
+    authorityListingIds: authorityListingIds.slice(0, 550),
+    listingAuthority: {
+      ...authority,
+      checkedListingCount: 550,
+      inputListingCount: 550,
+      outputListingCount: 550,
+      spentListingCount: 0,
+      unspentListingCount: 550,
+    },
+    listingProjection: {
+      ...authorityPayload.listingProjection,
+      activeListingCount: 550,
+      coreUnspentListingCount: 550,
+    },
+    totalCount: 550,
+  };
+  assert.equal(
+    completeWorkListingAuthorityMatchesPayload(
+      previewOnlyAuthority,
+      summaryPayload,
+    ),
+    false,
+    "a structurally complete proof of only the visible preview is insufficient",
+  );
+  assert.equal(
+    completeWorkListingAuthorityMatchesPayload(
+      {
+        ...authorityPayload,
+        indexedThroughBlockHash: "d".repeat(64),
+      },
+      summaryPayload,
+    ),
+    false,
+  );
+  assert.equal(
+    completeWorkListingAuthorityMatchesPayload(
+      {
+        ...authorityPayload,
+        listingProjection: {
+          ...authorityPayload.listingProjection,
+          excludedByProtocolCount: 1,
+        },
+      },
+      summaryPayload,
+    ),
+    false,
+  );
+  const protocolExcludedAuthorityPayload = {
+    ...authorityPayload,
+    authorityCoreUnspentListingIds: [
+      ...authorityListingIds,
+      authorityInputListingIds[582],
+    ],
+    listingAuthority: {
+      ...authority,
+      outputListingCount: 583,
+      spentListingCount: 25,
+      unspentListingCount: 583,
+    },
+    listingProjection: {
+      ...authorityPayload.listingProjection,
+      coreUnspentListingCount: 583,
+      excludedByProtocolCount: 1,
+    },
+  };
+  assert.equal(
+    tokenPayloadWithCompleteWorkListingAuthority(
+      {
+        ...summaryPayload,
+        listings: [
+          {
+            confirmed: true,
+            listingId: authorityInputListingIds[582],
+            tokenId: workTokenId,
+          },
+          ...summaryPayload.listings.slice(1),
+        ],
+      },
+      protocolExcludedAuthorityPayload,
+    ),
+    null,
+    "a Core-unspent row excluded by protocol policy must fail closed",
+  );
+  assert.equal(
+    tokenPayloadWithCompleteWorkListingAuthority(
+      {
+        ...summaryPayload,
+        listings: [
+          { confirmed: true, listingId: "f".repeat(64), tokenId: workTokenId },
+          ...summaryPayload.listings.slice(1),
+        ],
+      },
+      authorityPayload,
+    ),
+    null,
+    "a confirmed preview row absent from the complete input must fail closed",
+  );
+  const coreSpentPreview = tokenPayloadWithCompleteWorkListingAuthority(
+    {
+      ...summaryPayload,
+      listings: [
+        {
+          confirmed: true,
+          listingId: authorityInputListingIds[582],
+          tokenId: workTokenId,
+        },
+        ...summaryPayload.listings.slice(1),
+      ],
+    },
+    authorityPayload,
+  );
+  assert.equal(coreSpentPreview.listings.length, 549);
+  assert.equal(coreSpentPreview.tokens[0].lowestAskPricePerToken, undefined);
+  assert.equal(coreSpentPreview.tokens[0].lowestAskPricePerTokenExact, undefined);
+  assert.equal(
+    tokenPayloadWithCompleteWorkListingAuthority(
+      {
+        ...summaryPayload,
+        listings: [
+          summaryPayload.listings[0],
+          summaryPayload.listings[0],
+          ...summaryPayload.listings.slice(2),
+        ],
+      },
+      authorityPayload,
+    ),
+    null,
+    "duplicate visible listing identities must fail closed",
+  );
+  assert.equal(
+    tokenPayloadWithCompleteWorkListingAuthority(
+      {
+        ...summaryPayload,
+        stats: { ...summaryPayload.stats, pendingOpenListings: 1 },
+      },
+      authorityPayload,
+    ),
+    null,
+    "inconsistent pending components must fail closed",
+  );
+  assert.equal(
+    completeWorkListingAuthorityMatchesPayload(
+      authorityPayload,
+      { ...summaryPayload, network: "testnet" },
+    ),
+    false,
+    "both sides of the authority envelope must be livenet",
+  );
+
+  const mempoolActiveListingIds = authorityListingIds.slice(1);
+  const mempoolAuthorityPayload = {
+    ...authorityPayload,
+    authorityCoreUnspentListingIds: mempoolActiveListingIds,
+    authorityListingIds: mempoolActiveListingIds,
+    listingAuthority: {
+      ...authority,
+      outputListingCount: 581,
+      spentListingCount: 27,
+      unspentListingCount: 581,
+    },
+    listingProjection: {
+      ...authorityPayload.listingProjection,
+      activeListingCount: 581,
+      coreUnspentListingCount: 581,
+    },
+    totalCount: 581,
+  };
+  assert.equal(
+    completeWorkListingAuthorityMatchesPayload(
+      mempoolAuthorityPayload,
+      summaryPayload,
+    ),
+    true,
+    "a pending Core spend may reduce active authority below checkpoint counts",
+  );
+  const mempoolBound = tokenPayloadWithCompleteWorkListingAuthority(
+    summaryPayload,
+    mempoolAuthorityPayload,
+  );
+  assert.equal(mempoolBound.listings.length, 549);
+  assert.equal(mempoolBound.totalCounts.listings, 581);
+  assert.equal(mempoolBound.tokens[0].openListings, 581);
+  assert.equal(mempoolBound.tokens[0].confirmedOpenListings, 581);
+  assert.equal(mempoolBound.tokens[0].lowestAskPricePerToken, undefined);
+  assert.equal(mempoolBound.tokens[0].lowestAskPricePerTokenExact, undefined);
+  assert.equal(mempoolBound.stats.activeListings, 581);
+  assert.equal(mempoolBound.collectionHasMore.listings, true);
+
   let metadataReads = 0;
-  let spendableReads = 0;
+  let authorityReads = 0;
   const tokenReadResponsePayload = isolatedFunction(
     API_PATH,
     "tokenReadResponsePayload",
@@ -11946,12 +12508,12 @@ check("fresh WORK token responses require stable Core listing authority", async 
         String(value ?? "").trim().toUpperCase() === "WORK"
           ? workTokenId
           : String(value ?? "").trim().toLowerCase(),
-      stableTipCoreTokenListingAuthorityComplete,
-      tokenPayloadWithCurrentWorkActiveListingPolicy: (payload) => payload,
-      tokenPayloadWithSpendableActiveListings: async (payload) => {
-        spendableReads += 1;
-        return { ...payload, listingAuthority: authority };
+      completeWorkListingAuthorityForTokenRead: async () => {
+        authorityReads += 1;
+        return authorityPayload;
       },
+      tokenPayloadWithCompleteWorkListingAuthority,
+      tokenPayloadWithCurrentWorkActiveListingPolicy: (payload) => payload,
       withWorkMarketplaceV4Metadata: async (payload) => {
         metadataReads += 1;
         return { ...payload, workAmoV8: { checked: true } };
@@ -11959,32 +12521,25 @@ check("fresh WORK token responses require stable Core listing authority", async 
     },
   );
   const freshPayload = await tokenReadResponsePayload(
-    { listings: [{ listingId: "1".repeat(64) }] },
+    summaryPayload,
     "livenet",
     "WORK",
     { requireWorkListingAuthority: true },
   );
-  assert.equal(freshPayload.listingAuthority, authority);
+  assert.equal(freshPayload.listingAuthority.inputListingCount, 608);
+  assert.equal(freshPayload.totalCounts.listings, 582);
   assert.equal(freshPayload.workAmoV8.checked, true);
   assert.equal(metadataReads, 1);
-  assert.equal(spendableReads, 1);
-
-  await tokenReadResponsePayload(
-    { listingAuthority: authority, listings: [] },
-    "livenet",
-    "WORK",
-    { requireWorkListingAuthority: true },
-  );
-  assert.equal(spendableReads, 1);
+  assert.equal(authorityReads, 1);
 
   const nonFreshPayload = await tokenReadResponsePayload(
-    { listings: [] },
+    summaryPayload,
     "livenet",
     "WORK",
     { requireWorkListingAuthority: false },
   );
   assert.equal(nonFreshPayload.listingAuthority, undefined);
-  assert.equal(spendableReads, 1);
+  assert.equal(authorityReads, 1);
 
   const failingTokenReadResponsePayload = isolatedFunction(
     API_PATH,
@@ -11999,15 +12554,16 @@ check("fresh WORK token responses require stable Core listing authority", async 
         String(value ?? "").trim().toUpperCase() === "WORK"
           ? workTokenId
           : String(value ?? "").trim().toLowerCase(),
-      stableTipCoreTokenListingAuthorityComplete,
+      completeWorkListingAuthorityForTokenRead: async () =>
+        previewOnlyAuthority,
+      tokenPayloadWithCompleteWorkListingAuthority,
       tokenPayloadWithCurrentWorkActiveListingPolicy: (payload) => payload,
-      tokenPayloadWithSpendableActiveListings: async (payload) => payload,
       withWorkMarketplaceV4Metadata: async (payload) => payload,
     },
   );
   await assert.rejects(
     failingTokenReadResponsePayload(
-      { listings: [{ listingId: "2".repeat(64) }] },
+      summaryPayload,
       "livenet",
       "WORK",
       { requireWorkListingAuthority: true },
@@ -12020,6 +12576,149 @@ check("fresh WORK token responses require stable Core listing authority", async 
         "CANONICAL_WORK_LISTING_AUTHORITY_UNAVAILABLE" &&
       error?.details?.requiredSource === "proof-token-market-core-gettxout-v1",
   );
+
+  const unavailableTokenReadResponsePayload = isolatedFunction(
+    API_PATH,
+    "tokenReadResponsePayload",
+    {
+      WORK_TOKEN_ID: workTokenId,
+      completeWorkListingAuthorityForTokenRead: async () => {
+        throw new Error("relational authority unavailable");
+      },
+      errorSummary: (error) => String(error?.message ?? error),
+      freshDataUnavailableError: (message) => Object.assign(
+        new Error(message),
+        { statusCode: 503 },
+      ),
+      normalizeTokenScope: (value) =>
+        String(value ?? "").trim().toUpperCase() === "WORK"
+          ? workTokenId
+          : String(value ?? "").trim().toLowerCase(),
+      tokenPayloadWithCompleteWorkListingAuthority,
+      tokenPayloadWithCurrentWorkActiveListingPolicy: (payload) => payload,
+      withWorkMarketplaceV4Metadata: async (payload) => payload,
+    },
+  );
+  await assert.rejects(
+    unavailableTokenReadResponsePayload(
+      summaryPayload,
+      "livenet",
+      "WORK",
+      { requireWorkListingAuthority: true },
+    ),
+    (error) =>
+      error?.statusCode === 503 &&
+      error?.details?.code ===
+        "CANONICAL_WORK_LISTING_AUTHORITY_UNAVAILABLE",
+    "producer failures normalize to the fresh WORK authority contract",
+  );
+});
+
+check("complete WORK listing authority uses a bounded positive exact-checkpoint cache", async () => {
+  const checkpointHash = "a".repeat(64);
+  const payload = {
+    indexedThroughBlock: 965_502,
+    indexedThroughBlockHash: checkpointHash,
+  };
+  const expected = { complete: true };
+  const cache = new Map();
+  const refreshes = new Map();
+  let calls = 0;
+  const completeWorkListingAuthorityForTokenRead = isolatedFunction(
+    API_PATH,
+    "completeWorkListingAuthorityForTokenRead",
+    {
+      WORK_LISTING_AUTHORITY_CACHE: cache,
+      WORK_LISTING_AUTHORITY_CACHE_MAX_ENTRIES: 2,
+      WORK_LISTING_AUTHORITY_CACHE_TTL_MS: 15_000,
+      WORK_LISTING_AUTHORITY_REFRESHES: refreshes,
+      WORK_TOKEN_ID,
+      completeWorkListingAuthorityMatchesPayload: () => true,
+      completeTokenListingHistoryPayload: async () => {
+        calls += 1;
+        await Promise.resolve();
+        return expected;
+      },
+      payloadIndexedThroughBlockHash: (value) =>
+        String(value?.indexedThroughBlockHash ?? ""),
+      proofIndexPayloadIndexedThroughBlock: (value) =>
+        Number(value?.indexedThroughBlock),
+    },
+  );
+
+  const first = completeWorkListingAuthorityForTokenRead(payload, "livenet");
+  const second = completeWorkListingAuthorityForTokenRead(payload, "livenet");
+  assert.equal(calls, 1);
+  assert.equal(refreshes.size, 1);
+  assert.deepEqual(await Promise.all([first, second]), [expected, expected]);
+  assert.equal(refreshes.size, 0);
+  assert.equal(cache.size, 1);
+
+  assert.equal(
+    await completeWorkListingAuthorityForTokenRead(payload, "livenet"),
+    expected,
+  );
+  assert.equal(calls, 1, "a short exact-checkpoint positive may be reused");
+  const onlyCacheKey = cache.keys().next().value;
+  cache.set(onlyCacheKey, { ...cache.get(onlyCacheKey), expiresAt: 0 });
+  await completeWorkListingAuthorityForTokenRead(payload, "livenet");
+  assert.equal(calls, 2, "an expired authority must be recomputed");
+  for (const [index, hashDigit] of ["b", "c"].entries()) {
+    await completeWorkListingAuthorityForTokenRead(
+      {
+        indexedThroughBlock: payload.indexedThroughBlock + index + 1,
+        indexedThroughBlockHash: hashDigit.repeat(64),
+      },
+      "livenet",
+    );
+  }
+  assert.equal(calls, 4);
+  assert.equal(cache.size, 2, "old checkpoint authorities must be evicted");
+  assert.equal(refreshes.size, 0);
+  assert.equal(
+    await completeWorkListingAuthorityForTokenRead(payload, "testnet"),
+    null,
+  );
+  assert.equal(calls, 4);
+});
+
+check("failed complete WORK authority refreshes are never cached", async () => {
+  const cache = new Map();
+  const refreshes = new Map();
+  let calls = 0;
+  const helper = isolatedFunction(
+    API_PATH,
+    "completeWorkListingAuthorityForTokenRead",
+    {
+      WORK_LISTING_AUTHORITY_CACHE: cache,
+      WORK_LISTING_AUTHORITY_CACHE_MAX_ENTRIES: 2,
+      WORK_LISTING_AUTHORITY_CACHE_TTL_MS: 15_000,
+      WORK_LISTING_AUTHORITY_REFRESHES: refreshes,
+      WORK_TOKEN_ID,
+      completeTokenListingHistoryPayload: async () => {
+        calls += 1;
+        if (calls === 1) {
+          throw new Error("temporary authority outage");
+        }
+        return { complete: true };
+      },
+      completeWorkListingAuthorityMatchesPayload: () => true,
+      payloadIndexedThroughBlockHash: (value) =>
+        String(value?.indexedThroughBlockHash ?? ""),
+      proofIndexPayloadIndexedThroughBlock: (value) =>
+        Number(value?.indexedThroughBlock),
+    },
+  );
+  const payload = {
+    indexedThroughBlock: 965_502,
+    indexedThroughBlockHash: "a".repeat(64),
+  };
+  await assert.rejects(() => helper(payload, "livenet"));
+  assert.equal(cache.size, 0);
+  assert.equal(refreshes.size, 0);
+  assert.deepEqual(await helper(payload, "livenet"), { complete: true });
+  assert.equal(calls, 2);
+  assert.equal(cache.size, 1);
 });
 
 check("wallet WORK overlay recovers active canonical V8 listings and drops matching invalid attempts", async () => {
@@ -35240,6 +35939,252 @@ check("legacy pwid1:r registrations retain plain IDs and projection fields", () 
   assert.equal(registration.receiveAddress, "1receiver");
 });
 
+check("canonical PWID list5 preparation consumes its raw carrier exactly once", async () => {
+  const txid =
+    "0d966b98ae7672e7812db99ad41ecba5e97697b8f70f814da73f267492b7a649";
+  const blockHash =
+    "000000000000000000008e3b6884d6b2e297d5934891279f92bcf117851f7c07";
+  const previousBlockHash =
+    "0000000000000000000128ed24c620f4e045cf3817a9271bb3cd78af95391b0b";
+  const blockHeight = 965_474;
+  const blockIndex = 3_819;
+  const protocolVout = 1;
+  const authorization = {
+    anchorScriptPubKey:
+      "76a914e1f1cafe0bf7ff9f827a93d6f0d352e85056591f88ac",
+    anchorSigHashType: 131,
+    anchorType: "sale-ticket-v1",
+    anchorValueSats: 546,
+    anchorVout: 2,
+    id: "luuk",
+    nonce: "mtmvq2ht-dqmo3mqwzx",
+    priceSats: 1_000,
+    sellerAddress: "1MbghEKwNH88jqYynJVtEDYHU8d5iy7PzM",
+    sellerPublicKey:
+      "030508b0483253657d9ab48ec2828c54f4400393131209fc05ca181357088c4ac0",
+    signature: "",
+    version: "pwid-sale-v4",
+  };
+  const encodedAuthorization = Buffer.from(
+    JSON.stringify(authorization),
+    "utf8",
+  ).toString("base64url");
+  const message = {
+    prefix: "pwid1:",
+    text: `pwid1:list5:${encodedAuthorization}`,
+    voutIndex: protocolVout,
+  };
+  const protocolItemsFromTx = isolatedFunction(
+    BACKFILL_PATH,
+    "protocolItemsFromTx",
+    {
+      baseProtocolItem: (_tx, _message, kind) => ({
+        blockHash,
+        blockHeight,
+        blockIndex,
+        confirmed: true,
+        kind,
+        protocol: "pwid1",
+        protocolVout,
+        recordOrdinal: 0,
+        txid,
+      }),
+      decodeBase64UrlText: (value) =>
+        Buffer.from(String(value), "base64url").toString("utf8"),
+      normalizedPowId: (value) =>
+        String(value ?? "").trim().toLowerCase(),
+    },
+  );
+  const [rawItem] = protocolItemsFromTx({ txid }, message);
+  assert.equal(rawItem.kind, "id-list");
+  assert.equal(
+    rawItem.listingId,
+    txid,
+    "A list5 carrier is the listing; its authorization payload is not a listing ID.",
+  );
+
+  const canonicalItem = {
+    ...rawItem,
+    id: authorization.id,
+    listingId: txid,
+    saleAuthorization: authorization,
+    sellerAddress: authorization.sellerAddress,
+    valid: true,
+  };
+  const rawMatchesCanonical = isolatedFunction(
+    BACKFILL_PATH,
+    "rawProtocolItemMatchesCanonical",
+    {
+      INCB_TOKEN_ID: "f".repeat(64),
+      canonicalBondMintProjectionStructure: () => false,
+      isWorkTokenId: () => false,
+      workAmoV6RawPlaceholderMatchesCanonical: () => null,
+      workAmountAtomsFromRecord: () => {
+        throw new Error("Not a WORK item");
+      },
+    },
+  );
+  assert.equal(
+    rawMatchesCanonical(rawItem, canonicalItem, "id-list"),
+    true,
+  );
+
+  const canonicalRecoveryItemsForTx = isolatedFunction(
+    BACKFILL_PATH,
+    "canonicalRecoveryItemsForTx",
+    {
+      NETWORK: "livenet",
+      PENDING_LEGACY_VERIFIER_TIMEOUT_MS: 30_000,
+      PENDING_VERIFIER_TIMEOUT_MS: 5_000,
+      canonicalKindForSourceLabel: isolatedFunction(
+        BACKFILL_PATH,
+        "canonicalKindForSourceLabel",
+      ),
+      canonicalRecoveryItemMatchesTxid: isolatedFunction(
+        BACKFILL_PATH,
+        "canonicalRecoveryItemMatchesTxid",
+      ),
+      disambiguateDuplicateProtocolItems: isolatedFunction(
+        BACKFILL_PATH,
+        "disambiguateDuplicateProtocolItems",
+      ),
+      endpoint: () => "http://127.0.0.1/internal/id-verifier",
+      invalidProtocolItem: isolatedFunction(
+        BACKFILL_PATH,
+        "invalidProtocolItem",
+      ),
+      rawProtocolItemMatchesCanonical: rawMatchesCanonical,
+      rawProtocolItemsForTx: () => [structuredClone(rawItem)],
+      readJson: async () => ({
+        blockHash,
+        indexedThroughBlock: blockHeight,
+        items: [structuredClone(canonicalItem)],
+        network: "livenet",
+        previousBlockHash,
+        source: "canonical-block-scan-db-core-id-verifier",
+        txid,
+      }),
+      recoveryEndpointSpecs: () => [{
+        label: "id-verifier",
+        params: { txid },
+        path: "/api/v1/internal/id-verifier",
+      }],
+      reservedBondCreditViolationReason: () => "",
+      sourceLabelForProtocolItem: isolatedFunction(
+        BACKFILL_PATH,
+        "sourceLabelForProtocolItem",
+      ),
+      tokenProtocolIntegrityInvalidItem: (item) => item,
+    },
+  );
+  const recovered = await canonicalRecoveryItemsForTx(
+    {
+      _powBlockHash: blockHash,
+      _powBlockIndex: blockIndex,
+      _powPreviousBlockHash: previousBlockHash,
+      height: blockHeight,
+      txid,
+    },
+    [message],
+  );
+  assert.equal(recovered.length, 1);
+  assert.equal(recovered[0].item.kind, "id-list");
+  assert.equal(recovered[0].item.listingId, txid);
+  assert.equal(
+    recovered.some(({ item }) => item.kind.endsWith("-invalid")),
+    false,
+    "The consumed raw list5 carrier must not reappear as a duplicate invalid sibling.",
+  );
+
+  const position = {
+    blockHash,
+    blockHeight,
+    blockTransactionIndex: blockIndex,
+    protocolVout,
+    recordOrdinal: 0,
+  };
+  const replayPositionKey = (value) => {
+    const source = value?.position ?? value ?? {};
+    const normalized = {
+      blockHash: String(source.blockHash ?? ""),
+      blockHeight: Number(source.blockHeight),
+      blockTransactionIndex: Number(
+        source.blockTransactionIndex ?? source.blockIndex,
+      ),
+      protocolVout: Number(source.protocolVout),
+      recordOrdinal: Number(source.recordOrdinal),
+    };
+    return {
+      key: [
+        normalized.blockHeight,
+        normalized.blockTransactionIndex,
+        normalized.protocolVout,
+        normalized.recordOrdinal,
+      ].join(":"),
+      position: normalized,
+    };
+  };
+  const bind = isolatedFunction(
+    BACKFILL_PATH,
+    "bindPreparedTransactionsToWorkAmoV5Replay",
+    {
+      WORK_AMO_V6_AUTH_VERSION: "pwt-sale-v6",
+      WORK_AMO_V8_AUTH_VERSION: "pwt-sale-v8",
+      canonicalProtocolItemForPostgres: (item) => item,
+      invalidProtocolItem: isolatedFunction(
+        BACKFILL_PATH,
+        "invalidProtocolItem",
+      ),
+      isHexTxid: (value) => /^[0-9a-f]{64}$/u.test(value),
+      normalizedLowerText: (value) =>
+        String(value ?? "").trim().toLowerCase(),
+      objectValue,
+      sourceLabelForProtocolItem: isolatedFunction(
+        BACKFILL_PATH,
+        "sourceLabelForProtocolItem",
+      ),
+      workAmoFrozenTermsFromItem: () => null,
+      workAmoV5ConsensusEventKind,
+      workAmoV5PwidRegistryAttribution: () => null,
+      workAmoV5ReplayFrozenTerms: () => null,
+      workAmoV5ReplayPositionKey: replayPositionKey,
+      workAmoV5ReplayProjectionFromOutput: (output) =>
+        output?.projection ?? {},
+      workAmoV6ReplayListingMaterialization: () => null,
+    },
+  );
+  const [bound] = bind(
+    [{ items: recovered, txid }],
+    {
+      replayRecords: [{
+        outcome: {
+          kind: workAmoV5ConsensusEventKind("pwid1", true),
+          reasonCode: "",
+          valid: true,
+        },
+        output: {
+          projection: {
+            ...canonicalItem,
+            kind: "id-list",
+            position,
+            protocol: "pwid1",
+            txid,
+            valid: true,
+          },
+        },
+        position,
+        protocol: "pwid1",
+        rawCandidate: true,
+        rawWitness: { fixture: "block-965474-pwid-list5" },
+        txid,
+      }],
+    },
+  );
+  assert.equal(bound.items.length, 1);
+  assert.equal(bound.items[0].item._workAmoV5ReplayBound, true);
+  assert.equal(bound.items[0].item.listingId, txid);
+});
+
 check("canonical PWM aggregation classifies reply, file, and bond once", () => {
   const bytes = Buffer.from("x");
   const sha256 = createHash("sha256").update(bytes).digest("hex");
@@ -53304,6 +54249,31 @@ check("token listing history rejects previews and fences relational and Core evi
   assert.equal(first.totalCount, 2);
   assert.equal(first.items.length, 1);
   assert.equal(first.hasMore, true);
+  assert.equal(first.authorityInputListingIds, undefined);
+  assert.equal(first.authorityCoreUnspentListingIds, undefined);
+  assert.equal(first.authorityListingIds, undefined);
+  assert.equal(first.authorityTokenId, undefined);
+  const internalAuthority = await completeTokenListingHistoryPayload(
+    "livenet",
+    WORK_TOKEN_ID,
+    new URLSearchParams({ limit: "1", q: listings[0].listingId }),
+    { includeAuthorityListingIds: true },
+  );
+  assert.equal(internalAuthority.totalCount, 1);
+  assert.equal(internalAuthority.authorityTokenId, WORK_TOKEN_ID);
+  assert.deepEqual(
+    [...internalAuthority.authorityInputListingIds],
+    lifecycleListings.map((listing) => listing.listingId),
+  );
+  assert.deepEqual(
+    [...internalAuthority.authorityCoreUnspentListingIds],
+    [legacyRefundListing.listingId, listings[0].listingId, listings[2].listingId],
+  );
+  assert.deepEqual(
+    [...internalAuthority.authorityListingIds],
+    [listings[0].listingId, listings[2].listingId],
+    "private membership covers the complete unfiltered protocol-active book",
+  );
   const second = await completeTokenListingHistoryPayload(
     "livenet", "work",
     new URLSearchParams({ cursor: first.nextCursor, limit: "1" }),
