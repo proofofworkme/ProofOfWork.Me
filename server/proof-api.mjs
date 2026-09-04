@@ -662,6 +662,15 @@ const TOKEN_MARKET_OUTSPEND_CACHE_TTL_MS = Number(
 const TOKEN_MARKET_UNSPENT_OUTSPEND_CACHE_TTL_MS = Number(
   process.env.TOKEN_MARKET_UNSPENT_OUTSPEND_CACHE_TTL_MS ?? 30_000,
 );
+const WORK_LISTING_AUTHORITY_CACHE_TTL_MS = Math.max(
+  1_000,
+  Math.min(
+    15_000,
+    Number(process.env.WORK_LISTING_AUTHORITY_CACHE_TTL_MS ?? 15_000) ||
+      15_000,
+  ),
+);
+const WORK_LISTING_AUTHORITY_CACHE_MAX_ENTRIES = 2;
 const TOKEN_MARKET_OUTSPEND_CACHE_STALE_MS = Number(
   process.env.TOKEN_MARKET_OUTSPEND_CACHE_STALE_MS ?? HEAVY_READ_STALE_MS,
 );
@@ -1449,6 +1458,8 @@ const WORK_TOKEN_EXPLICIT_CLOSE_RECOVERY_CACHE = new Map();
 const WORK_TOKEN_SEAL_RECOVERY_CACHE = new Map();
 const TOKEN_MARKET_OUTSPEND_CACHE = new Map();
 const WORK_MARKET_V2_ORACLE_CACHE = new Map();
+const WORK_LISTING_AUTHORITY_CACHE = new Map();
+const WORK_LISTING_AUTHORITY_REFRESHES = new Map();
 const BROADCAST_CLIENT_ATTEMPTS = new Map();
 let broadcastActiveRequests = 0;
 let broadcastGlobalAttempts = [];
@@ -10715,6 +10726,397 @@ function stableTipCoreTokenListingAuthorityComplete(authority) {
   );
 }
 
+function completeWorkListingAuthorityMatchesPayload(authorityPayload, payload) {
+  if (
+    !authorityPayload ||
+    typeof authorityPayload !== "object" ||
+    Array.isArray(authorityPayload) ||
+    !payload ||
+    typeof payload !== "object" ||
+    Array.isArray(payload)
+  ) {
+    return false;
+  }
+  const payloadHeight = proofIndexPayloadIndexedThroughBlock(payload);
+  const payloadHash = payloadIndexedThroughBlockHash(payload);
+  const authorityHeight = Number(authorityPayload.indexedThroughBlock);
+  const authorityHash = String(
+    authorityPayload.indexedThroughBlockHash ?? "",
+  )
+    .trim()
+    .toLowerCase();
+  const evidence = authorityPayload.listingAuthority;
+  const projection = authorityPayload.listingProjection;
+  const activeListingCount = Number(projection?.activeListingCount);
+  const coreUnspentListingCount = Number(
+    projection?.coreUnspentListingCount,
+  );
+  const excludedByProtocolCount = Number(
+    projection?.excludedByProtocolCount,
+  );
+  const projectionMembershipSha256 = String(
+    projection?.membershipSha256 ?? "",
+  )
+    .trim()
+    .toLowerCase();
+  const totalCount = Number(authorityPayload.totalCount);
+  const payloadTokens = Array.isArray(payload?.tokens) ? payload.tokens : [];
+  const workTokens = payloadTokens.filter((token) =>
+    isWorkTokenId(token?.tokenId),
+  );
+  const visibleListings = Array.isArray(payload?.listings)
+    ? payload.listings
+    : [];
+  const tokenConfirmedOpenListings = tokenSummaryNonNegativeInteger(
+    workTokens[0]?.confirmedOpenListings,
+  );
+  const tokenPendingOpenListings = tokenSummaryNonNegativeInteger(
+    workTokens[0]?.pendingOpenListings,
+  );
+  const tokenOpenListings = tokenSummaryNonNegativeInteger(
+    workTokens[0]?.openListings,
+  );
+  const statsActiveListings = tokenSummaryNonNegativeInteger(
+    payload?.stats?.activeListings,
+  );
+  const statsConfirmedOpenListings = tokenSummaryNonNegativeInteger(
+    payload?.stats?.confirmedOpenListings,
+  );
+  const statsOpenListings = tokenSummaryNonNegativeInteger(
+    payload?.stats?.openListings,
+  );
+  const statsPendingOpenListings = tokenSummaryNonNegativeInteger(
+    payload?.stats?.pendingOpenListings,
+  );
+  const hasStatsListings = Object.prototype.hasOwnProperty.call(
+    payload?.stats ?? {},
+    "listings",
+  );
+  const statsListings = hasStatsListings
+    ? tokenSummaryNonNegativeInteger(payload.stats.listings)
+    : null;
+  const declaredTotalCount = tokenSummaryNonNegativeInteger(
+    payload?.totalCounts?.listings,
+  );
+  const declaredCountsComplete = [
+    tokenConfirmedOpenListings,
+    tokenPendingOpenListings,
+    tokenOpenListings,
+    statsActiveListings,
+    statsConfirmedOpenListings,
+    statsOpenListings,
+    statsPendingOpenListings,
+    declaredTotalCount,
+  ].every((count) => count !== null);
+  const declaredCountsConsistent =
+    declaredCountsComplete &&
+    tokenOpenListings ===
+      tokenConfirmedOpenListings + tokenPendingOpenListings &&
+    statsActiveListings === tokenOpenListings &&
+    statsConfirmedOpenListings === tokenConfirmedOpenListings &&
+    statsOpenListings === tokenOpenListings &&
+    statsPendingOpenListings === tokenPendingOpenListings &&
+    declaredTotalCount === tokenOpenListings &&
+    (!hasStatsListings || statsListings === tokenOpenListings) &&
+    typeof payload?.collectionHasMore?.listings === "boolean" &&
+    payload.collectionHasMore.listings ===
+      (tokenOpenListings > visibleListings.length);
+  const authorityListingIds = Array.isArray(
+    authorityPayload.authorityListingIds,
+  )
+    ? authorityPayload.authorityListingIds
+    : null;
+  const authorityInputListingIds = Array.isArray(
+    authorityPayload.authorityInputListingIds,
+  )
+    ? authorityPayload.authorityInputListingIds
+    : null;
+  const authorityCoreUnspentListingIds = Array.isArray(
+    authorityPayload.authorityCoreUnspentListingIds,
+  )
+    ? authorityPayload.authorityCoreUnspentListingIds
+    : null;
+  const uniqueAuthorityListingIds = authorityListingIds
+    ? new Set(authorityListingIds)
+    : null;
+  const uniqueAuthorityInputListingIds = authorityInputListingIds
+    ? new Set(authorityInputListingIds)
+    : null;
+  const uniqueAuthorityCoreUnspentListingIds =
+    authorityCoreUnspentListingIds
+      ? new Set(authorityCoreUnspentListingIds)
+      : null;
+  const confirmedVisibleListingCount = visibleListings.filter(
+    (listing) => listing?.confirmed === true,
+  ).length;
+  const pendingVisibleListingCount =
+    visibleListings.length - confirmedVisibleListingCount;
+  const validListingIds = (listingIds) =>
+    listingIds !== null &&
+    listingIds.every((listingId) =>
+      /^[0-9a-f]{64}$/u.test(String(listingId ?? "")),
+    );
+  const evidenceHeight = Number(evidence?.checkpoint?.height);
+  const evidenceHash = String(evidence?.checkpoint?.blockHash ?? "")
+    .trim()
+    .toLowerCase();
+  return (
+    Number.isSafeInteger(payloadHeight) &&
+    payloadHeight > 0 &&
+    /^[0-9a-f]{64}$/u.test(payloadHash) &&
+    authorityHeight === payloadHeight &&
+    authorityHash === payloadHash &&
+    evidenceHeight === payloadHeight &&
+    evidenceHash === payloadHash &&
+    payload.network === "livenet" &&
+    authorityPayload.network === "livenet" &&
+    authorityPayload.authorityTokenId === WORK_TOKEN_ID &&
+    authorityPayload.source ===
+      "proof-indexer-complete-core-reconciled-token-listings" &&
+    payloadTokens.length === 1 &&
+    workTokens.length === 1 &&
+    Array.isArray(payload.listings) &&
+    declaredCountsConsistent &&
+    visibleListings.length <= tokenOpenListings &&
+    confirmedVisibleListingCount <= tokenConfirmedOpenListings &&
+    pendingVisibleListingCount <= tokenPendingOpenListings &&
+    stableTipCoreTokenListingAuthorityComplete(evidence) &&
+    projection?.model === "proof-token-market-cutover-after-core-v1" &&
+    /^[0-9a-f]{64}$/u.test(projectionMembershipSha256) &&
+    Number.isSafeInteger(activeListingCount) &&
+    activeListingCount >= 0 &&
+    Number(evidence.inputListingCount) >= tokenConfirmedOpenListings &&
+    Number.isSafeInteger(coreUnspentListingCount) &&
+    coreUnspentListingCount >= activeListingCount &&
+    Number.isSafeInteger(excludedByProtocolCount) &&
+    excludedByProtocolCount ===
+      coreUnspentListingCount - activeListingCount &&
+    Number(evidence.outputListingCount) === coreUnspentListingCount &&
+    Number(evidence.unspentListingCount) === coreUnspentListingCount &&
+    totalCount === activeListingCount &&
+    validListingIds(authorityInputListingIds) &&
+    authorityInputListingIds.length === Number(evidence.inputListingCount) &&
+    uniqueAuthorityInputListingIds.size ===
+      Number(evidence.inputListingCount) &&
+    validListingIds(authorityCoreUnspentListingIds) &&
+    authorityCoreUnspentListingIds.length === coreUnspentListingCount &&
+    uniqueAuthorityCoreUnspentListingIds.size === coreUnspentListingCount &&
+    authorityCoreUnspentListingIds.every((listingId) =>
+      uniqueAuthorityInputListingIds.has(listingId),
+    ) &&
+    validListingIds(authorityListingIds) &&
+    authorityListingIds.length === activeListingCount &&
+    uniqueAuthorityListingIds.size === activeListingCount &&
+    authorityListingIds.every((listingId) =>
+      uniqueAuthorityCoreUnspentListingIds.has(listingId),
+    )
+  );
+}
+
+function tokenPayloadWithCompleteWorkListingAuthority(
+  payload,
+  authorityPayload,
+) {
+  if (!completeWorkListingAuthorityMatchesPayload(authorityPayload, payload)) {
+    return null;
+  }
+  const workTokens = (Array.isArray(payload?.tokens) ? payload.tokens : [])
+    .filter((token) => isWorkTokenId(token?.tokenId));
+  if (workTokens.length !== 1) {
+    return null;
+  }
+  const visibleListings = Array.isArray(payload?.listings)
+    ? payload.listings
+    : [];
+  const authorityInputListingIds = new Set(
+    authorityPayload.authorityInputListingIds,
+  );
+  const authorityCoreUnspentListingIds = new Set(
+    authorityPayload.authorityCoreUnspentListingIds,
+  );
+  const authorityListingIds = new Set(authorityPayload.authorityListingIds);
+  const confirmedVisibleListings = visibleListings.filter(
+    (listing) => listing?.confirmed === true,
+  );
+  const confirmedVisibleListingIds = confirmedVisibleListings.map((listing) =>
+    String(listing?.listingId ?? listing?.txid ?? "")
+      .trim()
+      .toLowerCase(),
+  );
+  if (
+    visibleListings.some(
+      (listing) => !isWorkTokenId(tokenMarketRecordTokenId(listing)),
+    ) ||
+    confirmedVisibleListingIds.some(
+      (listingId) => !/^[0-9a-f]{64}$/u.test(listingId),
+    ) ||
+    new Set(confirmedVisibleListingIds).size !==
+      confirmedVisibleListingIds.length
+  ) {
+    return null;
+  }
+  const authoritativeVisibleListings = [];
+  for (const listing of visibleListings) {
+    if (listing?.confirmed !== true) {
+      authoritativeVisibleListings.push(listing);
+      continue;
+    }
+    const listingId = String(listing?.listingId ?? listing?.txid ?? "")
+      .trim()
+      .toLowerCase();
+    if (authorityListingIds.has(listingId)) {
+      authoritativeVisibleListings.push(listing);
+      continue;
+    }
+    if (
+      authorityInputListingIds.has(listingId) &&
+      !authorityCoreUnspentListingIds.has(listingId)
+    ) {
+      continue;
+    }
+    return null;
+  }
+
+  const explicitCount = (value) => {
+    const count = Number(value);
+    return Number.isSafeInteger(count) && count >= 0 ? count : null;
+  };
+  const pendingCounts = [
+    workTokens[0]?.pendingOpenListings,
+    payload?.stats?.pendingOpenListings,
+  ]
+    .map(explicitCount)
+    .filter((count) => count !== null);
+  const visiblePendingListings = authoritativeVisibleListings.filter(
+    (listing) => listing?.confirmed !== true,
+  ).length;
+  if (
+    pendingCounts.some((count) => count !== pendingCounts[0]) ||
+    (pendingCounts[0] ?? 0) < visiblePendingListings
+  ) {
+    return null;
+  }
+  const pendingOpenListings = pendingCounts[0] ?? 0;
+  const confirmedOpenListings = Number(
+    authorityPayload.listingProjection.activeListingCount,
+  );
+  const openListings = confirmedOpenListings + pendingOpenListings;
+  const tokens = payload.tokens.map((token) => {
+    if (!isWorkTokenId(token?.tokenId)) {
+      return token;
+    }
+    const next = {
+      ...token,
+      confirmedOpenListings,
+      openListings,
+      pendingOpenListings,
+    };
+    delete next.lowestAskPricePerToken;
+    delete next.lowestAskPricePerTokenExact;
+    return next;
+  });
+  const collectionHasMore = {
+    ...(payload?.collectionHasMore ?? {}),
+    listings: openListings > authoritativeVisibleListings.length,
+  };
+  const stats = {
+    ...(payload?.stats ?? {}),
+    activeListings: openListings,
+    confirmedOpenListings,
+    openListings,
+    pendingOpenListings,
+  };
+  if (Object.prototype.hasOwnProperty.call(stats, "listings")) {
+    stats.listings = openListings;
+  }
+
+  return {
+    ...payload,
+    collectionHasMore,
+    hasMore: Object.values(collectionHasMore).some(Boolean),
+    listingAuthority: authorityPayload.listingAuthority,
+    listingProjection: authorityPayload.listingProjection,
+    listings: authoritativeVisibleListings,
+    stats,
+    totalCounts: {
+      ...(payload?.totalCounts ?? {}),
+      listings: openListings,
+    },
+    tokens,
+  };
+}
+
+async function completeWorkListingAuthorityForTokenRead(payload, network) {
+  const indexedThroughBlock = proofIndexPayloadIndexedThroughBlock(payload);
+  const indexedThroughBlockHash = payloadIndexedThroughBlockHash(payload);
+  if (
+    network !== "livenet" ||
+    !Number.isSafeInteger(indexedThroughBlock) ||
+    indexedThroughBlock < 1 ||
+    !/^[0-9a-f]{64}$/u.test(indexedThroughBlockHash)
+  ) {
+    return null;
+  }
+  const cacheKey = [
+    "work-listing-authority",
+    network,
+    indexedThroughBlock,
+    indexedThroughBlockHash,
+  ].join(":");
+  const now = Date.now();
+  const cached = WORK_LISTING_AUTHORITY_CACHE.get(cacheKey);
+  if (
+    cached?.expiresAt > now &&
+    completeWorkListingAuthorityMatchesPayload(cached.payload, payload)
+  ) {
+    WORK_LISTING_AUTHORITY_CACHE.delete(cacheKey);
+    WORK_LISTING_AUTHORITY_CACHE.set(cacheKey, cached);
+    return cached.payload;
+  }
+  if (cached?.expiresAt <= now) {
+    WORK_LISTING_AUTHORITY_CACHE.delete(cacheKey);
+  }
+  const existing = WORK_LISTING_AUTHORITY_REFRESHES.get(cacheKey);
+  if (existing) {
+    return existing;
+  }
+  const refresh = (async () => {
+    const authorityPayload = await completeTokenListingHistoryPayload(
+      network,
+      WORK_TOKEN_ID,
+      new URLSearchParams([["limit", "1"]]),
+      { includeAuthorityListingIds: true },
+    );
+    if (
+      !completeWorkListingAuthorityMatchesPayload(authorityPayload, payload)
+    ) {
+      return null;
+    }
+    WORK_LISTING_AUTHORITY_CACHE.delete(cacheKey);
+    WORK_LISTING_AUTHORITY_CACHE.set(cacheKey, {
+      expiresAt: Date.now() + WORK_LISTING_AUTHORITY_CACHE_TTL_MS,
+      payload: authorityPayload,
+    });
+    while (
+      WORK_LISTING_AUTHORITY_CACHE.size >
+      WORK_LISTING_AUTHORITY_CACHE_MAX_ENTRIES
+    ) {
+      WORK_LISTING_AUTHORITY_CACHE.delete(
+        WORK_LISTING_AUTHORITY_CACHE.keys().next().value,
+      );
+    }
+    return authorityPayload;
+  })();
+  WORK_LISTING_AUTHORITY_REFRESHES.set(cacheKey, refresh);
+  try {
+    return await refresh;
+  } finally {
+    if (WORK_LISTING_AUTHORITY_REFRESHES.get(cacheKey) === refresh) {
+      WORK_LISTING_AUTHORITY_REFRESHES.delete(cacheKey);
+    }
+  }
+}
+
 async function tokenReadResponsePayload(payload, network, tokenScope, options = {}) {
   const scope = normalizeTokenScope(tokenScope);
   let responsePayload =
@@ -10727,23 +11129,22 @@ async function tokenReadResponsePayload(payload, network, tokenScope, options = 
   if (
     options.requireWorkListingAuthority === true &&
     network === "livenet" &&
-    scope === WORK_TOKEN_ID &&
-    !stableTipCoreTokenListingAuthorityComplete(
-      responsePayload?.listingAuthority,
-    )
+    scope === WORK_TOKEN_ID
   ) {
-    responsePayload = tokenPayloadWithCurrentWorkActiveListingPolicy(
-      await tokenPayloadWithSpendableActiveListings(
-        responsePayload,
-        network,
-      ),
+    const authorityPayload = await completeWorkListingAuthorityForTokenRead(
+      responsePayload,
       network,
+    ).catch((error) => {
+      console.error(
+        `Complete WORK listing authority read failed: ${errorSummary(error)}`,
+      );
+      return null;
+    });
+    const authorityBoundPayload = tokenPayloadWithCompleteWorkListingAuthority(
+      responsePayload,
+      authorityPayload,
     );
-    if (
-      !stableTipCoreTokenListingAuthorityComplete(
-        responsePayload?.listingAuthority,
-      )
-    ) {
+    if (!authorityBoundPayload) {
       const unavailable = freshDataUnavailableError(
         "Fresh WORK listing authority is still catching up to Bitcoin Core.",
       );
@@ -10753,6 +11154,7 @@ async function tokenReadResponsePayload(payload, network, tokenScope, options = 
       };
       throw unavailable;
     }
+    responsePayload = authorityBoundPayload;
   }
   return scope === WORK_TOKEN_ID
     ? tokenPayloadWithCurrentWorkActiveListingPolicy(responsePayload, network)
@@ -38565,6 +38967,29 @@ function canonicalWorkMarketV2TokenSummary(payload, network) {
   ) {
     return null;
   }
+  if (
+    indexedThroughBlock >= WORK_AMO_V8_ACTIVATION_HEIGHT &&
+    (Array.isArray(payload.listings) ? payload.listings : []).some(
+      (listing) => {
+        if (!isWorkTokenId(tokenMarketRecordTokenId(listing))) {
+          return false;
+        }
+        const version = String(
+          listing?.saleAuthorization?.version ??
+            listing?.listingAuthorization?.version ??
+            listing?.authorization?.version ??
+            listing?.authorizationVersion ??
+            listing?.version ??
+            "",
+        )
+          .trim()
+          .toLowerCase();
+        return version !== WORK_AMO_V8_AUTH_VERSION;
+      },
+    )
+  ) {
+    return null;
+  }
   // The activation marker is written only after the full canonical state has
   // been cut over. Summary payloads intentionally carry a bounded listing
   // preview, so transforming them again would replace exact aggregate counts
@@ -41256,6 +41681,12 @@ function tokenPayloadWithCurrentWorkActiveListingPolicy(
   payload,
   network = payload?.network,
 ) {
+  if (
+    payload?.summaryOnly === true &&
+    canonicalWorkMarketV2TokenSummary(payload, network)
+  ) {
+    return payload;
+  }
   const cutoverPayload = applyWorkMarketV2CutoverToTokenState(payload);
   const indexedThroughBlock = Number(
     cutoverPayload?.indexedThroughBlock ??
@@ -54201,9 +54632,18 @@ function tokenListingHistoryStableKey(listing) {
   ];
 }
 
-async function completeTokenListingHistoryPayload(network, tokenScope, searchParams) {
+async function completeTokenListingHistoryPayload(
+  network,
+  tokenScope,
+  searchParams,
+  options = {},
+) {
   const request = checkpointHistoryRequest(searchParams, TOKEN_LISTING_HISTORY_CURSOR_PREFIX);
   const scope = normalizeTokenScope(tokenScope);
+  const includeAuthorityListingIds =
+    options.includeAuthorityListingIds === true &&
+    network === "livenet" &&
+    scope === WORK_TOKEN_ID;
   const relational = await proofIndexCreditListingsPayload(network, scope, {
     limit: TOKEN_LISTING_LIFECYCLE_MATERIALIZATION_LIMIT,
     requireComplete: true,
@@ -54364,6 +54804,55 @@ async function completeTokenListingHistoryPayload(network, tokenScope, searchPar
       "Canonical protocol-active token-listing projection is unavailable.",
     );
   }
+  const canonicalListingIds = (listings) => [
+    ...new Set(
+      listings.map((listing) =>
+        String(listing?.listingId ?? listing?.txid ?? "")
+          .trim()
+          .toLowerCase(),
+      ),
+    ),
+  ];
+  const authorityInputListingIds = includeAuthorityListingIds
+    ? canonicalListingIds(canonicalItems)
+    : null;
+  const authorityCoreUnspentListingIds = includeAuthorityListingIds
+    ? canonicalListingIds(authorityListings)
+    : null;
+  const protocolAuthorityListingIds = includeAuthorityListingIds
+    ? canonicalListingIds(protocolAuthorityListings)
+    : null;
+  const validAuthorityListingIds = (ids, listings) =>
+    ids.length === listings.length &&
+    ids.every((listingId) => /^[0-9a-f]{64}$/u.test(listingId));
+  const authorityInputListingIdSet = includeAuthorityListingIds
+    ? new Set(authorityInputListingIds)
+    : null;
+  const authorityCoreUnspentListingIdSet = includeAuthorityListingIds
+    ? new Set(authorityCoreUnspentListingIds)
+    : null;
+  if (
+    includeAuthorityListingIds &&
+    (!validAuthorityListingIds(authorityInputListingIds, canonicalItems) ||
+      !validAuthorityListingIds(
+        authorityCoreUnspentListingIds,
+        authorityListings,
+      ) ||
+      !validAuthorityListingIds(
+        protocolAuthorityListingIds,
+        protocolAuthorityListings,
+      ) ||
+      authorityCoreUnspentListingIds.some(
+        (listingId) => !authorityInputListingIdSet.has(listingId),
+      ) ||
+      protocolAuthorityListingIds.some(
+        (listingId) => !authorityCoreUnspentListingIdSet.has(listingId),
+      ))
+  ) {
+    throw tokenListingHistoryUnavailable(
+      "Canonical protocol-active WORK listing identities are unavailable.",
+    );
+  }
   const addresses = recoveryAddressesFromSearchParams(searchParams, network);
   const filtered = historyItemsMatchingQuery(
     historyItemsMatchingAddresses(protocolAuthorityListings, addresses), request.query,
@@ -54439,6 +54928,14 @@ async function completeTokenListingHistoryPayload(network, tokenScope, searchPar
       membershipSha256: protocolMembershipSha256,
       model: "proof-token-market-cutover-after-core-v1",
     },
+    ...(includeAuthorityListingIds
+      ? {
+          authorityCoreUnspentListingIds,
+          authorityInputListingIds,
+          authorityListingIds: protocolAuthorityListingIds,
+          authorityTokenId: scope,
+        }
+      : {}),
     page: Math.floor(emitted / request.limit),
     pageCount: Math.max(1, Math.ceil(filtered.length / request.limit)),
     pageSize: request.limit, query: request.query,
