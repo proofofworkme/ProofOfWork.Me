@@ -4855,7 +4855,7 @@ check("token reads suppress legacy WORK listings before spendability", async () 
   assert.equal(payload.totalCounts.listings, 1);
 });
 
-check("scoped WORK token summaries rebase stale active listing totals", () => {
+check("bounded WORK token summaries preserve declared listing totals", () => {
   const workTokenId = WORK_TOKEN_ID;
   const normalizeTestScope = (value) =>
     String(value ?? "").trim().toUpperCase() === "WORK"
@@ -4931,28 +4931,46 @@ check("scoped WORK token summaries rebase stale active listing totals", () => {
   assert.equal(boundedPreview.tokens[0].openListings, 2);
   assert.equal(boundedPreview.collectionHasMore.listings, true);
 
-  const scopedSummary = policy(summaryPayload, "livenet", {
-    forceScopedWorkListingCounts: true,
-  });
-  assert.deepEqual(
-    scopedSummary.listings.map((listing) => listing.listingId),
-    [v8ListingId],
-  );
-  assert.equal(scopedSummary.currentWorkActiveListingPolicy.removedListings, 0);
-  assert.equal(scopedSummary.totalCounts.listings, 1);
-  assert.equal(scopedSummary.stats.activeListings, 1);
-  assert.equal(scopedSummary.stats.confirmedOpenListings, 1);
-  assert.equal(scopedSummary.stats.openListings, 1);
-  assert.equal(scopedSummary.stats.pendingOpenListings, 0);
-  assert.equal(scopedSummary.tokens[0].confirmedOpenListings, 1);
-  assert.equal(scopedSummary.tokens[0].openListings, 1);
-  assert.equal(scopedSummary.tokens[0].pendingOpenListings, 0);
-  assert.equal(scopedSummary.collectionHasMore.listings, false);
+  assert.equal(boundedPreview.listings.length, 1);
+  assert.equal(boundedPreview.stats.activeListings, 2);
+  assert.equal(boundedPreview.stats.confirmedOpenListings, 2);
+  assert.equal(boundedPreview.stats.openListings, 2);
+  assert.equal(boundedPreview.stats.pendingOpenListings, 0);
+  assert.equal(boundedPreview.tokens[0].confirmedOpenListings, 2);
+  assert.equal(boundedPreview.tokens[0].pendingOpenListings, 0);
 });
 
-check("stored canonical WORK token summaries force current listing totals", async () => {
+check("stored canonical WORK summaries retain bounded-book totals", async () => {
   const workTokenId = WORK_TOKEN_ID;
-  let forced = false;
+  let policyCalls = 0;
+  const storedToken = {
+    collectionHasMore: { listings: true },
+    indexedThroughBlock: 965_498,
+    listings: Array.from({ length: 550 }, (_value, index) => ({
+      confirmed: true,
+      listingId: (index + 1).toString(16).padStart(64, "0"),
+      saleAuthorization: {
+        tokenId: workTokenId,
+        version: "pwt-sale-v8",
+      },
+      tokenId: workTokenId,
+    })),
+    network: "livenet",
+    stats: {
+      activeListings: 582,
+      confirmedOpenListings: 582,
+      openListings: 582,
+      pendingOpenListings: 0,
+    },
+    summaryOnly: true,
+    tokens: [{
+      confirmedOpenListings: 582,
+      openListings: 582,
+      pendingOpenListings: 0,
+      tokenId: workTokenId,
+    }],
+    totalCounts: { listings: 582 },
+  };
   const storedCanonicalTokenSummaryPayload = isolatedFunction(
     API_PATH,
     "storedCanonicalTokenSummaryPayload",
@@ -4970,27 +4988,104 @@ check("stored canonical WORK token summaries force current listing totals", asyn
       proofIndexReadFeatureEnabled: () => false,
       proofIndexSnapshotPayload: async () => ({
         consistency: { ok: true },
-        token: {
-          indexedThroughBlock: 960_601,
-          network: "livenet",
-          tokens: [{ tokenId: workTokenId }],
-        },
+        token: storedToken,
       }),
-      tokenPayloadWithCurrentWorkActiveListingPolicy: (payload, network, options) => {
+      tokenPayloadWithCurrentWorkActiveListingPolicy: (
+        payload,
+        network,
+        options,
+      ) => {
         assert.equal(network, "livenet");
-        forced = options?.forceScopedWorkListingCounts === true;
-        return {
-          ...payload,
-          forcedScopedWorkListingCounts: forced,
-        };
+        assert.equal(
+          options,
+          undefined,
+          "stored bounded WORK summaries must not force preview-sized totals",
+        );
+        policyCalls += 1;
+        return payload;
       },
     },
   );
 
   const payload = await storedCanonicalTokenSummaryPayload("livenet", "WORK");
-  assert.equal(forced, true);
-  assert.equal(payload.forcedScopedWorkListingCounts, true);
+  assert.equal(policyCalls, 1);
+  assert.equal(payload.listings.length, 550);
+  assert.equal(payload.totalCounts.listings, 582);
+  assert.equal(payload.tokens[0].openListings, 582);
+  assert.equal(payload.collectionHasMore.listings, true);
   assert.deepEqual(payload.consistency, { ok: true });
+});
+
+check("WORK summary previews retain every seal without erasing ordinary totals", () => {
+  const recentByCreatedAtForTest = isolatedFunction(
+    API_PATH,
+    "recentByCreatedAt",
+    { compareCanonicalUtf8 },
+  );
+  const tokenSummaryListingKeyForTest = isolatedFunction(
+    API_PATH,
+    "tokenSummaryListingKey",
+  );
+  const tokenSummaryListingActivityMsForTest = isolatedFunction(
+    API_PATH,
+    "tokenSummaryListingActivityMs",
+  );
+  const tokenSummaryListingsForTest = isolatedFunction(
+    API_PATH,
+    "tokenSummaryListings",
+    {
+      SUMMARY_MARKET_LIMIT: 40,
+      compareCanonicalUtf8,
+      recentByCreatedAt: recentByCreatedAtForTest,
+      tokenListingHasConfirmedSaleTicketSeal: (listing) =>
+        listing?.sealed === true,
+      tokenSummaryListingActivityMs: tokenSummaryListingActivityMsForTest,
+      tokenSummaryListingKey: tokenSummaryListingKeyForTest,
+    },
+  );
+  let listingOrdinal = 0;
+  const listing = (sealed, createdMs) => {
+    listingOrdinal += 1;
+    return {
+      confirmed: true,
+      createdAt: new Date(createdMs).toISOString(),
+      listingId: listingOrdinal.toString(16).padStart(64, "0"),
+      network: "livenet",
+      sealed,
+    };
+  };
+  const oldSealed = Array.from({ length: 510 }, (_value, index) =>
+    listing(true, 1_000 + index),
+  );
+  const oldUnsealed = Array.from({ length: 32 }, (_value, index) =>
+    listing(false, 2_000 + index),
+  );
+  const recentSealed = Array.from({ length: 33 }, (_value, index) =>
+    listing(true, 100_000 + index),
+  );
+  const recentUnsealed = Array.from({ length: 7 }, (_value, index) =>
+    listing(false, 200_000 + index),
+  );
+  const completeBook = [
+    ...oldSealed,
+    ...oldUnsealed,
+    ...recentSealed,
+    ...recentUnsealed,
+  ];
+
+  const preview = tokenSummaryListingsForTest(completeBook, 40);
+  assert.equal(completeBook.length, 582);
+  assert.equal(preview.length, 550);
+  assert.equal(preview.filter((item) => item.sealed).length, 543);
+  assert.equal(preview.filter((item) => !item.sealed).length, 7);
+  assert.ok(
+    [...oldSealed, ...recentSealed].every((item) => preview.includes(item)),
+    "every confirmed sealed listing must escape the ordinary preview limit",
+  );
+  assert.ok(
+    oldUnsealed.every((item) => !preview.includes(item)),
+    "older ordinary listings remain available through paginated history",
+  );
 });
 
 check("token response wrapper applies current WORK listing policy", async () => {
