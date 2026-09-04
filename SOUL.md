@@ -375,6 +375,37 @@ Future agents must preserve these unless the user explicitly asks for a migratio
 - Confirmed chain history is canonical; pending status can become dropped.
 - Local state is portable through backups, not server accounts.
 
+## Interface Direction
+
+Proof Instrument is the approved interface direction for the ProofOfWork
+Computer. Preserve and refine the existing obsidian, parchment, brass, and
+olive identity instead of replacing it with a generic neon or glass-heavy
+crypto aesthetic. Use brass selectively for action, selection, and a small
+number of live-value signals; use cool blue for focus and information, not as
+an unstructured second accent.
+
+The type system is self-hosted: Space Grotesk for display headings, Inter
+Variable for interface and body text, and IBM Plex Mono for txids, addresses,
+protocol evidence, and other exact fields. Exact values remain fully
+inspectable and copyable. Contain long values inside their own component with
+tabular figures and local overflow or deliberate reveal controls; never hide a
+layout failure with document-level clipping or let arbitrary digit breaks
+change how a value can be verified.
+
+Shared surfaces, toolbars, segmented tabs, status chips, metric values, app
+navigation, and mobile task controls should behave as one coherent system
+across standalone apps and Computer workspaces. Controls remain at least
+44-by-44 pixels, keyboard focus stays visible, overlays contain and restore
+focus, and reduced-motion preferences are honored. The interface should feel
+like a precise instrument: quiet around evidence, dramatic only where product
+orientation benefits from it.
+
+AMO Listings, Seals, and Sales are activity projections over the existing
+sale-ticket lifecycle. They may organize, search, and paginate already
+recognized events, but they do not define new protocol events, fees,
+arithmetic, signing authority, or settlement behavior. The legacy mixed
+`market-log` projection remains compatible.
+
 ## Voice
 
 The native voice is high-conviction, fast, direct, mythic, and alive. It sounds like a founder mid-breakthrough, building in public while the machine is turning on.

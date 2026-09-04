@@ -29,7 +29,9 @@ const files = [
   "src/shared/components/DomainNav.tsx",
   "src/shared/components/FeeRateControl.tsx",
   "src/shared/components/HeaderActionsMenu.tsx",
+  "src/shared/components/ProgressBar.tsx",
   "src/shared/protocol/idRegistry.ts",
+  "src/ui/SegmentedTabs.tsx",
   "src/styles.css",
   "deploy/Caddyfile",
   "vite.config.ts",
@@ -268,11 +270,11 @@ expect(
   ),
 );
 expect(
-  "standalone shells reserve the shared header stack row",
+  "standalone shells reserve an auto-height shared status row",
   /\.desktop-public-app\s*\{[\s\S]*grid-template-rows:\s*auto\s+minmax\(0,\s*1fr\)\s+auto/.test(
     css,
   ) &&
-    /\.desktop-public-app\.has-route-status\s*\{[\s\S]*grid-template-rows:\s*auto\s+var\(--status-row-height\)\s+minmax\(0,\s*1fr\)\s+auto/.test(
+    /\.desktop-public-app\.has-route-status\s*\{[\s\S]*grid-template-rows:\s*auto\s+auto\s+minmax\(0,\s*1fr\)\s+auto/.test(
       css,
     ),
 );
@@ -288,8 +290,8 @@ expect(
     !/justify-self:/.test(topbarActionsBlock),
 );
 expect(
-  "id launch shells use the same account-aware chrome rows",
-  /\.id-launch-app\s*\{[\s\S]*display:\s*grid[\s\S]*grid-template-rows:\s*auto\s+var\(--status-row-height\)\s+minmax\(0,\s*1fr\)\s+auto/.test(
+  "id launch shells use the same auto-height account-aware chrome rows",
+  /\.id-launch-app,[\s\S]*\.desktop-public-app\.has-route-status\s*\{[\s\S]*grid-template-rows:\s*auto\s+auto\s+minmax\(0,\s*1fr\)\s+auto/.test(
     css,
   ),
 );
@@ -343,6 +345,16 @@ expect(
 expect(
   "AppHeader always renders the shared topbar base",
   /<header className="topbar">/.test(appHeader) && /className="brand"/.test(appHeader),
+);
+expect(
+  "AppHeader provides a keyboard-visible main-content skip target",
+  /<a className="skip-link" href="#main-content">[\s\S]*Skip to main content/.test(
+    appHeader,
+  ) &&
+    /className="skip-target" id="main-content" tabIndex=\{-1\}/.test(
+      appHeader,
+    ) &&
+    /\.skip-link:focus\s*\{[\s\S]*transform:\s*translateY\(0\)/.test(css),
 );
 expect(
   "AppHeader can render the shared connected account strip",
@@ -466,6 +478,52 @@ expect(
   "DomainNav only intercepts explicit Computer-handled navigation",
   /handled\s*===\s*true/.test(domainNav) && !/handled\s*!==\s*false/.test(domainNav),
 );
+expect(
+  "mobile DomainNav is a contained modal sheet with focus restoration",
+  /createPortal\(menuLayer,\s*document\.body\)/.test(domainNav) &&
+    /aria-modal=\{mobileSheet \? true : undefined\}/.test(domainNav) &&
+    /role=\{mobileSheet \? "dialog" : "menu"\}/.test(domainNav) &&
+    /mobileSheet && event\.key === "Tab"/.test(domainNav) &&
+    /event\.key === "Escape"[\s\S]*closeAndRestoreFocus\(\)/.test(domainNav) &&
+    /triggerRef\.current\?\.focus\(\)/.test(domainNav) &&
+    /className="app-menu-scrim"/.test(domainNav),
+);
+
+const segmentedTabs = contents.get("src/ui/SegmentedTabs.tsx");
+expect(
+  "shared segmented tabs distinguish tabs from pressed filter groups",
+  /semantics\?: "filters" \| "tabs"/.test(segmentedTabs) &&
+    /role=\{semantics === "tabs" \? "tablist" : "group"\}/.test(
+      segmentedTabs,
+    ) &&
+    /role=\{semantics === "tabs" \? "tab" : undefined\}/.test(
+      segmentedTabs,
+    ) &&
+    /aria-pressed=\{semantics === "filters" \? selected : undefined\}/.test(
+      segmentedTabs,
+    ) &&
+    /aria-selected=\{semantics === "tabs" \? selected : undefined\}/.test(
+      segmentedTabs,
+    ) &&
+    /tabIndex=\{semantics === "tabs" \? \(selected \? 0 : -1\) : undefined\}/.test(
+      segmentedTabs,
+    ) &&
+    /event\.key !== "Home"/.test(segmentedTabs) &&
+    /event\.key !== "End"/.test(segmentedTabs) &&
+    /"ArrowLeft", "ArrowRight"/.test(segmentedTabs) &&
+    /tabRefs\.current\[nextIndex\]\?\.focus\(\)/.test(segmentedTabs),
+);
+const progressBar = contents.get("src/shared/components/ProgressBar.tsx");
+expect(
+  "shared progress bars expose bounded determinate semantics",
+  /const boundedProgress = Math\.max\(0, Math\.min\(100, progress\)\)/.test(
+    progressBar,
+  ) &&
+    /role="progressbar"/.test(progressBar) &&
+    /aria-valuemin=\{0\}/.test(progressBar) &&
+    /aria-valuemax=\{100\}/.test(progressBar) &&
+    /aria-valuenow=\{boundedProgress\}/.test(progressBar),
+);
 
 const browserNetworkTabs = contents.get("src/shared/components/BrowserNetworkTabs.tsx");
 expect(
@@ -529,6 +587,22 @@ const boostRoot = contents.get("src/features/boost/BoostRoot.tsx");
 const boostProtocol = contents.get("src/features/boost/boostProtocol.ts");
 const exactAmount = contents.get("src/exactAmount.ts");
 const walletUtxoPolicy = contents.get("src/walletUtxos.ts");
+expect(
+  "Boost tools drawer traps focus and closes when its surface exceeds 760px",
+  /document\.body\.style\.overflow = "hidden"/.test(boostRoot) &&
+    /event\.key === "Escape"[\s\S]*setToolsOpen\(false\)/.test(boostRoot) &&
+    /event\.key !== "Tab"/.test(boostRoot) &&
+    /new ResizeObserver\(closeDesktopDrawer\)/.test(boostRoot) &&
+    /getBoundingClientRect\(\)\.width > 760[\s\S]*setToolsOpen\(false\)/.test(
+      boostRoot,
+    ) &&
+    /aria-modal=\{toolsOpen \|\| undefined\}/.test(boostRoot) &&
+    /role=\{toolsOpen \? "dialog" : undefined\}/.test(boostRoot) &&
+    /toolsInvokerRef\.current =[\s\S]*document\.activeElement/.test(boostRoot) &&
+    /const invoker = toolsInvokerRef\.current[\s\S]*invoker\?\.isConnected[\s\S]*invoker\.focus\(\)/.test(
+      boostRoot,
+    ),
+);
 expect(
   "Boost feed renders total signal while preserving proof and WORK lanes",
   /function boostTotalSignalSats/u.test(boostRoot) &&
@@ -2567,11 +2641,47 @@ expect(
   !/className=\{`status /.test(app),
 );
 expect(
-  "shared status row has fixed height",
-  /--status-row-height:\s*38px/.test(css) &&
-    /\.status\s*\{[\s\S]*height:\s*var\(--status-row-height\)[\s\S]*min-height:\s*var\(--status-row-height\)/.test(
+  "shared status row uses a 44px minimum and can grow without clipping",
+  /--status-row-height:\s*44px/.test(css) &&
+    /\.status\s*\{[\s\S]*height:\s*auto[\s\S]*min-height:\s*var\(--status-row-height\)/.test(
+      css,
+    ) &&
+    /\.status\.is-expanded \.status-text\s*\{[\s\S]*overflow:\s*visible[\s\S]*white-space:\s*normal/.test(
       css,
     ),
+);
+expect(
+  "long mobile statuses expose a two-line disclosure with accessible state",
+  /const collapsible = lineStatus\.text\.trim\(\)\.length > 72/.test(
+    appStatusRow,
+  ) &&
+    /collapsible \? "is-collapsible" : ""/.test(appStatusRow) &&
+    /aria-controls=\{textId\}/.test(appStatusRow) &&
+    /aria-expanded=\{expanded\}/.test(appStatusRow) &&
+    /aria-label=\{expanded \? "Collapse status" : "Show full status"\}/.test(
+      appStatusRow,
+    ) &&
+    /@media\s*\(max-width:\s*620px\)[\s\S]*\.status\.is-collapsible:not\(\.is-expanded\) \.status-text\s*\{[\s\S]*-webkit-line-clamp:\s*2[\s\S]*white-space:\s*normal/.test(
+      css,
+    ),
+);
+expect(
+  "Computer mobile More is a focus-managed modal sheet",
+  /window\.matchMedia\("\(max-width: 860px\)"\)/.test(app) &&
+    /document\.documentElement\.classList\.add\("computer-nav-open"\)/.test(
+      app,
+    ) &&
+    /event\.key === "Escape"[\s\S]*setSidebarExpanded\(false\)/.test(app) &&
+    /event\.key !== "Tab"/.test(app) &&
+    /mobileNavigationTriggerRef\.current\?\.focus\(\)/.test(app) &&
+    /aria-modal=\{[\s\S]*compactComputerNavigation && sidebarExpanded/.test(
+      app,
+    ) &&
+    /compactComputerNavigation && sidebarExpanded \? "dialog" : undefined/.test(
+      app,
+    ) &&
+    /aria-haspopup="dialog"/.test(app) &&
+    /className="computer-navigation-scrim"/.test(app),
 );
 expect(
   "route status rows stick under the shared topbar",
@@ -2605,10 +2715,10 @@ expect(
 );
 expect(
   "AMO UI preserves the active era, exact pre-V8 relics, and historical Marketplace V1",
-  /aria-label="WORK AMO protocol view"/.test(app) &&
-    /<span>AMO<\/span>/.test(app) &&
-    /workV8BoundaryObserved \? "Pre-V8 Relics" : "V4 Relic"/.test(app) &&
-    /<span>Marketplace V1 Relic<\/span>/.test(app) &&
+  /ariaLabel="WORK AMO protocol view"/.test(app) &&
+    /id: "amo",[\s\S]*label: "AMO"/.test(app) &&
+    /label: workV8BoundaryObserved \? "Pre-V8 Relics" : "V4 Relic"/.test(app) &&
+    /id: "v1-relic",[\s\S]*label: "Marketplace V1 Relic"/.test(app) &&
     /<h3>Pre-V8 AMO Relics<\/h3>[\s\S]*cannot be sealed, purchased, or delisted/.test(
       app,
     ) &&
@@ -2995,7 +3105,15 @@ expect(
   /tokenMarketLoading/.test(app) &&
     /Loading credit markets/.test(app) &&
     /Loading credit sale tickets/.test(app) &&
-    /Loading credit market history/.test(app),
+    /const tokenMarketActivityLoading =[\s\S]*=== "loading" \|\| tokenMarketLoading/.test(
+      app,
+    ) &&
+    /tokenMarketActivityLoading[\s\S]*`Loading \$\{tokenMarketActivityTab\}`/.test(
+      app,
+    ) &&
+    /Canonical \$\{tokenMarketActivityTab\} are loading from the ProofOfWork index/.test(
+      app,
+    ),
 );
 const normalizeTokenApiStateBlock =
   app.match(
@@ -3307,8 +3425,68 @@ expect(
     !/remoteTokenMarketLogPage\?\.key === tokenMarketLogKey/.test(app),
 );
 expect(
+  "Marketplace separates listing, seal, and sale history into semantic tabs",
+  /const TOKEN_MARKET_ACTIVITY_TABS:[\s\S]*label: "Listings", value: "listings"[\s\S]*label: "Seals", value: "seals"[\s\S]*label: "Sales", value: "sales"/.test(
+    app,
+  ) &&
+    /function tokenMarketActivityHistoryKind[\s\S]*`market-\$\{tab\}`/.test(
+      app,
+    ) &&
+    /ariaLabel="Credit market activity"/.test(app) &&
+    /className="marketplace-tabs token-market-activity-tabs"/.test(app) &&
+    /panelId: "token-market-activity-panel"/.test(app) &&
+    /tabId: `token-market-activity-tab-\$\{item\.value\}`/.test(app) &&
+    /role="tabpanel"/.test(app) &&
+    /aria-labelledby=\{`token-market-activity-tab-\$\{tokenMarketActivityTab\}`\}/.test(
+      app,
+    ) &&
+    /TOKEN_MARKET_ACTIVITY_TABS\.map\(async \(\{ value \}\)/.test(app),
+);
+const marketplaceListingBookTabsBlock = topLevelFunctionSource(
+  app,
+  "MarketplaceListingBookTabs",
+);
+expect(
+  "Marketplace order-book choices are pressed filters rather than document tabs",
+  /ariaLabel=\{label\}/.test(marketplaceListingBookTabsBlock) &&
+    /semantics="filters"/.test(marketplaceListingBookTabsBlock) &&
+    /id: "all"/.test(marketplaceListingBookTabsBlock) &&
+    /id: "sealed"/.test(marketplaceListingBookTabsBlock) &&
+    /id: "unsealed"/.test(marketplaceListingBookTabsBlock),
+);
+expect(
+  "Marketplace history withholds totals, absence claims, and pagination for incomplete previews",
+  /function tokenMarketHistoryPageIsAuthoritative[\s\S]*page\.authoritative === true[\s\S]*page\.complete === true[\s\S]*page\.preview !== true/.test(
+    app,
+  ) &&
+    /const tokenMarketActivityHistoryAuthoritative =[\s\S]*payload\.kind === kind[\s\S]*payload\.authoritative === true[\s\S]*payload\.complete === true[\s\S]*payload\.preview !== true/.test(
+      app,
+    ) &&
+    /!tokenMarketActivityHistoryAuthoritative[\s\S]*authoritative: false,[\s\S]*complete: false,[\s\S]*preview: true/.test(
+      app,
+    ) &&
+    /type TokenMarketActivityReadState = \{[\s\S]*status: "authoritative" \| "loading" \| "preview"/.test(
+      app,
+    ) &&
+    /tokenMarketHistoryPageIsAuthoritative\(page\)[\s\S]*\[tokenMarketActivityTab\]: page\.totalCount/.test(
+      app,
+    ) &&
+    /Incomplete current-state preview\. Canonical indexed history is[\s\S]*totals and absence claims are withheld\./.test(
+      app,
+    ) &&
+    /!tokenMarketActivityAuthoritative[\s\S]*`Full \$\{tokenMarketActivityTab\} history unavailable`/.test(
+      app,
+    ) &&
+    /\{tokenMarketActivityAuthoritative \? \([\s\S]*<PaginationControls[\s\S]*Credit market \$\{tokenMarketActivityTab\}/.test(
+      app,
+    ) &&
+    /function tokenMarketActivityHistoryPageWithAuthority[\s\S]*authoritative: complete === true[\s\S]*complete: complete === true[\s\S]*preview: complete !== true/.test(
+      proofApi,
+    ),
+);
+expect(
   "Marketplace credit history normalizes and labels pending seals consistently",
-  /kind === "market-log"[\s\S]*\.map\(normalizeTokenMarketLogItem\)/.test(
+  /kind === "market-log" \|\|[\s\S]*kind === "market-listings" \|\|[\s\S]*kind === "market-seals" \|\|[\s\S]*kind === "market-sales"[\s\S]*\.map\(normalizeTokenMarketLogItem\)/.test(
     app,
   ) &&
     /function tokenMarketListingStatusLabel[\s\S]*tokenListingHasConfirmedSaleTicketSeal[\s\S]*tokenListingHasPendingSaleTicketSeal[\s\S]*return listing\.confirmed \? "Waiting for seal" : "Pending listing"/.test(

@@ -5903,7 +5903,7 @@ function paginatedHistoryPayload({
 }
 
 function tokenHistoryPageItemKey(item, kind) {
-  if (kind === "market-log") {
+  if (kind === "market-log" || kind === "market-listings") {
     if (item?.kind === "sale") {
       return `sale:${tokenSaleItemKey(item.sale ?? item)}`;
     }
@@ -5919,6 +5919,14 @@ function tokenHistoryPageItemKey(item, kind) {
         item.listing?.listingId ?? item.txid ?? "",
       ).toLowerCase()}`;
     }
+  }
+  if (kind === "market-seals") {
+    return `seal:${String(item?.seal?.sealTxid ?? item?.txid ?? "").toLowerCase()}:${String(
+      item?.seal?.listingId ?? "",
+    ).toLowerCase()}`;
+  }
+  if (kind === "market-sales") {
+    return `sale:${tokenSaleItemKey(item.sale ?? item)}`;
   }
   if (kind === "closedListings") {
     return `closed:${String(item?.listingId ?? "").toLowerCase()}:${String(
@@ -5952,12 +5960,16 @@ function tokenHistoryPageItemCreatedAt(item) {
   if (item?.kind === "listing") {
     return item.listing?.createdAt ?? item.createdAt;
   }
+  if (item?.kind === "seal") {
+    return item.seal?.sealAt ?? item.seal?.createdAt ?? item.createdAt;
+  }
   return item?.closedAt ?? item?.createdAt;
 }
 
 function tokenHistoryPageItemIsMarketLogItem(item) {
   return (
     item?.kind === "sale" ||
+    item?.kind === "seal" ||
     item?.kind === "closed-listing" ||
     item?.kind === "listing"
   );
@@ -5970,6 +5982,9 @@ function tokenHistoryPageItemConfirmed(item) {
   if (item?.kind === "closed-listing") {
     return item.closedListing?.closedConfirmed === true;
   }
+  if (item?.kind === "seal") {
+    return item.seal?.sealConfirmed === true;
+  }
   return item?.kind === "listing" && item.listing?.confirmed === true;
 }
 
@@ -5979,6 +5994,9 @@ function tokenHistoryPageItemKindRank(item) {
   }
   if (item?.kind === "closed-listing") {
     return 1;
+  }
+  if (item?.kind === "seal") {
+    return 2;
   }
   return item?.kind === "listing" ? 2 : 3;
 }
@@ -6024,19 +6042,22 @@ function mergedSourceLabel(...sources) {
   ].join("+");
 }
 
-function mergeTokenHistoryPageItem(current, incoming, kind) {
+function mergeTokenHistoryPageItem(current, incoming, kind, options = {}) {
   if (!current) {
     return incoming;
   }
   if (!incoming) {
     return current;
   }
+  if (options.valueEnrichmentOnly === true) {
+    return tokenHistoryPageItemWithValueEnrichment(current, incoming);
+  }
 
   if (kind === "listings" || kind === "closedListings") {
     return mergeTokenListingRecord(current, incoming);
   }
 
-  if (kind === "market-log") {
+  if (kind === "market-log" || kind === "market-listings") {
     if (current.kind === "sale" && incoming.kind === "sale") {
       return {
         ...current,
@@ -6064,6 +6085,30 @@ function mergeTokenHistoryPageItem(current, incoming, kind) {
         ),
       };
     }
+  }
+
+  if (
+    kind === "market-seals" &&
+    current.kind === "seal" &&
+    incoming.kind === "seal"
+  ) {
+    return {
+      ...current,
+      ...incoming,
+      seal: mergeTokenListingRecord(current.seal, incoming.seal),
+    };
+  }
+
+  if (
+    kind === "market-sales" &&
+    current.kind === "sale" &&
+    incoming.kind === "sale"
+  ) {
+    return {
+      ...current,
+      ...incoming,
+      sale: mergeTokenSaleRecord(current.sale, incoming.sale),
+    };
   }
 
   if (kind === "holders") {
@@ -6513,6 +6558,85 @@ function mergeCreditNetworkValueRecord(current, incoming) {
   );
 }
 
+const TOKEN_HISTORY_VALUE_ENRICHMENT_FIELD_NAMES = new Set([
+  ...CREDIT_NETWORK_VALUE_FIELD_NAMES,
+  "amount",
+  "amountAtoms",
+  "amountStorageModel",
+  "amountSubatoms",
+  "amountVersion",
+  "closedFrozenNetworkValueSats",
+  "closedLiveNetworkValueSats",
+  "closedMinerFeeSats",
+  "creditAmountMovedAtoms",
+  "creditFloorAtConfirmModel",
+  "decimals",
+  "precisionModel",
+  "sealFrozenNetworkValueSats",
+  "sealLiveNetworkValueSats",
+  "sealMinerFeeSats",
+  "tokenAmount",
+  "tokenAmountAtoms",
+  "tokenAmountSubatoms",
+  "unitScale",
+]);
+
+function tokenHistoryValueEnrichmentFields(record) {
+  const fields = {};
+  for (const field of TOKEN_HISTORY_VALUE_ENRICHMENT_FIELD_NAMES) {
+    if (
+      Object.prototype.hasOwnProperty.call(record ?? {}, field) &&
+      record[field] !== undefined &&
+      record[field] !== null &&
+      record[field] !== ""
+    ) {
+      fields[field] = record[field];
+    }
+  }
+  return fields;
+}
+
+function tokenHistoryRecordWithValueEnrichment(current, incoming) {
+  if (!current || !incoming) {
+    return current;
+  }
+  return mergeCreditNetworkValueRecord(
+    current,
+    tokenHistoryValueEnrichmentFields(incoming),
+  );
+}
+
+function tokenHistoryPageItemWithValueEnrichment(current, incoming) {
+  if (!current || !incoming) {
+    return current;
+  }
+
+  const enriched = tokenHistoryRecordWithValueEnrichment(current, incoming);
+  if (current.kind !== incoming.kind) {
+    return enriched;
+  }
+  const nestedField =
+    current.kind === "listing"
+      ? "listing"
+      : current.kind === "closed-listing"
+        ? "closedListing"
+        : current.kind === "seal"
+          ? "seal"
+          : current.kind === "sale"
+            ? "sale"
+            : "";
+  if (!nestedField || !current[nestedField] || !incoming[nestedField]) {
+    return enriched;
+  }
+  return {
+    ...enriched,
+    [nestedField]: tokenHistoryRecordWithValueEnrichment(
+      current[nestedField],
+      incoming[nestedField],
+    ),
+  };
+}
+
 function mergeTokenHistoryPageWithOverlay(
   page,
   overlayPage,
@@ -6540,7 +6664,21 @@ function mergeTokenHistoryPageWithOverlay(
     if (!addOverlayItems && !byKey.has(key)) {
       continue;
     }
-    byKey.set(key, mergeTokenHistoryPageItem(byKey.get(key), item, kind));
+    byKey.set(
+      key,
+      mergeTokenHistoryPageItem(byKey.get(key), item, kind, {
+        valueEnrichmentOnly: !addOverlayItems,
+      }),
+    );
+  }
+
+  if (!addOverlayItems) {
+    return {
+      ...page,
+      items: pageItems.map((item) =>
+        byKey.get(tokenHistoryPageItemKey(item, kind)),
+      ),
+    };
   }
 
   const items = [...byKey.values()].sort(compareTokenHistoryPageItems);
@@ -6582,6 +6720,9 @@ function normalizedTokenHistoryKind(kind) {
     ["closed_listing", "closedListings"],
     ["closed-listing", "closedListings"],
     ["listings", "listings"],
+    ["market-listings", "market-listings"],
+    ["market-seals", "market-seals"],
+    ["market-sales", "market-sales"],
     ["marketlog", "market-log"],
     ["market-log", "market-log"],
     ["market_log", "market-log"],
@@ -6595,10 +6736,37 @@ function normalizedTokenHistoryKind(kind) {
   return kindMap.get(normalized) ?? "mints";
 }
 
+const TOKEN_MARKET_ACTIVITY_HISTORY_KINDS = new Set([
+  "market-listings",
+  "market-seals",
+  "market-sales",
+]);
+
+function tokenMarketActivityHistoryPageWithAuthority(
+  page,
+  kind,
+  complete,
+) {
+  const requestedKind = normalizedTokenHistoryKind(kind);
+  if (!TOKEN_MARKET_ACTIVITY_HISTORY_KINDS.has(requestedKind)) {
+    return page;
+  }
+  const pageKind = String(page?.kind ?? "").trim().toLowerCase();
+  const authoritative = complete === true && pageKind === requestedKind;
+  return {
+    ...page,
+    authoritative,
+    complete: authoritative,
+    preview: !authoritative,
+  };
+}
+
 function tokenHistoryKindNeedsCreditNetworkValueOverlay(kind) {
   return new Set([
     "closedListings",
     "market-log",
+    "market-listings",
+    "market-sales",
     "mints",
     "sales",
     "transfers",
@@ -6771,9 +6939,11 @@ async function tokenHistoryPageWithCanonicalCreditValueOverlay(
   const rawItems =
     safeKind === "market-log"
       ? tokenMarketLogItemsFromState(state)
-      : safeKind === "listings"
-        ? activeTokenListingsFromState(state)
-      : (state?.[safeKind] ?? []);
+      : ["market-listings", "market-seals", "market-sales"].includes(safeKind)
+        ? tokenMarketHistoryItemsFromState(state, safeKind)
+        : safeKind === "listings"
+          ? activeTokenListingsFromState(state)
+          : (state?.[safeKind] ?? []);
   const txidScopedItems =
     txidHints.size === 0
       ? rawItems
@@ -6785,6 +6955,8 @@ async function tokenHistoryPageWithCanonicalCreditValueOverlay(
             item?.saleTxid,
             item?.listing?.listingId,
             item?.listing?.sealTxid,
+            item?.seal?.listingId,
+            item?.seal?.sealTxid,
             item?.closedListing?.closedTxid,
             item?.closedListing?.listingId,
             item?.sale?.txid,
@@ -19014,6 +19186,142 @@ function tokenMarketLogItemsFromState(state) {
   ]);
 }
 
+function tokenMarketClosedListingIsSaleSettlement(listing, sales = []) {
+  const status = String(listing?.status ?? "").trim().toLowerCase();
+  const lifecycleStatus = String(listing?.lifecycleStatus ?? "")
+    .trim()
+    .toLowerCase();
+  const saleTxid = String(listing?.saleTxid ?? "").trim().toLowerCase();
+  if (
+    status === "sold" ||
+    lifecycleStatus === "sold" ||
+    /^[0-9a-f]{64}$/u.test(saleTxid)
+  ) {
+    return true;
+  }
+  const listingId = String(listing?.listingId ?? "").trim().toLowerCase();
+  const closeTxid = String(listing?.closedTxid ?? listing?.txid ?? "")
+    .trim()
+    .toLowerCase();
+  if (!listingId || !/^[0-9a-f]{64}$/u.test(closeTxid)) {
+    return false;
+  }
+  return (Array.isArray(sales) ? sales : []).some(
+    (sale) =>
+      String(sale?.listingId ?? "").trim().toLowerCase() === listingId &&
+      String(sale?.txid ?? sale?.saleTxid ?? "").trim().toLowerCase() ===
+        closeTxid,
+  );
+}
+
+function tokenMarketListingActivityItemsFromState(state) {
+  const activeListings = Array.isArray(state?.listings) ? state.listings : [];
+  const closedListings = Array.isArray(state?.closedListings)
+    ? state.closedListings
+    : [];
+  const sales = Array.isArray(state?.sales) ? state.sales : [];
+  const listingsById = new Map();
+  for (const listing of [...activeListings, ...closedListings]) {
+    const listingId = String(listing?.listingId ?? "").trim().toLowerCase();
+    if (!listingId) {
+      continue;
+    }
+    listingsById.set(
+      listingId,
+      mergeTokenListingRecord(listingsById.get(listingId), listing),
+    );
+  }
+  return sortTokenMarketLogItems([
+    ...[...listingsById.values()].map((listing) => ({
+      createdAt: listing.createdAt,
+      kind: "listing",
+      listing,
+      txid: listing.listingId,
+    })),
+    ...closedListings
+      .filter(
+        (closedListing) =>
+          !tokenMarketClosedListingIsSaleSettlement(closedListing, sales),
+      )
+      .map((closedListing) => ({
+        closedListing,
+        createdAt: closedListing.closedAt ?? closedListing.createdAt,
+        kind: "closed-listing",
+        txid: closedListing.closedTxid || closedListing.listingId,
+      })),
+  ]);
+}
+
+function tokenMarketSealActivityItemsFromState(state) {
+  const listings = [
+    ...(Array.isArray(state?.listings) ? state.listings : []),
+    ...(Array.isArray(state?.closedListings) ? state.closedListings : []),
+  ];
+  const sealsByIdentity = new Map();
+  for (const listing of listings) {
+    const sealTxid = String(listing?.sealTxid ?? "").trim().toLowerCase();
+    const listingId = String(listing?.listingId ?? "").trim().toLowerCase();
+    if (!/^[0-9a-f]{64}$/u.test(sealTxid) || !listingId) {
+      continue;
+    }
+    const identity = `${sealTxid}:${listingId}`;
+    sealsByIdentity.set(
+      identity,
+      mergeTokenListingRecord(sealsByIdentity.get(identity), listing),
+    );
+  }
+  return sortTokenMarketLogItems(
+    [...sealsByIdentity.values()].map((listing) => {
+      const sealTxid = String(listing.sealTxid).trim().toLowerCase();
+      const sealAt = listing.sealAt ?? listing.createdAt;
+      const seal = {
+        ...listing,
+        confirmed: listing.sealConfirmed === true,
+        createdAt: sealAt,
+        sealAt,
+        sealTxid,
+        status: listing.sealConfirmed === true ? "confirmed" : "pending",
+        txid: sealTxid,
+      };
+      return {
+        createdAt: sealAt,
+        kind: "seal",
+        seal,
+        txid: sealTxid,
+      };
+    }),
+  );
+}
+
+function tokenMarketSaleActivityItemsFromState(state) {
+  const sales = Array.isArray(state?.sales) ? state.sales : [];
+  return sortTokenMarketLogItems(
+    sales.map((sale) => ({
+      createdAt: sale.createdAt,
+      kind: "sale",
+      sale,
+      txid: sale.txid,
+    })),
+  );
+}
+
+function tokenMarketHistoryItemsFromState(state, kind) {
+  const safeKind = normalizedTokenHistoryKind(kind);
+  if (safeKind === "market-log") {
+    return tokenMarketLogItemsFromState(state);
+  }
+  if (safeKind === "market-listings") {
+    return tokenMarketListingActivityItemsFromState(state);
+  }
+  if (safeKind === "market-seals") {
+    return tokenMarketSealActivityItemsFromState(state);
+  }
+  if (safeKind === "market-sales") {
+    return tokenMarketSaleActivityItemsFromState(state);
+  }
+  return null;
+}
+
 function activeTokenListingsFromState(state) {
   const closedListingIds = new Set(
     (Array.isArray(state?.closedListings) ? state.closedListings : [])
@@ -22919,7 +23227,14 @@ async function recoveredWorkMarketPayloadFromTransactions(
 
 function pendingWorkMarketRecoveryHistoryKind(kind) {
   const safeKind = normalizedTokenHistoryKind(kind);
-  return ["listings", "market-log", "invalidEvents"].includes(safeKind)
+  return [
+    "listings",
+    "market-log",
+    "market-listings",
+    "market-seals",
+    "market-sales",
+    "invalidEvents",
+  ].includes(safeKind)
     ? safeKind
     : "";
 }
@@ -23437,9 +23752,11 @@ async function pendingWorkMarketHistoryPage(
   const directItems =
     safeKind === "market-log"
       ? tokenMarketLogItemsFromState(overlay)
-      : safeKind === "listings"
-        ? activeTokenListingsFromState(overlay)
-        : overlay.invalidEvents ?? [];
+      : ["market-listings", "market-seals", "market-sales"].includes(safeKind)
+        ? tokenMarketHistoryItemsFromState(overlay, safeKind)
+        : safeKind === "listings"
+          ? activeTokenListingsFromState(overlay)
+          : overlay.invalidEvents ?? [];
   const scopedItems = historyItemsMatchingAddresses(
     directItems,
     recoveryAddresses,
@@ -54491,6 +54808,9 @@ async function tokenHistoryPayload(network, tokenScope, kind, searchParams, fres
     ["closed_listing", "closedListings"],
     ["closed-listing", "closedListings"],
     ["listings", "listings"],
+    ["market-listings", "market-listings"],
+    ["market-seals", "market-seals"],
+    ["market-sales", "market-sales"],
     ["marketlog", "market-log"],
     ["market-log", "market-log"],
     ["market_log", "market-log"],
@@ -54521,6 +54841,9 @@ async function tokenHistoryPayload(network, tokenScope, kind, searchParams, fres
   const workMarketHistoryKind =
     safeKind === "sales" ||
     safeKind === "market-log" ||
+    safeKind === "market-listings" ||
+    safeKind === "market-seals" ||
+    safeKind === "market-sales" ||
     safeKind === "closedListings" ||
     safeKind === "listings";
   const workBalanceHistoryKind =
@@ -54561,7 +54884,11 @@ async function tokenHistoryPayload(network, tokenScope, kind, searchParams, fres
       return null;
     });
     if (pendingMarketPage) {
-      return pendingMarketPage;
+      return tokenMarketActivityHistoryPageWithAuthority(
+        pendingMarketPage,
+        safeKind,
+        false,
+      );
     }
   }
   if (
@@ -54592,12 +54919,16 @@ async function tokenHistoryPayload(network, tokenScope, kind, searchParams, fres
         (indexedMarketPage.items ?? []).length > 0 ||
         isTerminalTokenMarketHistoryPage(indexedMarketPage))
     ) {
-      return tokenHistoryPageWithCanonicalCreditValueOverlay(
-        indexedMarketPage,
-        network,
-        scope,
+      return tokenMarketActivityHistoryPageWithAuthority(
+        await tokenHistoryPageWithCanonicalCreditValueOverlay(
+          indexedMarketPage,
+          network,
+          scope,
+          safeKind,
+          searchParams,
+        ),
         safeKind,
-        searchParams,
+        false,
       );
     }
   }
@@ -54631,20 +54962,26 @@ async function tokenHistoryPayload(network, tokenScope, kind, searchParams, fres
     const directItems =
       safeKind === "market-log"
         ? tokenMarketLogItemsFromState(recoveredPayload)
-        : (recoveredPayload?.[safeKind] ?? []);
+        : ["market-listings", "market-seals", "market-sales"].includes(safeKind)
+          ? tokenMarketHistoryItemsFromState(recoveredPayload, safeKind)
+          : (recoveredPayload?.[safeKind] ?? []);
     const scopedDirectItems = historyItemsMatchingAddresses(
       directItems,
       recoveryAddresses,
     );
     if (scopedDirectItems.length > 0) {
-      return paginatedHistoryPayload({
-        indexedAt: recoveredPayload.indexedAt ?? new Date().toISOString(),
-        items: scopedDirectItems,
-        kind: safeKind,
-        network,
-        pagination,
-        source: recoveredPayload.source,
-      });
+      return tokenMarketActivityHistoryPageWithAuthority(
+        paginatedHistoryPayload({
+          indexedAt: recoveredPayload.indexedAt ?? new Date().toISOString(),
+          items: scopedDirectItems,
+          kind: safeKind,
+          network,
+          pagination,
+          source: recoveredPayload.source,
+        }),
+        safeKind,
+        false,
+      );
     }
   }
   if (
@@ -54791,22 +55128,30 @@ async function tokenHistoryPayload(network, tokenScope, kind, searchParams, fres
       const directItems =
         safeKind === "market-log"
           ? tokenMarketLogItemsFromState(recoveredPayload)
-          : safeKind === "listings"
-            ? activeTokenListingsFromState(recoveredPayload)
-          : (recoveredPayload[safeKind] ?? []);
+          : ["market-listings", "market-seals", "market-sales"].includes(
+                safeKind,
+              )
+            ? tokenMarketHistoryItemsFromState(recoveredPayload, safeKind)
+            : safeKind === "listings"
+              ? activeTokenListingsFromState(recoveredPayload)
+              : (recoveredPayload[safeKind] ?? []);
       const scopedDirectItems = historyItemsMatchingAddresses(
         directItems,
         recoveryAddresses,
       );
       if (safeKind !== "listings" && scopedDirectItems.length > 0) {
-        return paginatedHistoryPayload({
-          indexedAt: recoveredPayload.indexedAt ?? new Date().toISOString(),
-          items: scopedDirectItems,
-          kind: safeKind,
-          network,
-          pagination,
-          source: recoveredPayload.source,
-        });
+        return tokenMarketActivityHistoryPageWithAuthority(
+          paginatedHistoryPayload({
+            indexedAt: recoveredPayload.indexedAt ?? new Date().toISOString(),
+            items: scopedDirectItems,
+            kind: safeKind,
+            network,
+            pagination,
+            source: recoveredPayload.source,
+          }),
+          safeKind,
+          false,
+        );
       }
     }
   }
@@ -54881,12 +55226,16 @@ async function tokenHistoryPayload(network, tokenScope, kind, searchParams, fres
         (indexedHistoryPage.items ?? []).length > 0 ||
         isTerminalTokenMarketHistoryPage(indexedHistoryPage))
     ) {
-      return tokenHistoryPageWithCanonicalCreditValueOverlay(
-        indexedHistoryPage,
-        network,
-        scope,
+      return tokenMarketActivityHistoryPageWithAuthority(
+        await tokenHistoryPageWithCanonicalCreditValueOverlay(
+          indexedHistoryPage,
+          network,
+          scope,
+          safeKind,
+          searchParams,
+        ),
         safeKind,
-        searchParams,
+        false,
       );
     }
   }
@@ -55039,9 +55388,11 @@ async function tokenHistoryPayload(network, tokenScope, kind, searchParams, fres
   const rawItems =
     safeKind === "market-log"
       ? tokenMarketLogItemsFromState(payload)
-      : safeKind === "listings"
-        ? activeTokenListingsFromState(payload)
-      : (payload[safeKind] ?? []);
+      : ["market-listings", "market-seals", "market-sales"].includes(safeKind)
+        ? tokenMarketHistoryItemsFromState(payload, safeKind)
+        : safeKind === "listings"
+          ? activeTokenListingsFromState(payload)
+          : (payload[safeKind] ?? []);
   const items = historyItemsMatchingAddresses(rawItems, recoveryAddresses);
 
   let page = paginatedHistoryPayload({
@@ -55144,14 +55495,18 @@ async function tokenHistoryPayload(network, tokenScope, kind, searchParams, fres
     safeKind === "listings" && payload?.listingAuthority
       ? { ...page, listingAuthority: payload.listingAuthority }
       : page;
-  return payload.snapshotId
-    ? {
-        ...authorityPage,
-        consistency: payload.consistency,
-        ledgerGeneratedAt: payload.ledgerGeneratedAt,
-        snapshotId: payload.snapshotId,
-      }
-    : authorityPage;
+  return tokenMarketActivityHistoryPageWithAuthority(
+    payload.snapshotId
+      ? {
+          ...authorityPage,
+          consistency: payload.consistency,
+          ledgerGeneratedAt: payload.ledgerGeneratedAt,
+          snapshotId: payload.snapshotId,
+        }
+      : authorityPage,
+    safeKind,
+    false,
+  );
 }
 
 function growthElapsedYears() {
@@ -75987,6 +76342,9 @@ async function handleRequest(request, response) {
           "closed_listing",
           "closed-listing",
           "listings",
+          "market-listings",
+          "market-seals",
+          "market-sales",
           "marketlog",
           "market-log",
           "market_log",
@@ -76012,13 +76370,16 @@ async function handleRequest(request, response) {
             })
           : null;
       if (pendingWorkMarketFastPage) {
-        const responsePayload =
+        const responsePayload = tokenMarketActivityHistoryPageWithAuthority(
           await tokenHistoryPageWithCanonicalWorkAmoV8ListingWitnesses(
             pendingWorkMarketFastPage,
             network,
             tokenScope,
             historyKind,
-          );
+          ),
+          historyKind,
+          false,
+        );
         jsonResponse(
           response,
           200,
@@ -76084,13 +76445,17 @@ async function handleRequest(request, response) {
               url.searchParams,
             )
           ) {
-            const responsePayload =
+            const responsePayload = tokenMarketActivityHistoryPageWithAuthority(
               await tokenHistoryPageWithCanonicalWorkAmoV8ListingWitnesses(
                 canonicalValuePayload,
                 network,
                 tokenScope,
                 historyKind,
-              );
+              ),
+              historyKind,
+              canonicalValuePayload.complete !== false &&
+                canonicalValuePayload.preview !== true,
+            );
             jsonResponse(
               response,
               200,

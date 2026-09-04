@@ -14208,6 +14208,9 @@ function tokenHistorySafeKind(kind) {
     ["closed_listing", "closedListings"],
     ["closed-listing", "closedListings"],
     ["listings", "listings"],
+    ["market-listings", "market-listings"],
+    ["market-seals", "market-seals"],
+    ["market-sales", "market-sales"],
     ["marketlog", "market-log"],
     ["market-log", "market-log"],
     ["market_log", "market-log"],
@@ -14603,6 +14606,21 @@ function tokenListingFromEventPayload(payload, row = {}) {
     createdAt: dateIso(payload?.createdAt),
     dataBytes: rowNumber(payload, "dataBytes"),
     frozenNetworkValueSats: rowNumber(payload, "frozenNetworkValueSats"),
+    ...(payload?.frozenTerms &&
+      typeof payload.frozenTerms === "object" &&
+      !Array.isArray(payload.frozenTerms)
+      ? { frozenTerms: payload.frozenTerms }
+      : {}),
+    ...(payload?.listingAuthorization &&
+      typeof payload.listingAuthorization === "object" &&
+      !Array.isArray(payload.listingAuthorization)
+      ? { listingAuthorization: payload.listingAuthorization }
+      : {}),
+    ...(payload?.listingFrozenTerms &&
+      typeof payload.listingFrozenTerms === "object" &&
+      !Array.isArray(payload.listingFrozenTerms)
+      ? { listingFrozenTerms: payload.listingFrozenTerms }
+      : {}),
     listingId: String(payload?.listingId ?? payload?.txid ?? "")
       .trim()
       .toLowerCase(),
@@ -14647,6 +14665,11 @@ function tokenListingFromEventPayload(payload, row = {}) {
     status: payload?.status,
     ticker: normalizedTicker,
     tokenId,
+    ...(payload?.workAmoFrozenTerms &&
+      typeof payload.workAmoFrozenTerms === "object" &&
+      !Array.isArray(payload.workAmoFrozenTerms)
+      ? { workAmoFrozenTerms: payload.workAmoFrozenTerms }
+      : {}),
   };
   return tokenListingWithSaleTicketStatus(listing);
 }
@@ -15428,7 +15451,31 @@ function snapshotTokenActivityItemCanProject(item) {
   });
 }
 
-function snapshotTokenHistoryItemCanProject(item, safeKind) {
+function tokenMarketClosedListingIsSaleSettlement(listing, sales = []) {
+  if (
+    normalizedLowerText(listing?.status) === "sold" ||
+    normalizedLowerText(listing?.lifecycleStatus) === "sold" ||
+    validTxid(normalizedLowerText(listing?.saleTxid))
+  ) {
+    return true;
+  }
+  const listingId = normalizedLowerText(listing?.listingId);
+  const closeTxid = normalizedLowerText(
+    listing?.closedTxid ?? listing?.txid,
+  );
+  if (!listingId || !validTxid(closeTxid)) {
+    return false;
+  }
+  return (Array.isArray(sales) ? sales : []).some((item) => {
+    const sale = item?.sale ?? item;
+    return (
+      normalizedLowerText(sale?.listingId) === listingId &&
+      normalizedLowerText(sale?.txid ?? sale?.saleTxid) === closeTxid
+    );
+  });
+}
+
+function snapshotTokenHistoryItemCanProject(item, safeKind, sales = []) {
   if (!item || typeof item !== "object" || Array.isArray(item)) {
     return false;
   }
@@ -15437,18 +15484,48 @@ function snapshotTokenHistoryItemCanProject(item, safeKind) {
   }
   if (safeKind === "market-log") {
     if (item.listing) {
-      return snapshotTokenHistoryItemCanProject(item.listing, "listings");
+      return snapshotTokenHistoryItemCanProject(item.listing, "listings", sales);
     }
     if (item.sale) {
-      return snapshotTokenHistoryItemCanProject(item.sale, "sales");
+      return snapshotTokenHistoryItemCanProject(item.sale, "sales", sales);
     }
     if (item.closedListing) {
       return snapshotTokenHistoryItemCanProject(
         item.closedListing,
         "closedListings",
+        sales,
       );
     }
     return snapshotTokenActivityItemCanProject(item);
+  }
+  if (safeKind === "market-listings") {
+    if (item.listing) {
+      return snapshotTokenHistoryItemCanProject(item.listing, "listings", sales);
+    }
+    if (item.closedListing) {
+      if (tokenMarketClosedListingIsSaleSettlement(item.closedListing, sales)) {
+        return false;
+      }
+      return snapshotTokenHistoryItemCanProject(
+        item.closedListing,
+        "closedListings",
+        sales,
+      );
+    }
+    return false;
+  }
+  if (safeKind === "market-seals") {
+    return item.seal
+      ? snapshotTokenActivityItemCanProject({
+          ...item.seal,
+          kind: "token-listing-sealed",
+        })
+      : false;
+  }
+  if (safeKind === "market-sales") {
+    return item.sale
+      ? snapshotTokenHistoryItemCanProject(item.sale, "sales", sales)
+      : false;
   }
   if (safeKind === "listings") {
     if (
@@ -16619,7 +16696,7 @@ function tokenHistoryItemFromMarketEventPayload(
     if (safeKind === "closedListings") {
       return closedListing;
     }
-    if (safeKind === "market-log") {
+    if (safeKind === "market-log" || safeKind === "market-listings") {
       return {
         closedListing,
         createdAt: closedListing.closedAt,
@@ -16670,6 +16747,27 @@ function tokenHistoryItemFromMarketEventPayload(
     if (safeKind === "listings") {
       return listing;
     }
+    if (safeKind === "market-seals") {
+      const sealTxid = String(listing.sealTxid ?? payload.txid ?? "")
+        .trim()
+        .toLowerCase();
+      const sealAt = listing.sealAt ?? listing.createdAt;
+      const seal = {
+        ...listing,
+        confirmed: listing.sealConfirmed === true,
+        createdAt: sealAt,
+        sealAt,
+        sealTxid,
+        status: listing.sealConfirmed === true ? "confirmed" : "pending",
+        txid: sealTxid,
+      };
+      return {
+        createdAt: sealAt,
+        kind: "seal",
+        seal,
+        txid: sealTxid,
+      };
+    }
     return {
       createdAt: listing.sealAt ?? listing.createdAt,
       kind: "listing",
@@ -16686,6 +16784,9 @@ function tokenHistoryItemFromMarketEventPayload(
     if (safeKind === "closedListings") {
       return tokenClosedListingFromSalePayload(sale);
     }
+    if (safeKind === "market-listings") {
+      return null;
+    }
     if (safeKind === "sales") {
       return sale;
     }
@@ -16698,6 +16799,14 @@ function tokenHistoryItemFromMarketEventPayload(
   }
 
   if (payload?.kind === "token-listing-closed") {
+    if (
+      safeKind === "market-listings" &&
+      payload?.derived === true &&
+      payload?.rawCandidate === false &&
+      payload?.workAmoV5RawCandidate === false
+    ) {
+      return null;
+    }
     const closedListing = tokenClosedListingFromEventPayload(payload, row);
     if (
       !closedListing.closedTxid ||
@@ -16799,6 +16908,19 @@ function tokenHistoryMarketEventKinds(safeKind) {
   if (safeKind === "sales") {
     return ["token-sale"];
   }
+  if (safeKind === "market-listings") {
+    return [
+      "token-listings",
+      "token-listing",
+      "token-listing-closed",
+    ];
+  }
+  if (safeKind === "market-seals") {
+    return ["token-listing-sealed"];
+  }
+  if (safeKind === "market-sales") {
+    return ["token-sale"];
+  }
   if (safeKind === "closedListings") {
     return ["token-listing-closed", "token-sale"];
   }
@@ -16825,6 +16947,8 @@ function tokenHistoryCanonicalMarketEventsSql(
 ) {
   const listingKinds =
     "ARRAY['token-listings','token-listing','token-listing-sealed']::text[]";
+  const listingCreationKinds =
+    "ARRAY['token-listings','token-listing']::text[]";
   const amoV5Relic = `(${amoV5RelicPredicateSql})`;
   const listingId = `lower(COALESCE(
     NULLIF(e.payload->>'listingId', ''),
@@ -16859,17 +16983,29 @@ function tokenHistoryCanonicalMarketEventsSql(
       ? `'listing:' || ${listingId}`
       : safeKind === "sales"
         ? canonicalSaleKey
-        : safeKind === "closedListings"
-          ? `'closed:' || ${listingId} || ':' || lower(e.txid)`
-          : `CASE
-              WHEN e.kind = ANY(${listingKinds})
-                THEN 'listing:' || ${listingId}
-              WHEN e.kind = 'token-sale'
-                THEN ${canonicalSaleKey}
-              WHEN e.kind = 'token-listing-closed'
-                THEN 'closed:' || ${listingId} || ':' || lower(e.txid)
-              ELSE e.kind || ':' || e.event_id::text
-            END`;
+        : safeKind === "market-sales"
+          ? canonicalSaleKey
+          : safeKind === "market-seals"
+            ? `'seal:' || lower(e.txid) || ':' || ${listingId}`
+            : safeKind === "market-listings"
+              ? `CASE
+                  WHEN e.kind = ANY(${listingCreationKinds})
+                    THEN 'listing:' || ${listingId}
+                  WHEN e.kind = 'token-listing-closed'
+                    THEN 'closed:' || ${listingId} || ':' || lower(e.txid)
+                  ELSE e.kind || ':' || e.event_id::text
+                END`
+              : safeKind === "closedListings"
+                ? `'closed:' || ${listingId} || ':' || lower(e.txid)`
+                : `CASE
+                    WHEN e.kind = ANY(${listingKinds})
+                      THEN 'listing:' || ${listingId}
+                    WHEN e.kind = 'token-sale'
+                      THEN ${canonicalSaleKey}
+                    WHEN e.kind = 'token-listing-closed'
+                      THEN 'closed:' || ${listingId} || ':' || lower(e.txid)
+                    ELSE e.kind || ':' || e.event_id::text
+                  END`;
   const canonicalKey = `CASE
     WHEN ${amoV5Relic}
       THEN 'closed:' || ${listingId} || ':' || ${amoV5RelicClosedTxidSql}
@@ -16877,6 +17013,7 @@ function tokenHistoryCanonicalMarketEventsSql(
   END`;
   const itemTxid = `CASE
     WHEN ${amoV5Relic} THEN ${amoV5RelicClosedTxidSql}
+    WHEN '${safeKind}' = 'market-seals' THEN lower(e.txid)
     WHEN e.kind = ANY(${listingKinds}) THEN ${listingId}
     ELSE lower(e.txid)
   END`;
@@ -17226,7 +17363,7 @@ function currentRelationalHistoryPageWithScanCoverage(page, scan) {
 }
 
 function tokenHistoryItemKey(item, safeKind) {
-  if (safeKind === "market-log") {
+  if (safeKind === "market-log" || safeKind === "market-listings") {
     if (item?.kind === "sale") {
       return `sale:${canonicalTokenMarketHistorySaleKey(item)}`;
     }
@@ -17242,6 +17379,16 @@ function tokenHistoryItemKey(item, safeKind) {
         item.listing?.listingId ?? item.txid ?? "",
       ).toLowerCase()}`;
     }
+  }
+
+  if (safeKind === "market-seals") {
+    return `seal:${String(item?.seal?.sealTxid ?? item?.txid ?? "").toLowerCase()}:${String(
+      item?.seal?.listingId ?? "",
+    ).toLowerCase()}`;
+  }
+
+  if (safeKind === "market-sales") {
+    return `sale:${canonicalTokenMarketHistorySaleKey(item)}`;
   }
 
   if (safeKind === "closedListings") {
@@ -17267,12 +17414,16 @@ function tokenHistoryItemCreatedAt(item) {
   if (item?.kind === "listing") {
     return item.listing?.createdAt ?? item.createdAt;
   }
+  if (item?.kind === "seal") {
+    return item.seal?.sealAt ?? item.seal?.createdAt ?? item.createdAt;
+  }
   return item?.closedAt ?? item?.createdAt;
 }
 
 function tokenHistoryItemIsMarketLogItem(item) {
   return (
     item?.kind === "sale" ||
+    item?.kind === "seal" ||
     item?.kind === "closed-listing" ||
     item?.kind === "listing"
   );
@@ -17285,6 +17436,9 @@ function tokenHistoryItemConfirmed(item) {
   if (item?.kind === "closed-listing") {
     return item.closedListing?.closedConfirmed === true;
   }
+  if (item?.kind === "seal") {
+    return item.seal?.sealConfirmed === true;
+  }
   return item?.kind === "listing" && item.listing?.confirmed === true;
 }
 
@@ -17294,6 +17448,9 @@ function tokenHistoryItemKindRank(item) {
   }
   if (item?.kind === "closed-listing") {
     return 1;
+  }
+  if (item?.kind === "seal") {
+    return 2;
   }
   return item?.kind === "listing" ? 2 : 3;
 }
@@ -17922,7 +18079,7 @@ function mergeTokenHistoryMarketItem(current, incoming, safeKind) {
     return mergeTokenListingRecord(current, incoming);
   }
 
-  if (safeKind === "market-log") {
+  if (safeKind === "market-log" || safeKind === "market-listings") {
     if (current.kind === "listing" && incoming.kind === "listing") {
       return {
         ...current,
@@ -17943,6 +18100,30 @@ function mergeTokenHistoryMarketItem(current, incoming, safeKind) {
         ),
       };
     }
+  }
+
+  if (
+    safeKind === "market-seals" &&
+    current.kind === "seal" &&
+    incoming.kind === "seal"
+  ) {
+    return {
+      ...current,
+      ...incoming,
+      seal: mergeTokenListingRecord(current.seal, incoming.seal),
+    };
+  }
+
+  if (
+    safeKind === "market-sales" &&
+    current.kind === "sale" &&
+    incoming.kind === "sale"
+  ) {
+    return {
+      ...current,
+      ...incoming,
+      sale: mergeCanonicalTokenSaleRecord(current.sale, incoming.sale),
+    };
   }
 
   return incoming;
@@ -21638,8 +21819,29 @@ function tokenHistoryPageFromSnapshot(
     source.sourceItems,
     safeKind,
   );
+  const snapshotSales =
+    safeKind === "market-listings"
+      ? ["market-sales", "market-log", "sales"].flatMap((saleKind) => {
+          const saleSource = tokenHistoryItemsFromSnapshot(
+            tokenHistoryPayloads,
+            scope,
+            saleKind,
+          );
+          return Array.isArray(saleSource?.sourceItems)
+            ? saleSource.sourceItems
+                .map((item) => item?.sale ?? item)
+                .filter(
+                  (sale) =>
+                    sale &&
+                    normalizedLowerText(sale?.kind) !== "closed-listing" &&
+                    validTxid(normalizedLowerText(sale?.txid ?? sale?.saleTxid)) &&
+                    normalizedLowerText(sale?.listingId),
+                )
+            : [];
+        })
+      : [];
   sourceItems = sourceItems.filter((item) =>
-    snapshotTokenHistoryItemCanProject(item, safeKind),
+    snapshotTokenHistoryItemCanProject(item, safeKind, snapshotSales),
   );
   if (safeKind === "listings") {
     const cutoverState = applyWorkMarketV2CutoverToTokenState(
@@ -21759,7 +21961,9 @@ export async function proofIndexTokenMarketHistoryOverlayPayload(
     (snapshotHeight === 0 ||
       snapshotHeight >= WORK_AMO_V5_ACTIVATION_HEIGHT) &&
     workScopeIncludesWork &&
-    ["listings", "closedListings", "market-log"].includes(safeKind);
+    ["listings", "closedListings", "market-log", "market-listings"].includes(
+      safeKind,
+    );
   const amoV5RelicEvidence = amoV5RelicBoundaryReached
     ? await proofIndexWorkAmoV5PreUnitRelicEvidence(
         network,
@@ -21806,7 +22010,8 @@ export async function proofIndexTokenMarketHistoryOverlayPayload(
     )`;
   }
   const eventKindCondition =
-    safeKind === "closedListings" && amoV5RelicProjectable
+    ["closedListings", "market-listings"].includes(safeKind) &&
+    amoV5RelicProjectable
       ? `(e.kind = ANY($2::text[]) OR ${amoV5RelicPredicateSql})`
       : "e.kind = ANY($2::text[])";
   const conditions = [
@@ -21816,6 +22021,56 @@ export async function proofIndexTokenMarketHistoryOverlayPayload(
     "e.status IN ('confirmed', 'pending')",
     eventKindCondition,
   ];
+  if (safeKind === "market-listings") {
+    const listingIdSql = `lower(COALESCE(
+      NULLIF(e.payload->>'listingId', ''),
+      NULLIF(cl_event.listing_id, ''),
+      e.txid
+    ))`;
+    const targetTokenIdSql = `lower(COALESCE(
+      NULLIF(e.payload->>'tokenId', ''),
+      NULLIF(e.payload->'saleAuthorization'->>'tokenId', ''),
+      NULLIF(cl_event.token_id, ''),
+      NULLIF(cl_event.payload->>'tokenId', ''),
+      NULLIF(cl_event.payload->'saleAuthorization'->>'tokenId', ''),
+      ''
+    ))`;
+    conditions.push(`(
+      e.kind <> 'token-listing-closed'
+      OR NOT EXISTS (
+        SELECT 1
+        FROM proof_indexer.events sale_sibling
+        WHERE sale_sibling.network = e.network
+          AND sale_sibling.txid = e.txid
+          AND sale_sibling.protocol = 'pwt1'
+          AND sale_sibling.kind = 'token-sale'
+          AND sale_sibling.valid = true
+          AND sale_sibling.status = e.status
+          AND sale_sibling.block_height IS NOT DISTINCT FROM e.block_height
+          AND sale_sibling.block_index IS NOT DISTINCT FROM e.block_index
+          AND sale_sibling.op_return_vout::text = COALESCE(
+            NULLIF(e.payload->'containerPosition'->>'protocolVout', ''),
+            e.op_return_vout::text
+          )
+          AND sale_sibling.record_ordinal::text = COALESCE(
+            NULLIF(e.payload->'containerPosition'->>'recordOrdinal', ''),
+            e.record_ordinal::text
+          )
+          AND lower(COALESCE(
+            NULLIF(sale_sibling.payload->>'listingId', ''),
+            ''
+          )) = ${listingIdSql}
+          AND lower(COALESCE(
+            NULLIF(sale_sibling.payload->>'tokenId', ''),
+            NULLIF(
+              sale_sibling.payload->'saleAuthorization'->>'tokenId',
+              ''
+            ),
+            ''
+          )) = ${targetTokenIdSql}
+      )
+    )`);
+  }
   if (
     amoV5RelicBoundaryReached &&
     safeKind === "market-log" &&
@@ -21859,6 +22114,7 @@ export async function proofIndexTokenMarketHistoryOverlayPayload(
       for (const key of [
         "txid",
         "saleTxid",
+        "sealTxid",
         "closeTxid",
         "closedTxid",
         "listingId",
@@ -23852,7 +24108,14 @@ export async function proofIndexTokenHistoryPayload(
   // searches already take the current scan-bound branch above; the default page
   // must not disappear merely because embedded history blobs are retired.
   if (
-    ["listings", "closedListings", "market-log"].includes(eligibility.kind) &&
+    [
+      "listings",
+      "closedListings",
+      "market-log",
+      "market-listings",
+      "market-seals",
+      "market-sales",
+    ].includes(eligibility.kind) &&
     !eligibility.pagination.snapshotId &&
     exactMarketTxidNeedles.length === 0
   ) {
@@ -23879,6 +24142,20 @@ export async function proofIndexTokenHistoryPayload(
     if (page) {
       return currentRelationalHistoryPageWithScanCoverage(page, scan);
     }
+  }
+
+  // The additive credit-activity categories are authoritative only when their
+  // current relational page passes the scan-bound count and pagination checks
+  // above. They do not have an embedded snapshot representation, so retrying
+  // the overlay against an older ledger snapshot would bypass that fail-closed
+  // boundary and let the API promote an unverified page to authoritative.
+  if (
+    ["market-listings", "market-seals", "market-sales"].includes(
+      eligibility.kind,
+    ) &&
+    !eligibility.pagination.snapshotId
+  ) {
+    return null;
   }
 
   const snapshot = await ledgerSnapshotWithPayload(

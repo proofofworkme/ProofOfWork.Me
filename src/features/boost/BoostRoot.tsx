@@ -1,4 +1,11 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import {
+  FormEvent,
+  type KeyboardEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Buffer } from "buffer";
 import {
   ArrowUpRight,
@@ -10,6 +17,7 @@ import {
   Send,
   Share2,
   ShoppingBag,
+  SlidersHorizontal,
   Tag,
   UserMinus,
   UserPlus,
@@ -81,6 +89,7 @@ import {
   scriptForAddress,
   signAndBroadcastBoostPsbt,
 } from "./boostWallet";
+import "./boost.css";
 
 type BoostSortMode = "value" | "newest" | "oldest";
 type BoostValueWindow = "hour" | "day" | "week" | "all";
@@ -331,6 +340,32 @@ function actionLabel(kind: string) {
 function avatarText(item: BoostFeedItem) {
   const label = item.authorId || item.profile?.id || item.authorAddress || "Boost";
   return label.slice(0, 2).toUpperCase();
+}
+
+function moveBoostTabFocus(event: KeyboardEvent<HTMLButtonElement>) {
+  if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) {
+    return;
+  }
+
+  const tablist = event.currentTarget.closest<HTMLElement>("[role='tablist']");
+  const tabs = Array.from(
+    tablist?.querySelectorAll<HTMLButtonElement>("[role='tab']") ?? [],
+  );
+  const currentIndex = tabs.indexOf(event.currentTarget);
+  if (currentIndex < 0 || tabs.length === 0) {
+    return;
+  }
+
+  event.preventDefault();
+  const nextIndex =
+    event.key === "Home"
+      ? 0
+      : event.key === "End"
+        ? tabs.length - 1
+        : (currentIndex + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) %
+          tabs.length;
+  tabs[nextIndex]?.focus();
+  tabs[nextIndex]?.click();
 }
 
 function confirmDustFeeAbsorption({
@@ -619,6 +654,11 @@ export default function BoostRoot({
     DEFAULT_LIST_PRICE_SATS,
   );
   const [feeRate, setFeeRate] = useState(DEFAULT_FEE_RATE);
+  const [toolsOpen, setToolsOpen] = useState(false);
+  const boostSurfaceRef = useRef<HTMLDivElement>(null);
+  const toolsPanelRef = useRef<HTMLElement>(null);
+  const toolsTriggerRef = useRef<HTMLButtonElement>(null);
+  const toolsInvokerRef = useRef<HTMLElement | null>(null);
   const [status, setStatus] = useState<AppStatusState>({
     tone: "idle",
     text: "",
@@ -1298,6 +1338,83 @@ export default function BoostRoot({
     }
   }, [items, listQuery, listingTarget]);
 
+  useEffect(() => {
+    if (!toolsOpen) {
+      return;
+    }
+
+    const panel = toolsPanelRef.current;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    panel
+      ?.querySelector<HTMLElement>(
+        "button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled])",
+      )
+      ?.focus();
+
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setToolsOpen(false);
+        return;
+      }
+      if (event.key !== "Tab" || !panel) {
+        return;
+      }
+      const focusable = Array.from(
+        panel.querySelectorAll<HTMLElement>(
+          "button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled])",
+        ),
+      ).filter((element) => element.getClientRects().length > 0);
+      if (focusable.length === 0) {
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      document.body.style.overflow = previousOverflow;
+      const invoker = toolsInvokerRef.current;
+      if (invoker?.isConnected) {
+        invoker.focus();
+      } else {
+        toolsTriggerRef.current?.focus();
+      }
+      toolsInvokerRef.current = null;
+    };
+  }, [toolsOpen]);
+
+  useEffect(() => {
+    const surface = boostSurfaceRef.current;
+    if (!surface) {
+      return;
+    }
+
+    const closeDesktopDrawer = () => {
+      if (surface.getBoundingClientRect().width > 760) {
+        setToolsOpen(false);
+      }
+    };
+    closeDesktopDrawer();
+    const observer = new ResizeObserver(closeDesktopDrawer);
+    observer.observe(surface);
+    window.addEventListener("resize", closeDesktopDrawer);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", closeDesktopDrawer);
+    };
+  }, []);
+
   const headerSignalStats = useMemo(() => {
     return visibleItems.reduce(
       (totals, item) => ({
@@ -1357,11 +1474,29 @@ export default function BoostRoot({
     },
   ];
 
+  function openTools() {
+    toolsInvokerRef.current =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    setToolsOpen(true);
+  }
+
+  function openToolsForCompactSurface() {
+    const surfaceWidth = boostSurfaceRef.current?.getBoundingClientRect().width;
+    if ((surfaceWidth ?? window.innerWidth) <= 760) {
+      openTools();
+    }
+  }
+
   return (
     <div
       className={
-        embedded ? "boost-public-app boost-embedded-app" : "mail-app boost-public-app"
+        embedded
+          ? "boost-public-app boost-embedded-app"
+          : "mail-app boost-public-app"
       }
+      ref={boostSurfaceRef}
     >
       {embedded ? null : (
         <AppHeader
@@ -1380,8 +1515,45 @@ export default function BoostRoot({
       )}
       <AppStatusRow persistent status={status} />
 
-      <div className={embedded ? "boost-shell is-embedded" : "boost-shell"}>
-        <aside className="boost-sidebar">
+      <div
+        aria-label={embedded ? undefined : "Boost timeline"}
+        className={
+          embedded
+            ? "boost-shell boost-shell-instrument is-embedded"
+            : "boost-shell boost-shell-instrument"
+        }
+        role={embedded ? undefined : "main"}
+      >
+        {toolsOpen ? (
+          <button
+            aria-label="Close Boost tools"
+            className="boost-tools-backdrop"
+            onClick={() => setToolsOpen(false)}
+            type="button"
+          />
+        ) : null}
+        <aside
+          aria-label="Boost tools"
+          aria-modal={toolsOpen || undefined}
+          className={toolsOpen ? "boost-sidebar is-open" : "boost-sidebar"}
+          id="boost-tools-panel"
+          ref={toolsPanelRef}
+          role={toolsOpen ? "dialog" : undefined}
+        >
+          <div className="boost-sidebar-mobile-head">
+            <div>
+              <span>Boost controls</span>
+              <strong>Identity & discovery</strong>
+            </div>
+            <button
+              aria-label="Close Boost tools"
+              className="secondary small"
+              onClick={() => setToolsOpen(false)}
+              type="button"
+            >
+              <X size={17} />
+            </button>
+          </div>
           <div className="boost-compose-panel">
             {onComposeBoost ? (
               <button
@@ -1680,12 +1852,21 @@ export default function BoostRoot({
                   </button>
                 ) : null}
               </div>
-              <div className="boost-profile-tabs" aria-label="Boost profile tabs">
+              <div
+                className="boost-profile-tabs"
+                aria-label="Boost profile tabs"
+                role="tablist"
+              >
                 {PROFILE_TABS.map((option) => (
                   <button
-                    aria-pressed={profileTab === option.value}
+                    aria-controls="boost-profile-panel"
+                    aria-selected={profileTab === option.value}
+                    id={`boost-profile-tab-${option.value}`}
                     key={option.value}
+                    onKeyDown={moveBoostTabFocus}
                     onClick={() => selectProfileTab(option.value)}
+                    role="tab"
+                    tabIndex={profileTab === option.value ? 0 : -1}
                     type="button"
                   >
                     <span>{option.label}</span>
@@ -1696,12 +1877,21 @@ export default function BoostRoot({
             </div>
           ) : (
             <div className="boost-timeline-head">
-              <div className="boost-timeline-tabs" aria-label="Boost timeline">
+              <div
+                className="boost-timeline-tabs"
+                aria-label="Boost timeline"
+                role="tablist"
+              >
                 {TIMELINE_MODES.map((option) => (
                   <button
-                    aria-pressed={timelineMode === option.value}
+                    aria-controls="boost-timeline-panel"
+                    aria-selected={timelineMode === option.value}
+                    id={`boost-timeline-tab-${option.value}`}
                     key={option.value}
+                    onKeyDown={moveBoostTabFocus}
                     onClick={() => setTimelineMode(option.value)}
+                    role="tab"
+                    tabIndex={timelineMode === option.value ? 0 : -1}
                     type="button"
                   >
                     {option.label}
@@ -1735,6 +1925,19 @@ export default function BoostRoot({
             </div>
           )}
           <div className="boost-feed-toolbar">
+            <button
+              aria-controls="boost-tools-panel"
+              aria-expanded={toolsOpen}
+              className="secondary small boost-tools-trigger"
+              onClick={openTools}
+              ref={toolsTriggerRef}
+              type="button"
+            >
+              <span className="button-content">
+                <SlidersHorizontal size={15} />
+                <span>Tools</span>
+              </span>
+            </button>
             <div className="network-tabs" aria-label="Boost value window">
               {VALUE_WINDOWS.map((option) => (
                 <button
@@ -1772,7 +1975,17 @@ export default function BoostRoot({
             </button>
           </div>
 
-          <div className="boost-feed">
+          <div
+            aria-labelledby={
+              isProfileView
+                ? `boost-profile-tab-${profileTab}`
+                : `boost-timeline-tab-${timelineMode}`
+            }
+            className="boost-feed"
+            id={isProfileView ? "boost-profile-panel" : "boost-timeline-panel"}
+            role="tabpanel"
+            tabIndex={0}
+          >
             {visibleItems.length > 0 ? (
               visibleItems.map((item) => (
                 <BoostPost
@@ -1788,13 +2001,17 @@ export default function BoostRoot({
                   onLike={(boostItem) =>
                     void publishPaidAction("like", boostItem)
                   }
-                  onList={setListingTarget}
+                  onList={(boostItem) => {
+                    setListingTarget(boostItem);
+                    openToolsForCompactSurface();
+                  }}
                   onReboost={(boostItem) =>
                     void publishPaidAction("reboost", boostItem)
                   }
                   onReply={(boostItem) => {
                     setReplyTarget(boostItem);
                     setReplyText("");
+                    openToolsForCompactSurface();
                   }}
                 />
               ))

@@ -99,6 +99,7 @@ import {
   isWorkTokenRoute,
 } from "./app/routeRegistry";
 import { BrowserNetworkTabs } from "./shared/components/BrowserNetworkTabs";
+import { MetricValue, SegmentedTabs, StatusChip } from "./ui";
 import {
   CHAINED_MINT_BROADCAST_STRATEGY,
   CHAINED_MINT_MAX_COUNT,
@@ -898,7 +899,10 @@ type PowTokenClosedListing = PowTokenListing & {
   disabledAtBlockHeight?: number;
   disabledByTxid?: string;
   disabledReason?: string;
+  lifecycleStatus?: string;
   relic?: boolean;
+  saleTxid?: string;
+  status?: string;
 };
 
 type WorkMarketV1RefundListing = {
@@ -1587,6 +1591,8 @@ type PowTokenListingProjectionEvidence = {
 };
 
 type PowPaginatedApiResponse<T> = {
+  authoritative?: boolean;
+  complete?: boolean;
   cursor?: string;
   end?: number;
   hasMore?: boolean;
@@ -1603,6 +1609,7 @@ type PowPaginatedApiResponse<T> = {
   page?: number;
   pageCount?: number;
   pageSize?: number;
+  preview?: boolean;
   query?: string;
   snapshotId?: string;
   source?: string;
@@ -16386,6 +16393,9 @@ async function fetchTokenHistoryPage<T>(
     | "holders"
     | "listings"
     | "market-log"
+    | "market-listings"
+    | "market-seals"
+    | "market-sales"
     | "mints"
     | "sales"
     | "tokens"
@@ -16433,12 +16443,25 @@ async function fetchTokenHistoryPage<T>(
     throw new Error(String((payload as { error: string }).error));
   }
   const rawItems = Array.isArray(payload.items) ? payload.items : [];
+  const tokenMarketActivityHistoryKind =
+    kind === "market-listings" ||
+    kind === "market-seals" ||
+    kind === "market-sales";
+  const tokenMarketActivityHistoryAuthoritative =
+    tokenMarketActivityHistoryKind &&
+    payload.kind === kind &&
+    payload.authoritative === true &&
+    payload.complete === true &&
+    payload.preview !== true;
   const items = (
     kind === "listings" || kind === "closedListings"
       ? normalizeTokenListingRecords(
           rawItems as Array<PowTokenListing | PowTokenClosedListing>,
         )
-      : kind === "market-log"
+      : kind === "market-log" ||
+          kind === "market-listings" ||
+          kind === "market-seals" ||
+          kind === "market-sales"
         ? (rawItems as TokenMarketLogItem[])
             .map(normalizeTokenMarketLogItem)
             .filter((item): item is TokenMarketLogItem => Boolean(item))
@@ -16456,6 +16479,13 @@ async function fetchTokenHistoryPage<T>(
   ) as T[];
   return {
     ...payload,
+    ...(tokenMarketActivityHistoryKind && !tokenMarketActivityHistoryAuthoritative
+      ? {
+          authoritative: false,
+          complete: false,
+          preview: true,
+        }
+      : {}),
     items,
   };
 }
@@ -20927,12 +20957,89 @@ export default function App() {
   const [selectedKey, setSelectedKey] = useState("");
   const [composeOpen, setComposeOpen] = useState(true);
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
+  const [compactComputerNavigation, setCompactComputerNavigation] =
+    useState(false);
+  const mobileNavigationPanelRef = useRef<HTMLElement>(null);
+  const mobileNavigationTriggerRef = useRef<HTMLButtonElement>(null);
   const [replyParentTxid, setReplyParentTxid] = useState<string | undefined>();
   const [busy, setBusy] = useState(false);
   const [mailSendBusy, setMailSendBusy] = useState(false);
   const [mailWorkAdmissionError, setMailWorkAdmissionError] = useState("");
   const [idMarketplaceAction, setIdMarketplaceAction] =
     useState<IdMarketplaceAction>("idle");
+
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 860px)");
+    const updateNavigationMode = () => {
+      setCompactComputerNavigation(media.matches);
+      if (!media.matches) {
+        setSidebarExpanded(false);
+      }
+    };
+    updateNavigationMode();
+    media.addEventListener("change", updateNavigationMode);
+    return () => media.removeEventListener("change", updateNavigationMode);
+  }, []);
+
+  useEffect(() => {
+    if (!compactComputerNavigation || !sidebarExpanded) {
+      return;
+    }
+
+    const panel = mobileNavigationPanelRef.current;
+    const focusableSelector =
+      'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled])';
+    document.documentElement.classList.add("computer-nav-open");
+    const focusFrame = window.requestAnimationFrame(() => {
+      Array.from(
+        panel?.querySelectorAll<HTMLElement>(focusableSelector) ?? [],
+      )
+        .find((element) => element.getClientRects().length > 0)
+        ?.focus();
+    });
+
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setSidebarExpanded(false);
+        return;
+      }
+      if (event.key !== "Tab" || !panel) {
+        return;
+      }
+      const focusable = Array.from(
+        panel.querySelectorAll<HTMLElement>(focusableSelector),
+      ).filter((element) => element.getClientRects().length > 0);
+      if (focusable.length === 0) {
+        event.preventDefault();
+        return;
+      }
+      const currentIndex = focusable.indexOf(
+        document.activeElement as HTMLElement,
+      );
+      const nextIndex = event.shiftKey
+        ? currentIndex <= 0
+          ? focusable.length - 1
+          : currentIndex - 1
+        : currentIndex === -1 || currentIndex === focusable.length - 1
+          ? 0
+          : currentIndex + 1;
+      event.preventDefault();
+      focusable[nextIndex]?.focus();
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      window.removeEventListener("keydown", handleKeyDown);
+      document.documentElement.classList.remove("computer-nav-open");
+      if (window.matchMedia("(max-width: 860px)").matches) {
+        window.requestAnimationFrame(() =>
+          mobileNavigationTriggerRef.current?.focus(),
+        );
+      }
+    };
+  }, [compactComputerNavigation, sidebarExpanded]);
   const activeWorkspaceStatusKey = landingMode
     ? "landing"
     : idLaunchMode
@@ -33055,8 +33162,8 @@ export default function App() {
                   : refreshMail(activeFolder));
               }
         }
-        subtitle={networkLabel(network)}
-        title="ProofOfWork.Me"
+        subtitle={`ProofOfWork Computer · ${networkLabel(network)}`}
+        title={folderLabel(activeFolder)}
       />
 
       <AppStatusRow
@@ -33066,7 +33173,26 @@ export default function App() {
       />
 
       <section className={layoutClassName}>
-        <aside className={sidebarExpanded ? "sidebar is-expanded" : "sidebar"}>
+        {compactComputerNavigation && sidebarExpanded ? (
+          <button
+            aria-label="Close Computer navigation"
+            className="computer-navigation-scrim"
+            onClick={() => setSidebarExpanded(false)}
+            type="button"
+          />
+        ) : null}
+        <aside
+          aria-label="Computer navigation"
+          aria-modal={
+            compactComputerNavigation && sidebarExpanded ? true : undefined
+          }
+          className={sidebarExpanded ? "sidebar is-expanded" : "sidebar"}
+          id="computer-navigation-panel"
+          ref={mobileNavigationPanelRef}
+          role={
+            compactComputerNavigation && sidebarExpanded ? "dialog" : undefined
+          }
+        >
           <button
             aria-expanded={sidebarExpanded}
             className="sidebar-toggle"
@@ -33086,7 +33212,8 @@ export default function App() {
             </span>
           </button>
 
-          <nav className="folders" aria-label="Folders">
+          <nav className="folders" aria-label="Computer workspaces">
+            <span className="folder-group-label">Mail</span>
             <button
               aria-current={activeFolder === "inbox"}
               onClick={() => openFolder("inbox")}
@@ -33211,6 +33338,7 @@ export default function App() {
                 <FolderPlus size={15} />
               </button>
             </form>
+            <span className="folder-group-label">Create &amp; files</span>
             <button
               aria-current={activeFolder === "files"}
               onClick={() => openFolder("files")}
@@ -33253,6 +33381,7 @@ export default function App() {
                 <span>Boost</span>
               </span>
             </button>
+            <span className="folder-group-label">Identity &amp; value</span>
             <button
               aria-current={activeFolder === "ids"}
               onClick={() => openFolder("ids")}
@@ -33362,6 +33491,7 @@ export default function App() {
                   : "…"}
               </strong>
             </button>
+            <span className="folder-group-label">Verify</span>
             <button
               aria-current={activeFolder === "log"}
               onClick={() => openFolder("log")}
@@ -33377,6 +33507,7 @@ export default function App() {
                   : "…"}
               </strong>
             </button>
+            <span className="folder-group-label">Contacts &amp; local</span>
             <button
               aria-current={activeFolder === "contacts"}
               onClick={() => openFolder("contacts")}
@@ -34150,6 +34281,77 @@ export default function App() {
           </>
         )}
       </section>
+      <nav className="computer-mobile-nav" aria-label="Primary Computer workspaces">
+        <button
+          aria-current={
+            activeFolder === "inbox" ||
+            activeFolder === "incoming" ||
+            activeFolder === "sent" ||
+            activeFolder === "outbox" ||
+            activeFolder === "drafts" ||
+            activeFolder === "favorites" ||
+            activeFolder === "archive"
+          }
+          onClick={() => openFolder("inbox")}
+          type="button"
+        >
+          <Mail size={18} aria-hidden="true" />
+          <span>Mail</span>
+        </button>
+        <button
+          aria-current={
+            activeFolder === "files" ||
+            activeFolder === "desktop" ||
+            activeFolder === "browser"
+          }
+          onClick={() => openFolder("files")}
+          type="button"
+        >
+          <Paperclip size={18} aria-hidden="true" />
+          <span>Files</span>
+        </button>
+        <button
+          aria-current={activeFolder === "marketplace"}
+          onClick={() => openFolder("marketplace")}
+          type="button"
+        >
+          <Users size={18} aria-hidden="true" />
+          <span>AMO</span>
+        </button>
+        <button
+          aria-current={activeFolder === "wallet"}
+          onClick={() => openFolder("wallet")}
+          type="button"
+        >
+          <Wallet size={18} aria-hidden="true" />
+          <span>Wallet</span>
+        </button>
+        <button
+          aria-current={
+            activeFolder !== "inbox" &&
+            activeFolder !== "incoming" &&
+            activeFolder !== "sent" &&
+            activeFolder !== "outbox" &&
+            activeFolder !== "drafts" &&
+            activeFolder !== "favorites" &&
+            activeFolder !== "archive" &&
+            activeFolder !== "files" &&
+            activeFolder !== "desktop" &&
+            activeFolder !== "browser" &&
+            activeFolder !== "marketplace" &&
+            activeFolder !== "wallet"
+          }
+          aria-expanded={sidebarExpanded}
+          aria-controls="computer-navigation-panel"
+          aria-haspopup="dialog"
+          onClick={() => setSidebarExpanded((current) => !current)}
+          ref={mobileNavigationTriggerRef}
+          type="button"
+        >
+          <Menu size={18} aria-hidden="true" />
+          <span>More</span>
+        </button>
+      </nav>
       <MarketplacePurchaseReceiptModal
         receipt={purchaseReceipt}
         onClose={() => setPurchaseReceipt(undefined)}
@@ -34343,6 +34545,24 @@ function historyPageToPagedItems<T>(
     start,
     totalCount,
   };
+}
+
+function WorkspaceSectionNav({
+  items,
+  label = "Workspace sections",
+}: {
+  items: Array<{ href: string; label: string }>;
+  label?: string;
+}) {
+  return (
+    <nav className="workspace-section-nav" aria-label={label}>
+      {items.map((item) => (
+        <a href={item.href} key={item.href}>
+          {item.label}
+        </a>
+      ))}
+    </nav>
+  );
 }
 
 function PaginationControls({
@@ -34755,7 +34975,15 @@ function BrowserApp({
       <AppStatusRow className="desktop-route-status" persistent status={status} />
 
       <section className="browser-workspace">
-        <section className="browser-hero">
+        <WorkspaceSectionNav
+          label="Browser sections"
+          items={[
+            { href: "#browser-render", label: "Render" },
+            { href: "#browser-evidence", label: "Evidence" },
+            { href: "#browser-template", label: "Page template" },
+          ]}
+        />
+        <section className="browser-hero" id="browser-render">
           <div>
             <span className="browser-kicker">ProofOfWork-native browser</span>
             <h2>Paste a txid. Render the page.</h2>
@@ -34795,7 +35023,7 @@ function BrowserApp({
         </section>
 
         {page ? (
-          <section className="browser-page-grid">
+          <section className="browser-page-grid" id="browser-evidence">
             <article className="browser-preview-card">
               <div className="browser-card-head">
                 <div>
@@ -34890,7 +35118,7 @@ function BrowserApp({
             </article>
           </section>
         ) : (
-          <section className="browser-empty">
+          <section className="browser-empty" id="browser-evidence">
             <div className="empty-icon" aria-hidden="true">
               <Monitor size={26} />
             </div>
@@ -34902,7 +35130,7 @@ function BrowserApp({
           </section>
         )}
 
-        <section className="browser-template-card">
+        <section className="browser-template-card" id="browser-template">
           <div className="browser-card-head">
             <div>
               <span>Page template</span>
@@ -35083,7 +35311,15 @@ function BrowserWorkspace({
         status={status}
       />
 
-      <section className="browser-hero">
+      <WorkspaceSectionNav
+        label="Browser sections"
+        items={[
+          { href: "#browser-render", label: "Render" },
+          { href: "#browser-evidence", label: "Evidence" },
+          { href: "#browser-template", label: "Page template" },
+        ]}
+      />
+      <section className="browser-hero" id="browser-render">
         <div>
           <span className="browser-kicker">ProofOfWork-native browser</span>
           <h2>Browser</h2>
@@ -35124,7 +35360,7 @@ function BrowserWorkspace({
       </section>
 
       {page ? (
-        <section className="browser-page-grid">
+        <section className="browser-page-grid" id="browser-evidence">
           <article className="browser-preview-card">
             <div className="browser-card-head">
               <div>
@@ -35219,7 +35455,7 @@ function BrowserWorkspace({
           </article>
         </section>
       ) : (
-        <section className="browser-empty">
+        <section className="browser-empty" id="browser-evidence">
           <div className="empty-icon" aria-hidden="true">
             <Monitor size={26} />
           </div>
@@ -35231,7 +35467,7 @@ function BrowserWorkspace({
         </section>
       )}
 
-      <section className="browser-template-card">
+      <section className="browser-template-card" id="browser-template">
         <div className="browser-card-head">
           <div>
             <span>Page template</span>
@@ -35606,7 +35842,14 @@ function ActivityWorkspace({
 
   return (
     <section className="activity-workspace">
-      <div className="activity-hero">
+      <WorkspaceSectionNav
+        label="Log sections"
+        items={[
+          { href: "#log-overview", label: "Overview" },
+          { href: "#log-events", label: "Events" },
+        ]}
+      />
+      <div className="activity-hero" id="log-overview">
         <div>
           <span className="landing-kicker">ProofOfWork-native audit trail</span>
           <h2>Every ProofOfWork action with a txid.</h2>
@@ -35682,7 +35925,7 @@ function ActivityWorkspace({
         </div>
       </div>
 
-      <section className="activity-feed-card">
+      <section className="activity-feed-card" id="log-events">
         <div className="id-card-head">
           <div className="empty-icon" aria-hidden="true">
             <Clock size={24} />
@@ -36213,7 +36456,17 @@ function InfinityApp({
 
   const workspace = (
     <section className="token-workspace token-wallet-workspace">
-        <section className="id-launch-card token-dashboard-card">
+        <WorkspaceSectionNav
+          label={`${bondConfig.displayName} sections`}
+          items={[
+            { href: "#bond-overview", label: "Overview" },
+            { href: "#bond-history", label: "History" },
+            { href: "#bond-create", label: "Create" },
+            { href: "#bond-wallet", label: "Wallet" },
+            { href: "#bond-market", label: "Market" },
+          ]}
+        />
+        <section className="id-launch-card token-dashboard-card" id="bond-overview">
           <div className="id-card-heading">
             <div className="id-card-icon">
               <TrendingUp size={24} />
@@ -36362,7 +36615,10 @@ function InfinityApp({
           ) : null}
         </section>
 
-        <section className="id-launch-card token-dashboard-card marketplace-work-floor-card">
+        <section
+          className="id-launch-card token-dashboard-card marketplace-work-floor-card"
+          id="bond-history"
+        >
           <div className="id-card-heading">
             <div className="id-card-icon">
               <TrendingUp size={24} />
@@ -36450,7 +36706,7 @@ function InfinityApp({
           )}
         </section>
 
-        <section className="id-launch-card token-mint-card">
+        <section className="id-launch-card token-mint-card" id="bond-create">
           <div className="id-card-heading compact">
             <div className="id-card-icon">
               <Send size={22} />
@@ -36571,6 +36827,7 @@ function InfinityApp({
           </form>
         </section>
 
+        <span className="workspace-anchor" id="bond-wallet" />
         <TokenWalletWorkspace
           address={address}
           balances={balances}
@@ -36631,6 +36888,7 @@ function InfinityApp({
           }}
         />
 
+        <span className="workspace-anchor" id="bond-market" />
         <InfinityBondMarketPanel
           address={address}
           bondConfig={bondConfig}
@@ -37671,7 +37929,19 @@ function TokenWalletWorkspace({
           : "token-workspace token-wallet-workspace"
       }
     >
-      <section className="id-launch-card token-dashboard-card">
+      {!compact ? (
+        <WorkspaceSectionNav
+          label="Wallet sections"
+          items={[
+            { href: "#wallet-overview", label: "Overview" },
+            { href: "#wallet-balances", label: "Balances" },
+            { href: "#wallet-send", label: "Send" },
+            { href: "#wallet-list", label: "List" },
+            { href: "#wallet-activity", label: "Activity" },
+          ]}
+        />
+      ) : null}
+      <section className="id-launch-card token-dashboard-card" id="wallet-overview">
         <div className="id-card-heading">
           <div className="id-card-icon">
             <Wallet size={24} />
@@ -37727,7 +37997,7 @@ function TokenWalletWorkspace({
       </section>
 
       <div className="token-detail-grid">
-        <section className="id-launch-card token-mint-panel">
+        <section className="id-launch-card token-mint-panel" id="wallet-balances">
           <div className="id-card-heading compact">
             <div className="id-card-icon">
               <Wallet size={22} />
@@ -37830,7 +38100,7 @@ function TokenWalletWorkspace({
           )}
         </section>
 
-        <section className="id-launch-card token-mint-card">
+        <section className="id-launch-card token-mint-card" id="wallet-send">
           <div className="id-card-heading compact">
             <div className="id-card-icon">
               <Send size={22} />
@@ -37948,7 +38218,7 @@ function TokenWalletWorkspace({
           {transferFundingPrep}
         </section>
 
-        <section className="id-launch-card token-mint-card">
+        <section className="id-launch-card token-mint-card" id="wallet-list">
           <div className="id-card-heading compact">
             <div className="id-card-icon">
               <Tag size={22} />
@@ -38462,7 +38732,7 @@ function TokenWalletWorkspace({
         </section>
       </div>
 
-      <section className="id-launch-card token-log-card">
+      <section className="id-launch-card token-log-card" id="wallet-activity">
         <div className="id-card-heading compact">
           <div className="id-card-icon">
             <Clock size={22} />
@@ -40059,9 +40329,25 @@ function TokenWorkspace({
           </button>
         </div>
 
+        <WorkspaceSectionNav
+          label={`${detailToken?.ticker ?? "Credit"} sections`}
+          items={[
+            { href: "#credit-detail-overview", label: "Overview" },
+            { href: "#credit-detail-market", label: "Market" },
+            ...(!detailBondDefinition
+              ? [{ href: "#credit-detail-mint", label: "Mint" }]
+              : []),
+            { href: "#credit-detail-holders", label: "Holders" },
+            { href: "#credit-detail-mints", label: "Mint log" },
+          ]}
+        />
+
         {detailToken ? (
           <>
-            <section className="id-launch-card token-detail-hero">
+            <section
+              className="id-launch-card token-detail-hero"
+              id="credit-detail-overview"
+            >
               <div className="token-detail-title">
                 <div className="empty-icon" aria-hidden="true">
                   <TrendingUp size={26} />
@@ -40176,6 +40462,7 @@ function TokenWorkspace({
             {detailShowsWorkFloor ? (
               <section
                 className="id-launch-card token-floor-card work-floor-metrics-card"
+                id="credit-detail-market"
               >
                 <div className="id-card-head">
                   <div className="empty-icon" aria-hidden="true">
@@ -40202,12 +40489,14 @@ function TokenWorkspace({
                     >
                       <div>
                         <span>Floor</span>
-                        <strong>
-                          {bondProofAmountDisplay(
+                        <MetricValue
+                          exactValue={bondProofAmountDisplay(
                             liveWorkFloorSats,
                             liveWorkFloorQ8,
-                          )} proofs / WORK
-                        </strong>
+                          )}
+                          label="Live WORK floor"
+                          unit="proofs / WORK"
+                        />
                       </div>
                       <div>
                         <span>USD/WORK</span>
@@ -40215,13 +40504,15 @@ function TokenWorkspace({
                       </div>
                       <div>
                         <span>Live network value</span>
-                        <strong>
-                          {bondProofAmountDisplay(
+                        <MetricValue
+                          exactValue={bondProofAmountDisplay(
                             workFloorQuote.liveNetworkValueSats ??
                               workFloorQuote.networkValueSats,
                             liveWorkNetworkValueQ8,
-                          )} proofs
-                        </strong>
+                          )}
+                          label="Live network value"
+                          unit="proofs"
+                        />
                       </div>
                       <div>
                         <span>Network USD</span>
@@ -40231,21 +40522,25 @@ function TokenWorkspace({
                         <>
                           <div>
                             <span>Frozen network value</span>
-                            <strong>
-                              {bondProofAmountDisplay(
+                            <MetricValue
+                              exactValue={bondProofAmountDisplay(
                                 frozenWorkNetworkValueSats,
                                 frozenWorkNetworkValueQ8,
-                              )} proofs
-                            </strong>
+                              )}
+                              label="Frozen network value"
+                              unit="proofs"
+                            />
                           </div>
                           <div>
                             <span>Frozen floor</span>
-                            <strong>
-                              {bondProofAmountDisplay(
+                            <MetricValue
+                              exactValue={bondProofAmountDisplay(
                                 frozenWorkFloorSats,
                                 frozenWorkFloorQ8,
-                              )} proofs / WORK
-                            </strong>
+                              )}
+                              label="Frozen WORK floor"
+                              unit="proofs / WORK"
+                            />
                           </div>
                         </>
                       ) : null}
@@ -40393,7 +40688,10 @@ function TokenWorkspace({
             ) : null}
 
             {!detailShowsWorkFloor ? (
-              <section className="id-launch-card token-floor-card">
+              <section
+                className="id-launch-card token-floor-card"
+                id="credit-detail-market"
+              >
                 <div className="id-card-head">
                   <div className="empty-icon" aria-hidden="true">
                     <TrendingUp size={24} />
@@ -40509,7 +40807,10 @@ function TokenWorkspace({
 
             <div className="id-launch-grid">
               {!detailBondDefinition ? (
-                <section className="id-launch-card token-mint-panel">
+                <section
+                  className="id-launch-card token-mint-panel"
+                  id="credit-detail-mint"
+                >
                 <div className="id-card-head">
                   <div className="empty-icon" aria-hidden="true">
                     <Wallet size={24} />
@@ -40639,7 +40940,7 @@ function TokenWorkspace({
             </div>
 
             <div className="id-launch-grid">
-              <section className="id-launch-card">
+              <section className="id-launch-card" id="credit-detail-holders">
                 <div className="id-card-head">
                   <div className="empty-icon" aria-hidden="true">
                     <Users size={24} />
@@ -40666,7 +40967,7 @@ function TokenWorkspace({
                 />
               </section>
 
-              <section className="id-launch-card">
+              <section className="id-launch-card" id="credit-detail-mints">
                 <div className="id-card-head">
                   <div className="empty-icon" aria-hidden="true">
                     <Clock size={24} />
@@ -40710,7 +41011,19 @@ function TokenWorkspace({
 
   return (
     <section className={workspaceClassName}>
-      <div className="token-registry-strip">
+      {!compact ? (
+        <WorkspaceSectionNav
+          label="Credit sections"
+          items={[
+            { href: "#credit-overview", label: "Overview" },
+            { href: "#credit-create", label: "Create" },
+            { href: "#credit-mint", label: "Mint" },
+            { href: "#credit-ledger", label: "Ledger" },
+            { href: "#credit-directory", label: "Directory" },
+          ]}
+        />
+      ) : null}
+      <div className="token-registry-strip" id="credit-overview">
         <div>
           <span>Credit index</span>
           <strong>{TOKEN_INDEX_ID}</strong>
@@ -40732,7 +41045,10 @@ function TokenWorkspace({
         </div>
       </div>
       <div className="id-launch-hero">
-        <section className="id-launch-card id-claim-card token-create-card">
+        <section
+          className="id-launch-card id-claim-card token-create-card"
+          id="credit-create"
+        >
           <div className="id-card-head">
             <div className="empty-icon" aria-hidden="true">
               <FilePenLine size={24} />
@@ -40899,7 +41215,10 @@ function TokenWorkspace({
           </form>
         </section>
 
-        <section className="id-launch-card id-claim-card token-mint-card">
+        <section
+          className="id-launch-card id-claim-card token-mint-card"
+          id="credit-mint"
+        >
           <div className="id-card-head">
             <div className="empty-icon" aria-hidden="true">
               <Wallet size={24} />
@@ -41069,7 +41388,7 @@ function TokenWorkspace({
       </div>
 
       {selectedToken ? (
-        <div className="id-launch-grid token-selected-ledger">
+        <div className="id-launch-grid token-selected-ledger" id="credit-ledger">
           <section className="id-launch-card">
             <div className="id-card-head">
               <div className="empty-icon" aria-hidden="true">
@@ -41123,7 +41442,7 @@ function TokenWorkspace({
       ) : null}
 
       <div className="id-launch-grid">
-        <section className="id-launch-card">
+        <section className="id-launch-card" id="credit-directory">
           <div className="id-card-head">
             <div className="empty-icon" aria-hidden="true">
               <TrendingUp size={24} />
@@ -43731,7 +44050,17 @@ function GrowthWorkspace({
 
   return (
     <section className="growth-workspace">
-      <div className="growth-hero">
+      <WorkspaceSectionNav
+        label="Growth sections"
+        items={[
+          { href: "#growth-overview", label: "Overview" },
+          { href: "#growth-model", label: "Model" },
+          { href: "#growth-events", label: "Events" },
+          { href: "#growth-products", label: "Products" },
+          { href: "#growth-assumptions", label: "Assumptions" },
+        ]}
+      />
+      <div className="growth-hero" id="growth-overview">
         <div>
           <span className="landing-kicker">ProofOfWork Computer growth model</span>
           <h2>Model the future. Measure the chain.</h2>
@@ -43921,7 +44250,7 @@ function GrowthWorkspace({
         </article>
       </section>
 
-      <section className="growth-chart-card">
+      <section className="growth-chart-card" id="growth-model">
         <div className="id-launch-section-head">
           <div>
             <h3>Modeled network value vs live real value</h3>
@@ -43975,6 +44304,7 @@ function GrowthWorkspace({
       <section
         className="growth-events-card"
         aria-label="Real confirmed growth events"
+        id="growth-events"
       >
         <div className="id-launch-section-head">
           <div>
@@ -44026,6 +44356,7 @@ function GrowthWorkspace({
       <section
         className="growth-product-section"
         aria-label="Growth product metrics"
+        id="growth-products"
       >
         <div className="id-launch-section-head">
           <div>
@@ -44180,6 +44511,7 @@ function GrowthWorkspace({
       <section
         className="growth-assumption-grid"
         aria-label="Model assumptions"
+        id="growth-assumptions"
       >
         <article>
           <h3>Product contract</h3>
@@ -44326,7 +44658,16 @@ function IdLaunchApp({
       />
 
       <section className="id-launch-main">
-        <div className="id-launch-hero">
+        <WorkspaceSectionNav
+          label="ID registry sections"
+          items={[
+            { href: "#id-overview", label: "Overview" },
+            { href: "#id-register", label: "Register" },
+            { href: "#id-owned", label: "Your IDs" },
+            { href: "#id-registry", label: "Registry" },
+          ]}
+        />
+        <div className="id-launch-hero" id="id-overview">
           <div>
             <span className="id-launch-kicker">ProofOfWork-native identity</span>
             <h2>Claim your ProofOfWork ID.</h2>
@@ -44353,7 +44694,11 @@ function IdLaunchApp({
         </div>
 
         <div className="id-launch-grid">
-          <form className="id-launch-card id-claim-card" onSubmit={submit}>
+          <form
+            className="id-launch-card id-claim-card"
+            id="id-register"
+            onSubmit={submit}
+          >
             <div className="id-card-head">
               <div className="empty-icon" aria-hidden="true">
                 <AtSign size={24} />
@@ -44509,7 +44854,7 @@ function IdLaunchApp({
               </dl>
             </section>
 
-            <section className="id-launch-card">
+            <section className="id-launch-card" id="id-owned">
               <h3>Your IDs</h3>
               <IdRecordList
                 records={ownedIds}
@@ -44525,7 +44870,7 @@ function IdLaunchApp({
           </aside>
         </div>
 
-        <section className="id-launch-card">
+        <section className="id-launch-card" id="id-registry">
           <div className="id-launch-section-head">
             <div>
               <h3>Public Registry</h3>
@@ -44588,6 +44933,7 @@ type MarketplaceSortMode =
   | "arb-desc"
   | "arb-asc";
 type MarketplaceListingBookFilter = "all" | "sealed" | "unsealed";
+type TokenMarketActivityTab = "listings" | "seals" | "sales";
 type TokenDirectorySortMode = "mint-progress" | "confirmed-supply";
 
 type TokenReferenceSnapshot = Pick<
@@ -44619,10 +44965,21 @@ type TokenMarketLogItem =
       kind: "sale";
       sale: PowTokenSale;
       txid: string;
+    }
+  | {
+      createdAt: string;
+      kind: "seal";
+      seal: PowTokenListing;
+      txid: string;
     };
 
 type RemoteTokenMarketLogPage = {
   page: PowPaginatedApiResponse<TokenMarketLogItem>;
+  viewKey: string;
+};
+
+type TokenMarketActivityReadState = {
+  status: "authoritative" | "loading" | "preview";
   viewKey: string;
 };
 
@@ -44631,6 +44988,16 @@ function tokenMarketLogRemotePageForView(
   viewKey: string,
 ) {
   return remotePage?.viewKey === viewKey ? remotePage.page : undefined;
+}
+
+function tokenMarketHistoryPageIsAuthoritative(
+  page: PowPaginatedApiResponse<unknown>,
+) {
+  return (
+    page.authoritative === true &&
+    page.complete === true &&
+    page.preview !== true
+  );
 }
 
 function normalizeTokenMarketLogItem(
@@ -44677,6 +45044,19 @@ function normalizeTokenMarketLogItem(
           createdAt: sale.createdAt || item.createdAt,
           sale,
           txid: sale.txid,
+        }
+      : null;
+  }
+
+  if (item?.kind === "seal") {
+    const seal = normalizeTokenListingRecord(item.seal);
+    const sealTxid = seal?.sealTxid || item.txid;
+    return seal && sealTxid
+      ? {
+          ...item,
+          createdAt: seal.sealAt || seal.createdAt || item.createdAt,
+          seal,
+          txid: sealTxid,
         }
       : null;
   }
@@ -45055,6 +45435,10 @@ function tokenMarketLogItemConfirmed(item: TokenMarketLogItem) {
     return Boolean(item.closedListing.closedConfirmed);
   }
 
+  if (item.kind === "seal") {
+    return Boolean(item.seal.sealConfirmed);
+  }
+
   return item.kind === "sale" ? item.sale.confirmed : item.listing.confirmed;
 }
 
@@ -45062,7 +45446,10 @@ function tokenMarketLogItemKindRank(item: TokenMarketLogItem) {
   if (item.kind === "sale") {
     return 0;
   }
-  return item.kind === "closed-listing" ? 1 : 2;
+  if (item.kind === "closed-listing") {
+    return 1;
+  }
+  return item.kind === "seal" ? 2 : 3;
 }
 
 function compareTokenMarketLogItems(
@@ -45200,28 +45587,130 @@ function MarketplaceListingBookTabs({
   value: MarketplaceListingBookFilter;
 }) {
   return (
-    <div
+    <SegmentedTabs
+      ariaLabel={label}
       className="marketplace-tabs marketplace-listing-tabs"
-      aria-label={label}
-    >
-      {(
-        [
-          ["all", "All", allCount],
-          ["sealed", "Sealed", sealedCount],
-          ["unsealed", "Unsealed", unsealedCount],
-        ] as const
-      ).map(([filter, filterLabel, count]) => (
-        <button
-          aria-pressed={value === filter}
-          key={filter}
-          onClick={() => onChange(filter)}
-          type="button"
-        >
-          <span>{filterLabel}</span>
-          <strong>{count.toLocaleString()}</strong>
-        </button>
-      ))}
-    </div>
+      items={[
+        { count: allCount.toLocaleString(), id: "all", label: "All" },
+        {
+          count: sealedCount.toLocaleString(),
+          id: "sealed",
+          label: "Sealed",
+        },
+        {
+          count: unsealedCount.toLocaleString(),
+          id: "unsealed",
+          label: "Unsealed",
+        },
+      ]}
+      onChange={onChange}
+      semantics="filters"
+      value={value}
+    />
+  );
+}
+
+const TOKEN_MARKET_ACTIVITY_TABS: Array<{
+  label: string;
+  value: TokenMarketActivityTab;
+}> = [
+  { label: "Listings", value: "listings" },
+  { label: "Seals", value: "seals" },
+  { label: "Sales", value: "sales" },
+];
+
+function tokenMarketActivityHistoryKind(tab: TokenMarketActivityTab) {
+  return `market-${tab}` as const;
+}
+
+function tokenMarketActivityMatchesSearch(
+  item: TokenMarketLogItem,
+  query: string,
+) {
+  const normalizedQuery = query.trim().toLowerCase();
+  if (!normalizedQuery) {
+    return true;
+  }
+
+  const record =
+    item.kind === "listing"
+      ? item.listing
+      : item.kind === "closed-listing"
+        ? item.closedListing
+        : item.kind === "seal"
+          ? item.seal
+          : item.sale;
+  return [
+    item.kind,
+    item.txid,
+    record.tokenId,
+    record.ticker,
+    record.listingId,
+    record.sellerAddress,
+    "buyerAddress" in record ? record.buyerAddress : "",
+    "closedTxid" in record ? record.closedTxid : "",
+    "sealTxid" in record ? record.sealTxid : "",
+    "saleAuthorization" in record
+      ? record.saleAuthorization.buyerAddress
+      : "",
+  ]
+    .filter(Boolean)
+    .some((candidate) =>
+      String(candidate).toLowerCase().includes(normalizedQuery),
+    );
+}
+
+function tokenMarketClosedListingIsSaleSettlement(
+  listing: PowTokenClosedListing,
+  sales: PowTokenSale[] = [],
+) {
+  if (
+    listing.status?.trim().toLowerCase() === "sold" ||
+    listing.lifecycleStatus?.trim().toLowerCase() === "sold" ||
+    /^[0-9a-f]{64}$/u.test(String(listing.saleTxid ?? "").trim().toLowerCase())
+  ) {
+    return true;
+  }
+  const listingId = listing.listingId.trim().toLowerCase();
+  const closeTxid = String(listing.closedTxid || "")
+    .trim()
+    .toLowerCase();
+  if (!listingId || !/^[0-9a-f]{64}$/u.test(closeTxid)) {
+    return false;
+  }
+  return sales.some(
+    (sale) =>
+      sale.listingId.trim().toLowerCase() === listingId &&
+      sale.txid.trim().toLowerCase() === closeTxid,
+  );
+}
+
+function TokenMarketActivityTabs({
+  counts,
+  onChange,
+  value,
+}: {
+  counts: Partial<Record<TokenMarketActivityTab, number>>;
+  onChange: (value: TokenMarketActivityTab) => void;
+  value: TokenMarketActivityTab;
+}) {
+  return (
+    <SegmentedTabs
+      ariaLabel="Credit market activity"
+      className="marketplace-tabs token-market-activity-tabs"
+      items={TOKEN_MARKET_ACTIVITY_TABS.map((item) => ({
+        count:
+          counts[item.value] === undefined
+            ? "…"
+            : counts[item.value]?.toLocaleString(),
+        id: item.value,
+        label: item.label,
+        panelId: "token-market-activity-panel",
+        tabId: `token-market-activity-tab-${item.value}`,
+      }))}
+      onChange={onChange}
+      value={value}
+    />
   );
 }
 
@@ -46586,6 +47075,12 @@ function InfinityBondMarketPanel({
                 );
               }
 
+              // Bond market history continues to consume the legacy mixed-log
+              // contract, which never emits the additive credit seal row.
+              if (item.kind === "seal") {
+                return null;
+              }
+
               const hasSeal = tokenSaleAuthorizationUsesSaleTicketAnchor(
                 item.listing.saleAuthorization,
               );
@@ -46900,9 +47395,23 @@ function TokenMarketplacePanel({
   const [tokenMarketPageIndex, setTokenMarketPageIndex] = useState(0);
   const [tokenListingPageIndex, setTokenListingPageIndex] = useState(0);
   const [tokenMarketLogPageIndex, setTokenMarketLogPageIndex] = useState(0);
+  const [tokenMarketLogPageScopeKey, setTokenMarketLogPageScopeKey] =
+    useState("");
+  const [tokenMarketActivityTab, setTokenMarketActivityTab] =
+    useState<TokenMarketActivityTab>("listings");
+  const [tokenMarketActivityQuery, setTokenMarketActivityQuery] = useState("");
+  const [tokenMarketActivityTotals, setTokenMarketActivityTotals] = useState<{
+    scopeKey: string;
+    totals: Partial<Record<TokenMarketActivityTab, number>>;
+  }>({ scopeKey: "", totals: {} });
   const [tokenListingSearchQuery, setTokenListingSearchQuery] = useState("");
   const [remoteTokenMarketLogPage, setRemoteTokenMarketLogPage] =
     useState<RemoteTokenMarketLogPage>();
+  const [tokenMarketActivityReadState, setTokenMarketActivityReadState] =
+    useState<TokenMarketActivityReadState>({
+      status: "preview",
+      viewKey: "",
+    });
   const [tokenMarketLogPageLoading, setTokenMarketLogPageLoading] =
     useState(false);
   const [tokenDirectorySortMode, setTokenDirectorySortMode] =
@@ -46916,11 +47425,33 @@ function TokenMarketplacePanel({
   >("amo");
   const [workPreV8RelicPageIndex, setWorkPreV8RelicPageIndex] = useState(0);
   const [workRelicPageIndex, setWorkRelicPageIndex] = useState(0);
+  const selectTokenMarketActivityTab = (tab: TokenMarketActivityTab) => {
+    setTokenMarketLogPageIndex(0);
+    setRemoteTokenMarketLogPage(undefined);
+    setTokenMarketActivityTab(tab);
+  };
+  const updateTokenMarketActivityQuery = (query: string) => {
+    setTokenMarketLogPageIndex(0);
+    setRemoteTokenMarketLogPage(undefined);
+    setTokenMarketActivityQuery(query);
+  };
   const selectedMarketToken = rows.find(
     (token) =>
       token.tokenId === activeSelectedTokenMarketId ||
       token.ticker === normalizeTokenTicker(activeSelectedTokenMarketId),
   );
+  const tokenMarketActivityScopeKey = [
+    network,
+    selectedMarketToken?.tokenId ?? "",
+  ].join(":");
+  const activeTokenMarketLogPageIndex =
+    tokenMarketLogPageScopeKey === tokenMarketActivityScopeKey
+      ? tokenMarketLogPageIndex
+      : 0;
+  const changeTokenMarketLogPageIndex = (pageIndex: number) => {
+    setTokenMarketLogPageScopeKey(tokenMarketActivityScopeKey);
+    setTokenMarketLogPageIndex(pageIndex);
+  };
   useEffect(() => {
     setTokenMarketPageIndex(0);
   }, [selectedMarketToken?.tokenId, tokenDirectorySortMode]);
@@ -46935,7 +47466,12 @@ function TokenMarketplacePanel({
   ]);
   useEffect(() => {
     setTokenMarketLogPageIndex(0);
-  }, [selectedMarketToken?.tokenId]);
+    setTokenMarketLogPageScopeKey(tokenMarketActivityScopeKey);
+  }, [
+    tokenMarketActivityScopeKey,
+    tokenMarketActivityQuery,
+    tokenMarketActivityTab,
+  ]);
   const setTokenMarketRoute = (tokenId: string) => {
     if (preserveRoute || typeof window === "undefined") {
       return;
@@ -47050,27 +47586,74 @@ function TokenMarketplacePanel({
   const tokenReferenceById = new Map<string, TokenReferenceSnapshot>(
     rows.map((token) => [token.tokenId, token]),
   );
-  const tokenMarketLogItems = sortTokenMarketLogItems([
-    ...marketListings.map((listing) => ({
+  const marketListingHistoryById = new Map<string, PowTokenListing>();
+  for (const listing of [...marketClosedListings, ...allMarketListings]) {
+    const listingId = listing.listingId.trim().toLowerCase();
+    if (listingId) {
+      marketListingHistoryById.set(listingId, listing);
+    }
+  }
+  const tokenMarketListingActivityItems = sortTokenMarketLogItems([
+    ...[...marketListingHistoryById.values()].map((listing) => ({
       createdAt: listing.createdAt,
       kind: "listing" as const,
       listing,
       txid: listing.listingId,
     })),
-    ...marketClosedListings.map((closedListing) => ({
-      closedListing,
-      createdAt: closedListing.closedAt ?? closedListing.createdAt,
-      kind: "closed-listing" as const,
-      txid: closedListing.closedTxid || closedListing.listingId,
+    ...marketClosedListings
+      .filter(
+        (closedListing) =>
+          !tokenMarketClosedListingIsSaleSettlement(
+            closedListing,
+            marketSales,
+          ),
+      )
+      .map((closedListing) => ({
+        closedListing,
+        createdAt: closedListing.closedAt ?? closedListing.createdAt,
+        kind: "closed-listing" as const,
+        txid: closedListing.closedTxid || closedListing.listingId,
+      })),
+  ]);
+  const marketSealHistoryById = new Map<string, PowTokenListing>();
+  for (const listing of [...marketClosedListings, ...allMarketListings]) {
+    const sealTxid = String(listing.sealTxid ?? "").trim().toLowerCase();
+    const listingId = listing.listingId.trim().toLowerCase();
+    if (sealTxid && listingId) {
+      marketSealHistoryById.set(`${sealTxid}:${listingId}`, listing);
+    }
+  }
+  const tokenMarketSealActivityItems = sortTokenMarketLogItems(
+    [...marketSealHistoryById.values()].map((seal) => ({
+      createdAt: seal.sealAt ?? seal.createdAt,
+      kind: "seal" as const,
+      seal,
+      txid: seal.sealTxid ?? "",
     })),
-    ...marketSales.map((sale) => ({
+  );
+  const tokenMarketSaleActivityItems = sortTokenMarketLogItems(
+    marketSales.map((sale) => ({
       createdAt: sale.createdAt,
       kind: "sale" as const,
       sale,
       txid: sale.txid,
     })),
-  ]);
-  const tokenMarketLogDataVersion = tokenMarketLogItems
+  );
+  const localTokenMarketActivityItems =
+    tokenMarketActivityTab === "listings"
+      ? tokenMarketListingActivityItems
+      : tokenMarketActivityTab === "seals"
+        ? tokenMarketSealActivityItems
+        : tokenMarketSaleActivityItems;
+  const localTokenMarketActivityTotals: Record<TokenMarketActivityTab, number> = {
+    listings: tokenMarketListingActivityItems.length,
+    sales: tokenMarketSaleActivityItems.length,
+    seals: tokenMarketSealActivityItems.length,
+  };
+  const tokenMarketActivityItems = localTokenMarketActivityItems.filter((item) =>
+    tokenMarketActivityMatchesSearch(item, tokenMarketActivityQuery),
+  );
+  const tokenMarketLogDataVersion = localTokenMarketActivityItems
     .map((item) =>
       [
         item.kind,
@@ -47083,7 +47666,9 @@ function TokenMarketplacePanel({
   const tokenMarketLogViewKey = [
     network,
     selectedMarketToken?.tokenId ?? "",
-    tokenMarketLogPageIndex,
+    tokenMarketActivityTab,
+    tokenMarketActivityQuery.trim().toLowerCase(),
+    activeTokenMarketLogPageIndex,
     TOKEN_LIST_PREVIEW_COUNT,
   ].join(":");
   const tokenMarketLogRequestKey = [
@@ -47095,20 +47680,30 @@ function TokenMarketplacePanel({
     if (network !== "livenet") {
       setRemoteTokenMarketLogPage(undefined);
       setTokenMarketLogPageLoading(false);
+      setTokenMarketActivityReadState({
+        status: "preview",
+        viewKey: tokenMarketLogViewKey,
+      });
       return;
     }
 
     let cancelled = false;
     setTokenMarketLogPageLoading(true);
+    setTokenMarketActivityReadState({
+      status: "loading",
+      viewKey: tokenMarketLogViewKey,
+    });
+    const historyKind = tokenMarketActivityHistoryKind(tokenMarketActivityTab);
     const historyOptions = {
       fresh: tokenMarketHistoryRefreshNonce > 0,
-      pageIndex: tokenMarketLogPageIndex,
+      pageIndex: activeTokenMarketLogPageIndex,
       pageSize: TOKEN_LIST_PREVIEW_COUNT,
+      query: tokenMarketActivityQuery,
       tokenScope: selectedMarketToken?.tokenId ?? "",
     };
     void fetchTokenHistoryPage<TokenMarketLogItem>(
       network,
-      "market-log",
+      historyKind,
       historyOptions,
     )
       .catch((error) => {
@@ -47117,7 +47712,7 @@ function TokenMarketplacePanel({
         }
         return fetchTokenHistoryPage<TokenMarketLogItem>(
           network,
-          "market-log",
+          historyKind,
           {
             ...historyOptions,
             fresh: false,
@@ -47126,11 +47721,27 @@ function TokenMarketplacePanel({
       })
       .then((page) => {
         if (!cancelled) {
+          const authoritative = tokenMarketHistoryPageIsAuthoritative(page);
+          if (authoritative && !historyOptions.query.trim()) {
+            setTokenMarketActivityTotals((current) => ({
+              scopeKey: tokenMarketActivityScopeKey,
+              totals: {
+                ...(current.scopeKey === tokenMarketActivityScopeKey
+                  ? current.totals
+                  : {}),
+                [tokenMarketActivityTab]: page.totalCount,
+              },
+            }));
+          }
           setRemoteTokenMarketLogPage({
             page: {
               ...page,
               items: sortTokenMarketLogItems(page.items ?? []),
             },
+            viewKey: tokenMarketLogViewKey,
+          });
+          setTokenMarketActivityReadState({
+            status: authoritative ? "authoritative" : "preview",
             viewKey: tokenMarketLogViewKey,
           });
         }
@@ -47140,6 +47751,10 @@ function TokenMarketplacePanel({
           setRemoteTokenMarketLogPage((current) =>
             current?.viewKey === tokenMarketLogViewKey ? current : undefined,
           );
+          setTokenMarketActivityReadState({
+            status: "preview",
+            viewKey: tokenMarketLogViewKey,
+          });
         }
       })
       .finally(() => {
@@ -47153,12 +47768,89 @@ function TokenMarketplacePanel({
     };
   }, [
     network,
+    tokenMarketActivityScopeKey,
     tokenMarketLogRequestKey,
     tokenMarketLogViewKey,
   ]);
+  useEffect(() => {
+    if (network !== "livenet") {
+      setTokenMarketActivityTotals({
+        scopeKey: tokenMarketActivityScopeKey,
+        totals: {},
+      });
+      return;
+    }
+
+    let cancelled = false;
+    setTokenMarketActivityTotals({
+      scopeKey: tokenMarketActivityScopeKey,
+      totals: {},
+    });
+    const loadTotal = async (tab: TokenMarketActivityTab) => {
+      const kind = tokenMarketActivityHistoryKind(tab);
+      const options = {
+        fresh: tokenMarketHistoryRefreshNonce > 0,
+        pageIndex: 0,
+        pageSize: 1,
+        tokenScope: selectedMarketToken?.tokenId ?? "",
+      };
+      try {
+        return await fetchTokenHistoryPage<TokenMarketLogItem>(
+          network,
+          kind,
+          options,
+        );
+      } catch (error) {
+        if (!options.fresh) {
+          throw error;
+        }
+        return fetchTokenHistoryPage<TokenMarketLogItem>(network, kind, {
+          ...options,
+          fresh: false,
+        });
+      }
+    };
+    void Promise.all(
+      TOKEN_MARKET_ACTIVITY_TABS.map(async ({ value }) => {
+        const page = await loadTotal(value);
+        return [
+          value,
+          tokenMarketHistoryPageIsAuthoritative(page)
+            ? page.totalCount
+            : undefined,
+        ] as const;
+      }),
+    )
+      .then((entries) => {
+        if (!cancelled) {
+          setTokenMarketActivityTotals({
+            scopeKey: tokenMarketActivityScopeKey,
+            totals: Object.fromEntries(entries),
+          });
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setTokenMarketActivityTotals({
+            scopeKey: tokenMarketActivityScopeKey,
+            totals: {},
+          });
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    network,
+    selectedMarketToken?.tokenId,
+    tokenMarketActivityScopeKey,
+    tokenMarketHistoryRefreshNonce,
+    tokenMarketLogDataVersion,
+  ]);
   const localTokenMarketLogPage = pagedItems(
-    tokenMarketLogItems,
-    tokenMarketLogPageIndex,
+    tokenMarketActivityItems,
+    activeTokenMarketLogPageIndex,
     TOKEN_LIST_PREVIEW_COUNT,
   );
   const remoteTokenMarketLogPageForView = tokenMarketLogRemotePageForView(
@@ -47166,15 +47858,32 @@ function TokenMarketplacePanel({
     tokenMarketLogViewKey,
   );
   const activeRemoteTokenMarketLogPage = remoteTokenMarketLogPageForView
-      ? historyPageToPagedItems(
-          remoteTokenMarketLogPageForView,
-          tokenMarketLogPageIndex,
-          TOKEN_LIST_PREVIEW_COUNT,
-        )
-      : undefined;
+    ? historyPageToPagedItems(
+        remoteTokenMarketLogPageForView,
+        activeTokenMarketLogPageIndex,
+        TOKEN_LIST_PREVIEW_COUNT,
+      )
+    : undefined;
   const tokenMarketLogPage =
     activeRemoteTokenMarketLogPage ?? localTokenMarketLogPage;
-  const hasTokenMarketLogItems = tokenMarketLogPage.totalCount > 0;
+  const hasTokenMarketLogItems = tokenMarketLogPage.items.length > 0;
+  const tokenMarketActivityReadStatus =
+    tokenMarketActivityReadState.viewKey === tokenMarketLogViewKey
+      ? tokenMarketActivityReadState.status
+      : network === "livenet"
+        ? "loading"
+        : "preview";
+  const tokenMarketActivityAuthoritative =
+    tokenMarketActivityReadStatus === "authoritative" &&
+    Boolean(activeRemoteTokenMarketLogPage);
+  const tokenMarketActivityLoading =
+    tokenMarketActivityReadStatus === "loading" || tokenMarketLoading;
+  const tokenMarketActivityCounts =
+    network === "livenet"
+      ? tokenMarketActivityTotals.scopeKey === tokenMarketActivityScopeKey
+        ? tokenMarketActivityTotals.totals
+        : {}
+      : localTokenMarketActivityTotals;
   const orderBookListings = marketListings;
   const sealedListings = orderBookListings.filter(
     tokenListingHasConfirmedSaleTicketSeal,
@@ -47389,6 +48098,15 @@ function TokenMarketplacePanel({
   return (
     <>
       <div className="ids-content marketplace-content token-market-content">
+        <WorkspaceSectionNav
+          label="Credit market sections"
+          items={[
+            { href: "#credit-market-overview", label: "Overview" },
+            { href: "#credit-market-book", label: "Sale tickets" },
+            { href: "#credit-market-activity", label: "Activity" },
+          ]}
+        />
+        <span className="workspace-anchor" id="credit-market-overview" />
         {!selectedMarketToken || selectedMarketTokenIsWork ? (
           <section className="id-card ids-registry-card token-market-card marketplace-work-floor-card">
             <div className="id-card-head">
@@ -47416,12 +48134,14 @@ function TokenMarketplacePanel({
                 >
                   <div>
                     <span>Live network floor</span>
-                    <strong>
-                      {bondProofAmountDisplay(
+                    <MetricValue
+                      exactValue={bondProofAmountDisplay(
                         workMarketFloorSats,
                         workMarketFloorQ8,
-                      )} proofs / WORK
-                    </strong>
+                      )}
+                      label="Live network floor"
+                      unit="proofs / WORK"
+                    />
                   </div>
                   <div>
                     <span>USD/WORK</span>
@@ -47429,13 +48149,15 @@ function TokenMarketplacePanel({
                   </div>
                   <div>
                     <span>Live network value</span>
-                    <strong>
-                      {bondProofAmountDisplay(
+                    <MetricValue
+                      exactValue={bondProofAmountDisplay(
                         workFloorQuote.liveNetworkValueSats ??
                           workFloorQuote.networkValueSats,
                         workMarketLiveNetworkValueQ8,
-                      )} proofs
-                    </strong>
+                      )}
+                      label="Live network value"
+                      unit="proofs"
+                    />
                   </div>
                   <div>
                     <span>Network USD</span>
@@ -47445,21 +48167,25 @@ function TokenMarketplacePanel({
                     <>
                       <div>
                         <span>Frozen network value</span>
-                        <strong>
-                          {bondProofAmountDisplay(
+                        <MetricValue
+                          exactValue={bondProofAmountDisplay(
                             workMarketFrozenNetworkValueSats,
                             workMarketFrozenNetworkValueQ8,
-                          )} proofs
-                        </strong>
+                          )}
+                          label="Frozen network value"
+                          unit="proofs"
+                        />
                       </div>
                       <div>
                         <span>Frozen floor</span>
-                        <strong>
-                          {bondProofAmountDisplay(
+                        <MetricValue
+                          exactValue={bondProofAmountDisplay(
                             workMarketFrozenFloorSats,
                             workMarketFrozenFloorQ8,
-                          )} proofs / WORK
-                        </strong>
+                          )}
+                          label="Frozen network floor"
+                          unit="proofs / WORK"
+                        />
                       </div>
                     </>
                   ) : null}
@@ -47932,46 +48658,74 @@ function TokenMarketplacePanel({
         </section>
 
         {selectedMarketTokenIsWork ? (
-          <div
+          <SegmentedTabs
+            ariaLabel="WORK AMO protocol view"
             className="marketplace-tabs work-marketplace-version-tabs"
-            aria-label="WORK AMO protocol view"
-          >
-            <button
-              aria-pressed={workMarketplaceVersion === "amo"}
-              onClick={() => setWorkMarketplaceVersion("amo")}
-              type="button"
-            >
-              <span>AMO</span>
-              <strong>{workAmoListings.length.toLocaleString()}</strong>
-            </button>
-            <button
-              aria-pressed={workMarketplaceVersion === "v4-relic"}
-              onClick={() => setWorkMarketplaceVersion("v4-relic")}
-              type="button"
-            >
-              <span>
-                {workV8BoundaryObserved ? "Pre-V8 Relics" : "V4 Relic"}
-              </span>
-              <strong>
-                {(workV8BoundaryObserved
+            items={[
+              {
+                count: workAmoListings.length.toLocaleString(),
+                id: "amo",
+                label: "AMO",
+                panelId: "credit-market-book",
+                tabId: "work-marketplace-tab-amo",
+              },
+              {
+                count: (workV8BoundaryObserved
                   ? workPreV8RelicRows.length
                   : workV4RelicListings.length
-                ).toLocaleString()}
-              </strong>
-            </button>
-            <button
-              aria-pressed={workMarketplaceVersion === "v1-relic"}
-              onClick={() => setWorkMarketplaceVersion("v1-relic")}
-              type="button"
-            >
-              <span>Marketplace V1 Relic</span>
-              <strong>{workRelicRows.length.toLocaleString()}</strong>
-            </button>
-          </div>
+                ).toLocaleString(),
+                id: "v4-relic",
+                label: workV8BoundaryObserved ? "Pre-V8 Relics" : "V4 Relic",
+                panelId: "work-pre-v8-relic-panel",
+                tabId: "work-marketplace-tab-v4-relic",
+              },
+              {
+                count: workRelicRows.length.toLocaleString(),
+                id: "v1-relic",
+                label: "Marketplace V1 Relic",
+                panelId: "work-v1-relic-panel",
+                tabId: "work-marketplace-tab-v1-relic",
+              },
+            ]}
+            onChange={setWorkMarketplaceVersion}
+            value={workMarketplaceVersion}
+          />
+        ) : null}
+
+        {selectedMarketTokenIsWork && workMarketplaceVersion !== "amo" ? (
+          <div
+            aria-labelledby="work-marketplace-tab-amo"
+            hidden
+            id="credit-market-book"
+            role="tabpanel"
+          />
+        ) : null}
+        {selectedMarketTokenIsWork &&
+        workMarketplaceVersion !== "v4-relic" ? (
+          <div
+            aria-labelledby="work-marketplace-tab-v4-relic"
+            hidden
+            id="work-pre-v8-relic-panel"
+            role="tabpanel"
+          />
+        ) : null}
+        {selectedMarketTokenIsWork &&
+        workMarketplaceVersion !== "v1-relic" ? (
+          <div
+            aria-labelledby="work-marketplace-tab-v1-relic"
+            hidden
+            id="work-v1-relic-panel"
+            role="tabpanel"
+          />
         ) : null}
 
         {selectedMarketTokenIsWork && workMarketplaceVersion === "v1-relic" ? (
-          <section className="id-card token-market-card">
+          <section
+            aria-labelledby="work-marketplace-tab-v1-relic"
+            className="id-card token-market-card"
+            id="work-v1-relic-panel"
+            role="tabpanel"
+          >
             <div className="id-card-head">
               <div className="empty-icon" aria-hidden="true">
                 <FileText size={24} />
@@ -48106,7 +48860,12 @@ function TokenMarketplacePanel({
         ) : selectedMarketTokenIsWork &&
           workMarketplaceVersion === "v4-relic" &&
           workV8BoundaryObserved ? (
-          <section className="id-card token-market-card">
+          <section
+            aria-labelledby="work-marketplace-tab-v4-relic"
+            className="id-card token-market-card"
+            id="work-pre-v8-relic-panel"
+            role="tabpanel"
+          >
             <div className="id-card-head">
               <div className="empty-icon" aria-hidden="true">
                 <FileText size={24} />
@@ -48229,7 +48988,23 @@ function TokenMarketplacePanel({
             />
           </section>
         ) : (
-        <section className="id-card token-market-card">
+        <section
+          aria-labelledby={
+            selectedMarketTokenIsWork
+              ? workMarketplaceVersion === "v4-relic"
+                ? "work-marketplace-tab-v4-relic"
+                : "work-marketplace-tab-amo"
+              : undefined
+          }
+          className="id-card token-market-card"
+          id={
+            selectedMarketTokenIsWork &&
+            workMarketplaceVersion === "v4-relic"
+              ? "work-pre-v8-relic-panel"
+              : "credit-market-book"
+          }
+          role={selectedMarketTokenIsWork ? "tabpanel" : undefined}
+        >
           <div className="id-card-head">
             <div className="empty-icon" aria-hidden="true">
               <Wallet size={24} />
@@ -48702,23 +49477,70 @@ function TokenMarketplacePanel({
         </section>
         )}
 
-        <section className="id-card token-market-card">
+        <section
+          className="id-card token-market-card"
+          id="credit-market-activity"
+        >
           <div className="id-card-head">
             <div className="empty-icon" aria-hidden="true">
               <FileText size={24} />
             </div>
             <div>
-              <h3>Credit Sales & Listings Log</h3>
+              <h3>Credit Market Activity</h3>
               <p>
                 {selectedMarketToken
-                  ? `${selectedMarketToken.ticker} listings and sale settlements.`
-                  : "Listings and sale settlements across credit markets."}
+                  ? `${selectedMarketToken.ticker} listing, seal, and sale evidence.`
+                  : "Listing, seal, and sale evidence across credit markets."}
               </p>
             </div>
           </div>
-          {hasTokenMarketLogItems ? (
-            <div className="token-market-grid">
-              {tokenMarketLogPage.items.map((item) => {
+          <TokenMarketActivityTabs
+            counts={tokenMarketActivityCounts}
+            onChange={selectTokenMarketActivityTab}
+            value={tokenMarketActivityTab}
+          />
+          <div className="token-search-row token-market-activity-search">
+            <label className="token-search-field">
+              <Search aria-hidden="true" size={18} />
+              <input
+                aria-label={`Search ${tokenMarketActivityTab}`}
+                onChange={(event) =>
+                  updateTokenMarketActivityQuery(event.target.value)
+                }
+                placeholder={`Search ${tokenMarketActivityTab}, addresses, or txids`}
+                type="search"
+                value={tokenMarketActivityQuery}
+              />
+            </label>
+            <span className="token-search-count" aria-live="polite">
+              {tokenMarketActivityLoading
+                ? "Loading history…"
+                : tokenMarketActivityAuthoritative
+                  ? `${tokenMarketLogPage.totalCount.toLocaleString()} found`
+                  : hasTokenMarketLogItems
+                    ? `${tokenMarketLogPage.items.length.toLocaleString()} visible · incomplete`
+                    : "Full history unavailable"}
+            </span>
+          </div>
+          <div
+            aria-labelledby={`token-market-activity-tab-${tokenMarketActivityTab}`}
+            id="token-market-activity-panel"
+            role="tabpanel"
+          >
+            {!tokenMarketActivityLoading &&
+            !tokenMarketActivityAuthoritative &&
+            hasTokenMarketLogItems ? (
+              <p
+                className="field-note token-market-history-preview-note"
+                role="status"
+              >
+                Incomplete current-state preview. Canonical indexed history is
+                unavailable, so totals and absence claims are withheld.
+              </p>
+            ) : null}
+            {hasTokenMarketLogItems ? (
+              <div className="token-market-grid">
+                {tokenMarketLogPage.items.map((item) => {
                 if (item.kind === "closed-listing") {
                   const closedListing = item.closedListing;
                   const closedTxid =
@@ -48739,11 +49561,15 @@ function TokenMarketplacePanel({
                           )}{" "}
                           {closedListing.ticker}
                         </strong>
-                        <span>
+                        <StatusChip
+                          tone={
+                            closedListing.closedConfirmed ? "good" : "pending"
+                          }
+                        >
                           {closedListing.closedConfirmed
                             ? "Closed listing"
                             : "Closing listing"}
-                        </span>
+                        </StatusChip>
                       </div>
                       <dl>
                         <div>
@@ -48832,11 +49658,11 @@ function TokenMarketplacePanel({
                           )}{" "}
                           {item.sale.ticker}
                         </strong>
-                        <span>
+                        <StatusChip tone={item.sale.confirmed ? "good" : "pending"}>
                           {item.sale.confirmed
                             ? "Confirmed sale"
                             : "Pending sale"}
-                        </span>
+                        </StatusChip>
                       </div>
                       <dl>
                         <div>
@@ -48903,6 +49729,92 @@ function TokenMarketplacePanel({
                   );
                 }
 
+                if (item.kind === "seal") {
+                  const seal = item.seal;
+                  const sealTxid = seal.sealTxid || item.txid;
+                  const frozenTerms = isWorkToken(seal)
+                    ? workAmoFrozenTerms(seal)
+                    : null;
+                  return (
+                    <article
+                      className="id-record token-market-row"
+                      key={`seal-${sealTxid}-${seal.listingId}`}
+                    >
+                      <div>
+                        <strong>
+                          {tokenAmountDisplay(
+                            seal,
+                            seal.amount,
+                            seal.amountAtoms,
+                          )}{" "}
+                          {seal.ticker}
+                        </strong>
+                        <StatusChip tone={seal.sealConfirmed ? "good" : "pending"}>
+                          {seal.sealConfirmed ? "Confirmed seal" : "Pending seal"}
+                        </StatusChip>
+                      </div>
+                      <dl>
+                        <div>
+                          <dt>Price</dt>
+                          <dd>{seal.priceSats.toLocaleString()} proofs</dd>
+                        </div>
+                        <div>
+                          <dt>Seller</dt>
+                          <dd>{shortAddress(seal.sellerAddress)}</dd>
+                        </div>
+                        <div>
+                          <dt>Sealed</dt>
+                          <dd>{formatDate(seal.sealAt ?? seal.createdAt)}</dd>
+                        </div>
+                        <div>
+                          <dt>Listing</dt>
+                          <dd>{shortAddress(seal.listingId)}</dd>
+                        </div>
+                        {frozenTerms ? (
+                          <div>
+                            <dt>Frozen WORK</dt>
+                            <dd>
+                              {formatWorkAmountAmo(
+                                BigInt(frozenTerms.amountSubatoms),
+                                false,
+                              )}
+                            </dd>
+                          </div>
+                        ) : null}
+                      </dl>
+                      <p className="field-note">
+                        Seal transaction {shortAddress(sealTxid)} commits the
+                        sale-ticket evidence for listing{" "}
+                        {shortAddress(seal.listingId)}.
+                      </p>
+                      <div className="id-record-actions">
+                        <a
+                          className="secondary small"
+                          href={explorerTxUrl(sealTxid, seal.network)}
+                          rel="noreferrer"
+                          target="_blank"
+                        >
+                          <span className="button-content">
+                            <ArrowUpRight size={15} />
+                            <span>Seal TX</span>
+                          </span>
+                        </a>
+                        <a
+                          className="secondary small"
+                          href={explorerTxUrl(seal.listingId, seal.network)}
+                          rel="noreferrer"
+                          target="_blank"
+                        >
+                          <span className="button-content">
+                            <ArrowUpRight size={15} />
+                            <span>Listing TX</span>
+                          </span>
+                        </a>
+                      </div>
+                    </article>
+                  );
+                }
+
                 const sealConfirmed =
                   tokenListingHasConfirmedSaleTicketSeal(item.listing);
                 const buyerLock =
@@ -48921,7 +49833,15 @@ function TokenMarketplacePanel({
                         )}{" "}
                         {item.listing.ticker}
                       </strong>
-                      <span>{tokenMarketListingStatusLabel(item.listing)}</span>
+                      <StatusChip
+                        tone={
+                          tokenListingHasConfirmedSaleTicketSeal(item.listing)
+                            ? "good"
+                            : "pending"
+                        }
+                      >
+                        {tokenMarketListingStatusLabel(item.listing)}
+                      </StatusChip>
                     </div>
                     <dl>
                       <div>
@@ -48995,33 +49915,44 @@ function TokenMarketplacePanel({
                     </div>
                   </article>
                 );
-              })}
-            </div>
-          ) : (
-            <div className="empty-state">
-              <FileText size={28} />
-              <h3>
-                {tokenMarketLoading
-                  ? "Loading credit market history"
-                  : "No credit market history yet"}
-              </h3>
-              <p>
-                {tokenMarketLoading
-                  ? "Confirmed listings, closures, and sales are loading from the ProofOfWork index."
-                  : selectedMarketToken
-                  ? `${selectedMarketToken.ticker} has no listings or sales yet.`
-                  : "Credit listings and sales will appear here after they confirm or enter mempool."}
-              </p>
-            </div>
-          )}
-          {tokenMarketLogPageLoading ? (
-            <p className="field-note">Loading full credit market history...</p>
-          ) : null}
-          <PaginationControls
-            label="Credit sales and listings"
-            onPageChange={setTokenMarketLogPageIndex}
-            page={tokenMarketLogPage}
-          />
+                })}
+              </div>
+            ) : (
+              <div className="empty-state">
+                <FileText size={28} />
+                <h3>
+                  {tokenMarketActivityLoading
+                    ? `Loading ${tokenMarketActivityTab}`
+                    : !tokenMarketActivityAuthoritative
+                      ? `Full ${tokenMarketActivityTab} history unavailable`
+                      : tokenMarketActivityQuery
+                        ? `No matching ${tokenMarketActivityTab}`
+                        : `No ${tokenMarketActivityTab} yet`}
+                </h3>
+                <p>
+                  {tokenMarketActivityLoading
+                    ? `Canonical ${tokenMarketActivityTab} are loading from the ProofOfWork index.`
+                    : !tokenMarketActivityAuthoritative
+                      ? "A partial current-state preview cannot establish that no history exists. Try again after the indexed history read recovers."
+                      : tokenMarketActivityQuery
+                        ? "Try a listing, seal, or sale transaction id, address, or credit ticker."
+                        : selectedMarketToken
+                          ? `${selectedMarketToken.ticker} has no ${tokenMarketActivityTab} in this view.`
+                          : `Credit ${tokenMarketActivityTab} will appear here after they enter mempool or confirm.`}
+                </p>
+              </div>
+            )}
+            {tokenMarketLogPageLoading ? (
+              <p className="field-note">Loading full credit market history...</p>
+            ) : null}
+            {tokenMarketActivityAuthoritative ? (
+              <PaginationControls
+                label={`Credit market ${tokenMarketActivityTab}`}
+                onPageChange={changeTokenMarketLogPageIndex}
+                page={tokenMarketLogPage}
+              />
+            ) : null}
+          </div>
         </section>
       </div>
     </>

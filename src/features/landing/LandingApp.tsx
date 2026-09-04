@@ -13,8 +13,10 @@ import {
   TrendingUp,
   Users,
   Wallet,
+  Zap,
 } from "lucide-react";
 import {
+  BOOST_APP_URL,
   BROWSER_APP_URL,
   COMPUTER_APP_URL,
   DESKTOP_APP_URL,
@@ -23,6 +25,7 @@ import {
   INCEPTION_APP_URL,
   INFINITY_APP_URL,
   LOCAL_BROWSER_APP_URL,
+  LOCAL_BOOST_APP_URL,
   LOCAL_COMPUTER_APP_URL,
   LOCAL_DESKTOP_APP_URL,
   LOCAL_GROWTH_APP_URL,
@@ -48,6 +51,7 @@ import {
 import { AppHeader } from "../../shared/components/AppHeader";
 import { AppStatusRow } from "../../shared/components/AppStatusRow";
 import { SocialFooter } from "../../shared/components/SocialFooter";
+import "./landing.css";
 
 type LandingRegistryRecord = {
   confirmed: boolean;
@@ -61,6 +65,137 @@ const LANDING_TESTIMONIAL_TX_URL = explorerTxUrl(
   LANDING_TESTIMONIAL_TXID,
   "livenet",
 );
+
+const LANDING_APP_GROUPS = [
+  {
+    description: "Communicate, publish, and inspect chain-readable work.",
+    label: "Create & communicate",
+    apps: [
+      {
+        description:
+          "Mail, files, contacts, applications, and local-first account state in one sovereign workspace.",
+        href: COMPUTER_APP_URL,
+        icon: Mail,
+        label: "Computer",
+        localHref: LOCAL_COMPUTER_APP_URL,
+      },
+      {
+        description:
+          "Search a confirmed ID or address and browse its public, verified files.",
+        href: DESKTOP_APP_URL,
+        icon: Monitor,
+        label: "Desktop",
+        localHref: LOCAL_DESKTOP_APP_URL,
+      },
+      {
+        description:
+          "Render verified HTML messages and attachments from a transaction ID.",
+        href: BROWSER_APP_URL,
+        icon: FileText,
+        label: "Browser",
+        localHref: LOCAL_BROWSER_APP_URL,
+      },
+      {
+        description:
+          "Follow proof-ranked people and publish permanent social records from Mail.",
+        href: BOOST_APP_URL,
+        icon: Zap,
+        label: "Boost",
+        localHref: LOCAL_BOOST_APP_URL,
+      },
+    ],
+  },
+  {
+    description: "Own an identity, then create and exchange verifiable value.",
+    label: "Identity & markets",
+    apps: [
+      {
+        description:
+          "Claim a permanent ProofOfWork ID through the canonical registry.",
+        href: ID_APP_URL,
+        icon: AtSign,
+        label: "IDs",
+        localHref: LOCAL_ID_APP_URL,
+      },
+      {
+        description:
+          "Browse sealed terms and settle ID, credit, WORK, bond, and Boost sale tickets.",
+        href: MARKETPLACE_APP_URL,
+        icon: Users,
+        label: "AMO",
+        localHref: LOCAL_MARKETPLACE_APP_URL,
+      },
+      {
+        description:
+          "Create proof-backed credits and mint directly through their owner registries.",
+        href: TOKEN_APP_URL,
+        icon: FilePenLine,
+        label: "Credits",
+        localHref: LOCAL_TOKEN_APP_URL,
+      },
+      {
+        description:
+          "Review balances, transfer owned credits and bonds, and manage your sale tickets.",
+        href: WALLET_APP_URL,
+        icon: Wallet,
+        label: "Wallet",
+        localHref: LOCAL_WALLET_APP_URL,
+      },
+    ],
+  },
+  {
+    description: "Read the instruments built from confirmed ProofOfWork state.",
+    label: "Proof instruments",
+    apps: [
+      {
+        description:
+          "Inspect WORK supply, holders, network-value floor, AMO units, and confirmed history.",
+        href: WORK_TOKEN_APP_URL,
+        icon: TrendingUp,
+        label: "WORK",
+        localHref: LOCAL_WORK_TOKEN_APP_URL,
+      },
+      {
+        description:
+          "Create and inspect POWB Infinity Bonds and their sale-ticket market.",
+        href: INFINITY_APP_URL,
+        icon: InfinityIcon,
+        label: "Infinity",
+        localHref: LOCAL_INFINITY_APP_URL,
+      },
+      {
+        description:
+          "Create and inspect INCB Inception Bonds with frozen confirmation-time value.",
+        href: INCEPTION_APP_URL,
+        icon: GitBranch,
+        label: "Inception",
+        localHref: LOCAL_INCEPTION_APP_URL,
+      },
+    ],
+  },
+  {
+    description: "Verify the public record and measure the Computer's growth.",
+    label: "Observe & verify",
+    apps: [
+      {
+        description:
+          "Search the read-only activity ledger for chain-backed Computer events.",
+        href: LOG_APP_URL,
+        icon: Clock,
+        label: "Log",
+        localHref: LOCAL_LOG_APP_URL,
+      },
+      {
+        description:
+          "Compare canonical modeled value with confirmed network activity in proofs and USD.",
+        href: GROWTH_APP_URL,
+        icon: TrendingUp,
+        label: "Growth",
+        localHref: LOCAL_GROWTH_APP_URL,
+      },
+    ],
+  },
+] as const;
 
 function shortAddress(value: string) {
   if (!value) {
@@ -133,112 +268,150 @@ export function LandingApp({
 
       <section className="landing-hero">
         <div className="landing-hero-content">
-          <span className="landing-kicker">
-            ProofOfWork-native identity, mail, files, pages, markets, credits,
-            Infinity Bonds, Inception Bonds, logs, and growth
-          </span>
-          <h2>ProofOfWork.Me</h2>
-          <p>
-            Claim a permanent on-chain ID, then use the ProofOfWork Computer for
-            mail, files, HTML pages, AMO actions, credit mints, and
-            bond-backed chain-readable proof.
-          </p>
-          <div className="landing-actions">
-            <a
-              className="primary link-button"
-              href={appHref(ID_APP_URL, LOCAL_ID_APP_URL)}
-            >
-              <span className="button-content">
-                <AtSign size={17} />
-                <span>Claim an ID</span>
-              </span>
-            </a>
-            <a
-              className="secondary link-button"
-              href={appHref(COMPUTER_APP_URL, LOCAL_COMPUTER_APP_URL)}
-            >
-              <span className="button-content">
-                <Mail size={17} />
-                <span>Open Computer</span>
-              </span>
-            </a>
-            <a
-              className="secondary link-button"
-              href={appHref(DESKTOP_APP_URL, LOCAL_DESKTOP_APP_URL)}
-            >
-              <span className="button-content">
-                <Monitor size={17} />
-                <span>Open Desktop</span>
-              </span>
-            </a>
-            <a
-              className="secondary link-button"
-              href={appHref(BROWSER_APP_URL, LOCAL_BROWSER_APP_URL)}
-            >
-              <span className="button-content">
-                <FileText size={17} />
-                <span>Open Browser</span>
-              </span>
-            </a>
-            <a
-              className="secondary link-button"
-              href={appHref(MARKETPLACE_APP_URL, LOCAL_MARKETPLACE_APP_URL)}
-            >
-              <span className="button-content">
-                <Users size={17} />
-                <span>AMO</span>
-              </span>
-            </a>
-            <a
-              className="secondary link-button"
-              href={appHref(TOKEN_APP_URL, LOCAL_TOKEN_APP_URL)}
-            >
-              <span className="button-content">
-                <FilePenLine size={17} />
-                <span>Credits</span>
-              </span>
-            </a>
-            <a
-              className="secondary link-button"
-              href={appHref(WALLET_APP_URL, LOCAL_WALLET_APP_URL)}
-            >
-              <span className="button-content">
-                <Wallet size={17} />
-                <span>Wallet</span>
-              </span>
-            </a>
-            <a
-              className="secondary link-button"
-              href={appHref(WORK_TOKEN_APP_URL, LOCAL_WORK_TOKEN_APP_URL)}
-            >
-              <span className="button-content">
-                <TrendingUp size={17} />
-                <span>WORK</span>
-              </span>
-            </a>
-            <a
-              className="secondary link-button"
-              href={appHref(INFINITY_APP_URL, LOCAL_INFINITY_APP_URL)}
-            >
-              <span className="button-content">
-                <InfinityIcon size={17} />
-                <span>Infinity</span>
-              </span>
-            </a>
-            <a
-              className="secondary link-button"
-              href={appHref(INCEPTION_APP_URL, LOCAL_INCEPTION_APP_URL)}
-            >
-              <span className="button-content">
-                <GitBranch size={17} />
-                <span>Inception</span>
-              </span>
-            </a>
+          <div className="landing-hero-copy">
+            <span className="landing-kicker">The ProofOfWork Computer</span>
+            <h2>ProofOfWork.Me</h2>
+            <p>
+              Claim a permanent on-chain ID, then communicate, publish, exchange,
+              and verify through one chain-readable computer.
+            </p>
+            <div className="landing-actions">
+              <a
+                className="primary link-button"
+                href={appHref(ID_APP_URL, LOCAL_ID_APP_URL)}
+              >
+                <span className="button-content">
+                  <AtSign size={17} />
+                  <span>Claim an ID</span>
+                </span>
+              </a>
+              <a
+                className="secondary link-button landing-computer-action"
+                href={appHref(COMPUTER_APP_URL, LOCAL_COMPUTER_APP_URL)}
+              >
+                <span className="button-content">
+                  <Mail size={17} />
+                  <span>Open Computer</span>
+                </span>
+              </a>
+            </div>
           </div>
+          <aside className="landing-hero-instrument" aria-label="Core guarantees">
+            <div className="landing-instrument-head">
+              <span>Proof instrument</span>
+              <strong>Live</strong>
+            </div>
+            <dl>
+              <div>
+                <dt>Source</dt>
+                <dd>Confirmed ProofOfWork</dd>
+              </div>
+              <div>
+                <dt>Signing</dt>
+                <dd>Local wallet</dd>
+              </div>
+              <div>
+                <dt>Records</dt>
+                <dd>Human-readable · agent-verifiable</dd>
+              </div>
+            </dl>
+            <span className="landing-instrument-foot">
+              Pending data is visibility. Confirmation is truth.
+            </span>
+          </aside>
         </div>
       </section>
 
       <section className="landing-main" aria-label="ProofOfWork.Me onboarding">
+        <section
+          className="landing-stats"
+          aria-label="ProofOfWork ID registry stats"
+        >
+          <div>
+            <span>Confirmed IDs</span>
+            <strong>
+              {registryLoaded ? confirmedRecords.length.toLocaleString() : "…"}
+            </strong>
+          </div>
+          <div>
+            <span>Pending IDs</span>
+            <strong>
+              {registryLoaded ? pendingRecords.length.toLocaleString() : "…"}
+            </strong>
+          </div>
+          <div>
+            <span>Visible records</span>
+            <strong>
+              {registryLoaded ? registryRecords.length.toLocaleString() : "…"}
+            </strong>
+          </div>
+          <button
+            className="secondary"
+            disabled={registryLoading}
+            onClick={onRefresh}
+            type="button"
+          >
+            <span className="button-content">
+              <RefreshCw size={16} />
+              <span>{registryLoading ? "Refreshing" : "Refresh Registry"}</span>
+            </span>
+          </button>
+        </section>
+
+        <section className="landing-explore" aria-labelledby="landing-explore-title">
+          <header className="landing-section-heading">
+            <span className="landing-kicker">Apparatus</span>
+            <h2 id="landing-explore-title">Explore the Computer</h2>
+            <p>
+              Start with a task. Every surface resolves back to the same
+              chain-readable record.
+            </p>
+          </header>
+
+          <div className="landing-app-groups">
+            {LANDING_APP_GROUPS.map((group, groupIndex) => (
+              <section
+                className="landing-app-group"
+                key={group.label}
+                aria-labelledby={`landing-app-group-${groupIndex}`}
+              >
+                <header>
+                  <span>{String(groupIndex + 1).padStart(2, "0")}</span>
+                  <div>
+                    <h3 id={`landing-app-group-${groupIndex}`}>{group.label}</h3>
+                    <p>{group.description}</p>
+                  </div>
+                </header>
+                <div className="landing-app-grid">
+                  {group.apps.map((app) => {
+                    const AppIcon = app.icon;
+                    return (
+                      <a
+                        className="landing-app-card"
+                        href={appHref(app.href, app.localHref)}
+                        key={app.label}
+                      >
+                        <span className="landing-app-icon" aria-hidden="true">
+                          <AppIcon size={20} />
+                        </span>
+                        <span className="landing-app-copy">
+                          <strong>{app.label}</strong>
+                          <span>{app.description}</span>
+                        </span>
+                        <ArrowUpRight
+                          className="landing-app-arrow"
+                          size={17}
+                          aria-hidden="true"
+                        />
+                      </a>
+                    );
+                  })}
+                </div>
+              </section>
+            ))}
+          </div>
+        </section>
+
         <section
           className="landing-video"
           aria-label="ProofOfWork.Me overview video"
@@ -301,307 +474,6 @@ export function LandingApp({
               <span>View TX</span>
             </span>
           </a>
-        </section>
-
-        <section
-          className="landing-stats"
-          aria-label="ProofOfWork ID registry stats"
-        >
-          <div>
-            <span>Confirmed IDs</span>
-            <strong>
-              {registryLoaded ? confirmedRecords.length.toLocaleString() : "…"}
-            </strong>
-          </div>
-          <div>
-            <span>Pending IDs</span>
-            <strong>
-              {registryLoaded ? pendingRecords.length.toLocaleString() : "…"}
-            </strong>
-          </div>
-          <div>
-            <span>Visible records</span>
-            <strong>
-              {registryLoaded ? registryRecords.length.toLocaleString() : "…"}
-            </strong>
-          </div>
-          <button
-            className="secondary"
-            disabled={registryLoading}
-            onClick={onRefresh}
-            type="button"
-          >
-            <span className="button-content">
-              <RefreshCw size={16} />
-              <span>{registryLoading ? "Refreshing" : "Refresh Registry"}</span>
-            </span>
-          </button>
-        </section>
-
-        <section className="landing-choice-grid" aria-label="Choose an app">
-          <article className="landing-choice">
-            <div className="empty-icon" aria-hidden="true">
-              <AtSign size={24} />
-            </div>
-            <div>
-              <h3>Claim Your ID</h3>
-              <p>
-                Register <code>user@proofofwork.me</code> to your ProofOfWork
-                receive address through the canonical mainnet registry.
-              </p>
-            </div>
-            <a
-              className="primary link-button"
-              href={appHref(ID_APP_URL, LOCAL_ID_APP_URL)}
-            >
-              <span className="button-content">
-                <AtSign size={16} />
-                <span>Go to IDs</span>
-              </span>
-            </a>
-          </article>
-
-          <article className="landing-choice">
-            <div className="empty-icon" aria-hidden="true">
-              <GitBranch size={24} />
-            </div>
-            <div>
-              <h3>Open Inception</h3>
-              <p>
-                Create Inception Bonds, track INCB supply and floor, and trade
-                INCB through the same sale-ticket market as credits.
-              </p>
-            </div>
-            <a
-              className="secondary link-button"
-              href={appHref(INCEPTION_APP_URL, LOCAL_INCEPTION_APP_URL)}
-            >
-              <span className="button-content">
-                <GitBranch size={16} />
-                <span>Open Inception</span>
-              </span>
-            </a>
-          </article>
-
-          <article className="landing-choice">
-            <div className="empty-icon" aria-hidden="true">
-              <Mail size={24} />
-            </div>
-            <div>
-              <h3>Open Computer</h3>
-              <p>
-                Send and receive ProofOfWork-native mail, replies, and small files
-                with local drafts, archive, favorites, and backups.
-              </p>
-            </div>
-            <a
-              className="secondary link-button"
-              href={appHref(COMPUTER_APP_URL, LOCAL_COMPUTER_APP_URL)}
-            >
-              <span className="button-content">
-                <Mail size={16} />
-                <span>Open App</span>
-              </span>
-            </a>
-          </article>
-
-          <article className="landing-choice">
-            <div className="empty-icon" aria-hidden="true">
-              <Monitor size={24} />
-            </div>
-            <div>
-              <h3>Open Desktop</h3>
-              <p>
-                Search an address or confirmed ProofOfWork ID and browse public
-                confirmed files.
-              </p>
-            </div>
-            <a
-              className="secondary link-button"
-              href={appHref(DESKTOP_APP_URL, LOCAL_DESKTOP_APP_URL)}
-            >
-              <span className="button-content">
-                <Monitor size={16} />
-                <span>Open Desktop</span>
-              </span>
-            </a>
-          </article>
-
-          <article className="landing-choice">
-            <div className="empty-icon" aria-hidden="true">
-              <FileText size={24} />
-            </div>
-            <div>
-              <h3>Open Browser</h3>
-              <p>
-                Paste a txid and render HTML from ProofOfWork message bodies or
-                verified <code>text/html</code> attachments.
-              </p>
-            </div>
-            <a
-              className="secondary link-button"
-              href={appHref(BROWSER_APP_URL, LOCAL_BROWSER_APP_URL)}
-            >
-              <span className="button-content">
-                <FileText size={16} />
-                <span>Open Browser</span>
-              </span>
-            </a>
-          </article>
-
-          <article className="landing-choice">
-            <div className="empty-icon" aria-hidden="true">
-              <Users size={24} />
-            </div>
-            <div>
-              <h3>Open AMO</h3>
-              <p>
-                List confirmed ProofOfWork IDs, delist them, and execute
-                buyer-funded ownership transfers on chain.
-              </p>
-            </div>
-            <a
-              className="secondary link-button"
-              href={appHref(MARKETPLACE_APP_URL, LOCAL_MARKETPLACE_APP_URL)}
-            >
-              <span className="button-content">
-                <Users size={16} />
-                <span>Open AMO</span>
-              </span>
-            </a>
-          </article>
-
-          <article className="landing-choice">
-            <div className="empty-icon" aria-hidden="true">
-              <FilePenLine size={24} />
-            </div>
-            <div>
-              <h3>Create Credits</h3>
-              <p>
-                Launch mint-first <code>pwt1:</code> credits, set the owner
-                registry, and let mints pay that registry directly.
-              </p>
-            </div>
-            <a
-              className="secondary link-button"
-              href={appHref(TOKEN_APP_URL, LOCAL_TOKEN_APP_URL)}
-            >
-              <span className="button-content">
-                <FilePenLine size={16} />
-                <span>Open Credits</span>
-              </span>
-            </a>
-          </article>
-
-          <article className="landing-choice">
-            <div className="empty-icon" aria-hidden="true">
-              <Wallet size={24} />
-            </div>
-            <div>
-              <h3>Open Wallet</h3>
-              <p>
-                Track confirmed platform credit balances and send{" "}
-                <code>pwt1:send</code> transfers that pay the credit registry.
-              </p>
-            </div>
-            <a
-              className="secondary link-button"
-              href={appHref(WALLET_APP_URL, LOCAL_WALLET_APP_URL)}
-            >
-              <span className="button-content">
-                <Wallet size={16} />
-                <span>Open Wallet</span>
-              </span>
-            </a>
-          </article>
-
-          <article className="landing-choice">
-            <div className="empty-icon" aria-hidden="true">
-              <TrendingUp size={24} />
-            </div>
-            <div>
-              <h3>Track WORK</h3>
-              <p>
-                View the dedicated WORK dashboard, mint progress, holders,
-                confirmed supply, and mint log.
-              </p>
-            </div>
-            <a
-              className="secondary link-button"
-              href={appHref(WORK_TOKEN_APP_URL, LOCAL_WORK_TOKEN_APP_URL)}
-            >
-              <span className="button-content">
-                <TrendingUp size={16} />
-                <span>Open WORK</span>
-              </span>
-            </a>
-          </article>
-
-          <article className="landing-choice">
-            <div className="empty-icon" aria-hidden="true">
-              <InfinityIcon size={24} />
-            </div>
-            <div>
-              <h3>Open Infinity</h3>
-              <p>
-                Create Infinity Bonds, track POWB supply and floor, and trade
-                POWB through the same sale-ticket market as credits.
-              </p>
-            </div>
-            <a
-              className="secondary link-button"
-              href={appHref(INFINITY_APP_URL, LOCAL_INFINITY_APP_URL)}
-            >
-              <span className="button-content">
-                <InfinityIcon size={16} />
-                <span>Open Infinity</span>
-              </span>
-            </a>
-          </article>
-
-          <article className="landing-choice">
-            <div className="empty-icon" aria-hidden="true">
-              <Clock size={24} />
-            </div>
-            <div>
-              <h3>Open Log</h3>
-              <p>
-                Read the public ProofOfWork Computer activity feed for IDs, mail,
-                replies, files, Browser pages, and AMO events.
-              </p>
-            </div>
-            <a
-              className="secondary link-button"
-              href={appHref(LOG_APP_URL, LOCAL_LOG_APP_URL)}
-            >
-              <span className="button-content">
-                <Clock size={16} />
-                <span>Open Log</span>
-              </span>
-            </a>
-          </article>
-
-          <article className="landing-choice">
-            <div className="empty-icon" aria-hidden="true">
-              <TrendingUp size={24} />
-            </div>
-            <div>
-              <h3>Open Growth</h3>
-              <p>
-                Compare the canonical ProofOfWork Computer growth model against real
-                confirmed network value in proofs and USD.
-              </p>
-            </div>
-            <a
-              className="secondary link-button"
-              href={appHref(GROWTH_APP_URL, LOCAL_GROWTH_APP_URL)}
-            >
-              <span className="button-content">
-                <TrendingUp size={16} />
-                <span>Open Growth</span>
-              </span>
-            </a>
-          </article>
         </section>
 
         <section className="landing-protocol">

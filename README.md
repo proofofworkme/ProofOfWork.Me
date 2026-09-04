@@ -144,6 +144,31 @@ policy for pushed commits; a provably mechanical server merge may inherit its
 reviewed parent attestations, but a content-altering merge cannot. Do not use
 `--no-verify` or bypass the hygiene CI without explicit user approval.
 
+### Proof Instrument UI
+
+The shared interface direction retains the existing near-black, parchment,
+brass, and olive identity while making hierarchy, responsive behavior, and
+evidence presentation consistent across every standalone app and embedded
+Computer workspace. Space Grotesk is the display-heading family, Inter
+Variable is the interface/body family, and IBM Plex Mono is reserved for
+txids, addresses, protocol evidence, and other exact fields. The font assets
+are self-hosted by the application build.
+
+Reusable UI primitives include surfaces and toolbars, segmented tabs, status
+chips, and metric-value containers. Shared domain navigation becomes a
+viewport-contained sheet on narrow screens, the Computer exposes a compact
+mobile task bar, and section navigation can collapse into horizontally
+scrollable local controls. Keyboard focus, Escape dismissal, focus return,
+reduced motion, and minimum 44-by-44-pixel targets are part of the component
+contract.
+
+Exact balances, prices, counts, proof values, Q16 WORK amounts, addresses, and
+txids must remain readable and copyable without bleeding into adjacent cards
+or creating document-level horizontal overflow. Components contain their own
+long values with tabular figures, local overflow, and explicit copy/reveal
+behavior where needed. Display formatting never changes the canonical integer
+or decimal-string value used by protocol and read-model code.
+
 Official YouTube:
 
 ```text
@@ -240,6 +265,12 @@ Launch invariants for future developers/agents:
 - Shows credit market books with All, Sealed, and Unsealed views where sale-ticket status applies. Sealed means the sale-ticket seal is confirmed and buyable; pending seal rows remain visible in All/Unsealed as sealing status. Active books can sort by price or arbitrage, while sales/listing logs stay ordered by confirmation time.
 - Keeps confirmed, unspent, buyable sealed listings in AMO summaries even when ordinary active-listing previews are capped, so older sealed inventory remains visible in Buy and public order-book views.
 - Paginates credit sales/listing logs from the API so every listing, closure, and sale remains inspectable instead of being limited to a preview.
+- Separates AMO credit activity into Listings, Seals, and Sales tabs backed by
+  additive `token-history` read projections. Listings include listing creation
+  and retained non-sale closure/delist evidence, Seals expose distinct seal
+  transactions, and Sales expose settled purchases. The existing mixed
+  `market-log` response remains compatible, and the active All/Sealed/Unsealed
+  order-book filters remain a separate inventory control.
 - Prunes dropped pending WORK and credit transactions from live pending overlays after liveness checks, so stale mempool ghosts cannot distort transfer visibility, listing visibility, balances, floor, or network value.
 - Credit mint surfaces treat confirmed history as canonical mint-out, but pause user mint actions when confirmed plus pending mints would fill the remaining supply. Pending mempool records are not final, but the UI avoids letting users pay for likely overfill attempts, and WORK summary data must replay confirmed mints instead of trusting stale partial supply totals.
 - Exposes Growth as a public dashboard for modeled ProofOfWork Computer network value versus real confirmed registry, log, file, AMO, and Credit value metrics.
@@ -303,6 +334,18 @@ Current production behavior:
 - For pending visibility, the API merges the local node/indexer view with `PENDING_MEMPOOL_BASE` when configured. By default this stays on the same local node/indexer stack.
 - The unscoped credit directory (`token-history?kind=tokens`) paginates exact-tip proof-index data or the stored hash-bound Token summary instead of rebuilding full credit history. Mempool checks, raw tx lookups, UTXO/outspend checks, broadcasts, and projection fallback still use the first-party node/API path.
 - Confirmed database projections are the default fast path for supported stable reads; pending records are visible but not final.
+- `token-history` accepts the additive `market-listings`, `market-seals`, and
+  `market-sales` kinds for AMO activity organization. Each category computes
+  its filtered total before pagination, preserves the existing canonical event
+  ordering and status classification, and keeps seal rows searchable by their
+  seal transaction id. Sale-derived closures are represented in Sales rather
+  than duplicated in Listings. The legacy `market-log` kind remains available
+  with its existing mixed lifecycle shape.
+- Treats a Listings / Seals / Sales page as authoritative only when the server
+  echoes the exact requested kind with explicit `authoritative: true` and
+  `complete: true` flags. State-derived, failed, unflagged, or mismatched
+  responses remain labeled incomplete previews; the UI withholds canonical
+  totals, pagination, and empty-history claims until the indexed read recovers.
 - Pending ID mutation events are exposed separately from confirmed records. They are UI status only until confirmation.
 - AMO ID sale count and seller-price volume are derived from resolver-accepted `buy5` sale-ticket purchases, with confirmed sales canonical and pending sales shown as mempool visibility. Older legacy buy events remain replayable protocol history but do not seed the public AMO stats.
 - The credit API scans `tokens@proofofwork.me` at `1L4xrDurN9VghknrbsSju2vQb6oXZe1Pbn` for `pwt1:create` events, using tx `7a8845f33823305fabd818b3a3e2f06a175b29bf55dd79a2f83365251a6d5d19` as the current ID record for the credit index.
