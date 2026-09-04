@@ -563,6 +563,8 @@ async function installApiFixtures(
     activityHistoryMode = "authoritative",
     boostItems = [],
     countedAmo = false,
+    marketplaceSummaryGate,
+    marketplaceSummaryMode = "ready",
   } = {},
 ) {
   const fixtureTokenState = countedAmo
@@ -590,6 +592,33 @@ async function installApiFixtures(
     let json;
 
     if (pathname === "/api/v1/marketplace-summary") {
+      if (marketplaceSummaryGate) {
+        await marketplaceSummaryGate;
+      }
+      const currentMarketplaceSummaryMode =
+        typeof marketplaceSummaryMode === "function"
+          ? marketplaceSummaryMode(url)
+          : marketplaceSummaryMode;
+      const summaryUnavailable =
+        currentMarketplaceSummaryMode === "unavailable" ||
+        (currentMarketplaceSummaryMode === "fresh-unavailable" &&
+          url.searchParams.get("fresh") === "1");
+      if (summaryUnavailable) {
+        await route.fulfill({
+          body: JSON.stringify({
+            error: "Canonical AMO index is catching up.",
+            details: {
+              code: "CANONICAL_INDEX_CATCHING_UP",
+              indexedThroughBlock: 965_473,
+              lagBlocks: 20,
+              tipHeight: 965_493,
+            },
+          }),
+          contentType: "application/json",
+          status: 503,
+        });
+        return;
+      }
       json = {
         indexedAt: NOW,
         network: "livenet",
@@ -2186,6 +2215,220 @@ test("AMO history exposes authoritative totals and rejects incomplete or mismatc
   ).toHaveCount(0);
 });
 
+test("AMO 503 responses become unavailable without false zero totals or endless loading", async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  let marketplaceSummaryMode = "unavailable";
+  const marketplaceSummaryRequests = [];
+  await installApiFixtures(page, {
+    countedAmo: true,
+    marketplaceSummaryMode: (url) => {
+      marketplaceSummaryRequests.push(url.href);
+      return marketplaceSummaryMode;
+    },
+  });
+  await page.setViewportSize({ height: VIEWPORT_HEIGHT, width: 390 });
+  const surfaces = [
+    {
+      baseUrl: MARKETPLACE_BASE_URL,
+      label: "standalone AMO",
+      path: `/?marketplace=1&asset=${WORK_TOKEN_ID}`,
+      ready: ".marketplace-app",
+      stats: ".id-launch-hero .id-launch-stats",
+    },
+    {
+      baseUrl: COMPUTER_BASE_URL,
+      label: "Computer AMO",
+      path: `/?folder=marketplace&asset=${WORK_TOKEN_ID}`,
+      ready: ".mail-layout.is-marketplace-workspace",
+      stats: "",
+    },
+  ];
+
+  for (const surface of surfaces) {
+    await test.step(surface.label, async () => {
+      marketplaceSummaryMode = "unavailable";
+      const requestCountBeforeUnavailable = marketplaceSummaryRequests.length;
+      await openFixtureRoute(
+        page,
+        surfaceUrl(surface.baseUrl, surface.path),
+        `${surface.label} unavailable summary`,
+      );
+      const verification = page
+        .locator(`${surface.ready} .marketplace-summary-read-state`)
+        .first();
+      await expect(verification).toHaveAttribute("data-state", "unavailable", {
+        timeout: 60_000,
+      });
+      await expect(verification).toContainText("Unavailable");
+      await expect(
+        page.getByRole("heading", { name: "AMO summary unavailable" }),
+      ).toBeVisible();
+      await expect(
+        page.getByRole("heading", { name: "Loading AMO summary" }),
+      ).toHaveCount(0);
+
+      if (surface.stats) {
+        const metrics = page.locator(`${surface.ready} ${surface.stats} strong`);
+        await expect(metrics.first()).toHaveText("—");
+        const renderedMetrics = await metrics.allTextContents();
+        expect(renderedMetrics.length).toBeGreaterThan(0);
+        expect(
+          renderedMetrics.every((value) => value.trim() === "—"),
+          `${surface.label} exposed an unverified numeric AMO total: ${JSON.stringify(renderedMetrics)}`,
+        ).toBe(true);
+      } else {
+        await expect(
+          page.locator(`${surface.ready} .marketplace-workspace-stats`),
+        ).toHaveCount(0);
+      }
+
+      const tabs = page.getByLabel("AMO asset tabs");
+      for (const label of ["IDs", "Credits", "Bonds"]) {
+        await expect(
+          tabs.getByRole("button", {
+            name: new RegExp(`^${label}\\s+—$`, "u"),
+          }),
+        ).toBeVisible();
+      }
+
+      expect(marketplaceSummaryRequests.length).toBeGreaterThan(
+        requestCountBeforeUnavailable,
+      );
+      const unavailableRequestUrl = new URL(
+        marketplaceSummaryRequests.at(-1),
+      );
+      expect(unavailableRequestUrl.origin).toBe(new URL(page.url()).origin);
+
+      const requestCountBeforeRetry = marketplaceSummaryRequests.length;
+      const retry = verification.getByRole("button", { name: "Retry" });
+      await expect(retry).toBeVisible();
+      await expect(retry).toBeEnabled();
+      const retryClick = retry.evaluate((button) => button.click());
+      marketplaceSummaryMode = "ready";
+      await retryClick;
+      await expect(verification).toHaveAttribute("data-state", "ready", {
+        timeout: 60_000,
+      });
+      await expect(verification).toContainText("Ready");
+      expect(marketplaceSummaryRequests.length).toBeGreaterThan(
+        requestCountBeforeRetry,
+      );
+      const retryRequestUrl = new URL(marketplaceSummaryRequests.at(-1));
+      expect(retryRequestUrl.origin).toBe(new URL(page.url()).origin);
+      await expect(
+        page.locator(`${surface.ready} [aria-label="WORK credit AMO stats"]`),
+      ).toContainText(AMO_LISTING_COUNT.toLocaleString());
+      await expect(
+        page.getByRole("heading", { name: "AMO summary unavailable" }),
+      ).toHaveCount(0);
+      await assertNoDocumentOverflow(
+        page,
+        `${surface.label} recovered summary`,
+      );
+    });
+  }
+});
+
+test("AMO summary moves from loading to ready without presenting placeholder zeros", async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  let releaseMarketplaceSummary = () => {};
+  const marketplaceSummaryGate = new Promise((resolve) => {
+    releaseMarketplaceSummary = resolve;
+  });
+  await installApiFixtures(page, { marketplaceSummaryGate });
+  await page.setViewportSize({ height: VIEWPORT_HEIGHT, width: 390 });
+  await openFixtureRoute(
+    page,
+    surfaceUrl(
+      MARKETPLACE_BASE_URL,
+      `/?marketplace=1&asset=${WORK_TOKEN_ID}`,
+    ),
+    "AMO loading and ready states",
+  );
+
+  const verification = page.locator(".marketplace-summary-read-state").first();
+  await expect(verification).toHaveAttribute("data-state", "loading", {
+    timeout: 60_000,
+  });
+  const loadingMetrics = page.locator(".id-launch-hero .id-launch-stats strong");
+  await expect(loadingMetrics.first()).toHaveText("—");
+
+  releaseMarketplaceSummary();
+  await expect(verification).toHaveAttribute("data-state", "ready", {
+    timeout: 60_000,
+  });
+  await expect(verification).toContainText("Ready");
+  await expect(loadingMetrics.first()).not.toHaveText("—");
+});
+
+test("AMO retains labeled last-verified totals when an exact-tip refresh returns 503", async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  await installApiFixtures(page, {
+    countedAmo: true,
+    marketplaceSummaryMode: "fresh-unavailable",
+  });
+  await page.setViewportSize({ height: VIEWPORT_HEIGHT, width: 390 });
+  const surfaces = [
+    {
+      baseUrl: MARKETPLACE_BASE_URL,
+      label: "standalone AMO",
+      path: `/?marketplace=1&asset=${WORK_TOKEN_ID}`,
+      ready: ".marketplace-app",
+    },
+    {
+      baseUrl: COMPUTER_BASE_URL,
+      label: "Computer AMO",
+      path: `/?folder=marketplace&asset=${WORK_TOKEN_ID}`,
+      ready: ".mail-layout.is-marketplace-workspace",
+    },
+  ];
+
+  for (const surface of surfaces) {
+    await test.step(surface.label, async () => {
+      await openFixtureRoute(
+        page,
+        surfaceUrl(surface.baseUrl, surface.path),
+        `${surface.label} last verified summary`,
+      );
+      const verification = page
+        .locator(`${surface.ready} .marketplace-summary-read-state`)
+        .first();
+      await page.getByRole("button", { name: "Refresh" }).first().click();
+      await expect(verification).toHaveAttribute(
+        "data-state",
+        "last-verified",
+        { timeout: 60_000 },
+      );
+      await expect(verification).toContainText("Last Verified");
+      await expect(verification).toContainText("20 blocks behind");
+      await expect(
+        page.locator(`${surface.ready} [aria-label="WORK credit AMO stats"]`),
+      ).toContainText(AMO_LISTING_COUNT.toLocaleString());
+      await expect(
+        page.locator(`${surface.ready} .marketplace-summary-gate`),
+      ).toHaveCount(0);
+      await verification.getByRole("button", { name: "Retry" }).click();
+      await expect(verification).toHaveAttribute(
+        "data-state",
+        "last-verified",
+      );
+      await expect(
+        page.locator(`${surface.ready} [aria-label="WORK credit AMO stats"]`),
+      ).toContainText(AMO_LISTING_COUNT.toLocaleString());
+      await assertNoDocumentOverflow(
+        page,
+        `${surface.label} last verified summary`,
+      );
+    });
+  }
+});
+
 test("Computer mobile More opens a viewport-bound modal and restores focus", async ({
   page,
 }) => {
@@ -2346,6 +2589,11 @@ test("representative mobile routes match deterministic visual snapshots", async 
         `${surface.label} visual snapshot`,
       );
       await expect(page.locator(surface.ready).first()).toBeVisible();
+      if (surface.label === "AMO") {
+        await expect(
+          page.locator(".marketplace-summary-read-state").first(),
+        ).toHaveAttribute("data-state", "ready", { timeout: 30_000 });
+      }
       await page.evaluate(async () => {
         await document.fonts.ready;
       });

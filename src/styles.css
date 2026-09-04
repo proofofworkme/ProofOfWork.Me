@@ -5717,6 +5717,78 @@ pre {
   font-weight: 780;
 }
 
+.marketplace-summary-read-state {
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  min-width: 0;
+  padding: 12px 14px;
+}
+
+.marketplace-summary-read-state.is-ready {
+  border-color: color-mix(in srgb, var(--green) 32%, var(--border));
+}
+
+.marketplace-summary-read-state.is-unavailable {
+  border-color: color-mix(in srgb, var(--red) 42%, var(--border));
+}
+
+.marketplace-summary-read-state.is-last-verified {
+  border-color: color-mix(in srgb, var(--amber) 42%, var(--border));
+}
+
+.marketplace-summary-read-state > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.marketplace-summary-read-state > div > strong {
+  font-size: 0.86rem;
+}
+
+.marketplace-summary-read-state > div > span {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.marketplace-summary-read-state > button {
+  justify-content: center;
+}
+
+.marketplace-summary-gate {
+  margin: 0;
+}
+
+.marketplace-summary-gate .empty-state {
+  min-height: 220px;
+}
+
+.marketplace-summary-inline-state {
+  align-items: start;
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+}
+
+@media (max-width: 620px) {
+  .marketplace-summary-read-state {
+    align-items: start;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .marketplace-summary-read-state > button,
+  .marketplace-summary-inline-state > button {
+    width: 100%;
+  }
+}
+
 .marketplace-workspace-stats {
   margin: 0 18px;
 }

@@ -1172,6 +1172,13 @@ type TokenMarketplaceSummaryStats = {
   }>;
 };
 
+type MarketplaceSummaryReadState = {
+  indexedAt?: string;
+  message: string;
+  retryable?: boolean;
+  status: "loading" | "ready" | "unavailable" | "last-verified";
+};
+
 type PowActivityKind =
   | "id-register"
   | "id-update"
@@ -14122,22 +14129,135 @@ function tokenMarketplaceSummaryStats({
   };
 }
 
+function marketplaceSummaryHasVerifiedData(
+  readState: MarketplaceSummaryReadState,
+) {
+  return readState.status === "ready" || readState.status === "last-verified";
+}
+
+function marketplaceSummaryMetric(
+  readState: MarketplaceSummaryReadState,
+  value: number | string,
+) {
+  if (!marketplaceSummaryHasVerifiedData(readState)) {
+    return "—";
+  }
+  return typeof value === "number" ? value.toLocaleString() : value;
+}
+
+function MarketplaceSummaryReadStatus({
+  busy,
+  onRetry,
+  readState,
+}: {
+  busy: boolean;
+  onRetry: () => void;
+  readState: MarketplaceSummaryReadState;
+}) {
+  const statusLabel =
+    readState.status === "last-verified"
+      ? "Last Verified"
+      : readState.status === "unavailable"
+        ? "Unavailable"
+        : readState.status === "ready"
+          ? "Ready"
+          : "Loading";
+  const statusTone =
+    readState.status === "unavailable"
+      ? "bad"
+      : readState.status === "ready"
+        ? "good"
+        : "pending";
+  const indexedAt = readState.indexedAt
+    ? ` Verified ${formatDate(readState.indexedAt)}.`
+    : "";
+
+  return (
+    <section
+      aria-label="AMO summary verification"
+      aria-live="polite"
+      className={`marketplace-summary-read-state is-${readState.status}`}
+      data-state={readState.status}
+    >
+      <StatusChip tone={statusTone}>{statusLabel}</StatusChip>
+      <div>
+        <strong>Canonical AMO summary</strong>
+        <span>
+          {readState.message}
+          {indexedAt}
+        </span>
+      </div>
+      {(readState.status === "unavailable" ||
+        readState.status === "last-verified") &&
+      readState.retryable !== false ? (
+        <button
+          className="secondary small"
+          disabled={busy}
+          onClick={onRetry}
+          type="button"
+        >
+          <span className="button-content">
+            <RefreshCw className={busy ? "refresh-spin" : ""} size={15} />
+            <span>{busy ? "Verifying" : "Retry"}</span>
+          </span>
+        </button>
+      ) : null}
+    </section>
+  );
+}
+
+function MarketplaceSummaryGate({
+  busy,
+  onRetry,
+  readState,
+}: {
+  busy: boolean;
+  onRetry: () => void;
+  readState: MarketplaceSummaryReadState;
+}) {
+  const unavailable = readState.status === "unavailable";
+  return (
+    <section className="id-card marketplace-summary-gate">
+      <div className="empty-state">
+        <Wallet size={28} />
+        <h3>{unavailable ? "AMO summary unavailable" : "Loading AMO summary"}</h3>
+        <p>
+          {unavailable
+            ? "The canonical registry, credit, listing, sale, and WORK snapshot could not be verified. Totals and empty-book claims are withheld."
+            : "Verifying one coherent AMO snapshot from the ProofOfWork index."}
+        </p>
+        {unavailable && readState.retryable !== false ? (
+          <button
+            className="secondary small"
+            disabled={busy}
+            onClick={onRetry}
+            type="button"
+          >
+            <span className="button-content">
+              <RefreshCw className={busy ? "refresh-spin" : ""} size={15} />
+              <span>{busy ? "Verifying" : "Retry"}</span>
+            </span>
+          </button>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
 function TokenMarketplaceStatsGrid({
   className = "id-launch-stats",
+  readState,
   stats,
 }: {
   className?: string;
+  readState: MarketplaceSummaryReadState;
   stats: TokenMarketplaceSummaryStats;
 }) {
   return (
     <div className={className} aria-label={stats.ariaLabel}>
       {stats.items.map((item) => (
         <div key={item.label}>
-          <strong>
-            {typeof item.value === "number"
-              ? item.value.toLocaleString()
-              : item.value}
-          </strong>
+          <strong>{marketplaceSummaryMetric(readState, item.value)}</strong>
           <span>{item.label}</span>
         </div>
       ))}
@@ -20709,7 +20829,12 @@ export default function App() {
   const [tokenDataLoadedScopeKey, setTokenDataLoadedScopeKey] = useState("");
   const [tokenDataError, setTokenDataError] = useState("");
   const [marketplaceDataLoading, setMarketplaceDataLoading] = useState(false);
-  const [marketplaceDataLoaded, setMarketplaceDataLoaded] = useState(false);
+  const [marketplaceSummaryReadState, setMarketplaceSummaryReadState] =
+    useState<MarketplaceSummaryReadState>({
+      message:
+        "Verifying one coherent registry, credit, and WORK snapshot from the ProofOfWork index.",
+      status: "loading",
+    });
   const [tokenMarketHistoryRefreshNonce, setTokenMarketHistoryRefreshNonce] =
     useState(0);
 
@@ -20915,6 +21040,19 @@ export default function App() {
                         : "inbox")
     );
   });
+  useEffect(() => {
+    if (
+      network !== "livenet" &&
+      (marketplaceMode || activeFolder === "marketplace")
+    ) {
+      setMarketplaceSummaryReadState({
+        message:
+          "The coherent AMO summary is published on Mainnet. Switch networks to verify market totals.",
+        retryable: false,
+        status: "unavailable",
+      });
+    }
+  }, [activeFolder, marketplaceMode, network]);
   const activeBondConfig =
     inceptionMode || activeFolder === "inception"
       ? INCEPTION_BOND_UI
@@ -21243,6 +21381,8 @@ export default function App() {
   activeTokenStateScopeRef.current = activeTokenStateScopeKey;
   const activeFolderRef = useRef(activeFolder);
   activeFolderRef.current = activeFolder;
+  const marketplaceWorkspaceIsCurrent = () =>
+    marketplaceMode || activeFolderRef.current === "marketplace";
   const walletSyncGenerationRef = useRef(0);
   const acceptedWorkFloorQuoteRef = useRef<WorkFloorQuote | undefined>();
   const workV8DeclarationBoundaryLatchRef = useRef(false);
@@ -22572,13 +22712,12 @@ export default function App() {
     tokenDataPriming || (tokenDataLoading && !activeTokenStateLoaded);
   const marketplaceDataPriming =
     network === "livenet" &&
-    !marketplaceDataLoaded &&
-    tokenDefinitions.length === 0 &&
-    tokenListings.length === 0 &&
-    tokenSales.length === 0 &&
+    marketplaceSummaryReadState.status === "loading" &&
     (marketplaceMode || activeFolder === "marketplace");
   const tokenMarketplaceLoading =
-    marketplaceDataLoading || marketplaceDataPriming;
+    marketplaceDataPriming ||
+    (marketplaceDataLoading &&
+      !marketplaceSummaryHasVerifiedData(marketplaceSummaryReadState));
   const tokenDetailLedger = useMemo(
     () => tokenLedgerFor(tokenDetailToken, tokenMints, tokenTransfers, tokenSales),
     [tokenDetailToken, tokenMints, tokenSales, tokenTransfers],
@@ -24597,6 +24736,11 @@ export default function App() {
         return;
       }
 
+      if (activeFolder === "marketplace") {
+        void refreshMarketplaceSummary(true, false);
+        return;
+      }
+
       if (activeFolder === "token" || activeFolder === "wallet" || activeFolder === "work") {
         void refreshToken(true);
         return;
@@ -25168,7 +25312,10 @@ export default function App() {
           const config = standaloneBondConfig ?? activeBondConfig;
           await ensureWalletNetwork(wallet, "livenet", nextAddress);
           const snapshot = await fetchBondSummary(config, false);
-          if (generation !== walletSyncGenerationRef.current) {
+          if (
+            generation !== walletSyncGenerationRef.current ||
+            (!standaloneBondConfig && marketplaceWorkspaceIsCurrent())
+          ) {
             return;
           }
           const tokenState = snapshot.token;
@@ -25185,6 +25332,24 @@ export default function App() {
           setStatus({
             tone: "good",
             text: `${shortAddress(nextAddress)} connected. ${config.pluralName} ready.`,
+          });
+          return;
+        }
+
+        if (marketplaceWorkspaceIsCurrent()) {
+          await ensureWalletNetwork(wallet, "livenet", nextAddress);
+          const snapshot = await refreshMarketplaceSummary(true, false);
+          if (
+            generation !== walletSyncGenerationRef.current ||
+            !marketplaceWorkspaceIsCurrent()
+          ) {
+            return;
+          }
+          setStatus({
+            tone: snapshot ? "good" : "idle",
+            text: snapshot
+              ? `${shortAddress(nextAddress)} connected. AMO summary verification refreshed.`
+              : `${shortAddress(nextAddress)} connected. Current AMO summary verification is unavailable; retained verified state remains labeled.`,
           });
           return;
         }
@@ -25213,7 +25378,10 @@ export default function App() {
               [nextAddress],
               walletWorkspace,
             ));
-          if (generation !== walletSyncGenerationRef.current) {
+          if (
+            generation !== walletSyncGenerationRef.current ||
+            marketplaceWorkspaceIsCurrent()
+          ) {
             return;
           }
           if (workSummary?.floor) {
@@ -25239,7 +25407,10 @@ export default function App() {
         if (mainnetWorkspaceMode) {
           await ensureWalletNetwork(wallet, "livenet", nextAddress);
           const state = await fetchIdRegistryState("livenet");
-          if (generation !== walletSyncGenerationRef.current) {
+          if (
+            generation !== walletSyncGenerationRef.current ||
+            marketplaceWorkspaceIsCurrent()
+          ) {
             return;
           }
           applyRegistryState(state);
@@ -26428,9 +26599,6 @@ export default function App() {
       }
       try {
         const snapshot = await marketplaceSummaryRefreshInFlightRef.current;
-        if (snapshot) {
-          setMarketplaceDataLoaded(true);
-        }
         if (needsFreshRefresh && requestIsActive()) {
           chainedRefresh = true;
           return refreshMarketplaceSummary(silent, fresh);
@@ -26453,6 +26621,13 @@ export default function App() {
       const readSource = "marketplace";
       const readAttempt = nextProofApiReadAttempt();
       setMarketplaceDataLoading(true);
+      if (!acceptedMarketplaceSnapshotRef.current) {
+        setMarketplaceSummaryReadState({
+          message:
+            "Verifying one coherent registry, credit, and WORK snapshot from the ProofOfWork index.",
+          status: "loading",
+        });
+      }
       if (!silent) {
         setBusyForWorkspace(requestWorkspaceKey, true);
         if (requestIsActive()) {
@@ -26468,8 +26643,6 @@ export default function App() {
           fetchMarketplaceSummary(fresh),
           fetchBtcUsdPrice(fresh).catch(() => undefined),
         ]);
-        const acceptedRegistryState =
-          applyRegistryState(snapshot.registry) ?? snapshot.registry;
         const completeTokenState = await tokenStateWithCurrentCompleteMarketplaceListings(
           snapshot.token,
           fresh,
@@ -26482,14 +26655,30 @@ export default function App() {
           );
           return snapshot.token;
         });
-        const acceptedTokenState = applyTokenState(completeTokenState, {
-          scopeKey: tokenStateScopeKey({
-            network: "livenet",
-            tokenScope: "",
-            walletScoped: false,
-          }),
+        const marketplaceTokenScopeKey = tokenStateScopeKey({
+          network: "livenet",
+          tokenScope: "",
+          walletScoped: false,
         });
-        setMarketplaceDataLoaded(true);
+        const previousMarketplaceSnapshot =
+          acceptedMarketplaceSnapshotRef.current;
+        const previousRegistryState = acceptedRegistryStateRef.current;
+        const previousTokenState =
+          acceptedTokenStatesRef.current.get(marketplaceTokenScopeKey);
+        const registryStateRetained = registryStateRegresses(
+          snapshot.registry,
+          previousRegistryState,
+        );
+        const tokenStateRetained = tokenStateRegresses(
+          completeTokenState,
+          previousTokenState,
+          true,
+        );
+        const acceptedRegistryState =
+          applyRegistryState(snapshot.registry) ?? snapshot.registry;
+        const acceptedTokenState = applyTokenState(completeTokenState, {
+          scopeKey: marketplaceTokenScopeKey,
+        });
         setTokenMarketHistoryRefreshNonce((current) => current + 1);
         if (btcUsdQuote) {
           setTokenBtcUsd(btcUsdQuote);
@@ -26499,6 +26688,10 @@ export default function App() {
           : undefined;
         const retainedEarlierWorkFloor =
           Boolean(snapshot.workFloor) && acceptedWorkFloor !== snapshot.workFloor;
+        const retainedEarlierSummaryLane =
+          registryStateRetained ||
+          tokenStateRetained ||
+          retainedEarlierWorkFloor;
         if (fresh && requestIsActive() && snapshot.workFloor) {
           setWorkFloorLastGoodStatus(
             retainedEarlierWorkFloor && acceptedWorkFloor
@@ -26512,8 +26705,39 @@ export default function App() {
           token: acceptedTokenState,
           workFloor: acceptedWorkFloor,
         };
-        acceptedMarketplaceSnapshotRef.current = acceptedSnapshot;
-        if (fresh) {
+        if (!retainedEarlierSummaryLane) {
+          acceptedMarketplaceSnapshotRef.current = acceptedSnapshot;
+        }
+        setMarketplaceSummaryReadState((current) => {
+          if (retainedEarlierSummaryLane) {
+            return previousMarketplaceSnapshot
+              ? {
+                  indexedAt: previousMarketplaceSnapshot.indexedAt,
+                  message: fresh
+                    ? "The exact-tip AMO response could not replace every verified lane without regression. Retained verified data remains labeled until one coherent current snapshot covers every lane."
+                    : "The current AMO response could not replace every verified lane without regression. Retained verified data remains labeled until one coherent snapshot covers every lane.",
+                  status: "last-verified",
+                }
+              : {
+                  message: fresh
+                    ? "The exact-tip AMO response regressed one or more canonical lanes, so no coherent market snapshot was accepted. Totals and empty-book claims are withheld."
+                    : "The AMO response regressed one or more canonical lanes, so no coherent market snapshot was accepted. Totals and empty-book claims are withheld.",
+                  status: "unavailable",
+                };
+          }
+          const retainsIndexedSnapshot =
+            !fresh &&
+            (current.status === "last-verified" ||
+              current.status === "unavailable");
+          return {
+            indexedAt: acceptedSnapshot.indexedAt,
+            message: retainsIndexedSnapshot
+              ? current.message
+              : "Registry, credit, listing, sale, and WORK state agree in one verified snapshot.",
+            status: retainsIndexedSnapshot ? "last-verified" : "ready",
+          };
+        });
+        if (fresh && !retainedEarlierSummaryLane) {
           clearLastGoodReadWarning(
             requestWorkspaceKey,
             readSource,
@@ -26521,21 +26745,56 @@ export default function App() {
           );
         }
         if (!silent) {
-          const floorText = acceptedWorkFloor
-            ? ` WORK floor ${bondProofAmountDisplay(
-                workFloorQuoteLiveValue(acceptedWorkFloor),
-                workFloorQuoteLiveValueQ8(acceptedWorkFloor),
-              )} proofs.`
-            : "";
-          setStatusForWorkspace(requestWorkspaceKey, {
-            tone: "good",
-            text: `AMO loaded. ${acceptedTokenState.tokens.length.toLocaleString()} credit${acceptedTokenState.tokens.length === 1 ? "" : "s"}, ${acceptedTokenState.listings.length.toLocaleString()} listing${acceptedTokenState.listings.length === 1 ? "" : "s"}.${floorText}`,
-          });
+          if (retainedEarlierSummaryLane) {
+            setStatusForWorkspace(requestWorkspaceKey, {
+              tone: previousMarketplaceSnapshot ? "idle" : "bad",
+              text: previousMarketplaceSnapshot
+                ? "AMO refresh retained verified data because one or more current lanes regressed; the summary remains Last Verified."
+                : "AMO refresh could not accept a coherent market snapshot because one or more canonical lanes regressed.",
+            });
+          } else {
+            const floorText = acceptedWorkFloor
+              ? ` WORK floor ${bondProofAmountDisplay(
+                  workFloorQuoteLiveValue(acceptedWorkFloor),
+                  workFloorQuoteLiveValueQ8(acceptedWorkFloor),
+                )} proofs.`
+              : "";
+            setStatusForWorkspace(requestWorkspaceKey, {
+              tone: "good",
+              text: `AMO loaded. ${acceptedTokenState.tokens.length.toLocaleString()} credit${acceptedTokenState.tokens.length === 1 ? "" : "s"}, ${acceptedTokenState.listings.length.toLocaleString()} listing${acceptedTokenState.listings.length === 1 ? "" : "s"}.${floorText}`,
+            });
+          }
         }
-        return acceptedSnapshot;
+        return retainedEarlierSummaryLane ? undefined : acceptedSnapshot;
       } catch (error) {
         const lastGoodSnapshot = acceptedMarketplaceSnapshotRef.current;
         const lastGoodWorkFloor = lastGoodSnapshot?.workFloor;
+        const lastGoodStatus = fresh && lastGoodSnapshot
+          ? proofApiLastGoodReadStatus(error, {
+              indexedAt: lastGoodSnapshot.indexedAt,
+              indexedThroughBlock: Number(
+                lastGoodSnapshot.workFloor?.stats?.indexedThroughBlock,
+              ),
+              label: "ProofOfWork AMO",
+            })
+          : "";
+        setMarketplaceSummaryReadState(
+          lastGoodSnapshot
+            ? {
+                indexedAt: lastGoodSnapshot.indexedAt,
+                message:
+                  lastGoodStatus ||
+                  "The current AMO summary could not be verified. Showing the most recent verified snapshot.",
+                status: "last-verified",
+              }
+            : {
+                message: errorMessage(
+                  error,
+                  "The canonical AMO summary could not be verified. No market totals are being reported.",
+                ),
+                status: "unavailable",
+              },
+        );
         if (fresh && requestIsActive() && lastGoodWorkFloor) {
           const structuredStatus = proofApiLastGoodReadStatus(error, {
             indexedAt: lastGoodWorkFloor.indexedAt,
@@ -26648,7 +26907,10 @@ export default function App() {
           );
           return snapshot.token;
         });
-        if (registryState) {
+        if (
+          registryState &&
+          !marketplaceWorkspaceIsCurrent()
+        ) {
           applyRegistryState(registryState);
         }
         const snapshotWithCompleteListings = { ...snapshot, token: tokenState };
@@ -26840,12 +27102,11 @@ export default function App() {
       }
       try {
         let state: PowTokenState;
+        let workSummaryFloor: WorkFloorQuote | undefined;
         if (workSummaryRead) {
           const summary = await fetchWorkSummary(network, fresh);
           state = summary.token;
-          if (summary.floor) {
-            applyWorkFloorQuote(summary.floor);
-          }
+          workSummaryFloor = summary.floor;
         } else {
           state = await fetchTokenState(
             network,
@@ -26855,6 +27116,12 @@ export default function App() {
             address ? [address] : [],
             walletScoped,
           );
+        }
+        if (marketplaceWorkspaceIsCurrent()) {
+          return acceptedTokenStatesRef.current.get(scopeKey);
+        }
+        if (workSummaryFloor) {
+          applyWorkFloorQuote(workSummaryFloor);
         }
         const acceptedState = applyTokenState(state, { scopeKey });
         const walletAddress = address;
@@ -27024,6 +27291,9 @@ export default function App() {
             "Verified WORK floor is unavailable. Retaining the last verified value.",
           );
         }
+        if (marketplaceWorkspaceIsCurrent()) {
+          return acceptedWorkFloorQuoteRef.current;
+        }
         const acceptedQuote = applyWorkFloorQuote(apiQuote) ?? apiQuote;
         const retainedEarlierQuote = acceptedQuote !== apiQuote;
         if (fresh) {
@@ -27132,44 +27402,25 @@ export default function App() {
       let floorQuote: WorkFloorQuote | undefined;
       let tokenUsedIndexedFallback = false;
       let floorUsedIndexedFallback = false;
-      if (marketplaceMode || activeFolder === "marketplace") {
-        let marketplaceSummary = await refreshMarketplaceSummary(true, fresh);
-        if (!marketplaceSummary && fresh) {
-          marketplaceSummary = await refreshMarketplaceSummary(true, false);
-          tokenUsedIndexedFallback = Boolean(marketplaceSummary?.token);
-          floorUsedIndexedFallback =
-            includeWorkFloor && Boolean(marketplaceSummary?.workFloor);
-        }
+      const useMarketplaceSummary =
+        marketplaceMode || activeFolder === "marketplace";
+      if (useMarketplaceSummary) {
+        const currentMarketplaceSummary = await refreshMarketplaceSummary(
+          true,
+          fresh,
+        );
+        const marketplaceSummary =
+          currentMarketplaceSummary ?? acceptedMarketplaceSnapshotRef.current;
         tokenState = marketplaceSummary?.token;
-        floorQuote = includeWorkFloor ? marketplaceSummary?.workFloor : undefined;
-        if (!tokenState) {
-          let fallbackTokenState: PowTokenState | undefined;
-          let fallbackFloorQuote: WorkFloorQuote | undefined;
-          [fallbackTokenState, , fallbackFloorQuote] = await Promise.all([
-            refreshToken(true, fresh),
-            refreshTokenBtcUsd(fresh).catch(() => undefined),
-            includeWorkFloor && !floorQuote
-              ? refreshWorkFloor(true, fresh)
-              : Promise.resolve(undefined),
-          ]);
-          if (!fallbackTokenState && fresh) {
-            let indexedFloorQuote: WorkFloorQuote | undefined;
-            [fallbackTokenState, , indexedFloorQuote] = await Promise.all([
-              refreshToken(true, false),
-              refreshTokenBtcUsd(false).catch(() => undefined),
-              includeWorkFloor && !floorQuote && !fallbackFloorQuote
-                ? refreshWorkFloor(true, false)
-                : Promise.resolve(undefined),
-            ]);
-            tokenUsedIndexedFallback = Boolean(fallbackTokenState);
-            if (!fallbackFloorQuote && indexedFloorQuote) {
-              fallbackFloorQuote = indexedFloorQuote;
-              floorUsedIndexedFallback = true;
-            }
-          }
-          tokenState = fallbackTokenState;
-          floorQuote = floorQuote ?? fallbackFloorQuote;
-        }
+        floorQuote = includeWorkFloor
+          ? marketplaceSummary?.workFloor
+          : undefined;
+        tokenUsedIndexedFallback =
+          !currentMarketplaceSummary && Boolean(marketplaceSummary?.token);
+        floorUsedIndexedFallback =
+          !currentMarketplaceSummary &&
+          includeWorkFloor &&
+          Boolean(marketplaceSummary?.workFloor);
       } else {
         [tokenState, , floorQuote] = await Promise.all([
           refreshToken(true, fresh),
@@ -27199,7 +27450,7 @@ export default function App() {
         }
       }
 
-      if (includeWorkFloor && !floorQuote && fresh) {
+      if (!useMarketplaceSummary && includeWorkFloor && !floorQuote && fresh) {
         floorQuote = await refreshWorkFloor(true, false);
         floorUsedIndexedFallback = Boolean(floorQuote);
       }
@@ -27218,7 +27469,9 @@ export default function App() {
             usedIndexedFallback
               ? {
                   tone: "idle",
-                  text: `${label} refresh retained verified indexed state while the exact-tip read was unavailable.`,
+                  text: fresh
+                    ? `${label} refresh retained verified indexed state while the exact-tip read was unavailable.`
+                    : `${label} refresh retained the most recent verified coherent AMO snapshot.`,
                 }
               : {
                   tone: "good",
@@ -27501,7 +27754,10 @@ export default function App() {
         ) {
           const config = standaloneBondConfig ?? activeBondConfig;
           const snapshot = await fetchBondSummary(config, false);
-          if (generation !== walletSyncGenerationRef.current) {
+          if (
+            generation !== walletSyncGenerationRef.current ||
+            (!standaloneBondConfig && marketplaceWorkspaceIsCurrent())
+          ) {
             return;
           }
           const tokenState = snapshot.token;
@@ -27518,6 +27774,23 @@ export default function App() {
           setStatus({
             tone: "good",
             text: `UniSat connected. ${config.pluralName} ready.`,
+          });
+          return;
+        }
+
+        if (marketplaceWorkspaceIsCurrent()) {
+          const snapshot = await refreshMarketplaceSummary(true, false);
+          if (
+            generation !== walletSyncGenerationRef.current ||
+            !marketplaceWorkspaceIsCurrent()
+          ) {
+            return;
+          }
+          setStatus({
+            tone: snapshot ? "good" : "idle",
+            text: snapshot
+              ? "UniSat connected. AMO summary verification refreshed."
+              : "UniSat connected. Current AMO summary verification is unavailable; retained verified state remains labeled.",
           });
           return;
         }
@@ -27545,7 +27818,10 @@ export default function App() {
               [firstAddress],
               walletWorkspace,
             ));
-          if (generation !== walletSyncGenerationRef.current) {
+          if (
+            generation !== walletSyncGenerationRef.current ||
+            marketplaceWorkspaceIsCurrent()
+          ) {
             return;
           }
           if (workSummary?.floor) {
@@ -27570,7 +27846,10 @@ export default function App() {
 
         if (mainnetWorkspaceMode) {
           const state = await fetchIdRegistryState("livenet");
-          if (generation !== walletSyncGenerationRef.current) {
+          if (
+            generation !== walletSyncGenerationRef.current ||
+            marketplaceWorkspaceIsCurrent()
+          ) {
             return;
           }
           applyRegistryState(state);
@@ -27801,6 +28080,9 @@ export default function App() {
         activeFolder !== "marketplace";
       try {
         const state = await fetchIdRegistryState(network, fresh, useSummary);
+        if (marketplaceWorkspaceIsCurrent()) {
+          return acceptedRegistryStateRef.current;
+        }
         let activity = state.activity;
         let activityLoadFailed = false;
         if (shouldLoadComputerLog) {
@@ -27878,6 +28160,18 @@ export default function App() {
     idRefreshInFlightFreshRef.current = fresh;
     idRefreshInFlightRef.current = refreshPromise;
     return refreshPromise;
+  }
+
+  function refreshIdStateAfterMutation() {
+    return marketplaceWorkspaceIsCurrent()
+      ? refreshMarketplaceSummary(true, true)
+      : refreshIds(true);
+  }
+
+  function refreshTokenStateAfterMutation() {
+    return marketplaceWorkspaceIsCurrent()
+      ? refreshMarketplaceSummary(true, true)
+      : refreshToken(true, true);
   }
 
   async function registerId(event: FormEvent<HTMLFormElement>) {
@@ -28062,7 +28356,7 @@ export default function App() {
           network,
         ),
       );
-      await refreshIds(true);
+      await refreshIdStateAfterMutation();
       setIdRegistry((current) =>
         current.some((record) => record.txid === txid)
           ? current
@@ -28221,7 +28515,7 @@ export default function App() {
           network,
         ),
       );
-      await refreshIds(true);
+      await refreshIdStateAfterMutation();
     } catch (error) {
       setStatus({
         tone: "bad",
@@ -28453,7 +28747,7 @@ export default function App() {
           network,
         ),
       );
-      await refreshIds(true);
+      await refreshIdStateAfterMutation();
     } catch (error) {
       setStatus({
         tone: "bad",
@@ -28653,7 +28947,7 @@ export default function App() {
           network,
         ),
       );
-      await refreshIds(true);
+      await refreshIdStateAfterMutation();
     } catch (error) {
       setStatus({
         tone: "bad",
@@ -28839,7 +29133,7 @@ export default function App() {
             network,
           ),
         );
-        await refreshIds(true);
+        await refreshIdStateAfterMutation();
       } catch (error) {
         setStatus({
           tone: "bad",
@@ -29128,7 +29422,7 @@ export default function App() {
       setIdSaleAuthorization("");
       setIdSelectedListingId("");
       setIdPurchaseReceiveAddress("");
-      await refreshIds(true);
+      await refreshIdStateAfterMutation();
     } catch (error) {
       setStatus({
         tone: "bad",
@@ -31420,7 +31714,7 @@ export default function App() {
           "livenet",
         ),
       );
-      void refreshToken(true, true);
+      void refreshTokenStateAfterMutation();
     } catch (error) {
       walletAction.setStatus({
         tone: "bad",
@@ -31584,7 +31878,7 @@ export default function App() {
         delete next[listing.listingId];
         return next;
       });
-      void refreshToken(true, true);
+      void refreshTokenStateAfterMutation();
     } catch (error) {
       const message = errorMessage(error, "Credit listing seal failed.");
       setTokenListingActionNotes((current) => ({
@@ -31729,7 +32023,7 @@ export default function App() {
           "livenet",
         ),
       );
-      void refreshToken(true, true);
+      void refreshTokenStateAfterMutation();
     } catch (error) {
       setStatus({
         tone: "bad",
@@ -31957,7 +32251,7 @@ export default function App() {
         sellerAddress: listing.sellerAddress,
         txid,
       });
-      void refreshToken(true, true);
+      void refreshTokenStateAfterMutation();
     } catch (error) {
       setStatus({
         tone: "bad",
@@ -32624,6 +32918,7 @@ export default function App() {
           idSaleReceiveAddress={idSaleReceiveAddress}
           idMarketplaceAction={idMarketplaceAction}
           managedIdName={managedIdRecord?.id ?? ""}
+          marketplaceSummaryReadState={marketplaceSummaryReadState}
           network={network}
           onNetworkChange={chooseNetwork}
           publishListing={publishIdListing}
@@ -32683,7 +32978,9 @@ export default function App() {
             setIdPurchaseReceiveAddress(listing.receiveAddress ?? "");
           }}
           onRefreshBonds={refreshBondMarkets}
-          onRefreshIds={() => void refreshIds()}
+          onRetryMarketplaceSummary={() =>
+            void refreshMarketplaceSummary(false, true)
+          }
           onRefreshTokens={() =>
             void refreshTokenMarketData({
               includeWorkFloor: true,
@@ -33641,6 +33938,7 @@ export default function App() {
             idSaleReceiveAddress={idSaleReceiveAddress}
             idMarketplaceAction={idMarketplaceAction}
             managedIdName={managedIdName}
+            marketplaceSummaryReadState={marketplaceSummaryReadState}
             network={network}
             pendingEvents={idPendingEvents}
             publishListing={publishIdListing}
@@ -33687,7 +33985,9 @@ export default function App() {
               setIdPurchaseReceiveAddress(listing.receiveAddress ?? "");
             }}
             onRefreshBonds={refreshBondMarkets}
-            onRefreshIds={() => void refreshIds()}
+            onRetryMarketplaceSummary={() =>
+              void refreshMarketplaceSummary(false, true)
+            }
             onRefreshTokens={() =>
               void refreshTokenMarketData({
                 includeWorkFloor: true,
@@ -46422,11 +46722,11 @@ function MarketplaceTabs({
   tokenCount,
 }: {
   active: MarketplaceTab;
-  bondCount: number;
+  bondCount?: number;
   boostCount: number;
-  idCount: number;
+  idCount?: number;
   onChange: (tab: MarketplaceTab) => void;
-  tokenCount: number;
+  tokenCount?: number;
 }) {
   return (
     <div className="marketplace-tabs" aria-label="AMO asset tabs">
@@ -46445,7 +46745,7 @@ function MarketplaceTabs({
           type="button"
         >
           <span>{label}</span>
-          <strong>{count.toLocaleString()}</strong>
+          <strong>{count === undefined ? "—" : count.toLocaleString()}</strong>
         </button>
       ))}
     </div>
@@ -47328,9 +47628,11 @@ function TokenMarketplacePanel({
   feeRate,
   listings,
   mints,
+  marketplaceSummaryReadState,
   network,
   onOpenTokenWorkspace,
   onOpenWalletWorkspace,
+  onRetryMarketplaceSummary,
   onSelectedTokenMarketIdChange,
   preserveRoute = false,
   sales,
@@ -47353,9 +47655,11 @@ function TokenMarketplacePanel({
   feeRate: number;
   listings: PowTokenListing[];
   mints: PowTokenMint[];
+  marketplaceSummaryReadState: MarketplaceSummaryReadState;
   network: BitcoinNetwork;
   onOpenTokenWorkspace?: (token?: PowTokenDefinition) => void;
   onOpenWalletWorkspace?: (token?: PowTokenDefinition) => void;
+  onRetryMarketplaceSummary: () => void;
   onSelectedTokenMarketIdChange?: (tokenId: string) => void;
   preserveRoute?: boolean;
   sales: PowTokenSale[];
@@ -47383,6 +47687,9 @@ function TokenMarketplacePanel({
     tokens,
     transfers,
   });
+  const marketplaceSummaryVerified = marketplaceSummaryHasVerifiedData(
+    marketplaceSummaryReadState,
+  );
   const [selectedTokenMarketId, setSelectedTokenMarketId] = useState(() =>
     tokenRouteTarget(),
   );
@@ -48126,7 +48433,9 @@ function TokenMarketplacePanel({
               </div>
             </div>
 
-            {workFloorQuote && workMarketFloorSats > 0 ? (
+            {marketplaceSummaryVerified &&
+            workFloorQuote &&
+            workMarketFloorSats > 0 ? (
               <>
                 <div
                   className="id-launch-stats token-floor-stats"
@@ -48349,11 +48658,33 @@ function TokenMarketplacePanel({
                 </p>
               </>
             ) : (
-              <p className="field-note">
-                {workFloorLoading
-                  ? "Loading WORK market price..."
-                  : "Refresh AMO to load the WORK state."}
-              </p>
+              <div className="marketplace-summary-inline-state">
+                <p className="field-note">
+                  {marketplaceSummaryReadState.status === "unavailable"
+                    ? "WORK AMO state is unavailable because the canonical summary could not be verified. No zero value is being reported."
+                    : marketplaceSummaryReadState.status === "loading" ||
+                        workFloorLoading
+                      ? "Loading WORK market price..."
+                      : "Refresh AMO to load the WORK state."}
+                </p>
+                {marketplaceSummaryReadState.status === "unavailable" &&
+                marketplaceSummaryReadState.retryable !== false ? (
+                  <button
+                    className="secondary small"
+                    disabled={busy}
+                    onClick={onRetryMarketplaceSummary}
+                    type="button"
+                  >
+                    <span className="button-content">
+                      <RefreshCw
+                        className={busy ? "refresh-spin" : ""}
+                        size={15}
+                      />
+                      <span>{busy ? "Verifying" : "Retry"}</span>
+                    </span>
+                  </button>
+                ) : null}
+              </div>
             )}
           </section>
         ) : null}
@@ -48512,19 +48843,42 @@ function TokenMarketplacePanel({
             />
           ) : null}
 
-          {rows.length === 0 ? (
+          {!marketplaceSummaryVerified || rows.length === 0 ? (
             <div className="empty-state">
               <Wallet size={28} />
               <h3>
-                {tokenMarketLoading
+                {marketplaceSummaryReadState.status === "unavailable"
+                  ? "Credit markets unavailable"
+                  : tokenMarketLoading ||
+                      marketplaceSummaryReadState.status === "loading"
                   ? "Loading credit markets"
                   : "No credits indexed yet"}
               </h3>
               <p>
-                {tokenMarketLoading
+                {marketplaceSummaryReadState.status === "unavailable"
+                  ? "The ProofOfWork index did not provide a verified coherent AMO snapshot. Market totals and empty-book claims are withheld."
+                  : tokenMarketLoading ||
+                      marketplaceSummaryReadState.status === "loading"
                   ? "Confirmed credit and sale-ticket data is loading from the ProofOfWork index."
                   : "Create credit before credit markets can open."}
               </p>
+              {marketplaceSummaryReadState.status === "unavailable" &&
+              marketplaceSummaryReadState.retryable !== false ? (
+                <button
+                  className="secondary small"
+                  disabled={busy}
+                  onClick={onRetryMarketplaceSummary}
+                  type="button"
+                >
+                  <span className="button-content">
+                    <RefreshCw
+                      className={busy ? "refresh-spin" : ""}
+                      size={15}
+                    />
+                    <span>{busy ? "Verifying" : "Retry"}</span>
+                  </span>
+                </button>
+              ) : null}
             </div>
           ) : (
             <div className="token-market-grid">
@@ -49981,6 +50335,7 @@ function MarketplaceApp({
   idSaleReceiveAddress,
   idMarketplaceAction,
   managedIdName,
+  marketplaceSummaryReadState,
   network,
   onNetworkChange,
   pendingEvents,
@@ -50015,7 +50370,7 @@ function MarketplaceApp({
   buyTokenListing,
   useListing,
   onRefreshBonds,
-  onRefreshIds,
+  onRetryMarketplaceSummary,
   onRefreshTokens,
 }: {
   accountStats?: AppHeaderAccountStat[];
@@ -50039,6 +50394,7 @@ function MarketplaceApp({
   idSaleReceiveAddress: string;
   idMarketplaceAction: IdMarketplaceAction;
   managedIdName: string;
+  marketplaceSummaryReadState: MarketplaceSummaryReadState;
   network: BitcoinNetwork;
   onNetworkChange: (network: BitcoinNetwork) => void;
   pendingEvents: PowIdPendingEvent[];
@@ -50075,7 +50431,7 @@ function MarketplaceApp({
   buyTokenListing: (listing: PowTokenListing) => void;
   useListing: (listing: PowIdListing) => void;
   onRefreshBonds: () => void;
-  onRefreshIds: () => void;
+  onRetryMarketplaceSummary: () => void;
   onRefreshTokens: () => void;
 }) {
   const initialTokenMarketTarget = tokenRouteTarget();
@@ -50164,6 +50520,9 @@ function MarketplaceApp({
   );
   const listingBookComplete = tokenSummary.listingBookComplete === true;
   const confirmedTokenCount = creditTokens.filter((token) => token.confirmed).length;
+  const marketplaceSummaryVerified = marketplaceSummaryHasVerifiedData(
+    marketplaceSummaryReadState,
+  );
   const scopedStatus = marketplaceStatusForTab({
     active: marketplaceTab,
     bondSummary: {
@@ -50192,6 +50551,22 @@ function MarketplaceApp({
         : `Credit market preview loaded. Verifying all ${Number(tokenSummary.totalCounts?.listings ?? creditTokenListings.length).toLocaleString()} Core-reconciled sale tickets before reporting the book as complete.`,
     },
   });
+  const visibleScopedStatus: WorkspaceStatus =
+    marketplaceTab === "boosts" || marketplaceSummaryReadState.status === "ready"
+      ? scopedStatus
+      : {
+          tone:
+            marketplaceSummaryReadState.status === "unavailable"
+              ? "bad"
+              : "idle",
+          text: `AMO summary ${
+            marketplaceSummaryReadState.status === "last-verified"
+              ? "Last Verified"
+              : marketplaceSummaryReadState.status === "unavailable"
+                ? "Unavailable"
+                : "Loading"
+          }. ${marketplaceSummaryReadState.message}`,
+        };
   const refreshMarketplaceTab = () => {
     if (marketplaceTab === "boosts") {
       void refreshBoostMarketplace(true);
@@ -50208,7 +50583,7 @@ function MarketplaceApp({
       return;
     }
 
-    onRefreshIds();
+    onRetryMarketplaceSummary();
   };
 
   return (
@@ -50230,10 +50605,15 @@ function MarketplaceApp({
       <AppStatusRow
         persistent
         secondaryStatus={degradedReadStatus}
-        status={scopedStatus}
+        status={visibleScopedStatus}
       />
 
       <section className="id-launch-main">
+        <MarketplaceSummaryReadStatus
+          busy={busy}
+          onRetry={onRetryMarketplaceSummary}
+          readState={marketplaceSummaryReadState}
+        />
         <div className="id-launch-hero">
           <div>
             <span className="id-launch-kicker">
@@ -50249,60 +50629,111 @@ function MarketplaceApp({
           {marketplaceTab === "ids" ? (
             <div className="id-launch-stats" aria-label="ID AMO stats">
               <div>
-                <strong>{registryRecords.length.toLocaleString()}</strong>
+                <strong>
+                  {marketplaceSummaryMetric(
+                    marketplaceSummaryReadState,
+                    registryRecords.length,
+                  )}
+                </strong>
                 <span>Total IDs</span>
               </div>
               <div>
-                <strong>{registryListings.length.toLocaleString()}</strong>
+                <strong>
+                  {marketplaceSummaryMetric(
+                    marketplaceSummaryReadState,
+                    registryListings.length,
+                  )}
+                </strong>
                 <span>Active Listings</span>
               </div>
               <div>
-                <strong>{marketplaceStats.totalSales.toLocaleString()}</strong>
+                <strong>
+                  {marketplaceSummaryMetric(
+                    marketplaceSummaryReadState,
+                    marketplaceStats.totalSales,
+                  )}
+                </strong>
                 <span>ID Sales</span>
               </div>
               <div>
                 <strong>
-                  {marketplaceStats.totalVolumeSats.toLocaleString()}
+                  {marketplaceSummaryMetric(
+                    marketplaceSummaryReadState,
+                    marketplaceStats.totalVolumeSats,
+                  )}
                 </strong>
                 <span>Volume proofs</span>
               </div>
               <div>
-                <strong>{pendingRecords.length.toLocaleString()}</strong>
+                <strong>
+                  {marketplaceSummaryMetric(
+                    marketplaceSummaryReadState,
+                    pendingRecords.length,
+                  )}
+                </strong>
                 <span>Pending IDs</span>
               </div>
               <div>
-                <strong>{marketplaceStats.pendingSales.toLocaleString()}</strong>
+                <strong>
+                  {marketplaceSummaryMetric(
+                    marketplaceSummaryReadState,
+                    marketplaceStats.pendingSales,
+                  )}
+                </strong>
                 <span>Pending Sales</span>
               </div>
             </div>
           ) : marketplaceTab === "bonds" ? (
             <div className="id-launch-stats" aria-label="Bond AMO stats">
               <div>
-                <strong>{bondListings.length.toLocaleString()}</strong>
+                <strong>
+                  {marketplaceSummaryMetric(
+                    marketplaceSummaryReadState,
+                    bondListings.length,
+                  )}
+                </strong>
                 <span>Open Tickets</span>
               </div>
               <div>
-                <strong>{sealedBondListings.length.toLocaleString()}</strong>
+                <strong>
+                  {marketplaceSummaryMetric(
+                    marketplaceSummaryReadState,
+                    sealedBondListings.length,
+                  )}
+                </strong>
                 <span>Sealed Tickets</span>
               </div>
               <div>
-                <strong>{bondSales.length.toLocaleString()}</strong>
+                <strong>
+                  {marketplaceSummaryMetric(
+                    marketplaceSummaryReadState,
+                    bondSales.length,
+                  )}
+                </strong>
                 <span>Bond Sales</span>
               </div>
               <div>
                 <strong>
-                  {listingCountForBondToken(bondListings, INCB_TOKEN_ID).toLocaleString()}
+                  {marketplaceSummaryMetric(
+                    marketplaceSummaryReadState,
+                    listingCountForBondToken(bondListings, INCB_TOKEN_ID),
+                  )}
                 </strong>
                 <span>INCB Tickets</span>
               </div>
               <div>
                 <strong>
-                  {listingCountForBondToken(bondListings, POWB_TOKEN_ID).toLocaleString()}
+                  {marketplaceSummaryMetric(
+                    marketplaceSummaryReadState,
+                    listingCountForBondToken(bondListings, POWB_TOKEN_ID),
+                  )}
                 </strong>
                 <span>POWB Tickets</span>
               </div>
               <div>
-                <strong>2</strong>
+                <strong>
+                  {marketplaceSummaryMetric(marketplaceSummaryReadState, 2)}
+                </strong>
                 <span>Bond Books</span>
               </div>
             </div>
@@ -50338,20 +50769,29 @@ function MarketplaceApp({
               </div>
             </div>
           ) : (
-            <TokenMarketplaceStatsGrid stats={tokenSummaryStats} />
+            <TokenMarketplaceStatsGrid
+              readState={marketplaceSummaryReadState}
+              stats={tokenSummaryStats}
+            />
           )}
         </div>
 
         <MarketplaceTabs
           active={marketplaceTab}
-          bondCount={bondListings.length}
+          bondCount={marketplaceSummaryVerified ? bondListings.length : undefined}
           boostCount={boostListings.length}
-          idCount={registryListings.length}
+          idCount={marketplaceSummaryVerified ? registryListings.length : undefined}
           onChange={setMarketplaceTab}
-          tokenCount={creditTokens.length}
+          tokenCount={marketplaceSummaryVerified ? creditTokens.length : undefined}
         />
 
-        {marketplaceTab === "ids" ? (
+        {marketplaceTab !== "boosts" && !marketplaceSummaryVerified ? (
+          <MarketplaceSummaryGate
+            busy={busy}
+            onRetry={onRetryMarketplaceSummary}
+            readState={marketplaceSummaryReadState}
+          />
+        ) : marketplaceTab === "ids" ? (
         <div className="ids-content marketplace-content">
           <section className="id-card">
             <div className="id-card-head">
@@ -50533,7 +50973,9 @@ function MarketplaceApp({
             feeRate={feeRate}
             listings={creditTokenListings}
             mints={creditTokenMints}
+            marketplaceSummaryReadState={marketplaceSummaryReadState}
             network="livenet"
+            onRetryMarketplaceSummary={onRetryMarketplaceSummary}
             onSelectedTokenMarketIdChange={setSelectedTokenMarketId}
             sales={creditTokenSales}
             selectedTokenMarketId={selectedTokenMarketId}
@@ -50571,6 +51013,7 @@ function MarketplaceWorkspace({
   idSaleReceiveAddress,
   idMarketplaceAction,
   managedIdName,
+  marketplaceSummaryReadState,
   network,
   pendingEvents,
   publishListing,
@@ -50606,7 +51049,7 @@ function MarketplaceWorkspace({
   onOpenWalletWorkspace,
   useListing,
   onRefreshBonds,
-  onRefreshIds,
+  onRetryMarketplaceSummary,
   onRefreshTokens,
 }: {
   address: string;
@@ -50625,6 +51068,7 @@ function MarketplaceWorkspace({
   idSaleReceiveAddress: string;
   idMarketplaceAction: IdMarketplaceAction;
   managedIdName: string;
+  marketplaceSummaryReadState: MarketplaceSummaryReadState;
   network: BitcoinNetwork;
   pendingEvents: PowIdPendingEvent[];
   publishListing: () => void;
@@ -50662,7 +51106,7 @@ function MarketplaceWorkspace({
   onOpenWalletWorkspace?: (token?: PowTokenDefinition) => void;
   useListing: (listing: PowIdListing) => void;
   onRefreshBonds: () => void;
-  onRefreshIds: () => void;
+  onRetryMarketplaceSummary: () => void;
   onRefreshTokens: () => void;
 }) {
   const initialTokenMarketTarget = tokenRouteTarget();
@@ -50757,6 +51201,9 @@ function MarketplaceWorkspace({
     tokenScope: selectedTokenMarketId,
     tokens: creditTokens,
   });
+  const marketplaceSummaryVerified = marketplaceSummaryHasVerifiedData(
+    marketplaceSummaryReadState,
+  );
   const refreshMarketplaceTab = () => {
     if (marketplaceTab === "boosts") {
       void refreshBoostMarketplace(true);
@@ -50773,7 +51220,7 @@ function MarketplaceWorkspace({
       return;
     }
 
-    onRefreshIds();
+    onRetryMarketplaceSummary();
   };
 
   return (
@@ -50782,7 +51229,9 @@ function MarketplaceWorkspace({
         <div>
           <h2>AMO</h2>
           <span>
-            {registryAddress
+            {!marketplaceSummaryVerified
+              ? `Canonical AMO summary ${marketplaceSummaryReadState.status === "unavailable" ? "unavailable" : "loading"}`
+              : registryAddress
               ? `${networkListings.length.toLocaleString()} ID listings · ${networkTokenCount.toLocaleString()} credits · ${bondListings.length.toLocaleString()} bond tickets · ${boostListings.length.toLocaleString()} Boost listings`
               : `No AMO registry configured for ${networkLabel(network)}`}
           </span>
@@ -50800,35 +51249,67 @@ function MarketplaceWorkspace({
         </button>
       </div>
 
-      <MarketplaceTabs
-        active={marketplaceTab}
-        bondCount={bondListings.length}
-        boostCount={boostListings.length}
-        idCount={networkListings.length}
-        onChange={setMarketplaceTab}
-        tokenCount={networkTokenCount}
+      <MarketplaceSummaryReadStatus
+        busy={busy}
+        onRetry={onRetryMarketplaceSummary}
+        readState={marketplaceSummaryReadState}
       />
 
-      {marketplaceTab === "ids" ? (
+      <MarketplaceTabs
+        active={marketplaceTab}
+        bondCount={marketplaceSummaryVerified ? bondListings.length : undefined}
+        boostCount={boostListings.length}
+        idCount={marketplaceSummaryVerified ? networkListings.length : undefined}
+        onChange={setMarketplaceTab}
+        tokenCount={marketplaceSummaryVerified ? networkTokenCount : undefined}
+      />
+
+      {marketplaceTab !== "boosts" && !marketplaceSummaryVerified ? (
+        <MarketplaceSummaryGate
+          busy={busy}
+          onRetry={onRetryMarketplaceSummary}
+          readState={marketplaceSummaryReadState}
+        />
+      ) : marketplaceTab === "ids" ? (
         <>
       <div
         className="id-launch-stats marketplace-workspace-stats"
         aria-label="AMO stats"
       >
         <div>
-          <strong>{networkListings.length.toLocaleString()}</strong>
+          <strong>
+            {marketplaceSummaryMetric(
+              marketplaceSummaryReadState,
+              networkListings.length,
+            )}
+          </strong>
           <span>Active Listings</span>
         </div>
         <div>
-          <strong>{marketplaceStats.totalSales.toLocaleString()}</strong>
+          <strong>
+            {marketplaceSummaryMetric(
+              marketplaceSummaryReadState,
+              marketplaceStats.totalSales,
+            )}
+          </strong>
           <span>ID Sales</span>
         </div>
         <div>
-          <strong>{marketplaceStats.totalVolumeSats.toLocaleString()}</strong>
+          <strong>
+            {marketplaceSummaryMetric(
+              marketplaceSummaryReadState,
+              marketplaceStats.totalVolumeSats,
+            )}
+          </strong>
           <span>Volume proofs</span>
         </div>
         <div>
-          <strong>{marketplaceStats.pendingSales.toLocaleString()}</strong>
+          <strong>
+            {marketplaceSummaryMetric(
+              marketplaceSummaryReadState,
+              marketplaceStats.pendingSales,
+            )}
+          </strong>
           <span>Pending Sales</span>
         </div>
       </div>
@@ -51001,26 +51482,47 @@ function MarketplaceWorkspace({
             aria-label="Bond AMO stats"
           >
             <div>
-              <strong>{bondListings.length.toLocaleString()}</strong>
+              <strong>
+                {marketplaceSummaryMetric(
+                  marketplaceSummaryReadState,
+                  bondListings.length,
+                )}
+              </strong>
               <span>Open Tickets</span>
             </div>
             <div>
-              <strong>{sealedBondListings.length.toLocaleString()}</strong>
+              <strong>
+                {marketplaceSummaryMetric(
+                  marketplaceSummaryReadState,
+                  sealedBondListings.length,
+                )}
+              </strong>
               <span>Sealed Tickets</span>
             </div>
             <div>
-              <strong>{bondSales.length.toLocaleString()}</strong>
+              <strong>
+                {marketplaceSummaryMetric(
+                  marketplaceSummaryReadState,
+                  bondSales.length,
+                )}
+              </strong>
               <span>Bond Sales</span>
             </div>
             <div>
               <strong>
-                {listingCountForBondToken(bondListings, INCB_TOKEN_ID).toLocaleString()}
+                {marketplaceSummaryMetric(
+                  marketplaceSummaryReadState,
+                  listingCountForBondToken(bondListings, INCB_TOKEN_ID),
+                )}
               </strong>
               <span>INCB Tickets</span>
             </div>
             <div>
               <strong>
-                {listingCountForBondToken(bondListings, POWB_TOKEN_ID).toLocaleString()}
+                {marketplaceSummaryMetric(
+                  marketplaceSummaryReadState,
+                  listingCountForBondToken(bondListings, POWB_TOKEN_ID),
+                )}
               </strong>
               <span>POWB Tickets</span>
             </div>
@@ -51046,6 +51548,7 @@ function MarketplaceWorkspace({
         <>
           <TokenMarketplaceStatsGrid
             className="id-launch-stats marketplace-workspace-stats"
+            readState={marketplaceSummaryReadState}
             stats={tokenSummaryStats}
           />
           <TokenMarketplacePanel
@@ -51058,9 +51561,11 @@ function MarketplaceWorkspace({
             feeRate={feeRate}
             listings={creditTokenListings}
             mints={creditTokenMints}
+            marketplaceSummaryReadState={marketplaceSummaryReadState}
             network={network}
             onOpenTokenWorkspace={onOpenTokenWorkspace}
             onOpenWalletWorkspace={onOpenWalletWorkspace}
+            onRetryMarketplaceSummary={onRetryMarketplaceSummary}
             onSelectedTokenMarketIdChange={setSelectedTokenMarketId}
             sales={creditTokenSales}
             selectedTokenMarketId={selectedTokenMarketId}

@@ -3446,6 +3446,11 @@ const marketplaceListingBookTabsBlock = topLevelFunctionSource(
   app,
   "MarketplaceListingBookTabs",
 );
+const tokenMarketActivityHistoryPageWithAuthorityBlock =
+  topLevelFunctionSource(
+    proofApi,
+    "tokenMarketActivityHistoryPageWithAuthority",
+  );
 expect(
   "Marketplace order-book choices are pressed filters rather than document tabs",
   /ariaLabel=\{label\}/.test(marketplaceListingBookTabsBlock) &&
@@ -3480,8 +3485,11 @@ expect(
     /\{tokenMarketActivityAuthoritative \? \([\s\S]*<PaginationControls[\s\S]*Credit market \$\{tokenMarketActivityTab\}/.test(
       app,
     ) &&
-    /function tokenMarketActivityHistoryPageWithAuthority[\s\S]*authoritative: complete === true[\s\S]*complete: complete === true[\s\S]*preview: complete !== true/.test(
-      proofApi,
+    /const authoritative = complete === true && pageKind === requestedKind;/.test(
+      tokenMarketActivityHistoryPageWithAuthorityBlock,
+    ) &&
+    /authoritative,[\s\S]*complete: authoritative,[\s\S]*preview: !authoritative/.test(
+      tokenMarketActivityHistoryPageWithAuthorityBlock,
     ),
 );
 expect(

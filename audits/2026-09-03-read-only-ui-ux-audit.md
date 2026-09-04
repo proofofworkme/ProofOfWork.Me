@@ -3,11 +3,11 @@
 Date: 2026-09-03
 Mode: original read-only UI/UX audit with a separately approved local
 implementation follow-up
-Status: original audit complete. The local Proof Instrument candidate is
-implemented and fixture-backed automated verification is green; exhaustive
-visual/state coverage and real-device verification remain pending. The
-candidate was approved for branch commit and push on 2026-09-04. Production
-deployment remains unapproved, undeployed, and pending user review.
+Status: original audit complete. The Proof Instrument candidate and subsequent
+AMO availability hardening are implemented on the dedicated UI branch. The
+candidate is approved for commit, push, merge, and production deployment;
+integrated pre-production QA and the UI release remain in progress. Exhaustive
+physical-device verification remains pending.
 
 ## Scope And Approval
 
@@ -866,9 +866,9 @@ presentation layer over canonical values, never a replacement for them.
 
 Status at this documentation checkpoint: implemented locally on
 `ui-modernization-2026-09-03`. The user approved the implementation commit and
-branch push on 2026-09-04; production remains undeployed and requires a
-separate review and approval. The original read-only findings above remain the
-audit baseline.
+branch push on 2026-09-04, then approved merge and deployment later that day.
+Production remains undeployed at this checkpoint while integrated QA is in
+progress. The original read-only findings above remain the audit baseline.
 
 - Retained and refined the near-black, parchment, brass, olive, blue-focus,
   and semantic status palette under shared design tokens.
@@ -930,4 +930,34 @@ audit baseline.
   available.
 - Protocol rules, precision/math, fee splits, canonical ID behavior, wallet
   signing, marketplace authorization, and settlement behavior changed: none.
+- Production changes applied: none.
+
+### 2026-09-04 — AMO Availability Hardening
+
+Status at this documentation checkpoint: implemented locally and awaiting the
+final merge with the production-verified backend authority release.
+
+- Replaced ambiguous zero-value placeholders with explicit Loading, Ready, and
+  Unavailable states so an unresolved summary cannot present fabricated market
+  totals.
+- Added a labeled Last Verified timestamp that advances only with a coherent,
+  accepted summary snapshot.
+- Kept AMO headline totals and the active-book panels on one accepted snapshot
+  lane. Independent fallbacks cannot combine values from different checkpoints.
+- Added an explicit Retry action for canonical 503 responses and guarded
+  asynchronous completion so an older response cannot replace a newer accepted
+  result.
+- Covered standalone and embedded API routing, 503-to-ready recovery, retention
+  of the last verified snapshot during refresh, and unavailable-without-data
+  behavior in the browser harness.
+- Focused recovery checks passed 3/3 with two workers. A controlled two-worker
+  contention cluster covering mobile navigation, AMO history, and 503 recovery
+  passed 3/3; seven affected wallet, AMO, mail, and INCB scenarios also passed
+  in isolated serial verification.
+- A full four-worker run on the local host exhausted shared readiness budgets
+  across unrelated routes. Final integrated QA therefore uses controlled
+  concurrency and records that result separately instead of treating resource
+  contention as a product pass.
+- Protocol rules, math, precision, fee splits, signing, canonical IDs, and
+  marketplace settlement behavior changed: none.
 - Production changes applied: none.
