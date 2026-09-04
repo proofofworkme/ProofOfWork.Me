@@ -1821,6 +1821,8 @@ expectAll("marketplace summary and tabs keep confirmed sealed inventory canonica
   /async function indexedTokenMarketSummaryOverlay\([\s\S]*tokenMarketLifecycleOverlayFromCreditListings\([\s\S]*proofIndexPayloadCoversConfirmedTip\(/,
   /function tokenMarketLifecycleOverlayFromCreditListings\([\s\S]*closedListings\.push\([\s\S]*sales\.push\(/,
   /async function indexedTokenMarketSummaryOverlay\([\s\S]*proofIndexCreditListingsPayload\(network,\s*tokenScope,\s*\{[\s\S]*limit: TOKEN_LISTING_LIFECYCLE_MATERIALIZATION_LIMIT/,
+  /async function indexedWorkCreditListingStateForSummary\([\s\S]*proofIndexCreditListingsPayload\(network,\s*WORK_TOKEN_ID,\s*\{[\s\S]*limit: TOKEN_LISTING_LIFECYCLE_MATERIALIZATION_LIMIT[\s\S]*requireComplete: true[\s\S]*proofIndexPayloadCoversConfirmedTip/,
+  /async function tokenStateWithCanonicalWorkListingBookForMarketplaceSummary\([\s\S]*scopedWorkHeight === tokenStateHeight[\s\S]*tokenStateHasFullerWorkListingBook\(tokenState,\s*scopedWorkState\)[\s\S]*Rejected smaller same-checkpoint WORK canonical listing book/,
   /const fast = options\.fast === true;[\s\S]*if \(fast\) \{[\s\S]*indexedTokenMarketSummaryOverlay\(network\)[\s\S]*return null;[\s\S]*tokenStateWithIndexedMarketSummaryOverlay\(/,
   /async function marketplaceSummaryWithCurrentBtcUsd\([\s\S]*workFloorWithCurrentBtcUsd\(/,
   /function tokenStateWithIndexedMarketSummaryOverlay\([\s\S]*overlay\.listings[\s\S]*tokenListingItemKey/,

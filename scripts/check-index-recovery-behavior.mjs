@@ -5278,6 +5278,157 @@ check("marketplace fast fallback fails closed without lifecycle coverage", async
   );
 });
 
+check("WORK summary credit listings require complete lifecycle materialization", async () => {
+  let requestedOptions = null;
+  let currentPayload = {
+    indexedAt: "2026-09-04T04:53:37.000Z",
+    indexedThroughBlock: 965_431,
+    items: [
+      { confirmed: true, listingId: "1".repeat(64), tokenId: WORK_TOKEN_ID },
+      { confirmed: true, listingId: "2".repeat(64), tokenId: WORK_TOKEN_ID },
+    ],
+    stats: { complete: true },
+    summaryOnly: false,
+    totalCount: 2,
+    workMarketV4Activation: { activationHeight: 1 },
+  };
+  const indexedWorkCreditListingStateForSummary = isolatedFunction(
+    API_PATH,
+    "indexedWorkCreditListingStateForSummary",
+    {
+      TOKEN_LISTING_LIFECYCLE_MATERIALIZATION_LIMIT: 5_000,
+      SUMMARY_PROOF_INDEX_READ_WAIT_MS: 2_000,
+      SUMMARY_WORK_LISTING_RECOVERY_WAIT_MS: 15_000,
+      TX_FETCH_CONCURRENCY: 4,
+      WORK_TOKEN_ID,
+      applyWorkMarketV2CutoverToTokenState: (payload) => payload,
+      emptyTokenPayloadSnapshot: (network) => ({
+        closedListings: [],
+        holders: [],
+        invalidEvents: [],
+        mints: [],
+        network,
+        sales: [],
+        stats: {},
+        tokens: [],
+        totalCounts: {},
+        transfers: [],
+      }),
+      errorSummary: (error) => error?.message ?? String(error),
+      mapWithConcurrency: async (items, _limit, mapper) =>
+        Promise.all(items.map(mapper)),
+      payloadWithFallbackAfterMs: async (payload) => payload,
+      proofIndexCreditListingsPayload: async (_network, tokenId, options) => {
+        assert.equal(tokenId, WORK_TOKEN_ID);
+        requestedOptions = options;
+        return currentPayload;
+      },
+      proofIndexPayloadCoversConfirmedTip: async () => true,
+      proofIndexReadFeatureEnabled: () => true,
+      workTokenListingFromCreditListingItem: async (item) => item,
+    },
+  );
+
+  const complete = await indexedWorkCreditListingStateForSummary("livenet");
+  assert.equal(requestedOptions.limit, 5_000);
+  assert.equal(requestedOptions.requireComplete, true);
+  assert.equal(complete.listings.length, 2);
+  assert.equal(complete.source, "proof-indexer-credit-listings-summary");
+  assert.deepEqual(complete.workMarketV4Activation, {
+    activationHeight: 1,
+  });
+
+  currentPayload = {
+    ...currentPayload,
+    items: currentPayload.items.slice(0, 1),
+    stats: { complete: false },
+    totalCount: 2,
+  };
+  assert.equal(
+    await indexedWorkCreditListingStateForSummary("livenet"),
+    null,
+    "a partial lifecycle read must not become scoped WORK summary truth",
+  );
+});
+
+check("marketplace WORK listing override cannot shrink an equal checkpoint book", async () => {
+  const listing = (index) => ({
+    confirmed: true,
+    listingId: index.toString(16).padStart(64, "0"),
+    tokenId: WORK_TOKEN_ID,
+  });
+  const current = {
+    indexedThroughBlock: 965_431,
+    listings: Array.from({ length: 562 }, (_value, index) =>
+      listing(index + 1)),
+    network: "livenet",
+    tokens: [
+      {
+        confirmedOpenListings: 562,
+        openListings: 562,
+        pendingOpenListings: 0,
+        tokenId: WORK_TOKEN_ID,
+      },
+    ],
+  };
+  const scoped = {
+    indexedThroughBlock: 965_431,
+    listings: current.listings.slice(0, 533),
+    network: "livenet",
+    tokens: [
+      {
+        confirmedOpenListings: 533,
+        openListings: 533,
+        pendingOpenListings: 0,
+        tokenId: WORK_TOKEN_ID,
+      },
+    ],
+  };
+  const tokenStateWorkListingBookCounts = isolatedFunction(
+    API_PATH,
+    "tokenStateWorkListingBookCounts",
+    {
+      isWorkTokenId,
+      tokenMarketRecordTokenId: (item) => item?.tokenId ?? "",
+      tokenSummaryNonNegativeInteger: (value) => {
+        const number = Number(value);
+        return Number.isSafeInteger(number) && number >= 0 ? number : null;
+      },
+    },
+  );
+  const tokenStateHasFullerWorkListingBook = isolatedFunction(
+    API_PATH,
+    "tokenStateHasFullerWorkListingBook",
+    { tokenStateWorkListingBookCounts },
+  );
+  let replacementCalled = false;
+  const canonicalWorkListingBook =
+    isolatedFunction(
+      API_PATH,
+      "tokenStateWithCanonicalWorkListingBookForMarketplaceSummary",
+      {
+        errorSummary: (error) => error?.message ?? String(error),
+        proofIndexPayloadIndexedThroughBlock: (payload) =>
+          Number(payload?.indexedThroughBlock ?? 0),
+        storedCanonicalTokenSummaryPayload: async () => scoped,
+        tokenStateHasFullerWorkListingBook,
+        tokenStateWithCanonicalWorkListingBook: () => {
+          replacementCalled = true;
+          return { shrunk: true };
+        },
+        tokenStateWorkListingBookCounts,
+      },
+    );
+
+  const result = await canonicalWorkListingBook(current, "livenet");
+  assert.equal(result, current);
+  assert.equal(
+    replacementCalled,
+    false,
+    "a smaller same-checkpoint scoped WORK book must not replace the fuller book",
+  );
+});
+
 check("WORK V2 stored summaries require the exact cutover marker", () => {
   const canonicalSummary = isolatedFunction(
     API_PATH,

@@ -5163,7 +5163,10 @@ async function indexedWorkCreditListingStateForSummary(network) {
   }
 
   const payload = await payloadWithFallbackAfterMs(
-    proofIndexCreditListingsPayload(network, WORK_TOKEN_ID),
+    proofIndexCreditListingsPayload(network, WORK_TOKEN_ID, {
+      limit: TOKEN_LISTING_LIFECYCLE_MATERIALIZATION_LIMIT,
+      requireComplete: true,
+    }),
     null,
     Math.min(
       SUMMARY_WORK_LISTING_RECOVERY_WAIT_MS,
@@ -5176,9 +5179,39 @@ async function indexedWorkCreditListingStateForSummary(network) {
     return null;
   });
 
+  const payloadItems = Array.isArray(payload?.items) ? payload.items : null;
+  const declaredTotal = Number(payload?.totalCount);
+  if (
+    !payload ||
+    payload.summaryOnly === true ||
+    payloadItems === null ||
+    payload?.stats?.complete !== true ||
+    !Number.isSafeInteger(declaredTotal) ||
+    declaredTotal < 0 ||
+    declaredTotal > TOKEN_LISTING_LIFECYCLE_MATERIALIZATION_LIMIT ||
+    declaredTotal !== payloadItems.length ||
+    !(await proofIndexPayloadCoversConfirmedTip(
+      payload,
+      network,
+      "WORK credit-listing summary",
+    ))
+  ) {
+    console.error(
+      `Rejected incomplete WORK credit listing summary read: ${JSON.stringify({
+        complete: payload?.stats?.complete === true,
+        declaredTotal: Number.isSafeInteger(declaredTotal)
+          ? declaredTotal
+          : null,
+        materializedCount: payloadItems?.length ?? null,
+        summaryOnly: payload?.summaryOnly === true,
+      })}.`,
+    );
+    return null;
+  }
+
   const listings = (
     await mapWithConcurrency(
-      Array.isArray(payload?.items) ? payload.items : [],
+      payloadItems,
       Math.max(1, Math.min(TX_FETCH_CONCURRENCY, 4)),
       (item) =>
         workTokenListingFromCreditListingItem(
@@ -56878,6 +56911,47 @@ function tokenSummaryNonNegativeInteger(value) {
   return Number.isSafeInteger(number) && number >= 0 ? number : null;
 }
 
+function tokenStateWorkListingBookCounts(state) {
+  const isWorkMarketRecord = (item) =>
+    isWorkTokenId(tokenMarketRecordTokenId(item));
+  const workListings = (Array.isArray(state?.listings)
+    ? state.listings
+    : []
+  ).filter(isWorkMarketRecord);
+  const workToken = (Array.isArray(state?.tokens)
+    ? state.tokens
+    : []
+  ).find((token) => isWorkTokenId(token?.tokenId));
+  const count = (key, fallback) =>
+    tokenSummaryNonNegativeInteger(workToken?.[key]) ?? fallback;
+  const confirmedWorkListings = workListings.filter(
+    (listing) => listing?.confirmed === true,
+  ).length;
+
+  return {
+    confirmedOpenListings: count(
+      "confirmedOpenListings",
+      confirmedWorkListings,
+    ),
+    materializedListings: workListings.length,
+    openListings: count("openListings", workListings.length),
+    pendingOpenListings: count(
+      "pendingOpenListings",
+      Math.max(0, workListings.length - confirmedWorkListings),
+    ),
+  };
+}
+
+function tokenStateHasFullerWorkListingBook(currentState, candidateState) {
+  const current = tokenStateWorkListingBookCounts(currentState);
+  const candidate = tokenStateWorkListingBookCounts(candidateState);
+  return (
+    current.openListings > candidate.openListings ||
+    current.confirmedOpenListings > candidate.confirmedOpenListings ||
+    current.materializedListings > candidate.materializedListings
+  );
+}
+
 function tokenStateWithCanonicalWorkListingBook(tokenState, scopedWorkState) {
   if (!tokenState || !scopedWorkState) {
     return tokenState;
@@ -57036,6 +57110,21 @@ async function tokenStateWithCanonicalWorkListingBookForMarketplaceSummary(
   ) {
     console.error(
       `Rejected stale WORK canonical listing book for marketplace summary: scoped ${scopedWorkHeight}, summary ${tokenStateHeight}.`,
+    );
+    return tokenState;
+  }
+  if (
+    tokenStateHeight > 0 &&
+    scopedWorkHeight > 0 &&
+    scopedWorkHeight === tokenStateHeight &&
+    tokenStateHasFullerWorkListingBook(tokenState, scopedWorkState)
+  ) {
+    console.error(
+      `Rejected smaller same-checkpoint WORK canonical listing book for marketplace summary: ${JSON.stringify({
+        current: tokenStateWorkListingBookCounts(tokenState),
+        height: tokenStateHeight,
+        scoped: tokenStateWorkListingBookCounts(scopedWorkState),
+      })}.`,
     );
     return tokenState;
   }
