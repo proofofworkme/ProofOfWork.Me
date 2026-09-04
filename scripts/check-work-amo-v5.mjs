@@ -2550,6 +2550,40 @@ assert.equal(
   )?.saleAuthorization?.version,
   WORK_AMO_V5_ID_SALE_AUTH_VERSION,
 );
+const parsedRawIdListing = parseWorkAmoV5RawPwidRecord(
+  `pwid1:list5:${validIdSaleAuthorization}`,
+);
+assert.deepEqual(
+  Object.keys(parsedRawIdListing.saleAuthorization).filter(
+    (key) => parsedRawIdListing.saleAuthorization[key] === undefined,
+  ),
+  [],
+  "Absent optional ID sale-authorization fields must be omitted, not stored as undefined.",
+);
+assert.doesNotThrow(
+  () =>
+    workAmoV5RawIdStateCommitment({
+      listings: [
+        {
+          id: rawIdSaleAuthorization.id,
+          listingId: rawListingId,
+          priceSats: String(rawIdSaleAuthorization.priceSats),
+          saleAuthorization: parsedRawIdListing.saleAuthorization,
+          sellerAddress: rawIdSaleAuthorization.sellerAddress,
+        },
+      ],
+      model: "canonical-work-amo-v5-id-state-v1",
+      records: [
+        {
+          id: rawIdSaleAuthorization.id,
+          ownerAddress: rawIdSaleAuthorization.sellerAddress,
+          pgpKey: "",
+          receiveAddress: rawIdSaleAuthorization.sellerAddress,
+        },
+      ],
+    }),
+  "Canonical ID state commitments must accept listings whose optional authorization fields are absent.",
+);
 const semanticNulText = "alice\u0000storage";
 const semanticNulTextEncoded = Buffer.from(
   semanticNulText,
