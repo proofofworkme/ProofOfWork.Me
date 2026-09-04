@@ -64,6 +64,35 @@ state-commitment boundary that failed in production.
 The canonical serializer was not weakened. Unsupported values elsewhere remain
 fail-closed.
 
+### Second fail-closed representation layer
+
+The first merged recovery release passed the formerly failing canonical-state
+serialization boundary. Replay then stopped, still before committing block
+`965474`, at transaction
+`0d966b98ae7672e7812db99ad41ecba5e97697b8f70f814da73f267492b7a649`
+with `Canonical AMO prepared-item binding is invalid at 965474:3819:1:0.`
+
+The block-scoped ID verifier returned exactly one canonical `id-list` item at
+that position, with the transaction txid as its listing ID. The independent raw
+preparation path instead assigned `parts[2]` to every ID marketplace action.
+For `pwid1:list5`, `parts[2]` is the Base64URL-encoded sale authorization, not a
+listing reference. The raw and verified items therefore failed identity
+matching; the verified item and an unmatched invalid raw sibling both reached
+the binder with the same canonical position, where the duplicate was correctly
+rejected.
+
+Raw preparation now uses the carrier transaction txid for `list5` only.
+`seal5` and `delist5` continue to use their explicit referenced listing txid.
+This changes no decoded authorization, replay outcome, protocol rule, fee,
+signature, canonical ID, or settlement behavior. It only gives the raw
+preparation object the same listing identity already used by canonical replay.
+
+The production-shaped regression uses the observed block, transaction,
+position, and a `pwid-sale-v4` authorization. It proves that raw preparation
+sets `listingId` to the carrier txid, canonical recovery consumes the raw item
+exactly once without manufacturing an invalid sibling, and replay binding
+produces one bound item at the original position.
+
 ## Recovery Plan
 
 1. Prove the focused parser and raw state-commitment regression locally.
@@ -97,7 +126,10 @@ At the initial local remediation checkpoint:
 - `npm run build`: passed (expected bundle-size warning only);
 - syntax checks for both changed JavaScript modules: passed;
 - `git diff --check`: passed; and
-- production deployment: not yet performed.
+- first production recovery release: cleared the unsupported-value failure,
+  then failed closed at the separate prepared-item identity mismatch described
+  above; checkpoint `965473` remained unchanged; and
+- follow-up production-shaped index-recovery suite: passed (493 checks).
 
 Production results, exact release commits, checkpoint catch-up evidence, and
 whether a rebuild was required will be appended after deployment verification.
@@ -112,3 +144,16 @@ whether a rebuild was required will be appended after deployment verification.
 - Preserved protocol, math, fee, signing, canonical ID, and settlement behavior.
 - Data changes applied: none.
 - Production changes applied: none at this checkpoint.
+
+### 2026-09-04 — Follow-up list5 preparation correction
+
+- Confirmed the first serializer correction reached the next replay stage in
+  production without advancing or partially committing the failing block.
+- Compared the one-item block-scoped ID verifier response with raw preparation
+  for the exact failing `pwid1:list5` carrier.
+- Corrected raw `list5` listing identity from the authorization field to the
+  carrier transaction txid while preserving referenced IDs for follow-on
+  actions.
+- Added an end-to-end preparation, recovery, and replay-binding regression for
+  the observed production position.
+- Rebuild required: no. The canonical checkpoint remains safe and resumable.

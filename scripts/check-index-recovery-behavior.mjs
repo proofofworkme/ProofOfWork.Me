@@ -34860,6 +34860,252 @@ check("legacy pwid1:r registrations retain plain IDs and projection fields", () 
   assert.equal(registration.receiveAddress, "1receiver");
 });
 
+check("canonical PWID list5 preparation consumes its raw carrier exactly once", async () => {
+  const txid =
+    "0d966b98ae7672e7812db99ad41ecba5e97697b8f70f814da73f267492b7a649";
+  const blockHash =
+    "000000000000000000008e3b6884d6b2e297d5934891279f92bcf117851f7c07";
+  const previousBlockHash =
+    "0000000000000000000128ed24c620f4e045cf3817a9271bb3cd78af95391b0b";
+  const blockHeight = 965_474;
+  const blockIndex = 3_819;
+  const protocolVout = 1;
+  const authorization = {
+    anchorScriptPubKey:
+      "76a914e1f1cafe0bf7ff9f827a93d6f0d352e85056591f88ac",
+    anchorSigHashType: 131,
+    anchorType: "sale-ticket-v1",
+    anchorValueSats: 546,
+    anchorVout: 2,
+    id: "luuk",
+    nonce: "mtmvq2ht-dqmo3mqwzx",
+    priceSats: 1_000,
+    sellerAddress: "1MbghEKwNH88jqYynJVtEDYHU8d5iy7PzM",
+    sellerPublicKey:
+      "030508b0483253657d9ab48ec2828c54f4400393131209fc05ca181357088c4ac0",
+    signature: "",
+    version: "pwid-sale-v4",
+  };
+  const encodedAuthorization = Buffer.from(
+    JSON.stringify(authorization),
+    "utf8",
+  ).toString("base64url");
+  const message = {
+    prefix: "pwid1:",
+    text: `pwid1:list5:${encodedAuthorization}`,
+    voutIndex: protocolVout,
+  };
+  const protocolItemsFromTx = isolatedFunction(
+    BACKFILL_PATH,
+    "protocolItemsFromTx",
+    {
+      baseProtocolItem: (_tx, _message, kind) => ({
+        blockHash,
+        blockHeight,
+        blockIndex,
+        confirmed: true,
+        kind,
+        protocol: "pwid1",
+        protocolVout,
+        recordOrdinal: 0,
+        txid,
+      }),
+      decodeBase64UrlText: (value) =>
+        Buffer.from(String(value), "base64url").toString("utf8"),
+      normalizedPowId: (value) =>
+        String(value ?? "").trim().toLowerCase(),
+    },
+  );
+  const [rawItem] = protocolItemsFromTx({ txid }, message);
+  assert.equal(rawItem.kind, "id-list");
+  assert.equal(
+    rawItem.listingId,
+    txid,
+    "A list5 carrier is the listing; its authorization payload is not a listing ID.",
+  );
+
+  const canonicalItem = {
+    ...rawItem,
+    id: authorization.id,
+    listingId: txid,
+    saleAuthorization: authorization,
+    sellerAddress: authorization.sellerAddress,
+    valid: true,
+  };
+  const rawMatchesCanonical = isolatedFunction(
+    BACKFILL_PATH,
+    "rawProtocolItemMatchesCanonical",
+    {
+      INCB_TOKEN_ID: "f".repeat(64),
+      canonicalBondMintProjectionStructure: () => false,
+      isWorkTokenId: () => false,
+      workAmoV6RawPlaceholderMatchesCanonical: () => null,
+      workAmountAtomsFromRecord: () => {
+        throw new Error("Not a WORK item");
+      },
+    },
+  );
+  assert.equal(
+    rawMatchesCanonical(rawItem, canonicalItem, "id-list"),
+    true,
+  );
+
+  const canonicalRecoveryItemsForTx = isolatedFunction(
+    BACKFILL_PATH,
+    "canonicalRecoveryItemsForTx",
+    {
+      NETWORK: "livenet",
+      PENDING_LEGACY_VERIFIER_TIMEOUT_MS: 30_000,
+      PENDING_VERIFIER_TIMEOUT_MS: 5_000,
+      canonicalKindForSourceLabel: isolatedFunction(
+        BACKFILL_PATH,
+        "canonicalKindForSourceLabel",
+      ),
+      canonicalRecoveryItemMatchesTxid: isolatedFunction(
+        BACKFILL_PATH,
+        "canonicalRecoveryItemMatchesTxid",
+      ),
+      disambiguateDuplicateProtocolItems: isolatedFunction(
+        BACKFILL_PATH,
+        "disambiguateDuplicateProtocolItems",
+      ),
+      endpoint: () => "http://127.0.0.1/internal/id-verifier",
+      invalidProtocolItem: isolatedFunction(
+        BACKFILL_PATH,
+        "invalidProtocolItem",
+      ),
+      rawProtocolItemMatchesCanonical: rawMatchesCanonical,
+      rawProtocolItemsForTx: () => [structuredClone(rawItem)],
+      readJson: async () => ({
+        blockHash,
+        indexedThroughBlock: blockHeight,
+        items: [structuredClone(canonicalItem)],
+        network: "livenet",
+        previousBlockHash,
+        source: "canonical-block-scan-db-core-id-verifier",
+        txid,
+      }),
+      recoveryEndpointSpecs: () => [{
+        label: "id-verifier",
+        params: { txid },
+        path: "/api/v1/internal/id-verifier",
+      }],
+      reservedBondCreditViolationReason: () => "",
+      sourceLabelForProtocolItem: isolatedFunction(
+        BACKFILL_PATH,
+        "sourceLabelForProtocolItem",
+      ),
+      tokenProtocolIntegrityInvalidItem: (item) => item,
+    },
+  );
+  const recovered = await canonicalRecoveryItemsForTx(
+    {
+      _powBlockHash: blockHash,
+      _powBlockIndex: blockIndex,
+      _powPreviousBlockHash: previousBlockHash,
+      height: blockHeight,
+      txid,
+    },
+    [message],
+  );
+  assert.equal(recovered.length, 1);
+  assert.equal(recovered[0].item.kind, "id-list");
+  assert.equal(recovered[0].item.listingId, txid);
+  assert.equal(
+    recovered.some(({ item }) => item.kind.endsWith("-invalid")),
+    false,
+    "The consumed raw list5 carrier must not reappear as a duplicate invalid sibling.",
+  );
+
+  const position = {
+    blockHash,
+    blockHeight,
+    blockTransactionIndex: blockIndex,
+    protocolVout,
+    recordOrdinal: 0,
+  };
+  const replayPositionKey = (value) => {
+    const source = value?.position ?? value ?? {};
+    const normalized = {
+      blockHash: String(source.blockHash ?? ""),
+      blockHeight: Number(source.blockHeight),
+      blockTransactionIndex: Number(
+        source.blockTransactionIndex ?? source.blockIndex,
+      ),
+      protocolVout: Number(source.protocolVout),
+      recordOrdinal: Number(source.recordOrdinal),
+    };
+    return {
+      key: [
+        normalized.blockHeight,
+        normalized.blockTransactionIndex,
+        normalized.protocolVout,
+        normalized.recordOrdinal,
+      ].join(":"),
+      position: normalized,
+    };
+  };
+  const bind = isolatedFunction(
+    BACKFILL_PATH,
+    "bindPreparedTransactionsToWorkAmoV5Replay",
+    {
+      WORK_AMO_V6_AUTH_VERSION: "pwt-sale-v6",
+      WORK_AMO_V8_AUTH_VERSION: "pwt-sale-v8",
+      canonicalProtocolItemForPostgres: (item) => item,
+      invalidProtocolItem: isolatedFunction(
+        BACKFILL_PATH,
+        "invalidProtocolItem",
+      ),
+      isHexTxid: (value) => /^[0-9a-f]{64}$/u.test(value),
+      normalizedLowerText: (value) =>
+        String(value ?? "").trim().toLowerCase(),
+      objectValue,
+      sourceLabelForProtocolItem: isolatedFunction(
+        BACKFILL_PATH,
+        "sourceLabelForProtocolItem",
+      ),
+      workAmoFrozenTermsFromItem: () => null,
+      workAmoV5ConsensusEventKind,
+      workAmoV5PwidRegistryAttribution: () => null,
+      workAmoV5ReplayFrozenTerms: () => null,
+      workAmoV5ReplayPositionKey: replayPositionKey,
+      workAmoV5ReplayProjectionFromOutput: (output) =>
+        output?.projection ?? {},
+      workAmoV6ReplayListingMaterialization: () => null,
+    },
+  );
+  const [bound] = bind(
+    [{ items: recovered, txid }],
+    {
+      replayRecords: [{
+        outcome: {
+          kind: workAmoV5ConsensusEventKind("pwid1", true),
+          reasonCode: "",
+          valid: true,
+        },
+        output: {
+          projection: {
+            ...canonicalItem,
+            kind: "id-list",
+            position,
+            protocol: "pwid1",
+            txid,
+            valid: true,
+          },
+        },
+        position,
+        protocol: "pwid1",
+        rawCandidate: true,
+        rawWitness: { fixture: "block-965474-pwid-list5" },
+        txid,
+      }],
+    },
+  );
+  assert.equal(bound.items.length, 1);
+  assert.equal(bound.items[0].item._workAmoV5ReplayBound, true);
+  assert.equal(bound.items[0].item.listingId, txid);
+});
+
 check("canonical PWM aggregation classifies reply, file, and bond once", () => {
   const bytes = Buffer.from("x");
   const sha256 = createHash("sha256").update(bytes).digest("hex");
