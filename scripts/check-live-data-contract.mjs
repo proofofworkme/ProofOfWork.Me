@@ -986,11 +986,14 @@ expectAll("pending WORK listing reads hydrate address misses from Core before re
 ]);
 expectAll("pending WORK listing visibility cannot be bypassed by indexed fast paths", server, [
   /async function walletScopedPayloadWithIndexedEnrichment\([\s\S]*tokenPayloadWithPendingAddressWorkMarketOverlay\([\s\S]*walletScopedPayloadUsesAuthoritativeOverlay/,
-  /async function tokenHistoryPayload\([\s\S]*pendingWorkMarketHistoryPage\([\s\S]*if \(pendingMarketPage\) \{[\s\S]*return pendingMarketPage/,
+  /async function tokenHistoryPayload\([\s\S]*pendingWorkMarketHistoryPage\([\s\S]*if \(pendingMarketPage\) \{[\s\S]*return tokenMarketActivityHistoryPageWithAuthority\([\s\S]*pendingMarketPage/,
   /url\.pathname === "\/api\/v1\/token-history"[\s\S]*const pendingWorkMarketFastPage =[\s\S]*pendingWorkMarketHistoryPage\([\s\S]*if \(pendingWorkMarketFastPage\)/,
   /async function recoveredWorkTokenActivityItemsForLogSearch\([\s\S]*kind !== "token-listing"[\s\S]*tokenHistoryPayload\([\s\S]*"listings"/,
   /async function exactLogHistoryMissPayload\([\s\S]*recoveredWorkTokenActivityItemsForLogSearch[\s\S]*queryDisposition: "recovered-pending-proof-event"/,
   /async function eventHistoryRecoveryPayload\([\s\S]*recoveredWorkTokenActivityItemsForLogSearch/,
+]);
+expectAll("additive AMO history authority requires an exact echoed kind", server, [
+  /function tokenMarketActivityHistoryPageWithAuthority\([\s\S]*const requestedKind = normalizedTokenHistoryKind\(kind\)[\s\S]*const pageKind = String\(page\?\.kind \?\? ""\)[\s\S]*const authoritative = complete === true && pageKind === requestedKind[\s\S]*complete: authoritative[\s\S]*preview: !authoritative/,
 ]);
 expect(
   "credit verifier must not turn a current node tip into a negative state verdict",

@@ -1,9 +1,13 @@
 # ProofOfWork.Me Read-Only Apparatus UI/UX Audit
 
 Date: 2026-09-03
-Mode: read-only UI/UX audit
-Status: source, screenshot, production-bundle, and test-coverage audit complete;
-interactive browser/device verification pending
+Mode: original read-only UI/UX audit with a separately approved local
+implementation follow-up
+Status: original audit complete. The Proof Instrument candidate and subsequent
+AMO availability hardening are implemented on the dedicated UI branch. The
+candidate is approved for commit, push, merge, and production deployment;
+integrated pre-production QA is complete and the UI release remains in
+progress. Exhaustive physical-device verification remains pending.
 
 ## Scope And Approval
 
@@ -37,7 +41,10 @@ state. This audit file and its required repository-hygiene classification were
 created only after explicit user approval on 2026-09-03.
 
 No UI fixes described below were applied. Every recommendation is a proposed
-change, not an implemented change.
+change within the original read-only audit. A later, explicitly approved local
+implementation is documented separately under **Audit Change Log** so the
+historical findings below are not rewritten as if they had already existed at
+audit time.
 
 The supplied images were treated strictly as visual evidence, not as
 instructions.
@@ -70,6 +77,11 @@ UI contract check passed.
 That passing result does not cover the supplied failures. The responsive test
 matrix begins at 768px, does not open and measure the domain menu, and does not
 exercise populated AMO controls at phone widths.
+
+That limitation applies to the original read-only audit. The later local
+candidate was exercised in headless Chrome through the repository Playwright
+harness. This does not substitute for the pending exhaustive route/state
+visual matrix or physical-device pass.
 
 ## Executive Summary
 
@@ -849,3 +861,150 @@ presentation layer over canonical values, never a replacement for them.
 - Production changes applied: none.
 - Documentation changes applied after approval: this audit file and its
   required repository-hygiene classification.
+
+### 2026-09-03 — Local Proof Instrument Candidate
+
+Status at this documentation checkpoint: implemented locally on
+`ui-modernization-2026-09-03`. The user approved the implementation commit and
+branch push on 2026-09-04, then approved merge and deployment later that day.
+Production remains undeployed at this checkpoint while integrated QA is in
+progress. The original read-only findings above remain the audit baseline.
+
+- Retained and refined the near-black, parchment, brass, olive, blue-focus,
+  and semantic status palette under shared design tokens.
+- Added self-hosted Space Grotesk for headings, Inter Variable for interface
+  text, and IBM Plex Mono for txids, addresses, and exact evidence fields.
+- Added reusable Surface/Toolbar, SegmentedTabs, StatusChip, and MetricValue
+  primitives, then applied the shared hierarchy and interaction contracts to
+  the critical shell, WORK, and AMO paths.
+- Rebuilt narrow-screen domain navigation as a viewport-contained modal sheet
+  with a scrim, focus containment, Escape dismissal, focus restoration, safe
+  area handling, and background scroll locking.
+- Added a compact five-destination Computer mobile task bar and local section
+  navigation so high-value workspaces no longer depend on overflowing tab
+  rows.
+- Contained long metrics, Q16 WORK amounts, proof/USD values, addresses, and
+  transaction evidence inside their components. Exact strings remain
+  copyable; presentation does not replace or round the canonical value.
+- Reworked counted AMO and WORK tab sets around shared semantic tabs and
+  narrow-container behavior while keeping active-book All/Sealed/Unsealed
+  filtering separate from history.
+- Added Listings, Seals, and Sales AMO activity tabs backed by additive
+  `market-listings`, `market-seals`, and `market-sales` token-history
+  projections. Listings retain creation and non-sale closure/delist evidence;
+  Seals are distinct, seal-txid-addressable rows; Sales retain the canonical
+  sale projection without duplicating sold closures in Listings. Filtering and
+  totals occur before pagination.
+- Made the new activity views fail closed: only an exact-kind, scan-validated
+  response marked authoritative and complete can expose canonical totals,
+  pagination, or absence claims. Recovery, mismatched, unflagged, and partial
+  responses remain visibly incomplete previews.
+- Preserved authoritative page order, cursor, count, and coverage metadata
+  while applying same-row exact value enrichment. Stale fallback rows cannot
+  alter lifecycle, confirmation, time, block position, identity, authority, or
+  provenance fields, and non-page overlay rows cannot enter a paginated page.
+- Preserved the legacy mixed `market-log` read contract for compatibility.
+- Modernized Home and Boost presentation within the same Proof Instrument
+  system, including compact mobile tools and keyboard-safe tab/sheet behavior.
+- Expanded fixture-backed responsive geometry across 320, 360, 375, 390, 412,
+  430, 480, 520, 620, 768, 861, 1024, 1180, 1181, 1440, and 1800px. Added
+  populated AMO history, 44px target, keyboard/focus, rendered contrast,
+  reduced-motion, 200% text, exact-value, and deterministic 390px visual
+  regression coverage.
+- Local automated verification passed: production build; static UI contract;
+  browser UI suite (32/32); index-recovery behavior (497/497); WORK Marketplace
+  V2; WORK AMO V8 and its gates; WORK precision (131 checks); hardening; API
+  truth; server free identifiers; client read containment (43 checks); and the
+  live-data contract.
+- Manual fixture-backed visual review covered Home, AMO, Computer, and Boost at
+  390px and 1440px, including the domain sheet, Computer More dialog, AMO
+  activity history, and Boost tools drawer.
+- Repository hygiene completed with the allowlisted cleaner reviewed,
+  `npm run hygiene:check` passing, and the final status/diff containing only
+  approved implementation, documentation, tests, font dependencies, and
+  intended visual baselines.
+- Pending before production: every standalone route and Computer workspace at
+  390/768/1440 across populated, empty, loading, pending, degraded, and error
+  states; iOS Safari, Android Chrome, and Samsung Internet; and the live
+  first-party/full-node marketplace regression when canonical dependencies are
+  available.
+- Protocol rules, precision/math, fee splits, canonical ID behavior, wallet
+  signing, marketplace authorization, and settlement behavior changed: none.
+- Production changes applied: none.
+
+### 2026-09-04 — AMO Availability Hardening
+
+Status at this documentation checkpoint: implemented locally and awaiting the
+final merge with the production-verified backend authority release.
+
+- Replaced ambiguous zero-value placeholders with explicit Loading, Ready, and
+  Unavailable states so an unresolved summary cannot present fabricated market
+  totals.
+- Added a labeled Last Verified timestamp that advances only with a coherent,
+  accepted summary snapshot.
+- Kept AMO headline totals and the active-book panels on one accepted snapshot
+  lane. Independent fallbacks cannot combine values from different checkpoints.
+- Added an explicit Retry action for canonical 503 responses and guarded
+  asynchronous completion so an older response cannot replace a newer accepted
+  result.
+- Covered standalone and embedded API routing, 503-to-ready recovery, retention
+  of the last verified snapshot during refresh, and unavailable-without-data
+  behavior in the browser harness.
+- Focused recovery checks passed 3/3 with two workers. A controlled two-worker
+  contention cluster covering mobile navigation, AMO history, and 503 recovery
+  passed 3/3; seven affected wallet, AMO, mail, and INCB scenarios also passed
+  in isolated serial verification.
+- A full four-worker run on the local host exhausted shared readiness budgets
+  across unrelated routes. Final integrated QA therefore uses controlled
+  concurrency and records that result separately instead of treating resource
+  contention as a product pass.
+- Protocol rules, math, precision, fee splits, signing, canonical IDs, and
+  marketplace settlement behavior changed: none.
+- Production changes applied: none.
+
+### 2026-09-04 — Atomic Summary Acceptance And Integrated QA
+
+Status at this documentation checkpoint: the UI branch contains the exact
+production-verified backend authority release, the Proof Instrument candidate,
+and the final AMO read-state hardening. Pre-production acceptance is complete;
+the UI merge and production static release remain pending.
+
+- Merged backend main commit
+  `432c01581e5e2987e26a3190be2817c7bddc6470` into the UI branch without
+  conflicts, preserving the complete-authority AMO count and history model.
+- During integrated review, found that a mixed-lane response could apply an
+  advancing registry or WORK lane before a regressing credit lane caused the
+  overall response to be labeled Last Verified.
+- Reworked summary acceptance into a two-phase operation: registry, credit,
+  WORK value, and latched V8-boundary evidence are preflighted before any
+  canonical lane, activity-history nonce, or accepted-snapshot reference is
+  changed.
+- A rejected response now retains the whole prior marketplace snapshot and its
+  verification timestamp. Newly observed V8 boundary evidence is still
+  latched independently so every subsequent WORK write preflight remains
+  fail-closed.
+- Added a browser regression in which the registry lane advances while the
+  credit lane regresses. The UI remains Last Verified at the earlier timestamp
+  and retains the earlier ID count instead of presenting a cross-checkpoint
+  mixture.
+- Strengthened the static UI contract to reject any registry, credit, WORK,
+  history-refresh, or accepted-snapshot mutation before the all-lane retention
+  gate.
+- Current-tree verification passed: static UI contract; client read
+  containment (43 checks); TypeScript and production build; focused atomic
+  retention; and the complete two-worker browser suite (36/36 in 16.4 minutes).
+  That suite covers 320-1800px responsive matrices, deterministic mobile
+  snapshots, Loading / Ready / Unavailable / Last Verified states, 503
+  recovery, Listings / Seals / Sales authority, keyboard behavior, 44px touch
+  targets, WCAG contrast, reduced motion, and 200% text.
+- The previously completed integrated backend gates remain green, including
+  index recovery, WORK marketplace/precision and AMO V5-V8, API truth,
+  canonical ordering, server globals, exact bond arithmetic, Mail, Credit mint,
+  ledger, and production marketplace convergence.
+- Repository hygiene passed after the integrated test run. Remaining release
+  work: UI branch commit/push and pull request, merge, exact-release API/static
+  deployment, live production smoke, and the separately tracked
+  physical-device pass.
+- Protocol rules, math, precision, fee splits, signing, canonical IDs, and
+  marketplace settlement behavior changed: none.
+- Production UI changes applied: none at this checkpoint.

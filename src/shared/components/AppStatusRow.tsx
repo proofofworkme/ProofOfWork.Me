@@ -1,4 +1,5 @@
-import type { ReactNode } from "react";
+import { ChevronDown } from "lucide-react";
+import { useId, useState, type ReactNode } from "react";
 
 export type AppStatusTone = "idle" | "good" | "bad";
 
@@ -88,6 +89,10 @@ export function AppStatusRow({
   secondaryStatus?: AppStatusState;
   status: AppStatusState;
 }) {
+  const [primaryExpanded, setPrimaryExpanded] = useState(false);
+  const [secondaryExpanded, setSecondaryExpanded] = useState(false);
+  const primaryTextId = useId();
+  const secondaryTextId = useId();
   const showPrimary = persistent || status.tone !== "idle";
   const showSecondary = Boolean(secondaryStatus?.text.trim());
   if (!showPrimary && !showSecondary) {
@@ -97,18 +102,50 @@ export function AppStatusRow({
   const statusLine = (
     lineStatus: AppStatusState,
     lineClassName = "",
-  ) => (
-    <div
-      aria-live={lineStatus.tone === "bad" ? "assertive" : "polite"}
-      className={["status", lineClassName, lineStatus.tone]
-        .filter(Boolean)
-        .join(" ")}
-      role={lineStatus.tone === "bad" ? "alert" : "status"}
-    >
-      <span className="status-dot" aria-hidden="true" />
-      <span className="status-text">{renderStatusText(lineStatus)}</span>
-    </div>
-  );
+    expanded = false,
+    setExpanded?: (expanded: boolean) => void,
+    textId = primaryTextId,
+  ) => {
+    const collapsible = lineStatus.text.trim().length > 72;
+    return (
+      <div
+        className={[
+          "status",
+          lineClassName,
+          lineStatus.tone,
+          expanded ? "is-expanded" : "",
+          collapsible ? "is-collapsible" : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+      >
+        <span
+          aria-atomic="true"
+          aria-live={lineStatus.tone === "bad" ? "assertive" : "polite"}
+          className="sr-only"
+          role={lineStatus.tone === "bad" ? "alert" : "status"}
+        >
+          {lineStatus.text}
+        </span>
+        <span className="status-dot" aria-hidden="true" />
+        <span className="status-text" id={textId}>
+          {renderStatusText(lineStatus)}
+        </span>
+        {collapsible && setExpanded ? (
+          <button
+            aria-controls={textId}
+            aria-expanded={expanded}
+            aria-label={expanded ? "Collapse status" : "Show full status"}
+            className="status-expand-button"
+            onClick={() => setExpanded(!expanded)}
+            type="button"
+          >
+            <ChevronDown aria-hidden="true" size={16} />
+          </button>
+        ) : null}
+      </div>
+    );
+  };
 
   if (showSecondary && secondaryStatus) {
     return (
@@ -117,8 +154,22 @@ export function AppStatusRow({
           .filter(Boolean)
           .join(" ")}
       >
-        {showPrimary ? statusLine(status, "app-status-primary") : null}
-        {statusLine(secondaryStatus, "app-status-degraded")}
+        {showPrimary
+          ? statusLine(
+              status,
+              "app-status-primary",
+              primaryExpanded,
+              setPrimaryExpanded,
+              primaryTextId,
+            )
+          : null}
+        {statusLine(
+          secondaryStatus,
+          "app-status-degraded",
+          secondaryExpanded,
+          setSecondaryExpanded,
+          secondaryTextId,
+        )}
       </div>
     );
   }
@@ -126,5 +177,8 @@ export function AppStatusRow({
   return statusLine(
     status,
     ["app-status-row", className].filter(Boolean).join(" "),
+    primaryExpanded,
+    setPrimaryExpanded,
+    primaryTextId,
   );
 }

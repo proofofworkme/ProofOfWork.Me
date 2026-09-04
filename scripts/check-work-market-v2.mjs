@@ -1459,7 +1459,7 @@ const relicViewStart = appSource.indexOf(
   'selectedMarketTokenIsWork && workMarketplaceVersion === "v1-relic"',
 );
 const relicViewEnd = appSource.indexOf(
-  '\n        ) : (\n        <section className="id-card token-market-card">',
+  '\n        ) : selectedMarketTokenIsWork &&\n          workMarketplaceVersion === "v4-relic"',
   relicViewStart,
 );
 assert.ok(relicViewStart >= 0 && relicViewEnd > relicViewStart);
@@ -1487,7 +1487,7 @@ assert.match(
 );
 assert.match(
   readerSource,
-  /\["listings", "closedListings", "market-log"\]\.includes\(eligibility\.kind\)[\s\S]*authoritativeEmpty: true[\s\S]*indexed_through_block: scan\?\.indexed_through_block/u,
+  /"listings"[\s\S]*"closedListings"[\s\S]*"market-log"[\s\S]*"market-listings"[\s\S]*"market-seals"[\s\S]*"market-sales"[\s\S]*\.includes\(eligibility\.kind\)[\s\S]*authoritativeEmpty: true[\s\S]*indexed_through_block: scan\?\.indexed_through_block/u,
 );
 assert.match(
   readerSource,

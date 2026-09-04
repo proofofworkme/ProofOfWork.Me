@@ -218,6 +218,19 @@ an exact current proof-index page or paginate the stored hash-bound Token summar
 the full credit ledger. Token history and token state snapshots use a 24-hour
 stable confirmed-data guard by default.
 
+AMO activity organization is exposed through the additive
+`kind=market-listings`, `kind=market-seals`, and `kind=market-sales` Token
+History views. Each view filters and computes its total before pagination,
+preserves the canonical deterministic event order, and keeps seal transaction
+ids searchable as first-class evidence. A page is authoritative only when the
+server echoes the exact requested `kind` with `authoritative: true`,
+`complete: true`, and `preview: false`. Recovery, mismatched, unflagged, or
+partial responses declare a non-authoritative incomplete preview and cannot
+establish canonical totals, pagination, or absence. The mixed
+`kind=market-log` response remains backward compatible for existing clients.
+These are read-model projections over the existing sale-ticket lifecycle; they
+add no protocol event, fee, arithmetic, signing authority, or settlement rule.
+
 `/api/v1/token-history?kind=listings&network=livenet` is stricter than the
 other historical credit collections. Every broad, exact-query, and
 address-scoped request starts from one complete relational current-listing

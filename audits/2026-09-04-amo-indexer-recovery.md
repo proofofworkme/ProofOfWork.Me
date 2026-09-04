@@ -268,8 +268,8 @@ Read-only external baseline checks for Credit minting and Mail also passed. The
 workstation candidate could not run the environment-bound marketplace suite
 because it intentionally has no production PostgreSQL/Core credentials; its
 local API returned `CANONICAL_INDEX_UNAVAILABLE` before marketplace assertions.
-The exact merged release must therefore run the full marketplace gate inside
-the production node environment before it is accepted. The unrelated live
+The exact merged release subsequently passed the full marketplace gate inside
+the production node environment, as recorded below. The unrelated live
 send-preparation fixture currently reports zero confirmed UTXOs for
 `armyofyouth`; that external fixture drift does not exercise this read path.
 
@@ -322,3 +322,42 @@ send-preparation fixture currently reports zero confirmed UTXOs for
   checkpoint, three-set membership, V8 marker, mempool-spend, bounded-cache,
   ask-invalidation, and count-component regressions.
 - Rebuild required: no. No canonical data mutation is part of this change.
+
+### 2026-09-04 — Complete-authority production release
+
+- Merged pull request 50 and released exact main commit
+  `432c01581e5e2987e26a3190be2817c7bddc6470` as
+  `432c01581e5e-20260904T174541Z`.
+- Preserved the prior checkout at
+  `/opt/proofofwork-api-stage-432c01581e5e-20260904T174541Z`.
+- Published
+  `proofofwork-node-release-432c015-432c01581e5e-20260904T174541Z.tgz`
+  with archive SHA-256
+  `f977f5aa7e3a6f2ccff286866e337ec2e495f51de7d8fe4f9f44407b774a084c`
+  and runtime SHA-256
+  `99e504fa0355fcdd51b98b6de03c3c64ce371385c9493d97f1ac7282be37ad7d`.
+- The atomic checkout exchange completed once. Initial archive publication
+  then failed closed because a post-exchange status read recreated
+  `.git/index` with mode `0664`. Services remained stopped, the exchange was
+  not rerun, the live tree was normalized to remove group/world write bits,
+  and the same exact checkout passed publication before services restarted.
+- Public and loopback health returned ready, available, canonical, and zero
+  blocks behind at height `965504`, hash
+  `000000000000000000017adb5d007cc51cbd1101bb16ab356b5546d2de7229b4`.
+- Dynamic authority verification proved 608 complete lifecycle inputs, 582
+  Core-unspent protocol-active listings, zero pending listings, 582 total open
+  listings, a 550-row summary preview, and a true continuation flag. Public
+  responses exposed none of the private membership arrays and did not retain
+  an unbound aggregate ask.
+- Full production marketplace convergence, ledger consistency, Mail, and
+  Credit mint regressions passed. Ledger snapshot
+  `f55ff9dac6a8f85d8128cc98` reconciled to
+  `8115626634080169885.41580993` proofs.
+- Recursive release attestation verified the live commit, tree, runtime digest,
+  eight archives, and one current provenance record. The service retains its
+  existing warning exit because `/opt` contains 17 historical node checkouts,
+  above the bounded inventory warning threshold; current release provenance is
+  valid and no historical checkout was deleted.
+- Data rebuild required or performed: no.
+- Protocol rules, math, fees, signing, canonical IDs, and settlement behavior
+  changed: none.

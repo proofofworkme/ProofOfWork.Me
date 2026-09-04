@@ -79,6 +79,9 @@ export function AppHeader({
           : "app-header-stack"
       }
     >
+      <a className="skip-link" href="#main-content">
+        Skip to main content
+      </a>
       <header className="topbar">
         <a
           className="brand"
@@ -184,6 +187,7 @@ export function AppHeader({
           ))}
         </div>
       ) : null}
+      <span className="skip-target" id="main-content" tabIndex={-1} />
     </div>
   );
 }

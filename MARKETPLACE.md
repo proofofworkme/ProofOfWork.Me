@@ -1378,6 +1378,44 @@ by confirmation status and event time, newest first, then txid for stable replay
 They should not use price or arbitrage sorting. Logs must be paginated so every
 listing, seal, closure, delisting, and purchase remains inspectable.
 
+### Listings / Seals / Sales Activity Projections
+
+AMO credit activity has three additive `token-history` views over the existing
+sale-ticket lifecycle:
+
+- `kind=market-listings` returns listing creations together with retained
+  non-sale terminal listing evidence, including delisted and otherwise closed
+  listings. Sale-derived closures remain represented by their settlement in
+  Sales. Listings is lifecycle history, not the current active inventory.
+- `kind=market-seals` returns one explicit seal activity row keyed by the seal
+  transaction id and linked to its listing. Seal confirmation/pending status is
+  preserved from the existing lifecycle; the projection does not promote a
+  pending seal to canonical state.
+- `kind=market-sales` returns settled sale activity using the same canonical
+  sale records as the existing sales and market-log readers.
+
+Search filtering and category totals are applied before pagination, and each
+view retains the existing deterministic history ordering and canonical cursor
+rules. Seal txids are first-class search and evidence fields. The original
+`kind=market-log` response remains backward compatible as the mixed lifecycle
+view for existing clients.
+
+Authoritative responses for these three additive categories echo the exact
+requested `kind` and declare `authoritative: true`, `complete: true`, and
+`preview: false`. A current-state or recovery fallback may remain visible for
+orientation, but it declares `authoritative: false`, `complete: false`, and
+`preview: true`; clients must withhold canonical totals, pagination, and
+absence claims in that state. Missing flags or a mismatched kind are likewise
+incomplete. This explicit handshake keeps rolling deployments compatible with
+older servers that do not yet recognize the additive category names.
+
+These categories organize read-model output only. They add no OP_RETURN event,
+authorization version, fee, balance mutation, pricing formula, wallet signing
+step, or settlement rule. All/Sealed/Unsealed remains the independent active
+order-book control: a listing appearing in Listings activity does not make it
+active or buyable, and only the existing confirmed sealed/unspent validity
+rules establish executable inventory.
+
 ## Spent Ticket Closure
 
 The sale-ticket UTXO is the settlement primitive. Once that outpoint is spent by

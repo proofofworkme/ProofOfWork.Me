@@ -7194,6 +7194,265 @@ check("canonical credit overlays retain explicit address scope", async () => {
   );
 });
 
+check("canonical credit enrichment preserves page-two pagination metadata", () => {
+  let repaginationCalls = 0;
+  const mergeTokenHistoryPageWithOverlay = isolatedFunction(
+    API_PATH,
+    "mergeTokenHistoryPageWithOverlay",
+    {
+      compareTokenHistoryPageItems: (left, right) => left.id - right.id,
+      mergeTokenHistoryPageItem: (current, incoming) => ({
+        ...(current ?? {}),
+        ...(incoming ?? {}),
+      }),
+      mergedSourceLabel: (left, right) => `${left}+${right}`,
+      paginatedHistoryPayload: ({ items, kind, network, pagination, source }) => {
+        repaginationCalls += 1;
+        return {
+          cursor: "0",
+          end: items.length,
+          items,
+          kind,
+          network,
+          nextCursor: "",
+          page: 0,
+          pageCount: 1,
+          pageSize: pagination.limit,
+          source,
+          start: 0,
+          totalCount: items.length,
+        };
+      },
+      tokenHistoryPageItemKey: (item) => String(item?.id ?? ""),
+    },
+  );
+  const baseItems = Array.from({ length: 24 }, (_value, index) => ({
+    id: index + 24,
+    value: `base-${index + 24}`,
+  }));
+  const basePage = {
+    cursor: "24",
+    end: 48,
+    hasMore: true,
+    indexedAt: "2026-09-03T11:59:00.000Z",
+    indexedThroughBlock: 960_600,
+    indexedThroughBlockHash: "ab".repeat(32),
+    items: baseItems,
+    kind: "market-listings",
+    limit: 24,
+    network: "livenet",
+    nextCursor: "48",
+    page: 1,
+    pageCount: 4,
+    pageSize: 24,
+    source: "proof-indexer-token-events",
+    start: 24,
+    totalCount: 80,
+  };
+  const overlayPage = {
+    indexedAt: "2026-09-03T12:00:00.000Z",
+    indexedThroughBlock: 960_601,
+    items: [
+      { creditNetworkValueSats: 25_000, id: 30 },
+      { creditNetworkValueSats: 99_999, id: 99 },
+    ],
+    kind: "market-sales",
+    network: "testnet",
+    source: "canonical-credit-value-overlay",
+    totalCount: 2,
+  };
+  const pagination = {
+    limit: 24,
+    offset: 24,
+    page: 1,
+    query: "",
+  };
+  const enriched = mergeTokenHistoryPageWithOverlay(
+    basePage,
+    overlayPage,
+    pagination,
+    { addOverlayItems: false },
+  );
+
+  for (const field of [
+    "cursor",
+    "end",
+    "hasMore",
+    "indexedAt",
+    "indexedThroughBlock",
+    "indexedThroughBlockHash",
+    "kind",
+    "limit",
+    "network",
+    "nextCursor",
+    "page",
+    "pageCount",
+    "pageSize",
+    "start",
+    "source",
+    "totalCount",
+  ]) {
+    assert.equal(enriched[field], basePage[field], `${field} must stay pinned`);
+  }
+  assert.deepEqual(
+    enriched.items.map((item) => item.id),
+    baseItems.map((item) => item.id),
+  );
+  assert.equal(enriched.items.find((item) => item.id === 30).value, "base-30");
+  assert.equal(
+    enriched.items.find((item) => item.id === 30).creditNetworkValueSats,
+    25_000,
+  );
+  assert.equal(enriched.items.some((item) => item.id === 99), false);
+  assert.equal(repaginationCalls, 0);
+
+  const legacyMerged = mergeTokenHistoryPageWithOverlay(
+    basePage,
+    overlayPage,
+    pagination,
+  );
+  assert.equal(repaginationCalls, 1);
+  assert.equal(legacyMerged.items.some((item) => item.id === 99), true);
+  assert.equal(legacyMerged.page, 0);
+  assert.equal(legacyMerged.start, 0);
+});
+
+check("matching-only history enrichment preserves canonical lifecycle fields", () => {
+  const creditFields = [
+    "creditLiveValueSats",
+    "frozenNetworkValueSats",
+    "minerFeeSats",
+  ];
+  const valueFields = new Set([
+    ...creditFields,
+    "amount",
+    "amountStorageModel",
+    "amountSubatoms",
+    "decimals",
+    "precisionModel",
+    "unitScale",
+  ]);
+  const mergeCreditNetworkValueRecord = isolatedFunction(
+    API_PATH,
+    "mergeCreditNetworkValueRecord",
+    {
+      CREDIT_NETWORK_VALUE_FIELD_NAMES: creditFields,
+      mergedCreditRecordWithExactWorkAmount: (_current, _incoming, merged) =>
+        merged,
+    },
+  );
+  const tokenHistoryValueEnrichmentFields = isolatedFunction(
+    API_PATH,
+    "tokenHistoryValueEnrichmentFields",
+    { TOKEN_HISTORY_VALUE_ENRICHMENT_FIELD_NAMES: valueFields },
+  );
+  const tokenHistoryRecordWithValueEnrichment = isolatedFunction(
+    API_PATH,
+    "tokenHistoryRecordWithValueEnrichment",
+    {
+      mergeCreditNetworkValueRecord,
+      tokenHistoryValueEnrichmentFields,
+    },
+  );
+  const tokenHistoryPageItemWithValueEnrichment = isolatedFunction(
+    API_PATH,
+    "tokenHistoryPageItemWithValueEnrichment",
+    { tokenHistoryRecordWithValueEnrichment },
+  );
+  const txid = "c".repeat(64);
+  const blockHash = "d".repeat(64);
+  const base = {
+    authoritative: true,
+    createdAt: "2026-09-03T12:00:00.000Z",
+    kind: "sale",
+    sale: {
+      amount: "0.0000000000000001",
+      amountStorageModel: "work-subatoms-v2",
+      amountSubatoms: "1",
+      blockHash,
+      blockHeight: 950_000,
+      blockIndex: 3,
+      buyerAddress: "bc1pbuyer",
+      canonicalMinerFeeCovered: false,
+      confirmed: true,
+      createdAt: "2026-09-03T12:00:00.000Z",
+      creditLiveValueSats: "10.00000000",
+      decimals: 16,
+      listingId: "e".repeat(64),
+      minerFeeSats: 100,
+      network: "livenet",
+      precisionModel: "canonical-work-subatoms-v2",
+      priceSats: 25_000,
+      protocolVout: 2,
+      recordOrdinal: 4,
+      sellerAddress: "bc1pseller",
+      status: "confirmed",
+      tokenId: "work",
+      txid,
+      unitScale: "10000000000000000",
+    },
+    txid,
+  };
+  const staleOverlay = {
+    authoritative: false,
+    createdAt: "2026-09-03T11:00:00.000Z",
+    kind: "sale",
+    sale: {
+      ...base.sale,
+      blockHash: "f".repeat(64),
+      blockHeight: 949_999,
+      blockIndex: 1,
+      buyerAddress: "bc1pstale-buyer",
+      canonicalMinerFeeCovered: true,
+      confirmed: false,
+      createdAt: "2026-09-03T11:00:00.000Z",
+      creditLiveValueSats: "25.00000000",
+      minerFeeSats: 222,
+      network: "testnet",
+      priceSats: 1,
+      protocolVout: 0,
+      recordOrdinal: 0,
+      sellerAddress: "bc1pstale-seller",
+      status: "pending",
+      tokenId: "stale-token",
+    },
+  };
+  const enriched = tokenHistoryPageItemWithValueEnrichment(
+    base,
+    staleOverlay,
+  );
+
+  assert.equal(enriched.authoritative, true);
+  assert.equal(enriched.createdAt, base.createdAt);
+  assert.equal(enriched.kind, base.kind);
+  assert.equal(enriched.txid, base.txid);
+  assert.equal(enriched.sale.creditLiveValueSats, "25.00000000");
+  assert.equal(enriched.sale.minerFeeSats, 222);
+  for (const field of [
+    "blockHash",
+    "blockHeight",
+    "blockIndex",
+    "buyerAddress",
+    "canonicalMinerFeeCovered",
+    "confirmed",
+    "createdAt",
+    "network",
+    "priceSats",
+    "protocolVout",
+    "recordOrdinal",
+    "sellerAddress",
+    "status",
+    "tokenId",
+    "txid",
+  ]) {
+    assert.equal(
+      enriched.sale[field],
+      base.sale[field],
+      `${field} must remain relational-canonical`,
+    );
+  }
+});
+
 check("canonical WORK transfer overlays preserve exact-tip page provenance", () => {
   const historicalTxid = "a".repeat(64);
   const tipHash = "b".repeat(64);
@@ -15865,6 +16124,127 @@ check("unpinned mint and market history use current relational pages", async () 
     ),
     false,
   );
+});
+
+check("additive market activity fails closed before snapshot overlay retry", async () => {
+  const scan = {
+    generated_at: "2026-09-03T12:00:00.000Z",
+    indexed_through_block: 960_601,
+    payload: { indexedThroughBlockHash: "ab".repeat(32) },
+  };
+  const snapshot = {
+    generated_at: "2026-09-03T11:59:00.000Z",
+    indexed_through_block: 960_600,
+    payload: { tokenHistoryPayloads: {} },
+    snapshot_id: "legacy-snapshot",
+  };
+  const overlayReads = new Map();
+  let scanRejectedKind = "";
+  let snapshotReads = 0;
+  const legacyPage = {
+    items: [],
+    kind: "market-log",
+    totalCount: 0,
+  };
+  const proofIndexTokenHistoryPayload = isolatedFunction(
+    READER_PATH,
+    "proofIndexTokenHistoryPayload",
+    {
+      currentRelationalHistoryPageWithScanCoverage: (page) =>
+        page?.kind === scanRejectedKind ? null : page,
+      latestProofIndexScanMetadata: async () => scan,
+      ledgerSnapshotWithPayload: async () => {
+        snapshotReads += 1;
+        return snapshot;
+      },
+      mergeTokenHistoryPages: (_snapshotPage, overlayPage) => overlayPage,
+      normalizedTxid: () => "",
+      proofIndexPool: () => ({}),
+      proofIndexTokenHistoryReadEligibility: (_scope, kind) => ({
+        eligible: true,
+        kind,
+        pagination: {
+          limit: 25,
+          offset: 0,
+          page: 0,
+          query: "",
+          snapshotId: "",
+        },
+        scope: "work",
+      }),
+      proofIndexTokenMarketHistoryOverlayPayload: async (
+        _network,
+        _scope,
+        kind,
+      ) => {
+        const reads = (overlayReads.get(kind) ?? 0) + 1;
+        overlayReads.set(kind, reads);
+        if (kind === scanRejectedKind && reads === 1) {
+          return { items: [], kind, totalCount: 1 };
+        }
+        // A null first page represents the relational mapper/count integrity
+        // check rejecting the page. Only legacy market-log may use its prior
+        // snapshot-overlay fallback after that rejection.
+        return kind === "market-log" && reads === 2 ? legacyPage : null;
+      },
+      tokenHistoryFilterNeedles: () => [],
+      tokenHistoryMarketEventKinds: () => ["token-listing"],
+      tokenHistoryPageFromSnapshot: () => null,
+      tokenHistoryPageWithScanCoverage: (page) => page,
+      verifiedWorkMarketV4Activation: async () => null,
+    },
+  );
+
+  for (const kind of [
+    "market-listings",
+    "market-seals",
+    "market-sales",
+  ]) {
+    assert.equal(
+      await proofIndexTokenHistoryPayload(
+        "livenet",
+        "work",
+        kind,
+        new URLSearchParams(),
+      ),
+      null,
+    );
+    assert.equal(overlayReads.get(kind), 1);
+  }
+  assert.equal(
+    snapshotReads,
+    0,
+    "rejected additive activity must not retry against an older snapshot",
+  );
+
+  scanRejectedKind = "market-seals";
+  overlayReads.set(scanRejectedKind, 0);
+  assert.equal(
+    await proofIndexTokenHistoryPayload(
+      "livenet",
+      "work",
+      scanRejectedKind,
+      new URLSearchParams(),
+    ),
+    null,
+  );
+  assert.equal(overlayReads.get(scanRejectedKind), 1);
+  assert.equal(
+    snapshotReads,
+    0,
+    "scan-rejected additive activity must return null directly",
+  );
+  scanRejectedKind = "";
+
+  const legacyResult = await proofIndexTokenHistoryPayload(
+    "livenet",
+    "work",
+    "market-log",
+    new URLSearchParams(),
+  );
+  assert.equal(snapshotReads, 1);
+  assert.equal(overlayReads.get("market-log"), 2);
+  assert.equal(legacyResult, legacyPage);
 });
 
 check("invalid listing attempts inherit their canonical credit scope", () => {
@@ -48643,11 +49023,11 @@ check("credit market log SQL canonicalizes listing lifecycles before pagination"
   );
   assert.match(
     overlaySource,
-    /safeKind === "closedListings" && amoV5RelicProjectable[\s\S]*e\.kind = ANY\(\$2::text\[\]\) OR \$\{amoV5RelicPredicateSql\}/u,
+    /\["closedListings", "market-listings"\]\.includes\(safeKind\)[\s\S]*amoV5RelicProjectable[\s\S]*e\.kind = ANY\(\$2::text\[\]\) OR \$\{amoV5RelicPredicateSql\}/u,
   );
   assert.match(
     historySource,
-    /\["listings", "closedListings", "market-log"\]\.includes\(\s*eligibility\.kind\s*\)[\s\S]*authoritativeEmpty: true/iu,
+    /"market-listings"[\s\S]*"market-seals"[\s\S]*"market-sales"[\s\S]*\.includes\(eligibility\.kind\)[\s\S]*authoritativeEmpty: true/iu,
   );
   assert.doesNotMatch(
     overlaySource,
@@ -48655,6 +49035,488 @@ check("credit market log SQL canonicalizes listing lifecycles before pagination"
   );
   assert.match(overlaySource, /await ledgerSnapshotMetadata\(/u);
   assert.doesNotMatch(overlaySource, /await ledgerSnapshot\(/u);
+});
+
+check("credit market activity fallback pages disclose incomplete authority", () => {
+  const normalizedTokenHistoryKind = isolatedFunction(
+    API_PATH,
+    "normalizedTokenHistoryKind",
+  );
+  const withAuthority = isolatedFunction(
+    API_PATH,
+    "tokenMarketActivityHistoryPageWithAuthority",
+    {
+      normalizedTokenHistoryKind,
+      TOKEN_MARKET_ACTIVITY_HISTORY_KINDS: new Set([
+        "market-listings",
+        "market-seals",
+        "market-sales",
+      ]),
+    },
+  );
+  const sourcePage = {
+    items: [{ kind: "listing" }],
+    kind: "market-listings",
+    totalCount: 1,
+  };
+  assert.equal(
+    JSON.stringify(withAuthority(sourcePage, "market-listings", false)),
+    JSON.stringify({
+      ...sourcePage,
+      authoritative: false,
+      complete: false,
+      preview: true,
+    }),
+  );
+  assert.equal(
+    JSON.stringify(withAuthority(sourcePage, "market-listings", true)),
+    JSON.stringify({
+      ...sourcePage,
+      authoritative: true,
+      complete: true,
+      preview: false,
+    }),
+  );
+  for (const unboundPage of [
+    { items: [], totalCount: 0 },
+    { ...sourcePage, kind: "market-seals" },
+  ]) {
+    assert.equal(
+      JSON.stringify(withAuthority(unboundPage, "market-listings", true)),
+      JSON.stringify({
+        ...unboundPage,
+        authoritative: false,
+        complete: false,
+        preview: true,
+      }),
+      "missing or mismatched response kinds must remain incomplete previews",
+    );
+  }
+  assert.equal(withAuthority(sourcePage, "market-log", false), sourcePage);
+
+  const fallbackSource = topLevelFunctionSource(API_PATH, "tokenHistoryPayload");
+  assert.match(
+    fallbackSource,
+    /return tokenMarketActivityHistoryPageWithAuthority\([\s\S]*payload\.snapshotId[\s\S]*safeKind,[\s\S]*false,/u,
+  );
+  assert.match(
+    fileSource(API_PATH),
+    /canonicalValuePayload,[\s\S]*historyKind,[\s\S]*canonicalValuePayload\.complete !== false[\s\S]*canonicalValuePayload\.preview !== true,[\s\S]*jsonResponse\(/u,
+  );
+});
+
+check("credit market activity categories preserve lifecycle evidence and pagination", () => {
+  const tokenHistorySafeKind = isolatedFunction(
+    READER_PATH,
+    "tokenHistorySafeKind",
+  );
+  const tokenHistoryMarketEventKinds = isolatedFunction(
+    READER_PATH,
+    "tokenHistoryMarketEventKinds",
+  );
+  for (const kind of ["market-listings", "market-seals", "market-sales"]) {
+    assert.equal(tokenHistorySafeKind(kind), kind);
+  }
+  assert.equal(
+    JSON.stringify(tokenHistoryMarketEventKinds("market-listings")),
+    JSON.stringify([
+      "token-listings",
+      "token-listing",
+      "token-listing-closed",
+    ]),
+  );
+  assert.equal(
+    JSON.stringify(tokenHistoryMarketEventKinds("market-seals")),
+    JSON.stringify(["token-listing-sealed"]),
+  );
+  assert.equal(
+    JSON.stringify(tokenHistoryMarketEventKinds("market-sales")),
+    JSON.stringify(["token-sale"]),
+  );
+
+  const canonicalSql = isolatedFunction(
+    READER_PATH,
+    "tokenHistoryCanonicalMarketEventsSql",
+    {
+      WORK_MARKET_V2_AUTH_VERSION: "pwt-sale-v3",
+      WORK_MARKET_V4_AUTH_VERSION: "pwt-sale-v4",
+      WORK_TOKEN_ID,
+    },
+  );
+  const sealSql = canonicalSql("market-seals", "e.network = $1");
+  const listingSql = canonicalSql("market-listings", "e.network = $1");
+  const overlaySource = topLevelFunctionSource(
+    READER_PATH,
+    "proofIndexTokenMarketHistoryOverlayPayload",
+  );
+  assert.match(
+    sealSql,
+    /'seal:' \|\| lower\(e\.txid\) \|\| ':'/u,
+  );
+  assert.match(
+    sealSql,
+    /WHEN 'market-seals' = 'market-seals' THEN lower\(e\.txid\)/u,
+  );
+  assert.match(
+    listingSql,
+    /WHEN e\.kind = ANY\(ARRAY\['token-listings','token-listing'\]::text\[\]\)[\s\S]*WHEN e\.kind = 'token-listing-closed'[\s\S]*THEN 'closed:'/u,
+  );
+  assert.match(
+    overlaySource,
+    /safeKind === "market-listings"[\s\S]*sale_sibling\.kind = 'token-sale'[\s\S]*containerPosition'[\s\S]*listingId[\s\S]*tokenId/iu,
+  );
+
+  const listingId = "1".repeat(64);
+  const secondListingId = "2".repeat(64);
+  const sealTxid = "a".repeat(64);
+  const pendingSealTxid = "b".repeat(64);
+  const closeTxid = "c".repeat(64);
+  const saleTxid = "d".repeat(64);
+  const frozenTerms = {
+    unitAmountSubatoms: "7490303660000000",
+    unitFaceProofs: 25_000,
+    unitPriceSats: 25_000,
+    version: "pwt-sale-v8",
+  };
+  const listingFromPayload = (payload) => ({
+    confirmed: payload.confirmed === true,
+    createdAt: payload.createdAt,
+    frozenTerms: payload.frozenTerms,
+    listingId: payload.listingId,
+    registryAddress: "bc1pregistry",
+    saleAuthorization: payload.saleAuthorization,
+    sealAt: payload.sealAt ?? payload.createdAt,
+    sealConfirmed: payload.confirmed === true,
+    sealTxid: payload.sealTxid ?? payload.txid,
+    sellerAddress: payload.sellerAddress,
+    tokenId: WORK_TOKEN_ID,
+  });
+  const tokenHistoryItemFromMarketEventPayload = isolatedFunction(
+    READER_PATH,
+    "tokenHistoryItemFromMarketEventPayload",
+    {
+      activeTokenListingHistoryItem: () => true,
+      tokenClosedListingFromEventPayload: (payload) => ({
+        closedAt: payload.createdAt,
+        closedConfirmed: payload.confirmed === true,
+        closedTxid: payload.txid,
+        listingId: payload.listingId,
+        sellerAddress: payload.sellerAddress,
+        tokenId: WORK_TOKEN_ID,
+      }),
+      tokenClosedListingFromSalePayload: (sale) => ({
+        ...sale,
+        closedAt: sale.createdAt,
+        closedConfirmed: sale.confirmed === true,
+        closedTxid: sale.txid,
+        status: "sold",
+      }),
+      tokenListingFromEventPayload: listingFromPayload,
+      tokenSaleFromEventPayload: (payload) => ({
+        confirmed: payload.confirmed === true,
+        createdAt: payload.createdAt,
+        listingId: payload.listingId,
+        tokenId: WORK_TOKEN_ID,
+        txid: payload.txid,
+      }),
+      workAmoV5PreUnitRelicEvidenceIsExact: () => false,
+    },
+  );
+  const confirmedSeal = tokenHistoryItemFromMarketEventPayload(
+    {
+      confirmed: true,
+      createdAt: "2026-09-03T12:00:00.000Z",
+      frozenTerms,
+      kind: "token-listing-sealed",
+      listingId,
+      saleAuthorization: { sellerAddress: "bc1pseller" },
+      sellerAddress: "bc1pseller",
+      txid: sealTxid,
+    },
+    "market-seals",
+  );
+  assert.equal(confirmedSeal.kind, "seal");
+  assert.equal(confirmedSeal.txid, sealTxid);
+  assert.equal(confirmedSeal.seal.listingId, listingId);
+  assert.equal(confirmedSeal.seal.confirmed, true);
+  assert.equal(confirmedSeal.seal.sealConfirmed, true);
+  assert.equal(confirmedSeal.seal.sellerAddress, "bc1pseller");
+  assert.deepEqual(confirmedSeal.seal.frozenTerms, frozenTerms);
+
+  const pendingSeal = tokenHistoryItemFromMarketEventPayload(
+    {
+      confirmed: false,
+      createdAt: "2026-09-03T12:01:00.000Z",
+      frozenTerms,
+      kind: "token-listing-sealed",
+      listingId: secondListingId,
+      sellerAddress: "bc1pseller2",
+      txid: pendingSealTxid,
+    },
+    "market-seals",
+  );
+  assert.equal(pendingSeal.seal.confirmed, false);
+  assert.equal(pendingSeal.seal.sealConfirmed, false);
+  assert.equal(pendingSeal.seal.status, "pending");
+
+  const legacyMarketLogSeal = tokenHistoryItemFromMarketEventPayload(
+    {
+      confirmed: true,
+      createdAt: "2026-09-03T12:00:00.000Z",
+      kind: "token-listing-sealed",
+      listingId,
+      txid: sealTxid,
+    },
+    "market-log",
+  );
+  assert.equal(legacyMarketLogSeal.kind, "listing");
+  assert.equal(legacyMarketLogSeal.txid, listingId);
+  assert.equal(legacyMarketLogSeal.seal, undefined);
+
+  const close = tokenHistoryItemFromMarketEventPayload(
+    {
+      confirmed: true,
+      createdAt: "2026-09-03T12:02:00.000Z",
+      kind: "token-listing-closed",
+      listingId,
+      sellerAddress: "bc1pseller",
+      txid: closeTxid,
+    },
+    "market-listings",
+  );
+  assert.equal(close.kind, "closed-listing");
+  assert.equal(close.txid, closeTxid);
+  assert.equal(close.closedListing.listingId, listingId);
+
+  const opening = tokenHistoryItemFromMarketEventPayload(
+    {
+      confirmed: true,
+      createdAt: "2026-09-03T11:59:00.000Z",
+      kind: "token-listing",
+      listingId,
+      saleAuthorization: { sellerAddress: "bc1pseller" },
+      sellerAddress: "bc1pseller",
+      txid: listingId,
+    },
+    "market-listings",
+  );
+  assert.equal(opening.kind, "listing");
+  assert.equal(opening.txid, listingId);
+
+  const derivedSaleClosePayload = {
+    confirmed: true,
+    createdAt: "2026-09-03T12:03:00.000Z",
+    derived: true,
+    kind: "token-listing-closed",
+    listingId,
+    rawCandidate: false,
+    sellerAddress: "bc1pseller",
+    tokenId: WORK_TOKEN_ID,
+    txid: saleTxid,
+    workAmoV5RawCandidate: false,
+  };
+  assert.equal(
+    tokenHistoryItemFromMarketEventPayload(
+      derivedSaleClosePayload,
+      "market-listings",
+    ),
+    null,
+  );
+  assert.equal(
+    tokenHistoryItemFromMarketEventPayload(
+      derivedSaleClosePayload,
+      "market-log",
+    ).kind,
+    "closed-listing",
+  );
+
+  const soldClose = tokenHistoryItemFromMarketEventPayload(
+    {
+      actor: "bc1pbuyer",
+      confirmed: true,
+      createdAt: "2026-09-03T12:03:00.000Z",
+      kind: "token-sale",
+      listingId,
+      sellerAddress: "bc1pseller",
+      tokenId: WORK_TOKEN_ID,
+      txid: saleTxid,
+    },
+    "market-listings",
+  );
+  assert.equal(soldClose, null);
+  const categorizedSale = tokenHistoryItemFromMarketEventPayload(
+    {
+      actor: "bc1pbuyer",
+      confirmed: true,
+      createdAt: "2026-09-03T12:03:00.000Z",
+      kind: "token-sale",
+      listingId,
+      sellerAddress: "bc1pseller",
+      tokenId: WORK_TOKEN_ID,
+      txid: saleTxid,
+    },
+    "market-sales",
+  );
+  assert.equal(categorizedSale.kind, "sale");
+  assert.equal(categorizedSale.txid, saleTxid);
+
+  const tokenMarketClosedListingIsSaleSettlementForSnapshot = isolatedFunction(
+    READER_PATH,
+    "tokenMarketClosedListingIsSaleSettlement",
+    {
+      normalizedLowerText: (value) => String(value ?? "").trim().toLowerCase(),
+      validTxid: (value) => /^[0-9a-f]{64}$/u.test(value),
+    },
+  );
+  const snapshotTokenHistoryItemCanProject = isolatedFunction(
+    READER_PATH,
+    "snapshotTokenHistoryItemCanProject",
+    {
+      snapshotTokenActivityItemCanProject: () => true,
+      snapshotTokenActivityPositionCanProject: () => true,
+      tokenMarketClosedListingIsSaleSettlement:
+        tokenMarketClosedListingIsSaleSettlementForSnapshot,
+    },
+  );
+  const soldSnapshotItem = {
+    closedListing: {
+      closedConfirmed: true,
+      closedTxid: saleTxid,
+      listingId,
+    },
+  };
+  assert.equal(
+    snapshotTokenHistoryItemCanProject(soldSnapshotItem, "market-log"),
+    true,
+  );
+  assert.equal(
+    snapshotTokenHistoryItemCanProject(
+      soldSnapshotItem,
+      "market-listings",
+      [{ listingId, txid: saleTxid }],
+    ),
+    false,
+  );
+
+  const mergeListing = (current, incoming) => ({
+    ...(current ?? {}),
+    ...(incoming ?? {}),
+  });
+  const identitySort = (items) => [...items];
+  const tokenMarketLogItemsFromState = isolatedFunction(
+    API_PATH,
+    "tokenMarketLogItemsFromState",
+    { sortTokenMarketLogItems: identitySort },
+  );
+  const tokenMarketClosedListingIsSaleSettlement = isolatedFunction(
+    API_PATH,
+    "tokenMarketClosedListingIsSaleSettlement",
+  );
+  const tokenMarketListingActivityItemsFromState = isolatedFunction(
+    API_PATH,
+    "tokenMarketListingActivityItemsFromState",
+    {
+      mergeTokenListingRecord: mergeListing,
+      sortTokenMarketLogItems: identitySort,
+      tokenMarketClosedListingIsSaleSettlement,
+    },
+  );
+  const tokenMarketSealActivityItemsFromState = isolatedFunction(
+    API_PATH,
+    "tokenMarketSealActivityItemsFromState",
+    {
+      mergeTokenListingRecord: mergeListing,
+      sortTokenMarketLogItems: identitySort,
+    },
+  );
+  const tokenMarketSaleActivityItemsFromState = isolatedFunction(
+    API_PATH,
+    "tokenMarketSaleActivityItemsFromState",
+    { sortTokenMarketLogItems: identitySort },
+  );
+  const state = {
+    closedListings: [
+      {
+        ...confirmedSeal.seal,
+        closedAt: "2026-09-03T12:02:00.000Z",
+        closedConfirmed: true,
+        closedTxid: closeTxid,
+      },
+      {
+        ...confirmedSeal.seal,
+        closedAt: "2026-09-03T12:03:00.000Z",
+        closedConfirmed: true,
+        closedTxid: saleTxid,
+        listingId,
+      },
+    ],
+    listings: [pendingSeal.seal],
+    sales: [
+      {
+        confirmed: true,
+        createdAt: "2026-09-03T12:03:00.000Z",
+        listingId,
+        txid: saleTxid,
+      },
+    ],
+  };
+  const legacyItems = tokenMarketLogItemsFromState(state);
+  assert.deepEqual(
+    legacyItems.map((item) => item.kind),
+    ["listing", "closed-listing", "closed-listing", "sale"],
+  );
+  assert.equal(legacyItems.some((item) => item.kind === "seal"), false);
+
+  const listingItems = tokenMarketListingActivityItemsFromState(state);
+  assert.equal(
+    listingItems.filter((item) => item.kind === "listing").length,
+    2,
+  );
+  assert.equal(
+    listingItems.filter((item) => item.kind === "closed-listing").length,
+    1,
+  );
+  assert.equal(
+    listingItems.some(
+      (item) => item.kind === "closed-listing" && item.txid === saleTxid,
+    ),
+    false,
+  );
+  const sealItems = tokenMarketSealActivityItemsFromState(state);
+  assert.equal(sealItems.length, 2);
+  assert.equal(
+    sealItems.find((item) => item.txid === sealTxid)?.seal.confirmed,
+    true,
+  );
+  assert.equal(
+    sealItems.find((item) => item.txid === pendingSealTxid)?.seal.confirmed,
+    false,
+  );
+  assert.equal(tokenMarketSaleActivityItemsFromState(state).length, 1);
+
+  const paginatedHistoryPayload = isolatedFunction(
+    API_PATH,
+    "paginatedHistoryPayload",
+    {
+      historyItemsMatchingQuery: (items) => items,
+      indexedThroughBlockFromItems: () => 960_601,
+    },
+  );
+  const pageFor = (offset) =>
+    paginatedHistoryPayload({
+      indexedAt: "2026-09-03T12:04:00.000Z",
+      items: sealItems,
+      kind: "market-seals",
+      network: "livenet",
+      pagination: { limit: 1, offset, query: "" },
+      source: "test",
+    });
+  const firstPage = pageFor(0);
+  const secondPage = pageFor(1);
+  assert.equal(firstPage.totalCount, 2);
+  assert.equal(secondPage.totalCount, 2);
+  assert.equal(firstPage.nextCursor, "1");
+  assert.notEqual(firstPage.items[0].txid, secondPage.items[0].txid);
 });
 
 check("AMO V5 pre-unit relic history is exact, relational, and fail-closed", async () => {
@@ -48893,6 +49755,18 @@ check("AMO V5 pre-unit relic history is exact, relational, and fail-closed", asy
   });
   assert.equal(broadListings.totalCount, 0);
   assert.deepEqual(broadListings.items, []);
+  const categorizedListings = await read("market-listings", "", {
+    authoritativeEmpty: true,
+  });
+  assert.equal(categorizedListings.totalCount, 0);
+  assert.deepEqual(categorizedListings.items, []);
+  const categorizedListingsCall = canonicalSqlCalls.find(
+    (call) => call.kind === "market-listings",
+  );
+  assert.match(
+    categorizedListingsCall?.whereClause ?? "",
+    /sale_sibling[\s\S]*containerPosition[\s\S]*saleAuthorization/iu,
+  );
   const exactListings = await read(
     "listings",
     WORK_AMO_V5_PRE_UNIT_RELIC_LISTING_TXID,
@@ -77782,7 +78656,7 @@ check("snapshot token activity fails closed without its canonical tuple", () => 
   );
   assert.match(
     topLevelFunctionSource(READER_PATH, "tokenHistoryPageFromSnapshot"),
-    /snapshotTokenHistoryItemCanProject\(item, safeKind\)/u,
+    /snapshotTokenHistoryItemCanProject\(item, safeKind, snapshotSales\)/u,
   );
 });
 

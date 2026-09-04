@@ -5,9 +5,15 @@ export function ProgressBar({
   label: string;
   progress: number;
 }) {
+  const boundedProgress = Math.max(0, Math.min(100, progress));
+
   return (
     <div
       aria-label={label}
+      aria-valuemax={100}
+      aria-valuemin={0}
+      aria-valuenow={boundedProgress}
+      role="progressbar"
       style={{
         background: "var(--surface-soft)",
         border: "1px solid var(--border)",
@@ -22,7 +28,7 @@ export function ProgressBar({
           display: "block",
           height: "100%",
           minWidth: 2,
-          width: `${Math.max(0, Math.min(100, progress))}%`,
+          width: `${boundedProgress}%`,
         }}
       />
     </div>
