@@ -187,6 +187,92 @@ oracle now uses the Core-reconciled listing history total and authority counts,
 not a bounded materialized array length. This changes representation only; it
 does not add, remove, open, close, seal, or settle any listing.
 
+### Canonical summary recut and complete-authority hardening
+
+Production verification of the first count hardening found one additional
+presentation boundary. The stored canonical WORK summary was already correct
+at snapshot `ac83f851be20a9f757a8b52f`: 582 confirmed open listings, zero
+pending, 550 visible preview rows, and `collectionHasMore.listings=true`.
+However, the public scoped summary wrapper reapplied the historical WORK V2
+cutover to that already-cut-over bounded snapshot. The cutover correctly
+recomputed a full state, but on a summary preview its only available array had
+550 rows, so the wrapper collapsed the preserved 582 total back to 550 and
+cleared the continuation flag.
+
+At current post-V2 livenet checkpoints, the read policy treats a `summaryOnly`
+payload as already cut over only when it carries the exact canonical WORK V2
+activation marker. At a post-V8 checkpoint, every materialized WORK row must
+also carry the current V8 authorization; a V2 marker cannot revive a legacy
+listing. Pre-activation and non-livenet behavior remains unchanged. Unmarked,
+malformed, legacy-row, and full-state current payloads continue through the
+existing cutover and policy path. A production-shaped regression runs the real
+V2 cutover implementation
+against a 550-row preview with a declared total of 582: the valid marked
+summary retains 582/550/`hasMore=true`, while the same unmarked shape is
+deliberately recut to 550 and `hasMore=false`.
+
+Fresh scoped WORK responses had a related evidence defect. They reconciled only
+the visible preview with Core and could therefore attach internally consistent
+authority for 550 inputs while the complete lifecycle contained 608 anchors.
+Fresh reads now obtain the existing complete, checkpoint-bound listing-history
+projection, which validates the full relational materialization, canonical V8
+witnesses, and every anchor through Core. The response remains bounded to 550
+rows but is accepted only when:
+
+- the summary, relational projection, and Core evidence share the exact block
+  height and hash;
+- Core checked all 608 lifecycle anchors and the projection accounts for its
+  582 unspent protocol-active listings;
+- private, non-response membership sets prove the complete relational input,
+  Core-unspent set, and protocol-active subset with unique canonical IDs;
+- the scoped token, stats, totals, preview size, continuation flag, and pending
+  count components agree before authority is attached; and
+- the complete source, scope, membership cardinality, and authority model are
+  explicit.
+
+The complete Core sweep includes mempool spends. A confirmed preview row is
+removed only when it is present in the complete relational input and absent
+from the Core-unspent set. A row missing from the complete input, or one that
+is Core-unspent but excluded by current protocol policy, fails closed. Because
+the bounded summary does not carry a full-membership digest that binds its
+aggregate ask to the complete Core-authority set, fresh authority binding
+clears the aggregate ask aliases. Listing rows remain available, while no price
+is retained from an unproved source membership. Pending listings and their
+counts remain the checkpoint projection; they are not represented as confirmed
+Core-authority members.
+
+Identical exact-checkpoint authority reads share one in-flight sweep. Successful
+envelopes may be reused for at most 15 seconds in a dedicated two-checkpoint
+cache; expired and older checkpoints are evicted, failures are never cached,
+and there is no stale fallback. Any missing, partial, mismatched, or raced
+evidence returns HTTP 503 with
+`CANONICAL_WORK_LISTING_AUTHORITY_UNAVAILABLE` instead of presenting a
+preview-sized proof as complete. This is a read-model representation and
+evidence change only; protocol rules, arithmetic, fees, signing, canonical IDs,
+and settlement remain unchanged.
+
+### Scoped summary follow-up local verification
+
+The completed read-layer candidate passed:
+
+- JavaScript syntax checks for the API and behavior suite;
+- `npm run check:index-recovery-behavior` (496/496 checks);
+- WORK marketplace V2 and AMO V5, V6, V7, and V8 contracts;
+- WORK Q8 and Q16 precision contracts;
+- API-truth, live-data, hardening, canonical-order, server-global,
+  client-containment, worker-containment, node-operations, and bond-arithmetic
+  contracts; and
+- the production build, with only the existing bundle-size warning.
+
+Read-only external baseline checks for Credit minting and Mail also passed. The
+workstation candidate could not run the environment-bound marketplace suite
+because it intentionally has no production PostgreSQL/Core credentials; its
+local API returned `CANONICAL_INDEX_UNAVAILABLE` before marketplace assertions.
+The exact merged release must therefore run the full marketplace gate inside
+the production node environment before it is accepted. The unrelated live
+send-preparation fixture currently reports zero confirmed UTXOs for
+`armyofyouth`; that external fixture drift does not exercise this read path.
+
 ## Change Log
 
 ### 2026-09-04 — Local recovery candidate
@@ -223,3 +309,16 @@ does not add, remove, open, close, seal, or settle any listing.
 - Added a production-shaped 582-declared / 550-materialized regression and
   corrected the production marketplace oracle to use authoritative totals.
 - Rebuild required: no.
+
+### 2026-09-04 — Scoped summary and fresh-authority follow-up
+
+- Proved the stored canonical WORK summary was already 582 total / 550 visible
+  at the production checkpoint and isolated the collapse to a second read-time
+  cutover.
+- Prevented exact marker-bound bounded summaries from being cut over twice.
+- Bound fresh scoped WORK responses to complete relational and Core authority,
+  while keeping response rows bounded and paginated.
+- Added production-shaped count, continuation, preview-only-authority,
+  checkpoint, three-set membership, V8 marker, mempool-spend, bounded-cache,
+  ask-invalidation, and count-component regressions.
+- Rebuild required: no. No canonical data mutation is part of this change.
