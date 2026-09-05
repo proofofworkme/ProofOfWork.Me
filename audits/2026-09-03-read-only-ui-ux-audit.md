@@ -3,15 +3,14 @@
 Date: 2026-09-03
 Mode: original read-only UI/UX audit with a separately approved local
 implementation follow-up
-Status: original audit complete. Pull request 51 merged the Proof Instrument
-candidate at exact main commit
-`ca8de7ef58b741840612ae3d457b36b8c43f6639`, and its matching API release is
-production-verified. Static publication remains gated by preservation and
-classification of the retained September 3 rollback snapshot. The subsequent
-immutable-seal-history and exact invalid-asset-state candidate has completed
-local controlled QA and is being prepared for its isolated pull request; it is
-not yet merged or deployed. Exhaustive physical-device verification remains
-pending.
+Status: original audit complete. Pull requests 51 through 53 are merged, and
+the Proof Instrument release is production-published from exact main commit
+`6c1b4780167101289811010469d129111a62dd52` with source tree
+`93b9e8a201a406f1b37c839f94f0f11e9acfb139`. The matching API authority,
+immutable seal-history, exact invalid-asset state, responsive UI, and static
+release are production-verified. The prior complete UI root and its
+classification evidence remain preserved. Exhaustive physical-device
+verification remains a separate follow-up.
 
 ## Scope And Approval
 
@@ -1055,3 +1054,92 @@ QA, and are not yet merged or deployed.
   release identifiers are appended after deployment.
 - Data rebuild required: no. Protocol rules, math, fee splits, wallet signing,
   canonical ID rules, and settlement behavior changed: none.
+
+### 2026-09-05 — Proof Instrument production publication
+
+Status: production-published and verified. The exact static release is
+`6c1b47801671-20260905T020357Z`, commit
+`6c1b4780167101289811010469d129111a62dd52`, source tree
+`93b9e8a201a406f1b37c839f94f0f11e9acfb139`, and archive SHA-256
+`48720813383ee776873fbf2e65e3e8bd113fe2cd616e5410da93a69499b1702b`.
+
+- Before staging, preserved and atomically reclassified the exact earlier
+  rollback root
+  `/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-b76a4f56aff2-20260903T033447Z`
+  as
+  `/var/backups/proofofwork-ui/rollbacks/proofofwork-www-pre-b76a4f56aff2-20260903T033447Z`.
+  The source and destination retained device/inode `2049:542863`; no content
+  was deleted, overwritten, or mutated.
+- Wrote self-contained classification evidence under
+  `/var/backups/proofofwork-ui/rollback-classifications/proofofwork-www-pre-b76a4f56aff2-20260903T033447Z-20260905T032328Z`.
+  Its complete-root archive SHA-256 is
+  `702b1b2446e42a7b37c3ff06cf57e7327483b92792d102b057e9760fdb674620`;
+  its aggregate evidence-inventory SHA-256 is
+  `78e8529e87e7ebc12a81967cb04075bd79634f118ae6bc3f0a44ddff3ea1d983`.
+- Bound the release input to source bundle SHA-256
+  `5ffed4a38d77533b541ce8543cc2699c6349958e09e4cfe526e75ee47b4385bd`
+  and 15-surface payload SHA-256
+  `0b76e33cbe59b717604f1e378f55ae54e9d01783855b919060a4503e8ad03f0f`.
+  The publisher verified safe archive members, freshly extracted the pinned
+  payload, compared its complete path/type/mode/owner/size/content inventory
+  to the canonical staging input, and held the deployment lock through
+  staging, archive creation, atomic exchange, rollback preservation, and
+  active provenance verification.
+- The first reviewed one-shot runner, SHA-256
+  `3e3c0e6620f41398528628abc1ee61ef0997288c8d912ceb1eec12ffb0f01fb3`,
+  stopped fail-closed in payload preflight because its literal expected list
+  placed `browser` before `boost` while C-locale sorting places `boost` first.
+  It stopped before staging or publication: the active release remained
+  `b76a4f56aff2-20260903T033447Z`, all new stage/archive/provenance/rollback
+  paths remained absent, and private validation scratch was removed. It was
+  not rerun.
+- Two independent reviews proved that the corrected one-shot runner, SHA-256
+  `161eef6317f1f03917a2b098ffb8dd6988382c6ecf447c1e2f9c8135f0683d6f`,
+  differed only by that corrected order. A new unique systemd unit ran it
+  once. The durable journal recorded both exact `ui_release_publish
+  status=published` and `ui_release_deploy status=published` records.
+- Published the immutable `185,792,000`-byte archive and matching checksum and
+  provenance sidecars under `/var/backups/proofofwork-ui/releases`. The active
+  manifest equals the archive-adjacent provenance record. Independent active
+  and rollback verification passed: the new active root is the stated
+  `6c1b47801671-20260905T020357Z` release, and the complete prior
+  `b76a4f56aff2-20260903T033447Z` root is preserved at
+  `/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-6c1b47801671-20260905T020357Z`.
+  That new rollback root remains intentionally unclassified through soak.
+- The first scheduled post-publication provenance run completed successfully
+  at `2026-09-05T04:00:20Z`. Provenance and prune timers are enabled and
+  active. Final storage health was 70% filesystem use, 7% inode use, and
+  `11,814,178,816` available bytes. No release-bound stage, payload-extraction,
+  archive-scratch, or stager-scratch directory remained.
+- Compared every regular file in the immutable archive to its live TLS-served
+  body at the known UI origin: 15 surfaces, 750 files, and 218,128,313 bytes
+  matched exactly. The apex returned the intended 301 redirect to
+  `https://www.proofofwork.me/`.
+- The canonical production surface audit completed fresh with `ok: true` for
+  all 13 configured high-level applications, their HTML/JS/CSS assets, and
+  their live API probes. Boost and NFT were additionally covered by the
+  15-host byte comparison.
+- The focused post-publication browser suite passed 8/8 in 6.4 minutes. It
+  covered mobile navigation and exact metrics, authoritative Listings / Seals
+  / Sales totals, unknown asset rejection, Loading to Ready, 503 Unavailable,
+  retained Last Verified values, 44px embedded targets, and the Computer AMO
+  responsive boundary matrix.
+- Real-data browser verification at 390 by 844 passed six routes: mistyped,
+  lowercase canonical, and uppercase canonical WORK IDs on standalone AMO and
+  embedded Computer. The mistyped ID remained exact and horizontally
+  contained, exposed no scoped totals or history, and View all credits cleared
+  both query fields and focused Credit Markets. Canonical routes reached Ready
+  with nonzero data and contained semantic tabs: Listings 886, Seals 723,
+  Sales 71; AMO 601, Pre-V8 Relics 23, and Marketplace V1 Relic 94.
+- Live exact WORK metrics passed at 390, 1024, and 1440px. Production-scale
+  values remained on one rendered line inside their scroll-safe evidence lane;
+  body and document widths equaled the viewport at every size. This verifies
+  that the original numeric bleed is contained without changing or rounding
+  the underlying values.
+- Headless viewport and deterministic browser coverage is complete for this
+  release. Physical iOS Safari, Android Chrome, and Samsung Internet remain a
+  separate device-lab follow-up and are not represented as completed here.
+- Protocol rules, mathematical functions, precision, fee splits, wallet
+  signing, canonical ID behavior, marketplace authorization, and settlement
+  behavior changed during static publication: none. Production data rebuild
+  required for the UI release: none.
