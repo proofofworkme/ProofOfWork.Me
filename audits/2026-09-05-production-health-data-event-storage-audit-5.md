@@ -939,3 +939,179 @@ NoNewPrivs1 and a verified read-only database pool. It reports200/ready at965666
 A fresh bounded full-node comparison remains required before rollout. Operational
 helper corrections are committed separately from the already built application.
 No application publication or four-record repair has occurred at this checkpoint.
+
+
+### Second resume: full candidate Core pass and preserved UI capacity stop (2026-09-05, 21:01 UTC)
+
+The unchanged application candidate2ddefac163d5 passed the complete bounded
+candidate comparison at Core965667/hash
+00000000000000000001e1401b1a833cfec87826ed257ce3a992533f1c0fd408.
+The verifier collected29 HTTP and743 Core responses (61,185,665bytes), checked
+505 confirmed IDs, all238 definitions,629 full/display listing rows and their
+unspent Core tickets,106 public-fixture wallet UTXOs, exact WORK reservations,
+three Boost raw carriers, and POWB/INCB integer identities. The final receipt
+SHA256 is70e7bcfd41ba3367d6e568368a3a9baa10fcb2c2775128ad3e9646fd23ba720a.
+The mempool sequence changed22869782→22871816; this is current inventory
+verification, not an atomic mempool snapshot, every-provider signing proof,
+whole-chain address completeness proof, or exhaustive historical replay.
+
+A preceding attempt stopped when an output was spent during the probe and
+bitcoin-cli returned successful empty stdout for gettxout's null result. Its
+failure and spender timing remain preserved. The verifier now decodes that
+specific successful response as null so the existing semantic spent-output
+check refuses it explicitly. Other malformed/empty RPC responses still fail,
+and decimal value lexemes remain exact. All19 verifier tests passed; this
+correction changes no application data or arithmetic. The observed wallet/API
+inventory briefly lagged the new Core mempool spend; no atomic freshness claim
+is made. The subsequent unchanged-fixture probe passed all final fences.
+
+Measured candidate payloads fell from2,204,059 to774bytes for registry counts,
+from4,534,991 to400,646bytes for the qualified token directory, and from25,477,951
+to10,309,015bytes for the listing display book. Full detail and source-bound
+membership comparisons passed; these are measured response sizes for this run.
+
+Operational commit0b63c8604456 was installed with all previous target files
+preserved. The paired UI stage/publish reference-search bounds now match the
+reviewed finite1048576 candidate limit; other compatibility limits remain.
+Node helpers were uploaded only into new root-private directories. Core,
+PostgreSQL, API, worker and Caddy identities remained unchanged. Existing
+same-day safeguards and physical-backup/WAL filename continuity were checked;
+no new backup, off-host transfer, recovery-chain deletion or physical restore
+claim is implied by this continuity check.
+
+The exact2d UI rebuilt with all15 surfaces and was staged as
+2ddefac163d5-20260905T204437Z. Compatibility closure checked525 dependencies,
+1005 edges and527332 search candidates. The managed stage contains796 entries
+and217,922,858 logical bytes;572 internal duplicate files saved181,852,944bytes.
+Its portable archive was successfully created and verified:185,566,324bytes,
+SHA2565e05adbf7d905f2dc4d3540ac389484d21ef71241155c7f73559f1e879cbedea.
+The wrapper then refused its final source-capacity gate: free11,039,272,960bytes
+was1,703,936bytes below the unchanged10GiB floor plus64MiB reserve plus full
+236,449,792byte source allocation. Stage/archive/checksum remain intact, source
+is absent, and publication has not occurred. Only this attempt's verified new
+transport payload was disposed by its reviewed lifecycle. No historical asset
+was removed. A fresh shallow exact-commit source transport with identical full
+dependencies is being assessed; the original complete build/source is preserved.
+
+No four-record repair or application rollout has occurred at this checkpoint.
+These execution receipts extend existing findings and approvals; they introduce
+no duplicate finding IDs. Required stopped-writer, invariant, bootstrap,
+production and repository checks remain gating steps.
+
+
+### Candidate ready; H5-04 funding-parent scope decision (2026-09-05, 21:19 UTC)
+
+The UI source-capacity issue is resolved without removing historical material
+or weakening the storage floor. A new shallow detached checkout preserves the
+exact application commit/tree and every dependency byte and mode. It saves
+12,083,200 allocated bytes compared with the original full source checkout,
+which remains preserved. Source transport SHA256 is
+72246046ae47a10eb639017d84fe339cf943a54a20397d6d5cac6ba4bc5bddc7.
+The installed source/dependency attestor and complete candidate provenance
+verification passed for all 15 surfaces, including the NFT alias. Production
+normalized dependencies match 6,118 entries / 160,954,989 bytes and fingerprint
+74d54e7c58f15d225603104316eab06748209b85c6e2c27f8457ee6967f9b811.
+All new verification tmpfs scratch was removed. At completion, the UI root had
+10,814,582,784 bytes free, 10,055,680 bytes above the unchanged 10 GiB floor plus
+64 MiB reserve. Existing capacity warnings remain applicable. No UI publication
+has occurred.
+
+Fresh node preconditions verified both live/candidate runtime fingerprints,
+original API/worker process identities and captured environment hashes, and the
+four historical repair targets against Core at block 965668. The largest of the
+six current persisted cache files is 77,931,434 bytes. The prepared bootstrap
+units therefore use a temporary 512 MiB regular-file limit, while repair/gate
+units retain 16 MiB; these limits are operational guards, not a proof of a
+universal cache-size maximum. Running-log receipts explicitly hash a captured
+prefix; complete-log claims require a stopped, stable file. The completed
+read-only shadow was stopped successfully without touching production units.
+
+A verifier assumption was corrected before any write: the auxiliary transaction
+contains one raw `OP_RETURN OP_13` output, but the unchanged push-only decoder
+correctly produces **zero parsed `op_returns` rows**. The whole output script
+`6a5d081600ff7f8184ec02` remains canonical transaction/output evidence. The repair
+comparator now checks all six exact Core input relations and values, both output
+scripts, and exactly 3,593 proofs in / 3,118 out / 475 fee. All 22 comparator
+fixtures passed. The extended offline validator independently decodes the
+948-byte confirmed transaction and its 80-byte block header, checks addresses,
+sequence, scriptSig, witnesses, stored fee, existing anchor fields, event raw
+carriers and protected/global invariants. Its 55 checks passed, including a
+refusal for the actual newly discovered parent-row condition below. These are
+verification corrections, not protocol/parser or application changes.
+
+**Approval decision: one additional existing funding-output record.** The
+approved canonical writer would also update the already indexed funding output
+`fc57450c502e054ecf23469d88f5249a578799da59d111fe234e50ca593c20e5:3`.
+It holds 863 proofs at `17W7JZ9KjjGUwdAyXeGxhzYe2vGe8YTRzA`; the database currently
+has null spend-link fields. Confirmed Core bytes prove it is input 0 of the
+already documented auxiliary transaction
+`4c079144b315ca08a846e7e7af3d37f5c96419a94f06af8384dc73e1ca307359`.
+The exact proposed additional changes to `proof_indexer.tx_outputs` are:
+
+| Column | Current | Proposed |
+| --- | --- | --- |
+| `spent_by_txid` | `NULL` | `4c079144b315ca08a846e7e7af3d37f5c96419a94f06af8384dc73e1ca307359` |
+| `spent_by_vin` | `NULL` | `0` |
+| `spent_at` | `NULL` | `2026-08-18T05:09:21+00:00` |
+
+All other funding-row fields, including value, address and script, must remain
+identical. The five previously recorded complete ticket-anchor rows must also
+remain identical. Their existing timestamps already match the canonical block
+header. This would produce six recorded input spend links while retaining the
+five original links. It creates no protocol event, credit or transaction and
+involves no signing or broadcast. Global economic and historical invariants
+remain mandatory.
+
+The header's double-SHA256 binds the timestamp to block 962992/hash
+00000000000000000000635d4ae72706ed6d6f4a17299714a3014074d441824b;
+transaction position is 1161. The exact before/after funding-row hashes are
+fbfeffc2097d8c076903f425efe3a6aecb8044c640ae5ff5fdfbaca77888d1a2 and
+002b05bb47ada6c4cfff2e76814dd200d03c8d20177b6e2dcbc2a9bf1360e281.
+The complete proposed rows, all five existing anchors, raw transaction/header,
+Core parent proofs and review receipts are retained in the audit evidence JSON.
+No current amount or spendability claim relies solely on this historical row.
+
+This extra parent record was not explicit in the user's limited repair scope.
+**It has not been approved or changed.** The current extended verifier refuses
+this baseline, and the prepared unit controller requires that verifier before
+either repair writer can start. A future approval requires a separately
+reviewed verifier/controller update admitting only these three additional
+fields; the existing writer itself needs no protocol change. This is a scope
+qualification of H5-04, not a duplicate finding or a completed fix.
+
+No maintenance window began: no production API/worker stop, database repair,
+cache rotation, node timer hold, application exchange, deployment or push was
+performed at this checkpoint. At 21:18:44 UTC the node returned HTTP 200,
+available/ready at tip/index 965669 with zero lag. Core, Electrs, PostgreSQL,
+WAL receiver, API, worker and WG identities remain unchanged; all seven
+maintenance timers and storage monitoring are active. The application candidate,
+UI archive/source/stage and recovery assets are preserved. UI provenance timer
+restoration and final repository hygiene are recorded below when completed.
+
+
+Routine UI provenance monitoring was restored to its original active/enabled
+state and completed successfully at 21:19:46 UTC against the unchanged live
+release. Caddy identity, the current release manifest and all staged artifacts
+remain intact. Publication must re-hold that timer and repeat fresh capacity
+and provenance gates. No failure state was reset or candidate provenance
+published. The final unit controller passed 19 focused local checks, including
+both repair modes refusing the actual sixth-parent condition before any log,
+receipt, quiescence action or process launch. The prepared cache/timer helpers
+passed 14 checks; they remain unuploaded and unexecuted. Window helper source
+and exact hashes are preserved in `deploy/audit5/` and the audit evidence.
+
+Repository review preserves the original audit prefix and all previous audits,
+canonical protocol rules, source/release assets and recovery history. The
+infrastructure documentation now clarifies the existing push-only OP_RETURN
+decoder behavior. SOUL and the remaining canonical product/protocol documents
+require no semantic change. Only the newly generated untracked local Python
+bytecode file was removed after confirming its origin and hash; no additional
+historical archive was removed. `hygiene:fix` found no allowlisted rebuildable
+state. The final check and local checkpoint commit do not authorize the new
+parent repair or imply production completion; deployment, production checks
+and push remain held.
+
+Final checkpoint validation: `npm run hygiene:check` and `git diff --check`
+passed. No tracked file was deleted; only the current audit pair changed among
+audit records. The local checkpoint remains unpushed pending the scoped repair
+decision and required production workflow.

@@ -12,6 +12,21 @@ const additions = {
   amountSubatoms: "0", decimals: 16, unitScale: "10000000000000000",
   amountStorageModel: "work-subatoms-v2", precisionModel: "canonical-work-subatoms-v2",
 };
+// Exact saved Core evidence for this approved historical transaction. The
+// OP_RETURN contains OP_13, so the push-only payload decoder produces no row;
+// the complete script remains in tx_outputs and the confirmed raw transaction.
+const auxiliaryInputEvidence = [
+  ["fc57450c502e054ecf23469d88f5249a578799da59d111fe234e50ca593c20e5", 3, "863"],
+  ["fc57450c502e054ecf23469d88f5249a578799da59d111fe234e50ca593c20e5", 2, "546"],
+  ["db836174bde97f027c85553e26af3b896b9d3f04745f32f6f99af631865c7bcc", 2, "546"],
+  ["488f31b5ac317123a2383e49eaf06fb6351f117e217bdeb9440795de431175a5", 2, "546"],
+  ["3c69d397b2ec43c8eb8a83409b7f2dc979f5b887a307f8a12e053b3ebc545a00", 2, "546"],
+  ["a8906b1f9bab7a791a5271a3e9276b8a91e0fb502a49235d4be0c1b8e8a27b79", 2, "546"],
+].map(([prevTxid, prevVout, valueSats], vin) => ({ vin, prevTxid, prevVout, valueSats }));
+const auxiliaryOutputEvidence = [
+  { vout: 0, valueSats: "3118", scriptPubKey: "76a9144752142b83faf13d526a59212f3f228012890dbe88ac" },
+  { vout: 1, valueSats: "0", scriptPubKey: "6a5d081600ff7f8184ec02" },
+];
 function validate(evidence, repaired) {
   assert.equal(evidence.format, "proofofwork-audit5-repair-evidence-v1");
   assert.equal(evidence.database, "proof_indexer");
@@ -27,14 +42,17 @@ function validate(evidence, repaired) {
   assert.equal(evidence.aux.outputs.length, repaired ? 2 : 0);
   assert.equal(evidence.aux.anchorLinks.length, 5);
   if (repaired) {
-    assert.equal(evidence.aux.opReturnCount, 1);
+    assert.equal(evidence.aux.opReturnCount, 0, "OP_13 is not a push-only protocol payload.");
+    assert.deepEqual(evidence.aux.inputs, auxiliaryInputEvidence, "Each input must match its exact Core prevout and value.");
+    assert.deepEqual(evidence.aux.outputs, auxiliaryOutputEvidence, "Both output values and complete scripts must match Core.");
     const inputs = evidence.aux.inputs.reduce((sum, input) => {
       assert.match(input.valueSats, /^(0|[1-9][0-9]*)$/u);
       return sum + BigInt(input.valueSats);
     }, 0n);
     const outputs = evidence.aux.outputs.reduce((sum, output) => sum + BigInt(output.valueSats), 0n);
+    assert.equal(inputs, 3593n);
     assert.equal(outputs, 3118n);
-    assert.ok(inputs >= outputs, "Repaired inputs cannot imply a negative fee.");
+    assert.equal(inputs - outputs, 475n, "The derived miner fee must match exact Core inputs minus outputs.");
   }
   assert.equal(evidence.targetEvents.length, 3);
   for (const event of evidence.targetEvents) {

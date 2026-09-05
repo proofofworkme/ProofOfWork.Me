@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readFile } from 'node:fs/promises';
-import { apiBase, canonicalJson, compareCandidate, decimalQ8, digest, FIXTURE, integer, inventory, listingCommitmentRecord,
+import { apiBase, canonicalJson, compareCandidate, decimalQ8, decodeCoreCliPayload, digest, FIXTURE, integer, inventory, listingCommitmentRecord,
   verifyBonds, verifyBookPair, verifyBoost, verifyCounts, verifyDirectory, verifyWallet,
   verifyWalletListingScopes } from '../deploy/audit5/probe-candidate.mjs';
 import { registryCountsProjection, tokenDirectoryProjection, tokenListingDisplayProjection } from '../server/read-projections.mjs';
@@ -78,6 +78,27 @@ test('exact parsing and numeric loopback port admission', () => {
   assert.equal(apiBase('8081'), 'http://127.0.0.1:8081');
   assert.equal(apiBase('18081'), 'http://127.0.0.1:18081');
   for (const bad of ['443', '18081/path', 'https://example.com']) assert.throws(() => apiBase(bad));
+});
+test('successful gettxout CLI null differs from malformed or empty other RPC output', () => {
+  for (const empty of ['', ' \n\t', 'null\n']) assert.equal(decodeCoreCliPayload('gettxout', empty), null);
+  for (const method of ['getblockchaininfo', 'getrawmempool', 'getrawtransaction']) {
+    for (const bad of ['', ' \n', '{bad']) {
+      assert.throws(() => decodeCoreCliPayload(method, bad), /CORE_RPC_RESPONSE_NOT_JSON/u);
+    }
+  }
+  assert.throws(() => decodeCoreCliPayload('gettxout', '{bad'), /CORE_RPC_RESPONSE_NOT_JSON/u);
+  for (const scalar of ['0', 'false', '[]', '"null"']) {
+    assert.throws(() => decodeCoreCliPayload('gettxout', scalar), /CORE_GETTXOUT_RESPONSE_SHAPE/u);
+  }
+});
+test('Core value decoding preserves zero and exact decimal lexemes without floating-point conversion', () => {
+  for (const [value, proofs] of [['0', '0'], ['0.00000546', '546'], ['0.00011409', '11409'],
+    ['90071992.54740993', '9007199254740993']]) {
+    assert.equal(decodeCoreCliPayload('gettxout', `{"value":${value}}`).exactValueProofs, proofs);
+  }
+  for (const bad of ['{}', '{"value":1e-8}', '{"value":0.000000001}', '{"value":1,"nested":{"value":2}}']) {
+    assert.throws(() => decodeCoreCliPayload('gettxout', bad));
+  }
 });
 test('counts compare real projection with complete source and reject truncation', () => {
   assert.equal(verifyCounts(registry, registryCountsProjection(registry)).pendingCount, 1);
@@ -290,6 +311,15 @@ test('wallet negative reservation, spent outputs and moving Core tip fail explic
   const moving = fakeIO(), raw = moving.core; let count = 0;
   moving.core = async (method, args) => method === 'getblockchaininfo' && ++count > 1 ? { blocks: 101, bestblockhash: h(9) } : raw(method, args);
   await assert.rejects(compareCandidate(moving), /CORE_TIP_CHANGED/u);
+});
+test('saved empty gettxout stdout reaches explicit wallet spent-output refusal', async () => {
+  const io = fakeIO();
+  io.core = async (method) => {
+    assert.equal(method, 'gettxout');
+    return decodeCoreCliPayload(method, '');
+  };
+  await assert.rejects(verifyWallet(io, registry, book().full, { blocks: 100, bestblockhash: h(1) }),
+    /WALLET_CORE_UTXO_MISMATCH/u);
 });
 test('unrelated mempool change is recorded without an atomic snapshot claim', async () => {
   const io = fakeIO(), raw = io.core; let sequence = 0;

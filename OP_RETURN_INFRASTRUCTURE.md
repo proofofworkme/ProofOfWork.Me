@@ -133,6 +133,10 @@ For every hydrated protocol transaction, canonical replay also upserts
 full-node `tx_inputs`, `tx_outputs`, safely decoded `op_returns`, and canonical
 spend links. These normalized rows accelerate exact transaction/outpoint audits
 without replacing Bitcoin Core as the source of truth.
+An output beginning with `OP_RETURN` does not necessarily produce a decoded
+`op_returns` row. The detail decoder accepts push-only payloads; a non-push
+opcode such as `OP_13` leaves the complete script in `tx_outputs` and the raw
+transaction without inventing a parsed payload or protocol event.
 Existing confirmed canonical raw rows can be hydrated without replaying or
 rewinding projections:
 

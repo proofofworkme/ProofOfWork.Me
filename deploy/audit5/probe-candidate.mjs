@@ -57,6 +57,22 @@ export function decimalQ8(value) {
   const [whole, fraction = ''] = text.split('.');
   return BigInt(whole) * 100000000n + BigInt(fraction.padEnd(8, '0'));
 }
+export function decodeCoreCliPayload(method, stdout) {
+  // bitcoin-cli prints no stdout for gettxout's JSON null result. The caller
+  // invokes this only after a successful CLI exit; a spent output stays null
+  // so the existing semantic authority checks still refuse it.
+  if (method === 'gettxout' && stdout.trim() === '') return null;
+  let payload;
+  try { payload = JSON.parse(stdout); }
+  catch { throw new Error('CORE_RPC_RESPONSE_NOT_JSON'); }
+  if (method === 'gettxout' && payload !== null) {
+    requireFact(typeof payload === 'object' && !Array.isArray(payload), 'CORE_GETTXOUT_RESPONSE_SHAPE');
+    const matches = [...stdout.matchAll(/"value"\s*:\s*(\d+(?:\.\d+)?)(?=\s*[,}])/gu)];
+    requireFact(matches.length === 1, 'CORE_EXACT_VALUE_LEXEME_UNAVAILABLE');
+    payload.exactValueProofs = decimalQ8(matches[0][1]).toString();
+  }
+  return payload;
+}
 function checkpoint(payload) {
   requireFact(Number.isSafeInteger(payload?.indexedThroughBlock) && payload.indexedThroughBlock > 0 &&
     HASH.test(payload.indexedThroughBlockHash ?? '') && typeof payload.snapshotId === 'string' && payload.snapshotId.length > 0,
@@ -510,13 +526,7 @@ function ioFor(outputDirectory, receipts, base) {
       totalBytes += raw.length;
       requireFact(totalBytes <= MAX_BYTES, 'CORE_BYTE_BUDGET_EXCEEDED');
       await save('core', [method, ...args], raw, 0);
-      const payload = JSON.parse(stdout);
-      if (method === 'gettxout' && payload) {
-        const matches = [...stdout.matchAll(/"value"\s*:\s*(\d+(?:\.\d+)?)(?=\s*[,}])/gu)];
-        requireFact(matches.length === 1, 'CORE_EXACT_VALUE_LEXEME_UNAVAILABLE');
-        payload.exactValueProofs = decimalQ8(matches[0][1]).toString();
-      }
-      return payload;
+      return decodeCoreCliPayload(method, stdout);
     },
   };
 }
