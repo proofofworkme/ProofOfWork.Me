@@ -4716,7 +4716,7 @@
     "pushed": false,
     "deployed": false
   },
-  "auditDocumentSha256": "c6fd0f435f3d31238e936f9d82a2b29555f0f05f9f4557563dba52931833498b",
+  "auditDocumentSha256": "de616c1f14d284d5d8c3376801329f77e44aa38dfa72c1efdcc65e8f68b8e4ad",
   "orderedSurfaceAudit": {
     "schema": "pow-ordered-read-only-audit-addendum-v1",
     "recordedAt": "2026-09-05T14:00:36.751263+00:00",
@@ -12100,7 +12100,7 @@
     }
   },
   "approvedRemediation": {
-    "status": "resumed-pre-rollout-verification",
+    "status": "ops-installed-candidate-preparation",
     "approvedBatches": [
       1,
       2,
@@ -19601,6 +19601,686 @@
       },
       "safeguardStarted": false,
       "opsInstalled": false
+    },
+    "operationsInstallation": {
+      "format": "audit5-ops-installed-receipt-v1",
+      "commit": "5a74ca8f98769534bce23f550e54cc17b0c816a0",
+      "opsRelease": "5a74ca8f9876-20260905T175921Z",
+      "hostReceipts": {
+        "node": {
+          "ops-final-manifest.json": {
+            "sha256": "e3f4ca942b9718e4e8c5e32cdf8bbffdb39591136be45524524bbe2dd777a5ab",
+            "evidence": {
+              "host": "node",
+              "commit": "5a74ca8f98769534bce23f550e54cc17b0c816a0",
+              "release": "5a74ca8f9876-20260905T175921Z",
+              "sourceRoot": "/var/tmp/proofofwork-audit5-ops-source-5a74ca8f9876-20260905T175921Z",
+              "manifestSha256": "6689820c4863d90d212080d710bfb22c18d113744fe9e95a84ca8881d674f30d",
+              "files": {
+                "deploy/apport-disable.conf": {
+                  "sha256": "b58d312f2c4b266b95040cd9912b864840a9444f04f5fbdaa05b0281f34afcbd",
+                  "bytes": 158
+                },
+                "deploy/apport-hardening.conf": {
+                  "sha256": "c7efe8adc5b098ede619558041f9cacad7914b057fb38962489d691e7f90e036",
+                  "bytes": 22
+                },
+                "deploy/audit5/attest-node.py": {
+                  "sha256": "4bec20fa1e5931636e3bfc84f617f005a7b1b71e752dc7f7c9b8bea23014be38",
+                  "bytes": 3380
+                },
+                "deploy/audit5/build-ui-release.sh": {
+                  "sha256": "7fd8c0b9e13708bf97b40852af7fee4c434b2a4096686390fc03ecadb6755a0d",
+                  "bytes": 4999
+                },
+                "deploy/audit5/install-ops.py": {
+                  "sha256": "d4ba36f80f1914a20655b20763cbe04b23c5ee48039e41b2773c95340d1e5d52",
+                  "bytes": 12092
+                },
+                "deploy/audit5/private-env.py": {
+                  "sha256": "21ab7df81d133466c7bdda47787bbb748828452bc44c04b3f2e3dfb7e428c80c",
+                  "bytes": 22349
+                },
+                "deploy/audit5/safeguard-backup.sh": {
+                  "sha256": "d0ac8c1eedb14b03f89c16959dcb172f8c2febc04aae1a956c5e8fb2fea00699",
+                  "bytes": 2784
+                },
+                "deploy/audit5/shadow-entry.mjs": {
+                  "sha256": "48da4605178d43d1cfbf7b33aeb45c1a64e9474913d8e51d1513904dd8d4bf4d",
+                  "bytes": 3436
+                },
+                "deploy/audit5/stage-node.sh": {
+                  "sha256": "b9af30e0776802b618d4bc619f44009dc999b5fca0751af8352c62dc5f38e9ca",
+                  "bytes": 3748
+                },
+                "deploy/audit5/stream-ui-bundle.py": {
+                  "sha256": "2ed410286d6081a2b82e7ff26d9ffb9f202b0a7f0ea41d91db1ac2751f4b5914",
+                  "bytes": 7557
+                },
+                "deploy/audit5/ui-capacity.py": {
+                  "sha256": "fcfd1df944b8d7b96ee39ff6981648a7968f920067cf907e7e15a7dea9ba406a",
+                  "bytes": 4327
+                },
+                "deploy/audit5/ui-publish-candidate.sh": {
+                  "sha256": "a5ecb51ef554fb40d92430745621f9bcea9760c6a197b130748641e5b62fde1a",
+                  "bytes": 3595
+                },
+                "deploy/audit5/ui-stage-candidate.sh": {
+                  "sha256": "cd5587325ede5c15c5d408207c823514b560cb36197fe01cb7c76d7e33d551ce",
+                  "bytes": 4909
+                },
+                "deploy/coredump-disable-sysctl.conf": {
+                  "sha256": "1730fa029f818c4d86e58d72b617ca64a044da92e16011b6625b69d9b33ea768",
+                  "bytes": 234
+                },
+                "deploy/proofofwork-node-release-health.service": {
+                  "sha256": "b131d67f157018d0ef86fae60bcab39253dc0632a2fe61b5330663759a5b7aea",
+                  "bytes": 770
+                },
+                "deploy/proofofwork-node-release-prune.service": {
+                  "sha256": "572d063d33ee3851ce482df5be7b21f9395f3a7ccf95e910fab0a536d9d0bbc8",
+                  "bytes": 894
+                },
+                "deploy/proofofwork-release-prune.sh": {
+                  "sha256": "227d0a0261dc80e3144111f1ae9ff269109a87be0743c24f690cc5d7a5e71879",
+                  "bytes": 23689
+                },
+                "deploy/proofofwork-ui-release-provenance.sh": {
+                  "sha256": "1117642815e1caf02ad5dc5d262419802daf029e6e0b7a04ebff4ac227beddb5",
+                  "bytes": 62190
+                },
+                "deploy/proofofwork-ui-release-prune.service": {
+                  "sha256": "94ff3a4cefee878c26f7d4b81ee74db0d5b85ecf7bb690d881deb11099e6121f",
+                  "bytes": 779
+                },
+                "deploy/proofofwork-ui-release-publish.sh": {
+                  "sha256": "61914c4aeef7fa38b7d85de86c846aa206c9729196d4ec72c50884541c23a8e4",
+                  "bytes": 35696
+                },
+                "deploy/proofofwork-ui-release-stage.py": {
+                  "sha256": "aca575403bb785ea657493c79c36e460b19a7554b400f25cf91502da0f08dad6",
+                  "bytes": 54220
+                },
+                "deploy/proofofwork-ui-retained-root.py": {
+                  "sha256": "6421d58ec8a2259cc21512679db05654b2a138a6e6f56d3656c0287b934ddd9e",
+                  "bytes": 5500
+                },
+                "deploy/proofofwork-ui-storage-health.service": {
+                  "sha256": "4a02356ceffd84ba03202a96aa8ab12d9b48c92ed44584e1c4ad71e5a090e0c2",
+                  "bytes": 792
+                },
+                "deploy/proofofwork-ui-storage-health.sh": {
+                  "sha256": "b533b293cf0973bbdfb43ab8f2a6e81a0cf6b329f4d951b81ed54dfa28a7855b",
+                  "bytes": 2870
+                },
+                "ops-install-manifest.json": {
+                  "sha256": "6689820c4863d90d212080d710bfb22c18d113744fe9e95a84ca8881d674f30d",
+                  "bytes": 15995
+                }
+              },
+              "startedAt": "2026-09-05T18:00:26.324142+00:00"
+            }
+          },
+          "ops-post-verification.json": {
+            "sha256": "98fd47b2e3c6e91478dbf2ef7435968abfde5f9a0f0fb04e3e1b252da83f7abe",
+            "evidence": {
+              "capturedAt": "2026-09-05T18:02:11.312301+00:00",
+              "host": "node",
+              "installedTargets": {
+                "/usr/local/sbin/proofofwork-release-prune": {
+                  "sha256": "227d0a0261dc80e3144111f1ae9ff269109a87be0743c24f690cc5d7a5e71879",
+                  "mode": "0o755",
+                  "uid": 0,
+                  "gid": 0
+                },
+                "/etc/systemd/system/proofofwork-node-release-health.service": {
+                  "sha256": "b131d67f157018d0ef86fae60bcab39253dc0632a2fe61b5330663759a5b7aea",
+                  "mode": "0o644",
+                  "uid": 0,
+                  "gid": 0
+                },
+                "/etc/systemd/system/proofofwork-node-release-prune.service": {
+                  "sha256": "572d063d33ee3851ce482df5be7b21f9395f3a7ccf95e910fab0a536d9d0bbc8",
+                  "mode": "0o644",
+                  "uid": 0,
+                  "gid": 0
+                }
+              },
+              "preservedBefore": {
+                "/var/tmp/proofofwork-audit5-ops-install-5a74ca8f9876-20260905T175921Z-node/0.before": "0fcf5326f0f650d76d3068bc935a9984fee1d7d2dc8fb601bc85d0f5382ce55c",
+                "/var/tmp/proofofwork-audit5-ops-install-5a74ca8f9876-20260905T175921Z-node/1.before": "0af57702e9a97c3ceae169d16d16763256c8cb2a8505723eaa62495f627abcf9",
+                "/var/tmp/proofofwork-audit5-ops-install-5a74ca8f9876-20260905T175921Z-node/2.before": "b2e3497a866dd50bbb1933b867cda0ffefd62baeefa2cc2a43218c1abdc80f9a"
+              },
+              "units": {
+                "bitcoind.service": "MainPID=282028\nNRestarts=0\nExecMainStartTimestamp=Sun 2026-08-23 17:04:50 UTC\nActiveState=active\nSubState=running",
+                "postgresql@16-main.service": "MainPID=3612661\nNRestarts=0\nExecMainStartTimestamp=Thu 2026-09-03 06:51:01 UTC\nActiveState=active\nSubState=running",
+                "proofofwork-api.service": "MainPID=750532\nNRestarts=0\nExecMainStartTimestamp=Sat 2026-09-05 05:12:06 UTC\nActiveState=active\nSubState=running",
+                "proofofwork-indexer-worker.service": "MainPID=750543\nNRestarts=0\nExecMainStartTimestamp=Sat 2026-09-05 05:12:07 UTC\nActiveState=active\nSubState=running",
+                "proofofwork-node-release-health.service": "Result=exit-code\nExecMainStatus=2\nExecStart={ path=/usr/local/sbin/proofofwork-node-release-health ; argv[]=/usr/local/sbin/proofofwork-node-release-health ; ignore_errors=no ; start_time=[n/a] ; stop_time=[n/a] ; pid=0 ; code=(null) ; status=0/0 }\nCapabilityBoundingSet=cap_dac_read_search\nActiveState=failed\nSubState=failed",
+                "proofofwork-node-release-prune.service": "Result=exit-code\nExecMainStatus=2\nExecStart={ path=/usr/local/sbin/proofofwork-release-prune ; argv[]=/usr/local/sbin/proofofwork-release-prune /data/proofofwork-release-backups/managed 3 --dry-run ; ignore_errors=no ; start_time=[n/a] ; stop_time=[n/a] ; pid=0 ; code=(null) ; status=0/0 }\nCapabilityBoundingSet=cap_dac_read_search\nActiveState=failed\nSubState=failed"
+              },
+              "timers": {
+                "proofofwork-node-release-health.timer": "NextElapseUSecRealtime=Sun 2026-09-06 04:28:12 UTC\nLastTriggerUSec=Sat 2026-09-05 04:28:15 UTC\nActiveState=active\nSubState=waiting\nUnitFileState=enabled",
+                "proofofwork-node-release-prune.timer": "NextElapseUSecRealtime=Sun 2026-09-06 00:14:18 UTC\nLastTriggerUSec=Sat 2026-09-05 00:14:18 UTC\nActiveState=active\nSubState=waiting\nUnitFileState=enabled"
+              },
+              "receipt": "/var/tmp/proofofwork-audit5-ops-install-5a74ca8f9876-20260905T175921Z-node",
+              "health": {
+                "ok": true,
+                "ready": true,
+                "tipHeight": 965647,
+                "indexedThroughBlock": 965647,
+                "lagBlocks": 0,
+                "workerFailures": 0
+              },
+              "rootAvailableBytes": 76153077760,
+              "completion": {
+                "status": "installed",
+                "host": "node",
+                "release": "5a74ca8f9876-20260905T175921Z",
+                "commit": "5a74ca8f98769534bce23f550e54cc17b0c816a0",
+                "manifestSha256": "6689820c4863d90d212080d710bfb22c18d113744fe9e95a84ca8881d674f30d",
+                "targets": 3,
+                "provenanceTimerHeld": false,
+                "oneshotsExplicitlyInvoked": false
+              },
+              "timersBefore": {
+                "proofofwork-node-release-health.timer": "ActiveState=active\nUnitFileState=enabled",
+                "proofofwork-node-release-prune.timer": "ActiveState=active\nUnitFileState=enabled"
+              }
+            }
+          },
+          "ops-dry-run.txt": {
+            "sha256": "c52f13bbbea1db9369549f6e8a795c4a5463262c24daed8eeb4abc3a69c91c46",
+            "stdout": "{\"status\": \"verified-dry-run\", \"host\": \"node\", \"release\": \"5a74ca8f9876-20260905T175921Z\", \"targets\": 3, \"timersBefore\": {\"proofofwork-node-release-health.timer\": \"ActiveState=active\\nUnitFileState=enabled\", \"proofofwork-node-release-prune.timer\": \"ActiveState=active\\nUnitFileState=enabled\"}}\n",
+            "exitCode": 0
+          },
+          "ops-apply.txt": {
+            "sha256": "9998a05c4d05c85a6f6b2abc94855c1c8faa8fc984c77b9586032d93547de57b",
+            "stdout": "{\"status\": \"installed\", \"host\": \"node\", \"release\": \"5a74ca8f9876-20260905T175921Z\", \"commit\": \"5a74ca8f98769534bce23f550e54cc17b0c816a0\", \"manifestSha256\": \"6689820c4863d90d212080d710bfb22c18d113744fe9e95a84ca8881d674f30d\", \"targets\": 3, \"provenanceTimerHeld\": false, \"oneshotsExplicitlyInvoked\": false, \"receipt\": \"/var/tmp/proofofwork-audit5-ops-install-5a74ca8f9876-20260905T175921Z-node\"}\n",
+            "exitCode": 0
+          }
+        },
+        "ui": {
+          "ops-final-manifest.json": {
+            "sha256": "4a88cbb95e172d431945367047cec4468313bde6de0ca524faf79517812e64d7",
+            "evidence": {
+              "host": "ui",
+              "commit": "5a74ca8f98769534bce23f550e54cc17b0c816a0",
+              "release": "5a74ca8f9876-20260905T175921Z",
+              "sourceRoot": "/var/tmp/proofofwork-audit5-ops-source-5a74ca8f9876-20260905T175921Z",
+              "manifestSha256": "6689820c4863d90d212080d710bfb22c18d113744fe9e95a84ca8881d674f30d",
+              "files": {
+                "deploy/apport-disable.conf": {
+                  "sha256": "b58d312f2c4b266b95040cd9912b864840a9444f04f5fbdaa05b0281f34afcbd",
+                  "bytes": 158
+                },
+                "deploy/apport-hardening.conf": {
+                  "sha256": "c7efe8adc5b098ede619558041f9cacad7914b057fb38962489d691e7f90e036",
+                  "bytes": 22
+                },
+                "deploy/audit5/attest-node.py": {
+                  "sha256": "4bec20fa1e5931636e3bfc84f617f005a7b1b71e752dc7f7c9b8bea23014be38",
+                  "bytes": 3380
+                },
+                "deploy/audit5/build-ui-release.sh": {
+                  "sha256": "7fd8c0b9e13708bf97b40852af7fee4c434b2a4096686390fc03ecadb6755a0d",
+                  "bytes": 4999
+                },
+                "deploy/audit5/install-ops.py": {
+                  "sha256": "d4ba36f80f1914a20655b20763cbe04b23c5ee48039e41b2773c95340d1e5d52",
+                  "bytes": 12092
+                },
+                "deploy/audit5/private-env.py": {
+                  "sha256": "21ab7df81d133466c7bdda47787bbb748828452bc44c04b3f2e3dfb7e428c80c",
+                  "bytes": 22349
+                },
+                "deploy/audit5/safeguard-backup.sh": {
+                  "sha256": "d0ac8c1eedb14b03f89c16959dcb172f8c2febc04aae1a956c5e8fb2fea00699",
+                  "bytes": 2784
+                },
+                "deploy/audit5/shadow-entry.mjs": {
+                  "sha256": "48da4605178d43d1cfbf7b33aeb45c1a64e9474913d8e51d1513904dd8d4bf4d",
+                  "bytes": 3436
+                },
+                "deploy/audit5/stage-node.sh": {
+                  "sha256": "b9af30e0776802b618d4bc619f44009dc999b5fca0751af8352c62dc5f38e9ca",
+                  "bytes": 3748
+                },
+                "deploy/audit5/stream-ui-bundle.py": {
+                  "sha256": "2ed410286d6081a2b82e7ff26d9ffb9f202b0a7f0ea41d91db1ac2751f4b5914",
+                  "bytes": 7557
+                },
+                "deploy/audit5/ui-capacity.py": {
+                  "sha256": "fcfd1df944b8d7b96ee39ff6981648a7968f920067cf907e7e15a7dea9ba406a",
+                  "bytes": 4327
+                },
+                "deploy/audit5/ui-publish-candidate.sh": {
+                  "sha256": "a5ecb51ef554fb40d92430745621f9bcea9760c6a197b130748641e5b62fde1a",
+                  "bytes": 3595
+                },
+                "deploy/audit5/ui-stage-candidate.sh": {
+                  "sha256": "cd5587325ede5c15c5d408207c823514b560cb36197fe01cb7c76d7e33d551ce",
+                  "bytes": 4909
+                },
+                "deploy/coredump-disable-sysctl.conf": {
+                  "sha256": "1730fa029f818c4d86e58d72b617ca64a044da92e16011b6625b69d9b33ea768",
+                  "bytes": 234
+                },
+                "deploy/proofofwork-node-release-health.service": {
+                  "sha256": "b131d67f157018d0ef86fae60bcab39253dc0632a2fe61b5330663759a5b7aea",
+                  "bytes": 770
+                },
+                "deploy/proofofwork-node-release-prune.service": {
+                  "sha256": "572d063d33ee3851ce482df5be7b21f9395f3a7ccf95e910fab0a536d9d0bbc8",
+                  "bytes": 894
+                },
+                "deploy/proofofwork-release-prune.sh": {
+                  "sha256": "227d0a0261dc80e3144111f1ae9ff269109a87be0743c24f690cc5d7a5e71879",
+                  "bytes": 23689
+                },
+                "deploy/proofofwork-ui-release-provenance.sh": {
+                  "sha256": "1117642815e1caf02ad5dc5d262419802daf029e6e0b7a04ebff4ac227beddb5",
+                  "bytes": 62190
+                },
+                "deploy/proofofwork-ui-release-prune.service": {
+                  "sha256": "94ff3a4cefee878c26f7d4b81ee74db0d5b85ecf7bb690d881deb11099e6121f",
+                  "bytes": 779
+                },
+                "deploy/proofofwork-ui-release-publish.sh": {
+                  "sha256": "61914c4aeef7fa38b7d85de86c846aa206c9729196d4ec72c50884541c23a8e4",
+                  "bytes": 35696
+                },
+                "deploy/proofofwork-ui-release-stage.py": {
+                  "sha256": "aca575403bb785ea657493c79c36e460b19a7554b400f25cf91502da0f08dad6",
+                  "bytes": 54220
+                },
+                "deploy/proofofwork-ui-retained-root.py": {
+                  "sha256": "6421d58ec8a2259cc21512679db05654b2a138a6e6f56d3656c0287b934ddd9e",
+                  "bytes": 5500
+                },
+                "deploy/proofofwork-ui-storage-health.service": {
+                  "sha256": "4a02356ceffd84ba03202a96aa8ab12d9b48c92ed44584e1c4ad71e5a090e0c2",
+                  "bytes": 792
+                },
+                "deploy/proofofwork-ui-storage-health.sh": {
+                  "sha256": "b533b293cf0973bbdfb43ab8f2a6e81a0cf6b329f4d951b81ed54dfa28a7855b",
+                  "bytes": 2870
+                },
+                "ops-install-manifest.json": {
+                  "sha256": "6689820c4863d90d212080d710bfb22c18d113744fe9e95a84ca8881d674f30d",
+                  "bytes": 15995
+                }
+              },
+              "startedAt": "2026-09-05T18:00:48.379518+00:00"
+            }
+          },
+          "ops-post-verification.json": {
+            "sha256": "d090ef745acf6a908b5e845a156212a2aee14ee2c6980f72fc8cfa04c3bed067",
+            "evidence": {
+              "capturedAt": "2026-09-05T18:02:11.934976+00:00",
+              "host": "ui",
+              "installedTargets": {
+                "/usr/local/sbin/proofofwork-ui-release-provenance": {
+                  "sha256": "1117642815e1caf02ad5dc5d262419802daf029e6e0b7a04ebff4ac227beddb5",
+                  "mode": "0o755",
+                  "uid": 0,
+                  "gid": 0
+                },
+                "/usr/local/sbin/proofofwork-ui-release-stage": {
+                  "sha256": "aca575403bb785ea657493c79c36e460b19a7554b400f25cf91502da0f08dad6",
+                  "mode": "0o755",
+                  "uid": 0,
+                  "gid": 0
+                },
+                "/usr/local/sbin/proofofwork-ui-release-publish": {
+                  "sha256": "61914c4aeef7fa38b7d85de86c846aa206c9729196d4ec72c50884541c23a8e4",
+                  "mode": "0o755",
+                  "uid": 0,
+                  "gid": 0
+                },
+                "/usr/local/sbin/proofofwork-ui-retained-root": {
+                  "sha256": "6421d58ec8a2259cc21512679db05654b2a138a6e6f56d3656c0287b934ddd9e",
+                  "mode": "0o755",
+                  "uid": 0,
+                  "gid": 0
+                },
+                "/usr/local/sbin/proofofwork-release-prune": {
+                  "sha256": "227d0a0261dc80e3144111f1ae9ff269109a87be0743c24f690cc5d7a5e71879",
+                  "mode": "0o755",
+                  "uid": 0,
+                  "gid": 0
+                },
+                "/usr/local/sbin/proofofwork-ui-storage-health": {
+                  "sha256": "b533b293cf0973bbdfb43ab8f2a6e81a0cf6b329f4d951b81ed54dfa28a7855b",
+                  "mode": "0o755",
+                  "uid": 0,
+                  "gid": 0
+                },
+                "/etc/systemd/system/proofofwork-ui-release-prune.service": {
+                  "sha256": "94ff3a4cefee878c26f7d4b81ee74db0d5b85ecf7bb690d881deb11099e6121f",
+                  "mode": "0o644",
+                  "uid": 0,
+                  "gid": 0
+                },
+                "/etc/systemd/system/proofofwork-ui-storage-health.service": {
+                  "sha256": "4a02356ceffd84ba03202a96aa8ab12d9b48c92ed44584e1c4ad71e5a090e0c2",
+                  "mode": "0o644",
+                  "uid": 0,
+                  "gid": 0
+                },
+                "/etc/default/apport": {
+                  "sha256": "b58d312f2c4b266b95040cd9912b864840a9444f04f5fbdaa05b0281f34afcbd",
+                  "mode": "0o644",
+                  "uid": 0,
+                  "gid": 0
+                },
+                "/etc/systemd/system/apport.service.d/hardening.conf": {
+                  "sha256": "c7efe8adc5b098ede619558041f9cacad7914b057fb38962489d691e7f90e036",
+                  "mode": "0o644",
+                  "uid": 0,
+                  "gid": 0
+                },
+                "/etc/sysctl.d/99-proofofwork-disable-coredumps.conf": {
+                  "sha256": "1730fa029f818c4d86e58d72b617ca64a044da92e16011b6625b69d9b33ea768",
+                  "mode": "0o644",
+                  "uid": 0,
+                  "gid": 0
+                }
+              },
+              "preservedBefore": {
+                "/var/tmp/proofofwork-audit5-ops-install-5a74ca8f9876-20260905T175921Z-ui/0.before": "d90a10dd6ed656fcf223c16e4469ae792206c6db81b47ab331d52c2d2f852669",
+                "/var/tmp/proofofwork-audit5-ops-install-5a74ca8f9876-20260905T175921Z-ui/1.before": "2e94bd1b4871da7668dc6f7a06bd693b325bf3a9cb4c2cd7ffb3c3a80940d53b",
+                "/var/tmp/proofofwork-audit5-ops-install-5a74ca8f9876-20260905T175921Z-ui/2.before": "c43612b98d76e3bf7d87e4352ea842962297fccf4c7a03e72df90ce367857ef0",
+                "/var/tmp/proofofwork-audit5-ops-install-5a74ca8f9876-20260905T175921Z-ui/4.before": "422397c28f82413e1e9be5f1084816d691660ec161cda0c88e19458603d048ac",
+                "/var/tmp/proofofwork-audit5-ops-install-5a74ca8f9876-20260905T175921Z-ui/5.before": "3dc8261746afb218ca6de606cc8ffc79c0e0a1294fdf7f8998169d99bab631fe",
+                "/var/tmp/proofofwork-audit5-ops-install-5a74ca8f9876-20260905T175921Z-ui/6.before": "055b1c8f2f1bc03cf6d03de51f5471d6b9fd22bbb9f81eb55e214a4b16010f98",
+                "/var/tmp/proofofwork-audit5-ops-install-5a74ca8f9876-20260905T175921Z-ui/7.before": "fca0ce9b0e07c93aa9fbd25cb156d04001c182ad7cf39eebed561db5f416f401",
+                "/var/tmp/proofofwork-audit5-ops-install-5a74ca8f9876-20260905T175921Z-ui/8.before": "810304fb0df6dbc8a651a8928ddd0bb2b521fa0ca6f32a328aa103be61977f91"
+              },
+              "units": {
+                "caddy.service": "MainPID=3002830\nNRestarts=0\nExecMainStartTimestamp=Wed 2026-08-12 06:03:49 UTC\nActiveState=active\nSubState=running",
+                "proofofwork-ui-release-provenance.service": "Result=success\nExecMainStatus=0\nExecStart={ path=/usr/local/sbin/proofofwork-ui-release-provenance ; argv[]=/usr/local/sbin/proofofwork-ui-release-provenance verify-rollback ; ignore_errors=no ; start_time=[n/a] ; stop_time=[n/a] ; pid=0 ; code=(null) ; status=0/0 }\nCapabilityBoundingSet=\nActiveState=inactive\nSubState=dead",
+                "proofofwork-ui-release-prune.service": "Result=success\nExecMainStatus=0\nExecStart={ path=/usr/local/sbin/proofofwork-release-prune ; argv[]=/usr/local/sbin/proofofwork-release-prune /var/backups/proofofwork-ui/releases 5 --dry-run ; ignore_errors=no ; start_time=[n/a] ; stop_time=[n/a] ; pid=0 ; code=(null) ; status=0/0 }\nCapabilityBoundingSet=\nActiveState=inactive\nSubState=dead",
+                "proofofwork-ui-storage-health.service": "Result=success\nExecMainStatus=0\nExecStart={ path=/usr/local/sbin/proofofwork-ui-storage-health ; argv[]=/usr/local/sbin/proofofwork-ui-storage-health ; ignore_errors=no ; start_time=[n/a] ; stop_time=[n/a] ; pid=0 ; code=(null) ; status=0/0 }\nCapabilityBoundingSet=\nActiveState=inactive\nSubState=dead"
+              },
+              "timers": {
+                "proofofwork-ui-release-provenance.timer": "NextElapseUSecRealtime=\nLastTriggerUSec=Sat 2026-09-05 18:00:10 UTC\nActiveState=inactive\nSubState=dead\nUnitFileState=enabled",
+                "proofofwork-ui-release-prune.timer": "NextElapseUSecRealtime=Sun 2026-09-06 00:10:07 UTC\nLastTriggerUSec=Sat 2026-09-05 00:10:10 UTC\nActiveState=active\nSubState=waiting\nUnitFileState=enabled",
+                "proofofwork-ui-storage-health.timer": "NextElapseUSecRealtime=Sat 2026-09-05 18:05:23 UTC\nLastTriggerUSec=Sat 2026-09-05 18:00:26 UTC\nActiveState=active\nSubState=waiting\nUnitFileState=enabled"
+              },
+              "receipt": "/var/tmp/proofofwork-audit5-ops-install-5a74ca8f9876-20260905T175921Z-ui",
+              "liveManifestSha256": "2e75546ca7b21ff7b8a1d96d1a891c9bdc9e97dfa74b451f58dd4519c790a1ec",
+              "liveAllocatedBytes": 413335552,
+              "coreSysctl": "kernel.core_pattern = |/bin/false\nkernel.core_pipe_limit = 1\nfs.suid_dumpable = 0",
+              "apport": "LimitCORE=0\nActiveState=inactive\nSubState=dead\nUnitFileState=disabled",
+              "rootAvailableBytes": 11458891776,
+              "completion": {
+                "status": "installed",
+                "host": "ui",
+                "release": "5a74ca8f9876-20260905T175921Z",
+                "commit": "5a74ca8f98769534bce23f550e54cc17b0c816a0",
+                "manifestSha256": "6689820c4863d90d212080d710bfb22c18d113744fe9e95a84ca8881d674f30d",
+                "targets": 11,
+                "provenanceTimerHeld": true,
+                "oneshotsExplicitlyInvoked": false
+              },
+              "timersBefore": {
+                "proofofwork-ui-release-provenance.timer": "ActiveState=active\nUnitFileState=enabled",
+                "proofofwork-ui-release-prune.timer": "ActiveState=active\nUnitFileState=enabled",
+                "proofofwork-ui-storage-health.timer": "ActiveState=active\nUnitFileState=enabled"
+              }
+            }
+          },
+          "ops-dry-run.txt": {
+            "sha256": "e167b509656a90c1c02ee1531ab14f14012c4595a8be7be607fe8ba23602fe91",
+            "stdout": "{\"status\": \"verified-dry-run\", \"host\": \"ui\", \"release\": \"5a74ca8f9876-20260905T175921Z\", \"targets\": 11, \"timersBefore\": {\"proofofwork-ui-release-provenance.timer\": \"ActiveState=active\\nUnitFileState=enabled\", \"proofofwork-ui-release-prune.timer\": \"ActiveState=active\\nUnitFileState=enabled\", \"proofofwork-ui-storage-health.timer\": \"ActiveState=active\\nUnitFileState=enabled\"}}\n",
+            "exitCode": 0
+          },
+          "ops-apply.txt": {
+            "sha256": "57dfe93ebb134610faccd384abb5dfb3df771277277dd8c74f6a3cca09c4c832",
+            "stdout": "{\"status\": \"installed\", \"host\": \"ui\", \"release\": \"5a74ca8f9876-20260905T175921Z\", \"commit\": \"5a74ca8f98769534bce23f550e54cc17b0c816a0\", \"manifestSha256\": \"6689820c4863d90d212080d710bfb22c18d113744fe9e95a84ca8881d674f30d\", \"targets\": 11, \"provenanceTimerHeld\": true, \"oneshotsExplicitlyInvoked\": false, \"receipt\": \"/var/tmp/proofofwork-audit5-ops-install-5a74ca8f9876-20260905T175921Z-ui\"}\n",
+            "exitCode": 0
+          }
+        }
+      },
+      "applicationDeploymentPerformed": false,
+      "extraArchiveDeletionPerformed": false,
+      "databaseRepairPerformed": false,
+      "safeguardStarted": false,
+      "restoreMonitors": [
+        {
+          "capturedAt": "2026-09-05T17:45:14.682834+00:00",
+          "unit": {
+            "exitCode": 0,
+            "stdout": "Result=success\nMemoryCurrent=2147475456\nMemoryPeak=2147483648\nCPUUsageNSec=79065716000\nTasksCurrent=12\nActiveState=active\nSubState=running",
+            "stderr": ""
+          },
+          "jobBytes": {
+            "exitCode": 0,
+            "stdout": "2610651136\t/data/proofofwork-audit5-restore-20260905T174233Z",
+            "stderr": ""
+          },
+          "liveHealth": {
+            "httpStatus": 200,
+            "ok": true,
+            "ready": true,
+            "tipHeight": 965645,
+            "indexedThroughBlock": 965645,
+            "lagBlocks": 0,
+            "workerFailures": 0
+          },
+          "dataAvailableBytes": 438532083712,
+          "restoreLogTail": {
+            "exitCode": 0,
+            "stdout": "",
+            "stderr": ""
+          }
+        },
+        {
+          "capturedAt": "2026-09-05T17:49:34.683174+00:00",
+          "unit": {
+            "exitCode": 0,
+            "stdout": "Result=success\nMemoryCurrent=2146537472\nMemoryPeak=2147487744\nCPUUsageNSec=208770253000\nTasksCurrent=12\nActiveState=active\nSubState=running",
+            "stderr": ""
+          },
+          "jobBytes": {
+            "exitCode": 0,
+            "stdout": "5925294080\t/data/proofofwork-audit5-restore-20260905T174233Z",
+            "stderr": ""
+          },
+          "dataAvailableBytes": 435233206272,
+          "liveHealth": {
+            "httpStatus": 200,
+            "ok": true,
+            "ready": true,
+            "tipHeight": 965645,
+            "indexedThroughBlock": 965645,
+            "lagBlocks": 0,
+            "workerFailures": null
+          },
+          "restoreLogTail": {
+            "exitCode": 0,
+            "stdout": "",
+            "stderr": ""
+          }
+        },
+        {
+          "capturedAt": "2026-09-05T17:54:15.645795+00:00",
+          "unit": {
+            "exitCode": 0,
+            "stdout": "Result=success\nMemoryCurrent=2147332096\nMemoryPeak=2147487744\nCPUUsageNSec=348813338000\nTasksCurrent=12\nActiveState=active\nSubState=running",
+            "stderr": ""
+          },
+          "jobBytes": {
+            "exitCode": 0,
+            "stdout": "9538691072\t/data/proofofwork-audit5-restore-20260905T174233Z",
+            "stderr": ""
+          },
+          "dataAvailableBytes": 431616204800,
+          "liveHealth": {
+            "httpStatus": 200,
+            "ok": true,
+            "ready": true,
+            "tipHeight": 965645,
+            "indexedThroughBlock": 965645,
+            "lagBlocks": 0,
+            "workerFailureCounters": {
+              ".checks.worker.consecutiveFailures": 0
+            }
+          },
+          "restoreLogTail": {
+            "exitCode": 0,
+            "stdout": "",
+            "stderr": ""
+          }
+        },
+        {
+          "capturedAt": "2026-09-05T17:56:55.359689+00:00",
+          "unit": {
+            "exitCode": 0,
+            "stdout": "Result=success\nMemoryCurrent=2118344704\nMemoryPeak=2147487744\nCPUUsageNSec=428461534000\nTasksCurrent=12\nActiveState=active\nSubState=running",
+            "stderr": ""
+          },
+          "jobBytes": {
+            "exitCode": 0,
+            "stdout": "11412389888\t/data/proofofwork-audit5-restore-20260905T174233Z",
+            "stderr": ""
+          },
+          "dataAvailableBytes": 429740535808,
+          "liveHealth": {
+            "httpStatus": 200,
+            "ok": true,
+            "ready": true,
+            "tipHeight": 965645,
+            "indexedThroughBlock": 965645,
+            "lagBlocks": 0,
+            "workerFailureCounters": {
+              ".checks.worker.consecutiveFailures": 0
+            }
+          },
+          "restoreLogTail": {
+            "exitCode": 0,
+            "stdout": "",
+            "stderr": ""
+          }
+        },
+        {
+          "capturedAt": "2026-09-05T18:01:19.474119+00:00",
+          "unit": {
+            "exitCode": 0,
+            "stdout": "Result=success\nMemoryCurrent=2147446784\nMemoryPeak=2147487744\nCPUUsageNSec=560146147000\nTasksCurrent=12\nActiveState=active\nSubState=running",
+            "stderr": ""
+          },
+          "jobBytes": {
+            "exitCode": 0,
+            "stdout": "14614777856\t/data/proofofwork-audit5-restore-20260905T174233Z",
+            "stderr": ""
+          },
+          "dataAvailableBytes": 426507534336,
+          "liveHealth": {
+            "httpStatus": 503,
+            "ok": false,
+            "ready": false,
+            "tipHeight": 965647,
+            "indexedThroughBlock": 965647,
+            "lagBlocks": 0,
+            "workerFailureCounters": {
+              ".checks.worker.consecutiveFailures": 0
+            }
+          },
+          "restoreLogTail": {
+            "exitCode": 0,
+            "stdout": "",
+            "stderr": ""
+          }
+        }
+      ],
+      "observedReadinessTransition": "18:01:19 HTTP503 with exact965647/lag0/failures0; 18:02:11 HTTP200/ready exact965647/failures0. No application intervention; cause not asserted."
+    },
+    "candidateProbeReview": {
+      "format": "audit5-candidate-probe-review-v1",
+      "createdAt": "2026-09-05T18:00:48.948033+00:00",
+      "productionExecuted": false,
+      "networkCallsInTests": 0,
+      "localRuntime": "v22.23.2",
+      "productionRuntimeGuard": "v24.18.0",
+      "casesPassed": 11,
+      "files": [
+        {
+          "path": "deploy/audit5/probe-candidate.mjs",
+          "sha256": "30a69284c9295cc48d6cd388f916984f4f9652ddccfce24909761ab422c44ac8",
+          "bytes": 33326
+        },
+        {
+          "path": "scripts/check-audit5-candidate-probe.mjs",
+          "sha256": "6114f627d299043831dfd53f99efa671abcf9e4c8f9fa1f5b717ead37c288f37",
+          "bytes": 16001
+        }
+      ],
+      "test": {
+        "path": "/tmp/pow-remediation-20260905/node-rollout/probe-tests.log",
+        "sha256": "d0cf2956b1b2f1b557b0127edb95af70650ff3a74bc875767dd914ee6d345ca4"
+      },
+      "usage": [
+        "/usr/bin/env",
+        "-i",
+        "PATH=/usr/local/bin:/usr/bin:/bin",
+        "LANG=C.UTF-8",
+        "/opt/node-v24.18.0-linux-x64/bin/node",
+        "ROOT_PRIVATE_HASH_VERIFIED/probe-candidate.mjs",
+        "--run",
+        "--output",
+        "FRESH_ABSOLUTE_CANONICAL_PARENT_DIRECTORY",
+        "--api-port",
+        "18081"
+      ],
+      "postdeploy": "Same command with --api-port8081 and a new evidence directory. Only numeric127.0.0.1 selected ports are allowed. No production endpoint called in this receipt.",
+      "bounds": {
+        "milliseconds": 600000,
+        "httpRequests": 128,
+        "coreRequests": 2300,
+        "pagesPerInventory": 32,
+        "rowsPerInventory": 2000,
+        "walletUtxos": 250,
+        "bodyBytes": 33554432,
+        "totalBytes": 201326592
+      },
+      "claims": [
+        "Counts projection versus complete registry",
+        "Exact complete directory versus compact predecessor plus all definition fields versus normal full summary",
+        "Full/display ordered book membership, every full-record hash and retained field, independently recomputed active membership digest, source digest bound to full-route snapshot",
+        "Every active book ticket independently Core gettxout including mempool: exact value/script/confirmed/tip",
+        "Public19JE7 fixture API UTXOs independently Core exact amount/address/status; complete known ID/credit ticket reservations; WORK holder balance/reservation arithmetic; positive unreserved fixture prerequisite",
+        "POWB/INCB exact supply versus directory, quotient, value decompositions, fixed INCB issuance/dust",
+        "Complete confirmed Boost event and feed cursor inventories, exact signals and aggregate/order, current valuation provenance; active listing discovery versus complete feed annotations; first8 unique raw confirmed pwb1 carriers",
+        "Initial/final Core tip stable and API checkpoints atCore; mempool sequence movement explicitly recorded without atomicity claim"
+      ],
+      "limitations": [
+        "No DB balances replay or historical chain replay",
+        "Historical604/238 and30-check receipt are fixtures/baselines only",
+        "Full source digest binds excluded history but excluded rows are not independently reconstructed",
+        "No independent Boost lifecycle reducer replay",
+        "Wallet API membership is not a full chain address discovery proof, nor a real wallet provider spendability proof",
+        "No transaction construction/signing/broadcast or proof that display projections can authorize signing",
+        "503/409/budget/checkpoint changes yield failed preserved attempt; no automatic retry, replay, repair or config changes"
+      ],
+      "review": "Server enum/field names and health.available reviewed against source. Tests use actual read-projection pure helpers, complete fake orchestration, adjacent BigInt values, cross-page mutation/negative reservations/spent outputs/moving tip failures and durable historical bond fixture."
+    },
+    "nodeCandidateAttempt1": {
+      "commit": "5a74ca8f98769534bce23f550e54cc17b0c816a0",
+      "releaseId": "5a74ca8f9876-20260905T175921Z",
+      "exitCode": 243,
+      "phase": "npm-ci",
+      "failure": "private deploy inbox ancestor prevents powadmin traversal",
+      "preserved": true,
+      "applicationPublished": false,
+      "bundle": {
+        "status": "verified",
+        "releaseId": "5a74ca8f9876-20260905T175921Z",
+        "path": "/var/tmp/proofofwork-deploy/proofofwork-audit5-source-5a74ca8f9876-20260905T175921Z.bundle",
+        "bytes": 27064881,
+        "sha256": "33cf8a7cc3c53090a1a7de5b1f78aba60db67eee25b849179d2c001169f33387"
+      }
     }
   }
 }

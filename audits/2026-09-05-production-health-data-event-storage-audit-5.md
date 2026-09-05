@@ -686,3 +686,36 @@ commit. The standalone HTTP/Core comparison probe remains under preparation
 and will be separately hash-bound and reviewed before execution; it does not
 change application behavior. Production application/config installation,
 database repair and publication are still pending at this checkpoint.
+
+### Installed operations controls and candidate preflight correction
+
+The exact three node and 11 UI operations targets were installed from reviewed
+commit `5a74ca8f98769534bce23f550e54cc17b0c816a0`. Both dry-runs and applications
+passed; each previous installed file is preserved in a private receipt
+directory. Post-install checks at 18:02:11 UTC verified every target hash/mode,
+unchanged Core/PostgreSQL/API/worker/Caddy PIDs and start times, read-only release
+retention commands, and the two node verifiers' required read capability. UI
+Apport is disabled with `LimitCORE=0`; the three reviewed crash sysctls match.
+Existing crash/log evidence remains intact. UI provenance's timer remains held
+for publication; other previously active maintenance timers were restored.
+
+A brief 503 at the new block 965647 converged naturally to 200/ready, zero lag
+and worker failures. No application service restart caused that transition.
+UI free space was 11,458,891,776 bytes after this small configuration update.
+
+The first isolated node candidate stopped during `npm ci`: the existing deploy
+inbox has intentionally private root-only mode 0700, so `powadmin` could not
+traverse it to the new npm scratch directory. No application deployment,
+database repair or permission widening occurred. The failed candidate and
+bundle are preserved. The stager now creates its separate root-owned 0711 work
+parent below traversable `/opt`, with a private application-owned npm cache and
+explicit unprivileged access checks. Git-mode tightening also runs as its owner.
+A new exact release will be built; the first UI build was stopped before rollout
+to keep both release manifests tied to the same final commit.
+
+The standalone HTTP/Core comparison probe is finalized and reviewed, with 11
+behavioral fixtures passing. It checks current complete inventories, every
+active ticket, a public wallet sample, exact bonds and Boost against a stable
+Core checkpoint; it makes no signing or exhaustive historical replay claim.
+The isolated restore and fresh safeguard remain gates before the four-record
+repair. Production application publication remains pending.

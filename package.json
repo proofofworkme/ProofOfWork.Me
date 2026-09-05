@@ -97,6 +97,7 @@
     "check:audit5-ui-workflow": "python3 -B scripts/check-audit5-ui-workflow.py",
     "check:audit5-node-attestor": "python3 -I -B scripts/check-audit5-node-attestor.py",
     "check:audit5-ops-installer": "python3 -I -B scripts/check-audit5-ops-installer.py",
+    "check:audit5-candidate-probe": "node scripts/check-audit5-candidate-probe.mjs",
     "check:send-prep-fixtures": "node scripts/check-send-prep-fixtures.mjs"
   },
   "dependencies": {

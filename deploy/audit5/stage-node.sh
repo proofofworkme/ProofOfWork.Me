@@ -10,7 +10,9 @@ release=${1:?}; commit=${2:?}; digest=${3:?}
 [[ ${release:0:12} == ${commit:0:12} ]]
 bundle="/var/tmp/proofofwork-deploy/proofofwork-audit5-source-$release.bundle"
 stage="/opt/proofofwork-api-stage-$release"
-work="/var/tmp/proofofwork-deploy/audit5-node-work-$release"
+# The existing deploy inbox is intentionally root-private. The application
+# user needs a separate fresh workspace below traversable /opt for npm.
+work="/opt/proofofwork-audit5-node-work-$release"
 helper_dir=$(dirname "$(realpath -e "$0")")
 attestor="$helper_dir/attest-node.py"
 [[ $(realpath -e "$helper_dir") == "$helper_dir" && ! -L "$helper_dir" && $(stat -c '%u:%g:%a' "$helper_dir") == 0:0:700 ]]
@@ -27,6 +29,7 @@ actual=$(sha256sum "$bundle"); [[ ${actual%% *} == "$digest" ]]
 [[ $(/opt/node-v24.18.0-linux-x64/bin/node --version) == v24.18.0 ]]
 free=$(df -B1 --output=avail /opt | tail -1 | tr -d ' ')
 ((free >= 10737418240+1073741824))
+runuser -u powadmin -- test -x /opt
 git -c safe.directory=/opt/proofofwork-api -C /opt/proofofwork-api bundle verify "$bundle"
 git bundle list-heads "$bundle" | awk -v commit="$commit" '$1==commit {found=1} END {exit !found}'
 # Clone as root to read the root-private bundle, then assign only the new tree.
@@ -37,10 +40,14 @@ mkdir -m 0711 -- "$work"
 install -d -o powadmin -g powadmin -m 0700 "$work/npm-cache"
 install -o powadmin -g powadmin -m 0600 /dev/null "$work/user.npmrc"
 install -o powadmin -g powadmin -m 0600 /dev/null "$work/global.npmrc"
+runuser -u powadmin -- test -w "$work/npm-cache"
+runuser -u powadmin -- test -x "$work/npm-cache"
+runuser -u powadmin -- test -r "$work/user.npmrc"
+runuser -u powadmin -- test -r "$work/global.npmrc"
 runuser -u powadmin -- /usr/bin/env -i PATH="$PATH" LC_ALL=C GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null \
   git -C "$stage" checkout --detach "$commit"
 # Preserve private Git metadata without touching any existing release.
-chmod --recursive go-rwx "$stage/.git"
+runuser -u powadmin -- chmod --recursive go-rwx "$stage/.git"
 runuser -u powadmin -- /usr/bin/env -i PATH="$PATH" LC_ALL=C \
   NPM_CONFIG_CACHE="$work/npm-cache" NPM_CONFIG_USERCONFIG="$work/user.npmrc" NPM_CONFIG_GLOBALCONFIG="$work/global.npmrc" \
   npm --prefix "$stage" ci --ignore-scripts --no-audit --no-fund
