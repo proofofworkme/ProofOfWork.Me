@@ -127,6 +127,13 @@ The Log subdomain is read-only. It exposes a unified ProofOfWork Computer log fo
 The Credit subdomain creates and mints mint-first `pwt1:` credits. The `tokens` subdomain redirects to Credit. The Wallet subdomain tracks credit balances and broadcasts generic-credit `pwt1:send` transfers plus the era-valid canonical WORK atomic transfer: historical Q8 `pwt1:send2`, then Q16 `pwt1:send3` only after the staged precision declaration activates. Every transfer pays the relevant credit registry, and legacy bytes retain their original scale. The WORK subdomain is the dedicated WORK credit dashboard. The Infinity subdomain tracks POWB supply/floor data and creates `pwm1:m:powb` bond messages. The Inception subdomain tracks INCB supply/floor data and creates `pwm1:m:incb` bond messages. Its canonical registry identity is `inception@proofofwork.me`, and its reserved synthetic credit id is `3cb25745f937f2b4e5508e5400189fe8fe679cd8e84bfa1e9176d70c9761f15d`. Both bond families reuse the credit sale-ticket lifecycle for transfers and trades, while only canonical WORK can be attached as a separate era-valid `send2`/`send3` credit transfer to a bond message.
 The Growth subdomain is read-only. It compares the canonical ID/Mail/Drive/AMO/Credit network-value model with confirmed registry, log, file, AMO, and credit value metrics in proofs and USD. Growth, WORK, Log, and credit/token history should share one confirmed livenet ledger snapshot after refresh. WORK has a permanent floor derived from live confirmed network value: `work_floor_sats = live_network_value_sats / 21,000,000 WORK`; the inverse `21,000,000 / live_network_value_sats` is the WORK-per-proof ratio. Frozen network value is kept separately as the confirmation-time audit stamp for WORK movement and other event components.
 
+The Boost Growth integration adds snapshot-bound confirmed indexed
+observations and an explicit versioned forecast. These observations do not
+change the ID registry, ID fee split, WORK floor, or frozen terms. Pending IDs
+remain unroutable; current display identity cannot replace confirmed identity
+at a historical action's position. New Boost network-value accounting remains
+an [unactivated proposal](BOOST_GROWTH_ACCOUNTING_PROPOSAL.md).
+
 Local preview:
 
 ```text

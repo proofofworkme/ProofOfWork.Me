@@ -3558,6 +3558,58 @@ select {
   line-height: 1.25;
 }
 
+.growth-forecast-select {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.growth-forecast-select select {
+  min-height: 44px;
+  max-width: 100%;
+  width: 100%;
+}
+
+.growth-boost-details {
+  min-width: 0;
+}
+
+.growth-boost-details summary {
+  align-content: center;
+  cursor: pointer;
+  min-height: 44px;
+  padding: 8px 0;
+}
+
+.growth-boost-details summary:focus-visible {
+  outline: 2px solid var(--focus, #6d9fc5);
+  outline-offset: 3px;
+}
+
+.growth-boost-details .growth-assumption-list {
+  margin-top: 12px;
+}
+
+.growth-boost-attribution dd {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  max-width: 100%;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+.growth-boost-attribution p {
+  font-size: 0.8rem;
+}
+
+.growth-boost-link {
+  align-items: center;
+  display: inline-flex;
+  justify-content: center;
+  min-height: 44px;
+}
+
 .growth-stat-grid {
   display: grid;
   gap: 10px;
@@ -3863,6 +3915,55 @@ select {
   display: grid;
   gap: 8px;
   padding: 16px;
+}
+
+.growth-model-details {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
+.growth-model-details summary {
+  cursor: pointer;
+  min-height: 44px;
+  padding: 12px 0;
+}
+
+.growth-model-details summary:focus-visible {
+  outline: 2px solid var(--focus, #6d9fc5);
+  outline-offset: 3px;
+}
+
+.growth-model-assumptions,
+.growth-product-coverage {
+  display: grid;
+  gap: 20px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+  padding: 12px 0;
+}
+
+.growth-model-details section {
+  min-width: 0;
+}
+
+.growth-model-details h4 {
+  margin: 0 0 8px;
+}
+
+.growth-model-details .growth-assumption-list div {
+  align-items: start;
+  grid-template-columns: minmax(90px, 0.4fr) minmax(0, 1fr);
+}
+
+.growth-model-details .growth-assumption-list {
+  grid-template-columns: 1fr;
+}
+
+.growth-model-details .growth-assumption-list dd {
+  font-size: 0.95rem;
+  font-weight: 500;
+  line-height: 1.4;
+  text-align: left;
+  white-space: normal;
 }
 
 .growth-events-card {

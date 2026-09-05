@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { compareCanonicalUtf8 } from "../canonical-order.mjs";
 import { decodeCanonicalOpReturnOutput } from "../canonical-op-return.mjs";
+import { readBoostGrowthObservation } from "./boost-growth-reader.mjs";
 import {
   canonicalSummarySnapshotSqlTextMaxBytes,
 } from "../canonical-summary-budget.mjs";
@@ -38828,6 +38829,12 @@ export async function proofIndexEventHistoryPayload(network, searchParams) {
   } finally {
     client.release();
   }
+}
+
+export async function proofIndexBoostGrowthObservation(network, checkpoint) {
+  return readBoostGrowthObservation(
+    proofIndexPool(), network, checkpoint, strictEventHistoryLedgerSnapshot,
+  );
 }
 
 function canonicalSnapshotQ8Text(value, { positive = false } = {}) {

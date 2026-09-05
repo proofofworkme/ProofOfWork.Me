@@ -24,6 +24,7 @@ import {
   compareCanonicalUtf8,
 } from "./canonical-order.mjs";
 import { createElectrumClient } from "./electrum-client.mjs";
+import { createBoostGrowthObservationLoader, withBoostGrowthObservation } from "./boost-growth.mjs";
 import {
   electrumAddressHistoryCoverage,
   firstPartyAddressTransactionsPage,
@@ -270,6 +271,7 @@ import {
   proofIndexConfirmedValueEventsAfterBlock,
   proofIndexCreditListingsPayload,
   proofIndexEventHistoryPayload,
+  proofIndexBoostGrowthObservation,
   proofIndexIdRegistryAuditStream,
   proofIndexLogHistoryReadEligibility,
   proofIndexLogHistoryPayload,
@@ -52234,11 +52236,20 @@ function growthSummaryWithBtcUsdQuote(growthSummary, quote) {
   };
 }
 
+const loadGrowthBoostObservation = createBoostGrowthObservationLoader(proofIndexBoostGrowthObservation);
+
 async function growthSummaryWithCurrentBtcUsd(
   growthSummary,
   network,
   fresh = false,
 ) {
+  const checkpoint = {
+    blockHeight: proofIndexPayloadIndexedThroughBlock(growthSummary),
+    blockHash: payloadIndexedThroughBlockHash(growthSummary),
+    snapshotId: payloadSnapshotId(growthSummary),
+  };
+  const boost = await loadGrowthBoostObservation(network, checkpoint);
+  growthSummary = withBoostGrowthObservation(growthSummary, boost);
   if (network !== "livenet") {
     return growthSummary;
   }

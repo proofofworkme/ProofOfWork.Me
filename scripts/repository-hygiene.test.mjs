@@ -70,6 +70,8 @@ const FIXTURE_CONFIG = {
     'presentation-and-generated-notes': [
       'PROOFOFWORK_GENERAL_DECK.md',
       'output/proofofwork-computer-agent-adoption-model.md',
+      'output/proofofwork-computer-growth-model-2026-09-05-boost-v1.md',
+      'output/historical/2026-05-13/proofofwork-computer-agent-adoption-model.md',
     ],
     'support-notes': [],
   },
@@ -117,27 +119,46 @@ const FIXTURE_CONFIG = {
   ],
   protectedTrackedPrefixes: ['output/', 'public/', 'deploy/'],
   generatedArtifacts: [
-    {
-      generator: 'scripts/build-general-deck.mjs',
-      inputs: ['PROOFOFWORK_GENERAL_DECK.md'],
-      outputs: [
-        'output/proofofwork-general-deck.pptx',
-        'public/proofofwork-general-deck.pptx',
-      ],
-    },
-    {
-      generator: 'scripts/generate-proofofwork-computer-model.mjs',
-      outputs: [
-        'output/proofofwork-computer-agent-adoption-model.md',
-        'output/proofofwork-computer-growth-model.json',
-        'output/proofofwork-computer-model-blockspace.svg',
-        'output/proofofwork-computer-model-compounding.svg',
-        'output/proofofwork-computer-model-dollar-growth.svg',
-        'output/proofofwork-computer-model-product-split.svg',
-        'output/proofofwork-computer-model-volatility.svg',
-      ],
-    },
-  ],
+  {
+    "generator": "scripts/build-general-deck.mjs",
+    "inputs": [
+      "PROOFOFWORK_GENERAL_DECK.md"
+    ],
+    "outputs": [
+      "output/proofofwork-general-deck.pptx",
+      "public/proofofwork-general-deck.pptx"
+    ]
+  },
+  {
+    "generator": "scripts/generate-proofofwork-computer-model.mjs",
+    "outputs": [
+      "output/historical/2026-05-13/proofofwork-computer-agent-adoption-model.md",
+      "output/historical/2026-05-13/proofofwork-computer-growth-model.json",
+      "output/historical/2026-05-13/proofofwork-computer-model-blockspace.svg",
+      "output/historical/2026-05-13/proofofwork-computer-model-compounding.svg",
+      "output/historical/2026-05-13/proofofwork-computer-model-dollar-growth.svg",
+      "output/historical/2026-05-13/proofofwork-computer-model-product-split.svg",
+      "output/historical/2026-05-13/proofofwork-computer-model-volatility.svg"
+    ]
+  },
+  {
+    "generator": "scripts/generate-growth-forecast.mjs",
+    "inputs": [
+      "src/features/growth/growthForecast.mjs"
+    ],
+    "outputs": [
+      "output/proofofwork-computer-agent-adoption-model.md",
+      "output/proofofwork-computer-growth-model.json",
+      "output/proofofwork-computer-model-blockspace.svg",
+      "output/proofofwork-computer-model-compounding.svg",
+      "output/proofofwork-computer-model-dollar-growth.svg",
+      "output/proofofwork-computer-model-product-split.svg",
+      "output/proofofwork-computer-model-volatility.svg",
+      "output/proofofwork-computer-growth-model-2026-09-05-boost-v1.json",
+      "output/proofofwork-computer-growth-model-2026-09-05-boost-v1.md"
+    ]
+  }
+],
 };
 
 function write(root, relativePath, contents, mode) {
@@ -317,6 +338,7 @@ function createFixture(t, { withObsoleteFile = false } = {}) {
       "import { mkdirSync, writeFileSync } from 'node:fs';",
       "mkdirSync('output', { recursive: true });",
       `for (const output of ${JSON.stringify(modelOutputs)}) {`,
+      "  mkdirSync(output.slice(0, output.lastIndexOf('/')), { recursive: true });",
       "  writeFileSync(output, 'fixture-generated\\n');",
       '}',
       '',
@@ -334,6 +356,28 @@ function createFixture(t, { withObsoleteFile = false } = {}) {
   );
   for (const output of modelOutputs) {
     write(root, output, 'fixture-generated\n');
+  }
+  const forecastGroup = FIXTURE_CONFIG.generatedArtifacts[2];
+  write(
+    root,
+    forecastGroup.inputs[0],
+    "export const forecastBytes = 'fixture-forecast\\n';\n",
+  );
+  write(
+    root,
+    forecastGroup.generator,
+    [
+      "import { mkdirSync, writeFileSync } from 'node:fs';",
+      "import { forecastBytes } from '../src/features/growth/growthForecast.mjs';",
+      "mkdirSync('output', { recursive: true });",
+      `for (const output of ${JSON.stringify(forecastGroup.outputs)}) {`,
+      '  writeFileSync(output, forecastBytes);',
+      '}',
+      '',
+    ].join('\n'),
+  );
+  for (const output of forecastGroup.outputs) {
+    write(root, output, 'fixture-forecast\n');
   }
   for (const hook of ['pre-commit', 'prepare-commit-msg', 'commit-msg']) {
     write(
@@ -980,10 +1024,10 @@ test('pre-commit rejects a no-op replacement for a tracked hook wrapper', (t) =>
   );
 });
 
-test('check rejects generated output that does not match its declared source', (t) => {
+test('check rejects archived May output that does not match its declared source', (t) => {
   const root = createFixture(t);
   const generatedOutput =
-    'output/proofofwork-computer-growth-model.json';
+    'output/historical/2026-05-13/proofofwork-computer-growth-model.json';
   write(root, generatedOutput, 'stale\n');
 
   expectFailure(
@@ -1009,6 +1053,61 @@ test('check refuses removal of a mandatory generated-artifact policy', (t) => {
   expectFailure(
     cli(root, 'check', '--ci'),
     'a disabled generated-artifact manifest',
+  );
+});
+
+test('check detects all-product forecast and chart drift from its shared model input', (t) => {
+  const root = createFixture(t);
+  const forecastGroup = FIXTURE_CONFIG.generatedArtifacts[2];
+  expectSuccess(cli(root, 'check', '--ci'), 'the unchanged generated forecast');
+  write(
+    root,
+    forecastGroup.inputs[0],
+    "export const forecastBytes = 'revised-forecast\\n';\n",
+  );
+
+  expectFailure(
+    cli(root, 'check', '--ci'),
+    'Boost forecast output from an outdated model input',
+  );
+  write(root, forecastGroup.outputs[0], 'revised-forecast\n');
+  expectFailure(
+    cli(root, 'check', '--ci'),
+    'stale model data/charts after only the main report is refreshed',
+  );
+  for (const output of forecastGroup.outputs.slice(1)) {
+    write(root, output, 'revised-forecast\n');
+  }
+  expectSuccess(
+    cli(root, 'check', '--ci'),
+    'all current forecast and chart artifacts matching the shared model input',
+  );
+});
+
+test('check refuses removing only the mandatory Boost forecast generator', (t) => {
+  const root = createFixture(t);
+  expectSuccess(cli(root, 'check', '--ci'), 'the complete generator policy');
+  write(
+    root,
+    'repository-hygiene.json',
+    `${JSON.stringify({
+      ...FIXTURE_CONFIG,
+      generatedArtifacts: FIXTURE_CONFIG.generatedArtifacts.slice(0, 2),
+    }, null, 2)}\n`,
+  );
+
+  expectFailure(
+    cli(root, 'check', '--ci'),
+    'removal of the Boost forecast generator policy',
+  );
+  write(
+    root,
+    'repository-hygiene.json',
+    `${JSON.stringify(FIXTURE_CONFIG, null, 2)}\n`,
+  );
+  expectSuccess(
+    cli(root, 'check', '--ci'),
+    'the restored complete generator policy',
   );
 });
 

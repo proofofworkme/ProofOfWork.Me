@@ -798,6 +798,8 @@ expectAll(
     /POW_INDEX_WORKER_PENDING_WITNESS_MAX_AGE_MS \?\?[\s\S]*10 \* 60_000[\s\S]*\|\| 10 \* 60_000/u,
   ],
 );
+// These Boolean checks use lazy spans where repeated tokens in the concatenated
+// source otherwise cause broad greedy backtracking; the accepted language is unchanged.
 expectAll("hot worker summary publication is canonical, conservative, and health-gated", proofIndexerBackfill + proofIndexReader + server, [
   /STORE_CANONICAL_SUMMARY_SNAPSHOT/,
   /function canonicalSummaryRefreshCanDefer\([\s\S]*statusCode === 503[\s\S]*Bitcoin Core tip/,
@@ -812,8 +814,8 @@ expectAll("hot worker summary publication is canonical, conservative, and health
   /function tokenTablePayloadHasConservedBalances\([\s\S]*!tokenIds\.has\(tokenId\)[\s\S]*minted === held[\s\S]*mintedSupply === heldSupply/,
   /async function tokenStatePayloadAtCanonicalCheckpoint\([\s\S]*canonical_blocks AS[\s\S]*checkpoint_block\.canonical = true[\s\S]*GREATEST\(latest_scan\.height, canonical_blocks\.height\) AS scan_height[\s\S]*token_event\.protocol = 'pwt1'[\s\S]*token_event\.kind LIKE 'token-%'[\s\S]*token_event\.status = 'confirmed'[\s\S]*indexedThroughBlock: checkpointHeight[\s\S]*indexedThroughBlockHash: normalizedCheckpointHash/,
   /proofIndexCanonicalSummaryTokenTablePayload\([\s\S]*checkpointRelationalPayload[\s\S]*tokenStatePayloadAtCanonicalCheckpoint\([\s\S]*payloadWithCurrentWorkPrecisionReadPolicy\([\s\S]*checkpointRelationalPayload/,
-  /proofIndexLogHistoryPayload\([\s\S]*currentRelational[\s\S]*proofIndexCanonicalActivityPayload\(network, \{[\s\S]*snapshotId: pagination\.snapshotId[\s\S]*totalCount:\s*rowNumber\(canonicalPage, "totalCount"\)[\s\S]*snapshotTotalCount/,
-  /payloadWithCanonicalWorkLifecyclePositions\([\s\S]*expectationKeys\.has\(key\)[\s\S]*return true[\s\S]*closedLifecycleListingKeys[\s\S]*tokenListingsWithoutClosedEvents\([\s\S]*payload\.listings[\s\S]*closedListings[\s\S]*closedLifecycleListingKeys\.has[\s\S]*positionedListings/,
+  /proofIndexLogHistoryPayload\([\s\S]*?currentRelational[\s\S]*?proofIndexCanonicalActivityPayload\(network, \{[\s\S]*?snapshotId: pagination\.snapshotId[\s\S]*?totalCount:\s*rowNumber\(canonicalPage, "totalCount"\)[\s\S]*?snapshotTotalCount/,
+  /payloadWithCanonicalWorkLifecyclePositions\([\s\S]*?expectationKeys\.has\(key\)[\s\S]*?return true[\s\S]*?closedLifecycleListingKeys[\s\S]*?tokenListingsWithoutClosedEvents\([\s\S]*?payload\.listings[\s\S]*?closedListings[\s\S]*?closedLifecycleListingKeys\.has[\s\S]*?positionedListings/,
   /currentProofIndexTokenTablePayloadForLedger\([\s\S]*options\.exactHeight[\s\S]*proofIndexPayloadIndexedThroughBlock\(payload\) !== exactHeight/,
   /indexedActivityStateForCanonicalLedger\([\s\S]*options\.exactHeight[\s\S]*proofIndexPayloadIndexedThroughBlock\(payload\) !== exactHeight/,
   /indexedRegistryStateForCanonicalLedger\([\s\S]*options\.exactHeight[\s\S]*proofIndexPayloadIndexedThroughBlock\(payload\) !== exactHeight/,
@@ -1506,14 +1508,15 @@ expectAll("server fresh token state reads fall back to valid cached snapshots", 
   /const EXACT_TIP_TOKEN_CACHE = new Map\(\)/,
   /function cacheTokenPayload\(network,\s*tokenScope = "",\s*payload,\s*options = \{\}\)[\s\S]*EXACT_TIP_TOKEN_CACHE\.set\(cacheKey,[\s\S]*PROOF_INDEX_HEALTH_MAX_AGE_MS/,
   /function cacheTokenPayload\([\s\S]*greenUntil:[\s\S]*pendingValidThroughMs[\s\S]*indexedThroughBlockHash: payloadIndexedThroughBlockHash\(payload\)/,
-  /async function currentExactTipTokenPayloadForRead\([\s\S]*canonicalGate = null[\s\S]*EXACT_TIP_TOKEN_CACHE\.get\(cacheKey\)[\s\S]*validatedUntil[\s\S]*tokenPayloadMatchesCanonicalGate\(payload, canonicalGate\)[\s\S]*retainedExactTipTokenPayloadForRead\(payload, canonicalGate, cached\)[\s\S]*healthNodeTipHeight\(\)[\s\S]*!Number\.isSafeInteger\(tipHeight\)[\s\S]*return null;[\s\S]*indexedThroughBlock === tipHeight[\s\S]*return payload;[\s\S]*EXACT_TIP_TOKEN_CACHE\.delete\(cacheKey\)/,
+  // Avoid greedy backtracking across repeated return/cache tokens in the full API source.
+  /async function currentExactTipTokenPayloadForRead\([\s\S]*?canonicalGate = null[\s\S]*?EXACT_TIP_TOKEN_CACHE\.get\(cacheKey\)[\s\S]*?validatedUntil[\s\S]*?tokenPayloadMatchesCanonicalGate\(payload, canonicalGate\)[\s\S]*?retainedExactTipTokenPayloadForRead\(payload, canonicalGate, cached\)[\s\S]*?healthNodeTipHeight\(\)[\s\S]*?!Number\.isSafeInteger\(tipHeight\)[\s\S]*?return null;[\s\S]*?indexedThroughBlock === tipHeight[\s\S]*?return payload;[\s\S]*?EXACT_TIP_TOKEN_CACHE\.delete\(cacheKey\)/,
   /function tokenPayloadMatchesCanonicalGate\([\s\S]*canonicalGate\.atTip !== true[\s\S]*tokenPayloadMatchesCanonicalIndexedGate\(payload, canonicalGate\)/,
   /function tokenPayloadMatchesCanonicalIndexedGate\([\s\S]*payloadIndexedThroughBlockHash\(payload\)[\s\S]*canonicalGate\.indexedThroughBlock[\s\S]*canonicalHash === indexedThroughBlockHash/,
   /function readOnlyRetainedWorkAmoV8Metadata\([\s\S]*indexReady: false[\s\S]*listingWritesEnabled: false[\s\S]*migrationReady: false[\s\S]*protocolWritesEnabled: false[\s\S]*settlementWritesEnabled: false[\s\S]*writeAdmission: false[\s\S]*pendingReady: false/,
   /function retainedExactTipTokenPayloadForRead\([\s\S]*canonicalGate\?\.ready === true[\s\S]*cached\?\.greenUntil[\s\S]*readOnlyRetainedWorkAmoV8Metadata/,
   /function stableTipCoreTokenListingAuthorityComplete\([\s\S]*proof-token-market-core-gettxout-v1[\s\S]*checkedOutpointsSha256[\s\S]*spentListingCount \+ unspentListingCount === checkedListingCount/,
   /async function completeWorkListingAuthorityForTokenRead\([\s\S]*completeTokenListingHistoryPayload\([\s\S]*includeAuthorityListingIds:\s*true[\s\S]*WORK_LISTING_AUTHORITY_CACHE_MAX_ENTRIES/,
-  /function completeWorkListingAuthorityMatchesPayload\([\s\S]*authorityInputListingIds[\s\S]*authorityCoreUnspentListingIds[\s\S]*authorityListingIds[\s\S]*stableTipCoreTokenListingAuthorityComplete/,
+  /function completeWorkListingAuthorityMatchesPayload\([\s\S]*?authorityInputListingIds[\s\S]*?authorityCoreUnspentListingIds[\s\S]*?authorityListingIds[\s\S]*?stableTipCoreTokenListingAuthorityComplete/,
   /async function tokenReadResponsePayload\([\s\S]*requireWorkListingAuthority[\s\S]*completeWorkListingAuthorityForTokenRead\([\s\S]*tokenPayloadWithCompleteWorkListingAuthority\([\s\S]*CANONICAL_WORK_LISTING_AUTHORITY_UNAVAILABLE/,
   /if \(cachedPayload\) \{[\s\S]*const responsePayload = await tokenReadResponsePayload\([\s\S]*cachedPayload,[\s\S]*network,[\s\S]*tokenScope,[\s\S]*requireWorkListingAuthority: freshRead[\s\S]*jsonResponse\([\s\S]*responsePayload/,
   /indexedPayload && \(!freshRead \|\| indexedPayloadExact\)[\s\S]*const responsePayload = await tokenReadResponsePayload\([\s\S]*indexedPayload,[\s\S]*network,[\s\S]*tokenScope,[\s\S]*requireWorkListingAuthority: freshRead[\s\S]*cacheTokenPayload\(network,\s*tokenScope,\s*responsePayload,\s*\{[\s\S]*exactTipValidated:\s*indexedPayloadExact[\s\S]*\}\)[\s\S]*jsonResponse\([\s\S]*responsePayload/,
@@ -1552,7 +1555,7 @@ expectAll("stable Log reads stay pinned to one authenticated last-good snapshot"
 expectAll("stable consistency uses the same authenticated last-good summary", server, [
   /async function ledgerConsistencyPayload\(network,\s*fresh\s*=\s*false\)[\s\S]*if \(!fresh\)[\s\S]*activitySummaryPayload\(network,\s*false\)[\s\S]*summaryPayloadWithCanonicalProvenance/,
   /proofIndexCanonicalSummaryLedgerPayload\([\s\S]*summaryHeight,[\s\S]*summaryHash/,
-  /verifyStableLogCheckpointAfterRead\([\s\S]*summary,[\s\S]*network,[\s\S]*"ledger-consistency"/,
+  /verifyStableLogCheckpointAfterRead\([\s\S]*?summary,[\s\S]*?network,[\s\S]*?"ledger-consistency"/,
   /CANONICAL_CONSISTENCY_SNAPSHOT_MISMATCH/,
   /surface:\s*"ledger-consistency"/,
 ]);

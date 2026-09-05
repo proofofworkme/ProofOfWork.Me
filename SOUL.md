@@ -15,7 +15,7 @@ It is distilled from current repository docs and public launch memory captured t
 - Public archives reviewed: `/home/sixer/Downloads/twitter-2026-05-19-4780579747040c69c6ee36267c276b61d1375ffa6de1fde07a0d945892fafea7`, `/home/sixer/Downloads/twitter-2026-06-09-4780579747040c69c6ee36267c276b61d1375ffa6de1fde07a0d945892fafea7`, `/home/sixer/Downloads/twitter-2026-07-14-4780579747040c69c6ee36267c276b61d1375ffa6de1fde07a0d945892fafea7`, `/home/sixer/Downloads/twitter-2026-08-19-4780579747040c69c6ee36267c276b61d1375ffa6de1fde07a0d945892fafea7`
 - 2026-07-14 archive inventory reviewed without sampling: 2,486 active tweet records, 39 deleted-tweet records, 67 long-form Note Tweet records, 2,486 active headers, and 39 deleted headers. Active and deleted tweet IDs were each unique; 271 active records were retweets.
 - 2026-08-19 archive inventory reviewed with full file inventory and targeted public-record sampling: 3,195 active tweet records, 10 deleted-tweet records, 167 long-form Note Tweet records, 3,195 active headers, 10 deleted headers, 417 active tweet media files, and 4 deleted-tweet media files. Active and deleted tweet IDs were each unique; 35 active records were retweets. Active public tweet records span 2026-05-08 through 2026-08-19, while Note Tweet records span 2026-07-16 through 2026-08-17.
-- Core domains: `www.proofofwork.me`, `proofofwork.me`, `id.proofofwork.me`, `computer.proofofwork.me`, `desktop.proofofwork.me`, `browser.proofofwork.me`, `amo.proofofwork.me`, legacy `marketplace.proofofwork.me`, `credit.proofofwork.me`, `token.proofofwork.me`, `tokens.proofofwork.me`, `wallet.proofofwork.me`, `work.proofofwork.me`, `infinity.proofofwork.me`, `inception.proofofwork.me`, `log.proofofwork.me`, `growth.proofofwork.me`
+- Core domains: `www.proofofwork.me`, `proofofwork.me`, `id.proofofwork.me`, `computer.proofofwork.me`, `desktop.proofofwork.me`, `browser.proofofwork.me`, `boost.proofofwork.me`, `amo.proofofwork.me`, legacy `marketplace.proofofwork.me`, `credit.proofofwork.me`, `token.proofofwork.me`, `tokens.proofofwork.me`, `wallet.proofofwork.me`, `work.proofofwork.me`, `infinity.proofofwork.me`, `inception.proofofwork.me`, `log.proofofwork.me`, `growth.proofofwork.me`
 
 ## One Sentence
 
@@ -308,7 +308,7 @@ Future agents must preserve these unless the user explicitly asks for a migratio
 - `computer.proofofwork.me` is the full mail/computer app.
 - `desktop.proofofwork.me` is the public read-only file desktop.
 - `browser.proofofwork.me` is the standalone public HTML renderer.
-- Boost is staged/local-only until a separate public launch is approved.
+- `boost.proofofwork.me` is the public Proof-ranked social feed over confirmed `pwb1:` records; original posts reuse Mail/Files, and paid actions and asset trades use the Boost protocol.
 - `amo.proofofwork.me` is the canonical Autonomous Money Organization surface for governed WORK units and the existing ID/credit sale-ticket markets.
 - `marketplace.proofofwork.me` is a retained compatibility hostname for AMO; it is not a separate protocol or state plane.
 - `credit.proofofwork.me` is the standalone credit creation and mint app.
@@ -370,6 +370,8 @@ Future agents must preserve these unless the user explicitly asks for a migratio
 - WORK and credit marketplace views must derive active listings, closed listings, sales, wallet owned listings, and mint summaries from the same refreshed credit payload. A surface-specific summary can format the data differently, but it must not carry its own stale listing or mint count after refresh.
 - Broadcast errors should be legible. A rejected transaction should expose the RPC code, reason when available, and a plain-English hint instead of a mystery error.
 - Every new product should enter the growth model with the same shape: real chain inputs, a usage assumption, a value assumption, fee elasticity, and blockspace accounting.
+- The current all-product Growth report, charts, and frontend share one forecast source. Preserve the dated May artifact archive and its reproducible generator. Every product has an explicit activity allocation; read-only surfaces, balances, synthetic issuance, and derived floors add no duplicate value. Scenario assumptions are not current chain calibration or canonical replay.
+- Boost's Growth integration separates confirmed indexed observations and the versioned forecast from canonical economics. Shared Mail/Files payments and WORK attachments must not be added twice. New Boost economic contributions require a separately approved declaration-bound accounting change; [the draft proposal](BOOST_GROWTH_ACCOUNTING_PROPOSAL.md) is not activation authority. Preserve the May model baseline and historical H-1 values, frozen listing terms, and issuance.
 - Merged apps should be treated as normal apps across public links, local route maps, GitHub docs, and Growth inputs.
 - Attachments are small and verified by size/hash.
 - Confirmed chain history is canonical; pending status can become dropped.

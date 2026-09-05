@@ -82,7 +82,9 @@
     "check:id-audit": "node scripts/check-id-registry-audit.mjs",
     "deck:general": "node scripts/build-general-deck.mjs",
     "rank:powids": "node scripts/rank-powid-transactions.mjs",
-    "proof-api": "node server/proof-api.mjs"
+    "proof-api": "node server/proof-api.mjs",
+    "model:growth": "node scripts/generate-growth-forecast.mjs",
+    "check:growth": "node --test scripts/check-growth-forecast.test.mjs scripts/check-boost-growth-client.test.mjs scripts/check-boost-growth.mjs scripts/check-growth-archive.test.mjs"
   },
   "dependencies": {
     "@bitcoinerlab/secp256k1": "^1.2.0",

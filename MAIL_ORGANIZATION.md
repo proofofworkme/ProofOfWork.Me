@@ -73,6 +73,15 @@ Growth is not a mailbox folder. It is a read-only model surface that compares co
 Browser is not a mailbox folder. It is an HTML renderer over ProofOfWork message bodies and the same verified file attachment protocol used by Files and Desktop. Browser-rendered HTML stays separate from wallet signing. Browser should not introduce B protocol, Ordinals, inscriptions, or any outside carrier unless the product direction explicitly changes.
 Boost is not a mailbox folder. Original Boost posts are created from Mail compose with the Boost ticker enabled, self-send to the sender's own address, and write `pwb1:post` alongside normal Mail/Files payloads. Likes, replies, reboosts, follows, unfollows, profile metadata, media references, transfers, marketplace listings, purchases, and hide/archive visibility tombstones use their own `pwb1:` meta protocol and must not be written as mailbox organization state, Contacts state, or ID registry mutations. Boost image bytes should be created through the existing ProofOfWork Files attachment layer and referenced from posts or profile proofs by file proof metadata. Boost profiles, owned/purchased boosts, followers/following counts, signal totals, WORK-balance display, and value-ranked timelines are social views over confirmed chain-readable records, not local mail folders. A Boost profile route is a person/profile projection with authored boosts/reboosts, authored replies, purchased/currently owned boosts, liked boosts, and expanded replies to that person's original boosts; it is not a mailbox folder or a filtered home timeline.
 
+Growth's Boost integration observes the complete confirmed indexed
+history at Growth's snapshot, including hidden posts. Local archives,
+favorites, profile filtering, and feed pagination do not change those totals.
+Its separate versioned forecast treats original Boosts as a subset of Mail
+transactions with additional Boost metadata, so it does not duplicate Mail
+payments, attached WORK value, or Files bytes. Observed companion Mail/WORK
+attribution is explanatory and adds no second canonical value. A future
+economic change is only a [draft proposal](BOOST_GROWTH_ACCOUNTING_PROPOSAL.md).
+
 ## Core Idea
 
 Messages written to ProofOfWork are permanent. The app should not pretend users can delete them from the chain.

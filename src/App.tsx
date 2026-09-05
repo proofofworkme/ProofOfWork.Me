@@ -51,6 +51,7 @@ import {
   Users,
   Wallet,
   X,
+  Zap,
 } from "lucide-react";
 import * as ecc from "@bitcoinerlab/secp256k1";
 import {
@@ -212,6 +213,26 @@ import {
   tokenUsd,
 } from "./functions";
 import BoostRoot from "./features/boost/BoostRoot";
+import BoostGrowthDetails from "./features/growth/BoostGrowthDetails";
+import GrowthModelDetails from "./features/growth/GrowthModelDetails";
+import {
+  normalizeBoostGrowth,
+  type BoostGrowthObservation,
+} from "./features/growth/boostGrowth.mjs";
+import {
+  GROWTH_MODEL_START_DATE,
+  GROWTH_MODEL_GENERATED_ON,
+  GROWTH_MODEL_INPUTS,
+  GROWTH_MODEL_ROWS,
+  GROWTH_MODEL_CHART_ROWS,
+  LEGACY_GROWTH_MODEL_GENERATED_ON,
+  LEGACY_GROWTH_MODEL_ROWS,
+  LEGACY_GROWTH_MODEL_CHART_ROWS,
+  growthModelStartRow,
+  growthBtcUsdAtYears,
+  growthSatsToUsdAtYears,
+  type GrowthForecastRow,
+} from "./features/growth/growthForecast.mjs";
 import {
   boostMarketplaceListingsFromItems,
   boostRouteHref,
@@ -1924,30 +1945,6 @@ const DEFAULT_BROWSER_INTENT_FEE_RATE = 1;
 const DEFAULT_MEMO = "";
 const MAX_RECIPIENTS = 10;
 
-type GrowthModelRow = {
-  adoption: number;
-  browserSats: number;
-  browserWrites: number;
-  blockspaceUsageRatio: number;
-  btcUsdBase: number;
-  driveSats: number;
-  driveWrites: number;
-  idSats: number;
-  idWrites: number;
-  label: string;
-  mailSats: number;
-  mailWrites: number;
-  marketplaceSats: number;
-  marketplaceWrites: number;
-  powids: number;
-  tokenSats: number;
-  tokenWrites: number;
-  totalSats: number;
-  totalUsdBase: number;
-  totalWrites: number;
-  years: number;
-};
-
 type GrowthValuePoint = {
   label: string;
   sats: number;
@@ -2383,6 +2380,7 @@ type GrowthSummaryCounts = {
 };
 
 type GrowthSummarySnapshot = {
+  boost: BoostGrowthObservation;
   actualValue: GrowthActualNetworkValue;
   btcUsd?: number;
   btcUsdIndexedAt?: string;
@@ -2397,6 +2395,9 @@ type GrowthSummarySnapshot = {
 };
 
 type GrowthSummaryApiResponse = {
+  boost?: unknown;
+  indexedThroughBlock?: number;
+  indexedThroughBlockHash?: string;
   actualValue?: Partial<GrowthActualNetworkValue>;
   activity?: PowActivityApiResponse;
   btcUsd?: number;
@@ -2544,279 +2545,7 @@ type InfinitySummaryApiResponse = {
   tokenId?: string;
 };
 
-const GROWTH_MODEL_START_DATE = "2026-05-11";
-const GROWTH_MODEL_GENERATED_ON = "2026-05-13";
 const MAX_GROWTH_ACTUAL_CHART_EVENTS = 240;
-const GROWTH_MODEL_INPUTS = {
-  bitnodesReachableNodes: 23_984,
-  agentShare: 0.51,
-  nodeCagr: 0.25,
-  currentBtcUsd: 80_879.33,
-  historicalBtcUsd: 452.73,
-  btcBenchmarkYears: 10,
-  currentPowids: 94,
-  idDensitySatsPerN2: 268.68933906745133,
-  baselineMailFlowSats: 10_202,
-  baselineFileFlowSats: 2_184,
-  baselineMarketplaceVolumeSats: 1_000,
-  baselineBrowserFlowSats: 0,
-  baselineTokenFlowSats: 0,
-  mailEdgeDensity: 0.012307692307692308,
-  mailSatsPerDelivery: 680.1333333333333,
-  marketplaceAverageSaleSats: 1000,
-  browserAveragePageSats: 1000,
-  tokenAverageMintSats: 1000,
-  satsPerFile: 1000,
-  canonicalFee: 0.00001,
-  blockspaceVbytesPerYear: 52_560_000_000,
-  idVbytesPerWrite: 350,
-  mailVbytesPerWrite: 500,
-  driveVbytesPerWrite: 9_621,
-  marketplaceVbytesPerSale: 1_500,
-  browserVbytesPerPage: 15_000,
-  tokenVbytesPerWrite: 700,
-  mailMessagesPerPairPerYear: 4,
-  driveFilesPerIdPerYear: 6,
-  marketplaceSalesPerIdPerYear: 0.2,
-  browserPagesPerIdPerYear: 1,
-  tokenMintsPerIdPerYear: 0.25,
-  valueMultiple: 5,
-  elasticities: {
-    id: 0.25,
-    mail: 0.5,
-    drive: 0.75,
-    marketplace: 0.5,
-    browser: 0.75,
-    token: 0.6,
-  },
-  horizons: [
-    { label: "6 months", years: 0.5, adoption: 0.1 },
-    { label: "12 months", years: 1, adoption: 0.2 },
-    { label: "24 months", years: 2, adoption: 0.4 },
-    { label: "5 years", years: 5, adoption: 0.6 },
-    { label: "10 years", years: 10, adoption: 0.8 },
-    { label: "25 years", years: 25, adoption: 0.9 },
-    { label: "50 years", years: 50, adoption: 1 },
-  ],
-};
-
-function growthFeeMultiplier(feeRate: number, elasticity: number) {
-  return (0.01 / feeRate) ** elasticity;
-}
-
-function growthBtcUsdAtYears(years: number) {
-  const mu =
-    Math.log(
-      GROWTH_MODEL_INPUTS.currentBtcUsd / GROWTH_MODEL_INPUTS.historicalBtcUsd,
-    ) / GROWTH_MODEL_INPUTS.btcBenchmarkYears;
-  return GROWTH_MODEL_INPUTS.currentBtcUsd * Math.exp(mu * Math.max(0, years));
-}
-
-function growthSatsToUsdAtYears(sats: number, years: number) {
-  return (sats / 100_000_000) * growthBtcUsdAtYears(years);
-}
-
-function growthModelRow(horizon: {
-  label: string;
-  years: number;
-  adoption: number;
-}): GrowthModelRow {
-  const nodes =
-    GROWTH_MODEL_INPUTS.bitnodesReachableNodes *
-    (1 + GROWTH_MODEL_INPUTS.nodeCagr) ** horizon.years;
-  const agentNodes = nodes * GROWTH_MODEL_INPUTS.agentShare;
-  const powids = agentNodes * horizon.adoption;
-  const directedPairs = powids * Math.max(0, powids - 1);
-  const idMultiplier = growthFeeMultiplier(
-    GROWTH_MODEL_INPUTS.canonicalFee,
-    GROWTH_MODEL_INPUTS.elasticities.id,
-  );
-  const mailMultiplier = growthFeeMultiplier(
-    GROWTH_MODEL_INPUTS.canonicalFee,
-    GROWTH_MODEL_INPUTS.elasticities.mail,
-  );
-  const driveMultiplier = growthFeeMultiplier(
-    GROWTH_MODEL_INPUTS.canonicalFee,
-    GROWTH_MODEL_INPUTS.elasticities.drive,
-  );
-  const marketplaceMultiplier = growthFeeMultiplier(
-    GROWTH_MODEL_INPUTS.canonicalFee,
-    GROWTH_MODEL_INPUTS.elasticities.marketplace,
-  );
-  const browserMultiplier = growthFeeMultiplier(
-    GROWTH_MODEL_INPUTS.canonicalFee,
-    GROWTH_MODEL_INPUTS.elasticities.browser,
-  );
-  const tokenMultiplier = growthFeeMultiplier(
-    GROWTH_MODEL_INPUTS.canonicalFee,
-    GROWTH_MODEL_INPUTS.elasticities.token,
-  );
-  const rawIdSats =
-    powids ** 2 * GROWTH_MODEL_INPUTS.idDensitySatsPerN2 * idMultiplier;
-  const rawMailSats =
-    directedPairs *
-    GROWTH_MODEL_INPUTS.mailEdgeDensity *
-    GROWTH_MODEL_INPUTS.mailMessagesPerPairPerYear *
-    GROWTH_MODEL_INPUTS.mailSatsPerDelivery *
-    GROWTH_MODEL_INPUTS.valueMultiple *
-    mailMultiplier;
-  const rawDriveSats =
-    powids *
-    GROWTH_MODEL_INPUTS.driveFilesPerIdPerYear *
-    GROWTH_MODEL_INPUTS.satsPerFile *
-    GROWTH_MODEL_INPUTS.valueMultiple *
-    driveMultiplier;
-  const rawMarketplaceSats =
-    powids *
-    GROWTH_MODEL_INPUTS.marketplaceSalesPerIdPerYear *
-    GROWTH_MODEL_INPUTS.marketplaceAverageSaleSats *
-    GROWTH_MODEL_INPUTS.valueMultiple *
-    marketplaceMultiplier;
-  const rawBrowserSats =
-    powids *
-    GROWTH_MODEL_INPUTS.browserPagesPerIdPerYear *
-    GROWTH_MODEL_INPUTS.browserAveragePageSats *
-    GROWTH_MODEL_INPUTS.valueMultiple *
-    browserMultiplier;
-  const rawTokenSats =
-    powids *
-    GROWTH_MODEL_INPUTS.tokenMintsPerIdPerYear *
-    GROWTH_MODEL_INPUTS.tokenAverageMintSats *
-    GROWTH_MODEL_INPUTS.valueMultiple *
-    tokenMultiplier;
-  const idWrites = powids * idMultiplier;
-  const mailWrites =
-    directedPairs *
-    GROWTH_MODEL_INPUTS.mailEdgeDensity *
-    GROWTH_MODEL_INPUTS.mailMessagesPerPairPerYear *
-    mailMultiplier;
-  const driveWrites =
-    powids * GROWTH_MODEL_INPUTS.driveFilesPerIdPerYear * driveMultiplier;
-  const marketplaceWrites =
-    powids *
-    GROWTH_MODEL_INPUTS.marketplaceSalesPerIdPerYear *
-    marketplaceMultiplier;
-  const browserWrites =
-    powids * GROWTH_MODEL_INPUTS.browserPagesPerIdPerYear * browserMultiplier;
-  const tokenWrites =
-    powids *
-    GROWTH_MODEL_INPUTS.tokenMintsPerIdPerYear *
-    tokenMultiplier;
-  const rawBlockspaceVbytes =
-    idWrites * GROWTH_MODEL_INPUTS.idVbytesPerWrite +
-    mailWrites * GROWTH_MODEL_INPUTS.mailVbytesPerWrite +
-    driveWrites * GROWTH_MODEL_INPUTS.driveVbytesPerWrite +
-    marketplaceWrites * GROWTH_MODEL_INPUTS.marketplaceVbytesPerSale +
-    browserWrites * GROWTH_MODEL_INPUTS.browserVbytesPerPage +
-    tokenWrites * GROWTH_MODEL_INPUTS.tokenVbytesPerWrite;
-  const blockspaceUsageRatio =
-    rawBlockspaceVbytes > 0
-      ? Math.min(
-          rawBlockspaceVbytes,
-          GROWTH_MODEL_INPUTS.blockspaceVbytesPerYear,
-        ) / rawBlockspaceVbytes
-      : 1;
-  const idSats = rawIdSats;
-  const mailSats = rawMailSats * blockspaceUsageRatio;
-  const driveSats = rawDriveSats * blockspaceUsageRatio;
-  const marketplaceSats = rawMarketplaceSats * blockspaceUsageRatio;
-  const browserSats = rawBrowserSats * blockspaceUsageRatio;
-  const tokenSats = rawTokenSats * blockspaceUsageRatio;
-  const totalSats =
-    idSats +
-    mailSats +
-    driveSats +
-    marketplaceSats +
-    browserSats +
-    tokenSats;
-  const btcUsdBase = growthBtcUsdAtYears(horizon.years);
-
-  return {
-    ...horizon,
-    blockspaceUsageRatio,
-    browserSats,
-    browserWrites: browserWrites * blockspaceUsageRatio,
-    btcUsdBase,
-    driveSats,
-    driveWrites: driveWrites * blockspaceUsageRatio,
-    idSats,
-    idWrites,
-    mailSats,
-    mailWrites: mailWrites * blockspaceUsageRatio,
-    marketplaceSats,
-    marketplaceWrites: marketplaceWrites * blockspaceUsageRatio,
-    powids,
-    tokenSats,
-    tokenWrites: tokenWrites * blockspaceUsageRatio,
-    totalSats,
-    totalUsdBase: (totalSats / 100_000_000) * btcUsdBase,
-    totalWrites:
-      idWrites +
-      (
-        mailWrites +
-        driveWrites +
-        marketplaceWrites +
-        browserWrites +
-        tokenWrites
-      ) *
-        blockspaceUsageRatio,
-  };
-}
-
-function growthModelStartRow(): GrowthModelRow {
-  const idSats =
-    GROWTH_MODEL_INPUTS.currentPowids ** 2 *
-    GROWTH_MODEL_INPUTS.idDensitySatsPerN2;
-  const mailSats =
-    GROWTH_MODEL_INPUTS.baselineMailFlowSats *
-    GROWTH_MODEL_INPUTS.valueMultiple;
-  const driveSats =
-    GROWTH_MODEL_INPUTS.baselineFileFlowSats *
-    GROWTH_MODEL_INPUTS.valueMultiple;
-  const marketplaceSats =
-    GROWTH_MODEL_INPUTS.baselineMarketplaceVolumeSats *
-    GROWTH_MODEL_INPUTS.valueMultiple;
-  const browserSats =
-    GROWTH_MODEL_INPUTS.baselineBrowserFlowSats *
-    GROWTH_MODEL_INPUTS.valueMultiple;
-  const tokenSats =
-    GROWTH_MODEL_INPUTS.baselineTokenFlowSats *
-    GROWTH_MODEL_INPUTS.valueMultiple;
-  const totalSats =
-    idSats +
-    mailSats +
-    driveSats +
-    marketplaceSats +
-    browserSats +
-    tokenSats;
-  const btcUsdBase = growthBtcUsdAtYears(0);
-  return {
-    adoption: 0,
-    blockspaceUsageRatio: 1,
-    browserSats,
-    browserWrites: 0,
-    btcUsdBase,
-    driveSats,
-    driveWrites: 0,
-    idSats,
-    idWrites: GROWTH_MODEL_INPUTS.currentPowids,
-    label: "Model start",
-    mailSats,
-    mailWrites: 0,
-    marketplaceSats,
-    marketplaceWrites: 0,
-    powids: GROWTH_MODEL_INPUTS.currentPowids,
-    tokenSats,
-    tokenWrites: 0,
-    totalSats,
-    totalUsdBase: (totalSats / 100_000_000) * btcUsdBase,
-    totalWrites: GROWTH_MODEL_INPUTS.currentPowids,
-    years: 0,
-  };
-}
-
-const GROWTH_MODEL_ROWS = GROWTH_MODEL_INPUTS.horizons.map(growthModelRow);
-const GROWTH_MODEL_CHART_ROWS = [growthModelStartRow(), ...GROWTH_MODEL_ROWS];
 
 function isBackupStorageKey(key: string) {
   return (
@@ -18526,6 +18255,11 @@ function normalizeGrowthSummary(
 
   return {
     actualValue,
+    boost: normalizeBoostGrowth(payload.boost, {
+      blockHeight: payload.indexedThroughBlock,
+      blockHash: payload.indexedThroughBlockHash,
+      snapshotId: payload.snapshotId,
+    }),
     btcUsd: Number(payload.btcUsd) || undefined,
     btcUsdIndexedAt:
       typeof payload.btcUsdIndexedAt === "string"
@@ -42694,8 +42428,10 @@ function growthActualValuePoints(
   return points;
 }
 
-function growthModelValueAtYears(years: number): GrowthValuePoint {
-  const rows = GROWTH_MODEL_CHART_ROWS;
+function growthModelValueAtYears(
+  years: number,
+  rows: GrowthForecastRow[] = GROWTH_MODEL_CHART_ROWS,
+): GrowthValuePoint {
   const clampedYears = Math.max(0, Math.min(GROWTH_MODEL_CHART_YEARS, years));
   const before =
     [...rows].reverse().find((row) => row.years <= clampedYears) ?? rows[0];
@@ -42971,8 +42707,10 @@ function growthChartPath(
 
 function GrowthLineChart({
   actualPoints,
+  modelRows,
 }: {
   actualPoints: GrowthValuePoint[];
+  modelRows: GrowthForecastRow[];
 }) {
   const width = 920;
   const height = 390;
@@ -42982,7 +42720,7 @@ function GrowthLineChart({
   const padBottom = 52;
   const plotWidth = width - padLeft - padRight;
   const plotHeight = height - padTop - padBottom;
-  const modelPoints = GROWTH_MODEL_CHART_ROWS.filter(
+  const modelPoints = modelRows.filter(
     (row) => row.years <= GROWTH_MODEL_CHART_YEARS,
   ).map((row) => ({
     label: row.label,
@@ -43067,7 +42805,7 @@ function GrowthLineChart({
             y={height - 20}
             textAnchor="middle"
           >
-            {tick === 0 ? "now" : `${tick}y`}
+            {tick === 0 ? "baseline" : `${tick}y`}
           </text>
         </g>
       ))}
@@ -44050,6 +43788,8 @@ function TokenMarketPriceChart({
 function GrowthProductCard({
   actual,
   actualLabel,
+  actualTitle = "Real now",
+  children,
   icon,
   modelFiveYear,
   modelFiveYearLabel,
@@ -44061,6 +43801,8 @@ function GrowthProductCard({
 }: {
   actual: string;
   actualLabel: string;
+  actualTitle?: string;
+  children?: ReactNode;
   icon: ReactNode;
   modelFiveYear: string;
   modelFiveYearLabel: string;
@@ -44083,7 +43825,7 @@ function GrowthProductCard({
       </div>
       <dl className="growth-product-metrics">
         <div>
-          <dt>Real now</dt>
+          <dt>{actualTitle}</dt>
           <dd>{actual}</dd>
           <span>{actualLabel}</span>
         </div>
@@ -44098,6 +43840,7 @@ function GrowthProductCard({
           <span>{modelFiveYearLabel || modelLabel}</span>
         </div>
       </dl>
+      {children}
     </article>
   );
 }
@@ -44209,6 +43952,10 @@ function GrowthWorkspace({
   workFloorQuote?: WorkFloorQuote;
   onRefresh: () => void;
 }) {
+  const [forecastVersion, setForecastVersion] = useState<"all-products" | "legacy">("all-products");
+  const modelRows = forecastVersion === "all-products" ? GROWTH_MODEL_ROWS : LEGACY_GROWTH_MODEL_ROWS;
+  const modelChartRows = forecastVersion === "all-products" ? GROWTH_MODEL_CHART_ROWS : LEGACY_GROWTH_MODEL_CHART_ROWS;
+  const boostObservation = growthSummary?.boost ?? normalizeBoostGrowth(undefined, undefined);
   const [growthEventPageIndex, setGrowthEventPageIndex] = useState(0);
   const pendingRecords = registryRecords.filter((record) => !record.confirmed);
   const confirmedActivity = idActivity.filter((item) => item.confirmed);
@@ -44288,13 +44035,13 @@ function GrowthWorkspace({
   );
   const marketplaceStats = marketplaceStatsFromSales(registrySales);
   const oneYear =
-    GROWTH_MODEL_ROWS.find((row) => row.years === 1) ?? GROWTH_MODEL_ROWS[1];
+    modelRows.find((row) => row.years === 1) ?? modelRows[1];
   const fiveYear =
-    GROWTH_MODEL_ROWS.find((row) => row.years === 5) ?? GROWTH_MODEL_ROWS[3];
+    modelRows.find((row) => row.years === 5) ?? modelRows[3];
   const summaryCounts = growthSummary?.counts;
   const currentActual = summaryCounts?.powids ?? actualValue.powids;
   const elapsedYears = growthElapsedYears();
-  const modelNow = growthModelValueAtYears(elapsedYears);
+  const modelNow = growthModelValueAtYears(elapsedYears, modelChartRows);
   const valueDeltaSats = authoritativeNetworkValueSats - modelNow.sats;
   const valueDeltaPct = modelNow.sats > 0 ? valueDeltaSats / modelNow.sats : 0;
   const confirmedComputerActions =
@@ -44416,6 +44163,7 @@ function GrowthWorkspace({
             The candle-gold line is modeled ProofOfWork Computer network value. The
             olive line is real confirmed mainnet value from IDs, Mail, Infinity
             Bonds, Inception Bonds, Drive, AMO, Browser, Credits, and Wallet.
+            The forecast includes Boost, bonds, credit activity, and transfers with shared payments counted once.
           </p>
         </div>
         <div className="growth-model-card">
@@ -44424,17 +44172,35 @@ function GrowthWorkspace({
               <TrendingUp size={24} />
             </div>
             <div>
-              <h3>Canonical baseline</h3>
+              <h3>Forecast version</h3>
               <p>
-                Generated {GROWTH_MODEL_GENERATED_ON}. Model start{" "}
-                {GROWTH_MODEL_START_DATE}.
+                {forecastVersion === "all-products"
+                  ? `All-product scenario revised ${GROWTH_MODEL_GENERATED_ON}.`
+                  : `Original baseline generated ${LEGACY_GROWTH_MODEL_GENERATED_ON}.`}{" "}
+                Both use the {GROWTH_MODEL_START_DATE} model origin.
               </p>
             </div>
           </div>
+          <label className="growth-forecast-select">
+            <span>Model shown</span>
+            <select
+              aria-label="Growth forecast"
+              value={forecastVersion}
+              onChange={(event) => setForecastVersion(event.target.value === "legacy" ? "legacy" : "all-products")}
+            >
+              <option value="all-products">All products · {GROWTH_MODEL_GENERATED_ON}</option>
+              <option value="legacy">Original baseline · {LEGACY_GROWTH_MODEL_GENERATED_ON}</option>
+            </select>
+          </label>
+          <p className="field-note">
+            {forecastVersion === "all-products"
+              ? "Explicit assumptions for every product, using the historical May origin. This scenario is not calibrated to current activity and does not revise confirmed network value."
+              : "The original forecast remains available for comparison. Boost was not included in this baseline."}
+          </p>
           <dl className="growth-assumption-list">
             <div>
               <dt>Baseline value</dt>
-              <dd>{growthSats(GROWTH_MODEL_CHART_ROWS[0].totalSats)}</dd>
+              <dd>{growthSats(modelChartRows[0].totalSats)}</dd>
             </div>
             <div>
               <dt>Baseline IDs</dt>
@@ -44449,7 +44215,7 @@ function GrowthWorkspace({
               <dd>{growthPercent(GROWTH_MODEL_INPUTS.agentShare)}</dd>
             </div>
             <div>
-              <dt>Canonical fee</dt>
+              <dt>Scenario fee rate</dt>
               <dd>
                 {GROWTH_MODEL_INPUTS.canonicalFee.toLocaleString("en-US", {
                   maximumFractionDigits: 5,
@@ -44557,8 +44323,8 @@ function GrowthWorkspace({
           <h3>Candle-gold is the success case. Olive is ProofOfWork history.</h3>
           <p>
             The model asks what the ProofOfWork Computer can become if IDs, Mail,
-            Infinity Bonds, Inception Bonds, Drive, AMO, Browser, Credits, and Wallet
-            compound together. The real line only counts confirmed mainnet
+            Boost, Infinity Bonds, Inception Bonds, Drive, AMO, Browser, Credits, and Wallet
+            compound together. Boost is included in the revised scenario. The real line only counts confirmed mainnet
             records that already exist.
           </p>
         </article>
@@ -44571,6 +44337,8 @@ function GrowthWorkspace({
             payment-flow buckets. WORK credit movements add live
             proof-equivalent value as the active site value, while each
             confirmation stamps its own frozen audit value plus separate miner fees.
+            Boost observations identify activity and existing payment attribution;
+            they do not add a second contribution to the real line.
           </p>
         </article>
         <article className="growth-explainer-card">
@@ -44592,7 +44360,7 @@ function GrowthWorkspace({
           <p>
             A product needs real chain inputs, a usage assumption, a value
             assumption, fee elasticity, and blockspace cost. That keeps every
-            merged app beside IDs, Mail, Infinity, Inception, Drive, AMO, Browser,
+            merged app beside IDs, Mail, Boost, Infinity, Inception, Drive, AMO, Browser,
             Credits, and Wallet instead of bolted on.
           </p>
         </article>
@@ -44604,7 +44372,8 @@ function GrowthWorkspace({
             <h3>Modeled network value vs live real value</h3>
             <p>
               Log scale, 10-year window. Values are shown in proofs and translated
-              to USD through the same live price benchmark.
+              to USD through the same live price benchmark. Years are measured from
+              the {GROWTH_MODEL_START_DATE} model origin.
             </p>
           </div>
           <div className="growth-chart-legend" aria-label="Chart legend">
@@ -44646,7 +44415,7 @@ function GrowthWorkspace({
             <small>{growthUsdForSats(oneYear.totalSats)} success path</small>
           </div>
         </div>
-        <GrowthLineChart actualPoints={authoritativeActualPoints} />
+        <GrowthLineChart actualPoints={authoritativeActualPoints} modelRows={modelChartRows} />
       </section>
 
       <section
@@ -44710,8 +44479,8 @@ function GrowthWorkspace({
           <div>
             <h3>Products in the model</h3>
             <p>
-              Every product gets a real metric, a usage assumption, a value
-              assumption, a fee elasticity, and blockspace accounting.
+              Each activity has a usage and value assumption, fee elasticity, and
+              blockspace allocation. Shared and read-only apps are mapped below.
             </p>
           </div>
         </div>
@@ -44728,7 +44497,7 @@ function GrowthWorkspace({
             modelOneYear={growthSats(oneYear.idSats)}
             modelOneYearLabel={growthUsdForSats(oneYear.idSats)}
             name="IDs"
-            note="Network stock value: n squared against current ID value density."
+            note="Network stock scenario: n squared using the historical May ID value density."
           />
           <GrowthProductCard
             actual={growthSats(actualValue.mailSats)}
@@ -44743,28 +44512,50 @@ function GrowthWorkspace({
             note="Relationship flow across the confirmed ID graph."
           />
           <GrowthProductCard
+            actual={boostObservation.ready && boostObservation.counts
+              ? `${boostObservation.counts.posts.toLocaleString()} ${boostObservation.counts.posts === 1 ? "post" : "posts"}`
+              : "Unavailable"}
+            actualTitle="Confirmed Boost observations"
+            actualLabel={boostObservation.ready && boostObservation.counts
+              ? `${boostObservation.counts.socialActions.toLocaleString()} social records · ${boostObservation.counts.sales.toLocaleString()} purchase records`
+              : "Waiting for complete Boost history at the Growth snapshot"}
+            icon={<Zap size={24} />}
+            modelFiveYear={forecastVersion === "all-products" ? growthSats(fiveYear.boostSats) : "Not modeled"}
+            modelFiveYearLabel={forecastVersion === "all-products" ? growthUsdForSats(fiveYear.boostSats) : "Original baseline"}
+            modelLabel="scenario value"
+            modelOneYear={forecastVersion === "all-products" ? growthSats(oneYear.boostSats) : "Not modeled"}
+            modelOneYearLabel={forecastVersion === "all-products" ? growthUsdForSats(oneYear.boostSats) : "Original baseline"}
+            name="Boost"
+            note="Social activity and sale-ticket flow, with shared Mail and WORK value counted once."
+          >
+            <BoostGrowthDetails observation={boostObservation} />
+            <a className="secondary small growth-boost-link" href={appHref(BOOST_APP_URL, LOCAL_BOOST_APP_URL)}>
+              Open Boost
+            </a>
+          </GrowthProductCard>
+          <GrowthProductCard
             actual={growthSats(actualValue.infinityBondSats)}
             actualLabel={`${growthUsdForSats(actualValue.infinityBondSats)} · ${actualValue.infinityBondFlowSats.toLocaleString()} bond proofs · ${infinityBondActions.toLocaleString()} bond actions`}
             icon={<InfinityIcon size={24} />}
-            modelFiveYear="Tracked"
-            modelFiveYearLabel="confirmed bond lane"
+            modelFiveYear={forecastVersion === "all-products" ? growthSats(fiveYear.infinitySats ?? 0) : "Not modeled"}
+            modelFiveYearLabel={forecastVersion === "all-products" ? growthUsdForSats(fiveYear.infinitySats ?? 0) : "Original baseline"}
             modelLabel="confirmed bond value"
-            modelOneYear="Tracked"
-            modelOneYearLabel="confirmed bond lane"
+            modelOneYear={forecastVersion === "all-products" ? growthSats(oneYear.infinitySats ?? 0) : "Not modeled"}
+            modelOneYearLabel={forecastVersion === "all-products" ? growthUsdForSats(oneYear.infinitySats ?? 0) : "Original baseline"}
             name="Infinity"
-            note="Confirmed Infinity Bonds and POWB bond proofs feed the same WORK floor ledger."
+            note="Direct POWB bond payments; synthetic issuance and AMO trades are counted through their owning activity."
           />
           <GrowthProductCard
             actual={growthSats(actualValue.inceptionBondSats)}
             actualLabel={`${growthUsdForSats(actualValue.inceptionBondSats)} · ${actualValue.inceptionBondFlowSats.toLocaleString()} bond proofs · ${inceptionBondActions.toLocaleString()} bond actions`}
             icon={<GitBranch size={24} />}
-            modelFiveYear="Tracked"
-            modelFiveYearLabel="confirmed bond lane"
+            modelFiveYear={forecastVersion === "all-products" ? growthSats(fiveYear.inceptionSats ?? 0) : "Not modeled"}
+            modelFiveYearLabel={forecastVersion === "all-products" ? growthUsdForSats(fiveYear.inceptionSats ?? 0) : "Original baseline"}
             modelLabel="confirmed bond value"
-            modelOneYear="Tracked"
-            modelOneYearLabel="confirmed bond lane"
+            modelOneYear={forecastVersion === "all-products" ? growthSats(oneYear.inceptionSats ?? 0) : "Not modeled"}
+            modelOneYearLabel={forecastVersion === "all-products" ? growthUsdForSats(oneYear.inceptionSats ?? 0) : "Original baseline"}
             name="Inception"
-            note="Confirmed Inception Bonds and INCB bond proofs feed the same WORK floor ledger."
+            note="Direct INCB bond payments. Attached WORK and fixed H-1 issuance are not forecast as extra value."
           />
           <GrowthProductCard
             actual={growthSats(actualValue.driveSats)}
@@ -44788,7 +44579,7 @@ function GrowthWorkspace({
             modelOneYear={growthSats(oneYear.marketplaceSats)}
             modelOneYearLabel={growthUsdForSats(oneYear.marketplaceSats)}
             name="AMO"
-            note="Buyer-funded ID transfers and credit sale-ticket buys become first-class product flow."
+            note="ID, Credit, WORK, POWB, and INCB sales and mutation fees are counted once. Boost trades stay in the Boost category."
           />
           <GrowthProductCard
             actual={growthSats(actualValue.browserSats)}
@@ -44806,13 +44597,13 @@ function GrowthWorkspace({
             actual={growthSats(actualValue.computerEventSats)}
             actualLabel={`${growthUsdForSats(actualValue.computerEventSats)} · ${computerEventFlowSats.toLocaleString()} other confirmed log proofs`}
             icon={<GitBranch size={24} />}
-            modelFiveYear="Tracked"
-            modelFiveYearLabel="confirmed event ledger"
+            modelFiveYear={forecastVersion === "all-products" ? growthSats(fiveYear.computerEventSats ?? 0) : "Not modeled"}
+            modelFiveYearLabel={forecastVersion === "all-products" ? growthUsdForSats(fiveYear.computerEventSats ?? 0) : "Original baseline"}
             modelLabel="confirmed log value"
-            modelOneYear="Tracked"
-            modelOneYearLabel="confirmed event ledger"
+            modelOneYear={forecastVersion === "all-products" ? growthSats(oneYear.computerEventSats ?? 0) : "Not modeled"}
+            modelOneYearLabel={forecastVersion === "all-products" ? growthUsdForSats(oneYear.computerEventSats ?? 0) : "Original baseline"}
             name="Confirmed Events"
-            note="Non-AMO registry mutations and other confirmed log writes feed the same WORK floor ledger."
+            note="ID registration fees, receiver updates, and direct transfers are counted once; unrelated events have no assumed extra contribution."
           />
           <GrowthProductCard
             actual={growthSats(actualValue.tokenSats)}
@@ -44830,13 +44621,13 @@ function GrowthWorkspace({
             actual={growthSats(actualValue.walletSats)}
             actualLabel={`${growthUsdForSats(actualValue.walletSats)} · ${walletFlowSats.toLocaleString()} transfer proofs · ${confirmedTokenTransfers.toLocaleString()} transfers`}
             icon={<Wallet size={24} />}
-            modelFiveYear="Tracked"
-            modelFiveYearLabel="credit transfer lane"
+            modelFiveYear={forecastVersion === "all-products" ? growthSats(fiveYear.walletSats ?? 0) : "Not modeled"}
+            modelFiveYearLabel={forecastVersion === "all-products" ? growthUsdForSats(fiveYear.walletSats ?? 0) : "Original baseline"}
             modelLabel="confirmed transfer value"
-            modelOneYear="Tracked"
-            modelOneYearLabel="credit transfer lane"
+            modelOneYear={forecastVersion === "all-products" ? growthSats(oneYear.walletSats ?? 0) : "Not modeled"}
+            modelOneYearLabel={forecastVersion === "all-products" ? growthUsdForSats(oneYear.walletSats ?? 0) : "Original baseline"}
             name="Wallet"
-            note="Credit balances and pwt1:send transfers become their own ownership product in the ProofOfWork Computer model."
+            note="Standalone Credit and WORK transfer registry fees are modeled here; balances and attached transfers add no duplicate value."
           />
           <GrowthProductCard
             actual={`${bondProofAmountDisplay(
@@ -44845,13 +44636,13 @@ function GrowthWorkspace({
             )} proofs`}
             actualLabel={`${growthUsdForSats(creditNetworkValueSats)} · ${bondProofAmountDisplay(creditEventLiveValueSats, creditEventLiveValueQ8)} live WORK event · ${bondProofAmountDisplay(creditEventFrozenValueSats, creditEventFrozenValueQ8)} frozen WORK event · ${bondProofAmountDisplay(creditMovementLiveValueSats, creditMovementLiveValueQ8)} live WORK mark · ${bondProofAmountDisplay(creditMovementFrozenValueSats, creditMovementFrozenValueQ8)} frozen WORK mark · ${creditSalePaymentFlowSats.toLocaleString()} sale proofs · ${creditProofPaymentFlowSats.toLocaleString()} mint/create proofs · ${creditMinerFeeFlowSats.toLocaleString()} miner proofs`}
             icon={<TrendingUp size={24} />}
-            modelFiveYear="Tracked"
-            modelFiveYearLabel="WORK movement lane"
+            modelFiveYear={forecastVersion === "all-products" ? `${growthCompactNumber(fiveYear.workMovementWrites ?? 0)} movements` : "Not modeled"}
+            modelFiveYearLabel={forecastVersion === "all-products" ? `${growthSats(fiveYear.workFloorSats ?? 0)} / WORK scenario floor` : "Original baseline"}
             modelLabel="live event value"
-            modelOneYear="Tracked"
-            modelOneYearLabel="WORK movement lane"
+            modelOneYear={forecastVersion === "all-products" ? `${growthCompactNumber(oneYear.workMovementWrites ?? 0)} movements` : "Not modeled"}
+            modelOneYearLabel={forecastVersion === "all-products" ? `${growthSats(oneYear.workFloorSats ?? 0)} / WORK scenario floor` : "Original baseline"}
             name="WORK Credit Value"
-            note="Only WORK transfers and sales carry live network value, while each confirmation stamps a frozen audit value. Other credits stay proof-flow only."
+            note="Forecast movements share Wallet and AMO activity. The scenario floor is derived from total value; canonical WORK revaluation stays in the confirmed ledger."
           />
         </div>
       </section>
@@ -44861,14 +44652,7 @@ function GrowthWorkspace({
         aria-label="Model assumptions"
         id="growth-assumptions"
       >
-        <article>
-          <h3>Product contract</h3>
-          <p>
-            New products are not side quests. They enter the same model with
-            real chain inputs, per-user usage, value multiple, fee elasticity,
-            and vbyte cost.
-          </p>
-        </article>
+        <GrowthModelDetails historical={forecastVersion === "legacy"} />
         <article>
           <h3>Blockspace constraint</h3>
           <p>
@@ -44879,7 +44663,7 @@ function GrowthWorkspace({
           </p>
         </article>
         <article>
-          <h3>Canonical path</h3>
+          <h3>Selected forecast</h3>
           <p>
             At 12 months the model reaches{" "}
             {Math.round(oneYear.powids).toLocaleString()} PowIDs and{" "}

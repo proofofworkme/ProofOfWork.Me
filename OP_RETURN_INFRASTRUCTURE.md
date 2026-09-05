@@ -4447,6 +4447,63 @@ surface: pinned system file in Computer Files and public Desktop
 open behavior: Browser by txid
 ```
 
+## Boost Observations In Growth
+
+The local Growth integration adds a `boost` observation object to
+`/api/v1/growth-summary`. Its model is `boost-growth-observation-v1`, with
+`ready`, `complete`, `reason`, `source`, and a `checkpoint` containing
+`blockHeight`, `blockHash`, and `snapshotId`. It reads the complete recognized
+confirmed indexed Boost record set at that exact Growth checkpoint. Public
+Boost feed pages, profile filters, hidden-post filters, and pending overlays
+are not the source of all-time Growth totals.
+
+The observation is an optional overlay: Growth waits at most 150 ms for it,
+then returns its canonical summary with an observation-preparing state while
+the read continues. Identical network/snapshot/height/hash requests share one
+in-flight read. At most one Boost scan runs at a time, and successful results
+are cached for 30 seconds across at most four exact checkpoint keys. The
+reader uses one read-only repeatable-read database transaction, keyset pages
+without a whole-history record limit, an 8-second read budget checked between
+page stages, and 3-second statement timeouts. Connection acquisition is bounded
+to 1 second; a connection arriving after that deadline is released. An unavailable Boost
+observation must not delay or consume every connection needed by canonical
+Growth, WORK, or other summary readers.
+
+`counts` reports recognized confirmed records by action and unique transaction.
+Explicit invalid and pending records are excluded. Hidden records remain
+history. Dataset completeness does not establish economic validity:
+`economicMetricsVerified` and per-field `metricReasons` distinguish unavailable
+payment or settlement evidence from verified values. Monetary fields use exact
+decimal integer strings or `null`, never an assumed zero or a partial sum:
+`directProofSignalSats`, `registryFeeSats`, `saleVolumeSats`,
+`attachedWorkSubatoms`, `attributedMailSats`, and `attributedWorkSubatoms`.
+Companion WORK quantities use the declared Q16 subatom scale, with historical
+Q8 amounts converted exactly; they are quantities, not current-price proofs.
+Companion Mail and WORK attribution explains overlap with existing lanes and
+must not be added again to `actualValue` or WORK network value.
+
+Every raw Boost carrier in a known source transaction must have an exact
+indexed outcome before its dataset can be complete, including malformed or
+rejected carriers. A raw WORK companion must match its indexed payload and
+position and have either an accepted canonical transfer or an explicit
+canonical rejection. A missing, mismatched, or wrong-kind projection makes
+the WORK metric unavailable; it never becomes a verified zero. Mail/Files
+payment attribution deduplicates canonical recipient outputs and excludes
+the separate bond families.
+
+A missing, incomplete, malformed, or differently bound observation must remain
+unavailable. It cannot acquire completeness from a recent feed page or inherit
+an unrelated WORK snapshot. The UI can still show the separately labeled
+`2026-09-05-all-products-v1` scenario. The main report, JSON, and charts use
+`src/features/growth/growthForecast.mjs`; the original May artifacts are
+preserved in `output/historical/2026-05-13/`. The intermediate Boost-only
+scenario remains reproducible separately. These forecasts use explicitly
+partitioned product activity and a shared capacity limit; they are not a
+canonical WORK/INCB replay or a newly calibrated chain snapshot. This
+read-model/forecast change does not alter economic
+replay, H-1 values, or frozen listing terms. Canonical Boost accounting remains
+the [unactivated design proposal](BOOST_GROWTH_ACCOUNTING_PROPOSAL.md).
+
 ## Confirmed vs Pending
 
 Confirmed ProofOfWork history is canonical. Pending mempool state is not.

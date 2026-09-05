@@ -1,34 +1,92 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">
-<rect width="1600" height="900" fill="#f8fafc"/>
-<text x="80" y="82" text-anchor="start" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="56" font-weight="850" fill="#0f172a">IDs + Mail + Drive + Marketplace + Browser</text>
-<text x="82" y="126" text-anchor="start" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="25" font-weight="500" fill="#475569">The aggregate is not one product. It is five reinforcing products measured together.</text>
-<rect x="170" y="182" width="28" height="28" rx="6" fill="#2563eb"/><text x="210" y="205" text-anchor="start" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="24" font-weight="750" fill="#0f172a">IDs</text>
-<rect x="300" y="182" width="28" height="28" rx="6" fill="#0f766e"/><text x="340" y="205" text-anchor="start" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="24" font-weight="750" fill="#0f172a">Mail</text>
-<rect x="440" y="182" width="28" height="28" rx="6" fill="#c2410c"/><text x="480" y="205" text-anchor="start" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="24" font-weight="750" fill="#0f172a">Drive</text>
-<rect x="585" y="182" width="28" height="28" rx="6" fill="#7c3aed"/><text x="625" y="205" text-anchor="start" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="24" font-weight="750" fill="#0f172a">Marketplace</text>
-<rect x="800" y="182" width="28" height="28" rx="6" fill="#0891b2"/><text x="840" y="205" text-anchor="start" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="24" font-weight="750" fill="#0f172a">Browser</text><text x="190" y="310" text-anchor="end" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="28" font-weight="850" fill="#0f172a">6 months</text>
-<rect x="220" y="260" width="143.45029942952277" height="64" rx="12" fill="#2563eb"/>
-<rect x="363.4502994295228" y="260" width="502.2662834823158" height="64" fill="#0f766e"/>
-<rect x="865.7165829118386" y="260" width="370.36119838164404" height="64" fill="#c2410c"/>
-<rect x="1236.0777812934825" y="260" width="2.1953523111962547" height="64" fill="#7c3aed"/>
-<rect x="1238.2731336046788" y="260" width="61.726866395321046" height="64" rx="12" fill="#0891b2"/>
-<text x="1365" y="302" text-anchor="end" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="24" font-weight="800" fill="#0f172a">Total: $22.3 million</text>
-<text x="220" y="360" text-anchor="start" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="20" font-weight="650" fill="#334155">IDs $2.96M  |  Mail $10.4M  |  Drive $7.65M  |  Market $45.3K  |  Browser $1.27M</text>
-<text x="190" y="460" text-anchor="end" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="28" font-weight="850" fill="#0f172a">24 months</text>
-<rect x="220" y="410" width="436.91481152576023" height="64" rx="12" fill="#2563eb"/>
-<rect x="656.9148115257602" y="410" width="556.9862475069285" height="64" fill="#0f766e"/>
-<rect x="1213.9010590326889" y="410" width="73.42602941042193" height="64" fill="#c2410c"/>
-<rect x="1287.3270884431108" y="410" width="0.43523998753881055" height="64" fill="#7c3aed"/>
-<rect x="1287.7623284306496" y="410" width="12.237671569350507" height="64" rx="12" fill="#0891b2"/>
-<text x="1365" y="452" text-anchor="end" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="24" font-weight="800" fill="#0f172a">Total: $498 million</text>
-<text x="220" y="510" text-anchor="start" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="20" font-weight="650" fill="#334155">IDs $201M  |  Mail $257M  |  Drive $33.9M  |  Market $201K  |  Browser $5.64M</text>
-<text x="190" y="610" text-anchor="end" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="28" font-weight="850" fill="#0f172a">10 years</text>
-<rect x="220" y="560" width="1054.2727796836816" height="64" rx="12" fill="#2563eb"/>
-<rect x="1274.2727796836816" y="560" width="25.39792210066261" height="64" fill="#0f766e"/>
-<rect x="1299.6707017843441" y="560" width="0.2808287792858939" height="64" fill="#c2410c"/>
-<rect x="1299.95153056363" y="560" width="0.0016646401198337352" height="64" fill="#7c3aed"/>
-<rect x="1299.9531952037498" y="560" width="0.04680479625004437" height="64" rx="12" fill="#0891b2"/>
-<text x="1365" y="602" text-anchor="end" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="24" font-weight="800" fill="#0f172a">Total: $1.86 trillion</text>
-<text x="220" y="660" text-anchor="start" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="20" font-weight="650" fill="#334155">IDs $1.81T  |  Mail $43.7B  |  Drive $483M  |  Market $2.86M  |  Browser $80.5M</text>
-<text x="80" y="848" text-anchor="start" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="20" font-weight="500" fill="#64748b">ProofOfWork.Me ProofOfWork Computer Model | generated from output/proofofwork-computer-agent-adoption-model.md</text>
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000" viewBox="0 0 1600 1000" role="img" aria-labelledby="title description">
+<title id="title">Modeled value by economic lane</title><desc id="description">All eleven lanes are visible, including smaller products · display values are rounded These illustrative stock/flow scores are not a treasury balance, market price, or canonical economic accounting.</desc>
+<style>text { font-family: Arial, Helvetica, sans-serif; } .mono { font-variant-numeric: tabular-nums; }</style>
+<rect width="1600" height="1000" fill="#f7f5ef"/>
+<text x="70" y="74" font-size="42" fill="#242820" font-weight="700" text-anchor="start">Modeled value by economic lane</text>
+<text x="70" y="112" font-size="21" fill="#666b61" font-weight="400" text-anchor="start">All eleven lanes are visible, including smaller products · display values are rounded</text>
+<text x="635" y="183" font-size="22" fill="#242820" font-weight="700" text-anchor="middle">12 months</text>
+<text x="975" y="183" font-size="22" fill="#242820" font-weight="700" text-anchor="middle">5 years</text>
+<text x="1315" y="183" font-size="22" fill="#242820" font-weight="700" text-anchor="middle">10 years</text>
+<text x="85" y="236" font-size="21" fill="#242820" font-weight="500" text-anchor="start">IDs</text>
+<rect x="465" y="205" width="310" height="42" rx="6" fill="rgb(123,139,99)"/>
+<text x="620" y="234" font-size="20" fill="#ffffff" font-weight="400" text-anchor="middle">14.13 B proofs</text>
+<rect x="805" y="205" width="310" height="42" rx="6" fill="rgb(104,122,78)"/>
+<text x="960" y="234" font-size="20" fill="#ffffff" font-weight="400" text-anchor="middle">757.94 B proofs</text>
+<rect x="1145" y="205" width="310" height="42" rx="6" fill="rgb(91,110,63)"/>
+<text x="1300" y="234" font-size="20" fill="#ffffff" font-weight="400" text-anchor="middle">12.55 T proofs</text>
+<text x="85" y="286" font-size="21" fill="#242820" font-weight="500" text-anchor="start">Mail</text>
+<rect x="465" y="255" width="310" height="42" rx="6" fill="rgb(117,133,93)"/>
+<text x="620" y="284" font-size="20" fill="#ffffff" font-weight="400" text-anchor="middle">49.49 B proofs</text>
+<rect x="805" y="255" width="310" height="42" rx="6" fill="rgb(111,127,85)"/>
+<text x="960" y="284" font-size="20" fill="#ffffff" font-weight="400" text-anchor="middle">202.92 B proofs</text>
+<rect x="1145" y="255" width="310" height="42" rx="6" fill="rgb(109,126,83)"/>
+<text x="1300" y="284" font-size="20" fill="#ffffff" font-weight="400" text-anchor="middle">301.11 B proofs</text>
+<text x="85" y="336" font-size="21" fill="#242820" font-weight="500" text-anchor="start">Files / Drive</text>
+<rect x="465" y="305" width="310" height="42" rx="6" fill="rgb(123,138,99)"/>
+<text x="620" y="334" font-size="20" fill="#ffffff" font-weight="400" text-anchor="middle">16.31 B proofs</text>
+<rect x="805" y="305" width="310" height="42" rx="6" fill="rgb(125,140,102)"/>
+<text x="960" y="334" font-size="20" fill="#ffffff" font-weight="400" text-anchor="middle">9.13 B proofs</text>
+<rect x="1145" y="305" width="310" height="42" rx="6" fill="rgb(130,145,107)"/>
+<text x="1300" y="334" font-size="20" fill="#ffffff" font-weight="400" text-anchor="middle">3.33 B proofs</text>
+<text x="85" y="386" font-size="21" fill="#242820" font-weight="500" text-anchor="start">Browser authoring</text>
+<rect x="465" y="355" width="310" height="42" rx="6" fill="rgb(131,146,108)"/>
+<text x="620" y="384" font-size="20" fill="#ffffff" font-weight="400" text-anchor="middle">2.72 B proofs</text>
+<rect x="805" y="355" width="310" height="42" rx="6" fill="rgb(134,148,111)"/>
+<text x="960" y="384" font-size="20" fill="#ffffff" font-weight="400" text-anchor="middle">1.52 B proofs</text>
+<rect x="1145" y="355" width="310" height="42" rx="6" fill="rgb(139,152,117)"/>
+<text x="1300" y="384" font-size="20" fill="#ffffff" font-weight="400" text-anchor="middle">554.91 M proofs</text>
+<text x="85" y="436" font-size="21" fill="#242820" font-weight="500" text-anchor="start">AMO</text>
+<rect x="465" y="405" width="310" height="42" rx="6" fill="rgb(136,150,113)"/>
+<text x="620" y="434" font-size="20" fill="#ffffff" font-weight="400" text-anchor="middle">1.06 B proofs</text>
+<rect x="805" y="405" width="310" height="42" rx="6" fill="rgb(139,152,117)"/>
+<text x="960" y="434" font-size="20" fill="#ffffff" font-weight="400" text-anchor="middle">591.05 M proofs</text>
+<rect x="1145" y="405" width="310" height="42" rx="6" fill="rgb(143,156,122)"/>
+<text x="1300" y="434" font-size="20" fill="#ffffff" font-weight="400" text-anchor="middle">215.54 M proofs</text>
+<text x="85" y="486" font-size="21" fill="#242820" font-weight="500" text-anchor="start">Credits</text>
+<rect x="465" y="455" width="310" height="42" rx="6" fill="rgb(143,156,121)"/>
+<text x="620" y="484" font-size="20" fill="#ffffff" font-weight="400" text-anchor="middle">246.45 M proofs</text>
+<rect x="805" y="455" width="310" height="42" rx="6" fill="rgb(146,158,124)"/>
+<text x="960" y="484" font-size="20" fill="#ffffff" font-weight="400" text-anchor="middle">137.92 M proofs</text>
+<rect x="1145" y="455" width="310" height="42" rx="6" fill="rgb(150,162,130)"/>
+<text x="1300" y="484" font-size="20" fill="#ffffff" font-weight="400" text-anchor="middle">50.30 M proofs</text>
+<text x="85" y="536" font-size="21" fill="#242820" font-weight="500" text-anchor="start">Boost</text>
+<rect x="465" y="505" width="310" height="42" rx="6" fill="rgb(131,145,107)"/>
+<text x="620" y="534" font-size="20" fill="#ffffff" font-weight="400" text-anchor="middle">3.19 B proofs</text>
+<rect x="805" y="505" width="310" height="42" rx="6" fill="rgb(133,147,111)"/>
+<text x="960" y="534" font-size="20" fill="#ffffff" font-weight="400" text-anchor="middle">1.79 B proofs</text>
+<rect x="1145" y="505" width="310" height="42" rx="6" fill="rgb(138,152,116)"/>
+<text x="1300" y="534" font-size="20" fill="#ffffff" font-weight="400" text-anchor="middle">651.75 M proofs</text>
+<text x="85" y="586" font-size="21" fill="#242820" font-weight="500" text-anchor="start">Infinity</text>
+<rect x="465" y="555" width="310" height="42" rx="6" fill="rgb(151,162,130)"/>
+<text x="620" y="584" font-size="20" fill="#ffffff" font-weight="400" text-anchor="middle">48.35 M proofs</text>
+<rect x="805" y="555" width="310" height="42" rx="6" fill="rgb(153,165,133)"/>
+<text x="960" y="584" font-size="20" fill="#242820" font-weight="400" text-anchor="middle">27.06 M proofs</text>
+<rect x="1145" y="555" width="310" height="42" rx="6" fill="rgb(158,169,138)"/>
+<text x="1300" y="584" font-size="20" fill="#242820" font-weight="400" text-anchor="middle">9.87 M proofs</text>
+<text x="85" y="636" font-size="21" fill="#242820" font-weight="500" text-anchor="start">Inception</text>
+<rect x="465" y="605" width="310" height="42" rx="6" fill="rgb(151,162,130)"/>
+<text x="620" y="634" font-size="20" fill="#ffffff" font-weight="400" text-anchor="middle">48.35 M proofs</text>
+<rect x="805" y="605" width="310" height="42" rx="6" fill="rgb(153,165,133)"/>
+<text x="960" y="634" font-size="20" fill="#242820" font-weight="400" text-anchor="middle">27.06 M proofs</text>
+<rect x="1145" y="605" width="310" height="42" rx="6" fill="rgb(158,169,138)"/>
+<text x="1300" y="634" font-size="20" fill="#242820" font-weight="400" text-anchor="middle">9.87 M proofs</text>
+<text x="85" y="686" font-size="21" fill="#242820" font-weight="500" text-anchor="start">Wallet transfers</text>
+<rect x="465" y="655" width="310" height="42" rx="6" fill="rgb(136,150,113)"/>
+<text x="620" y="684" font-size="20" fill="#ffffff" font-weight="400" text-anchor="middle">1.05 B proofs</text>
+<rect x="805" y="655" width="310" height="42" rx="6" fill="rgb(139,152,117)"/>
+<text x="960" y="684" font-size="20" fill="#ffffff" font-weight="400" text-anchor="middle">589.57 M proofs</text>
+<rect x="1145" y="655" width="310" height="42" rx="6" fill="rgb(143,156,122)"/>
+<text x="1300" y="684" font-size="20" fill="#ffffff" font-weight="400" text-anchor="middle">215.00 M proofs</text>
+<text x="85" y="736" font-size="21" fill="#242820" font-weight="500" text-anchor="start">Registry events</text>
+<rect x="465" y="705" width="310" height="42" rx="6" fill="rgb(148,160,127)"/>
+<text x="620" y="734" font-size="20" fill="#ffffff" font-weight="400" text-anchor="middle">90.68 M proofs</text>
+<rect x="805" y="705" width="310" height="42" rx="6" fill="rgb(150,162,130)"/>
+<text x="960" y="734" font-size="20" fill="#ffffff" font-weight="400" text-anchor="middle">50.75 M proofs</text>
+<rect x="1145" y="705" width="310" height="42" rx="6" fill="rgb(155,167,135)"/>
+<text x="1300" y="734" font-size="20" fill="#242820" font-weight="400" text-anchor="middle">18.51 M proofs</text>
+<text x="85" y="820" font-size="20" fill="#666b61" font-weight="400" text-anchor="start">Each cell shows its complete lane value; color intensity uses one logarithmic scale.</text>
+<text x="85" y="858" font-size="20" fill="#666b61" font-weight="400" text-anchor="start">WORK is derived. Shared interfaces and read-only surfaces add no independent summand.</text>
+<line x1="70" y1="911" x2="1530" y2="911" stroke="#d9dccf"/>
+<text x="70" y="946" font-size="18" fill="#666b61" font-weight="400" text-anchor="start">These illustrative stock/flow scores are not a treasury balance, market price, or canonical economic accounting.</text>
+<text x="70" y="975" font-size="17" fill="#666b61" font-weight="400" text-anchor="start">2026-09-05-all-products-v1 · revised 2026-09-05 · baseline 2026-05-11</text>
 </svg>

@@ -66,6 +66,15 @@ transfers.
 - Confirmed sales are canonical.
 - Pending sales are mempool-visible only until confirmation.
 
+The Boost Growth integration reports Boost observations separately from
+canonical AMO network-value accounting. A recognized confirmed `pwb1:buy5`
+record count does not by itself prove an economically valid sale; seller-price
+metrics stay unavailable until exact settlement evidence is verified. Ticket
+principal is not seller sale volume, and companion Mail/WORK values must not be
+added again. The [Boost accounting proposal](BOOST_GROWTH_ACCOUNTING_PROPOSAL.md)
+is draft and unactivated. The new forecast is a scenario only and cannot
+reprice any confirmed WORK unit or alter settlement rights.
+
 ## Current Credit AMO Model
 
 The live credit AMO writes sale-ticket events to each credit's own

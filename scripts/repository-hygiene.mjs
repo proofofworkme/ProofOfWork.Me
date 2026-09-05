@@ -91,23 +91,9 @@ const REQUIRED_PROTECTED_TRACKED_PREFIXES = new Set([
   "deploy/",
 ]);
 const REQUIRED_GENERATED_ARTIFACTS = new Set([
-  [
-    "scripts/build-general-deck.mjs",
-    "PROOFOFWORK_GENERAL_DECK.md",
-    "output/proofofwork-general-deck.pptx," +
-      "public/proofofwork-general-deck.pptx",
-  ].join("|"),
-  [
-    "scripts/generate-proofofwork-computer-model.mjs",
-    "",
-    "output/proofofwork-computer-agent-adoption-model.md," +
-      "output/proofofwork-computer-growth-model.json," +
-      "output/proofofwork-computer-model-blockspace.svg," +
-      "output/proofofwork-computer-model-compounding.svg," +
-      "output/proofofwork-computer-model-dollar-growth.svg," +
-      "output/proofofwork-computer-model-product-split.svg," +
-      "output/proofofwork-computer-model-volatility.svg",
-  ].join("|"),
+  "scripts/build-general-deck.mjs|PROOFOFWORK_GENERAL_DECK.md|output/proofofwork-general-deck.pptx,public/proofofwork-general-deck.pptx",
+  "scripts/generate-proofofwork-computer-model.mjs||output/historical/2026-05-13/proofofwork-computer-agent-adoption-model.md,output/historical/2026-05-13/proofofwork-computer-growth-model.json,output/historical/2026-05-13/proofofwork-computer-model-blockspace.svg,output/historical/2026-05-13/proofofwork-computer-model-compounding.svg,output/historical/2026-05-13/proofofwork-computer-model-dollar-growth.svg,output/historical/2026-05-13/proofofwork-computer-model-product-split.svg,output/historical/2026-05-13/proofofwork-computer-model-volatility.svg",
+  "scripts/generate-growth-forecast.mjs|src/features/growth/growthForecast.mjs|output/proofofwork-computer-agent-adoption-model.md,output/proofofwork-computer-growth-model-2026-09-05-boost-v1.json,output/proofofwork-computer-growth-model-2026-09-05-boost-v1.md,output/proofofwork-computer-growth-model.json,output/proofofwork-computer-model-blockspace.svg,output/proofofwork-computer-model-compounding.svg,output/proofofwork-computer-model-dollar-growth.svg,output/proofofwork-computer-model-product-split.svg,output/proofofwork-computer-model-volatility.svg"
 ]);
 const REQUIRED_HOOK_CONTENT = new Map([
   [

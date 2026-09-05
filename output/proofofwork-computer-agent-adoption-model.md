@@ -1,556 +1,303 @@
-# ProofOfWork.Me ProofOfWork Computer Model
-
-Generated on 2026-05-13. Operational note updated on 2026-06-13.
-
-This is the singular forward scenario model for ProofOfWork.Me. Current live
-BTC/USD, WORK floor, credit flow, and real network-value totals are read from the
-production ProofOfWork node/API and displayed in `growth.proofofwork.me` and
-`work.proofofwork.me`; do not treat the generated static USD snapshots below as
-live market data.
-
-Current production surfaces use fast cached first paint plus explicit fresh
-refresh against the first-party node/API. A refresh that touches Marketplace,
-WORK, credit summaries, or credit history must update the shared credit payload so
-spent sale tickets, confirmed credit sales, and WORK floor inputs converge across
-all app surfaces.
-
-June 13, 2026 marketplace accounting note: live Growth and WORK floor accounting
-now treats marketplace flow as seller sale volume plus marketplace mutation fees
-from listing, seal, delisting, and buy events. Seller sale volume remains a
-separate metric, and marketplace mutation fees stay out of generic Computer event
-flow to avoid double counting.
-
-All prior standalone charts, product-only markdown models, and old projection files are deprecated. This model measures:
-
-1. ProofOfWork IDs
-2. ProofOfWork Mail
-3. ProofOfWork Files / ProofOfWork Drive
-4. ProofOfWork Marketplace
-5. ProofOfWork Browser
-6. ProofOfWork Credits, Wallet, and WORK
-7. ProofOfWork Log and Growth
-8. The aggregate ProofOfWork Computer
-
-The model is success-case by design:
-
-```text
-agent adoption succeeds
-Base-layer node count grows exponentially
-BTC/USD follows the backward-facing BTC log-growth benchmark
-BTC/USD includes a one-standard-deviation volatility cone
-lower relay fees unlock exponentially more agent usage
-ProofOfWork Computer write demand grows exponentially until today's blockspace ceiling
-IDs, Mail, Drive, Marketplace, Browser, Credits, Wallet, WORK, Log, and Growth reinforce each other
-```
-
-## Visual Read
-
-These visuals are generated from this same canonical model.
-
-They are written for normal human pattern recognition: big labels, plain words, and no scientific notation.
-
-![What is compounding](proofofwork-computer-model-compounding.png)
-
-![Dollar growth in human words](proofofwork-computer-model-dollar-growth.png)
-
-![IDs Mail Drive Marketplace Browser product split](proofofwork-computer-model-product-split.png)
-
-![Blockspace ceiling](proofofwork-computer-model-blockspace.png)
-
-![ProofOfWork volatility translation](proofofwork-computer-model-volatility.png)
-
-SVG versions:
-
-- [What is compounding](proofofwork-computer-model-compounding.svg)
-- [Dollar growth in human words](proofofwork-computer-model-dollar-growth.svg)
-- [IDs Mail Drive Marketplace Browser product split](proofofwork-computer-model-product-split.svg)
-- [Blockspace ceiling](proofofwork-computer-model-blockspace.svg)
-- [ProofOfWork volatility translation](proofofwork-computer-model-volatility.svg)
-
-## Real Inputs
-
-### ProofOfWork Network Input
-
-```text
-Reachable base-layer nodes: 23,984
-Snapshot time: 2026-04-30 08:58:26 UTC
-Source: Bitnodes
-```
-
-Bitnodes describes its method as estimating the base-layer peer-to-peer network by finding reachable nodes.
-
-Sources:
-
-```text
-https://bitnodes.io/
-https://bitnodes.io/api/
-```
-
-### BTC/USD Input
-
-This section records the original generated benchmark. The live app no longer
-uses this static value for current USD displays. Production USD values come from
-`/api/v1/prices/btc-usd`, backed by the first-party node price endpoint.
-
-```text
-Current BTC/USD used: $80,879.33
-Current BTC/USD date: 2026-05-11
-10Y historical BTC/USD used: $452.73
-10Y historical date: 2016-05-11
-```
-
-Sources:
-
-```text
-https://coinmarketcap.com/currencies/proofofwork/
-https://coinmarketcap.com/historical/20160511/
-https://portfolioslab.com/tools/stock-comparison/BTC-USD/SPY
-```
-
-### Generated ProofOfWork.Me On-Chain Seed Inputs
-
-These are historical generated seed inputs from confirmed ProofOfWork.Me
-registry/mail/file data already modeled in this repo. They are preserved so the
-static forward scenario remains reproducible. They are not the current live
-Growth or WORK values.
-
-```text
-Confirmed PowIDs: 94
-Current n^2: 8,836
-Unique receive-address balance: 2,374,139 proofs
-ID value density: 268.68933906745133 proofs per n^2 unit
-```
-
-Mail:
-
-```text
-Confirmed protocol txids: 12
-Confirmed delivery edges: 15
-Paid attention flow: 10,202 proofs
-Average proofs per delivery: 680.13 proofs
-Current address-level mail edge density: 1.2308%
-```
-
-Files / ProofOfWork Drive:
-
-```text
-Confirmed file txids: 4
-Unique file hashes: 4
-Total file bytes: 37,284
-File-bearing payment flow: 2,184 proofs
-Canonical forward proofs per file: 1,000 proofs
-```
-
-Marketplace:
-
-```text
-Confirmed marketplace sales: 1
-Confirmed marketplace volume: 1,000 proofs
-Average proofs per sale: 1,000 proofs
-Canonical forward sales per ID per year: 0.2
-```
-
-The generated static model above used seller sale volume only. Live Growth and
-WORK floor values use confirmed marketplace flow:
-
-```text
-marketplace_flow_proofs =
-  seller_sale_volume_proofs
-  + marketplace_mutation_fee_proofs
-```
-
-Browser:
-
-```text
-Confirmed browser page txids: 0
-Confirmed browser page flow: 0 proofs
-Average proofs per browser page: 1,000 proofs
-Canonical forward browser pages per ID per year: 1
-```
-
-## ProofOfWork Growth Benchmark
-
-Backward-facing BTC log growth:
-
-```text
-btc_log_growth_mu = ln(current_btc_usd / historical_btc_usd) / 10
-btc_log_growth_mu = 51.85%
-equivalent_cagr = e^mu - 1 = 67.96%
-```
-
-ProofOfWork volatility input:
-
-```text
-btc_10y_annualized_volatility_sigma = 56.73%
-```
-
-Future BTC/USD paths:
-
-```text
-base_btc_usd(t) = current_btc_usd * e^(mu * t)
-low_btc_usd(t)  = current_btc_usd * e^(mu * t - sigma * sqrt(t))
-high_btc_usd(t) = current_btc_usd * e^(mu * t + sigma * sqrt(t))
-```
-
-The volatility band changes only the USD translation. It does not change the proofs or BTC valuation of the ProofOfWork Computer.
-
-## ProofOfWork Blockspace Ceiling
-
-This version adds the blockspace constraint.
-
-The success case assumes ProofOfWork Computer usage compounds exponentially as agents, PowIDs, fee collapse, Mail, Drive, Marketplace, and Browser reinforce each other. That usage cannot grow through infinite blockspace. It compounds until it hits the current theoretical ProofOfWork blockspace ceiling.
-
-Protocol-derived ceiling:
-
-```text
-Max block weight: 4,000,000 weight units
-Witness scale factor: 4
-Theoretical max virtual size per block: 1,000,000 vB
-Target blocks per day: 144
-Annual theoretical ceiling: 52,560,000,000 vB
-```
-
-Sources:
-
-```text
-https://github.com/proofofwork/bips/blob/master/bip-0141.mediawiki
-https://github.com/proofofwork/proofofwork/blob/master/src/consensus/consensus.h
-```
-
-Blockspace accounting assumptions:
-
-```text
-ID write size: 350 vB
-Mail write size: 500 vB
-Average current file payload: 9,321 bytes
-Drive write size: 9,621 vB
-Marketplace sale write size: 1,500 vB
-Browser page write size: 15,000 vB
-```
-
-Important boundary:
-
-```text
-The blockspace ceiling is protocol-derived.
-The per-product write sizes are model accounting assumptions.
-The model does not claim every block will be filled by ProofOfWork.Me.
-It asks what the ProofOfWork Computer can execute if demand compounds until today's ceiling is binding.
-```
-
-## Scenario Inputs
-
-```text
-Agent-controlled base-layer node share: 51%
-Base-layer node CAGR: 25%
-Canonical fee tier: 0.00001 proof/vB
-```
-
-Adoption curve:
-
-```text
-6 months: 10%
-12 months: 20%
-24 months: 40%
-5 years: 60%
-10 years: 80%
-25 years: 90%
-50 years: 100%
-```
-
-Fee tiers:
-
-```text
-0.01 proof/vB
-0.001 proof/vB
-0.0001 proof/vB
-0.00001 proof/vB
-```
-
-Fee-collapse multipliers:
-
-```text
-fee_drop_factor = 0.01 / fee_rate
-product_multiplier = fee_drop_factor ^ elasticity
-
-ID elasticity = 0.25
-Mail elasticity = 0.5
-Drive elasticity = 0.75
-Marketplace elasticity = 0.5
-Browser elasticity = 0.75
-```
-
-## Growth Engine
-
-| Horizon | Years | Future nodes | Agent nodes | Adoption | PowIDs | BTC/USD low | BTC/USD base | BTC/USD high |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 6 months | 0.5 | 26,815 | 13,676 | 10% | 1,368 | $70,182 | $104,818 | $156,549 |
-| 12 months | 1.0 | 29,980 | 15,290 | 20% | 3,058 | $77,030 | $135,843 | $239,559 |
-| 24 months | 2.0 | 37,475 | 19,112 | 40% | 7,645 | $102,285 | $228,159 | $508,937 |
-| 5 years | 5.0 | 73,193 | 37,329 | 60% | 22,397 | $304,036 | $1,081,027 | $3,843,691 |
-| 10 years | 10.0 | 223,368 | 113,918 | 80% | 91,134 | $2,402,862 | $14,448,934 | $86,884,598 |
-| 25 years | 25.0 | 6,348,512 | 3,237,741 | 90% | 2,913,967 | $2,022,818,537 | $34,501,122,304 | $588,449,936,873 |
-| 50 years | 50.0 | 1,680,437,118 | 857,022,930 | 100% | 857,022,930 | $266,497,250,533,000 | $14,717,325,677,700,000 | $812,765,139,869,000,000 |
-
-## Blockspace Constraint
-
-This is the canonical lowest-fee success path at 0.00001 proof/vB.
-
-```text
-raw_blockspace_demand_vbytes =
-  id_writes * id_write_vbytes
-  + mail_writes * mail_write_vbytes
-  + drive_writes * drive_write_vbytes
-  + marketplace_writes * marketplace_sale_vbytes
-  + browser_writes * browser_page_vbytes
-
-executable_blockspace_vbytes =
-  min(raw_blockspace_demand_vbytes, annual_theoretical_blockspace_ceiling)
-
-blockspace_usage_fulfillment_ratio =
-  executable_blockspace_vbytes / raw_blockspace_demand_vbytes
-```
-
-| Horizon | Raw annual demand | Executable blockspace | Ceiling used | Usage fulfilled | Capped? |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| 6 months | 19.2 billion vB | 19.2 billion vB | 36.45% | 100.00% | no |
-| 12 months | 46.9 billion vB | 46.9 billion vB | 89.15% | 100.00% | no |
-| 24 months | 144 billion vB | 52.6 billion vB | 100.00% | 36.39% | yes |
-| 5 years | 680 billion vB | 52.6 billion vB | 100.00% | 7.73% | yes |
-| 10 years | 7.64 trillion vB | 52.6 billion vB | 100.00% | 0.69% | yes |
-| 25 years | 6.65 quadrillion vB | 52.6 billion vB | 100.00% | <0.01% | yes |
-| 50 years | 572 quintillion vB | 52.6 billion vB | 100.00% | <0.01% | yes |
-
-## Product Formulas
+# ProofOfWork Computer growth model
+
+Current scenario: **2026-09-05-all-products-v1**. Revised **2026-09-05**. Historical model origin: **2026-05-11**.
+
+This report models all current product surfaces through eleven economic activity lanes and explicit shared or read-only mappings. It is an uncalibrated scenario extension of historical May inputs. It does not publish a new current-chain measurement or change canonical network value, WORK floors, balances, INCB issuance, or frozen sale-ticket terms.
+
+The [shared model source](../src/features/growth/growthForecast.mjs) drives this report, the main JSON/charts, and Growth's selected all-product forecast. Production actuals remain separate snapshot-bound API data under the [infrastructure contract](../OP_RETURN_INFRASTRUCTURE.md). The complete [May archive](historical/2026-05-13/README.md) preserves its original report, JSON, SVGs, and PNGs byte-for-byte; the [narrow Boost scenario](proofofwork-computer-growth-model-2026-09-05-boost-v1.md) remains reproducible as a separate comparison.
+
+## Read the model
+
+![Product and attribution map](proofofwork-computer-model-compounding.svg)
+
+1. Historical reachable-node count, assumed node growth, agent share, and adoption determine scenario IDs.
+2. Each economic carrier has one product owner. An interface displaying that carrier does not add its value or bytes again.
+3. One annual blockspace ceiling scales all physical writes and service flows. The inherited N² ID stock rule remains unthrottled.
+4. A derived WORK scenario floor is a diagnostic of the total, not an additional value component. Canonical live WORK revaluation is deliberately outside this forecast.
+
+Future rows are annual activity rates at their original May-origin horizons, not cumulative confirmed transaction counts or newly rebased September dates. The headline combines an illustrative identity stock with five-times annual service flow, preserving the inherited modeling convention. This is not a cash balance or an estimate of collectible revenue. Fractional transaction counts describe expected scenario rates; displayed values are rounded.
+
+## Product coverage and ownership
+
+Product roles follow the [public surface map](../README.md), [ID rules](../PROOFOFWORK_IDS.md), [AMO settlement rules](../MARKETPLACE.md), and [Mail/Files organization](../MAIL_ORGANIZATION.md). A shared or read-only product remains first-class coverage with zero incremental economic value. Its activity is carried by the listed owner.
+
+| Product | Role | Economic owner / lane | Activity and boundary |
+| --- | --- | --- | --- |
+| Home | read-only | None / No incremental lane | Landing page and apex redirect. Navigation creates no chain activity. |
+| IDs | economic | IDs / Registry events / idSats + computerEventSats | ID stock, registrations, receiver updates, and direct ownership transfers. Identity stock and registry payments are separate components; registration bytes occur once. |
+| Computer | aggregate | Underlying activity products / totalSats | Shell, Mail, Files, embedded workspaces, and NFT route alias. Aggregate of owned activity lanes; the shell and NFT alias add no second copy. |
+| Mail | economic | Mail / mailSats | Computer workspace for ordinary messages and text-only Boost originals. Files, HTML pages, and tagged bonds are allocated to their specific lane; the ordinary Mail basket excludes those carriers. |
+| Files | economic | Files / Drive / driveSats | Computer workspace for non-HTML file publication and retrieval. A published file and its Mail carrier occur once; HTML authoring belongs to Browser and repeat retrieval is read-only. |
+| Desktop | shared | Files / Drive or Browser authoring / driveSats / browserSats | Read-only access to existing Files and HTML records. Zero additional value or writes for displaying the same file. |
+| Browser | shared | Browser authoring / browserSats | HTML publication through Mail/Files; read-only rendering. Publish once in the Browser authoring basket; Mail/Drive and repeat views do not duplicate it. |
+| Boost | economic | Boost with shared Mail/Files / boostSats; original carrier in mailSats | Original posts, paid social actions, and Boost sale lifecycles. Originals add metadata only; paid-action and sale baskets are disjoint; media and WORK are not valued twice. |
+| AMO | economic | AMO / Boost / marketplaceSats; Boost sale flow in boostSats | ID, credit, WORK, POWB, INCB, and Boost markets; legacy Marketplace hostname. Each sale/mutation belongs to one asset basket, with seller price and registry fee separated. |
+| Credits | economic | Credits / tokenSats | Generic credit creation and minting; token/tokens hostname aliases. Creation and mint assumptions only; ownership transfers and markets belong to their respective baskets. |
+| Wallet | economic | Wallet transfers / AMO / walletSats; trades in marketplaceSats | Balances, standalone generic/WORK transfers, and market controls. Balance display is read-only; standalone transfer fees are incremental; trades are counted only in AMO. |
+| WORK | derived | Wallet / AMO / aggregate / workMovementWrites + workFloorSats (nonadditive) | WORK movement count and scenario total divided by capped supply. No new WORK mint demand and no separate floor capitalization or endogenous movement revaluation. |
+| Infinity | economic | Infinity / AMO / infinitySats; POWB trades in marketplaceSats | Direct bond payments, synthetic issuance, and POWB markets. Bond payment once; synthetic issuance adds no payment; sale/mutation fees occur in AMO. |
+| Inception | economic | Inception / AMO / inceptionSats; INCB trades in marketplaceSats | Direct bond payments, synthetic issuance, and INCB markets. Direct payment once; attached WORK and exact INCB issuance feedback are outside the forward-value model. |
+| Log | read-only | Underlying activity products / No incremental lane | Confirmed event discovery and transaction evidence. The event's owner counts its flow; viewing or indexing a Log row adds no payment. |
+| Growth | read-only | Aggregate / scenario diagnostics / No incremental lane | Confirmed metrics and forward scenarios. A dashboard, metric, or forecast creates no new chain value. |
+
+Mail covers plain-message traffic and original Boost text carriers; file-bearing, HTML-authoring, and bond carriers belong to their exclusive lanes. Files/Drive covers non-HTML files. Browser counts HTML publication carried by Mail/Files, while viewing an existing page creates no write. Infinity and Inception count their own tagged bond carriers. The Computer shell, Desktop, Log, Growth, and shared entry points do not duplicate those carriers.
+
+AMO separates ID, generic-credit, governed WORK, POWB, and INCB sale/cancellation baskets. Boost sale tickets are counted in Boost's own lifecycle basket. Wallet counts standalone transfers, excluding AMO settlement and attached WORK already carried by another action. WORK diagnostics and synthetic bond issuance are nonadditive. These partitions are scenario assumptions; they do not replace validation and output ownership in canonical replay.
+
+## Historical inputs and shared assumptions
+
+| Input | Value | Meaning |
+| --- | ---: | --- |
+| Historical reachable nodes | 23,984 | May model input; original source snapshot April 30, 2026 |
+| Agent-controlled node share | 51% | Assumption |
+| Annual node growth | 25% | Assumption |
+| Historical confirmed IDs | 94 | May 11 baseline, not current supply |
+| Historical Mail flow | 10,202 proofs | Origin input before the service multiple; not annualized current traffic |
+| Historical Files flow | 2,184 proofs | Origin input before the service multiple |
+| Historical AMO volume | 1,000 proofs | Origin input before the service multiple |
+| Historical Browser / Credits / Boost flow | 0 / 0 / 0 proofs | Preserved origin inputs; not a claim of no current activity |
+| ID density | 268.68933907 proofs / N² | Historical model density, not a live registry balance |
+| Mail edge density | 0.0123076923 | Inherited historical model relationship density |
+| May USD benchmark | $80,879.33 | May 11, 2026 historical input |
+| Ten-year-old USD benchmark | $452.73 | May 11, 2016 historical input |
+| Selected scenario fee | 0.00001 sat/vB | Hypothetical usage multiplier input, not an accepted relay quote |
+| Service value multiple | 5× | Scenario convention, not a newly declared economic parameter |
+| Annual capacity | 52,560,000,000 vB | Inherited theoretical whole-chain ceiling, not reserved app capacity |
+
+Historical observations and their source notes are retained in the [archived report](historical/2026-05-13/proofofwork-computer-agent-adoption-model.md). No new source survey or September calibration is asserted. New products start with zero additional value at the historical origin because no new historical baseline is invented; that zero says nothing about current usage.
+
+| Horizon from May origin | Years | Assumed adoption |
+| --- | ---: | ---: |
+| 6 months | 0.5 | 10% |
+| 12 months | 1 | 20% |
+| 24 months | 2 | 40% |
+| 5 years | 5 | 60% |
+| 10 years | 10 | 80% |
+| 25 years | 25 | 90% |
+| 50 years | 50 | 100% |
+
+## Explicit product assumptions
 
 ### IDs
 
-```text
-id_value_proofs =
-  projected_powids^2
-  * current_id_proofs_per_n2_unit
-  * id_fee_multiplier
-```
-
-ID is modeled as network stock value. It is not reduced by the annual blockspace fulfillment ratio once the ID graph exists.
+- Usage: Projected agent nodes × adoption; ID writes use the original ID fee multiplier.
+- Value: N² × 268.68933906745133 proofs density × fee multiplier; registration fees are in Registry events.
+- Fee elasticity: 0.25
+- Blockspace: 350 vB per registration; physical writes share the common cap.
+- Attribution: ID network stock is unthrottled. Registration transaction bytes are counted here once; the same registration is not a second Registry-event write.
 
 ### Mail
 
-```text
-mail_value_proofs =
-  projected_powids
-  * (projected_powids - 1)
-  * current_mail_edge_density
-  * messages_per_pair_per_year
-  * proofs_per_delivery
-  * value_multiple
-  * mail_fee_multiplier
-  * blockspace_usage_fulfillment_ratio
-```
+- Usage: 4 messages per directed pair per year × 0.012307692307692308 edge density.
+- Value: 680.1333333333333 proofs per delivery × 5 service multiple.
+- Fee elasticity: 0.5
+- Blockspace: 500 vB per ordinary message.
+- Attribution: Ordinary text messages, including text-only Boost originals; excludes file, HTML-page, and bond publications.
 
-### Files / ProofOfWork Drive
+### Files / Drive
 
-```text
-drive_value_proofs =
-  projected_powids
-  * files_per_id_per_year
-  * proofs_per_file
-  * value_multiple
-  * drive_fee_multiplier
-  * blockspace_usage_fulfillment_ratio
-```
+- Usage: 6 non-HTML files per ID per year.
+- Value: 1000 proofs per file × 5 service multiple.
+- Fee elasticity: 0.75
+- Blockspace: 9621 vB per publication, including its Mail carrier.
+- Attribution: Files and Desktop expose the same record; neither Mail nor Desktop adds its payment or bytes again. Boost media reuses these published files.
 
-### Marketplace
+### Browser authoring
 
-```text
-marketplace_value_proofs =
-  projected_powids
-  * marketplace_sales_per_id_per_year
-  * average_sale_proofs
-  * value_multiple
-  * marketplace_fee_multiplier
-  * blockspace_usage_fulfillment_ratio
-```
+- Usage: 1 HTML pages per ID per year.
+- Value: 1000 proofs per page × 5 service multiple.
+- Fee elasticity: 0.75
+- Blockspace: 15000 vB per HTML publication. Reading adds zero bytes.
+- Attribution: HTML Mail bodies and HTML Files attachments are allocated exclusively here; Mail/Drive do not add the same page again.
 
-Live Growth and WORK floor accounting additionally includes confirmed
-marketplace mutation-fee flow from listings, seals, delistings, and buys:
+### Boost
 
-```text
-live_marketplace_value_proofs =
-  (marketplace_sale_volume_proofs + marketplace_mutation_fee_proofs)
-  * value_multiple
-```
+- Usage: 4 text originals, 12 standalone paid actions, and 0.02 sales per ID per year. Originals are capped by Mail demand.
+- Value: 546 registry proofs per paid action; each sale adds 1000 seller proofs plus 3 registry fees, then × 5.
+- Fee elasticity: 0.5
+- Blockspace: 250 additional metadata vB per original; 500 vB per paid action; 1500 vB per sale lifecycle.
+- Attribution: Original transactions stay in Mail; media stays in Files; WORK attachments have no added forecast value. Boost sales are excluded from the non-Boost AMO basket.
 
-Canonical WORK adds a live/frozen movement-value layer on top of this proof-flow
-model. Live network value is the active site value and WORK floor source.
-Frozen network value is the confirmation-time audit stamp for WORK moved in
-confirmed transfers, sales, and other WORK events. Other credits remain
-proof-flow only unless a future protocol gives them a non-manipulable value
-source.
+### Infinity / POWB
 
-### Browser
+- Usage: 0.1 direct bond actions per ID per year.
+- Value: 1000 direct proofs per bond × 5 service multiple.
+- Fee elasticity: 0.5
+- Blockspace: 500 vB per tagged bond transaction, including its Mail carrier.
+- Attribution: Direct bond payment counted once; synthetic issuance adds no second payment. Bond trades belong to AMO, and attached WORK is outside this value forecast.
 
-```text
-browser_value_proofs =
-  projected_powids
-  * browser_pages_per_id_per_year
-  * average_browser_page_proofs
-  * value_multiple
-  * browser_fee_multiplier
-  * blockspace_usage_fulfillment_ratio
-```
+### Inception / INCB
 
-### ProofOfWork Computer
+- Usage: 0.1 direct bond actions per ID per year.
+- Value: 1000 direct proofs per bond × 5 service multiple.
+- Fee elasticity: 0.5
+- Blockspace: 500 vB per tagged bond transaction, including its Mail carrier.
+- Attribution: Direct bond payment counted once; synthetic issuance adds no second payment. Bond trades belong to AMO, and attached WORK is outside this value forecast.
 
-```text
-proofofwork_computer_value_proofs =
-  id_value_proofs
-  + mail_value_proofs
-  + drive_value_proofs
-  + marketplace_value_proofs
-  + browser_value_proofs
-```
+### Credits
 
-The BTC column is a proofs-denominated valuation converted into BTC as a unit of account. It is not a claim that those proofs are locked in the protocol.
+- Usage: 0.01 generic credit creations and 0.25 generic credit mints per ID per year.
+- Value: 546 proofs per creation and 1000 proofs per mint, then × 5.
+- Fee elasticity: 0.6
+- Blockspace: 700 vB per creation; 700 vB per mint.
+- Attribution: Creation/mint only. Transfers belong to Wallet; trades to AMO; no new WORK or bond issuance is assumed here.
 
-### WORK Floor
+### Wallet transfers
 
-WORK has a permanent floor tied to live confirmed ProofOfWork Computer network value:
+- Usage: 1 generic-credit and 1 WORK standalone transfers per ID per year.
+- Value: 546 registry proofs per transfer × 5 service multiple.
+- Fee elasticity: 0.6
+- Blockspace: 700 vB per standalone transfer.
+- Attribution: Market purchases and attached transfers are excluded from this standalone basket. WORK quantity revaluation is not added to the total.
 
-```text
-work_floor_proofs =
-  live_proofofwork_computer_value_proofs / 21,000,000 WORK
-```
+### AMO
 
-For price-per-credit displays, use `live_proofofwork_computer_value_proofs / 21,000,000`. The inverse, `21,000,000 / live_proofofwork_computer_value_proofs`, is the WORK-per-proof ratio. Pending mempool records are useful visibility but do not change the canonical floor until confirmed. Frozen network value is reported separately as a historical audit stamp, not as the current floor source.
+- Usage: IDs: 0.2 sales / 0.05 canceled listings per ID per year; Generic credits: 0.05 sales / 0.01 canceled listings per ID per year; WORK: 0.05 sales / 0.01 canceled listings per ID per year; POWB: 0.02 sales / 0.005 canceled listings per ID per year; INCB: 0.02 sales / 0.005 canceled listings per ID per year
+- Value: Seller-price assumptions: IDs 1000 proofs, Generic credits 1000 proofs, WORK 25000 proofs, POWB 1000 proofs, INCB 1000 proofs. Each lifecycle write adds 546 registry proofs; combined flow × 5.
+- Fee elasticity: 0.5
+- Blockspace: 500 vB per write; completed sales use 3 writes (list/seal/buy), cancellations 2 (list/delist).
+- Attribution: Separate IDs/generic-credit/WORK/POWB/INCB baskets; excludes Boost sales, Wallet standalone transfers, ticket refunds, and guessed WORK settlement quantities.
 
-Historical WORK floor announcement:
+### Registry events
 
-```text
-txid: cbb8a1b4af2ea8665129e799a85dfba31cea87ef38b9a99bcf198d827c12a58c
-subject: $work now has a permanent ProofOfWork Computer floor.
-message:
-Formula:
-confirmed network value / 21,000,000 WORK
+- Usage: ID registration writes already modeled under IDs, plus 0.1 nonmarket receiver/direct-transfer mutations per ID per year.
+- Value: 1000 registry proofs per registration and 546 per mutation, then × 5.
+- Fee elasticity: Registrations 0.25; mutations 0.25.
+- Blockspace: 350 vB per additional mutation; registration bytes remain only in IDs.
+- Attribution: Known nonmarket ID registry flow only. No generic fee is assigned to Log itself, and AMO mutations remain in AMO.
 
-Historical live floor at announcement time:
-74,499,503 proofs / 21,000,000 = 3.5476 proofs per WORK
-~$0.00277 per WORK at the BTC/USD quote used then
+### WORK diagnostic
 
-Pending mints are visible, but only confirmed ProofOfWork history moves the canonical floor.
+- Usage: Standalone WORK transfers from Wallet plus WORK sale movements from AMO, referenced once.
+- Value: Scenario total / 21000000 WORK; diagnostic only, no added capitalization or endogenous movement value.
+- Fee elasticity: Inherited from Wallet and AMO; no additional multiplier.
+- Blockspace: Zero additional writes or bytes; movements are already in Wallet/AMO.
+- Attribution: Endpoint scenario floor only. It does not simulate canonical Q16 replay, historical frozen terms, movement feedback, or settlement prices.
 
-As ProofOfWork.Me grows, the network value grows.
-As network value grows, the $work floor rises.
-```
+The 1,000-proof ID registration and 546-proof mutation rules are documented in [ProofOfWork IDs](../PROOFOFWORK_IDS.md). AMO fees, sale-ticket principal, and frozen WORK terms follow [Marketplace](../MARKETPLACE.md). The WORK 25,000-proof seller face is a protocol input; deriving a listing's exact WORK amount remains canonical replay, not a forecast operation. Bond quantities or WORK attachments create no second scenario payment lane.
 
-The tx status is intentionally not hardcoded here. The chain/API is the oracle for whether the announcement is pending or confirmed at read time.
+Boost assumptions remain explicit and uncalibrated. Original posts add metadata to existing Mail demand. Standalone paid actions exclude sale-ticket lifecycle writes. Its scenario adds only stated registry and seller flow; optional proof signal, follow-recipient payments, WORK movement, media, miner fees, and ticket principal are excluded. A separate canonical Boost contribution remains an [unactivated proposal](../BOOST_GROWTH_ACCOUNTING_PROPOSAL.md).
 
-Live operational rule:
+## Formula and capacity
 
 ```text
-work.proofofwork.me and growth.proofofwork.me must share the same
-/api/v1/work-floor payload and /api/v1/prices/btc-usd quote.
+nodes(t) = historical_nodes × (1 + node_CAGR)^t
+IDs(t) = nodes(t) × assumed_agent_share × horizon_adoption
+fee_multiplier(product) = (0.01 / scenario_fee_rate)^product_elasticity
+ID_stock = IDs² × historical_ID_density × ID_fee_multiplier
+raw_service_value = attributed_annual_proof_flow × service_value_multiple
+raw_bytes = sum(exclusive_physical_writes × assumed_vbytes) + Boost_original_metadata
+capacity_ratio = raw_bytes > 0 ? min(raw_bytes, annual_capacity) / raw_bytes : 1
+executed_writes = raw_writes × capacity_ratio
+scenario_total = ID_stock + sum(raw_service_value × capacity_ratio)
+derived_WORK_floor = scenario_total / 21000000
 ```
 
-The static formula remains canonical, but current live floor price, frozen audit
-value, network USD, and credit-reference/arbitrage displays must be read live
-from the node/API cache path and refreshed in the background when expensive
-credit/log scans are required.
+AMO sale lifecycles include list, seal, and buy; canceled lifecycles include list and delist. Sale volume is the seller price, while fees are separate registry payments. Ticket creation, ticket refunds, change, and unrelated outputs are not added. The shared model source specifies the exact arithmetic and per-asset basket rates. Its floating-point, 12-significant-digit artifact serialization is for scenarios only; canonical proof amounts, Q8 value, and Q16 WORK remain exact integer protocol data.
 
-## Canonical Product Growth
+![Demand and executable capacity](proofofwork-computer-model-blockspace.svg)
 
-This is the canonical lowest-fee success path at 0.00001 proof/vB.
+| Horizon | Raw demand (vB/year) | Executed (vB/year) | Demand fulfilled | Physical writes/year |
+| --- | ---: | ---: | ---: | ---: |
+| 6 months | 19,614,337,667 | 19,614,337,667 | 100.0000% | 5,396,491 |
+| 12 months | 47,882,710,764 | 47,882,710,764 | 100.0000% | 20,114,358 |
+| 24 months | 147,002,933,084 | 52,560,000,000 | 35.7544% | 37,498,562 |
+| 5 years | 687,865,289,145 | 52,560,000,000 | 7.6410% | 62,782,198 |
+| 10 years | 7,675,114,118,440 | 52,560,000,000 | 0.6848% | 89,680,414 |
+| 25 years | 6,648,302,456,350,000 | 52,560,000,000 | 0.0008% | 104,550,082 |
+| 50 years | 571,742,075,696,000,000,000 | 52,560,000,000 | 0.0000% | 105,118,051 |
 
-| Horizon | PowIDs | ID proofs | Mail proofs | Drive proofs | Marketplace proofs | Browser proofs | Total proofs | BTC | Base USD | Volatility USD range |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 6 months | 1,368 | 2,825,816,985 | 9,894,106,884 | 7,295,718,233 | 43,246,085 | 1,215,953,039 | 21,274,841,226 | 212.7484 | $22,299,945 ($22.3 million) | $14.9 million to $33.3 million |
-| 12 months | 3,058 | 14,129,084,927 | 49,490,545,697 | 16,313,721,914 | 96,701,186 | 2,718,953,652 | 82,749,007,376 | 827.4901 | $112,408,762 ($112 million) | $63.7 million to $198 million |
-| 24 months | 7,645 | 88,306,780,793 | 112,574,948,630 | 14,840,458,855 | 87,968,275 | 2,473,409,809 | 218,283,566,362 | 2,182.84 | $498,033,137 ($498 million) | $223 million to $1.11 billion |
-| 5 years | 22,397 | 757,943,179,259 | 205,152,935,839 | 9,230,486,445 | 54,714,613 | 1,538,414,408 | 973,919,730,564 | 9,739.20 | $10,528,338,624 ($10.5 billion) | $2.96 billion to $37.4 billion |
-| 10 years | 91,134 | 12,549,148,322,100 | 302,314,825,590 | 3,342,742,099 | 19,814,431 | 557,123,683 | 12,855,382,827,900 | 128,553.83 | $1,857,465,817,580 ($1.86 trillion) | $309 billion to $11.2 trillion |
-| 25 years | 2,913,967 | 12,829,794,126,700,000 | 355,449,644,584 | 122,917,629 | 728,606 | 20,486,272 | 12,830,149,720,400,000 | 128,301,497.20 | $4,426,545,646,780,000,000 ($4.43 quintillion) | $260 quadrillion to $75.5 quintillion |
-| 50 years | 857,022,930 | 1,109,775,975,760,000,000,000 | 357,471,143,888 | 420,309 | 2,491 | 70,052 | 1,109,775,976,120,000,000,000 | 11,097,759,761,200.00 | $163,329,344,698,000,000,000,000,000,000 ($163 octillion) | $2.96 octillion to $9.02 nonillion |
+The capacity ceiling is a hypothetical allocation of the entire inherited theoretical chain budget. It does not establish available relay policy, economic demand, app market share, or future protocol capacity. When demand exceeds capacity, new product traffic displaces some execution in every shared service lane; ID stock is still governed by the inherited N² assumption.
 
-## Aggregate Fee Sensitivity
+## Forecast by economic lane
 
-This is still one model. Fee tier is a variable inside the model, not a separate model.
+![Modeled value by lane](proofofwork-computer-model-product-split.svg)
 
-Every fee tier also runs through the same annual blockspace ceiling.
+| Lane (proofs) | 12 months | 5 years | 10 years |
+| --- | ---: | ---: | ---: |
+| IDs | 14,129,084,927 | 757,943,179,259 | 12,549,148,322,100 |
+| Mail | 49,490,545,697 | 202,917,485,008 | 301,113,518,097 |
+| Files / Drive | 16,313,721,914 | 9,129,906,366 | 3,329,459,055 |
+| Browser authoring | 2,718,953,652 | 1,521,651,061 | 554,909,842 |
+| AMO | 1,056,112,332 | 591,048,858 | 215,541,419 |
+| Credits | 246,447,668 | 137,923,408 | 50,297,377 |
+| Boost | 3,193,440,624 | 1,787,195,714 | 651,747,643 |
+| Infinity | 48,350,593 | 27,059,208 | 9,867,847 |
+| Inception | 48,350,593 | 27,059,208 | 9,867,847 |
+| Wallet transfers | 1,053,475,507 | 589,573,170 | 215,003,271 |
+| Registry events | 90,675,419 | 50,746,120 | 18,505,899 |
+| Total | 88,389,158,927 | 974,722,827,379 | 12,855,317,040,400 |
 
-| Horizon | Fee tier | PowIDs | Total proofs | BTC | Base USD | Low USD | High USD |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 6 months | 0.01 proof/vB | 1,368 | 864,620,554 | 8.6462 | $906 thousand | $607 thousand | $1.35 million |
-| 6 months | 0.001 proof/vB | 1,368 | 2,156,499,768 | 21.5650 | $2.26 million | $1.51 million | $3.38 million |
-| 6 months | 0.0001 proof/vB | 1,368 | 6,245,153,575 | 62.4515 | $6.55 million | $4.38 million | $9.78 million |
-| 6 months | 0.00001 proof/vB | 1,368 | 21,274,841,226 | 212.7484 | $22.3 million | $14.9 million | $33.3 million |
-| 12 months | 0.01 proof/vB | 3,058 | 4,187,661,111 | 41.8766 | $5.69 million | $3.23 million | $10 million |
-| 12 months | 0.001 proof/vB | 3,058 | 10,028,599,698 | 100.2860 | $13.6 million | $7.73 million | $24 million |
-| 12 months | 0.0001 proof/vB | 3,058 | 27,010,774,154 | 270.1077 | $36.7 million | $20.8 million | $64.7 million |
-| 12 months | 0.00001 proof/vB | 3,058 | 82,749,007,376 | 827.4901 | $112 million | $63.7 million | $198 million |
-| 24 months | 0.01 proof/vB | 7,645 | 25,761,977,180 | 257.6198 | $58.8 million | $26.4 million | $131 million |
-| 24 months | 0.001 proof/vB | 7,645 | 60,391,558,539 | 603.9156 | $138 million | $61.8 million | $307 million |
-| 24 months | 0.0001 proof/vB | 7,645 | 156,029,832,651 | 1,560.30 | $356 million | $160 million | $794 million |
-| 24 months | 0.00001 proof/vB | 7,645 | 218,283,566,362 | 2,182.84 | $498 million | $223 million | $1.11 billion |
-| 5 years | 0.01 proof/vB | 22,397 | 219,568,156,228 | 2,195.68 | $2.37 billion | $668 million | $8.44 billion |
-| 5 years | 0.001 proof/vB | 22,397 | 509,724,668,177 | 5,097.25 | $5.51 billion | $1.55 billion | $19.6 billion |
-| 5 years | 0.0001 proof/vB | 22,397 | 685,848,039,292 | 6,858.48 | $7.41 billion | $2.09 billion | $26.4 billion |
-| 5 years | 0.00001 proof/vB | 22,397 | 973,919,730,564 | 9,739.20 | $10.5 billion | $2.96 billion | $37.4 billion |
-| 10 years | 0.01 proof/vB | 91,134 | 2,578,561,568,830 | 25,785.62 | $373 billion | $62 billion | $2.24 trillion |
-| 10 years | 0.001 proof/vB | 91,134 | 4,307,711,540,590 | 43,077.12 | $622 billion | $104 billion | $3.74 trillion |
-| 10 years | 0.0001 proof/vB | 91,134 | 7,383,461,271,500 | 73,834.61 | $1.07 trillion | $177 billion | $6.42 trillion |
-| 10 years | 0.00001 proof/vB | 91,134 | 12,855,382,827,900 | 128,553.83 | $1.86 trillion | $309 billion | $11.2 trillion |
-| 25 years | 0.01 proof/vB | 2,913,967 | 2,281,853,012,170,000 | 22,818,530.12 | $787 quadrillion | $46.2 quadrillion | $13.4 quintillion |
-| 25 years | 0.001 proof/vB | 2,913,967 | 4,057,494,013,630,000 | 40,574,940.14 | $1.4 quintillion | $82.1 quadrillion | $23.9 quintillion |
-| 25 years | 0.0001 proof/vB | 2,913,967 | 7,215,079,846,230,000 | 72,150,798.46 | $2.49 quintillion | $146 quadrillion | $42.5 quintillion |
-| 25 years | 0.00001 proof/vB | 2,913,967 | 12,830,149,720,400,000 | 128,301,497.20 | $4.43 quintillion | $260 quadrillion | $75.5 quintillion |
-| 50 years | 0.01 proof/vB | 857,022,930 | 197,349,177,102,000,000,000 | 1,973,491,771,020.00 | $29 octillion | $526 septillion | $1.6 nonillion |
-| 50 years | 0.001 proof/vB | 857,022,930 | 350,941,977,951,000,000,000 | 3,509,419,779,510.00 | $51.6 octillion | $935 septillion | $2.85 nonillion |
-| 50 years | 0.0001 proof/vB | 857,022,930 | 624,072,893,231,000,000,000 | 6,240,728,932,310.00 | $91.8 octillion | $1.66 octillion | $5.07 nonillion |
-| 50 years | 0.00001 proof/vB | 857,022,930 | 1,109,775,976,120,000,000,000 | 11,097,759,761,200.00 | $163 octillion | $2.96 octillion | $9.02 nonillion |
+All seven horizon rows and every lane are in the [current JSON](proofofwork-computer-growth-model.json). Shared and read-only surfaces have no independent summand. WORK movement counts and the scenario floor below are diagnostic outputs and must not be added to the total.
 
-## Plain Read
+| Horizon | IDs | Total (proofs) | Derived WORK floor (proofs/WORK) | WORK movement writes/year |
+| --- | ---: | ---: | ---: | ---: |
+| 6 months | 1,368 | 23,797,193,680 | 1,133.199699 | 88,450 |
+| 12 months | 3,058 | 88,389,158,927 | 4,209.007568 | 197,779 |
+| 24 months | 7,645 | 221,062,983,778 | 10,526.808751 | 176,787 |
+| 5 years | 22,397 | 974,722,827,379 | 46,415.372732 | 110,686 |
+| 10 years | 91,134 | 12,855,317,040,400 | 612,157.954306 | 40,365 |
+| 25 years | 2,913,967 | 12,830,149,710,800,000 | 610,959,510.037000 | 1,490 |
+| 50 years | 857,022,930 | 1,109,775,976,120,000,000,000 | 52,846,475,053,200.000000 | 5 |
 
-At the canonical deep-fee success path:
+## AMO baskets
 
-```text
-6 months:
-21,274,841,226 proofs
-212.7484 BTC
-$22.3 million base USD
-$14.9 million to $33.3 million volatility range
+The following are annual scenario rates at the 12-month May-origin horizon, after the common capacity allocation. They are not current book inventory. Listings include both completed-sale and canceled-listing baskets; seal counts belong to sale lifecycles.
 
-10 years:
-12,855,382,827,900 proofs
-128,553.83 BTC
-$1.86 trillion base USD
-$309 billion to $11.2 trillion volatility range
+| Asset | Sales | Canceled listings | Registry writes | Seller flow (proofs) | Registry fees (proofs) |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| ids | 19,340.24 | 4,835.06 | 67,690.83 | 19,340,237 | 36,959,193 |
+| credits | 4,835.06 | 967.01 | 16,439.20 | 4,835,059 | 8,975,804 |
+| work | 4,835.06 | 967.01 | 16,439.20 | 120,876,482 | 8,975,804 |
+| powb | 1,934.02 | 483.51 | 6,769.08 | 1,934,024 | 3,695,919 |
+| incb | 1,934.02 | 483.51 | 6,769.08 | 1,934,024 | 3,695,919 |
 
-50 years:
-1,109,775,976,120,000,000,000 proofs
-11,097,759,761,200.00 BTC
-$163 octillion base USD
-$2.96 octillion to $9.02 nonillion volatility range
-```
+Boost marketplace activity remains its separately modeled basket. This avoids treating its sales as both AMO and Boost value.
 
-## Canonical Status
+## USD translation and fee sensitivity
 
-This markdown is the singular ProofOfWork.Me ProofOfWork Computer forward model.
-The live dashboards are the operational source for current confirmed values.
+![Illustrative dollar translation](proofofwork-computer-model-dollar-growth.svg)
 
-Deprecated:
+The inherited USD path uses `mu = ln(May_2026_USD / May_2016_USD) / 10`, then `USD_benchmark(t) = May_2026_USD × exp(mu × t)`. Scenario dollars equal native proofs divided by 100,000,000 and multiplied by that benchmark. This extrapolates historical growth; it is not a live quote or an expected future price. Growth's current-dollar UI uses the separate live first-party quote, so its live-dollar translation need not equal this static table.
 
-```text
-old standalone ID models
-old standalone Mail models
-old standalone Drive models
-old projection charts
-old graphics
-old modeling-data exports
-```
+| Horizon | Inherited USD benchmark | Scenario value (USD) |
+| --- | ---: | ---: |
+| 6 months | $104,818.38 | $24,943,833.77 |
+| 12 months | $135,843.03 | $120,070,515.00 |
+| 24 months | $228,158.79 | $504,374,622.16 |
+| 5 years | $1,081,027.35 | $10,537,020,319.80 |
+| 10 years | $14,448,934.29 | $1,857,456,311,980.00 |
+| 25 years | $34,501,122,303.60 | $4,426,545,643,450,000,000.00 |
+| 50 years | $14,717,325,677,700,000.00 | $163,329,344,698,000,000,000,000,000,000.00 |
 
-The source of truth for ProofOfWork.Me is the chain.
+![Sensitivity to the USD translation path](proofofwork-computer-model-volatility.svg)
 
-The base-layer node count is network-observed.
+The compatibility filename `volatility` now contains a translation sensitivity comparison: the same native scenario at a fixed May benchmark versus the inherited exponential benchmark. It is not a statistical confidence interval, fitted volatility estimate, or promised return. The original volatility-cone figure remains unchanged in the historical archive.
 
-The BTC price benchmark is backward-facing historical log growth with volatility.
+| Scenario fee (sat/vB) | 12m total (proofs) | 5y total (proofs) | 10y total (proofs) |
+| --- | ---: | ---: | ---: |
+| 0.01000 | 4,358,770,792 | 220,821,400,960 | 2,578,477,908,590 |
+| 0.00100 | 10,564,248,686 | 513,647,878,541 | 4,307,590,308,950 |
+| 0.00010 | 28,732,117,266 | 686,326,022,484 | 7,383,345,791,470 |
+| 0.00001 | 88,389,158,927 | 974,722,827,379 | 12,855,317,040,400 |
 
-The node growth, agent share, agent adoption curve, fee tiers, fee elasticities, and per-product blockspace usage assumptions are success-case scenario assumptions.
+## Scope limits
+
+- The May 11, 2026 baseline, node sample, adoption horizons, and historical modeled USD path are retained. New scenario assumptions are not current chain calibration.
+- All-product coverage maps every public app to its economic owner or shared/read-only role. It is not an exact canonical replay or a forecast of every possible action variant.
+- Mail means ordinary text messages, including text-only Boost originals, excluding file, HTML-page, and bond publications. Non-HTML files belong to Drive; HTML publication belongs exclusively to Browser authoring, whether carried as a Mail body or Files attachment. Reading the same record adds no transaction or value.
+- Boost originals reuse Mail transactions and existing Files media; only their additional Boost metadata consumes extra bytes. Standalone paid actions and Boost sale lifecycles are separate baskets. Optional recipient/follow signal, WORK attachments, profile/hide actions, and incomplete/cancelled Boost listings are outside the incremental Boost scenario.
+- Infinity and Inception count direct tagged-bond payments and their own transaction bytes. Synthetic POWB/INCB issuance is not another payment. Their sale and mutation flows belong only to AMO. Attached WORK and INCB issuance from it require exact replay and are not valued again here.
+- Generic credit creation/minting belongs to Credits; standalone generic and WORK transfer fees belong to Wallet; trade payments and market mutations belong to AMO. WORK is not assigned new credit creation or mint demand.
+- ID stock retains the original N-squared rule. Registration fees and nonmarket receiver/direct-transfer mutation fees belong to Registry events; registration transaction bytes are counted only in the ID-write lane.
+- The WORK diagnostic shows standalone WORK transfers plus AMO WORK sales and divides the scenario total by 21,000,000. It adds no value or writes. It omits endogenous live WORK revaluation, frozen confirmation ordering, exact Q16 quantities, and the resulting feedback on AMO/INCB; it is not the canonical live floor or a settlement quote.
+- The non-Boost AMO basket models complete list/seal/buy and list/delist lifecycles. WORK uses the current 25,000-proof face; no frozen WORK amount is guessed. Other seller prices are assumptions. Ticket principal/refunds, miner fees, open inventory, and failed attempts are excluded from scenario value.
+- Floating-point scenario counts and values are display estimates. Canonical balances, fees, issuance, sale terms, and WORK floors remain exact chain-derived arithmetic outside this model.
+
+## Reproduce and inspect
+
+Run `node scripts/generate-growth-forecast.mjs` from the repository root to regenerate the current main report, JSON, and five deterministic SVG charts, plus the narrower Boost-v1 report/JSON. Run `node scripts/generate-proofofwork-computer-model.mjs` to reproduce the seven deterministic May outputs in the archive. `SHA256SUMS` preserves the original bytes of all twelve archived artifacts, including the five original PNGs.
+
+SVG is the canonical chart format linked above. Run `node scripts/render-growth-charts.mjs` with the installed Playwright/Chrome runtime to refresh root PNG companions for convenient sharing. PNGs are renderer-dependent companions; they do not replace the deterministic SVG/source checks. All reported numbers come from the shared module, and this generator rejects missing lanes or a lane/total mismatch.
+
+Source authority remains explicit: [product roles](../README.md), [IDs and fees](../PROOFOFWORK_IDS.md), [sale-ticket and WORK rules](../MARKETPLACE.md), [Mail/Files sharing](../MAIL_ORGANIZATION.md), [snapshot/API behavior](../OP_RETURN_INFRASTRUCTURE.md), and the [draft Boost accounting design](../BOOST_GROWTH_ACCOUNTING_PROPOSAL.md). None of these static artifacts asserts a production deployment or replaces confirmed-chain verification.

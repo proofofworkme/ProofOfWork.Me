@@ -58,11 +58,15 @@
       "ONCHAIN_APP.md",
       "UNWRITER_GITHUB_RESEARCH.md",
       "chained-mint-templates/README.md",
-      "chained-mint-templates/TX_REVIEW.md"
+      "chained-mint-templates/TX_REVIEW.md",
+      "BOOST_GROWTH_ACCOUNTING_PROPOSAL.md"
     ],
     "presentation-and-generated-notes": [
       "PROOFOFWORK_GENERAL_DECK.md",
-      "output/proofofwork-computer-agent-adoption-model.md"
+      "output/proofofwork-computer-agent-adoption-model.md",
+      "output/proofofwork-computer-growth-model-2026-09-05-boost-v1.md",
+      "output/historical/2026-05-13/README.md",
+      "output/historical/2026-05-13/proofofwork-computer-agent-adoption-model.md"
     ],
     "support-notes": [
       "test-api/README.md"
@@ -132,13 +136,30 @@
     {
       "generator": "scripts/generate-proofofwork-computer-model.mjs",
       "outputs": [
+        "output/historical/2026-05-13/proofofwork-computer-agent-adoption-model.md",
+        "output/historical/2026-05-13/proofofwork-computer-growth-model.json",
+        "output/historical/2026-05-13/proofofwork-computer-model-blockspace.svg",
+        "output/historical/2026-05-13/proofofwork-computer-model-compounding.svg",
+        "output/historical/2026-05-13/proofofwork-computer-model-dollar-growth.svg",
+        "output/historical/2026-05-13/proofofwork-computer-model-product-split.svg",
+        "output/historical/2026-05-13/proofofwork-computer-model-volatility.svg"
+      ]
+    },
+    {
+      "generator": "scripts/generate-growth-forecast.mjs",
+      "inputs": [
+        "src/features/growth/growthForecast.mjs"
+      ],
+      "outputs": [
         "output/proofofwork-computer-agent-adoption-model.md",
         "output/proofofwork-computer-growth-model.json",
         "output/proofofwork-computer-model-blockspace.svg",
         "output/proofofwork-computer-model-compounding.svg",
         "output/proofofwork-computer-model-dollar-growth.svg",
         "output/proofofwork-computer-model-product-split.svg",
-        "output/proofofwork-computer-model-volatility.svg"
+        "output/proofofwork-computer-model-volatility.svg",
+        "output/proofofwork-computer-growth-model-2026-09-05-boost-v1.json",
+        "output/proofofwork-computer-growth-model-2026-09-05-boost-v1.md"
       ]
     }
   ]
