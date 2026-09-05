@@ -16945,6 +16945,7 @@ function tokenHistoryCanonicalMarketEventsSql(
     amoV5RelicPredicateSql = "false",
   } = {},
 ) {
+  const historicalSealProjection = safeKind === "market-seals";
   const listingKinds =
     "ARRAY['token-listings','token-listing','token-listing-sealed']::text[]";
   const listingCreationKinds =
@@ -16968,6 +16969,32 @@ function tokenHistoryCanonicalMarketEventsSql(
     NULLIF(cl_event.payload->'saleAuthorization'->>'version', ''),
     ''
   ))`;
+  // A seal-history row is an immutable event, while listing views project the
+  // current lifecycle seal. Keep reseals distinct by binding history to e.txid.
+  const targetSealTxid = historicalSealProjection
+    ? "lower(e.txid)"
+    : "lower(cl_event.seal_txid)";
+  const workSealAuthorizationVersions = [
+    ...(historicalSealProjection ? ["pwt-sale-v1", "pwt-sale-v2"] : []),
+    WORK_MARKET_V2_AUTH_VERSION,
+    WORK_MARKET_V4_AUTH_VERSION,
+    WORK_AMO_V5_AUTH_VERSION,
+    WORK_AMO_V6_AUTH_VERSION,
+    WORK_AMO_V8_AUTH_VERSION,
+  ];
+  const workSealAuthorizationVersionSql = workSealAuthorizationVersions
+    .map((version) => `'${version}'`)
+    .join(",\n          ");
+  const workSealAuthorizationPredicate = `(
+        ${targetSaleAuthorizationVersion} IN (
+          ${workSealAuthorizationVersionSql}
+        )
+        AND lower(COALESCE(
+          canonical_seal_event_row.payload
+            ->'saleAuthorization'->>'version',
+          ''
+        )) = ${targetSaleAuthorizationVersion}
+      )`;
   const canonicalSaleKey = `CASE
     WHEN e.status = 'confirmed'
       AND e.block_height >= ${WORK_AMO_V5_ACTIVATION_HEIGHT}
@@ -17032,6 +17059,26 @@ function tokenHistoryCanonicalMarketEventsSql(
     WHEN e.kind = 'token-sale' THEN 2
     ELSE 3
   END`;
+  const historicalSealEvidencePredicate = historicalSealProjection
+    ? `(
+        lower(COALESCE(txid, '')) ~ '^[0-9a-f]{64}$'
+        AND (
+          status = 'pending'
+          OR (
+            status = 'confirmed'
+            AND seal_event_status = 'confirmed'
+            AND lower(seal_event_txid) = lower(txid)
+            AND seal_event_match_count = 1
+            AND lower(COALESCE(seal_event_block_hash, '')) ~
+              '^[0-9a-f]{64}$'
+            AND seal_event_block_height >= 1
+            AND seal_event_block_index >= 0
+            AND seal_event_protocol_vout >= 0
+            AND seal_event_record_ordinal >= 0
+          )
+        )
+      )`
+    : "true";
 
   return `
     WITH ranked_market_events AS (
@@ -17125,7 +17172,7 @@ function tokenHistoryCanonicalMarketEventsSql(
        ))
       LEFT JOIN proof_indexer.transactions seal_transaction
         ON seal_transaction.network = cl_event.network
-       AND seal_transaction.txid = cl_event.seal_txid
+       AND seal_transaction.txid = ${targetSealTxid}
       LEFT JOIN LATERAL (
         SELECT
           canonical_seal_event_row.payload AS seal_event_payload,
@@ -17152,7 +17199,7 @@ function tokenHistoryCanonicalMarketEventsSql(
          AND canonical_seal_block.height = canonical_seal_tx.block_height
          AND canonical_seal_block.canonical = true
         WHERE canonical_seal_event_row.network = e.network
-          AND canonical_seal_event_row.txid = lower(cl_event.seal_txid)
+          AND canonical_seal_event_row.txid = ${targetSealTxid}
           AND canonical_seal_event_row.valid = true
           AND canonical_seal_event_row.status = 'confirmed'
           AND canonical_seal_event_row.protocol = 'pwt1'
@@ -17170,20 +17217,7 @@ function tokenHistoryCanonicalMarketEventsSql(
           )) = ${targetTokenId}
           AND (
             ${targetTokenId} <> '${WORK_TOKEN_ID}'
-            OR (
-              ${targetSaleAuthorizationVersion} IN (
-                '${WORK_MARKET_V2_AUTH_VERSION}',
-                '${WORK_MARKET_V4_AUTH_VERSION}',
-                '${WORK_AMO_V5_AUTH_VERSION}',
-                '${WORK_AMO_V6_AUTH_VERSION}',
-                '${WORK_AMO_V8_AUTH_VERSION}'
-              )
-              AND lower(COALESCE(
-                canonical_seal_event_row.payload
-                  ->'saleAuthorization'->>'version',
-                ''
-              )) = ${targetSaleAuthorizationVersion}
-            )
+            OR ${workSealAuthorizationPredicate}
           )
         ORDER BY
           canonical_seal_event_row.block_height DESC,
@@ -17205,6 +17239,7 @@ function tokenHistoryCanonicalMarketEventsSql(
       SELECT *
       FROM ranked_market_events
       WHERE canonical_history_rank = 1
+        AND ${historicalSealEvidencePredicate}
     )
   `;
 }
@@ -22334,7 +22369,9 @@ export async function proofIndexTokenMarketHistoryOverlayPayload(
     .filter((row) => row.kind)
     .map((row) =>
       tokenHistoryItemFromMarketEventPayload(
-        tokenMarketEventRowPayload(row, network),
+        tokenMarketEventRowPayload(row, network, {
+          historicalSealProjection: safeKind === "market-seals",
+        }),
         safeKind,
         row,
         amoV5RelicEvidence,
@@ -37180,6 +37217,7 @@ function tokenMarketListingSealPatch(
   listingPayload,
   canonicalSealPayload = {},
   canonicalSealStatus = "",
+  { historicalSealProjection = false } = {},
 ) {
   const kind = normalizedLowerText(payload?.kind);
   const payloadAuthorization = objectRecord(payload?.saleAuthorization);
@@ -37196,9 +37234,6 @@ function tokenMarketListingSealPatch(
         payloadAuthorization.version ?? listingAuthorization.version,
       ),
     );
-  const sealSource = governedWorkMarket
-    ? canonicalSealPayload
-    : listingPayload;
   const canonicalSealEventConfirmed =
     normalizedLowerText(canonicalSealStatus) === "confirmed";
   const canonicalSealEventMatchCount =
@@ -37208,6 +37243,28 @@ function tokenMarketListingSealPatch(
   const canonicalSealEventSingleton =
     Number.isSafeInteger(canonicalSealEventMatchCount) &&
     canonicalSealEventMatchCount === 1;
+  const historicalSealTxid = normalizedLowerText(payload?.txid);
+  const historicalSealEventExact =
+    historicalSealProjection &&
+    validTxid(historicalSealTxid) &&
+    normalizedLowerText(canonicalSealPayload?.sealTxid) ===
+      historicalSealTxid;
+  const historicalSealConfirmed =
+    historicalSealProjection && payload?.confirmed === true;
+  const historicalPendingSealPayload = historicalSealProjection
+    ? {
+        ...payload,
+        sealConfirmed: false,
+        sealTxid: historicalSealTxid,
+      }
+    : {};
+  const sealSource = historicalSealProjection
+    ? historicalSealConfirmed && historicalSealEventExact
+      ? canonicalSealPayload
+      : historicalPendingSealPayload
+    : governedWorkMarket
+      ? canonicalSealPayload
+      : listingPayload;
   const exactPositionInteger = (value, minimum) => {
     if (value === undefined || value === null || value === "") {
       return null;
@@ -37223,10 +37280,11 @@ function tokenMarketListingSealPatch(
     canonicalSealPayload?.sealTransactionBlockHeight,
     1,
   );
-  const sealTransactionConfirmed =
-    canonicalSealEventConfirmed ||
-    listingPayload?.sealConfirmed === true ||
-    payload?.sealConfirmed === true;
+  const sealTransactionConfirmed = historicalSealProjection
+    ? historicalSealConfirmed
+    : canonicalSealEventConfirmed ||
+      listingPayload?.sealConfirmed === true ||
+      payload?.sealConfirmed === true;
   const unknownConfirmedSealHeight =
     sealTransactionConfirmed &&
     sealEventBlockHeight === null &&
@@ -37246,8 +37304,9 @@ function tokenMarketListingSealPatch(
             height >= WORK_AMO_V5_ACTIVATION_HEIGHT,
         )
     );
-  const canonicalSealEventRequired =
-    governedWorkMarket || postAmoV5Seal;
+  const canonicalSealEventRequired = historicalSealProjection
+    ? historicalSealConfirmed
+    : governedWorkMarket || postAmoV5Seal;
   const sealIdentitySource = canonicalSealEventRequired
     ? canonicalSealPayload
     : sealSource;
@@ -37267,11 +37326,13 @@ function tokenMarketListingSealPatch(
       kind,
     ) ||
     !validTxid(sealIdentitySource?.sealTxid) ||
+    (historicalSealConfirmed && !historicalSealEventExact) ||
     (canonicalSealEventRequired && !canonicalSealEventConfirmed) ||
     (canonicalSealEventRequired && !canonicalSealEventSingleton) ||
-    (postAmoV5Seal && !canonicalSealPositionComplete)
+    ((historicalSealConfirmed || postAmoV5Seal) &&
+      !canonicalSealPositionComplete)
   ) {
-    return {};
+    return historicalSealProjection ? null : {};
   }
 
   const saleAuthorization = objectRecord(sealSource.saleAuthorization);
@@ -37325,9 +37386,12 @@ function tokenMarketListingSealPatch(
   };
 }
 
-function tokenMarketEventRowPayload(row, network) {
+function tokenMarketEventRowPayload(row, network, options = {}) {
   const payload = eventRowPayload(row, network);
   const listingPayload = objectRecord(row?.listing_payload);
+  const historicalSealProjection =
+    options?.historicalSealProjection === true &&
+    normalizedLowerText(payload?.kind) === "token-listing-sealed";
   const withoutSealPosition = (value) => {
     const {
       sealAt: ignoredSealAt,
@@ -37409,18 +37473,24 @@ function tokenMarketEventRowPayload(row, network) {
       ? { sealTxid: normalizedLowerText(row.seal_event_txid) }
       : {}),
   };
-  const projectedListingPayload = withoutSealPosition(
-    tokenMarketCanonicalListingProjectionPayload(
-      payload,
-      listingPayload,
-    ),
-  );
+  const projectedListingPayload = historicalSealProjection
+    ? {}
+    : withoutSealPosition(
+        tokenMarketCanonicalListingProjectionPayload(
+          payload,
+          listingPayload,
+        ),
+      );
   const sealPatch = tokenMarketListingSealPatch(
     payload,
     listingPayload,
     canonicalSealPayload,
     row?.seal_event_status,
+    { historicalSealProjection },
   );
+  if (historicalSealProjection && sealPatch === null) {
+    return null;
+  }
   const merged = {
     ...projectedListingPayload,
     ...payloadWithoutSealPosition,

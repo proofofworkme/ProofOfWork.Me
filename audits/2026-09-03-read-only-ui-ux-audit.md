@@ -3,11 +3,15 @@
 Date: 2026-09-03
 Mode: original read-only UI/UX audit with a separately approved local
 implementation follow-up
-Status: original audit complete. The Proof Instrument candidate and subsequent
-AMO availability hardening are implemented on the dedicated UI branch. The
-candidate is approved for commit, push, merge, and production deployment;
-integrated pre-production QA is complete and the UI release remains in
-progress. Exhaustive physical-device verification remains pending.
+Status: original audit complete. Pull request 51 merged the Proof Instrument
+candidate at exact main commit
+`ca8de7ef58b741840612ae3d457b36b8c43f6639`, and its matching API release is
+production-verified. Static publication remains gated by preservation and
+classification of the retained September 3 rollback snapshot. The subsequent
+immutable-seal-history and exact invalid-asset-state candidate has completed
+local controlled QA and is being prepared for its isolated pull request; it is
+not yet merged or deployed. Exhaustive physical-device verification remains
+pending.
 
 ## Scope And Approval
 
@@ -1008,3 +1012,46 @@ the UI merge and production static release remain pending.
 - Protocol rules, math, precision, fee splits, signing, canonical IDs, and
   marketplace settlement behavior changed: none.
 - Production UI changes applied: none at this checkpoint.
+
+### 2026-09-04 — Production merge and exact asset-state follow-up
+
+Status at this documentation checkpoint: pull request 51 merged the approved
+Proof Instrument UI at exact main commit
+`ca8de7ef58b741840612ae3d457b36b8c43f6639`. The matching API release passed
+service readiness and production marketplace gates. Static publication remains
+separately gated by preservation and classification of the existing September
+3 rollback snapshot; no rollback evidence has been deleted or overwritten.
+The asset-route and immutable seal-history changes described in the bullets
+below are a separate local follow-up candidate: they are not part of
+`ca8de7ef58b741840612ae3d457b36b8c43f6639`, have completed local controlled
+QA, and are not yet merged or deployed.
+
+- Traced the newly supplied AMO zero screenshot to a non-canonical `asset`
+  query whose ID differs from canonical WORK by one character. A verified
+  global AMO summary and an unavailable requested asset are now represented as
+  separate states instead of falling through to an unscoped market with
+  misleading zeroes or global history.
+- Added an asset-level Unavailable panel that retains and displays the exact
+  requested ID, withholds scoped stats, sale tickets, and activity, and clears
+  the query only after the user selects View all credits. The standalone AMO
+  status line also reports the failed asset scope precisely.
+- Kept canonical ID behavior exact: no fuzzy matching, alias, or silent WORK
+  substitution was introduced. Hex ID comparison now accepts only a
+  representation-only letter-case difference; canonical uppercase routes are
+  covered on both standalone and Computer AMO.
+- Corrected the additive Seals activity projection so every historical reseal
+  exposes its own canonical transaction, position, and signed authorization
+  rather than the current listing lifecycle's latest seal. The change is
+  opt-in to `market-seals`; Listings, Sales, compatibility history, active-book
+  behavior, and marketplace settlement are unchanged. Pending seals remain
+  visible from their own raw best-effort event.
+- Added regression coverage for the screenshot route, deliberate recovery,
+  mobile overflow, uppercase canonical IDs, legacy confirmed reseals, pending
+  seals, and unchanged lifecycle SQL. Local index/recovery checks pass 502/502;
+  static UI contract, TypeScript, and serial AMO geometry checks pass. The
+  complete controlled two-worker browser suite passes 37/37 in 22.5 minutes;
+  its aggregate matrix budgets were adjusted without removing or relaxing any
+  assertion. The production build also passes against the settled tree;
+  release identifiers are appended after deployment.
+- Data rebuild required: no. Protocol rules, math, fee splits, wallet signing,
+  canonical ID rules, and settlement behavior changed: none.

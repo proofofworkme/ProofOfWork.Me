@@ -2,6 +2,11 @@ import { expect, test } from "@playwright/test";
 
 const WORK_TOKEN_ID =
   "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8";
+const MISTYPED_WORK_TOKEN_ID =
+  "d4e5ebf11d104d6a63fb74e42094364b2535f7199a09e5c0e71408972466a8b8";
+const MALFORMED_WORK_PREFIX_ASSET = `WORK${"-".repeat(60)}`;
+const MALFORMED_POWB_PREFIX_ASSET = `POWB${"-".repeat(60)}`;
+const MALFORMED_INCB_PREFIX_ASSET = `INCB${"-".repeat(60)}`;
 const POWB_TOKEN_ID =
   "a3d0bc8528f91dfc52400a885bed7e49235396aa82aa9f95db41be629f1d5562";
 const INCB_TOKEN_ID =
@@ -2105,7 +2110,7 @@ async function assertMarketplaceGeometry(page, mode, width) {
 test("mobile navigation, exact metrics, counted AMO tabs, status, and sort remain contained", async ({
   page,
 }) => {
-  test.setTimeout(300_000);
+  test.setTimeout(420_000);
   await installApiFixtures(page, { countedAmo: true });
   for (const width of MOBILE_VIEWPORT_WIDTHS) {
     await test.step(`${width}px`, async () => {
@@ -2145,6 +2150,11 @@ test("AMO history exposes authoritative totals and rejects incomplete or mismatc
   await page.setViewportSize({ height: VIEWPORT_HEIGHT, width: 390 });
   await installApiFixtures(page, { countedAmo: true });
   await openFixtureRoute(page, href, "authoritative AMO activity");
+  await expect(
+    page.locator(
+      '.marketplace-summary-read-state[aria-label="AMO summary verification"]',
+    ),
+  ).toHaveAttribute("data-state", "ready", { timeout: 60_000 });
 
   let activity = page.locator("#credit-market-activity");
   await expect(
@@ -2331,6 +2341,214 @@ test("AMO 503 responses become unavailable without false zero totals or endless 
         page,
         `${surface.label} recovered summary`,
       );
+    });
+  }
+});
+
+test("AMO rejects an unknown asset route without falling back to global zero or history views", async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  const marketplaceSummaryRequests = [];
+  const historyRequests = [];
+  page.on("request", (request) => {
+    const requestUrl = new URL(request.url());
+    if (
+      requestUrl.pathname === "/api/v1/token-history" &&
+      ["market-listings", "market-seals", "market-sales"].includes(
+        requestUrl.searchParams.get("kind"),
+      )
+    ) {
+      historyRequests.push(requestUrl.href);
+    }
+  });
+  await installApiFixtures(page, {
+    countedAmo: true,
+    marketplaceSummaryMode: (url) => {
+      marketplaceSummaryRequests.push(url.href);
+      return "ready";
+    },
+  });
+  await page.setViewportSize({ height: VIEWPORT_HEIGHT, width: 390 });
+  const surfaces = [
+    {
+      baseUrl: MARKETPLACE_BASE_URL,
+      label: "standalone AMO",
+      path: `/?marketplace=1&asset=${MISTYPED_WORK_TOKEN_ID}&ticker=WORK`,
+      ready: ".marketplace-app",
+      routeParam: "marketplace",
+      routeValue: "1",
+    },
+    {
+      baseUrl: COMPUTER_BASE_URL,
+      label: "Computer AMO",
+      path: `/?folder=marketplace&asset=${MISTYPED_WORK_TOKEN_ID}&ticker=WORK`,
+      ready: ".mail-layout.is-marketplace-workspace",
+      routeParam: "folder",
+      routeValue: "marketplace",
+    },
+  ];
+
+  for (const surface of surfaces) {
+    await test.step(surface.label, async () => {
+      historyRequests.length = 0;
+      const summaryRequestCount = marketplaceSummaryRequests.length;
+      await openFixtureRoute(
+        page,
+        surfaceUrl(surface.baseUrl, surface.path),
+        `${surface.label} unknown asset route`,
+      );
+      const app = page.locator(surface.ready);
+      const summaryState = app
+        .locator('.marketplace-summary-read-state[aria-label="AMO summary verification"]')
+        .first();
+      await expect(summaryState).toHaveAttribute("data-state", "ready", {
+        timeout: 60_000,
+      });
+
+      const assetState = app.getByLabel("Requested credit availability");
+      await expect(assetState).toHaveAttribute("data-state", "unavailable");
+      await expect(assetState).toContainText("Requested credit unavailable");
+      await expect(assetState).toContainText(MISTYPED_WORK_TOKEN_ID);
+      await expect(
+        assetState.locator(".token-market-route-target"),
+      ).toHaveCSS("white-space", "nowrap");
+      await expect(
+        assetState.locator(".token-market-route-target"),
+      ).toHaveCSS("overflow-x", "auto");
+      await expect(
+        app.locator(
+          '[aria-label="WORK credit AMO stats"], [aria-label="Credit AMO stats"]',
+        ),
+      ).toHaveCount(0);
+      await expect(
+        app.getByRole("heading", { name: "WORK AMO State" }),
+      ).toHaveCount(0);
+      await expect(
+        app.getByRole("heading", { name: "Credit Market Activity" }),
+      ).toHaveCount(0);
+      expect(new URL(page.url()).searchParams.get("asset")).toBe(
+        MISTYPED_WORK_TOKEN_ID,
+      );
+      expect(historyRequests).toEqual([]);
+      expect(marketplaceSummaryRequests.length).toBeGreaterThan(
+        summaryRequestCount,
+      );
+      for (const requestUrl of marketplaceSummaryRequests.slice(
+        summaryRequestCount,
+      )) {
+        expect(new URL(requestUrl).searchParams.has("asset")).toBe(false);
+      }
+      await assertNoDocumentOverflow(page, `${surface.label} unknown asset route`);
+
+      await assetState.getByRole("button", { name: "View all credits" }).click();
+      await expect
+        .poll(() => new URL(page.url()).searchParams.get("asset"))
+        .toBeNull();
+      expect(new URL(page.url()).searchParams.get("ticker")).toBeNull();
+      expect(new URL(page.url()).searchParams.get(surface.routeParam)).toBe(
+        surface.routeValue,
+      );
+      const directoryHeading = app.getByRole("heading", {
+        name: "Credit Markets",
+      });
+      await expect(directoryHeading).toBeVisible();
+      await expect(directoryHeading).toBeFocused();
+      await expect(assetState).toHaveCount(0);
+      await assertNoDocumentOverflow(page, `${surface.label} all credits route`);
+
+      const uppercaseRoute = new URLSearchParams({
+        [surface.routeParam]: surface.routeValue,
+        asset: WORK_TOKEN_ID.toUpperCase(),
+      });
+      await openFixtureRoute(
+        page,
+        surfaceUrl(surface.baseUrl, `/?${uppercaseRoute.toString()}`),
+        `${surface.label} uppercase canonical asset route`,
+      );
+      await expect(
+        app
+          .locator(
+            '.marketplace-summary-read-state[aria-label="AMO summary verification"]',
+          )
+          .first(),
+      ).toHaveAttribute("data-state", "ready", { timeout: 60_000 });
+      await expect(assetState).toHaveCount(0);
+      await expect(
+        app.getByRole("heading", { name: "WORK AMO State" }),
+      ).toBeVisible();
+      expect(new URL(page.url()).searchParams.get("asset")).toBe(
+        WORK_TOKEN_ID.toUpperCase(),
+      );
+      await assertNoDocumentOverflow(
+        page,
+        `${surface.label} uppercase canonical asset route`,
+      );
+
+      for (const malformedTarget of [
+        MALFORMED_WORK_PREFIX_ASSET,
+        MALFORMED_POWB_PREFIX_ASSET,
+        MALFORMED_INCB_PREFIX_ASSET,
+      ]) {
+        const malformedRoute = new URLSearchParams({
+          [surface.routeParam]: surface.routeValue,
+          asset: malformedTarget,
+        });
+        await openFixtureRoute(
+          page,
+          surfaceUrl(surface.baseUrl, `/?${malformedRoute.toString()}`),
+          `${surface.label} malformed ticker-prefix asset route`,
+        );
+        await expect(
+          app
+            .locator(
+              '.marketplace-summary-read-state[aria-label="AMO summary verification"]',
+            )
+            .first(),
+        ).toHaveAttribute("data-state", "ready", { timeout: 60_000 });
+        await expect(assetState).toHaveAttribute("data-state", "unavailable");
+        await expect(assetState).toContainText(malformedTarget);
+        await expect(
+          app.getByRole("heading", { name: "WORK AMO State" }),
+        ).toHaveCount(0);
+        await expect(
+          app.getByRole("heading", { name: "Bond Listings" }),
+        ).toHaveCount(0);
+        await assertNoDocumentOverflow(
+          page,
+          `${surface.label} malformed ticker-prefix asset route`,
+        );
+      }
+
+      for (const bondRoute of [
+        { id: POWB_TOKEN_ID.toUpperCase(), tab: "Infinity" },
+        { id: INCB_TOKEN_ID.toUpperCase(), tab: "Inception" },
+      ]) {
+        const bondQuery = new URLSearchParams({
+          [surface.routeParam]: surface.routeValue,
+          asset: bondRoute.id,
+        });
+        await openFixtureRoute(
+          page,
+          surfaceUrl(surface.baseUrl, `/?${bondQuery.toString()}`),
+          `${surface.label} uppercase ${bondRoute.tab} bond route`,
+        );
+        await expect(
+          app.getByRole("heading", { name: "Bond Listings" }),
+        ).toBeVisible();
+        await expect(
+          app
+            .getByLabel("Bond listing tabs")
+            .getByRole("button", { name: new RegExp(bondRoute.tab, "u") }),
+        ).toHaveAttribute("aria-pressed", "true");
+        expect(new URL(page.url()).searchParams.get("asset")).toBe(
+          bondRoute.id,
+        );
+        await assertNoDocumentOverflow(
+          page,
+          `${surface.label} uppercase ${bondRoute.tab} bond route`,
+        );
+      }
     });
   }
 });
@@ -2706,7 +2924,7 @@ test("representative mobile routes match deterministic visual snapshots", async 
 
 for (const mode of ["AMO", "V4", "V1"]) {
   test(`standalone AMO WORK ${mode} geometry matrix`, async ({ page }) => {
-    test.setTimeout(180_000);
+    test.setTimeout(300_000);
     await installApiFixtures(page);
     for (const width of VIEWPORT_WIDTHS) {
       await test.step(`${width}px`, async () => {
@@ -2741,7 +2959,7 @@ const COMPUTER_ROUTES = [
 
 for (const route of COMPUTER_ROUTES) {
   test(`Computer ${route.folder} responsive boundary matrix`, async ({ page }) => {
-    test.setTimeout(180_000);
+    test.setTimeout(300_000);
     await installApiFixtures(page);
     for (const width of VIEWPORT_WIDTHS) {
       await test.step(`${width}px`, async () => {

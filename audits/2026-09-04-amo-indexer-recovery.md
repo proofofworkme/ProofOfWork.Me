@@ -361,3 +361,47 @@ send-preparation fixture currently reports zero confirmed UTXOs for
 - Data rebuild required or performed: no.
 - Protocol rules, math, fees, signing, canonical IDs, and settlement behavior
   changed: none.
+
+### 2026-09-04 — Immutable seal-history and asset-route hardening candidate
+
+- A post-merge read-only production audit found 13 identity collisions in the
+  additive Seals history. The database rows were distinct canonical seal
+  events; the response projection was relabeling each earlier legacy reseal
+  with the listing table's latest seal transaction and authorization.
+- Scoped only `market-seals` history to its immutable event transaction. Its
+  canonical evidence lookup now admits the complete recognized
+  historical/current WORK replay set (`pwt-sale-v1`, `pwt-sale-v2`,
+  `pwt-sale-v3`, `pwt-sale-v4`, `pwt-sale-v5`, `pwt-sale-v6`, and
+  `pwt-sale-v8`) while retaining exact event-version equality. V7 was never
+  activated. Current Listings, the compatibility `market-log`, active-book
+  state, authorization validation, and settlement projections keep their
+  existing lifecycle rules.
+- Made historical seal serialization explicit at its sole history caller.
+  Confirmed rows enter history totals and pagination only when a singleton
+  canonical seal event has the exact same transaction identity and complete
+  position; the serializer independently rejects any invalid confirmed
+  projection. Pending rows retain their own best-effort raw event. Neither path
+  can borrow a later listing's sale authorization. No rows are deleted or
+  deduplicated.
+- Confirmed that the supplied zero-state screenshot requested
+  `d4e5ebf11d104d6a63fb74e42094364b2535f7199a09e5c0e71408972466a8b8`,
+  while canonical WORK is
+  `d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8`.
+  The client now preserves an unmatched identifier, marks only that requested
+  asset Unavailable, withholds scoped totals and activity, and offers an
+  explicit return to all credits. It does not alias or autocorrect canonical
+  IDs.
+  Hexadecimal asset matching is representation-tolerant for letter case, so an
+  uppercase rendering of the exact canonical ID remains valid.
+- Regression coverage now includes a pre-V5 legacy WORK reseal with different
+  historical/current authorizations and positions, a governed pending seal, the
+  screenshot's exact mistyped route on standalone and Computer AMO, and
+  uppercase canonical routes. Index/recovery behavior passes 502/502 checks;
+  UI contract, TypeScript, and the standalone V4/V1/WORK geometry matrix also
+  pass at this checkpoint. The complete controlled two-worker browser suite
+  passes 37/37 in 22.5 minutes; its aggregate matrix budgets were adjusted
+  without removing or relaxing any assertion. The production build also passes
+  against the settled tree.
+- Rebuild required: no. Canonical data, protocol rules, precision/math, fees,
+  signing, canonical ID rules, and marketplace settlement behavior changed:
+  none.
