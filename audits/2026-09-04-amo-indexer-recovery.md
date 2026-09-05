@@ -405,3 +405,81 @@ send-preparation fixture currently reports zero confirmed UTXOs for
 - Rebuild required: no. Canonical data, protocol rules, precision/math, fees,
   signing, canonical ID rules, and marketplace settlement behavior changed:
   none.
+
+### 2026-09-05 — Immutable seal-history Node/API production release
+
+- Merged pull request 52 and released exact main commit
+  `7e97478bac6595e29cf4c6f566b3ef7f14b0db3a`, tree
+  `93e2de29b22ddd12425bc9b74e531eb36a1128c9`, as
+  `7e97478bac65-20260905T014751Z`.
+- Recursively attested the staged runtime before cutover: 6,463 entries,
+  188,841,857 bytes, runtime SHA-256
+  `fa8f97e0be31e0c222aabb44b0556bc7c5186fb43e9659be5704c83cec4b6b9a`.
+  The production Node 24 candidate passed the node-operations contract and all
+  502 index-recovery behavior checks before any service was stopped.
+- Published
+  `proofofwork-node-release-7e97478-7e97478bac65-20260905T014751Z.tgz`
+  with archive SHA-256
+  `cf5ee20b529f794798f0b693371fe9ddd3441b4c1651e748e116a966f68e9c3f`.
+  The atomic checkout exchange ran exactly once and returned the complete
+  `status=exchanged` record. The prior `ca8de7ef58b7` checkout remains at the
+  release-bound rollback path.
+- A pre-cutover read-only `git status` refreshed the live Git index and left
+  only that metadata file group-writable. Before staging or stopping a service,
+  its mode was restored from `0664` to the previously verified `0644` and the
+  recursive live-runtime attestor passed. No tracked or runtime bytes, service,
+  database row, checkpoint, or canonical evidence changed. Live-checkout
+  verification subsequently avoided `git status` and used the recursive
+  release attestor.
+- The cutover shell exited after the exchange, publication, and archive
+  checksum had all succeeded, before its release-health/start block emitted.
+  It left all application services intentionally inactive. The exchange and
+  publisher were not rerun. The immutable provenance, archive checksum, exact
+  live commit/tree/runtime digest, and current-provenance count were verified
+  independently before the API, worker, WireGuard socket, and previously active
+  guard timers were restarted.
+- Loopback and public availability/readiness then returned HTTP 200 with
+  `ok=true`, `ready=true`, and `available=true`. Core, Electrum, the canonical
+  index, and every required summary agreed at height `965547`, hash
+  `000000000000000000010b8abe3c53b62958b01fe855189e346913ab80e8e435`,
+  with zero lag, zero worker failures, and zero unresolved pending events.
+- Full stable-checkpoint Seals pagination returned 723 of 723 rows: 722
+  confirmed and one best-effort pending. All 723 `(sealTxid, listingId)`
+  identities and seal transaction IDs were unique; every confirmed row carried
+  a complete, internally exact, unique canonical position. The book contained
+  710 listings and preserved exactly 13 legitimate two-seal histories. Exposed
+  versions were 581 V8 rows, 136 V1 rows, and six V2 rows, with no V7 rows.
+- Listing
+  `d4763803c8c245342fd130d4c51d5f834a68988ea272c54a9d0028d9fb2772df`
+  retained its own two confirmed V1 seals. The earlier
+  `fc7f590032e7ce8e0bc4031ceec32c594b79a5c73c638fd7e526b71e0136c610`
+  row remained at `955468:1223:1:0`; the later
+  `4da5df861063ae104b7a79899ea4346f06edcc96c9d12552fea3bc3148a5f5ca`
+  row remained at `955580:87:1:0`. Each outer and nested transaction identity
+  matched its own canonical event and neither borrowed the other's
+  authorization.
+- The screenshot's mistyped asset returned an authoritative, complete, empty
+  HTTP 200 result for Listings, Seals, and Sales: zero totals and no rows, with
+  no global-data fallback.
+- `npm run check:marketplace-regressions:full` passed against the public
+  production API, covering delist behavior, fresh summaries, sealed listings,
+  sales, wallet state, and Log closure status. While block `965548` arrived, a
+  fresh wallet request correctly failed closed with
+  `CANONICAL_WALLET_INDEX_UNAVAILABLE`, recovered within the suite's bounded
+  retry window, and completed green. Final public readiness and availability
+  were HTTP 200 at zero lag, with Core, Electrum, index, and all eight summary
+  components aligned to height `965548`, hash
+  `0000000000000000000078489be32d2c6f99a28773716bb2e49c69a44e102592`,
+  snapshot `df6054f3e34da13cf5ccd862`.
+- Recursive release health verified 10 of 10 archives, zero unverified
+  archives, and one current provenance record. Its existing warning exit
+  remains because `/opt` contains 19 retained node checkouts, above the bounded
+  inventory threshold. Nothing was pruned or deleted during this release.
+- Data rebuild required or performed: no. Protocol rules, arithmetic, fees,
+  signing, canonical IDs, and settlement behavior changed: none.
+- This release publishes the server/read-model half only. The matching static
+  UI bundle, including the explicit Unavailable presentation for an unknown
+  asset route, remains undeployed until the preceding complete-root UI rollback
+  is separately preserved, classified, and moved outside the active rollback
+  parent. Production can therefore return correct fail-closed API data while
+  the old browser bundle may still render its former zero-state presentation.
