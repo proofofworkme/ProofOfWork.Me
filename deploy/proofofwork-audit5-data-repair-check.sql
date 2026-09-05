@@ -8,32 +8,35 @@ WITH targets(txid, event_id) AS (VALUES
   ('6ac53aca33541d60d6d58af03d4c27d09bbeaab3e3c016ee10d270aad578957c', 3607561::bigint),
   ('8eaa4098c631bded37ce40d88778cce53a6d00b2d4f3eb783d2b9713fc9951cc', 3621078::bigint),
   ('9e202c0fae0f3ab500325fc7a5326dda1d68c8500c85fe51cb18385e7d8aeab0', 3747805::bigint)
-), protected_ids AS MATERIALIZED (
-  SELECT DISTINCT payload->>'issuanceValueSnapshotId' AS snapshot_id
-  FROM proof_indexer.events
-  WHERE network='livenet' AND COALESCE(payload->>'issuanceValueSnapshotId','')<>''
-  UNION
-  SELECT entry->'snapshot'->>'snapshotId'
-  FROM proof_indexer.meta rebuild
-  JOIN proof_indexer.meta witness ON witness.key=rebuild.value->'verifierBinding'->>'witnessSetMetaKey'
-  CROSS JOIN LATERAL jsonb_array_elements(COALESCE(witness.value->'entries','[]'::jsonb)) entry
-  WHERE rebuild.key='canonical:rebuild' AND entry->>'disposition'='preserve'
-  UNION
-  SELECT snapshot_id FROM proof_indexer.ledger_snapshots
-  WHERE network='livenet' AND payload->>'model'='canonical-work-amo-v5-h-minus-one-seed-evidence-v1'
-  UNION
-  SELECT payload->'canonicalSummary'->>'snapshotId' FROM proof_indexer.ledger_snapshots
-  WHERE network='livenet' AND payload->>'model'='canonical-work-amo-v5-h-minus-one-seed-evidence-v1'
-  UNION
-  SELECT jsonb_array_elements_text(COALESCE(m.value->'replayEvidence'->part->'snapshotIds','[]'::jsonb))
-  FROM proof_indexer.meta m CROSS JOIN (VALUES ('seed'),('closing')) sections(part)
-  WHERE m.key='workAmoV5Migration:livenet'
+), migration AS MATERIALIZED (
+ SELECT * FROM proof_indexer.meta WHERE key='workAmoV5Migration:livenet'
+), seed AS MATERIALIZED (
+ SELECT * FROM proof_indexer.ledger_snapshots WHERE network='livenet'
+ AND payload->>'model'='canonical-work-amo-v5-h-minus-one-seed-evidence-v1'
+), refs AS (
+ SELECT payload->>'issuanceValueSnapshotId' id,'issuance' origin FROM proof_indexer.events
+ WHERE network='livenet' AND COALESCE(payload->>'issuanceValueSnapshotId','')<>''
+ UNION
+ SELECT entry->'snapshot'->>'snapshotId','witness' FROM proof_indexer.meta rebuild
+ JOIN proof_indexer.meta witness ON witness.key=rebuild.value->'verifierBinding'->>'witnessSetMetaKey'
+ CROSS JOIN LATERAL jsonb_array_elements(COALESCE(witness.value->'entries','[]'::jsonb)) entry
+ WHERE rebuild.key='canonical:rebuild' AND entry->>'disposition'='preserve'
+ UNION SELECT snapshot_id,'seed-evidence' FROM seed
+ UNION SELECT payload->'canonicalSummary'->>'snapshotId','seed-summary-provenance' FROM seed
+ UNION SELECT jsonb_array_elements_text(COALESCE(value->'replayEvidence'->'seed'->'snapshotIds','[]'::jsonb)),'migration-seed-provenance' FROM migration
+ UNION SELECT jsonb_array_elements_text(COALESCE(value->'replayEvidence'->'closing'->'snapshotIds','[]'::jsonb)),'migration-closing-provenance' FROM migration
+), grouped AS (
+ SELECT id,array_agg(DISTINCT origin ORDER BY origin) origins FROM refs
+ WHERE COALESCE(id,'')<>'' GROUP BY id
 ), protected_rows AS MATERIALIZED (
-  SELECT p.snapshot_id, s.snapshot_id IS NOT NULL AS resolved,
-    encode(sha256(convert_to(to_jsonb(s)::text,'UTF8')),'hex') AS row_sha256
-  FROM protected_ids p LEFT JOIN proof_indexer.ledger_snapshots s
-    ON s.network='livenet' AND s.snapshot_id=p.snapshot_id
-  WHERE p.snapshot_id IS NOT NULL
+ SELECT r.id AS snapshot_id,r.origins,s.snapshot_id IS NOT NULL resolved,
+ CASE WHEN s.snapshot_id IS NULL THEN NULL ELSE encode(sha256(convert_to(to_jsonb(s)::text,'UTF8')),'hex') END row_sha256
+ FROM grouped r LEFT JOIN proof_indexer.ledger_snapshots s ON s.network='livenet' AND s.snapshot_id=r.id
+), transitions AS MATERIALIZED (
+ SELECT t.*,b.canonical block_canonical,b.previous_block_hash canonical_previous_hash
+ FROM proof_indexer.work_amo_block_transitions t
+ JOIN proof_indexer.blocks b ON b.network=t.network AND b.height=t.block_height AND b.block_hash=t.block_hash
+ WHERE t.network='livenet' AND t.block_height IN (959621,959804)
 ), event_hashes AS MATERIALIZED (
   SELECT e.event_id, encode(sha256(convert_to(
     CASE WHEN t.txid IS NOT NULL THEN
@@ -92,6 +95,20 @@ SELECT jsonb_build_object(
     AND e.payload#>>'{saleAuthorization,version}'='pwt-sale-v8'
     AND NOT (e.payload ? 'amountSubatoms')),
   'protectedSnapshots',(SELECT jsonb_agg(to_jsonb(p) ORDER BY snapshot_id) FROM protected_rows p),
+  -- These full-row hashes bind the separately verified immutable seed and
+  -- bootstrap authority. The two old summary IDs remain provenance only.
+  'historicalAuthorities',jsonb_build_object(
+    'model','audit5-historical-authorities-v1',
+    'seed',(SELECT jsonb_build_object('snapshotId',snapshot_id,
+      'rowSha256',encode(sha256(convert_to(to_jsonb(s)::text,'UTF8')),'hex')) FROM seed s),
+    'migration',(SELECT jsonb_build_object('key',key,
+      'rowSha256',encode(sha256(convert_to(to_jsonb(m)::text,'UTF8')),'hex')) FROM migration m),
+    'transitions',(SELECT jsonb_agg(jsonb_build_object('blockHeight',t.block_height,'blockHash',t.block_hash,
+      'rowSha256',encode(sha256(convert_to((to_jsonb(t)-ARRAY['block_canonical','canonical_previous_hash'])::text,'UTF8')),'hex'),
+      'blockCanonical',t.block_canonical,'canonicalPreviousHash',t.canonical_previous_hash) ORDER BY t.block_height) FROM transitions t),
+    'blocks',(SELECT jsonb_agg(jsonb_build_object('height',height,'hash',block_hash,
+      'previousHash',previous_block_hash,'canonical',canonical) ORDER BY height,block_hash)
+      FROM proof_indexer.blocks WHERE network='livenet' AND height IN(959620,959621,959804) AND canonical=true)),
   'invariants',(SELECT jsonb_agg(to_jsonb(h) ORDER BY name) FROM invariant_hashes h)
 );
 COMMIT;

@@ -1152,3 +1152,96 @@ no new backup or destructive cleanup was needed. The UI candidate remains
 verified and unpublished, above the unchanged floor and reserve. All normal
 monitoring remains active at this preparation checkpoint. No controlled window,
 database repair or application publication has begun yet.
+
+
+### First controlled window: historical-provenance assertion, safe restoration
+
+The reviewed repair controls were committed as `afcb304a21a5` with hygiene
+hooks passing. Eight commit-bound tools were uploaded into a fresh private
+directory. The seven documented maintenance timers were held at 21:38:48 UTC;
+the application proxy, worker and API were stopped. Core, Electrs, PostgreSQL,
+the WAL receiver and storage monitoring retained their original identities.
+The 21:39:42 stopped-writer check found zero other database sessions, no
+application listeners and no live/candidate working-directory processes.
+
+The before-state capture completed, but its standard comparator refused before
+any repair because two historical summary IDs did not resolve to ledger rows:
+`cb13bc6edd20d72f6ae3919e` (V5 migration seed) and
+`ae8f28b922cecee2580a97e5` (migration closing). Thirty protected rows did resolve,
+including the immutable `amo-v5-h1-af98265df1e8e61a7b173807` seed evidence.
+The two absent IDs have no issuance-event or preserved-witness references.
+The original captures, attempt marker and comparator error are retained.
+
+This is an audit-verifier compatibility issue under investigation, not a
+confirmed arithmetic failure or authorization for additional database repairs.
+`README.md` explicitly identifies the old seed summary as provenance only;
+`OP_RETURN_INFRASTRUCTURE.md` protects it when present and does not require
+recreating it after legitimate pruning. The retained immutable seed and
+migration closing transition/certificate bindings must be independently
+verified before correcting the blanket all-references-resolved assertion.
+No historical summary row is to be restored or synthesized to satisfy it.
+
+No approved transaction/metadata repair, cache rotation or release exchange
+ran. The exact original live `6a7d5c12e403` runtime was re-attested and restarted
+at 21:41:56. The proxy reopened at 21:42:39 with HTTP 200, readiness true,
+Core/index height 965670, zero lag and zero reported unresolved pending events.
+All seven originally active maintenance timers were restored by 21:43:07.
+A separate public UI-proxy health read at 21:44:34 also passed. The original
+live UI and retained rollback manifests remain unchanged; both candidates
+remain unpublished. A subsequent window needs fresh process/environment
+capture and a new evidence namespace because the application has resumed.
+
+Repository cleanup in this continuation removed only one newly generated,
+untracked Python bytecode file after exact identity/hash inspection; its
+receipt is preserved. No further archive, backup, historical evidence or
+release artifact was deleted. This addendum continues H5-04 and the approved
+verification workflow rather than duplicating prior findings.
+
+
+### Historical-provenance check corrected; fresh window prepared
+
+The follow-up authority inspection resolves the preceding audit-harness hold.
+The 21:46:51 read-only capture contains one complete immutable seed, its
+completed migration certificate, and the activation and migration-closing
+transitions. Direct Core calls at 21:47:15 confirm their canonical blocks at
+959620, 959621 and 959804 under a stable current tip of 965671. The two absent
+summary IDs have only their exact migration-provenance origins. All 29
+issuance snapshot references and the immutable seed row resolve.
+
+The pinned candidate's actual seed validator recomputed the closed evidence
+and sufficient-state commitments. The independent wrapper also verified
+bootstrap opening/closing commitments, retained relational completeness,
+historical summary provenance, canonical block bindings, and the BIP141 and
+transition-certificate bindings. Actual captured evidence passed on Node
+24.18.0 as UID/GID 1000 with no supplementary groups, no effective capabilities,
+no-new-privileges and file writes prohibited. Only public captured inputs and
+pure pinned modules were used; that execution made no database or API call.
+This is retained-authority verification, not a new replay of every transition
+or reconstruction of the two historical summary payloads.
+
+The normal before/after SQL now records each reference's origin and compact
+full-row hashes for the seed, completed migration and two historical
+transitions, plus the three canonical block bindings. The comparator pins
+these to the independently verified evidence, allows only the two exact
+provenance-only absences, and still requires every issuance/witness reference
+to resolve. Every protected row, reference origin, resolution and authority
+hash must remain identical across all repair phases. The detailed auxiliary
+validator independently compares the additional authority object as well.
+The approved transaction, funding output and three zero-metadata records are
+unchanged in scope. No missing historical summary is restored or synthesized.
+
+Validation passed: 42 standard comparator checks, 122 exact auxiliary/phase
+checks, 28 retained-authority checks and three independently reviewed negative
+cases for malformed or changed authority. Fresh live execution of the revised
+SQL passed all shape/authority inspections with six other sessions; it is not
+substituted for a stopped-writer proof. Window2's namespace tests (11), unit
+controller checks (27), capture checks (18), and exclusive upload receiver
+checks (7) also passed. Original private-environment/privilege-drop helper bytes
+and the application candidate remain unchanged.
+
+Window2 uses fresh private capture, tool, execution and unit namespaces while
+reusing the exact existing application candidate. Original failed capture and
+restoration receipts remain untouched. A second newly generated untracked
+bytecode file was removed after exact identity/hash review; no retained data
+or deployment artifact was removed. Production remains on the recovered
+original release with normal monitoring active until the new window starts.

@@ -6,9 +6,9 @@ sys.dont_write_bytecode=True
 import os,pathlib,stat,json,hashlib,ctypes,errno,datetime
 APP='2ddefac163d5-20260905T180603Z';OPS='0b63c8604456-20260905T205150Z'
 PARENT=pathlib.Path('/data');LIVE='proofofwork-api-cache';PRESERVED=LIVE+'.pre-audit5-'+APP
-CAPTURE=pathlib.Path('/run/proofofwork-audit5-'+APP)
-GUARD=pathlib.Path('/run/proofofwork-audit5-window-tools-'+OPS+'/window-quiescence.py')
-GUARD_SHA='710dbbe0fce1189b735e8e4795bdbef632040a36558fb4b0004a44d98204fb63'
+CAPTURE=pathlib.Path('/run/proofofwork-audit5-'+APP+'-window2')
+GUARD=pathlib.Path('/run/proofofwork-audit5-window-tools-'+OPS+'-window2/window-quiescence.py')
+GUARD_SHA='24210c1d8f551404e70ffa12b1f7ccc0edfa8ec4ed79b28fcedb6ae73cbcadac'
 EXPECTED={'device':64514,'inode':94765057,'uid':1000,'gid':1000,'mode':0o750}
 OWNER=1000;GROUP=1000;MODE=0o750
 

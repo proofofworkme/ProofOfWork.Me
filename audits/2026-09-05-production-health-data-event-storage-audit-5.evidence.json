@@ -38304,6 +38304,689 @@
           "bytes": 7043
         }
       }
+    },
+    "firstControlledWindow": {
+      "status": "pre-repair-historical-provenance-check-refused-unchanged-production-restored",
+      "at": "2026-09-05T21:45:11Z",
+      "controlCommit": "afcb304a21a5c4e686096a4bac688b332af2925b",
+      "controlTree": "0c8f894a4c7cf03ccc76b6107533f2def14f74e8",
+      "windowToolsUpload": {
+        "at": "2026-09-05T21:38:04.766048+00:00",
+        "requestSha256": "9701234a3ee3c0aadf79b43dab7256160c87cc933744a2fc055aa7dbb9e98e1a",
+        "exitCode": 0,
+        "remoteReceipt": {
+          "at": "2026-09-05T21:38:04.687157+00:00",
+          "status": "private-tools-uploaded-only",
+          "commit": "afcb304a21a5c4e686096a4bac688b332af2925b",
+          "tree": "0c8f894a4c7cf03ccc76b6107533f2def14f74e8",
+          "destination": "/run/proofofwork-audit5-window-tools-0b63c8604456-20260905T205150Z",
+          "rootMode": "0700",
+          "rootUid": 0,
+          "rootGid": 0,
+          "rootInode": 8785357,
+          "toolFiles": 8,
+          "manifestFiles": 1,
+          "files": {
+            "window-quiescence.py": {
+              "bytes": 7831,
+              "sha256": "710dbbe0fce1189b735e8e4795bdbef632040a36558fb4b0004a44d98204fb63",
+              "uid": 0,
+              "gid": 0,
+              "mode": "0600",
+              "inode": 8785358
+            },
+            "window-unit.py": {
+              "bytes": 7219,
+              "sha256": "06d1cd67d7f2238c91ffddc5cb50c3e0f325ae1bb5547e24019602d91dc52bb3",
+              "uid": 0,
+              "gid": 0,
+              "mode": "0600",
+              "inode": 8785359
+            },
+            "capture-repair-evidence.py": {
+              "bytes": 6878,
+              "sha256": "395e088ec053d080220b70f769817e8c596c064568bcae910f9c194379d33f32",
+              "uid": 0,
+              "gid": 0,
+              "mode": "0600",
+              "inode": 8785360
+            },
+            "aux-fields.sql": {
+              "bytes": 2335,
+              "sha256": "2b83631a2f7495357ba1445948a525877b6cd6239043f5e5462aab376b18eccc",
+              "uid": 0,
+              "gid": 0,
+              "mode": "0600",
+              "inode": 8785361
+            },
+            "check-exact-aux.py": {
+              "bytes": 15531,
+              "sha256": "3f2fc89dbd22d77253ebc698d78b37699bebb214dc842c90625b7eb761ea60d3",
+              "uid": 0,
+              "gid": 0,
+              "mode": "0600",
+              "inode": 8785362
+            },
+            "rotate-cache.py": {
+              "bytes": 8092,
+              "sha256": "089ab6e7d8c482811cffc61279a40afcc7f4df6e3938f174bf45dca47fdb6529",
+              "uid": 0,
+              "gid": 0,
+              "mode": "0600",
+              "inode": 8785363
+            },
+            "restore-window-timers.py": {
+              "bytes": 7663,
+              "sha256": "38c17ca564982b815ea3410c04e28aceca90513bcc96bc1ce8c6e533196ec79f",
+              "uid": 0,
+              "gid": 0,
+              "mode": "0600",
+              "inode": 8785364
+            },
+            "check-audit5-data-repair.mjs": {
+              "bytes": 7043,
+              "sha256": "4af49f042d8ece901f31e09362e53c1f6df954f2b3baa43385b0fc4a8b9d476e",
+              "uid": 0,
+              "gid": 0,
+              "mode": "0600",
+              "inode": 8785365
+            },
+            "upload-manifest.json": {
+              "bytes": 1881,
+              "sha256": "7433e7961729d4b7da7b03e683058c77f276ea4fe4d05f7fbb0414767bd4f92b",
+              "uid": 0,
+              "gid": 0,
+              "mode": "0600",
+              "inode": 8785366
+            }
+          },
+          "toolsExecuted": false,
+          "serviceActions": false,
+          "databaseQueries": false,
+          "deletions": false,
+          "overwrites": false
+        },
+        "failureStdout": null,
+        "failureStderr": null,
+        "preserveOnFailure": true
+      },
+      "otherDatabaseSessions": 0,
+      "databaseRepairPerformed": false,
+      "cacheRotated": false,
+      "releaseExchanged": false,
+      "applicationCommitStillLive": "6a7d5c12e403e0ddb6247fa2a6865cb70d623a8e",
+      "protectedRowsResolved": 30,
+      "unresolvedProvenanceIds": [
+        "ae8f28b922cecee2580a97e5",
+        "cb13bc6edd20d72f6ae3919e"
+      ],
+      "provenanceLookup": {
+        "at": "2026-09-05T21:40:50.258515+00:00",
+        "events": [],
+        "witnessEntries": [],
+        "seedRows": [
+          {
+            "snapshotId": "amo-v5-h1-af98265df1e8e61a7b173807",
+            "canonicalId": "cb13bc6edd20d72f6ae3919e"
+          }
+        ],
+        "migration": {
+          "model": "canonical-work-amo-v5-full-position-replay-v1",
+          "complete": true,
+          "seed": {
+            "blockHash": "0000000000000000000094195957f498f894c92f5d5f75ff5b9c9afc749a6811",
+            "blockHeight": 959620,
+            "snapshotIds": [
+              "cb13bc6edd20d72f6ae3919e"
+            ],
+            "summaryHash": "251b1e72f2cfa4db297e63cd435e3c9c970d18315bf0cfa63581f273eef8f407",
+            "snapshotCount": 1,
+            "networkValueQ8": "238485720971953244796304141"
+          },
+          "closing": {
+            "blockHash": "00000000000000000001d0b122e73a235c361a73c48912e30651402cf455fe48",
+            "blockHeight": 959804,
+            "snapshotIds": [
+              "ae8f28b922cecee2580a97e5"
+            ],
+            "summaryHash": "e1dae9670d9ba06aa67d84a1d7bd6b7e607e53197f9cae59d8c93354e129b2fc",
+            "snapshotCount": 1,
+            "networkValueQ8": "238485720971953244796304141"
+          }
+        },
+        "rawEvidence": {
+          "path": "/tmp/pow-approved-parent-20260905/unresolved-snapshot-provenance.json",
+          "bytes": 5184937,
+          "sha256": "58bb7e6fb07280ca01132a92ce38257456c014576026791279bd8c1511bb191d"
+        }
+      },
+      "interpretation": "Blanket all-references-resolved audit assertion conflicts with documented prunable historical summaries; independently validate retained seed and migration closing authorities before correcting this audit-only assertion. Do not recreate, restore or synthesize summary rows. No finding of broken exact arithmetic.",
+      "recovery": {
+        "at": "2026-09-05T21:42:39.433892+00:00",
+        "publicProxyReopened": true,
+        "health": {
+          "ready": true,
+          "available": true,
+          "tipHeight": 965670,
+          "indexedThroughBlock": 965670,
+          "lagBlocks": 0
+        },
+        "pending": {
+          "globalUnresolved": 0,
+          "model": "bounded-best-effort-pending-event-health-v1",
+          "ok": true,
+          "q16PendingUnresolved": 0,
+          "required": true,
+          "scope": "all-observed-pending-protocol-events",
+          "status": {
+            "checked": 0,
+            "deferred": 0,
+            "errors": 0,
+            "ok": true,
+            "q16ParentDeferred": 0,
+            "staleCandidates": 0,
+            "unavailable": false,
+            "unavailableValid": true
+          }
+        }
+      },
+      "allSevenOriginalTimersRestoredAt": "2026-09-05T21:43:07.605317Z",
+      "publicUiProxyCheckpoint": {
+        "at": "2026-09-05T21:44:34.855Z",
+        "http": 200,
+        "ready": true,
+        "tipHeight": 965670,
+        "indexedThroughBlock": 965670,
+        "lagBlocks": 0,
+        "receiptSha256": "26ca49fe7f9e2602dd90e96fbe49b1b85661ff44e961812c131315c09507ec53"
+      },
+      "files": {
+        "maintenance-baseline.stdout": {
+          "path": "/tmp/pow-approved-parent-20260905/maintenance-baseline.stdout",
+          "bytes": 206,
+          "sha256": "4df20d6c65ed3741fe85f93851d7266e688237f5c761b46a5b9eceb3f1dee63b"
+        },
+        "maintenance-hold.stdout": {
+          "path": "/tmp/pow-approved-parent-20260905/maintenance-hold.stdout",
+          "bytes": 197,
+          "sha256": "e95ce536ebd30cdf4161d97144bd60309fc578304ee979ee81fedfc27bb64d10"
+        },
+        "repair-before.json": {
+          "path": "/tmp/pow-approved-parent-20260905/repair-before.json",
+          "bytes": 95855,
+          "sha256": "d709f7376387f660dbc00aec0fc60d03d035e38bce993c13cc609453248c618e"
+        },
+        "repair-before-aux.json": {
+          "path": "/tmp/pow-approved-parent-20260905/repair-before-aux.json",
+          "bytes": 16885,
+          "sha256": "f5bc041dd5a2b899274867a6de5431deee0dc970edb06caec8b8db673f8ea559"
+        },
+        "repair-before.stderr": {
+          "path": "/tmp/pow-approved-parent-20260905/repair-before.stderr",
+          "bytes": 439,
+          "sha256": "9ffa9c7abdd47dc4ba3898ac2127e0ea3e2387ba41dd25405eb09fad9dad3260"
+        },
+        "restore-unchanged-live.stdout": {
+          "path": "/tmp/pow-approved-parent-20260905/restore-unchanged-live.stdout",
+          "bytes": 410,
+          "sha256": "10cd3e3a5b1b6438c99c3d9921c36d051452ad3ca0fbb3f8c7d2a1c08528c7d5"
+        },
+        "unchanged-proxy-restored.json": {
+          "path": "/tmp/pow-approved-parent-20260905/unchanged-proxy-restored.json",
+          "bytes": 544,
+          "sha256": "b876431a676429c68c115f9e30c3ad44687dc00333cae36a574c1cd77d850d1f"
+        },
+        "unchanged-timers-restore.stdout": {
+          "path": "/tmp/pow-approved-parent-20260905/unchanged-timers-restore.stdout",
+          "bytes": 1897,
+          "sha256": "80598929ccaf51744dc19d9822c3729aeccc363ebf954847fe906cca73a26385"
+        },
+        "new-bytecode-cleanup.json": {
+          "path": "/tmp/pow-approved-parent-20260905/new-bytecode-cleanup.json",
+          "bytes": 268,
+          "sha256": "69c1e2bd2e8aac93b49ccc2ff78790153ca8f72215c842dc6505f4251c069736"
+        }
+      },
+      "nextWindow": "Requires fresh private process capture and new attempt namespace; original failed captures remain immutable and are never overwritten or reused as a fresh baseline."
+    },
+    "historicalProvenanceResolution": {
+      "status": "retained-authority-verified-window2-controls-prepared",
+      "authorityProof": {
+        "nodeVersion": "v24.18.0",
+        "uid": 1000,
+        "gid": 1000,
+        "groups": [
+          1000
+        ],
+        "ok": true,
+        "classification": "validated-historical-summary-provenance-absence",
+        "resolvedProtectedRows": 30,
+        "absentProvenanceIds": [
+          "ae8f28b922cecee2580a97e5",
+          "cb13bc6edd20d72f6ae3919e"
+        ],
+        "seedAuthority": {
+          "snapshotId": "amo-v5-h1-af98265df1e8e61a7b173807",
+          "rowSha256": "18c3380fa370f28e136308b9cca43b80f5a43d5bd617c4b7c9cb77d127419128",
+          "evidenceCommitment": {
+            "model": "canonical-work-amo-payload-sha256-v1",
+            "sha256": "af98265df1e8e61a7b173807870935d1303b545caf39f7fea31fd0d02708f2bb",
+            "payloadBytes": 2730727
+          },
+          "summary": {
+            "blockHash": "0000000000000000000094195957f498f894c92f5d5f75ff5b9c9afc749a6811",
+            "blockHeight": 959620,
+            "networkValueQ8": "238485720971953244796304141",
+            "snapshotId": "cb13bc6edd20d72f6ae3919e",
+            "summaryHash": "251b1e72f2cfa4db297e63cd435e3c9c970d18315bf0cfa63581f273eef8f407"
+          }
+        },
+        "migrationRowSha256": "bf8a4098f4a65f43a3fbe189b6ee820afc35cb27e5f63b6cb32fcad2bbe87512",
+        "transitionRows": [
+          {
+            "height": 959621,
+            "hash": "00000000000000000000447e3a8c01b4b0f08aef5c817ddfd10cf51b1d691d69",
+            "rowSha256": "c72120ff99307f42ce63426ddd6082ff8a3eb7d7f20fb03f9e5407db9716e37c"
+          },
+          {
+            "height": 959804,
+            "hash": "00000000000000000001d0b122e73a235c361a73c48912e30651402cf455fe48",
+            "rowSha256": "dd6551971d3d0ce36c873561f34c807ab9ee1625f2e7c0c7d00b6032c4982b13"
+          }
+        ],
+        "references": [
+          {
+            "id": "0d013316972dea627a571cfa",
+            "origins": [
+              "issuance"
+            ],
+            "resolved": true,
+            "row_sha256": "f38f9f53fa78e98479ce4e09f3d08e87d1fb2835f91423ed658b72909ec44642"
+          },
+          {
+            "id": "266a4929fa33e9ea7199501a",
+            "origins": [
+              "issuance"
+            ],
+            "resolved": true,
+            "row_sha256": "dd741afac19471491ae7dba8f8f6f836ca643691dd4ce5dcb07003e54a54ba6c"
+          },
+          {
+            "id": "28bcfb94e3572f9099112e6c",
+            "origins": [
+              "issuance"
+            ],
+            "resolved": true,
+            "row_sha256": "024133f60d2d921a1db70dbed351b22fa8716a1bd1c844dd0f7836df6e91c935"
+          },
+          {
+            "id": "2aab25ca991f1d53895b5cb2",
+            "origins": [
+              "issuance"
+            ],
+            "resolved": true,
+            "row_sha256": "f68d3499b8b78972b6c1100c17908b2753659a6bd0170266cde06ff4f4677e7a"
+          },
+          {
+            "id": "34f3d816786f7e8f2f81b505",
+            "origins": [
+              "issuance"
+            ],
+            "resolved": true,
+            "row_sha256": "765f7ba412a739b2dedfe52a726fd06da924a6e601b9aa68aec9e3aa827d6f35"
+          },
+          {
+            "id": "35bf2b05cd91025920df228c",
+            "origins": [
+              "issuance"
+            ],
+            "resolved": true,
+            "row_sha256": "39d0cfc647e4c8d3e8bf3a433ab29d120cbd329806f7d3b28b04483ce5730e3b"
+          },
+          {
+            "id": "40cd14abee715e4b9074a474",
+            "origins": [
+              "issuance"
+            ],
+            "resolved": true,
+            "row_sha256": "95a7cb575e7ff6ffd094a76301f6cd57aac35cab1eeff5834dbac8bd510eb1fa"
+          },
+          {
+            "id": "6c0d5c24f35b37139bead9ff",
+            "origins": [
+              "issuance"
+            ],
+            "resolved": true,
+            "row_sha256": "17b34fc3f0b1e280ffcaa3cc0171e6bf4fe4542438a11d4274f81cf3594d12ac"
+          },
+          {
+            "id": "755d057b4161358725012b6f",
+            "origins": [
+              "issuance"
+            ],
+            "resolved": true,
+            "row_sha256": "bf24dbdc7236e039c310e0725c223634e7b9dc179b00bc82e55ce8188dc34978"
+          },
+          {
+            "id": "7ab9dad4300df08edf54e80f",
+            "origins": [
+              "issuance"
+            ],
+            "resolved": true,
+            "row_sha256": "5371ba7763a3ff58d9cf4c718776a7a7e263fe7b05c5c2e1410ac09f28892e0d"
+          },
+          {
+            "id": "7b937a7a603b1332d22b06e1",
+            "origins": [
+              "issuance"
+            ],
+            "resolved": true,
+            "row_sha256": "3f24a1f57867f73beeb869b88e55057e0afad82d5d458d17e69053d76cf57bf9"
+          },
+          {
+            "id": "8037251c8887a49009047864",
+            "origins": [
+              "issuance"
+            ],
+            "resolved": true,
+            "row_sha256": "7751ed516d594ca7839d93976063ec51f9a742f3376cddbcf79e73c50811a63f"
+          },
+          {
+            "id": "80e84ace387f63fa1c34aa22",
+            "origins": [
+              "issuance"
+            ],
+            "resolved": true,
+            "row_sha256": "88a930fae542c731835c034f0669eb94e4c5b71a59fb74079c14ce9ae8b6680c"
+          },
+          {
+            "id": "88598ea2c4cd03c3641c9493",
+            "origins": [
+              "issuance"
+            ],
+            "resolved": true,
+            "row_sha256": "d1c3f8a639aff290242589e25da31794ded9175d4fdd7a272af8015ffbc5d6bf"
+          },
+          {
+            "id": "895dbf988e2f77fc89c1757c",
+            "origins": [
+              "issuance"
+            ],
+            "resolved": true,
+            "row_sha256": "cf7c34c86fe6dbebebe935e18e174804940724c59772ffb61b523cef97601008"
+          },
+          {
+            "id": "8ff476fff4f2fb14373a34e3",
+            "origins": [
+              "issuance"
+            ],
+            "resolved": true,
+            "row_sha256": "5ae7d54936688bd507ec383fef939699bc951b8f89438a53bbd0e14e034a91b3"
+          },
+          {
+            "id": "9187c976328d4ad6c1cc1b30",
+            "origins": [
+              "issuance"
+            ],
+            "resolved": true,
+            "row_sha256": "9daacc5d5382c75af1c20545d6465b10267c8a1b5d12aed632253d116bdb4359"
+          },
+          {
+            "id": "94f8316c91af164ebf92c179",
+            "origins": [
+              "issuance"
+            ],
+            "resolved": true,
+            "row_sha256": "106442341380ad8334d4a1ea76c374d72c347126fc935022299258893f1c7cb7"
+          },
+          {
+            "id": "9a7831112b60da8ba8a6d5d1",
+            "origins": [
+              "issuance"
+            ],
+            "resolved": true,
+            "row_sha256": "ee327257f57d93e6ff2e161f2140216154d205a1d4f4337f96d1c7dcbc2bfae3"
+          },
+          {
+            "id": "a5a3faedaa796de67db5dee2",
+            "origins": [
+              "issuance"
+            ],
+            "resolved": true,
+            "row_sha256": "b3fbd01c99a4fd1984003aa1af5b49ee5709015c69d73d440d00880cdd1b867d"
+          },
+          {
+            "id": "ae8f28b922cecee2580a97e5",
+            "origins": [
+              "migration-closing-provenance"
+            ],
+            "resolved": false,
+            "row_sha256": null
+          },
+          {
+            "id": "amo-v5-h1-af98265df1e8e61a7b173807",
+            "origins": [
+              "seed-evidence"
+            ],
+            "resolved": true,
+            "row_sha256": "18c3380fa370f28e136308b9cca43b80f5a43d5bd617c4b7c9cb77d127419128"
+          },
+          {
+            "id": "b5d36ee98bcbef4fc7a54aed",
+            "origins": [
+              "issuance"
+            ],
+            "resolved": true,
+            "row_sha256": "ce873bd52cf0f66f9aff9f58e2d212e698090c0820665906c206f1a03fa57789"
+          },
+          {
+            "id": "b8e77cd30cbed6855977c514",
+            "origins": [
+              "issuance"
+            ],
+            "resolved": true,
+            "row_sha256": "999bbb0d2b99cd52708756101970ac69460edc0ec850ee0eb925ed9c50d691e8"
+          },
+          {
+            "id": "c0cc2df08b40a04e03fee8e1",
+            "origins": [
+              "issuance"
+            ],
+            "resolved": true,
+            "row_sha256": "93d32e16ac616e3a7baedf00acc0730e6ddd8f7065852a9bc1e23606b1c177c3"
+          },
+          {
+            "id": "c8b800384da576c962ae82a5",
+            "origins": [
+              "issuance"
+            ],
+            "resolved": true,
+            "row_sha256": "15b9837e972604593fb292fcc995338b3851242f3ac3d03dc18a963f1759350a"
+          },
+          {
+            "id": "cb13bc6edd20d72f6ae3919e",
+            "origins": [
+              "migration-seed-provenance",
+              "seed-summary-provenance"
+            ],
+            "resolved": false,
+            "row_sha256": null
+          },
+          {
+            "id": "dca7e548d87d04940c1635ee",
+            "origins": [
+              "issuance"
+            ],
+            "resolved": true,
+            "row_sha256": "1bd4b773303c0990fcfccdd4a7b923a053295802785332658740f3680fe138a8"
+          },
+          {
+            "id": "e59bf41d4ced5cb965cb0cb6",
+            "origins": [
+              "issuance"
+            ],
+            "resolved": true,
+            "row_sha256": "4a00ec697fbac71654f86cbd8c05d7362514876e8d5e07718d0dd293231a1a78"
+          },
+          {
+            "id": "ebfca7f3f79b479dbd2d0f43",
+            "origins": [
+              "issuance"
+            ],
+            "resolved": true,
+            "row_sha256": "b62542417fbe99cb3f110ef6c94535c82a9dbe5beb8510475ccbef1c754a2dcd"
+          },
+          {
+            "id": "efbf9a05058307f1fb35802a",
+            "origins": [
+              "issuance"
+            ],
+            "resolved": true,
+            "row_sha256": "87f47719214928cb05cf01713f524c483a28b924cf12b842c6ab450f0f9ce9fa"
+          },
+          {
+            "id": "f92c69962c409d55ba1b103c",
+            "origins": [
+              "issuance"
+            ],
+            "resolved": true,
+            "row_sha256": "c8100c91e319bc5a5a584a33082460faf0213234d27c20182e05c81cc71c18fa"
+          }
+        ],
+        "coreCheckpoint": {
+          "height": 965671,
+          "hash": "0000000000000000000036ed6a900c702660c3e8e152f674ab9d5787c82237c3"
+        },
+        "qualification": "Protect every existing referenced row byte-for-byte and preserve the two exact absent provenance bindings. This validates retained seed/bootstrap authority; it neither restores nor recreates the missing historical summary payloads, and it is not a fresh replay of all transitions."
+      },
+      "runtimeTests": {
+        "ok": true,
+        "scope": "Frozen verifier-only historical-authority origin classification and phase immutability; no application/runtime/database modifications by this agent.",
+        "tools": {
+          "deploy/proofofwork-audit5-data-repair-check.sql": "c9266303cf90fe0f81d9b49739675fabd520667a5bc40427cfc601279556967c",
+          "scripts/check-audit5-data-repair.mjs": "b475050441ed3828becb613ca7db16390a1560cd922846c7fdaeb34fd326fb57",
+          "scripts/check-audit5-data-repair-fixtures.mjs": "d9a539e3198ff230df5e9969651a62f0b3b4f715eba5153be4f98cea043f3881",
+          "deploy/audit5/check-exact-aux.py": "aa10c0053e935b70137712f4477fe92f9fd0ff4326095a9cf1cba65a6e3b17bc",
+          "deploy/audit5/verify-historical-authority.mjs": "e3b62ac0d0e5efb8417e9ccbf57072a8a713db0e3e717cd803b46f14bc1ea057",
+          "deploy/audit5/historical-authority.sql": "cbf3e795292f21835bdb7cdf70d6c241be576002f2a36de05fc85071595da793"
+        },
+        "checks": {
+          "standardComparator": {
+            "passed": 42,
+            "runtime": "Node v22.23.2"
+          },
+          "exactAuxiliary": {
+            "passed": 122,
+            "runtime": "Python3.12.3",
+            "fixture": "/tmp/pow-resume2-20260905/exact-repair/test-authority-actual-shape.py"
+          },
+          "fullAuthorityOriginalDraft": {
+            "passed": 28,
+            "runtime": "Node v22.23.2",
+            "qualification": "Earlier draft; final only adds strict predicates. Final positive independently passed Node24; all three newly added predicates rejected targeted negatives."
+          },
+          "finalAuthority": {
+            "actualPositive": "Node v24.18.0 UID1000, groups[1000], zero capabilities and NNP1; parent-owned safe stdin execution",
+            "targetedNegativePasses": 3,
+            "reviewer": "/root/audit_history_ui"
+          }
+        },
+        "evidence": {
+          "/tmp/pow-snapshot-provenance-20260905/snapshot-authority-live.json": "0c85d283ab1b533d1377c5ad981fd3d43294c2b7eccc09ecdfc3143be6ffe5d2",
+          "/tmp/pow-snapshot-provenance-20260905/historical-core.json": "3768f52e4fab3ad918a2d8c2b5ee3e38dfccff72593c2ab4909a68ae1dc20a0a",
+          "/tmp/pow-snapshot-provenance-20260905/node24-authority-result.json": "d124674fa6df47c49db3cd4a7cd39bb7b3b1cd8b3929a3ee114af0d9e9f5864a"
+        },
+        "liveShape": {
+          "path": "/tmp/pow-approved-window2-20260905/live-shape-inspection.json",
+          "sessions": 6,
+          "stoppedWriterProof": false
+        },
+        "authorityScope": "Immutable seed closed preimages and bootstrap/activation/closing commitments bind the retained historical authority. Exact full SQL row hashes are pinned and preserved across repair phases. Missing old summary payloads are neither restored nor independently rehashed; not a fresh replay of all transitions."
+      },
+      "operationalTests": {
+        "at": "2026-09-05T21:56:06.617008+00:00",
+        "namespaceChecks": 11,
+        "controllerChecks": 27,
+        "captureChecks": 18,
+        "receiverChecks": 7,
+        "allPinsSynchronized": true,
+        "files": {
+          "deploy/audit5/attempt-env.py": "9cf7c2371822f4cc6a344070a2245441c7a8327bb5f930257746a8a74abff64c",
+          "deploy/audit5/window-unit.py": "13c0deeab246c2e70db1fcbe1555a2816227b1dbc7d95a42a3495f3428f9af89",
+          "deploy/audit5/window-quiescence.py": "24210c1d8f551404e70ffa12b1f7ccc0edfa8ec4ed79b28fcedb6ae73cbcadac",
+          "deploy/audit5/capture-repair-evidence.py": "3544379f951a9f4779ca1e9b939eb2923c849f98d8c56ab1acf8411dfc409cc9",
+          "deploy/audit5/rotate-cache.py": "88f882d110aaf3266d693f1cbba23136d5ca3ed7dfe95eab547064de13a5cbc9",
+          "deploy/audit5/restore-window-timers.py": "34590661820146dcc15131a4b6afc9dffc86724254a659690d1ba40e3081f555",
+          "deploy/audit5/private-env.py": "3785ce4ab40b21f5759a37e6170ad38949488ded6d1e1129710bc03d97dbc382",
+          "deploy/audit5/shadow-entry.mjs": "48da4605178d43d1cfbf7b33aeb45c1a64e9474913d8e51d1513904dd8d4bf4d",
+          "deploy/audit5/check-exact-aux.py": "aa10c0053e935b70137712f4477fe92f9fd0ff4326095a9cf1cba65a6e3b17bc",
+          "deploy/audit5/aux-fields.sql": "2b83631a2f7495357ba1445948a525877b6cd6239043f5e5462aab376b18eccc",
+          "deploy/proofofwork-audit5-data-repair-check.sql": "c9266303cf90fe0f81d9b49739675fabd520667a5bc40427cfc601279556967c",
+          "scripts/check-audit5-data-repair.mjs": "b475050441ed3828becb613ca7db16390a1560cd922846c7fdaeb34fd326fb57",
+          "scripts/check-audit5-window2.py": "01cbfd266359924946d3f095429dd91871e646a72bdba9571f90bb7e3b80862a"
+        },
+        "receipts": {
+          "window2-namespace-final.log": "2a4e80f7ac851f95d000d1c167db9bac3678f0e6482a1c13077e9ec2a8ab106f",
+          "window2-controller-tests.json": "58050aa916a8644e28747baed9a0a10704dfd0383148d5671061426532667f86",
+          "window2-capture-tests.json": "a2ff45afca0b043c688a4c90f660698a206753f1cd93f45abafe750f63e8a1c9",
+          "window2-upload-tests.json": "e730a7d47e413d09e46c3b72ec472fed322282a6fba9b90db0403a8af98208b3"
+        },
+        "remainingBlockingFindings": [],
+        "independentReview": "audit_history_ui found no wrapper/controller blocker",
+        "productionCalls": 0,
+        "scope": "Namespace, original helper function privacy/candidate restrictions, command/phase control flow and temp-filesystem preservation tests. SQL and command execution mocked; historical authority validity independently tested by math reviewer."
+      },
+      "liveSqlShape": {
+        "sqlSha256": "c9266303cf90fe0f81d9b49739675fabd520667a5bc40427cfc601279556967c",
+        "responseSha256": "717668a45c5702b8a63abadb4007d35899697260a89545777d2765b166726fee",
+        "otherDatabaseSessions": 6,
+        "qualification": "Live read-only shape/authority inspection, not stopped-writer evidence; actual window2 capture must observe zero sessions."
+      },
+      "productionRepairsPerformed": false,
+      "summaryRowsRestoredOrSynthesized": false,
+      "applicationRuntimeChanged": false,
+      "newEvidenceRoot": "/run/proofofwork-audit5-2ddefac163d5-20260905T180603Z-window2",
+      "oldEvidencePreserved": true,
+      "currentLiveRelease": "6a7d5c12e403e0ddb6247fa2a6865cb70d623a8e",
+      "nextAction": "Fresh private identity/environment capture, historical target Core preflight and stopped-writer baseline in a new window; only then the unchanged approved repairs and original rollout gates.",
+      "files": {
+        "/tmp/pow-snapshot-provenance-20260905/snapshot-authority-live.json": {
+          "bytes": 2846389,
+          "sha256": "0c85d283ab1b533d1377c5ad981fd3d43294c2b7eccc09ecdfc3143be6ffe5d2"
+        },
+        "/tmp/pow-snapshot-provenance-20260905/historical-core.json": {
+          "bytes": 985,
+          "sha256": "3768f52e4fab3ad918a2d8c2b5ee3e38dfccff72593c2ab4909a68ae1dc20a0a"
+        },
+        "/tmp/pow-snapshot-provenance-20260905/node24-authority-result.json": {
+          "bytes": 6567,
+          "sha256": "d124674fa6df47c49db3cd4a7cd39bb7b3b1cd8b3929a3ee114af0d9e9f5864a"
+        },
+        "/tmp/pow-snapshot-provenance-20260905/node24-authority-request.json": {
+          "bytes": 350,
+          "sha256": "7220acd0e198bd42707d082c2f433ea985004f8ba4ea3d4cfe0b24af064704d6"
+        },
+        "/tmp/pow-snapshot-provenance-20260905/frozen-authority-tools-receipt.json": {
+          "bytes": 2607,
+          "sha256": "12d65d4d0bd355c2d271961e9d53c8698d5882276e33909c15025280a9723f8c"
+        },
+        "/tmp/pow-resume2-ops-20260905/window2-final-ops-tests.json": {
+          "bytes": 2430,
+          "sha256": "cf3f9e47797f9baf66eb263a37bbc334f7e3cd353965cf7c93bc98da30162091"
+        },
+        "/tmp/pow-approved-window2-20260905/live-new-sql.json": {
+          "bytes": 98306,
+          "sha256": "717668a45c5702b8a63abadb4007d35899697260a89545777d2765b166726fee"
+        },
+        "/tmp/pow-approved-window2-20260905/live-shape-inspection.json": {
+          "bytes": 681,
+          "sha256": "af9411e6be3a1e40220a131154deb0406e403129d930e6d0901217c10aee2089"
+        },
+        "/tmp/pow-approved-window2-20260905/new-bytecode-cleanup.json": {
+          "bytes": 425,
+          "sha256": "2c5dacfc9f00b073205e0a25594fa1650997897464d387fcf7097491c4cb3a4f"
+        }
+      }
     }
   }
 }

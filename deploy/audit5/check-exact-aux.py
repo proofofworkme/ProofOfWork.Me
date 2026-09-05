@@ -154,7 +154,7 @@ def validate(core, pairs):
         verify_optional_raw_blocktime(current['raw_tx'],block_epoch)
         equal(extra['anchors'],before_extra['anchors'] if index==0 else parents_after,'five complete anchors unchanged plus only the approved funding spend link')
         equal(extra['parentOutputs'],parents_before if index==0 else parents_after,'only three approved funding spend fields may change on six exact parent rows')
-        for field in ('invariants','protectedSnapshots'): equal(base[field],before[field],'unchanged '+field)
+        for field in ('invariants','protectedSnapshots','historicalAuthorities'): equal(base[field],before[field],'unchanged '+field)
         if index==0:
             need(len(extra['inputs'])==5 and len(extra['outputs'])==0 and extra['opReturns']==[] and all(r['value_sats'] is None for r in extra['inputs']),'known sparse baseline')
             continue

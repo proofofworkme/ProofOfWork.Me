@@ -8,18 +8,17 @@ import datetime, hashlib, json, os, pathlib, stat, subprocess
 
 APP = '2ddefac163d5-20260905T180603Z'
 OPS = '0b63c8604456-20260905T205150Z'
-ROOT = pathlib.Path('/run/proofofwork-audit5-' + APP)
-TOOLS = pathlib.Path('/run/proofofwork-audit5-window-tools-' + OPS)
-SOURCE = pathlib.Path('/var/tmp/proofofwork-audit5-ops-source-' + OPS)
+ROOT = pathlib.Path('/run/proofofwork-audit5-' + APP + '-window2')
+TOOLS = pathlib.Path('/run/proofofwork-audit5-window-tools-' + OPS + '-window2')
 NODE = '/opt/node-v24.18.0-linux-x64/bin/node'
 ENV = {'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LANG': 'C.UTF-8'}
 PINS = {
-    'window-quiescence.py': '710dbbe0fce1189b735e8e4795bdbef632040a36558fb4b0004a44d98204fb63',
+    'window-quiescence.py': '24210c1d8f551404e70ffa12b1f7ccc0edfa8ec4ed79b28fcedb6ae73cbcadac',
     'aux-fields.sql': '2b83631a2f7495357ba1445948a525877b6cd6239043f5e5462aab376b18eccc',
-    'check-exact-aux.py': '3f2fc89dbd22d77253ebc698d78b37699bebb214dc842c90625b7eb761ea60d3',
-    'check-audit5-data-repair.mjs': '4af49f042d8ece901f31e09362e53c1f6df954f2b3baa43385b0fc4a8b9d476e',
+    'check-exact-aux.py': 'aa10c0053e935b70137712f4477fe92f9fd0ff4326095a9cf1cba65a6e3b17bc',
+    'check-audit5-data-repair.mjs': 'b475050441ed3828becb613ca7db16390a1560cd922846c7fdaeb34fd326fb57',
 }
-SQL_PIN = 'c0d6a3aed9d55e071a324789857963a72705c363ef6313700dbde0875fd6bf2e'
+SQL_PIN = 'c9266303cf90fe0f81d9b49739675fabd520667a5bc40427cfc601279556967c'
 PHASES = ['before', 'intermediate', 'after']
 ATTEMPT_STARTED = False
 
@@ -57,7 +56,7 @@ def main():
         assert directory.resolve() == directory and stat.S_ISDIR(info.st_mode)
         assert info.st_uid == info.st_gid == 0 and stat.S_IMODE(info.st_mode) == 0o700
     verified = {name: read(TOOLS / name, pin) for name, pin in PINS.items()}
-    sql = read(SOURCE / 'deploy/proofofwork-audit5-data-repair-check.sql', SQL_PIN)
+    sql = read(TOOLS / 'proofofwork-audit5-data-repair-check.sql', SQL_PIN)
     core = read(ROOT / 'window-core-approved-before.json')
     assert json.loads(core)['ok'] is True
     for suffix in ('.json', '-aux.json', '-verification.json', '-attempt.json', '-failure.json', '-sql-error.txt', '-aux-sql-error.txt', '-standard-error.txt'):

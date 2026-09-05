@@ -6,7 +6,7 @@ if not sys.flags.isolated:
 sys.dont_write_bytecode = True
 import os,stat,pathlib,json,hashlib,subprocess,datetime,socket
 APP='2ddefac163d5-20260905T180603Z'
-ROOT=pathlib.Path('/run/proofofwork-audit5-'+APP)
+ROOT=pathlib.Path('/run/proofofwork-audit5-'+APP+'-window2')
 TIMERS=['proofofwork-postgres-logical-backup.timer','pg_basebackup@16-main.timer','pg_compresswal@16-main.timer','proofofwork-postgres-query-health.timer','proofofwork-cache-prune.timer','proofofwork-node-release-health.timer','proofofwork-node-release-prune.timer']
 KEEP=['bitcoind.service','electrs.service','postgresql@16-main.service','pg_receivewal@16-main.service']
 STOP=['proofofwork-api-wg.socket','proofofwork-api-wg.service','proofofwork-indexer-worker.service','proofofwork-api.service','proofofwork-audit5-shadow-'+APP+'-resume-20260905T204900Z.service']

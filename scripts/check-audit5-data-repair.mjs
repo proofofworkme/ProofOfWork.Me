@@ -35,6 +35,85 @@ function canonicalAnchorLinks(inputs) {
     scriptPubKey: auxiliaryOutputEvidence[0].scriptPubKey,
   })).sort((a, b) => a.txid < b.txid ? -1 : a.txid > b.txid ? 1 : a.vout - b.vout);
 }
+// Pins from the independently validated retained seed/bootstrap authority.
+// Captured authority evidence SHA 0c85d283ab1b533d1377c5ad981fd3d43294c2b7eccc09ecdfc3143be6ffe5d2;
+// Core receipt SHA 3768f52e4fab3ad918a2d8c2b5ee3e38dfccff72593c2ab4909a68ae1dc20a0a.
+// Missing historical payloads are not reconstructed; every existing row remains protected.
+const historicalAuthorityPins = {
+  "model": "audit5-historical-authorities-v1",
+  "seed": {
+    "snapshotId": "amo-v5-h1-af98265df1e8e61a7b173807",
+    "rowSha256": "18c3380fa370f28e136308b9cca43b80f5a43d5bd617c4b7c9cb77d127419128"
+  },
+  "migration": {
+    "key": "workAmoV5Migration:livenet",
+    "rowSha256": "bf8a4098f4a65f43a3fbe189b6ee820afc35cb27e5f63b6cb32fcad2bbe87512"
+  },
+  "transitions": [
+    {
+      "blockHeight": 959621,
+      "blockHash": "00000000000000000000447e3a8c01b4b0f08aef5c817ddfd10cf51b1d691d69",
+      "rowSha256": "c72120ff99307f42ce63426ddd6082ff8a3eb7d7f20fb03f9e5407db9716e37c",
+      "blockCanonical": true,
+      "canonicalPreviousHash": "0000000000000000000094195957f498f894c92f5d5f75ff5b9c9afc749a6811"
+    },
+    {
+      "blockHeight": 959804,
+      "blockHash": "00000000000000000001d0b122e73a235c361a73c48912e30651402cf455fe48",
+      "rowSha256": "dd6551971d3d0ce36c873561f34c807ab9ee1625f2e7c0c7d00b6032c4982b13",
+      "blockCanonical": true,
+      "canonicalPreviousHash": "00000000000000000001203f1a5c32be74c7b34228896504ad4412483b263c3d"
+    }
+  ],
+  "blocks": [
+    {
+      "hash": "0000000000000000000094195957f498f894c92f5d5f75ff5b9c9afc749a6811",
+      "height": 959620,
+      "canonical": true,
+      "previousHash": "0000000000000000000156a564e527e1e72dcfba1939ca8f0a7c598ebb8e9e5a"
+    },
+    {
+      "hash": "00000000000000000000447e3a8c01b4b0f08aef5c817ddfd10cf51b1d691d69",
+      "height": 959621,
+      "canonical": true,
+      "previousHash": "0000000000000000000094195957f498f894c92f5d5f75ff5b9c9afc749a6811"
+    },
+    {
+      "hash": "00000000000000000001d0b122e73a235c361a73c48912e30651402cf455fe48",
+      "height": 959804,
+      "canonical": true,
+      "previousHash": "00000000000000000001203f1a5c32be74c7b34228896504ad4412483b263c3d"
+    }
+  ]
+};
+const absentHistoricalOrigins = new Map([
+  ["ae8f28b922cecee2580a97e5", ["migration-closing-provenance"]],
+  ["cb13bc6edd20d72f6ae3919e", ["migration-seed-provenance", "seed-summary-provenance"]],
+]);
+function validateHistoricalAuthorities(evidence) {
+  assert.deepEqual(evidence.historicalAuthorities, historicalAuthorityPins,
+    "Retained seed, completed migration, activation/bootstrap transitions and canonical blocks must match independently verified authority.");
+  const refs = evidence.protectedSnapshots;
+  assert.equal(refs.length, 32, "Preserve the exact approved reference set.");
+  assert.equal(new Set(refs.map(row => row.snapshot_id)).size, refs.length);
+  assert.deepEqual(refs.filter(row => !row.resolved).map(row => row.snapshot_id).sort(), [...absentHistoricalOrigins.keys()].sort());
+  for (const row of refs) {
+    assert.equal(typeof row.resolved, "boolean");
+    assert.ok(Array.isArray(row.origins) && row.origins.length > 0);
+    assert.deepEqual(row.origins, [...new Set(row.origins)].sort());
+    for (const origin of row.origins) assert.ok(["issuance", "witness", "seed-evidence", "seed-summary-provenance", "migration-seed-provenance", "migration-closing-provenance"].includes(origin));
+    if (row.resolved) assert.match(row.row_sha256, /^[0-9a-f]{64}$/u);
+    else {
+      assert.equal(row.row_sha256, null);
+      assert.deepEqual(row.origins, absentHistoricalOrigins.get(row.snapshot_id),
+        "Only the two exact provenance-only references may lack a historical payload; issuance and witness authority must resolve.");
+    }
+  }
+  const seed = refs.find(row => row.snapshot_id === historicalAuthorityPins.seed.snapshotId);
+  assert.equal(seed?.resolved, true);
+  assert.deepEqual(seed.origins, ["seed-evidence"]);
+  assert.equal(seed.row_sha256, historicalAuthorityPins.seed.rowSha256);
+}
 function validate(evidence, repaired) {
   assert.equal(evidence.format, "proofofwork-audit5-repair-evidence-v1");
   assert.equal(evidence.database, "proof_indexer");
@@ -85,8 +164,7 @@ function validate(evidence, repaired) {
   }
   assert.deepEqual(evidence.missingZeroMetadataTxids,
     repaired ? [] : [...expected.values()].sort());
-  assert.ok(evidence.protectedSnapshots.length > 0);
-  assert.ok(evidence.protectedSnapshots.every(row => row.resolved && /^[0-9a-f]{64}$/u.test(row.row_sha256)));
+  validateHistoricalAuthorities(evidence);
   assert.deepEqual(evidence.invariants.map(row => row.name).sort(), [
     "creditBalances", "creditDefinitions", "creditListings", "eventsExceptApprovedMetadata", "transitionCommitments",
   ]);
@@ -101,7 +179,8 @@ if (after) {
   assert.deepEqual(after.aux.anchorLinks.filter(link => link.spentByVin !== 0),
     before.aux.anchorLinks, "All five existing spend links must remain identical.");
   assert.deepEqual(after.invariants, before.invariants, "Event/economic/transition commitments changed beyond the approved metadata.");
-  assert.deepEqual(after.protectedSnapshots, before.protectedSnapshots, "Immutable H-1/seed evidence changed.");
+  assert.deepEqual(after.protectedSnapshots, before.protectedSnapshots, "Immutable H-1/seed evidence, resolution or reference origins changed.");
+  assert.deepEqual(after.historicalAuthorities, before.historicalAuthorities, "Retained historical authority changed.");
   for (const event of after.targetEvents) {
     const original = before.targetEvents.find(row => row.event_id === event.event_id);
     const permitted = { ...original, updated_at: event.updated_at, payload: { ...original.payload, ...additions } };

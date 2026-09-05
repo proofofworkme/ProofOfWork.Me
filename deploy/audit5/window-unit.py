@@ -9,13 +9,13 @@ APP='2ddefac163d5-20260905T180603Z'
 OPS='0b63c8604456-20260905T205150Z'
 NODE='/opt/node-v24.18.0-linux-x64/bin/node'
 CANDIDATE='/opt/proofofwork-api-stage-'+APP
-EXEC=pathlib.Path('/run/proofofwork-audit5-exec-'+OPS)
-CAPTURE=pathlib.Path('/run/proofofwork-audit5-'+APP)
-WINDOW=pathlib.Path('/run/proofofwork-audit5-window-tools-'+OPS)
-QUIESCENCE_SHA='710dbbe0fce1189b735e8e4795bdbef632040a36558fb4b0004a44d98204fb63'
-EXACT_REPAIR_SHA='3f2fc89dbd22d77253ebc698d78b37699bebb214dc842c90625b7eb761ea60d3'
+EXEC=pathlib.Path('/run/proofofwork-audit5-exec-'+OPS+'-window2')
+CAPTURE=pathlib.Path('/run/proofofwork-audit5-'+APP+'-window2')
+WINDOW=pathlib.Path('/run/proofofwork-audit5-window-tools-'+OPS+'-window2')
+QUIESCENCE_SHA='24210c1d8f551404e70ffa12b1f7ccc0edfa8ec4ed79b28fcedb6ae73cbcadac'
+EXACT_REPAIR_SHA='aa10c0053e935b70137712f4477fe92f9fd0ff4326095a9cf1cba65a6e3b17bc'
 ENV={'PATH':'/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin','LANG':'C.UTF-8'}
-PINS={'private-env.py':'3785ce4ab40b21f5759a37e6170ad38949488ded6d1e1129710bc03d97dbc382','shadow-entry.mjs':'48da4605178d43d1cfbf7b33aeb45c1a64e9474913d8e51d1513904dd8d4bf4d'}
+PINS={'attempt-env.py':'9cf7c2371822f4cc6a344070a2245441c7a8327bb5f930257746a8a74abff64c','shadow-entry.mjs':'48da4605178d43d1cfbf7b33aeb45c1a64e9474913d8e51d1513904dd8d4bf4d'}
 MODES={'repair-canonical','repair-atoms','bootstrap-api','bootstrap-worker','gate'}
 assert os.geteuid()==0
 assert len(sys.argv) in (4,5)
@@ -38,13 +38,13 @@ def pinned_read(p,pin):
     finally:os.close(fd)
 verified={name:pinned_read(EXEC/name,pin) for name,pin in PINS.items()}
 quiescence=pinned_read(WINDOW/'window-quiescence.py',QUIESCENCE_SHA)
-ns={'__file__':str(EXEC/'private-env.py'),'__name__':'fixed_window_guard'}
-exec(compile(verified['private-env.py'],str(EXEC/'private-env.py'),'exec'),ns)
+ns={'__file__':str(EXEC/'attempt-env.py'),'__name__':'fixed_window_guard'}
+exec(compile(verified['attempt-env.py'],str(EXEC/'attempt-env.py'),'exec'),ns)
 if gate: assert gate in ns['GATES']
-unit='proofofwork-audit5-window-'+OPS+'-'+label+'.service'
+unit='proofofwork-audit5-window-'+OPS+'-window2-'+label+'.service'
 log=CAPTURE/('window-'+label+'.log')
 receipt=CAPTURE/('window-'+label+'-unit.json')
-argv=['/usr/bin/python3','-I',str(EXEC/'private-env.py'),'launch','--release-id',APP,'--mode',mode]
+argv=['/usr/bin/python3','-I',str(EXEC/'attempt-env.py'),'launch','--release-id',APP,'--mode',mode]
 if gate: argv+=['--source','worker','--gate',gate,'--api-port','18081']
 if mode.startswith('repair-'):
     before=ns['private_read'](str(CAPTURE/'repair-before.json'),32*1024*1024)

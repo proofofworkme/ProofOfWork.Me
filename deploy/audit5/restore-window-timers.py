@@ -5,9 +5,9 @@ if not sys.flags.isolated:raise SystemExit('Invoke with /usr/bin/python3 -I')
 sys.dont_write_bytecode=True
 import pathlib,os,json,hashlib,stat,datetime,subprocess,urllib.request
 APP='2ddefac163d5-20260905T180603Z';OPS='0b63c8604456-20260905T205150Z'
-CAPTURE=pathlib.Path('/run/proofofwork-audit5-'+APP)
-GUARD=pathlib.Path('/run/proofofwork-audit5-window-tools-'+OPS+'/window-quiescence.py')
-GUARD_SHA='710dbbe0fce1189b735e8e4795bdbef632040a36558fb4b0004a44d98204fb63'
+CAPTURE=pathlib.Path('/run/proofofwork-audit5-'+APP+'-window2')
+GUARD=pathlib.Path('/run/proofofwork-audit5-window-tools-'+OPS+'-window2/window-quiescence.py')
+GUARD_SHA='24210c1d8f551404e70ffa12b1f7ccc0edfa8ec4ed79b28fcedb6ae73cbcadac'
 TIMERS=['proofofwork-postgres-logical-backup.timer','pg_basebackup@16-main.timer','pg_compresswal@16-main.timer','proofofwork-postgres-query-health.timer','proofofwork-cache-prune.timer','proofofwork-node-release-health.timer','proofofwork-node-release-prune.timer']
 KEEP=['bitcoind.service','electrs.service','postgresql@16-main.service','pg_receivewal@16-main.service']
 APP_UNITS=['proofofwork-api.service','proofofwork-indexer-worker.service']
