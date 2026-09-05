@@ -13779,15 +13779,25 @@ function publicMarketplaceSales(sales: PowIdMarketplaceSale[]) {
   return sales.filter((sale) => sale.transferVersion === "buy5");
 }
 
+function exactTokenTickerScope(value: string) {
+  const target = value.trim();
+  return /^[A-Za-z0-9]{1,12}$/u.test(target)
+    ? normalizeTokenTicker(target)
+    : "";
+}
+
 function tokenScopeMatchesToken(
   token: Pick<PowTokenDefinition, "ticker" | "tokenId">,
   tokenScope = "",
 ) {
   const normalizedScope = tokenScope.trim();
+  const normalizedTokenId = token.tokenId.trim().toLowerCase();
+  const tickerScope = exactTokenTickerScope(normalizedScope);
   return (
     normalizedScope.length > 0 &&
-    (token.tokenId === normalizedScope ||
-      token.ticker === normalizeTokenTicker(normalizedScope))
+    (normalizedTokenId === normalizedScope.toLowerCase() ||
+      (Boolean(tickerScope) &&
+        normalizeTokenTicker(token.ticker) === tickerScope))
   );
 }
 
@@ -47561,8 +47571,10 @@ function BondMarketplacePanel({
 }) {
   const [activeBondTab, setActiveBondTab] = useState<BondMarketplaceTab>(() => {
     const target = tokenRouteTarget();
-    const normalizedTicker = normalizeTokenTicker(target);
-    return target === POWB_TOKEN_ID || normalizedTicker === POWB_TOKEN_TICKER
+    const normalizedTokenId = target.toLowerCase();
+    const normalizedTicker = exactTokenTickerScope(target);
+    return normalizedTokenId === POWB_TOKEN_ID ||
+      normalizedTicker === POWB_TOKEN_TICKER
       ? "infinity"
       : "inception";
   });
@@ -47653,6 +47665,87 @@ function BondMarketplacePanel({
         tokens={tokens}
       />
     </>
+  );
+}
+
+function replaceTokenMarketRoute(
+  tokenId: string,
+  {
+    computerMode = false,
+    preserveRoute = false,
+  }: { computerMode?: boolean; preserveRoute?: boolean } = {},
+) {
+  if (preserveRoute || typeof window === "undefined") {
+    return;
+  }
+
+  const params = new URLSearchParams(window.location.search);
+  params.delete("ticker");
+  if (tokenId) {
+    params.set("asset", tokenId);
+  } else {
+    params.delete("asset");
+  }
+  if (computerMode) {
+    STANDALONE_ROUTE_PARAMS.forEach((param) => params.delete(param));
+    params.set("folder", "marketplace");
+  } else if (isLocalPreviewHost()) {
+    params.set("marketplace", "1");
+  }
+  const query = params.toString();
+  window.history.replaceState(
+    null,
+    "",
+    `${window.location.pathname}${query ? `?${query}` : ""}`,
+  );
+}
+
+function focusTokenMarketDirectoryHeading() {
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.requestAnimationFrame(() => {
+    document
+      .querySelector<HTMLElement>("[data-token-market-directory-heading]")
+      ?.focus();
+  });
+}
+
+function TokenMarketRouteUnavailable({
+  onViewAll,
+  readState,
+  target,
+}: {
+  onViewAll: () => void;
+  readState: MarketplaceSummaryReadState;
+  target: string;
+}) {
+  const snapshotLabel =
+    readState.status === "last-verified" ? "last verified" : "verified";
+  return (
+    <section
+      aria-label="Requested credit availability"
+      aria-live="polite"
+      className="marketplace-summary-read-state is-unavailable token-market-route-read-state"
+      data-state="unavailable"
+    >
+      <StatusChip tone="bad">Unavailable</StatusChip>
+      <div>
+        <strong>Requested credit unavailable</strong>
+        <span>
+          This asset identifier does not match a credit in the {snapshotLabel}
+          {" "}AMO snapshot. Scoped totals, sale tickets, and absence claims are
+          withheld.
+        </span>
+        <code className="mono token-market-route-target">{target}</code>
+      </div>
+      <button className="secondary small" onClick={onViewAll} type="button">
+        <span className="button-content">
+          <ArrowLeft size={15} />
+          <span>View all credits</span>
+        </span>
+      </button>
+    </section>
   );
 }
 
@@ -47781,9 +47874,7 @@ function TokenMarketplacePanel({
     setTokenMarketActivityQuery(query);
   };
   const selectedMarketToken = rows.find(
-    (token) =>
-      token.tokenId === activeSelectedTokenMarketId ||
-      token.ticker === normalizeTokenTicker(activeSelectedTokenMarketId),
+    (token) => tokenScopeMatchesToken(token, activeSelectedTokenMarketId),
   );
   const tokenMarketActivityScopeKey = [
     network,
@@ -47817,30 +47908,8 @@ function TokenMarketplacePanel({
     tokenMarketActivityQuery,
     tokenMarketActivityTab,
   ]);
-  const setTokenMarketRoute = (tokenId: string) => {
-    if (preserveRoute || typeof window === "undefined") {
-      return;
-    }
-
-    const params = new URLSearchParams(window.location.search);
-    if (tokenId) {
-      params.set("asset", tokenId);
-    } else {
-      params.delete("asset");
-    }
-    if (computerMode) {
-      STANDALONE_ROUTE_PARAMS.forEach((param) => params.delete(param));
-      params.set("folder", "marketplace");
-    } else if (isLocalPreviewHost()) {
-      params.set("marketplace", "1");
-    }
-    const query = params.toString();
-    window.history.replaceState(
-      null,
-      "",
-      `${window.location.pathname}${query ? `?${query}` : ""}`,
-    );
-  };
+  const setTokenMarketRoute = (tokenId: string) =>
+    replaceTokenMarketRoute(tokenId, { computerMode, preserveRoute });
   const openTokenMarket = (token: TokenMarketplaceRow) => {
     updateSelectedTokenMarketId(token.tokenId);
     setTokenMarketRoute(token.tokenId);
@@ -47848,6 +47917,7 @@ function TokenMarketplacePanel({
   const clearTokenMarket = () => {
     updateSelectedTokenMarketId("");
     setTokenMarketRoute("");
+    focusTokenMarketDirectoryHeading();
   };
   const networkListings = listings.filter(
     (listing) => listing.network === network,
@@ -48849,7 +48919,14 @@ function TokenMarketplacePanel({
               <TrendingUp size={24} />
             </div>
             <div>
-              <h3>
+              <h3
+                {...(!selectedMarketToken
+                  ? {
+                      "data-token-market-directory-heading": true,
+                      tabIndex: -1,
+                    }
+                  : {})}
+              >
                 {selectedMarketToken
                   ? `${selectedMarketToken.ticker} Market`
                   : "Credit Markets"}
@@ -50473,9 +50550,11 @@ function MarketplaceApp({
   onRefreshTokens: () => void;
 }) {
   const initialTokenMarketTarget = tokenRouteTarget();
-  const initialTokenMarketTicker = normalizeTokenTicker(initialTokenMarketTarget);
+  const initialTokenMarketTicker = exactTokenTickerScope(
+    initialTokenMarketTarget,
+  );
   const defaultMarketplaceTab: MarketplaceTab =
-    BOND_TOKEN_IDS.has(initialTokenMarketTarget) ||
+    BOND_TOKEN_IDS.has(initialTokenMarketTarget.toLowerCase()) ||
     initialTokenMarketTicker === POWB_TOKEN_TICKER ||
     initialTokenMarketTicker === INCB_TOKEN_TICKER
       ? "bonds"
@@ -50540,9 +50619,7 @@ function MarketplaceApp({
     transfers: creditTokenTransfers,
   });
   const selectedTokenMarket = tokenMarketRows.find(
-    (token) =>
-      token.tokenId === selectedTokenMarketId ||
-      token.ticker === normalizeTokenTicker(selectedTokenMarketId),
+    (token) => tokenScopeMatchesToken(token, selectedTokenMarketId),
   );
   const tokenSummaryStats = tokenMarketplaceSummaryStats({
     listings: creditTokenListings,
@@ -50561,6 +50638,15 @@ function MarketplaceApp({
   const marketplaceSummaryVerified = marketplaceSummaryHasVerifiedData(
     marketplaceSummaryReadState,
   );
+  const tokenMarketRouteUnavailable =
+    marketplaceSummaryVerified &&
+    Boolean(selectedTokenMarketId.trim()) &&
+    !selectedTokenMarket;
+  const viewAllTokenMarkets = () => {
+    setSelectedTokenMarketId("");
+    replaceTokenMarketRoute("");
+    focusTokenMarketDirectoryHeading();
+  };
   const scopedStatus = marketplaceStatusForTab({
     active: marketplaceTab,
     bondSummary: {
@@ -50590,7 +50676,12 @@ function MarketplaceApp({
     },
   });
   const visibleScopedStatus: WorkspaceStatus =
-    marketplaceTab === "boosts" || marketplaceSummaryReadState.status === "ready"
+    marketplaceTab === "tokens" && tokenMarketRouteUnavailable
+      ? {
+          tone: "bad",
+          text: "Requested credit unavailable. The asset identifier does not match the verified AMO snapshot; scoped totals are withheld.",
+        }
+      : marketplaceTab === "boosts" || marketplaceSummaryReadState.status === "ready"
       ? scopedStatus
       : {
           tone:
@@ -50806,7 +50897,7 @@ function MarketplaceApp({
                 <span>Sellers</span>
               </div>
             </div>
-          ) : (
+          ) : tokenMarketRouteUnavailable ? null : (
             <TokenMarketplaceStatsGrid
               readState={marketplaceSummaryReadState}
               stats={tokenSummaryStats}
@@ -51001,6 +51092,12 @@ function MarketplaceApp({
             setFeeRate={setFeeRate}
             tokens={tokens}
           />
+        ) : tokenMarketRouteUnavailable ? (
+          <TokenMarketRouteUnavailable
+            onViewAll={viewAllTokenMarkets}
+            readState={marketplaceSummaryReadState}
+            target={selectedTokenMarketId}
+          />
         ) : (
           <TokenMarketplacePanel
             address={address}
@@ -51148,9 +51245,11 @@ function MarketplaceWorkspace({
   onRefreshTokens: () => void;
 }) {
   const initialTokenMarketTarget = tokenRouteTarget();
-  const initialTokenMarketTicker = normalizeTokenTicker(initialTokenMarketTarget);
+  const initialTokenMarketTicker = exactTokenTickerScope(
+    initialTokenMarketTarget,
+  );
   const defaultMarketplaceTab: MarketplaceTab =
-    BOND_TOKEN_IDS.has(initialTokenMarketTarget) ||
+    BOND_TOKEN_IDS.has(initialTokenMarketTarget.toLowerCase()) ||
     initialTokenMarketTicker === POWB_TOKEN_TICKER ||
     initialTokenMarketTicker === INCB_TOKEN_TICKER
       ? "bonds"
@@ -51226,9 +51325,7 @@ function MarketplaceWorkspace({
     transfers: creditTokenTransfers,
   });
   const selectedTokenMarket = tokenMarketRows.find(
-    (token) =>
-      token.tokenId === selectedTokenMarketId ||
-      token.ticker === normalizeTokenTicker(selectedTokenMarketId),
+    (token) => tokenScopeMatchesToken(token, selectedTokenMarketId),
   );
   const tokenSummaryStats = tokenMarketplaceSummaryStats({
     listings: creditTokenListings,
@@ -51242,6 +51339,15 @@ function MarketplaceWorkspace({
   const marketplaceSummaryVerified = marketplaceSummaryHasVerifiedData(
     marketplaceSummaryReadState,
   );
+  const tokenMarketRouteUnavailable =
+    marketplaceSummaryVerified &&
+    Boolean(selectedTokenMarketId.trim()) &&
+    !selectedTokenMarket;
+  const viewAllTokenMarkets = () => {
+    setSelectedTokenMarketId("");
+    replaceTokenMarketRoute("", { computerMode: true });
+    focusTokenMarketDirectoryHeading();
+  };
   const refreshMarketplaceTab = () => {
     if (marketplaceTab === "boosts") {
       void refreshBoostMarketplace(true);
@@ -51582,6 +51688,12 @@ function MarketplaceWorkspace({
             tokens={tokens}
           />
         </>
+      ) : tokenMarketRouteUnavailable ? (
+        <TokenMarketRouteUnavailable
+          onViewAll={viewAllTokenMarkets}
+          readState={marketplaceSummaryReadState}
+          target={selectedTokenMarketId}
+        />
       ) : (
         <>
           <TokenMarketplaceStatsGrid

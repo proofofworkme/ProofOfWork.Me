@@ -5762,6 +5762,27 @@ pre {
   justify-content: center;
 }
 
+.token-market-route-target {
+  box-sizing: border-box;
+  contain: inline-size;
+  display: block;
+  margin-top: 5px;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  white-space: nowrap;
+  width: 100%;
+}
+
+.mail-layout.is-marketplace-workspace
+  .marketplace-workspace
+  .token-market-route-target {
+  overflow-wrap: normal;
+  white-space: nowrap;
+  word-break: normal;
+}
+
 .marketplace-summary-gate {
   margin: 0;
 }

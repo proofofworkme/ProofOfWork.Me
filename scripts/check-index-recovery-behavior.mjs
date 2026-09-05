@@ -49158,12 +49158,45 @@ check("credit market activity categories preserve lifecycle evidence and paginat
     /WHEN 'market-seals' = 'market-seals' THEN lower\(e\.txid\)/u,
   );
   assert.match(
+    sealSql,
+    /seal_transaction\.txid = lower\(e\.txid\)[\s\S]*canonical_seal_event_row\.txid = lower\(e\.txid\)/u,
+  );
+  assert.match(
+    listingSql,
+    /seal_transaction\.txid = lower\(cl_event\.seal_txid\)[\s\S]*canonical_seal_event_row\.txid = lower\(cl_event\.seal_txid\)/u,
+  );
+  assert.match(
+    sealSql,
+    new RegExp(WORK_TOKEN_ID),
+  );
+  assert.match(
+    sealSql,
+    /pwt-sale-v1[\s\S]*pwt-sale-v2[\s\S]*pwt-sale-v3[\s\S]*pwt-sale-v4[\s\S]*pwt-sale-v5/u,
+  );
+  assert.doesNotMatch(listingSql, /pwt-sale-v1|pwt-sale-v2/u);
+  assert.match(
+    listingSql,
+    /pwt-sale-v3[\s\S]*pwt-sale-v4[\s\S]*pwt-sale-v5/u,
+  );
+  assert.match(
     listingSql,
     /WHEN e\.kind = ANY\(ARRAY\['token-listings','token-listing'\]::text\[\]\)[\s\S]*WHEN e\.kind = 'token-listing-closed'[\s\S]*THEN 'closed:'/u,
   );
   assert.match(
+    sealSql,
+    /canonical_market_events AS \([\s\S]*WHERE canonical_history_rank = 1[\s\S]*lower\(COALESCE\(txid, ''\)\) ~ '\^\[0-9a-f\]\{64\}\$'[\s\S]*status = 'pending'[\s\S]*status = 'confirmed'[\s\S]*seal_event_status = 'confirmed'[\s\S]*lower\(seal_event_txid\) = lower\(txid\)[\s\S]*seal_event_match_count = 1[\s\S]*lower\(COALESCE\(seal_event_block_hash, ''\)\) ~[\s\S]*'\^\[0-9a-f\]\{64\}\$'[\s\S]*seal_event_block_height >= 1[\s\S]*seal_event_block_index >= 0[\s\S]*seal_event_protocol_vout >= 0[\s\S]*seal_event_record_ordinal >= 0/u,
+  );
+  assert.match(
+    listingSql,
+    /canonical_market_events AS \([\s\S]*WHERE canonical_history_rank = 1\s+AND true/u,
+  );
+  assert.match(
     overlaySource,
     /safeKind === "market-listings"[\s\S]*sale_sibling\.kind = 'token-sale'[\s\S]*containerPosition'[\s\S]*listingId[\s\S]*tokenId/iu,
+  );
+  assert.match(
+    overlaySource,
+    /historicalSealProjection: safeKind === "market-seals"/u,
   );
 
   const listingId = "1".repeat(64);
@@ -51161,6 +51194,316 @@ check("canonical market listings retain original time with current seal metadata
   assert.equal(item.listing.status, "sealing");
   assert.equal(item.listing.saleTicketStatus, "sealed");
   assert.deepEqual(item.listing.saleAuthorization, saleAuthorization);
+});
+
+check("historical market seals retain their own canonical identity across reseals", () => {
+  const normalizedLowerText = (value) =>
+    String(value ?? "").trim().toLowerCase();
+  const objectRecord = (value) =>
+    value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  const validTxid = (value) =>
+    /^[0-9a-f]{64}$/u.test(String(value ?? "").trim().toLowerCase());
+  const sealPatch = isolatedFunction(
+    READER_PATH,
+    "tokenMarketListingSealPatch",
+    {
+      normalizedLowerText,
+      objectRecord,
+      validTxid,
+      WORK_MARKET_GOVERNED_AUTH_VERSIONS:
+        WORK_MARKET_GOVERNED_AUTH_VERSIONS_FIXTURE,
+      WORK_MARKET_V2_AUTH_VERSION: "pwt-sale-v3",
+      WORK_TOKEN_ID,
+    },
+  );
+  const canonicalProjectionPayload = isolatedFunction(
+    READER_PATH,
+    "tokenMarketCanonicalListingProjectionPayload",
+    {
+      normalizedLowerText,
+      objectRecord,
+      WORK_MARKET_GOVERNED_AUTH_VERSIONS:
+        WORK_MARKET_GOVERNED_AUTH_VERSIONS_FIXTURE,
+      WORK_MARKET_V2_AUTH_VERSION: "pwt-sale-v3",
+      WORK_TOKEN_ID,
+    },
+  );
+  const tokenMarketEventRowPayload = isolatedFunction(
+    READER_PATH,
+    "tokenMarketEventRowPayload",
+    {
+      eventRowPayload: (row) => row.payload,
+      normalizeEventPayload: (value) => value,
+      normalizedLowerText,
+      objectRecord,
+      tokenListingWithSaleTicketStatus: (value) => value,
+      tokenMarketCanonicalListingProjectionPayload:
+        canonicalProjectionPayload,
+      tokenMarketListingSealPatch: sealPatch,
+      validTxid,
+    },
+  );
+  const tokenSaleAuthorizationUsesSpendableSaleTicketAnchor =
+    isolatedFunction(
+      READER_PATH,
+      "tokenSaleAuthorizationUsesSpendableSaleTicketAnchor",
+      {
+        isWorkTokenId,
+        validPublicKeyHex: (value) =>
+          /^[0-9a-fA-F]{64}$/u.test(value) ||
+          /^(02|03)[0-9a-fA-F]{64}$/u.test(value) ||
+          /^04[0-9a-fA-F]{128}$/u.test(value),
+        TOKEN_LISTING_ANCHOR_SIGHASH_TYPE: 0x83,
+        TOKEN_LISTING_ANCHOR_TYPE: "sale-ticket-v1",
+        TOKEN_LISTING_ANCHOR_VALUE_SATS: 546,
+        TOKEN_LISTING_ANCHOR_VOUT: 2,
+        TOKEN_SALE_AUTH_VERSION: "pwt-sale-v1",
+        TOKEN_SALE_AUTH_VERSIONS: new Set([
+          "pwt-sale-v1",
+          "pwt-sale-v2",
+          ...WORK_MARKET_GOVERNED_AUTH_VERSIONS_FIXTURE,
+        ]),
+        WORK_MARKET_GOVERNED_AUTH_VERSIONS:
+          WORK_MARKET_GOVERNED_AUTH_VERSIONS_FIXTURE,
+        WORK_TOKEN_TICKER: "WORK",
+      },
+    );
+  const activeTokenListingHistoryItem = isolatedFunction(
+    READER_PATH,
+    "activeTokenListingHistoryItem",
+    { tokenSaleAuthorizationUsesSpendableSaleTicketAnchor },
+  );
+  const listingFromPayload = (payload) => {
+    const saleAuthorization = objectRecord(payload?.saleAuthorization);
+    return {
+      confirmed: payload?.confirmed === true,
+      createdAt: payload?.createdAt,
+      listingId: payload?.listingId,
+      registryAddress:
+        payload?.registryAddress ?? saleAuthorization.registryAddress,
+      saleAuthorization,
+      sealAt: payload?.sealAt,
+      sealConfirmed: payload?.sealConfirmed,
+      sealTxid: payload?.sealTxid,
+      sellerAddress:
+        payload?.sellerAddress ?? saleAuthorization.sellerAddress,
+      status: payload?.status,
+      tokenId: payload?.tokenId ?? saleAuthorization.tokenId,
+    };
+  };
+  const tokenHistoryItemFromMarketEventPayload = isolatedFunction(
+    READER_PATH,
+    "tokenHistoryItemFromMarketEventPayload",
+    {
+      activeTokenListingHistoryItem,
+      tokenListingFromEventPayload: listingFromPayload,
+      workAmoV5PreUnitRelicEvidenceIsExact: () => false,
+    },
+  );
+
+  const listingId = "1".repeat(64);
+  const historicalSealTxid = "a".repeat(64);
+  const currentSealTxid = "b".repeat(64);
+  const pendingSealTxid = "e".repeat(64);
+  const historicalSealAt = "2026-05-30T12:00:00.000Z";
+  const currentSealAt = "2026-06-01T12:00:00.000Z";
+  const historicalSaleAuthorization = {
+    anchorScriptPubKey: `0014${"1".repeat(40)}`,
+    anchorSignature: "historical-signature",
+    anchorSigHashType: 0x83,
+    anchorType: "sale-ticket-v1",
+    anchorValueSats: 546,
+    anchorVout: 2,
+    nonce: "historical-nonce",
+    registryAddress: "bc1phistoricalregistry",
+    sellerAddress: "bc1phistoricalseller",
+    sellerPublicKey: `02${"2".repeat(64)}`,
+    ticker: "WORK",
+    tokenId: WORK_TOKEN_ID,
+    version: "pwt-sale-v1",
+  };
+  const currentSaleAuthorization = {
+    anchorScriptPubKey: `0014${"3".repeat(40)}`,
+    anchorSignature: "current-signature",
+    anchorSigHashType: 0x83,
+    anchorType: "sale-ticket-v1",
+    anchorValueSats: 546,
+    anchorVout: 2,
+    nonce: "current-nonce",
+    registryAddress: "bc1pcurrentregistry",
+    sellerAddress: "bc1pcurrentseller",
+    sellerPublicKey: `03${"4".repeat(64)}`,
+    ticker: "WORK",
+    tokenId: WORK_TOKEN_ID,
+    version: "pwt-sale-v1",
+  };
+  const historicalSealPosition = {
+    sealBlockHash: "c".repeat(64),
+    sealBlockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT - 10,
+    sealBlockIndex: 1223,
+    sealProtocolVout: 0,
+    sealRecordOrdinal: 0,
+  };
+  const confirmedHistoricalSealRow = {
+    listing_payload: {
+      listingId,
+      saleAuthorization: currentSaleAuthorization,
+      sealAt: currentSealAt,
+      sealBlockHash: "d".repeat(64),
+      sealBlockHeight: WORK_AMO_V5_ACTIVATION_HEIGHT - 5,
+      sealBlockIndex: 87,
+      sealConfirmed: true,
+      sealTxid: currentSealTxid,
+    },
+    payload: {
+      confirmed: true,
+      kind: "token-listing-sealed",
+      listingId,
+      saleAuthorization: historicalSaleAuthorization,
+      sealAt: historicalSealAt,
+      tokenId: WORK_TOKEN_ID,
+      txid: historicalSealTxid,
+    },
+    seal_event_payload: {
+      listingId,
+      saleAuthorization: historicalSaleAuthorization,
+      sealAt: historicalSealAt,
+      tokenId: WORK_TOKEN_ID,
+    },
+    seal_event_status: "confirmed",
+    seal_event_txid: historicalSealTxid,
+    seal_event_match_count: 1,
+    seal_event_block_hash: historicalSealPosition.sealBlockHash,
+    seal_event_block_height: historicalSealPosition.sealBlockHeight,
+    seal_event_block_index: historicalSealPosition.sealBlockIndex,
+    seal_event_protocol_vout: historicalSealPosition.sealProtocolVout,
+    seal_event_record_ordinal: historicalSealPosition.sealRecordOrdinal,
+    seal_transaction_block_height: historicalSealPosition.sealBlockHeight,
+  };
+  const historicalSeal = tokenMarketEventRowPayload(
+    confirmedHistoricalSealRow,
+    "livenet",
+    { historicalSealProjection: true },
+  );
+
+  assert.equal(historicalSeal.txid, historicalSealTxid);
+  assert.equal(historicalSeal.sealTxid, historicalSealTxid);
+  assert.notEqual(historicalSeal.sealTxid, currentSealTxid);
+  assert.equal(historicalSeal.sealAt, historicalSealAt);
+  assert.notEqual(historicalSeal.sealAt, currentSealAt);
+  assert.deepEqual(
+    historicalSeal.saleAuthorization,
+    historicalSaleAuthorization,
+  );
+  assert.notDeepEqual(
+    historicalSeal.saleAuthorization,
+    currentSaleAuthorization,
+  );
+  for (const [field, value] of Object.entries(historicalSealPosition)) {
+    assert.equal(historicalSeal[field], value);
+  }
+  const historicalHistoryItem = tokenHistoryItemFromMarketEventPayload(
+    historicalSeal,
+    "market-seals",
+  );
+  assert.equal(historicalHistoryItem.kind, "seal");
+  assert.equal(historicalHistoryItem.txid, historicalSealTxid);
+  assert.equal(historicalHistoryItem.seal.sealTxid, historicalSealTxid);
+  assert.equal(historicalHistoryItem.seal.status, "confirmed");
+  assert.deepEqual(
+    historicalHistoryItem.seal.saleAuthorization,
+    historicalSaleAuthorization,
+  );
+
+  const invalidConfirmedHistoricalRows = [
+    {
+      label: "a mismatched canonical seal transaction",
+      row: {
+        ...confirmedHistoricalSealRow,
+        seal_event_txid: currentSealTxid,
+      },
+    },
+    {
+      label: "ambiguous canonical seal evidence",
+      row: {
+        ...confirmedHistoricalSealRow,
+        seal_event_match_count: 2,
+      },
+    },
+    {
+      label: "non-confirmed canonical seal evidence",
+      row: {
+        ...confirmedHistoricalSealRow,
+        seal_event_status: "pending",
+      },
+    },
+    {
+      label: "incomplete canonical seal position",
+      row: {
+        ...confirmedHistoricalSealRow,
+        seal_event_block_hash: null,
+      },
+    },
+  ];
+  for (const { label, row } of invalidConfirmedHistoricalRows) {
+    assert.equal(
+      tokenMarketEventRowPayload(
+        row,
+        "livenet",
+        { historicalSealProjection: true },
+      ),
+      null,
+      `${label} must suppress the confirmed historical row`,
+    );
+  }
+
+  const pendingSaleAuthorization = {
+    ...historicalSaleAuthorization,
+    anchorSignature: "pending-signature",
+    nonce: "pending-nonce",
+    version: WORK_AMO_V8_AUTH_VERSION,
+  };
+  const pendingSeal = tokenMarketEventRowPayload(
+    {
+      listing_payload: {
+        listingId,
+        saleAuthorization: currentSaleAuthorization,
+        sealAt: currentSealAt,
+        sealConfirmed: true,
+        sealTxid: currentSealTxid,
+      },
+      payload: {
+        confirmed: false,
+        createdAt: "2026-05-30T13:00:00.000Z",
+        kind: "token-listing-sealed",
+        listingId,
+        saleAuthorization: pendingSaleAuthorization,
+        status: "pending",
+        tokenId: WORK_TOKEN_ID,
+        txid: pendingSealTxid,
+      },
+    },
+    "livenet",
+    { historicalSealProjection: true },
+  );
+
+  assert.equal(pendingSeal.txid, pendingSealTxid);
+  assert.equal(pendingSeal.sealTxid, pendingSealTxid);
+  assert.equal(pendingSeal.sealConfirmed, false);
+  assert.deepEqual(pendingSeal.saleAuthorization, pendingSaleAuthorization);
+  assert.notDeepEqual(pendingSeal.saleAuthorization, currentSaleAuthorization);
+  const pendingHistoryItem = tokenHistoryItemFromMarketEventPayload(
+    pendingSeal,
+    "market-seals",
+  );
+  assert.equal(pendingHistoryItem.kind, "seal");
+  assert.equal(pendingHistoryItem.txid, pendingSealTxid);
+  assert.equal(pendingHistoryItem.seal.sealTxid, pendingSealTxid);
+  assert.equal(pendingHistoryItem.seal.status, "pending");
+  assert.deepEqual(
+    pendingHistoryItem.seal.saleAuthorization,
+    pendingSaleAuthorization,
+  );
 });
 
 check("WORK V3 market history ignores an unproven listing-table seal", () => {
