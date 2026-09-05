@@ -42,7 +42,10 @@ COMPATIBILITY_MODEL = "proofofwork-ui-prior-asset-closure-v1"
 MAXIMUM_INDEX_BYTES = 2 * 1024 * 1024
 MAXIMUM_ASSET_BYTES = 64 * 1024 * 1024
 MAXIMUM_TOTAL_BYTES = 512 * 1024 * 1024
-MAXIMUM_DEPENDENCIES = 256
+# The current 15-surface split bundle has 525 reachable prior assets (35 per
+# surface). Count each served path, including shared-content URLs, and retain
+# a finite ceiling above that measured set alongside the byte/edge limits.
+MAXIMUM_DEPENDENCIES = 1024
 MAXIMUM_REFERENCE_EDGES = 4096
 # The compatibility-complete pre-v3 monolith produces 421,994 candidates
 # across the 14 canonical surfaces. Keep a bounded power-of-two ceiling above
