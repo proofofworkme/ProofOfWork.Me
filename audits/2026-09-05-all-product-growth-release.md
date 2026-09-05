@@ -9,12 +9,13 @@ generator and charts while preserving the historical baseline, running checks
 and hygiene, committing, pushing to origin, and deploying the API and shared UI
 with production verification and rollback available.
 
-The deployed application source is commit
+The deployed node and UI use application source commit
 `6a7d5c12e403e0ddb6247fa2a6865cb70d623a8e`, tree
 `bc84d0294fc4fdd9e0dd2b9943f6b330197e1ea7`, on
-`growth-all-products-2026-09-05`. A later tooling commit repairs the release
-helpers and records progress; a final receipt-only commit records completed
-verification. Neither changes the application build's source identity.
+`growth-all-products-2026-09-05`. Tooling commit
+`760d36f3762b45cc392ef6c34abc6b61a01b73b7` repairs the release helpers and
+records progress. This receipt records deployment and verification separately
+from the unchanged application build's source identity.
 
 ## Product and accounting result
 
@@ -110,6 +111,22 @@ bounded background read ran. At 05:24:39 the same checkpoint returned complete,
 verified observations with the same amounts. Canonical data remained available
 through that optional-overlay warmup.
 
+The read-only node and public API soak at 05:51:41–05:51:58 UTC verified the
+same clean application commit/tree, all four API/worker/WireGuard units active,
+the retained archive and provenance, and the rollback checkout matching its
+pre-exchange attestation. Public Growth, WORK and consistency agreed at snapshot
+`32af6ef5650418f8e8260041`, height `965572`, block hash
+`0000000000000000000162bc730918d629599a12c8f137d51fbdc314537dbeb2`.
+Consistency remained green and both exact network values remained
+`813148268234266354863291054`. Boost was complete and economically verified at
+that same checkpoint, with the two posts and all amounts unchanged from the
+earlier observations. The existing checkout-count monitoring warning remained;
+all 11 retained archives and current provenance verified.
+
+The local soak receipt is
+`/tmp/proofofwork-node-soak-20260905T055141Z.json`, SHA-256
+`2bb923d97076ad6523eb2059b7b3cce1ebff6a6a00b1b0daf64ca379c4687cba`.
+
 ## Shared UI release
 
 Release ID: `6a7d5c12e403-20260905T050937Z`.
@@ -119,10 +136,17 @@ Transferred source bundle SHA-256:
 Transferred surface payload SHA-256:
 `e2777626def38435154f36908d6f5037cdaf34005eaa32c215eafadd52a7f282`.
 
-Publication and public UI verification are in progress. Preservation of the
-previous rollback completed its atomic move and content checks, then paused
-before staging because temporary verification copies reduced free space below
-the existing 10 GiB storage floor. The previously active UI remained serving.
+The UI was published and verified by the canonical publisher at 05:58:12 UTC;
+its active provenance records `deployed_at=2026-09-05T05:57:35Z`. Browser checks
+passed. Complete HTTPS byte checks passed for 14 hosts through public DNS and
+the NFT compatibility host directly at the UI origin, with TLS and Host
+preserved. The two earlier pre-publication stops and their evidence-preserving
+continuations follow.
+
+Preservation of the previous rollback completed its atomic move and content
+checks, then paused before staging because temporary verification copies
+reduced free space below the existing 10 GiB storage floor. The previously
+active UI remained serving throughout that pause.
 
 The continuation reverified the original root and its complete archive, removed
 only the reconstructed replay tree and two temporary upload copies whose exact
@@ -163,10 +187,10 @@ The original inventory describes the complete copy retained on the node;
 local validation explicitly permits only those two digest-pinned files to be
 offloaded.
 
-The publication continuation verifies the original transport checksums again,
-reclaims only its fresh verification extraction and temporary upload copies,
-and proves each fresh payload file against the completed stage before reclaiming
-that redundant payload tree. It constructs the canonical 15-surface archive
+The publication continuation verified the original transport checksums again,
+reclaimed only its fresh verification extraction and temporary upload copies,
+and proved each fresh payload file against the completed stage before reclaiming
+that redundant payload tree. It constructed the canonical 15-surface archive
 directly from the stage, avoiding another full static-file copy. A local fixture
 verified the transformed archive paths and bytes for all 15 roots. Source
 checkout/runtime, release archives and rollback roots remain retained. The
@@ -203,9 +227,112 @@ The deployment-tool repair is versioned separately from the unchanged
 `6a7d5c12e403` application build. The complete native `npm run check:ui-ops`
 passed, including acceptance of 525 and 1,024 dependencies, rejection of 1,025
 by both shipped implementations, publication failure recovery and rollback
-durability. Tooling installation and publication remain pending at this progress
-checkpoint. Final publication and browser evidence will be added in a subsequent
-receipt update.
+durability.
+
+The tooling repair was committed and pushed as
+`760d36f3762b45cc392ef6c34abc6b61a01b73b7`, tree
+`4ba2e071dd2a94116da5a6c8fd095510cf67c56b`. At 05:52:40 UTC the installer
+verified the two installed helpers against the application commit, preserved
+their exact prior bytes and metadata, and atomically installed only the two
+tracked tooling blobs under the existing UI deploy lock. Both installed files
+are root:root, mode 0755:
+
+| Installed helper | Bytes | SHA-256 |
+| --- | ---: | --- |
+| `/usr/local/sbin/proofofwork-ui-release-stage` | 41,747 | `2e94bd1b4871da7668dc6f7a06bd693b325bf3a9cb4c2cd7ffb3c3a80940d53b` |
+| `/usr/local/sbin/proofofwork-ui-release-publish` | 32,985 | `c43612b98d76e3bf7d87e4352ea842962297fccf4c7a03e72df90ce367857ef0` |
+
+The previous helper SHA-256 values were respectively
+`86b2886f17e9e2646746dd6006a5e9bd371b1d872371b920291000c7b5cbdf58`
+and `c1d50668c1ff22cc487cd831509e7764b7f2d959b327d0c89568f2d357daba4d`.
+Their preserved files, original metadata, install intent, committed-file
+manifest, receipt and checksum sidecars remain in the fresh root-owned 0700
+directory
+`/var/backups/proofofwork-ui/release-tooling/760d36f3762b45cc392ef6c34abc6b61a01b73b7/`.
+Its `TOOLING-RECEIPT.json` has SHA-256
+`3181e67f0482bb4f877b16ea09aaf587044316b5cc8cccb700854e72c2b4dbcb`;
+the committed-file manifest SHA-256 is
+`a88bb245c0d613d4dfd0e5615abc096363c6c1c0c56573c39bec8adc98133b71`.
+The matching local copies are
+`/tmp/all-product-ui-tooling-760d36f3762b45cc392ef6c34abc6b61a01b73b7.receipt.json`
+and `.manifest.json` under the same filename prefix.
+
+This installation changed no application payload, live UI, source checkout,
+storage threshold or production configuration. The resumed publisher pins the
+installed helper hashes and their separate tooling receipt while preserving
+the application's original source attestation.
+
+### Published UI and browser verification
+
+The canonical publisher verified the old `6c1b47801671` release and the new
+candidate, exchanged the complete root, recorded the new active provenance,
+and verified the published `6a7d5c12e403` release. The immediate rollback is the
+complete previous UI, separate from the older historical root preserved above.
+
+- Retained archive:
+  `/var/backups/proofofwork-ui/releases/proofofwork-ui-release-6a7d5c12e403-20260905T050937Z.tgz`.
+- Archive size: 185,346,618 bytes; SHA-256
+  `3294199efbd9d81b8f203ee2da7e71ae714f749f5ff2f85dc2022bae941ee973`.
+- Active and archive-adjacent provenance match byte-for-byte, SHA-256
+  `2e75546ca7b21ff7b8a1d96d1a891c9bdc9e97dfa74b451f58dd4519c790a1ec`.
+- Live `/var/www` identity: `2049:520190`, root:root, mode 0755.
+- Immediate rollback:
+  `/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-6a7d5c12e403-20260905T050937Z`,
+  identity `2049:520899`, retaining commit
+  `6c1b4780167101289811010469d129111a62dd52` and its unchanged manifest SHA-256
+  `46ac2f7d48e3e1b5ebcdb90b7220cdf9ed680d1107fd491ab134c29298805ec8`.
+
+A read-only follow-up at 06:00:22 UTC rehashed the archive and canonical
+checksum sidecar, matched active and adjacent provenance, confirmed the prior
+rollback identity, and verified the clean detached application source and
+separately installed tooling. Caddy and the UI provenance, release-prune and
+storage-health timers were active. Storage had 11,003,629,568 available bytes,
+72% block use, 7% inode use and 2,270,895 available inodes, passing the unchanged
+thresholds. No deploy lock, pruning, configuration change or deployment helper
+was used by this follow-up. Its local receipt is
+`/tmp/all-product-ui-postpublication-20260905T060023Z.json`, SHA-256
+`3a80e40e5419396f3fb8073ae4634f49a11b3738d2e5143cfbe9898bc6ae7da3`.
+
+Production browser checks passed for all 16 product coverage entries, the
+11 economic lanes and separate WORK diagnostic, the historical-model selector
+roundtrip with unchanged canonical actuals, Computer's shared Growth route,
+and the standalone Boost feed. No page JavaScript errors or mobile document
+overflow were observed; the 390-pixel viewport, document and body widths
+matched. Six screenshots accompany
+`/tmp/pow-growth-production-6a7d5c12e403/evidence.json`, SHA-256
+`5824388f447d71651b8b773a02e69c230ae11ca62c0d0d751483fee7447b2fed`.
+
+The first three Growth reads, roughly ten seconds apart, correctly showed the
+optional Boost observations as unavailable while preparing. The fourth read
+returned complete, economically verified observations at snapshot
+`0ae27ea16ac4f4d2ec7404f8`, height `965574`, block hash
+`00000000000000000001b92362ed66b4dd341ce3373c9a91332c61d187f65b8a`.
+The same checkpoint and values appeared in Computer. One scripted reload
+aborted a Growth GET; subsequent reads recovered. These were transient
+observations, not persistent application failures. The route's observed cache
+policy was `max-age=15, stale-while-revalidate=60`; the evidence does not isolate
+an exact cache-duration cause for the warmup.
+
+The first complete HTTPS smoke stopped because public DNS could not resolve
+`nft.proofofwork.me`. This predates the release and is recorded in the
+[September 1 audit](2026-09-01-production-health-data-event-storage-audit-3.md)
+and [September 2 audit](2026-09-02-production-health-data-event-storage-audit-4.md).
+The repeat checked the 14 primary hosts through public DNS and only the NFT
+compatibility host directly at `77.42.91.106`, preserving its TLS hostname and
+HTTP Host. No DNS or production configuration was changed. This distinction
+must remain explicit; direct-origin success does not prove public NFT DNS.
+
+The complete HTTPS repeat passed with exit 0 at 06:03:09 UTC: all 735 archived
+regular files, 49 on each of 15 surfaces, matched exactly across 217,150,448
+served bytes. All 15 hostname roots matched their expected indices and the
+apex returned the expected 301 redirect. TLS validation passed for all hosts;
+only `nft.proofofwork.me` used the explicitly pinned origin described above.
+Elapsed time was 106.9 seconds. The evidence log is
+`/tmp/proofofwork-ui-smoke.24vT9wj18x/external-smoke-nft-origin.log`, SHA-256
+`417d627cb5717609dfef8be990dcbbd1fc6f92463725595dcfa88f88547f8b69`.
+At 06:03:34 UTC a final byte comparison confirmed that the active manifest
+still matched the release manifest downloaded before smoke; the same
+`6a7d5c12e403` application remained active.
 
 ## Monitoring and rollback boundary
 
@@ -238,3 +365,38 @@ verification. Verify restored routes and release provenance before restarting
 `proofofwork-api-wg.socket` and `proofofwork-api-wg.service`. An uncertain exchange
 result requires inspection of saved inode identities with services stopped;
 never retry the exchange blindly.
+
+For the UI, follow the complete-root rollback procedure in
+[the deployment runbook](../OP_RETURN_INFRASTRUCTURE.md) and the tracked
+`exchange_directories`, `verify_directory_identity`, `fsync_parent_directories`
+and `rename_directory` routines in
+[the publisher](../deploy/proofofwork-ui-release-publish.sh). The installed
+publisher has no standalone rollback flag; do not rerun publication as rollback.
+No UI rollback was executed for this release.
+
+If rollback becomes necessary, an operator must hold the existing
+`/run/proofofwork-ui/deploy.lock`, reverify ownership, mounts, source/archive
+provenance and the two recorded identities, and require the rejected-candidate
+stage path below to be absent. Atomically exchange complete `/var/www`
+(`2049:520190`) with the exact immediate rollback root above (`2049:520899`)
+using `renameat2(RENAME_EXCHANGE)`. Assert that the prior inode is now live,
+fsync both parents, and verify the restored prior provenance and HTTP service.
+Return the rejected current root to
+`/var/tmp/proofofwork-deploy/proofofwork-www-stage-6a7d5c12e403-20260905T050937Z`
+with a checked non-overwriting rename, assert its `2049:520190` identity, and
+fsync the affected parents. Preserve its archive and incident evidence.
+
+With the same checked deploy-lock descriptor held and the prior root restored,
+the supported provenance commands are:
+
+```bash
+POW_UI_DEPLOY_LOCK_FD="$deploy_lock_fd" /usr/local/sbin/proofofwork-ui-release-provenance verify-rollback
+POW_UI_DEPLOY_LOCK_FD="$deploy_lock_fd" /usr/local/sbin/proofofwork-ui-release-provenance verify
+```
+
+They must verify prior release `6c1b47801671-20260905T020357Z`, backed by archive
+SHA-256 `48720813383ee776873fbf2e65e3e8bd113fe2cd616e5410da93a69499b1702b`.
+Repeat HTTPS checks against that prior archive, including its asset dependency
+graph and the explicit NFT DNS limitation. If exchange, identity or durability
+is uncertain, inspect the saved identities before any further mutation; never
+repair the release one surface at a time.
